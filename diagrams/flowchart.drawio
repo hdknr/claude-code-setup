@@ -1,0 +1,144 @@
+<mxfile host="app.diagrams.net" modified="2026-02-16T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="セットアップフロー" id="flowchart">
+    <mxGraphModel dx="1100" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="セットアップの流れ" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="400" y="15" width="220" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- START -->
+        <mxCell id="start" value="🆕 新品の MacBook" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E6E6E6;strokeColor=#999999;fontSize=14;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="400" y="70" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Part 1 Header -->
+        <mxCell id="part1_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;dashed=0;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="50" y="170" width="900" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="part1_label" value="Part 1: 事前準備" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="70" y="175" width="160" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step1" value="🍺&lt;br&gt;Homebrew&lt;br&gt;インストール" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB300;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="215" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step2" value="🔧&lt;br&gt;Git&lt;br&gt;確認" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB300;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="250" y="215" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step3" value="&lt;b&gt;GitHub CLI&lt;/b&gt;&lt;br&gt;インストール&lt;br&gt;&amp;amp; ログイン" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB300;fontSize=12;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="215" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step4" value="⬢&lt;br&gt;Node.js&lt;br&gt;インストール" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB300;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="590" y="215" width="130" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Part 2 Header -->
+        <mxCell id="part2_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#4CAF50;dashed=0;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="50" y="340" width="900" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="part2_label" value="Part 2: Claude Code インストール" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="70" y="345" width="290" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step5" value="👤&lt;br&gt;Anthropic&lt;br&gt;アカウント作成" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#66BB6A;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="165" y="385" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step6" value="🤖&lt;br&gt;Claude Code&lt;br&gt;インストール" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#66BB6A;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="420" y="385" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step7" value="🔑&lt;br&gt;認証&lt;br&gt;&amp;amp; 動作確認" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#66BB6A;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="675" y="385" width="130" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Part 3 Header -->
+        <mxCell id="part3_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#2196F3;dashed=0;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="50" y="510" width="900" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="part3_label" value="Part 3: インストール後の環境準備" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#0D47A1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="515" width="290" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step8" value="📁&lt;br&gt;作業用リポジトリ&lt;br&gt;作成" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#64B5F6;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="555" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step9" value="📄&lt;br&gt;CLAUDE.md&lt;br&gt;設定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#64B5F6;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="290" y="555" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step10" value="🔗&lt;br&gt;GitHub&lt;br&gt;連携" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#64B5F6;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="555" width="130" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="step11" value="📋&lt;br&gt;スキル&lt;br&gt;設定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#64B5F6;fontSize=12;fontStyle=1;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="710" y="555" width="130" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- END -->
+        <mxCell id="end" value="✅ セットアップ完了！" style="ellipse;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;fontSize=14;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="400" y="690" width="200" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Flow Arrows -->
+        <mxCell id="f0" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="start" target="step1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FF9800;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step1" target="step2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FF9800;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step2" target="step3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FF9800;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step3" target="step4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="step4" target="step5" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="655" y="320" />
+              <mxPoint x="230" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="f5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#4CAF50;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step5" target="step6" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#4CAF50;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step6" target="step7" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="step7" target="step8" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="740" y="490" />
+              <mxPoint x="145" y="490" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="f8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2196F3;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step8" target="step9" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2196F3;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step9" target="step10" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="f10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#2196F3;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="step10" target="step11" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="step11" target="end" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="775" y="660" />
+              <mxPoint x="500" y="660" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
