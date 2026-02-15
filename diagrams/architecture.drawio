@@ -1,134 +1,146 @@
 <mxfile host="app.diagrams.net" modified="2026-02-16T00:00:00.000Z" agent="Claude Code" version="24.0.0">
   <diagram name="構成図" id="architecture">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="700" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="750" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
         <!-- Title -->
-        <mxCell id="title" value="Claude Code 設定 構成図" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+        <mxCell id="title" value="セットアップ後の利用環境" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
           <mxGeometry x="400" y="20" width="400" height="40" as="geometry" />
         </mxCell>
 
         <!-- User's MacBook -->
         <mxCell id="macbook_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;dashPattern=5 5;fontSize=14;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="80" y="90" width="500" height="520" as="geometry" />
+          <mxGeometry x="60" y="80" width="520" height="580" as="geometry" />
         </mxCell>
         <mxCell id="macbook_label" value="💻 あなたの MacBook" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
-          <mxGeometry x="200" y="100" width="220" height="30" as="geometry" />
+          <mxGeometry x="190" y="90" width="220" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- You (user) -->
+        <mxCell id="user" value="🙂 あなた" style="shape=ellipse;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;fontSize=14;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="230" y="130" width="130" height="50" as="geometry" />
         </mxCell>
 
         <!-- Terminal -->
         <mxCell id="terminal" value="⬛ ターミナル" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#333333;strokeColor=#333333;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="220" y="150" width="200" height="50" as="geometry" />
+          <mxGeometry x="220" y="210" width="160" height="45" as="geometry" />
         </mxCell>
 
         <!-- Claude Code -->
         <mxCell id="claude_code" value="🤖 Claude Code" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=16;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="190" y="240" width="260" height="60" as="geometry" />
+          <mxGeometry x="180" y="290" width="240" height="60" as="geometry" />
         </mxCell>
 
-        <!-- Homebrew -->
-        <mxCell id="homebrew" value="🍺 Homebrew" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBB040;strokeColor=#F5A623;fontColor=#FFFFFF;fontSize=13;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="110" y="350" width="150" height="45" as="geometry" />
+        <!-- Workspace group -->
+        <mxCell id="workspace_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AAAAAA;dashed=0;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="90" y="400" width="460" height="230" as="geometry" />
         </mxCell>
-
-        <!-- Node.js -->
-        <mxCell id="nodejs" value="⬢ Node.js" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#68A063;strokeColor=#5B9156;fontColor=#FFFFFF;fontSize=13;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="110" y="420" width="150" height="45" as="geometry" />
-        </mxCell>
-
-        <!-- GitHub CLI -->
-        <mxCell id="ghcli" value="&lt;b&gt;GitHub CLI (gh)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#24292E;strokeColor=#24292E;fontColor=#FFFFFF;fontSize=13;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="110" y="490" width="150" height="45" as="geometry" />
-        </mxCell>
-
-        <!-- Skills -->
-        <mxCell id="skills" value="📋 スキル&#xa;(/コマンド)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#333333;fontSize=13;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="380" y="350" width="150" height="45" as="geometry" />
+        <mxCell id="workspace_label" value="📂 ~/Projects/my-workspace（作業用リポジトリ）" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="100" y="405" width="360" height="25" as="geometry" />
         </mxCell>
 
         <!-- CLAUDE.md -->
-        <mxCell id="claudemd" value="📄 CLAUDE.md&#xa;(設定ファイル)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=13;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="380" y="420" width="150" height="45" as="geometry" />
+        <mxCell id="claudemd" value="📄 CLAUDE.md&#xa;Claude への常駐指示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="110" y="445" width="170" height="50" as="geometry" />
         </mxCell>
 
-        <!-- Local files -->
-        <mxCell id="localfiles" value="📁 作業ファイル" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=13;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="380" y="490" width="150" height="45" as="geometry" />
+        <!-- Skills -->
+        <mxCell id="skills" value="📋 スキル (.claude/commands/)&#xa;定型作業の自動化" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="110" y="510" width="170" height="50" as="geometry" />
         </mxCell>
 
-        <!-- Cloud Services -->
+        <!-- Work files -->
+        <mxCell id="docs_files" value="📝 提案書・計画書" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="445" width="200" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="portfolio_files" value="📷 ポートフォリオ素材" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="495" width="200" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="tax_files" value="📋 確定申告・書類整理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="545" width="200" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="other_files" value="💡 調査メモ・アイデア" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="595" width="200" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Cloud Services area -->
+        <mxCell id="cloud_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F8FF;strokeColor=#4A90D9;dashed=1;dashPattern=5 5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="720" y="80" width="260" height="580" as="geometry" />
+        </mxCell>
+        <mxCell id="cloud_label" value="☁️ クラウドサービス" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#4A90D9;" vertex="1" parent="1">
+          <mxGeometry x="760" y="90" width="190" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Claude (Anthropic) -->
+        <mxCell id="claude_api" value="Claude&#xa;(Anthropic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="150" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="claude_api_desc" value="AI が質問に回答・&#xa;ファイル操作を実行" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="785" y="225" width="130" height="35" as="geometry" />
+        </mxCell>
+
         <!-- GitHub -->
         <mxCell id="github" value="GitHub" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#24292E;strokeColor=#24292E;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="750" y="150" width="200" height="60" as="geometry" />
+          <mxGeometry x="760" y="310" width="180" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="github_desc" value="コード管理・公開" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#666666;" vertex="1" parent="1">
-          <mxGeometry x="790" y="210" width="120" height="25" as="geometry" />
-        </mxCell>
-
-        <!-- Claude API -->
-        <mxCell id="claude_api" value="Claude API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="750" y="290" width="200" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="claude_api_desc" value="AI による応答生成" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#666666;" vertex="1" parent="1">
-          <mxGeometry x="790" y="350" width="130" height="25" as="geometry" />
+        <mxCell id="github_desc" value="ファイルのバックアップ&#xa;&amp; バージョン管理" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="785" y="385" width="150" height="35" as="geometry" />
         </mxCell>
 
         <!-- GitHub Pages -->
         <mxCell id="ghpages" value="GitHub Pages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0366D6;strokeColor=#0366D6;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="750" y="430" width="200" height="60" as="geometry" />
+          <mxGeometry x="760" y="470" width="180" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="ghpages_desc" value="この手順書の公開先" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#666666;" vertex="1" parent="1">
-          <mxGeometry x="785" y="490" width="140" height="25" as="geometry" />
+        <mxCell id="ghpages_desc" value="ポートフォリオなどの&#xa;Web 公開" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="790" y="545" width="130" height="35" as="geometry" />
         </mxCell>
 
         <!-- Arrows -->
+        <!-- You → Terminal -->
+        <mxCell id="a_user_term" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="user" target="terminal" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_user_term_l" value="日本語で指示" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_user_term">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
         <!-- Terminal → Claude Code -->
-        <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#666666;strokeWidth=2;" edge="1" source="terminal" target="claude_code" parent="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="arrow1_label" value="操作" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="arrow1">
-          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
-        </mxCell>
-
-        <!-- Claude Code → Homebrew -->
-        <mxCell id="arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#999999;strokeWidth=1;dashed=1;" edge="1" source="claude_code" target="homebrew" parent="1">
+        <mxCell id="a_term_cc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="terminal" target="claude_code" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <!-- Claude Code → Skills -->
-        <mxCell id="arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;exitX=1;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#999999;strokeWidth=1;dashed=1;" edge="1" source="claude_code" target="skills" parent="1">
+        <!-- Claude Code → Workspace -->
+        <mxCell id="a_cc_ws" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="claude_code" target="workspace_group" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-
-        <!-- Claude Code → GitHub -->
-        <mxCell id="arrow4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;exitX=1;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#24292E;strokeWidth=2;" edge="1" source="claude_code" target="github" parent="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="arrow4_label" value="push / pull" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="arrow4">
-          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        <mxCell id="a_cc_ws_l" value="ファイル作成・編集" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_cc_ws">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
         </mxCell>
 
         <!-- Claude Code → Claude API -->
-        <mxCell id="arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#D4A574;strokeWidth=2;" edge="1" source="claude_code" target="claude_api" parent="1">
+        <mxCell id="a_cc_api" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#D4A574;strokeWidth=2;" edge="1" source="claude_code" target="claude_api" parent="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="arrow5_label" value="API 通信" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="arrow5">
+        <mxCell id="a_cc_api_l" value="質問・指示を送信" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_cc_api">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Claude Code → GitHub -->
+        <mxCell id="a_cc_gh" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#24292E;strokeWidth=2;" edge="1" source="claude_code" target="github" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_cc_gh_l" value="保存・同期" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_cc_gh">
           <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
         </mxCell>
 
         <!-- GitHub → GitHub Pages -->
-        <mxCell id="arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0366D6;strokeWidth=2;" edge="1" source="github" target="ghpages" parent="1">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="850" y="390" />
-              <mxPoint x="850" y="390" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="a_gh_pages" style="edgeStyle=orthogonalEdgeStyle;rounded=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;strokeColor=#0366D6;strokeWidth=2;" edge="1" source="github" target="ghpages" parent="1">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="arrow6_label" value="自動デプロイ" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="arrow6">
-          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        <mxCell id="a_gh_pages_l" value="公開" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_gh_pages">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
         </mxCell>
 
       </root>

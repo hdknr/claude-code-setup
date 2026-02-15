@@ -23,14 +23,15 @@
 
 ### 構成図
 
-以下の図は、セットアップ後の全体構成を示しています。
+以下の図は、セットアップ完了後のあなたの利用環境を示しています。
 
 ![構成図](images/architecture.svg)
 
-- **あなたの MacBook** 上に Claude Code をインストールし、ターミナルから操作します
-- Claude Code は **Claude API** と通信して AI の応答を受け取ります
-- 作成したファイルは **GitHub** で管理し、必要に応じて **GitHub Pages** で公開できます
-- **スキル** や **CLAUDE.md** で Claude Code の動作をカスタマイズできます
+- **ターミナル**から Claude Code を起動し、日本語で指示を出します
+- Claude Code が **Claude（Anthropic）** の AI と通信して、質問への回答やファイル操作を行います
+- あなたの**作業用リポジトリ**（`~/Projects/my-workspace`）に、提案書・ポートフォリオ・書類などのファイルが保存されます
+- **CLAUDE.md** や**スキル**で、Claude Code の動作をあなた好みにカスタマイズできます
+- 作業ファイルは **GitHub** に自動バックアップされ、必要に応じて **GitHub Pages** で Web 公開もできます
 
 ### セットアップの流れ
 
