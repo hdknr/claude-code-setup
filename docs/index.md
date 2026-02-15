@@ -1,4 +1,4 @@
-# Claude Code Setup
+# Claude Code 設定
 
 Claude Code をインストールして使えるようにするための手順書です。
 
