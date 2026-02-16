@@ -4,8 +4,7 @@ Claude Code をインストールする前に必要なツールをセットア�
 
 ## 1.1 ターミナルを開く
 
-1. Finder で「アプリケーション」→「ユーティリティ」→「ターミナル」を開きます
-2. または Spotlight（`⌘ + Space`）で「ターミナル」と入力して開きます
+![ターミナルの開き方](images/screenshots/open-terminal.svg)
 
 !!! tip "ターミナルとは"
     ターミナルは Mac に標準で入っているアプリで、テキストでコマンドを入力してパソコンを操作できます。
@@ -68,6 +67,8 @@ brew install gh
 
 まだ GitHub アカウントがない場合は [github.com](https://github.com/) でアカウントを作成してください。
 
+![GitHub アカウント作成画面](images/screenshots/github-signup.png)
+
 ### ログイン
 
 ターミナルで以下を実行:
@@ -76,12 +77,13 @@ brew install gh
 gh auth login
 ```
 
-対話形式で聞かれるので、以下のように選択してください:
+対話形式で聞かれるので、以下の図のように選択してください:
 
-1. `GitHub.com` を選択
-2. `HTTPS` を選択
-3. `Login with a web browser` を選択
-4. 表示されるコードをコピーして、ブラウザで認証を完了
+![gh auth login の操作ガイド](images/screenshots/gh-auth-flow.svg)
+
+ステップ❹でブラウザが開いたら、コードを入力して認証を完了します:
+
+![GitHub デバイス認証画面](images/screenshots/github-device-auth.png)
 
 確認:
 
