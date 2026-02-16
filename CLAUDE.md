@@ -4,7 +4,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 
 ## プロジェクト構成
 
-- `docs/` - mkdocs ドキュメントソース
+- `docs/` - mkdocs ドキュメントソース（Part 1〜3 + 付録リンク集）
 - `diagrams/` - drawio ダイアグラムソース（`diagrams/icons/` にブランドアイコン SVG）
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
