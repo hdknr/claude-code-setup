@@ -12,7 +12,7 @@ Anthropic のアカウント登録から Claude Code のインストールまで
 
 ## 2.2 Claude Code のインストール
 
-ターミナルで以下を実行:
+ターミナルで以下のコマンドを実行してください:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -27,7 +27,7 @@ npm install -g @anthropic-ai/claude-code
 
 ## 2.3 Claude Code の起動と認証
 
-任意のディレクトリで Claude Code を起動します:
+ターミナルで以下のコマンドを実行して Claude Code を起動します:
 
 ```bash
 claude
