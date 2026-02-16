@@ -8,7 +8,7 @@ Anthropic のアカウント登録から Claude Code のインストールまで
 2. 「Sign Up」からアカウントを作成
 3. メールアドレスの確認を完了
 
-![Anthropic Console](images/screenshots/anthropic-console.png)
+![Anthropic Console](../images/screenshots/anthropic-console.png)
 
 ## 2.2 Claude Code のインストール
 
