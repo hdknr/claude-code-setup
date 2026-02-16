@@ -22,9 +22,14 @@ theme:
 nav:
   - ホーム: index.md
   - 概要: overview.md
-  - Part 1 - 事前準備: part1-preparation.md
-  - Part 2 - Claude Code インストール: part2-installation.md
-  - Part 3 - インストール後の環境準備: part3-post-setup.md
+  - macOS:
+    - Part 1 - 事前準備: macos/part1-preparation.md
+    - Part 2 - Claude Code インストール: macos/part2-installation.md
+    - Part 3 - インストール後の環境準備: macos/part3-post-setup.md
+  - Windows:
+    - Part 1 - 事前準備: windows/part1-preparation.md
+    - Part 2 - Claude Code インストール: windows/part2-installation.md
+    - Part 3 - インストール後の環境準備: windows/part3-post-setup.md
   - 付録 - 便利リンク集: appendix-links.md
 
 markdown_extensions:
