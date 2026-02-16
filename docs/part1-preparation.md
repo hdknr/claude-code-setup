@@ -23,6 +23,13 @@ Homebrew は Mac 用のパッケージマネージャーです。各種ツール
 !!! note "パスワードを聞かれたら"
     Mac のログインパスワードを入力してください。入力中は画面に何も表示されませんが、正常です。
 
+!!! info "Command Line Tools のインストールダイアログが表示されたら"
+    Homebrew のインストール中に、以下のようなダイアログが表示されることがあります。これは Homebrew が必要とする開発ツール（Command Line Tools）を自動的にインストールするためのものです。**「インストール」をクリック**してください。
+
+    ![Command Line Tools インストールダイアログ](images/screenshots/clt-dialog.svg)
+
+    インストールには数分かかる場合があります。完了するまでそのまま待ってください。
+
 インストール完了後、表示される「Next steps」の指示に従ってパスを設定してください:
 
 ```bash
@@ -41,17 +48,13 @@ brew --version
 
 ## 1.3 Git の確認
 
-Mac には Git がプリインストールされています。確認してみましょう:
+Homebrew のインストール時に Command Line Tools と一緒に Git も導入されています。確認してみましょう:
 
 ```bash
 git --version
 ```
 
-バージョンが表示されれば OK です。表示されない場合は以下を実行:
-
-```bash
-xcode-select --install
-```
+バージョンが表示されれば OK です。
 
 ## 1.4 GitHub CLI のインストール
 
