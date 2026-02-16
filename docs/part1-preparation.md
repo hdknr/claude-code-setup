@@ -38,27 +38,27 @@ echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
 eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
-確認:
+正しくインストールされたか確認しましょう。ターミナルで以下のコマンドを実行してください:
 
 ```bash
 brew --version
 ```
 
-バージョン番号が表示されれば成功です。
+`Homebrew 4.x.x` のようにバージョン番号が表示されれば成功です。
 
 ## 1.3 Git の確認
 
-Homebrew のインストール時に Command Line Tools と一緒に Git も導入されています。確認してみましょう:
+Homebrew のインストール時に Command Line Tools と一緒に Git も導入されています。ターミナルで以下のコマンドを実行して確認しましょう:
 
 ```bash
 git --version
 ```
 
-バージョンが表示されれば OK です。
+`git version 2.x.x` のようにバージョンが表示されれば OK です。
 
 ## 1.4 GitHub CLI のインストール
 
-GitHub をターミナルから操作するためのツールです。
+GitHub をターミナルから操作するためのツールです。ターミナルで以下のコマンドを実行してください:
 
 ```bash
 brew install gh
@@ -74,7 +74,7 @@ brew install gh
 
 ### ログイン
 
-ターミナルで以下を実行:
+ターミナルで以下のコマンドを実行してください:
 
 ```bash
 gh auth login
@@ -88,7 +88,7 @@ gh auth login
 
 ![GitHub デバイス認証画面](images/screenshots/github-device-auth.png)
 
-確認:
+正しくログインできたか確認しましょう。ターミナルで以下のコマンドを実行してください:
 
 ```bash
 gh auth status
@@ -98,19 +98,19 @@ gh auth status
 
 ## 1.6 Node.js のインストール
 
-Claude Code の実行に Node.js が必要です。
+Claude Code の実行に Node.js が必要です。ターミナルで以下のコマンドを実行してください:
 
 ```bash
 brew install node
 ```
 
-確認:
+正しくインストールされたか確認しましょう。ターミナルで以下のコマンドを実行してください:
 
 ```bash
 node --version
 ```
 
-v18 以上が表示されれば OK です。
+`v18.x.x` 以上のバージョンが表示されれば OK です。
 
 ## 次のステップ
 
