@@ -14,84 +14,115 @@
         <mxCell id="macbook_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;dashPattern=5 5;fontSize=14;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="60" y="80" width="520" height="580" as="geometry" />
         </mxCell>
-        <mxCell id="macbook_label" value="💻 あなたの MacBook" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
-          <mxGeometry x="190" y="90" width="220" height="30" as="geometry" />
+        <!-- Apple icon + label -->
+        <mxCell id="apple_icon" value="" style="shape=image;imageAlign=center;verticalAlign=middle;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjZmZmZmZmIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+QXBwbGU8L3RpdGxlPjxwYXRoIGQ9Ik0xMi4xNTIgNi44OTZjLS45NDggMC0yLjQxNS0xLjA3OC0zLjk2LTEuMDQtMi4wNC4wMjctMy45MSAxLjE4My00Ljk2MSAzLjAxNC0yLjExNyAzLjY3NS0uNTQ2IDkuMTAzIDEuNTE5IDEyLjA5IDEuMDEzIDEuNDU0IDIuMjA4IDMuMDkgMy43OTIgMy4wMzkgMS41Mi0uMDY1IDIuMDktLjk4NyAzLjkzNS0uOTg3IDEuODMxIDAgMi4zNS45ODcgMy45Ni45NDggMS42MzctLjAyNiAyLjY3Ni0xLjQ4IDMuNjc2LTIuOTQ4IDEuMTU2LTEuNjg4IDEuNjM2LTMuMzI1IDEuNjYyLTMuNDE1LS4wMzktLjAxMy0zLjE4Mi0xLjIyMS0zLjIyLTQuODU3LS4wMjYtMy4wNCAyLjQ4LTQuNDk0IDIuNTk3LTQuNTU5LTEuNDI5LTIuMDktMy42MjMtMi4zMjQtNC4zOS0yLjM3Ni0yLS4xNTYtMy42NzUgMS4wOS00LjYxIDEuMDl6TTE1LjUzIDMuODNjLjg0My0xLjAxMiAxLjQtMi40MjcgMS4yNDUtMy44My0xLjIwNy4wNTItMi42NjIuODA1LTMuNTMyIDEuODE4LS43OC44OTYtMS40NTQgMi4zMzgtMS4yNzMgMy43MTQgMS4zMzguMTA0IDIuNzE1LS42ODggMy41NTktMS43MDEiLz48L3N2Zz4=;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="210" y="86" width="22" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="macbook_label" value="あなたの MacBook" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="236" y="82" width="180" height="30" as="geometry" />
         </mxCell>
 
         <!-- You (user) -->
-        <mxCell id="user" value="🙂 あなた" style="shape=ellipse;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;fontSize=14;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
-          <mxGeometry x="230" y="130" width="130" height="50" as="geometry" />
+        <mxCell id="user" value="あなた" style="shape=ellipse;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;fontSize=14;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="230" y="125" width="130" height="50" as="geometry" />
         </mxCell>
 
         <!-- Terminal -->
-        <mxCell id="terminal" value="⬛ ターミナル" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#333333;strokeColor=#333333;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="220" y="210" width="160" height="45" as="geometry" />
+        <mxCell id="terminal" value="ターミナル" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#333333;strokeColor=#333333;fontColor=#FFFFFF;fontSize=14;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="220" y="205" width="160" height="45" as="geometry" />
         </mxCell>
 
-        <!-- Claude Code -->
-        <mxCell id="claude_code" value="🤖 Claude Code" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=16;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
-          <mxGeometry x="180" y="290" width="240" height="60" as="geometry" />
+        <!-- Claude Code with Anthropic icon -->
+        <mxCell id="claude_code" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=16;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="180" y="285" width="240" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="anthropic_icon_local" value="" style="shape=image;imageAlign=center;verticalAlign=middle;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjZmZmZmZmIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+QW50aHJvcGljPC90aXRsZT48cGF0aCBkPSJNMTcuMzA0MSAzLjU0MWgtMy42NzE4bDYuNjk2IDE2LjkxOEgyNFptLTEwLjYwODIgMEwwIDIwLjQ1OWgzLjc0NDJsMS4zNjkzLTMuNTUyN2g3LjAwNTJsMS4zNjkzIDMuNTUyOGgzLjc0NDJMMTAuNTM2MyAzLjU0MDlabS0uMzcxMiAxMC4yMjMyIDIuMjkxNC01Ljk0NTYgMi4yOTE0IDUuOTQ1NloiLz48L3N2Zz4=;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="210" y="298" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="claude_code_label" value="Claude Code" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="245" y="300" width="130" height="30" as="geometry" />
         </mxCell>
 
         <!-- Workspace group -->
         <mxCell id="workspace_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AAAAAA;dashed=0;arcSize=8;" vertex="1" parent="1">
-          <mxGeometry x="90" y="400" width="460" height="230" as="geometry" />
+          <mxGeometry x="90" y="395" width="460" height="235" as="geometry" />
         </mxCell>
-        <mxCell id="workspace_label" value="📂 ~/Projects/my-workspace（作業用リポジトリ）" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#555555;" vertex="1" parent="1">
-          <mxGeometry x="100" y="405" width="360" height="25" as="geometry" />
+        <mxCell id="workspace_label" value="~/Projects/my-workspace（作業用リポジトリ）" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="110" y="400" width="340" height="25" as="geometry" />
         </mxCell>
 
         <!-- CLAUDE.md -->
-        <mxCell id="claudemd" value="📄 CLAUDE.md&#xa;Claude への常駐指示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="110" y="445" width="170" height="50" as="geometry" />
+        <mxCell id="claudemd" value="CLAUDE.md&#xa;Claude への常駐指示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="110" y="440" width="170" height="50" as="geometry" />
         </mxCell>
 
         <!-- Skills -->
-        <mxCell id="skills" value="📋 スキル (.claude/commands/)&#xa;定型作業の自動化" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="110" y="510" width="170" height="50" as="geometry" />
+        <mxCell id="skills" value="スキル (.claude/commands/)&#xa;定型作業の自動化" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="110" y="505" width="170" height="50" as="geometry" />
         </mxCell>
 
         <!-- Work files -->
-        <mxCell id="docs_files" value="📝 提案書・計画書" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="320" y="445" width="200" height="35" as="geometry" />
+        <mxCell id="docs_files" value="提案書・計画書" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="440" width="200" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="portfolio_files" value="📷 ポートフォリオ素材" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="320" y="495" width="200" height="35" as="geometry" />
+        <mxCell id="portfolio_files" value="ポートフォリオ素材" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="490" width="200" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="tax_files" value="📋 確定申告・書類整理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="320" y="545" width="200" height="35" as="geometry" />
+        <mxCell id="tax_files" value="確定申告・書類整理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="540" width="200" height="35" as="geometry" />
         </mxCell>
-        <mxCell id="other_files" value="💡 調査メモ・アイデア" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
-          <mxGeometry x="320" y="595" width="200" height="35" as="geometry" />
+        <mxCell id="other_files" value="調査メモ・アイデア" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="320" y="590" width="200" height="35" as="geometry" />
         </mxCell>
 
         <!-- Cloud Services area -->
         <mxCell id="cloud_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F8FF;strokeColor=#4A90D9;dashed=1;dashPattern=5 5;arcSize=8;" vertex="1" parent="1">
           <mxGeometry x="720" y="80" width="260" height="580" as="geometry" />
         </mxCell>
-        <mxCell id="cloud_label" value="☁️ クラウドサービス" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#4A90D9;" vertex="1" parent="1">
-          <mxGeometry x="760" y="90" width="190" height="30" as="geometry" />
+        <mxCell id="cloud_label" value="クラウドサービス" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#4A90D9;" vertex="1" parent="1">
+          <mxGeometry x="775" y="90" width="160" height="30" as="geometry" />
         </mxCell>
 
-        <!-- Claude (Anthropic) -->
-        <mxCell id="claude_api" value="Claude&#xa;(Anthropic)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
+        <!-- Claude (Anthropic) with brand icon -->
+        <mxCell id="claude_api" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="760" y="150" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="anthropic_icon_cloud" value="" style="shape=image;imageAlign=center;verticalAlign=middle;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjZmZmZmZmIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+QW50aHJvcGljPC90aXRsZT48cGF0aCBkPSJNMTcuMzA0MSAzLjU0MWgtMy42NzE4bDYuNjk2IDE2LjkxOEgyNFptLTEwLjYwODIgMEwwIDIwLjQ1OWgzLjc0NDJsMS4zNjkzLTMuNTUyN2g3LjAwNTJsMS4zNjkzIDMuNTUyOGgzLjc0NDJMMTAuNTM2MyAzLjU0MDlabS0uMzcxMiAxMC4yMjMyIDIuMjkxNC01Ljk0NTYgMi4yOTE0IDUuOTQ1NloiLz48L3N2Zz4=;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="785" y="162" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="claude_api_label" value="Claude" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="815" y="158" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="claude_api_sub" value="(Anthropic)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#FFFFFF;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="810" y="182" width="90" height="25" as="geometry" />
         </mxCell>
         <mxCell id="claude_api_desc" value="AI が質問に回答・&#xa;ファイル操作を実行" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
           <mxGeometry x="785" y="225" width="130" height="35" as="geometry" />
         </mxCell>
 
-        <!-- GitHub -->
-        <mxCell id="github" value="GitHub" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#24292E;strokeColor=#24292E;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
+        <!-- GitHub with brand icon -->
+        <mxCell id="github" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#24292E;strokeColor=#24292E;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="760" y="310" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="github_icon" value="" style="shape=image;imageAlign=center;verticalAlign=middle;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjZmZmZmZmIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+R2l0SHViPC90aXRsZT48cGF0aCBkPSJNMTIgLjI5N2MtNi42MyAwLTEyIDUuMzczLTEyIDEyIDAgNS4zMDMgMy40MzggOS44IDguMjA1IDExLjM4NS42LjExMy44Mi0uMjU4LjgyLS41NzcgMC0uMjg1LS4wMS0xLjA0LS4wMTUtMi4wNC0zLjMzOC43MjQtNC4wNDItMS42MS00LjA0Mi0xLjYxQzQuNDIyIDE4LjA3IDMuNjMzIDE3LjcgMy42MzMgMTcuN2MtMS4wODctLjc0NC4wODQtLjcyOS4wODQtLjcyOSAxLjIwNS4wODQgMS44MzggMS4yMzYgMS44MzggMS4yMzYgMS4wNyAxLjgzNSAyLjgwOSAxLjMwNSAzLjQ5NS45OTguMTA4LS43NzYuNDE3LTEuMzA1Ljc2LTEuNjA1LTIuNjY1LS4zLTUuNDY2LTEuMzMyLTUuNDY2LTUuOTMgMC0xLjMxLjQ2NS0yLjM4IDEuMjM1LTMuMjItLjEzNS0uMzAzLS41NC0xLjUyMy4xMDUtMy4xNzYgMCAwIDEuMDA1LS4zMjIgMy4zIDEuMjMuOTYtLjI2NyAxLjk4LS4zOTkgMy0uNDA1IDEuMDIuMDA2IDIuMDQuMTM4IDMgLjQwNSAyLjI4LTEuNTUyIDMuMjg1LTEuMjMgMy4yODUtMS4yMy42NDUgMS42NTMuMjQgMi44NzMuMTIgMy4xNzYuNzY1Ljg0IDEuMjMgMS45MSAxLjIzIDMuMjIgMCA0LjYxLTIuODA1IDUuNjI1LTUuNDc1IDUuOTIuNDIuMzYuODEgMS4wOTYuODEgMi4yMiAwIDEuNjA2LS4wMTUgMi44OTYtLjAxNSAzLjI4NiAwIC4zMTUuMjEuNjkuODI1LjU3QzIwLjU2NSAyMi4wOTIgMjQgMTcuNTkyIDI0IDEyLjI5N2MwLTYuNjI3LTUuMzczLTEyLTEyLTEyIi8+PC9zdmc+;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="322" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="github_label" value="GitHub" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="820" y="328" width="80" height="30" as="geometry" />
         </mxCell>
         <mxCell id="github_desc" value="ファイルのバックアップ&#xa;&amp; バージョン管理" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
           <mxGeometry x="785" y="385" width="150" height="35" as="geometry" />
         </mxCell>
 
-        <!-- GitHub Pages -->
-        <mxCell id="ghpages" value="GitHub Pages" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0366D6;strokeColor=#0366D6;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
+        <!-- GitHub Pages with brand icon -->
+        <mxCell id="ghpages" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0366D6;strokeColor=#0366D6;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
           <mxGeometry x="760" y="470" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ghpages_icon" value="" style="shape=image;imageAlign=center;verticalAlign=middle;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjZmZmZmZmIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+R2l0SHViIFBhZ2VzPC90aXRsZT48cGF0aCBkPSJNMTQuMDg4IDEzLjEyNmgtLjI5NlY5Ljg1OGguOTk4Yy44MTUgMCAxLjA5NC40NyAxLjA5NC45OHMtLjI4Ljk4LTEuMDk0Ljk4aC0uNzAxdjEuMzA4em0wLTEuNTgyaC43NGEuNjQyLjY0MiAwIDAgMCAuNzMzLS43MDUuNjQyLjY0MiAwIDAgMC0uNzMyLS43MDZoLS43NDF6bTIuODgxLS4zN2ExLjkxMyAxLjkxMyAwIDAgMC0uNjUzLjExdi0uMjYyYTEuNzU2IDEuNzU2IDAgMCAxIC42NTMtLjExOGMuNjU0IDAgLjgyNC4yOTcuODI0LjczMnYxLjQ5aC0uMTdsLS4wNjYtLjE3NGExLjE0MyAxLjE0MyAwIDAgMS0uNjU3LjIxOC42NjMuNjYzIDAgMCAxLS43NjMtLjcwMmMwLS4zNy4yMDUtLjY0NS43NzYtLjY4bC41NzUtLjAzNXYtLjEyMmMwLS4zMTgtLjExMy0uNDU3LS41MTktLjQ1N3ptLS4wNzguODVjLS4zMS4wMy0uNDQ1LjE5Mi0uNDQ1LjQ0NSAwIC4xOTYuMDQ4LjQzMS40NjIuNDMxYTEuMDU2IDEuMDU2IDAgMCAwIC41OC0uMTc0di0uNzU4em0xLjg2LjQ5M2EuMjUyLjI1MiAwIDAgMC0uMDgzLjE2YzAgLjExLjA1My4xNTguMTY2LjE3bC43NC4wODhjLjQxLjA0NC41OTguMjA1LjU5OC41ODQgMCAuNTMyLS41MzIuNzQtMS4xMzMuNzQtLjYxIDAtLjk3Ni0uMTc4LS45NzYtLjY1N2EuNjA5LjYwOSAwIDAgMSAuNDQ5LS41NzV2LS4wMDVhLjMyMS4zMjEgMCAwIDEtLjE0LS4yODcuMzkyLjM5MiAwIDAgMSAuMTY2LS4yOTcuNzQ2Ljc0NiAwIDAgMS0uMzQ5LS43MTRjMC0uNDQ5LjE5Mi0uODIuODUtLjgyYTEuMzYgMS4zNiAwIDAgMSAuMzQ5LjA0NGguNzR2LjE2NWwtLjM2NS4xMDVhLjkwOC45MDggMCAwIDEgLjEyNi41MDVjMCAuNDQ5LS4xOTIuODItLjg1LjgyYTEuMzk3IDEuMzk3IDAgMCAxLS4yODgtLjAyN3ptLjEyNy41ODhjLS4yODguMDY1LS41MzIuMi0uNTMyLjQ4IDAgLjMyMi4yNDQuNDEzLjY5My40MTMuNDM1IDAgLjg0NS0uMTA5Ljg0NS0uNDggMC0uMjIxLS4xMDUtLjMwOS0uMzctLjM0em0uNzI3LTEuMzgxYzAtLjI4OC0uMDU2LS41NTQtLjU2Ni0uNTU0LS41MSAwLS41NjcuMjY2LS41NjcuNTU0IDAgLjI4OC4wNTcuNTUzLjU2Ny41NTMuNTEgMCAuNTY2LS4yNjYuNTY2LS41NTR6bTEuNjM3LS44MmMuNzQgMCAuODI4LjUwNi44MjggMS4xMzN2LjE0aC0xLjQzOGMuMDE4LjM3OS4xMTguNzIzLjYxLjcyM2ExLjY2NSAxLjY2NSAwIDAgMCAuNzE5LS4xMjJ2LjI2MWExLjc2NSAxLjc2NSAwIDAgMS0uNzE5LjEzMWMtLjczNiAwLS45MTUtLjUwNS0uOTE1LTEuMTMzcy4xNzktMS4xMzMuOTE1LTEuMTMzem0tLjYxIDEuMDI0aDEuMTMzYzAtLjM4Ny0uMDIyLS43NTMtLjUyMy0uNzUzLS41MDYgMC0uNTk3LjM2LS42MS43NTN6bTIuNjAxLS4wNTJjLjYxOS4wNTcuNzY3LjI2Ni43NjcuNjIzIDAgLjMzNi0uMjEzLjY3MS0uODc2LjY3MWEyLjE0NyAyLjE0NyAwIDAgMS0uNjQ5LS4xMDlWMTIuOGExLjkyNCAxLjkyNCAwIDAgMCAuNjU0LjFjLjQ1MyAwIC41NzUtLjE5Mi41NzUtLjM5NyAwLS4yLS4wNjEtLjM0LS40OTItLjM3NC0uNjMyLS4wNTctLjc2My0uMjgtLjc2My0uNTggMC0uMzEuMi0uNjQ1LjgxNS0uNjQ1YTEuNjI3IDEuNjI3IDAgMCAxIC42MjcuMTF2LjI2YTEuNzk5IDEuNzk5IDAgMCAwLS42MzEtLjFjLS40MzIgMC0uNTIzLjE2Mi0uNTIzLjM3NiAwIC4xOS4wNzguMjkuNDk2LjMyNnptLTIwLjc4Ny0uNjU5SDEuMzhhLjA1LjA1IDAgMCAwLS4wNS4wNXYuNTIyYS4wNS4wNSAwIDAgMCAuMDUuMDVoLjQxNnYuNjQ5YTEuMjY3IDEuMjY3IDAgMCAxLS4zNTEuMDMyYy0uMzA1IDAtLjczMS0uMTEyLS43MzEtMS4wNDhzLjQ0My0xLjA2Ljg2LTEuMDZhMS42OSAxLjY5IDAgMCAxIC42MTQuMDk0LjA1LjA1IDAgMCAwIC4wNi0uMDVsLjEyLS41MDRhLjA0Ny4wNDcgMCAwIDAtLjAyLS4wMzkgMS43MTUgMS43MTUgMCAwIDAtLjkwMy0uMTY1Qy43MyA5Ljc0OCAwIDEwLjA1IDAgMTEuNTA4cy44MzcgMS42NzUgMS41NDIgMS42NzVhMS43MzYgMS43MzYgMCAwIDAgLjkzOC0uMjUuMDQzLjA0MyAwIDAgMCAuMDE2LS4wMzh2LTEuNjI4YS4wNS4wNSAwIDAgMC0uMDUtLjA1em01LjU0NS0xLjI5NGEuMDUuMDUgMCAwIDAtLjA1LS4wNUg3LjM0YS4wNS4wNSAwIDAgMC0uMDUuMDV2MS4xNjFoLS45MzZWOS45MjNhLjA1LjA1IDAgMCAwLS4wNS0uMDVoLS42YS4wNS4wNSAwIDAgMC0uMDUuMDV2My4xNDVhLjA1LjA1IDAgMCAwIC4wNS4wNWguNmEuMDUuMDUgMCAwIDAgLjA1LS4wNXYtMS4zNDVoLjkzN2wtLjAwMiAxLjM0NWEuMDUuMDUgMCAwIDAgLjA1LjA1aC42MDNhLjA1LjA1IDAgMCAwIC4wNS0uMDV6bS00LjM4OS40MTJhLjM4OC4zODggMCAxIDAtLjM4Ny4zOTIuMzkuMzkgMCAwIDAgLjM4Ny0uMzkyem0tLjA0MiAyLjA2OHYtMS40NTFhLjA1LjA1IDAgMCAwLS4wNS0uMDVoLS42YS4wNTcuMDU3IDAgMCAwLS4wNTEuMDU2djIuMDhjMCAuMDYuMDM4LjA3OS4wODcuMDc5aC41NGMuMDYgMCAuMDc0LS4wMy4wNzQtLjA4em02Ljc2NC0xLjQ5N2gtLjU5N2EuMDUuMDUgMCAwIDAtLjA1LjA1djEuNTQyYS42NzMuNjczIDAgMCAxLS4zNjcuMTFjLS4yMTUgMC0uMjcyLS4wOTctLjI3Mi0uMzA3di0xLjM0NGEuMDUuMDUgMCAwIDAtLjA1LS4wNWgtLjYwNGEuMDUuMDUgMCAwIDAtLjA1LjA1djEuNDQ2YzAgLjYyNi4zNDguNzc5LjgyOC43NzlhMS4zOTggMS4zOTggMCAwIDAgLjcxLS4yMTcgMS4yNzQgMS4yNzQgMCAwIDAgLjAyMi4xMjguMDUyLjA1MiAwIDAgMCAuMDQ0LjAyN2wuMzg1LS4wMDJhLjA1LjA1IDAgMCAwIC4wNS0uMDV2LTIuMTEyYS4wNS4wNSAwIDAgMC0uMDUtLjA1em0xLjY2Mi0uMDdhMS4xMjEgMS4xMjEgMCAwIDAtLjU2OS4xNVY5LjkyM2EuMDUuMDUgMCAwIDAtLjA1LS4wNWgtLjYwMmEuMDUuMDUgMCAwIDAtLjA1LjA1djMuMTQ1YS4wNS4wNSAwIDAgMCAuMDUuMDVoLjQxOGEuMDUuMDUgMCAwIDAgLjA0NC0uMDI3Ljk3My45NzMgMCAwIDAgLjAyNS0uMTQ0IDEuMDggMS4wOCAwIDAgMCAuNzEzLjIzM2MuNTQ4IDAgLjg2Mi0uMjc4Ljg2Mi0xLjI0OHMtLjUwMi0xLjA5NS0uODQxLTEuMDk1em0tLjIzNSAxLjc3MWEuNzE2LjcxNiAwIDAgMS0uMzQ3LS4xdi0uOTk2YS43OTMuNzkzIDAgMCAxIC4zMDgtLjFjLjIxNS0uMDE5LjQyMi4wNDYuNDIyLjU1OCAwIC41NC0uMDk0LjY0Ny0uMzgzLjYzOXptLTYuNDc1LTEuNzA2aC0uNDVsLS4wMDItLjU5NWMwLS4wMjMtLjAxMS0uMDM0LS4wMzctLjAzNGgtLjYxNWMtLjAyNCAwLS4wMzYuMDEtLjAzNi4wMzN2LjYxNWwtLjMzLjA4YS4wNS4wNSAwIDAgMC0uMDM1LjA0OHYuMzg3YS4wNS4wNSAwIDAgMCAuMDUuMDVoLjMxNXYuOTNjMCAuNjkyLjQ4NC43Ni44MTIuNzZhMS4zNzUgMS4zNzUgMCAwIDAgLjM1Ny0uMDYuMDQ2LjA0NiAwIDAgMCAuMDI4LS4wNDRsLjAwMS0uNDI2YS4wNS4wNSAwIDAgMC0uMDUtLjA1Yy0uMDI2IDAtLjA5NC4wMS0uMTYzLjAxLS4yMjEgMC0uMjk2LS4xMDItLjI5Ni0uMjM2di0uODg0aC40NTFhLjA1LjA1IDAgMCAwIC4wNS0uMDV2LS40ODRhLjA1LjA1IDAgMCAwLS4wNS0uMDV6Ii8+PC9zdmc+;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="785" y="483" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="ghpages_label" value="GitHub Pages" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="815" y="488" width="120" height="25" as="geometry" />
         </mxCell>
         <mxCell id="ghpages_desc" value="ポートフォリオなどの&#xa;Web 公開" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
           <mxGeometry x="790" y="545" width="130" height="35" as="geometry" />
