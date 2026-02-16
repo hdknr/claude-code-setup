@@ -1,0 +1,134 @@
+<mxfile host="app.diagrams.net" modified="2026-02-16T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="ターミナルの開き方" id="open-terminal">
+    <mxGraphModel dx="900" dy="500" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="ターミナルの開き方" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="320" y="10" width="200" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Method 1: Spotlight -->
+        <mxCell id="method1_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#2196F3;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="30" y="60" width="380" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="method1_title" value="方法 1: Spotlight（おすすめ）" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="90" y="70" width="250" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1" value="&lt;b&gt;⌘&lt;/b&gt; + &lt;b&gt;Space&lt;/b&gt; を押す" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#90CAF9;fontSize=14;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="115" width="300" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s1_icon" value="⌨️" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="120" width="30" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s1_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#90CAF9;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="220" y="160" as="sourcePoint" />
+            <mxPoint x="220" y="185" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s2" value="「ターミナル」と入力" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#90CAF9;fontSize=14;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="185" width="300" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_icon" value="🔍" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="30" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s2_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#90CAF9;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="220" y="230" as="sourcePoint" />
+            <mxPoint x="220" y="255" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s3" value="「ターミナル.app」が表示されたら&#xa;Enter を押す" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#90CAF9;fontSize=14;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="255" width="300" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s3_icon" value="↩️" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="260" width="30" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#90CAF9;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="220" y="305" as="sourcePoint" />
+            <mxPoint x="220" y="330" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="s_done" value="ターミナルが起動します ✅" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#66BB6A;fontSize=14;fontStyle=1;fontColor=#1B5E20;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="330" width="300" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Spotlight visual -->
+        <mxCell id="spotlight_visual" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#BDBDBD;arcSize=20;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="395" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="spotlight_text" value="🔍  ターミナル" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="115" y="400" width="130" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Method 2: Finder -->
+        <mxCell id="method2_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="460" y="60" width="400" height="400" as="geometry" />
+        </mxCell>
+        <mxCell id="method2_title" value="方法 2: Finder から開く" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=15;fontStyle=1;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="540" y="70" width="210" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f1" value="Finder を開く" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FFCC80;fontSize=14;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="115" width="310" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f1_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FFCC80;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="655" y="160" as="sourcePoint" />
+            <mxPoint x="655" y="185" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="f2" value="メニューバーの「移動」をクリック" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FFCC80;fontSize=14;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="185" width="310" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f2_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FFCC80;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="655" y="230" as="sourcePoint" />
+            <mxPoint x="655" y="255" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="f3" value="「ユーティリティ」を選択" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FFCC80;fontSize=14;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="255" width="310" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f3_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FFCC80;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="655" y="300" as="sourcePoint" />
+            <mxPoint x="655" y="325" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="f4" value="「ターミナル」をダブルクリック" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#FFCC80;fontSize=14;fontColor=#333333;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="325" width="310" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="f4_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#FFCC80;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="655" y="370" as="sourcePoint" />
+            <mxPoint x="655" y="395" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="f_done" value="ターミナルが起動します ✅" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#66BB6A;fontSize=14;fontStyle=1;fontColor=#1B5E20;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="500" y="395" width="310" height="45" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

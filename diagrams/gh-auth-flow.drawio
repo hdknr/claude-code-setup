@@ -1,0 +1,106 @@
+<mxfile host="app.diagrams.net" modified="2026-02-16T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="gh auth login の流れ" id="gh-auth-flow">
+    <mxGraphModel dx="900" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="gh auth login の対話操作ガイド" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="260" y="10" width="330" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Step 1 -->
+        <mxCell id="q1_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F3F3;strokeColor=#CCCCCC;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="820" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="q1_num" value="❶" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;strokeColor=none;fillColor=none;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="70" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="q1" value="? Where do you use GitHub?" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontFamily=Courier New;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="85" y="65" width="280" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="→ &lt;b&gt;GitHub.com&lt;/b&gt; を選択" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#66BB6A;fontSize=13;fontColor=#1B5E20;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="85" y="93" width="250" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Step 2 -->
+        <mxCell id="q2_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F3F3;strokeColor=#CCCCCC;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="155" width="820" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="q2_num" value="❷" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;strokeColor=none;fillColor=none;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="165" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="q2" value="? What is your preferred protocol for Git operations on this host?" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontFamily=Courier New;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="85" y="160" width="620" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="→ &lt;b&gt;HTTPS&lt;/b&gt; を選択" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#66BB6A;fontSize=13;fontColor=#1B5E20;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="85" y="188" width="250" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Step 3 -->
+        <mxCell id="q3_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3F3F3;strokeColor=#CCCCCC;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="820" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="q3_num" value="❸" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;strokeColor=none;fillColor=none;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="260" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="q3" value="? How would you like to authenticate GitHub CLI?" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontFamily=Courier New;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="85" y="255" width="480" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="→ &lt;b&gt;Login with a web browser&lt;/b&gt; を選択" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#66BB6A;fontSize=13;fontColor=#1B5E20;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="85" y="283" width="330" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Step 4 -->
+        <mxCell id="q4_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="345" width="820" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="q4_num" value="❹" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;strokeColor=none;fillColor=none;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="50" y="355" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="q4" value="! First copy your one-time code: XXXX-XXXX" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontFamily=Courier New;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="85" y="350" width="430" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="→ 表示されたコードをコピーし、ブラウザで認証ページが開いたら貼り付けて認証を完了する" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#FF9800;fontSize=13;fontColor=#E65100;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="85" y="380" width="700" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Step 5 - Success -->
+        <mxCell id="success_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#4CAF50;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="40" y="455" width="820" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="success" value="✅ Logged in as &lt;your-username&gt;" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontFamily=Courier New;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="85" y="465" width="350" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows between steps -->
+        <mxCell id="arr1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#CCCCCC;strokeWidth=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="135" as="sourcePoint" />
+            <mxPoint x="450" y="155" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#CCCCCC;strokeWidth=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="230" as="sourcePoint" />
+            <mxPoint x="450" y="250" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#CCCCCC;strokeWidth=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="325" as="sourcePoint" />
+            <mxPoint x="450" y="345" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arr4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#CCCCCC;strokeWidth=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="435" as="sourcePoint" />
+            <mxPoint x="450" y="455" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
