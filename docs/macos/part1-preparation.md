@@ -4,7 +4,7 @@ Claude Code をインストールする前に必要なツールをセットア�
 
 ## 1.1 ターミナルを開く
 
-![ターミナルの開き方](images/screenshots/open-terminal.svg)
+![ターミナルの開き方](../images/screenshots/open-terminal.svg)
 
 !!! tip "ターミナルとは"
     ターミナルは Mac に標準で入っているアプリで、テキストでコマンドを入力してパソコンを操作できます。
@@ -26,7 +26,7 @@ Homebrew は Mac 用のパッケージマネージャーです。各種ツール
 !!! info "Command Line Tools のインストールダイアログが表示されたら"
     Homebrew のインストール中に、以下のようなダイアログが表示されることがあります。これは Homebrew が必要とする開発ツール（Command Line Tools）を自動的にインストールするためのものです。**「インストール」をクリック**してください。
 
-    ![Command Line Tools インストールダイアログ](images/screenshots/clt-dialog.png)
+    ![Command Line Tools インストールダイアログ](../images/screenshots/clt-dialog.png)
 
     インストールには数分かかる場合があります。完了するまでそのまま待ってください。
 
@@ -70,7 +70,7 @@ brew install gh
 
 まだ GitHub アカウントがない場合は [github.com](https://github.com/) でアカウントを作成してください。
 
-![GitHub アカウント作成画面](images/screenshots/github-signup.png)
+![GitHub アカウント作成画面](../images/screenshots/github-signup.png)
 
 ### ログイン
 
@@ -82,11 +82,11 @@ gh auth login
 
 対話形式で聞かれるので、以下の図のように選択してください:
 
-![gh auth login の操作ガイド](images/screenshots/gh-auth-flow.svg)
+![gh auth login の操作ガイド](../images/screenshots/gh-auth-flow.svg)
 
 ステップ❹でブラウザが開いたら、コードを入力して認証を完了します:
 
-![GitHub デバイス認証画面](images/screenshots/github-device-auth.png)
+![GitHub デバイス認証画面](../images/screenshots/github-device-auth.png)
 
 正しくログインできたか確認しましょう。ターミナルで以下のコマンドを実行してください:
 
