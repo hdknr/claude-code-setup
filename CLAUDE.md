@@ -6,6 +6,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 
 - `docs/` - mkdocs ドキュメントソース（Part 1〜3 + 付録リンク集）
 - `diagrams/` - drawio ダイアグラムソース（`diagrams/icons/` にブランドアイコン SVG）
+- `.claude-plugin/` - マーケットプレイスカタログ（`marketplace.json`）
+- `plugins/` - プラグイン配布用ディレクトリ
+  - `workspace-setup/` - ワークスペース初期セットアップスキル
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
 - `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ
