@@ -61,16 +61,22 @@ GitHub に my-workspace というプライベートリポジトリを作成し�
 スキルは Claude Code の機能を拡張する再利用可能なコマンドです。
 `/` に続けてスキル名を入力することで実行できます。
 
-### claude-code-setup のスキルをインストール
+### プラグイン・マーケットプレイスからインストール
 
-このプロジェクトでは、初期セットアップ用のスキルを提供しています。
+このプロジェクトでは、プラグイン・マーケットプレイス方式でスキルを配布しています。
+Claude Code 内で以下のコマンドを実行するだけでインストールできます。
 
-```bash
-cd ~/Projects
-git clone https://github.com/hdknr/claude-code-setup.git
+**マーケットプレイスの追加:**
+
+```
+/plugin marketplace add hdknr/claude-code-setup
 ```
 
-claude-code-setup リポジトリに含まれるスキルを自分のワークスペースから参照できます。
+**プラグインのインストール:**
+
+```
+/plugin install workspace-setup@claude-code-setup
+```
 
 ### 使い方の例
 
@@ -80,6 +86,18 @@ claude-code-setup リポジトリに含まれるスキルを自分のワーク�
 cd ~/Projects/my-workspace
 claude
 ```
+
+ワークスペースの初期セットアップを実行:
+
+```
+/workspace-setup:workspace-setup
+```
+
+このスキルを実行すると、以下を対話的にセットアップできます:
+
+- ワークスペースディレクトリの作成
+- `CLAUDE.md` の作成
+- GitHub プライベートリポジトリの作成と連携
 
 スキルの一覧を確認:
 

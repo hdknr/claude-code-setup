@@ -1,0 +1,12 @@
+{
+  "name": "workspace-setup",
+  "description": "ワークスペースの初期セットアップを案内するスキル",
+  "version": "1.0.0",
+  "commands": [
+    {
+      "name": "workspace-setup",
+      "description": "作業用ワークスペースの初期セットアップ（ディレクトリ作成、CLAUDE.md 作成、GitHub リポジトリ連携）",
+      "entry": "commands/workspace-setup.md"
+    }
+  ]
+}
