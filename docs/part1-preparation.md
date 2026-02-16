@@ -26,7 +26,7 @@ Homebrew は Mac 用のパッケージマネージャーです。各種ツール
 !!! info "Command Line Tools のインストールダイアログが表示されたら"
     Homebrew のインストール中に、以下のようなダイアログが表示されることがあります。これは Homebrew が必要とする開発ツール（Command Line Tools）を自動的にインストールするためのものです。**「インストール」をクリック**してください。
 
-    ![Command Line Tools インストールダイアログ](images/screenshots/clt-dialog.svg)
+    ![Command Line Tools インストールダイアログ](images/screenshots/clt-dialog.png)
 
     インストールには数分かかる場合があります。完了するまでそのまま待ってください。
 
