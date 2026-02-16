@@ -1,0 +1,12 @@
+{
+  "name": "claude-code-setup",
+  "description": "Claude Code のセットアップガイド - 初期環境構築を支援するプラグイン集",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "workspace-setup",
+      "path": "plugins/workspace-setup",
+      "description": "ワークスペースの初期セットアップ（CLAUDE.md 作成、GitHub リポジトリ作成、プライベート設定）"
+    }
+  ]
+}
