@@ -2,6 +2,8 @@
 
 Claude Code をインストールして使えるようにするための手順書です。
 
+**サイト:** [https://hdknr.github.io/claude-code-setup/](https://hdknr.github.io/claude-code-setup/)
+
 ## この手順書について
 
 - 対象: Claude Code を使い始めたい方（現在は macOS 向け、Windows 版は準備中）
