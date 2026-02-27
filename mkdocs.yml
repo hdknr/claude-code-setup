@@ -30,6 +30,8 @@ nav:
     - Part 1 - 事前準備: windows/part1-preparation.md
     - Part 2 - Claude Code インストール: windows/part2-installation.md
     - Part 3 - インストール後の環境準備: windows/part3-post-setup.md
+  - Claude Codeの使い方:
+    - CLAUDE.md の使い方: usage/claude-md.md
   - 付録 - 便利リンク集: appendix-links.md
 
 markdown_extensions:
