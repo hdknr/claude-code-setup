@@ -35,6 +35,8 @@ nav:
     - 基本操作とスラッシュコマンド: usage/basic-operations.md
     - 実行モードと権限管理: usage/execution-modes.md
     - CLAUDE.md の使い方: usage/claude-md.md
+  - Claude Codeの高度な使い方:
+    - 拡張機能: usage/advanced-extensions.md
   - 付録 - 便利リンク集: appendix-links.md
 
 markdown_extensions:
