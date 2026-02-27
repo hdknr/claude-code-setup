@@ -31,6 +31,9 @@ nav:
     - Part 2 - Claude Code インストール: windows/part2-installation.md
     - Part 3 - インストール後の環境準備: windows/part3-post-setup.md
   - Claude Codeの使い方:
+    - 基本概念: usage/concepts.md
+    - 基本操作とスラッシュコマンド: usage/basic-operations.md
+    - 実行モードと権限管理: usage/execution-modes.md
     - CLAUDE.md の使い方: usage/claude-md.md
   - 付録 - 便利リンク集: appendix-links.md
 
