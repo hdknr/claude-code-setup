@@ -1,0 +1,178 @@
+<mxfile host="app.diagrams.net" modified="2026-02-27T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="基本概念" id="concepts-overview">
+    <mxGraphModel dx="1100" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Claude Code の全体像" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="380" y="15" width="300" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- User's PC group -->
+        <mxCell id="pc_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;dashPattern=5 5;fontSize=14;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="160" y="70" width="480" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="pc_label" value="あなたの PC" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="330" y="76" width="130" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- User -->
+        <mxCell id="user" value="あなた" style="shape=ellipse;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;fontSize=16;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="330" y="120" width="140" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- Instruction label -->
+        <mxCell id="instruction_label" value="日本語で指示" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="250" y="188" width="100" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="result_label" value="結果を表示" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="440" y="188" width="90" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Code box -->
+        <mxCell id="claude_code_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;arcSize=8;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="250" y="220" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="cc_icon" value="" style="shape=image;imageAlign=center;verticalAlign=middle;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjZmZmZmZmIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+QW50aHJvcGljPC90aXRsZT48cGF0aCBkPSJNMTcuMzA0MSAzLjU0MWgtMy42NzE4bDYuNjk2IDE2LjkxOEgyNFptLTEwLjYwODIgMEwwIDIwLjQ1OWgzLjc0NDJsMS4zNjkzLTMuNTUyN2g3LjAwNTJsMS4zNjkzIDMuNTUyOGgzLjc0NDJMMTAuNTM2MyAzLjU0MDlabS0uMzcxMiAxMC4yMjMyIDIuMjkxNC01Ljk0NTYgMi4yOTE0IDUuOTQ1NloiLz48L3N2Zz4=;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="280" y="230" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="cc_title" value="Claude Code" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="312" y="228" width="130" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="cc_desc" value="あなたの PC 上で動く AI アシスタント" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=12;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="280" y="260" width="240" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Agent loop inside Claude Code -->
+        <mxCell id="loop_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C49564;strokeColor=#B4855A;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="270" y="290" width="260" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="loop_label" value="考える → 実行する → 確認する（エージェントループ）" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontStyle=1;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="275" y="300" width="310" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Tools group -->
+        <mxCell id="tools_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#AAAAAA;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="200" y="400" width="400" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="tools_label" value="ツール（手足）" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontStyle=1;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="340" y="403" width="120" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tool_read" value="ファイル&#xa;読み取り" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=11;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="215" y="435" width="80" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_edit" value="ファイル&#xa;編集" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=11;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="305" y="435" width="80" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_cmd" value="コマンド&#xa;実行" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=11;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="395" y="435" width="80" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="tool_web" value="Web&#xa;検索" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontColor=#333333;fontSize=11;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="485" y="435" width="80" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- CLAUDE.md and Context -->
+        <mxCell id="claudemd" value="CLAUDE.md&#xa;（常駐の指示書）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1D5E7;strokeColor=#9673A6;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="200" y="540" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="context" value="コンテキスト&#xa;（会話の記憶）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontColor=#333333;fontSize=12;fontStyle=1;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="380" y="540" width="150" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Cloud: Claude LLM -->
+        <mxCell id="cloud_group" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F8FF;strokeColor=#4A90D9;dashed=1;dashPattern=5 5;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="770" y="150" width="250" height="310" as="geometry" />
+        </mxCell>
+        <mxCell id="cloud_label" value="クラウド（インターネット上）" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#4A90D9;" vertex="1" parent="1">
+          <mxGeometry x="785" y="160" width="200" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Claude LLM -->
+        <mxCell id="llm_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;strokeColor=#C4956A;fontColor=#FFFFFF;fontSize=15;fontStyle=1;arcSize=12;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="810" y="210" width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="llm_icon" value="" style="shape=image;imageAlign=center;verticalAlign=middle;image=data:image/svg+xml,PHN2ZyBmaWxsPSIjZmZmZmZmIiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+QW50aHJvcGljPC90aXRsZT48cGF0aCBkPSJNMTcuMzA0MSAzLjU0MWgtMy42NzE4bDYuNjk2IDE2LjkxOEgyNFptLTEwLjYwODIgMEwwIDIwLjQ1OWgzLjc0NDJsMS4zNjkzLTMuNTUyN2g3LjAwNTJsMS4zNjkzIDMuNTUyOGgzLjc0NDJMMTAuNTM2MyAzLjU0MDlabS0uMzcxMiAxMC4yMjMyIDIuMjkxNC01Ljk0NTYgMi4yOTE0IDUuOTQ1NloiLz48L3N2Zz4=;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="840" y="222" width="26" height="26" as="geometry" />
+        </mxCell>
+        <mxCell id="llm_title" value="Claude（AI モデル）" style="text;html=1;align=left;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="830" y="250" width="160" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="llm_desc" value="モデル = 脳&#xa;指示を理解し、考え、判断する" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="830" y="300" width="180" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- Model types -->
+        <mxCell id="model_sonnet" value="Sonnet（標準）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB74D;fontColor=#333333;fontSize=11;fontStyle=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="350" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="model_haiku" value="Haiku（軽量）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB74D;fontColor=#333333;fontSize=11;fontStyle=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="800" y="390" width="100" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="model_opus" value="Opus（高性能）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB74D;fontColor=#333333;fontSize=11;fontStyle=0;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="910" y="350" width="100" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <!-- User → Claude Code -->
+        <mxCell id="a_user_cc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#666666;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="user" target="claude_code_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Claude Code → Tools -->
+        <mxCell id="a_cc_tools" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#6C8EBF;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" source="claude_code_box" target="tools_group" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_cc_tools_l" value="ツールを使って作業" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_cc_tools">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- CLAUDE.md → Claude Code -->
+        <mxCell id="a_md_cc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#9673A6;strokeWidth=2;exitX=0.5;exitY=0;entryX=0.2;entryY=1;dashed=1;" edge="1" source="claudemd" target="claude_code_box" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="275" y="520" />
+              <mxPoint x="310" y="520" />
+              <mxPoint x="310" y="350" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_md_cc_l" value="起動時に読み込み" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;fontColor=#9673A6;" vertex="1" connectable="0" parent="a_md_cc">
+          <mxGeometry x="0.3" y="-15" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Context → Claude Code -->
+        <mxCell id="a_ctx_cc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#82B366;strokeWidth=2;exitX=0.5;exitY=0;entryX=0.8;entryY=1;dashed=1;" edge="1" source="context" target="claude_code_box" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="455" y="520" />
+              <mxPoint x="490" y="520" />
+              <mxPoint x="490" y="350" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a_ctx_cc_l" value="会話を記憶" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=10;fontColor=#82B366;" vertex="1" connectable="0" parent="a_ctx_cc">
+          <mxGeometry x="0.3" y="15" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Claude Code ↔ Claude LLM -->
+        <mxCell id="a_cc_llm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#D4A574;strokeWidth=2;exitX=1;exitY=0.3;entryX=0;entryY=0.5;" edge="1" source="claude_code_box" target="llm_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_cc_llm_l" value="指示を送信" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_cc_llm">
+          <mxGeometry x="-0.2" y="-10" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="a_llm_cc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#D4A574;strokeWidth=2;dashed=1;exitX=0;exitY=0.7;entryX=1;entryY=0.7;" edge="1" source="llm_box" target="claude_code_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a_llm_cc_l" value="回答を返す" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;fontColor=#666666;" vertex="1" connectable="0" parent="a_llm_cc">
+          <mxGeometry x="0.2" y="10" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
