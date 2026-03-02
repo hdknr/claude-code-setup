@@ -37,6 +37,7 @@ nav:
     - CLAUDE.md の使い方: usage/claude-md.md
   - Claude Codeの高度な使い方:
     - 拡張機能: usage/advanced-extensions.md
+    - トークン最適化: usage/advanced-token-management.md
   - 付録 - 便利リンク集: appendix-links.md
 
 markdown_extensions:
