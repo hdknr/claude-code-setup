@@ -61,6 +61,9 @@ winget install GitHub.cli
 
 ## 1.5 GitHub アカウントの作成とログイン
 
+!!! tip "GitHub を使う理由がピンとこない方へ"
+    なぜ Claude Code に GitHub を組み合わせるのかは [なぜ GitHub を使うのか](../usage/why-github.md) で解説しています。先に読むとこの先の手順の意味が理解しやすくなります。
+
 ### アカウント作成
 
 まだ GitHub アカウントがない場合は [github.com](https://github.com/) でアカウントを作成してください。
