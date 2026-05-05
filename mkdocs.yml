@@ -32,6 +32,7 @@ nav:
     - Part 3 - インストール後の環境準備: windows/part3-post-setup.md
   - Claude Codeの使い方:
     - 基本概念: usage/concepts.md
+    - なぜ GitHub を使うのか: usage/why-github.md
     - 基本操作とスラッシュコマンド: usage/basic-operations.md
     - 実行モードと権限管理: usage/execution-modes.md
     - CLAUDE.md の使い方: usage/claude-md.md
