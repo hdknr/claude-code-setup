@@ -40,6 +40,8 @@ nav:
   - Claude Codeの高度な使い方:
     - 拡張機能: usage/advanced-extensions.md
     - トークン最適化: usage/advanced-token-management.md
+  - ツール解説:
+    - Docker をやさしく理解する: tools/docker.md
   - 事例集:
     - 事例集について: cases/index.md
     - WordPress (xserver) を Claude Code で管理:

@@ -24,6 +24,9 @@
 
 Docker は「軽量な仮想 PC を、必要なときだけ動かせる仕組み」です。WordPress の動作環境を、自分の PC を汚さずに動かせます。
 
+!!! info "Docker をはじめて触る方へ"
+    用語や仕組みが気になる方は、先に **[Docker をやさしく理解する](../../tools/docker.md)** を読むと、このページのコマンドが何をしているかがイメージしやすくなります。
+
 === "macOS"
 
     [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/) からインストーラをダウンロードしてインストール。
