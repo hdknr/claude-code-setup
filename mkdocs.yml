@@ -40,6 +40,19 @@ nav:
   - Claude Codeの高度な使い方:
     - 拡張機能: usage/advanced-extensions.md
     - トークン最適化: usage/advanced-token-management.md
+  - 事例集:
+    - 事例集について: cases/index.md
+    - WordPress (xserver) を Claude Code で管理:
+      - 全体像: cases/wp-xserver/index.md
+      - 1. ゴールと全体フロー: cases/wp-xserver/01-overview.md
+      - 2. フォルダ作成と plan.md: cases/wp-xserver/02-prepare-folder.md
+      - 3. GitHub リポジトリの用意: cases/wp-xserver/03-github-repo.md
+      - 4. plan.md から Issue を作る: cases/wp-xserver/04-issue-creation.md
+      - 5. Issue で対話する: cases/wp-xserver/05-issue-dialogue.md
+      - 6. Docker で stage 環境: cases/wp-xserver/06-stage-docker.md
+      - 7. 修正と PR: cases/wp-xserver/07-edit-and-pr.md
+      - 8. xserver にデプロイ: cases/wp-xserver/08-deploy-xserver.md
+      - 9. トラブルシュート: cases/wp-xserver/09-troubleshooting.md
   - 付録 - 便利リンク集: appendix-links.md
 
 markdown_extensions:
