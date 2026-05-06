@@ -40,6 +40,27 @@ nav:
   - Claude Codeの高度な使い方:
     - 拡張機能: usage/advanced-extensions.md
     - トークン最適化: usage/advanced-token-management.md
+  - ツール解説:
+    - Docker をやさしく理解する: tools/docker.md
+    - GitHub をやさしく理解する: tools/github/index.md
+    - SSH と鍵ファイル:
+      - SSH と鍵ファイルをやさしく理解する: tools/ssh/index.md
+      - Windows での SSH 鍵ファイル管理: tools/ssh/windows.md
+  - 事例集:
+    - 事例集について: cases/index.md
+    - WordPress (xserver) を Claude Code で管理:
+      - 全体像: cases/wp-xserver/index.md
+      - 1. ゴールと全体フロー: cases/wp-xserver/01-overview.md
+      - 2. フォルダ作成と plan.md: cases/wp-xserver/02-prepare-folder.md
+      - 3. GitHub リポジトリの用意: cases/wp-xserver/03-github-repo.md
+      - 4. plan.md から Issue を作る: cases/wp-xserver/04-issue-creation.md
+      - 5. Issue で対話する: cases/wp-xserver/05-issue-dialogue.md
+      - 6. SSH 接続を設定する: cases/wp-xserver/06-ssh-setup.md
+      - 7. xserver の内容を GitHub に取り込む: cases/wp-xserver/07-xserver-to-github.md
+      - 8. Docker で stage 環境: cases/wp-xserver/08-stage-docker.md
+      - 9. 修正と PR: cases/wp-xserver/09-edit-and-pr.md
+      - 10. xserver にデプロイ: cases/wp-xserver/10-deploy-xserver.md
+      - 11. トラブルシュート: cases/wp-xserver/11-troubleshooting.md
   - 付録 - 便利リンク集: appendix-links.md
 
 markdown_extensions:
@@ -50,5 +71,7 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
   - attr_list
   - md_in_html

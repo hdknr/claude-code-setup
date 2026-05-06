@@ -1,0 +1,144 @@
+<mxfile host="app.diagrams.net" modified="2026-05-06T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="wp-xserver-overview" id="wp-xserver-overview">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="xserver の WordPress を Claude Code で管理するフロー" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#333333;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="50" y="20" width="1000" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="local_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1976D2;arcSize=6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="80" width="540" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="local_title" value="💻 あなたのローカル PC" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#0D47A1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="60" y="90" width="540" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="folder_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#90CAF9;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="90" y="130" width="220" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="folder_title" value="📁 作業フォルダ" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#1976D2;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="90" y="140" width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="folder_files" value="📄 plan.md&#xa;📄 docker-compose.yml&#xa;📁 wp-content/" style="text;html=1;align=left;verticalAlign=top;fontSize=12;fontColor=#333333;strokeColor=none;fillColor=none;spacingLeft=14;" vertex="1" parent="1">
+          <mxGeometry x="100" y="170" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="claude_label" value="🤖 Claude Code" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FB8C00;fontSize=12;fontStyle=1;fontColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="120" y="270" width="160" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="stage_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#90CAF9;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="350" y="130" width="220" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="stage_title" value="🐳 Docker stage 環境" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontStyle=1;fontColor=#1976D2;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="350" y="140" width="220" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="stage_inner" value="WordPress&#xa;（http://localhost:8080）" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#333333;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="360" y="180" width="200" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="stage_note" value="本番に当てる前に&#xa;ここで動作確認" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#888888;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="360" y="240" width="200" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="folder_to_stage" value="" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="310" y="220" as="sourcePoint" />
+            <mxPoint x="350" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="github_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;arcSize=6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="700" y="80" width="340" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="github_title" value="☁️ GitHub（private）" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#4A148C;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="700" y="90" width="340" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="issue_box" value="📋 Issue&#xa;（修正依頼・対話）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CE93D8;arcSize=8;fontSize=12;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="730" y="135" width="130" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="pr_box" value="🔀 PR&#xa;（マージで本番反映）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CE93D8;arcSize=8;fontSize=12;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="880" y="135" width="130" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="issue_to_pr" value="" style="endArrow=classic;html=1;strokeColor=#6A1B9A;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="175" as="sourcePoint" />
+            <mxPoint x="880" y="175" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="repo_box" value="📁 main ブランチ&#xa;（変更履歴がすべて残る）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#CE93D8;arcSize=8;fontSize=12;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="730" y="240" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="local_to_github" value="push / PR" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#1976D2;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="180" as="sourcePoint" />
+            <mxPoint x="700" y="180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="github_to_local" value="Issue コメント / pull" style="endArrow=classic;html=1;strokeColor=#6A1B9A;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#6A1B9A;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="700" y="270" as="sourcePoint" />
+            <mxPoint x="600" y="270" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="xserver_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;arcSize=6;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="380" y="450" width="340" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="xserver_title" value="🌐 xserver（本番）" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#1B5E20;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="380" y="460" width="340" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="xserver_inner" value="WordPress 本番サイト&#xa;https://example.com" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontColor=#333333;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="400" y="500" width="300" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="xserver_note" value="PR をマージしたら&#xa;SSH または WP REST API でデプロイ" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#666666;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="400" y="560" width="300" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="github_to_xserver" value="③ マージ後にデプロイ" style="endArrow=classic;html=1;strokeColor=#2E7D32;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#2E7D32;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="800" y="360" as="sourcePoint" />
+            <mxPoint x="650" y="450" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="xserver_to_local" value="① 初回: SSH/rsync で取得" style="endArrow=classic;html=1;strokeColor=#2E7D32;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#2E7D32;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="450" as="sourcePoint" />
+            <mxPoint x="330" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="local_to_github_initial" value="② 初回 push（取り込んだ一式）" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;dashed=1;fontSize=11;fontStyle=1;fontColor=#1976D2;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="220" as="sourcePoint" />
+            <mxPoint x="700" y="220" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="legend_title" value="凡例" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="60" y="650" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_solid_line" value="" style="endArrow=classic;html=1;strokeColor=#666666;strokeWidth=2;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="100" y="680" as="sourcePoint" />
+            <mxPoint x="160" y="680" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend_solid_label" value="主な操作" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#666666;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="170" y="670" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="legend_dashed_line" value="" style="endArrow=classic;html=1;strokeColor=#666666;strokeWidth=2;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="280" y="680" as="sourcePoint" />
+            <mxPoint x="340" y="680" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend_dashed_label" value="補助的な参照" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontColor=#666666;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="350" y="670" width="120" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
