@@ -34,9 +34,10 @@ gh repo view
 
 ### `docker: command not found`
 
-Docker Desktop がインストールされていない、または起動していません。
+Docker 環境（Docker Desktop または OrbStack）がインストールされていない、または起動していません。
 
-- macOS: アプリケーションフォルダから `Docker.app` を起動
+- macOS（OrbStack）: アプリケーションフォルダから `OrbStack.app` を起動
+- macOS（Docker Desktop）: アプリケーションフォルダから `Docker.app` を起動
 - Windows: スタートメニューから `Docker Desktop` を起動
 
 ### `port is already allocated` でポート 8080 が使えない
