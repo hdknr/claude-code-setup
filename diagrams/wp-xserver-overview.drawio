@@ -97,16 +97,22 @@
           <mxGeometry x="400" y="560" width="300" height="50" as="geometry" />
         </mxCell>
 
-        <mxCell id="github_to_xserver" value="マージ後にデプロイ" style="endArrow=classic;html=1;strokeColor=#2E7D32;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#2E7D32;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+        <mxCell id="github_to_xserver" value="③ マージ後にデプロイ" style="endArrow=classic;html=1;strokeColor=#2E7D32;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#2E7D32;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
             <mxPoint x="800" y="360" as="sourcePoint" />
             <mxPoint x="650" y="450" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="local_to_xserver" value="" style="endArrow=classic;html=1;strokeColor=#2E7D32;strokeWidth=3;dashed=1;" edge="1" parent="1">
+        <mxCell id="xserver_to_local" value="① 初回: SSH/rsync で取得" style="endArrow=classic;html=1;strokeColor=#2E7D32;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#2E7D32;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
           <mxGeometry relative="1" as="geometry">
-            <mxPoint x="330" y="360" as="sourcePoint" />
-            <mxPoint x="450" y="450" as="targetPoint" />
+            <mxPoint x="450" y="450" as="sourcePoint" />
+            <mxPoint x="330" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="local_to_github_initial" value="② 初回 push（取り込んだ一式）" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;dashed=1;fontSize=11;fontStyle=1;fontColor=#1976D2;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="220" as="sourcePoint" />
+            <mxPoint x="700" y="220" as="targetPoint" />
           </mxGeometry>
         </mxCell>
 
