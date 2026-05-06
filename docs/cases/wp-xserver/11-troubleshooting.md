@@ -4,62 +4,16 @@
 
 困ったら、まずは Claude Code に **エラーメッセージをそのまま貼り付けて相談** するのが一番早いです。
 
-## GitHub 関連
+## ツール別のトラブルはツール解説に集約しています
 
-### `gh: command not found`
+ツールに関する詰まりどころ（インストール、認証、コマンドエラーなど）は、各ツールの解説ページに **「詰まりやすいエラーと対応」表** としてまとめてあります。事例の途中で詰まった場合は、まずそちらを参照してください。
 
-GitHub CLI が入っていません。Part 1 のセットアップに戻り、`gh` をインストールしてください。
+- **GitHub / `gh` / push まわり** → [GitHub をやさしく理解する / 詰まりやすいエラーと対応](../../tools/github/index.md#troubleshoot)
+- **Docker / コンテナ / ポート / ローカル WordPress 真っ白** → [Docker をやさしく理解する / 詰まりやすいエラーと対応](../../tools/docker.md#troubleshoot)
+- **SSH 全般（接続拒否・鍵パーミッション・known_hosts など）** → [SSH と鍵ファイルをやさしく理解する / 詰まりやすいエラーと対応](../../tools/ssh/index.md#troubleshoot)
+- **Windows 特有の SSH 鍵管理（`icacls` / 改行コード / 3 つの世界問題）** → [Windows での SSH 鍵ファイル管理](../../tools/ssh/windows.md)
 
-### `Permission denied (publickey)` で push できない
-
-GitHub への認証が切れています。
-
-```bash
-gh auth login
-```
-
-を実行して再ログインします。
-
-### Issue を作ろうとして「No default repository」と言われる
-
-リポジトリの設定が読まれていません。作業フォルダにいるか確認してください。
-
-```bash
-gh repo view
-```
-
-で現在のフォルダのリポジトリ情報が表示されればよし。されない場合は [3. GitHub リポジトリの用意](03-github-repo.md) からやり直します。
-
-## Docker 関連
-
-### `docker: command not found`
-
-Docker 環境（Docker Desktop または OrbStack）がインストールされていない、または起動していません。
-
-- macOS（OrbStack）: アプリケーションフォルダから `OrbStack.app` を起動
-- macOS（Docker Desktop）: アプリケーションフォルダから `Docker.app` を起動
-- Windows: スタートメニューから `Docker Desktop` を起動
-
-### `port is already allocated` でポート 8080 が使えない
-
-別のアプリが 8080 番を使っています。`docker-compose.yml` のポートを変更します。
-
-```yaml
-ports:
-  - "8081:80"  # 8080 → 8081
-```
-
-ブラウザでは `http://localhost:8081` でアクセスします。
-
-### `http://localhost:8080` が真っ白
-
-WordPress が起動中の可能性があります。30 秒ほど待ってリロード。改善しない場合はログを確認します。
-
-```bash
-docker compose logs -f
-```
-
-ログを Claude Code に貼り付けて相談すれば、原因を切り分けてくれます。
+以下は、この事例（WordPress + xserver）に **特有のトラブル** だけを残しています。
 
 ## stage と本番の見た目が違う
 
@@ -79,31 +33,6 @@ WordPress のデータベース内に **絶対 URL** が入っているためで
 ### CSS が崩れている
 
 ブラウザのキャッシュが原因のことが多いです。Mac は `Cmd + Shift + R`、Windows は `Ctrl + F5` でハードリロード。
-
-## SSH 関連（6 章・10 章で使用）
-
-### `Permission denied (publickey)`
-
-SSH 鍵のパーミッションが正しくない可能性があります。
-
-```bash
-chmod 600 ~/.ssh/xserver-deploy.key
-```
-
-を実行してください。
-
-### `Connection refused`
-
-xserver の SSH 設定が無効になっているか、ポート番号が違います。サーバーパネルの「SSH 設定」で
-
-- SSH が **ON** になっているか
-- 表示されているポート番号と `~/.ssh/config` の `Port` が一致しているか
-
-を確認します。
-
-### `Host key verification failed`
-
-xserver の SSH ホスト鍵が変わったときに出ます。Claude Code に頼んで `known_hosts` から該当エントリを削除してから、再接続してください。
 
 ## WP REST API 関連（10 章で使用）
 

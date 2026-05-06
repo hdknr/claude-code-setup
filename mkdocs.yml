@@ -42,6 +42,10 @@ nav:
     - トークン最適化: usage/advanced-token-management.md
   - ツール解説:
     - Docker をやさしく理解する: tools/docker.md
+    - GitHub をやさしく理解する: tools/github/index.md
+    - SSH と鍵ファイル:
+      - SSH と鍵ファイルをやさしく理解する: tools/ssh/index.md
+      - Windows での SSH 鍵ファイル管理: tools/ssh/windows.md
   - 事例集:
     - 事例集について: cases/index.md
     - WordPress (xserver) を Claude Code で管理:
@@ -67,5 +71,7 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
   - attr_list
   - md_in_html

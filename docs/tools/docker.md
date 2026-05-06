@@ -161,6 +161,18 @@ OrbStack のライセンスを購入できない、もしくは慣れた Docker 
 
 インストール後、タスクトレイの **クジラのアイコン** が起動していれば準備完了です。
 
+#### Windows での全体像
+
+Windows では、Docker Desktop が **WSL2（Linux 仮想マシン）** の中で Docker Engine を動かし、その上で WordPress / MariaDB のコンテナを起動します。ブラウザからは `http://localhost:8080` でアクセスできます。
+
+![Windows + Docker Desktop + WSL2 + WordPress の構成図](../images/docker-windows-wsl.png)
+
+ポイントは次の 3 つだけ押さえれば十分です。
+
+- **Docker Desktop** はあくまで **管理 GUI / CLI**。実際にコンテナを動かしているのは **WSL2 内の Docker Engine**
+- **WordPress コンテナ**（ポート 8080）と **MariaDB コンテナ**（DB 専用）が連携して動く
+- **ボリューム**（`wp_data` / `db_data`）にデータが残るので、コンテナを消してもデータは消えない
+
 !!! info "Windows のライセンス"
     Docker Desktop は、**個人利用・小規模事業者（従業員 250 名未満かつ年商 1000 万ドル未満）・教育用途・非商用 OSS** は無料で利用できます。これを超える規模の企業で業務利用する場合は、有償の「Docker Business」サブスクリプションが必要です。
 
@@ -168,7 +180,23 @@ OrbStack のライセンスを購入できない、もしくは慣れた Docker 
 
 - [WordPress (xserver) を Claude Code で管理 / 8. Docker で stage 環境](../cases/wp-xserver/08-stage-docker.md) — 実際に Docker で WordPress の動作確認環境を立ち上げます
 
-## 困ったときは
+## 詰まりやすいエラーと対応 { #troubleshoot }
 
-- [トラブルシュート（wp-xserver 事例）](../cases/wp-xserver/11-troubleshooting.md) の「Docker 関連」セクションに詰まりどころをまとめています
-- それでも解決しないときは、Claude Code に **エラーメッセージをそのまま貼り付けて** 相談してください
+| エラー | 主な原因 | 対応 |
+|---|---|---|
+| `docker: command not found` | Docker Desktop / OrbStack が **未起動** または未インストール | アプリを起動。macOS は OrbStack.app または Docker.app、Windows は スタートメニューから「Docker Desktop」 |
+| `Cannot connect to the Docker daemon` | アプリは起動しているがデーモンがまだ立ち上がっていない | クジラ / OrbStack のアイコンが「動作中」になるまで待ってから再実行 |
+| `port is already allocated` | ポート 8080 を別のアプリが使用中 | `docker-compose.yml` のポートを `"8081:80"` のように変更し、ブラウザは `http://localhost:8081` でアクセス |
+| `http://localhost:8080` が真っ白 | コンテナがまだ起動中、または内部エラー | 30 秒待ってリロード。改善しなければ `docker compose logs -f` のログを Claude Code に貼って相談 |
+| `no space left on device` | Docker のディスク使用量が上限到達 | 不要コンテナ削除: `docker system prune -a`（消えてはいけないボリュームに注意） |
+| Apple Silicon Mac で `image platform mismatch` 警告 | x86 用イメージを ARM Mac で動かしている | OrbStack は通常自動対応。気になる場合は `docker-compose.yml` に `platform: linux/amd64` を追記 |
+
+ここに無いエラーは、メッセージを **そのまま** Claude Code に貼り付けて相談するのが一番早いです。
+
+> Docker でこういうエラーが出ました。原因と直し方を教えてください。
+>
+> ```
+> （ここにエラー全文を貼る）
+> ```
+
+事例ページ側の解決事例は [11. トラブルシュート](../cases/wp-xserver/11-troubleshooting.md) に追加でまとめています。
