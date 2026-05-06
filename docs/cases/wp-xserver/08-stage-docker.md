@@ -4,7 +4,7 @@
 
 ## やること
 
-1. Docker Desktop をインストールする
+1. Docker 環境をインストールする（macOS は OrbStack 推奨）
 2. Claude Code に頼んで `docker-compose.yml` を作る
 3. 前章で取得したファイル・DB を stage にロード
 4. ブラウザで `http://localhost:8080` で WordPress を開けるようにする
@@ -20,18 +20,22 @@
 - 修正を **本番（xserver）に直接当てる** と、もし不具合があったときにサイトが見られなくなります
 - ローカル PC の stage で **先に動作確認** すれば、安心して本番に反映できます
 
-## ステップ 1: Docker Desktop をインストール
+## ステップ 1: Docker 環境をインストール
 
 Docker は「軽量な仮想 PC を、必要なときだけ動かせる仕組み」です。WordPress の動作環境を、自分の PC を汚さずに動かせます。
 
 !!! info "Docker をはじめて触る方へ"
-    用語や仕組みが気になる方は、先に **[Docker をやさしく理解する](../../tools/docker.md)** を読むと、このページのコマンドが何をしているかがイメージしやすくなります。
+    用語や仕組みが気になる方は、先に **[Docker をやさしく理解する](../../tools/docker.md)** を読むと、このページのコマンドが何をしているかがイメージしやすくなります。インストールアプリの選び方（OrbStack vs Docker Desktop）もそちらにまとめています。
 
-=== "macOS"
+=== "macOS（OrbStack 推奨）"
 
-    [Docker Desktop for Mac](https://www.docker.com/products/docker-desktop/) からインストーラをダウンロードしてインストール。
+    Mac では **[OrbStack](https://orbstack.dev/)** が軽量・高速でおすすめです。
 
-    インストール後、`Docker.app` を起動するとメニューバーにクジラのアイコンが現れます。
+    1. [https://orbstack.dev/](https://orbstack.dev/) からダウンロード
+    2. `OrbStack.app` を「Applications」フォルダに配置 → 起動
+    3. 初回セットアップで「Docker」を選択
+
+    ライセンスや Docker Desktop との比較は [Docker をやさしく理解する / インストール](../../tools/docker.md#インストール) を参照してください。
 
 === "Windows"
 
@@ -45,7 +49,7 @@ Docker は「軽量な仮想 PC を、必要なときだけ動かせる仕組み
 docker --version
 ```
 
-`Docker version 2X.X.X, ...` のように表示されれば OK です。
+`Docker version 2X.X.X, ...` のように表示されれば OK です（OrbStack でも同じく `docker` コマンドが使えます）。
 
 ## ステップ 2: docker-compose.yml を Claude Code に作ってもらう
 
@@ -121,7 +125,7 @@ docker compose exec wordpress wp search-replace 'https://example.com' 'http://lo
 
 ## 確認
 
-- [ ] Docker Desktop が起動している
+- [ ] Docker 環境（OrbStack または Docker Desktop）が起動している
 - [ ] `http://localhost:8080` で WordPress が表示される
 - [ ] 本番と同じ記事・ページが見える
 - [ ] 画像が表示される
