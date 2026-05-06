@@ -1,4 +1,4 @@
-# 7. 修正と PR
+# 9. 修正と PR
 
 このページを読むと、**stage 環境で修正内容を確認し、GitHub に PR（プルリクエスト）として登録できる** ようになります。
 
@@ -117,4 +117,4 @@ git branch -d issue/1-update-catchphrase
 - [ ] PR が GitHub に登録された
 - [ ] PR がマージされた
 
-確認できたら、次の [8. xserver にデプロイ](08-deploy-xserver.md) に進みます。
+確認できたら、次の [10. xserver にデプロイ](10-deploy-xserver.md) に進みます。

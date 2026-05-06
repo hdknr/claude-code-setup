@@ -49,10 +49,12 @@ nav:
       - 3. GitHub リポジトリの用意: cases/wp-xserver/03-github-repo.md
       - 4. plan.md から Issue を作る: cases/wp-xserver/04-issue-creation.md
       - 5. Issue で対話する: cases/wp-xserver/05-issue-dialogue.md
-      - 6. Docker で stage 環境: cases/wp-xserver/06-stage-docker.md
-      - 7. 修正と PR: cases/wp-xserver/07-edit-and-pr.md
-      - 8. xserver にデプロイ: cases/wp-xserver/08-deploy-xserver.md
-      - 9. トラブルシュート: cases/wp-xserver/09-troubleshooting.md
+      - 6. SSH 接続を設定する: cases/wp-xserver/06-ssh-setup.md
+      - 7. xserver の内容を GitHub に取り込む: cases/wp-xserver/07-xserver-to-github.md
+      - 8. Docker で stage 環境: cases/wp-xserver/08-stage-docker.md
+      - 9. 修正と PR: cases/wp-xserver/09-edit-and-pr.md
+      - 10. xserver にデプロイ: cases/wp-xserver/10-deploy-xserver.md
+      - 11. トラブルシュート: cases/wp-xserver/11-troubleshooting.md
   - 付録 - 便利リンク集: appendix-links.md
 
 markdown_extensions:
