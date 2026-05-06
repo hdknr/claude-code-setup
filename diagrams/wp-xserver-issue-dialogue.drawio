@@ -1,0 +1,95 @@
+<mxfile host="app.diagrams.net" modified="2026-05-06T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="wp-xserver-issue-dialogue" id="wp-xserver-issue-dialogue">
+    <mxGraphModel dx="900" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="500" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="GitHub Issue を介した対話の流れ" style="text;html=1;align=center;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#333333;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="50" y="20" width="800" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user_box" value="🧑 あなた" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1976D2;arcSize=8;fontSize=14;fontStyle=1;fontColor=#0D47A1;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="80" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="issue_box" value="📋 GitHub Issue" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;arcSize=8;fontSize=14;fontStyle=1;fontColor=#4A148C;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="370" y="80" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="claude_box" value="🤖 Claude Code" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FB8C00;arcSize=8;fontSize=14;fontStyle=1;fontColor=#E65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="680" y="80" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="step1" value="① コメントで指示" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#1976D2;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="220" y="100" as="sourcePoint" />
+            <mxPoint x="370" y="100" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="step2" value="② コメント URL を渡す" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#1976D2;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="140" as="sourcePoint" />
+            <mxPoint x="760" y="140" as="targetPoint" />
+            <Array as="points">
+              <mxPoint x="140" y="200" />
+              <mxPoint x="760" y="200" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="step3" value="③ コメントを読み取り" style="endArrow=classic;html=1;strokeColor=#FB8C00;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#E65100;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="680" y="120" as="sourcePoint" />
+            <mxPoint x="530" y="120" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="step4" value="④ 確認・質問をコメント投稿" style="endArrow=classic;html=1;strokeColor=#FB8C00;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#E65100;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="680" y="280" as="sourcePoint" />
+            <mxPoint x="530" y="280" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="step5" value="⑤ コメントで返答" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#1976D2;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="220" y="320" as="sourcePoint" />
+            <mxPoint x="370" y="320" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="step6" value="⑥ 作業着手 → 結果報告" style="endArrow=classic;html=1;strokeColor=#FB8C00;strokeWidth=2;dashed=1;fontSize=12;fontStyle=1;fontColor=#E65100;labelBackgroundColor=#FFFFFF;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="680" y="370" as="sourcePoint" />
+            <mxPoint x="530" y="370" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="user_lifeline" value="" style="endArrow=none;html=1;strokeColor=#1976D2;strokeWidth=1;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="140" y="140" as="sourcePoint" />
+            <mxPoint x="140" y="430" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="issue_lifeline" value="" style="endArrow=none;html=1;strokeColor=#6A1B9A;strokeWidth=1;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="140" as="sourcePoint" />
+            <mxPoint x="450" y="430" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="claude_lifeline" value="" style="endArrow=none;html=1;strokeColor=#FB8C00;strokeWidth=1;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="760" y="140" as="sourcePoint" />
+            <mxPoint x="760" y="430" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="note" value="Issue にすべてのやり取りが残るので、後から経緯を辿れる" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=2;fontColor=#666666;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="60" y="450" width="800" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
