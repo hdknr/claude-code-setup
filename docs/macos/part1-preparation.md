@@ -99,22 +99,9 @@ gh auth status
 
 「Logged in to github.com」と表示されれば成功です。
 
-## 1.6 Node.js のインストール
-
-Claude Code の実行に Node.js が必要です。ターミナルで以下のコマンドを実行してください:
-
-```bash
-brew install node
-```
-
-正しくインストールされたか確認しましょう。ターミナルで以下のコマンドを実行してください:
-
-```bash
-node --version
-```
-
-`v18.x.x` 以上のバージョンが表示されれば OK です。
-
 ## 次のステップ
 
 事前準備が完了しました。[Part 2: Claude Code インストール](part2-installation.md) に進んでください。
+
+!!! info "Node.js は不要になりました"
+    以前は Claude Code のインストールに Node.js が必要でしたが、現在は公式の**ネイティブインストーラー**を使うため Node.js は不要です。Part 2 で詳しく説明します。
