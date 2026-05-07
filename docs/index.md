@@ -2,7 +2,7 @@
 
 Claude Code をインストールして使えるようにするための手順書です。
 
-**サイト:** [https://hdknr.github.io/claude-code-setup/](https://hdknr.github.io/claude-code-setup/)
+**サイト:** [https://shiftone-ai.github.io/claude-code-setup/](https://shiftone-ai.github.io/claude-code-setup/)
 
 ## この手順書について
 

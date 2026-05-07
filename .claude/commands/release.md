@@ -11,7 +11,7 @@ GitHub Actions の release ワークフローを手動実行してリリース�
 既存のリリースを確認:
 
 ```bash
-gh release list --repo hdknr/claude-code-setup
+gh release list --repo shiftone-ai/claude-code-setup
 ```
 
 最新のタグを確認:
@@ -25,7 +25,7 @@ git tag --sort=-version:refname | head -5
 GitHub Actions の `release.yml` ワークフローを手動実行します:
 
 ```bash
-gh workflow run release.yml --repo hdknr/claude-code-setup -f version={バージョン}
+gh workflow run release.yml --repo shiftone-ai/claude-code-setup -f version={バージョン}
 ```
 
 - `version`: リリースバージョン（例: `v1.2.0`）
@@ -35,11 +35,11 @@ gh workflow run release.yml --repo hdknr/claude-code-setup -f version={バージ
 ワークフローの実行状況を確認:
 
 ```bash
-gh run list --repo hdknr/claude-code-setup --workflow=release.yml --limit 1
+gh run list --repo shiftone-ai/claude-code-setup --workflow=release.yml --limit 1
 ```
 
 リリースが作成されたか確認:
 
 ```bash
-gh release view {バージョン} --repo hdknr/claude-code-setup
+gh release view {バージョン} --repo shiftone-ai/claude-code-setup
 ```
