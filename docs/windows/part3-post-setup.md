@@ -67,7 +67,7 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 **マーケットプレイスの追加:**
 
 ```
-/plugin marketplace add hdknr/claude-code-setup
+/plugin marketplace add shiftone-ai/claude-code-setup
 ```
 
 **プラグインのインストール:**

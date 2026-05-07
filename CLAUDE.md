@@ -39,6 +39,6 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 
 ## デプロイ
 
-- リポジトリ: github.com/hdknr/claude-code-setup（公開）
-- サイト: https://hdknr.github.io/claude-code-setup/
+- リポジトリ: github.com/shiftone-ai/claude-code-setup（公開、hdknr/claude-code-setup からのフォーク）
+- サイト: https://shiftone-ai.github.io/claude-code-setup/
 - main への push で GitHub Actions が自動デプロイ

@@ -4,7 +4,7 @@ Claude Code をインストールして使えるようにするためのセッ�
 
 ## ドキュメントサイト
 
-👉 **https://hdknr.github.io/claude-code-setup/**
+👉 **https://shiftone-ai.github.io/claude-code-setup/**
 
 ## 概要
 
