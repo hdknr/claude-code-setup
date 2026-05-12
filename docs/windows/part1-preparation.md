@@ -2,6 +2,9 @@
 
 Claude Code をインストールする前に必要なツールをセットアップします。
 
+!!! info "WSL2 (Ubuntu) を使いたい方"
+    本パートは**ネイティブ Windows**（PowerShell + winget）の手順です。Windows 上に Linux 環境（Ubuntu）を構築して使いたい方は、[WSL2 版の Part 1](wsl2-part1-preparation.md) を参照してください。Claude Code の**サンドボックス機能**は WSL2 でのみ利用できます。
+
 ## 1.1 ターミナル（PowerShell）を開く
 
 Windows キーを押して「PowerShell」と入力し、**Windows PowerShell** を起動してください。
