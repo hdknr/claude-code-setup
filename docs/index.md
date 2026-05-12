@@ -34,13 +34,29 @@ Claude Code をインストールして使えるようにするための手順�
 ### Windows
 
 - 対応: Windows 10 / 11
+- 2 つの方式から選べます
+
+#### ネイティブ Windows
+
 - パッケージ管理: [winget](https://learn.microsoft.com/ja-jp/windows/package-manager/winget/)（Windows 標準）
+- Windows 標準の PowerShell でそのまま使えるシンプルな構成
 
 | パート | 内容 | 概要 |
 |--------|------|------|
 | [Part 1](windows/part1-preparation.md) | 事前準備 | Git・GitHub CLI のインストール |
 | [Part 2](windows/part2-installation.md) | Claude Code インストール | アカウント登録からインストールまで |
 | [Part 3](part3-post-setup.md) | インストール後の環境準備（共通） | スキル設定・日常利用の準備 |
+
+#### WSL2 (Ubuntu)
+
+- パッケージ管理: `apt`（Ubuntu 標準）
+- Windows 上で Linux 環境を使う方式。Linux ツールチェーンや Claude Code の**サンドボックス機能**を活用したい方向け
+
+| パート | 内容 | 概要 |
+|--------|------|------|
+| [Part 1](windows/wsl2-part1-preparation.md) | 事前準備 | WSL2・Ubuntu・Git・GitHub CLI のインストール |
+| [Part 2](windows/wsl2-part2-installation.md) | Claude Code インストール | アカウント登録からインストールまで |
+| [Part 3](windows/wsl2-part3-post-setup.md) | インストール後の環境準備 | スキル設定・日常利用の準備 |
 
 ## 環境
 
