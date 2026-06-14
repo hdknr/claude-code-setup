@@ -16,12 +16,7 @@ PC で始めた作業を、ソファに座ったままスマホから、ある�
 
 クラウドにファイルがアップロードされるわけではありません。Claude Code は**ずっと自分の PC 上で動き続け**、スマホやブラウザは「その画面をのぞく窓」になるイメージです。
 
-```
-[自分の PC]                    [Anthropic API]              [スマホ / ブラウザ]
- claude 起動中  ──HTTPS(外向き)──→  中継サーバー  ←──────────  Claude アプリ
- （ファイル・                                                   claude.ai/code
-  MCP・ツール）  ←─────────────  指示を中継  ←─────────────  で指示を入力
-```
+![リモートコントロールの仕組み](../images/mobile-remote-control.png)
 
 !!! note "Claude Code on the Web との違い"
     似た機能に [Claude Code on the Web](https://code.claude.com/docs/en/claude-code-on-the-web) がありますが、あちらは **Anthropic のクラウド VM 上**で動きます。手元のファイルにはアクセスできません。
