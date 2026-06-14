@@ -36,7 +36,7 @@ Claude Code を使うには、以下のいずれかが必要です（**無料の
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-インストールが完了すると、`claude` コマンドが `~/.local/bin/claude` に配置されます。インストーラーがシェル設定（`~/.zprofile` など）にパスを自動追加します。
+インストールが完了すると、`claude` コマンドが `~/.local/bin/claude` に配置されます。通常はインストーラーがシェル設定（`~/.zprofile` など）にパスを自動追加します。
 
 !!! note "インストール後はターミナルを開き直してください"
     パス設定を反映するため、ターミナルを一度閉じて開き直してください。
@@ -52,6 +52,22 @@ claude --version
 ```
 
 バージョン番号が表示されれば成功です。
+
+!!! warning "`claude: command not found` と表示される場合"
+    インストーラーが `~/.local/bin` をパスに追加できていないことがあります（`.zprofile` がない場合など）。まず本体が存在するか確認します:
+
+    ```bash
+    ls -l ~/.local/bin/claude
+    ```
+
+    ファイルがあれば、`~/.local/bin` をパスに追加して反映します（macOS の標準シェルは zsh です）:
+
+    ```bash
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile
+    source ~/.zprofile
+    ```
+
+    再度 `claude --version` を実行し、バージョンが表示されれば解決です。
 
 !!! info "アップデートについて"
     ネイティブインストーラーで入れた Claude Code は**バックグラウンドで自動アップデート**されます。手動で最新化したい場合は `claude update` を実行します。
