@@ -2,23 +2,37 @@
 
 Claude Code を日常的に使うための環境を整えます。
 
+!!! note "macOS / Windows 共通ページ"
+    Part 3 は macOS・Windows で内容がほぼ共通のため、1 ページにまとめています。
+    OS によってコマンドが異なる箇所のみ、**macOS / Windows のタブ**で切り替えて表示しています。
+
 ## 3.1 作業用リポジトリの作成
 
 日々の作業を管理するための GitHub リポジトリを作成します。
 
-```bash
-mkdir -p ~/Projects
-cd ~/Projects
-mkdir my-workspace
-cd my-workspace
-git init
-```
+=== "macOS"
+
+    ```bash
+    mkdir -p ~/Projects
+    cd ~/Projects
+    mkdir my-workspace
+    cd my-workspace
+    git init
+    ```
+
+=== "Windows"
+
+    ```powershell
+    mkdir $HOME\Projects\my-workspace
+    cd $HOME\Projects\my-workspace
+    git init
+    ```
 
 ## 3.2 CLAUDE.md の作成
 
 `CLAUDE.md` は Claude Code に対する常駐の指示ファイルです。プロジェクトのルートに配置すると、毎回の会話で自動的に読み込まれます。
 
-```bash
+```
 claude
 ```
 
@@ -66,26 +80,51 @@ GitHub に my-workspace というプライベートリポジトリを作成し�
 このプロジェクトでは、プラグイン・マーケットプレイス方式でスキルを配布しています。
 Claude Code 内で以下のコマンドを実行するだけでインストールできます。
 
-**マーケットプレイスの追加:**
+**① マーケットプレイスを追加する（最初に一度だけ）:**
 
 ```
 /plugin marketplace add hdknr/claude-code-setup
 ```
 
-**プラグインのインストール:**
+**② 必要なプラグインをインストールする:**
+
+このマーケットプレイスからは、次のプラグインをインストールできます。
+
+| プラグイン | 提供スキル | 内容 |
+|---|---|---|
+| `workspace-setup` | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ（CLAUDE.md 作成、GitHub リポジトリ作成、プライベート設定） |
+| `cmux` | `/cmux` | cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビュー |
 
 ```
+# ワークスペース初期セットアップ用
 /plugin install workspace-setup@claude-code-setup
+
+# cmux 連携用（cmux ターミナルを使う場合）
+/plugin install cmux@claude-code-setup
 ```
+
+!!! tip "インストール済みプラグインの確認"
+    `/plugin` を実行すると、追加済みのマーケットプレイスとインストール済みプラグインの一覧を確認・管理できます。
+
+各プラグインの詳しい機能・前提・使い方は [プラグイン一覧](plugins/index.md) にまとめています。
 
 ### 使い方の例
 
 作業用リポジトリで Claude Code を起動し:
 
-```bash
-cd ~/Projects/my-workspace
-claude
-```
+=== "macOS"
+
+    ```bash
+    cd ~/Projects/my-workspace
+    claude
+    ```
+
+=== "Windows"
+
+    ```powershell
+    cd $HOME\Projects\my-workspace
+    claude
+    ```
 
 ワークスペースの初期セットアップを実行:
 
@@ -98,6 +137,16 @@ claude
 - ワークスペースディレクトリの作成
 - `CLAUDE.md` の作成
 - GitHub プライベートリポジトリの作成と連携
+
+`cmux` プラグインを入れた場合は、cmux ウィンドウ内で GitHub の Issue/PR を操作できます:
+
+```
+# Issue 番号 12 をブラウザペインに表示
+/cmux 12
+
+# PR 番号 34 を worktree でチェックアウトしてレビュー
+/cmux -r 34
+```
 
 スキルの一覧を確認:
 
@@ -134,7 +183,7 @@ claude
 
 以上で Claude Code の環境構築は完了です。
 
-- **Part 1** で Homebrew・GitHub CLI などの基盤ツールをインストール
+- **Part 1** で基盤ツール（GitHub CLI など）をインストール
 - **Part 2** で Claude Code をインストール・認証
 - **Part 3** で日常利用の環境を準備
 

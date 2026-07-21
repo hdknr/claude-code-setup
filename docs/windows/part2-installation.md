@@ -110,4 +110,4 @@ Claude Code が起動したら、簡単な質問をして動作を確認しま�
 
 ## 次のステップ
 
-Claude Code のインストールが完了しました。[Part 3: インストール後の環境準備](part3-post-setup.md) に進んでください。
+Claude Code のインストールが完了しました。[Part 3: インストール後の環境準備](../part3-post-setup.md) に進んでください。

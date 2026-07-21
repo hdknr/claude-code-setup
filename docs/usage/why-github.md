@@ -49,5 +49,5 @@ Claude Code の作業用リポジトリは **必ず Private（非公開）** で
 ## 次のステップ
 
 - **これから準備する方**: [macOS Part 1](../macos/part1-preparation.md) / [Windows Part 1](../windows/part1-preparation.md) で GitHub CLI のインストールとログインを行います
-- **インストール済みの方**: [macOS Part 3](../macos/part3-post-setup.md) / [Windows Part 3](../windows/part3-post-setup.md) でリポジトリを作成し、Claude Code から使える状態にします
+- **インストール済みの方**: [Part 3: インストール後の環境準備](../part3-post-setup.md) でリポジトリを作成し、Claude Code から使える状態にします
 - **GitHub の概念をもっと理解したい方**: [GitHub をやさしく理解する](../tools/github/index.md)
