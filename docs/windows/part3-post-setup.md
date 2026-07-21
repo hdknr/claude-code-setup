@@ -64,17 +64,31 @@ GitHub に my-workspace というプライベートリポジトリを作成し�
 このプロジェクトでは、プラグイン・マーケットプレイス方式でスキルを配布しています。
 Claude Code 内で以下のコマンドを実行するだけでインストールできます。
 
-**マーケットプレイスの追加:**
+**① マーケットプレイスを追加する（最初に一度だけ）:**
 
 ```
 /plugin marketplace add hdknr/claude-code-setup
 ```
 
-**プラグインのインストール:**
+**② 必要なプラグインをインストールする:**
+
+このマーケットプレイスからは、次のプラグインをインストールできます。
+
+| プラグイン | 提供スキル | 内容 |
+|---|---|---|
+| `workspace-setup` | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ（CLAUDE.md 作成、GitHub リポジトリ作成、プライベート設定） |
+| `cmux` | `/cmux` | cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビュー |
 
 ```
+# ワークスペース初期セットアップ用
 /plugin install workspace-setup@claude-code-setup
+
+# cmux 連携用（cmux ターミナルを使う場合）
+/plugin install cmux@claude-code-setup
 ```
+
+!!! tip "インストール済みプラグインの確認"
+    `/plugin` を実行すると、追加済みのマーケットプレイスとインストール済みプラグインの一覧を確認・管理できます。
 
 ### 使い方の例
 
@@ -96,6 +110,16 @@ claude
 - ワークスペースディレクトリの作成
 - `CLAUDE.md` の作成
 - GitHub プライベートリポジトリの作成と連携
+
+`cmux` プラグインを入れた場合は、cmux ウィンドウ内で GitHub の Issue/PR を操作できます:
+
+```
+# Issue 番号 12 をブラウザペインに表示
+/cmux 12
+
+# PR 番号 34 を worktree でチェックアウトしてレビュー
+/cmux -r 34
+```
 
 スキルの一覧を確認:
 
