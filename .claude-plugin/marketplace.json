@@ -1,21 +1,34 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-code-setup",
-  "description": "Claude Code のセットアップガイド - 初期環境構築を支援するプラグイン集",
   "version": "1.0.0",
+  "owner": {
+    "name": "hdknr",
+    "url": "https://github.com/hdknr/claude-code-setup"
+  },
+  "metadata": {
+    "description": "Claude Code のセットアップガイド - 初期環境構築を支援するプラグイン集"
+  },
   "plugins": [
     {
       "name": "workspace-setup",
-      "path": "plugins/workspace-setup",
+      "source": "./plugins/workspace-setup",
+      "version": "1.0.0",
+      "author": { "name": "hdknr" },
       "description": "ワークスペースの初期セットアップ（CLAUDE.md 作成、GitHub リポジトリ作成、プライベート設定）"
     },
     {
       "name": "cmux",
-      "path": "plugins/cmux",
+      "source": "./plugins/cmux",
+      "version": "1.0.0",
+      "author": { "name": "hdknr" },
       "description": "cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビューを行うスキル"
     },
     {
       "name": "dev-loop",
-      "path": "plugins/dev-loop",
+      "source": "./plugins/dev-loop",
+      "version": "1.0.0",
+      "author": { "name": "hdknr" },
       "description": "1 Issue = 1 周のループ志向開発。検証（verify）を停止条件に、計画→実装→実機検証→レビュー→デプロイを回すスキル"
     }
   ]
