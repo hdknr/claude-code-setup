@@ -41,6 +41,7 @@ nav:
     - トークン最適化: usage/advanced-token-management.md
   - プラグイン:
     - プラグイン一覧: plugins/index.md
+    - dev-loop の設計（ループ志向開発）: plugins/dev-loop-design.md
   - ツール解説:
     - Docker をやさしく理解する: tools/docker.md
     - GitHub をやさしく理解する: tools/github/index.md

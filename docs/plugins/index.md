@@ -16,6 +16,7 @@
 |---|---|---|
 | [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ |
 | [`cmux`](#cmux) | `/cmux` | cmux ウィンドウで GitHub Issue/PR を操作 |
+| [`dev-loop`](#dev-loop) | `/dev-loop` | 1 Issue = 1 周のループ志向開発 |
 
 !!! info "プラグインの入れ方・使い方の全体像"
     インストール手順と日常利用の流れは [Part 3: インストール後の環境準備](../part3-post-setup.md) にもまとまっています。このページは各プラグインの**詳細リファレンス**です。
@@ -91,3 +92,56 @@ cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビ�
 - `cmux` CLI がインストールされていること
 - `gh` CLI が認証済みであること
 - Claude Code の `EnterWorktree` ツールが利用可能であること
+
+---
+
+## dev-loop
+
+GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**として 1 周させる、
+ループ志向開発のスキルを提供するプラグインです。どのプロジェクトでも使える汎用版で、
+プロジェクト固有の事情は対象リポジトリの `CLAUDE.md` から発見して従います。
+
+!!! info "設計の背景"
+    「なぜループ志向か」「verify を停止条件に据える理由」「Dreaming・トークンコスト・
+    アンチパターン」といった設計思想は [dev-loop の設計（ループ志向開発）](dev-loop-design.md)
+    にまとめています。
+
+### インストール
+
+```
+/plugin install dev-loop@claude-code-setup
+```
+
+### 提供スキル
+
+#### `/dev-loop <issue-number>`
+
+対象 Issue を、以下の標準サイクルで 1 周させます。**5↔4 は verify が通るまで繰り返します。**
+
+1. **Issue 選択** — `gh issue view` で要件・受入条件を把握
+2. **文脈収集** — 関連設計・既存実装・過去の議論を読む
+3. **計画** — 変更範囲を切り分け、設定／フラグで済むかを先に判断
+4. **実装** — 対象リポジトリの `CLAUDE.md` のルールに従って変更
+5. **検証（停止条件）** — 実機で目視確認 ＋ **別モデルの検証エージェント**で受入条件の反証を探す
+6. **レビュー → PR** — `/code-review`、結果を PR コメントに残す
+7. **本番反映** — CLAUDE.md / deploy runbook に従う
+8. **経験の還元** — 学びを CLAUDE.md / Skill / メモリへ焼き戻す
+
+!!! tip "CLAUDE.md に書いておくと効く"
+    実機検証（verify）の手順・デプロイ経路・やってはいけない制約を対象リポジトリの
+    `CLAUDE.md`（または `.claude/dev-loop.md`）に書いておくと、スキルがそれを発見して従います。
+    無ければテスト実行＋アプリ起動での手動確認に**縮退**するので、設定が無くても動きます。
+
+**使用例:**
+
+```
+# Issue 番号 42 を 1 周させる
+/dev-loop 42
+```
+
+### 前提
+
+- `gh` CLI が認証済みであること
+- 対象リポジトリが git 管理下にあること
+- （任意）`/loop`・`/schedule`・`/code-review`・`/run` などの汎用スキルや GSD スキル群。
+  無い環境では手動の待機・確認に読み替えます。
