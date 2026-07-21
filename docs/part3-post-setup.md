@@ -1,22 +1,38 @@
-# Part 3: インストール後の環境準備（Windows）
+# Part 3: インストール後の環境準備
 
 Claude Code を日常的に使うための環境を整えます。
+
+!!! note "macOS / Windows 共通ページ"
+    Part 3 は macOS・Windows で内容がほぼ共通のため、1 ページにまとめています。
+    OS によってコマンドが異なる箇所のみ、**macOS / Windows のタブ**で切り替えて表示しています。
 
 ## 3.1 作業用リポジトリの作成
 
 日々の作業を管理するための GitHub リポジトリを作成します。
 
-```powershell
-mkdir $HOME\Projects\my-workspace
-cd $HOME\Projects\my-workspace
-git init
-```
+=== "macOS"
+
+    ```bash
+    mkdir -p ~/Projects
+    cd ~/Projects
+    mkdir my-workspace
+    cd my-workspace
+    git init
+    ```
+
+=== "Windows"
+
+    ```powershell
+    mkdir $HOME\Projects\my-workspace
+    cd $HOME\Projects\my-workspace
+    git init
+    ```
 
 ## 3.2 CLAUDE.md の作成
 
 `CLAUDE.md` は Claude Code に対する常駐の指示ファイルです。プロジェクトのルートに配置すると、毎回の会話で自動的に読み込まれます。
 
-```powershell
+```
 claude
 ```
 
@@ -94,10 +110,19 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 
 作業用リポジトリで Claude Code を起動し:
 
-```powershell
-cd $HOME\Projects\my-workspace
-claude
-```
+=== "macOS"
+
+    ```bash
+    cd ~/Projects/my-workspace
+    claude
+    ```
+
+=== "Windows"
+
+    ```powershell
+    cd $HOME\Projects\my-workspace
+    claude
+    ```
 
 ワークスペースの初期セットアップを実行:
 
@@ -156,7 +181,7 @@ claude
 
 以上で Claude Code の環境構築は完了です。
 
-- **Part 1** で Git・GitHub CLI・Node.js などの基盤ツールをインストール
+- **Part 1** で基盤ツール（GitHub CLI など）をインストール
 - **Part 2** で Claude Code をインストール・認証
 - **Part 3** で日常利用の環境を準備
 

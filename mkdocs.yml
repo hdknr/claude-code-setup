@@ -25,11 +25,10 @@ nav:
   - macOS:
     - Part 1 - 事前準備: macos/part1-preparation.md
     - Part 2 - Claude Code インストール: macos/part2-installation.md
-    - Part 3 - インストール後の環境準備: macos/part3-post-setup.md
   - Windows:
     - Part 1 - 事前準備: windows/part1-preparation.md
     - Part 2 - Claude Code インストール: windows/part2-installation.md
-    - Part 3 - インストール後の環境準備: windows/part3-post-setup.md
+  - Part 3 - インストール後の環境準備（共通）: part3-post-setup.md
   - Claude Codeの使い方:
     - 基本概念: usage/concepts.md
     - なぜ GitHub を使うのか: usage/why-github.md
