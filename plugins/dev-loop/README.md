@@ -3,6 +3,9 @@
 GitHub Issue 1 件を **検証（verify）が通ることを停止条件**として 1 周させる、
 ループ志向開発のスキルを提供するプラグイン。どのプロジェクトでも使える汎用版。
 
+設計思想（なぜループ志向か・verify を停止条件に据える理由・Dreaming・トークンコスト・
+アンチパターン）は [dev-loop の設計](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/) を参照。
+
 ## 提供スキル
 
 ### `/dev-loop <issue-number>`

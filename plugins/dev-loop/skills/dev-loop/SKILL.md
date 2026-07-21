@@ -14,6 +14,10 @@ GitHub Issue 1 件を、**検証が通ることを停止条件**として 1 周�
 デプロイ経路・一次ソースのドキュメント）は、**対象リポジトリの `CLAUDE.md`** から発見して従う。
 無ければ下記の汎用手順に縮退する。
 
+設計の背景（なぜループ志向か・verify を停止条件に据える理由・Dreaming・トークンコスト・
+アンチパターン）は「dev-loop の設計」を参照:
+<https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/>
+
 引数: `/dev-loop <issue-number>`（省略時は現在の作業対象 Issue を尋ねる）。
 
 ## はじめに — プロジェクト固有設定の発見
