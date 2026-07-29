@@ -31,6 +31,16 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 
 ブランドアイコンは Simple Icons (simpleicons.org) から取得し、base64 で drawio に埋め込んでいる。
 
+## プラグインの更新
+
+`plugins/` 配下の `SKILL.md` やコマンド定義を変更したら、**バージョンを必ず上げる**。
+
+- `plugins/<name>/.claude-plugin/plugin.json` の `version`
+- `.claude-plugin/marketplace.json` の該当プラグインの `version`
+
+**この 2 箇所を同じ値に揃える。** バージョンを据え置いたまま中身だけ変えると、インストール済み
+クライアントのキャッシュが更新を検知できず、旧い内容のスキルを使い続ける（#33 で実際に発生した）。
+
 ## Git ワークフロー
 
 - Issue 対応はブランチを切って PR 経由でマージ（ブランチ名: `issue/<番号>-<説明>`）
