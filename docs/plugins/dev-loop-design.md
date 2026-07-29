@@ -70,7 +70,8 @@
 flowchart LR
     S["Issue 選択<br/>gh issue view &lt;issue&gt;"] --> C["文脈収集"]
     C --> P["計画<br/>変更範囲・経路を確定"]
-    P --> E["実装<br/>CLAUDE.md のルールに従う"]
+    P --> W["worktree 開始<br/>PR を出す変更は必須"]
+    W --> E["実装<br/>CLAUDE.md のルールに従う"]
     E --> V["検証<br/>実機で目視 / 別モデル Verifier"]
     V -- NG --> E
     V -- OK --> R["レビュー<br/>/code-review → PR"]
@@ -85,10 +86,12 @@ flowchart LR
 2. **文脈収集** — 関連ドキュメント・既存実装・過去の議論を読む。受入条件を「何を目視できれば
    満たしたと言えるか」に翻訳しておく。
 3. **計画** — 変更範囲・影響を確定。設定フラグで切替可能かも先に判断（済むなら再ビルドを避けられる）。
-4. **実装** — 対象リポジトリの `CLAUDE.md` のルールを守り、既存コードの流儀に合わせて変更する。
+4. **実装** — **まず worktree を開始する（PR を出す周では必須）**。そのうえで対象リポジトリの
+   `CLAUDE.md` のルールを守り、既存コードの流儀に合わせて変更する。
 5. **検証（停止条件）** — [§2](#verify) の verify が通るまで 4↔5 を繰り返す。ここがループの本体。
    受入条件の充足は、実装とは **別モデルの Verifier サブエージェント**にも反証を探させて牽制する。
-6. **レビュー** — `/code-review` で差分をレビューし、指摘を反映して PR を作成。結果は PR コメントに残す。
+6. **レビュー** — `/code-review` で差分をレビューし、指摘を反映して PR を作成。**worktree 上に
+   いることが PR 作成の前提条件**で、そうでなければ worktree へ移送してから作る。結果は PR コメントに残す。
 7. **本番反映** — 対象リポジトリの `CLAUDE.md` / deploy runbook の経路に従う。破壊的・不可逆な反映
    （DB マイグレーション・インフラ apply 等）は前提条件を確認し、必要なら人間の承認を得る。
 8. **経験の還元** — この 1 周で得た学び（成功の型・失敗の教訓・非自明な事実）を `CLAUDE.md` / 該当
@@ -127,12 +130,15 @@ gh issue view 999               # 要件・受入条件・関連 PR を把握（
 | 設定・環境変数で挙動を切替できる | コード変更なし。フラグ更新 + 再起動で反映 |
 | 表示ロジックの追加が要る | バックエンド + フロントの変更 → フル 1 周（本例はこちら） |
 
-### 5.3 実装
+### 5.3 実装 — worktree で作業する
 
-`CLAUDE.md` のルールを守って変更する。
+**ファイルを触る前に worktree を開始する。** PR を出す変更では必須で、メインの作業ツリーを
+汚さずに他の周と並行できる。
 
 ```bash
-git checkout -b feat/add-badge-999
+# EnterWorktree ツールが使える環境ではそれを使う。同等の素の操作:
+git worktree add ../myrepo-issue-999 -b issue/999-add-badge
+cd ../myrepo-issue-999
 # backend: API に新フィールドを追加
 # frontend: 一覧にバッジ表示を追加
 ```
@@ -146,6 +152,9 @@ git checkout -b feat/add-badge-999
 
 ```bash
 /code-review                        # 差分をレビューし指摘を反映
+
+# PR 作成の前提条件: worktree 上にいること（そうでなければ 5.3 に戻る）
+test "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" || exit 1
 gh pr create --base main --fill     # PR 作成 → 人間レビュー・承認
 ```
 

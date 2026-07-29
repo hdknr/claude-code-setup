@@ -37,6 +37,8 @@ GitHub Issue 1 件を、**検証が通ることを停止条件**として 1 周�
 
 - **停止条件は verify**。「テストが緑」だけでは完了にしない。ロジック変更は
   **実際に動かして期待挙動を目視**するまで完了扱いにしない。
+- **PR を出す変更は必ず worktree 上で行う（必須）**。メインの作業ツリーを汚さず、
+  他の周・他の Issue と並行できる状態を保つ。worktree に入らずに PR を作ってはならない。
 - **対象リポジトリの `CLAUDE.md` のルールを守る**（コーディング規約・図版規約・製本／デプロイ制約など）。
 - **本番への破壊的操作・不可逆操作は勝手に実行しない**。CLAUDE.md の制約と、明示の承認に従う。
 
@@ -65,6 +67,20 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 
 ### 4. 実装
 
+- **最初に worktree を開始する（必須）**。ファイルを 1 行も触る前に、Issue 用の worktree に入る。
+  PR を作る周では例外を認めない（PR 作成時点で worktree 上にいる必要があり、実装後に
+  移し替えるのは手戻りになる）。
+  ```bash
+  # EnterWorktree ツールが使える環境ではそれを使う（後片付けまで面倒を見てくれる）。
+  # 使えない環境の同等操作:
+  git worktree add ../<repo>-issue-<issue-number> -b issue/<issue-number>-<説明>
+  ```
+  - すでに worktree 上にいる（`git rev-parse --git-common-dir` と `--git-dir` が異なる）なら、
+    そのまま続けてよい。
+  - メインの作業ツリーに未コミットの変更を作ってしまっていた場合は、`git stash` →
+    worktree 作成 → `git stash pop` で移送してから続ける。
+  - ブランチ名は対象リポジトリの CLAUDE.md の命名規約に従う（規約が無ければ
+    `issue/<番号>-<説明>`）。
 - 対象リポジトリの CLAUDE.md のルールに従って変更する。既存コードの流儀（命名・コメント量・
   イディオム）に合わせる。
 - GSD を使う運用なら `/gsd:execute-phase`（任意）。
@@ -85,7 +101,16 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 ### 6. レビュー → PR
 
 - `/code-review` で差分をレビューし、指摘を反映する。
-- PR を作成（デフォルトブランチで直接作業していれば先にブランチを切る）。
+- **PR 作成の前提条件（必須）: worktree 上にいること**。作成前に必ず確認する:
+  ```bash
+  test "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" \
+    && echo "worktree OK" || echo "NOT in a worktree"
+  ```
+  - `NOT in a worktree` の場合は **PR を作らない**。手順 4 の worktree 開始に戻り、
+    変更を worktree へ移送してから（未コミットなら `git stash` → worktree 作成 →
+    `git stash pop`、コミット済みなら worktree でそのブランチを checkout）PR を作る。
+  - デフォルトブランチ上にいる場合も同様に、worktree でブランチを切り直してから作る。
+- worktree 上のブランチを push して PR を作成する（`gh pr create`）。
 - **レビュー結果は必ず PR コメントに残す**（`gh pr comment <n> --body ...`）。発見・修正した実問題、
   検証して問題なしと確認した項目、意図的スキップ、残課題を記録し、後追いできるようにする。
   実データ照合を行った場合はその結果も同様にコメントする。
