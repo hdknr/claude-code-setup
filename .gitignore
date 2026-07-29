@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .python-version
 .*.bkp
+
+# dev-loop の作業用（計画メモ・worktree）
+.claude/plans/
+.claude/worktrees/
