@@ -98,19 +98,7 @@ D は**その外側にあるグラフの層**で、1 本のループでは待ち
 
 開発本体は **層 A** を基本とする。GitHub Issue 1 件を次のサイクルで 1 周させる。
 
-```mermaid
-flowchart LR
-    S["Issue 選択<br/>gh issue view &lt;issue&gt;"] --> C["文脈収集"]
-    C --> P["計画<br/>変更範囲・経路を確定"]
-    P --> W["worktree 開始<br/>PR を出す変更は必須"]
-    W --> E["実装<br/>CLAUDE.md のルールに従う"]
-    E --> V["検証<br/>実機で目視 / 別モデル Verifier"]
-    V -- NG --> E
-    V -- OK --> R["レビュー<br/>/code-review → PR"]
-    R --> D["本番反映<br/>CLAUDE.md / deploy runbook"]
-    D --> L["経験の還元<br/>CLAUDE.md/Skill/メモリへ焼き戻し"]
-    L --> S
-```
+![dev-loop の標準ループ](../images/dev-loop-cycle.svg)
 
 !!! note "この図はループの図解であり、宣言的グラフではない"
     上の図は手順の流れを人間向けに描いたもので、実行される構造ではない。各ステップは
