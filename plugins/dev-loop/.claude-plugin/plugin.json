@@ -1,6 +1,6 @@
 {
   "name": "dev-loop",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "author": { "name": "hdknr" },
   "description": "1 Issue = 1 周のループ志向開発。検証（verify）を停止条件に、Issue を選択→計画→実装→実機検証→レビュー→デプロイで回すスキル"
 }
