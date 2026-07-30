@@ -1,0 +1,29 @@
+name: Check plugin catalog
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # bump チェックは base との比較が必要なので全履歴を取る
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # ubuntu-latest には python3 が同梱されており、スクリプトは標準ライブラリのみ。
+      # action を増やすほど Node 非推奨 annotation の発生源も増えるので setup-python は使わない。
+      - name: カタログと version の整合をチェック
+        run: python3 scripts/check-plugin-versions.py
+
+      # main への push では比較対象の base が曖昧なため、PR のときだけ実行する
+      - name: version bump 漏れをチェック
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-version-bump.py "origin/${{ github.base_ref }}"
