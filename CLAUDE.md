@@ -9,9 +9,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 - `.claude-plugin/` - マーケットプレイスカタログ（`marketplace.json`）
 - `plugins/` - プラグイン配布用ディレクトリ
   - `workspace-setup/` - ワークスペース初期セットアップスキル
+- `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
 - `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ
+- `.github/workflows/plugins.yml` - プラグインカタログの整合チェック
 
 ## 開発コマンド
 
@@ -40,6 +42,21 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 
 **この 2 箇所を同じ値に揃える。** バージョンを据え置いたまま中身だけ変えると、インストール済み
 クライアントのキャッシュが更新を検知できず、旧い内容のスキルを使い続ける（#33 で実際に発生した）。
+
+刻み方は semver に従う。
+
+| 変更の性質 | 上げ方 | 例 |
+| --- | --- | --- |
+| 能力・手順の追加 | **minor** | 手順に新しい任意ステップを足す |
+| 不具合・記述の修正 | **patch** | 指示の誤りを直す・typo |
+| 既存の使い方が壊れる変更 | **major** | 引数や必須前提の変更 |
+
+この整合は CI（`.github/workflows/plugins.yml`）で機械的にチェックしている。ローカルでも確認できる:
+
+```bash
+python3 scripts/check-plugin-versions.py        # 2 箇所の version 一致・カタログ構造
+python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分に対して）
+```
 
 ## Git ワークフロー
 
