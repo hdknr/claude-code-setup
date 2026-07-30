@@ -230,3 +230,5 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   レンズを変えることに意味がある。
 - 層の関係と使い分けは設計ドキュメントを参照:
   <https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#five-layers>
+
+<!-- CI 検証用の一時変更。次のコミットで戻す -->
