@@ -2,5 +2,5 @@
   "name": "dev-loop",
   "version": "1.4.0",
   "author": { "name": "hdknr" },
-  "description": "1 Issue = 1 周のループ志向開発。検証（verify）を停止条件に、Issue を選択→計画→実装→実機検証→レビュー→デプロイで回すスキル"
+  "description": "1 Issue = 1 周のループ志向開発。受入基準を「不変条件 × それを破りうる経路」に展開し、証明できないものは未証明として申告する。Verifier とレビューは相互に代替できない別々の関門"
 }
