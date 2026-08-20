@@ -111,3 +111,6 @@ Claude Code が起動したら、簡単な質問をして動作を確認しま�
 ## 次のステップ
 
 Claude Code のインストールが完了しました。[Part 3: インストール後の環境準備](../part3-post-setup.md) に進んでください。
+
+!!! tip "リポジトリや実行環境が WSL（Linux）側にある場合"
+    `bash` スクリプトや Linux 前提のツールチェーンを使う場合は、Claude Desktop の Code タブから WSL セッションを開く方法があります。[補足: Claude Desktop から WSL の Linux ツールを使う](claude-desktop-wsl.md) を参照してください。
