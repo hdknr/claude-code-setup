@@ -378,6 +378,228 @@ for shell in shells()[:1]:
         check("dry-run: 予定を表示する", "cmux" in proc.stdout)
 
 
+# ---------------------------------------- [verifier-57] 追加ケース: パストラバーサル
+#
+# name は $repo_root/plugins/$name/skills/$name と $skills_dir/$name にそのまま連結される。
+# ".." やスラッシュを渡したときに、skills_dir の外を rm/mv/ln してしまわないかを見る。
+# 「victim」は skills_dir の外に置いた無関係のファイル/symlink。
+
+for shell in shells()[:1]:
+    tag_shell = Path(shell).name
+    for bad_name in ("../victim", "../../victim", "a/../../victim", "sub/evil"):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            script = make_repo(repo, ["cmux"])
+            home = Path(tmp) / "home"
+            skills = home / ".claude" / "skills"
+            skills.mkdir(parents=True)
+            victim = home / ".claude" / "victim"
+            victim.write_text(OLD, encoding="utf-8")
+            proc = run(script, home, shell=shell, skills_dir=skills, args=[bad_name])
+            label = f"{tag_shell}/traversal/{bad_name}"
+            check(f"{label}: 非 0 で終わる", proc.returncode != 0, f"rc={proc.returncode} out={proc.stdout!r}")
+            check(f"{label}: victim が無傷", victim.is_file() and not victim.is_symlink()
+                  and victim.read_text(encoding='utf-8') == OLD,
+                  f"victim exists={victim.exists()} is_symlink={victim.is_symlink()}")
+            check(f"{label}: skills 直下に想定外のエントリを作らない",
+                  not any(".." in p.name for p in skills.rglob("*")) if skills.exists() else True)
+
+    # スキル名にグロブ文字・スペース
+    for bad_name in ("*", "cmux ", " cmux"):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            script = make_repo(repo, ["cmux"])
+            home = Path(tmp) / "home"
+            skills = home / ".claude" / "skills"
+            proc = run(script, home, shell=shell, skills_dir=skills, args=[bad_name])
+            label = f"{tag_shell}/weird-name/{bad_name!r}"
+            check(f"{label}: 非 0 で終わる", proc.returncode != 0, f"rc={proc.returncode} out={proc.stdout!r}")
+
+# ---------------------------------------- [verifier-57] 追加ケース: $0 がスクリプト自身への symlink
+#
+# scripts/link-skills.sh を repo の外にある別名の symlink から起動する。
+# repo_root の解決は "$(dirname -- "$0")" を "cd -- ... && pwd -P" するだけなので、
+# symlink 自体を解決せず、symlink が置かれたディレクトリを repo_root の起点にしてしまわないか。
+
+for shell in shells()[:1]:
+    tag_shell = Path(shell).name
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        skills = home / ".claude" / "skills"
+        skills.mkdir(parents=True)
+        (skills / "cmux").mkdir()
+        (skills / "cmux" / "SKILL.md").write_text(OLD, encoding="utf-8")
+
+        elsewhere = Path(tmp) / "bin"
+        elsewhere.mkdir()
+        link = elsewhere / "link-skills.sh"
+        link.symlink_to(script)
+
+        assert_sandboxed(skills)
+        proc = subprocess.run(
+            [shell, str(link), "-d", str(skills)],
+            capture_output=True, text=True,
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home)},
+        )
+        label = f"{tag_shell}/symlinked-invocation"
+        check(f"{label}: 終了コード", True, f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r}")
+        check(f"{label}: 元データが保全されている", old_survives(skills))
+        if proc.returncode == 0:
+            check(f"{label}: symlink が解決する（rc=0 なら）", resolves_to_new(skills / "cmux"),
+                  f"out={proc.stdout!r}")
+
+# ---------------------------------------- [verifier-57] 追加ケース: PATH に date が無い
+
+for shell in shells()[:1]:
+    tag_shell = Path(shell).name
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        skills = home / ".claude" / "skills"
+        skills.mkdir(parents=True)
+        (skills / "cmux").mkdir()
+        (skills / "cmux" / "SKILL.md").write_text(OLD, encoding="utf-8")
+
+        nodate_bin = Path(tmp) / "nodate-bin"
+        nodate_bin.mkdir()
+        for tool in ("mkdir", "rm", "mv", "ln", "basename", "dirname", "cat", "printf", "sh", "test", "["):
+            src_bin = shutil.which(tool)
+            if src_bin:
+                try:
+                    (nodate_bin / tool).symlink_to(src_bin)
+                except OSError:
+                    pass
+
+        assert_sandboxed(skills)
+        proc = subprocess.run(
+            [shell, str(script), "-d", str(skills)],
+            capture_output=True, text=True,
+            env={"PATH": str(nodate_bin), "HOME": str(home)},
+        )
+        label = f"{tag_shell}/no-date-in-path"
+        check(f"{label}: 終了コード 0 (date 無しでも動く)", proc.returncode == 0,
+              f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r}")
+        check(f"{label}: 元データが保全されている", old_survives(skills))
+
+# ---------------------------------------- [verifier-57] 追加ケース: 引数順序 (name の後に -d)
+
+for shell in shells()[:1]:
+    tag_shell = Path(shell).name
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        intended = Path(tmp) / "intended-dir"
+        proc = run(script, home, shell=shell, args=["cmux", "-d", str(intended)])
+        default_target = home / ".claude" / "skills" / "cmux"
+        label = f"{tag_shell}/swapped-order"
+        # 「-d が読み取られずデフォルト置き場所に書かれてしまう」ことを主張として確認する。
+        check(f"{label}: 意図したディレクトリには何も出来ない", not intended.exists(),
+              f"intended.exists()={intended.exists()}")
+        check(f"{label}: 何らかの形でエラーが分かる (非 0 か、意図した場所に何もない)",
+              proc.returncode != 0 or not intended.exists(),
+              f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r} "
+              f"default_target_linked={resolves_to_new(default_target)}")
+
+# ---------------------------------------- [verifier-57] 追加ケース: 同じスキルを 2 回指定
+
+for shell in shells()[:1]:
+    tag_shell = Path(shell).name
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        skills = home / ".claude" / "skills"
+        proc = run(script, home, shell=shell, skills_dir=skills, args=["cmux", "cmux"])
+        label = f"{tag_shell}/duplicate-arg"
+        check(f"{label}: 終了コード 0", proc.returncode == 0, f"rc={proc.returncode} err={proc.stderr!r}")
+        check(f"{label}: symlink が解決する", resolves_to_new(skills / "cmux"))
+
+# ---------------------------------------- [verifier-57] 追加ケース: -d の値の変則パターン
+
+for shell in shells()[:1]:
+    tag_shell = Path(shell).name
+
+    # -d が空文字列
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        assert_sandboxed(Path(""))
+        proc = subprocess.run(
+            [shell, str(script), "-d", "", "cmux"],
+            capture_output=True, text=True,
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home)},
+        )
+        label = f"{tag_shell}/-d-empty"
+        check(f"{label}: 非 0 で終わる (空文字列を skills_dir として受理しない)",
+              proc.returncode != 0, f"rc={proc.returncode} out={proc.stdout!r} err={proc.stderr!r}")
+
+    # -d が末尾スラッシュ
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        skills = home / ".claude" / "skills"
+        proc = run(script, home, shell=shell, args=["-d", str(skills) + "/", "cmux"])
+        label = f"{tag_shell}/-d-trailing-slash"
+        check(f"{label}: 終了コード 0", proc.returncode == 0, f"rc={proc.returncode} err={proc.stderr!r}")
+        check(f"{label}: symlink が解決する", resolves_to_new(skills / "cmux"))
+
+    # -d が相対パス（スクリプトの cwd 基準になる）
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        cwd_dir = Path(tmp) / "cwd"
+        cwd_dir.mkdir()
+        skills = cwd_dir / "rel-skills"
+        assert_sandboxed(skills)
+        proc = subprocess.run(
+            [shell, str(script), "-d", "rel-skills", "cmux"],
+            cwd=str(cwd_dir), capture_output=True, text=True,
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home)},
+        )
+        label = f"{tag_shell}/-d-relative"
+        check(f"{label}: 終了コード 0", proc.returncode == 0, f"rc={proc.returncode} err={proc.stderr!r}")
+        check(f"{label}: cwd 基準で解決する", resolves_to_new(skills / "cmux"),
+              f"cwd_dir contents={[p.name for p in cwd_dir.iterdir()] if cwd_dir.exists() else 'missing'}")
+
+    # -d が既存の symlink（実ディレクトリへのリンク）
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        home = Path(tmp) / "home"
+        real = Path(tmp) / "real-skills"
+        real.mkdir()
+        link_dir = Path(tmp) / "link-skills-dir"
+        link_dir.symlink_to(real)
+        proc = run(script, home, shell=shell, skills_dir=link_dir, args=["cmux"])
+        label = f"{tag_shell}/-d-is-symlink-to-dir"
+        check(f"{label}: 終了コード 0", proc.returncode == 0, f"rc={proc.returncode} err={proc.stderr!r}")
+        check(f"{label}: 実体側に張られる", resolves_to_new(real / "cmux"),
+              f"real contents={[p.name for p in real.iterdir()] if real.exists() else 'missing'}")
+
+# ---------------------------------------- [verifier-57] 追加ケース: plugins/ に SKILL.md を
+# 持たないスペース入りディレクトリがあっても、引数省略の全件列挙が壊れない
+
+for shell in shells()[:1]:
+    tag_shell = Path(shell).name
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        script = make_repo(repo, ["cmux"])
+        weird = repo / "plugins" / "not a skill dir"
+        weird.mkdir(parents=True)
+        home = Path(tmp) / "home"
+        skills = home / ".claude" / "skills"
+        proc = run(script, home, shell=shell, skills_dir=skills)
+        label = f"{tag_shell}/plugins-has-weird-dir/omitted-args"
+        check(f"{label}: 終了コード 0", proc.returncode == 0, f"rc={proc.returncode} err={proc.stderr!r}")
+        check(f"{label}: cmux は張られる", resolves_to_new(skills / "cmux"))
+
 # -------------------------------------------------------------------------- 集計
 
 print(f"link-skills.sh のテスト: {checks} 件の判定")

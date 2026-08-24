@@ -53,6 +53,9 @@ repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd -P) || {
 }
 
 skills_dir=""
+# 「-d が渡されていない」と「-d に空文字列が渡された」を区別する。
+# 混同すると `-d "$SOMEDIR"` で SOMEDIR 未設定のとき、黙って $HOME/.claude/skills が対象になる。
+skills_dir_given=0
 dry_run=0
 
 while [ $# -gt 0 ]; do
@@ -63,6 +66,7 @@ while [ $# -gt 0 ]; do
 			exit 2
 		}
 		skills_dir=$2
+		skills_dir_given=1
 		shift 2
 		;;
 	-n)
@@ -88,7 +92,13 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-if [ -z "$skills_dir" ]; then
+if [ "$skills_dir_given" -eq 1 ]; then
+	# 空を既定値へのフォールバックにしない（実環境が対象になってしまう）
+	if [ -z "$skills_dir" ]; then
+		warn "中止: -d に空の値が渡されました。置き場所を明示してください。"
+		exit 2
+	fi
+else
 	# HOME が未設定・空なら置き場所を決められない
 	if [ -z "${HOME:-}" ]; then
 		warn "中止: HOME が設定されていません。-d で置き場所を指定してください。"
