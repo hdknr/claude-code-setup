@@ -1,11 +1,17 @@
 ---
 name: cmux
-description: "cmux ウィンドウの Issue/PR 切替: /cmux [-n] [-w|-r] <number>"
+description: "cmux ウィンドウで GitHub Issue/PR を切り替える。引数: [-n] [-w|-r] <number>"
 ---
 
 # cmux スキル
 
 cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビューを行うスキル。
+
+**呼び出し形**: プラグインとして入れた場合は `/cmux:cmux`（プラグイン提供のスキルは常に
+プラグイン名で名前空間化される）。マニフェスト（`.claude-plugin/`）を持たない素のスキルとして
+skills ディレクトリに置いた場合は `/cmux`（`~/.claude/skills/cmux/` なら全プロジェクト、
+`<プロジェクト>/.claude/skills/cmux/` ならそのプロジェクトだけ）。
+以下の本文は短い方の `/cmux` で表記する。
 
 ## `-n` フラグ — 新しいターミナルタブで開く
 

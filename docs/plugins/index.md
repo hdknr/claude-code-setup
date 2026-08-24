@@ -15,11 +15,41 @@
 | プラグイン | 提供スキル | 概要 |
 |---|---|---|
 | [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ |
-| [`cmux`](#cmux) | `/cmux` | cmux ウィンドウで GitHub Issue/PR を操作 |
-| [`dev-loop`](#dev-loop) | `/dev-loop` | 1 Issue = 1 周のループ志向開発 |
+| [`cmux`](#cmux) | `/cmux:cmux` | cmux ウィンドウで GitHub Issue/PR を操作 |
+| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | 1 Issue = 1 周のループ志向開発 |
+
+!!! warning "呼び出しは `プラグイン名:スキル名`"
+    プラグインが提供するスキルは、名前の衝突を防ぐため**常にプラグイン名で名前空間化されます**。
+    たとえば `cmux` プラグインのスキルは `/cmux` ではなく **`/cmux:cmux`** で呼び出します
+    （`commands/` に置いても同じ名前空間に載るため、bare な `/cmux` をプラグインで提供する方法は
+    ありません）。名前空間の付かない短い名前で呼びたい場合は
+    [bare な名前で呼びたい場合](#bare-invocation) を参照してください。
 
 !!! info "プラグインの入れ方・使い方の全体像"
     インストール手順と日常利用の流れは [Part 3: インストール後の環境準備](../part3-post-setup.md) にもまとまっています。このページは各プラグインの**詳細リファレンス**です。
+
+---
+
+## インストールのスコープ
+
+`/plugin install` を実行するとスコープの選択画面が出ます。
+
+| スコープ | 意味 |
+|---|---|
+| **User** | 自分の**全プロジェクト**で使う |
+| **Project** | このリポジトリの**全メンバー**で使う（`.claude/settings.json` に入る） |
+| **Local** | このリポジトリで**自分だけ**が使う（共有しない） |
+
+**全プロジェクトで使いたい場合は User を選びます。** シェルから非対話で入れる場合は
+`--scope` を渡します。
+
+```bash
+claude plugin marketplace add hdknr/claude-code-setup
+claude plugin install cmux@claude-code-setup --scope user
+```
+
+`claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
+セッションで `/reload-plugins` を実行したときになります。
 
 ---
 
@@ -65,15 +95,15 @@
 
 ### 提供スキル
 
-#### `/cmux [-n] [-w|-r] <number>`
+#### `/cmux:cmux [-n] [-w|-r] <number>`
 
 cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビューを行います。
 
 | 呼び出し | モード | 動作 |
 |---|---|---|
-| `/cmux <number>` | Issue | Issue の URL をブラウザペインに表示 |
-| `/cmux -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
-| `/cmux -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
+| `/cmux:cmux <number>` | Issue | Issue の URL をブラウザペインに表示 |
+| `/cmux:cmux -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
+| `/cmux:cmux -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
 
 `-n` フラグを付けると、処理の最初に新しいターミナルタブ（サーフェス）を作成し、そこで実行します。
 
@@ -81,10 +111,10 @@ cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビ�
 
 ```
 # Issue 番号 12 をブラウザペインに表示
-/cmux 12
+/cmux:cmux 12
 
 # PR 番号 34 を worktree でチェックアウトしてレビュー
-/cmux -r 34
+/cmux:cmux -r 34
 ```
 
 ### 前提
@@ -114,7 +144,7 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 
 ### 提供スキル
 
-#### `/dev-loop <issue-number>`
+#### `/dev-loop:dev-loop <issue-number>`
 
 対象 Issue を、以下の標準サイクルで 1 周させます。**5↔4 は verify が通るまで繰り返します。**
 
@@ -148,7 +178,7 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 
 ```
 # Issue 番号 42 を 1 周させる
-/dev-loop 42
+/dev-loop:dev-loop 42
 ```
 
 ### 前提
@@ -171,3 +201,89 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
   宣言し PR コメントに残す、のいずれかを明示的に選びます。
 - （任意）`/loop`・`/schedule`・`/run` などの汎用スキルや、フェーズ分割型のプランニング
   プラグイン。無い環境では手動の待機・確認に読み替えます。
+
+---
+
+## bare な名前で呼びたい場合 { #bare-invocation }
+
+プラグイン経由の呼び出しは必ず `プラグイン名:スキル名` になります。`/cmux` のように
+名前空間の付かない名前で呼びたい場合は、**マニフェスト（`.claude-plugin/`）を持たない素のスキル**
+として skills ディレクトリに置きます。置き場所で有効範囲が変わります
+（[スキル活用ガイド](../usage/skills-guide.md) の置き場所の表と同じ区別です）。
+
+| 置き場所 | 有効範囲 |
+|---|---|
+| `~/.claude/skills/<name>/` | すべてのプロジェクトで自動的に読み込まれる |
+| `<プロジェクト>/.claude/skills/<name>/` | そのプロジェクトだけ |
+
+以下は全プロジェクトで使う場合の手順です。
+
+このリポジトリの `plugins/<name>/skills/<name>/` は `SKILL.md` だけで `.claude-plugin/` を
+持たないので、そのまま symlink できます。
+
+まずリポジトリを clone します。**すでに別の場所に clone してあるなら clone は省略し、
+次のブロックの `repo=` をその場所に書き換えてください。**
+
+```bash
+git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
+```
+
+```bash
+# 自分の clone 先に合わせて書き換える
+repo=$HOME/src/claude-code-setup
+
+for name in cmux dev-loop; do
+  src=$repo/plugins/$name/skills/$name
+  target=$HOME/.claude/skills/$name
+
+  if [ ! -f "$src/SKILL.md" ]; then
+    # clone が無いまま進むと、動いているスキルを退避したうえで壊れた symlink を張ってしまう
+    echo "中止: $src が見つかりません。repo= を clone 先に合わせてください。" >&2
+    continue
+  fi
+
+  mkdir -p "$HOME/.claude/skills"
+
+  # symlink 以外のものが同名で置かれていたら、日時付きの名前で退避する
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    mv "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
+  fi
+
+  # 退避できていなければ、symlink を張らずに中止する
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    echo "中止: $target を退避できませんでした。手で移動してから再実行してください。" >&2
+  else
+    ln -sfn "$src" "$target"
+  fi
+done
+```
+
+!!! note "ガードの意図"
+    素朴に `ln -sfn` するだけだと 2 通りの壊れ方をします。
+
+    1. **clone が無い／別の場所にある場合** — 動いているスキルを退避したうえで**壊れた symlink**を
+       張り、**何も出力せずに**終わります（`/<name>` が消えます）。
+    2. **`~/.claude/skills/<name>` に symlink 以外のものがある場合**（個人スキルとして直置きした実
+       ディレクトリなど）— `ln -sfn` は**エラーを出さずに** `<name>/<name>` を作り、`/<name>` は
+       **古いスキルを指したまま**になります（`-f` はディレクトリを unlink できないため）。
+
+    上のブロックは**先に clone の有無を確かめ**、退避してから張り、**退避できなければ張らずに
+    中止**します。中止メッセージは stderr に出ます。
+
+    **検証済みの範囲**: macOS の bash / zsh / sh、宛先が「無い／実ディレクトリ／空ディレクトリ／
+    通常ファイル／既存 symlink／壊れた symlink／`.bak` が既にある」の各状態、clone が無い場合、
+    `$HOME` に空白や日本語を含む場合、2 回連続実行。`.bak` の名前が同一秒内に衝突した場合は
+    入れ子になりますが、データは失われません。
+
+次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は clone 先で
+`git pull` するだけでよく、symlink の張り直しは不要です。
+
+!!! note "プラグインと併用すると両方並びます"
+    プラグインを入れたまま symlink も張ると、`/cmux` と `/cmux:cmux` の両方がスキル一覧に
+    出ます（中身は同じなのでどちらでも動きます）。片方だけにしたい場合は、プラグインを
+    入れずに symlink だけにしてください。
+
+!!! warning "検証環境は macOS のみです"
+    macOS の bash / zsh / sh で確認しています。**Linux は未検証**です（同じ手順で動く見込みですが、
+    シェルの実装差で挙動が変わりうる箇所があります）。**Windows も未検証**で、symlink を使わない
+    場合はディレクトリをコピーし、`git pull` のたびにコピーし直してください。
