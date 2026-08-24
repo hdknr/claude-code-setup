@@ -25,7 +25,12 @@
     ありません）。名前空間の付かない短い名前で呼びたい場合は
     [bare な名前で呼びたい場合](#bare-invocation) を参照してください。
 
-### インストールのスコープ
+!!! info "プラグインの入れ方・使い方の全体像"
+    インストール手順と日常利用の流れは [Part 3: インストール後の環境準備](../part3-post-setup.md) にもまとまっています。このページは各プラグインの**詳細リファレンス**です。
+
+---
+
+## インストールのスコープ
 
 `/plugin install` を実行するとスコープの選択画面が出ます。
 
@@ -45,9 +50,6 @@ claude plugin install cmux@claude-code-setup --scope user
 
 `claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
 セッションで `/reload-plugins` を実行したときになります。
-
-!!! info "プラグインの入れ方・使い方の全体像"
-    インストール手順と日常利用の流れは [Part 3: インストール後の環境準備](../part3-post-setup.md) にもまとまっています。このページは各プラグインの**詳細リファレンス**です。
 
 ---
 
@@ -206,8 +208,15 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 
 プラグイン経由の呼び出しは必ず `プラグイン名:スキル名` になります。`/cmux` のように
 名前空間の付かない名前で呼びたい場合は、**マニフェスト（`.claude-plugin/`）を持たない素のスキル**
-として `~/.claude/skills/` に置きます。この配置だけが名前空間の付かない呼び出しになり、
-かつ全プロジェクトで自動的に読み込まれます。
+として skills ディレクトリに置きます。置き場所で有効範囲が変わります
+（[スキル活用ガイド](../usage/skills-guide.md) の置き場所の表と同じ区別です）。
+
+| 置き場所 | 有効範囲 |
+|---|---|
+| `~/.claude/skills/<name>/` | すべてのプロジェクトで自動的に読み込まれる |
+| `<プロジェクト>/.claude/skills/<name>/` | そのプロジェクトだけ |
+
+以下は全プロジェクトで使う場合の手順です。
 
 このリポジトリの `plugins/<name>/skills/<name>/` は `SKILL.md` だけで `.claude-plugin/` を
 持たないので、そのまま symlink できます。
@@ -215,12 +224,24 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
 
+mkdir -p ~/.claude/skills
+
 # /cmux で呼べるようにする
-ln -s ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
+ln -sfn ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
 
 # /dev-loop で呼べるようにする
-ln -s ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
+ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
 ```
+
+!!! warning "同名の実ディレクトリが既にある場合は先に退避する"
+    `~/.claude/skills/cmux/` を**実ディレクトリとして**すでに持っている場合（個人スキルとして
+    直置きしていた場合）は、先に退避してください。実ディレクトリが残っていると `ln -sfn` は
+    **エラーを出さずに** `~/.claude/skills/cmux/cmux` を作ってしまい、`/cmux` は増えません
+    （`-f` はディレクトリを unlink できないため）。
+
+    ```bash
+    mv ~/.claude/skills/cmux ~/.claude/skills/cmux.bak
+    ```
 
 次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は
 `git -C ~/src/claude-code-setup pull` だけでよく、symlink の張り直しは不要です。

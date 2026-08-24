@@ -102,6 +102,9 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 
 # cmux 連携用（cmux ターミナルを使う場合）
 /plugin install cmux@claude-code-setup
+
+# ループ志向開発用（開発者向け・GitHub Issue で開発を回す場合）
+/plugin install dev-loop@claude-code-setup
 ```
 
 インストール時に**スコープ**を選ぶ画面が出ます。

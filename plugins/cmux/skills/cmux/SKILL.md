@@ -1,6 +1,6 @@
 ---
 name: cmux
-description: "cmux ウィンドウの Issue/PR 切替: [-n] [-w|-r] <number>"
+description: "cmux ウィンドウで GitHub Issue/PR を切り替える。引数: [-n] [-w|-r] <number>"
 ---
 
 # cmux スキル

@@ -104,8 +104,13 @@ claude plugin install dev-loop@claude-code-setup --scope user
 
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
-ln -s ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
+
+mkdir -p ~/.claude/skills
+ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
 ```
+
+既に `~/.claude/skills/dev-loop/` を**実ディレクトリとして**持っている場合は、先に退避する
+（実ディレクトリが残っていると `ln -sfn` はエラーを出さずに入れ子を作り、`/dev-loop` は増えない）。
 
 プラグインと併用すると `/dev-loop` と `/dev-loop:dev-loop` が両方並ぶ（中身は同じ）。
 macOS / Linux 向けの手順。
