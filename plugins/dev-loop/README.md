@@ -100,24 +100,47 @@ claude plugin install dev-loop@claude-code-setup --scope user
 ### bare `/dev-loop` で使う
 
 `plugins/dev-loop/skills/dev-loop/` は `SKILL.md` だけで `.claude-plugin/` を持たないので、
-素のスキルとして `~/.claude/skills/` に symlink すれば名前空間の付かない `/dev-loop` になる。
+素のスキルとして skills ディレクトリに置けば名前空間の付かない `/dev-loop` になる。
+置き場所で有効範囲が変わる。
+
+| 置き場所 | 有効範囲 |
+|---|---|
+| `~/.claude/skills/dev-loop/` | すべてのプロジェクト |
+| `<プロジェクト>/.claude/skills/dev-loop/` | そのプロジェクトだけ |
+
+以下は全プロジェクトで使う場合の手順。
 
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
-
-mkdir -p ~/.claude/skills
-
-# 同名の実ディレクトリが既にあるなら先に退避する（symlink なら不要）
-if [ -d ~/.claude/skills/dev-loop ] && [ ! -L ~/.claude/skills/dev-loop ]; then
-  mv ~/.claude/skills/dev-loop ~/.claude/skills/dev-loop.bak
-fi
-
-ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
 ```
 
-ガードが要るのは、`~/.claude/skills/dev-loop/` が**実ディレクトリ**だと `ln -sfn` が
-エラーを出さずに入れ子（`dev-loop/dev-loop`）を作ってしまうため（`-f` はディレクトリを
-unlink できない）。上のブロックは先に `.bak` へ退避するので、そのままコピペできる。
+すでに clone してあるなら `git -C ~/src/claude-code-setup pull` でよい。
+
+```bash
+mkdir -p ~/.claude/skills
+target=~/.claude/skills/dev-loop
+
+# symlink 以外のものが同名で置かれていたら、日時付きの名前で退避する
+if [ -e "$target" ] && [ ! -L "$target" ]; then
+  mv "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
+fi
+
+# 退避できていなければ、symlink を張らずに中止する
+if [ -e "$target" ] && [ ! -L "$target" ]; then
+  echo "中止: $target を退避できませんでした。手で移動してから再実行してください。"
+else
+  ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop "$target"
+fi
+```
+
+> **ガードの意図。** `~/.claude/skills/dev-loop` に **symlink 以外のもの**（個人 skill として
+> 直置きした実ディレクトリなど）が残っていると、`ln -sfn` は**エラーを出さずに**
+> `~/.claude/skills/dev-loop/dev-loop` を作ってしまい、`/dev-loop` は**古いスキルを指したまま**になる
+> （`-f` はディレクトリを unlink できない）。上のブロックはそれを `.bak.<日時>` へ退避し、
+> **退避できなかったときは symlink を張らずに中止する**。
+>
+> macOS の bash / zsh で、宛先が「無い／実ディレクトリ／通常ファイル／既存 symlink／壊れた
+> symlink／`.bak` が既にある」の各状態と、2 回連続実行について動作を確認している。
 
 プラグインと併用すると `/dev-loop` と `/dev-loop:dev-loop` が両方並ぶ（中身は同じ）。
 macOS / Linux 向けの手順。

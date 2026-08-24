@@ -223,29 +223,40 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
+```
 
+すでに clone してあるなら `git -C ~/src/claude-code-setup pull` でよいです。
+
+```bash
 mkdir -p ~/.claude/skills
 
-# 同名の実ディレクトリが既にあるなら先に退避する（symlink なら不要）
 for name in cmux dev-loop; do
-  if [ -d ~/.claude/skills/$name ] && [ ! -L ~/.claude/skills/$name ]; then
-    mv ~/.claude/skills/$name ~/.claude/skills/$name.bak
+  target=~/.claude/skills/$name
+
+  # symlink 以外のものが同名で置かれていたら、日時付きの名前で退避する
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    mv "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
+  fi
+
+  # 退避できていなければ、symlink を張らずに中止する
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    echo "中止: $target を退避できませんでした。手で移動してから再実行してください。"
+  else
+    ln -sfn ~/src/claude-code-setup/plugins/$name/skills/$name "$target"
   fi
 done
-
-# /cmux で呼べるようにする
-ln -sfn ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
-
-# /dev-loop で呼べるようにする
-ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
 ```
 
 !!! note "退避のガードが入っている理由"
-    `~/.claude/skills/cmux/` を**実ディレクトリとして**すでに持っている場合（個人スキルとして
-    直置きしていた場合）、`ln -sfn` は**エラーを出さずに** `~/.claude/skills/cmux/cmux` を
-    作ってしまい、`/cmux` は増えません（`-f` はディレクトリを unlink できないため）。
-    上のブロックはその状態を先に `.bak` へ退避するので、置き場所がどの状態でもそのまま
-    コピー＆ペーストできます。
+    `~/.claude/skills/<name>` に **symlink 以外のもの**（個人スキルとして直置きした実
+    ディレクトリなど）が残っていると、`ln -sfn` は**エラーを出さずに**
+    `~/.claude/skills/<name>/<name>` を作ってしまい、`/<name>` は**古いスキルを指したまま**に
+    なります（`-f` はディレクトリを unlink できないため）。上のブロックはそれを
+    `.bak.<日時>` へ退避し、**退避できなかったときは symlink を張らずに中止します**。
+    `cmux` と `dev-loop` の両方に同じガードがかかります。
+
+    macOS の bash / zsh で、宛先が「無い／実ディレクトリ／通常ファイル／既存 symlink／
+    壊れた symlink／`.bak` が既にある」の各状態と、2 回連続実行について動作を確認しています。
 
 次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は
 `git -C ~/src/claude-code-setup pull` だけでよく、symlink の張り直しは不要です。
@@ -255,5 +266,6 @@ ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skill
     出ます（中身は同じなのでどちらでも動きます）。片方だけにしたい場合は、プラグインを
     入れずに symlink だけにしてください。
 
-    macOS / Linux 向けの手順です。Windows で symlink を使わない場合はディレクトリをコピーし、
-    `git pull` のたびにコピーし直してください。
+!!! warning "macOS / Linux 向けの手順です"
+    Windows で symlink を使わない場合はディレクトリをコピーし、`git pull` のたびにコピーし
+    直してください。**Windows での動作は未検証**です（検証環境が macOS のみのため）。

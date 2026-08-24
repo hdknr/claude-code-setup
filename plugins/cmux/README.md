@@ -80,22 +80,35 @@ claude plugin install cmux@claude-code-setup --scope user
 
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
-
-mkdir -p ~/.claude/skills
-
-# 同名の実ディレクトリが既にあるなら先に退避する（symlink なら不要）
-if [ -d ~/.claude/skills/cmux ] && [ ! -L ~/.claude/skills/cmux ]; then
-  mv ~/.claude/skills/cmux ~/.claude/skills/cmux.bak
-fi
-
-ln -sfn ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
 ```
 
-> **なぜ退避のガードが要るのか。** `~/.claude/skills/cmux/` を**実ディレクトリとして**すでに
-> 持っている場合（個人 skill として直置きしていた場合）、`ln -sfn` は**エラーを出さずに**
-> `~/.claude/skills/cmux/cmux` を作ってしまい、`/cmux` は増えない（`-f` はディレクトリを
-> unlink できない）。上のブロックはその状態を先に `.bak` へ退避するので、宛先がどの状態でも
-> そのままコピペできる。
+すでに clone してあるなら `git -C ~/src/claude-code-setup pull` でよい。
+
+```bash
+mkdir -p ~/.claude/skills
+target=~/.claude/skills/cmux
+
+# symlink 以外のものが同名で置かれていたら、日時付きの名前で退避する
+if [ -e "$target" ] && [ ! -L "$target" ]; then
+  mv "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
+fi
+
+# 退避できていなければ、symlink を張らずに中止する
+if [ -e "$target" ] && [ ! -L "$target" ]; then
+  echo "中止: $target を退避できませんでした。手で移動してから再実行してください。"
+else
+  ln -sfn ~/src/claude-code-setup/plugins/cmux/skills/cmux "$target"
+fi
+```
+
+> **ガードの意図。** `~/.claude/skills/cmux` に **symlink 以外のもの**（個人 skill として
+> 直置きした実ディレクトリなど）が残っていると、`ln -sfn` は**エラーを出さずに**
+> `~/.claude/skills/cmux/cmux` を作ってしまい、`/cmux` は**古いスキルを指したまま**になる
+> （`-f` はディレクトリを unlink できない）。上のブロックはそれを `.bak.<日時>` へ退避し、
+> **退避できなかったときは symlink を張らずに中止する**。
+>
+> macOS の bash / zsh で、宛先が「無い／実ディレクトリ／通常ファイル／既存 symlink／壊れた
+> symlink／`.bak` が既にある」の各状態と、2 回連続実行について動作を確認している。
 
 次のセッションから、どのプロジェクトでも `/cmux` で呼べる。更新は
 `git -C ~/src/claude-code-setup pull` だけでよい（symlink なので張り直しは不要）。

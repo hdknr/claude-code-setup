@@ -22,11 +22,11 @@ GitHub Issue 1 件を、**検証が通ることを停止条件**として 1 周�
 アンチパターン）は「dev-loop の設計」を参照:
 <https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/>
 
-引数: `/dev-loop <issue-number>`（省略時は現在の作業対象 Issue を尋ねる）。
-
 **呼び出し形**: プラグインとして入れた場合は `/dev-loop:dev-loop`（プラグイン提供のスキルは常に
 プラグイン名で名前空間化される）。`~/.claude/skills/dev-loop/` に素のスキルとして置いた場合は
 `/dev-loop`。以下の本文は短い方の `/dev-loop` で表記する。
+
+引数: `<issue-number>` を 1 件（省略時は現在の作業対象 Issue を尋ねる）。
 
 ## はじめに — プロジェクト固有設定の発見
 

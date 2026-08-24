@@ -9,6 +9,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 - `.claude-plugin/` - マーケットプレイスカタログ（`marketplace.json`）
 - `plugins/` - プラグイン配布用ディレクトリ
   - `workspace-setup/` - ワークスペース初期セットアップスキル
+  - `cmux/` - cmux ウィンドウで GitHub Issue/PR を扱うスキル
+  - `dev-loop/` - 1 Issue = 1 周のループ志向開発スキル
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
