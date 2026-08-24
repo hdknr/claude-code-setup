@@ -14,8 +14,9 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 >
 > プラグインが提供するスキルは、名前の衝突を防ぐため**常にプラグイン名で名前空間化される**。
 > `commands/` に置いても同じ名前空間に載るので、bare な `/dev-loop` をプラグインで提供する
-> 方法は無い。`/dev-loop` で呼びたい場合は、`~/.claude/skills/dev-loop/` へ
-> **マニフェストを持たない素のスキル**として置く（下記「インストール」参照）。
+> 方法は無い。`/dev-loop` で呼びたい場合は、**マニフェストを持たない素のスキル**として
+> skills ディレクトリへ置く（全プロジェクトなら `~/.claude/skills/dev-loop/`、そのプロジェクト
+> だけなら `<プロジェクト>/.claude/skills/dev-loop/`）。手順は下記「インストール」を参照。
 > 以下の本文では短い方の `/dev-loop` で表記する。
 
 対象 Issue を、以下の標準サイクルで 1 周させる。5↔4 は verify が通るまで繰り返す。
@@ -108,57 +109,30 @@ claude plugin install dev-loop@claude-code-setup --scope user
 | `~/.claude/skills/dev-loop/` | すべてのプロジェクト |
 | `<プロジェクト>/.claude/skills/dev-loop/` | そのプロジェクトだけ |
 
-以下は全プロジェクトで使う場合の手順。
-
-まずリポジトリを clone する。**すでに別の場所に clone してあるなら clone は省略し、
-次のブロックの `repo=` をその場所に書き換える。**
+以下は全プロジェクトで使う場合の手順。リポジトリを clone して、付属のスクリプトを実行する。
 
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
+~/src/claude-code-setup/scripts/link-skills.sh dev-loop
 ```
 
-```bash
-# 自分の clone 先に合わせて書き換える
-repo=$HOME/src/claude-code-setup
+スキル名を省略すると（`scripts/link-skills.sh`）、このリポジトリが配布する素のスキルを
+すべて張る。`-d <dir>` で置き場所を変えられ（既定は `~/.claude/skills`）、`-n` を付けると
+何をするかだけ表示して変更しない。
 
-src=$repo/plugins/dev-loop/skills/dev-loop
-target=$HOME/.claude/skills/dev-loop
-
-if [ ! -f "$src/SKILL.md" ]; then
-  # clone が無いまま進むと、動いているスキルを退避したうえで壊れた symlink を張ってしまう
-  echo "中止: $src が見つかりません。repo= を clone 先に合わせてください。" >&2
-else
-  mkdir -p "$HOME/.claude/skills"
-
-  # symlink 以外のものが同名で置かれていたら、日時付きの名前で退避する
-  if [ -e "$target" ] && [ ! -L "$target" ]; then
-    mv "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
-  fi
-
-  # 退避できていなければ、symlink を張らずに中止する
-  if [ -e "$target" ] && [ ! -L "$target" ]; then
-    echo "中止: $target を退避できませんでした。手で移動してから再実行してください。" >&2
-  else
-    ln -sfn "$src" "$target"
-  fi
-fi
-```
-
-> **ガードの意図。** 素朴に `ln -sfn` するだけだと 2 通りの壊れ方をする。(1) **clone が無い／別の
-> 場所にある場合**、動いているスキルを退避したうえで**壊れた symlink** を張り、**何も出力せずに**
-> 終わる（`/dev-loop` が消える）。(2) `~/.claude/skills/dev-loop` に **symlink 以外のもの**（個人 skill と
-> して直置きした実ディレクトリなど）があると、`ln -sfn` は**エラーを出さずに** `dev-loop/dev-loop` を
-> 作り、`/dev-loop` は**古いスキルを指したまま**になる（`-f` はディレクトリを unlink できない）。
-> 上のブロックは**先に clone の有無を確かめ**、退避してから張り、**退避できなければ張らずに
-> 中止する**（メッセージは stderr）。
+> **なぜスクリプトなのか。** 素朴に `ln -s` を並べるだけだと、宛先や clone の状態によって
+> **黙って壊れる**（動いているスキルを退避したうえで壊れた symlink を張り、終了コード 0 で
+> 何も出力しない、など）。手順を文書に手で複製していたところ 4 ラウンド連続でこの類のバグが
+> 出たので、1 箇所に集めてテスト（`scripts/test-link-skills.py`）を当てている。
 >
-> **検証済みの範囲**: macOS の bash / zsh / sh、宛先が「無い／実ディレクトリ／空ディレクトリ／
-> 通常ファイル／既存 symlink／壊れた symlink／`.bak` が既にある」の各状態、clone が無い場合、
-> `$HOME` に空白や日本語を含む場合、2 回連続実行。`.bak` の名前が同一秒内に衝突した場合は
-> 入れ子になるが、データは失われない。
+> スクリプトは**リポジトリの位置を自分で解決する**ので clone 先を入力する必要がなく、
+> 同名の実ディレクトリがあれば `.bak.<日時>` へ退避し、**張った後に解決を確認して、
+> できていなければ非 0 で終わる**。
 
 - **プラグインと併用すると `/dev-loop` と `/dev-loop:dev-loop` が両方並ぶ。** 中身は同じなので
   どちらでも動くが、スキル一覧が二重になる。片方だけにしたいなら、プラグインを入れずに
   symlink だけにする。
-- **検証環境は macOS のみ。** Linux も同じ手順で動く見込みだが未検証。Windows も未検証で、
-  symlink を使わない場合はディレクトリをコピーする（`git pull` のたびにコピーし直す）。
+- **スクリプトは sh / bash / zsh / dash でテストしている**（`scripts/test-link-skills.py`）。
+  テストは macOS で回しているが、POSIX sh で書いてあり dash も含めて通るので Linux でも
+  同じ挙動になる見込み。**Windows は未検証**で、symlink を使わない場合はディレクトリを
+  コピーする（`git pull` のたびにコピーし直す）。
