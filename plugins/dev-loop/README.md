@@ -106,11 +106,18 @@ claude plugin install dev-loop@claude-code-setup --scope user
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
 
 mkdir -p ~/.claude/skills
+
+# 同名の実ディレクトリが既にあるなら先に退避する（symlink なら不要）
+if [ -d ~/.claude/skills/dev-loop ] && [ ! -L ~/.claude/skills/dev-loop ]; then
+  mv ~/.claude/skills/dev-loop ~/.claude/skills/dev-loop.bak
+fi
+
 ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
 ```
 
-既に `~/.claude/skills/dev-loop/` を**実ディレクトリとして**持っている場合は、先に退避する
-（実ディレクトリが残っていると `ln -sfn` はエラーを出さずに入れ子を作り、`/dev-loop` は増えない）。
+ガードが要るのは、`~/.claude/skills/dev-loop/` が**実ディレクトリ**だと `ln -sfn` が
+エラーを出さずに入れ子（`dev-loop/dev-loop`）を作ってしまうため（`-f` はディレクトリを
+unlink できない）。上のブロックは先に `.bak` へ退避するので、そのままコピペできる。
 
 プラグインと併用すると `/dev-loop` と `/dev-loop:dev-loop` が両方並ぶ（中身は同じ）。
 macOS / Linux 向けの手順。

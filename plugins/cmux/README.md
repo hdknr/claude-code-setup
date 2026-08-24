@@ -82,17 +82,20 @@ claude plugin install cmux@claude-code-setup --scope user
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
 
 mkdir -p ~/.claude/skills
+
+# 同名の実ディレクトリが既にあるなら先に退避する（symlink なら不要）
+if [ -d ~/.claude/skills/cmux ] && [ ! -L ~/.claude/skills/cmux ]; then
+  mv ~/.claude/skills/cmux ~/.claude/skills/cmux.bak
+fi
+
 ln -sfn ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
 ```
 
-> **既に `~/.claude/skills/cmux/` を実ディレクトリとして持っている場合は、先に退避する。**
-> 個人 skill として直置きしていた場合がこれに当たる。実ディレクトリが残っていると
-> `ln -sfn` は**エラーを出さずに** `~/.claude/skills/cmux/cmux` を作ってしまい、`/cmux` は
-> 増えない（`-f` はディレクトリを unlink できない）。
->
-> ```bash
-> mv ~/.claude/skills/cmux ~/.claude/skills/cmux.bak
-> ```
+> **なぜ退避のガードが要るのか。** `~/.claude/skills/cmux/` を**実ディレクトリとして**すでに
+> 持っている場合（個人 skill として直置きしていた場合）、`ln -sfn` は**エラーを出さずに**
+> `~/.claude/skills/cmux/cmux` を作ってしまい、`/cmux` は増えない（`-f` はディレクトリを
+> unlink できない）。上のブロックはその状態を先に `.bak` へ退避するので、宛先がどの状態でも
+> そのままコピペできる。
 
 次のセッションから、どのプロジェクトでも `/cmux` で呼べる。更新は
 `git -C ~/src/claude-code-setup pull` だけでよい（symlink なので張り直しは不要）。

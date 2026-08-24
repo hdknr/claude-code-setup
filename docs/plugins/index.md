@@ -226,6 +226,13 @@ git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
 
 mkdir -p ~/.claude/skills
 
+# 同名の実ディレクトリが既にあるなら先に退避する（symlink なら不要）
+for name in cmux dev-loop; do
+  if [ -d ~/.claude/skills/$name ] && [ ! -L ~/.claude/skills/$name ]; then
+    mv ~/.claude/skills/$name ~/.claude/skills/$name.bak
+  fi
+done
+
 # /cmux で呼べるようにする
 ln -sfn ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
 
@@ -233,15 +240,12 @@ ln -sfn ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
 ln -sfn ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
 ```
 
-!!! warning "同名の実ディレクトリが既にある場合は先に退避する"
+!!! note "退避のガードが入っている理由"
     `~/.claude/skills/cmux/` を**実ディレクトリとして**すでに持っている場合（個人スキルとして
-    直置きしていた場合）は、先に退避してください。実ディレクトリが残っていると `ln -sfn` は
-    **エラーを出さずに** `~/.claude/skills/cmux/cmux` を作ってしまい、`/cmux` は増えません
-    （`-f` はディレクトリを unlink できないため）。
-
-    ```bash
-    mv ~/.claude/skills/cmux ~/.claude/skills/cmux.bak
-    ```
+    直置きしていた場合）、`ln -sfn` は**エラーを出さずに** `~/.claude/skills/cmux/cmux` を
+    作ってしまい、`/cmux` は増えません（`-f` はディレクトリを unlink できないため）。
+    上のブロックはその状態を先に `.bak` へ退避するので、置き場所がどの状態でもそのまま
+    コピー＆ペーストできます。
 
 次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は
 `git -C ~/src/claude-code-setup pull` だけでよく、symlink の張り直しは不要です。
