@@ -15,8 +15,36 @@
 | プラグイン | 提供スキル | 概要 |
 |---|---|---|
 | [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ |
-| [`cmux`](#cmux) | `/cmux` | cmux ウィンドウで GitHub Issue/PR を操作 |
-| [`dev-loop`](#dev-loop) | `/dev-loop` | 1 Issue = 1 周のループ志向開発 |
+| [`cmux`](#cmux) | `/cmux:cmux` | cmux ウィンドウで GitHub Issue/PR を操作 |
+| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | 1 Issue = 1 周のループ志向開発 |
+
+!!! warning "呼び出しは `プラグイン名:スキル名`"
+    プラグインが提供するスキルは、名前の衝突を防ぐため**常にプラグイン名で名前空間化されます**。
+    たとえば `cmux` プラグインのスキルは `/cmux` ではなく **`/cmux:cmux`** で呼び出します
+    （`commands/` に置いても同じ名前空間に載るため、bare な `/cmux` をプラグインで提供する方法は
+    ありません）。名前空間の付かない短い名前で呼びたい場合は
+    [bare な名前で呼びたい場合](#bare-invocation) を参照してください。
+
+### インストールのスコープ
+
+`/plugin install` を実行するとスコープの選択画面が出ます。
+
+| スコープ | 意味 |
+|---|---|
+| **User** | 自分の**全プロジェクト**で使う |
+| **Project** | このリポジトリの**全メンバー**で使う（`.claude/settings.json` に入る） |
+| **Local** | このリポジトリで**自分だけ**が使う（共有しない） |
+
+**全プロジェクトで使いたい場合は User を選びます。** シェルから非対話で入れる場合は
+`--scope` を渡します。
+
+```bash
+claude plugin marketplace add hdknr/claude-code-setup
+claude plugin install cmux@claude-code-setup --scope user
+```
+
+`claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
+セッションで `/reload-plugins` を実行したときになります。
 
 !!! info "プラグインの入れ方・使い方の全体像"
     インストール手順と日常利用の流れは [Part 3: インストール後の環境準備](../part3-post-setup.md) にもまとまっています。このページは各プラグインの**詳細リファレンス**です。
@@ -65,15 +93,15 @@
 
 ### 提供スキル
 
-#### `/cmux [-n] [-w|-r] <number>`
+#### `/cmux:cmux [-n] [-w|-r] <number>`
 
 cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビューを行います。
 
 | 呼び出し | モード | 動作 |
 |---|---|---|
-| `/cmux <number>` | Issue | Issue の URL をブラウザペインに表示 |
-| `/cmux -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
-| `/cmux -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
+| `/cmux:cmux <number>` | Issue | Issue の URL をブラウザペインに表示 |
+| `/cmux:cmux -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
+| `/cmux:cmux -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
 
 `-n` フラグを付けると、処理の最初に新しいターミナルタブ（サーフェス）を作成し、そこで実行します。
 
@@ -81,10 +109,10 @@ cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビ�
 
 ```
 # Issue 番号 12 をブラウザペインに表示
-/cmux 12
+/cmux:cmux 12
 
 # PR 番号 34 を worktree でチェックアウトしてレビュー
-/cmux -r 34
+/cmux:cmux -r 34
 ```
 
 ### 前提
@@ -114,7 +142,7 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 
 ### 提供スキル
 
-#### `/dev-loop <issue-number>`
+#### `/dev-loop:dev-loop <issue-number>`
 
 対象 Issue を、以下の標準サイクルで 1 周させます。**5↔4 は verify が通るまで繰り返します。**
 
@@ -148,7 +176,7 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 
 ```
 # Issue 番号 42 を 1 周させる
-/dev-loop 42
+/dev-loop:dev-loop 42
 ```
 
 ### 前提
@@ -171,3 +199,36 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
   宣言し PR コメントに残す、のいずれかを明示的に選びます。
 - （任意）`/loop`・`/schedule`・`/run` などの汎用スキルや、フェーズ分割型のプランニング
   プラグイン。無い環境では手動の待機・確認に読み替えます。
+
+---
+
+## bare な名前で呼びたい場合 { #bare-invocation }
+
+プラグイン経由の呼び出しは必ず `プラグイン名:スキル名` になります。`/cmux` のように
+名前空間の付かない名前で呼びたい場合は、**マニフェスト（`.claude-plugin/`）を持たない素のスキル**
+として `~/.claude/skills/` に置きます。この配置だけが名前空間の付かない呼び出しになり、
+かつ全プロジェクトで自動的に読み込まれます。
+
+このリポジトリの `plugins/<name>/skills/<name>/` は `SKILL.md` だけで `.claude-plugin/` を
+持たないので、そのまま symlink できます。
+
+```bash
+git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
+
+# /cmux で呼べるようにする
+ln -s ~/src/claude-code-setup/plugins/cmux/skills/cmux ~/.claude/skills/cmux
+
+# /dev-loop で呼べるようにする
+ln -s ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
+```
+
+次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は
+`git -C ~/src/claude-code-setup pull` だけでよく、symlink の張り直しは不要です。
+
+!!! note "プラグインと併用すると両方並びます"
+    プラグインを入れたまま symlink も張ると、`/cmux` と `/cmux:cmux` の両方がスキル一覧に
+    出ます（中身は同じなのでどちらでも動きます）。片方だけにしたい場合は、プラグインを
+    入れずに symlink だけにしてください。
+
+    macOS / Linux 向けの手順です。Windows で symlink を使わない場合はディレクトリをコピーし、
+    `git pull` のたびにコピーし直してください。

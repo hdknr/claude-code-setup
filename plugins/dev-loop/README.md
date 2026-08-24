@@ -8,7 +8,15 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 
 ## 提供スキル
 
-### `/dev-loop <issue-number>`
+### `/dev-loop:dev-loop <issue-number>`
+
+> **なぜ `/dev-loop` ではなく `/dev-loop:dev-loop` なのか**
+>
+> プラグインが提供するスキルは、名前の衝突を防ぐため**常にプラグイン名で名前空間化される**。
+> `commands/` に置いても同じ名前空間に載るので、bare な `/dev-loop` をプラグインで提供する
+> 方法は無い。`/dev-loop` で呼びたい場合は、`~/.claude/skills/dev-loop/` へ
+> **マニフェストを持たない素のスキル**として置く（下記「インストール」参照）。
+> 以下の本文では短い方の `/dev-loop` で表記する。
 
 対象 Issue を、以下の標準サイクルで 1 周させる。5↔4 は verify が通るまで繰り返す。
 
@@ -64,7 +72,40 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 
 ## インストール
 
+まずマーケットプレイスを追加する（最初に一度だけ）。
+
 ```
 /plugin marketplace add hdknr/claude-code-setup
+```
+
+`/plugin install` はスコープの選択画面を出す。**User** が自分の全プロジェクト、**Project** が
+このリポジトリの全メンバー、**Local** がこのリポジトリで自分だけ。
+
+```
 /plugin install dev-loop@claude-code-setup
 ```
+
+### すべてのプロジェクトで使う（ユーザースコープ）
+
+上のコマンドで **User** を選ぶ。シェルから非対話で入れる場合は `--scope` を渡す。
+
+```bash
+claude plugin marketplace add hdknr/claude-code-setup
+claude plugin install dev-loop@claude-code-setup --scope user
+```
+
+`claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
+セッションで `/reload-plugins` を実行したときになる。
+
+### bare `/dev-loop` で使う
+
+`plugins/dev-loop/skills/dev-loop/` は `SKILL.md` だけで `.claude-plugin/` を持たないので、
+素のスキルとして `~/.claude/skills/` に symlink すれば名前空間の付かない `/dev-loop` になる。
+
+```bash
+git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
+ln -s ~/src/claude-code-setup/plugins/dev-loop/skills/dev-loop ~/.claude/skills/dev-loop
+```
+
+プラグインと併用すると `/dev-loop` と `/dev-loop:dev-loop` が両方並ぶ（中身は同じ）。
+macOS / Linux 向けの手順。
