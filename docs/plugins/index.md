@@ -216,64 +216,42 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 | `~/.claude/skills/<name>/` | すべてのプロジェクトで自動的に読み込まれる |
 | `<プロジェクト>/.claude/skills/<name>/` | そのプロジェクトだけ |
 
-以下は全プロジェクトで使う場合の手順です。
-
-このリポジトリの `plugins/<name>/skills/<name>/` は `SKILL.md` だけで `.claude-plugin/` を
-持たないので、そのまま symlink できます。
-
-まずリポジトリを clone します。**すでに別の場所に clone してあるなら clone は省略し、
-次のブロックの `repo=` をその場所に書き換えてください。**
+以下は全プロジェクトで使う場合の手順です。リポジトリを clone して、付属のスクリプトを実行します。
 
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
+~/src/claude-code-setup/scripts/link-skills.sh
 ```
+
+引数なしで実行すると、このリポジトリが配布する素のスキル（現在は `cmux` と `dev-loop`）を
+すべて張ります。名前を渡せばその分だけ張ります。
 
 ```bash
-# 自分の clone 先に合わせて書き換える
-repo=$HOME/src/claude-code-setup
-
-for name in cmux dev-loop; do
-  src=$repo/plugins/$name/skills/$name
-  target=$HOME/.claude/skills/$name
-
-  if [ ! -f "$src/SKILL.md" ]; then
-    # clone が無いまま進むと、動いているスキルを退避したうえで壊れた symlink を張ってしまう
-    echo "中止: $src が見つかりません。repo= を clone 先に合わせてください。" >&2
-    continue
-  fi
-
-  mkdir -p "$HOME/.claude/skills"
-
-  # symlink 以外のものが同名で置かれていたら、日時付きの名前で退避する
-  if [ -e "$target" ] && [ ! -L "$target" ]; then
-    mv "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
-  fi
-
-  # 退避できていなければ、symlink を張らずに中止する
-  if [ -e "$target" ] && [ ! -L "$target" ]; then
-    echo "中止: $target を退避できませんでした。手で移動してから再実行してください。" >&2
-  else
-    ln -sfn "$src" "$target"
-  fi
-done
+~/src/claude-code-setup/scripts/link-skills.sh cmux
 ```
 
-!!! note "ガードの意図"
-    素朴に `ln -sfn` するだけだと 2 通りの壊れ方をします。
+| オプション | 意味 |
+|---|---|
+| `-d <dir>` | 置き場所を変える（既定は `~/.claude/skills`）。プロジェクト単位で入れたいときに使う |
+| `-n` | 何をするかだけ表示して、実際には変更しない |
 
-    1. **clone が無い／別の場所にある場合** — 動いているスキルを退避したうえで**壊れた symlink**を
-       張り、**何も出力せずに**終わります（`/<name>` が消えます）。
-    2. **`~/.claude/skills/<name>` に symlink 以外のものがある場合**（個人スキルとして直置きした実
-       ディレクトリなど）— `ln -sfn` は**エラーを出さずに** `<name>/<name>` を作り、`/<name>` は
-       **古いスキルを指したまま**になります（`-f` はディレクトリを unlink できないため）。
+!!! note "なぜスクリプトなのか"
+    素朴に `ln -s` を並べるだけだと、宛先や clone の状態によって**黙って壊れます**。実際に
+    起きた壊れ方:
 
-    上のブロックは**先に clone の有無を確かめ**、退避してから張り、**退避できなければ張らずに
-    中止**します。中止メッセージは stderr に出ます。
+    1. **clone が無い／パスの指定を間違えた場合** — 動いているスキルを退避したうえで
+       **壊れた symlink** を張り、**終了コード 0 で何も出力せずに**終わる（`/<name>` が消える）。
+    2. **`~/.claude/skills/<name>` に symlink 以外のものがある場合**（個人スキルとして直置きした
+       実ディレクトリなど）— `ln -sfn` は**エラーを出さずに** `<name>/<name>` を作り、`/<name>` は
+       **古いスキルを指したまま**になる（`-f` はディレクトリを unlink できないため）。
 
-    **検証済みの範囲**: macOS の bash / zsh / sh、宛先が「無い／実ディレクトリ／空ディレクトリ／
-    通常ファイル／既存 symlink／壊れた symlink／`.bak` が既にある」の各状態、clone が無い場合、
-    `$HOME` に空白や日本語を含む場合、2 回連続実行。`.bak` の名前が同一秒内に衝突した場合は
-    入れ子になりますが、データは失われません。
+    この手順を文書に手で複製していたところ、4 ラウンド連続でこの類のバグが出ました（しかも
+    毎回、前回の修正が次の穴を開けていました）。そこで手続きを 1 箇所に集め、テスト
+    （`scripts/test-link-skills.py`）を当てています。
+
+    スクリプトは**リポジトリの位置を自分で解決する**ので clone 先を入力する必要がなく
+    （入力が無ければパス指定ミスも起きません）、同名の実ディレクトリがあれば `.bak.<日時>` へ
+    退避し、**張った後に解決を確認して、できていなければ非 0 で終わります**。
 
 次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は clone 先で
 `git pull` するだけでよく、symlink の張り直しは不要です。
@@ -283,7 +261,10 @@ done
     出ます（中身は同じなのでどちらでも動きます）。片方だけにしたい場合は、プラグインを
     入れずに symlink だけにしてください。
 
-!!! warning "検証環境は macOS のみです"
-    macOS の bash / zsh / sh で確認しています。**Linux は未検証**です（同じ手順で動く見込みですが、
-    シェルの実装差で挙動が変わりうる箇所があります）。**Windows も未検証**で、symlink を使わない
-    場合はディレクトリをコピーし、`git pull` のたびにコピーし直してください。
+!!! warning "Windows は未検証です"
+    スクリプトは POSIX sh で書いてあり、**sh / bash / zsh / dash** でテストしています
+    （`scripts/test-link-skills.py`、CI でも実行）。テストを回しているのは macOS ですが、
+    dash も含めて通るので Linux でも同じ挙動になる見込みです。
+
+    **Windows は未検証**です。symlink を使わない場合はディレクトリをコピーし、`git pull` の
+    たびにコピーし直してください。

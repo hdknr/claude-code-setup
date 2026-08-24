@@ -20,14 +20,14 @@
     {
       "name": "cmux",
       "source": "./plugins/cmux",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": { "name": "hdknr" },
       "description": "cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビューを行うスキル"
     },
     {
       "name": "dev-loop",
       "source": "./plugins/dev-loop",
-      "version": "1.6.0",
+      "version": "1.6.1",
       "author": { "name": "hdknr" },
       "description": "1 Issue = 1 周のループ志向開発。受入基準を「不変条件 × それを破りうる経路」に展開し（経路は差分ではなく入口一覧から数える）、証明できないものは未証明として申告する。Verifier とレビューは相互に代替できない別々の関門。ファイルを変更する周は必ず worktree → PR"
     }

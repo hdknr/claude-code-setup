@@ -1,6 +1,6 @@
 {
   "name": "cmux",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": { "name": "hdknr" },
   "description": "cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビューを行うスキル"
 }
