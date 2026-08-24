@@ -27,3 +27,8 @@ jobs:
       - name: version bump 漏れをチェック
         if: github.event_name == 'pull_request'
         run: python3 scripts/check-version-bump.py "origin/${{ github.base_ref }}"
+
+      # ubuntu-latest の /bin/sh は dash。macOS 側は zsh / bash なので、
+      # 両方で回すことで「片方のシェルだけで壊れる」類（#57 で実際に踏んだ）を止める。
+      - name: link-skills.sh のテスト
+        run: python3 scripts/test-link-skills.py
