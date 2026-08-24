@@ -122,6 +122,17 @@ for name in "$@"; do
 	src=$repo_root/plugins/$name/skills/$name
 	target=$skills_dir/$name
 
+	# スキル名は 1 つのディレクトリ名。スラッシュや `..` を許すと、連結先が
+	# plugins/ の外や skills ディレクトリの外を指す（`cmux/../cmux` は ln まで到達していた）。
+	# 連結先に SKILL.md が無いので結果的には止まるが、それは偶然なので明示的に弾く。
+	case $name in
+	"" | . | .. | */*)
+		warn "中止 ($name): スキル名は 1 つのディレクトリ名で指定してください。"
+		failed=1
+		continue
+		;;
+	esac
+
 	# 素のスキルとして置けるのは、マニフェストを持たないものだけ。
 	# `.claude-plugin/` を持つものを置くと、名前空間付き（<name>:<skill>）になってしまう。
 	if [ ! -f "$src/SKILL.md" ]; then

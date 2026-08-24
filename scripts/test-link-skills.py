@@ -289,6 +289,28 @@ for shell in shells():
         proc = run(script, Path(tmp) / "home", shell=shell, args=["--nope"])
         check(f"{tag_shell}/bad-opt: 非 0 で終わる", proc.returncode != 0, f"rc={proc.returncode}")
 
+    # 7) スキル名が 1 つのディレクトリ名でない（パスを跨がせない）
+    #
+    # name はそのままパスに連結されるので、スラッシュや `..` を許すと skills ディレクトリの
+    # 外を指す。結果的に止まるのではなく、明示的に弾いていることを固定する。
+    for bad in ("../outside/pwned", "cmux/../cmux", ".", "..", "", "a/b"):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = make_repo(Path(tmp) / "repo", ["cmux"])
+            home = Path(tmp) / "home"
+            skills = home / ".claude" / "skills"
+            skills.mkdir(parents=True)
+            outside = home / "outside"
+            outside.mkdir()
+            proc = run(script, home, shell=shell, skills_dir=skills, args=[bad])
+            label = f"{tag_shell}/bad-name[{bad}]"
+            check(f"{label}: 非 0 で終わる", proc.returncode != 0, f"rc={proc.returncode}")
+            check(f"{label}: 置き場所の外に作らない",
+                  not any(outside.iterdir()),
+                  f"outside={[p.name for p in outside.iterdir()]}")
+            check(f"{label}: 置き場所に何も作らない",
+                  not any(skills.iterdir()),
+                  f"skills={[p.name for p in skills.iterdir()]}")
+
 # ------------------------------------------------ 相対パスで呼んでも壊れない（#56 の HIGH 相当）
 
 for shell in shells():
