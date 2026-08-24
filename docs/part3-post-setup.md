@@ -93,7 +93,8 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 | プラグイン | 提供スキル | 内容 |
 |---|---|---|
 | `workspace-setup` | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ（CLAUDE.md 作成、GitHub リポジトリ作成、プライベート設定） |
-| `cmux` | `/cmux` | cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビュー |
+| `cmux` | `/cmux:cmux` | cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビュー |
+| `dev-loop` | `/dev-loop:dev-loop` | 1 Issue = 1 周のループ志向開発（開発者向け） |
 
 ```
 # ワークスペース初期セットアップ用
@@ -101,7 +102,26 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 
 # cmux 連携用（cmux ターミナルを使う場合）
 /plugin install cmux@claude-code-setup
+
+# ループ志向開発用（開発者向け・GitHub Issue で開発を回す場合）
+/plugin install dev-loop@claude-code-setup
 ```
+
+インストール時に**スコープ**を選ぶ画面が出ます。
+
+| スコープ | 意味 |
+|---|---|
+| **User** | 自分の**全プロジェクト**で使う |
+| **Project** | このリポジトリの**全メンバー**で使う |
+| **Local** | このリポジトリで**自分だけ**が使う |
+
+どのフォルダで作業しても使えるようにしたい場合は **User** を選びます。迷ったら User で
+問題ありません。
+
+!!! note "スキル名に `プラグイン名:` が付きます"
+    プラグインが提供するスキルは、名前の衝突を防ぐため**常にプラグイン名が頭に付きます**。
+    `cmux` プラグインのスキルは `/cmux` ではなく **`/cmux:cmux`** です。入力を始めれば
+    候補が出るので、覚えなくても `/cmux` まで打てば選べます。
 
 !!! tip "インストール済みプラグインの確認"
     `/plugin` を実行すると、追加済みのマーケットプレイスとインストール済みプラグインの一覧を確認・管理できます。
@@ -142,10 +162,10 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 
 ```
 # Issue 番号 12 をブラウザペインに表示
-/cmux 12
+/cmux:cmux 12
 
 # PR 番号 34 を worktree でチェックアウトしてレビュー
-/cmux -r 34
+/cmux:cmux -r 34
 ```
 
 スキルの一覧を確認:

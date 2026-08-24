@@ -7,7 +7,7 @@ description: >
   数える）、この環境では証明できないものは「未証明」として人間のレビューに申告する。
   別モデル Verifier とレビューは相互に代替できない別々の関門で、どちらも回せないなら
   黙って飛ばさず申告する。ファイルを変更する周は必ず worktree を開始して PR にする
-  （直接コミットで閉じない）。/dev-loop <issue-number> で起動。プロジェクト固有の verify / deploy
+  （直接コミットで閉じない）。引数は対象の <issue-number> 1 件。プロジェクト固有の verify / deploy
   手順は対象リポジトリの CLAUDE.md から発見し、無ければ汎用手順に縮退する。
 ---
 
@@ -22,7 +22,13 @@ GitHub Issue 1 件を、**検証が通ることを停止条件**として 1 周�
 アンチパターン）は「dev-loop の設計」を参照:
 <https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/>
 
-引数: `/dev-loop <issue-number>`（省略時は現在の作業対象 Issue を尋ねる）。
+**呼び出し形**: プラグインとして入れた場合は `/dev-loop:dev-loop`（プラグイン提供のスキルは常に
+プラグイン名で名前空間化される）。マニフェスト（`.claude-plugin/`）を持たない素のスキルとして
+skills ディレクトリに置いた場合は `/dev-loop`（`~/.claude/skills/dev-loop/` なら全プロジェクト、
+`<プロジェクト>/.claude/skills/dev-loop/` ならそのプロジェクトだけ）。
+以下の本文は短い方の `/dev-loop` で表記する。
+
+引数: `<issue-number>` を 1 件（省略時は現在の作業対象 Issue を尋ねる）。
 
 ## はじめに — プロジェクト固有設定の発見
 
