@@ -221,17 +221,28 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 このリポジトリの `plugins/<name>/skills/<name>/` は `SKILL.md` だけで `.claude-plugin/` を
 持たないので、そのまま symlink できます。
 
+まずリポジトリを clone します。**すでに別の場所に clone してあるなら clone は省略し、
+次のブロックの `repo=` をその場所に書き換えてください。**
+
 ```bash
 git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
 ```
 
-すでに clone してあるなら `git -C ~/src/claude-code-setup pull` でよいです。
-
 ```bash
-mkdir -p ~/.claude/skills
+# 自分の clone 先に合わせて書き換える
+repo=$HOME/src/claude-code-setup
 
 for name in cmux dev-loop; do
-  target=~/.claude/skills/$name
+  src=$repo/plugins/$name/skills/$name
+  target=$HOME/.claude/skills/$name
+
+  if [ ! -f "$src/SKILL.md" ]; then
+    # clone が無いまま進むと、動いているスキルを退避したうえで壊れた symlink を張ってしまう
+    echo "中止: $src が見つかりません。repo= を clone 先に合わせてください。" >&2
+    continue
+  fi
+
+  mkdir -p "$HOME/.claude/skills"
 
   # symlink 以外のものが同名で置かれていたら、日時付きの名前で退避する
   if [ -e "$target" ] && [ ! -L "$target" ]; then
@@ -240,32 +251,39 @@ for name in cmux dev-loop; do
 
   # 退避できていなければ、symlink を張らずに中止する
   if [ -e "$target" ] && [ ! -L "$target" ]; then
-    echo "中止: $target を退避できませんでした。手で移動してから再実行してください。"
+    echo "中止: $target を退避できませんでした。手で移動してから再実行してください。" >&2
   else
-    ln -sfn ~/src/claude-code-setup/plugins/$name/skills/$name "$target"
+    ln -sfn "$src" "$target"
   fi
 done
 ```
 
-!!! note "退避のガードが入っている理由"
-    `~/.claude/skills/<name>` に **symlink 以外のもの**（個人スキルとして直置きした実
-    ディレクトリなど）が残っていると、`ln -sfn` は**エラーを出さずに**
-    `~/.claude/skills/<name>/<name>` を作ってしまい、`/<name>` は**古いスキルを指したまま**に
-    なります（`-f` はディレクトリを unlink できないため）。上のブロックはそれを
-    `.bak.<日時>` へ退避し、**退避できなかったときは symlink を張らずに中止します**。
-    `cmux` と `dev-loop` の両方に同じガードがかかります。
+!!! note "ガードの意図"
+    素朴に `ln -sfn` するだけだと 2 通りの壊れ方をします。
 
-    macOS の bash / zsh で、宛先が「無い／実ディレクトリ／通常ファイル／既存 symlink／
-    壊れた symlink／`.bak` が既にある」の各状態と、2 回連続実行について動作を確認しています。
+    1. **clone が無い／別の場所にある場合** — 動いているスキルを退避したうえで**壊れた symlink**を
+       張り、**何も出力せずに**終わります（`/<name>` が消えます）。
+    2. **`~/.claude/skills/<name>` に symlink 以外のものがある場合**（個人スキルとして直置きした実
+       ディレクトリなど）— `ln -sfn` は**エラーを出さずに** `<name>/<name>` を作り、`/<name>` は
+       **古いスキルを指したまま**になります（`-f` はディレクトリを unlink できないため）。
 
-次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は
-`git -C ~/src/claude-code-setup pull` だけでよく、symlink の張り直しは不要です。
+    上のブロックは**先に clone の有無を確かめ**、退避してから張り、**退避できなければ張らずに
+    中止**します。中止メッセージは stderr に出ます。
+
+    **検証済みの範囲**: macOS の bash / zsh / sh、宛先が「無い／実ディレクトリ／空ディレクトリ／
+    通常ファイル／既存 symlink／壊れた symlink／`.bak` が既にある」の各状態、clone が無い場合、
+    `$HOME` に空白や日本語を含む場合、2 回連続実行。`.bak` の名前が同一秒内に衝突した場合は
+    入れ子になりますが、データは失われません。
+
+次のセッションから、どのプロジェクトでも `/cmux` `/dev-loop` で呼べます。更新は clone 先で
+`git pull` するだけでよく、symlink の張り直しは不要です。
 
 !!! note "プラグインと併用すると両方並びます"
     プラグインを入れたまま symlink も張ると、`/cmux` と `/cmux:cmux` の両方がスキル一覧に
     出ます（中身は同じなのでどちらでも動きます）。片方だけにしたい場合は、プラグインを
     入れずに symlink だけにしてください。
 
-!!! warning "macOS / Linux 向けの手順です"
-    Windows で symlink を使わない場合はディレクトリをコピーし、`git pull` のたびにコピーし
-    直してください。**Windows での動作は未検証**です（検証環境が macOS のみのため）。
+!!! warning "検証環境は macOS のみです"
+    macOS の bash / zsh / sh で確認しています。**Linux は未検証**です（同じ手順で動く見込みですが、
+    シェルの実装差で挙動が変わりうる箇所があります）。**Windows も未検証**で、symlink を使わない
+    場合はディレクトリをコピーし、`git pull` のたびにコピーし直してください。
