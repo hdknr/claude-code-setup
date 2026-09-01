@@ -45,6 +45,7 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 | **値** | クォートが同じ行で閉じない複数行スカラー | エラー |
 | **キー** | スキルのディレクトリ名を変える | **両側の和集合で比較**（片側にしか無いスロットは「変更」） |
 | **キー** | カタログの `name` と実ディレクトリ名を食い違わせる | `source` からディレクトリを解決する |
+| **キー** | `./plugins/./demo` のような書き方で解決に失敗させる | パスを正規化してから判定する |
 
 **したがってスロットは「両側の積集合」ではなく「和集合」で数える。** 片側にしか
 存在しないスロットは、欠けている側を「無い」という値として比較する。
@@ -75,6 +76,7 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 import subprocess
 import sys
@@ -199,12 +201,19 @@ def plugin_dir(source: object, name: str) -> str | None:
     """カタログの source からプラグインのディレクトリ名を得る。
 
     `name` がディレクトリ名と一致する保証は無い（レビューで見つかった抜け道）ので、
-    **source を正とする**。`./plugins/<dir>` の形でなければ None（対象外）。
+    **source を正とする**。
+
+    **パスは正規化してから判定する。** `./plugins/./demo` のような書き方を
+    「解釈できないから対象外」にすると、`check-plugin-versions.py` 側は通るのに
+    こちらだけ黙って免除される——「落とすと差分も消える」の同じ形になる。
+    正規化の結果 `plugins/<dir>` にならないもの（`plugins/../evil` で外に出る、
+    絶対パス、階層が深い）だけを対象外にする。
     """
     if not isinstance(source, str):
         return name or None
-    normalized = source[2:] if source.startswith("./") else source
-    normalized = normalized.rstrip("/")
+    if source.startswith("/"):
+        return None
+    normalized = posixpath.normpath(source)
     prefix = "plugins/"
     if not normalized.startswith(prefix):
         return None

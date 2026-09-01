@@ -99,7 +99,7 @@ description: {description}
 """
 
 
-def marketplace(description: str) -> str:
+def marketplace(description: str, source: str = "./plugins/demo") -> str:
     return json.dumps(
         {
             "name": "test-catalog",
@@ -107,7 +107,7 @@ def marketplace(description: str) -> str:
             "plugins": [
                 {
                     "name": "demo",
-                    "source": "./plugins/demo",
+                    "source": source,
                     "version": "1.0.0",
                     "description": description,
                 }
@@ -427,14 +427,36 @@ def main() -> int:
         )
         check(proc.returncode == 0, "折り畳みの改行位置を変えただけで落ちた", proc.stdout)
 
-        # 未知の指示子（`>+`）でも指示子として認識し、値に化けない
-        proc = raw_case(
+        # 未知の指示子（`>+`）でも「指示子」として認識し、値に化けないこと。
+        #
+        # **base と head の両方を同じ未知指示子にして、中身だけ変える**のが要点。
+        # 片側を `>` にして比べると、`>+` が文字列 ">+" に化けていても base と違う値に
+        # なるので「変更あり」になり、**テストは通ってしまう**（実際 1 版目のテストが
+        # これで、正規表現を狭いものに戻す変異が 30 判定を素通りした）。
+        git(root, "checkout", "-q", "-B", "unknown-indicator", "base-ref")
+        write(
             root,
-            catalog=marketplace("old catalog"),
-            plugin=manifest("old catalog"),
-            skill="---\nname: skill0\ndescription: >+\n  brand new\n---\n\nbody\n",
+            marketplace("old catalog"),
+            manifest("old catalog"),
+            ["---\nname: skill0\ndescription: >+\n  original body\n---\n\nbody\n"],
         )
-        check(proc.returncode != 0, "`>+` 指示子の frontmatter 変更がすり抜けた")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "未知指示子の base")
+        git(root, "branch", "-q", "-f", "unknown-base")
+        write(
+            root,
+            marketplace("old catalog"),
+            manifest("old catalog"),
+            ["---\nname: skill0\ndescription: >+\n  completely different body\n---\n\nbody\n"],
+        )
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "未知指示子のまま中身だけ変える")
+        proc = run(sys.executable, str(SCRIPT), "unknown-base", cwd=root)
+        check(
+            proc.returncode != 0,
+            "`>+` の下で中身を変えたのに検出されなかった（指示子が値に化けている）",
+            proc.stdout,
+        )
 
         # 同じ行で閉じないクォートは読めないものとして拒否する
         proc = raw_case(
@@ -494,6 +516,29 @@ def main() -> int:
         git(root, "commit", "-q", "-m", "plugin.json だけ変える")
         proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
         check(proc.returncode != 0, "name != source ディレクトリのプラグインが対象外になった")
+
+    # source の書き方が揺れても解決できる（正規化しないと黙って対象外になる）
+    for variant in ("./plugins/./demo", "plugins/demo/", "./plugins/demo"):
+        with tempfile.TemporaryDirectory(prefix="desc-sync-path-") as tmp:
+            root = Path(tmp) / "repo"
+            root.mkdir()
+            assert_outside_real_repo(root)
+            git(root, "init", "-q", "-b", "main")
+            git(root, "config", "user.email", "test@example.invalid")
+            git(root, "config", "user.name", "test")
+            write(root, marketplace("old", source=variant), manifest("old"), [])
+            git(root, "add", "-A")
+            git(root, "commit", "-q", "-m", "base")
+            git(root, "branch", "-q", "base-ref")
+            write(root, marketplace("new", source=variant), manifest("old"), [])
+            git(root, "add", "-A")
+            git(root, "commit", "-q", "-m", "marketplace だけ変える")
+            proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+            check(
+                proc.returncode != 0,
+                f"source が {variant} のとき、片側だけの変更が対象外になった",
+                proc.stdout,
+            )
 
     # base が進んでいても、分岐元（merge-base）と比べるので誤検出しない
     with tempfile.TemporaryDirectory(prefix="desc-sync-base-") as tmp:
