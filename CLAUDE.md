@@ -58,8 +58,36 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 この整合は CI（`.github/workflows/plugins.yml`）で機械的にチェックしている。ローカルでも確認できる:
 
 ```bash
-python3 scripts/check-plugin-versions.py        # 2 箇所の version 一致・カタログ構造
+python3 scripts/check-plugin-versions.py            # 2 箇所の version 一致・カタログ構造
 python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分に対して）
+python3 scripts/check-description-sync.py origin/main   # description の同期漏れ（同上）
+```
+
+### description は 3 箇所にある
+
+`version` が 2 箇所なのに対し、`description` は **3 箇所**に複製されている。
+
+| 箇所 | 役割 |
+| --- | --- |
+| `.claude-plugin/marketplace.json` | カタログの紹介文 |
+| `plugins/<name>/.claude-plugin/plugin.json` | マニフェスト |
+| `plugins/<name>/skills/<skill>/SKILL.md` の frontmatter | **常時ロードされる要約** |
+
+**version と違い、3 つを同じ値に揃えるのは誤り。** frontmatter は「いつこのスキルを起動するか」を
+書く別目的の文章で、カタログの紹介文より長く引数の説明も含む（`dev-loop` は frontmatter 397 字に対して
+JSON は 147 字）。
+
+**揃えるべきなのは値ではなく更新のタイミング。どれかを直したら、残りも点検する。**
+とくに frontmatter は**本文を読む前の判断材料**なので、置き去りにすると**古い規範が先に読まれる**。
+#59 / PR #60 の周では、本文が「達成不能だから」と否定した文言を要約が掲げ続ける状態が生じ、
+同じ同期漏れが**向きを変えて 2 回**起きた（本文＋frontmatter を直して JSON が残る →
+JSON を直して frontmatter が残る）。
+
+`check-description-sync.py` はこの**共変**を base との diff で見る。片側だけ直すのが正しい場合
+（カタログの typo 修正など）は、コミットメッセージに理由つきの trailer を書く:
+
+```
+Skip-description-sync: カタログの typo 修正のみ。要約の内容は変わらない
 ```
 
 ## Git ワークフロー
