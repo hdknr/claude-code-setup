@@ -74,8 +74,9 @@ python3 scripts/check-description-sync.py origin/main   # description の同期�
 | `plugins/<name>/skills/<skill>/SKILL.md` の frontmatter | **常時ロードされる要約** |
 
 **version と違い、3 つを同じ値に揃えるのは誤り。** frontmatter は「いつこのスキルを起動するか」を
-書く別目的の文章で、カタログの紹介文より長く引数の説明も含む（`dev-loop` は frontmatter 397 字に対して
-JSON は 147 字）。
+書く別目的の文章で、カタログの紹介文より長く引数の説明も含む（`dev-loop` は frontmatter が
+JSON の 2 倍ほどある）。**具体的な文字数はここに書かない**——本文を直すたびに古くなり、
+実際 #62 の周で、古い実測値をそのまま書いて事実誤りを出した。
 
 **揃えるべきなのは値ではなく更新のタイミング。どれかを直したら、残りも点検する。**
 とくに frontmatter は**本文を読む前の判断材料**なので、置き去りにすると**古い規範が先に読まれる**。

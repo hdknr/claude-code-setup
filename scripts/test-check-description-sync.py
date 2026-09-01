@@ -18,6 +18,11 @@ description の同期漏れが**向きを変えて 2 回**すり抜けた。そ�
   (ii)  全部変えた／何も変えていない差分が**通る**（誤検知しない）
   (iii) 失敗が黙って通らない（終了コードが非 0、メッセージが出る）
 
+初版のテストは**単一スキルのプラグイン 1 つ**しか作っておらず、計画で固定すると約束した
+分岐（スキル無し・複数スキル・新規プラグイン）を実際にはテストしていなかった。
+さらに検証で、**読めないものを黙って対象外にする**形の抜け道が 4 つ見つかった。
+どちらも「テストが通っている」ことを根拠にしていたら気づけなかったので、ここに固定する。
+
 標準ライブラリのみ。
 """
 
@@ -59,13 +64,13 @@ def check(condition: bool, label: str, detail: str = "") -> None:
         failures.append(f"{label}{': ' + detail if detail else ''}")
 
 
-def skill_md(description: str) -> str:
+def skill_md(description: str, name: str = "demo") -> str:
     return f"""---
-name: demo
+name: {name}
 description: {description}
 ---
 
-# demo skill
+# {name} skill
 """
 
 
@@ -96,28 +101,48 @@ def manifest(description: str) -> str:
     )
 
 
-def write(root: Path, catalog: str, plugin: str, skill: str) -> None:
+# スキル名の既定。スキルを複数持つケースでは呼び出し側が名前を渡す。
+DEFAULT_SKILLS = ["demo"]
+
+
+def write(root: Path, catalog: str, plugin: str, skills: list[str]) -> None:
+    """カタログ・マニフェスト・各スキルの SKILL.md を書き出す。
+
+    `skills` は SKILL.md の本文そのもののリスト。空リストなら skills/ を作らない
+    （スキルを持たないプラグインのケース）。
+    """
     (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     (root / ".claude-plugin" / "marketplace.json").write_text(catalog, encoding="utf-8")
     manifest_dir = root / "plugins" / "demo" / ".claude-plugin"
     manifest_dir.mkdir(parents=True, exist_ok=True)
     (manifest_dir / "plugin.json").write_text(plugin, encoding="utf-8")
-    skill_dir = root / "plugins" / "demo" / "skills" / "demo"
-    skill_dir.mkdir(parents=True, exist_ok=True)
-    (skill_dir / "SKILL.md").write_text(skill, encoding="utf-8")
+    for index, body in enumerate(skills):
+        skill_dir = root / "plugins" / "demo" / "skills" / f"skill{index}"
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        (skill_dir / "SKILL.md").write_text(body, encoding="utf-8")
 
 
-def make_repo(root: Path) -> None:
-    """base コミット（3 スロットとも "old"）を持つ使い捨てリポジトリを作る。"""
+def make_repo(root: Path, skills: list[str] | None = None) -> None:
+    """base コミット（各スロットとも "old"）を持つ使い捨てリポジトリを作る。
+
+    `skills` はスキルの description のリスト。None なら単一スキル。
+    空リストならスキルを持たないプラグインになる。
+    """
     assert root.resolve() != REAL_REPO, "テストが実リポジトリを対象にしている"
     assert not str(root.resolve()).startswith(str(REAL_REPO) + os.sep), (
         "テストの作業ディレクトリが実リポジトリの内側にある"
     )
 
+    descriptions = ["old skill"] if skills is None else skills
     git(root, "init", "-q", "-b", "main")
     git(root, "config", "user.email", "test@example.invalid")
     git(root, "config", "user.name", "test")
-    write(root, marketplace("old catalog"), manifest("old catalog"), skill_md("old skill"))
+    write(
+        root,
+        marketplace("old catalog"),
+        manifest("old catalog"),
+        [skill_md(d, f"skill{i}") for i, d in enumerate(descriptions)],
+    )
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "base")
     git(root, "branch", "-q", "base-ref")
@@ -128,12 +153,42 @@ def commit_case(
     *,
     catalog: str,
     plugin: str,
-    skill: str,
+    skill: str | None = None,
+    skills: list[str] | None = None,
     message: str = "change",
 ) -> subprocess.CompletedProcess[str]:
-    """base から作業ブランチを切り直して 1 コミットし、チェッカーを走らせる。"""
+    """base から作業ブランチを切り直して 1 コミットし、チェッカーを走らせる。
+
+    `skill` は単一スキルの description（後方互換のための省略形）。
+    `skills` を渡すと複数スキル・0 スキルを表現できる。
+    """
+    descriptions = [skill] if skills is None else skills
+    if descriptions == [None]:
+        descriptions = []
+    return raw_case(
+        root,
+        catalog=marketplace(catalog),
+        plugin=manifest(plugin),
+        skill=[skill_md(d, f"skill{i}") for i, d in enumerate(descriptions)],
+        message=message,
+    )
+
+
+def raw_case(
+    root: Path,
+    *,
+    catalog: str,
+    plugin: str,
+    skill: str | list[str],
+    message: str = "change",
+) -> subprocess.CompletedProcess[str]:
+    """ファイルの中身を**そのまま**書いて 1 コミットし、チェッカーを走らせる。
+
+    壊れた JSON やキーの無い JSON など、正規の生成関数では作れない形を試すために使う。
+    """
+    bodies = [skill] if isinstance(skill, str) else skill
     git(root, "checkout", "-q", "-B", "work", "base-ref")
-    write(root, marketplace(catalog), manifest(plugin), skill_md(skill))
+    write(root, catalog, plugin, bodies)
     git(root, "add", "-A")
     # 「description を変えていない」ケースは差分ゼロになるので空コミットを許す
     git(root, "commit", "-q", "--allow-empty", "-m", message)
@@ -208,7 +263,7 @@ def main() -> int:
 
         # fail-closed: frontmatter が壊れていたらエラーにする（黙って対象外にしない）
         git(root, "checkout", "-q", "-B", "work", "base-ref")
-        write(root, marketplace("new catalog"), manifest("new catalog"), "frontmatter なし\n")
+        write(root, marketplace("new catalog"), manifest("new catalog"), ["frontmatter なし\n"])
         git(root, "add", "-A")
         git(root, "commit", "-q", "-m", "壊れた frontmatter")
         proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
@@ -218,6 +273,103 @@ def main() -> int:
         # base ref が解決できない場合は、黙って 0 を返さない
         proc = run(sys.executable, str(SCRIPT), "no-such-ref", cwd=root)
         check(proc.returncode != 0, "解決できない base ref で 0 を返した")
+
+        # --- 検証で見つかった抜け道（初版はすべてすり抜けていた） ---
+
+        # 抜け道 1: description キーごと削除する
+        proc = raw_case(
+            root,
+            catalog=json.dumps(
+                {
+                    "name": "test-catalog",
+                    "owner": {"name": "tester"},
+                    # description キーを持たないエントリ
+                    "plugins": [{"name": "demo", "source": "./plugins/demo", "version": "1.0.0"}],
+                },
+                ensure_ascii=False,
+            ),
+            plugin=manifest("old catalog"),
+            skill=skill_md("old skill"),
+        )
+        check(proc.returncode != 0, "marketplace の description キー削除がすり抜けた")
+
+        proc = raw_case(
+            root,
+            catalog=marketplace("old catalog"),
+            plugin=json.dumps({"name": "demo", "version": "1.0.0"}, ensure_ascii=False),
+            skill=skill_md("old skill"),
+        )
+        check(proc.returncode != 0, "plugin.json の description キー削除がすり抜けた")
+
+        # 抜け道 2: plugin.json の JSON を壊す（他は正しく更新済み）
+        proc = raw_case(
+            root,
+            catalog=marketplace("new catalog"),
+            plugin="{ 壊れた JSON",
+            skill=skill_md("new skill"),
+        )
+        check(proc.returncode != 0, "plugin.json が壊れているのに通った（fail-open）")
+
+        # 抜け道 3: marketplace.json の JSON を壊す（カタログ全体が黙るのが最悪）
+        proc = raw_case(
+            root,
+            catalog="{ 壊れた JSON",
+            plugin=manifest("new catalog"),
+            skill=skill_md("new skill"),
+        )
+        check(proc.returncode != 0, "marketplace.json が壊れているのに通った（fail-open）")
+
+        # --- 計画で固定すると約束していたのに、初版が実装していなかった分岐 ---
+
+    # 1-f: スキルを持たないプラグイン（スロットは 2 つ）
+    with tempfile.TemporaryDirectory(prefix="desc-sync-noskill-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        make_repo(root, skills=[])
+        proc = commit_case(root, catalog="new catalog", plugin="old catalog", skills=[])
+        check(proc.returncode != 0, "スキル無しプラグインで片側だけ変えたのに通った（1-f）")
+        proc = commit_case(root, catalog="new catalog", plugin="new catalog", skills=[])
+        check(proc.returncode == 0, "スキル無しプラグインで両方変えたのに落ちた（1-f）")
+
+    # 1-g: スキルを複数持つプラグイン（全 frontmatter が対象）
+    with tempfile.TemporaryDirectory(prefix="desc-sync-multi-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        make_repo(root, skills=["one", "two"])
+        # base は ["one", "two"]。skill1 だけ据え置くと「1 つ取り残し」になる
+        proc = commit_case(
+            root, catalog="new catalog", plugin="new catalog", skills=["new one", "two"]
+        )
+        check(proc.returncode != 0, "2 スキル中 1 つを取り残したのに通った（1-g）")
+        proc = commit_case(
+            root, catalog="new catalog", plugin="new catalog", skills=["new one", "new two"]
+        )
+        check(proc.returncode == 0, "全スキルを更新したのに落ちた（1-g）")
+
+    # 1-h: 新規プラグイン（base に plugin.json が無い）は対象外
+    with tempfile.TemporaryDirectory(prefix="desc-sync-new-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        assert root.resolve() != REAL_REPO
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "test@example.invalid")
+        git(root, "config", "user.name", "test")
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin" / "marketplace.json").write_text(
+            json.dumps(
+                {"name": "test-catalog", "owner": {"name": "tester"}, "plugins": []},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "base")
+        git(root, "branch", "-q", "base-ref")
+        write(root, marketplace("new catalog"), manifest("new catalog"), ["new skill"])
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "プラグインを新規追加")
+        proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+        check(proc.returncode == 0, "新規プラグインで落ちた（1-h は対象外のはず）", proc.stdout)
 
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")

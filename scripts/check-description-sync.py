@@ -19,8 +19,7 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 （本文＋frontmatter を直して JSON が残る → JSON を直して frontmatter が残る）。
 
 **判定は「3 つが同一か」ではない。** frontmatter は「いつこのスキルを起動するか」を書く
-別目的の文章で、カタログの紹介文より長く引数の説明も含む。実際 `dev-loop` は
-frontmatter 397 字に対して JSON は 147 字で、**一致させるほうが誤り**になる。
+別目的の文章で、カタログの紹介文より長く引数の説明も含む。**一致させるほうが誤り**になる。
 
 代わりに**共変（co-change）**を見る:
 
@@ -34,11 +33,26 @@ frontmatter 397 字に対して JSON は 147 字で、**一致させるほうが
 
 - スロットが 1 つしか無いプラグイン → 比較相手がいないので対象外
 - 新規プラグイン（base に plugin.json が無い）→ 対象外
-- **frontmatter を解析できない → エラー**（fail-closed）。「読めないからスキップ」は
-  #60 が潰した fail-open そのものなので、黙って通さない
 - スキルが複数あるプラグイン → **全スキルの frontmatter を個別のスロットとして扱う**
   （代表を決められないため。1 つでも取り残されたらエラー）
 - `main` への直接 push では base が曖昧なので判定できない。**PR のときだけ**実行する
+
+**読めないものは、黙って対象外にしない（fail-closed）。** 初版はここが甘く、検証で
+4 つの抜け道が見つかった:
+
+| すり抜けた形 | 初版の挙動 | 現在 |
+| --- | --- | --- |
+| `description` キーを**削除**する | スロットごと比較から消えて無検知 | **キーの有無も値として比較**する（削除は「変更」） |
+| `plugin.json` の JSON を壊す | 例外を握り潰してスロットが消える | **エラー** |
+| `marketplace.json` の JSON を壊す | カタログ全体のチェックが無効化 | **エラー**（1 箇所の構文ミスで全体が黙るのが最悪） |
+| `SKILL.md` の frontmatter が読めない | （初版からエラー） | エラー |
+
+**「読めないからスキップ」は、書式を崩した瞬間にチェックが無言で外れるということ**で、
+このスクリプトが防ごうとしている失敗そのものになる。
+
+なお **marketplace からエントリを丸ごと削除**した場合は、既存の
+`scripts/check-plugin-versions.py` が「plugins/ に存在するがカタログに載っていない」で
+検出するので、ここでは重複して見ない。
 
 どうしても片側だけ直したい場合（カタログの typo 修正など）は、コミットメッセージに
 trailer を書く:
@@ -109,28 +123,60 @@ def parse_frontmatter_description(text: str) -> str | None:
     return None
 
 
-def catalog_descriptions(text: str | None) -> dict[str, str]:
-    """marketplace.json の中身から {プラグイン名: description} を作る。"""
+class Unreadable:
+    """JSON / frontmatter を解析できなかったことを表す番兵。
+
+    「読めない」を None（＝キーが無い）と同じ扱いにすると、**書式を崩した瞬間に
+    そのスロットが比較から消えてチェックが無言で外れる**。区別して必ずエラーにする。
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # デバッグ出力用
+        return "<解析不能>"
+
+
+UNREADABLE = Unreadable()
+
+# スロットの値の型。str は description 本体、None は「キーが無い」、UNREADABLE は解析不能。
+# None を独立した値として扱うので、**キーの削除も「変更」として検出される**。
+SlotValue = "str | None | Unreadable"
+
+
+def catalog_descriptions(ref: str) -> dict[str, object] | Unreadable | None:
+    """marketplace.json から {プラグイン名: description（無ければ None）} を作る。
+
+    ファイルが無ければ None、JSON として壊れていれば UNREADABLE を返す。
+    **壊れているのを {} で代用してはならない**——1 箇所の構文ミスで、カタログ全体の
+    共変チェックが黙って無効化される（検証で実際に見つかった、最も深刻な抜け道）。
+    """
+    text = show(ref, MARKETPLACE)
     if text is None:
-        return {}
+        return None
     try:
         catalog = json.loads(text)
     except json.JSONDecodeError:
-        return {}
-    result: dict[str, str] = {}
+        return UNREADABLE
+    result: dict[str, object] = {}
     for entry in catalog.get("plugins", []):
-        if isinstance(entry, dict) and "name" in entry and "description" in entry:
-            result[entry["name"]] = entry["description"]
+        if isinstance(entry, dict) and "name" in entry:
+            result[entry["name"]] = entry.get("description")
     return result
 
 
-def manifest_description(text: str | None) -> str | None:
+def manifest_description(ref: str, plugin: str) -> object:
+    """plugin.json の description。無ければ None、壊れていれば UNREADABLE。
+
+    ファイル自体が無い場合は、区別のために FileNotFoundError 相当として
+    "missing" 文字列ではなく専用の戻り値を使わず、呼び出し側が show() で先に確認する。
+    """
+    text = show(ref, f"plugins/{plugin}/.claude-plugin/plugin.json")
     if text is None:
-        return None
+        return UNREADABLE  # 呼び出し側が存在確認済みなので、ここに来たら異常
     try:
         return json.loads(text).get("description")
     except json.JSONDecodeError:
-        return None
+        return UNREADABLE
 
 
 def skill_paths(ref: str, plugin: str) -> list[str]:
@@ -141,37 +187,51 @@ def skill_paths(ref: str, plugin: str) -> list[str]:
     return sorted(line for line in out.splitlines() if line.endswith("/SKILL.md"))
 
 
-def slots(ref: str, plugin: str, catalog: dict[str, str]) -> dict[str, str] | None:
+def slots(ref: str, plugin: str, catalog: dict[str, object]) -> dict[str, object] | None:
     """指定 ref における、そのプラグインの description スロット一覧。
 
-    plugin.json が無ければ None（新規プラグイン扱い）。
-    frontmatter が解析できないスロットは、値の代わりに番兵を入れてエラーにする。
+    plugin.json が存在しなければ None（新規／削除されたプラグイン扱い）。
+
+    値は str（description 本体）・None（キーが無い）・UNREADABLE（解析不能）の 3 種。
+    **None を独立した値として持つのが要点**——スロットごと落とすと、
+    キーを削除するだけでチェックをすり抜けられる。
     """
-    manifest = manifest_description(
-        show(ref, f"plugins/{plugin}/.claude-plugin/plugin.json")
-    )
-    if manifest is None and show(ref, f"plugins/{plugin}/.claude-plugin/plugin.json") is None:
+    manifest_path = f"plugins/{plugin}/.claude-plugin/plugin.json"
+    if show(ref, manifest_path) is None:
         return None
 
-    found: dict[str, str] = {}
+    found: dict[str, object] = {}
     if plugin in catalog:
         found[MARKETPLACE] = catalog[plugin]
-    if manifest is not None:
-        found[f"plugins/{plugin}/.claude-plugin/plugin.json"] = manifest
+    found[manifest_path] = manifest_description(ref, plugin)
 
     for path in skill_paths(ref, plugin):
         text = show(ref, path)
         if text is None:
             continue
         description = parse_frontmatter_description(text)
-        if description is None:
-            errors.append(
-                f"{plugin}: {path} の frontmatter から description を読めない。"
-                "書式を確認する（読めないままだと、このチェックが無言で外れる）"
-            )
-            continue
-        found[path] = description
+        found[path] = UNREADABLE if description is None else description
     return found
+
+
+def report_unreadable(ref: str, plugin: str, found: dict[str, object]) -> bool:
+    """解析できないスロットがあればエラーに積む。1 つでもあれば True。"""
+    bad = sorted(slot for slot, value in found.items() if isinstance(value, Unreadable))
+    for slot in bad:
+        errors.append(
+            f"{plugin}: {ref} の {slot} から description を読めない。"
+            "書式を確認する（読めないままだと、このチェックが無言で外れる）"
+        )
+    return bool(bad)
+
+
+def describe(value: object) -> str:
+    """エラーメッセージ用に、スロットの値を短く表す。"""
+    if isinstance(value, Unreadable):
+        return "解析不能"
+    if value is None:
+        return "キー無し"
+    return "あり"
 
 
 def skip_requested(base: str) -> str | None:
@@ -199,14 +259,26 @@ def main() -> int:
         print(f"base ref '{base}' を解決できません。fetch-depth を確認してください。")
         return 2
 
-    base_catalog = catalog_descriptions(show(base, MARKETPLACE))
-    head_catalog = catalog_descriptions(show("HEAD", MARKETPLACE))
+    base_catalog = catalog_descriptions(base)
+    head_catalog = catalog_descriptions("HEAD")
+
+    for ref, catalog in ((base, base_catalog), ("HEAD", head_catalog)):
+        if isinstance(catalog, Unreadable):
+            print(
+                f"::error::{ref} の {MARKETPLACE} を JSON として解析できません。"
+                "壊れたまま通すと、カタログ全体の共変チェックが黙って無効になります"
+            )
+            return 1
+    if base_catalog is None or head_catalog is None:
+        print(f"{MARKETPLACE} が見つかりません。description のチェックはスキップします。")
+        return 0
 
     plugins = sorted(set(base_catalog) | set(head_catalog))
     if not plugins:
         print("カタログにプラグインがありません。description のチェックはスキップします。")
         return 0
 
+    # (プラグイン名, 変更ありスロットの整形済み説明, 変更なしスロット名)
     drifted: list[tuple[str, list[str], list[str]]] = []
 
     for plugin in plugins:
@@ -217,7 +289,15 @@ def main() -> int:
             print(f"{plugin}: 新規または削除されたプラグイン。対象外")
             continue
 
+        # 解析できないスロットは、比較の前にエラーにする（fail-closed）
+        bad = report_unreadable(base, plugin, before)
+        bad = report_unreadable("HEAD", plugin, after) or bad
+        if bad:
+            continue
+
         shared = sorted(set(before) & set(after))
+        # 両方の ref で「キー無し」のスロットは、そもそもスロットではない
+        shared = [s for s in shared if not (before[s] is None and after[s] is None)]
         if len(shared) < 2:
             print(f"{plugin}: description スロットが {len(shared)} 個。比較相手がいないので対象外")
             continue
@@ -230,7 +310,16 @@ def main() -> int:
         elif not unchanged:
             print(f"{plugin}: description を {len(changed)} 箇所すべてで更新。OK")
         else:
-            drifted.append((plugin, changed, unchanged))
+            drifted.append(
+                (
+                    plugin,
+                    [
+                        f"{slot}（{describe(before[slot])} → {describe(after[slot])}）"
+                        for slot in changed
+                    ],
+                    unchanged,
+                )
+            )
 
     if drifted:
         reason = skip_requested(base)
