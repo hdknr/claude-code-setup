@@ -12,8 +12,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `cmux/` - cmux ウィンドウで GitHub Issue/PR を扱うスキル
   - `dev-loop/` - 1 Issue = 1 周のループ志向開発スキル
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
+  - `check-plugin-versions.py` - カタログ構造と version 一致
+  - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
+  - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
-  - `test-link-skills.py` - 上記の回帰テスト。**実環境を対象にしないことをアサートで担保している**
+  - `test-link-skills.py` / `test-check-description-sync.py` - 上記の回帰テスト。
+    **どちらも実環境を対象にしないことをアサートで担保している**
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
 - `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ

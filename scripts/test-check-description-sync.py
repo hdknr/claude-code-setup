@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -62,6 +63,30 @@ def check(condition: bool, label: str, detail: str = "") -> None:
     checks += 1
     if not condition:
         failures.append(f"{label}{': ' + detail if detail else ''}")
+
+
+def assert_outside_real_repo(root: Path) -> None:
+    """テストの作業先が実リポジトリでないことを、実行前に構造で担保する。
+
+    `test-link-skills.py` と同じ方針。#56 で「実環境を触るな」という指示が破られた実績が
+    あるので、方針を書くだけにしない。
+    """
+    assert root.resolve() != REAL_REPO, "テストが実リポジトリを対象にしている"
+    assert not str(root.resolve()).startswith(str(REAL_REPO) + os.sep), (
+        "テストの作業ディレクトリが実リポジトリの内側にある"
+    )
+
+
+def folded_skill(description: str, name: str = "skill0") -> str:
+    """`>` 折り畳みブロックの SKILL.md。**dev-loop の実物がこの形**。"""
+    return f"""---
+name: {name}
+description: >
+  {description}
+---
+
+# {name} skill
+"""
 
 
 def skill_md(description: str, name: str = "demo") -> str:
@@ -128,10 +153,7 @@ def make_repo(root: Path, skills: list[str] | None = None) -> None:
     `skills` はスキルの description のリスト。None なら単一スキル。
     空リストならスキルを持たないプラグインになる。
     """
-    assert root.resolve() != REAL_REPO, "テストが実リポジトリを対象にしている"
-    assert not str(root.resolve()).startswith(str(REAL_REPO) + os.sep), (
-        "テストの作業ディレクトリが実リポジトリの内側にある"
-    )
+    assert_outside_real_repo(root)
 
     descriptions = ["old skill"] if skills is None else skills
     git(root, "init", "-q", "-b", "main")
@@ -346,11 +368,160 @@ def main() -> int:
         )
         check(proc.returncode == 0, "全スキルを更新したのに落ちた（1-g）")
 
+    # --- レビューで見つかった「キーの次元」の抜け道 ---
+
+    with tempfile.TemporaryDirectory(prefix="desc-sync-key-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        make_repo(root)
+
+        # スキルのディレクトリ名を変えると、両側のキーが消えて無検知になっていた
+        git(root, "checkout", "-q", "-B", "work", "base-ref")
+        shutil.rmtree(root / "plugins" / "demo" / "skills")
+        renamed = root / "plugins" / "demo" / "skills" / "renamed"
+        renamed.mkdir(parents=True)
+        (renamed / "SKILL.md").write_text(skill_md("new skill", "renamed"), encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "スキルを改名して frontmatter だけ変える")
+        proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+        check(proc.returncode != 0, "スキル改名＋frontmatter 変更がすり抜けた")
+
+        # trailer は行頭・末尾段落のもののみ有効（引用文で無効化できない）
+        proc = commit_case(
+            root,
+            catalog="new catalog",
+            plugin="old catalog",
+            skill="old skill",
+            message="無関係な変更\n\n以前こう書いた:\n    Skip-description-sync: 昔の理由",
+        )
+        check(proc.returncode != 0, "引用された trailer でチェックが無効化された")
+
+    # 折り畳みブロックのスキル（dev-loop の実物がこの形。初版はここを一切テストしていなかった）
+    with tempfile.TemporaryDirectory(prefix="desc-sync-block-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        assert_outside_real_repo(root)
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "test@example.invalid")
+        git(root, "config", "user.name", "test")
+        write(root, marketplace("old catalog"), manifest("old catalog"), [folded_skill("old text")])
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "base")
+        git(root, "branch", "-q", "base-ref")
+
+        # 本文だけ変える → 検出される
+        proc = raw_case(
+            root,
+            catalog=marketplace("old catalog"),
+            plugin=manifest("old catalog"),
+            skill=folded_skill("completely different"),
+        )
+        check(proc.returncode != 0, "折り畳みブロックの本文変更がすり抜けた")
+
+        # 改行位置だけ変える（意味は同じ）→ 通る
+        proc = raw_case(
+            root,
+            catalog=marketplace("old catalog"),
+            plugin=manifest("old catalog"),
+            skill="---\nname: skill0\ndescription: >\n  old\n  text\n---\n\nbody\n",
+        )
+        check(proc.returncode == 0, "折り畳みの改行位置を変えただけで落ちた", proc.stdout)
+
+        # 未知の指示子（`>+`）でも指示子として認識し、値に化けない
+        proc = raw_case(
+            root,
+            catalog=marketplace("old catalog"),
+            plugin=manifest("old catalog"),
+            skill="---\nname: skill0\ndescription: >+\n  brand new\n---\n\nbody\n",
+        )
+        check(proc.returncode != 0, "`>+` 指示子の frontmatter 変更がすり抜けた")
+
+        # 同じ行で閉じないクォートは読めないものとして拒否する
+        proc = raw_case(
+            root,
+            catalog=marketplace("new catalog"),
+            plugin=manifest("new catalog"),
+            skill='---\nname: skill0\ndescription: "first\n  second"\n---\n\nbody\n',
+        )
+        check(proc.returncode != 0, "閉じないクォートを黙って読んだ（fail-open）")
+        check("読めません" in proc.stdout, "読めない旨が出ていない", proc.stdout)
+
+    # カタログの name とディレクトリ名が食い違う場合、source を正とする
+    with tempfile.TemporaryDirectory(prefix="desc-sync-src-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        assert_outside_real_repo(root)
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "test@example.invalid")
+        git(root, "config", "user.name", "test")
+
+        def build(catalog_desc: str, manifest_desc: str) -> None:
+            (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+            (root / ".claude-plugin" / "marketplace.json").write_text(
+                json.dumps(
+                    {
+                        "name": "test-catalog",
+                        "owner": {"name": "tester"},
+                        "plugins": [
+                            {
+                                "name": "demo",
+                                "source": "./plugins/other",
+                                "version": "1.0.0",
+                                "description": catalog_desc,
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            d = root / "plugins" / "other" / ".claude-plugin"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "plugin.json").write_text(
+                json.dumps(
+                    {"name": "demo", "version": "1.0.0", "description": manifest_desc},
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        build("old", "old")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "base")
+        git(root, "branch", "-q", "base-ref")
+        build("old", "new")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "plugin.json だけ変える")
+        proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+        check(proc.returncode != 0, "name != source ディレクトリのプラグインが対象外になった")
+
+    # base が進んでいても、分岐元（merge-base）と比べるので誤検出しない
+    with tempfile.TemporaryDirectory(prefix="desc-sync-base-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        make_repo(root)
+        git(root, "checkout", "-q", "-B", "work", "base-ref")
+        (root / "NOTES.md").write_text("branch side\n", encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "description に無関係な変更")
+        # base 側だけを進める（片側だけの description 変更を含む）
+        git(root, "checkout", "-q", "base-ref")
+        write(root, marketplace("moved on"), manifest("old catalog"), [skill_md("old skill", "skill0")])
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "base 側が進む")
+        git(root, "checkout", "-q", "work")
+        proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+        check(
+            proc.returncode == 0,
+            "base 側が進んだ分を、このブランチの変更として誤検出した",
+            proc.stdout,
+        )
+
     # 1-h: 新規プラグイン（base に plugin.json が無い）は対象外
     with tempfile.TemporaryDirectory(prefix="desc-sync-new-") as tmp:
         root = Path(tmp) / "repo"
         root.mkdir()
-        assert root.resolve() != REAL_REPO
+        assert_outside_real_repo(root)
         git(root, "init", "-q", "-b", "main")
         git(root, "config", "user.email", "test@example.invalid")
         git(root, "config", "user.name", "test")
