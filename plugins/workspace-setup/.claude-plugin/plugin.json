@@ -1,7 +1,7 @@
 {
   "name": "workspace-setup",
-  "description": "ワークスペースの初期セットアップを案内するスキル",
-  "version": "1.0.0",
+  "description": "ワークスペースの初期セットアップを対話的に行うコマンド（ディレクトリ作成と git init、CLAUDE.md 作成、GitHub プライベートリポジトリの作成と連携）",
+  "version": "1.0.1",
   "author": { "name": "hdknr" },
   "commands": ["./commands/workspace-setup.md"]
 }

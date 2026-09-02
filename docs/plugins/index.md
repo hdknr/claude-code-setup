@@ -12,14 +12,15 @@
 
 配布中のプラグインは以下のとおりです。
 
-| プラグイン | 提供スキル | 概要 |
-|---|---|---|
-| [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ |
-| [`cmux`](#cmux) | `/cmux:cmux` | cmux ウィンドウで GitHub Issue/PR を操作 |
-| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | 1 Issue = 1 周のループ志向開発 |
+| プラグイン | 呼び出し | 種別 | 概要 |
+|---|---|---|---|
+| [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | コマンド | ワークスペースの初期セットアップ |
+| [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
+| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
 
-!!! warning "呼び出しは `プラグイン名:スキル名`"
-    プラグインが提供するスキルは、名前の衝突を防ぐため**常にプラグイン名で名前空間化されます**。
+!!! warning "呼び出しは `プラグイン名:名前`"
+    プラグインが提供するスキル**とコマンド**は、名前の衝突を防ぐため
+    **常にプラグイン名で名前空間化されます**。
     たとえば `cmux` プラグインのスキルは `/cmux` ではなく **`/cmux:cmux`** で呼び出します
     （`commands/` に置いても同じ名前空間に載るため、bare な `/cmux` をプラグインで提供する方法は
     ありません）。名前空間の付かない短い名前で呼びたい場合は
@@ -51,7 +52,7 @@ claude plugin install cmux@claude-code-setup --scope user
 `claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
 セッションで `/reload-plugins` を実行したときになります。
 
-### 更新のしかた
+### 更新のしかた { #updating }
 
 **version を上げただけでは届きません。** 利用者のマーケットプレイスのクローンは
 導入時のコミットで凍結しており、**カタログを読み直すまで新しい版が見えません**
@@ -78,13 +79,17 @@ claude plugin install cmux@claude-code-setup --scope user
 
 作業用ワークスペースの初期セットアップを対話的に行うプラグインです。Claude Code を使い始める最初の一歩をまとめて実行します。
 
+!!! note "このプラグインだけスキルを持ちません"
+    提供するのは**スラッシュコマンド 1 つ**です（`commands/` のみ）。
+    そこから来る制約は [更新のしかた](#updating) にまとめてあります。
+
 ### インストール
 
 ```
 /plugin install workspace-setup@claude-code-setup
 ```
 
-### 提供スキル
+### 提供コマンド
 
 #### `/workspace-setup:workspace-setup`
 
@@ -246,7 +251,7 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 
 ## bare な名前で呼びたい場合 { #bare-invocation }
 
-プラグイン経由の呼び出しは必ず `プラグイン名:スキル名` になります。`/cmux` のように
+プラグイン経由の呼び出しは必ず `プラグイン名:名前` になります（スキルもコマンドも同じ）。`/cmux` のように
 名前空間の付かない名前で呼びたい場合は、**マニフェスト（`.claude-plugin/`）を持たない素のスキル**
 として skills ディレクトリに置きます。置き場所で有効範囲が変わります
 （[スキル活用ガイド](../usage/skills-guide.md) の置き場所の表と同じ区別です）。

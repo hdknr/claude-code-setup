@@ -1,6 +1,10 @@
 name: Deploy docs to GitHub Pages
 
 on:
+  # PR でもビルドする。**ビルドが通ることの確認は PR で行いたい**——
+  # main への push でしか走らないと、壊れたリンクは「PR は緑、main のデプロイが失敗」
+  # という形で初めて表面化し、サイトの更新が止まる（#66 で指摘された）。
+  pull_request:
   push:
     branches:
       - main
@@ -29,12 +33,15 @@ jobs:
       - name: Build docs
         run: uv run mkdocs build
 
+      # デプロイ用のアーティファクトは main への push のときだけ上げる
       - name: Upload artifact
+        if: github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
         with:
           path: site/
 
   deploy:
+    if: github.event_name == 'push'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

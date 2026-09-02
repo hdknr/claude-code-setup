@@ -35,7 +35,7 @@ Docker は「軽量な仮想 PC を、必要なときだけ動かせる仕組み
     2. `OrbStack.app` を「Applications」フォルダに配置 → 起動
     3. 初回セットアップで「Docker」を選択
 
-    ライセンスや Docker Desktop との比較は [Docker をやさしく理解する / インストール](../../tools/docker.md#インストール) を参照してください。
+    ライセンスや Docker Desktop との比較は [Docker をやさしく理解する / インストール](../../tools/docker.md#install) を参照してください。
 
 === "Windows"
 
