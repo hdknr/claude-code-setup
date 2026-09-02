@@ -62,6 +62,23 @@ claude plugin install cmux@claude-code-setup --scope user
 `claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
 セッションで `/reload-plugins` を実行したときになる。
 
+### 更新のしかた
+
+**version を上げただけでは届かない。** 利用者のマーケットプレイスのクローンは
+導入時のコミットで凍結しており、**カタログを読み直すまで新しい版が見えない**
+（#63 で実際に、1.0.0 のまま数か月使われていた）。2 段階で更新する。
+
+```
+/plugin marketplace update                  # カタログを取り直す
+/plugin update cmux@claude-code-setup      # 新しい版に上げる（要再起動）
+```
+
+入っている版は **`SKILL.md` の冒頭**に書いてある。読み込まれた版がここより古ければ、
+キャッシュが更新されていない。
+
+**常に最新を使いたいなら、下の symlink 経路を選ぶ**——キャッシュを経由しないので、
+`git pull` した時点で反映される（構造的に古くならない）。
+
 ### bare `/cmux` で使う
 
 プラグイン経由では `/cmux` にならない。`/cmux` で呼びたい場合は、スキルを

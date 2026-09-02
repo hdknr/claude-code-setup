@@ -9,11 +9,19 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 
 1. marketplace.json の構造 — 必須キーの有無、名前の重複、source の指す先が実在するか
 2. version の一致 — marketplace.json のエントリと plugin.json が同じ値か
-3. 取りこぼし — plugins/ にあるのにカタログに載っていないプラグイン
+3. SKILL.md 本文の版表記 — `<!-- skill-version: X -->` が plugin.json と同じ値か
+4. 取りこぼし — plugins/ にあるのにカタログに載っていないプラグイン
 
 なぜ必要か: version を据え置いたまま中身だけ変えると、インストール済みクライアントの
 キャッシュが更新を検知できず旧内容のスキルを使い続ける（#33 で実際に発生）。
 片方の version だけ上げても同じことが起きるため、機械的に止める。
+
+**ただし version bump だけでは届かない**（#63）。利用者のマーケットプレイスのクローンが
+導入時のコミットで凍結していると、**カタログを読み直すまで version の変化自体が見えない**。
+そこで SKILL.md の本文にも版を書き、**古いキャッシュが読まれたら版が目に入る**ようにした。
+本文の版が plugin.json とずれると意味が無いので、ここで一致を強制する。
+記載が無い場合も**エラーにする**（fail-closed）——「書いていないからスキップ」は、
+書き忘れた瞬間にチェックが無言で外れるということ。
 
 標準ライブラリのみで動かす。リモートスキーマは取得しない（ネットワーク依存で壊れるため、
 ローカルで完結する構造検証で代替する）。
@@ -116,7 +124,9 @@ def check_entry(entry: dict) -> str | None:
     plugin_version = manifest.get("version")
     if plugin_version is None:
         fail(f"{name}: {rel(manifest_path)} に version が無い")
-    elif plugin_version != catalog_version:
+    else:
+        check_skill_versions(name, source_dir, plugin_version)
+    if plugin_version is not None and plugin_version != catalog_version:
         fail(
             f"{name}: version が一致しない — "
             f"marketplace.json={catalog_version} / plugin.json={plugin_version}。"
@@ -124,6 +134,41 @@ def check_entry(entry: dict) -> str | None:
         )
 
     return source_dir.name
+
+
+SKILL_VERSION_MARKER = "<!-- skill-version: "
+
+
+def check_skill_versions(plugin: str, source_dir: Path, version: str) -> None:
+    """そのプラグインの全 SKILL.md 本文に、plugin.json と同じ版が書かれているか。
+
+    スキルを持たないプラグイン（`commands/` だけ等）は検査対象なし——それは正しい状態。
+    スキルがあるのに版の記載が無ければ**エラー**にする（fail-closed）。
+    """
+    skills_dir = source_dir / "skills"
+    if not skills_dir.is_dir():
+        return
+    for skill in sorted(skills_dir.glob("*/SKILL.md")):
+        text = skill.read_text(encoding="utf-8")
+        marked = [
+            line for line in text.split("\n") if line.startswith(SKILL_VERSION_MARKER)
+        ]
+        if not marked:
+            fail(
+                f"{plugin}: {rel(skill)} の本文に版の記載が無い。"
+                f"`{SKILL_VERSION_MARKER}{version} -->` を見出しの直後に置く"
+                "（古いキャッシュが読まれたときに気づく唯一の手掛かり。#63）"
+            )
+            continue
+        if len(marked) > 1:
+            fail(f"{plugin}: {rel(skill)} に版の記載が {len(marked)} 個ある。1 つにする")
+            continue
+        found = marked[0][len(SKILL_VERSION_MARKER) :].split("-->")[0].strip()
+        if found != version:
+            fail(
+                f"{plugin}: {rel(skill)} の版が {found} で plugin.json の {version} と一致しない。"
+                "版を上げたら本文の記載も直す"
+            )
 
 
 def check_uncatalogued(catalogued: set[str]) -> None:

@@ -51,6 +51,9 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 **この 2 箇所を同じ値に揃える。** バージョンを据え置いたまま中身だけ変えると、インストール済み
 クライアントのキャッシュが更新を検知できず、旧い内容のスキルを使い続ける（#33 で実際に発生した）。
 
+さらに **`plugins/<name>/skills/<skill>/SKILL.md` の本文にも同じ版を書く**
+（`<!-- skill-version: X -->`）。理由は下の「version を上げるだけでは届かない」を参照。
+
 刻み方は semver に従う。
 
 | 変更の性質 | 上げ方 | 例 |
@@ -59,10 +62,38 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 | 不具合・記述の修正 | **patch** | 指示の誤りを直す・typo |
 | 既存の使い方が壊れる変更 | **major** | 引数や必須前提の変更 |
 
+### version を上げるだけでは届かない
+
+**version bump は必要条件であって十分条件ではない。** 利用者側のマーケットプレイスのクローンが
+導入時のコミットで凍結していると、**カタログを読み直すまで version の変化自体が見えない**。
+
+実測（2026-09-02、#63）: このリポジトリのマーケットプレイスは利用者の手元で **2026-07-29 の
+コミットのまま**で、`dev-loop` は **1.0.0** のまま使われていた。その間に 1.7.0 まで上げていたが、
+**1 度も届いていなかった**。#33 の対策（version bump）だけでは防げていなかったことになる。
+
+利用者が更新するには **2 段階**が要る:
+
+```
+/plugin marketplace update              # カタログ（クローン）を取り直す
+/plugin update <plugin>@claude-code-setup   # プラグインを新しい版に上げる（要再起動）
+```
+
+`autoUpdate` を有効にしているマーケットプレイスは自動で追随するが、**これはクライアント側の
+状態**（`~/.claude/plugins/known_marketplaces.json`）で、**リポジトリ側からは設定できない**。
+`/plugin` の対話メニューで設定できるとされる。
+
+そこで、リポジトリ側からできる歯止めとして **SKILL.md の本文に版を書いている**。
+古いキャッシュが読まれれば**その版が目に入る**ので、乖離に気づける。
+`check-plugin-versions.py` が plugin.json との一致を強制する（記載漏れもエラー）。
+
+**常に最新を使いたい場合は、プラグインではなく symlink 経路を選ぶ**——
+`scripts/link-skills.sh` で `~/.claude/skills/` に張れば、リポジトリを `git pull` した時点で
+反映される（キャッシュを経由しないため、構造的に古くならない）。
+
 この整合は CI（`.github/workflows/plugins.yml`）で機械的にチェックしている。ローカルでも確認できる:
 
 ```bash
-python3 scripts/check-plugin-versions.py            # 2 箇所の version 一致・カタログ構造
+python3 scripts/check-plugin-versions.py            # version の一致（3 箇所）・カタログ構造
 python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分に対して）
 python3 scripts/check-description-sync.py origin/main   # description の同期漏れ（同上）
 ```
