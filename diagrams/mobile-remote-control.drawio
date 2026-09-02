@@ -1,0 +1,97 @@
+<mxfile host="app.diagrams.net" modified="2026-06-14T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="リモートコントロールの仕組み" id="mobile-remote-control">
+    <mxGraphModel dx="900" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="440" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="リモートコントロールの仕組み" style="text;html=1;align=center;verticalAlign=middle;fontSize=16;fontStyle=1;fontColor=#333333;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="50" y="20" width="800" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Local PC box -->
+        <mxCell id="local_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1976D2;arcSize=8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="240" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="local_title" value="💻 自分の PC（ローカル）" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#0D47A1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="102" width="240" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="local_inner" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#90CAF9;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="65" y="140" width="190" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="local_claude" value="claude 起動中" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#1976D2;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="65" y="152" width="190" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="local_items" value="📁 ファイル&#xa;🔌 MCP サーバー&#xa;🛠 ツール・設定" style="text;html=1;align=left;verticalAlign=top;fontSize=12;fontColor=#333333;strokeColor=none;fillColor=none;spacingLeft=16;" vertex="1" parent="1">
+          <mxGeometry x="75" y="182" width="170" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="local_note" value="作業はずっとここで動く" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#888888;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="65" y="262" width="190" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Anthropic API box -->
+        <mxCell id="api_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;arcSize=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="360" y="130" width="180" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="api_title" value="☁️ Anthropic API" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#4A148C;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="360" y="150" width="180" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="api_sub" value="中継サーバー&#xa;（TLS 暗号化）" style="text;html=1;align=center;verticalAlign=middle;fontSize=12;fontColor=#6A1B9A;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="360" y="185" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Devices box -->
+        <mxCell id="dev_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;arcSize=8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="620" y="90" width="240" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="dev_title" value="📱 スマホ / 🖥 ブラウザ" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#1B5E20;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="620" y="102" width="240" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="dev_inner" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#A5D6A7;arcSize=8;" vertex="1" parent="1">
+          <mxGeometry x="645" y="140" width="190" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="dev_app" value="Claude アプリ&#xa;claude.ai/code" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#2E7D32;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="645" y="160" width="190" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="dev_note" value="指示を入力するだけ&#xa;（画面をのぞく窓）" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#888888;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="645" y="222" width="190" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- PC -> API arrow (outbound HTTPS) -->
+        <mxCell id="pc_api_arrow" value="" style="endArrow=classic;html=1;strokeColor=#1976D2;strokeWidth=3;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="280" y="170" as="sourcePoint" />
+            <mxPoint x="360" y="170" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pc_api_label" value="HTTPS（外向き接続のみ）" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1976D2;fillColor=#FFFFFF;strokeColor=#1976D2;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="278" y="92" width="170" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="pc_api_arrow_path" value="" style="endArrow=none;html=1;strokeColor=#1976D2;strokeWidth=1;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="363" y="114" as="sourcePoint" />
+            <mxPoint x="335" y="160" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- API <-> devices arrows -->
+        <mxCell id="api_dev_arrow" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#2E7D32;strokeWidth=3;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="540" y="200" as="sourcePoint" />
+            <mxPoint x="620" y="200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="api_dev_label" value="指示を中継" style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#2E7D32;fillColor=#FFFFFF;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="540" y="208" width="80" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Bottom callout -->
+        <mxCell id="callout" value="🔒 ファイルはクラウドに上がりません。Claude Code は自分の PC で動き続け、スマホ・ブラウザはその画面を操作する「窓」です。" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#FFB300;arcSize=12;fontSize=12;fontColor=#5D4037;align=center;verticalAlign=middle;spacingLeft=10;spacingRight=10;" vertex="1" parent="1">
+          <mxGeometry x="120" y="350" width="660" height="50" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

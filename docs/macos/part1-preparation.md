@@ -87,9 +87,14 @@ gh auth login
 
 ![gh auth login の操作ガイド](../images/screenshots/gh-auth-flow.svg)
 
-ステップ❹でブラウザが開いたら、コードを入力して認証を完了します:
+ステップ❹に進むと、**ターミナルに 8 桁の認証コードが表示** されます（例: `XXXX-XXXX`）。このコードを控えてから Enter キーを押すと、ブラウザで GitHub のデバイス認証画面が開きます。
 
 ![GitHub デバイス認証画面](../images/screenshots/github-device-auth.png)
+
+ブラウザに切り替えたら、**ターミナルに表示された 8 桁のコード** を入力して「Continue」→「Authorize github」の順に進めば認証完了です。
+
+!!! tip "ターミナルのコードを見失ったとき"
+    ブラウザに切り替えるとターミナルのコードが画面外に流れてしまうことがあります。その場合はターミナルを少しスクロールアップすると `! First copy your one-time code: XXXX-XXXX` の行が見つかります。見つからなければ `Ctrl + C` で中断し、もう一度 `gh auth login` を実行してください。
 
 正しくログインできたか確認しましょう。ターミナルで以下のコマンドを実行してください:
 
