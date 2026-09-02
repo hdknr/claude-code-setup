@@ -8,15 +8,19 @@
 **古いキャッシュが読まれたら目に入る**ようにすることだけ。その歯止めが効かなくなっていたら
 意味が無いので、ここで固定する。
 
-**歯止めは「落として黙って免除する」形で破られる**（#62 の教訓）。初版は実際に 2 つ落としていた:
+**歯止めは「落として黙って免除する」形で破られる**（#62 の教訓）。この検査は、
+レビューのたびに同じ形で穴が見つかった:
 
-- **可視テキストを見ていなかった。** コメントだけ検査していたので、実際に目に入る引用文が
-  ずれても緑のまま通った。**守りたいのは可視テキストのほう**なのに検査していなかった。
-- **`skills/` を持たないレイアウトを無検査にしていた。** 公式ドキュメントは、単一スキルの
-  プラグインは `SKILL.md` をプラグインルート直下に置いてよいと明記している。
-  `skills/` の有無だけで判断すると、そのレイアウトが丸ごとすり抜ける。
+| 落としていたもの | どう塞いだか |
+| --- | --- |
+| 可視テキスト（コメントだけ検査していた） | 両方を検査する。**守りたいのは可視テキストのほう** |
+| ルート直下 `SKILL.md`（公式レイアウト） | — |
+| `plugin.json` の `skills` フィールド（`impeccable` が実使用） | レイアウトの列挙をやめ、`rglob` で全部拾う |
+| 複数行の HTML コメントによる無効化 | 読者に見えない部分を**先に落としてから**探す |
+| `~~~` フェンス（``` しか見ていなかった） | 同上。逆に例示フェンスの誤検出も止まる |
 
-どちらもレビューが使い捨て fixture で再現した。ここに固定して再発を止める。
+**レイアウトや書式を列挙して判定する限り、知らない形が残り続けた。**
+「全部拾ってから、見えない部分を落とす」に変えて初めて収束した。ここに固定して再発を止める。
 
 **このテストは実環境を触らない。** 毎回テンポラリに偽リポジトリを作り、そこだけを対象にする。
 実リポジトリを対象にしてしまうテストは**実行前にアサートで落とす**
@@ -223,7 +227,8 @@ def main() -> int:
         {
             "demo": {
                 "version": "1.0.0",
-                "manifest_extra": {"skills": ["./custom/mine"]},
+                # 実データ（impeccable）は**文字列**。配列を取る実装もありうるので両方試す
+                "manifest_extra": {"skills": "./custom/mine"},
                 "skills": {"custom/mine/SKILL.md": skill_md(comment=None, visible=None)},
             }
         }
@@ -237,13 +242,58 @@ def main() -> int:
     proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": body}}})
     check(proc.returncode != 0, "コメントアウトした可視テキストで合格した")
 
-    # **コードフェンスの中**の記載も、読者には版として見えないので数えない
-    fenced = skill_md(comment="1.0.0", visible=None)
-    fenced = fenced.replace(
-        "本文。", "```\n> **このスキルの版: 1.0.0**\n```\n本文。"
+    # **複数行の HTML コメント**で囲って無効化しても合格させない。
+    # 実際のマーカーは 5 行のブロック引用なので、**無効化する現実的な方法はこちら**。
+    # 単一行の囲みだけ塞いでいたときは、起きにくい側だけを守っていた。
+    multiline = skill_md(comment="1.0.0", visible=None)
+    multiline = multiline.replace(
+        "本文。", "<!--\n> **このスキルの版: 1.0.0**（プラグイン `demo`）。\n-->\n本文。"
     )
-    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": fenced}}})
-    check(proc.returncode != 0, "フェンス内の可視テキストで合格した")
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": multiline}}})
+    check(proc.returncode != 0, "複数行コメントで囲った可視テキストで合格した")
+
+    # **コードフェンスの中**の記載も、読者には版として見えないので数えない（``` と ~~~ の両方）
+    for fence in ("```", "~~~"):
+        fenced = skill_md(comment="1.0.0", visible=None)
+        fenced = fenced.replace(
+            "本文。", f"{fence}\n> **このスキルの版: 1.0.0**\n{fence}\n本文。"
+        )
+        proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": fenced}}})
+        check(proc.returncode != 0, f"`{fence}` フェンス内の可視テキストで合格した")
+
+    # **フェンスは開いたのと同じ文字でしか閉じない。** ``` を `~~~` で閉じたつもりの
+    # 壊れた文書では、以降が全部フェンス内のままになり、本物のマーカーも数えられない
+    # → 記載なしでエラー（fail-closed）。閉じ文字を見ない実装だと、ここが素通りする。
+    mixed = skill_md(comment=None, visible=None)
+    mixed = mixed.replace(
+        "本文。",
+        "```\n例\n~~~\n\n<!-- skill-version: 1.0.0 -->\n"
+        "> **このスキルの版: 1.0.0**（プラグイン `demo`）。\n\n本文。",
+    )
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": mixed}}})
+    check(
+        proc.returncode != 0,
+        "``` を `~~~` で閉じた壊れた文書が素通りした（閉じ文字を見ていない）",
+        proc.stdout,
+    )
+
+    # 逆側: **規約を例示しているだけのフェンス**を「2 個ある」と誤検出しない
+    # （CLAUDE.md がまさにこの例を載せているので、SKILL.md に写されうる）
+    for fence in ("```", "~~~"):
+        documented = skill_md(comment="1.0.0", visible="1.0.0")
+        documented = documented.replace(
+            "本文。",
+            f"版はこう書く:\n\n{fence}markdown\n<!-- skill-version: 9.9.9 -->\n"
+            f"> **このスキルの版: 9.9.9**（プラグイン `demo`）。\n{fence}\n\n本文。",
+        )
+        proc = run_case(
+            {"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": documented}}}
+        )
+        check(
+            proc.returncode == 0,
+            f"`{fence}` の例示ブロックを数えて誤検出した",
+            proc.stdout,
+        )
 
     # **1 行に 2 つ**並べても数える（古い版を同じ行に残せてしまう）
     for extra_line, label in (

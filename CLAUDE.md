@@ -49,10 +49,12 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 - `plugins/<name>/.claude-plugin/plugin.json` の `version`
 - `.claude-plugin/marketplace.json` の該当プラグインの `version`
 
-**この 2 箇所を同じ値に揃える。** バージョンを据え置いたまま中身だけ変えると、インストール済み
+**この 2 つの JSON は同じ値に揃える。** バージョンを据え置いたまま中身だけ変えると、インストール済み
 クライアントのキャッシュが更新を検知できず、旧い内容のスキルを使い続ける（#33 で実際に発生した）。
 
-さらに **その プラグインが持つ `SKILL.md` すべての本文にも同じ版を書く**。
+さらに **そのプラグインが持つ `SKILL.md` すべての本文にも同じ版を書く**。
+**揃える箇所は合わせて 3 種類**（`marketplace.json` / `plugin.json` / `SKILL.md`）で、
+CI のエラーメッセージもそう案内する。
 **2 行 1 組**で、見出しの直後に置く（理由は下の「version を上げるだけでは届かない」）:
 
 ```markdown
@@ -114,7 +116,7 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 
 ### description は 3 箇所にある
 
-`version` が 2 箇所なのに対し、`description` は **3 箇所**に複製されている。
+`version` と同じく、`description` も **3 箇所**に複製されている。ただし**揃え方が違う**。
 
 | 箇所 | 役割 |
 | --- | --- |

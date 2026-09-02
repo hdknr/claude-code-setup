@@ -155,40 +155,83 @@ def skill_files(source_dir: Path) -> list[Path]:
     落とした——**同じ失敗を 2 回**やっている。
 
     そこで**探索をやめて全部拾う**。プラグイン配下の `SKILL.md` を再帰的に集めれば、
-    現在のレイアウトも将来のレイアウトも漏れない。多めに拾う方向の誤りは
-    「版を書け」と言われるだけで、**見逃しより安全**。
+    レイアウトを知らなくても取りこぼさない。多めに拾う方向の誤りは「版を書け」と
+    言われるだけなので、**見逃しより安全**。
+
+    **ただし「漏れない」とまでは言えない。** 限界を 2 つ承知して使う:
+
+    - `rglob` は**シンボリックリンクのディレクトリには入らない**（Python の既定）。
+      リンク越しにしか辿れないスキルは検査されない。このリポジトリの `plugins/` に
+      symlink は無いが、置けば静かに免除される。
+    - **配布物以外まで拾う。** ハーネス別のミラーやベンダーツリーを同梱するプラグインだと、
+      本来のスキルの何倍も引っかかる（上で挙げた `impeccable` は 216 個の `SKILL.md` を
+      持ち、実体は `./.claude/skills` の 18 個だけ）。**このスクリプトはこのリポジトリの
+      CI であって汎用ツールではない**ので現状は許容しているが、そういう構成のプラグインを
+      足すなら除外の仕組みが要る。
     """
     return sorted(source_dir.rglob("SKILL.md"))
+
+
+def strip_fences(text: str) -> str:
+    """コードフェンスの中身を落とす（``` と ~~~ の両方）。
+
+    フェンス内の記載は読者に「版」として見えないので、それを根拠に合格させると
+    可視テキストを検査する意味が無くなる。逆に、**規約を例示しているだけの
+    フェンス**を数えると「2 個ある」で誤って落ちる（`CLAUDE.md` がまさにその例を載せている）。
+
+    開いたのと同じ文字でしか閉じないことまで見る。行数を保つため、落とした行は空行に置き換える。
+    """
+    out: list[str] = []
+    fence: str | None = None
+    for line in text.split("\n"):
+        marker = line.lstrip()
+        if fence is None:
+            if marker.startswith("```") or marker.startswith("~~~"):
+                fence = marker[0]
+                out.append("")
+                continue
+        elif marker.startswith(fence * 3):
+            fence = None
+            out.append("")
+            continue
+        out.append("" if fence else line)
+    return "\n".join(out)
 
 
 def extract_versions(text: str) -> tuple[list[str], list[str]]:
     """SKILL.md 本文から (コメントの版, 可視テキストの版) を取り出す。
 
-    **コードフェンスの中は数えない。** フェンス内の記載は読者に「版」として見えないので、
-    それを根拠に合格させると、可視テキストを検査する意味が無くなる。
+    **「読者に見えない部分を先に落としてから探す」** 方式にしてある。行ごとの場当たり判定は、
+    塞ぐたびに別の書式が出てきた——単一行の `<!-- ... -->` を塞いだら**複数行の**囲みが
+    残り、``` を塞いだら `~~~` が残った。しかも実際のマーカーは 5 行のブロック引用なので、
+    **無効化する現実的な方法は複数行の囲みのほう**で、塞いでいたのは起きにくい側だった。
 
-    **可視テキストは行頭の `> **このスキルの版: ` だけを認める。** 行の途中でも拾うと、
-    HTML コメントで囲って無効化した記載（`<!-- > **このスキルの版: X** -->`）が
-    そのまま合格してしまう——**読者には見えないのに CI は緑**という、この検査が
-    防ごうとしている状態そのものになる。
+    順序が要点:
 
-    **1 行に複数あっても数える。** 1 行 1 件しか拾わないと、同じ行に古い版を並べて
-    残せてしまう。
+    1. **フェンスを落とす**（``` と `~~~`）。例示のためのフェンスを数えないため
+    2. **コメントの版はここで拾う**（マーカー自体が HTML コメントなので、落とす前に）
+    3. **HTML コメントを落とす**（複数行にまたがるものも）
+    4. **可視テキストの版を拾う** — 行頭が `> **このスキルの版: ` のものだけ
+
+    **1 行に複数あっても数える。** 1 行 1 件しか拾わないと、同じ行に古い版を並べて残せる。
     """
-    comments: list[str] = []
-    visible: list[str] = []
-    in_fence = False
-    for line in text.split("\n"):
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
-        for match in re.finditer(re.escape(SKILL_VERSION_MARKER) + r"(.*?)-->", line):
-            comments.append(match.group(1).strip())
-        if line.startswith(VISIBLE_PREFIX):
-            for match in re.finditer(re.escape(SKILL_VERSION_VISIBLE) + r"(.*?)\*\*", line):
-                visible.append(match.group(1).strip())
+    body = strip_fences(text)
+
+    comments = [
+        match.group(1).strip()
+        for match in re.finditer(
+            re.escape(SKILL_VERSION_MARKER) + r"(.*?)-->", body, re.S
+        )
+    ]
+
+    # コメント（複数行にまたがるものを含む）を落としてから、可視テキストを探す
+    uncommented = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+    visible = [
+        match.group(1).strip()
+        for line in uncommented.split("\n")
+        if line.startswith(VISIBLE_PREFIX)
+        for match in re.finditer(re.escape(SKILL_VERSION_VISIBLE) + r"(.*?)\*\*", line)
+    ]
     return comments, visible
 
 
