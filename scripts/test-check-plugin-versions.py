@@ -98,7 +98,7 @@ def skill_md(
     return "\n".join(lines) + "\n"
 
 
-def build(root: Path, plugins: dict[str, dict]) -> None:
+def build(root: Path, plugins: dict[str, dict], docs: dict[str, str] | None = None) -> None:
     """偽リポジトリを組み立てる。
 
     `plugins` は {ディレクトリ名: {"version": str, "skills": {相対パス: 中身}}}。
@@ -131,6 +131,11 @@ def build(root: Path, plugins: dict[str, dict]) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body, encoding="utf-8")
 
+    for rel_path, body in (docs or {}).items():
+        page = root / "docs" / rel_path
+        page.parent.mkdir(parents=True, exist_ok=True)
+        page.write_text(body, encoding="utf-8")
+
     (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     (root / ".claude-plugin" / "marketplace.json").write_text(
         json.dumps(
@@ -142,7 +147,9 @@ def build(root: Path, plugins: dict[str, dict]) -> None:
     )
 
 
-def run_case(plugins: dict[str, dict]) -> subprocess.CompletedProcess[str]:
+def run_case(
+    plugins: dict[str, dict], docs: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     """偽リポジトリを作り、そこに**スクリプトをコピーして**走らせる。
 
     `check-plugin-versions.py` は `REPO_ROOT = Path(__file__).parent.parent` で対象を
@@ -153,7 +160,7 @@ def run_case(plugins: dict[str, dict]) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory(prefix="cpv-test-") as tmp:
         root = Path(tmp) / "repo"
         (root / "scripts").mkdir(parents=True)
-        build(root, plugins)
+        build(root, plugins, docs)
         copied = root / "scripts" / SCRIPT.name
         copied.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
         return subprocess.run(
@@ -395,6 +402,60 @@ def main() -> int:
         }
     )
     check_rejected(proc, "版のコメントが無い", "複数スキルの片方の記載漏れがすり抜けた")
+
+    # --- 公開サイトへの絶対リンクの検査（check_site_links） ---
+    #
+    # SKILL.md は docs_dir の外にあり、リンクは絶対 URL なので **mkdocs は検証しない**。
+    # #61 / #64 で根拠を設計ドキュメントへ移し、本文にはリンクだけを残したので、
+    # ここが切れると移した先に辿り着けなくなる。
+
+    SITE = "https://hdknr.github.io/claude-code-setup/"
+    DOC = "# 設計\n\n## 節 { #verify }\n\n本文。\n"
+
+    def with_link(link: str) -> dict:
+        body = skill_md(comment="1.0.0", visible="1.0.0")
+        return {
+            "demo": {
+                "version": "1.0.0",
+                "skills": {"skills/demo/SKILL.md": body.replace("本文。", f"根拠は {link}。")},
+            }
+        }
+
+    # 解決するリンクは通る
+    proc = run_case(with_link(f"[設計]({SITE}plugins/design/#verify)"), {"plugins/design.md": DOC})
+    check(proc.returncode == 0, "解決するリンクで落ちた", proc.stdout)
+
+    # 存在しないアンカー → 落ちる
+    proc = run_case(with_link(f"[設計]({SITE}plugins/design/#nope)"), {"plugins/design.md": DOC})
+    check_rejected(proc, "アンカー #nope", "存在しないアンカーがすり抜けた")
+
+    # 存在しないページ → 落ちる
+    proc = run_case(with_link(f"[設計]({SITE}plugins/missing/#verify)"), {"plugins/design.md": DOC})
+    check_rejected(proc, "指すページが docs/ に無い", "存在しないページがすり抜けた")
+
+    # **本文やコード例に書かれただけの `{ #x }` を数えない**（見出し行だけを見る）
+    prose_doc = "# 設計\n\n書き方: `{ #ghost }` のように書く。\n\n## 節 { #verify }\n"
+    proc = run_case(with_link(f"[設計]({SITE}plugins/design/#ghost)"), {"plugins/design.md": prose_doc})
+    check_rejected(proc, "アンカー #ghost", "散文中の `{ #x }` を本物として数えた")
+
+    # **自動 id は認めない**（見出しを足すとずれるため。#66 で実際に踏んだ）
+    proc = run_case(with_link(f"[設計]({SITE}plugins/design/#_5)"), {"plugins/design.md": DOC})
+    check_rejected(proc, "アンカー #_5", "自動生成 id へのリンクを通した")
+
+    # URL の切れ目: バッククォート・和文の句読点・自動リンクで誤検出しない
+    for label, link in (
+        ("バッククォート", f"`{SITE}plugins/design/#verify`"),
+        ("句点", f"{SITE}plugins/design/#verify。次の文"),
+        ("読点", f"{SITE}plugins/design/#verify、続き"),
+        ("自動リンク", f"<{SITE}plugins/design/#verify>"),
+        ("全角括弧", f"（{SITE}plugins/design/#verify）"),
+    ):
+        proc = run_case(with_link(link), {"plugins/design.md": DOC})
+        check(proc.returncode == 0, f"{label}で囲んだ正しいリンクで落ちた", proc.stdout)
+
+    # `docs/<path>/index.md` 形式のページも解決する
+    proc = run_case(with_link(f"[設計]({SITE}plugins/#verify)"), {"plugins/index.md": DOC})
+    check(proc.returncode == 0, "index.md 形式のページを解決できなかった", proc.stdout)
 
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")
