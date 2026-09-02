@@ -24,6 +24,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # drawio を編集して SVG/PNG を書き出し直し忘れても、**差分を見ても気づけない**
+      # （書き出しは差分に現れないので「変えていない」と見える）。ソースのハッシュを
+      # diagrams/exports.json に記録して突き合わせる。ubuntu-latest 同梱の python3 と
+      # 標準ライブラリだけで動くので、CI に draw.io CLI（+ xvfb）は入れない。
+      - name: 図の鮮度をチェック
+        run: python3 scripts/check-diagram-freshness.py
+
+      # 歯止め自体が「置いてあるが何も見ていない」状態に退化していないかを確かめる
+      - name: check-diagram-freshness.py のテスト
+        run: python3 scripts/test-check-diagram-freshness.py
+
       # setup-uv は floating major タグ (v9) を publish していないためパッチまで固定
       - uses: astral-sh/setup-uv@v9.0.0
 

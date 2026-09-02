@@ -1,0 +1,57 @@
+{
+  "_comment": "このファイルは scripts/export-diagrams.py が更新する。手で sha256 を書かない（CLAUDE.md「図表の更新」）。sha256 は書き出し時点の source のハッシュで、scripts/check-diagram-freshness.py が現在の source と突き合わせる。",
+  "diagrams/architecture.drawio": {
+    "output": "docs/images/architecture.svg",
+    "sha256": "747ff5b5adb7dd2cb0b7333db7708091c8fa965703a20acd2166933b3ce227ed"
+  },
+  "diagrams/clt-dialog.drawio": {
+    "output": null,
+    "note": "書き出していない。docs/macos/part1-preparation.md が使っている docs/images/screenshots/clt-dialog.png は drawio の書き出しではなく写実的な生成画像（2816x1536・7.0MB。drawio を 1〜4 倍で書き出したどの寸法とも一致しない）。この drawio は同じ主題を図として描いたものだが、現在どのページからも参照されていない（#50 で確認）。"
+  },
+  "diagrams/commit-history.drawio": {
+    "output": "docs/images/commit-history.svg",
+    "sha256": "d2abda11666c337769e465422903107a10cb02d7ab819392c547c9689c2fb650"
+  },
+  "diagrams/concepts-overview.drawio": {
+    "output": "docs/images/concepts-overview.svg",
+    "sha256": "b6798ff1c2e24b0863a5fc2e7e4b4feada3d3e7e80ebb7d8f06dc86df253e676"
+  },
+  "diagrams/dev-loop-cycle.drawio": {
+    "output": "docs/images/dev-loop-cycle.svg",
+    "sha256": "6c9582b8a491873a1c5620e32abf921811589913b6b72a836bcb445855c737ca"
+  },
+  "diagrams/docker-windows-wsl.drawio": {
+    "output": "docs/images/docker-windows-wsl.png",
+    "sha256": "4ba95ed4995e713b3bcbae4bde48204c83a5e05a227a682b30543b02c5885990"
+  },
+  "diagrams/flowchart.drawio": {
+    "output": "docs/images/flowchart.svg",
+    "sha256": "c9ae835cfd088ace88df7a23634081a99f6306f1a32551bd093179473836253d"
+  },
+  "diagrams/gh-auth-flow.drawio": {
+    "output": "docs/images/screenshots/gh-auth-flow.svg",
+    "sha256": "1ac8cc3136fac248eae7dca7e0fec33b6b8a0c25878ebc47d2ed8ab20fb0e2e0"
+  },
+  "diagrams/local-remote.drawio": {
+    "output": "docs/images/local-remote.svg",
+    "sha256": "858eb4f27f956b0e3e29db8743a1635c3ed0599986541984e44f1eaf5d874e5b"
+  },
+  "diagrams/mobile-remote-control.drawio": {
+    "output": "docs/images/mobile-remote-control.png",
+    "scale": 2,
+    "sha256": "693680cbe91eb20e2eb368ae77d6a28dc1ada30e925b39c1a8900be378da7fa9",
+    "note": "PNG は 1646x763。既定倍率だと 824x383 になるので --scale 2 で書き出している（#50 で寸法とサイズを突き合わせて確認）。"
+  },
+  "diagrams/open-terminal.drawio": {
+    "output": "docs/images/screenshots/open-terminal.svg",
+    "sha256": "e121473487d91977a004d104f591e9595e5a815db932bc7ed8f96265fd346806"
+  },
+  "diagrams/wp-xserver-issue-dialogue.drawio": {
+    "output": "docs/images/wp-xserver-issue-dialogue.svg",
+    "sha256": "a5d07246c0e6715d6992a205a24d52a1539b30e4c26fb57fbd7d131570220886"
+  },
+  "diagrams/wp-xserver-overview.drawio": {
+    "output": "docs/images/wp-xserver-overview.svg",
+    "sha256": "ddf2f00b540d711d2429f05c1c887036dce81b4a7f48c7a2b4ffda3ac73ce184"
+  }
+}
