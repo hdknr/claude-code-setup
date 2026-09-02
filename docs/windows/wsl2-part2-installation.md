@@ -1,6 +1,9 @@
-# Part 2: Claude Code インストール
+# Part 2: Claude Code インストール（WSL2 / Ubuntu）
 
-Claude アカウントの準備から Claude Code のインストール、サインインまでの手順です。
+WSL2 (Ubuntu) 上に Claude Code をインストールしてサインインするまでの手順です。
+
+!!! info "ネイティブ Windows をご利用の方"
+    PowerShell でインストールする手順は [Windows / Part 2](part2-installation.md) を参照してください。
 
 ## 2.1 Claude アカウントの準備
 
@@ -28,21 +31,21 @@ Claude Code を使うには、以下のいずれかが必要です（**無料の
 
 ## 2.2 Claude Code のインストール
 
-公式の**ネイティブインストーラー**を使ってインストールします。Node.js などの追加準備は不要で、自動でアップデートされます。
+公式の**ネイティブインストーラー**を使います。Node.js などの追加準備は不要で、自動でアップデートされます。
 
-ターミナルで以下のコマンドを実行してください:
+Ubuntu ターミナルで以下を実行してください:
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash
 ```
 
-インストールが完了すると、`claude` コマンドが `~/.local/bin/claude` に配置されます。通常はインストーラーがシェル設定（`~/.zprofile` など）にパスを自動追加します。
+インストールが完了すると、`claude` コマンドが `~/.local/bin/claude` に配置されます。インストーラーがシェル設定（`~/.bashrc`）にパスを自動追加します。
 
 !!! note "インストール後はターミナルを開き直してください"
-    パス設定を反映するため、ターミナルを一度閉じて開き直してください。
+    パス設定を反映するため、Ubuntu のターミナルを一度閉じて開き直してください。
     すぐに反映したい場合は次を実行します:
     ```bash
-    source ~/.zprofile
+    source ~/.bashrc
     ```
 
 正しくインストールされたか確認しましょう:
@@ -53,28 +56,22 @@ claude --version
 
 バージョン番号が表示されれば成功です。
 
-!!! warning "`claude: command not found` と表示される場合"
-    インストーラーが `~/.local/bin` をパスに追加できていないことがあります（`.zprofile` がない場合など）。まず本体が存在するか確認します:
-
+!!! tip "`claude` コマンドが見つからない場合"
+    ターミナルを開き直しても `claude: command not found` と表示される場合は、フルパスで起動を確認:
     ```bash
-    ls -l ~/.local/bin/claude
+    ~/.local/bin/claude --version
     ```
-
-    ファイルがあれば、`~/.local/bin` をパスに追加して反映します（macOS の標準シェルは zsh です）:
-
+    動く場合は、`~/.bashrc` の末尾に次の行を追加して再読み込みしてください:
     ```bash
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile
-    source ~/.zprofile
+    export PATH="$HOME/.local/bin:$PATH"
     ```
-
-    再度 `claude --version` を実行し、バージョンが表示されれば解決です。
 
 !!! info "アップデートについて"
     ネイティブインストーラーで入れた Claude Code は**バックグラウンドで自動アップデート**されます。手動で最新化したい場合は `claude update` を実行します。
 
 ## 2.3 Claude Code の起動とサインイン
 
-ターミナルで以下のコマンドを実行して Claude Code を起動します:
+Ubuntu ターミナルで以下を実行:
 
 ```bash
 claude
@@ -82,14 +79,15 @@ claude
 
 初回起動時にサインインが求められます:
 
-1. ブラウザが自動的に開きます
+1. Windows 側のブラウザが自動的に開きます
 2. **2.1 で作成した Claude アカウント**でログインしてください
 3. 「Authorize」をクリックして認証を許可
 4. ブラウザに「Login successful」と表示されたらターミナルに戻ります
 
 !!! note "ブラウザが自動で開かない場合"
-    ターミナルに表示された URL を手動でブラウザに貼り付けてください。
-    SSH 経由など、ブラウザのコールバックが届かない環境ではログインコードが表示されるので、ターミナルの `Paste code here if prompted` にコードを貼り付けます。
+    WSL2 では Windows 側のブラウザを呼び出す仕組みが標準で有効ですが、環境によっては自動で開かないことがあります。その場合はターミナルに表示された URL を手動で Windows のブラウザに貼り付けてください。
+
+    ブラウザのコールバックが届かない場合はログインコードが表示されるので、ターミナルの `Paste code here if prompted` にコードを貼り付けます。
 
 !!! tip "ログインのやり直し"
     別のアカウントでログインし直したいときは、Claude Code 内で `/logout` を実行してから再度 `claude` を起動します。
