@@ -101,13 +101,10 @@ def build(root: Path, plugins: dict[str, dict]) -> None:
         )
         manifest_dir = root / "plugins" / name / ".claude-plugin"
         manifest_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {"name": name, "version": spec["version"], "description": f"{name} の説明"}
+        manifest.update(spec.get("manifest_extra", {}))
         (manifest_dir / "plugin.json").write_text(
-            json.dumps(
-                {"name": name, "version": spec["version"], "description": f"{name} の説明"},
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         for rel, body in spec.get("skills", {}).items():
             path = root / "plugins" / name / rel
@@ -219,6 +216,67 @@ def main() -> int:
         {"demo": {"version": "1.0.0", "skills": {"SKILL.md": ok}}}
     )
     check(proc.returncode == 0, "ルート直下 SKILL.md で版が揃っているのに落ちた", proc.stdout)
+
+    # **`plugin.json` の `skills` フィールドで任意のパスに置いた場合**
+    # （この環境の `impeccable` が実際に使っているレイアウト）
+    proc = run_case(
+        {
+            "demo": {
+                "version": "1.0.0",
+                "manifest_extra": {"skills": ["./custom/mine"]},
+                "skills": {"custom/mine/SKILL.md": skill_md(comment=None, visible=None)},
+            }
+        }
+    )
+    check(proc.returncode != 0, "`skills` フィールドで置いたスキルが無検査で免除された")
+
+    # **可視テキストを HTML コメントで囲って無効化**しても合格させない
+    # （読者には見えないのに CI 緑、という状態を作らせない）
+    body = skill_md(comment="1.0.0", visible=None)
+    body = body.replace("本文。", "<!-- > **このスキルの版: 1.0.0**（無効化） -->\n本文。")
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": body}}})
+    check(proc.returncode != 0, "コメントアウトした可視テキストで合格した")
+
+    # **コードフェンスの中**の記載も、読者には版として見えないので数えない
+    fenced = skill_md(comment="1.0.0", visible=None)
+    fenced = fenced.replace(
+        "本文。", "```\n> **このスキルの版: 1.0.0**\n```\n本文。"
+    )
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": fenced}}})
+    check(proc.returncode != 0, "フェンス内の可視テキストで合格した")
+
+    # **1 行に 2 つ**並べても数える（古い版を同じ行に残せてしまう）
+    for extra_line, label in (
+        ("<!-- skill-version: 1.0.0 --> <!-- skill-version: 0.0.1 -->", "コメント"),
+        ("> **このスキルの版: 1.0.0** 旧 **このスキルの版: 0.0.1**", "可視テキスト"),
+    ):
+        one_line = skill_md(
+            comment=None if label == "コメント" else "1.0.0",
+            visible=None if label == "可視テキスト" else "1.0.0",
+            extra=extra_line,
+        )
+        proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": one_line}}})
+        check(proc.returncode != 0, f"1 行に 2 つ並べた{label}がすり抜けた")
+
+    # **複数プラグイン**のうち、2 つ目だけ古い（1 つ目しか見ない退行を捕まえる）。
+    #
+    # **終了コードだけを見てはいけない。** 1 つ目しか検査しない実装でも、2 つ目が
+    # 「カタログに載っていない」扱いになって別の理由で非 0 になり、**テストは通ってしまう**。
+    # 実際にその変異が生き残った。**版ずれの指摘そのものが出ているか**を確かめる。
+    proc = run_case(
+        {
+            "first": {"version": "1.0.0", "skills": {"skills/first/SKILL.md": skill_md(
+                comment="1.0.0", visible="1.0.0", name="first")}},
+            "second": {"version": "2.0.0", "skills": {"skills/second/SKILL.md": skill_md(
+                comment="0.0.1", visible="0.0.1", name="second")}},
+        }
+    )
+    check(proc.returncode != 0, "2 つ目のプラグインの版ずれがすり抜けた")
+    check(
+        "second" in proc.stdout and "0.0.1" in proc.stdout,
+        "2 つ目のプラグインの版ずれが、指摘として出ていない",
+        proc.stdout,
+    )
 
     # スキルが複数あり、片方だけ記載漏れ
     proc = run_case(

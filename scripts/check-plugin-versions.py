@@ -30,6 +30,7 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -130,7 +131,7 @@ def check_entry(entry: dict) -> str | None:
         fail(
             f"{name}: version が一致しない — "
             f"marketplace.json={catalog_version} / plugin.json={plugin_version}。"
-            "CLAUDE.md「プラグインの更新」のとおり 2 箇所を同じ値に揃える"
+            "CLAUDE.md「プラグインの更新」のとおり 3 箇所（marketplace.json / plugin.json / SKILL.md）を揃える"
         )
 
     return source_dir.name
@@ -138,34 +139,56 @@ def check_entry(entry: dict) -> str | None:
 
 SKILL_VERSION_MARKER = "<!-- skill-version: "
 SKILL_VERSION_VISIBLE = "**このスキルの版: "
+# 可視テキストは行頭のこの形だけを認める（コメントで囲って無効化されるのを防ぐ）
+VISIBLE_PREFIX = "> " + SKILL_VERSION_VISIBLE
 
 
 def skill_files(source_dir: Path) -> list[Path]:
-    """そのプラグインが持つ SKILL.md をすべて返す。
+    """そのプラグインが持つ SKILL.md を**すべて**返す。
 
-    **2 つのレイアウトがある。** 公式ドキュメントは、単一スキルのプラグインは
-    `SKILL.md` を**プラグインルート直下**に置いてよいと明記している。
-    `skills/` の有無だけで判断すると、**そのレイアウトを黙って無検査にしてしまう**——
-    レビューで実際に再現された（受入基準 2-e が警戒していた「黙って免除」そのもの）。
+    **レイアウトを推測しない。** スキルの置き場所は 1 通りではない——`skills/<name>/` の他に、
+    単一スキルなら**プラグインルート直下**でよいし、`plugin.json` の `skills` フィールドで
+    **任意のパスを指定**することもできる（この環境の `impeccable` が実際に使っている）。
+
+    レイアウトを列挙して判定すると、**知らない形が黙って無検査になる**。実際、初版は
+    `skills/` しか見ずルート直下を落とし、次の版はその 2 つしか見ず `skills` フィールドを
+    落とした——**同じ失敗を 2 回**やっている。
+
+    そこで**探索をやめて全部拾う**。プラグイン配下の `SKILL.md` を再帰的に集めれば、
+    現在のレイアウトも将来のレイアウトも漏れない。多めに拾う方向の誤りは
+    「版を書け」と言われるだけで、**見逃しより安全**。
     """
-    found = [source_dir / "SKILL.md"] if (source_dir / "SKILL.md").is_file() else []
-    skills_dir = source_dir / "skills"
-    if skills_dir.is_dir():
-        found.extend(sorted(skills_dir.glob("*/SKILL.md")))
-    return found
+    return sorted(source_dir.rglob("SKILL.md"))
 
 
 def extract_versions(text: str) -> tuple[list[str], list[str]]:
-    """SKILL.md 本文から (コメントの版, 可視テキストの版) を取り出す。"""
+    """SKILL.md 本文から (コメントの版, 可視テキストの版) を取り出す。
+
+    **コードフェンスの中は数えない。** フェンス内の記載は読者に「版」として見えないので、
+    それを根拠に合格させると、可視テキストを検査する意味が無くなる。
+
+    **可視テキストは行頭の `> **このスキルの版: ` だけを認める。** 行の途中でも拾うと、
+    HTML コメントで囲って無効化した記載（`<!-- > **このスキルの版: X** -->`）が
+    そのまま合格してしまう——**読者には見えないのに CI は緑**という、この検査が
+    防ごうとしている状態そのものになる。
+
+    **1 行に複数あっても数える。** 1 行 1 件しか拾わないと、同じ行に古い版を並べて
+    残せてしまう。
+    """
     comments: list[str] = []
     visible: list[str] = []
+    in_fence = False
     for line in text.split("\n"):
-        if line.startswith(SKILL_VERSION_MARKER):
-            comments.append(line[len(SKILL_VERSION_MARKER) :].split("-->")[0].strip())
-        index = line.find(SKILL_VERSION_VISIBLE)
-        if index != -1:
-            rest = line[index + len(SKILL_VERSION_VISIBLE) :]
-            visible.append(rest.split("**")[0].strip())
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        for match in re.finditer(re.escape(SKILL_VERSION_MARKER) + r"(.*?)-->", line):
+            comments.append(match.group(1).strip())
+        if line.startswith(VISIBLE_PREFIX):
+            for match in re.finditer(re.escape(SKILL_VERSION_VISIBLE) + r"(.*?)\*\*", line):
+                visible.append(match.group(1).strip())
     return comments, visible
 
 
@@ -185,7 +208,7 @@ def check_skill_versions(plugin: str, source_dir: Path, version: str) -> None:
 
         for label, found, hint in (
             ("コメント", comments, f"`{SKILL_VERSION_MARKER}{version} -->`"),
-            ("可視テキスト", visible, f"`> {SKILL_VERSION_VISIBLE}{version}**`"),
+            ("可視テキスト", visible, f"`{VISIBLE_PREFIX}{version}**`（行頭から）"),
         ):
             if not found:
                 fail(

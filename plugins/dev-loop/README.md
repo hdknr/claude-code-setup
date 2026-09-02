@@ -127,7 +127,7 @@ claude plugin install dev-loop@claude-code-setup --scope user
 
 **version を上げただけでは届かない。** 利用者のマーケットプレイスのクローンは
 導入時のコミットで凍結しており、**カタログを読み直すまで新しい版が見えない**
-（#63 で実際に、1.0.0 のまま数か月使われていた）。2 段階で更新する。
+（#63 で実際に、`dev-loop` が 1.0.0 のまま約 5 週間使われていた）。2 段階で更新する。
 
 ```
 /plugin marketplace update                  # カタログを取り直す
@@ -139,6 +139,8 @@ claude plugin install dev-loop@claude-code-setup --scope user
 
 **常に最新を使いたいなら、下の symlink 経路を選ぶ**——キャッシュを経由しないので、
 `git pull` した時点で反映される（構造的に古くならない）。
+**ただしスクリプトは自分の位置からリポジトリを解決して絶対パスで張る**ので、
+**worktree から実行するとその worktree に固定される**。メインの作業ツリーから実行する。
 
 ### bare `/dev-loop` で使う
 
