@@ -10,7 +10,8 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 1. marketplace.json の構造 — 必須キーの有無、名前の重複、source の指す先が実在するか
 2. version の一致 — marketplace.json のエントリと plugin.json が同じ値か
 3. SKILL.md 本文の版表記 — `<!-- skill-version: X -->` が plugin.json と同じ値か
-4. 取りこぼし — plugins/ にあるのにカタログに載っていないプラグイン
+4. 公開サイトへの絶対リンク — 指すページとアンカーが docs/ に実在するか
+5. 取りこぼし — plugins/ にあるのにカタログに載っていないプラグイン
 
 なぜ必要か: version を据え置いたまま中身だけ変えると、インストール済みクライアントの
 キャッシュが更新を検知できず旧内容のスキルを使い続ける（#33 で実際に発生）。
@@ -127,6 +128,7 @@ def check_entry(entry: dict) -> str | None:
         fail(f"{name}: {rel(manifest_path)} に version が無い")
     else:
         check_skill_versions(name, source_dir, plugin_version)
+    check_site_links(name, source_dir)
     if plugin_version is not None and plugin_version != catalog_version:
         fail(
             f"{name}: version が一致しない — "
@@ -302,6 +304,50 @@ def check_skill_versions(plugin: str, source_dir: Path, version: str) -> None:
                     f"{plugin}: {rel(skill)} の版の{label}が {found[0]} で "
                     f"plugin.json の {version} と一致しない。版を上げたら本文の記載も直す"
                 )
+
+
+SITE_PREFIX = "https://hdknr.github.io/claude-code-setup/"
+
+
+def check_site_links(plugin: str, source_dir: Path) -> None:
+    """配布物から公開サイトへの絶対リンクが、実際に解決するかを見る。
+
+    **mkdocs はこれを検証できない。** `SKILL.md` や `README.md` は `docs_dir` の外にあるので
+    mkdocs が読まないし、絶対 URL は仮に読んでも検証対象外である。
+    つまり `strict: true` にしても**ここだけは守られていない**。
+
+    #61 / #64 の周で、規範の根拠を設計ドキュメントへ移して本文からはリンクだけを残した。
+    リンクが切れると**移した先に辿り着けなくなる**ので、機械的に見る。
+    """
+    for source in sorted(source_dir.rglob("*.md")):
+        for line in source.read_text(encoding="utf-8").split("\n"):
+            index = 0
+            while True:
+                index = line.find(SITE_PREFIX, index)
+                if index == -1:
+                    break
+                # `<...>` の自動リンク・`[...](...)`・素の URL のいずれも取れるように、
+                # URL に現れない文字で切る
+                url = re.split(r"[\s)>\]」）]", line[index:])[0].rstrip(".,、。")
+                index += len(SITE_PREFIX)
+
+                rest = url[len(SITE_PREFIX) :]
+                page, _, fragment = rest.partition("#")
+                page = page.strip("/")
+                target = REPO_ROOT / "docs" / f"{page}.md"
+                if not target.is_file():
+                    target = REPO_ROOT / "docs" / page / "index.md"
+                if not target.is_file():
+                    fail(
+                        f"{plugin}: {rel(source)} のリンク {url} が指すページが docs/ に無い"
+                    )
+                    continue
+                if fragment and f"{{ #{fragment} }}" not in target.read_text(encoding="utf-8"):
+                    fail(
+                        f"{plugin}: {rel(source)} のリンク {url} のアンカー #{fragment} が "
+                        f"{rel(target)} に無い。見出しに `{{ #{fragment} }}` を付ける"
+                        "（絶対 URL なので mkdocs は検証しない）"
+                    )
 
 
 def check_uncatalogued(catalogued: set[str]) -> None:
