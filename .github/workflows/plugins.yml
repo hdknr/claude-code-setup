@@ -28,7 +28,17 @@ jobs:
         if: github.event_name == 'pull_request'
         run: python3 scripts/check-version-bump.py "origin/${{ github.base_ref }}"
 
+      # description は 3 箇所に複製されている。片側だけ直す事故が #60 で 2 回起きたので、
+      # 共変（どれかを直したら残りも直っている）を base との diff で見る。同じく PR 限定。
+      - name: description の同期漏れをチェック
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-description-sync.py "origin/${{ github.base_ref }}"
+
       # ubuntu-latest の /bin/sh は dash。macOS 側は zsh / bash なので、
       # 両方で回すことで「片方のシェルだけで壊れる」類（#57 で実際に踏んだ）を止める。
       - name: link-skills.sh のテスト
         run: python3 scripts/test-link-skills.py
+
+      # 歯止め自体が「置いてあるが何も見ていない」状態に退化していないかを確かめる
+      - name: check-description-sync.py のテスト
+        run: python3 scripts/test-check-description-sync.py
