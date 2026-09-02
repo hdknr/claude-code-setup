@@ -1,8 +1,8 @@
 {
-  "_comment": "このファイルは scripts/export-diagrams.py が更新する。手で fingerprint を書かない（CLAUDE.md「図表の更新」）。fingerprint は書き出し時点の前提（source の内容・output・scale）の指紋で、式は scripts/diagram_manifest.py にある。scripts/check-diagram-freshness.py が現在の前提と突き合わせる。",
+  "_comment": "このファイルは scripts/export-diagrams.py が更新する。手で fingerprint を書かない（CLAUDE.md「図表の更新」）。fingerprint は書き出しの前提と結果（source の内容・output・scale・書き出しの内容）をまとめた指紋で、式は scripts/diagram_manifest.py にある。scripts/check-diagram-freshness.py が現在の状態と突き合わせる。書き出しの内容が入っているので、書き出しが壊れた場合も検出する。",
   "diagrams/architecture.drawio": {
     "output": "docs/images/architecture.svg",
-    "fingerprint": "2f6ffa31e1df50c18f1736770caa6ad090c46270b44cf6d6a9ec97f03f8c6d62"
+    "fingerprint": "c90287b24c3bdee9a14855febbc34f8b5f232b56ec404e5f1055b2522253331a"
   },
   "diagrams/clt-dialog.drawio": {
     "output": null,
@@ -10,48 +10,48 @@
   },
   "diagrams/commit-history.drawio": {
     "output": "docs/images/commit-history.svg",
-    "fingerprint": "da29a6ee121d8eeb11269e44422419109c63c4456369a41460bda0bc386a6072"
+    "fingerprint": "caef959baf13b734cc5be3a124d4aab73856fb193427b7607bf0501fedb529f7"
   },
   "diagrams/concepts-overview.drawio": {
     "output": "docs/images/concepts-overview.svg",
-    "fingerprint": "e47fbc7d6e4a5e68fc9b6ebf798cbc88995b816c066e4ee41767e9e053709682"
+    "fingerprint": "d1b8fa39ae2347ff39e4834e5b9d088c43cd2ab39e3ef68fe866be1d26c03347"
   },
   "diagrams/dev-loop-cycle.drawio": {
     "output": "docs/images/dev-loop-cycle.svg",
-    "fingerprint": "5df59e1e0e88d6ccc657011c55d3015e1661ae2c580bffe438cb6d041dcb4220"
+    "fingerprint": "b7eabb6d0dab833523adb22054e1608b559b34c4fd1140a9883a4deb4da23d6b"
   },
   "diagrams/docker-windows-wsl.drawio": {
     "output": "docs/images/docker-windows-wsl.png",
-    "fingerprint": "6a0920b49863db50390efc901be2bf2ca848d9c0ff98649f19c8afa64700b0b6"
+    "fingerprint": "f705e798b688abf0d92960124a444f48a7fa64594cbbcdd55fe87fd7c2158eaf"
   },
   "diagrams/flowchart.drawio": {
     "output": "docs/images/flowchart.svg",
-    "fingerprint": "ce41e932e8f0a7c6536dccb31d675c039d40da6d144ed657a846049e22f99c7c"
+    "fingerprint": "1250475b4a7f44f2df7ca014b878141c47321365c426d561f4dbfa7c5880ec97"
   },
   "diagrams/gh-auth-flow.drawio": {
     "output": "docs/images/screenshots/gh-auth-flow.svg",
-    "fingerprint": "78ff937c6cb17d6b75918017fb6451bfc033f72711cd90b16be2d7d452f689f7"
+    "fingerprint": "185ac2c2b2e01af357575054d8ef855f480959a67acab603183c1ef1bbf2c4ae"
   },
   "diagrams/local-remote.drawio": {
     "output": "docs/images/local-remote.svg",
-    "fingerprint": "51af075b6673360cf7ff1db2b2b3f994e7a9aa8bd8962b11c226755dcec6c1e5"
+    "fingerprint": "d23983cbabf22f516338b1ad0ca504423dca418301ebe744a14b50069198efdc"
   },
   "diagrams/mobile-remote-control.drawio": {
     "output": "docs/images/mobile-remote-control.png",
     "scale": 2,
     "note": "PNG は 1646x763。既定倍率だと 824x383 になるので --scale 2 で書き出している（#50 で寸法とサイズを突き合わせて確認）。",
-    "fingerprint": "580eb1127698869f0962ac0623f6f7c4bac81d8503b94a723dbb366153dbc22d"
+    "fingerprint": "06cf644594f36bf295572f91a10e209e49493762d86992595d98ece818049332"
   },
   "diagrams/open-terminal.drawio": {
     "output": "docs/images/screenshots/open-terminal.svg",
-    "fingerprint": "269b7c722d96f01140c094d59bd70ca394eee9d966712a7b30ecb07855529754"
+    "fingerprint": "e26c50d33f28e2910fe17352e0060c35bfc1e19439f5a32c0e9417b977ffc923"
   },
   "diagrams/wp-xserver-issue-dialogue.drawio": {
     "output": "docs/images/wp-xserver-issue-dialogue.svg",
-    "fingerprint": "8fa66c784f3155616afb256cc89af96e83af6527d2252fe62fa5e3eeeccb6d3e"
+    "fingerprint": "72cf24efcca8dce51582aa04ba038f6c95c02d39aed54048ba3629eb71b0e0bf"
   },
   "diagrams/wp-xserver-overview.drawio": {
     "output": "docs/images/wp-xserver-overview.svg",
-    "fingerprint": "ec587f4eff42d585e93a60aeb47495b492fae5f1735b32ebc8032cc1c8e9e1f6"
+    "fingerprint": "030db6e4a76293a297dd1db97cbc9ae40098b6842d913a2c475cb5dcd81c2514"
   }
 }

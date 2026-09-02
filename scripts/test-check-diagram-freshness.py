@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,8 @@ SRC_ONE = "<mxfile>one</mxfile>\n"
 SRC_TWO = "<mxfile>two</mxfile>\n"
 OUT_ONE = "docs/images/one.svg"
 OUT_TWO = "docs/images/two.png"
+BODY_ONE = "<svg/>\n"
+BODY_TWO = "\x89PNG\r\n\x1a\n"
 
 # 変異テスト中だけ、偽リポジトリにコピーする中身を差し替える（末尾を参照）。
 # 収集規則は共有モジュール側にあるので、**どちらのファイルも**変異させられる必要がある。
@@ -85,7 +88,12 @@ def check_rejected(proc: subprocess.CompletedProcess[str], expected: str, label:
     )
 
 
-def fp(source_text: str, output: str, scale: object = None) -> str:
+def fp(
+    source_text: str,
+    output: str,
+    scale: object = None,
+    output_text: str = BODY_ONE,
+) -> str:
     """`diagram_manifest.fingerprint` と**同じ式を独立に**書いたもの（上の docstring を参照）。"""
     digest = hashlib.sha256()
     digest.update(source_text.encode("utf-8"))
@@ -93,6 +101,8 @@ def fp(source_text: str, output: str, scale: object = None) -> str:
     digest.update(output.encode("utf-8"))
     digest.update(b"\0")
     digest.update(repr(scale).encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(output_text.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -161,7 +171,7 @@ def run_case(
     if sources is None:
         sources = {"one.drawio": SRC_ONE}
     if outputs is None:
-        outputs = {OUT_ONE: "<svg/>\n"}
+        outputs = {OUT_ONE: BODY_ONE}
     with tempfile.TemporaryDirectory(prefix="cdf-test-") as tmp:
         root = Path(tmp) / "repo"
         (root / "scripts").mkdir(parents=True)
@@ -203,7 +213,7 @@ def two_source_case(second: dict, **kwargs) -> subprocess.CompletedProcess[str]:
     return run_case(
         manifest=manifest,
         sources={"one.drawio": SRC_ONE, "two.drawio": SRC_TWO},
-        outputs={OUT_ONE: "<svg/>\n", OUT_TWO: "\x89PNG\r\n\x1a\n"},
+        outputs={OUT_ONE: BODY_ONE, OUT_TWO: BODY_TWO},
         **kwargs,
     )
 
@@ -240,8 +250,22 @@ def case_output_retargeted():
     manifest["diagrams/one.drawio"]["output"] = OUT_TWO  # 指紋は OUT_ONE で作ってある
     return run_case(
         manifest=manifest,
-        outputs={OUT_ONE: "<svg/>\n", OUT_TWO: "\x89PNG\r\n\x1a\n"},
+        outputs={OUT_ONE: BODY_ONE, OUT_TWO: BODY_TWO},
     )
+
+
+def case_output_corrupted():
+    """経路 1d: **書き出しの中身だけ**壊れる（マニフェストを 1 文字も触らない）。
+
+    悪いマージ・ディスク障害・書き出し途中のクラッシュで起きる。指紋が前提だけを
+    見ていると**永久に見えない**（#50 の 2 パス目の検証で実証された）。
+    """
+    manifest = ok_manifest()
+    # 記録は「別の中身」で作る = いまディスクにある書き出しと食い違う
+    manifest["diagrams/one.drawio"]["fingerprint"] = fp(
+        SRC_ONE, OUT_ONE, None, "<svg>まったく別の中身</svg>\n"
+    )
+    return run_case(manifest=manifest)
 
 
 def case_unregistered():
@@ -269,6 +293,42 @@ def case_symlink_dir():
         os.symlink(root / "outside", root / "diagrams" / "linked")
 
     return run_case(manifest=ok_manifest(), setup=setup)
+
+
+def case_noise_dir_inside_diagrams():
+    """経路 2d: `diagrams/` の中の「ノイズ扱いのディレクトリ」に置く。
+
+    リポジトリ全体の走査では `node_modules` や `.` 始まりを飛ばすが、**その除外を
+    `diagrams/` の中にも適用すると二重の死角になる**——収集されず、範囲の外としても
+    報告されない。守りたいディレクトリの中に見ない場所を作ってはならない。
+    """
+    return run_case(
+        manifest=ok_manifest(),
+        sources={"one.drawio": SRC_ONE, "node_modules/hidden.drawio": SRC_TWO},
+    )
+
+
+def case_uncollectable_but_present():
+    """実在するのに収集できていない（symlink ループの打ち切りの向こう側）。
+
+    `diagrams/loop -> diagrams` を作ると、`diagrams/loop/one.drawio` は**実在する**が、
+    収集はループ検出で打ち切るので拾わない。何もしないとそのエントリは鮮度の検査に
+    一度も回らないまま緑になる。
+    """
+
+    def setup(root: Path) -> None:
+        os.symlink(root / "diagrams", root / "diagrams" / "loop")
+
+    manifest = ok_manifest()
+    manifest["diagrams/loop/one.drawio"] = {
+        "output": OUT_TWO,
+        "fingerprint": fp(SRC_ONE, OUT_TWO, None, BODY_TWO),
+    }
+    return run_case(
+        manifest=manifest,
+        outputs={OUT_ONE: BODY_ONE, OUT_TWO: BODY_TWO},
+        setup=setup,
+    )
 
 
 def case_outside_diagrams():
@@ -400,6 +460,30 @@ def case_empty_key():
     return run_case(manifest=manifest)
 
 
+def case_diagrams_not_a_dir():
+    """`diagrams/` が通常ファイル（`FileNotFoundError` ではない `OSError`）。
+
+    `FileNotFoundError` だけを捕まえていると、ここが**素の traceback で落ちる**。
+    """
+
+    def setup(root: Path) -> None:
+        import shutil
+
+        shutil.rmtree(root / "diagrams")
+        (root / "diagrams").write_text("not a directory", encoding="utf-8")
+
+    return run_case(manifest=ok_manifest(), setup=setup)
+
+
+def case_manifest_not_utf8():
+    """マニフェストが UTF-8 でない（`UnicodeDecodeError` は `JSONDecodeError` ではない）。"""
+
+    def setup(root: Path) -> None:
+        (root / "diagrams" / "exports.json").write_bytes(b"\xff\xfe{}")
+
+    return run_case(manifest=ok_manifest(), setup=setup)
+
+
 def case_output_not_string():
     """`output` が文字列でない。"""
     manifest = ok_manifest()
@@ -443,8 +527,13 @@ def main() -> int:
     check(proc.returncode == 0, "`diagrams/icons/` の素材を source と誤検出した", proc.stdout)
 
     # PNG の書き出しも通る
-    manifest = {"diagrams/one.drawio": {"output": OUT_TWO, "fingerprint": fp(SRC_ONE, OUT_TWO)}}
-    proc = run_case(manifest=manifest, outputs={OUT_TWO: "png"})
+    manifest = {
+        "diagrams/one.drawio": {
+            "output": OUT_TWO,
+            "fingerprint": fp(SRC_ONE, OUT_TWO, None, BODY_TWO),
+        }
+    }
+    proc = run_case(manifest=manifest, outputs={OUT_TWO: BODY_TWO})
     check(proc.returncode == 0, "PNG の書き出しで落ちた", proc.stdout)
 
     # --- 否定側: 経路ごとに 1 件以上 --------------------------------------------
@@ -452,9 +541,12 @@ def main() -> int:
         (case_stale, "書き出し直していない", "鮮度の乖離"),
         (case_scale_changed, "書き出し直していない", "`scale` だけの書き換え"),
         (case_output_retargeted, "書き出し直していない", "`output` だけの向け替え"),
+        (case_output_corrupted, "書き出し直していない", "書き出しの中身だけの破損"),
         (case_unregistered, "未登録", "未登録の新規 drawio"),
         (case_uppercase_suffix, "未登録", "大文字拡張子の drawio"),
         (case_symlink_dir, "未登録", "symlink ディレクトリ配下の drawio"),
+        (case_noise_dir_inside_diagrams, "未登録", "`diagrams/` 内のノイズ扱いディレクトリ"),
+        (case_uncollectable_but_present, "実在するのに収集できていない", "収集の死角にある宣言済み source"),
         (case_outside_diagrams, "の外にある", "`diagrams/` の外の drawio"),
         (case_dead_entry, "実在しない", "実在しない source のエントリ"),
         (case_missing_output, "が存在しない", "書き出しの欠落"),
@@ -473,6 +565,8 @@ def main() -> int:
         (case_key_noncanonical, "正規形でない", "正規形でないキー"),
         (case_empty_key, "空のキー", "空のキー"),
         (case_output_not_string, "`output` が文字列でない", "`output` の型"),
+        (case_diagrams_not_a_dir, "を読めない", "`diagrams/` が通常ファイル"),
+        (case_manifest_not_utf8, "JSON として不正", "UTF-8 でないマニフェスト"),
     ):
         check_rejected(case(), expected, f"{label}がすり抜けた")
 
@@ -511,7 +605,9 @@ def main() -> int:
     # `output` の拡張子が対象外
     manifest = ok_manifest()
     manifest["diagrams/one.drawio"]["output"] = "docs/images/one.pdf"
-    manifest["diagrams/one.drawio"]["fingerprint"] = fp(SRC_ONE, "docs/images/one.pdf")
+    manifest["diagrams/one.drawio"]["fingerprint"] = fp(
+        SRC_ONE, "docs/images/one.pdf", None, "pdf"
+    )
     check_rejected(
         run_case(manifest=manifest, outputs={"docs/images/one.pdf": "pdf"}),
         "拡張子が",
@@ -550,7 +646,12 @@ def main() -> int:
     # **2 件目だけ古い**（1 件目しか見ない退行を捕まえる）。
     # 終了コードだけを見ると、別の理由（未登録など）で非 0 になって**テストが通ってしまう**ので、
     # **2 件目の鮮度の指摘そのものが出ているか**を確かめる。
-    proc = two_source_case({"output": OUT_TWO, "fingerprint": fp("<mxfile>outdated</mxfile>\n", OUT_TWO)})
+    proc = two_source_case(
+        {
+            "output": OUT_TWO,
+            "fingerprint": fp("<mxfile>outdated</mxfile>\n", OUT_TWO, None, BODY_TWO),
+        }
+    )
     check_rejected(proc, "diagrams/two.drawio", "2 件目の鮮度の乖離がすり抜けた")
     check(
         "書き出し直していない" in proc.stdout and "two.png" in proc.stdout,
@@ -558,6 +659,55 @@ def main() -> int:
         proc.stdout,
     )
 
+    # --- 壊れると「偽陽性」として現れる性質 --------------------------------------
+    #
+    # 否定テストでは固定できない（壊れても落ちることは落ちる）。**正常系が通ること**と、
+    # **潰すと通らなくなること**の 2 つで挟む。
+
+    # symlink のループを打ち切れていること。打ち切らないと `os.walk(followlinks=True)` が
+    # 同じ場所を何段も降り、実在しないパスの「未登録」が大量に出る。
+    def loop_setup(root: Path) -> None:
+        os.symlink(root / "diagrams", root / "diagrams" / "loop")
+
+    proc = run_case(manifest=ok_manifest(), setup=loop_setup)
+    check(proc.returncode == 0, "symlink のループで偽陽性が出た", proc.stdout[:400])
+    check("Traceback" not in proc.stderr, "symlink のループでクラッシュした", proc.stderr[-300:])
+
+    original_shared = SHARED.read_text(encoding="utf-8")
+    cut = "        if real in visited:"
+    check(original_shared.count(cut) == 1, "ループ打ち切りの対象が一意でない")
+    if original_shared.count(cut) == 1:
+        _MUTATED[SHARED.name] = original_shared.replace(cut, "        if False:")
+        try:
+            proc = run_case(manifest=ok_manifest(), setup=loop_setup)
+        finally:
+            _MUTATED.clear()
+        check(
+            proc.returncode != 0,
+            "ループ打ち切りを潰しても何も起きなかった（この分岐は何も守っていない）",
+            proc.stdout[:300],
+        )
+
+    # 除外規則が `.claude/worktrees/` を狙い撃ちしていること（他の周の作業ツリーを
+    # 「diagrams/ の外にある」と誤検出しない）。**ドット始まりを全部飛ばす広い規則ではない**
+    # ——`.github/` は追跡されているので、そこの drawio は報告されるべき。
+    proc = run_case(
+        manifest=ok_manifest(),
+        extra_files={".claude/worktrees/other/diagrams/x.drawio": SRC_TWO},
+    )
+    check(
+        proc.returncode == 0,
+        "他の周の作業ツリーの drawio を誤検出した",
+        proc.stdout[:400],
+    )
+
+    proc = run_case(
+        manifest=ok_manifest(),
+        extra_files={".github/ci.drawio": SRC_TWO},
+    )
+    check_rejected(proc, "の外にある", "`.github/` の drawio が報告されなかった")
+
+    check_fingerprint_terms()
     check_mutations()
 
     if failures:
@@ -567,6 +717,67 @@ def main() -> int:
         return 1
     print(f"check-diagram-freshness.py: 全 {checks} 判定に合格")
     return 0
+
+
+# --- 指紋が 4 つの項に依存していることの直接検査 -------------------------------
+#
+# **変異テストではこれを固定できない。** 指紋の式を変える変異は**すべての指紋を変える**ので、
+# 「その項を落とした」ことだけを分離できない。さらに、テスト側の `fp` と本体の式を
+# **両方**同じ向きに直してしまう退行（項を 1 つ落とす）は、`fp` を使う否定ケースでは
+# 検出できない——両方が同じ値を出すので通ってしまう。
+#
+# そこで**スクリプト自身が報告する値だけ**を使う。指紋が合わないときの診断には
+# 「実際 <先頭 12 桁>…」が入るので、**1 つの項だけを変えて 2 回走らせ、報告される値が
+# 変わること**を見る。`fp` に一切依存しないので、テストと本体が一緒にずれても検出できる。
+
+ACTUAL_RE = re.compile(r"実際 ([0-9a-f]{12})…")
+
+
+def reported_fingerprint(**kwargs) -> str | None:
+    """わざと合わない指紋を入れて走らせ、スクリプトが報告する「実際」の値を取る。"""
+    proc = run_case(**kwargs)
+    found = ACTUAL_RE.search(proc.stdout)
+    return found.group(1) if found else None
+
+
+def check_fingerprint_terms() -> None:
+    wrong = "0" * 64  # 何にも一致しない指紋
+
+    def entry(output: str = OUT_ONE, scale: object = "absent") -> dict:
+        spec: dict = {"output": output, "fingerprint": wrong}
+        if scale != "absent":
+            spec["scale"] = scale
+        return {"diagrams/one.drawio": spec}
+
+    base = reported_fingerprint(manifest=entry())
+    check(base is not None, "指紋の診断から「実際」の値を取れなかった")
+    if base is None:
+        return
+
+    # 1) ソースの内容を変える
+    variant = reported_fingerprint(
+        manifest=entry(), sources={"one.drawio": "<mxfile>changed</mxfile>\n"}
+    )
+    check(variant != base, "指紋が**ソースの内容**に依存していない", f"{base} == {variant}")
+
+    # 2) 書き出しの内容を変える（前提ではなく結果。ここが 2 パス目の反証だった）
+    variant = reported_fingerprint(manifest=entry(), outputs={OUT_ONE: "<svg>changed</svg>\n"})
+    check(variant != base, "指紋が**書き出しの内容**に依存していない", f"{base} == {variant}")
+
+    # 3) `output` のパスを変える（中身は同じにしておく）
+    variant = reported_fingerprint(
+        manifest=entry(output="docs/images/other.svg"),
+        outputs={"docs/images/other.svg": BODY_ONE},
+    )
+    check(variant != base, "指紋が **`output` のパス**に依存していない", f"{base} == {variant}")
+
+    # 4) `scale` を変える
+    variant = reported_fingerprint(manifest=entry(scale=2))
+    check(variant != base, "指紋が **`scale`** に依存していない", f"{base} == {variant}")
+
+    # `scale` の有無そのものも区別する（既定倍率と `--scale 1` は CLI の呼び方が違う）
+    with_one = reported_fingerprint(manifest=entry(scale=1))
+    check(with_one != base, "指紋が **`scale` の有無**を区別していない", f"{base} == {with_one}")
 
 
 # --- 変異テスト ----------------------------------------------------------------
@@ -601,6 +812,20 @@ MUTATIONS = [
         "未登録",
     ),
     (
+        "`diagrams/` の中にもノイズ除外を適用する",
+        "        if skip_noise:",
+        "        if True:",
+        case_noise_dir_inside_diagrams,
+        "未登録",
+    ),
+    (
+        "「実在するのに収集できていない」の診断を潰す",
+        '            fail(f"{key} は実在するのに収集できていない（収集規則から漏れている）")',
+        "            pass",
+        case_uncollectable_but_present,
+        "実在するのに収集できていない",
+    ),
+    (
         "収集の大文字小文字対応を潰す",
         '            if name.lower().endswith(SOURCE_SUFFIX):',
         "            if name.endswith(SOURCE_SUFFIX):",
@@ -609,8 +834,8 @@ MUTATIONS = [
     ),
     (
         "収集の symlink 追跡を潰す",
-        "    for dirpath, dirnames, filenames in os.walk(top, followlinks=True):",
-        "    for dirpath, dirnames, filenames in os.walk(top):",
+        "os.walk(top, followlinks=True, onerror=on_error)",
+        "os.walk(top, onerror=on_error)",
         case_symlink_dir,
         "未登録",
     ),
@@ -629,9 +854,11 @@ MUTATIONS = [
         "実在しない",
     ),
     (
+        # 条件を潰すと下流の `read_bytes()` が存在しないファイルでクラッシュする。
+        # **診断の行だけ**を消す形にする（`return` は残るのでクラッシュしない）。
         "書き出しの実在確認を潰す",
-        "    if not output_path.is_file():",
-        "    if False:",
+        '        fail(f"{key} の書き出し {output} が存在しない")',
+        "        pass",
         case_missing_output,
         "が存在しない",
     ),

@@ -19,7 +19,9 @@ CI（.github/workflows/docs.yml）から呼ばれるが、ローカルでもそ�
 3. 収集範囲の外 — `diagrams/` の外に置かれた drawio（置いた本人にも気づく機会が無い）
 4. 死んだエントリ — マニフェストにあるのに実在しない source
 5. 書き出しの実在 — `output` が指すファイルがあるか
-6. **鮮度** — 記録された指紋が、いまの書き出しの前提（ソースの内容・`output`・`scale`）と一致するか
+6. **鮮度** — 記録された指紋が、いまの前提と結果（ソースの内容・`output`・`scale`・
+   **書き出しの内容**）と一致するか。書き出しの内容が入っているので、**書き出しそのものが
+   壊れた場合も検出する**（マニフェストを 1 文字も触らずに起きる形）
 7. エントリの形 — 必須キーの欠落・**未知キー**・指紋の桁・scale の値・
    `output` の正規形と**実パスでの重複**（symlink や `./` で同じファイルを 2 度指せない）
 
@@ -76,6 +78,15 @@ def fail(message: str) -> None:
     errors.append(message)
 
 
+def walk_failed(exc: OSError) -> None:
+    """走査中に一覧できなかったディレクトリをエラーにする。
+
+    `os.walk` の既定はこの例外を**捨てる**ので、渡さないと「一覧できないディレクトリの中は
+    黙って収集から落ちる」（このリポジトリが何度も踏んでいる「落として黙って免除する」形）。
+    """
+    fail(f"走査できないディレクトリがある: {exc}（中の drawio を検査できていない）")
+
+
 def rel(path: Path) -> str:
     """リポジトリ相対のパス表記。エラーメッセージをコピペで辿れるようにする。"""
     try:
@@ -113,7 +124,10 @@ def load_manifest() -> dict | None:
         # 理由が読めない。fail-closed のまま理由を出す。
         fail(f"{rel(MANIFEST)} を読めない: {exc}")
         return None
-    except json.JSONDecodeError as exc:
+    except ValueError as exc:
+        # `JSONDecodeError` と `UnicodeDecodeError` はどちらも `ValueError`。
+        # 前者だけを捕まえていると、**UTF-8 でないマニフェストが素の traceback で落ちる**
+        # ——非ゼロにはなるが理由が読めない（#50 の 2 パス目のレビューで指摘された）。
         fail(f"{rel(MANIFEST)} が JSON として不正: {exc}")
         return None
     if not isinstance(data, dict):
@@ -197,7 +211,9 @@ def check_entry(key: str, entry: object, outputs_seen: dict[str, tuple[str, str]
     if output_path.suffix.lower() not in ALLOWED_SUFFIXES:
         fail(f"{key} の `output` の拡張子が {sorted(ALLOWED_SUFFIXES)} ではない: {output}")
     if not output_path.is_file():
+        # 指紋は書き出しの内容も含むので、書き出しが無ければ鮮度は判定できない。
         fail(f"{key} の書き出し {output} が存在しない")
+        return
 
     # **突き合わせは実パスで行う。** 文字列比較だと、片方を symlink にするだけで
     # 「同じファイルを 2 つの source が指す」状態をすり抜けられる。
@@ -224,12 +240,13 @@ def check_entry(key: str, entry: object, outputs_seen: dict[str, tuple[str, str]
         fail(f"{key} の `fingerprint` が 64 桁の小文字 hex でない: {recorded!r}")
         return
 
-    actual = fingerprint(REPO_ROOT / key, output, scale)
+    actual = fingerprint(REPO_ROOT / key, output, scale, output_path)
     if actual != recorded:
-        # 指紋はソースの内容・`output`・`scale` をまとめたものなので、どれが変わっても落ちる。
+        # 指紋はソースの内容・`output`・`scale`・**書き出しの内容**をまとめたものなので、
+        # どれが変わっても落ちる（書き出しが壊れた場合も含む）。
         fail(
-            f"{key} の書き出しの前提（ソースの内容・`output`・`scale`）が記録と違う"
-            f"——{output} を書き出し直していない"
+            f"{key} の書き出しの前提と結果（ソースの内容・`output`・`scale`・書き出しの内容）"
+            f"が記録と違う——{output} を書き出し直していない"
             f"（記録 {recorded[:12]}… / 実際 {actual[:12]}…）。"
             f"`python3 scripts/export-diagrams.py {Path(key).stem}` で書き出す"
         )
@@ -242,7 +259,7 @@ def check_sources_outside_diagrams(found_in_diagrams: set[str]) -> None:
     置くと、鮮度が一切見られない**——未登録エラーにもならないので、置いた本人にも
     気づく機会が無い。「収集範囲の外」は最も静かな抜け道なので、範囲の外を明示的に禁じる。
     """
-    for path in walk_drawio(REPO_ROOT):
+    for path in walk_drawio(REPO_ROOT, skip_noise=True, on_error=walk_failed):
         name = rel(path)
         if name in found_in_diagrams:
             continue
@@ -264,7 +281,7 @@ def main() -> int:
 
     # **レイアウトを列挙せず、全部拾ってから照合する。** 列挙で判定すると知らない形が残る
     # （#63 の周で SKILL.md の検査が同じ穴を繰り返した）。
-    found = {rel(path) for path in walk_drawio(DIAGRAMS_DIR)}
+    found = {rel(path) for path in walk_drawio(DIAGRAMS_DIR, on_error=walk_failed)}
 
     check_sources_outside_diagrams(found)
 

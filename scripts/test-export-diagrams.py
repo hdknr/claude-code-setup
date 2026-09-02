@@ -57,18 +57,28 @@ def check(condition: bool, label: str, detail: str = "") -> None:
         failures.append(f"{label}{': ' + detail if detail else ''}")
 
 
-def fp(source_text: str, output: str, scale: object = None) -> str:
+def fp(
+    source_text: str,
+    output: str,
+    scale: object = None,
+    output_text: str = GOOD_SVG,
+) -> str:
     """`diagram_manifest.fingerprint` と**同じ式を独立に**書いたもの。
 
     共有実装を import して期待値を作ると、**式が変わってもテストは一緒に変わって
     通り続ける**（`test-check-diagram-freshness.py` と同じ理由）。
+    `output_text` の既定は**偽 CLI が成功時に書く中身**——書き出し後の指紋を期待するため。
     """
     digest = hashlib.sha256()
     digest.update(source_text.encode("utf-8"))
     digest.update(b"\0")
     digest.update(output.encode("utf-8"))
     digest.update(b"\0")
+    if isinstance(scale, float) and scale.is_integer():
+        scale = int(scale)
     digest.update(repr(scale).encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(output_text.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -98,6 +108,11 @@ if behaviour == "nothing_but_ok":
     sys.exit(0)
 if behaviour == "fail_only":
     sys.exit(3)
+if behaviour == "hang":
+    # タイムアウトさせる（テストは DRAWIO_TIMEOUT=1 を渡す）
+    import time
+    time.sleep(10)
+    sys.exit(0)
 raise SystemExit("unknown behaviour: " + behaviour)
 '''.replace("{good!r}", repr(GOOD_SVG))
 
@@ -152,6 +167,8 @@ def run_case(
         env = dict(os.environ)
         env["DRAWIO"] = f"{sys.executable} {fake}"
         env["FAKE_BEHAVIOUR"] = behaviour
+        # タイムアウト経路を通すため。既定（600 秒）のままではその分岐を検証できない。
+        env["DRAWIO_TIMEOUT"] = "1" if behaviour == "hang" else "60"
 
         proc = subprocess.run(
             # `args=[]`（全件モード）と `args=None`（既定）を区別する。
@@ -219,11 +236,40 @@ def main() -> int:
     check(body == GOOD_SVG, "壊れた書き出しが残った", str(body))
 
     # --- 何も書かずに 0 を返す ---------------------------------------------------
-    # 既存の書き出しが無い状態で走らせる（mtime の判定に頼れないケースを分ける）
+    # 既存の書き出しが**無い**場合
     proc, after, body = run_case("nothing_but_ok", output_body=None)
     check(proc.returncode != 0, "書き出しが作られていないのに成功と判定した", proc.stdout)
     check(recorded(after) != fresh, "書き出しが無いのに記録が進んだ", proc.stdout)
     check(body is None, "作られていないはずの書き出しが存在する", str(body))
+
+    # **既存の書き出しが有効なまま残っている場合**（#50 の 2 パス目のレビューで、
+    # mtime の 1 秒許容がこの窓を開けていたことが実測された）。既存ファイルは
+    # `looks_like` を通ってしまうので、**「今回書いたか」を確定させる判定が要る**。
+    # 書き出しの前に消す設計にしたので、在るかどうかを見るだけで確定する。
+    proc, after, body = run_case("nothing_but_ok", output_body=GOOD_SVG)
+    check(
+        proc.returncode != 0,
+        "**何も書かない CLI を、既存の有効な書き出しがあると成功と判定した**",
+        proc.stdout,
+    )
+    check(
+        recorded(after) != fresh,
+        "**何も書かなかったのに記録が進んだ**（検出できない状態を自分で作っている）",
+        proc.stdout,
+    )
+    check(body == GOOD_SVG, "既存の書き出しが復元されていない", str(body))
+
+    # --- タイムアウト -----------------------------------------------------------
+    proc, after, body = run_case("hang")
+    check(proc.returncode != 0, "タイムアウトを成功と判定した", proc.stdout)
+    check("タイムアウト" in proc.stdout, "タイムアウトの理由が報告されていない", proc.stdout)
+    check(recorded(after) != fresh, "タイムアウトしたのに記録が進んだ", proc.stdout)
+    check(body == GOOD_SVG, "タイムアウトで既存の書き出しが失われた", str(body))
+
+    # --- 既存の書き出しが無い状態で失敗したら、中途半端なファイルを残さない -------
+    proc, after, body = run_case("broken_then_ok", output_body=None)
+    check(proc.returncode != 0, "壊れた書き出しを成功と判定した（新規）", proc.stdout)
+    check(body is None, "失敗したのに壊れたファイルが残った（新規作成の経路）", str(body))
 
     # --- 書かずに非ゼロ ---------------------------------------------------------
     proc, after, body = run_case("fail_only")
@@ -307,8 +353,13 @@ def main() -> int:
 
 # --- 変異テスト ----------------------------------------------------------------
 #
-# 失敗判定は 4 つ（終了コード・実在・mtime・中身）を見ている。1 つずつ潰して、
+# 失敗判定は 3 つ（終了コード・実在・中身）。1 つずつ潰して、
 # **その判定が出していた理由が消えること**を確かめる。
+#
+# **mtime の判定は無い。** 以前は時刻と比べていたが、粒度の粗い環境向けに 1 秒の許容を
+# 入れた結果、**何も書かない CLI を 1 秒の窓で見逃す**穴になっていた（2 パス目のレビューで
+# 実測）。書き出しの前に出力を消す設計にして、判定を 1 つ減らした——
+# **テストできない判定を足すより、判定を減らすほうが強い。**
 #
 # **判定は「記録が進むこと」ではなく「その理由が消えること」。** 4 つは重なっているので
 # （空ファイルを書いて非ゼロ終了するケースは「非ゼロ終了」と「空のファイル」の両方で

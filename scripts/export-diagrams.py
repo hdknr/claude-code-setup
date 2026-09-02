@@ -12,10 +12,16 @@
 
 **書き出しが失敗したら指紋は更新しない。** 指紋だけ進むと、検査は緑なのに書き出しは
 古いままという、この方式で唯一検出できない状態を自分で作ることになる。失敗の判定は
-**終了コード・出力の実在・mtime・中身が形式として読めること**の 4 つを全部見る——
+**終了コード・出力の実在・中身が形式として読めること**の 3 つを全部見る——
 どれか 1 つでも落とすと、そこから記録だけが進む（#50 の周の検証で実際に踏んだ:
 終了コードを見ていなかったため、**壊れたファイルを吐いて落ちる CLI** を成功と誤判定した）。
-さらに**失敗したら書き出しを元に戻す**ので、壊れたファイルが残ることもない。
+**書き出しの前に出力を消す**ので、「在ること」がそのまま「今回書いたこと」の証明になる
+（mtime を読む判定は置かない。1 秒の許容を入れた版が、**何も書かない CLI を 1 秒の窓で
+見逃す**穴を作っていた）。
+さらに**失敗したら書き出しを元に戻す**。ただし**復元そのものが失敗しうる**
+（書き出し先が読み取り専用になっている等）——そのときは壊れたファイルが残るので、
+「戻せなかった」ことと `git checkout` での戻し方を明示して報告する（黙って traceback で
+終わらせない）。**「壊れたファイルが残ることはない」とまでは言えない。**
 
 draw.io CLI は GUI アプリに同梱されている。macOS の既定の場所を見るが、環境変数
 `DRAWIO` で差し替えられる（Linux なら `DRAWIO=drawio`、`xvfb-run` 越しなら
@@ -34,7 +40,6 @@ import os
 import shlex
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -43,6 +48,7 @@ from diagram_manifest import (  # noqa: E402
     MANIFEST_NAME,
     RESERVED_KEYS,
     fingerprint,
+    normalize_scale,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -51,9 +57,9 @@ MANIFEST = DIAGRAMS_DIR / MANIFEST_NAME
 
 DEFAULT_DRAWIO = "/Applications/draw.io.app/Contents/MacOS/draw.io"
 
-# mtime の粒度が 1 秒のファイルシステムや、時刻がずれたネットワークマウントでは、
-# 「書き出した直後の mtime」が開始時刻より前に見えることがある。1 秒だけ許す。
-MTIME_TOLERANCE_SECONDS = 1
+# 書き出し 1 件あたりの待ち時間。`DRAWIO_TIMEOUT` で縮められる
+# （テストがタイムアウト経路を通すために使う。既定のままだとその分岐は検証できない）。
+TIMEOUT_SECONDS = int(os.environ.get("DRAWIO_TIMEOUT", "600"))
 
 
 def rel(path: Path) -> str:
@@ -142,7 +148,7 @@ def export_one(key: str, entry: dict, command: list[str]) -> bool:
     fmt = output.suffix.lstrip(".")
 
     cmd = [*command, "--export", "--format", fmt, "--output", str(output)]
-    scale = entry.get("scale")
+    scale = normalize_scale(entry.get("scale"))
     if scale is not None:
         cmd += ["--scale", str(scale)]
     cmd.append(str(source))
@@ -156,19 +162,43 @@ def export_one(key: str, entry: dict, command: list[str]) -> bool:
             detail = (proc.stdout + proc.stderr).strip()
             if detail:
                 print(f"    {detail[-400:]}")
-        if previous is None:
-            output.unlink(missing_ok=True)
+        # **復元そのものが失敗しうる。** 書き出し先が読み取り専用になっている等。
+        # そこで素の例外を投げると、**壊れたファイルを残したまま traceback で終わる**
+        # ——理由が読めないまま「戻したはず」と思われるのが最悪なので、明示的に報告する。
+        try:
+            if previous is None:
+                output.unlink(missing_ok=True)
+            else:
+                output.write_bytes(previous)
+        except OSError as exc:
+            print(f"    **{entry['output']} を書き出し前の状態に戻せなかった: {exc}**")
+            print(f"    壊れた書き出しが残っている可能性がある。`git checkout -- {entry['output']}`"
+                  " で戻すこと")
         else:
-            output.write_bytes(previous)
-        print(f"    {entry['output']} は書き出し前の状態に戻した")
+            print(f"    {entry['output']} は書き出し前の状態に戻した")
         return False
 
-    started = time.time()
+    # **先に消してから書かせる。** こうすると「書き出しが在ること」がそのまま
+    # 「CLI が今回書いたこと」の証明になり、mtime を読む必要が無くなる。
+    #
+    # 以前は mtime を時刻と比べていたが、粒度の粗いファイルシステム向けに 1 秒の許容を
+    # 入れた結果、**何も書かずに 0 を返す CLI を 1 秒の窓で見逃す**穴を自分で開けていた
+    # （#50 の 2 パス目のレビューで実測された。既存の書き出しが有効なら他の 3 判定は
+    # すべて通るので、mtime だけがその窓の唯一の歯止めだった）。
+    # 判定を 1 つ減らして、確率的な推定を確定的な証明に置き換える。
+    #
+    # 消してから書かせるので、失敗時は `reject` が `previous` から戻す。途中で
+    # プロセスが殺されると書き出しは失われるが、git に入っているので `git checkout` で戻る。
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    except FileNotFoundError:
-        print(f"  失敗: draw.io CLI が見つからない（{command[0]}）。DRAWIO で指定する")
+        output.unlink(missing_ok=True)
+    except OSError as exc:
+        print(f"  失敗: {entry['output']} を消せない（書き出し先が書き込み不可）: {exc}")
         return False
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
+    except FileNotFoundError:
+        return reject(f"draw.io CLI が見つからない（{command[0]}）。DRAWIO で指定する")
     except subprocess.TimeoutExpired:
         return reject("draw.io CLI がタイムアウトした")
 
@@ -179,10 +209,9 @@ def export_one(key: str, entry: dict, command: list[str]) -> bool:
         return reject(f"draw.io CLI が非ゼロ終了した（rc={proc.returncode}）", proc)
 
     # **終了コードだけでも足りない。** GUI アプリ同梱の CLI は、書き出さずに 0 を返すことがある。
+    # 先に消してあるので、在るかどうかを見るだけで「今回書いたか」が確定する。
     if not output.is_file():
         return reject("書き出しが作られなかった（rc=0）", proc)
-    if output.stat().st_mtime < started - MTIME_TOLERANCE_SECONDS:
-        return reject("書き出しが更新されていない（rc=0）", proc)
     broken = looks_like(output)
     if broken is not None:
         return reject(f"書き出しが壊れている（{broken}）", proc)
@@ -208,7 +237,12 @@ def main() -> int:
             continue
         # **成功してから**指紋を進める。失敗した分は記録を据え置くので、
         # 次の check で「書き出していない」として落ちる。
-        entry["fingerprint"] = fingerprint(REPO_ROOT / key, entry["output"], entry.get("scale"))
+        entry["fingerprint"] = fingerprint(
+            REPO_ROOT / key,
+            entry["output"],
+            entry.get("scale"),
+            REPO_ROOT / entry["output"],
+        )
 
     save_manifest(manifest)
 
