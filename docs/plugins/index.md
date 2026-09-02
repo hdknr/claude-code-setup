@@ -12,11 +12,11 @@
 
 配布中のプラグインは以下のとおりです。
 
-| プラグイン | 提供スキル | 概要 |
-|---|---|---|
-| [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | ワークスペースの初期セットアップ |
-| [`cmux`](#cmux) | `/cmux:cmux` | cmux ウィンドウで GitHub Issue/PR を操作 |
-| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | 1 Issue = 1 周のループ志向開発 |
+| プラグイン | 呼び出し | 種別 | 概要 |
+|---|---|---|---|
+| [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | コマンド | ワークスペースの初期セットアップ |
+| [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
+| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
 
 !!! warning "呼び出しは `プラグイン名:スキル名`"
     プラグインが提供するスキルは、名前の衝突を防ぐため**常にプラグイン名で名前空間化されます**。
@@ -78,13 +78,18 @@ claude plugin install cmux@claude-code-setup --scope user
 
 作業用ワークスペースの初期セットアップを対話的に行うプラグインです。Claude Code を使い始める最初の一歩をまとめて実行します。
 
+!!! note "このプラグインだけスキルを持ちません"
+    提供するのは**スラッシュコマンド 1 つ**です（`commands/` のみ）。そのため
+    `SKILL.md` が無く、[更新のしかた](#更新のしかた)で触れている版の表示や、
+    `link-skills.sh` による symlink の対象にもなりません。
+
 ### インストール
 
 ```
 /plugin install workspace-setup@claude-code-setup
 ```
 
-### 提供スキル
+### 提供コマンド
 
 #### `/workspace-setup:workspace-setup`
 

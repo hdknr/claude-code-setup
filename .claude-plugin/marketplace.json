@@ -13,9 +13,9 @@
     {
       "name": "workspace-setup",
       "source": "./plugins/workspace-setup",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": { "name": "hdknr" },
-      "description": "ワークスペースの初期セットアップ（CLAUDE.md 作成、GitHub リポジトリ作成、プライベート設定）"
+      "description": "ワークスペースの初期セットアップを対話的に行うコマンド（ディレクトリ作成と git init、CLAUDE.md 作成、GitHub プライベートリポジトリの作成と連携）"
     },
     {
       "name": "cmux",
