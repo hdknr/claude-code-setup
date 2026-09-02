@@ -19,9 +19,13 @@ theme:
         icon: material/brightness-4
         name: ライトモードに切り替え
 
-# アンカー切れを --strict で落とす。既定は info 止まりなので CI をすり抜ける——
-# #66 の周で、日本語見出しへのリンク（ASCII スラグ化で id が空になる）が
-# 実際に緑のままマージ直前まで残った。手で気づくのに頼らない。
+# 警告を失敗として扱う。**設定に書くのが要点**——CI もローカルも `mkdocs build` を
+# そのまま叩くので、`--strict` を渡す運用にすると付け忘れた場所だけ守られなくなる。
+# 実際 #66 の周で、`validation` だけ足して CI に `--strict` が無いことを見落とした。
+strict: true
+
+# アンカー切れは既定が info 止まりで、strict でも落ちない。warn に上げて初めて効く。
+# #66 では、日本語見出しへのリンク（ASCII スラグ化で id が空になる）が緑のまま残った。
 validation:
   anchors: warn
 
