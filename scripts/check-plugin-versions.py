@@ -137,38 +137,68 @@ def check_entry(entry: dict) -> str | None:
 
 
 SKILL_VERSION_MARKER = "<!-- skill-version: "
+SKILL_VERSION_VISIBLE = "**このスキルの版: "
+
+
+def skill_files(source_dir: Path) -> list[Path]:
+    """そのプラグインが持つ SKILL.md をすべて返す。
+
+    **2 つのレイアウトがある。** 公式ドキュメントは、単一スキルのプラグインは
+    `SKILL.md` を**プラグインルート直下**に置いてよいと明記している。
+    `skills/` の有無だけで判断すると、**そのレイアウトを黙って無検査にしてしまう**——
+    レビューで実際に再現された（受入基準 2-e が警戒していた「黙って免除」そのもの）。
+    """
+    found = [source_dir / "SKILL.md"] if (source_dir / "SKILL.md").is_file() else []
+    skills_dir = source_dir / "skills"
+    if skills_dir.is_dir():
+        found.extend(sorted(skills_dir.glob("*/SKILL.md")))
+    return found
+
+
+def extract_versions(text: str) -> tuple[list[str], list[str]]:
+    """SKILL.md 本文から (コメントの版, 可視テキストの版) を取り出す。"""
+    comments: list[str] = []
+    visible: list[str] = []
+    for line in text.split("\n"):
+        if line.startswith(SKILL_VERSION_MARKER):
+            comments.append(line[len(SKILL_VERSION_MARKER) :].split("-->")[0].strip())
+        index = line.find(SKILL_VERSION_VISIBLE)
+        if index != -1:
+            rest = line[index + len(SKILL_VERSION_VISIBLE) :]
+            visible.append(rest.split("**")[0].strip())
+    return comments, visible
 
 
 def check_skill_versions(plugin: str, source_dir: Path, version: str) -> None:
     """そのプラグインの全 SKILL.md 本文に、plugin.json と同じ版が書かれているか。
 
-    スキルを持たないプラグイン（`commands/` だけ等）は検査対象なし——それは正しい状態。
-    スキルがあるのに版の記載が無ければ**エラー**にする（fail-closed）。
+    **コメントと可視テキストの両方を見る。** コメント（`<!-- skill-version: X -->`）は
+    機械が読む印だが、**古いキャッシュに気づかせる役目を負っているのは可視テキストのほう**
+    （`> **このスキルの版: X**`）である。コメントだけ検査すると、実際に目に入る側が
+    ずれても緑のまま通る——レビューで再現された。守りたいものを守る。
+
+    SKILL.md を 1 つも持たないプラグイン（`commands/` だけ等）は検査対象なし。
+    持っているのに記載が無ければ**エラー**にする（fail-closed）。
     """
-    skills_dir = source_dir / "skills"
-    if not skills_dir.is_dir():
-        return
-    for skill in sorted(skills_dir.glob("*/SKILL.md")):
-        text = skill.read_text(encoding="utf-8")
-        marked = [
-            line for line in text.split("\n") if line.startswith(SKILL_VERSION_MARKER)
-        ]
-        if not marked:
-            fail(
-                f"{plugin}: {rel(skill)} の本文に版の記載が無い。"
-                f"`{SKILL_VERSION_MARKER}{version} -->` を見出しの直後に置く"
-                "（古いキャッシュが読まれたときに気づく唯一の手掛かり。#63）"
-            )
-            continue
-        if len(marked) > 1:
-            fail(f"{plugin}: {rel(skill)} に版の記載が {len(marked)} 個ある。1 つにする")
-            continue
-        found = marked[0][len(SKILL_VERSION_MARKER) :].split("-->")[0].strip()
-        if found != version:
-            fail(
-                f"{plugin}: {rel(skill)} の版が {found} で plugin.json の {version} と一致しない。"
-                "版を上げたら本文の記載も直す"
-            )
+    for skill in skill_files(source_dir):
+        comments, visible = extract_versions(skill.read_text(encoding="utf-8"))
+
+        for label, found, hint in (
+            ("コメント", comments, f"`{SKILL_VERSION_MARKER}{version} -->`"),
+            ("可視テキスト", visible, f"`> {SKILL_VERSION_VISIBLE}{version}**`"),
+        ):
+            if not found:
+                fail(
+                    f"{plugin}: {rel(skill)} に版の{label}が無い。{hint} を見出しの直後に置く"
+                    "（古いキャッシュが読まれたときに気づく手掛かり。#63）"
+                )
+            elif len(found) > 1:
+                fail(f"{plugin}: {rel(skill)} に版の{label}が {len(found)} 個ある。1 つにする")
+            elif found[0] != version:
+                fail(
+                    f"{plugin}: {rel(skill)} の版の{label}が {found[0]} で "
+                    f"plugin.json の {version} と一致しない。版を上げたら本文の記載も直す"
+                )
 
 
 def check_uncatalogued(catalogued: set[str]) -> None:

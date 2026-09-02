@@ -42,3 +42,6 @@ jobs:
       # 歯止め自体が「置いてあるが何も見ていない」状態に退化していないかを確かめる
       - name: check-description-sync.py のテスト
         run: python3 scripts/test-check-description-sync.py
+
+      - name: check-plugin-versions.py の版チェックのテスト
+        run: python3 scripts/test-check-plugin-versions.py

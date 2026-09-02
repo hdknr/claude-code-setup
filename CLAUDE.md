@@ -16,8 +16,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
-  - `test-link-skills.py` / `test-check-description-sync.py` - 上記の回帰テスト。
-    **どちらも実環境を対象にしないことをアサートで担保している**
+  - `test-link-skills.py` / `test-check-description-sync.py` /
+    `test-check-plugin-versions.py` - 上記の回帰テスト。
+    **いずれも実環境を対象にしないことをアサートで担保している**
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
 - `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ
@@ -96,6 +97,7 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 python3 scripts/check-plugin-versions.py            # version の一致（3 箇所）・カタログ構造
 python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分に対して）
 python3 scripts/check-description-sync.py origin/main   # description の同期漏れ（同上）
+python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止め自体のテスト
 ```
 
 ### description は 3 箇所にある
