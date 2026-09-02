@@ -112,7 +112,7 @@ Docker Desktop が動いている間は、それなりにメモリを使いま�
 
 ありません。Docker は **完全に自分の PC の中だけ** で動いていて、xserver や本番サイトには一切触りません。安心して試せます。
 
-## インストール
+## インストール { #install }
 
 Docker を動かすためのアプリには、いくつか選択肢があります。**macOS では OrbStack、Windows では Docker Desktop** が標準的なおすすめです。
 

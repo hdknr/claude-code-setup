@@ -19,6 +19,12 @@ theme:
         icon: material/brightness-4
         name: ライトモードに切り替え
 
+# アンカー切れを --strict で落とす。既定は info 止まりなので CI をすり抜ける——
+# #66 の周で、日本語見出しへのリンク（ASCII スラグ化で id が空になる）が
+# 実際に緑のままマージ直前まで残った。手で気づくのに頼らない。
+validation:
+  anchors: warn
+
 nav:
   - ホーム: index.md
   - 概要: overview.md
