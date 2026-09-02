@@ -51,7 +51,7 @@ claude plugin install cmux@claude-code-setup --scope user
 `claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
 セッションで `/reload-plugins` を実行したときになります。
 
-### 更新のしかた
+### 更新のしかた { #updating }
 
 **version を上げただけでは届きません。** 利用者のマーケットプレイスのクローンは
 導入時のコミットで凍結しており、**カタログを読み直すまで新しい版が見えません**
@@ -79,9 +79,8 @@ claude plugin install cmux@claude-code-setup --scope user
 作業用ワークスペースの初期セットアップを対話的に行うプラグインです。Claude Code を使い始める最初の一歩をまとめて実行します。
 
 !!! note "このプラグインだけスキルを持ちません"
-    提供するのは**スラッシュコマンド 1 つ**です（`commands/` のみ）。そのため
-    `SKILL.md` が無く、[更新のしかた](#更新のしかた)で触れている版の表示や、
-    `link-skills.sh` による symlink の対象にもなりません。
+    提供するのは**スラッシュコマンド 1 つ**です（`commands/` のみ）。
+    そこから来る制約は [更新のしかた](#updating) にまとめてあります。
 
 ### インストール
 
