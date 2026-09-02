@@ -418,14 +418,20 @@ def main() -> int:
         )
         check(proc.returncode != 0, "折り畳みブロックの本文変更がすり抜けた")
 
-        # 改行位置だけ変える（意味は同じ）→ 通る
+        # 改行位置だけ変えた場合も「変更」になる。**生テキストを比較する設計の帰結**で、
+        # 意図的にそうしている（見逃すより誤検出するほうが安全。YAML を解釈しようとして
+        # 3 周続けて穴が開いたので、解釈をやめた）。
         proc = raw_case(
             root,
             catalog=marketplace("old catalog"),
             plugin=manifest("old catalog"),
             skill="---\nname: skill0\ndescription: >\n  old\n  text\n---\n\nbody\n",
         )
-        check(proc.returncode == 0, "折り畳みの改行位置を変えただけで落ちた", proc.stdout)
+        check(
+            proc.returncode != 0,
+            "折り返しの変更が検出されなかった（生テキスト比較になっていない）",
+            proc.stdout,
+        )
 
         # 未知の指示子（`>+`）でも「指示子」として認識し、値に化けないこと。
         #
@@ -458,15 +464,58 @@ def main() -> int:
             proc.stdout,
         )
 
-        # 同じ行で閉じないクォートは読めないものとして拒否する
-        proc = raw_case(
+        # 複数行スカラー（クォートが同じ行で閉じない形）も、継続行まで含めて比較される。
+        # 以前は 1 行目だけ読んでいたので、継続行の編集が丸ごと落ちていた。
+        git(root, "checkout", "-q", "-B", "multiline", "base-ref")
+        write(
             root,
-            catalog=marketplace("new catalog"),
-            plugin=manifest("new catalog"),
-            skill='---\nname: skill0\ndescription: "first\n  second"\n---\n\nbody\n',
+            marketplace("old catalog"),
+            manifest("old catalog"),
+            ['---\nname: skill0\ndescription: "first\n  original second"\n---\n\nbody\n'],
         )
-        check(proc.returncode != 0, "閉じないクォートを黙って読んだ（fail-open）")
-        check("読めません" in proc.stdout, "読めない旨が出ていない", proc.stdout)
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "複数行スカラーの base")
+        git(root, "branch", "-q", "-f", "multiline-base")
+        write(
+            root,
+            marketplace("old catalog"),
+            manifest("old catalog"),
+            ['---\nname: skill0\ndescription: "first\n  TOTALLY CHANGED"\n---\n\nbody\n'],
+        )
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "継続行だけ変える")
+        proc = run(sys.executable, str(SCRIPT), "multiline-base", cwd=root)
+        check(
+            proc.returncode != 0,
+            "複数行スカラーの継続行の変更がすり抜けた",
+            proc.stdout,
+        )
+
+        # block 指示子の後ろに YAML コメントが付く形でも、中身の変更を見逃さない
+        git(root, "checkout", "-q", "-B", "commented", "base-ref")
+        write(
+            root,
+            marketplace("old catalog"),
+            manifest("old catalog"),
+            ["---\nname: skill0\ndescription: | # note\n  original text\n---\n\nbody\n"],
+        )
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "コメント付き指示子の base")
+        git(root, "branch", "-q", "-f", "commented-base")
+        write(
+            root,
+            marketplace("old catalog"),
+            manifest("old catalog"),
+            ["---\nname: skill0\ndescription: | # note\n  COMPLETELY DIFFERENT\n---\n\nbody\n"],
+        )
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "コメント付き指示子のまま中身を変える")
+        proc = run(sys.executable, str(SCRIPT), "commented-base", cwd=root)
+        check(
+            proc.returncode != 0,
+            "`| # note` の下で中身を変えたのに検出されなかった",
+            proc.stdout,
+        )
 
     # カタログの name とディレクトリ名が食い違う場合、source を正とする
     with tempfile.TemporaryDirectory(prefix="desc-sync-src-") as tmp:
@@ -562,6 +611,119 @@ def main() -> int:
             proc.stdout,
         )
 
+    # --- 3 パス目のレビューで見つかった経路 ---
+
+    with tempfile.TemporaryDirectory(prefix="desc-sync-misc-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        make_repo(root)
+
+        # 非 ASCII のスキルディレクトリ名（ls-tree の C クォートで消えていた）
+        git(root, "checkout", "-q", "-B", "nonascii", "base-ref")
+        shutil.rmtree(root / "plugins" / "demo" / "skills")
+        jp = root / "plugins" / "demo" / "skills" / "日本語"
+        jp.mkdir(parents=True)
+        (jp / "SKILL.md").write_text(skill_md("もとの説明", "日本語"), encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "日本語名のスキルを置く")
+        git(root, "branch", "-q", "-f", "nonascii-base")
+        (jp / "SKILL.md").write_text(skill_md("変えた説明", "日本語"), encoding="utf-8")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "frontmatter だけ変える")
+        proc = run(sys.executable, str(SCRIPT), "nonascii-base", cwd=root)
+        check(proc.returncode != 0, "日本語名スキルの frontmatter 変更がすり抜けた", proc.stdout)
+
+        # サブディレクトリから実行しても SKILL.md のスロットが消えない
+        subdir = root / "sub"
+        subdir.mkdir(exist_ok=True)
+        proc = run(sys.executable, str(SCRIPT), "nonascii-base", cwd=subdir)
+        check(
+            proc.returncode != 0,
+            "サブディレクトリから実行すると SKILL.md のスロットが消えた",
+            proc.stdout,
+        )
+
+        # プラグイン単位の trailer は、そのプラグインにだけ効く
+        proc = commit_case(
+            root,
+            catalog="new catalog",
+            plugin="old catalog",
+            skill="old skill",
+            message="片側だけ直す\n\nSkip-description-sync: demo: 紹介文の typo のみ",
+        )
+        check(proc.returncode == 0, "プラグイン名付きの trailer が効かなかった", proc.stdout)
+        proc = commit_case(
+            root,
+            catalog="new catalog",
+            plugin="old catalog",
+            skill="old skill",
+            message="片側だけ直す\n\nSkip-description-sync: other-plugin: 別のプラグインの話",
+        )
+        check(proc.returncode != 0, "別プラグイン宛の trailer で素通りした", proc.stdout)
+
+    # プラグインのディレクトリを改名しても、丸ごと免除されない
+    with tempfile.TemporaryDirectory(prefix="desc-sync-plugdir-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        assert_outside_real_repo(root)
+        git(root, "init", "-q", "-b", "main")
+        git(root, "config", "user.email", "test@example.invalid")
+        git(root, "config", "user.name", "test")
+
+        def place(directory: str, catalog_desc: str) -> None:
+            (root / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+            (root / ".claude-plugin" / "marketplace.json").write_text(
+                marketplace(catalog_desc, source=f"./plugins/{directory}"), encoding="utf-8"
+            )
+            d = root / "plugins" / directory / ".claude-plugin"
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "plugin.json").write_text(manifest("unchanged"), encoding="utf-8")
+            s = root / "plugins" / directory / "skills" / "only"
+            s.mkdir(parents=True, exist_ok=True)
+            (s / "SKILL.md").write_text(skill_md("unchanged skill", "only"), encoding="utf-8")
+
+        place("foo", "old catalog")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "base")
+        git(root, "branch", "-q", "base-ref")
+        shutil.rmtree(root / "plugins" / "foo")
+        place("bar", "new catalog")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "ディレクトリ改名＋カタログだけ変更")
+        proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+        check(
+            proc.returncode != 0,
+            "プラグインのディレクトリ改名で、片側だけの変更が丸ごと免除された",
+            proc.stdout,
+        )
+
+        # **改名だけで description をどこも変えていない場合は通る。**
+        # スロット ID にディレクトリ名を含めていると、スキルのスロットが
+        # 「消えた＋現れた」に見えて誤検出になる（この 2 ケースで初めて区別できる）。
+        git(root, "checkout", "-q", "-B", "rename-only", "base-ref")
+        shutil.rmtree(root / "plugins" / "foo")
+        place("bar", "old catalog")
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "ディレクトリ改名だけ")
+        proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+        check(
+            proc.returncode == 0,
+            "description を変えていない改名だけで落ちた（スロット ID がディレクトリに依存している）",
+            proc.stdout,
+        )
+
+    # marketplace.json を片側で消すとチェック全体が黙る、という状態にしない
+    with tempfile.TemporaryDirectory(prefix="desc-sync-nocat-") as tmp:
+        root = Path(tmp) / "repo"
+        root.mkdir()
+        make_repo(root)
+        git(root, "checkout", "-q", "-B", "work", "base-ref")
+        (root / ".claude-plugin" / "marketplace.json").unlink()
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", "カタログを消す")
+        proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)
+        check(proc.returncode != 0, "カタログを消すだけでチェックが黙った", proc.stdout)
+
     # 1-h: 新規プラグイン（base に plugin.json が無い）は対象外
     with tempfile.TemporaryDirectory(prefix="desc-sync-new-") as tmp:
         root = Path(tmp) / "repo"
@@ -581,7 +743,7 @@ def main() -> int:
         git(root, "add", "-A")
         git(root, "commit", "-q", "-m", "base")
         git(root, "branch", "-q", "base-ref")
-        write(root, marketplace("new catalog"), manifest("new catalog"), ["new skill"])
+        write(root, marketplace("new catalog"), manifest("new catalog"), [skill_md("new skill", "skill0")])
         git(root, "add", "-A")
         git(root, "commit", "-q", "-m", "プラグインを新規追加")
         proc = run(sys.executable, str(SCRIPT), "base-ref", cwd=root)

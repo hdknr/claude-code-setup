@@ -34,41 +34,54 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 このチェックが破られる形は 1 つに集約される。**「読めない」「無い」をスロットごと
 比較から落とすと、差分も一緒に消えて無検知になる。**
 
-初版はここが甘く、レビューで**同じ欠陥が 2 つの次元**で見つかった:
+初版はここが甘く、レビューを重ねるたびに**同じ欠陥が次元を変えて**出てきた:
 
 | 次元 | すり抜けた形 | 現在 |
 | --- | --- | --- |
 | **値** | `description` キーを削除する | キーの有無も値として比較（削除＝変更） |
-| **値** | `plugin.json` の JSON を壊す | エラー |
-| **値** | `marketplace.json` の JSON を壊す | エラー（構文ミス 1 箇所で全体が黙るのが最悪） |
-| **値** | frontmatter の block 指示子が未知（`>+` `>2` 等） | エラー（指示子として認識し、読めない形は拒否） |
-| **値** | クォートが同じ行で閉じない複数行スカラー | エラー |
-| **キー** | スキルのディレクトリ名を変える | **両側の和集合で比較**（片側にしか無いスロットは「変更」） |
-| **キー** | カタログの `name` と実ディレクトリ名を食い違わせる | `source` からディレクトリを解決する |
+| **値** | `plugin.json` / `marketplace.json` の JSON を壊す | エラー（構文ミス 1 箇所で全体が黙るのが最悪） |
+| **値** | YAML の書式を変える（`>+`、`|` の後ろのコメント、複数行スカラー…） | **値を解釈するのをやめた**（下記） |
+| **キー** | スキルのディレクトリ名を変える | 両側の**和集合**で比較（片側にしか無いスロットは「変更」） |
+| **キー** | プラグインのディレクトリ名を変える | スロット ID にディレクトリ名を含めない／ディレクトリは **ref ごとに解決** |
+| **キー** | カタログの `name` と実ディレクトリ名を食い違わせる | `source` だけを見る（`name` にフォールバックしない） |
 | **キー** | `./plugins/./demo` のような書き方で解決に失敗させる | パスを正規化してから判定する |
+| **収集** | 非 ASCII のパスが `ls-tree` で C クォートされる | `-z` で受け取る |
+| **収集** | サブディレクトリから実行すると相対パスになる | `--full-tree` を付ける |
 
-**したがってスロットは「両側の積集合」ではなく「和集合」で数える。** 片側にしか
-存在しないスロットは、欠けている側を「無い」という値として比較する。
+**スロットは「両側の積集合」ではなく「和集合」で数える。** 片側にしか存在しない
+スロットは、欠けている側を「無い」という値として比較する。
+
+**そして値を解釈しない。** frontmatter の description は、YAML として解釈せず
+**フィールドの生テキストをそのまま比較**する。ここは 3 周続けて解釈漏れで穴が開いた
+場所で、塞ぐたびに次の書式が出てきた。**解釈しなければ解釈漏れも起きない。**
+代償として、折り返し位置を変えただけ・クォートを付けただけでも「変更」になるが、
+**見逃すより誤検出するほうが安全**であり、どちらも「常時ロードされる要約に手を入れた」
+ことに変わりはない。
 
 判定の線引き:
 
-- スロットが 1 つしか無いプラグイン → 比較相手がいないので対象外
 - 新規／削除されたプラグイン（`plugin.json` が片方の ref にしか無い）→ 対象外
 - **スキルの追加・削除・改名は「変更」として数える。** プラグインの守備範囲が変われば
   カタログの紹介文も見直す対象になるため。見直し不要と判断したなら trailer を使う
 - `main` への直接 push では base が曖昧なので判定できない。**PR のときだけ**実行する
 
-なお **marketplace からエントリを丸ごと削除**した場合と、**`source` が指すディレクトリが
-存在しない**場合は、既存の `scripts/check-plugin-versions.py` が検出するので、
-ここでは重複して見ない。
+**marketplace からエントリを丸ごと削除**した場合は、和集合比較にしたことで
+ここでも「あり → ファイル自体が無い」として検出される（既存の
+`scripts/check-plugin-versions.py` も別の理由で落とすので、二重に見えることになる）。
+**`source` が指すディレクトリが存在しない**場合と、**`source` キーが無い**場合は、
+`check-plugin-versions.py` の担当なのでここでは対象外にする。
 
 どうしても片側だけ直したい場合（カタログの typo 修正など）は、コミットメッセージの
 **末尾に trailer として**書く（行頭から。引用文の中では効かない）:
 
     Skip-description-sync: カタログの typo 修正のみ。要約の内容は変わらない
 
-**理由は必須**で、履歴に残るのでレビューで追える。**この PR 全体に効く**ので、
-1 つの逃げ道で他のプラグインの同期漏れまで通る点に注意する。
+**理由は必須**で、履歴に残るのでレビューで追える。既定では **PR 全体に効く**ので、
+**プラグインを 1 つに絞りたいときは名前を前置する**:
+
+    Skip-description-sync: dev-loop: スキルを 1 つ足しただけで、紹介文は変えない
+
+絞らないと、1 つの逃げ道で**他のプラグインの同期漏れまで一緒に通る**。
 
 標準ライブラリのみ。git はサブプロセスで呼ぶ。
 """
@@ -82,6 +95,8 @@ import subprocess
 import sys
 
 MARKETPLACE = ".claude-plugin/marketplace.json"
+# マニフェストのスロット ID。プラグインのディレクトリ名は含めない（改名で免除されるのを防ぐ）
+MANIFEST_SLOT = ".claude-plugin/plugin.json"
 TRAILER_KEY = "Skip-description-sync"
 
 # YAML の block scalar 指示子（`>` `|` に桁数と chomping が付きうる）
@@ -123,18 +138,28 @@ def show(ref: str, path: str) -> str | None:
     return out if code == 0 else None
 
 
-def parse_frontmatter_description(text: str) -> str | Sentinel:
-    """SKILL.md の YAML frontmatter から description を取り出す。
+def frontmatter_description_source(text: str) -> str | Sentinel:
+    """SKILL.md の frontmatter から、description フィールドの**生テキスト**を切り出す。
 
-    PyYAML に依存せず、**確実に読める形だけを読み、それ以外は拒否する**:
+    **値を解釈しない。** ここは 3 周続けて「YAML の解釈漏れ」で穴が開いた場所である:
 
-    - 1 行のプレーンスカラー（クォート有無どちらも。ただし同じ行で閉じること）
-    - `>` / `|` 系の block scalar（桁数・chomping 付きも含む）。1 スペースで連結して畳む
+    - 未知の block 指示子（`>+` `>2`）を*値そのもの*として返し、スロットが定数に固定される
+    - 指示子の後ろに YAML コメント（`| # note`）が付くと同じことが起きる
+    - クォート無しの複数行プレーンスカラーで継続行が落ちる
+    - クォートが同じ行で閉じない場合も同様
 
-    読めない形は UNREADABLE を返す。**「読めないから対象外」にしてはならない**——
-    書式を崩した瞬間にチェックが無言で外れる。初版は未知の block 指示子（`>+` 等）を
-    *値そのもの*として返していたため、その形にした時点でスロットが定数に固定され、
-    frontmatter をどう編集しても検出されない状態になっていた。
+    どれも「解釈できなかった分を落とす → 差分も消える」という同じ形で、
+    **塞ぐたびに次の書式が出てくる**。YAML の全書式を自前で正しく解釈するのは割に合わない。
+
+    そこで**解釈をやめる**。`description:` の行から、次のトップレベルキー（列 0 から始まる行）
+    または frontmatter の終わりまでの**行をそのまま連結して返す**。
+    比較したいのは「要約が書き換わったか」であって、YAML としての値ではない。
+
+    この設計は**保守的な側に倒れる**——折り返し位置を変えただけ・クォートを付けただけでも
+    「変更」になる。見逃すより誤検出するほうが安全であり、実際その 2 つも
+    「常時ロードされる要約に手を入れた」ことに変わりはない。
+
+    `description:` が無い、frontmatter が無い場合は UNREADABLE（fail-closed）。
     """
     if not text.startswith("---\n"):
         return UNREADABLE
@@ -146,22 +171,16 @@ def parse_frontmatter_description(text: str) -> str | Sentinel:
     for index, line in enumerate(lines):
         if not line.startswith("description:"):
             continue
-        inline = line[len("description:") :].strip()
-
-        if inline and not BLOCK_INDICATOR.match(inline):
-            # プレーンスカラー。クォートが同じ行で閉じていなければ複数行なので読めない
-            if inline[0] in "\"'" and not (len(inline) >= 2 and inline[-1] == inline[0]):
-                return UNREADABLE
-            return inline
-
-        # block scalar（または `description:` の後が空）: インデントが続く限り拾う
-        collected: list[str] = []
+        block = [line]
         for cont in lines[index + 1 :]:
-            if cont.strip() and not cont.startswith(" "):
+            # 列 0 から始まる非空行 = 次のトップレベルキー
+            if cont.strip() and not cont[0].isspace():
                 break
-            collected.append(cont.strip())
-        joined = " ".join(part for part in collected if part)
-        return joined or UNREADABLE
+            block.append(cont)
+        # 末尾の空行は書式の揺れなので落とす（意味を持たない）
+        while block and not block[-1].strip():
+            block.pop()
+        return "\n".join(block)
     return UNREADABLE
 
 
@@ -197,11 +216,13 @@ def load_catalog(ref: str) -> dict[str, dict[str, object]] | Sentinel | None:
     return result
 
 
-def plugin_dir(source: object, name: str) -> str | None:
+def plugin_dir(source: object) -> str | None:
     """カタログの source からプラグインのディレクトリ名を得る。
 
     `name` がディレクトリ名と一致する保証は無い（レビューで見つかった抜け道）ので、
-    **source を正とする**。
+    **source だけを見る**。`name` にフォールバックすると、まさにその仮定が復活する。
+    `source` が無い／文字列でないカタログは `check-plugin-versions.py` が
+    「必須キーが無い」で落とすので、ここでは対象外にしてよい。
 
     **パスは正規化してから判定する。** `./plugins/./demo` のような書き方を
     「解釈できないから対象外」にすると、`check-plugin-versions.py` 側は通るのに
@@ -209,9 +230,7 @@ def plugin_dir(source: object, name: str) -> str | None:
     正規化の結果 `plugins/<dir>` にならないもの（`plugins/../evil` で外に出る、
     絶対パス、階層が深い）だけを対象外にする。
     """
-    if not isinstance(source, str):
-        return name or None
-    if source.startswith("/"):
+    if not isinstance(source, str) or source.startswith("/"):
         return None
     normalized = posixpath.normpath(source)
     prefix = "plugins/"
@@ -236,12 +255,34 @@ def manifest_value(ref: str, directory: str) -> str | Sentinel:
     return value if isinstance(value, (str, Sentinel)) else NO_KEY
 
 
-def skill_paths(ref: str, directory: str) -> list[str]:
-    """指定 ref に存在する、そのプラグインの SKILL.md をすべて返す。"""
-    code, out = git("ls-tree", "-r", "--name-only", ref, f"plugins/{directory}/skills/")
+def skill_paths(ref: str, directory: str) -> list[tuple[str, str]]:
+    """そのプラグインの SKILL.md を (スロット ID, リポジトリ内のパス) で返す。
+
+    **スロット ID にプラグインのディレクトリ名を含めない**（`skills/<name>/SKILL.md`）。
+    含めると、**プラグインのディレクトリを改名しただけで全スロットの ID が変わり**、
+    「新規または削除されたプラグイン」として丸ごと免除される——スキルの改名で塞いだのと
+    同じ穴の、プラグイン階層版になる。
+
+    `-z` と `--full-tree` が要る:
+
+    - `-z` 無しだと `core.quotePath` の既定で**非 ASCII のパスが C クォートされ**、
+      `endswith("/SKILL.md")` に一致せずスロットが消える。日本語のディレクトリ名は、
+      このリポジトリでは十分ありうる。
+    - `--full-tree` 無しだと**カレントディレクトリ相対**になる。docstring と CLAUDE.md は
+      ローカル実行を案内しているので、サブディレクトリから走らせると SKILL.md の
+      スロットが全部消えたまま JSON 側だけ比較され、**沈黙が正常な合格に見える**。
+    """
+    prefix = f"plugins/{directory}/"
+    code, out = git(
+        "ls-tree", "-r", "-z", "--name-only", "--full-tree", ref, f"{prefix}skills/"
+    )
     if code != 0:
         return []
-    return sorted(line for line in out.splitlines() if line.endswith("/SKILL.md"))
+    return sorted(
+        (path[len(prefix) :], path)
+        for path in out.split("\0")
+        if path.endswith("/SKILL.md") and path.startswith(prefix)
+    )
 
 
 def slots(
@@ -249,17 +290,18 @@ def slots(
 ) -> dict[str, object]:
     """指定 ref における、そのプラグインの description スロット一覧。
 
-    値は str（本体）・NO_KEY・MISSING・UNREADABLE のいずれか。
+    キーは**プラグインのディレクトリ名に依存しない安定した ID**（上記参照）。
+    値は str（生テキスト）・NO_KEY・MISSING・UNREADABLE のいずれか。
     **スロットを落とさない**のが要点で、「無い」も比較可能な値として持つ。
     """
     entry = catalog.get(name)
     found: dict[str, object] = {
         MARKETPLACE: entry["description"] if entry else MISSING,
-        f"plugins/{directory}/.claude-plugin/plugin.json": manifest_value(ref, directory),
+        MANIFEST_SLOT: manifest_value(ref, directory),
     }
-    for path in skill_paths(ref, directory):
+    for skill_id, path in skill_paths(ref, directory):
         text = show(ref, path)
-        found[path] = UNREADABLE if text is None else parse_frontmatter_description(text)
+        found[skill_id] = UNREADABLE if text is None else frontmatter_description_source(text)
     return found
 
 
@@ -268,22 +310,32 @@ def describe(value: object) -> str:
     return value.label if isinstance(value, Sentinel) else "あり"
 
 
-def skip_reason(base: str) -> str | None:
-    """コミットメッセージの trailer に Skip-description-sync があれば理由を返す。
+def skip_reasons(base: str) -> dict[str | None, str]:
+    """コミットメッセージの trailer から {対象プラグイン名 or None: 理由} を作る。
 
     **git の trailer 解釈に任せる**（行頭・末尾段落）。初版は「行を strip して前方一致」
     だったため、**過去のメッセージを引用しただけの行でもチェックが無効化**できた。
+
+    値を `<プラグイン名>: <理由>` の形にすると、**そのプラグインだけ**に効く。
+    プラグイン名を書かなければ PR 全体に効く——スキルを 1 つ足しただけの周で、
+    **他のプラグインの同期漏れまで一緒に通す**のを避けたいときは名前を書く。
     """
     code, out = git(
         "log", f"--format=%(trailers:key={TRAILER_KEY},valueonly)", f"{base}..HEAD"
     )
     if code != 0:
-        return None
+        return {}
+    found: dict[str | None, str] = {}
     for line in out.splitlines():
-        reason = line.strip()
-        if reason:
-            return reason
-    return None
+        value = line.strip()
+        if not value:
+            continue
+        target: str | None = None
+        head, sep, rest = value.partition(":")
+        if sep and rest.strip() and " " not in head.strip():
+            target, value = head.strip(), rest.strip()
+        found.setdefault(target, value)
+    return found
 
 
 def resolve_base(ref: str) -> str | None:
@@ -318,9 +370,16 @@ def main() -> int:
                 "壊れたまま通すと、カタログ全体の共変チェックが黙って無効になります"
             )
             return 1
-    if base_catalog is None or head_catalog is None:
-        print(f"{MARKETPLACE} が見つかりません。description のチェックはスキップします。")
+    if base_catalog is None and head_catalog is None:
+        print(f"{MARKETPLACE} が両方の ref に見つかりません。チェックはスキップします。")
         return 0
+    if base_catalog is None or head_catalog is None:
+        missing = base if base_catalog is None else "HEAD"
+        print(
+            f"::error::{missing} に {MARKETPLACE} がありません。"
+            "片側にしか無い状態を「対象外」にすると、カタログを消すだけでチェックが黙ります"
+        )
+        return 1
     assert isinstance(base_catalog, dict) and isinstance(head_catalog, dict)
 
     names = sorted(set(base_catalog) | set(head_catalog))
@@ -331,17 +390,22 @@ def main() -> int:
     drifted: list[tuple[str, list[str], list[str]]] = []
 
     for name in names:
-        entry = head_catalog.get(name) or base_catalog.get(name) or {}
-        directory = plugin_dir(entry.get("source"), name)
-        if directory is None:
+        # **ディレクトリは ref ごとに解決する。** HEAD の source だけで両方を見ると、
+        # プラグインのディレクトリを改名した周に base 側が MISSING になり、
+        # 「新規または削除されたプラグイン」として**丸ごと免除**される。
+        dirs = {
+            ref: plugin_dir((catalog.get(name) or {}).get("source"))
+            for ref, catalog in ((base, base_catalog), ("HEAD", head_catalog))
+        }
+        usable = [d for d in dirs.values() if d is not None]
+        if not usable:
             print(f"{name}: source がリポジトリ内のプラグインを指していません。対象外")
             continue
 
-        before = slots(base, name, directory, base_catalog)
-        after = slots("HEAD", name, directory, head_catalog)
+        before = slots(base, name, dirs[base] or usable[0], base_catalog)
+        after = slots("HEAD", name, dirs["HEAD"] or usable[-1], head_catalog)
 
-        manifest_slot = f"plugins/{directory}/.claude-plugin/plugin.json"
-        if before[manifest_slot] is MISSING or after[manifest_slot] is MISSING:
+        if before[MANIFEST_SLOT] is MISSING or after[MANIFEST_SLOT] is MISSING:
             print(f"{name}: 新規または削除されたプラグイン。対象外")
             continue
 
@@ -366,9 +430,7 @@ def main() -> int:
         changed = [s for s in every if before.get(s, MISSING) != after.get(s, MISSING)]
         unchanged = [s for s in every if s not in changed]
 
-        if len(every) < 2:
-            print(f"{name}: description スロットが {len(every)} 個。比較相手がいないので対象外")
-        elif not changed:
+        if not changed:
             print(f"{name}: description に変更なし。OK")
         elif not unchanged:
             print(f"{name}: description を {len(changed)} 箇所すべてで更新。OK")
@@ -385,8 +447,9 @@ def main() -> int:
             )
 
     if drifted:
-        reason = skip_reason(base)
+        reasons = skip_reasons(base)
         for name, changed, unchanged in drifted:
+            reason = reasons.get(name, reasons.get(None))
             if reason is not None:
                 print(
                     f"::warning::{name}: description が片側だけ変わっていますが、"
