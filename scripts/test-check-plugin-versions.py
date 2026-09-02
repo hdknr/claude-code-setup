@@ -55,6 +55,22 @@ def check(condition: bool, label: str, detail: str = "") -> None:
         failures.append(f"{label}{': ' + detail if detail else ''}")
 
 
+def check_rejected(proc: subprocess.CompletedProcess[str], expected: str, label: str) -> None:
+    """「落ちること」だけでなく、**期待した理由で落ちたこと**まで見る。
+
+    終了コードだけを見ると、**クラッシュも合格になる**。実際、`if not found:` を潰す変異は
+    `IndexError` で落ちて stdout が空になるが、`returncode != 0` しか見ていない判定は
+    22 件すべて通ってしまった——**fail-closed の保証が固定できていなかった**。
+    この周で「別の理由で通るテスト」を踏むのは 3 度目なので、否定側は全部これを使う。
+    """
+    check(proc.returncode != 0, f"{label}（落ちなかった）", proc.stdout)
+    check(
+        expected in proc.stdout,
+        f"{label}（落ちたが理由が違う。期待: {expected!r}）",
+        (proc.stdout + proc.stderr)[-400:],
+    )
+
+
 def skill_md(
     *,
     comment: str | None,
@@ -165,7 +181,7 @@ def main() -> int:
             }
         }
     )
-    check(proc.returncode != 0, "コメントの版ずれがすり抜けた")
+    check_rejected(proc, "版のコメントが 9.9.9", "コメントの版ずれがすり抜けた")
 
     # **可視テキストの版だけずれる**（初版が見逃していた形）
     proc = run_case(
@@ -176,7 +192,7 @@ def main() -> int:
             }
         }
     )
-    check(proc.returncode != 0, "可視テキストの版ずれがすり抜けた（守りたいのはこちら）")
+    check_rejected(proc, "版の可視テキストが 0.1.0", "可視テキストの版ずれがすり抜けた（守りたいのはこちら）")
 
     # 記載が無い（コメント / 可視テキストそれぞれ）
     for missing, label in (("comment", "コメント"), ("visible", "可視テキスト")):
@@ -185,7 +201,7 @@ def main() -> int:
             visible=None if missing == "visible" else "1.0.0",
         )
         proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": body}}})
-        check(proc.returncode != 0, f"版の{label}が無いのに通った（fail-open）")
+        check_rejected(proc, f"版の{label}が無い", f"版の{label}が無いのに通った（fail-open）")
 
     # 記載が 2 つある
     proc = run_case(
@@ -200,7 +216,7 @@ def main() -> int:
             }
         }
     )
-    check(proc.returncode != 0, "版の記載が 2 つあるのに通った")
+    check_rejected(proc, "版のコメントが 2 個ある", "版の記載が 2 つあるのに通った")
 
     # **skills/ を持たず、プラグインルート直下に SKILL.md を置く公式レイアウト**
     proc = run_case(
@@ -211,8 +227,8 @@ def main() -> int:
             }
         }
     )
-    check(
-        proc.returncode != 0,
+    check_rejected(
+        proc, "版のコメントが無い",
         "ルート直下 SKILL.md のプラグインが無検査で免除された（受入基準 2-e）",
     )
 
@@ -233,14 +249,14 @@ def main() -> int:
             }
         }
     )
-    check(proc.returncode != 0, "`skills` フィールドで置いたスキルが無検査で免除された")
+    check_rejected(proc, "版のコメントが無い", "`skills` フィールドで置いたスキルが無検査で免除された")
 
     # **可視テキストを HTML コメントで囲って無効化**しても合格させない
     # （読者には見えないのに CI 緑、という状態を作らせない）
     body = skill_md(comment="1.0.0", visible=None)
     body = body.replace("本文。", "<!-- > **このスキルの版: 1.0.0**（無効化） -->\n本文。")
     proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": body}}})
-    check(proc.returncode != 0, "コメントアウトした可視テキストで合格した")
+    check_rejected(proc, "版の可視テキストが無い", "コメントアウトした可視テキストで合格した")
 
     # **複数行の HTML コメント**で囲って無効化しても合格させない。
     # 実際のマーカーは 5 行のブロック引用なので、**無効化する現実的な方法はこちら**。
@@ -250,7 +266,7 @@ def main() -> int:
         "本文。", "<!--\n> **このスキルの版: 1.0.0**（プラグイン `demo`）。\n-->\n本文。"
     )
     proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": multiline}}})
-    check(proc.returncode != 0, "複数行コメントで囲った可視テキストで合格した")
+    check_rejected(proc, "版の可視テキストが無い", "複数行コメントで囲った可視テキストで合格した")
 
     # **コードフェンスの中**の記載も、読者には版として見えないので数えない（``` と ~~~ の両方）
     for fence in ("```", "~~~"):
@@ -259,7 +275,7 @@ def main() -> int:
             "本文。", f"{fence}\n> **このスキルの版: 1.0.0**\n{fence}\n本文。"
         )
         proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": fenced}}})
-        check(proc.returncode != 0, f"`{fence}` フェンス内の可視テキストで合格した")
+        check_rejected(proc, "版の可視テキストが無い", f"`{fence}` フェンス内の可視テキストで合格した")
 
     # **フェンスは開いたのと同じ文字でしか閉じない。** ``` を `~~~` で閉じたつもりの
     # 壊れた文書では、以降が全部フェンス内のままになり、本物のマーカーも数えられない
@@ -271,10 +287,9 @@ def main() -> int:
         "> **このスキルの版: 1.0.0**（プラグイン `demo`）。\n\n本文。",
     )
     proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": mixed}}})
-    check(
-        proc.returncode != 0,
+    check_rejected(
+        proc, "版のコメントが無い",
         "``` を `~~~` で閉じた壊れた文書が素通りした（閉じ文字を見ていない）",
-        proc.stdout,
     )
 
     # 逆側: **規約を例示しているだけのフェンス**を「2 個ある」と誤検出しない
@@ -306,7 +321,46 @@ def main() -> int:
             extra=extra_line,
         )
         proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": one_line}}})
-        check(proc.returncode != 0, f"1 行に 2 つ並べた{label}がすり抜けた")
+        check_rejected(proc, f"版の{label}が 2 個ある", f"1 行に 2 つ並べた{label}がすり抜けた")
+
+    # **4 個の ` で開いた囲み**は内側の ``` では閉じない
+    # （``` を含む例を載せるときの標準的な書き方。長さを見ないと例が本文に漏れる）
+    nested = skill_md(comment="1.0.0", visible="1.0.0")
+    nested = nested.replace(
+        "本文。",
+        "````markdown\n```\n<!-- skill-version: 9.9.9 -->\n"
+        "> **このスキルの版: 9.9.9**（プラグイン `demo`）。\n```\n````\n\n本文。",
+    )
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": nested}}})
+    check(proc.returncode == 0, "4 個の ` で囲った例示が本文に漏れた", proc.stdout)
+
+    # **散文の中のインラインコード**や**字下げの例示**を「本物が 2 個」と誤検出しない
+    for label, snippet in (
+        ("インラインコード", "版は `<!-- skill-version: 9.9.9 -->` と書く。"),
+        ("字下げの例示", "    <!-- skill-version: 9.9.9 -->"),
+    ):
+        prose = skill_md(comment="1.0.0", visible="1.0.0")
+        prose = prose.replace("本文。", snippet + "\n\n本文。")
+        proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": prose}}})
+        check(proc.returncode == 0, f"{label}を本物として数えた", proc.stdout)
+
+    # **散文の途中**に同じ文字列があっても、可視マーカーとしては数えない
+    # （`> ` は行頭にあって初めて引用になる。ここが行頭要求の役目で、
+    #  コメントでの無効化を防いでいるのは別の仕組み＝コメント除去のほう）
+    midline = skill_md(comment="1.0.0", visible="1.0.0")
+    midline = midline.replace("本文。", "以前は > **このスキルの版: 9.9.9** と書いていた。\n\n本文。")
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": midline}}})
+    check(proc.returncode == 0, "散文の途中の文字列を可視マーカーとして数えた", proc.stdout)
+
+    # **記載が末尾にある**と、起動しても目に入らないので目的を果たさない
+    late = skill_md(comment=None, visible=None)
+    late = late.replace(
+        "本文。",
+        "本文。\n\n## 詳細\n\n<!-- skill-version: 1.0.0 -->\n"
+        "> **このスキルの版: 1.0.0**（プラグイン `demo`）。",
+    )
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"skills/demo/SKILL.md": late}}})
+    check_rejected(proc, "最初の見出し節より後ろ", "版の記載が末尾にあっても通った")
 
     # **複数プラグイン**のうち、2 つ目だけ古い（1 つ目しか見ない退行を捕まえる）。
     #
@@ -321,7 +375,7 @@ def main() -> int:
                 comment="0.0.1", visible="0.0.1", name="second")}},
         }
     )
-    check(proc.returncode != 0, "2 つ目のプラグインの版ずれがすり抜けた")
+    check_rejected(proc, "second", "2 つ目のプラグインの版ずれがすり抜けた")
     check(
         "second" in proc.stdout and "0.0.1" in proc.stdout,
         "2 つ目のプラグインの版ずれが、指摘として出ていない",
@@ -340,7 +394,7 @@ def main() -> int:
             }
         }
     )
-    check(proc.returncode != 0, "複数スキルの片方の記載漏れがすり抜けた")
+    check_rejected(proc, "版のコメントが無い", "複数スキルの片方の記載漏れがすり抜けた")
 
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")

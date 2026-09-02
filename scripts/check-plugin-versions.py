@@ -139,7 +139,9 @@ def check_entry(entry: dict) -> str | None:
 
 SKILL_VERSION_MARKER = "<!-- skill-version: "
 SKILL_VERSION_VISIBLE = "**このスキルの版: "
-# 可視テキストは行頭のこの形だけを認める（コメントで囲って無効化されるのを防ぐ）
+# 可視テキストは行頭のこの形だけを認める。`> ` は行頭にあって初めて引用になるので、
+# 散文の途中に同じ文字列があっても数えないため。
+# **コメントでの無効化を防いでいるのはこれではなく、下のコメント除去のほう。**
 VISIBLE_PREFIX = "> " + SKILL_VERSION_VISIBLE
 
 
@@ -179,18 +181,27 @@ def strip_fences(text: str) -> str:
     可視テキストを検査する意味が無くなる。逆に、**規約を例示しているだけの
     フェンス**を数えると「2 個ある」で誤って落ちる（`CLAUDE.md` がまさにその例を載せている）。
 
-    開いたのと同じ文字でしか閉じないことまで見る。行数を保つため、落とした行は空行に置き換える。
+    **同じ文字で、開いたのと同じ長さ以上でしか閉じない**（Markdown の規則）。長さを見ないと、
+    4 個の ` で開いた囲み——**まさに ``` を含む例を載せるときの書き方**——が内側の ``` で
+    閉じてしまい、例が本文に漏れて「2 個ある」と誤検出する。
+
+    行数を保つため、落とした行は空行に置き換える。
     """
     out: list[str] = []
     fence: str | None = None
     for line in text.split("\n"):
         marker = line.lstrip()
+        run = ""
+        for char in ("`", "~"):
+            if marker.startswith(char * 3):
+                run = marker[: len(marker) - len(marker.lstrip(char))]
+                break
         if fence is None:
-            if marker.startswith("```") or marker.startswith("~~~"):
-                fence = marker[0]
+            if run:
+                fence = run
                 out.append("")
                 continue
-        elif marker.startswith(fence * 3):
+        elif run and run[0] == fence[0] and len(run) >= len(fence):
             fence = None
             out.append("")
             continue
@@ -217,11 +228,14 @@ def extract_versions(text: str) -> tuple[list[str], list[str]]:
     """
     body = strip_fences(text)
 
+    # コメント側も**行頭のみ**を認める。行の途中まで拾うと、規約を説明する散文
+    # （`` 版は `<!-- skill-version: X -->` と書く `` ）や 4 字下げの例示を
+    # 「本物が 2 個ある」と誤検出する。可視テキスト側と同じ扱いに揃えた。
     comments = [
         match.group(1).strip()
-        for match in re.finditer(
-            re.escape(SKILL_VERSION_MARKER) + r"(.*?)-->", body, re.S
-        )
+        for line in body.split("\n")
+        if line.startswith(SKILL_VERSION_MARKER)
+        for match in re.finditer(re.escape(SKILL_VERSION_MARKER) + r"(.*?)-->", line)
     ]
 
     # コメント（複数行にまたがるものを含む）を落としてから、可視テキストを探す
@@ -233,6 +247,27 @@ def extract_versions(text: str) -> tuple[list[str], list[str]]:
         for match in re.finditer(re.escape(SKILL_VERSION_VISIBLE) + r"(.*?)\*\*", line)
     ]
     return comments, visible
+
+
+def check_placement(plugin: str, skill: Path, text: str) -> None:
+    """版の記載が**冒頭にある**ことを確かめる。
+
+    この記載の役目は「起動して読まれたときに目に入る」こと（#63 の不変条件 1-a）。
+    400 行の末尾に置いても検査は通ってしまうが、**それでは目的を果たさない**。
+    「最初の `##` 見出しより前」を条件にする——本物はどれも `# 見出し` の直後にある。
+    """
+    body = strip_fences(text)
+    lines = body.split("\n")
+    section = next(
+        (i for i, line in enumerate(lines) if line.startswith("## ")), len(lines)
+    )
+    for label, prefix in (("コメント", SKILL_VERSION_MARKER), ("可視テキスト", VISIBLE_PREFIX)):
+        positions = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+        if positions and positions[0] >= section:
+            fail(
+                f"{plugin}: {rel(skill)} の版の{label}が最初の見出し節より後ろにある。"
+                "**読まれたときに目に入る**ことが目的なので、冒頭の見出しの直後に置く（#63）"
+            )
 
 
 def check_skill_versions(plugin: str, source_dir: Path, version: str) -> None:
@@ -247,7 +282,9 @@ def check_skill_versions(plugin: str, source_dir: Path, version: str) -> None:
     持っているのに記載が無ければ**エラー**にする（fail-closed）。
     """
     for skill in skill_files(source_dir):
-        comments, visible = extract_versions(skill.read_text(encoding="utf-8"))
+        text = skill.read_text(encoding="utf-8")
+        comments, visible = extract_versions(text)
+        check_placement(plugin, skill, text)
 
         for label, found, hint in (
             ("コメント", comments, f"`{SKILL_VERSION_MARKER}{version} -->`"),
