@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""drawio を書き出し、そのソースのハッシュを `diagrams/exports.json` に書き戻す。
+"""drawio を書き出し、書き出しの前提の指紋を `diagrams/exports.json` に書き戻す。
 
     python3 scripts/export-diagrams.py                    # マニフェストにある全件
     python3 scripts/export-diagrams.py architecture        # 名前を指定（拡張子は不要）
     python3 scripts/export-diagrams.py diagrams/flowchart.drawio   # パスでも指定できる
 
 なぜ 1 本のスクリプトにするか（#50）: `scripts/check-diagram-freshness.py` は
-**ソースのハッシュを書き出しの記録として**持つ方式なので、「書き出す」と「ハッシュを更新する」の
+**書き出しの前提の指紋を記録として**持つ方式なので、「書き出す」と「指紋を更新する」の
 **2 手になった瞬間に、片方だけ忘れる新しい失敗モードが生まれる**——忘れ物を 1 つ増やしただけになる。
-書き出しの成功を待ってハッシュを書き戻すことで、**手でハッシュを書く手順を残さない**。
+書き出しの成功を待って指紋を書き戻すことで、**手で指紋を書く手順を残さない**。
 
-**書き出しが失敗したらハッシュは更新しない。** ハッシュだけ進むと、検査は緑なのに書き出しは
-古いままという、この方式で唯一検出できない状態を自分で作ることになる。
+**書き出しが失敗したら指紋は更新しない。** 指紋だけ進むと、検査は緑なのに書き出しは
+古いままという、この方式で唯一検出できない状態を自分で作ることになる。失敗の判定は
+**終了コード・出力の実在・mtime・中身が形式として読めること**の 4 つを全部見る——
+どれか 1 つでも落とすと、そこから記録だけが進む（#50 の周の検証で実際に踏んだ:
+終了コードを見ていなかったため、**壊れたファイルを吐いて落ちる CLI** を成功と誤判定した）。
+さらに**失敗したら書き出しを元に戻す**ので、壊れたファイルが残ることもない。
 
 draw.io CLI は GUI アプリに同梱されている。macOS の既定の場所を見るが、環境変数
 `DRAWIO` で差し替えられる（Linux なら `DRAWIO=drawio`、`xvfb-run` 越しなら
@@ -25,7 +29,6 @@ draw.io CLI は GUI アプリに同梱されている。macOS の既定の場所
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shlex
@@ -34,12 +37,23 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from diagram_manifest import (  # noqa: E402
+    MANIFEST_NAME,
+    RESERVED_KEYS,
+    fingerprint,
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DIAGRAMS_DIR = REPO_ROOT / "diagrams"
-MANIFEST = DIAGRAMS_DIR / "exports.json"
+MANIFEST = DIAGRAMS_DIR / MANIFEST_NAME
 
 DEFAULT_DRAWIO = "/Applications/draw.io.app/Contents/MacOS/draw.io"
-RESERVED_KEYS = {"_comment"}
+
+# mtime の粒度が 1 秒のファイルシステムや、時刻がずれたネットワークマウントでは、
+# 「書き出した直後の mtime」が開始時刻より前に見えることがある。1 秒だけ許す。
+MTIME_TOLERANCE_SECONDS = 1
 
 
 def rel(path: Path) -> str:
@@ -47,10 +61,6 @@ def rel(path: Path) -> str:
         return str(path.relative_to(REPO_ROOT))
     except ValueError:
         return str(path)
-
-
-def sha256_of(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def drawio_command() -> list[str]:
@@ -104,8 +114,29 @@ def resolve_targets(manifest: dict, args: list[str]) -> list[str] | None:
     return targets
 
 
+def looks_like(output: Path) -> str | None:
+    """書き出しが**その形式として読める**か。読めなければ理由を返す。
+
+    終了コードと mtime だけでは、**壊れたファイル・空のファイルを吐いて落ちた**場合を
+    弾けない。中身を軽く見て、明らかに書き出しになっていないものを落とす。
+    """
+    data = output.read_bytes()
+    if not data:
+        return "空のファイル"
+    if output.suffix.lower() == ".png":
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "PNG のシグネチャが無い"
+    elif b"<svg" not in data[:4096]:
+        return "`<svg` が見つからない"
+    return None
+
+
 def export_one(key: str, entry: dict, command: list[str]) -> bool:
-    """1 件書き出す。成功したかどうかを返す。"""
+    """1 件書き出す。成功したかどうかを返す。
+
+    **失敗したら、書き出しを元に戻す。** 壊れたファイルを吐いて落ちる CLI に既存の
+    正しい書き出しを潰させると、記録は据え置かれても**書き出しは壊れたまま**になる。
+    """
     source = REPO_ROOT / key
     output = REPO_ROOT / entry["output"]
     fmt = output.suffix.lstrip(".")
@@ -116,27 +147,45 @@ def export_one(key: str, entry: dict, command: list[str]) -> bool:
         cmd += ["--scale", str(scale)]
     cmd.append(str(source))
 
-    started = time.time()
     output.parent.mkdir(parents=True, exist_ok=True)
+    previous = output.read_bytes() if output.is_file() else None
+
+    def reject(reason: str, proc: subprocess.CompletedProcess[str] | None = None) -> bool:
+        print(f"  失敗: {reason}")
+        if proc is not None:
+            detail = (proc.stdout + proc.stderr).strip()
+            if detail:
+                print(f"    {detail[-400:]}")
+        if previous is None:
+            output.unlink(missing_ok=True)
+        else:
+            output.write_bytes(previous)
+        print(f"    {entry['output']} は書き出し前の状態に戻した")
+        return False
+
+    started = time.time()
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     except FileNotFoundError:
         print(f"  失敗: draw.io CLI が見つからない（{command[0]}）。DRAWIO で指定する")
         return False
     except subprocess.TimeoutExpired:
-        print("  失敗: draw.io CLI がタイムアウトした")
-        return False
+        return reject("draw.io CLI がタイムアウトした")
 
-    # **終了コードだけを信じない。** GUI アプリ同梱の CLI は、書き出さずに 0 を返すことがある。
-    # 書き出しが「今回」更新されたことまで確かめる。
+    # **終了コードを見る。** これを落とすと、**書き出してから非ゼロで終了する**CLI
+    # （部分書き込み後のクラッシュ等）を成功と誤判定し、記録だけが進む——この方式で
+    # 唯一検出できない状態（記録は新しいのに書き出しは古い／壊れている）を自分で作ることになる。
+    if proc.returncode != 0:
+        return reject(f"draw.io CLI が非ゼロ終了した（rc={proc.returncode}）", proc)
+
+    # **終了コードだけでも足りない。** GUI アプリ同梱の CLI は、書き出さずに 0 を返すことがある。
     if not output.is_file():
-        print(f"  失敗: {entry['output']} が作られなかった（rc={proc.returncode}）")
-        print(f"    {(proc.stdout + proc.stderr).strip()[-400:]}")
-        return False
-    if output.stat().st_mtime < started:
-        print(f"  失敗: {entry['output']} が更新されていない（rc={proc.returncode}）")
-        print(f"    {(proc.stdout + proc.stderr).strip()[-400:]}")
-        return False
+        return reject("書き出しが作られなかった（rc=0）", proc)
+    if output.stat().st_mtime < started - MTIME_TOLERANCE_SECONDS:
+        return reject("書き出しが更新されていない（rc=0）", proc)
+    broken = looks_like(output)
+    if broken is not None:
+        return reject(f"書き出しが壊れている（{broken}）", proc)
     return True
 
 
@@ -157,9 +206,9 @@ def main() -> int:
         if not export_one(key, entry, command):
             failed.append(key)
             continue
-        # **成功してから**ハッシュを進める。失敗した分は記録を据え置くので、
+        # **成功してから**指紋を進める。失敗した分は記録を据え置くので、
         # 次の check で「書き出していない」として落ちる。
-        entry["sha256"] = sha256_of(REPO_ROOT / key)
+        entry["fingerprint"] = fingerprint(REPO_ROOT / key, entry["output"], entry.get("scale"))
 
     save_manifest(manifest)
 

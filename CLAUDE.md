@@ -6,8 +6,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 
 - `docs/` - mkdocs ドキュメントソース（Part 1〜3 + 付録リンク集）
 - `diagrams/` - drawio ダイアグラムソース（`diagrams/icons/` にブランドアイコン SVG）
-  - `exports.json` - source → 書き出しの宣言と、書き出し時点の source のハッシュ。
-    **手で編集しない**（`scripts/export-diagrams.py` が更新する）
+  - `exports.json` - source → 書き出しの宣言と、書き出し時点の前提の指紋。
+    **指紋は手で書かない**（`scripts/export-diagrams.py` が更新する）
 - `.claude-plugin/` - マーケットプレイスカタログ（`marketplace.json`）
 - `plugins/` - プラグイン配布用ディレクトリ
   - `workspace-setup/` - ワークスペース初期セットアップの**コマンド**（このプラグインだけスキルを持たない）
@@ -19,9 +19,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
   - `export-diagrams.py` - drawio の書き出しと `diagrams/exports.json` の更新（**CI からは呼ばない**）
+  - `diagram_manifest.py` - 上の 2 本が共有する指紋の式と収集規則（**実行しない**。
+    式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
   - `test-link-skills.py` / `test-check-description-sync.py` /
-    `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` - 上記の回帰テスト。
+    `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
+    `test-export-diagrams.py` - 上記の回帰テスト。
     **いずれも実環境を対象にしないことをアサートで担保している**
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
@@ -47,7 +50,9 @@ python3 scripts/export-diagrams.py           # マニフェストにある全件
 
 書き出し先・形式・倍率は `diagrams/exports.json` が持っている（`docs/images/` 直下と
 `docs/images/screenshots/` の両方に散っており、PNG も 2 件ある。**推測で書き出さない**）。
-スクリプトは**書き出しが成功してから** source のハッシュをマニフェストに書き戻す。
+スクリプトは**書き出しが成功してから**指紋をマニフェストに書き戻す。成功の判定は
+**終了コード・出力の実在・mtime・中身が形式として読めること**の 4 つを全部見て、
+**失敗したら書き出しを書き出し前の状態に戻す**。
 
 macOS 以外、あるいは draw.io を別の場所に入れている場合は `DRAWIO` で差し替える
 （`DRAWIO=drawio`、`xvfb-run` 越しなら `DRAWIO="xvfb-run -a drawio"`）。
@@ -57,27 +62,36 @@ macOS 以外、あるいは draw.io を別の場所に入れている場合は `
 
 **ソースだけ直して書き出しを忘れると、差分を見ても気づけない**——書き出しは差分に現れないので
 「変えていない」と見える。`makemigrations --check` に相当するものが無いことが、そもそも
-見落としの原因になる（#50）。そこで `diagrams/exports.json` に**書き出し時点の source の
-sha256** を記録し、CI（`docs.yml`）で現在の source と突き合わせている:
+見落としの原因になる（#50）。そこで `diagrams/exports.json` に**書き出し時点の前提の指紋**を
+記録し、CI（`docs.yml`）で現在の前提と突き合わせている:
 
 ```bash
 python3 scripts/check-diagram-freshness.py       # 乖離を検出して非ゼロ終了（--check 相当）
 python3 scripts/test-check-diagram-freshness.py  # 歯止め自体のテスト（変異テストを含む）
+python3 scripts/test-export-diagrams.py          # 書き出し側のテスト（偽の CLI で失敗を作る）
 ```
 
-**バイト比較（書き出し直して `git diff --exit-code`）は採れない。** 実測で 13 件のうち
-**6 件しかバイト一致しなかった**——寸法は一致するのに数十バイト違う。2026-02 に書き出した分は
-古い drawio 版で作られており、埋め込みフォントのサブセットが変わっている。CI に draw.io CLI
-（+ xvfb）を入れても偽陽性になるだけなので、入れていない。
+**指紋はソースの内容だけではない。** `output`（どこに・どの形式で）と `scale`（どの倍率で）も
+書き出しを変えるので、指紋に織り込んでいる。ソースのハッシュだけを記録していると、
+**マニフェストの `scale` を 2 → 4 に書き換えても指紋が変わらない**ので、検査は緑のまま
+書き出しは 2 倍で据え置かれる。式は `scripts/diagram_manifest.py` に**1 箇所だけ**置く
+（検査側と書き出し側で式がずれると、片方だけ緑になる）。
 
-**この方式で検出できるのは「ソースを編集してマニフェストも触っていない」場合だけ**である。
-マニフェストのハッシュだけ書き換えて実際には書き出さない、は検出できない。だから
-**手でハッシュを書かない**——`export-diagrams.py` を使うことがこの限界に対する実際の歯止め。
+**バイト比較（書き出し直して `git diff --exit-code`）は採れない。** 実測で、書き出しのある
+12 件を書き出し直したら **6 件しかバイト一致しなかった**——`architecture.svg` は 922x642 で
+寸法が一致して 453602B vs 453646B、`mobile-remote-control.png` は 1646x763 で一致して 3 バイト差。
+**原因は特定していない**（drawio の版・環境・埋め込む資源のどれが効いているかは確かめていない）。
+確かめたのは「**同じソースから同じ引数で書き出してもバイトは一致しない**」という事実だけで、
+それだけでバイト比較は偽陽性になると言える。CI に draw.io CLI（+ xvfb）を入れても解決しない。
+
+**この方式で検出できるのは「前提を変えてマニフェストも触っていない」場合だけ**である。
+マニフェストの指紋だけ書き換えて実際には書き出さない、は検出できない。だから
+**手で指紋を書かない**——`export-diagrams.py` を使うことがこの限界に対する実際の歯止め。
 
 **新しい図を足すときは、まずマニフェストにエントリを作る**（`output` と、書き出さないなら
 `output: null` と `note`）。未登録の drawio は CI でエラーになる——「書き出し忘れ」と
-「書き出さないと決めた」を区別できない状態を残さないため。**`sha256` は書かなくてよい**——
-初回の `export-diagrams.py` が書き込む（書くまでは検査が「`sha256` が無い」で落ちる）。
+「書き出さないと決めた」を区別できない状態を残さないため。**`fingerprint` は書かなくてよい**——
+初回の `export-diagrams.py` が書き込む（書くまでは検査が「`fingerprint` が無い」で落ちる）。
 
 ブランドアイコンは Simple Icons (simpleicons.org) から取得し、base64 で drawio に埋め込んでいる
 （`diagrams/icons/` の SVG は素材で、書き出しの source ではない）。

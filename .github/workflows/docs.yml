@@ -35,6 +35,12 @@ jobs:
       - name: check-diagram-freshness.py のテスト
         run: python3 scripts/test-check-diagram-freshness.py
 
+      # 「記録は新しいのに書き出しは古い」を作らないのは書き出し側の責任で、
+      # 上のテストでは一切カバーされない（#50 の検証でこの経路の不具合が出た）。
+      # draw.io CLI は呼ばず、偽の CLI を DRAWIO に差し込んで失敗の形を作る。
+      - name: export-diagrams.py のテスト
+        run: python3 scripts/test-export-diagrams.py
+
       # setup-uv は floating major タグ (v9) を publish していないためパッチまで固定
       - uses: astral-sh/setup-uv@v9.0.0
 
