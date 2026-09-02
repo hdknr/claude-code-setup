@@ -48,6 +48,7 @@ CI に draw.io CLI（+ xvfb）を入れても解決しないので、入れて�
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -78,13 +79,37 @@ def fail(message: str) -> None:
     errors.append(message)
 
 
+def read_bytes(path: Path, label: str) -> bytes | None:
+    """ファイルを読む。読めなければ errors に積んで None を返す。
+
+    **このスクリプトがファイルを読むのはここだけ**（マニフェストの読み込みを除く）。
+    読み取りを散らすと、散らした先の 1 つが `try` を持たないだけで**素の traceback**に
+    なる——非ゼロにはなるので fail-closed は保たれるが、**理由が読めない**。
+    実際 3 パス目のレビューで、指紋の計算が権限エラーで traceback を出していた。
+    集約して、読めないことも必ず診断として出す。
+    """
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        fail(f"{label} を読めない: {exc}")
+        return None
+
+
 def walk_failed(exc: OSError) -> None:
     """走査中に一覧できなかったディレクトリをエラーにする。
 
     `os.walk` の既定はこの例外を**捨てる**ので、渡さないと「一覧できないディレクトリの中は
     黙って収集から落ちる」（このリポジトリが何度も踏んでいる「落として黙って免除する」形）。
     """
-    fail(f"走査できないディレクトリがある: {exc}（中の drawio を検査できていない）")
+    where = rel(Path(exc.filename)) if exc.filename else "（場所不明）"
+    # 走査は 2 回する（`diagrams/` 以下とリポジトリ全体）ので、同じディレクトリで 2 度踏む。
+    # 同じ指摘を 2 行並べても情報は増えないので 1 度だけ積む。
+    if any(f"{where} を走査できない" in existing for existing in errors):
+        return
+    # **メッセージの literal は `fail()` の中に置く。** 変数に組み立ててから渡すと、
+    # テスト側の「`fail()` の網羅」検査が literal を読み取れず、**免除も変異も
+    # 付いていない分岐として現れる**（実際そうなって検出された）。
+    fail(f"{where} を走査できない: {exc.strerror}（中の drawio を検査できていない）")
 
 
 def rel(path: Path) -> str:
@@ -228,8 +253,16 @@ def check_entry(key: str, entry: object, outputs_seen: dict[str, tuple[str, str]
 
     scale = entry.get("scale")
     if "scale" in entry:
-        if isinstance(scale, bool) or not isinstance(scale, (int, float)) or scale <= 0:
-            fail(f"{key} の `scale` が正の数でない: {scale!r}")
+        # `Infinity` / `NaN` は JSON の既定で読める。`nan <= 0` は False、`inf` は
+        # あらゆる比較を満たすので、**「正の数」の検査を素通りして `--scale inf` が
+        # drawio に渡る**（3 パス目のレビューで実測された）。有限であることまで見る。
+        if (
+            isinstance(scale, bool)
+            or not isinstance(scale, (int, float))
+            or not math.isfinite(scale)
+            or scale <= 0
+        ):
+            fail(f"{key} の `scale` が正の有限の数でない: {scale!r}")
             return
 
     if "fingerprint" not in entry:
@@ -240,7 +273,12 @@ def check_entry(key: str, entry: object, outputs_seen: dict[str, tuple[str, str]
         fail(f"{key} の `fingerprint` が 64 桁の小文字 hex でない: {recorded!r}")
         return
 
-    actual = fingerprint(REPO_ROOT / key, output, scale, output_path)
+    source_bytes = read_bytes(REPO_ROOT / key, f"ソース {key}")
+    output_bytes = read_bytes(output_path, f"{key} の書き出し {output}")
+    if source_bytes is None or output_bytes is None:
+        return
+
+    actual = fingerprint(source_bytes, output, scale, output_bytes)
     if actual != recorded:
         # 指紋はソースの内容・`output`・`scale`・**書き出しの内容**をまとめたものなので、
         # どれが変わっても落ちる（書き出しが壊れた場合も含む）。

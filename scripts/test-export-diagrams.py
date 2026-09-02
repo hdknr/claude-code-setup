@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -85,12 +86,20 @@ def fp(
 # 変異テスト中だけ、偽リポジトリにコピーするスクリプトの中身を差し替える（末尾を参照）。
 _MUTATED_SCRIPT: str | None = None
 
+# 直前の `run_case` で偽 CLI に渡された引数（`--scale` の正規化を見るため）。
+_LAST_ARGV: str = ""
+
 
 # 偽の draw.io CLI。`--output <path>` を拾って、behaviour に応じた振る舞いをする。
 FAKE_CLI = '''#!/usr/bin/env python3
 import sys, os
 behaviour = os.environ["FAKE_BEHAVIOUR"]
 out = sys.argv[sys.argv.index("--output") + 1]
+
+# 渡された引数を記録する。`--scale` が正規化後の値で渡っているかを見るため
+# （指紋だけ正規化して CLI 引数が元のままなら、記録と実際の書き出しがずれる）。
+with open(os.environ["FAKE_ARGV_LOG"], "a") as log:
+    log.write(" ".join(sys.argv[1:]) + "\\n")
 
 if behaviour == "success":
     open(out, "w").write({good!r})
@@ -123,6 +132,7 @@ def run_case(
     manifest: dict | None = None,
     args: list[str] | None = None,
     output_body: str | None = GOOD_SVG,
+    drawio: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], dict, str | None]:
     """偽リポジトリを作り、偽 CLI で `export-diagrams.py` を走らせる。
 
@@ -165,8 +175,10 @@ def run_case(
         fake.write_text(FAKE_CLI, encoding="utf-8")
 
         env = dict(os.environ)
-        env["DRAWIO"] = f"{sys.executable} {fake}"
+        argv_log = root / "fake-argv.log"
+        env["DRAWIO"] = f"{sys.executable} {fake}" if drawio is None else drawio
         env["FAKE_BEHAVIOUR"] = behaviour
+        env["FAKE_ARGV_LOG"] = str(argv_log)
         # タイムアウト経路を通すため。既定（600 秒）のままではその分岐を検証できない。
         env["DRAWIO_TIMEOUT"] = "1" if behaviour == "hang" else "60"
 
@@ -181,6 +193,10 @@ def run_case(
         )
         after = json.loads((root / "diagrams" / "exports.json").read_text(encoding="utf-8"))
         body = out_path.read_text(encoding="utf-8") if out_path.is_file() else None
+        global _LAST_ARGV
+        _LAST_ARGV = (
+            argv_log.read_text(encoding="utf-8") if argv_log.is_file() else ""
+        )
         return proc, after, body
 
 
@@ -212,6 +228,26 @@ def main() -> int:
     check(
         recorded(after) != fp(SRC, OUT, None),
         "`scale` の有無で指紋が変わっていない",
+        str(recorded(after)),
+    )
+    check("--scale 2" in _LAST_ARGV, "`--scale` が CLI に渡っていない", _LAST_ARGV)
+
+    # **`--scale` は正規化後の値で渡らなければならない。** 指紋だけ正規化して CLI 引数が
+    # 元のままだと、`2.0` と書いたときに記録は fp(2) なのに書き出しは `--scale 2.0` で
+    # 走る——記録と実際の書き出しがずれる（3 パス目のレビューが名指しした未固定の経路）。
+    proc, after, _ = run_case(
+        "success",
+        manifest={KEY: {"output": OUT, "scale": 2.0, "fingerprint": fp("old", OUT, 2)}},
+    )
+    check(proc.returncode == 0, "`scale: 2.0` で落ちた", proc.stdout + proc.stderr)
+    check(
+        "--scale 2" in _LAST_ARGV and "--scale 2.0" not in _LAST_ARGV,
+        "`--scale` が正規化されずに渡っている（記録は fp(2) なのに書き出しは 2.0）",
+        _LAST_ARGV,
+    )
+    check(
+        recorded(after) == fp(SRC, OUT, 2),
+        "`scale: 2.0` の記録が `scale: 2` と一致しない",
         str(recorded(after)),
     )
 
@@ -311,6 +347,31 @@ def main() -> int:
             "CLI が無いのに既存の書き出しが失われた",
         )
 
+    # --- CLI をループの前に解決する（1 件も消す前に落ちる） ----------------------
+    #
+    # 3 パス目のレビュー: `DRAWIO` の指定間違い（最も起きやすい操作ミス）で、
+    # **CLI を 1 度も呼ばないまま全件を消して書き戻していた**。事前 unlink を入れた
+    # 副作用で、追跡対象ファイルに対する削除と書き戻しが全件分走る。
+    proc, after, body = run_case("success", drawio="/nonexistent/drawio")
+    check(proc.returncode != 0, "CLI が無いのに成功と判定した", proc.stdout)
+    check("見つからない" in proc.stdout, "CLI が無い理由が報告されていない", proc.stdout)
+    check(recorded(after) != fresh, "CLI が無いのに記録が進んだ", proc.stdout)
+    check(
+        body == GOOD_SVG,
+        "**CLI を 1 度も呼ばずに書き出しを消して書き戻した**（事前 unlink の副作用）",
+        str(body),
+    )
+    check(
+        "戻した" not in proc.stdout,
+        "1 件も消していないのに「戻した」と報告している",
+        proc.stdout,
+    )
+
+    proc, after, body = run_case("success", drawio="")
+    check(proc.returncode != 0, "`DRAWIO` が空なのに成功と判定した", proc.stdout)
+    check("DRAWIO が空" in proc.stdout, "`DRAWIO` が空の理由が報告されていない", proc.stdout)
+    check(body == GOOD_SVG, "`DRAWIO` が空で書き出しが失われた", str(body))
+
     # --- 宣言と要求の食い違いは黙って飛ばさない ---------------------------------
     proc, after, _ = run_case(
         "success",
@@ -341,6 +402,7 @@ def main() -> int:
     check("形が不正" in proc.stdout, "エントリの型の理由が報告されていない", proc.stdout)
 
     check_mutations()
+    check_every_failure_has_a_mutation()
 
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")
@@ -386,6 +448,14 @@ MUTATIONS = [
         "壊れている",
     ),
     (
+        "タイムアウトの報告を潰す",
+        '        return reject("draw.io CLI がタイムアウトした")',
+        "        return False",
+        "hang",
+        GOOD_SVG,
+        "タイムアウト",
+    ),
+    (
         # 条件を潰すと下流の `stat()` が存在しないファイルでクラッシュする
         # （実在確認がそれを防いでいる証拠だが、クラッシュは「指摘が消えた」と区別できない）。
         # **診断の行だけ**を消す形にする。
@@ -427,6 +497,97 @@ def check_mutations() -> None:
         SCRIPT.read_text(encoding="utf-8") == original,
         "変異テストが実スクリプトを書き換えた",
     )
+
+
+# --- 失敗の報告が全部いずれかの変異でカバーされていることを機械的に確かめる -----------
+#
+# `test-check-diagram-freshness.py` と同じ仕組みを書き出し側にも置く。3 パス目のレビューで、
+# **この周で入れた修正のうち 2 つ（`on_error` の配線・`normalize_scale`）にテストが
+# 1 つも当たっていない**ことが分かった——「変異リストに無い分岐」は 3 パス連続で出ている型で、
+# 個別に足しても次の `print("  失敗: ...")` で同じ穴が開く。列挙して機械的に強制する。
+
+FAILURE_EXEMPT = {
+    "失敗: ": "`reject` の報告口そのもの（判定ではなく出力）。各判定の側で担保する",
+    "draw.io CLI が見つからない": "ループ前の解決に移したので到達しにくい。否定テストで担保",
+    "を消せない": "書き出し先を書き込み不可にする必要があり、root では作れない",
+    "指紋を計算できない（読み取りエラー）": "同上（書き出した直後に読めなくする必要がある）",
+    "エントリの形が不正": "check スクリプト側の担当。否定テストで担保",
+    "は `output: null`": "否定テストで担保（変異はメッセージの消失にならない）",
+    " に無い。候補: ": "否定テストで担保（知らない名前）",
+    "DRAWIO が空": "否定テストで担保",
+}
+
+
+def failure_literals(path: Path) -> list[tuple[int, str]]:
+    """`print("  失敗: ...")` と `reject(...)` の literal を集める。"""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    sites: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", None)
+        if name not in ("reject", "print"):
+            continue
+        if not node.args:
+            continue
+        parts = [
+            piece.value
+            for piece in ast.walk(node.args[0])
+            if isinstance(piece, ast.Constant) and isinstance(piece.value, str)
+        ]
+        text = "".join(parts)
+        # 集めるのは**失敗の判定そのもの**（`reject(...)` と、行頭が「エラー:」「  失敗:」の
+        # `print`）。バッチの集計や、`reject` の中で状態を説明する行は判定ではないので入れない
+        # ——入れると免除表が「判定でないもの」で膨らみ、何を担保したのか読めなくなる。
+        if name == "reject" or text.startswith("エラー:") or text.startswith("  失敗:"):
+            sites.append((node.lineno, text))
+    return sites
+
+
+def check_every_failure_has_a_mutation() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    lines = source.splitlines()
+    sites = failure_literals(SCRIPT)
+    check(len(sites) >= 6, f"失敗の報告の列挙に失敗した（{len(sites)} 件）")
+
+    mutated_lines = set()
+    for _label, old, _new, _behaviour, _body, _expected in MUTATIONS:
+        if source.count(old) != 1:
+            continue
+        mutated_lines.add(next(i + 1 for i, line in enumerate(lines) if old in line))
+
+    tree = ast.parse(source)
+    covered: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.If, ast.For, ast.While, ast.Try)):
+            continue
+        start, end = node.lineno, node.end_lineno or node.lineno
+        inside = {
+            piece.lineno
+            for piece in ast.walk(node)
+            if isinstance(piece, ast.Call)
+            and getattr(piece.func, "id", None) in ("reject", "print")
+        }
+        if any(start <= line <= end for line in mutated_lines):
+            covered |= inside
+    covered |= mutated_lines
+
+    for lineno, message in sites:
+        if lineno in covered:
+            continue
+        if any(exempt in message for exempt in FAILURE_EXEMPT):
+            continue
+        check(
+            False,
+            f"{SCRIPT.name}:{lineno} の失敗報告に変異が無く、免除も書かれていない",
+            message[:120],
+        )
+
+    for exempt in FAILURE_EXEMPT:
+        check(
+            any(exempt in message for _, message in sites),
+            f"FAILURE_EXEMPT の {exempt!r} に対応する報告が無い（免除が古い）",
+        )
 
 
 if __name__ == "__main__":

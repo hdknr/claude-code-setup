@@ -19,9 +19,10 @@
 （mtime を読む判定は置かない。1 秒の許容を入れた版が、**何も書かない CLI を 1 秒の窓で
 見逃す**穴を作っていた）。
 さらに**失敗したら書き出しを元に戻す**。ただし**復元そのものが失敗しうる**
-（書き出し先が読み取り専用になっている等）——そのときは壊れたファイルが残るので、
-「戻せなかった」ことと `git checkout` での戻し方を明示して報告する（黙って traceback で
-終わらせない）。**「壊れたファイルが残ることはない」とまでは言えない。**
+（書き出し先が読み取り専用になっている等）。書き出しの前に出力を消しているので、
+そのとき残るのは「壊れたファイル」ではなく**消えた状態**である——「戻せなかった」ことと
+`git checkout` での戻し方を明示して報告する（黙って traceback で終わらせない）。
+**「必ず元に戻る」とまでは言えない。**
 
 draw.io CLI は GUI アプリに同梱されている。macOS の既定の場所を見るが、環境変数
 `DRAWIO` で差し替えられる（Linux なら `DRAWIO=drawio`、`xvfb-run` 越しなら
@@ -38,6 +39,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -69,10 +71,24 @@ def rel(path: Path) -> str:
         return str(path)
 
 
-def drawio_command() -> list[str]:
-    """draw.io CLI の起動コマンド。`DRAWIO` で差し替えられる。"""
+def drawio_command() -> list[str] | None:
+    """draw.io CLI の起動コマンド。`DRAWIO` で差し替えられる。見つからなければ None。
+
+    **ループに入る前に 1 度だけ解決する。** 書き出しは「先に出力を消してから CLI を呼ぶ」
+    ので、CLI が無いことをループの中で知ると**1 件ごとに消して戻すだけ**を全件分繰り返す
+    （`DRAWIO` の指定間違いは最も起きやすい操作ミスで、追跡対象ファイルに対して
+    12 回の削除と書き戻しを走らせることになる。#50 の 3 パス目のレビューで実測された）。
+    """
     raw = os.environ.get("DRAWIO", DEFAULT_DRAWIO)
-    return shlex.split(raw)
+    command = shlex.split(raw)
+    if not command:
+        print("エラー: DRAWIO が空。draw.io CLI のパスを指定する")
+        return None
+    binary = command[0]
+    if shutil.which(binary) is None and not os.access(binary, os.X_OK):
+        print(f"エラー: draw.io CLI が見つからない（{binary}）。DRAWIO で指定する")
+        return None
+    return command
 
 
 def load_manifest() -> dict:
@@ -123,7 +139,7 @@ def resolve_targets(manifest: dict, args: list[str]) -> list[str] | None:
 def looks_like(output: Path) -> str | None:
     """書き出しが**その形式として読める**か。読めなければ理由を返す。
 
-    終了コードと mtime だけでは、**壊れたファイル・空のファイルを吐いて落ちた**場合を
+    終了コードと出力の実在だけでは、**壊れたファイル・空のファイルを吐いて 0 を返した**場合を
     弾けない。中身を軽く見て、明らかに書き出しになっていないものを落とす。
     """
     data = output.read_bytes()
@@ -163,17 +179,26 @@ def export_one(key: str, entry: dict, command: list[str]) -> bool:
             if detail:
                 print(f"    {detail[-400:]}")
         # **復元そのものが失敗しうる。** 書き出し先が読み取り専用になっている等。
-        # そこで素の例外を投げると、**壊れたファイルを残したまま traceback で終わる**
-        # ——理由が読めないまま「戻したはず」と思われるのが最悪なので、明示的に報告する。
+        # そこで素の例外を投げると、**理由が読めないまま終わる**ので明示的に報告する。
+        #
+        # **書き出しの前に出力を消しているので、復元が失敗した状態は「壊れて残る」ではなく
+        # 「消えている」。** 3 パス目のレビューで、以前の文面（「壊れたファイルが残っている
+        # 可能性がある」）が実際の状態と食い違っていることが実測された。
+        # 一時ファイルに書いてから `os.replace` で差し替えるので、**復元の途中で
+        # 中途半端な内容が見える窓は無い**（成功か、消えたままか）。
         try:
             if previous is None:
                 output.unlink(missing_ok=True)
             else:
-                output.write_bytes(previous)
+                spare = output.with_name(output.name + ".restoring")
+                spare.write_bytes(previous)
+                os.replace(spare, output)
         except OSError as exc:
             print(f"    **{entry['output']} を書き出し前の状態に戻せなかった: {exc}**")
-            print(f"    壊れた書き出しが残っている可能性がある。`git checkout -- {entry['output']}`"
-                  " で戻すこと")
+            print(
+                f"    書き出しは**消えたか、壊れたまま残っている**。"
+                f"`git checkout -- {entry['output']}` で戻すこと"
+            )
         else:
             print(f"    {entry['output']} は書き出し前の状態に戻した")
         return False
@@ -227,7 +252,11 @@ def main() -> int:
         print("書き出す対象がない")
         return 0
 
+    # **1 件も消す前に CLI を解決する**（上記のとおり、後で気づくと全件分の空回しになる）。
     command = drawio_command()
+    if command is None:
+        return 1
+
     failed: list[str] = []
     for key in targets:
         entry = manifest[key]
@@ -237,11 +266,17 @@ def main() -> int:
             continue
         # **成功してから**指紋を進める。失敗した分は記録を据え置くので、
         # 次の check で「書き出していない」として落ちる。
+        # 書き出した直後なので普通は読めるが、読めないなら**記録を進めてはならない**
+        # （記録だけ進むのがこの方式で唯一検出できない状態）。
+        try:
+            source_bytes = (REPO_ROOT / key).read_bytes()
+            output_bytes = (REPO_ROOT / entry["output"]).read_bytes()
+        except OSError as exc:
+            print(f"  失敗: 指紋を計算できない（読み取りエラー）: {exc}")
+            failed.append(key)
+            continue
         entry["fingerprint"] = fingerprint(
-            REPO_ROOT / key,
-            entry["output"],
-            entry.get("scale"),
-            REPO_ROOT / entry["output"],
+            source_bytes, entry["output"], entry.get("scale"), output_bytes
         )
 
     save_manifest(manifest)

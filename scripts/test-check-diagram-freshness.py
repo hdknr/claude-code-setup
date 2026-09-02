@@ -28,6 +28,7 @@ import して期待値を作ると、**式が変わってもテストは一緒�
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -460,6 +461,42 @@ def case_empty_key():
     return run_case(manifest=manifest)
 
 
+def case_entry_not_object():
+    """エントリがオブジェクトでない。"""
+    return run_case(manifest={"diagrams/one.drawio": OUT_ONE})
+
+
+def case_output_key_missing():
+    """`output` キーが無い（`null` の書き忘れと書き出し忘れを区別できない状態）。"""
+    return run_case(
+        manifest={"diagrams/one.drawio": {"fingerprint": fp(SRC_ONE, OUT_ONE)}}, outputs={}
+    )
+
+
+def case_output_absolute():
+    """`output` が絶対パス。"""
+    manifest = ok_manifest()
+    manifest["diagrams/one.drawio"]["output"] = "/etc/passwd.svg"
+    return run_case(manifest=manifest, outputs={})
+
+
+def case_output_bad_suffix():
+    """`output` の拡張子が対象外。"""
+    manifest = ok_manifest()
+    manifest["diagrams/one.drawio"]["output"] = "docs/images/one.pdf"
+    manifest["diagrams/one.drawio"]["fingerprint"] = fp(
+        SRC_ONE, "docs/images/one.pdf", None, "pdf"
+    )
+    return run_case(manifest=manifest, outputs={"docs/images/one.pdf": "pdf"})
+
+
+def case_scale_not_positive():
+    """`scale` が正の有限の数でない。"""
+    manifest = ok_manifest()
+    manifest["diagrams/one.drawio"]["scale"] = -1
+    return run_case(manifest=manifest)
+
+
 def case_diagrams_not_a_dir():
     """`diagrams/` が通常ファイル（`FileNotFoundError` ではない `OSError`）。
 
@@ -567,6 +604,11 @@ def main() -> int:
         (case_output_not_string, "`output` が文字列でない", "`output` の型"),
         (case_diagrams_not_a_dir, "を読めない", "`diagrams/` が通常ファイル"),
         (case_manifest_not_utf8, "JSON として不正", "UTF-8 でないマニフェスト"),
+        (case_entry_not_object, "オブジェクトでない", "エントリの型"),
+        (case_output_key_missing, "`output` が無い", "`output` キーの欠落"),
+        (case_output_absolute, "は不正", "`output` の絶対パス"),
+        (case_output_bad_suffix, "拡張子が", "対象外の拡張子"),
+        (case_scale_not_positive, "`scale` が正の有限の数でない", "負の `scale`"),
     ):
         check_rejected(case(), expected, f"{label}がすり抜けた")
 
@@ -624,13 +666,13 @@ def main() -> int:
             f"`output` の{label}がすり抜けた",
         )
 
-    # `scale` が正の数でない
+    # `scale` が正の有限の数でない
     for bad in (0, -1, "2", True):
         manifest = ok_manifest()
         manifest["diagrams/one.drawio"]["scale"] = bad
         check_rejected(
             run_case(manifest=manifest),
-            "`scale` が正の数でない",
+            "`scale` が正の有限の数でない",
             f"`scale`={bad!r} がすり抜けた",
         )
 
@@ -707,8 +749,46 @@ def main() -> int:
     )
     check_rejected(proc, "の外にある", "`.github/` の drawio が報告されなかった")
 
+    # --- 読み取り不能なファイル・ディレクトリ（root では chmod が効かないので条件付き） ---
+    #
+    # **免除表がここを担保していると書いているので、実際に置く。** 免除の理由が
+    # 「否定テストで担保」なのに否定テストが無い、が最も静かな抜け道。
+    if os.geteuid() != 0:
+        def unreadable_output(root: Path) -> None:
+            os.chmod(root / OUT_ONE, 0o000)
+
+        check_rejected(
+            run_case(manifest=ok_manifest(), setup=unreadable_output),
+            "を読めない",
+            "読めない書き出しで診断が出なかった",
+        )
+
+        def unreadable_source(root: Path) -> None:
+            os.chmod(root / "diagrams" / "one.drawio", 0o000)
+
+        check_rejected(
+            run_case(manifest=ok_manifest(), setup=unreadable_source),
+            "を読めない",
+            "読めないソースで診断が出なかった",
+        )
+
+        def unreadable_dir(root: Path) -> None:
+            (root / "diagrams" / "locked").mkdir()
+            os.chmod(root / "diagrams" / "locked", 0o000)
+
+        proc = run_case(manifest=ok_manifest(), setup=unreadable_dir)
+        check_rejected(proc, "を走査できない", "走査できないディレクトリで診断が出なかった")
+        check(
+            proc.stdout.count("を走査できない") == 1,
+            "走査できないディレクトリの指摘が重複している",
+            proc.stdout,
+        )
+    else:
+        print("（root で実行中: 読み取り不能ファイルの否定テストは chmod が効かないので省略）")
+
     check_fingerprint_terms()
     check_mutations()
+    check_every_guard_has_a_mutation()
 
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")
@@ -754,14 +834,22 @@ def check_fingerprint_terms() -> None:
     if base is None:
         return
 
-    # 1) ソースの内容を変える
+    # **変化は「同じ長さ」でさせる。** 長さも変えてしまうと、内容ではなく
+    # **長さにだけ依存する**実装（`len(...)` を混ぜる形）を見逃す。3 パス目のレビューで、
+    # 実際に `fingerprint` を `len(output_bytes)` に変える協調変異が全 223 判定を通り抜けた。
+    # ——その状態では、**同じ長さの書き換え**（`<svg>AAA</svg>` → `<svg>BBB</svg>`）が
+    # 検出されなくなる。長さを変えない変化で見れば、内容への依存を直接固定できる。
+    assert len(SRC_ONE) == len("<mxfile>ONE</mxfile>\n"), "同じ長さのソースを用意する"
+    assert len(BODY_ONE) == len("<svgX/>"), "同じ長さの書き出しを用意する"
+
+    # 1) ソースの内容を変える（長さは同じ）
     variant = reported_fingerprint(
-        manifest=entry(), sources={"one.drawio": "<mxfile>changed</mxfile>\n"}
+        manifest=entry(), sources={"one.drawio": "<mxfile>ONE</mxfile>\n"}
     )
     check(variant != base, "指紋が**ソースの内容**に依存していない", f"{base} == {variant}")
 
-    # 2) 書き出しの内容を変える（前提ではなく結果。ここが 2 パス目の反証だった）
-    variant = reported_fingerprint(manifest=entry(), outputs={OUT_ONE: "<svg>changed</svg>\n"})
+    # 2) 書き出しの内容を変える（長さは同じ。前提ではなく結果。2 パス目の反証だった項）
+    variant = reported_fingerprint(manifest=entry(), outputs={OUT_ONE: "<svgX/>"})
     check(variant != base, "指紋が**書き出しの内容**に依存していない", f"{base} == {variant}")
 
     # 3) `output` のパスを変える（中身は同じにしておく）
@@ -771,13 +859,30 @@ def check_fingerprint_terms() -> None:
     )
     check(variant != base, "指紋が **`output` のパス**に依存していない", f"{base} == {variant}")
 
-    # 4) `scale` を変える
-    variant = reported_fingerprint(manifest=entry(scale=2))
-    check(variant != base, "指紋が **`scale`** に依存していない", f"{base} == {variant}")
+    # 4) `scale` を変える。**`scale` の有無だけでなく、値の違いも見る。**
+    #    3 パス目のレビューの指摘: 比較がすべて「`scale` キー不在」に対してだったので、
+    #    「`None` かどうかだけを見て実値を無視する」形に退行しても気づけなかった。
+    #    実際、`scale` を定数に丸める変異を入れても全 223 判定が通ってしまっていた。
+    two = reported_fingerprint(manifest=entry(scale=2))
+    four = reported_fingerprint(manifest=entry(scale=4))
+    check(two != base, "指紋が **`scale` の有無**を区別していない", f"{base} == {two}")
+    check(
+        two != four,
+        "指紋が **`scale` の値**を区別していない（有無だけ見て実値を無視している）",
+        f"scale=2 と scale=4 が同じ: {two}",
+    )
 
     # `scale` の有無そのものも区別する（既定倍率と `--scale 1` は CLI の呼び方が違う）
     with_one = reported_fingerprint(manifest=entry(scale=1))
-    check(with_one != base, "指紋が **`scale` の有無**を区別していない", f"{base} == {with_one}")
+    check(with_one != base, "指紋が `scale: 1` と不在を区別していない", f"{base} == {with_one}")
+
+    # 逆に、`2` と `2.0` は**同じ**でなければならない（書き方の差で書き出しは変わらない）。
+    as_float = reported_fingerprint(manifest=entry(scale=2.0))
+    check(
+        as_float == two,
+        "`2` と `2.0` で指紋が変わる（書き方の差で無意味な書き出しを強いる）",
+        f"{two} != {as_float}",
+    )
 
 
 # --- 変異テスト ----------------------------------------------------------------
@@ -954,6 +1059,44 @@ MUTATIONS = [
         "空のキー",
     ),
     (
+        # 条件を潰すと `set(entry)` でクラッシュする。診断の行だけを消す。
+        "エントリの型の検査を潰す",
+        '        fail(f"{key} のエントリがオブジェクトでない")',
+        "        pass",
+        case_entry_not_object,
+        "オブジェクトでない",
+    ),
+    (
+        # 条件を潰すと `entry["output"]` で KeyError。診断の行だけを消す。
+        "`output` キーの必須を潰す",
+        '        fail(f"{key} のエントリに `output` が無い（書き出さないなら `output: null` と書く）")',
+        "        pass",
+        case_output_key_missing,
+        "`output` が無い",
+    ),
+    (
+        "`output` の絶対パス・親参照の検査を潰す",
+        '    if output.startswith("/") or ".." in Path(output).parts:',
+        "    if False:",
+        case_output_absolute,
+        "は不正",
+    ),
+    (
+        "`output` の拡張子の検査を潰す",
+        "    if output_path.suffix.lower() not in ALLOWED_SUFFIXES:",
+        "    if False:",
+        case_output_bad_suffix,
+        "拡張子が",
+    ),
+    (
+        # 条件は複数行に分かれているので、診断の行だけを消す。
+        "`scale` の値の検査を潰す",
+        '            fail(f"{key} の `scale` が正の有限の数でない: {scale!r}")',
+        "            pass",
+        case_scale_not_positive,
+        "`scale` が正の有限の数でない",
+    ),
+    (
         # 条件そのものを潰すと下流が `int.startswith` でクラッシュする（型検査が
         # 素通しを防いでいる証拠ではあるが、クラッシュは「指摘が消えた」と区別できない）。
         # **診断の行だけ**を消す形にする。
@@ -1018,6 +1161,151 @@ def check_mutations() -> None:
         check(
             path.read_text(encoding="utf-8") == originals[path.name],
             f"変異テストが {path.name} を書き換えた",
+        )
+
+
+# --- 歯止めの網羅を機械的に強制する ---------------------------------------------
+#
+# **これがこの周で 3 度繰り返した指摘への構造的な答え。** 1 パス目・2 パス目・3 パス目の
+# それぞれで「`MUTATIONS` に無い分岐」が見つかった（合計 12 分岐）。**個別に足しても、
+# 次に `fail()` を書いた人が同じ穴を開ける**——リストは人間が同期させる複製だからである。
+#
+# そこで**検査スクリプトの `fail()` 呼び出しを列挙して、どれかの変異でカバーされていることを
+# 機械的に確かめる**。カバーの判定は「`MUTATIONS` の `expected` が、その `fail()` の
+# メッセージの literal に含まれるか」——`expected` はまさに「その分岐が出す指摘の目印」
+# なので、既にある情報で判定できる。
+#
+# 意図的に変異を置かない分岐は `MUTATION_EXEMPT` に**理由つきで**書く。
+# 数と判断を書かせるのが目的で、基準を満たしたかどうかではない。
+# **今後 `fail()` を足すと、変異か免除のどちらかを書くまでテストが落ちる。**
+
+MUTATION_EXEMPT = {
+    # マニフェストが読めない／JSON でない／形が違う経路。`except` 節や
+    # `isinstance` を潰す変異はスクリプトを別の場所でクラッシュさせるだけで、
+    # 「診断が消える」形にならない。否定テストは main() にある（fail-closed を確認済み）。
+    "が存在しない（書き出しの宣言が無いと鮮度を検査できない）": "except 節の変異は診断の消失にならない。否定テストで担保",
+    "が JSON として不正": "同上。否定テストで担保",
+    "のトップレベルはオブジェクトである必要がある": "同上。否定テストで担保",
+    # 読み取りエラーは chmod でしか作れず、**root では chmod が効かない**
+    # （root は権限検査を素通りする）。環境に依存しない変異にできないので免除する。
+    # 代わりに、root でないときだけ走る否定テストを main() に置いている。
+    #
+    # **キーは 1 つにまとめる。** `dict` は同じキーを 2 回書くと**黙って後勝ち**になる
+    # ——マニフェストで弾いている事故が、この免除表で実際に起きていた（最初は
+    # 「`diagrams/` が通常ファイル」と「指紋の計算」を別々のキーにしたつもりで、
+    # どちらも `"を読めない: "` だったので 1 つ消えていた）。部分一致なので 1 つで両方を覆う。
+    "を走査できない": "root では chmod が効かず環境非依存の変異にできない。非 root の否定テストで担保",
+    "を読めない: ": (
+        "2 箇所（マニフェストが読めない／指紋の計算で読めない）を覆う。"
+        "前者は except 節の変異が診断の消失にならず、後者は root で chmod が効かない。"
+        "どちらも否定テストで担保（後者は非 root のときだけ）"
+    ),
+}
+
+
+def fail_sites(path: Path) -> list[tuple[int, str]]:
+    """スクリプト内の `fail(...)` 呼び出しの行番号と、第 1 引数の literal 部分。
+
+    f-string の中の literal だけを繋ぐ（`{key}` のような置換部分は落ちる）。
+    正規表現ではなく `ast` を使うのは、複数行の f-string を取りこぼさないため。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    sites: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "fail":
+            continue
+        if not node.args:
+            continue
+        parts = [
+            piece.value
+            for piece in ast.walk(node.args[0])
+            if isinstance(piece, ast.Constant) and isinstance(piece.value, str)
+        ]
+        sites.append((node.lineno, "".join(parts)))
+    return sites
+
+
+def fails_within(node: ast.AST) -> set[int]:
+    return {
+        piece.lineno
+        for piece in ast.walk(node)
+        if isinstance(piece, ast.Call)
+        and isinstance(piece.func, ast.Name)
+        and piece.func.id == "fail"
+    }
+
+
+def coverage_map(path: Path) -> tuple[list[tuple[int, int, set[int]]], dict[str, set[int]]]:
+    """変異の行から「カバーされる `fail()`」を引くための 2 つの索引。
+
+    **カバーの判定を行番号で行うため。** メッセージの部分一致で判定すると、
+    別の分岐の変異が**偶然カバー扱いになる**（「は不正」はキーの検査と `output` の検査の
+    両方に出るので、キー側の変異だけで `output` 側もカバー済みに見えてしまう）。
+    3 パス目のレビューが `output` の親参照ガードを「未カバー」と名指しできたのは、
+    そこを人間が見たからで、部分一致では出てこない。
+
+    返すのは:
+
+    - 制御構造の (開始行, 終了行, 中の `fail()` の行) ——変異がその範囲内にあればカバー
+      （`try` の本体を潰す変異が `except` 側の診断を消す形も拾える）
+    - 関数名 → その中の `fail()` の行 ——**関数の呼び出しごと消す変異**もカバーと数える
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    spans: list[tuple[int, int, set[int]]] = []
+    functions: dict[str, set[int]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.If, ast.For, ast.While, ast.Try)):
+            inside = fails_within(node)
+            if inside:
+                spans.append((node.lineno, node.end_lineno or node.lineno, inside))
+        elif isinstance(node, ast.FunctionDef):
+            inside = fails_within(node)
+            if inside:
+                functions[node.name] = inside
+    return spans, functions
+
+
+def check_every_guard_has_a_mutation() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    lines = source.splitlines()
+    sites = fail_sites(SCRIPT)
+    check(len(sites) >= 15, f"`fail()` の列挙に失敗した（{len(sites)} 件しか見つからない）")
+
+    spans, functions = coverage_map(SCRIPT)
+
+    # 変異が指す行番号を求め、そこから「カバーされる `fail()` の行」を広げる。
+    covered: set[int] = set()
+    for _label, old, _new, _case, _expected in MUTATIONS:
+        if source.count(old) != 1:
+            continue  # 共有モジュール側の変異。ここでは対象外
+        lineno = next(i + 1 for i, line in enumerate(lines) if old in line)
+        covered |= {site for site, _ in sites if site == lineno}
+        for start, end, inside in spans:
+            if start <= lineno <= end:
+                covered |= inside
+        for name, inside in functions.items():
+            # 関数の呼び出しごと消す変異（`check_sources_outside_diagrams(found)` → `pass`）
+            if f"{name}(" in old:
+                covered |= inside
+
+    for lineno, message in sites:
+        if lineno in covered:
+            continue
+        if any(exempt in message for exempt in MUTATION_EXEMPT):
+            continue
+        check(
+            False,
+            f"{SCRIPT.name}:{lineno} の `fail()` に変異が無く、免除も書かれていない",
+            message[:120],
+        )
+
+    # 免除の側も腐らせない: 使われていない免除は消す（分岐を消したのに免除が残る形）。
+    for exempt in MUTATION_EXEMPT:
+        check(
+            any(exempt in message for _, message in sites),
+            f"MUTATION_EXEMPT の {exempt!r} に対応する `fail()` が無い（免除が古い）",
         )
 
 

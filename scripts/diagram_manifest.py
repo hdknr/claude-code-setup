@@ -109,7 +109,9 @@ def normalize_scale(scale: object) -> object:
     return scale
 
 
-def fingerprint(source: Path, output: str, scale: object, output_file: Path) -> str:
+def fingerprint(
+    source_bytes: bytes, output: str, scale: object, output_bytes: bytes
+) -> str:
     """書き出しの**前提と結果**をまとめた指紋。4 つを混ぜる。
 
     | 混ぜるもの | これが無いと何が見えなくなるか |
@@ -130,9 +132,14 @@ def fingerprint(source: Path, output: str, scale: object, output_file: Path) -> 
 
     区切りに `\\0` を挟むのは、隣り合う要素の境界を曖昧にしないため
     （`output` の末尾と `scale` の先頭がくっついて別の組と同じ列になるのを防ぐ）。
+
+    **ファイルは読まない（バイト列を受け取る）。** 読む場所をここに置くと、
+    読めなかったとき（権限・ディスク障害）に**素の traceback**で終わる——呼び出し側は
+    「fail-closed のまま理由を出す」設計なのに、この関数だけがそれを破っていた（#50 の
+    3 パス目で指摘された）。読み取りは呼び出し側の 1 箇所に集約して、必ず診断を出させる。
     """
     digest = hashlib.sha256()
-    digest.update(source.read_bytes())
+    digest.update(source_bytes)
     digest.update(b"\0")
     digest.update(output.encode("utf-8"))
     digest.update(b"\0")
@@ -141,5 +148,5 @@ def fingerprint(source: Path, output: str, scale: object, output_file: Path) -> 
     # 意味の無い書き出しを強いないため）。
     digest.update(repr(normalize_scale(scale)).encode("utf-8"))
     digest.update(b"\0")
-    digest.update(output_file.read_bytes())
+    digest.update(output_bytes)
     return digest.hexdigest()
