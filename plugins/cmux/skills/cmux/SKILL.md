@@ -5,6 +5,12 @@ description: "cmux ウィンドウで GitHub Issue/PR を切り替える。引�
 
 # cmux スキル
 
+<!-- skill-version: 1.1.2 -->
+> **このスキルの版: 1.1.2**（プラグイン `cmux`）。
+> 手元で読まれている版がリポジトリの最新より古いなら、**キャッシュが更新されていない**。
+> `/plugin marketplace update` → `/plugin update cmux@claude-code-setup` の順に実行し、
+> Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
+
 cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビューを行うスキル。
 
 **呼び出し形**: プラグインとして入れた場合は `/cmux:cmux`（プラグイン提供のスキルは常に

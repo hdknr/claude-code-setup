@@ -109,7 +109,7 @@ def main() -> int:
             errors.append(
                 f"{plugin}: 中身を変えたのに version が {base_version} のまま "
                 f"（変更: {listing}）。CLAUDE.md「プラグインの更新」のとおり "
-                f"plugin.json と marketplace.json の 2 箇所を上げる"
+                f"plugin.json / marketplace.json / SKILL.md 本文の 3 箇所を上げる"
             )
         else:
             warnings.append(
