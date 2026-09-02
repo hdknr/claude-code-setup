@@ -2,9 +2,10 @@
 
 Claude Code を日常的に使うための環境を整えます。
 
-!!! note "macOS / Windows 共通ページ"
-    Part 3 は macOS・Windows で内容がほぼ共通のため、1 ページにまとめています。
+!!! note "macOS / Windows / WSL2 共通ページ"
+    Part 3 は OS を問わず内容がほぼ共通のため、1 ページにまとめています。
     OS によってコマンドが異なる箇所のみ、**macOS / Windows のタブ**で切り替えて表示しています。
+    WSL2 (Ubuntu) を使っている場合は、Windows タブではなく **3.6** も合わせて参照してください。
 
 ## 3.1 作業用リポジトリの作成
 
@@ -206,6 +207,28 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
     - 終了: `/exit` と入力
     - 再開: 同じディレクトリで `claude` を実行
     - 前回の会話を続ける: `claude --continue` を実行
+
+## 3.6 WSL2 ならではの便利な使い方
+
+WSL2 (Ubuntu) 経由で使っている場合のみ該当します。
+
+### Windows のエクスプローラーで開く
+
+Ubuntu のターミナルから現在のディレクトリを Windows のエクスプローラーで開けます:
+
+```bash
+explorer.exe .
+```
+
+### VS Code との連携（任意）
+
+Windows 側に VS Code をインストールしていれば、Ubuntu のディレクトリをそのまま開けます:
+
+```bash
+code .
+```
+
+初回は VS Code の **WSL 拡張機能**が自動でインストールされます。
 
 ## まとめ
 

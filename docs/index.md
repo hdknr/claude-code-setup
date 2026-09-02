@@ -56,7 +56,7 @@ Claude Code をインストールして使えるようにするための手順�
 |--------|------|------|
 | [Part 1](windows/wsl2-part1-preparation.md) | 事前準備 | WSL2・Ubuntu・Git・GitHub CLI のインストール |
 | [Part 2](windows/wsl2-part2-installation.md) | Claude Code インストール | アカウント登録からインストールまで |
-| [Part 3](windows/wsl2-part3-post-setup.md) | インストール後の環境準備 | スキル設定・日常利用の準備 |
+| [Part 3](part3-post-setup.md) | インストール後の環境準備（共通） | スキル設定・日常利用の準備 |
 
 ## 環境
 
