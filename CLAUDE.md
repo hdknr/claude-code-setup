@@ -16,8 +16,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
-  - `test-link-skills.py` / `test-check-description-sync.py` - 上記の回帰テスト。
-    **どちらも実環境を対象にしないことをアサートで担保している**
+  - `test-link-skills.py` / `test-check-description-sync.py` /
+    `test-check-plugin-versions.py` - 上記の回帰テスト。
+    **いずれも実環境を対象にしないことをアサートで担保している**
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
 - `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ
@@ -48,8 +49,24 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 - `plugins/<name>/.claude-plugin/plugin.json` の `version`
 - `.claude-plugin/marketplace.json` の該当プラグインの `version`
 
-**この 2 箇所を同じ値に揃える。** バージョンを据え置いたまま中身だけ変えると、インストール済み
+**この 2 つの JSON は同じ値に揃える。** バージョンを据え置いたまま中身だけ変えると、インストール済み
 クライアントのキャッシュが更新を検知できず、旧い内容のスキルを使い続ける（#33 で実際に発生した）。
+
+さらに **そのプラグインが持つ `SKILL.md` すべての本文にも同じ版を書く**。
+**揃える箇所は合わせて 3 種類**（`marketplace.json` / `plugin.json` / `SKILL.md`）で、
+CI のエラーメッセージもそう案内する。
+**2 行 1 組**で、見出しの直後に置く（理由は下の「version を上げるだけでは届かない」）:
+
+```markdown
+<!-- skill-version: 1.2.3 -->
+> **このスキルの版: 1.2.3**（プラグイン `<name>`）。
+```
+
+1 行目は機械が読む印、**2 行目が利用者の目に入る側**で、こちらが本体。
+`check-plugin-versions.py` は**両方**を検査する（片方だけだとエラー）。
+可視テキストは**行頭が `> **このスキルの版: `** であることまで見る（散文の途中に同じ
+文字列があっても数えないため）。**コメントやコードフェンスで囲って無効化した記載は
+そもそも数えない**——「読者には見えないのに CI は緑」を防ぐのはこちらの仕組み。
 
 刻み方は semver に従う。
 
@@ -59,17 +76,48 @@ drawio ファイルを編集後、SVG エクスポートが必要:
 | 不具合・記述の修正 | **patch** | 指示の誤りを直す・typo |
 | 既存の使い方が壊れる変更 | **major** | 引数や必須前提の変更 |
 
+### version を上げるだけでは届かない
+
+**version bump は必要条件であって十分条件ではない。** 利用者側のマーケットプレイスのクローンが
+導入時のコミットで凍結していると、**カタログを読み直すまで version の変化自体が見えない**。
+
+実測（2026-09-02、#63）: このリポジトリのマーケットプレイスは利用者の手元で **2026-07-29 の
+コミットのまま**で、`dev-loop` は **1.0.0** のまま使われていた（約 5 週間）。
+その間に 1.7.0 まで上げていたが、**1 度も届いていなかった**。#33 の対策（version bump）だけでは防げていなかったことになる。
+
+利用者が更新するには **2 段階**が要る:
+
+```
+/plugin marketplace update              # カタログ（クローン）を取り直す
+/plugin update <plugin>@claude-code-setup   # プラグインを新しい版に上げる（要再起動）
+```
+
+`autoUpdate` を有効にしているマーケットプレイスは自動で追随するが、**これはクライアント側の
+状態**（`~/.claude/plugins/known_marketplaces.json`）で、**リポジトリ側からは設定できない**。
+`/plugin` の対話メニューで設定できるとされる。
+
+そこで、リポジトリ側からできる歯止めとして **SKILL.md の本文に版を書いている**。
+古いキャッシュが読まれれば**その版が目に入る**ので、乖離に気づける。
+`check-plugin-versions.py` が plugin.json との一致を強制する（記載漏れもエラー）。
+
+**常に最新を使いたい場合は、プラグインではなく symlink 経路を選ぶ**——
+`scripts/link-skills.sh` で `~/.claude/skills/` に張れば、リポジトリを `git pull` した時点で
+反映される（キャッシュを経由しないため、構造的に古くならない）。
+**ただしスクリプトは自分の位置からリポジトリを解決して絶対パスで張る**ので、
+**worktree から実行するとその worktree に固定される**。メインの作業ツリーから実行すること。
+
 この整合は CI（`.github/workflows/plugins.yml`）で機械的にチェックしている。ローカルでも確認できる:
 
 ```bash
-python3 scripts/check-plugin-versions.py            # 2 箇所の version 一致・カタログ構造
+python3 scripts/check-plugin-versions.py            # version の一致（3 箇所）・カタログ構造
 python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分に対して）
 python3 scripts/check-description-sync.py origin/main   # description の同期漏れ（同上）
+python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止め自体のテスト
 ```
 
 ### description は 3 箇所にある
 
-`version` が 2 箇所なのに対し、`description` は **3 箇所**に複製されている。
+`version` と同じく、`description` も **3 箇所**に複製されている。ただし**揃え方が違う**。
 
 | 箇所 | 役割 |
 | --- | --- |

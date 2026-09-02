@@ -15,6 +15,12 @@ description: >
 
 # dev-loop スキル
 
+<!-- skill-version: 1.7.1 -->
+> **このスキルの版: 1.7.1**（プラグイン `dev-loop`）。
+> 手元で読まれている版がリポジトリの最新より古いなら、**キャッシュが更新されていない**。
+> `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
+> Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
+
 GitHub Issue 1 件を、**検証が通ることを停止条件**として 1 周させるループ志向開発の手順。
 どのプロジェクトでも使えるよう汎用化してある。プロジェクト固有の事情（実機検証コマンド・
 デプロイ経路・一次ソースのドキュメント）は、**対象リポジトリの `CLAUDE.md`** から発見して従う。

@@ -123,6 +123,25 @@ claude plugin install dev-loop@claude-code-setup --scope user
 `claude plugin install` はセッションの外で走るため、反映は次回起動時か、開いている
 セッションで `/reload-plugins` を実行したときになる。
 
+### 更新のしかた
+
+**version を上げただけでは届かない。** 利用者のマーケットプレイスのクローンは
+導入時のコミットで凍結しており、**カタログを読み直すまで新しい版が見えない**
+（#63 で実際に、`dev-loop` が 1.0.0 のまま約 5 週間使われていた）。2 段階で更新する。
+
+```
+/plugin marketplace update                  # カタログを取り直す
+/plugin update dev-loop@claude-code-setup      # 新しい版に上げる（要再起動）
+```
+
+入っている版は **`SKILL.md` の冒頭**に書いてある。読み込まれた版がここより古ければ、
+キャッシュが更新されていない。
+
+**常に最新を使いたいなら、下の symlink 経路を選ぶ**——キャッシュを経由しないので、
+`git pull` した時点で反映される（構造的に古くならない）。
+**ただしスクリプトは自分の位置からリポジトリを解決して絶対パスで張る**ので、
+**worktree から実行するとその worktree に固定される**。メインの作業ツリーから実行する。
+
 ### bare `/dev-loop` で使う
 
 `plugins/dev-loop/skills/dev-loop/` は `SKILL.md` だけで `.claude-plugin/` を持たないので、
