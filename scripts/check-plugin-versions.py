@@ -307,6 +307,27 @@ def check_skill_versions(plugin: str, source_dir: Path, version: str) -> None:
 
 
 SITE_PREFIX = "https://hdknr.github.io/claude-code-setup/"
+# URL の切れ目。空白・閉じ括弧・バッククォート・和文の句読点まで見る
+URL_BOUNDARY = re.compile(r"[\s)>\]`」）。、]")
+# 見出し行に明示 id が付いているか（`{ #id }` / `{#id}` の両方）
+HEADING_ID = re.compile(r"^#{1,6}\s.*\{\s*#([A-Za-z0-9_-]+)\s*\}\s*$")
+
+
+def explicit_heading_ids(text: str) -> set[str]:
+    """見出し行に明示された id だけを集める。
+
+    **自動生成の id は数えない。** mkdocs は見出しごとに id を振るが、日本語見出しは
+    `_5` のような連番になり、**見出しを 1 つ足すだけで後続がずれる**（#66 で実際に踏んだ）。
+    配布物からのリンク先にそれを使うと、無関係な編集で静かに 404 になる。
+
+    **見出し行だけを見る。** 本文やコード例に `{ #x }` と書いてあるだけのものを数えると、
+    存在しないアンカーへのリンクを通してしまう。
+    """
+    return {
+        m.group(1)
+        for line in text.split("\n")
+        if (m := HEADING_ID.match(line.strip()))
+    }
 
 
 def check_site_links(plugin: str, source_dir: Path) -> None:
@@ -318,35 +339,31 @@ def check_site_links(plugin: str, source_dir: Path) -> None:
 
     #61 / #64 の周で、規範の根拠を設計ドキュメントへ移して本文からはリンクだけを残した。
     リンクが切れると**移した先に辿り着けなくなる**ので、機械的に見る。
+
+    **リンク先の見出しには明示 id を付ける**のがこのリポジトリの約束（上記の理由）。
     """
     for source in sorted(source_dir.rglob("*.md")):
         for line in source.read_text(encoding="utf-8").split("\n"):
             index = 0
-            while True:
-                index = line.find(SITE_PREFIX, index)
-                if index == -1:
-                    break
-                # `<...>` の自動リンク・`[...](...)`・素の URL のいずれも取れるように、
-                # URL に現れない文字で切る
-                url = re.split(r"[\s)>\]」）]", line[index:])[0].rstrip(".,、。")
+            while (index := line.find(SITE_PREFIX, index)) != -1:
+                url = URL_BOUNDARY.split(line[index:])[0]
                 index += len(SITE_PREFIX)
 
-                rest = url[len(SITE_PREFIX) :]
-                page, _, fragment = rest.partition("#")
+                page, _, fragment = url[len(SITE_PREFIX) :].partition("#")
                 page = page.strip("/")
                 target = REPO_ROOT / "docs" / f"{page}.md"
                 if not target.is_file():
                     target = REPO_ROOT / "docs" / page / "index.md"
                 if not target.is_file():
-                    fail(
-                        f"{plugin}: {rel(source)} のリンク {url} が指すページが docs/ に無い"
-                    )
+                    fail(f"{plugin}: {rel(source)} のリンク {url} が指すページが docs/ に無い")
                     continue
-                if fragment and f"{{ #{fragment} }}" not in target.read_text(encoding="utf-8"):
+                if not fragment:
+                    continue
+                if fragment not in explicit_heading_ids(target.read_text(encoding="utf-8")):
                     fail(
                         f"{plugin}: {rel(source)} のリンク {url} のアンカー #{fragment} が "
-                        f"{rel(target)} に無い。見出しに `{{ #{fragment} }}` を付ける"
-                        "（絶対 URL なので mkdocs は検証しない）"
+                        f"{rel(target)} の見出しに無い。見出しに `{{ #{fragment} }}` を付ける"
+                        "（絶対 URL なので mkdocs は検証しない。自動 id は見出しを足すとずれる）"
                     )
 
 
