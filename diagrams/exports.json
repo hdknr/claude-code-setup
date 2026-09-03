@@ -1,0 +1,57 @@
+{
+  "_comment": "このファイルは scripts/export-diagrams.py が更新する。手で fingerprint を書かない（CLAUDE.md「図表の更新」）。fingerprint は書き出しの前提と結果（source の内容・output・scale・書き出しの内容）をまとめた指紋で、式は scripts/diagram_manifest.py にある。scripts/check-diagram-freshness.py が現在の状態と突き合わせる。書き出しの内容が入っているので、書き出しが壊れた場合も検出する。",
+  "diagrams/architecture.drawio": {
+    "output": "docs/images/architecture.svg",
+    "fingerprint": "c90287b24c3bdee9a14855febbc34f8b5f232b56ec404e5f1055b2522253331a"
+  },
+  "diagrams/clt-dialog.drawio": {
+    "output": null,
+    "note": "書き出していない。docs/macos/part1-preparation.md が使っている docs/images/screenshots/clt-dialog.png は drawio の書き出しではなく写実的な生成画像（2816x1536・7.0MB。drawio を 1〜4 倍で書き出したどの寸法とも一致しない）。この drawio は同じ主題を図として描いたものだが、現在どのページからも参照されていない（#50 で確認）。"
+  },
+  "diagrams/commit-history.drawio": {
+    "output": "docs/images/commit-history.svg",
+    "fingerprint": "caef959baf13b734cc5be3a124d4aab73856fb193427b7607bf0501fedb529f7"
+  },
+  "diagrams/concepts-overview.drawio": {
+    "output": "docs/images/concepts-overview.svg",
+    "fingerprint": "d1b8fa39ae2347ff39e4834e5b9d088c43cd2ab39e3ef68fe866be1d26c03347"
+  },
+  "diagrams/dev-loop-cycle.drawio": {
+    "output": "docs/images/dev-loop-cycle.svg",
+    "fingerprint": "b7eabb6d0dab833523adb22054e1608b559b34c4fd1140a9883a4deb4da23d6b"
+  },
+  "diagrams/docker-windows-wsl.drawio": {
+    "output": "docs/images/docker-windows-wsl.png",
+    "fingerprint": "f705e798b688abf0d92960124a444f48a7fa64594cbbcdd55fe87fd7c2158eaf"
+  },
+  "diagrams/flowchart.drawio": {
+    "output": "docs/images/flowchart.svg",
+    "fingerprint": "1250475b4a7f44f2df7ca014b878141c47321365c426d561f4dbfa7c5880ec97"
+  },
+  "diagrams/gh-auth-flow.drawio": {
+    "output": "docs/images/screenshots/gh-auth-flow.svg",
+    "fingerprint": "185ac2c2b2e01af357575054d8ef855f480959a67acab603183c1ef1bbf2c4ae"
+  },
+  "diagrams/local-remote.drawio": {
+    "output": "docs/images/local-remote.svg",
+    "fingerprint": "d23983cbabf22f516338b1ad0ca504423dca418301ebe744a14b50069198efdc"
+  },
+  "diagrams/mobile-remote-control.drawio": {
+    "output": "docs/images/mobile-remote-control.png",
+    "scale": 2,
+    "note": "PNG は 1646x763。既定倍率だと 824x383 になるので --scale 2 で書き出している（#50 で寸法とサイズを突き合わせて確認）。",
+    "fingerprint": "06cf644594f36bf295572f91a10e209e49493762d86992595d98ece818049332"
+  },
+  "diagrams/open-terminal.drawio": {
+    "output": "docs/images/screenshots/open-terminal.svg",
+    "fingerprint": "e26c50d33f28e2910fe17352e0060c35bfc1e19439f5a32c0e9417b977ffc923"
+  },
+  "diagrams/wp-xserver-issue-dialogue.drawio": {
+    "output": "docs/images/wp-xserver-issue-dialogue.svg",
+    "fingerprint": "72cf24efcca8dce51582aa04ba038f6c95c02d39aed54048ba3629eb71b0e0bf"
+  },
+  "diagrams/wp-xserver-overview.drawio": {
+    "output": "docs/images/wp-xserver-overview.svg",
+    "fingerprint": "030db6e4a76293a297dd1db97cbc9ae40098b6842d913a2c475cb5dcd81c2514"
+  }
+}
