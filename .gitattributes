@@ -1,0 +1,12 @@
+# 図の書き出しは**バイト単位で指紋を取っている**（`diagrams/exports.json` /
+# `scripts/check-diagram-freshness.py`）。改行を変換されると、**何もしていないのに
+# 「書き出し直していない」と報告される**——しかも再書き出しでは直らない。
+#
+# Windows の既定に近い `core.autocrlf=true` で clone すると、LF を含む SVG が
+# CRLF に書き換えられて実際にそうなる（このリポジトリは Windows/WSL の手順も載せている）。
+# CI は ubuntu（`autocrlf=false`）なので、この事故は CI では再現しない。
+#
+# drawio のソースも同じ理由で変換させない（ソースの内容も指紋に入っている）。
+*.svg -text
+*.drawio -text
+*.png binary

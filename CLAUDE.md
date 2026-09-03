@@ -6,6 +6,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 
 - `docs/` - mkdocs ドキュメントソース（Part 1〜3 + 付録リンク集）
 - `diagrams/` - drawio ダイアグラムソース（`diagrams/icons/` にブランドアイコン SVG）
+  - `exports.json` - source → 書き出しの宣言と、書き出し時点の前提の指紋。
+    **指紋は手で書かない**（`scripts/export-diagrams.py` が更新する）
 - `.claude-plugin/` - マーケットプレイスカタログ（`marketplace.json`）
 - `plugins/` - プラグイン配布用ディレクトリ
   - `workspace-setup/` - ワークスペース初期セットアップの**コマンド**（このプラグインだけスキルを持たない）
@@ -15,13 +17,18 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-plugin-versions.py` - カタログ構造と version 一致
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
+  - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
+  - `export-diagrams.py` - drawio の書き出しと `diagrams/exports.json` の更新（**CI からは呼ばない**）
+  - `diagram_manifest.py` - 上の 2 本が共有する指紋の式と収集規則（**実行しない**。
+    式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
   - `test-link-skills.py` / `test-check-description-sync.py` /
-    `test-check-plugin-versions.py` - 上記の回帰テスト。
+    `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
+    `test-export-diagrams.py` - 上記の回帰テスト。
     **いずれも実環境を対象にしないことをアサートで担保している**
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
-- `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ
+- `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ ＋ 図の鮮度チェック
 - `.github/workflows/plugins.yml` - プラグインカタログの整合チェック
 
 ## 開発コマンド
@@ -34,13 +41,75 @@ uv run mkdocs build              # サイトビルド
 
 ## 図表の更新
 
-drawio ファイルを編集後、SVG エクスポートが必要:
+drawio ファイルを編集したら、**書き出しスクリプトで書き出す**。生の CLI を直接叩かない:
 
 ```bash
-/Applications/draw.io.app/Contents/MacOS/draw.io --export --format svg --output docs/images/<name>.svg diagrams/<name>.drawio
+python3 scripts/export-diagrams.py <name>    # 例: architecture（拡張子は不要）
+python3 scripts/export-diagrams.py           # マニフェストにある全件
 ```
 
-ブランドアイコンは Simple Icons (simpleicons.org) から取得し、base64 で drawio に埋め込んでいる。
+書き出し先・形式・倍率は `diagrams/exports.json` が持っている（`docs/images/` 直下と
+`docs/images/screenshots/` の両方に散っており、PNG も 2 件ある。**推測で書き出さない**）。
+スクリプトは**書き出しが成功してから**指紋をマニフェストに書き戻す。成功の判定は
+**終了コード・出力の実在・中身が形式として読めること**の 3 つを全部見る。
+**書き出しの前に出力を消す**ので、「在ること」がそのまま「今回書いたこと」の証明になる
+（mtime は読まない）。**失敗したら書き出しを書き出し前の状態に戻す**——ただし
+復元自体が失敗しうる（書き込み不可など）ので、そのときは戻せなかったことを明示して報告する。
+
+macOS 以外、あるいは draw.io を別の場所に入れている場合は `DRAWIO` で差し替える
+（`DRAWIO=drawio`、`xvfb-run` 越しなら `DRAWIO="xvfb-run -a drawio"`）。
+**動作確認は macOS でしか取れていない。**
+
+### 書き出し忘れは差分では見えない
+
+**ソースだけ直して書き出しを忘れると、差分を見ても気づけない**——書き出しは差分に現れないので
+「変えていない」と見える。`makemigrations --check` に相当するものが無いことが、そもそも
+見落としの原因になる（#50）。そこで `diagrams/exports.json` に**書き出し時点の前提の指紋**を
+記録し、CI（`docs.yml`）で現在の前提と突き合わせている:
+
+```bash
+python3 scripts/check-diagram-freshness.py       # 乖離を検出して非ゼロ終了（--check 相当）
+python3 scripts/test-check-diagram-freshness.py  # 歯止め自体のテスト（変異テストを含む）
+python3 scripts/test-export-diagrams.py          # 書き出し側のテスト（偽の CLI で失敗を作る）
+```
+
+**指紋は 4 つを混ぜている**——ソースの内容・`output`・`scale`・**書き出しの内容**。
+式は `scripts/diagram_manifest.py` に**1 箇所だけ**置く（検査側と書き出し側で式がずれると
+片方だけ緑になる）。どれが欠けても、次が見えなくなる:
+
+| 混ぜるもの | これが無いと何が見えなくなるか |
+| --- | --- |
+| ソースの内容 | 図を編集して書き出し忘れた（本来の目的） |
+| `output` | 書き出し先を別の実在ファイルに向け替えた |
+| `scale` | **マニフェストの倍率だけ書き換えた**（2 → 4 でも指紋が変わらない） |
+| **書き出しの内容** | **書き出しそのものが壊れた・書き換えられた**（マニフェストを 1 文字も触らずに起きる） |
+
+**バイト比較（書き出し直して `git diff --exit-code`）は採れない。** 実測で、書き出しのある
+12 件を書き出し直したら **6 件しかバイト一致しなかった**——`architecture.svg` は 922x642 で
+寸法が一致して 453602B vs 453646B、`mobile-remote-control.png` は 1646x763 で一致して 3 バイト差。
+**原因は特定していない**（drawio の版・環境・埋め込む資源のどれが効いているかは確かめていない）。
+確かめたのは「**同じソースから同じ引数で書き出してもバイトは一致しない**」という事実だけで、
+それだけでバイト比較は偽陽性になると言える。CI に draw.io CLI（+ xvfb）を入れても解決しない。
+
+**残る限界は 2 つ**。どちらも方式の原理的なもので、検出手段が無い:
+
+1. **マニフェストの指紋だけ手で書き換えて実際には書き出さない。** だから**手で指紋を
+   書かない**（`export-diagrams.py` を使うことが、この限界に対する実際の歯止め）。
+2. **`output: null` のエントリは、ソースを編集しても何も言わない。** 指紋を持たないので
+   比較する相手が無い。いま該当するのは `diagrams/clt-dialog.drawio` の 1 件で、
+   **書き出しを持たない図はこの仕組みの外にある**。書き出しを作ると決めた時点で
+   マニフェストに `output` を書けば、そこから先は見られるようになる。
+
+逆に、**書き出しが壊れた・書き換えられた場合は検出できる**（指紋に書き出しの内容が
+入っているので、マニフェストを触らない改変はすべて乖離として出る）。
+
+**新しい図を足すときは、まずマニフェストにエントリを作る**（`output` と、書き出さないなら
+`output: null` と `note`）。未登録の drawio は CI でエラーになる——「書き出し忘れ」と
+「書き出さないと決めた」を区別できない状態を残さないため。**`fingerprint` は書かなくてよい**——
+初回の `export-diagrams.py` が書き込む（書くまでは検査が「`fingerprint` が無い」で落ちる）。
+
+ブランドアイコンは Simple Icons (simpleicons.org) から取得し、base64 で drawio に埋め込んでいる
+（`diagrams/icons/` の SVG は素材で、書き出しの source ではない）。
 
 ## プラグインの更新
 
