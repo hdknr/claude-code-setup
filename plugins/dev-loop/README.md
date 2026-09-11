@@ -138,7 +138,8 @@ claude plugin install dev-loop@claude-code-setup --scope user
 
 **version を上げただけでは届かない。** 利用者のマーケットプレイスのクローンは
 導入時のコミットで凍結しており、**カタログを読み直すまで新しい版が見えない**
-（#63 で実際に、`dev-loop` が 1.0.0 のまま約 5 週間使われていた）。2 段階で更新する。
+（#63 で実際に、`dev-loop` が 1.0.0 のまま使われていた。**再実測でもまだ 1.0.0 のまま**
+だった。最新の実測値は[プラグイン一覧の「更新のしかた」](https://hdknr.github.io/claude-code-setup/plugins/#updating)にある）。2 段階で更新する。
 
 ```
 /plugin marketplace update                  # カタログを取り直す
