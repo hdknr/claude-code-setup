@@ -35,6 +35,10 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from markdown_fences import strip_fences  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MARKETPLACE = REPO_ROOT / ".claude-plugin" / "marketplace.json"
 PLUGINS_DIR = REPO_ROOT / "plugins"
@@ -174,41 +178,6 @@ def skill_files(source_dir: Path) -> list[Path]:
       足すなら除外の仕組みが要る。
     """
     return sorted(source_dir.rglob("SKILL.md"))
-
-
-def strip_fences(text: str) -> str:
-    """コードフェンスの中身を落とす（``` と ~~~ の両方）。
-
-    フェンス内の記載は読者に「版」として見えないので、それを根拠に合格させると
-    可視テキストを検査する意味が無くなる。逆に、**規約を例示しているだけの
-    フェンス**を数えると「2 個ある」で誤って落ちる（`CLAUDE.md` がまさにその例を載せている）。
-
-    **同じ文字で、開いたのと同じ長さ以上でしか閉じない**（Markdown の規則）。長さを見ないと、
-    4 個の ` で開いた囲み——**まさに ``` を含む例を載せるときの書き方**——が内側の ``` で
-    閉じてしまい、例が本文に漏れて「2 個ある」と誤検出する。
-
-    行数を保つため、落とした行は空行に置き換える。
-    """
-    out: list[str] = []
-    fence: str | None = None
-    for line in text.split("\n"):
-        marker = line.lstrip()
-        run = ""
-        for char in ("`", "~"):
-            if marker.startswith(char * 3):
-                run = marker[: len(marker) - len(marker.lstrip(char))]
-                break
-        if fence is None:
-            if run:
-                fence = run
-                out.append("")
-                continue
-        elif run and run[0] == fence[0] and len(run) >= len(fence):
-            fence = None
-            out.append("")
-            continue
-        out.append("" if fence else line)
-    return "\n".join(out)
 
 
 def extract_versions(text: str) -> tuple[list[str], list[str]]:
