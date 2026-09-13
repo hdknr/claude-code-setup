@@ -21,14 +21,20 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `export-diagrams.py` - drawio の書き出しと `diagrams/exports.json` の更新（**CI からは呼ばない**）
   - `diagram_manifest.py` - 上の 2 本が共有する指紋の式と収集規則（**実行しない**。
     式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
+  - `skill-metrics.py` - `SKILL.md` の節構造を測り、設計ドキュメント §8.2 の
+    生成ブロックに書き込む（`--check` で検査のみ）
+  - `markdown_fences.py` - コードフェンスの除去と閉じ忘れの検出（**実行しない**。
+    `check-plugin-versions.py` と `skill-metrics.py` が共有する。
+    式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
   - `test-link-skills.py` / `test-check-description-sync.py` /
     `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
-    `test-export-diagrams.py` - 上記の回帰テスト。
+    `test-export-diagrams.py` / `test-skill-metrics.py` - 上記の回帰テスト。
     **いずれも実環境を対象にしないことをアサートで担保している**
 - `mkdocs.yml` - mkdocs 設定
 - `pyproject.toml` - Python 依存関係（uv で管理）
 - `.github/workflows/docs.yml` - GitHub Pages 自動デプロイ ＋ 図の鮮度チェック
+  ＋ `SKILL.md` の測定値の鮮度チェック
 - `.github/workflows/plugins.yml` - プラグインカタログの整合チェック
 
 ## 開発コマンド
@@ -110,6 +116,29 @@ python3 scripts/test-export-diagrams.py          # 書き出し側のテスト�
 
 ブランドアイコンは Simple Icons (simpleicons.org) から取得し、base64 で drawio に埋め込んでいる
 （`diagrams/icons/` の SVG は素材で、書き出しの source ではない）。
+
+### 同じ形がもう 1 つある — `SKILL.md` の測定値
+
+設計ドキュメント §8.2 は**判断を測定値だけで正当化している節**で、その数字は
+`SKILL.md` の節構造に依存する。**`SKILL.md` を編集すると黙って古くなり、差分にも現れない**
+——図の書き出しとまったく同じ形（#78）。
+
+**ただし対処は変えている。指紋を突き合わせるのではなく、数字そのものを生成する。**
+直近 3 か月に `SKILL.md` を触った 15 コミットのうち **13 が行数を動かしている**ので、
+「ずれたら手で直せ」では**税が重すぎる**（20 個以上の数字がある）。
+
+```bash
+python3 scripts/skill-metrics.py           # 生成ブロックを書き直す
+python3 scripts/skill-metrics.py --check   # 古ければ非ゼロ終了（CI がこれを呼ぶ）
+python3 scripts/test-skill-metrics.py      # 歯止め自体のテスト（変異テストを含む）
+```
+
+**生成ブロックを手で書き換えない。** **何が守られ、何が守られないかは
+[設計ドキュメント §8.2](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#no-split)
+の冒頭を正とする**（ここに再掲しない——列挙を 2 箇所に置くと片方だけ古くなる）。
+
+**この「再掲しない」は、実際に破って確かめた。** 最初はここに列挙と件数を書いており、
+**その 2 行上で「再掲しない」と宣言していながら**、2 周後に**両方とも古くなった**。
 
 ## プラグインの更新
 
