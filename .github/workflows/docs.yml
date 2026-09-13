@@ -41,6 +41,17 @@ jobs:
       - name: export-diagrams.py のテスト
         run: python3 scripts/test-export-diagrams.py
 
+      # 設計ドキュメント §8.2 は判断を測定値だけで正当化している節で、その数字は
+      # SKILL.md の節構造に依存する。SKILL.md を編集すると黙って古くなり、差分にも
+      # 現れない（図の書き出しと同じ形。#78）。数字はスクリプトが生成するので、
+      # ここでは「生成し直して差分が無いか」だけを見る。
+      - name: SKILL.md の測定値が最新かチェック
+        run: python3 scripts/skill-metrics.py --check
+
+      # 歯止め自体のテスト（変異テストを含む。実環境を対象にしないことをアサートで担保）
+      - name: skill-metrics.py のテスト
+        run: python3 scripts/test-skill-metrics.py
+
       # setup-uv は floating major タグ (v9) を publish していないためパッチまで固定
       - uses: astral-sh/setup-uv@v9.0.0
 

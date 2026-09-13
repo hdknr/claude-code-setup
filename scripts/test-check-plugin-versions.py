@@ -163,6 +163,14 @@ def run_case(
         build(root, plugins, docs)
         copied = root / "scripts" / SCRIPT.name
         copied.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
+        # **依存モジュールも一緒に持っていく。** `strip_fences` は
+        # `markdown_fences.py` に切り出してある（式を 2 箇所に置かないため）。
+        # これを忘れると、テストは ModuleNotFoundError で落ちる——
+        # **「落ちた」ことは分かるが理由が検査内容とずれる**ので、必ず揃える。
+        for dep in ("markdown_fences.py",):
+            (root / "scripts" / dep).write_text(
+                (REPO_ROOT / "scripts" / dep).read_text(encoding="utf-8"), encoding="utf-8"
+            )
         return subprocess.run(
             [sys.executable, str(copied)], cwd=root, capture_output=True, text=True
         )
