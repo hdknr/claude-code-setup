@@ -101,22 +101,57 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 !!! warning "「確かめるだけ」はできません"
     2 つ目は**判定と更新を兼ねています**。最新でなければ**その場で更新され**、反映のための
     再起動（または `/reload-plugins`）を求められます。
-    **読み取りだけで「自分は最新か」に答える方法はありません。**
+    **「最新か」に読み取りだけで答える方法は見つかっていません**（`list` は入っている版しか
+    返さず、`--available` は後述のとおりこのプラグインを返しません）。
+    **探し尽くしたわけではありません。**
 
-!!! question "カタログの取り直しが必須かは、確かめていません"
-    段階ごとに何が変わるかは確認しました（下表。中段の扱いは表の直後を参照）。ただし**「カタログを取り直さずに
-    `plugin update` だけ走らせたらどうなるか」は測っていません**——記録した手順は
-    常に「取り直す → 更新する」の順でした。
+    ただし**「入っている版が、手元のカタログに追いついているか」なら、ファイルを読むだけで
+    分かります**——**2 つのファイルを突き合わせます**。
 
-    **むしろ逆向きの手がかりがあります。** CLI の実体には
-    `Failed to refresh marketplace '...' before update; using cached data: ...` という
-    文字列があり、**更新の前にカタログを取り直そうとする経路がある**ことを示唆します
-    （文字列の存在は制御フローの証明ではないので、**断定はできません**）。
+    ```bash
+    # カタログが宣言する版
+    python3 -c "import json;print([(p['name'],p['version']) for p in json.load(open('$HOME/.claude/plugins/marketplaces/claude-code-setup/.claude-plugin/marketplace.json'))['plugins']])"
+    # 入っている版
+    python3 -c "import json;d=json.load(open('$HOME/.claude/plugins/installed_plugins.json'));print({k:[i['version'] for i in v] for k,v in d['plugins'].items() if 'claude-code-setup' in k})"
+    ```
 
-    **決着させるには**、クローンを凍結状態（`0b22552`）に戻して `plugin update` だけを
-    走らせます。本リポジトリではまだ実施していません。
-    **それまでは 2 つとも走らせてください**——取り直しは安全で、結果が変わらないなら
-    無駄になるだけです。
+    **手元のカタログ自体が古い可能性は残ります**（それを知るには取り直すしかありません）。
+
+!!! danger "`claude plugin list` は「読み取りだけ」ではありません"
+    **`claude plugin` 系のコマンドは、自動更新の掃引を発火させることがあります。**
+    実測で、`list` と `--help` を動かしただけで**自動更新が有効な 5 件のマーケットプレイスが
+    一斉に更新されました**（後述）。
+
+    つまり **`autoUpdate` を有効にしている場合、`claude plugin list` を「確認のため」に
+    打つと、それ自体が更新を起こしうる**ということです。
+    **本当に何も動かしたくないときは、上のファイルを直接読んでください。**
+
+!!! success "カタログの取り直しは、必須ではありません（実測）"
+    **`claude plugin update` は、更新の前に自分でカタログを取り直します。**
+    2026-09-13 に、**`marketplace update` を走らせずに `plugin update` だけ**を実行して
+    確かめました。
+
+    | | 実行前 | 実行後 |
+    | --- | --- | --- |
+    | クローンの HEAD | `92a9936`（09-11） | **`650af0c`（09-13）** |
+    | カタログが宣言する版 | 1.9.1 | **1.9.2** |
+    | 入っている版 | 1.9.1 | **1.9.2** |
+
+    **更新が要るかどうかに関わらず取り直します**——すでに最新の状態でもう一度走らせても、
+    最終更新の時刻が進みました。
+
+    **それでも 2 段階で書いているのは、`marketplace update` が害にならないからです。**
+    「取り直してから更新する」と覚えておけば、どちらの経路でも正しく動きます。
+
+    **以前ここには「取り直しが必須かは未検証」と書き、逆向きの手がかりとして
+    `Failed to refresh marketplace '...' before update; using cached data:` という文字列を
+    併記していました。その手がかりは当たっていました。**
+
+    **以下は CLI の実体を読んだもので、動かして確かめたものではありません。**
+    直前に取り直したときは省く分岐があり、閾値は **30 秒**と読めます。
+    取り直しに失敗した場合も黙らず
+    `Warning: marketplace not refreshed (...) — version shown may be stale.` を付けて返す形で、
+    **取り直せなかったことが利用者に見える**——この経路は安全側に見えます。
 
 !!! note "`--available` は `dev-loop` を返しません（理由は不明）"
     `claude plugin list --json --available` の `available` に、**`dev-loop` は一度も
@@ -179,26 +214,105 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
     届いていません**——**対策が届くには対策より後の版が届いている必要がある**という循環です。
     だから**上の `claude plugin list` を先に案内しています**。そちらは古い版にも効きます。
 
-#### リポジトリ側からできること／できないこと
+#### リポジトリ側からできること／届かないこと
 
-| できること（リポジトリ側・CI で強制） | できないこと（クライアント側の状態） |
+| できること（リポジトリ側・CI で強制） | 届かないこと（クライアント側の状態） |
 | --- | --- |
 | version を 3 箇所で揃える | **更新を実行すること**（[更新する](#updating) の手順） |
-| description を共変させる | **`autoUpdate` を有効にすること**（`~/.claude/plugins/known_marketplaces.json`。`/plugin` の対話メニューで設定するとされます） |
-| `SKILL.md` にバナーを刻む | **再起動すること** |
+| description を共変させる | **`autoUpdate` を有効にすること**——**保留**（リポジトリの settings から宣言できるかは確かめていません。下記） |
+| `SKILL.md` にバナーを刻む | **再起動すること**（または `/reload-plugins`） |
 
-`autoUpdate` は `~/.claude/plugins/known_marketplaces.json` の**素のブール値**です。
-実測（2026-09-11）では、登録済み 9 件のうち **2 件が `"autoUpdate": true`**、
-`claude-code-setup` は**未設定**でした。**リポジトリ側からは設定できません。**
+#### `autoUpdate`
 
-!!! note "「有効にすれば追随する」はこのリポジトリでは確かめていません"
-    `autoUpdate` の有無と最終更新日を並べても**因果は言えません**——未設定でも当日更新されて
-    いるものが 2 件あり、交絡しています。**有効化して経過を見る**という手段はありますが、
-    本リポジトリではまだ実施していません。**動作は未確認**として扱ってください。
+`~/.claude/plugins/known_marketplaces.json` の**マーケットプレイスごとのブール値**です。
+公式スキーマの説明は「**このマーケットプレイスとそのプラグインを起動時に自動更新するか**」。
 
+**設定する手段は少なくとも 3 つあります。**
 
-**できない側に対策を書いても届きません。** リポジトリ側からできるのは
-「気づける材料を置くこと」までで、**実行するのは利用者**です。
+| 手段 | 確からしさ |
+| --- | --- |
+| **`/plugin` の画面** | CLI の実体に `Auto-update enabled. Claude Code will automatically update this marketplace and its installed plugins.` という**画面用の文言**があります。**この手順は試していません** |
+| **`~/.claude/plugins/known_marketplaces.json` を直接編集** | **2026-09-13 に実測**。書いた値は CLI の書き込み経路を通しても消えませんでした（`plugin update` が同じファイルの `lastUpdated` を書き換えても `autoUpdate` は残った） |
+| **settings の `extraKnownMarketplaces`** | 宣言に `autoUpdate` を書けます。CLI 側に `known_marketplaces.json` へ**書き戻す**経路があります（`Synced autoUpdate=... from settings for marketplace`）。**この手順は試していません** |
+
+**非対話の `claude plugin` には該当するオプションが見当たりません**（`marketplace` 配下の 4 つを含む **18 枚の `--help`** を確認）。
+シェルから設定したい場合はファイルを編集することになります。
+
+!!! danger "`known_marketplaces.json` は真の出所ではないようです"
+    **以下は CLI の実体を読んだもので、動かして確かめたものではありません。**
+    settings で宣言した値が**最優先**で、`known_marketplaces.json` に**書き戻される**
+    経路があります。そうであれば、**ファイルの値だけを見ても、それがどこから来たのかは
+    分かりません**。
+    `/plugin` の画面には
+    `Auto-update for '...' is set by <source> and can't be changed here.` という
+    **出所を示す文言**があります。
+
+    ファイルを見るだけなら:
+
+    ```bash
+    python3 -c "import json,os;d=json.load(open(os.path.expanduser('~/.claude/plugins/known_marketplaces.json')));print(d.get('claude-code-setup',{}).get('autoUpdate'))"
+    ```
+
+!!! note "設定していなくても自動更新されるものがあります（名前による既定）"
+    CLI の実体を読むと、判定はこの順です——**(1) settings の宣言 → (2) `known_marketplaces.json`
+    の値 → (3) `claude.ai` ホストなら有効 → (4) 名前による既定**。
+
+    (4) は「Anthropic 公式の名前の一覧にあり、**かつ除外の 2 件に入っていない**」というもので、
+    一覧には `claude-plugins-official` と `anthropic-agent-skills` が含まれます
+    （除外は `knowledge-work-plugins` と `first-party-plugins` の 2 件で、**一覧にあっても
+    既定は無効**）。
+
+    **`claude-code-setup` はその一覧に入っていない**ので、**設定しなければ自動更新されません。**
+
+    （**この段落は CLI の実体を読んだもので、動かして確かめたものではありません。**
+    実測したのは「未設定のまま 2 日置いてもカタログが進まなかった」という事実のほうです。）
+
+!!! danger "リポジトリの settings から宣言できるかは、確かめていません"
+    **`extraKnownMarketplaces` の公式スキーマは「リポジトリの `.claude/settings.json` で使うのが
+    典型」と書いています。** つまり**リポジトリ側から `autoUpdate` を宣言できる可能性があります**。
+
+    **一度、できないと書きました。撤回します。** 根拠にした文字列
+    （`must be declared under extraKnownMarketplaces in USER or managed settings`）が出るのは
+    **記録された場所やソースのパスが「ネットワーク形状、または一度も調べていないので分類できない」
+    と判定されたとき**で、**ソースの種類とは別の話**です。
+    **`github` であること自体を理由にこの分岐へ入るわけではありません**——
+    **文字列を、それが支えていない結論に使いました。**
+
+    **逆側の読みもあります。** 実体には、**`project` / `local` の settings を除外する経路**も
+    見えます（宣言をどの集合から読むかで分岐します。**どちらが走るかは確かめていません**）。
+
+    **試していないので、できるともできないとも書きません。**
+
+!!! success "有効にすると、掃引の対象に入ります（実測）"
+    2026-09-13 に `claude-code-setup` の `autoUpdate` を `true` にしたところ、
+    **その直後の掃引に加わりました**。同じ時刻に、有効なものだけが一斉に更新されています。
+
+    | auto-update | マーケットプレイス | 直前 | 掃引後 |
+    | --- | --- | --- | --- |
+    | 有効（明示） | `claude-code-setup` | **2026-09-11** | **07:55:18** |
+    | 有効（明示） | `spin-dd` / `automedia` | 06:01:49 | 07:55:18 |
+    | 有効（名前による既定） | `claude-plugins-official` / `anthropic-agent-skills` | 06:01:4x | 07:55:1x |
+    | 無効 | `astral-sh` / `awesome-claude-code-plugins` / `impeccable` / `taiheicloud` | 1〜8 か月前 | **動かず** |
+
+    **有効 5 件は全部進み、無効 4 件は 1 つも動きませんでした。**
+    とくに `claude-code-setup` は、**2 日間止まっていたものが、フラグを立てた直後の掃引に
+    加わった**——**同じマーケットプレイスの前後比較**になっています。
+
+    !!! warning "ここまでしか言えません"
+        - **確かめたのは「取り直しに行くようになった」ことだけ**です。このときクローンは
+          すでに最新だったので、**新しいコミットを実際に引いてくるところは見ていません**。
+        - この掃引は**`claude plugin` 系のコマンドを動かしたときに**発火しました。
+          スキーマには「**起動時に**」とあり、起動時の経路も実体にありますが、
+          **起動で発火するところは確かめていません**。
+        - **どれくらいの間隔で走るか**は測っていません。実体には最大 10 分ほどの
+          待ちを入れる形が読めます。
+
+**更新の実行と再起動は、リポジトリ側からはどうにもなりません**——ここに対策を書いても
+届きません。リポジトリ側からできるのは「**気づける材料を置くこと**」までで、
+**実行するのは利用者**です。
+
+**`autoUpdate` だけは保留です**（上記）。リポジトリの settings から宣言できるかを
+確かめていないので、**「届かない」側だと決めつけていません。**
 
 **常に最新を使いたい場合は、[bare な名前で呼びたい場合](#bare-invocation) の symlink 経路**を
 選びます——キャッシュを経由しないので、`git pull` した時点で反映されます。
