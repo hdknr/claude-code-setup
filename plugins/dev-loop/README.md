@@ -37,9 +37,11 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
    （禁止は散文ではなくツール構成で表明する。指定前に実際のツール一覧を確認する）。
    回せないときは**黙って飛ばさず、着手前に申告して指示を仰ぐ**。**受入基準のどれかに証明手段が
    無い**（ブラウザなし・実データなし）ときは、弱い検査で代替せず **BLOCKED** として、**何が無いから
-   回せないのか・次善に回した検査・証明できなかった受入基準**を名指しで報告し、**周を閉じない**
+   回せないのか・次善に回した検査・証明できなかった受入基準**を名指しで報告し、**周を閉じない**。
+   **実験の結果から何かを述べるなら、先に交絡を潰す**——**設定のほうが結果を決めていないか**を
+   確かめてから書く（否定的な結果はとくに、実験が壊れていても同じ形で出る）
 6. **レビュー → PR** — **`/code-review` は手順 5 の有無に関わらず必須**。**受入基準は Verifier と
-   `/code-review` の両方に渡し、問いを局面に絞らない**。指摘を直したら verify とレビューの
+   `/code-review` の両方に渡し、問いを局面に絞らない**（実験をした周は**交絡の確認も両方に渡す**）。指摘を直したら verify とレビューの
    **両方**に当て直し、**2 パス目にも受入基準を渡す**（＝受け渡しは計 4 回）。
    **変更が 1 行でもあれば PR にする**（直接コミット／push で閉じない）。**worktree 上であることを
    確認**して PR 作成、結果と**手順 3 で「未証明」とした項目**を PR コメントに残す
@@ -53,7 +55,9 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 > 付いている。線の引き方の根拠は
 > [dev-loop の設計 §4.1](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#degradation)、
 > BLOCKED と「未証明」の違いは
-> [§2.3](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#blocked) を参照。
+> [§2.3](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#blocked)、
+> 実験の交絡は
+> [§2.4](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#confounded) を参照。
 
 ## プロジェクト固有部分の扱い
 
