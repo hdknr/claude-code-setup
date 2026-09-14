@@ -144,9 +144,17 @@ def render(total: int, preamble: int, rows: list[tuple[str, int, int]]) -> str:
     for head, n, m in rows:
         name = head.lstrip("# ").strip().replace("|", r"\|")
         out.append(f"| {name} | {n} | {m if m else '—'} |")
+    top = sorted(rows, key=lambda r: r[1], reverse=True)[:2]
+    top_names = "・".join(head.lstrip("# ").strip() for head, _, _ in top)
     out += [
         "",
-        "<small>この表と上の段落は `scripts/skill-metrics.py` が生成している。"
+        f"**行数が最も大きい 2 節は「{top_names}」**。"
+        f"**`（必須）` を含まない節は {without_marker} 行＝全体の "
+        f"{without_marker / total * 100:.1f}%** で、"
+        f"これが「切り出せる上限」の側に振れた値である"
+        f"（印を付けていない必須文は数に入らないため）。",
+        "",
+        "<small>この表と上下の段落は `scripts/skill-metrics.py` が生成している。"
         "**手で書き換えない**——`SKILL.md` を編集したら "
         "`python3 scripts/skill-metrics.py` で作り直す（CI が `--check` で見ている）。</small>",
         "",
