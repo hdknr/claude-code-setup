@@ -2,8 +2,11 @@
 
 `dev-loop` プラグインが実装する開発方式（**AI コーディングエージェント前提の反復開発**）の
 設計ドキュメント。`/dev-loop` の各ステップが「なぜそうなっているか」をここで定義する。
-手順そのものは [プラグイン一覧の dev-loop 節](index.md#dev-loop) と、インストール後の
-`SKILL.md` を参照。
+手順そのものは
+[プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/README.md)
+と、規範の本体である
+[`SKILL.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/SKILL.md)
+を参照（[プラグイン一覧](index.md#dev-loop)は入口で、手順の中身は置いていない）。
 
 !!! note "表記について"
     プラグインとして入れた場合の実際の呼び出しは **`/dev-loop:dev-loop`** です
