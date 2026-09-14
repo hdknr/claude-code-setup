@@ -236,8 +236,9 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 
 **CI では強制できないが、リポジトリから届くものが 1 つあります**——`.claude/settings.json` に
 `extraKnownMarketplaces` を置くと **`autoUpdate` を宣言できます**（2026-09-14 に実測。下記）。
-CI で強制できないのは、**置くかどうかが利用者側の判断**だからです
-（このリポジトリは置いていません）。**利用者がその workspace を信頼していなければ届きません。**
+ここで CI が何も言わないのは、**このリポジトリがそのファイルを置かないと決めている**からです
+（置くと決めたなら、CI で存在を強制することもできます）。
+**置いても、利用者がその workspace を信頼していなければ届きません。**
 
 #### `autoUpdate`
 
@@ -308,22 +309,22 @@ CI で強制できないのは、**置くかどうかが利用者側の判断**�
 
 | 宣言した対象 | 結果 |
 | --- | --- |
-| **既に登録済み**のマーケットプレイス（`claude-code-setup`・`github`） | **値が書き換わる**。`true` → `false` → `true` の**両方向**とも、`Synced autoUpdate=<値> from settings` のログとファイルの値の両方で確認 |
+| **既に登録済み**のマーケットプレイス（`claude-code-setup`・`github`） | **値が書き換わる**。`true` → `false` → `true` の**両方向**とも、`Synced autoUpdate=<値> from settings` のログとファイルの値の両方で確認（true 方向もリポジトリの `.claude/settings.json` 経由） |
 | **名前も source も未登録**のマーケットプレイス（`directory` 形式） | **新規に登録される**——`Added marketplace source` ＋ `Synced autoUpdate=false` が出て、`known_marketplaces.json` に `autoUpdate` つきで載る |
 | 宣言を消してからもう一度起動 | **書き換わった値は残る**——宣言は 1 度で恒久的に効く |
 | 宣言を消したあと、**別の実行**から新規登録を見る | **`known_marketplaces.json` に残っていた**（一覧に出た）。確かめたのは**登録が残っていること**までで、**セッション起動での再確認はしていない** |
 | **名前だけ新しく、source は登録済みと同じ**もの | **登録されない**。`Source already materialized as '<既存名>', skipping clone` で短絡する |
 | **信頼していない**ディレクトリに置いた `.claude/settings.json` | **宣言が届かない**（`reconcile` の行自体が出ない）。**ファイル経由の場合の話**で、`--settings` フラグは下の行のとおり別 |
-| 宣言を置いて `claude plugin marketplace list` を実行 | **宣言が当たらない**。信頼済みディレクトリで**登録済みのマーケットプレイスの値を変える宣言**を置いても、`known_marketplaces.json` の値は動かなかった（セッション起動なら同じ宣言で動く） |
+| 宣言を置いて `claude plugin marketplace list` を実行 | **宣言が当たらない**。信頼済みディレクトリで**登録済みのマーケットプレイスの値を変える宣言**を置いても、`known_marketplaces.json` の値は動かなかった（セッション起動なら同じ宣言で動く）。17 行のデバッグログに `Synced` も `[reconcile]` も無い。**当たらない理由までは確かめていません** |
 | **同じ未信頼のディレクトリ**で `claude --settings '<JSON>'` | **届いて、値まで当たる**——`Dropped 1 project-scoped permissions.allow entry — workspace not yet trusted` と**同じ実行の中で** `Synced autoUpdate=false from settings` が出て、ファイルの値が変わった。**関門はファイル経由の設定に掛かっており、フラグはその外** |
 
 **測っていないこと**: **未登録の名前を `github` の source で宣言した場合**。
 上の 2 行目は `directory` 形式で測ったもので、`github` でも同じかは確かめていません。
 
-!!! warning "信頼の関門について確かめたのは、3 つのキーだけです"
+!!! warning "信頼の関門について確かめたのは、2 つのキーだけです"
     信頼していないディレクトリで落ちることを確認したのは
     **`permissions.allow`**（`Dropped 1 project-scoped permissions.allow entry — workspace not yet trusted`
-    と明示される）、**`env`**、**`extraKnownMarketplaces`** の 3 つです。
+    と明示される）と **`extraKnownMarketplaces`** の 2 つです。
     **`enabledPlugins` は試していません。**
 
     `permissions.allow` を 1 件置いたのは**対照**としてで、
@@ -335,9 +336,8 @@ CI で強制できないのは、**置くかどうかが利用者側の判断**�
     **利用者全体の `~/.claude/plugins/known_marketplaces.json`** で、
     **そのディレクトリを離れても、宣言を消しても残ります**（上の表の 3 行目）。
     **知らないマーケットプレイスを新規に登録することもできます**（上の表の 2 行目）。
-    ただしそこで測れたのは**登録簿に 1 行増えるところまで**です——クローンは作られず、
-    プラグインも入りませんでした（`installed_plugins.json` の出現 0・`marketplaces/` に
-    ディレクトリ 0）。**測ったのはローカルの `directory` 形式で、`github` 形式は試していません。**
+    **測ったのはローカルの `directory` 形式で、`github` 形式は試していません**——
+    どこまで起きるか（クローンまで作られるか）は、その形式で測らないと言えません。
 
     信頼の関門があるのはこのためです。**知らないリポジトリを信頼するということは、
     そのリポジトリに `autoUpdate` を書かせることを含みます。**
@@ -373,8 +373,10 @@ CI で強制できないのは、**置くかどうかが利用者側の判断**�
         - この掃引は**`claude plugin` 系のコマンドを動かしたときに**発火しました。
           スキーマには「**起動時に**」とあり、起動時の経路も実体にあります。
           **2026-09-14 に発火条件を特定しようとして、できませんでした**——
-          `claude plugin list` も **`-p` での起動**も、この日は掃引を起こしませんでした。
-          **対話での起動は試していません。**
+          `claude plugin list` でも `-p` での起動でも **`lastUpdated` は動きませんでした**。
+          ただし条件が揃っていません（このときは `--help` を動かしておらず、
+          フラグを立てた直後でもなく、対象も 2 日止まってはいませんでした）。
+          **「起きなかった」とまでは言えません。対話での起動も試していません。**
         - **どれくらいの間隔で走るか**は測っていません。実体には最大 10 分ほどの
           待ちを入れる形が読めます。
 
