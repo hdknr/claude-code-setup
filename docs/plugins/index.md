@@ -27,7 +27,8 @@
     [bare な名前で呼びたい場合](#bare-invocation) を参照してください。
 
 !!! info "プラグインの入れ方・使い方の全体像"
-    インストール手順と日常利用の流れは [Part 3: インストール後の環境準備](../part3-post-setup.md) にもまとまっています。このページは各プラグインの**詳細リファレンス**です。
+    インストール手順と日常利用の流れは [Part 3: インストール後の環境準備](../part3-post-setup.md) にもまとまっています。このページは**入口**です——各プラグインが何をするか、どう入れるか、どこを読むか。
+**手順や規範の中身は、各プラグインの README とスキル本文にあります。**
 
 ---
 
@@ -463,11 +464,9 @@ cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビ�
 /cmux:cmux -r 34
 ```
 
-### 前提
-
-- `cmux` CLI がインストールされていること
-- `gh` CLI が認証済みであること
-- Claude Code の `EnterWorktree` ツールが利用可能であること
+動かすための前提（`cmux` CLI・`gh` CLI・`EnterWorktree` ツール）は
+[プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/cmux/README.md)
+にあります——**ここに写すと、片方だけが古くなります**（dev-loop と同じ理由）。
 
 ---
 
