@@ -847,6 +847,13 @@ Claude Code の設計は 4 要素で捉えられる。`/dev-loop` を使う際�
 }
 ```
 
+!!! warning "効くのは、利用者がその workspace を信頼してからです"
+    2026-09-14 に実測したところ、**信頼していないディレクトリでは `.claude/settings.json` が
+    まるごと落ちます**（`this workspace has not been trusted`）。clone しただけでは届かず、
+    **各メンバーが一度そのディレクトリで信頼を承認してから**有効になります。
+    宣言に `autoUpdate` を足すと、それは**利用者全体の設定に恒久的に書き込まれます**——
+    測った範囲は[プラグインの入れ方と更新](index.md#autoupdate)に書いてあります。
+
 - プロジェクト固有の verify／デプロイ経路／制約は `.claude/dev-loop.md` に置く（`/dev-loop` が読む）。
 - `/code-review`・`/loop`・`/schedule` は Claude Code のビルトイン相当で宣言不要。フェーズ分割型の
   プランニングプラグイン（GSD 系など）は各自導入前提で任意——`/dev-loop` はその価値の中核である
