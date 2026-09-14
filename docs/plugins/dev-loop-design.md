@@ -847,6 +847,24 @@ Claude Code の設計は 4 要素で捉えられる。`/dev-loop` を使う際�
 }
 ```
 
+!!! warning "`extraKnownMarketplaces` が効くのは、利用者がその workspace を信頼してからです"
+    2026-09-14 に実測したところ、**信頼していないディレクトリでは
+    `.claude/settings.json` の `extraKnownMarketplaces` が届きません**
+    （同じ関門で `permissions.allow` も `workspace not yet trusted` として捨てられます）。
+    **上のスニペットのもう半分、`enabledPlugins` は試していません**——
+    この警告は `extraKnownMarketplaces` についてのものです。
+
+    **信頼を承認すれば届くようになるか**は測っていません——CLI のメッセージが
+    「一度ここで対話的に起動して信頼ダイアログを承認せよ」と案内しているだけで、
+    **その遷移そのものは試していません**（実験に使った信頼済みディレクトリは、
+    最初から信頼済みでした）。
+
+    宣言に `autoUpdate` を足すと、それは**利用者全体の
+    `~/.claude/plugins/known_marketplaces.json` に書き込まれ、宣言を消しても残ります**。
+    **マーケットプレイスの新規登録も起きました**——ただし測ったのは**ローカルの
+    `directory` 形式**で、**上のスニペットのような `github` 形式は試していません**。
+    測った範囲は[プラグインの入れ方と更新](index.md#autoupdate)を正とします。
+
 - プロジェクト固有の verify／デプロイ経路／制約は `.claude/dev-loop.md` に置く（`/dev-loop` が読む）。
 - `/code-review`・`/loop`・`/schedule` は Claude Code のビルトイン相当で宣言不要。フェーズ分割型の
   プランニングプラグイン（GSD 系など）は各自導入前提で任意——`/dev-loop` はその価値の中核である
