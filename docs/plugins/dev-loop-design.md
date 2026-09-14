@@ -6,7 +6,7 @@
 [プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/README.md)
 と、規範の本体である
 [`SKILL.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/SKILL.md)
-を参照（[プラグイン一覧](index.md#dev-loop)は入口で、手順の中身は置いていない）。
+を参照。
 
 !!! note "表記について"
     プラグインとして入れた場合の実際の呼び出しは **`/dev-loop:dev-loop`** です
