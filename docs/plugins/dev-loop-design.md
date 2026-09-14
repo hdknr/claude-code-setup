@@ -847,16 +847,19 @@ Claude Code の設計は 4 要素で捉えられる。`/dev-loop` を使う際�
 }
 ```
 
-!!! warning "効くのは、利用者がその workspace を信頼してからです"
+!!! warning "`extraKnownMarketplaces` が効くのは、利用者がその workspace を信頼してからです"
     2026-09-14 に実測したところ、**信頼していないディレクトリでは
-    `.claude/settings.json` の `extraKnownMarketplaces` が届きません**
-    （同じ実行で `permissions.allow` も捨てられ、`workspace not yet trusted` と記録されます）。
+    `.claude/settings.json` の `extraKnownMarketplaces` が届きません**。
     clone しただけでは届かず、**各メンバーが一度そのディレクトリで信頼を承認してから**
-    有効になります。**`enabledPlugins` のほうは試していません。**
+    有効になります。別の実行では `permissions.allow` も
+    `workspace not yet trusted` として捨てられました。
+    **上のスニペットのもう半分、`enabledPlugins` は試していません**——
+    この警告は `extraKnownMarketplaces` についてのものです。
 
     宣言に `autoUpdate` を足すと、それは**利用者全体の
-    `~/.claude/plugins/known_marketplaces.json` に書き込まれ、宣言を消しても残ります**
-    ——マーケットプレイスの**新規登録も同じ**です。
+    `~/.claude/plugins/known_marketplaces.json` に書き込まれ、宣言を消しても残ります**。
+    **マーケットプレイスの新規登録も起きました**——ただし測ったのは**ローカルの
+    `directory` 形式**で、**上のスニペットのような `github` 形式は試していません**。
     測った範囲と、測っていない組み合わせは[プラグインの入れ方と更新](index.md#autoupdate)に
     書いてあります。
 
