@@ -130,8 +130,7 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
     `--debug-file` つきで動かしても、ログ 38 行に更新に関する行は **1 行も出ず**、
     `lastUpdated` も動きませんでした（`-p` でのセッション起動でも動かず）。
     **どの条件で発火するのかは特定できていません。**
-    発火した事実は消えないので、**注意はそのまま残します**——
-    「必ず起きる」ではなく「**起きることがある**」と読んでください。
+    一度は発火した以上、**注意はそのまま残します**。
 
 !!! success "カタログの取り直しは、必須ではありません（実測）"
     **`claude plugin update` は、更新の前に自分でカタログを取り直します。**
@@ -227,8 +226,12 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 | --- | --- |
 | version を 3 箇所で揃える | **更新を実行すること**（[更新する](#updating) の手順） |
 | description を共変させる | **再起動すること**（または `/reload-plugins`） |
-| `SKILL.md` にバナーを刻む | **利用者が workspace を信頼していない場合**——設定ファイルごと落ちます（下記） |
-| **`autoUpdate` を宣言すること**（`.claude/settings.json` の `extraKnownMarketplaces`。**信頼済みの workspace に限る**。2026-09-14 に実測） | |
+| `SKILL.md` にバナーを刻む | **掃引を起こすこと**——発火条件が特定できていません（下記） |
+
+**CI では強制できないが、リポジトリから届くものが 1 つあります**——`.claude/settings.json` に
+`extraKnownMarketplaces` を置くと **`autoUpdate` を宣言できます**（2026-09-14 に実測。下記）。
+CI で強制できないのは、**置くかどうかが利用者側の判断**だからです
+（このリポジトリは置いていません）。**利用者がその workspace を信頼していなければ届きません。**
 
 #### `autoUpdate`
 
@@ -291,26 +294,40 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 }
 ```
 
-と書いて、そのディレクトリでセッションを起動すると、
+と書いて、**そのディレクトリを信頼した状態で**セッションを起動すると、
 `~/.claude/plugins/known_marketplaces.json` の `autoUpdate` が**その値になります**。
-`true` → `false` → `true` の**両方向**で確認しました。
+デバッグログに `Synced autoUpdate=<値> from settings for marketplace: <名前>` が出ます。
 
-**測ったことと、その対照**:
+**測ったこと**（`claude` 2.1.270・2026-09-14）:
 
-| 測ったこと | 結果 |
+| 宣言した対象 | 結果 |
 | --- | --- |
-| 信頼済みディレクトリ・既知のマーケットプレイス | **`known_marketplaces.json` の値が書き換わった**（両方向） |
-| 宣言を消してからもう一度起動 | **書き換わった値のまま**——宣言は 1 度で恒久的に効く |
-| **信頼していない**ディレクトリ | **設定ファイルごと落ちる**。`this workspace has not been trusted` と明示される |
-| 同じ実行で `permissions.allow` を 1 件置いた（対照） | **未信頼では 0 件・信頼済みでは 1 件**と出た——「ファイルが読まれているか」を宣言と切り離して確かめた |
-| **未登録**の名前を宣言 | 起動時に `[reconcile] 1 marketplace(s): <名前>(install)` までは進むが、`known_marketplaces.json`・`installed_plugins.json`・`marketplaces/` の**どこにも残らない**（3 箇所を確認）＝**そのセッション限り** |
-| `claude plugin marketplace list` | **宣言を見ない**。信頼済みディレクトリで宣言を置いても一覧は 9 件のまま |
-| `claude --settings '<JSON>'` | **未信頼のディレクトリでも届く**（フラグは信頼の関門の外） |
+| **既に登録済み**のマーケットプレイス（`claude-code-setup`・`github`） | **値が書き換わる**。`true` → `false` → `true` の**両方向**で確認 |
+| **名前も source も未登録**のマーケットプレイス（`directory` 形式） | **新規に登録される**——`Added marketplace source` ＋ `Synced autoUpdate=false` が出て、`known_marketplaces.json` に `autoUpdate` つきで載る |
+| 宣言を消してからもう一度起動 | **書き換わった値も、新規登録も残る**——宣言は 1 度で恒久的に効く |
+| **名前だけ新しく、source は登録済みと同じ**もの | **登録されない**。`Source already materialized as '<既存名>', skipping clone` で短絡する |
+| **信頼していない**ディレクトリ | **宣言が届かない**（`reconcile` の行自体が出ない） |
+| `claude plugin marketplace list` | **宣言を見ない**。宣言だけした名前は一覧に出ず、登録済みの名前は出る（同じ実行で両方を確認） |
+| `claude --settings '<JSON>'` | **信頼の関門が実際に発火した場所でも届く**（フラグは関門の外） |
+
+**測っていないこと**: **未登録の名前を `github` の source で宣言した場合**。
+上の 2 行目は `directory` 形式で測ったもので、`github` でも同じかは確かめていません。
+
+!!! warning "信頼の関門について確かめたのは、3 つのキーだけです"
+    信頼していないディレクトリで落ちることを確認したのは
+    **`permissions.allow`**（`Dropped 1 project-scoped permissions.allow entry — workspace not yet trusted`
+    と明示される）、**`env`**、**`extraKnownMarketplaces`** の 3 つです。
+    **`enabledPlugins` は試していません。**
+
+    `permissions.allow` を 1 件置いたのは**対照**としてで、
+    「宣言が届かないこと」と「そもそもファイルが読まれていないこと」を切り分けるためです
+    ——信頼済みでは 1 件適用され、未信頼では 0 件になりました。
 
 !!! danger "これは「リポジトリが利用者の設定を書き換えられる」ということです"
     宣言が効くのは**宣言したリポジトリの中だけではありません**。書き込まれる先は
     **利用者全体の `~/.claude/plugins/known_marketplaces.json`** で、
-    **そのディレクトリを離れても、宣言を消しても残ります**（上の表の 2 行目）。
+    **そのディレクトリを離れても、宣言を消しても残ります**（上の表の 3 行目）。
+    **知らないマーケットプレイスを新規に登録することもできます**（上の表の 2 行目）。
 
     信頼の関門があるのはこのためです。**知らないリポジトリを信頼するということは、
     そのリポジトリに `autoUpdate` を書かせることを含みます。**
@@ -344,10 +361,10 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
         - **確かめたのは「取り直しに行くようになった」ことだけ**です。このときクローンは
           すでに最新だったので、**新しいコミットを実際に引いてくるところは見ていません**。
         - この掃引は**`claude plugin` 系のコマンドを動かしたときに**発火しました。
-          スキーマには「**起動時に**」とあり、起動時の経路も実体にありますが、
-          **起動で発火するところは確かめていません**。
+          スキーマには「**起動時に**」とあり、起動時の経路も実体にあります。
           **2026-09-14 に発火条件を特定しようとして、できませんでした**——
-          `claude plugin list` も `-p` の起動も、この日は掃引を起こしませんでした。
+          `claude plugin list` も **`-p` での起動**も、この日は掃引を起こしませんでした。
+          **対話での起動は試していません。**
         - **どれくらいの間隔で走るか**は測っていません。実体には最大 10 分ほどの
           待ちを入れる形が読めます。
 
@@ -356,8 +373,7 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 **実行するのは利用者**です。
 
 **`autoUpdate` は例外です**（上記）——リポジトリの `.claude/settings.json` から宣言でき、
-**利用者が workspace を信頼していれば届きます**。届かないのは**信頼していない場合**で、
-そのときは設定ファイルごと落ちます。
+**利用者が workspace を信頼していれば届きます**。信頼していなければ届きません。
 
 **常に最新を使いたい場合は、[bare な名前で呼びたい場合](#bare-invocation) の symlink 経路**を
 選びます——キャッシュを経由しないので、`git pull` した時点で反映されます。
