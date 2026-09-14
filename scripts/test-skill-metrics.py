@@ -22,6 +22,7 @@ usage: python3 scripts/test-skill-metrics.py
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -101,6 +102,34 @@ _skill_metrics = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_skill_metrics)
 
 FIXTURE_MARKERS = sum(SKILL_BODY.count(marker) for marker in _skill_metrics.MARKERS)
+
+
+def _fixture_sections() -> list[tuple[str, int, int]]:
+    """フィクスチャの節を**テスト側で独立に**数える。
+
+    **本体の `sections()` を呼ばない。** 呼ぶと式が変わったときにテストも一緒に変わり、
+    退行を検出できなくなる（#50 の協調変異）。ここは素朴に上から数えるだけでよい
+    ——フィクスチャは小さく、`##`/`###` しか出てこない。
+    """
+    lines = SKILL_BODY.rstrip("\n").split("\n")
+    heads = [i for i, line in enumerate(lines) if line.startswith(("## ", "### "))]
+    out = []
+    for k, i in enumerate(heads):
+        # **見出し行を含み、次の見出しの直前まで**（末尾の空行も節に属する）。
+        end = heads[k + 1] if k + 1 < len(heads) else len(lines)
+        body = "\n".join(lines[i:end])
+        name = lines[i].lstrip("# ").strip()
+        m = sum(body.count(marker) for marker in _skill_metrics.MARKERS)
+        out.append((name, end - i, m))
+    return out
+
+
+_FIXTURE_ROWS = _fixture_sections()
+_FIXTURE_TOTAL = len(SKILL_BODY.rstrip("\n").split("\n"))
+FIXTURE_TOP2 = [name for name, _, _ in sorted(_FIXTURE_ROWS, key=lambda r: -r[1])[:2]]
+FIXTURE_WITHOUT_PCT = "{:.1f}".format(
+    sum(n for _, n, m in _FIXTURE_ROWS if not m) / _FIXTURE_TOTAL * 100
+)
 
 _REPO_BEFORE = _snapshot()
 
@@ -208,6 +237,76 @@ def main() -> int:
             block,
         )
         check("必須を持たない節は — で出る", "| — |" in block, block)
+
+        # **式はここで独立に書き直す。** 本体の関数から期待値を作ると、
+        # 式が変わってもテストが一緒に変わって通り続ける（#50 の協調変異）。
+        top2 = "と".join(f"「{h}」" for h in FIXTURE_TOP2)
+
+        def named_sections(text: str) -> list[str]:
+            """生成文が名指しした節名を取り出す。
+
+            **部分一致で見ない。** 件数を増やす変異は先頭 2 つが一致するので、
+            `in` で見ると素通りする（実際にこの周で 1 度素通りさせた）。
+            """
+            head = re.search(r"行数が最も大きい[^「]*((?:「[^」]+」(?:と)?)+)", text)
+            return re.findall(r"「([^」]+)」", head.group(1)) if head else []
+
+        check(
+            f"最も大きい 2 節が過不足なく名指しされる（{top2}）",
+            named_sections(block) == FIXTURE_TOP2,
+            block,
+        )
+        check(
+            f"マーカー無しの割合が出る（{FIXTURE_WITHOUT_PCT}）",
+            f"{FIXTURE_WITHOUT_PCT}%" in block,
+            block,
+        )
+        # **節名を 1 つずつ括る。** 区切りが「・」だと、節名自体が「・」を含むときに
+        # 境界が消える（実データに「待ち時間・定時処理は別スキル」がある）。
+        check("節名が 1 つずつ括られている", "」と「" in block, block)
+
+        # --- 変異: skill-metrics.py 側（生成の式を壊す） ---
+        print("\n[変異: 生成の式を壊す]")
+        script_src = SCRIPT.read_text(encoding="utf-8")
+        formula_mutations = {
+            "並び順を逆にする": lambda t: t.replace(
+                "key=lambda r: r[1], reverse=True", "key=lambda r: r[1]"
+            ),
+            "件数を 3 つにする": lambda t: t.replace("ranked[:2]", "ranked[:3]"),
+            "割合の分子を取り違える": lambda t: t.replace(
+                "{without_marker / total * 100:.1f}", "{with_marker / total * 100:.1f}"
+            ),
+            "節名を括らない": lambda t: t.replace(
+                """"と".join(f"「{head.lstrip('# ').strip()}」" for head, _, _ in top)""",
+                """"・".join(head.lstrip("# ").strip() for head, _, _ in top)""",
+            ),
+        }
+        mutant = root / "mutant.py"
+        for name, mutate in formula_mutations.items():
+            mutated_src = mutate(script_src)
+            check(f"{name} → 変異が実際に適用される", mutated_src != script_src)
+            mutant.write_text(mutated_src, encoding="utf-8")
+            # **生成し直してから、テスト側の期待と突き合わせる。**
+            # `--check` は「生成物と再生成が一致するか」しか見ないので、
+            # **式の誤りは原理的に検出できない**——ここでしか捕まらない。
+            # **`markdown_fences` は `scripts/` にある。** 変異版は一時ディレクトリに
+            # 置くので、`PYTHONPATH` で元の場所を渡さないと import で落ちる。
+            env = {**os.environ, "PYTHONPATH": str(SCRIPT.parent)}
+            result = subprocess.run(
+                [sys.executable, str(mutant), "--root", str(root)],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            check(f"{name} → 変異版でも生成は成功する", result.returncode == 0, result.stderr)
+            bad = block_of(root)
+            wrong = named_sections(bad) != FIXTURE_TOP2 or (
+                f"{FIXTURE_WITHOUT_PCT}%" not in bad
+            )
+            check(f"{name} → 生成物がテスト側の期待とずれる", wrong, bad)
+            # 本物で書き戻す（次の変異に持ち越さない）。
+            run(root)
+        mutant.unlink()
 
         # --- 変異: SKILL.md 側 ---
         print("\n[変異: SKILL.md を変える]")

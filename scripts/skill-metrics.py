@@ -144,12 +144,28 @@ def render(total: int, preamble: int, rows: list[tuple[str, int, int]]) -> str:
     for head, n, m in rows:
         name = head.lstrip("# ").strip().replace("|", r"\|")
         out.append(f"| {name} | {n} | {m if m else '—'} |")
-    top = sorted(rows, key=lambda r: r[1], reverse=True)[:2]
-    top_names = "・".join(head.lstrip("# ").strip() for head, _, _ in top)
+    # **節名は 1 つずつ鉤括弧で囲む。** 節名自体が「・」を含むことがある
+    # （実在: 「待ち時間・定時処理は別スキル」）ので、区切りに「・」を使うと
+    # **何節あるのか読めなくなる**。
+    ranked = sorted(rows, key=lambda r: r[1], reverse=True)
+    top = ranked[:2]
+    top_names = "と".join(f"「{head.lstrip('# ').strip()}」" for head, _, _ in top)
+    # **同点のときは名指しを避ける。** `sorted` は安定なので、2 位と 3 位が同じ行数だと
+    # **文書順の片方だけ**を黙って選ぶ——それを「最も大きい」と書くと検証できない主張になる。
+    tied = len(ranked) > len(top) and ranked[len(top) - 1][1] == ranked[len(top)][1]
+    if len(top) < 2:
+        head_line = f"**節は {len(top)} つしかない**（{top_names}）。"
+    elif tied:
+        head_line = (
+            f"**行数が最も大きいのは {top_names} だが、同じ行数の節が他にもある**"
+            "——順位は下表で確かめること。"
+        )
+    else:
+        head_line = f"**行数が最も大きい 2 節は {top_names}**。"
     out += [
         "",
-        f"**行数が最も大きい 2 節は「{top_names}」**。"
-        f"**`（必須）` を含まない節は {without_marker} 行＝全体の "
+        head_line
+        + f"**`（必須）` を含まない節は {without_marker} 行＝全体の "
         f"{without_marker / total * 100:.1f}%** で、"
         f"これが「切り出せる上限」の側に振れた値である"
         f"（印を付けていない必須文は数に入らないため）。",
