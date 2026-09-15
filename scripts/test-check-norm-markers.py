@@ -155,6 +155,49 @@ def main() -> int:
         )
         check("生成ブロックの外は捕まえる", len(run(root)) == 1)
 
+        print("例外 3: フェンスの中は数えない")
+        root = base / "fenced"
+        make_repo(
+            root,
+            origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+            others={
+                "docs/plugins/dev-loop-design.md":
+                    f"# 設計\n\n```bash\ngh issue view 999   # 把握{MARKER}\n```\n",
+            },
+        )
+        check("フェンス内のマーカーは違反にしない", run(root) == [])
+
+        print("例外 3 の境界: フェンスを閉じたあとは数える")
+        root = base / "after-fence"
+        make_repo(
+            root,
+            origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+            others={
+                "docs/plugins/dev-loop-design.md":
+                    f"# 設計\n\n```bash\necho hi\n```\n\nここは外{MARKER}\n",
+            },
+        )
+        found = run(root)
+        check("フェンスの外は捕まえる", len(found) == 1)
+        # `strip_fences` は行数を保って空行に置き換えるので、行番号がずれない。
+        check("フェンスを落としても行番号がずれない", found and found[0][1] == 7)
+
+        print("原本の数え方が skill-metrics と揃っている")
+        root = base / "count"
+        make_repo(
+            root,
+            origin_body=(
+                f"# 原本\n\n- 本体{MARKER}\n\n"
+                f"```bash\ngh issue view 999   # 例{MARKER}\n```\n"
+            ),
+            others={},
+        )
+        mod = load(root)
+        origin_text = (root / mod.ORIGIN).read_text(encoding="utf-8")
+        check("フェンス内を数えない（素だと 2、落とすと 1）",
+              origin_text.count(MARKER) == 2
+              and mod.strip_fences(origin_text).count(MARKER) == 1)
+
         print("収集範囲")
         root = base / "skip"
         make_repo(
@@ -186,6 +229,10 @@ def main() -> int:
                 "if MARKER in QUOTED.sub(\"\", line):",
                 "if MARKER in line:",
             ),
+            "フェンスの除去をやめる（フェンス内が違反になるはず）": (
+                "stripped = strip_fences(path.read_text(encoding=\"utf-8\")).splitlines()",
+                "stripped = path.read_text(encoding=\"utf-8\").splitlines()",
+            ),
         }
         source = SCRIPT.read_text(encoding="utf-8")
         for name, (old, new) in mutants.items():
@@ -204,6 +251,7 @@ def main() -> int:
                         f"| 節{MARKER} | 38 |\n"
                         "<!-- skill-metrics:end -->\n"
                         f"\n数えているのは `{MARKER}` だけ。\n"
+                        f"\n```bash\necho 例{MARKER}\n```\n"
                     ),
                 },
             )

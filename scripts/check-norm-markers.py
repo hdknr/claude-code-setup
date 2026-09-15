@@ -7,13 +7,14 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 
 なぜ必要か（#94）: dev-loop の規範は `SKILL.md`・`plugins/dev-loop/README.md`・
 `docs/plugins/dev-loop-design.md`・カタログ JSON・frontmatter に**分散していた**。
-規範を 1 つ足すたびに全部へ届かせる必要があり、#92 の周では**同じ数え上げを 6 回外し**、
-レビューが 2 パス連続で 13 件を返して収束しなかった（見積もり 7 箇所に対し実際は約 21 箇所）。
+規範を 1 つ足すたびに全部へ届かせる必要がある。
 
 #75 で「落とせない／落としてよいの列挙は `SKILL.md` にしか置かない」と決めていたが、
-**その規約を見張る仕組みが無かった**ので、決めたあとも複製が増え続けた——#92 では
-「1 箇所に寄せた」と宣言した**同じコミットで新しい複製が 3 つ**生まれている。
+**その規約を見張る仕組みが無かった**ので、決めたあとも複製が増え続けた。
 **宣言は検査ではない。**
+
+**経緯と実測は設計ドキュメント §8.1（`#miscount`）を正とする。ここに数字を書かない**
+——数字を 2 箇所に置くのが、そもそもこのスクリプトが直そうとしている形である。
 
 検証する内容:
 
@@ -37,6 +38,7 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 | **規範の*内容*が食い違うこと** | 同じ規範が 2 箇所にあって中身が違っても、マーカーが片方だけなら通る |
 | **原本の中の重複** | `SKILL.md` の中で同じ規範を 2 度書いても通る（#92 で実際に起きた） |
 | **ポインタの指し先が実在するか** | 「`SKILL.md` の手順 6 を正とする」と書いて手順 6 に何も無くても通る |
+| **フェンスの中の記載** | `strip_fences` で落としている。例示のためのコードブロックを数えると、**規約を例示しただけで落ちる**（`skill-metrics.py` と同じ扱い） |
 
 つまりこれは**「規範が漏れていない」の証明ではなく、「最も強い印が漏れていない」の検査**である。
 それでも置く価値があるのは、**`（必須）` を付ける行為が「これは規範だ」という著者の自己申告**
@@ -45,6 +47,10 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from markdown_fences import strip_fences  # noqa: E402
 
 MARKER = "（必須）"
 
@@ -83,7 +89,14 @@ def violations(root: Path) -> list[tuple[str, int, str]]:
         if rel == ORIGIN:
             continue
         in_generated = False
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        # **フェンスの中は数えない。** `skill-metrics.py` と `check-plugin-versions.py` が
+        # 同じことをしており、**式が 2 箇所にあると片方だけ緑になる**ので共有モジュールを使う。
+        # 揃えないと、同じ量に対して**2 つの公式な数**ができる——実際、揃える前は
+        # `skill-metrics.py` が 69、こちらが 70 を報告していた（`SKILL.md` の bash 例の
+        # コメントに 1 個ある分）。`strip_fences` は**行数を保って空行に置き換える**ので、
+        # 行番号はずれない。
+        stripped = strip_fences(path.read_text(encoding="utf-8")).splitlines()
+        for lineno, line in enumerate(stripped, 1):
             if GENERATED_BEGIN in line:
                 in_generated = True
             elif GENERATED_END in line:
@@ -117,7 +130,9 @@ def main() -> int:
         return 1
 
     total = len(markdown_files(root))
-    count = (root / ORIGIN).read_text(encoding="utf-8").count(MARKER)
+    # **ここも `strip_fences` を通す。** 素で数えると `skill-metrics.py` が報告する数と
+    # 食い違い、**同じ量に 2 つの公式な数**ができる。
+    count = strip_fences((root / ORIGIN).read_text(encoding="utf-8")).count(MARKER)
     print(f"必須マーカーの検査: 問題なし"
           f"（{total} 件の Markdown を検査。原本に {count} 個）")
     return 0
