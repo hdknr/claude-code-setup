@@ -174,6 +174,36 @@ def main() -> int:
         )
         check("囲みと囲みの間の素のマーカーを捕まえる", len(run(root)) == 2)
 
+        print("例外 1 の境界: 二重バッククォートの囲みは通す")
+        # **見逃しを直した版が、今度はこれを誤検出した。** 開きの 2 本目を「空の囲み」として
+        # 食い、間のマーカーが素のまま残っていた（#94 のレビューが再現例つきで指摘）。
+        # **開いた本数と同じ本数で閉じる**ようにして直した。
+        root = base / "double-backtick"
+        make_repo(
+            root,
+            origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+            others={
+                "docs/plugins/dev-loop-design.md": (
+                    f"# 設計\n\n"
+                    f"``{MARKER}`` と書けば引用である。\n"
+                    f"`` {MARKER} `` も同じ。\n"
+                ),
+            },
+        )
+        check("二重バッククォートの引用を違反にしない", run(root) == [])
+
+        print("例外 1 の境界: 二重で囲んでも、外にある素のマーカーは捕まえる")
+        root = base / "double-and-bare"
+        make_repo(
+            root,
+            origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+            others={
+                "docs/plugins/dev-loop-design.md":
+                    f"# 設計\n\n``{MARKER}`` の話。ところでこれは必須{MARKER}\n",
+            },
+        )
+        check("二重の引用があっても素のマーカーは見逃さない", len(run(root)) == 1)
+
         print("例外 3: フェンスの中は数えない")
         root = base / "fenced"
         make_repo(
@@ -289,6 +319,10 @@ def main() -> int:
                 "stripped = strip_fences(path.read_text(encoding=\"utf-8\")).splitlines()",
                 "stripped = path.read_text(encoding=\"utf-8\").splitlines()",
             ),
+            "囲みの長さを見ない（二重バッククォートが違反になるはず）": (
+                'CODE_SPAN = re.compile(r"(`+)(?:(?!\\1)[\\s\\S])*?\\1")',
+                'CODE_SPAN = re.compile(r"`[^`]*`")',
+            ),
         }
         # **終了コードの変異は、起動しないと殺せない。** `violations()` を呼ぶだけの
         # テストでは `main()` の `return 1` を `return 0` に変えても緑のままになる（#94）。
@@ -330,6 +364,7 @@ def main() -> int:
                         f"| 節{MARKER} | 38 |\n"
                         "<!-- skill-metrics:end -->\n"
                         f"\n数えているのは `{MARKER}` だけ。\n"
+                        f"\n``{MARKER}`` と二重で囲んでも引用である。\n"
                         f"\n```bash\necho 例{MARKER}\n```\n"
                     ),
                 },

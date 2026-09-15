@@ -254,10 +254,9 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 **dev-loop の規範は `SKILL.md` にしか書かない。** `plugins/dev-loop/README.md` も
 公開ページも設計ドキュメントも、**指すだけで列挙を持たない**。
 
-**これは #75 で決めたが、見張る仕組みが無いあいだに複製が増え続けた。**
-**宣言は検査ではない**ので、#94 で検査を置いた。**経緯と実測は
+**経緯（なぜ検査が要ったか）と実測は
 [設計ドキュメント §8.1](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#miscount)
-を正とする**（ここに再掲しない——数字を 2 箇所に置くのが、この規約が直した形そのもの）:
+を正とする**（ここに再掲しない——**話を 2 箇所に置くのが、この規約が直した形そのもの**）:
 
 ```bash
 python3 scripts/check-norm-markers.py       # マーカーが原本の外にあれば非ゼロ終了
