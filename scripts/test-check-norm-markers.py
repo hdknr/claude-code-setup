@@ -13,6 +13,7 @@
 """
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -155,6 +156,24 @@ def main() -> int:
         )
         check("生成ブロックの外は捕まえる", len(run(root)) == 1)
 
+        print("例外 1 の境界: 2 つのインラインコードの間の素のマーカー")
+        # **最初の実装はこれを見逃した。** マーカーを含む囲みだけを狙う正規表現だと、
+        # 最初の囲みの閉じと次の囲みの開きが 1 つの囲みとして一致し、
+        # **間の素のマーカーごと消える**（#94 のレビューが再現例つきで指摘）。
+        root = base / "between-spans"
+        make_repo(
+            root,
+            origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+            others={
+                "plugins/dev-loop/README.md": (
+                    f"# README\n\n"
+                    f"`/code-review` は{MARKER}で、`SKILL.md` の受入基準をまるごと渡す。\n"
+                    f"\n| `x` | 渡すもの{MARKER} | `y` |\n"
+                ),
+            },
+        )
+        check("囲みと囲みの間の素のマーカーを捕まえる", len(run(root)) == 2)
+
         print("例外 3: フェンスの中は数えない")
         root = base / "fenced"
         make_repo(
@@ -215,6 +234,43 @@ def main() -> int:
         check(".claude/ は見ない", ".claude/plans/issue-1.md" not in rels)
         check("入れ子の深い .md も見る", "docs/nested/deep/page.md" in rels)
 
+        print("終了コード（CI が見ているのはここ）")
+        # **`violations()` だけを呼ぶテストでは、CI が依存する終了コードが無検査になる。**
+        # #94 のレビューが実証した——`main()` の `return 1` を `return 0` に変えても、
+        # **漏れのあるリポジトリでスクリプトが 0 を返し、テストは「すべて合格」のまま**だった。
+        # `test-check-plugin-versions.py` / `test-skill-metrics.py` と同じく、
+        # **スクリプトを実際に起動して `returncode` を見る**。
+        for name, others, want in [
+            ("漏れが無ければ 0", {"plugins/dev-loop/README.md": "# README\n\n手順は SKILL.md が正。\n"}, 0),
+            ("漏れがあれば 1", {"plugins/dev-loop/README.md": f"# README\n\n- 漏れた{MARKER}\n"}, 1),
+        ]:
+            eroot = base / ("exit-" + str(want))
+            assert_not_real_repo(eroot)
+            (eroot / "scripts").mkdir(parents=True, exist_ok=True)
+            for helper in ("check-norm-markers.py", "markdown_fences.py"):
+                shutil.copy(REAL_REPO / "scripts" / helper, eroot / "scripts" / helper)
+            make_repo(eroot, origin_body=f"# 原本\n\n- 本体{MARKER}\n", others=others)
+            proc = subprocess.run(
+                [sys.executable, str(eroot / "scripts" / "check-norm-markers.py")],
+                capture_output=True, text=True,
+            )
+            check(f"{name}（実際に起動して returncode を見る）", proc.returncode == want)
+
+        print("原本が無ければ落ちる（fail-closed）")
+        nroot = base / "no-origin"
+        assert_not_real_repo(nroot)
+        (nroot / "scripts").mkdir(parents=True, exist_ok=True)
+        for helper in ("check-norm-markers.py", "markdown_fences.py"):
+            shutil.copy(REAL_REPO / "scripts" / helper, nroot / "scripts" / helper)
+        (nroot / "docs").mkdir(parents=True, exist_ok=True)
+        (nroot / "docs" / "page.md").write_text("# ページ\n", encoding="utf-8")
+        proc = subprocess.run(
+            [sys.executable, str(nroot / "scripts" / "check-norm-markers.py")],
+            capture_output=True, text=True,
+        )
+        check("原本が見つからなければ非ゼロで落ちる", proc.returncode != 0)
+        check("原本が無いことを理由として言う", "原本が見つからない" in proc.stderr)
+
         print("変異テスト（壊したのに緑なら失格）")
         mutants = {
             "原本の除外をやめる（原本自身が違反になるはず）": (
@@ -226,7 +282,7 @@ def main() -> int:
                 "if MARKER not in line:",
             ),
             "引用の除去をやめる（引用が違反になるはず）": (
-                "if MARKER in QUOTED.sub(\"\", line):",
+                "if MARKER in CODE_SPAN.sub(\"\", line):",
                 "if MARKER in line:",
             ),
             "フェンスの除去をやめる（フェンス内が違反になるはず）": (
@@ -234,6 +290,29 @@ def main() -> int:
                 "stripped = path.read_text(encoding=\"utf-8\").splitlines()",
             ),
         }
+        # **終了コードの変異は、起動しないと殺せない。** `violations()` を呼ぶだけの
+        # テストでは `main()` の `return 1` を `return 0` に変えても緑のままになる（#94）。
+        exit_mutant = ("        return 1\n\n    total", "        return 0\n\n    total")
+        source_for_exit = SCRIPT.read_text(encoding="utf-8")
+        assert source_for_exit.count(exit_mutant[0]) == 1, "終了コードの変異の対象が 1 箇所でない"
+        mroot = base / "mutant-exit"
+        assert_not_real_repo(mroot)
+        (mroot / "scripts").mkdir(parents=True, exist_ok=True)
+        (mroot / "scripts" / "check-norm-markers.py").write_text(
+            source_for_exit.replace(*exit_mutant), encoding="utf-8")
+        shutil.copy(REAL_REPO / "scripts" / "markdown_fences.py", mroot / "scripts" / "markdown_fences.py")
+        make_repo(mroot, origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+                  others={"plugins/dev-loop/README.md": f"# README\n\n- 漏れた{MARKER}\n"})
+        proc = subprocess.run(
+            [sys.executable, str(mroot / "scripts" / "check-norm-markers.py")],
+            capture_output=True, text=True,
+        )
+        # **変異体は 0 を返す**（それが変異の中身）。上の「漏れがあれば 1」が 1 を要求して
+        # いるので、変異体はそこで落ちる＝殺せる。ここで確かめるのは
+        # **変異が実際に挙動を変えていること**——変わらないなら、その assertion は
+        # 何も見ていないことになる。
+        check("変異を殺せる: 違反時に 0 を返す（起動しないと殺せない）", proc.returncode == 0)
+
         source = SCRIPT.read_text(encoding="utf-8")
         for name, (old, new) in mutants.items():
             assert source.count(old) == 1, f"変異の対象が 1 箇所でない: {name}"
