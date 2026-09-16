@@ -47,6 +47,14 @@ jobs:
       - name: token-metrics.py のテスト
         run: python3 scripts/test-token-metrics.py
 
+      # 「ここには書かない。〇〇を正とする」という形は、**指し先が実在して初めて意味を持つ**。
+      # mkdocs は絶対 URL を検証しないので（docs_dir の外も読まない）、ここで見る。#97
+      - name: 公開サイトへのリンクが解決するかチェック
+        run: python3 scripts/check-site-links.py
+
+      - name: check-site-links.py のテスト
+        run: python3 scripts/test-check-site-links.py
+
       # 設計ドキュメント §8.2 は判断を測定値だけで正当化している節で、その数字は
       # SKILL.md の節構造に依存する。SKILL.md を編集すると黙って古くなり、差分にも
       # 現れない（図の書き出しと同じ形。#78）。数字はスクリプトが生成するので、

@@ -18,6 +18,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `check-norm-markers.py` - `（必須）` が原本（`SKILL.md`）の外に漏れていないか
+  - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
+    （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
   - `export-diagrams.py` - drawio の書き出しと `diagrams/exports.json` の更新（**CI からは呼ばない**）
   - `token-metrics.py` - ローカルのトランスクリプトからトークン使用量を集計（**CI からは呼ばない**
@@ -29,9 +31,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `markdown_fences.py` - コードフェンスの除去と閉じ忘れの検出（**実行しない**。
     `check-plugin-versions.py` と `skill-metrics.py` が共有する。
     式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
+  - `site_links.py` - 絶対リンクの収集とアンカーの解決（**実行しない**。
+    `check-plugin-versions.py` と `check-site-links.py` が共有する。同上）
   - `test-check-norm-markers.py` - 必須マーカー検査の回帰テスト（変異テストを含む）
   - `test-token-metrics.py` - 集計の回帰テスト（変異テストを含む。**本体は CI から呼ばないが
     テストは回す**——`test-export-diagrams.py` と同じ形）
+  - `test-check-site-links.py` - リンク検査の回帰テスト（変異テストを含む）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
   - `test-link-skills.py` / `test-check-description-sync.py` /
     `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
@@ -271,11 +276,13 @@ python3 scripts/test-token-metrics.py                        # 歯止め自体�
 **worktree も別プロジェクトとして記録される**（`<repo>--claude-worktrees-<name>`）ので、
 寄せたいなら `--merge-worktrees`。
 
-**このスクリプトを作る過程で、設計 §8.3 の表の誤りが分かった**——**加重と req が
-約 1.8 倍過大**（1 応答が複数行に書かれ、各行が `usage` を再掲する）。
-**どの数字が影響を受けるかは
+**このスクリプトを作る過程で、設計 §8.3 の表の誤りが分かった**
+（1 応答が複数行に書かれ、各行が `usage` を再掲する）。**どの数字がどれだけ影響を
+受けるかは
 [§8.3 の訂正](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#miscounted-rows)
-を正とする**（ここに再掲しない）。**数え方の落とし穴は docstring を正とする**（同上）。
+を正とする**。一度ここにも率を書いており、**2 行下でリンクしている先と食い違った**
+（「約 1.8 倍」対「1.7 倍」。#95 の 4 パス目）。
+**数え方の落とし穴は docstring を正とする**（同上）。
 
 ### 規範の原本は `SKILL.md` だけ
 
@@ -295,6 +302,33 @@ python3 scripts/test-check-norm-markers.py  # 歯止め自体のテスト（変�
 **列挙を 2 箇所に置くのが、この規約が直した形そのもの**）。性質だけ言えば、これは
 「規範が漏れていない」の証明ではなく、
 **「著者が必須と申告した規範が原本の外に出ていない」の検査**である。
+
+### 「ここには書かない」ではなく「〇〇を正とする」と書く
+
+複製を 1 箇所に寄せるとき、**禁止の形（「ここには書かない」）で書かない**。
+**指し先の形（「〇〇を正とする」）で書く。**
+
+| 形 | 例 | 問題 |
+| --- | --- | --- |
+| **禁止** | 「具体的な件数はここに書かない」 | **書いた本人が同じ節で破れる。** 破っても文として成立するので気づけない |
+| **記述** | 「ここにあるのは各段の名前だけ」 | 破ると**読んで分かる**（書いてあるものと違う） |
+| **指し先** | 「率は設計 §8.3 を正とする」 | **書いた時点で指し先が要る**ので、無ければその場で気づく。**リンクの形で書けば機械でも見られる**（下記） |
+
+**禁止の形は、周をまたいで繰り返し破られた。**
+**破った箇所の一覧と経緯は [#97](https://github.com/hdknr/claude-code-setup/issues/97) を正とする。**
+
+**機械で見られるのは、指し先を*リンクで*書いたものだけである。**
+「`docstring` を正とする」のように**リンクを持たない指し先は拾えない**——
+この節の上にもそう書いた箇所がいくつもある。
+見られる場合も、分かるのは**アンカーが実在するか**までで、
+**指し先に「指すと書いた内容」があるか**は見ていない（#95 で、実在するアンカーを指したのに
+その節に当の話が無かった）。**何を守り何を守らないかは `check-site-links.py` の
+docstring を正とする。**
+
+```bash
+python3 scripts/check-site-links.py       # 指し先が無ければ非ゼロ終了
+python3 scripts/test-check-site-links.py  # 歯止め自体のテスト（変異テストを含む）
+```
 
 ### description は 3 箇所にある
 

@@ -167,7 +167,7 @@ def run_case(
         # `markdown_fences.py` に切り出してある（式を 2 箇所に置かないため）。
         # これを忘れると、テストは ModuleNotFoundError で落ちる——
         # **「落ちた」ことは分かるが理由が検査内容とずれる**ので、必ず揃える。
-        for dep in ("markdown_fences.py",):
+        for dep in ("markdown_fences.py", "site_links.py"):
             (root / "scripts" / dep).write_text(
                 (REPO_ROOT / "scripts" / dep).read_text(encoding="utf-8"), encoding="utf-8"
             )
