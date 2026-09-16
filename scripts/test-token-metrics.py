@@ -1,0 +1,656 @@
+#!/usr/bin/env python3
+"""`token-metrics.py` の回帰テスト。
+
+    python3 scripts/test-token-metrics.py
+
+**このテストは実環境を触らない。** 毎回テンポラリに偽の `projects` ツリーを作り、
+そこだけを対象にする（`assert_not_real_home` がそれを担保する）。
+本体は実ホームの `~/.claude/projects` を既定にするので、**歯止めが無いと、
+テストが利用者のトランスクリプトを読んで通ってしまう**——通っても「歯止めが効く」の
+証明にならない。
+
+**変異テストを含む。** 検査本体を 1 箇所ずつ壊し、**壊したのに緑のままなら失格**とする。
+「正しい入力で緑」だけでは、**何も検査しない実装でも通る**。
+
+**本体は CI から呼ばないが、このテストは CI で回す。** `test-export-diagrams.py` が
+同じ形——本体（`export-diagrams.py`）は CI から呼ばないが、テストは `docs.yml` で回っている。
+**歯止めが「置いてあるが何も見ていない」状態に退化するのを防ぐ**のがテストの役目なので、
+本体が手動でもテストは自動で回す。
+"""
+import contextlib
+import importlib.util
+import io
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+REAL_REPO = Path(__file__).resolve().parent.parent
+SCRIPT = REAL_REPO / "scripts" / "token-metrics.py"
+REAL_HOME_PROJECTS = Path(os.path.expanduser("~")) / ".claude" / "projects"
+
+failures: list[str] = []
+
+
+def load(script: Path = SCRIPT):
+    spec = importlib.util.spec_from_file_location(f"tm_{script.parent.parent.name}", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def assert_not_real_home(root: Path) -> None:
+    resolved = root.resolve()
+    assert resolved != REAL_HOME_PROJECTS.resolve(), "テストが実ホームの projects を対象にしている"
+    assert not str(resolved).startswith(str(REAL_HOME_PROJECTS.resolve()) + os.sep), (
+        "テストの対象が実ホームの projects の内側にある"
+    )
+    # 両側を resolve() してから比べる（macOS の /var → /private/var）。
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    assert resolved.is_relative_to(tmp_root), "テストの対象がテンポラリの外にある"
+
+
+def check(name: str, cond: bool) -> None:
+    if cond:
+        print(f"  ok   {name}")
+    else:
+        print(f"  FAIL {name}")
+        failures.append(name)
+
+
+def usage(inp=0, cw=0, cr=0, out=0, *, iterations=True):
+    u = {
+        "input_tokens": inp,
+        "cache_creation_input_tokens": cw,
+        "cache_read_input_tokens": cr,
+        "output_tokens": out,
+    }
+    if iterations:
+        # **本物と同じ形**: 各要素がトップレベルと同じ数字を再掲している。
+        u["iterations"] = [dict(u)]
+    return u
+
+
+def line(model="claude-opus-5", day="2026-09-15", u=None, tool=None, msg_id=None):
+    message = {"model": model}
+    if msg_id is not None:
+        # **本物は必ず `id` を持つ。** 同じ id の行が複数あり、各行が usage を再掲する。
+        message["id"] = msg_id
+    if u is not None:
+        message["usage"] = u
+    if tool is not None:
+        message["content"] = [tool]
+    return json.dumps({"type": "assistant", "timestamp": f"{day}T10:00:00.000Z",
+                       "message": message}, ensure_ascii=False)
+
+
+def skill_use(name):
+    return {"type": "tool_use", "name": "Skill", "input": {"skill": name}}
+
+
+def agent_use(subagent_type):
+    return {"type": "tool_use", "name": "Agent", "input": {"subagent_type": subagent_type}}
+
+
+def make_tree(root: Path, files: dict[str, list[str]]) -> None:
+    assert_not_real_home(root)
+    for rel, lines in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    with tempfile.TemporaryDirectory(prefix="tm-test-") as tmp:
+        base = Path(tmp)
+        mod = load()
+
+        print("加重の式")
+        w, cr = mod.weighted_tokens(usage(inp=100, cw=200, cr=1000, out=10))
+        # 100*1 + 200*1.25 + 1000*0.1 + 10*5 = 100 + 250 + 100 + 50 = 500
+        check("加重が式どおり", w == 500.0)
+        check("cache read を別に返す", cr == 1000)
+
+        print("iterations を二重計上しない")
+        u = usage(inp=100, cw=200, cr=1000, out=10)
+        check("iterations がある入力を使っている", "iterations" in u)
+        w2, _ = mod.weighted_tokens(u)
+        check("iterations があっても加重が変わらない", w2 == 500.0)
+
+        print("トップレベルが全部 0 で iterations に実数があるとき")
+        # **実データに 2 件あった**（同じリクエストの重複）。cache read だけで
+        # 約 100 万トークン。**トップレベルだけ読むと丸ごと落ちる**（#95 のレビューが発見）。
+        u = {
+            "input_tokens": 0, "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0, "output_tokens": 0,
+            "iterations": [{"input_tokens": 2, "cache_creation_input_tokens": 545,
+                            "cache_read_input_tokens": 996796, "output_tokens": 3070}],
+        }
+        w, cr = mod.weighted_tokens(u)
+        # 2*1 + 545*1.25 + 996796*0.1 + 3070*5 = 2 + 681.25 + 99679.6 + 15350
+        check("iterations から拾う", abs(w - 115712.85) < 0.01)
+        check("cache read も iterations から取る", cr == 996796)
+
+        print("トップレベルに値があれば iterations を足さない")
+        w2, _ = mod.weighted_tokens(usage(inp=100, cw=200, cr=1000, out=10))
+        check("二重計上しない（500 のまま）", w2 == 500.0)
+        # **キーごとに大きいほうを採る。**「全部 0 のときだけ iterations を見る」だと、
+        # 1 フィールドでも実数があると残りを落とした（#95 のレビュー）。
+        u3 = usage(inp=100)
+        u3["iterations"] = [{"input_tokens": 999999}]
+        w3, _ = mod.weighted_tokens(u3)
+        check("キーごとに大きいほうを採る", w3 == 999999.0)
+        # 部分的に 0 のとき、iterations にしかない残りを落とさない。
+        u4 = {"input_tokens": 0, "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0, "output_tokens": 5,
+              "iterations": [{"input_tokens": 1000, "cache_read_input_tokens": 500000,
+                              "output_tokens": 5}]}
+        w4, _ = mod.weighted_tokens(u4)
+        # 1000*1 + 500000*0.1 + 5*5 = 1000 + 50000 + 25
+        check("部分的に 0 でも残りを拾う", w4 == 51025.0)
+        # iterations が 2 要素の再掲でも倍にしない。
+        u5 = {"input_tokens": 0, "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0, "output_tokens": 0,
+              "iterations": [{"input_tokens": 100}, {"input_tokens": 100}]}
+        w5, _ = mod.weighted_tokens(u5)
+        check("iterations が複数要素でも足さない", w5 == 100.0)
+        # **トップレベルが上回る側**も固定する。これが無いと「`iterations` だけ見る」
+        # 変異が生き残る（#95 の 3 パス目）。`max` の**両側**を押さえる。
+        u6 = {"input_tokens": 500, "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0, "output_tokens": 0,
+              "iterations": [{"input_tokens": 1}]}
+        w6, _ = mod.weighted_tokens(u6)
+        check("トップレベルが大きければそちらを採る", w6 == 500.0)
+
+        print("レコードはあるが加重が 0 でも落ちない")
+        root = base / "zero"
+        make_tree(root, {"repo-a/s.jsonl": [line(u=usage())]})
+        check("ゼロ除算にならない", mod.main(["--projects", str(root)]) == 0)
+
+        print("1 応答が複数行に書かれるとき（message.id で畳む）")
+        # **実データの支配的な形。** 行ごとに足すと 7 割ほど膨らんでいた
+        # （率は設計 §8.3 の訂正を正とする。**ここに数字を書かない**——増えると古くなる）。
+        root = base / "msgid"
+        make_tree(root, {
+            "repo-a/s.jsonl": [line(u=usage(out=1), msg_id="m1"),
+                               line(u=usage(out=1), msg_id="m1"),
+                               line(u=usage(out=207), msg_id="m1")],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("同じ id の 3 行を 1 件に畳む", len(records) == 1)
+        # 育っていく形なので最大（207*5）を採る。
+        check("畳むときに最大を採る", records[0].weighted == 1035.0)
+
+        print("id が違えば別々に数える")
+        root = base / "msgid2"
+        make_tree(root, {
+            "repo-a/s.jsonl": [line(u=usage(out=10), msg_id="m1"),
+                               line(u=usage(out=10), msg_id="m2")],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("別の id は畳まない", len(records) == 2)
+
+        print("id が無ければそのまま数える")
+        root = base / "noid"
+        make_tree(root, {"repo-a/s.jsonl": [line(u=usage(out=10)), line(u=usage(out=10))]})
+        records, _, _, _ = mod.scan(root)
+        check("id が無ければ落とさずに数える", len(records) == 2)
+
+        print("ファイルを跨いでも同じ id なら畳む")
+        # **`message.id` は API が採番するので、ファイルを跨いでも同一の応答**。
+        # セッションを fork / resume すると履歴がコピーされ、同じ応答が別ファイルにも入る
+        # （実測で数 % 過大になっていた）。**初版はファイル単位で畳んでおり、
+        # このテストが「別物として数える」を正しい挙動として固定していた**（#95 の 2 パス目）。
+        root = base / "msgid3"
+        make_tree(root, {
+            "repo-a/s1.jsonl": [line(u=usage(out=10), msg_id="m1")],
+            "repo-a/s2.jsonl": [line(u=usage(out=10), msg_id="m1")],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("跨ファイルの同名 id を 1 件に畳む", len(records) == 1)
+        check("帰属は先に出会ったファイル", records[0].session == "s1")
+
+        print("消費量は最大・帰属は最も古いレコード")
+        # **2 つは別の基準で決まる。** 消費量は育ちきった値（最大）、帰属は最初に
+        # 消費した側。**走査順では帰属を決められない**——セッション id は UUID で
+        # 時刻を持たず、実測で「走査順の先頭が最も古いファイル」は 0 件だった
+        # （#95 の 3 パス目。docstring は「先に出会ったほう」と書いていたが、
+        # それは**コピー側に約 7 割착地していた**）。
+        root = base / "msgid4"
+        make_tree(root, {
+            # s2 が**先に**走査される（アルファベット順では s1 が先なので、
+            # 名前で「古い」を決められないことを示すために日付を逆にしてある）。
+            "repo-a/s1.jsonl": [line(day="2026-09-16", u=usage(out=1), msg_id="m1")],
+            "repo-a/s2.jsonl": [line(day="2026-09-15", u=usage(out=207), msg_id="m1")],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("消費量は最大を採る", records[0].weighted == 1035.0)
+        check("帰属は古いほうのセッション", records[0].session == "s2")
+        check("日付も古いほうを採る", records[0].day == "2026-09-15")
+
+        print("サブエージェントを取りこぼさない")
+        root = base / "sub"
+        make_tree(root, {
+            "repo-a/sess1.jsonl": [line(u=usage(inp=1000))],
+            "repo-a/sess1/subagents/agent1.jsonl": [line(u=usage(inp=3000))],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("親とサブエージェントの両方を拾う", len(records) == 2)
+        check("サブエージェント分の加重が入っている",
+              sum(r.weighted for r in records) == 4000.0)
+        check("サブエージェントに印が付く", sum(1 for r in records if r.is_sub) == 1)
+        check("サブエージェントも親セッションに属する",
+              {r.session for r in records} == {"sess1"})
+
+        print("`<synthetic>` を除外する")
+        root = base / "syn"
+        make_tree(root, {
+            "repo-a/s.jsonl": [line(u=usage(inp=1000)),
+                               line(model="<synthetic>", u=usage(inp=0))],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("synthetic のレコードを数えない", len(records) == 1)
+
+        print("dev-loop の周を判定する")
+        root = base / "dl"
+        make_tree(root, {
+            "repo-a/plain.jsonl": [line(u=usage(inp=10))],
+            "repo-a/viaskill.jsonl": [line(u=usage(inp=10), tool=skill_use("dev-loop:dev-loop"))],
+            "repo-a/viaagent.jsonl": [line(u=usage(inp=10),
+                                           tool=agent_use("dev-loop:dev-loop-verifier"))],
+            "repo-a/bare.jsonl": [line(u=usage(inp=10), tool=skill_use("dev-loop"))],
+            "repo-a/other.jsonl": [line(u=usage(inp=10), tool=skill_use("code-review"))],
+        })
+        _, dev, _, _ = mod.scan(root)
+        sessions = {s for _, s in dev}
+        check("Skill 経由（名前空間つき）を拾う", "viaskill" in sessions)
+        check("Skill 経由（素の名前）を拾う", "bare" in sessions)
+        check("Agent 経由を拾う", "viaagent" in sessions)
+        check("無関係なセッションを拾わない", "plain" not in sessions and "other" not in sessions)
+
+        print("worktree の扱い")
+        root = base / "wt"
+        make_tree(root, {
+            "repo-a/s.jsonl": [line(u=usage(inp=10))],
+            "repo-a--claude-worktrees-issue-1/s.jsonl": [line(u=usage(inp=10))],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("既定では worktree を別リポジトリとして数える",
+              len({r.repo for r in records}) == 2)
+        records, _, _, _ = mod.scan(root, merge_worktrees=True)
+        check("--merge-worktrees で元のリポジトリに寄せる",
+              {r.repo for r in records} == {"repo-a"})
+
+        print("壊れた入力で落ちない")
+        root = base / "broken"
+        make_tree(root, {
+            "repo-a/s.jsonl": ["{壊れた JSON", "", "null", '{"type":"assistant"}',
+                               '{"type":"assistant","message":{"usage":"文字列"}}',
+                               line(u=usage(inp=10))],
+        })
+        records, _, unreadable, broken = mod.scan(root)
+        check("壊れた行を飛ばして生き残る", len(records) == 1)
+        check("読めなかったファイルは 0 件", unreadable == 0)
+        # **壊れた行は数える。** 初版は 0 をアサートして「黙って落とす」を固定していた。
+        check("壊れた行を数えている", broken == 2)
+
+        print("読めないファイルがあっても落ちない")
+        # **`_iter_rows` はジェネレータなので、`path.open()` は最初の `next()` まで動かない。**
+        # 呼び出し側の `try` で囲んでも捕まらず、**読めないファイル 1 つで全体が落ちた**
+        # （#95 の 3 パス目。性能修正のときに入った）。**`unreadable` を 0 としか
+        # アサートしていなかったので、テストも通り抜けていた。**
+        root = base / "unreadable"
+        make_tree(root, {
+            "repo-a/ok.jsonl": [line(u=usage(inp=10))],
+            "repo-a/locked.jsonl": [line(u=usage(inp=999))],
+        })
+        locked = root / "repo-a" / "locked.jsonl"
+        locked.chmod(0o000)
+        try:
+            records, _, unreadable, _ = mod.scan(root)
+            check("読めないファイルで落ちない", True)
+            check("読めるファイルは数える", len(records) == 1)
+            check("読めなかった件数を返す", unreadable == 1)
+            check("終了コードは 0（報告して続ける）",
+                  mod.main(["--projects", str(root)]) == 0)
+        except OSError:
+            check("読めないファイルで落ちない", False)
+        finally:
+            locked.chmod(0o644)
+
+        print("usage の在処を型で絞らない")
+        root = base / "type"
+        make_tree(root, {
+            "repo-a/s.jsonl": [json.dumps({"type": "将来の型", "timestamp": "2026-09-15T10:00:00Z",
+                                           "message": {"model": "m", "usage": usage(inp=10)}})],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("assistant 以外でも usage があれば拾う", len(records) == 1)
+
+        print("出力の数字そのものを固定する（絶対的な検査）")
+        # **変異ハーネスだけでは足りない。** あれは `observe(correct)` と
+        # `observe(mutant)` を比べる**差分比較**なので、**元から在る欠陥は両側に
+        # 継承されて見えない**（#95 の 3 パス目のレビューが、26 変異中 15 件の生存と、
+        # `render_weekly` / `render_split` / `main` が丸ごと無検査であることを実証した）。
+        # **§8.3 に載せる数字を作るのは `--split`** なので、ここは期待値で固定する。
+        root = base / "numbers"
+        make_tree(root, {
+            # dev-loop の周: 2 セッション・3 レコード。
+            #   d1: 1000 + (cr=200000 → 20000) = 21000、d2: 2000
+            "repo-a/d1.jsonl": [line(u=usage(inp=1000, cr=200000), tool=skill_use("dev-loop")),
+                                line(u=usage(inp=2000))],
+            "repo-a/d2.jsonl": [line(u=usage(inp=3000), tool=skill_use("dev-loop"))],
+            # それ以外: 1 セッション・1 レコード。
+            "repo-a/o1.jsonl": [line(u=usage(inp=4000))],
+        })
+        records, dev, _, _ = mod.scan(root)
+        check("レコード数", len(records) == 4)
+        check("加重の合計", sum(r.weighted for r in records) == 30000.0)
+
+        split = mod.render_split(records, dev)
+        # dev-loop: 2 セッション・26000（21000+2000+3000）・26000/30000 = 87%・3 req / 2 セ = 1
+        # それ以外: 1 セッション・4000・13%・1 req / 1 セ = 1
+        check("--split の dev-loop 行", "| dev-loop を回した周 | 2 | 0 | 87% | 1 |" in split)
+        check("--split のそれ以外の行", "| それ以外 | 1 | 0 | 13% | 1 |" in split)
+        # **比率の分母が全体であること**を、合計が 100% になることで固定する。
+        check("--split の比率が合計 100%",
+              sum(int(cell.strip().rstrip("%"))
+                  for row in split.splitlines()[2:]
+                  for cell in [row.split("|")[4]]) == 100)
+
+        weekly = mod.render_weekly(records, dev)
+        # 2026-09-15 は ISO 2026-W38。**セッションは 3**（d1 が 2 レコードを持つ）で、
+        # うち 2 つが dev-loop。平均文脈 = 200000 / 4 レコード = 50000 → 50k。
+        # **レコード数とセッション数が違うことを、この 1 行が押さえている**
+        # ——「セッションをレコードで数える」変異はここで落ちる。
+        check("週次の行", "| 2026-W38 | 3 | 2 | 0 | 87% | 50k |" in weekly)
+
+        print("集計の出力")
+        root = base / "render"
+        make_tree(root, {
+            "repo-a/s1.jsonl": [line(day="2026-09-15", u=usage(inp=1000, cr=100000)),
+                                line(day="2026-09-15", u=usage(inp=1000, cr=100000),
+                                     tool=skill_use("dev-loop"))],
+            "repo-b/s2.jsonl": [line(day="2026-09-08", u=usage(inp=1000))],
+        })
+        records, dev, _, _ = mod.scan(root)
+        weekly = mod.render_weekly(records, dev)
+        check("週次に 2 つの ISO 週が出る",
+              "2026-W37" in weekly and "2026-W38" in weekly)
+        per_cycle = mod.render_per_cycle(records, dev)
+        check("周ごとに dev-loop の周だけ出る",
+              "repo-a" in per_cycle and "repo-b" not in per_cycle)
+
+        print("main() の終了コード")
+        root = base / "main"
+        make_tree(root, {"repo-a/s.jsonl": [line(u=usage(inp=10))]})
+        check("走査できれば 0", mod.main(["--projects", str(root)]) == 0)
+        missing = base / "なにもない"
+        check("走査先が無ければ非ゼロ", mod.main(["--projects", str(missing)]) == 1)
+
+        print("変異テスト（壊したのに緑なら失格）")
+        # chmod したファイルは、テンポラリを消す前に戻す（消せなくなるため）。
+        locked_paths: list[Path] = []
+        source = SCRIPT.read_text(encoding="utf-8")
+        mutants = {
+            "iterations を足す（二重計上になるはず）": (
+                "        out[key] = best",
+                "        out[key] = sum((i.get(key) or 0) for i in its if isinstance(i, dict))",
+            ),
+            "iterations を見ない（取りこぼすはず）": (
+                "    nested = _from_iterations(usage)",
+                "    nested = {}",
+            ),
+            "message.id で畳まない（1 応答を複数回数えるはず）": (
+                "            previous = by_id.get(message_id)",
+                "            records.append(record)\n            previous = record\n"
+                "            by_id.pop(message_id, None)\n            previous = None",
+            ),
+            "畳むときに消費量を更新しない（途中経過のまま残るはず）": (
+                "            if record.weighted > previous.weighted:",
+                "            if False:",
+            ),
+            "帰属を古いほうに寄せない（走査順のまま残るはず）": (
+                "            if record.timestamp and (not previous.timestamp\n"
+                "                                     or record.timestamp < previous.timestamp):",
+                "            if False:",
+            ),
+            "壊れた行を数えない": (
+                '            if problem == "broken":\n'
+                "                broken_lines += 1\n                continue",
+                '            if problem == "broken":\n                continue',
+            ),
+            "壊れた行を JSON でないと判定しない": (
+                '                if not isinstance(row, dict):\n'
+                '                    yield None, "broken"',
+                '                if not isinstance(row, dict):\n'
+                '                    yield row, None',
+            ),
+            "読めないファイルを数えない": (
+                '            if problem == "unreadable":\n'
+                "                unreadable += 1\n                continue",
+                '            if problem == "unreadable":\n                continue',
+            ),
+            "開く失敗を呼び出し側に投げる（全体が落ちるはず）": (
+                '    try:\n        handle = path.open(encoding="utf-8", errors="replace")\n'
+                '    except OSError:\n        yield None, "unreadable"\n        return',
+                '    handle = path.open(encoding="utf-8", errors="replace")',
+            ),
+            "サブエージェントを見ない（取りこぼすはず）": (
+                'for path in sorted(projects_root.rglob("*.jsonl")):',
+                'for path in sorted(projects_root.glob("*/*.jsonl")):',
+            ),
+            "synthetic を除外しない": (
+                "            if model in SYNTHETIC_MODELS:\n                continue",
+                "            if False:\n                continue",
+            ),
+            "Agent 経由の判定をやめる": (
+                "                elif name in AGENT_TOOLS:",
+                "                elif False:",
+            ),
+            "旧版の Task を見ない": (
+                'AGENT_TOOLS = ("Agent", "Task")',
+                'AGENT_TOOLS = ("Agent",)',
+            ),
+            "Skill の command フォールバックを落とす": (
+                '                    skill = args.get("skill") or args.get("command") or ""',
+                '                    skill = args.get("skill") or ""',
+            ),
+            "--since の不等号を反転": (
+                "        records = [r for r in records if r.day >= args.since]",
+                "        records = [r for r in records if r.day <= args.since]",
+            ),
+            "--repo の絞りをやめる": (
+                "        records = [r for r in records if args.repo in r.repo]",
+                "        records = [r for r in records if True]",
+            ),
+            "--list-repos で worktree を寄せない": (
+                "        if args.merge_worktrees:\n"
+                "            # **集計と同じ粒度で見せる。**",
+                "        if False:\n"
+                "            # **集計と同じ粒度で見せる。**",
+            ),
+            "--split の req/セッションを総数にする": (
+                "        per_session = len(rows) // len(sessions) if sessions else 0",
+                "        per_session = len(rows)",
+            ),
+            # **レビューが「生存する」と実証した変異**（3 パス目）。差分比較のオラクルでは
+            # 殺せず、上の「出力の数字そのものを固定する」検査のほうで落ちる。
+            "--split の比率の分母を 1 にする": (
+                "    total = sum(r.weighted for r in records) or 1",
+                "    total = 1",
+            ),
+            "週次でセッションをレコード数で数える": (
+                '        n_sessions = len(b["sessions"])',
+                "        n_sessions = b[\"requests\"]",
+            ),
+            "週次で文脈を足さない": (
+                '        bucket["ctx"] += r.cache_read',
+                '        bucket["ctx"] += 0',
+            ),
+            "週次で dev-loop の加重を全体にする": (
+                "        dev_weighted = sum(r.weighted for r in records\n"
+                "                           if iso_week(r.day) == week\n"
+                "                           and (r.repo, r.session) in dev_loop_sessions)",
+                "        dev_weighted = b['weighted']",
+            ),
+            "iterations だけを見る（トップレベルが大きい側を落とすはず）": (
+                "    return {key: max(top.get(key, 0), nested.get(key, 0)) for key in WEIGHTS}",
+                "    return {key: nested.get(key, 0) for key in WEIGHTS}",
+            ),
+            "iso_week を暦年で切る": (
+                "    year, week, _ = d.isocalendar()",
+                "    year, week = d.year, d.isocalendar()[1]",
+            ),
+            "fmt_m を切り捨てにする": (
+                '    return f"{value / 1_000_000:.0f}"',
+                '    return str(int(value / 1_000_000))',
+            ),
+            "跨ファイルの畳み込みをファイル単位に戻す": (
+                "        repo, session, is_sub = session_of(path, projects_root, merge_worktrees)",
+                "        by_id = {}\n"
+                "        repo, session, is_sub = session_of(path, projects_root, merge_worktrees)",
+            ),
+            "加重の係数を 1 にする": (
+                '    "output_tokens": 5.0,',
+                '    "output_tokens": 1.0,',
+            ),
+        }
+        for name, (old, new) in mutants.items():
+            assert source.count(old) == 1, f"変異の対象が 1 箇所でない: {name}"
+            mroot = base / ("mutant-" + str(abs(hash(name)) % 10**6))
+            assert_not_real_home(mroot)
+            (mroot / "scripts").mkdir(parents=True, exist_ok=True)
+            mscript = mroot / "scripts" / "token-metrics.py"
+            mscript.write_text(source.replace(old, new), encoding="utf-8")
+            tree = mroot / "projects"
+            top_zero = {
+                "input_tokens": 0, "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0, "output_tokens": 0,
+                "iterations": [{"input_tokens": 7, "cache_creation_input_tokens": 0,
+                                "cache_read_input_tokens": 0, "output_tokens": 0}],
+            }
+            # **変異木は「殺したい変異が触るデータ」を全部持っていなければならない。**
+            # 2 パス目のレビューが、同じ木で 21 変異を試して **12 件の生存**を実証した
+            # ——木に該当データが無いだけで、実装は正しいのに検査されていなかった。
+            two_iters = {
+                "input_tokens": 0, "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0, "output_tokens": 0,
+                "iterations": [{"input_tokens": 50}, {"input_tokens": 50}],
+            }
+            make_tree(tree, {
+                "repo-a/s.jsonl": [line(u=usage(inp=100, cw=200, cr=1000, out=10)),
+                                   line(model="<synthetic>", u=usage(inp=0)),
+                                   # **トップレベルが全部 0 で iterations に実数**——
+                                   # この 1 行が無いと「iterations を見ない」変異が殺せない。
+                                   line(u=top_zero),
+                                   # **iterations が 2 要素の再掲**——足す変異を殺すのに要る。
+                                   line(u=two_iters),
+                                   # **同じ message.id の重複行**（usage が育つ形）——
+                                   # 畳む判定の変異 2 件は、これが無いと殺せない。
+                                   line(u=usage(out=1), msg_id="msg_dup"),
+                                   line(u=usage(out=207), msg_id="msg_dup"),
+                                   # **壊れた行**——数えない変異を殺すのに要る。
+                                   # パースできない行と、**JSON だが dict でない行**の両方。
+                                   "{壊れた JSON",
+                                   "[1, 2, 3]",
+                                   # **`fmt_m` の丸めを効かせる大きな値**（1.5M 級）。
+                                   line(u=usage(out=300000)),
+                                   # **`--since` の境界**と**ISO 年 ≠ 暦年の日**
+                                   # （2027-01-01 は ISO では 2026-W53）。
+                                   line(day="2026-09-01", u=usage(inp=13)),
+                                   line(day="2027-01-01", u=usage(inp=14))],
+                "repo-a/s/subagents/a.jsonl": [line(u=usage(inp=3000))],
+                # **判定の経路ごとに別セッションへ置く。** 同じファイルに全部入れると、
+                # 1 つの経路を落としても**別の経路がそのセッションを dev と判定して**
+                # 変異が生き残る（最初にそう書いて 3 件取り逃した）。
+                "repo-a/via-agent.jsonl": [line(u=usage(inp=10),
+                                                tool=agent_use("dev-loop-verifier"))],
+                "repo-a/via-task.jsonl": [line(u=usage(inp=11),
+                                               tool={"type": "tool_use", "name": "Task",
+                                                     "input": {"subagent_type":
+                                                               "dev-loop-verifier"}})],
+                "repo-a/via-command.jsonl": [line(u=usage(inp=12),
+                                                  tool={"type": "tool_use", "name": "Skill",
+                                                        "input": {"command": "dev-loop"}})],
+                # **worktree**——`--list-repos` の `--merge-worktrees` 変異に要る。
+                "repo-a--claude-worktrees-x/s.jsonl": [line(u=usage(inp=15))],
+                # **2 セッション目**——`--split` の `req/セッション` の割り算に要る
+                # （1 群 1 セッションだと商が変わらず、変異が生き残る）。
+                "repo-a/s2.jsonl": [line(u=usage(inp=16), tool=skill_use("dev-loop"))],
+                # **読めないファイル**——OSError まわりの変異に要る（下で chmod する）。
+                "repo-a/locked.jsonl": [line(u=usage(inp=17))],
+                # **跨ファイルの同一 id で、走査順とタイムスタンプが逆**——
+                # 帰属を古いほうに寄せる判定は、これが無いと殺せない。
+                "repo-a/t1.jsonl": [line(day="2026-09-16", u=usage(inp=18), msg_id="mx")],
+                "repo-a/t2.jsonl": [line(day="2026-09-15", u=usage(inp=19), msg_id="mx")],
+                # **cache_read を持つレコード**——週次の平均文脈の変異に要る。
+                "repo-a/ctx.jsonl": [line(u=usage(cr=500000))],
+                # **トップレベルが iterations を上回るレコード**——`max` の片側に要る。
+                "repo-a/topbig.jsonl": [line(u={"input_tokens": 500,
+                                                "cache_creation_input_tokens": 0,
+                                                "cache_read_input_tokens": 0,
+                                                "output_tokens": 0,
+                                                "iterations": [{"input_tokens": 1}]})],
+            })
+            (tree / "repo-a" / "locked.jsonl").chmod(0o000)
+            locked_paths.append(tree / "repo-a" / "locked.jsonl")
+            correct = load()
+            mutated = load(mscript)
+            # **`scan()` の 3 つだけを比べると、`main()` / `render_*` / `iso_week` /
+            # `fmt_m` の変異が全部生き残る**（#95 のレビューが 12 変異中 8 件の生存を実証）。
+            # **出力そのものを比べる**——CLI が返すものが最終的な成果物なので、
+            # そこが変わらない変異は「殺せていない」と言うべきである。
+            def observe(module):
+                # **例外も振る舞いの違いとして数える。** 変異体が落ちるなら、
+                # それは「正しい実装と区別がついた」＝殺せたということである。
+                # 捕まえないと、テスト全体が変異体の例外で止まる。
+                try:
+                    return _observe(module)
+                except Exception as exc:  # noqa: BLE001
+                    return ("例外", type(exc).__name__)
+
+            def _observe(module):
+                rec, dev, unread, broke = module.scan(tree)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    for argv in ([], ["--per-cycle"], ["--split"],
+                                 ["--since", "2026-09-15"], ["--list-repos"],
+                                 # **絞りと寄せも呼ぶ。** 呼ばない引数の変異は
+                                 # 「出力が変わらない」ので全部生き残る。
+                                 ["--repo", "worktrees"], ["--merge-worktrees"],
+                                 ["--list-repos", "--merge-worktrees"]):
+                        module.main(["--projects", str(tree)] + argv)
+                # **帰属も観測する。** 件数・加重・出力だけを見ていると、
+                # 「どのセッションに計上したか」を変える変異が生き残る
+                # （#95 の 3 パス目で実際に 1 件生き残った）。
+                attribution = sorted((r.session, r.day, r.repo, r.is_sub) for r in rec)
+                return (len(rec), sum(r.weighted for r in rec), dev, unread, broke,
+                        attribution, buf.getvalue())
+
+            check(f"変異を殺せる: {name}", observe(correct) != observe(mutated))
+
+        for locked_path in locked_paths:
+            locked_path.chmod(0o644)
+
+        print("実環境を対象にしない歯止め")
+        try:
+            assert_not_real_home(REAL_HOME_PROJECTS)
+        except AssertionError:
+            check("実ホームの projects を対象にすると落ちる", True)
+        else:
+            check("実ホームの projects を対象にすると落ちる", False)
+
+    print()
+    if failures:
+        print(f"FAILED: {len(failures)} 件")
+        for name in failures:
+            print(f"  - {name}")
+        return 1
+    print("トークン集計のテスト: すべて合格")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

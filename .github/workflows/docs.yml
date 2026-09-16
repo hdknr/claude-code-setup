@@ -41,6 +41,12 @@ jobs:
       - name: export-diagrams.py のテスト
         run: python3 scripts/test-export-diagrams.py
 
+      # token-metrics.py 本体は CI から呼べない（入力が ~/.claude/projects にあり、
+      # リポジトリの外で利用者ごとに違う）。ただし歯止めが退化しないよう、テストは回す
+      # ——上の export-diagrams と同じ形。テストは偽ツリーを作るので実環境に触れない。
+      - name: token-metrics.py のテスト
+        run: python3 scripts/test-token-metrics.py
+
       # 設計ドキュメント §8.2 は判断を測定値だけで正当化している節で、その数字は
       # SKILL.md の節構造に依存する。SKILL.md を編集すると黙って古くなり、差分にも
       # 現れない（図の書き出しと同じ形。#78）。数字はスクリプトが生成するので、
