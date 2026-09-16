@@ -44,14 +44,14 @@
 | 落とし穴 | どうしているか |
 | --- | --- |
 | **1 応答が複数行に書かれる** | 各行が**同じ `message.id` と同じ `usage`** を再掲する。**行ごとに足すと 7 割ほど膨らむ**（率は設計 §8.3 の訂正を見ること）。`message.id` ごとに畳んで**最大を採る**（`output_tokens` が育っていく形があるため） |
-| **同じ応答が複数ファイルに入る** | セッションを fork / resume すると**履歴がコピーされる**。`message.id` は API が採番するので**ファイルを跨いでも同一の応答**である。ファイル単位で畳むと数 % 過大になるので、**走査全体で畳む**。帰属は**先に出会ったほう**（コピーされた側が消費したわけではない） |
+| **同じ応答が複数ファイルに入る** | セッションを fork / resume すると**履歴がコピーされる**。`message.id` は API が採番するので**ファイルを跨いでも同一の応答**である。ファイル単位で畳むと数 % 過大になるので、**走査全体で畳む**。**消費量は最大、帰属は最も古いレコード**（コピーではなく最初に消費した側に計上する。**走査順では決められない**——セッション id は UUID で時刻を持たない） |
 | **サブエージェントの取りこぼし** | 使用量は `<project>/<session>/subagents/*.jsonl` に分かれて入る。`*/*.jsonl` だけ見ると落ちる（割合は設計 §8.3 を見ること——**ここに数字を書かない**） |
 | **`usage.iterations` の二重計上** | 各要素が**トップレベルと同じ数字を再掲**している。**足すと倍になる**ので、既定ではトップレベルだけ読む |
 | **その逆——`iterations` にしか実数が無い** | **トップレベルが 0 のレコードが実在する**（全件走査で 2 件。**同じリクエストの重複**で、cache read だけで約 100 万トークン）。**トップレベルだけ読むと丸ごと落ちる**ので、**キーごとに大きいほうを採る**（`effective_usage`） |
 | **`<synthetic>` モデル** | 実測で**全件 0 トークン**。足しても数は変わらないが**件数の分母が狂う**ので除外する |
 | **レコードはあるのに加重が 0** | 上の 0 トークンのレコードだけが絞り込みに残ると起きる。**割り算にガードを置く**（置き忘れて落ちた） |
 | **`grep dev-loop` で周を判定する** | **使えない**——`MEMORY.md` の記載に当たって全件ヒットする。`Skill` の `skill` と `Agent` の `subagent_type` を見る |
-| **読めないファイル・壊れた行** | どちらも件数を**報告に出す**。黙って 0 にしない——実データに壊れた行が実在し、**そのうち何行かは `"usage"` を含んでいた** |
+| **読めないファイル・壊れた行** | どちらも件数を**報告に出す**。黙って 0 にしない。**読めないファイルは走査を止めない**（1 つで全体が落ちていた）。なお**行ごとに読むと壊れた行は出なくなった**——以前 46 行あったのは `splitlines()` が**JSON 文字列の中の U+2028 などで切っていた**ためで、**その 7 行は本物の `usage` を含んでいた**（つまり取りこぼしていた） |
 | **`--repo` の部分一致が広すぎる** | `--list-repos` で**実際に何にマッチするかを先に見る**（実測で、短い名前が 7 件に当たったことがある。**数は増えるのでここに書かない**）。**値が `-` で始まるなら `--repo=...` と書く**（そうしないと argparse が引数として解釈する） |
 | **worktree が別プロジェクトとして記録される** | `<repo>--claude-worktrees-<name>` という別ディレクトリになる。**同じリポジトリの作業なのに別々に数えられる**。寄せたいなら `--merge-worktrees` |
 | **日と週の境目が UTC** | タイムスタンプは全件 `…Z`。`--since` と ISO 週の境界は **UTC で切られる**ので、JST の朝 9 時前の作業は**前日**に入る。週単位の before/after を見るときに効く |
@@ -121,9 +121,12 @@ WORKTREE_MARKER = "--claude-worktrees-"
 class Record:
     """1 レコード分の集計値。"""
 
-    __slots__ = ("day", "repo", "session", "is_sub", "model", "weighted", "cache_read")
+    __slots__ = ("day", "repo", "session", "is_sub", "model", "weighted", "cache_read",
+                 "timestamp")
 
-    def __init__(self, day, repo, session, is_sub, model, weighted, cache_read):
+    def __init__(self, day, repo, session, is_sub, model, weighted, cache_read,
+                 timestamp=""):
+        self.timestamp = timestamp
         self.day = day
         self.repo = repo
         self.session = session
@@ -238,12 +241,13 @@ def _iter_rows(path: pathlib.Path):
     （レビュー中に実際に `FileNotFoundError` を踏んだ）。`yield` を囲む `try` で拾う。
 
     **`read_text()` ＋ `splitlines()` にしない。** ファイル 1 つ分のテキストと
-    全行のリストが**同時にメモリに載る**——実測でピーク 1.1GB になり、
-    行ごとに読む形にしたら **42MB** まで下がった（27 分の 1）。
+    全行のリストが**同時にメモリに載る**——同じ走査の前後で測って
+    **1,672MB → 107MB**（ピーク RSS。15 分の 1）、**12.8 秒 → 8.8 秒**だった。
     トランスクリプトは 1 ファイルが大きいので、ここが支配的だった。
+    （**前後を別の実験から取らない**。「空ループなら 42MB」は*別の測定*で、
+    出荷する実装のピークではない——最初その 2 つを並べて書いた。）
 
-    **壊れた行は黙って落とさず、印をつけて返す**（実データに実在し、
-    そのうち何行かは `"usage"` を含んでいた）。
+    **壊れた行は黙って落とさず、印をつけて返す。**
     """
     try:
         handle = path.open(encoding="utf-8", errors="replace")
@@ -290,8 +294,8 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
     broken_lines = 0
     # **`message.id` は API が採番するので、ファイルを跨いでも同一の応答を指す。**
     # セッションを fork / resume すると履歴がコピーされ、**同じ応答が別ファイルにも入る**
-    # （実測で 2,175 件。モデルが食い違うものは 0 件）。ファイル単位で畳むと
-    # **加重が 2.8% 過大**になる——#95 の 2 パス目のレビューが見つけた。
+    # （モデルが食い違うものは 0 件）。ファイル単位で畳むと**数 % 過大**になる
+    # ——#95 の 2 パス目のレビューが見つけた。
     # 帰属は**最初に出会ったファイル**（`sorted` で走るので決定的）。コピーされた側が
     # 消費したわけではないので、そちらには数えない。
     by_id: dict[str, Record] = {}
@@ -330,16 +334,34 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             if model in SYNTHETIC_MODELS:
                 continue
             weighted, cache_read = weighted_tokens(usage)
-            day = (row.get("timestamp") or "")[:10]
-            record = Record(day, repo, session, is_sub, model, weighted, cache_read)
+            timestamp = row.get("timestamp") or ""
+            day = timestamp[:10]
+            record = Record(day, repo, session, is_sub, model, weighted, cache_read,
+                            timestamp)
             message_id = message.get("id")
             if not isinstance(message_id, str) or not message_id:
                 # id が無ければ畳めない。**そのまま数える**（落とすより過大のほうがまし）。
                 records.append(record)
                 continue
             previous = by_id.get(message_id)
-            if previous is None or record.weighted > previous.weighted:
+            if previous is None:
                 by_id[message_id] = record
+                continue
+            # **消費量と帰属で採る基準が違う。**
+            # 消費量は**最大**（途中経過の行があるので、育ちきった値を採る）。
+            # 帰属は**最も古いレコード**——コピーではなく**最初に消費した側**に計上する。
+            # **`sorted()` の順は帰属を決められない**（実測で、走査順の先頭が最も古い
+            # ファイルだった例は 0 件。セッション id は UUID で時刻の情報を持たない）。
+            if record.weighted > previous.weighted:
+                previous.weighted = record.weighted
+                previous.cache_read = record.cache_read
+            if record.timestamp and (not previous.timestamp
+                                     or record.timestamp < previous.timestamp):
+                previous.timestamp = record.timestamp
+                previous.day = record.day
+                previous.repo = record.repo
+                previous.session = record.session
+                previous.is_sub = record.is_sub
 
     records.extend(by_id.values())
     return records, dev_loop_sessions, unreadable, broken_lines

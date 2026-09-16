@@ -155,6 +155,13 @@ def main() -> int:
               "iterations": [{"input_tokens": 100}, {"input_tokens": 100}]}
         w5, _ = mod.weighted_tokens(u5)
         check("iterations が複数要素でも足さない", w5 == 100.0)
+        # **トップレベルが上回る側**も固定する。これが無いと「`iterations` だけ見る」
+        # 変異が生き残る（#95 の 3 パス目）。`max` の**両側**を押さえる。
+        u6 = {"input_tokens": 500, "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0, "output_tokens": 0,
+              "iterations": [{"input_tokens": 1}]}
+        w6, _ = mod.weighted_tokens(u6)
+        check("トップレベルが大きければそちらを採る", w6 == 500.0)
 
         print("レコードはあるが加重が 0 でも落ちない")
         root = base / "zero"
@@ -204,14 +211,23 @@ def main() -> int:
         check("跨ファイルの同名 id を 1 件に畳む", len(records) == 1)
         check("帰属は先に出会ったファイル", records[0].session == "s1")
 
-        print("跨ファイルでも大きいほうを採る")
+        print("消費量は最大・帰属は最も古いレコード")
+        # **2 つは別の基準で決まる。** 消費量は育ちきった値（最大）、帰属は最初に
+        # 消費した側。**走査順では帰属を決められない**——セッション id は UUID で
+        # 時刻を持たず、実測で「走査順の先頭が最も古いファイル」は 0 件だった
+        # （#95 の 3 パス目。docstring は「先に出会ったほう」と書いていたが、
+        # それは**コピー側に約 7 割착地していた**）。
         root = base / "msgid4"
         make_tree(root, {
-            "repo-a/s1.jsonl": [line(u=usage(out=1), msg_id="m1")],
-            "repo-a/s2.jsonl": [line(u=usage(out=207), msg_id="m1")],
+            # s2 が**先に**走査される（アルファベット順では s1 が先なので、
+            # 名前で「古い」を決められないことを示すために日付を逆にしてある）。
+            "repo-a/s1.jsonl": [line(day="2026-09-16", u=usage(out=1), msg_id="m1")],
+            "repo-a/s2.jsonl": [line(day="2026-09-15", u=usage(out=207), msg_id="m1")],
         })
         records, _, _, _ = mod.scan(root)
-        check("後のファイルの大きい値を採る", records[0].weighted == 1035.0)
+        check("消費量は最大を採る", records[0].weighted == 1035.0)
+        check("帰属は古いほうのセッション", records[0].session == "s2")
+        check("日付も古いほうを採る", records[0].day == "2026-09-15")
 
         print("サブエージェントを取りこぼさない")
         root = base / "sub"
@@ -312,6 +328,44 @@ def main() -> int:
         records, _, _, _ = mod.scan(root)
         check("assistant 以外でも usage があれば拾う", len(records) == 1)
 
+        print("出力の数字そのものを固定する（絶対的な検査）")
+        # **変異ハーネスだけでは足りない。** あれは `observe(correct)` と
+        # `observe(mutant)` を比べる**差分比較**なので、**元から在る欠陥は両側に
+        # 継承されて見えない**（#95 の 3 パス目のレビューが、26 変異中 15 件の生存と、
+        # `render_weekly` / `render_split` / `main` が丸ごと無検査であることを実証した）。
+        # **§8.3 に載せる数字を作るのは `--split`** なので、ここは期待値で固定する。
+        root = base / "numbers"
+        make_tree(root, {
+            # dev-loop の周: 2 セッション・3 レコード。
+            #   d1: 1000 + (cr=200000 → 20000) = 21000、d2: 2000
+            "repo-a/d1.jsonl": [line(u=usage(inp=1000, cr=200000), tool=skill_use("dev-loop")),
+                                line(u=usage(inp=2000))],
+            "repo-a/d2.jsonl": [line(u=usage(inp=3000), tool=skill_use("dev-loop"))],
+            # それ以外: 1 セッション・1 レコード。
+            "repo-a/o1.jsonl": [line(u=usage(inp=4000))],
+        })
+        records, dev, _, _ = mod.scan(root)
+        check("レコード数", len(records) == 4)
+        check("加重の合計", sum(r.weighted for r in records) == 30000.0)
+
+        split = mod.render_split(records, dev)
+        # dev-loop: 2 セッション・26000（21000+2000+3000）・26000/30000 = 87%・3 req / 2 セ = 1
+        # それ以外: 1 セッション・4000・13%・1 req / 1 セ = 1
+        check("--split の dev-loop 行", "| dev-loop を回した周 | 2 | 0 | 87% | 1 |" in split)
+        check("--split のそれ以外の行", "| それ以外 | 1 | 0 | 13% | 1 |" in split)
+        # **比率の分母が全体であること**を、合計が 100% になることで固定する。
+        check("--split の比率が合計 100%",
+              sum(int(cell.strip().rstrip("%"))
+                  for row in split.splitlines()[2:]
+                  for cell in [row.split("|")[4]]) == 100)
+
+        weekly = mod.render_weekly(records, dev)
+        # 2026-09-15 は ISO 2026-W38。**セッションは 3**（d1 が 2 レコードを持つ）で、
+        # うち 2 つが dev-loop。平均文脈 = 200000 / 4 レコード = 50000 → 50k。
+        # **レコード数とセッション数が違うことを、この 1 行が押さえている**
+        # ——「セッションをレコードで数える」変異はここで落ちる。
+        check("週次の行", "| 2026-W38 | 3 | 2 | 0 | 87% | 50k |" in weekly)
+
         print("集計の出力")
         root = base / "render"
         make_tree(root, {
@@ -353,9 +407,14 @@ def main() -> int:
                 "            records.append(record)\n            previous = record\n"
                 "            by_id.pop(message_id, None)\n            previous = None",
             ),
-            "畳むときに最小を採る（育つ形で小さいほうを採るはず）": (
-                "            if previous is None or record.weighted > previous.weighted:",
-                "            if previous is None or record.weighted < previous.weighted:",
+            "畳むときに消費量を更新しない（途中経過のまま残るはず）": (
+                "            if record.weighted > previous.weighted:",
+                "            if False:",
+            ),
+            "帰属を古いほうに寄せない（走査順のまま残るはず）": (
+                "            if record.timestamp and (not previous.timestamp\n"
+                "                                     or record.timestamp < previous.timestamp):",
+                "            if False:",
             ),
             "壊れた行を数えない": (
                 '            if problem == "broken":\n'
@@ -415,6 +474,30 @@ def main() -> int:
             "--split の req/セッションを総数にする": (
                 "        per_session = len(rows) // len(sessions) if sessions else 0",
                 "        per_session = len(rows)",
+            ),
+            # **レビューが「生存する」と実証した変異**（3 パス目）。差分比較のオラクルでは
+            # 殺せず、上の「出力の数字そのものを固定する」検査のほうで落ちる。
+            "--split の比率の分母を 1 にする": (
+                "    total = sum(r.weighted for r in records) or 1",
+                "    total = 1",
+            ),
+            "週次でセッションをレコード数で数える": (
+                '        n_sessions = len(b["sessions"])',
+                "        n_sessions = b[\"requests\"]",
+            ),
+            "週次で文脈を足さない": (
+                '        bucket["ctx"] += r.cache_read',
+                '        bucket["ctx"] += 0',
+            ),
+            "週次で dev-loop の加重を全体にする": (
+                "        dev_weighted = sum(r.weighted for r in records\n"
+                "                           if iso_week(r.day) == week\n"
+                "                           and (r.repo, r.session) in dev_loop_sessions)",
+                "        dev_weighted = b['weighted']",
+            ),
+            "iterations だけを見る（トップレベルが大きい側を落とすはず）": (
+                "    return {key: max(top.get(key, 0), nested.get(key, 0)) for key in WEIGHTS}",
+                "    return {key: nested.get(key, 0) for key in WEIGHTS}",
             ),
             "iso_week を暦年で切る": (
                 "    year, week, _ = d.isocalendar()",
@@ -498,6 +581,18 @@ def main() -> int:
                 "repo-a/s2.jsonl": [line(u=usage(inp=16), tool=skill_use("dev-loop"))],
                 # **読めないファイル**——OSError まわりの変異に要る（下で chmod する）。
                 "repo-a/locked.jsonl": [line(u=usage(inp=17))],
+                # **跨ファイルの同一 id で、走査順とタイムスタンプが逆**——
+                # 帰属を古いほうに寄せる判定は、これが無いと殺せない。
+                "repo-a/t1.jsonl": [line(day="2026-09-16", u=usage(inp=18), msg_id="mx")],
+                "repo-a/t2.jsonl": [line(day="2026-09-15", u=usage(inp=19), msg_id="mx")],
+                # **cache_read を持つレコード**——週次の平均文脈の変異に要る。
+                "repo-a/ctx.jsonl": [line(u=usage(cr=500000))],
+                # **トップレベルが iterations を上回るレコード**——`max` の片側に要る。
+                "repo-a/topbig.jsonl": [line(u={"input_tokens": 500,
+                                                "cache_creation_input_tokens": 0,
+                                                "cache_read_input_tokens": 0,
+                                                "output_tokens": 0,
+                                                "iterations": [{"input_tokens": 1}]})],
             })
             (tree / "repo-a" / "locked.jsonl").chmod(0o000)
             locked_paths.append(tree / "repo-a" / "locked.jsonl")
@@ -527,8 +622,12 @@ def main() -> int:
                                  ["--repo", "worktrees"], ["--merge-worktrees"],
                                  ["--list-repos", "--merge-worktrees"]):
                         module.main(["--projects", str(tree)] + argv)
+                # **帰属も観測する。** 件数・加重・出力だけを見ていると、
+                # 「どのセッションに計上したか」を変える変異が生き残る
+                # （#95 の 3 パス目で実際に 1 件生き残った）。
+                attribution = sorted((r.session, r.day, r.repo, r.is_sub) for r in rec)
                 return (len(rec), sum(r.weighted for r in rec), dev, unread, broke,
-                        buf.getvalue())
+                        attribution, buf.getvalue())
 
             check(f"変異を殺せる: {name}", observe(correct) != observe(mutated))
 
