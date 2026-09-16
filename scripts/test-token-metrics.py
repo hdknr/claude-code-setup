@@ -119,7 +119,7 @@ def main() -> int:
         check("iterations があっても加重が変わらない", w2 == 500.0)
 
         print("トップレベルが全部 0 で iterations に実数があるとき")
-        # **実データに 2 件あった**（全件 151,922 件中）。片方は cache read だけで
+        # **実データに 2 件あった**（同じリクエストの重複）。cache read だけで
         # 約 100 万トークン。**トップレベルだけ読むと丸ごと落ちる**（#95 のレビューが発見）。
         u = {
             "input_tokens": 0, "cache_creation_input_tokens": 0,
@@ -162,8 +162,8 @@ def main() -> int:
         check("ゼロ除算にならない", mod.main(["--projects", str(root)]) == 0)
 
         print("1 応答が複数行に書かれるとき（message.id で畳む）")
-        # **実データの支配的な形。** 全件で「usage を持つ行 179,948 / 異なる id 99,718」、
-        # 行ごとに足すと**加重が 1.77 倍・req が 1.80 倍**に膨らんでいた（#95 のレビュー）。
+        # **実データの支配的な形。** 行ごとに足すと 7 割ほど膨らんでいた
+        # （率は設計 §8.3 の訂正を正とする。**ここに数字を書かない**——増えると古くなる）。
         root = base / "msgid"
         make_tree(root, {
             "repo-a/s.jsonl": [line(u=usage(out=1), msg_id="m1"),
@@ -190,14 +190,28 @@ def main() -> int:
         records, _, _, _ = mod.scan(root)
         check("id が無ければ落とさずに数える", len(records) == 2)
 
-        print("同じ id でもファイルが違えば畳まない")
+        print("ファイルを跨いでも同じ id なら畳む")
+        # **`message.id` は API が採番するので、ファイルを跨いでも同一の応答**。
+        # セッションを fork / resume すると履歴がコピーされ、同じ応答が別ファイルにも入る
+        # （実測で数 % 過大になっていた）。**初版はファイル単位で畳んでおり、
+        # このテストが「別物として数える」を正しい挙動として固定していた**（#95 の 2 パス目）。
         root = base / "msgid3"
         make_tree(root, {
             "repo-a/s1.jsonl": [line(u=usage(out=10), msg_id="m1")],
             "repo-a/s2.jsonl": [line(u=usage(out=10), msg_id="m1")],
         })
         records, _, _, _ = mod.scan(root)
-        check("別セッションの同名 id は別物として数える", len(records) == 2)
+        check("跨ファイルの同名 id を 1 件に畳む", len(records) == 1)
+        check("帰属は先に出会ったファイル", records[0].session == "s1")
+
+        print("跨ファイルでも大きいほうを採る")
+        root = base / "msgid4"
+        make_tree(root, {
+            "repo-a/s1.jsonl": [line(u=usage(out=1), msg_id="m1")],
+            "repo-a/s2.jsonl": [line(u=usage(out=207), msg_id="m1")],
+        })
+        records, _, _, _ = mod.scan(root)
+        check("後のファイルの大きい値を採る", records[0].weighted == 1035.0)
 
         print("サブエージェントを取りこぼさない")
         root = base / "sub"
@@ -335,6 +349,45 @@ def main() -> int:
                 "                elif name in AGENT_TOOLS:",
                 "                elif False:",
             ),
+            "旧版の Task を見ない": (
+                'AGENT_TOOLS = ("Agent", "Task")',
+                'AGENT_TOOLS = ("Agent",)',
+            ),
+            "Skill の command フォールバックを落とす": (
+                '                    skill = args.get("skill") or args.get("command") or ""',
+                '                    skill = args.get("skill") or ""',
+            ),
+            "--since の不等号を反転": (
+                "        records = [r for r in records if r.day >= args.since]",
+                "        records = [r for r in records if r.day <= args.since]",
+            ),
+            "--repo の絞りをやめる": (
+                "        records = [r for r in records if args.repo in r.repo]",
+                "        records = [r for r in records if True]",
+            ),
+            "--list-repos で worktree を寄せない": (
+                "        if args.merge_worktrees:\n"
+                "            # **集計と同じ粒度で見せる。**",
+                "        if False:\n"
+                "            # **集計と同じ粒度で見せる。**",
+            ),
+            "--split の req/セッションを総数にする": (
+                "        per_session = len(rows) // len(sessions) if sessions else 0",
+                "        per_session = len(rows)",
+            ),
+            "iso_week を暦年で切る": (
+                "    year, week, _ = d.isocalendar()",
+                "    year, week = d.year, d.isocalendar()[1]",
+            ),
+            "fmt_m を切り捨てにする": (
+                '    return f"{value / 1_000_000:.0f}"',
+                '    return str(int(value / 1_000_000))',
+            ),
+            "跨ファイルの畳み込みをファイル単位に戻す": (
+                "        repo, session, is_sub = session_of(path, projects_root, merge_worktrees)",
+                "        by_id = {}\n"
+                "        repo, session, is_sub = session_of(path, projects_root, merge_worktrees)",
+            ),
             "加重の係数を 1 にする": (
                 '    "output_tokens": 5.0,',
                 '    "output_tokens": 1.0,',
@@ -354,6 +407,9 @@ def main() -> int:
                 "iterations": [{"input_tokens": 7, "cache_creation_input_tokens": 0,
                                 "cache_read_input_tokens": 0, "output_tokens": 0}],
             }
+            # **変異木は「殺したい変異が触るデータ」を全部持っていなければならない。**
+            # 2 パス目のレビューが、同じ木で 21 変異を試して **12 件の生存**を実証した
+            # ——木に該当データが無いだけで、実装は正しいのに検査されていなかった。
             two_iters = {
                 "input_tokens": 0, "cache_creation_input_tokens": 0,
                 "cache_read_input_tokens": 0, "output_tokens": 0,
@@ -373,8 +429,30 @@ def main() -> int:
                                    line(u=usage(out=207), msg_id="msg_dup"),
                                    # **壊れた行**——数えない変異を殺すのに要る。
                                    "{壊れた JSON",
-                                   line(u=usage(inp=10), tool=agent_use("dev-loop-verifier"))],
+                                   # **`fmt_m` の丸めを効かせる大きな値**（1.5M 級）。
+                                   line(u=usage(out=300000)),
+                                   # **`--since` の境界**と**ISO 年 ≠ 暦年の日**
+                                   # （2027-01-01 は ISO では 2026-W53）。
+                                   line(day="2026-09-01", u=usage(inp=13)),
+                                   line(day="2027-01-01", u=usage(inp=14))],
                 "repo-a/s/subagents/a.jsonl": [line(u=usage(inp=3000))],
+                # **判定の経路ごとに別セッションへ置く。** 同じファイルに全部入れると、
+                # 1 つの経路を落としても**別の経路がそのセッションを dev と判定して**
+                # 変異が生き残る（最初にそう書いて 3 件取り逃した）。
+                "repo-a/via-agent.jsonl": [line(u=usage(inp=10),
+                                                tool=agent_use("dev-loop-verifier"))],
+                "repo-a/via-task.jsonl": [line(u=usage(inp=11),
+                                               tool={"type": "tool_use", "name": "Task",
+                                                     "input": {"subagent_type":
+                                                               "dev-loop-verifier"}})],
+                "repo-a/via-command.jsonl": [line(u=usage(inp=12),
+                                                  tool={"type": "tool_use", "name": "Skill",
+                                                        "input": {"command": "dev-loop"}})],
+                # **worktree**——`--list-repos` の `--merge-worktrees` 変異に要る。
+                "repo-a--claude-worktrees-x/s.jsonl": [line(u=usage(inp=15))],
+                # **2 セッション目**——`--split` の `req/セッション` の割り算に要る
+                # （1 群 1 セッションだと商が変わらず、変異が生き残る）。
+                "repo-a/s2.jsonl": [line(u=usage(inp=16), tool=skill_use("dev-loop"))],
             })
             correct = load()
             mutated = load(mscript)
@@ -387,7 +465,11 @@ def main() -> int:
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf):
                     for argv in ([], ["--per-cycle"], ["--split"],
-                                 ["--since", "2026-09-15"], ["--list-repos"]):
+                                 ["--since", "2026-09-15"], ["--list-repos"],
+                                 # **絞りと寄せも呼ぶ。** 呼ばない引数の変異は
+                                 # 「出力が変わらない」ので全部生き残る。
+                                 ["--repo", "worktrees"], ["--merge-worktrees"],
+                                 ["--list-repos", "--merge-worktrees"]):
                         module.main(["--projects", str(tree)] + argv)
                 return (len(rec), sum(r.weighted for r in rec), dev, unread, broke,
                         buf.getvalue())
