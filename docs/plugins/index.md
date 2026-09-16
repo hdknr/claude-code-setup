@@ -496,17 +496,19 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 **検証が通るまで、実装と検証を往復します。**
 
 !!! warning "手順の中身と前提は、ここには書いてありません"
-    **各手順の必須要件**（受入基準の展開のしかた、別モデルの検証エージェント、BLOCKED の報告、
-    実験の交絡の潰し方、2 つの関門に 2 パス当てること**など**）と、**動かすための前提**
-    （`gh` CLI・git・worktree・レビューの手段・検証エージェント**など**）は、
-    [プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/README.md)
-    にまとまっています。**ここに挙げたのは例で、全部ではありません**——数え上げると、
-    それ自体が古くなります。規範の本体は
-    [スキル本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/SKILL.md)、
+    **各手順の必須要件は
+    [スキル本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/SKILL.md)
+    だけにあります**。**動かすための前提**（`gh` CLI・git・worktree・レビューの手段・
+    検証エージェント**など**）は
+    [プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/README.md)、
     設計の理由は [dev-loop の設計](dev-loop-design.md)です。
 
     **このページに写すと、片方だけが古くなります。** 実際に #75 の周で、縮退の注記に足した
     参照が README には入って**このページには入りませんでした**（別の周のレビューで気づきました）。
+
+    **そして #94 の周では、この注記自身が古くなりました**——README から必須要件を外して
+    スキル本文に一本化したのに、**ここが「README にまとまっています」と言い続けていた**。
+    レビューが見つけるまで、**入口の数え上げにこのページを入れていながら**落としていた。
 
 **使用例:**
 

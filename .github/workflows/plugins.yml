@@ -34,6 +34,11 @@ jobs:
         if: github.event_name == 'pull_request'
         run: python3 scripts/check-description-sync.py "origin/${{ github.base_ref }}"
 
+      # 規範は SKILL.md にしか置かない（#75 / #94）。宣言は検査ではないので機械で見る。
+      # push でも回す。base が要らない（1 つのツリーだけで判定できる）ので PR 限定にしない。
+      - name: 必須マーカーが原本の外に漏れていないかチェック
+        run: python3 scripts/check-norm-markers.py
+
       # ubuntu-latest の /bin/sh は dash。macOS 側は zsh / bash なので、
       # 両方で回すことで「片方のシェルだけで壊れる」類（#57 で実際に踏んだ）を止める。
       - name: link-skills.sh のテスト
@@ -45,3 +50,6 @@ jobs:
 
       - name: check-plugin-versions.py の版チェックのテスト
         run: python3 scripts/test-check-plugin-versions.py
+
+      - name: check-norm-markers.py のテスト
+        run: python3 scripts/test-check-norm-markers.py
