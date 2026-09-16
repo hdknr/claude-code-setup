@@ -30,9 +30,9 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 7. **本番反映** — CLAUDE.md / deploy runbook に従う
 8. **経験の還元** — 学びを CLAUDE.md / Skill / メモリへ焼き戻す
 
-> **各段の必須要件は [`skills/dev-loop/SKILL.md`](skills/dev-loop/SKILL.md) が正で、
-> ここには書かない。** 上の 1 行ずつは「その段が何をする段か」であって、**要件の要約ではない**
-> ——**読んで従う先は `SKILL.md`** である。
+> **上にあるのは各段の名前と、その段が何をする段かの 1 行だけである。**
+> **必須要件は [`skills/dev-loop/SKILL.md`](skills/dev-loop/SKILL.md) を正とする**
+> ——**読んで従う先はそちら**で、上の 1 行は要件の要約ではない。
 >
 > **これは一度失敗して決めたことである**（#94）。規範を減らしたのではなく、
 > **規範の住所を 1 つにした**。**経緯と実測は
@@ -65,8 +65,8 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 
 ## 前提
 
-**ここに書くのは「何が要るか」までで、「どう使うか」は書かない**（要件は
-[`skills/dev-loop/SKILL.md`](skills/dev-loop/SKILL.md) が正）。
+**ここにあるのは、動かすのに要る道具の一覧である。**
+**どう使うかは [`skills/dev-loop/SKILL.md`](skills/dev-loop/SKILL.md) を正とする。**
 
 - `gh` CLI が認証済みであること
 - 対象リポジトリが git 管理下にあること
