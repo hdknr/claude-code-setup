@@ -7,6 +7,7 @@
 
     python3 scripts/token-metrics.py                 # 週次の推移
     python3 scripts/token-metrics.py --per-cycle     # dev-loop の周ごと
+    python3 scripts/token-metrics.py --per-issue     # 周を Issue で束ねる（割った周を 1 周に）
     python3 scripts/token-metrics.py --since 2026-09-01 --repo taihei-epm-server
 
 なぜ必要か（#95）: #92 で「1 周の重さ（ターン数 × 文脈）を減らす」規範を入れたが、
@@ -50,7 +51,10 @@
 | **その逆——`iterations` にしか実数が無い** | **トップレベルが 0 のレコードが実在する**（全件走査で 2 件。**同じリクエストの重複**で、cache read だけで約 100 万トークン）。**トップレベルだけ読むと丸ごと落ちる**ので、**キーごとに大きいほうを採る**（`effective_usage`） |
 | **`<synthetic>` モデル** | 実測で**全件 0 トークン**。足しても数は変わらないが**件数の分母が狂う**ので除外する |
 | **レコードはあるのに加重が 0** | 上の 0 トークンのレコードだけが絞り込みに残ると起きる。**割り算にガードを置く**（置き忘れて落ちた） |
-| **`grep dev-loop` で周を判定する** | **使えない**——`MEMORY.md` の記載に当たって全件ヒットする。`Skill` の `skill` と `Agent` の `subagent_type` を見る |
+| **`grep dev-loop` で周を判定する** | **使えない**——`MEMORY.md` の記載に当たって全件ヒットする。`Skill` の `skill`、`Agent` の `subagent_type`、**スラッシュ起動の `<command-name>`** の 3 つを見る |
+| **スラッシュ起動は `Skill` の tool_use として残らない** | **これがいちばん多い起動形**。`Skill` と `subagent_type` の 2 つだけを見ていた時期、**dev-loop の周 120 本のうち 60 本が丸ごと欠けていた**（加重 608M——**当時数えていた 1,328M の 46%**）——`dev-loop-verifier` を呼ぶ**手順 5 に着くまで周が存在しなかった**（#108）。**本文で判定してはいけない**のは上の行のとおりで、`<command-name>` タグを持つ `role=user` のテキストだけを見る |
+| **1 周が複数セッションに割れる** | `/clear` で割ると**セッション id が変わる**。`--per-cycle` は `(repo, session)` で数えるので、**割った周は per-session の会計で必ず「軽くなった」と出る**（会計上の分割で、節約ではない）。**割った周は `--per-issue` で見る**——`<command-args>` の Issue 番号で束ねる。**番号が取れない周は束ねず、件数だけ別に出す** |
+| **親の起点をサブエージェントのリクエストに課金する** | 委譲先は**自分の起点**を持ち、**親の起点を払わない**。含めると**1.65 倍の過大**になる——実測で中央値 29.3% 対 17.8%（サブエージェントが加重の 24%）。**`floor_share` には親の req だけを渡す**。**「周の 30%」として #101 / #102 / #103 の根拠にした数字はこの誤りを含む**（#108 で訂正） |
 | **読めないファイル・壊れた行** | どちらも件数を**報告に出す**。黙って 0 にしない。**読めないファイルは走査を止めない**（1 つで全体が落ちていた）。なお**行ごとに読むと壊れた行は出なくなった**——以前 46 行あったのは `splitlines()` が**JSON 文字列の中の U+2028 などで切っていた**ためで、**その 7 行は本物の `usage` を含んでいた**（つまり取りこぼしていた） |
 | **`--repo` の部分一致が広すぎる** | `--list-repos` で**実際に何にマッチするかを先に見る**——短い名前は**思っているより多くに当たる**。**値が `-` で始まるなら `--repo=...` と書く**（そうしないと argparse が引数として解釈する） |
 | **worktree が別プロジェクトとして記録される** | `<repo>--claude-worktrees-<name>` という別ディレクトリになる。**同じリポジトリの作業なのに別々に数えられる**。寄せたいなら `--merge-worktrees` |
@@ -93,6 +97,7 @@ import json
 import os
 import statistics
 import pathlib
+import re
 import sys
 
 # 加重の式。**実装はここだけだが、式そのものは 3 箇所にある**
@@ -114,16 +119,30 @@ DEV_LOOP_AGENT = "dev-loop-verifier"
 
 AGENT_TOOLS = ("Agent", "Task")
 
+# **スラッシュ起動の形。** スキルは `Skill` の tool_use ではなく
+# **スラッシュコマンドとして呼ばれることのほうが多い**——実測で、
+# dev-loop を呼んだ 120 周のうち **`Skill` の tool_use は使われていない周が半分**あり、
+# それらは `dev-loop-verifier` を呼ぶ**手順 5 に着くまで存在しなかった**（#108）。
+# **`<command-name>` タグを持つ user テキストだけを見る**——スキル本文も
+# `role=user` として載るので、本文を見ると「起動された」と誤判定する（#101 と同じ落とし穴）。
+SLASH_NAME = re.compile(r"<command-name>\s*/?([^<\s]+)")
+SLASH_ARGS = re.compile(r"<command-args>([^<]*)</command-args>")
+
+
 # worktree はプロジェクトディレクトリとして**別扱いで記録される**
 # （`<repo>--claude-worktrees-<name>`）。同じリポジトリの作業なのに別々に数えられる。
 WORKTREE_MARKER = "--claude-worktrees-"
+# worktree のディレクトリ名から Issue 番号を拾う**補助の**経路。
+# 起動形が取れないときだけ使う（`--claude-worktrees-issue-10856-costcustomer-sheet`）。
+WORKTREE_ISSUE = re.compile(re.escape(WORKTREE_MARKER) + r"issue-(\d+)")
+
 
 
 class Record:
     """1 レコード分の集計値。"""
 
     __slots__ = ("day", "repo", "session", "is_sub", "model", "weighted", "cache_read",
-                 "timestamp", "context")
+                 "timestamp", "context", "issue")
 
     def __init__(self, day, repo, session, is_sub, model, weighted, cache_read,
                  timestamp="", context=0):
@@ -139,6 +158,10 @@ class Record:
         # **1 回目は cache write として課金される**ので、起点を cache read だけで
         # 取ると**周の最初のリクエストで 0 になる**。
         self.context = context
+        # **どの Issue の周か。** `scan` が**走査を終えてから**入れる
+        # ——起動形は先頭にあるとはいえ、fork / resume で**順序は保証できない**。
+        # 取れなければ `None` のまま（**近い値で代用しない**）。
+        self.issue = None
 
 
 def _from_iterations(usage: dict) -> dict:
@@ -248,6 +271,66 @@ def tool_uses(message: dict):
             yield block
 
 
+def user_texts(message: dict):
+    """user メッセージのテキストを 1 つずつ返す。
+
+    **`role` を見る。** アシスタントの応答にも `text` ブロックがあり、
+    そちらに起動形の話が書かれていることがある（この会話が実際にそうだった）。
+    """
+    if message.get("role") != "user":
+        return
+    content = message.get("content")
+    if isinstance(content, str):
+        yield content
+        return
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            yield block.get("text") or ""
+
+
+def slash_command(text: str) -> tuple[str, str] | None:
+    """スラッシュ起動なら `(コマンド名, 引数)`、そうでなければ `None`。
+
+    **`<command-name>` タグが無いテキストは見ない。** スキル本文も `role=user` で
+    載るので、本文に `dev-loop` があるだけで「起動された」と数えると
+    **本文を読んだだけの周まで dev-loop になる**（#101 で同じ落とし穴を踏んだ）。
+
+    **この要求は `SLASH_NAME` の正規表現だけが持つ。** 最初は `in` による
+    早期 return も置いていたが、**2 箇所が同じことを言うと片方への変異が
+    もう片方に隠される**——実際に「タグの条件を外す」変異が生き残った。
+    **歯止めを 1 箇所にする**（このリポジトリが繰り返し踏んでいる型）。
+    """
+    name = SLASH_NAME.search(text)
+    if not name:
+        return None
+    args = SLASH_ARGS.search(text)
+    return name.group(1), (args.group(1) if args else "")
+
+
+def issue_number(args: str) -> str | None:
+    """引数から Issue 番号を取る。最初の数字の連なりだけを見る。
+
+    **番号が取れなければ `None`。** `/dev-loop` は引数 1 件が前提だが、
+    実測では**引数の無い起動が 120 周のうち 2 件**あった。
+    **`0` を返したり近い周に寄せたりしない**——束ねられなかったことを
+    呼び出し側が判別できる必要がある（#103 の「先頭が範囲外」と同じ判断）。
+    """
+    found = re.search(r"\d+", args or "")
+    return found.group(0) if found else None
+
+
+def worktree_issue(repo_dir: str) -> str | None:
+    """worktree のディレクトリ名から Issue 番号を取る（**補助の経路**）。
+
+    起動形が取れないときだけ使う。**ディレクトリ名は人間が付けるので、
+    Issue 番号とは限らない**——`issue-<数字>` の形に限って拾う。
+    """
+    found = WORKTREE_ISSUE.search(repo_dir or "")
+    return found.group(1) if found else None
+
+
 def _iter_rows(path: pathlib.Path):
     """`(row, 問題)` を 1 行ずつ返す。問題は `None` / `"broken"` / `"unreadable"`。
 
@@ -321,8 +404,21 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
     # **逆のことを言っている**状態が見つかった）。
     by_id: dict[str, Record] = {}
 
+    # **(repo, session) -> Issue 番号。** 走査中に集め、**最後に Record へ入れる**。
+    # **2 つに分けて持つ。** 起動形（`<command-args>`）が正で、
+    # worktree のディレクトリ名は**それが取れないときだけ**使う補助の経路。
+    # 1 つの辞書に混ぜると、**走査順でどちらが勝つかが変わる**。
+    session_issue: dict[tuple[str, str], str] = {}
+    session_issue_fallback: dict[tuple[str, str], str] = {}
     for path in sorted(projects_root.rglob("*.jsonl")):
         repo, session, is_sub = session_of(path, projects_root, merge_worktrees)
+        rel_parts = path.relative_to(projects_root).parts
+        repo_dir = rel_parts[0] if rel_parts else ""
+        # **補助の経路（#108）。** 別の辞書に入れておき、
+        # 起動形が取れなかった周にだけ使う。
+        fallback = worktree_issue(repo_dir)
+        if fallback:
+            session_issue_fallback.setdefault((repo, session), fallback)
         for row, problem in _iter_rows(path):
             if problem == "unreadable":
                 unreadable += 1
@@ -333,6 +429,20 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             message = row.get("message")
             if not isinstance(message, dict):
                 continue
+
+            for text in user_texts(message):
+                invocation = slash_command(text)
+                if invocation is None:
+                    continue
+                name, args = invocation
+                if DEV_LOOP_SKILL not in name:
+                    continue
+                # **スラッシュ起動も dev-loop の周である（#108）。**
+                # これが無いと、手順 5 で Verifier を呼ぶまで周が存在しない。
+                dev_loop_sessions.add((repo, session))
+                number = issue_number(args)
+                if number:
+                    session_issue.setdefault((repo, session), number)
 
             for block in tool_uses(message):
                 name = block.get("name")
@@ -396,6 +506,12 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
                 previous.is_sub = record.is_sub
 
     records.extend(by_id.values())
+    # **Issue 番号は走査を終えてから入れる。** 起動形は先頭にあるとはいえ、
+    # **畳み込みが帰属を書き換える**（同じ応答が別セッションのファイルにも入る）ので、
+    # レコードの `session` が決まるのはここである。
+    for record in records:
+        key = (record.repo, record.session)
+        record.issue = session_issue.get(key) or session_issue_fallback.get(key)
     return records, dev_loop_sessions, unreadable, broken_lines
 
 
@@ -496,25 +612,156 @@ def session_floors(records) -> dict:
     return best
 
 
-def floor_share(floor: int, requests: int, weighted: float) -> float | None:
-    """起点が周の加重に占める割合（%）。分からなければ `None`。
+def floor_share(floor: int, parent_requests: int, weighted: float) -> float | None:
+    """親の起点が周の加重に占める割合（%）。分からなければ `None`。
 
-    **近似である。** 起点は**最初のリクエストだけ cache write（×1.25）として
-    課金される**のに、ここでは全リクエストを cache read（×0.1）として数えている。
-    **つまりわずかに小さめに出る**——起点を過大に見せない向きなので、
-    「30% を占める」という主張に対しては**安全側**である。
+    **`parent_requests` は親のリクエスト数である。サブエージェントを含めてはいけない。**
+    委譲先は**自分の起点**を持っており、**親の起点を払わない**。含めると
+    **親の起点を、それを払っていないリクエストにまで課金する**ことになる
+    ——実測で**中央値 29.3% 対 17.8%、1.65 倍の過大**だった（#108）。
+    サブエージェントが加重の 24% を占めるのが出所である。
+
+    **初版はここを間違えていた。** `render_per_cycle` が全レコードを渡しており、
+    **「周の 30%」として #101 / #102 / #103 の根拠に使った数字は 1.65 倍**だった。
+    引数の名前を `requests` から変えてあるのは、**基準を取り違えたまま呼べないようにする**ため。
+
+    **残る近似は 1 つで、向きは小さめ。** 起点は**最初のリクエストだけ
+    cache write（×1.25）として課金される**のに、ここでは全リクエストを
+    cache read（×0.1）として数えている。
+    **以前この docstring は「だから安全側」と書いていたが、それは誤りだった**
+    ——上のリクエスト基準の誤り（1.65 倍の過大）のほうが大きく、**向きは逆だった**。
+
+    **分母は周の加重の全部**（サブエージェントを含む）である。
+    したがってこれは**「親の起点が周全体のコストに占める割合」**で、
+    **委譲先の起点は数に入っていない**——周全体の「起点の総額」はこれより大きい。
 
     **割り算にガードを置く。** レコードはあるのに加重が 0 のことがある
     （トップレベルの usage が全部 0 のレコードが実在する）。
     """
-    if not floor or not requests or not weighted:
+    if not floor or not parent_requests or not weighted:
         return None
-    return 100 * (floor * requests * WEIGHTS["cache_read_input_tokens"]) / weighted
+    return 100 * (floor * parent_requests * WEIGHTS["cache_read_input_tokens"]) / weighted
+
+
+def floor_share_summary(shares) -> str | None:
+    """起点比の集計行。**中央値を出す。平均にしない。**
+
+    起点比は 1 周の req が少ないほど跳ねるので、**短い周 1 つで平均が動く**
+    （実測で 128 req の周が 39% を出している）。
+
+    **`--per-cycle` と `--per-issue` が共有する。** 式を 2 箇所に置くと
+    **片方だけ直して緑になる**——このリポジトリが繰り返し踏んでいる型である。
+    """
+    if not shares:
+        return None
+    return (f"**起点が占める割合: 中央値 {statistics.median(shares):.0f}%**"
+            f"（{len(shares)} 周で算出）")
+
+
+def render_per_issue(records, dev_loop_sessions, floors=None) -> str:
+    """Issue 番号で束ねた周を返す（`--per-issue`）。
+
+    **`--per-cycle` は周を `(repo, session)` で数えている。** `/clear` で割ると
+    **セッション id が変わるので 1 周が 2 周になる**——per-session の会計では、
+    **割った周は必ず「軽くなった」と出る**（#108）。ここは `(repo, Issue 番号)` で束ねる。
+
+    **起点はセッションごとに合計する。** 割った後のセッションは
+    **起点（実測で約 90k）を払い直す**ので、周全体の起点は 1 セッション分ではない。
+    **これが「割ると得か」の答えを決める量**である。
+
+    **Issue 番号が取れなかった周は束ねない。** 行に出さず、**件数だけ別に示す**
+    ——近い周に寄せると、束ねられなかったことが数字から見えなくなる
+    （#103 の「先頭が範囲外」と同じ判断）。
+
+    **セッション数を列に出す。** 出さないと、**割れた周と割れていない周が
+    見分けられない**——この表を作った目的そのものが見えなくなる。
+    """
+    if floors is None:
+        floors = session_floors(records)
+
+    # セッション単位の集計が先に要る（起点はセッションごとに払う）。
+    per_session = collections.defaultdict(lambda: {"weighted": 0.0, "requests": 0,
+                                                   "ctx": 0, "day": "", "first": ""})
+    for r in records:
+        key = (r.repo, r.session)
+        if key not in dev_loop_sessions:
+            continue
+        b = per_session[key]
+        if r.timestamp and not r.is_sub and (not b["first"] or r.timestamp < b["first"]):
+            b["first"] = r.timestamp
+        b["weighted"] += r.weighted
+        if not r.is_sub:
+            b["requests"] += 1
+            b["ctx"] += r.cache_read
+        if r.day and (not b["day"] or r.day < b["day"]):
+            b["day"] = r.day
+
+    issue_of = {}
+    for r in records:
+        if r.issue:
+            issue_of[(r.repo, r.session)] = r.issue
+
+    per_issue = collections.defaultdict(lambda: {"weighted": 0.0, "requests": 0,
+                                                 "ctx": 0, "day": "", "sessions": 0,
+                                                 "floor_req": 0.0, "truncated": False})
+    unmerged = 0
+    for key, b in per_session.items():
+        number = issue_of.get(key)
+        if not number:
+            unmerged += 1
+            continue
+        g = per_issue[(key[0], number)]
+        g["weighted"] += b["weighted"]
+        g["requests"] += b["requests"]
+        g["ctx"] += b["ctx"]
+        g["sessions"] += 1
+        if b["day"] and (not g["day"] or b["day"] < g["day"]):
+            g["day"] = b["day"]
+        first_seen, floor = floors.get(key, ("", 0))
+        cut = bool(first_seen) and bool(b["first"]) and b["first"] > first_seen
+        if cut or not floor:
+            g["truncated"] = True
+        else:
+            g["floor_req"] += floor * b["requests"]
+
+    if not per_issue:
+        return "Issue 番号で束ねられた周は見つかりませんでした。"
+
+    lines = ["| 日 | Issue | セッション | req | 加重(M) | 平均文脈 | 起点×req | 起点比 |",
+             "|---|---|---|---|---|---|---|---|"]
+    shares = []
+    for (repo, number), g in sorted(per_issue.items(), key=lambda kv: kv[1]["day"]):
+        ctx = g["ctx"] // g["requests"] if g["requests"] else 0
+        if g["truncated"] or not g["weighted"]:
+            floor_cell, share_cell = "–（先頭が範囲外）", "–"
+        else:
+            weighted_floor = g["floor_req"] * WEIGHTS["cache_read_input_tokens"]
+            share = 100 * weighted_floor / g["weighted"]
+            shares.append(share)
+            floor_cell = f"{g['floor_req'] / 1e6:.1f}M"
+            share_cell = f"{share:.0f}%"
+        lines.append(f"| {g['day']} | #{number} | {g['sessions']} | {g['requests']} "
+                     f"| {fmt_m(g['weighted'])} | {ctx // 1000}k "
+                     f"| {floor_cell} | {share_cell} |")
+
+    split = sum(1 for g in per_issue.values() if g["sessions"] > 1)
+    lines.append("")
+    lines.append(f"**{len(per_issue)} 周**（うち**割れている周 {split} 件**——"
+                 f"2 セッション以上）")
+    summary = floor_share_summary(shares)
+    if summary:
+        lines.append(summary)
+    if unmerged:
+        # **束ねられなかったものを黙って落とさない。** 落とすと、
+        # 表の「周」が母集団の全部だと読めてしまう。
+        lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"
+                     f"（この表には出していない）")
+    return "\n".join(lines)
 
 
 def render_per_cycle(records, dev_loop_sessions, floors=None) -> str:
     per = collections.defaultdict(lambda: {"weighted": 0.0, "requests": 0, "ctx": 0,
-                                           "day": "", "first": ""})
+                                           "day": "", "first": "", "parent": 0})
     for r in records:
         key = (r.repo, r.session)
         if key not in dev_loop_sessions:
@@ -524,6 +771,10 @@ def render_per_cycle(records, dev_loop_sessions, floors=None) -> str:
             b["first"] = r.timestamp
         b["weighted"] += r.weighted
         b["requests"] += 1
+        # **起点比には親のリクエストだけを渡す。** 委譲先は自分の起点を持つので、
+        # 混ぜると親の起点を 1.65 倍に課金する（#108。`floor_share` を正とする）。
+        if not r.is_sub:
+            b["parent"] += 1
         b["ctx"] += r.cache_read
         if not b["day"] or (r.day and r.day < b["day"]):
             b["day"] = r.day
@@ -544,7 +795,7 @@ def render_per_cycle(records, dev_loop_sessions, floors=None) -> str:
         # 残っている最古のレコードは**周の途中**なので、そこを起点と呼べば
         # 100% を超える割合が出る（実測で 104% が出た）。**近い値で代用しない。**
         truncated = bool(first_seen) and bool(b["first"]) and b["first"] > first_seen
-        share = None if truncated else floor_share(floor, b["requests"], b["weighted"])
+        share = None if truncated else floor_share(floor, b["parent"], b["weighted"])
         if share is not None:
             shares.append(share)
         floor_cell = "–（先頭が範囲外）" if truncated else f"{floor // 1000}k"
@@ -557,11 +808,9 @@ def render_per_cycle(records, dev_loop_sessions, floors=None) -> str:
     lines.append("")
     lines.append(f"**{len(per)} 周・平均 {total_req // len(per)} req/周・"
                  f"平均文脈 {(total_ctx // total_req) // 1000 if total_req else 0}k**")
-    if shares:
-        # **中央値を出す。平均にしない**——起点比は 1 周の req が少ないほど跳ねるので、
-        # **短い周 1 つで平均が動く**（実測で 128 req の周が 39% を出している）。
-        lines.append(f"**起点が占める割合: 中央値 {statistics.median(shares):.0f}%**"
-                     f"（{len(shares)} 周で算出）")
+    summary = floor_share_summary(shares)
+    if summary:
+        lines.append(summary)
     return "\n".join(lines)
 
 
@@ -573,6 +822,8 @@ def main(argv=None) -> int:
     parser.add_argument("--repo", default=None, help="この文字列を含むリポジトリだけ")
     parser.add_argument("--per-cycle", action="store_true",
                         help="週次ではなく dev-loop の周ごとに出す")
+    parser.add_argument("--per-issue", action="store_true",
+                        help="周を Issue 番号で束ねて出す（割った周を 1 周として数える）")
     parser.add_argument("--split", action="store_true",
                         help="dev-loop を回した周とそれ以外に分けて出す（設計 §8.3 と同じ形）")
     parser.add_argument("--merge-worktrees", action="store_true",
@@ -626,6 +877,8 @@ def main(argv=None) -> int:
 
     if args.split:
         print(render_split(records, dev_loop_sessions))
+    elif args.per_issue:
+        print(render_per_issue(records, dev_loop_sessions, floors))
     elif args.per_cycle:
         print(render_per_cycle(records, dev_loop_sessions, floors))
     else:
