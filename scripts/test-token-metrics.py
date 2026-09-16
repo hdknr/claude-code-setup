@@ -94,6 +94,21 @@ def agent_use(subagent_type):
     return {"type": "tool_use", "name": "Agent", "input": {"subagent_type": subagent_type}}
 
 
+def user_line(text, day="2026-09-15", time="09:59:00", as_list=False):
+    """user メッセージの行。スラッシュ起動の観測に要る。"""
+    content = [{"type": "text", "text": text}] if as_list else text
+    return json.dumps({"type": "user", "timestamp": f"{day}T{time}.000Z",
+                       "message": {"role": "user", "content": content}},
+                      ensure_ascii=False)
+
+
+def slash(number="10856", name="/dev-loop:dev-loop"):
+    """本物と同じ起動形のテキスト。"""
+    args = f"<command-args>{number}</command-args>" if number is not None else ""
+    return (f"<command-message>dev-loop</command-message>\n"
+            f"<command-name>{name}</command-name>\n{args}")
+
+
 def make_tree(root: Path, files: dict[str, list[str]]) -> None:
     assert_not_real_home(root)
     for rel, lines in files.items():
@@ -452,6 +467,93 @@ def main() -> int:
         check("走査先が無ければ非ゼロ", mod.main(["--projects", str(missing)]) == 1)
 
         print("変異テスト（壊したのに緑なら失格）")
+        print("スラッシュ起動の検出（#108）")
+        check("起動形からコマンド名と引数を取る",
+              mod.slash_command(slash("10856")) == ("dev-loop:dev-loop", "10856"))
+        # **本文も role=user で載る。** タグが無いテキストを見ると、
+        # 本文を読んだだけの周まで dev-loop になる。
+        check("command-name タグが無い本文は起動形でない",
+              mod.slash_command("本文に dev-loop と書いてあるだけ") is None)
+        check("引数の無い起動でも起動形として取れる",
+              mod.slash_command(slash(None))[0] == "dev-loop:dev-loop")
+        check("Issue 番号は最初の数字の連なり", mod.issue_number("10856") == "10856")
+        # **`0` で代用しない。** 束ねられなかったことを呼び出し側が判別できる必要がある。
+        check("番号が取れなければ None（0 で代用しない）", mod.issue_number("") is None)
+        check("worktree 名から番号を拾う",
+              mod.worktree_issue("r--claude-worktrees-issue-10856-x") == "10856")
+        check("issue- の形でない worktree 名は None",
+              mod.worktree_issue("r--claude-worktrees-testing-md") is None)
+        check("user_texts は assistant のテキストを返さない",
+              list(mod.user_texts({"role": "assistant",
+                                   "content": [{"type": "text", "text": slash()}]})) == [])
+        check("user_texts は str の content を返す",
+              list(mod.user_texts({"role": "user", "content": "x"})) == ["x"])
+
+        print("スラッシュ起動の周と Issue 束ね（#108）")
+        iroot = base / "issues"
+        make_tree(iroot, {
+            # **Verifier を呼ばない周**——現状の 2 経路では検出できない。
+            "repo-i/a.jsonl": [user_line(slash("777")),
+                               line(day="2026-09-15", time="10:00:00", u=usage(cr=10000))],
+            # **同じ Issue の 2 セッション目**（割れた周）。
+            "repo-i/b.jsonl": [user_line(slash("777"), time="11:00:00"),
+                               line(day="2026-09-15", time="11:00:00", u=usage(cr=20000))],
+            # **本文に dev-loop があるだけの周**——dev-loop に数えてはいけない。
+            "repo-i/body.jsonl": [user_line("# dev-loop スキル\n本文"),
+                                  line(day="2026-09-15", u=usage(inp=5))],
+            # **引数の無い起動**——周ではあるが束ねられない。
+            "repo-i/noarg.jsonl": [user_line(slash(None), time="12:00:00"),
+                                   line(day="2026-09-15", time="12:00:00", u=usage(inp=6))],
+            # **worktree フォールバック**——起動形が無く、ディレクトリ名に番号がある。
+            "repo-i--claude-worktrees-issue-999-x/w.jsonl": [
+                line(day="2026-09-15", u=usage(inp=7), tool=skill_use("dev-loop"))],
+            # **起動形とディレクトリ名が食い違う**——起動形が勝つこと。
+            "repo-i--claude-worktrees-issue-111-x/conflict.jsonl": [
+                user_line(slash("222"), time="13:00:00"),
+                line(day="2026-09-15", time="13:00:00", u=usage(inp=8))],
+            # **サブエージェント**——親の Issue を継ぐこと。
+            "repo-i/a/subagents/v.jsonl": [line(day="2026-09-15", u=usage(inp=9))],
+        })
+        irec, idev, _, _ = mod.scan(iroot)
+        check("スラッシュ起動が Verifier を呼ばなくても周になる",
+              ("repo-i", "a") in idev)
+        check("本文に dev-loop があるだけでは周にならない",
+              ("repo-i", "body") not in idev)
+        issue_of = {(r.repo, r.session): r.issue for r in irec}
+        check("起動形から Record に Issue が付く", issue_of[("repo-i", "a")] == "777")
+        check("引数の無い起動は Issue が付かない", issue_of[("repo-i", "noarg")] is None)
+        check("worktree 名がフォールバックになる",
+              issue_of[("repo-i--claude-worktrees-issue-999-x", "w")] == "999")
+        # **起動形が正。** ディレクトリ名は補助なので、食い違ったら起動形を採る。
+        check("起動形が worktree 名より優先される",
+              issue_of[("repo-i--claude-worktrees-issue-111-x", "conflict")] == "222")
+        check("サブエージェントも親の Issue を継ぐ",
+              [r.issue for r in irec if r.is_sub and r.session == "a"] == ["777"])
+
+        per_issue = mod.render_per_issue(irec, idev)
+        check("Issue の列が出る", "| Issue | セッション |" in per_issue)
+        # **2 セッションが 1 行になる**のがこの表の目的。
+        check("同じ Issue の 2 セッションが 1 行になる",
+              per_issue.count("| #777 |") == 1)
+        check("セッション数の列に 2 が出る", "| #777 | 2 |" in per_issue)
+        check("割れている周の件数が出る", "割れている周 1 件" in per_issue)
+        # **束ねられなかったものを黙って落とさない。**
+        check("束ねられなかったセッションの件数が出る",
+              "束ねられなかったセッション: 1 件" in per_issue)
+        check("束ねられなかった Issue は行に出ない", "#None" not in per_issue)
+
+        print("起点比の基準（#108 の訂正）")
+        # **サブエージェントを含めると 1.65 倍に出た。** 親の req だけを渡す。
+        check("起点比は req が増えれば増える",
+              mod.floor_share(1000, 20, 5.0) > mod.floor_share(1000, 10, 5.0))
+        fl_rec, fl_dev, _, _ = mod.scan(iroot)
+        floors = mod.session_floors(fl_rec)
+        check("サブエージェントは起点の候補にならない（親の値が残る）",
+              floors[("repo-i", "a")][1] == 10000)
+        per_cycle_i = mod.render_per_cycle(fl_rec, fl_dev)
+        # 親 1 req・起点 10000・加重 1000*0.1=100 → 10000*1*0.1/100 = 100%
+        check("起点比が親リクエストだけで計算される", "| 100% |" in per_cycle_i)
+
         # chmod したファイルは、テンポラリを消す前に戻す（消せなくなるため）。
         locked_paths: list[Path] = []
         source = SCRIPT.read_text(encoding="utf-8")
@@ -603,6 +705,47 @@ def main() -> int:
                 "        by_id = {}\n"
                 "        repo, session, is_sub = session_of(path, projects_root, merge_worktrees)",
             ),
+            # --- #108 で足した変異 ---
+            '束ねられなかったセッションの件数を出さない（黙って落ちるはず）': (
+                '    if unmerged:',
+                '    if False:',
+            ),
+            'スラッシュ起動を検出しない（手順 5 まで周が無いはず）': (
+                '                dev_loop_sessions.add((repo, session))\n                number = issue_number(args)',
+                '                number = issue_number(args)',
+            ),
+            'タグではなく本文から名前を探す（#101 の落とし穴に戻るはず）': (
+                '    name = SLASH_NAME.search(text)',
+                '    name = re.search(r"([^\\s]*dev-loop[^\\s]*)", text)',
+            ),
+            'Issue 番号が取れないとき 0 で代用する': (
+                '    return found.group(0) if found else None',
+                '    return found.group(0) if found else "0"',
+            ),
+            'worktree 名を起動形より優先する': (
+                '        record.issue = session_issue.get(key) or session_issue_fallback.get(key)',
+                '        record.issue = session_issue_fallback.get(key) or session_issue.get(key)',
+            ),
+            'Issue で束ねない（セッションのままにするはず）': (
+                '        g = per_issue[(key[0], number)]',
+                '        g = per_issue[(key[0], number, key[1])]',
+            ),
+            '起点をセッションごとに合計しない（1 つ分になるはず）': (
+                '            g["floor_req"] += floor * b["requests"]',
+                '            g["floor_req"] = floor * b["requests"]',
+            ),
+            'セッション数を列に出さない': (
+                '| {g[\'sessions\']} | {g[\'requests\']} "',
+                '| {g[\'requests\']} "',
+            ),
+            '起点比にサブエージェントも数える（1.65 倍に出るはず）': (
+                '        if not r.is_sub:\n            b["parent"] += 1',
+                '        b["parent"] += 1',
+            ),
+            'user のテキストで role を見ない（assistant の言及も拾うはず）': (
+                '    if message.get("role") != "user":\n        return',
+                '    if False:\n        return',
+            ),
             "加重の係数を 1 にする": (
                 '    "output_tokens": 5.0,',
                 '    "output_tokens": 1.0,',
@@ -711,6 +854,48 @@ def main() -> int:
                                              u=usage(cr=10000), tool=skill_use("dev-loop")),
                                         line(day="2026-09-14", time="09:00:00",
                                              u=usage(cr=30000))],
+                # **スラッシュ起動の周（#108）。** `Skill` の tool_use も
+                # Verifier も持たない——**この 2 ファイルが無いと、スラッシュ検出を
+                # 落とす変異が「出力が変わらない」で生き残る**。
+                # **同じ Issue を 2 セッションに置く**（割れた周）。これが無いと
+                # 「Issue で束ねない」変異が殺せない。
+                "repo-a/slash1.jsonl": [user_line(slash("555"), day="2026-09-14",
+                                                  time="07:00:00"),
+                                        line(day="2026-09-14", time="08:00:00",
+                                             u=usage(cr=20000, cw=500))],
+                "repo-a/slash2.jsonl": [user_line(slash("555"), day="2026-09-14",
+                                                  time="09:00:00"),
+                                        line(day="2026-09-14", time="09:30:00",
+                                             u=usage(cr=60000))],
+                # **本文だけの周**——`<command-name>` の条件を外す変異に要る。
+                "repo-a/slashbody.jsonl": [user_line("# dev-loop スキル 本文",
+                                                     day="2026-09-14"),
+                                           line(day="2026-09-14", u=usage(inp=21))],
+                # **引数の無い起動**——`or "0"` で代用する変異に要る。
+                "repo-a/slashnoarg.jsonl": [user_line(slash(None), day="2026-09-14",
+                                                      time="07:10:00"),
+                                            line(day="2026-09-14", time="07:20:00",
+                                                 u=usage(inp=22))],
+                # **起動形とディレクトリ名が食い違う**——優先順を入れ替える変異に要る。
+                "repo-a--claude-worktrees-issue-888-x/conf.jsonl": [
+                    user_line(slash("999"), day="2026-09-14", time="07:40:00"),
+                    line(day="2026-09-14", time="07:50:00", u=usage(inp=23))],
+                # **content が list の user 行**——str だけを見る変異に要る。
+                "repo-a/slashlist.jsonl": [user_line(slash("666"), day="2026-09-14",
+                                                     time="07:05:00", as_list=True),
+                                           line(day="2026-09-14", time="07:06:00",
+                                                u=usage(inp=24))],
+                # **assistant の text に起動形が書かれた行**——`role` を見ない変異に要る。
+                # この会話が実際にそうだった（応答の中で起動形を引用した）。
+                "repo-a/assistant-mentions.jsonl": [json.dumps(
+                    {"type": "assistant", "timestamp": "2026-09-14T07:15:00.000Z",
+                     "message": {"model": "claude-opus-5", "role": "assistant",
+                                 "usage": {"input_tokens": 25,
+                                           "cache_creation_input_tokens": 0,
+                                           "cache_read_input_tokens": 0,
+                                           "output_tokens": 0},
+                                 "content": [{"type": "text", "text": slash("444")}]}},
+                    ensure_ascii=False)],
                 # **トップレベルが iterations を上回るレコード**——`max` の片側に要る。
                 "repo-a/topbig.jsonl": [line(u={"input_tokens": 500,
                                                 "cache_creation_input_tokens": 0,
@@ -744,6 +929,10 @@ def main() -> int:
                                  # **周の途中に落ちる `--since` と `--per-cycle` の
                                  # 組み合わせ**——起点の切り落とし判定はここでしか見えない。
                                  ["--per-cycle", "--since", "2026-09-16"],
+                                 # **Issue 束ね（#108）。** 呼ばないと
+                                 # `render_per_issue` の変異が全部生き残る。
+                                 ["--per-issue"],
+                                 ["--per-issue", "--since", "2026-09-16"],
                                  # **絞りと寄せも呼ぶ。** 呼ばない引数の変異は
                                  # 「出力が変わらない」ので全部生き残る。
                                  ["--repo", "worktrees"], ["--merge-worktrees"],
@@ -752,7 +941,10 @@ def main() -> int:
                 # **帰属も観測する。** 件数・加重・出力だけを見ていると、
                 # 「どのセッションに計上したか」を変える変異が生き残る
                 # （#95 の 3 パス目で実際に 1 件生き残った）。
-                attribution = sorted((r.session, r.day, r.repo, r.is_sub) for r in rec)
+                # **`issue` も帰属である。** 入れないと「番号の付け方」を変える変異が
+                # 出力に出ないかぎり生き残る（#108）。
+                attribution = sorted((r.session, r.day, r.repo, r.is_sub, r.issue)
+                                     for r in rec)
                 return (len(rec), sum(r.weighted for r in rec), dev, unread, broke,
                         attribution, buf.getvalue())
 
