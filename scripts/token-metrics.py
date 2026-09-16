@@ -91,6 +91,7 @@ import collections
 import datetime as dt
 import json
 import os
+import statistics
 import pathlib
 import sys
 
@@ -122,10 +123,10 @@ class Record:
     """1 レコード分の集計値。"""
 
     __slots__ = ("day", "repo", "session", "is_sub", "model", "weighted", "cache_read",
-                 "timestamp")
+                 "timestamp", "context")
 
     def __init__(self, day, repo, session, is_sub, model, weighted, cache_read,
-                 timestamp=""):
+                 timestamp="", context=0):
         self.timestamp = timestamp
         self.day = day
         self.repo = repo
@@ -134,6 +135,10 @@ class Record:
         self.model = model
         self.weighted = weighted
         self.cache_read = cache_read
+        # **そのリクエストが抱えていた文脈**。cache read だけでは足りない——
+        # **1 回目は cache write として課金される**ので、起点を cache read だけで
+        # 取ると**周の最初のリクエストで 0 になる**。
+        self.context = context
 
 
 def _from_iterations(usage: dict) -> dict:
@@ -186,6 +191,21 @@ def effective_usage(usage: dict) -> dict:
     if not nested:
         return top
     return {key: max(top.get(key, 0), nested.get(key, 0)) for key in WEIGHTS}
+
+
+def context_tokens(usage: dict) -> int:
+    """そのリクエストが抱えていた文脈（cache read + cache write）を返す。
+
+    **`weighted_tokens` と別に置く。** あちらは**課金の重み**を掛けた値で、
+    こちらは**素の大きさ**である。同じ数から作れるが、**混ぜると
+    「重み付き文脈」という無意味な量が生まれる**（#103 の実装で一度やった）。
+
+    **`input_tokens` は足さない。** 起点として見たいのは
+    **キャッシュに載る繰り返し部分**で、そのリクエスト固有の入力ではない。
+    """
+    effective = effective_usage(usage)
+    return int((effective.get("cache_read_input_tokens") or 0)
+               + (effective.get("cache_creation_input_tokens") or 0))
 
 
 def weighted_tokens(usage: dict) -> tuple[float, int]:
@@ -335,10 +355,11 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             if model in SYNTHETIC_MODELS:
                 continue
             weighted, cache_read = weighted_tokens(usage)
+            context = context_tokens(usage)
             timestamp = row.get("timestamp") or ""
             day = timestamp[:10]
             record = Record(day, repo, session, is_sub, model, weighted, cache_read,
-                            timestamp)
+                            timestamp, context)
             message_id = message.get("id")
             if not isinstance(message_id, str) or not message_id:
                 # id が無ければ畳めない。**そのまま数える**（落とすより過大のほうがまし）。
@@ -365,6 +386,7 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             if record.weighted > previous.weighted:
                 previous.weighted = record.weighted
                 previous.cache_read = record.cache_read
+                previous.context = record.context
             if record.timestamp and (not previous.timestamp
                                      or record.timestamp < previous.timestamp):
                 previous.timestamp = record.timestamp
@@ -444,13 +466,62 @@ def render_split(records, dev_loop_sessions) -> str:
     return "\n".join(lines)
 
 
-def render_per_cycle(records, dev_loop_sessions) -> str:
-    per = collections.defaultdict(lambda: {"weighted": 0.0, "requests": 0, "ctx": 0, "day": ""})
+def session_floors(records) -> dict:
+    """周ごとの**起点**を返す（`(repo, session) -> (最初の時刻, トークン数)`）。
+
+    **起点 ＝ その周の最初の応答が既に抱えていた文脈。**
+    system prompt・道具定義・`CLAUDE.md`・メモリ・スキル本文が入る——
+    **1 ターンも仕事をしていない時点の文脈**である。
+
+    **サブエージェントのレコードから取らない。** 委譲先は**親と別の起点**を持つので、
+    混ぜると周の起点が委譲先の値に置き換わりうる。
+
+    **最も古いレコードを採る。走査順では決められない**——セッション id は UUID で
+    **時刻を持たない**（`scan` の帰属と同じ理由）。**タイムスタンプを持たないレコードは
+    候補にしない**（空文字は文字列順で最小になり、黙って先頭に立つ）。
+
+    **時刻も返す。** 呼び出し側が「その周の先頭が絞り込みで切られていないか」を
+    判定できないと、**周の途中のレコードを起点と呼んでしまう**——実測で、
+    `--since` を周の途中に置くと**起点 470k・起点比 104%** という値が出た。
+    **絞り込む前のレコードから作って渡すこと**（`main` がそうしている）。
+    """
+    best: dict = {}
+    for r in records:
+        if r.is_sub or not r.timestamp:
+            continue
+        key = (r.repo, r.session)
+        current = best.get(key)
+        if current is None or r.timestamp < current[0]:
+            best[key] = (r.timestamp, r.context)
+    return best
+
+
+def floor_share(floor: int, requests: int, weighted: float) -> float | None:
+    """起点が周の加重に占める割合（%）。分からなければ `None`。
+
+    **近似である。** 起点は**最初のリクエストだけ cache write（×1.25）として
+    課金される**のに、ここでは全リクエストを cache read（×0.1）として数えている。
+    **つまりわずかに小さめに出る**——起点を過大に見せない向きなので、
+    「30% を占める」という主張に対しては**安全側**である。
+
+    **割り算にガードを置く。** レコードはあるのに加重が 0 のことがある
+    （トップレベルの usage が全部 0 のレコードが実在する）。
+    """
+    if not floor or not requests or not weighted:
+        return None
+    return 100 * (floor * requests * WEIGHTS["cache_read_input_tokens"]) / weighted
+
+
+def render_per_cycle(records, dev_loop_sessions, floors=None) -> str:
+    per = collections.defaultdict(lambda: {"weighted": 0.0, "requests": 0, "ctx": 0,
+                                           "day": "", "first": ""})
     for r in records:
         key = (r.repo, r.session)
         if key not in dev_loop_sessions:
             continue
         b = per[key]
+        if r.timestamp and not r.is_sub and (not b["first"] or r.timestamp < b["first"]):
+            b["first"] = r.timestamp
         b["weighted"] += r.weighted
         b["requests"] += 1
         b["ctx"] += r.cache_read
@@ -460,17 +531,37 @@ def render_per_cycle(records, dev_loop_sessions) -> str:
     if not per:
         return "dev-loop を回した周は見つかりませんでした。"
 
-    lines = ["| 日 | リポジトリ | req | 加重(M) | 平均文脈 |", "|---|---|---|---|---|"]
-    for (repo, _session), b in sorted(per.items(), key=lambda kv: kv[1]["day"]):
+    if floors is None:
+        floors = session_floors(records)
+    lines = ["| 日 | リポジトリ | req | 加重(M) | 平均文脈 | 起点 | 起点比 |",
+             "|---|---|---|---|---|---|---|"]
+    shares = []
+    for key, b in sorted(per.items(), key=lambda kv: kv[1]["day"]):
+        repo, _session = key
         ctx = b["ctx"] // b["requests"] if b["requests"] else 0
+        first_seen, floor = floors.get(key, ("", 0))
+        # **先頭が絞り込みで切られた周は、起点も起点比も出さない。**
+        # 残っている最古のレコードは**周の途中**なので、そこを起点と呼べば
+        # 100% を超える割合が出る（実測で 104% が出た）。**近い値で代用しない。**
+        truncated = bool(first_seen) and bool(b["first"]) and b["first"] > first_seen
+        share = None if truncated else floor_share(floor, b["requests"], b["weighted"])
+        if share is not None:
+            shares.append(share)
+        floor_cell = "–（先頭が範囲外）" if truncated else f"{floor // 1000}k"
         lines.append(f"| {b['day']} | {repo} | {b['requests']} "
-                     f"| {fmt_m(b['weighted'])} | {ctx // 1000}k |")
+                     f"| {fmt_m(b['weighted'])} | {ctx // 1000}k "
+                     f"| {floor_cell} | {f'{share:.0f}%' if share is not None else '–'} |")
 
     total_req = sum(b["requests"] for b in per.values())
     total_ctx = sum(b["ctx"] for b in per.values())
     lines.append("")
     lines.append(f"**{len(per)} 周・平均 {total_req // len(per)} req/周・"
                  f"平均文脈 {(total_ctx // total_req) // 1000 if total_req else 0}k**")
+    if shares:
+        # **中央値を出す。平均にしない**——起点比は 1 周の req が少ないほど跳ねるので、
+        # **短い周 1 つで平均が動く**（実測で 128 req の周が 39% を出している）。
+        lines.append(f"**起点が占める割合: 中央値 {statistics.median(shares):.0f}%**"
+                     f"（{len(shares)} 周で算出）")
     return "\n".join(lines)
 
 
@@ -515,6 +606,10 @@ def main(argv=None) -> int:
         return 0
 
     records, dev_loop_sessions, unreadable, broken = scan(root, args.merge_worktrees)
+    # **起点は絞り込みの前に作る。** `--since` が周の途中に落ちると、
+    # 残ったレコードの先頭は**周の途中**になる。そこを起点と呼ぶと
+    # **100% を超える起点比**が出る（実測で 104%）。
+    floors = session_floors(records)
     if args.since:
         records = [r for r in records if r.day >= args.since]
     if args.repo:
@@ -532,7 +627,7 @@ def main(argv=None) -> int:
     if args.split:
         print(render_split(records, dev_loop_sessions))
     elif args.per_cycle:
-        print(render_per_cycle(records, dev_loop_sessions))
+        print(render_per_cycle(records, dev_loop_sessions, floors))
     else:
         print(render_weekly(records, dev_loop_sessions))
     print()
