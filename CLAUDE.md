@@ -17,6 +17,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-plugin-versions.py` - カタログ構造と version 一致
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
+  - `check-norm-markers.py` - `（必須）` が原本（`SKILL.md`）の外に漏れていないか
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
   - `export-diagrams.py` - drawio の書き出しと `diagrams/exports.json` の更新（**CI からは呼ばない**）
   - `diagram_manifest.py` - 上の 2 本が共有する指紋の式と収集規則（**実行しない**。
@@ -26,6 +27,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `markdown_fences.py` - コードフェンスの除去と閉じ忘れの検出（**実行しない**。
     `check-plugin-versions.py` と `skill-metrics.py` が共有する。
     式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
+  - `test-check-norm-markers.py` - 必須マーカー検査の回帰テスト（変異テストを含む）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
   - `test-link-skills.py` / `test-check-description-sync.py` /
     `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
@@ -246,6 +248,25 @@ python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分
 python3 scripts/check-description-sync.py origin/main   # description の同期漏れ（同上）
 python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止め自体のテスト
 ```
+
+### 規範の原本は `SKILL.md` だけ
+
+**dev-loop の規範は `SKILL.md` にしか書かない。** `plugins/dev-loop/README.md` も
+公開ページも設計ドキュメントも、**指すだけで列挙を持たない**。
+
+**経緯（なぜ検査が要ったか）と実測は
+[設計ドキュメント §8.1](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#miscount)
+を正とする**（ここに再掲しない——**話を 2 箇所に置くのが、この規約が直した形そのもの**）:
+
+```bash
+python3 scripts/check-norm-markers.py       # マーカーが原本の外にあれば非ゼロ終了
+python3 scripts/test-check-norm-markers.py  # 歯止め自体のテスト（変異テストを含む）
+```
+
+**例外と、何を守り何を守らないかはスクリプトの docstring を正とする**（ここに列挙しない——
+**列挙を 2 箇所に置くのが、この規約が直した形そのもの**）。性質だけ言えば、これは
+「規範が漏れていない」の証明ではなく、
+**「著者が必須と申告した規範が原本の外に出ていない」の検査**である。
 
 ### description は 3 箇所にある
 
