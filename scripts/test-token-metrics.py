@@ -114,6 +114,34 @@ def main() -> int:
         w2, _, _ = mod.weighted_tokens(u)
         check("iterations があっても加重が変わらない", w2 == 500.0)
 
+        print("トップレベルが全部 0 で iterations に実数があるとき")
+        # **実データに 2 件あった**（全件 151,922 件中）。片方は cache read だけで
+        # 約 100 万トークン。**トップレベルだけ読むと丸ごと落ちる**（#95 のレビューが発見）。
+        u = {
+            "input_tokens": 0, "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0, "output_tokens": 0,
+            "iterations": [{"input_tokens": 2, "cache_creation_input_tokens": 545,
+                            "cache_read_input_tokens": 996796, "output_tokens": 3070}],
+        }
+        w, _, cr = mod.weighted_tokens(u)
+        # 2*1 + 545*1.25 + 996796*0.1 + 3070*5 = 2 + 681.25 + 99679.6 + 15350
+        check("iterations から拾う", abs(w - 115712.85) < 0.01)
+        check("cache read も iterations から取る", cr == 996796)
+
+        print("トップレベルに値があれば iterations を足さない")
+        w2, _, _ = mod.weighted_tokens(usage(inp=100, cw=200, cr=1000, out=10))
+        check("二重計上しない（500 のまま）", w2 == 500.0)
+        # トップレベルと iterations が食い違っていても、トップレベルを採る。
+        u3 = usage(inp=100)
+        u3["iterations"] = [{"input_tokens": 999999}]
+        w3, _, _ = mod.weighted_tokens(u3)
+        check("食い違ってもトップレベルを優先する", w3 == 100.0)
+
+        print("レコードはあるが加重が 0 でも落ちない")
+        root = base / "zero"
+        make_tree(root, {"repo-a/s.jsonl": [line(u=usage())]})
+        check("ゼロ除算にならない", mod.main(["--projects", str(root)]) == 0)
+
         print("サブエージェントを取りこぼさない")
         root = base / "sub"
         make_tree(root, {
@@ -214,11 +242,15 @@ def main() -> int:
         source = SCRIPT.read_text(encoding="utf-8")
         mutants = {
             "iterations も足す（二重計上になるはず）": (
-                '    cache_read = usage.get("cache_read_input_tokens") or 0',
-                '    for it in (usage.get("iterations") or []):\n'
-                '        for key, factor in WEIGHTS.items():\n'
-                '            weighted += (it.get(key) or 0) * factor\n'
-                '    cache_read = usage.get("cache_read_input_tokens") or 0',
+                "    effective = effective_usage(usage)",
+                "    effective = effective_usage(usage)\n"
+                "    for _it in (usage.get('iterations') or []):\n"
+                "        for _k in WEIGHTS:\n"
+                "            effective[_k] = (effective.get(_k) or 0) + (_it.get(_k) or 0)",
+            ),
+            "トップレベルが 0 でも iterations を見ない（取りこぼすはず）": (
+                "    return _sum_iterations(usage) or top",
+                "    return top",
             ),
             "サブエージェントを見ない（取りこぼすはず）": (
                 'for path in sorted(projects_root.rglob("*.jsonl")):',
@@ -245,9 +277,18 @@ def main() -> int:
             mscript = mroot / "scripts" / "token-metrics.py"
             mscript.write_text(source.replace(old, new), encoding="utf-8")
             tree = mroot / "projects"
+            top_zero = {
+                "input_tokens": 0, "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0, "output_tokens": 0,
+                "iterations": [{"input_tokens": 7, "cache_creation_input_tokens": 0,
+                                "cache_read_input_tokens": 0, "output_tokens": 0}],
+            }
             make_tree(tree, {
                 "repo-a/s.jsonl": [line(u=usage(inp=100, cw=200, cr=1000, out=10)),
                                    line(model="<synthetic>", u=usage(inp=0)),
+                                   # **トップレベルが全部 0 で iterations に実数**——
+                                   # この 1 行が無いと「iterations を見ない」変異が殺せない。
+                                   line(u=top_zero),
                                    line(u=usage(inp=10), tool=agent_use("dev-loop-verifier"))],
                 "repo-a/s/subagents/a.jsonl": [line(u=usage(inp=3000))],
             })

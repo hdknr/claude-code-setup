@@ -25,19 +25,29 @@
 #92 が使った換算をそのまま置いている。**請求と突き合わせていない**ので、
 **保証されるのは「#92 と同じ式である」ことだけ**で、**それが課金と一致するかは別問題**。
 
-**この式は 2 箇所にある。** 実装はここ（`WEIGHTS`）だけだが、
-**設計 §8.3 にも #92 時点の記録として同じ式が載っている**。あちらは
-「#92 の数字がどう作られたか」の記録なので消せない——消すと表の意味が読めなくなる。
-**比率が変わったら両方直すこと。**「1 箇所だけに置いた」と書きたくなるが、
-**実際には 2 箇所あるので、そう書けば嘘になる**（#94 で同じ形を 6 回やった）。
+**この式は 3 箇所にある。** 数えると:
+
+1. **実装** — このファイルの `WEIGHTS`
+2. **この段落** — 読む人のための再掲
+3. **設計 §8.3** — #92 時点の記録。「#92 の数字がどう作られたか」なので消せない
+   （消すと表の意味が読めなくなる）
+
+ほかに `test-token-metrics.py` の検算コメントにも係数が出るが、あれは
+**係数を変えればテストが落ちる**ので、黙って古くなる類ではない。
+
+**比率が変わったら 1〜3 を全部直すこと。**「1 箇所だけに置いた」と書きたくなるが、
+**実際には 3 箇所あるので、そう書けば嘘になる**（#94 で同じ形を 6 回やり、
+**この docstring でも一度「2 箇所」と数え違えた**——レビューが 3 箇所目を見つけた）。
 
 ## 落とし穴（どれも実測で確かめた）
 
 | 落とし穴 | どうしているか |
 | --- | --- |
 | **サブエージェントの取りこぼし** | 使用量は `<project>/<session>/subagents/*.jsonl` に分かれて入る。`*/*.jsonl` だけ見ると落ちる（割合は設計 §8.3 を見ること——**ここに数字を書かない**） |
-| **`usage.iterations` の二重計上** | 各要素が**トップレベルと同じ数字を再掲**している。実測 1,698 件すべてで一致し、要素が 2 つ以上のものは 0 件だった。**トップレベルだけ読む** |
-| **`<synthetic>` モデル** | 実測で**全件 0 トークン**（62/62）。足しても数は変わらないが**件数の分母が狂う**ので除外する |
+| **`usage.iterations` の二重計上** | 各要素が**トップレベルと同じ数字を再掲**している。**足すと倍になる**ので、既定ではトップレベルだけ読む |
+| **その逆——`iterations` にしか実数が無い** | **トップレベルが全部 0 のレコードが実在する**（全件走査で 2 件。片方は cache read だけで約 100 万トークン）。**トップレベルだけ読むと丸ごと落ちる**ので、**全部 0 のときに限り `iterations` を見る**（`effective_usage`） |
+| **`<synthetic>` モデル** | 実測で**全件 0 トークン**。足しても数は変わらないが**件数の分母が狂う**ので除外する |
+| **レコードはあるのに加重が 0** | 上の 0 トークンのレコードだけが絞り込みに残ると起きる。**割り算にガードを置く**（置き忘れて落ちた） |
 | **`grep dev-loop` で周を判定する** | **使えない**——`MEMORY.md` の記載に当たって全件ヒットする。`Skill` の `skill` と `Agent` の `subagent_type` を見る |
 | **読めないファイル** | 件数を**報告に出す**。黙って 0 にしない |
 | **`--repo` の部分一致が広すぎる** | `--list-repos` で**実際に何にマッチするかを先に見る**。実測で `taihei-epm` は **7 ディレクトリ**に当たった |
@@ -46,13 +56,22 @@
 **`usage` の在処を型で絞らない。** 実測では `assistant` にしか無いが、
 `message.usage` の有無で拾えば、将来ほかの型に付いても落ちない。
 
+**具体的な件数をここに書かない。** データは増えるので、**書いた瞬間から古くなる**
+（#94 で同じ形を繰り返した）。**数えたければ走らせること**——落とし穴の形は変わらないが、
+**母数は毎回変わる**。上の表で数字を出しているのは「2 件」だけで、これは
+**性質が変わる境目**（0 件なら規則が要らない）なので残してある。
+
 ## #92 の数字を再現するものではない
 
 設計 §8.3 の表と**突き合わせたが、一致しなかった**。完全な名前で絞ると
-**セッション数と dev-loop 周の数は合う**のに、**加重トークンは合わない**（2026-W37 で
-472M 対 637M）。**原因は特定していない**——#92 側がどの範囲で数えたか（`-web` や `-ui` を
-含めたか・worktree を含めたか・日付を UTC で切ったか）が**散文にしか残っていない**ためで、
-**まさにこのスクリプトが無かったことの帰結**である。
+**セッション数（25）と dev-loop 周の数（12）は合う**のに、**加重トークンは合わない**
+（2026-W37 で 472M 対 637M）。
+
+**探したうえで特定できていない。** 試したのは、リポジトリ名の絞り方（部分一致／完全な名前）・
+`--merge-worktrees` の有無・絞らない全体。**どれも 637M にならなかった**
+（worktree を寄せても 472M のまま＝この期間の worktree 分は元々別リポジトリに出ていない）。
+**#92 側がどの範囲で数えたのかが散文にしか残っていない**以上、
+**こちらから当てにいく手段が無い**——**まさにこのスクリプトが無かったことの帰結**である。
 
 **だから「#92 を再現した」とは書かない。** 言えるのは、**今後は同じ式で before/after が
 取れる**ことだけ。§8.3 の表は 2026-09-15 時点の記録として**そのまま置く**。
@@ -69,8 +88,8 @@ import os
 import pathlib
 import sys
 
-# 加重の式。**実装はここだけ。ただし設計 §8.3 にも #92 時点の記録として同じ式がある**
-# （docstring の「数え方」を見ること）。**変えるなら両方。**
+# 加重の式。**実装はここだけだが、式そのものは 3 箇所にある**
+# （docstring の「数え方」に一覧がある）。**変えるなら全部。**
 WEIGHTS = {
     "input_tokens": 1.0,
     "cache_creation_input_tokens": 1.25,
@@ -109,22 +128,57 @@ class Record:
         self.cache_read = cache_read
 
 
-def weighted_tokens(usage: dict) -> tuple[float, int, int]:
-    """(加重, 生の合計, cache read) を返す。
+def _sum_iterations(usage: dict) -> dict:
+    """`iterations` の各キーを足した辞書を返す（要素が無ければ空）。"""
+    its = usage.get("iterations")
+    if not isinstance(its, list) or not its:
+        return {}
+    out = {}
+    for key in WEIGHTS:
+        total = 0
+        for item in its:
+            if not isinstance(item, dict):
+                continue
+            value = item.get(key) or 0
+            if isinstance(value, (int, float)):
+                total += value
+        out[key] = total
+    return out
 
-    **`iterations` は読まない。** 各要素がトップレベルと同じ数字を持っているので、
-    足すと二重計上になる。
+
+def effective_usage(usage: dict) -> dict:
+    """実際に消費された数字を返す。
+
+    **既定はトップレベル。`iterations` は足さない**——各要素がトップレベルと同じ数字を
+    再掲しているので、足すと二重計上になる（実測 151,922 件中 151,920 件がこの形）。
+
+    **ただし「トップレベルが全部 0 で `iterations` には実数がある」レコードが実在する。**
+    実測で 2 件（2026-08-17）あり、片方は cache read だけで 996,796 トークンあった。
+    **トップレベルだけ読むと、これを丸ごと取りこぼす**——#95 のレビューが見つけた。
+    **二重計上を避ける規則が、逆向きに取りこぼしを作っていた**ことになる。
+
+    だから**トップレベルが全部 0 のときに限り `iterations` を見る**。
+    どちらか一方しか使わないので、**二重計上にはならない**。
     """
+    top = {}
+    for key in WEIGHTS:
+        value = usage.get(key) or 0
+        top[key] = value if isinstance(value, (int, float)) else 0
+    if any(top.values()):
+        return top
+    return _sum_iterations(usage) or top
+
+
+def weighted_tokens(usage: dict) -> tuple[float, int, int]:
+    """(加重, 生の合計, cache read) を返す。"""
+    effective = effective_usage(usage)
     weighted = 0.0
     raw = 0
     for key, factor in WEIGHTS.items():
-        value = usage.get(key) or 0
-        if not isinstance(value, (int, float)):
-            continue
+        value = effective.get(key) or 0
         weighted += value * factor
         raw += int(value)
-    cache_read = usage.get("cache_read_input_tokens") or 0
-    return weighted, raw, int(cache_read) if isinstance(cache_read, (int, float)) else 0
+    return weighted, raw, int(effective.get("cache_read_input_tokens") or 0)
 
 
 def session_of(path: pathlib.Path, projects_root: pathlib.Path,
@@ -337,9 +391,13 @@ def main(argv=None) -> int:
     print(render_per_cycle(records, dev_loop_sessions) if args.per_cycle
           else render_weekly(records, dev_loop_sessions))
     print()
+    # **割り算にガードを置く。** レコードはあるのに加重が 0 のことがある——
+    # 実測で、トップレベルの usage が全部 0 のレコードが実在した。絞り込みの結果
+    # それだけが残ると、ガードが無ければ ZeroDivisionError で落ちる（#95 のレビューが
+    # 実データで再現させた）。`render_*` の割り算は守ってあったのに、ここだけ抜けていた。
+    sub_ratio = f"{100 * sub_weighted / total_weighted:.0f}%" if total_weighted else "–"
     print(f"レコード {len(records)} 件（うちサブエージェント {sub} 件＝"
-          f"加重の {100 * sub_weighted / total_weighted:.0f}%）。"
-          f"加重合計 {fmt_m(total_weighted)}M。")
+          f"加重の {sub_ratio}）。加重合計 {fmt_m(total_weighted)}M。")
     # **読めなかったファイルは黙って 0 にしない。**
     if unreadable:
         print(f"⚠ 読めなかったファイル: {unreadable} 件（集計から落ちている）")
