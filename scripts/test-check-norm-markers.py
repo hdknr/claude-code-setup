@@ -256,6 +256,12 @@ def main() -> int:
                 "site/plugins/index.md": f"# ビルド成果物{MARKER}\n",
                 ".claude/plans/issue-1.md": f"# 作業メモ{MARKER}\n",
                 "docs/nested/deep/page.md": f"# 深い場所{MARKER}\n",
+                # **除外はトップレベルとは限らない。** フィクスチャを浅い位置にだけ置くと、
+                # 判定を `parts[0] in SKIP_DIRS` に変える変異が生き残る——実リポジトリで
+                # 最もありうる形（入れ子の `node_modules/` や `.venv/`）が走査に戻っても
+                # 緑のままになる（#94 のレビューが指摘）。
+                "docs/vendor/node_modules/pkg/README.md": f"# 依存{MARKER}\n",
+                "tools/.venv/lib/page.md": f"# 仮想環境{MARKER}\n",
             },
         )
         found = run(root)
@@ -263,6 +269,9 @@ def main() -> int:
         check("site/ は見ない", "site/plugins/index.md" not in rels)
         check(".claude/ は見ない", ".claude/plans/issue-1.md" not in rels)
         check("入れ子の深い .md も見る", "docs/nested/deep/page.md" in rels)
+        check("入れ子の node_modules/ も見ない",
+              "docs/vendor/node_modules/pkg/README.md" not in rels)
+        check("入れ子の .venv/ も見ない", "tools/.venv/lib/page.md" not in rels)
 
         print("終了コード（CI が見ているのはここ）")
         # **`violations()` だけを呼ぶテストでは、CI が依存する終了コードが無検査になる。**
@@ -320,8 +329,12 @@ def main() -> int:
                 "stripped = path.read_text(encoding=\"utf-8\").splitlines()",
             ),
             "囲みの長さを見ない（二重バッククォートが違反になるはず）": (
-                'CODE_SPAN = re.compile(r"(`+)(?:(?!\\1)[\\s\\S])*?\\1")',
+                'CODE_SPAN = re.compile(r"(`+)[\\s\\S]*?\\1")',
                 'CODE_SPAN = re.compile(r"`[^`]*`")',
+            ),
+            "除外をパスの先頭だけで見る（入れ子の除外が走査に戻るはず）": (
+                "if any(part in SKIP_DIRS for part in path.relative_to(root).parts):",
+                "if path.relative_to(root).parts[0] in SKIP_DIRS:",
             ),
         }
         # **終了コードの変異は、起動しないと殺せない。** `violations()` を呼ぶだけの
@@ -347,6 +360,36 @@ def main() -> int:
         # 何も見ていないことになる。
         check("変異を殺せる: 違反時に 0 を返す（起動しないと殺せない）", proc.returncode == 0)
 
+        # **向きが逆の変異は、汎用ループでは扱えない。** 下のループは「正しい実装なら 0 件の
+        # 入力で、変異体が違反を出す」形で殺す。囲みを貪欲に取る変異は逆で、
+        # **正しい実装が捕まえるものを変異体が見逃す**ので、両方を走らせて差を見る。
+        greedy = (
+            'CODE_SPAN = re.compile(r"(`+)[\\s\\S]*?\\1")',
+            'CODE_SPAN = re.compile(r"(`+)[\\s\\S]*\\1")',
+        )
+        source_for_greedy = SCRIPT.read_text(encoding="utf-8")
+        assert source_for_greedy.count(greedy[0]) == 1, "貪欲変異の対象が 1 箇所でない"
+        groot = base / "mutant-greedy"
+        assert_not_real_repo(groot)
+        (groot / "scripts").mkdir(parents=True, exist_ok=True)
+        (groot / "scripts" / "check-norm-markers.py").write_text(
+            source_for_greedy.replace(*greedy), encoding="utf-8")
+        shutil.copy(REAL_REPO / "scripts" / "markdown_fences.py",
+                    groot / "scripts" / "markdown_fences.py")
+        # 「囲みと囲みの間の素のマーカー」——貪欲だと 1 つの囲みとして食われて消える。
+        make_repo(
+            groot,
+            origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+            others={"plugins/dev-loop/README.md": f"# README\n\n`A` は{MARKER}で `B`\n"},
+        )
+        gspec = importlib.util.spec_from_file_location(
+            "mut_greedy", groot / "scripts" / "check-norm-markers.py")
+        gmod = importlib.util.module_from_spec(gspec)
+        gspec.loader.exec_module(gmod)
+        correct = load(groot)
+        check("変異を殺せる: 囲みを貪欲に取る（正しい実装は捕まえ、変異体は見逃す）",
+              len(correct.violations(groot)) == 1 and len(gmod.violations(groot)) == 0)
+
         source = SCRIPT.read_text(encoding="utf-8")
         for name, (old, new) in mutants.items():
             assert source.count(old) == 1, f"変異の対象が 1 箇所でない: {name}"
@@ -367,6 +410,9 @@ def main() -> int:
                         f"\n``{MARKER}`` と二重で囲んでも引用である。\n"
                         f"\n```bash\necho 例{MARKER}\n```\n"
                     ),
+                    # 入れ子の除外ディレクトリ。除外をパスの先頭だけで見る変異は、
+                    # **これが無いと殺せない**。
+                    "docs/vendor/node_modules/pkg/README.md": f"# 依存{MARKER}\n",
                 },
             )
             spec = importlib.util.spec_from_file_location(f"mut_{mroot.name}", mscript)
