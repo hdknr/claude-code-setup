@@ -20,6 +20,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-norm-markers.py` - `（必須）` が原本（`SKILL.md`）の外に漏れていないか
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
   - `export-diagrams.py` - drawio の書き出しと `diagrams/exports.json` の更新（**CI からは呼ばない**）
+  - `token-metrics.py` - ローカルのトランスクリプトからトークン使用量を集計（**CI からは呼ばない**
+    ——入力が `~/.claude/projects/` にあり、リポジトリの外で利用者ごとに違う）
   - `diagram_manifest.py` - 上の 2 本が共有する指紋の式と収集規則（**実行しない**。
     式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
   - `skill-metrics.py` - `SKILL.md` の節構造を測り、設計ドキュメント §8.2 の
@@ -28,6 +30,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `check-plugin-versions.py` と `skill-metrics.py` が共有する。
     式が 2 箇所にあると片方だけ緑になるので 1 箇所に置く）
   - `test-check-norm-markers.py` - 必須マーカー検査の回帰テスト（変異テストを含む）
+  - `test-token-metrics.py` - 集計の回帰テスト（変異テストを含む。**本体は CI から呼ばないが
+    テストは回す**——`test-export-diagrams.py` と同じ形）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
   - `test-link-skills.py` / `test-check-description-sync.py` /
     `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
@@ -248,6 +252,30 @@ python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分
 python3 scripts/check-description-sync.py origin/main   # description の同期漏れ（同上）
 python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止め自体のテスト
 ```
+
+### トークン使用量を測る
+
+#92 で「1 周の重さを減らす」規範を入れたが、**効果を測る手段が無かった**——
+受入基準の「トークンが実際に減ること」は**未証明**のまま人間レビューに回している。
+#95 で測る側を置いた（**CI からは呼ばない**。入力がリポジトリの外にある）:
+
+```bash
+python3 scripts/token-metrics.py --since 2026-09-01          # 週次の推移
+python3 scripts/token-metrics.py --split                     # dev-loop の周とそれ以外
+python3 scripts/token-metrics.py --per-cycle                 # dev-loop の周ごと
+python3 scripts/token-metrics.py --list-repos --repo taihei  # 先に何に当たるかを見る
+python3 scripts/test-token-metrics.py                        # 歯止め自体のテスト
+```
+
+**絞る前に `--list-repos` を見ること。** `--repo` は部分一致で、**広すぎることがある**。
+**worktree も別プロジェクトとして記録される**（`<repo>--claude-worktrees-<name>`）ので、
+寄せたいなら `--merge-worktrees`。
+
+**このスクリプトを作る過程で、設計 §8.3 の表の誤りが分かった**——**加重と req が
+約 1.8 倍過大**（1 応答が複数行に書かれ、各行が `usage` を再掲する）。
+**どの数字が影響を受けるかは
+[§8.3 の訂正](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#miscounted-rows)
+を正とする**（ここに再掲しない）。**数え方の落とし穴は docstring を正とする**（同上）。
 
 ### 規範の原本は `SKILL.md` だけ
 
