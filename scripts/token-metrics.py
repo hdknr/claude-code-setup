@@ -226,7 +226,16 @@ def tool_uses(message: dict):
 
 
 def _iter_rows(path: pathlib.Path):
-    """`(row, 壊れているか)` を 1 行ずつ返す。
+    """`(row, 問題)` を 1 行ずつ返す。問題は `None` / `"broken"` / `"unreadable"`。
+
+    **開く失敗を呼び出し側の `try` で捕まえられない。** これはジェネレータなので、
+    `path.open()` は**最初の `next()` まで動かない**——`rows = _iter_rows(path)` を
+    `try` で囲んでも、その `try` を抜けた後の `for` で例外が出る。
+    **実際に、読めないファイルが 1 つあるだけで全体が落ちた**（#95 の 3 パス目）。
+    だから**ここで捕まえて、問題として返す**。
+
+    **読み取り中の失敗も捕まえる。** 走査の最中にトランスクリプトが消えることがある
+    （レビュー中に実際に `FileNotFoundError` を踏んだ）。`yield` を囲む `try` で拾う。
 
     **`read_text()` ＋ `splitlines()` にしない。** ファイル 1 つ分のテキストと
     全行のリストが**同時にメモリに載る**——実測でピーク 1.1GB になり、
@@ -236,20 +245,29 @@ def _iter_rows(path: pathlib.Path):
     **壊れた行は黙って落とさず、印をつけて返す**（実データに実在し、
     そのうち何行かは `"usage"` を含んでいた）。
     """
-    with path.open(encoding="utf-8", errors="replace") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except (ValueError, TypeError):
-                yield None, True
-                continue
-            if not isinstance(row, dict):
-                yield None, True
-                continue
-            yield row, False
+    try:
+        handle = path.open(encoding="utf-8", errors="replace")
+    except OSError:
+        yield None, "unreadable"
+        return
+    try:
+        with handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except (ValueError, TypeError):
+                    yield None, "broken"
+                    continue
+                if not isinstance(row, dict):
+                    yield None, "broken"
+                    continue
+                yield row, None
+    except OSError:
+        # 走査中に消えた・読めなくなった。**黙って打ち切らない。**
+        yield None, "unreadable"
 
 
 def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
@@ -280,13 +298,11 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
 
     for path in sorted(projects_root.rglob("*.jsonl")):
         repo, session, is_sub = session_of(path, projects_root, merge_worktrees)
-        try:
-            rows = _iter_rows(path)
-        except OSError:
-            unreadable += 1
-            continue
-        for row, bad in rows:
-            if bad:
+        for row, problem in _iter_rows(path):
+            if problem == "unreadable":
+                unreadable += 1
+                continue
+            if problem == "broken":
                 broken_lines += 1
                 continue
             message = row.get("message")

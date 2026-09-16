@@ -279,6 +279,30 @@ def main() -> int:
         # **壊れた行は数える。** 初版は 0 をアサートして「黙って落とす」を固定していた。
         check("壊れた行を数えている", broken == 2)
 
+        print("読めないファイルがあっても落ちない")
+        # **`_iter_rows` はジェネレータなので、`path.open()` は最初の `next()` まで動かない。**
+        # 呼び出し側の `try` で囲んでも捕まらず、**読めないファイル 1 つで全体が落ちた**
+        # （#95 の 3 パス目。性能修正のときに入った）。**`unreadable` を 0 としか
+        # アサートしていなかったので、テストも通り抜けていた。**
+        root = base / "unreadable"
+        make_tree(root, {
+            "repo-a/ok.jsonl": [line(u=usage(inp=10))],
+            "repo-a/locked.jsonl": [line(u=usage(inp=999))],
+        })
+        locked = root / "repo-a" / "locked.jsonl"
+        locked.chmod(0o000)
+        try:
+            records, _, unreadable, _ = mod.scan(root)
+            check("読めないファイルで落ちない", True)
+            check("読めるファイルは数える", len(records) == 1)
+            check("読めなかった件数を返す", unreadable == 1)
+            check("終了コードは 0（報告して続ける）",
+                  mod.main(["--projects", str(root)]) == 0)
+        except OSError:
+            check("読めないファイルで落ちない", False)
+        finally:
+            locked.chmod(0o644)
+
         print("usage の在処を型で絞らない")
         root = base / "type"
         make_tree(root, {
@@ -312,6 +336,8 @@ def main() -> int:
         check("走査先が無ければ非ゼロ", mod.main(["--projects", str(missing)]) == 1)
 
         print("変異テスト（壊したのに緑なら失格）")
+        # chmod したファイルは、テンポラリを消す前に戻す（消せなくなるため）。
+        locked_paths: list[Path] = []
         source = SCRIPT.read_text(encoding="utf-8")
         mutants = {
             "iterations を足す（二重計上になるはず）": (
@@ -332,12 +358,25 @@ def main() -> int:
                 "            if previous is None or record.weighted < previous.weighted:",
             ),
             "壊れた行を数えない": (
-                "            if bad:\n                broken_lines += 1\n                continue",
-                "            if bad:\n                continue",
+                '            if problem == "broken":\n'
+                "                broken_lines += 1\n                continue",
+                '            if problem == "broken":\n                continue',
             ),
             "壊れた行を JSON でないと判定しない": (
-                "            if not isinstance(row, dict):\n                yield None, True",
-                "            if not isinstance(row, dict):\n                yield row, False",
+                '                if not isinstance(row, dict):\n'
+                '                    yield None, "broken"',
+                '                if not isinstance(row, dict):\n'
+                '                    yield row, None',
+            ),
+            "読めないファイルを数えない": (
+                '            if problem == "unreadable":\n'
+                "                unreadable += 1\n                continue",
+                '            if problem == "unreadable":\n                continue',
+            ),
+            "開く失敗を呼び出し側に投げる（全体が落ちるはず）": (
+                '    try:\n        handle = path.open(encoding="utf-8", errors="replace")\n'
+                '    except OSError:\n        yield None, "unreadable"\n        return',
+                '    handle = path.open(encoding="utf-8", errors="replace")',
             ),
             "サブエージェントを見ない（取りこぼすはず）": (
                 'for path in sorted(projects_root.rglob("*.jsonl")):',
@@ -457,7 +496,11 @@ def main() -> int:
                 # **2 セッション目**——`--split` の `req/セッション` の割り算に要る
                 # （1 群 1 セッションだと商が変わらず、変異が生き残る）。
                 "repo-a/s2.jsonl": [line(u=usage(inp=16), tool=skill_use("dev-loop"))],
+                # **読めないファイル**——OSError まわりの変異に要る（下で chmod する）。
+                "repo-a/locked.jsonl": [line(u=usage(inp=17))],
             })
+            (tree / "repo-a" / "locked.jsonl").chmod(0o000)
+            locked_paths.append(tree / "repo-a" / "locked.jsonl")
             correct = load()
             mutated = load(mscript)
             # **`scan()` の 3 つだけを比べると、`main()` / `render_*` / `iso_week` /
@@ -488,6 +531,9 @@ def main() -> int:
                         buf.getvalue())
 
             check(f"変異を殺せる: {name}", observe(correct) != observe(mutated))
+
+        for locked_path in locked_paths:
+            locked_path.chmod(0o644)
 
         print("実環境を対象にしない歯止め")
         try:
