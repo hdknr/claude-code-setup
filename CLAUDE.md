@@ -18,7 +18,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `check-norm-markers.py` - `（必須）` が原本（`SKILL.md`）の外に漏れていないか
-  - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか（**リポジトリ全体**）
+  - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
+    （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
   - `export-diagrams.py` - drawio の書き出しと `diagrams/exports.json` の更新（**CI からは呼ばない**）
   - `token-metrics.py` - ローカルのトランスクリプトからトークン使用量を集計（**CI からは呼ばない**
@@ -313,7 +314,7 @@ python3 scripts/test-check-norm-markers.py  # 歯止め自体のテスト（変�
 | **記述** | 「ここにあるのは各段の名前だけ」 | 破ると**読んで分かる**（書いてあるものと違う） |
 | **指し先** | 「率は設計 §8.3 を正とする」 | **書いた時点で指し先が要る**ので、無ければその場で気づく。**リンクの形で書けば機械でも見られる**（下記） |
 
-**禁止の形は、3 周続けて破られた**（#94 で 4 件・#95 で 2 件）。
+**禁止の形は、周をまたいで繰り返し破られた。**
 **破った箇所の一覧と経緯は [#97](https://github.com/hdknr/claude-code-setup/issues/97) を正とする。**
 
 **機械で見られるのは、指し先を*リンクで*書いたものだけである。**

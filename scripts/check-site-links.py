@@ -10,8 +10,11 @@ CI（`.github/workflows/docs.yml`）から呼ばれるが、ローカルでも�
 
 **指し先の実在を見る仕組みは、あるにはあった**——`check-plugin-versions.py` が
 配布物（`plugins/` の `.md`）からのリンクを見ていた。**だが範囲がそこだけだった。**
-実測では、リポジトリ全体の絶対リンク 30 件のうち**検査されていたのは 17 件で、
-残り 13 件（`CLAUDE.md`・`scripts/`・`docs/`・`README.md`）は無検査**だった。
+`CLAUDE.md` と `scripts/` の docstring から張ったリンクは、**誰も見ていなかった**。
+
+（**何件が無検査だったかをここに書かない。** 一度書いたが、**書いた時点の数が
+実装の途中の状態を指しており、同じコミットの中で再現しなくなっていた**
+——#97 の 1 パス目のレビューが数え直して見つけた。**数えたければ走らせること。**）
 
 **無検査の範囲で実際に壊れた。** #95 で `scripts/token-metrics.py` と `CLAUDE.md` から
 設計ドキュメントへリンクを張り、**その指し先の節に、指すと書いた内容が無かった**
@@ -23,6 +26,8 @@ CI（`.github/workflows/docs.yml`）から呼ばれるが、ローカルでも�
 | 守らないもの | なぜ |
 | --- | --- |
 | **相対リンク** | `mkdocs build --strict` が `docs/` の中を見る。ただし**`docs/` の外から張った相対リンクは誰も見ていない** |
+| **走査する拡張子の外** | 見るのは `SUFFIXES` に挙げた拡張子だけ。**「リポジトリ全体」と書いてあっても、拡張子の無いファイルや挙げていない形式は見ていない**（#97 の 1 パス目で `.sh` と `.toml` の抜けを指摘された） |
+| **作業メモ** | `.claude/plans/` と `.claude/worktrees/` は見ない（どちらも gitignore 済み） |
 | **指し先に「指すと書いた内容」があるか** | 見るのは**アンカーが実在するか**だけ。**節の中身は読まない**——#95 で壊れたのはまさにここで、`#miscount` は実在したが `#75` の話が無かった |
 | **リンクを張らずに文章で指すこと** | 「`SKILL.md` の手順 6 を正とする」のようにリンクが無ければ、拾いようがない |
 | **外部サイトへのリンク** | このサイトの絶対 URL だけを見る |
@@ -46,17 +51,27 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = REPO_ROOT / "docs"
 
 # 走査しない場所。**ビルド成果物と作業メモを見ない。**
-SKIP_DIRS = {".git", "site", ".venv", "node_modules", "__pycache__", ".claude"}
+#
+# **`.claude/` を丸ごと外さない。** `.claude/commands/` は**追跡されている配布物**で、
+# そこにも公開ページへのリンクが書かれうる。外すのは**作業メモと worktree だけ**
+# （どちらも gitignore 済み）。**最初は `.claude/` ごと外していた**
+# ——#97 の 1 パス目のレビューが、`.claude/commands/release.md` が無検査だと指摘した。
+SKIP_DIRS = {".git", "site", ".venv", "node_modules", "__pycache__"}
+SKIP_PATHS = (".claude/plans", ".claude/worktrees")
 
 # 走査する拡張子。**`.md` だけにしない**——#95 のリンクは `.py` の docstring にあった。
-SUFFIXES = {".md", ".py", ".yml", ".yaml", ".json"}
+# **`.sh` と `.toml` も見る**（配布するスクリプトと設定にも書ける）。
+SUFFIXES = {".md", ".py", ".yml", ".yaml", ".json", ".sh", ".toml", ".txt"}
 
 
 def sources(root: Path):
     for path in sorted(root.rglob("*")):
         if path.is_dir() or path.suffix not in SUFFIXES:
             continue
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+        rel = path.relative_to(root)
+        if any(part in SKIP_DIRS for part in rel.parts):
+            continue
+        if rel.as_posix().startswith(SKIP_PATHS):
             continue
         yield path
 
