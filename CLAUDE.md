@@ -261,18 +261,21 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 
 ```bash
 python3 scripts/token-metrics.py --since 2026-09-01          # 週次の推移
+python3 scripts/token-metrics.py --split                     # dev-loop の周とそれ以外
 python3 scripts/token-metrics.py --per-cycle                 # dev-loop の周ごと
 python3 scripts/token-metrics.py --list-repos --repo taihei  # 先に何に当たるかを見る
 python3 scripts/test-token-metrics.py                        # 歯止め自体のテスト
 ```
 
-**絞る前に `--list-repos` を見ること。** `--repo` は部分一致で、**広すぎることがある**
-——実測で `taihei-epm` は **7 ディレクトリ**に当たった。**worktree も別プロジェクトとして
-記録される**（`<repo>--claude-worktrees-<name>`）ので、寄せたいなら `--merge-worktrees`。
+**絞る前に `--list-repos` を見ること。** `--repo` は部分一致で、**広すぎることがある**。
+**worktree も別プロジェクトとして記録される**（`<repo>--claude-worktrees-<name>`）ので、
+寄せたいなら `--merge-worktrees`。
 
-**このスクリプトは設計 §8.3 の数字を再計算しない。** あれは 2026-09-15 時点の記録として
-凍結してある。**数え方の落とし穴と、#92 の値と一致しなかったことは docstring を正とする**
-（ここに再掲しない）。
+**このスクリプトを作る過程で、設計 §8.3 の表の誤りが分かった**——**加重と req が
+約 1.8 倍過大**（1 応答が複数行に書かれ、各行が `usage` を再掲する）。
+**どの数字が影響を受けるかは
+[§8.3 の訂正](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#miscounted-rows)
+を正とする**（ここに再掲しない）。**数え方の落とし穴は docstring を正とする**（同上）。
 
 ### 規範の原本は `SKILL.md` だけ
 

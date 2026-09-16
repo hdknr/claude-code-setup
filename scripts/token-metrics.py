@@ -14,10 +14,10 @@
 残っていない**。受入基準のうち「トークンが実際に減ること」は**未証明**として人間レビューに
 回したが、**データが溜まった時点で測れる状態を作っておかないと、未証明が回収されない**。
 
-**#92 の計測値そのものは再計算しない。** あれは
+**このスクリプトが出すのは今の値**で、
 [設計 §8.3](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#session-split)
-に凍結した 2026-09-15 時点の実測で、**ここで数え直すと同じ量に 2 つの公式な数ができる**
-（#94 で実際にやって直した）。このスクリプトが出すのは**今の値**である。
+の表を書き換えるものではない（あちらは 2026-09-15 時点の記録）。
+**ただし、突き合わせた結果あちらの誤りが分かった**——下の「§8.3 の表は…」を見ること。
 
 ## 数え方
 
@@ -43,15 +43,17 @@
 
 | 落とし穴 | どうしているか |
 | --- | --- |
+| **1 応答が複数行に書かれる** | 各行が**同じ `message.id` と同じ `usage`** を再掲する。行ごとに足すと**加重が 1.77 倍・req が 1.80 倍**に膨らむ。`message.id` ごとに畳んで**最大を採る**（`output_tokens` が育っていく形があるため） |
 | **サブエージェントの取りこぼし** | 使用量は `<project>/<session>/subagents/*.jsonl` に分かれて入る。`*/*.jsonl` だけ見ると落ちる（割合は設計 §8.3 を見ること——**ここに数字を書かない**） |
 | **`usage.iterations` の二重計上** | 各要素が**トップレベルと同じ数字を再掲**している。**足すと倍になる**ので、既定ではトップレベルだけ読む |
-| **その逆——`iterations` にしか実数が無い** | **トップレベルが全部 0 のレコードが実在する**（全件走査で 2 件。片方は cache read だけで約 100 万トークン）。**トップレベルだけ読むと丸ごと落ちる**ので、**全部 0 のときに限り `iterations` を見る**（`effective_usage`） |
+| **その逆——`iterations` にしか実数が無い** | **トップレベルが 0 のレコードが実在する**（全件走査で 2 件。**同じリクエストの重複**で、cache read だけで約 100 万トークン）。**トップレベルだけ読むと丸ごと落ちる**ので、**キーごとに大きいほうを採る**（`effective_usage`） |
 | **`<synthetic>` モデル** | 実測で**全件 0 トークン**。足しても数は変わらないが**件数の分母が狂う**ので除外する |
 | **レコードはあるのに加重が 0** | 上の 0 トークンのレコードだけが絞り込みに残ると起きる。**割り算にガードを置く**（置き忘れて落ちた） |
 | **`grep dev-loop` で周を判定する** | **使えない**——`MEMORY.md` の記載に当たって全件ヒットする。`Skill` の `skill` と `Agent` の `subagent_type` を見る |
-| **読めないファイル** | 件数を**報告に出す**。黙って 0 にしない |
-| **`--repo` の部分一致が広すぎる** | `--list-repos` で**実際に何にマッチするかを先に見る**。実測で `taihei-epm` は **7 ディレクトリ**に当たった |
+| **読めないファイル・壊れた行** | どちらも件数を**報告に出す**。黙って 0 にしない——実データに壊れた行が実在し、**そのうち何行かは `"usage"` を含んでいた** |
+| **`--repo` の部分一致が広すぎる** | `--list-repos` で**実際に何にマッチするかを先に見る**。実測で `taihei-epm` は **6 ディレクトリ**に当たった |
 | **worktree が別プロジェクトとして記録される** | `<repo>--claude-worktrees-<name>` という別ディレクトリになる。**同じリポジトリの作業なのに別々に数えられる**。寄せたいなら `--merge-worktrees` |
+| **日と週の境目が UTC** | タイムスタンプは全件 `…Z`。`--since` と ISO 週の境界は **UTC で切られる**ので、JST の朝 9 時前の作業は**前日**に入る。週単位の before/after を見るときに効く |
 | **1 つの会話が複数の「周」に見える** | 周はセッション id で数えるが、**worktree を移ると別セッションになる**。`/dev-loop` を 1 本の会話で複数 Issue に回すと、**`--per-cycle` の行数が実際の周より多く出る**。`--merge-worktrees` はリポジトリ名を寄せるだけで、**セッションは寄せない**（寄せると別々の周まで 1 つになる）。**「1 周あたり req」は上限ではなく下限として読むこと** |
 
 **`usage` の在処を型で絞らない。** 実測では `assistant` にしか無いが、
@@ -62,20 +64,25 @@
 **母数は毎回変わる**。上の表で数字を出しているのは「2 件」だけで、これは
 **性質が変わる境目**（0 件なら規則が要らない）なので残してある。
 
-## #92 の数字を再現するものではない
+## 設計 §8.3 の表は、加重と req が約 1.8 倍過大である
 
-設計 §8.3 の表と**突き合わせたが、一致しなかった**。完全な名前で絞ると
-**セッション数（25）と dev-loop 周の数（12）は合う**のに、**加重トークンは合わない**
-（2026-W37 で 472M 対 637M）。
+**このスクリプトを作る過程で、#92 の数字の誤りが分かった。**
 
-**探したうえで特定できていない。** 試したのは、リポジトリ名の絞り方（部分一致／完全な名前）・
-`--merge-worktrees` の有無・絞らない全体。**どれも 637M にならなかった**
-（worktree を寄せても 472M のまま＝この期間の worktree 分は元々別リポジトリに出ていない）。
-**#92 側がどの範囲で数えたのかが散文にしか残っていない**以上、
-**こちらから当てにいく手段が無い**——**まさにこのスクリプトが無かったことの帰結**である。
+同じ範囲（`taihei-epm-server`・2026-09-01 以降）を `--split` で出すと、
+**比率（95% / 5%）とセッション数は §8.3 の表と一致する**のに、
+**加重と「リクエスト/セッション」だけが 1.8 分の 1 になる**。
 
-**だから「#92 を再現した」とは書かない。** 言えるのは、**今後は同じ式で before/after が
-取れる**ことだけ。§8.3 の表は 2026-09-15 時点の記録として**そのまま置く**。
+**これは偶然ではない。** 行の重複率（`usage` を持つ行 ÷ 異なる `message.id`）が
+**1.80** で、**req の比（940 → 524）と一致する**。つまり **#92 の集計も
+1 応答を複数行として数えていた**。比率とセッション数は**膨らみの影響を受けない**ので
+一致し、行数に比例する量だけがずれる——**食い違い方そのものが原因を指している**。
+
+**§8.3 の表は書き換えない**（2026-09-15 時点の記録なので）。
+**代わりに訂正の注記をあちらに置いた。** どの数字が影響を受け、どれが受けないかは
+そちらを正とする。
+
+**言えることと言えないことを分ける。** 「1 周が重い」という #92 の結論は、
+**比率が正しい以上そのまま成り立つ**。誤っていたのは**絶対値のほう**である。
 
 標準ライブラリのみ。
 """
@@ -116,34 +123,40 @@ WORKTREE_MARKER = "--claude-worktrees-"
 class Record:
     """1 レコード分の集計値。"""
 
-    __slots__ = ("day", "repo", "session", "is_sub", "model", "weighted", "raw", "cache_read")
+    __slots__ = ("day", "repo", "session", "is_sub", "model", "weighted", "cache_read")
 
-    def __init__(self, day, repo, session, is_sub, model, weighted, raw, cache_read):
+    def __init__(self, day, repo, session, is_sub, model, weighted, cache_read):
         self.day = day
         self.repo = repo
         self.session = session
         self.is_sub = is_sub
         self.model = model
         self.weighted = weighted
-        self.raw = raw
         self.cache_read = cache_read
 
 
-def _sum_iterations(usage: dict) -> dict:
-    """`iterations` の各キーを足した辞書を返す（要素が無ければ空）。"""
+def _from_iterations(usage: dict) -> dict:
+    """`iterations` から 1 件分の数字を取り出す（要素が無ければ空）。
+
+    **足さない。** `iterations` の各要素は**同じ応答のスナップショット**で、
+    トップレベルと同じ数字を再掲している。足すと倍になる——
+    実測では要素が 2 つ以上のものは 0 件だが、**形として再掲だと分かっているものを
+    足す実装にしておくと、要素が増えた瞬間に静かに倍になる**（#95 のレビュー）。
+    だから**キーごとに最大を採る**（育っていく形なら最後が最大になる）。
+    """
     its = usage.get("iterations")
     if not isinstance(its, list) or not its:
         return {}
     out = {}
     for key in WEIGHTS:
-        total = 0
+        best = 0
         for item in its:
             if not isinstance(item, dict):
                 continue
             value = item.get(key) or 0
-            if isinstance(value, (int, float)):
-                total += value
-        out[key] = total
+            if isinstance(value, (int, float)) and value > best:
+                best = value
+        out[key] = best
     return out
 
 
@@ -151,35 +164,36 @@ def effective_usage(usage: dict) -> dict:
     """実際に消費された数字を返す。
 
     **既定はトップレベル。`iterations` は足さない**——各要素がトップレベルと同じ数字を
-    再掲しているので、足すと二重計上になる（実測 151,922 件中 151,920 件がこの形）。
+    再掲しているので、足すと二重計上になる。
 
-    **ただし「トップレベルが全部 0 で `iterations` には実数がある」レコードが実在する。**
-    実測で 2 件（2026-08-17）あり、片方は cache read だけで 996,796 トークンあった。
-    **トップレベルだけ読むと、これを丸ごと取りこぼす**——#95 のレビューが見つけた。
+    **ただし「トップレベルが 0 で `iterations` には実数がある」レコードが実在する。**
+    実測で 2 件（2026-08-17）あり、cache read だけで約 100 万トークンあった
+    （**2 件は同じリクエストの重複**で、別々の消費ではない）。
+    **トップレベルだけ読むと丸ごと取りこぼす**——#95 のレビューが見つけた。
     **二重計上を避ける規則が、逆向きに取りこぼしを作っていた**ことになる。
 
-    だから**トップレベルが全部 0 のときに限り `iterations` を見る**。
-    どちらか一方しか使わないので、**二重計上にはならない**。
+    **キーごとに大きいほうを採る。** 最初は「トップレベルが*全部* 0 のときだけ
+    `iterations` を見る」にしていたが、**1 フィールドでも実数があると残りを落とした**
+    （`output` だけ埋まっていて `cache_read` が `iterations` にしか無い形）。
+    現データに該当は無いが、**「全部 0」という条件は形の保証ではない**。
     """
     top = {}
     for key in WEIGHTS:
         value = usage.get(key) or 0
         top[key] = value if isinstance(value, (int, float)) else 0
-    if any(top.values()):
+    nested = _from_iterations(usage)
+    if not nested:
         return top
-    return _sum_iterations(usage) or top
+    return {key: max(top.get(key, 0), nested.get(key, 0)) for key in WEIGHTS}
 
 
-def weighted_tokens(usage: dict) -> tuple[float, int, int]:
-    """(加重, 生の合計, cache read) を返す。"""
+def weighted_tokens(usage: dict) -> tuple[float, int]:
+    """(加重, cache read) を返す。"""
     effective = effective_usage(usage)
     weighted = 0.0
-    raw = 0
     for key, factor in WEIGHTS.items():
-        value = effective.get(key) or 0
-        weighted += value * factor
-        raw += int(value)
-    return weighted, raw, int(effective.get("cache_read_input_tokens") or 0)
+        weighted += (effective.get(key) or 0) * factor
+    return weighted, int(effective.get("cache_read_input_tokens") or 0)
 
 
 def session_of(path: pathlib.Path, projects_root: pathlib.Path,
@@ -214,10 +228,21 @@ def tool_uses(message: dict):
 
 
 def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
-    """(レコード列, dev-loop を回したセッション, 読めなかったファイル数) を返す。"""
+    """(レコード列, dev-loop を回したセッション, 読めなかったファイル数, 壊れた行数) を返す。
+
+    **1 応答が複数行に書かれ、各行が同じ `usage` を再掲する。**
+    `message.id` が同じ行を 1 リクエストとして畳まないと、**加重が 1.77 倍に膨らむ**
+    （実測: 全行を足すと 5,839M、畳むと 3,300M）。**#95 のレビューが見つけた**——
+    実装の初版は行ごとに足しており、**出した数字がすべて過大だった**。
+
+    畳むときは**最大を採る**。再掲は同じ値のこともあるが、**`output_tokens` が
+    `1 → 1 → 207` のように育っていく形**もある（実測で 21,071 件）。
+    最後の行が最大になるので、最大を採れば最終状態を拾える。
+    """
     records: list[Record] = []
     dev_loop_sessions: set[tuple[str, str]] = set()
     unreadable = 0
+    broken_lines = 0
 
     for path in sorted(projects_root.rglob("*.jsonl")):
         try:
@@ -226,6 +251,8 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             unreadable += 1
             continue
         repo, session, is_sub = session_of(path, projects_root, merge_worktrees)
+        # message.id ごとに 1 件だけ残す（同じファイルの中で畳む）。
+        by_id: dict[str, Record] = {}
         for line in text.splitlines():
             line = line.strip()
             if not line:
@@ -233,8 +260,12 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             try:
                 row = json.loads(line)
             except (ValueError, TypeError):
+                # **黙って落とさない。** 実データに壊れた行が実在する
+                # （文字化けしたファイルも `errors="replace"` でここに来る）。
+                broken_lines += 1
                 continue
             if not isinstance(row, dict):
+                broken_lines += 1
                 continue
             message = row.get("message")
             if not isinstance(message, dict):
@@ -260,12 +291,21 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             model = message.get("model") or "?"
             if model in SYNTHETIC_MODELS:
                 continue
-            weighted, raw, cache_read = weighted_tokens(usage)
+            weighted, cache_read = weighted_tokens(usage)
             day = (row.get("timestamp") or "")[:10]
-            records.append(Record(day, repo, session, is_sub, model,
-                                  weighted, raw, cache_read))
+            record = Record(day, repo, session, is_sub, model, weighted, cache_read)
+            message_id = message.get("id")
+            if not isinstance(message_id, str) or not message_id:
+                # id が無ければ畳めない。**そのまま数える**（落とすより過大のほうがまし）。
+                records.append(record)
+                continue
+            previous = by_id.get(message_id)
+            if previous is None or record.weighted > previous.weighted:
+                by_id[message_id] = record
 
-    return records, dev_loop_sessions, unreadable
+        records.extend(by_id.values())
+
+    return records, dev_loop_sessions, unreadable, broken_lines
 
 
 def iso_week(day: str) -> str:
@@ -310,6 +350,31 @@ def render_weekly(records, dev_loop_sessions) -> str:
     return "\n".join(lines)
 
 
+def render_split(records, dev_loop_sessions) -> str:
+    """dev-loop を回した周とそれ以外に分ける（設計 §8.3 の表と同じ形）。
+
+    **この形で出すのは、before/after を同じ切り口で比べるため**である。
+    §8.3 の表は 2026-09-15 時点の記録なので、**同じ範囲・同じ式で取り直して初めて
+    比較になる**。
+    """
+    groups = {"dev-loop を回した周": [], "それ以外": []}
+    for r in records:
+        key = ("dev-loop を回した周" if (r.repo, r.session) in dev_loop_sessions
+               else "それ以外")
+        groups[key].append(r)
+
+    lines = ["| 区分 | セッション | 加重(M) | 比率 | リクエスト/セッション |",
+             "|---|---|---|---|---|"]
+    total = sum(r.weighted for r in records) or 1
+    for name, rows in groups.items():
+        sessions = {(r.repo, r.session) for r in rows}
+        weighted = sum(r.weighted for r in rows)
+        per_session = len(rows) // len(sessions) if sessions else 0
+        lines.append(f"| {name} | {len(sessions)} | {fmt_m(weighted)} "
+                     f"| {100 * weighted / total:.0f}% | {per_session} |")
+    return "\n".join(lines)
+
+
 def render_per_cycle(records, dev_loop_sessions) -> str:
     per = collections.defaultdict(lambda: {"weighted": 0.0, "requests": 0, "ctx": 0, "day": ""})
     for r in records:
@@ -348,6 +413,8 @@ def main(argv=None) -> int:
     parser.add_argument("--repo", default=None, help="この文字列を含むリポジトリだけ")
     parser.add_argument("--per-cycle", action="store_true",
                         help="週次ではなく dev-loop の周ごとに出す")
+    parser.add_argument("--split", action="store_true",
+                        help="dev-loop を回した周とそれ以外に分けて出す（設計 §8.3 と同じ形）")
     parser.add_argument("--merge-worktrees", action="store_true",
                         help="worktree を元のリポジトリに寄せる")
     parser.add_argument("--list-repos", action="store_true",
@@ -365,6 +432,10 @@ def main(argv=None) -> int:
     # 数字が合わない理由が分からなくなる**（#95 の周で実際に踏んだ）。
     if args.list_repos:
         names = sorted({p.name for p in root.iterdir() if p.is_dir()})
+        if args.merge_worktrees:
+            # **集計と同じ粒度で見せる。** 見せる粒度が集計と違うと、
+            # 「絞る前に何に当たるか見る」ための機能が用を成さない（#95 のレビュー）。
+            names = sorted({n.split(WORKTREE_MARKER, 1)[0] for n in names})
         if args.repo:
             names = [n for n in names if args.repo in n]
         for name in names:
@@ -374,7 +445,7 @@ def main(argv=None) -> int:
               + (f"（`{args.repo}` で絞った）" if args.repo else ""))
         return 0
 
-    records, dev_loop_sessions, unreadable = scan(root, args.merge_worktrees)
+    records, dev_loop_sessions, unreadable, broken = scan(root, args.merge_worktrees)
     if args.since:
         records = [r for r in records if r.day >= args.since]
     if args.repo:
@@ -389,8 +460,12 @@ def main(argv=None) -> int:
     sub_weighted = sum(r.weighted for r in records if r.is_sub)
     total_weighted = sum(r.weighted for r in records)
 
-    print(render_per_cycle(records, dev_loop_sessions) if args.per_cycle
-          else render_weekly(records, dev_loop_sessions))
+    if args.split:
+        print(render_split(records, dev_loop_sessions))
+    elif args.per_cycle:
+        print(render_per_cycle(records, dev_loop_sessions))
+    else:
+        print(render_weekly(records, dev_loop_sessions))
     print()
     # **割り算にガードを置く。** レコードはあるのに加重が 0 のことがある——
     # 実測で、トップレベルの usage が全部 0 のレコードが実在した。絞り込みの結果
@@ -399,9 +474,12 @@ def main(argv=None) -> int:
     sub_ratio = f"{100 * sub_weighted / total_weighted:.0f}%" if total_weighted else "–"
     print(f"レコード {len(records)} 件（うちサブエージェント {sub} 件＝"
           f"加重の {sub_ratio}）。加重合計 {fmt_m(total_weighted)}M。")
-    # **読めなかったファイルは黙って 0 にしない。**
+    # **読めなかったものは黙って 0 にしない。** ファイルだけでなく**行**も数える
+    # ——実データに壊れた行が実在し、そのうち何行かは `"usage"` を含んでいた（#95）。
     if unreadable:
         print(f"⚠ 読めなかったファイル: {unreadable} 件（集計から落ちている）")
+    if broken:
+        print(f"⚠ JSON として読めなかった行: {broken} 行（集計から落ちている）")
     return 0
 
 
