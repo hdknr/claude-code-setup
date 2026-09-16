@@ -225,6 +225,33 @@ def tool_uses(message: dict):
             yield block
 
 
+def _iter_rows(path: pathlib.Path):
+    """`(row, 壊れているか)` を 1 行ずつ返す。
+
+    **`read_text()` ＋ `splitlines()` にしない。** ファイル 1 つ分のテキストと
+    全行のリストが**同時にメモリに載る**——実測でピーク 1.1GB になり、
+    行ごとに読む形にしたら **42MB** まで下がった（27 分の 1）。
+    トランスクリプトは 1 ファイルが大きいので、ここが支配的だった。
+
+    **壊れた行は黙って落とさず、印をつけて返す**（実データに実在し、
+    そのうち何行かは `"usage"` を含んでいた）。
+    """
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except (ValueError, TypeError):
+                yield None, True
+                continue
+            if not isinstance(row, dict):
+                yield None, True
+                continue
+            yield row, False
+
+
 def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
     """(レコード列, dev-loop を回したセッション, 読めなかったファイル数, 壊れた行数) を返す。
 
@@ -252,24 +279,14 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
     by_id: dict[str, Record] = {}
 
     for path in sorted(projects_root.rglob("*.jsonl")):
+        repo, session, is_sub = session_of(path, projects_root, merge_worktrees)
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            rows = _iter_rows(path)
         except OSError:
             unreadable += 1
             continue
-        repo, session, is_sub = session_of(path, projects_root, merge_worktrees)
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except (ValueError, TypeError):
-                # **黙って落とさない。** 実データに壊れた行が実在する
-                # （文字化けしたファイルも `errors="replace"` でここに来る）。
-                broken_lines += 1
-                continue
-            if not isinstance(row, dict):
+        for row, bad in rows:
+            if bad:
                 broken_lines += 1
                 continue
             message = row.get("message")

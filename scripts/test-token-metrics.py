@@ -332,10 +332,12 @@ def main() -> int:
                 "            if previous is None or record.weighted < previous.weighted:",
             ),
             "壊れた行を数えない": (
-                "                broken_lines += 1\n                continue\n"
-                "            if not isinstance(row, dict):",
-                "                continue\n"
-                "            if not isinstance(row, dict):",
+                "            if bad:\n                broken_lines += 1\n                continue",
+                "            if bad:\n                continue",
+            ),
+            "壊れた行を JSON でないと判定しない": (
+                "            if not isinstance(row, dict):\n                yield None, True",
+                "            if not isinstance(row, dict):\n                yield row, False",
             ),
             "サブエージェントを見ない（取りこぼすはず）": (
                 'for path in sorted(projects_root.rglob("*.jsonl")):',
@@ -428,7 +430,9 @@ def main() -> int:
                                    line(u=usage(out=1), msg_id="msg_dup"),
                                    line(u=usage(out=207), msg_id="msg_dup"),
                                    # **壊れた行**——数えない変異を殺すのに要る。
+                                   # パースできない行と、**JSON だが dict でない行**の両方。
                                    "{壊れた JSON",
+                                   "[1, 2, 3]",
                                    # **`fmt_m` の丸めを効かせる大きな値**（1.5M 級）。
                                    line(u=usage(out=300000)),
                                    # **`--since` の境界**と**ISO 年 ≠ 暦年の日**
@@ -461,6 +465,15 @@ def main() -> int:
             # **出力そのものを比べる**——CLI が返すものが最終的な成果物なので、
             # そこが変わらない変異は「殺せていない」と言うべきである。
             def observe(module):
+                # **例外も振る舞いの違いとして数える。** 変異体が落ちるなら、
+                # それは「正しい実装と区別がついた」＝殺せたということである。
+                # 捕まえないと、テスト全体が変異体の例外で止まる。
+                try:
+                    return _observe(module)
+                except Exception as exc:  # noqa: BLE001
+                    return ("例外", type(exc).__name__)
+
+            def _observe(module):
                 rec, dev, unread, broke = module.scan(tree)
                 buf = io.StringIO()
                 with contextlib.redirect_stdout(buf):
