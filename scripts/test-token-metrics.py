@@ -72,7 +72,8 @@ def usage(inp=0, cw=0, cr=0, out=0, *, iterations=True):
     return u
 
 
-def line(model="claude-opus-5", day="2026-09-15", u=None, tool=None, msg_id=None):
+def line(model="claude-opus-5", day="2026-09-15", u=None, tool=None, msg_id=None,
+         time="10:00:00", is_sub=False):
     message = {"model": model}
     if msg_id is not None:
         # **本物は必ず `id` を持つ。** 同じ id の行が複数あり、各行が usage を再掲する。
@@ -81,7 +82,7 @@ def line(model="claude-opus-5", day="2026-09-15", u=None, tool=None, msg_id=None
         message["usage"] = u
     if tool is not None:
         message["content"] = [tool]
-    return json.dumps({"type": "assistant", "timestamp": f"{day}T10:00:00.000Z",
+    return json.dumps({"type": "assistant", "timestamp": f"{day}T{time}.000Z",
                        "message": message}, ensure_ascii=False)
 
 
@@ -382,6 +383,67 @@ def main() -> int:
         check("周ごとに dev-loop の周だけ出る",
               "repo-a" in per_cycle and "repo-b" not in per_cycle)
 
+        print("起点（floor）")
+        root = base / "floor"
+        make_tree(root, {
+            # 同じ周の 2 レコード。**あとの行のほうが文脈が大きい**ので、
+            # 「最も古いほう」を採れているかが分かる。
+            "repo-a/s1.jsonl": [line(day="2026-09-15", time="09:00:00",
+                                     u=usage(cr=40000, cw=1000), tool=skill_use("dev-loop")),
+                                line(day="2026-09-15", time="11:00:00",
+                                     u=usage(cr=90000))],
+            # **サブエージェントは親と別の起点を持つ。親より「先」に置く。**
+            # あとに置くと、除外していなくても親の最古レコードが勝つので、
+            # **検査が何も見ていない状態になる**（最初そう書いて変異が生き残った）。
+            # 委譲先のレコードは**親と同じセッション id の下**に入り、
+            # 親の最古レコードは畳み込みで**別セッションへ帰属しうる**ので、
+            # 時刻の前後は保証されない。
+            "repo-a/s1/subagents/a.jsonl": [line(day="2026-09-15", time="08:00:00",
+                                                 u=usage(cr=100))],
+        })
+        records, dev, _, _ = mod.scan(root)
+        floors = mod.session_floors(records)
+        first_seen, floor = floors[("repo-a", "s1")]
+        # 40000 + 1000。**cache write を足す**——1 回目は write として課金されるので、
+        # cache read だけで取ると周の最初のリクエストが 0 になる。
+        check("起点は cache read + cache write", floor == 41000)
+        check("起点は最も古いレコードから取る", first_seen.endswith("T09:00:00.000Z"))
+        check("サブエージェントは起点の候補にしない",
+              ("repo-a", "s1/subagents/a") not in floors
+              and all(not key[1].startswith("s1/sub") for key in floors))
+        check("context_tokens は input を足さない",
+              mod.context_tokens({"input_tokens": 500, "cache_read_input_tokens": 3,
+                                  "cache_creation_input_tokens": 2}) == 5)
+
+        # **タイムスタンプの無いレコードは候補にしない。** 空文字は文字列順で最小に
+        # なるので、候補に入れると黙って先頭に立つ。
+        no_ts = mod.Record("2026-09-15", "repo-x", "s9", False, "claude-opus-5",
+                           1.0, 0, "", 999999)
+        with_ts = mod.Record("2026-09-15", "repo-x", "s9", False, "claude-opus-5",
+                             1.0, 0, "2026-09-15T10:00:00.000Z", 7000)
+        check("タイムスタンプの無いレコードは起点にしない",
+              mod.session_floors([no_ts, with_ts])[("repo-x", "s9")][1] == 7000)
+
+        check("起点比は加重が 0 なら None", mod.floor_share(1000, 10, 0) is None)
+        check("起点比は req が 0 なら None", mod.floor_share(1000, 0, 5.0) is None)
+        check("起点比は起点が 0 なら None", mod.floor_share(0, 10, 5.0) is None)
+        # 1000 × 10 × 0.1 / 500 = 200%。**100% を超える値をそのまま返す**
+        # ——丸めて隠すと、先頭が切れた周を見逃す。
+        check("起点比は 100% を超えてもそのまま返す",
+              abs(mod.floor_share(1000, 10, 500.0) - 200.0) < 1e-9)
+
+        per_cycle = mod.render_per_cycle(records, dev)
+        check("周ごとの表に起点の列が出る", "| 起点 | 起点比 |" in per_cycle)
+        check("周ごとの表に起点の値が出る", "| 41k |" in per_cycle)
+
+        # **先頭が絞り込みで切られた周は、起点も起点比も出さない。**
+        # 絞り込む前の floors を渡し、絞ったレコードだけで描かせる。
+        cut = [r for r in records if not r.timestamp.endswith("T09:00:00.000Z")]
+        cut_out = mod.render_per_cycle(cut, dev, floors)
+        check("先頭が範囲外の周は起点を出さない", "先頭が範囲外" in cut_out)
+        check("先頭が範囲外の周は起点比を出さない",
+              "起点が占める割合" not in cut_out)
+
         print("main() の終了コード")
         root = base / "main"
         make_tree(root, {"repo-a/s.jsonl": [line(u=usage(inp=10))]})
@@ -415,6 +477,35 @@ def main() -> int:
                 "            if record.timestamp and (not previous.timestamp\n"
                 "                                     or record.timestamp < previous.timestamp):",
                 "            if False:",
+            ),
+            "起点に cache write を足さない（周の先頭が 0 になるはず）": (
+                '    return int((effective.get("cache_read_input_tokens") or 0)\n'
+                '               + (effective.get("cache_creation_input_tokens") or 0))',
+                '    return int(effective.get("cache_read_input_tokens") or 0)',
+            ),
+            "サブエージェントを起点の候補にする（委譲先の起点に置き換わるはず）": (
+                "        if r.is_sub or not r.timestamp:",
+                "        if not r.timestamp:",
+            ),
+            "タイムスタンプの無いレコードを起点の候補にする": (
+                "        if r.is_sub or not r.timestamp:",
+                "        if r.is_sub and False:",
+            ),
+            "起点を最も古いレコードから取らない（走査順のままになるはず）": (
+                "        if current is None or r.timestamp < current[0]:",
+                "        if True:",
+            ),
+            "先頭が絞り込みで切られた周を印にしない（100% 超が出るはず）": (
+                '        truncated = bool(first_seen) and bool(b["first"]) and b["first"] > first_seen',
+                "        truncated = False",
+            ),
+            "起点比の集計を中央値でなく平均にする": (
+                'f"**起点が占める割合: 中央値 {statistics.median(shares):.0f}%**"',
+                'f"**起点が占める割合: 中央値 {sum(shares) / len(shares):.0f}%**"',
+            ),
+            "起点を絞り込みの後に作る（周の途中を起点と呼ぶはず）": (
+                "    floors = session_floors(records)\n    if args.since:",
+                "    if args.since:",
             ),
             "壊れた行を数えない": (
                 '            if problem == "broken":\n'
@@ -587,6 +678,39 @@ def main() -> int:
                 "repo-a/t2.jsonl": [line(day="2026-09-15", u=usage(inp=19), msg_id="mx")],
                 # **cache_read を持つレコード**——週次の平均文脈の変異に要る。
                 "repo-a/ctx.jsonl": [line(u=usage(cr=500000))],
+                # **起点の変異に要る木。** 同じ周に**時刻の違う 2 レコード**があり、
+                # **サブエージェントが親より小さい文脈**を持ち、
+                # **`--since` が周の途中に落ちる**（先頭 09-14 / 続き 09-16）。
+                "repo-a/floor.jsonl": [line(day="2026-09-14", time="08:00:00",
+                                            u=usage(cr=40000, cw=1000),
+                                            tool=skill_use("dev-loop")),
+                                       line(day="2026-09-16", time="08:00:00",
+                                            u=usage(cr=800000))],
+                "repo-a/floor/subagents/a.jsonl": [line(day="2026-09-14", time="07:30:00",
+                                                       u=usage(cr=100))],
+                # **タイムスタンプを持たないレコード**——空文字は文字列順で最小に
+                # なるので、候補に入れると黙って先頭に立つ。これが無いと
+                # 「タイムスタンプ無しを候補にする」変異が殺せない。
+                "repo-a/floor4.jsonl": [json.dumps(
+                    {"type": "assistant",
+                     "message": {"model": "claude-opus-5", "id": "no_ts",
+                                 "usage": {"input_tokens": 0,
+                                           "cache_creation_input_tokens": 0,
+                                           "cache_read_input_tokens": 777000,
+                                           "output_tokens": 0},
+                                 "content": [skill_use("dev-loop")]}},
+                    ensure_ascii=False),
+                    line(day="2026-09-14", time="08:00:00", u=usage(cr=5000))],
+                # **起点比が周ごとに違う木**——中央値と平均が一致すると、
+                # 「中央値を平均にする」変異が生き残る。3 周で 100% / 50% / 1 割弱にする。
+                "repo-a/floor2.jsonl": [line(day="2026-09-14", time="08:00:00",
+                                             u=usage(cr=10000), tool=skill_use("dev-loop")),
+                                        line(day="2026-09-14", time="09:00:00",
+                                             u=usage(cr=10000))],
+                "repo-a/floor3.jsonl": [line(day="2026-09-14", time="08:00:00",
+                                             u=usage(cr=10000), tool=skill_use("dev-loop")),
+                                        line(day="2026-09-14", time="09:00:00",
+                                             u=usage(cr=30000))],
                 # **トップレベルが iterations を上回るレコード**——`max` の片側に要る。
                 "repo-a/topbig.jsonl": [line(u={"input_tokens": 500,
                                                 "cache_creation_input_tokens": 0,
@@ -617,6 +741,9 @@ def main() -> int:
                 with contextlib.redirect_stdout(buf):
                     for argv in ([], ["--per-cycle"], ["--split"],
                                  ["--since", "2026-09-15"], ["--list-repos"],
+                                 # **周の途中に落ちる `--since` と `--per-cycle` の
+                                 # 組み合わせ**——起点の切り落とし判定はここでしか見えない。
+                                 ["--per-cycle", "--since", "2026-09-16"],
                                  # **絞りと寄せも呼ぶ。** 呼ばない引数の変異は
                                  # 「出力が変わらない」ので全部生き残る。
                                  ["--repo", "worktrees"], ["--merge-worktrees"],
