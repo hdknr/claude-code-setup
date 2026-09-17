@@ -241,15 +241,30 @@ worktree → PR に乗る。
       git log --all --diff-filter=A --name-only --format= -- '*issue-<issue-number>*'
       git log --all --grep '#<issue-number>' --oneline   # Fixes #<n> を含むコミット
       ```
-        - **2 本目が効くのは、番号が*計画ファイルのパス*に入っているから**で、
-          **ブランチ名に入っていなくても当たる**。**これが番号依存から抜ける唯一の足場**である
+        - **抜けているのは*ブランチ名*依存であって、番号依存ではない（必須）。**
+          2 本目・3 本目は**番号を引数に埋めている**ので、番号そのものには依存したままである。
+          **ブランチ名に番号が入っていなくても当たる**、が正確な言い方
+          （[#110](https://github.com/hdknr/claude-code-setup/issues/110) の 1 パス目で、
+          **「番号依存から抜ける唯一の足場」と書いたラベルが誤り**だと指摘された）。
+        - **2 本目が効くのは、番号が*計画ファイルのパス*に入っているから**
           （`docs/plans/` にコミットしている周に限る。gitignore した周には効かない——
-          下の `git show` の項と同じ限界）。
-        - **`git worktree list` を全件見るほうが、番号で絞るより強い。** 絞ると
-          **ランダム名の worktree が出力から消える**が、全件なら**在ることは見える**
-          ——そのうえで各 worktree の HEAD を当たればよい（`git -C <path> log --oneline -1`）。
+          下の `git show` の項と同じ限界）。**3 本目はコミットメッセージの
+          `Fixes #<n>` 規約に依存する。**
+        - **番号にも名前にも依らないのは 1 本目だけ（必須）。** `git worktree list` を
+          **全件見る**と、絞ると**ランダム名の worktree が出力から消える**のに対し、
+          全件なら**在ることは見える**——そのうえで各 worktree の HEAD を当たればよい
+          （`git -C <path> log --oneline -1`）。**計画ファイルを gitignore した周で
+          worktree も畳んでいると、この 3 本はどれも当たらない**——そのときは
+          「途中から再開する周」の**読めないと分かったときの扱い**（人間に指示を仰ぐ）に落ちる。
         - **改名の跡にも注意**——`ExitWorktree` で畳んだのに残ったブランチが混ざる
           （手順 4 の「改名すると後片付けと噛み合わない」）。**当たったものは確かめてから入る。**
+        - **同じ Issue に worktree ／ ブランチが 2 本以上当たることがある（必須）**——
+          前の周の畳み残りと今回の分、`--force` で作った 2 本目、`path` 無しの
+          `EnterWorktree` が生やした 2 本目。**多いほうが新しいとは限らない。**
+          **どれを選ぶかは、計画ファイルの「周の在り処」（ブランチ名・worktree のパス・
+          起点コミット。手順 3 の 5 番目）と突き合わせて決める**——
+          **記録が無ければ選べないので、人間に指示を仰ぐ**（下の「読めないと分かったとき」と
+          同じ扱い。**新しそうなほうで代用しない**）。
     - **ブランチが見つかっても、worktree が無ければ中身は読めていない（必須）。**
       **ブランチ名の一覧は計画ファイルではない。** worktree を持たないブランチの計画ファイルは、
       **コミットされていれば** `git show <ブランチ>:<パス>` で読む
@@ -369,8 +384,13 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     3. **verify の受入基準** — 何を目視できたら通ったと言えるか。書き方はこの節の後続 3 項目
        （**経路への展開／証明できないものの分離／生成物の鮮度**）に従う
     4. 未解決の判断・確認待ち事項
-    5. **関門の進捗（再開点）** — 次の 3 つ。**周が進むたびに更新する**（1〜4 は着手時に書いて
+    5. **関門の進捗（再開点）** — 次の 4 つ。**周が進むたびに更新する**（1〜4 は着手時に書いて
        以後は変更時だけ直すが、5 は**進捗そのもの**なので毎回動く）:
+        - **周の在り処**——**ブランチ名・worktree のパス・起点コミット**。
+          **これは手順 4 の入場時の照合相手である（必須）**。手順 4 は「いま*正しい* worktree に
+          いるか」を**その周のブランチ／コミットの上にいるか**で判定するので、
+          **ここに書いていなければ照合相手が無く、正しい worktree にいても毎回
+          「一致しない」側に倒れる**（手順 4 の肯定的な確認）。
         - **どの関門を、どのパスまで通したか**（Verifier／`/code-review` の 1 パス目・2 パス目）
         - **手順 5 で挙がった反証と、手順 4 への差し戻しの履歴**
         - **交絡を潰した手順**（手順 5。実験をしていない周は「実験なし」と書く）
@@ -443,11 +463,24 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 - **最初に worktree を開始する（必須）**。ファイルを 1 行も触る前に、Issue 用の worktree に入る。
   **変更が 1 行でも入る周は例外を認めない**——その周の成果は必ず PR になり（手順 6）、PR 作成時点で
   worktree 上にいる必要があるので、実装してから移し替えるのは手戻りになる。
-  - **だが「開始する」の最初の一手は、作ることではなく*見ること*（必須）。** 下の
-    「既に worktree がある場合」を**先に読む**——**この項が「開始」から始まるのは、新規の周が
-    いちばん多いからで、「まず作れ」の意味ではない**。再開した周がここで作ると、
-    **周のコミットを 1 つも持たない worktree で実装をやり直す**（[#96](https://github.com/hdknr/claude-code-setup/issues/96)）。
-    **上から順に実行するモデルは、先に作ってしまう**（[#110](https://github.com/hdknr/claude-code-setup/issues/110)）。
+  - **だが「開始する」の最初の一手は、作ることではなく*見ること*（必須）。**
+    **この項が「開始」から始まるのは、新規の周がいちばん多いからで、「まず作れ」の意味ではない。**
+    再開した周がここで作ると、**周のコミットを 1 つも持たない worktree で実装をやり直す**
+    （[#96](https://github.com/hdknr/claude-code-setup/issues/96)）。
+    - **前方参照では効かない（必須）。** 以前ここには「下の『既に worktree がある場合』を
+      **先に読む**」と書いていたが、**上から順に実行するモデルは、読む前に作ってしまう**
+      ——**警告文は、それを読む前に通り過ぎる場所には置けない**
+      （[#110](https://github.com/hdknr/claude-code-setup/issues/110) の 1 パス目で指摘された）。
+      **だから存在確認を、新規作成のコマンドより*前*に置く。下のコマンドは、この 2 本が
+      空振りした周だけが使う**:
+      ```bash
+      git worktree list                            # その Issue の worktree があるか
+      git branch --all --list '*<issue-number>*'   # 畳んでいてもブランチは残る（--all でリモートも）
+      ```
+        - **当たったら作らない。** 下の「既に worktree がある場合」へ進む。
+        - **空振りを「新規の周」と読まない（必須）。** この 2 本は**名前に番号が入っていること**に
+          乗っているので、**ランダム名で作られた周は映らない**（「途中から再開する周」の
+          `EnterWorktree` の項）。**番号に依らない探索を当ててから決める。**
   - **いま worktree の中にいることは、*正しい* worktree にいることではない（必須）。**
     **`--git-dir` ≠ `--git-common-dir` を「続けてよい」の判定に使ってはならない**——
     **それは「どれかの worktree にいる」しか言わない**。**#96 で壊れた周は worktree の中にいた**
@@ -463,20 +496,42 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     - **計画ファイルに記録が無ければ、それも「一致しない」側に倒す**——手順 3 の再開点には
       **ブランチ・worktree のパス・起点コミット**を書く（手順 3 の 5 番目）。
   ```bash
-  # EnterWorktree ツールが使える環境ではそれを使う（後片付けまで面倒を見てくれる）。
+  # EnterWorktree ツールが使える環境ではそれを使う（後片付けの範囲は直後の注意を読む）。
   # 使えない環境の同等操作（置き場所については直後の注意を読む）:
   git worktree add .claude/worktrees/issue-<issue-number> -b issue/<issue-number>-<説明>
   ```
+  - **`ExitWorktree` の後片付けは、`EnterWorktree` が `name` で作った worktree にしか効かない
+    （必須）。** 以前ここには「**後片付けまで面倒を見てくれる**」とだけ書いていたが、
+    **この周が推奨する経路にはまさに効かない**。一次ソース（道具の説明文）:
+    「ONLY operates on worktrees created by EnterWorktree **in this session**」
+    「will NOT touch: Worktrees you created manually with `git worktree add`」
+    「**ExitWorktree will not remove a worktree entered this way**（`path` で入った worktree）」。
+      - つまり**下の「規約どおりの名前で最初から切る」形**（素の `git worktree add` →
+        `EnterWorktree` に `path`）で入った worktree は、**畳むのも手**である
+        （`git worktree remove <path>` ＋ ブランチは別途）。
+      - **`EnterWorktree` を一度も呼んでいないセッション**（この worktree の中で `/clear` して
+        入り直した周＝**再開の既定形**）では、`ExitWorktree` は**no-op**
+        （「If called outside an EnterWorktree session, the tool is a no-op」）。
+      - **「道具が片付けてくれる」を前提に置き去りにしない。** どちらの形かは、
+        **自分がその worktree をどう作って、どう入ったか**で決まる。
   - **置き場所を `.claude/worktrees/` 配下にする（必須）。** 以前ここは
     `../<repo>-issue-<issue-number>` と書いていたが、**配下に無い worktree には、
     worktree の中にいるセッションから合流できない**（実測。下の `EnterWorktree` の項）。
     **再開する側が入れない場所に作ってはならない。**
+  - **いま別の worktree の中にいるなら、`EnterWorktree` では新規に作れない（必須）。**
+    **新規の周を、前の周の worktree に居残ったまま始めるとここに当たる。**
+    一次ソース（道具の説明文）:「Must not already be in a worktree session when creating a
+    new worktree (`name`)」——**`name` での新規作成は拒否され、`path` での切替だけが通る。**
+    取れるのは次のどちらか:
+      - **素の `git worktree add` で作る**——ただし**相対パスは*いまいる worktree* を起点に
+        解決される**ので、**メインの作業ツリーの絶対パスで書く**
+        （`git worktree add <メインツリーの絶対パス>/.claude/worktrees/issue-<n> -b …`）。
+        **相対パスのまま走らせると別の worktree の中に入れ子で生える。**
+      - **前の周を畳んでから始める**（`ExitWorktree`。効く条件は上の後片付けの項）。
   - **既に worktree がある場合は、作らずにそこへ入る（必須）。** 割り目から再開した周は
-    **既にブランチと worktree を持っている**（「途中から再開する周」）。**作る前に必ず見る**:
-    ```bash
-    git worktree list                            # その Issue の worktree があるか
-    git branch --all --list '*<issue-number>*'   # 畳んでいてもブランチは残る（--all でリモートも）
-    ```
+    **既にブランチと worktree を持っている**（「途中から再開する周」）。
+    **見るのは上に置いた 2 本**（`git worktree list` ／ `git branch --all --list`）で、
+    **当たった先に応じて次のどれかに進む**:
     - **`EnterWorktree` は `path` を渡せば既存の worktree に入れる。`path` 無しで呼ぶと
       新規作成になり、既定では `origin/<デフォルトブランチ>` から切る**——つまり
       **周のコミットを 1 つも持たない worktree に入って、実装をやり直すことになる**。
@@ -501,16 +556,35 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
           確かめていない。**
         - **`name` での新規作成は、worktree の中からはできない**（道具の説明文。
           「既に worktree セッションにいるときは新規作成できない」）。**この周では測っていない。**
-    - **だから、配下でない worktree に合流したくなったら手が無い（必須）。** 手順 4 の代替コマンドが
-      以前作っていた `../<repo>-issue-<n>` は**まさに配下でない**ので、
+    - **だから、配下でない worktree への合流は、確実な手が 1 つしかない（必須）。** 手順 4 の
+      代替コマンドが以前作っていた `../<repo>-issue-<n>` は**まさに配下でない**ので、
       **worktree の中から再開した周は入れない**。**Bash の `cd` ではセッションの cwd は動かない**
-      ので代用にならない。取れる道は次のどれかで、**いずれもこの周では測っていない**:
-        1. **`ExitWorktree` に `action: "keep"` を渡して起動ディレクトリに戻り**、
-           そこから `path` で入り直す（初回入場の条件に戻るため）。
+      ので代用にならない。**候補は 3 つあるが、上の 2 つは条件付きで落ちる**
+      （[#110](https://github.com/hdknr/claude-code-setup/issues/110) の 1 パス目で、
+      **「手が無い」と書いた直後に 3 つ挙げる自己矛盾**として指摘された）:
+        1. **`ExitWorktree` に `action: "keep"` を渡して起動ディレクトリに戻る**——
+           **再開の既定形では効かない。** 一次ソース（道具の説明文）:
+           「ONLY operates on worktrees created by EnterWorktree **in this session**」
+           「If called outside an EnterWorktree session, the tool is a **no-op**」。
+           **この worktree の中で `/clear` して入り直した周は `EnterWorktree` を呼んでいない**
+           ので no-op になり、そもそも「起動ディレクトリ」が worktree 自身である。
+           **同一セッションで `EnterWorktree` を呼んで入った場合にだけ使える。**
         2. その周のブランチを、**配下に作った新しい worktree で** checkout する
-           （`git worktree add .claude/worktrees/issue-<n> <既存ブランチ>`。**`-b` を付けない**）。
-        3. **人間に、その worktree の中で新しいセッションを開いてもらう。**
-      **だから、そもそも配下に作る**（上の置き場所の項）。**これが唯一の予防である。**
+           （`git worktree add .claude/worktrees/issue-<n> <既存ブランチ>`。**`-b` を付けない**）
+           ——**元の worktree がそのブランチを checkout したままなら fatal で止まる。**
+           一次ソース（`man git-worktree` の `-f, --force`）:
+           「add refuses to create a new worktree when `<commit-ish>` is a branch name and
+           **is already checked out by another worktree**」。
+           **先に `git worktree remove <元のパス>` で外すか、`--force` を付ける**
+           （`--force` は 2 本が同じブランチを持つ状態を作るので、**どちらで作業しているかを
+           見失いやすい**）。
+           **さらに、相対パスは*いまいる worktree* を起点に解決される**ので、
+           別の worktree の中から走らせると `<その worktree>/.claude/worktrees/…` に生える
+           ——**メインツリー配下ではない。絶対パスで書く。**
+           （**その入れ子を `EnterWorktree` の `path` が受け付けるかは測っていない。**）
+        3. **人間に、その worktree の中で新しいセッションを開いてもらう**——
+           **条件を外さない唯一の手**（初回入場の条件に戻る）。
+      **だから、そもそも配下に作る**（上の置き場所の項）。**予防のほうが、どの復旧手段より確実である。**
     - **別の worktree へ切り替えると、前にいた worktree は書けなくなる**（道具の説明文）。
       **戻るには `path` で入り直す**——この周では**戻れることだけ実測した**（切り替えた先から
       元の worktree に `path` で戻り、書き込みが通った）。**書けなくなること自体は測っていない。**
@@ -539,10 +613,17 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     使わない（必須）**——**stash スタックは全 worktree と他のセッションで共有**なので、
     **他人の作業を取り出しうる**。印を付けて push し、SHA を捕まえて `apply` する:
     ```bash
-    git stash push -u -m "issue-<issue-number>-move"
+    git stash push -u -m "issue-<issue-number>-move"   # メインの作業ツリーで
     git stash list --format='%H %gs'    # 上で付けた印の行から SHA を取る
-    git stash apply <SHA>               # pop ではなく apply
+    git stash apply <SHA>               # ★ worktree を作って、その中で走らせる
+    git stash drop <印の現在の stash@{n}>   # 印で見つけ直してから落とす
     ```
+    - **`apply` で終わらせない（必須）。** `pop` と違って `apply` は**エントリを残す**ので、
+      **移送のたびに共有スタックが伸び、他のセッションの `git stash list` に残り続ける**。
+      **落とすときは番号を覚えておかない**——他のセッションが push / drop すると
+      `stash@{n}` はずれるので、**印で見つけ直してから** `drop` する。
+    - **`apply` を走らせる場所は、移送先の worktree の中**（メインの作業ツリーで走らせると、
+      いま外したはずの変更をそこへ戻すことになる）。
     **WIP コミットを 1 つ作って worktree で cherry-pick するほうが安全**で、
     共有スタックに触らずに済む。
   - ブランチ名は対象リポジトリの CLAUDE.md の命名規約に従う（規約が無ければ
@@ -589,8 +670,16 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
       （エラーも出ない）。
         - **害は小さいが、「片付けた」と思って残る**のが問題で、
           **次の周の `git branch --all --list '*<n>*'` に映る。**
-          手で消せる（`git branch -d <名前>`。squash merge でも、リモート追跡参照に
-          マージ済みと判定されるので `-d` で通った）。
+          手で消せる（`git branch -d <名前>`）。**ただし `-d` が通る条件は upstream の有無で
+          変わる（必須）**——一次ソース（`man git-branch` の `-d`）:
+          「The branch must be fully merged **in its upstream branch**, or **in HEAD if no
+          upstream was set**」。
+            - **push 済み（upstream あり）なら、squash merge でも通る**
+              ——リモート追跡参照に対してマージ済みと判定されるため（**実測**: この 1 件・1 回）。
+            - **一度も push していない周（upstream なし）は、判定相手が HEAD になる**ので、
+              squash merge 済みでも `error: the branch '<名前>' is not fully merged` で落ちる
+              （**一次ソースからの帰結。この形は走らせて確かめていない**）。
+              **中身が要らないと確かめたうえで `-D`**（`--delete --force`）に落とす。
         - **観測窓**: **この 1 件・1 回のみ。** **`EnterWorktree` で作って*改名しなかった*
           worktree で同じことが起きるかは確かめていない**（「起きないはず」とは書かない）。
         - **だから、改名するなら畳むときにブランチを自分で確かめる**——
@@ -1001,16 +1090,39 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   git rev-parse --git-common-dir   # 同じ値なら「メインの作業ツリー」
   git rev-parse --abbrev-ref HEAD  # 計画ファイルに記録したブランチと一致するか
   ```
-  - **複合コマンド 1 本にまとめない（必須）。** 以前ここには
+  - **`git` の出力を `test` に食わせる形にまとめない（必須）。** 以前ここには
     `test "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" && …` と
     書いていたが、**worktree 隔離セッションではこの形が拒否される**
     ——**実測**（2026-09-17、[#110](https://github.com/hdknr/claude-code-setup/issues/110)）:
     `this command names git in a form too complex to verify that it stays inside the worktree.
-    Refusing to run it`。**陽性対照**——同じセッションで素の
-    `git rev-parse --git-dir` は**通った**ので、拒否は「隔離セッションが git を全部拒む」のでは
-    なく**複合の形**で起きている。
+    Refusing to run it`。
     **つまりこの関門は、いちばん効いてほしい状況（worktree の中）で走らなかった。**
-    **観測窓**: この 1 環境・1 回。**他の harness 版で同じに拒否されるかは測っていない。**
+      - **一度「複合の形で起きている」と書いたが、これは誤りだった**（同じ Issue の
+        1 パス目で反証された）。**当時の陽性対照は素の（非複合の）`git rev-parse --git-dir`
+        1 本だけ**で、被験コマンドとは**複合・コマンド置換・`test` の被演算子・git の
+        呼び出し回数の 4 つが同時に違っていた**。**どれが効いたかを 1 つも判別していない。**
+      - **測り直した**（2026-09-17、同一の隔離セッション、各 1 回）。
+        **陽性側（通る）と陰性側（拒否）を同じ観測点で取っている**:
+
+        | 形 | 結果 |
+        | --- | --- |
+        | `echo a && echo b && echo c`（複合・git なし） | 通る |
+        | `git rev-parse --git-dir && echo ok`（複合 ＋ git） | 通る |
+        | `git rev-parse --git-dir && git rev-parse --git-common-dir`（複合・git 2 回） | 通る |
+        | `git symbolic-ref -q HEAD >/dev/null && echo on-branch \|\| echo detached` | 通る |
+        | `echo "dir=$(git rev-parse --git-dir)"`（コマンド置換のみ） | 通る |
+        | `test "$(git rev-parse --git-dir)" != "x" && echo A \|\| echo B` | **拒否** |
+        | `test "$(git …)" != "$(git …)" && …`（元の形） | **拒否** |
+
+      - **効いているのは「`git` のコマンド置換が `test` の被演算子に来ること」**——
+        **複合そのものでも、コマンド置換そのものでもない**（どちらも単独では通る）。
+        **だから規範を「複合コマンドにするな」と広く書かない**——
+        **そう書くと、この節の少し上にある
+        `git symbolic-ref -q HEAD >/dev/null && echo on-branch || echo detached` が
+        自分の規範に違反する**（上表のとおり、これは通る）。
+      - **観測窓**: この 1 環境・1 harness 版、各形 1 回。
+        **他の harness 版で同じ境界かは測っていない**——**`test` 以外の比較の形
+        （`[ ]`・`case`・`if`）も測っていない。**
   - **この 3 つで足りるのは「PR を出す先が合っているか」までで、
     「正しい worktree にいるか」はブランチの一致で見る（必須）。**
     **worktree かどうかだけを見る検査は、周のコミットを持たない別の worktree を素通りさせる**
@@ -1018,8 +1130,9 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     ここでも当てる。**
   - **メインの作業ツリーだった場合は PR を作らない**（`--git-dir` と `--git-common-dir` が
     同じ値）。手順 4 の worktree 開始に戻り、
-    変更を worktree へ移送してから（未コミットなら `git stash push -u -m "<印>"` → worktree 作成 →
-    `git stash apply <SHA>`、コミット済みなら worktree でそのブランチを checkout）PR を作る。
+    変更を worktree へ移送してから（未コミットなら**手順 4 の移送手順を正とする**——
+    印を付けて push・`apply`・`drop` まで。コミット済みなら worktree でそのブランチを
+    checkout）PR を作る。
     **`git stash` / `git stash pop` を裸で使わない**——stash スタックは
     **全 worktree と他のセッションで共有**なので、他人の作業を取り出しうる。
   - デフォルトブランチ上にいる場合も同様に、worktree でブランチを切り直してから作る。
