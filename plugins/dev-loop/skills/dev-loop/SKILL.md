@@ -208,7 +208,9 @@ worktree → PR に乗る。
       ブランチの上にコミットされている**ことがあり、そのときデフォルトブランチの作業ツリーには
       **存在しない**。**メインの作業ツリーから再開した周は、ここで必ず空振りする。**
     - **だから探索は作業ツリーの外まで伸ばす（必須）**——`git worktree list` と
-      `git branch --list '*<issue-number>*'` を見て、**その周の worktree ／ ブランチの中**を探す。
+      `git branch --all --list '*<issue-number>*'` を見て、**その周の worktree ／ ブランチの中**を
+      探す。**`--all` を落とさない**——割り目のあとに push だけして手元の worktree を畳んだ周は、
+      **リモートにしかブランチが無い**。ローカルだけ見ると、その周も「無い」に見える。
     - **「無ければ新規の周」と即断しない（必須）。** 新規と判定してよいのは、**上の 2 つを見て
       どちらにも無かったとき**だけである。実測では、メインの作業ツリーから再開した周が
       既定の 2 パスだけ空振りして新規と判定し、**手順 1 から走り直したうえで 2 本目の worktree を
@@ -387,8 +389,8 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   - **既に worktree がある場合は、作らずにそこへ入る（必須）。** 割り目から再開した周は
     **既にブランチと worktree を持っている**（「途中から再開する周」）。**作る前に必ず見る**:
     ```bash
-    git worktree list                        # その Issue の worktree があるか
-    git branch --list '*<issue-number>*'     # worktree を畳んでいてもブランチは残る
+    git worktree list                            # その Issue の worktree があるか
+    git branch --all --list '*<issue-number>*'   # 畳んでいてもブランチは残る（--all でリモートも）
     ```
     - **`EnterWorktree` は `path` を渡せば既存の worktree に入れる。`path` 無しで呼ぶと
       新規作成になり、既定では `origin/<デフォルトブランチ>` から切る**——つまり
