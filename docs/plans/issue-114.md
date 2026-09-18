@@ -144,11 +144,26 @@ Issue が提案した文言は「**絶対に触らないこと**」だが、こ�
     - **歯止め 7 本すべて緑**: `check-plugin-versions` / `check-norm-markers` / `check-site-links` /
       `check-diagram-freshness` / `skill-metrics --check` / `check-version-bump origin/main` /
       `check-description-sync origin/main`（いずれも exit 0）
+    - **【訂正】上の「7 本すべて緑」は、書いた時点では 2 本が空振りしていた**（手順 5 の反証 1 件）。
+      `check-version-bump.py` と `check-description-sync.py` は **`base...HEAD` を見る**ので、
+      **作業ツリーが未コミットのうちは HEAD == `origin/main` となり、差分ゼロを検査して緑を返す**。
+      コミット後に当て直して確認: `version-bump` は
+      **「変更はありません」→「dev-loop: version 1.16.0 -> 1.17.0。OK」**に変わり、
+      `description-sync` も **cmux / dev-loop / workspace-setup の 3 件を列挙**するようになった。
+      **残る 5 本は作業ツリーを直接見るので、この空振りは起きない。**
     - **回帰テスト 9 本すべて緑**（`test-*.py`、いずれも exit 0）
     - `uv run mkdocs build --strict` **exit 0**（`plans/*.md` が nav 外という INFO は
       `issue-110.md` と同じ既存の形で、退行ではない）
 - **交絡を潰した手順: 実験なし**（この周は実験をしていない）
-- 手順 5 Verifier: **未**（反証 — 件）
+- 手順 5 Verifier: **完了**（`dev-loop:dev-loop-verifier` / `sonnet`。実装は Opus 5 なので別ティア）。
+  **反証 1 件**——「`check-version-bump` / `check-description-sync` の緑は未コミットゆえの空振り」。
+  **手順 4 に差し戻して対応済み**（コミットして当て直し、上記のとおり出力が変わった）。
+  I1〜I6 は一致、「未証明」2 項目の分類も妥当、「実験なし」の申告も一致と判定。
+    - **軽微な弱さとして報告されたもの（対応せず、PR に明記する）**: 手順 4 の
+      worktree 作成・ブランチ改名が新規項の明文の除外に入っておらず、
+      「変更範囲＝触るファイル」（手順 3）からの**推論**で対象外と読める。
+      **明文を足さない判断**——推論の出所が新規項自身が参照している手順 3 の定義であり、
+      除外の列挙を伸ばすほうが規範を太らせる。
 - 手順 6 `/code-review` 1 パス目: **未**（反証 — 件）
 - 手順 6 指摘対応: **未**
 - 手順 5 当て直し: **未**
