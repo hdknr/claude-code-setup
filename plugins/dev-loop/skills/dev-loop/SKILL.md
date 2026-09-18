@@ -252,10 +252,29 @@ worktree → PR に乗る。
           `Fixes #<n>` 規約に依存する。**
         - **番号にも名前にも依らないのは 1 本目だけ（必須）。** `git worktree list` を
           **全件見る**と、絞ると**ランダム名の worktree が出力から消える**のに対し、
-          全件なら**在ることは見える**——そのうえで各 worktree の HEAD を当たればよい
-          （`git -C <path> log --oneline -1`）。**計画ファイルを gitignore した周で
-          worktree も畳んでいると、この 3 本はどれも当たらない**——そのときは
+          全件なら**在ることは見える**。**各 worktree の HEAD とブランチは、この 1 本の出力に
+          既に入っている**（`<パス> <SHA> [<ブランチ>]` の形）ので、**当たり直す必要が無い。**
+            - **`git -C <パス>` で当たり直さない（必須）。** worktree 隔離セッションでは
+              **自分の worktree の外を指す `-C` が拒否される**——**実測**（2026-09-18、
+              [#110](https://github.com/hdknr/claude-code-setup/issues/110) の 2 パス目）:
+              `this command redirects git to the shared checkout via -C`。
+              **陽性対照**——同じセッションで `-C` に**自分の worktree のパス**を渡すと
+              **通った**ので、拒否は「`-C` が使えない」のではなく
+              **指す先が自分の worktree の外であること**で起きている（振った次元は 1 つ）。
+              **以前ここには `git -C <path> log --oneline -1` と書いていた**が、
+              **この項が想定している再開の局面（worktree の中）でこそ走らない**コマンドだった。
+            - **中身を見たいときはブランチ名で引く**——**参照は全 worktree で共有**なので、
+              **他の worktree が checkout しているブランチでも**
+              `git log --oneline -1 <ブランチ>` が**自分の worktree の中から読める**
+              （実測・同上）。
+        - **3 本とも空振りする周はある。ただし 3 本目を無条件に死んだ扱いにしない（必須）。**
+          計画ファイルを gitignore し、worktree も畳んだ周では 1 本目・2 本目が落ちるが、
+          **3 本目は別の条件に乗っている**——`git worktree remove` は**ブランチを消さない**
+          （上の `--all` の項）ので、**`Fixes #<n>` の規約に従っていれば 3 本目は当たる**。
+          **3 本目も空振りした**（その規約に従っていない周だった）ときに初めて、
           「途中から再開する周」の**読めないと分かったときの扱い**（人間に指示を仰ぐ）に落ちる。
+          **「どれも当たらない」と決めてから人間に上げると、在るものを見ずに諦める**
+          （#110 の 2 パス目で指摘された）。
         - **改名の跡にも注意**——`ExitWorktree` で畳んだのに残ったブランチが混ざる
           （手順 4 の「改名すると後片付けと噛み合わない」）。**当たったものは確かめてから入る。**
         - **同じ Issue に worktree ／ ブランチが 2 本以上当たることがある（必須）**——
@@ -471,8 +490,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
       **先に読む**」と書いていたが、**上から順に実行するモデルは、読む前に作ってしまう**
       ——**警告文は、それを読む前に通り過ぎる場所には置けない**
       （[#110](https://github.com/hdknr/claude-code-setup/issues/110) の 1 パス目で指摘された）。
-      **だから存在確認を、新規作成のコマンドより*前*に置く。下のコマンドは、この 2 本が
-      空振りした周だけが使う**:
+      **だから存在確認を、新規作成のコマンドより*前*に置く。まずこの 2 本を走らせる**:
       ```bash
       git worktree list                            # その Issue の worktree があるか
       git branch --all --list '*<issue-number>*'   # 畳んでいてもブランチは残る（--all でリモートも）
@@ -481,6 +499,13 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
         - **空振りを「新規の周」と読まない（必須）。** この 2 本は**名前に番号が入っていること**に
           乗っているので、**ランダム名で作られた周は映らない**（「途中から再開する周」の
           `EnterWorktree` の項）。**番号に依らない探索を当ててから決める。**
+        - **この 2 本が省けるようにするのは `git worktree add` のブロックだけ（必須）。**
+          **次に来る「肯定的な確認」（`rev-parse --abbrev-ref HEAD` ／ `log --oneline -1`）は、
+          どの周でも走らせる**——**新規の周は起点と、再開した周は計画ファイルの記録と
+          突き合わせる**。**当たったからといって飛ばしてよいのは作成だけ**であり、
+          ここを飛ばすと**不変条件 A の検査そのものが消える**
+          （#110 の 2 パス目で、「下のコマンド」の指す先が曖昧で
+          **肯定的な確認まで免除と読める**と指摘された）。
   - **いま worktree の中にいることは、*正しい* worktree にいることではない（必須）。**
     **`--git-dir` ≠ `--git-common-dir` を「続けてよい」の判定に使ってはならない**——
     **それは「どれかの worktree にいる」しか言わない**。**#96 で壊れた周は worktree の中にいた**
@@ -500,12 +525,18 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   # 使えない環境の同等操作（置き場所については直後の注意を読む）:
   git worktree add .claude/worktrees/issue-<issue-number> -b issue/<issue-number>-<説明>
   ```
-  - **`ExitWorktree` の後片付けは、`EnterWorktree` が `name` で作った worktree にしか効かない
-    （必須）。** 以前ここには「**後片付けまで面倒を見てくれる**」とだけ書いていたが、
-    **この周が推奨する経路にはまさに効かない**。一次ソース（道具の説明文）:
+  - **`ExitWorktree` の後片付けは、`EnterWorktree` が*このセッションで作った* worktree に
+    しか効かない（必須）。** 以前ここには「**後片付けまで面倒を見てくれる**」とだけ
+    書いていたが、**この周が推奨する経路にはまさに効かない**。一次ソース（道具の説明文）:
     「ONLY operates on worktrees created by EnterWorktree **in this session**」
     「will NOT touch: Worktrees you created manually with `git worktree add`」
     「**ExitWorktree will not remove a worktree entered this way**（`path` で入った worktree）」。
+      - **「`name` を渡して作った場合だけ」ではない（必須）。** 効くかどうかを決めるのは
+        **このセッションの `EnterWorktree` が作ったかどうか**であって、`name` の有無ではない
+        ——**`name` を渡さなければランダム名で作られる**（上の `EnterWorktree` の項）が、
+        **それも「作った」側**なので後片付けの対象に入る。
+        **`path` 無しの `EnterWorktree` が生やした 2 本目**も同様である
+        （#110 の 2 パス目で、**引用した一次ソースより狭く言い換えていた**と指摘された）。
       - つまり**下の「規約どおりの名前で最初から切る」形**（素の `git worktree add` →
         `EnterWorktree` に `path`）で入った worktree は、**畳むのも手**である
         （`git worktree remove <path>` ＋ ブランチは別途）。
@@ -523,10 +554,15 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     一次ソース（道具の説明文）:「Must not already be in a worktree session when creating a
     new worktree (`name`)」——**`name` での新規作成は拒否され、`path` での切替だけが通る。**
     取れるのは次のどちらか:
-      - **素の `git worktree add` で作る**——ただし**相対パスは*いまいる worktree* を起点に
-        解決される**ので、**メインの作業ツリーの絶対パスで書く**
+      - **素の `git worktree add` で作る**——ただし**相対パスは*シェルの cwd* を起点に
+        解決される**（`git` の一般則。**この周では別途走らせて確かめていない**）ので、
+        **メインの作業ツリーの絶対パスで書く**
         （`git worktree add <メインツリーの絶対パス>/.claude/worktrees/issue-<n> -b …`）。
-        **相対パスのまま走らせると別の worktree の中に入れ子で生える。**
+        **別の worktree の中にいる周は cwd がそこなので、相対パスのまま走らせると
+        その worktree の中に入れ子で生える。**
+        **絶対パスで書けば起点がどこでも同じ場所を指す**ので、
+        **この一般則が仮に違っても結果は変わらない**（#110 の 2 パス目で、
+        **出所も観測窓も無いまま道具の挙動として断定していた**と指摘された）。
       - **前の周を畳んでから始める**（`ExitWorktree`。効く条件は上の後片付けの項）。
   - **既に worktree がある場合は、作らずにそこへ入る（必須）。** 割り目から再開した周は
     **既にブランチと worktree を持っている**（「途中から再開する周」）。
@@ -568,19 +604,39 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
            「If called outside an EnterWorktree session, the tool is a **no-op**」。
            **この worktree の中で `/clear` して入り直した周は `EnterWorktree` を呼んでいない**
            ので no-op になり、そもそも「起動ディレクトリ」が worktree 自身である。
-           **同一セッションで `EnterWorktree` を呼んで入った場合にだけ使える。**
+           **使えるとすれば同一セッションで `EnterWorktree` を呼んで入った場合だけ**だが、
+           **そこから先は測っていない（必須）**——**戻ったあとの入場が
+           「初回入場」として扱われるか**（道具の説明文は「On first entry from the launch
+           directory, the path must appear in `git worktree list`」と条件を分けている）は、
+           **`ExitWorktree` の後に確かめていない**。**「使える」と書き切らない**
+           （#110 の 2 パス目で、**1 パス目にあった「いずれもこの周では測っていない」の
+           留保が、確かめないまま肯定形に置き換わっている**と指摘された）。
         2. その周のブランチを、**配下に作った新しい worktree で** checkout する
            （`git worktree add .claude/worktrees/issue-<n> <既存ブランチ>`。**`-b` を付けない**）
            ——**元の worktree がそのブランチを checkout したままなら fatal で止まる。**
            一次ソース（`man git-worktree` の `-f, --force`）:
            「add refuses to create a new worktree when `<commit-ish>` is a branch name and
            **is already checked out by another worktree**」。
-           **先に `git worktree remove <元のパス>` で外すか、`--force` を付ける**
-           （`--force` は 2 本が同じブランチを持つ状態を作るので、**どちらで作業しているかを
+           **先に `git worktree remove <元のパス>` で外すか、`add` に `--force` を付ける**
+           （`add --force` は 2 本が同じブランチを持つ状態を作るので、**どちらで作業しているかを
            見失いやすい**）。
-           **さらに、相対パスは*いまいる worktree* を起点に解決される**ので、
+           - **`remove` のほうにも前提がある（必須）。** 一次ソース（`man git-worktree` の
+             `remove`）:「**Only clean worktrees**（no untracked files and no modification in
+             tracked files）**can be removed**」「remove refuses to remove an unclean worktree
+             **unless --force is used**」。
+             **P7 で外したい元の worktree は、入れなかった作業が載っている worktree そのもの**
+             なので、**汚れているのがふつう**である——**素の `remove` は fatal で止まる。**
+           - **ここで `remove --force` に逃げてはならない（必須）。** それは
+             **いま救おうとしている未コミットの変更を捨てる**。**先にその worktree の中で
+             コミットするか**（人間にセッションを開いてもらう＝下の 3 番目）、
+             **`add --force` のほうを選ぶ**（元をそのまま残す）。
+             **「`--force` を付ければ通る」で 2 つの `--force` を同じものとして扱わない**
+             ——`add --force` は**状態を増やす**が、`remove --force` は**消す**
+             （#110 の 2 パス目で、`remove` の前提が抜けていると指摘された）。
+           **さらに、相対パスは*シェルの cwd* を起点に解決される**ので、
            別の worktree の中から走らせると `<その worktree>/.claude/worktrees/…` に生える
-           ——**メインツリー配下ではない。絶対パスで書く。**
+           ——**メインツリー配下ではない。絶対パスで書く**（出所と留保は上の
+           「`EnterWorktree` では新規に作れない」の項）。
            （**その入れ子を `EnterWorktree` の `path` が受け付けるかは測っていない。**）
         3. **人間に、その worktree の中で新しいセッションを開いてもらう**——
            **条件を外さない唯一の手**（初回入場の条件に戻る）。
@@ -1091,24 +1147,33 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   git rev-parse --abbrev-ref HEAD  # 計画ファイルに記録したブランチと一致するか
   ```
   - **走らせる形を、harness が静的に検証できる形に保つ（必須）。** worktree 隔離セッションは、
-    **「走らせるものが `git` でないと示せない」コマンドを拒否する**。以前ここには
+    **`git` の操作が自分の worktree を出ないことを静的に示せないコマンドを拒否する**
+    （**この言い方はガード自身の 2 文目の引用**である。下の「拒否の根」を参照）。以前ここには
     `test "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" && …` と
     書いていたが、**worktree 隔離セッションではこの形が拒否される**
     ——**実測**（2026-09-17、[#110](https://github.com/hdknr/claude-code-setup/issues/110)）:
     `this command names git in a form too complex to verify that it stays inside the worktree.
     Refusing to run it`。
     **つまりこの関門は、いちばん効いてほしい状況（worktree の中）で走らなかった。**
-      - **実際に守る形は 3 つ（必須）。** いずれも下の実測から出ている:
+      - **実際に守る形は 4 つ（必須。ただし目安であって十分条件ではない——下の「拒否の根」）。**
+        いずれも下の実測から出ている:
         1. **`git` の出力を `test` の被演算子にしない。** 上のコードブロックのように
            **1 行ずつ素のコマンドで出して、値は読む側が突き合わせる。**
         2. **実行時に決まる値を、プログラム／スクリプトの位置に置かない。**
            `python3 scripts/$S.py` は拒否される。**計算値はスクリプトより後ろに置く**
            （`python3 scripts/<名前>.py $ARGS` は通る）。複数のスクリプトを回したいなら
            **スクリプト名をリテラルで書いた行に割る**——ループにまとめない。
+           **「スクリプトの位置」だけではない**——`sed -n 1,5p $F` のように
+           **オプションが立ちうる位置に計算値を置く**形も拒否される
+           （`where an option may stand`）。**パスもリテラルで書く。**
         3. **`git` という語を含むテキストを、別のプログラムに食わせない。**
            ヒアドキュメントで `python3 - <<'EOF'` にスクリプト本文を流す形は、
            **本文が `git` を含むだけで拒否される**（`feeds python text naming git`）。
            **その編集はファイル編集ツールで行う**——Bash に寄せられない場面がここにある。
+        4. **`git -C` で自分の worktree の外を指さない。** **`git` だと示せていても拒否される**
+           （`redirects git to the shared checkout via -C`）。
+           **他の worktree の HEAD は `git worktree list` の出力に既に入っており、
+           中身はブランチ名で引ける**（参照は共有。「途中から再開する周」の該当項）。
       - **一度「複合の形で起きている」と書いたが、これは誤りだった**（同じ Issue の
         1 パス目で反証された）。**当時の陽性対照は素の（非複合の）`git rev-parse --git-dir`
         1 本だけ**で、被験コマンドとは**複合・コマンド置換・`test` の被演算子・git の
@@ -1126,7 +1191,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
         | `test "$(git rev-parse --git-dir)" != "x" && echo A \|\| echo B` | **拒否** |
         | `test "$(git …)" != "$(git …)" && …`（元の形） | **拒否** |
 
-      - **その測り直しの結論も、広すぎた**（同じ Issue の **2 パス目**で反証された）。
+      - **その測り直しの結論も、広すぎた**（同じ Issue の**手順 5 の当て直し**で反証された）。
         当時は「**効いているのは『`git` のコマンド置換が `test` の被演算子に来ること』——
         複合そのものでも、コマンド置換そのものでもない**」と書いたが、
         **これは上の 7 形から言える十分条件であって、境界の全体ではない**。
@@ -1149,25 +1214,58 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
         **同じ周でさらに 3 つ目の形が出た**——`python3 - <<'EOF'` に `git` を含む本文を
         流すと `feeds python text naming git` で拒否される（`test` もコマンド置換も
         変数展開も無い）。
-      - **だから「効いているのは X」と書かない（必須）。** **3 つの拒否メッセージは
-        どれも同じ末尾を持つ**——「**走らせるものが `git` でないと示せない**」。
-        `test` の被演算子も、計算されたスクリプト名も、`git` を含む本文も、
-        **その末尾が付いた個別の形**である。
-        **ただしこれも 3 件からの帰納で、境界を尽くしている保証は無い**——
-        **ガード自身の文言を要約しただけ**なので、推測よりは強いが、
-        **「根はこれである」と断定できるほどの数は見ていない**。
+      - **拒否の根は、帰納せずに引用で取れる（必須）。** **拒否メッセージは 2 文から成り、
+        1 文目（理由）は形ごとに違うが、2 文目は全件で同一**である。**2 文目を引く**:
+        `Refusing to run it — a worktree-isolated session's git operations must target its
+        own worktree.` ——**これはガードが自分で述べている規則**なので、
+        **測った形からの帰納ではない。**
+        - **一度「3 つの拒否メッセージはどれも同じ末尾を持つ——『走らせるものが `git` で
+          ないと示せない』」と書いたが、これは誤りだった**（2 パス目で反証）。
+          **その文言を持つのは 1 形だけ**で、他は別の理由を述べている。
+          **1 文目（理由）と 2 文目（規則）を取り違えていた。**
+        - **決定的なのは、`git` だと*示せている*のに拒否される形があること**——
+          `git -C <自分の worktree の外> …` は**理由が
+          `redirects git to the shared checkout via -C`** で、
+          **「`git` でないと示せない」の正反対**である（上の表の 2・3 行目も
+          まぎれもなく `git` で、そちらは**通る**）。
+          **根を「`git` でないと示せないこと」に置くと、自分の陽性対照と矛盾する。**
+      - **理由の側（1 文目）は数え上げない（必須）。** **観測できた理由は 5 つ**で、
+        **2 パス目だけで 2 つ増えた**（`-C` と、下の `sed` の形）:
+
+        | 形 | 1 文目（理由） |
+        | --- | --- |
+        | `test "$(git …)" != …` | `names git in a form too complex to verify that it stays inside the worktree` |
+        | `S=<名前>; python3 scripts/$S.py` | `runs python with a value computed at runtime … so what it runs cannot be shown not to be git` |
+        | `python3 - <<'EOF'`（本文に `git`） | `feeds python text naming git …, which cannot be shown to stay inside the worktree` |
+        | `sed -n 1,5p $F`（`F` にパス） | `runs sed with a value computed at runtime … where an option may stand` |
+        | `git -C <外のパス> …` | `redirects git to the shared checkout via -C` |
+
+        **「効いているのは X」とも「根は Y である」とも書かない**——
+        **形を 1 つ足すたびに理由が増えており、数え上げが閉じる見込みが無い。**
         **測った形の集合から境界の全体を述べると、集合の外で破れる**——
-        **1 パス目で 1 度直した型が、狭め方を変えて再発した。**
-        **根を断定するのは、同じ型が 1 段上に移るだけである**（2 パス目の関門が
-        ここを留保として挙げた）。
+        **1 パス目は「複合」で広げすぎ、手順 5 の当て直しでは「`test` の被演算子」と
+        狭めて断定し、2 パス目には「根は `git` でないと示せないこと」と 1 段上で断定して、
+        3 度とも別の関門に反証された。**
+        **振れ幅ではなく、断定の形が問題である。**
+      - **だから運用は、境界を当てにせず「拒否されたら分ける」でよい（必須）。**
+        下の 4 つは**観測された形を避けるための目安**であって、**十分条件ではない。**
+        **拒否されたらメッセージの 1 文目を読んで、その形を素の 1 行に割る。**
       - **規範を「複合コマンドにするな」と広く書かないのは、いまも同じ理由（必須）。**
-        そう書くと、この節の少し上にある
+        そう書くと、**手順 4 の「detached HEAD かどうかを見る」項が薦めている**
         `git symbolic-ref -q HEAD >/dev/null && echo on-branch || echo detached` が
         自分の規範に違反する（上の表のとおり、これは通る）。
-      - **観測窓**: この 1 環境・1 harness 版、各形 1 回。
+        **この節の中にある同じ文字列は測定表の行**であって、薦めているのはこの節ではない
+        （#110 の 2 パス目で、**「この節の少し上」が実際には別の手順を指していた**と
+        指摘された）。
+      - **観測窓**: この 1 環境・1 harness 版、各形 1 回
+        （2026-09-17 に 11 形、**2026-09-18 の 2 パス目に `-C` の 2 形と `sed` の 1 形を追加**。
+        `-C` は**陽性対照つき**——自分の worktree のパスを渡すと通り、外を渡すと拒否される、
+        の 1 次元）。
         **他の harness 版で同じ境界かは測っていない**——**`test` 以外の比較の形
-        （`[ ]`・`case`・`if`）も、`python3` 以外のプログラムも測っていない。**
-        **ここに挙げた 3 つの形が拒否の全部だとも言えない**（同じ根から別の形が出うる）。
+        （`[ ]`・`case`・`if`）も、`python3` / `sed` 以外のプログラムも測っていない。**
+        **ここに挙げた形が拒否の全部だとは言えない**——むしろ
+        **パスを重ねるたびに新しい形が出ている**（1 パス目 3 形 → 2 パス目でさらに 2 理由）。
+        **だから境界を言い当てようとせず、2 文目の規則を引いて、拒否されたら割る**（上項）。
   - **この 3 つで足りるのは「PR を出す先が合っているか」までで、
     「正しい worktree にいるか」はブランチの一致で見る（必須）。**
     **worktree かどうかだけを見る検査は、周のコミットを持たない別の worktree を素通りさせる**
