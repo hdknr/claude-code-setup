@@ -158,8 +158,25 @@ Issue #112 の「進め方の提案」が先に置いた問いに従う:
     - ブランチ: `issue/112-guard-remedy`
     - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-112`
     - 起点コミット: `165dd48`
-- **どの関門を、どのパスまで通したか**: （未着手）
+- **どの関門を、どのパスまで通したか**
+    - 手順 4（実装）: **完了**。コミット `e56137a`。
+      機械的な検査は**全件緑**——`check-plugin-versions` / `check-version-bump origin/main` /
+      `check-description-sync origin/main` / `check-norm-markers` / `check-site-links` /
+      `check-diagram-freshness` / `skill-metrics --check` の 7 本と、
+      CI が呼ぶ `test-*.py` 9 本（`test-check-norm-markers` / `test-skill-metrics` /
+      `test-check-plugin-versions` / `test-check-site-links` / `test-link-skills` /
+      `test-check-description-sync` / `test-check-diagram-freshness` /
+      `test-export-diagrams` / `test-token-metrics`）。
+      **途中で `check-norm-markers` が 1 件落ちた**——この計画ファイルが
+      `（必須）` を原本の外に漏らしていた。バッククォートで囲んで直し、再実行で緑。
+    - 手順 5 の Verifier: **未着手**
+    - `/code-review` 1 パス目: **未着手**
+    - 指摘対応: **未着手**
+    - 手順 5 の当て直し: **未着手**
+    - `/code-review` 2 パス目: **未着手**
 - **手順 5 で挙がった反証と、手順 4 への差し戻しの履歴**: （なし）
+- **手順 4 の割り目**: 人間に `AskUserQuestion` で提示済み。**選択は下に書き戻す。**
+    - 選択: **「このまま続ける」**（2026-09-19）。割らずに手順 5 へ進んだ。
 - **交絡を潰した手順**: **実験あり。** 下に記録する。
 
 ### 交絡を潰した手順（手順 5 の規定に対する実績）
