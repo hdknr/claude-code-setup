@@ -266,8 +266,8 @@ worktree → PR に乗る。
               **`-C` が拒否される**——**実測**（2026-09-18、
               [#110](https://github.com/hdknr/claude-code-setup/issues/110) の 2 パス目）:
               `this command redirects git to the shared checkout via -C`。
-              **「外を指したから」と読んではならない（必須）**——**自分の worktree を指す
-              `-C .` を名指しした拒否も実測されている**（#112）。
+              **「外を指したから」と読んではならない（必須）**——**理由節が `-C .` を
+              名指しした拒否も実測されている**（#112）。
               **内側なら通る、という当てにし方をしない。**
               **以前ここには `git -C <path> log --oneline -1` と書いていた**が、
               **この項が想定している再開の局面（worktree の中）でこそ走らない**コマンドだった。
