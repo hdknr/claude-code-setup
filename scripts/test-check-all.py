@@ -187,6 +187,10 @@ def test_ci_runs_every_registered_script() -> None:
     出すため各スクリプトを個別ステップにしている）。**だから収録と CI 登録は別の作業**で、
     **片方だけ済ませると、そのテストは手元でしか走らない。**
 
+    **照合は名前単位で行う（必須の注意）。** **素の部分文字列一致では、`check-X.py` が
+    `test-check-X.py` に覆い隠される**——**最初そう書いて、2 パス目の Verifier に
+    「6 本が隠れる」と反証された。** **歯止めを足した当人が、同じ型の盲点を作っていた。**
+
     **上の `test_registry_covers_every_script` はこの向きを見ていなかった**——
     「`scripts/` に在るのに `check-all.py` に無い」は見るが、
     「`check-all.py` に在るのに CI に無い」は見ない。**実際に 2 本が漏れていた**
@@ -198,7 +202,12 @@ def test_ci_runs_every_registered_script() -> None:
     workflows = REAL_REPO / ".github" / "workflows"
     ci = "".join(f.read_text() for f in sorted(workflows.glob("*.yml")))
     registered = sorted(set(re.findall(r'"((?:check|test|skill)-[a-z-]+\.py)"', src)))
-    missing = [n for n in registered if n not in ci]
+    # **素の部分文字列一致にしない。** `check-X.py` は **`test-check-X.py` の部分文字列**
+    # なので、**`check-X.py` の CI ステップを消しても、`test-` 版が残っていれば隠れる**
+    # ——**実測で 6 本が覆い隠されていた**（#136 の 2 パス目で Verifier が指摘）。
+    # **`scripts/` の直後から行末・空白までを 1 つの名前として照合する。**
+    ci_scripts = set(re.findall(r"scripts/([A-Za-z0-9_.-]+\.py)", ci))
+    missing = [n for n in registered if n not in ci_scripts]
     check(f"収録したものを CI も回している（{len(registered)} 本）", not missing)
     if missing:
         print(f"       CI の yaml に無い: {missing}")
