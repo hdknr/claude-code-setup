@@ -37,6 +37,7 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 | **原本の中の重複** | `SKILL.md` の中で同じ規範を 2 度書いても通る（#92 で実際に起きた） |
 | **ポインタの指し先が実在するか** | 「`SKILL.md` の手順 6 を正とする」と書いて手順 6 に何も無くても通る |
 | **フェンスの中の記載** | `strip_fences` で落としている。例示のためのコードブロックを数えると、**規約を例示しただけで落ちる**（`skill-metrics.py` と同じ扱い） |
+| **原本の中のどこに書いたか** | 原本は **`SKILL.md` ＋ `references/*.md`** で、**その中での置き場所は見ていない**。**再開の周でしか要らない節だけを `references/` に出す**という判断は、**人間が行う**（#136） |
 | **他のプラグインの `SKILL.md`** | 原本は dev-loop の 1 本だけなので、`plugins/cmux/` などがマーカーを使うと**このスクリプトが誤ったエラーメッセージを出す**（「dev-loop の原本へ移せ」と言う）。**そうなったら ORIGIN を「プラグインごとの原本」に一般化すること**——いまは dev-loop 以外がマーカーを使っていないので単数にしてある |
 | **`skill-metrics` の開始印を他のファイルに貼ること** | どのファイルでも生成ブロックとして扱うので、**貼れば以降が全部免除される**。印を偽装する動機がある状況は想定していない |
 | **1 行にバッククォートが奇数個ある場合** | 閉じ忘れた囲みが**後続の正常な囲みと対になり**、間の素のマーカーが引用扱いで消える（`` `閉じ忘れ （必須） そして `本物` ``）。**見逃す向き**である。正しく直すにはインラインの構文解析が要り、**行単位の正規表現では原理的に取れない**。閉じ忘れ自体が壊れた Markdown なので、そちらを直すのが筋 |
@@ -56,7 +57,28 @@ from markdown_fences import strip_fences  # noqa: E402
 MARKER = "（必須）"
 
 # 原本。ここにだけマーカーを書いてよい。
-ORIGIN = "plugins/dev-loop/skills/dev-loop/SKILL.md"
+#
+# **原本は 1 ファイルではなく、スキルのディレクトリである**（#136）。
+# `SKILL.md` が大きくなりすぎたので、**再開の周でしか要らない節を `references/` に
+# 出した**——**起点に載る量を減らすため**であって、規範として弱いからではない。
+# **`references/` の中でも `（必須）` はそのまま効く。**
+#
+# **除外にしなかったのは意図的である。** 除外すると**移設先が無検査になり、
+# 歯止めが盲目になる**——「原本の外に漏れていないか」を見る検査が、
+# 「漏れた先を見ない」ようになるのでは本末転倒である。
+ORIGIN_DIR = "plugins/dev-loop/skills/dev-loop"
+ORIGIN = f"{ORIGIN_DIR}/SKILL.md"
+
+
+def in_origin(rel: str) -> bool:
+    """原本（スキルのディレクトリの中の Markdown）かどうか。
+
+    **`SKILL.md` そのものと、`references/` 以下の `.md` を原本とする。**
+    **スキルのディレクトリの外は原本ではない。**
+    """
+    if rel == ORIGIN:
+        return True
+    return rel.startswith(f"{ORIGIN_DIR}/references/") and rel.endswith(".md")
 
 # 走査する先。**ここを増やし忘れると、増やした先が黙って対象外になる**ので、
 # 「拾いすぎて落とす」側に倒して .md を全部見る（除外は下の SKIP_DIRS だけ）。
@@ -106,7 +128,7 @@ def violations(root: Path) -> list[tuple[str, int, str]]:
     found = []
     for path in markdown_files(root):
         rel = path.relative_to(root).as_posix()
-        if rel == ORIGIN:
+        if in_origin(rel):
             continue
         in_generated = False
         # **フェンスの中は数えない。** `skill-metrics.py` と `check-plugin-versions.py` が
@@ -139,7 +161,7 @@ def main() -> int:
 
     found = violations(root)
     if found:
-        fail(f"`{MARKER}` が原本（{ORIGIN}）の外にあります:")
+        fail(f"`{MARKER}` が原本（{ORIGIN_DIR}/ の中の Markdown）の外にあります:")
         for rel, lineno, line in found:
             fail(f"  {rel}:{lineno}: {line[:100]}")
         fail("")
@@ -156,7 +178,9 @@ def main() -> int:
     # 版のバナー）にマーカーが無いから**にすぎない。frontmatter の `description` に
     # マーカーが入れば、また食い違う。**この数は参考値**であって、
     # **節ごとの正は `skill-metrics.py` の生成ブロック**である。
-    count = strip_fences((root / ORIGIN).read_text(encoding="utf-8")).count(MARKER)
+    origin_files = [root / ORIGIN] + sorted((root / ORIGIN_DIR / "references").glob("*.md"))
+    count = sum(strip_fences(f.read_text(encoding="utf-8")).count(MARKER)
+                for f in origin_files if f.exists())
     print(f"必須マーカーの検査: 問題なし"
           f"（{total} 件の Markdown を検査。原本に {count} 個・参考値）")
     return 0
