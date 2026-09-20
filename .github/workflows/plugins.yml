@@ -49,6 +49,9 @@ jobs:
       - name: 必須マーカーが原本の外に漏れていないかチェック
         run: python3 scripts/check-norm-markers.py
 
+      - name: 件数の食い違い（#138）
+        run: python3 scripts/check-duplicate-counts.py
+
       # ubuntu-latest の /bin/sh は dash。macOS 側は zsh / bash なので、
       # 両方で回すことで「片方のシェルだけで壊れる」類（#57 で実際に踏んだ）を止める。
       - name: link-skills.sh のテスト
@@ -63,6 +66,9 @@ jobs:
 
       - name: check-norm-markers.py のテスト
         run: python3 scripts/test-check-norm-markers.py
+
+      - name: check-duplicate-counts.py のテスト
+        run: python3 scripts/test-check-duplicate-counts.py
 
       # 歯止めを 1 本ずつ選ばせないための入口（#117）。本体は CI から呼ばないが、
       # 「収録漏れ＝黙って 1 本落とす」を見るのはこのテストだけなので、テストは回す。
