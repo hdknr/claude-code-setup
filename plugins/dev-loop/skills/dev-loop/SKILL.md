@@ -1049,7 +1049,9 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 
   **終了コードで分岐する**——**0: 通過** ／ **1: メインの作業ツリー**（**PR を作らない**）／
   **2: ブランチ不一致**（**別の worktree にいる**）／ **3: detached**
-  （**場所は合っていて名前が出ていないだけかもしれない**）。
+  （**場所は合っていて名前が出ていないだけかもしれない**）／
+  **4: 判定できなかった**（**「メインにいる」とは答えていない。git が使えないか、
+  `--path-format` を持たない古い git である**）。
   **「落ちた」だけでは次に何をすべきか決まらない**ので、**コードを見て分ける。**
 
   **スクリプトを使うのは、ガードを避けるためでもある**——値の突き合わせを
@@ -1057,10 +1059,16 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   **素の git で確かめたいなら、1 行ずつ走らせる**（下の「走らせる形」を読むこと）:
 
   ```bash
-  git rev-parse --git-dir          # worktree なら …/.git/worktrees/<名前>
-  git rev-parse --git-common-dir   # 同じ値なら「メインの作業ツリー」
-  git rev-parse --abbrev-ref HEAD  # 計画ファイルに記録したブランチと一致するか
+  git rev-parse --path-format=absolute --git-dir         # worktree なら …/.git/worktrees/<名前>
+  git rev-parse --path-format=absolute --git-common-dir  # 同じ値なら「メインの作業ツリー」
+  git rev-parse --abbrev-ref HEAD                        # 記録したブランチと一致するか
   ```
+
+  **`--path-format=absolute` を落とさない（必須）。** **付けないと、
+  メインの作業ツリーの*サブディレクトリ*から走らせたときに、前者が絶対・後者が相対で返り、
+  比較が必ず不一致になる**——**メインの作業ツリーにいるのに「worktree にいる」と読める。**
+  **`Bash` の cwd は呼び出し間で持続する**ので、**直前の `cd docs` だけで起きる。**
+  **一度スクリプト側だけ直して、この散文を直し忘れ、`/code-review` に反証された**（#136）。
   - **走らせる形は、素の 1 行に保つ（必須）。** worktree 隔離セッションには**ガードがあり、
     一部の形を拒否する**。**素のコマンドを 1 行ずつ、パスもスクリプト名もリテラルで書く**
     ——**値の突き合わせは、走らせる側ではなく読む側でやる。**
@@ -1076,8 +1084,8 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     **worktree かどうかだけを見る検査は、周のコミットを持たない別の worktree を素通りさせる**
     ——#96 で壊れた周はまさに worktree の中にいた。**手順 4 の肯定的な確認と同じものを、
     ここでも当てる。**
-  - **メインの作業ツリーだった場合は PR を作らない**（`--git-dir` と `--git-common-dir` が
-    同じ値）。手順 4 の worktree 開始に戻り、
+  - **メインの作業ツリーだった場合は PR を作らない**（`--path-format=absolute` を付けた
+    `--git-dir` と `--git-common-dir` が同じ値）。手順 4 の worktree 開始に戻り、
     変更を worktree へ移送してから（未コミットなら**手順 4 の移送手順を正とする**——
     印を付けて push・`apply`・`drop` まで。コミット済みなら worktree でそのブランチを
     checkout）PR を作る。

@@ -78,6 +78,19 @@ FENCED = """# デモ
 本文の指し先は `references/resume.md` だけ。
 """
 
+# **フェンスの中の起動行。** **実際の起動はすべてコードブロックの中にある**ので、
+# **ここを見ないと、いちばん壊れて困る指し先を 1 つも検査しない。**
+# **占位子に空白が入る**（`<このスキルの base ディレクトリ>`）ことも試料に入れてある
+# ——**`\S*?` では跨げず、1 件も拾わなかった**（実測）。
+INVOKED_OK = """# デモ
+
+```bash
+bash <このスキルの base ディレクトリ>/scripts/find-cycle.py 42
+```
+"""
+
+INVOKED_BROKEN = INVOKED_OK.replace("find-cycle.py", "find-cycle-typo.py")
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -95,10 +108,14 @@ MUTATIONS = {
     "囲みを見ない": (
         'POINTER = re.compile(r"`((?:references|prompts|scripts)/[\\w./-]+)`")',
         'POINTER = re.compile(r"(?!x)x")'),
-    # 守る 3: フェンスの中を見ないこと
+    # 守る 3b: フェンスの中の起動行は見ること
+    "起動行を見ない": (
+        'INVOCATION = re.compile(r"(?:bash|sh|python3?)\\s+.*?(scripts/[\\w.-]+)")',
+        'INVOCATION = re.compile(r"(?!x)x")'),
+    # 守る 3: フェンスの中を見ないこと（囲まれた相対パスについて）
     "フェンスを剥がさない": (
-        '    text = strip_fences(path.read_text(encoding="utf-8"))',
-        '    text = path.read_text(encoding="utf-8")'),
+        "    stripped = strip_fences(raw)",
+        "    stripped = raw"),
     # 守る 4: スキルを固定しないこと
     "スキルを名前で固定する": (
         '    for plugin in sorted((root / "plugins").glob("*")):',
@@ -134,6 +151,17 @@ def main() -> int:
         fenced = base / "fenced"
         assert_not_real_repo(fenced)
         make_skill(fenced, body=FENCED, files={"references/resume.md": "# 再開\n"})
+        invoked = base / "invoked"
+        assert_not_real_repo(invoked)
+        make_skill(invoked, body=INVOKED_OK, files={"scripts/find-cycle.py": "# s\n"})
+        broken_inv = base / "invoked-broken"
+        assert_not_real_repo(broken_inv)
+        make_skill(broken_inv, body=INVOKED_BROKEN, files={"scripts/find-cycle.py": "# s\n"})
+        print("\nフェンスの中の起動行")
+        check("実在する起動行は通す", observe(mod, invoked)["rc"] == 0)
+        check("壊れた起動行を捕まえる（空白を含む占位子ごしでも）",
+              observe(mod, broken_inv)["rc"] == 1)
+
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
 
@@ -160,7 +188,9 @@ def main() -> int:
                 mutant = load(d / "scripts" / "check-skill-pointers.py")
                 # **壊れた木で非ゼロにならない**か、**フェンスの木で非ゼロになる**なら殺せた
                 killed = (mutant.main([str(broken)]) != 1
-                          or mutant.main([str(fenced)]) != 0)
+                          or mutant.main([str(fenced)]) != 0
+                          or mutant.main([str(broken_inv)]) != 1
+                          or mutant.main([str(invoked)]) != 0)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)

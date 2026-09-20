@@ -213,7 +213,7 @@ Verifier ／ `/code-review` ／ 2 パスのどれの免除にもならない。
   **この項は `path`（既存の worktree に入る）だけを述べる。**
   **`name`（新規作成）は別の条件軸に乗っている**——**効くかどうかは
   このセッションが `EnterWorktree` を呼んだかどうかで、物理的な位置ではない。
-  原本は **`SKILL.md` 手順 4 の「`EnterWorktree` で新規に作れないことがある」の項**である**
+  原本は `SKILL.md` 手順 4 の「`EnterWorktree` で新規に作れないことがある」の項である**
   （**ここに複製を置かない**。**以前ここは 1 つの箇条書きで 2 つの軸を同時に述べていた**——
   [#115](https://github.com/hdknr/claude-code-setup/issues/115)）。
     - **`.claude/worktrees/`（同一リポジトリ）配下の worktree にしか入れない。**
