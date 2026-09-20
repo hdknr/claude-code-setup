@@ -83,6 +83,23 @@ EXEMPT_PLUS_DEFECT = REAL_DEFECT + """
 dup-counts-ok: 揃わなかったもの
 """
 
+# **フェンスの中に免除を書いた形。** **効いてはならない**——
+# **コード例として見せた免除がファイル全体に効くと、「黙ってファイル全体を免除しない」
+# という約束に反する。** **免除だけフェンスを剥がしていなかった**のを直した跡で、
+# **その直しに回帰テストが無いと 2 パス目の Verifier に反証された。**
+FENCED_EXEMPTION = """# 免除の書き方の例
+
+**揃わなかったものが 1 つ**。
+
+**揃わなかったものが 2 つ**。
+
+書き方はこう:
+
+```markdown
+dup-counts-ok: 揃わなかったもの
+```
+"""
+
 OTHER_PHRASE = """# 別の語句なら当たらない
 
 **歯止めが 8 本**ある。
@@ -123,6 +140,10 @@ MUTATIONS = {
     "免除を語句で絞らない": (
         "            if phrase in exempt:",
         "            if exempt:"),
+    # 守る 5: 免除もフェンスの外だけを拾う
+    "免除をフェンスごと拾う": (
+        "    exempt = set(EXEMPT.findall(stripped))",
+        "    exempt = set(EXEMPT.findall(text))"),
 }
 
 
@@ -136,6 +157,7 @@ def main() -> int:
         write(root, "exempt.md", EXEMPTED)
         write(root, "other.md", OTHER_PHRASE)
         write(root, "mixed.md", EXEMPT_PLUS_DEFECT)
+        write(root, "fenced-exempt.md", FENCED_EXEMPTION)
 
         mod = load()
         correct = observe(mod, root)
@@ -148,6 +170,8 @@ def main() -> int:
         check("語句が違えば出さない", correct["other.md"] == ())
         check("免除は名指しした語句だけに効く（他の語句は出る）",
               correct["mixed.md"] == (("残る課題", "件", ("3", "5")),))
+        check("フェンスの中に書いた免除は効かない",
+              correct["fenced-exempt.md"] == (("揃わなかったもの", "つ", ("1", "2")),))
 
         print("\n終了コード")
         check("欠陥があれば非ゼロ", mod.main([str(root)]) == 1)
