@@ -121,8 +121,14 @@ def os_of(cwd):
     return f"不明 ({head})"
 
 
-def collect(root):
-    """トランスクリプトを走査して、拒否イベントを列挙する。"""
+def collect(root, cwd_prefix=None):
+    """トランスクリプトを走査して、拒否イベントを列挙する。
+
+    `cwd_prefix` を渡すと、**`cwd` がその接頭辞で始まる件だけ**を数える。
+    macOS 側は実作業のトランスクリプトと同じ置き場所に probe の記録が混ざるので、
+    **probe だけを数えるのに要る**——混ぜると「probe の結果」と「日々の作業の履歴」を
+    比べることになり、OS の差と母集団の差が交絡する。
+    """
     events = []
     scanned = 0
     for path in sorted(pathlib.Path(root).rglob("*.jsonl")):
@@ -140,6 +146,8 @@ def collect(root):
                 except ValueError:
                     continue
                 if record.get("type") != "user":
+                    continue
+                if cwd_prefix and not (record.get("cwd") or "").startswith(cwd_prefix):
                     continue
                 for body in error_blocks(record):
                     text = unwrap(body)
@@ -167,6 +175,11 @@ def main(argv=None):
         help="トランスクリプトの置き場所（既定: ~/.claude/projects）",
     )
     parser.add_argument("--json", metavar="PATH", help="収集結果を JSON で書き出す")
+    parser.add_argument(
+        "--cwd-prefix",
+        metavar="PREFIX",
+        help="`cwd` がこの接頭辞で始まる件だけを数える（probe だけを取り出すのに使う）",
+    )
     args = parser.parse_args(argv)
 
     root = pathlib.Path(args.root)
@@ -174,7 +187,7 @@ def main(argv=None):
         print(f"置き場所が無い: {root}", file=sys.stderr)
         return 2
 
-    events, scanned = collect(root)
+    events, scanned = collect(root, args.cwd_prefix)
 
     print(f"走査したファイル: {scanned}")
     print(f"拒否イベント: {len(events)}")
