@@ -54,6 +54,7 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("skill-metrics.py", ["--check"], False),
     ("check-version-bump.py", [], True),
     ("check-description-sync.py", [], True),
+    ("check-plan-scope.py", [], True),
 ]
 
 # 回帰テスト（歯止め自体が何も見ていない状態に退化していないかを見る）
@@ -68,6 +69,7 @@ TESTS: list[str] = [
     "test-token-metrics.py",
     "test-link-skills.py",
     "test-check-all.py",
+    "test-check-plan-scope.py",
 ]
 
 

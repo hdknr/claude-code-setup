@@ -19,6 +19,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-plugin-versions.py` - カタログ構造と version 一致
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
+  - `check-plan-scope.py` - 差分が計画ファイルの「変更範囲」に収まっているか（PR 限定）
   - `check-norm-markers.py` - `（必須）` が原本（`SKILL.md`）の外に漏れていないか
   - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
     （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
@@ -42,6 +43,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
   - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた）と
     集約の検査。**変異テストを含む**
+  - `test-check-plan-scope.py` - 変更範囲の検査の回帰テスト（変異テストを含む）
   - `test-link-skills.py` / `test-check-description-sync.py` /
     `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
     `test-export-diagrams.py` / `test-skill-metrics.py` - 上記の回帰テスト。
