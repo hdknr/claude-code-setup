@@ -70,6 +70,7 @@ TESTS: list[str] = [
     "test-link-skills.py",
     "test-check-all.py",
     "test-check-plan-scope.py",
+    "test-collect-guard-rejections.py",
 ]
 
 
