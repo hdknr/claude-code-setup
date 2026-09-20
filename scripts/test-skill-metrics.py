@@ -136,11 +136,40 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         failures.append(name)
 
 
-def make_repo(root: Path) -> None:
+# **起点に載らないファイル**（#136）。`lazy_files()` が拾う先で、
+# **これが無いと新しいロジックは「常に空リスト」の経路しかテストされない**
+# ——実際そうなっており、**手順 5 の Verifier に反証された。**
+REF_BODY = """# 参考
+
+**移した規範（必須）。**
+
+**もう 1 つ（必須）。**
+
+**フェンスの中の印は数えない。** これが無いと
+「参照のフェンスを剥がさない」変異が殺せない（試料に数える対象が無いため）:
+
+```bash
+echo "コード例の中（必須）"
+```
+"""
+
+PROMPT_BODY = """# 委譲文
+
+必須マーカーは使わない。強調は太字で行う。
+"""
+
+
+def make_repo(root: Path, *, lazy: bool = True) -> None:
     (root / SKILL_REL).parent.mkdir(parents=True, exist_ok=True)
     (root / DOC_REL).parent.mkdir(parents=True, exist_ok=True)
     (root / SKILL_REL).write_text(SKILL_BODY, encoding="utf-8")
     (root / DOC_REL).write_text(DOC_BODY, encoding="utf-8")
+    if lazy:
+        skill_dir = (root / SKILL_REL).parent
+        (skill_dir / "references").mkdir(exist_ok=True)
+        (skill_dir / "prompts").mkdir(exist_ok=True)
+        (skill_dir / "references" / "resume.md").write_text(REF_BODY, encoding="utf-8")
+        (skill_dir / "prompts" / "verifier.md").write_text(PROMPT_BODY, encoding="utf-8")
 
 
 def run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -208,6 +237,61 @@ def main() -> int:
             block,
         )
         check("必須を持たない節は — で出る", "| — |" in block, block)
+
+        # --- 起点に載らない分（#136）---
+        # **`SKILL.md` と混ぜていないことを見る。** 混ぜると、**節を移しただけで
+        # 「減った」と読める数字**が出る——内容は 1 行も減っていないのに。
+        # 設計 §8.2 は**この数字だけで判断を正当化している。**
+        print("\n[起点に載らない分を分けて出す]")
+        check("references/ のファイル名が出る", "references/resume.md" in block, block)
+        check("prompts/ のファイル名が出る", "prompts/verifier.md" in block, block)
+        check("起点に載らないと明記する", "起点に載らない" in block, block)
+        check("参照の（必須）を SKILL.md の数に混ぜない",
+              f"`（必須）` は {FIXTURE_MARKERS} 個" in block, block)
+
+        # **`references/` が無いリポジトリでも壊れない**（この仕組みを使っていない場合）。
+        bare = root / "bare"
+        make_repo(bare, lazy=False)
+        result = run(bare)
+        check("参照が 1 本も無くても生成できる", result.returncode == 0, result.stderr)
+        bare_block = block_of(bare)
+        check("参照が無ければ参照の表を出さない",
+              "起点に載らない" not in bare_block, bare_block)
+
+        # --- 変異: 起点に載らない分の数え方 ---
+        print("\n[変異: 起点に載らない分の数え方]")
+        lazy_mutations = {
+            "参照を SKILL.md と混ぜる": (
+                'refs.append((f"{dirname}/{path.name}", len(text.split("\\n")),',
+                'rows.append((f"{dirname}/{path.name}", len(text.split("\\n")),'),
+            "prompts を数えない": (
+                'LAZY_DIRS = ("references", "prompts")',
+                'LAZY_DIRS = ("references",)'),
+            "参照のフェンスを剥がさない": (
+                "        stripped = strip_fences(text)\n"
+                "        refs.append(",
+                "        stripped = text\n"
+                "        refs.append("),
+        }
+        script_src = SCRIPT.read_text(encoding="utf-8")
+        for name, (needle, replacement) in lazy_mutations.items():
+            if script_src.count(needle) != 1:
+                check(f"{name} → 変異の当て先が 1 箇所", False)
+                continue
+            mut_dir = root / f"lazy-{abs(hash(name))}"
+            mut_dir.mkdir()
+            mut_script = mut_dir / "skill-metrics.py"
+            mut_script.write_text(script_src.replace(needle, replacement, 1), encoding="utf-8")
+            for shared in ("markdown_fences.py",):
+                (mut_dir / shared).write_text(
+                    (SCRIPT.parent / shared).read_text(encoding="utf-8"), encoding="utf-8")
+            target = root / f"lazytree-{abs(hash(name))}"
+            make_repo(target)
+            proc = subprocess.run(
+                [sys.executable, str(mut_script), "--root", str(target)],
+                capture_output=True, text=True)
+            mutated_block = block_of(target) if proc.returncode == 0 else ""
+            check(f"{name} → 変異を殺せる", mutated_block != block or proc.returncode != 0)
 
         # --- 変異: SKILL.md 側 ---
         print("\n[変異: SKILL.md を変える]")

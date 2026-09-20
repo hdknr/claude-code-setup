@@ -320,7 +320,8 @@ def main() -> int:
             # **`references/` を原本から外すと、移設先が丸ごと違反として出る**
             # ——**歯止めが盲目にならないことを、ここで押さえる。**
             "references を原本から外す": (
-                '    return rel.startswith(f"{ORIGIN_DIR}/references/") and rel.endswith(".md")',
+                '    return (rel.startswith(prefix) and rel.endswith(".md")\n'
+                '            and "/" not in rel[len(prefix):])',
                 '    return False',
             ),
             "生成ブロックの判定をやめる": (
@@ -396,6 +397,32 @@ def main() -> int:
         correct = load(groot)
         check("変異を殺せる: 囲みを貪欲に取る（正しい実装は捕まえ、変異体は見逃す）",
               len(correct.violations(groot)) == 1 and len(gmod.violations(groot)) == 0)
+
+        # #136: **緩める向きの変異は、`violations > 0` では殺せない**
+        # （上のループは「厳しくする向き」を前提にしている）。**明示形で当てる。**
+        # **`references/` の入れ子を原本に数えると、`skill-metrics.py` の測定
+        # （直下の glob）から漏れたファイルが、この検査だけ素通りする**
+        # ——**歯止めと測定の範囲を揃える**（`/code-review` が指摘）。
+        nroot2 = base / "nested"
+        assert_not_real_repo(nroot2)
+        (nroot2 / "scripts").mkdir(parents=True, exist_ok=True)
+        nsrc = SCRIPT.read_text(encoding="utf-8")
+        nold = '            and "/" not in rel[len(prefix):])'
+        assert nsrc.count(nold) == 1, "入れ子の変異の当て先が 1 箇所でない"
+        (nroot2 / "scripts" / "check-norm-markers.py").write_text(
+            nsrc.replace(nold, "            )"), encoding="utf-8")
+        make_repo(
+            nroot2,
+            origin_body=f"# 原本\n\n- 本体{MARKER}\n",
+            others={"plugins/dev-loop/skills/dev-loop/references/sub/nested.md":
+                    f"# 入れ子\n\n- 測定から漏れる場所の規範{MARKER}\n"},
+        )
+        nspec = importlib.util.spec_from_file_location(
+            "mut_nested", nroot2 / "scripts" / "check-norm-markers.py")
+        nmod = importlib.util.module_from_spec(nspec)
+        nspec.loader.exec_module(nmod)
+        check("変異を殺せる: references の入れ子まで原本に数える（正しい実装は捕まえ、変異体は見逃す）",
+              len(load(nroot2).violations(nroot2)) == 1 and len(nmod.violations(nroot2)) == 0)
 
         source = SCRIPT.read_text(encoding="utf-8")
         for name, (old, new) in mutants.items():

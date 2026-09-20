@@ -21,6 +21,7 @@ import contextlib
 import importlib.util
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -179,6 +180,31 @@ def test_registry_covers_every_script() -> None:
         print(f"       収録漏れ: {missing_t}")
 
 
+def test_ci_runs_every_registered_script() -> None:
+    """実リポジトリを読む。**`check-all.py` に在るのに CI の yaml に無い**なら落とす。
+
+    **`check-all.py` は CI から呼ばない**（`CLAUDE.md` のとおり、どれが落ちたか UI に
+    出すため各スクリプトを個別ステップにしている）。**だから収録と CI 登録は別の作業**で、
+    **片方だけ済ませると、そのテストは手元でしか走らない。**
+
+    **上の `test_registry_covers_every_script` はこの向きを見ていなかった**——
+    「`scripts/` に在るのに `check-all.py` に無い」は見るが、
+    「`check-all.py` に在るのに CI に無い」は見ない。**実際に 2 本が漏れていた**
+    （`test-find-cycle.py` は #136 段 1 から、`test-collect-guard-rejections.py` は
+    #122 から。**どちらも手元では緑、CI では 1 度も走っていなかった**）。
+    **手順 5 の Verifier が見つけた**（#136 の全段に掛けた回）。
+    """
+    src = TARGET.read_text()
+    workflows = REAL_REPO / ".github" / "workflows"
+    ci = "".join(f.read_text() for f in sorted(workflows.glob("*.yml")))
+    registered = sorted(set(re.findall(r'"((?:check|test|skill)-[a-z-]+\.py)"', src)))
+    missing = [n for n in registered if n not in ci]
+    check(f"収録したものを CI も回している（{len(registered)} 本）", not missing)
+    if missing:
+        print(f"       CI の yaml に無い: {missing}")
+        print("       **手元では緑でも、CI では 1 度も走らない。**")
+
+
 # ------------------------------------------------------------------ 変異
 MUTANTS = {
     "歯止めが落ちても failed に積まない": (
@@ -200,6 +226,7 @@ MUTANTS = {
 def main() -> int:
     print("収録漏れ（実リポジトリを読むだけ）:")
     test_registry_covers_every_script()
+    test_ci_runs_every_registered_script()
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
