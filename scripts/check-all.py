@@ -74,6 +74,7 @@ TESTS: list[str] = [
     "test-collect-guard-rejections.py",
     "test-find-cycle.py",
     "test-check-duplicate-counts.py",
+    "test-worktree-scripts.py",
 ]
 
 

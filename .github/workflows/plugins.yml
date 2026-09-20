@@ -70,6 +70,9 @@ jobs:
       - name: check-duplicate-counts.py のテスト
         run: python3 scripts/test-check-duplicate-counts.py
 
+      - name: worktree スクリプトのテスト（#136 段 3）
+        run: python3 scripts/test-worktree-scripts.py
+
       # 歯止めを 1 本ずつ選ばせないための入口（#117）。本体は CI から呼ばないが、
       # 「収録漏れ＝黙って 1 本落とす」を見るのはこのテストだけなので、テストは回す。
       - name: check-all.py のテスト
