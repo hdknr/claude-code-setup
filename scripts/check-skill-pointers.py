@@ -26,7 +26,11 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
 
 - **指し先のファイルが実在すること**——無ければ落とす。
 - **バッククォートで囲まれた指し先を拾うこと**——このリポジトリの書き方である。
-- **フェンスの中は見ないこと**——コード例の中のパスは主張ではない。
+- **フェンスの中は見ないこと**（囲まれた相対パスについて）——コード例の中のパスは主張ではない。
+- **フェンスの中の起動行は見ること**——`bash …/scripts/x.sh` の形。
+  **実際の起動はすべてコードブロックの中にあり、そこが壊れると手順が動かない。**
+  **一度ここを見ておらず、`prepare-worktree.sh` は「スキルのどこからも指されていない」
+  状態だった**（`/code-review` が指摘）。
 - **スキルを固定しないこと**——`plugins/*/skills/*/` を走査するので、
   **プラグインが増えても手で足さなくてよい。**
 
@@ -63,11 +67,36 @@ def skill_dirs(root: pathlib.Path):
                 yield skill
 
 
+# **フェンスの中の起動行**。`bash …/scripts/x.sh` `python3 …/scripts/x.py` の形。
+# **ここを見ないと、いちばん壊れて困る指し先を 1 つも検査しない**
+# ——**実際の起動はすべてコードブロックの中にある**（`/code-review` が指摘。#136）。
+INVOCATION = re.compile(r"(?:bash|sh|python3?)\s+.*?(scripts/[\w.-]+)")
+# **`\S*?` にしない。** 起動行のパスには `<このスキルの base ディレクトリ>` のような
+# **空白を含む占位子**が挟まる。**`\S*?` では跨げず、1 件も拾わなかった**（実測）。
+
+
 def pointers_in(path: pathlib.Path):
-    """そのファイルにある指し先を (行番号, パス) で返す。**フェンスの中は見ない。**"""
-    text = strip_fences(path.read_text(encoding="utf-8"))
-    for lineno, line in enumerate(text.split("\n"), 1):
+    """そのファイルにある指し先を (行番号, パス) で返す。
+
+    **2 種類を拾う:**
+
+    - **散文の中の、囲まれた相対パス**（`` `references/resume.md` `` など）。
+      **フェンスの中は見ない**——コード例の中のパスは主張ではない。
+    - **フェンスの中の起動行**（`bash …/scripts/x.sh`）。**こちらはフェンスの中だけを見る**
+      ——**実際の起動はすべてコードブロックの中にあり、そこが壊れると手順が動かない。**
+    """
+    raw = path.read_text(encoding="utf-8")
+    stripped = strip_fences(raw)
+    for lineno, line in enumerate(stripped.split("\n"), 1):
         for m in POINTER.finditer(line):
+            yield lineno, m.group(1)
+    # **フェンスの中だけ**を見る（`strip_fences` は行数を保って空行にするので、
+    # 素の本文と突き合わせれば「フェンスの中だった行」が分かる）。
+    for lineno, (raw_line, bare) in enumerate(
+            zip(raw.split("\n"), stripped.split("\n")), 1):
+        if bare.strip() or not raw_line.strip():
+            continue
+        for m in INVOCATION.finditer(raw_line):
             yield lineno, m.group(1)
 
 
