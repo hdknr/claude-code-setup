@@ -110,10 +110,17 @@ def outside(out: str) -> str:
     return out.split(marker, 1)[1] if marker in out else ""
 
 
-def run(root: Path, *args: str) -> tuple[int, str]:
+def run(root: Path, *args: str, env: dict | None = None, detach: bool = False) -> tuple[int, str]:
+    """検査を回す。`detach=True` は **CI と同じ detached HEAD** を作ってから回す。"""
+    if detach:
+        git(root, "switch", "-q", "--detach", "HEAD")
+    e = dict(os.environ)
+    # 実行環境が GitHub Actions だと、テストが本物の値を拾ってしまう
+    e.pop("GITHUB_HEAD_REF", None); e.pop("GITHUB_REF_NAME", None)
+    e.update(env or {})
     proc = subprocess.run(
         [sys.executable, str(root / "scripts" / "check-plan-scope.py"), *args],
-        capture_output=True, text=True, check=False, cwd=root,
+        capture_output=True, text=True, check=False, cwd=root, env=e,
     )
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -196,6 +203,38 @@ def contract(tmp: Path, tag: str, script_text: str | None = None) -> list[tuple[
     rc, out = run(d, "main")
     got += [("番号を名乗るブランチは、差分の別計画で代用しない", rc == 0 and "判定していない" in out)]
 
+    # 9) **detached HEAD（CI と同じ形）でも、GITHUB_HEAD_REF があれば働く。**
+    #    **ここが無いと、この検査は CI で一度も働かない**（実際にそうなっていた）。
+    d = fresh(head_files={"never/touched.md": "x\n"})
+    rc, out = run(d, "main", env={"GITHUB_HEAD_REF": "issue/7-demo"}, detach=True)
+    got += [
+        ("detached でも GITHUB_HEAD_REF から計画を当てる", "issue-7.md" in out),
+        ("detached でも範囲の外を捕まえる", rc == 1 and "never/touched.md" in outside(out)),
+    ]
+
+    # 10) detached で環境変数も無ければ、**黙らずに「判定していない」**。
+    #     **差分の別計画で代用してはならない**（1 度目の修正が detached で抜けた道）。
+    d = fresh(plan=None, head_files={
+        "docs/plans/issue-999.md": "# 他人の計画\n\n## 変更範囲\n\n触る:\n\n- `zzz/`\n",
+        "never/touched.md": "x\n",
+    })
+    rc, out = run(d, "main", detach=True)
+    got += [
+        ("detached かつ環境変数なしなら判定しない", rc == 0 and "判定していない" in out),
+        ("detached でも差分の別計画で代用しない", "issue-999" not in outside(out)),
+        # **git が返す "HEAD" をブランチ名として報告しない**——
+        # そう報告すると、読む側は「ブランチ名は取れている」と読む。
+        ("git の HEAD をブランチ名として報告しない", "ブランチ: (取れない)" in out),
+    ]
+
+    # 11) GITHUB_REF_NAME が "HEAD" のときは、ブランチ名として使わない
+    d = fresh(head_files={"never/touched.md": "x\n"})
+    rc, out = run(d, "main", env={"GITHUB_REF_NAME": "HEAD"}, detach=True)
+    got += [
+        ("GITHUB_REF_NAME が HEAD なら名前として使わない", rc == 0 and "判定していない" in out),
+        ("GITHUB_REF_NAME の HEAD をブランチ名として報告しない", "ブランチ: (取れない)" in out),
+    ]
+
     return got
 
 
@@ -208,9 +247,15 @@ MUTANTS = {
                               '        return 0\n    print("差分はすべて変更範囲の中にある。")\n'),
     "節が読めなくても通す": ('            "  バッククォートで囲んだパターンの箇条書きを置く（SKILL.md 手順 3 を正とする）。"\n        )\n        return 1\n',
                              '            "  バッククォートで囲んだパターンの箇条書きを置く（SKILL.md 手順 3 を正とする）。"\n        )\n        return 0\n'),
-    "計画が無いときに黙る": ('    plan = find_plan(files, opts.plan)\n',
-                            '    plan = find_plan(files, opts.plan) or Path("/nonexistent")\n'),
-    "差分の別計画で代用する": ('        return None  # 番号は名乗っている。差分で代用しない\n', "        pass\n"),
+    "計画が無いときに黙る": ('    plan = find_plan(opts.plan)\n',
+                            '    plan = find_plan(opts.plan) or Path("/nonexistent")\n'),
+    "detached で環境変数を見ない": (
+        '    for env in ("GITHUB_HEAD_REF", "GITHUB_REF_NAME"):\n',
+        '    for env in ():\n'),
+    "GITHUB_REF_NAME の HEAD を名前として使う": (
+        '        if v and v != "HEAD":\n', "        if v:\n"),
+    "git が返す HEAD を名前として使う": (
+        '    return "" if name == "HEAD" else name\n', "    return name\n"),
     "計画ファイル自身も外として数える": ("        if f != rel and not covered(f, patterns)\n",
                                         "        if not covered(f, patterns)\n"),
 }
