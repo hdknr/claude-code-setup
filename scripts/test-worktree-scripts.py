@@ -97,6 +97,30 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         out["入れ子で生えていない"] = not (wt / ".claude" / "worktrees" / "issue-43").exists()
         out["別 worktree からでも規約の場所"] = (
             repo / ".claude" / "worktrees" / "issue-43").is_dir()
+    # **サブディレクトリから走らせる。** `--git-dir` は絶対、`--git-common-dir` は
+    # **相対で返ることがあり、その相対は cwd を起点にする。**
+    # **トップレベルからの観測だけでは、この 2 つの実バグが両方とも素通りした**
+    # ——前提条件が**メインの作業ツリーで rc=0** を返し、入場が**リポジトリの外**に
+    # worktree を作ろうとしていた（`/code-review` が指摘。#136）。
+    deep = repo / "sub" / "deep"
+    deep.mkdir(parents=True, exist_ok=True)
+    out["前提条件: メインのサブディレクトリ"] = run(precond, deep).returncode
+    sub_res = run(prepare, deep, "77", "nested-sub")
+    out["サブから作った場所がリポジトリの中"] = (
+        repo / ".claude" / "worktrees" / "issue-77").is_dir()
+    out["サブから作ってもリポジトリの外に作らない"] = not (
+        repo.parent / ".claude").exists()
+    out["サブから作った rc"] = sub_res.returncode
+
+    # **git が使えない木では「判定できなかった」と答える**（「メインにいる」ではない）。
+    nogit = base / "nogit"
+    nogit.mkdir(parents=True, exist_ok=True)
+    out["前提条件: git 無し"] = run(precond, nogit).returncode
+    # **入場の側も、見られなかったときに作らないことを見る。**
+    # **これが無いと「見られなくても作る」変異が殺せない**（観測が無いため）。
+    out["入場: git 無し"] = run(prepare, nogit, "88", "nogit").returncode
+    out["入場: git 無しでも作らない"] = not (nogit / ".claude").exists()
+
     # detached を作って見分けられるか
     if wt.is_dir():
         sha = git(wt, "rev-parse", "HEAD").stdout.strip()
@@ -139,6 +163,19 @@ MUTATIONS = {
     "終了コードを一律にする": (PRECOND,
         '  exit 3\nfi',
         '  exit 1\nfi'),
+    # 守る 5: 判定できなかったことを「メインにいる」と答えない
+    "判定できなくても答える": (PRECOND,
+        '  exit 4\nfi',
+        '  GIT_DIR=""; COMMON_DIR=""\nfi'),
+    # 守る 6（prepare）: 判定できなかったことを「当たらなかった」と答えない
+    # **root の守りを壊すと、背後の守りが終了コード 6 で受け止める**ので観測が変わる。
+    "見られなくても作る": (PREPARE,
+        '  exit 5\nfi\nMAIN=',
+        '  COMMON="$(pwd)/.git"\nfi\nMAIN='),
+    # 守る 7（prepare）: 相対パスを cwd 起点で解決する（= 絶対で取る）
+    "相対のまま root 起点で解決する": (PREPARE,
+        'MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"',
+        'MAIN="$(cd "$(git rev-parse --show-toplevel)/$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P)"'),
 }
 
 
@@ -163,6 +200,16 @@ def main() -> int:
         check("ブランチが違えば止める（rc=2）", correct["前提条件: 不一致"] == 2)
         check("メインの作業ツリーなら止める（rc=1）", correct["前提条件: メイン"] == 1)
         check("detached を見分ける（rc=3）", correct["前提条件: detached"] == 3)
+        check("メインの**サブディレクトリ**でも止める（rc=1）",
+              correct["前提条件: メインのサブディレクトリ"] == 1)
+        check("判定できなければ「メインにいる」とは答えない（rc=4）",
+              correct["前提条件: git 無し"] == 4)
+        check("入場も、見られなければ作らない（rc=5）", correct["入場: git 無し"] == 5)
+        check("入場は、見られなければ何も作らない", correct["入場: git 無しでも作らない"])
+        check("サブディレクトリから作ってもリポジトリの中",
+              correct["サブから作った場所がリポジトリの中"])
+        check("サブディレクトリから作ってもリポジトリの外に作らない",
+              correct["サブから作ってもリポジトリの外に作らない"])
 
         print("\n変異テスト（壊したのに緑なら失格）")
         for name, (script, needle, replacement) in MUTATIONS.items():

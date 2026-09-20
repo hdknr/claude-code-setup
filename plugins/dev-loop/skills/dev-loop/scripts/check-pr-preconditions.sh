@@ -22,8 +22,11 @@
 #   （#96 で壊れた周は worktree の中にいた）。
 # - **detached を見分ける**——**「一致しない」と「名前が出ていないだけ」は別**である。
 # - **終了コードで区別する**——0: 通過 / 1: メインの作業ツリー / 2: ブランチ不一致 /
-#   3: detached。**「落ちた」だけでは何をすべきか決まらない。**
+#   3: detached / **4: 判定できなかった**。**「落ちた」だけでは何をすべきか決まらない。**
 #   **一律に 1 で落とすと、呼んだ側は次に何をすべきか決められない。**
+# - **判定できなかったことを「メインの作業ツリー」と答えない。** git が失敗すると
+#   **両方が空文字になって一致し、「メインにいる」という*確定的に誤った*判定**が出る。
+#   **`find-cycle.py` が「1 件も当たらなかった」と「探せなかった」を分けているのと同じ形。**
 #
 # ## 何を守らないか
 #
@@ -37,8 +40,19 @@ set -uo pipefail
 
 EXPECTED="${1:-}"
 
-GIT_DIR="$(git rev-parse --git-dir)"
-COMMON_DIR="$(git rev-parse --git-common-dir)"
+# **絶対パスで取る。** `--git-dir` と `--git-common-dir` は**片方だけ相対で返ることがある**
+# ——**メインの作業ツリーのサブディレクトリから走らせると、前者が絶対・後者が相対
+# （`../../.git`）になり、文字列比較が必ず不一致になる。** つまり
+# **メインの作業ツリーにいるのに「worktree の中にいる」と答えて rc=0 を返す**
+# ——**この関門がいちばん止めたい状況で、素通りする。**
+# **実測で再現した**（`/code-review` が指摘。#136）。
+# **`Bash` の cwd は呼び出し間で持続する**ので、**直前の `cd docs` だけで起きる。**
+if ! GIT_DIR="$(git rev-parse --path-format=absolute --git-dir 2>/dev/null)" \
+   || ! COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+  echo "git でリポジトリを解決できなかった。" >&2
+  echo "**「メインの作業ツリーにいる」とは答えない**——判定できていない。" >&2
+  exit 4
+fi
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 HEAD_LINE="$(git log --oneline -1 2>/dev/null || echo '(コミットなし)')"
 

@@ -31,6 +31,7 @@ Issue のコメントに同時に書いており、**「1 つ」→「2 つ」�
 - **フェンスの中を数えない**——コード例の中の数は文章の主張ではない。
 - **免除は語句を名指しさせる**——`dup-counts-ok: <語句>` をファイルに書くと、
   **その語句だけ**免除される。**黙ってファイル全体を免除しない。**
+  **免除もフェンスの外だけを拾う**——**コード例として見せた免除は効かない。**
 
 守らない:
 
@@ -77,8 +78,13 @@ EXEMPT = re.compile(r"dup-counts-ok:\s*(\S+)")
 
 def scan(text: str) -> dict:
     """(語句, 単位) → {数: [(行, 断片)]} のうち、**数が 2 種以上あるもの**を返す。"""
-    exempt = set(EXEMPT.findall(text))
     stripped = strip_fences(text)
+    # **免除もフェンスを剥がしてから拾う。** 生の本文から拾うと、
+    # **コード例として見せた免除がファイル全体に効いてしまう**
+    # ——**「黙ってファイル全体を免除しない」という約束に反する。**
+    # **数のほうはフェンスを剥がしているのに、免除だけ剥がしていなかった**
+    # （`/code-review` が指摘。#136）。
+    exempt = set(EXEMPT.findall(stripped))
     found = defaultdict(lambda: defaultdict(list))
     for lineno, line in enumerate(stripped.split("\n"), 1):
         plain = line.replace("**", "")

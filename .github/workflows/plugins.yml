@@ -52,6 +52,9 @@ jobs:
       - name: 件数の食い違い（#138）
         run: python3 scripts/check-duplicate-counts.py
 
+      - name: スキルの中の指し先（#136）
+        run: python3 scripts/check-skill-pointers.py
+
       # ubuntu-latest の /bin/sh は dash。macOS 側は zsh / bash なので、
       # 両方で回すことで「片方のシェルだけで壊れる」類（#57 で実際に踏んだ）を止める。
       - name: link-skills.sh のテスト
@@ -72,6 +75,15 @@ jobs:
 
       - name: worktree スクリプトのテスト（#136 段 3）
         run: python3 scripts/test-worktree-scripts.py
+
+      - name: 周の探索のテスト（#136 段 1）
+        run: python3 scripts/test-find-cycle.py
+
+      - name: ガード拒否の収集のテスト（#122）
+        run: python3 scripts/test-collect-guard-rejections.py
+
+      - name: check-skill-pointers.py のテスト
+        run: python3 scripts/test-check-skill-pointers.py
 
       # 歯止めを 1 本ずつ選ばせないための入口（#117）。本体は CI から呼ばないが、
       # 「収録漏れ＝黙って 1 本落とす」を見るのはこのテストだけなので、テストは回す。

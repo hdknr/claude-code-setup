@@ -20,10 +20,14 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `check-plan-scope.py` - 差分が計画ファイルの「変更範囲」に収まっているか（PR 限定）
-  - `check-norm-markers.py` - `（必須）` が原本（`SKILL.md`）の外に漏れていないか
+  - `check-norm-markers.py` - `（必須）` が原本（**スキルのディレクトリ**＝
+    `SKILL.md` ＋ `references/*.md`）の外に漏れていないか
   - `check-duplicate-counts.py` - **同じファイルの中で、同じ語句に違う数が付いていないか**
     （#138。**免除は `dup-counts-ok: <語句>` で語句を名指しさせる**）
   - `test-check-duplicate-counts.py` - 上の回帰テスト（変異テストを含む）
+  - `check-skill-pointers.py` - **スキルの中の指し先**（`references/…` `prompts/…`
+    `scripts/…`）が実在するか（#136。**`check-site-links.py` は絶対 URL しか見ない**）
+  - `test-check-skill-pointers.py` - 上の回帰テスト（変異テストを含む）
   - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
     （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
@@ -461,10 +465,17 @@ per-session の会計では「軽くなった」と必ず出る**。割った周
 （`<command-name>`）も見る。これが無いと、**`dev-loop-verifier` を呼ぶ手順 5 まで
 周が存在しない**——実測で **dev-loop の周 120 本のうち 60 本が丸ごと欠けていた**（#108）。
 
-### 規範の原本は `SKILL.md` だけ
+### 規範の原本は、スキルのディレクトリだけ
 
-**dev-loop の規範は `SKILL.md` にしか書かない。** `plugins/dev-loop/README.md` も
-公開ページも設計ドキュメントも、**指すだけで列挙を持たない**。
+**dev-loop の規範は、スキルのディレクトリの中にしか書かない**——
+`SKILL.md` と `references/*.md` である（#136 で `references/` に出した。
+**起点から外すためで、規範として弱いからではない**）。
+`plugins/dev-loop/README.md` も公開ページも設計ドキュメントも、
+**指すだけで列挙を持たない**。
+
+**一度ここを「`SKILL.md` だけ」のままにして、`/code-review` に反証された**
+——**同じファイルの別の節が「`references/` は原本の一部である」と書いており、
+2 つの節が食い違っていた。** **#138 の歯止めは数を伴わないので、これは捕まえられない。**
 
 **経緯（なぜ検査が要ったか）と実測は
 [設計ドキュメント §8.1](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#miscount)
@@ -519,6 +530,20 @@ python3 scripts/test-check-duplicate-counts.py  # 歯止め自体のテスト（
 **何を守り、何を守らないかは docstring を正とする。** 性質だけ言えば、これは
 **「重複が無い」の証明ではなく、実際に起きた 1 つの形の検査**である
 ——**ファイルをまたぐ重複は、言い回しが違うと当たらない。**
+
+**スキルの中の指し先も、もう 1 本が見る**（#136）。**`SKILL.md` を 29% 圧縮した設計は、
+本文に書いた相対パスだけで繋がっている**——**1 文字ずれても誰も気づかない。**
+**`check-site-links.py` は公開サイトへの絶対 URL しか解決しない**ので、
+**スキルの中の指し先だけが機械の外にあった**（`/code-review` が指摘）。
+
+```bash
+python3 scripts/check-skill-pointers.py       # 指し先が実在しなければ非ゼロ終了
+python3 scripts/test-check-skill-pointers.py  # 歯止め自体のテスト（変異テストを含む）
+```
+
+**置いた瞬間に実物を 1 件捕まえた**——`references/guard-rejections.md` が
+`scripts/collect-guard-rejections.py` を指していたが、**あれはリポジトリの `scripts/` に
+あり、スキルの中には無い。**
 
 ### description は 3 箇所にある
 
