@@ -247,6 +247,12 @@ def main() -> int:
             mutated = observe(load(broken), root, prefix)
             check(f"変異を殺せる: {name}", mutated != base)
 
+        print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
+        body = SCRIPT.read_text(encoding="utf-8").split("守る:")[1].split("守らない:")[0]
+        promises = [line for line in body.splitlines() if line.startswith("- ")]
+        check(f"本体の「守る」{len(promises)} 行に対して変異が {len(MUTATIONS)} 件",
+              len(promises) == len(MUTATIONS))
+
         print("\n実環境を対象にしない歯止め")
         try:
             assert_not_real_home(REAL_HOME_PROJECTS)
