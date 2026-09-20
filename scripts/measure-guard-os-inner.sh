@@ -32,6 +32,10 @@ git --version
 date -u +%Y-%m-%dT%H:%M:%SZ
 echo "PROBE_ROOT=${ROOT}"
 
+# **ここは失敗したら止める。** リポジトリが出来ていなければ `claude -w` は隔離
+# セッションを作れず、**R の probe が「拒否されない」形で通ってしまう**
+# ——**陽性対照（C1 / C2）はそれでも通るので、区別がつかない。**
+set -e
 rm -rf "${ROOT}"
 mkdir -p "${ROOT}" "${OUT}"
 cd "${ROOT}"
@@ -41,6 +45,7 @@ git config user.name probe
 echo hello > README.md
 git add -A
 git commit -qm init
+set +e
 
 run_probe() {
   local name="$1"
@@ -88,7 +93,14 @@ if [ -n "${PROBE_COPY_TRANSCRIPTS:-}" ]; then
   echo "=== トランスクリプトを持ち出す ==="
   mkdir -p "${OUT}/projects"
   cp -a "${HOME}/.claude/projects/." "${OUT}/projects/" 2>/dev/null || true
-  echo "jsonl: $(find "${OUT}/projects" -name '*.jsonl' | wc -l)"
+  found="$(find "${OUT}/projects" -name '*.jsonl' | wc -l | tr -d ' ')"
+  echo "jsonl: ${found}"
+  # **0 件で黙って成功しない。** 取り出しに失敗した場合と「1 件も拒否が無かった」
+  # 場合が、どちらも `拒否イベント: 0` として出てしまう。
+  if [ "${found}" = "0" ]; then
+    echo "トランスクリプトを 1 件も持ち出せていない。測定は成立していない。" >&2
+    exit 3
+  fi
 fi
 
 echo
