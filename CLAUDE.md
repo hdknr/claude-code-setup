@@ -14,6 +14,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `cmux/` - cmux ウィンドウで GitHub Issue/PR を扱うスキル
   - `dev-loop/` - 1 Issue = 1 周のループ志向開発スキル
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
+  - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
+    ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）
   - `check-plugin-versions.py` - カタログ構造と version 一致
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
@@ -38,6 +40,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     テストは回す**——`test-export-diagrams.py` と同じ形）
   - `test-check-site-links.py` - リンク検査の回帰テスト（変異テストを含む）
   - `link-skills.sh` - スキルを `~/.claude/skills` へ素のスキルとして symlink する（bare 呼び出し用）
+  - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた）と
+    集約の検査。**変異テストを含む**
   - `test-link-skills.py` / `test-check-description-sync.py` /
     `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
     `test-export-diagrams.py` / `test-skill-metrics.py` - 上記の回帰テスト。
@@ -257,6 +261,27 @@ python3 scripts/check-version-bump.py origin/main   # bump 漏れ（PR の差分
 python3 scripts/check-description-sync.py origin/main   # description の同期漏れ（同上）
 python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止め自体のテスト
 ```
+
+### 歯止めは毎回全部回す
+
+**1 本ずつ選ばない。** コミットする前に、**これ 1 本**を回す:
+
+```bash
+python3 scripts/check-all.py        # 歯止めと回帰テストを全部（本数は出力が言う）
+```
+
+**「この編集はあの検査に関係ない」という判断が、この型の事故を作る**
+——**関係の有無を判断する側が間違える。** #110 の周では、直前の編集のあと
+**7 本のうち 2 本しか回さずにコミットして CI を割った。落ちたのは回さなかったほう**で、
+しかも計画ファイルの 2 行上には**「OK」という自己申告**が残っており、
+**申告と実測が食い違っていた**（#117）。
+
+**そして、手元で緑にしても PR は赤のままでありうる。** **push したあと `gh pr checks <n>` で
+PR 側を見る**——**ローカルの緑を根拠に「緑」と報告しない。**
+#110 の周では、CI を割ったあとローカルで直したが **push しておらず、
+人間に訊かれるまで PR は赤のまま**だった。**届いていないことは症状として出ない。**
+
+**`check-all.py` が守らないものは docstring を正とする**（ここに列挙しない）。
 
 ### トークン使用量を測る
 
