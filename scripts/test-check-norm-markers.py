@@ -313,8 +313,15 @@ def main() -> int:
         print("変異テスト（壊したのに緑なら失格）")
         mutants = {
             "原本の除外をやめる（原本自身が違反になるはず）": (
-                'if rel == ORIGIN:\n            continue',
+                'if in_origin(rel):\n            continue',
                 'if False:\n            continue',
+            ),
+            # #136: 原本は `SKILL.md` 1 本ではなく**スキルのディレクトリ**になった。
+            # **`references/` を原本から外すと、移設先が丸ごと違反として出る**
+            # ——**歯止めが盲目にならないことを、ここで押さえる。**
+            "references を原本から外す": (
+                '    return rel.startswith(f"{ORIGIN_DIR}/references/") and rel.endswith(".md")',
+                '    return False',
             ),
             "生成ブロックの判定をやめる": (
                 "if MARKER not in line or in_generated:",
@@ -402,6 +409,11 @@ def main() -> int:
                 mroot,
                 origin_body=f"# 原本\n\n- 本体{MARKER}\n",
                 others={
+                    # #136: **原本の一部**（スキルの `references/`）。
+                    # ここを原本から外す変異は、この行が違反として出ることで殺せる。
+                    "plugins/dev-loop/skills/dev-loop/references/resume.md": (
+                        f"# 再開\n\n- 移した規範{MARKER}\n"
+                    ),
                     "docs/plugins/dev-loop-design.md": (
                         "# 設計\n\n<!-- skill-metrics:begin -->\n"
                         f"| 節{MARKER} | 38 |\n"

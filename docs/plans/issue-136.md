@@ -40,7 +40,10 @@ CI は `claude` を起こせない）。**その旨を `CLAUDE.md` に残す。*
 触る:
 
 - `docs/plans/issue-136.md` — この計画ファイル
-- `scripts/find-cycle.py` — 再開の周の探索（**全経路を走らせて答えを出す**）
+- `plugins/dev-loop/skills/dev-loop/scripts/find-cycle.py` — 再開の周の探索。
+  **1 本目の PR では `scripts/` に置いてしまい、マージ後に誤りと分かった**
+  ——**`dev-loop` はどのリポジトリでも使うスキル**なので、対象リポジトリの `scripts/` に
+  在ることを当てにできない。**スキルと一緒に配られる場所へ移す。**
 - `scripts/test-find-cycle.py` — 上の回帰テスト（変異テストを含む）
 - `scripts/check-all.py` — 上のテストを収録リストに足す
 - `plugins/dev-loop/skills/dev-loop/references/resume.md` — 「途中から再開する周」の移設先
@@ -87,8 +90,17 @@ CI は `claude` を起こせない）。**その旨を `CLAUDE.md` に残す。*
 
 | PR | 含むもの | 含まないもの |
 | --- | --- | --- |
-| **1 本目**（この PR） | `find-cycle.py` ＋ テスト ＋ `check-all.py` への登録 ＋ この計画ファイル | **`SKILL.md` を 1 文字も触らない**（版も上げない） |
-| **2 本目** | `references/resume.md` への移設・`SKILL.md` の指し先化・`check-norm-markers.py` と `skill-metrics.py` の一般化・`CLAUDE.md` | — |
+| **1 本目**（[PR #140](https://github.com/hdknr/claude-code-setup/pull/140)・マージ済み） | `find-cycle.py` ＋ テスト ＋ `check-all.py` への登録 ＋ この計画ファイル | **`SKILL.md` を 1 文字も触らない**（版も上げない） |
+| **2 本目**（この PR） | **スクリプトの置き場所の訂正**・`references/resume.md` への移設・`SKILL.md` の指し先化・`check-norm-markers.py` と `skill-metrics.py` の一般化・`CLAUDE.md` | — |
+
+**1 本目には誤りがあった。** `find-cycle.py` を**このリポジトリの `scripts/` に置いた**が、
+**`dev-loop` はどのリポジトリでも使うスキル**（`SKILL.md` 30 行目が「どのプロジェクトでも
+使えるよう汎用化してある」と明記）なので、**他のリポジトリにそのパスは存在しない。**
+**2 本目で `plugins/dev-loop/skills/dev-loop/scripts/` に移す。**
+
+**1 本目は、手順 5 の Verifier も `/code-review` も回さずにマージした**（人間の判断）。
+**「関門を通った」とは書けない。** **この置き場所の誤りは、関門を回していれば
+見つかった可能性がある**——**が、それは確かめられない**（回していないので）。
 
 **順序には理由がある**——**スクリプトが先でないと循環する**（§3.2 の P3）。
 **2 本目の `SKILL.md` は「`find-cycle.py` を走らせろ」と書く**ので、
@@ -182,3 +194,14 @@ CI は `claude` を起こせない）。**その旨を `CLAUDE.md` に残す。*
 | `/code-review` 2 パス目 | **未着手** |
 
 **移設前の実測**: `SKILL.md` **1,745 行 / 84,847 文字 / `（必須）` 168 個**。
+
+**移設後の実測**（2026-09-20）:
+
+| | 移設前 | 移設後 |
+| --- | --- | --- |
+| **起点に載る分**（`SKILL.md`） | 84,847 文字 / 1,745 行 | **76,632 文字 / 1,601 行**（**−8,215 文字 / −9.7%**） |
+| 遅延分（`references/resume.md`） | — | 9,563 文字 / 188 行 |
+| `（必須）` | 168 | **148 ＋ 25 = 173**（**指し先に新しい必須を足したので増えた**） |
+
+**規範が落ちていないことは機械で確かめた**——**移設した本体が `references/resume.md` に
+バイト一致で入っている**ことをアサートした。**目視していない。**
