@@ -71,6 +71,7 @@ TESTS: list[str] = [
     "test-check-all.py",
     "test-check-plan-scope.py",
     "test-collect-guard-rejections.py",
+    "test-find-cycle.py",
 ]
 
 
