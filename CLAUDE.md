@@ -47,6 +47,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた）と
     集約の検査。**変異テストを含む**
   - `test-check-plan-scope.py` - 変更範囲の検査の回帰テスト（変異テストを含む）
+  - `test-worktree-scripts.py` - **入場と PR 前提条件の回帰テスト**（変異 8 件）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/` にある**
+    （`prepare-worktree.sh` / `check-pr-preconditions.sh`）
   - `test-find-cycle.py` - **周の探索の回帰テスト**（変異テストを含む）。
     **本体は `scripts/` に無い**——`plugins/dev-loop/skills/dev-loop/scripts/find-cycle.py`
     に置いてある（**`dev-loop` はどのリポジトリでも使うスキル**なので、
@@ -385,6 +388,14 @@ probe スキルを `claude -p` で起動し、**トランスクリプトに印�
 **`prompts/` では必須マーカーを使わない。** あれは**dev-loop の著者が守る規範**の印で、
 **`prompts/` はサブエージェントへの指示文**である。混ぜると「どちらに向けた必須か」が
 読めなくなる。
+
+**入場と PR 前提条件もスクリプトにした**（#136 段 3）——`prepare-worktree.sh` と
+`check-pr-preconditions.sh`。**手順 4 の入場は #96 / #110 / #113 で繰り返し穴が見つかったのに、
+テストが 1 本も無かった**。**いまは変異 8 件で押さえている。**
+
+**`EnterWorktree` / `ExitWorktree` はスクリプトから呼べない。** だから
+**スクリプトは素の git で済む部分だけ**を担い、**入場そのものは道具に残す**
+——**道具の意味論は散文にしか書けない。**
 
 **`skill-metrics.py` は両者を分けて出す。** 混ぜると、**節を移しただけで「減った」と
 読める数字**が出る（内容は 1 行も減っていないのに）。設計 §8.2 は**この数字だけで
