@@ -46,6 +46,8 @@ r"""worktree 隔離セッションのガードによる拒否を、トランス�
   **走査した範囲に出た集合**であって、境界ではない。
 - **`cwd` が OS と一致すること**——代理変数であって、OS フィールドではない
   （レコードは `platform` / `os` を持たない。2026-09-20 に 5,898 ファイルで確認）。
+  **両 OS に在る場所（`/var` `/tmp` `/opt` など）は `不明` を返す。**
+  **判別できない場所で測ると、母集団が混ざっていることに気づけない。**
 - **拒否の原因**——なぜその形が拒否されたかは、このスクリプトの範囲外である。
 """
 
@@ -114,7 +116,10 @@ def os_of(cwd):
     if re.match(r"^[A-Za-z]:[\\/]", cwd):
         return "Windows"
     head = "/" + cwd.lstrip("/").split("/")[0]
-    if head in ("/Users", "/private", "/var"):
+    # **`/private` は macOS 固有**（`/tmp` の実体）。**`/var` は両方に在るので判別しない**
+    # ——ここを macOS に倒すと、`/var/tmp` で回した Linux の測定が丸ごと macOS と
+    # 札を付けられ、**「両 OS が一致した」が片方のデータから再現されてしまう。**
+    if head in ("/Users", "/private"):
         return "macOS"
     if head in ("/home", "/root"):
         return "Linux"
@@ -176,6 +181,11 @@ def main(argv=None):
     )
     parser.add_argument("--json", metavar="PATH", help="収集結果を JSON で書き出す")
     parser.add_argument(
+        "--fail-on-empty",
+        action="store_true",
+        help="拒否が 0 件なら非ゼロ終了する（測定の失敗と『拒否されなかった』を人手に頼らず分ける）",
+    )
+    parser.add_argument(
         "--cwd-prefix",
         metavar="PREFIX",
         help="`cwd` がこの接頭辞で始まる件だけを数える（probe だけを取り出すのに使う）",
@@ -196,7 +206,7 @@ def main(argv=None):
               "区別がつかないので、レコードそのものが在るかを先に確かめること。")
         if args.json:
             pathlib.Path(args.json).write_text(json.dumps(events, ensure_ascii=False, indent=2))
-        return 0
+        return 1 if args.fail_on_empty else 0
 
     for label, key in (("OS（cwd からの推定）", "os"), ("harness 版", "version")):
         counter = Counter(e[key] for e in events)

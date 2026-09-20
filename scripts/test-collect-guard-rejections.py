@@ -12,8 +12,13 @@
 **変異テストを含む。** 収集本体を 1 箇所ずつ壊し、**壊したのに緑のままなら失格**とする。
 「正しい入力で緑」だけでは、**何も検査しない実装でも通る**。
 
-**主張とテストを 1 対 1 にする。** 本体の docstring の「守る」は 4 行あるので、
-**その 4 行それぞれに変異を 1 つ当てる**。行を足したら変異も足す。
+**主張とテストを 1 対 1 にする。** 本体の docstring の「守る」の行数だけ変異を当てる。
+行を足したら変異も足す。
+
+**引数を渡さない呼びでは、その引数の分岐は 1 度も走らない（必須の注意）。**
+`--cwd-prefix` の絞り込みは、**渡さない観測では分岐に入らないので、反転しても
+全アサートが通ってしまう**——実際にそうなっていた（`/code-review` が指摘）。
+**だから変異ごとに「どの観測で殺すか」を `MUTATION_PROBE` に書く。**
 
 **ただし 1 対 1 にならない行がある。** 「二重計上」を止めているのは 1 箇所ではなく
 **3 つの条件の組み合わせ**で、**どれか 1 つを壊しても残り 2 つが止める**——
@@ -123,8 +128,8 @@ def build_tree(root: Path) -> None:
         encoding="utf-8")
 
 
-def observe(mod, root: Path) -> dict:
-    events, scanned = mod.collect(root)
+def observe(mod, root: Path, cwd_prefix=None) -> dict:
+    events, scanned = mod.collect(root, cwd_prefix)
     return {
         "件数": len(events),
         "OS": sorted({e["os"] for e in events}),
@@ -165,6 +170,17 @@ MUTATIONS = {
     'OS を一定にする': ('    if head in ("/home", "/root"):\n        return "Linux"\n', ''),
     # 守る 4: 理由節の正規化（パスを伏せる）
     'パスを伏せない': ('    clause = PATH_POSIX.sub("<PATH>", clause)', '    pass'),
+    # 守る 5: `cwd_prefix` の絞り込み。
+    # **これは既定の観測では殺せない**（`cwd_prefix` を渡さない呼びでは分岐に入らない）ので、
+    # **絞り込みを渡した観測**を別に取って当てる（`MUTATION_PROBE` 参照）。
+    '絞り込みを反転する': ('                if cwd_prefix and not (record.get("cwd") or "").startswith(cwd_prefix):',
+                          '                if cwd_prefix and (record.get("cwd") or "").startswith(cwd_prefix):'),
+}
+
+# 変異ごとに、どの観測で殺すか。**既定の観測で殺せないものがある**ことを明示しておく
+# ——書かないと、渡していない引数の分岐が丸ごと無検査のまま残る（実測でそうなっていた）。
+MUTATION_PROBE = {
+    '絞り込みを反転する': "/Users/someone",
 }
 
 
@@ -187,6 +203,13 @@ def main() -> int:
         check("理由節はパスを伏せて 3 通りに畳まれる", correct["理由の種類"] == 3)
         check("版を取り出す", correct["版"] == ["2.1.278"])
         check("走査したファイル数を返す", correct["走査"] == 4)
+
+        mac_only = observe(mod, root, "/Users/someone")
+        lin_only = observe(mod, root, "/root")
+        check("`--cwd-prefix` で macOS の 2 件だけに絞れる",
+              mac_only["件数"] == 2 and mac_only["OS"] == ["macOS"])
+        check("`--cwd-prefix` で Linux の 3 件だけに絞れる",
+              lin_only["件数"] == 3 and lin_only["OS"] == ["Linux"])
 
         print("\n0 件と収集失敗を混同しない")
         empty = tmpdir / "empty"
@@ -219,8 +242,10 @@ def main() -> int:
             broken_dir.mkdir()
             broken = broken_dir / "collect-guard-rejections.py"
             broken.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
-            mutated = observe(load(broken), root)
-            check(f"変異を殺せる: {name}", mutated != correct)
+            prefix = MUTATION_PROBE.get(name)
+            base = correct if prefix is None else observe(mod, root, prefix)
+            mutated = observe(load(broken), root, prefix)
+            check(f"変異を殺せる: {name}", mutated != base)
 
         print("\n実環境を対象にしない歯止め")
         try:

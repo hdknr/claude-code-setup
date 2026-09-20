@@ -36,6 +36,10 @@
 #
 # 使い方:
 #
+#     # 像を作る（コンテナで回す場合。1 度だけ）
+#     docker build -f scripts/measure-guard-os.Dockerfile \
+#       -t guard-probe:2.1.278 --build-arg CLAUDE_VERSION=2.1.278 scripts/
+#
 #     bash scripts/measure-guard-os.sh <出力先>           # Linux（コンテナ）
 #     bash scripts/measure-guard-os.sh --host <出力先>    # macOS（このホスト）
 #
@@ -57,7 +61,11 @@ fi
 
 OUT="${1:?使い方: bash scripts/measure-guard-os.sh [--host] <出力先ディレクトリ>}"
 mkdir -p "$OUT"
-OUT_ABS="$(cd "$OUT" && pwd)"
+# **`pwd -P` にする（物理パス）。** macOS の `/tmp` は `/private/tmp` への symlink なので、
+# 論理パスのままだと **`PROBE_ROOT` が `/tmp/...`、harness が記録する `cwd` が
+# `/private/tmp/...`** になり、**`--cwd-prefix` が 1 件も当たらず macOS 側が 0 件になる**
+# ——**「ガードが発火しなかった」と見分けがつかない形で失敗する。**
+OUT_ABS="$(cd "$OUT" && pwd -P)"
 
 if [ "$MODE" = host ]; then
   # ホスト（macOS）で回す。**トランスクリプトは実ホームに書かれる**ので、
@@ -70,8 +78,11 @@ if [ "$MODE" = host ]; then
 
   echo
   echo "=== 収集（probe の分だけ）==="
+  # **`--fail-on-empty`**: 0 件は「拒否されなかった」と「収集が届いていない」の
+  # 区別がつかない。**人がログを読んで気づく形にしない。**
   python3 "${HERE}/collect-guard-rejections.py" \
     --cwd-prefix "$PROBE_ROOT" \
+    --fail-on-empty \
     --json "$OUT_ABS/host-rejections.json"
   exit 0
 fi
@@ -93,8 +104,14 @@ echo
 # `-i` が要る。**無いとヒアドキュメント（ここでは標準入力に流す本体）がコンテナに
 # 届かず、何も実行されないまま終了コード 0 で返る**——「回したのに 0 件」と
 # 区別がつかない形で失敗する（実測）。
+# **トークンは argv に置かない。** `-e VAR=値` と書くと**ホストのプロセス表に載る**
+# ——このファイルの冒頭で「引数にも書かない」と決めている当のことに反する。
+# **名前だけ渡して、値は環境から取らせる。**
+CLAUDE_CODE_OAUTH_TOKEN="$(cat "$TOKEN_FILE")"
+export CLAUDE_CODE_OAUTH_TOKEN
+
 docker run --rm -i \
-  -e CLAUDE_CODE_OAUTH_TOKEN="$(cat "$TOKEN_FILE")" \
+  -e CLAUDE_CODE_OAUTH_TOKEN \
   -e PROBE_ROOT=/root/work \
   -e PROBE_OUT=/out \
   -e PROBE_COPY_TRANSCRIPTS=1 \
@@ -105,4 +122,5 @@ docker run --rm -i \
 echo
 echo "=== 収集 ==="
 python3 "${HERE}/collect-guard-rejections.py" --root "$OUT_ABS/projects" \
+  --fail-on-empty \
   --json "$OUT_ABS/linux-rejections.json"
