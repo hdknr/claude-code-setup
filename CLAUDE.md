@@ -44,6 +44,15 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた）と
     集約の検査。**変異テストを含む**
   - `test-check-plan-scope.py` - 変更範囲の検査の回帰テスト（変異テストを含む）
+  - `collect-guard-rejections.py` - worktree 隔離セッションのガードによる拒否を
+    トランスクリプトから収集する（**CI からは呼ばない**——入力が `~/.claude/projects` にあり、
+    リポジトリの外で利用者ごとに違う。`token-metrics.py` と同じ形）
+  - `test-collect-guard-rejections.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
+    呼ばないがテストは回す**）
+  - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
+    ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
+    `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に
+    1 箇所だけ置く**——2 箇所に置くと、観測された差が OS の差か probe の差か判別できない
   - `test-link-skills.py` / `test-check-description-sync.py` /
     `test-check-plugin-versions.py` / `test-check-diagram-freshness.py` /
     `test-export-diagrams.py` / `test-skill-metrics.py` - 上記の回帰テスト。
@@ -316,6 +325,32 @@ PR 側を見る**——**ローカルの緑を根拠に「緑」と報告しな�
 人間に訊かれるまで PR は赤のまま**だった。**届いていないことは症状として出ない。**
 
 **`check-all.py` が守らないものは docstring を正とする**（ここに列挙しない）。
+
+### ガードの挙動を別の OS で測る
+
+worktree 隔離セッションのガードについて、**#122 の前半で「他の harness 版」、後半で
+「他の OS（Linux・コンテナ）」を測った**。手順と結果は
+[#122](https://github.com/hdknr/claude-code-setup/issues/122) を正とする（ここに再掲しない）。
+
+```bash
+docker build -f scripts/measure-guard-os.Dockerfile -t guard-probe:2.1.278 \
+  --build-arg CLAUDE_VERSION=2.1.278 scripts/   # 像を作る（1 度だけ）
+bash scripts/measure-guard-os.sh <出力先>          # Linux（コンテナ）
+bash scripts/measure-guard-os.sh --host <出力先>   # macOS（このホスト）
+python3 scripts/test-collect-guard-rejections.py  # 収集側のテスト
+```
+
+**認証はマウントでは渡らない**——`~/.claude` も `~/.claude.json` も
+マウントしたうえで `Not logged in` になる（**macOS の資格情報は Keychain にあり、
+ファイルとして存在しない**）。**`claude setup-token` の長期トークンを
+`CLAUDE_CODE_OAUTH_TOKEN` で渡す。**
+
+**拒否 0 件は「拒否されなかった」ではない。** 測定が成立していない場合も同じ 0 件が出るので、
+**通るはずの形（陽性対照）が通ることを併せて見る**。スクリプトは
+**出力先が空でなければ断り**（回し直しで二重計上するため）、
+**0 件なら非ゼロで終わる**。
+
+**残っている BLOCKED は Windows と実機 Linux**（#122 に残してある。**閉じていない**）。
 
 ### トークン使用量を測る
 
