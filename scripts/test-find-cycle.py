@@ -3,6 +3,11 @@
 
     python3 scripts/test-find-cycle.py
 
+**本体はプラグインの中にある**（`plugins/dev-loop/skills/dev-loop/scripts/`）。
+`scripts/` ではない——**`dev-loop` はどのリポジトリでも使えるスキル**で、
+**`scripts/find-cycle.py` は他のリポジトリには存在しない。**
+**スキルが自分の base ディレクトリから呼べる場所に置く。**
+
 **このテストは実環境を触らない。** 毎回テンポラリに偽のリポジトリを作り、そこだけを
 対象にする（`assert_not_real_repo` がそれを担保する）。本体は cwd からリポジトリを
 解決するので、**歯止めが無いと、テストがこのリポジトリ自身を探して通ってしまう**
@@ -21,7 +26,7 @@ import tempfile
 from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
-SCRIPT = REAL_REPO / "scripts" / "find-cycle.py"
+SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "find-cycle.py"
 
 failures: list[str] = []
 

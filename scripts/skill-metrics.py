@@ -49,7 +49,16 @@ from markdown_fences import strip_fences, unclosed_fence  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-SKILL = Path("plugins/dev-loop/skills/dev-loop/SKILL.md")
+SKILL_DIR = Path("plugins/dev-loop/skills/dev-loop")
+SKILL = SKILL_DIR / "SKILL.md"
+# **遅延読み込みの分**（#136）。**起点に載らないが、規範としては原本の一部**である。
+REFERENCES = SKILL_DIR / "references"
+
+
+def reference_files(root: Path) -> list[Path]:
+    """`references/*.md` を返す。**無ければ空**（この仕組みを使っていないリポジトリ）。"""
+    base = root / REFERENCES
+    return sorted(base.glob("*.md")) if base.is_dir() else []
 DOC = Path("docs/plugins/dev-loop-design.md")
 
 BEGIN = "<!-- skill-metrics:begin -->"
@@ -120,11 +129,17 @@ def sections(text: str) -> tuple[int, int, list[tuple[str, int, int]]]:
     return total, heads[0], rows
 
 
-def render(total: int, preamble: int, rows: list[tuple[str, int, int]]) -> str:
+def render(total: int, preamble: int, rows: list[tuple[str, int, int]],
+           refs: list[tuple[str, int, int]] | None = None) -> str:
     """生成ブロックの中身を組み立てる。
 
     **節名も出す。** 行数とマーカー数が同じまま見出しだけ変わる編集を
     落とすため（受入基準の経路 4）。
+
+    **`references/` を別に出す（#136）。** 混ぜると、**節を `references/` に移しただけで
+    「減った」と読める数字が出る**——**内容は 1 行も減っていないのに。**
+    設計 §8.2 は**この数字だけで判断を正当化している**ので、
+    **「起点に載る分」と「遅延分」を分けないと、論証の前提が黙って入れ替わる。**
     """
     with_marker = sum(n for _, n, m in rows if m)
     without_marker = sum(n for _, n, m in rows if not m)
@@ -144,6 +159,23 @@ def render(total: int, preamble: int, rows: list[tuple[str, int, int]]) -> str:
     for head, n, m in rows:
         name = head.lstrip("# ").strip().replace("|", r"\|")
         out.append(f"| {name} | {n} | {m if m else '—'} |")
+    if refs:
+        ref_lines = sum(n for _, n, _ in refs)
+        ref_markers = sum(m for _, _, m in refs)
+        out += [
+            "",
+            f"**このほかに `references/` が {len(refs)} ファイル・{ref_lines} 行**"
+            f"（`（必須）` {ref_markers} 個）**ある。** "
+            f"**これは起点に載らない**——**条件が立った周だけが読む。** "
+            f"**規範としては原本の一部で、上の表とは足し算の関係にある**"
+            f"（合わせて {total + ref_lines} 行・`（必須）` {markers + ref_markers} 個）。",
+            "",
+            "| `references/` | 行 | `（必須）` |",
+            "| --- | --- | --- |",
+        ]
+        for name, n, m in refs:
+            out.append(f"| {name} | {n} | {m if m else '—'} |")
+
     out += [
         "",
         "<small>この表と上の段落は `scripts/skill-metrics.py` が生成している。"
@@ -218,7 +250,16 @@ def main() -> int:
             fail(f"{path} が無い")
 
     total, preamble, rows = sections(skill_path.read_text(encoding="utf-8"))
-    block = render(total, preamble, rows)
+    # `references/` は**ファイル 1 本を 1 行**として数える（節ではなくファイル単位）。
+    # **起点に載らない分なので、上の表とは別に出す。**
+    refs = []
+    for path in reference_files(args.root):
+        text = path.read_text(encoding="utf-8").rstrip("\n")
+        # **本体と同じ数え方にする**——フェンスの中は数えない（`sections` と同じ）。
+        stripped = strip_fences(text)
+        refs.append((path.name, len(text.split("\n")),
+                     sum(stripped.count(m) for m in MARKERS)))
+    block = render(total, preamble, rows, refs)
     doc = doc_path.read_text(encoding="utf-8")
     updated = splice(doc, block)
 

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 r"""ある Issue の周が既に始まっているかを探し、当たったものを全部出す。
 
-    python3 scripts/find-cycle.py <issue-number>
+    python3 <このスキルの base ディレクトリ>/scripts/find-cycle.py <issue-number>
+
+**置き場所に理由がある。** `dev-loop` は**どのリポジトリでも使えるスキル**なので、
+**対象リポジトリの `scripts/` に置いてはならない**——そこに在るとは限らない。
+**スキルと一緒に配られる場所**（スキルの base ディレクトリの下）に置く。
+**一度 `scripts/find-cycle.py` に置いて PR に出し、マージ後に気づいた**（#136）。
 
 `SKILL.md` の「途中から再開する周」が散文で書いていた探索を、**走らせる形にした**。
 **判定はしない**——**当たったものを並べ、どれで再開するかは読んだ側が決める。**
