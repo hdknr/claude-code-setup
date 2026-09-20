@@ -56,6 +56,11 @@ CI は `claude` を起こせない）。**その旨を `CLAUDE.md` に残す。*
 - `scripts/test-check-norm-markers.py` — 同上
 - `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — **段 2**。手順 5 の委譲文
 - `plugins/dev-loop/skills/dev-loop/prompts/review-handoff.md` — **段 2**。手順 6 の委譲文
+- `plugins/dev-loop/skills/dev-loop/scripts/prepare-worktree.sh` — **段 3**。新規の周の入場
+- `plugins/dev-loop/skills/dev-loop/scripts/check-pr-preconditions.sh` — **段 3**。PR 前の前提条件
+- `scripts/test-worktree-scripts.py` — **段 3**。上 2 本の回帰テスト（変異 8 件）
+- `.github/workflows/plugins.yml` — **段 3**。CI に登録
+- `docs/plans/issue-136-stage3.md` — **段 3** の計画（**この周から、段ごとに 1 本にする**）
 - `scripts/skill-metrics.py` — **範囲を広げた**（下記 2）
 - `scripts/test-skill-metrics.py` — 同上
 
@@ -246,3 +251,17 @@ CI は `claude` を起こせない）。**その旨を `CLAUDE.md` に残す。*
 **歯止めの数え方が 2 件ずれていたのを直した**——`skill-metrics.py` はフェンスしか
 剥がさないので、**テンプレート内でバッククォート付きに言及した印を数えていた**。
 **言及のほうを書き換えて揃えた**（174 個で `check-norm-markers.py` と一致）。
+
+
+## 段 3 — 入場をスクリプトにし、条件つきの塊を `references/` へ
+
+**詳細は `docs/plans/issue-136-stage3.md` を正とする**（測定・受入基準・経路・実測）。
+**ここには変更範囲だけを足してある**——`check-plan-scope.py` が拾うのは
+`issue-<番号>.md` の側だからである。
+
+**この食い違いで CI を 1 度割った**（PR #144）。**別名の計画ファイルを作ったら、
+番号どおりの名前のほうに変更範囲を足すこと。**
+
+**そして、`check-plan-scope.py` はコミットしてから走らせること**——
+**コミット前に走らせると `origin/main...HEAD` に差分が無く、「判定していない」で
+空振りする。** **空振りを緑と読まない。**

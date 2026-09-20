@@ -186,3 +186,222 @@
 
 **再開した周でも、関門の数とパスの数は変わらない。** 割ったこと自体は、
 Verifier ／ `/code-review` ／ 2 パスのどれの免除にもならない。
+
+## 既に worktree がある場合は、作らずにそこへ入る（必須）
+
+**`SKILL.md` 手順 4 から移した節である。** **再開の周でしか要らない**ので起点から外してある
+——**規範としての重さは変わらない。**
+
+割り目から再開した周は
+**既にブランチと worktree を持っている**（「途中から再開する周」）。
+**見るのは上に置いた 2 本**（`git worktree list` ／ `git branch --all --list`）で、
+**当たった先に応じて次のどれかに進む**:
+- **`EnterWorktree` は `path` を渡せば既存の worktree に入れる。`path` 無しで呼ぶと
+  新規作成になり、既定では `origin/<デフォルトブランチ>` から切る**——つまり
+  **周のコミットを 1 つも持たない worktree に入って、実装をやり直すことになる**。
+  **止まらないので気づけない。** 実測でそうなった（[#96](https://github.com/hdknr/claude-code-setup/issues/96)）。
+  - **切る元は設定で変わる**（`worktree.baseRef`。既定の `fresh` は
+    `origin/<デフォルトブランチ>`、`head` は**手元の HEAD**）。**`head` なら手元の
+    ブランチから生えるので、上の壊れ方は設定に依存する**——**自分の環境の設定を
+    確かめずに「origin から切られる」と決めない。**
+- **`path` は、どこからでも好きなパスを渡せるわけではない（必須）。**
+  **この項は `path`（既存の worktree に入る）だけを述べる。**
+  **`name`（新規作成）は別の条件軸に乗っている**——**効くかどうかは
+  このセッションが `EnterWorktree` を呼んだかどうかで、物理的な位置ではない。
+  原本は上の「`EnterWorktree` で新規に作れないことがある」の項である**
+  （**ここに複製を置かない**。**以前ここは 1 つの箇条書きで 2 つの軸を同時に述べていた**——
+  [#115](https://github.com/hdknr/claude-code-setup/issues/115)）。
+    - **`.claude/worktrees/`（同一リポジトリ）配下の worktree にしか入れない。**
+      **実測**（2026-09-17、[#110](https://github.com/hdknr/claude-code-setup/issues/110)）——
+      配下でない登録済み worktree を渡すと
+      `Cannot enter worktree: … is not under …/.claude/worktrees.` で**拒否された**。
+      **陽性対照**として、**同じセッションから配下の** worktree を渡すと**入れた**ので、
+      拒否は「登録されていない」からではなく**配下かどうか**で起きている
+      （**両方の probe を `git worktree list` に登録した状態で測った**）。
+        - **振った次元は「配下かどうか」の 1 つだけである（必須）。**
+          **測ったのは `path` で配下に入った 1 つのセッションから**で、
+          **そのセッションは物理的にも worktree の中にあり、`EnterWorktree` も呼んでいた。**
+          **だから、効いているのが*物理的な位置*なのか*worktree セッションであること*なのかは、
+          判別していない。** **どちらかに決めて書かない。**
+    - **起動ディレクトリからの初回入場は条件がゆるい**——`git worktree list` に載っていれば
+      よい（道具の説明文）。**ただしこれは説明文であって、この周で測ったのは
+      「配下のパスが通る」ことだけ**なので、**配下でないパスが初回入場で通るかは
+      確かめていない。**
+- **だから、配下でない worktree への合流は、確実な手が 1 つしかない（必須）。** 手順 4 の
+  代替コマンドが以前作っていた `../<repo>-issue-<n>` は**まさに配下でない**ので、
+  **worktree の中から再開した周は入れない**。**Bash の `cd` ではセッションの cwd は動かない**
+  ので代用にならない。**候補は 3 つあるが、上の 2 つは条件付きで落ちる**
+  （[#110](https://github.com/hdknr/claude-code-setup/issues/110) の 1 パス目で、
+  **「手が無い」と書いた直後に 3 つ挙げる自己矛盾**として指摘された）:
+    1. **`ExitWorktree` に `action: "keep"` を渡して起動ディレクトリに戻る**——
+       **再開の既定形では効かない。** 一次ソース（道具の説明文）:
+       「ONLY operates on worktrees created by EnterWorktree **in this session**」
+       「If called outside an EnterWorktree session, the tool is a **no-op**」。
+       **この worktree の中で `/clear` して入り直した周は `EnterWorktree` を呼んでいない**
+       ので no-op になり、そもそも「起動ディレクトリ」が worktree 自身である。
+       **使えるとすれば同一セッションで `EnterWorktree` を呼んで入った場合だけ**だが、
+       **そこから先は測っていない（必須）**——**戻ったあとの入場が
+       「初回入場」として扱われるか**（道具の説明文は「On first entry from the launch
+       directory, the path must appear in `git worktree list`」と条件を分けている）は、
+       **`ExitWorktree` の後に確かめていない**。**「使える」と書き切らない**
+       （#110 の 2 パス目で、**1 パス目にあった「いずれもこの周では測っていない」の
+       留保が、確かめないまま肯定形に置き換わっている**と指摘された）。
+    2. その周のブランチを、**配下に作った新しい worktree で** checkout する
+       （`git worktree add .claude/worktrees/issue-<n> <既存ブランチ>`。**`-b` を付けない**）
+       ——**元の worktree がそのブランチを checkout したままなら fatal で止まる。**
+       一次ソース（`man git-worktree` の `-f, --force`）:
+       「add refuses to create a new worktree when `<commit-ish>` is a branch name and
+       **is already checked out by another worktree**」。
+       **先に `git worktree remove <元のパス>` で外すか、`add` に `--force` を付ける**
+       （`add --force` は 2 本が同じブランチを持つ状態を作るので、**どちらで作業しているかを
+       見失いやすい**）。
+       - **`remove` のほうにも前提がある（必須）。** 一次ソース（`man git-worktree` の
+         `remove`）:「**Only clean worktrees**（no untracked files and no modification in
+         tracked files）**can be removed**」「remove refuses to remove an unclean worktree
+         **unless --force is used**」。
+         **P7 で外したい元の worktree は、入れなかった作業が載っている worktree そのもの**
+         なので、**汚れているのがふつう**である——**素の `remove` は fatal で止まる。**
+       - **ここで `remove --force` に逃げてはならない（必須）。** それは
+         **いま救おうとしている未コミットの変更を捨てる**。**先にその worktree の中で
+         コミットするか**（人間にセッションを開いてもらう＝下の 3 番目）、
+         **`add --force` のほうを選ぶ**（元をそのまま残す）。
+         **「`--force` を付ければ通る」で 2 つの `--force` を同じものとして扱わない**
+         ——`add --force` は**状態を増やす**が、`remove --force` は**消す**
+         （#110 の 2 パス目で、`remove` の前提が抜けていると指摘された）。
+       **さらに、相対パスは*シェルの cwd* を起点に解決される**ので、
+       別の worktree の中から走らせると `<その worktree>/.claude/worktrees/…` に生える
+       ——**メインツリー配下ではない。絶対パスで書く**（出所と留保は上の
+       「`EnterWorktree` では新規に作れない」の項）。
+       （**その入れ子を `EnterWorktree` の `path` が受け付けるかは測っていない。**）
+    3. **人間に、その worktree の中で新しいセッションを開いてもらう**——
+       **条件を外さない唯一の手**（初回入場の条件に戻る）。
+  **だから、そもそも配下に作る**（上の置き場所の項）。**予防のほうが、どの復旧手段より確実である。**
+- **別の worktree へ切り替えると、前にいた worktree は書けなくなる**（道具の説明文）。
+  **戻るには `path` で入り直す**——この周では**戻れることだけ実測した**（切り替えた先から
+  元の worktree に `path` で戻り、書き込みが通った）。**書けなくなること自体は測っていない。**
+- ブランチだけ残っている（worktree を持たない）なら、**そのブランチで worktree を作る**
+  ——`git worktree add <path> <既存ブランチ>` と書き、**`-b` を付けない**。
+  `-b` は新規ブランチの作成なので、同名があれば
+  `fatal: a branch named '<名前>' already exists` で止まる（git の仕様。**この周では
+  走らせて確かめていない**——`EnterWorktree` 経由では、そもそもこの形にならない）。
+  **止まるのは素の git の形だけで、`EnterWorktree` は止まらない**（上項）。
+    - **渡すのは「裸のブランチ名」（必須）。** `git branch --all` の出力は
+      `remotes/origin/<名前>` の形で出るが、**それをそのまま渡すと detached HEAD になる**
+      ——git がリモート追跡ブランチを作るのは **`<名前>` がローカルに見つからないとき**だけで、
+      `remotes/origin/<名前>` は**参照として見つかってしまう**ので分岐に入らない
+      （`git worktree --help` の `add` の項）。**detached HEAD で積んだコミットは
+      どのブランチにも乗らない**ので、push も PR も #96 と同じ形で壊れる。
+    - リモート追跡参照は `git fetch` するまで古い。**見つからないことを結論にする前に取り直す。**
+- **メインの作業ツリーで作業を始めない。** ここで気づかずに実装しても、
+  **止めてくれるものは薄い（必須）。** 手順 6 の PR 作成前チェックには
+  **ブランチの一致を見る項を足したが（[#110](https://github.com/hdknr/claude-code-setup/issues/110)）、
+  それは PR を出す直前**である——**実装をやり直したあとに気づいても手戻りは戻らない。**
+  **#96 で壊れた周はまさに worktree の中にいた**ので、
+  **「worktree にいる」を通過の根拠にしない。** 確かめるのは**入場の時点**で、
+  **その周のブランチ／コミットの上にいるか**（上の肯定的な確認）。
+- メインの作業ツリーに未コミットの変更を作ってしまっていた場合は、stash →
+worktree 作成 → 復元で移送してから続ける。**ただし裸の `git stash` / `git stash pop` を
+使わない（必須）**——**stash スタックは全 worktree と他のセッションで共有**なので、
+**他人の作業を取り出しうる**。印を付けて push し、SHA を捕まえて `apply` する:
+```bash
+git stash push -u -m "issue-<issue-number>-move"   # メインの作業ツリーで
+git stash list --format='%H %gs'    # 上で付けた印の行から SHA を取る
+git stash apply <SHA>               # ★ worktree を作って、その中で走らせる
+git stash drop <印の現在の stash@{n}>   # 印で見つけ直してから落とす
+```
+- **`apply` で終わらせない（必須）。** `pop` と違って `apply` は**エントリを残す**ので、
+  **移送のたびに共有スタックが伸び、他のセッションの `git stash list` に残り続ける**。
+  **落とすときは番号を覚えておかない**——他のセッションが push / drop すると
+  `stash@{n}` はずれるので、**印で見つけ直してから** `drop` する。
+- **`apply` を走らせる場所は、移送先の worktree の中**（メインの作業ツリーで走らせると、
+  いま外したはずの変更をそこへ戻すことになる）。
+**WIP コミットを 1 つ作って worktree で cherry-pick するほうが安全**で、
+共有スタックに触らずに済む。
+- ブランチ名は対象リポジトリの CLAUDE.md の命名規約に従う（規約が無ければ
+`issue/<番号>-<説明>`）。
+- **道具に任せると、この規約は黙って破られる（必須）。** `EnterWorktree` は
+  **ブランチ名を自分で決める**——観測では **`worktree-` ＋ 渡した `name`** になる
+  （#96 で 3 例。**道具の説明文には接頭辞のことが書かれていない**ので、これは
+  **仕様ではなく 3 例から読み取った規則性**である。**`name` で接頭辞を外せる書き方は
+  見つかっていない**——つまり **`issue/<番号>-…` の形を `EnterWorktree` だけで作れるかは、
+  確かめられていない**）。
+  **規約と食い違ったまま PR まで進む。誰も止めない。**
+- **だから worktree に入った直後に、ブランチ名を自分で確かめる（必須）**——
+  `git rev-parse --abbrev-ref HEAD`。規約と違えば**その場で改名する**が、
+  **改名のコマンドは「いまブランチの上にいるか」で分岐する（必須）**:
+  ```bash
+  git symbolic-ref -q HEAD >/dev/null && echo on-branch || echo detached
+  ```
+    - **`on-branch` なら** `git branch -m <規約どおりの名前>`。
+    - **`detached` なら** `git switch -c <規約どおりの名前>`——**`git branch -m` は使えない。**
+  **実測**（2026-09-17、git 2.54.0 / macOS、[#110](https://github.com/hdknr/claude-code-setup/issues/110)）:
+  detached HEAD で `git branch -m` は
+  **`fatal: cannot rename the current branch while not on any` で終了コード 128**。
+  **陽性対照**——同じ形の worktree でブランチの上にいるときは `-m` が**通った**ので、
+  失敗は detached であることに帰せられる。`git switch -c` は detached のまま走らせても
+  **通り、コミットも保たれた**。
+    - **`switch -c` も止まることがある。止まったら乗り換えてはならない（必須）。**
+      **同名のローカルブランチが既にあると
+      `fatal: a branch named '<名前>' already exists` で終了コード 128** になる
+      （経路 **P20**。[#115](https://github.com/hdknr/claude-code-setup/issues/115)）。
+      **条件は「同名のローカルブランチが存在すること」だけ**で、
+      **他の worktree がそれを持っているかどうかは関係ない。**
+      **そのときは、先にその既存ブランチがどこを指すかを見る**:
+      ```bash
+      git rev-parse HEAD          # detached で積んだ先端
+      git rev-parse <規約どおりの名前>   # 既存ブランチの先端
+      ```
+        - **同じコミットを指すなら、`git switch <規約どおりの名前>` で乗る**
+          （**`-c` を付けない**。実測 rc=0）。
+        - **違うコミットを指すなら、そこで止めて人間に指示を仰ぐ（必須）。**
+          **`git switch <名前>` は*通ってしまう*が**（実測 rc=0）、
+          **detached で積んだコミットをどのブランチにも乗らないまま置き去りにする**
+          ——**#96 と同じ壊れ方**である。
+          **どちらが目的の周かは、計画ファイルの「周の在り処」と突き合わせないと決まらない。**
+          **新しい名前で逃がすのも人間の判断**（規約から外れた名前が PR まで進む）。
+      **実測**（2026-09-20、git 2.54.0 / macOS、scratch リポジトリ。
+      [#115](https://github.com/hdknr/claude-code-setup/issues/115)）:
+      detached の worktree で、**別のコミットを指す同名ブランチがある状態**の
+      `git switch -c` が **rc=128**、**同じコミットを指すブランチへの `git switch`** が **rc=0**、
+      **別のコミットを指すブランチへの `git switch`** も **rc=0**（HEAD が移った）。
+      **どの worktree もそのブランチを持っていない状態で測った**ので、
+      止まる条件に「他の worktree が checkout 済み」は要らない。
+      **観測窓**: この 1 環境・各ケース 1 回。他の git 版・他の OS は測っていない。
+    - **この分岐が要るのは、同じ節が detached になる経路を作っているから（必須）。**
+      上の「裸のブランチ名を渡す」の項が、`remotes/origin/<名前>` を渡すと detached HEAD に
+      なると書いている。**そのとき `git rev-parse --abbrev-ref HEAD` は `HEAD` を返す**ので、
+      「規約と一致しない」と読んで `-m` に進むと**そこで fatal で止まり、
+      ブランチの無いまま次の指示が無い状態になる**（**観測窓**: 上の実測は
+      この 1 環境・各ケース 1 回。他の git 版・他の OS は測っていない）。
+  **規約どおりの名前で最初から切りたいなら**、素の
+  `git worktree add .claude/worktrees/issue-<issue-number> -b <規約どおりの名前>` で作ってから
+  **`EnterWorktree` に `path` を渡して入る**（**配下に作ること**——上の置き場所の項）。
+  **この周はこの形で入った**ので、起動ディレクトリからならこの手順が通ることは実測済み。
+- **改名すると、`ExitWorktree` の後片付けと噛み合わなくなる（必須）。**
+  **以前ここには「push 前なら副作用は無い」と書いていたが、これは誤りだった。**
+  **実測**（2026-09-17、#96 の worktree を畳んだとき。[#110](https://github.com/hdknr/claude-code-setup/issues/110) のコメント）:
+  **`ExitWorktree` は作成時のブランチ名を保持しており、改名に追従しない。**
+  `action: "remove"` の警告は**改名前の名前**で出て（コミット数は正しい）、
+  実行すると**ディレクトリは消えたが、現在のブランチは残った**——
+  道具の説明は「the worktree directory and **its branch**」を消すとしているが、
+  **消そうとしたのは存在しない旧名のほうで、ブランチ側は黙って no-op になった**
+  （エラーも出ない）。
+    - **害は小さいが、「片付けた」と思って残る**のが問題で、
+      **次の周の `git branch --all --list '*<n>*'` に映る。**
+      手で消せる（`git branch -d <名前>`）。**ただし `-d` が通る条件は upstream の有無で
+      変わる（必須）**——一次ソース（`man git-branch` の `-d`）:
+      「The branch must be fully merged **in its upstream branch**, or **in HEAD if no
+      upstream was set**」。
+        - **push 済み（upstream あり）なら、squash merge でも通る**
+          ——リモート追跡参照に対してマージ済みと判定されるため（**実測**: この 1 件・1 回）。
+        - **一度も push していない周（upstream なし）は、判定相手が HEAD になる**ので、
+          squash merge 済みでも `error: the branch '<名前>' is not fully merged` で落ちる
+          （**一次ソースからの帰結。この形は走らせて確かめていない**）。
+          **中身が要らないと確かめたうえで `-D`**（`--delete --force`）に落とす。
+    - **観測窓**: **この 1 件・1 回のみ。** **`EnterWorktree` で作って*改名しなかった*
+      worktree で同じことが起きるかは確かめていない**（「起きないはず」とは書かない）。
+    - **だから、改名するなら畳むときにブランチを自分で確かめる**——
+      `ExitWorktree` の報告を「消えた」の証拠にしない。
+- **これは「小さい」から後回しにしてよい類ではない。** ブランチ名は
+  **PR・Issue の突き合わせ・後からの検索**の入口で、**push したあとに直すと
+  参照が割れる**（PR を作り直すことになる）。**入った直後が唯一ただで直せる時点**である。
