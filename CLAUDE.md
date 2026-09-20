@@ -21,6 +21,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `check-plan-scope.py` - 差分が計画ファイルの「変更範囲」に収まっているか（PR 限定）
   - `check-norm-markers.py` - `（必須）` が原本（`SKILL.md`）の外に漏れていないか
+  - `check-duplicate-counts.py` - **同じファイルの中で、同じ語句に違う数が付いていないか**
+    （#138。**免除は `dup-counts-ok: <語句>` で語句を名指しさせる**）
+  - `test-check-duplicate-counts.py` - 上の回帰テスト（変異テストを含む）
   - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
     （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
@@ -485,6 +488,19 @@ docstring を正とする。**
 python3 scripts/check-site-links.py       # 指し先が無ければ非ゼロ終了
 python3 scripts/test-check-site-links.py  # 歯止め自体のテスト（変異テストを含む）
 ```
+
+**件数の写しは、もう 1 本の歯止めが見る**（#138）。**#122 の周はこの型で 3 パス目を
+回せずに人間レビューへ回った**——件数を複数箇所に書き、**直すたびに直し残しが
+次の関門に見つかった**。
+
+```bash
+python3 scripts/check-duplicate-counts.py       # 同じ語句に違う数が付いていれば非ゼロ終了
+python3 scripts/test-check-duplicate-counts.py  # 歯止め自体のテスト（変異テストを含む）
+```
+
+**何を守り、何を守らないかは docstring を正とする。** 性質だけ言えば、これは
+**「重複が無い」の証明ではなく、実際に起きた 1 つの形の検査**である
+——**ファイルをまたぐ重複は、言い回しが違うと当たらない。**
 
 ### description は 3 箇所にある
 
