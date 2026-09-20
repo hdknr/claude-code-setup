@@ -17,8 +17,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.24.1 -->
-> **このスキルの版: 1.24.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.25.0 -->
+> **このスキルの版: 1.25.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1467,6 +1467,17 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
         （[#123](https://github.com/hdknr/claude-code-setup/issues/123)）。
         **上の 2 項は、残る 2 件が何だったかである。**
         **「安いから気にしなくてよい」ではなく、「安いが、落ちるときは静かに落ちる」。**
+      - **ここまでの指示は、macOS だけの観測ではない。** **同じ形を Linux でも当てて、
+        probe ごとの結末も、理由節も、メッセージの形（包み・規則文の有無）も一致した**
+        ——**harness 版・アーキテクチャ・認証・当てた形を揃え、振った次元は OS だけ**
+        （[#122](https://github.com/hdknr/claude-code-setup/issues/122)）。
+        **だから、この節の指示を「macOS でしか確かめていない」と読む必要はない。**
+      - **ただし「OS に依らない」と読んではならない（必須）。** **当てたのは一握りの形**で、
+        **境界を確かめたのではない**（境界の特徴づけを追わないのは #112 の判定のとおり）。
+        **測ったのはコンテナで、実機の Linux は別環境である。**
+        **Windows は測っていない。**
+        **確かめた範囲と、確かめていないことの範囲は
+        [#122](https://github.com/hdknr/claude-code-setup/issues/122) を正とする。**
       - **経緯・観測・陽性対照・未解決は
         [#112](https://github.com/hdknr/claude-code-setup/issues/112) を正とする。**
       - **Bash に寄せられない場面がある。** ファイルの編集がガードに当たるなら、

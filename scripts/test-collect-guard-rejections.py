@@ -144,10 +144,14 @@ MUTATIONS = {
     # ——**素朴な実装（行に接頭辞が現れたら数える）に丸ごと差し替える**。
     '素朴な走査に戻す': ('                if record.get("type") != "user":\n'
                         '                    continue\n'
+                        '                if cwd_prefix and not (record.get("cwd") or "").startswith(cwd_prefix):\n'
+                        '                    continue\n'
                         '                for body in error_blocks(record):\n'
                         '                    text = unwrap(body)\n'
                         '                    if not text.startswith(GUARD_PREFIX):\n'
                         '                        continue\n',
+                        '                if False:\n'
+                        '                    continue\n'
                         '                if False:\n'
                         '                    continue\n'
                         '                for body in [line]:\n'
