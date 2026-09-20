@@ -28,6 +28,16 @@ jobs:
         if: github.event_name == 'pull_request'
         run: python3 scripts/check-version-bump.py "origin/${{ github.base_ref }}"
 
+      # 差分が計画ファイルの「変更範囲」に収まっているか（#119）。base が要るので PR 限定。
+      # 計画ファイルを持たない PR では「判定していない」と出して 0 で終わる。
+      - name: 差分が計画の変更範囲に収まっているかチェック
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-plan-scope.py "origin/${{ github.base_ref }}"
+
+      # 歯止め自体が「置いてあるが何も見ていない」状態に退化していないかを確かめる
+      - name: check-plan-scope.py のテスト
+        run: python3 scripts/test-check-plan-scope.py
+
       # description は 3 箇所に複製されている。片側だけ直す事故が #60 で 2 回起きたので、
       # 共変（どれかを直したら残りも直っている）を base との diff で見る。同じく PR 限定。
       - name: description の同期漏れをチェック
