@@ -51,14 +51,24 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 SKILL_DIR = Path("plugins/dev-loop/skills/dev-loop")
 SKILL = SKILL_DIR / "SKILL.md"
-# **遅延読み込みの分**（#136）。**起点に載らないが、規範としては原本の一部**である。
-REFERENCES = SKILL_DIR / "references"
+# **起点に載らない分**（#136）。**規範としては原本の一部**である。
+#
+# - `references/` — **条件が立った周だけが読む**（再開の周など）。
+# - `prompts/` — **委譲するときに読む**。条件ではなく用途で分かれている。
+#
+# **どちらも `SKILL.md` とは別に数える。** 混ぜると、**節を移しただけで「減った」と
+# 読める数字**が出る——内容は 1 行も減っていないのに。
+LAZY_DIRS = ("references", "prompts")
 
 
-def reference_files(root: Path) -> list[Path]:
-    """`references/*.md` を返す。**無ければ空**（この仕組みを使っていないリポジトリ）。"""
-    base = root / REFERENCES
-    return sorted(base.glob("*.md")) if base.is_dir() else []
+def lazy_files(root: Path) -> list[Path]:
+    """起点に載らないファイルを返す。**無ければ空**（この仕組みを使っていないリポジトリ）。"""
+    out = []
+    for name in LAZY_DIRS:
+        base = root / SKILL_DIR / name
+        if base.is_dir():
+            out += [(name, p) for p in sorted(base.glob("*.md"))]
+    return out
 DOC = Path("docs/plugins/dev-loop-design.md")
 
 BEGIN = "<!-- skill-metrics:begin -->"
@@ -164,13 +174,14 @@ def render(total: int, preamble: int, rows: list[tuple[str, int, int]],
         ref_markers = sum(m for _, _, m in refs)
         out += [
             "",
-            f"**このほかに `references/` が {len(refs)} ファイル・{ref_lines} 行**"
+            f"**このほかに、起点に載らないファイルが {len(refs)} 本・{ref_lines} 行**"
             f"（`（必須）` {ref_markers} 個）**ある。** "
-            f"**これは起点に載らない**——**条件が立った周だけが読む。** "
+            f"**これは起点に載らない**——**要るときだけ読む**"
+            f"（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 "
             f"**規範としては原本の一部で、上の表とは足し算の関係にある**"
             f"（合わせて {total + ref_lines} 行・`（必須）` {markers + ref_markers} 個）。",
             "",
-            "| `references/` | 行 | `（必須）` |",
+            "| 起点に載らないファイル | 行 | `（必須）` |",
             "| --- | --- | --- |",
         ]
         for name, n, m in refs:
@@ -253,11 +264,11 @@ def main() -> int:
     # `references/` は**ファイル 1 本を 1 行**として数える（節ではなくファイル単位）。
     # **起点に載らない分なので、上の表とは別に出す。**
     refs = []
-    for path in reference_files(args.root):
+    for dirname, path in lazy_files(args.root):
         text = path.read_text(encoding="utf-8").rstrip("\n")
         # **本体と同じ数え方にする**——フェンスの中は数えない（`sections` と同じ）。
         stripped = strip_fences(text)
-        refs.append((path.name, len(text.split("\n")),
+        refs.append((f"{dirname}/{path.name}", len(text.split("\n")),
                      sum(stripped.count(m) for m in MARKERS)))
     block = render(total, preamble, rows, refs)
     doc = doc_path.read_text(encoding="utf-8")
