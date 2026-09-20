@@ -17,11 +17,14 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.22.0 -->
-> **このスキルの版: 1.22.0**（プラグイン `dev-loop`）。
-> 手元で読まれている版がリポジトリの最新より古いなら、**キャッシュが更新されていない**。
+<!-- skill-version: 1.22.1 -->
+> **このスキルの版: 1.22.1**（プラグイン `dev-loop`）。
+> 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
+> **「キャッシュがまだ取れていないから」とは限らない**——**取得済みの新しい版が在るのに
+> 古いほうが読み込まれた実測がある**（[#120](https://github.com/hdknr/claude-code-setup/issues/120)）。
+> **どちらであっても、上の 2 つが対処である。**
 
 GitHub Issue 1 件を、**検証が通ることを停止条件**として 1 周させるループ志向開発の手順。
 どのプロジェクトでも使えるよう汎用化してある。プロジェクト固有の事情（実機検証コマンド・
