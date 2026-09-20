@@ -48,7 +48,8 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 
 | 守らないもの | なぜ |
 | --- | --- |
-| **ブランチ名が `issue/<n>-…` でない周** | 計画ファイルを当てる最後の手は「差分に計画ファイルが 1 つだけある」だが、**別の Issue の計画ファイルを*直すのが成果物*の周では、それを拾ってしまう。** ブランチが番号を名乗っていれば**そこだけを見る** |
+| **ブランチ名が `issue/<n>-…` でない周** | **当てる道はブランチ名だけ**（と `--plan`）。**差分から拾う道は置いていない**——**別の Issue の計画ファイルを*直すのが成果物*の周で、それを拾ってしまうため。** 番号を名乗らないブランチの周は、**`--plan` を渡さない限りこの仕組みの外にある** |
+| **ブランチ名が取れない実行** | **CI は `pull_request` の head を detached HEAD で置く**ので `git rev-parse --abbrev-ref HEAD` は `HEAD` を返す。**`GITHUB_HEAD_REF` → `GITHUB_REF_NAME` → git の順**に見る。**どれも取れなければ「判定していない」**（git の外で動かすなら `--plan` を渡す） |
 | **計画ファイルを持たない周** | **この仕組みの外にある。** 計画ファイルが見つからなければ**判定せずに 0 で終わる**（見つからないことは出力に出す）。`check-diagram-freshness.py` の `output: null` と**同じ形の限界**である |
 | **範囲を*後から*広げた周** | 見るのは **HEAD 時点**の計画ファイルだけ。**手を動かす前に更新したのか、後で辻褄を合わせたのかは、この検査には見えない**（差分の順序は見ていない）。手順 4 が求めているのは前者で、**そこは人間のレビューが見る** |
 | **広すぎるパターン** | `**` や `.` と書けば全部に当たる。**「書いてある」しか見ない**ので、**範囲の妥当性は採点しない** |
@@ -62,6 +63,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import os
 import re
 import subprocess
 import sys
@@ -88,33 +90,46 @@ def changed_files(base: str) -> list[str]:
     return [line for line in out.splitlines() if line.strip()]
 
 
-def find_plan(files: list[str], explicit: str | None) -> Path | None:
-    """計画ファイルを当てる。`--plan` → ブランチ名 → 差分 の順。
+def branch_name() -> str:
+    """いる周のブランチ名。**CI では detached HEAD なので、git だけでは取れない。**
 
-    **ブランチ名が Issue 番号を名乗っているなら、そこだけを見る。**
-    差分に別の Issue の計画ファイルが入っていることがあり（それを*直すのが成果物*の周）、
-    **差分から拾うと、別の周の変更範囲で採点してしまう**
-    ——**これはこのスクリプトを書いた周自身が最初に踏んだ**（差分に入っていた
-    `docs/plans/issue-110.md` を、この周の計画として読んだ）。
+    `actions/checkout` は `pull_request` の head を**detached HEAD** で置くので、
+    `git rev-parse --abbrev-ref HEAD` は **`HEAD` を返す**。
+    **`GITHUB_HEAD_REF` を先に見る**（`pull_request` のときだけ設定され、head の
+    ブランチ名が入る）。**これが無いと、この検査は CI で一度も働かない。**
+    """
+    for env in ("GITHUB_HEAD_REF", "GITHUB_REF_NAME"):
+        v = os.environ.get(env, "").strip()
+        if v and v != "HEAD":
+            return v
+    rc, out = git("rev-parse", "--abbrev-ref", "HEAD")
+    name = out.strip() if rc == 0 else ""
+    return "" if name == "HEAD" else name
+
+
+def find_plan(explicit: str | None) -> Path | None:
+    """計画ファイルを当てる。`--plan` → ブランチ名 の 2 つだけ。
+
+    **差分から拾う道は置かない。** 別の Issue の計画ファイルを*直すのが成果物*の周では、
+    **差分から拾うと、別の周の変更範囲で採点してしまう**——
+    **これはこのスクリプトを書いた周自身が 2 度踏んだ**
+    （どちらも差分に入っていた `docs/plans/issue-110.md` を、この周の計画として読んだ）。
+    **1 度目はブランチ名を先に見る形にして塞いだつもりだったが、
+    2 度目は detached HEAD でブランチ名が取れず、同じ道に落ちた。**
+    **条件を足して順序で守るのをやめ、道そのものを消した。**
     """
     if explicit:
         p = REPO / explicit
         return p if p.is_file() else None
 
-    rc, out = git("rev-parse", "--abbrev-ref", "HEAD")
-    m = re.match(r"^issue/(\d+)", out.strip()) if rc == 0 else None
-    if m:
-        for template in ("docs/plans/issue-{}.md", ".claude/plans/issue-{}.md"):
-            p = REPO / template.format(m.group(1))
-            if p.is_file():
-                return p
-        return None  # 番号は名乗っている。差分で代用しない
-
-    hits = [
-        f for f in files
-        if any(fnmatch.fnmatch(f, g) for g in PLAN_GLOBS) and (REPO / f).is_file()
-    ]
-    return REPO / hits[0] if len(hits) == 1 else None
+    m = re.match(r"^issue/(\d+)", branch_name())
+    if not m:
+        return None
+    for template in ("docs/plans/issue-{}.md", ".claude/plans/issue-{}.md"):
+        p = REPO / template.format(m.group(1))
+        if p.is_file():
+            return p
+    return None
 
 
 def parse_scope(text: str) -> list[str] | None:
@@ -179,13 +194,13 @@ def main() -> int:
         print(f"{opts.base}...HEAD に差分が無い。判定していない。")
         return 0
 
-    plan = find_plan(files, opts.plan)
+    plan = find_plan(opts.plan)
     if plan is None:
         print(
             "計画ファイルが見つからないので、変更範囲を**判定していない**。\n"
+            f"  ブランチ: {branch_name() or '(取れない)'}\n"
             "  探した順: (1) --plan  (2) ブランチ名 issue/<n>-… から引いた\n"
             "            docs/plans/issue-<n>.md ／ .claude/plans/issue-<n>.md\n"
-            "            (3) 番号を名乗らないブランチなら、差分の中の計画ファイル 1 件\n"
             "  **緑ではなく「見ていない」である。** --plan で明示もできる。"
         )
         return 0
