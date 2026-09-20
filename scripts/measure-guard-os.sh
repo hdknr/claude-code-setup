@@ -71,6 +71,17 @@ if [ "${1:-}" = "--host" ]; then
 fi
 
 OUT="${1:?使い方: bash scripts/measure-guard-os.sh [--host] <出力先ディレクトリ>}"
+
+# **出力先が空でなければ断る。** 同じ出力先に回し直すと、**前回の記録が残ったまま
+# 数えられて二重計上する**——ホスト側は `--cwd-prefix` が前回と同じ接頭辞に当たり、
+# コンテナ側は `cp -a` が前回の `projects/` に混ざる。**「Linux 6 件 対 macOS 12 件」**
+# のような、**この実験がまさに比べている数の偽の非対称**が、警告なしに出る。
+if [ -e "$OUT" ] && [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
+  echo "出力先が空ではない: $OUT" >&2
+  echo "前回の記録と混ざって二重に数えられる。空のディレクトリを指すか、先に消すこと。" >&2
+  exit 2
+fi
+
 mkdir -p "$OUT"
 # **`pwd -P` にする（物理パス）。** macOS の `/tmp` は `/private/tmp` への symlink なので、
 # 論理パスのままだと **`PROBE_ROOT` が `/tmp/...`、harness が記録する `cwd` が

@@ -25,12 +25,18 @@ set -uo pipefail
 ROOT="${PROBE_ROOT:?PROBE_ROOT が未設定}"
 OUT="${PROBE_OUT:?PROBE_OUT が未設定}"
 
-echo "=== 環境 ==="
-uname -sm
-claude --version
-git --version
-date -u +%Y-%m-%dT%H:%M:%SZ
-echo "PROBE_ROOT=${ROOT}"
+# **環境は成果物として残す。** 標準出力だけに出すと、**あとから確かめられるのは
+# 人が計画ファイルに手で写した値だけ**になる——このリポジトリが `exports.json` で
+# 禁じている「手で指紋を書く」のと同じ形である。
+mkdir -p "${OUT}"
+{
+  echo "=== 環境 ==="
+  uname -sm
+  claude --version
+  git --version
+  date -u +%Y-%m-%dT%H:%M:%SZ
+  echo "PROBE_ROOT=${ROOT}"
+} | tee "${OUT}/env.txt"
 
 # **ここは失敗したら止める。** リポジトリが出来ていなければ `claude -w` は隔離
 # セッションを作れず、**R の probe が「拒否されない」形で通ってしまう**
