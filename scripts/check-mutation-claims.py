@@ -239,13 +239,20 @@ def make_sandbox(root: pathlib.Path) -> pathlib.Path:
     **退避先を作って書き込み、任意のコマンドを走らせる歯止めの安全弁**が
     実行の仕方ひとつで無くなってしまう。
     """
-    box = pathlib.Path(tempfile.mkdtemp(prefix="mutation-claims-")).resolve()
-    # **ここから先で抜けるなら、自分で畳む**（#157）。**後始末を呼ぶ側の `finally` に
-    # 預けると、この関数が例外で抜けた周は `box` が返らないので、
+    # **`mkdtemp()` が返った瞬間から、畳む責任がある**（#157）。**後始末を呼ぶ側の
+    # `finally` に預けると、この関数が例外で抜けた周は `box` が返らないので、
     # その `finally` に一度も入らない**——**歯止めが自分で後始末を落とす。**
     # **`Exception` ではなく `BaseException`**。**`KeyboardInterrupt` で中断された
     # ときこそ残骸が残る。** **`raise` を落とさない**——飲むと、呼ぶ側は成功したと読む。
+    #
+    # **`.resolve()` も `try` の中に入れる。** **一度これを `mkdtemp()` と同じ行に
+    # 書いて、2 つの関門の両方に反証された**——**`.resolve()` は `lstat`／`readlink` を
+    # 呼ぶので落ちうるし、そこへ `KeyboardInterrupt` が届くこともある。**
+    # **そのとき退避先は既に在るのに、`try` へ一度も入らない。**
+    # **畳む先は `created`**（`resolve()` 前の生のパス）——**解決に失敗した周でも畳める。**
+    created = tempfile.mkdtemp(prefix="mutation-claims-")
     try:
+        box = pathlib.Path(created).resolve()
         real_root = root.resolve()
         # **退避先が原本の内側にあってはならない。** 内側だと、原本の側の検査や
         # `git` が複製を拾いうる。
@@ -258,7 +265,7 @@ def make_sandbox(root: pathlib.Path) -> pathlib.Path:
         if leftover:
             raise RuntimeError(f"退避先に .git が残っている: {leftover[:3]}")
     except BaseException:
-        shutil.rmtree(box, ignore_errors=True)
+        shutil.rmtree(created, ignore_errors=True)
         raise
     return box
 
