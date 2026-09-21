@@ -75,6 +75,8 @@ EXEMPTED = REAL_DEFECT + "\ndup-counts-ok: 揃わなかったもの\n"
 # **免除した語句と、していない語句が同居する形。**
 # **これが無いと「免除を語句で絞らない」変異が殺せない**——
 # 免除つきの試料に語句が 1 つしか無いと、全部免除しても結果が変わらない。
+# **この主張は機械で当ててある**（#151）。
+# mutation-claim: {"file": "scripts/test-check-duplicate-counts.py", "old": "\n**残る課題が 3 件**ある。\n\n**残る課題が 5 件**に増えた。\n", "new": "\n", "red": "python3 scripts/test-check-duplicate-counts.py"}
 EXEMPT_PLUS_DEFECT = REAL_DEFECT + """
 **残る課題が 3 件**ある。
 
@@ -105,6 +107,20 @@ OTHER_PHRASE = """# 別の語句なら当たらない
 **歯止めが 8 本**ある。
 
 **回帰テストが 12 本**ある。
+"""
+
+# **「守らない」の実演**（#150）。**助詞を伴わない件数表現は収集しない。**
+# **同じ語句に違う数が付いているのに緑になる**——これは穴だが、**穴だと知って残している。**
+# **`COUNTED` を広げてここが赤くなったら、それは「直った」ではなく
+# 「誤検出が支配する側へ倒れた」合図である**（広げ方ごとの実測は #150）。
+# **この試料が無いと、「守らない」の 1 行は書いただけになる。**
+# **この主張も機械で当ててある**（#151）。
+# mutation-claim: {"file": "scripts/test-check-duplicate-counts.py", "old": "        write(root, \"no-particle.md\", NO_PARTICLE)\n", "new": "", "red": "python3 scripts/test-check-duplicate-counts.py"}
+NO_PARTICLE = """# 助詞が無ければ収集されない
+
+**次の 6 つを書く。**
+
+**次の 5 つを書く。**
 """
 
 
@@ -158,6 +174,7 @@ def main() -> int:
         write(root, "other.md", OTHER_PHRASE)
         write(root, "mixed.md", EXEMPT_PLUS_DEFECT)
         write(root, "fenced-exempt.md", FENCED_EXEMPTION)
+        write(root, "no-particle.md", NO_PARTICLE)
 
         mod = load()
         correct = observe(mod, root)
@@ -172,6 +189,14 @@ def main() -> int:
               correct["mixed.md"] == (("残る課題", "件", ("3", "5")),))
         check("フェンスの中に書いた免除は効かない",
               correct["fenced-exempt.md"] == (("揃わなかったもの", "つ", ("1", "2")),))
+
+        print("\n「守らない」と書いたものを、本当に守っていないか")
+        # **これは穴を肯定するテストである。** ふつうのテストと向きが逆なので、
+        # **なぜ要るかを書いておく**——**docstring が「守らない」と宣言した以上、
+        # そこは*実際に*守られていないことまで確かめないと、宣言のほうが検査されない。**
+        # **#150 は、この行が「守る」側に書かれていた（＝実装より広い約束だった）件である。**
+        check("助詞を伴わない件数表現は収集しない（#150。穴だと知って残している）",
+              correct["no-particle.md"] == ())
 
         print("\n終了コード")
         check("欠陥があれば非ゼロ", mod.main([str(root)]) == 1)

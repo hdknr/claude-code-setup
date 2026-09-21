@@ -93,6 +93,8 @@ def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
     if bad_guard:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
         # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
+        # **この主張は機械で当ててある**（#151）——後ろに回すと、この回帰テストが赤くなる。
+        # mutation-claim: {"file": "scripts/test-check-all.py", "old": "GUARDS.insert(1, (\"bad.py\"", "new": "GUARDS.append((\"bad.py\"", "red": "python3 scripts/test-check-all.py"}
         mod.GUARDS.insert(1, ("bad.py", [], False))
     if bad_test:
         mod.TESTS.append("bad-test.py")
