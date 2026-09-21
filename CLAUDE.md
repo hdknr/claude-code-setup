@@ -51,7 +51,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた）と
     集約の検査。**変異テストを含む**
   - `test-check-plan-scope.py` - 変更範囲の検査の回帰テスト（変異テストを含む）
-  - `test-worktree-scripts.py` - **入場と PR 前提条件の回帰テスト**（変異 8 件）。
+  - `test-worktree-scripts.py` - **入場と PR 前提条件の回帰テスト**（変異 20 件）。
+    **周の base の取り方も、ここで陽性対照つきで実証している**（#148）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/` にある**
     （`prepare-worktree.sh` / `check-pr-preconditions.sh`）
   - `test-find-cycle.py` - **周の探索の回帰テスト**（変異テストを含む）。
@@ -402,7 +403,7 @@ probe スキルを `claude -p` で起動し、**トランスクリプトに印�
 
 **入場と PR 前提条件もスクリプトにした**（#136 段 3）——`prepare-worktree.sh` と
 `check-pr-preconditions.sh`。**手順 4 の入場は #96 / #110 / #113 で繰り返し穴が見つかったのに、
-テストが 1 本も無かった**。**いまは変異 8 件で押さえている。**
+テストが 1 本も無かった**。**いまは変異 20 件で押さえている。**
 
 **`EnterWorktree` / `ExitWorktree` はスクリプトから呼べない。** だから
 **スクリプトは素の git で済む部分だけ**を担い、**入場そのものは道具に残す**
