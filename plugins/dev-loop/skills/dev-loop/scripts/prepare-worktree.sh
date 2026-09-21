@@ -47,6 +47,14 @@
 # - **`origin` が無ければ、HEAD から切ったことを言う。** ローカルだけのリポジトリでは
 #   解決できるものが無い。**黙って HEAD に落ちるのが #148 の欠陥そのもの**なので、
 #   **落ちたこと自体を出力する。** **「無い」と「見られなかった」は別である。**
+# - **切ったブランチに upstream を付けない。** リモート追跡参照を start-point にすると
+#   **既定で upstream が `origin/<既定>` に設定される**（実測）。すると `status -sb` が
+#   `[ahead N, behind M]` を出し、**設定次第で `git pull` が既定ブランチをこの周に
+#   マージしうる**——**他人のマージ済みの作業が周に入る**（不変条件 A の破れ）。
+#   **`--no-track` で付けない。**
+# - **解決した start-point が壊れていたら、死なずに言う。** `git symbolic-ref` は
+#   **dangling な `origin/HEAD`** でも成功する。**そのまま渡すと `git worktree add` が
+#   `fatal` で死に、終了コードが文書化した集合の外に出る。**
 # - **関門に渡す base を、完全な SHA で出力する。** 周の base は**切った時点の分岐点**で、
 #   **関門にはこの SHA をそのまま渡す**（`SKILL.md` 手順 4 が正）。
 #   **短縮形では渡す先で曖昧になりうる**ので、**完全な SHA で出す。**
@@ -65,6 +73,9 @@
 # - **未コミットの変更の移送**——`SKILL.md` 手順 4 の移送手順を正とする
 #   （**裸の `git stash` を使わない**理由も含めて、あちらにある）。
 # - **入場そのもの**——上記。
+# - **ssh リモートで取り直しが固まらないこと**——**測っていない。**
+#   `BatchMode=yes` と `ConnectTimeout` を渡してはいるが、**確かめたのは https だけ**である。
+#   **「固まらない」と書かない。**
 # - **取り直しが成功したかどうかで、切るのをやめること**——**やめない。**
 #   **オフラインの周を止めてはならない。** **古いかもしれないことを出力して続ける。**
 # - **既定ブランチの推測が当たること**——`refs/remotes/origin/HEAD` が無いクローンでは
@@ -105,37 +116,6 @@ echo "メインの作業ツリー: ${MAIN}"
 echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"
 echo
 
-# **start-point を解決する。** **`-b` は省略すると HEAD に落ちる**ので、
-# **既定ブランチのリモート追跡参照を自分で解決して渡す**（#148）。
-BASE_REF=""
-BASE_HOW=""
-if [ -n "${DEV_LOOP_BASE_REF:-}" ]; then
-  BASE_REF="$DEV_LOOP_BASE_REF"
-  BASE_HOW="環境変数 DEV_LOOP_BASE_REF"
-elif BASE_REF="$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)"; then
-  BASE_HOW="refs/remotes/origin/HEAD"
-elif git rev-parse --verify -q origin/main >/dev/null 2>&1; then
-  BASE_REF="origin/main"
-  BASE_HOW="推測（refs/remotes/origin/HEAD が無い）"
-elif git rev-parse --verify -q origin/master >/dev/null 2>&1; then
-  BASE_REF="origin/master"
-  BASE_HOW="推測（refs/remotes/origin/HEAD が無い）"
-else
-  BASE_REF=""
-  BASE_HOW="解決できなかった"
-fi
-
-# **切る前に取り直す。** **最善努力**——**オフラインでも止めない。**
-# **`GIT_TERMINAL_PROMPT=0`** で、認証を訊かれて固まるのを防ぐ。
-FETCH_NOTE=""
-if [ -n "$BASE_REF" ]; then
-  if GIT_TERMINAL_PROMPT=0 git fetch --quiet origin >/dev/null 2>&1; then
-    FETCH_NOTE="取り直した"
-  else
-    FETCH_NOTE="**取り直せなかった。古いかもしれない。**"
-  fi
-fi
-
 # **先に見る。** 当たったら作らない。
 if ! WT_ALL="$(git worktree list 2>/dev/null)" || ! BR_ALL="$(git branch --all --list "*${NUMBER}*" 2>/dev/null)"; then
   echo "git で既存の worktree / ブランチを見られなかった。作らない。" >&2
@@ -156,8 +136,72 @@ if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then
   exit 3
 fi
 
+# **取り直しは「先に見る」より*後*である。** **断る周（終了コード 3）で
+# ネットワークに出ないため**（`/code-review` の指摘。#148）。
+# **解決より*前*でもある**——**一度も fetch していないクローンでは、
+# 取り直して初めて `origin/*` が生える。**
+#
+# **名指しされた参照がリモート追跡参照でなければ、取り直しても変わらない**ので打たない
+# （`DEV_LOOP_BASE_REF` に**ローカルのブランチ**を渡す「積んだ周」がこれに当たる）。
+NEED_FETCH=1
+if [ -n "${DEV_LOOP_BASE_REF:-}" ]; then
+  case "$(git rev-parse --symbolic-full-name "$DEV_LOOP_BASE_REF" 2>/dev/null)" in
+    refs/remotes/*) NEED_FETCH=1 ;;
+    *)              NEED_FETCH=0 ;;
+  esac
+fi
+
+# **最善努力**——**オフラインでも止めない。**
+# **`GIT_TERMINAL_PROMPT=0`** は **https** の入力待ちを止める。
+# **`BatchMode=yes` と `ConnectTimeout`** は **ssh** の passphrase / 未知のホスト鍵の
+# 入力待ちを止める——**片方だけでは、鍵に passphrase が付いた ssh リモートで固まりうる。**
+FETCH_NOTE=""
+if [ "$NEED_FETCH" = 1 ] && git remote get-url origin >/dev/null 2>&1; then
+  if GIT_TERMINAL_PROMPT=0 \
+     GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh} -oBatchMode=yes -oConnectTimeout=5" \
+     git fetch --quiet origin >/dev/null 2>&1; then
+    FETCH_NOTE="取り直した"
+  else
+    FETCH_NOTE="**取り直せなかった。古いかもしれない。**"
+  fi
+fi
+
+# **start-point を解決する。** **`-b` は省略すると HEAD に落ちる**ので、
+# **既定ブランチのリモート追跡参照を自分で解決して渡す**（#148）。
+BASE_REF=""
+BASE_HOW=""
+if [ -n "${DEV_LOOP_BASE_REF:-}" ]; then
+  BASE_REF="$DEV_LOOP_BASE_REF"
+  BASE_HOW="環境変数 DEV_LOOP_BASE_REF"
+elif BASE_REF="$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)"; then
+  BASE_HOW="refs/remotes/origin/HEAD"
+elif git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  BASE_REF="origin/main"
+  BASE_HOW="推測（refs/remotes/origin/HEAD が無い）"
+elif git rev-parse --verify -q origin/master >/dev/null 2>&1; then
+  BASE_REF="origin/master"
+  BASE_HOW="推測（refs/remotes/origin/HEAD が無い）"
+else
+  BASE_REF=""
+  BASE_HOW="解決できなかった"
+fi
+
+# **解決した参照が壊れていることがある。** `git symbolic-ref` は
+# **dangling な `refs/remotes/origin/HEAD`** でも成功する（上流で既定ブランチが
+# 改名され、こちらの `origin/HEAD` が古い名前を指したまま、など）。
+# **そのまま渡すと `git worktree add` が `fatal: invalid reference` で死ぬ**
+# ——**終了コードは文書化した 2/3/5/6 のどれでもない**（`/code-review` の指摘。#148）。
+# **死なせず、HEAD に落ちたことを言う。**
+if [ -n "$BASE_REF" ] && ! git rev-parse --verify -q "${BASE_REF}^{commit}" >/dev/null 2>&1; then
+  echo "**解決した start-point が壊れている: ${BASE_REF}（${BASE_HOW}）**" >&2
+  echo "  \`git remote set-head origin -a\` で直せることがある。**HEAD から切る。**" >&2
+  BASE_HOW="解決したが壊れていた（${BASE_HOW}）"
+  BASE_REF=""
+fi
+
+
 if [ -n "$BASE_REF" ]; then
-  git worktree add "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2
+  git worktree add --no-track "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2
 else
   # **黙って HEAD に落ちない。** 落ちたこと自体を出す（#148）。
   echo "**既定ブランチのリモート追跡参照を解決できなかった。HEAD から切る。**" >&2
