@@ -21,6 +21,7 @@ import contextlib
 import importlib.util
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -160,6 +161,14 @@ def contract_with_base(target: Path, root: Path, tag: str) -> list[tuple[str, bo
 
 
 # ---------------------------------------------------------------- 収録漏れ
+def load_target():
+    """`check-all.py` をモジュールとして読む。**宣言そのものを見るため。**"""
+    spec = importlib.util.spec_from_file_location("check_all_target", TARGET)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_registry_covers_every_script() -> None:
     """実リポジトリを読む。`scripts/` に検査を足して登録し忘れたら落とす。"""
     src = TARGET.read_text()
@@ -177,6 +186,48 @@ def test_registry_covers_every_script() -> None:
     check(f"回帰テストを全部収録している（{len(tests)} 本）", not missing_t)
     if missing_t:
         print(f"       収録漏れ: {missing_t}")
+
+
+def test_ci_runs_every_registered_script() -> None:
+    """実リポジトリを読む。**`check-all.py` に在るのに CI の yaml に無い**なら落とす。
+
+    **`check-all.py` は CI から呼ばない**（`CLAUDE.md` のとおり、どれが落ちたか UI に
+    出すため各スクリプトを個別ステップにしている）。**だから収録と CI 登録は別の作業**で、
+    **片方だけ済ませると、そのテストは手元でしか走らない。**
+
+    **照合は名前単位で行う（必須の注意）。** **素の部分文字列一致では、`check-X.py` が
+    `test-check-X.py` に覆い隠される**——**最初そう書いて、2 パス目の Verifier に
+    「6 本が隠れる」と反証された。** **歯止めを足した当人が、同じ型の盲点を作っていた。**
+
+    **上の `test_registry_covers_every_script` はこの向きを見ていなかった**——
+    「`scripts/` に在るのに `check-all.py` に無い」は見るが、
+    「`check-all.py` に在るのに CI に無い」は見ない。**実際に 2 本が漏れていた**
+    （`test-find-cycle.py` は #136 段 1 から、`test-collect-guard-rejections.py` は
+    #122 から。**どちらも手元では緑、CI では 1 度も走っていなかった**）。
+    **手順 5 の Verifier が見つけた**（#136 の全段に掛けた回）。
+    """
+    workflows = REAL_REPO / ".github" / "workflows"
+    ci = "".join(f.read_text() for f in sorted(workflows.glob("*.yml")))
+    # **正規表現でソースから拾わない。** **名前に数字や下線が入る・引用符が変わる・
+    # 変数から組み立てる**といった変更で `registered` が静かに空になり、
+    # **「0 本を検査して OK」**になる（`/code-review` が指摘。#136）。
+    # **モジュールを読んで、宣言そのものを見る。**
+    mod = load_target()
+    registered = sorted({name for name, _, _ in mod.GUARDS} | set(mod.TESTS))
+    check("収録の一覧が空でない（空振りしない）", len(registered) > 0)
+    # **素の部分文字列一致にしない。** `check-X.py` は **`test-check-X.py` の部分文字列**
+    # なので、**`check-X.py` の CI ステップを消しても、`test-` 版が残っていれば隠れる**
+    # ——**実測で 6 本が覆い隠されていた**（#136 の 2 パス目で Verifier が指摘）。
+    # **`scripts/` の直後から行末・空白までを 1 つの名前として照合する。**
+    # **`run:` の行だけを見る**——`- name:` のラベルやコメントに名前が出ているだけで
+    # 「CI で走る」と数えてしまわないため（同上）。
+    run_lines = [l for l in ci.split("\n") if "run:" in l]
+    ci_scripts = set(re.findall(r"scripts/([A-Za-z0-9_.-]+\.py)", "\n".join(run_lines)))
+    missing = [n for n in registered if n not in ci_scripts]
+    check(f"収録したものを CI も回している（{len(registered)} 本）", not missing)
+    if missing:
+        print(f"       CI の yaml に無い: {missing}")
+        print("       **手元では緑でも、CI では 1 度も走らない。**")
 
 
 # ------------------------------------------------------------------ 変異
@@ -200,6 +251,7 @@ MUTANTS = {
 def main() -> int:
     print("収録漏れ（実リポジトリを読むだけ）:")
     test_registry_covers_every_script()
+    test_ci_runs_every_registered_script()
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
