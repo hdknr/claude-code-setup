@@ -85,6 +85,14 @@ jobs:
       - name: check-skill-pointers.py のテスト
         run: python3 scripts/test-check-skill-pointers.py
 
+      # 散文で書かれた「この変異で赤になる」を機械で当てる（#151）。
+      # 他の歯止めを子プロセスで回すので、1 本だけ重い。
+      - name: 散文の変異主張を当てる（#151）
+        run: python3 scripts/check-mutation-claims.py
+
+      - name: check-mutation-claims.py のテスト
+        run: python3 scripts/test-check-mutation-claims.py
+
       # 歯止めを 1 本ずつ選ばせないための入口（#117）。本体は CI から呼ばないが、
       # 「収録漏れ＝黙って 1 本落とす」を見るのはこのテストだけなので、テストは回す。
       - name: check-all.py のテスト

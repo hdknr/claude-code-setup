@@ -139,6 +139,8 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     out["前提条件: git 無し"] = run(precond, nogit).returncode
     # **入場の側も、見られなかったときに作らないことを見る。**
     # **これが無いと「見られなくても作る」変異が殺せない**（観測が無いため）。
+    # **この主張は機械で当ててある**（#151）。
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "    out[\"入場: git 無しでも作らない\"] = not (nogit / \".claude\").exists()\n", "new": "", "red": "python3 scripts/test-worktree-scripts.py"}
     out["入場: git 無し"] = run(prepare, nogit, "88", "nogit").returncode
     out["入場: git 無しでも作らない"] = not (nogit / ".claude").exists()
 
