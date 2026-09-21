@@ -257,7 +257,9 @@ Verifier ／ `/code-review` ／ 2 パスのどれの免除にもならない。
        （#110 の 2 パス目で、**1 パス目にあった「いずれもこの周では測っていない」の
        留保が、確かめないまま肯定形に置き換わっている**と指摘された）。
     2. その周のブランチを、**配下に作った新しい worktree で** checkout する
-       （`git worktree add .claude/worktrees/issue-<n> <既存ブランチ>`。**`-b` を付けない**）
+       （`git worktree add <メインの作業ツリーの絶対パス>/.claude/worktrees/issue-<n> <既存ブランチ>`。
+       **`-b` を付けない**——**既存のブランチそのものが base なので start-point も要らない。**
+       **絶対パスで書く**のは、別の worktree の中から走らせたときに入れ子で生やさないため）
        ——**元の worktree がそのブランチを checkout したままなら fatal で止まる。**
        一次ソース（`man git-worktree` の `-f, --force`）:
        「add refuses to create a new worktree when `<commit-ish>` is a branch name and
@@ -384,8 +386,24 @@ git stash drop <印の現在の stash@{n}>   # 印で見つけ直してから落
       ブランチの無いまま次の指示が無い状態になる**（**観測窓**: 上の実測は
       この 1 環境・各ケース 1 回。他の git 版・他の OS は測っていない）。
   **規約どおりの名前で最初から切りたいなら**、素の
-  `git worktree add .claude/worktrees/issue-<issue-number> -b <規約どおりの名前>` で作ってから
-  **`EnterWorktree` に `path` を渡して入る**（**配下に作ること**——`SKILL.md` 手順 4 の置き場所の項）。
+
+  ```bash
+  git worktree add --no-track \
+    <メインの作業ツリーの絶対パス>/.claude/worktrees/issue-<issue-number> \
+    -b <規約どおりの名前> <start-point>
+  ```
+
+  で作ってから**`EnterWorktree` に `path` を渡して入る**
+  （**配下に作ること**——`SKILL.md` 手順 4 の置き場所の項）。
+  **3 つとも落とさない（必須）**——**`<start-point>` を落とすと HEAD に落ち**、
+  **絶対パスを落とすと別の worktree の中に入れ子で生え**、
+  **`--no-track` を落とすと upstream が付いて `git pull` が既定ブランチを取り込みうる。**
+  **`<start-point>` に何を渡すかは `SKILL.md` 手順 4 の「周の base は 1 つに決まっている」を
+  正とする**（ここに列挙を置かない）。
+  **以前ここは start-point 無し・相対パスのままだった**——
+  **`prepare-worktree.sh` を直しても、手で切る道が同じ欠陥を持っていた**
+  （[#148](https://github.com/hdknr/claude-code-setup/issues/148) の 1 パス目に
+  `/code-review` が指摘）。
   **この周はこの形で入った**ので、起動ディレクトリからならこの手順が通ることは実測済み。
 - **改名すると、`ExitWorktree` の後片付けと噛み合わなくなる（必須）。**
   **以前ここには「push 前なら副作用は無い」と書いていたが、これは誤りだった。**
