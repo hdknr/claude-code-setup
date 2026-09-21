@@ -303,9 +303,14 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         observe(mod, missing),
         # **これが無いと「退避先を畳まない」変異が殺せない**（#157）。
         # **後始末は出力を 1 バイトも変えない**ので、上の 3 つはどれも同じ観測を返す。
-        # **`new` は構造を壊さない形にする**（上の `only_na` と同じ理由——
-        # 消すとアリティが変わり、**変異ループに入る前に落ちて主張を実演しない**）。
-        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        observe(mod, root),", "red": "python3 scripts/test-check-mutation-claims.py"}
+        # **`new` は *観測の形* まで保つ**——**`observe(mod, root)` への差し替えでは
+        # 足りない。** あれは 2 要素を返すので、**下の `inside, inside_left, … = leak` が
+        # `ValueError` で落ち、変異ループに入る前に終わる**——**赤くはなるが、
+        # 主張（この観測が無いと守る 14 が殺せない）を 1 度も実演しない空の「確認」**になる。
+        # **一度これを `observe(mod, root)` で書き、`/code-review` が実測で反証した**
+        # ——**すぐ上の `only_na` の項がまさにその形を警告しているのに、同じ差分の中で踏んだ。**
+        # **だから定数の 5-tuple にする**——**アリティも要素数も変えずに、観測だけ殺す。**
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        (\"RuntimeError\", 0, \"RuntimeError\", 0, (True, True)),", "red": "python3 scripts/test-check-mutation-claims.py"}
         observe_leak(mod, leak_root, leak_parent),
     )
 
@@ -376,7 +381,7 @@ MUTATIONS = {
     # 守る 14: 退避先は、作った関数が自分で畳む（#157）
     "落ちたときに退避先を畳まない": (
         "    except BaseException:\n"
-        "        shutil.rmtree(box, ignore_errors=True)\n"
+        "        shutil.rmtree(created, ignore_errors=True)\n"
         "        raise",
         "    except BaseException:\n"
         "        raise"),
@@ -540,9 +545,16 @@ def run_all(escape: Path) -> int:
         (mut_dir / "markdown_fences.py").write_text(
             (REAL_REPO / "scripts" / "markdown_fences.py").read_text(encoding="utf-8"),
             encoding="utf-8")
-        subprocess.run([sys.executable, str(mutated), str(root)],
-                       env=dict(os.environ, TMPDIR=str(iso)),
-                       capture_output=True, text=True, check=False)
+        proc = subprocess.run([sys.executable, str(mutated), str(root)],
+                              env=dict(os.environ, TMPDIR=str(iso)),
+                              capture_output=True, text=True, check=False)
+        # **陽性対照を先に見る（必須）。** **「残っていない」は、子が退避先まで
+        # 辿り着かなかった場合も同じ形で出る**——**実測で、後始末を戻した（欠陥あり）うえに
+        # `markdown_fences.py` を置き忘れて import で死なせても、この検査は緑だった**
+        # （`/code-review` が反証した）。**通るはずの形が通ることを併せて見る。**
+        said = proc.stdout + proc.stderr
+        check("子は安全弁まで辿り着いて落ちた（陽性対照）",
+              proc.returncode != 0 and "退避先に .git が残っている" in said)
         strays = list(iso.glob("mutation-claims-*"))
         check(f"変異 2 を当てた実行が退避先を残さない（{len(strays)} 件）", not strays)
 
