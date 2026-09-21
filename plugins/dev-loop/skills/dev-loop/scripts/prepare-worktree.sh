@@ -22,8 +22,20 @@
 #
 # - **先に見る。** 同じ番号の worktree / ブランチが在れば**作らずに止まる**
 #   （**再開の周を新規として踏み潰さない**）。
-# - **絶対パスで作る。** 相対パスはシェルの cwd を起点に解決されるので、
+#   **当たり方は部分一致で、広い**——`issue-9` は `issue/99-foo` にも当たる。
+#   **失敗する側は安全**（新しい周を再開の道へ送るだけで、踏み潰さない）だが、
+#   **広いことは隠さない**（`find-cycle.py` と同じ扱い）。
+# - **root を解決できなかったら作らない**（終了コード 5）。
+#   **「無い」と「見られなかった」は別である。**
+# - **既存の一覧を見られなかったら作らない**（終了コード 6）。
+#   **5 と別の番号にする**——**同じにすると、片方を壊しても他方が同じ答えを返し、
+#   変異が殺せない。** **どちらにも専用の観測と変異がある**（後者は偽の `git` を使う）。
+# - **絶対パスで組み立てる。** 相対パスはシェルの cwd を起点に解決されるので、
 #   別の worktree の中から走らせると**入れ子で生える**。
+# - **メインの作業ツリーを `--path-format=absolute` で解決する。**
+#   **`--git-common-dir` は相対で返ることがあり、その相対は cwd を起点にする**
+#   ——root を起点に解決すると、**サブディレクトリから走らせたときに
+#   リポジトリの*親*を指す**（実測で再現した）。
 # - **規約どおりの名前で切る。** `issue/<番号>-<説明>`。
 #   **道具に任せると `worktree-` 接頭辞が付いて規約から外れる**（#96 で 3 例）。
 # - **肯定的な確認の材料を出す。** 作って終わりにしない——
@@ -33,11 +45,20 @@
 #
 # ## 何を守らないか
 #
+# - **`--path-format=absolute` は git 2.31 以降でしか使えない。**
+#   **古い git では終了コード 5 になり、「root を解決できない」と出る**
+#   ——**リポジトリは正常なのに、そう見える。** **版の要求はここに書いてある。**
 # - **`EnterWorktree` / `ExitWorktree` の意味論**——呼べないので何も言えない。
 #   **条件は `SKILL.md` 手順 4 と `references/resume.md` を正とする。**
 # - **未コミットの変更の移送**——`SKILL.md` 手順 4 の移送手順を正とする
 #   （**裸の `git stash` を使わない**理由も含めて、あちらにある）。
 # - **入場そのもの**——上記。
+# - **既存の一覧を取る側が、通常の運用で失敗すること**——**`git rev-parse` が成功していれば
+#   まず起きない。** **背後の守りとして置いてある。**
+#   **一度ここに「テストは root の守りを壊したときにこちらが受け止める形で当てている」と
+#   書いたが、それは誤りだった**——**3 巡目の Verifier が、この守りを壊してもテストが
+#   全項目 ok のままであることを実験で示した。** **いまは偽の `git` を使って
+#   直接当てている**（`scripts/test-worktree-scripts.py`）。
 
 set -euo pipefail
 
@@ -49,14 +70,17 @@ if ! printf '%s' "$NUMBER" | grep -Eq '^[0-9]+$'; then
   exit 2
 fi
 
-ROOT="$(git rev-parse --show-toplevel)"
-COMMON="$(git rev-parse --git-common-dir)"
-# `--git-common-dir` は worktree の中からでも**共有の .git** を指す。
-# その親が**メインの作業ツリー**である。**cwd がどこでも同じ場所を指す。**
-case "$COMMON" in
-  /*) MAIN="$(dirname "$COMMON")" ;;
-  *)  MAIN="$(cd "$ROOT/$(dirname "$COMMON")" && pwd -P)" ;;
-esac
+# **`--path-format=absolute` で取る。** `--git-common-dir` は**相対で返ることがあり、
+# その相対は*cwd*を起点にする**——**リポジトリの root ではない。**
+# 一度 `$ROOT` を起点に解決しており、**メインの作業ツリーのサブディレクトリから
+# 走らせると `MAIN` がリポジトリの*親*になっていた**（実測で再現。`/code-review` が指摘）。
+# **結果、リポジトリの外に `.claude/worktrees/` を作ろうとする**
+# ——実リポジトリなら `~/Projects/hdknr/` である。
+if ! COMMON="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+  echo "git でリポジトリを解決できなかった。作らない。" >&2
+  exit 5
+fi
+MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"
 
 BRANCH="issue/${NUMBER}-${SLUG}"
 PATH_ABS="${MAIN}/.claude/worktrees/issue-${NUMBER}"
@@ -66,8 +90,16 @@ echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"
 echo
 
 # **先に見る。** 当たったら作らない。
-EXISTING_WT="$(git worktree list | grep -F "issue-${NUMBER}" || true)"
-EXISTING_BR="$(git branch --all --list "*${NUMBER}*" || true)"
+if ! WT_ALL="$(git worktree list 2>/dev/null)" || ! BR_ALL="$(git branch --all --list "*${NUMBER}*" 2>/dev/null)"; then
+  echo "git で既存の worktree / ブランチを見られなかった。作らない。" >&2
+  echo "**「当たらなかった」とは答えない**——見られていない。" >&2
+  # **root の解決とは別の終了コードにする。** 同じにすると**2 つの守りが
+  # 区別できず、片方を壊しても他方が同じ答えを返して変異が殺せない**
+  # （実際にそうなっていた）。
+  exit 6
+fi
+EXISTING_WT="$(printf '%s\n' "$WT_ALL" | grep -F "issue-${NUMBER}" || true)"
+EXISTING_BR="$BR_ALL"
 if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then
   echo "既に当たるものがある。**作らない。**" >&2
   [ -n "$EXISTING_WT" ] && echo "  worktree:" && printf '    %s\n' "$EXISTING_WT" >&2

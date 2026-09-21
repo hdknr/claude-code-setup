@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""必須マーカー `（必須）` が `SKILL.md` の外に漏れていないかを検出する。
+"""必須マーカー `（必須）` が**原本**（スキルのディレクトリ）の外に漏れていないかを検出する。
 
 CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでもそのまま実行できる:
 
@@ -15,7 +15,10 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 
 検証する内容:
 
-    `（必須）` は原本（`SKILL.md`）にしか書けない。
+    `（必須）` は原本（`SKILL.md` ＋ `references/*.md`）にしか書けない。
+    **一度ここを「`SKILL.md`」のままにして、下の「守る」と食い違わせた**
+    ——**`CLAUDE.md` はこの docstring を正としているので、読者は誤った規則を読む**
+    （`/code-review` が指摘。#136）。
 
 例外は 2 つだけで、**どちらも位置ではなく形で判定する**（節番号で判定すると、
 節を並べ替えたときに黙って壊れる）:
@@ -37,6 +40,8 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 | **原本の中の重複** | `SKILL.md` の中で同じ規範を 2 度書いても通る（#92 で実際に起きた） |
 | **ポインタの指し先が実在するか** | 「`SKILL.md` の手順 6 を正とする」と書いて手順 6 に何も無くても通る |
 | **フェンスの中の記載** | `strip_fences` で落としている。例示のためのコードブロックを数えると、**規約を例示しただけで落ちる**（`skill-metrics.py` と同じ扱い） |
+| **`prompts/*.md`** | **原本ではない**（**サブエージェントへの指示文**であって、著者が守る規範ではない）。**マーカーを書けばエラーになる** |
+| **`references/` の入れ子** | **原本に数えない**。`skill-metrics.py` の測定が直下しか見ないので、**範囲を揃えてある** |
 | **原本の中のどこに書いたか** | 原本は **`SKILL.md` ＋ `references/*.md`** で、**その中での置き場所は見ていない**。**再開の周でしか要らない節だけを `references/` に出す**という判断は、**人間が行う**（#136） |
 | **他のプラグインの `SKILL.md`** | 原本は dev-loop の 1 本だけなので、`plugins/cmux/` などがマーカーを使うと**このスクリプトが誤ったエラーメッセージを出す**（「dev-loop の原本へ移せ」と言う）。**そうなったら ORIGIN を「プラグインごとの原本」に一般化すること**——いまは dev-loop 以外がマーカーを使っていないので単数にしてある |
 | **`skill-metrics` の開始印を他のファイルに貼ること** | どのファイルでも生成ブロックとして扱うので、**貼れば以降が全部免除される**。印を偽装する動機がある状況は想定していない |
@@ -78,7 +83,13 @@ def in_origin(rel: str) -> bool:
     """
     if rel == ORIGIN:
         return True
-    return rel.startswith(f"{ORIGIN_DIR}/references/") and rel.endswith(".md")
+    # **`references/` の直下だけ**。**入れ子を許すと、`skill-metrics.py` の
+    # 測定（`references/*.md` の glob）から漏れたファイルが、
+    # この検査だけ素通りする**——**歯止めと測定の範囲を揃える**
+    # （`/code-review` が指摘。#136）。
+    prefix = f"{ORIGIN_DIR}/references/"
+    return (rel.startswith(prefix) and rel.endswith(".md")
+            and "/" not in rel[len(prefix):])
 
 # 走査する先。**ここを増やし忘れると、増やした先が黙って対象外になる**ので、
 # 「拾いすぎて落とす」側に倒して .md を全部見る（除外は下の SKIP_DIRS だけ）。
@@ -161,7 +172,7 @@ def main() -> int:
 
     found = violations(root)
     if found:
-        fail(f"`{MARKER}` が原本（{ORIGIN_DIR}/ の中の Markdown）の外にあります:")
+        fail(f"`{MARKER}` が原本（{ORIGIN}／{ORIGIN_DIR}/references/*.md）の外にあります:")
         for rel, lineno, line in found:
             fail(f"  {rel}:{lineno}: {line[:100]}")
         fail("")

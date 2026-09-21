@@ -50,6 +50,7 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-plugin-versions.py", [], False),
     ("check-norm-markers.py", [], False),
     ("check-duplicate-counts.py", [], False),
+    ("check-skill-pointers.py", [], False),
     ("check-site-links.py", [], False),
     ("check-diagram-freshness.py", [], False),
     ("skill-metrics.py", ["--check"], False),
@@ -75,6 +76,7 @@ TESTS: list[str] = [
     "test-find-cycle.py",
     "test-check-duplicate-counts.py",
     "test-worktree-scripts.py",
+    "test-check-skill-pointers.py",
 ]
 
 
