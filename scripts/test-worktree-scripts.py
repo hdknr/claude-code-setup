@@ -15,11 +15,17 @@
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**壊したのに緑のままなら失格**とする。
 **「守る」の行数と変異の数が 1 対 1 か**は、**テスト自身が数える。**
 
+**#148 で 2 つ目の主題が入った**——**周の base をどこから取るか**である。
+**`prepare-worktree.sh` の start-point**（変異で当てる）と、
+**関門に渡す差分の取り方**（`main()` の末尾。**陽性対照つきの実証**で、
+スクリプトの変異とは独立している）の 2 つを見る。
+
 **散文では検証できなかった分岐を、ここで初めて検証している**——
 `SKILL.md` 手順 4 の入場手順は **#96 / #110 / #113 で繰り返し穴が見つかった**のに、
 **テストが 1 本も無かった**（#136）。
 """
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -88,6 +94,53 @@ def fake_git_dir(base: Path) -> Path:
     return d
 
 
+def make_ahead_clones(base: Path) -> dict:
+    """**origin が、手元より進んでいるクローン**を 2 つ作る（#148）。
+
+    **2 つ要る理由は、変異を*見分ける*ためである。** 「start-point を渡さない」と
+    「取り直さない」は、**取得していない側だけを見ると、どちらも同じ出力（古い側で切る）**
+    になる。**取得済みの側を併せて見ると、前者は古いまま・後者は新しい側**に分かれる。
+    **1 つの場面だけでは、2 つの変異が区別できない。**
+    """
+    bare = base / "origin.git"
+    bare.mkdir(parents=True)
+    assert_not_real_repo(bare)
+    git(bare, "init", "-q", "--bare", "-b", "main")
+
+    seed = base / "seed"
+    seed.mkdir(parents=True)
+    assert_not_real_repo(seed)
+    git(seed, "init", "-q", "-b", "main")
+    git(seed, "config", "user.email", "t@example.invalid")
+    git(seed, "config", "user.name", "t")
+    (seed / "README.md").write_text("A\n", encoding="utf-8")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-qm", "A")
+    git(seed, "remote", "add", "origin", str(bare))
+    git(seed, "push", "-q", "origin", "main")
+    sha_a = git(seed, "rev-parse", "HEAD").stdout.strip()
+
+    clones = {}
+    for label in ("未取得", "取得済み"):
+        work = base / f"work-{'stale' if label == '未取得' else 'fresh'}"
+        subprocess.run(["git", "clone", "-q", str(bare), str(work)],
+                       capture_output=True, text=True)
+        assert_not_real_repo(work)
+        git(work, "config", "user.email", "t@example.invalid")
+        git(work, "config", "user.name", "t")
+        clones[label] = work
+
+    # **他人の作業**が origin に入る（クローンより後）
+    (seed / "OTHER.md").write_text("other\n", encoding="utf-8")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-qm", "B: 他人の作業")
+    git(seed, "push", "-q", "origin", "main")
+    sha_b = git(seed, "rev-parse", "HEAD").stdout.strip()
+
+    git(clones["取得済み"], "fetch", "-q", "origin")
+    return {"clones": clones, "A": sha_a, "B": sha_b, "bare": bare, "seed": seed}
+
+
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
     """両スクリプトの分岐をまとめて観測する。**1 回の観測で 1 つの偽リポジトリを使い切る。**"""
     repo = make_repo(base / "repo")
@@ -151,6 +204,30 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     out["入場: 既存を見られなければ作らない"] = not (
         listless / ".claude" / "worktrees" / "issue-99").exists()
 
+    # ---- #148: start-point / 取り直し / 黙らないこと / base の出力 ----
+    # **`origin` を持たない木**（`make_repo`）での振る舞いは `first` に出ている。
+    out["origin が無いことを黙らない"] = "HEAD から切る" in (first.stderr + first.stdout)
+    out["base を完全な SHA で出す"] = bool(
+        re.search(r"^base:\s+[0-9a-f]{40}\s*$", first.stdout, re.M))
+    out["start-point を出力する"] = "start-point:" in first.stdout
+
+    # **origin が手元より進んでいるクローン。** 切った先が A か B かを見る。
+    ahead = make_ahead_clones(base / "ahead")
+    for label, work in ahead["clones"].items():
+        res = run(prepare, work, "55", "ahead")
+        wt3 = work / ".claude" / "worktrees" / "issue-55"
+        out[f"進んだ origin（{label}）: rc"] = res.returncode
+        if wt3.is_dir():
+            head = git(wt3, "rev-parse", "HEAD").stdout.strip()
+            out[f"進んだ origin（{label}）: 切った先"] = (
+                "B（新しい）" if head == ahead["B"]
+                else "A（古い）" if head == ahead["A"] else "?")
+            # **他人の作業が作業ツリーに入っているか**——B から切っていれば在る。
+            out[f"進んだ origin（{label}）: 他人の作業が在る"] = (wt3 / "OTHER.md").exists()
+        else:
+            out[f"進んだ origin（{label}）: 切った先"] = "-"
+            out[f"進んだ origin（{label}）: 他人の作業が在る"] = None
+
     # detached を作って見分けられるか
     if wt.is_dir():
         sha = git(wt, "rev-parse", "HEAD").stdout.strip()
@@ -207,11 +284,85 @@ MUTATIONS = {
     "既存を見られなくても作る": (PREPARE,
         '  exit 6\nfi',
         '  WT_ALL=""; BR_ALL=""\nfi'),
+    # 守る 8（prepare）: start-point を渡して切る（#148）
+    # **省略すると HEAD に落ちる**ので、古い既定ブランチの上で周が進む。
+    "start-point を渡さない": (PREPARE,
+        'git worktree add "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2',
+        'git worktree add "$PATH_ABS" -b "$BRANCH" >&2'),
+    # 守る 9（prepare）: 切る前に取り直す（#148）
+    # **「未取得」の場面だけでは上の変異と見分けられない**ので、
+    # **「取得済み」の場面を併せて観測している**（`make_ahead_clones`）。
+    "切る前に取り直さない": (PREPARE,
+        'if GIT_TERMINAL_PROMPT=0 git fetch --quiet origin >/dev/null 2>&1; then',
+        'if false; then'),
+    # 守る 10（prepare）: origin が無ければ HEAD から切ったことを言う（#148）
+    "HEAD に落ちたことを黙る": (PREPARE,
+        '  echo "**既定ブランチのリモート追跡参照を解決できなかった。HEAD から切る。**" >&2',
+        '  true'),
+    # 守る 11（prepare）: 関門に渡す base を完全な SHA で出す（#148）
+    "base を短縮形で出す": (PREPARE,
+        'BASE_SHA="$(git -C "$PATH_ABS" rev-parse HEAD)"',
+        'BASE_SHA="$(git -C "$PATH_ABS" rev-parse --short HEAD)"'),
     # 守る 7（prepare）: 相対パスを cwd 起点で解決する（= 絶対で取る）
     "相対のまま root 起点で解決する": (PREPARE,
         'MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"',
         'MAIN="$(cd "$(git rev-parse --show-toplevel)/$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P)"'),
 }
+
+
+def demonstrate_base_rule(base: Path) -> None:
+    """**選んだ base の形を、実際に当てて確かめる**（#148 の受入条件）。
+
+    決めた形は **`git merge-base <既定ブランチのリモート追跡参照> HEAD` の SHA に対する
+    2 点 diff** ＋ **未追跡は `git status --porcelain`** である。
+
+    **陽性対照を取る（必須の作法）。** 「混ざらない」「見える」だけを並べても、
+    **もともと出ない値**と区別がつかない。**だから、採らなかった形で実際に壊れること**を
+    併せて見る——**先端の SHA では他人の作業が「削除」として出る**／
+    **3 点では未コミットの実装が出ない**。
+    **この 2 つは #145 の周では区別できなかった**（当時 tip == merge-base だった）。
+    """
+    env = make_ahead_clones(base)
+    work = env["clones"]["取得済み"]
+
+    # 周を切る（origin/main = B の上）
+    wt = work / "wt"
+    git(work, "worktree", "add", "-q", str(wt), "-b", "issue/1-x", "origin/main")
+
+    # 実装を 3 つの形で置く
+    (wt / "IMPL.md").write_text("impl\n", encoding="utf-8")   # コミット済み
+    git(wt, "add", "-A")
+    git(wt, "commit", "-qm", "impl")
+    (wt / "README.md").write_text("A\nedited\n", encoding="utf-8")  # 未コミット（追跡済み）
+    (wt / "NEW.md").write_text("new\n", encoding="utf-8")            # 未追跡
+
+    # **周を切った後に、他人の作業がさらにマージされる**
+    seed = env["seed"]
+    (seed / "OTHER2.md").write_text("other2\n", encoding="utf-8")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-qm", "C: 他人の作業（周を切った後）")
+    git(seed, "push", "-q", "origin", "main")
+    git(work, "fetch", "-q", "origin")
+
+    mb = git(wt, "merge-base", "origin/main", "HEAD").stdout.strip()
+    tip = git(wt, "rev-parse", "origin/main").stdout.strip()
+    assert mb != tip, "陽性対照が成立していない（tip == merge-base では区別できない）"
+
+    two = git(wt, "diff", "--name-only", mb).stdout.split()
+    tip_two = git(wt, "diff", "--name-only", tip).stdout.split()
+    three = git(wt, "diff", "--name-only", f"{tip}...HEAD").stdout.split()
+    untracked = [l[3:] for l in git(wt, "status", "--porcelain").stdout.splitlines()
+                 if l.startswith("??")]
+
+    check("V1 merge-base の 2 点に、他人の作業が混ざらない",
+          "OTHER2.md" not in two and "OTHER.md" not in two)
+    check("V1 陽性対照: 先端の SHA だと、他人の作業が（削除として）出る",
+          "OTHER2.md" in tip_two)
+    check("V2 2 点に、未コミットの実装が出る", "README.md" in two)
+    check("V2 陽性対照: 3 点だと、未コミットの実装が出ない", "README.md" not in three)
+    check("V2 コミット済みの実装も 2 点に出る", "IMPL.md" in two)
+    check("V3 未追跡は diff に出ない（2 点でも出ない）", "NEW.md" not in two)
+    check("V3 だから status --porcelain を併せて見る", "NEW.md" in untracked)
 
 
 def main() -> int:
@@ -229,6 +380,18 @@ def main() -> int:
         check("別の worktree から走らせても入れ子で生えない", correct["入れ子で生えていない"])
         check("別の worktree から走らせても規約の場所に作る",
               correct["別 worktree からでも規約の場所"])
+
+        print("\nprepare-worktree.sh — 周の base（#148）")
+        check("origin が進んでいれば、新しい側の上に切る（手元が未取得でも）",
+              correct["進んだ origin（未取得）: 切った先"] == "B（新しい）")
+        check("手元が取得済みでも、新しい側の上に切る",
+              correct["進んだ origin（取得済み）: 切った先"] == "B（新しい）")
+        check("切った先に他人の作業が入っている（= 古い原本の上で進んでいない）",
+              correct["進んだ origin（未取得）: 他人の作業が在る"] is True)
+        check("origin が無ければ、HEAD から切ったことを言う",
+              correct["origin が無いことを黙らない"])
+        check("start-point を出力する", correct["start-point を出力する"])
+        check("関門に渡す base を完全な SHA で出す", correct["base を完全な SHA で出す"])
 
         print("\ncheck-pr-preconditions.sh")
         check("worktree でブランチも一致なら通す（rc=0）", correct["前提条件: 一致"] == 0)
@@ -278,6 +441,9 @@ def main() -> int:
             promises += len([l for l in section.splitlines() if l.startswith("# - ")])
         check(f"2 本の「守る」{promises} 行に対して変異が {len(MUTATIONS)} 件",
               promises == len(MUTATIONS))
+
+        print("\n選んだ base の形を、実際に当てて確かめる（#148。陽性対照つき）")
+        demonstrate_base_rule(base / "rule")
 
         print("\n実環境を対象にしない歯止め")
         try:

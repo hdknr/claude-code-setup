@@ -38,6 +38,18 @@
 #   リポジトリの*親*を指す**（実測で再現した）。
 # - **規約どおりの名前で切る。** `issue/<番号>-<説明>`。
 #   **道具に任せると `worktree-` 接頭辞が付いて規約から外れる**（#96 で 3 例）。
+# - **start-point を渡して切る。** `git worktree add -b` は **start-point を省略すると
+#   HEAD に落ちる**（`man git-worktree`: 「If `<commit-ish>` is omitted, it defaults to HEAD」）
+#   ので、**手元の既定ブランチが古いと周の全部が古い原本の上で進む**（#148）。
+#   **既定ブランチのリモート追跡参照を解決して渡す。**
+# - **切る前に取り直す。** リモート追跡参照そのものが古ければ、start-point を渡しても古い。
+#   **最善努力である**——**オフラインでも止めない**が、**取り直せなかったことは黙らない。**
+# - **`origin` が無ければ、HEAD から切ったことを言う。** ローカルだけのリポジトリでは
+#   解決できるものが無い。**黙って HEAD に落ちるのが #148 の欠陥そのもの**なので、
+#   **落ちたこと自体を出力する。** **「無い」と「見られなかった」は別である。**
+# - **関門に渡す base を、完全な SHA で出力する。** 周の base は**切った時点の分岐点**で、
+#   **関門にはこの SHA をそのまま渡す**（`SKILL.md` 手順 4 が正）。
+#   **短縮形では渡す先で曖昧になりうる**ので、**完全な SHA で出す。**
 # - **肯定的な確認の材料を出す。** 作って終わりにしない——
 #   **実際のブランチ名と起点コミットを出力し、呼んだ側が計画ファイルと突き合わせられるようにする。**
 #   **「切ったブランチ名と一致するか」を自分で比べても意味が無い**（`-b` で切った直後なので
@@ -53,6 +65,10 @@
 # - **未コミットの変更の移送**——`SKILL.md` 手順 4 の移送手順を正とする
 #   （**裸の `git stash` を使わない**理由も含めて、あちらにある）。
 # - **入場そのもの**——上記。
+# - **取り直しが成功したかどうかで、切るのをやめること**——**やめない。**
+#   **オフラインの周を止めてはならない。** **古いかもしれないことを出力して続ける。**
+# - **既定ブランチの推測が当たること**——`refs/remotes/origin/HEAD` が無いクローンでは
+#   `origin/main` → `origin/master` の順に**推測する**。**推測したことは出力する。**
 # - **既存の一覧を取る側が、通常の運用で失敗すること**——**`git rev-parse` が成功していれば
 #   まず起きない。** **背後の守りとして置いてある。**
 #   **一度ここに「テストは root の守りを壊したときにこちらが受け止める形で当てている」と
@@ -89,6 +105,37 @@ echo "メインの作業ツリー: ${MAIN}"
 echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"
 echo
 
+# **start-point を解決する。** **`-b` は省略すると HEAD に落ちる**ので、
+# **既定ブランチのリモート追跡参照を自分で解決して渡す**（#148）。
+BASE_REF=""
+BASE_HOW=""
+if [ -n "${DEV_LOOP_BASE_REF:-}" ]; then
+  BASE_REF="$DEV_LOOP_BASE_REF"
+  BASE_HOW="環境変数 DEV_LOOP_BASE_REF"
+elif BASE_REF="$(git symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)"; then
+  BASE_HOW="refs/remotes/origin/HEAD"
+elif git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  BASE_REF="origin/main"
+  BASE_HOW="推測（refs/remotes/origin/HEAD が無い）"
+elif git rev-parse --verify -q origin/master >/dev/null 2>&1; then
+  BASE_REF="origin/master"
+  BASE_HOW="推測（refs/remotes/origin/HEAD が無い）"
+else
+  BASE_REF=""
+  BASE_HOW="解決できなかった"
+fi
+
+# **切る前に取り直す。** **最善努力**——**オフラインでも止めない。**
+# **`GIT_TERMINAL_PROMPT=0`** で、認証を訊かれて固まるのを防ぐ。
+FETCH_NOTE=""
+if [ -n "$BASE_REF" ]; then
+  if GIT_TERMINAL_PROMPT=0 git fetch --quiet origin >/dev/null 2>&1; then
+    FETCH_NOTE="取り直した"
+  else
+    FETCH_NOTE="**取り直せなかった。古いかもしれない。**"
+  fi
+fi
+
 # **先に見る。** 当たったら作らない。
 if ! WT_ALL="$(git worktree list 2>/dev/null)" || ! BR_ALL="$(git branch --all --list "*${NUMBER}*" 2>/dev/null)"; then
   echo "git で既存の worktree / ブランチを見られなかった。作らない。" >&2
@@ -109,17 +156,30 @@ if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then
   exit 3
 fi
 
-git worktree add "$PATH_ABS" -b "$BRANCH" >&2
+if [ -n "$BASE_REF" ]; then
+  git worktree add "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2
+else
+  # **黙って HEAD に落ちない。** 落ちたこと自体を出す（#148）。
+  echo "**既定ブランチのリモート追跡参照を解決できなかった。HEAD から切る。**" >&2
+  echo "  手元の既定ブランチが古ければ、周の全部が古い原本の上で進む。" >&2
+  echo "  意図した base があるなら DEV_LOOP_BASE_REF に入れて切り直すこと。" >&2
+  git worktree add "$PATH_ABS" -b "$BRANCH" >&2
+fi
 
 # **肯定的な確認。** 作って終わりにしない。
 ACTUAL_BRANCH="$(git -C "$PATH_ABS" rev-parse --abbrev-ref HEAD)"
 ACTUAL_HEAD="$(git -C "$PATH_ABS" log --oneline -1)"
+# **関門に渡す base。** 切った直後は、worktree の HEAD が分岐点そのものである。
+BASE_SHA="$(git -C "$PATH_ABS" rev-parse HEAD)"
 
 echo
 echo "=== 肯定的な確認 ==="
 echo "ブランチ: ${ACTUAL_BRANCH}"
 echo "起点:     ${ACTUAL_HEAD}"
+echo "start-point: ${BASE_REF:-HEAD（解決できなかった）}  （${BASE_HOW}${FETCH_NOTE:+ / ${FETCH_NOTE}}）"
+echo "base:     ${BASE_SHA}"
 
 echo
 echo "次にすること: EnterWorktree に path=${PATH_ABS} を渡して入る。"
-echo "計画ファイルの「周の在り処」に、上のブランチ名・パス・起点を書くこと。"
+echo "計画ファイルの「周の在り処」に、上のブランチ名・パス・起点・**base** を書くこと。"
+echo "**base は関門にそのまま渡す SHA である**（SKILL.md 手順 4 が正）。"
