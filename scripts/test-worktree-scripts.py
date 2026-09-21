@@ -63,8 +63,29 @@ def make_repo(root: Path) -> Path:
     return root
 
 
-def run(script: Path, cwd: Path, *args):
-    return subprocess.run(["bash", str(script), *args], cwd=cwd, capture_output=True, text=True)
+def run(script: Path, cwd: Path, *args, env=None):
+    return subprocess.run(["bash", str(script), *args], cwd=cwd,
+                          capture_output=True, text=True, env=env)
+
+
+def fake_git_dir(base: Path) -> Path:
+    """**`rev-parse` は本物に通し、`worktree` と `branch` だけ失敗させる `git`。**
+
+    **これが無いと、exit 6 の守り（既存の一覧を見られなかったときに作らない）に
+    専用の観測が無い**——**壊しても全項目 ok のままになる**（3 巡目の Verifier が
+    実験で示した。**スクリプト側に「間接的に当たっている」と書いていたのは誤りだった**）。
+    """
+    d = base / "fakebin"
+    d.mkdir(parents=True, exist_ok=True)
+    real = subprocess.run(["which", "git"], capture_output=True, text=True).stdout.strip()
+    (d / "git").write_text(
+        "#!/usr/bin/env bash\n"
+        'case "$1" in\n'
+        "  worktree|branch) echo 'fake: refusing' >&2; exit 1 ;;\n"
+        f'  *) exec {real} "$@" ;;\n'
+        "esac\n", encoding="utf-8")
+    (d / "git").chmod(0o755)
+    return d
 
 
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
@@ -121,6 +142,15 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     out["入場: git 無し"] = run(prepare, nogit, "88", "nogit").returncode
     out["入場: git 無しでも作らない"] = not (nogit / ".claude").exists()
 
+    # **`rev-parse` は通るが、既存の一覧だけ取れない木。** exit 6 の守りを直接当てる。
+    fake = fake_git_dir(base)
+    env = dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}")
+    listless = make_repo(base / "listless")
+    res6 = run(prepare, listless, "99", "listless", env=env)
+    out["入場: 既存を見られない rc"] = res6.returncode
+    out["入場: 既存を見られなければ作らない"] = not (
+        listless / ".claude" / "worktrees" / "issue-99").exists()
+
     # detached を作って見分けられるか
     if wt.is_dir():
         sha = git(wt, "rev-parse", "HEAD").stdout.strip()
@@ -172,6 +202,11 @@ MUTATIONS = {
     "見られなくても作る": (PREPARE,
         '  exit 5\nfi\nMAIN=',
         '  COMMON="$(pwd)/.git"\nfi\nMAIN='),
+    # 守る 6b（prepare）: 既存の一覧を見られなかったときに「当たらなかった」と答えない
+    # **偽の `git` で直接当てる**（3 巡目まで、この守りには専用の観測が無かった）。
+    "既存を見られなくても作る": (PREPARE,
+        '  exit 6\nfi',
+        '  WT_ALL=""; BR_ALL=""\nfi'),
     # 守る 7（prepare）: 相対パスを cwd 起点で解決する（= 絶対で取る）
     "相対のまま root 起点で解決する": (PREPARE,
         'MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"',
@@ -205,6 +240,9 @@ def main() -> int:
         check("判定できなければ「メインにいる」とは答えない（rc=4）",
               correct["前提条件: git 無し"] == 4)
         check("入場も、見られなければ作らない（rc=5）", correct["入場: git 無し"] == 5)
+        check("既存の一覧だけ取れない木では rc=6", correct["入場: 既存を見られない rc"] == 6)
+        check("既存を見られなければ何も作らない",
+              correct["入場: 既存を見られなければ作らない"])
         check("入場は、見られなければ何も作らない", correct["入場: git 無しでも作らない"])
         check("サブディレクトリから作ってもリポジトリの中",
               correct["サブから作った場所がリポジトリの中"])
