@@ -19,9 +19,16 @@
 - `.github/workflows/plugins.yml` — #151。CI のステップを足す
 - `CLAUDE.md` — #150 / #151。`scripts/` 一覧の更新（手順 8 の焼き戻し）
 - `docs/plans/issue-151.md` — この計画ファイル
-- `scripts/test-check-all.py`、`scripts/test-worktree-scripts.py`、
-  `scripts/test-token-metrics.py` ほか `scripts/test-*.py` — #151。**実在する散文の主張に
-  マーカーを置く**（主張のある行の隣に 1 行足すだけ。ロジックは変えない）
+- `scripts/test-worktree-scripts.py` — #151。**実在する散文の主張にマーカーを置く**
+  （主張のある行の隣に 1 行足すだけ。ロジックは変えない）
+
+**1 行に 1 パターンしか書けない。** 上のマーカーの行は、最初
+**3 つのパターンを 1 行に並べて書いていた**——**`check-plan-scope.py` は
+`TICKED.search(line)` で行ごとに*最初の 1 つ*しか拾わない**ので、
+**残り 2 つは黙って範囲の外にいた。**
+**手元では緑だった**（コミット前に回したので差分が空で、**素通りした**）。
+**捕まえたのは PR の CI である**——**「手元の緑を根拠に緑と報告しない」が、
+この周で実際に効いた 1 例。**
 
 触らない:
 
