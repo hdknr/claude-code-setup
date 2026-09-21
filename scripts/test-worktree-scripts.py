@@ -123,8 +123,12 @@ def make_ahead_clones(base: Path) -> dict:
     clones = {}
     for label in ("未取得", "取得済み"):
         work = base / f"work-{'stale' if label == '未取得' else 'fresh'}"
-        subprocess.run(["git", "clone", "-q", str(bare), str(work)],
-                       capture_output=True, text=True)
+        res = subprocess.run(["git", "clone", "-q", str(bare), str(work)],
+                             capture_output=True, text=True)
+        # **rc を見る。** 見ないと、clone の失敗が次の `git config` の
+        # `FileNotFoundError` になり、**変異ループの `except Exception` が
+        # 「変異を殺せた」に化けさせる**（`/code-review` の指摘 11）。
+        assert res.returncode == 0, f"clone に失敗した: {res.stderr}"
         assert_not_real_repo(work)
         git(work, "config", "user.email", "t@example.invalid")
         git(work, "config", "user.name", "t")
@@ -139,6 +143,40 @@ def make_ahead_clones(base: Path) -> dict:
 
     git(clones["取得済み"], "fetch", "-q", "origin")
     return {"clones": clones, "A": sha_a, "B": sha_b, "bare": bare, "seed": seed}
+
+
+def make_dangling_origin_head(base: Path) -> Path:
+    """**`refs/remotes/origin/HEAD` が実在しない参照を指しているクローン**を作る（#148）。
+
+    上流で既定ブランチが改名され、こちらの `origin/HEAD` が古い名前を指したまま、
+    という形。**`git symbolic-ref` はこれでも成功する**ので、
+    **検証しないと `git worktree add` が `fatal` で死ぬ。**
+    """
+    bare = base / "origin.git"
+    bare.mkdir(parents=True)
+    assert_not_real_repo(bare)
+    git(bare, "init", "-q", "--bare", "-b", "main")
+    seed = base / "seed"
+    seed.mkdir(parents=True)
+    git(seed, "init", "-q", "-b", "main")
+    git(seed, "config", "user.email", "t@example.invalid")
+    git(seed, "config", "user.name", "t")
+    (seed / "README.md").write_text("A\n", encoding="utf-8")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-qm", "A")
+    git(seed, "remote", "add", "origin", str(bare))
+    git(seed, "push", "-q", "origin", "main")
+
+    work = base / "work"
+    res = subprocess.run(["git", "clone", "-q", str(bare), str(work)],
+                         capture_output=True, text=True)
+    assert res.returncode == 0, f"clone に失敗した: {res.stderr}"
+    assert_not_real_repo(work)
+    git(work, "config", "user.email", "t@example.invalid")
+    git(work, "config", "user.name", "t")
+    # **実在しない名前を指させる**（上流の改名を模す）
+    git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
+    return work
 
 
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
@@ -228,6 +266,21 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
             out[f"進んだ origin（{label}）: 切った先"] = "-"
             out[f"進んだ origin（{label}）: 他人の作業が在る"] = None
 
+    # **upstream が付いていないこと**（指摘 1）。付くと `git pull` が既定ブランチを
+    # この周にマージしうる。**`ahead` の worktree から読む**（追加のクローンは要らない）。
+    wt55 = ahead["clones"]["取得済み"] / ".claude" / "worktrees" / "issue-55"
+    out["upstream が付いていない"] = (
+        git(wt55, "rev-parse", "--abbrev-ref", "HEAD@{upstream}").returncode != 0
+        if wt55.is_dir() else None)
+
+    # **壊れた `origin/HEAD` でも死なない**（指摘 2）。
+    dang = make_dangling_origin_head(base / "dangling")
+    dres = run(prepare, dang, "66", "dangling")
+    out["壊れた origin/HEAD: rc"] = dres.returncode
+    out["壊れた origin/HEAD: 作れた"] = (
+        dang / ".claude" / "worktrees" / "issue-66").is_dir()
+    out["壊れた origin/HEAD: 黙らない"] = "壊れている" in (dres.stderr + dres.stdout)
+
     # detached を作って見分けられるか
     if wt.is_dir():
         sha = git(wt, "rev-parse", "HEAD").stdout.strip()
@@ -287,13 +340,21 @@ MUTATIONS = {
     # 守る 8（prepare）: start-point を渡して切る（#148）
     # **省略すると HEAD に落ちる**ので、古い既定ブランチの上で周が進む。
     "start-point を渡さない": (PREPARE,
-        'git worktree add "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2',
-        'git worktree add "$PATH_ABS" -b "$BRANCH" >&2'),
+        'git worktree add --no-track "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2',
+        'git worktree add --no-track "$PATH_ABS" -b "$BRANCH" >&2'),
     # 守る 9（prepare）: 切る前に取り直す（#148）
     # **「未取得」の場面だけでは上の変異と見分けられない**ので、
     # **「取得済み」の場面を併せて観測している**（`make_ahead_clones`）。
     "切る前に取り直さない": (PREPARE,
-        'if GIT_TERMINAL_PROMPT=0 git fetch --quiet origin >/dev/null 2>&1; then',
+        'if [ "$NEED_FETCH" = 1 ] && git remote get-url origin >/dev/null 2>&1; then',
+        'if false; then'),
+    # 守る 12（prepare）: upstream を付けない（#148 / `/code-review` 指摘 1）
+    "upstream を付ける": (PREPARE,
+        'git worktree add --no-track "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2',
+        'git worktree add "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2'),
+    # 守る 13（prepare）: 壊れた start-point で死なない（#148 / `/code-review` 指摘 2）
+    "壊れた start-point をそのまま渡す": (PREPARE,
+        'if [ -n "$BASE_REF" ] && ! git rev-parse --verify -q "${BASE_REF}^{commit}" >/dev/null 2>&1; then',
         'if false; then'),
     # 守る 10（prepare）: origin が無ければ HEAD から切ったことを言う（#148）
     "HEAD に落ちたことを黙る": (PREPARE,
@@ -308,6 +369,65 @@ MUTATIONS = {
         'MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"',
         'MAIN="$(cd "$(git rev-parse --show-toplevel)/$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P)"'),
 }
+
+
+def counting_git_dir(base: Path, log: Path) -> Path:
+    """**`fetch` の呼び出しを数える `git`。** 他は本物に通す。"""
+    d = base / "countbin"
+    d.mkdir(parents=True, exist_ok=True)
+    real = subprocess.run(["which", "git"], capture_output=True, text=True).stdout.strip()
+    (d / "git").write_text(
+        "#!/usr/bin/env bash\n"
+        f'if [ "$1" = fetch ]; then echo fetch >> "{log}"; fi\n'
+        f'exec {real} "$@"\n', encoding="utf-8")
+    (d / "git").chmod(0o755)
+    return d
+
+
+def check_no_network_on_reject(base: Path) -> None:
+    """**断る周（終了コード 3）でネットワークに出ないこと**（`/code-review` の指摘 3）。
+
+    **順序そのものを当てている**——`fetch` を「先に見る」より前に戻すと、
+    **断る周でも `fetch` が増える**ので、この検査が赤くなる。
+    """
+    env_ahead = make_ahead_clones(base / "clones")
+    work = env_ahead["clones"]["取得済み"]
+    log = base / "fetchlog"
+    d = counting_git_dir(base, log)
+    env = dict(os.environ, PATH=f"{d}:{os.environ['PATH']}")
+
+    run(PREPARE, work, "71", "first", env=env)
+    n1 = len(log.read_text(encoding="utf-8").splitlines()) if log.exists() else 0
+    again = run(PREPARE, work, "71", "again", env=env)
+    n2 = len(log.read_text(encoding="utf-8").splitlines()) if log.exists() else 0
+
+    check("作る周では取り直す（fetch が 1 回以上）", n1 >= 1)
+    check("断る周は rc=3", again.returncode == 3)
+    check("断る周では取り直さない（fetch が増えない）", n2 == n1)
+
+
+def check_norm_shape() -> None:
+    """**渡す形そのものを当てる**（`/code-review` の指摘 10）。
+
+    `demonstrate_base_rule` が見ているのは **git の性質**であって、
+    **この周が決めた規定ではない**——**委譲文を 3 点に戻しても緑のまま**だった。
+    **規定の側を読んで、壊れたら赤くする。**
+    """
+    skill_dir = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop"
+    for name in ("verifier.md", "review-handoff.md"):
+        body = (skill_dir / "prompts" / name).read_text(encoding="utf-8")
+        check(f"{name}: 2 点で渡している", "git diff {{base の SHA}}" in body)
+        check(f"{name}: 3 点を禁じている", "3 点（`...`）にしないでください" in body)
+        check(f"{name}: 未追跡を見よと書いてある", "git status --porcelain" in body)
+    skill = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    check("SKILL.md: base の式が書いてある", "git merge-base" in skill)
+    check("SKILL.md: DEV_LOOP_BASE_REF が書いてある", "DEV_LOOP_BASE_REF" in skill)
+    check("SKILL.md: 祖先であることの確認を要求している",
+          "--is-ancestor" in skill)
+    agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
+             ).read_text(encoding="utf-8")
+    check("同梱 agent 定義に取り直しの指示が無い（不変条件 D）",
+          "fetch" not in agent and "取り直" not in agent)
 
 
 def demonstrate_base_rule(base: Path) -> None:
@@ -392,6 +512,12 @@ def main() -> int:
               correct["origin が無いことを黙らない"])
         check("start-point を出力する", correct["start-point を出力する"])
         check("関門に渡す base を完全な SHA で出す", correct["base を完全な SHA で出す"])
+        check("切ったブランチに upstream を付けない（指摘 1）",
+              correct["upstream が付いていない"] is True)
+        check("壊れた origin/HEAD でも作れる（指摘 2）",
+              correct["壊れた origin/HEAD: rc"] == 0 and correct["壊れた origin/HEAD: 作れた"])
+        check("壊れた origin/HEAD であることを黙らない",
+              correct["壊れた origin/HEAD: 黙らない"])
 
         print("\ncheck-pr-preconditions.sh")
         check("worktree でブランチも一致なら通す（rc=0）", correct["前提条件: 一致"] == 0)
@@ -413,6 +539,7 @@ def main() -> int:
               correct["サブから作ってもリポジトリの外に作らない"])
 
         print("\n変異テスト（壊したのに緑なら失格）")
+        mutant_obs: dict[str, dict] = {}
         for name, (script, needle, replacement) in MUTATIONS.items():
             source = script.read_text(encoding="utf-8")
             if source.count(needle) != 1:
@@ -431,7 +558,29 @@ def main() -> int:
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
+            mutant_obs[name] = mutated
             check(f"変異を殺せる: {name}", mutated != correct)
+
+        # **2 つの変異が互いに区別できるか**（`/code-review` の指摘 9）。
+        # **docstring は「見分けるために 2 つ目のクローンを置いた」と主張していたのに、
+        # 検査は `correct` としか比べていなかった**——**主張に対応する検査が無かった。**
+        print("\n2 つの変異が互いに区別できるか（「取得済み」の場面が要る理由）")
+        a = mutant_obs.get("start-point を渡さない")
+        b = mutant_obs.get("切る前に取り直さない")
+        if a is None or b is None:
+            check("2 変異の観測が取れている", False)
+        else:
+            k_stale = "進んだ origin（未取得）: 切った先"
+            k_fresh = "進んだ origin（取得済み）: 切った先"
+            check("「未取得」だけでは 2 変異を区別できない（だから 2 つ目を置いている）",
+                  a[k_stale] == b[k_stale])
+            check("「取得済み」を足すと 2 変異が区別できる", a[k_fresh] != b[k_fresh])
+
+        print("\n渡す形そのもの（規定が壊れたら赤くなるか）")
+        check_norm_shape()
+
+        print("\n断る周でネットワークに出ないか")
+        check_no_network_on_reject(base / "reject")
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
         promises = 0
