@@ -20,11 +20,13 @@ r"""`check-mutation-claims.py` の回帰テスト。
 **本体が起こす `red` コマンドまで偽物にする。** 実在のテストを呼ぶと、
 **このテストが落ちた理由が「本体の欠陥」なのか「呼ばれた側の都合」なのか分からなくなる。**
 
-    root/scripts/subject.py       変異を当てられる側（`KEEP` を含む）
-    root/scripts/subject_test.py  `red`。`KEEP` が残っていれば 0、消えていれば 1
+    root/scripts/subject.py       変異を当てられる側（マーカーを 1 つ自分の中に持つ）
+    root/scripts/subject_test.py  `red`。`# KEEP` と `# SENTINEL` の行が両方残っていれば 0
     root/scripts/always_red.py    陽性対照を落とすための、常に 1 を返すコマンド
     root/claims.md                マーカー（フェンスの中に 1 つ紛れ込ませてある）
+    root/fenced-broken.md         閉じ忘れたフェンスの後ろにマーカーがある形
     root/.git/                    **複製に持ち込まれてはならないもの**
+    <TMPDIR>/cmc-escape-<pid>.txt **退避先の外**。`../` で指しても触られてはならない
 
 dup-counts-ok: 変異
 """
@@ -65,64 +67,102 @@ def load(script: Path = SCRIPT):
     return mod
 
 
-SUBJECT = "# KEEP\n# HARMLESS\n# TWICE\n# TWICE\n"
-
-SUBJECT_TEST = (
-    "import pathlib, sys\n"
-    'sys.exit(0 if "KEEP" in pathlib.Path("scripts/subject.py").read_text() else 1)\n'
-)
-
-ALWAYS_RED = "import sys\nsys.exit(1)\n"
-
-RED = "python3 scripts/subject_test.py"
-
-
 def marker(**spec) -> str:
     return "mutation-claim: " + json.dumps(spec, ensure_ascii=False)
 
 
-def build(root: Path) -> None:
-    """判定の 3 つが全部出そろう偽のツリーを作る。"""
+RED = "python3 scripts/subject_test.py"
+
+# **`# SENTINEL` を指すマーカーを、subject.py 自身の中に置く。**
+# **これが無いと「マーカー自身の行を数えない」変異が殺せない**
+# ——**マーカーと対象が別ファイルだと、数えても数えなくても結果が同じ。**
+SUBJECT = (
+    "# KEEP\n"
+    "# HARMLESS\n"
+    "# TRAILING\n"
+    "# TWICE\n"
+    "# TWICE\n"
+    "# SENTINEL\n"
+    "# " + marker(file="scripts/subject.py", old="# SENTINEL", new="# GONE", red=RED) + "\n"
+)
+
+# **行そのものが残っているかで見る。** 部分一致だと、マーカー行に含まれる
+# `# SENTINEL` を拾ってしまい、変異を当てても緑のままになる。
+SUBJECT_TEST = (
+    "import pathlib, sys\n"
+    'lines = pathlib.Path("scripts/subject.py").read_text().splitlines()\n'
+    'sys.exit(0 if ("# KEEP" in lines and "# SENTINEL" in lines) else 1)\n'
+)
+
+ALWAYS_RED = "import sys\nsys.exit(1)\n"
+
+# **閉じ忘れたフェンスの後ろにマーカーがある形。**
+# **黙って 0 件にせず「読めない」と言わせる。**
+# **フェンス記号を組み立てる。** リテラルで書くと、**この*ソース*が
+# 閉じ忘れたフェンスを持つファイルになり、自分の中のマーカーが読めなくなる**
+# ——置いた瞬間に自分で踏んだ。
+_FENCE = "`" * 3
+FENCED_BROKEN = (
+    "# 閉じ忘れ\n\n"
+    + _FENCE + "bash\n"
+    + 'echo "このフェンスは閉じていない"\n\n'
+    + marker(file="scripts/subject.py", old="# KEEP", new="# GONE", red=RED) + "\n"
+)
+
+
+def escape_target() -> Path:
+    """**退避先の外**に置く的。`make_sandbox` は `mkdtemp()` を使うので親は TMPDIR。"""
+    return Path(tempfile.gettempdir()).resolve() / f"cmc-escape-{os.getpid()}.txt"
+
+
+ESCAPE_BODY = "# KEEP\n"
+
+
+def build(root: Path) -> tuple[dict[str, int], int]:
+    """判定が全部出そろう偽のツリーを作る。(名前→行番号, マーカー総数) を返す。"""
     assert_not_real_repo(root)
     (root / "scripts").mkdir(parents=True)
     (root / "scripts" / "subject.py").write_text(SUBJECT, encoding="utf-8")
     (root / "scripts" / "subject_test.py").write_text(SUBJECT_TEST, encoding="utf-8")
     (root / "scripts" / "always_red.py").write_text(ALWAYS_RED, encoding="utf-8")
+    (root / "fenced-broken.md").write_text(FENCED_BROKEN, encoding="utf-8")
     # **複製に持ち込まれてはならないもの。** 実物の worktree では `.git` は
     # **本体を指すファイル**だが、除外の対象という点は同じ。
     (root / ".git").mkdir()
     (root / ".git" / "HEAD").write_text("ref: refs/heads/fake\n", encoding="utf-8")
 
     subject = "scripts/subject.py"
-    lines = [
-        "# 主張の一覧",
-        "",
-        marker(file=subject, old="KEEP", new="GONE", red=RED),
-        "",
-        marker(file=subject, old="HARMLESS", new="HARMLESS2", red=RED),
-        "",
-        marker(file=subject, old="TWICE", new="X", red=RED),
-        "",
-        marker(file=subject, old="NOWHERE", new="X", red=RED),
-        "",
-        marker(file=subject, old="KEEP", new="GONE", red="python3 scripts/always_red.py"),
-        "",
-        marker(file="../outside.txt", old="KEEP", new="GONE", red=RED),
-        "",
+    entries: list[tuple[str, str]] = [
+        ("good", marker(file=subject, old="# KEEP", new="# GONE", red=RED)),
+        ("noop", marker(file=subject, old="# HARMLESS", new="# HARMLESS2", red=RED)),
+        ("twice", marker(file=subject, old="# TWICE", new="# X", red=RED)),
+        ("missing", marker(file=subject, old="NOWHERE", new="X", red=RED)),
+        ("badbase", marker(file=subject, old="# KEEP", new="# GONE",
+                           red="python3 scripts/always_red.py")),
+        ("escape", marker(file=f"../{escape_target().name}", old="# KEEP",
+                          new="# GONE", red=RED)),
         # **必須のキーは全部あって、余計なキーが 1 つだけある形。**
         # **これが無いと「未知のキーを拒否する」変異が殺せない**
         # ——足りないキーの側で先に落ちてしまい、区別がつかない。
-        'mutation-claim: {"file": "scripts/subject.py", "old": "KEEP", "new": "GONE", '
-        f'"red": "{RED}", "why": "余計なキー"}}',
-        "",
-        "書式の例はフェンスに入れる:",
-        "",
-        "```text",
-        marker(file=subject, old="KEEP", new="GONE", red=RED),
-        "```",
-        "",
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": ", \"why\": \"余計なキー\"", "new": "", "red": "python3 scripts/test-check-mutation-claims.py"}
+        ("unknown", 'mutation-claim: {"file": "scripts/subject.py", "old": "# KEEP", '
+                    f'"new": "# GONE", "red": "{RED}", "why": "余計なキー"}}'),
+        # **行末に注記が続く形。** **これが無いと「行のどこに置いても拾う」変異が殺せない。**
+        ("trailing", marker(file=subject, old="# TRAILING", new="# TRAILING2", red=RED)
+                     + "  （行末に注記がある形）"),
     ]
+
+    lines = ["# 主張の一覧", ""]
+    where: dict[str, int] = {}
+    for name, text in entries:
+        lines.append(text)
+        where[name] = len(lines)  # 1 始まり
+        lines.append("")
+    lines += ["書式の例はフェンスに入れる:", "", "```text",
+              marker(file=subject, old="# KEEP", new="# GONE", red=RED), "```", ""]
     (root / "claims.md").write_text("\n".join(lines), encoding="utf-8")
+    # claims.md の 8 件 ＋ subject.py の中の 1 件（fenced-broken.md はファイル単位で broken）
+    return where, len(entries) + 1 + 1
 
 
 def build_only_not_applied(root: Path) -> None:
@@ -151,6 +191,21 @@ def observe(mod, root: Path) -> tuple[int, str]:
     return rc, buf.getvalue()
 
 
+def snapshot(mod, root: Path, only_na: Path, missing: Path) -> tuple:
+    """3 つの木を、まとめて 1 つの観測にする。
+
+    **どれが欠けても殺せない変異がある。**
+    """
+    return (
+        observe(mod, root),
+        # **これが無いと「当てられなかったを緑と数える」変異が殺せない。**
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe(mod, only_na),\n", "new": "", "red": "python3 scripts/test-check-mutation-claims.py"}
+        observe(mod, only_na),
+        # **これが無いと「対象の木が無くても通す」変異が殺せない。**
+        observe(mod, missing),
+    )
+
+
 def verdicts(out: str) -> dict[str, str]:
     """出力を「当てた先 → 判定」にほぐす。並び順には依存しない。"""
     got: dict[str, str] = {}
@@ -176,8 +231,8 @@ MUTATIONS = {
         "    if False:"),
     # 守る 4: 変異はちょうど 1 箇所に当てる
     "当てる先が 1 箇所かを見ない": (
-        "    if hits != 1:",
-        "    if hits == 0:"),
+        "    if len(at) != 1:",
+        "    if len(at) == 0:"),
     # 守る 5: 「当てられなかった」を緑と区別する
     "当てられなかったを緑と数える": (
         "    if counts[STILL_GREEN] or counts[NOT_APPLIED]:",
@@ -194,45 +249,83 @@ MUTATIONS = {
     "退避先の外を指していても当てる": (
         "    if target != box and not str(target).startswith(str(box) + \"/\"):",
         "    if False:"),
+    # 守る 9: 行のどこに置いたマーカーも拾う
+    "行末でなければ拾わない": (
+        "MARKER = re.compile(r\"mutation-claim:\\s*(\\{.*\\})\")",
+        "MARKER = re.compile(r\"mutation-claim:\\s*(\\{.*\\})\\s*$\")"),
+    # 守る 10: 閉じ忘れたフェンスを「読めない」と報告する
+    "閉じ忘れたフェンスを黙って飲む": (
+        "            if fence is not None:",
+        "            if False:"),
+    # 守る 11: マーカー自身の行は数えない
+    "マーカー自身の行も数える": (
+        "        if not any(start <= i <= end for start, end in spans):",
+        "        if True:"),
+    # 守る 12: 対象の木が無ければ落とす
+    "対象の木が無くても通す": (
+        "    if not root.is_dir():",
+        "    if False:"),
 }
 
 
 def main() -> int:
+    escape = escape_target()
+    escape.write_text(ESCAPE_BODY, encoding="utf-8")
+    try:
+        return run_all(escape)
+    finally:
+        escape.unlink(missing_ok=True)
+
+
+def run_all(escape: Path) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "tree"
         root.mkdir()
-        build(root)
+        where, total_markers = build(root)
         only_na = Path(tmp) / "only-not-applied"
         only_na.mkdir()
         build_only_not_applied(only_na)
+        missing = Path(tmp) / "does-not-exist"
 
         mod = load()
-        rc, out = observe(mod, root)
+        base = snapshot(mod, root, only_na, missing)
+        (rc, out), (rc_na, out_na), (rc_missing, _) = base
         got = verdicts(out)
-        rc_na, out_na = observe(mod, only_na)
 
         print("3 つの判定が出そろうか")
-        check("主張どおりなら『確認』", got.get("claims.md:3") == "確認")
-        check("変異を当てても緑なら『緑のまま』", got.get("claims.md:5") == "緑のまま")
+        check("主張どおりなら『確認』", got.get(f"claims.md:{where['good']}") == "確認")
+        check("変異を当てても緑なら『緑のまま』",
+              got.get(f"claims.md:{where['noop']}") == "緑のまま")
         check("`old` が 2 箇所なら『当てられなかった』",
-              got.get("claims.md:7") == "当てられなかった")
+              got.get(f"claims.md:{where['twice']}") == "当てられなかった")
         check("`old` が 0 箇所なら『当てられなかった』",
-              got.get("claims.md:9") == "当てられなかった")
+              got.get(f"claims.md:{where['missing']}") == "当てられなかった")
         check("陽性対照が通らなければ『当てられなかった』",
-              got.get("claims.md:11") == "当てられなかった")
+              got.get(f"claims.md:{where['badbase']}") == "当てられなかった")
+
+        print("\n退避先の外は触らない")
         check("退避先の外を指していれば『当てられなかった』",
-              got.get("claims.md:13") == "当てられなかった")
+              got.get(f"claims.md:{where['escape']}") == "当てられなかった")
+        # **理由の文字列ではなく、的そのものを見る。** 文言の書き換えで死なない変異は、
+        # **守っているつもりのものを守っていない**（2 パス目の `/code-review` が指摘）。
+        check("退避先の外のファイルが書き換わっていない",
+              escape.read_text(encoding="utf-8") == ESCAPE_BODY)
 
         print("\n書式")
         check("未知のキーがあれば拒否する", "知らないキー: ['why']" in out)
-        check("フェンスの中のマーカーは拾わない", "claims.md:21" not in out)
-        check("集めた件数を必ず出す", "変異の主張: 7 件" in out)
+        check("行末に注記が続いてもマーカーを拾う",
+              got.get(f"claims.md:{where['trailing']}") == "緑のまま")
+        check("マーカー自身の行は数えない（同じファイルの中を指せる）",
+              got.get("scripts/subject.py:7") == "確認")
+        check("閉じ忘れたフェンスは黙って飲まず『読めない』と言う",
+              "fenced-broken.md" in out and "閉じ忘れたフェンス" in out)
+        check("フェンスの中のマーカーは拾わない", f"変異の主張: {total_markers} 件" in out)
 
         print("\n終了コードと、緑との区別")
         check("確認できないものがあれば非ゼロ", rc == 1)
         check("『当てられなかった』だけでも非ゼロ", rc_na == 1)
-        check("『当てられなかった』は緑ではないと明記する",
-              "は緑ではない" in out_na)
+        check("『当てられなかった』は緑ではないと明記する", "は緑ではない" in out_na)
+        check("対象の木が無ければ非ゼロ", rc_missing == 1)
 
         print("\n退避先")
         box = mod.make_sandbox(root)
@@ -266,9 +359,11 @@ def main() -> int:
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
-            # **2 つのツリーの両方で観測する。** 「当てられなかった」だけのツリーが
-            # 無いと、守る 5 の変異が殺せない。
-            changed = (observe(bad, root) != (rc, out)) or (observe(bad, only_na) != (rc_na, out_na))
+            changed = snapshot(bad, root, only_na, missing) != base
+            # **退避先の外を触った変異は、観測が同じでも失格。**
+            if escape.read_text(encoding="utf-8") != ESCAPE_BODY:
+                escape.write_text(ESCAPE_BODY, encoding="utf-8")
+                changed = True
             check(f"変異を殺せる: {name}", changed)
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")

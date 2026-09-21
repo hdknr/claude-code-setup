@@ -24,12 +24,15 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 ```
 
 - `file` — 変異を当てるファイル（root からの相対パス）
-- `old` — 置き換える文字列。**ちょうど 1 箇所**に現れること。改行は JSON の `\n` で書ける
+- `old` — 置き換える文字列。**ちょうど 1 箇所**に現れること。改行は JSON の `\n` で書ける。
+  **マーカー自身が載っている行は数えない**ので、`old` に自分の書いた文字列がそのまま
+  現れても構わない
 - `new` — 置き換え後（空文字列でよい＝削除）
 - `red` — 走らせるコマンド。**変異の前は緑、変異の後は赤**でなければならない
 
 **キーはこの 4 つだけ。** 余計なキーがあれば**拒否する**（typo で黙って別の意味にならないため）。
-**書式は `dup-counts-ok:` と同じ形**——**行の中に 1 つ置くだけで、既存の書き方を壊さない。**
+**書式は `dup-counts-ok:` と同じ形**——**行の中に 1 つ置くだけでよく、行末である必要はない。**
+**コメント記号や注記で囲っても拾う**（`# … （#151）` も `<!-- … -->` も通る）。
 
 ## 判定 — 3 つに分ける
 
@@ -66,10 +69,18 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 - **フェンスの中のマーカーは拾わない**——**書式の例が主張として数えられない**（この docstring 自身がそう）。
 - **未知のキーを拒否する**——キー名の typo で黙って別の意味にならない。
 - **書き込む先が退避先の内側であることを確かめる**——`file` に `../` を書いても外へ出ない。
+- **行のどこに置いたマーカーも拾う**——**行末に注記やコメントの閉じ記号が続いても落とさない。**
+- **閉じ忘れたフェンスがあるファイルは、黙って落とさず「読めない」と報告する**——
+  **閉じ忘れは以降を全部飲み込むので、マーカーが「無かった」ことにされる。**
+- **マーカー自身の行は、変異の当たり先として数えない**——**マーカーは主張の*記述*であって、
+  主張の*対象*ではない。**
+- **対象の木が無ければ落とす**——**綴り間違いや置き場所の変更を「主張 0 件」で通さない。**
 
 守らない:
 
-- **マーカーを書いていない主張は見えない。** **「主張らしい文」を機械で数える手段は無い**ので、
+- **マーカーを書いていない主張は見えない。** **`殺せない` のような決まった言い回しは
+  `grep` で数えられるので、「機械で見つけようが無い」わけではない**
+  ——**いま印を付けているのはその一部にすぎない。**
   **どれをマーカー化するかは人間が決める。** **この歯止めは網羅性を一切主張しない。**
 - **「緑のまま」の理由は決められない。** **検査に穴があるのか、その変異が旧い欠陥を
   表していない（＝届いていない）のか**は区別できない。**`SKILL.md` 手順 5 の
@@ -91,6 +102,7 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -100,14 +112,19 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from markdown_fences import strip_fences  # noqa: E402
+from markdown_fences import strip_fences, unclosed_fence  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 SKIP_DIRS = {".git", "site", ".venv", "node_modules", "__pycache__", ".claude"}
 SUFFIXES = {".md", ".py", ".sh", ".json", ".yml", ".yaml", ".toml"}
 
-MARKER = re.compile(r"mutation-claim:\s*(\{.*\})\s*$")
+# **行末に錨を打たない。** 打つと、**注記やコメントの閉じ記号が 1 つ続いただけで
+# マーカーが黙って消える**——**しかも「壊れている」ですらなく「無かった」になる。**
+# **`dup-counts-ok:` も錨を持たない**ので、書式を揃える意味でもこちらが正しい。
+# **末尾に `}` を含む注記が続いた場合は貪欲一致が行きすぎて JSON が壊れる**が、
+# **そのときは「読めない」として報告される**（黙って消えるのとは違う）。
+MARKER = re.compile(r"mutation-claim:\s*(\{.*\})")
 KEYS = {"file", "old", "new", "red"}
 
 TIMEOUT = 300
@@ -153,6 +170,18 @@ def collect(root: pathlib.Path) -> tuple[list[Claim], list[tuple[str, str]]]:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+        # **閉じ忘れたフェンスは、以降を全部飲み込む**（`markdown_fences` の docstring）。
+        # **そのファイルにマーカーが書かれているなら、どれが生きているか決められない**
+        # ので、**黙って 0 件にせず「読めない」と言う。**
+        # **マーカーを一切含まないファイルには口を出さない**——ここは
+        # フェンスの閉じ忘れ一般を見る検査ではない。
+        if "mutation-claim:" in text:
+            fence = unclosed_fence(text)
+            if fence is not None:
+                broken.append((str(rel),
+                               f"閉じ忘れたフェンス（{fence}）がある。"
+                               "以降のマーカーが飲み込まれるので判定できない"))
+                continue
         for lineno, line in enumerate(strip_fences(text).split("\n"), 1):
             m = MARKER.search(line)
             if not m:
@@ -190,18 +219,24 @@ def _ignore(_dir, names):
 
 
 def make_sandbox(root: pathlib.Path) -> pathlib.Path:
-    """`.git` を持ち込まずに退避先を作る。**原本の外**であることまで確かめる。"""
+    """`.git` を持ち込まずに退避先を作る。**原本の外**であることまで確かめる。
+
+    **`assert` を使わない。** `python3 -O` では `assert` が消えるので、
+    **退避先を作って書き込み、任意のコマンドを走らせる歯止めの安全弁**が
+    実行の仕方ひとつで無くなってしまう。
+    """
     box = pathlib.Path(tempfile.mkdtemp(prefix="mutation-claims-")).resolve()
     real_root = root.resolve()
     # **退避先が原本の内側にあってはならない。** 内側だと、原本の側の検査や
     # `git` が複製を拾いうる。
-    assert box != real_root and not str(box).startswith(str(real_root) + "/"), (
-        f"退避先が原本の内側にある: {box}")
+    if box == real_root or str(box).startswith(str(real_root) + "/"):
+        raise RuntimeError(f"退避先が原本の内側にある: {box}")
     shutil.copytree(real_root, box, dirs_exist_ok=True, symlinks=True, ignore=_ignore)
     # **`.git` が 1 つも無いことを確かめる。** worktree の `.git` は本体を指す
     # *ファイル*なので、残っていれば複製の中の `git` が本物を触る。
-    leftover = [p for p in box.rglob(".git")]
-    assert not leftover, f"退避先に .git が残っている: {leftover[:3]}"
+    leftover = list(box.rglob(".git"))
+    if leftover:
+        raise RuntimeError(f"退避先に .git が残っている: {leftover[:3]}")
     return box
 
 
@@ -213,14 +248,46 @@ def run(command: str, cwd: pathlib.Path) -> tuple[int | None, str]:
         return None, f"コマンドを分割できない: {exc}"
     if not argv:
         return None, "コマンドが空"
+    # **バイトコードを残さない。** 退避先は主張をまたいで使い回すので、
+    # **変異 → 復元が同じ秒に収まると、復元後も変異後の `.pyc` が残りうる**
+    # （CPython は mtime の秒とサイズで妥当性を見る）。
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     try:
         proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                              check=False, timeout=TIMEOUT)
+                              check=False, timeout=TIMEOUT, env=env)
     except FileNotFoundError:
         return None, f"コマンドが見つからない: {argv[0]}"
     except subprocess.TimeoutExpired:
         return None, f"{TIMEOUT} 秒で打ち切った"
     return proc.returncode, (proc.stdout + proc.stderr)
+
+
+def _marker_spans(text: str) -> list[tuple[int, int]]:
+    """マーカーが載っている行の範囲（開始, 終了）を返す。"""
+    spans = []
+    pos = 0
+    for line in text.split("\n"):
+        if "mutation-claim:" in line:
+            spans.append((pos, pos + len(line)))
+        pos += len(line) + 1
+    return spans
+
+
+def occurrences(text: str, old: str) -> list[int]:
+    """`old` の出現位置。**マーカー自身の行に載っているものは数えない。**
+
+    **マーカーは主張の*記述*であって、主張の*対象*ではない。** 数えてしまうと、
+    **`old` に自分が書いた文字列がそのまま現れる主張**——たとえば同じファイルの
+    中の行を指す主張——が、**常に「2 箇所にある」で弾かれる。**
+    """
+    spans = _marker_spans(text)
+    out = []
+    i = text.find(old)
+    while i != -1:
+        if not any(start <= i <= end for start, end in spans):
+            out.append(i)
+        i = text.find(old, i + 1)
+    return out
 
 
 def judge(claim: Claim, box: pathlib.Path, baselines: dict) -> tuple[str, str]:
@@ -236,9 +303,10 @@ def judge(claim: Claim, box: pathlib.Path, baselines: dict) -> tuple[str, str]:
     except (OSError, UnicodeDecodeError) as exc:
         return NOT_APPLIED, f"`file` を読めない: {exc}"
 
-    hits = original.count(claim.old)
-    if hits != 1:
-        return NOT_APPLIED, f"`old` が {hits} 箇所にある（ちょうど 1 箇所を要求する）"
+    at = occurrences(original, claim.old)
+    if len(at) != 1:
+        return NOT_APPLIED, (f"`old` が {len(at)} 箇所にある"
+                             "（マーカー自身の行を除いて、ちょうど 1 箇所を要求する）")
 
     # **陽性対照。** 変異の前に緑でなければ、その後の緑には意味が無い。
     if claim.red not in baselines:
@@ -249,7 +317,9 @@ def judge(claim: Claim, box: pathlib.Path, baselines: dict) -> tuple[str, str]:
         why = f"（変異の前から緑でない: rc={base_rc}）"
         return NOT_APPLIED, "陽性対照が通らない" + why + (f": {tail[0]}" if tail else "")
 
-    target.write_text(original.replace(claim.old, claim.new, 1), encoding="utf-8")
+    cut = at[0]
+    mutated = original[:cut] + claim.new + original[cut + len(claim.old):]
+    target.write_text(mutated, encoding="utf-8")
     try:
         rc, _ = run(claim.red, box)
     finally:
@@ -264,6 +334,10 @@ def judge(claim: Claim, box: pathlib.Path, baselines: dict) -> tuple[str, str]:
 
 def main(argv=None) -> int:
     root = pathlib.Path(argv[0]) if argv else REPO_ROOT
+    # **綴り間違いや置き場所の変更を「主張 0 件」で通さない。**
+    if not root.is_dir():
+        print(f"ERROR: 対象の木が無い: {root}", file=sys.stderr)
+        return 1
     claims, broken = collect(root)
 
     results: list[tuple[Claim, str, str]] = []

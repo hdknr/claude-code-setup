@@ -55,7 +55,8 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-diagram-freshness.py", [], False),
     ("skill-metrics.py", ["--check"], False),
     # **他の歯止めを子プロセスで回すので、1 本だけ重い。**
-    # base を要する検査より前に置く（あちらは base が無いと SKIP される）。
+    # **並び順に意味は無い**——落ちても止めず、SKIP でも止めないので、
+    # どこに置いても出力の順番しか変わらない。
     ("check-mutation-claims.py", [], False),
     ("check-version-bump.py", [], True),
     ("check-description-sync.py", [], True),
