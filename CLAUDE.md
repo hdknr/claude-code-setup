@@ -60,7 +60,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-all.py` - **収録漏れ**（`scripts/` に検査を足して登録し忘れた）と
     集約の検査。**変異テストを含む**
   - `test-check-plan-scope.py` - 変更範囲の検査の回帰テスト（変異テストを含む）
-  - `test-worktree-scripts.py` - **入場と PR 前提条件の回帰テスト**（変異 8 件）。
+  - `test-worktree-scripts.py` - **入場と PR 前提条件の回帰テスト**（変異 20 件）。
+    **周の base の取り方も、ここで陽性対照つきで実証している**（#148）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/` にある**
     （`prepare-worktree.sh` / `check-pr-preconditions.sh`）
   - `test-find-cycle.py` - **周の探索の回帰テスト**（変異テストを含む）。
@@ -373,7 +374,11 @@ python3 scripts/test-collect-guard-rejections.py  # 収集側のテスト
 **出力先が空でなければ断り**（回し直しで二重計上するため）、
 **0 件なら非ゼロで終わる**。
 
-**残っている BLOCKED は Windows と実機 Linux**（#122 に残してある。**閉じていない**）。
+**Windows と実機 Linux では測っていない。** **#122 は閉じた**（2026-09-21）——
+**題（「測る手段が無い」）は両軸とも成り立たなくなり、残る 2 件に寄りかかっている主張が
+1 つも無い**（`references/guard-rejections.md` が「OS に依らないと読んではならない」
+「測ったのはコンテナ」「Windows は測っていない」を必須の印つきで持っている）。
+**実機で問題が起きたら、その時点で起票する。**
 
 ### `SKILL.md` は条件つきの節を `references/` に出す
 
@@ -411,7 +416,7 @@ probe スキルを `claude -p` で起動し、**トランスクリプトに印�
 
 **入場と PR 前提条件もスクリプトにした**（#136 段 3）——`prepare-worktree.sh` と
 `check-pr-preconditions.sh`。**手順 4 の入場は #96 / #110 / #113 で繰り返し穴が見つかったのに、
-テストが 1 本も無かった**。**いまは変異 8 件で押さえている。**
+テストが 1 本も無かった**。**いまは変異 20 件で押さえている。**
 
 **`EnterWorktree` / `ExitWorktree` はスクリプトから呼べない。** だから
 **スクリプトは素の git で済む部分だけ**を担い、**入場そのものは道具に残す**
