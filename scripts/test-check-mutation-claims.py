@@ -40,6 +40,9 @@ import importlib.util
 import io
 import json
 import os
+import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -220,8 +223,70 @@ def observe(mod, root: Path) -> tuple[int, str]:
     return rc, buf.getvalue()
 
 
-def snapshot(mod, root: Path, only_na: Path, missing: Path) -> tuple:
-    """3 つの木を、まとめて 1 つの観測にする。
+def observe_leak(mod, leak_root: Path, parent: Path) -> tuple:
+    """**退避先の消し残し**を観測する（守る 14 / #157）。
+
+    **これは出力に出ない副作用なので、`observe` では殺せない**
+    ——**観測の側を足さないと、変異ループが「畳まない」変異を素通りさせる。**
+
+    **安全弁は 2 つあり、どちらの倒れ方でも残しうる**ので両方当てる。
+    **正常系も併せて見る**——**`try` を広げすぎて*返すべき退避先まで畳む*変異**は、
+    落ちる側だけ見ていても殺せない。
+
+    **退避先の親を 2 つとも試料の中に閉じ込める**ので、
+    **実 `$TMPDIR` は汚さない**（それは別の検査が端から端まで見る）。
+    """
+    assert_not_real_repo(leak_root)
+    (leak_root / ".git").mkdir(exist_ok=True)
+    (leak_root / "scripts").mkdir(parents=True, exist_ok=True)
+    (leak_root / "scripts" / "subject.py").write_text("# leak\n", encoding="utf-8")
+    parent.mkdir(exist_ok=True)
+
+    def left(where: Path) -> int:
+        return len(list(where.glob("mutation-claims-*")))
+
+    def fell(call) -> str:
+        try:
+            call()
+        except BaseException as exc:  # noqa: BLE001 — 落ち方の *名前* だけを観測する
+            return type(exc).__name__
+        return "落ちなかった"
+
+    keep_tempdir = tempfile.tempdir
+    try:
+        # **P1: 退避先が原本の内側**——`copytree` の *前* に落ちる。
+        tempfile.tempdir = str(leak_root)
+        inside = fell(lambda: mod.make_sandbox(leak_root))
+        inside_left = left(leak_root)
+
+        # **P2: `.git` が残っている**——`copytree` の *後* に落ちる。**#157 を起こした当の道。**
+        tempfile.tempdir = str(parent)
+        keep_ignore = mod._ignore
+        mod._ignore = lambda _dir, _names: []
+        try:
+            dotgit = fell(lambda: mod.make_sandbox(leak_root))
+        finally:
+            mod._ignore = keep_ignore
+        dotgit_left = left(parent)
+
+        # **正常系は畳まない**——退避先が返り、中身が入っている。
+        normal: tuple = ()
+        try:
+            box = mod.make_sandbox(leak_root)
+            normal = (box.is_dir(), (box / "scripts" / "subject.py").is_file())
+            shutil.rmtree(box, ignore_errors=True)
+        except BaseException as exc:  # noqa: BLE001
+            normal = (type(exc).__name__,)
+    finally:
+        tempfile.tempdir = keep_tempdir
+        for stray in list(leak_root.glob("mutation-claims-*")) + list(parent.glob("mutation-claims-*")):
+            shutil.rmtree(stray, ignore_errors=True)
+    return (inside, inside_left, dotgit, dotgit_left, normal)
+
+
+def snapshot(mod, root: Path, only_na: Path, missing: Path,
+             leak_root: Path, leak_parent: Path) -> tuple:
+    """4 つの観測を、まとめて 1 つにする。
 
     **どれが欠けても殺せない変異がある。**
     """
@@ -236,6 +301,12 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path) -> tuple:
         observe(mod, only_na),
         # **これが無いと「対象の木が無くても通す」変異が殺せない。**
         observe(mod, missing),
+        # **これが無いと「退避先を畳まない」変異が殺せない**（#157）。
+        # **後始末は出力を 1 バイトも変えない**ので、上の 3 つはどれも同じ観測を返す。
+        # **`new` は構造を壊さない形にする**（上の `only_na` と同じ理由——
+        # 消すとアリティが変わり、**変異ループに入る前に落ちて主張を実演しない**）。
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        observe(mod, root),", "red": "python3 scripts/test-check-mutation-claims.py"}
+        observe_leak(mod, leak_root, leak_parent),
     )
 
 
@@ -302,6 +373,13 @@ MUTATIONS = {
     "出力が変わらなくても主張が偽と断定する": (
         "    if out == base_out:",
         "    if False:"),
+    # 守る 14: 退避先は、作った関数が自分で畳む（#157）
+    "落ちたときに退避先を畳まない": (
+        "    except BaseException:\n"
+        "        shutil.rmtree(box, ignore_errors=True)\n"
+        "        raise",
+        "    except BaseException:\n"
+        "        raise"),
 }
 
 
@@ -323,10 +401,13 @@ def run_all(escape: Path) -> int:
         only_na.mkdir()
         build_only_not_applied(only_na)
         missing = Path(tmp) / "does-not-exist"
+        leak_root = Path(tmp) / "leak-tree"
+        leak_root.mkdir()
+        leak_parent = Path(tmp) / "leak-parent"
 
         mod = load()
-        base = snapshot(mod, root, only_na, missing)
-        (rc, out), (rc_na, out_na), (rc_missing, _) = base
+        base = snapshot(mod, root, only_na, missing, leak_root, leak_parent)
+        (rc, out), (rc_na, out_na), (rc_missing, _), leak = base
         got = verdicts(out)
 
         print("3 つの判定が出そろうか")
@@ -378,8 +459,18 @@ def run_all(escape: Path) -> int:
             check("退避先に `.git` が 1 つも無い", not list(box.rglob(".git")))
             check("退避先に中身は入っている", (box / "scripts" / "subject.py").is_file())
         finally:
-            import shutil
             shutil.rmtree(box, ignore_errors=True)
+
+        print("\n落ちたときに退避先を消し残さない（守る 14 / #157）")
+        inside, inside_left, dotgit, dotgit_left, normal = leak
+        check("退避先が原本の内側なら落ちる（`copytree` の前）", inside == "RuntimeError")
+        check("その落ち方で退避先が残らない", inside_left == 0)
+        check("`.git` が残っていれば落ちる（`copytree` の後・#157 を起こした道）",
+              dotgit == "RuntimeError")
+        check("その落ち方でも退避先が残らない", dotgit_left == 0)
+        # **落ちる側だけ見ていると、`try` を広げすぎて*返すべき退避先まで畳む*形を見逃す。**
+        check("正常系では退避先を返し、中身が入っている", normal == (True, True))
+
         check("原本を書き換えていない",
               (root / "scripts" / "subject.py").read_text(encoding="utf-8") == SUBJECT)
 
@@ -401,7 +492,7 @@ def run_all(escape: Path) -> int:
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
-            changed = snapshot(bad, root, only_na, missing) != base
+            changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent) != base
             # **変異が的を書き換えたまま終わることがある**（復元は `judge` の中だけ）。
             # **次の変異の観測を汚さないよう、毎回戻す。**
             if escape.read_text(encoding="utf-8") != ESCAPE_BODY:
@@ -428,6 +519,32 @@ def run_all(escape: Path) -> int:
             check("実リポジトリを対象にすると落ちる", True)
         else:
             check("実リポジトリを対象にすると落ちる", False)
+
+        print("\n端から端まで — #157 の再現を、別プロセスで当てる")
+        # **#157 を起こしたのは変異 2（`.git` を複製に持ち込む）を当てた回**で、
+        # **本体は `copytree` の後で落ち、呼ぶ側の `finally` に入らないまま抜けた。**
+        # **その再現をそのまま、別プロセスとして走らせる。**
+        #
+        # **`$TMPDIR` を隔離する（必須）。** **実 `$TMPDIR` を数える形は採らない**
+        # ——**同じ置き場所を、入れ子で走る同じスクリプト自身が使う**ので、
+        # **判定が外の事情で揺れる**（実測: `check-mutation-claims.py` を 2 回回して
+        # **1 回目は走行中に 1 件増え、2 回目は 6 件増えた**。**直接実行では 0 件**）。
+        # **揺れる数を受入条件にすると、赤も緑も意味を持たない。**
+        iso = Path(tmp) / "iso-tmp"
+        iso.mkdir()
+        mut_dir = Path(tmp) / "mut-dotgit"
+        mut_dir.mkdir()
+        needle, replacement = MUTATIONS["`.git` を複製に持ち込む"]
+        mutated = mut_dir / "check-mutation-claims.py"
+        mutated.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+        (mut_dir / "markdown_fences.py").write_text(
+            (REAL_REPO / "scripts" / "markdown_fences.py").read_text(encoding="utf-8"),
+            encoding="utf-8")
+        subprocess.run([sys.executable, str(mutated), str(root)],
+                       env=dict(os.environ, TMPDIR=str(iso)),
+                       capture_output=True, text=True, check=False)
+        strays = list(iso.glob("mutation-claims-*"))
+        check(f"変異 2 を当てた実行が退避先を残さない（{len(strays)} 件）", not strays)
 
     if failures:
         print(f"\nFAILED: {len(failures)} 件")
