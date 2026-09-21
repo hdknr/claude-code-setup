@@ -54,6 +54,10 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-site-links.py", [], False),
     ("check-diagram-freshness.py", [], False),
     ("skill-metrics.py", ["--check"], False),
+    # **他の歯止めを子プロセスで回すので、1 本だけ重い。**
+    # **並び順に意味は無い**——落ちても止めず、SKIP でも止めないので、
+    # どこに置いても出力の順番しか変わらない。
+    ("check-mutation-claims.py", [], False),
     ("check-version-bump.py", [], True),
     ("check-description-sync.py", [], True),
     ("check-plan-scope.py", [], True),
@@ -77,6 +81,7 @@ TESTS: list[str] = [
     "test-check-duplicate-counts.py",
     "test-worktree-scripts.py",
     "test-check-skill-pointers.py",
+    "test-check-mutation-claims.py",
 ]
 
 
