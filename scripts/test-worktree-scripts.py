@@ -121,8 +121,11 @@ def make_ahead_clones(base: Path) -> dict:
     sha_a = git(seed, "rev-parse", "HEAD").stdout.strip()
 
     clones = {}
-    for label in ("未取得", "取得済み"):
-        work = base / f"work-{'stale' if label == '未取得' else 'fresh'}"
+    # **「未取得(専用)」は、この場面だけに使う。** **他の観測で 1 度でも走らせると、
+    # その実行が取り直してしまい、「まだ取れていない」という前提が壊れる**
+    # ——**実際にそうなっており、変異が殺せなかった。**
+    for label in ("未取得", "取得済み", "未取得(専用)"):
+        work = base / f"work-{ {'未取得': 'stale', '取得済み': 'fresh'}.get(label, 'sibling') }"
         res = subprocess.run(["git", "clone", "-q", str(bare), str(work)],
                              capture_output=True, text=True)
         # **rc を見る。** 見ないと、clone の失敗が次の `git config` の
@@ -141,8 +144,19 @@ def make_ahead_clones(base: Path) -> dict:
     git(seed, "push", "-q", "origin", "main")
     sha_b = git(seed, "rev-parse", "HEAD").stdout.strip()
 
+    # **クローンより後に origin へ生えたブランチ**（どちらのクローンにも参照が無い）。
+    # **名指ししても、取り直さなければ解決できない**——指摘 1 の場面。
+    git(seed, "checkout", "-q", "-b", "sibling")
+    (seed / "SIB.md").write_text("sib\n", encoding="utf-8")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-qm", "sibling")
+    git(seed, "push", "-q", "origin", "sibling")
+    sha_sib = git(seed, "rev-parse", "HEAD").stdout.strip()
+    git(seed, "checkout", "-q", "main")
+
     git(clones["取得済み"], "fetch", "-q", "origin")
-    return {"clones": clones, "A": sha_a, "B": sha_b, "bare": bare, "seed": seed}
+    return {"clones": clones, "A": sha_a, "B": sha_b, "SIB": sha_sib,
+            "bare": bare, "seed": seed}
 
 
 def make_dangling_origin_head(base: Path) -> Path:
@@ -251,7 +265,8 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
 
     # **origin が手元より進んでいるクローン。** 切った先が A か B かを見る。
     ahead = make_ahead_clones(base / "ahead")
-    for label, work in ahead["clones"].items():
+    for label in ("未取得", "取得済み"):
+        work = ahead["clones"][label]
         res = run(prepare, work, "55", "ahead")
         wt3 = work / ".claude" / "worktrees" / "issue-55"
         out[f"進んだ origin（{label}）: rc"] = res.returncode
@@ -272,6 +287,24 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     out["upstream が付いていない"] = (
         git(wt55, "rev-parse", "--abbrev-ref", "HEAD@{upstream}").returncode != 0
         if wt55.is_dir() else None)
+
+    # **まだ取れていない参照を名指ししても、取り直して解決する**（2 パス目の指摘 1）。
+    stale = ahead["clones"]["未取得(専用)"]
+    sib = run(prepare, stale, "56", "sibling",
+              env=dict(os.environ, DEV_LOOP_BASE_REF="origin/sibling"))
+    wt56 = stale / ".claude" / "worktrees" / "issue-56"
+    out["まだ取れていない参照: rc"] = sib.returncode
+    out["まだ取れていない参照: 切った先"] = (
+        "sibling" if wt56.is_dir()
+        and git(wt56, "rev-parse", "HEAD").stdout.strip() == ahead["SIB"]
+        else "別のところ" if wt56.is_dir() else "-")
+
+    # **名指しの base が解決しないなら断る**（2 パス目の指摘 2）。
+    bad = run(prepare, repo, "44", "badbase",
+              env=dict(os.environ, DEV_LOOP_BASE_REF="refs/nope/nope"))
+    out["名指しが解決しない: rc"] = bad.returncode
+    out["名指しが解決しなければ作らない"] = not (
+        repo / ".claude" / "worktrees" / "issue-44").is_dir()
 
     # **壊れた `origin/HEAD` でも死なない**（指摘 2）。
     dang = make_dangling_origin_head(base / "dangling")
@@ -340,8 +373,8 @@ MUTATIONS = {
     # 守る 8（prepare）: start-point を渡して切る（#148）
     # **省略すると HEAD に落ちる**ので、古い既定ブランチの上で周が進む。
     "start-point を渡さない": (PREPARE,
-        'git worktree add --no-track "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2',
-        'git worktree add --no-track "$PATH_ABS" -b "$BRANCH" >&2'),
+        'set -- "$BASE_REF"',
+        'set --'),
     # 守る 9（prepare）: 切る前に取り直す（#148）
     # **「未取得」の場面だけでは上の変異と見分けられない**ので、
     # **「取得済み」の場面を併せて観測している**（`make_ahead_clones`）。
@@ -350,8 +383,16 @@ MUTATIONS = {
         'if false; then'),
     # 守る 12（prepare）: upstream を付けない（#148 / `/code-review` 指摘 1）
     "upstream を付ける": (PREPARE,
-        'git worktree add --no-track "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2',
-        'git worktree add "$PATH_ABS" -b "$BRANCH" "$BASE_REF" >&2'),
+        'git worktree add --no-track "$PATH_ABS" -b "$BRANCH" "$@" >&2',
+        'git worktree add "$PATH_ABS" -b "$BRANCH" "$@" >&2'),
+    # 守る 14（prepare）: 名指しの base が解決しないなら断る（2 パス目の指摘 2）
+    "名指しの base が解決しなくても HEAD で作る": (PREPARE,
+        '  if [ -n "${DEV_LOOP_BASE_REF:-}" ]; then',
+        '  if false; then'),
+    # 守る 15（prepare）: まだ取れていない参照でも、取り直してから解決する（指摘 1）
+    "まだ取れていない参照で取り直しを飛ばす": (PREPARE,
+        '    NEED_FETCH=1   # 解決できない——取り直せば生えるかもしれない',
+        '    NEED_FETCH=0   # 解決できない——取り直せば生えるかもしれない'),
     # 守る 13（prepare）: 壊れた start-point で死なない（#148 / `/code-review` 指摘 2）
     "壊れた start-point をそのまま渡す": (PREPARE,
         'if [ -n "$BASE_REF" ] && ! git rev-parse --verify -q "${BASE_REF}^{commit}" >/dev/null 2>&1; then',
@@ -416,18 +457,30 @@ def check_norm_shape() -> None:
     skill_dir = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop"
     for name in ("verifier.md", "review-handoff.md"):
         body = (skill_dir / "prompts" / name).read_text(encoding="utf-8")
-        check(f"{name}: 2 点で渡している", "git diff {{base の SHA}}" in body)
+        # **在る／無いではなく、*形*を当てる。** **禁止文を残したまま
+        # `git diff {{base の SHA}}...HEAD` に書き換えても緑のままだった**
+        # ——**指摘 10 を直すために書いた検査が、その退行を捕まえていなかった**
+        # （`/code-review` の 2 パス目が再現して指摘。**同じ型の 3 度目**）。
+        m = re.search(r"git diff \{\{base の SHA\}\}(\.{3})?", body)
+        check(f"{name}: 差分の取り方が書いてある", m is not None)
+        check(f"{name}: 3 点になっていない（形を当てている）",
+              m is not None and m.group(1) is None)
         check(f"{name}: 3 点を禁じている", "3 点（`...`）にしないでください" in body)
         check(f"{name}: 未追跡を見よと書いてある", "git status --porcelain" in body)
     skill = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    check("SKILL.md: base の式が書いてある", "git merge-base" in skill)
+    # **式そのものを当てる。** **`merge-base` だけだと、無関係な `--is-ancestor` の行で
+    # 満たされてしまい、式の箇条書きを消しても緑のままになる**（同上）。
+    check("SKILL.md: base の式が書いてある",
+          "git merge-base <その周を切った元の参照> HEAD" in skill)
     check("SKILL.md: DEV_LOOP_BASE_REF が書いてある", "DEV_LOOP_BASE_REF" in skill)
     check("SKILL.md: 祖先であることの確認を要求している",
           "--is-ancestor" in skill)
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
+    # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
+    # （`/code-review` の 2 パス目が指摘）。**指示の形だけを当てる。**
     check("同梱 agent 定義に取り直しの指示が無い（不変条件 D）",
-          "fetch" not in agent and "取り直" not in agent)
+          "git fetch" not in agent and "取り直して" not in agent)
 
 
 def demonstrate_base_rule(base: Path) -> None:
@@ -470,7 +523,9 @@ def demonstrate_base_rule(base: Path) -> None:
 
     two = git(wt, "diff", "--name-only", mb).stdout.split()
     tip_two = git(wt, "diff", "--name-only", tip).stdout.split()
-    three = git(wt, "diff", "--name-only", f"{tip}...HEAD").stdout.split()
+    # **`mb` を使う。** **`tip` を使うと、点の数と base の 2 つが同時に変わり、
+    # 「3 点だから出ない」を分離できない**（`/code-review` の 2 パス目が指摘）。
+    three = git(wt, "diff", "--name-only", f"{mb}...HEAD").stdout.split()
     untracked = [l[3:] for l in git(wt, "status", "--porcelain").stdout.splitlines()
                  if l.startswith("??")]
 
@@ -514,6 +569,12 @@ def main() -> int:
         check("関門に渡す base を完全な SHA で出す", correct["base を完全な SHA で出す"])
         check("切ったブランチに upstream を付けない（指摘 1）",
               correct["upstream が付いていない"] is True)
+        check("まだ取れていない参照を名指ししても、取り直して解決する（2 パス目の指摘 1）",
+              correct["まだ取れていない参照: 切った先"] == "sibling")
+        check("名指しの base が解決しなければ断る（rc=7。2 パス目の指摘 2）",
+              correct["名指しが解決しない: rc"] == 7)
+        check("名指しの base が解決しなければ何も作らない",
+              correct["名指しが解決しなければ作らない"])
         check("壊れた origin/HEAD でも作れる（指摘 2）",
               correct["壊れた origin/HEAD: rc"] == 0 and correct["壊れた origin/HEAD: 作れた"])
         check("壊れた origin/HEAD であることを黙らない",
@@ -555,8 +616,10 @@ def main() -> int:
             try:
                 mutated = observe(d / "scripts" / PREPARE.name,
                                   d / "scripts" / PRECOND.name, d / "tree")
-            except Exception:
-                check(f"変異を殺せる: {name}", True)
+            except Exception as exc:
+                # **例外の型を名前に出す。** **黙って「殺せた」に丸めると、
+                # 観測キーの改名・足場の失敗まで緑になる**（`/code-review` の 2 パス目）。
+                check(f"変異を殺せる: {name}（例外 {type(exc).__name__}）", True)
                 continue
             mutant_obs[name] = mutated
             check(f"変異を殺せる: {name}", mutated != correct)
