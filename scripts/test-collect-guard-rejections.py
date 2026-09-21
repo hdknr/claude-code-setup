@@ -27,6 +27,8 @@
 テストが黙って飲み込まないように明示しておく。**
 """
 import importlib.util
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -145,6 +147,10 @@ def observe(mod, root: Path, cwd_prefix=None) -> dict:
         "版": sorted({e["version"] for e in events}),
         "main": sum(1 for e in events if not e["sidechain"]),
         "sidechain": sum(1 for e in events if e["sidechain"]),
+        # **件数ではなく「どのレコードが sidechain か」。** 和や差の形で書くと、
+        # **どんな実装でも真になる**（`main` と `sidechain` は同じ列を数えた
+        # 相補な分割なので、和は必ず総件数に等しい）。
+        "sidechain_uuids": sorted(e["uuid"] for e in events if e["sidechain"]),
         "走査": scanned,
     }
 
@@ -219,7 +225,8 @@ def main() -> int:
         check("走査したファイル数を返す", correct["走査"] == 4)
         check("main と sidechain の内訳を出す（#137）",
               (correct["main"], correct["sidechain"]) == (5, 1))
-        check("内訳の和が総件数に等しい", correct["main"] + correct["sidechain"] == correct["件数"])
+        check("sidechain と数えたのは、その印を持つレコードである（#137）",
+              correct["sidechain_uuids"] == ["m3"])
 
         mac_only = observe(mod, root, "/Users/someone")
         lin_only = observe(mod, root, "/root")
@@ -234,6 +241,18 @@ def main() -> int:
         assert_not_real_home(empty)
         events, scanned = mod.collect(empty)
         check("空のツリーは 0 件・走査 0 件", (len(events), scanned) == (0, 0))
+
+        # **0 件でも内訳を出す**（#137）。**docstring が「必ず出力する」と言っている**ので、
+        # **いちばん怪しい場合だけ出ない**のでは主張が偽になる。
+        # **標準出力を見る唯一のアサート**——`observe` は `collect` しか呼ばないので、
+        # **`main()` の出力の形は、ここを書くまで 1 度も走っていなかった。**
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = mod.main(["--root", str(empty)])
+        printed = buffer.getvalue()
+        check("0 件でも母集団の内訳を出す（#137）",
+              "=== 母集団の内訳 ===" in printed and "0  main-chain" in printed)
+        check("0 件は既定では失敗にしない", code == 0)
 
         print("\n理由節が取れない形は None にする（黙って畳まない）")
         odd = tmpdir / "odd"
@@ -252,17 +271,24 @@ def main() -> int:
         print("\n`isSidechain` を持たないレコードは main に数える（#137）")
         nosc = tmpdir / "nosc"
         (nosc / "p").mkdir(parents=True)
-        (nosc / "p" / "s.jsonl").write_text(json.dumps({
-            "type": "user", "uuid": "n1", "version": "2.1.278", "cwd": "/root/x",
-            "message": {"role": "user", "content": [
-                {"type": "tool_result", "is_error": True,
-                 "content": f"{GUARD}/root/x/w, but {TOO_COMPLEX}."},
-            ]},
-        }, ensure_ascii=False) + "\n", encoding="utf-8")
+        # **印を持つレコードを隣に置く。** 印の無いレコードだけで「main と数える」を
+        # 見ると、**何もかも main と数える実装でも緑になる**——`sidechain` を
+        # 見ない変異がここを素通りする。**判別するには両方が要る。**
+        (nosc / "p" / "s.jsonl").write_text("\n".join([
+            json.dumps({
+                "type": "user", "uuid": "n1", "version": "2.1.278", "cwd": "/root/x",
+                "message": {"role": "user", "content": [
+                    {"type": "tool_result", "is_error": True,
+                     "content": f"{GUARD}/root/x/w, but {TOO_COMPLEX}."},
+                ]},
+            }, ensure_ascii=False),
+            rejection("/root/x", TOO_COMPLEX, uuid="n2", sidechain=True),
+        ]) + "\n", encoding="utf-8")
         assert_not_real_home(nosc)
         events, _ = mod.collect(nosc)
-        check("フィールドが無ければ sidechain は False",
-              len(events) == 1 and events[0]["sidechain"] is False)
+        by_uuid = {e["uuid"]: e["sidechain"] for e in events}
+        check("フィールドが無ければ main、印があれば sidechain（#137）",
+              by_uuid == {"n1": False, "n2": True})
 
         print("\n変異テスト（壊したのに緑なら失格）")
         source = SCRIPT.read_text(encoding="utf-8")
