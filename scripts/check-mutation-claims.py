@@ -70,11 +70,17 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 - **未知のキーを拒否する**——キー名の typo で黙って別の意味にならない。
 - **書き込む先が退避先の内側であることを確かめる**——`file` に `../` を書いても外へ出ない。
 - **行のどこに置いたマーカーも拾う**——**行末に注記やコメントの閉じ記号が続いても落とさない。**
-- **閉じ忘れたフェンスがあるファイルは、黙って落とさず「読めない」と報告する**——
-  **閉じ忘れは以降を全部飲み込むので、マーカーが「無かった」ことにされる。**
+- **マーカーに触れているファイルに閉じ忘れたフェンスがあれば、黙って落とさず
+  「読めない」と報告する**——**閉じ忘れは以降を全部飲み込むので、
+  マーカーが「無かった」ことにされる。**
+  **見るのは `mutation-claim:` という語を含むファイルだけ**で、
+  **フェンスの平衡を一般に検査するものではない**
+  （語に触れただけの散文も、この検査の対象に入る）。
 - **マーカー自身の行は、変異の当たり先として数えない**——**マーカーは主張の*記述*であって、
   主張の*対象*ではない。**
 - **対象の木が無ければ落とす**——**綴り間違いや置き場所の変更を「主張 0 件」で通さない。**
+- **出力が変わらない緑を「主張が偽」と断定しない**——**「当てられなかった」に倒す。**
+  **陽性対照は「非ゼロで落ちる SKIP」しか捕まえない。**
 
 守らない:
 
@@ -86,7 +92,12 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
   表していない（＝届いていない）のか**は区別できない。**`SKILL.md` 手順 5 の
   「緑を砦の穴と読む前に、変異が届いているかを疑う」は、ここでは自動化できない。**
 - **`git` に依る主張は当てられない。** 退避先に `.git` が無いので、base を要する検査を
-  `red` に置くと**陽性対照で落ちて「当てられなかった」になる**。
+  `red` に置くと**当てられない。** **倒れ方は 2 通りあり、どちらも実測した**——
+  `check-version-bump.py` / `check-description-sync.py` は **rc=2 で落ちる**ので
+  陽性対照が捕まえ、`check-plan-scope.py` は**「判定していない」と言って rc=0 で終わる**ので
+  **陽性対照を通過する。** **後者を捕まえているのは上の「出力が変わらない」のほう**だが、
+  **これは*たまたま*出力が一致するから効くのであって、
+  「0 で終わる SKIP を一般に見分けられる」わけではない。**
   **黙っては通らないが、当てられもしない。**
 - **シェルの機能は使えない。** `red` は `shlex.split` で分割して直接起動する
   （パイプ・リダイレクト・変数展開は無い）。**シェルを噛ませると、書式のミスが
@@ -284,7 +295,7 @@ def occurrences(text: str, old: str) -> list[int]:
     out = []
     i = text.find(old)
     while i != -1:
-        if not any(start <= i <= end for start, end in spans):
+        if not any(start <= i < end for start, end in spans):
             out.append(i)
         i = text.find(old, i + 1)
     return out
@@ -321,7 +332,7 @@ def judge(claim: Claim, box: pathlib.Path, baselines: dict) -> tuple[str, str]:
     mutated = original[:cut] + claim.new + original[cut + len(claim.old):]
     target.write_text(mutated, encoding="utf-8")
     try:
-        rc, _ = run(claim.red, box)
+        rc, out = run(claim.red, box)
     finally:
         target.write_text(original, encoding="utf-8")
 
@@ -329,6 +340,15 @@ def judge(claim: Claim, box: pathlib.Path, baselines: dict) -> tuple[str, str]:
         return NOT_APPLIED, "変異を当てた側が走らなかった"
     if rc != 0:
         return VERIFIED, f"陽性対照 rc=0 → 変異 rc={rc}"
+    # **出力が 1 バイトも変わらないなら、「主張が偽」と断定してはならない。**
+    # **陽性対照は「非ゼロで落ちる SKIP」しか捕まえない**——**0 で終わる SKIP**
+    # （`check-plan-scope.py` は base が解決できないと「判定していない」と言って 0 で終わる）
+    # **は素通りする。** そのとき変異の前後で出力は完全に同じになる。
+    # **ここで「緑のまま＝主張が偽」と書くと、走らなかった検査を
+    # 「変異が届いていない」と読む #145 の 3 パス目の誤読を、この歯止め自身が出力する。**
+    if out == base_out:
+        return NOT_APPLIED, ("変異の前後で出力が 1 バイトも変わらない"
+                             "（検査がその変異を見ていない——走らなかった可能性がある）")
     return STILL_GREEN, "変異を当てても rc=0 のまま（主張が偽か、変異が届いていない）"
 
 
