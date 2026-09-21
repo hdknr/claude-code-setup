@@ -66,7 +66,8 @@ def check(name: str, cond: bool) -> None:
         failures.append(name)
 
 
-def rejection(cwd, reason, *, wrapped=False, rule=True, version="2.1.278", uuid="u1"):
+def rejection(cwd, reason, *, wrapped=False, rule=True, version="2.1.278", uuid="u1",
+              sidechain=False):
     """拒否レコード 1 行。本物と同じ形（`type=user` ＋ `is_error` ブロック）。"""
     body = f"{GUARD}{cwd}/.claude/worktrees/w, but {reason}."
     if rule:
@@ -77,6 +78,7 @@ def rejection(cwd, reason, *, wrapped=False, rule=True, version="2.1.278", uuid=
         body = f"<tool_use_error>{body}</tool_use_error>"
     return json.dumps({
         "type": "user", "uuid": uuid, "version": version, "cwd": cwd,
+        "isSidechain": sidechain,
         "timestamp": "2026-09-20T00:00:00.000Z",
         "message": {"role": "user", "content": [
             {"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": body},
@@ -103,7 +105,7 @@ def cd_reason(path):
 
 
 def build_tree(root: Path) -> None:
-    """macOS 2 件・Linux 3 件（うち 1 件は包み＋規則文なし）＋引用 1 件。
+    """macOS 3 件（うち 1 件は sidechain）・Linux 3 件（うち 1 件は包み＋規則文なし）＋引用 1 件。
 
     **同じ理由節をパスだけ変えて両 OS に置いてある**——正規化しなければ
     2 通りに割れるので、`パスを伏せない` 変異がここで殺せる。
@@ -115,6 +117,10 @@ def build_tree(root: Path) -> None:
     (mac / "s1.jsonl").write_text("\n".join([
         rejection("/Users/someone/repo", TOO_COMPLEX, uuid="m1"),
         echo("/Users/someone/repo", TOO_COMPLEX),
+        # **サブエージェントの拒否**（#137）。理由節は既存と同じものを使い、
+        # **内訳だけが動く**ようにしてある——ここで種類が動くと、
+        # sidechain の変異を「理由の種類」が殺してしまい、判別できなくなる。
+        rejection("/Users/someone/repo", TOO_COMPLEX, uuid="m3", sidechain=True),
     ]) + "\n", encoding="utf-8")
     (mac / "s3.jsonl").write_text(
         rejection("/Users/someone/repo", cd_reason("/Users/someone/repo"), uuid="m2") + "\n",
@@ -137,6 +143,8 @@ def observe(mod, root: Path, cwd_prefix=None) -> dict:
         "包み": sum(1 for e in events if e["wrapped"]),
         "規則文なし": sum(1 for e in events if not e["has_rule_sentence"]),
         "版": sorted({e["version"] for e in events}),
+        "main": sum(1 for e in events if not e["sidechain"]),
+        "sidechain": sum(1 for e in events if e["sidechain"]),
         "走査": scanned,
     }
 
@@ -170,7 +178,13 @@ MUTATIONS = {
     'OS を一定にする': ('    if head in ("/home", "/root"):\n        return "Linux"\n', ''),
     # 守る 4: 理由節の正規化（パスを伏せる）
     'パスを伏せない': ('    clause = PATH_POSIX.sub("<PATH>", clause)', '    pass'),
-    # 守る 5: `cwd_prefix` の絞り込み。
+    # 守る 5: main と sidechain の取り違え。
+    # **既定の観測で殺せる**——内訳を観測に入れてあるため（`observe` の `main`/`sidechain`）。
+    # **試料の sidechain は理由節を既存と共有している**ので、この変異は内訳*だけ*を
+    # 動かす——共有していないと「理由の種類」が先に殺してしまい、判別にならない。
+    'sidechain を見ない': ('"sidechain": bool(record.get("isSidechain")),',
+                           '"sidechain": False,'),
+    # 守る 6: `cwd_prefix` の絞り込み。
     # **これは既定の観測では殺せない**（`cwd_prefix` を渡さない呼びでは分岐に入らない）ので、
     # **絞り込みを渡した観測**を別に取って当てる（`MUTATION_PROBE` 参照）。
     '絞り込みを反転する': ('                if cwd_prefix and not (record.get("cwd") or "").startswith(cwd_prefix):',
@@ -196,18 +210,21 @@ def main() -> int:
         correct = observe(mod, root)
 
         print("正しい入力での収集")
-        check("拒否レコードだけを 5 件数える（引用は数えない）", correct["件数"] == 5)
+        check("拒否レコードだけを 6 件数える（引用は数えない）", correct["件数"] == 6)
         check("cwd から macOS と Linux を判別する", correct["OS"] == ["Linux", "macOS"])
         check("包まれた拒否も 1 件拾う", correct["包み"] == 1)
         check("規則文を持たない形も 1 件拾う", correct["規則文なし"] == 1)
         check("理由節はパスを伏せて 3 通りに畳まれる", correct["理由の種類"] == 3)
         check("版を取り出す", correct["版"] == ["2.1.278"])
         check("走査したファイル数を返す", correct["走査"] == 4)
+        check("main と sidechain の内訳を出す（#137）",
+              (correct["main"], correct["sidechain"]) == (5, 1))
+        check("内訳の和が総件数に等しい", correct["main"] + correct["sidechain"] == correct["件数"])
 
         mac_only = observe(mod, root, "/Users/someone")
         lin_only = observe(mod, root, "/root")
-        check("`--cwd-prefix` で macOS の 2 件だけに絞れる",
-              mac_only["件数"] == 2 and mac_only["OS"] == ["macOS"])
+        check("`--cwd-prefix` で macOS の 3 件だけに絞れる",
+              mac_only["件数"] == 3 and mac_only["OS"] == ["macOS"])
         check("`--cwd-prefix` で Linux の 3 件だけに絞れる",
               lin_only["件数"] == 3 and lin_only["OS"] == ["Linux"])
 
@@ -231,6 +248,21 @@ def main() -> int:
         assert_not_real_home(odd)
         events, _ = mod.collect(odd)
         check("`, but ` が無ければ reason は None", len(events) == 1 and events[0]["reason"] is None)
+
+        print("\n`isSidechain` を持たないレコードは main に数える（#137）")
+        nosc = tmpdir / "nosc"
+        (nosc / "p").mkdir(parents=True)
+        (nosc / "p" / "s.jsonl").write_text(json.dumps({
+            "type": "user", "uuid": "n1", "version": "2.1.278", "cwd": "/root/x",
+            "message": {"role": "user", "content": [
+                {"type": "tool_result", "is_error": True,
+                 "content": f"{GUARD}/root/x/w, but {TOO_COMPLEX}."},
+            ]},
+        }, ensure_ascii=False) + "\n", encoding="utf-8")
+        assert_not_real_home(nosc)
+        events, _ = mod.collect(nosc)
+        check("フィールドが無ければ sidechain は False",
+              len(events) == 1 and events[0]["sidechain"] is False)
 
         print("\n変異テスト（壊したのに緑なら失格）")
         source = SCRIPT.read_text(encoding="utf-8")

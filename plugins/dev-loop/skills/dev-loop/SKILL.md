@@ -17,8 +17,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.32.0 -->
-> **このスキルの版: 1.32.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.32.1 -->
+> **このスキルの版: 1.32.1**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
