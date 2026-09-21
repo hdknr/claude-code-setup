@@ -13,6 +13,34 @@
 
 **この runner の壊れ方は「落とす」である**——登録から 1 本落とす・落ちたのに数えない・
 飛ばしたのに黙っている。**契約はその 3 つに対応させてある。**
+
+**変異は 2 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
+**このファイルの中の判別**（CI の yaml の読み方）に当てる。**後者は自分自身を壊す。**
+
+## CI の走査が、何を守り、何を守らないか（#155）
+
+守る:
+
+- **`check-all.py` に収録したスクリプトが、CI の yaml に `run:` として書かれているか。**
+- **コメントアウトされたステップを「走っている」と数えない**——
+  **`# - run: …` も `"run:" in l` を満たすので、素の行走査では素通しだった。**
+- **「そもそも無い」と「コメントアウトされている」を分けて報告する**
+  ——**どちらも「CI では走らない」だが、ステップを足すのと `#` を外すのでは直し方が違う。**
+- **行末コメントの中の名前を、生きた名前として数えない。**
+- **`check-X.py` が `test-check-X.py` に覆い隠されない**（#136 で 6 本が隠れていた）。
+- **引用符の中の `#` で切らない**——切ると、その後ろの名前が落ちて「無い」と誤報する。
+
+守らない:
+
+- **「CI で実際に走った」の証明ではない。** 見ているのは**記述**だけで、
+  **ジョブやステップの `if:` 条件・`continue-on-error`・ステップ内での失敗握り潰し**は
+  見ていない。**言えるのは「走る形で書かれている」まで。**
+- **`run: |` のブロック本文で呼ばれたスクリプトは拾わない**（`run:` を含む行だけを見るため）。
+  **向きは偽陽性**（在るのに「無い」と言う）で、**黙って素通しする #155 の欠陥とは逆**。
+  **該当は現在 0 件。**
+- **ワークフローファイルごと消す・`on:` を変える**——**`*.yml` を読むだけなので、
+  そのファイルが実際に起動するかは見ていない。**
+- **`*.yaml`（拡張子違い）は読まない。**
 """
 
 from __future__ import annotations
@@ -190,6 +218,51 @@ def test_registry_covers_every_script() -> None:
         print(f"       収録漏れ: {missing_t}")
 
 
+# ------------------------------------------------------ yaml のコメント判別
+NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")
+
+
+def split_comment(line: str) -> tuple[str, str]:
+    """yaml の 1 行を「生きている部分」と「コメントの部分」に割る。
+
+    **`#` がコメントを始めるのは、行頭か、直前が空白のときだけ**（`a#b` は値の一部）。
+    **引用符の中の `#` はコメントではない**——そこで切ると、**後ろに書かれた
+    スクリプト名が落ちて「CI に無い」と誤報する**。向きは偽陽性（在るのに「無い」）なので
+    #155 の欠陥とは逆だが、**誤報には違いない。**
+    """
+    quote = ""
+    for i, ch in enumerate(line):
+        if quote:
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
+            return line[:i], line[i:]
+    return line, ""
+
+
+def scan_ci_runs(ci: str) -> tuple[set[str], set[str]]:
+    """CI の yaml から `run:` に現れるスクリプト名を拾い、**2 つに分けて**返す。
+
+    返すのは `(生きている, コメントアウトされている)`。**分けるのが要点**で、
+    「**そもそも無い**」と「**コメントアウトされている**」は**直し方が違う**
+    ——前者はステップを足す、後者は `#` を外す。**どちらも「CI では走らない」。**
+
+    **`run:` を含む行だけを見る**のは元のままで（`- name:` のラベルに名前が出ているだけの
+    行を数えないため）、**判定をその行の*生きている部分*に限る**のが #155 の修正である。
+    """
+    live: set[str] = set()
+    commented: set[str] = set()
+    for raw in ci.split("\n"):
+        code, comment = split_comment(raw)
+        if "run:" in code:
+            live |= set(NAME_RE.findall(code))
+        if "run:" in comment:
+            commented |= set(NAME_RE.findall(comment))
+    return live, commented
+
+
 def test_ci_runs_every_registered_script() -> None:
     """実リポジトリを読む。**`check-all.py` に在るのに CI の yaml に無い**なら落とす。
 
@@ -207,6 +280,17 @@ def test_ci_runs_every_registered_script() -> None:
     （`test-find-cycle.py` は #136 段 1 から、`test-collect-guard-rejections.py` は
     #122 から。**どちらも手元では緑、CI では 1 度も走っていなかった**）。
     **手順 5 の Verifier が見つけた**（#136 の全段に掛けた回）。
+
+    **コメントアウトされたステップを「走っている」と数えない（#155）。**
+    元の実装は `"run:" in l` を満たす行から名前を拾っていたので、
+    **`# - run: python3 scripts/check-foo.py` も条件を満たしていた**
+    ——**CI のステップをコメントアウトしても、この検査は緑のまま**だった。
+    **コメントアウトは、上の 2 本が出荷された状態に戻る最短経路である。**
+
+    **この主張は、実際に当てて確かめる**——`plugins.yml` の生きたステップを 1 つ
+    コメントアウトすると、このテストが赤になる（**陽性対照は、変異の前に緑であることで取る**）:
+
+    mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/check-duplicate-counts.py", "new": "        # run: python3 scripts/check-duplicate-counts.py", "red": "python3 scripts/test-check-all.py"}
     """
     workflows = REAL_REPO / ".github" / "workflows"
     ci = "".join(f.read_text() for f in sorted(workflows.glob("*.yml")))
@@ -220,16 +304,20 @@ def test_ci_runs_every_registered_script() -> None:
     # **素の部分文字列一致にしない。** `check-X.py` は **`test-check-X.py` の部分文字列**
     # なので、**`check-X.py` の CI ステップを消しても、`test-` 版が残っていれば隠れる**
     # ——**実測で 6 本が覆い隠されていた**（#136 の 2 パス目で Verifier が指摘）。
-    # **`scripts/` の直後から行末・空白までを 1 つの名前として照合する。**
-    # **`run:` の行だけを見る**——`- name:` のラベルやコメントに名前が出ているだけで
-    # 「CI で走る」と数えてしまわないため（同上）。
-    run_lines = [l for l in ci.split("\n") if "run:" in l]
-    ci_scripts = set(re.findall(r"scripts/([A-Za-z0-9_.-]+\.py)", "\n".join(run_lines)))
-    missing = [n for n in registered if n not in ci_scripts]
-    check(f"収録したものを CI も回している（{len(registered)} 本）", not missing)
-    if missing:
-        print(f"       CI の yaml に無い: {missing}")
-        print("       **手元では緑でも、CI では 1 度も走らない。**")
+    # **`scripts/` の直後から行末・空白までを 1 つの名前として照合する**（`NAME_RE`）。
+    live, commented = scan_ci_runs(ci)
+    # **2 つに分けて報告する（#155）。** どちらも「CI では走らない」だが、
+    # **ステップを足すのと `#` を外すのでは直し方が違う。**
+    absent = [n for n in registered if n not in live and n not in commented]
+    disabled = [n for n in registered if n not in live and n in commented]
+    check(f"収録したものが CI の yaml に在る（{len(registered)} 本）", not absent)
+    if absent:
+        print(f"       CI の yaml に無い: {absent}")
+        print("       **ステップを足す。** 手元では緑でも、CI では 1 度も走らない。")
+    check("収録したものの CI ステップが生きている（コメントアウトされていない）", not disabled)
+    if disabled:
+        print(f"       コメントアウトされている: {disabled}")
+        print("       **`#` を外す。** 手元では緑でも、CI では 1 度も走らない。")
 
 
 # ------------------------------------------------------------------ 変異
@@ -247,6 +335,97 @@ MUTANTS = {
         "        pass\n"),
     "最初の失敗で止める": ("            logs.append((label, out))\n",
                            "            logs.append((label, out))\n            break\n"),
+}
+
+
+# ------------------------------------------------- 判別の契約（合成試料）
+# **実物の yaml では、この経路は永久に空振りする**——`.github/workflows/` に
+# **コメントアウトされたステップは 1 件も無い**（#155 の時点で 0 件）。
+# **試料のほうに、経路を全部踏ませる。**
+SAMPLE_CI = """\
+jobs:
+  probe:
+    steps:
+      - name: 生きたステップ
+        run: python3 scripts/check-live.py
+
+      # - name: 止めたステップ
+      #   run: python3 scripts/check-dead.py
+
+      - name: scripts/check-label-only.py のラベルにだけ名前がある
+        run: echo ok
+
+      - name: 行末にコメント
+        run: python3 scripts/check-live2.py  # scripts/check-trailing.py は別
+
+      - name: 名前が覆い隠される
+        run: python3 scripts/test-check-mask.py
+
+      - name: 引用符の中の `#`
+        run: "echo 'PR #155' && python3 scripts/check-quoted.py"
+
+      - name: 常に偽の条件（**守らない**——記述しか見ていない）
+        if: false
+        run: python3 scripts/check-killed-by-if.py
+
+      - name: ブロックで呼ぶ（**守らない**——`run:` を含む行だけを見る）
+        run: |
+          python3 scripts/check-in-block.py
+"""
+# **この試料そのものについての主張も、機械で当てる**——
+# **コメントアウトされたステップを抜くと、「それと分かる形で拾う」契約が空振りする**
+# （#151 が言う「試料についての主張」。**書いた時点から一度も実行されない**のを避ける）:
+# mutation-claim: {"file": "scripts/test-check-all.py", "old": "      #   run: python3 scripts/check-dead.py\n", "new": "", "red": "python3 scripts/test-check-all.py"}
+
+
+def scan_contract(scan) -> list[tuple[str, bool]]:
+    """**判別の契約。** 各行が `SAMPLE_CI` のどれかの経路に対応している。
+
+    **陽性側も取る**——「拾わない」だけを並べると、**もともと空の集合**と区別がつかない
+    （**陰性だけの対照は対照ではない**）。
+    """
+    live, commented = scan(SAMPLE_CI)
+    seen = live | commented
+    return [
+        ("生きたステップを拾う（陽性対照）", "check-live.py" in live),
+        ("コメントアウトされたステップを、生きている側に数えない",
+         "check-dead.py" not in live),
+        ("コメントアウトされたステップを、それと分かる形で拾う",
+         "check-dead.py" in commented),
+        ("`- name:` のラベルだけの名前は拾わない", "check-label-only.py" not in seen),
+        ("行末コメントの中の名前は拾わない（その行の生きた名前は拾う）",
+         "check-trailing.py" not in seen and "check-live2.py" in live),
+        ("`check-X.py` が `test-check-X.py` に覆い隠されない",
+         "check-mask.py" not in seen and "test-check-mask.py" in live),
+        ("引用符の中の `#` で切らない", "check-quoted.py" in live),
+        # **守らないものも契約に書く**——**限界を機械で見える形に留める**ため。
+        # **黙って射程が変わったら、docstring の「守らない」と食い違ったまま緑になる。**
+        ("`if:` で止めたステップは、生きているものとして数える（守らない）",
+         "check-killed-by-if.py" in live),
+        ("`run: |` のブロック本文は拾わない（守らない）", "check-in-block.py" not in seen),
+    ]
+
+
+# ------------------------------------------------------------ 判別の変異
+# **この battery は*自分自身*を壊す**ので、**当て先を数える範囲から辞書自身を外す**
+# ——**辞書に書いた文字列も「その文字列の出現」なので、素に数えると必ず 2 箇所になり、
+# 「当て先が 1 箇所」の検査が全件落ちる。**
+SELF_SRC = Path(__file__).resolve().read_text()
+CODE_ONLY = SELF_SRC.split("\nSCAN_MUTANTS")[0]
+
+SCAN_MUTANTS = {
+    "コメントの始まりを見ない": (
+        '        elif ch == "#" and (i == 0 or line[i - 1] in ',
+        '        elif False and (i == 0 or line[i - 1] in '),
+    "引用符を見ない": ("        elif ch in ", "        elif False and ch in "),
+    "生きている側とコメント側を取り違える": (
+        "            return line[:i], line[i:]",
+        "            return line[i:], line[:i]"),
+    "`run:` の行に限らない": ('        if "run:" in code:', "        if True:"),
+    "コメント側を集めない": ('        if "run:" in comment:', "        if False:"),
+    "`test-` を剥がして照合する（覆い隠しが戻る）": (
+        r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
+        r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
 }
 
 
@@ -271,6 +450,31 @@ def main() -> int:
              "commit", "-q", "--allow-empty", "-m", "init"], check=True)
         for name, ok in contract_with_base(target, repo, "wb"):
             check(name, ok)
+
+        print("判別（合成試料——全部通らなければならない）:")
+        for name, ok in scan_contract(scan_ci_runs):
+            check(name, ok)
+
+        print("判別の変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
+        # **切れていなければ、当て先は必ず 2 箇所になって全件落ちる。**
+        # **6 件の「当て先が 1 箇所」より、切れていないことを 1 行で言うほうが速い。**
+        check("当て先を数える範囲が、辞書の手前で切れている", CODE_ONLY != SELF_SRC)
+        for i, (name, (old, new)) in enumerate(SCAN_MUTANTS.items()):
+            if CODE_ONLY.count(old) != 1:
+                check(f"変異 `{name}` の当て先が 1 箇所", False)
+                continue
+            d = root / f"scan{i}"
+            assert_not_real_repo(d)
+            d.mkdir()
+            p = d / "scanned.py"
+            # **辞書より前に 1 箇所しか無いことを上で確かめてある**ので、
+            # **最初の 1 件だけ置き換えれば、当たるのは判別の本体である。**
+            p.write_text(SELF_SRC.replace(old, new, 1))
+            broken = [n for n, ok in scan_contract(load(p, f"scanned{i}").scan_ci_runs)
+                      if not ok]
+            check(f"変異 `{name}` を契約が捕まえる", bool(broken))
+            if not broken:
+                print("       壊したのに契約が全部通った")
 
         print("変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
         src = TARGET.read_text()
