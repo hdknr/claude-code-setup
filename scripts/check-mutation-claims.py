@@ -81,6 +81,9 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 - **対象の木が無ければ落とす**——**綴り間違いや置き場所の変更を「主張 0 件」で通さない。**
 - **出力が変わらない緑を「主張が偽」と断定しない**——**「当てられなかった」に倒す。**
   **陽性対照は「非ゼロで落ちる SKIP」しか捕まえない。**
+- **退避先は、作った関数が自分で畳む**——**安全弁で落ちたときも残さない**（#157）。
+  **後始末を呼ぶ側の `finally` に預けると、`make_sandbox` が例外で抜けた周は
+  その `finally` に入らない**ので、**歯止めが自分で後始末を落とす。**
 
 守らない:
 
@@ -237,17 +240,26 @@ def make_sandbox(root: pathlib.Path) -> pathlib.Path:
     実行の仕方ひとつで無くなってしまう。
     """
     box = pathlib.Path(tempfile.mkdtemp(prefix="mutation-claims-")).resolve()
-    real_root = root.resolve()
-    # **退避先が原本の内側にあってはならない。** 内側だと、原本の側の検査や
-    # `git` が複製を拾いうる。
-    if box == real_root or str(box).startswith(str(real_root) + "/"):
-        raise RuntimeError(f"退避先が原本の内側にある: {box}")
-    shutil.copytree(real_root, box, dirs_exist_ok=True, symlinks=True, ignore=_ignore)
-    # **`.git` が 1 つも無いことを確かめる。** worktree の `.git` は本体を指す
-    # *ファイル*なので、残っていれば複製の中の `git` が本物を触る。
-    leftover = list(box.rglob(".git"))
-    if leftover:
-        raise RuntimeError(f"退避先に .git が残っている: {leftover[:3]}")
+    # **ここから先で抜けるなら、自分で畳む**（#157）。**後始末を呼ぶ側の `finally` に
+    # 預けると、この関数が例外で抜けた周は `box` が返らないので、
+    # その `finally` に一度も入らない**——**歯止めが自分で後始末を落とす。**
+    # **`Exception` ではなく `BaseException`**。**`KeyboardInterrupt` で中断された
+    # ときこそ残骸が残る。** **`raise` を落とさない**——飲むと、呼ぶ側は成功したと読む。
+    try:
+        real_root = root.resolve()
+        # **退避先が原本の内側にあってはならない。** 内側だと、原本の側の検査や
+        # `git` が複製を拾いうる。
+        if box == real_root or str(box).startswith(str(real_root) + "/"):
+            raise RuntimeError(f"退避先が原本の内側にある: {box}")
+        shutil.copytree(real_root, box, dirs_exist_ok=True, symlinks=True, ignore=_ignore)
+        # **`.git` が 1 つも無いことを確かめる。** worktree の `.git` は本体を指す
+        # *ファイル*なので、残っていれば複製の中の `git` が本物を触る。
+        leftover = list(box.rglob(".git"))
+        if leftover:
+            raise RuntimeError(f"退避先に .git が残っている: {leftover[:3]}")
+    except BaseException:
+        shutil.rmtree(box, ignore_errors=True)
+        raise
     return box
 
 
