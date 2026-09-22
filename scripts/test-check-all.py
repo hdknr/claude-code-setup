@@ -29,10 +29,17 @@
   **分けられるのは、コメントの側に `run:` と名前が*揃っている*ときだけ**（下の「守らない」）。
 - **行末コメントの中の名前を、生きた名前として数えない。**
 - **`check-X.py` が `test-check-X.py` に覆い隠されない**（#136 で 6 本が隠れていた）。
-- **引用符の中の `#` で切らない**——切ると、その後ろの名前が落ちて「無い」と誤報する。
-- **語の途中のアポストロフィで引用符を開かない**——開くと**行末まで閉じず、
-  コメントが丸ごと「生きている」側に入る**（`run: echo don't  # python3 scripts/x.py`）。
-  **これは偽陰性で、#155 の欠陥と同じ向きである**——`/code-review` の 1 パス目が実測で見つけた。
+- **引用された値の中の `#` で切らない**——切ると、その後ろの名前が落ちて「無い」と誤報する。
+- **引用された値と見なすのは、*値の先頭に立ち、同じ行で閉じた*引用符だけ。**
+  **それ以外の引用符は 1 つも数えない。** この 1 行が、**同じ向きの偽陰性を 3 つ塞いでいる**
+  ——**語の途中のアポストロフィ**（`echo don't`。1 パス目の HIGH）、
+  **値の途中の引用符でパリティが反転する形**（`--sep=", "`。2 パス目の HIGH）、
+  **退避した引用符で反転する形**（`--m "a\\" b "`。2 パス目の MEDIUM）。
+  **3 つとも、コメントが丸ごと「生きている」側に入って黙って緑になっていた**
+  ——**#155 の欠陥と同じ向きである。** **どちらの穴も、歯止めを足した当人が作った。**
+- **閉じない引用符を信じない**（`run: "unterminated  # …`）。
+  **信じると行末までが「値」になってコメントを飲み込む。**
+  **信じない側に倒すと向きは偽陽性**（在るのに「無い」）——**倒れてよいのはこちら。**
 
 守らない:
 
@@ -55,8 +62,12 @@
 - **ワークフローファイルごと消す・`on:` を変える**——**`*.yml` を読むだけなので、
   そのファイルが実際に起動するかは見ていない。**
 - **`*.yaml`（拡張子違い）は読まない。**
-- **引用符の中の `\\"` のような退避は解さない**——そこで閉じたと見なす。
+- **引用された値の中の `\\"` のような退避は解さない**——そこで閉じたと見なすので、
+  **`run: "a \\" b # scripts/x.py"` の後半が値ではなくコメントとして切れる。**
   **向きは偽陽性**（在るのに「無い」と言う）なので、**黙って素通しはしない。**
+  **素の値の中に引用符が出てくる形**（`run: echo "a # scripts/x.py"`）**は、
+  そもそも引用された値として扱わない**——**yaml 自身がそこで切る**ので、
+  **名前を「走っている」と数えないのが正しい。**
 """
 
 from __future__ import annotations
@@ -238,37 +249,64 @@ def test_registry_covers_every_script() -> None:
 NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")
 
 
-def opens_quote(line: str, i: int) -> bool:
-    """引用符が**値の先頭に立っているときだけ**、引用符として開く。
+# **値の先頭に立つ引用符**——行頭（空白を除く）か、`- ` の後ろか、`key: ` の後ろ。
+VALUE_QUOTE_RE = re.compile(r"""\s*(?:-\s+)?(?:[^\s:#]+:\s+)?(["'])""")
 
-    **語の途中のアポストロフィ（`echo don't`）で開いてはならない。**
-    開くと**閉じないまま行末まで走り、その行のコメントが丸ごと「生きている」側に入る**
-    ——**`run: echo don't  # python3 scripts/check-foo.py` が「走っている」と数えられる。**
-    **向きは偽陰性で、#155 が閉じようとしている欠陥そのものである。**
-    **`/code-review` の 1 パス目が、実際の `plugins.yml` で赤にならないことを示して見つけた**
-    ——**歯止めを足した当人が、同じ型の穴を別の場所に作っていた**（#136 と同じ形）。
+
+def quoted_span(line: str) -> tuple[int, int] | None:
+    """**値の先頭に立つ引用符**が張る範囲 `(開き, 閉じ)` を返す。無ければ `None`。
+
+    **引用符を、行のどこにあっても数えてはならない**——**パリティが途中で反転する。**
+    `run: echo skip --sep=", "  # python3 scripts/x.py` では、**`=` の後ろの `"` は開かず、
+    空白の後ろの閉じ `"` のほうが「開き」と読まれて**、そこから行末までが「値」になり、
+    **コメントが丸ごと「生きている」側に入った**（**偽陰性**。#155 と同じ向き）。
+    **`/code-review` の 2 パス目が、実物の `plugins.yml` で rc=0 のままになることを示した**
+    ——**1 パス目の修正（語の先頭でだけ開く）では届いていなかった。**
+
+    **同じ行の中で閉じない引用符は信じない**（`None` を返す）。
+    **信じると、そこから行末までが「値」になってコメントを飲み込む。**
+    **返さなければ `#` の規則がそのまま働き、向きは偽陽性**（在るのに「無い」と言う）
+    ——**宣言どおり、倒れてよいのはこちら側である。**
     """
-    return i == 0 or line[i - 1] in " \t:"
+    m = VALUE_QUOTE_RE.match(line)
+    if not m:
+        return None
+    open_i = m.end() - 1
+    close_i = line.find(m.group(1), open_i + 1)
+    if close_i == -1:
+        return None
+    return open_i, close_i
+
+
+def comment_at(line: str, start: int) -> int:
+    """`#` が**コメントを始める**位置を `start` 以降から探す。無ければ `-1`。
+
+    **`#` がコメントを始めるのは、行頭か、直前が空白のときだけ**（`a#b` は値の一部）。
+    """
+    for i in range(start, len(line)):
+        if line[i] == "#" and (i == 0 or line[i - 1] in " \t"):
+            return i
+    return -1
 
 
 def split_comment(line: str) -> tuple[str, str]:
     """yaml の 1 行を「生きている部分」と「コメントの部分」に割る。
 
-    **`#` がコメントを始めるのは、行頭か、直前が空白のときだけ**（`a#b` は値の一部）。
-    **引用符の中の `#` はコメントではない**——そこで切ると、**後ろに書かれた
-    スクリプト名が落ちて「CI に無い」と誤報する**。向きは偽陽性（在るのに「無い」）なので
-    #155 の欠陥とは逆だが、**誤報には違いない。**
+    **引用された値の中の `#` はコメントではない**——そこで切ると、**後ろに書かれた
+    スクリプト名が落ちて「CI に無い」と誤報する**（偽陽性）。
+    **見るのは「値の先頭に立ち、同じ行で閉じた引用符」だけ**で、
+    **それ以外の引用符は 1 つも数えない**（`quoted_span` の docstring が理由を持つ）。
     """
-    quote = ""
-    for i, ch in enumerate(line):
-        if quote:
-            if ch == quote:
-                quote = ""
-        elif ch in "\"'" and opens_quote(line, i):
-            quote = ch
-        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
-            return line[:i], line[i:]
-    return line, ""
+    span = quoted_span(line)
+    start = 0
+    while True:
+        i = comment_at(line, start)
+        if i == -1:
+            return line, ""
+        if span and span[0] < i < span[1]:
+            start = span[1] + 1  # 引用された値の中——その先を探す
+            continue
+        return line[:i], line[i:]
 
 
 def scan_ci_runs(ci: str) -> tuple[set[str], set[str]]:
@@ -400,6 +438,15 @@ jobs:
       - name: 語の途中のアポストロフィ
         run: echo don't  # python3 scripts/check-apostrophe.py
 
+      - name: 値の途中の引用符（パリティが反転しうる形）
+        run: echo skip --sep=", "  # python3 scripts/check-midquote.py
+
+      - name: 値の先頭の引用符が閉じない（安全側＝コメント扱いに倒す）
+        run: "unterminated  # python3 scripts/check-unterminated.py
+
+      - name: 素の値の中の引用符（yaml はここで切る）
+        run: echo "a # python3 scripts/check-plainhash.py"
+
       # - name: 名前と run: を別の行に割って止めたステップ（**守らない**）
       #   run:
       #     python3 scripts/check-dead-split.py
@@ -416,6 +463,11 @@ jobs:
 # **コメントアウトされたステップを抜くと、「それと分かる形で拾う」契約が空振りする**
 # （#151 が言う「試料についての主張」。**書いた時点から一度も実行されない**のを避ける）:
 # mutation-claim: {"file": "scripts/test-check-all.py", "old": "      #   run: python3 scripts/check-dead.py\n", "new": "", "red": "python3 scripts/test-check-all.py"}
+# **ラベルだけの行は、消しても緑になる**（`not in seen` が名前ごと消えて恒真になり、
+# `run:` の行に限らない 変異は別の行が殺す）。**`/code-review` の 2 パス目が数えて見つけた。**
+# **だから「消す」ではなく「`run:` に変える」で留める**——**消されたらマーカーの当て先が
+# 無くなり、`check-mutation-claims.py` が「当てられなかった」で赤にする**（緑ではない）:
+# mutation-claim: {"file": "scripts/test-check-all.py", "old": "      - name: scripts/check-label-only.py のラベルにだけ名前がある", "new": "        run: scripts/check-label-only.py のラベルにだけ名前がある", "red": "python3 scripts/test-check-all.py"}
 
 
 def scan_contract(scan) -> list[tuple[str, bool]]:
@@ -442,6 +494,15 @@ def scan_contract(scan) -> list[tuple[str, bool]]:
         # **片側だけ試料に置くと、切り損ねる欠陥を契約が判別できない**
         # （`/code-review` 1 パス目の指摘。**実際にこの向きの穴が残っていた**）。
         ("語の途中のアポストロフィで引用符を開かない", "check-apostrophe.py" not in seen),
+        # **2 パス目の HIGH の回帰止め**——**値の途中の引用符でパリティが反転すると、
+        # そこから行末までが「値」になってコメントを飲み込んだ**（偽陰性）。
+        ("値の途中の引用符でパリティを反転させない", "check-midquote.py" not in seen),
+        ("値の先頭の引用符が閉じないなら信じない（安全側に倒す）",
+         "check-unterminated.py" not in seen),
+        # **素の値（引用符で始まらない値）の中の引用符は、yaml でも値を守らない**
+        # ——`run: echo "a # x"` は ` #` で切れる。**`live` に入れてはならない。**
+        ("素の値の中の引用符は、引用された値として扱わない",
+         "check-plainhash.py" not in seen),
         # **守らないものも契約に書く**——**限界を機械で見える形に留める**ため。
         # **黙って射程が変わったら、docstring の「守らない」と食い違ったまま緑になる。**
         ("名前と `run:` が別の行に割れたコメントアウトは、コメント側として拾えない（守らない）",
@@ -461,14 +522,17 @@ CODE_ONLY = SELF_SRC.split("\nSCAN_MUTANTS")[0]
 
 SCAN_MUTANTS = {
     "コメントの始まりを見ない": (
-        '        elif ch == "#" and (i == 0 or line[i - 1] in ',
-        '        elif False and (i == 0 or line[i - 1] in '),
-    "引用符を見ない": ("        elif ch in ", "        elif False and ch in "),
-    "語の途中でも引用符を開く": (
-        r'    return i == 0 or line[i - 1] in " \t:"', "    return True"),
+        '        if line[i] == "#" and (i == 0 or line[i - 1] in ',
+        '        if False and (i == 0 or line[i - 1] in '),
+    "引用された値を見ない": ("    span = quoted_span(line)", "    span = None"),
+    "閉じない引用符も信じる": (
+        "    if close_i == -1:\n        return None",
+        "    if close_i == -1:\n        close_i = len(line)"),
+    "引用符を行のどこでも開く": (
+        '    m = VALUE_QUOTE_RE.match(line)', '    m = VALUE_QUOTE_RE.search(line)'),
     "生きている側とコメント側を取り違える": (
-        "            return line[:i], line[i:]",
-        "            return line[i:], line[:i]"),
+        "        return line[:i], line[i:]",
+        "        return line[i:], line[:i]"),
     "`run:` の行に限らない": ('        if "run:" in code:', "        if True:"),
     "コメント側を集めない": ('        if "run:" in comment:', "        if False:"),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
