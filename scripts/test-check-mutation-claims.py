@@ -673,6 +673,18 @@ def run_all(escape: Path) -> int:
         # 先に打ち切られ、`base_rc != 0` の側で止まる。** **3 度目だけを止める試料が要る。**
         hang_mod = load()
         hang_mod.TIMEOUT = HANG_TIMEOUT
+        # **打ち切ったあとに 2 本目を走らせないことも数える。**
+        # **戻しても判定も理由も 1 文字も変わらない**——**違うのは回数と時間だけ**なので、
+        # **数えないと、この最適化は誰にも見張られない**
+        # （3 巡目の Verifier が「実行されない主張がまた 1 つ増えている」と指摘した）。
+        hang_calls = {"n": 0}
+        hang_real_run = hang_mod.run
+
+        def hang_counting(command, cwd):
+            hang_calls["n"] += 1
+            return hang_real_run(command, cwd)
+
+        hang_mod.run = hang_counting
         _, out_hang = observe(hang_mod, hang)
         got_hang = verdicts(out_hang)
         check("2 度目が走らなければ『当てられなかった』（守る 16）",
@@ -680,6 +692,9 @@ def run_all(escape: Path) -> int:
         check("その理由は『揺れている』ではなく『走らなかった』（守る 16）",
               "陽性対照の当て直しが走らなかった" in out_hang
               and "変異を戻して 2 度走らせても同じ結果にならない" not in out_hang)
+        # **陽性対照 1 回 ＋ 変異 1 回 ＋ 当て直しの 1 本目（打ち切り）。** 2 本目は走らない。
+        check(f"打ち切ったら 2 本目を走らせない（{hang_calls['n']} 回・守る 16）",
+              hang_calls["n"] == 3)
 
         print("\n追加の実行は、倒れる直前でしか起きない（I5）")
         # **配置を何も押さえていなかった**——**当て直しのブロックを
