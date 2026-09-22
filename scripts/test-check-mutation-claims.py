@@ -20,12 +20,12 @@ r"""`check-mutation-claims.py` の回帰テスト。
 **本体が起こす `red` コマンドまで偽物にする。** 実在のテストを呼ぶと、
 **このテストが落ちた理由が「本体の欠陥」なのか「呼ばれた側の都合」なのか分からなくなる。**
 
-**何をどこに作るかは `run_all()` と `build*()` を正とする**——**ここに一覧を置かない。**
+**何をどこに作るかは `run_all()`・`build*()`・`observe_leak()` を正とする**
+——**ここに一覧を置かない。**
 **一度ここに一覧を置き、2 パス続けて「不足している」と反証された**
 （1 度目は 4 件、直した次のパスでさらに 3 件と、変異ループが毎回作る木が抜けていた）
 ——**木は編集のたびに増えるので、写した一覧は必ず古くなる。**
 
-**ただし 1 つだけ、木ではないので `build*()` から読めないものがある**——
 `<TMPDIR>/cmc-escape-<pid>.txt` は**退避先の外**に置く的で、
 **`../` で指しても触られてはならない**ことを確かめるためにある（`escape_target()`）。
 
@@ -234,13 +234,12 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
     落ちる側だけ見ていても殺せない。
 
     **中断（`BaseException`）も当てる**——**これが無いと `except Exception:` へ狭めても
-    どの観測も変わらない**（上の 3 つはどれも `RuntimeError` ＝ `Exception` で落ちる）。
+    どの観測も変わらない**。
     **一度これを落としたまま「P5 は `BaseException` で受けて守っている」と経路表に書き、
     2 パス目の `/code-review` に「散文だけで、実行されない主張だ」と反証された。**
 
     **`.resolve()` が落ちる形も当てる**——**これが無いと `try` の開始位置を
-    `mkdtemp` の前に戻しても、どの観測も動かない**（上の 4 つはどれも
-    `.resolve()` の *後* で落ちる）。**3 パス目の `/code-review` が
+    `mkdtemp` の前に戻しても、どの観測も動かない**。**3 パス目の `/code-review` が
     「P5 とまったく同じ『散文だけ』の状態が P10 に残っている」と実測で反証した**
     ——**revert しても完全に緑のまま、実際には 1 件漏れていた。**
 
@@ -248,17 +247,29 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
     ——**「定数の 5-tuple にする」と書いた 2 行の下で実際は 7 要素になり、
     3 パス目の `/code-review` に反証された。** **キーで対応が読めれば、数は要らない。**
 
-    **退避先の親を 2 つとも試料の中に閉じ込める**ので、
-    **実 `$TMPDIR` は汚さない**（それは別の検査が端から端まで見る）。
+    **退避先の親を 2 つとも試料の中に閉じ込める**ので、**実 `$TMPDIR` は汚さない。**
+    **閉じ込めは `assert_not_real_repo` が*両方に*当たっていることで守る**
+    ——**一度 `leak_root` にしか当てておらず、散文だけが「2 つとも」と言っていた。**
     """
     assert_not_real_repo(leak_root)
+    assert_not_real_repo(parent)
     (leak_root / ".git").mkdir(exist_ok=True)
     (leak_root / "scripts").mkdir(parents=True, exist_ok=True)
     (leak_root / "scripts" / "subject.py").write_text("# leak\n", encoding="utf-8")
     parent.mkdir(exist_ok=True)
 
     def left(where: Path) -> int:
-        return len(list(where.glob("mutation-claims-*")))
+        """**数えたら掃く**——**掃かないと、次の probe が前の経路の残骸を数える。**
+
+        **P2・P5・P10 は退避先の親を共有している**ので、**累積すると
+        *直っている*経路まで赤になる**——実測で、`except Exception:` へ狭めると
+        **P10（`OSError` ＝ `Exception` なので捕まって畳まれる）まで赤になり、
+        将来の保守者を壊れていない経路に向かわせた**（4 パス目の `/code-review`）。
+        """
+        strays = list(where.glob("mutation-claims-*"))
+        for stray in strays:
+            shutil.rmtree(stray, ignore_errors=True)
+        return len(strays)
 
     def fell(call) -> str:
         try:
@@ -300,8 +311,7 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
 
         # **P10: `.resolve()` が落ちる**——**`mkdtemp()` は既に作っているのに、
         # 解決に失敗すると後始末を通らずに抜けうる形だった。**
-        # **最初の 1 回だけ落とす**——`make_sandbox` は `root` の側でも呼ぶので、
-        # 全部落とすと「どこで落ちたか」が判別できない。
+        # **最初の 1 回だけ落とす。**
         calls = {"n": 0}
         keep_resolve = pathlib.Path.resolve
 
@@ -588,6 +598,28 @@ def run_all(escape: Path) -> int:
             check("実リポジトリを対象にすると落ちる", True)
         else:
             check("実リポジトリを対象にすると落ちる", False)
+        # **どの引数に当たっているかも見る。** **歯止めが在ることは、*全部*に
+        # 当たっていることではない**——`observe_leak` は長らく `leak_root` にしか
+        # 当てておらず、**`tempfile.tempdir` に据えて `rmtree` する `parent` は
+        # 素通しだった**（散文だけが「2 つとも」と言っていた）。
+        # **実リポジトリを渡して落ちるかを見る形は採らない**——**歯止めを外した状態で
+        # それを走らせると、当の実リポジトリに書いてしまう。**
+        # **だから歯止めを記録する体に差し替えて、当たった先を数える。**
+        seen: list[Path] = []
+        keep_guard = globals()["assert_not_real_repo"]
+
+        def recording(p: Path) -> None:
+            seen.append(Path(p))
+            keep_guard(p)
+
+        globals()["assert_not_real_repo"] = recording
+        try:
+            observe_leak(mod, leak_root, leak_parent)
+        finally:
+            globals()["assert_not_real_repo"] = keep_guard
+        check("退避先の親にも歯止めが当たっている",
+              {p.resolve() for p in seen}
+              >= {leak_root.resolve(), leak_parent.resolve()})
 
         print("\n端から端まで — #157 の再現を、別プロセスで当てる")
         # **#157 を起こしたのは変異 2（`.git` を複製に持ち込む）を当てた回**で、
