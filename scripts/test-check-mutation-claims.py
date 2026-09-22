@@ -238,10 +238,17 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
     **一度これを落としたまま「P5 は `BaseException` で受けて守っている」と経路表に書き、
     2 パス目の `/code-review` に「散文だけで、実行されない主張だ」と反証された。**
 
-    **`.resolve()` が落ちる形も当てる**——**これが無いと `try` の開始位置を
-    `mkdtemp` の前に戻しても、どの観測も動かない**。**3 パス目の `/code-review` が
+    **`.resolve()` が落ちる形も当てる**——**これが無いと `.resolve()` を
+    `try` の *外* へ戻しても、どの観測も動かない**。**3 パス目の `/code-review` が
     「P5 とまったく同じ『散文だけ』の状態が P10 に残っている」と実測で反証した**
     ——**revert しても完全に緑のまま、実際には 1 件漏れていた。**
+
+    **当てる変異を言い間違えていた（2 パス目の `/code-review`）。** 以前ここは
+    **「`try` の開始位置を `mkdtemp` の前に戻す」**と書いていたが、
+    **その変異は当てても suite が完全に緑のまま**である（実測）
+    ——**`mkdtemp()` を `try` の中に入れても、畳む対象は同じなので挙動が変わらない**
+    （**等価変異**）。**P10 が実際に判別するのは `.resolve()` を `try` の外へ戻す形**で、
+    **そのとき `.resolve()` が落ちた周は `try` へ一度も入らず、退避先が残る。**
 
     **返すのは辞書である**（タプルではない）。**要素数を数えた言葉を書かないため**
     ——**「定数の 5-tuple にする」と書いた 2 行の下で実際は 7 要素になり、
@@ -544,7 +551,9 @@ def run_all(escape: Path) -> int:
         check("中断（`KeyboardInterrupt`）でも落ちる", leak["stopped"] == "KeyboardInterrupt")
         check("中断でも退避先が残らない（`Exception` では捕まらない）",
               leak["stopped_left"] == 0)
-        # **これが無いと、後始末の開始位置を `mkdtemp` の前に戻しても観測が動かない。**
+        # **これが無いと、`.resolve()` を `try` の *外* へ戻しても観測が動かない。**
+        # **「後始末の開始位置を `mkdtemp` の前に戻す」と書いていたのは誤り**
+        # ——**その変異は当てても完全に緑**（等価変異。2 パス目の `/code-review`）。
         check("`.resolve()` が落ちても投げ直す", leak["unresolved"] == "OSError")
         check("`.resolve()` が落ちても退避先が残らない", leak["unresolved_left"] == 0)
         # **落ちる側だけ見ていると、`try` を広げすぎて*返すべき退避先まで畳む*形を見逃す。**
@@ -647,11 +656,25 @@ def run_all(escape: Path) -> int:
         # 単独の変異では殺せない**（`MUTATIONS` は 1 度に 1 箇所しか壊さない）。
         # **だから退避先の親に的を 1 つ植えて、それが*次の経路に持ち越されない*ことを見る。**
         # **掃かなければ、同じ的を P2・P5・P10 が数え続ける。**
+        #
+        # **絶対値で見てはならない（必須）。** **`left()` の戻り値は
+        # 「的の寄与」と「本体が畳まなかった分」の和**なので、
+        # **絶対値で見ると、掃きが正常でも本体の後始末が変わっただけで赤くなる。**
+        # **2 パス目の `/code-review` が実測で反証し、こちらでも 2 通りで再現した**
+        # ——**`except BaseException:` を `Exception` に狭めると `stopped_left` が 1 に、
+        # `.resolve()` を `try` の外へ戻すと `unresolved_left` が 1 になり、
+        # どちらも掃きは正常なのにこの検査が赤くなった。**
+        # **それは「掃き」という名前で別の原因を指す偽の赤**であり、
+        # **この周が `.resolve()` の偽の赤を消したのとまったく同じ害**である。
+        # **だから的の寄与だけを見る**——**植える前との差を取る。**
+        # **差にすれば、本体が何を畳まなくなっても同じ分が両側に乗って消える。**
+        before = observe_leak(mod, leak_root, leak_parent)
         planted = leak_parent / "mutation-claims-planted"
         planted.mkdir(parents=True, exist_ok=True)
         swept = observe_leak(mod, leak_root, leak_parent)
         check("数えた退避先は掃かれ、次の経路に持ち越されない",
-              (swept["dotgit_left"], swept["stopped_left"], swept["unresolved_left"])
+              tuple(swept[k] - before[k]
+                    for k in ("dotgit_left", "stopped_left", "unresolved_left"))
               == (1, 0, 0))
 
         print("\n端から端まで — #157 の再現を、別プロセスで当てる")
