@@ -90,6 +90,7 @@ SUBJECT = (
     "# WARM\n"
     "# PHASE\n"
     "# ROT\n"
+    "# LATE\n"
     "# TWICE\n"
     "# TWICE\n"
     "# SENTINEL\n"
@@ -155,6 +156,20 @@ ROTTED_TEST = (
     "sys.exit(1 if n >= 3 else 0)\n"
 )
 
+# **もっと後から落ち始める `red`**（守る 16 / #156）。**5 回目から非ゼロになる。**
+# **`ROTTED_TEST` の腐りは k+1・k+2 で現れる**ので `first[0] != 0` が捕まえるが、
+# **当て直した変異の回（k+3）で初めて落ちる形**はそこを素通りする。
+# **証拠を捨てて「変異を当てても rc=0 のまま」と言うと、その文が literally 偽になる**
+# ——**3 パス目の `/code-review` が実測で反証した。**
+LATE_ROT_TEST = (
+    "import pathlib, sys\n"
+    'p = pathlib.Path("late-count.txt")\n'
+    'n = (int(p.read_text()) + 1) if p.exists() else 1\n'
+    'p.write_text(str(n))\n'
+    'print("phase1" if n == 1 else ("phase2" if n == 2 else "steady"))\n'
+    "sys.exit(1 if n >= 5 else 0)\n"
+)
+
 ALWAYS_RED = "import sys\nsys.exit(1)\n"
 
 
@@ -203,6 +218,7 @@ def build(root: Path) -> tuple[dict[str, int], int]:
     (root / "scripts" / "warm_test.py").write_text(WARM_TEST, encoding="utf-8")
     (root / "scripts" / "two_phase_test.py").write_text(TWO_PHASE_TEST, encoding="utf-8")
     (root / "scripts" / "rotted_test.py").write_text(ROTTED_TEST, encoding="utf-8")
+    (root / "scripts" / "late_rot_test.py").write_text(LATE_ROT_TEST, encoding="utf-8")
     (root / "scripts" / "escape_test.py").write_text(
         escape_test_body(), encoding="utf-8")
     (root / "fenced-broken.md").write_text(FENCED_BROKEN, encoding="utf-8")
@@ -241,6 +257,10 @@ def build(root: Path) -> tuple[dict[str, int], int]:
         # **当て直した対照が緑であることを要求しないと「主張が偽」と読む。**
         ("rotted", marker(file=subject, old="# ROT", new="# ROT2",
                           red="python3 scripts/rotted_test.py")),
+        # **当て直した変異の回で初めて落ちる形**（守る 16 / #156）。
+        # **`first[0] != 0` を素通りするので、ここまで来る。**
+        ("laterot", marker(file=subject, old="# LATE", new="# LATE2",
+                           red="python3 scripts/late_rot_test.py")),
         # **必須のキーは全部あって、余計なキーが 1 つだけある形。**
         # **これが無いと「未知のキーを拒否する」変異が殺せない**
         # ——足りないキーの側で先に落ちてしまい、区別がつかない。
@@ -261,7 +281,8 @@ def build(root: Path) -> tuple[dict[str, int], int]:
     lines += ["書式の例はフェンスに入れる:", "", "```text",
               marker(file=subject, old="# KEEP", new="# GONE", red=RED), "```", ""]
     (root / "claims.md").write_text("\n".join(lines), encoding="utf-8")
-    # claims.md の 8 件 ＋ subject.py の中の 1 件（fenced-broken.md はファイル単位で broken）
+    # claims.md の全件 ＋ subject.py の中の 1 件（fenced-broken.md はファイル単位で broken）
+    # **件数を書かない**——試料を足すたびに古くなる（3 パス目の `/code-review` が指摘）。
     return where, len(entries) + 1 + 1
 
 
@@ -295,7 +316,9 @@ HANG_TEST = (
 )
 
 # **打ち切りを待つ秒数。** **短いほどテストが速いが、遅い機械で 1・2 度目まで
-# 打ち切られると、この試料は別の分岐に落ちて主張を実演しなくなる。**
+# 打ち切られると、`base_rc` が `None` になって別の分岐に落ちる。**
+# **そのとき黙って劣化するのではなく、この節の検査が赤になる**——**CI のちらつきであって、
+# 気づけない縮退ではない**（3 パス目の `/code-review` が、ここの記述が偽だと指摘した）。
 HANG_TIMEOUT = 10
 
 
@@ -667,6 +690,11 @@ def run_all(escape: Path) -> int:
               got.get(f"claims.md:{where['rotted']}") == "当てられなかった")
         check("その理由は『当て直しでは緑でない』（守る 16）",
               "陽性対照が当て直しでは緑でない" in out)
+        # **証拠を捨てて「rc=0 のまま」と言うと、その文が literally 偽になる**（守る 16）。
+        check("当て直した変異の回で落ちる `red` は『当てられなかった』（守る 16）",
+              got.get(f"claims.md:{where['laterot']}") == "当てられなかった")
+        check("その理由は『変異を当てた回の rc が再現しない』（守る 16）",
+              "変異を当てた回の rc が再現しない" in out)
         # **走らなかったことを「非決定的だ」と言わない**（守る 16）。
         # **判定はどちらも `当てられなかった` なので、理由を見ないと黙って通る。**
         # **`TIMEOUT` を一律に縮めても、この経路には入れない**——**1 度目の陽性対照が
