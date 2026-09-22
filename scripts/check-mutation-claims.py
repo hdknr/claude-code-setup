@@ -84,6 +84,9 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 - **退避先は、作った関数が自分で畳む**——**安全弁で落ちたときも残さない**（#157）。
   **後始末を呼ぶ側の `finally` に預けると、`make_sandbox` が例外で抜けた周は
   その `finally` に入らない**ので、**歯止めが自分で後始末を落とす。**
+- **中断されたときも畳む**——**`Exception` ではなく `BaseException` で受ける**（#157）。
+  **`KeyboardInterrupt` は `Exception` では捕まらない**のに、**歯止めが残骸を残すのは
+  まさに中断されたとき**である。
 
 守らない:
 

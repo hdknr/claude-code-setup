@@ -28,6 +28,10 @@ r"""`check-mutation-claims.py` の回帰テスト。
     root/claims.md                マーカー（フェンスの中に 1 つ紛れ込ませてある）
     root/fenced-broken.md         閉じ忘れたフェンスの後ろにマーカーがある形
     root/.git/                    **複製に持ち込まれてはならないもの**
+    leak-tree/                    退避先の消し残しを観測する的（`.git` を持つ・#157）
+    leak-parent/                  **その退避先の親**。実 `$TMPDIR` を汚さないために閉じ込める
+    iso-tmp/                      **端から端まで**で子に渡す隔離した `TMPDIR`
+    mut-dotgit/                   **変異 2 を当てた本体**を置いて、別プロセスとして走らせる
     <TMPDIR>/cmc-escape-<pid>.txt **退避先の外**。`../` で指しても触られてはならない
 
 dup-counts-ok: 変異
@@ -233,6 +237,11 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> tuple:
     **正常系も併せて見る**——**`try` を広げすぎて*返すべき退避先まで畳む*変異**は、
     落ちる側だけ見ていても殺せない。
 
+    **中断（`BaseException`）も当てる**——**これが無いと `except Exception:` へ狭めても
+    どの観測も変わらない**（上の 3 つはどれも `RuntimeError` ＝ `Exception` で落ちる）。
+    **一度これを落としたまま「P5 は `BaseException` で受けて守っている」と経路表に書き、
+    2 パス目の `/code-review` に「散文だけで、実行されない主張だ」と反証された。**
+
     **退避先の親を 2 つとも試料の中に閉じ込める**ので、
     **実 `$TMPDIR` は汚さない**（それは別の検査が端から端まで見る）。
     """
@@ -269,6 +278,20 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> tuple:
             mod._ignore = keep_ignore
         dotgit_left = left(parent)
 
+        # **P5: 中断**——`copytree` の最中に `KeyboardInterrupt` が届いた形。
+        # **`Exception` では捕まらない**ので、**`except Exception:` に狭めるとここだけ残る。**
+        keep_copytree = mod.shutil.copytree
+
+        def interrupted(*_a, **_k):
+            raise KeyboardInterrupt("probe: 中断")
+
+        mod.shutil.copytree = interrupted
+        try:
+            stopped = fell(lambda: mod.make_sandbox(leak_root))
+        finally:
+            mod.shutil.copytree = keep_copytree
+        stopped_left = left(parent)
+
         # **正常系は畳まない**——退避先が返り、中身が入っている。
         normal: tuple = ()
         try:
@@ -281,7 +304,7 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> tuple:
         tempfile.tempdir = keep_tempdir
         for stray in list(leak_root.glob("mutation-claims-*")) + list(parent.glob("mutation-claims-*")):
             shutil.rmtree(stray, ignore_errors=True)
-    return (inside, inside_left, dotgit, dotgit_left, normal)
+    return (inside, inside_left, dotgit, dotgit_left, stopped, stopped_left, normal)
 
 
 def snapshot(mod, root: Path, only_na: Path, missing: Path,
@@ -310,7 +333,7 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         # **一度これを `observe(mod, root)` で書き、`/code-review` が実測で反証した**
         # ——**すぐ上の `only_na` の項がまさにその形を警告しているのに、同じ差分の中で踏んだ。**
         # **だから定数の 5-tuple にする**——**アリティも要素数も変えずに、観測だけ殺す。**
-        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        (\"RuntimeError\", 0, \"RuntimeError\", 0, (True, True)),", "red": "python3 scripts/test-check-mutation-claims.py"}
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        (\"RuntimeError\", 0, \"RuntimeError\", 0, \"KeyboardInterrupt\", 0, (True, True)),", "red": "python3 scripts/test-check-mutation-claims.py"}
         observe_leak(mod, leak_root, leak_parent),
     )
 
@@ -385,6 +408,10 @@ MUTATIONS = {
         "        raise",
         "    except BaseException:\n"
         "        raise"),
+    # 守る 15: 中断されたときも畳む（#157）
+    "中断を捕まえない（`Exception` に狭める）": (
+        "    except BaseException:\n        shutil.rmtree(created",
+        "    except Exception:\n        shutil.rmtree(created"),
 }
 
 
@@ -466,13 +493,16 @@ def run_all(escape: Path) -> int:
         finally:
             shutil.rmtree(box, ignore_errors=True)
 
-        print("\n落ちたときに退避先を消し残さない（守る 14 / #157）")
-        inside, inside_left, dotgit, dotgit_left, normal = leak
+        print("\n落ちたときに退避先を消し残さない（守る 14・15 / #157）")
+        inside, inside_left, dotgit, dotgit_left, stopped, stopped_left, normal = leak
         check("退避先が原本の内側なら落ちる（`copytree` の前）", inside == "RuntimeError")
         check("その落ち方で退避先が残らない", inside_left == 0)
         check("`.git` が残っていれば落ちる（`copytree` の後・#157 を起こした道）",
               dotgit == "RuntimeError")
         check("その落ち方でも退避先が残らない", dotgit_left == 0)
+        # **これが無いと `except Exception:` へ狭めてもどの観測も変わらない**（守る 15）。
+        check("中断（`KeyboardInterrupt`）でも落ちる", stopped == "KeyboardInterrupt")
+        check("中断でも退避先が残らない（`Exception` では捕まらない）", stopped_left == 0)
         # **落ちる側だけ見ていると、`try` を広げすぎて*返すべき退避先まで畳む*形を見逃す。**
         check("正常系では退避先を返し、中身が入っている", normal == (True, True))
 
@@ -555,6 +585,13 @@ def run_all(escape: Path) -> int:
         said = proc.stdout + proc.stderr
         check("子は安全弁まで辿り着いて落ちた（陽性対照）",
               proc.returncode != 0 and "退避先に .git が残っている" in said)
+        # **数えている場所が合っているかも見る（必須）。** **辿り着いたことは、
+        # *ここ*を数えてよいことを意味しない**——**`TMPDIR` のキーを 1 文字打ち間違えるだけで、
+        # 子は実 `$TMPDIR` に作り、`iso` は永久に空になる**（`0 件` で緑のまま）。
+        # **実測で再現された**（2 パス目の `/code-review`。**打ち間違い＋後始末を外した状態で、
+        # この検査は緑のまま、実 `$TMPDIR` に 2 件漏れた**）。
+        # **子の `RuntimeError` は退避先のパスを名乗る**ので、そこで確かめる。
+        check("子の退避先は、隔離した TMPDIR の中にあった", str(iso.resolve()) in said)
         strays = list(iso.glob("mutation-claims-*"))
         check(f"変異 2 を当てた実行が退避先を残さない（{len(strays)} 件）", not strays)
 
