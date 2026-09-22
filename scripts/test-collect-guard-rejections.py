@@ -244,8 +244,6 @@ def main() -> int:
 
         # **0 件でも内訳を出す**（#137）。**docstring が「必ず出力する」と言っている**ので、
         # **いちばん怪しい場合だけ出ない**のでは主張が偽になる。
-        # **標準出力を見る唯一のアサート**——`observe` は `collect` しか呼ばないので、
-        # **`main()` の出力の形は、ここを書くまで 1 度も走っていなかった。**
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             code = mod.main(["--root", str(empty)])
@@ -253,6 +251,35 @@ def main() -> int:
         check("0 件でも母集団の内訳を出す（#137）",
               "=== 母集団の内訳 ===" in printed and "0  main-chain" in printed)
         check("0 件は既定では失敗にしない", code == 0)
+
+        # **0 件の枝だけでは、印字の側を判別できない**（#137 の 2 パス目が指摘）。
+        # **0 件では main も sidechain も 0 なので、札を入れ替えても、
+        # sidechain の行を消しても、この上のアサートは緑のままである。**
+        # **だから「値が違う試料」で印字そのものを見る**——`collect()` が返す辞書を
+        # 見るアサートは、**印字の側には 1 件も当たっていない。**
+        print("\n空でない試料で、印字される内訳を見る（#137）")
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = mod.main(["--root", str(root)])
+        printed = buffer.getvalue()
+        check("印字される内訳が main 5 / sidechain 1（札の入れ替えを見る）",
+              "5  main-chain" in printed and "1  sidechain（サブエージェント）" in printed)
+        check("空でない走査は 0 を返す", code == 0)
+
+        # **`--json` は「870 を当て直す唯一の機械的手段」として docstring が名指ししている**
+        # （I1）。**名指ししているのに 1 度も走っていない**のでは、主張が偽になりうる。
+        # **当て直しに要る 2 つの鍵（`sidechain` と `timestamp`）が在ること**まで見る。
+        out_json = tmpdir / "events.json"
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            mod.main(["--root", str(root), "--json", str(out_json)])
+        dumped = json.loads(out_json.read_text(encoding="utf-8"))
+        check("`--json` が書き出され、件数が一致する", len(dumped) == 6)
+        check("`--json` の各件が `sidechain` と `timestamp` を持つ（870 の当て直しに要る）",
+              all("sidechain" in e and "timestamp" in e for e in dumped))
+        check("`--json` で main 5 / sidechain 1 に分けられる",
+              (sum(1 for e in dumped if not e["sidechain"]),
+               sum(1 for e in dumped if e["sidechain"])) == (5, 1))
 
         print("\n理由節が取れない形は None にする（黙って畳まない）")
         odd = tmpdir / "odd"

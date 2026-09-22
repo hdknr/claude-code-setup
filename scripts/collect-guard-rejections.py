@@ -275,7 +275,7 @@ def main(argv=None):
     # **0 件の枝より前に置く。** 後ろに置くと、**いちばん怪しい場合**——収集が
     # 届いていないかもしれない 0 件——だけ内訳が出ない。
     sidechain = sum(1 for e in events if e["sidechain"])
-    print(f"\n=== 母集団の内訳 ===")
+    print("\n=== 母集団の内訳 ===")
     print(f"  {len(events) - sidechain:>6}  main-chain")
     print(f"  {sidechain:>6}  sidechain（サブエージェント）")
 
