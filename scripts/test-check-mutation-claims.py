@@ -245,9 +245,8 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
 
     **当てる変異を言い間違えていた（2 パス目の `/code-review`）。** 以前ここは
     **「`try` の開始位置を `mkdtemp` の前に戻す」**と書いていたが、
-    **その変異は当てても suite が完全に緑のまま**である（実測）
-    ——**`mkdtemp()` を `try` の中に入れても、畳む対象は同じなので挙動が変わらない**
-    （**等価変異**）。**P10 が実際に判別するのは `.resolve()` を `try` の外へ戻す形**で、
+    **その変異は当てても suite が完全に緑のまま**である（実測）。
+    **P10 が実際に判別するのは `.resolve()` を `try` の外へ戻す形**で、
     **そのとき `.resolve()` が落ちた周は `try` へ一度も入らず、退避先が残る。**
 
     **返すのは辞書である**（タプルではない）。**要素数を数えた言葉を書かないため**
@@ -553,7 +552,7 @@ def run_all(escape: Path) -> int:
               leak["stopped_left"] == 0)
         # **これが無いと、`.resolve()` を `try` の *外* へ戻しても観測が動かない。**
         # **「後始末の開始位置を `mkdtemp` の前に戻す」と書いていたのは誤り**
-        # ——**その変異は当てても完全に緑**（等価変異。2 パス目の `/code-review`）。
+        # ——**その変異は当てても完全に緑**（2 パス目の `/code-review`）。
         check("`.resolve()` が落ちても投げ直す", leak["unresolved"] == "OSError")
         check("`.resolve()` が落ちても退避先が残らない", leak["unresolved_left"] == 0)
         # **落ちる側だけ見ていると、`try` を広げすぎて*返すべき退避先まで畳む*形を見逃す。**
@@ -621,10 +620,21 @@ def run_all(escape: Path) -> int:
         # **`parent` が実リポジトリなら、そこに書いたあとで落ちることになる。**
         # **だから順序そのものを見る**——**歯止めと `mkdir` を 1 本の並びに記録し、
         # 歯止めが `mkdir` より前に出そろっていることを見る。**
+        # **作る側は 1 つの API ではない（3 パス目の `/code-review`）。**
+        # **`pathlib.Path.mkdir` だけを記録していたので、`os.mkdir`／`os.makedirs` で
+        # 作る形が丸ごと見えなかった**——**歯止めの *前* に `os.makedirs(parent)` を
+        # 入れても緑のままだった**（実測）。**この検査の名前は「何かを作る前に」なので、
+        # 記録する範囲が名前より狭いと、R1 が塞いだ穴が API を変えるだけで戻る。**
+        # **とくに、この節が危険と名指ししている `tempfile.mkdtemp` は `os.mkdir` を
+        # 使う**ので、**いちばん見たい経路がまさに記録の外にあった。**
+        # **逆向きにも壊れていた**——**既存の `Path.mkdir` を挙動同値な `os.makedirs` に
+        # 置き換えるだけで、この検査が単独で赤になった**（偽の赤）。**3 つとも記録する。**
         seen: list[Path] = []
         order: list[str] = []
         keep_guard = globals()["assert_not_real_repo"]
         keep_mkdir = pathlib.Path.mkdir
+        keep_os_mkdir = os.mkdir
+        keep_os_makedirs = os.makedirs
 
         def recording(p: Path) -> None:
             seen.append(Path(p))
@@ -635,13 +645,25 @@ def run_all(escape: Path) -> int:
             order.append("mkdir")
             return keep_mkdir(self, *a, **k)
 
+        def watching_os_mkdir(*a, **k):
+            order.append("mkdir")
+            return keep_os_mkdir(*a, **k)
+
+        def watching_os_makedirs(*a, **k):
+            order.append("mkdir")
+            return keep_os_makedirs(*a, **k)
+
         globals()["assert_not_real_repo"] = recording
         pathlib.Path.mkdir = watching_mkdir
+        os.mkdir = watching_os_mkdir
+        os.makedirs = watching_os_makedirs
         try:
             observe_leak(mod, leak_root, leak_parent)
         finally:
             globals()["assert_not_real_repo"] = keep_guard
             pathlib.Path.mkdir = keep_mkdir
+            os.mkdir = keep_os_mkdir
+            os.makedirs = keep_os_makedirs
         check("退避先の親にも歯止めが当たっている",
               {p.resolve() for p in seen}
               >= {leak_root.resolve(), leak_parent.resolve()})
