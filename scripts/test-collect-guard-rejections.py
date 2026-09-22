@@ -248,8 +248,13 @@ def main() -> int:
         with contextlib.redirect_stdout(buffer):
             code = mod.main(["--root", str(empty)])
         printed = buffer.getvalue()
-        check("0 件でも母集団の内訳を出す（#137）",
-              "=== 母集団の内訳 ===" in printed and "0  main-chain" in printed)
+        # **sidechain の行も見る。** main の行だけを見ていると、
+        # **`if sidechain:` で囲う素朴な整理**で 0 件のときの sidechain 行が消えても緑になる
+        # ——**docstring が「0 件のときも出す」と太字で言っている当のものが落ちる。**
+        check("0 件でも母集団の内訳を出す（#137。main と sidechain の両方）",
+              "=== 母集団の内訳 ===" in printed
+              and "0  main-chain" in printed
+              and "0  sidechain（サブエージェント）" in printed)
         check("0 件は既定では失敗にしない", code == 0)
 
         # **0 件の枝だけでは、印字の側を判別できない**（#137 の 2 パス目が指摘）。
@@ -272,9 +277,18 @@ def main() -> int:
         out_json = tmpdir / "events.json"
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            mod.main(["--root", str(root), "--json", str(out_json)])
-        dumped = json.loads(out_json.read_text(encoding="utf-8"))
-        check("`--json` が書き出され、件数が一致する", len(dumped) == 6)
+            code = mod.main(["--root", str(root), "--json", str(out_json)])
+        # **書き出しが壊れたときに、ここで例外を出して止めない。**
+        # **素の `json.loads(read_text())` だと `FileNotFoundError` で落ち、
+        # 以降の変異テスト 6 本と実環境の歯止めが丸ごと走らなくなる**
+        # ——**CI は赤いままだが、いちばん知りたいときに診断が消える。**
+        dumped = []
+        if out_json.exists():
+            try:
+                dumped = json.loads(out_json.read_text(encoding="utf-8"))
+            except ValueError:
+                dumped = []
+        check("`--json` が書き出され、件数が一致する", code == 0 and len(dumped) == 6)
         check("`--json` の各件が `sidechain` と `timestamp` を持つ（870 の当て直しに要る）",
               all("sidechain" in e and "timestamp" in e for e in dumped))
         check("`--json` で main 5 / sidechain 1 に分けられる",
