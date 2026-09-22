@@ -88,6 +88,8 @@ SUBJECT = (
     "# BLIND\n"
     "# FLAKY\n"
     "# WARM\n"
+    "# PHASE\n"
+    "# ROT\n"
     "# TWICE\n"
     "# TWICE\n"
     "# SENTINEL\n"
@@ -126,6 +128,31 @@ FLAKY_TEST = (
     'n = (int(p.read_text()) + 1) if p.exists() else 1\n'
     'p.write_text(str(n))\n'
     'print("走った回数:", n)\n'
+)
+
+# **2 段階の準備をする `red`**（守る 16 / #156）。**1 度目と 2 度目で別の出力を出し、
+# 3 度目から落ち着く。** **判定は一切しない**ので、変異は見逃されている（＝主張が偽ではなく、
+# **観測できない**）。**離れた回どうしを比べると、準備の段差を「変異のせい」と読んで
+# `緑のまま` になる**——**2 パス目の `/code-review` が、それを退行として実測した。**
+TWO_PHASE_TEST = (
+    "import pathlib\n"
+    'p = pathlib.Path("phase-count.txt")\n'
+    'n = (int(p.read_text()) + 1) if p.exists() else 1\n'
+    'p.write_text(str(n))\n'
+    'print("phase1" if n == 1 else ("phase2" if n == 2 else "steady"))\n'
+)
+
+# **途中から非ゼロになる `red`**（守る 16 / #156）。**3 度目以降で落ちるようになる。**
+# **当て直した対照が緑であることを要求しないと、揃っているだけで「主張が偽」と読む。**
+# **出力も 2 段階にする**——**そうしないと `out == base_out` の早期の分岐で止まり、
+# 当て直しの経路まで届かない**（**そう書いた試料を 1 度置いて、自分で反証した**）。
+ROTTED_TEST = (
+    "import pathlib, sys\n"
+    'p = pathlib.Path("rot-count.txt")\n'
+    'n = (int(p.read_text()) + 1) if p.exists() else 1\n'
+    'p.write_text(str(n))\n'
+    'print("phase1" if n == 1 else ("phase2" if n == 2 else "steady"))\n'
+    "sys.exit(1 if n >= 3 else 0)\n"
 )
 
 ALWAYS_RED = "import sys\nsys.exit(1)\n"
@@ -174,6 +201,8 @@ def build(root: Path) -> tuple[dict[str, int], int]:
     (root / "scripts" / "blind_test.py").write_text(BLIND_TEST, encoding="utf-8")
     (root / "scripts" / "flaky_test.py").write_text(FLAKY_TEST, encoding="utf-8")
     (root / "scripts" / "warm_test.py").write_text(WARM_TEST, encoding="utf-8")
+    (root / "scripts" / "two_phase_test.py").write_text(TWO_PHASE_TEST, encoding="utf-8")
+    (root / "scripts" / "rotted_test.py").write_text(ROTTED_TEST, encoding="utf-8")
     (root / "scripts" / "escape_test.py").write_text(
         escape_test_body(), encoding="utf-8")
     (root / "fenced-broken.md").write_text(FENCED_BROKEN, encoding="utf-8")
@@ -204,6 +233,14 @@ def build(root: Path) -> tuple[dict[str, int], int]:
         # **比較相手をキャッシュした 1 度目にすると、ここが倒しすぎで落ちる。**
         ("warm", marker(file=subject, old="# WARM", new="# WARM2",
                         red="python3 scripts/warm_test.py")),
+        # **2 段階の準備をする `red`**（守る 16 / #156）。**離れた回どうしを比べると
+        # `緑のまま` になる**——**前の版で入れた退行を、ここで押さえる。**
+        ("twophase", marker(file=subject, old="# PHASE", new="# PHASE2",
+                            red="python3 scripts/two_phase_test.py")),
+        # **途中から非ゼロになる `red`**（守る 16 / #156）。
+        # **当て直した対照が緑であることを要求しないと「主張が偽」と読む。**
+        ("rotted", marker(file=subject, old="# ROT", new="# ROT2",
+                          red="python3 scripts/rotted_test.py")),
         # **必須のキーは全部あって、余計なキーが 1 つだけある形。**
         # **これが無いと「未知のキーを拒否する」変異が殺せない**
         # ——足りないキーの側で先に落ちてしまい、区別がつかない。
@@ -228,10 +265,6 @@ def build(root: Path) -> tuple[dict[str, int], int]:
     return where, len(entries) + 1 + 1
 
 
-# **3 度目だけ止まるコマンド**（守る 16 / #156）。**1・2 度目は素直に 0 で終わり、
-# 陽性対照の *2 度目*（＝通算 3 度目）だけが打ち切られる。**
-# **`TIMEOUT` を一律に縮めても、この形は作れない**——**1 度目が先に打ち切られ、
-# `base_rc != 0` の側で止まってしまう。**
 # **決定的に判定するが、初回だけ余計な行を出すコマンド**（守る 16 / #156）。
 # **比較相手をキャッシュした 1 度目にすると、1 度目だけが永久に他と違う**ので、
 # **本物の「主張が偽」まで `当てられなかった` に落ちる**——**I2 が禁じている倒しすぎ。**
@@ -247,6 +280,10 @@ WARM_TEST = (
     'sys.exit(0 if "# KEEP" in text.splitlines() else 1)\n'
 )
 
+# **3 度目だけ止まるコマンド**（守る 16 / #156）。**1・2 度目は素直に 0 で終わり、
+# 陽性対照の当て直し（＝通算 3 度目）だけが打ち切られる。**
+# **`TIMEOUT` を一律に縮めても、この形は作れない**——**1 度目が先に打ち切られ、
+# `base_rc != 0` の側で止まってしまう**（実測で確かめた）。
 HANG_TEST = (
     "import pathlib, time\n"
     'p = pathlib.Path("hang-count.txt")\n'
@@ -267,10 +304,15 @@ def build_hang(root: Path) -> int:
 
     **これが無いと「走らなかったことを『非決定的』と言わない」変異が殺せない**
     ——**判定はどちらも `当てられなかった` なので、理由を見ないと区別がつかない。**
+
+    **主張はちょうど 1 件にする**——**`SUBJECT` は自分の中にマーカーを 1 つ持ち、
+    その `red` はこの木が書かない `subject_test.py` を指す**ので、**そのまま使うと
+    迷子の主張が 1 件混じる**（**すぐ下の `build_early_exit()` が同じ危険を書いているのに、
+    同じ差分で踏んだ**。2 パス目の `/code-review` が指摘した）。
     """
     assert_not_real_repo(root)
     (root / "scripts").mkdir(parents=True)
-    (root / "scripts" / "subject.py").write_text(SUBJECT, encoding="utf-8")
+    (root / "scripts" / "subject.py").write_text("# FLAKY\n", encoding="utf-8")
     (root / "scripts" / "hang_test.py").write_text(HANG_TEST, encoding="utf-8")
     text = marker(file="scripts/subject.py", old="# FLAKY", new="# FLAKY2",
                   red="python3 scripts/hang_test.py")
@@ -615,6 +657,16 @@ def run_all(escape: Path) -> int:
         # **比較相手をキャッシュした 1 度目にすると、ここが `当てられなかった` に落ちる。**
         check("初回だけ副作用がある `red` でも『緑のまま』（倒しすぎない・守る 16）",
               got.get(f"claims.md:{where['warm']}") == "緑のまま")
+        # **離れた回どうしを比べると、準備の段差を「変異のせい」と読む**（守る 16）。
+        check("2 段階の準備をする `red` は『当てられなかった』（守る 16）",
+              got.get(f"claims.md:{where['twophase']}") == "当てられなかった")
+        check("その理由は『変異の有無で結果が変わらない』（守る 16）",
+              "変異の有無で結果が変わらない" in out)
+        # **揃っているだけでは陽性対照にならない**（守る 16）。
+        check("当て直しで非ゼロになる `red` は『当てられなかった』（守る 16）",
+              got.get(f"claims.md:{where['rotted']}") == "当てられなかった")
+        check("その理由は『当て直しでは緑でない』（守る 16）",
+              "陽性対照が当て直しでは緑でない" in out)
         # **走らなかったことを「非決定的だ」と言わない**（守る 16）。
         # **判定はどちらも `当てられなかった` なので、理由を見ないと黙って通る。**
         # **`TIMEOUT` を一律に縮めても、この経路には入れない**——**1 度目の陽性対照が
