@@ -86,6 +86,7 @@ SUBJECT = (
     "# HARMLESS\n"
     "# TRAILING\n"
     "# BLIND\n"
+    "# FLAKY\n"
     "# TWICE\n"
     "# TWICE\n"
     "# SENTINEL\n"
@@ -107,6 +108,19 @@ SUBJECT_TEST = (
 # **中身を一切見ないコマンド。** 変異を当てても出力が 1 バイトも変わらないので、
 # **「主張が偽」と断定してはならない**形の試料になる（守る 13）。
 BLIND_TEST = 'print("blind ok")\n'
+
+# **中身を見ないまま 0 で終わり、しかも出力が実行ごとに変わるコマンド**（守る 16 / #156）。
+# **守る 13 が効かない形**——**変異と無関係に出力が変わる**ので「出力が変わらない」の
+# 判別を素通りし、**「主張が偽」と断定されてしまう。**
+# **時刻や乱数ではなく、必ず増える数を使う**——**試料が確率で揺れると、
+# 落ちたのが本体のせいか試料のせいか分からなくなる。**
+FLAKY_TEST = (
+    "import pathlib\n"
+    'p = pathlib.Path("flaky-count.txt")\n'
+    'n = (int(p.read_text()) + 1) if p.exists() else 1\n'
+    'p.write_text(str(n))\n'
+    'print("走った回数:", n)\n'
+)
 
 ALWAYS_RED = "import sys\nsys.exit(1)\n"
 
@@ -152,6 +166,7 @@ def build(root: Path) -> tuple[dict[str, int], int]:
     (root / "scripts" / "subject_test.py").write_text(SUBJECT_TEST, encoding="utf-8")
     (root / "scripts" / "always_red.py").write_text(ALWAYS_RED, encoding="utf-8")
     (root / "scripts" / "blind_test.py").write_text(BLIND_TEST, encoding="utf-8")
+    (root / "scripts" / "flaky_test.py").write_text(FLAKY_TEST, encoding="utf-8")
     (root / "scripts" / "escape_test.py").write_text(
         escape_test_body(), encoding="utf-8")
     (root / "fenced-broken.md").write_text(FENCED_BROKEN, encoding="utf-8")
@@ -173,6 +188,11 @@ def build(root: Path) -> tuple[dict[str, int], int]:
         # **出力が 1 バイトも変わらない形**（守る 13）。**緑だが「主張が偽」とは言えない。**
         ("blind", marker(file=subject, old="# BLIND", new="# BLIND2",
                          red="python3 scripts/blind_test.py")),
+        # **0 で終わる SKIP で、しかも出力が実行ごとに変わる形**（守る 16 / #156）。
+        # **守る 13 が効かない**——**変異と無関係に出力が変わる**ので、
+        # **これが無いと「主張が偽」と断定される。**
+        ("flaky", marker(file=subject, old="# FLAKY", new="# FLAKY2",
+                         red="python3 scripts/flaky_test.py")),
         # **必須のキーは全部あって、余計なキーが 1 つだけある形。**
         # **これが無いと「未知のキーを拒否する」変異が殺せない**
         # ——足りないキーの側で先に落ちてしまい、区別がつかない。
@@ -442,6 +462,10 @@ MUTATIONS = {
     "中断を捕まえない（`Exception` に狭める）": (
         "    except BaseException:\n        shutil.rmtree(created",
         "    except Exception:\n        shutil.rmtree(created"),
+    # 守る 16: 出力が実行ごとに変わる `red` では「主張が偽」と断定しない（#156）
+    "2 度目の陽性対照を見ない": (
+        "    if (again_rc, again_out) != (base_rc, base_out):",
+        "    if False:"),
 }
 
 
@@ -492,6 +516,12 @@ def run_all(escape: Path) -> int:
 
         check("出力が 1 バイトも変わらなければ『当てられなかった』（守る 13）",
               got.get(f"claims.md:{where['blind']}") == "当てられなかった")
+        # **守る 13 が効かない形**——**出力が変異と無関係に変わるので素通りする**（#156）。
+        check("出力が実行ごとに変わる `red` でも『当てられなかった』（守る 16）",
+              got.get(f"claims.md:{where['flaky']}") == "当てられなかった")
+        # **2 つの『当てられなかった』を、理由で読み分けられること。**
+        check("その理由が『出力が変わらない』と区別して出る（守る 16）",
+              "陽性対照が 2 度目に同じ結果を返さない" in out)
 
         print("\n書式")
         check("未知のキーがあれば拒否する", "知らないキー: ['why']" in out)
