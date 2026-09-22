@@ -20,7 +20,7 @@ r"""`check-mutation-claims.py` の回帰テスト。
 **本体が起こす `red` コマンドまで偽物にする。** 実在のテストを呼ぶと、
 **このテストが落ちた理由が「本体の欠陥」なのか「呼ばれた側の都合」なのか分からなくなる。**
 
-**何をどこに作るかは `run_all()`・`build*()`・`observe_leak()` を正とする**
+**何をどこに作るかは `main()`・`run_all()`・`build*()`・`observe_leak()` を正とする**
 ——**ここに一覧を置かない。**
 **一度ここに一覧を置き、2 パス続けて「不足している」と反証された**
 （1 度目は 4 件、直した次のパスでさらに 3 件と、変異ループが毎回作る木が抜けていた）
@@ -605,21 +605,54 @@ def run_all(escape: Path) -> int:
         # **実リポジトリを渡して落ちるかを見る形は採らない**——**歯止めを外した状態で
         # それを走らせると、当の実リポジトリに書いてしまう。**
         # **だから歯止めを記録する体に差し替えて、当たった先を数える。**
+        # **「当たっている」は「*作る前に* 当たっている」ではない**（1 パス目の `/code-review`）。
+        # **`assert_not_real_repo(parent)` を `observe_leak` の末尾へ動かしても、
+        # 下の「当たっている」は `ok` のままだった**——**そのとき歯止めは何も守っていない。**
+        # **`parent.mkdir()` も `tempfile.tempdir` の据え付けも `rmtree` も済んでいる**ので、
+        # **`parent` が実リポジトリなら、そこに書いたあとで落ちることになる。**
+        # **だから順序そのものを見る**——**歯止めと `mkdir` を 1 本の並びに記録し、
+        # 歯止めが `mkdir` より前に出そろっていることを見る。**
         seen: list[Path] = []
+        order: list[str] = []
         keep_guard = globals()["assert_not_real_repo"]
+        keep_mkdir = pathlib.Path.mkdir
 
         def recording(p: Path) -> None:
             seen.append(Path(p))
+            order.append("guard")
             keep_guard(p)
 
+        def watching_mkdir(self, *a, **k):
+            order.append("mkdir")
+            return keep_mkdir(self, *a, **k)
+
         globals()["assert_not_real_repo"] = recording
+        pathlib.Path.mkdir = watching_mkdir
         try:
             observe_leak(mod, leak_root, leak_parent)
         finally:
             globals()["assert_not_real_repo"] = keep_guard
+            pathlib.Path.mkdir = keep_mkdir
         check("退避先の親にも歯止めが当たっている",
               {p.resolve() for p in seen}
               >= {leak_root.resolve(), leak_parent.resolve()})
+        # **`mkdir` が 1 度も出ないなら、この検査は何も判別していない**ので併せて見る
+        # ——**「先頭 2 つが歯止め」だけだと、作る側が消えた変異まで緑になる。**
+        check("歯止めは、何かを作る前に 2 つとも当たっている",
+              order[:2] == ["guard", "guard"] and "mkdir" in order)
+
+        # **掃く形そのものにも歯止めを当てる**（1 パス目の `/code-review`）。
+        # **`left()` を「数えたら掃く」から元の「数えるだけ」に戻しても、
+        # 上の観測はすべて緑のままだった**——**累積は変異を *2 つ同時に* 当てて初めて見え、
+        # 単独の変異では殺せない**（`MUTATIONS` は 1 度に 1 箇所しか壊さない）。
+        # **だから退避先の親に的を 1 つ植えて、それが*次の経路に持ち越されない*ことを見る。**
+        # **掃かなければ、同じ的を P2・P5・P10 が数え続ける。**
+        planted = leak_parent / "mutation-claims-planted"
+        planted.mkdir(parents=True, exist_ok=True)
+        swept = observe_leak(mod, leak_root, leak_parent)
+        check("数えた退避先は掃かれ、次の経路に持ち越されない",
+              (swept["dotgit_left"], swept["stopped_left"], swept["unresolved_left"])
+              == (1, 0, 0))
 
         print("\n端から端まで — #157 の再現を、別プロセスで当てる")
         # **#157 を起こしたのは変異 2（`.git` を複製に持ち込む）を当てた回**で、
