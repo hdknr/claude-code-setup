@@ -20,12 +20,12 @@ r"""`check-mutation-claims.py` の回帰テスト。
 **本体が起こす `red` コマンドまで偽物にする。** 実在のテストを呼ぶと、
 **このテストが落ちた理由が「本体の欠陥」なのか「呼ばれた側の都合」なのか分からなくなる。**
 
-**何をどこに作るかは `run_all()` と `build*()` を正とする**——**ここに一覧を置かない。**
+**何をどこに作るかは `main()`・`run_all()`・`build*()`・`observe_leak()` を正とする**
+——**ここに一覧を置かない。**
 **一度ここに一覧を置き、2 パス続けて「不足している」と反証された**
 （1 度目は 4 件、直した次のパスでさらに 3 件と、変異ループが毎回作る木が抜けていた）
 ——**木は編集のたびに増えるので、写した一覧は必ず古くなる。**
 
-**ただし 1 つだけ、木ではないので `build*()` から読めないものがある**——
 `<TMPDIR>/cmc-escape-<pid>.txt` は**退避先の外**に置く的で、
 **`../` で指しても触られてはならない**ことを確かめるためにある（`escape_target()`）。
 
@@ -402,31 +402,48 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
     落ちる側だけ見ていても殺せない。
 
     **中断（`BaseException`）も当てる**——**これが無いと `except Exception:` へ狭めても
-    どの観測も変わらない**（上の 3 つはどれも `RuntimeError` ＝ `Exception` で落ちる）。
+    どの観測も変わらない**。
     **一度これを落としたまま「P5 は `BaseException` で受けて守っている」と経路表に書き、
     2 パス目の `/code-review` に「散文だけで、実行されない主張だ」と反証された。**
 
-    **`.resolve()` が落ちる形も当てる**——**これが無いと `try` の開始位置を
-    `mkdtemp` の前に戻しても、どの観測も動かない**（上の 4 つはどれも
-    `.resolve()` の *後* で落ちる）。**3 パス目の `/code-review` が
+    **`.resolve()` が落ちる形も当てる**——**これが無いと `.resolve()` を
+    `try` の *外* へ戻しても、どの観測も動かない**。**3 パス目の `/code-review` が
     「P5 とまったく同じ『散文だけ』の状態が P10 に残っている」と実測で反証した**
     ——**revert しても完全に緑のまま、実際には 1 件漏れていた。**
+
+    **当てる変異を言い間違えていた（2 パス目の `/code-review`）。** 以前ここは
+    **「`try` の開始位置を `mkdtemp` の前に戻す」**と書いていたが、
+    **その変異は当てても suite が完全に緑のまま**である（実測）。
+    **P10 が実際に判別するのは `.resolve()` を `try` の外へ戻す形**で、
+    **そのとき `.resolve()` が落ちた周は `try` へ一度も入らず、退避先が残る。**
 
     **返すのは辞書である**（タプルではない）。**要素数を数えた言葉を書かないため**
     ——**「定数の 5-tuple にする」と書いた 2 行の下で実際は 7 要素になり、
     3 パス目の `/code-review` に反証された。** **キーで対応が読めれば、数は要らない。**
 
-    **退避先の親を 2 つとも試料の中に閉じ込める**ので、
-    **実 `$TMPDIR` は汚さない**（それは別の検査が端から端まで見る）。
+    **退避先の親を 2 つとも試料の中に閉じ込める**ので、**実 `$TMPDIR` は汚さない。**
+    **閉じ込めは `assert_not_real_repo` が*両方に*当たっていることで守る**
+    ——**一度 `leak_root` にしか当てておらず、散文だけが「2 つとも」と言っていた。**
     """
     assert_not_real_repo(leak_root)
+    assert_not_real_repo(parent)
     (leak_root / ".git").mkdir(exist_ok=True)
     (leak_root / "scripts").mkdir(parents=True, exist_ok=True)
     (leak_root / "scripts" / "subject.py").write_text("# leak\n", encoding="utf-8")
     parent.mkdir(exist_ok=True)
 
     def left(where: Path) -> int:
-        return len(list(where.glob("mutation-claims-*")))
+        """**数えたら掃く**——**掃かないと、次の probe が前の経路の残骸を数える。**
+
+        **P2・P5・P10 は退避先の親を共有している**ので、**累積すると
+        *直っている*経路まで赤になる**——実測で、`except Exception:` へ狭めると
+        **P10（`OSError` ＝ `Exception` なので捕まって畳まれる）まで赤になり、
+        将来の保守者を壊れていない経路に向かわせた**（4 パス目の `/code-review`）。
+        """
+        strays = list(where.glob("mutation-claims-*"))
+        for stray in strays:
+            shutil.rmtree(stray, ignore_errors=True)
+        return len(strays)
 
     def fell(call) -> str:
         try:
@@ -468,8 +485,7 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
 
         # **P10: `.resolve()` が落ちる**——**`mkdtemp()` は既に作っているのに、
         # 解決に失敗すると後始末を通らずに抜けうる形だった。**
-        # **最初の 1 回だけ落とす**——`make_sandbox` は `root` の側でも呼ぶので、
-        # 全部落とすと「どこで落ちたか」が判別できない。
+        # **最初の 1 回だけ落とす。**
         calls = {"n": 0}
         keep_resolve = pathlib.Path.resolve
 
@@ -785,7 +801,9 @@ def run_all(escape: Path) -> int:
         check("中断（`KeyboardInterrupt`）でも落ちる", leak["stopped"] == "KeyboardInterrupt")
         check("中断でも退避先が残らない（`Exception` では捕まらない）",
               leak["stopped_left"] == 0)
-        # **これが無いと、後始末の開始位置を `mkdtemp` の前に戻しても観測が動かない。**
+        # **これが無いと、`.resolve()` を `try` の *外* へ戻しても観測が動かない。**
+        # **「後始末の開始位置を `mkdtemp` の前に戻す」と書いていたのは誤り**
+        # ——**その変異は当てても完全に緑**（2 パス目の `/code-review`）。
         check("`.resolve()` が落ちても投げ直す", leak["unresolved"] == "OSError")
         check("`.resolve()` が落ちても退避先が残らない", leak["unresolved_left"] == 0)
         # **落ちる側だけ見ていると、`try` を広げすぎて*返すべき退避先まで畳む*形を見逃す。**
@@ -839,6 +857,98 @@ def run_all(escape: Path) -> int:
             check("実リポジトリを対象にすると落ちる", True)
         else:
             check("実リポジトリを対象にすると落ちる", False)
+        # **どの引数に当たっているかも見る。** **歯止めが在ることは、*全部*に
+        # 当たっていることではない**——`observe_leak` は長らく `leak_root` にしか
+        # 当てておらず、**`tempfile.tempdir` に据えて `rmtree` する `parent` は
+        # 素通しだった**（散文だけが「2 つとも」と言っていた）。
+        # **実リポジトリを渡して落ちるかを見る形は採らない**——**歯止めを外した状態で
+        # それを走らせると、当の実リポジトリに書いてしまう。**
+        # **だから歯止めを記録する体に差し替えて、当たった先を数える。**
+        # **「当たっている」は「*作る前に* 当たっている」ではない**（1 パス目の `/code-review`）。
+        # **`assert_not_real_repo(parent)` を `observe_leak` の末尾へ動かしても、
+        # 下の「当たっている」は `ok` のままだった**——**そのとき歯止めは何も守っていない。**
+        # **`parent.mkdir()` も `tempfile.tempdir` の据え付けも `rmtree` も済んでいる**ので、
+        # **`parent` が実リポジトリなら、そこに書いたあとで落ちることになる。**
+        # **だから順序そのものを見る**——**歯止めと `mkdir` を 1 本の並びに記録し、
+        # 歯止めが `mkdir` より前に出そろっていることを見る。**
+        # **作る側は 1 つの API ではない（3 パス目の `/code-review`）。**
+        # **`pathlib.Path.mkdir` だけを記録していたので、`os.mkdir`／`os.makedirs` で
+        # 作る形が丸ごと見えなかった**——**歯止めの *前* に `os.makedirs(parent)` を
+        # 入れても緑のままだった**（実測）。**この検査の名前は「何かを作る前に」なので、
+        # 記録する範囲が名前より狭いと、R1 が塞いだ穴が API を変えるだけで戻る。**
+        # **とくに、この節が危険と名指ししている `tempfile.mkdtemp` は `os.mkdir` を
+        # 使う**ので、**いちばん見たい経路がまさに記録の外にあった。**
+        # **逆向きにも壊れていた**——**既存の `Path.mkdir` を挙動同値な `os.makedirs` に
+        # 置き換えるだけで、この検査が単独で赤になった**（偽の赤）。**3 つとも記録する。**
+        seen: list[Path] = []
+        order: list[str] = []
+        keep_guard = globals()["assert_not_real_repo"]
+        keep_mkdir = pathlib.Path.mkdir
+        keep_os_mkdir = os.mkdir
+        keep_os_makedirs = os.makedirs
+
+        def recording(p: Path) -> None:
+            seen.append(Path(p))
+            order.append("guard")
+            keep_guard(p)
+
+        def watching_mkdir(self, *a, **k):
+            order.append("mkdir")
+            return keep_mkdir(self, *a, **k)
+
+        def watching_os_mkdir(*a, **k):
+            order.append("mkdir")
+            return keep_os_mkdir(*a, **k)
+
+        def watching_os_makedirs(*a, **k):
+            order.append("mkdir")
+            return keep_os_makedirs(*a, **k)
+
+        globals()["assert_not_real_repo"] = recording
+        pathlib.Path.mkdir = watching_mkdir
+        os.mkdir = watching_os_mkdir
+        os.makedirs = watching_os_makedirs
+        try:
+            observe_leak(mod, leak_root, leak_parent)
+        finally:
+            globals()["assert_not_real_repo"] = keep_guard
+            pathlib.Path.mkdir = keep_mkdir
+            os.mkdir = keep_os_mkdir
+            os.makedirs = keep_os_makedirs
+        check("退避先の親にも歯止めが当たっている",
+              {p.resolve() for p in seen}
+              >= {leak_root.resolve(), leak_parent.resolve()})
+        # **`mkdir` が 1 度も出ないなら、この検査は何も判別していない**ので併せて見る
+        # ——**「先頭 2 つが歯止め」だけだと、作る側が消えた変異まで緑になる。**
+        check("歯止めは、何かを作る前に 2 つとも当たっている",
+              order[:2] == ["guard", "guard"] and "mkdir" in order)
+
+        # **掃く形そのものにも歯止めを当てる**（1 パス目の `/code-review`）。
+        # **`left()` を「数えたら掃く」から元の「数えるだけ」に戻しても、
+        # 上の観測はすべて緑のままだった**——**累積は変異を *2 つ同時に* 当てて初めて見え、
+        # 単独の変異では殺せない**（`MUTATIONS` は 1 度に 1 箇所しか壊さない）。
+        # **だから退避先の親に的を 1 つ植えて、それが*次の経路に持ち越されない*ことを見る。**
+        # **掃かなければ、同じ的を P2・P5・P10 が数え続ける。**
+        #
+        # **絶対値で見てはならない（必須）。** **`left()` の戻り値は
+        # 「的の寄与」と「本体が畳まなかった分」の和**なので、
+        # **絶対値で見ると、掃きが正常でも本体の後始末が変わっただけで赤くなる。**
+        # **2 パス目の `/code-review` が実測で反証し、こちらでも 2 通りで再現した**
+        # ——**`except BaseException:` を `Exception` に狭めると `stopped_left` が 1 に、
+        # `.resolve()` を `try` の外へ戻すと `unresolved_left` が 1 になり、
+        # どちらも掃きは正常なのにこの検査が赤くなった。**
+        # **それは「掃き」という名前で別の原因を指す偽の赤**であり、
+        # **この周が `.resolve()` の偽の赤を消したのとまったく同じ害**である。
+        # **だから的の寄与だけを見る**——**植える前との差を取る。**
+        # **差にすれば、本体が何を畳まなくなっても同じ分が両側に乗って消える。**
+        before = observe_leak(mod, leak_root, leak_parent)
+        planted = leak_parent / "mutation-claims-planted"
+        planted.mkdir(parents=True, exist_ok=True)
+        swept = observe_leak(mod, leak_root, leak_parent)
+        check("数えた退避先は掃かれ、次の経路に持ち越されない",
+              tuple(swept[k] - before[k]
+                    for k in ("dotgit_left", "stopped_left", "unresolved_left"))
+              == (1, 0, 0))
 
         print("\n端から端まで — #157 の再現を、別プロセスで当てる")
         # **#157 を起こしたのは変異 2（`.git` を複製に持ち込む）を当てた回**で、
