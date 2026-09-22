@@ -26,21 +26,37 @@
   **`# - run: …` も `"run:" in l` を満たすので、素の行走査では素通しだった。**
 - **「そもそも無い」と「コメントアウトされている」を分けて報告する**
   ——**どちらも「CI では走らない」だが、ステップを足すのと `#` を外すのでは直し方が違う。**
+  **分けられるのは、コメントの側に `run:` と名前が*揃っている*ときだけ**（下の「守らない」）。
 - **行末コメントの中の名前を、生きた名前として数えない。**
 - **`check-X.py` が `test-check-X.py` に覆い隠されない**（#136 で 6 本が隠れていた）。
 - **引用符の中の `#` で切らない**——切ると、その後ろの名前が落ちて「無い」と誤報する。
+- **語の途中のアポストロフィで引用符を開かない**——開くと**行末まで閉じず、
+  コメントが丸ごと「生きている」側に入る**（`run: echo don't  # python3 scripts/x.py`）。
+  **これは偽陰性で、#155 の欠陥と同じ向きである**——`/code-review` の 1 パス目が実測で見つけた。
 
 守らない:
 
 - **「CI で実際に走った」の証明ではない。** 見ているのは**記述**だけで、
   **ジョブやステップの `if:` 条件・`continue-on-error`・ステップ内での失敗握り潰し**は
   見ていない。**言えるのは「走る形で書かれている」まで。**
-- **`run: |` のブロック本文で呼ばれたスクリプトは拾わない**（`run:` を含む行だけを見るため）。
+- **コメントの側に `run:` が無い無効化は、コメント側として拾えない。**
+  3 つの形がある——**(a)** `# run:` の次の行に `#   python3 scripts/x.py` と割った形、
+  **(b)** コメントアウトした `run: |` のブロック、
+  **(c)** **行末で殺した形**（`run: echo skip  # python3 scripts/x.py`。
+  `run:` が生きている側に残る）。
+  **いずれも「そもそも無い」側に出るので赤にはなるが、案内する直し方が
+  「ステップを足す」になる**——**`#` を外せば済むのに。**
+  **(c) を「コメントアウト」と数えないのは意図的である**——
+  **行末の注記に名前が出ているだけの行と、構文で区別できない**
+  （上の「行末コメントの中の名前を、生きた名前として数えない」と同じ行の形）。
+- **`run: |` `run: >-` のブロック本文で呼ばれたスクリプトは拾わない**（`run:` を含む行だけを見るため）。
   **向きは偽陽性**（在るのに「無い」と言う）で、**黙って素通しする #155 の欠陥とは逆**。
   **該当は現在 0 件。**
 - **ワークフローファイルごと消す・`on:` を変える**——**`*.yml` を読むだけなので、
   そのファイルが実際に起動するかは見ていない。**
 - **`*.yaml`（拡張子違い）は読まない。**
+- **引用符の中の `\\"` のような退避は解さない**——そこで閉じたと見なす。
+  **向きは偽陽性**（在るのに「無い」と言う）なので、**黙って素通しはしない。**
 """
 
 from __future__ import annotations
@@ -222,6 +238,19 @@ def test_registry_covers_every_script() -> None:
 NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")
 
 
+def opens_quote(line: str, i: int) -> bool:
+    """引用符が**値の先頭に立っているときだけ**、引用符として開く。
+
+    **語の途中のアポストロフィ（`echo don't`）で開いてはならない。**
+    開くと**閉じないまま行末まで走り、その行のコメントが丸ごと「生きている」側に入る**
+    ——**`run: echo don't  # python3 scripts/check-foo.py` が「走っている」と数えられる。**
+    **向きは偽陰性で、#155 が閉じようとしている欠陥そのものである。**
+    **`/code-review` の 1 パス目が、実際の `plugins.yml` で赤にならないことを示して見つけた**
+    ——**歯止めを足した当人が、同じ型の穴を別の場所に作っていた**（#136 と同じ形）。
+    """
+    return i == 0 or line[i - 1] in " \t:"
+
+
 def split_comment(line: str) -> tuple[str, str]:
     """yaml の 1 行を「生きている部分」と「コメントの部分」に割る。
 
@@ -235,7 +264,7 @@ def split_comment(line: str) -> tuple[str, str]:
         if quote:
             if ch == quote:
                 quote = ""
-        elif ch in "\"'":
+        elif ch in "\"'" and opens_quote(line, i):
             quote = ch
         elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
             return line[:i], line[i:]
@@ -293,7 +322,11 @@ def test_ci_runs_every_registered_script() -> None:
     mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/check-duplicate-counts.py", "new": "        # run: python3 scripts/check-duplicate-counts.py", "red": "python3 scripts/test-check-all.py"}
     """
     workflows = REAL_REPO / ".github" / "workflows"
-    ci = "".join(f.read_text() for f in sorted(workflows.glob("*.yml")))
+    # **ファイルの境界に改行を挟む。** **素の連結では、末尾に改行の無い yaml が
+    # 1 本混ざった時点で、そのファイルの最終行と次のファイルの先頭行が 1 行に繋がる**
+    # ——**判別は行単位なので、繋がった側のコメントが生きた側を飲み込む。**
+    # **いまは全ファイルが改行で終わっているので実害は無い**（手順 5 の Verifier が確認）。
+    ci = "\n".join(f.read_text() for f in sorted(workflows.glob("*.yml")))
     # **正規表現でソースから拾わない。** **名前に数字や下線が入る・引用符が変わる・
     # 変数から組み立てる**といった変更で `registered` が静かに空になり、
     # **「0 本を検査して OK」**になる（`/code-review` が指摘。#136）。
@@ -364,6 +397,13 @@ jobs:
       - name: 引用符の中の `#`
         run: "echo 'PR #155' && python3 scripts/check-quoted.py"
 
+      - name: 語の途中のアポストロフィ
+        run: echo don't  # python3 scripts/check-apostrophe.py
+
+      # - name: 名前と run: を別の行に割って止めたステップ（**守らない**）
+      #   run:
+      #     python3 scripts/check-dead-split.py
+
       - name: 常に偽の条件（**守らない**——記述しか見ていない）
         if: false
         run: python3 scripts/check-killed-by-if.py
@@ -398,8 +438,14 @@ def scan_contract(scan) -> list[tuple[str, bool]]:
         ("`check-X.py` が `test-check-X.py` に覆い隠されない",
          "check-mask.py" not in seen and "test-check-mask.py" in live),
         ("引用符の中の `#` で切らない", "check-quoted.py" in live),
+        # **こちらは逆向き**——上は「早く切りすぎない」、これは「切り損ねない」。
+        # **片側だけ試料に置くと、切り損ねる欠陥を契約が判別できない**
+        # （`/code-review` 1 パス目の指摘。**実際にこの向きの穴が残っていた**）。
+        ("語の途中のアポストロフィで引用符を開かない", "check-apostrophe.py" not in seen),
         # **守らないものも契約に書く**——**限界を機械で見える形に留める**ため。
         # **黙って射程が変わったら、docstring の「守らない」と食い違ったまま緑になる。**
+        ("名前と `run:` が別の行に割れたコメントアウトは、コメント側として拾えない（守らない）",
+         "check-dead-split.py" not in seen),
         ("`if:` で止めたステップは、生きているものとして数える（守らない）",
          "check-killed-by-if.py" in live),
         ("`run: |` のブロック本文は拾わない（守らない）", "check-in-block.py" not in seen),
@@ -418,6 +464,8 @@ SCAN_MUTANTS = {
         '        elif ch == "#" and (i == 0 or line[i - 1] in ',
         '        elif False and (i == 0 or line[i - 1] in '),
     "引用符を見ない": ("        elif ch in ", "        elif False and ch in "),
+    "語の途中でも引用符を開く": (
+        r'    return i == 0 or line[i - 1] in " \t:"', "    return True"),
     "生きている側とコメント側を取り違える": (
         "            return line[:i], line[i:]",
         "            return line[i:], line[:i]"),
