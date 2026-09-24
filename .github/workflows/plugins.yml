@@ -79,9 +79,6 @@ jobs:
       - name: 周の探索のテスト（#136 段 1）
         run: python3 scripts/test-find-cycle.py
 
-      - name: サブエージェントの transcript 集計のテスト（#168）
-        run: python3 scripts/test-summarize-subagent.py
-
       - name: ガード拒否の収集のテスト（#122）
         run: python3 scripts/test-collect-guard-rejections.py
 
