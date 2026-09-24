@@ -278,3 +278,33 @@ main へのマージ → GitHub Pages の自動デプロイ（`docs/plugins/dev-
 
 **型**: 3 パス目と同じ 2 型（**スクリプトの推測と実物の形**・**1 行 2 主張の変異の穴**）が続き、
 さらに**削ったことが新しい指摘を生んだ**（#1）。**禁止の文面と `SKILL.md` の側は、#3 の 1 件だけ**。
+
+## 7. 分割後（4 パス目の相談で「分割する」を選んだ——この節が §1・§3 に優先する）
+
+**この PR に残すもの**（`git diff e686445 --stat` で 8 ファイル）:
+
+- `plugins/dev-loop/skills/dev-loop/prompts/verifier.md`・`prompts/review-handoff.md`・`agents/dev-loop-verifier.md` — 4 つの禁止
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 5 の注記（**スクリプトを指さない**。区別できないなら再実行は変えない）・版
+- `docs/plugins/dev-loop-design.md` — 注記・生成ブロック
+- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `docs/plans/issue-168.md` — この計画ファイル
+
+**#169 に送ったもの**: `summarize-subagent.py`・`test-summarize-subagent.py`（`b5dc44a` に最終版がある）・
+CI と `check-all.py` への登録・`CLAUDE.md` の一覧・**4 パス目の指摘 9 件＋Verifier の 1 件**・
+手順 6 に診断が無いこと（4 パス目 #3）。**§0 の実測はこの計画ファイルに残る**（#169 から指す）。
+
+**残る受入基準**（§3.1 のうち）:
+
+| # | 不変条件 |
+| --- | --- |
+| G | 3 つの委譲文面に 4 つの禁止と、それぞれの代わりにすることが入っている（`Monitor` を名指し・Bash の `run_in_background` に限定・`Agent` の並列起動は対象外） |
+| H | `SKILL.md` 手順 5 の「区別できないなら再実行」が残り、注記は**それを変えない**（緩めない） |
+| I | 版が 3 箇所で 1.33.0、生成ブロックが最新、`check-all.py` が緑 |
+| J | `SKILL.md` に**存在しないスクリプトへの指し先が残っていない**（`check-skill-pointers.py`） |
+| K | 委譲文と `SKILL.md` に書いた事実（既定は多くの環境で 120 秒・上限 10 分・+25 分の報告が +96 分まで渡らなかった・渡らない**ことがある**）が実物と一致する |
+| L | 「渡らないことがある」の強さで書く |
+| N | 設計ドキュメントが `SKILL.md` と食い違わない（スクリプトを指さない） |
+| O | **削ったものの跡が残っていない**——`summarize-subagent` への言及が `plugins/`・`docs/plugins/`・`CLAUDE.md`・`scripts/`・`.github/` に無い |
+
+**未証明（§3.3）はそのまま**。**反例が 1 件出た**（§5 の 4 パス目）ので、PR コメントでそれも名指しする。
+**3 パス目で「弱めた」E・C は、この PR からは消えた**（#169 に送った）。
