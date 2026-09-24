@@ -12,14 +12,14 @@ r"""サブエージェント 1 体分の transcript を集計し、何に時間�
 
 親の側には `This agent has not reported yet: it is waiting on its own background work` としか
 見えない。**検証がまだ続いているのか、書き終えた報告がバックグラウンドのジョブに止められて
-いるだけなのか**を、親の画面からは区別できない。前者なら待つ、後者なら**再実行すると同じ検証を
-もう一度払う**。**transcript をそのまま読むと文脈が溢れる**ので、集計だけを出す。
+いるだけなのか**を、親の画面からは区別できない。**transcript をそのまま読むと文脈が溢れる**ので、
+集計だけを出す。
 
 ## 読み方
 
 - **道具の呼び出し**を時刻・所要つきで並べ、**バックグラウンドに回ったもの**を
-  「指定」（入力に `run_in_background`）と「自動」（入力に無いのに回った——**タイムアウトで回る**）に分ける。
-  **コマンドは頭と尾だけ**を出し、**委譲文が禁じている形**（`find /` など）には印を付ける。
+  「指定」（入力に `run_in_background`）・「自動」（入力に無いのに回った——**タイムアウトで回る**）・
+  「監視」（`Monitor`）に分ける。**コマンドは頭と尾だけ**を出す。**道具の出力は 1 行も出さない。**
 - 回った各呼び出しに**完了の記録**（`<task-notification>`）があるかを出す。
 - **子の発言**（assistant の text と、`SubagentHandback`・`SendMessage` の引き渡し）を、経過・`stop_reason`・
   文字数・冒頭つきで並べる。**報告を書き終えたかどうかは、並べたものを読んで親が判断する**
@@ -29,48 +29,56 @@ r"""サブエージェント 1 体分の transcript を集計し、何に時間�
 
 ## 何を守り、何を守らないか
 
+**1 行に 1 つの主張だけを書く**——テストは 1 行に 1 つの変異を当てるので、2 つ目の主張は無検査になる
+（`/code-review` の 1〜3 パス目で、この形の生き残りが毎回見つかった）。
+
 守る:
 
 - **Bash のバックグラウンドは、結果の `toolUseResult.backgroundTaskId` で判定する**——入力の
   `run_in_background` だけを見ると、**タイムアウトで自動的に回ったものを取りこぼす**（#168 の `find /`）。
-- **`Monitor` の監視も、結果の `taskId` でバックグラウンドとして数える**——キーが違うので、
+- **`Monitor` の監視は、結果の `taskId` でバックグラウンドとして数える**——キーが違うので、
   `backgroundTaskId` だけを見ると**監視が 1 本も見えない**（実物で 19 件）。
-- **Bash の「自動」は「ID あり・入力に指定なし」で決める**——`timedOutAfterMs` は表示に留め、判定には使わない
+- **Bash の「自動」は「ID あり・入力に指定なし」で決める**——`timedOutAfterMs` では決めない
   （**印が片方消えたときに黙って「指定」へ落ちる**）。
+- **`timedOutAfterMs` があれば、打ち切りの秒数を添える。**
 - **完了の記録は、`attachment` と user の発言（SYSTEM NOTIFICATION の形）の両方から拾う**
   ——実物（#168）では **+96:13 の完了が user の発言で届いていた**。
-- **道具の結果と assistant の行（道具の入力）からは拾わない**——**通知の文面が写っていても、
-  完了とは数えない**（子が自分の出力ファイルを `cat` すると写る）。
+- **道具の結果と assistant の行（道具の入力）からは、完了の記録を拾わない**——子が自分の出力ファイルを
+  `cat` すると、通知の文面が写る。
 - **task-id と status は、1 つの `<task-notification>` の中でだけ組にする**——隣の通知の status を拾わない。
 - **`<status>` の無い通知（`Monitor` の途中経過の `<event>`）は、完了に数えない**——実物で、
   途中経過のあとに `completed` が来る task-id が 12 件ある。
-- **発言は `stop_reason` で絞らずに並べる**——「報告を書き終えたか」を判定しない。実測で、
-  最後の報告の `stop_reason` は `end_turn` とは限らず（`None`・`stop_sequence` がある）、
-  逆に `end_turn` の text が「ジョブの完了を待ちます」だけのこともある。
-- **引き渡し（`SubagentHandback`・`SendMessage`）も発言として並べる**——報告の本体がそちらで渡され、
-  text は定型文だけのことがある（実物 2 件とも `SubagentHandback`）。
-- **引き渡しは、新しい順の窓から外れても全部出す**——報告のあとで子が起こされて
-  短い text を重ねると、**報告が窓の外に押し出される**（#168 の実物の形）。
-- **いちばん長い text も、窓から外れても出す**——引き渡しの道具を使わずに text で報告した子の、
-  報告が押し出されないように。
-- **ID・名前から探して 2 件以上当たったら、選ばずに並べて非ゼロで終わる。**
-- **道具の出力は 1 行も出さず、コマンドは頭と尾だけ出す。禁じられた形には印を付ける**
-  ——**頭だけに切ると、止めている本体（`… ; find / …`）が隠れる**（#168 の実物 2 件とも）。
-- **印は禁じた形だけに付ける**——`find ~/.venv/...` のような狭い探索や、URL の `&` には付けない
-  （**委譲文が勧めている探し方に「禁止」の印が付くと、親が止めている呼び出しを読み違える**）。
+- **発言は `stop_reason` で絞らずに並べる**——実測で、最後の報告の `stop_reason` は `end_turn` とは限らない
+  （`None`・`stop_sequence` がある）。逆に `end_turn` の text が「ジョブの完了を待ちます」だけのこともある。
+- **`SubagentHandback` の引き渡しを発言として並べる**——報告の本体がそちらで渡され、
+  text は定型文だけのことがある（#168 の実物 2 件）。
+- **`SendMessage` の引き渡しを発言として並べる**——teammate はこちらで報告を渡す。
+- **`SendMessage` の本体は、`message` が空なら `content` から取る**——実物に `message: null` の形がある。
+- **引き渡しは、新しい順の窓から外れても全部出す**——報告のあとで子が起こされて短い text を重ねると、
+  **報告が窓の外に押し出される**（#168 の実物の形）。
+- **いちばん長い text も、窓から外れても出す**——引き渡しの道具を使わずに text で報告した子のために。
+- **agent ID で探して 2 件以上当たったら、選ばずに並べて非ゼロで終わる。**
+- **名前で探して 2 件以上当たったら、選ばずに並べて非ゼロで終わる**——同名の teammate は別のセッションにもいる。
+- **コマンドは頭と尾を出す**——**頭だけに切ると、止めている本体（`… ; find / …`）が隠れる**（#168 の実物 2 件とも）。
 - **`--text <N>` は、指定した 1 件だけを出す**——**親の文脈に積まないための道具である。**
-- **`--text` の範囲外（0 と負を含む）は非ゼロで終わる**——0 や負で末尾の発言を黙って返さない。
+- **`--text 0` は非ゼロで終わる**——末尾から数えて黙って返さない。
+- **`--text` の負の番号は非ゼロで終わる**——同上。
 
 守らない:
 
+- **「報告を書き終えたか」。** 判定する印が見つからなかった（上の `stop_reason` の行）。並べて親が読む。
 - **完了の記録が無いジョブが、いまも走っているか。** 実測で、開始 99 件のうち 29 件に完了の記録が
   無かったが、**その理由は特定していない**。だから**「完了の記録が無い」までしか言わない。**
 - **`completed` が「子の仕事が終わった」ことか。** status は**ジョブの**状態である。
+- **user の発言に、通知の文面が*引用*されている場合**（親が転送した・委譲文が例に挙げた）。
+  **本物の通知と区別しない**——実物では 0 件だった（**起きたら完了と誤って数える**）。
+- **`SendMessage` の宛先。** 親以外への `SendMessage` も引き渡しとして並ぶ。
 - **ジョブを止められるか。** 止め方も、止めたあとで報告が渡るかも確かめていない。
 - **`Agent` など、Bash と `Monitor` 以外の道具が起こしたバックグラウンドの仕事。**
+- **どの呼び出しが委譲文の禁止に当たるか。** 印を付けていた版があったが、**`&` の印が実物 64 件中 60 件で
+  誤検出**し、推測を足すたびに別の誤検出が見つかったので**外した**（#168 の 3 パス目）。コマンドの頭と尾を読んで親が判断する。
 - **ジョブの出力。** `output-file` は一時ディレクトリにあり、セッションと一緒に消える。
 - **親の transcript**（main-chain）。サブエージェント 1 体分だけを見る。
-- **印の網羅。** 印を付けるのは下の `FLAGS` にある形だけで、禁じられた操作の全部ではない。
 
 終了コード: **0** 集計した ／ **2** 入力を解決できない（見つからない・2 件以上当たった・読めない・
 `--text` の番号が範囲外）。
@@ -85,14 +93,6 @@ from pathlib import Path
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TASK_ID = re.compile(r"<task-id>([^<]+)</task-id>")
 STATUS = re.compile(r"<status>([^<]+)</status>")
-# 委譲文（prompts/verifier.md）が禁じている形のうち、コマンドの文字列から見えるもの
-FLAGS = [
-    ("find /", re.compile(r"\bfind\s+/(\s|$)")),
-    ("find ~", re.compile(r"\bfind\s+(~|\$HOME)/?(\s|$)")),
-    ("&", re.compile(r"(^|\s)&(\s|$)")),
-    ("nohup", re.compile(r"\bnohup\b")),
-    ("docker", re.compile(r"\bdocker\s+(run|compose|start)\b")),
-]
 # 報告を親に渡す道具（実測: 非同期の子は SubagentHandback、teammate は SendMessage）
 HANDBACK = ("SubagentHandback", "SendMessage")
 HEAD, TAIL = 40, 25
@@ -132,18 +132,11 @@ def short(s):
     return s if len(s) <= HEAD + TAIL + 3 else f"{s[:HEAD]} … {s[-TAIL:]}"
 
 
-def flags(command):
-    return [name for name, pat in FLAGS if pat.search(str(command))]
-
-
 def describe_input(inp):
     if not isinstance(inp, dict):
         return ""
-    if "command" in inp:
-        marks = "".join(f"[{f}]" for f in flags(inp["command"]))
-        return (marks + " " if marks else "") + short(inp["command"])
-    for key in ("description", "file_path", "pattern", "message", "prompt"):
-        if key in inp:
+    for key in ("command", "description", "file_path", "pattern", "message", "prompt"):
+        if inp.get(key):
             return short(inp[key])
     return ""
 
@@ -197,10 +190,15 @@ def notification_text(r):
         if isinstance(content, str):
             return content
         if isinstance(content, list):
-            # tool_result のブロックは text キーを持たないので、ここで自然に落ちる
+            # tool_result のブロックは type が text ではないので、ここで落ちる
             return "".join(str(b.get("text", "")) for b in content
                            if isinstance(b, dict) and b.get("type") == "text")
     return ""
+
+
+def handback_text(inp):
+    """引き渡しの本体。SendMessage は message が空で content に本体を持つことがある。"""
+    return str(inp.get("message") or inp.get("content") or "")
 
 
 def summarize(rows):
@@ -236,8 +234,7 @@ def summarize(rows):
                                       "start": ts, "end": None, "bg": None, "timeout": None}
                 order.append(b.get("id"))
                 if b.get("name") in HANDBACK and isinstance(inp, dict):
-                    says.append({"kind": "引き渡し", "ts": ts, "stop": None,
-                                 "text": str(inp.get("message", ""))})
+                    says.append({"kind": "引き渡し", "ts": ts, "stop": None, "text": handback_text(inp)})
             elif b.get("type") == "tool_result" and b.get("tool_use_id") in calls:
                 c = calls[b["tool_use_id"]]
                 c["end"] = ts
@@ -282,9 +279,9 @@ def report(path, rows):
                    f"{str(c['name'])[:10]:<10}  {bg_kind(c):<4}  {describe_input(c['input'])}")
 
     bgs = [calls[cid] for cid in order if calls[cid]["bg"]]
+    count = {k: sum(bg_kind(c) == k for c in bgs) for k in ("指定", "自動", "監視")}
     out += ["", f"バックグラウンドに回った呼び出し: {len(bgs)} 本"
-                f"（指定 {sum(bg_kind(c) == '指定' for c in bgs)} ／ 自動 {sum(bg_kind(c) == '自動' for c in bgs)}"
-                f" ／ 監視 {sum(bg_kind(c) == '監視' for c in bgs)}）"]
+                f"（指定 {count['指定']} ／ 自動 {count['自動']} ／ 監視 {count['監視']}）"]
     missing = 0
     for c in bgs:
         rec = done.get(c["bg"])
@@ -335,7 +332,13 @@ def main(argv=None):
         return 2
     if args.text is not None:
         says = summarize(rows)[3]
-        if not 1 <= args.text <= len(says):  # 0 と負を通すと末尾から数えてしまう
+        if args.text == 0:
+            print("番号が範囲外: 0（1 から数える）", file=sys.stderr)
+            return 2
+        if args.text < 0:
+            print(f"番号が範囲外: {args.text}（負の番号は使えない）", file=sys.stderr)
+            return 2
+        if args.text > len(says):
             print(f"番号が範囲外: {args.text}（発言は {len(says)} 件）", file=sys.stderr)
             return 2
         print(says[args.text - 1]["text"])
