@@ -33,6 +33,9 @@ FIND_CMD = "cd /work/" + "y" * 80 + " && find / -name pkg 2>/dev/null | head -5"
 REPORT = "## 検証結果\nREPORT_BODY 反証 0 件\n" + "詳細。" * 60
 HANDBACK = "HANDBACK_BODY"
 HANDBACK2 = "HANDBACK2_BODY"
+CONTENT = "CONTENT_BODY"
+# パスで渡す呼び出しにも探し先を渡す——解決の分岐が壊れても、既定の実環境へ落ちないように
+NO_PROJECTS = TMP / "summarize-subagent-test-no-projects"
 PREAMBLE = "まず差分を見ます"
 
 
@@ -119,15 +122,6 @@ def stalled_rows():
         # 道具の入力（assistant の行）に、bmon の通知の文面が写り込んでいる
         tool_use(212, "t10", "echo '" + notice("bmon", "completed") + "'"),
         tool_result(213, "t10"),
-        # 印の陽性と陰性: 狭い探索・URL の & には付けない
-        tool_use(214, "t11", "find ~/.venv/lib -name site-packages"),
-        tool_result(215, "t11"),
-        tool_use(216, "t12", "curl 'https://api.example/issues?labels=x&state=open'"),
-        tool_result(217, "t12"),
-        tool_use(218, "t13", "sleep 5 & wait"),
-        tool_result(219, "t13"),
-        tool_use(220, "t14", "find ~ -name pkg"),
-        tool_result(221, "t14"),
         assistant(222, [{"type": "text", "text": PREAMBLE}]),
         tool_use(223, "t7", "git diff"),
         tool_result(224, "t7"),
@@ -137,6 +131,9 @@ def stalled_rows():
         tool_result(311, "t8"),
         tool_use(312, "t15", None, name="SubagentHandback", message=HANDBACK2),
         tool_result(313, "t15"),
+        # SendMessage の本体が content にある形（実物に message: null がある）
+        tool_use(314, "t16", None, name="SendMessage", to="team-lead", message=None, content=CONTENT),
+        tool_result(315, "t16"),
         # 報告のあとで子が起こされて短い text を重ねる（報告と引き渡しが新しい 6 件の窓から出る）
         *[assistant(400 + i, [{"type": "text", "text": f"短い {i}"}]) for i in range(6)],
         # 最後の text の stop_reason が stop_sequence（実測で 29 件ある形）
@@ -145,10 +142,13 @@ def stalled_rows():
 
 
 def run(script: Path, *args) -> tuple[int, str]:
-    for a in args:
+    assert not NO_PROJECTS.exists(), "空のはずの探し先が在る"
+    # 既定の探し先を先に渡し、呼び出し側が --projects-dir を渡せばそちらが勝つ（argparse は後勝ち）
+    argv = ["--projects-dir", str(NO_PROJECTS), *args]
+    for a in argv:
         if a.startswith("/"):
             assert_in_tmp(Path(a))
-    proc = subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True,
+    proc = subprocess.run([sys.executable, str(script), *argv], capture_output=True, text=True,
                           check=False, cwd=TMP)
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -164,15 +164,12 @@ def evaluate(script: Path, fx: dict) -> list[tuple[str, bool]]:
     says = [l for l in out.splitlines() if "文字  " in l]
     report_line = next((l for l in says if "REPORT_BODY" in l), "")
     report_no = report_line.split(".")[0].strip() if report_line else "0"
-
-    def cmd(needle):
-        return next((l for l in out.splitlines() if needle in l and "Bash" in l), "")
-
     p = str(fx["projects"])
     checks = [
         ("rc=0", rc == 0),
         ("バックグラウンドは 5 本（指定 2 ／ 自動 2 ／ 監視 1）", "5 本（指定 2 ／ 自動 2 ／ 監視 1）" in out),
         ("入力に無いのに回ったもの（timedOutAfterMs あり）を「自動」と出す", " 自動" in auto),
+        ("timedOutAfterMs から打ち切りの秒数を添える", "120 秒で回った" in auto),
         ("timedOutAfterMs が無くても、入力に指定が無ければ「自動」と出す", " 自動" in auto2),
         ("指定したものを「指定」と出す", " 指定" in spec),
         ("Monitor の taskId を「監視」として数える", " 監視" in mon),
@@ -185,12 +182,8 @@ def evaluate(script: Path, fx: dict) -> list[tuple[str, bool]]:
         ("stop_reason が stop_sequence の text も並べる", any("STOPSEQ_TEXT" in l for l in says)),
         ("SendMessage の引き渡しを並べる", any("引き渡し" in l and "HANDBACK_BODY" in l for l in says)),
         ("SubagentHandback の引き渡しを並べる", any("引き渡し" in l and HANDBACK2 in l for l in says)),
+        ("SendMessage の message が空なら content を出す", any("引き渡し" in l and CONTENT in l for l in says)),
         ("判定しないことを明示する", "判定しない" in out),
-        ("コマンドの途中の find / に印を付ける", "[find /]" in auto),
-        ("find ~ に印を付ける", "[find ~]" in cmd("find ~ -name")),
-        ("狭い探索（find ~/.venv/...）には印を付けない", "[find ~]" not in cmd("find ~/.venv")),
-        ("URL の & には印を付けない", "[&]" not in cmd("curl")),
-        ("バックグラウンドの & に印を付ける", "[&]" in cmd("sleep 5 &")),
         ("長いコマンドの全文を出さない", FIND_CMD not in out),
         ("コマンドの尾を出す", "| head -5" in auto),
         ("道具の出力を出さない", TOOL_OUTPUT not in out),
@@ -201,9 +194,12 @@ def evaluate(script: Path, fx: dict) -> list[tuple[str, bool]]:
         ("--text は指定した 1 件だけを出す", PREAMBLE not in out and HANDBACK not in out),
         ("--text の番号が上に範囲外なら rc=2", run(script, str(fx["stalled"]), "--text", "99")[0] == 2),
         ("--text 0 は rc=2（末尾から数えない）", run(script, str(fx["stalled"]), "--text", "0")[0] == 2),
+        ("--text -1 は rc=2（末尾から数えない）", run(script, str(fx["stalled"]), "--text", "-1")[0] == 2),
     ]
     checks += [
-        ("同じ名前が 2 件あれば rc=2 で選ばない",
+        ("同じ agent ID が 2 件あれば rc=2 で選ばない",
+         (lambda r: r[0] == 2 and "2 件以上" in r[1])(run(script, "dupid", "--projects-dir", p))),
+        ("同じ名前が 2 件あれば rc=2 で選ばない（名前の経路）",
          (lambda r: r[0] == 2 and "2 件以上" in r[1])(run(script, "verifier", "--projects-dir", p))),
         ("名前@チームで 1 件に絞れる", run(script, "verifier@t1", "--projects-dir", p)[0] == 0),
         ("agent ID で解決する", run(script, "aaa", "--projects-dir", p)[0] == 0),
@@ -227,62 +223,76 @@ MUTATIONS = {
     "timedOutAfterMs で自動を決める": (
         '    return "指定" if inp.get("run_in_background") else "自動"',
         '    return "自動" if c["timeout"] else "指定"'),
-    # 守る 4: user の発言（SYSTEM NOTIFICATION）からも拾う
+    # 守る 4: timedOutAfterMs があれば打ち切りの秒数を添える
+    "打ち切りの秒数を添えない": (
+        """        extra = f"（{c['timeout'] // 1000} 秒で回った）" if isinstance(c["timeout"], int) else \"\"""",
+        '        extra = ""'),
+    # 守る 5: user の発言（SYSTEM NOTIFICATION）からも拾う
     "user の発言を見ない": (
         "        if isinstance(content, str):\n            return content",
         '        if isinstance(content, str):\n            return ""'),
-    # 守る 5: 道具の結果・入力からは拾わない
+    # 守る 6: 道具の結果・入力からは拾わない
     "どの行からも通知を拾う": (
         '    if r.get("type") == "attachment":\n        return json.dumps(r.get("attachment"), ensure_ascii=False)',
         "    if True:\n        return json.dumps(r, ensure_ascii=False)"),
-    # 守る 6: 1 つの通知の中でだけ組にする
+    # 守る 7: 1 つの通知の中でだけ組にする
     "行全体で 1 組だけ拾う": (
         "        for block in NOTIFICATION.findall(notification_text(r)):",
         "        for block in [notification_text(r)] if '<task-notification>' in notification_text(r) else []:"),
-    # 守る 7: status の無い通知は完了に数えない
+    # 守る 8: status の無い通知は完了に数えない
     "途中経過を完了に数える": (
         "            if tid and status:\n"
         "                done.setdefault(tid.group(1).strip(), (status.group(1).strip(), ts))",
         "            if tid:\n"
         '                done.setdefault(tid.group(1).strip(), (status.group(1).strip() if status else "?", ts))'),
-    # 守る 8: stop_reason で絞らない
+    # 守る 9: stop_reason で絞らない
     "stop_sequence を落とす": (
         "            if text:\n",
         '            if text and msg.get("stop_reason") in ("end_turn", None):\n'),
-    # 守る 9: SubagentHandback・SendMessage の両方を引き渡しとして並べる
+    # 守る 10: SubagentHandback を並べる
     "SubagentHandback を見ない": (
         'HANDBACK = ("SubagentHandback", "SendMessage")',
         'HANDBACK = ("SendMessage",)'),
-    # 守る 10: 引き渡しは窓から外れても出す
+    # 守る 11: SendMessage を並べる
+    "SendMessage を見ない": (
+        'HANDBACK = ("SubagentHandback", "SendMessage")',
+        'HANDBACK = ("SubagentHandback",)'),
+    # 守る 12: SendMessage の本体は message が空なら content から取る
+    "content を見ない": (
+        '    return str(inp.get("message") or inp.get("content") or "")',
+        '    return str(inp.get("message", ""))'),
+    # 守る 13: 引き渡しは窓から外れても出す
     "引き渡しを窓に任せる": (
         '    picked |= {i for i, s in enumerate(says, 1) if s["kind"] == "引き渡し"}',
         "    picked |= set()"),
-    # 守る 11: いちばん長い text も窓から外れても出す
+    # 守る 14: いちばん長い text も窓から外れても出す
     "最長の text を窓に任せる": (
         "        picked.add(max(texts)[1])",
         "        pass"),
-    # 守る 12: 2 件以上当たったら選ばない
-    "先頭の 1 件を選ぶ": (
-        "    if len(hits) > 1:",
-        "    if False:"),
-    # 守る 13: 禁じられた形に印を付ける（頭だけに切ると本体が隠れる）
-    "印を付けない": (
-        '        marks = "".join(f"[{f}]" for f in flags(inp["command"]))',
-        '        marks = ""'),
-    # 守る 14: 印は禁じた形だけに付ける
-    "印を広く付ける": (
-        '    ("find ~", re.compile(r"\\bfind\\s+(~|\\$HOME)/?(\\s|$)")),\n'
-        '    ("&", re.compile(r"(^|\\s)&(\\s|$)")),',
-        '    ("find ~", re.compile(r"\\bfind\\s+(~|\\$HOME)")),\n'
-        '    ("&", re.compile(r"(?<![&|>0-9])&(?![&>])")),'),
-    # 守る 15: --text は 1 件だけ
+    # 守る 15: agent ID で 2 件以上当たったら選ばない
+    "ID で先頭の 1 件を選ぶ": (
+        '    hits = sorted(projects_dir.glob(f"*/*/subagents/agent-{agent_id}.jsonl"))',
+        '    hits = sorted(projects_dir.glob(f"*/*/subagents/agent-{agent_id}.jsonl"))[:1]'),
+    # 守る 16: 名前で 2 件以上当たったら選ばない
+    "名前で最後の 1 件を選ぶ": (
+        "                    hits.append(jsonl)",
+        "                    hits[:] = [jsonl]"),
+    # 守る 17: コマンドは頭と尾を出す
+    "頭だけに切る": (
+        '    return s if len(s) <= HEAD + TAIL + 3 else f"{s[:HEAD]} … {s[-TAIL:]}"',
+        '    return s if len(s) <= HEAD + TAIL + 3 else f"{s[:HEAD]} …"'),
+    # 守る 18: --text は 1 件だけ
     "--text で全部を出す": (
         '        print(says[args.text - 1]["text"])',
         '        print("\\n".join(s["text"] for s in says))'),
-    # 守る 16: --text の範囲外（0 と負を含む）は非ゼロ
-    "--text の下限を見ない": (
-        "        if not 1 <= args.text <= len(says):",
-        "        if not args.text <= len(says):"),
+    # 守る 19: --text 0 は非ゼロ
+    "--text 0 を通す": (
+        "        if args.text == 0:\n",
+        "        if False:\n"),
+    # 守る 20: --text の負は非ゼロ
+    "--text の負を通す": (
+        "        if args.text < 0:\n",
+        "        if False:\n"),
 }
 
 
@@ -306,6 +316,7 @@ def main() -> int:
         for proj, agent, team in (("p1/s1", "aaa", "t1"), ("p2/s2", "bbb", "t2")):
             d = projects / proj / "subagents"
             write(d / f"agent-{agent}.jsonl", stalled_rows())
+            write(d / "agent-dupid.jsonl", stalled_rows())   # 同じ agent ID が 2 つのセッションに
             meta = d / f"agent-{agent}.meta.json"
             assert_in_tmp(meta)
             meta.write_text(json.dumps({"name": "verifier", "teamName": team}), encoding="utf-8")
