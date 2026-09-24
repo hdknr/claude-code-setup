@@ -78,6 +78,7 @@ TESTS: list[str] = [
     "test-check-plan-scope.py",
     "test-collect-guard-rejections.py",
     "test-find-cycle.py",
+    "test-summarize-subagent.py",
     "test-check-duplicate-counts.py",
     "test-worktree-scripts.py",
     "test-check-skill-pointers.py",
