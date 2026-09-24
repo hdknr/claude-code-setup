@@ -16,7 +16,8 @@
 （**観測の差ではなく、落ちた check で数える**——差があるだけでは、その主張を守っている証明にならない）。
 
 **主張とテストを 1 対 1 にする。** 本体の docstring の「守る」の行数だけ変異を当てる
-（**テスト自身に数えさせる**）。
+（**テスト自身に数えさせる**）。**1 行に主張を 2 つ書かない**——変異は 1 行に 1 つなので、
+2 つ目の主張には変異が当たらない（2 パス目の `/code-review` で、部分主張の変異が 10 件生き残った）。
 """
 import json
 import subprocess
@@ -29,8 +30,9 @@ SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" 
 TMP = Path(tempfile.gettempdir()).resolve()
 TOOL_OUTPUT = "TOOL_OUTPUT_MUST_NOT_APPEAR"
 FIND_CMD = "cd /work/" + "y" * 80 + " && find / -name pkg 2>/dev/null | head -5"
-REPORT = "## 検証結果\nREPORT_BODY 反証 0 件"
+REPORT = "## 検証結果\nREPORT_BODY 反証 0 件\n" + "詳細。" * 60
 HANDBACK = "HANDBACK_BODY"
+HANDBACK2 = "HANDBACK2_BODY"
 PREAMBLE = "まず差分を見ます"
 
 
@@ -65,6 +67,16 @@ def notice(task_id, status):
             f"<status>{status}</status>\n<summary>done</summary>\n</task-notification>")
 
 
+def event(task_id):
+    """Monitor の途中経過。<status> を持たない。"""
+    return f"<task-notification>\n<task-id>{task_id}</task-id>\n<event>line</event>\n</task-notification>"
+
+
+def queued(sec, prompt):
+    return {"type": "attachment", "timestamp": ts(sec),
+            "attachment": {"type": "queued_command", "prompt": prompt}}
+
+
 def write(path: Path, rows) -> Path:
     assert_in_tmp(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,19 +101,46 @@ def stalled_rows():
         # 指定して回した → 同じ通知の中で別の status を持つ
         tool_use(160, "t5", "make long", run_in_background=True),
         tool_result(161, "t5", {"stdout": "", "backgroundTaskId": "bkill"}),
+        # Monitor の監視（キーが taskId）。途中経過の event だけが届き、完了は届かない
+        assistant(170, [{"type": "tool_use", "id": "t9", "name": "Monitor",
+                         "input": {"description": "wait", "command": "tail -f log", "timeout_ms": 600000}}],
+                  stop="tool_use"),
+        tool_result(171, "t9", {"taskId": "bmon", "timeoutMs": 600000, "persistent": False}),
+        queued(180, event("bmon")),
         # 1 つの attachment に通知が 2 つ
-        {"type": "attachment", "timestamp": ts(200),
-         "attachment": {"type": "queued_command", "prompt": notice("bspec", "completed") + notice("bkill", "killed")}},
+        queued(200, notice("bspec", "completed") + notice("bkill", "killed")),
+        # bauto2: 途中経過（status なし）のあとで、completed が user の発言（SYSTEM NOTIFICATION）で届く
+        queued(205, event("bauto2")),
+        {"type": "user", "timestamp": ts(230),
+         "message": {"role": "user", "content": "[SYSTEM NOTIFICATION]\n" + notice("bauto2", "completed")}},
         # 道具の結果に、bauto の通知の文面が写り込んでいる（出力ファイルを cat した）
         tool_use(210, "t6", "cat /tmp/tasks/bauto.output"),
         tool_result(211, "t6", content=notice("bauto", "completed")),
-        assistant(220, [{"type": "text", "text": PREAMBLE}]),
-        tool_use(221, "t7", "git diff"),
-        tool_result(222, "t7"),
-        # 最後の報告の stop_reason が end_turn ではない（実測で 46 件ある形）
+        # 道具の入力（assistant の行）に、bmon の通知の文面が写り込んでいる
+        tool_use(212, "t10", "echo '" + notice("bmon", "completed") + "'"),
+        tool_result(213, "t10"),
+        # 印の陽性と陰性: 狭い探索・URL の & には付けない
+        tool_use(214, "t11", "find ~/.venv/lib -name site-packages"),
+        tool_result(215, "t11"),
+        tool_use(216, "t12", "curl 'https://api.example/issues?labels=x&state=open'"),
+        tool_result(217, "t12"),
+        tool_use(218, "t13", "sleep 5 & wait"),
+        tool_result(219, "t13"),
+        tool_use(220, "t14", "find ~ -name pkg"),
+        tool_result(221, "t14"),
+        assistant(222, [{"type": "text", "text": PREAMBLE}]),
+        tool_use(223, "t7", "git diff"),
+        tool_result(224, "t7"),
+        # 最後の報告の stop_reason が end_turn ではない（実測で 46 件ある形）。いちばん長い text
         assistant(300, [{"type": "text", "text": REPORT}], stop=None),
         tool_use(310, "t8", None, name="SendMessage", to="team-lead", message=HANDBACK),
         tool_result(311, "t8"),
+        tool_use(312, "t15", None, name="SubagentHandback", message=HANDBACK2),
+        tool_result(313, "t15"),
+        # 報告のあとで子が起こされて短い text を重ねる（報告と引き渡しが新しい 6 件の窓から出る）
+        *[assistant(400 + i, [{"type": "text", "text": f"短い {i}"}]) for i in range(6)],
+        # 最後の text の stop_reason が stop_sequence（実測で 29 件ある形）
+        assistant(410, [{"type": "text", "text": "STOPSEQ_TEXT"}], stop="stop_sequence"),
     ]
 
 
@@ -121,32 +160,47 @@ def line_of(out: str, head: str) -> str:
 def evaluate(script: Path, fx: dict) -> list[tuple[str, bool]]:
     """(check の名前, 通ったか) を並べる。本体にも変異にも同じものを当てる。"""
     rc, out = run(script, str(fx["stalled"]))
-    auto, auto2, spec, kill = (line_of(out, h) for h in ("bauto ", "bauto2", "bspec", "bkill"))
+    auto, auto2, spec, kill, mon = (line_of(out, h) for h in ("bauto ", "bauto2", "bspec", "bkill", "bmon"))
     says = [l for l in out.splitlines() if "文字  " in l]
+    report_line = next((l for l in says if "REPORT_BODY" in l), "")
+    report_no = report_line.split(".")[0].strip() if report_line else "0"
+
+    def cmd(needle):
+        return next((l for l in out.splitlines() if needle in l and "Bash" in l), "")
+
     p = str(fx["projects"])
     checks = [
         ("rc=0", rc == 0),
-        ("バックグラウンドは 4 本（指定 2 ／ 自動 2）", "4 本（指定 2 ／ 自動 2）" in out),
+        ("バックグラウンドは 5 本（指定 2 ／ 自動 2 ／ 監視 1）", "5 本（指定 2 ／ 自動 2 ／ 監視 1）" in out),
         ("入力に無いのに回ったもの（timedOutAfterMs あり）を「自動」と出す", " 自動" in auto),
         ("timedOutAfterMs が無くても、入力に指定が無ければ「自動」と出す", " 自動" in auto2),
         ("指定したものを「指定」と出す", " 指定" in spec),
-        ("通知のある task-id は「完了の記録あり」", "完了の記録あり（completed" in spec),
+        ("Monitor の taskId を「監視」として数える", " 監視" in mon),
+        ("attachment の通知で「完了の記録あり」", "完了の記録あり（completed" in spec),
+        ("user の発言（SYSTEM NOTIFICATION）の通知も拾う", "完了の記録あり（completed" in auto2),
         ("道具の結果に写った通知は完了に数えない", "完了の記録なし" in auto),
+        ("道具の入力に写った通知・途中経過の event は完了に数えない", "完了の記録なし" in mon),
         ("同じ行の 2 つ目の通知も、自分の status で拾う", "完了の記録あり（killed" in kill),
-        ("stop_reason が end_turn でない報告も並べる", any("REPORT_BODY" in l for l in says)),
-        ("前置きの text も並べる（判定しない）", any(PREAMBLE in l for l in says)),
-        ("SendMessage の引き渡しを並べる", any("引き渡し" in l and HANDBACK in l for l in says)),
+        ("stop_reason が None の報告も並べる", bool(report_line)),
+        ("stop_reason が stop_sequence の text も並べる", any("STOPSEQ_TEXT" in l for l in says)),
+        ("SendMessage の引き渡しを並べる", any("引き渡し" in l and "HANDBACK_BODY" in l for l in says)),
+        ("SubagentHandback の引き渡しを並べる", any("引き渡し" in l and HANDBACK2 in l for l in says)),
         ("判定しないことを明示する", "判定しない" in out),
         ("コマンドの途中の find / に印を付ける", "[find /]" in auto),
+        ("find ~ に印を付ける", "[find ~]" in cmd("find ~ -name")),
+        ("狭い探索（find ~/.venv/...）には印を付けない", "[find ~]" not in cmd("find ~/.venv")),
+        ("URL の & には印を付けない", "[&]" not in cmd("curl")),
+        ("バックグラウンドの & に印を付ける", "[&]" in cmd("sleep 5 &")),
         ("長いコマンドの全文を出さない", FIND_CMD not in out),
         ("コマンドの尾を出す", "| head -5" in auto),
         ("道具の出力を出さない", TOOL_OUTPUT not in out),
     ]
-    rc, out = run(script, str(fx["stalled"]), "--text", "2")
+    rc, out = run(script, str(fx["stalled"]), "--text", report_no)
     checks += [
-        ("--text 2 は報告の全文を出す", rc == 0 and "REPORT_BODY" in out),
+        ("--text は報告の全文を出す", rc == 0 and "REPORT_BODY" in out and "詳細。" * 60 in out),
         ("--text は指定した 1 件だけを出す", PREAMBLE not in out and HANDBACK not in out),
-        ("--text の番号が範囲外なら rc=2", run(script, str(fx["stalled"]), "--text", "99")[0] == 2),
+        ("--text の番号が上に範囲外なら rc=2", run(script, str(fx["stalled"]), "--text", "99")[0] == 2),
+        ("--text 0 は rc=2（末尾から数えない）", run(script, str(fx["stalled"]), "--text", "0")[0] == 2),
     ]
     checks += [
         ("同じ名前が 2 件あれば rc=2 で選ばない",
@@ -161,38 +215,74 @@ def evaluate(script: Path, fx: dict) -> list[tuple[str, bool]]:
 
 
 MUTATIONS = {
-    # 守る 1: 判定は結果の backgroundTaskId で行う
+    # 守る 1: Bash は結果の backgroundTaskId で判定する
     "入力フラグで判定する": (
         '                if isinstance(tur, dict) and tur.get("backgroundTaskId"):',
         '                if isinstance(tur, dict) and (c["input"] or {}).get("run_in_background"):'),
-    # 守る 2: 自動は「ID あり・指定なし」で決める（timedOutAfterMs で決めない）
+    # 守る 2: Monitor は taskId で数える
+    "Monitor を数えない": (
+        '                elif isinstance(tur, dict) and c["name"] == "Monitor" and tur.get("taskId"):',
+        "                elif False:"),
+    # 守る 3: 自動は「ID あり・指定なし」で決める（timedOutAfterMs で決めない）
     "timedOutAfterMs で自動を決める": (
         '    return "指定" if inp.get("run_in_background") else "自動"',
         '    return "自動" if c["timeout"] else "指定"'),
-    # 守る 3: 通知の行からだけ拾う
+    # 守る 4: user の発言（SYSTEM NOTIFICATION）からも拾う
+    "user の発言を見ない": (
+        "        if isinstance(content, str):\n            return content",
+        '        if isinstance(content, str):\n            return ""'),
+    # 守る 5: 道具の結果・入力からは拾わない
     "どの行からも通知を拾う": (
         '    if r.get("type") == "attachment":\n        return json.dumps(r.get("attachment"), ensure_ascii=False)',
-        '    if True:\n        return json.dumps(r, ensure_ascii=False)'),
-    # 守る 4: 1 つの通知の中でだけ組にする
+        "    if True:\n        return json.dumps(r, ensure_ascii=False)"),
+    # 守る 6: 1 つの通知の中でだけ組にする
     "行全体で 1 組だけ拾う": (
         "        for block in NOTIFICATION.findall(notification_text(r)):",
         "        for block in [notification_text(r)] if '<task-notification>' in notification_text(r) else []:"),
-    # 守る 5: stop_reason で絞らない
-    "end_turn の text だけを並べる": (
+    # 守る 7: status の無い通知は完了に数えない
+    "途中経過を完了に数える": (
+        "            if tid and status:\n"
+        "                done.setdefault(tid.group(1).strip(), (status.group(1).strip(), ts))",
+        "            if tid:\n"
+        '                done.setdefault(tid.group(1).strip(), (status.group(1).strip() if status else "?", ts))'),
+    # 守る 8: stop_reason で絞らない
+    "stop_sequence を落とす": (
         "            if text:\n",
-        '            if text and msg.get("stop_reason") == "end_turn":\n'),
-    # 守る 6: 2 件以上当たったら選ばない
+        '            if text and msg.get("stop_reason") in ("end_turn", None):\n'),
+    # 守る 9: SubagentHandback・SendMessage の両方を引き渡しとして並べる
+    "SubagentHandback を見ない": (
+        'HANDBACK = ("SubagentHandback", "SendMessage")',
+        'HANDBACK = ("SendMessage",)'),
+    # 守る 10: 引き渡しは窓から外れても出す
+    "引き渡しを窓に任せる": (
+        '    picked |= {i for i, s in enumerate(says, 1) if s["kind"] == "引き渡し"}',
+        "    picked |= set()"),
+    # 守る 11: いちばん長い text も窓から外れても出す
+    "最長の text を窓に任せる": (
+        "        picked.add(max(texts)[1])",
+        "        pass"),
+    # 守る 12: 2 件以上当たったら選ばない
     "先頭の 1 件を選ぶ": (
         "    if len(hits) > 1:",
         "    if False:"),
-    # 守る 7: 禁じられた形に印を付ける（頭だけに切ると本体が隠れる）
+    # 守る 13: 禁じられた形に印を付ける（頭だけに切ると本体が隠れる）
     "印を付けない": (
         '        marks = "".join(f"[{f}]" for f in flags(inp["command"]))',
         '        marks = ""'),
-    # 守る 8: --text は 1 件だけ
+    # 守る 14: 印は禁じた形だけに付ける
+    "印を広く付ける": (
+        '    ("find ~", re.compile(r"\\bfind\\s+(~|\\$HOME)/?(\\s|$)")),\n'
+        '    ("&", re.compile(r"(^|\\s)&(\\s|$)")),',
+        '    ("find ~", re.compile(r"\\bfind\\s+(~|\\$HOME)")),\n'
+        '    ("&", re.compile(r"(?<![&|>0-9])&(?![&>])")),'),
+    # 守る 15: --text は 1 件だけ
     "--text で全部を出す": (
         '        print(says[args.text - 1]["text"])',
         '        print("\\n".join(s["text"] for s in says))'),
+    # 守る 16: --text の範囲外（0 と負を含む）は非ゼロ
+    "--text の下限を見ない": (
+        "        if not 1 <= args.text <= len(says):",
+        "        if not args.text <= len(says):"),
 }
 
 
@@ -216,9 +306,9 @@ def main() -> int:
         for proj, agent, team in (("p1/s1", "aaa", "t1"), ("p2/s2", "bbb", "t2")):
             d = projects / proj / "subagents"
             write(d / f"agent-{agent}.jsonl", stalled_rows())
-            write(d / f"agent-{agent}.meta.json", [])
-            (d / f"agent-{agent}.meta.json").write_text(
-                json.dumps({"name": "verifier", "teamName": team}), encoding="utf-8")
+            meta = d / f"agent-{agent}.meta.json"
+            assert_in_tmp(meta)
+            meta.write_text(json.dumps({"name": "verifier", "teamName": team}), encoding="utf-8")
 
         print("本体")
         for name, ok in evaluate(SCRIPT, fx):
