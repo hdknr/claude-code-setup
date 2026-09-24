@@ -71,6 +71,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `scripts/` に無い**——`plugins/dev-loop/skills/dev-loop/scripts/find-cycle.py`
     に置いてある（**`dev-loop` はどのリポジトリでも使うスキル**なので、
     対象リポジトリの `scripts/` に在ることを当てにできない）
+  - `test-summarize-subagent.py` - **サブエージェント 1 体分の transcript 集計の回帰テスト**
+    （#168。変異テストを含む）。**本体は `plugins/dev-loop/skills/dev-loop/scripts/summarize-subagent.py`**
+    （`find-cycle.py` と同じ理由）。**バックグラウンドに回ったかは結果の `backgroundTaskId` で見る**
+    ——入力の `run_in_background` だけでは、タイムアウトで自動的に回ったものを取りこぼす。
+    **何を守り何を守らないかは docstring を正とする**
   - `collect-guard-rejections.py` - worktree 隔離セッションのガードによる拒否を
     トランスクリプトから収集する（**CI からは呼ばない**——入力が `~/.claude/projects` にあり、
     リポジトリの外で利用者ごとに違う。`token-metrics.py` と同じ形）
