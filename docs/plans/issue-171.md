@@ -82,7 +82,9 @@ main へのマージで GitHub Pages が再デプロイされる（`docs/` の�
 - 割り目（手順 4）: AskUserQuestion で訊いた → 「このまま続ける」
 - Verifier: 1 パス目 **完了・反証 0 件**（sonnet・`dev-loop:dev-loop-verifier`。報告冒頭のツール一覧は Read/Bash/SubagentHandback）
 - `/code-review`: 1 パス目 **完了・指摘 10 件**（high）。採否は §6 の表: 直す 6 ／ TODO 2 ／ 採らない 2
-- 次: 指摘対応（2 コミット目）→ 2 パス目の前の割り目 → Verifier と `/code-review` の 2 パス目
+- 指摘対応: 完了（`ad261d9`）。`check-all.py` 28/28 緑
+- 割り目（2 パス目の前）: AskUserQuestion で訊いた → 「ここで割る」
+- **次（再開点）: 手順 5 の当て直し（Verifier 2 パス目）と 手順 6 の `/code-review` 2 パス目の両方が残っている。** 委譲文は `prompts/` から作り直す（1 パス目の指摘と採否は §6 の表）
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
