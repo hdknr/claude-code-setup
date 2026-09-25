@@ -342,6 +342,8 @@ BACKGROUND_STATUSES = {"async_launched", "teammate_spawned"}
 NOTIFY_TOOL_USE = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
 TEAMMATE = re.compile(r'<teammate-message teammate_id="([^"]+)"[^>]*>(.*?)(?:</teammate-message>|$)',
                       re.S)
+# サブエージェントの引き渡し。`from=` は `Agent` の `name`（か agentId）。
+AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 # 区分。**この順で列に出す。合計がセッションの長さに等しい**（`partition`）。
 CATEGORIES = ("model", "tool", "human", "notify", "other")
 
@@ -361,9 +363,14 @@ def _notified(text: str) -> tuple[set, set]:
     報告の本文が idle 通知の `result` にしか無かった**——一律に捨てると、その周の
     Verifier は全部「報告なし」になる（最初そう書いて、実データの「報告なし」40 件を
     調べて見つけた。#169）。
+
+    **引き渡し（`<agent-message from=…>`）も報告である。** 最初の報告が引き渡しで、
+    teammate の発言がずっと後の idle 通知しか無い関門がある——`from=` を当てないと、
+    **6 分で報告が届いた Verifier が 699 分と出た**（2 パス目の `/code-review` が実物で示した）。
     """
     ids = set(NOTIFY_TOOL_USE.findall(text)) if "<task-notification>" in text else set()
     mates = {name for name, body in TEAMMATE.findall(text) if _reports(body)}
+    mates |= set(AGENT_MESSAGE.findall(text))
     return ids, mates
 
 
@@ -388,7 +395,7 @@ def elapsed_event(row: dict):
       そのあとも人間を待つ（実物で、人間の発言の直前の行は `end_turn` 4153・
       `stop_sequence` 85・なし 17・`tool_use` 2）
     - `result` — 道具の結果。中身は `{"ids": {id: 裏で起動したか}}`
-    - `notify` — 通知（task-notification / teammate-message）。中身は `{"ids", "mates"}`
+    - `notify` — 通知（task-notification / teammate-message / 引き渡し）。中身は `{"ids", "mates"}`
     - `human` — 人間の発言（スラッシュ起動を含む）
 
     **`isMeta` の行は境界にしない**——スキル本文の注入などで、人間の発言ではない。
@@ -424,7 +431,8 @@ def elapsed_event(row: dict):
         return None
     if row.get("isMeta"):
         if kind == "user" and any("<agent-message " in t for t in user_texts(message)):
-            return timestamp, "notify", {"ids": set(), "mates": set()}
+            mates = set().union(*(_notified(t)[1] for t in user_texts(message)))
+            return timestamp, "notify", {"ids": set(), "mates": mates}
         return None
     if kind == "assistant":
         starts = []
@@ -438,7 +446,7 @@ def elapsed_event(row: dict):
                 gate = "review"
             starts.append((block.get("id"), name, gate, args.get("name")))
         return timestamp, "assistant", {"idle": message.get("stop_reason") != "tool_use",
-                                        "starts": starts}
+                                        "starts": starts, "id": message.get("id")}
     if kind != "user":
         return None
     content = message.get("content")
@@ -461,7 +469,9 @@ def elapsed_event(row: dict):
 
 
 def _looks_notified(text: str) -> bool:
-    return "<teammate-message" in text or text.lstrip().startswith("<task-notification>")
+    head = text.lstrip()
+    return ("<teammate-message" in text or head.startswith("<task-notification>")
+            or head.startswith("<agent-message "))
 
 
 def _seconds(start: str, end: str) -> float:
@@ -484,6 +494,9 @@ def partition(events) -> dict:
     | 上のどれでもない | | `other` |
 
     **「止まった」は `end_turn` だけではない**（`elapsed_event` の `idle`）。
+    **ただし次の行が同じ応答（同じ `message.id`）なら止まっていない**——1 つの応答が
+    複数行に分かれると、**各行が最後の `stop_reason` を持つ**ので、thinking の行が
+    `end_turn` を名乗る（実物の 1 セッションに 19 組。2 パス目の `/code-review` が指摘）。
     **人間 → 人間**（続けて打った・割り込んだ）も人間の時間である。
 
     **関門の時間はここに入らない**——関門は裏で走り、親の区間と重なる（`gates`）。
@@ -496,6 +509,8 @@ def partition(events) -> dict:
     for prev, cur in zip(ordered, ordered[1:]):
         gap = _seconds(prev[0], cur[0])
         ended = prev[1] == "assistant" and prev[2]["idle"]
+        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:
+            ended = False
         if cur[1] == "result" and asked & set(cur[2]["ids"]):
             category = "human"
         elif ended and cur[1] in ("human", "notify"):
@@ -516,7 +531,9 @@ def gates(events) -> list[tuple[str, float | None]]:
     """関門ごとに `(種類, 起動から最初の報告までの秒数)` を返す。報告が無ければ `None`。
 
     **終わりは 3 つの形のどれか**——前景の結果 ／ `<tool-use-id>` が一致する通知 ／
-    `Agent` の `name` と `teammate_id` が一致する報告（idle 通知は除く）。
+    `Agent` の `name` と `teammate_id`（または引き渡しの `from=`）が一致する報告
+    （`result` の無い idle 通知は除く）。**`/code-review` は名前を持たないので 3 つ目に当たらない**
+    ——引き渡しは `from="code-review"` で来るが、並行する複数のレビューを見分けられない。
     **最初に届いたものを採る**——同じ id が 2 度通知されることがある（途中の報告かもしれない）。
     **報告が無い関門を落とさず、0 秒にもしない**（`None` のまま返す）。
     """

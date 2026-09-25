@@ -127,14 +127,16 @@ def ev_row(kind, time, day="2026-09-15", uuid=None, **fields):
     return json.dumps(row, ensure_ascii=False)
 
 
-def ev_assistant(time, *, stop="tool_use", uses=(), text=None, **kw):
+def ev_assistant(time, *, stop="tool_use", uses=(), text=None, mid=None, **kw):
     content = [{"type": "tool_use", "id": i, "name": n, "input": a} for i, n, a in uses]
     if text is not None:
         content.append({"type": "text", "text": text})
     # **usage を持たせる**——`main` はレコードが 0 件だと集計の前に帰る。
-    return ev_row("assistant", time, message={"role": "assistant", "model": "claude-opus-5",
-                                              "stop_reason": stop, "content": content,
-                                              "usage": usage(inp=1)}, **kw)
+    message = {"role": "assistant", "model": "claude-opus-5", "stop_reason": stop,
+               "content": content, "usage": usage(inp=1)}
+    if mid is not None:
+        message["id"] = mid
+    return ev_row("assistant", time, message=message, **kw)
 
 
 def ev_result(time, tool_id, status=None, background=None, **kw):
@@ -261,6 +263,28 @@ def elapsed_tree() -> dict[str, list[str]]:
                             "[Subagent hand-back] 反証 0 件\n</agent-message>", meta=True),  # 通知待ち 600 秒
         ev_assistant("14:32:40", stop="end_turn", text="届きました"),
     ]
+    # **2 パス目の `/code-review` が実物で示した 2 形**（#169）。手で数えた値:
+    # モデル 400・道具 1・通知待ち 899（合計 1300 = 15:00:00〜15:21:40）。
+    # 関門 ver-5 は 310 秒（15:00:30 起動 → 引き渡し）で、910 秒（あとの idle 通知）ではない。
+    s5 = [
+        ev_user("15:00:00", slash("810")),
+        # **1 つの応答が 2 行に分かれ、先の行が `end_turn` を名乗る**——
+        # 同じ応答の次の行を「止まった後」と読む変異に要る（モデル 30 秒）。
+        ev_assistant("15:00:00", stop="end_turn", text="考え中", mid="m1"),
+        ev_assistant("15:00:30", uses=[("v5", "Agent", {**VERIFIER, "name": "ver-5"})],
+                     mid="m1"),
+        ev_result("15:00:31", "v5", status="teammate_spawned"),         # 道具 1 秒
+        ev_assistant("15:00:40", stop="end_turn", text="待ちます"),    # モデル 9 秒
+        # **引き渡しが `attachment` で届き、それが最初の報告**（実物: `c73a0b7a…` 5329 行目）
+        # ——引き渡しを報告と数えない変異に要る（関門が 910 秒になり、ここが境界でなくなる）。
+        ev_row("attachment", "15:05:40", attachment={
+            "type": "queued_command",
+            "prompt": '<agent-message from="ver-5">\n反証 0 件\n</agent-message>'}),  # 通知待ち 300 秒
+        ev_assistant("15:05:41", stop="end_turn", text="届きました"),  # モデル 1 秒
+        ev_user("15:15:40", teammate(
+            "ver-5", '{"type":"idle_notification","from":"ver-5","result":"反証 0 件"}')),  # 通知待ち 599 秒
+        ev_assistant("15:21:40", stop="end_turn", text="ok"),          # モデル 360 秒（通知 → assistant）
+    ]
     # **`/clear` で割った周の前のセッションが丸ごと `--since` の外**——
     # 残ったセッションだけで完結した周に見せる変異に要る。
     early1 = [ev_user("10:00:00", slash("900"), day="2026-09-14"),
@@ -271,7 +295,7 @@ def elapsed_tree() -> dict[str, list[str]]:
     sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
     return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
             "repo-e/p1.jsonl": p1, "repo-e/p2.jsonl": p2, "repo-e/over.jsonl": over,
-            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4,
+            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5,
             "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
             "repo-e/s1/subagents/agent-x.jsonl": sub}
 
@@ -313,6 +337,12 @@ def test_elapsed(base: Path, mod) -> None:
     check("止まり方・人間→人間・id の無い通知・引き渡しを分ける（s4）",
           mod.partition(events[("repo-e", "s4")])
           == {"model": 40.0, "tool": 0.0, "human": 720.0, "notify": 1200.0, "other": 0.0})
+    s5 = events[("repo-e", "s5")]
+    check("分かれた応答・attachment の引き渡しを分ける（s5）",
+          mod.partition(s5) == {"model": 400.0, "tool": 1.0, "human": 0.0, "notify": 899.0,
+                                "other": 0.0})
+    check("引き渡しが最初の報告なら、そこで関門が終わる（ver-5 は 310 秒）",
+          mod.gates(s5) == [("verifier", 310.0)])
     got = sorted(mod.gates(s1), key=repr)
     check("関門: レビュー 610 秒・Verifier 1530 秒と 120 秒と 110 秒・報告なし 1",
           got == sorted([("review", 610.0), ("verifier", 1530.0), ("verifier", 120.0),
@@ -349,6 +379,12 @@ def test_elapsed(base: Path, mod) -> None:
             '    if False:'),
         "isMeta の引き渡しを境界にしない": (
             '        if kind == "user" and any("<agent-message " in t for t in user_texts(message)):',
+            '        if False:'),
+        "引き渡しを報告と数えない（attachment の引き渡しも境界でなくなる）": (
+            '    mates |= set(AGENT_MESSAGE.findall(text))',
+            '    pass'),
+        "同じ応答の次の行を止まった後と読む": (
+            '        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:',
             '        if False:'),
         "end_turn だけを止まったと読む": (
             '{"idle": message.get("stop_reason") != "tool_use",',
