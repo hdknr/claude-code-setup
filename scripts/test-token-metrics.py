@@ -285,6 +285,24 @@ def elapsed_tree() -> dict[str, list[str]]:
             "ver-5", '{"type":"idle_notification","from":"ver-5","result":"反証 0 件"}')),  # 通知待ち 599 秒
         ev_assistant("15:21:40", stop="end_turn", text="ok"),          # モデル 360 秒（通知 → assistant）
     ]
+    # **3 パス目の `/code-review` が実物で示した 3 形**（#169）。手で数えた値:
+    # モデル 310・人間待ち 595（合計 905 = 16:00:00〜16:15:05）。
+    # 関門 r6 は報告なし（failed の通知は報告ではない）。
+    s6 = [
+        ev_user("16:00:00", slash("820")),
+        ev_assistant("16:00:05", uses=[("r6", "Skill", {"skill": "code-review"}),
+                                       ("q6", "AskUserQuestion", {})]),  # モデル 5 秒
+        ev_result("16:00:06", "r6", status="forked", background=True),  # 人間待ち 1 秒（答え待ち）
+        # **答えを待っている間に通知が来る**——通知で答え待ちを切る変異に要る。
+        # **しかもその通知は failed**——failed を報告と数える変異に要る。
+        ev_user("16:05:00", "<task-notification>\n<task-id>c6</task-id>\n<tool-use-id>r6</tool-use-id>\n"
+                            "<status>failed</status>\n</task-notification>"),  # 人間待ち 294 秒
+        ev_result("16:10:00", "q6"),                                  # 人間待ち 300 秒
+        # **圧縮の要約**（`isMeta` を持たない）——人間の発言と数える変異に要る。
+        ev_user("16:15:00", "This session is being continued from a previous conversation …",
+                isCompactSummary=True),
+        ev_assistant("16:15:05", stop="end_turn", text="続けます"),  # モデル 305 秒（要約は境界でない）
+    ]
     # **`/clear` で割った周の前のセッションが丸ごと `--since` の外**——
     # 残ったセッションだけで完結した周に見せる変異に要る。
     early1 = [ev_user("10:00:00", slash("900"), day="2026-09-14"),
@@ -295,7 +313,7 @@ def elapsed_tree() -> dict[str, list[str]]:
     sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
     return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
             "repo-e/p1.jsonl": p1, "repo-e/p2.jsonl": p2, "repo-e/over.jsonl": over,
-            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5,
+            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5, "repo-e/s6.jsonl": s6,
             "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
             "repo-e/s1/subagents/agent-x.jsonl": sub}
 
@@ -330,8 +348,8 @@ def test_elapsed(base: Path, mod) -> None:
     parts = mod.partition(s1)
     # 手で数えた値（`elapsed_tree` のコメント）。
     check("区分が手で数えた値に一致する",
-          parts == {"model": 91.0, "tool": 124.0, "human": 590.0, "notify": 1250.0,
-                    "other": 350.0})
+          parts == {"model": 91.0, "tool": 124.0, "human": 590.0, "notify": 1600.0,
+                    "other": 0.0})
     check("区分の合計がセッションの長さに等しい（10:00:00〜10:40:05）",
           sum(parts.values()) == 2405.0)
     check("止まり方・人間→人間・id の無い通知・引き渡しを分ける（s4）",
@@ -343,6 +361,9 @@ def test_elapsed(base: Path, mod) -> None:
                                 "other": 0.0})
     check("引き渡しが最初の報告なら、そこで関門が終わる（ver-5 は 310 秒）",
           mod.gates(s5) == [("verifier", 310.0)])
+    s6 = events[("repo-e", "s6")]
+    check("答え待ちの間の通知・圧縮の要約を分ける（s6）", mod.partition(s6) == {"model": 310.0, "tool": 0.0, "human": 595.0, "notify": 0.0, "other": 0.0})
+    check("failed の通知は報告ではない（r6 は報告なし）", mod.gates(s6) == [("review", None)])
     got = sorted(mod.gates(s1), key=repr)
     check("関門: レビュー 610 秒・Verifier 1530 秒と 120 秒と 110 秒・報告なし 1",
           got == sorted([("review", 610.0), ("verifier", 1530.0), ("verifier", 120.0),
@@ -386,6 +407,18 @@ def test_elapsed(base: Path, mod) -> None:
         "同じ応答の次の行を止まった後と読む": (
             '        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:',
             '        if False:'),
+        "failed の通知を報告と数える": (
+            '    if "<task-notification>" in text and NOTIFY_STATUS.findall(text) in ([], ["completed"]):',
+            '    if "<task-notification>" in text:'),
+        "圧縮の要約を境界にする": (
+            '    if row.get("isCompactSummary"):',
+            '    if False:'),
+        "答え待ちを通知で切る": (
+            '        if asking:\n            category = "human"',
+            '        if asking and cur[1] == "result" and asking & set(cur[2]["ids"]):\n            category = "human"'),
+        "止まっていた状態を通知で切る（通知 → 通知がその他）": (
+            '        waiting = ended or (prev[1] == "notify" and waiting)',
+            '        waiting = ended'),
         "end_turn だけを止まったと読む": (
             '{"idle": message.get("stop_reason") != "tool_use",',
             '{"idle": message.get("stop_reason") == "end_turn",'),
@@ -408,11 +441,11 @@ def test_elapsed(base: Path, mod) -> None:
             '        if not isinstance(attachment, dict) or attachment.get("type") != "queued_command":',
             '        if True:'),
         "並べ替えずに区間を作る": (
-            '    ordered = sorted(events, key=lambda e: e[0])\n    asked',
-            '    ordered = list(events)\n    asked'),
+            '    ordered = sorted(events, key=lambda e: e[0])\n    totals',
+            '    ordered = list(events)\n    totals'),
         "AskUserQuestion の待ちを人間待ちにしない": (
-            '        if cur[1] == "result" and asked & set(cur[2]["ids"]):',
-            '        if False:'),
+            '        if asking:\n            category = "human"',
+            '        if False:\n            category = "human"'),
         "裏で起動した結果を関門の終わりと読む": (
             '            if kind == "result" and body["ids"].get(tool_id) is False:',
             '            if kind == "result" and tool_id in body["ids"]:'),
