@@ -1,0 +1,143 @@
+# #169 — 1 周の経過時間がどこで使われたかを測る（プロファイル）
+
+## 周の在り処
+
+- ブランチ: `issue/169-elapsed-profile`
+- worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-169`
+- 起点: `e94521e`（Merge pull request #172）
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD` から解決）→ `e94521ebe12799544f895ca3c6199172c916919b`
+- 入場: `prepare-worktree.sh` で作成 → `EnterWorktree(path)`。**`ExitWorktree` は畳まない**（path で入ったため）
+
+## 0. 範囲の決定（着手前に人間に訊いた）
+
+Issue には切り離せる塊が 3 つある。**AskUserQuestion で「(a) だけ」が選ばれた。**
+
+- **(a) 周の経過時間プロファイル** — この周でやる（Issue 本文の問い）
+- (b) #168 から送られた `summarize-subagent.py` の復活と未解決 10 件 — **別 Issue に起票する**
+- (c) 2 つ目のコメントの「遅延中は再実行せず待つ」規範 — **別 Issue に起票する**
+  （本文の「やらないこと」＝まず測る、とぶつかり、根拠も 1 件だけ）
+
+**(b) を外したので、Issue 本文の「#168 の集計スクリプトと式を共有する」は、この周では該当しない**
+（共有する相手がリポジトリに無い）。
+
+### 着手前に実物で確かめたこと（#168 の親セッション `cea81733-…` 1 本）
+
+| 観測 | 結果 |
+| --- | --- |
+| 周の起動形 | `/dev-loop 168` が**素のテキスト**で打たれ、`Skill` の tool_use（`input.args: "168"`）で起動した。**`<command-args>` が無いので、既存の `issue_number` の経路では Issue 番号が取れない**（`--per-issue` から落ちる） |
+| Verifier の起動と報告 | `Agent`（`subagent_type: dev-loop:dev-loop-verifier`・`name: verifier-168-p1`）→ 結果は `status: teammate_spawned`。**報告は user 行の `Another Claude session sent a message: <teammate-message teammate_id="verifier-168-p1" …>`** で届く。同じ id の `{"type":"idle_notification"…}` が後に続く |
+| `/code-review` の起動と報告 | `Skill`（`skill: code-review`）→ 結果は `status: forked, background: true`。**報告は user 行の `<task-notification>` で、`<tool-use-id>` が起動した tool_use の id と一致する** |
+| 親の動き | **関門を 2 つとも裏で走らせたまま、親は作業を続ける**（04:39:59 起動 → 04:40:07 end_turn → 04:47:45 通知）。**関門の区間は親の区間と重なる** |
+| 人間の応答 | `AskUserQuestion` の tool_use → tool_result の間、または end_turn → 素のテキストの user 行 |
+
+## 1. 変更範囲
+
+触る:
+
+- `scripts/token-metrics.py` — `--elapsed` を足す。**周の検出（`scan` の `dev_loop_sessions` と Issue 番号）は共有する**。Issue 番号の経路に `Skill` の `args` を足す
+- `scripts/test-token-metrics.py` — 経過時間の回帰テストと変異テスト、`Skill` の `args` の経路
+- `CLAUDE.md` — 「トークン使用量を測る」のコマンド例に 1 行
+- `docs/plans/issue-169.md` — この計画
+
+触らない:
+
+- 手順（1〜8）単位の推定——Issue 本文のとおり、transcript に境界が無い。**この周は関門（tool 呼び出し）単位まで**
+- `plugins/`（SKILL.md に「手順 N に入った」の印を書かせる案は Issue 本文が不採用）。**よって version bump なし**
+- `summarize-subagent.py`（(b)）、遅延の規範（(c)）
+- 経過時間を短くする規範（Issue の「やらないこと」）
+
+## 2. 乗るデプロイ経路
+
+`scripts/` と `CLAUDE.md` と `docs/plans/` だけ。**`mkdocs.yml` に `docs/plans/` の除外は無い**ので、
+マージすると `docs/plans/issue-169.md` は **nav に無いページとして GitHub Pages に載る**（反映経路あり）。
+スクリプト本体は CI から呼ばれない（テストは `docs.yml` で回る）。
+
+## 3. verify の受入基準
+
+### 3.1 不変条件
+
+- **A. 分割は壁時計と一致する。** セッションごとに、区分（モデル／道具／人間待ち／通知待ち／その他）の合計が、そのセッションの最初の行から最後の行までの時間と**等しい**（欠けも重複もない）
+- **B. 人間待ちを作業に入れない。** `AskUserQuestion` の tool_use → tool_result、および end_turn → 人間の発言の区間は「人間待ち」に入る
+- **C. 通知待ちを人間待ちと混ぜない。** end_turn → 通知（task-notification / teammate-message）の区間は「通知待ち」に入る
+- **D. 関門の区間は、起動から最初の報告まで。** Verifier（`Agent` で `subagent_type` に `dev-loop-verifier`）と `/code-review`（`Skill` で `code-review`）について、終わりは次のどれか——前景の tool_result ／ `<tool-use-id>` が一致する task-notification ／ `Agent` の `name` と `teammate_id` が一致する teammate-message（**`result` を持たない** idle 通知は除く）。**終わりが見つからない関門は落とさず、0 分にもせず、件数を別に出す**
+- **E. 関門の時間を壁時計に足さない。** 関門は親の区間と重なるので、出力は合計に混ぜず、そう明記する
+- **F. 周の数え方は 1 箇所。** `--elapsed` は `scan` が出す周と Issue 番号をそのまま使う（別の検出を書かない）。**`Skill` の `args` から Issue 番号を取る経路は共有側に足す**（`--per-issue` にも効く）
+- **G. 人間の発言の判定。** tool_result・通知・teammate-message・`isMeta` の行（スキル本文の注入など）は人間の発言として数えない
+- **H. 既存の出力を黙って変えない。** `--per-issue` 以外の既存出力は変わらない。`--per-issue` は `Skill` の `args` で束ねられる周が増える（F の意図した変化）
+- **I. 読めない・壊れた行は既存の件数報告に乗ったまま**
+
+### 3.2 これを破りうる経路
+
+| 経路 | 関わる不変条件 | どう守るか |
+| --- | --- | --- |
+| `/clear` で割った周（1 Issue に複数セッション） | A・F | セッションごとに分割し、Issue で合計。セッション間の空白は「セッション外」として別に出す |
+| タイムスタンプが順不同の行（実物: 先頭の 2 行が逆順） | A | 時刻で並べ替えてから区間を作る |
+| タイムスタンプの無い行・attachment・system 行 | A・G | 境界にしない |
+| `--since` が周の途中に落ちる | A | 既存の起点と同じく「先頭が範囲外」として出す（近い値で代用しない） |
+| `--repo` / `--merge-worktrees` | F | `scan` と同じ粒度で絞る |
+| サブエージェントの transcript | A・E | 親の分割には入れない（関門は親の側の起動と報告で測る） |
+| 同じ tool-use-id / teammate の通知が 2 回来る | D | 最初の報告を終わりにする |
+| 前景の `Agent`（同期） | D | tool_result を終わりにする |
+| 報告が来なかった関門 | D | 「終わりの記録なし」の件数に入れる |
+| `AskUserQuestion` の結果 | B | 直前が end_turn でなくても人間待ち |
+| 起動形が素のテキスト＋`Skill`（#168 の実物） | F | `Skill` の `args` の数字を Issue 番号として使う（`<command-args>` が優先） |
+
+### 3.3 この環境では証明できないもの（未証明）
+
+- **通知の行の時刻が、親に届いた時刻と一致するか。** transcript が書く時刻しか見えない
+- **teammate-message の最初の非 idle の発言が「報告」か。** 途中経過を送る Verifier がいれば、終わりが早く出る。**実物（#168 の 8 体）では全部が報告だった**が、形として保証されない
+- **分類の精度そのもの。** 境界の手がかり（end_turn → 次の行）で分けているので、**end_turn の直後に人間ではなく自動の入力が来た場合**（hook など）の誤分類は、実物に当てて数えるしかない
+- **「報告なし」6 件のうち 5 件が本当に報告の無い関門か**（1 件だけ実物で見た）
+- **通知でない `queued_command`**（人間の入力の待ち行列など、実物に 562 件）を境界にしていない。
+  **その区間は前後の行の区分に入る**ので、人間待ちが過小に出る可能性がある
+
+### 3.4 BLOCKED
+
+なし（入力の実物は手元にある）。
+
+### 3.5 生成物の鮮度
+
+**生成物なし。** 図（`diagrams/`）と `SKILL.md` の測定値（`skill-metrics.py`）は、どちらもこの周で触るファイルに依存しない。**`check-all.py` が両方の `--check` を回すので、それで確かめる。**
+
+### 3.6 必須要件の掛け算
+
+Verifier × 1・2 パス目、`/code-review` × 1・2 パス目 の 4 つの受け渡しすべてに、§3 と §6 を渡す。
+
+### 3.7 実データでの陽性対照
+
+#168 の親セッション（`cea81733-…`）に当てて、**上の「着手前に確かめたこと」の時刻と一致するか**を見る——`/code-review` 1 パス目は 04:39:59 起動 → 04:47:45 通知（7 分 46 秒）、Verifier 1 パス目は 04:39:33 起動 → 05:12:42 報告（33 分 9 秒）。
+
+## 4. 未解決の判断
+
+- (b)・(c) の起票（手順 8 で行う）
+- **既存の `<command-args>` の経路が拾う番号**に怪しいものがある（`--elapsed` の実データに `#1737` が出た。
+  `Skill` の `args` の経路ではないことは確かめた——`dev-loop` の `Skill` 起動 43 件のうち 41 件が数字だけ、
+  残る 2 件も先頭の数字が正しい番号だった）。**この周では触らない**（範囲外。起票するかは手順 8 で決める）
+
+## 5. 関門の進捗（再開点）
+
+- 実装: **済み**（未コミット → この節を書いた直後にコミットする）
+- 歯止め: `python3 scripts/check-all.py` → **28/28 本（失敗 0 / 飛ばし 0）**
+- Verifier: 未
+- `/code-review`: 未
+- 交絡: **実験あり**。下の「実装中に実データで見つけたこと」の 3 件は、どれも**陽性対照と母集団で当てた**
+  （#168 の関門の時刻が着手前の手計算と一致すること・重なり／報告なしの件数が直したあと減ること）
+
+### 実装中に実データで見つけたこと（どれも直した）
+
+| 見つけたこと | 実物 | 直し方 |
+| --- | --- | --- |
+| **fork / resume でコピーされた行を 2 度数えていた** | 同じ Issue の 2 セッションが **933 行の `uuid` を共有**し、セッションの長さの合計が壁時計の約 2 倍（344: 111 分に対し 220 分）。**コピーは時刻も同じ** | `uuid` で 1 度だけ数える。**直したあと、重なりは `uuid` を共有しない 2 組（本当に並行したセッション）だけ**になった → 「重なり N」と出す |
+| **idle 通知を一律に捨てていた** | 「報告なし」40 件を調べたら、**報告の本文が idle 通知の `result` にしか無い**形（#92 の周） | `result` が空でない idle 通知は報告として数える → **40 件 → 6 件**。残る 6 件のうち 1 件（`verifier-122-pass2`）を実物で見た: 起動 27 秒後に `result` の無い idle 通知が来ただけで、そのあと `verifier-122-retry` が立っている。**残り 5 件は見ていない** |
+| **attachment の通知を `json.dumps` してから当てていた** | 試料で落ちた。`teammate_id="…"` の引用符がエスケープされる | `prompt`（実物は全件が文字列）に直接当てる。**実物で `queued_command` に載るのは task-notification だけで、teammate は 0 件** |
+
+### 陽性対照の結果（§3.7）
+
+#168 の親セッションに当てて、`/code-review` 1 パス目 **7.76 分**（手計算 7 分 46 秒）、Verifier 1 パス目 **33.14 分**（手計算 33 分 9 秒）。**一致した。**
+
+## 6. 既知の限界・決着済みの論点
+
+| 論点 | 決着 | 理由 |
+| --- | --- | --- |
+| 手順単位で出すか | 採らない | transcript に境界が無い。Issue 本文も「推定の精度も測る必要がある」とし、今回は関門単位まで（人間が (a) を選んだ範囲） |
+| `summarize-subagent.py` と式を共有するか | 該当しない | (b) を別 Issue に送ったので、共有する相手がリポジトリに無い |
