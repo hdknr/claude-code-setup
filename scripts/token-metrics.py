@@ -382,14 +382,22 @@ def elapsed_event(row: dict):
 
     返すのは `(時刻, 種類, 中身)`。種類は:
 
-    - `assistant` — 中身は `{"end_turn": bool, "starts": [(id, 道具名, 関門, teammate 名)]}`
+    - `assistant` — 中身は `{"idle": bool, "starts": [(id, 道具名, 関門, teammate 名)]}`。
+      **`idle` は「道具を呼ばずに止まった」**（`stop_reason` が `tool_use` でない）——
+      **`end_turn` だけではない**。API エラーで切れた応答は `stop_sequence` で止まり、
+      そのあとも人間を待つ（実物で、人間の発言の直前の行は `end_turn` 4153・
+      `stop_sequence` 85・なし 17・`tool_use` 2）
     - `result` — 道具の結果。中身は `{"ids": {id: 裏で起動したか}}`
     - `notify` — 通知（task-notification / teammate-message）。中身は `{"ids", "mates"}`
     - `human` — 人間の発言（スラッシュ起動を含む）
 
     **`isMeta` の行は境界にしない**——スキル本文の注入などで、人間の発言ではない。
+    **例外はサブエージェントの引き渡し**（`<agent-message from=…>`）で、これは通知として数える
+    （実物では `isMeta` で届き、71 分の通知待ちがこれで終わっていた）。
     **通知は 2 つの経路で届く**——user 行と `attachment`（`queued_command`）。
     実物では**片方にしか出ないものがどちらの側にも多い**ので、両方を拾う。
+    **`<tool-use-id>` を持たない通知もある**（再通知など）。**どちらの経路でも**、
+    形が通知なら境界にする（関門の終わりには当てない）。
     """
     timestamp = row.get("timestamp")
     if not isinstance(timestamp, str) or not timestamp:
@@ -402,14 +410,21 @@ def elapsed_event(row: dict):
         # **`prompt` の文字列に当てる。** `json.dumps` してから当てると
         # `teammate_id="…"` の引用符がエスケープされて一致しない（最初そう書いて試料で落ちた）。
         # 実物の `prompt` は全件が文字列。**通知でない `queued_command`**（人間の入力の
-        # 待ち行列など）は境界にしない——その区間は前後の行のどちらかに入る。
+        # 待ち行列など）は境界にしない——**その行は無かったことになり**、区間は
+        # **次の境界で分類される**（end_turn → assistant なら「その他」）。
         prompt = attachment.get("prompt")
-        ids, mates = _notified(prompt) if isinstance(prompt, str) else (set(), set())
-        if ids or mates:
+        if not isinstance(prompt, str):
+            return None
+        ids, mates = _notified(prompt)
+        if ids or mates or _looks_notified(prompt):
             return timestamp, "notify", {"ids": ids, "mates": mates}
         return None
     message = row.get("message")
-    if not isinstance(message, dict) or row.get("isMeta"):
+    if not isinstance(message, dict):
+        return None
+    if row.get("isMeta"):
+        if kind == "user" and any("<agent-message " in t for t in user_texts(message)):
+            return timestamp, "notify", {"ids": set(), "mates": set()}
         return None
     if kind == "assistant":
         starts = []
@@ -422,7 +437,7 @@ def elapsed_event(row: dict):
             elif name == "Skill" and REVIEW_SKILL in str(args.get("skill") or ""):
                 gate = "review"
             starts.append((block.get("id"), name, gate, args.get("name")))
-        return timestamp, "assistant", {"end_turn": message.get("stop_reason") == "end_turn",
+        return timestamp, "assistant", {"idle": message.get("stop_reason") != "tool_use",
                                         "starts": starts}
     if kind != "user":
         return None
@@ -440,10 +455,13 @@ def elapsed_event(row: dict):
         found_ids, found_mates = _notified(text)
         ids |= found_ids
         mates |= found_mates
-    if ids or mates or any("<teammate-message" in t or t.lstrip().startswith("<task-notification>")
-                           for t in user_texts(message)):
+    if ids or mates or any(_looks_notified(t) for t in user_texts(message)):
         return timestamp, "notify", {"ids": ids, "mates": mates}
     return timestamp, "human", {}
+
+
+def _looks_notified(text: str) -> bool:
+    return "<teammate-message" in text or text.lstrip().startswith("<task-notification>")
 
 
 def _seconds(start: str, end: str) -> float:
@@ -459,11 +477,14 @@ def partition(events) -> dict:
     | 前 | 後 | 区分 |
     | --- | --- | --- |
     | 何でも | `AskUserQuestion` の結果 | `human` |
-    | end_turn | 人間の発言 | `human` |
-    | end_turn | 通知 | `notify`（**親が手を止めて、裏の仕事を待っていた**） |
-    | end_turn 以外 | assistant | `model` |
-    | end_turn 以外 | 道具の結果 | `tool` |
+    | 止まった（`idle`）／人間の発言 | 人間の発言 | `human` |
+    | 止まった（`idle`） | 通知 | `notify`（**親が手を止めて、裏の仕事を待っていた**） |
+    | 止まっていない | assistant | `model` |
+    | 止まっていない | 道具の結果 | `tool` |
     | 上のどれでもない | | `other` |
+
+    **「止まった」は `end_turn` だけではない**（`elapsed_event` の `idle`）。
+    **人間 → 人間**（続けて打った・割り込んだ）も人間の時間である。
 
     **関門の時間はここに入らない**——関門は裏で走り、親の区間と重なる（`gates`）。
     **並べ替えてから数える**——実物に、時刻が逆順の行がある。
@@ -474,11 +495,13 @@ def partition(events) -> dict:
     totals = dict.fromkeys(CATEGORIES, 0.0)
     for prev, cur in zip(ordered, ordered[1:]):
         gap = _seconds(prev[0], cur[0])
-        ended = prev[1] == "assistant" and prev[2]["end_turn"]
+        ended = prev[1] == "assistant" and prev[2]["idle"]
         if cur[1] == "result" and asked & set(cur[2]["ids"]):
             category = "human"
         elif ended and cur[1] in ("human", "notify"):
             category = cur[1]
+        elif prev[1] == "human" and cur[1] == "human":
+            category = "human"
         elif not ended and cur[1] == "assistant":
             category = "model"
         elif not ended and cur[1] == "result":
@@ -1007,6 +1030,9 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
 
     **`--since` が周の途中に落ちたら、その周は出さない**——残った行は周の途中から始まり、
     近い値で代用すると短く出る（起点と同じ判断）。件数だけ出す。
+    **落ちる形は 2 つ**——セッションの途中に落ちる形と、**`/clear` で割った周の
+    前のセッションが丸ごと範囲外になる形**。後者は残ったセッションだけ見ると
+    周の頭から始まっているように見える（実物: #169 が 2 セッション・35 分の完結した周として出た）。
     """
     cycles = collections.defaultdict(lambda: {"sessions": 0, "span": 0.0,
                                                  "first": "", "last": "",
@@ -1014,14 +1040,17 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
                                                  "gates": collections.defaultdict(list),
                                                  "truncated": False})
     unmerged = 0
+    early = set()  # 丸ごと範囲外のセッションを持つ周。
     for key, session_events in events.items():
         if key not in dev_loop_sessions or not session_events:
             continue
         first = min(e[0] for e in session_events)
         last = max(e[0] for e in session_events)
         # **範囲外は、集計の枠を作る前に落とす**——先に枠を作ると、空の枠が
-        # 行として残る（最初そう書いて `--since` で落ちた）。
+        # 行として残る（最初そう書いて `--since` で落ちた）。**ただし周には印を残す。**
         if since and last[:10] < since:
+            if issue_of.get(key):
+                early.add((key[0], issue_of[key]))
             continue  # 丸ごと範囲外。
         number = issue_of.get(key)
         if not number:
@@ -1039,6 +1068,8 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
         for gate, seconds in gates(session_events):
             g["gates"][gate].append(seconds)
 
+    for k in early & cycles.keys():
+        cycles[k]["truncated"] = True
     shown = {k: g for k, g in cycles.items() if not g["truncated"]}
     truncated = len(cycles) - len(shown)
     if not shown:
@@ -1070,7 +1101,7 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
                      f"| {gate_cell(g['gates']['review'])} |")
     lines.append("")
     lines.append(f"**{len(shown)} 周**。単位は分。**モデル〜その他の合計が、セッションの長さの合計**"
-                 f"（壁時計 − セッション外）に等しい。")
+                 f"（壁時計 − セッション外）に等しい（**列ごとに丸めるので、表の数字を足しても一致しないことがある**）。")
     lines.append("**Verifier・レビューの列は壁時計に足さない**——裏で走り、親の区間と重なる"
                  "（回数 / 起動から最初の報告までの合計）。")
     if truncated:

@@ -240,11 +240,40 @@ def elapsed_tree() -> dict[str, list[str]]:
     # **番号の取れない周**——件数を出さない変異に要る。
     nonum = [ev_assistant("13:00:00", uses=[("sk3", "Skill", {"skill": "dev-loop:dev-loop"})]),
              ev_assistant("13:00:05", stop="end_turn", text="?")]
+    # **1 パス目の `/code-review` が実物で示した 3 形**（#169）。手で数えた値:
+    # モデル 40・人間待ち 720・通知待ち 1200（合計 1960 = 14:00:00〜14:32:40）。
+    s4 = [
+        ev_user("14:00:00", slash("800")),
+        # **API エラーで切れた応答**（`stop_sequence`）——`end_turn` だけを止まったと読む変異に要る。
+        ev_assistant("14:00:10", stop="stop_sequence", text="API Error: 401"),
+        ev_user("14:10:10", "続けて"),                                   # 人間待ち 600 秒
+        # **人間 → 人間**——人間待ちに入れない変異に要る。
+        ev_user("14:12:10", "もう 1 つ"),                                # 人間待ち 120 秒
+        ev_assistant("14:12:20", stop="end_turn", text="待ちます"),
+        # **`<tool-use-id>` を持たない再通知を `attachment` の経路で**——落とす変異に要る。
+        ev_row("attachment", "14:22:20", attachment={
+            "type": "queued_command",
+            "prompt": "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n"
+                      "</task-notification>"}),                           # 通知待ち 600 秒
+        ev_assistant("14:22:30", stop="end_turn", text="まだ"),
+        # **`isMeta` で届くサブエージェントの引き渡し**——境界にしない変異に要る。
+        ev_user("14:32:30", 'Another Claude session sent a message:\n<agent-message from="b1">\n'
+                            "[Subagent hand-back] 反証 0 件\n</agent-message>", meta=True),  # 通知待ち 600 秒
+        ev_assistant("14:32:40", stop="end_turn", text="届きました"),
+    ]
+    # **`/clear` で割った周の前のセッションが丸ごと `--since` の外**——
+    # 残ったセッションだけで完結した周に見せる変異に要る。
+    early1 = [ev_user("10:00:00", slash("900"), day="2026-09-14"),
+              ev_assistant("10:01:00", stop="end_turn", text="a", day="2026-09-14")]
+    early2 = [ev_user("10:00:00", slash("900"), day="2026-09-16"),
+              ev_assistant("10:01:00", stop="end_turn", text="b", day="2026-09-16")]
     # **サブエージェント**——親の分割に混ぜる変異に要る（混ぜると s1 の長さが伸びる）。
     sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
     return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
             "repo-e/p1.jsonl": p1, "repo-e/p2.jsonl": p2, "repo-e/over.jsonl": over,
-            "repo-e/nonum.jsonl": nonum, "repo-e/s1/subagents/agent-x.jsonl": sub}
+            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4,
+            "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
+            "repo-e/s1/subagents/agent-x.jsonl": sub}
 
 
 def observe_elapsed(module, root: Path):
@@ -281,6 +310,9 @@ def test_elapsed(base: Path, mod) -> None:
                     "other": 350.0})
     check("区分の合計がセッションの長さに等しい（10:00:00〜10:40:05）",
           sum(parts.values()) == 2405.0)
+    check("止まり方・人間→人間・id の無い通知・引き渡しを分ける（s4）",
+          mod.partition(events[("repo-e", "s4")])
+          == {"model": 40.0, "tool": 0.0, "human": 720.0, "notify": 1200.0, "other": 0.0})
     got = sorted(mod.gates(s1), key=repr)
     check("関門: レビュー 610 秒・Verifier 1530 秒と 120 秒と 110 秒・報告なし 1",
           got == sorted([("review", 610.0), ("verifier", 1530.0), ("verifier", 120.0),
@@ -307,12 +339,29 @@ def test_elapsed(base: Path, mod) -> None:
         mod.main(["--projects", str(root), "--elapsed", "--since", "2026-09-16"])
     check("--since が周の途中に落ちたら出さず、件数を出す", "先頭が範囲外" in buf.getvalue()
           and "#700" not in buf.getvalue())
+    check("前のセッションが丸ごと範囲外の周も出さない", "#900" not in buf.getvalue()
+          and "先頭が範囲外の周 2 件" in buf.getvalue())
 
     source = SCRIPT.read_text(encoding="utf-8")
     mutants = {
         "isMeta の行を人間の発言と数える": (
-            '    if not isinstance(message, dict) or row.get("isMeta"):',
-            '    if not isinstance(message, dict):'),
+            '    if row.get("isMeta"):',
+            '    if False:'),
+        "isMeta の引き渡しを境界にしない": (
+            '        if kind == "user" and any("<agent-message " in t for t in user_texts(message)):',
+            '        if False:'),
+        "end_turn だけを止まったと読む": (
+            '{"idle": message.get("stop_reason") != "tool_use",',
+            '{"idle": message.get("stop_reason") == "end_turn",'),
+        "人間 → 人間を人間待ちにしない": (
+            '        elif prev[1] == "human" and cur[1] == "human":',
+            '        elif False:'),
+        "attachment の id の無い通知を落とす": (
+            '        if ids or mates or _looks_notified(prompt):',
+            '        if ids or mates:'),
+        "丸ごと範囲外のセッションで周に印を付けない": (
+            '    for k in early & cycles.keys():',
+            '    for k in ():'),
         "idle 通知を報告と数える": (
             "    return isinstance(notice, dict) and bool(notice.get(\"result\"))",
             "    return True"),
