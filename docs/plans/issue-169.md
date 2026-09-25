@@ -116,7 +116,9 @@ Verifier × 1・2 パス目、`/code-review` × 1・2 パス目 の 4 つの受�
 
 ## 5. 関門の進捗（再開点）
 
-- 実装: **済み**（未コミット → この節を書いた直後にコミットする）
+- 実装: **済み**（`2c24d53`）
+- 手順 4 の割り目: **AskUserQuestion で訊いた → 人間が「ここで割る」を選んだ**。
+  **次は手順 5 の Verifier 1 パス目から**（この worktree の中で `/dev-loop 169`）
 - 歯止め: `python3 scripts/check-all.py` → **28/28 本（失敗 0 / 飛ばし 0）**
 - Verifier: 未
 - `/code-review`: 未
