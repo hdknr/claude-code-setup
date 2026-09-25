@@ -8,6 +8,7 @@
     python3 scripts/token-metrics.py                 # 週次の推移
     python3 scripts/token-metrics.py --per-cycle     # dev-loop の周ごと
     python3 scripts/token-metrics.py --per-issue     # 周を Issue で束ねる（割った周を 1 周に）
+    python3 scripts/token-metrics.py --elapsed       # 周の経過時間を区分と関門に分ける（#169）
     python3 scripts/token-metrics.py --since 2026-09-01 --repo taihei-epm-server
 
 なぜ必要か（#95）: #92 で「1 周の重さ（ターン数 × 文脈）を減らす」規範を入れたが、
@@ -331,6 +332,261 @@ def worktree_issue(repo_dir: str) -> str | None:
     return found.group(1) if found else None
 
 
+# --- 経過時間（`--elapsed`、#169） ---
+
+# 関門の印。**周の印（`DEV_LOOP_AGENT`）と同じ部分一致で見る。**
+REVIEW_SKILL = "code-review"
+# **裏で起動したことを示す結果の印**（実物で数えた 3 形）。これ以外の結果は
+# 前景の完了として扱う——**`forked` でも `background` が偽なら前景**（実物に 2 件）。
+BACKGROUND_STATUSES = {"async_launched", "teammate_spawned"}
+NOTIFY_TOOL_USE = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
+NOTIFY_STATUS = re.compile(r"<status>([^<]+)</status>")
+TEAMMATE = re.compile(r'<teammate-message teammate_id="([^"]+)"[^>]*>(.*?)(?:</teammate-message>|$)',
+                      re.S)
+# サブエージェントの引き渡し。`from=` は `Agent` の `name`（か agentId）。
+AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
+# 区分。**この順で列に出す。合計がセッションの長さに等しい**（`partition`）。
+CATEGORIES = ("model", "tool", "human", "notify", "other")
+
+
+def _is_background(result) -> bool:
+    if not isinstance(result, dict):
+        return False
+    status = result.get("status")
+    return status in BACKGROUND_STATUSES or (status == "forked" and bool(result.get("background")))
+
+
+def _notified(text: str) -> tuple[set, set]:
+    """テキストから (tool-use-id の集合, 報告した teammate の集合) を返す。
+
+    **teammate の idle 通知は、`result` を持つときだけ報告である。**
+    #168 の周では報告が別の発言で先に届き、idle 通知は空だった。**一方で #92 の周では
+    報告の本文が idle 通知の `result` にしか無かった**——一律に捨てると、その周の
+    Verifier は全部「報告なし」になる（最初そう書いて、実データの「報告なし」40 件を
+    調べて見つけた。#169）。
+
+    **task-notification は `completed`（か `status` 無し）のときだけ報告である。**
+    親の通知の行に `completed` 2321・`status` 無し 585・`failed` 68・`killed` 4・`stopped` 2 件あり
+    （`running` は通知には無い——生の grep で数えると `TaskOutput` の結果まで拾う。4 パス目の `/code-review` が指摘）、
+    **API エラーで 28 秒で落ちた `/code-review` が「0.5 分で終わった関門」と出た**
+    （3 パス目の `/code-review` が実物で示した）。報告でない通知も**境界にはなる**（`_looks_notified`）。
+    **連結された通知**（`status` が複数）は、**全部 `completed` なら報告**である（実物の通知の行では 0 件）。
+
+    **引き渡し（`<agent-message from=…>`）も報告である。** 最初の報告が引き渡しで、
+    teammate の発言がずっと後の idle 通知しか無い関門がある——`from=` を当てないと、
+    **6 分で報告が届いた Verifier が 699 分と出た**（2 パス目の `/code-review` が実物で示した）。
+    """
+    ids = set()
+    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:
+        ids = set(NOTIFY_TOOL_USE.findall(text))
+    mates = {name for name, body in TEAMMATE.findall(text) if _reports(body)}
+    mates |= set(AGENT_MESSAGE.findall(text))
+    return ids, mates
+
+
+def _reports(body: str) -> bool:
+    if '"idle_notification"' not in body:
+        return True
+    try:
+        notice = json.loads(body.strip())
+    except ValueError:
+        return False
+    return isinstance(notice, dict) and bool(notice.get("result"))
+
+
+def elapsed_event(row: dict):
+    """親の 1 行を、経過時間の境界にする。境界にならない行は `None`。
+
+    返すのは `(時刻, 種類, 中身)`。種類は:
+
+    - `assistant` — 中身は `{"idle": bool, "starts": [(id, 道具名, 関門, teammate 名)]}`。
+      **`idle` は「道具を呼ばずに止まった」**（`stop_reason` が `tool_use` でない）——
+      **`end_turn` だけではない**。API エラーで切れた応答は `stop_sequence` で止まり、
+      そのあとも人間を待つ（実物で、人間の発言の直前の行は `end_turn` 4153・
+      `stop_sequence` 85・なし 17・`tool_use` 2）
+    - `result` — 道具の結果。中身は `{"ids": {id: 裏で起動したか}}`
+    - `notify` — 通知（task-notification / teammate-message / 引き渡し）。中身は `{"ids", "mates"}`
+    - `human` — 人間の発言（スラッシュ起動を含む）
+
+    **`isMeta` の行は境界にしない**——スキル本文の注入などで、人間の発言ではない。
+    **例外はサブエージェントの引き渡し**（`<agent-message from=…>`）で、これは通知として数える
+    （実物では `isMeta` で届き、71 分の通知待ちがこれで終わっていた）。
+    **通知は 2 つの経路で届く**——user 行と `attachment`（`queued_command`）。
+    実物では**片方にしか出ないものがどちらの側にも多い**ので、両方を拾う。
+    **`<tool-use-id>` を持たない通知もある**（再通知など）。**どちらの経路でも**、
+    形が通知なら境界にする（関門の終わりには当てない）。
+    """
+    timestamp = row.get("timestamp")
+    if not isinstance(timestamp, str) or not timestamp:
+        return None
+    kind = row.get("type")
+    if kind == "attachment":
+        attachment = row.get("attachment")
+        if not isinstance(attachment, dict) or attachment.get("type") != "queued_command":
+            return None
+        # **`prompt` の文字列に当てる。** `json.dumps` してから当てると
+        # `teammate_id="…"` の引用符がエスケープされて一致しない（最初そう書いて試料で落ちた）。
+        # 実物の `prompt` は全件が文字列。**通知でない `queued_command`**（人間の入力の
+        # 待ち行列など）は境界にしない——**その行は無かったことになり**、区間は
+        # **次の境界で分類される**（end_turn → assistant なら「その他」）。
+        prompt = attachment.get("prompt")
+        if not isinstance(prompt, str):
+            return None
+        ids, mates = _notified(prompt)
+        if ids or mates or _looks_notified(prompt):
+            return timestamp, "notify", {"ids": ids, "mates": mates}
+        return None
+    message = row.get("message")
+    if not isinstance(message, dict):
+        return None
+    if row.get("isCompactSummary"):
+        # **圧縮の要約は人間の発言ではない**（`isMeta` を持たない。実物に 17 件）。
+        # 境界にしないので、`/compact` → 要約 → assistant はモデルの時間に入る。
+        return None
+    if row.get("isMeta"):
+        if kind == "user" and any("<agent-message " in t for t in user_texts(message)):
+            mates = set().union(*(_notified(t)[1] for t in user_texts(message)))
+            return timestamp, "notify", {"ids": set(), "mates": mates}
+        return None
+    if kind == "assistant":
+        starts = []
+        for block in tool_uses(message):
+            args = block.get("input") if isinstance(block.get("input"), dict) else {}
+            name = block.get("name") or ""
+            gate = None
+            if name in AGENT_TOOLS and DEV_LOOP_AGENT in str(args.get("subagent_type") or ""):
+                gate = "verifier"
+            elif name == "Skill" and REVIEW_SKILL in str(args.get("skill") or ""):
+                gate = "review"
+            starts.append((block.get("id"), name, gate, args.get("name")))
+        return timestamp, "assistant", {"idle": message.get("stop_reason") != "tool_use",
+                                        "starts": starts, "id": message.get("id")}
+    if kind != "user":
+        return None
+    content = message.get("content")
+    results = {}
+    if isinstance(content, list):
+        background = _is_background(row.get("toolUseResult"))
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                results[block.get("tool_use_id")] = background
+    if results:
+        return timestamp, "result", {"ids": results}
+    ids, mates = set(), set()
+    for text in user_texts(message):
+        found_ids, found_mates = _notified(text)
+        ids |= found_ids
+        mates |= found_mates
+    if ids or mates or any(_looks_notified(t) for t in user_texts(message)):
+        return timestamp, "notify", {"ids": ids, "mates": mates}
+    return timestamp, "human", {}
+
+
+def _looks_notified(text: str) -> bool:
+    """通知の形か（報告かどうかは問わない）。**`<tool-use-id>` を持つ task-notification は、
+    途中に埋まっていても通知である**——3 パス目で報告の判定を `status` で絞ったとき、
+    この形が `ids` の経路から外れて人間の発言に落ちた（4 パス目の `/code-review` が指摘）。"""
+    head = text.lstrip()
+    return ("<teammate-message" in text or head.startswith("<task-notification>")
+            or head.startswith("<agent-message ")
+            or ("<task-notification>" in text and bool(NOTIFY_TOOL_USE.search(text))))
+
+
+def _seconds(start: str, end: str) -> float:
+    parse = dt.datetime.fromisoformat
+    return (parse(end.replace("Z", "+00:00")) - parse(start.replace("Z", "+00:00"))).total_seconds()
+
+
+def partition(events) -> dict:
+    """1 セッションの境界の列を、区分ごとの秒数に分ける。**合計はセッションの長さに等しい。**
+
+    **区間は、それを終わらせた行で分類する**（前の行が end_turn かどうかも見る）:
+
+    | 前 | 後 | 区分 |
+    | --- | --- | --- |
+    | `AskUserQuestion` の答えを待っている間 | 何でも | `human`（**間に通知が来ても**） |
+    | 止まった（`idle`）／人間の発言 | 人間の発言 | `human` |
+    | 止まった（`idle`） | 通知 | `notify`（**親が手を止めて、裏の仕事を待っていた**） |
+    | 止まっていない | assistant | `model` |
+    | 止まっていない | 道具の結果 | `tool` |
+    | 上のどれでもない | | `other` |
+
+    **「止まった」は `end_turn` だけではない**（`elapsed_event` の `idle`）。
+    **ただし次の行が同じ応答（同じ `message.id`）なら止まっていない**——1 つの応答が
+    複数行に分かれると、**各行が最後の `stop_reason` を持つ**ので、thinking の行が
+    `end_turn` を名乗る（実物の 1 セッションに 19 組。2 パス目の `/code-review` が指摘）。
+    **人間 → 人間**（続けて打った・割り込んだ）も人間の時間である。
+    **止まっていた状態は、通知を挟んでも続く**——止まった → 通知 → 通知／人間の 2 つ目の区間も
+    通知待ち／人間待ちに入る（3 パス目の `/code-review` が実物で示した: 通知 → 通知が
+    365 区間・86 分「その他」に落ちていた）。
+
+    **関門の時間はここに入らない**——関門は裏で走り、親の区間と重なる（`gates`）。
+    **並べ替えてから数える**——実物に、時刻が逆順の行がある。
+    """
+    ordered = sorted(events, key=lambda e: e[0])
+    totals = dict.fromkeys(CATEGORIES, 0.0)
+    asking = set()   # 答えを待っている `AskUserQuestion`
+    waiting = False  # 前の行の時点で、親が止まっていたか（通知を挟んでも続く）
+    for prev, cur in zip(ordered, ordered[1:]):
+        gap = _seconds(prev[0], cur[0])
+        ended = prev[1] == "assistant" and prev[2]["idle"]
+        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:
+            ended = False
+        if prev[1] == "assistant":
+            asking |= {tool_id for tool_id, name, _, _ in prev[2]["starts"]
+                       if name == "AskUserQuestion"}
+        waiting = ended or (prev[1] == "notify" and waiting)
+        if asking:
+            category = "human"
+        elif waiting and cur[1] in ("human", "notify"):
+            category = cur[1]
+        elif prev[1] == "human" and cur[1] == "human":
+            category = "human"
+        elif not ended and cur[1] == "assistant":
+            category = "model"
+        elif not ended and cur[1] == "result":
+            category = "tool"
+        else:
+            category = "other"
+        totals[category] += gap
+        if cur[1] == "result":
+            asking -= set(cur[2]["ids"])
+    return totals
+
+
+def gates(events) -> list[tuple[str, float | None]]:
+    """関門ごとに `(種類, 起動から最初の報告までの秒数)` を返す。報告が無ければ `None`。
+
+    **終わりは 3 つの形のどれか**——前景の結果 ／ `<tool-use-id>` が一致する通知 ／
+    `Agent` の `name` と `teammate_id`（または引き渡しの `from=`）が一致する報告
+    （`result` の無い idle 通知は除く）。**`/code-review` は名前を持たないので 3 つ目に当たらない**
+    ——引き渡しは `from="code-review"` で来るが、並行する複数のレビューを見分けられない。
+    **最初に届いたものを採る**——同じ id が 2 度通知されることがある（途中の報告かもしれない）。
+    **報告が無い関門を落とさず、0 秒にもしない**（`None` のまま返す）。
+    """
+    ordered = sorted(events, key=lambda e: e[0])
+    found = {}
+    for timestamp, kind, body in ordered:
+        if kind == "assistant":
+            for tool_id, _, gate, mate in body["starts"]:
+                if gate and tool_id and tool_id not in found:
+                    found[tool_id] = (gate, mate, timestamp)
+    out = []
+    for tool_id, (gate, mate, start) in found.items():
+        end = None
+        for timestamp, kind, body in ordered:
+            if timestamp < start:
+                continue
+            if kind == "result" and body["ids"].get(tool_id) is False:
+                end = timestamp
+            elif kind == "notify" and (tool_id in body["ids"] or (mate and mate in body["mates"])):
+                end = timestamp
+            if end:
+                break
+        out.append((gate, _seconds(start, end) if end else None))
+    return out
+
+
 def _iter_rows(path: pathlib.Path):
     """`(row, 問題)` を 1 行ずつ返す。問題は `None` / `"broken"` / `"unreadable"`。
 
@@ -377,7 +633,8 @@ def _iter_rows(path: pathlib.Path):
         yield None, "unreadable"
 
 
-def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
+def scan(projects_root: pathlib.Path, merge_worktrees: bool = False, events=None,
+         issues=None):
     """(レコード列, dev-loop を回したセッション, 読めなかったファイル数, 壊れた行数) を返す。
 
     **1 応答が複数行に書かれ、各行が同じ `usage` を再掲する。**
@@ -390,6 +647,10 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
     最後の行が最大になるので、最大を採れば最終状態を拾える。
     （実測では「最後 ≠ 最大」は 0 件なので、どちらでも同じ値になる。
     **最大のほうが安全側**なので最大にしてある。）
+
+    **`events` に辞書を渡すと、親の行の境界（`elapsed_event`）を
+    `(repo, session)` ごとに集める**（`--elapsed`。#169）。**周の検出はこの関数の
+    ものをそのまま使う**——経過時間のために周を数え直すと、片方だけ変わってずれる。
     """
     records: list[Record] = []
     dev_loop_sessions: set[tuple[str, str]] = set()
@@ -410,6 +671,8 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
     # 1 つの辞書に混ぜると、**走査順でどちらが勝つかが変わる**。
     session_issue: dict[tuple[str, str], str] = {}
     session_issue_fallback: dict[tuple[str, str], str] = {}
+    session_issue_skill: dict[tuple[str, str], str] = {}
+    seen_rows: set[str] = set()
     for path in sorted(projects_root.rglob("*.jsonl")):
         repo, session, is_sub = session_of(path, projects_root, merge_worktrees)
         rel_parts = path.relative_to(projects_root).parts
@@ -426,6 +689,19 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
             if problem == "broken":
                 broken_lines += 1
                 continue
+            if events is not None and not is_sub:
+                # **fork / resume で履歴がコピーされた行を 2 度数えない。** コピーは
+                # **`uuid` も時刻も元と同じ**なので、時刻では帰属を決められない。
+                # **最初に見た側に 1 度だけ入れる**——どちらに入っても和集合は 1 回ずつになる。
+                # 実物で、同じ Issue の 2 セッションが 933 行を共有し、
+                # **セッションの長さの合計が壁時計の 2 倍**になっていた（#169）。
+                row_id = row.get("uuid")
+                if not (isinstance(row_id, str) and row_id in seen_rows):
+                    event = elapsed_event(row)
+                    if event is not None:
+                        events.setdefault((repo, session), []).append(event)
+                    if isinstance(row_id, str):
+                        seen_rows.add(row_id)
             message = row.get("message")
             if not isinstance(message, dict):
                 continue
@@ -453,6 +729,13 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
                     skill = args.get("skill") or args.get("command") or ""
                     if isinstance(skill, str) and DEV_LOOP_SKILL in skill:
                         dev_loop_sessions.add((repo, session))
+                        # **起動形が素のテキストのとき、番号は `Skill` の引数にしか無い**
+                        # （#168 の周が実際にそうで、`--per-issue` から落ちていた。#169）。
+                        # **`<command-args>` の番号より後に置く**——`setdefault` なので先に
+                        # 入ったほうが勝つが、走査順は保証されないので辞書を分ける。
+                        number = issue_number(str(args.get("args") or ""))
+                        if number:
+                            session_issue_skill.setdefault((repo, session), number)
                 elif name in AGENT_TOOLS:
                     subagent = args.get("subagent_type") or ""
                     if isinstance(subagent, str) and DEV_LOOP_AGENT in subagent:
@@ -509,9 +792,19 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False):
     # **Issue 番号は走査を終えてから入れる。** 起動形は先頭にあるとはいえ、
     # **畳み込みが帰属を書き換える**（同じ応答が別セッションのファイルにも入る）ので、
     # レコードの `session` が決まるのはここである。
+    #
+    # **優先順はここ 1 箇所**——起動形 → `Skill` の引数 → worktree 名。
+    def issue_for(key):
+        return (session_issue.get(key) or session_issue_skill.get(key)
+                or session_issue_fallback.get(key))
+
     for record in records:
-        key = (record.repo, record.session)
-        record.issue = session_issue.get(key) or session_issue_fallback.get(key)
+        record.issue = issue_for((record.repo, record.session))
+    # **経過時間はレコードからではなく、セッションから番号を引く**——
+    # usage を持たないセッションでも周の境界は持つ（`--elapsed`。#169）。
+    if issues is not None:
+        for key in set(session_issue) | set(session_issue_skill) | set(session_issue_fallback):
+            issues[key] = issue_for(key)
     return records, dev_loop_sessions, unreadable, broken_lines
 
 
@@ -759,6 +1052,110 @@ def render_per_issue(records, dev_loop_sessions, floors=None) -> str:
     return "\n".join(lines)
 
 
+def fmt_minutes(seconds: float) -> str:
+    return f"{seconds / 60:.0f}"
+
+
+def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
+    """Issue で束ねた周の経過時間を返す（`--elapsed`、#169）。
+
+    **答える問い**: 1 周の経過時間のうち、どれだけが待ちで、どれだけがどの関門に使われたか。
+
+    **区分（モデル／道具／人間待ち／通知待ち／その他）の合計は、セッションの長さに等しい**
+    （`partition`）。**セッション外**は、Issue の最初から最後までのうちどのセッションにも
+    入らない時間で、`/clear` で割った周の割り目の間などがここに入る。
+
+    **関門の列は壁時計に足さない。** 関門は裏で走り、親の区間と重なる。
+    **並列に走った関門も足すと壁時計を超える**ので、関門ごとの合計として読む。
+
+    **束ね方は `render_per_issue` と同じ**（`scan` の周と Issue 番号を使う）。
+    番号が取れないセッションは行に出さず、件数だけ出す。
+    **番号はレコードではなくセッションから引く**（`scan` の `issues`）。
+
+    **`--since` が周の途中に落ちたら、その周は出さない**——残った行は周の途中から始まり、
+    近い値で代用すると短く出る（起点と同じ判断）。件数だけ出す。
+    **落ちる形は 2 つ**——セッションの途中に落ちる形と、**`/clear` で割った周の
+    前のセッションが丸ごと範囲外になる形**。後者は残ったセッションだけ見ると
+    周の頭から始まっているように見える（実物: #169 が 2 セッション・35 分の完結した周として出た）。
+    """
+    cycles = collections.defaultdict(lambda: {"sessions": 0, "span": 0.0,
+                                                 "first": "", "last": "",
+                                                 "parts": dict.fromkeys(CATEGORIES, 0.0),
+                                                 "gates": collections.defaultdict(list),
+                                                 "truncated": False})
+    unmerged = 0
+    early = set()  # 丸ごと範囲外のセッションを持つ周。
+    for key, session_events in events.items():
+        if key not in dev_loop_sessions or not session_events:
+            continue
+        first = min(e[0] for e in session_events)
+        last = max(e[0] for e in session_events)
+        # **範囲外は、集計の枠を作る前に落とす**——先に枠を作ると、空の枠が
+        # 行として残る（最初そう書いて `--since` で落ちた）。**ただし周には印を残す。**
+        if since and last[:10] < since:
+            if issue_of.get(key):
+                early.add((key[0], issue_of[key]))
+            continue  # 丸ごと範囲外。
+        number = issue_of.get(key)
+        if not number:
+            unmerged += 1
+            continue
+        g = cycles[(key[0], number)]
+        if since and first[:10] < since:
+            g["truncated"] = True
+        g["sessions"] += 1
+        g["span"] += _seconds(first, last)
+        g["first"] = min(g["first"], first) if g["first"] else first
+        g["last"] = max(g["last"], last)
+        for category, seconds in partition(session_events).items():
+            g["parts"][category] += seconds
+        for gate, seconds in gates(session_events):
+            g["gates"][gate].append(seconds)
+
+    for k in early & cycles.keys():
+        cycles[k]["truncated"] = True
+    shown = {k: g for k, g in cycles.items() if not g["truncated"]}
+    truncated = len(cycles) - len(shown)
+    if not shown:
+        message = "Issue 番号で束ねられた周は見つかりませんでした。"
+        if truncated:
+            message += f"（先頭が範囲外の周 {truncated} 件は出していない）"
+        return message
+
+    def gate_cell(values):
+        done = [v for v in values if v is not None]
+        missing = len(values) - len(done)
+        cell = f"{len(done)} 回 / {fmt_minutes(sum(done))}" if values else "–"
+        return cell + (f"（報告なし {missing}）" if missing else "")
+
+    lines = ["| 日 | Issue | セッション | 壁時計 | セッション外 | モデル | 道具 | 人間待ち "
+             "| 通知待ち | その他 | Verifier | レビュー |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for (repo, number), g in sorted(shown.items(), key=lambda kv: kv[1]["first"]):
+        wall = _seconds(g["first"], g["last"])
+        parts = g["parts"]
+        outside = wall - g["span"]
+        # **並行して動いたセッションは重なる**（コピーではない。`uuid` を共有しない実物がある）。
+        # **負の「セッション外」を出さない**——読み手は引き算の結果を時間と読む。
+        outside_cell = fmt_minutes(outside) if outside >= 0 else f"重なり {fmt_minutes(-outside)}"
+        lines.append(f"| {g['first'][:10]} | #{number} | {g['sessions']} | {fmt_minutes(wall)} "
+                     f"| {outside_cell} "
+                     + " ".join(f"| {fmt_minutes(parts[c])}" for c in CATEGORIES)
+                     + f" | {gate_cell(g['gates']['verifier'])} "
+                     f"| {gate_cell(g['gates']['review'])} |")
+    lines.append("")
+    lines.append(f"**{len(shown)} 周**。単位は分。**モデル〜その他の合計が、セッションの長さの合計**"
+                 f"（壁時計 − セッション外）に等しい（**列ごとに丸めるので、表の数字を足しても一致しないことがある**）。")
+    lines.append("**Verifier・レビューの列は壁時計に足さない**——裏で走り、親の区間と重なる"
+                 "（回数 / 起動から最初の報告までの合計）。")
+    if truncated:
+        lines.append(f"**先頭が範囲外で出していない周: {truncated} 件**（`--since` が周の途中に落ちた）")
+    if unmerged:
+        lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"
+                     f"（この表には出していない）")
+    return "\n".join(lines)
+
+
 def render_per_cycle(records, dev_loop_sessions, floors=None) -> str:
     per = collections.defaultdict(lambda: {"weighted": 0.0, "requests": 0, "ctx": 0,
                                            "day": "", "first": "", "parent": 0})
@@ -824,6 +1221,8 @@ def main(argv=None) -> int:
                         help="週次ではなく dev-loop の周ごとに出す")
     parser.add_argument("--per-issue", action="store_true",
                         help="周を Issue 番号で束ねて出す（割った周を 1 周として数える）")
+    parser.add_argument("--elapsed", action="store_true",
+                        help="周を Issue 番号で束ね、経過時間を区分と関門に分けて出す（#169）")
     parser.add_argument("--split", action="store_true",
                         help="dev-loop を回した周とそれ以外に分けて出す（設計 §8.3 と同じ形）")
     parser.add_argument("--merge-worktrees", action="store_true",
@@ -856,7 +1255,10 @@ def main(argv=None) -> int:
               + (f"（`{args.repo}` で絞った）" if args.repo else ""))
         return 0
 
-    records, dev_loop_sessions, unreadable, broken = scan(root, args.merge_worktrees)
+    events = {} if args.elapsed else None
+    issues = {}
+    records, dev_loop_sessions, unreadable, broken = scan(root, args.merge_worktrees, events,
+                                                          issues)
     # **起点は絞り込みの前に作る。** `--since` が周の途中に落ちると、
     # 残ったレコードの先頭は**周の途中**になる。そこを起点と呼ぶと
     # **100% を超える起点比**が出る（実測で 104%）。
@@ -877,6 +1279,8 @@ def main(argv=None) -> int:
 
     if args.split:
         print(render_split(records, dev_loop_sessions))
+    elif args.elapsed:
+        print(render_elapsed(issues, dev_loop_sessions, events, args.since))
     elif args.per_issue:
         print(render_per_issue(records, dev_loop_sessions, floors))
     elif args.per_cycle:
