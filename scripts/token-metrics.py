@@ -340,6 +340,7 @@ REVIEW_SKILL = "code-review"
 # 前景の完了として扱う——**`forked` でも `background` が偽なら前景**（実物に 2 件）。
 BACKGROUND_STATUSES = {"async_launched", "teammate_spawned"}
 NOTIFY_TOOL_USE = re.compile(r"<tool-use-id>([^<]+)</tool-use-id>")
+NOTIFY_STATUS = re.compile(r"<status>([^<]+)</status>")
 TEAMMATE = re.compile(r'<teammate-message teammate_id="([^"]+)"[^>]*>(.*?)(?:</teammate-message>|$)',
                       re.S)
 # サブエージェントの引き渡し。`from=` は `Agent` の `name`（か agentId）。
@@ -364,11 +365,18 @@ def _notified(text: str) -> tuple[set, set]:
     Verifier は全部「報告なし」になる（最初そう書いて、実データの「報告なし」40 件を
     調べて見つけた。#169）。
 
+    **task-notification は `completed`（か `status` 無し）のときだけ報告である。**
+    実物には `failed` 248・`running` 79・`killed` 53・`stopped` 4 件があり、
+    **API エラーで 28 秒で落ちた `/code-review` が「0.5 分で終わった関門」と出た**
+    （3 パス目の `/code-review` が実物で示した）。報告でない通知も**境界にはなる**（`_looks_notified`）。
+
     **引き渡し（`<agent-message from=…>`）も報告である。** 最初の報告が引き渡しで、
     teammate の発言がずっと後の idle 通知しか無い関門がある——`from=` を当てないと、
     **6 分で報告が届いた Verifier が 699 分と出た**（2 パス目の `/code-review` が実物で示した）。
     """
-    ids = set(NOTIFY_TOOL_USE.findall(text)) if "<task-notification>" in text else set()
+    ids = set()
+    if "<task-notification>" in text and NOTIFY_STATUS.findall(text) in ([], ["completed"]):
+        ids = set(NOTIFY_TOOL_USE.findall(text))
     mates = {name for name, body in TEAMMATE.findall(text) if _reports(body)}
     mates |= set(AGENT_MESSAGE.findall(text))
     return ids, mates
@@ -429,6 +437,10 @@ def elapsed_event(row: dict):
     message = row.get("message")
     if not isinstance(message, dict):
         return None
+    if row.get("isCompactSummary"):
+        # **圧縮の要約は人間の発言ではない**（`isMeta` を持たない。実物に 17 件）。
+        # 境界にしないので、`/compact` → 要約 → assistant はモデルの時間に入る。
+        return None
     if row.get("isMeta"):
         if kind == "user" and any("<agent-message " in t for t in user_texts(message)):
             mates = set().union(*(_notified(t)[1] for t in user_texts(message)))
@@ -486,7 +498,7 @@ def partition(events) -> dict:
 
     | 前 | 後 | 区分 |
     | --- | --- | --- |
-    | 何でも | `AskUserQuestion` の結果 | `human` |
+    | `AskUserQuestion` の答えを待っている間 | 何でも | `human`（**間に通知が来ても**） |
     | 止まった（`idle`）／人間の発言 | 人間の発言 | `human` |
     | 止まった（`idle`） | 通知 | `notify`（**親が手を止めて、裏の仕事を待っていた**） |
     | 止まっていない | assistant | `model` |
@@ -498,22 +510,29 @@ def partition(events) -> dict:
     複数行に分かれると、**各行が最後の `stop_reason` を持つ**ので、thinking の行が
     `end_turn` を名乗る（実物の 1 セッションに 19 組。2 パス目の `/code-review` が指摘）。
     **人間 → 人間**（続けて打った・割り込んだ）も人間の時間である。
+    **止まっていた状態は、通知を挟んでも続く**——止まった → 通知 → 通知／人間の 2 つ目の区間も
+    通知待ち／人間待ちに入る（3 パス目の `/code-review` が実物で示した: 通知 → 通知が
+    365 区間・86 分「その他」に落ちていた）。
 
     **関門の時間はここに入らない**——関門は裏で走り、親の区間と重なる（`gates`）。
     **並べ替えてから数える**——実物に、時刻が逆順の行がある。
     """
     ordered = sorted(events, key=lambda e: e[0])
-    asked = {tool_id for _, kind, body in ordered if kind == "assistant"
-             for tool_id, name, _, _ in body["starts"] if name == "AskUserQuestion"}
     totals = dict.fromkeys(CATEGORIES, 0.0)
+    asking = set()   # 答えを待っている `AskUserQuestion`
+    waiting = False  # 前の行の時点で、親が止まっていたか（通知を挟んでも続く）
     for prev, cur in zip(ordered, ordered[1:]):
         gap = _seconds(prev[0], cur[0])
         ended = prev[1] == "assistant" and prev[2]["idle"]
         if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:
             ended = False
-        if cur[1] == "result" and asked & set(cur[2]["ids"]):
+        if prev[1] == "assistant":
+            asking |= {tool_id for tool_id, name, _, _ in prev[2]["starts"]
+                       if name == "AskUserQuestion"}
+        waiting = ended or (prev[1] == "notify" and waiting)
+        if asking:
             category = "human"
-        elif ended and cur[1] in ("human", "notify"):
+        elif waiting and cur[1] in ("human", "notify"):
             category = cur[1]
         elif prev[1] == "human" and cur[1] == "human":
             category = "human"
@@ -524,6 +543,8 @@ def partition(events) -> dict:
         else:
             category = "other"
         totals[category] += gap
+        if cur[1] == "result":
+            asking -= set(cur[2]["ids"])
     return totals
 
 
