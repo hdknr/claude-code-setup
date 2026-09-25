@@ -303,6 +303,27 @@ def elapsed_tree() -> dict[str, list[str]]:
                 isCompactSummary=True),
         ev_assistant("16:15:05", stop="end_turn", text="続けます"),  # モデル 305 秒（要約は境界でない）
     ]
+    # **4 パス目の関門が示した 4 形**（#169）。手で数えた値:
+    # モデル 28・道具 2・通知待ち 600・その他 10（合計 640 = 17:00:00〜17:10:40）。
+    # 関門 r7 は報告なし（killed）、r8 は 625 秒（連結された完了通知）。
+    s7 = [
+        ev_user("17:00:00", slash("830")),
+        ev_assistant("17:00:05", uses=[("r7", "Skill", {"skill": "code-review"}),
+                                       ("r8", "Skill", {"skill": "code-review"})]),  # モデル 5 秒
+        ev_result("17:00:06", "r7", status="forked", background=True),  # 道具 1 秒
+        ev_result("17:00:07", "r8", status="forked", background=True),  # 道具 1 秒
+        ev_assistant("17:00:10", stop="end_turn", text="待ちます"),     # モデル 3 秒
+        # **`message.id` の無い 2 行**——`None == None` を同じ応答と読む変異に要る（その他 10 秒）。
+        ev_assistant("17:00:20", stop="end_turn", text="まだ"),
+        # **前置きの後に埋まった killed の通知**——killed を報告と数える変異と、
+        # 途中に埋まった通知を人間の発言にする変異に要る（通知待ち 300 秒）。
+        ev_user("17:05:20", "前置き\n<task-notification>\n<task-id>c7</task-id>\n"
+                            "<tool-use-id>r7</tool-use-id>\n<status>killed</status>\n</task-notification>"),
+        ev_assistant("17:05:30", stop="end_turn", text="待ちます"),     # モデル 10 秒
+        # **連結された完了通知**——`status` が複数だと報告と数えない変異に要る（通知待ち 300 秒）。
+        ev_user("17:10:30", task_notification("r8") + "\n" + task_notification("r8")),
+        ev_assistant("17:10:40", stop="end_turn", text="届きました"),   # モデル 10 秒
+    ]
     # **`/clear` で割った周の前のセッションが丸ごと `--since` の外**——
     # 残ったセッションだけで完結した周に見せる変異に要る。
     early1 = [ev_user("10:00:00", slash("900"), day="2026-09-14"),
@@ -313,7 +334,7 @@ def elapsed_tree() -> dict[str, list[str]]:
     sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
     return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
             "repo-e/p1.jsonl": p1, "repo-e/p2.jsonl": p2, "repo-e/over.jsonl": over,
-            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5, "repo-e/s6.jsonl": s6,
+            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5, "repo-e/s6.jsonl": s6, "repo-e/s7.jsonl": s7,
             "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
             "repo-e/s1/subagents/agent-x.jsonl": sub}
 
@@ -364,6 +385,12 @@ def test_elapsed(base: Path, mod) -> None:
     s6 = events[("repo-e", "s6")]
     check("答え待ちの間の通知・圧縮の要約を分ける（s6）", mod.partition(s6) == {"model": 310.0, "tool": 0.0, "human": 595.0, "notify": 0.0, "other": 0.0})
     check("failed の通知は報告ではない（r6 は報告なし）", mod.gates(s6) == [("review", None)])
+    s7 = events[("repo-e", "s7")]
+    check("id の無い行・埋まった killed・連結された完了通知を分ける（s7）",
+          mod.partition(s7) == {"model": 28.0, "tool": 2.0, "human": 0.0, "notify": 600.0,
+                                "other": 10.0})
+    check("killed は報告ではなく、連結された完了通知は報告（r7 なし・r8 625 秒）",
+          sorted(mod.gates(s7), key=repr) == sorted([("review", None), ("review", 625.0)], key=repr))
     got = sorted(mod.gates(s1), key=repr)
     check("関門: レビュー 610 秒・Verifier 1530 秒と 120 秒と 110 秒・報告なし 1",
           got == sorted([("review", 610.0), ("verifier", 1530.0), ("verifier", 120.0),
@@ -408,8 +435,20 @@ def test_elapsed(base: Path, mod) -> None:
             '        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:',
             '        if False:'),
         "failed の通知を報告と数える": (
-            '    if "<task-notification>" in text and NOTIFY_STATUS.findall(text) in ([], ["completed"]):',
+            '    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:',
             '    if "<task-notification>" in text:'),
+        "failed だけを報告から外す（killed を報告と数える）": (
+            '    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:',
+            '    if "<task-notification>" in text and "failed" not in NOTIFY_STATUS.findall(text):'),
+        "連結された完了通知を報告と数えない": (
+            '    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:',
+            '    if "<task-notification>" in text and NOTIFY_STATUS.findall(text) in ([], ["completed"]):'),
+        "途中に埋まった通知を人間の発言にする": (
+            '            or ("<task-notification>" in text and bool(NOTIFY_TOOL_USE.search(text))))',
+            '            )'),
+        "id の無い行どうしを同じ応答と読む": (
+            '        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:',
+            '        if ended and cur[1] == "assistant" and cur[2].get("id") == prev[2].get("id"):'),
         "圧縮の要約を境界にする": (
             '    if row.get("isCompactSummary"):',
             '    if False:'),
