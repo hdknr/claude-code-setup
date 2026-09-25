@@ -366,16 +366,18 @@ def _notified(text: str) -> tuple[set, set]:
     調べて見つけた。#169）。
 
     **task-notification は `completed`（か `status` 無し）のときだけ報告である。**
-    実物には `failed` 248・`running` 79・`killed` 53・`stopped` 4 件があり、
+    親の通知の行に `completed` 2321・`status` 無し 585・`failed` 68・`killed` 4・`stopped` 2 件あり
+    （`running` は通知には無い——生の grep で数えると `TaskOutput` の結果まで拾う。4 パス目の `/code-review` が指摘）、
     **API エラーで 28 秒で落ちた `/code-review` が「0.5 分で終わった関門」と出た**
     （3 パス目の `/code-review` が実物で示した）。報告でない通知も**境界にはなる**（`_looks_notified`）。
+    **連結された通知**（`status` が複数）は、**全部 `completed` なら報告**である（実物の通知の行では 0 件）。
 
     **引き渡し（`<agent-message from=…>`）も報告である。** 最初の報告が引き渡しで、
     teammate の発言がずっと後の idle 通知しか無い関門がある——`from=` を当てないと、
     **6 分で報告が届いた Verifier が 699 分と出た**（2 パス目の `/code-review` が実物で示した）。
     """
     ids = set()
-    if "<task-notification>" in text and NOTIFY_STATUS.findall(text) in ([], ["completed"]):
+    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:
         ids = set(NOTIFY_TOOL_USE.findall(text))
     mates = {name for name, body in TEAMMATE.findall(text) if _reports(body)}
     mates |= set(AGENT_MESSAGE.findall(text))
@@ -481,9 +483,13 @@ def elapsed_event(row: dict):
 
 
 def _looks_notified(text: str) -> bool:
+    """通知の形か（報告かどうかは問わない）。**`<tool-use-id>` を持つ task-notification は、
+    途中に埋まっていても通知である**——3 パス目で報告の判定を `status` で絞ったとき、
+    この形が `ids` の経路から外れて人間の発言に落ちた（4 パス目の `/code-review` が指摘）。"""
     head = text.lstrip()
     return ("<teammate-message" in text or head.startswith("<task-notification>")
-            or head.startswith("<agent-message "))
+            or head.startswith("<agent-message ")
+            or ("<task-notification>" in text and bool(NOTIFY_TOOL_USE.search(text))))
 
 
 def _seconds(start: str, end: str) -> float:
