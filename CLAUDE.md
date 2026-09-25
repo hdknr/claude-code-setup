@@ -447,6 +447,7 @@ probe スキルを `claude -p` で起動し、**トランスクリプトに印�
 python3 scripts/token-metrics.py --since 2026-09-01          # 週次の推移
 python3 scripts/token-metrics.py --split                     # dev-loop の周とそれ以外
 python3 scripts/token-metrics.py --per-cycle                 # dev-loop の周ごと
+python3 scripts/token-metrics.py --elapsed                   # 周の経過時間を区分と関門に分ける（#169）
 python3 scripts/token-metrics.py --list-repos --repo taihei  # 先に何に当たるかを見る
 python3 scripts/test-token-metrics.py                        # 歯止め自体のテスト
 ```
