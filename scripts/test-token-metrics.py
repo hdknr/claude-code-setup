@@ -117,6 +117,431 @@ def make_tree(root: Path, files: dict[str, list[str]]) -> None:
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+# --- 経過時間（`--elapsed`、#169） ---
+
+def ev_row(kind, time, day="2026-09-15", uuid=None, **fields):
+    """経過時間の試料の 1 行。**形は #168 の親セッションの実物に合わせてある。**"""
+    row = {"type": kind, "timestamp": f"{day}T{time}.000Z", **fields}
+    if uuid is not None:
+        row["uuid"] = uuid
+    return json.dumps(row, ensure_ascii=False)
+
+
+def ev_assistant(time, *, stop="tool_use", uses=(), text=None, mid=None, **kw):
+    content = [{"type": "tool_use", "id": i, "name": n, "input": a} for i, n, a in uses]
+    if text is not None:
+        content.append({"type": "text", "text": text})
+    # **usage を持たせる**——`main` はレコードが 0 件だと集計の前に帰る。
+    message = {"role": "assistant", "model": "claude-opus-5", "stop_reason": stop,
+               "content": content, "usage": usage(inp=1)}
+    if mid is not None:
+        message["id"] = mid
+    return ev_row("assistant", time, message=message, **kw)
+
+
+def ev_result(time, tool_id, status=None, background=None, **kw):
+    fields = {"message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": tool_id, "content": "ok"}]}}
+    if status is not None:
+        fields["toolUseResult"] = {"status": status}
+        if background is not None:
+            fields["toolUseResult"]["background"] = background
+    return ev_row("user", time, **fields, **kw)
+
+
+def ev_user(time, text, *, meta=False, **kw):
+    fields = {"message": {"role": "user", "content": text}}
+    if meta:
+        fields["isMeta"] = True
+    return ev_row("user", time, **fields, **kw)
+
+
+def task_notification(tool_id):
+    return (f"<task-notification>\n<task-id>a1</task-id>\n<tool-use-id>{tool_id}</tool-use-id>\n"
+            f"<status>completed</status>\n</task-notification>")
+
+
+def teammate(name, body):
+    return (f'Another Claude session sent a message:\n<teammate-message teammate_id="{name}" '
+            f'color="blue">\n{body}\n</teammate-message>')
+
+
+VERIFIER = {"subagent_type": "dev-loop:dev-loop-verifier"}
+
+
+def elapsed_tree() -> dict[str, list[str]]:
+    """経過時間の試料。**各行が、下の変異のどれかを殺すのに要る**（コメントに対応を書く）。"""
+    s1 = [
+        # **時刻が逆順の 2 行**——並べ替えない変異に要る（実物の先頭がこの形だった）。
+        ev_assistant("10:00:10", uses=[
+            ("q1", "AskUserQuestion", {}),
+            # **起動形と食い違う `Skill` の引数**——優先順を入れ替える変異に要る。
+            ("sk1", "Skill", {"skill": "dev-loop:dev-loop", "args": "501"})]),
+        ev_user("10:00:00", slash("500")),
+        ev_result("10:05:10", "q1"),                                  # 人間待ち 300 秒
+        ev_assistant("10:05:20", uses=[
+            ("v1", "Agent", {**VERIFIER, "name": "ver-1", "run_in_background": True}),
+            ("r1", "Skill", {"skill": "code-review"})]),
+        ev_result("10:05:21", "v1", status="teammate_spawned"),
+        # **`forked` ＋ `background`**——裏の印を落とす変異に要る。
+        ev_result("10:05:22", "r1", status="forked", background=True),
+        ev_assistant("10:05:30", stop="end_turn", text="待ちます"),
+        # **`isMeta` の行**——人間の発言と数える変異に要る。
+        ev_user("10:06:00", "Base directory for this skill: …", meta=True),
+        ev_user("10:15:30", task_notification("r1")),                # 通知待ち 600 秒・レビュー 610 秒
+        ev_assistant("10:15:40", stop="end_turn", text="了解"),
+        # **idle 通知が報告より先に来る**——idle を報告と数える変異に要る。
+        ev_user("10:20:40", teammate("ver-1", '{"type":"idle_notification"}')),
+        ev_assistant("10:20:50", stop="end_turn", text="まだ"),
+        # **同じ tool-use-id の 2 度目の通知を `attachment` の経路で**——最初の報告で
+        # 止めない変異と、その経路を落とす変異の両方に要る
+        # （実物で `queued_command` に載るのは task-notification だけで、teammate は 0 件）。
+        ev_row("attachment", "10:25:00", attachment={
+            "type": "queued_command", "prompt": task_notification("r1")}),
+        ev_user("10:30:50", teammate("ver-1", "反証 0 件")),        # Verifier 1530 秒
+        # **タイムスタンプの無い行**——境界にしない。
+        json.dumps({"type": "attachment", "attachment": {"type": "queued_command",
+                                                         "prompt": task_notification("r1")}}),
+        # **前景の Verifier**——前景の結果で終わる形。
+        ev_assistant("10:31:00", uses=[("v2", "Agent", VERIFIER)]),
+        ev_result("10:33:00", "v2", status="completed"),              # 関門 120 秒
+        # **報告の来ない Verifier**——0 秒で数える変異に要る。
+        ev_assistant("10:33:10", uses=[("v3", "Agent", {**VERIFIER, "name": "ver-3"}),
+                                       ("v4", "Agent", {**VERIFIER, "name": "ver-4"})]),
+        ev_result("10:33:11", "v3", status="async_launched"),
+        ev_result("10:33:12", "v4", status="async_launched"),
+        ev_assistant("10:33:20", stop="end_turn", text="待ちます"),
+        # **報告の本文が idle 通知の `result` にしか無い形**（#92 の周の実物）
+        # ——idle 通知を一律に捨てる変異に要る。
+        ev_user("10:35:00", teammate(
+            "ver-4", '{"type":"idle_notification","from":"ver-4","result":"反証 0 件"}')),
+        ev_assistant("10:35:10", stop="end_turn", text="届きました"),
+        ev_user("10:40:00", "続けて"),                                 # 人間待ち 290 秒
+        ev_assistant("10:40:05", stop="end_turn", text="はい"),
+    ]
+    # **`/clear` 後のセッション。起動形は素のテキスト＋`Skill`**（#168 の実物の形）
+    # ——`Skill` の引数から番号を取らない変異に要る。
+    s2 = [
+        ev_user("11:00:00", "/dev-loop 500", uuid="u1"),
+        ev_assistant("11:00:05", uses=[("sk2", "Skill", {"skill": "dev-loop:dev-loop",
+                                                         "args": "500"})], uuid="u2"),
+        ev_result("11:00:06", "sk2", uuid="u3"),
+        ev_assistant("11:00:10", stop="end_turn", text="ok", uuid="u4"),
+    ]
+    # **fork でコピーされたセッション**——`uuid` で畳まない変異に要る。
+    s3 = s2 + [ev_user("11:00:20", "more", uuid="u5"),
+               ev_assistant("11:00:30", stop="end_turn", text="ok", uuid="u6")]
+    # **並行して動いた 2 セッション（`uuid` を共有しない）**——負の「セッション外」を出す変異に要る。
+    p1 = [ev_user("12:00:00", slash("600")), ev_assistant("12:30:00", stop="end_turn", text="a")]
+    p2 = [ev_user("12:00:00", slash("600")), ev_assistant("12:30:00", stop="end_turn", text="b")]
+    # **日を跨ぐ周**——`--since` の切り落としに要る。
+    over = [ev_user("23:50:00", slash("700")),
+            ev_row("assistant", "00:10:00", day="2026-09-16", message={
+                "role": "assistant", "model": "claude-opus-5", "stop_reason": "end_turn",
+                "usage": usage(inp=1), "content": [{"type": "text", "text": "x"}]})]
+    # **番号の取れない周**——件数を出さない変異に要る。
+    nonum = [ev_assistant("13:00:00", uses=[("sk3", "Skill", {"skill": "dev-loop:dev-loop"})]),
+             ev_assistant("13:00:05", stop="end_turn", text="?")]
+    # **1 パス目の `/code-review` が実物で示した 3 形**（#169）。手で数えた値:
+    # モデル 40・人間待ち 720・通知待ち 1200（合計 1960 = 14:00:00〜14:32:40）。
+    s4 = [
+        ev_user("14:00:00", slash("800")),
+        # **API エラーで切れた応答**（`stop_sequence`）——`end_turn` だけを止まったと読む変異に要る。
+        ev_assistant("14:00:10", stop="stop_sequence", text="API Error: 401"),
+        ev_user("14:10:10", "続けて"),                                   # 人間待ち 600 秒
+        # **人間 → 人間**——人間待ちに入れない変異に要る。
+        ev_user("14:12:10", "もう 1 つ"),                                # 人間待ち 120 秒
+        ev_assistant("14:12:20", stop="end_turn", text="待ちます"),
+        # **`<tool-use-id>` を持たない再通知を `attachment` の経路で**——落とす変異に要る。
+        ev_row("attachment", "14:22:20", attachment={
+            "type": "queued_command",
+            "prompt": "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n"
+                      "</task-notification>"}),                           # 通知待ち 600 秒
+        ev_assistant("14:22:30", stop="end_turn", text="まだ"),
+        # **`isMeta` で届くサブエージェントの引き渡し**——境界にしない変異に要る。
+        ev_user("14:32:30", 'Another Claude session sent a message:\n<agent-message from="b1">\n'
+                            "[Subagent hand-back] 反証 0 件\n</agent-message>", meta=True),  # 通知待ち 600 秒
+        ev_assistant("14:32:40", stop="end_turn", text="届きました"),
+    ]
+    # **2 パス目の `/code-review` が実物で示した 2 形**（#169）。手で数えた値:
+    # モデル 400・道具 1・通知待ち 899（合計 1300 = 15:00:00〜15:21:40）。
+    # 関門 ver-5 は 310 秒（15:00:30 起動 → 引き渡し）で、910 秒（あとの idle 通知）ではない。
+    s5 = [
+        ev_user("15:00:00", slash("810")),
+        # **1 つの応答が 2 行に分かれ、先の行が `end_turn` を名乗る**——
+        # 同じ応答の次の行を「止まった後」と読む変異に要る（モデル 30 秒）。
+        ev_assistant("15:00:00", stop="end_turn", text="考え中", mid="m1"),
+        ev_assistant("15:00:30", uses=[("v5", "Agent", {**VERIFIER, "name": "ver-5"})],
+                     mid="m1"),
+        ev_result("15:00:31", "v5", status="teammate_spawned"),         # 道具 1 秒
+        ev_assistant("15:00:40", stop="end_turn", text="待ちます"),    # モデル 9 秒
+        # **引き渡しが `attachment` で届き、それが最初の報告**（実物: `c73a0b7a…` 5329 行目）
+        # ——引き渡しを報告と数えない変異に要る（関門が 910 秒になり、ここが境界でなくなる）。
+        ev_row("attachment", "15:05:40", attachment={
+            "type": "queued_command",
+            "prompt": '<agent-message from="ver-5">\n反証 0 件\n</agent-message>'}),  # 通知待ち 300 秒
+        ev_assistant("15:05:41", stop="end_turn", text="届きました"),  # モデル 1 秒
+        ev_user("15:15:40", teammate(
+            "ver-5", '{"type":"idle_notification","from":"ver-5","result":"反証 0 件"}')),  # 通知待ち 599 秒
+        ev_assistant("15:21:40", stop="end_turn", text="ok"),          # モデル 360 秒（通知 → assistant）
+    ]
+    # **3 パス目の `/code-review` が実物で示した 3 形**（#169）。手で数えた値:
+    # モデル 310・人間待ち 595（合計 905 = 16:00:00〜16:15:05）。
+    # 関門 r6 は報告なし（failed の通知は報告ではない）。
+    s6 = [
+        ev_user("16:00:00", slash("820")),
+        ev_assistant("16:00:05", uses=[("r6", "Skill", {"skill": "code-review"}),
+                                       ("q6", "AskUserQuestion", {})]),  # モデル 5 秒
+        ev_result("16:00:06", "r6", status="forked", background=True),  # 人間待ち 1 秒（答え待ち）
+        # **答えを待っている間に通知が来る**——通知で答え待ちを切る変異に要る。
+        # **しかもその通知は failed**——failed を報告と数える変異に要る。
+        ev_user("16:05:00", "<task-notification>\n<task-id>c6</task-id>\n<tool-use-id>r6</tool-use-id>\n"
+                            "<status>failed</status>\n</task-notification>"),  # 人間待ち 294 秒
+        ev_result("16:10:00", "q6"),                                  # 人間待ち 300 秒
+        # **圧縮の要約**（`isMeta` を持たない）——人間の発言と数える変異に要る。
+        ev_user("16:15:00", "This session is being continued from a previous conversation …",
+                isCompactSummary=True),
+        ev_assistant("16:15:05", stop="end_turn", text="続けます"),  # モデル 305 秒（要約は境界でない）
+    ]
+    # **4 パス目の関門が示した 4 形**（#169）。手で数えた値:
+    # モデル 28・道具 2・通知待ち 600・その他 10（合計 640 = 17:00:00〜17:10:40）。
+    # 関門 r7 は報告なし（killed）、r8 は 625 秒（連結された完了通知）。
+    s7 = [
+        ev_user("17:00:00", slash("830")),
+        ev_assistant("17:00:05", uses=[("r7", "Skill", {"skill": "code-review"}),
+                                       ("r8", "Skill", {"skill": "code-review"})]),  # モデル 5 秒
+        ev_result("17:00:06", "r7", status="forked", background=True),  # 道具 1 秒
+        ev_result("17:00:07", "r8", status="forked", background=True),  # 道具 1 秒
+        ev_assistant("17:00:10", stop="end_turn", text="待ちます"),     # モデル 3 秒
+        # **`message.id` の無い 2 行**——`None == None` を同じ応答と読む変異に要る（その他 10 秒）。
+        ev_assistant("17:00:20", stop="end_turn", text="まだ"),
+        # **前置きの後に埋まった killed の通知**——killed を報告と数える変異と、
+        # 途中に埋まった通知を人間の発言にする変異に要る（通知待ち 300 秒）。
+        ev_user("17:05:20", "前置き\n<task-notification>\n<task-id>c7</task-id>\n"
+                            "<tool-use-id>r7</tool-use-id>\n<status>killed</status>\n</task-notification>"),
+        ev_assistant("17:05:30", stop="end_turn", text="待ちます"),     # モデル 10 秒
+        # **連結された完了通知**——`status` が複数だと報告と数えない変異に要る（通知待ち 300 秒）。
+        ev_user("17:10:30", task_notification("r8") + "\n" + task_notification("r8")),
+        ev_assistant("17:10:40", stop="end_turn", text="届きました"),   # モデル 10 秒
+    ]
+    # **`/clear` で割った周の前のセッションが丸ごと `--since` の外**——
+    # 残ったセッションだけで完結した周に見せる変異に要る。
+    early1 = [ev_user("10:00:00", slash("900"), day="2026-09-14"),
+              ev_assistant("10:01:00", stop="end_turn", text="a", day="2026-09-14")]
+    early2 = [ev_user("10:00:00", slash("900"), day="2026-09-16"),
+              ev_assistant("10:01:00", stop="end_turn", text="b", day="2026-09-16")]
+    # **サブエージェント**——親の分割に混ぜる変異に要る（混ぜると s1 の長さが伸びる）。
+    sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
+    return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
+            "repo-e/p1.jsonl": p1, "repo-e/p2.jsonl": p2, "repo-e/over.jsonl": over,
+            "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5, "repo-e/s6.jsonl": s6, "repo-e/s7.jsonl": s7,
+            "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
+            "repo-e/s1/subagents/agent-x.jsonl": sub}
+
+
+def observe_elapsed(module, root: Path):
+    """経過時間の振る舞いを全部観測する（**秒のまま**——出力は分に丸めるので、そこだけ見ると
+    差が消える変異がある）。"""
+    try:
+        events, issue_map = {}, {}
+        records, dev, _, _ = module.scan(root, False, events, issue_map)
+        seen = {}
+        for key in sorted(events):
+            seen[key] = (len(events[key]), module.partition(events[key]),
+                         sorted(module.gates(events[key]), key=repr))
+        issues = (sorted((r.session, r.issue) for r in records), sorted(issue_map.items()))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            for argv in (["--elapsed"], ["--elapsed", "--since", "2026-09-16"]):
+                module.main(["--projects", str(root)] + argv)
+        return seen, issues, buf.getvalue()
+    except Exception as exc:  # noqa: BLE001
+        return ("例外", type(exc).__name__)
+
+
+def test_elapsed(base: Path, mod) -> None:
+    print("経過時間（--elapsed、#169）")
+    root = base / "elapsed"
+    make_tree(root, elapsed_tree())
+    events, issue_map = {}, {}
+    records, dev, _, _ = mod.scan(root, False, events, issue_map)
+    s1 = events[("repo-e", "s1")]
+    parts = mod.partition(s1)
+    # 手で数えた値（`elapsed_tree` のコメント）。
+    check("区分が手で数えた値に一致する",
+          parts == {"model": 91.0, "tool": 124.0, "human": 590.0, "notify": 1600.0,
+                    "other": 0.0})
+    check("区分の合計がセッションの長さに等しい（10:00:00〜10:40:05）",
+          sum(parts.values()) == 2405.0)
+    check("止まり方・人間→人間・id の無い通知・引き渡しを分ける（s4）",
+          mod.partition(events[("repo-e", "s4")])
+          == {"model": 40.0, "tool": 0.0, "human": 720.0, "notify": 1200.0, "other": 0.0})
+    s5 = events[("repo-e", "s5")]
+    check("分かれた応答・attachment の引き渡しを分ける（s5）",
+          mod.partition(s5) == {"model": 400.0, "tool": 1.0, "human": 0.0, "notify": 899.0,
+                                "other": 0.0})
+    check("引き渡しが最初の報告なら、そこで関門が終わる（ver-5 は 310 秒）",
+          mod.gates(s5) == [("verifier", 310.0)])
+    s6 = events[("repo-e", "s6")]
+    check("答え待ちの間の通知・圧縮の要約を分ける（s6）", mod.partition(s6) == {"model": 310.0, "tool": 0.0, "human": 595.0, "notify": 0.0, "other": 0.0})
+    check("failed の通知は報告ではない（r6 は報告なし）", mod.gates(s6) == [("review", None)])
+    s7 = events[("repo-e", "s7")]
+    check("id の無い行・埋まった killed・連結された完了通知を分ける（s7）",
+          mod.partition(s7) == {"model": 28.0, "tool": 2.0, "human": 0.0, "notify": 600.0,
+                                "other": 10.0})
+    check("killed は報告ではなく、連結された完了通知は報告（r7 なし・r8 625 秒）",
+          sorted(mod.gates(s7), key=repr) == sorted([("review", None), ("review", 625.0)], key=repr))
+    got = sorted(mod.gates(s1), key=repr)
+    check("関門: レビュー 610 秒・Verifier 1530 秒と 120 秒と 110 秒・報告なし 1",
+          got == sorted([("review", 610.0), ("verifier", 1530.0), ("verifier", 120.0),
+                         ("verifier", 110.0), ("verifier", None)], key=repr))
+    check("コピーされた行を 2 度数えない（s3 は自分の 2 行だけ）",
+          len(events[("repo-e", "s3")]) == 2)
+    check("サブエージェントを親の分割に入れない",
+          not any(k[1] == "agent-x" for k in events) and ("repo-e", "s1") in events
+          and min(e[0] for e in s1).endswith("10:00:00.000Z"))
+    issue = {k[1]: v for k, v in issue_map.items()}
+    check("起動形の番号が Skill の引数より優先", issue.get("s1") == "500")
+    check("素のテキスト＋Skill の周も番号が取れる", issue.get("s2") == "500")
+    check("レコードの番号もセッションの番号と同じ",
+          {r.session: r.issue for r in records if r.session == "s2"} == {"s2": "500"})
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        mod.main(["--projects", str(root), "--elapsed"])
+    out = buf.getvalue()
+    check("割った周を 1 行に束ねる（3 セッション）", "| #500 | 3 |" in out)
+    check("並行したセッションは『重なり』と出す", "重なり 30" in out)
+    check("番号の取れないセッションの件数を出す", "束ねられなかったセッション: 1 件" in out)
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        mod.main(["--projects", str(root), "--elapsed", "--since", "2026-09-16"])
+    check("--since が周の途中に落ちたら出さず、件数を出す", "先頭が範囲外" in buf.getvalue()
+          and "#700" not in buf.getvalue())
+    check("前のセッションが丸ごと範囲外の周も出さない", "#900" not in buf.getvalue()
+          and "先頭が範囲外の周 2 件" in buf.getvalue())
+
+    source = SCRIPT.read_text(encoding="utf-8")
+    mutants = {
+        "isMeta の行を人間の発言と数える": (
+            '    if row.get("isMeta"):',
+            '    if False:'),
+        "isMeta の引き渡しを境界にしない": (
+            '        if kind == "user" and any("<agent-message " in t for t in user_texts(message)):',
+            '        if False:'),
+        "引き渡しを報告と数えない（attachment の引き渡しも境界でなくなる）": (
+            '    mates |= set(AGENT_MESSAGE.findall(text))',
+            '    pass'),
+        "同じ応答の次の行を止まった後と読む": (
+            '        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:',
+            '        if False:'),
+        "failed の通知を報告と数える": (
+            '    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:',
+            '    if "<task-notification>" in text:'),
+        "failed だけを報告から外す（killed を報告と数える）": (
+            '    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:',
+            '    if "<task-notification>" in text and "failed" not in NOTIFY_STATUS.findall(text):'),
+        "連結された完了通知を報告と数えない": (
+            '    if "<task-notification>" in text and set(NOTIFY_STATUS.findall(text)) <= {"completed"}:',
+            '    if "<task-notification>" in text and NOTIFY_STATUS.findall(text) in ([], ["completed"]):'),
+        "途中に埋まった通知を人間の発言にする": (
+            '            or ("<task-notification>" in text and bool(NOTIFY_TOOL_USE.search(text))))',
+            '            )'),
+        "id の無い行どうしを同じ応答と読む": (
+            '        if ended and cur[1] == "assistant" and prev[2].get("id") and cur[2].get("id") == prev[2]["id"]:',
+            '        if ended and cur[1] == "assistant" and cur[2].get("id") == prev[2].get("id"):'),
+        "圧縮の要約を境界にする": (
+            '    if row.get("isCompactSummary"):',
+            '    if False:'),
+        "答え待ちを通知で切る": (
+            '        if asking:\n            category = "human"',
+            '        if asking and cur[1] == "result" and asking & set(cur[2]["ids"]):\n            category = "human"'),
+        "止まっていた状態を通知で切る（通知 → 通知がその他）": (
+            '        waiting = ended or (prev[1] == "notify" and waiting)',
+            '        waiting = ended'),
+        "end_turn だけを止まったと読む": (
+            '{"idle": message.get("stop_reason") != "tool_use",',
+            '{"idle": message.get("stop_reason") == "end_turn",'),
+        "人間 → 人間を人間待ちにしない": (
+            '        elif prev[1] == "human" and cur[1] == "human":',
+            '        elif False:'),
+        "attachment の id の無い通知を落とす": (
+            '        if ids or mates or _looks_notified(prompt):',
+            '        if ids or mates:'),
+        "丸ごと範囲外のセッションで周に印を付けない": (
+            '    for k in early & cycles.keys():',
+            '    for k in ():'),
+        "idle 通知を報告と数える": (
+            "    return isinstance(notice, dict) and bool(notice.get(\"result\"))",
+            "    return True"),
+        "idle 通知を一律に捨てる（result の報告を落とす）": (
+            "    return isinstance(notice, dict) and bool(notice.get(\"result\"))",
+            "    return False"),
+        "attachment の経路の通知を落とす": (
+            '        if not isinstance(attachment, dict) or attachment.get("type") != "queued_command":',
+            '        if True:'),
+        "並べ替えずに区間を作る": (
+            '    ordered = sorted(events, key=lambda e: e[0])\n    totals',
+            '    ordered = list(events)\n    totals'),
+        "AskUserQuestion の待ちを人間待ちにしない": (
+            '        if asking:\n            category = "human"',
+            '        if False:\n            category = "human"'),
+        "裏で起動した結果を関門の終わりと読む": (
+            '            if kind == "result" and body["ids"].get(tool_id) is False:',
+            '            if kind == "result" and tool_id in body["ids"]:'),
+        "forked＋background を裏の印と読まない": (
+            '    return status in BACKGROUND_STATUSES or (status == "forked" and bool(result.get("background")))',
+            '    return status in BACKGROUND_STATUSES'),
+        "報告の無い関門を 0 秒で数える": (
+            '        out.append((gate, _seconds(start, end) if end else None))',
+            '        out.append((gate, _seconds(start, end) if end else 0.0))'),
+        "コピーされた行を畳まない": (
+            '                if not (isinstance(row_id, str) and row_id in seen_rows):',
+            '                if True:'),
+        "サブエージェントを親の分割に入れる": (
+            '            if events is not None and not is_sub:',
+            '            if events is not None:'),
+        "Skill の引数から番号を取らない": (
+            '                        number = issue_number(str(args.get("args") or ""))',
+            '                        number = None'),
+        "Skill の引数を起動形より優先する": (
+            '        return (session_issue.get(key) or session_issue_skill.get(key)',
+            '        return (session_issue_skill.get(key) or session_issue.get(key)'),
+        "経過時間の番号をレコードから引く（usage の無いセッションが落ちる）": (
+            '            issues[key] = issue_for(key)',
+            '            pass'),
+        "負の『セッション外』をそのまま出す": (
+            '        outside_cell = fmt_minutes(outside) if outside >= 0 else',
+            '        outside_cell = fmt_minutes(outside) if True else'),
+        "周の途中に落ちた --since を切り落とさない": (
+            '        if since and first[:10] < since:\n            g["truncated"] = True',
+            '        if False:\n            g["truncated"] = True'),
+        "丸ごと範囲外の周を落とさない": (
+            '            continue  # 丸ごと範囲外。',
+            '            pass'),
+        "teammate の名前で報告を当てない": (
+            '(tool_id in body["ids"] or (mate and mate in body["mates"])):',
+            '(tool_id in body["ids"]):'),
+        "最初の報告で止めない": (
+            '            if end:\n                break',
+            '            if False:\n                break'),
+        "束ねられなかった件数を出さない": (
+            '    if unmerged:\n        lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"\n'
+            '                     f"（この表には出していない）")\n    return "\\n".join(lines)\n\n\ndef render_per_cycle',
+            '    if False:\n        lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"\n'
+            '                     f"（この表には出していない）")\n    return "\\n".join(lines)\n\n\ndef render_per_cycle'),
+    }
+    correct = observe_elapsed(mod, root)
+    check("陽性対照: 正しい実装は例外を出さない", correct[0] != "例外")
+    for name, (old, new) in mutants.items():
+        assert source.count(old) == 1, f"変異の対象が 1 箇所でない: {name}"
+        mroot = base / ("elapsed-mutant-" + str(abs(hash(name)) % 10**6))
+        assert_not_real_home(mroot)
+        (mroot / "scripts").mkdir(parents=True, exist_ok=True)
+        mscript = mroot / "scripts" / "token-metrics.py"
+        mscript.write_text(source.replace(old, new), encoding="utf-8")
+        check(f"変異を殺せる: {name}", observe_elapsed(load(mscript), root) != correct)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="tm-test-") as tmp:
         base = Path(tmp)
@@ -707,8 +1132,8 @@ def main() -> int:
             ),
             # --- #108 で足した変異 ---
             '束ねられなかったセッションの件数を出さない（黙って落ちるはず）': (
-                '    if unmerged:',
-                '    if False:',
+                '    if unmerged:\n        # **束ねられなかったものを黙って落とさない。**',
+                '    if False:\n        # **束ねられなかったものを黙って落とさない。**',
             ),
             'スラッシュ起動を検出しない（手順 5 まで周が無いはず）': (
                 '                dev_loop_sessions.add((repo, session))\n                number = issue_number(args)',
@@ -723,8 +1148,10 @@ def main() -> int:
                 '    return found.group(0) if found else "0"',
             ),
             'worktree 名を起動形より優先する': (
-                '        record.issue = session_issue.get(key) or session_issue_fallback.get(key)',
-                '        record.issue = session_issue_fallback.get(key) or session_issue.get(key)',
+                '        return (session_issue.get(key) or session_issue_skill.get(key)\n'
+                '                or session_issue_fallback.get(key))',
+                '        return (session_issue_fallback.get(key) or session_issue.get(key)\n'
+                '                or session_issue_skill.get(key))',
             ),
             'Issue で束ねない（セッションのままにするはず）': (
                 '        g = per_issue[(key[0], number)]',
@@ -952,6 +1379,8 @@ def main() -> int:
 
         for locked_path in locked_paths:
             locked_path.chmod(0o644)
+
+        test_elapsed(base, mod)
 
         print("実環境を対象にしない歯止め")
         try:
