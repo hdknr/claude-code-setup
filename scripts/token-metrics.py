@@ -55,6 +55,7 @@
 | **`grep dev-loop` で周を判定する** | **使えない**——`MEMORY.md` の記載に当たって全件ヒットする。`Skill` の `skill`、`Agent` の `subagent_type`、**スラッシュ起動の `<command-name>`** の 3 つを見る |
 | **スラッシュ起動は `Skill` の tool_use として残らない** | **これがいちばん多い起動形**。`Skill` と `subagent_type` の 2 つだけを見ていた時期、**dev-loop の周 120 本のうち 60 本が丸ごと欠けていた**（加重 608M——**当時数えていた 1,328M の 46%**）——`dev-loop-verifier` を呼ぶ**手順 5 に着くまで周が存在しなかった**（#108）。**本文で判定してはいけない**のは上の行のとおりで、`<command-name>` タグを持つ `role=user` のテキストだけを見る |
 | **1 周が複数セッションに割れる** | `/clear` で割ると**セッション id が変わる**。`--per-cycle` は `(repo, session)` で数えるので、**割った周は per-session の会計で必ず「軽くなった」と出る**（会計上の分割で、節約ではない）。**割った周は `--per-issue` で見る**——`<command-args>` の Issue 番号で束ねる。**番号が取れない周は束ねず、件数だけ別に出す** |
+| **1 セッションに複数の Issue の周がある** | `/clear` せずに次の `/dev-loop` を回すと起きる。**最初の番号に全部寄せると、後の周の時間とトークンが前の周の行に入る**（#175）。**番号が 2 種類以上のセッションは `--per-issue` / `--elapsed` の行に出さず、件数と番号だけ出す**。**分割はしない**——どこから次の周かは transcript に記録されておらず、推定になる。**worktree 名の番号は数えない**（起動形と違っても周の混在ではない）。**見えるのは起動形（`<command-args>`・`Skill` の引数）に番号が出た周だけ**——**起動せずに会話の続きで次の Issue を回した周は見えない**（実物: #175 が挙げた `15d5fe57…` は #94・#95・#97 を起動なしで回しており、混在と出るのは末尾の別番号の起動があるからにすぎない）。`cwd` や計画ファイルの編集も番号を持つが、**worktree の使い回し・他の周の計画の参照で誤検出する**ので使っていない |
 | **親の起点をサブエージェントのリクエストに課金する** | 委譲先は**自分の起点**を持ち、**親の起点を払わない**。含めると**1.65 倍の過大**になる——実測で中央値 29.3% 対 17.8%（サブエージェントが加重の 24%）。**`floor_share` には親の req だけを渡す**。**「周の 30%」として #101 / #102 / #103 の根拠にした数字はこの誤りを含む**（#108 で訂正） |
 | **読めないファイル・壊れた行** | どちらも件数を**報告に出す**。黙って 0 にしない。**読めないファイルは走査を止めない**（1 つで全体が落ちていた）。なお**行ごとに読むと壊れた行は出なくなった**——以前 46 行あったのは `splitlines()` が**JSON 文字列の中の U+2028 などで切っていた**ためで、**その 7 行は本物の `usage` を含んでいた**（つまり取りこぼしていた） |
 | **`--repo` の部分一致が広すぎる** | `--list-repos` で**実際に何にマッチするかを先に見る**——短い名前は**思っているより多くに当たる**。**値が `-` で始まるなら `--repo=...` と書く**（そうしないと argparse が引数として解釈する） |
@@ -330,6 +331,26 @@ def worktree_issue(repo_dir: str) -> str | None:
     """
     found = WORKTREE_ISSUE.search(repo_dir or "")
     return found.group(1) if found else None
+
+
+# **1 セッションに複数の Issue の周があったときの印**（#175）。`Record.issue` と
+# `scan` の `issues` に、番号の代わりにこれを入れる。**分割はしない**——セッションの
+# 中のどこから次の周かは transcript に記録されておらず、推定になる。
+MIXED_PREFIX = "mixed:"
+
+
+def mixed_numbers(issue: str | None) -> list[str] | None:
+    """混在の印なら含まれる番号を、そうでなければ None を返す。"""
+    if isinstance(issue, str) and issue.startswith(MIXED_PREFIX):
+        return issue[len(MIXED_PREFIX):].split(",")
+    return None
+
+
+def mixed_line(mixed: dict) -> str:
+    """混在で束ねなかったセッションの報告行（`--per-issue` と `--elapsed` で共有する）。"""
+    numbers = sorted({n for ns in mixed.values() for n in ns}, key=int)
+    return (f"**複数の Issue の周を含むため束ねなかったセッション: {len(mixed)} 件**"
+            f"（番号: {'・'.join('#' + n for n in numbers)}。この表には出していない）")
 
 
 # --- 経過時間（`--elapsed`、#169） ---
@@ -672,6 +693,10 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False, events=None
     session_issue: dict[tuple[str, str], str] = {}
     session_issue_fallback: dict[tuple[str, str], str] = {}
     session_issue_skill: dict[tuple[str, str], str] = {}
+    # **起動形と `Skill` の引数から取れた番号を全部**（#175）。上の 2 つは
+    # `setdefault` で最初の 1 つしか持たないので、**2 つ目の周があっても見えない**。
+    # **worktree 名は入れない**——起動形の番号と違っても、それは周の混在ではない。
+    session_numbers: dict[tuple[str, str], set[str]] = {}
     seen_rows: set[str] = set()
     for path in sorted(projects_root.rglob("*.jsonl")):
         repo, session, is_sub = session_of(path, projects_root, merge_worktrees)
@@ -719,6 +744,7 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False, events=None
                 number = issue_number(args)
                 if number:
                     session_issue.setdefault((repo, session), number)
+                    session_numbers.setdefault((repo, session), set()).add(number)
 
             for block in tool_uses(message):
                 name = block.get("name")
@@ -736,6 +762,7 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False, events=None
                         number = issue_number(str(args.get("args") or ""))
                         if number:
                             session_issue_skill.setdefault((repo, session), number)
+                            session_numbers.setdefault((repo, session), set()).add(number)
                 elif name in AGENT_TOOLS:
                     subagent = args.get("subagent_type") or ""
                     if isinstance(subagent, str) and DEV_LOOP_AGENT in subagent:
@@ -794,7 +821,12 @@ def scan(projects_root: pathlib.Path, merge_worktrees: bool = False, events=None
     # レコードの `session` が決まるのはここである。
     #
     # **優先順はここ 1 箇所**——起動形 → `Skill` の引数 → worktree 名。
+    # **ただし番号が 2 種類以上あれば、どれにも寄せず混在の印を返す**（#175）。
+    # 寄せると、最初の番号の行に後の周の時間とトークンが全部入る。
     def issue_for(key):
+        numbers = session_numbers.get(key, set())
+        if len(numbers) > 1:
+            return MIXED_PREFIX + ",".join(sorted(numbers, key=int))
         return (session_issue.get(key) or session_issue_skill.get(key)
                 or session_issue_fallback.get(key))
 
@@ -965,6 +997,7 @@ def render_per_issue(records, dev_loop_sessions, floors=None) -> str:
     **Issue 番号が取れなかった周は束ねない。** 行に出さず、**件数だけ別に示す**
     ——近い周に寄せると、束ねられなかったことが数字から見えなくなる
     （#103 の「先頭が範囲外」と同じ判断）。
+    **複数の Issue の周を含むセッションも束ねない**（#175）。件数と番号だけ出す。
 
     **セッション数を列に出す。** 出さないと、**割れた周と割れていない周が
     見分けられない**——この表を作った目的そのものが見えなくなる。
@@ -998,10 +1031,14 @@ def render_per_issue(records, dev_loop_sessions, floors=None) -> str:
                                                  "ctx": 0, "day": "", "sessions": 0,
                                                  "floor_req": 0.0, "truncated": False})
     unmerged = 0
+    mixed = {}
     for key, b in per_session.items():
         number = issue_of.get(key)
         if not number:
             unmerged += 1
+            continue
+        if mixed_numbers(number):
+            mixed[key] = mixed_numbers(number)
             continue
         g = per_issue[(key[0], number)]
         g["weighted"] += b["weighted"]
@@ -1018,7 +1055,10 @@ def render_per_issue(records, dev_loop_sessions, floors=None) -> str:
             g["floor_req"] += floor * b["requests"]
 
     if not per_issue:
-        return "Issue 番号で束ねられた周は見つかりませんでした。"
+        message = "Issue 番号で束ねられた周は見つかりませんでした。"
+        if mixed:
+            message += "\n" + mixed_line(mixed)
+        return message
 
     lines = ["| 日 | Issue | セッション | req | 加重(M) | 平均文脈 | 起点×req | 起点比 |",
              "|---|---|---|---|---|---|---|---|"]
@@ -1049,6 +1089,8 @@ def render_per_issue(records, dev_loop_sessions, floors=None) -> str:
         # 表の「周」が母集団の全部だと読めてしまう。
         lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"
                      f"（この表には出していない）")
+    if mixed:
+        lines.append(mixed_line(mixed))
     return "\n".join(lines)
 
 
@@ -1070,6 +1112,7 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
 
     **束ね方は `render_per_issue` と同じ**（`scan` の周と Issue 番号を使う）。
     番号が取れないセッションは行に出さず、件数だけ出す。
+    **複数の Issue の周を含むセッションも行に出さず、件数と番号だけ出す**（#175）。
     **番号はレコードではなくセッションから引く**（`scan` の `issues`）。
 
     **`--since` が周の途中に落ちたら、その周は出さない**——残った行は周の途中から始まり、
@@ -1077,6 +1120,8 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
     **落ちる形は 2 つ**——セッションの途中に落ちる形と、**`/clear` で割った周の
     前のセッションが丸ごと範囲外になる形**。後者は残ったセッションだけ見ると
     周の頭から始まっているように見える（実物: #169 が 2 セッション・35 分の完結した周として出た）。
+    **範囲外のセッションが混在なら、含む番号の周をすべて出さない**（どの番号の周の
+    前半かは分からないので、寄せずに全部に倒す）。
     """
     cycles = collections.defaultdict(lambda: {"sessions": 0, "span": 0.0,
                                                  "first": "", "last": "",
@@ -1084,6 +1129,7 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
                                                  "gates": collections.defaultdict(list),
                                                  "truncated": False})
     unmerged = 0
+    mixed = {}
     early = set()  # 丸ごと範囲外のセッションを持つ周。
     for key, session_events in events.items():
         if key not in dev_loop_sessions or not session_events:
@@ -1093,12 +1139,18 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
         # **範囲外は、集計の枠を作る前に落とす**——先に枠を作ると、空の枠が
         # 行として残る（最初そう書いて `--since` で落ちた）。**ただし周には印を残す。**
         if since and last[:10] < since:
-            if issue_of.get(key):
-                early.add((key[0], issue_of[key]))
+            # **混在の印はそのままでは周の鍵に当たらない**ので、番号ごとに印を残す
+            # （最初そう書かずに、前のセッションが混在の周が完結して見えた。#175）。
+            number = issue_of.get(key)
+            if number:
+                early.update((key[0], n) for n in mixed_numbers(number) or [number])
             continue  # 丸ごと範囲外。
         number = issue_of.get(key)
         if not number:
             unmerged += 1
+            continue
+        if mixed_numbers(number):
+            mixed[key] = mixed_numbers(number)
             continue
         g = cycles[(key[0], number)]
         if since and first[:10] < since:
@@ -1120,6 +1172,8 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
         message = "Issue 番号で束ねられた周は見つかりませんでした。"
         if truncated:
             message += f"（先頭が範囲外の周 {truncated} 件は出していない）"
+        if mixed:
+            message += "\n" + mixed_line(mixed)
         return message
 
     def gate_cell(values):
@@ -1153,6 +1207,8 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
     if unmerged:
         lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"
                      f"（この表には出していない）")
+    if mixed:
+        lines.append(mixed_line(mixed))
     return "\n".join(lines)
 
 
