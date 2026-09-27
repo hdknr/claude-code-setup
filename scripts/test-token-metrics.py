@@ -337,13 +337,19 @@ def elapsed_tree() -> dict[str, list[str]]:
            ev_assistant("18:00:10", uses=[("sk9", "Skill", {"skill": "dev-loop:dev-loop",
                                                               "args": "951"})]),
            ev_assistant("18:01:00", stop="end_turn", text="m")]
+    # **`Skill` の引数が 2 種類**——`Skill` の番号を最初の 1 つしか数えない変異に要る（#175）。
+    skmix = [ev_assistant("19:00:00", uses=[("sk10", "Skill", {"skill": "dev-loop:dev-loop",
+                                                                "args": "960"})]),
+             ev_assistant("19:00:10", uses=[("sk11", "Skill", {"skill": "dev-loop:dev-loop",
+                                                                "args": "961"})]),
+             ev_assistant("19:01:00", stop="end_turn", text="k")]
     # **サブエージェント**——親の分割に混ぜる変異に要る（混ぜると s1 の長さが伸びる）。
     sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
     return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
             "repo-e/p1.jsonl": p1, "repo-e/p2.jsonl": p2, "repo-e/over.jsonl": over,
             "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5, "repo-e/s6.jsonl": s6, "repo-e/s7.jsonl": s7,
             "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
-            "repo-e/mix.jsonl": mix,
+            "repo-e/mix.jsonl": mix, "repo-e/skmix.jsonl": skmix,
             "repo-e/s1/subagents/agent-x.jsonl": sub}
 
 
@@ -362,7 +368,10 @@ def observe_elapsed(module, root: Path):
         with contextlib.redirect_stdout(buf):
             for argv in (["--elapsed"], ["--elapsed", "--since", "2026-09-16"]):
                 module.main(["--projects", str(root)] + argv)
-        return seen, issues, buf.getvalue()
+        # **混在しか無いときの空の表**——空の分岐で混在を出さない変異に要る（#175）。
+        only_mixed = module.render_elapsed(
+            issue_map, dev, {k: v for k, v in events.items() if k[1] == "mix"})
+        return seen, issues, buf.getvalue(), only_mixed
     except Exception as exc:  # noqa: BLE001
         return ("例外", type(exc).__name__)
 
@@ -411,6 +420,7 @@ def test_elapsed(base: Path, mod) -> None:
     issue = {k[1]: v for k, v in issue_map.items()}
     check("起動形と同じ番号の Skill の引数は混在にしない", issue.get("s1") == "500")
     check("起動形と Skill の引数で番号が違えば混在（#175）", issue.get("mix") == "mixed:950,951")
+    check("Skill の引数が 2 種類でも混在（#175）", issue.get("skmix") == "mixed:960,961")
     check("素のテキスト＋Skill の周も番号が取れる", issue.get("s2") == "500")
     check("レコードの番号もセッションの番号と同じ",
           {r.session: r.issue for r in records if r.session == "s2"} == {"s2": "500"})
@@ -422,9 +432,14 @@ def test_elapsed(base: Path, mod) -> None:
     check("並行したセッションは『重なり』と出す", "重なり 30" in out)
     check("番号の取れないセッションの件数を出す", "束ねられなかったセッション: 1 件" in out)
     check("混在セッションはどの Issue の行にも入らない",
-          "| #950 |" not in out and "| #951 |" not in out)
+          "| #950 |" not in out and "| #951 |" not in out
+          and "| #960 |" not in out and "| #961 |" not in out)
     check("混在セッションの件数と番号を出す",
-          "束ねなかったセッション: 1 件" in out and "#950・#951" in out)
+          "束ねなかったセッション: 2 件" in out and "#950・#951・#960・#961" in out)
+    only_mixed = mod.render_elapsed(
+        issue_map, dev, {k: v for k, v in events.items() if k[1] == "mix"})
+    check("混在しか無いときも件数と番号を出す（elapsed）",
+          "見つかりませんでした" in only_mixed and "#950・#951" in only_mixed)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         mod.main(["--projects", str(root), "--elapsed", "--since", "2026-09-16"])
@@ -516,6 +531,15 @@ def test_elapsed(base: Path, mod) -> None:
         "Skill の引数から番号を取らない": (
             '                        number = issue_number(str(args.get("args") or ""))',
             '                        number = None'),
+        "Skill の番号を最初の 1 つしか数えない": (
+            '                            session_numbers.setdefault((repo, session), set()).add(number)',
+            '                            if session_issue_skill.get((repo, session)) == number:\n'
+            '                                session_numbers.setdefault((repo, session), set()).add(number)'),
+        "空の表で混在を出さない（elapsed）": (
+            '            message += f"（先頭が範囲外の周 {truncated} 件は出していない）"\n'
+            '        if mixed:',
+            '            message += f"（先頭が範囲外の周 {truncated} 件は出していない）"\n'
+            '        if False:'),
         "混在を行に入れる（elapsed）": (
             '        if mixed_numbers(number):\n            mixed[key] = mixed_numbers(number)\n'
             '            continue\n        g = cycles',
