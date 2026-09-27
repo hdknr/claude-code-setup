@@ -175,8 +175,10 @@ def elapsed_tree() -> dict[str, list[str]]:
         # **時刻が逆順の 2 行**——並べ替えない変異に要る（実物の先頭がこの形だった）。
         ev_assistant("10:00:10", uses=[
             ("q1", "AskUserQuestion", {}),
-            # **起動形と食い違う `Skill` の引数**——優先順を入れ替える変異に要る。
-            ("sk1", "Skill", {"skill": "dev-loop:dev-loop", "args": "501"})]),
+            # **起動形と同じ番号の `Skill` の引数**——同じ番号なら混在にしない（#175）。
+            # （以前は 501 で優先順を見ていたが、番号が 2 種類なら混在なので、
+            # 起動形と `Skill` の引数の優先順は出力に効かなくなった。）
+            ("sk1", "Skill", {"skill": "dev-loop:dev-loop", "args": "500"})]),
         ev_user("10:00:00", slash("500")),
         ev_result("10:05:10", "q1"),                                  # 人間待ち 300 秒
         ev_assistant("10:05:20", uses=[
@@ -330,12 +332,36 @@ def elapsed_tree() -> dict[str, list[str]]:
               ev_assistant("10:01:00", stop="end_turn", text="a", day="2026-09-14")]
     early2 = [ev_user("10:00:00", slash("900"), day="2026-09-16"),
               ev_assistant("10:01:00", stop="end_turn", text="b", day="2026-09-16")]
+    # **起動形と `Skill` の引数で番号が違う**——混在の判定・行に入れない・件数を出す変異に要る（#175）。
+    mix = [ev_user("18:00:00", slash("950")),
+           ev_assistant("18:00:10", uses=[("sk9", "Skill", {"skill": "dev-loop:dev-loop",
+                                                              "args": "951"})]),
+           ev_assistant("18:01:00", stop="end_turn", text="m")]
+    # **`Skill` の引数が 2 種類**——`Skill` の番号を最初の 1 つしか数えない変異に要る（#175）。
+    skmix = [ev_assistant("19:00:00", uses=[("sk10", "Skill", {"skill": "dev-loop:dev-loop",
+                                                                "args": "960"})]),
+             ev_assistant("19:00:10", uses=[("sk11", "Skill", {"skill": "dev-loop:dev-loop",
+                                                                "args": "961"})]),
+             ev_assistant("19:01:00", stop="end_turn", text="k")]
+    # **混在のセッションが丸ごと `--since` の外で、その番号の周が範囲内に続く**——
+    # 混在の印をそのまま周の印にする変異・最初の番号にしか印を残さない変異に要る（#175）。
+    earlymix = [ev_user("10:00:00", slash("970"), day="2026-09-14"),
+                ev_assistant("10:00:10", uses=[("sk12", "Skill", {"skill": "dev-loop:dev-loop",
+                                                                  "args": "971"})], day="2026-09-14"),
+                ev_assistant("10:01:00", stop="end_turn", text="e", day="2026-09-14")]
+    late970 = [ev_user("11:00:00", slash("970"), day="2026-09-16"),
+               ev_assistant("11:30:00", stop="end_turn", text="f", day="2026-09-16")]
+    late971 = [ev_user("12:00:00", slash("971"), day="2026-09-16"),
+               ev_assistant("12:30:00", stop="end_turn", text="g", day="2026-09-16")]
     # **サブエージェント**——親の分割に混ぜる変異に要る（混ぜると s1 の長さが伸びる）。
     sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
     return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
             "repo-e/p1.jsonl": p1, "repo-e/p2.jsonl": p2, "repo-e/over.jsonl": over,
             "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5, "repo-e/s6.jsonl": s6, "repo-e/s7.jsonl": s7,
             "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
+            "repo-e/mix.jsonl": mix, "repo-e/skmix.jsonl": skmix,
+            "repo-e/earlymix.jsonl": earlymix, "repo-e/late970.jsonl": late970,
+            "repo-e/late971.jsonl": late971,
             "repo-e/s1/subagents/agent-x.jsonl": sub}
 
 
@@ -354,7 +380,10 @@ def observe_elapsed(module, root: Path):
         with contextlib.redirect_stdout(buf):
             for argv in (["--elapsed"], ["--elapsed", "--since", "2026-09-16"]):
                 module.main(["--projects", str(root)] + argv)
-        return seen, issues, buf.getvalue()
+        # **混在しか無いときの空の表**——空の分岐で混在を出さない変異に要る（#175）。
+        only_mixed = module.render_elapsed(
+            issue_map, dev, {k: v for k, v in events.items() if k[1] == "mix"})
+        return seen, issues, buf.getvalue(), only_mixed
     except Exception as exc:  # noqa: BLE001
         return ("例外", type(exc).__name__)
 
@@ -401,7 +430,9 @@ def test_elapsed(base: Path, mod) -> None:
           not any(k[1] == "agent-x" for k in events) and ("repo-e", "s1") in events
           and min(e[0] for e in s1).endswith("10:00:00.000Z"))
     issue = {k[1]: v for k, v in issue_map.items()}
-    check("起動形の番号が Skill の引数より優先", issue.get("s1") == "500")
+    check("起動形と同じ番号の Skill の引数は混在にしない", issue.get("s1") == "500")
+    check("起動形と Skill の引数で番号が違えば混在（#175）", issue.get("mix") == "mixed:950,951")
+    check("Skill の引数が 2 種類でも混在（#175）", issue.get("skmix") == "mixed:960,961")
     check("素のテキスト＋Skill の周も番号が取れる", issue.get("s2") == "500")
     check("レコードの番号もセッションの番号と同じ",
           {r.session: r.issue for r in records if r.session == "s2"} == {"s2": "500"})
@@ -412,13 +443,24 @@ def test_elapsed(base: Path, mod) -> None:
     check("割った周を 1 行に束ねる（3 セッション）", "| #500 | 3 |" in out)
     check("並行したセッションは『重なり』と出す", "重なり 30" in out)
     check("番号の取れないセッションの件数を出す", "束ねられなかったセッション: 1 件" in out)
+    check("混在セッションはどの Issue の行にも入らない",
+          "| #950 |" not in out and "| #951 |" not in out
+          and "| #960 |" not in out and "| #961 |" not in out)
+    check("混在セッションの件数と番号を出す",
+          "束ねなかったセッション: 3 件" in out and "#950・#951・#960・#961・#970・#971" in out)
+    only_mixed = mod.render_elapsed(
+        issue_map, dev, {k: v for k, v in events.items() if k[1] == "mix"})
+    check("混在しか無いときも件数と番号を出す（elapsed）",
+          "見つかりませんでした" in only_mixed and "#950・#951" in only_mixed)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         mod.main(["--projects", str(root), "--elapsed", "--since", "2026-09-16"])
     check("--since が周の途中に落ちたら出さず、件数を出す", "先頭が範囲外" in buf.getvalue()
           and "#700" not in buf.getvalue())
     check("前のセッションが丸ごと範囲外の周も出さない", "#900" not in buf.getvalue()
-          and "先頭が範囲外の周 2 件" in buf.getvalue())
+          and "先頭が範囲外の周 4 件" in buf.getvalue())
+    check("前のセッションが混在で丸ごと範囲外なら、どの番号の周も出さない（#175）",
+          "#970" not in buf.getvalue() and "#971" not in buf.getvalue())
 
     source = SCRIPT.read_text(encoding="utf-8")
     mutants = {
@@ -503,9 +545,22 @@ def test_elapsed(base: Path, mod) -> None:
         "Skill の引数から番号を取らない": (
             '                        number = issue_number(str(args.get("args") or ""))',
             '                        number = None'),
-        "Skill の引数を起動形より優先する": (
-            '        return (session_issue.get(key) or session_issue_skill.get(key)',
-            '        return (session_issue_skill.get(key) or session_issue.get(key)'),
+        "Skill の番号を最初の 1 つしか数えない": (
+            '                            session_numbers.setdefault((repo, session), set()).add(number)',
+            '                            if session_issue_skill.get((repo, session)) == number:\n'
+            '                                session_numbers.setdefault((repo, session), set()).add(number)'),
+        "空の表で混在を出さない（elapsed）": (
+            '            message += f"（先頭が範囲外の周 {truncated} 件は出していない）"\n'
+            '        if mixed:',
+            '            message += f"（先頭が範囲外の周 {truncated} 件は出していない）"\n'
+            '        if False:'),
+        "混在を行に入れる（elapsed）": (
+            '        if mixed_numbers(number):\n            mixed[key] = mixed_numbers(number)\n'
+            '            continue\n        g = cycles',
+            '        g = cycles'),
+        "混在の件数を出さない（elapsed）": (
+            '    if mixed:\n        lines.append(mixed_line(mixed))\n    return "\\n".join(lines)\n\n\ndef render_per_cycle',
+            '    if False:\n        lines.append(mixed_line(mixed))\n    return "\\n".join(lines)\n\n\ndef render_per_cycle'),
         "経過時間の番号をレコードから引く（usage の無いセッションが落ちる）": (
             '            issues[key] = issue_for(key)',
             '            pass'),
@@ -518,6 +573,12 @@ def test_elapsed(base: Path, mod) -> None:
         "丸ごと範囲外の周を落とさない": (
             '            continue  # 丸ごと範囲外。',
             '            pass'),
+        "範囲外の混在の印をそのまま周の印にする": (
+            '                early.update((key[0], n) for n in mixed_numbers(number) or [number])',
+            '                early.add((key[0], number))'),
+        "範囲外の混在の最初の番号にしか印を残さない": (
+            '                early.update((key[0], n) for n in mixed_numbers(number) or [number])',
+            '                early.update((key[0], n) for n in (mixed_numbers(number) or [number])[:1])'),
         "teammate の名前で報告を当てない": (
             '(tool_id in body["ids"] or (mate and mate in body["mates"])):',
             '(tool_id in body["ids"]):'),
@@ -526,9 +587,11 @@ def test_elapsed(base: Path, mod) -> None:
             '            if False:\n                break'),
         "束ねられなかった件数を出さない": (
             '    if unmerged:\n        lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"\n'
-            '                     f"（この表には出していない）")\n    return "\\n".join(lines)\n\n\ndef render_per_cycle',
+            '                     f"（この表には出していない）")\n    if mixed:\n        lines.append(mixed_line(mixed))\n'
+            '    return "\\n".join(lines)\n\n\ndef render_per_cycle',
             '    if False:\n        lines.append(f"**Issue 番号が取れず束ねられなかったセッション: {unmerged} 件**"\n'
-            '                     f"（この表には出していない）")\n    return "\\n".join(lines)\n\n\ndef render_per_cycle'),
+            '                     f"（この表には出していない）")\n    if mixed:\n        lines.append(mixed_line(mixed))\n'
+            '    return "\\n".join(lines)\n\n\ndef render_per_cycle'),
     }
     correct = observe_elapsed(mod, root)
     check("陽性対照: 正しい実装は例外を出さない", correct[0] != "例外")
@@ -938,6 +1001,14 @@ def main() -> int:
                 line(day="2026-09-15", time="13:00:00", u=usage(inp=8))],
             # **サブエージェント**——親の Issue を継ぐこと。
             "repo-i/a/subagents/v.jsonl": [line(day="2026-09-15", u=usage(inp=9))],
+            # **1 セッションに 2 つの Issue の起動**（#175）——最初の番号に寄せないこと。
+            "repo-i/mix.jsonl": [user_line(slash("301"), time="14:00:00"),
+                                 user_line(slash("302"), time="14:30:00"),
+                                 line(day="2026-09-15", time="14:40:00", u=usage(inp=11))],
+            # **同じ番号を 2 回起動**——混在にしないこと。
+            "repo-i/same.jsonl": [user_line(slash("303"), time="15:00:00"),
+                                  user_line(slash("303"), time="15:30:00"),
+                                  line(day="2026-09-15", time="15:40:00", u=usage(inp=12))],
         })
         irec, idev, _, _ = mod.scan(iroot)
         check("スラッシュ起動が Verifier を呼ばなくても周になる",
@@ -954,6 +1025,9 @@ def main() -> int:
               issue_of[("repo-i--claude-worktrees-issue-111-x", "conflict")] == "222")
         check("サブエージェントも親の Issue を継ぐ",
               [r.issue for r in irec if r.is_sub and r.session == "a"] == ["777"])
+        check("2 つの Issue を起動したセッションは混在の印になる（#175）",
+              issue_of[("repo-i", "mix")] == "mixed:301,302")
+        check("同じ番号を 2 回起動しても混在にしない", issue_of[("repo-i", "same")] == "303")
 
         per_issue = mod.render_per_issue(irec, idev)
         check("Issue の列が出る", "| Issue | セッション |" in per_issue)
@@ -966,6 +1040,13 @@ def main() -> int:
         check("束ねられなかったセッションの件数が出る",
               "束ねられなかったセッション: 1 件" in per_issue)
         check("束ねられなかった Issue は行に出ない", "#None" not in per_issue)
+        check("混在セッションはどの Issue の行にも入らない",
+              "| #301 |" not in per_issue and "| #302 |" not in per_issue)
+        check("混在セッションの件数と番号を出す",
+              "束ねなかったセッション: 1 件" in per_issue and "#301・#302" in per_issue)
+        only_mixed = mod.render_per_issue([r for r in irec if r.session == "mix"], idev)
+        check("混在しか無いときも件数と番号を出す",
+              "見つかりませんでした" in only_mixed and "#301・#302" in only_mixed)
 
         print("起点比の基準（#108 の訂正）")
         # **サブエージェントを含めると 1.65 倍に出た。** 親の req だけを渡す。
@@ -1153,6 +1234,29 @@ def main() -> int:
                 '        return (session_issue_fallback.get(key) or session_issue.get(key)\n'
                 '                or session_issue_skill.get(key))',
             ),
+            # --- #175 で足した変異 ---
+            '混在を判定しない（最初の番号に寄せるはず）': (
+                '        if len(numbers) > 1:',
+                '        if False:',
+            ),
+            '混在の番号を文字列の順に並べる': (
+                '            return MIXED_PREFIX + ",".join(sorted(numbers, key=int))',
+                '            return MIXED_PREFIX + ",".join(sorted(numbers))',
+            ),
+            'worktree 名の番号も混在に数える（起動形と違うだけで混在になるはず）': (
+                '            session_issue_fallback.setdefault((repo, session), fallback)',
+                '            session_issue_fallback.setdefault((repo, session), fallback)\n'
+                '            session_numbers.setdefault((repo, session), set()).add(fallback)',
+            ),
+            '混在を行に入れる（per-issue）': (
+                '        if mixed_numbers(number):\n            mixed[key] = mixed_numbers(number)\n'
+                '            continue\n        g = per_issue',
+                '        g = per_issue',
+            ),
+            '混在の件数を出さない（per-issue）': (
+                '    if mixed:\n        lines.append(mixed_line(mixed))\n    return "\\n".join(lines)\n\n\ndef fmt_minutes',
+                '    if False:\n        lines.append(mixed_line(mixed))\n    return "\\n".join(lines)\n\n\ndef fmt_minutes',
+            ),
             'Issue で束ねない（セッションのままにするはず）': (
                 '        g = per_issue[(key[0], number)]',
                 '        g = per_issue[(key[0], number, key[1])]',
@@ -1307,6 +1411,14 @@ def main() -> int:
                 "repo-a--claude-worktrees-issue-888-x/conf.jsonl": [
                     user_line(slash("999"), day="2026-09-14", time="07:40:00"),
                     line(day="2026-09-14", time="07:50:00", u=usage(inp=23))],
+                # **1 セッションに 10 と 9 の起動**（#175）——混在の判定と、
+                # 番号を文字列の順に並べる変異（"10,9" になる）に要る。
+                "repo-a/slashmix.jsonl": [user_line(slash("10"), day="2026-09-14",
+                                                    time="07:30:00"),
+                                          user_line(slash("9"), day="2026-09-14",
+                                                    time="07:31:00"),
+                                          line(day="2026-09-14", time="07:32:00",
+                                               u=usage(inp=26))],
                 # **content が list の user 行**——str だけを見る変異に要る。
                 "repo-a/slashlist.jsonl": [user_line(slash("666"), day="2026-09-14",
                                                      time="07:05:00", as_list=True),
