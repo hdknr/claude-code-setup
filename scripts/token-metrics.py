@@ -1120,6 +1120,8 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
     **落ちる形は 2 つ**——セッションの途中に落ちる形と、**`/clear` で割った周の
     前のセッションが丸ごと範囲外になる形**。後者は残ったセッションだけ見ると
     周の頭から始まっているように見える（実物: #169 が 2 セッション・35 分の完結した周として出た）。
+    **範囲外のセッションが混在なら、含む番号の周をすべて出さない**（どの番号の周の
+    前半かは分からないので、寄せずに全部に倒す）。
     """
     cycles = collections.defaultdict(lambda: {"sessions": 0, "span": 0.0,
                                                  "first": "", "last": "",
@@ -1137,8 +1139,11 @@ def render_elapsed(issue_of, dev_loop_sessions, events, since=None) -> str:
         # **範囲外は、集計の枠を作る前に落とす**——先に枠を作ると、空の枠が
         # 行として残る（最初そう書いて `--since` で落ちた）。**ただし周には印を残す。**
         if since and last[:10] < since:
-            if issue_of.get(key):
-                early.add((key[0], issue_of[key]))
+            # **混在の印はそのままでは周の鍵に当たらない**ので、番号ごとに印を残す
+            # （最初そう書かずに、前のセッションが混在の周が完結して見えた。#175）。
+            number = issue_of.get(key)
+            if number:
+                early.update((key[0], n) for n in mixed_numbers(number) or [number])
             continue  # 丸ごと範囲外。
         number = issue_of.get(key)
         if not number:
