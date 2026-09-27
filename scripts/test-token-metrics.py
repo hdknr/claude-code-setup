@@ -343,6 +343,16 @@ def elapsed_tree() -> dict[str, list[str]]:
              ev_assistant("19:00:10", uses=[("sk11", "Skill", {"skill": "dev-loop:dev-loop",
                                                                 "args": "961"})]),
              ev_assistant("19:01:00", stop="end_turn", text="k")]
+    # **混在のセッションが丸ごと `--since` の外で、その番号の周が範囲内に続く**——
+    # 混在の印をそのまま周の印にする変異・最初の番号にしか印を残さない変異に要る（#175）。
+    earlymix = [ev_user("10:00:00", slash("970"), day="2026-09-14"),
+                ev_assistant("10:00:10", uses=[("sk12", "Skill", {"skill": "dev-loop:dev-loop",
+                                                                  "args": "971"})], day="2026-09-14"),
+                ev_assistant("10:01:00", stop="end_turn", text="e", day="2026-09-14")]
+    late970 = [ev_user("11:00:00", slash("970"), day="2026-09-16"),
+               ev_assistant("11:30:00", stop="end_turn", text="f", day="2026-09-16")]
+    late971 = [ev_user("12:00:00", slash("971"), day="2026-09-16"),
+               ev_assistant("12:30:00", stop="end_turn", text="g", day="2026-09-16")]
     # **サブエージェント**——親の分割に混ぜる変異に要る（混ぜると s1 の長さが伸びる）。
     sub = [ev_user("09:00:00", "sub"), ev_assistant("12:00:00", stop="end_turn", text="x")]
     return {"repo-e/s1.jsonl": s1, "repo-e/s2.jsonl": s2, "repo-e/s3.jsonl": s3,
@@ -350,6 +360,8 @@ def elapsed_tree() -> dict[str, list[str]]:
             "repo-e/nonum.jsonl": nonum, "repo-e/s4.jsonl": s4, "repo-e/s5.jsonl": s5, "repo-e/s6.jsonl": s6, "repo-e/s7.jsonl": s7,
             "repo-e/early1.jsonl": early1, "repo-e/early2.jsonl": early2,
             "repo-e/mix.jsonl": mix, "repo-e/skmix.jsonl": skmix,
+            "repo-e/earlymix.jsonl": earlymix, "repo-e/late970.jsonl": late970,
+            "repo-e/late971.jsonl": late971,
             "repo-e/s1/subagents/agent-x.jsonl": sub}
 
 
@@ -435,7 +447,7 @@ def test_elapsed(base: Path, mod) -> None:
           "| #950 |" not in out and "| #951 |" not in out
           and "| #960 |" not in out and "| #961 |" not in out)
     check("混在セッションの件数と番号を出す",
-          "束ねなかったセッション: 2 件" in out and "#950・#951・#960・#961" in out)
+          "束ねなかったセッション: 3 件" in out and "#950・#951・#960・#961・#970・#971" in out)
     only_mixed = mod.render_elapsed(
         issue_map, dev, {k: v for k, v in events.items() if k[1] == "mix"})
     check("混在しか無いときも件数と番号を出す（elapsed）",
@@ -446,7 +458,9 @@ def test_elapsed(base: Path, mod) -> None:
     check("--since が周の途中に落ちたら出さず、件数を出す", "先頭が範囲外" in buf.getvalue()
           and "#700" not in buf.getvalue())
     check("前のセッションが丸ごと範囲外の周も出さない", "#900" not in buf.getvalue()
-          and "先頭が範囲外の周 2 件" in buf.getvalue())
+          and "先頭が範囲外の周 4 件" in buf.getvalue())
+    check("前のセッションが混在で丸ごと範囲外なら、どの番号の周も出さない（#175）",
+          "#970" not in buf.getvalue() and "#971" not in buf.getvalue())
 
     source = SCRIPT.read_text(encoding="utf-8")
     mutants = {
@@ -559,6 +573,12 @@ def test_elapsed(base: Path, mod) -> None:
         "丸ごと範囲外の周を落とさない": (
             '            continue  # 丸ごと範囲外。',
             '            pass'),
+        "範囲外の混在の印をそのまま周の印にする": (
+            '                early.update((key[0], n) for n in mixed_numbers(number) or [number])',
+            '                early.add((key[0], number))'),
+        "範囲外の混在の最初の番号にしか印を残さない": (
+            '                early.update((key[0], n) for n in mixed_numbers(number) or [number])',
+            '                early.update((key[0], n) for n in (mixed_numbers(number) or [number])[:1])'),
         "teammate の名前で報告を当てない": (
             '(tool_id in body["ids"] or (mate and mate in body["mates"])):',
             '(tool_id in body["ids"]):'),
