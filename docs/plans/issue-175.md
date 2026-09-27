@@ -79,7 +79,9 @@ transcript に記録されておらず、推定になる。推定で切り分け
   R4・R5 を直した（`skmix` 試料・空の表の直接の確認・変異 2 件）。陽性対照: 試料を抜くと 2 変異と確認 2 件が生き残る（リポジトリの外の複製）。
   `check-all.py` **28/28 本（失敗 0 / 飛ばし 0）**。
   2 パス目: **未着手**——残っているのは **手順 5 の Verifier 2 パス目**と **手順 6 の `/code-review` 2 パス目**の**両方**（R4・R5 の修正に当てる）。
-  **2 つ目の割り目（手順 6）: 未回答**
+  **2 つ目の割り目（手順 6）: AskUserQuestion で訊いた → 「ここで割る」が選ばれた。**
+  **再開は、この worktree（`/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-169`）の中で `/clear` → `/dev-loop 175`。**
+  **Verifier 2 パス目と `/code-review` 2 パス目の両方から**（対象は `c945a03` の差分。受入基準は全部渡す。base は同じ SHA）。**2 パス目で直した行は当て直さない**（1.35.0）
 - **割り目（手順 4）: AskUserQuestion で訊いた → 「ここで割る」が選ばれた。**
   **再開は、この worktree（`/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-169`）の中で
   `/clear` → `/dev-loop 175`。手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）から。**
