@@ -1,0 +1,59 @@
+schema_version: "1.1"
+name: resume-no-new-worktree
+# **このケースが判別すると確かめたのは `ran-find-cycle` だけである**（#181）。
+# 同じ設定で、現行の SKILL.md は 4/4、#96 修正前の SKILL.md（`14fcc7f^`、v1.14.0）は 3/4 で、
+# **差が出たのは `ran-find-cycle` だけ**だった。**作成を見る 3 つの grader は、修正前の版でも通った**
+# ——現在のモデルは修正前の規範でも worktree を作らなかった（3 回とも）。だから**それらは
+# 「#96 の再発を捕まえる」ことを示していない**。置いてあるのは、作ったら赤になる歯止めとしてだけである。
+# 実測と経緯は docs/plans/issue-181.md を正とする。
+description: >-
+  再開の周（周の worktree・ブランチ・計画ファイルが既に在る）で /dev-loop を起動したとき、
+  再開の探索（find-cycle.py）を走らせること。worktree を新規作成したら赤になる歯止めも置いてあるが、
+  修正前後を判別することは示せていない。
+tags: [resume, worktree]
+plugins: ["../.."]
+# 実測した設定。1 回およそ $1（opus、12〜14 ターン）
+runs: 1
+expected_outcome: >-
+  find-cycle.py で既存の周を見つけ、既存の worktree（.claude/worktrees/issue-7）で手順 5 から再開する。
+  git worktree add / prepare-worktree.sh / EnterWorktree の新規作成 / 新ブランチの作成をしない。
+execution:
+  prompt: "/dev-loop:dev-loop 7"
+  max_turns: 25
+  timeout_seconds: 600
+  # EnterWorktree は**許可しても子に提供されなかった**（実測: 子の道具は Task, Bash, Glob, Grep, Read,
+  # Skill, TaskStop, ToolSearch）。#96 の実物はこの入口（path 無しの EnterWorktree）だったが、
+  # **eval では起こせない**——下の no-enter-worktree-create は必ず通る。許可は将来提供されたときのために残す。
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, EnterWorktree]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  # 判別すると確かめた唯一の grader——再開の探索を走らせる手順が消えたら赤になる。
+  # 何もせずに止まった実行を「通過」にしない役も兼ねる
+  - name: ran-find-cycle
+    type: tool_used
+    tool: Bash
+    input_match: 'find-cycle\.py'
+    min: 1
+  # 以下は歯止め（修正前後の判別は示せていない）
+  # 入口 (a)(b)——worktree を作るコマンド
+  - name: no-worktree-add
+    type: tool_used
+    tool: Bash
+    input_match: 'worktree\s+add|prepare-worktree'
+    min: 0
+    max: 0
+  # 入口 (c)——道具での新規作成（name を渡す・引数なし）。eval の子には道具が無く、必ず通る
+  - name: no-enter-worktree-create
+    type: tool_used
+    tool: EnterWorktree
+    input_match: '"name"|^\{\s*\}$'
+    min: 0
+    max: 0
+  # 入口 (d)——周のブランチと別の新ブランチ
+  - name: no-new-branch
+    type: tool_used
+    tool: Bash
+    input_match: 'checkout\s+-b|switch\s+-c|branch\s+(?!-)[^|;&]*issue/'
+    min: 0
+    max: 0
