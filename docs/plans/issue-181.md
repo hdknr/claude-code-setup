@@ -86,7 +86,10 @@ version bump は `check-version-bump.py` が要求した——`evals/` もプラ
 - 手順 4: 実装済み（`e4e4b82`・version bump）
 - Verifier 1 パス目: **反証 2 件**（V1・V2）＋所見（V3〜V8）。採否は §6。直す 4 件（V1・V3・V4・V6）を直した
   （**V4 は Verifier ではなく親が V3 を直す過程で見つけた**）。**直した分は既存の trace に当て直して結果不変**
-- `/code-review` 1 パス目: 未（**Verifier の指摘を直した後の差分に当てる**——1 パス目が見るのは実装＋V の修正）
+- `/code-review` 1 パス目（2026-10-04、effort high、再開したセッションで）: **指摘 10 件**＋軽微 1 件。
+  採否は §6。直す 6 件（CR1・CR2・CR4・CR5・CR6・CR10）を直した。**CR7（確定した grader は
+  実ハーネスを通っていない）は、C を当て直すことで扱う——課金するので人間に訊く**
+- 2 パス目に残っているもの: **手順 5 の当て直し（Verifier）** と **`/code-review` 2 パス目** の両方
 - 割り目（手順 4 の完了時）: **訊いていない**——人間の判断（git の修理・着地の選択）を挟みながら 1 セッションで進めた
 - 実験（すべて `--runs 1 --ablation none`、子のモデルは `claude-opus-5-5`）:
     - C3（現行 `SKILL.md`）: **4/4 通過**、5 ターン、$0.62
@@ -169,3 +172,26 @@ scaffold が書いたのは cwd と共有の `.git/` だけなので、メイン
 | 空でないリポジトリ（`scaf2`。**事故と同じ形**） | exit 1・コミット数 1 のまま |
 | どのリポジトリにも属さない空の dir（`scaf3`） | exit 0・`find-cycle.py 7` が exit 1（当たり） |
 | eval のワークスペース | C4・M2c で scaffold 成功 |
+
+### 1 パス目の指摘の採否（`/code-review` high、指摘 10 件）
+
+eval の grader に**終了状態を見る型は無い**（公式ドキュメント「There are no custom-code graders」。
+型は regex / tool_used / tool_order / file_exists / llm / baseline）——CR9 の前提が成り立たない。
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1. 「修正前の版でも作らなかった（3 回とも）」は交絡——2 回は `git` が動かず、3 回とも `EnterWorktree` が無い | 示せる: §5 の M2a・M2b の記録（`can't exec`）と子の道具一覧 | B'' | **直す**（判別に数えられるのは M2c の 1 回だけ、と冒頭に書く） |
+| CR2. `CLAUDE.md` の「修正前の版に探索の指示が 1 つも無い」は偽 | 示せる: `git show 14fcc7f^:…/SKILL.md` の 199・205・230 行 | B'' | **直す**（偽の文を消し、中身はケースの冒頭を指す） |
+| CR3. `no-worktree-add` が `prepare-worktree` の文字列だけで赤（この scaffold では exit 3 で何も作らない） | 示せない（実行の trace に現れていない。node の構成例のみ） | 無し | 残課題 |
+| CR4. `no-new-branch` が一覧・git 以外を拾う（`git branch 2>/dev/null` ほか 6 形）。コメントの「一覧は拾わない」と矛盾 | 示せる: `scratchpad/br.js` で旧 regex が 6 形を FP | B''（コメントが事実と違う） | **直す**（`\bgit\s+` を前置・リダイレクトを除外） |
+| CR5. `no-new-branch` が作成の 7 形を取りこぼす（`switch --force-create` ほか） | 示せる: `br.js` で旧 regex が 7 形を MISS | A | **直す**（`br.js` 35 例で ng 0。旧 regex は 13 件 ng——陽性対照） |
+| CR6. 「何もせずに止まった実行を通過にしない役も兼ねる」は偽（`cat find-cycle.py` でも、exit 2 で止まっても通る） | 示せる: regex の構造（`find-cycle\.py` を含めば当たる） | B'' | **直す**（その主張を消し、見ていないものを書く） |
+| CR7. `0ab9468` の grader（`"command"` に限った版）は実ハーネスを通っていない。C・B' の証拠は旧 grader の実行 | 示せる: C4・M2c は `0ab9468` より前の実行 | C・B' | **C を当て直す**（課金。人間に訊く） |
+| CR8. 行継続・`python -c`・サブエージェントの中での作成を見ない | 示せない（trace に現れていない） | 無し | 残課題（コメントに見ていないと書いた） |
+| CR9. 終了状態で採点すべき | 示せない／手段が無い（上記） | 無し | 残課題 |
+| CR10. 「SKILL.md から指示が消えたら」は広すぎる——`14fcc7f^` には `scripts/` も `references/` も無い | 示せる: `git ls-tree -r 14fcc7f^ plugins/dev-loop` が 4 ファイル | B'' | **直す**（「指示とスクリプトの両方が消えたら」に狭める） |
+| 軽微. `no-enter-worktree-create` が `{"path":…,"name":null}` を赤にする | 示せない | 無し | 残課題 |
+
+### 2 つ目の割り目（2026-10-04）
+
+`AskUserQuestion` で訊いた——**「このまま続ける」**。CR7 は **C を当て直す（課金承認済み）**。

@@ -3,10 +3,14 @@ name: resume-no-new-worktree
 # **このケースは「#96 の再発を捕まえる」ことを示していない**（#181）。
 # 同じ設定で、現行の SKILL.md は 4/4、#96 修正前の SKILL.md（`14fcc7f^`、v1.14.0）は 3/4 だった。
 # **差が出た `ran-find-cycle` は、構成上そうなる**——**修正前の版には `find-cycle.py` の記述が
-# 1 つも無い**（スクリプト自体が #136 で後から入った）ので、振る舞いと無関係に落ちる。
-# **言えるのは「SKILL.md から再開の探索の指示が消えたら赤になる」まで。**
-# **作成を見る 3 つの grader は、修正前の版でも通った**——現在のモデルは修正前の規範でも
-# worktree を作らなかった（3 回とも）。置いてあるのは、作ったら赤になる歯止めとしてだけである。
+# 1 つも無く、スクリプトも `references/` も無い**（#136 で後から入った）ので、振る舞いと無関係に
+# 落ちる。修正前の版にも「まず計画ファイルを探す」「worktree は作り直さない」の指示はある。
+# **言えるのは「スキルから `find-cycle.py`（指示とスクリプトの両方）が消えたら赤になる」まで**
+# ——指示だけが消えた場合は分けて測っていない。
+# **作成を見る 3 つの grader は、修正前の版でも通った**が、**判別に数えられるのは 1 回だけ**
+# （3 回のうち 2 回はサンドボックスの `git` が動かず、作成のコマンドが成功しえなかった）。
+# **3 回とも子に `EnterWorktree` が無く、#96 の実物の入口は起こせていない。**
+# 置いてあるのは、作ったら赤になる歯止めとしてだけである。
 # 実測と経緯は docs/plans/issue-181.md を正とする。
 #
 # **Bash の grader は `"command"` の値だけに当てる。** `input_match` は道具の入力の JSON 全体
@@ -33,8 +37,9 @@ execution:
 context:
   scaffold_script: scaffold.sh
 graders:
-  # 修正前の版で落ちた唯一の grader（理由は冒頭——指示が無いから）。
-  # 何もせずに止まった実行を「通過」にしない役も兼ねる
+  # 修正前の版で落ちた唯一の grader（理由は冒頭——指示とスクリプトが無いから）。
+  # **走らせたかしか見ない**——コマンドに `find-cycle.py` が含まれれば通り（`cat` でも）、
+  # 探せずに（exit 2）止まった実行も通る。既存の worktree で再開したことは、どの grader も見ていない
   - name: ran-find-cycle
     type: tool_used
     tool: Bash
@@ -56,10 +61,12 @@ graders:
     min: 0
     max: 0
   # 入口 (d)——周のブランチと別の新ブランチ（作る・複製する）。`git branch <名前>` は名前に
-  # 依らず拾う。`git branch` の一覧（引数なし・`-` で始まるオプション・パイプ）は拾わない
+  # 依らず拾う。`git branch` の一覧（引数なし・作成以外の `-` オプション・パイプ・リダイレクト）は
+  # 拾わない。**当てたのは scratchpad の 35 例まで**——文字列で当てる限り、言い回しの取りこぼしは残る
+  # （行継続・`python -c` 越し・サブエージェントの中は見ていない。eval に終了状態を見る grader は無い）
   - name: no-new-branch
     type: tool_used
     tool: Bash
-    input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?(?:checkout\s+(?:-b|-B|--orphan)\b|switch\s+(?:-c|-C|--create)\b|branch\s+(?:-c|-C|--copy)\b|branch\s+(?![-|;&])\S)'
+    input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?\bgit\s+(?:checkout(?:\s+--?[\w-]+)*?\s+(?:-[a-zA-Z]*[bB][a-zA-Z]*|--orphan)\b|switch(?:\s+--?[\w-]+)*?\s+(?:-[a-zA-Z]*[cC][a-zA-Z]*|--create|--force-create|--orphan)\b|branch\s+(?:-[a-zA-Z]*[cCft][a-zA-Z]*\b|--(?:copy|force|track|no-track)\b|(?![-|;&>]|\d+>)\S))'
     min: 0
     max: 0
