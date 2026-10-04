@@ -31,7 +31,12 @@ worktree を新規作成しない**。失敗の実物がある（#96 で 2 本�
 触らない: `SKILL.md` の規範（**規範を変えずに測る仕組みだけ足す**——分析の 2 番目「規範の追加を止める」と整合）、
 `scripts/check-all.py`・CI（課金するので組み込まない）、#1737 の帰属違い（別の候補）
 
-（version bump が要るかは歯止めに従う。要るなら `plugin.json`・`marketplace.json`・`SKILL.md` のバナーをここに足す）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.35.0 → 1.36.0
+- `.claude-plugin/marketplace.json` — 同上
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — **版のバナー 2 行だけ**（規範は触らない）
+
+（version bump は `check-version-bump.py` が要求した——`evals/` もプラグインの中身として数える。
+**能力の追加なので minor**。広げた分の受入基準: G — 3 箇所が 1.36.0 で揃い、`check-all.py` が緑）
 
 ## 2. デプロイ経路
 
