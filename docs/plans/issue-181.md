@@ -27,15 +27,15 @@ worktree を新規作成しない**。失敗の実物がある（#96 で 2 本�
 - `plugins/dev-loop/evals/` — Eval ケース（prompt・graders・scaffold）
 - `docs/plans/issue-181.md` — この計画ファイル
 - `CLAUDE.md` — Eval の置き場所と回し方（`plugins/` の構成の行と、新しい節「振る舞いを Eval で当てる」）
-
-触らない: `SKILL.md` の規範（**規範を変えずに測る仕組みだけ足す**——分析の 2 番目「規範の追加を止める」と整合）、
-`scripts/check-all.py`・CI（課金するので組み込まない）、#1737 の帰属違い（別の候補）
-
 - `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.35.0 → 1.36.0
 - `.claude-plugin/marketplace.json` — 同上
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — **版のバナー 2 行だけ**（規範は触らない）
 
-（version bump は `check-version-bump.py` が要求した——`evals/` もプラグインの中身として数える。
+触らない: `SKILL.md` の規範（**規範を変えずに測る仕組みだけ足す**——分析の 2 番目「規範の追加を止める」と整合）、
+`scripts/check-all.py`・CI（課金するので組み込まない）、#1737 の帰属違い（別の候補）
+
+（version bump の 3 行は、最初は `触らない:` の下に書いてしまい `check-plan-scope.py` に落とされた。
+version bump は `check-version-bump.py` が要求した——`evals/` もプラグインの中身として数える。
 **能力の追加なので minor**。広げた分の受入基準: G — 3 箇所が 1.36.0 で揃い、`check-all.py` が緑）
 
 ## 2. デプロイ経路
@@ -83,8 +83,11 @@ worktree を新規作成しない**。失敗の実物がある（#96 で 2 本�
 
 ## 5. 関門の進捗（再開点）
 
-- 手順 4: 実装中（`plugins/dev-loop/evals/resume-no-new-worktree/`）
-- Verifier: 未 / `/code-review`: 未
+- 手順 4: 実装済み（`e4e4b82`・version bump）
+- Verifier 1 パス目: **反証 2 件**（V1・V2）＋所見（V3〜V8）。採否は §6。直す 4 件（V1・V3・V4・V6）を直した
+  （**V4 は Verifier ではなく親が V3 を直す過程で見つけた**）。**直した分は既存の trace に当て直して結果不変**
+- `/code-review` 1 パス目: 未（**Verifier の指摘を直した後の差分に当てる**——1 パス目が見るのは実装＋V の修正）
+- 割り目（手順 4 の完了時）: **訊いていない**——人間の判断（git の修理・着地の選択）を挟みながら 1 セッションで進めた
 - 実験（すべて `--runs 1 --ablation none`、子のモデルは `claude-opus-5-5`）:
     - C3（現行 `SKILL.md`）: **4/4 通過**、5 ターン、$0.62
     - M2a（**#96 修正前の `SKILL.md`＝`14fcc7f^`、v1.14.0**）: 3/4。**落ちたのは `ran-find-cycle`
@@ -122,7 +125,21 @@ worktree を新規作成しない**。失敗の実物がある（#96 で 2 本�
 
 ## 6. 既知の限界・決着済みの論点
 
-（まだ無い）
+### 1 パス目の指摘の採否（Verifier = `dev-loop:dev-loop-verifier` / sonnet、反証 2 件＋所見）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1. B' は構成上自明——修正前の版に `find-cycle` の記述が 1 つも無いので、`ran-find-cycle` は振る舞いと無関係に落ちる。case.yaml と `CLAUDE.md` は「回帰を捕まえる」と読める | 示せる: `grep -c find-cycle`（`14fcc7f^` の SKILL.md）＝ **0** | B'' | **直す**（判別の理由を「修正前の版に指示が無いから」と書く） |
+| V2. 空の未追跡ディレクトリ `graders/` | 示せる（`ls`） | 無し | 残課題（ローカルの残骸。追跡されていないので差分に出ない。消すだけ） |
+| V3. `no-new-branch` が `switch -C` / `switch --create` / `checkout -B` / `checkout --orphan` / `branch -c` / `branch foo main` を取りこぼす | 示せる: `scratchpad/re.js` で旧 regex が 4 形を BAD | A | **直す** |
+| V4. `input_match` は道具の入力 JSON 全体（`description` を含む）に当たる——広げた regex は C4 の trace に実在する説明文「Show current branch name」に当たる（**V3 を直す過程で親が見つけた**） | 示せる: `re.js` の説明文ケースで BAD | A（偽陽性） | **直す**（`"command"` の値に限る） |
+| V5. scaffold のガードを実行で確かめられなかった（ハーネスが拒否） | — | D | **親が実行で確かめ済み**（§7 の 4 形）。Verifier の静的読解とも一致 |
+| V6. `CLAUDE.md` の「eval のワークスペース以外では断る」は実装より広い——どのリポジトリにも属さない空の dir は通す | 示せる: §7 の scaf3（空・リポジトリ外）で exit 0 | B''（記述の正確さ） | **直す**（書いてある条件を実装どおりにする） |
+| V7. 実の `HOME` がリポジトリだと、その下の空 dir を通す／`/tmp` と `/private/tmp` の比較 | 示せない（このホストの `HOME` はリポジトリではない。eval では一致を実測） | 無し | 残課題 |
+| V8. `branch issue/7 --contains HEAD` が偽陽性になりうる | 示せない（実行に現れていない） | 無し | 残課題 |
+
+**graders を変えたので、既存の trace に当て直す**（`scratchpad/regrade.js`。費用なし）。
+**陽性対照**: 旧 case.yaml で当て直すと C4 4/4・M2c 3/4（`ran-find-cycle` だけ）で、eval の実結果と回数まで一致した。
 
 ## 7. 事故の記録（この周）
 
@@ -140,5 +157,15 @@ worktree を新規作成しない**。失敗の実物がある（#96 で 2 本�
 **メインの作業ツリーの `git status` は見ていない**（ガードが `-C` を拒否）——
 scaffold が書いたのは cwd と共有の `.git/` だけなので、メインのファイルには触れていない。
 
-再発防止: scaffold の冒頭に「**空でない／git リポジトリの中なら断る**」を入れ、
-空でない dir で exit 1・空の dir で成功（`find-cycle.py 7` が exit 1＝当たり）を確かめた。
+再発防止: scaffold の冒頭にガードを入れた。**最初の 2 版は eval のワークスペースで落ちた**
+（eval は一時 `HOME` を git リポジトリにし、cwd をその下の空の `cwd` にする——診断用の scaffold で実測。$0）。
+最終形は「**空でない**か、**`HOME` 以外を根とするリポジトリの中**なら断る」。実行で確かめた 4 形
+（すべて scratchpad の中）:
+
+| 場所 | 結果 |
+| --- | --- |
+| 空でない dir（`scaf4`、ファイル 1 つ・リポジトリ外） | exit 1・`x` だけのまま |
+| 別のリポジトリの中の空の dir（`scaf2/emptysub`） | exit 1 |
+| 空でないリポジトリ（`scaf2`。**事故と同じ形**） | exit 1・コミット数 1 のまま |
+| どのリポジトリにも属さない空の dir（`scaf3`） | exit 0・`find-cycle.py 7` が exit 1（当たり） |
+| eval のワークスペース | C4・M2c で scaffold 成功 |

@@ -1,15 +1,20 @@
 schema_version: "1.1"
 name: resume-no-new-worktree
-# **このケースが判別すると確かめたのは `ran-find-cycle` だけである**（#181）。
-# 同じ設定で、現行の SKILL.md は 4/4、#96 修正前の SKILL.md（`14fcc7f^`、v1.14.0）は 3/4 で、
-# **差が出たのは `ran-find-cycle` だけ**だった。**作成を見る 3 つの grader は、修正前の版でも通った**
-# ——現在のモデルは修正前の規範でも worktree を作らなかった（3 回とも）。だから**それらは
-# 「#96 の再発を捕まえる」ことを示していない**。置いてあるのは、作ったら赤になる歯止めとしてだけである。
+# **このケースは「#96 の再発を捕まえる」ことを示していない**（#181）。
+# 同じ設定で、現行の SKILL.md は 4/4、#96 修正前の SKILL.md（`14fcc7f^`、v1.14.0）は 3/4 だった。
+# **差が出た `ran-find-cycle` は、構成上そうなる**——**修正前の版には `find-cycle.py` の記述が
+# 1 つも無い**（スクリプト自体が #136 で後から入った）ので、振る舞いと無関係に落ちる。
+# **言えるのは「SKILL.md から再開の探索の指示が消えたら赤になる」まで。**
+# **作成を見る 3 つの grader は、修正前の版でも通った**——現在のモデルは修正前の規範でも
+# worktree を作らなかった（3 回とも）。置いてあるのは、作ったら赤になる歯止めとしてだけである。
 # 実測と経緯は docs/plans/issue-181.md を正とする。
+#
+# **Bash の grader は `"command"` の値だけに当てる。** `input_match` は道具の入力の JSON 全体
+# （`description` を含む）に当たるので、限らないと説明文の語（実例: 「Show current branch name」）を拾う。
 description: >-
   再開の周（周の worktree・ブランチ・計画ファイルが既に在る）で /dev-loop を起動したとき、
   再開の探索（find-cycle.py）を走らせること。worktree を新規作成したら赤になる歯止めも置いてあるが、
-  修正前後を判別することは示せていない。
+  #96 の再発を捕まえることは示せていない。
 tags: [resume, worktree]
 plugins: ["../.."]
 # 実測した設定。1 回およそ $1（opus、12〜14 ターン）
@@ -28,19 +33,19 @@ execution:
 context:
   scaffold_script: scaffold.sh
 graders:
-  # 判別すると確かめた唯一の grader——再開の探索を走らせる手順が消えたら赤になる。
+  # 修正前の版で落ちた唯一の grader（理由は冒頭——指示が無いから）。
   # 何もせずに止まった実行を「通過」にしない役も兼ねる
   - name: ran-find-cycle
     type: tool_used
     tool: Bash
-    input_match: 'find-cycle\.py'
+    input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?find-cycle\.py'
     min: 1
   # 以下は歯止め（修正前後の判別は示せていない）
   # 入口 (a)(b)——worktree を作るコマンド
   - name: no-worktree-add
     type: tool_used
     tool: Bash
-    input_match: 'worktree\s+add|prepare-worktree'
+    input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?(?:worktree\s+add|prepare-worktree)'
     min: 0
     max: 0
   # 入口 (c)——道具での新規作成（name を渡す・引数なし）。eval の子には道具が無く、必ず通る
@@ -50,10 +55,11 @@ graders:
     input_match: '"name"|^\{\s*\}$'
     min: 0
     max: 0
-  # 入口 (d)——周のブランチと別の新ブランチ
+  # 入口 (d)——周のブランチと別の新ブランチ（作る・複製する）。`git branch <名前>` は名前に
+  # 依らず拾う。`git branch` の一覧（引数なし・`-` で始まるオプション・パイプ）は拾わない
   - name: no-new-branch
     type: tool_used
     tool: Bash
-    input_match: 'checkout\s+-b|switch\s+-c|branch\s+(?!-)[^|;&]*issue/'
+    input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?(?:checkout\s+(?:-b|-B|--orphan)\b|switch\s+(?:-c|-C|--create)\b|branch\s+(?:-c|-C|--copy)\b|branch\s+(?![-|;&])\S)'
     min: 0
     max: 0
