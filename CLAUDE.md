@@ -446,7 +446,7 @@ probe スキルを `claude -p` で起動し、**トランスクリプトに印�
 `claude plugin eval` で当てる（#181）:
 
 ```bash
-claude plugin eval plugins/dev-loop --scaffold --allow-tools Bash EnterWorktree \
+claude plugin eval plugins/dev-loop --scaffold --allow-tools Bash \
   --ablation none --no-publish --keep-temp --max-cost-usd 6
 ```
 
@@ -466,7 +466,7 @@ claude plugin eval plugins/dev-loop --scaffold --allow-tools Bash EnterWorktree 
 
 **サンドボックスの中の `git` は、ホストの `PATH` の先頭で決まる。** #181 の周では
 `/usr/local/bin/git` が切れたリンクで、**子の `git` が `can't exec` で失敗した**
-（修正前の版を当てた回の trace で確認）。**現行の版はその設定でも 4/4 だった**が、
+（修正前の版を当てた回の trace で確認）。**現行の版はその設定でも 4/4（当時の grader 4 本）だった**が、
 その回の trace は消えており、**正しく再開したのか、探せずに止まったのかは確かめていない**
 ——**何もしないことは「作らない」と同じに見える。** **通ったら trace を見る**（`--keep-temp`）。
 

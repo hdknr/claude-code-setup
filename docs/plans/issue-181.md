@@ -195,3 +195,44 @@ eval の grader に**終了状態を見る型は無い**（公式ドキュメン
 ### 2 つ目の割り目（2026-10-04）
 
 `AskUserQuestion` で訊いた——**「このまま続ける」**。CR7 は **C を当て直す（課金承認済み）**。
+
+**この周のセッションからは eval を起動できない**（2026-10-05）——worktree 隔離のガードが
+`claude plugin eval` を「shell の eval」と読んで拒否する（Bash からも、利用者の `!` 前置からも）。
+C の当て直し（C5）は**人間が別の端末で回す**。
+
+**C5 の 1 回目は読み込みで落ちた**（人間が別端末で実行、$0）——`claude` 2.1.289 が
+`--allow-tools EnterWorktree` を「a tool never available in an evaluation」として拒否。
+`allowed_tools` と `CLAUDE.md` のコマンドから外し、必ず通るだけだった `no-enter-worktree-create` を消した
+（grader は 3 本。入口 (c) は引き続き BLOCKED——F）。
+
+**C5（最終形の grader 3 本・現行 `SKILL.md`・`claude` 2.1.289、人間が別端末で実行）: 3/3、$1.38、167 秒。**
+trace（`/private/tmp/e-D5grs3/out/trace.jsonl`）で確かめた: `find-cycle.py 7` が当たり → `resume.md` を読む →
+既存の worktree（`issue/7-bump-version`、`merge-base --is-ancestor` が ok）で手順 5 から再開し、Verifier と
+`/code-review` を回して、remote が無いので PR の手前で止まった。**判別している通過**（サンドボックスの `git` は
+xcrun のキャッシュ警告を出したが動いた）。**CR7 は解消。** 費用の合計: **$6.00**。
+eval が `plugins/dev-loop/evals/results/` に結果を書くので、`evals/.gitignore` で除外した。
+
+## 2 パス目（2026-10-05）
+
+- Verifier 2 パス目（`dev-loop:dev-loop-verifier` / sonnet）: **反証 3 件**（R1〜R3）。基準を直接破るのは R1（A）・R2（B''）
+- `/code-review` 2 パス目（high）: **指摘 10 件**（CR2-1〜CR2-10）
+- **2 パス目で直した行は関門に当て直していない**（打ち切り）。PR コメントに名指しする
+- 当て方: `scratchpad/br.js`（56 例。旧 regex は新しく足した 14 例すべてを取り違えた——陽性対照）、
+  `scratchpad/regrade.js`（C5 の trace の Bash 12 件に新 grader を当てて `[1, 0, 0]`＝実ハーネスの結果と一致）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R1 / CR2-2. `-C <dir>`・`-c`・`--no-pager` の前置きと、`-b` の前の位置引数を取りこぼす | 示せる（`br.js`） | A | **直す** |
+| CR2-1. 改行の後のコマンド（JSON の `\n`）に `\b` が当たらない | 示せる（`br.js`。C5 にも複数行のコマンドが実在） | A | **直す** |
+| CR2-3. `checkout/switch --track/-t`・`=` つきオプションを取りこぼす | 示せる（`br.js`） | A | **直す**。改名 `-m/-M` は (d) の外として残課題 |
+| CR2-9. `<`・`#`・`)` の偽陽性（コメントと矛盾） | 示せる（`br.js`） | B'' | **直す** |
+| R2 / CR2-5. 「作成を見る 3 つ」が現行の 2 本と合わない・消した grader は 0 回判別 | 示せる（ファイルの grader 数） | B'' | **直す** |
+| CR2-6. 壊れた回が判別しない理由の説明が誤り（grader は発行を数える。本当の交絡は子から周が見えなかったこと） | 示せる（M2b の子の報告: `.git/objects` を zlib で読んだ） | B'' | **直す** |
+| CR2-4. 「eval に終了状態を見る grader は無い」は偽（2.1.289 に `file_exists` の `exists: false`、`regex` の `not_contains`） | 示せる（レビューがバイナリのスキーマを読んだ） | B''（コメントの偽） | **主張を消す**。終了状態の grader を足すのは残課題——**CR9 の決着の理由は誤りだった** |
+| R3. `CLAUDE.md` に EnterWorktree を外した理由が無い | — | 無し（F は case.yaml で満たす） | 残課題 |
+| CR2-7. サブエージェント経由は C5 で実際に起きた（Bash 5 件が sidechain）。`tool_used` が数えるかは未確認 | 示せない（どの grader にも当たる呼び出しが無い） | 無し | 残課題 |
+| CR2-8. `no-enter-worktree-create` の削除で無料の歯止めが消えた（読み込み失敗の原因は CLI の `--allow-tools`） | 示せない（その grader が 2.1.289 で読み込まれるかは未確認） | 無し | 残課題 |
+| CR2-10. scaffold の「`HOME` 以外を根とするリポジトリ」の条件は冗長 | 示せない（失敗ではなく簡素化） | 無し | 残課題 |
+| （Verifier）入口 (c) は eval 経路の限界で、`claude -p` ＋ trace なら起こせるかもしれない | 示せない（試していない） | 無し | 残課題 |
+
+**この周の起票: 0 件**（手順 8 で人間に訊く）
