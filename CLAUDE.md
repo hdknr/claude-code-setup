@@ -452,6 +452,10 @@ claude plugin eval plugins/dev-loop --scaffold --allow-tools Bash \
 
 **1 回およそ $1**（opus・12〜14 ターン）。**CI からは呼ばない。**
 
+**worktree 隔離セッションからは起動できない**——ガードが `claude plugin eval` を shell の `eval` と
+読んで拒否する（Bash からも `!` 前置からも。#181）。**別の端末で、worktree の絶対パスを渡して回す**
+（相対パスのまま main の作業ツリーで走らせると「No eval cases found」になる）。
+
 **ケースが何を判別するかは、ケースの冒頭のコメントを正とする。** 性質だけ言えば、
 **修正前の版で赤になることを実際に確かめた grader だけが、回帰を捕まえると言える**
 ——**ただし赤になった理由まで見る。** 修正前の版で落ちても、**落ちた理由が「修正前の版に
