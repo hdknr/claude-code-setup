@@ -150,6 +150,11 @@ def build_tree(root: Path) -> None:
     # 上の s4 は作成が先なので、「最初の起動に帰属させる」変異はそこでは区別できない。
     (Session("s7", "2026-09-19T02:00").slash("12").body(banner="1.35.0").slash("13").body(banner="1.35.0")
      .tool("Bash", {"command": "git worktree add ../w -b issue/13-q"}, PREPARING).write(root))
+    # 番号なし: 引数なしの起動（入り直した再開でありうる）。作らない。**新規の分母に入れない。**
+    # find-cycle が当てて作っても、番号なしは発生の一覧にも find-cycle の列にも出さない。
+    (Session("s8", "2026-09-19T03:00").slash("").body(banner="1.35.0")
+     .tool("Bash", {"command": "python3 /p/find-cycle.py 5"}, FIND_HIT)
+     .tool("EnterWorktree", {"name": "issue-5"}, CREATED).write(root))
 
 
 def build_blind(root: Path) -> None:
@@ -184,10 +189,11 @@ MUTATIONS = {
     "find-cycle を走らせたかをコマンドの文字列だけで見る":
         ("FIND_CYCLE_RUN.search(command)", '"find-cycle.py" in command'),
     "find-cycle が当てただけの区間を母数に混ぜる":
-        ('"2+" if inv["ordinal"] else', '"2+" if inv["ordinal"] or inv["find_cycle"] == "hit" else'),
+        ('"2+" if inv["ordinal"]', '"2+" if inv["ordinal"] or inv["find_cycle"] == "hit"'),
     "作成をファイルの最初の起動に帰属させる":
         ('"invocation": current["id"]', '"invocation": invocations[0]["id"]'),
     "検出できていないのに 0 で終わる": ("status = 3", "status = 0"),
+    "番号なしの区間を新規に混ぜる": ('row["no_issue"] += 1', 'row["new"] += 1'),
 }
 
 
@@ -202,7 +208,7 @@ def main() -> int:
         seg = {(s[0], s[1]): s for s in correct["segments"]}
 
         print("区間と再開の判定")
-        check("区間は 9 つ（コピーした起動は畳む）", len(correct["segments"]) == 9 and correct["dups"] == 1)
+        check("区間は 10（コピーした起動は畳む）", len(correct["segments"]) == 10 and correct["dups"] == 1)
         check("1 区間目は新規・作成あり", seg[("s1", "7")][2:4] == (None, ("worktree add",)))
         check("陽性対照: 2 区間目の EnterWorktree name は発生で、既に作成済み（#96 の実物と同じ形）",
               seg[("s2", "7")][2:5] == ("2+", ("EnterWorktree",), True))
@@ -225,6 +231,16 @@ def main() -> int:
         check("母数と発生と作成済みを出す", "（母数）: 2・発生: 1（うち前の区間で既に作っていた周: 1）" in text)
         check("find-cycle が当てただけの区間は別の行", "find-cycle が当てただけの区間: 1・発生: 1" in text)
         check("新規の区間の作成率を出す", "新規の区間の作成: 3 / 6" in text)
+        check("番号なしの区間は別に出し、新規の分母に入れない", "番号なしの区間: 1" in text)
+        check("番号なしは find-cycle が当てても発生の一覧に出ない", "#None" not in text)
+        with tempfile.TemporaryDirectory() as only_tmp:
+            only = Path(only_tmp) / "projects"
+            Session("n1", "2026-09-21T00:00").slash("").body(banner="1.35.0").write(only)
+            assert_not_real_home(only)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                ostatus = mod.main(["--root", str(only)])
+        check("新規の区間が 0 なら対照が取れないので終了コード 3", ostatus == 3)
         check("版の不明を黙って落とさない", "| 不明 / 本文なし |" in text)
         astatus, atext = correct["anon"]
         check("--anonymize はリポジトリ名と番号を伏せる",
