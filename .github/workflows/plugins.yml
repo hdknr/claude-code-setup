@@ -82,6 +82,10 @@ jobs:
       - name: ガード拒否の収集のテスト（#122）
         run: python3 scripts/test-collect-guard-rejections.py
 
+      # 本体は CI から呼べない（入力が ~/.claude/projects にある）。テストだけ回す。
+      - name: 再開の周の作り直しの計数のテスト（#184）
+        run: python3 scripts/test-count-resume-recreations.py
+
       - name: check-skill-pointers.py のテスト
         run: python3 scripts/test-check-skill-pointers.py
 
