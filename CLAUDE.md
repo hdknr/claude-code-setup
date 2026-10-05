@@ -78,6 +78,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     リポジトリの外で利用者ごとに違う。`token-metrics.py` と同じ形）
   - `test-collect-guard-rejections.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
     呼ばないがテストは回す**）
+  - `count-resume-recreations.py` - dev-loop の**再開の周で worktree／ブランチを作り直した**
+    回数（#96 型の候補）をトランスクリプトから数える（#184。**CI からは呼ばない**——
+    `token-metrics.py` と同じ形。**PR・Issue に貼るなら `--anonymize`**。
+    **何を数え、何を守らないかは docstring を正とする**）
+  - `test-count-resume-recreations.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
+    呼ばないがテストは回す**）
   - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
     ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
     `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に
