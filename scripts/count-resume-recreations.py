@@ -48,7 +48,8 @@
 
 **新規の区間（周の 1 区間目）の作成率を併記する。** 新規の周は worktree を作るのが
 正常なので、**ここが 0 なら検出器が信号を拾えていない**（形式が変わった・置き場所が違う）。
-**新規の区間があるのに作成が 0 件なら、終了コード 3 で終わる。** 発生 0 件は、
+**新規の区間の作成が 0 件なら、終了コード 3 で終わる**——**新規の区間そのものが 0 の場合も**
+（番号なし・再開だけの範囲、狭い `--since`。対照が取れていない）。発生 0 件は、
 **母数と、この作成率が併せて出ているときだけ**「起きなかった」と読める。
 
 ## 何を守り、何を守らないか
@@ -67,6 +68,8 @@
 - **find-cycle の誤ヒットによる母数の膨張**——当てただけの区間は母数と別の列に出す。
 - **別の起動への誤帰属**——作成の信号は、**同じファイルの直前の起動**に帰属させる。
 - **0 件の読み違え**——新規の区間の作成が 0 なら非ゼロ終了（上記）。
+- **番号なしの区間の新規への混入**——引数なしの起動は周に束ねられないので、
+  新規にも再開にも数えず別に出す（引数なしで入り直した再開が、作成率の分母に入らない）。
 
 守らない:
 
@@ -252,7 +255,9 @@ def collect(root: pathlib.Path, since: str | None = None):
         inv.setdefault("created_before", False)
         # **2 つの再開を混ぜない。** find-cycle は部分一致で当てる（`#11` が `#110` に当たる）ので、
         # 1 区間目で当たったものには**新規の周が多く混ざる**（#184 の周で実データを読んで確かめた）。
-        inv["resume"] = "2+" if inv["ordinal"] else ("find-cycle" if inv["find_cycle"] == "hit" else None)
+        # 番号なしは周に束ねないので、どちらの再開にもしない（集計と発生の一覧を食い違わせない）。
+        inv["resume"] = (None if inv["issue"] is None else "2+" if inv["ordinal"]
+                         else "find-cycle" if inv["find_cycle"] == "hit" else None)
         if since and inv["ts"] < since:
             continue
         segments.append(inv)
@@ -273,7 +278,11 @@ def summarize(segments, key):
         row["segments"] += 1
         if seg["issue"] is not None:
             row["cycles"].add((seg["repo"], seg["issue"]))
-        if seg["resume"] == "2+":
+        if seg["issue"] is None:
+            # **番号なしは新規に混ぜない。** 引数なしで入り直した再開でありうるので、
+            # 新規の区間の作成率（検出器の対照）と終了コード 3 の判定を濁らせる（#184 の 1 パス目）。
+            row["no_issue"] += 1
+        elif seg["resume"] == "2+":
             row["resume"] += 1
             row["recreated"] += bool(seg["signals"])
             row["recreated_twice"] += bool(seg["signals"]) and seg["created_before"]
@@ -310,9 +319,10 @@ def render(segments, stats, anonymize=False) -> tuple[str, int]:
     total = summarize(segments, lambda s: "全体")["全体"]
     lines += ["", "## 判定", ""]
     status = 0
-    if total["new"] and not total["new_created"]:
-        lines.append(f"**検出できていない**: 新規の区間が {total['new']} あるのに作成の信号が 0 件。"
-                     "発生 0 件を「起きなかった」と読まないこと。")
+    if not total["new_created"]:
+        # 新規の区間が 0 でも対照は取れていない（番号なし・再開だけの範囲。狭い --since）。0 で終わらない。
+        lines.append(f"**検出できていない**: 新規の区間が {total['new']} で、作成の信号が 0 件。"
+                     "対照が取れないので、発生 0 件を「起きなかった」と読まないこと。")
         status = 3
     else:
         lines.append(f"新規の区間の作成: {total['new_created']} / {total['new']}（検出器が信号を拾えていることの対照）")
@@ -320,6 +330,7 @@ def render(segments, stats, anonymize=False) -> tuple[str, int]:
                      f"（うち前の区間で既に作っていた周: {total['recreated_twice']}）")
         lines.append(f"find-cycle が当てただけの区間: {total['fc_resume']}・発生: {total['fc_recreated']}"
                      "（**部分一致の誤ヒットを含む**——母数として読まない）")
+        lines.append(f"番号なしの区間: {total['no_issue']}（周に束ねられないので、新規にも再開にも数えない）")
     hits = [s for s in segments if s["resume"] and s["signals"]]
     if hits:
         lines += ["", "## 発生の一覧", ""]
