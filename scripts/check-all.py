@@ -83,6 +83,7 @@ TESTS: list[str] = [
     "test-worktree-scripts.py",
     "test-check-skill-pointers.py",
     "test-check-mutation-claims.py",
+    "test-run-dev-loop-evals.py",
 ]
 
 

@@ -84,6 +84,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **何を数え、何を守らないかは docstring を正とする**）
   - `test-count-resume-recreations.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
     呼ばないがテストは回す**）
+  - `run-dev-loop-evals.py` - `dev-loop` の Eval を**陽性対照と一緒に 1 コマンドで回し、貼れる要約を出す**
+    （#190。**CI からは呼ばない**——`claude` を起こして課金する。下の「振る舞いを Eval で当てる」。
+    **対照の定義と、何を守り何を守らないかは docstring を正とする**）
+  - `test-run-dev-loop-evals.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
+    呼ばないがテストは回す**）
   - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
     ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
     `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に
@@ -449,14 +454,19 @@ probe スキルを `claude -p` で起動し、**トランスクリプトに印�
 
 **歯止めはどれも構造を見ている**（版・マーカー・指し先・件数）。**`dev-loop` の振る舞い**
 ——再開の周で既存の worktree に入るか、など——は、`plugins/dev-loop/evals/` のケースを
-`claude plugin eval` で当てる（#181）:
+`claude plugin eval` で当てる（#181）。**陽性対照と一緒に回し、要約まで出す 1 コマンドがある**（#190）:
 
 ```bash
-claude plugin eval plugins/dev-loop --scaffold --allow-tools Bash \
-  --ablation none --no-publish --keep-temp --max-cost-usd 6
+python3 <worktree の絶対パス>/scripts/run-dev-loop-evals.py   # 本物のケースと対照を回して要約
+python3 scripts/run-dev-loop-evals.py --dry-run                # 組むだけ（課金しない）
+python3 scripts/run-dev-loop-evals.py --summarize <aggregate-result.json>   # 既存の結果を要約
 ```
 
-**1 回およそ $1**（opus・12〜14 ターン）。**CI からは呼ばない。**
+**対照はリポジトリに置かない**——プラグインを**リポジトリの外に複製し、その中で本物のケースから組む**
+（違うのは `name` と `prompt` だけ）。**要約はそのまま計画ファイルか PR コメントに貼る。**
+**終了コードは「期待と違う」と「判定できなかった」を分ける**（中身は docstring を正とする）。
+
+**1 回およそ $1.5**（本物のケース $1.4・対照 $0.1）。**CI からは呼ばない。**
 
 **worktree 隔離セッションからは起動できない**——ガードが `claude plugin eval` を shell の `eval` と
 読んで拒否する（Bash からも `!` 前置からも。#181）。**別の端末で、worktree の絶対パスを渡して回す**
