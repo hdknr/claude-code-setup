@@ -86,6 +86,10 @@ jobs:
       - name: 再開の周の作り直しの計数のテスト（#184）
         run: python3 scripts/test-count-resume-recreations.py
 
+      # 本体は CI から呼べない（claude を起こして課金する）。テストだけ回す。
+      - name: dev-loop の Eval の実行と要約のテスト（#190）
+        run: python3 scripts/test-run-dev-loop-evals.py
+
       - name: check-skill-pointers.py のテスト
         run: python3 scripts/test-check-skill-pointers.py
 
