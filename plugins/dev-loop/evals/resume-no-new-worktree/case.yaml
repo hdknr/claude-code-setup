@@ -7,7 +7,7 @@ name: resume-no-new-worktree
 # 落ちる。修正前の版にも「まず計画ファイルを探す」「worktree は作り直さない」の指示はある。
 # **言えるのは「スキルから `find-cycle.py`（指示とスクリプトの両方）が消えたら赤になる」まで**
 # ——指示だけが消えた場合は分けて測っていない。
-# **作成を見る grader（当時 3 本、いまは Bash の 2 本）は、修正前の版でも通った**が、
+# **作成を見る grader（当時 3 本。#183 で終了状態の 2 本に置き換えた）は、修正前の版でも通った**が、
 # **判別に数えられるのは 1 回だけ**——3 回のうち 2 回はサンドボックスの `git` が動かず、
 # `find-cycle.py` も既存の周も子から見えていなかった（子は `.git/objects` を直に読んで代用した）。
 # **3 回とも子に `EnterWorktree` が無く、#96 の実物の入口は起こせていない**（消した
@@ -17,6 +17,20 @@ name: resume-no-new-worktree
 #
 # **Bash の grader は `"command"` の値だけに当てる。** `input_match` は道具の入力の JSON 全体
 # （`description` を含む）に当たるので、限らないと説明文の語（実例: 「Show current branch name」）を拾う。
+#
+# **作成は、コマンドの言い回しではなく終了状態で見る**（#183）。`file_exists` が当たるのは
+# **実行の間に新しく現れたファイルの一覧**で、2.1.289 は作業ディレクトリを**`.git` も除かずに**
+# 歩いて scaffold 直後と比べている（バイナリで読んだ。**公式ドキュメントは `.git` の扱いを書いていない**）。
+# だから `git worktree add` は**どこに作っても** `.git/worktrees/<名前>/HEAD` を、新しいブランチは
+# `.git/refs/heads/<名前>` を新しく作り、scaffold が作った issue-7 の分は差に現れない。
+# **見ないもの**: 既存の名前を消して作り直した（パスが前後で同じ）・**作って同じ実行の中で消した**
+# （worktree remove・branch -D・prune）・`pack-refs` で ref をファイルにしない・reftable 形式のリポジトリ・
+# **`git clone` での複製**（`.git` が入れ子になり、どちらのパターンも先頭の `.git/` にしか当たらない）・
+# **何も書かずに断った試み**（本物の `prepare-worktree.sh 7` はこの scaffold では既存の worktree を見て
+# exit 3 で断るので、**試みても緑**）。**途中で失敗した試みは見えることがある**——`git worktree add -b` は
+# ブランチを先に作るので、worktree の作成が失敗しても（rc=128）ブランチが残り `no-new-branch` が赤になる。
+# **赤は「worktree ができた」ではなく「どちらかのパスが新しく現れた」を言う。**
+# **実ハーネスでの陽性対照は docs/plans/issue-183.md を正とする。**
 description: >-
   再開の周（周の worktree・ブランチ・計画ファイルが既に在る）で /dev-loop を起動したとき、
   再開の探索（find-cycle.py）を走らせること。worktree を新規作成したら赤になる歯止めも置いてあるが、
@@ -47,23 +61,17 @@ graders:
     tool: Bash
     input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?find-cycle\.py'
     min: 1
-  # 以下は歯止め（修正前後の判別は示せていない）
-  # 入口 (a)(b)——worktree を作るコマンド
-  - name: no-worktree-add
-    type: tool_used
-    tool: Bash
-    input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?(?:worktree\s+add|prepare-worktree)'
-    min: 0
-    max: 0
-  # 入口 (c)（EnterWorktree）は見ない——2.1.289 は eval で使えない道具として拒否する（上の allowed_tools）
-  # 入口 (d)——周のブランチと別の新ブランチ（作る・複製する・追跡ブランチを作る）。`git branch <名前>` は
-  # 名前に依らず拾う。`git` の前の改行（JSON の `\n`）と `-C <dir>` 等のグローバルオプション、
-  # `-b` の前の位置引数も許す。`git branch` の一覧（引数なし・作成以外の `-` オプション・パイプ・
-  # リダイレクト・`#`・`)`）は拾わない。**当てたのは scratchpad の 56 例まで**——文字列で当てる限り、
-  # 言い回しの取りこぼしは残る（改名 `-m/-M`・行継続・`python -c` 越し・サブエージェントの中は見ていない）
+  # 以下は歯止め（修正前後の判別は示せていない）。**終了状態で見る**（冒頭の最後の段落）ので、
+  # 言い回し・行継続・`-C` 前置き・`python -c` 越し・スクリプト経由に依らない——**ただしパスが残った場合だけ**
+  # （`prepare-worktree.sh` は別の番号でなら作るので赤、`7` では何も書かずに断るので緑。冒頭の「見ないもの」）。
+  # 入口 (c)（EnterWorktree）は起こせない——2.1.289 は eval で使えない道具として拒否する（上の allowed_tools）
+  # 入口 (a)(b)——worktree を作る（`--detach` でブランチを作らなくても、cwd の外に作っても）
+  - name: no-new-worktree
+    type: file_exists
+    path: ".git/worktrees/*/HEAD"
+    exists: false
+  # 入口 (d)——周のブランチと別の新ブランチ（作る・複製する・改名する）
   - name: no-new-branch
-    type: tool_used
-    tool: Bash
-    input_match: '"command"\s*:\s*"(?:[^"\\]|\\.)*?(?:\\n|\b)git(?:\s+(?:-[Cc]\s+\S+|--[\w-]+(?:=\S+)?))*\s+(?:checkout(?:\s+(?![|;&<>#)])\S+)*?\s+(?:-[a-zA-Z]*[bBt][a-zA-Z]*|--orphan|--track)\b|switch(?:\s+(?![|;&<>#)])\S+)*?\s+(?:-[a-zA-Z]*[cCt][a-zA-Z]*|--create|--force-create|--orphan|--track)\b|branch\s+(?:-[a-zA-Z]*[cCft][a-zA-Z]*\b|--(?:copy|force|track|no-track)\b|(?![-|;&<>#)]|\d+[<>])\S))'
-    min: 0
-    max: 0
+    type: file_exists
+    path: ".git/refs/heads/**"
+    exists: false
