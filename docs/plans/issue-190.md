@@ -75,7 +75,7 @@ main へのマージで `docs.yml` がサイトをデプロイする（計画フ
 | E | **1 コマンドで本物のケースと対照の両方が回り、貼れる要約が出る** | 人間が別の端末で 1 回回す（**このセッションからは起動できない**） |
 | F | `check-all.py` が緑、PR 側の CI も緑 | `check-all.py`・`gh pr checks` |
 
-**E は BLOCKED**——**何が無いか: 道具**（worktree 隔離セッションのガードが `claude plugin eval` を拒否する。#181）。
+**E は BLOCKED だった**（§7 で解消。人間が別の端末で回した）——**何が無いか: 道具**（worktree 隔離セッションのガードが `claude plugin eval` を拒否する。#181）。
 人間が別の端末で回せば消える。費用はおよそ $1.5。
 
 **未証明**: なし（E 以外は手元で当たる）。
@@ -170,7 +170,17 @@ main へのマージで `docs.yml` がサイトをデプロイする（計画フ
 
 - PR #192。PR 側の CI: `check`・`build` とも pass（`deploy` は PR なので skip）。**マージは人間の承認待ち**
 - 反映経路: main へのマージで `docs.yml` がサイトをデプロイする（この計画ファイルが載る）。プラグインの版は動かない
-- **E は BLOCKED のまま**——人間が別の端末で `python3 <worktree の絶対パス>/scripts/run-dev-loop-evals.py` を 1 回回せば消える
+- **E は解消した**（2026-10-06、人間が別の端末で 1 回回した。claude 2.1.291・$1.64・209s）:
+  - 1 コマンドで本物と対照が **1 つの報告**に入り、要約は **rc 0（全部期待どおり）**——この形に当たったのはこれが初めて
+  - 対照（`/private/tmp/e-3DE2sg`）: `no-new-worktree`・`no-new-branch` が期待どおり不合格。親の Bash 1 回で
+    `Preparing worktree (new branch 'issue/7-again')`。`ran-find-cycle` は目的外
+  - 本物（`/private/tmp/e-hqYPd7`）: 3/3 合格。**緑は「何もせず止まった」ではない**——親の Bash 7 回で
+    `find-cycle.py 7`（exit=1）→ `git show issue/7-bump-version:docs/plans/issue-7.md` →
+    **既存の `.claude/worktrees/issue-7` に `cd`** して作業を続けた。Agent の中の Bash 5 回は数えていない
+  - `is_error` の印は 1 件（`test -f CLAUDE.md && cat CLAUDE.md`——scaffold に `CLAUDE.md` が無いので exit 1。
+    `ls` の出力は出ており、**測定不成立ではない**）。`can't exec` は 0 件
+  - `claude plugin eval` の終了コードは 1（対照の不合格による。判定には使っていない）
+  - 回したあとも作業ツリーの `git status` は clean（I2）
 - この周の起票: 0 件（残課題はどれも実物で失敗を示せないので、起票の 3 条件を満たさない。PR コメントに書いた）
 - 焼き戻し: 「Agent の中の Bash は trace に `parent_tool_use_id` 付きで出る」は本体の docstring に書いた。
   「新しい検査が古い試料を 2 にすると、古い検査の変異が等価になる」は、この周のテストの陽性対照と変異の組の形で残した。
