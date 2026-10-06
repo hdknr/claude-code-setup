@@ -27,9 +27,9 @@ usage:
 
 要約が示すもの:
 
-- grader ごとの合否と**期待**と一致したか。期待は、本物のケースは全部合格、対照は `CONTROLS` の `expect`
-  （`None` は目的外で、一致に数えない）
-- 子が走らせた Bash のコマンドと、その出力の末尾の行——**既知の雑音（`NOISE`）は除き、除いた行数を出す**
+- grader ごとの合否と**期待**と一致したか。期待は、本物のケースは `case.yaml` の grader が全部合格、
+  対照は `CONTROLS` の `expect`（`None` は目的外で、一致に数えない）
+- 子（親のセッション）が走らせた Bash のコマンドと、その出力の末尾の行——**既知の雑音（`NOISE`）は除き、除いた行数を出す**
 - **測定不成立の候補**（`SUSPECT` に当たる行・`is_error` の結果。実例: 子の `git` が `can't exec`——#181）
 - `claude plugin eval` の終了コード（**判定には使わない**——対照は不合格が期待なので、正常でも非ゼロになりうる）
 
@@ -39,13 +39,14 @@ usage:
 - **1**: 期待と違う grader がある
 - **2**: 判定できなかった。**判定できなかったことは緑ではない**——1 と分けるのは、直すものが違うから
   （ケースではなく実行）。条件は下の「守る」
-- **3**: 対照を組めなかった・`claude` を起動できなかった
+- **3**: 対照を組めなかった・`claude` を起動できなかった・`--cases` に知らないケースを渡した
 
 守る:
 
 - 対照は、本物のケースのディレクトリを丸ごと写す（grader・scaffold・設定は本物のまま）
 - 差し替える `name` / `prompt` の行がちょうど 1 つでなければ、組まない
-- 差し替える値がブロックスカラー（`>`・`|`）なら、組まない（1 行目だけ差し替えると壊れた YAML になる）
+- 差し替える値が次の行に続くなら、組まない（ブロックスカラー・次の行に書いた値・複数行の scalar。
+  1 行目だけ差し替えると壊れた YAML になる）
 - 複製をこの作業ツリーの中に作らない（`results/` も含め、リポジトリを 1 つも変えない）
 - worktree から走らせたとき、同じリポジトリのメインの作業ツリーの中にも作らない
 - 期待と違う grader があれば 1
@@ -53,7 +54,9 @@ usage:
 - 期待が定義されていないケースが報告にあれば 2（採点を黙って捨てない）
 - run が 0 件のケースは 2
 - grader が 0 件の run は 2
-- 期待した grader が報告に無ければ 2（対照が何も見なくなるのを緑にしない）
+- `results/` の下の `case.yaml` はケースに数えない
+- 期待した grader が報告に無ければ 2（本物は `case.yaml` の grader、対照は `expect`。何も見なくなるのを緑にしない）
+- 期待が定義されていない grader が報告にあれば 2（本物に足した grader は対照にも写る。黙って合格扱いにしない）
 - `partial: true` は 2（打ち切られた実行を緑にしない）
 - `skippedPaidGraders` は 2
 - `scored: false` の grader は 2
@@ -62,14 +65,16 @@ usage:
 - 実行エラーがあれば 2
 - 目的外（期待 `None`）の grader は一致に数えない
 - 既知の雑音は除き、除いた行数を出す
-- 測定不成立の候補は、表示する行に印を付ける
+- 測定不成立の候補（`SUSPECT` の各形）は、表示する行に印を付け、表示しなかった行にあればそう言う
+- Agent の中の Bash は、親の回数とコマンドに混ぜない（親が 0 回なら 0 回と出す）
 - `is_error` の結果には印を付ける（拒否された Bash は「作らなかった」と同じに見える）
 
 守らない:
 
 - **本物のケースの緑が「探して正しく再開した」か「何もせず止まった」かは、機械で判定しない。**
   要約は Bash の回数とコマンドを出すだけで、読むのは人間（#183 の B で trace を読んで確かめた形）
-- **Agent に委譲した先の Bash は数えない**——trace に出るのは親の道具呼び出しだけ。Agent の回数は出す
+- **Agent に委譲した先の Bash のコマンドは出さない**——trace には `parent_tool_use_id` 付きで出る
+  （#183 の本物の trace で 11 回中 3 回）。回数だけ別に出す
 - **trace の形はハーネスの内部形式である**——`message.content` の `tool_use` / `tool_result` を読む。
   変わったら「Bash 0 回」と出るので、**0 回は trace の形が変わった可能性も含む**
 - **`--keep-temp` の一時領域（`/private/tmp/e-*`）は消さない**——中の `home/`・`tmp/` はハーネスが
@@ -167,42 +172,66 @@ def build(out: Path) -> Path:
     return plugin
 
 
+def indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
 def replace_one(text: str, pattern: str, new: str, what: str) -> str:
     rx = re.compile(pattern, re.M)
-    hits = rx.findall(text)
+    hits = list(rx.finditer(text))
     if len(hits) != 1:
         raise ValueError(f"case.yaml の {what} の行が {len(hits)} 個——1 個でなければ組まない")
-    if hits[0].lstrip().startswith((">", "|")):
-        raise ValueError(f"case.yaml の {what} がブロックスカラー——1 行だけ差し替えると壊れるので組まない")
-    return rx.sub(lambda _m: new, text)
+    m = hits[0]
+    following = text[m.end():].lstrip("\n").split("\n", 1)[0] if text[m.end():].startswith("\n") else ""
+    if following.strip() and indent(following) > indent(m.group(0)):
+        # ブロックスカラー（`>`・`|`）も、次の行に書いた値も、複数行の scalar も、ここで当たる
+        raise ValueError(f"case.yaml の {what} の値が次の行に続く——1 行だけ差し替えると壊れるので組まない")
+    return text[:m.start()] + new + text[m.end():]
 
 
-def expectations(case_names: list[str]) -> dict[str, dict[str, bool | None] | None]:
-    """ケース名 → grader 名 → 期待。None（ケース全体）は「全 grader が合格」。"""
-    exp: dict[str, dict[str, bool | None] | None] = {n: None for n in case_names}
+def expectations(cases: dict[str, list[str]]) -> dict[str, dict[str, bool | None]]:
+    """ケース名 → grader 名 → 期待。本物は `case.yaml` の grader が全部合格、対照は `expect`。"""
+    exp: dict[str, dict[str, bool | None]] = {n: {g: True for g in gs} for n, gs in cases.items()}
     for c in CONTROLS:
         exp[c["name"]] = c["expect"]
     return exp
 
 
-def real_case_names(plugin: Path) -> list[str]:
-    """本物のケース名。入れ子も拾い（ハーネスと同じ）、`results/` の下は除く。"""
-    names = []
+def grader_names(text: str) -> list[str]:
+    """`graders:` の下の `  - name: X` を順に拾う（次のトップレベルのキーまで）。"""
+    names, inside = [], False
+    for line in text.splitlines():
+        if re.match(r"^graders:\s*$", line):
+            inside = True
+        elif inside and re.match(r"^\S", line):
+            break
+        elif inside:
+            m = re.match(r"^  - name:[ \t]*[\"']?([^\"'\s]+)", line)
+            if m:
+                names.append(m.group(1))
+    return names
+
+
+def real_cases(plugin: Path) -> dict[str, list[str]]:
+    """本物のケース名 → grader 名。入れ子も拾い（ハーネスと同じ）、`results/` の下は除く。"""
+    cases: dict[str, list[str]] = {}
     evals = plugin / "evals"
     for y in sorted(evals.rglob("case.yaml")):
         if "results" in y.relative_to(evals).parts:
             continue
-        m = re.search(r"^name:[ \t]*[\"']?([^\"'\s]+)", y.read_text(encoding="utf-8"), re.M)
-        names.append(m.group(1) if m else y.parent.name)
-    return names
+        text = y.read_text(encoding="utf-8")
+        m = re.search(r"^name:[ \t]*[\"']?([^\"'\s]+)", text, re.M)
+        cases[m.group(1) if m else y.parent.name] = grader_names(text)
+    return cases
 
 
-def tool_calls(trace: Path) -> tuple[list[tuple[str, str, bool]], int]:
-    """trace から Bash の (コマンド, 出力, is_error) を順に返す。2 つ目は Agent の回数。"""
+def tool_calls(trace: Path) -> tuple[list[tuple[str, str, bool]], int, int]:
+    """trace から親の Bash の (コマンド, 出力, is_error) を順に返す。
+    2 つ目は親の Agent の回数、3 つ目は Agent の中の Bash の回数（`parent_tool_use_id` 付き）。"""
     uses: dict[str, str] = {}
     order: list[str] = []
     results: dict[str, tuple[str, bool]] = {}
-    agents = 0
+    agents = sub_bash = 0
     for line in trace.read_text(encoding="utf-8").splitlines():
         try:
             o = json.loads(line)
@@ -212,10 +241,13 @@ def tool_calls(trace: Path) -> tuple[list[tuple[str, str, bool]], int]:
         content = m.get("content") if isinstance(m, dict) else None
         if not isinstance(content, list):
             continue
+        sidechain = o.get("parent_tool_use_id") is not None
         for b in content:
             if not isinstance(b, dict):
                 continue
-            if b.get("type") == "tool_use" and b.get("name") == "Bash":
+            if b.get("type") == "tool_use" and sidechain:
+                sub_bash += b.get("name") == "Bash"
+            elif b.get("type") == "tool_use" and b.get("name") == "Bash":
                 uses[b.get("id")] = str((b.get("input") or {}).get("command", ""))
                 order.append(b.get("id"))
             elif b.get("type") == "tool_use" and b.get("name") == "Agent":
@@ -225,7 +257,7 @@ def tool_calls(trace: Path) -> tuple[list[tuple[str, str, bool]], int]:
                 if isinstance(r, list):
                     r = "\n".join(x.get("text", "") for x in r if isinstance(x, dict))
                 results[b.get("tool_use_id")] = (str(r or ""), bool(b.get("is_error")))
-    return [(uses[i], *results.get(i, ("", False))) for i in order], agents
+    return [(uses[i], *results.get(i, ("", False))) for i in order], agents, sub_bash
 
 
 def split_noise(output: str) -> tuple[list[str], int]:
@@ -281,7 +313,7 @@ def _summarize(data: dict, expect: dict[str, dict[str, bool | None] | None],
                 out.append("**判定できなかった**: grader が 0 件\n")
                 code = 2  # grader 0 件
             e = expect[name]
-            missing = [k for k, v in (e or {}).items()
+            missing = [k for k, v in e.items()
                        if v is not None and k not in {g.get("name") for g in graders}]
             if missing:
                 out.append(f"**判定できなかった**: 期待した grader が報告に無い（{', '.join(missing)}）\n")
@@ -291,9 +323,12 @@ def _summarize(data: dict, expect: dict[str, dict[str, bool | None] | None],
                 code = 2  # skippedPaidGraders
             out.append("| grader | 結果 | 期待 | 一致 |\n| --- | --- | --- | --- |")
             for g in graders:
-                want = True if e is None else e.get(g["name"], True)
+                want = e.get(g["name"])
                 got = bool(g.get("passed"))
-                if g.get("scored") is False:
+                if g["name"] not in e:
+                    mark = "**期待が定義されていない grader**"
+                    code = 2  # 未定義の grader
+                elif g.get("scored") is False:
                     mark = "**採点されていない**"
                     code = 2  # 採点されていない
                 elif want is None:
@@ -310,14 +345,15 @@ def _summarize(data: dict, expect: dict[str, dict[str, bool | None] | None],
                 code = 2  # 実行エラー
             tp = run.get("tracePath")
             try:
-                calls, agents = tool_calls(Path(tp)) if tp else (None, 0)
+                calls, agents, sub_bash = tool_calls(Path(tp)) if tp else (None, 0, 0)
             except OSError:
-                calls, agents = None, 0
+                calls, agents, sub_bash = None, 0, 0
             if calls is None:
                 out.append(f"\n**trace を読めない**（{tp}）——赤・緑の理由を示せない")
                 code = 2  # trace を読めない
                 continue
-            out.append(f"\nBash {len(calls)} 回・Agent {agents} 回（trace: `{tp}`。Agent の中の Bash は数えない）\n")
+            out.append(f"\nBash {len(calls)} 回・Agent {agents} 回（trace: `{tp}`。"
+                       f"Agent の中の Bash {sub_bash} 回は数えず、コマンドも出さない）\n")
             for n, (cmd, res, is_error) in enumerate(calls, 1):
                 kept, dropped = split_noise(res)
                 first = cmd.splitlines()[0] if cmd else ""
@@ -358,7 +394,7 @@ def main() -> int:
     ap.add_argument("--cases", help="期待するケースをカンマ区切りで絞る（--summarize 用。片方だけ回した結果に当てる）")
     a = ap.parse_args()
 
-    names = real_case_names(PLUGIN)
+    names = real_cases(PLUGIN)
     expect = expectations(names)
     if a.cases:
         wanted = a.cases.split(",")
