@@ -1,0 +1,175 @@
+# #183 — dev-loop の Eval: 作成を、コマンドの regex ではなく終了状態で採点する
+
+## 周の在り処
+
+- ブランチ: `issue/183-eval-end-state-graders`
+- worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-183`
+  （`prepare-worktree.sh` で作り、`EnterWorktree` に `path` で入った。
+  セッションは issue-184 の worktree から `path` で移ってきた）
+- 起点: `1493a93`（Merge pull request #185）
+- base: 参照 `origin/main` → `1493a93ca23c15579942c12dc63bab6501d5e5d8`
+- 読み込まれた dev-loop は **1.35.0**（リポジトリは 1.36.0）
+
+## 0. 着手時に分かったこと
+
+**grader が見る「作成されたファイル」の取り方を、`claude` 2.1.289 のバイナリから読んだ**
+（`~/.local/share/claude/versions/2.1.289` の `strings`。**公式ドキュメントは
+「Only files created during the run count」までしか書いておらず、`.git` を含むかは書いていない**）:
+
+- scaffold の直後と実行の後に、**作業ディレクトリを再帰で歩いて**ディレクトリ以外の相対パスを集める。
+  **除外は無い**——`.git/` の中も入る。上限（件数・深さ）を超えると「file evidence cannot be trusted」で落ちる
+- 差（実行後 − scaffold 直後）を改行で連結したものが `files`。`file_exists` はこれに glob を当てる
+- glob は `*` → `[^/]*`、`**/` → `(?:.*/)?`、`**` → `.*`、全体を `^…$` で囲む
+
+だから **`git worktree add` はどこに作っても `.git/worktrees/<名前>/HEAD` を新しく作る**
+（admin ディレクトリは共通の `.git` に置かれる）。**新しいブランチは
+`.git/refs/heads/<名前>` を新しく作る**（loose ref）。**既存の issue-7 の分は
+scaffold 直後の集合に入っているので、差に現れない。**
+
+## 1. 変更範囲
+
+触る:
+
+- `plugins/dev-loop/evals/resume-no-new-worktree/case.yaml` — 作成を見る 2 本を終了状態の grader に置き換える
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（1.36.0 → 1.36.1）
+- `.claude-plugin/marketplace.json` — 同上
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版のバナーだけ
+- `docs/plans/issue-183.md` — この計画
+
+触らない: `scaffold.sh`（終了状態の取り方は scaffold に依らない）、`ran-find-cycle`、
+`CLAUDE.md`（grader の中身を書いていない。「ケースの冒頭のコメントを正とする」と指しているだけ）、
+`docs/plans/issue-181.md`（その周の記録）
+
+**同じことを述べている箇所の数**: 作成を見る grader の説明は `case.yaml` の冒頭と各 grader の
+コメントの 1 ファイルだけ。版は 3 箇所（機械が揃いを見る）。分ける理由は無い。
+
+## 2. デプロイ経路
+
+プラグインの版を上げる → main にマージ → 利用者は `plugin update` で受け取る。
+公開サイトの `docs/` は触らない（`docs/plans/` は mkdocs の nav に載るかに依らず、内容は記録）。
+
+## 3. 受入基準
+
+不変条件: **ケースの「作成したら赤」の歯止めは、作成の言い回しに依らず赤になり、
+作成しない実行では緑のまま。**
+
+破りうる経路（作成の入口）: `git worktree add`（cwd の内／外、`-C` 前置き、行継続、`--detach`）、
+`prepare-worktree.sh`、`git checkout -b` / `switch -c` / `branch <名前>` / `branch -m`、
+`python -c` 越し、サブエージェントの中、`EnterWorktree`（eval では使えない。#181）
+
+| # | 基準 | 証明手段 |
+| --- | --- | --- |
+| A | **実ハーネスで**、作成した実行（陽性対照）で終了状態の grader が赤になる | `claude plugin eval` を別端末で（**この周のセッションからは起動できない**。下記） |
+| B | **実ハーネスで**、現行の `SKILL.md` で当ケースが緑のまま（3/3 grader） | 同上 |
+| C | 走査の式をローカルに再現し、陰性（作成しない操作）で緑・陽性（上の経路のうち git で起こせるもの）で赤 | `sim.py`（scratchpad）。**再現であって実ハーネスではない** |
+| D | 版が 3 箇所で揃い、`check-all.py` が緑。PR 側の CI も緑 | `check-all.py`・`gh pr checks` |
+| E | `case.yaml` のコメントが述べる事実（走査の仕方・何を見ないか）が正しい | バイナリの該当箇所・C の結果 |
+
+**未証明**（この環境では原理的に証明できない）:
+
+- **サブエージェントの中での作成**——eval の子に `Agent` を許していない（`allowed_tools`）ので、
+  そもそも起こせない。終了状態は誰が作っても同じファイルなので**原理上は拾う**が、測っていない
+- **eval の子の `git` が reftable 形式で `init` する設定**——そのとき新しいブランチは
+  `refs/heads/` にファイルを作らない。サンドボックスの `HOME` は一時なので既定（files）のはず、までしか言えない
+
+**A・B は BLOCKED だった**——**何が無いか: 道具**（worktree 隔離セッションのガードが
+`claude plugin eval` を shell の `eval` と読んで拒否する。#181・`CLAUDE.md`）。
+**人間が別の端末で回して解消した**（2026-10-05）。結果は下の「7. 人間に回してもらうもの」。
+
+生成物: **なし**（`case.yaml` は手書き。`skill-metrics.py` は `SKILL.md` の節構造を測るが、
+版のバナーの数字の変更は節構造を動かさない——`check-all.py` の `--check` で確かめる）。
+
+## 4. 未解決の判断
+
+- 旧 regex の 2 本（`no-worktree-add`・`no-new-branch`）を**消す**。残すと「言い回しを足すたびに偽陽性」
+  （#183 の本文）がそのまま残り、終了状態の grader と二重に赤になるだけで情報が増えない
+
+## 5. 関門の進捗（再開点）
+
+- 手順 4: 実装済み（`case.yaml` の 2 本を `file_exists` に置換・版 1.36.1）
+- 陽性対照の用意: scratchpad の `build-control.py` が、本物のケースの grader と scaffold を
+  **そのまま写し prompt だけ差し替えた**対照ケース（`git worktree add … -b issue/7-again` を
+  走らせるだけ）をプラグインの複製の下に組む（`--eval-dir` はプラグインの下しか取らないため）。
+  **A・B は人間が別の端末で回す**（結果をここに書き戻す）
+- 割り目（手順 4 の後）: **割った**——2026-10-05、この worktree で `/clear` → `/dev-loop:dev-loop 183`
+  で再開（`find-cycle.py` は exit 1、当たったのはこの worktree 1 本だけ。肯定的な確認は一致）。
+  前のセッションの scratchpad（issue-184 側）から `sim.py`・`sim-v1.txt`・`build-control.py` を
+  このセッションの scratchpad に写し、対照ケースを組み直した
+- Verifier: 1 パス目 **反証 0 件**（sonnet・`dev-loop:dev-loop-verifier`）。ただし `pack-refs`/`gc` 後の
+  偽陽性候補・`fetch` 等は**未検証**のまま返った（下の 6 に採否）。
+  **Verifier は、ガードを避けようとして `git` の文字を分けて伏せたコマンドを 2 回書いた**と申告した（どちらも拒否されている）。
+  親が確かめた結果、リポジトリの `git status` は開始時と同じ
+- `/code-review`: 1 パス目 **指摘 8 件**（high）。採否は下の 6——直す 4（R1-2/3/4/7）・残課題 4。
+  R1-1 は人間に判断を仰ぐ。レビューは「scratchpad の `run.py`（Verifier が書いたもの）が `.git` を
+  文字列の断片から組んでおり、ガードの回避に見える」と報告した——使っていない
+- 指摘対応: 済み（`case.yaml` のコメント 2 箇所・`sim-v2.py`）。**残っているのは手順 5 の当て直しと
+  手順 6 の 2 パス目の両方**
+- 割り目（2 パス目の前）: `AskUserQuestion` で訊き、**「このまま続ける」**が選ばれた
+- 2 パス目: Verifier **反証 0 件**（sonnet。sim-v2 を外で再実行して 25/25。ガードの回避はしていないと申告）/ `/code-review` **指摘 8 件**——直す 4（R2-1〜4。**2 パス目の修正なので関門に当て直していない**。PR コメントに名指し）・残課題 4。**関門はここで打ち切り**（3 パス目は無い）
+- `check-all.py`: 1 パス目の前に 29/29 緑（指摘対応の後は未）
+- 実験: C（ローカル再現）。陰性 7・陽性 12、すべて期待どおり（`sim-v1.txt`）。
+  **交絡**: 再現は私の書いた walker であって実ハーネスではない——だから A・B を別に置いた
+
+## 6. 既知の限界・決着済みの論点
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-1 `pack-refs`/`gc` の後に既存ブランチへコミットすると、同じパスが再作成されて「新規」に見え、偽陽性になりうる（Verifier の推測。再現していない） | 示せない——差は**パスの集合差**（バイナリ `ug(e,n)`: `n` にあって `e` に無いものだけ）で、scaffold は ref を loose で作る（`scaffold.sh` の `worktree add -b`）ので、`.git/refs/heads/issue/7-bump-version` は scaffold 直後の集合に在る | 無し | 残課題 |
+| V1-2 走査の上限（深さ 32・エントリ 200000）を sim は再現していない | 示せない（scaffold の規模では届かない） | 無し | 残課題 |
+| R1-1 終了状態の grader は**作成が失敗した試み**を見ない（本物の `prepare-worktree.sh 7` は exit 3 で断るので緑）。消した regex は拾っていた。「情報が増えない」という決着の理由は誤り | 示せる（`sim-v2.txt`: 「本物の prepare-worktree.sh 7」が rc=3・緑） | **無し**——不変条件は「作成しない実行では緑」で、試みは書いていない。**基準を足せるのは人間だけ**なので訊く | 残課題（**人間が 2026-10-05 に「残課題にする」を選んだ**。基準は広げない）。コメントの事実の誤りは R1-3 で直した |
+| R1-2 「見ないもの」に「作って同じ実行の中で消す」が無い | 示せる（`sim-v2.txt`） | E | **直す**（`case.yaml` の冒頭） |
+| R1-3 「スクリプト経由に依らない」は本物のスクリプトで当てていない（`7` では断る） | 示せる（`sim-v2.txt`: `7` は緑・`8` は赤） | E | **直す**（grader の上のコメント） |
+| R1-4 sim の陰性「既存ブランチへ switch」が実は失敗しており（rc=128 を握りつぶす）、陰性の成功を確かめていない | 示せる（v1 の該当行） | C | **直す**（scratchpad の `sim-v2.py`: 期待する終了コードを要求。switch は `--detach` で往復。find-cycle は出力に `worktrees/issue-7` があることまで見る。25 件 ALL OK） |
+| R1-5 sim はサンドボックスの外の git で走るので、子が `.git/worktrees` に書けるかは C では示せない | 示せない（バイナリのプロファイルからの推測） | E の実ハーネス側 | **A で解消**（書き込めた。7 節） |
+| R1-6 reflog（`.git/logs/refs/heads/**`）を見る 3 本目で `branch → pack-refs` を塞げる | 示せない（失敗ではなく改善の提案） | 無し | 残課題 |
+| R1-7 `git clone` での複製が見えず、「見ないもの」にも無い | 示せる（レビューの sim・`sim-v2.txt`） | E | **直す**（「見ないもの」に足した。grader は足さない） |
+| R1-8 冒頭の「当時 3 本。#183 で…置き換えた）は、修正前の版でも通った」が新しい grader にも掛かって読める | 示せない（誤読の可能性） | 無し | 残課題 |
+| V1-3 `file_exists` の判定関数 `bm` の本体をバイナリから特定できなかった | 示せない（A の陽性対照が実ハーネスでこれを当てる） | A（BLOCKED の中で当たる） | **A で解消**（実ハーネスで赤。7 節） |
+| R2-1 「見ないもの」の「作ろうとして失敗した実行は終了状態に何も残らない」は偽——途中で失敗した `worktree add -b` はブランチを残し `no-new-branch` が赤 | 示せる（scratchpad の `failed-add.py`: rc=128 で `.git/refs/heads/issue/7-z` が残る。`sim-v2.py` の追加ケースも赤） | E | **直す**（「何も書かずに断った試み」と「途中で失敗した試み」に分けた）。**2 パス目の修正なので関門を通していない** |
+| R2-2 `case.yaml` の「実ハーネスでの陽性対照は docs/plans/issue-183.md を正とする」の指し先に結果が無く、「人間に回してもらうもの」の節も無い。対照を組むスクリプトは scratchpad にしか無い | 示せる（`grep` で節が無い） | E | **直す**（下の「7. 人間に回してもらうもの」を足し、対照の組み方を書いた。結果は回したら書き戻す）。関門を通していない |
+| R2-3 grader の上の「ただし作れた場合だけ」も狭すぎる | 示せる（R2-1 と同じ） | E | **直す**（「ただしパスが残った場合だけ」）。関門を通していない |
+| R2-4 sim の「失敗した試み」は git が書く前に断る 1 件だけで、途中の失敗を試していない | 示せる（R2-1 の偽の文が C を通った） | C | **直す**（`sim-v2.py` に途中で失敗する `worktree add -b` を追加。26 件 ALL OK、`sim-v3.txt`）。関門を通していない |
+| R2-5 sim の「`--track` 相当」は追跡を試していない（`main` はローカル） | 示せる（ラベルと中身の不一致） | 無し | 残課題 |
+| R2-6 sim は grader のパターンを引数で受け取り、`case.yaml` から読まない | 示せない（いまは一致している） | 無し | 残課題 |
+| R2-7 sim は呼び出し側の環境変数を引き継ぐ（`GIT_DIR` 等で交絡しうる） | 示せない | 無し | 残課題 |
+| R2-8 検証のための使い捨て worktree（`--detach`）も赤になり、`git clone` なら緑——判定がコピーの手段に依る | 示せない（実ハーネスの実行で起きた記録は無い） | 無し（不変条件は「作成したら赤」） | 残課題 |
+
+## 7. 人間に回してもらうもの（A・B）
+
+**この周のセッションからは起動できない**（ガードが `claude plugin eval` を拒否する）。別の端末で回す。
+
+- **A（陽性対照）**: 本物のケースのディレクトリ（`case.yaml`・`scaffold.sh`）をプラグインの複製の下の
+  `evals-control/created-worktree/` に写し、**`case.yaml` の `prompt` だけ**を
+  「Bash で次の 1 行をそのまま実行して、終わったら止まれ。他には何もするな:
+  `git worktree add .claude/worktrees/issue-7-again -b issue/7-again`」に、`name` を
+  `control-created-worktree` に差し替える（grader と scaffold はそのまま）。
+  `--eval-dir` はプラグインの下しか取らないので、複製の下に置く。
+  `claude plugin eval <複製>/dev-loop --eval-dir evals-control --scaffold --allow-tools Bash --ablation none --no-publish --keep-temp --max-cost-usd 2`。
+  **期待: `no-new-worktree`・`no-new-branch` が赤**（`ran-find-cycle` も赤だが目的外）
+- **B（本物のケース）**: `claude plugin eval <この worktree の絶対パス>/plugins/dev-loop --scaffold --allow-tools Bash --ablation none --no-publish --keep-temp --max-cost-usd 6`。
+  **期待: 3/3 緑**。緑なら trace で「探して正しく再開した」か「何もせず止まった」かを見る
+
+結果（2026-10-05、2.1.289、プラグイン 1.36.1。結果の JSON と trace は `--keep-temp` の一時領域にあり、リポジトリには入れていない）:
+
+| | 実行（`startedAt`） | 採点 | trace で確かめたこと |
+| --- | --- | --- | --- |
+| A | 08:25:30Z | 0/3（`no-new-worktree`・`no-new-branch` が赤、`ran-find-cycle` も赤） | 子は `git worktree add …` を 1 回だけ実行し、出力の末尾は `HEAD is now at 7b28d8b init`（**実際に作れている**） |
+| A | 10:49:25Z | 0/3（同上） | 同上（`HEAD is now at ce75547 init`） |
+| B | 10:49:48Z | **3/3**（$1.41・14 ターン） | `find-cycle.py 7` → `references/resume.md` → 計画ファイルの再開点（手順 5）→ 既存の `.claude/worktrees/issue-7` で Verifier・`/code-review` → 既存ブランチにコミット。**新しい worktree・ブランチは作っていない**（「何もせず止まった」ではなく「探して正しく再開した」） |
+
+- **A を満たした**: 作成した実行で、終了状態の 2 本が 2 回とも赤
+- **B を満たした**: 現行の `SKILL.md` で 3/3 緑。**この緑は空ではない**——#181 では 3 回のうち 2 回で
+  サンドボックスの `git` が動かなかったが、今回は xcrun の警告（`couldn't create cache file`）が出ても
+  `git show`・`git commit`・`worktree add` が成功している。**作れたのに作らなかった緑**である
+- **R1-5・V1-3 は A で埋まった**: 子のサンドボックスは `.git/worktrees` への書き込みを拒まない。
+  `file_exists` は実ハーネスで新しく現れたパスに当たる
+- **観測窓**: A は 2 回、B は **1 回**（`runs: 1`・ablation なし）。**A が示したのは「`worktree add` を 1 行だけ
+  実行させたら赤」まで**——dev-loop の流れの中で作った場合は、同じパスが残る限り同じ式で見えるはずだが、
+  起こしてはいない。**#96 の実物の入口（`EnterWorktree`）は今回も起こせていない**
+
+## 8. PR・本番反映・還元
+
+- PR: #186。PR 側の CI は緑（`check` pass・`build` pass・`deploy` skipping）。2026-10-05 に `gh pr checks` で確かめた
+- A・B が回った（7 節）。**PR は「A・B が回るまで draft」と書いたが、実際には draft になっていなかった**（2026-10-06 に `gh pr ready` で確かめた）。マージは人間が決める
+- 反映経路: プラグインの版（1.36.1）。マージ後に利用者が `plugin update` で受け取る
+- この周の起票: 0 件
