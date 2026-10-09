@@ -15,7 +15,7 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 | `/orca:orca -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
 | `/orca:orca -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
 
-`-n` フラグを付けると、処理の最初に現在の worktree に新しいターミナルタブを作成し、現在のディレクトリへ cd する。
+`-n` フラグを付けると、処理の最初に新しいターミナルタブを作成し、現在のディレクトリへ cd する。タブが付くのは現在のディレクトリを含む Orca 管理の worktree で、`.claude/worktrees/` 配下のように Orca に登録していない worktree の中からだと、それを含むメインのチェックアウトに付く。
 
 > **なぜ `/orca` ではなく `/orca:orca` なのか**
 >
@@ -28,7 +28,8 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 ## 前提
 
 - Orca アプリが起動しており、`orca` CLI がインストールされていること（`orca status` でランタイムに届くこと）
-- Claude Code を Orca のターミナルの中で起動していること
+- Claude Code を Orca のターミナルの中で、Orca 管理の worktree の中から起動していること
+  （`orca worktree current` が通ること。スキルは最初にこれを確かめ、外にいれば止まる）
 - `gh` CLI が認証済みであること
 - Claude Code の `EnterWorktree` ツールが利用可能であること
 

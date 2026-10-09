@@ -115,9 +115,19 @@ JSON の項目名が、実在の `orca` CLI（1.4.223）の挙動と一致する
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/orca-plugin`、
   起点コミット `5114914`（引き継ぎ時の HEAD。F1 の修正後の HEAD は `f023950`）、
   base は `origin/main` の merge-base = `86b33d953c3d1f5f75ea435ef3be404305b3b1ff`。PR #195。
-- 関門: Verifier 1 パス目を起動 → **セッション終了で報告なしに止まった（欠票）** → 同じ体を再開して報告待ち。
-  `/code-review` 1 パス目は未着手
-- 反証・差し戻し: 実機確認で 3 件（F2〜F4。下の表）。差し戻しは関門の報告を揃えてから決める
+- 関門:
+    - **Verifier 1 パス目: 済**（sonnet。1 度セッション終了で報告なしに止まり＝欠票、同じ体を再開して完走）。
+      **反証 0 件**、観察 4 件（V1〜V4）
+    - **`/code-review` 1 パス目: 済**（high）。**指摘 9 件**（CR1〜CR9）
+    - **1 パス目の指摘対応: 済**（F3・F4・CR1・CR3・CR5・CR6 を直した。採否は下の表）
+    - **残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**
+    - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: 2 パス目の報告が揃った時点で書く
+- 反証・差し戻し: 実機確認で 3 件（F2〜F4）、関門で 13 件（V1〜V4・CR1〜CR9）。手順 4 へ差し戻して 6 件を直した
+- 指摘対応後の実機確認（SKILL.md の bash ブロックを**機械的に抜き出して**流した——手で写すと CR1 の経路を通らないため）:
+  前提の確認 = worktree の中 0・Orca 管理外 1・`orca` が `PATH` に無い 1（P10）・偽の `orca` で reachable 偽 1（P11）／
+  **陽性対照** reachable 真の偽 `orca` 0。`-n` = サブディレクトリから新しい端末のプロンプトが `orca %`（P8）・
+  Orca 管理外では rc=1 で端末の数が 8 のまま（F4）。共通手順 = `/issues/194` を 2 回でタブ 2→3（P1・P2）・
+  `https://` で始まらない URL で rc=1。`check-all.py` 30/30 緑
 - 交絡: 2 件見つけて潰した（下の「実機確認」）
 - 実機確認（2026-10-09、Orca 1.4.223、macOS。手順の bash をそのまま scratchpad のスクリプトに写して流した）:
     - P12 緑（`status` 判定 rc=0）。P1 緑（タブ 0 → 1、作成）。P2 緑（同じ URL で件数が増えず、
@@ -151,4 +161,15 @@ JSON の項目名が、実在の `orca` CLI（1.4.223）の挙動と一致する
 | --- | --- | --- | --- |
 | F2 Issue モードに PR の番号を渡すと、GitHub が `/issues/19` → `/pull/19` に転送するので、呼ぶたびにタブが増える | 示せる: `/issues/19` を 2 回開いて `/pull/19` のタブが 2 枚になった（実機確認） | 無し——I1 は「表示する・他のタブを壊さない」で、どちらも守られている。P2 は「同じ URL のタブがある」に限っている（転送先は別の URL）。cmux も同じ挙動 | 残課題 |
 | F3 文書（README・docs）の「現在の worktree に新しいターミナルタブを作成」が事実と違う。`--worktree active` は **cwd を含む Orca 管理の worktree** に解決され、`.claude/worktrees/` 配下からはメインのチェックアウトに付く | 示せる: P7 の `terminal create` の結果の `worktreeId` がメインのチェックアウト。`orca worktree list` に `.claude/worktrees/orca-plugin` は無い | I5（文書の主張が事実）・I2 の文面 | 直す（文言） |
-| F4 `-n` で `terminal create` が失敗しても止まらず、空の handle で `send` する。空の handle は**別のライブ端末**に解決され、`cd` が他人の端末に打ち込まれる | 示せる: Orca 管理外の cwd で create が `selector_not_found`（rc=1）、続く `send --terminal ""` は rc=0 で `blogs` の端末に入った（`terminal read --terminal ""` がその handle を返した） | I2（cd が自分の新しいタブではなく無関係な端末に行く） | 直す（handle が空なら止める） |
+| F4 `-n` で `terminal create` が失敗しても止まらず、空の handle で `send` する。空の handle は**別のライブ端末**に解決され、`cd` が他人の端末に打ち込まれる | 示せる: Orca 管理外の cwd で create が `selector_not_found`（rc=1）、続く `send --terminal ""` は rc=0 で `blogs` の端末に入った（`terminal read --terminal ""` がその handle を返した） | I2（cd が自分の新しいタブではなく無関係な端末に行く） | 直す（CR6 の形で。`send` を無くす） |
+| V1（Verifier）`result.terminal.handle` の項目名が一次ソースで未確認 | 示せない（反対の実物がある: 実機の P7〜P9 で `term_…` が返った） | 無し | 不採用（実機で確認済み） |
+| V2 = CR4 `tab switch` に `--focus` が無いので前面に出ない恐れ | **示せない**: 人間に Orca の端末を前面にしてもらい、再利用の経路（`goto` ＋ `tab switch`、`--focus` 無し）を流したら PR #195 のブラウザが前面に出た（人間の目視、2026-10-09）。**作成の経路を端末が前面の状態で流すのは測っていない** | — | 不採用 |
+| V3 = CR5 Issue モードの URL を `sed` で作るので、`ssh://`・GHE・末尾 `/` のリモートで壊れる | 示せる: `sed` の出力が `ssh://git@github.com/o/r`・`o/r`（ホストが落ちる）・`o/r/` | I1（番号の Issue を表示しない） | 直す（`gh repo view --json url`） |
+| V4 `tab list` の既定の範囲が「現在の worktree」であることを書いていない | 示せない（害の実例が無い） | 無し | 残課題 |
+| CR1 共通手順と `-n` が変数を共有する別々のコードブロックに分かれ、`TARGET_URL` を代入する行が無い。Bash の呼び出しをまたぐと変数は消える | 示せる: 実機確認は 1 本のスクリプトに写して流したので、この経路を通っていない（交絡）。変数が呼び出しをまたいで消えることはハーネスの仕様 | I2（`-n` を 2 回の呼び出しで流すと空の handle で `send` する＝F4 と同じ）・I1 P2（`BROWSER_PAGE` が消えると毎回作成） | 直す（各モードを 1 ブロックにし、`TARGET_URL` を代入する） |
+| CR2 Orca では最初から worktree の中にいるので、`-r` の「worktree 内でなければ」が常に偽になり、`gh pr checkout` が利用者の作業ブランチを切り替える | 示せない（走らせていない） | 無し——`-w`/`-r` は受入基準の外（§3）。**CR2 は「外に置いた理由（cmux と同文で Orca 固有の部分が無い）」が誤りだと言っている**。人間に渡す | 残課題（人間が判断） |
+| CR3 前提の確認が `runtime.reachable` しか見ず、cwd が Orca 管理の worktree の中かを見ない | 示せる: scratch で `status` は reachable、`worktree current` は `selector_not_found`。F4 はこの状態で起きた | I2（F4 と同じ） | 直す（前提に `orca worktree current --json` を足す） |
+| CR6 `-n` は `terminal create --command` で 1 回にできる | 示せる（修正の実物）: `--command "cd '…'"` で新しいシェルのプロンプトが `orca %`、Orca 管理外では create が rc=1 で何も送らない | I2（F4 の機構を消す） | 直す（F4 の修正の形） |
+| CR7 `docs/plugins/index.md` の素のスキルの節の末尾が `/cmux` `/dev-loop` だけを挙げ、同じ節で足した `orca` と食い違う | 示せる（同じ節の 2 行） | 無し——I5 は Orca の CLI についての主張に限っている | 残課題 |
+| CR8 既存の利用者は `marketplace update` を先に走らせないと `orca` が見つからない | 示せない（確かめていない） | 無し | 残課題 |
+| CR9 版のバナーの段落（この差分で `orca` を足した）が #120 で外した「キャッシュが更新されていない」の断定を持ったまま | 示せる（CLAUDE.md の #120 の記録） | 無し（I5 の範囲外） | 残課題 |
