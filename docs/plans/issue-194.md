@@ -113,13 +113,13 @@ JSON の項目名が、実在の `orca` CLI（1.4.223）の挙動と一致する
 
 - **周の在り処**: ブランチ `issue/194-orca-plugin`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/orca-plugin`、
-  起点コミット `5114914`（引き継ぎ時の HEAD）、
+  起点コミット `5114914`（引き継ぎ時の HEAD。F1 の修正後の HEAD は `f023950`）、
   base は `origin/main` の merge-base = `86b33d953c3d1f5f75ea435ef3be404305b3b1ff`。PR #195。
 - 関門: **未着手**（Verifier 1 パス目から）
 - 反証・差し戻し: なし（引き継ぎ時に自分で F1 を見つけた。下の表）
 - 交絡: 未（実験は手順 5 で行う）
 - 実装: F1 の修正をコミット済み（`check-all.py` 30/30 緑）
-- 割り目（手順 4 完了時）: 訊いている最中
+- 割り目（手順 4 完了時）: 提案した → 「ここで割る」が選ばれた。次は手順 5 の Verifier 1 パス目から（関門は 0 件通過）
 
 ## 6. 既知の限界・決着済みの論点
 
