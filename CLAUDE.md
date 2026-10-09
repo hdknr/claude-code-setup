@@ -12,6 +12,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 - `plugins/` - プラグイン配布用ディレクトリ
   - `workspace-setup/` - ワークスペース初期セットアップの**コマンド**（このプラグインだけスキルを持たない）
   - `cmux/` - cmux ウィンドウで GitHub Issue/PR を扱うスキル
+  - `orca/` - Orca の内蔵ブラウザで GitHub Issue/PR を扱うスキル（`cmux/` の Orca 版）
   - `dev-loop/` - 1 Issue = 1 周のループ志向開発スキル
     - `evals/` - **振る舞いの回帰 Eval**（`claude plugin eval`。#181。**CI からは呼ばない**——
       `claude` を起こして課金する。下の「振る舞いを Eval で当てる」）
