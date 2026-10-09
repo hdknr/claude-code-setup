@@ -28,4 +28,8 @@ dev-loop の指摘は、個別に起票した Issue（#205〜#211）で扱う。
 
 ## 3. 検証
 
-`python3 scripts/check-all.py` — 30/30 本 OK（失敗 0 / 飛ばし 0）。コミット後に PR 限定の 3 本（version-bump・description-sync・plan-scope）を回し直した結果は PR の CI を正とする。
+コミット後に `python3 scripts/check-all.py` を回し、30/30 本 OK（失敗 0 / 飛ばし 0）。
+
+**コミット前の check-all.py は緑だったが、それは根拠にならなかった。** PR 限定の 3 本（version-bump・description-sync・plan-scope）は `origin/main..HEAD` のコミットしか見ないので、未コミットの変更は素通しになる。コミットしてから回すと `check-description-sync.py` が cmux / orca で落ちた。frontmatter だけ直して JSON を直していなかったためである。そこで、片側だけの変更が正しい理由を、プラグイン名を前置した `Skip-description-sync` trailer で書いた。最初は trailer を最後の段落の外に置いており、それでは効かなかった。
+
+PR 側の結果は `gh pr checks` で確認する。
