@@ -76,7 +76,7 @@ claude plugin install cmux@claude-code-setup --scope user
 ```
 
 入っている版は **`SKILL.md` の冒頭**に書いてある。読み込まれた版がここより古ければ、
-キャッシュが更新されていない。
+上の 2 段階で更新する。
 
 **常に最新を使いたいなら、下の symlink 経路を選ぶ**——キャッシュを経由しないので、
 `git pull` した時点で反映される（構造的に古くならない）。
