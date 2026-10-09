@@ -1,18 +1,18 @@
 ---
 name: orca
-description: "Orca の内蔵ブラウザで GitHub Issue/PR を切り替える。引数: [-n] [-w|-r] <number>"
+description: "Orca の内蔵ブラウザで GitHub Issue/PR を開く。番号だけなら Issue を表示、-w は PR を表示して worktree で gh pr checkout、-r はさらに gh pr diff でレビューを始める。-n は先に新しいターミナルタブを作る。Orca 管理の worktree の中から、Issue/PR を見たい・PR をローカルでレビューしたいときに使う。引数: [-n] [-w|-r] <number>"
 ---
 
 # orca スキル
 
-<!-- skill-version: 1.0.0 -->
-> **このスキルの版: 1.0.0**（プラグイン `orca`）。
+<!-- skill-version: 1.0.1 -->
+> **このスキルの版: 1.0.1**（プラグイン `orca`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update orca@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
 
 [Orca](https://github.com/stablyai/orca) の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビューを行うスキル。
-`cmux` プラグインの Orca 版で、引数と動作は揃えてある。
+`cmux` プラグインの Orca 版で、引数とモードは揃えてある（タブの探し方などの手順は Orca に合わせて別に持つ）。
 
 **呼び出し形**: プラグインとして入れた場合は `/orca:orca`（プラグイン提供のスキルは常に
 プラグイン名で名前空間化される）。マニフェスト（`.claude-plugin/`）を持たない素のスキルとして
