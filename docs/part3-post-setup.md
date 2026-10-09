@@ -103,6 +103,7 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 |---|---|---|---|
 | `workspace-setup` | `/workspace-setup:workspace-setup` | コマンド | ワークスペースの初期セットアップを対話的に行う（ディレクトリ作成と git init、CLAUDE.md 作成、GitHub プライベートリポジトリの作成と連携） |
 | `cmux` | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビュー |
+| `orca` | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を表示し、worktree でレビュー |
 | `dev-loop` | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発（開発者向け） |
 
 ```
@@ -111,6 +112,9 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 
 # cmux 連携用（cmux ターミナルを使う場合）
 /plugin install cmux@claude-code-setup
+
+# Orca 連携用（Orca を使う場合）
+/plugin install orca@claude-code-setup
 
 # ループ志向開発用（開発者向け・GitHub Issue で開発を回す場合）
 /plugin install dev-loop@claude-code-setup
@@ -176,6 +180,16 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 
 # PR 番号 34 を worktree でチェックアウトしてレビュー
 /cmux:cmux -r 34
+```
+
+`orca` プラグインを入れた場合は、[Orca](https://github.com/stablyai/orca) の中で同じ操作ができます（引数は `cmux` と同じ）:
+
+```
+# Issue 番号 12 を Orca の内蔵ブラウザに表示
+/orca:orca 12
+
+# PR 番号 34 を worktree でチェックアウトしてレビュー
+/orca:orca -r 34
 ```
 
 使えるスキルとコマンドの一覧を確認:
