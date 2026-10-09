@@ -68,6 +68,9 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
   （リロード）して前面に出し、なければ新規作成する。
 - **一致は「完全一致、または直後が `/` `#` `?`」に限る**——部分一致にすると
   `/issues/19` を開くときに `/issues/194` のタブを再利用して上書きする。
+- **完全一致のタブを先に探し、無いときだけ下位ページ（直後が `/` `#` `?`）のタブを使う**——
+  先頭から順に取ると、`/pull/12/files` のタブが手前にあるだけで、`/pull/12` のタブがあっても
+  `/pull/12/files` のほうを上書きする。
 - **1 行目の `TARGET_URL=` を各モードの指示どおりに置き換え、ブロック全体を 1 回の Bash 呼び出しで流す。**
   呼び出しを分けるとシェル変数が消え、`BROWSER_PAGE` が空になって毎回タブが増える。
 
@@ -77,12 +80,12 @@ case "$TARGET_URL" in https://*) ;; *) echo "URL を決められない: $TARGET_
 BROWSER_PAGE=$(orca tab list --json 2>/dev/null | python3 -c "
 import sys, json
 target = sys.argv[1]
-data = json.load(sys.stdin)
-for t in data.get('result', {}).get('tabs', []):
-    url = t.get('url') or ''
-    if url == target or (url.startswith(target) and url[len(target)] in '/#?'):
-        print(t['browserPageId'])
-        break
+tabs = json.load(sys.stdin).get('result', {}).get('tabs', [])
+urls = [(t, t.get('url') or '') for t in tabs]
+hit = [t for t, u in urls if u == target] or \
+      [t for t, u in urls if u.startswith(target) and u[len(target)] in '/#?']
+if hit:
+    print(hit[0]['browserPageId'])
 " "$TARGET_URL" 2>/dev/null || echo "")
 if [ -n "$BROWSER_PAGE" ]; then
     orca goto --page "$BROWSER_PAGE" --url "$TARGET_URL" --json
