@@ -1,0 +1,6 @@
+{
+  "name": "orca",
+  "version": "1.0.0",
+  "author": { "name": "hdknr" },
+  "description": "Orca の内蔵ブラウザで GitHub Issue/PR を表示し、worktree でレビューを行うスキル"
+}
