@@ -53,14 +53,17 @@ sys.exit(0 if r.get('runtime', {}).get('reachable') else 1)
 
 すべてのモードで URL を内蔵ブラウザに表示する際は、**対象の GitHub URL を表示しているブラウザタブ** があれば再利用し、なければ新規作成する。
 
-1. 対象 URL を表示しているタブを探す（URL は文字列に埋め込まず引数で渡す）:
+1. 対象 URL を表示しているタブを探す（URL は文字列に埋め込まず引数で渡す）。
+   **一致は「完全一致、または直後が `/` `#` `?`」に限る**——部分一致にすると
+   `/issues/19` を開くときに `/issues/194` のタブを再利用して上書きする:
    ```bash
    BROWSER_PAGE=$(orca tab list --json 2>/dev/null | python3 -c "
    import sys, json
    target = sys.argv[1]
    data = json.load(sys.stdin)
    for t in data.get('result', {}).get('tabs', []):
-       if target in (t.get('url') or ''):
+       url = t.get('url') or ''
+       if url == target or (url.startswith(target) and url[len(target)] in '/#?'):
            print(t['browserPageId'])
            break
    " "$TARGET_URL" 2>/dev/null || echo "")
