@@ -115,9 +115,23 @@ JSON の項目名が、実在の `orca` CLI（1.4.223）の挙動と一致する
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/orca-plugin`、
   起点コミット `5114914`（引き継ぎ時の HEAD。F1 の修正後の HEAD は `f023950`）、
   base は `origin/main` の merge-base = `86b33d953c3d1f5f75ea435ef3be404305b3b1ff`。PR #195。
-- 関門: **未着手**（Verifier 1 パス目から）
-- 反証・差し戻し: なし（引き継ぎ時に自分で F1 を見つけた。下の表）
-- 交絡: 未（実験は手順 5 で行う）
+- 関門: Verifier 1 パス目を起動 → **セッション終了で報告なしに止まった（欠票）** → 同じ体を再開して報告待ち。
+  `/code-review` 1 パス目は未着手
+- 反証・差し戻し: 実機確認で 3 件（F2〜F4。下の表）。差し戻しは関門の報告を揃えてから決める
+- 交絡: 2 件見つけて潰した（下の「実機確認」）
+- 実機確認（2026-10-09、Orca 1.4.223、macOS。手順の bash をそのまま scratchpad のスクリプトに写して流した）:
+    - P12 緑（`status` 判定 rc=0）。P1 緑（タブ 0 → 1、作成）。P2 緑（同じ URL で件数が増えず、
+      **非アクティブにしてから開き直して前面に出る**ことも確認——1 枚目のときは「前面」が自明だったので測り直した）。
+    - P3 緑（`/issues/194` があって `/issues/19` → 194 のタブは無傷で新規作成）。
+      **陽性対照**: 同じタブ一覧に旧い `target in url` を当てると 194 のタブを返した。
+    - P4・P6 緑（`gh pr view 195 --json url` の URL。タブを `/pull/195/files` に移してから開いて再利用）。
+    - P7・P8・P9 緑（新しいターミナルで `echo PWD_IS=$(pwd)` が期待のパス）。
+      **交絡 1**: P9 を最初は Orca 管理外の scratch で回し、`terminal create` が失敗したのに
+      後続が別のターミナルで動いて「緑」に見えた → worktree の中に空白入りのディレクトリを作って測り直した（F4 の発見）。
+      **交絡 2**: 迷い込み先を `grep` で探したとき、このセッション自身の端末が自分のコマンド文字列を表示していて当たった
+      → 空の handle が何に解決されるかを `terminal read --terminal ""` で直接見て確定した。
+    - **副作用**: F4 の再現で、利用者の別プロジェクト（`blogs`）の端末に `cd` と `echo` が入った。人間に報告済み。
+    - P10・P11 は未（Verifier に偽の `orca` で当てさせている）
 - 実装: F1 の修正をコミット済み（`check-all.py` 30/30 緑）
 - 割り目（手順 4 完了時）: 提案した → 「ここで割る」が選ばれた。次は手順 5 の Verifier 1 パス目から（関門は 0 件通過）
 
@@ -130,3 +144,11 @@ JSON の項目名が、実在の `orca` CLI（1.4.223）の挙動と一致する
 | worktree を `EnterWorktree` のままにする | 初版は cmux に揃える | Orca 管理の worktree には現セッションが入らない。人間が決める（§4） |
 | `-n` の cd で、パスに単引用符を含むと壊れる | 残課題 | cmux は引用すらしていない。単引用符を含むパスは実例が無い |
 | 計画ファイルを実装の後に書いた | 事実として記録する | dev-loop への引き継ぎがマージ前に決まったため |
+
+### 指摘の採否（1 件 1 行）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| F2 Issue モードに PR の番号を渡すと、GitHub が `/issues/19` → `/pull/19` に転送するので、呼ぶたびにタブが増える | 示せる: `/issues/19` を 2 回開いて `/pull/19` のタブが 2 枚になった（実機確認） | 無し——I1 は「表示する・他のタブを壊さない」で、どちらも守られている。P2 は「同じ URL のタブがある」に限っている（転送先は別の URL）。cmux も同じ挙動 | 残課題 |
+| F3 文書（README・docs）の「現在の worktree に新しいターミナルタブを作成」が事実と違う。`--worktree active` は **cwd を含む Orca 管理の worktree** に解決され、`.claude/worktrees/` 配下からはメインのチェックアウトに付く | 示せる: P7 の `terminal create` の結果の `worktreeId` がメインのチェックアウト。`orca worktree list` に `.claude/worktrees/orca-plugin` は無い | I5（文書の主張が事実）・I2 の文面 | 直す（文言） |
+| F4 `-n` で `terminal create` が失敗しても止まらず、空の handle で `send` する。空の handle は**別のライブ端末**に解決され、`cd` が他人の端末に打ち込まれる | 示せる: Orca 管理外の cwd で create が `selector_not_found`（rc=1）、続く `send --terminal ""` は rc=0 で `blogs` の端末に入った（`terminal read --terminal ""` がその handle を返した） | I2（cd が自分の新しいタブではなく無関係な端末に行く） | 直す（handle が空なら止める） |
