@@ -1,13 +1,13 @@
 ---
 name: cmux
-description: "cmux ウィンドウで GitHub Issue/PR を切り替える。引数: [-n] [-w|-r] <number>"
+description: "cmux のブラウザペインで GitHub Issue/PR を開く。番号だけなら Issue を表示、-w は PR を表示して worktree で gh pr checkout、-r はさらに gh pr diff でレビューを始める。-n は先に新しいターミナルタブを作る。cmux の中で Issue/PR を見たい・PR をローカルでレビューしたいときに使う。引数: [-n] [-w|-r] <number>"
 ---
 
 # cmux スキル
 
-<!-- skill-version: 1.1.4 -->
-> **このスキルの版: 1.1.4**（プラグイン `cmux`）。
-> 手元で読まれている版がリポジトリの最新より古いなら、**キャッシュが更新されていない**。
+<!-- skill-version: 1.1.5 -->
+> **このスキルの版: 1.1.5**（プラグイン `cmux`）。
+> 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update cmux@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
 

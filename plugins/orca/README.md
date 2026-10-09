@@ -1,7 +1,7 @@
 # orca plugin
 
 [Orca](https://github.com/stablyai/orca) で GitHub Issue/PR を扱うためのスキルを提供するプラグイン。
-[`cmux` プラグイン](../cmux/README.md)の Orca 版で、引数と動作は揃えてある。
+[`cmux` プラグイン](../cmux/README.md)の Orca 版で、引数とモードは揃えてある（タブの探し方などの手順は Orca に合わせて別に持つ）。
 
 ## 提供スキル
 
