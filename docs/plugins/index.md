@@ -16,6 +16,7 @@
 |---|---|---|---|
 | [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | コマンド | ワークスペースの初期セットアップ |
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
+| [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
 | [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
@@ -217,7 +218,7 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 
 #### 版のバナー（補助）
 
-**スキルを提供するプラグイン**（`cmux` / `dev-loop`）は、入っている版が **`SKILL.md` の冒頭**に
+**スキルを提供するプラグイン**（`cmux` / `orca` / `dev-loop`）は、入っている版が **`SKILL.md` の冒頭**に
 書いてあります。読み込まれた版がリポジトリより古ければ、キャッシュが更新されていません。
 `workspace-setup` はコマンドのみを提供するため `SKILL.md` を持たず、この表示はありません。
 
@@ -469,6 +470,36 @@ cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビ�
 
 ---
 
+## orca
+
+[Orca](https://github.com/stablyai/orca) の中で GitHub の Issue/PR を扱うためのプラグインです。[`cmux`](#cmux) の Orca 版で、引数と動作は揃えてあります。Orca の内蔵ブラウザに Issue/PR を表示し、worktree でレビューを行えます。
+
+### インストール
+
+```
+/plugin install orca@claude-code-setup
+```
+
+### 提供スキル
+
+#### `/orca:orca [-n] [-w|-r] <number>`
+
+Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビューを行います。
+
+| 呼び出し | モード | 動作 |
+|---|---|---|
+| `/orca:orca <number>` | Issue | Issue の URL を内蔵ブラウザに表示 |
+| `/orca:orca -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
+| `/orca:orca -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
+
+`-n` フラグを付けると、処理の最初に新しいターミナルタブを作成し、現在のディレクトリへ cd します。タブが付くのは現在のディレクトリを含む Orca 管理の worktree で、`.claude/worktrees/` 配下のように Orca に登録していない worktree の中からだと、それを含むメインのチェックアウトに付きます。
+
+動かすための前提（Orca アプリと `orca` CLI・`gh` CLI・`EnterWorktree` ツール）は
+[プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/orca/README.md)
+にあります。
+
+---
+
 ## dev-loop
 
 GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**として 1 周させる、
@@ -538,7 +569,7 @@ git clone https://github.com/hdknr/claude-code-setup.git ~/src/claude-code-setup
 ~/src/claude-code-setup/scripts/link-skills.sh
 ```
 
-引数なしで実行すると、このリポジトリが配布する素のスキル（現在は `cmux` と `dev-loop`）を
+引数なしで実行すると、このリポジトリが配布する素のスキル（現在は `cmux`・`orca`・`dev-loop`）を
 すべて張ります。名前を渡せばその分だけ張ります。
 
 ```bash
