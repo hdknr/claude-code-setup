@@ -85,9 +85,12 @@
 
 - 周の在り処: ブランチ `issue/202-tab-match-test`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-202`、
   起点 `9968727`、base 参照 `origin/main` → `9968727b8b800c31c7b94a9929105caac44b37e9`
-- 関門: 未着手
+- 実装: 済（コミット済み）。`check-all.py` 33/33 緑。`test-tab-match.py` はケース orca 14/14・cmux 18/18、変異 23 件すべて死亡
+  （#194 の `-` 変異は両スキルとも C5 だけが殺す——`ISSUE_KILLERS` の表明で陽性対照を兼ねる）
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と手順 6 の `/code-review` 1 パス目）
+- 手順 4 の割り目: 提案した（AskUserQuestion）→ 人間が「ここで割る」を選択（2026-10-13）。再開は手順 5 から
 - 反証・差し戻し: なし
-- 交絡: 未着手
+- 交絡: 実験は「変異を入れて赤になるか」のみ。陽性対照＝壊していないブロックで全ケース緑、届いているか＝壊す文字列が 1 回だけ現れることを表明
 
 ## 6. 既知の限界・決着済みの論点
 
