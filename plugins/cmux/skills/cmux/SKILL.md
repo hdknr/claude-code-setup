@@ -5,8 +5,8 @@ description: "cmux のブラウザペインで GitHub Issue/PR を開く。番�
 
 # cmux スキル
 
-<!-- skill-version: 1.1.8 -->
-> **このスキルの版: 1.1.8**（プラグイン `cmux`）。
+<!-- skill-version: 1.1.9 -->
+> **このスキルの版: 1.1.9**（プラグイン `cmux`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update cmux@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
