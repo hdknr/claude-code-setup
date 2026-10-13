@@ -26,7 +26,8 @@
 - `plugins/orca/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plugins/index.md` — orca のインストールに「既存の利用者は先に取り直す」
-- `plugins/orca/README.md` — インストール節に同じ事実への指し先
+- `plugins/orca/README.md` — インストール節に同じ事実への指し先・CLI の例に `marketplace update`
+- `docs/part3-post-setup.md` — インストール一覧から orca のインストール節を指す（1 パス目の指摘 V3/R4 で広げた。orca の install を案内している箇所がもう 1 つあった）
 - `docs/plans/issue-201.md` — この計画ファイル
 
 触らない:
@@ -60,13 +61,20 @@
 
 **I4. CR8: orca のインストール案内で、既存の利用者が先に `marketplace update` を走らせることが分かる**（事実は公開ページに 1 箇所）。
 
+| 経路（orca の install を案内している箇所。`grep -rn 'install orca@'`） | 守り方 |
+| --- | --- |
+| `docs/plugins/index.md` の orca のインストール | 事実と手順の本体 |
+| `plugins/orca/README.md` のスラッシュコマンド | 指し先 |
+| `plugins/orca/README.md` の CLI（`claude plugin install … --scope user`） | `marketplace update` の行を足す（1 パス目で広げた） |
+| `docs/part3-post-setup.md` のインストール一覧 | 指し先（1 パス目で広げた） |
+
 **I5. 版を 3 箇所で揃える**（`check-all.py` が緑）。
 
 ### 証明の手段
 
 - I1 P1〜P3: 直したブロックを実際の Orca で流し、`screencapture` で前面を目視。
 - I1 P4: 直したブロックの `goto` の分岐に、閉じたタブの page id を与えて流し、新規作成と前面化を目視。
-- I2: `surface` が `visible` の JSON と `background` の JSON を判定部に流して終了コードを見る。**実際に Orca が `background` を返す状態は作れない**——UI が端末を受け取れない状態の作り方が分からない。→ **未証明**（判定部が実物の `background` の出力に効くかは、ソースの読解だけで確かめている）。
+- I2: `surface` が `visible` の JSON と `background` の JSON を判定部に流して終了コードを見る。**実際に Orca が `background` を返す状態は作れていない**——UI が端末を受け取れない状態は、利用者が使っている Orca を壊さずには作れない。→ **BLOCKED**（1 パス目の Verifier の指摘で未証明から改めた。欠けているのは「壊してよい Orca の環境」で、時間や手間ではない。判定部が実物の `background` の出力に効くかは、ソースの読解だけで確かめている）。
 - I3〜I5: 差分の読解と `check-all.py`。
 
 ### 生成物
@@ -92,16 +100,34 @@
     新規作成に落ちてタブ 1→2、新しいタブが前面、rc=0
   - 片付け: テストの端末とタブは閉じた（タブ 0・端末は元の 1 本）
 - 割り目（手順 4 の後）: AskUserQuestion で提案 → **「ここで割る」が選ばれた**（2026-10-13）。
-  次は手順 5 の Verifier 1 パス目と手順 6 の `/code-review` 1 パス目（どちらも未着手）
-- 関門: 未
+- 関門 1 パス目（base `9968727b`）: **Verifier（dev-loop:dev-loop-verifier・sonnet）反証 3 件**、
+  **`/code-review` high 指摘 8 件**（重複 3 組）。採否は §6 の表。直したのは 3 行（R3・V3/R4・R4 の README CLI）
+- 1 パス目の指摘対応の著者確認: 偽 orca で `tab create` の 4 形（正常／`ok:false`／JSON 破損／配列）→
+  正常は rc=0 で `tab switch --page p9 --focus`、他は rc=1 で**出力そのものが stderr に出る**。
+  陽性対照: 修正前の版では `ok:false` で理由が出ない（`BROWSER_PAGE: ブラウザタブを作れなかった` だけ）
+- 次: 2 パス目（Verifier と `/code-review` の両方。どちらも未着手）
 - 交絡: §0 のとおり。P1〜P4 は各操作の約 2 秒後に 1 回撮っただけ
 
 ## 6. 既知の限界・決着済みの論点
 
 | 論点 | 決着 | 理由 |
 | --- | --- | --- |
-| `surface: background` を実行で観測していない | 残す（未証明） | UI が受け取れない状態を作れない。ソースでは既定値が `background` |
+| `surface: background` を実行で観測していない | 残す（BLOCKED。1 パス目で未証明から改めた） | 利用者の Orca を壊さずには作れない。ソースでは既定値が `background` |
 | CR2-8 前半 | 扱わない | 仕様の判断（P4 は「再利用してよい」） |
 | cmux に同じ欠陥があるか | 扱わない | 測っていない。範囲の外 |
+
+### 1 パス目の指摘の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1/R6 | `--help` は「`ok: true` を返す」とは書いていない（帰属の誤り） | 示せる（`orca terminal create --help` の Notes） | 無し | 残課題 |
+| V2/R5 | `ok:false` は理由を出さずに rc=1、`result.terminal: null` は traceback | 示せない（偽 orca のみ。実 Orca がそう返した記録は無い。`ok:false` の無言は修正前から） | 無し | 残課題 |
+| V3/R4 | `docs/part3-post-setup.md:118` と README の CLI 例が `marketplace update` 無しで orca を案内 | 示せる（ファイルの行そのもの） | I4 | **直す**（済） |
+| R1 | `tab switch --focus` は UI がそのタブの worktree にいるときしか前面に出さない（`browser-tab.js:41-43` のコメント） | 示せない（ソースのコメントのみ。別 worktree の状態で実際に前に出なかった記録は無い） | I1 | 残課題（SKILL.md の「前面に出す」はその条件付きであることを PR コメントで名指しする） |
+| R2 | `goto` のどの失敗でも新規作成に落ちるので、タイムアウトでタブが重複する | 示せない（偽 orca のみ） | 無し（タブは作られ前面に出る） | 残課題 |
+| R3 | `tab create` の失敗理由（`--json` だと stdout）がパイプで消える | 示せる（`cli-error.js` が `console.log` で JSON を出す・偽 orca で修正前の版が理由を出さないことを確認） | I3（修正前は出力が端末に出ていた） | **直す**（済） |
+| R7 | 計画の実測が同じ worktree の場合しか見ていない | —（計画ファイルは関門の検査対象ではない） | — | 残課題（R1 と同じ扱い） |
+| R8 | `docs/plugins/index.md` で素の `install` のブロックが先に出る | 示せない（読み飛ばした利用者が失敗した記録は無い） | 無し（警告は直下にある） | 残課題 |
+| V 分類 | I2 は未証明ではなく BLOCKED 寄り | — | — | **採る**（§3 の分類を改めた） |
 
 この周の起票: 0 件

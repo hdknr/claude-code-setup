@@ -68,6 +68,7 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 
 ```bash
 claude plugin marketplace add hdknr/claude-code-setup
+claude plugin marketplace update claude-code-setup   # orca より前に追加していた場合
 claude plugin install orca@claude-code-setup --scope user
 ```
 

@@ -120,6 +120,8 @@ elif surface != 'visible':
   端末で動いている（`-n` なら必ず）と、ブラウザは端末の裏に残る（#201 で実測）。
 - **`goto` が失敗したら新規作成に落とす**——`tab list` から `goto` までの間にタブが閉じられると、
   `goto` は `browser_tab_not_found` で非ゼロになる（#201 で実測）。落とさないとタブが 1 つもできない。
+- **`tab create` が `browserPageId` を返さなかったら、出力をそのまま stderr に出して止まる**——
+  `--json` のときエラーは stdout に JSON で出るので、パイプで読むと理由ごと消える。
 
 ```bash
 TARGET_URL="<各モードで決める URL>"
@@ -140,7 +142,14 @@ fi
 if [ -z "$BROWSER_PAGE" ]; then
     BROWSER_PAGE=$(orca tab create --url "$TARGET_URL" --json | python3 -I -c "
 import sys, json
-print((json.load(sys.stdin).get('result') or {}).get('browserPageId') or '')
+raw = sys.stdin.read()
+try:
+    page = (json.loads(raw).get('result') or {}).get('browserPageId') or ''
+except (ValueError, AttributeError):
+    page = ''
+if not page:
+    print(raw, file=sys.stderr)
+print(page)
 ")
 fi
 orca tab switch --page "${BROWSER_PAGE:?ブラウザタブを作れなかった}" --focus --json
