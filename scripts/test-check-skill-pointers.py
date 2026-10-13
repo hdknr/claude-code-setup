@@ -111,6 +111,14 @@ ESCAPE = """# デモ
 検査は `../../../../scripts/repo-only.py` を使う。
 """
 
+# **隣のプラグイン**。名前の付いたディレクトリを通って外へ出る形で、これも実在するが落とす。
+# **リポジトリの直下まで出る `ESCAPE` だけでは、境界を `plugins/` に 1 段上げた変異が緑のまま**
+# だった（#216 の `/code-review` が実測）。
+SIBLING = """# デモ
+
+隣の決まりは `../../../other/README.md` を見る。
+"""
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -126,7 +134,7 @@ MUTATIONS = {
     "実在を見ない": ('                if not (skill / rel).exists():', '                if False:'),
     # 守る 2: 囲まれた指し先を拾うこと
     "囲みを見ない": (
-        'POINTER = re.compile(r"`((?:\\.\\./)*(?:references|prompts|scripts)/[\\w./-]+)`")',
+        'POINTER = re.compile(r"`((?:references|prompts|scripts)/[\\w./-]+)`")',
         'POINTER = re.compile(r"(?!x)x")'),
     # 守る 3b: フェンスの中の起動行は見ること
     "起動行を見ない": (
@@ -142,12 +150,16 @@ MUTATIONS = {
         '    for plugin in sorted((root / "plugins").glob("dev-loop")):'),
     # 守る 5: `../` で始まる指し先も拾うこと
     "`../` の前置を拾わない": (
-        'POINTER = re.compile(r"`((?:\\.\\./)*(?:references',
-        'POINTER = re.compile(r"`((?:references'),
+        'PARENT = re.compile(r"`((?:\\.\\./)+[\\w.-][\\w./-]*)`")',
+        'PARENT = re.compile(r"(?!x)x")'),
     # 守る 6: `../` の指し先がプラグインの中に収まること
     "プラグインの外を見逃す": (
         "                elif not (skill / rel).resolve().is_relative_to(plugin):",
         "                elif False:"),
+    # 守る 7: プラグインの境界は `plugins/<name>/` であること
+    "境界を `plugins/` に上げる": (
+        "        plugin = skill.parent.parent.resolve()",
+        "        plugin = skill.parent.parent.parent.resolve()"),
 }
 
 
@@ -201,15 +213,19 @@ def main() -> int:
             (plugin / "scripts" / "check.py").write_text("# s\n", encoding="utf-8")
             (d / "scripts").mkdir(parents=True, exist_ok=True)
             (d / "scripts" / "repo-only.py").write_text("# s\n", encoding="utf-8")
+            (d / "plugins" / "other").mkdir(parents=True, exist_ok=True)
+            (d / "plugins" / "other" / "README.md").write_text("# 隣\n", encoding="utf-8")
             return d
 
         parent_ok = parent_tree("parent-ok", PARENT_OK)
         parent_broken = parent_tree("parent-broken", PARENT_BROKEN)
         escape = parent_tree("escape", ESCAPE)
+        sibling = parent_tree("sibling", SIBLING)
         print("\nプラグイン直下の共有物（`../`）")
         check("`../../` の指し先が実在すれば通す（散文と起動行）", observe(mod, parent_ok)["rc"] == 0)
         check("`../../` の指し先の綴り誤りを捕まえる", observe(mod, parent_broken)["rc"] == 1)
         check("プラグインの外を指したら、実在しても落とす", observe(mod, escape)["rc"] == 1)
+        check("隣のプラグインを指したら、実在しても落とす", observe(mod, sibling)["rc"] == 1)
 
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
@@ -242,7 +258,8 @@ def main() -> int:
                           or mutant.main([str(invoked)]) != 0
                           or mutant.main([str(parent_ok)]) != 0
                           or mutant.main([str(parent_broken)]) != 1
-                          or mutant.main([str(escape)]) != 1)
+                          or mutant.main([str(escape)]) != 1
+                          or mutant.main([str(sibling)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)

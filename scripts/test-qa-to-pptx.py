@@ -181,6 +181,17 @@ def observe(mod, base: Path) -> dict:
         obs["missing_rc"] = f"例外: {type(e).__name__}"
     obs["usage_rc"] = run(mod, str(good))
 
+    # 出力先が入力の表と同じなら書かない（正本の表が PPTX に置き換わって戻せない。#216 の Verifier）
+    same = write_csv(base / "same.csv", ROWS)
+    before = same.read_bytes()
+    obs["same_rc"] = run(mod, str(same), str(same))
+    obs["same_kept"] = same.read_bytes() == before
+
+    # 出力先の親が無ければ作る（既定の出力先 `build/req-loop/` は初回には無い。#216 の /code-review）
+    nested = base / "build" / "req-loop" / "qa-review.pptx"
+    obs["nested_rc"] = run(mod, str(good), str(nested))
+    obs["nested_made"] = nested.is_file()
+
     blocked = base / "is-a-dir.pptx"
     blocked.mkdir(exist_ok=True)
     obs["unwritable_rc"] = run(mod, str(good), str(blocked))
@@ -194,10 +205,11 @@ EXPECTED = {
     "done_absent": True, "deterministic": True,
     "bad_rc": 1, "bad_kept": True, "missing_rc": 2, "usage_rc": 2,
     "unwritable_rc": 3, "no_tmp_left": True,
+    "same_rc": 2, "same_kept": True, "nested_rc": 0, "nested_made": True,
 }
 
 MUTATIONS: list[tuple[str, str, str]] = [
-    ("確認中で絞らない", 'if row["状態"].strip() == PENDING:', "if True:"),
+    ("反映済みで絞らない", 'if row["状態"].strip() != qa.DONE:', "if True:"),
     ("列検査を飛ばす", "    code, lines = qa.check(path)", "    code, lines = 0, []"),
     ("XML の特殊文字を逃がさない", 'return escape(INVALID_XML.sub("", text))', 'return INVALID_XML.sub("", text)'),
     ("制御文字を落とさない", 'return escape(INVALID_XML.sub("", text))', "return escape(text)"),
@@ -207,6 +219,9 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("zip の時刻を固定しない", "info = zipfile.ZipInfo(name, date_time=ZIP_TIME)",
      "info = zipfile.ZipInfo(name, date_time=time.localtime()[:6])"),
     ("一時ファイルを消さない", "        Path(tmp).unlink(missing_ok=True)\n", ""),
+    ("入力と同じ出力先を拒まない", "    if out.exists() and src.exists() and out.samefile(src):",
+     "    if False:"),
+    ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
 ]
 
 

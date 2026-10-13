@@ -3,8 +3,10 @@
 
 usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>]
 
-**載せるのは `状態` が `確認中` の行だけ**（回答待ちと、回答はあるが未反映の行）。
-`反映済み` の行は載せない。表紙・一覧・1 問 1 枚の順に並べる。
+**載せるのは、まだ仕様に反映していない行だけ**——`状態` が `check-qa-csv.py` の
+`DONE` でない行である（状態の意味は `references/qa-csv.md` を正とする）。
+**状態の名前を列挙して絞らない**——決まりに状態が増えても、反映が残っている行を黙って落とさない。
+表紙・一覧・1 問 1 枚の順に並べる。
 
 **列の決まりは同じディレクトリの `check-qa-csv.py` から読み込む**（定数を写さない）。
 決まりの正は `references/qa-csv.md` である（このプラグインの中にある）。
@@ -20,8 +22,11 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 - 0: 作った（載せた質問の数を出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
-- 2: 引数の誤り・表が読めない（**同上**）
+- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
+
+出力先の親ディレクトリが無ければ作る（既定の出力先 `build/req-loop/` は、
+初回には無いのがふつうである。`references/tree.md`）。
 
 **この生成が守らないもの**:
 
@@ -57,9 +62,6 @@ def _load_checker():
 
 qa = _load_checker()
 
-PENDING = "確認中"
-# 名前で拾う状態が決まりから消えたら、黙って 0 件のスライドを作らずに落ちる。
-assert PENDING in qa.STATES, f"`{PENDING}` が check-qa-csv.py の STATES に無い"
 
 # 16:9（EMU）
 SLIDE_W, SLIDE_H = 12192000, 6858000
@@ -95,7 +97,7 @@ def read_pending(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
         if not any(f.strip() for f in fields):
             continue
         row = dict(zip(qa.COLUMNS, fields))
-        if row["状態"].strip() == PENDING:
+        if row["状態"].strip() != qa.DONE:
             rows.append(row)
     return 0, lines, rows
 
@@ -321,6 +323,7 @@ def build(rows: list[dict[str, str]], title: str, subtitle: str) -> list[tuple[s
 
 def write(parts: list[tuple[str, str]], out: Path) -> None:
     """一時ファイルに書いてから置き換える（途中で失敗しても既存の出力は残る）。"""
+    out.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=out.parent, prefix=f".{out.name}.", suffix=".tmp")
     os.close(fd)
     try:
@@ -362,6 +365,10 @@ def main(argv: list[str]) -> int:
         print(__doc__.splitlines()[2], file=sys.stderr)
         return 2
     src, out, title, subtitle = parsed
+    # **出力先が入力の表そのものなら書かない**——置き換えで正本の表が PPTX になり、戻せない。
+    if out.exists() and src.exists() and out.samefile(src):
+        print(f"{out}: 入力の表と同じファイルなので書かない", file=sys.stderr)
+        return 2
     code, lines, rows = read_pending(src)
     if code:
         for line in lines:
