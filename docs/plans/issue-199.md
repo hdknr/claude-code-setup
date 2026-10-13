@@ -46,6 +46,17 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
 | P5 `-w`/`-r`・`EnterWorktree` は返ったが移っていない | 止まる | 作成前後の `--show-toplevel` を比べる |
 | P6 fork の PR で head 名とローカル名が違う | 安全側（作る）に倒れる | 一致しなければ作る |
 
+**I3（1 パス目のあと人間が追加。V1/C1/C2）. `-r` が checkout を飛ばすのは、いまのツリーの HEAD が PR の head コミットと同じときだけ。**
+飛ばした結果、PR でないコードをレビューしない。
+
+| 経路 | 期待 | 守り方 |
+| --- | --- | --- |
+| P7 fork の PR の head 名が手元のブランチ名と同じ（例 `main`） | 作る | 名前ではなく `git rev-parse HEAD` と `headRefOid` を比べる |
+| P8 手元の同名ブランチが PR より遅れている／force-push で分岐 | 作る | 同上 |
+| P9 手元が PR の head と同じコミット（名前付き・detached どちらも） | 作らずにレビュー | 同上 |
+
+（`isCrossRepository` は使わない——SHA が一致すれば fork でも同じコミットなので、名前より強い条件で足りる。）
+
 **I2. 版が揃い patch で上がっている**（orca 1.0.4 → 1.0.5）。`check-all.py` が緑。
 
 ### 証明の手段
@@ -67,7 +78,12 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
   起点 `4395dd2`、base 参照 `origin/main`、base SHA `4395dd2c1a85d7205ae2a4826297ca9b2d70d6b6`
 - 実装: `e49a061`（check-all 32/32 緑）。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）
 - 割り目 1（手順 4 完了時）: 提案した → 人間の選択「ここで割る」
-- 関門: 未着手
+- 関門: 1 パス目
+  - Verifier（`dev-loop:dev-loop-verifier`/sonnet。自己申告のツールは Bash/Read のみ）: **反証 1 件**（I1/I2 への直接の反証 0 件）。check-all 32/32 緑・生成物なしを独立確認
+  - `/code-review` high: **指摘 10 件**（I2 は緑を独立確認。I1 を直接破る指摘は 0 件）
+  - 採否: 「示せる × 破る受入基準」を満たす行は 0。V1/C1/C2（この周が入れた退行）は人間に範囲拡大を訊き「範囲を広げて直す」→ I3 を追加して直した。残り 7 件は残課題（C8 は対象外）
+  - 1 パス目の指摘対応: `-r` 手順 3 を名前比較から SHA 比較（`git rev-parse HEAD` ↔ `headRefOid`）へ。実データ: この worktree の HEAD `55e3a24` ≠ PR #229 の head `c094176`（→ 作る）、ローカルの `issue/198-issue-mode-pr-url` = `c094176`（→ そこにいれば飛ばす）
+  - 次: **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**が残っている。2 パス目の指摘対応の起点 SHA は、指摘対応のコミット後の HEAD を 2 パス目開始前にここへ書く
 - 反証・差し戻し: 0
 - 交絡: 実験 1（上の実測）。陽性側（メインで「外」・checkout で実際に切り替わる）を取った。
 
@@ -77,3 +93,19 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
 | --- | --- | --- |
 | cmux も同じ文面 | 触らない（残課題） | Issue は Orca の前提を問う。cmux で linked worktree から呼ぶ危険は同型だが受入基準の外 |
 | `orca worktree create --pr` に寄せる | 採らない | #203 の未決 |
+
+### 1 パス目の指摘（採否の表）
+
+| # | 出所 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- | --- |
+| C1 | /code-review | V1 と同じ。加えて「手元が PR より遅れている同名ブランチ」も。P2 の「回帰しない」を破ると主張 | 示せない（同上） | 無し（経路の表に当たるだけでは受入基準にならない。I1 は守られる） | **直す**（I3） |
+| C2 | /code-review | 手順 3 の理由「checkout しても何も切り替わらない」は偽（既存ブランチでは `gh pr checkout` が fetch ＋ ff-only merge する） | 示せない（`gh` の実装の読みのみ。走らせていない） | 無し | **直す**（同じ修正で理由文も差し替え） |
+| C3 | /code-review | PR のブランチが別の worktree で checkout 済みだと、新しい worktree での `gh pr checkout` が失敗し、次の手が書かれていない | 示せない（旧版にも同じ形がある） | 無し（失敗するだけで切り替えない） | 残課題 |
+| C4 | /code-review | `-w` は利用者が PR のブランチ上にいると `gh pr checkout` が失敗する（C3 の特殊形） | 示せない | 無し | 残課題 |
+| C5 | /code-review | `EnterWorktree` が利用者の Orca worktree の `.claude/worktrees/` に入れ子で作る見込み | 示せない（未測定。計画で未証明に挙げ済み） | 無し | 残課題（BLOCKED への分類替えと合わせて PR コメントに書く） |
+| C6 | /code-review | P4 で止めるより `git worktree add` ＋ `EnterWorktree(path)` で作れる | 示せない（設計の代案） | 無し | 残課題 |
+| C7 | /code-review | P5 の検査は「既存の別 worktree へ `path` で入った」も通す。そこで checkout すると他人の worktree のブランチが切り替わる | 示せない | 無し（I1 は「呼び出した時点の作業ツリー」） | 残課題 |
+| C8 | /code-review | 計画の「証明の手段」が P3〜P6 の判定を測っていない | — | — | 対象外（関門は計画ファイルを検査しない）。PR コメントで未証明／BLOCKED を書き直す |
+| C9 | /code-review | SKILL.md が「旧条件は Orca で切り替える側に倒れる」と断定するが、測ったのは git の読みだけ | 示せない | 無し | 残課題 |
+| C10 | /code-review | 公開ページ `docs/plugins/index.md:496` の `-r` 行が「worktree でチェックアウト」のまま | 示せない | 無し（範囲外） | 残課題 |
+| V1 | Verifier | `-r` 手順 3 は名前の一致だけで checkout を飛ばすので、fork の PR の head が `main` で利用者がローカル `main` にいる・同名でコミットが違う場合に、PR でないツリーをレビューする（旧版は常に checkout していたので**この周が入れた退行**） | 示せない（実データの失敗は無い。論理上の経路。`gh pr view 229 --json headRefOid,isCrossRepository` が値を返すことは確認） | 無し（I1 は守られる。壊れるのはレビューの正しさ） | **直す**（人間が範囲拡大を選択 → I3。手順 3 を SHA 比較に変更） |
