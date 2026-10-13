@@ -39,10 +39,16 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   置く**（spec-loop の `references/` と `scripts/`。#216）。スキルからは
   `../../references/qa-csv.md` の形で指すので、**ここを拾わないと、
   共有の決まりへの指し先が 1 つも検査されない。**
+  **`../` の後ろは `references/` などに限らない**——`../../../dev-loop/…` のように
+  **名前の付いたディレクトリを通って外へ出る形も拾う**（限ると、外へ出る指し先ほど
+  見えなくなる。#216 の `/code-review` が実測で示した）。
 - **`../` で始まる指し先が、そのプラグインのディレクトリの中に収まること**——
   **外へ出る指し先は、実在しても落とす。** プラグインはキャッシュに単独で降りるので、
   **プラグインの外はインストール先に無い**（このリポジトリの `scripts/` を指した
   つもりの記述が、ここで緑になってはならない）。
+- **プラグインの境界は `plugins/<name>/` であって `plugins/` ではないこと**——
+  **隣のプラグインを指したら、実在しても落とす**（隣のプラグインもインストール先には
+  無い。境界を 1 段上げても、リポジトリの直下まで出る試料だけでは緑のままだった）。
 
 守らない:
 
@@ -52,6 +58,10 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   書き方は拾えない。**拾うのは、パスの形をしたものだけ。**
 - **`SKILL.md` の外から張られた指し先**——`CLAUDE.md` や設計ドキュメントが
   スキルの中を指しても、ここでは見ていない。
+- **起動行の中の、名前の付いたディレクトリを通る `../`**——起動行は
+  `…/scripts/x` の形しか拾わないので、`python3 ../../../dev-loop/scripts/x.py` は
+  **`scripts/x.py` としてスキルからの相対で解決される**（無ければ「実在しない」で落ちるが、
+  **同じ名前がスキルの中にあると緑になる**）。
 - **使われていないファイル**——**指されていない `references/*.md` があっても落とさない**
   （置いてすぐ指す周と、先に置く周を区別できないため）。
 - **スキルの `scripts/` と、対象リポジトリの `scripts/` の区別**——**付かない。**
@@ -72,8 +82,11 @@ from markdown_fences import strip_fences  # noqa: E402
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # `` `references/resume.md` `` のように囲まれた相対パスだけを拾う。
-# `../` の前置は、プラグイン直下の共有物を指す形（#216）。
-POINTER = re.compile(r"`((?:\.\./)*(?:references|prompts|scripts)/[\w./-]+)`")
+POINTER = re.compile(r"`((?:references|prompts|scripts)/[\w./-]+)`")
+# `../` で始まる囲まれた相対パス（プラグイン直下の共有物を指す形。#216）。
+# **`../` の後ろを `references/` などに限らない**——限ると、`../../../dev-loop/…` のように
+# **外へ出る指し先ほど拾えない**。
+PARENT = re.compile(r"`((?:\.\./)+[\w.-][\w./-]*)`")
 
 
 def skill_dirs(root: pathlib.Path):
@@ -106,6 +119,8 @@ def pointers_in(path: pathlib.Path):
     stripped = strip_fences(raw)
     for lineno, line in enumerate(stripped.split("\n"), 1):
         for m in POINTER.finditer(line):
+            yield lineno, m.group(1)
+        for m in PARENT.finditer(line):
             yield lineno, m.group(1)
     # **フェンスの中だけ**を見る（`strip_fences` は行数を保って空行にするので、
     # 素の本文と突き合わせれば「フェンスの中だった行」が分かる）。

@@ -38,6 +38,10 @@ from pathlib import Path
 COLUMNS = ["No", "起票元", "質問", "選択肢", "回答", "反映先", "状態", "費用への影響"]
 SOURCES = ["要求確定", "仕様レビュー", "実現性・コスト", "開発"]
 STATES = ["確認中", "反映済み"]
+# 回答を仕様に反映し終えた状態。**これ以外の状態の行は、まだ反映が残っている**
+# （`qa-to-pptx.py` はこの定数で絞る——状態の名前を写さないため）。
+DONE = "反映済み"
+assert DONE in STATES
 
 NO_ANSWER = "未回答"
 NO_TARGET = "—"
@@ -93,7 +97,7 @@ def check_row(row: dict[str, str]) -> list[str]:
     if row["状態"] and row["状態"] not in STATES:
         problems.append(f"`状態` が決まりに無い: {row['状態']!r}")
 
-    if row["状態"] == "反映済み":
+    if row["状態"] == DONE:
         # 空の検査と同じく前後の空白を落として比べる（`未回答 ` を回答ありと読まない）
         if row["回答"].strip() in ("", NO_ANSWER):
             problems.append("`反映済み` なのに `回答` が無い")

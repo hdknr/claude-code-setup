@@ -391,7 +391,9 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 
 **常に最新を使いたい場合は、[bare な名前で呼びたい場合](#bare-invocation) の symlink 経路**を
 選びます——キャッシュを経由しないので、`git pull` した時点で反映されます。
-ただし `link-skills.sh` が張るのは**スキルを持つプラグイン**だけで、`workspace-setup` は
+ただし `link-skills.sh` が張るのは**プラグインと同じ名前のスキル**
+（`plugins/<name>/skills/<name>`）だけで、`workspace-setup`（スキルを持たない）と
+`spec-loop`（`req-loop` はプラグイン直下の共有物を `../../` で指すので、素のスキルとしては置けない）は
 対象外です。また**スクリプトは自分の位置からリポジトリを解決して絶対パスで張る**ので、
 **worktree から実行するとその worktree に固定されます**。メインの作業ツリーから実行してください。
 
