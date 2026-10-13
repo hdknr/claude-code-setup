@@ -1,0 +1,87 @@
+# Issue #198 — orca・cmux: Issue モードに PR の番号を渡すと、呼ぶたびにタブが増える
+
+## 1. 変更範囲
+
+触る:
+
+- `plugins/orca/skills/orca/SKILL.md` — Issue モードの 1 行目と説明（と版のバナー）
+- `plugins/orca/.claude-plugin/plugin.json` — version
+- `plugins/cmux/skills/cmux/SKILL.md` — Issue モードの 1 行目と説明（と版のバナー）
+- `plugins/cmux/.claude-plugin/plugin.json` — version
+- `.claude-plugin/marketplace.json` — orca・cmux の version
+- `docs/plans/issue-198.md` — この計画ファイル
+
+触らない:
+
+- 共通手順（タブの探し方・一致規則）——#194 / #196 で決着済み。探す側を広げる案（`/pull/<n>` も探す）は採らない（下の判断）
+- `-w` / `-r` モード——もともと `gh pr view --json url` で `/pull/<n>` を探している
+- description（3 箇所）——能力は変わらない（「番号だけなら Issue を表示」は、GitHub の転送で元々 PR が表示されていた）
+
+**直し方の判断**: Issue の候補 2 つのうち、**探す URL そのものを `gh issue view <n> --json url -q .url` で決める**形を採る。
+`gh issue view` は PR の番号には `/pull/<n>` を返す（gh 2.92.0 で実測: 225 → `/pull/225`、198 → `/issues/198`）。
+1 回の呼び出しで Issue と PR の両方に正しい正規 URL が出るので、`gh issue view` 失敗 → `gh pr view` の 2 段は要らない。
+探す側に `/pull/<n>` を足す案は、**開く URL が `/issues/<n>` のまま**なので、`goto` のたびに転送を経由し、
+共通手順（2 つのプラグイン×一致規則）を書き換えることになる——触る行が増える。
+
+**cmux 側は #221 と同じ行を書き換える**。1 行目を `gh` に訊く形に変えると、`git remote` を `sed` で削る形が消えるので、
+#221 の 4 形（origin 無し・`ssh://`・GHE・末尾スラッシュ）にも効く。**同じ行なので分けない**。ただし #221 を閉じるかは
+人間が決める（PR には `Refs #221` だけ書く）。
+
+**複製の数**: 同じ規則を述べている箇所は **2**（orca と cmux の Issue モード）。共通手順は別々に持つ方針（orca の冒頭）なので分けない。
+
+**挙動の変化（意図したもの）**: 存在しない番号を渡すと、これまでは GitHub の 404 ページのタブを開いていたが、
+`gh issue view` が失敗して `TARGET_URL` が空になり、共通手順の 2 行目で止まる。
+
+## 2. デプロイ経路
+
+プラグインの version を上げる → マージでカタログに載る（利用者は `plugin update`）。公開サイトは `docs/plans/` を含むので main への push でデプロイされる。
+
+## 3. 受入基準
+
+不変条件:
+
+- **I1（Issue の受入基準）**: PR の番号で Issue モードを 2 回呼んでも、タブ（サーフェス）は 1 枚のまま。
+- **I2**: Issue の番号で Issue モードを 2 回呼んでも 1 枚のまま（退行しない）。
+- **I3**: Issue モードで URL を決められないとき（`gh` の失敗・リポジトリ外・存在しない番号）は、どのタブも上書きせずに止まる。
+- **I4**: 版が 3 箇所で一致し、上がっている（`check-all.py`）。
+
+経路（Issue モードの 1 行目を通るもの）:
+
+| 経路 | I | 守り方 |
+| --- | --- | --- |
+| orca・PR 番号 | I1 | `gh issue view` が `/pull/<n>` を返す → 転送後のタブと完全一致 |
+| orca・Issue 番号 | I2 | `/issues/<n>` を返す（従来と同じ） |
+| cmux・PR 番号 | I1 | 同上 |
+| cmux・Issue 番号 | I2 | 同上 |
+| 存在しない番号・`gh` 失敗・リポジトリ外（両方） | I3 | `$(...)` が空 → 2 行目の `https://*` で拒否 |
+| cmux・origin 無し／ssh:// ／GHE ／末尾スラッシュ（#221） | I3（付随） | `gh` がリポジトリを解決する。解決できなければ空で拒否 |
+| 以前の版で開いた `/issues/<n>` のまま残るタブ（PR は転送で `/pull/<n>`） | I1 | 転送後の URL がタブに残るので一致する |
+
+必須要件の掛け算: 受入基準を Verifier と `/code-review` の両方に、1 パス目・2 パス目の両方で渡す（4 つの受け渡し）。
+
+### 証明の手段
+
+- **実機（Orca・cmux とも手元で到達可能）**: 各プラグインの Issue モードのブロック（1 行目を置き換えた共通手順）を、**1 回の Bash 呼び出しで 2 回**流し、前後のタブ／サーフェスの数を数える。PR 番号と Issue 番号の両方。**陽性対照**: 旧 1 行目で PR 番号を 2 回流すと増える（Issue の症状の再現）。
+- I3: 存在しない番号でブロックを流し、終了コードと「URL を決められない」・タブ数が変わらないこと。
+- **未証明**: gh の古い版で `gh issue view` が PR 番号を拒否するか（手元は 2.92.0 のみ）。
+
+### 生成物
+
+該当なし（drawio・`skill-metrics.py` は dev-loop の SKILL.md だけ）。`check-all.py` で鮮度系も回す。
+
+## 4. 未解決・確認待ち
+
+- #221 を閉じるか（人間）。
+
+## 5. 関門の進捗（再開点）
+
+- **周の在り処**: ブランチ `issue/198-issue-mode-pr-url`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-198`、
+  起点 `9fc3ba4`、base の参照 `origin/main` → `9fc3ba490c2dc5e0b82aaa77e0c348387831a97b`
+- 関門: 未着手
+- 反証・差し戻し: なし
+- 交絡を潰した手順: 未着手
+
+## 6. 既知の限界・決着済みの論点
+
+- 共通手順の一致規則は #194 / #196 で決着済み（完全一致優先、下位ページは直後が `/` `#` `?`）。
+- cmux の `-n` の扱いは #197 で決着済み。
