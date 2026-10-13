@@ -18,7 +18,7 @@
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
 | [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
 | [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
-| [`spec-loop`](#spec-loop) | —（スキルはまだ無い） | データの決まり・検査スクリプト | dev-loop の手前にある要求側のループ（準備中） |
+| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop` | スキル | dev-loop の手前にある要求側のループ（段階的に追加中。いまは要求確定の `req-loop` だけ） |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
     プラグインが提供するスキル**とコマンド**は、名前の衝突を防ぐため
@@ -391,7 +391,9 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 
 **常に最新を使いたい場合は、[bare な名前で呼びたい場合](#bare-invocation) の symlink 経路**を
 選びます——キャッシュを経由しないので、`git pull` した時点で反映されます。
-ただし `link-skills.sh` が張るのは**スキルを持つプラグイン**だけで、`workspace-setup` は
+ただし `link-skills.sh` が張るのは**プラグインと同じ名前のスキル**
+（`plugins/<name>/skills/<name>`）だけで、`workspace-setup`（スキルを持たない）と
+`spec-loop`（`req-loop` はプラグイン直下の共有物を `../../` で指すので、素のスキルとしては置けない）は
 対象外です。また**スクリプトは自分の位置からリポジトリを解決して絶対パスで張る**ので、
 **worktree から実行するとその worktree に固定されます**。メインの作業ツリーから実行してください。
 
@@ -558,10 +560,12 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 設計の背景は記事 [spec-loop プラグインの構成案](https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/)
 にあります。
 
-!!! warning "まだスキルを持ちません"
-    いま入っているのは、どのスキルも共有する**データの決まり**（正本リポジトリのツリー・
-    Q&A 表の列・サインオフのタグの命名）と、Q&A 表を検査するスクリプトだけです。
-    スキルは段ごとに足します（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+!!! warning "スキルはまだ 1 本だけです"
+    いま使えるスキルは、要求確定のループ **`req-loop`** だけです。残りのループ
+    （仕様レビュー・実現性とコスト・提案書）と dev-loop への引き渡しは段ごとに足します
+    （計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+    どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・
+    サインオフのタグの命名）と、Q&A 表を検査するスクリプトも入っています。
 
     **データの決まりは
     [プラグインの `references/`](https://github.com/hdknr/claude-code-setup/tree/main/plugins/spec-loop/references)
@@ -574,6 +578,27 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 ```
 /plugin install spec-loop@claude-code-setup
 ```
+
+### `req-loop` — 要求確定のループ
+
+```
+/spec-loop:req-loop
+```
+
+1 回の実行が**レビュー会 1 回分**です。前回のレビュー会でもらった回答を仕様に反映し、
+未決定事項を選択肢付きの質問として Q&A 表に起票し、レビュー会用の PPTX を作って、
+**利用者の回答待ちで止まります。**
+
+- **回答をスキルが推測で埋めることはありません。** 回答は、Q&A 表に利用者が書くか、
+  会話で番号ごとに伝えます（スキルは転記だけして、反映は次の実行で行います）。
+- **再開点は会話ではなく Q&A 表の状態から読みます。** 別のセッションで呼び直しても続きから始まります。
+- PPTX は同梱のスクリプト（標準ライブラリのみ）で作ります。正本リポジトリの `CLAUDE.md` に
+  スライドの形式の指定があれば、そちらに従います。
+
+手順は
+[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/req-loop/SKILL.md)
+を正とします。**プラグインとしてだけ使えます**（素のスキルとしては置けません。理由は
+[プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/README.md)）。
 
 ---
 
