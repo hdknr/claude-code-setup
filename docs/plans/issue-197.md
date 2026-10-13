@@ -63,6 +63,8 @@
   壊れる（`quote>` で止まる）ことを見る。
 - P3・P4: cmux は存在しない pane を指定して失敗させる。orca は #194 で確認済みの形を変えない（`--command` の値だけ変える）。
 - **未証明**: 改行を含むパス（受入基準の外）。他の cmux/Orca の版。ログインシェルが zsh 以外（fish など）の環境。
+  **Windows ホストの Orca**（PowerShell・cmd——`shlex.quote` は POSIX 向け）。
+  **SSH 経由の端末・cmux の SSH ワークスペース**（ローカルの `$(pwd)` がリモートで解釈される）。いずれも手元に環境が無い。
 
 ### 生成物
 
@@ -79,7 +81,16 @@
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-197`、
   起点 `b8c5e89`、**base: `origin/main` → `b8c5e89886ac29b34cefb260dc6bc87efd2e0b63`**
 - 実装コミット: `4903190`。`check-all.py` 30/30 緑（文言修正後に回し直した）
-- 関門: 未着手。**次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）**
+- 関門:
+  - **1 パス目 Verifier**（sonnet）: **反証 0 件**。著者の主張のうち `surface_ref`・「シェルを通らない」は未確認（サーフェスを作れないため）。
+    **Verifier は禁じた `cmux new-surface` を走らせようとし、分類器に拒否された**（実行されていない。`git status` は空のまま）。
+  - **1 パス目 `/code-review`**（high）: **指摘 10 件**→ 直す 3 件（R1・R2・R2b）、残課題 8 件（§6 の表）。
+  - **1 パス目の指摘対応**: 済（orca `SKILL.md` の `-n` ブロックに `-I` と `|| exit 1`）。
+    確認: `SKILL.md` からブロックを抜き出し、偽の `orca` に対して 4 通り（特殊パス＋`shlex.py`/`json.py` を置く・`ok:false`・
+    ふつうのパス・`python3` が失敗）を流した（scratchpad の `verify-block.sh`）。**陽性対照**: 同じ手順を修正前の版に当てると
+    `cd ` で `$HOME` へ・`ok:false` で rc=0・`python3` 失敗でも `orca` が呼ばれる。`check-all.py` 30/30 緑。
+  - **次**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目——**両方とも未着手**。
+    2 パス目の対象差分は指摘対応のコミットだが、受入基準と base（周の base）はまるごと渡す。
 - 割り目（手順 4）: 提案済み——**人間の選択は「ここで割る」**（2026-10-13）
 - 交絡を潰した手順（実装前の実験）:
   - **cmux 旧形の陽性対照**: 正しい `surface_ref` を使ってなお、`cd $CURRENT_DIR` は `quote>` で止まり、
@@ -104,5 +115,27 @@
 | cmux を `shlex.quote` で直すか | 採らない | `--working-directory` があり、シェルを通らない |
 | `printf '%q'` | 採らない | zsh と bash で出力が違う |
 | 改行を含むパス | 範囲外 | 受入基準は空白と単引用符 |
+
+### 1 パス目の指摘と採否
+
+Verifier（sonnet・`dev-loop:dev-loop-verifier`）: **反証 0 件**。注意点 1 件（Windows ホスト）は下の R6 に畳む。
+`/code-review`（high）: **10 件**。
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| R1 | orca: 引用の置換の失敗を検査せず、`CD_COMMAND="cd "` → `$HOME` へ移って rc=0 | 示せる——cwd に `raise SystemExit(3)` の `shlex.py` → `rc=3 [cd ]`（scratchpad の `repro.sh`） | I1（P2） | **直す**（`|| exit 1`） |
+| R2 | orca: `python3 -c` が cwd の `shlex.py` を import する | 示せる——同上。`-I` で正しく引用され、`zsh -fc` の `pwd` がそのパス | I1（P2） | **直す**（`-I`） |
+| R2b | （R2 と同じ形を著者が横に洗った）同じブロックの ok 判定の `python3 -c` が cwd の `json.py` を import する | 示せる——`raise SystemExit(0)` の `json.py` で `{"ok": false}` が rc=0。`-I` で rc=1 | I1（P4） | **直す**（`-I`） |
+| R3 | cmux: 「`--working-directory` はシェルを通らない」は SSH ワークスペースでは偽かもしれない（バイナリに `cd … \|\| true`） | 示せない（バイナリの文字列のみ。SSH ワークスペースは手元に無い） | 無し（未証明に足す） | 残課題 |
+| R4 | P3 の失敗の作り方がブロックと別のコマンド（cwd が消えた等で黙って既定 cwd に落ちる可能性） | 示せない | 無し | 残課題 |
+| R5 | `--working-directory` に要る cmux の版を書いていない | 示せない（古い版が手元に無い） | 無し | 残課題 |
+| R6 | 未証明に Windows ホスト（PowerShell・cmd）と SSH 経由の端末が無い（Verifier も同旨） | 分類の指摘 | 無し | 残課題（§3 の未証明に足す） |
+| R7 | cmux README:17・`docs/plugins/index.md`:455 が「そこで実行する」のまま | 示せる（文面）。ただし変更前の `SKILL.md` も同じ趣旨で、この差分が作った食い違いではない | 無し | 残課題 |
+| R8 | cmux の `new-surface` に `--focus` が無く、裏で作られるだけ | 変更前からの挙動 | 無し | 残課題 |
+| R9 | `SKILL.md` に版固有のキー名（`surface_ref`）を書いている | 示せない | 無し | 残課題 |
+| R10 | `--pane` 未指定で、置き場所がフォーカス中のペインに依る | 示せない（推測） | 無し | 残課題 |
+
+**範囲外として残すもの**: `orca` の共通手順（31・35・84 行）と `cmux` の 61 行の `python3 -c` も同じ形（`-I` 無し）だが、
+`-n` の外で受入基準に無い。残課題に書く。
 
 この周の起票: 0 件
