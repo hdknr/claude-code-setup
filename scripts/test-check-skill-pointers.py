@@ -73,6 +73,7 @@ FENCED = """# デモ
 
 ```markdown
 指し先の書き方の例: `references/never-exists.md`
+上の「どこにも無い項」
 ```
 
 本文の指し先は `references/resume.md` だけ。
@@ -135,6 +136,73 @@ SYMLINKED = """# デモ
 詳しくは `references/x.md` を見る。
 """
 
+# **散文の指し先**（#205）。**『』と本文の「」・太字・バッククォート・改行の違いを同一視する**ことを
+# 試料に入れる——**揃えた書き方だけだと、正規化を外す変異が殺せない。** 太字とバッククォートは
+# **X の途中に**置く（端に置くと、外さなくても部分一致で見つかる。2 パス目の `/code-review` が実測）。
+PROSE_OK = """# デモ
+
+**ここで「肯定的な確認」を
+走らせる（必須）。**
+
+不一致なら下の「ここで『肯定的な確認』を走らせる」の項へ戻る。
+改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
+
+**改名は** `git branch -m` で行う。
+
+上の「改名は git branch -m で行う」とおり。`SKILL.md` 手順 4 の「改名は git branch -m で行う」も同じ。
+
+```markdown
+フェンスの中の書き方の例: 上の「どこにも無い項」
+```
+"""
+PROSE_RESUME = "# 再開\n\n**改名の「コマンド」で\n分岐する（必須）**\n"
+
+# **X が指し先の中にしか無い**——Issue #205 の `SKILL.md:464` と同じ形。
+PROSE_BROKEN = """# デモ
+
+不一致なら下の「改名のコマンドは『いまブランチの上にいるか』で分岐する」項へ進む。
+"""
+
+# **移した先を名指ししたが、その先に無い。**
+XREF_BROKEN = """# デモ
+
+改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
+"""
+
+# **`の` と `「` の間で折り返した指し先**——#205 の 1 パス目で S1・S5・S6 がこの形だった。
+PROSE_SPLIT_BROKEN = """# デモ
+
+不一致なら下の
+「どこにも無い項」へ進む。
+"""
+XREF_SPLIT_BROKEN = """# デモ
+
+改名は `references/resume.md` の
+「どこにも無い項」を読む。
+"""
+
+# **`手順 N` を挟んだ形で、その先に無い**（#205 の 2 パス目の `/code-review`）。
+STEP_BROKEN = """# デモ
+
+詳しくは `SKILL.md` 手順 4 の「どこにも無い項」を見る。
+"""
+
+# **X が、同じファイルの移した先の名指しの中にしか無い**——本文には無い。
+XREF_MASKED = """# デモ
+
+改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
+不一致なら下の「改名の『コマンド』で分岐する」項へ進む。
+"""
+
+# **移した先が、X を元のファイルへの指し先の中にしか持っていない**——項はどこにも無い。
+TARGET_MASKED = """# デモ
+
+**戻り先の項**
+
+詳しくは `references/resume.md` の「戻り先の項」を読む。
+"""
+TARGET_MASKED_RESUME = "# 再開\n\n`SKILL.md` の「戻り先の項」を見る。\n"
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -185,6 +253,47 @@ MUTATIONS = {
     "symlink の先を見ない": (
         "                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):",
         "                      or False):"),
+    # 守る 10: 散文の指し先 `上の「X」` の X が同じファイルにあること（#205）
+    "散文の指し先を見ない": (
+        "               normalize(m.group(1)) in own)",
+        "               True)"),
+    # 守る 11: `の` と `「` の間で折り返した散文の指し先も拾うこと
+    "折り返した指し先を拾わない": (
+        'NO = r"の\\s*"',
+        'NO = r"の"'),
+    # 守る 12: 散文の指し先も、フェンスの中は見ないこと
+    "散文の指し先でフェンスを剥がさない": (
+        "    prose = strip_fences(raw)",
+        "    prose = raw"),
+    # 守る 13: `references/x.md` の「X」の X が指したファイルにあること
+    "移した先の名指しを見ない": (
+        "               normalize(m.group(2)) in body_without_pointers(",
+        "               True or body_without_pointers("),
+    # 守る 14: `手順 N` を挟んだ形も拾うこと
+    "手順 N を挟んだ形を拾わない": (
+        "`\\s*(?:手順\\s*\\d+\\s*)?\" + NO + QUOTED)",
+        "`\\s*\" + NO + QUOTED)"),
+    # 守る 15: 指し先そのものの文字列は数えないこと
+    "指し先が自分を見つける": (
+        '    return normalize(XREF.sub("", PROSE.sub("", text)))',
+        '    return normalize(XREF.sub("", text))'),
+    # 守る 16: 移した先の名指しの文字列も数えないこと
+    "移した先の名指しを本文に数える": (
+        '    return normalize(XREF.sub("", PROSE.sub("", text)))',
+        '    return normalize(PROSE.sub("", text))'),
+    # 守る 17: 指した先の照合でも、そこの指し先の文字列は数えないこと
+    "指した先の指し先を数える": (
+        "               normalize(m.group(2)) in body_without_pointers(",
+        "               normalize(m.group(2)) in normalize("),
+    # 守る 18: 『』と「」の違いを同一視すること
+    "『』を寄せない": (
+        '.replace("『", "「").replace("』", "」")', ""),
+    # 守る 19: 太字の違いを同一視すること
+    "太字を外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[`\\s]"'),
+    # 守る 20: バッククォートの違いを同一視すること
+    "バッククォートを外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[*\\s]"'),
+    # 守る 21: 空白（改行を含む）の違いを同一視すること
+    "空白を外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[*`]"'),
 }
 
 
@@ -272,6 +381,37 @@ def main() -> int:
               observe(mod, symlink_out)["rc"] == 1)
         check("symlink の先がプラグインの中なら通す", observe(mod, symlink_in)["rc"] == 0)
 
+        def prose_tree(name: str, body: str, resume: str) -> Path:
+            d = base / name
+            assert_not_real_repo(d)
+            make_skill(d, body=body, files={"references/resume.md": resume})
+            return d
+
+        prose_ok = prose_tree("prose-ok", PROSE_OK, PROSE_RESUME)
+        prose_broken = prose_tree("prose-broken", PROSE_BROKEN, PROSE_RESUME)
+        xref_broken = prose_tree("xref-broken", XREF_BROKEN, "# 再開\n")
+        prose_split = prose_tree("prose-split", PROSE_SPLIT_BROKEN, PROSE_RESUME)
+        xref_split = prose_tree("xref-split", XREF_SPLIT_BROKEN, PROSE_RESUME)
+        print("\n散文の指し先（#205）")
+        check("X が本文にあれば通す（『』・太字・改行の違いを越えて。フェンスの中は見ない）",
+              observe(mod, prose_ok)["rc"] == 0)
+        check("X が指し先の中にしか無ければ落とす（#205 の形）",
+              observe(mod, prose_broken)["rc"] == 1)
+        check("移した先を名指しして、その先に無ければ落とす",
+              observe(mod, xref_broken)["rc"] == 1)
+        check("`の` と `「` の間で折り返しても、無ければ落とす（同じファイル）",
+              observe(mod, prose_split)["rc"] == 1)
+        check("`の` と `「` の間で折り返しても、無ければ落とす（移した先）",
+              observe(mod, xref_split)["rc"] == 1)
+        step_broken = prose_tree("step-broken", STEP_BROKEN, PROSE_RESUME)
+        xref_masked = prose_tree("xref-masked", XREF_MASKED, PROSE_RESUME)
+        target_masked = prose_tree("target-masked", TARGET_MASKED, TARGET_MASKED_RESUME)
+        check("`手順 N` を挟んだ形でも、無ければ落とす", observe(mod, step_broken)["rc"] == 1)
+        check("X が同じファイルの移した先の名指しの中にしか無ければ落とす",
+              observe(mod, xref_masked)["rc"] == 1)
+        check("移した先が X を指し先の中にしか持っていなければ落とす",
+              observe(mod, target_masked)["rc"] == 1)
+
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
 
@@ -307,7 +447,15 @@ def main() -> int:
                           or mutant.main([str(sibling)]) != 1
                           or mutant.main([str(roundtrip)]) != 1
                           or mutant.main([str(symlink_out)]) != 1
-                          or mutant.main([str(symlink_in)]) != 0)
+                          or mutant.main([str(symlink_in)]) != 0
+                          or mutant.main([str(prose_ok)]) != 0
+                          or mutant.main([str(prose_broken)]) != 1
+                          or mutant.main([str(xref_broken)]) != 1
+                          or mutant.main([str(prose_split)]) != 1
+                          or mutant.main([str(xref_split)]) != 1
+                          or mutant.main([str(step_broken)]) != 1
+                          or mutant.main([str(xref_masked)]) != 1
+                          or mutant.main([str(target_masked)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
