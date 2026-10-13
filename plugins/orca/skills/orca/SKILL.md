@@ -146,14 +146,16 @@ fi
    ```bash
    TARGET_URL=$(gh pr view <number> --json url -q '.url')
    ```
-3. 現在のブランチが PR の head ブランチと同じかを見る（1 行ずつ走らせ、値は読んで比べる）:
+3. 現在のコミットが PR の head コミットと同じかを見る（1 行ずつ走らせ、値は読んで比べる）:
    ```bash
-   git rev-parse --abbrev-ref HEAD
-   gh pr view <number> --json headRefName -q .headRefName
+   git rev-parse HEAD
+   gh pr view <number> --json headRefOid -q .headRefOid
    ```
-   **同じなら作らずに 5 へ進む**（既にその PR の上にいるので、checkout しても何も切り替わらない）。
+   **SHA が同じなら作らずに 5 へ進む**（いまのツリーが既に PR の head のコミットなので、そのまま読める）。
    **違うなら**「PR を checkout する worktree の作り方」の手順で worktree を作り、そこへ移る。
-   **「worktree の中にいるか」では判定しない**——理由は同じ節にある。
+   **ブランチ名では判定しない**——名前が同じでも中身が PR と違うことがある
+   （fork の PR の head が `main` で手元の `main` にいる・手元の同名ブランチが PR より遅れている）。
+   **「worktree の中にいるか」でも判定しない**——理由は同じ節にある。
 4. 移った worktree の中で以下を実行（3 で「同じ」だったときは飛ばす）:
    ```bash
    gh pr checkout <number>
