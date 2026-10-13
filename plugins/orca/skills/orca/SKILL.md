@@ -138,6 +138,8 @@ fi
    ```bash
    gh pr checkout <number>
    ```
+   **失敗したら（終了コードが 0 でない）、ここで止めてエラーを表示する。**
+   新しい worktree は PR でないコミットのまま残る（下の `-r` の 4 と同じ）。
 
 ### `/orca -r <number>` — PR レビューモード
 
@@ -160,6 +162,10 @@ fi
    ```bash
    gh pr checkout <number>
    ```
+   **失敗したら（終了コードが 0 でない）、ここで止めてエラーを表示する——5 へ進まない。**
+   新しい worktree は PR でないコミット（作った元）のまま残っているので、そこを読むと PR でないコードをレビューする。
+   たとえば **PR のブランチが別の worktree（利用者のツリー）で checkout 済み**だと、
+   `gh pr checkout` は `fatal: '<ブランチ>' is already used by worktree at '<パス>'` で失敗する（#199 で実測）。
 5. PR のコード差分をレビュー開始する（`gh pr diff <number>` で差分を取得し、変更内容を分析）。
 
 ## PR を checkout する worktree の作り方（`-w` / `-r` 共通）

@@ -85,6 +85,7 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
   - 採否: 「示せる × 破る受入基準」を満たす行は 0。V1/C1/C2（この周が入れた退行）は人間に範囲拡大を訊き「範囲を広げて直す」→ I3 を追加して直した。残り 7 件は残課題（C8 は対象外）
   - 1 パス目の指摘対応: `-r` 手順 3 を名前比較から SHA 比較（`git rev-parse HEAD` ↔ `headRefOid`）へ。実データ: この worktree の HEAD `55e3a24` ≠ PR #229 の head `c094176`（→ 作る）、ローカルの `issue/198-issue-mode-pr-url` = `c094176`（→ そこにいれば飛ばす）
   - 次: **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**が残っている。1 パス目の指摘対応は `831feec`（check-all 32/32 緑）。**狭いパスの起点 SHA（2 パス目の指摘対応を始める直前の HEAD）: `831feec1fdc38d243c25025b373403fe232c4b2f`**
+- 2 パス目: Verifier 反証 0 件／`/code-review` 指摘 8 件（採否は §6 の 2 パス目の表）。直す 1 件（R1）。**次: R1 を直してコミット → 狭いパス（起点 `831feec1fdc38d243c25025b373403fe232c4b2f`）**
 - 反証・差し戻し: 0
 - 交絡: 実験 1（上の実測）。陽性側（メインで「外」・checkout で実際に切り替わる）を取った。
 
@@ -110,3 +111,19 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
 | C9 | /code-review | SKILL.md が「旧条件は Orca で切り替える側に倒れる」と断定するが、測ったのは git の読みだけ | 示せない | 無し | 残課題 |
 | C10 | /code-review | 公開ページ `docs/plugins/index.md:496` の `-r` 行が「worktree でチェックアウト」のまま | 示せない | 無し（範囲外） | 残課題 |
 | V1 | Verifier | `-r` 手順 3 は名前の一致だけで checkout を飛ばすので、fork の PR の head が `main` で利用者がローカル `main` にいる・同名でコミットが違う場合に、PR でないツリーをレビューする（旧版は常に checkout していたので**この周が入れた退行**） | 示せない（実データの失敗は無い。論理上の経路。`gh pr view 229 --json headRefOid,isCrossRepository` が値を返すことは確認） | 無し（I1 は守られる。壊れるのはレビューの正しさ） | **直す**（人間が範囲拡大を選択 → I3。手順 3 を SHA 比較に変更） |
+
+### 2 パス目の指摘（採否の表）
+
+関門: Verifier（`dev-loop:dev-loop-verifier`/sonnet。自己申告のツールは Read/Bash）**反証 0 件**（check-all 32/32 緑・`headRefOid` が 40 桁 SHA を返すことを独立確認）。
+`/code-review` high **指摘 8 件**。
+
+| # | 出所 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- | --- |
+| R1 | /code-review | P8（利用者のツリーが PR と同名・遅れたブランチ）で新 worktree の `gh pr checkout` が必ず失敗し、止まる記述が無いので 5 で PR でないツリーをレビューする | **示せる**——scratchpad の clone で、同名ブランチを別 worktree に持たせた状態で `gh pr checkout 229` が `fatal: 'issue/198-issue-mode-pr-url' is already used by worktree` / **rc=1**、新ツリーは origin/main（`8df3a56`）のまま。陽性対照: その worktree を外すと rc=0 で `c094176` に着く | **I3** | **直す**（`-w`/`-r` の 4 に「失敗したら止める」） |
+| R2 | /code-review | HEAD = head でも未コミットの変更があると、PR に無い編集をレビューする | 示せない（レビューが作業ツリーを読むことは実物で示していない。旧版も同じ） | 無し | 残課題 |
+| R3 | /code-review | 同じセッションで 2 回目の `-w`/`-r` は worktree セッション中なので必ず止まり、`ExitWorktree` への案内が無い | 示せない | 無し（止まる側。I1 は守られる） | 残課題 |
+| R4 | /code-review | 共通節の「git でも worktree の中と出る」は Orca のメインのチェックアウトでは偽 | 示せない（記述の広さ） | 無し | 残課題（C9 と合わせて） |
+| R5 | /code-review | 公開ページ `docs/plugins/index.md:478` の「cmux と引数・挙動が同じ」が偽になった | 示せない | 無し（範囲外） | 残課題（C10 と合わせて） |
+| R6 | /code-review | 「理由は同じ節にある」の指し先が違う（別の節） | 示せない | 無し | 残課題 |
+| R7 | /code-review | `git fetch pull/N/head` → `worktree add --detach` → `EnterWorktree(path)` で根本から消せる | 示せない（設計の代案） | 無し | 残課題（C6 と合わせて） |
+| R8 | /code-review | 40 桁の目視比較は誤読しうる。1 行の `[ … = … ]` で終了コードにできる | 示せない | 無し | 残課題 |
