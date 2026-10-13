@@ -80,6 +80,9 @@
 - 周の在り処: ブランチ `issue/200-orca-doc-facts`・worktree `.claude/worktrees/issue-200`・
   起点 `8df3a56`・base 参照 `origin/main` → `8df3a56ad5384771869eb1799d7f87a0b9a603b8`
 - 実験: なし（一次ソースの読解と git 履歴のみ）
+- 実装: 済（コミット済み）。関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
+- 割り目 1（手順 4 の完了時）: 提案した → **人間が「ここで割る」を選択**（2026-10-13）。
+  再開は `.claude/worktrees/issue-200` の中で `/clear` → `/dev-loop 200`（手順 5 から）
 
 ## 6. 既知の限界・決着済みの論点
 
