@@ -77,9 +77,16 @@
 ## 5. 関門の進捗（再開点）
 
 - **周の在り処**: ブランチ `issue/215-spec-loop-skeleton`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-215`・起点 `2639705`・base の参照 `origin/main`・**base `2639705e510c25f0a73c586244f692fb0695f28c`**
+- **実装**: コミット済み（`feat(spec-loop): 骨組みとデータの決まり…`）
+- **著者の確認**（関門ではない）:
+    - `scripts/test-check-qa-csv.py` — 試料 26 件・変異 18 件 OK。**変異ごとに「殺すはずの試料」を名指しし、その試料が期待どおりでなくなることまで見る**
+    - `claude plugin validate plugins/spec-loop` / `claude plugin validate .` — passed（README に install 行が無いという助言だけ）
+    - `claude --plugin-dir plugins/spec-loop plugin details spec-loop` — `spec-loop 0.1.0`・Skills (0)。**陽性対照**: 同じコマンドを dev-loop に当てると Skills (1)・Agents (1)
+    - `uv run mkdocs build --strict` — exit 0・警告 0
+- **I8 の install の確認は、計画した形では回せなかった**——一時 `HOME` で `claude plugin marketplace add` を走らせる形は、worktree 隔離のガードに「HOME を差し替えるな」と拒否された。**実環境の `~/.claude` に足すと既存の `claude-code-setup` と衝突する**ので走らせていない。代わりに上の `--plugin-dir` で「読み込める」までを確かめた。**マーケットプレイス経由の install は未証明**（merge 後に手順 7 で見る）
 - **関門**: まだ
 - **反証と差し戻し**: まだ
-- **交絡を潰した手順**: まだ
+- **交絡を潰した手順**: `plugin details` の Skills (0) が「読み込めずに 0」でないことを、dev-loop の陽性対照で潰した。変異テストは「別の試料で偶然落ちた」を、殺すはずの試料の名指しで潰した（1 件、`splitlines` の変異が引用符つき改行の試料では**生き残った**——csv が繋ぎ直すため。試料を U+2028 に変え、本体のコメントの誤った主張も直した）
 
 ## 6. 既知の限界・決着済みの論点
 
