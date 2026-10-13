@@ -97,6 +97,10 @@ jobs:
       - name: spec-loop の Q&A 表の検査のテスト（#215）
         run: python3 scripts/test-check-qa-csv.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（req-loop が使う）。
+      - name: spec-loop の PPTX 生成のテスト（#216）
+        run: python3 scripts/test-qa-to-pptx.py
+
       # 散文で書かれた「この変異で赤になる」を機械で当てる（#151）。
       # 他の歯止めを子プロセスで回すので、1 本だけ重い。
       - name: 散文の変異主張を当てる（#151）
