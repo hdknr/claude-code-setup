@@ -46,6 +46,10 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 /plugin marketplace add hdknr/claude-code-setup
 ```
 
+**`orca` より前に追加していたなら、先に `/plugin marketplace update claude-code-setup` を走らせる**
+——`install` はカタログを取り直さない。理由と実測は
+[プラグイン一覧の orca のインストール](https://hdknr.github.io/claude-code-setup/plugins/#orca-install)を正とする。
+
 `/plugin install` はスコープの選択画面を出すので、用途に応じて選ぶ。
 
 ```
@@ -64,6 +68,7 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 
 ```bash
 claude plugin marketplace add hdknr/claude-code-setup
+claude plugin marketplace update claude-code-setup   # orca より前に追加していた場合
 claude plugin install orca@claude-code-setup --scope user
 ```
 
