@@ -5,8 +5,8 @@ description: "cmux のブラウザペインで GitHub Issue/PR を開く。番�
 
 # cmux スキル
 
-<!-- skill-version: 1.1.8 -->
-> **このスキルの版: 1.1.8**（プラグイン `cmux`）。
+<!-- skill-version: 1.1.9 -->
+> **このスキルの版: 1.1.9**（プラグイン `cmux`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update cmux@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -89,10 +89,17 @@ fi
 
 ### `/cmux <number>` — Issue モード
 
-1. 「ブラウザペインの開き方」の共通手順を、1 行目を次に置き換えて流す:
+1. 「ブラウザペインの開き方」の共通手順を、1 行目を次に置き換えて流す
+   （URL は `gh` に訊く。リモート URL を自分で組み立てると、`ssh://` 形式や
+   GitHub Enterprise のリモートで URL が壊れる）:
    ```bash
-   TARGET_URL="https://github.com/$(git remote get-url origin 2>/dev/null | sed -E 's#^(https?://[^/]+/|git@[^:]+:)##; s#\.git$##')/issues/<number>"
+   TARGET_URL=$(gh issue view <number> --json url -q .url)
    ```
+   **`/issues/<number>` を自分で組み立てない**——PR の番号だと GitHub が `/pull/<number>` に
+   転送するので、サーフェスの URL と一致せず、呼ぶたびにサーフェスが増える。`gh issue view` は
+   PR の番号には `/pull/<number>` を返す。
+   `gh issue view` が失敗する（存在しない番号・リポジトリの外）と `TARGET_URL` が空になり、
+   共通手順の 2 行目（`https://` で始まるか）で止まる。
 
 ### `/cmux -w <number>` — PR worktree モード
 
