@@ -23,7 +23,7 @@
    変異ごとに、**壊す文字列がブロックにちょうど 1 回現れること**を先に確かめる
    （届いていない変異は、穴が無くても緑になるので）。変異は**両スキル**に当てる。
 3. **抜き出しが壊れたら赤**——見出しが無い・その下に `bash` ブロックが無い・
-   1 行目が `TARGET_URL=` でない、のどれでも黙ってケース 0 件にならない。
+   1 行目が `TARGET_URL=` でない・`python3 -I -c` が無い、のどれでも黙ってケース 0 件にならない。
 
 **このテストは実環境を触らない。** 偽のコマンドが `PATH` で先に解決されることを
 ケースを流す前に表明し（本物の `orca` / `cmux` を起こさない）、`HOME` も一時ディレクトリに差し替える。
@@ -158,6 +158,8 @@ COMMON_CASES = [
     ("C11a TARGET_URL が空", "", [tab("p1", MISSING), tab("p2", "")], None, {}, ("reject",)),
     ("C11b https:// でない", "github.com/o/r/pull/12",
      [tab("p1", "github.com/o/r/pull/12")], None, {}, ("reject",)),
+    ("C11c http:// は https:// でない", "http://github.com/o/r/pull/12",
+     [tab("p1", "http://github.com/o/r/pull/12")], None, {}, ("reject",)),
 ]
 
 CMUX_CASES = [
@@ -190,8 +192,10 @@ MUTANTS = [
      "if u == target or (u.startswith(target) and u[len(target)] in '/#?')] or", None),
     ("先頭ではなく末尾を取る", "hit[0]", "hit[-1]", None),
     ("https:// の拒否を外す", CASE_LINE, ":", None),
+    ("https:// の拒否を http に緩める", "in https://*)", "in http*)", None),
     ("url 欠落を空文字にしない", "t.get('url') or ''", "t.get('url')", "orca"),
     ("url を添字で引く", "t.get('url') or ''", "t['url']", "orca"),
+    ("url を添字で判定する", "if s.get('url'):", "if s['url']:", "cmux"),
     ("ブラウザに絞らない", " if s.get('type') == 'browser'", "", "cmux"),
     ("1 枚ずつ取らない", "return json.loads(out).get('url') or ''", "return ''", "cmux"),
     ("1 枚ずつの null を空文字にしない", "return json.loads(out).get('url') or ''",
@@ -333,6 +337,7 @@ def main() -> int:
             "見出しが無い": lambda s, h: s.replace(h, h + "X"),
             "1 行目が TARGET_URL= でない": lambda s, h: s.replace('\nTARGET_URL="', '\nTARGET="', 1),
             "bash ブロックが無い": lambda s, h: s.replace("```bash\nTARGET_URL", "```sh\nTARGET_URL", 1),
+            "python3 -I -c が無い": lambda s, h: s.replace("python3 -I -c", "python3 -c"),
         }
         for tool in TOOLS:
             text = tool.skill.read_text(encoding="utf-8")
