@@ -119,6 +119,14 @@ SIBLING = """# デモ
 隣の決まりは `../../../other/README.md` を見る。
 """
 
+# **一度プラグインの外へ出て、自分のプラグインの名前で戻る**。リポジトリでは実在するが、
+# インストール先ではプラグインの上の名前が違うので実在しない。**行き着く先だけを見ると緑**
+# だった（#216 の 2 パス目の `/code-review` が実測）。
+ROUNDTRIP = """# デモ
+
+決まりは `../../../demo/references/qa.md` を正とする。
+"""
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -154,12 +162,17 @@ MUTATIONS = {
         'PARENT = re.compile(r"(?!x)x")'),
     # 守る 6: `../` の指し先がプラグインの中に収まること
     "プラグインの外を見逃す": (
-        "                elif not (skill / rel).resolve().is_relative_to(plugin):",
+        "                elif (leaves_plugin(skill, plugin, rel)\n"
+        "                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):",
         "                elif False:"),
     # 守る 7: プラグインの境界は `plugins/<name>/` であること
     "境界を `plugins/` に上げる": (
-        "        plugin = skill.parent.parent.resolve()",
-        "        plugin = skill.parent.parent.parent.resolve()"),
+        "        plugin = skill.parent.parent\n",
+        "        plugin = skill.parent.parent.parent\n"),
+    # 守る 8: 途中で 1 度でもプラグインの外へ出た指し先は、戻ってきても落とすこと
+    "行き着く先だけを見る": (
+        "                elif (leaves_plugin(skill, plugin, rel)",
+        "                elif (False"),
 }
 
 
@@ -221,11 +234,13 @@ def main() -> int:
         parent_broken = parent_tree("parent-broken", PARENT_BROKEN)
         escape = parent_tree("escape", ESCAPE)
         sibling = parent_tree("sibling", SIBLING)
+        roundtrip = parent_tree("roundtrip", ROUNDTRIP)
         print("\nプラグイン直下の共有物（`../`）")
         check("`../../` の指し先が実在すれば通す（散文と起動行）", observe(mod, parent_ok)["rc"] == 0)
         check("`../../` の指し先の綴り誤りを捕まえる", observe(mod, parent_broken)["rc"] == 1)
         check("プラグインの外を指したら、実在しても落とす", observe(mod, escape)["rc"] == 1)
         check("隣のプラグインを指したら、実在しても落とす", observe(mod, sibling)["rc"] == 1)
+        check("外へ出て名前で戻る指し先は、実在しても落とす", observe(mod, roundtrip)["rc"] == 1)
 
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
@@ -259,7 +274,8 @@ def main() -> int:
                           or mutant.main([str(parent_ok)]) != 0
                           or mutant.main([str(parent_broken)]) != 1
                           or mutant.main([str(escape)]) != 1
-                          or mutant.main([str(sibling)]) != 1)
+                          or mutant.main([str(sibling)]) != 1
+                          or mutant.main([str(roundtrip)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)

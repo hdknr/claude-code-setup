@@ -243,7 +243,7 @@ def main() -> int:
         rc = run(mod, str(empty), str(out))
         slides, problems = slide_paragraphs(out) if rc == 0 else ([], ["作られない"])
         check("確認中 0 件でも作り、そう書く",
-              rc == 0 and not problems and any("確認中の質問はありません" in p for s in slides for p in s))
+              rc == 0 and not problems and any("未反映の質問はありません" in p for s in slides for p in s))
         many = [[f"Q-{100 + i}", "要求確定", f"質問 {i}", "A: x / B: y", "未回答", "—", "確認中", ""]
                 for i in range(12)]
         out = base / "many.pptx"
