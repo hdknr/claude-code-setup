@@ -5,8 +5,8 @@ description: "Orca の内蔵ブラウザで GitHub Issue/PR を開く。番号�
 
 # orca スキル
 
-<!-- skill-version: 1.0.2 -->
-> **このスキルの版: 1.0.2**（プラグイン `orca`）。
+<!-- skill-version: 1.0.3 -->
+> **このスキルの版: 1.0.3**（プラグイン `orca`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update orca@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -27,12 +27,15 @@ skills ディレクトリに置いた場合は `/orca`。以下の本文は短�
 2. 現在のディレクトリが Orca 管理の worktree の中にあるか——**外にいると、`-n` のターミナルも
    ブラウザのタブも、どの worktree に付くかが決まらない**（ランタイムには届くので 1 だけでは止まらない）
 
+**このスキルの `python3` はすべて `-I` で起動する**——無いと、カレントディレクトリ（レビュー対象のリポジトリ）に
+置かれた `json.py` などが import されて走り、この確認も黙って通る。
+
 ```bash
-orca status --json | python3 -c "
+orca status --json | python3 -I -c "
 import sys, json
 r = json.load(sys.stdin).get('result', {})
 sys.exit(0 if r.get('runtime', {}).get('reachable') else 1)
-" && orca worktree current --json | python3 -c "
+" && orca worktree current --json | python3 -I -c "
 import sys, json
 sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 "
@@ -87,7 +90,7 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 ```bash
 TARGET_URL="<各モードで決める URL>"
 case "$TARGET_URL" in https://*) ;; *) echo "URL を決められない: $TARGET_URL" >&2; exit 1 ;; esac
-BROWSER_PAGE=$(orca tab list --json 2>/dev/null | python3 -c "
+BROWSER_PAGE=$(orca tab list --json 2>/dev/null | python3 -I -c "
 import sys, json
 target = sys.argv[1]
 tabs = json.load(sys.stdin).get('result', {}).get('tabs', [])
