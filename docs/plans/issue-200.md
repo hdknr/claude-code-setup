@@ -80,10 +80,32 @@
 - 周の在り処: ブランチ `issue/200-orca-doc-facts`・worktree `.claude/worktrees/issue-200`・
   起点 `8df3a56`・base 参照 `origin/main` → `8df3a56ad5384771869eb1799d7f87a0b9a603b8`
 - 実験: なし（一次ソースの読解と git 履歴のみ）
-- 実装: 済（コミット済み）。関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
+- 実装: 済（コミット済み）。関門 1 パス目: **済**（2026-10-13。Verifier は `dev-loop:dev-loop-verifier`・sonnet、
+  `/code-review` は high。どちらも base `8df3a56` を渡した）。
+  **Verifier: 事実の反証 0 件・指摘 2 件。`/code-review`: 指摘 7 件**（採否は §6 の表。直す 3 件・残課題 4 件）
+- 1 パス目の指摘対応: 済（V1-1/CR1-1・CR1-2・V1-2/CR1-3）。**残り: 手順 5 の当て直し（Verifier 2 パス目）と
+  `/code-review` 2 パス目の両方**
+- `check-all.py`: 32/32 緑（1 パス目の起動時点・ローカル）
 - 割り目 1（手順 4 の完了時）: 提案した → **人間が「ここで割る」を選択**（2026-10-13）。
   再開は `.claude/worktrees/issue-200` の中で `/clear` → `/dev-loop 200`（手順 5 から）
 
 ## 6. 既知の限界・決着済みの論点
 
 - 動作は変えない（Issue の決定）。`tab list` に `--worktree` を明示する案は採らない。
+
+### 1 パス目の指摘と採否
+
+| # | 関門 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- | --- |
+| V1-1 | Verifier | README の前提の箇条書きの途中に「スキルが確かめるのは…」の段落が挟まり、`gh` と `EnterWorktree` の 2 項目が別リストに見える | 示せる——`plugins/orca/README.md` の「前提」節（この周の差分が段落を箇条書きの間に入れた） | I2（前提の書き分けが読み違えられる） | 直す |
+| V1-2 | Verifier | F-b にはリモート接続時（`client.isRemote`）に絞らない分岐もあり、SKILL.md はローカルを暗黙に仮定 | 示せる（CR1-3 と同じ——`getBrowserWorktreeSelector` の分岐。両関門が独立に同じ行を引いた） | I3（F-b の「ローカルでは」が文面から落ちている） | 直す（CR1-3 と統合） |
+| CR1-1 | `/code-review` | V1-1 と同じ | 同上 | I2 | 直す（V1-1） |
+| CR1-2 | `/code-review` | SKILL.md だけ「（実装どおりならそのリンク worktree に付く）」があり、README・docs に無い | 示せる——3 箇所の文面 | I1（3 箇所が食い違わない） | 直す（SKILL.md から外す。測っていない予想なので、足すより外す） |
+| CR1-3 | `/code-review` | `tab list` の範囲の注記がリモートの分岐と `handlers/browser-tab.js` を落としている | 示せる——`selectors.js` の `isRemote` 分岐 | I3（F-b と出所） | 直す |
+| CR1-4 | `/code-review` | 「前提の確認を通っていれば前者」は、確認と `tab list` が同じ cwd・同じ worktree 一覧であることを仮定 | 示せない（cwd が変わる経路——`EnterWorktree` で `.claude/worktrees/` へ——でもメインのチェックアウトの配下に留まり、この環境では解決先が変わらない。登録の変化は起こせていない） | 無し | 残課題 |
+| CR1-5 | `/code-review` | 公開ページの「この環境の 1 件」は読者に誰の環境か分からない | 示せる（文面） | 無し（I1 がこの文言を指定している） | 残課題 |
+| CR1-6 | `/code-review` | docs の指し先の文が、スキルが確かめる worktree の条件を前提の列挙から落としている | 示せる（文面） | 無し（I2 は README の前提の話。docs の文はこの周で触っていない） | 残課題 |
+| CR1-7 | `/code-review` | 付き先の段落を 3 箇所に全文で書いており、CLAUDE.md の「〇〇を正とする」に反する | 示せる（3 箇所の文面） | 無し（§1 で「分けない理由」として決めた範囲。寄せるのは別の周の判断） | 残課題 |
+
+- Verifier 1 パス目: **事実の反証 0 件**、構成の指摘 1 件（V1-1）・範囲の限定 1 件（V1-2）。F-a〜F-e・I4〜I6 を一次ソースで一致と報告。
+  起動した agent は `dev-loop:dev-loop-verifier`（ツール: Read / Bash のみと報告。定義の許可リストと一致）。

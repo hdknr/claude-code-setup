@@ -30,13 +30,13 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 - Orca アプリが起動しており、`orca` CLI がインストールされていること（`orca status` でランタイムに届くこと）
 - Claude Code を Orca 管理の worktree の中から起動していること（`orca worktree current` が通ること）
 - Orca のターミナルの中で起動することを想定している
+- `gh` CLI が認証済みであること
+- Claude Code の `EnterWorktree` ツールが利用可能であること
 
 スキルが最初に確かめるのは、**Orca のランタイムに届くこと**（`orca status`）と、
 **現在のディレクトリが Orca 管理の worktree の中にあること**（`orca worktree current`）の 2 つだけで、
 どちらかが偽なら止まる。**Orca のターミナルの中で起動しているかは確かめない**
 ——別の端末から起動しても、この 2 つが通れば先へ進む。
-- `gh` CLI が認証済みであること
-- Claude Code の `EnterWorktree` ツールが利用可能であること
 
 ## インストール
 
