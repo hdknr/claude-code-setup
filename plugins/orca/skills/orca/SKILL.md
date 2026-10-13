@@ -5,8 +5,8 @@ description: "Orca の内蔵ブラウザで GitHub Issue/PR を開く。番号�
 
 # orca スキル
 
-<!-- skill-version: 1.0.4 -->
-> **このスキルの版: 1.0.4**（プラグイン `orca`）。
+<!-- skill-version: 1.0.5 -->
+> **このスキルの版: 1.0.5**（プラグイン `orca`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update orca@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -44,9 +44,11 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 ## `-n` フラグ — 新しいターミナルタブで開く
 
 `-n` が指定された場合、処理の **最初に** 新しいターミナルタブを作成し、現在のディレクトリへ cd する。
-タブが付くのは、**現在のディレクトリを含む Orca 管理の worktree**（`--worktree active` の解決先）である
+タブが付くのは、**現在のディレクトリを含む Orca 管理の worktree のうち、いちばん内側のもの**
+（`--worktree active` の解決先。Orca CLI の `resolveCurrentWorktreeSelector` がそう選ぶ）である
 ——`.claude/worktrees/` 配下のように Orca が登録していない worktree の中にいると、それを含む
-メインのチェックアウトに付く。cd するのは現在のディレクトリなので、シェルの場所は変わらない。
+Orca 管理の worktree に付く。メインのチェックアウトが Orca 管理なら、その配下からはメインのチェックアウトに付く
+（この環境の 1 件で確認）。**Orca のリンク worktree の配下から始めた場合は測っていない**。cd するのは現在のディレクトリなので、シェルの場所は変わらない。
 
 **cd は `--command` で作成と同じ呼び出しに入れる。`orca terminal send` を使わない**——
 作成に失敗したあとの `send` は handle が空になり、**無関係なライブ端末に打ち込まれる**
@@ -84,6 +86,16 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 - **完全一致のタブを先に探し、無いときだけ下位ページ（直後が `/` `#` `?`）のタブを使う**——
   先頭から順に取ると、`/pull/12/files` のタブが手前にあるだけで、`/pull/12` のタブがあっても
   `/pull/12/files` のほうを上書きする。
+- **`tab list` が返すタブの範囲**: Orca CLI の実装（アプリ 1.4.224。`tab list` は
+  `handlers/browser-tab.js` から `selectors.js` の `getBrowserWorktreeSelector` を呼ぶ）では、
+  `--worktree` を省くと、**ローカルのランタイムなら**現在のディレクトリを含む Orca 管理の
+  worktree のタブに絞り、その解決に失敗すれば絞らない——含む worktree が無い場合に限らず、
+  `worktree.list` の呼び出しの失敗も同じ `catch` で握りつぶされる（前提の確認を通っていても、
+  `tab list` の時点で解決に失敗すれば絞られない）。
+  **リモートのランタイムでは絞らない**。
+  ただし #194 では「全 worktree のタブが返り、タブごとに `worktreeId` が付く」という観測も報告されており、
+  **この食い違いは解いていない**（実際の範囲は測っていない）。
+  **別の worktree のタブを再利用して前面に出したときの見え方も測っていない。**
 - **1 行目の `TARGET_URL=` を各モードの指示どおりに置き換え、ブロック全体を 1 回の Bash 呼び出しで流す。**
   呼び出しを分けるとシェル変数が消え、`BROWSER_PAGE` が空になって毎回タブが増える。
 
