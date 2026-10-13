@@ -15,7 +15,7 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 | `/orca:orca -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
 | `/orca:orca -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
 
-`-n` フラグを付けると、処理の最初に新しいターミナルタブを作成し、現在のディレクトリへ cd する。タブが付くのは現在のディレクトリを含む Orca 管理の worktree（いちばん内側のもの）で、`.claude/worktrees/` 配下のように Orca に登録していない worktree の中からだと、それを含む Orca 管理の worktree に付く（メインのチェックアウトの配下ならメインのチェックアウト。この環境の 1 件で確認）。Orca のリンク worktree の配下から始めた場合は測っていない。
+`-n` フラグを付けると、処理の最初に新しいターミナルタブを作成し、現在のディレクトリへ cd する。タブが付くのは現在のディレクトリを含む Orca 管理の worktree（いちばん内側のもの）で、`.claude/worktrees/` 配下のように Orca に登録していない worktree の中からだと、それを含む Orca 管理の worktree に付く（メインのチェックアウトが Orca 管理なら、その配下からはメインのチェックアウト。この環境の 1 件で確認）。Orca のリンク worktree の配下から始めた場合は測っていない。
 
 > **なぜ `/orca` ではなく `/orca:orca` なのか**
 >
