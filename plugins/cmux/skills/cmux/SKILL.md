@@ -5,8 +5,8 @@ description: "cmux のブラウザペインで GitHub Issue/PR を開く。番�
 
 # cmux スキル
 
-<!-- skill-version: 1.1.6 -->
-> **このスキルの版: 1.1.6**（プラグイン `cmux`）。
+<!-- skill-version: 1.1.7 -->
+> **このスキルの版: 1.1.7**（プラグイン `cmux`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update cmux@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -21,23 +21,20 @@ skills ディレクトリに置いた場合は `/cmux`（`~/.claude/skills/cmux/
 
 ## `-n` フラグ — 新しいターミナルタブで開く
 
-`-n` が指定された場合、処理の **最初に** 現在のペインに新しいターミナルタブ（サーフェス）を作成する:
+`-n` が指定された場合、処理の **最初に** 現在のペインに新しいターミナルタブ（サーフェス）を、
+現在のディレクトリを作業ディレクトリにして作成する。非ゼロなら終了する:
 
-1. 新しいターミナルサーフェスを作成する:
-   ```bash
-   NEW_SURFACE=$(cmux --json new-surface | python3 -c "
-   import sys, json
-   data = json.load(sys.stdin)
-   print(data.get('surface_id', data.get('ref', '')))
-   ")
-   ```
-2. 新しいタブに cd を送信する:
-   ```bash
-   CURRENT_DIR=$(pwd)
-   cmux send --surface "$NEW_SURFACE" "cd $CURRENT_DIR"
-   cmux send-key --surface "$NEW_SURFACE" Return
-   ```
-3. 以降の処理（ブラウザ、worktree 等）はこのタブ上で行う。
+```bash
+cmux new-surface --working-directory "$(pwd)"
+```
+
+- **cd を送らない**（`cmux send "cd …"` を使わない）——送った文字列はシェルが解釈するので、
+  **空白や単引用符を含むパスで壊れる**。`--working-directory` はシェルを通らない。
+- **作ったサーフェスの ref を取り出して後から操作する形にしない**——取り出し方が版に依る
+  （cmux 0.65.1 の `new-surface --json` は `surface_ref` を返し、`surface_id`・`ref` は無い）。
+  取り損ねた空の ref で `send` すると、行き先が新しいタブではなくなる。
+
+以降の処理（ブラウザ、worktree 等）を続ける。
 
 ## ブラウザペインの開き方（共通手順）
 
