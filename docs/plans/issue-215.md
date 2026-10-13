@@ -85,7 +85,7 @@
     - `uv run mkdocs build --strict` — exit 0・警告 0
 - **I8 の install の確認は、計画した形では回せなかった**——一時 `HOME` で `claude plugin marketplace add` を走らせる形は、worktree 隔離のガードに「HOME を差し替えるな」と拒否された。**実環境の `~/.claude` に足すと既存の `claude-code-setup` と衝突する**ので走らせていない。代わりに上の `--plugin-dir` で「読み込める」までを確かめた。**マーケットプレイス経由の install は未証明**（merge 後に手順 7 で見る）
     - `python3 scripts/check-all.py` — 31/31 OK（失敗 0 / 飛ばし 0）。1 回目は `check-duplicate-counts.py` が試料名「選択肢が 1 つ」と期待文「選択肢が 2 つ未満」を食い違いとして拾ったので、試料名を変えた（免除は使っていない）
-- **手順 4 の割り目**: 実装完了。**次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）**。割るかどうかは下に書き戻す
+- **手順 4 の割り目**: 実装完了。**次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）**。**人間の選択: 「ここで割る」**（AskUserQuestion）。worktree の中で `/clear` → `/dev-loop:dev-loop 215` で手順 5 から再開する
 - **関門**: まだ（Verifier 1 パス目・`/code-review` 1 パス目とも未着手）
 - **反証と差し戻し**: まだ
 - **交絡を潰した手順**: `plugin details` の Skills (0) が「読み込めずに 0」でないことを、dev-loop の陽性対照で潰した。変異テストは「別の試料で偶然落ちた」を、殺すはずの試料の名指しで潰した（1 件、`splitlines` の変異が引用符つき改行の試料では**生き残った**——csv が繋ぎ直すため。試料を U+2028 に変え、本体のコメントの誤った主張も直した）
