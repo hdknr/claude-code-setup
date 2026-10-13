@@ -65,6 +65,8 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
 
 - 周の在り処: ブランチ `issue/199-orca-r-worktree-check`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-199`、
   起点 `4395dd2`、base 参照 `origin/main`、base SHA `4395dd2c1a85d7205ae2a4826297ca9b2d70d6b6`
+- 実装: `e49a061`（check-all 32/32 緑）。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）
+- 割り目 1（手順 4 完了時）: 提案した → 人間の選択「ここで割る」
 - 関門: 未着手
 - 反証・差し戻し: 0
 - 交絡: 実験 1（上の実測）。陽性側（メインで「外」・checkout で実際に切り替わる）を取った。
