@@ -45,6 +45,24 @@ GOOD_ROWS = (
     "Q-005,実現性・コスト,夜間は止めてよいか,A: 止まってよい / B: 24 時間,未回答,—,確認中,B は月額が約 2 倍\n"
     "Q-010,開発,上限を超えたら？,A: 拒否 / B: 切り詰める / C: 警告だけ,B（開発が仮置き）,—,確認中,\n"
 )
+# 記事（要求仕様書作成ループ）の Q&A 表の 6 行。記事の表は 2 つに分かれており、
+# Q-005・Q-006 の表には `回答`・`反映先`・`状態` の列が無いので `未回答`・`—`・`確認中` で埋めた。
+# Q-001 の `10,000` は区切りのコンマを含むので引用符で囲んだ。それ以外は記事の文のまま。
+ARTICLE_ROWS = (
+    'Q-001,要求確定（決定表）,"シルバー会員で 10,000 円未満のとき、割引は A・B のどちらにしますか？",'
+    "A: 割引なし（0%） / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+    "Q-002,仕様レビュー（Red Team）,決済の途中で通信が切れたとき、注文は A・B のどちらで扱いますか？,"
+    "A: 取り消す / B: 「決済待ち」で残し、後で再開できる,未回答,—,確認中,\n"
+    "Q-003,仕様レビュー（Domain Checker）,割引後の金額に 1 円未満の端数が出たら、A・B のどちらで丸めますか？,"
+    "A: 切り捨て / B: 四捨五入,未回答,—,確認中,\n"
+    "Q-004,仕様レビュー（形式検査・Z3 の反例）,クーポンを使うと「注文額の 60% 以上」の下限を割るとき、A・B のどちらにしますか？,"
+    "A: 下限の金額で止める / B: この条件ではクーポンを使えなくする,未回答,—,確認中,\n"
+    "Q-005,実現性・コスト（運用費の見積り）,夜間（0〜6 時）のシステム停止について、A・B のどちらにしますか？,"
+    "A: 夜間は止まってよい / B: 24 時間稼働させる,未回答,—,確認中,"
+    "B は冗長構成が要り、月額が A の約 2 倍、開発は 2 週間増える（仮の値）\n"
+    "Q-006,実現性・コスト（運用費の見積り）,注文データを検索できる期間は、A・B のどちらにしますか？,"
+    "A: 直近 1 年（それ以前はアーカイブ） / B: 全期間,未回答,—,確認中,B は保管と検索の費用が年ごとに増える（仮の値）\n"
+)
 
 
 def row(**over: str) -> str:
@@ -62,6 +80,8 @@ def row(**over: str) -> str:
 CASES: list[tuple[str, str | bytes, int, str]] = [
     # --- 陽性対照 ---
     ("決まりどおり", HEADER + GOOD_ROWS, 0, "OK（4 行）"),
+    ("記事の Q-001〜Q-006", HEADER + ARTICLE_ROWS, 0, "OK（6 行）"),
+    ("番号が 4 桁", HEADER + row(No="Q-1000"), 0, "OK（1 行）"),
     ("BOM 付き（Excel）", ("﻿" + HEADER + GOOD_ROWS), 0, "OK（4 行）"),
     ("空行は飛ばす", HEADER + GOOD_ROWS + "\n,,,,,,,\n", 0, "OK（4 行）"),
     ("セルの中の改行（引用符つき）",
@@ -78,6 +98,7 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     # --- 行 ---
     ("行の列数が違う", HEADER + "Q-001,要求確定,質問,A: x / B: y,未回答,—,確認中\n", 1, "列の数が 7"),
     ("番号の書式", HEADER + row(No="Q-1"), 1, "`No` が `Q-001` の形でない"),
+    ("番号が 2 桁", HEADER + row(No="Q-01"), 1, "`No` が `Q-001` の形でない"),
     ("番号の重複", HEADER + row() + row(), 1, ":3: `No` が 2 行目と重複"),
     ("未知の起票元", HEADER + row(起票元="営業"), 1, "`起票元` が決まりに無い"),
     ("未知の起票元（括弧つき）", HEADER + row(起票元="営業（電話）"), 1, "`起票元` が決まりに無い"),
@@ -86,7 +107,11 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     ("選択肢のラベル重複", HEADER + row(選択肢="A: する / A: しない"), 1, "ラベルが重複"),
     ("未知の状態", HEADER + row(状態="回答済み"), 1, "`状態` が決まりに無い"),
     ("反映済みなのに未回答", HEADER + row(状態="反映済み", 反映先="決定表 1 行目"), 1, "`反映済み` なのに `回答` が無い"),
+    ("反映済みなのに未回答（後ろに空白）", HEADER + row(状態="反映済み", 回答="未回答 ", 反映先="決定表 1 行目"), 1,
+     "`反映済み` なのに `回答` が無い"),
     ("反映済みなのに反映先が無い", HEADER + row(状態="反映済み", 回答="A"), 1, "`反映済み` なのに `反映先` が無い"),
+    ("反映済みなのに反映先が無い（前に空白）", HEADER + row(状態="反映済み", 回答="A", 反映先=" —"), 1,
+     "`反映済み` なのに `反映先` が無い"),
     ("回答が空", HEADER + row(回答=""), 1, "`回答` が空（まだなら `未回答`）"),
     ("反映先が空", HEADER + row(反映先=""), 1, "`反映先` が空（まだなら `—`）"),
     ("質問が空", HEADER + row(質問=""), 1, "`質問` が空"),
@@ -100,13 +125,19 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("見出しを見ない", "if header != COLUMNS:", "if False:", "列の順序が違う"),
     ("状態を見ない", 'row["状態"] not in STATES', "False", "未知の状態"),
-    ("反映済みの回答を見ない", 'if row["回答"] in ("", NO_ANSWER):', "if False:", "反映済みなのに未回答"),
-    ("反映済みの反映先を見ない", 'if row["反映先"] in ("", NO_TARGET):', "if False:", "反映済みなのに反映先が無い"),
+    ("反映済みの回答を見ない", 'if row["回答"].strip() in ("", NO_ANSWER):', "if False:", "反映済みなのに未回答"),
+    ("反映済みの反映先を見ない", 'if row["反映先"].strip() in ("", NO_TARGET):', "if False:", "反映済みなのに反映先が無い"),
     ("選択肢の数を見ない", "if len(options) < 2:", "if False:", "選択肢が足りない"),
     ("選択肢の形を見ない", r'OPTION = re.compile(r"(?P<label>[A-Z]): \S.*")',
      r'OPTION = re.compile(r"(?P<label>.?).*")', "選択肢の形"),
     ("ラベルの重複を見ない", "if len(set(labels)) != len(labels):", "if False:", "選択肢のラベル重複"),
     ("番号の書式を見ない", 'not NUMBER.fullmatch(row["No"])', "False", "番号の書式"),
+    ("番号を 2 桁から許す", r'NUMBER = re.compile(r"Q-\d{3,}")', r'NUMBER = re.compile(r"Q-\d{2,}")', "番号が 2 桁"),
+    ("番号を 3 桁までにする", r'NUMBER = re.compile(r"Q-\d{3,}")', r'NUMBER = re.compile(r"Q-\d{3}")', "番号が 4 桁"),
+    ("反映済みの回答の空白を落とさない", 'if row["回答"].strip() in ("", NO_ANSWER):',
+     'if row["回答"] in ("", NO_ANSWER):', "反映済みなのに未回答（後ろに空白）"),
+    ("反映済みの反映先の空白を落とさない", 'if row["反映先"].strip() in ("", NO_TARGET):',
+     'if row["反映先"] in ("", NO_TARGET):', "反映済みなのに反映先が無い（前に空白）"),
     ("番号の重複を見ない", 'if row["No"] in seen:', "if False:", "番号の重複"),
     ("起票元を見ない", 'm["name"] not in SOURCES', "False", "未知の起票元"),
     ("空のセルを見ない", "if column not in MAY_BE_EMPTY and not row[column].strip():", "if False:", "質問が空"),
@@ -183,13 +214,61 @@ def table_keys(markdown: str, heading: str) -> list[str]:
     return keys
 
 
+def column_cells(markdown: str) -> dict[str, list[str]]:
+    """「列」の表を {列名: [書くもの, 空のとき]} で返す。"""
+    m = re.search(r"^## 列\n(.*?)(?=^## |\Z)", markdown, re.S | re.M)
+    cells: dict[str, list[str]] = {}
+    for line in (m.group(1).splitlines() if m else []):
+        parts = [p.strip() for p in line.strip().strip("|").split(" | ")]
+        key = re.fullmatch(r"`([^`]+)`", parts[0]) if parts else None
+        if key and len(parts) == 3:
+            cells[key.group(1)] = parts[1:]
+    return cells
+
+
+def first_code(text: str, pattern: str) -> str | None:
+    """`pattern` の `{}` の位置にあるバッククォートの中身を返す（空白はそのまま）。"""
+    m = re.search(pattern.replace("{}", "`([^`]+)`"), text)
+    return m.group(1) if m else None
+
+
 def reference_mismatches(mod, markdown: str) -> list[str]:
     problems = []
     for heading, constant in (("列", mod.COLUMNS), ("起票元", mod.SOURCES), ("状態", mod.STATES)):
         keys = table_keys(markdown, heading)
         if keys != list(constant):
             problems.append(f"「{heading}」の表 {keys} ≠ 本体 {list(constant)}")
+
+    # 「列」の表のセルに書いた決まりと、本体の写し
+    cells = column_cells(markdown)
+    write, empty = (lambda c: cells.get(c, ["", ""])[0]), (lambda c: cells.get(c, ["", ""])[1])
+    may_be_empty = {c for c in cells if "空でよい" in empty(c)}
+    if may_be_empty != set(mod.MAY_BE_EMPTY):
+        problems.append(f"空でよい列 {sorted(may_be_empty)} ≠ 本体 {sorted(mod.MAY_BE_EMPTY)}")
+    for column, constant in (("回答", mod.NO_ANSWER), ("反映先", mod.NO_TARGET)):
+        marker = first_code(empty(column), "まだなら {}")
+        if marker != constant:
+            problems.append(f"`{column}` の「まだ無い」の印 {marker!r} ≠ 本体 {constant!r}")
+    digits = re.search(r"`Q-` に (\d+) 桁以上", write("No"))
+    expected = rf"Q-\d{{{digits.group(1)},}}" if digits else None
+    if expected != mod.NUMBER.pattern:
+        problems.append(f"番号の書式 {expected!r} ≠ 本体 {mod.NUMBER.pattern!r}")
+    separator = first_code(write("選択肢"), "の形を {} で")
+    if separator != mod.OPTION_SEPARATOR:
+        problems.append(f"選択肢の区切り {separator!r} ≠ 本体 {mod.OPTION_SEPARATOR!r}")
     return problems
+
+
+# references/qa-csv.md を 1 箇所ずつ崩す。どれも突き合わせで不一致として見えなければならない
+# （突き合わせが空振りしていないことの陽性対照）。
+REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
+    ("状態の表の 1 行", "| `反映済み` |", "| 反映済み |"),
+    ("空でよい列", "| 費用に関わらない質問は空でよい |", "| 許さない |"),
+    ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
+    ("反映先の「まだ無い」の印", "まだなら `—` と書く", "まだなら `-` と書く"),
+    ("番号の桁", "`Q-` に 3 桁以上の数字", "`Q-` に 4 桁以上の数字"),
+    ("選択肢の区切り", "の形を ` / ` で", "の形を ` | ` で"),
+]
 
 
 def reference_example(markdown: str) -> str | None:
@@ -212,10 +291,12 @@ def main() -> int:
 
         print("3. references/qa-csv.md との一致")
         problems = reference_mismatches(mod, reference)
-        check("列・起票元・状態の表が本体の定数と一致する", not problems, "; ".join(problems))
-        # 陽性対照: 表を 1 行削ると不一致として見えること（突き合わせが空振りしていない）
-        dropped = reference.replace("| `反映済み` |", "| 反映済み |", 1)
-        check("表の 1 行を崩すと不一致になる（突き合わせの陽性対照）", bool(reference_mismatches(mod, dropped)))
+        check("決まりの表が本体の定数と一致する", not problems, "; ".join(problems))
+        for name, before, after in REFERENCE_MUTATIONS:
+            if reference.count(before) != 1:
+                check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {reference.count(before)} 回現れる")
+                continue
+            check(f"崩すと不一致になる: {name}", bool(reference_mismatches(mod, reference.replace(before, after))))
         example = reference_example(reference)
         check("「例」のブロックがある", example is not None)
         if example is not None:

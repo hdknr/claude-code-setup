@@ -5,7 +5,7 @@ usage: python3 check-qa-csv.py <qa.csv>
 
 **決まりの正は `references/qa-csv.md` である**（このプラグインの中にある）。
 このスクリプトは、そこに書いた決まりのうち**答えが一意に決まるもの**だけを機械で見る。
-下の `COLUMNS` / `SOURCES` / `STATES` はその写しで、**写しがずれていないかは
+下の定数（列・起票元・状態・`未回答` と `—`・空を許す列・番号の桁・選択肢の区切り）はその写しで、**写しがずれていないかは
 このリポジトリの `scripts/test-check-qa-csv.py` が `references/qa-csv.md` の表と突き合わせて見る**。
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う。
@@ -89,9 +89,10 @@ def check_row(row: dict[str, str]) -> list[str]:
         problems.append(f"`状態` が決まりに無い: {row['状態']!r}")
 
     if row["状態"] == "反映済み":
-        if row["回答"] in ("", NO_ANSWER):
+        # 空の検査と同じく前後の空白を落として比べる（`未回答 ` を回答ありと読まない）
+        if row["回答"].strip() in ("", NO_ANSWER):
             problems.append("`反映済み` なのに `回答` が無い")
-        if row["反映先"] in ("", NO_TARGET):
+        if row["反映先"].strip() in ("", NO_TARGET):
             problems.append("`反映済み` なのに `反映先` が無い")
     return problems
 
