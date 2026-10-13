@@ -52,11 +52,15 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 
 **パスは `shlex.quote` で引用してから `--command` に入れる**——`--command` は新しいシェルに
 打ち込まれるので、`"cd '$CURRENT_DIR'"` のように単引用符で囲むだけだと、**パスが単引用符を含むと
-引用が閉じて残りが打ち込まれる**（`quote>` で止まる）:
+引用が閉じて残りが打ち込まれる**（`quote>` で止まる）。
+
+**`python3` には `-I` を付け、引用の失敗で止める**——`-I` が無いと、カレントディレクトリの
+`shlex.py`・`json.py` が import される（レビュー対象のリポジトリに置かれていれば、それが走る）。
+引用が失敗したまま進むと `--command` が `cd ` だけになり、新しいシェルは**ホームへ移ったまま成功に見える**:
 
 ```bash
-CD_COMMAND="cd $(python3 -c 'import shlex, sys; print(shlex.quote(sys.argv[1]))' "$(pwd)")"
-orca terminal create --worktree active --focus --command "$CD_COMMAND" --json | python3 -c "
+QUOTED_DIR=$(python3 -I -c 'import shlex, sys; print(shlex.quote(sys.argv[1]))' "$(pwd)") || exit 1
+orca terminal create --worktree active --focus --command "cd $QUOTED_DIR" --json | python3 -I -c "
 import sys, json
 sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 "
