@@ -15,7 +15,7 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 | `/orca:orca -w <number>` | PR worktree | PR をブラウザ表示し、worktree を作成して `gh pr checkout` |
 | `/orca:orca -r <number>` | PR レビュー | worktree でチェックアウトし、`gh pr diff` でレビュー開始 |
 
-`-n` フラグを付けると、処理の最初に新しいターミナルタブを作成し、現在のディレクトリへ cd する。タブが付くのは現在のディレクトリを含む Orca 管理の worktree で、`.claude/worktrees/` 配下のように Orca に登録していない worktree の中からだと、それを含むメインのチェックアウトに付く。
+`-n` フラグを付けると、処理の最初に新しいターミナルタブを作成し、現在のディレクトリへ cd する。タブが付くのは現在のディレクトリを含む Orca 管理の worktree（いちばん内側のもの）で、`.claude/worktrees/` 配下のように Orca に登録していない worktree の中からだと、それを含む Orca 管理の worktree に付く（メインのチェックアウトが Orca 管理なら、その配下からはメインのチェックアウト。この環境の 1 件で確認）。Orca のリンク worktree の配下から始めた場合は測っていない。
 
 > **なぜ `/orca` ではなく `/orca:orca` なのか**
 >
@@ -28,10 +28,15 @@ Orca の内蔵ブラウザで GitHub Issue/PR を開き、worktree でレビュ�
 ## 前提
 
 - Orca アプリが起動しており、`orca` CLI がインストールされていること（`orca status` でランタイムに届くこと）
-- Claude Code を Orca のターミナルの中で、Orca 管理の worktree の中から起動していること
-  （`orca worktree current` が通ること。スキルは最初にこれを確かめ、外にいれば止まる）
+- Claude Code を Orca 管理の worktree の中から起動していること（`orca worktree current` が通ること）
+- Orca のターミナルの中で起動することを想定している
 - `gh` CLI が認証済みであること
 - Claude Code の `EnterWorktree` ツールが利用可能であること
+
+スキルが最初に確かめるのは、**Orca のランタイムに届くこと**（`orca status`）と、
+**現在のディレクトリが Orca 管理の worktree の中にあること**（`orca worktree current`）の 2 つだけで、
+どちらかが偽なら止まる。**Orca のターミナルの中で起動しているかは確かめない**
+——別の端末から起動しても、この 2 つが通れば先へ進む。
 
 ## インストール
 
