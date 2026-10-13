@@ -16,7 +16,7 @@
 | 場所 | 何があるか |
 | --- | --- |
 | `references/tree.md` | 正本リポジトリのツリー（どこに何を置くか） |
-| `references/qa-csv.md` | Q&A 表（`docs/shared/qa.csv`）の列・起票元・状態 |
+| `references/qa-csv.md` | Q&A 表の列・起票元・状態（表の置き場所は `references/tree.md`） |
 | `references/signoff-tags.md` | サインオフのタグの命名と、2 つの承認が同じ範囲を見ていたかの確かめ方 |
 | `scripts/check-qa-csv.py` | Q&A 表が決まりどおりかの検査（標準ライブラリのみ） |
 
@@ -29,10 +29,10 @@
 
 ## Q&A 表を検査する
 
-正本リポジトリで:
+正本リポジトリで、Q&A 表（置き場所は `references/tree.md`）を引数に渡します:
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py docs/shared/qa.csv
+python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py <Q&A 表のパス>
 ```
 
 終了コードは、0 が決まりどおり、1 が決まりに反する箇所あり（全部を 1 行ずつ出す）、
