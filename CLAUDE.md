@@ -106,6 +106,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-qa-to-pptx.py` - spec-loop の PPTX 生成の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**PowerPoint・LibreOffice で開けることは見ない**
     （CI に無い）——見るのは部品の揃い・XML の整形式・載る行・出力の決定性
+  - `test-tab-match.py` - orca・cmux の**タブ一致規則**の回帰テスト（#202。変異テストを含む）。
+    **本体は両プラグインの `SKILL.md` の共通手順ブロック**——写しを作らず毎回抜き出し、
+    偽の `orca` / `cmux` を `PATH` の先頭に置いて bash ごと流す。**実機の出力形は見ない**
   - `test-check-qa-csv.py` - spec-loop の Q&A 表の検査の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**（`test-find-cycle.py` と同じ形）。
     **本体の定数が `references/qa-csv.md` の表と一致することも見る**——決まりの原本は
