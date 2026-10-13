@@ -121,6 +121,9 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 /plugin install dev-loop@claude-code-setup
 ```
 
+`orca` より前にマーケットプレイスを追加していた場合、`orca` の `install` は失敗する。
+先にカタログを取り直す（手順は[プラグイン一覧の orca のインストール](plugins/index.md#orca-install)を正とする）。
+
 インストール時に**スコープ**を選ぶ画面が出ます。
 
 | スコープ | 意味 |
