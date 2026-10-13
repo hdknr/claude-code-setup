@@ -136,8 +136,9 @@ SYMLINKED = """# デモ
 詳しくは `references/x.md` を見る。
 """
 
-# **散文の指し先**（#205）。**『』と本文の「」・太字・改行の違いを同一視する**ことを試料に入れる
-# ——**揃えた書き方だけだと、正規化を外す変異が殺せない。**
+# **散文の指し先**（#205）。**『』と本文の「」・太字・バッククォート・改行の違いを同一視する**ことを
+# 試料に入れる——**揃えた書き方だけだと、正規化を外す変異が殺せない。** 太字とバッククォートは
+# **X の途中に**置く（端に置くと、外さなくても部分一致で見つかる。2 パス目の `/code-review` が実測）。
 PROSE_OK = """# デモ
 
 **ここで「肯定的な確認」を
@@ -145,6 +146,10 @@ PROSE_OK = """# デモ
 
 不一致なら下の「ここで『肯定的な確認』を走らせる」の項へ戻る。
 改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
+
+**改名は** `git branch -m` で行う。
+
+上の「改名は git branch -m で行う」とおり。`SKILL.md` 手順 4 の「改名は git branch -m で行う」も同じ。
 
 ```markdown
 フェンスの中の書き方の例: 上の「どこにも無い項」
@@ -175,6 +180,28 @@ XREF_SPLIT_BROKEN = """# デモ
 改名は `references/resume.md` の
 「どこにも無い項」を読む。
 """
+
+# **`手順 N` を挟んだ形で、その先に無い**（#205 の 2 パス目の `/code-review`）。
+STEP_BROKEN = """# デモ
+
+詳しくは `SKILL.md` 手順 4 の「どこにも無い項」を見る。
+"""
+
+# **X が、同じファイルの移した先の名指しの中にしか無い**——本文には無い。
+XREF_MASKED = """# デモ
+
+改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
+不一致なら下の「改名の『コマンド』で分岐する」項へ進む。
+"""
+
+# **移した先が、X を元のファイルへの指し先の中にしか持っていない**——項はどこにも無い。
+TARGET_MASKED = """# デモ
+
+**戻り先の項**
+
+詳しくは `references/resume.md` の「戻り先の項」を読む。
+"""
+TARGET_MASKED_RESUME = "# 再開\n\n`SKILL.md` の「戻り先の項」を見る。\n"
 
 PLAIN = """# デモ
 
@@ -242,14 +269,31 @@ MUTATIONS = {
     "移した先の名指しを見ない": (
         "               normalize(m.group(2)) in body_without_pointers(",
         "               True or body_without_pointers("),
-    # 守る 14: 指し先そのものの文字列は数えないこと
+    # 守る 14: `手順 N` を挟んだ形も拾うこと
+    "手順 N を挟んだ形を拾わない": (
+        "`\\s*(?:手順\\s*\\d+\\s*)?\" + NO + QUOTED)",
+        "`\\s*\" + NO + QUOTED)"),
+    # 守る 15: 指し先そのものの文字列は数えないこと
     "指し先が自分を見つける": (
         '    return normalize(XREF.sub("", PROSE.sub("", text)))',
-        "    return normalize(text)"),
-    # 守る 15: 『』と「」・太字・空白の違いを同一視すること
-    "正規化しない": (
-        '    return re.sub(r"[*`\\s]", "", text).replace("『", "「").replace("』", "」")',
-        "    return text"),
+        '    return normalize(XREF.sub("", text))'),
+    # 守る 16: 移した先の名指しの文字列も数えないこと
+    "移した先の名指しを本文に数える": (
+        '    return normalize(XREF.sub("", PROSE.sub("", text)))',
+        '    return normalize(PROSE.sub("", text))'),
+    # 守る 17: 指した先の照合でも、そこの指し先の文字列は数えないこと
+    "指した先の指し先を数える": (
+        "               normalize(m.group(2)) in body_without_pointers(",
+        "               normalize(m.group(2)) in normalize("),
+    # 守る 18: 『』と「」の違いを同一視すること
+    "『』を寄せない": (
+        '.replace("『", "「").replace("』", "」")', ""),
+    # 守る 19: 太字の違いを同一視すること
+    "太字を外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[`\\s]"'),
+    # 守る 20: バッククォートの違いを同一視すること
+    "バッククォートを外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[*\\s]"'),
+    # 守る 21: 空白（改行を含む）の違いを同一視すること
+    "空白を外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[*`]"'),
 }
 
 
@@ -359,6 +403,14 @@ def main() -> int:
               observe(mod, prose_split)["rc"] == 1)
         check("`の` と `「` の間で折り返しても、無ければ落とす（移した先）",
               observe(mod, xref_split)["rc"] == 1)
+        step_broken = prose_tree("step-broken", STEP_BROKEN, PROSE_RESUME)
+        xref_masked = prose_tree("xref-masked", XREF_MASKED, PROSE_RESUME)
+        target_masked = prose_tree("target-masked", TARGET_MASKED, TARGET_MASKED_RESUME)
+        check("`手順 N` を挟んだ形でも、無ければ落とす", observe(mod, step_broken)["rc"] == 1)
+        check("X が同じファイルの移した先の名指しの中にしか無ければ落とす",
+              observe(mod, xref_masked)["rc"] == 1)
+        check("移した先が X を指し先の中にしか持っていなければ落とす",
+              observe(mod, target_masked)["rc"] == 1)
 
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
@@ -400,7 +452,10 @@ def main() -> int:
                           or mutant.main([str(prose_broken)]) != 1
                           or mutant.main([str(xref_broken)]) != 1
                           or mutant.main([str(prose_split)]) != 1
-                          or mutant.main([str(xref_split)]) != 1)
+                          or mutant.main([str(xref_split)]) != 1
+                          or mutant.main([str(step_broken)]) != 1
+                          or mutant.main([str(xref_masked)]) != 1
+                          or mutant.main([str(target_masked)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
