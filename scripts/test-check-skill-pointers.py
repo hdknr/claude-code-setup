@@ -127,6 +127,14 @@ ROUNDTRIP = """# デモ
 決まりは `../../../demo/references/qa.md` を正とする。
 """
 
+# **字面はスキルの中、実体は symlink の先**（#230）。字面を辿る `leaves_plugin` では外へ出ないので、
+# **`resolve()` 側だけが捕まえる**。**この試料が無いと、`resolve()` 側だけを外す変異が殺せない**
+# （Issue #230 の陽性対照: 変異を入れてもテストは振る舞いの検査がすべて合格だった）。
+SYMLINKED = """# デモ
+
+詳しくは `references/x.md` を見る。
+"""
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -173,6 +181,10 @@ MUTATIONS = {
     "行き着く先だけを見る": (
         "                elif (leaves_plugin(skill, plugin, rel)",
         "                elif (False"),
+    # 守る 9: symlink の先がプラグインの外なら落とすこと（#230。上の 2 つと別に外す）
+    "symlink の先を見ない": (
+        "                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):",
+        "                      or False):"),
 }
 
 
@@ -242,6 +254,24 @@ def main() -> int:
         check("隣のプラグインを指したら、実在しても落とす", observe(mod, sibling)["rc"] == 1)
         check("外へ出て名前で戻る指し先は、実在しても落とす", observe(mod, roundtrip)["rc"] == 1)
 
+        def symlink_tree(name: str, target: str) -> Path:
+            """`references/x.md` を `target`（`references/` からの相対）への symlink にした木。"""
+            d = parent_tree(name, SYMLINKED)
+            (d / "plugins" / "other" / "references").mkdir(parents=True, exist_ok=True)
+            (d / "plugins" / "other" / "references" / "o.md").write_text("# 隣\n", encoding="utf-8")
+            link = d / "plugins" / "demo" / "skills" / "demo" / "references" / "x.md"
+            link.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(target, link)
+            return d
+
+        # Issue #230 の木そのもの（隣のプラグインへ）と、プラグインの中に留まる対照
+        symlink_out = symlink_tree("symlink-out", "../../../../other/references/o.md")
+        symlink_in = symlink_tree("symlink-in", "../../../references/qa.md")
+        print("\nsymlink（字面は中、実体は先）")
+        check("symlink の先がプラグインの外なら、字面が中でも落とす",
+              observe(mod, symlink_out)["rc"] == 1)
+        check("symlink の先がプラグインの中なら通す", observe(mod, symlink_in)["rc"] == 0)
+
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
 
@@ -275,7 +305,9 @@ def main() -> int:
                           or mutant.main([str(parent_broken)]) != 1
                           or mutant.main([str(escape)]) != 1
                           or mutant.main([str(sibling)]) != 1
-                          or mutant.main([str(roundtrip)]) != 1)
+                          or mutant.main([str(roundtrip)]) != 1
+                          or mutant.main([str(symlink_out)]) != 1
+                          or mutant.main([str(symlink_in)]) != 0)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
