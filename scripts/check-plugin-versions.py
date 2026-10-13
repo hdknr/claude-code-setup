@@ -12,6 +12,8 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 3. SKILL.md 本文の版表記 — `<!-- skill-version: X -->` が plugin.json と同じ値か
 4. 公開サイトへの絶対リンク — 指すページとアンカーが docs/ に実在するか
 5. 取りこぼし — plugins/ にあるのにカタログに載っていないプラグイン
+6. description の一致 — marketplace.json のエントリと plugin.json が同じ値か（#224。
+   SKILL.md の frontmatter は比べない——そちらは check-description-sync.py が共変を見る）
 
 なぜ必要か: version を据え置いたまま中身だけ変えると、インストール済みクライアントの
 キャッシュが更新を検知できず旧内容のスキルを使い続ける（#33 で実際に発生）。
@@ -56,15 +58,24 @@ def fail(message: str) -> None:
 
 
 def load_json(path: Path) -> dict | None:
-    """JSON を読む。壊れていれば errors に積んで None を返す。"""
+    """JSON を読む。壊れていれば errors に積んで None を返す。
+
+    **JSON として正しくてもオブジェクトでなければ壊れている側に倒す**——
+    呼ぶ側は `.get()` するので、`[]` や `"x"` を通すと AttributeError でクラッシュする（#224）。
+    """
     try:
         with path.open(encoding="utf-8") as fh:
-            return json.load(fh)
+            data = json.load(fh)
     except FileNotFoundError:
         fail(f"{rel(path)} が存在しない")
+        return None
     except json.JSONDecodeError as exc:
         fail(f"{rel(path)} が JSON として不正: {exc}")
-    return None
+        return None
+    if not isinstance(data, dict):
+        fail(f"{rel(path)} がオブジェクトでない（{type(data).__name__}）")
+        return None
+    return data
 
 
 def rel(path: Path) -> str:
@@ -141,8 +152,43 @@ def check_entry(entry: dict) -> str | None:
             f"marketplace.json={catalog_version} / plugin.json={plugin_version}。"
             "CLAUDE.md「プラグインの更新」のとおり 3 箇所（marketplace.json / plugin.json / SKILL.md）を揃える"
         )
+    check_description(entry, manifest)
 
     return source_dir.name
+
+
+def check_description(entry: dict, manifest: dict) -> None:
+    """marketplace.json と plugin.json の description が同じ値かを見る（#224）。
+
+    **base を見ない。** `check-description-sync.py` は共変を base との diff で見るので、
+    base に無い（新規の）プラグインは定義上見られない——#215 の周でそこを素通りした。
+    ここは 1 つのツリーだけで判定するので、新規も既存も同じに見える。
+
+    **キーが無いことも値として比べる**（片側だけ消した形を落とさない。`null` とも区別する）。
+    **型も比べる——入れ子の中まで**（`json.dumps` の文字列で比べるので `1` と `true` と `1.0` が分かれる）。
+    両側とも無ければ一致として通す——description を必須にするのはこの検査の役目ではない。
+    **正規化しない**（空白の違いも食い違いとして出す）。
+    SKILL.md の frontmatter は別目的の文章なので比べない（共変は check-description-sync.py）。
+    """
+    missing = object()
+    catalog = entry.get("description", missing)
+    plugin = manifest.get("description", missing)
+    # Python では 1 == True == 1.0 が成り立ち、入れ子の [1] == [True] も成り立つ。
+    # JSON の表記で比べれば型が入れ子まで分かれる（キーの順序は意味を持たないので揃える）
+    def canonical(value: object) -> object:
+        return value if value is missing else json.dumps(value, sort_keys=True)
+
+    if canonical(catalog) == canonical(plugin):
+        return
+
+    def show(value: object) -> str:
+        return "（キーが無い）" if value is missing else json.dumps(value, ensure_ascii=False)
+
+    fail(
+        f"{entry['name']}: description が一致しない — "
+        f"marketplace.json={show(catalog)} / plugin.json={show(plugin)}。"
+        "CLAUDE.md「description は 3 箇所にある」のとおり JSON の 2 箇所は同じ値に揃える"
+    )
 
 
 SKILL_VERSION_MARKER = "<!-- skill-version: "
