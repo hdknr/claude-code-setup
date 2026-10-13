@@ -47,7 +47,7 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 タブが付くのは、**現在のディレクトリを含む Orca 管理の worktree のうち、いちばん内側のもの**
 （`--worktree active` の解決先。Orca CLI の `resolveCurrentWorktreeSelector` がそう選ぶ）である
 ——`.claude/worktrees/` 配下のように Orca が登録していない worktree の中にいると、それを含む
-Orca 管理の worktree に付く。メインのチェックアウトの配下ならメインのチェックアウトに付く
+Orca 管理の worktree に付く。メインのチェックアウトが Orca 管理なら、その配下からはメインのチェックアウトに付く
 （この環境の 1 件で確認）。**Orca のリンク worktree の配下から始めた場合は測っていない**。cd するのは現在のディレクトリなので、シェルの場所は変わらない。
 
 **cd は `--command` で作成と同じ呼び出しに入れる。`orca terminal send` を使わない**——
@@ -89,7 +89,9 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 - **`tab list` が返すタブの範囲**: Orca CLI の実装（アプリ 1.4.224。`tab list` は
   `handlers/browser-tab.js` から `selectors.js` の `getBrowserWorktreeSelector` を呼ぶ）では、
   `--worktree` を省くと、**ローカルのランタイムなら**現在のディレクトリを含む Orca 管理の
-  worktree のタブに絞り、含む worktree が無ければ絞らない（前提の確認を通っていれば前者になる）。
+  worktree のタブに絞り、その解決に失敗すれば絞らない——含む worktree が無い場合に限らず、
+  `worktree.list` の呼び出しの失敗も同じ `catch` で握りつぶされる（前提の確認を通っていても、
+  `tab list` の時点で解決に失敗すれば絞られない）。
   **リモートのランタイムでは絞らない**。
   ただし #194 では「全 worktree のタブが返り、タブごとに `worktreeId` が付く」という観測も報告されており、
   **この食い違いは解いていない**（実際の範囲は測っていない）。
