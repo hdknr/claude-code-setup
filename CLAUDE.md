@@ -681,7 +681,11 @@ python3 scripts/test-check-mutation-claims.py  # 歯止め自体のテスト（�
 | `plugins/<name>/.claude-plugin/plugin.json` | マニフェスト |
 | `plugins/<name>/skills/<skill>/SKILL.md` の frontmatter | **常時ロードされる要約** |
 
-**version と違い、3 つを同じ値に揃えるのは誤り。** frontmatter は「いつこのスキルを起動するか」を
+**JSON の 2 箇所（`marketplace.json` と `plugin.json`）は同じ値に揃える**（#224）。
+`check-plugin-versions.py` が**全プラグインで常に**比べる——base を見ないので、**新規プラグインも見える**
+（`check-description-sync.py` は base に無いプラグインを見られず、#215 の周でそこを素通りした）。
+
+**frontmatter だけは揃えない——3 つを同じ値に揃えるのは誤り。** frontmatter は「いつこのスキルを起動するか」を
 書く別目的の文章で、カタログの紹介文より長く引数の説明も含む（`dev-loop` は frontmatter が
 JSON の 2 倍ほどある）。**具体的な文字数はここに書かない**——本文を直すたびに古くなり、
 実際 #62 の周で、古い実測値をそのまま書いて事実誤りを出した。
@@ -693,11 +697,13 @@ JSON の 2 倍ほどある）。**具体的な文字数はここに書かない*
 JSON を直して frontmatter が残る）。
 
 `check-description-sync.py` はこの**共変**を base との diff で見る。片側だけ直すのが正しい場合
-（カタログの typo 修正など）は、コミットメッセージに理由つきの trailer を書く:
+（JSON の typo を直したが、frontmatter の要約は変わらない、など）は、コミットメッセージに理由つきの trailer を書く:
 
 ```
-Skip-description-sync: カタログの typo 修正のみ。要約の内容は変わらない
+Skip-description-sync: JSON の typo 修正のみ。要約の内容は変わらない
 ```
+
+**trailer が免除するのは共変だけで、JSON 2 箇所の一致は免除しない**——カタログだけ直すことはできない。
 
 ## Git ワークフロー
 

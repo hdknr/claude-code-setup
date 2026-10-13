@@ -12,6 +12,8 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 3. SKILL.md 本文の版表記 — `<!-- skill-version: X -->` が plugin.json と同じ値か
 4. 公開サイトへの絶対リンク — 指すページとアンカーが docs/ に実在するか
 5. 取りこぼし — plugins/ にあるのにカタログに載っていないプラグイン
+6. description の一致 — marketplace.json のエントリと plugin.json が同じ値か（#224。
+   SKILL.md の frontmatter は比べない——そちらは check-description-sync.py が共変を見る）
 
 なぜ必要か: version を据え置いたまま中身だけ変えると、インストール済みクライアントの
 キャッシュが更新を検知できず旧内容のスキルを使い続ける（#33 で実際に発生）。
@@ -141,8 +143,38 @@ def check_entry(entry: dict) -> str | None:
             f"marketplace.json={catalog_version} / plugin.json={plugin_version}。"
             "CLAUDE.md「プラグインの更新」のとおり 3 箇所（marketplace.json / plugin.json / SKILL.md）を揃える"
         )
+    check_description(entry, manifest)
 
     return source_dir.name
+
+
+def check_description(entry: dict, manifest: dict) -> None:
+    """marketplace.json と plugin.json の description が同じ値かを見る（#224）。
+
+    **base を見ない。** `check-description-sync.py` は共変を base との diff で見るので、
+    base に無い（新規の）プラグインは定義上見られない——#215 の周でそこを素通りした。
+    ここは 1 つのツリーだけで判定するので、新規も既存も同じに見える。
+
+    **キーが無いことも値として比べる**（片側だけ消した形を落とさない）。**型も比べる。**
+    両側とも無ければ一致として通す——description を必須にするのはこの検査の役目ではない。
+    **正規化しない**（空白の違いも食い違いとして出す）。
+    SKILL.md の frontmatter は別目的の文章なので比べない（共変は check-description-sync.py）。
+    """
+    missing = object()
+    catalog = entry.get("description", missing)
+    plugin = manifest.get("description", missing)
+    # 型も比べる（Python では 1 == True == 1.0 が成り立つ）
+    if type(catalog) is type(plugin) and catalog == plugin:
+        return
+
+    def show(value: object) -> str:
+        return "（キーが無い）" if value is missing else json.dumps(value, ensure_ascii=False)
+
+    fail(
+        f"{entry['name']}: description が一致しない — "
+        f"marketplace.json={show(catalog)} / plugin.json={show(plugin)}。"
+        "CLAUDE.md「description は 3 箇所にある」のとおり JSON の 2 箇所は同じ値に揃える"
+    )
 
 
 SKILL_VERSION_MARKER = "<!-- skill-version: "
