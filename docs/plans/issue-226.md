@@ -42,7 +42,7 @@
 | P4 orca ブラウザタブ（`json`。失敗は `2>/dev/null \|\| echo ""` で握りつぶされる） | cwd の `json.py` が走らない | `-I` |
 | P5 cmux ブラウザ（`json`・`subprocess`。同じく握りつぶし） | cwd の `json.py`・`subprocess.py` が走らない | `-I` |
 | P6 上の全ブロック・ふつうの cwd | 結果が変わらない（回帰しない） | `-I` は import 先を狭めるだけ |
-| P7 `PYTHONPATH`・`PYTHONSTARTUP` などの環境変数 | 効かない | `-I` は `-E` を含む |
+| P7 `PYTHONPATH` | 効かない | `-I` は `-E` を含む（当初 `PYTHONSTARTUP` も挙げていたが、`python3 -c` はもともと走らせないので判別しない。A1 で削った） |
 
 **I2. Issue の再現が直る**: 偽の `orca` にランタイム不達・`ok:false` を返させ、cwd に
 `open(marker,'w').write('ran'); raise SystemExit(0)` の `json.py` を置いて前提チェックを流すと、**rc=1・marker が作られない**。
