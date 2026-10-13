@@ -18,6 +18,7 @@
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
 | [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
 | [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
+| [`spec-loop`](#spec-loop) | —（スキルはまだ無い） | データの決まり・検査スクリプト | dev-loop の手前にある要求側のループ（準備中） |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
     プラグインが提供するスキル**とコマンド**は、名前の衝突を防ぐため
@@ -546,6 +547,32 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 ```
 # Issue 番号 42 を 1 周させる
 /dev-loop:dev-loop 42
+```
+
+---
+
+## spec-loop
+
+dev-loop の**手前にある、要求側のループ**（要求確定・仕様レビュー・実現性とコスト・提案書）と、
+確定した仕様を dev-loop の入力（Issue）に変える引き渡しを扱うプラグインです。
+設計の背景は記事 [spec-loop プラグインの構成案](https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/)
+にあります。
+
+!!! warning "まだスキルを持ちません"
+    いま入っているのは、どのスキルも共有する**データの決まり**（正本リポジトリのツリー・
+    Q&A 表の列・サインオフのタグの命名）と、Q&A 表を検査するスクリプトだけです。
+    スキルは段ごとに足します（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+
+    **データの決まりは
+    [プラグインの `references/`](https://github.com/hdknr/claude-code-setup/tree/main/plugins/spec-loop/references)
+    を正とします。** 中身と検査の使い方は
+    [プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/README.md)
+    にあります。
+
+### インストール
+
+```
+/plugin install spec-loop@claude-code-setup
 ```
 
 ---
