@@ -105,6 +105,7 @@ Claude Code 内で以下のコマンドを実行するだけでインストー�
 | `cmux` | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR をブラウザ表示し、worktree でレビュー |
 | `orca` | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を表示し、worktree でレビュー |
 | `dev-loop` | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発（開発者向け） |
+| `spec-loop` | — | データの決まり・検査スクリプト | dev-loop の手前にある要求側のループ（**準備中。スキルはまだ無い**。[プラグイン一覧](plugins/index.md#spec-loop)） |
 
 ```
 # ワークスペース初期セットアップ用

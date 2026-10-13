@@ -16,6 +16,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `dev-loop/` - 1 Issue = 1 周のループ志向開発スキル
     - `evals/` - **振る舞いの回帰 Eval**（`claude plugin eval`。#181。**CI からは呼ばない**——
       `claude` を起こして課金する。下の「振る舞いを Eval で当てる」）
+  - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214。**段 0 の時点ではスキルを持たない**）
+    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・サインオフのタグ）。
+      **スキルの中ではなくプラグイン直下にある**——`check-skill-pointers.py` は
+      `plugins/*/skills/*/` しか見ないので、スキルからここを指す形は段 1（#216）で決める
+    - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。テストは
+      `scripts/test-check-qa-csv.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）
@@ -90,6 +96,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **対照の定義と、何を守り何を守らないかは docstring を正とする**）
   - `test-run-dev-loop-evals.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
     呼ばないがテストは回す**）
+  - `test-check-qa-csv.py` - spec-loop の Q&A 表の検査の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**（`test-find-cycle.py` と同じ形）。
+    **本体の定数が `references/qa-csv.md` の表と一致することも見る**——決まりの原本は
+    `references/` で、本体の定数はその写しなので
   - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
     ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
     `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に
