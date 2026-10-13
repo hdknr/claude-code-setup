@@ -37,6 +37,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check-plugin-versions.py"
@@ -154,9 +155,14 @@ def build(root: Path, plugins: dict[str, dict], docs: dict[str, str] | None = No
 
 
 def run_case(
-    plugins: dict[str, dict], docs: dict[str, str] | None = None
+    plugins: dict[str, dict],
+    docs: dict[str, str] | None = None,
+    mutate: Callable[[Path], None] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """偽リポジトリを作り、そこに**スクリプトをコピーして**走らせる。
+
+    `mutate` は組み上げた偽リポジトリのルートを受け取り、`build` では作れない形
+    （壊れた・無い `plugin.json`）に手で崩す。**準備を呼ぶ側に複製しないため**（#224）。
 
     `check-plugin-versions.py` は `REPO_ROOT = Path(__file__).parent.parent` で対象を
     決める（cwd ではない）。実リポジトリの側から呼ぶと**偽リポジトリではなく実リポジトリを
@@ -167,6 +173,8 @@ def run_case(
         root = Path(tmp) / "repo"
         (root / "scripts").mkdir(parents=True)
         build(root, plugins, docs)
+        if mutate is not None:
+            mutate(root)
         copied = root / "scripts" / SCRIPT.name
         copied.write_text(SCRIPT.read_text(encoding="utf-8"), encoding="utf-8")
         # **依存モジュールも一緒に持っていく。** `strip_fences` は
@@ -490,6 +498,11 @@ def main() -> int:
         # 型も比べる——Python では 1 == True が成り立つ
         ("数値と真偽値", {"catalog_extra": {"description": 1}, "manifest_extra": {"description": True}}),
         ("文字列と null", {"manifest_extra": {"description": None}}),
+        # キーが無いことと null は別——番兵を外して .get() にすると両側 None で一致してしまう
+        ("キーが無いのと null", {"catalog_drop": ("description",), "manifest_extra": {"description": None}}),
+        # 型は入れ子の中まで比べる——Python では [1] == [True]、{"a": 1} == {"a": 1.0}
+        ("入れ子の数値と真偽値", {"catalog_extra": {"description": [1]}, "manifest_extra": {"description": [True]}}),
+        ("入れ子の整数と浮動小数", {"catalog_extra": {"description": {"a": 1}}, "manifest_extra": {"description": {"a": 1.0}}}),
     ):
         proc = run_case(with_description(**spec))
         check_rejected(proc, "description が一致しない", f"description の食い違い（{label}）がすり抜けた")
@@ -498,22 +511,28 @@ def main() -> int:
     proc = run_case(with_description(catalog_drop=("description",), manifest_drop=("description",)))
     check(proc.returncode == 0, "両側とも description が無いのに落ちた", proc.stdout)
 
-    # plugin.json が壊れていても、description の比較でクラッシュしない（既存のエラーだけが出る）
-    with tempfile.TemporaryDirectory(prefix="cpv-test-") as tmp:
-        root = Path(tmp) / "repo"
-        (root / "scripts").mkdir(parents=True)
-        build(root, with_description())
-        (root / "plugins" / "demo" / ".claude-plugin" / "plugin.json").write_text("{", encoding="utf-8")
-        for script in (SCRIPT.name, "markdown_fences.py", "site_links.py"):
-            (root / "scripts" / script).write_text(
-                (REPO_ROOT / "scripts" / script).read_text(encoding="utf-8"), encoding="utf-8"
-            )
-        proc = subprocess.run(
-            [sys.executable, str(root / "scripts" / SCRIPT.name)], cwd=root, capture_output=True, text=True
-        )
-        check_rejected(proc, "JSON として不正", "壊れた plugin.json で期待した理由で落ちなかった")
-        check("Traceback" not in proc.stderr, "壊れた plugin.json でクラッシュした", proc.stderr[-400:])
-        check("description" not in proc.stdout, "壊れた plugin.json で description を比べた", proc.stdout)
+    # plugin.json が壊れていても・無くても、description の比較でクラッシュしない（既存のエラーだけが出る）
+    def manifest_as(text: str | None) -> Callable[[Path], None]:
+        def mutate(root: Path) -> None:
+            path = root / "plugins" / "demo" / ".claude-plugin" / "plugin.json"
+            if text is None:
+                path.unlink()
+            else:
+                path.write_text(text, encoding="utf-8")
+
+        return mutate
+
+    for label, text, expected in (
+        ("壊れた plugin.json", "{", "JSON として不正"),
+        ("無い plugin.json", None, "が存在しない"),
+        # JSON としては正しいがオブジェクトでない——以前は .get() で AttributeError になった
+        ("配列の plugin.json", "[]", "オブジェクトでない"),
+        ("文字列の plugin.json", '"x"', "オブジェクトでない"),
+    ):
+        proc = run_case(with_description(), mutate=manifest_as(text))
+        check_rejected(proc, expected, f"{label}で期待した理由で落ちなかった")
+        check("Traceback" not in proc.stderr, f"{label}でクラッシュした", proc.stderr[-400:])
+        check("description" not in proc.stdout, f"{label}で description を比べた", proc.stdout)
 
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")

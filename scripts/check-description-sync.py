@@ -471,10 +471,12 @@ def main() -> int:
 
     if errors:
         print(
-            "\n3 箇所は一致させる必要はありませんが、**どれかを直したら残りも点検**してください。\n"
-            "とくに SKILL.md の frontmatter は常時ロードされる要約なので、置き去りにすると\n"
+            "\nJSON の 2 箇所（marketplace.json / plugin.json）は同じ値に揃えます（check-plugin-versions.py が見る）。\n"
+            "SKILL.md の frontmatter は揃えなくてよいが、**どれかを直したら残りも点検**してください。\n"
+            "frontmatter は常時ロードされる要約なので、置き去りにすると\n"
             "古い規範が先に読まれます（#59 / PR #60 で 2 回発生）。\n"
-            f"片側だけで正しい場合は、コミットメッセージの末尾に `{TRAILER_KEY}: <理由>` を書きます。"
+            f"JSON と frontmatter の片側だけで正しい場合は、コミットメッセージの末尾に `{TRAILER_KEY}: <理由>` を書きます\n"
+            "（trailer が免除するのは共変だけで、JSON 2 箇所の一致は免除しません）。"
         )
         print(f"\ndescription の同期漏れが {len(errors)} 件あります。")
         return 1
