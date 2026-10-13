@@ -99,11 +99,17 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     ("行の列数が違う", HEADER + "Q-001,要求確定,質問,A: x / B: y,未回答,—,確認中\n", 1, "列の数が 7"),
     ("番号の書式", HEADER + row(No="Q-1"), 1, "`No` が `Q-001` の形でない"),
     ("番号が 2 桁", HEADER + row(No="Q-01"), 1, "`No` が `Q-001` の形でない"),
+    ("番号が全角数字", HEADER + row(No="Q-００１"), 1, "`No` が `Q-001` の形でない"),
     ("番号の重複", HEADER + row() + row(), 1, ":3: `No` が 2 行目と重複"),
     ("未知の起票元", HEADER + row(起票元="営業"), 1, "`起票元` が決まりに無い"),
     ("未知の起票元（括弧つき）", HEADER + row(起票元="営業（電話）"), 1, "`起票元` が決まりに無い"),
+    ("起票元の括弧が半角", HEADER + row(起票元="要求確定(決定表)"), 1, "`起票元` が決まりに無い"),
     ("選択肢が足りない", HEADER + row(選択肢="A: する"), 1, "選択肢が 2 つ未満"),
     ("選択肢の形", HEADER + row(選択肢="する / しない"), 1, "`A: …` の形でない"),
+    ("選択肢のラベルが小文字", HEADER + row(選択肢="a: する / b: しない"), 1, "`A: …` の形でない"),
+    ("選択肢のラベルが 2 字", HEADER + row(選択肢="AB: する / B: しない"), 1, "`A: …` の形でない"),
+    ("選択肢のコロンの後に空白が無い", HEADER + row(選択肢="A:する / B: しない"), 1, "`A: …` の形でない"),
+    ("選択肢の文が空", HEADER + row(選択肢="A:  / B: しない"), 1, "`A: …` の形でない"),
     ("選択肢のラベル重複", HEADER + row(選択肢="A: する / A: しない"), 1, "ラベルが重複"),
     ("未知の状態", HEADER + row(状態="回答済み"), 1, "`状態` が決まりに無い"),
     ("反映済みなのに未回答", HEADER + row(状態="反映済み", 反映先="決定表 1 行目"), 1, "`反映済み` なのに `回答` が無い"),
@@ -127,13 +133,23 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("状態を見ない", 'row["状態"] not in STATES', "False", "未知の状態"),
     ("反映済みの回答を見ない", 'if row["回答"].strip() in ("", NO_ANSWER):', "if False:", "反映済みなのに未回答"),
     ("反映済みの反映先を見ない", 'if row["反映先"].strip() in ("", NO_TARGET):', "if False:", "反映済みなのに反映先が無い"),
-    ("選択肢の数を見ない", "if len(options) < 2:", "if False:", "選択肢が足りない"),
-    ("選択肢の形を見ない", r'OPTION = re.compile(r"(?P<label>[A-Z]): \S.*")',
+    ("選択肢の数を見ない", "if len(options) < MIN_OPTIONS:", "if False:", "選択肢が足りない"),
+    ("選択肢を 1 つから許す", "MIN_OPTIONS = 2", "MIN_OPTIONS = 1", "選択肢が足りない"),
+    ("選択肢の形を見ない", r'OPTION = re.compile(rf"(?P<label>{OPTION_LABEL}): \S.*")',
      r'OPTION = re.compile(r"(?P<label>.?).*")', "選択肢の形"),
+    ("ラベルに小文字を許す", 'OPTION_LABEL = "[A-Z]"', 'OPTION_LABEL = "[A-Za-z]"', "選択肢のラベルが小文字"),
+    ("ラベルに 2 字を許す", 'OPTION_LABEL = "[A-Z]"', 'OPTION_LABEL = "[A-Z]+"', "選択肢のラベルが 2 字"),
+    ("コロンの後の空白を見ない", r'}): \S.*")', r'}):\s*\S.*")', "選択肢のコロンの後に空白が無い"),
+    ("選択肢の文の空を許す", r'}): \S.*")', r'}): .*")', "選択肢の文が空"),
+    ("起票元の括弧を半角でも許す",
+     'SOURCE = re.compile(rf"(?P<name>[^{DETAIL_OPEN}]+)(?:{DETAIL_OPEN}.+{DETAIL_CLOSE})?")',
+     'SOURCE = re.compile(r"(?P<name>[^（(]+)(?:[（(].+[）)])?")', "起票元の括弧が半角"),
     ("ラベルの重複を見ない", "if len(set(labels)) != len(labels):", "if False:", "選択肢のラベル重複"),
     ("番号の書式を見ない", 'not NUMBER.fullmatch(row["No"])', "False", "番号の書式"),
-    ("番号を 2 桁から許す", r'NUMBER = re.compile(r"Q-\d{3,}")', r'NUMBER = re.compile(r"Q-\d{2,}")', "番号が 2 桁"),
-    ("番号を 3 桁までにする", r'NUMBER = re.compile(r"Q-\d{3,}")', r'NUMBER = re.compile(r"Q-\d{3}")', "番号が 4 桁"),
+    ("番号を 2 桁から許す", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-[0-9]{2,}")', "番号が 2 桁"),
+    ("番号を 3 桁までにする", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-[0-9]{3}")', "番号が 4 桁"),
+    ("番号を Unicode の数字で見る", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-\d{3,}")',
+     "番号が全角数字"),
     ("反映済みの回答の空白を落とさない", 'if row["回答"].strip() in ("", NO_ANSWER):',
      'if row["回答"] in ("", NO_ANSWER):', "反映済みなのに未回答（後ろに空白）"),
     ("反映済みの反映先の空白を落とさない", 'if row["反映先"].strip() in ("", NO_TARGET):',
@@ -250,13 +266,28 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
         if marker != constant:
             problems.append(f"`{column}` の「まだ無い」の印 {marker!r} ≠ 本体 {constant!r}")
     digits = re.search(r"`Q-` に (\d+) 桁以上", write("No"))
-    expected = rf"Q-\d{{{digits.group(1)},}}" if digits else None
+    expected = rf"Q-[0-9]{{{digits.group(1)},}}" if digits else None
     if expected != mod.NUMBER.pattern:
         problems.append(f"番号の書式 {expected!r} ≠ 本体 {mod.NUMBER.pattern!r}")
     separator = first_code(write("選択肢"), "の形を {} で")
     if separator != mod.OPTION_SEPARATOR:
         problems.append(f"選択肢の区切り {separator!r} ≠ 本体 {mod.OPTION_SEPARATOR!r}")
+    count = re.search(r"で (\d+) つ以上つなぐ", write("選択肢"))
+    if (int(count.group(1)) if count else None) != mod.MIN_OPTIONS:
+        problems.append(f"選択肢の数 {count and count.group(1)!r} ≠ 本体 {mod.MIN_OPTIONS!r}")
+    # 言葉で書いた決まりは、言葉 → 本体の値の対応（下の 2 つの辞書）で突き合わせる。
+    # 決まりの言葉が変わると対応に無いので None になり、不一致として見える。
+    label = re.search(r"ラベルは(.+?)で、", write("選択肢"))
+    if LABEL_WORDS.get(label.group(1) if label else "") != mod.OPTION_LABEL:
+        problems.append(f"選択肢のラベル {label and label.group(1)!r} ≠ 本体 {mod.OPTION_LABEL!r}")
+    bracket = re.search(r"詳細は(.+?)で添えて", write("起票元"))
+    if BRACKET_WORDS.get(bracket.group(1) if bracket else "") != (mod.DETAIL_OPEN, mod.DETAIL_CLOSE):
+        problems.append(f"起票元の括弧 {bracket and bracket.group(1)!r} ≠ 本体 {(mod.DETAIL_OPEN, mod.DETAIL_CLOSE)!r}")
     return problems
+
+
+LABEL_WORDS = {"英大文字 1 字": "[A-Z]"}
+BRACKET_WORDS = {"全角括弧": ("（", "）")}
 
 
 # references/qa-csv.md を 1 箇所ずつ崩す。どれも突き合わせで不一致として見えなければならない
@@ -267,7 +298,11 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
     ("反映先の「まだ無い」の印", "まだなら `—` と書く", "まだなら `-` と書く"),
     ("番号の桁", "`Q-` に 3 桁以上の数字", "`Q-` に 4 桁以上の数字"),
-    ("選択肢の区切り", "の形を ` / ` で", "の形を ` | ` で"),
+    # ` | ` に崩すと表の行が割れて「欠落」で赤になり、値の比較を確かめられない
+    ("選択肢の区切り", "の形を ` / ` で", "の形を ` ; ` で"),
+    ("選択肢の数", "で 2 つ以上つなぐ", "で 3 つ以上つなぐ"),
+    ("選択肢のラベル", "ラベルは英大文字 1 字で、", "ラベルは英字 1 字で、"),
+    ("起票元の括弧", "詳細は全角括弧で添えて", "詳細は半角括弧で添えて"),
 ]
 
 
