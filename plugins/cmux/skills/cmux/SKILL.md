@@ -51,60 +51,61 @@ skills ディレクトリに置いた場合は `/cmux`（`~/.claude/skills/cmux/
 - **`list-panels` がブラウザサーフェスの `url` を返さない版がある**（cmux 0.65.1 で実測）。
   そのときは `cmux --json browser --surface <ref> url` で 1 枚ずつ取る——取らないと一致が
   1 度も起きず、開くたびにサーフェスが増える。
+- **1 行目の `TARGET_URL=` を各モードの指示どおりに置き換え、ブロック全体を 1 回の Bash 呼び出しで流す。**
+  呼び出しを分けるとシェル変数が消え、`BROWSER_SURFACE` が空になって毎回サーフェスが増える。
+  `TARGET_URL` が空のまま探すと、URL を取れなかったサーフェス（空文字列）と一致して上書きするので、
+  2 行目で `https://` で始まらない URL を拒否する。
 
-1. 対象 URL を表示しているブラウザサーフェスを探す（URL は文字列に埋め込まず引数で渡す）:
-   ```bash
-   BROWSER_SURFACE=$(cmux --json list-panels 2>/dev/null | python3 -c "
-   import sys, json, subprocess
-   target = sys.argv[1]
-   data = json.load(sys.stdin)
-   def url_of(s):
-       if s.get('url'):
-           return s['url']
-       try:
-           out = subprocess.run(['cmux', '--json', 'browser', '--surface', s['ref'], 'url'],
-                                capture_output=True, text=True, timeout=10).stdout
-           return json.loads(out).get('url') or ''
-       except Exception:
-           return ''
-   urls = [(s, url_of(s)) for s in data.get('surfaces', []) if s.get('type') == 'browser']
-   hit = [s for s, u in urls if u == target] or \
-         [s for s, u in urls if u.startswith(target) and u[len(target)] in '/#?']
-   if hit:
-       print(hit[0]['ref'])
-   " "$TARGET_URL" 2>/dev/null || echo "")
-   ```
-2. 見つかった場合はナビゲート（リロード）、なければ新規作成:
-   ```bash
-   if [ -n "$BROWSER_SURFACE" ]; then
-       cmux browser --surface "$BROWSER_SURFACE" navigate "$TARGET_URL"
-   else
-       cmux browser open-split "$TARGET_URL"
-   fi
-   ```
+URL は文字列に埋め込まず引数で渡す:
+
+```bash
+TARGET_URL="<各モードで決める URL>"
+case "$TARGET_URL" in https://*) ;; *) echo "URL を決められない: $TARGET_URL" >&2; exit 1 ;; esac
+BROWSER_SURFACE=$(cmux --json list-panels 2>/dev/null | python3 -c "
+import sys, json, subprocess
+target = sys.argv[1]
+data = json.load(sys.stdin)
+def url_of(s):
+    if s.get('url'):
+        return s['url']
+    try:
+        out = subprocess.run(['cmux', '--json', 'browser', '--surface', s['ref'], 'url'],
+                             capture_output=True, text=True, timeout=10).stdout
+        return json.loads(out).get('url') or ''
+    except Exception:
+        return ''
+urls = [(s, url_of(s)) for s in data.get('surfaces', []) if s.get('type') == 'browser']
+hit = [s for s, u in urls if u == target] or \
+      [s for s, u in urls if u.startswith(target) and u[len(target)] in '/#?']
+if hit:
+    print(hit[0]['ref'])
+" "$TARGET_URL" 2>/dev/null || echo "")
+if [ -n "$BROWSER_SURFACE" ]; then
+    cmux browser --surface "$BROWSER_SURFACE" navigate "$TARGET_URL"
+else
+    cmux browser open-split "$TARGET_URL"
+fi
+```
 
 ## 使い方
 
 ### `/cmux <number>` — Issue モード
 
-1. GitHub Issue の URL を構築する:
+1. 「ブラウザペインの開き方」の共通手順を、1 行目を次に置き換えて流す:
    ```bash
-   REMOTE_URL=$(git remote get-url origin 2>/dev/null)
-   REPO_SLUG=$(echo "$REMOTE_URL" | sed -E 's#^(https?://[^/]+/|git@[^:]+:)##; s#\.git$##')
-   GITHUB_URL="https://github.com/${REPO_SLUG}/issues/<number>"
+   TARGET_URL="https://github.com/$(git remote get-url origin 2>/dev/null | sed -E 's#^(https?://[^/]+/|git@[^:]+:)##; s#\.git$##')/issues/<number>"
    ```
-2. 「ブラウザペインの開き方」の共通手順で `TARGET_URL=$GITHUB_URL` として開く。
 
 ### `/cmux -w <number>` — PR worktree モード
 
 1. `gh pr view <number>` で PR であることを確認する。PR でなければエラーメッセージを表示して終了。
-2. PR の URL を取得する:
+2. 「ブラウザペインの開き方」の共通手順を、1 行目を次に置き換えて流す
+   （`gh pr view` が失敗すると `TARGET_URL` が空になり、共通手順の 2 行目で止まる）:
    ```bash
-   PR_URL=$(gh pr view <number> --json url -q '.url')
+   TARGET_URL=$(gh pr view <number> --json url -q '.url')
    ```
-3. 「ブラウザペインの開き方」の共通手順で `TARGET_URL=$PR_URL` として開く。
-4. `EnterWorktree` ツールで worktree を作成する。
-5. worktree 内で以下を実行:
+3. `EnterWorktree` ツールで worktree を作成する。
+4. worktree 内で以下を実行:
    ```bash
    gh pr checkout <number>
    ```
@@ -112,14 +113,14 @@ skills ディレクトリに置いた場合は `/cmux`（`~/.claude/skills/cmux/
 ### `/cmux -r <number>` — PR レビューモード
 
 1. `gh pr view <number>` で PR であることを確認する。PR でなければエラーメッセージを表示して終了。
-2. PR の URL を取得する:
+2. 「ブラウザペインの開き方」の共通手順を、1 行目を次に置き換えて流す
+   （`gh pr view` が失敗すると `TARGET_URL` が空になり、共通手順の 2 行目で止まる）:
    ```bash
-   PR_URL=$(gh pr view <number> --json url -q '.url')
+   TARGET_URL=$(gh pr view <number> --json url -q '.url')
    ```
-3. 「ブラウザペインの開き方」の共通手順で `TARGET_URL=$PR_URL` として開く。
-4. worktree 内でなければ `EnterWorktree` ツールで worktree を作成する。
-5. worktree 内で以下を実行:
+3. worktree 内でなければ `EnterWorktree` ツールで worktree を作成する。
+4. worktree 内で以下を実行:
    ```bash
    gh pr checkout <number>
    ```
-6. PR のコード差分をレビュー開始する（`gh pr diff <number>` で差分を取得し、変更内容を分析）。
+5. PR のコード差分をレビュー開始する（`gh pr diff <number>` で差分を取得し、変更内容を分析）。
