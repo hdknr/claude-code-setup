@@ -485,6 +485,107 @@ def check_norm_shape() -> None:
           "git fetch" not in agent and "取り直して" not in agent)
 
 
+def script_exit_codes(source: str) -> set[int]:
+    """**スクリプトが返しうる固定の終了コード**を、本体から集める（#206）。
+
+    明示の `exit N`（**行頭の空白だけを許す**——コメント中の `exit 7` は数えない）・
+    正常終了の 0・**`${N:?…}` の引数不足**（bash の実測で 1）。
+    **`git worktree add` の失敗は git の終了コードで固定ではない**ので、ここには入らない
+    （一覧の「それ以外」がそれを受ける）。
+    """
+    codes = {int(m) for m in re.findall(r"^[ \t]*exit[ \t]+(\d+)\b", source, re.M)}
+    codes.add(0)
+    if re.search(r"\$\{\d+:\?", source):
+        codes.add(1)
+    return codes
+
+
+def exit_paragraph_span(skill: str, script_name: str) -> tuple[int, int] | None:
+    """**そのスクリプトを呼ぶコードブロックの、直後の段落**の位置。
+
+    **直後の段落が「終了コードで分岐する」で始まらなければ `None`**——
+    **先へ探しに行くと、見出しを改名したときに別のスクリプトの一覧を拾う**。
+    """
+    call = skill.find(f"scripts/{script_name}")
+    if call < 0:
+        return None
+    fence = skill.find("```", call)
+    if fence < 0:
+        return None
+    start = fence + 3
+    while start < len(skill) and skill[start].isspace():
+        start += 1
+    if not skill.startswith("**終了コードで分岐する**", start):
+        return None
+    end = skill.find("\n\n", start)
+    return start, end if end >= 0 else len(skill)
+
+
+def listed_exit_codes(skill: str, script_name: str) -> set[int] | None:
+    """**`SKILL.md` の、そのスクリプトの終了コード一覧**に挙がる番号。
+
+    **段落が見つからなければ `None`**——**「当てられなかった」を空集合（＝緑の材料）に丸めない。**
+    `5・6` のように束ねた書き方は両方を数える。
+    """
+    span = exit_paragraph_span(skill, script_name)
+    if span is None:
+        return None
+    codes: set[int] = set()
+    for group in re.findall(r"\*\*(\d+(?:・\d+)*):", skill[span[0]:span[1]]):
+        codes.update(int(n) for n in group.split("・"))
+    return codes or None
+
+
+def exit_lists_agree(skill: str, script_name: str, source: str) -> bool:
+    listed = listed_exit_codes(skill, script_name)
+    return listed is not None and listed == script_exit_codes(source)
+
+
+def check_exit_code_lists() -> None:
+    """**`SKILL.md` の終了コード一覧が、スクリプトの全終了コードと一致するか**（#206）。
+
+    **一覧に 7 が無く、名指しの base の誤りが「`git worktree add` の失敗」に
+    読まれていた**——**一覧とスクリプトを突き合わせるものが何も無かった。**
+    **変異は対象の段落の中だけで当て、壊したのに一致と言えば失格とする**
+    （**段落の外で当てると、別の一覧を壊して「殺せた」と数えうる**）。
+    """
+    skill = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md"
+             ).read_text(encoding="utf-8")
+    for script in (PREPARE, PRECOND):
+        source = script.read_text(encoding="utf-8")
+        listed = listed_exit_codes(skill, script.name)
+        actual = script_exit_codes(source)
+        check(f"{script.name}: SKILL.md に一覧が在る", listed is not None)
+        check(f"{script.name}: 一覧 {sorted(listed or [])} がスクリプト {sorted(actual)} と一致",
+              listed == actual)
+        span = exit_paragraph_span(skill, script.name)
+        if span is None:
+            continue
+
+        def in_para(fn, span=span) -> str:
+            return skill[:span[0]] + fn(skill[span[0]:span[1]]) + skill[span[1]:]
+
+        # --- 変異（壊したのに一致と言えば失格） ---
+        top = max(actual)
+        removed = in_para(lambda t: t.replace(f"**{top}:", "**削除:", 1))
+        check(f"{script.name}: 変異の当て先（{top}）が段落に在る", removed != skill)
+        check(f"{script.name}: 一覧から {top} を消すと不一致（#206 の再現）",
+              not exit_lists_agree(removed, script.name, source))
+        check(f"{script.name}: スクリプトに exit {top + 1} を足すと不一致",
+              not exit_lists_agree(skill, script.name, source + f"\nexit {top + 1}\n"))
+        extra = in_para(lambda t: t.replace(
+            "**終了コードで分岐する**——",
+            f"**終了コードで分岐する**——**{top + 2}: 架空** ／ ", 1))
+        check(f"{script.name}: 一覧に無い番号 {top + 2} を書くと不一致",
+              not exit_lists_agree(extra, script.name, source))
+        renamed = in_para(lambda t: t.replace(
+            "**終了コードで分岐する**", "**終了コードで分ける**", 1))
+        check(f"{script.name}: 段落が見つからなければ一致と言わない",
+              not exit_lists_agree(renamed, script.name, source))
+        check(f"{script.name}: コメント中の exit は数えない",
+              script_exit_codes(source + f"\n# 例: exit {top + 3}\n") == actual)
+
+
 def demonstrate_base_rule(base: Path) -> None:
     """**選んだ base の形を、実際に当てて確かめる**（#148 の受入条件）。
 
@@ -643,6 +744,9 @@ def main() -> int:
 
         print("\n渡す形そのもの（規定が壊れたら赤くなるか）")
         check_norm_shape()
+
+        print("\nSKILL.md の終了コード一覧がスクリプトと一致するか（#206）")
+        check_exit_code_lists()
 
         print("\n断る周でネットワークに出ないか")
         check_no_network_on_reject(base / "reject")
