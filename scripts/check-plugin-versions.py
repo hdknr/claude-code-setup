@@ -58,15 +58,24 @@ def fail(message: str) -> None:
 
 
 def load_json(path: Path) -> dict | None:
-    """JSON を読む。壊れていれば errors に積んで None を返す。"""
+    """JSON を読む。壊れていれば errors に積んで None を返す。
+
+    **JSON として正しくてもオブジェクトでなければ壊れている側に倒す**——
+    呼ぶ側は `.get()` するので、`[]` や `"x"` を通すと AttributeError でクラッシュする（#224）。
+    """
     try:
         with path.open(encoding="utf-8") as fh:
-            return json.load(fh)
+            data = json.load(fh)
     except FileNotFoundError:
         fail(f"{rel(path)} が存在しない")
+        return None
     except json.JSONDecodeError as exc:
         fail(f"{rel(path)} が JSON として不正: {exc}")
-    return None
+        return None
+    if not isinstance(data, dict):
+        fail(f"{rel(path)} がオブジェクトでない（{type(data).__name__}）")
+        return None
+    return data
 
 
 def rel(path: Path) -> str:
@@ -155,7 +164,8 @@ def check_description(entry: dict, manifest: dict) -> None:
     base に無い（新規の）プラグインは定義上見られない——#215 の周でそこを素通りした。
     ここは 1 つのツリーだけで判定するので、新規も既存も同じに見える。
 
-    **キーが無いことも値として比べる**（片側だけ消した形を落とさない）。**型も比べる。**
+    **キーが無いことも値として比べる**（片側だけ消した形を落とさない。`null` とも区別する）。
+    **型も比べる——入れ子の中まで**（`json.dumps` の文字列で比べるので `1` と `true` と `1.0` が分かれる）。
     両側とも無ければ一致として通す——description を必須にするのはこの検査の役目ではない。
     **正規化しない**（空白の違いも食い違いとして出す）。
     SKILL.md の frontmatter は別目的の文章なので比べない（共変は check-description-sync.py）。
@@ -163,8 +173,12 @@ def check_description(entry: dict, manifest: dict) -> None:
     missing = object()
     catalog = entry.get("description", missing)
     plugin = manifest.get("description", missing)
-    # 型も比べる（Python では 1 == True == 1.0 が成り立つ）
-    if type(catalog) is type(plugin) and catalog == plugin:
+    # Python では 1 == True == 1.0 が成り立ち、入れ子の [1] == [True] も成り立つ。
+    # JSON の表記で比べれば型が入れ子まで分かれる（キーの順序は意味を持たないので揃える）
+    def canonical(value: object) -> object:
+        return value if value is missing else json.dumps(value, sort_keys=True)
+
+    if canonical(catalog) == canonical(plugin):
         return
 
     def show(value: object) -> str:
