@@ -85,7 +85,7 @@ CT = "application/vnd.openxmlformats-officedocument"
 # ---------------------------------------------------------------- 表を読む
 
 def read_pending(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
-    """(終了コード, 出力する行, 確認中の行) を返す。検査を通らなければ行は空。"""
+    """(終了コード, 出力する行, `DONE` でない行) を返す。検査を通らなければ行は空。"""
     code, lines = qa.check(path)
     if code:
         return code, lines, []
@@ -155,7 +155,7 @@ def slide(title: list[str], body: list[str]) -> str:
 # ---------------------------------------------------------------- スライドの中身
 
 def cover(title: str, subtitle: str, count: int) -> str:
-    body = lines_of(f"確認中の質問: {count} 件", 2400)
+    body = lines_of(f"未反映の質問: {count} 件", 2400)
     if subtitle:
         body = lines_of(subtitle, 2000) + body
     return slide(lines_of(title, 4000, bold=True), body)
@@ -163,7 +163,7 @@ def cover(title: str, subtitle: str, count: int) -> str:
 
 def index_slides(rows: list[dict[str, str]]) -> list[str]:
     if not rows:
-        return [slide(lines_of("一覧", 3200, bold=True), lines_of("確認中の質問はありません", 2000))]
+        return [slide(lines_of("一覧", 3200, bold=True), lines_of("未反映の質問はありません", 2000))]
     chunks = [rows[i:i + INDEX_PER_SLIDE] for i in range(0, len(rows), INDEX_PER_SLIDE)]
     out = []
     for n, chunk in enumerate(chunks, 1):
@@ -380,7 +380,7 @@ def main(argv: list[str]) -> int:
     except OSError as e:
         print(f"{out}: 書けない（{e.strerror}）。既存の出力には触っていない", file=sys.stderr)
         return 3
-    print(f"{out}: 確認中の質問 {len(rows)} 件を載せた")
+    print(f"{out}: 未反映の質問 {len(rows)} 件を載せた")
     return 0
 
 

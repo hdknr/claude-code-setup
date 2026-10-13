@@ -49,6 +49,11 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
 - **プラグインの境界は `plugins/<name>/` であって `plugins/` ではないこと**——
   **隣のプラグインを指したら、実在しても落とす**（隣のプラグインもインストール先には
   無い。境界を 1 段上げても、リポジトリの直下まで出る試料だけでは緑のままだった）。
+- **途中で 1 度でもプラグインの外へ出た指し先は、戻ってきても落とすこと**——
+  `../../../spec-loop/references/…` は**リポジトリでは自分のプラグインに戻って実在する**が、
+  **インストール先ではプラグインの上のディレクトリの名前が違う**（`<market>/spec-loop/<版>/`）
+  ので実在しない。**行き着く先だけを見ると緑になる**（#216 の 2 パス目の `/code-review` が
+  実測で示した）。**だから字面で 1 段ずつ辿り、プラグインの根より上に出た時点で落とす。**
 
 守らない:
 
@@ -87,6 +92,25 @@ POINTER = re.compile(r"`((?:references|prompts|scripts)/[\w./-]+)`")
 # **`../` の後ろを `references/` などに限らない**——限ると、`../../../dev-loop/…` のように
 # **外へ出る指し先ほど拾えない**。
 PARENT = re.compile(r"`((?:\.\./)+[\w.-][\w./-]*)`")
+
+
+def leaves_plugin(skill: pathlib.Path, plugin: pathlib.Path, rel: str) -> bool:
+    """`rel` を `skill` から字面で 1 段ずつ辿り、途中で 1 度でも `plugin` の外へ出たら真。
+
+    **行き着く先だけを見ない**——外へ出て名前で戻る形（`../../../spec-loop/…`）は、
+    行き着く先がプラグインの中でもインストール先では実在しない。
+    **symlink は辿らない**（字面だけ）。symlink の先が外かどうかは、呼ぶ側が
+    `resolve()` で別に見る。
+    """
+    depth = len(skill.relative_to(plugin).parts)
+    for part in pathlib.PurePosixPath(rel).parts:
+        if part == "..":
+            depth -= 1
+            if depth < 0:
+                return True
+        elif part != ".":
+            depth += 1
+    return False
 
 
 def skill_dirs(root: pathlib.Path):
@@ -140,14 +164,15 @@ def main(argv=None) -> int:
         targets = [skill / "SKILL.md"]
         for sub in ("references", "prompts"):
             targets += sorted((skill / sub).glob("*.md"))
-        plugin = skill.parent.parent.resolve()
+        plugin = skill.parent.parent
         for path in targets:
             files += 1
             for lineno, rel in pointers_in(path):
                 checked += 1
                 if not (skill / rel).exists():
                     problems.append((path.relative_to(root), lineno, rel))
-                elif not (skill / rel).resolve().is_relative_to(plugin):
+                elif (leaves_plugin(skill, plugin, rel)
+                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):
                     problems.append((path.relative_to(root), lineno, f"{rel}（プラグインの外）"))
 
     if problems:
