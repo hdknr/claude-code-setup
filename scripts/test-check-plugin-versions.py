@@ -102,6 +102,8 @@ def build(root: Path, plugins: dict[str, dict], docs: dict[str, str] | None = No
     """偽リポジトリを組み立てる。
 
     `plugins` は {ディレクトリ名: {"version": str, "skills": {相対パス: 中身}}}。
+    `catalog_extra` / `manifest_extra` で marketplace.json のエントリ／plugin.json のキーを上書きし、
+    `catalog_drop` / `manifest_drop` でキーを消す（description の食い違いを作るため。#224）。
     相対パスは `SKILL.md`（ルート直下）や `skills/foo/SKILL.md` を取る。
     """
     assert root.resolve() != REAL_REPO, "テストが実リポジトリを対象にしている"
@@ -111,18 +113,22 @@ def build(root: Path, plugins: dict[str, dict], docs: dict[str, str] | None = No
 
     entries = []
     for name, spec in plugins.items():
-        entries.append(
-            {
-                "name": name,
-                "source": f"./plugins/{name}",
-                "version": spec["version"],
-                "description": f"{name} の説明",
-            }
-        )
+        entry = {
+            "name": name,
+            "source": f"./plugins/{name}",
+            "version": spec["version"],
+            "description": f"{name} の説明",
+        }
+        entry.update(spec.get("catalog_extra", {}))
+        for key in spec.get("catalog_drop", ()):
+            del entry[key]
+        entries.append(entry)
         manifest_dir = root / "plugins" / name / ".claude-plugin"
         manifest_dir.mkdir(parents=True, exist_ok=True)
         manifest = {"name": name, "version": spec["version"], "description": f"{name} の説明"}
         manifest.update(spec.get("manifest_extra", {}))
+        for key in spec.get("manifest_drop", ()):
+            del manifest[key]
         (manifest_dir / "plugin.json").write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -464,6 +470,50 @@ def main() -> int:
     # `docs/<path>/index.md` 形式のページも解決する
     proc = run_case(with_link(f"[設計]({SITE}plugins/#verify)"), {"plugins/index.md": DOC})
     check(proc.returncode == 0, "index.md 形式のページを解決できなかった", proc.stdout)
+
+    # **description: marketplace.json と plugin.json の食い違い（#224）。**
+    # check-description-sync.py は base に無いプラグインを見ない（共変は base が無いと定義できない）。
+    # #215 の周で、新規プラグインの marketplace 側だけを変えても両方の歯止めが緑だった。
+    # ここは 1 つのツリーで判定するので、偽リポジトリには「新規」も「既存」も無い——
+    # **base を見ないこと自体が、新規プラグインを見られる理由である。**
+    def with_description(**spec: object) -> dict:
+        return {"demo": {"version": "1.0.0", **spec}}
+
+    # 正常系（両側に同じ値）は冒頭の「SKILL.md を持たないプラグイン」のケースが兼ねている
+    for label, spec in (
+        ("marketplace 側だけ別の値", {"catalog_extra": {"description": "別の説明"}}),
+        ("plugin.json 側だけ別の値", {"manifest_extra": {"description": "別の説明"}}),
+        ("marketplace 側にキーが無い", {"catalog_drop": ("description",)}),
+        ("plugin.json 側にキーが無い", {"manifest_drop": ("description",)}),
+        # 正規化しない——末尾の空白だけ違っても食い違い
+        ("末尾の空白だけ違う", {"manifest_extra": {"description": "demo の説明 "}}),
+        # 型も比べる——Python では 1 == True が成り立つ
+        ("数値と真偽値", {"catalog_extra": {"description": 1}, "manifest_extra": {"description": True}}),
+        ("文字列と null", {"manifest_extra": {"description": None}}),
+    ):
+        proc = run_case(with_description(**spec))
+        check_rejected(proc, "description が一致しない", f"description の食い違い（{label}）がすり抜けた")
+
+    # 両側とも無ければ通す（description を必須にするのはこの検査の役目ではない）
+    proc = run_case(with_description(catalog_drop=("description",), manifest_drop=("description",)))
+    check(proc.returncode == 0, "両側とも description が無いのに落ちた", proc.stdout)
+
+    # plugin.json が壊れていても、description の比較でクラッシュしない（既存のエラーだけが出る）
+    with tempfile.TemporaryDirectory(prefix="cpv-test-") as tmp:
+        root = Path(tmp) / "repo"
+        (root / "scripts").mkdir(parents=True)
+        build(root, with_description())
+        (root / "plugins" / "demo" / ".claude-plugin" / "plugin.json").write_text("{", encoding="utf-8")
+        for script in (SCRIPT.name, "markdown_fences.py", "site_links.py"):
+            (root / "scripts" / script).write_text(
+                (REPO_ROOT / "scripts" / script).read_text(encoding="utf-8"), encoding="utf-8"
+            )
+        proc = subprocess.run(
+            [sys.executable, str(root / "scripts" / SCRIPT.name)], cwd=root, capture_output=True, text=True
+        )
+        check_rejected(proc, "JSON として不正", "壊れた plugin.json で期待した理由で落ちなかった")
+        check("Traceback" not in proc.stderr, "壊れた plugin.json でクラッシュした", proc.stderr[-400:])
+        check("description" not in proc.stdout, "壊れた plugin.json で description を比べた", proc.stdout)
 
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")
