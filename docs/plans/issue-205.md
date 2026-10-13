@@ -90,9 +90,12 @@
 
 - **周の在り処**: ブランチ `issue/205-prose-pointers`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-205`・
   起点 `8df3a56`・base 参照 `origin/main` → `8df3a56ad5384771869eb1799d7f87a0b9a603b8`
-- 関門: 未着手
+- 実装: `25fe435`（`check-all.py` 32/32 緑）。M6（新しい検査 × main の本文 → 4 件で赤）・
+  M7（main の検査 × main の本文 → 緑）を実際に走らせた
+- 関門: 1 パス目 未着手（次は手順 5 の Verifier と手順 6 の `/code-review`）
 - 反証: —
-- 交絡: —
+- 交絡: M6・M7 が陽性対照と陰性対照の組（同じ main の本文に、新旧の検査を当てた）
+- 割り目（手順 4）: 人間が「ここで割る」を選んだ（2026-10-13）。再開は手順 5 から（1 パス目の Verifier と `/code-review`）
 
 ## 6. 既知の限界・決着済みの論点
 
