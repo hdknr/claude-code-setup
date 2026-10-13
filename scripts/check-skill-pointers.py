@@ -35,6 +35,25 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   状態だった**（`/code-review` が指摘）。
 - **スキルを固定しないこと**——`plugins/*/skills/*/` を走査するので、
   **プラグインが増えても手で足さなくてよい。**
+- **`../` で始まる指し先も拾うこと**——**複数のスキルが共有するものはプラグイン直下に
+  置く**（spec-loop の `references/` と `scripts/`。#216）。スキルからは
+  `../../references/qa-csv.md` の形で指すので、**ここを拾わないと、
+  共有の決まりへの指し先が 1 つも検査されない。**
+  **`../` の後ろは `references/` などに限らない**——`../../../dev-loop/…` のように
+  **名前の付いたディレクトリを通って外へ出る形も拾う**（限ると、外へ出る指し先ほど
+  見えなくなる。#216 の `/code-review` が実測で示した）。
+- **`../` で始まる指し先が、そのプラグインのディレクトリの中に収まること**——
+  **外へ出る指し先は、実在しても落とす。** プラグインはキャッシュに単独で降りるので、
+  **プラグインの外はインストール先に無い**（このリポジトリの `scripts/` を指した
+  つもりの記述が、ここで緑になってはならない）。
+- **プラグインの境界は `plugins/<name>/` であって `plugins/` ではないこと**——
+  **隣のプラグインを指したら、実在しても落とす**（隣のプラグインもインストール先には
+  無い。境界を 1 段上げても、リポジトリの直下まで出る試料だけでは緑のままだった）。
+- **途中で 1 度でもプラグインの外へ出た指し先は、戻ってきても落とすこと**——
+  `../../../spec-loop/references/…` は**リポジトリでは自分のプラグインに戻って実在する**が、
+  **インストール先ではプラグインの上のディレクトリの名前が違う**（`<market>/spec-loop/<版>/`）
+  ので実在しない。**行き着く先だけを見ると緑になる**（#216 の 2 パス目の `/code-review` が
+  実測で示した）。**だから字面で 1 段ずつ辿り、プラグインの根より上に出た時点で落とす。**
 
 守らない:
 
@@ -44,6 +63,10 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   書き方は拾えない。**拾うのは、パスの形をしたものだけ。**
 - **`SKILL.md` の外から張られた指し先**——`CLAUDE.md` や設計ドキュメントが
   スキルの中を指しても、ここでは見ていない。
+- **起動行の中の、名前の付いたディレクトリを通る `../`**——起動行は
+  `…/scripts/x` の形しか拾わないので、`python3 ../../../dev-loop/scripts/x.py` は
+  **`scripts/x.py` としてスキルからの相対で解決される**（無ければ「実在しない」で落ちるが、
+  **同じ名前がスキルの中にあると緑になる**）。
 - **使われていないファイル**——**指されていない `references/*.md` があっても落とさない**
   （置いてすぐ指す周と、先に置く周を区別できないため）。
 - **スキルの `scripts/` と、対象リポジトリの `scripts/` の区別**——**付かない。**
@@ -65,6 +88,29 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # `` `references/resume.md` `` のように囲まれた相対パスだけを拾う。
 POINTER = re.compile(r"`((?:references|prompts|scripts)/[\w./-]+)`")
+# `../` で始まる囲まれた相対パス（プラグイン直下の共有物を指す形。#216）。
+# **`../` の後ろを `references/` などに限らない**——限ると、`../../../dev-loop/…` のように
+# **外へ出る指し先ほど拾えない**。
+PARENT = re.compile(r"`((?:\.\./)+[\w.-][\w./-]*)`")
+
+
+def leaves_plugin(skill: pathlib.Path, plugin: pathlib.Path, rel: str) -> bool:
+    """`rel` を `skill` から字面で 1 段ずつ辿り、途中で 1 度でも `plugin` の外へ出たら真。
+
+    **行き着く先だけを見ない**——外へ出て名前で戻る形（`../../../spec-loop/…`）は、
+    行き着く先がプラグインの中でもインストール先では実在しない。
+    **symlink は辿らない**（字面だけ）。symlink の先が外かどうかは、呼ぶ側が
+    `resolve()` で別に見る。
+    """
+    depth = len(skill.relative_to(plugin).parts)
+    for part in pathlib.PurePosixPath(rel).parts:
+        if part == "..":
+            depth -= 1
+            if depth < 0:
+                return True
+        elif part != ".":
+            depth += 1
+    return False
 
 
 def skill_dirs(root: pathlib.Path):
@@ -78,7 +124,7 @@ def skill_dirs(root: pathlib.Path):
 # **フェンスの中の起動行**。`bash …/scripts/x.sh` `python3 …/scripts/x.py` の形。
 # **ここを見ないと、いちばん壊れて困る指し先を 1 つも検査しない**
 # ——**実際の起動はすべてコードブロックの中にある**（`/code-review` が指摘。#136）。
-INVOCATION = re.compile(r"(?:bash|sh|python3?)\s+.*?(scripts/[\w.-]+)")
+INVOCATION = re.compile(r"(?:bash|sh|python3?)\s+.*?((?:\.\./)*scripts/[\w.-]+)")
 # **`\S*?` にしない。** 起動行のパスには `<このスキルの base ディレクトリ>` のような
 # **空白を含む占位子**が挟まる。**`\S*?` では跨げず、1 件も拾わなかった**（実測）。
 
@@ -98,6 +144,8 @@ def pointers_in(path: pathlib.Path):
     for lineno, line in enumerate(stripped.split("\n"), 1):
         for m in POINTER.finditer(line):
             yield lineno, m.group(1)
+        for m in PARENT.finditer(line):
+            yield lineno, m.group(1)
     # **フェンスの中だけ**を見る（`strip_fences` は行数を保って空行にするので、
     # 素の本文と突き合わせれば「フェンスの中だった行」が分かる）。
     for lineno, (raw_line, bare) in enumerate(
@@ -116,19 +164,24 @@ def main(argv=None) -> int:
         targets = [skill / "SKILL.md"]
         for sub in ("references", "prompts"):
             targets += sorted((skill / sub).glob("*.md"))
+        plugin = skill.parent.parent
         for path in targets:
             files += 1
             for lineno, rel in pointers_in(path):
                 checked += 1
                 if not (skill / rel).exists():
                     problems.append((path.relative_to(root), lineno, rel))
+                elif (leaves_plugin(skill, plugin, rel)
+                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):
+                    problems.append((path.relative_to(root), lineno, f"{rel}（プラグインの外）"))
 
     if problems:
         print("ERROR: スキルの中の指し先が実在しません:", file=sys.stderr)
         for rel_path, lineno, target in problems:
             print(f"ERROR:   {rel_path}:{lineno} → {target}", file=sys.stderr)
         print("ERROR:", file=sys.stderr)
-        print("ERROR: **指し先はスキルのディレクトリからの相対で書く。**", file=sys.stderr)
+        print("ERROR: **指し先はスキルのディレクトリからの相対で書く。**"
+              "プラグイン直下の共有物は `../../` で指す。プラグインの外は指せない。", file=sys.stderr)
         print("ERROR: 名前を変えたなら、指している側も直すこと（#136）。", file=sys.stderr)
         return 1
 
