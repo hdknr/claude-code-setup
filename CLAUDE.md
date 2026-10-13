@@ -51,7 +51,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-mutation-claims.py` - 上の回帰テスト（変異テストを含む）
   - `check-skill-pointers.py` - **スキルの中の指し先**（`references/…` `prompts/…`
     `scripts/…`）が実在するか（#136。**`check-site-links.py` は絶対 URL しか見ない**）。
-    **`../` で始まる指し先も見て、プラグインの外へ出たら落とす**（#216）
+    **`../` で始まる指し先も見て、プラグインの外へ出たら落とす**（#216）。
+    **散文の指し先（`下の「X」`・`` `references/x.md` の「X」 ``）の X も照合する**（#205）
   - `test-check-skill-pointers.py` - 上の回帰テスト（変異テストを含む）
   - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
     （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
@@ -644,6 +645,12 @@ python3 scripts/test-check-skill-pointers.py  # 歯止め自体のテスト（�
 **置いた瞬間に実物を 1 件捕まえた**——`references/guard-rejections.md` が
 `scripts/collect-guard-rejections.py` を指していたが、**あれはリポジトリの `scripts/` に
 あり、スキルの中には無い。**
+
+**散文の指し先も見る**（#205）——`下の「X」` と `` `references/resume.md` の「X」 `` の
+X が、指したファイルの本文にあるか。**節を `references/` へ移したあと、`SKILL.md` に残った
+「下の『改名の…』項」がどこも指していなかった**（パスの形をしていないので見えなかった）。
+**項を指すときは「」で文言どおりに引く**——「上項」「直前の項」のような名指ししない形は
+照合する相手が無い。**何を守り何を守らないかは docstring を正とする。**
 
 ### 散文で書いた「この変異で赤になる」も、機械で当てる
 

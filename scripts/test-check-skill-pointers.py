@@ -73,6 +73,7 @@ FENCED = """# デモ
 
 ```markdown
 指し先の書き方の例: `references/never-exists.md`
+上の「どこにも無い項」
 ```
 
 本文の指し先は `references/resume.md` だけ。
@@ -135,6 +136,34 @@ SYMLINKED = """# デモ
 詳しくは `references/x.md` を見る。
 """
 
+# **散文の指し先**（#205）。**『』と本文の「」・太字・改行の違いを同一視する**ことを試料に入れる
+# ——**揃えた書き方だけだと、正規化を外す変異が殺せない。**
+PROSE_OK = """# デモ
+
+**ここで「肯定的な確認」を
+走らせる（必須）。**
+
+不一致なら下の「ここで『肯定的な確認』を走らせる」の項へ戻る。
+改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
+
+```markdown
+フェンスの中の書き方の例: 上の「どこにも無い項」
+```
+"""
+PROSE_RESUME = "# 再開\n\n**改名の「コマンド」で\n分岐する（必須）**\n"
+
+# **X が指し先の中にしか無い**——Issue #205 の `SKILL.md:464` と同じ形。
+PROSE_BROKEN = """# デモ
+
+不一致なら下の「改名のコマンドは『いまブランチの上にいるか』で分岐する」項へ進む。
+"""
+
+# **移した先を名指ししたが、その先に無い。**
+XREF_BROKEN = """# デモ
+
+改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
+"""
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -185,6 +214,26 @@ MUTATIONS = {
     "symlink の先を見ない": (
         "                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):",
         "                      or False):"),
+    # 守る 10: 散文の指し先 `上の「X」` の X が同じファイルにあること（#205）
+    "散文の指し先を見ない": (
+        "               normalize(m.group(1)) in own)",
+        "               True)"),
+    # 守る 11: 散文の指し先も、フェンスの中は見ないこと
+    "散文の指し先でフェンスを剥がさない": (
+        "    prose = strip_fences(raw)",
+        "    prose = raw"),
+    # 守る 12: `references/x.md` の「X」の X が指したファイルにあること
+    "移した先の名指しを見ない": (
+        "               normalize(m.group(2)) in body_without_pointers(",
+        "               True or body_without_pointers("),
+    # 守る 13: 指し先そのものの文字列は数えないこと
+    "指し先が自分を見つける": (
+        '    return normalize(XREF.sub("", PROSE.sub("", text)))',
+        "    return normalize(text)"),
+    # 守る 14: 『』と「」・太字・空白の違いを同一視すること
+    "正規化しない": (
+        '    return re.sub(r"[*`\\s]", "", text).replace("『", "「").replace("』", "」")',
+        "    return text"),
 }
 
 
@@ -272,6 +321,23 @@ def main() -> int:
               observe(mod, symlink_out)["rc"] == 1)
         check("symlink の先がプラグインの中なら通す", observe(mod, symlink_in)["rc"] == 0)
 
+        def prose_tree(name: str, body: str, resume: str) -> Path:
+            d = base / name
+            assert_not_real_repo(d)
+            make_skill(d, body=body, files={"references/resume.md": resume})
+            return d
+
+        prose_ok = prose_tree("prose-ok", PROSE_OK, PROSE_RESUME)
+        prose_broken = prose_tree("prose-broken", PROSE_BROKEN, PROSE_RESUME)
+        xref_broken = prose_tree("xref-broken", XREF_BROKEN, "# 再開\n")
+        print("\n散文の指し先（#205）")
+        check("X が本文にあれば通す（『』・太字・改行の違いを越えて。フェンスの中は見ない）",
+              observe(mod, prose_ok)["rc"] == 0)
+        check("X が指し先の中にしか無ければ落とす（#205 の形）",
+              observe(mod, prose_broken)["rc"] == 1)
+        check("移した先を名指しして、その先に無ければ落とす",
+              observe(mod, xref_broken)["rc"] == 1)
+
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
 
@@ -307,7 +373,10 @@ def main() -> int:
                           or mutant.main([str(sibling)]) != 1
                           or mutant.main([str(roundtrip)]) != 1
                           or mutant.main([str(symlink_out)]) != 1
-                          or mutant.main([str(symlink_in)]) != 0)
+                          or mutant.main([str(symlink_in)]) != 0
+                          or mutant.main([str(prose_ok)]) != 0
+                          or mutant.main([str(prose_broken)]) != 1
+                          or mutant.main([str(xref_broken)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
