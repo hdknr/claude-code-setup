@@ -20,6 +20,8 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 
 **判定は「3 つが同一か」ではない。** frontmatter は「いつこのスキルを起動するか」を書く
 別目的の文章で、カタログの紹介文より長く引数の説明も含む。**一致させるほうが誤り**になる。
+（JSON の 2 箇所——1 と 2——は同じ値に揃える。その一致は `check-plugin-versions.py` が
+base を見ずに全プラグインで見る（#224）。ここが見るのは共変だけである。）
 
 代わりに**共変（co-change）**を見る:
 
@@ -61,6 +63,8 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 判定の線引き:
 
 - 新規／削除されたプラグイン（`plugin.json` が片方の ref にしか無い）→ 対象外
+  （共変は base が無いと定義できない。**新規プラグインの JSON 2 箇所の食い違いは
+  `check-plugin-versions.py` が捕まえる**——#215 の周ではどちらも見ておらず素通りした。#224）
 - **スキルの追加・削除・改名は「変更」として数える。** プラグインの守備範囲が変われば
   カタログの紹介文も見直す対象になるため。見直し不要と判断したなら trailer を使う
 - `main` への直接 push では base が曖昧なので判定できない。**PR のときだけ**実行する
@@ -71,10 +75,10 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 **`source` が指すディレクトリが存在しない**場合と、**`source` キーが無い**場合は、
 `check-plugin-versions.py` の担当なのでここでは対象外にする。
 
-どうしても片側だけ直したい場合（カタログの typo 修正など）は、コミットメッセージの
+どうしても片側だけ直したい場合（JSON の typo を直したが frontmatter の要約は変わらない、など）は、コミットメッセージの
 **末尾に trailer として**書く（行頭から。引用文の中では効かない）:
 
-    Skip-description-sync: カタログの typo 修正のみ。要約の内容は変わらない
+    Skip-description-sync: JSON の typo 修正のみ。要約の内容は変わらない
 
 **理由は必須**で、履歴に残るのでレビューで追える。既定では **PR 全体に効く**ので、
 **プラグインを 1 つに絞りたいときは名前を前置する**:
@@ -467,10 +471,12 @@ def main() -> int:
 
     if errors:
         print(
-            "\n3 箇所は一致させる必要はありませんが、**どれかを直したら残りも点検**してください。\n"
-            "とくに SKILL.md の frontmatter は常時ロードされる要約なので、置き去りにすると\n"
+            "\nJSON の 2 箇所（marketplace.json / plugin.json）は同じ値に揃えます（check-plugin-versions.py が見る）。\n"
+            "SKILL.md の frontmatter は揃えなくてよいが、**どれかを直したら残りも点検**してください。\n"
+            "frontmatter は常時ロードされる要約なので、置き去りにすると\n"
             "古い規範が先に読まれます（#59 / PR #60 で 2 回発生）。\n"
-            f"片側だけで正しい場合は、コミットメッセージの末尾に `{TRAILER_KEY}: <理由>` を書きます。"
+            f"JSON と frontmatter の片側だけで正しい場合は、コミットメッセージの末尾に `{TRAILER_KEY}: <理由>` を書きます\n"
+            "（trailer が免除するのは共変だけで、JSON 2 箇所の一致は免除しません）。"
         )
         print(f"\ndescription の同期漏れが {len(errors)} 件あります。")
         return 1
