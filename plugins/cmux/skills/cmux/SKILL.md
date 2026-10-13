@@ -53,12 +53,13 @@ cmux new-surface --working-directory "$(pwd)"
   `TARGET_URL` が空のまま探すと、URL を取れなかったサーフェス（空文字列）と一致して上書きするので、
   2 行目で `https://` で始まらない URL を拒否する。
 
-URL は文字列に埋め込まず引数で渡す:
+URL は文字列に埋め込まず引数で渡す。`python3` は `-I` で起動する——無いと、カレントディレクトリ
+（レビュー対象のリポジトリ）に置かれた `json.py`・`subprocess.py` が import されて走る:
 
 ```bash
 TARGET_URL="<各モードで決める URL>"
 case "$TARGET_URL" in https://*) ;; *) echo "URL を決められない: $TARGET_URL" >&2; exit 1 ;; esac
-BROWSER_SURFACE=$(cmux --json list-panels 2>/dev/null | python3 -c "
+BROWSER_SURFACE=$(cmux --json list-panels 2>/dev/null | python3 -I -c "
 import sys, json, subprocess
 target = sys.argv[1]
 data = json.load(sys.stdin)
