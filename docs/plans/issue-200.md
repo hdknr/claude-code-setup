@@ -92,7 +92,13 @@
 - 狭いパスの起点: `aedd1fd`（2 パス目の指摘対応を始める直前の HEAD）
 - `check-all.py`: 32/32 緑（1 パス目の起動時点・ローカル）。2 パス目の Verifier が `aedd1fd` で 32/32 緑を報告。
   2 パス目の指摘対応（CR2-3・CR2-5）のあと 32/32 緑（ローカル）
-- 2 パス目の指摘対応: 済（CR2-3・CR2-5）。**残り: 狭いパス（起点 `aedd1fd`）→ PR**
+- 2 パス目の指摘対応: 済（CR2-3・CR2-5、`bb0500f`）
+- 狭いパス: **済**（`dev-loop:dev-loop-verifier`・sonnet、起点 `aedd1fd`）。**反証 0 件**。
+  Verifier が設計した変異 2 本（A: docs から I1 の条件を落とす／B: SKILL.md の `tab list` を修正前の文面に戻す。
+  陽性対照はどちらも修正前の文面そのもの）は、機械の歯止め 4 本（plugin-versions・duplicate-counts・norm-markers・
+  skill-pointers）を**素通り**——I1・I3 を守るのは一次ソースとの突き合わせだけ。
+  変異後のコピーで `check-site-links`・`check-all` は回していない。`check-all.py` は `bb0500f` で 32/32 緑（Verifier の実行）
+- 残り: PR（手順 6）→ マージ（手順 7）→ 手順 8
 - 割り目 1（手順 4 の完了時）: 提案した → **人間が「ここで割る」を選択**（2026-10-13）。
   再開は `.claude/worktrees/issue-200` の中で `/clear` → `/dev-loop 200`（手順 5 から）
 
