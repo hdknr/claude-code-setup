@@ -164,6 +164,18 @@ XREF_BROKEN = """# デモ
 改名は `references/resume.md` の「改名の『コマンド』で分岐する」の項を読む。
 """
 
+# **`の` と `「` の間で折り返した指し先**——#205 の 1 パス目で S1・S5・S6 がこの形だった。
+PROSE_SPLIT_BROKEN = """# デモ
+
+不一致なら下の
+「どこにも無い項」へ進む。
+"""
+XREF_SPLIT_BROKEN = """# デモ
+
+改名は `references/resume.md` の
+「どこにも無い項」を読む。
+"""
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -218,19 +230,23 @@ MUTATIONS = {
     "散文の指し先を見ない": (
         "               normalize(m.group(1)) in own)",
         "               True)"),
-    # 守る 11: 散文の指し先も、フェンスの中は見ないこと
+    # 守る 11: `の` と `「` の間で折り返した散文の指し先も拾うこと
+    "折り返した指し先を拾わない": (
+        'NO = r"の\\s*"',
+        'NO = r"の"'),
+    # 守る 12: 散文の指し先も、フェンスの中は見ないこと
     "散文の指し先でフェンスを剥がさない": (
         "    prose = strip_fences(raw)",
         "    prose = raw"),
-    # 守る 12: `references/x.md` の「X」の X が指したファイルにあること
+    # 守る 13: `references/x.md` の「X」の X が指したファイルにあること
     "移した先の名指しを見ない": (
         "               normalize(m.group(2)) in body_without_pointers(",
         "               True or body_without_pointers("),
-    # 守る 13: 指し先そのものの文字列は数えないこと
+    # 守る 14: 指し先そのものの文字列は数えないこと
     "指し先が自分を見つける": (
         '    return normalize(XREF.sub("", PROSE.sub("", text)))',
         "    return normalize(text)"),
-    # 守る 14: 『』と「」・太字・空白の違いを同一視すること
+    # 守る 15: 『』と「」・太字・空白の違いを同一視すること
     "正規化しない": (
         '    return re.sub(r"[*`\\s]", "", text).replace("『", "「").replace("』", "」")',
         "    return text"),
@@ -330,6 +346,8 @@ def main() -> int:
         prose_ok = prose_tree("prose-ok", PROSE_OK, PROSE_RESUME)
         prose_broken = prose_tree("prose-broken", PROSE_BROKEN, PROSE_RESUME)
         xref_broken = prose_tree("xref-broken", XREF_BROKEN, "# 再開\n")
+        prose_split = prose_tree("prose-split", PROSE_SPLIT_BROKEN, PROSE_RESUME)
+        xref_split = prose_tree("xref-split", XREF_SPLIT_BROKEN, PROSE_RESUME)
         print("\n散文の指し先（#205）")
         check("X が本文にあれば通す（『』・太字・改行の違いを越えて。フェンスの中は見ない）",
               observe(mod, prose_ok)["rc"] == 0)
@@ -337,6 +355,10 @@ def main() -> int:
               observe(mod, prose_broken)["rc"] == 1)
         check("移した先を名指しして、その先に無ければ落とす",
               observe(mod, xref_broken)["rc"] == 1)
+        check("`の` と `「` の間で折り返しても、無ければ落とす（同じファイル）",
+              observe(mod, prose_split)["rc"] == 1)
+        check("`の` と `「` の間で折り返しても、無ければ落とす（移した先）",
+              observe(mod, xref_split)["rc"] == 1)
 
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
@@ -376,7 +398,9 @@ def main() -> int:
                           or mutant.main([str(symlink_in)]) != 0
                           or mutant.main([str(prose_ok)]) != 0
                           or mutant.main([str(prose_broken)]) != 1
-                          or mutant.main([str(xref_broken)]) != 1)
+                          or mutant.main([str(xref_broken)]) != 1
+                          or mutant.main([str(prose_split)]) != 1
+                          or mutant.main([str(xref_split)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
