@@ -5,8 +5,8 @@ description: "Orca の内蔵ブラウザで GitHub Issue/PR を開く。番号�
 
 # orca スキル
 
-<!-- skill-version: 1.0.4 -->
-> **このスキルの版: 1.0.4**（プラグイン `orca`）。
+<!-- skill-version: 1.0.5 -->
+> **このスキルの版: 1.0.5**（プラグイン `orca`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update orca@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -133,8 +133,8 @@ fi
    ```bash
    TARGET_URL=$(gh pr view <number> --json url -q '.url')
    ```
-3. `EnterWorktree` ツールで worktree を作成する。
-4. worktree 内で以下を実行:
+3. 「PR を checkout する worktree の作り方」の手順で worktree を作り、そこへ移る。
+4. 移った worktree の中で以下を実行:
    ```bash
    gh pr checkout <number>
    ```
@@ -146,9 +146,34 @@ fi
    ```bash
    TARGET_URL=$(gh pr view <number> --json url -q '.url')
    ```
-3. worktree 内でなければ `EnterWorktree` ツールで worktree を作成する。
-4. worktree 内で以下を実行:
+3. 現在のブランチが PR の head ブランチと同じかを見る（1 行ずつ走らせ、値は読んで比べる）:
+   ```bash
+   git rev-parse --abbrev-ref HEAD
+   gh pr view <number> --json headRefName -q .headRefName
+   ```
+   **同じなら作らずに 5 へ進む**（既にその PR の上にいるので、checkout しても何も切り替わらない）。
+   **違うなら**「PR を checkout する worktree の作り方」の手順で worktree を作り、そこへ移る。
+   **「worktree の中にいるか」では判定しない**——理由は同じ節にある。
+4. 移った worktree の中で以下を実行（3 で「同じ」だったときは飛ばす）:
    ```bash
    gh pr checkout <number>
    ```
 5. PR のコード差分をレビュー開始する（`gh pr diff <number>` で差分を取得し、変更内容を分析）。
+
+## PR を checkout する worktree の作り方（`-w` / `-r` 共通）
+
+**Orca では、Claude Code は最初から Orca 管理の worktree の中で動いている**（前提の確認がそれを要求する）。
+そこは**利用者がいま作業しているブランチ**なので、**その場で `gh pr checkout` するとそのブランチが切り替わる**
+——`orca worktree create` で作った worktree の中で実測した（#199）。
+git の判定（`--git-dir` と `--git-common-dir` が違う）でもそこは「worktree の中」と出るので、
+**「worktree の中にいるなら作らない」という条件は、Orca では利用者のブランチを切り替える側に倒れる。**
+
+1. 作る前に、いまの作業ツリーの根を控える:
+   ```bash
+   git rev-parse --show-toplevel
+   ```
+2. `EnterWorktree` ツールで worktree を作成する。
+   **作れなかったら、ここで止めてエラーを表示する**——現在のツリーで `gh pr checkout` に進まない
+   （たとえば、このセッションが既に worktree セッションにいると、新規の作成は断られる）。
+3. 移ったことを確かめる——もう一度 `git rev-parse --show-toplevel` を走らせ、
+   **1 で控えた値と違うこと**を見る。**同じなら止める**（`EnterWorktree` が効いていない）。
