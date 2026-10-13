@@ -5,8 +5,8 @@ description: "Orca の内蔵ブラウザで GitHub Issue/PR を開く。番号�
 
 # orca スキル
 
-<!-- skill-version: 1.0.3 -->
-> **このスキルの版: 1.0.3**（プラグイン `orca`）。
+<!-- skill-version: 1.0.4 -->
+> **このスキルの版: 1.0.4**（プラグイン `orca`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update orca@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -115,13 +115,16 @@ fi
 ### `/orca <number>` — Issue モード
 
 1. 「ブラウザタブの開き方」の共通手順を、1 行目を次に置き換えて流す
-   （リポジトリの URL は `gh` に訊く。リモート URL を自分で組み立てると、`ssh://` 形式や
+   （URL は `gh` に訊く。リモート URL を自分で組み立てると、`ssh://` 形式や
    GitHub Enterprise のリモートで URL が壊れる）:
    ```bash
-   TARGET_URL="$(gh repo view --json url -q .url)/issues/<number>"
+   TARGET_URL=$(gh issue view <number> --json url -q .url)
    ```
-   `gh repo view` が失敗すると `TARGET_URL` が `/issues/<number>` だけになり、共通手順の
-   2 行目（`https://` で始まるか）で止まる。
+   **`/issues/<number>` を自分で組み立てない**——PR の番号だと GitHub が `/pull/<number>` に
+   転送するので、タブの URL と一致せず、呼ぶたびにタブが増える。`gh issue view` は
+   PR の番号には `/pull/<number>` を返す。
+   `gh issue view` が失敗する（存在しない番号・リポジトリの外）と `TARGET_URL` が空になり、
+   共通手順の 2 行目（`https://` で始まるか）で止まる。
 
 ### `/orca -w <number>` — PR worktree モード
 
