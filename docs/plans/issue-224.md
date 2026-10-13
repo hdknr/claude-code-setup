@@ -72,8 +72,19 @@
 - **周の在り処**: ブランチ `issue/224-description-json-equal`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-224`、
   起点 `fe726b1`、**base: `origin/main` → `fe726b1df5dfc55cf341ccc1a470d61c25e1cad6`**
-- 実装: 未着手
-- 交絡を潰した手順: 未
+- 実装: `check_description()` を `check-plugin-versions.py` に追加、テスト 7 ケース（赤）＋ 2 ケース（緑／クラッシュしない）。
+  `CLAUDE.md` と `check-description-sync.py` の docstring を直した。`check-all.py` 32/32 緑。
+  PR 限定の 3 本（plan-scope・description-sync・version-bump）も base に対して緑。
+- 実装コミット: `afff0aa`
+- 関門: 1 パス目 未着手（Verifier・`/code-review` とも）。**次は手順 5（Verifier 1 パス目）から。**
+- 割り目（手順 4）: 提案済み——**人間の選択は「ここで割る」**（2026-10-13）
+- 交絡を潰した手順（著者の実験。関門ではない）:
+  - **陽性対照**: 新しいテストを修正前（`fe726b1`）のスクリプトに当てると、食い違い 7 ケースすべてが緑（＝すり抜け。14 判定が失敗）。
+    両側に無い・壊れた `plugin.json` の 2 ケースは修正前も通る（回帰していないことの確認）。
+  - **変異**: 型の比較（`type(...) is type(...)`）を外すと「数値と真偽値」だけが赤になる（2 判定）。
+  - **Issue の再現**: 実リポジトリの複製（`.git` を除いた `rsync`）で spec-loop の marketplace 側だけ「別の文字列」にすると rc=1。
+    変える前は 5 件とも問題なし。
+  - スクリプト: scratchpad の `i224/`（`mutate.py`・`old/scripts/`）。
 
 ## 6. 既知の限界・決着済みの論点
 
