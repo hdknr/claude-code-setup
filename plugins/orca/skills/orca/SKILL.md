@@ -56,11 +56,13 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 
 **`python3` には `-I` を付け、引用の失敗で止める**——`-I` が無いと、カレントディレクトリの
 `shlex.py`・`json.py` が import される（レビュー対象のリポジトリに置かれていれば、それが走る）。
-引用が失敗したまま進むと `--command` が `cd ` だけになり、新しいシェルは**ホームへ移ったまま成功に見える**:
+引用が失敗したまま進むと `--command` が `cd ` だけになり、新しいシェルは**ホームへ移ったまま成功に見える**。
+2 行を別々の Bash 呼び出しに分けたときも `QUOTED_DIR` が空になって同じことが起きるので、
+`${QUOTED_DIR:?}` で端末を作る前に止める:
 
 ```bash
 QUOTED_DIR=$(python3 -I -c 'import shlex, sys; print(shlex.quote(sys.argv[1]))' "$(pwd)") || exit 1
-orca terminal create --worktree active --focus --command "cd $QUOTED_DIR" --json | python3 -I -c "
+orca terminal create --worktree active --focus --command "cd ${QUOTED_DIR:?}" --json | python3 -I -c "
 import sys, json
 sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 "
