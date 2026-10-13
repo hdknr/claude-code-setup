@@ -78,7 +78,9 @@
 - **周の在り処**: ブランチ `issue/197-n-cd-quoting`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-197`、
   起点 `b8c5e89`、**base: `origin/main` → `b8c5e89886ac29b34cefb260dc6bc87efd2e0b63`**
-- 関門: 未着手
+- 実装コミット: `4903190`。`check-all.py` 30/30 緑（文言修正後に回し直した）
+- 関門: 未着手。**次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）**
+- 割り目（手順 4）: 提案済み——**人間の選択は「ここで割る」**（2026-10-13）
 - 交絡を潰した手順（実装前の実験）:
   - **cmux 旧形の陽性対照**: 正しい `surface_ref` を使ってなお、`cd $CURRENT_DIR` は `quote>` で止まり、
     `pwd` はメインのチェックアウトを返した（新しいサーフェスの既定の cwd）。**旧形が「たまたま cwd が合って通る」ことは無い**。
