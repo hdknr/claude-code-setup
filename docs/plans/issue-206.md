@@ -81,7 +81,9 @@
 - `check-all.py`: 33 本中 32 本緑。**落ちたのは `test-tab-match.py`（orca）だけで、この周の差分と無関係**——
   **main（`53d06c3` = PR #237 のマージ）の `Check plugin catalog` が既に failure**。この周では直さない（範囲外）。
   したがって I5 の「PR の CI も緑」は、この 1 ステップについて満たせない（main 由来）。
-- 関門: 未着手
+- 割り目 1（手順 4 完了時）: AskUserQuestion で提案 → **人間が「ここで割る」を選択**（2026-10-14）。
+  再開は worktree の中で `/clear` → `/dev-loop:dev-loop 206` → **手順 5（Verifier 1 パス目）から**。
+- 関門: 未着手（Verifier・`/code-review` とも 1 パス目から）
 - 反証: —
 - 交絡: 実験は「`${1:?}` の終了コードが 1」の実測 1 件（引数なしで実行し rc=1）。
 
