@@ -121,9 +121,21 @@
 - **周の在り処**: ブランチ `issue/216-req-loop-skill`／worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-216`／
   起点 `210079b`／base の参照 `origin/main`、SHA `210079b24c8925916132f4446b0db33a6b93cc94`
+- 実装: 完了（コミット済み）。`check-all.py` 32/32 緑、PR 限定の 3 本も実差分で緑、`mkdocs build --strict` 緑
+- **手順 4 の割り目**: AskUserQuestion で訊いた（2026-10-13）→ **「ここで割る」が選ばれた**
+- 次にすること: **手順 5（Verifier 1 パス目）と、B1〜B3 の実機観測（`claude -p --plugin-dir`）**
+  ——再開したら、この worktree の中で `/dev-loop:dev-loop 216`
+- 実装中の観測（実験ではなく動作確認）:
+    - LibreOffice（`soffice --headless --convert-to pdf`）で見本の PPTX が 5 ページに変換された（表紙・一覧・3 問）
+    - **PowerPoint（macOS）**: 自分では開けなかった（サンドボックスの「ファイル アクセスを許可」
+      ダイアログで止まり、コンテナへの複製も macOS のプライバシー保護で拒否された）。
+      **利用者が `~/Downloads/req-loop-sample-216.pptx` を手で開き、「5 枚・修復の確認なし」と回答した**（2026-10-13）。
+      見本は `references/qa-csv.md` の例（確認中 2 件）に、特殊文字と制御文字を含む確認中 1 件を足した表から作った
+    - 見本の生成は修正前の版（`splitlines` を使っていた版）ではなく、**修正後の版**で作り直したもの
 - 関門: 未着手
 - 反証・差し戻し: なし
-- 交絡を潰した手順: まだ
+- 交絡を潰した手順: まだ（`test-qa-to-pptx.py` の変異 8 件は、それぞれ狙った観測で落ちることを確かめた
+  ——「列検査を飛ばす」は最初、無関係な観測の例外で落ちていたので、観測を分けて直した）
 
 ## 6. 既知の限界・決着済みの論点
 
