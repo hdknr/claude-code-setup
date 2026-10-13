@@ -5,8 +5,8 @@ description: "Orca の内蔵ブラウザで GitHub Issue/PR を開く。番号�
 
 # orca スキル
 
-<!-- skill-version: 1.0.1 -->
-> **このスキルの版: 1.0.1**（プラグイン `orca`）。
+<!-- skill-version: 1.0.2 -->
+> **このスキルの版: 1.0.2**（プラグイン `orca`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update orca@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -48,11 +48,15 @@ sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 **cd は `--command` で作成と同じ呼び出しに入れる。`orca terminal send` を使わない**——
 作成に失敗したあとの `send` は handle が空になり、**無関係なライブ端末に打ち込まれる**
 （`--terminal` が空だと Orca は別の端末に解決する）。次を **1 回の Bash 呼び出し**で流し、
-非ゼロなら終了する:
+非ゼロなら終了する。
+
+**パスは `shlex.quote` で引用してから `--command` に入れる**——`--command` は新しいシェルに
+打ち込まれるので、`"cd '$CURRENT_DIR'"` のように単引用符で囲むだけだと、**パスが単引用符を含むと
+引用が閉じて残りが打ち込まれる**（`quote>` で止まる）:
 
 ```bash
-CURRENT_DIR=$(pwd)
-orca terminal create --worktree active --focus --command "cd '$CURRENT_DIR'" --json | python3 -c "
+CD_COMMAND="cd $(python3 -c 'import shlex, sys; print(shlex.quote(sys.argv[1]))' "$(pwd)")"
+orca terminal create --worktree active --focus --command "$CD_COMMAND" --json | python3 -c "
 import sys, json
 sys.exit(0 if json.load(sys.stdin).get('ok') else 1)
 "
