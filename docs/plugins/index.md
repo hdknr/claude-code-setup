@@ -481,9 +481,19 @@ cmux のブラウザペインで GitHub Issue/PR を開き、worktree でレビ�
 
 [Orca](https://github.com/stablyai/orca) の中で GitHub の Issue/PR を扱うためのプラグインです。[`cmux`](#cmux) の Orca 版で、引数と動作は揃えてあります。Orca の内蔵ブラウザに Issue/PR を表示し、worktree でレビューを行えます。
 
-### インストール
+### インストール { #orca-install }
 
 ```
+/plugin install orca@claude-code-setup
+```
+
+**`orca` より前にマーケットプレイスを追加していた場合は、先にカタログを取り直す。**
+手元のカタログのクローンは追加した時点のコミットで止まっており、**`install` はそれを取り直さない**。
+`orca` を含まないカタログのまま `install` すると、`Plugin "orca" not found in marketplace` で失敗する
+（#201 で実測。取り直してからの `install` は通った）:
+
+```
+/plugin marketplace update claude-code-setup
 /plugin install orca@claude-code-setup
 ```
 
