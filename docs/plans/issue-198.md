@@ -96,6 +96,9 @@ Orca 1.4.224・cmux（手元のアプリ）・gh 2.92.0。
 
 - **周の在り処**: ブランチ `issue/198-issue-mode-pr-url`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-198`、
   起点 `9fc3ba4`、base の参照 `origin/main` → `9fc3ba490c2dc5e0b82aaa77e0c348387831a97b`
+  （PR #229 の CI で、#226 が main で cmux 1.1.8・orca 1.0.3 を先に使っていたため版の bump 漏れになった。
+  `origin/main`（`fe726b1`）をマージして cmux 1.1.9・orca 1.0.4 に上げ直した。base は式を当て直して `fe726b1`。
+  マージで Issue モードの行に衝突は無く、版の行以外の差分は 1 パス目に関門へ渡したものと同じ）
 - 実装: 済（コミット済み）。歯止め `check-all.py` 31/31 緑
 - 関門: 1 パス目——
   - Verifier（`dev-loop:dev-loop-verifier`・sonnet。報告で Write/Edit 無しを確認）: **反証 0 件**。`gh issue view` の 225/223→`/pull`、198→`/issues`、99999・リポジトリ外→rc=1・stdout 空、`check-all.py` 31/31 を自分で実行。実機（タブ操作）は禁止のため当てていない。留意: fork で gh の既定リポジトリが origin と違うと cmux の解決先が変わる（I1〜I3 は破らない）。報告中の「計画ファイルが ` M`」は親の再開点更新（著者の編集）。親が `gh issue view 225` とリポジトリ外 rc=1 を抜き取りで再確認
