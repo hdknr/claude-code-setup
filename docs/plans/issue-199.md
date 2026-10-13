@@ -78,12 +78,13 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
   起点 `4395dd2`、base 参照 `origin/main`、base SHA `4395dd2c1a85d7205ae2a4826297ca9b2d70d6b6`
 - 実装: `e49a061`（check-all 32/32 緑）。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）
 - 割り目 1（手順 4 完了時）: 提案した → 人間の選択「ここで割る」
+- 割り目 2（2 パス目の前）: 提案した → 人間の選択「ここで割る」
 - 関門: 1 パス目
   - Verifier（`dev-loop:dev-loop-verifier`/sonnet。自己申告のツールは Bash/Read のみ）: **反証 1 件**（I1/I2 への直接の反証 0 件）。check-all 32/32 緑・生成物なしを独立確認
   - `/code-review` high: **指摘 10 件**（I2 は緑を独立確認。I1 を直接破る指摘は 0 件）
   - 採否: 「示せる × 破る受入基準」を満たす行は 0。V1/C1/C2（この周が入れた退行）は人間に範囲拡大を訊き「範囲を広げて直す」→ I3 を追加して直した。残り 7 件は残課題（C8 は対象外）
   - 1 パス目の指摘対応: `-r` 手順 3 を名前比較から SHA 比較（`git rev-parse HEAD` ↔ `headRefOid`）へ。実データ: この worktree の HEAD `55e3a24` ≠ PR #229 の head `c094176`（→ 作る）、ローカルの `issue/198-issue-mode-pr-url` = `c094176`（→ そこにいれば飛ばす）
-  - 次: **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**が残っている。2 パス目の指摘対応の起点 SHA は、指摘対応のコミット後の HEAD を 2 パス目開始前にここへ書く
+  - 次: **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**が残っている。1 パス目の指摘対応は `831feec`（check-all 32/32 緑）。**狭いパスの起点 SHA（2 パス目の指摘対応を始める直前の HEAD）: `831feec1fdc38d243c25025b373403fe232c4b2f`**
 - 反証・差し戻し: 0
 - 交絡: 実験 1（上の実測）。陽性側（メインで「外」・checkout で実際に切り替わる）を取った。
 
