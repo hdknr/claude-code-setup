@@ -55,8 +55,12 @@ docstring の `leaves_plugin` が「呼ぶ側が `resolve()` で別に見る」�
 - 周の在り処: ブランチ `issue/230-skill-pointers-symlink-test`・worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-230`・
   起点 `fe726b1`・base 参照 `origin/main` → `fe726b1df5dfc55cf341ccc1a470d61c25e1cad6`
-- 関門: 未着手
-- 交絡: 未
+- 実装: 済（コミット済み）。`check-all.py` 32/32 緑
+- 関門: 未着手（次は手順 5 の 1 パス目: Verifier と `/code-review`）
+- 交絡: 陽性対照を取った——`resolve()` 側だけを外した変異に対し、**修正前（origin/main）のテストは
+  振る舞いの検査 11 件がすべて ok**（殺せない）、**修正後のテストは「symlink の先がプラグインの外なら、
+  字面が中でも落とす」1 件だけが FAIL**（その試料で殺している）。変異は scratchpad の複製にだけ入れた
+- 割り目 1（手順 4 の後）: AskUserQuestion で提案 →「ここで割る」が選ばれた。再開は手順 5 の 1 パス目から
 
 ## 6. 既知の限界・決着済みの論点
 
