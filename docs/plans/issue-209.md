@@ -78,7 +78,9 @@
 - **周の在り処**: ブランチ `issue/209-blocked-checks-in-prompts`・
   worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-209`・
   起点 `ab215f1`・base の参照 `origin/main`・**base `ab215f1c4887b4bddc260cfdca1c6f9ae8aba962`**
-- 関門: 未着手
+- 実装: `e2c4db3`（`check-all.py` 33/33 緑）
+- 関門: 未着手。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）
+- 割り目 1（手順 4 の完了時）: **AskUserQuestion で提示 → 「ここで割る」が選ばれた**
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
