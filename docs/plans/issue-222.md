@@ -5,7 +5,7 @@
 触る:
 
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 6「走らせる形は、素の 1 行に保つ」に、終了コードで分岐するスクリプトを包まない旨を足す（原本）。**1 パス目の指摘対応で、再開の節・手順 4・手順 5 の生出力の項に指し先を 1 行ずつ足した**（CR3・CR4）。版のバナー
-- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.38.2 → 1.38.3
+- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.38.3 → 1.38.4（main が #245 で 1.38.3 を先に使ったので rebase 後に上げ直した）
 - `.claude-plugin/marketplace.json` — 同上
 - `docs/plans/issue-222.md` — この計画ファイル
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` の再生成のみ。手で書かない）
@@ -31,7 +31,7 @@
 
 - **A**: `SKILL.md` に書いた呼び出し形のとおりに読者が走らせると、worktree 隔離セッションでガードに拒否されない。
 - **B**: 読者が終了コードによる分岐（0〜4）を行える——終了コードを得る手段が失われていない。
-- **C**: 版が 3 箇所（`marketplace.json` / `plugin.json` / `SKILL.md` の 2 行）で 1.38.3 に揃う。
+- **C**: 版が 3 箇所（`marketplace.json` / `plugin.json` / `SKILL.md` の 2 行）で 1.38.4 に揃う。
 
 経路（A を破りうる入口）:
 
@@ -74,6 +74,7 @@
 - 割り目（手順 6・2 パス目の前）: 提案した → **「ここで割る」が選ばれた**（2026-10-14）
 - 2 パス目（2026-10-14、再開したセッション）: Verifier 反証 1 件・/code-review 指摘 7 件 → 直す 2 件（`cd38854`）・残課題 5 件。check-all 33/33 緑
 - 狭いパス: 済み（反証 1 件＋補足 1 件。人間に渡す）
+- rebase（2026-10-14、PR 作成前）: main が #245 で 1.38.3 を使っていたので `origin/main` に rebase し 1.38.4 に上げ直した。**base を式で当て直した**: `origin/main` → `438b4771682bdc982e5f157c980df3d776356c6f`（以後の差分はこの SHA から）。衝突は設計 §8.2 の生成ブロックだけで、`skill-metrics.py` で再生成して解いた
 - 次: PR 作成（手順 6）
 - 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**（`/clear` して `/dev-loop 222` で再開。2026-10-14）
 - 再開時の肯定的な確認: ブランチ `issue/222-pr-preconditions-guard` 一致・HEAD `210f04f`・base `6071e01` は HEAD の祖先
