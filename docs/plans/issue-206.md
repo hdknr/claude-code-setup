@@ -5,7 +5,7 @@
 触る:
 
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 4 の `prepare-worktree.sh` 終了コード一覧に 7 を足す・版のバナー
-- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.37.1 → 1.37.2（patch: 記述の修正）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.37.2 → 1.37.3（patch: 記述の修正。main が別の PR で 1.37.2 に上げたので、main を取り込んだ時点で 1.37.3 に上げ直した）
 - `.claude-plugin/marketplace.json` — 同上
 - `scripts/test-worktree-scripts.py` — 一覧とスクリプトの終了コードの突き合わせ（2 本とも）と、その変異
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す場合のみ）
@@ -52,7 +52,7 @@
 
 **I4. 修正前の版で赤になる（陽性対照）**: base（`53d06c3`）の `SKILL.md` を当てると P1 として赤になる。
 
-**I5. version 3 箇所が 1.37.2 で揃い、`check-all.py` が全部緑、PR の CI も緑。**
+**I5. version 3 箇所が main より新しい同じ版（1.37.3）で揃い、`check-all.py` が全部緑、PR の CI も緑。**
 
 **I6. 生成物の鮮度**: 生成物は `skill-metrics.py` の §8.2 生成ブロックのみ該当（`SKILL.md` の行数が動きうる）。
 `skill-metrics.py --check` が緑。図（drawio）は触らないので該当なし。
@@ -152,4 +152,9 @@ Verifier（Sonnet・`dev-loop:dev-loop-verifier`）反証 4 件。著者が F1�
 - この周の起票: 0 件
 - PR #242 作成。PR の CI: `check`（plugins）pass・`build` pass——I5 の CI 部分は PR 側で満たした（main が #240 で直っていた）。
 - 手順 7: マージは人間の判断待ち（狭いパスの N1〜N4 の採否が先）。反映経路は plugins（`plugin update`）と docs（Pages）。
+- PR が main と衝突（`mergeable: CONFLICTING`。push 後に CI が 1 本も起動しなかった）。`origin/main`
+  （`2a1d22e`）をマージ——衝突は §8.2 の生成ブロックだけで、`skill-metrics.py` で再生成。main が別の PR で
+  dev-loop を 1.37.2 にしていたので **1.37.3** に上げ直した。**系譜が動いたので周の base は
+  `git merge-base origin/main HEAD` = `2a1d22e` に当て直す**（関門はマージ前に `53d06c3` で通した）。
+  マージ後の `check-all.py`: 33/33 本、失敗 0（`test-tab-match.py` は main の #240 で緑）。
 - 手順 8: 焼き戻す学びなし（狭いパスが 2 パス目の修正の後退を捕まえた——既存の規定どおりに働いた）。
