@@ -77,9 +77,15 @@
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-207`、
   起点 `2a1d22e`、base 参照 `origin/main` → `2a1d22e00b0d12cb09b8da4dae0b661915ee821c`
 - 実装: `13b2492`（check-all 33/33 緑）
-- 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
+- **周の base（当て直し後）**: `origin/main` を `30945e8` で取り込んだので式を当て直した →
+  `75516dd8f05d649ceec4f42ef50b417b19e973da`（`origin/main`。HEAD の祖先であることを確認済み）。**2 パス目にはこれを渡す**
+- 関門 1 パス目: **Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 1 件**、**`/code-review`（high）指摘 10 件**——済み。
+  採否は 6 の表（直す 8 件・主張を弱める 1 件・残課題 3 件）
+- 1 パス目の指摘対応: `efba586`（check-all 33/33 緑）——済み
+- **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）**と** `/code-review` 2 パス目の**両方**。
+  そのあと 2 パス目で直した行があれば狭いパス（起点は 2 パス目の指摘対応を始める直前の HEAD）
 - 割り目（手順 4 完了時）: 提案した → 人間の選択「ここで割る」（2026-10-14）。再開は手順 5 から
-- 反証・差し戻し: なし
+- 反証・差し戻し: 1 パス目で反証 1 件（V1）→ 手順 4 へ差し戻して `efba586` で対応
 - 交絡: 実験なし
 
 ## 6. 既知の限界・決着済みの論点
