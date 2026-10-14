@@ -485,15 +485,25 @@ def check_norm_shape() -> None:
           "git fetch" not in agent and "取り直して" not in agent)
 
 
-def script_exit_codes(source: str) -> set[int]:
+def script_exit_codes(source: str) -> set[int] | None:
     """**スクリプトが返しうる固定の終了コード**を、本体から集める（#206）。
 
-    明示の `exit N`（**行頭の空白だけを許す**——コメント中の `exit 7` は数えない）・
-    正常終了の 0・**`${N:?…}` の引数不足**（bash の実測で 1）。
+    明示の `exit N`（**行のどこにあっても数える**——`cmd || exit 8`・`then exit 8; fi`・
+    `foo; exit 8`。**行頭だけに絞ると、この形で足した番号が一覧に無くても緑になる**
+    ——1 パス目の両関門が実測）・正常終了の 0・**`${N:?…}` の引数不足**（bash の実測で 1）。
+    **コメント（行頭か空白・`;` の直後の `#` から行末）は数えない。**
+    **数字の付かない `exit`（`exit "$rc"`・`exit -1`・素の `exit`）があれば `None`**
+    ——**値が読めない形を「無い」に丸めない**（一覧と一致とは言わせない）。
     **`git worktree add` の失敗は git の終了コードで固定ではない**ので、ここには入らない
     （一覧の「それ以外」がそれを受ける）。
     """
-    codes = {int(m) for m in re.findall(r"^[ \t]*exit[ \t]+(\d+)\b", source, re.M)}
+    codes: set[int] = set()
+    for line in source.splitlines():
+        code = re.sub(r"(^|[ \t;])#.*$", r"\1", line)
+        for m in re.finditer(r"\bexit\b([ \t]+(\d+)\b)?", code):
+            if m.group(2) is None:
+                return None
+            codes.add(int(m.group(2)))
     codes.add(0)
     if re.search(r"\$\{\d+:\?", source):
         codes.add(1)
@@ -556,10 +566,12 @@ def check_exit_code_lists() -> None:
         listed = listed_exit_codes(skill, script.name)
         actual = script_exit_codes(source)
         check(f"{script.name}: SKILL.md に一覧が在る", listed is not None)
-        check(f"{script.name}: 一覧 {sorted(listed or [])} がスクリプト {sorted(actual)} と一致",
+        check(f"{script.name}: スクリプトの終了コードが読める（値の無い `exit` が無い）",
+              actual is not None)
+        check(f"{script.name}: 一覧 {sorted(listed or [])} がスクリプト {sorted(actual or [])} と一致",
               listed == actual)
         span = exit_paragraph_span(skill, script.name)
-        if span is None:
+        if span is None or actual is None:
             continue
 
         def in_para(fn, span=span) -> str:
@@ -571,8 +583,14 @@ def check_exit_code_lists() -> None:
         check(f"{script.name}: 変異の当て先（{top}）が段落に在る", removed != skill)
         check(f"{script.name}: 一覧から {top} を消すと不一致（#206 の再現）",
               not exit_lists_agree(removed, script.name, source))
-        check(f"{script.name}: スクリプトに exit {top + 1} を足すと不一致",
-              not exit_lists_agree(skill, script.name, source + f"\nexit {top + 1}\n"))
+        for form in ("exit {n}", "git fetch || exit {n}", "if x; then exit {n}; fi",
+                     "foo; exit {n}"):
+            added = form.format(n=top + 1)
+            check(f"{script.name}: スクリプトに `{added}` を足すと不一致",
+                  not exit_lists_agree(skill, script.name, source + f"\n{added}\n"))
+        for form in ('exit "$rc"', "exit -1", "exit"):
+            check(f"{script.name}: 値の読めない `{form}` を足すと一致と言わない",
+                  not exit_lists_agree(skill, script.name, source + f"\n{form}\n"))
         extra = in_para(lambda t: t.replace(
             "**終了コードで分岐する**——",
             f"**終了コードで分岐する**——**{top + 2}: 架空** ／ ", 1))
