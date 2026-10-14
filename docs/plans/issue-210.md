@@ -1,4 +1,4 @@
-# Issue #210 — 「検証スコープを絞って」が（必須）「問いを局面に絞らない」と衝突する
+# Issue #210 — 「検証スコープを絞って」が必須の「問いを局面に絞らない」と衝突する
 
 ## 1. 変更範囲
 
@@ -8,7 +8,8 @@
 - `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — 「観点を絞って短く返す」を同じ趣旨に直す
 - `plugins/dev-loop/agents/dev-loop-verifier.md` — 6 番目「報告は簡潔に」に「範囲は絞らない」を足す
 - `docs/plugins/dev-loop-design.md` — 同じ文の写し（Issue 本文は挙げていないが、grep で当たった 4 つ目の複製）。§8.2 の生成ブロック（`skill-metrics.py` が書く）
-- `plugins/dev-loop/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` — version 1.38.2 → 1.38.3（記述の修正なので patch）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.38.2 → 1.38.3（記述の修正なので patch）
+- `.claude-plugin/marketplace.json` — 同じ版
 - `docs/plans/issue-210.md` — この計画ファイル
 
 触らない:
@@ -32,7 +33,7 @@
 - **I1. 範囲を絞れと読める文が無い。** 関門（Verifier・レビュー）に渡す問い・受入基準・経路の一覧について、
   「絞れ」と読める文が SKILL.md・`prompts/`・`agents/`・設計ドキュメント・README のどこにも無い。
 - **I2. 「報告を短く」の意図は残る。** 4 箇所とも、報告を短くする理由（途中で切れると「反証なし」と区別がつかない／完走しない）と要求が残っている。
-- **I3. 直した文が、別の規定と食い違わない。** とくに「問いを局面に絞らない（必須）」と、多レンズ化（任意。分けるなら各体に表をまるごと渡し、経路を全部挙げる担当を 1 体置く）。
+- **I3. 直した文が、別の規定と食い違わない。** とくに必須の「問いを局面に絞らない」と、多レンズ化（任意。分けるなら各体に表をまるごと渡し、経路を全部挙げる担当を 1 体置く）。
 - **I4. 版が 3 種類で揃い（1.38.3）、`check-all.py` が緑。**
 
 **それを破りうる経路**（文面が関門・読者に届く入口）
