@@ -70,7 +70,9 @@
 - 周の在り処: ブランチ `issue/253-version-bump-regression` ／ worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-253` ／ 起点 `6331379` ／
   base 参照 `origin/main`（解決した SHA `63313790e6781d3e70b3cf042dd30c4e0203853b`）
-- 関門: 未着手
+- 実装: `b670f94`。`check-all.py` 34/34 緑。修正前の本体に当てると後退 3 ケース・比較不能 3 ケースが rc=0（本件を再現）
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
+- 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**（2026-10-14）
 - 反証と差し戻し: なし
 - 交絡: 実験なし
 
