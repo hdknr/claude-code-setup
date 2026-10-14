@@ -370,6 +370,29 @@ python3 scripts/check-description-sync.py origin/main   # description の同期�
 python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止め自体のテスト
 ```
 
+### 並行する周は、同じ版に上げて衝突する
+
+**同じプラグインを触る周が並行していると、先にマージされた周が、こちらと同じ patch 版に上げている。**
+#211 の周では**これが 2 回起きた**——こちらが上げた版に、main が #222（1.38.5）と
+#210（1.38.6）で先に到達した。2 回目は PR が `CONFLICTING` になり、
+**`gh pr checks` が `no checks reported` を返して CI が 1 本も走っていなかった**
+（取り込んで push したら走った）。**PR を作っただけでは、CI が回ったことにならない。**
+
+**取り込むときは、版をもう 1 つ上げる。** **両側が同じ値に上げていると、版の行は
+衝突せずに自動でマージされる**——**マージが通ったことは、版が正しいことを意味しない。**
+取り込んだあとの版は main と同じ値なので、**中身を変えたのに版が据え置きの状態**になっている。
+#211 の周で 2 回とも行った手順:
+
+1. `git merge origin/main`
+2. **生成ブロック（設計ドキュメント §8.2）が衝突したら、main 側を取ってから
+   `python3 scripts/skill-metrics.py` で書き直す**——手で両側を混ぜない（生成ブロックは手で書かない）
+3. **版を次の patch に上げる**（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）
+4. `git diff origin/main` で、**main との正味の差分がその周の変更だけ**であることを見る
+5. `python3 scripts/check-all.py` を回し、push したあと `gh pr checks <n>` で PR 側を見る
+
+**PR を作ってからマージされるまでの間にも、main は進む。** マージの直前に
+`gh pr view <n> --json mergeable` を見る。
+
 ### 歯止めは毎回全部回す
 
 **1 本ずつ選ばない。** コミットする前に、**これ 1 本**を回す:
