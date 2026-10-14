@@ -492,14 +492,29 @@ def script_exit_codes(source: str) -> set[int] | None:
     `foo; exit 8`。**行頭だけに絞ると、この形で足した番号が一覧に無くても緑になる**
     ——1 パス目の両関門が実測）・正常終了の 0・**`${N:?…}` の引数不足**（bash の実測で 1）。
     **コメント（行頭か空白・`;` の直後の `#` から行末）は数えない。**
+    **引用（`'…'`・`"…"`）の中身と heredoc の本文も数えない**——**数えると、
+    実際の `exit 7` を `echo 'exit 7'` に置き換えても一致と言う**。**引用を外してから
+    コメントを落とす**——**順を逆にすると `echo "see #206"; exit 8` の `exit 8` が消える**
+    （どちらも 2 パス目の `/code-review` が実測）。
     **数字の付かない `exit`（`exit "$rc"`・`exit -1`・素の `exit`）があれば `None`**
     ——**値が読めない形を「無い」に丸めない**（一覧と一致とは言わせない）。
     **`git worktree add` の失敗は git の終了コードで固定ではない**ので、ここには入らない
     （一覧の「それ以外」がそれを受ける）。
     """
     codes: set[int] = set()
+    heredoc: tuple[str, bool] | None = None  # (終端の語, `<<-` か)
     for line in source.splitlines():
-        code = re.sub(r"(^|[ \t;])#.*$", r"\1", line)
+        if heredoc is not None:
+            word, dash = heredoc
+            if (line.lstrip("\t") if dash else line) == word:
+                heredoc = None
+            continue
+        code = re.sub(r"<<(-?)[ \t]*(['\"])([A-Za-z_]\w*)\2", r"<<\1\3", line)
+        code = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", code)
+        code = re.sub(r"(^|[ \t;])#.*$", r"\1", code)
+        m = re.search(r"(?<!<)<<(-?)[ \t]*([A-Za-z_]\w*)", code)
+        if m:
+            heredoc = (m.group(2), m.group(1) == "-")
         for m in re.finditer(r"\bexit\b([ \t]+(\d+)\b)?", code):
             if m.group(2) is None:
                 return None
@@ -602,6 +617,29 @@ def check_exit_code_lists() -> None:
               not exit_lists_agree(renamed, script.name, source))
         check(f"{script.name}: コメント中の exit は数えない",
               script_exit_codes(source + f"\n# 例: exit {top + 3}\n") == actual)
+        check(f"{script.name}: 行末のコメント中の exit は数えない",
+              script_exit_codes(source + f"\ngit fetch  # retry would exit {top + 3}\n")
+              == actual)
+        # --- 引用と heredoc（2 パス目の `/code-review` の CR2-1・CR2-2） ---
+        quoted_hash = f'[ -n "$X" ] || {{ echo "see #206" >&2; exit {top + 1}; }}'
+        check(f"{script.name}: 引用の中の `#` の後ろの exit も数える（`{quoted_hash}`）",
+              not exit_lists_agree(skill, script.name, source + f"\n{quoted_hash}\n"))
+        real_exit = re.compile(rf"^([ \t]*)exit {top}\b", re.M)
+        check(f"{script.name}: 変異の当て先（`exit {top}`）がスクリプトに在る",
+              real_exit.search(source) is not None)
+        for repl in (f"echo 'caller should exit {top}'",
+                     f'echo "caller should exit {top}"',
+                     f"cat <<EOF\nexit {top}\nEOF",
+                     f"cat <<-'EOF'\n\texit {top}\n\tEOF"):
+            moved = real_exit.sub(lambda m, r=repl: m.group(1) + r, source, count=1)
+            shown = repl.replace("\n", "⏎")
+            check(f"{script.name}: 実際の `exit {top}` を `{shown}` に置き換えると不一致",
+                  not exit_lists_agree(skill, script.name, moved))
+        for tail in ("cat <<EOF\nx\nEOF\nexit {n}", "x=$((1<<2)); exit {n}"):
+            added = tail.format(n=top + 1)
+            shown = added.replace("\n", "⏎")
+            check(f"{script.name}: heredoc の後ろ・`<<` 演算の後ろの `exit` は数える（`{shown}`）",
+                  not exit_lists_agree(skill, script.name, source + f"\n{added}\n"))
 
 
 def demonstrate_base_rule(base: Path) -> None:
