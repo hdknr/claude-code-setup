@@ -65,7 +65,13 @@
 
 - 周の在り処: ブランチ `issue/222-pr-preconditions-guard`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-222`、
   起点 `6071e01`、base 参照 `origin/main` → `6071e01e9c1855e3a3c1db053d3e1a53cda26020`
-- 関門: 未着手
+- 実装: `210f04f` で完了（check-all 33/33 緑、plan-scope 緑）
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と手順 6 の /code-review 1 パス目）
+- 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**（`/clear` して `/dev-loop 222` で再開。2026-10-14）
+- 再開時の肯定的な確認: ブランチ `issue/222-pr-preconditions-guard` 一致・HEAD `210f04f`・base `6071e01` は HEAD の祖先
+- 再開後の観測（付随。受入基準ではない）: 再開したセッション（`EnterWorktree` を呼んでいない）で
+  `python3 <find-cycle.py> 222; echo "exit=$?"` が**拒否されずに通った**（1 回）。
+  実装時の拒否は `EnterWorktree` で入ったセッション。**セッションの種別・コマンドの形（`bash`/`python3`・引用符）の両方が違うので、何が効いたかは分けていない**
 - 交絡を潰した手順: `;` と `$?` を分けた（`; echo done` が通る）。陽性対照（素の形が通る）を同じセッションで取った
 
 ## 6. 既知の限界・決着済みの論点
