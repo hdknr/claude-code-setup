@@ -34,8 +34,9 @@ from pathlib import Path
 MANIFEST = ".claude-plugin/plugin.json"
 # bump 無しでも警告に留めるファイル名（プラグインルート直下のみ）
 WARN_ONLY = {"README.md"}
-# 比較できる版の形。prerelease は使っていないので受け付けない（比較不能としてエラー）
-VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+# 比較できる版の形。prerelease は使っていないので受け付けない（比較不能としてエラー）。
+# `\d` にしない——全角の「１」のような Unicode の数字にも当たり、int() も通してしまう
+VERSION_RE = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)")
 
 errors: list[str] = []
 warnings: list[str] = []

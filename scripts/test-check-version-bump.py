@@ -179,6 +179,15 @@ def unparsable_both_same(tmp: Path) -> Path:
     return root
 
 
+def fullwidth_digit(tmp: Path) -> Path:
+    """全角の数字は X.Y.Z ではない（`\\d` は Unicode の数字にも当たる）。"""
+    root = new_repo(tmp, "1.0.0")
+    set_version(root, "\uff11.0.1")
+    touch(root, "skills/demo/SKILL.md", "new\n")
+    commit(root, "全角の版")
+    return root
+
+
 def non_string_version(tmp: Path) -> Path:
     root = new_repo(tmp, "1.0.0")
     set_version(root, 2)
@@ -203,6 +212,7 @@ CASES: list[Case] = [
     ("版を据え置いて README だけ", same_version_readme, True, "::warning::"),
     ("head の版が X.Y.Z でない", unparsable_head, False, "比較できない"),
     ("両側とも同じ壊れた版", unparsable_both_same, False, "比較できない"),
+    ("版に全角の数字", fullwidth_digit, False, "比較できない"),
     ("版が文字列でない", non_string_version, False, "比較できない"),
     ("新規プラグイン", new_plugin, True, "新規プラグイン"),
 ]
@@ -243,6 +253,10 @@ MUTATIONS: list[tuple[str, list[tuple[str, str]]]] = [
     (
         "比較できない版の検査を外す",
         [("if base_key is None or head_key is None:", "if False:")],
+    ),
+    (
+        "数字を Unicode の数字まで広げる",
+        [(r'r"([0-9]+)\.([0-9]+)\.([0-9]+)"', r'r"(\d+)\.(\d+)\.(\d+)"')],
     ),
 ]
 
