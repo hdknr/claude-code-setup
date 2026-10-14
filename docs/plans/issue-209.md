@@ -7,7 +7,7 @@
 - `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — 項目 7 に 3 点を足す
 - `plugins/dev-loop/skills/dev-loop/prompts/review-handoff.md` — 項目 6 に 3 点を足す
 - `plugins/dev-loop/agents/dev-loop-verifier.md` — 項目 5 に 3 点を足す（Issue の「任意」を採る）
-- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版のバナーだけ（1.38.1 → 1.38.3。main の #208 が 1.38.2 を先に使った）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版のバナーだけ（1.38.1 → 1.38.4。main の #208 が 1.38.2、#245 が 1.38.3 を先に使った）
 - `plugins/dev-loop/.claude-plugin/plugin.json` — version
 - `.claude-plugin/marketplace.json` — dev-loop の version
 - `docs/plans/issue-209.md` — この計画ファイル
@@ -37,7 +37,7 @@
   (b)「何が無いのか」が環境・権限・道具か（時間・手間なら BLOCKED ではない）、
   (c) 主張を弱めれば分類そのものが要らなくならないか——が、**委譲先に届く経路すべて**に載っている。
 - **I2.** 既存の記述（「探していないだけか」「BLOCKED を未証明に寄せる誤り」など）を消さない・緩めない。
-- **I3.** version が 3 種類（marketplace.json / plugin.json / SKILL.md の 2 行）で 1.38.3 に揃う（1 パス目の V1/R1 で 1.38.2 から訂正）。
+- **I3.** version が 3 種類（marketplace.json / plugin.json / SKILL.md の 2 行）で 1.38.4 に揃う（1 パス目の V1/R1 で 1.38.2 → 1.38.3、PR 後のコンフリクト解消で 1.38.4 に訂正）。
 - **I4.** `check-all.py` が全部緑。
 
 **I1 を破りうる経路**（委譲先が BLOCKED の分類を検査するときに読む文面。差分ではなく SKILL の委譲の入口から数える）
@@ -93,7 +93,11 @@
   受入基準を破るものは 0 件——子の報告もそう述べる）。採否は 6 の表。
 - **2 パス目の指摘対応: 直した行 0 件**（どれも「示せる」かつ「受入基準を破る」を満たさない）。
   **狭いパス: 該当なし。** 関門はここで打ち切り、残りは人間レビュー。
-- 次: PR 作成（手順 6）→ 承認待ち（手順 7）
+- PR #250 を作成（CI 緑）→ 承認待ちの間に #245（1.38.3）が main に入りコンフリクト。
+  `origin/main` を取り込み、1.38.4 に上げ、§8.2 の生成ブロックを再生成して解消（人間の指示による）。
+  **成果物の中身（3 点の追記）は変えていない**ので関門には当て直していない——変わったのは版と生成ブロックだけで、
+  どちらも `check-all.py` が機械で見る。
+- 次: 承認待ち（手順 7）
 - 反証・差し戻し: 1 パス目で 1 件（V1）→ 手順 4 に差し戻して対応
 - 交絡: 実験なし
 
