@@ -57,7 +57,9 @@
 - 関門:
     - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件**（`check-all.py` 33/33 緑・`skill-metrics --check` 緑）
     - `/code-review` 1 パス目（high）: **指摘 6 件**——採否は §6。直す 2 件（R1・R3）
-    - 次: 指摘対応 → 手順 5 の当て直し（Verifier 2 パス目）**と** `/code-review` 2 パス目の両方
+    - 指摘対応: `2676273`（R1・R3。`check-all.py` 33/33 緑）
+    - 次: 手順 5 の当て直し（Verifier 2 パス目）**と** `/code-review` 2 パス目の**両方が未**。base は上の SHA のまま
+    - 2 つ目の割り目: 提案中
 - 反証・差し戻し: Verifier 0 件。差し戻しなし（指摘対応のみ）
 - 交絡: 実験なし
 
