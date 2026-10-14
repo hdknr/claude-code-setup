@@ -38,8 +38,28 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check-version-bump.py"
 
-# 実リポジトリ。ここを対象にしてしまうテストは実行前に落とす。
-REAL_REPO = REPO_ROOT.resolve()
+def real_repo_roots() -> list[Path]:
+    """実リポジトリの作業ツリー。ここを対象にしてしまうテストは実行前に落とす。
+
+    **worktree から走らせると `REPO_ROOT` は worktree を指す**ので、それだけでは
+    メインの作業ツリーの内側を通してしまう。共有の `.git` の親も加える。
+    """
+    roots = [REPO_ROOT.resolve()]
+    proc = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode == 0:
+        main_root = Path(proc.stdout.strip()).resolve().parent
+        if main_root not in roots:
+            roots.append(main_root)
+    return roots
+
+
+REAL_REPOS = real_repo_roots()
 
 failures: list[str] = []
 checks = 0
@@ -57,10 +77,12 @@ def git(cwd: Path, *args: str) -> None:
 
 def assert_outside_real_repo(root: Path) -> None:
     """テストの作業先が実リポジトリでないことを、実行前に構造で担保する。"""
-    assert root.resolve() != REAL_REPO, "テストが実リポジトリを対象にしている"
-    assert not str(root.resolve()).startswith(str(REAL_REPO) + os.sep), (
-        "テストの作業ディレクトリが実リポジトリの内側にある"
-    )
+    resolved = root.resolve()
+    for real in REAL_REPOS:
+        assert resolved != real, "テストが実リポジトリを対象にしている"
+        assert not str(resolved).startswith(str(real) + os.sep), (
+            "テストの作業ディレクトリが実リポジトリの内側にある"
+        )
 
 
 def set_version(root: Path, version: object, plugin: str = "demo") -> None:
@@ -195,6 +217,30 @@ def non_string_version(tmp: Path) -> Path:
     return root
 
 
+def break_base_manifest(tmp: Path, text: str) -> Path:
+    """base の plugin.json は在るが、版が読めない形に書き換える。"""
+    root = new_repo(tmp, "1.0.0")
+    git(root, "checkout", "-q", "base-ref")
+    manifest = root / "plugins" / "demo" / ".claude-plugin" / "plugin.json"
+    manifest.write_text(text, encoding="utf-8")
+    commit(root, "base の plugin.json を壊す")
+    git(root, "checkout", "-q", "work")
+    set_version(root, "0.0.1")
+    touch(root, "skills/demo/SKILL.md", "new\n")
+    commit(root, "版を付ける")
+    return root
+
+
+def base_without_version(tmp: Path) -> Path:
+    """base に plugin.json は在るが version が無い。新規プラグインと読まない。"""
+    return break_base_manifest(tmp, json.dumps({"name": "demo"}))
+
+
+def base_broken_json(tmp: Path) -> Path:
+    """base の plugin.json が JSON として読めない。新規プラグインと読まない。"""
+    return break_base_manifest(tmp, '{"name": "demo",')
+
+
 def new_plugin(tmp: Path) -> Path:
     root = new_repo(tmp, "1.0.0")
     set_version(root, "0.0.1", plugin="fresh")
@@ -214,6 +260,8 @@ CASES: list[Case] = [
     ("両側とも同じ壊れた版", unparsable_both_same, False, "比較できない"),
     ("版に全角の数字", fullwidth_digit, False, "比較できない"),
     ("版が文字列でない", non_string_version, False, "比較できない"),
+    ("base の plugin.json に version が無い", base_without_version, False, "比較できない"),
+    ("base の plugin.json が壊れている", base_broken_json, False, "読めない"),
     ("新規プラグイン", new_plugin, True, "新規プラグイン"),
 ]
 
@@ -255,6 +303,15 @@ MUTATIONS: list[tuple[str, list[tuple[str, str]]]] = [
         [("if base_key is None or head_key is None:", "if False:")],
     ),
     (
+        "版の読めない base を新規プラグイン扱いに戻す",
+        [
+            (
+                "if base_manifest is None:",
+                "if base_manifest is None or version_in(base_manifest)[1] is None:",
+            )
+        ],
+    ),
+    (
         "数字を Unicode の数字まで広げる",
         [(r'r"([0-9]+)\.([0-9]+)\.([0-9]+)"', r'r"(\d+)\.(\d+)\.(\d+)"')],
     ),
@@ -268,7 +325,21 @@ def check(condition: bool, label: str, detail: str = "") -> None:
         failures.append(f"{label}{': ' + detail if detail else ''}")
 
 
+def guard_rejects(path: Path) -> bool:
+    try:
+        assert_outside_real_repo(path)
+    except AssertionError:
+        return True
+    return False
+
+
 def main() -> int:
+    # ガード自体: どの実作業ツリー（worktree から走らせたときのメインを含む）の内側も通さない。
+    # パスを作らずに述語だけ当てる
+    for real in REAL_REPOS:
+        check(guard_rejects(real / "version-bump-probe"), f"ガードが {real} の内側を通す")
+    check(not guard_rejects(Path(tempfile.gettempdir()) / "version-bump-probe"), "ガードが一時ディレクトリまで拒む")
+
     # 陽性対照: 本物の本体で全ケースが期待どおり
     wrong = run_cases(SCRIPT)
     check(not wrong, "本体で期待と違うケースがある", "\n".join(wrong))

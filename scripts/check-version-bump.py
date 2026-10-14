@@ -58,15 +58,25 @@ def changed_files(base: str) -> list[str]:
     return [line for line in out.splitlines() if line.strip()]
 
 
-def version_at(ref: str, plugin: str) -> str | None:
-    """指定 ref における plugin.json の version。無ければ None。"""
+def manifest_at(ref: str, plugin: str) -> str | None:
+    """指定 ref における plugin.json の中身。ファイルが無ければ None。
+
+    **「無い」と「在るが版が読めない」を分ける**——後者を新規プラグイン扱いにすると、
+    版の欠落・壊れた JSON が黙って OK になる。
+    """
     code, out = git("show", f"{ref}:plugins/{plugin}/{MANIFEST}")
-    if code != 0:
-        return None
+    return out if code == 0 else None
+
+
+def version_in(text: str) -> tuple[bool, object]:
+    """plugin.json の中身から version を取る。(JSON として読めたか, version)。"""
     try:
-        return json.loads(out).get("version")
+        data = json.loads(text)
     except json.JSONDecodeError:
-        return None
+        return False, None
+    if not isinstance(data, dict):
+        return False, None
+    return True, data.get("version")
 
 
 def parse_version(version: object) -> tuple[int, int, int] | None:
@@ -110,9 +120,13 @@ def main() -> int:
         return 0
 
     for plugin, files in sorted(touched.items()):
-        base_version = version_at(base, plugin)
-        if base_version is None:
+        base_manifest = manifest_at(base, plugin)
+        if base_manifest is None:
             print(f"{plugin}: 新規プラグイン（base に plugin.json が無い）。対象外")
+            continue
+        readable, base_version = version_in(base_manifest)
+        if not readable:
+            errors.append(f"{plugin}: base の plugins/{plugin}/{MANIFEST} が読めない")
             continue
 
         head_version = current_version(plugin)
