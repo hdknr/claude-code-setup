@@ -18,7 +18,7 @@
   },
   "diagrams/dev-loop-cycle.drawio": {
     "output": "docs/images/dev-loop-cycle.svg",
-    "fingerprint": "b7eabb6d0dab833523adb22054e1608b559b34c4fd1140a9883a4deb4da23d6b"
+    "fingerprint": "3d4c378bd78b3a1569d7a9881bbb4f6d9bca963ebbb6ed4bc534d5e306d222c9"
   },
   "diagrams/docker-windows-wsl.drawio": {
     "output": "docs/images/docker-windows-wsl.png",
