@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.37.2 -->
-> **このスキルの版: 1.37.2**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.37.3 -->
+> **このスキルの版: 1.37.3**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -485,6 +485,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   **終了コードで分岐する**——**0: 作れた** ／ **3: 既に当たるものがある**（**作っていない。
   再開の周かもしれないので `find-cycle.py` で探す**）／ **2: 番号が数字でない** ／
   **1: 引数が足りない** ／ **5・6: git で判定できなかった**（**作っていない**）／
+  **7: `DEV_LOOP_BASE_REF` で名指しした参照が解決できない**（**作っていない。HEAD には落とさない**）／
   **それ以外: `git worktree add` が失敗した**。
   **0 以外はすべて「作っていない」**と読んでよい。
   **作ったあとに `EnterWorktree` へ `path` を渡して入る**——
