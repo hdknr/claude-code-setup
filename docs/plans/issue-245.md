@@ -79,7 +79,9 @@
 ## 5. 関門の進捗（再開点）
 
 - **周の在り処**: ブランチ `issue/245-porcelain-start-end`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-245`・起点 `2a8e87b`・base `origin/main` = `2a8e87bd90b89a70a17da4e317e9f736649774a0`
-- 関門: 未着手
+- 実装: `4da0b24`（`check-all.py` 33/33 緑・`skill-metrics.py` 再生成済み）。増減: 4 箇所とも 2 行を 1 つの規定に畳み（減）、開始時の取得を足した（増）
+- 関門: 未着手（次は手順 5 の 1 パス目）
+- 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**。再開は手順 5 の 1 パス目から（Verifier と /code-review の両方、base `2a8e87bd90b89a70a17da4e317e9f736649774a0`）
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
