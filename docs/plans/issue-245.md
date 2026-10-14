@@ -78,12 +78,13 @@
 
 ## 5. 関門の進捗（再開点）
 
-- **周の在り処**: ブランチ `issue/245-porcelain-start-end`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-245`・起点 `2a8e87b`・base `origin/main` = `2a8e87bd90b89a70a17da4e317e9f736649774a0`
+- **周の在り処**: ブランチ `issue/245-porcelain-start-end`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-245`・起点 `2a8e87b`・base `origin/main` = `2a8e87bd90b89a70a17da4e317e9f736649774a0`（1 パス目）→ `ab215f1c4887b4bddc260cfdca1c6f9ae8aba962`（main のマージで系譜が動いたので、同じ式 `git merge-base origin/main HEAD` を当て直した。旧 base のままだと #246/#248 の作業が「追加」として混ざる。2 パス目はこの SHA を渡す）
 - 実装: `4da0b24`（`check-all.py` 33/33 緑・`skill-metrics.py` 再生成済み）。増減: 4 箇所とも 2 行を 1 つの規定に畳み（減）、開始時の取得を足した（増）
 - Verifier 1 パス目（`dev-loop:dev-loop-verifier`／sonnet。Write/Edit なしを報告で確認）: **反証 1 件**（V1 = J4。`check-version-bump.py` が `origin/main` に対して赤）。J1〜J3 は一致。開始時・終了時の porcelain はともに空
 - `/code-review` 1 パス目（high）: **指摘 8 件**（下表 R1〜R8）。直す 1 件（R1。V1 と同じ）・残課題 7 件。開始時・終了時の porcelain はともに空
 - 1 パス目の指摘対応: **済**——R1/V1 = origin/main（`ab215f1`）をマージ（衝突は §8.2 の生成ブロックのみ。main 側を採って `skill-metrics.py` で再生成）・版を 1.38.2 に。`check-all.py` 33/33 緑・`check-version-bump.py origin/main` 問題なし
-- **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**。base は不変（`2a8e87bd90b89a70a17da4e317e9f736649774a0`。マージ後も HEAD の祖先）
+- **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**。base は上の当て直した SHA（`ab215f1`）
+- 2 つ目の割り目（手順 6）: 未提案
 - 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**。再開は手順 5 の 1 パス目から（Verifier と /code-review の両方、base `2a8e87bd90b89a70a17da4e317e9f736649774a0`）
 - 反証・差し戻し: なし
 - 交絡: 実験なし
