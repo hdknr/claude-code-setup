@@ -8,7 +8,7 @@
 - `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — 「観点を絞って短く返す」を同じ趣旨に直す
 - `plugins/dev-loop/agents/dev-loop-verifier.md` — 6 番目「報告は簡潔に」に「範囲は絞らない」を足す
 - `docs/plugins/dev-loop-design.md` — 同じ文の写し（Issue 本文は挙げていないが、grep で当たった 4 つ目の複製）。§8.2 の生成ブロック（`skill-metrics.py` が書く）
-- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.38.2 → 1.38.3（記述の修正なので patch）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.38.2 → 1.38.3（記述の修正なので patch）。main が先に 1.38.4 まで進んだので、取り込み後に 1.38.5
 - `.claude-plugin/marketplace.json` — 同じ版
 - `docs/plans/issue-210.md` — この計画ファイル
 
@@ -34,7 +34,7 @@
   「絞れ」と読める文が SKILL.md・`prompts/`・`agents/`・設計ドキュメント・README のどこにも無い。
 - **I2. 「報告を短く」の意図は残る。** 4 箇所とも、報告を短くする理由（途中で切れると「反証なし」と区別がつかない／完走しない）と要求が残っている。
 - **I3. 直した文が、別の規定と食い違わない。** とくに必須の「問いを局面に絞らない」と、多レンズ化（任意。分けるなら各体に表をまるごと渡し、経路を全部挙げる担当を 1 体置く）。
-- **I4. 版が 3 種類で揃い（1.38.3）、`check-all.py` が緑。**
+- **I4. 版が 3 種類で揃い（main 取り込み後の 1.38.5。着手時は 1.38.3）、`check-all.py` が緑。**
 
 **それを破りうる経路**（文面が関門・読者に届く入口）
 
@@ -70,9 +70,10 @@
 - 関門 2 パス目: Verifier（`dev-loop:dev-loop-verifier`/sonnet）反証 1 件（F1。採否は 6 節）・`/code-review`（high）指摘 9 件＋本文 1 件（C1〜C10。直す 4・他の修正で解消 4・残課題 2）
 - 2 パス目の指摘対応の起点（狭いパス用）: `c6de8e6f1852f0e8223cb2416f4baa186ad310c6`（F1 の修正に入る直前の HEAD）
 - 2 パス目の指摘対応: F1（人間の指示で、`/code-review` の報告を待たずに着手）・C1・C2・C3・C6 を直した
-- 版: main が別 PR で 1.38.3 に進んだため `check-version-bump.py` が赤。狭いパスのあとで main を取り込み 1.38.4 に上げる（差分の起点を汚さないため、取り込みは狭いパスの後）
+- 版: main が別 PR で 1.38.3 に進んだため `check-version-bump.py` が赤。狭いパスのあとで main を取り込み 上げる（差分の起点を汚さないため、取り込みは狭いパスの後）
 - 狭いパス: 通した（修正コミット `792c34d`。反証 1 件＝N1。人間が決める）
-- 次: origin/main（1.38.4。#250 が先に入った）を取り込んで 1.38.5 に上げる → PR
+- main の取り込み: 済み（`origin/main` = `1867096`。衝突 5 ファイル——版 4 箇所は 1.38.5 に、agent 定義は main の BLOCKED 逆向きの追記とこの周の 6 番目を両方残し、§8.2 は再生成）。周の base は取り込みで `1867096` に動いた
+- 次: `check-all.py` → push → PR
 - 割り目 2（2 パス目の前）: 訊いた → **「ここで割る」**を選択（2026-10-14）。再開は 2 パス目（Verifier・`/code-review` の両方）から。指摘対応の起点（狭いパス用）は、2 パス目の指摘対応に入る直前の HEAD を書く（現在 `b2278e3` 以降）
 - 割り目 1（手順 4 完了時）: 訊いた → **「ここで割る」**を選択（2026-10-14）。再開は手順 5 の 1 パス目から
 - 交絡: 実験なし
