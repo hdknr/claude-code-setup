@@ -64,7 +64,9 @@ main へのマージ → GitHub Pages（`docs/` の生成ブロックが変わ�
 ## 5. 関門の進捗（再開点）
 
 - **周の在り処**: ブランチ `issue/204-audit-flags`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-204`、起点 `53d06c3`、base の参照 `origin/main`、base の SHA `53d06c35b1c94561dae32203f20adf57f03d43fa`
-- 関門: 未着手
+- 実装: 完了（コミット済み）。`check-all.py` は 33 本中 32 本 OK、落ちたのは base から落ちている `test-tab-match.py` の 1 本だけ（下の 6）
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目）
+- 割り目（手順 4）: 提案した → **人間が「ここで割る」を選んだ**（2026-10-14）。再開は上の worktree の中で `/clear` → `/dev-loop:dev-loop 204`
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
