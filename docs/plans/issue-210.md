@@ -64,7 +64,9 @@
 
 - **周の在り処**: ブランチ `issue/210-report-not-scope`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-210`・
   起点 `6071e01`・base 参照 `origin/main` → `6071e01e9c1855e3a3c1db053d3e1a53cda26020`
-- 関門: 未着手
+- 実装: 完了（`098150c`・計画修正 `check-all.py` 33/33 緑）
+- 関門: 未着手（次は手順 5 の 1 パス目）
+- 割り目 1（手順 4 完了時）: 訊いた → **「ここで割る」**を選択（2026-10-14）。再開は手順 5 の 1 パス目から
 - 交絡: 実験なし
 
 ## 6. 既知の限界・決着済みの論点
