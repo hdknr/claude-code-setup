@@ -7,7 +7,7 @@
 - `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — 項目 7 に 3 点を足す
 - `plugins/dev-loop/skills/dev-loop/prompts/review-handoff.md` — 項目 6 に 3 点を足す
 - `plugins/dev-loop/agents/dev-loop-verifier.md` — 項目 5 に 3 点を足す（Issue の「任意」を採る）
-- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版のバナーだけ（1.38.1 → 1.38.2）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版のバナーだけ（1.38.1 → 1.38.3。main の #208 が 1.38.2 を先に使った）
 - `plugins/dev-loop/.claude-plugin/plugin.json` — version
 - `.claude-plugin/marketplace.json` — dev-loop の version
 - `docs/plans/issue-209.md` — この計画ファイル
@@ -37,7 +37,7 @@
   (b)「何が無いのか」が環境・権限・道具か（時間・手間なら BLOCKED ではない）、
   (c) 主張を弱めれば分類そのものが要らなくならないか——が、**委譲先に届く経路すべて**に載っている。
 - **I2.** 既存の記述（「探していないだけか」「BLOCKED を未証明に寄せる誤り」など）を消さない・緩めない。
-- **I3.** version が 3 種類（marketplace.json / plugin.json / SKILL.md の 2 行）で 1.38.2 に揃う。
+- **I3.** version が 3 種類（marketplace.json / plugin.json / SKILL.md の 2 行）で 1.38.3 に揃う（1 パス目の V1/R1 で 1.38.2 から訂正）。
 - **I4.** `check-all.py` が全部緑。
 
 **I1 を破りうる経路**（委譲先が BLOCKED の分類を検査するときに読む文面。差分ではなく SKILL の委譲の入口から数える）
@@ -77,13 +77,34 @@
 
 - **周の在り処**: ブランチ `issue/209-blocked-checks-in-prompts`・
   worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-209`・
-  起点 `ab215f1`・base の参照 `origin/main`・**base `ab215f1c4887b4bddc260cfdca1c6f9ae8aba962`**
-- 実装: `e2c4db3`（`check-all.py` 33/33 緑）
-- 関門: 未着手。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）
+  起点 `ab215f1`・base の参照 `origin/main`・**1 パス目の base `ab215f1c4887b4bddc260cfdca1c6f9ae8aba962`**
+  - **1 パス目の指摘対応で `origin/main` を取り込んだので HEAD の系譜が動いた。式を当て直した base は
+    `6071e01`（`git merge-base origin/main HEAD`）**——2 パス目からはこちらを渡す
+    （手順 4 の「記録した SHA は値であって、定義ではない」）
+- 実装: `e2c4db3`（`check-all.py` 33/33 緑——**ただし base が古く、PR では赤になる形だった**。V1）
 - 割り目 1（手順 4 の完了時）: **AskUserQuestion で提示 → 「ここで割る」が選ばれた**
-- 反証・差し戻し: なし
+- **1 パス目**: Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 1 件**（V1）／
+  `/code-review` **指摘 7 件**（R1〜R7。R1 は V1 と同じ）。採否は 6 の表。
+- **1 パス目の指摘対応**: `origin/main` を取り込んで 1.38.3 に上げ、§8.2 の生成ブロックを再生成（V1/R1/R2）
+- 次: **手順 5 の当て直し（Verifier 2 パス目）**と **`/code-review` 2 パス目**の両方——その前に割り目 2
+- 反証・差し戻し: 1 パス目で 1 件（V1）→ 手順 4 に差し戻して対応
 - 交絡: 実験なし
 
 ## 6. 既知の限界・決着済みの論点
 
 - 機械で見る歯止めは作らない（4 を参照）。
+- **I1 で証明したのは「3 点の語句が 3 つの文面に載っている」まで。委譲先が実際にその 3 点を検査するかは
+  見ていない**（V1 の報告が指摘）。`claude` を起こせば測れるが受入基準ではないので、主張を測った範囲に留め、
+  PR コメントに名指しで残す。
+
+### 1 パス目の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1/R1 | 1.38.2 が main（#208）と衝突 | 示せる——`origin/main` の `plugin.json` が 1.38.2、`check-all.py` で `check-version-bump.py` が落ちた | I3・I4 | **直す**（1.38.3） |
+| R2 | 取り込み後は §8.2 の生成ブロックが古くなる | 示せる——取り込みで `dev-loop-design.md` が衝突した | I4 | **直す**（再生成） |
+| R3 | (c) に SKILL の「弱められる≠弱めてよい」が付いていない | 示せない（文面の差だけで、緩んだ実例は無い） | 無し（I1 の (c) は SKILL の原文どおり） | 残課題 |
+| R4 | `review-handoff.md` 項目 6 に「探していないだけか」と定義が無い | 示せない（既存の非対称で、この周の差分ではない） | 無し | 残課題 |
+| R5 | `Workflow` のノード経路が経路表に無い | 示せない（ノードに文面が届かなかった実例は無い） | 無し | 残課題 |
+| R6 | 「起票すれば周を閉じられる出口」が前提（人間の判断）を落としている | 示せない（SKILL 自身が「規定が用意した出口」と書く） | 無し | 残課題 |
+| R7 | 3 点の写しが 3 ファイルにあり同期の仕組みが無い | 示せない（決着済みの 4 と同じ論点） | 無し | 残課題 |
