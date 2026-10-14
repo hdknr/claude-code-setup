@@ -52,11 +52,14 @@ from pathlib import Path
 REAL_REPO = Path(__file__).resolve().parent.parent
 
 MISSING = object()  # url キーそのものが無い
+NEW_PAGE = "new"  # 偽の orca の `tab create` が返す browserPageId
 
-FAKE_ORCA = """#!/bin/sh
+FAKE_ORCA = f"""#!/bin/sh
 echo "orca $*" >> "$FAKE_LOG"
 if [ "$1 $2" = "tab list" ]; then
     cat "$FAKE_DIR/list.out"
+elif [ "$1 $2" = "tab create" ]; then
+    echo '{{"ok":true,"result":{{"browserPageId":"{NEW_PAGE}"}}}}'
 fi
 """
 
@@ -102,7 +105,11 @@ class Tool:
         """偽のコマンドの呼び出し記録を ('reuse', id) / ('create',) / ('unknown', calls) に読む。"""
         if self.name == "orca":
             acts = [c for c in calls if c != "orca tab list --json"]
-            if acts == [f"orca tab create --url {target} --json"]:
+            # #201 以降、作った場合も再利用した場合も最後に --focus 付きで前面に出す
+            if acts == [
+                f"orca tab create --url {target} --json",
+                f"orca tab switch --page {NEW_PAGE} --focus --json",
+            ]:
                 return ("create",)
             if (
                 len(acts) == 2
@@ -110,7 +117,7 @@ class Tool:
                 and acts[0].endswith(f" --url {target} --json")
             ):
                 page = acts[0][len("orca goto --page "):-len(f" --url {target} --json")]
-                if acts[1] == f"orca tab switch --page {page} --json":
+                if acts[1] == f"orca tab switch --page {page} --focus --json":
                     return ("reuse", page)
             return ("unknown", acts)
         acts = [
