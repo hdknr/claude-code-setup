@@ -109,6 +109,9 @@
   V-R2a（変異を殺すためのケースで、直す前の版の挙動は正しい）。
   **修正を外す変異 11 本**（scratchpad）: 11 本とも `check_shell_lexing` が赤。`check-all.py`: 33/33 本、失敗 0。
 - **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**。
+  差分の取り方は周の base `75516dd` のまま（狭いパスの起点は、2 パス目の指摘対応の直前に記録する）。
+- 割り目 2（2 パス目の前）: AskUserQuestion で提案 → **人間が「ここで割る」を選択**（2026-10-14）。
+  再開は worktree の中で `/clear` → `/dev-loop:dev-loop 243` → **Verifier 2 パス目と `/code-review` 2 パス目から**。
 - 交絡: 実験は bash の実測 1 件（`exit 010` → 10・`exit 256` → 0・`<<E"OF"`・`<<\EOF` が `EOF` で閉じる）。
   陽性側: 同じスクリプトで heredoc の後ろの `echo` が出る（閉じたことの観測）。
 
