@@ -10,10 +10,11 @@
 - `.claude-plugin/marketplace.json` — dev-loop の version
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す場合のみ）
 - `docs/plans/issue-211.md` — この計画ファイル
+- `CLAUDE.md` — **手順 8 の焼き戻し**（PR #254 のマージ後、人間の指示で広げた）。「並行する周は、同じ版に上げて衝突する」節を足す。
+  既存の「歯止めは毎回全部回す」節（I2 の根拠）は触らない
 
 触らない:
 
-- `CLAUDE.md` — 既に「歯止めは毎回全部回す」節で `python3 scripts/check-all.py` を名指ししている（受入基準 I2 はこの記述で満たされる）
 - `plugins/dev-loop/README.md` — 99 行の「このリポジトリ」は**インストール先**のスコープの説明（汎用）、155 行は直前で clone した `claude-code-setup` を指す（配布元の README なので正しい対象）
 - `#110` などの Issue リンク — URL が `hdknr/claude-code-setup` を名指ししており、実例と分かる形になっている
 - 他プラグイン（Issue の範囲外）
@@ -101,6 +102,9 @@ grep は「このリポジトリ／本リポジトリ／当リポジトリ／che
   **PR 側の CI**: `check` pass・`build` pass（`deploy` は skipping）。mergeable。
 - 手順 7: **マージは人間の承認待ち**。反映経路はプラグイン配布（マージ後の `plugin update`）と GitHub Pages（生成ブロック）。
 - 手順 8: **この周の起票: 0 件**。学びの候補（未焼き戻し・人間に提示）: 並行する周が同じ patch 版に上げて衝突する形が、この周だけで 2 回起きた（#222・#210）。
+- **手順 8 の焼き戻し**（PR #254 マージ後、人間が「CLAUDE.md に書いて」と指示）: ブランチ `issue/211-version-collision-lesson`
+  （同じ worktree で `origin/main` から切った）で CLAUDE.md に「並行する周は、同じ版に上げて衝突する」節を足す。
+  手順 7 のマージ後なので関門は残っていない（SKILL.md 手順 4 のとおり受入基準は広げない）。PR で人間レビューに回す。
 - 実験: 陽性対照つきの grep のみ
 
 ## 6. 既知の限界・決着済みの論点
