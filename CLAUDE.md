@@ -32,7 +32,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）
   - `check-plugin-versions.py` - カタログ構造と version 一致
-  - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）
+  - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）。
+    **base の先端より版が下がった差分も落とす**（#253。比較は数値——`1.38.10` > `1.38.9`）
+  - `test-check-version-bump.py` - 上の回帰テスト（変異テストを含む）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
   - `check-plan-scope.py` - 差分が計画ファイルの「変更範囲」に収まっているか（PR 限定）
   - `check-norm-markers.py` - `（必須）` が原本（**スキルのディレクトリ**＝
