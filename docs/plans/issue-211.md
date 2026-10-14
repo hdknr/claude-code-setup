@@ -73,7 +73,9 @@ grep は「このリポジトリ／本リポジトリ／当リポジトリ／che
   起点 `1867096`・base 参照 `origin/main` → `1867096f7447e09ac4cadd03513da0390e606826`
 - 実装: 済（SKILL.md 2 箇所・guard-rejections.md 1 箇所・版 1.38.4 → 1.38.5）。`skill-metrics.py` は生成ブロックを変えなかった（`--check` は check-all に含む）
 - grep: 修正前 4 件（うち実例 1）→ 修正後 1 件（実例の #233 のみ）
-- 関門: 未
+- `check-all.py`: 33/33 緑（失敗 0 / 飛ばし 0）。コミット `25b1bcb`
+- 割り目 1（手順 4 完了時）: AskUserQuestion で提案 → **「ここで割る」が選ばれた**
+- 関門: 未（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
 - 実験: 陽性対照つきの grep のみ
 
 ## 6. 既知の限界・決着済みの論点
