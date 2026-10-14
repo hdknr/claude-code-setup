@@ -485,37 +485,130 @@ def check_norm_shape() -> None:
           "git fetch" not in agent and "取り直して" not in agent)
 
 
+def shell_code_and_data(source: str) -> tuple[str, list[str]]:
+    """シェルの本文を、**実行される字句**と**データ**（引用の中身・heredoc の本文）に分ける（#243）。
+
+    **行をまたいで状態を持つ**——#206 の版は行単位の正規表現で、**複数行の文字列の中の
+    `exit 7` を数え**、**`$((a<<b))` を heredoc として開いて以降の行を全部飛ばした**（#243 N1・N3）。
+    実行される字句では、引用は `''`・`""` に、算術（`((…))`）は `0` に置き換え、
+    コメント（語の頭の `#` から行末）は落とす。**`$#`・`${v#p}`・`"…#…"` はコメントではない。**
+    heredoc は**終端語の引用を外して**（`<<\\EOF`・`<<'EOF'`・`<<E"OF"` はどれも `EOF`）、
+    `<<-` は**行頭のタブを剥がした行**で閉じる。**1 行の heredoc は書いた順に全部読む。**
+    **`<<<`（here-string）は heredoc ではない。**
+    **追わないもの**: `"…"` の中の `$(…)` に入れ子の引用・`$(…)` 自体（中の `exit` は字句として残る）。
+    """
+    code: list[str] = []
+    data: list[str] = []
+    pending: list[tuple[str, bool]] = []  # (終端の語, `<<-` か)
+    i, n = 0, len(source)
+
+    def skip_quoted(start: int, quote: str, escapes: bool) -> int:
+        j = start
+        while j < n and source[j] != quote:
+            j += 2 if escapes and source[j] == "\\" else 1
+        return j
+
+    while i < n:
+        c = source[i]
+        if c == "\n":
+            code.append("\n")
+            i += 1
+            for word, dash in pending:
+                body: list[str] = []
+                while i < n:
+                    j = source.find("\n", i)
+                    j = n if j < 0 else j
+                    line, i = source[i:j], j + 1
+                    if (line.lstrip("\t") if dash else line) == word:
+                        break
+                    body.append(line)
+                data.append("\n".join(body))
+            pending = []
+        elif c == "\\":
+            code.append("_")
+            i += 2
+        elif c == "#" and (not code or code[-1] in " \t\n;&|()"):
+            j = source.find("\n", i)
+            i = n if j < 0 else j
+        elif source.startswith("$'", i):
+            j = skip_quoted(i + 2, "'", True)
+            # `\n` の `n` が語の境界を消さないよう、エスケープは空白に置き換える
+            data.append(re.sub(r"\\.", " ", source[i + 2:j]))
+            code.append("''")
+            i = j + 1
+        elif c == "'":
+            j = skip_quoted(i + 1, "'", False)
+            data.append(source[i + 1:j])
+            code.append("''")
+            i = j + 1
+        elif c == '"':
+            j = skip_quoted(i + 1, '"', True)
+            data.append(source[i + 1:j])
+            code.append('""')
+            i = j + 1
+        elif source.startswith("((", i):
+            depth, j = 0, i
+            while j < n:
+                depth += {"(": 1, ")": -1}.get(source[j], 0)
+                if depth == 0:
+                    break
+                j += 1
+            code.append("0")
+            i = j + 1
+        elif source.startswith("<<<", i):
+            code.append("<<<")
+            i += 3
+        elif source.startswith("<<", i):
+            i += 2
+            dash = source.startswith("-", i)
+            i += dash
+            while i < n and source[i] in " \t":
+                i += 1
+            word: list[str] = []
+            while i < n and source[i] not in " \t\n;&|<>()":
+                if source[i] in "'\"":
+                    j = source.find(source[i], i + 1)
+                    j = n if j < 0 else j
+                    word.append(source[i + 1:j])
+                    i = j + 1
+                elif source[i] == "\\":
+                    word.append(source[i + 1:i + 2])
+                    i += 2
+                else:
+                    word.append(source[i])
+                    i += 1
+            pending.append(("".join(word), dash))
+            code.append("<<")
+        else:
+            code.append(c)
+            i += 1
+    return "".join(code), data
+
+
 def script_exit_codes(source: str) -> set[int] | None:
     """**スクリプトが返しうる固定の終了コード**を、本体から集める（#206）。
 
     明示の `exit N`（**行のどこにあっても数える**——`cmd || exit 8`・`then exit 8; fi`・
     `foo; exit 8`。**行頭だけに絞ると、この形で足した番号が一覧に無くても緑になる**
     ——1 パス目の両関門が実測）・正常終了の 0・**`${N:?…}` の引数不足**（bash の実測で 1）。
-    **コメント（行頭か空白・`;` の直後の `#` から行末）は数えない。**
-    **引用（`'…'`・`"…"`）の中身と heredoc の本文も数えない**——**数えると、
-    実際の `exit 7` を `echo 'exit 7'` に置き換えても一致と言う**。**引用を外してから
-    コメントを落とす**——**順を逆にすると `echo "see #206"; exit 8` の `exit 8` が消える**
-    （どちらも 2 パス目の `/code-review` が実測）。
-    **数字の付かない `exit`（`exit "$rc"`・`exit -1`・素の `exit`）があれば `None`**
+    **コメント・引用の中身・heredoc の本文は数えない**——切り分けは `shell_code_and_data`
+    （**行をまたいで状態を持つ**。#243）。
+    **引用か heredoc の本文に `exit` が現れたら `None`**——**実行されるか
+    （`trap 'exit 7' EXIT`・`eval "exit 7"`・`bash -c '…'`）を字句では決めきれない**。
+    **数えると `exit 7` を `echo 'exit 7'` に置き換えても一致と言い、落とすと
+    `trap 'exit 7' EXIT` を足しても一致と言う**——**どちらに丸めても緑が嘘になる**（#243 N2）。
+    **数字の付かない `exit`（`exit "$rc"`・`exit -1`・素の `exit`）も `None`**
     ——**値が読めない形を「無い」に丸めない**（一覧と一致とは言わせない）。
+    **番号は 10 進で読む**——`exit 010` は 10（bash の実測。#243）。
     **`git worktree add` の失敗は git の終了コードで固定ではない**ので、ここには入らない
     （一覧の「それ以外」がそれを受ける）。
     """
+    code, data = shell_code_and_data(source)
+    if any(re.search(r"\bexit\b", d) for d in data):
+        return None
     codes: set[int] = set()
-    heredoc: tuple[str, bool] | None = None  # (終端の語, `<<-` か)
-    for line in source.splitlines():
-        if heredoc is not None:
-            word, dash = heredoc
-            if (line.lstrip("\t") if dash else line) == word:
-                heredoc = None
-            continue
-        code = re.sub(r"<<(-?)[ \t]*(['\"])([A-Za-z_]\w*)\2", r"<<\1\3", line)
-        code = re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"", "''", code)
-        code = re.sub(r"(^|[ \t;])#.*$", r"\1", code)
-        m = re.search(r"(?<!<)<<(-?)[ \t]*([A-Za-z_]\w*)", code)
-        if m:
-            heredoc = (m.group(2), m.group(1) == "-")
-        for m in re.finditer(r"\bexit\b([ \t]+(\d+)\b)?", code):
+    for line in code.splitlines():
+        for m in re.finditer(r"\bexit\b([ \t]+(\d+)\b)?", line):
             if m.group(2) is None:
                 return None
             codes.add(int(m.group(2)))
@@ -581,7 +674,7 @@ def check_exit_code_lists() -> None:
         listed = listed_exit_codes(skill, script.name)
         actual = script_exit_codes(source)
         check(f"{script.name}: SKILL.md に一覧が在る", listed is not None)
-        check(f"{script.name}: スクリプトの終了コードが読める（値の無い `exit` が無い）",
+        check(f"{script.name}: スクリプトの終了コードが読める（数字の無い `exit`・引用や heredoc の中の `exit` が無い）",
               actual is not None)
         check(f"{script.name}: 一覧 {sorted(listed or [])} がスクリプト {sorted(actual or [])} と一致",
               listed == actual)
@@ -640,6 +733,64 @@ def check_exit_code_lists() -> None:
             shown = added.replace("\n", "⏎")
             check(f"{script.name}: heredoc の後ろ・`<<` 演算の後ろの `exit` は数える（`{shown}`）",
                   not exit_lists_agree(skill, script.name, source + f"\n{added}\n"))
+        # --- 行をまたぐ字句（#243） ---
+        for tail in ("x=$((a<<b))\nexit {n}", "(( a<<b ))\nexit {n}",
+                     "cat <<-EOF\n\techo x\n\tEOF\nexit {n}", "cat <<< foo\nexit {n}",
+                     "echo 'a\nb'\nexit {n}"):
+            added = tail.format(n=top + 1)
+            shown = added.replace("\n", "⏎")
+            check(f"{script.name}: 次の行の `exit` を飲み込まない（`{shown}`）",
+                  not exit_lists_agree(skill, script.name, source + f"\n{added}\n"))
+        for repl in (f"trap 'exit {top}' EXIT", f'eval "exit {top}"',
+                     f'echo "a\nexit {top}\nb"', f"cat <<\\EOF\nexit {top}\nEOF",
+                     f'cat <<E"OF"\nexit {top}\nEOF', f"cat <<A <<B\nx\nA\nexit {top}\nB"):
+            moved = real_exit.sub(lambda m, r=repl: m.group(1) + r, source, count=1)
+            shown = repl.replace("\n", "⏎")
+            check(f"{script.name}: 実際の `exit {top}` を `{shown}` に置き換えると不一致",
+                  not exit_lists_agree(skill, script.name, moved))
+
+
+def check_shell_lexing() -> None:
+    """**`script_exit_codes` を、#243 の経路 E1〜E10 に直接当てる。**
+
+    **一覧との突き合わせ（`check_exit_code_lists`）だけでは、`None` と「違う集合」を
+    区別しない**——**どちらも「不一致」で赤**になるので、**`<<-` が閉じずに以降を飲み込む形**
+    （集合が小さくなる）と**正しく閉じる形**を見分けられない（#242 の狭いパスで素通りした変異）。
+    **だから値そのものを当てる。**
+    """
+    cases = [
+        ("E1 算術のシフト `$((a<<b))`", "x=$((a<<b))\nexit 8", {0, 8}),
+        ("E1 算術のシフト `(( a<<b ))`", "(( a<<b ))\nexit 8", {0, 8}),
+        ("E1 数字のシフト", "x=$((1<<2)); exit 8", {0, 8}),
+        ("E2 `trap '…' EXIT`", "trap 'exit 7' EXIT\nexit 8", None),
+        ("E2 `eval \"…\"`", 'eval "exit 7"\nexit 8', None),
+        ("E2 `bash -c '…'`", "bash -c 'exit 7'\nexit 8", None),
+        ("E3 複数行の二重引用", 'echo "a\nexit 7\nb"\nexit 8', None),
+        ("E3 複数行の単引用", "echo 'a\nexit 7\nb'\nexit 8", None),
+        ("E3 `$'…'`", "echo $'a\\nexit 7'\nexit 8", None),
+        ("E3 複数行の文字列の後ろ", "echo 'a\nb'\nexit 8", {0, 8}),
+        ("E4 `<<\\EOF`", "cat <<\\EOF\nx\nEOF\nexit 8", {0, 8}),
+        ("E4 `<<'EOF'`", "cat <<'EOF'\nx\nEOF\nexit 8", {0, 8}),
+        ("E4 `<<\"EOF\"`", 'cat <<"EOF"\nx\nEOF\nexit 8', {0, 8}),
+        ("E4 `<<E\"OF\"`", 'cat <<E"OF"\nx\nEOF\nexit 8', {0, 8}),
+        ("E4 本文の `exit`", "cat <<EOF\nexit 7\nEOF\nexit 8", None),
+        ("E5 1 行に 2 つ（2 つ目の本文）", "cat <<A <<B\nx\nA\nexit 9\nB\nexit 8", None),
+        ("E5 1 行に 2 つ（両方閉じる）", "cat <<A <<B\nx\nA\ny\nB\nexit 8", {0, 8}),
+        ("E6 `<<-` はタブ付きの終端で閉じる", "cat <<-EOF\n\tx\n\tEOF\nexit 8", {0, 8}),
+        ("E6 `<<` はタブ付きの行では閉じない", "cat <<EOF\n\tEOF\nexit 7\nEOF\nexit 8", None),
+        ("E7 here-string", "cat <<< foo\nexit 8", {0, 8}),
+        ("E8 先頭が 0 の番号", "exit 010", {0, 10}),
+        ("E9 `$#`", "[ $# -eq 0 ] && exit 8", {0, 8}),
+        ("E9 `${v#p}`", "x=${v#p}; exit 8", {0, 8}),
+        ("E9 引用の中の `#`", 'echo "see #206"; exit 8', {0, 8}),
+        ("E9 語の途中の `#`", "echo a#b; exit 8", {0, 8}),
+        ("E10 行頭のコメント", "# exit 9\nexit 8", {0, 8}),
+        ("E10 行末のコメント", "git fetch  # exit 9\nexit 8", {0, 8}),
+    ]
+    for name, src, want in cases:
+        got = script_exit_codes(src)
+        check(f"{name}: {sorted(got) if got is not None else None} == "
+              f"{sorted(want) if want is not None else None}", got == want)
 
 
 def demonstrate_base_rule(base: Path) -> None:
@@ -803,6 +954,9 @@ def main() -> int:
 
         print("\nSKILL.md の終了コード一覧がスクリプトと一致するか（#206）")
         check_exit_code_lists()
+
+        print("\n終了コードを集める字句解析（#243）")
+        check_shell_lexing()
 
         print("\n断る周でネットワークに出ないか")
         check_no_network_on_reject(base / "reject")
