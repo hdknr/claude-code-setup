@@ -52,7 +52,8 @@
 
 - 周の在り処: ブランチ `issue/208-review-fanout-wording`・worktree `.claude/worktrees/issue-208`・起点 `75516dd`・
   base 参照 `origin/main` → `75516dd8f05d649ceec4f42ef50b417b19e973da`
-- 関門: 未着手
+- 実装: `e492bfb`（`check-all.py` 33/33 緑）。手順 4 の割り目: 提案済み → **「ここで割る」を選択**
+- 関門: 未着手。**次は手順 5（Verifier 1 パス目）→ 手順 6（`/code-review` 1 パス目）**。base は上の SHA
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
