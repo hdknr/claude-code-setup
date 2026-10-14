@@ -111,6 +111,9 @@ def new_repo(tmp: Path, base_version: object) -> Path:
     git(root, "config", "user.email", "test@example.invalid")
     git(root, "config", "user.name", "test")
     git(root, "config", "commit.gpgsign", "false")
+    # 後片付けの最中に .git へ書き込む切り離しの処理を起こさない（CI で rmtree が落ちた。#253）
+    git(root, "config", "gc.auto", "0")
+    git(root, "config", "maintenance.auto", "false")
     set_version(root, base_version)
     touch(root, "skills/demo/SKILL.md", "old\n")
     touch(root, "README.md", "old\n")
@@ -270,7 +273,7 @@ def run_cases(script: Path) -> list[str]:
     """全ケースを回し、期待と違ったケースの説明を返す。"""
     wrong: list[str] = []
     for name, build, want_ok, needle in CASES:
-        with tempfile.TemporaryDirectory(prefix="version-bump-test-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="version-bump-test-", ignore_cleanup_errors=True) as tmp:
             root = build(Path(tmp))
             proc = run(sys.executable, str(script), "base-ref", cwd=root)
         out = proc.stdout + proc.stderr
@@ -357,7 +360,7 @@ def main() -> int:
             mutated = mutated.replace(old, new)
         if not reached:
             continue
-        with tempfile.TemporaryDirectory(prefix="version-bump-mut-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="version-bump-mut-", ignore_cleanup_errors=True) as tmp:
             path = Path(tmp) / "check-version-bump.py"
             path.write_text(mutated, encoding="utf-8")
             killed = run_cases(path)
