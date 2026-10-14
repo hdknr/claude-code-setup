@@ -65,8 +65,9 @@ main へのマージ → GitHub Pages（`docs/` の生成ブロックが変わ�
 
 - **周の在り処**: ブランチ `issue/204-audit-flags`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-204`、起点 `53d06c3`、base の参照 `origin/main`、base の SHA `53d06c35b1c94561dae32203f20adf57f03d43fa`
 - 実装: 完了（コミット済み）。`check-all.py` は 33 本中 32 本 OK、落ちたのは base から落ちている `test-tab-match.py` の 1 本だけ（下の 6）
-- 関門: 1 パス目の Verifier（反証 0 件）と `/code-review`（指摘 9 件。採否は 6 の表）を通した。指摘対応 4 件（R4 の一部・R5・R6・R8）を実施中。次は手順 5 の当て直しと `/code-review` 2 パス目
+- 関門: 1 パス目の Verifier（反証 0 件）と `/code-review`（指摘 9 件。採否は 6 の表）を通した。指摘対応 4 件（R4 の一部・R5・R6・R8）は `fb16563` でコミット済み（`check-all.py` 33 本中 32 本 OK、落ちたのは既知の `test-tab-match.py` だけ。指し先は 77 → 80 件で、新しい 3 つが検査に入った）。**残っているのは 2 つ: 手順 5 の Verifier 当て直し（2 パス目）と `/code-review` 2 パス目**。2 パス目の差分にも base `53d06c35` を渡す。1 パス目の指摘対応の差分は `04c1256..fb16563`
 - 割り目（手順 4）: 提案した → **人間が「ここで割る」を選んだ**（2026-10-14）。再開は上の worktree の中で `/clear` → `/dev-loop:dev-loop 204`
+- 割り目（手順 6・2 パス目の前）: 提案した → **人間が「ここで割る」を選んだ**（2026-10-14）。再開は同じ worktree の中で `/clear` → `/dev-loop:dev-loop 204`。着地先は手順 5 の当て直し（2 パス目の Verifier）と `/code-review` 2 パス目の**両方**
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
