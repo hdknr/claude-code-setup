@@ -70,7 +70,8 @@ grep は「このリポジトリ／本リポジトリ／当リポジトリ／che
 
 - 周の在り処: ブランチ `issue/211-repo-agnostic-skill`・worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-211`・
-  起点 `1867096`・base 参照 `origin/main` → `1867096f7447e09ac4cadd03513da0390e606826`
+  起点 `1867096`・base 参照 `origin/main` → `1867096f7447e09ac4cadd03513da0390e606826`（1 パス目）→
+  **`63313790e6781d3e70b3cf042dd30c4e0203853b`（2 パス目以降。origin/main を取り込んだので当て直した）**
 - 実装: 済（SKILL.md 2 箇所・guard-rejections.md 1 箇所・版 1.38.4 → 1.38.5）。`skill-metrics.py` は生成ブロックを変えなかった（`--check` は check-all に含む）
 - grep: 修正前 4 件（うち実例 1）→ 修正後 1 件（実例の #233 のみ）
 - `check-all.py`: 33/33 緑（失敗 0 / 飛ばし 0）。コミット `25b1bcb`
@@ -78,7 +79,14 @@ grep は「このリポジトリ／本リポジトリ／当リポジトリ／che
 - 関門 1 パス目: **Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件**（軽微 2 件。check-all 33/33 緑を独立確認）／
   **`/code-review` 指摘 8 件**（採否は §6 の表。直す 4・残課題 4）
 - 指摘対応の起点（1 パス目の指摘対応を始める直前の HEAD）: `956674a79fd13b1837f4c3d8097a60a9d3994254`
-- 次: 指摘対応 → 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**
+- 1 パス目の指摘対応: **済**（R1・R2・R6・R7。コミット `9e674a0`）。
+- origin/main が #222 で 1.38.5 に進んでいたので取り込み（`20b2160`）、版を **1.38.6** に上げた。
+  生成ブロックは衝突したので main 側を取って `skill-metrics.py` で再生成。`check-all.py` 33/33 緑（失敗 0 / 飛ばし 0）。
+- **base を当て直した**（HEAD の系譜が動いたため。式は同じ `git merge-base origin/main HEAD`）:
+  `origin/main` → `63313790e6781d3e70b3cf042dd30c4e0203853b`。**2 パス目の関門にはこの SHA を渡す。**
+- 次（**2 つ残っている**）: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目。
+  2 パス目の指摘対応の起点は、その対応に入る直前の HEAD を記録する（狭いパス用）。
+- 割り目 2（2 パス目の前）: AskUserQuestion で提案（結果は下に追記）
 - 実験: 陽性対照つきの grep のみ
 
 ## 6. 既知の限界・決着済みの論点
