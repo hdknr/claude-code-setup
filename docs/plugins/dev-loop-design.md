@@ -1322,15 +1322,15 @@ Eotel 側で同じ範囲を覆う 5 本
 | 同期呼び出しでは並列にならない | 15 | — |
 | 守ること | 26 | 1 |
 
-**このほかに、起点に載らないファイルが 5 本・784 行**（`（必須）` 52 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 2380 行・`（必須）` 205 個）。
+**このほかに、起点に載らないファイルが 5 本・792 行**（`（必須）` 52 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 2388 行・`（必須）` 205 個）。
 
 | 起点に載らないファイル | 行 | `（必須）` |
 | --- | --- | --- |
 | references/guard-rejections.md | 115 | 16 |
 | references/resume.md | 339 | 34 |
 | references/untrusted-input.md | 48 | 2 |
-| prompts/review-handoff.md | 125 | — |
-| prompts/verifier.md | 157 | — |
+| prompts/review-handoff.md | 129 | — |
+| prompts/verifier.md | 161 | — |
 
 <small>この表と上の段落は `scripts/skill-metrics.py` が生成している。**手で書き換えない**——`SKILL.md` を編集したら `python3 scripts/skill-metrics.py` で作り直す（CI が `--check` で見ている）。</small>
 

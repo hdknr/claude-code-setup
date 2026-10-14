@@ -5,7 +5,7 @@
 触る:
 
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 6「走らせる形は、素の 1 行に保つ」に、終了コードで分岐するスクリプトを包まない旨を足す（原本）。**1 パス目の指摘対応で、再開の節・手順 4・手順 5 の生出力の項に指し先を 1 行ずつ足した**（CR3・CR4）。版のバナー
-- `plugins/dev-loop/.claude-plugin/plugin.json` — version 1.38.3 → 1.38.4（main が #245 で 1.38.3 を先に使ったので rebase 後に上げ直した）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — version → 1.38.5（main が #245 で 1.38.3、#209 で 1.38.4 を先に使ったので上げ直した）
 - `.claude-plugin/marketplace.json` — 同上
 - `docs/plans/issue-222.md` — この計画ファイル
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` の再生成のみ。手で書かない）
@@ -31,7 +31,7 @@
 
 - **A**: `SKILL.md` に書いた呼び出し形のとおりに読者が走らせると、worktree 隔離セッションでガードに拒否されない。
 - **B**: 読者が終了コードによる分岐（0〜4）を行える——終了コードを得る手段が失われていない。
-- **C**: 版が 3 箇所（`marketplace.json` / `plugin.json` / `SKILL.md` の 2 行）で 1.38.4 に揃う。
+- **C**: 版が 3 箇所（`marketplace.json` / `plugin.json` / `SKILL.md` の 2 行）で 1.38.5 に揃う。
 
 経路（A を破りうる入口）:
 
@@ -75,8 +75,9 @@
 - 2 パス目（2026-10-14、再開したセッション）: Verifier 反証 1 件・/code-review 指摘 7 件 → 直す 2 件（`cd38854`）・残課題 5 件。check-all 33/33 緑
 - 狭いパス: 済み（反証 1 件＋補足 1 件。人間に渡す）
 - rebase（2026-10-14、PR 作成前）: main が #245 で 1.38.3 を使っていたので `origin/main` に rebase し 1.38.4 に上げ直した。**base を式で当て直した**: `origin/main` → `438b4771682bdc982e5f157c980df3d776356c6f`（以後の差分はこの SHA から）。衝突は設計 §8.2 の生成ブロックだけで、`skill-metrics.py` で再生成して解いた
+- main の取り込み（PR 作成後）: #209 が 1.38.4 を使っていて PR が CONFLICTING になった。force push を避けて `origin/main` を merge し 1.38.5 に上げた。**base を式で当て直した**: `origin/main` → `1867096`（`git merge-base origin/main HEAD`）。衝突は設計 §8.2 の生成ブロックだけで、再生成して解いた
 - PR: #251 作成。PR コメントに関門の結果・狭いパスの指摘（人間判断）・残課題を記載。PR 側の CI: `check` pass・`build` pass（`gh pr checks 251`）
-- 手順 7: **マージ待ち（人間の承認）**。反映経路: マージでプラグインの版 1.38.4 が main に入る（利用者は `plugin update`）。公開サイトは設計 §8.2 の生成ブロックと計画ファイルが main への push で自動デプロイされる
+- 手順 7: **マージ待ち（人間の承認）**。反映経路: マージでプラグインの版 1.38.5 が main に入る（利用者は `plugin update`）。公開サイトは設計 §8.2 の生成ブロックと計画ファイルが main への push で自動デプロイされる
 - 手順 8: 焼き戻す学びなし（main との版の衝突は `check-version-bump.py` が手元で捕まえ、rebase と bump で解いた——既存の仕組みどおりに働いた）。**この周の起票: 0 件**
 - 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**（`/clear` して `/dev-loop 222` で再開。2026-10-14）
 - 再開時の肯定的な確認: ブランチ `issue/222-pr-preconditions-guard` 一致・HEAD `210f04f`・base `6071e01` は HEAD の祖先
