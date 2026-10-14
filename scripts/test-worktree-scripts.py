@@ -501,6 +501,9 @@ def shell_code_and_data(source: str) -> tuple[str, list[tuple[str, bool]]]:
     heredoc は**終端語の引用を外して**（`<<\\EOF`・`<<'EOF'`・`<<E"OF"` はどれも `EOF`）、
     `<<-` は**行頭のタブを剥がした行**で閉じる。**終端語を引用しない heredoc は、本文の行末の `\\` で
     次の行と繋いでから終端と比べる**（bash の実測）。**1 行の heredoc は書いた順に全部読む。**
+    **いちばん内側の括弧が `$(` なら、`EOF)` の行でも閉じ、`)` 以降は実行される字句に戻す**
+    ——bash の実測で、`$(` の中だけがそう閉じる（素の `(` の中は構文エラー・括弧の外は閉じない）。
+    **終端語の途中の `\\`⏎ は語を割らない**（`<<EO\\`⏎`F` の終端は `EOF`。実測）。
     **`<<<`（here-string）は heredoc ではない。**
     データは `(中身, 展開されて止まりうるか)` の組で返す——**真になるのは `"…"` の中身だけ**
     （`${N:?…}` を拾う範囲。**引用しない heredoc の本文の `${1:?}` は、bash の実測でスクリプトを
@@ -511,6 +514,7 @@ def shell_code_and_data(source: str) -> tuple[str, list[tuple[str, bool]]]:
     data: list[tuple[str, bool]] = []
     pending: list[tuple[str, bool, bool]] = []  # (終端の語, `<<-` か, 終端語を引用したか)
     brace = 0  # `${` の深さ。この中の `#` はコメントではない
+    parens: list[bool] = []  # 開いている `(` ごとに、それが `$(` か
     i, n = 0, len(source)
 
     def skip_quoted(start: int, quote: str, escapes: bool) -> int:
@@ -529,19 +533,32 @@ def shell_code_and_data(source: str) -> tuple[str, list[tuple[str, bool]]]:
         if c == "\n":
             code.append("\n")
             i += 1
-            for word, dash, quoted in pending:
+            rest_pending: list[tuple[str, bool, bool]] = []
+            for k, (word, dash, quoted) in enumerate(pending):
                 body: list[str] = []
+                mid_line = False
                 while i < n:
+                    start = i
                     line, i = next_line(i)
+                    joined = False
                     while (not quoted and i < n
                            and (len(line) - len(line.rstrip("\\"))) % 2):
                         rest, i = next_line(i)
-                        line = line[:-1] + rest
-                    if (line.lstrip("\t") if dash else line) == word:
+                        line, joined = line[:-1] + rest, True
+                    head = line.lstrip("\t") if dash else line
+                    if head == word:
+                        break
+                    if (not joined and parens and parens[-1]
+                            and head.startswith(word + ")")):
+                        i = start + len(line) - len(head) + len(word)
+                        mid_line = True
                         break
                     body.append(line)
                 data.append(("\n".join(body), False))
-            pending = []
+                if mid_line:
+                    rest_pending = pending[k + 1:]
+                    break
+            pending = rest_pending
         elif c == "\\":
             nxt = source[i + 1:i + 2]
             if nxt != "\n":
@@ -586,6 +603,7 @@ def shell_code_and_data(source: str) -> tuple[str, list[tuple[str, bool]]]:
                 code.append("0")
                 i = j + 1
             else:
+                parens.append(bool(code) and code[-1] == "$")
                 code.append("(")
                 i += 1
         elif source.startswith("<<<", i):
@@ -605,6 +623,8 @@ def shell_code_and_data(source: str) -> tuple[str, list[tuple[str, bool]]]:
                     j = n if j < 0 else j
                     word.append(source[i + 1:j])
                     quoted, i = True, j + 1
+                elif source.startswith("\\\n", i):
+                    i += 2
                 elif source[i] == "\\":
                     word.append(source[i + 1:i + 2])
                     quoted, i = True, i + 2
@@ -614,6 +634,10 @@ def shell_code_and_data(source: str) -> tuple[str, list[tuple[str, bool]]]:
             pending.append(("".join(word), dash, quoted))
             code.append("<<")
         else:
+            if c == "(":
+                parens.append(bool(code) and code[-1] == "$")
+            elif c == ")" and parens:
+                parens.pop()
             code.append(c)
             i += 1
     return "".join(code), data
@@ -635,19 +659,24 @@ def script_exit_codes(source: str) -> set[int] | None:
     ——**値が読めない形を「無い」に丸めない**（一覧と一致とは言わせない）。
     **番号は 10 進で読む**——`exit 010` は 10（bash の実測。#243）。
     **番号の直後が語の切れ目でなければ `None`**——`exit 7+1` は bash では 255（実測）で、7 ではない。
-    **データの中では `\\` の直後を語の切れ目として見る**——`printf 'true\\nexit 6'` の
-    `n` が `exit` の語の境界を消すと、実行される文字列を見落とす（#243 の 1 パス目）。
+    **データの中では `\\` の直後を語の切れ目として見て、`\\` を外しただけの形でも見る**
+    ——`printf 'true\\nexit 6'` の `n` が `exit` の語の境界を消すと、実行される文字列を見落とす
+    （#243 の 1 パス目）。**`\\` の直後の文字ごと落とすと、`trap 'true; \\exit 7' EXIT` の
+    `exit` が `xit` に潰れる**（bash の実測で 7。2 パス目）。
+    **行は `\\n` だけで割る**——`splitlines` は `\\r` でも割るので、CRLF の `exit 7\\r` を 7 と読む
+    （bash では `numeric argument required` で 255。2 パス目）。
     **`${N:?…}` は実行される字句と `"…"` の中身からだけ拾う**——コメントや heredoc の本文に
     書いてあるだけで 1 を足すと、**本当の `${1:?…}` を消しても一致と言う**（同上）。
     **`git worktree add` の失敗は git の終了コードで固定ではない**ので、ここには入らない
     （一覧の「それ以外」がそれを受ける）。
     """
     code, data = shell_code_and_data(source)
-    if any(re.search(r"\bexit\b", re.sub(r"\\.", " ", d)) for d, _ in data):
+    if any(re.search(r"\bexit\b", re.sub(escape, " ", d))
+           for d, _ in data for escape in (r"\\.", r"\\")):
         return None
     codes: set[int] = set()
-    for line in code.splitlines():
-        for m in re.finditer(r"\bexit\b([ \t]+(\d+)(?=[\s;&|)]|$))?", line):
+    for line in code.split("\n"):
+        for m in re.finditer(r"\bexit\b([ \t]+(\d+)(?=[ \t;&|)]|$))?", line):
             if m.group(2) is None:
                 return None
             codes.add(int(m.group(2)))
@@ -843,6 +872,13 @@ def check_shell_lexing() -> None:
         ("E17 `\"${1:?…}\"` は 1", 'n="${1:?usage}"\nexit 8', {0, 1, 8}),
         ("E18 `exit 7+1` は読めない", "exit 7+1", None),
         ("E18 `exit 7;`・`(exit 7)` は 7", "exit 7;\n(exit 7)", {0, 7}),
+        # 2 パス目の両関門の指摘（同上）
+        ("E2 単引用の中の `\\exit`", "trap 'true; \\exit 7' EXIT\nexit 0", None),
+        ("E2 二重引用の中の `\\exit`", 'eval "true; \\exit 7"\nexit 0', None),
+        ("E4 `$(` の中の `EOF)` で閉じる", "x=$(cat <<EOF\nbody\nEOF); exit 8", {0, 8}),
+        ("E4 素の `(` の中の `EOF)` では閉じない", "(cat <<EOF\nbody\nEOF); exit 7\nEOF\nexit 8", None),
+        ("E4 終端語の途中の `\\`⏎", "cat <<EO\\\nF\nbody\nEOF\nexit 8", {0, 8}),
+        ("E18 CRLF の `exit 7\\r` は読めない", "exit 7\r\n", None),
     ]
     for name, src, want in cases:
         got = script_exit_codes(src)
