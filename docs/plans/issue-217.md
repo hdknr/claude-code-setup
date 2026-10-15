@@ -95,8 +95,11 @@ req-loop 本文の写しは残課題）。**分けない理由**: 段 2 は #214
 
 - **周の在り処**: ブランチ `issue/217-spec-review`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-217`、
   起点 `e86f118`、base の参照 `origin/main` → `e86f1180ec5e4a397318c13a133ff03242f63bcf`
-- 実装: 済み（未コミット → コミット後に関門へ）
-- 関門: 未着手
+- 実装: 済み（`1f11190`）。`check-all.py` 35/35 緑（失敗 0 / 飛ばし 0）
+- 手順 4 の割り目: AskUserQuestion で訊き、**「ここで割る」**が選ばれた（2026-10-15）
+- **次にすること**: 手順 5 の Verifier（別ティア、`dev-loop:dev-loop-verifier`）と手順 6 の `/code-review` の **1 パス目**。
+  base は上の `e86f1180ec5e4a397318c13a133ff03242f63bcf`
+- 関門: 未着手（1 パス目・2 パス目とも）
 - 反証・差し戻し: なし
 - 交絡: 実験なし（試料に当てた確認だけ。陽性対照はテストの「満たす」試料と変異 15 件）
 - 実装中に足した複製: 判定役 3 体の「守ること」（同じ趣旨を 3 体に持つ。agent 定義は単体で読まれるので分けない）
