@@ -534,6 +534,49 @@ def main() -> int:
         check("Traceback" not in proc.stderr, f"{label}でクラッシュした", proc.stderr[-400:])
         check("description" not in proc.stdout, f"{label}で description を比べた", proc.stdout)
 
+    # **判定役の agent 定義（#217）。** 書く手段を持たないことを、許可リストで見る。
+    # `build` の `skills` は任意の相対パスを書けるので、agent 定義もそこに置く。
+    def agent(frontmatter: str, where: str = "agents/judge.md") -> dict:
+        body = f"---\nname: judge\ndescription: テスト用\n{frontmatter}---\n\n本文。\n"
+        return {"demo": {"version": "1.0.0", "skills": {where: body}}}
+
+    # 陽性対照: 許可リストどおりなら通る（dev-loop-verifier と同じ形・YAML のリスト・絞り込み付き Bash）
+    for label, frontmatter in (
+        ("カンマ区切り", "tools: Read, Grep, Glob, Bash\n"),
+        ("YAML のリスト", "tools:\n  - Read\n  - Bash\n"),
+        ("絞り込み付きの Bash", "tools: Read, Bash(git diff:*)\n"),
+    ):
+        proc = run_case(agent(frontmatter))
+        check(proc.returncode == 0, f"許可リストどおりの agent 定義（{label}）が落ちた", proc.stdout)
+
+    for label, frontmatter, expected in (
+        ("Write を持つ", "tools: Read, Write, Bash\n", "持ってはならないツールがある: Write"),
+        ("Edit を持つ", "tools: Read, Edit\n", "持ってはならないツールがある: Edit"),
+        # 禁止リストで判定すると、知らない名前が素通りする
+        ("NotebookEdit を持つ", "tools: Read, NotebookEdit\n", "NotebookEdit"),
+        ("MCP のツールを持つ", "tools: Read, mcp__x__write\n", "mcp__x__write"),
+        ("ワイルドカード", "tools: *\n", "持ってはならないツールがある"),
+        ("YAML のリストに Write", "tools:\n  - Read\n  - Write\n", "持ってはならないツールがある: Write"),
+        # 書かなければ全ツールを継承する
+        ("tools: が無い", "", "tools: が無い"),
+        ("tools: が空", "tools:\n", "tools: が無い"),
+        # 除外リスト形式は tools: を持たないので、上と同じ理由で落ちる
+        ("除外リスト形式", "disallowedTools: Write, Edit\n", "tools: が無い"),
+        ("model: を固定", "tools: Read, Bash\nmodel: sonnet\n", "model: を書いている"),
+    ):
+        proc = run_case(agent(frontmatter))
+        check_rejected(proc, expected, f"判定役の agent 定義（{label}）がすり抜けた")
+
+    # frontmatter が閉じていない定義は読めないので落とす（黙って飛ばさない）
+    proc = run_case({"demo": {"version": "1.0.0", "skills": {"agents/judge.md": "---\ntools: Write\n"}}})
+    check_rejected(proc, "frontmatter が無い", "閉じていない frontmatter の agent 定義がすり抜けた")
+
+    # 入れ子の agents/ も見る（場所で免除しない）。agents/ の外の *.md は agent 定義ではない
+    proc = run_case(agent("tools: Write\n", where="skills/x/agents/judge.md"))
+    check_rejected(proc, "持ってはならないツールがある: Write", "入れ子の agents/ の定義がすり抜けた")
+    proc = run_case(agent("tools: Write\n", where="references/judge.md"))
+    check(proc.returncode == 0, "agents/ の外の *.md を agent 定義として検査した", proc.stdout)
+
     if failures:
         print(f"{len(failures)} 件の失敗（{checks} 判定）:\n")
         for message in failures:

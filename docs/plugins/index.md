@@ -18,7 +18,7 @@
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
 | [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
 | [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
-| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop` | スキル | dev-loop の手前にある要求側のループ（段階的に追加中。いまは要求確定の `req-loop` だけ） |
+| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review` | スキル | dev-loop の手前にある要求側のループ（段階的に追加中。いまは要求確定の `req-loop` と仕様レビューの `spec-review`） |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
     プラグインが提供するスキル**とコマンド**は、名前の衝突を防ぐため
@@ -397,7 +397,7 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 選びます——キャッシュを経由しないので、`git pull` した時点で反映されます。
 ただし `link-skills.sh` が張るのは**プラグインと同じ名前のスキル**
 （`plugins/<name>/skills/<name>`）だけで、`workspace-setup`（スキルを持たない）と
-`spec-loop`（`req-loop` はプラグイン直下の共有物を `../../` で指すので、素のスキルとしては置けない）は
+`spec-loop`（`req-loop`・`spec-review` はプラグイン直下の共有物を `../../` で指すので、素のスキルとしては置けない）は
 対象外です。また**スクリプトは自分の位置からリポジトリを解決して絶対パスで張る**ので、
 **worktree から実行するとその worktree に固定されます**。メインの作業ツリーから実行してください。
 
@@ -574,9 +574,9 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 設計の背景は記事 [spec-loop プラグインの構成案](https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/)
 にあります。
 
-!!! warning "スキルはまだ 1 本だけです"
-    いま使えるスキルは、要求確定のループ **`req-loop`** だけです。残りのループ
-    （仕様レビュー・実現性とコスト・提案書）と dev-loop への引き渡しは段ごとに足します
+!!! warning "スキルはまだ 2 本だけです"
+    いま使えるスキルは、要求確定のループ **`req-loop`** と、仕様レビューのループ **`spec-review`** です。残りのループ
+    （実現性とコスト・提案書）と dev-loop への引き渡しは段ごとに足します
     （計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
     どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・
     サインオフのタグの命名）と、Q&A 表を検査するスクリプトも入っています。
@@ -613,6 +613,27 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 [スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/req-loop/SKILL.md)
 を正とします。**プラグインとしてだけ使えます**（素のスキルとしては置けません。理由は
 [プラグインの README](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/README.md)）。
+
+### `spec-review` — 仕様レビューのループ
+
+```
+/spec-loop:spec-review
+```
+
+確定した要求から**開発者向けの仕様を書き下し**（スキルが書く側）、**仕様を批判する 3 つの判定役**
+（Red Team・Domain Checker・Formal Checker）にレビューさせて、指摘を振り分けます。
+
+- **判定役はファイルを直接書くツールを持たず、仕様を書いたモデルとは別のティアで呼びます**
+  （dev-loop の Verifier と同じ形）。
+- 開発者が決めてよい指摘は仕様を直し、**利用者の判断が要る指摘は Q&A 表に起票して `req-loop` の回答待ちに差し戻します。**
+- **ループを抜ける条件を満たしたときだけ「抜けた」と報告します。** 満たさないか、判定できなければ、
+  どの条件が満たせていないかを示して止まります。
+
+抜ける条件は
+[プラグインの `references/spec-exit.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-exit.md)、
+手順は
+[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/spec-review/SKILL.md)
+を正とします。
 
 ---
 

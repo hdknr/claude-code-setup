@@ -20,7 +20,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/req-loop/` - 要求確定のループ（#216。1 周 = レビュー会 1 回。**回答待ちで止まる**）。
       **共有の `references/` と `scripts/` を `../../` で指す**ので、**素のスキルとしては張れない**
       （`link-skills.sh` は `plugins/<name>/skills/<name>` しか張らないので、名前の規則で最初から対象外）
-    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・サインオフのタグ）。
+    - `skills/spec-review/` - 仕様レビューのループ（#217。**スキル本体が仕様を書く側**で、
+      批判する側は `agents/`。**抜ける条件を満たさなければ抜けたと報告しない**）。素のスキルとして張れないのは同上
+    - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）。
+      **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
+    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・サインオフのタグ・仕様レビューを抜ける条件）。
       **スキルの中ではなくプラグイン直下にある**——スキルからは `../../references/…` で指し、
       `check-skill-pointers.py` が**プラグインの中に収まること**まで見る（#216）
     - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。テストは
@@ -28,10 +32,14 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
       `scripts/test-qa-to-pptx.py`）
+    - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
+      （**0 でも「抜けた」ではない**。反映済みでない行は `qa-to-pptx.py` の定義で読む。テストは
+      `scripts/test-check-spec-exit.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）
-  - `check-plugin-versions.py` - カタログ構造と version 一致
+  - `check-plugin-versions.py` - カタログ構造と version 一致。**`agents/` の定義が許可リストで、
+    読み取りと `Bash` 以外のツールと `model:` を持たないこと**も見る（#217）
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）。
     **base の先端より版が下がった差分も落とす**（#253。比較は数値——`1.38.10` > `1.38.9`）
   - `test-check-version-bump.py` - 上の回帰テスト（変異テストを含む）
@@ -116,6 +124,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `plugins/spec-loop/scripts/` にある**（`test-find-cycle.py` と同じ形）。
     **本体の定数が `references/qa-csv.md` の表と一致することも見る**——決まりの原本は
     `references/` で、本体の定数はその写しなので
+  - `test-check-spec-exit.py` - spec-loop の抜ける条件 1 の判定の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**未決定の印が `references/spec-exit.md` の表と
+    一致することも見る**（`test-check-qa-csv.py` と同じ形）
   - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
     ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
     `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に
