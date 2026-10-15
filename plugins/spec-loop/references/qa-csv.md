@@ -39,7 +39,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py docs/sha
 | `要求確定` | 要求確定（決定表の空欄・ヒアリング） |
 | `仕様レビュー` | 仕様レビュー（Red Team・Domain Checker・Formal Checker の指摘のうち、利用者の判断が要るもの） |
 | `実現性・コスト` | 実現性・コスト（費用付きの質問） |
-| `開発` | dev-loop（開発中に見つかった仕様の穴の差し戻し） |
+| `開発` | dev-loop（開発中に見つかった仕様の穴の差し戻し。差し戻しの規定の本体は dev-loop の `references/spec-gap.md`） |
 
 ## 状態
 
