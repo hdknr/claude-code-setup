@@ -14,13 +14,20 @@
 
 ## 2 つの承認が同じ範囲を見ていたか
 
-開発に進む前の関門では、**最新の 2 つのタグの時点で `docs/shared/` が一致するか**を確かめる:
+開発に進む前の関門では、**最新の 2 つのタグの時点で `docs/shared/` が一致するか**を確かめる。
+プラグインに同梱の照合を使う（**LLM に判断させない**）:
 
 ```bash
-git diff --quiet req-signoff-v3 budget-signoff-v2 -- docs/shared/
+python3 <spec-loop の base ディレクトリ>/scripts/check-signoff.py
 ```
 
+- **最新**は、`<n>` を**数として**比べて最大のもの（`v10` は `v9` より新しい）。
+  **`req-signoff-v3-fix` のような、命名に合わないタグは数えない。**
+- **どちらかの時点で `docs/shared/` が無い・空なら、一致とは言わない**（判定していない）。
+  比べる中身が無いときも `git diff` は「差分なし」を返すので。
+
 一致しなければ、2 つの承認は別の範囲を見ていたことになる。**どちらかを取り直す。**
+**提案書（`proposal`）は、一致したときだけ作る。**
 CI で走らせるなら、タグを取得できるよう履歴をすべて取る（GitHub Actions なら
 `actions/checkout` に `fetch-depth: 0`）。
 
