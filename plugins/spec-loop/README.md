@@ -2,11 +2,10 @@
 
 コーディングエージェントの開発ループ（[dev-loop](../dev-loop/README.md)）の**手前にある、要求側のループ**を
 扱うプラグインです。要求確定・仕様レビュー・実現性とコスト・提案書の 4 つのループと、
-確定した仕様を dev-loop の入力（Issue）に変える引き渡しを、ループごとのスキルとして持つ予定です。
+確定した仕様を dev-loop の入力（Issue）に変える引き渡しを、ループごとのスキルとして持ちます。
 
-**いまのスキルは `req-loop`（要求確定）・`spec-review`（仕様レビュー）・`feasibility`（実現性とコスト）・
-`proposal`（提案書）の 4 本で、4 つのループがそろいました**。dev-loop への引き渡し（`scaffold`）は
-段 4 で足します（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+**スキルは `req-loop`（要求確定）・`spec-review`（仕様レビュー）・`feasibility`（実現性とコスト）・
+`proposal`（提案書）・`scaffold`（dev-loop への引き渡し）の 5 本です**（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
 
 設計の背景（なぜ dev-loop と分けるか・なぜ 1 つのプラグインにまとめるか）は記事を参照:
 <https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/>
@@ -27,10 +26,14 @@
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
 | `scripts/check-signoff.py` | 2 つのサインオフのタグの時点で `docs/shared/` が一致するかの照合（標準ライブラリと `git`） |
 | `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書を作る（標準ライブラリと `git`） |
+| `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
+| `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |
+| `scripts/scaffold.py` | 中間表現から OpenAPI・型・Red テスト・Issue の本文を作る。関門（仕様レビューを抜ける条件 1）を自分で通す（標準ライブラリのみ） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
 | `skills/feasibility/` | 実現性・コストのループを 1 回分進めるスキル（見積りを書く側） |
 | `skills/proposal/` | 関門を照合して提案書を作るスキル |
+| `skills/scaffold/` | 確定した仕様を Red テストと Issue に変え、dev-loop に渡すスキル |
 | `agents/` | 仕様を批判する 3 つの判定役（`red-team`・`domain-checker`・`formal-checker`）と見積りの検証役（`estimate-checker`）。**書き込みツールを持たない** |
 
 **データの決まりは `references/` だけに書きます。** このファイルも、スキルも、公開ページも、
@@ -39,7 +42,7 @@
 **例外はスクリプトの定数**で、機械で検査する以上、写しが要ります。
 写しがずれていないかは、このリポジトリのテストが `references/` の表と突き合わせて確かめます
 （`scripts/test-check-qa-csv.py`・`scripts/test-check-spec-exit.py`・`scripts/test-check-feasibility-csv.py`・
-`scripts/test-check-signoff.py`）。
+`scripts/test-check-signoff.py`・`scripts/test-scaffold.py`）。
 
 ## `req-loop` — 要求確定のループ
 
@@ -84,6 +87,24 @@
 **決裁者の承認待ちで止まります。**
 
 手順と守ることは [`skills/proposal/SKILL.md`](skills/proposal/SKILL.md) を正とします。
+
+## `scaffold` — dev-loop への引き渡し
+
+`/spec-loop:scaffold` で呼びます。仕様レビューを抜けた仕様を中間表現（`spec_ir.json`）に書き起こし、
+同梱のスクリプトで OpenAPI・型・**Red テスト**（実装が無いと失敗するテスト）と **Issue の本文**を作って、
+**1 機能 = Issue 1 件**で登録します（登録の前に利用者に確かめます）。**Issue の登録で止まり、以降は dev-loop が受け持ちます。**
+dev-loop は Issue の本文の印で spec-loop から来たことを知り、開発中に見つけた仕様の穴を
+Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `references/spec-gap.md`）。
+
+手順と守ることは [`skills/scaffold/SKILL.md`](skills/scaffold/SKILL.md) を正とします。
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run]
+```
+
+`--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。
+実装を置くモジュールは、中間表現の `impl_module` に書きます（`references/spec-ir.md`）。
+何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
 ## Q&A 表を検査する
 

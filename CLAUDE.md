@@ -16,6 +16,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `dev-loop/` - 1 Issue = 1 周のループ志向開発スキル
     - `evals/` - **振る舞いの回帰 Eval**（`claude plugin eval`。#181。**CI からは呼ばない**——
       `claude` を起こして課金する。下の「振る舞いを Eval で当てる」）
+    - `skills/dev-loop/references/spec-gap.md` - **仕様の穴を実装で決めず、spec-loop の Q&A 表に差し戻す**規定
+      （#219。spec-loop から来た Issue の読み方も持つ。**Issue の印と節は spec-loop の `references/handoff-issue.md`
+      の写しで、`scripts/test-scaffold.py` が突き合わせる**——dev-loop から spec-loop を相対パスで指せないため）
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
     - `skills/req-loop/` - 要求確定のループ（#216。1 周 = レビュー会 1 回。**回答待ちで止まる**）。
       **共有の `references/` と `scripts/` を `../../` で指す**ので、**素のスキルとしては張れない**
@@ -26,6 +29,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **予算責任者の合意待ちで止まり、合意もタグも推測で埋めない**）。素のスキルとして張れないのは同上
     - `skills/proposal/` - 提案書のループ（#218。**関門の照合も生成もスクリプト**——スキルは照合が通らないとき
       **手で提案書を書かない**。**決裁者の承認待ちで止まる**）。素のスキルとして張れないのは同上
+    - `skills/scaffold/` - dev-loop への引き渡し（#219。**中間表現 `spec_ir.json` を書くのがスキル、
+      そこから先の生成はスクリプト**。**Issue の登録で止まり、登録の前に利用者に確かめる**）。素のスキルとして張れないのは同上
     - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
     - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件）。
@@ -49,6 +54,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       テストは `scripts/test-check-signoff.py`）
     - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書を作る
       （照合をスキルの判断に任せないため、**生成の側で照合する**。テストは `scripts/test-build-proposal.py`）
+    - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で
+      抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
+      テストは `scripts/test-scaffold.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）
@@ -145,6 +153,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと
     タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）
+  - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
+    **生成した Red テストを実際に `unittest` で走らせ、実装が無ければケースの数だけ失敗し、
+    正しい実装で緑になる（陽性対照）**ことを見る。**dev-loop の `references/spec-gap.md` の印と節の写しも突き合わせる**
   - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
     ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
     `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に

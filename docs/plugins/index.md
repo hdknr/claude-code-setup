@@ -18,7 +18,7 @@
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
 | [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
 | [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
-| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review`<br>`/spec-loop:feasibility`<br>`/spec-loop:proposal` | スキル | dev-loop の手前にある要求側のループ（要求確定・仕様レビュー・実現性とコスト・提案書。dev-loop への引き渡しは追加予定） |
+| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review`<br>`/spec-loop:feasibility`<br>`/spec-loop:proposal`<br>`/spec-loop:scaffold` | スキル | dev-loop の手前にある要求側のループ（要求確定・仕様レビュー・実現性とコスト・提案書）と、dev-loop への引き渡し |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
     プラグインが提供するスキル**とコマンド**は、名前の衝突を防ぐため
@@ -574,10 +574,10 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 設計の背景は記事 [spec-loop プラグインの構成案](https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/)
 にあります。
 
-!!! warning "dev-loop への引き渡しはまだありません"
-    いま使えるスキルは、要求確定のループ **`req-loop`**・仕様レビューのループ **`spec-review`**・
-    実現性とコストのループ **`feasibility`**・提案書のループ **`proposal`** です。dev-loop への引き渡し（`scaffold`）は
-    段 4 で足します（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+!!! note "スキルとデータの決まり"
+    スキルは、要求確定のループ **`req-loop`**・仕様レビューのループ **`spec-review`**・
+    実現性とコストのループ **`feasibility`**・提案書のループ **`proposal`** と、
+    dev-loop への引き渡し **`scaffold`** の 5 本です（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
     どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・スケジュールと見積りの列・
     サインオフのタグの命名）と、それを検査するスクリプトも入っています。
 
@@ -672,6 +672,32 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 [プラグインの `references/signoff-tags.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/signoff-tags.md)、
 手順は
 [スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/proposal/SKILL.md)
+を正とします。
+
+### `scaffold` — dev-loop への引き渡し
+
+```
+/spec-loop:scaffold
+```
+
+**仕様レビューを抜けた仕様**を中間表現（`spec_ir.json`）に書き起こし（スキルが書く側）、そこから
+OpenAPI・型・**Red テスト**（実装が無いと失敗するテスト）と、**dev-loop に渡す Issue の本文**を
+スクリプトで生成して、**1 機能 = Issue 1 件**で登録します。
+
+- **生成のスクリプトは、生成の前に仕様レビューを抜ける条件 1 を自分で確かめます**（反映済みでない Q&A・
+  未決定の印が残っていれば何も作りません）。中間表現が指す Q&A と仕様のファイルが実在することも見ます。
+- **Issue の本文から、受入基準（ケースごとの Red テスト）・Q&A の回答・仕様の原文を辿れます。**
+  本文は指すファイルの sha256 を持ち、dev-loop は手元のファイルが Issue の時点と同じかを確かめられます。
+- **登録の前に利用者に確かめます。** Issue の登録で止まり、以降は dev-loop が受け持ちます。
+- **開発中に仕様の穴が見つかったら、dev-loop は実装で決めず、Q&A 表に起票して要求側に差し戻します**
+  （規定は dev-loop の
+  [`references/spec-gap.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/spec-gap.md)）。
+
+中間表現と Issue の本文の形は
+[プラグインの `references/spec-ir.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-ir.md)・
+[`references/handoff-issue.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/handoff-issue.md)、
+手順は
+[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/scaffold/SKILL.md)
 を正とします。
 
 ---
