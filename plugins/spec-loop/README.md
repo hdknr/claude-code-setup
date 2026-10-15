@@ -103,6 +103,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正
 ```
 
 `--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを確かめます（鮮度）。
+`--impl-module` を省くと、置いてある Red テストが記録しているモジュール名で比べます。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
 ## Q&A 表を検査する
