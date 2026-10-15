@@ -49,7 +49,7 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 | 拾うもの | 無いとき |
 | --- | --- |
 | 正本のツリー・仕様の置き場所 | `../../references/tree.md` のとおり |
-| 実装のモジュール名（Red テストが探すもの） | スクリプトの既定（`spec_impl`） |
+| 実装のモジュール名（Red テストが探すもの。中間表現の `impl_module` に書く） | 書かない（スクリプトの既定 `spec_impl`） |
 | 正本と開発のリポジトリが別か、別なら `scaffold/` をどう写すか | 同じリポジトリとして扱う |
 | Issue を登録するリポジトリ・ラベル | 正本リポジトリに、ラベルなしで |
 | commit・push の決まり | 変更したファイルの一覧を示して止まり、commit するかどうかを利用者に任せる |
@@ -88,7 +88,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py -
 ### 4. 生成して、Red テストが失敗することを見る
 
 ```bash
-python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py --repo <正本リポジトリ> [--impl-module <モジュール名>]
+python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py --repo <正本リポジトリ>
 python3 -m unittest discover -s scaffold/tests     # 正本リポジトリの根で
 ```
 

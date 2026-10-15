@@ -21,9 +21,10 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 
 | キー | 書くもの |
 | --- | --- |
-| `spec_ir_version` | `1` |
+| `spec_ir_version` | `1`（整数。`1.0` は不可） |
 | `title` | 仕様の題（空にしない・1 行で） |
 | `features` | 機能の配列（1 つ以上） |
+| `impl_module` | （任意）実装を置く Python のモジュール名（`app.core` の形）。省けば `spec_impl`。**Red テストと Issue の本文はこれを指す**——引数ではなくここに書くので、作り直しても変わらず、`--check` もこれで比べる |
 
 **どの文字列にも、孤立したサロゲート（`"\ud800"` のような、JSON として読めるが UTF-8 で書けない文字）を入れない**——キーも値も。
 
