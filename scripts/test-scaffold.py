@@ -108,6 +108,17 @@ def can_cancel(shipped):
     return {"ok": shipped}
 '''
 NO_FUNCTION_IMPL = "VALUE = 1\n"
+# 値は等しいが型が違う（`0.0 == 0`・`1 == True`）——`assertEqual` だけなら緑になる
+WRONG_TYPE_IMPL = '''
+def calc_discount(rank, amount):
+    if amount < 0:
+        return {"error": "INVALID_AMOUNT"}
+    return {"discount": 0.0}
+
+
+def can_cancel(shipped):
+    return {"ok": int(not shipped)}
+'''
 
 
 def edit(fn: Callable[[dict], None]) -> Callable[[dict], dict]:
@@ -293,6 +304,17 @@ def stale_test_removed(repo: Path) -> str | None:
     return None
 
 
+def regenerate_with_impl_module(repo: Path) -> None:
+    subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / TARGET), "--repo", str(repo),
+                    "--impl-module", "app.core"], capture_output=True, text=True, check=True)
+
+
+def plant_draft_spec(repo: Path) -> None:
+    draft = repo / "docs" / "spec" / ".draft"
+    draft.mkdir()
+    (draft / "order.md").write_text(SPEC + "上限は TBD。\n", encoding="utf-8")
+
+
 ONE = edit(lambda ir: None)
 
 CASES: list[Case] = [
@@ -301,11 +323,15 @@ CASES: list[Case] = [
     Case("関数の無い実装でも失敗する", 0, impl=NO_FUNCTION_IMPL, post=expect_red(3)),
     Case("誤った実装で失敗する", 0, impl=WRONG_IMPL, post=expect_red(3)),
     Case("正しい実装で緑", 0, impl=GOOD_IMPL, post=expect_green),
+    Case("型の違う実装で失敗する", 0, impl=WRONG_TYPE_IMPL, post=expect_red(2)),
     Case("本文から辿れる", 0, post=body_traceable),
     Case("OpenAPI と型", 0, post=openapi_shape),
     Case("決定論的", 0, post=deterministic),
     Case("生成直後の --check", 0, "新しい", args=("--check",), generate_first=True),
     Case("中間表現を直した後の --check", 1, "今の入力から作るものと違う", args=("--check",), generate_first=True, pre=edit_ir_file),
+    # 生成のあとで `--impl-module` を変えて作り直し、`--check` ではそれを繰り返さない
+    Case("--check は記録した実装のモジュールで比べる", 0, "新しい", args=("--check",), generate_first=True,
+         pre=regenerate_with_impl_module),
     Case("手で直した後の --check", 1, "test_f_001.py: 今の入力から作るものと違う", args=("--check",), generate_first=True, pre=hand_edit),
     Case("消した機能の Red テストが残る --check", 1, "中間表現に無い機能の Red テスト", args=("--check",), generate_first=True,
          pre=drop_feature),
@@ -339,6 +365,8 @@ CASES: list[Case] = [
     Case("Q&A の重複", 1, "Q&A の No が重複している", ir=edit(lambda ir: f1(ir).update(qa=["Q-001", "Q-001"]))),
     Case("仕様のファイルが無い", 1, "docs/spec/missing.md が無い", ir=edit(lambda ir: f1(ir).update(source=["docs/spec/missing.md"]))),
     Case("仕様の外のファイル", 1, "の中に無い", ir=edit(lambda ir: f1(ir).update(source=["docs/shared/qa.csv"]))),
+    Case("ドットの場所の仕様", 1, "`.` で始まる場所", pre=plant_draft_spec,
+         ir=edit(lambda ir: f1(ir).update(source=["docs/spec/.draft/order.md"]))),
     Case("中間表現を出所にする", 1, "中間表現そのもの", ir=edit(lambda ir: f1(ir).update(source=["docs/spec/spec_ir.json"]))),
     Case("出所が空", 1, "仕様のファイルの配列（1 つ以上）でない", ir=edit(lambda ir: f1(ir).update(source=[]))),
     Case("メソッドが決まりに無い", 1, "operation.method: 決まりに無い", ir=edit(lambda ir: f1(ir)["operation"].update(method="FETCH"))),
@@ -346,6 +374,8 @@ CASES: list[Case] = [
     Case("入口の重複", 1, "が重複している", ir=edit(lambda ir: ir["features"][1]["operation"].update(method="POST", path="/orders/discount"))),
     Case("入口の id の重複", 1, "operation.id: calc_discount が重複している",
          ir=edit(lambda ir: ir["features"][1]["operation"].update(id="calc_discount"))),
+    Case("型の名前が潰れる", 1, "同じ型の名前 CalcDiscountInput",
+         ir=edit(lambda ir: ir["features"][1]["operation"].update(id="calc__discount")), post=nothing_written),
     Case("予約語の入口", 1, "Python の予約語でない", ir=edit(lambda ir: f1(ir)["operation"].update(id="class"))),
     Case("予約語の項目", 1, "項目名の形に反する", ir=edit(lambda ir: f1(ir)["operation"]["input"].update({"from": {"type": "string"}}))),
     Case("型が決まりに無い", 1, "型 `date` は決まりに無い", ir=edit(lambda ir: f1(ir)["operation"]["output"]["discount"].update(type="date"))),
@@ -373,6 +403,16 @@ CASES: list[Case] = [
          ir=edit(lambda ir: f1(ir)["operation"]["input"]["amount"].update(type="number")),
          pre=lambda repo: (repo / "docs/spec/spec_ir.json").write_text(
              (repo / "docs/spec/spec_ir.json").read_text(encoding="utf-8").replace('"amount": 9999', '"amount": Infinity'),
+             encoding="utf-8")),
+    # 孤立したサロゲートは JSON として読めるが UTF-8 で書けない——書く途中で落ちて契約を切り詰めない
+    Case("孤立したサロゲート", 1, "孤立したサロゲート",
+         raw=json.dumps(IR, ensure_ascii=False).replace("割引額を計算する", "\\ud800"),
+         pre=plant_old_contract, post=contract_kept_issues_gone),
+    # 桁の大きい整数は float に直せない——`math.isfinite` に渡すと OverflowError で落ちる
+    Case("number に桁の大きい整数", 0, "作った",
+         ir=edit(lambda ir: f1(ir)["operation"]["input"]["amount"].update(type="number")),
+         pre=lambda repo: (repo / "docs/spec/spec_ir.json").write_text(
+             (repo / "docs/spec/spec_ir.json").read_text(encoding="utf-8").replace('"amount": 9999', '"amount": 1' + "0" * 400),
              encoding="utf-8")),
     Case("全部を出す", 1, "（2 件）",
          ir=edit(lambda ir: (f1(ir)["operation"].update(method="FETCH"), ir["features"][1].update(title="")))),
@@ -406,7 +446,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("未実装をエラーにする", '"            return None",', '"            raise",', "Red テストが失敗する"),
     ("未実装で fail しない", '"            self.fail(f\\"未実装: {IMPL_MODULE}.{OPERATION} が無い\\")",', '"            pass",',
      "関数の無い実装でも失敗する"),
-    ("期待を比べない", "self.assertEqual(self.call(", "self.assertIsNotNone(self.call(", "誤った実装で失敗する"),
+    ("期待を比べない", '"        self.assertEqual(actual, expected)",', '"        self.assertIsNotNone(actual)",', "誤った実装で失敗する"),
+    ("型を見ない", '"            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",', '"            self.assertTrue(True,",',
+     "型の違う実装で失敗する"),
+    ("記録した実装のモジュールを読まない", "recorded = recorded_impl_modules(repo / OUT_DIR) if args.check else set()",
+     "recorded = set()", "--check は記録した実装のモジュールで比べる"),
+    ("型の名前の衝突を見ない", "                elif pascal(oid) in type_names:", "                elif False:", "型の名前が潰れる"),
+    ("ドットの場所を許す", '        elif any(part.startswith(".") for part in path.relative_to(spec_root).parts):', "        elif False:",
+     "ドットの場所の仕様"),
+    ("サロゲートを見ない", "    problems = surrogates(ir)\n    if problems:", "    problems = []\n    if problems:", "孤立したサロゲート"),
+    ("整数を isfinite に渡す", "        return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))",
+     "        return math.isfinite(value) and isinstance(value, (int, float))", "number に桁の大きい整数"),
     ("エラーのケースで error を期待しない", 'expected = case["expected"] if "expected" in case else {"error": case["error"]}',
      'expected = case.get("expected", {})', "正しい実装で緑"),
     ("ケースを 1 つしか作らない", '    for case in sorted(feature["cases"], key=lambda c: int(c["id"].rsplit("C", 1)[1])):\n        expected',

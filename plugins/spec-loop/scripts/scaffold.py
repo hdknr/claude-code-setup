@@ -18,6 +18,8 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--impl-module <モ�
 
 - `--check`: 書かずに、置いてある `scaffold/` が今の入力から作るものと同じかを確かめる（鮮度）。
   **消した機能の Red テストが残っていても古いと言う**（生成の印のあるファイルだけを数える）。
+  **`--impl-module` を省くと、置いてある Red テストが記録している `IMPL_MODULE` で比べる**
+  （作ったときの指定を繰り返さなくてよい。Red テストごとに違えば 2）。
 - `--dry-run`: 関門と中間表現の検査だけをして、何も書かず何も消さない。
 
 終了コード:
@@ -77,6 +79,7 @@ ERROR_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 QA_NO = re.compile(r"Q-[0-9]{3,}")
 # 正常時の出力の項目に使えない名前（失敗の形 `{"error": …}` と見分けられないため）
 RESERVED_OUTPUT = "error"
+DEFAULT_IMPL_MODULE = "spec_impl"
 # 引数を持たないメソッド（入力はクエリに載せる）
 NO_BODY = ("GET", "DELETE")
 
@@ -114,6 +117,24 @@ def one_line(value) -> bool:
             and not any(unicodedata.category(c) == "Cc" for c in value))
 
 
+def surrogates(obj, where: str = "spec_ir.json") -> list[str]:
+    """孤立したサロゲート（`"\\ud800"` は JSON として読めるが UTF-8 で書けない）を、キーと値の全部から探す。
+
+    **書く途中で落ちて契約を切り詰めないため**、生成より前に、どの文字列にも許さない。
+    """
+    if isinstance(obj, str):
+        return [f"{where}: UTF-8 で書けない文字（孤立したサロゲート）を含む"] if any(
+            unicodedata.category(c) == "Cs" for c in obj) else []
+    if isinstance(obj, dict):
+        found = []
+        for key, value in obj.items():
+            found += surrogates(key, f"{where}（キー）") + surrogates(value, f"{where}.{key}")
+        return found
+    if isinstance(obj, list):
+        return [p for i, v in enumerate(obj) for p in surrogates(v, f"{where}[{i}]")]
+    return []
+
+
 def keys_problem(where: str, obj, required: set[str], optional: set[str] = frozenset()) -> list[str]:
     if not isinstance(obj, dict):
         return [f"{where}: オブジェクトでない"]
@@ -131,8 +152,11 @@ def value_fits(kind: str, value) -> bool:
     if kind == "integer":
         return isinstance(value, int) and not isinstance(value, bool)
     if kind == "number":
-        # `NaN`・`Infinity` は JSON として読めてしまうが、値として比べられない
-        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+        # `NaN`・`Infinity` は JSON として読めてしまうが、値として比べられない。
+        # 整数は `math.isfinite` に渡さない——桁が大きいと float に直せず OverflowError で落ちる
+        if isinstance(value, bool):
+            return False
+        return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))
     return isinstance(value, bool)
 
 
@@ -214,6 +238,9 @@ def check_source(where: str, sources, repo: Path) -> list[str]:
         path = (repo / rel).resolve()
         if spec_root not in path.parents:
             problems.append(f"{where}: {rel} は {SPEC_DIR}/ の中に無い")
+        elif any(part.startswith(".") for part in path.relative_to(spec_root).parts):
+            # `check-spec-exit.py` は `.` で始まる場所を走査しない——そこを指すと未決定の印が関門を素通りする
+            problems.append(f"{where}: {rel} は `.` で始まる場所にある（関門が未決定の印を見ない）")
         elif rel == IR_PATH or path == (repo / IR_PATH).resolve():
             problems.append(f"{where}: {rel} は中間表現そのもの（仕様の原文を指す）")
         elif not path.is_file():
@@ -222,6 +249,9 @@ def check_source(where: str, sources, repo: Path) -> list[str]:
 
 
 def check_ir(ir, repo: Path, answered: dict[str, dict[str, str]]) -> list[str]:
+    problems = surrogates(ir)
+    if problems:
+        return problems + ["孤立したサロゲートを含む中間表現は、ほかの規則を見ない"]
     problems = keys_problem("spec_ir.json", ir, {"spec_ir_version", "title", "features"})
     if problems and not isinstance(ir, dict):
         return problems
@@ -235,6 +265,7 @@ def check_ir(ir, repo: Path, answered: dict[str, dict[str, str]]) -> list[str]:
         return problems
 
     feature_ids, operation_ids, routes, case_ids = set(), set(), set(), set()
+    type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
         found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"})
@@ -269,8 +300,13 @@ def check_ir(ir, repo: Path, answered: dict[str, dict[str, str]]) -> list[str]:
                     problems.append(f"{where}.operation.id: 形に反する（英小文字で始まり英小文字・数字・_、Python の予約語でない）: {oid!r}")
                 elif oid in operation_ids:
                     problems.append(f"{where}.operation.id: {oid} が重複している")
+                elif pascal(oid) in type_names:
+                    # `a_1` と `a1`・`foo_bar` と `foo__bar` は別の id だが、型の名前が同じになり上書きし合う
+                    problems.append(f"{where}.operation.id: {oid} は {type_names[pascal(oid)]} と"
+                                    f"同じ型の名前 {pascal(oid)}Input / {pascal(oid)}Output になる")
                 else:
                     operation_ids.add(oid)
+                    type_names[pascal(oid)] = oid
                 method, path = op.get("method"), op.get("path")
                 if method not in METHODS:
                     problems.append(f"{where}.operation.method: 決まりに無い（{' / '.join(METHODS)}）: {method!r}")
@@ -461,6 +497,13 @@ def test_class(feature: dict) -> str:
     return "Test" + feature["id"].replace("-", "")
 
 
+def output_types(op: dict) -> dict:
+    """正常時の出力の項目と、失敗の形（`error`）の型。Red テストが値と一緒に型を見るのに使う。"""
+    types = {name: field["type"] for name, field in op["output"].items()}
+    types[RESERVED_OUTPUT] = "string"
+    return types
+
+
 def red_test(feature: dict, impl_module: str) -> str:
     op = feature["operation"]
     lines = [
@@ -475,6 +518,20 @@ def red_test(feature: dict, impl_module: str) -> str:
         "",
         f"IMPL_MODULE = {impl_module!r}",
         f"OPERATION = {op['id']!r}",
+        f"OUTPUT_TYPES = {literal(output_types(op))}",
+        "",
+        "",
+        "def type_fits(kind, value):",
+        "    # `assertEqual` は `True == 1 == 1.0` を等しいと見るので、型は別に見る",
+        "    if isinstance(value, bool):",
+        "        return kind == \"boolean\"",
+        "    if kind == \"integer\":",
+        "        return isinstance(value, int)",
+        "    if kind == \"number\":",
+        "        return isinstance(value, (int, float))",
+        "    if kind == \"string\":",
+        "        return isinstance(value, str)",
+        "    return False",
         "",
         "",
         "def implementation():",
@@ -493,6 +550,13 @@ def red_test(feature: dict, impl_module: str) -> str:
         "        if function is None:",
         "            self.fail(f\"未実装: {IMPL_MODULE}.{OPERATION} が無い\")",
         "        return function(**given)",
+        "",
+        "    def check(self, given, expected):",
+        "        actual = self.call(given)",
+        "        self.assertEqual(actual, expected)",
+        "        for name, value in actual.items():",
+        "            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",
+        "                            f\"{name}: 型が {OUTPUT_TYPES[name]} でない（{value!r}）\")",
     ]
     for case in sorted(feature["cases"], key=lambda c: int(c["id"].rsplit("C", 1)[1])):
         expected = case["expected"] if "expected" in case else {"error": case["error"]}
@@ -501,7 +565,7 @@ def red_test(feature: dict, impl_module: str) -> str:
             "",
             f"    # {case['id']}: {case['title']}" + (f"（{refs}）" if refs else ""),
             f"    def {test_method(case)}(self):",
-            f"        self.assertEqual(self.call({literal(case['input'])}), {literal(expected)})",
+            f"        self.check({literal(case['input'])}, {literal(expected)})",
         ]
     lines += ["", "", "if __name__ == \"__main__\":", "    unittest.main()"]
     return "\n".join(lines) + "\n"
@@ -638,6 +702,20 @@ def stale(out: Path, contract: dict[str, str]) -> list[str]:
     return problems
 
 
+def recorded_impl_modules(out: Path) -> set[str]:
+    """生成の印を持つ Red テストが記録している `IMPL_MODULE` の値。"""
+    found = set()
+    for rel in generated_tests(out):
+        try:
+            text = (out / rel).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        match = re.search(r"^IMPL_MODULE = '([^'\n]*)'$", text, re.MULTILINE)
+        if match:
+            found.add(match.group(1))
+    return found
+
+
 def clear_issues(repo: Path) -> None:
     path = repo / ISSUES_DIR
     if path.is_dir():
@@ -647,24 +725,27 @@ def clear_issues(repo: Path) -> None:
 
 
 def write(repo: Path, contract: dict[str, str], issues: dict[str, str]) -> None:
+    # **1 つ目のファイルに触る前に、全部をバイトにする**——符号化で落ちるなら、何も書かないうちに落ちる
+    contract_bytes = {rel: text.encode("utf-8") for rel, text in contract.items()}
+    issue_bytes = {name: text.encode("utf-8") for name, text in issues.items()}
     out = repo / OUT_DIR
     for rel in sorted(generated_tests(out) - contract.keys()):
         (out / rel).unlink()
-    for rel, text in contract.items():
+    for rel, data in contract_bytes.items():
         path = out / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8", newline="\n")
+        path.write_bytes(data)
     clear_issues(repo)
     target = repo / ISSUES_DIR
     target.mkdir(parents=True)
-    for name, text in issues.items():
-        (target / name).write_text(text, encoding="utf-8", newline="\n")
+    for name, data in issue_bytes.items():
+        (target / name).write_bytes(data)
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--repo", default=".")
-    parser.add_argument("--impl-module", default="spec_impl")
+    parser.add_argument("--impl-module", default=None)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
@@ -674,6 +755,14 @@ def main(argv: list[str]) -> int:
         return 0 if exc.code == 0 else 2
     repo = Path(args.repo)
     writing = not (args.check or args.dry_run)
+    if args.impl_module is None:
+        # `--check` で省いたら、置いてある Red テストが記録しているものを使う（作ったときの指定で比べる）
+        recorded = recorded_impl_modules(repo / OUT_DIR) if args.check else set()
+        if len(recorded) > 1:
+            print(f"{OUT_DIR}/tests/: Red テストごとに IMPL_MODULE が違う（{' / '.join(sorted(recorded))}）。"
+                  "--impl-module で名指しする", file=sys.stderr)
+            return 2
+        args.impl_module = recorded.pop() if recorded else DEFAULT_IMPL_MODULE
     if not all(NAME.fullmatch(part) and not keyword.iskeyword(part) for part in args.impl_module.split(".")):
         print(f"--impl-module: モジュール名の形に反する: {args.impl_module!r}", file=sys.stderr)
         return 2
