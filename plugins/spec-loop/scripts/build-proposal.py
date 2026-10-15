@@ -181,6 +181,20 @@ def build(args) -> tuple[str, str, int]:
     return text, gantt.render(schedule), len(schedule)
 
 
+def repo_top(repo: Path) -> Path:
+    """既定の出力先の根。git で求められなければ `.git` を上へたどる（下位から走らせても根の古い出力を消すため）。"""
+    try:
+        top = signoff.git(repo, "rev-parse", "--show-toplevel")
+        if top.returncode == 0 and top.stdout.strip():
+            return Path(top.stdout.strip())
+    except signoff.Unjudged:
+        pass
+    for parent in (repo.resolve(), *repo.resolve().parents):
+        if (parent / ".git").exists():
+            return parent
+    return repo
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=".", type=Path)
@@ -191,13 +205,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     # git を起動できなくても、古い出力は消してから 2 で終わる（ここで落ちると古い提案書が残る）
-    unjudged = None
-    try:
-        top = signoff.git(args.repo, "rev-parse", "--show-toplevel")
-        base = Path(top.stdout.strip()) if top.returncode == 0 and top.stdout.strip() else args.repo
-    except signoff.Unjudged as e:
-        unjudged, base = Stop(2, [str(e)]), args.repo
-    out = args.out if args.out else base / DEFAULT_OUT
+    out = args.out if args.out else repo_top(args.repo) / DEFAULT_OUT
     svg = out.parent / GANTT_NAME
     for stale in (out, svg):
         if stale.is_file():
@@ -205,8 +213,6 @@ def main(argv: list[str]) -> int:
             print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
 
     try:
-        if unjudged:
-            raise unjudged
         try:
             text, chart, count = build(args)
         except signoff.Unjudged as e:
