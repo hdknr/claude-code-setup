@@ -17,7 +17,7 @@
 4. **決定論的で、`--check` が鮮度を見る**——2 回の生成でバイト一致。生成直後の `--check` は 0（陽性対照）、
    中間表現を直した後・手で直した後・消した機能の Red テストが残ったときは 1。
 5. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
-   `references/spec-gap.md` も同じ印と節を持つ**（2 つのプラグインの境界の写し）。
+   `references/spec-gap.md` も同じ印と節を持ち、dev-loop の `SKILL.md` も同じ印を持つ**（2 つのプラグインの境界の写し）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -48,6 +48,8 @@ SPEC_IR_REF = PLUGIN / "references" / "spec-ir.md"
 HANDOFF_REF = PLUGIN / "references" / "handoff-issue.md"
 TREE_REF = PLUGIN / "references" / "tree.md"
 SPEC_GAP_REF = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "spec-gap.md"
+# dev-loop の手順 1 は、この印を見て `spec-gap.md` へ送る——印の写しはここにもある
+DEV_LOOP_SKILL = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md"
 
 HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 QA_DONE = "Q-001,要求確定（決定表）,シルバーで 10000 円未満の割引は？,A: 割引なし / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
@@ -118,6 +120,17 @@ def calc_discount(rank, amount):
 
 def can_cancel(shipped):
     return {"ok": int(not shipped)}
+'''
+# 逆向き——真偽値を integer の項目に返す（`False == 0`）
+WRONG_BOOL_IMPL = '''
+def calc_discount(rank, amount):
+    if amount < 0:
+        return {"error": "INVALID_AMOUNT"}
+    return {"discount": False}
+
+
+def can_cancel(shipped):
+    return {"ok": not shipped}
 '''
 
 
@@ -304,9 +317,40 @@ def stale_test_removed(repo: Path) -> str | None:
     return None
 
 
-def regenerate_with_impl_module(repo: Path) -> None:
-    subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / TARGET), "--repo", str(repo),
-                    "--impl-module", "app.core"], capture_output=True, text=True, check=True)
+def impl_module_used(repo: Path) -> str | None:
+    test = (repo / "scaffold" / "tests" / "test_f_001.py").read_text(encoding="utf-8")
+    body = (repo / "build" / "scaffold" / "issues" / "F-001.md").read_text(encoding="utf-8")
+    if "IMPL_MODULE = 'app.core'" not in test:
+        return "Red テストが中間表現の impl_module を使っていない"
+    if "モジュール `app.core`" not in body:
+        return "Issue の本文が中間表現の impl_module を指していない"
+    return None
+
+
+def hand_edit_impl_module(repo: Path) -> None:
+    # 全部の Red テストを一様に書き換える——検査する相手から読む `--check` なら新しいと言ってしまう
+    for path in (repo / "scaffold" / "tests").glob("test_*.py"):
+        path.write_text(path.read_text(encoding="utf-8").replace("spec_impl", "hacked_mod"), encoding="utf-8")
+
+
+def crlf_test(repo: Path) -> None:
+    path = repo / "scaffold" / "tests" / "test_f_001.py"
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+
+
+def break_write(repo: Path) -> None:
+    # 書き込みの途中で OSError——`types.py` をディレクトリにして、題を変えて作り直させる
+    types = repo / "scaffold" / "types.py"
+    types.unlink()
+    (types / "x").mkdir(parents=True)
+    path = repo / "docs" / "spec" / "spec_ir.json"
+    path.write_text(path.read_text(encoding="utf-8").replace('"注文"', '"注文2"'), encoding="utf-8")
+
+
+def issues_gone(repo: Path) -> str | None:
+    if (repo / "build" / "scaffold" / "issues").exists():
+        return "前の Issue の本文が残っている"
+    return None
 
 
 def plant_draft_spec(repo: Path) -> None:
@@ -329,9 +373,13 @@ CASES: list[Case] = [
     Case("決定論的", 0, post=deterministic),
     Case("生成直後の --check", 0, "新しい", args=("--check",), generate_first=True),
     Case("中間表現を直した後の --check", 1, "今の入力から作るものと違う", args=("--check",), generate_first=True, pre=edit_ir_file),
-    # 生成のあとで `--impl-module` を変えて作り直し、`--check` ではそれを繰り返さない
-    Case("--check は記録した実装のモジュールで比べる", 0, "新しい", args=("--check",), generate_first=True,
-         pre=regenerate_with_impl_module),
+    Case("中間表現の実装のモジュールを使う", 0, ir=edit(lambda ir: ir.update(impl_module="app.core")), post=impl_module_used),
+    Case("実装のモジュールを手で書き換えた --check", 1, "今の入力から作るものと違う", args=("--check",), generate_first=True,
+         pre=hand_edit_impl_module),
+    Case("改行を CRLF に変えた --check", 1, "test_f_001.py: 今の入力から作るものと違う", args=("--check",),
+         generate_first=True, pre=crlf_test),
+    Case("書き込みの途中で失敗する", 2, "予期しない失敗", generate_first=True, pre=break_write, post=issues_gone),
+    Case("真偽値を整数の項目に返す実装で失敗する", 0, impl=WRONG_BOOL_IMPL, post=expect_red(1)),
     Case("手で直した後の --check", 1, "test_f_001.py: 今の入力から作るものと違う", args=("--check",), generate_first=True, pre=hand_edit),
     Case("消した機能の Red テストが残る --check", 1, "中間表現に無い機能の Red テスト", args=("--check",), generate_first=True,
          pre=drop_feature),
@@ -350,6 +398,8 @@ CASES: list[Case] = [
     # 中間表現の規則
     Case("版が違う", 1, "spec_ir_version が 1 でない", ir=edit(lambda ir: ir.update(spec_ir_version=2)), post=nothing_written),
     Case("版が true", 1, "spec_ir_version が 1 でない", ir=edit(lambda ir: ir.update(spec_ir_version=True))),
+    Case("版が 1.0", 1, "spec_ir_version が 1 でない", ir=edit(lambda ir: ir.update(spec_ir_version=1.0))),
+    Case("実装のモジュールの形", 1, "impl_module がモジュール名の形に反する", ir=edit(lambda ir: ir.update(impl_module="Bad-Name"))),
     Case("機能が無い", 1, "features が 1 つ以上の配列でない", ir=edit(lambda ir: ir.update(features=[]))),
     Case("決まりに無いキー", 1, "決まりに無いキー `priority`", ir=edit(lambda ir: f1(ir).update(priority="高"))),
     Case("ケースの決まりに無いキー", 1, "決まりに無いキー `note`", ir=edit(lambda ir: f1(ir)["cases"][0].update(note="x"))),
@@ -384,6 +434,16 @@ CASES: list[Case] = [
          ir=edit(lambda ir: f1(ir)["operation"]["output"].update({"error": {"type": "string"}}))),
     Case("enum の型", 1, "enum の値が型 string でない", ir=edit(lambda ir: f1(ir)["operation"]["input"]["rank"].update(enum=["silver", 1]))),
     Case("enum の重複", 1, "enum の値が重複している", ir=edit(lambda ir: f1(ir)["operation"]["input"]["rank"].update(enum=["gold", "gold"]))),
+    Case("enum の 1 と 1.0", 1, "enum の値が重複している",
+         ir=edit(lambda ir: f1(ir)["operation"]["input"]["amount"].update(type="number", enum=[1, 1.0]))),
+    # 以下は、検査の途中で Python の例外になっていた形——traceback（exit 1）で古い Issue の本文を残さない
+    Case("メソッドが配列", 1, "operation.method: 決まりに無い", pre=plant_old_issues, post=issues_gone,
+         ir=edit(lambda ir: f1(ir)["operation"].update(method=["POST"]))),
+    Case("深い入れ子", 2, "中間表現を読めない", raw="[" * 200000 + "]" * 200000, pre=plant_old_issues, post=issues_gone),
+    Case("仕様のパスに NUL", 2, "予期しない失敗", pre=plant_old_issues, post=issues_gone,
+         ir=edit(lambda ir: f1(ir).update(source=["docs/spec/a\u0000b.md"]))),
+    Case("桁の多いケースの id", 0, "作った",
+         ir=edit(lambda ir: ir["features"][1]["cases"][0].update(id="F-002-C" + "1" * 5000))),
     Case("エラー名の形", 1, "operation.errors: 名前の形に反する", ir=edit(lambda ir: f1(ir)["operation"].update(errors=["bad"]))),
     Case("ケースの id の形", 1, "<機能の id>-C<数字>", ir=edit(lambda ir: f1(ir)["cases"][0].update(id="F-002-C1"))),
     Case("ケースの id の重複", 1, "id F-001-C1 が重複している", ir=edit(lambda ir: f1(ir)["cases"][1].update(id="F-001-C1"))),
@@ -449,8 +509,27 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("期待を比べない", '"        self.assertEqual(actual, expected)",', '"        self.assertIsNotNone(actual)",', "誤った実装で失敗する"),
     ("型を見ない", '"            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",', '"            self.assertTrue(True,",',
      "型の違う実装で失敗する"),
-    ("記録した実装のモジュールを読まない", "recorded = recorded_impl_modules(repo / OUT_DIR) if args.check else set()",
-     "recorded = set()", "--check は記録した実装のモジュールで比べる"),
+    ("中間表現の実装のモジュールを読まない", 'ir.get("impl_module", DEFAULT_IMPL_MODULE)', "DEFAULT_IMPL_MODULE",
+     "中間表現の実装のモジュールを使う"),
+    ("実装のモジュールの形を見ない", '    if "impl_module" in ir and not module_name(ir["impl_module"]):',
+     "    if False:", "実装のモジュールの形"),
+    ("--check が文字列で比べる", '        if current != text.encode("utf-8"):', '        if current.decode("utf-8").splitlines() != text.splitlines():',
+     "改行を CRLF に変えた --check"),
+    ("予期しない失敗で Issue の本文を消さない", "        if writing:\n            try:\n                clear_issues(repo)",
+     "        if False:\n            try:\n                clear_issues(repo)", "仕様のパスに NUL"),
+    ("予期しない失敗を捕まえない", "    except Exception as exc:  # 予期しない失敗", "    except ZeroDivisionError as exc:  # 予期しない失敗",
+     "書き込みの途中で失敗する"),
+    ("メソッドが決まりに無くても入口の重複を見る", "                elif method in METHODS and (method, path) in routes:",
+     "                elif (method, path) in routes:", "メソッドが配列"),
+    ("深い入れ子を読めないと言わない", "ValueError, RecursionError) as exc:", "ValueError) as exc:", "深い入れ子"),
+    ("ケースの id を int() で並べる", '    digits = case["id"].rsplit("C", 1)[1].lstrip("0")\n    return len(digits), digits',
+     '    return 0, str(int(case["id"].rsplit("C", 1)[1]))', "桁の多いケースの id"),
+    ("版を値だけで比べる", '    if type(ir.get("spec_ir_version")) is not int or', '    if isinstance(ir.get("spec_ir_version"), bool) or',
+     "版が 1.0"),
+    ("enum の重複を文字列で数える", "            elif any(a == b for i, a in enumerate(enum) for b in enum[i + 1:]):",
+     "            elif len({json.dumps(v) for v in enum}) != len(enum):", "enum の 1 と 1.0"),
+    ("真偽値をどの型にも合うとする", '"        return kind == \\"boolean\\"",', '"        return True",',
+     "真偽値を整数の項目に返す実装で失敗する"),
     ("型の名前の衝突を見ない", "                elif pascal(oid) in type_names:", "                elif False:", "型の名前が潰れる"),
     ("ドットの場所を許す", '        elif any(part.startswith(".") for part in path.relative_to(spec_root).parts):', "        elif False:",
      "ドットの場所の仕様"),
@@ -459,8 +538,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        return math.isfinite(value) and isinstance(value, (int, float))", "number に桁の大きい整数"),
     ("エラーのケースで error を期待しない", 'expected = case["expected"] if "expected" in case else {"error": case["error"]}',
      'expected = case.get("expected", {})', "正しい実装で緑"),
-    ("ケースを 1 つしか作らない", '    for case in sorted(feature["cases"], key=lambda c: int(c["id"].rsplit("C", 1)[1])):\n        expected',
-     '    for case in sorted(feature["cases"], key=lambda c: int(c["id"].rsplit("C", 1)[1]))[:1]:\n        expected',
+    ("ケースを 1 つしか作らない", '    for case in sorted(feature["cases"], key=case_order):\n        expected',
+     '    for case in sorted(feature["cases"], key=case_order)[:1]:\n        expected',
      "Red テストが失敗する"),
     ("中間表現の sha256 を取らない", "    ir_sha = sha256(raw)", "    ir_sha = sha256(b\"\")", "本文から辿れる"),
     ("Q&A の回答を写さない", "            lines.append(f\"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |\")",
@@ -473,7 +552,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("書くときに残った Red テストを消さない", "    for rel in sorted(generated_tests(out) - contract.keys()):\n        (out / rel).unlink()",
      "    for rel in []:\n        (out / rel).unlink()", "消した機能の Red テストを消す"),
     ("印の無いテストも消す", "            if GENERATED in head:", "            if True:", "消した機能の Red テストを消す"),
-    ("--check が中身を比べない", "        if current != text:", "        if False:", "手で直した後の --check"),
+    ("--check が中身を比べない", '        if current != text.encode("utf-8"):', "        if False:", "手で直した後の --check"),
     ("機能の並びを保たない", '    return sorted(ir["features"], key=lambda f: f["id"])', '    return list(ir["features"])[::-1]',
      "本文から辿れる"),
 ]
@@ -590,6 +669,11 @@ def main() -> int:
             check(f"置き場所 {rel} が references/tree.md に無い", rel is not None and rel.rsplit("/", 1)[-1] in tree)
         # 2 つのプラグインの境界の写し
         check("dev-loop の references/spec-gap.md に印が無い", marker is not None and marker in gap)
+        skill = DEV_LOOP_SKILL.read_text(encoding="utf-8")
+        check("dev-loop の SKILL.md に印が無い（手順 1 が spec-loop の Issue に気づかない）", marker is not None and marker in skill)
+        # 陽性対照: 印を上げたら、`SKILL.md` に残った古い印では当たらない
+        check("印の版を変えても SKILL.md の照合が不一致にならない",
+              marker is not None and marker.replace("v1", "v2") not in skill)
         gap_sections = table_cells(gap, "## spec-loop から来た Issue を読む")
         check("dev-loop の references/spec-gap.md の節の表が handoff-issue.md と違う", gap_sections == sections,
               f"{gap_sections} vs {sections}")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """確定した仕様の中間表現（`spec_ir.json`）から、dev-loop に渡すものを作る。
 
-usage: python3 scaffold.py [--repo <正本リポジトリ>] [--impl-module <モジュール名>] [--check | --dry-run]
+usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run]
 
 作るもの（置き場所の正は `references/tree.md`）:
 
@@ -14,12 +14,17 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--impl-module <モ�
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（反映済みでない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
-**全部を組み立ててから書く**ので、途中で落ちて一部だけ書くことはない。
+**全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
+**書き込みそのもの（ファイルシステム）が途中で失敗すると、`scaffold/` は一部だけ書かれうる**——そのときも
+**Issue の本文は書く前に消してある**（古い本文を登録させない）ので、契約の乖離は `--check` が言う。
+
+**実装のモジュールは中間表現の `impl_module` が決める**（省けば `spec_impl`）——引数では渡さない。
+引数で渡すと、作り直すたびに指定を繰り返さなければ黙って別のモジュールになり、
+`--check` は検査する相手（置いてある Red テスト）からそれを読むしかなくなる。
 
 - `--check`: 書かずに、置いてある `scaffold/` が今の入力から作るものと同じかを確かめる（鮮度）。
   **消した機能の Red テストが残っていても古いと言う**（生成の印のあるファイルだけを数える）。
-  **`--impl-module` を省くと、置いてある Red テストが記録している `IMPL_MODULE` で比べる**
-  （作ったときの指定を繰り返さなくてよい。Red テストごとに違えば 2）。
+  **バイトで比べる**（改行の違いも古いと言う——Issue の本文の sha256 はバイトの指紋なので）。
 - `--dry-run`: 関門と中間表現の検査だけをして、何も書かず何も消さない。
 
 終了コード:
@@ -27,7 +32,8 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--impl-module <モ�
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる）
 - 1: 作らなかった——関門の条件 1 を満たさない・中間表現が決まりに反する（全部を 1 行ずつ出す）・
   `--check` で古い。**Issue の本文の前の出力は消す**（古い本文を登録させない。`--check`・`--dry-run` では消さない）
-- 2: 判定していない——引数の誤り・関門が判定していない・中間表現が無い／JSON として読めない。前の Issue の本文は消す
+- 2: 判定していない——引数の誤り・関門が判定していない・中間表現が無い／JSON として読めない・
+  予期しない失敗（書き込みの失敗を含む）。前の Issue の本文は消す
 
 **`scaffold/` は失敗しても消さない**——commit 済みの契約で、古ければ `--check` が言う。
 
@@ -117,6 +123,11 @@ def one_line(value) -> bool:
             and not any(unicodedata.category(c) == "Cc" for c in value))
 
 
+def module_name(value) -> bool:
+    return isinstance(value, str) and all(NAME.fullmatch(part) and not keyword.iskeyword(part)
+                                          for part in value.split("."))
+
+
 def surrogates(obj, where: str = "spec_ir.json") -> list[str]:
     """孤立したサロゲート（`"\\ud800"` は JSON として読めるが UTF-8 で書けない）を、キーと値の全部から探す。
 
@@ -185,7 +196,8 @@ def check_fields(where: str, fields, at_least_one: bool, output: bool) -> list[s
                 problems.append(f"{at}: enum は 1 つ以上の値の配列")
             elif not all(value_fits(field["type"], v) for v in enum):
                 problems.append(f"{at}: enum の値が型 {field['type']} でない")
-            elif len({json.dumps(v) for v in enum}) != len(enum):
+            # `json.dumps` の文字列で比べると `1` と `1.0` を別の値と数える
+            elif any(a == b for i, a in enumerate(enum) for b in enum[i + 1:]):
                 problems.append(f"{at}: enum の値が重複している")
     return problems
 
@@ -252,11 +264,14 @@ def check_ir(ir, repo: Path, answered: dict[str, dict[str, str]]) -> list[str]:
     problems = surrogates(ir)
     if problems:
         return problems + ["孤立したサロゲートを含む中間表現は、ほかの規則を見ない"]
-    problems = keys_problem("spec_ir.json", ir, {"spec_ir_version", "title", "features"})
+    problems = keys_problem("spec_ir.json", ir, {"spec_ir_version", "title", "features"}, {"impl_module"})
     if problems and not isinstance(ir, dict):
         return problems
-    if ir.get("spec_ir_version") != IR_VERSION or isinstance(ir.get("spec_ir_version"), bool):
+    # `1.0 == True == 1` なので、値ではなく型ごと見る
+    if type(ir.get("spec_ir_version")) is not int or ir.get("spec_ir_version") != IR_VERSION:
         problems.append(f"spec_ir.json: spec_ir_version が {IR_VERSION} でない")
+    if "impl_module" in ir and not module_name(ir["impl_module"]):
+        problems.append(f"spec_ir.json: impl_module がモジュール名の形に反する: {ir['impl_module']!r}")
     if "title" in ir and not one_line(ir["title"]):
         problems.append("spec_ir.json: title が空か、1 行でない")
     features = ir.get("features")
@@ -312,9 +327,10 @@ def check_ir(ir, repo: Path, answered: dict[str, dict[str, str]]) -> list[str]:
                     problems.append(f"{where}.operation.method: 決まりに無い（{' / '.join(METHODS)}）: {method!r}")
                 if not isinstance(path, str) or not path.startswith("/") or not one_line(path):
                     problems.append(f"{where}.operation.path: / で始まる 1 行でない: {path!r}")
-                elif (method, path) in routes:
+                # メソッドが決まりに無い（配列など）なら入口の重複は見ない——組にできず TypeError で落ちる
+                elif method in METHODS and (method, path) in routes:
                     problems.append(f"{where}.operation: {method} {path} が重複している")
-                else:
+                elif method in METHODS:
                     routes.add((method, path))
                 if "input" in op:
                     problems += check_fields(f"{where}.operation.input", op["input"], False, False)
@@ -391,7 +407,7 @@ def load(repo: Path) -> tuple[int, list[str], dict | None, bytes, dict]:
     try:
         raw = ir_path.read_bytes()
         ir = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise Unjudged(f"{ir_path}: 中間表現を読めない（{exc.__class__.__name__}: {exc}）")
     answered = read_answered(repo / QA_PATH)
     problems = check_ir(ir, repo, answered)
@@ -485,6 +501,12 @@ def types_py(ir: dict) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+def case_order(case: dict) -> tuple[int, str]:
+    # `int()` は桁が多すぎると ValueError で落ちる——桁数と文字列で数の順に並べる
+    digits = case["id"].rsplit("C", 1)[1].lstrip("0")
+    return len(digits), digits
+
+
 def test_file(feature: dict) -> str:
     return f"test_{feature['id'].lower().replace('-', '_')}.py"
 
@@ -558,7 +580,7 @@ def red_test(feature: dict, impl_module: str) -> str:
         "            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",
         "                            f\"{name}: 型が {OUTPUT_TYPES[name]} でない（{value!r}）\")",
     ]
-    for case in sorted(feature["cases"], key=lambda c: int(c["id"].rsplit("C", 1)[1])):
+    for case in sorted(feature["cases"], key=case_order):
         expected = case["expected"] if "expected" in case else {"error": case["error"]}
         refs = "・".join(case.get("qa", []))
         lines += [
@@ -588,7 +610,7 @@ def issue_body(feature: dict, ir_sha: str, test_text: str, impl_module: str, ans
     base = pascal(op["id"])
     names = [f"`{base}Input`", f"`{base}Output`"] + ([f"`{base}Error`"] if op.get("errors") else [])
     tfile = f"{OUT_DIR}/tests/{test_file(feature)}"
-    cases = sorted(feature["cases"], key=lambda c: int(c["id"].rsplit("C", 1)[1]))
+    cases = sorted(feature["cases"], key=case_order)
     refs = set(feature["qa"]) | {no for case in cases for no in case.get("qa", [])}
     lines = [
         HANDOFF_MARKER,
@@ -691,29 +713,16 @@ def stale(out: Path, contract: dict[str, str]) -> list[str]:
     for rel, text in contract.items():
         path = out / rel
         try:
-            current = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            current = path.read_bytes()
+        except OSError:
             problems.append(f"{OUT_DIR}/{rel}: 無い（生成していない）")
             continue
-        if current != text:
+        # 文字列で読むと改行が正規化され、CRLF に書き換えたものを新しいと言う
+        if current != text.encode("utf-8"):
             problems.append(f"{OUT_DIR}/{rel}: 今の入力から作るものと違う（古い・手で直した）")
     for rel in sorted(generated_tests(out) - contract.keys()):
         problems.append(f"{OUT_DIR}/{rel}: 中間表現に無い機能の Red テストが残っている")
     return problems
-
-
-def recorded_impl_modules(out: Path) -> set[str]:
-    """生成の印を持つ Red テストが記録している `IMPL_MODULE` の値。"""
-    found = set()
-    for rel in generated_tests(out):
-        try:
-            text = (out / rel).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        match = re.search(r"^IMPL_MODULE = '([^'\n]*)'$", text, re.MULTILINE)
-        if match:
-            found.add(match.group(1))
-    return found
 
 
 def clear_issues(repo: Path) -> None:
@@ -728,6 +737,8 @@ def write(repo: Path, contract: dict[str, str], issues: dict[str, str]) -> None:
     # **1 つ目のファイルに触る前に、全部をバイトにする**——符号化で落ちるなら、何も書かないうちに落ちる
     contract_bytes = {rel: text.encode("utf-8") for rel, text in contract.items()}
     issue_bytes = {name: text.encode("utf-8") for name, text in issues.items()}
+    # **契約に触る前に前の Issue の本文を消す**——書き込みが途中で失敗しても、古い本文が新しい契約と並ばない
+    clear_issues(repo)
     out = repo / OUT_DIR
     for rel in sorted(generated_tests(out) - contract.keys()):
         (out / rel).unlink()
@@ -735,7 +746,6 @@ def write(repo: Path, contract: dict[str, str], issues: dict[str, str]) -> None:
         path = out / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
-    clear_issues(repo)
     target = repo / ISSUES_DIR
     target.mkdir(parents=True)
     for name, data in issue_bytes.items():
@@ -745,7 +755,6 @@ def write(repo: Path, contract: dict[str, str], issues: dict[str, str]) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--repo", default=".")
-    parser.add_argument("--impl-module", default=None)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
@@ -755,21 +764,26 @@ def main(argv: list[str]) -> int:
         return 0 if exc.code == 0 else 2
     repo = Path(args.repo)
     writing = not (args.check or args.dry_run)
-    if args.impl_module is None:
-        # `--check` で省いたら、置いてある Red テストが記録しているものを使う（作ったときの指定で比べる）
-        recorded = recorded_impl_modules(repo / OUT_DIR) if args.check else set()
-        if len(recorded) > 1:
-            print(f"{OUT_DIR}/tests/: Red テストごとに IMPL_MODULE が違う（{' / '.join(sorted(recorded))}）。"
-                  "--impl-module で名指しする", file=sys.stderr)
-            return 2
-        args.impl_module = recorded.pop() if recorded else DEFAULT_IMPL_MODULE
-    if not all(NAME.fullmatch(part) and not keyword.iskeyword(part) for part in args.impl_module.split(".")):
-        print(f"--impl-module: モジュール名の形に反する: {args.impl_module!r}", file=sys.stderr)
-        return 2
     if not repo.is_dir():
         print(f"{repo}: ディレクトリが無い。判定していない", file=sys.stderr)
         return 2
+    try:
+        return run(repo, args, writing)
+    except Exception as exc:  # 予期しない失敗も「作らなかった」(1) と区別し、古い Issue の本文を残さない
+        lines = [f"予期しない失敗（{exc.__class__.__name__}: {exc}）。判定していない"]
+        if writing:
+            try:
+                clear_issues(repo)
+                lines.append(f"前の Issue の本文（{ISSUES_DIR}/）は消した。"
+                             f"{OUT_DIR}/ は一部だけ書かれたかもしれない——--check で確かめる")
+            except OSError as again:
+                lines.append(f"前の Issue の本文（{ISSUES_DIR}/）を消せなかった（{again}）——登録しないこと")
+        for line in lines:
+            print(line, file=sys.stderr)
+        return 2
 
+
+def run(repo: Path, args, writing: bool) -> int:
     try:
         code, lines, ir, raw, answered = load(repo)
     except Unjudged as exc:
@@ -782,7 +796,7 @@ def main(argv: list[str]) -> int:
             print(line, file=sys.stderr)
         return code
 
-    contract, issues = render(ir, raw, answered, args.impl_module)
+    contract, issues = render(ir, raw, answered, ir.get("impl_module", DEFAULT_IMPL_MODULE))
     features = len(ir["features"])
     cases = sum(len(f["cases"]) for f in ir["features"])
     if args.check:

@@ -79,7 +79,9 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | `scaffold/tests/test_<機能>.py` | Red テスト（Python の `unittest`。実装が無ければ失敗する） |
 
 **正本と開発のリポジトリが別なら**、`scaffold/` を開発のリポジトリへどう写すかは正本リポジトリの `CLAUDE.md` に
-書いてもらう（Issue の本文の sha256 で、写したものが同じかを確かめられる）。
+書いてもらう。**Issue の本文が sha256 を持つのは、中間表現（`docs/spec/spec_ir.json`）と Red テストだけ**——
+`openapi.json`・`types.py` は指紋を持たず、中間表現は `scaffold/` の外にある。dev-loop は本文の sha256 を
+手元の中間表現と Red テストに当てるので、**開発のリポジトリにも中間表現を写すか、どこで当てるかを決めて書く**。
 
 ## プロジェクトに任せること
 

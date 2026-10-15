@@ -99,11 +99,11 @@ Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `ref
 手順と守ることは [`skills/scaffold/SKILL.md`](skills/scaffold/SKILL.md) を正とします。
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--impl-module <モジュール名>] [--check | --dry-run]
+python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run]
 ```
 
-`--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを確かめます（鮮度）。
-`--impl-module` を省くと、置いてある Red テストが記録しているモジュール名で比べます。
+`--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。
+実装を置くモジュールは、中間表現の `impl_module` に書きます（`references/spec-ir.md`）。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
 ## Q&A 表を検査する
