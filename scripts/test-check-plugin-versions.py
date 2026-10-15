@@ -563,6 +563,11 @@ def main() -> int:
         # 除外リスト形式は tools: を持たないので、上と同じ理由で落ちる
         ("除外リスト形式", "disallowedTools: Write, Edit\n", "tools: が無い"),
         ("model: を固定", "tools: Read, Bash\nmodel: sonnet\n", "model: を書いている"),
+        # キーの書き方の揺れで model: / tools: を拾い損ねない（YAML としては有効な形）
+        ("コロンの前に空白の model", "tools: Read, Bash\nmodel : sonnet\n", "frontmatter を読めない"),
+        ("引用符つきの model", 'tools: Read, Bash\n"model": sonnet\n', "frontmatter を読めない"),
+        # 後勝ちで読むと、後ろの行で Write を隠せる
+        ("tools: が 2 回", "tools: Write\ntools: Read\n", "tools: が 2 回ある"),
     ):
         proc = run_case(agent(frontmatter))
         check_rejected(proc, expected, f"判定役の agent 定義（{label}）がすり抜けた")

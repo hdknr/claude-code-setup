@@ -14,8 +14,11 @@
 - `scripts/test-check-spec-exit.py` — 上の回帰テスト（変異テスト・references との一致）
 - `scripts/check-plugin-versions.py` — `plugins/*/agents/*.md` が許可リストで、書き込みツールと `model` を持たないことを検査
 - `scripts/test-check-plugin-versions.py` — 上の回帰テスト
-- `scripts/check-all.py` / `.github/workflows/plugins.yml` — 新しいテストの登録
-- `plugins/spec-loop/README.md` / `plugins/spec-loop/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` — 版 0.3.0 と description
+- `scripts/check-all.py` — 新しいテストの登録
+- `.github/workflows/plugins.yml` — 同上
+- `plugins/spec-loop/README.md` — 版 0.3.0 と description
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 同上
+- `.claude-plugin/marketplace.json` — 同上
 - `plugins/spec-loop/skills/req-loop/SKILL.md` — 版のバナーだけ（同じプラグインの全 `SKILL.md` に同じ版）
 - `docs/plugins/index.md` — spec-loop の節と一覧表
 - `CLAUDE.md` — プロジェクト構成
@@ -31,6 +34,9 @@
 ## 決めたこと（Issue の「決めること」）
 
 1. **ループを抜ける条件**: 記事（要求仕様書作成ループ）の 4 条件を採り、`references/spec-exit.md` に置く。
+   **実装では 5 条件になった**（下の 4 つに「5: 最後のレビューの指摘が 1 件残らず振り分け済み」を足し、
+   条件 1 は「`反映済み` でない行が 0 件」に広げた）。**条件の正は `spec-exit.md`**——以下は着手時の記録
+   （`/code-review` 1 パス目 R10 の指摘で追記）。
    1. Q&A 表に `確認中` の行が 0 件、仕様に未決定の印が 0 件 ——**スクリプトが決める**
    2. 仕様チェックリスト（入出力・エラー・境界値・状態遷移）が埋まっている ——判定役の報告
    3. 決定表の各行・各シナリオに、対応するテストケース（入力と期待結果）が仕様の中にある ——判定役の報告
@@ -95,11 +101,19 @@ req-loop 本文の写しは残課題）。**分けない理由**: 段 2 は #214
 
 - **周の在り処**: ブランチ `issue/217-spec-review`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-217`、
   起点 `e86f118`、base の参照 `origin/main` → `e86f1180ec5e4a397318c13a133ff03242f63bcf`
-- 実装: 済み（`1f11190`）。`check-all.py` 35/35 緑（失敗 0 / 飛ばし 0）
+- 実装: 済み（`1f11190`）。~~`check-all.py` 35/35 緑~~ **この申告は誤りだった**——1 パス目の後に回したら
+  `check-description-sync.py`（req-loop の frontmatter を変えていない共変）と `check-plan-scope.py`
+  （変更範囲の 1 行に複数パスを書き、先頭しか読まれない）が**どちらも `1f11190` の時点から落ちる形**だった。
+  前者は trailer、後者は変更範囲の書式を直して解消
 - 手順 4 の割り目: AskUserQuestion で訊き、**「ここで割る」**が選ばれた（2026-10-15）
 - **次にすること**: 手順 5 の Verifier（別ティア、`dev-loop:dev-loop-verifier`）と手順 6 の `/code-review` の **1 パス目**。
   base は上の `e86f1180ec5e4a397318c13a133ff03242f63bcf`
-- 関門: 未着手（1 パス目・2 パス目とも）
+- 関門 1 パス目（2026-10-15）:
+  - Verifier（`dev-loop:dev-loop-verifier`・sonnet）: **済み。反証 2 件**（下の採否の表 V1・V2。どちらも親が再現した）
+  - `/code-review`（high。受入基準は起動後に SendMessage で渡し、報告が D・決着済みの論点に言及しているので届いた）:
+    **済み。指摘 10 件**（R1〜R10。R4 は V1 と同じ）
+  - 直したもの: V1・V2・R1（R4 は V1 で同時に解消）。指摘対応のコミット: 下の「1 パス目の指摘対応」
+  - **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**
 - 反証・差し戻し: なし
 - 交絡: 実験なし（試料に当てた確認だけ。陽性対照はテストの「満たす」試料と変異 15 件）
 - 実装中に足した複製: 判定役 3 体の「守ること」（同じ趣旨を 3 体に持つ。agent 定義は単体で読まれるので分けない）
@@ -111,3 +125,23 @@ req-loop 本文の写しは残課題）。**分けない理由**: 段 2 は #214
 | 抜ける条件をどこに置くか | `references/spec-exit.md` | 段 4 の scaffold も「確定した仕様」の定義として読む。スキル本文に置くと写しになる |
 | req-loop 本文の「未定」「TBD」 | 段 2 では触らない（残課題） | バナー以外を触ると req-loop の振る舞いの変更になる |
 | 形式検査の縮退 | 決定表・計算ルールは標準ライブラリで総当たり、他は「検査できなかった」 | 記事の「判定は検査器の出力で決める」を、道具が無い環境でも守るため |
+
+### 関門の指摘の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1 | `model :`（コロン前に空白）・`"model":`（引用符つきキー）が `agent_frontmatter` のキーの正規表現に当たらず、`model` の拒否をすり抜ける | 示せる——`agent_frontmatter("---\nname: a\ntools: Read\nmodel : opus\n---\n")` が `{'name': 'a', 'tools': 'Read'}` を返す（親が再現） | B(a) | 直す |
+| V2 | 同じキーが 2 回あると後勝ちになり、`tools: Write` の後の `tools: Read` で検査を通る | 示せる——同上の関数が `{'name': 'a', 'tools': 'Read'}` を返す（親が再現） | A(a) | 直す |
+| R1 | 仕様のファイルが 1 つも UTF-8 で読めない（UTF-16・`.xlsx` だけ）と、0 ファイルしか見ていないのに「条件 1 を満たす」で 0 終了 | 示せる——UTF-16 の `order.md`（「割引は TBD」）で exit 0・「仕様 0 ファイルに未決定の印 0 件」（親が再現） | D(b) | 直す（読めた仕様が 0 なら 2。試料と変異を 1 件ずつ足した） |
+| R2 | 2 パス目（最後）の判定のあとに Planner が直した仕様は誰も見ないのに、手順 6 は最後の判定の条件 2〜4 をそのまま使う | 示せない（SKILL.md の読解。実行はしていない） | D(c) に触れうる | 残課題（**人間に判断を仰ぐ**——受入基準 D に近い振る舞いの規定） |
+| R3 | req-loop と spec-review の両方が「回答済み・未反映」の行を反映し、起票元で絞らない——spec-review の行を req-loop が `requirements/` に反映して `反映済み` にしうる | 示せない（読解） | 無し（req-loop の本文は触らない決着） | 残課題 |
+| R4 | = V1 | — | — | V1 で解消 |
+| R5 | formal-checker の形式モデルを保存する手順が SKILL.md に無く、`spec/formal/` を書く者がいない | 示せない（読解） | 無し | 残課題 |
+| R6 | 決定表の縮退（総当たり）も代表値の選び方に依存し、フローで縮退を拒む理由と矛盾する——**決着済みの論点の理由への反論** | 示せない（読解。反例は仮想） | 無し（条件 4 の強さの論点） | 残課題（決着の理由への反論として人間に渡す） |
+| R7 | Q&A 表が列検査を通らないと `read_pending` が行を返さず、`確認中` の行が出力に出ない | 示せる（終了コードは 1 のまま） | 無し（満たしたとは報告しない） | 残課題 |
+| R8 | `find_markers` の `splitlines()` が U+2028 等でも割り、行番号がずれる | 示せる（`a b\nc TBD` で :3） | 無し | 残課題 |
+| R9 | 0 桁目の YAML リスト・`[Read, Bash]` を誤読し、正しい読み取り専用の定義を誤った理由で落とす | 示せる | 無し（安全側に落ちる。V1・V2 の修正後、0 桁目のリストは「読めない」で落ちる） | 残課題 |
+| R10 | 計画の「決めたこと」が 4 条件・`確認中` のまま、`spec-exit.md` は 5 条件・`反映済み` でない行 | — | 無し（計画ファイルは関門の対象外） | 記録として追記（関門の採否ではない） |
+
+**自分で気づいたもの（関門の指摘ではない）**: `spec-exit.md` の「条件 1 を確かめる」節が
+「条件 2〜4 はこのスクリプトでは判定しない」と書き、スクリプトの出力は「条件 2〜5」——残課題。

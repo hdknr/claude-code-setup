@@ -63,6 +63,8 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("印が無い行の後ろに印", HEADER, {"order.md": CLEAN_SPEC, "flow.md": "a\nb\nc TBD\n"}, 1, "flow.md:3"),
     ("読めないファイルは件数を出して通す", HEADER, {"order.md": CLEAN_SPEC, "fig.png": b"\x89PNG\xff\xfe"}, 0,
      "見なかったファイル（読めない・UTF-8 でない）: 1 件"),
+    # 1 つも読めなければ「印 0 件」と言わない（UTF-16 で書いた仕様の TBD を見落として 0 にしていた）
+    ("どの仕様も読めない", HEADER, {"order.md": "割引は TBD\n".encode("utf-16")}, 2, "どの仕様も読めなかった"),
     ("ドット始まりは見ない", HEADER, {"order.md": CLEAN_SPEC, ".cache/x.md": "TODO\n"}, 0, "条件 1 を満たす"),
     ("仕様のディレクトリが無い", HEADER, None, 2, "ディレクトリが無い"),
     ("仕様が空", HEADER, {}, 2, "ファイルが 1 つも無い"),
@@ -87,6 +89,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            line = \"\" if word in line else line", "未定義と未定が同じ行"),
     ("ディレクトリが無くても進む", "    if not spec_dir.is_dir():", "    if False:", "仕様のディレクトリが無い"),
     ("空の仕様を通す", "    if not files:", "    if False:", "仕様が空"),
+    ("読めない仕様だけでも通す", "    if len(unread) == len(files):", "    if False:", "どの仕様も読めない"),
     ("ドット始まりも見る", "        if any(part.startswith(\".\") for part in path.relative_to(root).parts):",
      "        if False:", "ドット始まりは見ない"),
     ("入れ子を見ない", 'root.rglob("*")', 'root.glob("*")', "入れ子のファイル"),
