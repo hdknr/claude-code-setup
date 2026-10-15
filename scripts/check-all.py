@@ -87,6 +87,7 @@ TESTS: list[str] = [
     "test-run-dev-loop-evals.py",
     "test-check-qa-csv.py",
     "test-qa-to-pptx.py",
+    "test-check-spec-exit.py",
     "test-tab-match.py",
 ]
 
