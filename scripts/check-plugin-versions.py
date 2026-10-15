@@ -358,6 +358,14 @@ def agent_frontmatter(text: str) -> dict[str, str] | None:
     **読めない形は `ValueError` にする（拾い損ねて通さない）**——行頭にあるのに `キー: 値` の形で
     読めない行（`model : x`・`"model": x` のように YAML としては有効なキー）と、
     **同じキーが 2 回ある**定義（後勝ちで読むと `tools: Write` を後ろの行で隠せる）。
+
+    **字下げした行は、直前のキーの値に足す**（`- ` で始まればリストの項目として `, ` で、
+    それ以外は YAML の複数行スカラーと同じく空白でつなぐ）。捨てると、`tools: Read` の次の行の
+    `  , Write`（YAML は `Read , Write` と読む）が見えない。`tools: |` のブロックも同じ扱いで、
+    値は `| …` になり許可リストに当たらず落ちる——**読み方を合わせるより、通さない側に倒す**。
+
+    **閉じの `---` は 0 桁目のものだけ。** 字下げした `---` はブロックの中の文字にすぎず、
+    そこで閉じると後ろのキー（`model:` など）を見ずに通す。
     """
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -365,7 +373,7 @@ def agent_frontmatter(text: str) -> dict[str, str] | None:
     fields: dict[str, str] = {}
     key = None
     for line in lines[1:]:
-        if line.strip() == "---":
+        if line.rstrip() == "---":
             return fields
         match = re.match(r"([A-Za-z_][\w-]*):(?:\s+(.*))?$", line)
         if match:
@@ -375,9 +383,14 @@ def agent_frontmatter(text: str) -> dict[str, str] | None:
             fields[key] = (match.group(2) or "").strip()
         elif line.strip() and not line[0].isspace() and not line.startswith("#"):
             raise ValueError(f"キー: 値 の形で読めない行がある: {line.strip()}")
-        elif key is not None and re.match(r"\s+-\s*\S", line):
-            item = line.strip()[1:].strip()
-            fields[key] = f"{fields[key]}, {item}" if fields[key] else item
+        elif line.strip() and line[0].isspace():
+            if key is None:
+                raise ValueError(f"キーより前に字下げした行がある: {line.strip()}")
+            if re.match(r"\s+-\s*\S", line):
+                item = line.strip()[1:].strip()
+                fields[key] = f"{fields[key]}, {item}" if fields[key] else item
+            else:
+                fields[key] = f"{fields[key]} {line.strip()}" if fields[key] else line.strip()
     return None
 
 

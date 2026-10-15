@@ -545,6 +545,8 @@ def main() -> int:
         ("カンマ区切り", "tools: Read, Grep, Glob, Bash\n"),
         ("YAML のリスト", "tools:\n  - Read\n  - Bash\n"),
         ("絞り込み付きの Bash", "tools: Read, Bash(git diff:*)\n"),
+        # ブロックの中の字下げした `---` は閉じではない（閉じと読んだら後ろの tools: を見失う）
+        ("ブロックの中の ---", "note: |\n  前置き\n  ---\ntools: Read, Bash\n"),
     ):
         proc = run_case(agent(frontmatter))
         check(proc.returncode == 0, f"許可リストどおりの agent 定義（{label}）が落ちた", proc.stdout)
@@ -568,6 +570,11 @@ def main() -> int:
         ("引用符つきの model", 'tools: Read, Bash\n"model": sonnet\n', "frontmatter を読めない"),
         # 後勝ちで読むと、後ろの行で Write を隠せる
         ("tools: が 2 回", "tools: Write\ntools: Read\n", "tools: が 2 回ある"),
+        # 字下げした継続行は値の続き（YAML は `Read , Write` と読む）。捨てると Write が見えない
+        ("継続行に Write", "tools: Read\n  , Write\n", "持ってはならないツールがある: Write"),
+        # 字下げした `---` で閉じたと読むと、その後ろの model: を見ない
+        ("ブロックの中の --- の後ろに model", "tools: Read\nnote: |\n  前置き\n  ---\nmodel: opus\n",
+         "model: を書いている"),
     ):
         proc = run_case(agent(frontmatter))
         check_rejected(proc, expected, f"判定役の agent 定義（{label}）がすり抜けた")

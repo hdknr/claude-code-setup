@@ -63,8 +63,20 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("印が無い行の後ろに印", HEADER, {"order.md": CLEAN_SPEC, "flow.md": "a\nb\nc TBD\n"}, 1, "flow.md:3"),
     ("読めないファイルは件数を出して通す", HEADER, {"order.md": CLEAN_SPEC, "fig.png": b"\x89PNG\xff\xfe"}, 0,
      "見なかったファイル（読めない・UTF-8 でない）: 1 件"),
-    # 1 つも読めなければ「印 0 件」と言わない（UTF-16 で書いた仕様の TBD を見落として 0 にしていた）
-    ("どの仕様も読めない", HEADER, {"order.md": "割引は TBD\n".encode("utf-16")}, 2, "どの仕様も読めなかった"),
+    # 見ていない仕様を「印 0 件」と言わない（UTF-16 で書いた仕様の TBD を見落として 0 にしていた）
+    ("図以外に読めない仕様", HEADER, {"order.md": "割引は TBD\n".encode("utf-16")}, 2, "図以外に読めないファイルが 1 件"),
+    # 読める別ファイルが混ざっても同じ（全部読めないときだけ 2 にしていた）
+    ("読めない仕様と読める README", HEADER,
+     {"order.md": "割引は TBD\n".encode("utf-16"), "README.md": "目次\n"}, 2, "図以外に読めないファイルが 1 件"),
+    # ASCII だけの UTF-16 は UTF-8 として復号できてしまう（NUL は有効）。NUL で読めない側に数える
+    ("BOM の無い ASCII の UTF-16", HEADER, {"a.md": "Status: TBD\n".encode("utf-16-le")}, 2,
+     "図以外に読めないファイルが 1 件"),
+    ("図だけ", HEADER, {"fig.png": b"\x89PNG\xff\xfe"}, 2, "どの仕様も読めなかった"),
+    # 読めないファイルがあっても、印が見つかれば満たさないことは確か
+    ("読めない仕様と印のある仕様", HEADER,
+     {"order.md": "割引は TBD\n".encode("utf-16"), "flow.md": "TODO\n"}, 1, "flow.md:1: 未決定の印 TODO"),
+    # 全角の英字は IGNORECASE では半角にならない
+    ("全角の ＴＢＤ", HEADER, {"order.md": "仕様はＴＢＤ。\n"}, 1, "未決定の印 TBD"),
     ("ドット始まりは見ない", HEADER, {"order.md": CLEAN_SPEC, ".cache/x.md": "TODO\n"}, 0, "条件 1 を満たす"),
     ("仕様のディレクトリが無い", HEADER, None, 2, "ディレクトリが無い"),
     ("仕様が空", HEADER, {}, 2, "ファイルが 1 つも無い"),
@@ -89,7 +101,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            line = \"\" if word in line else line", "未定義と未定が同じ行"),
     ("ディレクトリが無くても進む", "    if not spec_dir.is_dir():", "    if False:", "仕様のディレクトリが無い"),
     ("空の仕様を通す", "    if not files:", "    if False:", "仕様が空"),
-    ("読めない仕様だけでも通す", "    if len(unread) == len(files):", "    if False:", "どの仕様も読めない"),
+    ("図だけでも通す", "    if len(unread) == len(files):", "    if False:", "図だけ"),
+    ("図以外の読めないファイルも通す", "    if not_figures:", "    if False:", "読めない仕様と読める README"),
+    ("NUL を含むファイルも読む", '        if "\\0" in text:', "        if False:", "BOM の無い ASCII の UTF-16"),
+    ("全角を正規化しない", '        line = unicodedata.normalize("NFKC", line)\n', "", "全角の ＴＢＤ"),
+    ("読めないファイルを印より先に見る", "    if problems:\n        return 1",
+     "    if problems and not unread:\n        return 1", "読めない仕様と印のある仕様"),
     ("ドット始まりも見る", "        if any(part.startswith(\".\") for part in path.relative_to(root).parts):",
      "        if False:", "ドット始まりは見ない"),
     ("入れ子を見ない", 'root.rglob("*")', 'root.glob("*")', "入れ子のファイル"),
