@@ -354,6 +354,10 @@ def agent_frontmatter(text: str) -> dict[str, str] | None:
 
     **行頭のキーだけ**を拾う。値が空で次の行から `- 名前` が続く形（YAML のリスト）は、
     カンマ区切りに直して返す。
+
+    **読めない形は `ValueError` にする（拾い損ねて通さない）**——行頭にあるのに `キー: 値` の形で
+    読めない行（`model : x`・`"model": x` のように YAML としては有効なキー）と、
+    **同じキーが 2 回ある**定義（後勝ちで読むと `tools: Write` を後ろの行で隠せる）。
     """
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -363,10 +367,14 @@ def agent_frontmatter(text: str) -> dict[str, str] | None:
     for line in lines[1:]:
         if line.strip() == "---":
             return fields
-        match = re.match(r"([A-Za-z_][\w-]*):\s*(.*)$", line)
+        match = re.match(r"([A-Za-z_][\w-]*):(?:\s+(.*))?$", line)
         if match:
             key = match.group(1)
-            fields[key] = match.group(2).strip()
+            if key in fields:
+                raise ValueError(f"キー {key}: が 2 回ある")
+            fields[key] = (match.group(2) or "").strip()
+        elif line.strip() and not line[0].isspace() and not line.startswith("#"):
+            raise ValueError(f"キー: 値 の形で読めない行がある: {line.strip()}")
         elif key is not None and re.match(r"\s+-\s*\S", line):
             item = line.strip()[1:].strip()
             fields[key] = f"{fields[key]}, {item}" if fields[key] else item
@@ -387,6 +395,8 @@ def check_agents(plugin: str, source_dir: Path) -> None:
       `Bash(…)` のような絞り込みは、括弧の前の名前で見る。`*` や MCP の名前も落ちる）。
     - **`model:` を書いた定義を落とす。** 固定すると、呼び出し側の「実装とは別のティア」を
       黙って破る（実装と同じティアの周が出る）。ティアは呼び出し時の引数で選ぶ。
+    - **frontmatter を読めない定義を落とす**——`キー: 値` の形でない行頭の行と、重複したキー
+      （`agent_frontmatter`）。拾い損ねたキーは検査をすり抜けるので、読めないものは通さない。
 
     守らないもの:
 
@@ -398,7 +408,11 @@ def check_agents(plugin: str, source_dir: Path) -> None:
     for path in sorted(source_dir.rglob("*.md")):
         if path.parent.name != "agents":
             continue
-        fields = agent_frontmatter(path.read_text(encoding="utf-8"))
+        try:
+            fields = agent_frontmatter(path.read_text(encoding="utf-8"))
+        except ValueError as error:
+            fail(f"{plugin}: {rel(path)} の frontmatter を読めない（{error}）。読めない定義は通さない")
+            continue
         if fields is None:
             fail(f"{plugin}: {rel(path)} に frontmatter が無い（閉じていない）。agent 定義として読めない")
             continue
