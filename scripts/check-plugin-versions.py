@@ -14,6 +14,9 @@ CI（.github/workflows/plugins.yml）から呼ばれるが、ローカルでも�
 5. 取りこぼし — plugins/ にあるのにカタログに載っていないプラグイン
 6. description の一致 — marketplace.json のエントリと plugin.json が同じ値か（#224。
    SKILL.md の frontmatter は比べない——そちらは check-description-sync.py が共変を見る）
+7. 判定役の agent 定義 — `agents/` の下の `*.md` が**許可リストの `tools:` を持ち、
+   読み取りと `Bash` 以外を 1 つも列挙せず、`model:` を書いていない**か（#217。
+   何を守り何を守らないかは `check_agents` の docstring を正とする）
 
 なぜ必要か: version を据え置いたまま中身だけ変えると、インストール済みクライアントの
 キャッシュが更新を検知できず旧内容のスキルを使い続ける（#33 で実際に発生）。
@@ -146,6 +149,7 @@ def check_entry(entry: dict) -> str | None:
     else:
         check_skill_versions(name, source_dir, plugin_version)
     check_site_links(name, source_dir)
+    check_agents(name, source_dir)
     if plugin_version is not None and plugin_version != catalog_version:
         fail(
             f"{name}: version が一致しない — "
@@ -338,6 +342,111 @@ def check_site_links(plugin: str, source_dir: Path) -> None:
     for source in sorted(source_dir.rglob("*.md")):
         for problem in broken_links(source, REPO_ROOT / "docs"):
             fail(f"{plugin}: {rel(source)} の{problem}")
+
+
+# 判定役（検証・レビュー）の agent が持ってよいツール。**許可リストで持つ**——
+# 禁止のほうを列挙すると、`NotebookEdit` や MCP の書き込みツールのように知らない名前が素通りする。
+AGENT_ALLOWED_TOOLS = ("Read", "Grep", "Glob", "Bash")
+
+
+def agent_frontmatter(text: str) -> dict[str, str] | None:
+    """agent 定義の frontmatter を {キー: 値} で返す。無い・閉じていなければ None。
+
+    **行頭のキーだけ**を拾う。値が空で次の行から `- 名前` が続く形（YAML のリスト）は、
+    カンマ区切りに直して返す。
+
+    **読めない形は `ValueError` にする（拾い損ねて通さない）**——行頭にあるのに `キー: 値` の形で
+    読めない行（`model : x`・`"model": x` のように YAML としては有効なキー）と、
+    **同じキーが 2 回ある**定義（後勝ちで読むと `tools: Write` を後ろの行で隠せる）。
+
+    **字下げした行は、直前のキーの値に足す**（`- ` で始まればリストの項目として `, ` で、
+    それ以外は YAML の複数行スカラーと同じく空白でつなぐ）。捨てると、`tools: Read` の次の行の
+    `  , Write`（YAML は `Read , Write` と読む）が見えない。`tools: |` のブロックも同じ扱いで、
+    値は `| …` になり許可リストに当たらず落ちる——**読み方を合わせるより、通さない側に倒す**。
+
+    **閉じの `---` は 0 桁目のものだけ。** 字下げした `---` はブロックの中の文字にすぎず、
+    そこで閉じると後ろのキー（`model:` など）を見ずに通す。
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    fields: dict[str, str] = {}
+    key = None
+    for line in lines[1:]:
+        if line.rstrip() == "---":
+            return fields
+        match = re.match(r"([A-Za-z_][\w-]*):(?:\s+(.*))?$", line)
+        if match:
+            key = match.group(1)
+            if key in fields:
+                raise ValueError(f"キー {key}: が 2 回ある")
+            fields[key] = (match.group(2) or "").strip()
+        elif line.strip() and not line[0].isspace() and not line.startswith("#"):
+            raise ValueError(f"キー: 値 の形で読めない行がある: {line.strip()}")
+        elif line.strip() and line[0].isspace():
+            if key is None:
+                raise ValueError(f"キーより前に字下げした行がある: {line.strip()}")
+            if re.match(r"\s+-\s*\S", line):
+                item = line.strip()[1:].strip()
+                fields[key] = f"{fields[key]}, {item}" if fields[key] else item
+            else:
+                fields[key] = f"{fields[key]} {line.strip()}" if fields[key] else line.strip()
+    return None
+
+
+def check_agents(plugin: str, source_dir: Path) -> None:
+    """判定役の agent 定義が、書く手段を持たないかを見る（#217）。
+
+    **対象はプラグインの中の、`agents` という名前のディレクトリの直下にある `*.md` すべて。**
+    このリポジトリの agent は**どれも判定役**（dev-loop の Verifier、spec-loop の 3 役）である。
+    書き込みが要る agent を足すなら、**この検査を意図して変える**——黙って免除しない。
+
+    守るもの:
+
+    - **`tools:` が無い（空の）定義を落とす。** 書かなければ**全ツールを継承する**。
+    - **`tools:` が `AGENT_ALLOWED_TOOLS` 以外を 1 つでも含めば落とす**（許可リストで判定する。
+      `Bash(…)` のような絞り込みは、括弧の前の名前で見る。`*` や MCP の名前も落ちる）。
+    - **`model:` を書いた定義を落とす。** 固定すると、呼び出し側の「実装とは別のティア」を
+      黙って破る（実装と同じティアの周が出る）。ティアは呼び出し時の引数で選ぶ。
+    - **frontmatter を読めない定義を落とす**——`キー: 値` の形でない行頭の行と、重複したキー
+      （`agent_frontmatter`）。拾い損ねたキーは検査をすり抜けるので、読めないものは通さない。
+
+    守らないもの:
+
+    - **`Bash` は書ける**（`>` のリダイレクト）。証拠を出すために残している——
+      **構造で密閉できるのはここまで**で、残りは agent の本文の指示に頼る。
+    - **`plugin.json` の `agents` で別の場所を指した定義**は見ない（このリポジトリは使っていない）。
+    - **呼び出し側が `model` を実際に渡したか**は見ない（スキルの本文の規定に頼る）。
+    """
+    for path in sorted(source_dir.rglob("*.md")):
+        if path.parent.name != "agents":
+            continue
+        try:
+            fields = agent_frontmatter(path.read_text(encoding="utf-8"))
+        except ValueError as error:
+            fail(f"{plugin}: {rel(path)} の frontmatter を読めない（{error}）。読めない定義は通さない")
+            continue
+        if fields is None:
+            fail(f"{plugin}: {rel(path)} に frontmatter が無い（閉じていない）。agent 定義として読めない")
+            continue
+        if not fields.get("tools"):
+            fail(
+                f"{plugin}: {rel(path)} に tools: が無い。書かなければ全ツールを継承する——"
+                f"判定役は許可リスト（{', '.join(AGENT_ALLOWED_TOOLS)}）で書く"
+            )
+        else:
+            names = [item.strip().split("(", 1)[0].strip() for item in fields["tools"].split(",")]
+            extra = [name for name in names if name not in AGENT_ALLOWED_TOOLS]
+            if extra:
+                fail(
+                    f"{plugin}: {rel(path)} の tools: に判定役が持ってはならないツールがある: "
+                    f"{', '.join(extra)}（許してよいのは {', '.join(AGENT_ALLOWED_TOOLS)} だけ）"
+                )
+        if "model" in fields:
+            fail(
+                f"{plugin}: {rel(path)} が model: を書いている。固定すると「実装とは別のティア」を"
+                "黙って破る——ティアは呼び出し時の model 引数で選ぶ"
+            )
 
 
 def check_uncatalogued(catalogued: set[str]) -> None:
