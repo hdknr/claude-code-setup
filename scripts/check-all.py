@@ -88,6 +88,10 @@ TESTS: list[str] = [
     "test-check-qa-csv.py",
     "test-qa-to-pptx.py",
     "test-check-spec-exit.py",
+    "test-check-feasibility-csv.py",
+    "test-schedule-to-gantt.py",
+    "test-check-signoff.py",
+    "test-build-proposal.py",
     "test-tab-match.py",
 ]
 

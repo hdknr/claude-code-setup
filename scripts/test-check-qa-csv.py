@@ -88,6 +88,8 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
      HEADER + 'Q-001,要求確定,"1 行目\n2 行目",A: x / B: y,未回答,—,確認中,\n', 0, "OK（1 行）"),
     ("セルの中の U+2028（Web から貼った文）", HEADER + row(質問="1 文目 2 文目"), 0, "OK（1 行）"),
     ("費用への影響は空でよい", HEADER + row(), 0, "OK（1 行）"),
+    ("費用付きの質問に費用への影響", HEADER + row(起票元="実現性・コスト（運用費）", 費用への影響="B は月額が約 2 倍"), 0,
+     "OK（1 行）"),
     # --- 読めない（中身を検査していない） ---
     ("空のファイル", "", 2, "空のファイル"),
     ("UTF-8 でない", HEADER.encode("cp932"), 2, "UTF-8 として読めない"),
@@ -107,6 +109,10 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     ("起票元の括弧が半角", HEADER + row(起票元="要求確定(決定表)"), 1, "`起票元` が決まりに無い"),
     ("起票元の括弧が閉じていない", HEADER + row(起票元="要求確定（決定表"), 1, "`起票元` が決まりに無い"),
     ("起票元の括弧が空", HEADER + row(起票元="要求確定（）"), 1, "`起票元` が決まりに無い"),
+    ("費用付きの質問で費用への影響が空", HEADER + row(起票元="実現性・コスト"), 1,
+     "起票元が `実現性・コスト` なのに `費用への影響` が空"),
+    ("費用付きの質問（括弧つき）で費用への影響が空白だけ", HEADER + row(起票元="実現性・コスト（運用費）", 費用への影響=" "), 1,
+     "起票元が `実現性・コスト` なのに `費用への影響` が空"),
     ("選択肢が足りない", HEADER + row(選択肢="A: する"), 1, "選択肢が 2 つ未満"),
     ("選択肢の形", HEADER + row(選択肢="する / しない"), 1, "`A: …` の形でない"),
     ("選択肢のラベルが小文字", HEADER + row(選択肢="a: する / b: しない"), 1, "`A: …` の形でない"),
@@ -168,6 +174,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("空のファイルを 2 にしない", "if not text.strip():", "if False:", "空のファイル"),
     ("UTF-8 でないのを 2 にしない", 'return 2, [f"{path}: UTF-8', 'return 1, [f"{path}: UTF-8', "UTF-8 でない"),
     ("費用への影響の空を許さない", 'MAY_BE_EMPTY = {"費用への影響"}', "MAY_BE_EMPTY = set()", "費用への影響は空でよい"),
+    ("費用付きの質問の空を見ない", 'elif m["name"] == COST_SOURCE and not row["費用への影響"].strip():', "elif False:",
+     "費用付きの質問で費用への影響が空"),
+    ("費用付きの質問の空白を落とさない", 'and not row["費用への影響"].strip():', 'and not row["費用への影響"]:',
+     "費用付きの質問（括弧つき）で費用への影響が空白だけ"),
+    ("費用付きの質問を起票元の詳細ごと比べる", 'elif m["name"] == COST_SOURCE', 'elif row["起票元"] == COST_SOURCE',
+     "費用付きの質問（括弧つき）で費用への影響が空白だけ"),
     # 引用符つきの改行は `splitlines()` でも壊れない（csv が繋ぎ直す）ので、殺すのは U+2028 の試料
     ("splitlines で割る", 'csv.reader(io.StringIO(text, newline=""))', "csv.reader(text.splitlines())",
      "セルの中の U+2028（Web から貼った文）"),
@@ -267,6 +279,9 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
     may_be_empty = {c for c in cells if "空でよい" in empty(c)}
     if may_be_empty != set(mod.MAY_BE_EMPTY):
         problems.append(f"空でよい列 {sorted(may_be_empty)} ≠ 本体 {sorted(mod.MAY_BE_EMPTY)}")
+    cost_source = first_code(empty("費用への影響"), "起票元が {} の行は空を許さない")
+    if cost_source != mod.COST_SOURCE:
+        problems.append(f"費用付きの質問の起票元 {cost_source!r} ≠ 本体 {mod.COST_SOURCE!r}")
     for column, constant in (("回答", mod.NO_ANSWER), ("反映先", mod.NO_TARGET)):
         marker = first_code(empty(column), "まだなら {}")
         if marker != constant:
@@ -300,7 +315,8 @@ BRACKET_WORDS = {"全角括弧": ("（", "）")}
 # （突き合わせが空振りしていないことの陽性対照）。
 REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("状態の表の 1 行", "| `反映済み` |", "| 反映済み |"),
-    ("空でよい列", "| 費用に関わらない質問は空でよい |", "| 許さない |"),
+    ("空でよい列", "| 費用に関わらない質問は空でよい。", "| 費用に関わらない質問も空を許さない。"),
+    ("費用付きの質問の起票元", "**起票元が `実現性・コスト` の行は", "**起票元が `開発` の行は"),
     ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
     ("反映先の「まだ無い」の印", "まだなら `—` と書く", "まだなら `-` と書く"),
     ("番号の桁", "`Q-` に 3 桁以上の数字", "`Q-` に 4 桁以上の数字"),
