@@ -11,11 +11,16 @@ docs/
 │   └── nfr.csv              # 非機能要求の回答
 ├── requirements/            # 利用者向け：業務ルール・画面・業務フロー
 ├── spec/                    # 開発者向け：入出力・エラー・境界値・状態遷移（spec-review が書き下す）
-│   └── formal/              # 形式検査のモデル（決定表の検査・TLA+・Alloy など）
+│   ├── formal/              # 形式検査のモデル（決定表の検査・TLA+・Alloy など）
+│   └── spec_ir.json         # 仕様の中間表現（scaffold が書き起こす。形は spec-ir.md）
 ├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り
 │   ├── schedule.csv         # スケジュールの正本（列は feasibility-csv.md）
 │   └── estimate.csv         # 見積りの正本（同上）
 └── proposal/                # 決裁者向け提案書の手書き部分
+scaffold/                    # dev-loop に渡す契約（scaffold が生成し、commit する。下の「scaffold の出力」）
+├── openapi.json
+├── types.py
+└── tests/test_<機能>.py     # Red テスト
 ```
 
 ## 置き方の決まり
@@ -53,9 +58,28 @@ docs/
 | --- | --- | --- |
 | ガントチャート | `build/feasibility/gantt.svg` | `feasibility` |
 | 提案書 | `build/proposal/proposal.md`（と同じ場所の `gantt.svg`） | `proposal` |
+| Issue の本文 | `build/scaffold/issues/<機能の id>.md`（と同じ場所の `issues.json`） | `scaffold` |
 
 **commit しなくてよい**——同梱の生成スクリプトは、同じ入力から同じバイトを作る。
 提案書は**サインオフのタグの時点の中身**から作るので、タグがあれば作り直せる（`signoff-tags.md`）。
+
+Issue の本文は**登録すれば GitHub に残る**ので、commit しなくてよい。**作れなかったときは前の本文を消す**
+（古い本文を登録させない）。
+
+## scaffold の出力
+
+**`scaffold/`（リポジトリ直下）は生成物だが、commit する。** Issue が指す受け渡しの契約で、dev-loop は
+このファイルに対して実装するからである。**手で直さない**——直したいところは `spec_ir.json` を直して作り直す。
+同梱の生成スクリプトは同じ入力から同じバイトを作り、**`--check` で、置いてあるものが古くないかを確かめる**。
+
+| ファイル | 中身 |
+| --- | --- |
+| `scaffold/openapi.json` | OpenAPI 3.1（JSON） |
+| `scaffold/types.py` | 入出力の型（Python の `TypedDict`） |
+| `scaffold/tests/test_<機能>.py` | Red テスト（Python の `unittest`。実装が無ければ失敗する） |
+
+**正本と開発のリポジトリが別なら**、`scaffold/` を開発のリポジトリへどう写すかは正本リポジトリの `CLAUDE.md` に
+書いてもらう（Issue の本文の sha256 で、写したものが同じかを確かめられる）。
 
 ## プロジェクトに任せること
 

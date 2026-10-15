@@ -92,6 +92,7 @@ TESTS: list[str] = [
     "test-schedule-to-gantt.py",
     "test-check-signoff.py",
     "test-build-proposal.py",
+    "test-scaffold.py",
     "test-tab-match.py",
 ]
 
