@@ -190,8 +190,13 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--title", default="提案書")
     args = parser.parse_args(argv)
 
-    top = signoff.git(args.repo, "rev-parse", "--show-toplevel")
-    base = Path(top.stdout.strip()) if top.returncode == 0 and top.stdout.strip() else args.repo
+    # git を起動できなくても、古い出力は消してから 2 で終わる（ここで落ちると古い提案書が残る）
+    unjudged = None
+    try:
+        top = signoff.git(args.repo, "rev-parse", "--show-toplevel")
+        base = Path(top.stdout.strip()) if top.returncode == 0 and top.stdout.strip() else args.repo
+    except signoff.Unjudged as e:
+        unjudged, base = Stop(2, [str(e)]), args.repo
     out = args.out if args.out else base / DEFAULT_OUT
     svg = out.parent / GANTT_NAME
     for stale in (out, svg):
@@ -200,7 +205,14 @@ def main(argv: list[str]) -> int:
             print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
 
     try:
-        text, chart, count = build(args)
+        if unjudged:
+            raise unjudged
+        try:
+            text, chart, count = build(args)
+        except signoff.Unjudged as e:
+            raise Stop(2, [str(e)])
+        except OSError as e:
+            raise Stop(2, [f"git を起動できない（{e.strerror}）。提案書の材料を読んでいない"])
     except Stop as stop:
         for line in stop.lines:
             print(line, file=sys.stderr)

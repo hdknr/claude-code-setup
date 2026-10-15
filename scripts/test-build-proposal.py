@@ -184,6 +184,29 @@ def run_case(scripts: Path, root: Path, steps, stale: bool, env: dict[str, str])
     return Result(code, output, text, svg, again)
 
 
+def run_no_git(scripts: Path, root: Path, env: dict[str, str]) -> Result:
+    """作れる状態のリポジトリと古い出力を置いてから、git を起動できない PATH で生成する。"""
+    build_repo(root, SIGNED, env)
+    out = root / "build" / "proposal" / "proposal.md"
+    out.parent.mkdir(parents=True)
+    out.write_text("古い提案書\n", encoding="utf-8")
+    (out.parent / "gantt.svg").write_text("<svg/>", encoding="utf-8")
+    empty = root.parent / f"{root.name}-empty-path"
+    empty.mkdir()
+    code, output = generate(scripts, root, out, {**env, "PATH": str(empty)})
+    return Result(code, output, out.read_text(encoding="utf-8") if out.is_file() else None,
+                  (out.parent / "gantt.svg").is_file(), None)
+
+
+# git を起動できないとき: 古い出力を消し、2 で終わる（トレースバックの 1 にしない）
+def no_git(r: Result) -> bool:
+    return not_made(2)(r) and r.output.count("前に作った出力を消した") == 2 and "Traceback" not in r.output
+
+
+NO_GIT_MUTATION = ("git を起動できないと落ちる", "    except signoff.Unjudged as e:\n        unjudged, base",
+                   "    except ZeroDivisionError as e:\n        unjudged, base")
+
+
 def run_all(scripts: Path, work: Path, env: dict[str, str]) -> dict[str, Result]:
     return {name: run_case(scripts, work / f"case{i}", steps, stale, env)
             for i, (name, steps, stale, _) in enumerate(CASES)}
@@ -212,7 +235,18 @@ def main() -> int:
         for name, result in run_all(scripts, tmp_path / "work", env).items():
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result.code} {result.output[-300:]}")
 
+        result = run_no_git(scripts, tmp_path / "nogit", env)
+        check("試料が期待どおりでない: git を起動できない", no_git(result), f"exit={result.code} {result.output[-300:]}")
+
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
+        name, before, after = NO_GIT_MUTATION
+        if source.count(before) != 1:
+            check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+        else:
+            mutated = copy_scripts(tmp_path / "mut-nogit")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            result = run_no_git(mutated, tmp_path / "mutwork-nogit", env)
+            check(f"変異が生き残った: {name}", not no_git(result), result.output[-300:])
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
@@ -229,7 +263,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 1} 件・変異 {len(MUTATIONS) + 1} 件")
     return 0
 
 

@@ -140,7 +140,29 @@ def check_schedule(path: Path, text: str | None = None) -> tuple[list[str], list
                 before_end = parse_date(by_no[before]["終了"])
                 if start and before_end and start < before_end:
                     problems.append(f"{where}: `前提` の {before} が終わる前（{by_no[before]['終了']}）に始まる（{row['開始']}）")
+    problems += cycles(path, rows)
     return problems, [row for _, row in rows]
+
+
+def cycles(path: Path, rows: list[tuple[int, dict[str, str]]]) -> list[str]:
+    """`前提` をたどって自分に戻る工程を返す。自分自身を直接書いた行は上で報告済みなので数えない。
+
+    終了日と同じ日に始めるのは許すので、同じ日の工程どうしの循環は日付の検査を通ってしまう。"""
+    edges = {row["No"]: [b for b in row["前提"].split(SEPARATOR) if b and b != row["No"]]
+             for _, row in rows if row["No"] and row["前提"].strip()}
+    problems = []
+    for line, row in rows:
+        start = row["No"]
+        stack, seen = list(edges.get(start, [])), set()
+        while stack:
+            current = stack.pop()
+            if current == start:
+                problems.append(f"{path}:{line}: {start}: `前提` をたどると自分に戻る（循環）")
+                break
+            if current not in seen:
+                seen.add(current)
+                stack.extend(edges.get(current, []))
+    return problems
 
 
 def check_estimate(path: Path, text: str | None = None) -> tuple[list[str], list[dict[str, str]]]:
