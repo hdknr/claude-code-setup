@@ -22,9 +22,13 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （`link-skills.sh` は `plugins/<name>/skills/<name>` しか張らないので、名前の規則で最初から対象外）
     - `skills/spec-review/` - 仕様レビューのループ（#217。**スキル本体が仕様を書く側**で、
       批判する側は `agents/`。**抜ける条件を満たさなければ抜けたと報告しない**）。素のスキルとして張れないのは同上
-    - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）。
+    - `skills/feasibility/` - 実現性・コストのループ（#218。**スキル本体が見積りを書く側**で、検証役は `agents/`。
+      **予算責任者の合意待ちで止まり、合意もタグも推測で埋めない**）。素のスキルとして張れないのは同上
+    - `skills/proposal/` - 提案書のループ（#218。**関門の照合も生成もスクリプト**——スキルは照合が通らないとき
+      **手で提案書を書かない**。**決裁者の承認待ちで止まる**）。素のスキルとして張れないのは同上
+    - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
-    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・サインオフのタグ・仕様レビューを抜ける条件）。
+    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件）。
       **スキルの中ではなくプラグイン直下にある**——スキルからは `../../references/…` で指し、
       `check-skill-pointers.py` が**プラグインの中に収まること**まで見る（#216）
     - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。テストは
@@ -35,6 +39,16 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
       （**0 でも「抜けた」ではない**。反映済みでない行は `qa-to-pptx.py` の定義で読む。テストは
       `scripts/test-check-spec-exit.py`）
+    - `scripts/check-feasibility-csv.py` - スケジュールと見積りの表の検査（`schedule-to-gantt.py` と
+      `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは
+      `scripts/test-check-feasibility-csv.py`）
+    - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
+      作れなければ**前の出力を消す**。テストは `scripts/test-schedule-to-gantt.py`）
+    - `scripts/check-signoff.py` - 2 つのサインオフのタグの時点で `docs/shared/` が一致するかの照合
+      （**どちらかの時点に `docs/shared/` が無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。
+      テストは `scripts/test-check-signoff.py`）
+    - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書を作る
+      （照合をスキルの判断に任せないため、**生成の側で照合する**。テストは `scripts/test-build-proposal.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）
@@ -127,6 +141,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-spec-exit.py` - spec-loop の抜ける条件 1 の判定の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**未決定の印が `references/spec-exit.md` の表と
     一致することも見る**（`test-check-qa-csv.py` と同じ形）
+  - `test-check-feasibility-csv.py` / `test-schedule-to-gantt.py` / `test-check-signoff.py` /
+    `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと
+    タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）
   - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
     ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
     `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に

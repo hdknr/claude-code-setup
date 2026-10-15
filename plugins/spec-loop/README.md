@@ -4,8 +4,9 @@
 扱うプラグインです。要求確定・仕様レビュー・実現性とコスト・提案書の 4 つのループと、
 確定した仕様を dev-loop の入力（Issue）に変える引き渡しを、ループごとのスキルとして持つ予定です。
 
-**いまのスキルは `req-loop`（要求確定のループ）と `spec-review`（仕様レビューのループ）の 2 本です**。残りのループのスキルは
-段ごとに足します（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+**いまのスキルは `req-loop`（要求確定）・`spec-review`（仕様レビュー）・`feasibility`（実現性とコスト）・
+`proposal`（提案書）の 4 本で、4 つのループがそろいました**。dev-loop への引き渡し（`scaffold`）は
+段 4 で足します（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
 
 設計の背景（なぜ dev-loop と分けるか・なぜ 1 つのプラグインにまとめるか）は記事を参照:
 <https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/>
@@ -20,17 +21,25 @@
 | `references/spec-exit.md` | 仕様レビューを抜ける条件・未決定の印・仕様チェックリスト・形式検査の対象 |
 | `scripts/check-qa-csv.py` | Q&A 表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/qa-to-pptx.py` | Q&A 表からレビュー会用の PPTX を作る（標準ライブラリのみ） |
+| `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
+| `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
+| `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
+| `scripts/check-signoff.py` | 2 つのサインオフのタグの時点で `docs/shared/` が一致するかの照合（標準ライブラリと `git`） |
+| `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書を作る（標準ライブラリと `git`） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
-| `agents/` | 仕様を批判する 3 つの判定役（`red-team`・`domain-checker`・`formal-checker`）。**書き込みツールを持たない** |
+| `skills/feasibility/` | 実現性・コストのループを 1 回分進めるスキル（見積りを書く側） |
+| `skills/proposal/` | 関門を照合して提案書を作るスキル |
+| `agents/` | 仕様を批判する 3 つの判定役（`red-team`・`domain-checker`・`formal-checker`）と見積りの検証役（`estimate-checker`）。**書き込みツールを持たない** |
 
 **データの決まりは `references/` だけに書きます。** このファイルも、スキルも、公開ページも、
 そこを指すだけで決まりを写しません。写しがあると、直すときに一部だけ直し漏れます。
 
 **例外はスクリプトの定数**で、機械で検査する以上、写しが要ります。
 写しがずれていないかは、このリポジトリのテストが `references/` の表と突き合わせて確かめます
-（`scripts/test-check-qa-csv.py` と `scripts/test-check-spec-exit.py`）。
+（`scripts/test-check-qa-csv.py`・`scripts/test-check-spec-exit.py`・`scripts/test-check-feasibility-csv.py`・
+`scripts/test-check-signoff.py`）。
 
 ## `req-loop` — 要求確定のループ
 
@@ -58,6 +67,24 @@
 `model` も定義に書かず、呼び出す側が仕様を書いたモデルと別のティアを選びます。
 この形はこのリポジトリの `scripts/check-plugin-versions.py` が CI で確かめます。
 
+## `feasibility` — 実現性・コストのループ
+
+`/spec-loop:feasibility` で呼びます。1 回の実行で、要求・仕様から規模を数えて見積り（開発費・運用費）と
+スケジュールを更新し、ガントチャートをスクリプトで生成し、**選択肢によって費用が変わる未決定事項を
+費用付きの質問として Q&A 表に起票します**。見積りは `agents/estimate-checker.md` に**別のティアで**検証させます。
+**予算責任者の合意待ちで止まります**——合意を推測で埋めることも、`budget-signoff` のタグを付けることもありません。
+
+手順と守ることは [`skills/feasibility/SKILL.md`](skills/feasibility/SKILL.md) を正とします。
+
+## `proposal` — 提案書のループ
+
+`/spec-loop:proposal` で呼びます。**2 つのサインオフのタグ（`req-signoff`・`budget-signoff`）の時点で
+`docs/shared/` が一致するかをスクリプトで照合し、一致したときだけ提案書を生成します**（LLM に判断させません）。
+提案書は**承認したタグの時点の中身**から作るので、承認の後に直した中身は入りません。
+**決裁者の承認待ちで止まります。**
+
+手順と守ることは [`skills/proposal/SKILL.md`](skills/proposal/SKILL.md) を正とします。
+
 ## Q&A 表を検査する
 
 正本リポジトリで、Q&A 表（置き場所は `references/tree.md`）を引数に渡します:
@@ -81,6 +108,20 @@ python3 <spec-loop の base ディレクトリ>/scripts/qa-to-pptx.py <Q&A 表�
 載るのは状態が回答待ち・未反映の行だけで、Q&A 表が検査を通らなければ作りません。
 出力先の既定は `references/tree.md` の「スライドの置き場所」にあります。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
+
+## スケジュールと見積り・照合・提案書のスクリプト
+
+`feasibility` と `proposal` が使うスクリプトを、単体でも呼べます:
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/check-feasibility-csv.py <schedule.csv> <estimate.csv>
+python3 <spec-loop の base ディレクトリ>/scripts/schedule-to-gantt.py <schedule.csv> <出力先.svg>
+python3 <spec-loop の base ディレクトリ>/scripts/check-signoff.py [--repo <正本リポジトリ>] [--req <タグ>] [--budget <タグ>]
+python3 <spec-loop の base ディレクトリ>/scripts/build-proposal.py [--repo <正本リポジトリ>] [--out <出力先.md>] [--title <題>]
+```
+
+生成するもの（ガントチャート・提案書）は、作れなかったときに前の出力を消します。
+何を守り何を守らないか（終了コードを含む）は、各スクリプトの docstring を正とします。
 
 ## 前提
 

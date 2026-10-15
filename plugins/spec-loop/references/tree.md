@@ -13,7 +13,8 @@ docs/
 ├── spec/                    # 開発者向け：入出力・エラー・境界値・状態遷移（spec-review が書き下す）
 │   └── formal/              # 形式検査のモデル（決定表の検査・TLA+・Alloy など）
 ├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り
-│   └── schedule.csv         # スケジュールの正本
+│   ├── schedule.csv         # スケジュールの正本（列は feasibility-csv.md）
+│   └── estimate.csv         # 見積りの正本（同上）
 └── proposal/                # 決裁者向け提案書の手書き部分
 ```
 
@@ -30,7 +31,8 @@ docs/
   `qa.csv` に起票する。確定の条件は `spec-exit.md`。
 - **`proposal/` には、ほかのどこにも無い部分だけを手で書く**（背景と目的・推奨案とその理由・
   比較した代替案・リスクと前提条件）。範囲・費用・期間・主な決定事項の表は、
-  `shared/`・`requirements/`・`feasibility/` から生成する。
+  `shared/`・`requirements/`・`feasibility/` から生成する。手書き部分は `proposal/*.md` に置き、
+  **ファイル名の順に**提案書の先頭へ並ぶ（`01-background.md`・`02-recommendation.md` のように番号を付ける）。
 
 ## スライドの置き場所
 
@@ -42,6 +44,18 @@ docs/
   **commit しなくてよい**——同梱の生成スクリプトは、同じ `qa.csv` と引数から同じバイトを作るので、
   レビュー会で見せたものは `qa.csv` の履歴から作り直せる。
 - 正本リポジトリの `CLAUDE.md` が出力先や形式を決めていれば、そちらに従う（下）。
+
+## 生成物の置き場所
+
+レビュー会のスライドと同じく、**ガントチャートと提案書も生成物で、正本ではない**。ツリーには置かない。
+
+| 生成物 | 既定の出力先 | 作るスキル |
+| --- | --- | --- |
+| ガントチャート | `build/feasibility/gantt.svg` | `feasibility` |
+| 提案書 | `build/proposal/proposal.md`（と同じ場所の `gantt.svg`） | `proposal` |
+
+**commit しなくてよい**——同梱の生成スクリプトは、同じ入力から同じバイトを作る。
+提案書は**サインオフのタグの時点の中身**から作るので、タグがあれば作り直せる（`signoff-tags.md`）。
 
 ## プロジェクトに任せること
 

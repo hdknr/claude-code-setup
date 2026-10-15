@@ -18,7 +18,7 @@
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
 | [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
 | [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
-| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review` | スキル | dev-loop の手前にある要求側のループ（段階的に追加中。いまは要求確定の `req-loop` と仕様レビューの `spec-review`） |
+| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review`<br>`/spec-loop:feasibility`<br>`/spec-loop:proposal` | スキル | dev-loop の手前にある要求側のループ（要求確定・仕様レビュー・実現性とコスト・提案書。dev-loop への引き渡しは追加予定） |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
     プラグインが提供するスキル**とコマンド**は、名前の衝突を防ぐため
@@ -397,7 +397,7 @@ claude plugin update dev-loop@claude-code-setup         # 新しい版に上げ�
 選びます——キャッシュを経由しないので、`git pull` した時点で反映されます。
 ただし `link-skills.sh` が張るのは**プラグインと同じ名前のスキル**
 （`plugins/<name>/skills/<name>`）だけで、`workspace-setup`（スキルを持たない）と
-`spec-loop`（`req-loop`・`spec-review` はプラグイン直下の共有物を `../../` で指すので、素のスキルとしては置けない）は
+`spec-loop`（どのスキルもプラグイン直下の共有物を `../../` で指すので、素のスキルとしては置けない）は
 対象外です。また**スクリプトは自分の位置からリポジトリを解決して絶対パスで張る**ので、
 **worktree から実行するとその worktree に固定されます**。メインの作業ツリーから実行してください。
 
@@ -574,12 +574,12 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 設計の背景は記事 [spec-loop プラグインの構成案](https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/)
 にあります。
 
-!!! warning "スキルはまだ 2 本だけです"
-    いま使えるスキルは、要求確定のループ **`req-loop`** と、仕様レビューのループ **`spec-review`** です。残りのループ
-    （実現性とコスト・提案書）と dev-loop への引き渡しは段ごとに足します
-    （計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
-    どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・
-    サインオフのタグの命名）と、Q&A 表を検査するスクリプトも入っています。
+!!! warning "dev-loop への引き渡しはまだありません"
+    いま使えるスキルは、要求確定のループ **`req-loop`**・仕様レビューのループ **`spec-review`**・
+    実現性とコストのループ **`feasibility`**・提案書のループ **`proposal`** です。dev-loop への引き渡し（`scaffold`）は
+    段 4 で足します（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+    どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・スケジュールと見積りの列・
+    サインオフのタグの命名）と、それを検査するスクリプトも入っています。
 
     **データの決まりは
     [プラグインの `references/`](https://github.com/hdknr/claude-code-setup/tree/main/plugins/spec-loop/references)
@@ -633,6 +633,45 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 [プラグインの `references/spec-exit.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-exit.md)、
 手順は
 [スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/spec-review/SKILL.md)
+を正とします。
+
+### `feasibility` — 実現性とコストのループ
+
+```
+/spec-loop:feasibility
+```
+
+要求・仕様から**規模を数え**、見積り（開発費・運用費）とスケジュールを更新します。
+
+- **ガントチャートはスケジュールの表（`schedule.csv`）からスクリプトで生成します**（同じ表から同じ図）。
+- **選択肢によって費用が変わる未決定事項は、費用への影響を添えた質問として Q&A 表に起票します**
+  （`req-loop` の回答待ちに合流します）。
+- 見積りは**書き込みツールを持たない検証役**に、見積りを書いたモデルとは**別のティアで**検証させます。
+- **予算責任者の合意待ちで止まります。** 合意を推測で埋めることも、`budget-signoff` のタグを付けることもありません。
+
+表の列は
+[プラグインの `references/feasibility-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/feasibility-csv.md)、
+手順は
+[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/feasibility/SKILL.md)
+を正とします。
+
+### `proposal` — 提案書のループ
+
+```
+/spec-loop:proposal
+```
+
+**2 つのサインオフのタグ（`req-signoff`・`budget-signoff`）の時点で `docs/shared/` が一致するか**を
+スクリプトで照合し、**一致したときだけ**決裁者向けの提案書を生成します。
+
+- **照合は LLM に判断させません。** 一致しなければ提案書を作らず、どちらの承認を取り直すかを示して止まります。
+- 提案書は**承認したタグの時点の中身**から作るので、承認の後に直した中身は入りません。
+- **決裁者の承認待ちで止まります。** 提案書に「承認済み」とは書きません。
+
+照合の決まりは
+[プラグインの `references/signoff-tags.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/signoff-tags.md)、
+手順は
+[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/proposal/SKILL.md)
 を正とします。
 
 ---
