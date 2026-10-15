@@ -109,6 +109,19 @@ jobs:
       - name: spec-loop の仕様レビューを抜ける条件の検査のテスト（#217）
         run: python3 scripts/test-check-spec-exit.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（feasibility・proposal が使う）。
+      - name: spec-loop のスケジュールと見積りの表の検査のテスト（#218）
+        run: python3 scripts/test-check-feasibility-csv.py
+
+      - name: spec-loop のガントチャート生成のテスト（#218）
+        run: python3 scripts/test-schedule-to-gantt.py
+
+      - name: spec-loop のサインオフのタグの照合のテスト（#218）
+        run: python3 scripts/test-check-signoff.py
+
+      - name: spec-loop の提案書の生成のテスト（#218）
+        run: python3 scripts/test-build-proposal.py
+
       # 本体は plugins/orca・plugins/cmux の SKILL.md の共通手順ブロック（写しを作らず抜き出して流す）。
       - name: orca・cmux のタブ一致規則のテスト（#202）
         run: python3 scripts/test-tab-match.py

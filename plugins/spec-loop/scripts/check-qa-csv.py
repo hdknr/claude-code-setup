@@ -5,7 +5,7 @@ usage: python3 check-qa-csv.py <qa.csv>
 
 **決まりの正は `references/qa-csv.md` である**（このプラグインの中にある）。
 このスクリプトは、そこに書いた決まりのうち**答えが一意に決まるもの**だけを機械で見る。
-下の定数（列・起票元・状態・「まだ無い」の印・空を許す列・番号の桁・起票元の括弧・選択肢のラベル／数／区切り）は
+下の定数（列・起票元・状態・「まだ無い」の印・空を許す列・費用付きの質問の起票元・番号の桁・起票元の括弧・選択肢のラベル／数／区切り）は
 その写しで、**写しがずれていないかは
 このリポジトリの `scripts/test-check-qa-csv.py` が `references/qa-csv.md` の表と突き合わせて見る**。
 
@@ -47,6 +47,9 @@ NO_ANSWER = "未回答"
 NO_TARGET = "—"
 # 空を許す列。それ以外は空を許さない。
 MAY_BE_EMPTY = {"費用への影響"}
+# 費用付きの質問を起票する起票元。この起票元の行だけは `費用への影響` を空にしない
+COST_SOURCE = "実現性・コスト"
+assert COST_SOURCE in SOURCES
 
 # `\d` は全角や他の文字体系の数字にも合い、`Q-001` と `Q-００１` が別の番号になるので使わない
 NUMBER = re.compile(r"Q-[0-9]{3,}")
@@ -88,6 +91,8 @@ def check_row(row: dict[str, str]) -> list[str]:
         m = SOURCE.fullmatch(row["起票元"])
         if not m or m["name"] not in SOURCES:
             problems.append(f"`起票元` が決まりに無い: {row['起票元']!r}")
+        elif m["name"] == COST_SOURCE and not row["費用への影響"].strip():
+            problems.append(f"起票元が `{COST_SOURCE}` なのに `費用への影響` が空")
 
     if row["選択肢"]:
         problem = check_options(row["選択肢"])
