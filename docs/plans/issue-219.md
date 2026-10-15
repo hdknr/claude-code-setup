@@ -122,9 +122,17 @@ A(a)(c)(e)・B・C・D・E・F(b)(c)(d)・G はスクリプトとテストで実
 - 周の在り処: ブランチ `issue/219-scaffold-handoff`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-219`、
   起点 `0074e5d`、base 参照 `origin/main` → `0074e5d3c69cbe4dfd62e0af3a41a01c588cf4c5`
-- 実装: 着手
+- 実装: 完了（手順 4）。実装コミット `af9acf3` 系（amend 後の HEAD。trailer の位置を直した）。
+  `check-all.py` 40/40 緑（コミット後に実測。`check-description-sync` は `Skip-description-sync:` を最後の trailer 段落に置いて通った）、
+  `mkdocs build --strict` 0。`test-scaffold.py` 試料 64・変異 31
+- 実装中の手戻り: `check-skill-pointers.py` が dev-loop の `spec-gap.md` から spec-loop の `references/…` を指した 2 箇所を落とした
+  （決めたこと 8 のとおり）——「spec-loop プラグインの `handoff-issue.md`」の書き方に直した。
+  変異 2 本が最初生き残った——どちらも**試料が判別していなかった**（全角の id はケースの id でも落ちていた・
+  `| Q-002 |` は受入基準の表にも出ていた）。変異ではなく試料を直した
 - 関門 1 パス目: 未
-- 交絡: 未（実験は Red テストの実行と変異テスト）
+- 交絡: 実験は Red テストの実行と変異テスト。Red テストの失敗には陽性対照（正しい実装で緑）を置き、
+  失敗が「エラーではなく失敗」であることを `failures=N` で見る。変異は届いていること（1 回現れる）を先に確かめる
+- 割り目（手順 4）: 提案した（AskUserQuestion）→ **「ここで割る」を選択**。次は手順 5（Verifier）と手順 6（/code-review）の 1 パス目
 
 ## 既知の限界・決着済みの論点
 
