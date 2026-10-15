@@ -122,7 +122,7 @@ A(a)(c)(e)・B・C・D・E・F(b)(c)(d)・G はスクリプトとテストで実
 - 周の在り処: ブランチ `issue/219-scaffold-handoff`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-219`、
   起点 `0074e5d`、base 参照 `origin/main` → `0074e5d3c69cbe4dfd62e0af3a41a01c588cf4c5`
-- 実装: 完了（手順 4）。実装コミット `af9acf3` 系（amend 後の HEAD。trailer の位置を直した）。
+- 実装: 完了（手順 4）。実装コミット `656fb31`（trailer の位置を直すため amend した。amend 前は `af9acf3`）。
   `check-all.py` 40/40 緑（コミット後に実測。`check-description-sync` は `Skip-description-sync:` を最後の trailer 段落に置いて通った）、
   `mkdocs build --strict` 0。`test-scaffold.py` 試料 64・変異 31
 - 実装中の手戻り: `check-skill-pointers.py` が dev-loop の `spec-gap.md` から spec-loop の `references/…` を指した 2 箇所を落とした
