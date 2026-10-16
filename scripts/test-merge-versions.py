@@ -12,10 +12,14 @@
 2. **重ねないもの**——`feasibility/`・`proposal/`・`.` で始まる名前・版でない名前（`videos/`・`index.md`）。
 3. **決まりに反する入力からは作らない（1）**——版の欠番・形に合わない版名（ファイルでも）・シンボリックリンク
    （版・置き場所・ファイル・`removed.csv`）・`qa.csv` の決まり違反・機能の `id` の重複と欠落・`removed.csv` の誤り・
-   重ねた結果のファイルとディレクトリの衝突。**前に作った出力は消す。** **入力が無い・読めない（2）ときも消す。**
+   重ねた結果のファイルとディレクトリの衝突・大文字小文字や Unicode の正規化だけが違うパス・UTF-8 で書けない文字。
+   **前に作った出力は消す。** **入力が無い・読めない（2）ときも消す。**
 4. **正本を消さない（2）**——印の無い空でない出力先・シンボリックリンクの出力先・`docs/` の中・`docs/` そのもの・
    `docs/` を含む場所には書かない。**中身は触らない。**
 5. **同じ入力から同じバイト**——2 回作って一致。**陽性対照として、入力を 1 字変えると出力が変わる。**
+   **2 回続けて作るだけでは、日付のように粒の粗い時刻を捕まえない**ので、出力の全バイト（印を含む）を期待値と突き合わせる。
+8. **書いている途中で失敗したら、書きかけを残さない**——書き込みの口（`put`）を差し替えて 2 つ目で失敗させる。
+   用意された空の出力先は消さない。**途中で落ちても（後始末が走らなくても）印は無い。**
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 7. **決まりの写しがずれていない**——本体の定数が `references/versions.md` と一致する。
 
@@ -86,6 +90,19 @@ V2 = {
     "v2/feasibility/estimate.csv": "見積り v2\n",
 }
 MAIN = {**V1, **V2}
+NFC, NFD = "\u30ac\u30a4\u30c9.md", "\u30ab\u3099\u30a4\u30c8\u3099.md"  # ガイド.md の NFC と NFD
+# MAIN を重ねた出力の全バイト（印を含む）。2 回作って比べるだけでは日付のような時刻を捕まえないので、値で突き合わせる
+GOLDEN = {
+    ".merged-versions": "merge-versions.py が作った。手で直さない\n".encode("utf-8"),
+    "requirements/a.md": b"A2\n",
+    "requirements/c.md": b"C2\n",
+    "shared/decision_table.csv": "決定表 v1\n".encode("utf-8"),
+    "shared/qa.csv": (QA_HEAD + Q1 + Q2B + Q3).encode("utf-8"),
+    "spec/order.md": "仕様 v1\n".encode("utf-8"),
+    "spec/spec_ir.json": (json.dumps({"spec_ir_version": 1, "title": "注文 v2", "features": [
+        SPEC1["features"][0], {"id": "F-002", "title": "送料 v2"}, {"id": "F-003", "title": "ポイント"}]},
+        ensure_ascii=False, indent=2) + "\n").encode("utf-8"),
+}
 
 
 def with_removed(*rows: str) -> dict[str, str]:
@@ -94,9 +111,9 @@ def with_removed(*rows: str) -> dict[str, str]:
 
 class Result:
     def __init__(self, code: int, output: str, tree: dict[str, bytes] | None, preexisting: str | None = None,
-                 again: dict[str, bytes] | None = None, docs_intact: bool = True):
+                 again: dict[str, bytes] | None = None, docs_intact: bool = True, leftover: list[str] | None = None):
         self.code, self.output, self.tree, self.preexisting, self.again = code, output, tree, preexisting, again
-        self.docs_intact = docs_intact
+        self.docs_intact, self.leftover = docs_intact, leftover
 
     def text(self, path: str) -> str | None:
         return self.tree[path].decode("utf-8") if self.tree and path in self.tree else None
@@ -138,6 +155,8 @@ def main_case(r: Result) -> bool:
 # (名前, 入力の木（パス → 中身。None ならシンボリックリンクを作る）, 出力先の準備, 引数, 判定)
 # 出力先の準備: "none"（無い）／"stale"（印つきの前の出力）／"foreign"（印の無い正本らしきもの）／"inside"（docs の中）
 # ／"docs"（docs そのもの）／"parent"（docs を含む、印つきの場所）／"symlink"（空のディレクトリへのシンボリックリンク）
+# ／"failwrite"（無い出力先に、2 つ目の書き込みで失敗する）／"failwrite-empty"（用意された空の出力先に、同上）
+# ／"crash"（2 つ目の書き込みで後始末の走らない落ち方をする）
 # 入力の木が None なら docs を作らない
 CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("全部の経路を重ねる", MAIN, "none", [], main_case),
@@ -209,6 +228,21 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("Q&A が全部消えても qa.csv を書く",
      {**V1, "v2/removed.csv": REMOVED_HEAD + "Q&A,Q-001,取り下げ\nQ&A,Q-002,取り下げ\n"}, "none", [],
      lambda r: made(r) and r.text("shared/qa.csv") == QA_HEAD),
+    ("出力のバイトが決まっている", MAIN, "none", [], lambda r: made(r) and r.tree == GOLDEN),
+    ("大文字小文字だけ違うパス", {**V1, "v2/requirements/A.md": "x\n"}, "stale", [],
+     lambda r: refused(r, "正規化だけ違う") and "前に作った出力を消した" in r.output),
+    ("正規化だけ違うパス", {**V1, "v1/requirements/" + NFC: "nfc\n", "v2/requirements/" + NFD: "nfd\n"}, "none", [],
+     lambda r: refused(r, "正規化だけ違う")),
+    ("大文字小文字だけ違うファイルとディレクトリ", {**V1, "v2/requirements/B.md/x.md": "x\n"}, "none", [],
+     lambda r: refused(r, "ファイルとディレクトリの両方")),
+    ("UTF-8 で書けない文字", {**MAIN, "v2/spec/spec_ir.json": '{"title": "\\ud800", "features": []}'}, "stale", [],
+     lambda r: refused(r, "UTF-8 で書けない") and "前に作った出力を消した" in r.output),
+    ("書いている途中で失敗したら書きかけを消す", MAIN, "failwrite", [],
+     lambda r: r.code == 2 and "書きかけを消した" in r.output and r.leftover is None),
+    ("用意した空の出力先は失敗しても消さない", MAIN, "failwrite-empty", [],
+     lambda r: r.code == 2 and r.leftover == []),
+    ("途中で落ちても印は無い", MAIN, "crash", [],
+     lambda r: r.code != 0 and r.leftover is not None and ".merged-versions" not in r.leftover),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -273,7 +307,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "置き場所がシンボリックリンク"),
     ("removed.csv のリンクを読む", "        if removed_path.is_symlink():\n", "        if False:\n",
      "removed.csv がシンボリックリンク"),
-    ("衝突を見ない", "problems.extend(whole.collisions())", "pass", "ファイルとディレクトリの衝突"),
+    ("衝突を見ない", "problems.extend(collisions(list(rendered)))", "pass", "ファイルとディレクトリの衝突"),
+    ("大文字小文字を畳まない", 'unicodedata.normalize("NFC", path).casefold()', 'unicodedata.normalize("NFC", path)',
+     "大文字小文字だけ違うパス"),
+    ("正規化を畳まない", 'unicodedata.normalize("NFC", path).casefold()', "path.casefold()", "正規化だけ違うパス"),
+    ("親を畳まずに比べる", "if fold(parent) in by_fold:", "if parent in by_fold:", "大文字小文字だけ違うファイルとディレクトリ"),
+    ("書けない文字を包まない", "            except UnicodeEncodeError:\n", "            except KeyError:\n",
+     "UTF-8 で書けない文字"),
+    ("出力に時刻を入れる", 'whole = {**self.spec, "features": list(self.features.values())}',
+     'whole = {**self.spec, "generated": __import__("time").strftime("%Y-%m-%d"), "features": list(self.features.values())}',
+     "出力のバイトが決まっている"),
+    ("書きかけを消さない", "        if not existed:\n            shutil.rmtree(out, ignore_errors=True)\n",
+     "        if not existed:\n            pass\n", "書いている途中で失敗したら書きかけを消す"),
+    ("用意された出力先ごと消す", "    existed = out.is_dir()", "    existed = False", "用意した空の出力先は失敗しても消さない"),
+    ("印を先に書く", "        for path in sorted(rendered):\n",
+     '        put(out / MARKER, b"x\\n")\n        for path in sorted(rendered):\n', "途中で落ちても印は無い"),
     ("行が 0 なら qa.csv を書かない", "        if self.has_qa:\n            buffer", "        if self.qa:\n            buffer",
      "Q&A が全部消えても qa.csv を書く"),
 ]
@@ -327,12 +375,31 @@ def build(docs: Path, tree: dict | None) -> list[Path]:
 def snapshot(out: Path) -> dict[str, bytes] | None:
     if not out.is_dir() or not (out / ".merged-versions").is_file():
         return None
-    return {p.relative_to(out).as_posix(): p.read_bytes() for p in sorted(out.rglob("*"))
-            if p.is_file() and p.name != ".merged-versions"}
+    return {p.relative_to(out).as_posix(): p.read_bytes() for p in sorted(out.rglob("*")) if p.is_file()}
 
 
-def merge(scripts: Path, docs: Path, out: Path, extra: list[str]) -> tuple[int, str]:
-    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), str(docs), str(out), *extra],
+# 書き込みの口（`put`）を差し替えて、2 つ目の書き込みで失敗させる。"crash" は後始末の走らない落ち方（OSError でない）
+FAIL_DRIVER = '''
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("merge_versions", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+mode, real, calls = sys.argv[2], module.put, []
+def put(dest, content):
+    calls.append(dest)
+    if len(calls) == 2:
+        if mode == "crash":
+            raise KeyboardInterrupt
+        raise OSError(28, "No space left on device")
+    real(dest, content)
+module.put = put
+sys.exit(module.main(sys.argv[3:]))
+'''
+
+
+def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | None = None) -> tuple[int, str]:
+    head = ["-c", FAIL_DRIVER, str(scripts / TARGET), fail] if fail else [str(scripts / TARGET)]
+    proc = subprocess.run([sys.executable, "-I", *head, str(docs), str(out), *extra],
                           capture_output=True, text=True, cwd=docs.parent)
     return proc.returncode, proc.stdout + proc.stderr
 
@@ -356,7 +423,12 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
     elif prepare == "foreign":
         out.mkdir(parents=True)
         (out / "keep.md").write_text("正本\n", encoding="utf-8")
-    code, output = merge(scripts, docs, out, extra)
+    elif prepare == "failwrite-empty":
+        out.mkdir(parents=True)
+    fail = {"failwrite": "oserror", "failwrite-empty": "oserror", "crash": "crash"}.get(prepare)
+    code, output = merge(scripts, docs, out, extra, fail)
+    leftover = (sorted(p.relative_to(out).as_posix() for p in out.rglob("*"))
+                if out.is_dir() and not out.is_symlink() else None)
     for path in locked:
         path.chmod(0o755)
     docs_intact = tree is None or (docs / "v1").is_dir()
@@ -369,7 +441,7 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         merge(scripts, docs, second, extra)
         again = snapshot(second)
     tree_out = None if prepare in ("docs", "parent") else snapshot(out)
-    return Result(code, output, tree_out, preexisting, again, docs_intact)
+    return Result(code, output, tree_out, preexisting, again, docs_intact, leftover)
 
 
 def skipped(name: str) -> bool:
