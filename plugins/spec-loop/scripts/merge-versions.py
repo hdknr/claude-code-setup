@@ -16,7 +16,7 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 終了コード:
 
 - 0: 書いた
-- 1: 入力が決まりに反する——**書かない。前に作った出力があれば消す**（問題は 1 件で止めず、
+- 1: 入力が決まりに反する（重ねた結果が書けない形になる・UTF-8 で書けない文字を含む、も含む）——**書かない。前に作った出力があれば消す**（問題は 1 件で止めず、
   最初に問題のあった版の中は全部出す。それより後の版は前の版の全体に依るので見ない）
 - 2: 引数の誤り・入力が無い／読めない・出力先に書けない——**書かない**。
   **入力が無い・読めないときは**、出力先が印の在るディレクトリなら前の出力を消す。
@@ -29,7 +29,7 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 | **新しいつもりで前の版の番号を書いた** | 同じ番号は「変更」の意味と決めている。意図は機械で分からない |
 | **重ね合わせた `spec_ir.json` の中身の決まり** | `spec-ir.md` の決まりは `scaffold.py` が全体に当てる |
 | **凍結した版が直されていないか** | `release-v<n>` のタグとの照合で、git が要る（このスクリプトは git を使わない） |
-| **大文字小文字を区別しないファイルシステムでの `V2`** | 試していない |
+| **大文字小文字を区別しないファイルシステムでの版名 `V2`** | `v` の次が数字の名前だけを版と読むので、`V2/` は版でない名前として読まない |
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ import json
 import re
 import shutil
 import sys
+import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -268,41 +269,51 @@ class Whole:
         for _, kind, target in removed:
             {KIND_FILE: self.files, KIND_QA: self.qa, KIND_FEATURE: self.features}[kind].pop(target)
 
-    def collisions(self) -> list[str]:
-        """重ねた結果で、あるファイルのパスが別のファイルの親ディレクトリになっているもの（書けない）。"""
-        paths = set(self.files)
-        if self.has_qa:
-            paths.add(QA_PATH)
-        if self.spec is not None:
-            paths.add(SPEC_PATH)
-        found = []
-        for path in sorted(paths):
-            parts = path.split("/")
-            for depth in range(1, len(parts)):
-                parent = "/".join(parts[:depth])
-                if parent in paths:
-                    found.append(f"重ねた結果で {parent} がファイルとディレクトリの両方になる（{path}）")
-        return found
-
-    def write(self, out: Path) -> None:
-        for path, content in sorted(self.files.items()):
-            dest = out / path
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(content)
+    def render(self, problems: list[str]) -> dict[str, bytes]:
+        """書く前に、出力の全部をバイトにする——書いている途中で作れないと分かる経路を残さない。"""
+        rendered = dict(self.files)
         if self.has_qa:
             buffer = io.StringIO(newline="")
             writer = csv.writer(buffer, lineterminator="\n")
             writer.writerow(qa.COLUMNS)
             for row in self.qa.values():
                 writer.writerow([row[c] for c in qa.COLUMNS])
-            dest = out / QA_PATH
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(buffer.getvalue().encode("utf-8"))
+            rendered[QA_PATH] = buffer.getvalue().encode("utf-8")
         if self.spec is not None:
             whole = {**self.spec, "features": list(self.features.values())}
-            dest = out / SPEC_PATH
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes((json.dumps(whole, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+            try:
+                rendered[SPEC_PATH] = (json.dumps(whole, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            except UnicodeEncodeError:
+                problems.append(f"重ねた {SPEC_PATH} に UTF-8 で書けない文字（対のないサロゲート）がある")
+        return rendered
+
+
+def fold(path: str) -> str:
+    """大文字小文字・Unicode の正規化だけが違うパスを同じものと見る（区別しないファイルシステムでは同じ場所に書かれる）。"""
+    return unicodedata.normalize("NFC", path).casefold()
+
+
+def collisions(paths: list[str]) -> list[str]:
+    """重ねた結果で書けない形——ファイルとディレクトリが同じパスになる・大文字小文字や正規化だけが違うパスが並ぶ。"""
+    found = []
+    by_fold: dict[str, str] = {}
+    for path in sorted(paths):
+        other = by_fold.setdefault(fold(path), path)
+        if other != path:
+            found.append(f"重ねた結果で {other} と {path} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    for path in sorted(paths):
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            parent = "/".join(parts[:depth])
+            if fold(parent) in by_fold:
+                found.append(f"重ねた結果で {by_fold[fold(parent)]} がファイルとディレクトリの両方になる（{path}）")
+    return found
+
+
+def put(dest: Path, content: bytes) -> None:
+    """出力を書く唯一の口（テストはここを差し替えて、書いている途中の失敗を作る）。"""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(content)
 
 
 def owned(out: Path) -> bool:
@@ -365,7 +376,8 @@ def main(argv: list[str]) -> int:
                 break
             whole.apply(number, root, problems)
         if not problems:
-            problems.extend(whole.collisions())
+            rendered = whole.render(problems)
+            problems.extend(collisions(list(rendered)))
     except Unreadable as e:
         print(e, file=sys.stderr)
         print("重ね合わせは作っていない", file=sys.stderr)
@@ -379,14 +391,23 @@ def main(argv: list[str]) -> int:
         return 1
 
     remove_stale(out, quiet=True)
+    existed = out.is_dir()  # 利用者が用意した空の出力先は、失敗しても消さない（印の無いものは消さない）
     try:
         out.mkdir(parents=True, exist_ok=True)
-        whole.write(out)
+        for path in sorted(rendered):
+            put(out / path, rendered[path])
         # 印は最後に書く——途中で失敗した出力を、出来上がったものと取り違えないため
-        (out / MARKER).write_text("merge-versions.py が作った。手で直さない\n", encoding="utf-8")
+        put(out / MARKER, "merge-versions.py が作った。手で直さない\n".encode("utf-8"))
     except OSError as e:
         print(f"{out}: 書けない（{e.strerror}）。書きかけを消した", file=sys.stderr)
-        shutil.rmtree(out, ignore_errors=True)
+        if not existed:
+            shutil.rmtree(out, ignore_errors=True)
+        elif out.is_dir():
+            for child in out.iterdir():
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink(missing_ok=True)
         return 2
     last = len(versions) if upto is None else upto
     print(f"{out}: v1〜v{last} を重ねた（ファイル {len(whole.files)}・Q&A {len(whole.qa)} 行・機能 {len(whole.features)}）")
