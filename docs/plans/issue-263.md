@@ -128,6 +128,7 @@ docstring・`build-proposal.py` の docstring・4 つの SKILL.md（指し先と
   （proposal の frontmatter と JSON だけ変え、ほかの 4 スキルは変えていない）。理由つきの trailer を `9937419` に置いて緑
 - 次: 2 つ目の割り目 → **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**（どちらも未着手）。
   2 パス目の指摘対応を始める直前の HEAD の SHA は、2 パス目の報告を受けてから記録する
+- 割り目（2 パス目の前）: 人間の回答「ここで割る」。再開は worktree の中で `/dev-loop:dev-loop 263` → 2 パス目から
 - 反証と差し戻し: Verifier の反証 0 件（差し戻しなし）。`/code-review` の 6 件を周の中で直した
 - 交絡: 実験なし
 - 割り目（手順 4 の完了時）: 人間の回答「ここで割る」。再開は worktree の中で `/dev-loop:dev-loop 263` → 手順 5 から
