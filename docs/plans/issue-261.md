@@ -88,9 +88,11 @@
 
 - 周の在り処: ブランチ `issue/261-version-overlay`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-261`・
   起点 `3a2a2f7`・base の参照 `origin/main`・base `3a2a2f7717c991f4bffaa8d702f437ad0d0361c2`
-- 関門: 未着手
+- 実装: 済み（コミット済み）。`check-all.py` 41/41 緑・`test-merge-versions.py` 試料 29・変異 25
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
 - 反証と差し戻し: 無し
-- 交絡: 実験なし（まだ）
+- 交絡: 実験なし（変異テストの陽性対照は、テスト本体が「変異の前に試料が緑」を見ている）
+- 割り目（手順 4 の後）: 訊いた → **割る**を選んだ（2026-10-16）。再開は手順 5 の Verifier 1 パス目から
 
 ## 既知の限界・決着済みの論点
 
