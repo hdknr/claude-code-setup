@@ -56,6 +56,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 
 **その版だけを読むもの**——`check-qa-csv.py`（版ごとの `qa.csv`）・`check-feasibility-csv.py` と `schedule-to-gantt.py`
 （版ごとの `feasibility/`）・`check-signoff.py` と `build-proposal.py`（`signoff-tags.md`）。
+**前の版の全体と比べるもの**——`diff-versions.py` と、v2 以降の `build-proposal.py` の「前の版からの変更」（下の「版の差分」）。
 
 ### 重ねるもの
 
@@ -90,6 +91,31 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 - **同じ版で、置きつつ消さない。** 同じ対象を 2 度書かない。
 - **v1 には置かない**（消すものが無い）。
 - **`shared/qa.csv` と `spec/spec_ir.json` はファイルとしては消せない**——行・機能の単位で消す。
+
+## 版の差分
+
+**v<n> の差分 ＝ v<n-1> の時点の全体と v<n> の時点の全体の比較。** 各スキルの差分モード（その版の分だけを
+レビュー会に載せる・レビューする・見積もる・提案する）は、ここで決まる差分を使う。比べるのは同梱のスクリプト
+（**手で数えない**）:
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs               # 作業中の版
+python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs --version 2   # 版を指定
+```
+
+| 変化 | 意味 |
+| --- | --- |
+| `追加` | v<n> の全体にあって、v<n-1> の全体に無い |
+| `変更` | 両方にあって、中身が違う |
+| `削除` | v<n-1> の全体にあって、v<n> の全体に無い（`removed.csv` の `理由` を添える） |
+
+- 単位は「重ねるもの」と同じ——Q&A は行（`No`）、機能は `id`、ほかのファイルは版のディレクトリからのパス。
+  `spec_ir.json` の `features` 以外のキーと、`feasibility/`・`proposal/` は比べない。
+- **同じ中身を置き直しただけのものは `変更` に数えない**（比較なので）。何を置いたかは `docs/v<n>/` を開けば分かる。
+- **v1 は前の版が無いので、全部が `追加`。**
+- 重ね合わせが決まりに反すれば比べない（1）。その版が無い・読めなければ比べない（2）。
+- **提案書（v2 以降）の「前の版からの変更」の節は、この比較を `v<n>/req-signoff-<k>` の時点の `docs/` に当てて作る**
+  （`signoff-tags.md`。作業ツリーで承認の後に直したものは入らない）。
 
 ## 出力先
 
