@@ -19,7 +19,7 @@
 5. **同じ入力から同じバイト**——2 回作って一致。**陽性対照として、入力を 1 字変えると出力が変わる。**
    **2 回続けて作るだけでは、日付のように粒の粗い時刻を捕まえない**ので、出力の全バイト（印を含む）を期待値と突き合わせる。
 8. **書いている途中で失敗したら、書きかけを残さない**——書き込みの口（`put`）を差し替えて 2 つ目で失敗させる。
-   用意された空の出力先は消さない。**途中で落ちても（後始末が走らなくても）印は無い。**
+   用意された空の出力先は消さない（印を書きかけて失敗しても、直下に書きかけを残さない）。**途中で落ちても（後始末が走らなくても）印は無い。**
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 7. **決まりの写しがずれていない**——本体の定数が `references/versions.md` と一致する。
 
@@ -157,6 +157,7 @@ def main_case(r: Result) -> bool:
 # ／"docs"（docs そのもの）／"parent"（docs を含む、印つきの場所）／"symlink"（空のディレクトリへのシンボリックリンク）
 # ／"failwrite"（無い出力先に、2 つ目の書き込みで失敗する）／"failwrite-empty"（用意された空の出力先に、同上）
 # ／"crash"（2 つ目の書き込みで後始末の走らない落ち方をする）
+# ／"marker-empty"（用意された空の出力先に、印を書きかけたところで失敗する）
 # 入力の木が None なら docs を作らない
 CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("全部の経路を重ねる", MAIN, "none", [], main_case),
@@ -241,6 +242,9 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: r.code == 2 and "書きかけを消した" in r.output and r.leftover is None),
     ("用意した空の出力先は失敗しても消さない", MAIN, "failwrite-empty", [],
      lambda r: r.code == 2 and r.leftover == []),
+    ("印を書きかけて失敗しても直下に残さない", MAIN, "marker-empty", [],
+     lambda r: r.code == 2 and r.leftover == []),
+    ("大文字の V は版でない", {**MAIN, "V3/requirements/a.md": "x\n"}, "none", [], main_case),
     ("途中で落ちても印は無い", MAIN, "crash", [],
      lambda r: r.code != 0 and r.leftover is not None and ".merged-versions" not in r.leftover),
 ]
@@ -320,6 +324,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("書きかけを消さない", "        if not existed:\n            shutil.rmtree(out, ignore_errors=True)\n",
      "        if not existed:\n            pass\n", "書いている途中で失敗したら書きかけを消す"),
     ("用意された出力先ごと消す", "    existed = out.is_dir()", "    existed = False", "用意した空の出力先は失敗しても消さない"),
+    ("直下の書きかけを消さない", "                    child.unlink(missing_ok=True)\n", "                    pass\n",
+     "印を書きかけて失敗しても直下に残さない"),
+    ("大文字の V も版と読む", 'VERSION_LIKE = re.compile(r"v[0-9]")', 'VERSION_LIKE = re.compile(r"v[0-9]", re.I)',
+     "大文字の V は版でない"),
     ("印を先に書く", "        for path in sorted(rendered):\n",
      '        put(out / MARKER, b"x\\n")\n        for path in sorted(rendered):\n', "途中で落ちても印は無い"),
     ("行が 0 なら qa.csv を書かない", "        if self.has_qa:\n            buffer", "        if self.qa:\n            buffer",
@@ -378,7 +386,8 @@ def snapshot(out: Path) -> dict[str, bytes] | None:
     return {p.relative_to(out).as_posix(): p.read_bytes() for p in sorted(out.rglob("*")) if p.is_file()}
 
 
-# 書き込みの口（`put`）を差し替えて、2 つ目の書き込みで失敗させる。"crash" は後始末の走らない落ち方（OSError でない）
+# 書き込みの口（`put`）を差し替えて、2 つ目の書き込みで失敗させる。"crash" は後始末の走らない落ち方（OSError でない）。
+# "marker" は印を書きかけたところで失敗させる——用意された出力先の直下に書きかけのファイルが残る形を作る
 FAIL_DRIVER = '''
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("merge_versions", sys.argv[1])
@@ -387,7 +396,11 @@ spec.loader.exec_module(module)
 mode, real, calls = sys.argv[2], module.put, []
 def put(dest, content):
     calls.append(dest)
-    if len(calls) == 2:
+    if mode == "marker":  # 中身を全部書いたあと、印を 5 バイト書いたところで失敗する（出力先の直下に書きかけが残る）
+        if dest.name == ".merged-versions":
+            dest.write_bytes(content[:5])
+            raise OSError(28, "No space left on device")
+    elif len(calls) == 2:
         if mode == "crash":
             raise KeyboardInterrupt
         raise OSError(28, "No space left on device")
@@ -423,9 +436,9 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
     elif prepare == "foreign":
         out.mkdir(parents=True)
         (out / "keep.md").write_text("正本\n", encoding="utf-8")
-    elif prepare == "failwrite-empty":
+    elif prepare in ("failwrite-empty", "marker-empty"):
         out.mkdir(parents=True)
-    fail = {"failwrite": "oserror", "failwrite-empty": "oserror", "crash": "crash"}.get(prepare)
+    fail = {"failwrite": "oserror", "failwrite-empty": "oserror", "crash": "crash", "marker-empty": "marker"}.get(prepare)
     code, output = merge(scripts, docs, out, extra, fail)
     leftover = (sorted(p.relative_to(out).as_posix() for p in out.rglob("*"))
                 if out.is_dir() and not out.is_symlink() else None)
