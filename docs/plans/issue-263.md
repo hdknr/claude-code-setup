@@ -110,11 +110,14 @@ docstring・`build-proposal.py` の docstring・4 つの SKILL.md（指し先と
 
 - **周の在り処**: ブランチ `issue/263-diff-mode`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-263`・
   起点 `694fe95`・base `origin/main` = `694fe9549abb7d97367b493806cc68abf87d3096`
-- 実装: 済み（手順 4）。`test-diff-versions.py` 11 試料・10 変異、`test-build-proposal.py` 28 試料・24 変異が緑
+- 実装: 済み（手順 4。コミット `3e932a3`）。`test-diff-versions.py` 11 試料・10 変異、`test-build-proposal.py` 28 試料・24 変異、
+  `check-all.py` 43/43 本が緑
+- 実装中の追加: `versions.md` の「版の差分」を `###` にしたら `test-merge-versions.py` の原本照合（`### 削除` から次の `## ` までを
+  読む）が新しい表を拾って落ちた。節を `## 版の差分` に上げて解消（`test-merge-versions.py` は触っていない）
 - 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
 - 反証と差し戻し: なし
 - 交絡: 実験なし
-- 割り目（手順 4 の完了時）: 未回答
+- 割り目（手順 4 の完了時）: 人間の回答「ここで割る」。再開は worktree の中で `/dev-loop:dev-loop 263` → 手順 5 から
 
 ## 既知の限界・決着済みの論点
 
