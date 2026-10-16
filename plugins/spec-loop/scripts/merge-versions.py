@@ -18,8 +18,9 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 - 0: 書いた
 - 1: 入力が決まりに反する——**書かない。前に作った出力があれば消す**（問題は 1 件で止めず、
   最初に問題のあった版の中は全部出す。それより後の版は前の版の全体に依るので見ない）
-- 2: 引数の誤り・入力が読めない・出力先に書けない（印の無い空でないディレクトリ・`docs/` の中）——
-  **書かない**。出力先が印の在るディレクトリなら、前の出力を消す
+- 2: 引数の誤り・入力が無い／読めない・出力先に書けない——**書かない**。
+  **入力が無い・読めないときは**、出力先が印の在るディレクトリなら前の出力を消す。
+  **出力先そのものを断ったとき**（印の無い空でない場所・シンボリックリンク・`docs/` の中・`docs/` を含む場所）は**消さない**
 
 **守らないもの**:
 
@@ -83,16 +84,19 @@ def read_text(path: Path) -> str:
 
 def find_versions(docs: Path, problems: list[str]) -> list[tuple[int, Path]]:
     found = []
-    for entry in sorted(docs.iterdir()):
+    try:
+        entries = sorted(docs.iterdir())
+    except OSError as e:
+        raise Unreadable(f"{docs}: 読めない（{e.strerror}）") from None
+    for entry in entries:
         name = entry.name
         if not VERSION_LIKE.match(name):
             continue
-        if not entry.is_dir() or entry.is_symlink():
-            if VERSION.fullmatch(name):
-                problems.append(f"{entry}: 版はディレクトリで置く（シンボリックリンク・ファイルは不可）")
-            continue
         if not VERSION.fullmatch(name):
             problems.append(f"{entry}: 版の名前の形（v<n>・先頭に 0 を付けない）に合わない")
+            continue
+        if not entry.is_dir() or entry.is_symlink():
+            problems.append(f"{entry}: 版はディレクトリで置く（シンボリックリンク・ファイルは不可）")
             continue
         found.append((int(name[1:]), entry))
     found.sort()
@@ -113,15 +117,25 @@ def list_files(root: Path, problems: list[str]) -> dict[str, Path]:
             continue
         if not top.is_dir():
             continue
-        for path in sorted(top.rglob("*")):
-            rel = path.relative_to(root)
-            if any(part.startswith(".") for part in rel.parts):
-                continue
-            if path.is_symlink():
-                problems.append(f"{path}: シンボリックリンクは置かない")
-            elif path.is_file():
-                files[rel.as_posix()] = path
+        walk(root, top, files, problems)
     return files
+
+
+def walk(root: Path, directory: Path, files: dict[str, Path], problems: list[str]) -> None:
+    """読めないディレクトリを黙って飛ばさない（`Path.rglob` は飛ばす）。"""
+    try:
+        entries = sorted(directory.iterdir())
+    except OSError as e:
+        raise Unreadable(f"{directory}: 読めない（{e.strerror}）") from None
+    for path in entries:
+        if path.name.startswith("."):
+            continue
+        if path.is_symlink():
+            problems.append(f"{path}: シンボリックリンクは置かない")
+        elif path.is_dir():
+            walk(root, path, files, problems)
+        elif path.is_file():
+            files[path.relative_to(root).as_posix()] = path
 
 
 def read_qa(path: Path, problems: list[str]) -> list[dict[str, str]]:
@@ -198,12 +212,15 @@ class Whole:
         self.qa: dict[str, dict[str, str]] = {}  # 挿入順 = 並び順
         self.spec: dict | None = None
         self.features: dict[str, dict] = {}
+        self.has_qa = False  # どれかの版に qa.csv があれば、行が 0 でも見出しだけ書く（出力を docs/ と同じ形に）
 
     def apply(self, number: int, root: Path, problems: list[str]) -> None:
         files = list_files(root, problems)
         removed_path = root / REMOVED
         removed = []
-        if removed_path.exists():
+        if removed_path.is_symlink():
+            problems.append(f"{removed_path}: シンボリックリンクは置かない")
+        elif removed_path.exists():
             if number == 1:
                 problems.append(f"{removed_path}: v1 には置かない（消すものが無い）")
             else:
@@ -236,7 +253,11 @@ class Whole:
             return
         for path, source in files.items():
             if path not in STRUCTURED:
-                self.files[path] = source.read_bytes()
+                try:
+                    self.files[path] = source.read_bytes()
+                except OSError as e:
+                    raise Unreadable(f"{source}: 読めない（{e.strerror}）") from None
+        self.has_qa = self.has_qa or QA_PATH in files
         for row in qa_rows:
             self.qa[row["No"]] = row
         if spec is not None:
@@ -247,12 +268,28 @@ class Whole:
         for _, kind, target in removed:
             {KIND_FILE: self.files, KIND_QA: self.qa, KIND_FEATURE: self.features}[kind].pop(target)
 
+    def collisions(self) -> list[str]:
+        """重ねた結果で、あるファイルのパスが別のファイルの親ディレクトリになっているもの（書けない）。"""
+        paths = set(self.files)
+        if self.has_qa:
+            paths.add(QA_PATH)
+        if self.spec is not None:
+            paths.add(SPEC_PATH)
+        found = []
+        for path in sorted(paths):
+            parts = path.split("/")
+            for depth in range(1, len(parts)):
+                parent = "/".join(parts[:depth])
+                if parent in paths:
+                    found.append(f"重ねた結果で {parent} がファイルとディレクトリの両方になる（{path}）")
+        return found
+
     def write(self, out: Path) -> None:
         for path, content in sorted(self.files.items()):
             dest = out / path
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(content)
-        if self.qa:
+        if self.has_qa:
             buffer = io.StringIO(newline="")
             writer = csv.writer(buffer, lineterminator="\n")
             writer.writerow(qa.COLUMNS)
@@ -294,15 +331,23 @@ def main(argv: list[str]) -> int:
         return 2
     docs, out = Path(args[0]), Path(args[1])
 
-    if not docs.is_dir():
-        print(f"{docs}: ディレクトリが無い", file=sys.stderr)
+    if out.is_symlink():
+        print(f"{out}: 出力先にシンボリックリンクは使わない（印で持ち主を確かめられない）", file=sys.stderr)
         return 2
     docs_real, out_real = docs.resolve(), out.resolve()
     if out_real == docs_real or docs_real in out_real.parents:
         print(f"{out}: {docs} の中には書かない（次の重ね合わせで入力に混ざる）", file=sys.stderr)
         return 2
+    if out_real in docs_real.parents:
+        print(f"{out}: {docs} を含む場所には書かない（前の出力と一緒に入力を消す）", file=sys.stderr)
+        return 2
     if out.exists() and not owned(out) and (not out.is_dir() or any(out.iterdir())):
         print(f"{out}: 印（{MARKER}）の無い空でない場所には書かない（取り違えた正本を消さないため）", file=sys.stderr)
+        return 2
+
+    if not docs.is_dir():
+        print(f"{docs}: ディレクトリが無い", file=sys.stderr)
+        remove_stale(out)
         return 2
 
     problems: list[str] = []
@@ -319,6 +364,8 @@ def main(argv: list[str]) -> int:
             if problems:
                 break
             whole.apply(number, root, problems)
+        if not problems:
+            problems.extend(whole.collisions())
     except Unreadable as e:
         print(e, file=sys.stderr)
         print("重ね合わせは作っていない", file=sys.stderr)
@@ -332,9 +379,15 @@ def main(argv: list[str]) -> int:
         return 1
 
     remove_stale(out, quiet=True)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / MARKER).write_text("merge-versions.py が作った。手で直さない\n", encoding="utf-8")
-    whole.write(out)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        whole.write(out)
+        # 印は最後に書く——途中で失敗した出力を、出来上がったものと取り違えないため
+        (out / MARKER).write_text("merge-versions.py が作った。手で直さない\n", encoding="utf-8")
+    except OSError as e:
+        print(f"{out}: 書けない（{e.strerror}）。書きかけを消した", file=sys.stderr)
+        shutil.rmtree(out, ignore_errors=True)
+        return 2
     last = len(versions) if upto is None else upto
     print(f"{out}: v1〜v{last} を重ねた（ファイル {len(whole.files)}・Q&A {len(whole.qa)} 行・機能 {len(whole.features)}）")
     return 0
