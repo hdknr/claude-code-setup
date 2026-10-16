@@ -14,6 +14,7 @@
 5. **重ねないもの（`feasibility/`・`proposal/`・版でない名前）は差分に出ない。**
 6. **比べられないときは比べない**——その版が無い（2。文言は `--version`）・決まりに反する（1）・`docs` が無い（2）。
 7. **同じ入力から同じ出力。**
+   **1 変更は 1 行**——セルの改行は `\\n` と書き、偽の変更行を作らない（件数と一覧の行数が食い違わない）。
 8. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 9. **決まりの原本（`references/versions.md`）に「版の差分」の節があり、3 つの変化の名前とコマンドが載っている。**
 
@@ -121,6 +122,13 @@ CASES: list[tuple[str, dict | None, list[str], Callable[[Result], bool]]] = [
      lambda r: r.code == 1 and "F-999" in r.output and "比べていない" in r.output and "差分（" not in r.output),
     ("docs が無いと比べない", None, [], lambda r: r.code == 2 and "ディレクトリが無い" in r.output),
     ("--version の誤り", {**V1}, ["--version", "0"], lambda r: r.code == 2 and "1 以上の整数" in r.output),
+    # セルの改行で偽の変更行を作らない（1 変更 = 1 行。件数と一覧の行数が食い違わない）
+    ("セルの改行は 1 行に留める",
+     {**V1, "v1/shared/qa.csv": V1["v1/shared/qa.csv"] + 'Q-005,要求確定,"一行目\n  追加 Q-999 偽",A: 甲 / B: 乙,未回答,—,確認中,\n'},
+     ["--version", "1"],
+     lambda r: r.code == 0 and "Q&A: 追加 4・変更 0・削除 0" in r.output
+     and sum(line.startswith("  追加 Q-") for line in r.output.splitlines()) == 4
+     and "  追加 Q-005 一行目\\n  追加 Q-999 偽\n" in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -139,6 +147,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ファイルを比べない", "    diff.changes[merge_versions.KIND_FILE] = compare_maps(dict(sorted(before.files.items())),\n",
      "    diff.changes[merge_versions.KIND_FILE] = [] or compare_maps({},\n", "3 種の追加・変更・削除"),
     ("範囲外の文言を言い直さない", 'str(e).replace("--upto", "--version", 1)', "str(e)", "その版が無いと比べない"),
+    ("改行をそのまま出す", 'return text.replace("\\r\\n", "\\n")', 'return text\n    return text.replace("\\r\\n", "\\n")',
+     "セルの改行は 1 行に留める"),
     ("決まりに反しても比べる", "    if problems:\n        return problems, None\n    number",
      "    if False:\n        return problems, None\n    number", "決まりに反すると比べない"),
 ]

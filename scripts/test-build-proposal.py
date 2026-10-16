@@ -167,6 +167,27 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     # 比較は req のタグの時点から作る——承認の後に作業ツリーとコミットで足した要求は載らない
     ("承認の後に直した差分は比較に入らない", V2C + [("w", "docs/v2/requirements/late.md", "L\n"), ("c",)], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "late.md" not in r.text),
+    # req のタグと budget のタグの間に足した要求は載らない（比較は req のタグの時点。共有の範囲の外なので照合は通る）
+    ("比較は要求のタグの時点から作る", SIGNED_R + V2_CHANGES + [("c",), ("t", "v2/req-signoff-1"),
+                                    ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "v2/budget-signoff-1")], False,
+     lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "between.md" not in r.text),
+    # 大文字小文字だけ違うパスは写す前に断る——区別しない FS では上書きし合い、先に置いたリンクを辿って外に書きうる
+    ("大文字小文字だけ違うパスは比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/C.md", "100644", "X\n"), ("c",),
+                                          ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: not_made(1)(r) and "写すと同じ場所に書かれる" in r.output and "requirements/C.md" in r.output),
+    ("リンクと大文字小文字だけ違うファイルは比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/L", "120000", "x"),
+                                                    ("i", "docs/v2/requirements/l", "100644", "OVER\n"), ("c",),
+                                                    ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: not_made(1)(r) and "写すと同じ場所に書かれる" in r.output),
+    ("ファイルとディレクトリが大文字小文字だけ違うと比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/D", "100644", "X\n"),
+                                                           ("i", "docs/v2/requirements/d/y.md", "100644", "Y\n"), ("c",),
+                                                           ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: not_made(1)(r) and "ファイルとディレクトリの両方" in r.output and "写すと同じ場所に書かれる" in r.output),
+    # 重ね合わせが読まないもの（版の外・版の中の重ねない置き場所）は写さない——そこで並んでも比較は作れる
+    ("重ね合わせが読まないものは写さない", V2C[:-3] + [("i", "docs/notes/A.md", "100644", "X\n"), ("i", "docs/notes/a.md", "100644", "Y\n"),
+                                              ("i", "docs/v2/proposal/N.md", "100644", "X\n"), ("i", "docs/v2/proposal/n.md", "100644", "Y\n"),
+                                              ("c",), ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text),
     ("v1 は比較の節を持たない", SIGNED_R, False,
      lambda r: made(r) and "前の版" not in r.text and "差分の見積り" not in r.text),
     # 重ね合わせが作れない（前の版に無いものを消す）——比較を作れないので書かない
@@ -209,6 +230,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("比較を作業ツリーから作る", "        copy_docs(top, commit, tag, Path(tmp))\n",
      "        __import__('shutil').copytree(top / signoff.DOCS, Path(tmp) / signoff.DOCS, symlinks=True)\n",
      "承認の後に直した差分は比較に入らない"),
+    ("比較を予算のタグの時点から作る", 'compare_at(top, info["req_commit"], info["req"]',
+     'compare_at(top, info["budget_commit"], info["req"]', "比較は要求のタグの時点から作る"),
+    ("大文字小文字だけ違うパスを断らない", "    if clashes:\n", "    if False:\n", "大文字小文字だけ違うパスは比較で断る"),
+    ("ファイルとディレクトリの重なりを見ない", "            if fold(parent) in seen:\n", "            if False:\n",
+     "ファイルとディレクトリが大文字小文字だけ違うと比較で断る"),
+    ("重ね合わせが読まないものも写す", "        if not merged_reads(path):\n            continue\n", "",
+     "重ね合わせが読まないものは写さない"),
     ("比較が作れなくても作る", "    if problems:\n        raise Stop(1, [f\"{tag}: ",
      "    if False:\n        raise Stop(1, [f\"{tag}: ", "比較を作れないと作らない"),
     ("v1 にも比較の節を出す", 'if info["version"] > 1 else None', 'if True else None', "v1 は比較の節を持たない"),
@@ -265,6 +293,10 @@ def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) ->
             path.parent.mkdir(parents=True, exist_ok=True)
             path.symlink_to(step[2])
             run_git(root, env, "add", "-A")
+        elif step[0] == "i":  # 作業ツリーを通さず索引にだけ置く（大文字小文字を区別しない FS でも並べられる）。("i", パス, モード, 中身)
+            blob = subprocess.run(["git", "-C", str(root), "hash-object", "-w", "--stdin"], input=step[3].encode(),
+                                  check=True, capture_output=True, env=env).stdout.decode().strip()
+            run_git(root, env, "update-index", "--add", "--cacheinfo", f"{step[2]},{blob},{step[1]}")
         elif step[0] == "c":
             run_git(root, env, "commit", "-q", "--allow-empty", "-m", "step")
         elif step[0] == "t":
