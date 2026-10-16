@@ -106,10 +106,15 @@ agent 1・README・`docs/plugins/index.md`・dev-loop の `spec-gap.md`（写し
 
 - **周の在り処**: ブランチ `issue/262-version-layout`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-262`・
   起点 `f40dcbb`・**base: 参照 `origin/main` → `f40dcbb9fa2c46bb197052fcb73ac0297fcd5531`**
-- 関門: 未着手
+- 実装: 済み（`e6f570e`）。`check-all.py` 42/42 緑・`check-plan-scope.py`／`check-version-bump.py`／
+  `check-description-sync.py`（`Skip-description-sync` の trailer つき）緑
+- 移し方の再現: 一時リポジトリで手順 1〜5 を流した（旧い構成で scaffold=1・signoff=2 → 移して source を直すと
+  scaffold=0・本文の sha256 が `merge-versions.py` の出力と一致・旧いタグでは signoff=2 → 取り直すと 0・proposal=0・
+  release-v1 で frozen=0 → 直すと 1）。**`git mv` に無いディレクトリを混ぜると全体が失敗する**ことが分かり、案内に書いた
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と手順 6 の `/code-review` 1 パス目）
 - 反証: —
-- 交絡を潰した手順: —
-- 割り目（手順 4）: —
+- 交絡を潰した手順: 実験は移し方の再現 1 件。陽性側（移した後に 0）と陰性側（移す前・取り直す前・直した後に非ゼロ）を同じ観測点で取った
+- 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 262`、手順 5 から
 
 ## 既知の限界・決着済みの論点
 
