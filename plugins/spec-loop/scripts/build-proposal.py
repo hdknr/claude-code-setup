@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """2 つのサインオフのタグの照合が通ったときだけ、決裁者向けの提案書（Markdown）を作る。
 
-usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--req <タグ>] [--budget <タグ>] [--out <出力先.md>] [--title <題>]
+usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>] [--req <タグ>] [--budget <タグ>] [--out <出力先.md>] [--title <題>]
 
-**ツリー・生成物の置き場所の正は `references/tree.md`、タグの決まりの正は `references/signoff-tags.md`
-である**（どちらもこのプラグインの中にある）。
+**ツリー・生成物の置き場所の正は `references/tree.md`、版の決まりの正は `references/versions.md`、
+タグの決まりの正は `references/signoff-tags.md` である**（どれもこのプラグインの中にある）。
 
 - **最初に `check-signoff.py` の `resolve` で照合する。0 でなければ 1 バイトも書かない。**
-  照合をスキル（LLM）の判断に任せないため、生成の側で担保する。
-- **承認されたタグの時点の中身から作る**——`docs/shared/qa.csv` は `req-signoff`、
-  `docs/feasibility/schedule.csv`・`estimate.csv` は `budget-signoff` の時点のものを `git show` で読む。
-  作業ツリーで承認後に直した中身は提案書に入らない。**手書き部分（`docs/proposal/*.md`）だけは作業ツリーから読む**
+  照合をスキル（LLM）の判断に任せないため、生成の側で担保する。**版（`<n>`）も照合が決めたものを使う**
+  （`--version` を省けば作業中の版）。
+- **承認されたタグの時点の、その版の中身から作る**——`docs/v<n>/shared/qa.csv` は `v<n>/req-signoff-<k>`、
+  `docs/v<n>/feasibility/schedule.csv`・`estimate.csv` は `v<n>/budget-signoff-<k>` の時点のものを `git show` で読む。
+  作業ツリーで承認後に直した中身は提案書に入らない。**手書き部分（`docs/v<n>/proposal/*.md`）だけは作業ツリーから読む**
   （承認の対象ではない。ファイル名の順に先頭へ並べる）。
+  **v2 以降は、その版の差分の表だけが載る**（前の版との比較は載せない）。
+  **v2 以降で `shared/qa.csv` を置かない版**（Q&A を足さない版。`references/versions.md`）は、Q&A を 0 行として作る。
+  v1 では `qa.csv` が無ければ作らない。
 - 読んだ表は決まりの検査（`check-qa-csv.py`・`check-feasibility-csv.py`）を通す。通らなければ書かない。
 - **始める前に、前に作った出力（提案書と同じ場所の `gantt.svg`）を消す**——作れなかったときに、
   古い提案書を今のものと取り違えないため。
@@ -53,12 +57,17 @@ qa = _load("check_qa_csv", "check-qa-csv.py")
 feasibility = _load("check_feasibility_csv", "check-feasibility-csv.py")
 gantt = _load("schedule_to_gantt", "schedule-to-gantt.py")
 
-QA_PATH = "docs/shared/qa.csv"
-SCHEDULE_PATH = "docs/feasibility/schedule.csv"
-ESTIMATE_PATH = "docs/feasibility/estimate.csv"
-HAND_DIR = "docs/proposal"
+# 版のディレクトリ（`docs/v<n>/`）からのパス
+QA_PATH = "shared/qa.csv"
+SCHEDULE_PATH = "feasibility/schedule.csv"
+ESTIMATE_PATH = "feasibility/estimate.csv"
+HAND_DIR = "proposal"
 DEFAULT_OUT = "build/proposal/proposal.md"
 GANTT_NAME = "gantt.svg"
+
+
+def in_version(version: int, path: str) -> str:
+    return f"{signoff.DOCS}/v{version}/{path}"
 
 
 class Stop(Exception):
@@ -75,6 +84,14 @@ def show(top: Path, commit: str, tag: str, path: str) -> str:
         return result.stdout.decode("utf-8")
     except UnicodeDecodeError:
         raise Stop(2, [f"{tag}:{path}: UTF-8 として読めない。中身を検査していない"])
+
+
+def exists(top: Path, commit: str, path: str) -> bool:
+    result = subprocess.run(["git", "-C", str(top), "ls-tree", "--name-only", commit, "--", path],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Stop(2, [f"{commit[:7]}:{path}: 在るかを確かめられない: {result.stderr.strip()}"])
+    return bool(result.stdout.strip())
 
 
 def read_qa(text: str, label: str) -> list[dict[str, str]]:
@@ -111,12 +128,14 @@ def table(columns: list[str], rows: list[list[str]]) -> list[str]:
     return lines
 
 
-def compose(title: str, info: dict[str, str], hand: list[tuple[str, str]], qa_rows: list[dict[str, str]],
+def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[dict[str, str]],
             schedule: list[dict[str, str]], estimate: list[dict[str, str]]) -> str:
+    version = info["version"]
     out = [f"# {title}", ""]
     out.append(f"> この提案書は生成物です。生成元: `{info['req']}`（`{info['req_commit']}`）・"
-               f"`{info['budget']}`（`{info['budget_commit']}`）の時点の `docs/shared/`・`docs/feasibility/` と、"
-               f"`{HAND_DIR}/` の手書き部分。**決裁者の承認の記録ではありません。**")
+               f"`{info['budget']}`（`{info['budget_commit']}`）の時点の `{in_version(version, 'shared/')}`・"
+               f"`{in_version(version, 'feasibility/')}` と、"
+               f"`{in_version(version, HAND_DIR)}/` の手書き部分。**決裁者の承認の記録ではありません。**")
     out.append("")
     for _, body in hand:
         out += [body.rstrip("\n"), ""]
@@ -154,21 +173,26 @@ def compose(title: str, info: dict[str, str], hand: list[tuple[str, str]], qa_ro
 
 def build(args) -> tuple[str, str, int]:
     """(提案書, ガントチャート, 工程数) を返す。作れなければ Stop。"""
-    code, lines, info = signoff.resolve(args.repo, args.req, args.budget)
+    code, lines, info = signoff.resolve(args.repo, args.req, args.budget, args.version)
     if code:
         raise Stop(code, lines)
     print("\n".join(lines))
     top = Path(info["top"])
-    qa_rows = read_qa(show(top, info["req_commit"], info["req"], QA_PATH), f"{info['req']}:{QA_PATH}")
-    schedule = read_table(feasibility.check_schedule, show(top, info["budget_commit"], info["budget"], SCHEDULE_PATH),
-                          f"{info['budget']}:{SCHEDULE_PATH}")
-    estimate = read_table(feasibility.check_estimate, show(top, info["budget_commit"], info["budget"], ESTIMATE_PATH),
-                          f"{info['budget']}:{ESTIMATE_PATH}")
+    qa_path, schedule_path, estimate_path = (in_version(info["version"], p) for p in (QA_PATH, SCHEDULE_PATH, ESTIMATE_PATH))
+    if info["version"] > 1 and not exists(top, info["req_commit"], qa_path):
+        # v2 以降は差分だけなので、Q&A を足さない版は `qa.csv` を置かない（`references/versions.md`）
+        qa_rows = []
+    else:
+        qa_rows = read_qa(show(top, info["req_commit"], info["req"], qa_path), f"{info['req']}:{qa_path}")
+    schedule = read_table(feasibility.check_schedule, show(top, info["budget_commit"], info["budget"], schedule_path),
+                          f"{info['budget']}:{schedule_path}")
+    estimate = read_table(feasibility.check_estimate, show(top, info["budget_commit"], info["budget"], estimate_path),
+                          f"{info['budget']}:{estimate_path}")
     if not schedule:
-        raise Stop(1, [f"{info['budget']}:{SCHEDULE_PATH}: 工程が 1 行も無い。提案書の材料が無い"])
+        raise Stop(1, [f"{info['budget']}:{schedule_path}: 工程が 1 行も無い。提案書の材料が無い"])
     if not estimate:
-        raise Stop(1, [f"{info['budget']}:{ESTIMATE_PATH}: 費用が 1 行も無い。提案書の材料が無い"])
-    hand_dir = top / HAND_DIR
+        raise Stop(1, [f"{info['budget']}:{estimate_path}: 費用が 1 行も無い。提案書の材料が無い"])
+    hand_dir = top / in_version(info["version"], HAND_DIR)
     hand = []
     for path in sorted(hand_dir.glob("*.md")) if hand_dir.is_dir() else []:
         try:
@@ -198,6 +222,7 @@ def repo_top(repo: Path) -> Path:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=".", type=Path)
+    parser.add_argument("--version", type=signoff.positive)
     parser.add_argument("--req")
     parser.add_argument("--budget")
     parser.add_argument("--out", type=Path)

@@ -327,6 +327,34 @@ def remove_stale(out: Path, quiet: bool = False) -> None:
             print(f"{out}: 前に作った出力を消した（今の入力から作ったものではないため）", file=sys.stderr)
 
 
+class OutOfRange(Unreadable):
+    """`--upto` の版が無い（終了コード 2）。"""
+
+
+def merge(docs: Path, upto: int | None = None) -> tuple[list[str], list[tuple[int, Path]], Whole, dict[str, bytes]]:
+    """(決まりに反する点, 版の一覧, 重ねた全体, 書く中身) を返す。決まりに反する点があれば、書く中身は空。
+
+    書かずに全体が要るもの（`scaffold.py`）もこの関数で重ねる——同じ入力から、出力と同じバイトを作る。
+    無い・読めない入力と、無い版の `upto` は `Unreadable` を投げる。
+    """
+    problems: list[str] = []
+    versions = find_versions(docs, problems)
+    if not problems and not versions:
+        problems.append(f"{docs}: 版（v1 など）が 1 つも無い")
+    if upto is not None and not problems and upto > len(versions):
+        raise OutOfRange(f"--upto {upto}: v{upto} が無い（最大は v{len(versions)}）")
+    whole = Whole()
+    rendered: dict[str, bytes] = {}
+    for number, root in versions[:upto]:
+        if problems:
+            break
+        whole.apply(number, root, problems)
+    if not problems:
+        rendered = whole.render(problems)
+        problems.extend(collisions(list(rendered)))
+    return problems, versions, whole, (rendered if not problems else {})
+
+
 def main(argv: list[str]) -> int:
     upto = None
     args = list(argv)
@@ -361,23 +389,12 @@ def main(argv: list[str]) -> int:
         remove_stale(out)
         return 2
 
-    problems: list[str] = []
     try:
-        versions = find_versions(docs, problems)
-        if not problems and not versions:
-            problems.append(f"{docs}: 版（v1 など）が 1 つも無い")
-        if upto is not None and not problems and upto > len(versions):
-            print(f"--upto {upto}: v{upto} が無い（最大は v{len(versions)}）", file=sys.stderr)
-            remove_stale(out)
-            return 2
-        whole = Whole()
-        for number, root in versions[:upto]:
-            if problems:
-                break
-            whole.apply(number, root, problems)
-        if not problems:
-            rendered = whole.render(problems)
-            problems.extend(collisions(list(rendered)))
+        problems, versions, whole, rendered = merge(docs, upto)
+    except OutOfRange as e:
+        print(e, file=sys.stderr)
+        remove_stale(out)
+        return 2
     except Unreadable as e:
         print(e, file=sys.stderr)
         print("重ね合わせは作っていない", file=sys.stderr)

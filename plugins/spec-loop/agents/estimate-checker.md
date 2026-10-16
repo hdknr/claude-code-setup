@@ -9,8 +9,9 @@ tools: Read, Grep, Glob, Bash
 
 ## 見るもの
 
-呼び出し元が渡す**見積り**（`estimate.csv`）・**スケジュール**（`schedule.csv`）・**規模の数え方**（`docs/feasibility/` の文書）・
-**要求と仕様**（`docs/requirements/`・`docs/spec/`）・**Q&A 表**（`docs/shared/qa.csv`）を読み、次を探します:
+呼び出し元が渡す**見積り**（`estimate.csv`）・**スケジュール**（`schedule.csv`）・**規模の数え方**（`feasibility/` の文書）・
+**要求と仕様**（`requirements/`・`spec/`）・**Q&A 表**（`shared/qa.csv`）を読み、次を探します
+（どこから読むか——版のディレクトリ `docs/v<n>/` か、重ね合わせた全体 `build/merged/` か——は呼び出し元が渡すパスに従う）:
 
 - **根拠の無い金額**——`根拠` の列が指す Q&A の番号・決定表の行・数えた規模が、**実在しない／その金額を導かない**。
   指せたら `ファイル:行` を書く。**指せなかったものは「根拠が無い」と報告する**——もっともらしさで通さない。

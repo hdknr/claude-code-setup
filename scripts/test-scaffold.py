@@ -9,11 +9,15 @@
 
 1. **確定していない仕様からは作らない**（反映済みでない Q&A・未決定の印・中間表現の各規則・指す Q&A や仕様が無い）。
    **作らなかったときは、前の Issue の本文を消し、`scaffold/` は消さない。**
+   **入力は版（`docs/v1/`・`docs/v2/`…）を重ね合わせた全体**——v2 で変えた・消した・足した機能が反映され、
+   v2 の Q&A・仕様にも関門が掛かり、重ね合わせの誤り・版に分けていない構成からは作らない。
+   **`build/merged/` を書かない**（`--check`・`--dry-run` も）。
 2. **生成した Red テストが、実装の無い状態で実際に失敗する**——`unittest` で走らせ、
    **ケースの数だけ失敗（エラーではない）**になること。モジュールはあるが関数が無い・誤った値を返す実装でも同じ。
    **陽性対照: 正しい実装を置くと緑になる**（別の理由で落ちているのではないことを見る）。
 3. **Issue の本文から辿れる**——印・節の順・ケースごとの Red テストの名前・Q&A の回答・
-   **本文の sha256 が、指しているファイルの実物と一致する**こと。
+   **本文の sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
+   が書いた実物——メモリ上の重ね合わせと同じバイトであること）。
 4. **決定論的で、`--check` が鮮度を見る**——2 回の生成でバイト一致。生成直後の `--check` は 0（陽性対照）、
    中間表現を直した後・手で直した後・消した機能の Red テストが残ったときは 1。
 5. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
@@ -61,7 +65,7 @@ IR = {
     "title": "注文",
     "features": [
         {
-            "id": "F-001", "title": "割引額を計算する", "source": ["docs/spec/order.md"], "qa": ["Q-001"],
+            "id": "F-001", "title": "割引額を計算する", "source": ["spec/order.md"], "qa": ["Q-001"],
             "operation": {
                 "id": "calc_discount", "method": "POST", "path": "/orders/discount",
                 "input": {"rank": {"type": "string", "enum": ["silver", "gold"]}, "amount": {"type": "integer"}},
@@ -76,7 +80,7 @@ IR = {
             ],
         },
         {
-            "id": "F-002", "title": "注文を取り消せるか", "source": ["docs/spec/order.md"], "qa": [],
+            "id": "F-002", "title": "注文を取り消せるか", "source": ["spec/order.md"], "qa": [],
             "operation": {
                 "id": "can_cancel", "method": "GET", "path": "/orders/cancelable",
                 "input": {"shipped": {"type": "boolean"}},
@@ -89,6 +93,10 @@ IR = {
     ],
 }
 SPEC = "# 注文\n\n割引と取り消し。\n"
+# 試料の正本は版のディレクトリに置く（`references/versions.md`）
+V1 = Path("docs") / "v1"
+V2 = Path("docs") / "v2"
+IR_FILE = V1 / "spec" / "spec_ir.json"
 
 # 正しい実装（陽性対照）
 GOOD_IMPL = '''
@@ -149,11 +157,14 @@ def f1(ir: dict) -> dict:
 class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
-                 post: Callable[[Path], str | None] | None = None, generate_first: bool = False, impl: str | None = None):
+                 post: Callable[[Path], str | None] | None = None, generate_first: bool = False, impl: str | None = None,
+                 extra: dict[str, str] | None = None, root: Path = V1):
         self.name, self.code, self.text = name, code, text
         self.ir, self.raw, self.qa, self.spec = ir, raw, qa, spec
         self.args, self.pre, self.post = args, pre, post
         self.generate_first, self.impl = generate_first, impl
+        # extra: 正本の根からのパス → 中身（v2 の差分など）。root: 試料の版 1 を置く場所（旧い構成なら docs）
+        self.extra, self.root = extra or {}, root
 
 
 def red_run(repo: Path) -> tuple[int, str]:
@@ -186,7 +197,17 @@ def files_written(repo: Path) -> str | None:
                 "build/scaffold/issues/issues.json"):
         if not (repo / rel).is_file():
             return f"{rel} が無い"
+    if (repo / "build" / "merged").exists():
+        return "build/merged/ を書いた（重ね合わせはメモリ上で行う）"
     return None
+
+
+def merge_with_script(repo: Path) -> Path:
+    """`merge-versions.py docs build/merged` を走らせ、重ね合わせた全体の根を返す（Issue の本文が指す場所）。"""
+    proc = subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / "merge-versions.py"),
+                           str(repo / "docs"), str(repo / "build" / "merged")], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return repo / "build" / "merged"
 
 
 def nothing_written(repo: Path) -> str | None:
@@ -224,6 +245,8 @@ def old_issues_kept(repo: Path) -> str | None:
         return "--dry-run / --check が前の Issue の本文を消した"
     if (repo / "scaffold").exists():
         return "--dry-run が書いた"
+    if (repo / "build" / "merged").exists():
+        return "--dry-run / --check が build/merged/ を書いた"
     return None
 
 
@@ -239,12 +262,14 @@ def body_traceable(repo: Path) -> str | None:
                    "| Q-001 | シルバーで 10000 円未満の割引は？ | A（業務部が回答） | 決定表 4 行目 |",
                    # 機能ではなくケースだけが指す Q&A（受入基準の表の `| Q-002 |` と区別するため、質問まで見る）
                    "| Q-002 | 金額が負なら？ |", "`POST /orders/discount`",
-                   "`calc_discount`", "docs/spec/order.md", "起票元 `開発`", "references/spec-gap.md"):
+                   "`calc_discount`", "`build/merged/spec/order.md`", "起票元 `開発`", "references/spec-gap.md",
+                   "`merge-versions.py docs build/merged`", "`docs/v<n>/shared/qa.csv`"):
         if needle not in body:
             return f"本文に {needle!r} が無い"
-    # 本文の sha256 と、指しているファイルの実物
+    # 本文の sha256 と、指しているファイルの実物——中間表現は `merge-versions.py` が書く全体（同じバイトであること）
+    merge_with_script(repo)
     shas = dict(re.findall(r"`([^`]+)`（sha256: `([0-9a-f]{64})`）", body))
-    for rel in ("docs/spec/spec_ir.json", "scaffold/tests/test_f_001.py"):
+    for rel in ("build/merged/spec/spec_ir.json", "scaffold/tests/test_f_001.py"):
         if rel not in shas:
             return f"本文に {rel} の sha256 が無い"
         actual = hashlib.sha256((repo / rel).read_bytes()).hexdigest()
@@ -286,14 +311,14 @@ def deterministic(repo: Path) -> str | None:
 
 
 def edit_ir_file(repo: Path) -> None:
-    path = repo / "docs" / "spec" / "spec_ir.json"
+    path = repo / IR_FILE
     ir = json.loads(path.read_text(encoding="utf-8"))
     ir["features"][0]["cases"][0]["expected"]["discount"] = 5
     path.write_text(json.dumps(ir, ensure_ascii=False), encoding="utf-8")
 
 
 def drop_feature(repo: Path) -> None:
-    path = repo / "docs" / "spec" / "spec_ir.json"
+    path = repo / IR_FILE
     ir = json.loads(path.read_text(encoding="utf-8"))
     ir["features"] = ir["features"][:1]
     path.write_text(json.dumps(ir, ensure_ascii=False), encoding="utf-8")
@@ -343,7 +368,7 @@ def break_write(repo: Path) -> None:
     types = repo / "scaffold" / "types.py"
     types.unlink()
     (types / "x").mkdir(parents=True)
-    path = repo / "docs" / "spec" / "spec_ir.json"
+    path = repo / IR_FILE
     path.write_text(path.read_text(encoding="utf-8").replace('"注文"', '"注文2"'), encoding="utf-8")
 
 
@@ -354,12 +379,61 @@ def issues_gone(repo: Path) -> str | None:
 
 
 def plant_draft_spec(repo: Path) -> None:
-    draft = repo / "docs" / "spec" / ".draft"
+    draft = repo / V1 / "spec" / ".draft"
     draft.mkdir()
     (draft / "order.md").write_text(SPEC + "上限は TBD。\n", encoding="utf-8")
 
 
 ONE = edit(lambda ir: None)
+
+# ---- 版（v2 は v1 からの差分だけ）
+V2_CHANGED = copy.deepcopy(IR["features"][0])
+V2_CHANGED["cases"][0]["expected"] = {"discount": 300}  # v2 でシルバーの割引を変えた
+V2_RETURN = {
+    "id": "F-003", "title": "返品できるか", "source": ["spec/return.md"], "qa": ["Q-004"],
+    "operation": {"id": "can_return", "method": "GET", "path": "/orders/returnable",
+                  "input": {"days": {"type": "integer"}}, "output": {"ok": {"type": "boolean"}}},
+    "cases": [{"id": "F-003-C1", "title": "7 日以内なら返品できる", "input": {"days": 3}, "expected": {"ok": True}, "qa": ["Q-004"]}],
+}
+QA_V2 = "Q-004,要求確定,返品は何日まで？,A: 7 日 / B: 14 日,A（業務部が回答）,spec/return.md,反映済み,\n"
+RETURN_SPEC = "# 返品\n\n7 日以内。\n"
+
+
+def v2(features: list[dict], qa: str | None = HEADER + QA_V2, removed: str | None = None,
+       spec: dict[str, str] | None = None) -> dict[str, str]:
+    files = {str(V2 / "spec" / "spec_ir.json"): json.dumps({"features": features}, ensure_ascii=False, indent=2)}
+    if qa is not None:
+        files[str(V2 / "shared" / "qa.csv")] = qa
+    if removed is not None:
+        files[str(V2 / "removed.csv")] = "種類,対象,理由\n" + removed
+    for rel, body in (spec or {"return.md": RETURN_SPEC}).items():
+        files[str(V2 / "spec" / rel)] = body
+    return files
+
+
+def v2_changed(repo: Path) -> str | None:
+    test = (repo / "scaffold" / "tests" / "test_f_001.py").read_text(encoding="utf-8")
+    if "'discount': 300" not in test or "'discount': 0" in test:
+        return "v2 で変えた機能のケースが Red テストに入っていない（v1 のまま）"
+    if not (repo / "scaffold" / "tests" / "test_f_002.py").is_file():
+        return "v2 で触っていない機能の Red テストが無い"
+    return files_written(repo)
+
+
+def v2_removed(repo: Path) -> str | None:
+    if (repo / "scaffold" / "tests" / "test_f_002.py").exists():
+        return "v2 で消した機能の Red テストを作った"
+    if (repo / "build" / "scaffold" / "issues" / "F-002.md").exists():
+        return "v2 で消した機能の Issue の本文を作った"
+    return None if (repo / "scaffold" / "tests" / "test_f_001.py").is_file() else "残る機能の Red テストが無い"
+
+
+def v2_added(repo: Path) -> str | None:
+    body = (repo / "build" / "scaffold" / "issues" / "F-003.md").read_text(encoding="utf-8")
+    for needle in ("`build/merged/spec/return.md`", "| Q-004 | 返品は何日まで？ |"):
+        if needle not in body:
+            return f"v2 で足した機能の本文に {needle!r} が無い"
+    return None
 
 CASES: list[Case] = [
     Case("作る", 0, "作った", post=files_written),
@@ -393,8 +467,9 @@ CASES: list[Case] = [
     Case("仕様に未決定の印", 1, "未決定の印 TBD", spec={"order.md": SPEC + "上限は TBD。\n"}, pre=plant_old_issues,
          post=nothing_written),
     Case("Q&A 表が無い", 2, "Q&A 表を読めない", qa="", pre=plant_old_issues, post=nothing_written),
-    Case("中間表現が無い", 2, "中間表現を読めない", raw="", pre=plant_old_issues, post=nothing_written),
-    Case("中間表現が JSON でない", 2, "中間表現を読めない", raw="{,", pre=plant_old_issues, post=nothing_written),
+    Case("中間表現が無い", 2, "どの版にも中間表現が無い", raw="", pre=plant_old_issues, post=nothing_written),
+    # 版を重ねるときに読むので、重ね合わせの誤り（1）になる
+    Case("中間表現が JSON でない", 1, "JSON として読めない", raw="{,", pre=plant_old_issues, post=nothing_written),
     # 中間表現の規則
     Case("版が違う", 1, "spec_ir_version が 1 でない", ir=edit(lambda ir: ir.update(spec_ir_version=2)), post=nothing_written),
     Case("版が true", 1, "spec_ir_version が 1 でない", ir=edit(lambda ir: ir.update(spec_ir_version=True))),
@@ -408,16 +483,19 @@ CASES: list[Case] = [
     Case("全角の数字の id", 1, "id の形に反する（F- に 3 桁以上の数字）",
          ir=edit(lambda ir: (f1(ir).update(id="F-００１"),
                              [c.update(id=c["id"].replace("F-001", "F-００１")) for c in f1(ir)["cases"]]))),
-    Case("機能の id の重複", 1, "id F-001 が重複している", ir=edit(lambda ir: ir["features"][1].update(id="F-001"))),
+    # 版を重ねる段（`merge-versions.py`）が先に断る
+    Case("機能の id の重複", 1, "機能の `id` が版の中で重複: F-001",ir=edit(lambda ir: ir["features"][1].update(id="F-001"))),
     Case("改行を含む題", 1, "title が空か、1 行でない", ir=edit(lambda ir: f1(ir).update(title="割引\n計算"))),
     Case("Q&A が表に無い", 1, "Q-099 は Q&A 表に無い", ir=edit(lambda ir: f1(ir).update(qa=["Q-099"]))),
     Case("ケースの Q&A が表に無い", 1, "Q-098 は Q&A 表に無い", ir=edit(lambda ir: f1(ir)["cases"][0].update(qa=["Q-098"]))),
     Case("Q&A の重複", 1, "Q&A の No が重複している", ir=edit(lambda ir: f1(ir).update(qa=["Q-001", "Q-001"]))),
-    Case("仕様のファイルが無い", 1, "docs/spec/missing.md が無い", ir=edit(lambda ir: f1(ir).update(source=["docs/spec/missing.md"]))),
-    Case("仕様の外のファイル", 1, "の中に無い", ir=edit(lambda ir: f1(ir).update(source=["docs/shared/qa.csv"]))),
+    Case("仕様のファイルが無い", 1, "spec/missing.md が無い", ir=edit(lambda ir: f1(ir).update(source=["spec/missing.md"]))),
+    Case("仕様の外のファイル", 1, "の中に無い", ir=edit(lambda ir: f1(ir).update(source=["shared/qa.csv"]))),
+    # 版のディレクトリのパスは指さない（重ね合わせた全体の根からのパス）
+    Case("版のディレクトリのパスを出所にする", 1, "の中に無い", ir=edit(lambda ir: f1(ir).update(source=["docs/v1/spec/order.md"]))),
     Case("ドットの場所の仕様", 1, "`.` で始まる場所", pre=plant_draft_spec,
-         ir=edit(lambda ir: f1(ir).update(source=["docs/spec/.draft/order.md"]))),
-    Case("中間表現を出所にする", 1, "中間表現そのもの", ir=edit(lambda ir: f1(ir).update(source=["docs/spec/spec_ir.json"]))),
+         ir=edit(lambda ir: f1(ir).update(source=["spec/.draft/order.md"]))),
+    Case("中間表現を出所にする", 1, "中間表現そのもの", ir=edit(lambda ir: f1(ir).update(source=["spec/spec_ir.json"]))),
     Case("出所が空", 1, "仕様のファイルの配列（1 つ以上）でない", ir=edit(lambda ir: f1(ir).update(source=[]))),
     Case("メソッドが決まりに無い", 1, "operation.method: 決まりに無い", ir=edit(lambda ir: f1(ir)["operation"].update(method="FETCH"))),
     Case("パスが / で始まらない", 1, "operation.path", ir=edit(lambda ir: f1(ir)["operation"].update(path="orders"))),
@@ -441,7 +519,7 @@ CASES: list[Case] = [
          ir=edit(lambda ir: f1(ir)["operation"].update(method=["POST"]))),
     Case("深い入れ子", 2, "中間表現を読めない", raw="[" * 200000 + "]" * 200000, pre=plant_old_issues, post=issues_gone),
     Case("仕様のパスに NUL", 2, "予期しない失敗", pre=plant_old_issues, post=issues_gone,
-         ir=edit(lambda ir: f1(ir).update(source=["docs/spec/a\u0000b.md"]))),
+         ir=edit(lambda ir: f1(ir).update(source=["spec/a\u0000b.md"]))),
     Case("桁の多いケースの id", 0, "作った",
          ir=edit(lambda ir: ir["features"][1]["cases"][0].update(id="F-002-C" + "1" * 5000))),
     Case("エラー名の形", 1, "operation.errors: 名前の形に反する", ir=edit(lambda ir: f1(ir)["operation"].update(errors=["bad"]))),
@@ -461,30 +539,49 @@ CASES: list[Case] = [
     Case("NaN", 1, "型 integer でない", raw=json.dumps(IR).replace('"amount": 9999', '"amount": NaN')),
     Case("number に Infinity", 1, "型 number でない",
          ir=edit(lambda ir: f1(ir)["operation"]["input"]["amount"].update(type="number")),
-         pre=lambda repo: (repo / "docs/spec/spec_ir.json").write_text(
-             (repo / "docs/spec/spec_ir.json").read_text(encoding="utf-8").replace('"amount": 9999', '"amount": Infinity'),
+         pre=lambda repo: (repo / IR_FILE).write_text(
+             (repo / IR_FILE).read_text(encoding="utf-8").replace('"amount": 9999', '"amount": Infinity'),
              encoding="utf-8")),
     # 孤立したサロゲートは JSON として読めるが UTF-8 で書けない——書く途中で落ちて契約を切り詰めない
-    Case("孤立したサロゲート", 1, "孤立したサロゲート",
+    # （版を重ねる段で `merge-versions.py` が先に断る）
+    Case("孤立したサロゲート", 1, "サロゲート",
          raw=json.dumps(IR, ensure_ascii=False).replace("割引額を計算する", "\\ud800"),
          pre=plant_old_contract, post=contract_kept_issues_gone),
     # 桁の大きい整数は float に直せない——`math.isfinite` に渡すと OverflowError で落ちる
     Case("number に桁の大きい整数", 0, "作った",
          ir=edit(lambda ir: f1(ir)["operation"]["input"]["amount"].update(type="number")),
-         pre=lambda repo: (repo / "docs/spec/spec_ir.json").write_text(
-             (repo / "docs/spec/spec_ir.json").read_text(encoding="utf-8").replace('"amount": 9999', '"amount": 1' + "0" * 400),
+         pre=lambda repo: (repo / IR_FILE).write_text(
+             (repo / IR_FILE).read_text(encoding="utf-8").replace('"amount": 9999', '"amount": 1' + "0" * 400),
              encoding="utf-8")),
     Case("全部を出す", 1, "（2 件）",
          ir=edit(lambda ir: (f1(ir)["operation"].update(method="FETCH"), ir["features"][1].update(title="")))),
+    # ---- 版（重ね合わせた全体から作る）
+    Case("v2 で機能を変える", 0, "作った", extra=v2([V2_CHANGED]), post=v2_changed),
+    Case("v2 で機能を消す", 0, "作った", extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=v2_removed),
+    Case("v2 で機能を足す", 0, "作った", extra=v2([V2_RETURN]), post=v2_added),
+    Case("v2 の Q&A が確認中", 1, "build/merged/shared/qa.csv: Q-003: 状態が 確認中",
+         extra=v2([V2_RETURN], qa=HEADER + QA_V2 + QA_OPEN), pre=plant_old_issues, post=nothing_written),
+    Case("v2 の仕様に未決定の印", 1, "未決定の印 TBD", extra=v2([V2_RETURN], spec={"return.md": RETURN_SPEC + "上限は TBD。\n"}),
+         pre=plant_old_issues, post=nothing_written),
+    Case("重ね合わせが決まりに反する", 1, "前の版までに無いものを消そうとしている",
+         extra=v2([], removed="機能,F-009,無いもの\n"), pre=plant_old_issues, post=nothing_written),
+    Case("版に分けていない", 2, "版（v1 など）が 1 つも無い", root=Path("docs"), pre=plant_old_issues, post=nothing_written),
+    Case("docs が無い", 2, "ディレクトリが無い", root=Path("legacy"), pre=plant_old_issues, post=nothing_written),
+    Case("v2 の --check は書かない", 0, "新しい", args=("--check",), generate_first=True, extra=v2([V2_CHANGED]),
+         post=lambda repo: "--check が build/merged/ を書いた" if (repo / "build" / "merged").exists() else None),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("関門を見ない", "    if code:\n        return code, lines + [", "    if False:\n        return code, lines + [", "確認中の Q&A"),
+    ("関門を見ない", "        if code:\n            return code, shown(lines) + [", "        if False:\n            return code, shown(lines) + [",
+     "確認中の Q&A"),
     ("失敗時に Issue の本文を消さない", "        if writing:\n            clear_issues(repo)", "        if False:\n            clear_issues(repo)",
      "確認中の Q&A"),
     ("--dry-run でも Issue の本文を消す", "    writing = not (args.check or args.dry_run)", "    writing = True",
      "--dry-run は失敗しても消さない"),
+    # 版が無いのは決まりに反するのではなく移していない——2 で止め、1（重ね合わせの誤り）と言わない
+    ("版が無いのを重ね合わせの誤りと言う", "        if not versions.find_versions(docs, probe) and not probe:",
+     "        if False:", "版に分けていない"),
     ("決まりに無いキーを見ない", "    for key in sorted(obj.keys() - required - optional):", "    for key in []:", "決まりに無いキー"),
     ("Q&A の実在を見ない", "        elif no not in answered:", "        elif False:", "Q&A が表に無い"),
     ("ケースの Q&A を見ない", '            if "qa" in case:\n                problems += check_qa_refs',
@@ -521,7 +618,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "書き込みの途中で失敗する"),
     ("メソッドが決まりに無くても入口の重複を見る", "                elif method in METHODS and (method, path) in routes:",
      "                elif (method, path) in routes:", "メソッドが配列"),
-    ("深い入れ子を読めないと言わない", "ValueError, RecursionError) as exc:", "ValueError) as exc:", "深い入れ子"),
+    ("深い入れ子を読めないと言わない", "    except RecursionError:\n        # 版の", "    except ZeroDivisionError:\n        # 版の",
+     "深い入れ子"),
     ("ケースの id を int() で並べる", '    digits = case["id"].rsplit("C", 1)[1].lstrip("0")\n    return len(digits), digits',
      '    return 0, str(int(case["id"].rsplit("C", 1)[1]))', "桁の多いケースの id"),
     ("版を値だけで比べる", '    if type(ir.get("spec_ir_version")) is not int or', '    if isinstance(ir.get("spec_ir_version"), bool) or',
@@ -533,7 +631,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("型の名前の衝突を見ない", "                elif pascal(oid) in type_names:", "                elif False:", "型の名前が潰れる"),
     ("ドットの場所を許す", '        elif any(part.startswith(".") for part in path.relative_to(spec_root).parts):', "        elif False:",
      "ドットの場所の仕様"),
-    ("サロゲートを見ない", "    problems = surrogates(ir)\n    if problems:", "    problems = []\n    if problems:", "孤立したサロゲート"),
+    # `surrogates(ir)` の検査には変異を置かない——版を重ねる段（`merge-versions.py` の `render`）が先に断るので、
+    # 入力から届かない（殺せると主張しない）
     ("整数を isfinite に渡す", "        return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))",
      "        return math.isfinite(value) and isinstance(value, (int, float))", "number に桁の大きい整数"),
     ("エラーのケースで error を期待しない", 'expected = case["expected"] if "expected" in case else {"error": case["error"]}',
@@ -555,6 +654,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("--check が中身を比べない", '        if current != text.encode("utf-8"):', "        if False:", "手で直した後の --check"),
     ("機能の並びを保たない", '    return sorted(ir["features"], key=lambda f: f["id"])', '    return list(ir["features"])[::-1]',
      "本文から辿れる"),
+    # ---- 版
+    ("v1 だけを読む", "versions.merge(docs)", "versions.merge(docs, 1)", "v2 で機能を変える"),
+    ("重ね合わせの誤りを見ない", '    if problems:\n        return 1, problems + ["版の重ね合わせ',
+     '    if False:\n        return 1, problems + ["版の重ね合わせ', "重ね合わせが決まりに反する"),
+    ("一時ディレクトリの名前で言う", "return [line.replace(str(whole), MERGED_DIR) for line in lines]", "return lines",
+     "v2 の Q&A が確認中"),
+    ("本文に重ね合わせた全体の場所を書かない", 'return f"{MERGED_DIR}/{path}"', "return path", "本文から辿れる"),
 ]
 
 failures: list[str] = []
@@ -572,19 +678,24 @@ def assert_in_tmp(path: Path) -> None:
 
 def build(root: Path, case: Case) -> Path:
     assert_in_tmp(root)
-    (root / "docs" / "shared").mkdir(parents=True)
-    (root / "docs" / "spec").mkdir(parents=True)
+    base = root / case.root
+    (base / "shared").mkdir(parents=True)
+    (base / "spec").mkdir(parents=True)
     qa = HEADER + QA_DONE + QA_DONE2 if case.qa is None else case.qa
     if qa:
-        (root / "docs" / "shared" / "qa.csv").write_text(qa, encoding="utf-8")
+        (base / "shared" / "qa.csv").write_text(qa, encoding="utf-8")
     for rel, body in (case.spec or {"order.md": SPEC}).items():
-        (root / "docs" / "spec" / rel).write_text(body, encoding="utf-8")
+        (base / "spec" / rel).write_text(body, encoding="utf-8")
     if case.raw is not None:
         if case.raw:
-            (root / "docs" / "spec" / "spec_ir.json").write_text(case.raw, encoding="utf-8")
+            (base / "spec" / "spec_ir.json").write_text(case.raw, encoding="utf-8")
     else:
         ir = (case.ir or ONE)(IR)
-        (root / "docs" / "spec" / "spec_ir.json").write_text(json.dumps(ir, ensure_ascii=False, indent=2), encoding="utf-8")
+        (base / "spec" / "spec_ir.json").write_text(json.dumps(ir, ensure_ascii=False, indent=2), encoding="utf-8")
+    for rel, body in case.extra.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
     if case.impl is not None:
         (root / "spec_impl.py").write_text(case.impl, encoding="utf-8")
     return root

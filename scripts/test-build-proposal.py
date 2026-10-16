@@ -9,7 +9,9 @@
 1. **照合が通らないとき、提案書を作らない**——一致しない（1）・照合していない（2）。
    **前に作った提案書とガントチャートも消す**（古いものを今のものと取り違えないため）。
 2. **承認したタグの時点の中身から作る**——承認の後に直した見積り・Q&A 表は入らない。
-   `docs/feasibility/` は `budget-signoff`、`docs/shared/` は `req-signoff` の時点。
+   `docs/v<n>/feasibility/` は `v<n>/budget-signoff-<k>`、`docs/v<n>/shared/` は `v<n>/req-signoff-<k>` の時点。
+   **版は照合が決めたもの**（省けば作業中の版・`--version` で指定）で、**その版の表と手書き部分だけ**が載る。
+   **v2 以降で `qa.csv` を置かない版は Q&A 0 行で作り、v1 では `qa.csv` が無ければ作らない。**
 3. **材料が欠けた・決まりに反するときも作らない**——手書き部分が無い・見積りが無い・見積りが決まりに反する。
 4. **作れるときは作る**（陽性対照）——決定事項・未決定の質問・費用の合計・期間・ガントチャートが載り、
    手書き部分がファイル名の順に並ぶ。**同じ入力から同じバイト。**
@@ -34,9 +36,10 @@ REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 TARGET = "build-proposal.py"
 
-QA = "docs/shared/qa.csv"
-SCHEDULE = "docs/feasibility/schedule.csv"
-ESTIMATE = "docs/feasibility/estimate.csv"
+QA = "docs/v1/shared/qa.csv"
+SCHEDULE = "docs/v1/feasibility/schedule.csv"
+ESTIMATE = "docs/v1/feasibility/estimate.csv"
+R1, B1 = "v1/req-signoff-1", "v1/budget-signoff-1"
 QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 QA_ROWS = (
     "Q-001,要求確定,割引は？,A: なし / B: 3%,A（業務部が回答）,決定表 4 行目,反映済み,\n"
@@ -50,9 +53,15 @@ def estimate(amount: str) -> str:
 
 
 BASE = [("w", QA, QA_HEAD + QA_ROWS), ("w", SCHEDULE, SCHEDULE_CSV), ("w", ESTIMATE, estimate("4800000")),
-        ("w", "docs/proposal/02-recommendation.md", "## 推奨案\n\n案 B を推す。\n"),
-        ("w", "docs/proposal/01-background.md", "## 背景と目的\n\n受注を自動化する。\n"), ("c",)]
-SIGNED = BASE + [("t", "req-signoff-v1"), ("t", "budget-signoff-v1")]
+        ("w", "docs/v1/proposal/02-recommendation.md", "## 推奨案\n\n案 B を推す。\n"),
+        ("w", "docs/v1/proposal/01-background.md", "## 背景と目的\n\n受注を自動化する。\n"), ("c",)]
+SIGNED = BASE + [("t", R1), ("t", B1)]
+# v2: その版の差分だけを置き、v2 のタグで承認する（v1 は凍結したまま）
+V2 = SIGNED + [("w", "docs/v2/shared/qa.csv", QA_HEAD + "Q-006,要求確定,返品は？,A: 可 / B: 不可,A,決定表 9 行目,反映済み,\n"),
+               ("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV),
+               ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
+               ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n返品を受け付ける。\n"), ("c",),
+               ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")]
 
 
 class Result:
@@ -81,34 +90,64 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("同じ入力から同じバイト", SIGNED, False, lambda r: made(r) and r.text == r.again),
     ("承認の記録を持たない", SIGNED, False, lambda r: made(r) and "承認済み" not in r.text and "承認の記録ではありません" in r.text),
     # 予算のタグは見積りを直した後、作業ツリーはさらにその後に直している
-    ("承認したタグの時点の見積り", BASE + [("t", "req-signoff-v1"), ("w", ESTIMATE, estimate("5000000")), ("c",),
-                                    ("t", "budget-signoff-v1"), ("w", ESTIMATE, estimate("9999999")), ("c",)], False,
+    ("承認したタグの時点の見積り", BASE + [("t", R1), ("w", ESTIMATE, estimate("5000000")), ("c",),
+                                    ("t", B1), ("w", ESTIMATE, estimate("9999999")), ("c",)], False,
      lambda r: made(r) and "5,000,000" in r.text and "9,999,999" not in r.text and "4,800,000" not in r.text),
     ("承認の後に直した Q&A 表は入らない", SIGNED + [("w", QA, QA_HEAD + QA_ROWS.replace("割引は？", "割引は本当に？")), ("c",)],
      False, lambda r: made(r) and "割引は？" in r.text and "割引は本当に？" not in r.text),
-    ("一致しないと作らない", BASE + [("t", "req-signoff-v1"), ("w", QA, QA_HEAD), ("c",), ("t", "budget-signoff-v1")],
+    ("一致しないと作らない", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)],
      False, not_made(1)),
-    ("前の提案書を消す", BASE + [("t", "req-signoff-v1"), ("w", QA, QA_HEAD), ("c",), ("t", "budget-signoff-v1")],
+    ("前の提案書を消す", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)],
      True, lambda r: not_made(1)(r) and r.output.count("前に作った出力を消した") == 2),
     ("照合していないと作らない", BASE, True, not_made(2)),
     ("見積りが決まりに反すると作らない", BASE[:2] + [("w", ESTIMATE, estimate('"4,800,000"'))] + BASE[3:]
-     + [("t", "req-signoff-v1"), ("t", "budget-signoff-v1")], False, not_made(1)),
+     + [("t", R1), ("t", B1)], False, not_made(1)),
     ("見積りが無いと作らない", [s for s in SIGNED if s[:2] != ("w", ESTIMATE)], False,
      lambda r: not_made(1)(r) and "承認の時点に無い" in r.output),
-    ("手書き部分が無いと作らない", [s for s in SIGNED if not (len(s) > 1 and s[1].startswith("docs/proposal/"))], False,
-     lambda r: not_made(1)(r) and "手書き部分" in r.output),
+    ("手書き部分が無いと作らない", [s for s in SIGNED if not (len(s) > 1 and s[1].startswith("docs/v1/proposal/"))],
+     False, lambda r: not_made(1)(r) and "手書き部分" in r.output),
+    # ---- 版
+    ("作業中の版から作る", V2, False,
+     lambda r: made(r) and "| Q-006 | 返品は？ |" in r.text and "Q-001" not in r.text and "700,000" in r.text
+     and "4,800,000" not in r.text and "## 変更の背景" in r.text and "## 推奨案" not in r.text
+     and "`docs/v2/shared/`" in r.text and "`v2/req-signoff-1`" in r.text),
+    ("版を指定して作る", V2 + [("arg", "--version", "1")], False,
+     lambda r: made(r) and "| Q-001 | 割引は？ |" in r.text and "Q-006" not in r.text and "`docs/v1/shared/`" in r.text),
+    # v2 の手書き部分が無い——v1 の手書き部分で代わりに作らない
+    ("作業中の版の手書き部分が無いと作らない",
+     [s for s in V2 if not (len(s) > 1 and s[1].startswith("docs/v2/proposal/"))], False,
+     lambda r: not_made(1)(r) and "docs/v2/proposal" in r.output),
+    # v2 以降は差分だけ——Q&A を足さない版は qa.csv を置かない（versions.md）。それでも作れる
+    ("Q&A を足さない版でも作る", [s for s in V2 if not (len(s) > 1 and s[1] == "docs/v2/shared/qa.csv")]
+     + [("w", "docs/v2/requirements/returns.md", "x\n"), ("c",), ("t", "v2/req-signoff-2"), ("t", "v2/budget-signoff-2")],
+     False, lambda r: made(r) and "（反映済みの決定事項はありません）" in r.text and "Q-001" not in r.text
+     and "700,000" in r.text),
+    # v1 は qa.csv が要る（v2 以降の扱いを v1 に広げない）
+    ("v1 は Q&A 表が無いと作らない", [s for s in SIGNED if s[:2] != ("w", QA)]
+     + [("w", "docs/v1/shared/nfr.csv", "x\n"), ("c",), ("t", "v1/req-signoff-2"), ("t", "v1/budget-signoff-2")],
+     False, lambda r: not_made(1)(r) and "docs/v1/shared/qa.csv: 承認の時点に無い" in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("v2 以降も Q&A 表を必須にする", 'if info["version"] > 1 and not exists(', 'if False and not exists(',
+     "Q&A を足さない版でも作る"),
+    ("v1 でも Q&A 表を省ける", 'if info["version"] > 1 and not exists(', 'if not exists(',
+     "v1 は Q&A 表が無いと作らない"),
     ("照合を見ない", "    if code:\n        raise Stop(code, lines)\n", "    if False:\n        raise Stop(code, lines)\n",
      "一致しないと作らない"),
-    ("見積りを作業ツリーから読む", 'show(top, info["budget_commit"], info["budget"], ESTIMATE_PATH)',
-     '(top / ESTIMATE_PATH).read_text(encoding="utf-8")', "承認したタグの時点の見積り"),
-    ("見積りを要求のタグの時点で読む", 'show(top, info["budget_commit"], info["budget"], ESTIMATE_PATH)',
-     'show(top, info["req_commit"], info["budget"], ESTIMATE_PATH)', "承認したタグの時点の見積り"),
-    ("Q&A 表を作業ツリーから読む", 'show(top, info["req_commit"], info["req"], QA_PATH)',
-     '(top / QA_PATH).read_text(encoding="utf-8")', "承認の後に直した Q&A 表は入らない"),
+    ("見積りを作業ツリーから読む", 'show(top, info["budget_commit"], info["budget"], estimate_path)',
+     '(top / estimate_path).read_text(encoding="utf-8")', "承認したタグの時点の見積り"),
+    ("見積りを要求のタグの時点で読む", 'show(top, info["budget_commit"], info["budget"], estimate_path)',
+     'show(top, info["req_commit"], info["budget"], estimate_path)', "承認したタグの時点の見積り"),
+    ("Q&A 表を作業ツリーから読む", 'show(top, info["req_commit"], info["req"], qa_path)',
+     '(top / qa_path).read_text(encoding="utf-8")', "承認の後に直した Q&A 表は入らない"),
+    ("版のパスを v1 に固定する", 'return f"{signoff.DOCS}/v{version}/{path}"', 'return f"{signoff.DOCS}/v1/{path}"',
+     "作業中の版から作る"),
+    ("--version を渡さない", "signoff.resolve(args.repo, args.req, args.budget, args.version)",
+     "signoff.resolve(args.repo, args.req, args.budget)", "版を指定して作る"),
+    ("手書き部分を版の外から読む", 'hand_dir = top / in_version(info["version"], HAND_DIR)',
+     'hand_dir = top / in_version(1, HAND_DIR)', "作業中の版の手書き部分が無いと作らない"),
     ("前の出力を消さない", "            stale.unlink()\n", "            pass\n", "前の提案書を消す"),
     ("手書き部分を逆順に並べる", 'sorted(hand_dir.glob("*.md"))', 'sorted(hand_dir.glob("*.md"), reverse=True)',
      "手書き部分はファイル名の順"),
@@ -162,24 +201,26 @@ def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) ->
             run_git(root, env, "tag", step[1])
 
 
-def generate(scripts: Path, root: Path, out: Path, env: dict[str, str]) -> tuple[int, str]:
-    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(root), "--out", str(out)],
+def generate(scripts: Path, root: Path, out: Path, env: dict[str, str], extra: list[str] = ()) -> tuple[int, str]:
+    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(root), "--out", str(out), *extra],
                           capture_output=True, text=True, cwd=root, env=env)
     return proc.returncode, proc.stdout + proc.stderr
 
 
 def run_case(scripts: Path, root: Path, steps, stale: bool, env: dict[str, str]) -> Result:
     build_repo(root, steps, env)
+    # ("arg", …) の手順は、生成に渡す引数（リポジトリには何もしない）
+    extra = [value for step in steps if step[0] == "arg" for value in step[1:]]
     out = root / "build" / "proposal" / "proposal.md"
     if stale:
         out.parent.mkdir(parents=True)
         out.write_text("古い提案書\n", encoding="utf-8")
         (out.parent / "gantt.svg").write_text("<svg/>", encoding="utf-8")
-    code, output = generate(scripts, root, out, env)
+    code, output = generate(scripts, root, out, env, extra)
     text = out.read_text(encoding="utf-8") if out.is_file() else None
     svg = (out.parent / "gantt.svg").is_file()
     again_out = root / "build" / "again" / "proposal.md"
-    generate(scripts, root, again_out, env)
+    generate(scripts, root, again_out, env, extra)
     again = again_out.read_text(encoding="utf-8") if again_out.is_file() else None
     return Result(code, output, text, svg, again)
 

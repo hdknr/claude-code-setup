@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.6.0 -->
-> **このスキルの版: 0.6.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.7.0 -->
+> **このスキルの版: 0.7.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -145,9 +145,14 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 **条件 1 を同梱のスクリプトで判定する**:
 
+正本の版（`docs/v1/`・`docs/v2/`…）を重ね合わせた全体に当てる（`../../references/versions.md`）:
+
 ```bash
-python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-exit.py <Q&A 表のパス> <仕様のディレクトリ>
+python3 <このスキルの base ディレクトリ>/../../scripts/merge-versions.py docs build/merged
+python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-exit.py build/merged/shared/qa.csv build/merged/spec
 ```
+
+**重ね合わせが 0 以外なら、条件 1 は判定していない**（版の決まりに反する。出力を示す）。
 
 **0 で終わっても、それは条件 1 だけである。** 条件 2〜4 は最後のレビューの判定役の判定（`満たす`／`満たさない`／
 `判定できなかった`）を、条件 5 は手順 4 の表を、それぞれ**そのまま**使う。
