@@ -10,14 +10,19 @@
 1. **決まりどおりに重なる**——ファイル・`qa.csv` の行・機能・トップレベルのキーの追加と置き換え、3 種類の削除、
    3 つ以上の版、`--upto`。**置き換えは前の版の順の位置に入る**（末尾に回さない）。
 2. **重ねないもの**——`feasibility/`・`proposal/`・`.` で始まる名前・版でない名前（`videos/`・`index.md`）。
-3. **決まりに反する入力からは作らない（1）**——版の欠番・形に合わない版名・シンボリックリンク・`qa.csv` の決まり違反・
-   機能の `id` の重複と欠落・`removed.csv` の誤り。**前に作った出力は消す。**
-4. **正本を消さない（2）**——印の無い空でない出力先・`docs/` の中には書かない。**中身は触らない。**
+3. **決まりに反する入力からは作らない（1）**——版の欠番・形に合わない版名（ファイルでも）・シンボリックリンク
+   （版・置き場所・ファイル・`removed.csv`）・`qa.csv` の決まり違反・機能の `id` の重複と欠落・`removed.csv` の誤り・
+   重ねた結果のファイルとディレクトリの衝突。**前に作った出力は消す。** **入力が無い・読めない（2）ときも消す。**
+4. **正本を消さない（2）**——印の無い空でない出力先・シンボリックリンクの出力先・`docs/` の中・`docs/` そのもの・
+   `docs/` を含む場所には書かない。**中身は触らない。**
 5. **同じ入力から同じバイト**——2 回作って一致。**陽性対照として、入力を 1 字変えると出力が変わる。**
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 7. **決まりの写しがずれていない**——本体の定数が `references/versions.md` と一致する。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
+
+**読めない入力の試料は root では作れない**（root は mode 000 でも読める）。root で走らせたときは、その試料と
+それを名指しした変異を飛ばし、**飛ばしたことを出力に書く**（緑のふりをしない）。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 """
@@ -53,6 +58,9 @@ SPEC1 = {"spec_ir_version": 1, "title": "注文", "features": [
 # v2 は差分だけ。並びを v1 と逆にして、置き換えが前の版の位置に入ることを見る
 SPEC2 = {"title": "注文 v2", "features": [{"id": "F-003", "title": "ポイント"}, {"id": "F-002", "title": "送料 v2"}]}
 REMOVED_HEAD = "種類,対象,理由\n"
+# 入力の木の特別な値: シンボリックリンク（版の外のファイル／ディレクトリへ）と、読めないファイル／ディレクトリ
+LINK, LINK_DIR, UNREADABLE, UNREADABLE_DIR = None, "\0link-dir", "\0unreadable", "\0unreadable-dir"
+UNREADABLE_CASES = {"読めないファイル", "読めないディレクトリ"}
 
 
 def js(data) -> str:
@@ -86,8 +94,9 @@ def with_removed(*rows: str) -> dict[str, str]:
 
 class Result:
     def __init__(self, code: int, output: str, tree: dict[str, bytes] | None, preexisting: str | None = None,
-                 again: dict[str, bytes] | None = None):
+                 again: dict[str, bytes] | None = None, docs_intact: bool = True):
         self.code, self.output, self.tree, self.preexisting, self.again = code, output, tree, preexisting, again
+        self.docs_intact = docs_intact
 
     def text(self, path: str) -> str | None:
         return self.tree[path].decode("utf-8") if self.tree and path in self.tree else None
@@ -128,6 +137,8 @@ def main_case(r: Result) -> bool:
 
 # (名前, 入力の木（パス → 中身。None ならシンボリックリンクを作る）, 出力先の準備, 引数, 判定)
 # 出力先の準備: "none"（無い）／"stale"（印つきの前の出力）／"foreign"（印の無い正本らしきもの）／"inside"（docs の中）
+# ／"docs"（docs そのもの）／"parent"（docs を含む、印つきの場所）／"symlink"（空のディレクトリへのシンボリックリンク）
+# 入力の木が None なら docs を作らない
 CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("全部の経路を重ねる", MAIN, "none", [], main_case),
     ("Q&A を消す", with_removed("Q&A,Q-001,質問を取り下げた\n"), "none", [],
@@ -172,6 +183,32 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("印の無い場所には書かない", MAIN, "foreign", [],
      lambda r: r.code == 2 and "印" in r.output and r.preexisting == "正本\n"),
     ("docs の中には書かない", MAIN, "inside", [], lambda r: r.code == 2 and "の中には書かない" in r.output),
+    ("docs そのものには書かない", MAIN, "docs", [],
+     lambda r: r.code == 2 and "の中には書かない" in r.output and r.docs_intact),
+    ("docs を含む場所には書かない", MAIN, "parent", [],
+     lambda r: r.code == 2 and "を含む場所には書かない" in r.output and r.docs_intact),
+    ("出力先のシンボリックリンクには書かない", MAIN, "symlink", [],
+     lambda r: r.code == 2 and "シンボリックリンクは使わない" in r.output),
+    ("入力が無いと前の出力を消す", None, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "前に作った出力を消した" in r.output),
+    ("読めないファイル", {**MAIN, "v2/requirements/d.md": UNREADABLE}, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "読めない" in r.output and "前に作った出力を消した" in r.output),
+    ("読めないディレクトリ", {**MAIN, "v2/requirements/sub": UNREADABLE_DIR}, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "読めない" in r.output and "前に作った出力を消した" in r.output),
+    ("ファイルの形の版名", {**MAIN, "v3.md": "x\n"}, "none", [], lambda r: refused(r, "版の名前の形")),
+    ("版がシンボリックリンク", {**MAIN, "v3": LINK_DIR}, "none", [], lambda r: refused(r, "版はディレクトリで置く")),
+    ("置き場所がシンボリックリンク", {**V1, "v2/requirements": LINK_DIR}, "none", [],
+     lambda r: refused(r, "シンボリックリンク")),
+    ("removed.csv がシンボリックリンク", {**MAIN, "v2/removed.csv": LINK}, "none", [],
+     lambda r: refused(r, "シンボリックリンク")),
+    ("ファイルとディレクトリの衝突", {**V1, "v2/requirements/b.md/x.md": "x\n"}, "none", [],
+     lambda r: refused(r, "ファイルとディレクトリの両方")),
+    ("衝突を削除で解く", {**V1, "v2/requirements/b.md/x.md": "x\n",
+                       "v2/removed.csv": REMOVED_HEAD + "ファイル,requirements/b.md,ディレクトリに分けた\n"}, "none", [],
+     lambda r: made(r) and r.text("requirements/b.md/x.md") == "x\n"),
+    ("Q&A が全部消えても qa.csv を書く",
+     {**V1, "v2/removed.csv": REMOVED_HEAD + "Q&A,Q-001,取り下げ\nQ&A,Q-002,取り下げ\n"}, "none", [],
+     lambda r: made(r) and r.text("shared/qa.csv") == QA_HEAD),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -189,13 +226,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("--upto を無視する", "for number, root in versions[:upto]:", "for number, root in versions:", "--upto 1 は v1 だけ"),
     ("v で始まる名前を全部版と読む", "if not VERSION_LIKE.match(name):", 'if not name.startswith("v"):',
      "版でない名前は読まない"),
-    ("ドットで始まる名前も読む", 'if any(part.startswith(".") for part in rel.parts):', "if False:",
+    ("ドットで始まる名前も読む", '        if path.name.startswith("."):\n', "        if False:\n",
      "ドットで始まる名前は読まない"),
     ("欠番を見ない", "if number != expected:", "if False:", "版の欠番"),
     ("版名の形を見ない", "        if not VERSION.fullmatch(name):\n            problems.append",
      "        if False:\n            problems.append", "形に合わない版名"),
     ("版が無いのを通す", "if not problems and not versions:", "if False:", "版が 1 つも無い"),
-    ("シンボリックリンクを読む", "            if path.is_symlink():\n", "            if False:\n", "シンボリックリンク"),
+    ("シンボリックリンクを読む", "        if path.is_symlink():\n", "        if False:\n", "シンボリックリンク"),
     ("qa.csv の検査を通さない", "    if code == 1:\n", "    if False:\n", "qa.csv の決まり違反"),
     ("機能の重複を見ない", "elif fid in seen:", "elif False:", "機能の id の重複"),
     ("消す種類を見ない", "if kind not in KINDS:", "if False:", "消す種類が決まりに無い"),
@@ -213,6 +250,32 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "印の無い場所には書かない"),
     ("docs の中を断らない", "if out_real == docs_real or docs_real in out_real.parents:", "if False:",
      "docs の中には書かない"),
+    ("docs そのものを断らない", "if out_real == docs_real or docs_real in out_real.parents:",
+     "if docs_real in out_real.parents:", "docs そのものには書かない"),
+    ("docs を含む場所を断らない", "if out_real in docs_real.parents:", "if False:", "docs を含む場所には書かない"),
+    ("出力先のシンボリックリンクを通す", "    if out.is_symlink():\n", "    if False:\n",
+     "出力先のシンボリックリンクには書かない"),
+    ("入力が無いとき前の出力を消さない",
+     '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n        remove_stale(out)\n',
+     '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n', "入力が無いと前の出力を消す"),
+    ("読めないとき前の出力を消さない",
+     '        print("重ね合わせは作っていない", file=sys.stderr)\n        remove_stale(out)\n        return 2',
+     '        print("重ね合わせは作っていない", file=sys.stderr)\n        return 2', "読めないファイル"),
+    ("読めないファイルを包まない", "                except OSError as e:\n", "                except KeyError as e:\n",
+     "読めないファイル"),
+    ("読めないディレクトリを飛ばす", "        entries = sorted(directory.iterdir())\n    except OSError as e:\n",
+     "        entries = sorted(directory.iterdir())\n    except OSError as e:\n        return\n", "読めないディレクトリ"),
+    ("ファイルの形の版名を飛ばす", "        if not VERSION.fullmatch(name):\n            problems.append",
+     "        if not VERSION.fullmatch(name):\n            continue\n            problems.append", "ファイルの形の版名"),
+    ("版のシンボリックリンクを読む", "        if not entry.is_dir() or entry.is_symlink():\n", "        if not entry.is_dir():\n",
+     "版がシンボリックリンク"),
+    ("置き場所のシンボリックリンクを読む", "        if top.is_symlink():\n", "        if False:\n",
+     "置き場所がシンボリックリンク"),
+    ("removed.csv のリンクを読む", "        if removed_path.is_symlink():\n", "        if False:\n",
+     "removed.csv がシンボリックリンク"),
+    ("衝突を見ない", "problems.extend(whole.collisions())", "pass", "ファイルとディレクトリの衝突"),
+    ("行が 0 なら qa.csv を書かない", "        if self.has_qa:\n            buffer", "        if self.qa:\n            buffer",
+     "Q&A が全部消えても qa.csv を書く"),
 ]
 
 failures: list[str] = []
@@ -228,18 +291,37 @@ def assert_in_tmp(path: Path) -> None:
     assert REAL_REPO not in resolved.parents and resolved != REAL_REPO, f"実リポジトリの中を触ろうとした: {path}"
 
 
-def build(docs: Path, tree: dict) -> None:
+def build(docs: Path, tree: dict | None) -> list[Path]:
+    """試料を書く。読めなくしたパスを返す（後で戻す——一時ディレクトリを消せるように）。"""
     assert_in_tmp(docs)
+    if tree is None:
+        return []
     docs.mkdir(parents=True)
+    locked = []
     for rel, content in tree.items():
         path = docs / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        if content is None:
+        if content is LINK:
             target = docs.parent / "outside.md"
             target.write_text("版の外\n", encoding="utf-8")
             os.symlink(target, path)
+        elif content == LINK_DIR:
+            target = docs.parent / "outside"
+            (target / "requirements").mkdir(parents=True, exist_ok=True)
+            (target / "requirements" / "x.md").write_text("版の外\n", encoding="utf-8")
+            os.symlink(target, path)
+        elif content == UNREADABLE:
+            path.write_text("読めない\n", encoding="utf-8")
+            locked.append(path)
+        elif content == UNREADABLE_DIR:
+            path.mkdir()
+            (path / "e.md").write_text("読めない\n", encoding="utf-8")
+            locked.append(path)
         else:
             path.write_text(content, encoding="utf-8")
+    for path in locked:
+        path.chmod(0)
+    return locked
 
 
 def snapshot(out: Path) -> dict[str, bytes] | None:
@@ -258,10 +340,16 @@ def merge(scripts: Path, docs: Path, out: Path, extra: list[str]) -> tuple[int, 
 def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[str], twice: bool = False) -> Result:
     assert_in_tmp(root)
     docs = root / "docs"
-    build(docs, tree)
-    out = docs / "merged" if prepare == "inside" else root / "build" / "merged"
+    locked = build(docs, tree)
+    out = {"inside": docs / "merged", "docs": docs, "parent": root}.get(prepare, root / "build" / "merged")
     preexisting = None
-    if prepare == "stale":
+    if prepare == "parent":
+        (root / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
+    elif prepare == "symlink":
+        (root / "real").mkdir()
+        out.parent.mkdir(parents=True)
+        os.symlink(root / "real", out)
+    elif prepare == "stale":
         out.mkdir(parents=True)
         (out / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
         (out / "old.md").write_text("古い\n", encoding="utf-8")
@@ -269,6 +357,9 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         out.mkdir(parents=True)
         (out / "keep.md").write_text("正本\n", encoding="utf-8")
     code, output = merge(scripts, docs, out, extra)
+    for path in locked:
+        path.chmod(0o755)
+    docs_intact = tree is None or (docs / "v1").is_dir()
     if prepare == "foreign":
         keep = out / "keep.md"
         preexisting = keep.read_text(encoding="utf-8") if keep.is_file() else None
@@ -277,12 +368,18 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         second = root / "build" / "again"
         merge(scripts, docs, second, extra)
         again = snapshot(second)
-    return Result(code, output, snapshot(out), preexisting, again)
+    tree_out = None if prepare in ("docs", "parent") else snapshot(out)
+    return Result(code, output, tree_out, preexisting, again, docs_intact)
+
+
+def skipped(name: str) -> bool:
+    """root は mode 000 でも読めるので、読めない入力の試料を作れない。"""
+    return name in UNREADABLE_CASES and hasattr(os, "geteuid") and os.geteuid() == 0
 
 
 def run_all(scripts: Path, work: Path) -> dict[str, Result]:
     return {name: run_case(scripts, work / f"case{i}", tree, prepare, extra)
-            for i, (name, tree, prepare, extra, _) in enumerate(CASES)}
+            for i, (name, tree, prepare, extra, _) in enumerate(CASES) if not skipped(name)}
 
 
 def as_expected(name: str, result: Result) -> bool:
@@ -338,6 +435,8 @@ def main() -> int:
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
+            if skipped(killer):
+                continue
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
@@ -353,7 +452,10 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    skip = [name for name, *_ in CASES if skipped(name)]
+    if skip:
+        print(f"飛ばした（root では読めない入力を作れない）: 試料 {'・'.join(skip)} と、それを名指しした変異")
+    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS)} 件")
     return 0
 
 
