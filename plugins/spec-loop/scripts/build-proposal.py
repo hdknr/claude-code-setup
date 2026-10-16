@@ -14,6 +14,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   作業ツリーで承認後に直した中身は提案書に入らない。**手書き部分（`docs/v<n>/proposal/*.md`）だけは作業ツリーから読む**
   （承認の対象ではない。ファイル名の順に先頭へ並べる）。
   **v2 以降は、その版の差分の表だけが載る**（前の版との比較は載せない）。
+  **v2 以降で `shared/qa.csv` を置かない版**（Q&A を足さない版。`references/versions.md`）は、Q&A を 0 行として作る。
+  v1 では `qa.csv` が無ければ作らない。
 - 読んだ表は決まりの検査（`check-qa-csv.py`・`check-feasibility-csv.py`）を通す。通らなければ書かない。
 - **始める前に、前に作った出力（提案書と同じ場所の `gantt.svg`）を消す**——作れなかったときに、
   古い提案書を今のものと取り違えないため。
@@ -82,6 +84,14 @@ def show(top: Path, commit: str, tag: str, path: str) -> str:
         return result.stdout.decode("utf-8")
     except UnicodeDecodeError:
         raise Stop(2, [f"{tag}:{path}: UTF-8 として読めない。中身を検査していない"])
+
+
+def exists(top: Path, commit: str, path: str) -> bool:
+    result = subprocess.run(["git", "-C", str(top), "ls-tree", "--name-only", commit, "--", path],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Stop(2, [f"{commit[:7]}:{path}: 在るかを確かめられない: {result.stderr.strip()}"])
+    return bool(result.stdout.strip())
 
 
 def read_qa(text: str, label: str) -> list[dict[str, str]]:
@@ -169,7 +179,11 @@ def build(args) -> tuple[str, str, int]:
     print("\n".join(lines))
     top = Path(info["top"])
     qa_path, schedule_path, estimate_path = (in_version(info["version"], p) for p in (QA_PATH, SCHEDULE_PATH, ESTIMATE_PATH))
-    qa_rows = read_qa(show(top, info["req_commit"], info["req"], qa_path), f"{info['req']}:{qa_path}")
+    if info["version"] > 1 and not exists(top, info["req_commit"], qa_path):
+        # v2 以降は差分だけなので、Q&A を足さない版は `qa.csv` を置かない（`references/versions.md`）
+        qa_rows = []
+    else:
+        qa_rows = read_qa(show(top, info["req_commit"], info["req"], qa_path), f"{info['req']}:{qa_path}")
     schedule = read_table(feasibility.check_schedule, show(top, info["budget_commit"], info["budget"], schedule_path),
                           f"{info['budget']}:{schedule_path}")
     estimate = read_table(feasibility.check_estimate, show(top, info["budget_commit"], info["budget"], estimate_path),

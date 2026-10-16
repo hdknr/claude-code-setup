@@ -11,6 +11,7 @@
 2. **承認したタグの時点の中身から作る**——承認の後に直した見積り・Q&A 表は入らない。
    `docs/v<n>/feasibility/` は `v<n>/budget-signoff-<k>`、`docs/v<n>/shared/` は `v<n>/req-signoff-<k>` の時点。
    **版は照合が決めたもの**（省けば作業中の版・`--version` で指定）で、**その版の表と手書き部分だけ**が載る。
+   **v2 以降で `qa.csv` を置かない版は Q&A 0 行で作り、v1 では `qa.csv` が無ければ作らない。**
 3. **材料が欠けた・決まりに反するときも作らない**——手書き部分が無い・見積りが無い・見積りが決まりに反する。
 4. **作れるときは作る**（陽性対照）——決定事項・未決定の質問・費用の合計・期間・ガントチャートが載り、
    手書き部分がファイル名の順に並ぶ。**同じ入力から同じバイト。**
@@ -116,10 +117,23 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("作業中の版の手書き部分が無いと作らない",
      [s for s in V2 if not (len(s) > 1 and s[1].startswith("docs/v2/proposal/"))], False,
      lambda r: not_made(1)(r) and "docs/v2/proposal" in r.output),
+    # v2 以降は差分だけ——Q&A を足さない版は qa.csv を置かない（versions.md）。それでも作れる
+    ("Q&A を足さない版でも作る", [s for s in V2 if not (len(s) > 1 and s[1] == "docs/v2/shared/qa.csv")]
+     + [("w", "docs/v2/requirements/returns.md", "x\n"), ("c",), ("t", "v2/req-signoff-2"), ("t", "v2/budget-signoff-2")],
+     False, lambda r: made(r) and "（反映済みの決定事項はありません）" in r.text and "Q-001" not in r.text
+     and "700,000" in r.text),
+    # v1 は qa.csv が要る（v2 以降の扱いを v1 に広げない）
+    ("v1 は Q&A 表が無いと作らない", [s for s in SIGNED if s[:2] != ("w", QA)]
+     + [("w", "docs/v1/shared/nfr.csv", "x\n"), ("c",), ("t", "v1/req-signoff-2"), ("t", "v1/budget-signoff-2")],
+     False, lambda r: not_made(1)(r) and "docs/v1/shared/qa.csv: 承認の時点に無い" in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("v2 以降も Q&A 表を必須にする", 'if info["version"] > 1 and not exists(', 'if False and not exists(',
+     "Q&A を足さない版でも作る"),
+    ("v1 でも Q&A 表を省ける", 'if info["version"] > 1 and not exists(', 'if not exists(',
+     "v1 は Q&A 表が無いと作らない"),
     ("照合を見ない", "    if code:\n        raise Stop(code, lines)\n", "    if False:\n        raise Stop(code, lines)\n",
      "一致しないと作らない"),
     ("見積りを作業ツリーから読む", 'show(top, info["budget_commit"], info["budget"], estimate_path)',

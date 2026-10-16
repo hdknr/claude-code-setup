@@ -12,7 +12,8 @@
 2. **直していなければ通す**（陽性対照）。**リリースのタグが無ければ 0 で、そう言う。**
 3. **命名に合わないリリースのタグ（`release-v02`・`release-v2-fix`）は数えない。**
 4. **判定できない形を 0 にしない（2）**——タグの時点に `docs/v<n>/` が無い・タグがコミットを指さない・
-   HEAD が無い・git でない。
+   HEAD が無い・git でない・**浅い clone**（`actions/checkout` の既定。タグが見えない——
+   同じ元からの深い clone では判定できることを陽性対照にする）。
 5. **本体の定数が `references/versions.md` と一致する**（写しのずれ）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -65,6 +66,10 @@ CASES: list[tuple[str, Steps, int, str]] = [
     ("タグの時点に版が無い", [("w", "README.md", "x\n"), ("c",), ("t", "release-v1"), ("w", QA, "a\n"), ("c",)],
      2, "release-v1 の時点に docs/v1/ のファイルが 1 つも無い"),
     ("タグがツリーを指す", [("w", QA, "a\n"), ("c",), ("tt", "release-v1")], 2, "コミットを指していない"),
+    # actions/checkout の既定（--depth=1・タグなし）で取った clone——タグが見えないのを「凍結した版が無い」と読まない
+    ("浅い clone", RELEASED + [("w", QA, "x\n"), ("c",), ("shallow",)], 2, "浅い clone である"),
+    # 陽性対照: 同じ元から履歴とタグをすべて取った clone は判定できる（浅いかどうかの検査が clone そのものを拒まない）
+    ("深い clone", RELEASED + [("w", QA, "x\n"), ("c",), ("deep",)], 1, "直されている"),
     ("HEAD が無い", [], 2, "HEAD が無い"),
     ("git でない", None, 2, "作業ツリーでない"),
 ]
@@ -89,6 +94,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("HEAD を見ない", '            raise Unjudged("HEAD が無い', '            pass  # ("HEAD が無い', "HEAD が無い"),
     ("git でないのを見ない", "if top.returncode != 0 or not top.stdout.strip():", "if False:", "git でない"),
     ("直していても 0", "    if changed:\n", "    if False:\n", "コミット済みの変更"),
+    ("浅い clone を見ない", '        if shallow.stdout.strip() == "true":\n', "        if False:\n", "浅い clone"),
 ]
 
 failures: list[str] = []
@@ -142,6 +148,13 @@ def build_repo(root: Path, steps: Steps, env: dict[str, str]) -> list[str]:
             run_git(root, env, "tag", step[1])
         elif kind == "tt":
             run_git(root, env, "tag", step[1], "HEAD^{tree}")
+        elif kind in ("shallow", "deep"):
+            # 作った履歴を元にして clone し直す（浅い: actions/checkout の既定と同じ --depth=1・タグなし）
+            source = root.with_name(root.name + "-src")
+            root.rename(source)
+            options = ["--depth=1", "--no-tags"] if kind == "shallow" else []
+            subprocess.run(["git", "clone", "-q", *options, f"file://{source}", str(root)],
+                           check=True, capture_output=True, env=env)
         elif kind == "arg":
             extra += [step[1], str(root / step[2])]  # ("arg", "--repo", 根からのパス)
     return extra

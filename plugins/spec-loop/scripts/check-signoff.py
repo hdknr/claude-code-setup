@@ -15,8 +15,13 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   **指定したタグが別の版のものなら照合しない（2）**——別の版の承認を組にしない。
 - **比べる場所は `docs/v1/shared/`〜`docs/v<n>/shared/` と `docs/v2/removed.csv`〜`docs/v<n>/removed.csv`**
   （v<n> の時点の共有の範囲は、前の版の `shared/` と、行を消す `removed.csv` にも依る）。
+  **`removed.csv` は `shared/` に効く行だけを比べる**——種類 `Q&A` と、種類 `ファイル` で対象が `shared/` から
+  始まる行。`requirements/` や機能の削除だけが違っても一致のまま（範囲の外なので）。
 - **どちらかの時点で比べる場所にファイルが 1 つも無ければ、一致とは言わない（2）。**
   比べる中身が無くても `git diff --quiet` は 0 を返すので、それを「一致」と読まない。
+  **どちらかの時点に `docs/v<n>/` のファイルが 1 つも無いときも 2**——前の版の `shared/` があっても、
+  その時点に版 n はまだ無い。
+- **作業ツリーの版の並びは、`--version` の有無に依らず検査する**（決まりに反すれば 2）。
 - **LLM に判断させないための照合**なので、判定はすべて `git` の出力から決める。
 
 終了コード:
@@ -25,7 +30,8 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 - 1: 一致しない（違うファイルを全部出す）
 - 2: 照合していない——git でない・git が無い・作業ツリーの版が決まりに反する／1 つも無い（`--version` を省いたとき）・
   タグが無い／片方しか無い・指定したタグが無い／命名に合わない／別の版のもの・
-  どちらかの時点で比べる場所にファイルが無い（旧い構成のタグを含む）
+  どちらかの時点で比べる場所にファイルが無い（旧い構成のタグを含む）・どちらかの時点に `docs/v<n>/` が無い・
+  `removed.csv` が読めない
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`git` は要る）。
 
@@ -42,7 +48,9 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 from __future__ import annotations
 
 import argparse
+import csv
 import importlib.util
+import io
 import re
 import subprocess
 import sys
@@ -86,8 +94,50 @@ def tag_pattern(prefix: str, version: int) -> re.Pattern[str]:
 
 def scope(version: int) -> list[str]:
     """比べる場所（版 1〜n の `shared/` と、版 2〜n の `removed.csv`）。"""
-    paths = [f"{DOCS}/v{i}/{SHARED}" for i in range(1, version + 1)]
-    return paths + [f"{DOCS}/v{i}/{REMOVED}" for i in range(2, version + 1)]
+    return shared_scope(version) + removed_scope(version)
+
+
+def shared_scope(version: int) -> list[str]:
+    return [f"{DOCS}/v{i}/{SHARED}" for i in range(1, version + 1)]
+
+
+def removed_scope(version: int) -> list[str]:
+    return [f"{DOCS}/v{i}/{REMOVED}" for i in range(2, version + 1)]
+
+
+# `removed.csv` の種類（`references/versions.md` の「削除」）
+REMOVED_QA = "Q&A"
+REMOVED_FILE = "ファイル"
+
+
+def removed_shared_rows(repo: Path, commit: str, tag: str, path: str) -> list[tuple[str, str]] | None:
+    """その時点の `removed.csv` のうち `shared/` に効く行（種類・対象）。ファイルが無ければ None。
+
+    理由の列は比べない——消したものが同じなら、2 つの承認が見た共有の範囲は同じなので。
+    """
+    listed = git(repo, "ls-tree", "--name-only", commit, "--", path)
+    if listed.returncode != 0:
+        raise Unjudged(f"{tag} の {path} を読めない: {listed.stderr.strip()}。照合していない")
+    if not listed.stdout.strip():
+        return None
+    try:
+        result = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True)
+    except OSError as e:
+        raise Unjudged(f"git を起動できない（{e.strerror}）。照合していない")
+    if result.returncode != 0:
+        raise Unjudged(f"{tag} の {path} を読めない: {result.stderr.decode(errors='replace').strip()}。照合していない")
+    try:
+        text = result.stdout.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise Unjudged(f"{tag} の {path} が UTF-8 として読めない。照合していない")
+    rows = []
+    for fields in list(csv.reader(io.StringIO(text, newline="")))[1:]:
+        if len(fields) < 2:
+            continue
+        kind, target = fields[0].strip(), fields[1].strip()
+        if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):
+            rows.append((kind, target))
+    return sorted(rows)
 
 
 def working_version(repo: Path) -> int:
@@ -145,8 +195,10 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
             raise Unjudged(f"{repo}: git の作業ツリーでない。照合していない")
         # パス指定（`docs/v1/shared/`）は cwd から解決されるので、サブディレクトリを渡されても根で走らせる
         repo = Path(top.stdout.strip())
+        # 版の並びは `--version` を渡されても検査する（渡したかどうかで判定が変わらないように）
+        working = working_version(repo)
         if version is None:
-            version = working_version(repo)
+            version = working
         listed = git(repo, "tag", "--list")
         if listed.returncode != 0:
             raise Unjudged(f"タグを読めない: {listed.stderr.strip()}。照合していない")
@@ -169,15 +221,25 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
             info[f"{key}_commit"] = commit_of(repo, chosen[key])
         for key in ("req", "budget"):
             shared_files(repo, info[f"{key}_commit"], chosen[key], paths)
+            # 前の版の `shared/` があっても、その時点に版 n が無ければ「v1〜vn」を比べたことにならない
+            shared_files(repo, info[f"{key}_commit"], chosen[key], [f"{DOCS}/v{version}/"])
+        removed = {}
+        for path in removed_scope(version):
+            removed[path] = [removed_shared_rows(repo, info[f"{key}_commit"], chosen[key], path)
+                             for key in ("req", "budget")]
     except Unjudged as e:
         return 2, [str(e)], {}
 
     pair = f"{info['req']}（{info['req_commit'][:7]}）と {info['budget']}（{info['budget_commit'][:7]}）"
     where = f"v1〜v{version} の {SHARED}" + (f" と {REMOVED}" if version > 1 else "")
-    diff = git(repo, "diff", "--name-status", info["req_commit"], info["budget_commit"], "--", *paths)
+    diff = git(repo, "diff", "--name-status", info["req_commit"], info["budget_commit"], "--", *shared_scope(version))
     if diff.returncode != 0:
         return 2, [f"{where} を比べられない: {diff.stderr.strip()}。照合していない"], {}
     changed = [line for line in diff.stdout.splitlines() if line]
+    for path, (at_req, at_budget) in removed.items():
+        # 無いことと、`shared/` に効く行が無いことは同じ（どちらも `shared/` から何も消さない）
+        if (at_req or []) != (at_budget or []):
+            changed.append(f"{REMOVED}\t{path}（shared/ に効く行が違う）")
     if changed:
         lines = [f"一致しない: {pair} で {where} が違う（{len(changed)} 件）"]
         lines += [f"    {line}" for line in changed]

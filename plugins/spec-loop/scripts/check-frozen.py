@@ -13,13 +13,15 @@ usage: python3 check-frozen.py [--repo <正本リポジトリ>]
 - **タグの時点に `docs/v<n>/` のファイルが 1 つも無ければ、凍結の確かめようが無い（2）**——比べる中身が無くても
   `git diff` は「差分なし」を返すので、それを「直されていない」と読まない。
 - **リリースのタグが 1 つも無ければ 0**（凍結した版が無い）。出力もそう言う。
+  **ただし浅い clone では判定しない（2）**——浅い clone はタグを取らないことがあり、タグが無いことを
+  「凍結した版が無い」と読めない。
 - 判定はすべて `git` の出力から決める。
 
 終了コード:
 
 - 0: 凍結した版は直されていない（凍結した版が無いときも 0。出力で区別する）
 - 1: 直されている（違うファイルを版ごとに全部出す）
-- 2: 判定していない——git でない・git が無い・HEAD が無い・タグの時点に `docs/v<n>/` が無い
+- 2: 判定していない——git でない・git が無い・HEAD が無い・浅い clone・タグの時点に `docs/v<n>/` が無い
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`git` は要る）。
 CI で走らせるなら、タグを取得できるよう履歴をすべて取る（GitHub Actions なら `actions/checkout` に `fetch-depth: 0`）。
@@ -31,6 +33,7 @@ CI で走らせるなら、タグを取得できるよう履歴をすべて取�
 | **リリースのタグを付け直していないか** | 付け直した後の状態しか見えない。「付け直さない」は運用で守る |
 | **リリースのタグを付け忘れた版** | タグが無い版は凍結していない扱い。どの版をリリースしたかは人間が決める |
 | **`.gitignore` で無視したファイル** | git が見ないものは比べられない |
+| **タグを取らずに履歴だけ全部取った clone**（`--no-tags`） | 浅くないので、タグが無いことと見分けられない |
 """
 
 from __future__ import annotations
@@ -71,6 +74,13 @@ def check(repo: Path) -> tuple[int, list[str]]:
         head = git(repo, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
         if head.returncode != 0:
             raise Unjudged("HEAD が無い（コミットが 1 つも無い）。判定していない")
+        # 浅い clone（`actions/checkout` の既定）はタグを取らないので、タグが無いことを「凍結した版が無い」と読めない
+        shallow = git(repo, "rev-parse", "--is-shallow-repository")
+        if shallow.returncode != 0:
+            raise Unjudged(f"浅い clone かどうかを確かめられない: {shallow.stderr.strip()}。判定していない")
+        if shallow.stdout.strip() == "true":
+            raise Unjudged("浅い clone である（タグと履歴がそろっていない）。履歴をすべて取ってから走らせる"
+                           "（GitHub Actions なら actions/checkout に fetch-depth: 0）。判定していない")
         listed = git(repo, "tag", "--list")
         if listed.returncode != 0:
             raise Unjudged(f"タグを読めない: {listed.stderr.strip()}。判定していない")
