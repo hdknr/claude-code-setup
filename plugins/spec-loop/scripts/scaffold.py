@@ -12,6 +12,11 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run
 （このプラグインの中にある）。下の定数（メソッド・型・番号の形・印・節）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-scaffold.py` が突き合わせて見る**。
 
+**入力は、正本の版（`docs/v1/`・`docs/v2/`…）を重ね合わせた全体である**（決まりは `references/versions.md`）。
+同梱の `merge-versions.py` の `merge` で**メモリ上で**重ね（同じ入力から、`merge-versions.py docs build/merged` が書くのと
+同じバイト）、一時ディレクトリに置いて当てる。**`build/merged/` には書かない。** 重ね合わせが決まりに反すれば 1
+（JSON として読めない版を含む）、`docs/` が無い・版が読めない・どの版にも中間表現が無ければ 2。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（反映済みでない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -30,9 +35,9 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run
 終了コード:
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる）
-- 1: 作らなかった——関門の条件 1 を満たさない・中間表現が決まりに反する（全部を 1 行ずつ出す）・
+- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現が決まりに反する（全部を 1 行ずつ出す）・
   `--check` で古い。**Issue の本文の前の出力は消す**（古い本文を登録させない。`--check`・`--dry-run` では消さない）
-- 2: 判定していない——引数の誤り・関門が判定していない・中間表現が無い／JSON として読めない・
+- 2: 判定していない——引数の誤り・`docs/` が無い／版が 1 つも無い／版が読めない・関門が判定していない・中間表現が無い・
   予期しない失敗（書き込みの失敗を含む）。前の Issue の本文は消す
 
 **`scaffold/` は失敗しても消さない**——commit 済みの契約で、古ければ `--check` が言う。
@@ -62,15 +67,20 @@ import math
 import re
 import shutil
 import sys
+import tempfile
 import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-# 置き場所（`references/tree.md` の写し）
-QA_PATH = "docs/shared/qa.csv"
-SPEC_DIR = "docs/spec"
-IR_PATH = "docs/spec/spec_ir.json"
+# 置き場所（`references/tree.md`・`references/versions.md` の写し）
+DOCS = "docs"
+# 重ね合わせた全体の置き場所（`merge-versions.py docs build/merged` が書く場所。このスクリプトは書かない）
+MERGED_DIR = "build/merged"
+# 重ね合わせた全体の根からのパス
+QA_PATH = "shared/qa.csv"
+SPEC_DIR = "spec"
+IR_PATH = "spec/spec_ir.json"
 OUT_DIR = "scaffold"
 ISSUES_DIR = "build/scaffold/issues"
 
@@ -113,6 +123,12 @@ def _load(name: str, filename: str):
 
 spec_exit = _load("check_spec_exit", "check-spec-exit.py")
 qa = spec_exit.pptx.qa
+versions = _load("merge_versions", "merge-versions.py")
+
+
+def merged(path: str) -> str:
+    """重ね合わせた全体の中のパスを、利用者が開ける形（`build/merged/…`）で書く。"""
+    return f"{MERGED_DIR}/{path}"
 
 
 # ---------------------------------------------------------------- 中間表現を検査する
@@ -238,29 +254,30 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list
     return problems
 
 
-def check_source(where: str, sources, repo: Path) -> list[str]:
+def check_source(where: str, sources, whole: Path) -> list[str]:
+    """`whole` は重ね合わせた全体の根。`source` はそこからのパス（`spec/order.md`）。"""
     if not isinstance(sources, list) or not sources:
         return [f"{where}: 仕様のファイルの配列（1 つ以上）でない"]
     problems = []
-    spec_root = (repo / SPEC_DIR).resolve()
+    spec_root = (whole / SPEC_DIR).resolve()
     for rel in sources:
         if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
-            problems.append(f"{where}: 正本の根からの相対パスでない（{rel!r}）")
+            problems.append(f"{where}: 重ね合わせた全体の根からの相対パスでない（{rel!r}）")
             continue
-        path = (repo / rel).resolve()
+        path = (whole / rel).resolve()
         if spec_root not in path.parents:
             problems.append(f"{where}: {rel} は {SPEC_DIR}/ の中に無い")
         elif any(part.startswith(".") for part in path.relative_to(spec_root).parts):
             # `check-spec-exit.py` は `.` で始まる場所を走査しない——そこを指すと未決定の印が関門を素通りする
             problems.append(f"{where}: {rel} は `.` で始まる場所にある（関門が未決定の印を見ない）")
-        elif rel == IR_PATH or path == (repo / IR_PATH).resolve():
+        elif rel == IR_PATH or path == (whole / IR_PATH).resolve():
             problems.append(f"{where}: {rel} は中間表現そのもの（仕様の原文を指す）")
         elif not path.is_file():
             problems.append(f"{where}: {rel} が無い")
     return problems
 
 
-def check_ir(ir, repo: Path, answered: dict[str, dict[str, str]]) -> list[str]:
+def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]]) -> list[str]:
     problems = surrogates(ir)
     if problems:
         return problems + ["孤立したサロゲートを含む中間表現は、ほかの規則を見ない"]
@@ -300,7 +317,7 @@ def check_ir(ir, repo: Path, answered: dict[str, dict[str, str]]) -> list[str]:
         if "title" in feature and not one_line(feature["title"]):
             problems.append(f"{where}: title が空か、1 行でない")
         if "source" in feature:
-            problems += check_source(f"{where}.source", feature["source"], repo)
+            problems += check_source(f"{where}.source", feature["source"], whole)
         if "qa" in feature:
             problems += check_qa_refs(f"{where}.qa", feature["qa"], answered)
 
@@ -399,18 +416,52 @@ def read_answered(path: Path) -> dict[str, dict[str, str]]:
 
 
 def load(repo: Path) -> tuple[int, list[str], dict | None, bytes, dict]:
-    """(終了コード, 出力する行, 中間表現, 中間表現のバイト, Q&A の行) を返す。"""
-    code, lines = spec_exit.check(repo / QA_PATH, repo / SPEC_DIR)
-    if code:
-        return code, lines + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, b"", {}
-    ir_path = repo / IR_PATH
+    """(終了コード, 出力する行, 中間表現, 中間表現のバイト, Q&A の行) を返す。
+
+    `docs/` の版を**メモリ上で**重ね合わせ（`merge-versions.py` の `merge`。同じバイト）、一時ディレクトリに書いて、
+    関門・中間表現の検査をそこに当てる。**`build/merged/` には書かない**——`--check`・`--dry-run` は何も書かない。
+    """
+    docs = repo / DOCS
+    if not docs.is_dir():
+        raise Unjudged(f"{docs}: ディレクトリが無い（版は {DOCS}/v1/ から置く。references/versions.md）")
+    # 版が 1 つも無い（版に分ける前の構成）は、決まりに反するのではなく移していない——判定しない
+    probe: list[str] = []
     try:
-        raw = ir_path.read_bytes()
-        ir = json.loads(raw.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
-        raise Unjudged(f"{ir_path}: 中間表現を読めない（{exc.__class__.__name__}: {exc}）")
-    answered = read_answered(repo / QA_PATH)
-    problems = check_ir(ir, repo, answered)
+        if not versions.find_versions(docs, probe) and not probe:
+            raise Unjudged(f"{docs}: 版（v1 など）が 1 つも無い（版に分ける前の構成なら "
+                           "references/versions.md の「移し方」で移す）。判定していない")
+    except versions.Unreadable as exc:
+        raise Unjudged(f"{exc}。重ね合わせていない")
+    try:
+        problems, _, _, rendered = versions.merge(docs)
+    except versions.Unreadable as exc:
+        raise Unjudged(f"{exc}。重ね合わせていない")
+    except RecursionError:
+        # 版の中間表現の入れ子が深すぎて JSON として読めない（`merge-versions.py` は捕まえない）
+        raise Unjudged("版の中間表現を読めない（入れ子が深すぎる）。重ね合わせていない")
+    if problems:
+        return 1, problems + ["版の重ね合わせが決まりに反する（references/versions.md）。生成しない"], None, b"", {}
+    if IR_PATH not in rendered:
+        raise Unjudged(f"重ね合わせた全体に {IR_PATH} が無い（どの版にも中間表現が無い）。判定していない")
+    with tempfile.TemporaryDirectory() as tmp:
+        whole = Path(tmp)
+        for rel, data in rendered.items():
+            versions.put(whole / rel, data)
+
+        def shown(lines: list[str]) -> list[str]:
+            # 一時ディレクトリの名前ではなく、利用者が `merge-versions.py` で作れる場所で言う
+            return [line.replace(str(whole), MERGED_DIR) for line in lines]
+
+        code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR)
+        if code:
+            return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, b"", {}
+        raw = rendered[IR_PATH]
+        try:
+            ir = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, RecursionError) as exc:
+            raise Unjudged(f"{merged(IR_PATH)}: 中間表現を読めない（{exc.__class__.__name__}: {exc}）")
+        answered = read_answered(whole / QA_PATH)
+        problems = check_ir(ir, whole, answered)
     if problems:
         return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, b"", {}
     return 0, [], ir, raw, answered
@@ -621,8 +672,10 @@ def issue_body(feature: dict, ir_sha: str, test_text: str, impl_module: str, ans
         SECTIONS[0],
         "",
         f"- 機能: `{feature['id']}` {feature['title']}",
-        f"- 中間表現: `{IR_PATH}`（sha256: `{ir_sha}`）",
-        "- 仕様の原文: " + "・".join(f"`{s}`" for s in feature["source"]),
+        f"- 中間表現: `{merged(IR_PATH)}`（sha256: `{ir_sha}`）",
+        "- 仕様の原文: " + "・".join(f"`{merged(s)}`" for s in feature["source"]),
+        f"- `{MERGED_DIR}/` は正本の版（`{DOCS}/v1/`…）を重ね合わせた全体で、commit しない——spec-loop の"
+        f" `merge-versions.py {DOCS} {MERGED_DIR}` で作る",
         f"- API: `{op['method']} {op['path']}`（`{OUT_DIR}/openapi.json` の `operationId`: `{op['id']}`）",
         f"- 型: `{OUT_DIR}/types.py` の " + "・".join(names),
         "",
@@ -661,16 +714,16 @@ def issue_body(feature: dict, ir_sha: str, test_text: str, impl_module: str, ans
             row = answered[no]
             lines.append(f"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |")
         lines.append("")
-        lines.append(f"（生成した時点の `{QA_PATH}` から写した。）")
+        lines.append(f"（生成した時点の `{merged(QA_PATH)}` から写した。）")
     else:
         lines.append("この機能が根拠にした Q&A は無い。")
     lines += [
         "",
         SECTIONS[4],
         "",
-        f"**実装で決めない。** Q&A 表（`{QA_PATH}`）に起票元 `開発` で起票して、要求側に差し戻す。",
+        f"**実装で決めない。** 作業中の版の Q&A 表（`{DOCS}/v<n>/{QA_PATH}`）に起票元 `開発` で起票して、要求側に差し戻す。",
         "手順は dev-loop の `references/spec-gap.md` にある。",
-        f"**手元の `{IR_PATH}` か Red テストの sha256 が上と違うなら、この Issue は手元の仕様と別の時点のもの**——",
+        f"**手元の `{merged(IR_PATH)}` か Red テストの sha256 が上と違うなら、この Issue は手元の仕様と別の時点のもの**——",
         "実装に入らず、同じく差し戻す。",
     ]
     return "\n".join(lines) + "\n"

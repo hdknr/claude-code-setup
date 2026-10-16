@@ -5,8 +5,8 @@ description: "実現性・コストのループを 1 回分進める。要求・
 
 # feasibility スキル
 
-<!-- skill-version: 0.6.0 -->
-> **このスキルの版: 0.6.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.7.0 -->
+> **このスキルの版: 0.7.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -81,7 +81,9 @@ description: "実現性・コストのループを 1 回分進める。要求・
 
 ### 2. 規模を数える
 
-要求（`docs/requirements/`）・仕様（`docs/spec/`）・共有の決定表から、規模を数える。
+要求（`requirements/`）・仕様（`spec/`）・共有の決定表から、規模を数える。**版を重ね合わせた全体**
+（`merge-versions.py docs build/merged` が作る `build/merged/`。`../../references/versions.md`）を読む——
+v2 以降の版のディレクトリは差分しか持たない。
 **数えた件数ごとに、数えた場所（`ファイル:行` か、数えたコマンド）を書く**——検証役が数え直せるように。
 
 汎用の数え方（`CLAUDE.md` に数え方が無いとき）:
@@ -94,7 +96,8 @@ description: "実現性・コストのループを 1 回分進める。要求・
 | 外部連携 | 要求・仕様に出てくる外部のシステム |
 | 非機能要求 | `nfr.csv` の行 |
 
-数えた結果は `docs/feasibility/` の文書に書く（置き場所は `../../references/tree.md`）。
+数えた結果は、作業中の版（`docs/` の版で番号が最大のもの）の `docs/v<n>/feasibility/` の文書に書く
+（置き場所は `../../references/tree.md`）。**リリースした版（凍結）には書かない。**
 
 ### 3. 見積りとスケジュールを更新する
 
@@ -158,5 +161,5 @@ python3 <このスキルの base ディレクトリ>/../../scripts/schedule-to-g
     - **費用付きの質問がある**なら、`/spec-loop:req-loop` でレビュー会の資料を作り、回答をもらってから
       `/spec-loop:feasibility` を呼び直す（別のセッションでよい）
     - **予算責任者に見せる準備ができた**なら、そう伝える。**合意したら、予算責任者（か、その代わりの人間）が
-      `budget-signoff-v<n>` のタグを付ける**（`../../references/signoff-tags.md`）。**このスキルはタグを付けない**
+      `v<n>/budget-signoff-<k>` のタグを付ける**（`../../references/signoff-tags.md`）。**このスキルはタグを付けない**
     - 2 つの承認がそろったら、`/spec-loop:proposal` で提案書を作る
