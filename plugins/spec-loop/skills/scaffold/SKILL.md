@@ -1,12 +1,12 @@
 ---
 name: scaffold
-description: "確定した仕様を dev-loop の入力（Issue）に変える引き渡しを 1 回分進める。仕様レビューを抜けた仕様（docs/spec/）を中間表現（spec_ir.json）に書き起こし、同梱のスクリプトで OpenAPI・型・Red テスト（実装が無いと失敗するテスト）と Issue の本文を生成して、1 機能 = Issue 1 件で登録する。スクリプトは生成の前に仕様レビューを抜ける条件 1 を自分で確かめ、通らなければ何も作らない。仕様に無いことを中間表現に足さず、生成物と Issue の本文を手で直さず、登録の前に利用者に確かめる。Issue の登録で止まり、以降は dev-loop が受け持つ。仕様が確定したので開発に渡したい・Red テストと Issue を作りたいときに使う。引数なし。"
+description: "確定した仕様を dev-loop の入力（Issue）に変える引き渡しを 1 回分進める。仕様レビューを抜けた仕様（版ごとの docs/v<n>/spec/ を重ね合わせた全体）を中間表現（spec_ir.json）に書き起こし、同梱のスクリプトで OpenAPI・型・Red テスト（実装が無いと失敗するテスト）と Issue の本文を生成して、1 機能 = Issue 1 件で登録する。スクリプトは生成の前に仕様レビューを抜ける条件 1 を自分で確かめ、通らなければ何も作らない。仕様に無いことを中間表現に足さず、生成物と Issue の本文を手で直さず、登録の前に利用者に確かめる。Issue の登録で止まり、以降は dev-loop が受け持つ。仕様が確定したので開発に渡したい・Red テストと Issue を作りたいときに使う。引数なし。"
 ---
 
 # scaffold スキル
 
-<!-- skill-version: 0.6.0 -->
-> **このスキルの版: 0.6.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.7.0 -->
+> **このスキルの版: 0.7.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -58,9 +58,14 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 ### 1. 入力が確定しているかを確かめる
 
+正本の版（`docs/v1/`・`docs/v2/`…）を重ね合わせた全体に当てる（`../../references/versions.md`）:
+
 ```bash
-python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-exit.py docs/shared/qa.csv docs/spec
+python3 <このスキルの base ディレクトリ>/../../scripts/merge-versions.py docs build/merged
+python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-exit.py build/merged/shared/qa.csv build/merged/spec
 ```
+
+- **重ね合わせが 0 以外なら止まる**（版の決まりに反する。出力を示す）。
 
 - **0 以外なら止まる。** 出力（反映済みでない Q&A・未決定の印）を示し、`/spec-loop:req-loop`・`/spec-loop:spec-review` を案内する。
 - **0 でも、抜けたとは限らない**——条件 2〜5 は判定役の報告で決まる（`../../references/spec-exit.md`）。
@@ -68,10 +73,14 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 
 ### 2. 中間表現を書き起こす
 
-`docs/spec/` の仕様から `docs/spec/spec_ir.json` を書く（形は `../../references/spec-ir.md`）。
+仕様から、**作業中の版**（`docs/` の版で番号が最大のもの）の `docs/v<n>/spec/spec_ir.json` を書く
+（形は `../../references/spec-ir.md`）。**v2 以降は、その版で足した・変えた機能だけを書く**——
+前の版の機能を写さない。消す機能は `docs/v<n>/removed.csv` に書く（`../../references/versions.md`）。
+**リリースした版（凍結）の中間表現は直さない。**
 
 - **1 機能 = Issue 1 件**になるので、機能の切り方は仕様が書き分けている単位（画面の操作・API・バッチ）に合わせる。
-- 各機能の `source` に、その機能を書いた仕様のファイルを、`qa` に決定の根拠にした Q&A の No を書く。
+- 各機能の `source` に、その機能を書いた仕様のファイルを**重ね合わせた全体の根からのパス**（`spec/order.md`）で、
+  `qa` に決定の根拠にした Q&A の No を書く。
 - **既にあるなら、仕様と食い違うところだけを直す。** 機能の `id` とケースの `id` を振り直さない——
   登録済みの Issue と Red テストの名前がずれる。
 
@@ -98,7 +107,9 @@ python3 -m unittest discover -s scaffold/tests     # 正本リポジトリの根
 
 ### 5. commit する
 
-**Issue が指すのは `scaffold/` と `docs/spec/spec_ir.json` なので、登録より前に、開発する側から見える場所に置く。**
+**Issue が指すのは `scaffold/` と、正本の版から重ね合わせた中間表現（`build/merged/spec/spec_ir.json`）なので、
+登録より前に `scaffold/` と `docs/v<n>/` を、開発する側から見える場所に置く**（`build/merged/` は commit しない——
+開発する側が同じコマンドで作る）。
 正本リポジトリの `CLAUDE.md` の決まりに従う。決まりが無ければ、変更したファイルの一覧を示して止まり、
 commit と push を利用者に任せる（**push されるまで登録しない**）。
 

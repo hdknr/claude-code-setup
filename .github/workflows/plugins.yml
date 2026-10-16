@@ -130,6 +130,10 @@ jobs:
       - name: spec-loop の版の重ね合わせのテスト（#261）
         run: python3 scripts/test-merge-versions.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（リリースした版が直されていないか）。
+      - name: spec-loop の凍結した版の確かめのテスト（#262）
+        run: python3 scripts/test-check-frozen.py
+
       # 本体は plugins/orca・plugins/cmux の SKILL.md の共通手順ブロック（写しを作らず抜き出して流す）。
       - name: orca・cmux のタブ一致規則のテスト（#202）
         run: python3 scripts/test-tab-match.py
