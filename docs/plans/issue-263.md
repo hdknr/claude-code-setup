@@ -140,7 +140,9 @@ docstring・`build-proposal.py` の docstring・4 つの SKILL.md（指し先と
 - 狭いパス（sonnet・`dev-loop:dev-loop-verifier`）: 反証 1 件（N1）・軽微 1 件（N2）。Verifier が設計した変異 5 本のうち
   赤 2・素通り 3（`fold`→`lower()` が N1、最深の親だけ・`sorted` を外すの 2 本は等価変異）。C2・C9 の文面は一時ディレクトリで実走して一致。
   **指摘は直さず人間に渡す**
-- この周の起票: 0 件（手順 8 で候補を訊く）
+- PR #273。CI 緑（check・build pass／deploy skipping）・MERGEABLE。マージは人間の承認待ち。反映経路: main へのマージで GitHub Pages（`docs/` の変更を含む）
+- この周の起票: 3 件（人間が承認）——#274（spec-loop の Eval。V2-1）・#275（NFD ディレクトリの試料。N1）・#276（macOS の大文字小文字の食い違い。C4）
+- 焼き戻し: 学びなし（`CLAUDE.md`・dev-loop の規範に足すものは無い。未証明の分類の誤りは #274 に回収）
 - 反証と差し戻し: Verifier の反証 0 件（差し戻しなし）。`/code-review` の 6 件を周の中で直した
 - 交絡: 実験なし
 - 割り目（手順 4 の完了時）: 人間の回答「ここで割る」。再開は worktree の中で `/dev-loop:dev-loop 263` → 手順 5 から
