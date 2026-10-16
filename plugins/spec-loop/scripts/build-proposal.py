@@ -13,7 +13,11 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   `docs/v<n>/feasibility/schedule.csv`・`estimate.csv` は `v<n>/budget-signoff-<k>` の時点のものを `git show` で読む。
   作業ツリーで承認後に直した中身は提案書に入らない。**手書き部分（`docs/v<n>/proposal/*.md`）だけは作業ツリーから読む**
   （承認の対象ではない。ファイル名の順に先頭へ並べる）。
-  **v2 以降は、その版の差分の表だけが載る**（前の版との比較は載せない）。
+  **v2 以降は、その版の差分の表に加えて、前の版との比較の節が載る**（変更の提案書）——比較は同梱の `diff-versions.py` の
+  `compare` を、**`v<n>/req-signoff-<k>` の時点の `docs/`** に当てる（`git ls-tree`・`git cat-file` で一時ディレクトリに写す。
+  `git archive` は `.gitattributes` で中身が変わるので使わない。写すのは重ね合わせが読むものだけで、
+  **大文字小文字・Unicode の正規化だけが違うパスがあれば写さずに 1**——区別しないファイルシステムでは同じ場所に書かれる）。決まりの正は `references/versions.md` の「版の差分」。
+  **重ね合わせが作れなければ書かない（1）。** 費用の節は**その版の差分の見積り**で、前の版までの費用は足さない。
   **v2 以降で `shared/qa.csv` を置かない版**（Q&A を足さない版。`references/versions.md`）は、Q&A を 0 行として作る。
   v1 では `qa.csv` が無ければ作らない。
 - 読んだ表は決まりの検査（`check-qa-csv.py`・`check-feasibility-csv.py`）を通す。通らなければ書かない。
@@ -37,10 +41,11 @@ import argparse
 import csv
 import importlib.util
 import io
+import os
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 HERE = Path(__file__).resolve().parent
 
@@ -56,6 +61,7 @@ signoff = _load("check_signoff", "check-signoff.py")
 qa = _load("check_qa_csv", "check-qa-csv.py")
 feasibility = _load("check_feasibility_csv", "check-feasibility-csv.py")
 gantt = _load("schedule_to_gantt", "schedule-to-gantt.py")
+diffs = _load("diff_versions", "diff-versions.py")
 
 # 版のディレクトリ（`docs/v<n>/`）からのパス
 QA_PATH = "shared/qa.csv"
@@ -94,6 +100,138 @@ def exists(top: Path, commit: str, path: str) -> bool:
     return bool(result.stdout.strip())
 
 
+def merged_reads(path: str) -> bool:
+    """重ね合わせが読むものか——`docs/v…` の名前そのものと、版の中の置き場所・`removed.csv`（`.` で始まる名前は読まない）。"""
+    parts = PurePosixPath(path).parts
+    if len(parts) < 2 or parts[0] != signoff.DOCS or not diffs.merge_versions.VERSION_LIKE.match(parts[1]):
+        return False
+    if len(parts) == 2:
+        return True
+    inside = parts[2:]
+    if any(p.startswith(".") for p in inside):
+        return False
+    return inside[0] in diffs.merge_versions.AREAS or inside == (diffs.merge_versions.REMOVED,)
+
+
+def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
+    """`commit` の時点の `docs/` のうち重ね合わせが読むものを `dest` の下に写す（作業ツリーは読まない）。
+
+    **大文字小文字・Unicode の正規化だけが違うパスがあれば写さない（1）**——区別しないファイルシステム
+    （macOS の既定）では同じ場所に書かれ、片方が黙って消えるか、先に置いたリンクを辿って一時ディレクトリの外に
+    書く。どのファイルシステムでも同じ答えにするため、写す前に一覧で断る。書く先が既にあるときも断る。
+    """
+    listing = subprocess.run(["git", "-C", str(top), "ls-tree", "-r", "-z", "--full-tree", commit, "--", signoff.DOCS],
+                             capture_output=True)
+    if listing.returncode != 0:
+        raise Stop(2, [f"{tag}: {signoff.DOCS}/ を一覧できない: {listing.stderr.decode('utf-8', 'replace').strip()}"])
+    entries, versions = [], set()
+    for record in listing.stdout.split(b"\0"):
+        if not record:
+            continue
+        meta, _, raw = record.partition(b"\t")
+        mode, kind, sha = meta.decode().split()
+        path = raw.decode("utf-8", "surrogateescape")
+        parts = PurePosixPath(path).parts
+        if len(parts) > 2 and parts[0] == signoff.DOCS and diffs.merge_versions.VERSION_LIKE.match(parts[1]):
+            versions.add(parts[1])  # 重ねるものを持たない版も、版としては在る
+        if not merged_reads(path):
+            continue
+        if kind != "blob":
+            raise Stop(2, [f"{tag}:{path}: サブモジュールは読まない。前の版との比較を作れない"])
+        if PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
+            raise Stop(2, [f"{tag}:{path}: 写せないパス。前の版との比較を作れない"])
+        entries.append((mode, sha, path))
+    fold = diffs.merge_versions.fold
+    seen: dict[str, str] = {}
+    clashes = []
+    for _, _, path in sorted(entries, key=lambda e: e[2]):
+        other = seen.setdefault(fold(path), path)
+        if other != path:
+            clashes.append(f"{tag}: {other} と {path} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    dirs: dict[str, str] = {}
+    for _, _, path in sorted(entries, key=lambda e: e[2]):
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            parent = "/".join(parts[:depth])
+            if fold(parent) in seen:
+                clashes.append(f"{tag}: {seen[fold(parent)]} がファイルとディレクトリの両方になる（{path}）")
+            other = dirs.setdefault(fold(parent), parent)
+            if other != parent:
+                clashes.append(f"{tag}: ディレクトリ {other} と {parent} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    if clashes:
+        raise Stop(1, sorted(set(clashes)) + ["前の版との比較を作れない（写すと同じ場所に書かれる）"])
+    batch = subprocess.run(["git", "-C", str(top), "cat-file", "--batch"],
+                           input=b"".join(sha.encode() + b"\n" for _, sha, _ in entries), capture_output=True)
+    if batch.returncode != 0:
+        raise Stop(2, [f"{tag}: {signoff.DOCS}/ を読めない: {batch.stderr.decode('utf-8', 'replace').strip()}"])
+    data, at, root = batch.stdout, 0, dest.resolve()
+    for name in sorted(versions):
+        (dest / signoff.DOCS / name).mkdir(parents=True, exist_ok=True)
+    for mode, _, path in entries:
+        end = data.index(b"\n", at)
+        size = int(data[at:end].split()[2])
+        content, at = data[end + 1:end + 1 + size], end + 2 + size
+        target = dest / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        parent = target.parent.resolve()
+        if parent != root and root not in parent.parents:
+            raise Stop(2, [f"{tag}:{path}: 写す先が一時ディレクトリの外に出る。前の版との比較を作れない"])
+        if os.path.lexists(target):
+            raise Stop(1, [f"{tag}:{path}: 写す先に既に別のものがある。前の版との比較を作れない"])
+        if mode == "120000":
+            # リンクのまま置く——重ね合わせの決まりが断る（版の外を読ませない）
+            target.symlink_to(content.decode("utf-8", "surrogateescape"))
+        else:
+            target.write_bytes(content)
+
+
+def compare_at(top: Path, commit: str, tag: str, version: int):
+    """`commit` の時点の v<version-1> と v<version> の全体を比べる。比べられなければ Stop。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        copy_docs(top, commit, tag, Path(tmp))
+        prefix = str(Path(tmp)) + "/"
+        try:
+            problems, diff = diffs.compare(Path(tmp) / signoff.DOCS, version)
+        except diffs.merge_versions.Unreadable as e:
+            raise Stop(2, [f"{tag}: {str(e).replace(prefix, '')}"])
+    if problems:
+        raise Stop(1, [f"{tag}: {line.replace(prefix, '')}" for line in problems]
+                   + ["前の版との比較を作れない（重ね合わせが決まりに反する）"])
+    return diff
+
+
+def changes_section(diff, tag: str) -> list[str]:
+    qa_kind, feature_kind, file_kind = diffs.KINDS
+    out = [f"## 前の版（v{diff.version - 1}）からの変更", ""]
+    out += [f"> `{tag}` の時点の、v{diff.version - 1} までの全体と v{diff.version} までの全体の比較。"
+            "同じ中身を置き直しただけのものは載らない。", ""]
+    out += table(["種類", *diffs.STATUSES], [[k, *(str(diff.count(k, s)) for s in diffs.STATUSES)] for k in diffs.KINDS])
+    out.append("")
+    if not any(diff.changes[k] for k in diffs.KINDS):
+        return out + ["（前の版からの変更はありません）", ""]
+
+    def answer(row) -> str:
+        return row["回答"] if row is not None else "—"
+
+    if diff.changes[qa_kind]:
+        out += [f"### {qa_kind}", ""]
+        out += table(["No", "変化", "質問", "前の版の回答", "この版の回答", "削除の理由"],
+                     [[c.key, c.status, diffs.label(qa_kind, c), answer(c.before), answer(c.after), c.reason or "—"]
+                      for c in diff.changes[qa_kind]])
+        out.append("")
+    if diff.changes[feature_kind]:
+        out += [f"### {feature_kind}", ""]
+        out += table(["id", "変化", "題", "削除の理由"],
+                     [[c.key, c.status, diffs.label(feature_kind, c) or "—", c.reason or "—"]
+                      for c in diff.changes[feature_kind]])
+        out.append("")
+    if diff.changes[file_kind]:
+        out += [f"### {file_kind}", ""]
+        out += table(["パス", "変化", "削除の理由"], [[c.key, c.status, c.reason or "—"] for c in diff.changes[file_kind]])
+        out.append("")
+    return out
+
+
 def read_qa(text: str, label: str) -> list[dict[str, str]]:
     """Q&A 表を検査して行を返す（`check-qa-csv.py` はパスを取るので一時ファイルに書く）。"""
     with tempfile.TemporaryDirectory() as tmp:
@@ -129,7 +267,7 @@ def table(columns: list[str], rows: list[list[str]]) -> list[str]:
 
 
 def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[dict[str, str]],
-            schedule: list[dict[str, str]], estimate: list[dict[str, str]]) -> str:
+            schedule: list[dict[str, str]], estimate: list[dict[str, str]], diff=None) -> str:
     version = info["version"]
     out = [f"# {title}", ""]
     out.append(f"> この提案書は生成物です。生成元: `{info['req']}`（`{info['req_commit']}`）・"
@@ -139,6 +277,8 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
     out.append("")
     for _, body in hand:
         out += [body.rstrip("\n"), ""]
+    if diff is not None:
+        out += changes_section(diff, info["req"])
 
     done = [r for r in qa_rows if r["状態"].strip() == qa.DONE]
     pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE]
@@ -155,6 +295,8 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
         out.append("")
 
     out += ["## 費用", ""]
+    if diff is not None:
+        out += [f"この版（v{version}）の差分の見積り。前の版までの費用は含まない。", ""]
     totals = [[c, f"{sum(int(r['金額']) for r in estimate if r['区分'] == c):,}"] for c in feasibility.CATEGORIES]
     out += table(["区分", "合計（円）"], totals)
     out += ["", "### 内訳", ""]
@@ -192,6 +334,7 @@ def build(args) -> tuple[str, str, int]:
         raise Stop(1, [f"{info['budget']}:{schedule_path}: 工程が 1 行も無い。提案書の材料が無い"])
     if not estimate:
         raise Stop(1, [f"{info['budget']}:{estimate_path}: 費用が 1 行も無い。提案書の材料が無い"])
+    diff = compare_at(top, info["req_commit"], info["req"], info["version"]) if info["version"] > 1 else None
     hand_dir = top / in_version(info["version"], HAND_DIR)
     hand = []
     for path in sorted(hand_dir.glob("*.md")) if hand_dir.is_dir() else []:
@@ -201,7 +344,7 @@ def build(args) -> tuple[str, str, int]:
             raise Stop(2, [f"{path}: UTF-8 として読めない。中身を検査していない"])
     if not hand:
         raise Stop(1, [f"{hand_dir}: 手書き部分（*.md）が無い。背景と目的・推奨案・代替案・リスクを書いてから作る"])
-    text = compose(args.title, info, hand, qa_rows, schedule, estimate)
+    text = compose(args.title, info, hand, qa_rows, schedule, estimate, diff)
     return text, gantt.render(schedule), len(schedule)
 
 

@@ -130,6 +130,10 @@ jobs:
       - name: spec-loop の版の重ね合わせのテスト（#261）
         run: python3 scripts/test-merge-versions.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（ある版が前の版から何を足し・変え・消したか）。
+      - name: spec-loop の版の差分のテスト（#263）
+        run: python3 scripts/test-diff-versions.py
+
       # 本体は plugins/spec-loop/scripts/ にある（リリースした版が直されていないか）。
       - name: spec-loop の凍結した版の確かめのテスト（#262）
         run: python3 scripts/test-check-frozen.py
