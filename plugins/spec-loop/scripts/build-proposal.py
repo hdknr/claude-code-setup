@@ -15,7 +15,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   （承認の対象ではない。ファイル名の順に先頭へ並べる）。
   **v2 以降は、その版の差分の表に加えて、前の版との比較の節が載る**（変更の提案書）——比較は同梱の `diff-versions.py` の
   `compare` を、**`v<n>/req-signoff-<k>` の時点の `docs/`** に当てる（`git ls-tree`・`git cat-file` で一時ディレクトリに写す。
-  `git archive` は `.gitattributes` で中身が変わるので使わない）。決まりの正は `references/versions.md` の「版の差分」。
+  `git archive` は `.gitattributes` で中身が変わるので使わない。写すのは重ね合わせが読むものだけで、
+  **大文字小文字・Unicode の正規化だけが違うパスがあれば写さずに 1**——区別しないファイルシステムでは同じ場所に書かれる）。決まりの正は `references/versions.md` の「版の差分」。
   **重ね合わせが作れなければ書かない（1）。** 費用の節は**その版の差分の見積り**で、前の版までの費用は足さない。
   **v2 以降で `shared/qa.csv` を置かない版**（Q&A を足さない版。`references/versions.md`）は、Q&A を 0 行として作る。
   v1 では `qa.csv` が無ければ作らない。
@@ -40,6 +41,7 @@ import argparse
 import csv
 import importlib.util
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -98,29 +100,69 @@ def exists(top: Path, commit: str, path: str) -> bool:
     return bool(result.stdout.strip())
 
 
+def merged_reads(path: str) -> bool:
+    """重ね合わせが読むものか——`docs/v…` の名前そのものと、版の中の置き場所・`removed.csv`（`.` で始まる名前は読まない）。"""
+    parts = PurePosixPath(path).parts
+    if len(parts) < 2 or parts[0] != signoff.DOCS or not diffs.merge_versions.VERSION_LIKE.match(parts[1]):
+        return False
+    if len(parts) == 2:
+        return True
+    inside = parts[2:]
+    if any(p.startswith(".") for p in inside):
+        return False
+    return inside[0] in diffs.merge_versions.AREAS or inside == (diffs.merge_versions.REMOVED,)
+
+
 def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
-    """`commit` の時点の `docs/` を `dest` の下に写す（作業ツリーは読まない）。"""
+    """`commit` の時点の `docs/` のうち重ね合わせが読むものを `dest` の下に写す（作業ツリーは読まない）。
+
+    **大文字小文字・Unicode の正規化だけが違うパスがあれば写さない（1）**——区別しないファイルシステム
+    （macOS の既定）では同じ場所に書かれ、片方が黙って消えるか、先に置いたリンクを辿って一時ディレクトリの外に
+    書く。どのファイルシステムでも同じ答えにするため、写す前に一覧で断る。書く先が既にあるときも断る。
+    """
     listing = subprocess.run(["git", "-C", str(top), "ls-tree", "-r", "-z", "--full-tree", commit, "--", signoff.DOCS],
                              capture_output=True)
     if listing.returncode != 0:
         raise Stop(2, [f"{tag}: {signoff.DOCS}/ を一覧できない: {listing.stderr.decode('utf-8', 'replace').strip()}"])
-    entries = []
+    entries, versions = [], set()
     for record in listing.stdout.split(b"\0"):
         if not record:
             continue
         meta, _, raw = record.partition(b"\t")
         mode, kind, sha = meta.decode().split()
         path = raw.decode("utf-8", "surrogateescape")
+        parts = PurePosixPath(path).parts
+        if len(parts) > 2 and parts[0] == signoff.DOCS and diffs.merge_versions.VERSION_LIKE.match(parts[1]):
+            versions.add(parts[1])  # 重ねるものを持たない版も、版としては在る
+        if not merged_reads(path):
+            continue
         if kind != "blob":
             raise Stop(2, [f"{tag}:{path}: サブモジュールは読まない。前の版との比較を作れない"])
         if PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
             raise Stop(2, [f"{tag}:{path}: 写せないパス。前の版との比較を作れない"])
         entries.append((mode, sha, path))
+    fold = diffs.merge_versions.fold
+    seen: dict[str, str] = {}
+    clashes = []
+    for _, _, path in sorted(entries, key=lambda e: e[2]):
+        other = seen.setdefault(fold(path), path)
+        if other != path:
+            clashes.append(f"{tag}: {other} と {path} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    for _, _, path in entries:
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            parent = "/".join(parts[:depth])
+            if fold(parent) in seen:
+                clashes.append(f"{tag}: {seen[fold(parent)]} がファイルとディレクトリの両方になる（{path}）")
+    if clashes:
+        raise Stop(1, sorted(set(clashes)) + ["前の版との比較を作れない（写すと同じ場所に書かれる）"])
     batch = subprocess.run(["git", "-C", str(top), "cat-file", "--batch"],
                            input=b"".join(sha.encode() + b"\n" for _, sha, _ in entries), capture_output=True)
     if batch.returncode != 0:
         raise Stop(2, [f"{tag}: {signoff.DOCS}/ を読めない: {batch.stderr.decode('utf-8', 'replace').strip()}"])
     data, at, root = batch.stdout, 0, dest.resolve()
+    for name in sorted(versions):
+        (dest / signoff.DOCS / name).mkdir(parents=True, exist_ok=True)
     for mode, _, path in entries:
         end = data.index(b"\n", at)
         size = int(data[at:end].split()[2])
@@ -130,6 +172,8 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
         parent = target.parent.resolve()
         if parent != root and root not in parent.parents:
             raise Stop(2, [f"{tag}:{path}: 写す先が一時ディレクトリの外に出る。前の版との比較を作れない"])
+        if os.path.lexists(target):
+            raise Stop(1, [f"{tag}:{path}: 写す先に既に別のものがある。前の版との比較を作れない"])
         if mode == "120000":
             # リンクのまま置く——重ね合わせの決まりが断る（版の外を読ませない）
             target.symlink_to(content.decode("utf-8", "surrogateescape"))

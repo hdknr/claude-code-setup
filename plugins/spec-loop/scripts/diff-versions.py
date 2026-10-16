@@ -140,6 +140,11 @@ def label(kind: str, change: Change) -> str:
     return ""
 
 
+def one_line(text: str) -> str:
+    """セルの改行で偽の行を作らない——改行は `\\n` と書いて 1 行に留める（1 変更 = 1 行）。"""
+    return text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+
+
 def render(diff: Diff) -> list[str]:
     if diff.version == 1:
         lines = ["v1 の差分（前の版が無いので、全部が追加）"]
@@ -149,10 +154,10 @@ def render(diff: Diff) -> list[str]:
         counts = "・".join(f"{s} {diff.count(kind, s)}" for s in STATUSES)
         lines.append(f"{kind}: {counts}")
         for change in diff.changes[kind]:
-            text = label(kind, change)
-            line = f"  {change.status} {change.key}" + (f" {text}" if text else "")
+            text = one_line(label(kind, change))
+            line = f"  {change.status} {one_line(change.key)}" + (f" {text}" if text else "")
             if change.status == REMOVED:
-                line += f"（理由: {change.reason}）"
+                line += f"（理由: {one_line(change.reason or '')}）"
             lines.append(line)
     return lines
 
