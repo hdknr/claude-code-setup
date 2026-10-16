@@ -62,6 +62,22 @@ V2 = SIGNED + [("w", "docs/v2/shared/qa.csv", QA_HEAD + "Q-006,要求確定,返�
                ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
                ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n返品を受け付ける。\n"), ("c",),
                ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")]
+# 前の版との比較: v1 に要求・機能を足して承認し、v2 で Q&A・機能・ファイルをそれぞれ足し・変え・消し、置き直す
+SPEC_V1 = '{"title": "注文", "features": [{"id": "F-001", "title": "割引"}, {"id": "F-002", "title": "送料"}]}'
+SPEC_V2 = '{"features": [{"id": "F-002", "title": "送料（離島）"}, {"id": "F-003", "title": "返品"}]}'
+SIGNED_R = BASE[:-1] + [("w", "docs/v1/requirements/a.md", "A\n"), ("w", "docs/v1/requirements/b.md", "B\n"),
+                        ("w", "docs/v1/requirements/same.md", "S\n"), ("w", "docs/v1/spec/spec_ir.json", SPEC_V1),
+                        ("c",), ("t", R1), ("t", B1)]
+V2_CHANGES = [
+    ("w", "docs/v2/shared/qa.csv", QA_HEAD + QA_ROWS.splitlines(True)[0].replace("A（業務部が回答）", "B（業務部が回答）")
+     + "Q-006,要求確定,返品は？,A: 可 / B: 不可,A,決定表 9 行目,反映済み,\n"),
+    ("w", "docs/v2/removed.csv", "種類,対象,理由\nQ&A,Q-005,夜間の停止を決めた\nファイル,requirements/b.md,a.md に統合した\n"
+     "機能,F-001,割引を廃止した\n"),
+    ("w", "docs/v2/requirements/a.md", "A2\n"), ("w", "docs/v2/requirements/c.md", "C\n"),
+    ("w", "docs/v2/requirements/same.md", "S\n"), ("w", "docs/v2/spec/spec_ir.json", SPEC_V2),
+    ("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV), ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
+    ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n返品を受け付ける。\n")]
+V2C = SIGNED_R + V2_CHANGES + [("c",), ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")]
 
 
 class Result:
@@ -126,6 +142,41 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("v1 は Q&A 表が無いと作らない", [s for s in SIGNED if s[:2] != ("w", QA)]
      + [("w", "docs/v1/shared/nfr.csv", "x\n"), ("c",), ("t", "v1/req-signoff-2"), ("t", "v1/budget-signoff-2")],
      False, lambda r: not_made(1)(r) and "docs/v1/shared/qa.csv: 承認の時点に無い" in r.output),
+    # ---- 前の版との比較（v2 以降）
+    ("前の版との比較を載せる", V2C, False,
+     lambda r: made(r) and "## 前の版（v1）からの変更" in r.text
+     and "| Q&A | 1 | 1 | 1 |" in r.text and "| 機能 | 1 | 1 | 1 |" in r.text and "| ファイル | 1 | 1 | 1 |" in r.text
+     and "| Q-001 | 変更 | 割引は？ | A（業務部が回答） | B（業務部が回答） | — |" in r.text
+     and "| Q-006 | 追加 | 返品は？ | — | A | — |" in r.text
+     and "| Q-005 | 削除 | 夜間は止めてよいか | 未回答 | — | 夜間の停止を決めた |" in r.text
+     and "| F-002 | 変更 | 送料（離島） | — |" in r.text and "| F-003 | 追加 | 返品 | — |" in r.text
+     and "| F-001 | 削除 | 割引 | 割引を廃止した |" in r.text
+     and "| requirements/a.md | 変更 | — |" in r.text and "| requirements/c.md | 追加 | — |" in r.text
+     and "| requirements/b.md | 削除 | a.md に統合した |" in r.text
+     and "same.md" not in r.text
+     and "この版（v2）の差分の見積り" in r.text
+     and r.text.find("## 変更の背景") < r.text.find("## 前の版（v1）からの変更") < r.text.find("## 主な決定事項")),
+    ("比較も同じ入力から同じバイト", V2C, False, lambda r: made(r) and r.text == r.again),
+    ("足しただけの版は追加だけを載せる", V2, False,
+     lambda r: made(r) and "| Q&A | 1 | 0 | 0 |" in r.text and "### Q&A" in r.text and "### 機能" not in r.text),
+    ("変更が無い版", SIGNED + [("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV),
+                             ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
+                             ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n見直しだけ。\n"), ("c",),
+                             ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: made(r) and "（前の版からの変更はありません）" in r.text),
+    # 比較は req のタグの時点から作る——承認の後に作業ツリーとコミットで足した要求は載らない
+    ("承認の後に直した差分は比較に入らない", V2C + [("w", "docs/v2/requirements/late.md", "L\n"), ("c",)], False,
+     lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "late.md" not in r.text),
+    ("v1 は比較の節を持たない", SIGNED_R, False,
+     lambda r: made(r) and "前の版" not in r.text and "差分の見積り" not in r.text),
+    # 重ね合わせが作れない（前の版に無いものを消す）——比較を作れないので書かない
+    ("比較を作れないと作らない", SIGNED_R + [s if s[:2] != ("w", "docs/v2/removed.csv")
+                                    else ("w", "docs/v2/removed.csv", "種類,対象,理由\n機能,F-999,誤記\n")
+                                    for s in V2_CHANGES] + [("c",), ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")],
+     False, lambda r: not_made(1)(r) and "前の版との比較を作れない" in r.output and "F-999" in r.output),
+    ("版の中のシンボリックリンクは比較で断る", V2C[:-2] + [("l", "docs/v2/requirements/link.md", "../../v1/requirements/a.md"), ("c",),
+                                              ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: not_made(1)(r) and "シンボリックリンク" in r.output and "link.md" in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -155,7 +206,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("表の検査を見ない", "    if problems:\n        raise Stop(1, problems)", "    if False:\n        raise Stop(1, problems)",
      "見積りが決まりに反すると作らない"),
     ("未決定の質問を載せない", "    if pending:\n", "    if False:\n", "未決定の質問を載せる"),
-    ("区分ごとに合計しない", "sum(int(r['金額']) for r in estimate if r['区分'] == c)", "sum(int(r['金額']) for r in estimate)",
+    ("比較を作業ツリーから作る", "        copy_docs(top, commit, tag, Path(tmp))\n",
+     "        __import__('shutil').copytree(top / signoff.DOCS, Path(tmp) / signoff.DOCS, symlinks=True)\n",
+     "承認の後に直した差分は比較に入らない"),
+    ("比較が作れなくても作る", "    if problems:\n        raise Stop(1, [f\"{tag}: ",
+     "    if False:\n        raise Stop(1, [f\"{tag}: ", "比較を作れないと作らない"),
+    ("v1 にも比較の節を出す", 'if info["version"] > 1 else None', 'if True else None', "v1 は比較の節を持たない"),
+    ("v2 以降も比較の節を出さない", 'if info["version"] > 1 else None', 'if False else None', "前の版との比較を載せる"),
+    ("シンボリックリンクを中身で写す", '        if mode == "120000":\n', '        if False:\n',
+     "版の中のシンボリックリンクは比較で断る"),
+    ("比較の節を手書き部分の前に置く", '    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n    if diff is not None:\n        out += changes_section(diff, info["req"])\n',
+     '    if diff is not None:\n        out += changes_section(diff, info["req"])\n    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n',
+     "前の版との比較を載せる"),
+    ("削除の理由を載せない", "answer(c.before), answer(c.after), c.reason or \"—\"]",
+     "answer(c.before), answer(c.after), \"—\"]", "前の版との比較を載せる"),
+    ("区分ごとに合計しない","sum(int(r['金額']) for r in estimate if r['区分'] == c)", "sum(int(r['金額']) for r in estimate)",
      "作れるときは作る"),
 ]
 
@@ -194,6 +259,11 @@ def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) ->
             path = root / step[1]
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(step[2], encoding="utf-8")
+            run_git(root, env, "add", "-A")
+        elif step[0] == "l":  # シンボリックリンク（リンク先は書いたまま）
+            path = root / step[1]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.symlink_to(step[2])
             run_git(root, env, "add", "-A")
         elif step[0] == "c":
             run_git(root, env, "commit", "-q", "--allow-empty", "-m", "step")

@@ -44,7 +44,8 @@ build/merged/                # 版を重ね合わせた全体（生成物。comm
   `qa.csv` に起票する。確定の条件は `spec-exit.md`。
 - **`proposal/` には、ほかのどこにも無い部分だけを手で書く**（背景と目的・推奨案とその理由・
   比較した代替案・リスクと前提条件）。範囲・費用・期間・主な決定事項の表は、
-  `shared/`・`requirements/`・`feasibility/` から生成する。手書き部分は `proposal/*.md` に置き、
+  `shared/`・`requirements/`・`feasibility/` から生成する。**v2 以降の「前の版からの変更」の表も生成する**
+  （`versions.md` の「版の差分」）。手書き部分は `proposal/*.md` に置き、
   **ファイル名の順に**提案書の先頭へ並ぶ（`01-background.md`・`02-recommendation.md` のように番号を付ける）。
 
 ## スライドの置き場所

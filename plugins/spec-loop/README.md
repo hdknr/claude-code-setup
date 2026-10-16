@@ -31,6 +31,7 @@
 | `scripts/scaffold.py` | 中間表現から OpenAPI・型・Red テスト・Issue の本文を作る。関門（仕様レビューを抜ける条件 1）を自分で通す（標準ライブラリのみ） |
 | `references/versions.md` | 版のディレクトリ（`docs/v<n>/`）と、差分の重ね合わせ・削除（`removed.csv`）・凍結・前の構成からの移し方の決まり |
 | `scripts/merge-versions.py` | 版ごとの差分を重ねて、ある版の時点の全体を作る（標準ライブラリのみ） |
+| `scripts/diff-versions.py` | ある版が前の版から何を足し・変え・消したかを、前の版の時点の全体と比べて出す（標準ライブラリのみ） |
 | `scripts/check-frozen.py` | リリースした版（`release-v<n>` のタグ）の `docs/v<n>/` が直されていないかの確かめ（標準ライブラリと `git`） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
@@ -87,6 +88,7 @@
 `/spec-loop:proposal` で呼びます。**同じ版の 2 つのサインオフのタグ（`v<n>/req-signoff-<k>`・`v<n>/budget-signoff-<k>`）の時点で
 共有の範囲（`docs/v<n>/shared/` ほか。`references/signoff-tags.md`）が一致するかをスクリプトで照合し、一致したときだけ提案書を生成します**（LLM に判断させません）。
 提案書は**承認したタグの時点の中身**から作るので、承認の後に直した中身は入りません。
+**v2 以降は、前の版との比較（追加・変更・削除）を載せた変更の提案書になります**（`references/versions.md` の「版の差分」）。
 **決裁者の承認待ちで止まります。**
 
 手順と守ることは [`skills/proposal/SKILL.md`](skills/proposal/SKILL.md) を正とします。
@@ -143,6 +145,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/schedule-to-gantt.py <sc
 python3 <spec-loop の base ディレクトリ>/scripts/check-signoff.py [--repo <正本リポジトリ>] [--version <n>] [--req <タグ>] [--budget <タグ>]
 python3 <spec-loop の base ディレクトリ>/scripts/build-proposal.py [--repo <正本リポジトリ>] [--version <n>] [--out <出力先.md>] [--title <題>]
 python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py [--repo <正本リポジトリ>]
+python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs [--version <n>]
 ```
 
 生成するもの（ガントチャート・提案書）は、作れなかったときに前の出力を消します。
