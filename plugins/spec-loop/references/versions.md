@@ -3,9 +3,8 @@
 プロジェクトが完成した**あと**のバージョンアップでは、要件の**差分だけ**を回す。
 そのために正本リポジトリの `docs/` を**版ごとのディレクトリ**に分け、v2 以降には**前の版からの差分だけ**を置く。
 
-> **移行中**: このファイルの決まりに従っているのは、いまは同梱の `scripts/merge-versions.py` だけである。
-> ほかの決まり（`tree.md`・`signoff-tags.md` など）・スクリプト・スキルは、まだ `docs/` 直下の構成を読む。
-> 版の構成に移すのは [#262](https://github.com/hdknr/claude-code-setup/issues/262)。
+**正本リポジトリは、版が 1 つしか無いうちから `docs/v1/` に置く。** 同梱のスクリプトは、版に分けていない構成
+（`docs/shared/` 直下）を読まない。前の構成から移すときは下の「移し方」。
 
 ## ツリー
 
@@ -30,7 +29,9 @@ docs/
   **番号は 1 から欠けずに続ける。** **`v` の次が数字で、形に合わない名前（`v2-draft`・`v02`）は誤り**——
   黙って飛ばすと、その版の要件が消える。ほかの名前のファイル・ディレクトリ（`index.md` など）は版として読まない。
 - **作業中の版は、番号が最大の版。** 作業中かどうかを書いたファイルは置かない。
-- **リリースした版は凍結する**——直さない。リリースは git のタグ `release-v<n>` で示す。
+- **リリースした版は凍結する**——直さない。リリースは git のタグ `release-v<n>` で示す（下の「凍結」）。
+- **版の中の置き方**（`shared/`・`requirements/`・`spec/`・`feasibility/`・`proposal/` に何を置くか）は `tree.md`。
+  サインオフのタグも版ごと（`signoff-tags.md`）。
 
 ## 重ね合わせ
 
@@ -42,8 +43,19 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs build/merged-v1 --upto 1   # v1 だけ
 ```
 
-出力は**版に分ける前の `docs/` と同じ形**（`shared/`・`requirements/`・`spec/`）で、`tree.md` の決まりどおりに読める。
+出力は**版のディレクトリと同じ形**（`shared/`・`requirements/`・`spec/`）で、`tree.md` の決まりどおりに読める。
 **commit しなくてよい**（同じ入力から同じバイトを作る）。
+
+### 重ね合わせた全体を読むもの
+
+| 読むもの | どう読むか |
+| --- | --- |
+| 仕様レビューを抜ける条件 1（`check-spec-exit.py`） | `build/merged/shared/qa.csv` と `build/merged/spec` に当てる |
+| `scaffold.py` | **自分でメモリ上に重ねる**（`build/merged/` は書かない。同じバイト）。中間表現の `source` は**重ね合わせた全体の根からのパス**（`spec-ir.md`） |
+| Issue の本文 | 中間表現は `build/merged/spec/spec_ir.json`（sha256 はこのバイト）。開発する側は同じコマンドで作って当てる |
+
+**その版だけを読むもの**——`check-qa-csv.py`（版ごとの `qa.csv`）・`check-feasibility-csv.py` と `schedule-to-gantt.py`
+（版ごとの `feasibility/`）・`check-signoff.py` と `build-proposal.py`（`signoff-tags.md`）。
 
 ### 重ねるもの
 
@@ -92,3 +104,43 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 - **重ねた結果で、大文字小文字・Unicode の正規化（NFC/NFD）だけが違うパスが並ぶのも誤り**（`requirements/A.md` と
   `requirements/a.md`）——区別しないファイルシステムでは同じ場所に書かれ、片方が黙って消える。前の版のファイルを変えるなら、同じ綴りで置く。
 - どれかの版に `shared/qa.csv` があれば、行がすべて消えても**見出し行だけの `shared/qa.csv` を書く**（出力を `docs/` と同じ形に保つ）。
+
+## 凍結
+
+**リリースした版（`release-v<n>` のタグがある版）の `docs/v<n>/` は、タグの時点から変えない。**
+変えたいことは、作業中の版に差分として置く（同じ番号・同じパスで置けば置き換わる。消すなら `removed.csv`）。
+同梱の確かめを CI で走らせる:
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py
+```
+
+- 命名に合う `release-v<n>` ごとに、タグの時点と HEAD で `docs/v<n>/` が同じか、作業ツリーに `docs/v<n>/` の
+  未コミット・未追跡の変更が無いかを見る。**直されていれば 1。**
+- **タグの時点に `docs/v<n>/` が無ければ 2**（比べる中身が無いのに「直されていない」とは言わない）。
+- リリースのタグが 1 つも無ければ 0（凍結した版が無い。出力がそう言う）。
+- タグを取得できるよう、CI では履歴をすべて取る（GitHub Actions なら `actions/checkout` に `fetch-depth: 0`）。
+- **タグはスキルが付けない。** どの版をリリースしたかは人間が決める。
+
+## 移し方（版に分ける前の正本リポジトリ）
+
+版に分ける前の構成（`docs/shared/`・`docs/spec/`… が `docs/` の直下）は、同梱のスクリプトが読まない。次の順で移す:
+
+1. **`docs/` の直下のディレクトリを `docs/v1/` へ移す**（`git mv` で。履歴が辿れる）:
+
+   ```bash
+   mkdir -p docs/v1
+   git mv docs/shared docs/requirements docs/spec docs/feasibility docs/proposal docs/v1/
+   ```
+
+   **在るディレクトリだけを並べる**——無いものが 1 つでも混ざると、`git mv` は何も移さずに失敗する。
+
+2. **中間表現の `source` を、重ね合わせた全体の根からのパスに書き換える**（`docs/spec/order.md` → `spec/order.md`。`spec-ir.md`）。
+3. **`scaffold.py` で作り直す。** `scaffold/` の中身は変わらないことがあるが、**Issue の本文は変わる**（中間表現の場所と
+   sha256 が `build/merged/spec/spec_ir.json` を指す）。**登録済みの Issue は古い場所を指したまま**なので、
+   開発中の Issue があるなら、開発する側に場所が変わったことを伝える。
+4. **承認を取り直す。** 前の名前のタグ（`req-signoff-v<n>`・`budget-signoff-v<n>`）は読まれない。移したコミットで
+   `v1/req-signoff-1`・`v1/budget-signoff-1` を付けてもらう（`signoff-tags.md`。**タグはスキルが付けない**）。
+   **中身を変えずに移しただけでも、どのコミットを承認したかは利用者・予算責任者が決める。**
+5. **リリース済みなら、移したコミットに `release-v1` を付けてもらう**（凍結の確かめの起点）。
+6. 正本リポジトリの `CLAUDE.md`・CI がパスを書いていれば直す。

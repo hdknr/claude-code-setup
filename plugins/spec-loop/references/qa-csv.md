@@ -1,4 +1,4 @@
-# Q&A 表（`docs/shared/qa.csv`）
+# Q&A 表（`docs/v<n>/shared/qa.csv`）
 
 利用者に聞く**未決定事項の台帳**。エージェントが見つけた未決定事項を 1 行ずつ起票し、
 回答をもらって仕様に反映するまでを追う。決定表の空欄も、仕様レビューの「もし〇〇の場合は？」も、
@@ -9,7 +9,7 @@
 決まりどおりかどうかは、プラグインに同梱の検査で確かめる:
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py docs/shared/qa.csv
+python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py docs/v<n>/shared/qa.csv   # 版ごとに通す（versions.md）
 ```
 
 ## ファイル

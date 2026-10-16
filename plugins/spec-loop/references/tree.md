@@ -3,8 +3,12 @@
 要求・見積り・提案書の元ファイルは、**1 つの git リポジトリ（正本）**に置く。
 spec-loop のスキルはどれも、このツリーを前提に読み書きする。
 
+**`docs/` は版ごとのディレクトリ（`docs/v1/`・`docs/v2/`…）に分け、v2 以降には前の版からの差分だけを置く。**
+版の決まり（作業中の版・凍結・重ね合わせ・削除・移し方）は `versions.md` を正とする。
+下の `docs/v<n>/` の中の構成は、**どの版でも同じ**（v2 以降は、足した・変えたものだけを置く）。
+
 ```
-docs/
+docs/v<n>/
 ├── shared/                  # 利用者と予算責任者の両方に見せてよいもの
 │   ├── qa.csv               # Q&A 表（列は qa-csv.md）
 │   ├── decision_table.csv   # 決定表
@@ -16,15 +20,16 @@ docs/
 ├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り
 │   ├── schedule.csv         # スケジュールの正本（列は feasibility-csv.md）
 │   └── estimate.csv         # 見積りの正本（同上）
-└── proposal/                # 決裁者向け提案書の手書き部分
+├── proposal/                # 決裁者向け提案書の手書き部分
+└── removed.csv              # v2 以降だけ。前の版から消したもの（versions.md）
 scaffold/                    # dev-loop に渡す契約（scaffold が生成し、commit する。下の「scaffold の出力」）
 ├── openapi.json
 ├── types.py
 └── tests/test_<機能>.py     # Red テスト
+build/merged/                # 版を重ね合わせた全体（生成物。commit しない。versions.md）
 ```
 
-**バージョンアップでは `docs/` を版ごとのディレクトリ（`docs/v1/`・`docs/v2/`…）に分け、v2 以降には差分だけを置く。**
-決まりは `versions.md` を正とする（移行中——どの決まり・スクリプトが従っているかも、そこに書いてある）。
+以下、`shared/`・`spec/` などは**版のディレクトリの中**（`docs/v<n>/shared/`）を指す。
 
 ## 置き方の決まり
 
@@ -82,9 +87,10 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | `scaffold/tests/test_<機能>.py` | Red テスト（Python の `unittest`。実装が無ければ失敗する） |
 
 **正本と開発のリポジトリが別なら**、`scaffold/` を開発のリポジトリへどう写すかは正本リポジトリの `CLAUDE.md` に
-書いてもらう。**Issue の本文が sha256 を持つのは、中間表現（`docs/spec/spec_ir.json`）と Red テストだけ**——
-`openapi.json`・`types.py` は指紋を持たず、中間表現は `scaffold/` の外にある。dev-loop は本文の sha256 を
-手元の中間表現と Red テストに当てるので、**開発のリポジトリにも中間表現を写すか、どこで当てるかを決めて書く**。
+書いてもらう。**Issue の本文が sha256 を持つのは、中間表現（重ね合わせた全体の `build/merged/spec/spec_ir.json`）と
+Red テストだけ**——`openapi.json`・`types.py` は指紋を持たず、中間表現は `scaffold/` の外にあり、commit もしない。
+dev-loop は本文の sha256 を手元の中間表現と Red テストに当てるので、**開発のリポジトリにも正本の版を写して
+重ね合わせるか、どこで当てるかを決めて書く**。
 
 ## プロジェクトに任せること
 

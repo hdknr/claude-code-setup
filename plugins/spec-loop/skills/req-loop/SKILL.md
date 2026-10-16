@@ -5,8 +5,8 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 # req-loop スキル
 
-<!-- skill-version: 0.6.0 -->
-> **このスキルの版: 0.6.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.7.0 -->
+> **このスキルの版: 0.7.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -62,6 +62,10 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 **Q&A 表がまだ無ければ、見出し行だけの表を作る**（見出しは `../../references/qa-csv.md` の列と同じ文字列・同じ順）。
 見出し行だけの表は検査を通る。
+
+**書き込む Q&A 表は、作業中の版（`docs/` の版で番号が最大のもの）の `docs/v<n>/shared/qa.csv`**
+（`../../references/versions.md`）。**リリースした版（凍結）の表は直さない。** 新しく起票する行の `No` は、
+**全部の版を通した**最大の番号の次にする（前の版と同じ番号は「変更」の意味になる）。
 
 ## 1 回の実行
 

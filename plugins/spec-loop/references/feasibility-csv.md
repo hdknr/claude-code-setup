@@ -1,4 +1,4 @@
-# スケジュールと見積りの表（`docs/feasibility/`）
+# スケジュールと見積りの表（`docs/v<n>/feasibility/`）
 
 予算責任者に見せる**スケジュール**と**見積り**の正本。どちらも CSV で置き、
 ガントチャートと提案書の費用・期間の表は**この 2 つから生成する**（手で写さない）。
@@ -6,7 +6,7 @@
 決まりどおりかどうかは、プラグインに同梱の検査で確かめる:
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/check-feasibility-csv.py docs/feasibility/schedule.csv docs/feasibility/estimate.csv
+python3 <spec-loop の base ディレクトリ>/scripts/check-feasibility-csv.py docs/v<n>/feasibility/schedule.csv docs/v<n>/feasibility/estimate.csv
 ```
 
 **2 つのファイルに共通の決まり**: 文字コードは UTF-8（BOM はあってもよい）。1 行目が見出し行で、
