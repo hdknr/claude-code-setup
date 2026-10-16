@@ -17,6 +17,8 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   （v<n> の時点の共有の範囲は、前の版の `shared/` と、行を消す `removed.csv` にも依る）。
   **`removed.csv` は `shared/` に効く行だけを比べる**——種類 `Q&A` と、種類 `ファイル` で対象が `shared/` から
   始まる行。`requirements/` や機能の削除だけが違っても一致のまま（範囲の外なので）。
+- **`.` で始まる名前（`.gitkeep`・`.DS_Store`）は数えない**——重ね合わせ（`merge-versions.py`）が読まないので、
+  承認が見た範囲に入らない。
 - **どちらかの時点で比べる場所にファイルが 1 つも無ければ、一致とは言わない（2）。**
   比べる中身が無くても `git diff --quiet` は 0 を返すので、それを「一致」と読まない。
   **どちらかの時点に `docs/v<n>/` のファイルが 1 つも無いときも 2**——前の版の `shared/` があっても、
@@ -31,7 +33,7 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 - 2: 照合していない——git でない・git が無い・作業ツリーの版が決まりに反する／1 つも無い（`--version` を省いたとき）・
   タグが無い／片方しか無い・指定したタグが無い／命名に合わない／別の版のもの・
   どちらかの時点で比べる場所にファイルが無い（旧い構成のタグを含む）・どちらかの時点に `docs/v<n>/` が無い・
-  `removed.csv` が読めない
+  `removed.csv` が読めない／決まり（`merge-versions.py` の読み方）に反する
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`git` は要る）。
 
@@ -48,12 +50,11 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 from __future__ import annotations
 
 import argparse
-import csv
 import importlib.util
-import io
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -126,15 +127,22 @@ def removed_shared_rows(repo: Path, commit: str, tag: str, path: str) -> list[tu
         raise Unjudged(f"git を起動できない（{e.strerror}）。照合していない")
     if result.returncode != 0:
         raise Unjudged(f"{tag} の {path} を読めない: {result.stderr.decode(errors='replace').strip()}。照合していない")
-    try:
-        text = result.stdout.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        raise Unjudged(f"{tag} の {path} が UTF-8 として読めない。照合していない")
+    # 読み方は `merge-versions.py` の `read_removed`（写しを作らない）——決まりに反する `removed.csv` を、
+    # 無い `removed.csv` と同じに読んで「一致」と言わないため
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / REMOVED
+        copy.write_bytes(result.stdout)
+        try:
+            parsed = versions.read_removed(copy, problems)
+        except versions.Unreadable:
+            raise Unjudged(f"{tag} の {path} が UTF-8 として読めない。照合していない")
+        problems = [line.replace(str(copy), path) for line in problems]
+    if problems:
+        raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）: "
+                       + " / ".join(problems) + "。照合していない")
     rows = []
-    for fields in list(csv.reader(io.StringIO(text, newline="")))[1:]:
-        if len(fields) < 2:
-            continue
-        kind, target = fields[0].strip(), fields[1].strip()
+    for _, kind, target in parsed:
         if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):
             rows.append((kind, target))
     return sorted(rows)
@@ -171,12 +179,17 @@ def commit_of(repo: Path, tag: str) -> str:
     return result.stdout.strip()
 
 
+def hidden(path: str) -> bool:
+    """`.` で始まる名前を含むパス——`merge-versions.py` が読まない（`.gitkeep`・`.DS_Store`）。"""
+    return any(part.startswith(".") for part in path.split("/"))
+
+
 def shared_files(repo: Path, commit: str, tag: str, paths: list[str]) -> list[str]:
     result = git(repo, "ls-tree", "-r", "--name-only", commit, "--", *paths)
     where = f"{paths[0]}（ほか {len(paths) - 1} 箇所）" if len(paths) > 1 else paths[0]
     if result.returncode != 0:
         raise Unjudged(f"{tag} の {where} を読めない: {result.stderr.strip()}。照合していない")
-    files = [line for line in result.stdout.splitlines() if line]
+    files = [line for line in result.stdout.splitlines() if line and not hidden(line)]
     if not files:
         raise Unjudged(f"{tag} の時点に {where} のファイルが 1 つも無い。比べる中身が無いので照合していない")
     return files
@@ -235,7 +248,9 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
     diff = git(repo, "diff", "--name-status", info["req_commit"], info["budget_commit"], "--", *shared_scope(version))
     if diff.returncode != 0:
         return 2, [f"{where} を比べられない: {diff.stderr.strip()}。照合していない"], {}
-    changed = [line for line in diff.stdout.splitlines() if line]
+    # 重ね合わせが読まないもの（`.` で始まる名前）だけの違いは、承認が見た範囲の違いではない
+    changed = [line for line in diff.stdout.splitlines()
+               if line and not all(hidden(path) for path in line.split("\t")[1:])]
     for path, (at_req, at_budget) in removed.items():
         # 無いことと、`shared/` に効く行が無いことは同じ（どちらも `shared/` から何も消さない）
         if (at_req or []) != (at_budget or []):
