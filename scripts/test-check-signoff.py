@@ -8,13 +8,16 @@
 見るもの:
 
 1. **比べる場所（v1〜v<n> の `shared/` と v2〜v<n> の `removed.csv`）が食い違うタグの組で非ゼロ（1）**——
-   中身の違い・追加・削除・**前の版の `shared/` だけ**・**`removed.csv` だけ**の違い。
-2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致）。
+   中身の違い・追加・削除・**前の版の `shared/` だけ**・**`removed.csv` の `shared/` に効く行だけ**の違い。
+2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致——**`removed.csv` の `requirements/`・機能の行
+   だけ・理由だけが違う組も**）。
 3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `req-signoff-v<n>` を含む）を数えない**・
    指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ。
 4. **照合できない形を 0 にしない（2）**——タグが無い・片方だけ・指定したタグが無い／命名に合わない／**別の版のもの**・
    どちらかの時点に比べる場所が無い（**両方に無いときも**——`git diff` は差分なしを返す。**旧い構成のタグも**）・
-   タグがコミットを指さない・git でない・**作業ツリーの版が決まりに反する／1 つも無い**・`--version` が版の番号でない。
+   **タグの時点に `docs/v<n>/` が無い（前の版の `shared/` はある）**・
+   タグがコミットを指さない・git でない・**作業ツリーの版が決まりに反する／1 つも無い（`--version` を渡しても）**・
+   `--version` が版の番号でない。
 5. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -118,13 +121,34 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
      [], 1, "M\tdocs/v1/shared/qa.csv"),
     ("removed.csv だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                             ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
-     [], 1, "A\tdocs/v2/removed.csv"),
+     [], 1, "docs/v2/removed.csv（shared/ に効く行が違う）"),
+    ("removed.csv の shared のファイルの行が違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                         ("w", REMOVED2, "種類,対象,理由\nファイル,shared/nfr.csv,不要\n"), ("c",), ("t", B2)],
+     [], 1, "docs/v2/removed.csv（shared/ に効く行が違う）"),
+    # requirements/ や機能の削除は共有の範囲の外——removed.csv のファイルが違っても一致のまま
+    ("removed.csv の範囲の外の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                     ("w", REMOVED2, "種類,対象,理由\nファイル,requirements/r.md,不要\n機能,F-001,不要\n"),
+                                     ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+    # 理由の列は比べない（消したものが同じなら、見た共有の範囲は同じ）
+    ("removed.csv の理由だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
+                                 ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\n"), ("c",), ("t", R2),
+                                 ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,重複\n"), ("c",), ("t", B2)],
+     [], 0, "一致する"),
+    # v1 の shared/ はあるが、タグの時点に v2 はまだ無い——「v1〜v2 が一致」とは言わない
+    ("タグの時点に作業中の版が無い", [("w", SHARED, QA_A), ("c",), ("t", R2), ("t", B2),
+                                ("w", "docs/v2/spec/s.md", "x\n"), ("c",)],
+     [], 2, f"{R2} の時点に docs/v2/ のファイルが 1 つも無い"),
     ("範囲の外だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                        ("w", "docs/v2/requirements/a.md", "x\n"), ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
     # 作業中の版は v2 だがタグは v1 にしかない。v1 の範囲に v2 は入らない
     ("版を指定", [("w", SHARED, QA_A), ("c",), ("t", R1), ("w", SHARED2, QA_A), ("c",), ("t", B1)],
      ["--version", "1"], 0, f"一致する: {R1}"),
+    # 版を渡しても作業ツリーの版の並びは見る（渡したかどうかで判定が変わらない）
+    ("版を指定しても作業ツリーの版を見る", [("w", SHARED, QA_A), ("w", "docs/v03/shared/qa.csv", QA_A), ("c",),
+                                     ("t", R1), ("t", B1)],
+     ["--version", "1"], 2, "版が決まりに反する"),
     ("版を省くと作業中の版のタグを探す", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1), ("w", SHARED2, QA_A), ("c",)],
      [], 2, "v2/req-signoff-<k> のタグが 1 つも無い"),
     ("作業ツリーの版が決まりに反する", [("w", "docs/v02/shared/qa.csv", QA_A), ("c",), ("t", R1), ("t", B1)],
@@ -146,10 +170,23 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "両方に shared が無い"),
     ("根で走らせない", "        repo = Path(top.stdout.strip())\n", "", "サブディレクトリから"),
     ("差分を見ない", "    if changed:", "    if False:", "中身が違う"),
-    ("比べる場所を絞らない", 'info["budget_commit"], "--", *paths)', 'info["budget_commit"])', "一致"),
+    ("比べる場所を絞らない", 'info["budget_commit"], "--", *shared_scope(version))', 'info["budget_commit"])', "一致"),
     ("前の版を範囲に含めない", "for i in range(1, version + 1)]", "for i in range(version, version + 1)]",
      "前の版の shared だけ違う"),
-    ("removed.csv を範囲に含めない", "    return paths + [", "    return paths or [", "removed.csv だけ違う"),
+    ("removed.csv を比べない", "if (at_req or []) != (at_budget or []):", "if False:", "removed.csv だけ違う"),
+    ("removed.csv の行を絞らない", "if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):",
+     "if True:", "removed.csv の範囲の外の行だけ違う"),
+    ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED)):", "and False):",
+     "removed.csv の shared のファイルの行が違う"),
+    ("removed.csv の理由も比べる", "rows.append((kind, target))", "rows.append(tuple(fields))",
+     "removed.csv の理由だけ違う"),
+    ("タグの時点に版 n があるかを見ない",
+     'shared_files(repo, info[f"{key}_commit"], chosen[key], [f"{DOCS}/v{version}/"])', "pass",
+     "タグの時点に作業中の版が無い"),
+    ("版を渡すと作業ツリーの版を見ない",
+     "        working = working_version(repo)\n        if version is None:\n            version = working\n",
+     "        if version is None:\n            version = working_version(repo)\n",
+     "版を指定しても作業ツリーの版を見る"),
     ("指定の命名を見ない", "if not tag_pattern(prefix, version).fullmatch(given):", "if False:", "指定が命名に合わない"),
     ("タグの版を見ない", 'rf"v{version}/{re.escape(prefix)}-{NUMBER}"', 'rf"v[0-9]+/{re.escape(prefix)}-{NUMBER}"',
      "指定が別の版"),
