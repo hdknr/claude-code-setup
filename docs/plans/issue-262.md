@@ -113,7 +113,9 @@ agent 1・README・`docs/plugins/index.md`・dev-loop の `spec-gap.md`（写し
   release-v1 で frozen=0 → 直すと 1）。**`git mv` に無いディレクトリを混ぜると全体が失敗する**ことが分かり、案内に書いた
 - 関門 1 パス目: **済み**。Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 **1 件**（C）・
   `/code-review`（high）指摘 **8 件**（うち 1 件は Verifier と同じ）。採否は下の「1 パス目の指摘と採否」——直す 5・残課題 3
-- 1 パス目の指摘対応: **済み**（CR1〜CR5。起点 `f31c341`）。`test-check-signoff.py` 35/24・`test-check-frozen.py` 17/14・
+- 割り目（手順 6・2 パス目の前）: 提案した → **「ここで割る」が選ばれた**。再開は worktree の中で `/clear` →
+  `/dev-loop:dev-loop 262`、**Verifier 2 パス目と `/code-review` 2 パス目から**（base は周の base `f40dcbb` のまま）
+- 1 パス目の指摘対応: **済み**（CR1〜CR5。起点 `f31c341`・コミット `e08806b`）。`test-check-signoff.py` 35/24・`test-check-frozen.py` 17/14・
   `test-build-proposal.py` 20/17（試料/変異）緑。新しい変異はどれも旧い挙動に戻す形で、対応する試料を落とす（陽性対照）。
   `check-all.py` 42/42 緑
 - 残り: **手順 5 の当て直し（Verifier 2 パス目）**と **`/code-review` 2 パス目**の両方（どちらも未着手）。
