@@ -37,7 +37,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる）
 - 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現が決まりに反する（全部を 1 行ずつ出す）・
   `--check` で古い。**Issue の本文の前の出力は消す**（古い本文を登録させない。`--check`・`--dry-run` では消さない）
-- 2: 判定していない——引数の誤り・`docs/` が無い／版が読めない・関門が判定していない・中間表現が無い・
+- 2: 判定していない——引数の誤り・`docs/` が無い／版が 1 つも無い／版が読めない・関門が判定していない・中間表現が無い・
   予期しない失敗（書き込みの失敗を含む）。前の Issue の本文は消す
 
 **`scaffold/` は失敗しても消さない**——commit 済みの契約で、古ければ `--check` が言う。
@@ -424,6 +424,14 @@ def load(repo: Path) -> tuple[int, list[str], dict | None, bytes, dict]:
     docs = repo / DOCS
     if not docs.is_dir():
         raise Unjudged(f"{docs}: ディレクトリが無い（版は {DOCS}/v1/ から置く。references/versions.md）")
+    # 版が 1 つも無い（版に分ける前の構成）は、決まりに反するのではなく移していない——判定しない
+    probe: list[str] = []
+    try:
+        if not versions.find_versions(docs, probe) and not probe:
+            raise Unjudged(f"{docs}: 版（v1 など）が 1 つも無い（版に分ける前の構成なら "
+                           "references/versions.md の「移し方」で移す）。判定していない")
+    except versions.Unreadable as exc:
+        raise Unjudged(f"{exc}。重ね合わせていない")
     try:
         problems, _, _, rendered = versions.merge(docs)
     except versions.Unreadable as exc:
