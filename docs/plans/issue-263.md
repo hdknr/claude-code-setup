@@ -129,6 +129,12 @@ docstring・`build-proposal.py` の docstring・4 つの SKILL.md（指し先と
 - 次: 2 つ目の割り目 → **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**（どちらも未着手）。
   2 パス目の指摘対応を始める直前の HEAD の SHA は、2 パス目の報告を受けてから記録する
 - 割り目（2 パス目の前）: 人間の回答「ここで割る」。再開は worktree の中で `/dev-loop:dev-loop 263` → 2 パス目から
+- 再開（2026-10-16）: `find-cycle.py 263` で当たり、この worktree・ブランチ・HEAD `937874c` を確かめた。base は祖先、main は動いていない。
+  `check-all.py` 43/43 緑。Verifier 2 パス目（sonnet・`dev-loop:dev-loop-verifier`）と `/code-review`（high）2 パス目を起動
+- Verifier 2 パス目: **反証 0 件**。1 パス目の指摘対応の試料が殺すはずの変異 4 本（fold の検査を外す・全部写す・
+  `req_commit`→`budget_commit`・`one_line` を恒等に）を外の複製に当てて**4 本とも赤**（陽性対照: 無変異で緑）。
+  未証明の分類への指摘 1 件（V2-1。下の表）
+- `/code-review` 2 パス目: **報告待ち（未完了）**
 - 反証と差し戻し: Verifier の反証 0 件（差し戻しなし）。`/code-review` の 6 件を周の中で直した
 - 交絡: 実験なし
 - 割り目（手順 4 の完了時）: 人間の回答「ここで割る」。再開は worktree の中で `/dev-loop:dev-loop 263` → 手順 5 から
@@ -158,3 +164,9 @@ Verifier（sonnet・`dev-loop:dev-loop-verifier`）: 反証 0 件・軽微な所
 | R10 | 前の版までを 2 回重ねる・`docs/` 全体を読む（効率） | 示せない（性能の失敗は無い） | 無し | 残課題（写す範囲は R1 の修正で版の中に絞る） |
 | V1 | feasibility の手順 3 の追記の継ぎ目が読みにくい | 示せない | 無し | 残課題 |
 | V2 | 「負を許さない」の根拠の文言が `feasibility-csv.md` に無い | 未確認 | 無し | 残課題 |
+
+### 2 パス目の指摘の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V2-1 | 未証明の 2 項目は「手段が原理的に無い」ではなく「spec-loop の Eval を作っていない」（`plugins/dev-loop/evals/` と `claude plugin eval` は実在する） | 示せる（evals が dev-loop にしか無い） | 無し（F は文面の性質で読解で確かめられる。モデルの振る舞いは受入基準ではない） | 残課題。**分類を改める**: 2 項目は受入基準ではない付随の主張なので BLOCKED にも未証明にもせず、PR コメントで名指しする。spec-loop の Eval は手順 8 の起票候補 |
