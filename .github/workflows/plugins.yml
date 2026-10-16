@@ -126,6 +126,10 @@ jobs:
       - name: spec-loop の Red テストと Issue の本文の生成のテスト（#219）
         run: python3 scripts/test-scaffold.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（バージョンアップの差分を重ねる）。
+      - name: spec-loop の版の重ね合わせのテスト（#261）
+        run: python3 scripts/test-merge-versions.py
+
       # 本体は plugins/orca・plugins/cmux の SKILL.md の共通手順ブロック（写しを作らず抜き出して流す）。
       - name: orca・cmux のタブ一致規則のテスト（#202）
         run: python3 scripts/test-tab-match.py
