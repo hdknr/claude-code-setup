@@ -57,6 +57,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
       テストは `scripts/test-scaffold.py`）
+    - `scripts/merge-versions.py` - バージョンアップの版（`docs/v<n>/`。v2 以降は差分だけ）を重ねて、ある版の時点の全体を作る
+      （#261。決まりは `references/versions.md`。**印 `.merged-versions` の無い出力先は消さない**。
+      テストは `scripts/test-merge-versions.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）
@@ -153,6 +156,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと
     タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）
+  - `test-merge-versions.py` - spec-loop の段 5a（#261）の回帰テスト（変異テストを含む）。
+    **本体の定数が `references/versions.md` と一致することも見る**
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
     **生成した Red テストを実際に `unittest` で走らせ、実装が無ければケースの数だけ失敗し、
     正しい実装で緑になる（陽性対照）**ことを見る。**dev-loop の `references/spec-gap.md` の印と節の写しも突き合わせる**

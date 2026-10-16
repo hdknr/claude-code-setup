@@ -29,6 +29,8 @@
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
 | `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |
 | `scripts/scaffold.py` | 中間表現から OpenAPI・型・Red テスト・Issue の本文を作る。関門（仕様レビューを抜ける条件 1）を自分で通す（標準ライブラリのみ） |
+| `references/versions.md` | バージョンアップの版のディレクトリ（`docs/v<n>/`）と、差分の重ね合わせ・削除（`removed.csv`）の決まり |
+| `scripts/merge-versions.py` | 版ごとの差分を重ねて、ある版の時点の全体を作る（標準ライブラリのみ） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
 | `skills/feasibility/` | 実現性・コストのループを 1 回分進めるスキル（見積りを書く側） |
@@ -42,7 +44,7 @@
 **例外はスクリプトの定数**で、機械で検査する以上、写しが要ります。
 写しがずれていないかは、このリポジトリのテストが `references/` の表と突き合わせて確かめます
 （`scripts/test-check-qa-csv.py`・`scripts/test-check-spec-exit.py`・`scripts/test-check-feasibility-csv.py`・
-`scripts/test-check-signoff.py`・`scripts/test-scaffold.py`）。
+`scripts/test-check-signoff.py`・`scripts/test-scaffold.py`・`scripts/test-merge-versions.py`）。
 
 ## `req-loop` — 要求確定のループ
 
