@@ -579,7 +579,7 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
     実現性とコストのループ **`feasibility`**・提案書のループ **`proposal`** と、
     dev-loop への引き渡し **`scaffold`** の 5 本です（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
     どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・スケジュールと見積りの列・
-    サインオフのタグの命名）と、それを検査するスクリプトも入っています。
+    サインオフのタグの命名・バージョンアップの版の重ね合わせ）と、それを検査するスクリプトも入っています。
 
     **データの決まりは
     [プラグインの `references/`](https://github.com/hdknr/claude-code-setup/tree/main/plugins/spec-loop/references)
