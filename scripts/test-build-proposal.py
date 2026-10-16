@@ -183,6 +183,12 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
                                                            ("i", "docs/v2/requirements/d/y.md", "100644", "Y\n"), ("c",),
                                                            ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
      lambda r: not_made(1)(r) and "ファイルとディレクトリの両方" in r.output and "写すと同じ場所に書かれる" in r.output),
+    # ファイル名は違ってもディレクトリだけが大文字小文字違い——区別しない FS では片方のディレクトリに寄り、git に無いパスが載る
+    ("ディレクトリが大文字小文字だけ違うと比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/Dir/a.md", "100644", "A\n"),
+                                                      ("i", "docs/v2/requirements/dir/b.md", "100644", "B\n"), ("c",),
+                                                      ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: not_made(1)(r) and "ディレクトリ" in r.output and "requirements/dir" in r.output
+     and "写すと同じ場所に書かれる" in r.output),
     # 重ね合わせが読まないもの（版の外・版の中の重ねない置き場所）は写さない——そこで並んでも比較は作れる
     ("重ね合わせが読まないものは写さない", V2C[:-3] + [("i", "docs/notes/A.md", "100644", "X\n"), ("i", "docs/notes/a.md", "100644", "Y\n"),
                                               ("i", "docs/v2/proposal/N.md", "100644", "X\n"), ("i", "docs/v2/proposal/n.md", "100644", "Y\n"),
@@ -235,6 +241,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("大文字小文字だけ違うパスを断らない", "    if clashes:\n", "    if False:\n", "大文字小文字だけ違うパスは比較で断る"),
     ("ファイルとディレクトリの重なりを見ない", "            if fold(parent) in seen:\n", "            if False:\n",
      "ファイルとディレクトリが大文字小文字だけ違うと比較で断る"),
+    ("ディレクトリ同士の重なりを見ない", "            if other != parent:\n", "            if False:\n",
+     "ディレクトリが大文字小文字だけ違うと比較で断る"),
     ("重ね合わせが読まないものも写す", "        if not merged_reads(path):\n            continue\n", "",
      "重ね合わせが読まないものは写さない"),
     ("比較が作れなくても作る", "    if problems:\n        raise Stop(1, [f\"{tag}: ",

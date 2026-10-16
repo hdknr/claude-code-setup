@@ -148,12 +148,16 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
         other = seen.setdefault(fold(path), path)
         if other != path:
             clashes.append(f"{tag}: {other} と {path} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
-    for _, _, path in entries:
+    dirs: dict[str, str] = {}
+    for _, _, path in sorted(entries, key=lambda e: e[2]):
         parts = path.split("/")
         for depth in range(1, len(parts)):
             parent = "/".join(parts[:depth])
             if fold(parent) in seen:
                 clashes.append(f"{tag}: {seen[fold(parent)]} がファイルとディレクトリの両方になる（{path}）")
+            other = dirs.setdefault(fold(parent), parent)
+            if other != parent:
+                clashes.append(f"{tag}: ディレクトリ {other} と {parent} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
     if clashes:
         raise Stop(1, sorted(set(clashes)) + ["前の版との比較を作れない（写すと同じ場所に書かれる）"])
     batch = subprocess.run(["git", "-C", str(top), "cat-file", "--batch"],
