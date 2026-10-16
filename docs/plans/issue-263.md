@@ -123,7 +123,11 @@ docstring・`build-proposal.py` の docstring・4 つの SKILL.md（指し先と
 - 1 パス目の指摘対応: R1・R2（`copy_docs` を重ね合わせが読むものに絞り、大文字小文字だけ違うパスを写す前に 1）・
   R3（req と budget のタグを分けた試料）・R4（`render` の改行）・R7・R8（SKILL.md の文面）。
   `test-diff-versions.py` 12 試料・11 変異、`test-build-proposal.py` 33 試料・28 変異
-- 次: 指摘対応をコミット → 2 つ目の割り目 → 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目
+- 指摘対応のコミット: `9937419`（base は同じ `694fe95…`。main は動いていない）。`check-all.py` は
+  `check-description-sync.py` だけ赤だった——**実装のコミット（`3e932a3`）の時点から赤で、上の「43/43 本が緑」は誤り**
+  （proposal の frontmatter と JSON だけ変え、ほかの 4 スキルは変えていない）。理由つきの trailer を `9937419` に置いて緑
+- 次: 2 つ目の割り目 → **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**（どちらも未着手）。
+  2 パス目の指摘対応を始める直前の HEAD の SHA は、2 パス目の報告を受けてから記録する
 - 反証と差し戻し: Verifier の反証 0 件（差し戻しなし）。`/code-review` の 6 件を周の中で直した
 - 交絡: 実験なし
 - 割り目（手順 4 の完了時）: 人間の回答「ここで割る」。再開は worktree の中で `/dev-loop:dev-loop 263` → 手順 5 から
