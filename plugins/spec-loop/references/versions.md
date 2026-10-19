@@ -51,8 +51,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 | 読むもの | どう読むか |
 | --- | --- |
 | 仕様レビューを抜ける条件 1（`check-spec-exit.py`） | `build/merged/shared/qa.csv` と `build/merged/spec` に当てる |
-| `scaffold.py` | **自分でメモリ上に重ねる**（`build/merged/` は書かない。同じバイト）。中間表現の `source` は**重ね合わせた全体の根からのパス**（`spec-ir.md`） |
-| Issue の本文 | 中間表現は `build/merged/spec/spec_ir.json`（sha256 はこのバイト）。開発する側は同じコマンドで作って当てる |
+| `scaffold.py` | **自分でメモリ上に重ねる**（`build/merged/` は書かない。同じバイト）。中間表現の `source` は**重ね合わせた全体の根からのパス**（`spec-ir.md`）。**機能を追加・変更・削除に分けるのは、v<n-1> の全体との比較**（下の「版の差分」。`handoff-issue.md`） |
+| Issue の本文 | 中間表現は `build/merged/spec/spec_ir.json`（sha256 はこのバイト）。開発する側は**本文のコマンド**（`--upto <n>` で版を指定する）で作って当てる |
 
 **その版だけを読むもの**——`check-qa-csv.py`（版ごとの `qa.csv`）・`check-feasibility-csv.py` と `schedule-to-gantt.py`
 （版ごとの `feasibility/`）・`check-signoff.py` と `build-proposal.py`（`signoff-tags.md`）。
@@ -130,6 +130,20 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs --
 - **重ねた結果で、大文字小文字・Unicode の正規化（NFC/NFD）だけが違うパスが並ぶのも誤り**（`requirements/A.md` と
   `requirements/a.md`）——区別しないファイルシステムでは同じ場所に書かれ、片方が黙って消える。前の版のファイルを変えるなら、同じ綴りで置く。
 - どれかの版に `shared/qa.csv` があれば、行がすべて消えても**見出し行だけの `shared/qa.csv` を書く**（出力を `docs/` と同じ形に保つ）。
+
+## 差分の周を始める前に
+
+**新しい版（`docs/v<n>/`）を作る前に、前の版 v<n-1> の時点が崩れていないことを確かめる。** 崩れていると、
+差分を測る土台が無い——v<n> の変更の Issue が「変わったケースだけ失敗し、ほかは緑」と言っても、その「ほか」が既に赤い。
+
+| 確かめること | どう確かめるか | 崩れていたら |
+| --- | --- | --- |
+| `scaffold/` が v<n-1> の時点で新しい | `scaffold.py --check --upto <n-1>`（同梱。0 なら新しい） | v<n-1> で `scaffold` を作り直して登録してから始める |
+| 前の版の Red テストが、実装の上で全部緑 | 開発のリポジトリで `python3 -m unittest discover -s scaffold/tests` | 実装が前の版の仕様に追いついていない（乖離）。**先にそれを直す周を回す**（dev-loop で、前の版の Issue の受入基準に戻す） |
+
+- **どちらも v1 を作る前には要らない**（前の版が無い）。
+- **2 つ目は開発のリポジトリで見る**——正本と同じリポジトリなら、`scaffold.py --red-check` が同じことを全部の版について見る。
+- **確かめずに始めない。** 崩れているのに始めると、v<n> の差分の Red テストが、前の版から持ち越した赤と区別できない。
 
 ## 凍結
 
