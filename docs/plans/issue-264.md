@@ -98,9 +98,13 @@
 
 - **周の在り処**: ブランチ `issue/264-scaffold-change-kinds`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-264`・
   起点 `e41079b`・base 参照 `origin/main` → `e41079b3a1f3f5b76e5813ec308e363420cf048f`
-- 関門: 未着手
+- 実装: `f9807ef` まで。`test-scaffold.py` は試料 108 件・変異 64 件で緑。`check-all.py` は 43 本中 1 本（`check-skill-pointers.py`：
+  `spec-gap.md` の散文の指し先）が落ち、直して単体で緑——**全部を回し直すのはコミット後**
+- 手順 4 の割り目: AskUserQuestion で提案し、**「ここで割る」が選ばれた**（2026-10-19）。
+  再開は worktree の中で `/clear` → `/dev-loop:dev-loop 264`。**再開したら最初に `check-all.py` を回し直す**
+- 関門: 未着手（次は Verifier 1 パス目と `/code-review` 1 パス目。base は `e41079b3a1f3f5b76e5813ec308e363420cf048f`）
 - 反証・差し戻し: なし
-- 交絡: 未着手
+- 交絡: 実験なし（`--red-check` の陽性対照は試料の中にある——正しい前の版の実装で 0・壊れた実装で 1・実装なしで 2）
 
 ## 既知の限界・決着済みの論点
 
