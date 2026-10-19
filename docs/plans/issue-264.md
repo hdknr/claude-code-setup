@@ -114,6 +114,13 @@
 - 関門 2 パス目: **Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 1 件**／**`/code-review`（high）指摘 9 件**。base `e41079b3a1f3f5b76e5813ec308e363420cf048f`。
   採否は下の 2 パス目の表（直す 1・残課題 8。Verifier の R1 は review の P2-4 と重複）
 - 狭いパスの起点: `d4e6baf10a5ec52ab6f749bc4d4ed0a0fcfa7e50`（2 パス目の指摘対応の直前の HEAD）。直す行は P2-1 だけで、**ファイルの差分を持たない**（コミットメッセージの trailer）
+- 2 パス目の指摘対応: `5c003d7`（P2-1。trailer を最後の段落へ）。`check-all.py` 43/43 緑（失敗 0）
+- 狭いパス: **Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 0 件**。Verifier が設計した変異 10 本（一時リポジトリ）——
+  赤 5（trailer なしの対照・別段落 2 形・他プラグイン名の trailer・指定外プラグインの変更）、緑 5（同じ段落の陽性対照・古いコミットの trailer・
+  名前なし trailer〔docstring どおり PR 全体に効く〕・marketplace だけの変更〔一致は `check-plugin-versions.py` の担当〕・コロン後の空白なし）。
+  留意: 免除はコミットメッセージにあるので、PR の CI（`base..HEAD`）では効くが、履歴を書き換えると落ちる
+- 関門はここで打ち切り（3 パス目は無い）。残課題 P1-5〜P1-12・P2-2〜P2-9 は PR コメントで人間に渡す
+- この周の起票: 0 件（手順 8 で人間に訊く）
 - 交絡: 実験なし（`--red-check` の陽性対照は試料の中にある——正しい前の版の実装で 0・壊れた実装で 1・実装なしで 2）
 
 ## 既知の限界・決着済みの論点
