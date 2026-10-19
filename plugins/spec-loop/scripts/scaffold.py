@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """確定した仕様の中間表現（`spec_ir.json`）から、dev-loop に渡すものを作る。
 
-usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run]
+usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check]
 
 作るもの（置き場所の正は `references/tree.md`）:
 
@@ -17,6 +17,12 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run
 同じバイト）、一時ディレクトリに置いて当てる。**`build/merged/` には書かない。** 重ね合わせが決まりに反すれば 1
 （JSON として読めない版を含む）、`docs/` が無い・版が読めない・どの版にも中間表現が無ければ 2。
 
+**契約（`scaffold/`）は全体から作り、Issue の本文は変わった機能だけに作る。** 作業中の版 v<n> の全体と v<n-1> の全体を
+機能の `id` で比べ（同梱の `diff-versions.py` の `compare_maps`）、**追加・変更・削除**の機能ごとに本文を 1 件作る。
+**変わっていない機能の本文は作らない**（前の版の Issue がある）。v1 だけなら全部が追加。
+ケースの変化は**Red テストが実行する中身**（入力・期待・`operation.id`・出力の型・`impl_module`）で決める——題だけの違いは
+変化に数えない。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（反映済みでない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -30,15 +36,24 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run
 - `--check`: 書かずに、置いてある `scaffold/` が今の入力から作るものと同じかを確かめる（鮮度）。
   **消した機能の Red テストが残っていても古いと言う**（生成の印のあるファイルだけを数える）。
   **バイトで比べる**（改行の違いも古いと言う——Issue の本文の sha256 はバイトの指紋なので）。
-- `--dry-run`: 関門と中間表現の検査だけをして、何も書かず何も消さない。
+- `--dry-run`: 関門と中間表現の検査（前の版との分け方を含む）だけをして、何も書かず何も消さない。
+- `--upto <n>`: v<n> までを重ねた全体に当てる（`--check`・`--dry-run` でだけ使える）。**差分の周を始める前に、前の版の
+  時点の `scaffold/` が新しいか**を `--check --upto <n-1>` で確かめるのに使う（`references/versions.md`）。
+  **書く生成では断る**——古い版の契約を置くと、作業中の版の Issue が指すものと食い違う。
+- `--red-check`: 置いてある `scaffold/` が新しいことを確かめてから、Red テストを正本リポジトリの根で走らせ、
+  **失敗したテストが「追加・変更のケース」とちょうど同じか**を見る（前の版の実装の上で、回帰のケースは緑）。
+  **実装が無い**（どのテストも「未実装」で落ちる）なら、期待が全部失敗のとき（v1・追加だけ）は判定でき、
+  そうでなければ**回帰を判定していない**（2）。テストを書き換えない・何も書かない。
 
 終了コード:
 
-- 0: 作った（`--check` なら新しい・`--dry-run` なら作れる）
-- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現が決まりに反する（全部を 1 行ずつ出す）・
-  `--check` で古い。**Issue の本文の前の出力は消す**（古い本文を登録させない。`--check`・`--dry-run` では消さない）
-- 2: 判定していない——引数の誤り・`docs/` が無い／版が 1 つも無い／版が読めない・関門が判定していない・中間表現が無い・
-  予期しない失敗（書き込みの失敗を含む）。前の Issue の本文は消す
+- 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
+- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現（前の版のものを含む）が決まりに
+  反する（全部を 1 行ずつ出す）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
+  （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
+- 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、無い版の `--upto` を含む）・`docs/` が無い／版が 1 つも無い／
+  版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
+  予期しない失敗（書き込みの失敗を含む）。書く生成では前の Issue の本文は消す
 
 **`scaffold/` は失敗しても消さない**——commit 済みの契約で、古ければ `--check` が言う。
 
@@ -52,6 +67,8 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check | --dry-run
 | **Red テストが仕様のケースを漏れなく持つか** | 中間表現に書いたケースだけが生成される。漏れは書き起こしの側で見る |
 | **Python 以外の言語の型・テスト** | OpenAPI から対象リポジトリの道具で作る |
 | **Issue を登録したか・登録した本文が同じか** | 登録はスクリプトの外（`gh issue create --body-file` に、生成した本文をそのまま渡す） |
+| **変わった API（メソッド・パス）を Red テストが捕まえるか** | Red テストは関数を呼ぶ。メソッド・パスだけの変更は本文に前の版の API を書くが、ケースの変化には数えない |
+| **`--red-check` が回したのが前の版の実装か** | 走らせるのは正本リポジトリの根で読み込める実装。開発のリポジトリが別なら、そこで回すかは `CLAUDE.md` が決める |
 """
 
 from __future__ import annotations
@@ -66,6 +83,7 @@ import keyword
 import math
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unicodedata
@@ -100,9 +118,16 @@ DEFAULT_IMPL_MODULE = "spec_impl"
 NO_BODY = ("GET", "DELETE")
 
 # `references/handoff-issue.md` の写し
-HANDOFF_MARKER = "<!-- spec-loop-handoff: v1 -->"
+HANDOFF_MARKER = "<!-- spec-loop-handoff: v2 -->"
 FEATURE_MARKER = "<!-- spec-loop-feature: {} -->"
+CHANGE_MARKER = "<!-- spec-loop-change: {}; base={} -->"
+ADD, MODIFY, REMOVE = "add", "modify", "remove"
+NO_BASE = "none"
 SECTIONS = ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 仕様の穴を見つけたら")
+# ケースの変化（受入基準の表の `変化` の列）
+CASE_ADDED, CASE_CHANGED, CASE_KEPT, CASE_REMOVED = "追加", "変更", "回帰", "削除"
+# Red テストが「実装が無い」で落ちたときの文言の頭（生成する Red テストの `self.fail` と同じ）
+MISSING = "未実装: "
 
 # 生成したファイルの印。**これを持つファイルだけを、消してよい・古いと言ってよい生成物に数える**
 GENERATED = "spec-loop scaffold が生成（手で直さない。spec_ir.json を直して作り直す）"
@@ -124,6 +149,8 @@ def _load(name: str, filename: str):
 spec_exit = _load("check_spec_exit", "check-spec-exit.py")
 qa = spec_exit.pptx.qa
 versions = _load("merge_versions", "merge-versions.py")
+# 比べ方は `diff-versions.py` のもの（`compare_maps` は純粋な関数。重ねるのはこのスクリプトの `versions`）
+diffs = _load("diff_versions", "diff-versions.py")
 
 
 def merged(path: str) -> str:
@@ -415,11 +442,24 @@ def read_answered(path: Path) -> dict[str, dict[str, str]]:
     return rows
 
 
-def load(repo: Path) -> tuple[int, list[str], dict | None, bytes, dict]:
-    """(終了コード, 出力する行, 中間表現, 中間表現のバイト, Q&A の行) を返す。
+# dataclass は使わない——importlib で読み込むと sys.modules に無く、dataclass が落ちる（`diff-versions.py` と同じ）
+class Loaded:
+    """重ね合わせた全体から読んだもの。"""
+
+    def __init__(self, ir: dict, raw: bytes, answered: dict, number: int, docs: Path) -> None:
+        self.ir = ir
+        self.raw = raw  # 中間表現のバイト（Issue の本文の sha256 はこれ）
+        self.answered = answered  # Q&A の行（No → 行）
+        self.number = number  # 重ねた最後の版の番号
+        self.docs = docs
+
+
+def load(repo: Path, upto: int | None = None) -> tuple[int, list[str], Loaded | None]:
+    """(終了コード, 出力する行, 読んだもの) を返す。
 
     `docs/` の版を**メモリ上で**重ね合わせ（`merge-versions.py` の `merge`。同じバイト）、一時ディレクトリに書いて、
     関門・中間表現の検査をそこに当てる。**`build/merged/` には書かない**——`--check`・`--dry-run` は何も書かない。
+    `upto` を渡せば v<upto> までを重ねる（無い版なら判定しない）。
     """
     docs = repo / DOCS
     if not docs.is_dir():
@@ -433,16 +473,28 @@ def load(repo: Path) -> tuple[int, list[str], dict | None, bytes, dict]:
     except versions.Unreadable as exc:
         raise Unjudged(f"{exc}。重ね合わせていない")
     try:
-        problems, _, _, rendered = versions.merge(docs)
+        problems, found, _, rendered = versions.merge(docs, upto)
     except versions.Unreadable as exc:
         raise Unjudged(f"{exc}。重ね合わせていない")
     except RecursionError:
         # 版の中間表現の入れ子が深すぎて JSON として読めない（`merge-versions.py` は捕まえない）
         raise Unjudged("版の中間表現を読めない（入れ子が深すぎる）。重ね合わせていない")
     if problems:
-        return 1, problems + ["版の重ね合わせが決まりに反する（references/versions.md）。生成しない"], None, b"", {}
+        return 1, problems + ["版の重ね合わせが決まりに反する（references/versions.md）。生成しない"], None
     if IR_PATH not in rendered:
         raise Unjudged(f"重ね合わせた全体に {IR_PATH} が無い（どの版にも中間表現が無い）。判定していない")
+    code, lines, ir, answered = read_whole(rendered, gate=True)
+    if code:
+        return code, lines, None
+    number = upto if upto is not None else len(found)
+    return 0, [], Loaded(ir, rendered[IR_PATH], answered, number, docs)
+
+
+def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], dict | None, dict]:
+    """重ね合わせた全体を一時ディレクトリに置き、(終了コード, 出力する行, 中間表現, Q&A の行) を返す。
+
+    `gate` なら関門（条件 1）も当てる——前の版の全体には当てない（その版の時点で通ったもので、後の版の Q&A は関わらない）。
+    """
     with tempfile.TemporaryDirectory() as tmp:
         whole = Path(tmp)
         for rel, data in rendered.items():
@@ -452,19 +504,20 @@ def load(repo: Path) -> tuple[int, list[str], dict | None, bytes, dict]:
             # 一時ディレクトリの名前ではなく、利用者が `merge-versions.py` で作れる場所で言う
             return [line.replace(str(whole), MERGED_DIR) for line in lines]
 
-        code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR)
-        if code:
-            return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, b"", {}
+        if gate:
+            code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR)
+            if code:
+                return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, {}
         raw = rendered[IR_PATH]
         try:
             ir = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise Unjudged(f"{merged(IR_PATH)}: 中間表現を読めない（{exc.__class__.__name__}: {exc}）")
-        answered = read_answered(whole / QA_PATH)
+        answered = read_answered(whole / QA_PATH) if (whole / QA_PATH).is_file() else {}
         problems = check_ir(ir, whole, answered)
     if problems:
-        return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, b"", {}
-    return 0, [], ir, raw, answered
+        return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, {}
+    return 0, [], ir, answered
 
 
 # ---------------------------------------------------------------- 生成する
@@ -656,92 +709,341 @@ def qa_sort_key(no: str) -> int:
     return int(no.split("-", 1)[1])
 
 
-def issue_body(feature: dict, ir_sha: str, test_text: str, impl_module: str, answered: dict) -> str:
+def qa_rows(refs: set[str], answered: dict, where: str) -> list[str]:
+    if not refs:
+        return ["この機能が根拠にした Q&A は無い。"]
+    lines = ["| No | 質問 | 回答 | 反映先 |", "| --- | --- | --- | --- |"]
+    for no in sorted(refs, key=qa_sort_key):
+        row = answered[no]
+        lines.append(f"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |")
+    return lines + ["", f"（{where}から写した。）"]
+
+
+# ---------------------------------------------------------------- 前の版と比べる
+
+class Change:
+    """Issue の本文 1 件になる機能の変化。"""
+
+    def __init__(self, kind: str, feature: dict, before: dict | None = None) -> None:
+        self.kind = kind  # ADD / MODIFY / REMOVE
+        self.feature = feature  # この版の機能（削除なら前の版の機能）
+        self.before = before  # 前の版の機能（変更・削除）
+        self.reason = ""  # 削除の理由（removed.csv）
+
+
+class Before:
+    """前の版（v<n-1>）の全体から読んだもの。v1 なら空。"""
+
+    def __init__(self, answered: dict | None = None, impl_module: str = DEFAULT_IMPL_MODULE) -> None:
+        self.answered = answered or {}
+        self.impl_module = impl_module
+
+
+def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
+    """(終了コード, 出力する行, 変化, 前の版) を返す。v<n> の全体と v<n-1> の全体を機能の `id` で比べる。
+
+    前の版の中間表現も決まりに当てる——反すると、ケースの変化を Red テストの中身で比べられない（1）。
+    """
+    number = loaded.number
+    now = {f["id"]: f for f in features_of(loaded.ir)}
+    if number == 1:
+        return 0, [], [Change(ADD, f) for f in now.values()], Before()
+    try:
+        problems, found, _, rendered = versions.merge(loaded.docs, number - 1)
+    except versions.Unreadable as exc:
+        raise Unjudged(f"{exc}。前の版（v{number - 1}）を重ね合わせていない")
+    if problems:
+        return 1, problems + [f"前の版（v{number - 1}）の全体を重ねられない。生成しない"], [], Before()
+    before_ir, before = {"features": []}, Before()
+    if IR_PATH in rendered:
+        code, lines, before_ir, answered = read_whole(rendered, gate=False)
+        if code:
+            return 1, [f"v{number - 1} の時点の {line}" for line in lines[:-1]] + [
+                f"前の版（v{number - 1}）の中間表現が決まりに反するので、機能を追加・変更・削除に分けない。生成しない"], [], Before()
+        before = Before(answered, before_ir.get("impl_module", DEFAULT_IMPL_MODULE))
+    reasons = diffs.removal_reasons(found[number - 1][1])
+    kinds = {diffs.ADDED: ADD, diffs.CHANGED: MODIFY, diffs.REMOVED: REMOVE}
+    old = {f["id"]: f for f in features_of(before_ir)}
+    changes = []
+    for diff in diffs.compare_maps(old, now):
+        kind = kinds[diff.status]
+        change = Change(kind, diff.before if kind == REMOVE else diff.after, diff.before)
+        change.reason = reasons.get((versions.KIND_FEATURE, diff.key), "")
+        changes.append(change)
+    return 0, [], sorted(changes, key=lambda c: c.feature["id"]), before
+
+
+def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
+    """そのケースの Red テストが実行する中身（題・コメントは入れない）。"""
+    op = feature["operation"]
+    expected = case["expected"] if "expected" in case else {"error": case["error"]}
+    return impl_module, op["id"], literal(output_types(op)), literal(case["input"]), literal(expected)
+
+
+def case_changes(change: Change, impl_now: str, impl_before: str) -> tuple[list[tuple[str, dict]], list[dict]]:
+    """([(変化, ケース)], 消したケース) を返す。並びはケースの番号の順。"""
+    cases = sorted(change.feature["cases"], key=case_order)
+    if change.kind == REMOVE:
+        return [(CASE_REMOVED, c) for c in cases], []
+    if change.kind == ADD:
+        return [(CASE_ADDED, c) for c in cases], []
+    old = {c["id"]: c for c in change.before["cases"]}
+    rows = []
+    for case in cases:
+        if case["id"] not in old:
+            rows.append((CASE_ADDED, case))
+        elif behavior(change.before, old[case["id"]], impl_before) != behavior(change.feature, case, impl_now):
+            rows.append((CASE_CHANGED, case))
+        else:
+            rows.append((CASE_KEPT, case))
+    ids = {case["id"] for case in cases}
+    return rows, sorted((c for c in change.before["cases"] if c["id"] not in ids), key=case_order)
+
+
+def test_name(feature: dict, case: dict) -> str:
+    return f"{test_class(feature)}.{test_method(case)}"
+
+
+def test_id(feature: dict, case: dict) -> str:
+    """`unittest` が `scaffold/tests` から見つけたときの名前（モジュール.クラス.メソッド）。"""
+    return f"{test_file(feature)[:-3]}.{test_name(feature, case)}"
+
+
+def red_cases(rows: list[tuple[str, dict]]) -> list[dict]:
+    """前の版の実装の上で失敗するはずのケース（追加・変更）。"""
+    return [case for status, case in rows if status in (CASE_ADDED, CASE_CHANGED)]
+
+
+# ---------------------------------------------------------------- Issue の本文
+
+def issue_title(change: Change, number: int) -> str:
+    title = f"{change.feature['id']}: {change.feature['title']}"
+    if change.kind == MODIFY:
+        return f"{title}（v{number} で変更）"
+    if change.kind == REMOVE:
+        return f"{title}（v{number} で撤去）"
+    return title
+
+
+def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before: Before) -> str:
+    feature, number = change.feature, loaded.number
+    impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
+    impl = before.impl_module if change.kind == REMOVE else impl_now
     op = feature["operation"]
     base = pascal(op["id"])
     names = [f"`{base}Input`", f"`{base}Output`"] + ([f"`{base}Error`"] if op.get("errors") else [])
     tfile = f"{OUT_DIR}/tests/{test_file(feature)}"
-    cases = sorted(feature["cases"], key=case_order)
-    refs = set(feature["qa"]) | {no for case in cases for no in case.get("qa", [])}
+    rows, gone = case_changes(change, impl_now, before.impl_module)
+    previous = f"v{number - 1}"
+    kind_text = {
+        ADD: "追加（v1 の機能）" if number == 1 else f"追加（v{number} で足した機能）",
+        MODIFY: f"変更（{previous} の時点から v{number} で変えた機能）",
+        REMOVE: f"削除（v{number} で消した機能。理由: {cell(change.reason)}）",
+    }[change.kind]
+    command = f"merge-versions.py {DOCS} {MERGED_DIR} --upto {number}"
     lines = [
         HANDOFF_MARKER,
         FEATURE_MARKER.format(feature["id"]),
+        CHANGE_MARKER.format(change.kind, previous if number > 1 else NO_BASE),
         "",
         "この Issue は spec-loop の `scaffold` が、確定した仕様から生成した。**本文を手で直さない。**",
         "",
         SECTIONS[0],
         "",
         f"- 機能: `{feature['id']}` {feature['title']}",
-        f"- 中間表現: `{merged(IR_PATH)}`（sha256: `{ir_sha}`）",
-        "- 仕様の原文: " + "・".join(f"`{merged(s)}`" for s in feature["source"]),
-        f"- `{MERGED_DIR}/` は正本の版（`{DOCS}/v1/`…）を重ね合わせた全体で、commit しない——spec-loop の"
-        f" `merge-versions.py {DOCS} {MERGED_DIR}` で作る",
-        f"- API: `{op['method']} {op['path']}`（`{OUT_DIR}/openapi.json` の `operationId`: `{op['id']}`）",
-        f"- 型: `{OUT_DIR}/types.py` の " + "・".join(names),
-        "",
-        SECTIONS[1],
-        "",
-        "**下の Red テストがすべて緑になること。** テストを書き換えて緑にしない——テストが仕様と食い違うと思ったら、",
-        "それは仕様の穴である（下の「仕様の穴を見つけたら」）。",
-        "",
-        "| ケース | 確かめること | Red テスト | Q&A |",
-        "| --- | --- | --- | --- |",
+        f"- 変化: {kind_text}",
+        f"- 中間表現: `{merged(IR_PATH)}`（sha256: `{sha256(loaded.raw)}`）"
+        + ("——この機能を消した後の全体" if change.kind == REMOVE else ""),
     ]
-    for case in cases:
-        lines.append(f"| `{case['id']}` | {cell(case['title'])} | `{test_class(feature)}.{test_method(case)}` | "
-                     + ("・".join(case.get("qa", [])) or "—") + " |")
-    lines += [
-        "",
-        SECTIONS[2],
-        "",
-        f"- ファイル: `{tfile}`（sha256: `{sha256(test_text)}`）",
-        f"- 実装を置く場所: モジュール `{impl_module}` の関数 `{op['id']}(**input) -> dict`"
-        "（失敗は `{\"error\": \"<名前>\"}` を返す）",
-        "- 回し方（正本リポジトリの根で）:",
-        "",
-        "```bash",
-        f"python3 -m unittest discover -s {OUT_DIR}/tests -p {test_file(feature)}",
-        "```",
-        "",
-        "実装が無い状態では、ケースの数だけ失敗する。",
-        "",
-        SECTIONS[3],
-        "",
-    ]
-    if refs:
-        lines += ["| No | 質問 | 回答 | 反映先 |", "| --- | --- | --- | --- |"]
-        for no in sorted(refs, key=qa_sort_key):
-            row = answered[no]
-            lines.append(f"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |")
-        lines.append("")
-        lines.append(f"（生成した時点の `{merged(QA_PATH)}` から写した。）")
+    if change.kind == REMOVE:
+        lines.append(f"- 仕様の原文（{previous} の時点）: " + "・".join(f"`{s}`" for s in feature["source"]))
     else:
-        lines.append("この機能が根拠にした Q&A は無い。")
+        lines.append("- 仕様の原文: " + "・".join(f"`{merged(s)}`" for s in feature["source"]))
+    lines.append(f"- `{MERGED_DIR}/` は正本の版（`{DOCS}/v1/`…）を v{number} まで重ね合わせた全体で、commit しない——spec-loop の"
+                 f" `{command}` で作る（**版を指定する**——後の版を足しても同じバイトになる）")
+    if change.kind == REMOVE:
+        lines += [f"- 撤去する API: `{op['method']} {op['path']}`（`operationId`: `{op['id']}`。`{OUT_DIR}/openapi.json` から消えた）",
+                  "- 消えた型: " + "・".join(names) + f"（`{OUT_DIR}/types.py` から消えた）"]
+    else:
+        lines += [f"- API: `{op['method']} {op['path']}`（`{OUT_DIR}/openapi.json` の `operationId`: `{op['id']}`）",
+                  f"- 型: `{OUT_DIR}/types.py` の " + "・".join(names)]
+        old_op = change.before["operation"] if change.kind == MODIFY else None
+        if old_op and (old_op["method"], old_op["path"], old_op["id"]) != (op["method"], op["path"], op["id"]):
+            lines.append(f"- {previous} の API: `{old_op['method']} {old_op['path']}`（`operationId`: `{old_op['id']}`）")
+    lines += ["", SECTIONS[1], ""]
+    if change.kind == REMOVE:
+        lines += [
+            f"**この機能の実装（モジュール `{impl}` の関数 `{op['id']}`）を撤去し、ほかの Red テストがすべて緑のままであること。**",
+            "撤去した関数を呼ぶ箇所を残さない。下のケースの振る舞いは、もう求めない。",
+        ]
+    else:
+        lines += [
+            "**下の Red テストがすべて緑になること。** テストを書き換えて緑にしない——テストが仕様と食い違うと思ったら、",
+            "それは仕様の穴である（下の「仕様の穴を見つけたら」）。",
+        ]
+        if change.kind == MODIFY:
+            lines += [
+                f"**`{CASE_KEPT}` のケースは前の版の実装で緑で、緑のままであること**——前の版の実装の上で失敗するのは",
+                f"`{CASE_ADDED}`・`{CASE_CHANGED}` のケースだけである。**ほかの機能の Red テストも緑のままであること。**",
+            ]
+    lines += ["", "| ケース | 変化 | 確かめること | Red テスト | Q&A |", "| --- | --- | --- | --- | --- |"]
+    for status, case in rows:
+        test = f"—（`{tfile}` ごと消した）" if change.kind == REMOVE else f"`{test_name(feature, case)}`"
+        lines.append(f"| `{case['id']}` | {status} | {cell(case['title'])} | {test} | "
+                     + ("・".join(case.get("qa", [])) or "—") + " |")
+    if gone:
+        lines += ["", f"{CASE_REMOVED}したケース（Red テストから外した。その振る舞いはもう求めない）: "
+                  + "・".join(f"`{c['id']}` {cell(c['title'])}" for c in gone)]
+    lines += ["", SECTIONS[2], ""]
+    if change.kind == REMOVE:
+        lines += [
+            f"- 消したファイル: `{tfile}`（`scaffold.py` が消した。この機能の Red テストはもう無い）",
+            "- 回帰（正本リポジトリの根で。すべて緑であること）:",
+            "",
+            "```bash",
+            f"python3 -m unittest discover -s {OUT_DIR}/tests",
+            "```",
+        ]
+    else:
+        red = red_cases(rows)
+        lines += [
+            f"- ファイル: `{tfile}`（sha256: `{sha256(contract[f'tests/{test_file(feature)}'])}`）",
+            f"- 実装を置く場所: モジュール `{impl}` の関数 `{op['id']}(**input) -> dict`"
+            "（失敗は `{\"error\": \"<名前>\"}` を返す）",
+            "- 回し方（正本リポジトリの根で）:",
+            "",
+            "```bash",
+            f"python3 -m unittest discover -s {OUT_DIR}/tests -p {test_file(feature)}",
+            "```",
+            "",
+        ]
+        if change.kind == ADD:
+            lines.append("実装が無い状態では、ケースの数だけ失敗する。")
+        else:
+            lines += [f"前の版の実装の上では、`{CASE_ADDED}`・`{CASE_CHANGED}` のケース（{len(red)} 件）だけが失敗し、"
+                      f"`{CASE_KEPT}` のケース（{len(rows) - len(red)} 件）は緑である。ほかの機能を含む回帰は",
+                      f"`python3 -m unittest discover -s {OUT_DIR}/tests` で見る。"]
+    lines += ["", SECTIONS[3], ""]
+    refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}
+    if change.kind == REMOVE:
+        lines += qa_rows(refs, before.answered, f"{previous} の時点の `{merged(QA_PATH)}` ")
+    else:
+        lines += qa_rows(refs, loaded.answered, f"生成した時点の `{merged(QA_PATH)}` ")
     lines += [
         "",
         SECTIONS[4],
         "",
         f"**実装で決めない。** 作業中の版の Q&A 表（`{DOCS}/v<n>/{QA_PATH}`）に起票元 `開発` で起票して、要求側に差し戻す。",
         "手順は dev-loop の `references/spec-gap.md` にある。",
-        f"**手元の `{merged(IR_PATH)}` か Red テストの sha256 が上と違うなら、この Issue は手元の仕様と別の時点のもの**——",
+        f"**上のコマンドで作った手元の `{merged(IR_PATH)}` か Red テストの sha256 が上と違うなら、"
+        "この Issue は手元の仕様と別の時点のもの**——",
         "実装に入らず、同じく差し戻す。",
     ]
     return "\n".join(lines) + "\n"
 
 
-def render(ir: dict, raw: bytes, answered: dict, impl_module: str) -> tuple[dict[str, str], dict[str, str]]:
-    """({`scaffold/` からの相対パス: 中身}, {Issue の本文のファイル名: 中身}) を返す。"""
+def render_contract(ir: dict) -> dict[str, str]:
+    """{`scaffold/` からの相対パス: 中身} を返す。契約は全体から作る（変わっていない機能も）。"""
+    impl_module = ir.get("impl_module", DEFAULT_IMPL_MODULE)
     contract = {"openapi.json": openapi(ir), "types.py": types_py(ir)}
-    issues, index = {}, []
-    ir_sha = sha256(raw)
     for feature in features_of(ir):
-        text = red_test(feature, impl_module)
-        contract[f"tests/{test_file(feature)}"] = text
-        issues[f"{feature['id']}.md"] = issue_body(feature, ir_sha, text, impl_module, answered)
-        index.append({"feature": feature["id"], "title": f"{feature['id']}: {feature['title']}",
-                      "body": f"{feature['id']}.md"})
+        contract[f"tests/{test_file(feature)}"] = red_test(feature, impl_module)
+    return contract
+
+
+def render_issues(changes: list[Change], loaded: Loaded, contract: dict[str, str], before: Before) -> dict[str, str]:
+    """{Issue の本文のファイル名: 中身} を返す。本文は変わった機能だけ。"""
+    impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
+    issues, index = {}, []
+    for change in changes:
+        fid = change.feature["id"]
+        rows, _ = case_changes(change, impl_now, before.impl_module)
+        issues[f"{fid}.md"] = issue_body(change, loaded, contract, before)
+        index.append({"feature": fid, "title": issue_title(change, loaded.number), "change": change.kind,
+                      "body": f"{fid}.md",
+                      "red": [] if change.kind == REMOVE else [test_name(change.feature, c) for c in red_cases(rows)]})
     issues["issues.json"] = json.dumps(index, ensure_ascii=False, indent=2) + "\n"
-    return contract, issues
+    return issues
+
+
+# ---------------------------------------------------------------- Red の状態を見る
+
+# 子のプロセスで走らせる——実装を読み込むのは正本リポジトリの根（`python3 -m unittest discover` と同じ）
+DRIVER = r'''
+import json
+import sys
+import unittest
+
+outcomes = {}
+
+
+class Result(unittest.TestResult):
+    def addSuccess(self, test):
+        outcomes[test.id()] = "pass"
+
+    def addFailure(self, test, err):
+        outcomes[test.id()] = "missing" if str(err[1]).startswith(sys.argv[2]) else "fail"
+
+    def addError(self, test, err):
+        outcomes[test.id()] = "error"
+
+    def addSkip(self, test, reason):
+        outcomes[test.id()] = "skip"
+
+    def addExpectedFailure(self, test, err):
+        outcomes[test.id()] = "skip"
+
+    def addUnexpectedSuccess(self, test):
+        outcomes[test.id()] = "pass"
+
+
+unittest.defaultTestLoader.discover(sys.argv[1], top_level_dir=sys.argv[1]).run(Result())
+print("\n" + json.dumps(outcomes, ensure_ascii=False))
+'''
+RED_TIMEOUT = 600
+
+
+def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before) -> int:
+    """失敗した Red テストが、追加・変更のケースとちょうど同じかを見る。"""
+    impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
+    red = set()
+    for change in changes:
+        if change.kind != REMOVE:
+            rows, _ = case_changes(change, impl_now, before.impl_module)
+            red |= {test_id(change.feature, case) for case in red_cases(rows)}
+    expected = [test_id(f, c) for f in features_of(loaded.ir) for c in sorted(f["cases"], key=case_order)]
+    try:
+        proc = subprocess.run([sys.executable, "-c", DRIVER, f"{OUT_DIR}/tests", MISSING], cwd=repo,
+                              capture_output=True, text=True, timeout=RED_TIMEOUT)
+        outcomes = json.loads(proc.stdout.rstrip("\n").rsplit("\n", 1)[-1])
+        if proc.returncode != 0 or not isinstance(outcomes, dict):
+            raise ValueError(proc.stderr[-400:])
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        print(f"Red テストを走らせられない（{exc.__class__.__name__}: {exc}）。判定していない", file=sys.stderr)
+        return 2
+    green = [t for t in expected if t not in red]
+    if expected and green and all(outcomes.get(t) == "missing" for t in expected):
+        print(f"実装が無い（どの Red テストも「{MISSING.strip()}」で失敗した）。回帰のケース {len(green)} 件を判定していない"
+              f"——前の版の実装を読み込める場所で走らせる", file=sys.stderr)
+        return 2
+    problems = []
+    for name in expected:
+        got = outcomes.get(name)
+        if got is None:
+            problems.append(f"{name}: 走らなかった")
+        elif got in ("error", "skip"):
+            problems.append(f"{name}: {'エラー' if got == 'error' else '飛ばされた'}（失敗でも緑でもない）")
+        elif name in red and got == "pass":
+            problems.append(f"{name}: {CASE_ADDED}・{CASE_CHANGED}のケースなのに緑（Red テストが変化を捕まえていない）")
+        elif name not in red and got != "pass":
+            problems.append(f"{name}: {CASE_KEPT}のケースなのに失敗した")
+    for line in problems:
+        print(line, file=sys.stderr)
+    if problems:
+        print(f"Red の状態が期待と違う（{len(problems)} 件）", file=sys.stderr)
+        return 1
+    print(f"Red の状態は期待どおり: 失敗 {len(red)} 件（{CASE_ADDED}・{CASE_CHANGED}）・緑 {len(green)} 件（{CASE_KEPT}）")
+    return 0
 
 
 # ---------------------------------------------------------------- 書く・比べる
@@ -808,15 +1110,27 @@ def write(repo: Path, contract: dict[str, str], issues: dict[str, str]) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--repo", default=".")
+    parser.add_argument("--upto")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--red-check", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
     repo = Path(args.repo)
-    writing = not (args.check or args.dry_run)
+    writing = not (args.check or args.dry_run or args.red_check)
+    if args.upto is not None:
+        if not re.fullmatch(r"[1-9][0-9]*", args.upto):
+            print("--upto には 1 以上の整数を渡す", file=sys.stderr)
+            return 2
+        if not (args.check or args.dry_run):
+            # 古い版の契約を置くと、作業中の版の Issue が指すものと食い違う
+            print("--upto は --check か --dry-run と一緒にだけ使う（書く生成・--red-check は作業中の版に当てる）",
+                  file=sys.stderr)
+            return 2
+        args.upto = int(args.upto)
     if not repo.is_dir():
         print(f"{repo}: ディレクトリが無い。判定していない", file=sys.stderr)
         return 2
@@ -836,22 +1150,26 @@ def main(argv: list[str]) -> int:
         return 2
 
 
+def fail(repo: Path, writing: bool, code: int, lines: list[str]) -> int:
+    if writing:
+        clear_issues(repo)
+        lines = lines + [f"前の Issue の本文（{ISSUES_DIR}/）は消した"]
+    for line in lines:
+        print(line, file=sys.stderr)
+    return code
+
+
 def run(repo: Path, args, writing: bool) -> int:
     try:
-        code, lines, ir, raw, answered = load(repo)
+        code, lines, loaded = load(repo, args.upto)
     except Unjudged as exc:
         code, lines = 2, [str(exc)]
     if code:
-        if writing:
-            clear_issues(repo)
-            lines.append(f"前の Issue の本文（{ISSUES_DIR}/）は消した")
-        for line in lines:
-            print(line, file=sys.stderr)
-        return code
+        return fail(repo, writing, code, lines)
 
-    contract, issues = render(ir, raw, answered, ir.get("impl_module", DEFAULT_IMPL_MODULE))
-    features = len(ir["features"])
-    cases = sum(len(f["cases"]) for f in ir["features"])
+    contract = render_contract(loaded.ir)
+    features = len(loaded.ir["features"])
+    cases = sum(len(f["cases"]) for f in loaded.ir["features"])
     if args.check:
         problems = stale(repo / OUT_DIR, contract)
         for line in problems:
@@ -859,13 +1177,33 @@ def run(repo: Path, args, writing: bool) -> int:
         if problems:
             print(f"{OUT_DIR}/ が古い（{len(problems)} 件）。scaffold.py で作り直す", file=sys.stderr)
             return 1
-        print(f"{OUT_DIR}/ は新しい（機能 {features} 件・ケース {cases} 件）")
+        print(f"{OUT_DIR}/ は新しい（v{loaded.number} まで・機能 {features} 件・ケース {cases} 件）")
         return 0
+
+    try:
+        code, lines, changes, before = classify(loaded)
+    except Unjudged as exc:
+        code, lines = 2, [str(exc)]
+    if code:
+        return fail(repo, writing, code, lines)
+    if args.red_check:
+        problems = stale(repo / OUT_DIR, contract)
+        if problems:
+            for line in problems:
+                print(line, file=sys.stderr)
+            print(f"{OUT_DIR}/ が古い（{len(problems)} 件）。作り直してから Red の状態を見る", file=sys.stderr)
+            return 1
+        return red_check(repo, loaded, changes, before)
+    issues = render_issues(changes, loaded, contract, before)
+    counted = "・".join(f"{kind} {sum(1 for c in changes if c.kind == kind)}" for kind in (ADD, MODIFY, REMOVE))
+    summary = (f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）。"
+               f"v{loaded.number - 1} から変わっていない機能の本文は作らない" if loaded.number > 1 else
+               f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）")
     if args.dry_run:
-        print(f"作れる（機能 {features} 件・ケース {cases} 件）。何も書いていない")
+        print(f"作れる（{summary}）。何も書いていない")
         return 0
     write(repo, contract, issues)
-    print(f"作った: {OUT_DIR}/（機能 {features} 件・ケース {cases} 件の Red テスト）・{ISSUES_DIR}/（Issue の本文 {features} 件）")
+    print(f"作った: {OUT_DIR}/ と {ISSUES_DIR}/（{summary}）")
     print("**条件 2〜5 は判定していない**——spec-review が「抜けた」と報告したことを確かめてから登録する")
     return 0
 
