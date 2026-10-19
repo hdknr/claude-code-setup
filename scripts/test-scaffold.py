@@ -403,13 +403,21 @@ V2_RETURN = {
                   "input": {"days": {"type": "integer"}}, "output": {"ok": {"type": "boolean"}}},
     "cases": [{"id": "F-003-C1", "title": "7 日以内なら返品できる", "input": {"days": 3}, "expected": {"ok": True}, "qa": ["Q-004"]}],
 }
+# v2 で出力に項目を足した（C1 の期待は変わる。失敗のケース C2 は前の版の実装で緑のまま）
+V2_OUTPUT_ADDED = copy.deepcopy(V2_CHANGED)
+V2_OUTPUT_ADDED["operation"]["output"]["rate"] = {"type": "integer"}
+V2_OUTPUT_ADDED["cases"][0]["expected"] = {"discount": 300, "rate": 3}
+# v2 で割引の型を number に広げただけ（期待は同じ）——前の版の実装はどのケースも緑のまま
+V2_WIDENED = copy.deepcopy(IR["features"][0])
+V2_WIDENED["operation"]["output"]["discount"] = {"type": "number"}
 QA_V2 = "Q-004,要求確定,返品は何日まで？,A: 7 日 / B: 14 日,A（業務部が回答）,spec/return.md,反映済み,\n"
 RETURN_SPEC = "# 返品\n\n7 日以内。\n"
 
 
 def v2(features: list[dict], qa: str | None = HEADER + QA_V2, removed: str | None = None,
-       spec: dict[str, str] | None = None) -> dict[str, str]:
-    files = {str(V2 / "spec" / "spec_ir.json"): json.dumps({"features": features}, ensure_ascii=False, indent=2)}
+       spec: dict[str, str] | None = None, top: dict | None = None) -> dict[str, str]:
+    files = {str(V2 / "spec" / "spec_ir.json"): json.dumps({**(top or {}), "features": features}, ensure_ascii=False,
+                                                            indent=2)}
     if qa is not None:
         files[str(V2 / "shared" / "qa.csv")] = qa
     if removed is not None:
@@ -716,6 +724,13 @@ CASES: list[Case] = [
          extra=v2([V2_CHANGED])),
     Case("Red の状態: 回帰が壊れた実装", 1, "test_f_002.TestF002.test_f_002_c1: 回帰のケースなのに失敗した",
          args=("--red-check",), generate_first=True, extra=v2([V2_CHANGED]), impl=WRONG_IMPL),
+    Case("Red の状態: v2 で出力の項目を足す", 0, "失敗 1 件（追加・変更）・緑 2 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_OUTPUT_ADDED]), impl=GOOD_IMPL),
+    Case("Red の状態: v2 で型を広げる", 0, "失敗 0 件（追加・変更）・緑 3 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_WIDENED]), impl=GOOD_IMPL),
+    Case("v2 で impl_module だけ変える", 0, "modify 2", extra=v2([], top={"impl_module": "app_impl"})),
+    Case("Red の状態: v2 で impl_module だけ変える", 0, "失敗 3 件", args=("--red-check",), generate_first=True,
+         extra=v2([], top={"impl_module": "app_impl"}), impl=GOOD_IMPL),
     Case("Red の状態: scaffold が古い", 1, "作り直してから", args=("--red-check",), generate_first=True, pre=edit_ir_file),
 ]
 
@@ -818,8 +833,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("消したケースを書かない", "    if gone:\n", "    if False:\n", "v2 でケースを足し・消し・題を変える"),
     ("再現コマンドに版を書かない", 'command = f"merge-versions.py {DOCS} {MERGED_DIR} --upto {number}"',
      'command = f"merge-versions.py {DOCS} {MERGED_DIR}"', "v3 を足しても本文の sha256 が合う"),
-    ("前の版の中間表現を検査しない", "        if code:\n            return 1, [f\"v{number - 1} の時点",
-     "        if False:\n            return 1, [f\"v{number - 1} の時点", "前の版の中間表現が決まりに反する"),
+    # 検査だけ飛ばし、中間表現は返す形にする——`if code:` を潰すと None を読んで落ち、意味ではなく例外で殺される
+    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered)\n",
+     "        problems = check_ir(ir, whole, answered) if gate else []\n", "前の版の中間表現が決まりに反する"),
+    ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
+     "Red の状態: v2 で出力の項目を足す"),
+    ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
+    ("impl_module の変化を見ない", "    if before.impl_module != loaded.ir.get(", "    if False and before.impl_module != loaded.ir.get(",
+     "v2 で impl_module だけ変える"),
     ("--upto で書くのを断らない", "        if not (args.check or args.dry_run):\n", "        if False:\n", "--upto で書く"),
     ("--upto を渡さない", "load(repo, args.upto)", "load(repo)", "前の版の時点の --check"),
     ("回帰の失敗を見ない", '        elif name not in red and got != "pass":', "        elif False:", "Red の状態: 回帰が壊れた実装"),

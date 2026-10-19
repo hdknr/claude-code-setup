@@ -20,8 +20,9 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 **契約（`scaffold/`）は全体から作り、Issue の本文は変わった機能だけに作る。** 作業中の版 v<n> の全体と v<n-1> の全体を
 機能の `id` で比べ（同梱の `diff-versions.py` の `compare_maps`）、**追加・変更・削除**の機能ごとに本文を 1 件作る。
 **変わっていない機能の本文は作らない**（前の版の Issue がある）。v1 だけなら全部が追加。
-ケースの変化は**Red テストが実行する中身**（入力・期待・`operation.id`・出力の型・`impl_module`）で決める——題だけの違いは
-変化に数えない。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
+ケースの変化は**Red テストが実行する中身**（入力・期待・`operation.id`・期待にある項目の出力の型・`impl_module`）で決める——
+題だけの違い・`integer` を `number` に広げただけの違いは変化に数えない（前の版の実装は落ちない）。
+**`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（反映済みでない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
@@ -770,14 +771,35 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
         change = Change(kind, diff.before if kind == REMOVE else diff.after, diff.before)
         change.reason = reasons.get((versions.KIND_FEATURE, diff.key), "")
         changes.append(change)
+    if before.impl_module != loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE):
+        # 実装のモジュールが変わると、機能が同じでも Red テストは全部、前の版の実装を探せずに失敗する
+        moved = {c.feature["id"] for c in changes}
+        changes += [Change(MODIFY, f, old[key]) for key, f in now.items() if key in old and key not in moved]
     return 0, [], sorted(changes, key=lambda c: c.feature["id"]), before
 
 
+# 前の版の型で通った値は、広げた型にも合う（`type_fits`）——広げただけでは前の版の実装は落ちない
+WIDENED = {("integer", "number")}
+
+
 def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
-    """そのケースの Red テストが実行する中身（題・コメントは入れない）。"""
+    """そのケースの Red テストが実行する中身のうち、型を除いたもの（題・コメントは入れない）。"""
     op = feature["operation"]
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
-    return impl_module, op["id"], literal(output_types(op)), literal(case["input"]), literal(expected)
+    return impl_module, op["id"], literal(case["input"]), literal(expected)
+
+
+def case_changed(before: dict, old: dict, impl_before: str, feature: dict, case: dict, impl_now: str) -> bool:
+    """前の版で通った実装の上で、このケースの Red テストが失敗しうるか。
+
+    型を見るのは期待にある項目だけ——Red テストは `actual == expected` のあとで `actual` の項目の型を見るので、
+    期待に無い出力の項目・失敗のケースの `error` 以外の型は、そのケースの結果を変えない。
+    """
+    if behavior(before, old, impl_before) != behavior(feature, case, impl_now):
+        return True
+    was, now = output_types(before["operation"]), output_types(feature["operation"])
+    expected = case["expected"] if "expected" in case else {"error": case["error"]}
+    return any(was.get(name) != now.get(name) and (was.get(name), now.get(name)) not in WIDENED for name in expected)
 
 
 def case_changes(change: Change, impl_now: str, impl_before: str) -> tuple[list[tuple[str, dict]], list[dict]]:
@@ -792,7 +814,7 @@ def case_changes(change: Change, impl_now: str, impl_before: str) -> tuple[list[
     for case in cases:
         if case["id"] not in old:
             rows.append((CASE_ADDED, case))
-        elif behavior(change.before, old[case["id"]], impl_before) != behavior(change.feature, case, impl_now):
+        elif case_changed(change.before, old[case["id"]], impl_before, change.feature, case, impl_now):
             rows.append((CASE_CHANGED, case))
         else:
             rows.append((CASE_KEPT, case))
