@@ -54,6 +54,8 @@ TREE_REF = PLUGIN / "references" / "tree.md"
 SPEC_GAP_REF = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "spec-gap.md"
 # dev-loop の手順 1 は、この印を見て `spec-gap.md` へ送る——印の写しはここにもある
 DEV_LOOP_SKILL = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md"
+# 前の形（段 5d より前）の印——登録済みの Issue はこの形のまま残るので、dev-loop は読み続ける
+LEGACY_MARKER = "<!-- spec-loop-handoff: v1 -->"
 
 HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 QA_DONE = "Q-001,要求確定（決定表）,シルバーで 10000 円未満の割引は？,A: 割引なし / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
@@ -253,8 +255,9 @@ def old_issues_kept(repo: Path) -> str | None:
 def body_traceable(repo: Path) -> str | None:
     body = (repo / "build" / "scaffold" / "issues" / "F-001.md").read_text(encoding="utf-8")
     lines = body.splitlines()
-    if lines[:2] != ["<!-- spec-loop-handoff: v1 -->", "<!-- spec-loop-feature: F-001 -->"]:
-        return f"先頭 2 行が印でない: {lines[:2]}"
+    if lines[:3] != ["<!-- spec-loop-handoff: v2 -->", "<!-- spec-loop-feature: F-001 -->",
+                     "<!-- spec-loop-change: add; base=none -->"]:
+        return f"先頭 3 行が印でない: {lines[:3]}"
     positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 仕様の穴を見つけたら")]
     if -1 in positions or positions != sorted(positions):
         return f"節が揃っていないか順が違う: {positions}"
@@ -263,7 +266,9 @@ def body_traceable(repo: Path) -> str | None:
                    # 機能ではなくケースだけが指す Q&A（受入基準の表の `| Q-002 |` と区別するため、質問まで見る）
                    "| Q-002 | 金額が負なら？ |", "`POST /orders/discount`",
                    "`calc_discount`", "`build/merged/spec/order.md`", "起票元 `開発`", "references/spec-gap.md",
-                   "`merge-versions.py docs build/merged`", "`docs/v<n>/shared/qa.csv`"):
+                   "`merge-versions.py docs build/merged --upto 1`", "`docs/v<n>/shared/qa.csv`",
+                   "| ケース | 変化 | 確かめること | Red テスト | Q&A |", "| `F-001-C1` | 追加 |", "変化: 追加（v1 の機能）",
+                   "実装が無い状態では、ケースの数だけ失敗する。"):
         if needle not in body:
             return f"本文に {needle!r} が無い"
     # 本文の sha256 と、指しているファイルの実物——中間表現は `merge-versions.py` が書く全体（同じバイトであること）
@@ -278,6 +283,9 @@ def body_traceable(repo: Path) -> str | None:
     index = json.loads((repo / "build" / "scaffold" / "issues" / "issues.json").read_text(encoding="utf-8"))
     if [i["title"] for i in index] != ["F-001: 割引額を計算する", "F-002: 注文を取り消せるか"]:
         return f"issues.json の題が違う: {index}"
+    if [(i["change"], i["red"]) for i in index] != [("add", ["TestF001.test_f_001_c1", "TestF001.test_f_001_c2"]),
+                                                    ("add", ["TestF002.test_f_002_c1"])]:
+        return f"issues.json の変化と失敗するはずのテストが違う: {index}"
     other = (repo / "build" / "scaffold" / "issues" / "F-002.md").read_text(encoding="utf-8")
     if "この機能が根拠にした Q&A は無い" not in other:
         return "Q&A の無い機能でそう書いていない"
@@ -395,13 +403,21 @@ V2_RETURN = {
                   "input": {"days": {"type": "integer"}}, "output": {"ok": {"type": "boolean"}}},
     "cases": [{"id": "F-003-C1", "title": "7 日以内なら返品できる", "input": {"days": 3}, "expected": {"ok": True}, "qa": ["Q-004"]}],
 }
+# v2 で出力に項目を足した（C1 の期待は変わる。失敗のケース C2 は前の版の実装で緑のまま）
+V2_OUTPUT_ADDED = copy.deepcopy(V2_CHANGED)
+V2_OUTPUT_ADDED["operation"]["output"]["rate"] = {"type": "integer"}
+V2_OUTPUT_ADDED["cases"][0]["expected"] = {"discount": 300, "rate": 3}
+# v2 で割引の型を number に広げただけ（期待は同じ）——前の版の実装はどのケースも緑のまま
+V2_WIDENED = copy.deepcopy(IR["features"][0])
+V2_WIDENED["operation"]["output"]["discount"] = {"type": "number"}
 QA_V2 = "Q-004,要求確定,返品は何日まで？,A: 7 日 / B: 14 日,A（業務部が回答）,spec/return.md,反映済み,\n"
 RETURN_SPEC = "# 返品\n\n7 日以内。\n"
 
 
 def v2(features: list[dict], qa: str | None = HEADER + QA_V2, removed: str | None = None,
-       spec: dict[str, str] | None = None) -> dict[str, str]:
-    files = {str(V2 / "spec" / "spec_ir.json"): json.dumps({"features": features}, ensure_ascii=False, indent=2)}
+       spec: dict[str, str] | None = None, top: dict | None = None) -> dict[str, str]:
+    files = {str(V2 / "spec" / "spec_ir.json"): json.dumps({**(top or {}), "features": features}, ensure_ascii=False,
+                                                            indent=2)}
     if qa is not None:
         files[str(V2 / "shared" / "qa.csv")] = qa
     if removed is not None:
@@ -411,29 +427,140 @@ def v2(features: list[dict], qa: str | None = HEADER + QA_V2, removed: str | Non
     return files
 
 
+ISSUES = Path("build") / "scaffold" / "issues"
+
+
+def bodies(repo: Path) -> dict[str, str]:
+    """{機能の id: 本文}（作った本文だけ）。"""
+    return {p.stem: p.read_text(encoding="utf-8") for p in sorted((repo / ISSUES).glob("F-*.md"))}
+
+
+def body_has(body: str, needles: tuple[str, ...], what: str) -> str | None:
+    for needle in needles:
+        if needle not in body:
+            return f"{what}の本文に {needle!r} が無い"
+    return None
+
+
+def sections_in_order(body: str) -> bool:
+    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 仕様の穴を見つけたら")]
+    return -1 not in positions and positions == sorted(positions)
+
+
 def v2_changed(repo: Path) -> str | None:
     test = (repo / "scaffold" / "tests" / "test_f_001.py").read_text(encoding="utf-8")
     if "'discount': 300" not in test or "'discount': 0" in test:
         return "v2 で変えた機能のケースが Red テストに入っていない（v1 のまま）"
     if not (repo / "scaffold" / "tests" / "test_f_002.py").is_file():
-        return "v2 で触っていない機能の Red テストが無い"
-    return files_written(repo)
+        return "v2 で触っていない機能の Red テストが無い（契約は全体から作る）"
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのは変えた機能だけのはず: {list(found)}"
+    body = found["F-001"]
+    if body.splitlines()[:3] != ["<!-- spec-loop-handoff: v2 -->", "<!-- spec-loop-feature: F-001 -->",
+                                 "<!-- spec-loop-change: modify; base=v1 -->"]:
+        return f"変更の印でない: {body.splitlines()[:3]}"
+    if not sections_in_order(body):
+        return "変更の本文の節が揃っていない"
+    index = json.loads((repo / ISSUES / "issues.json").read_text(encoding="utf-8"))
+    if index != [{"feature": "F-001", "title": "F-001: 割引額を計算する（v2 で変更）", "change": "modify",
+                  "body": "F-001.md", "red": ["TestF001.test_f_001_c1"]}]:
+        return f"issues.json が違う: {index}"
+    return body_has(body, ("| `F-001-C1` | 変更 |", "| `F-001-C2` | 回帰 |", "変化: 変更（v1 の時点から v2 で変えた機能）",
+                           "`merge-versions.py docs build/merged --upto 2`", "**`回帰` のケースは前の版の実装で緑で、緑のままであること**",
+                           "`追加`・`変更` のケース（1 件）だけが失敗し、`回帰` のケース（1 件）は緑"), "変更")
 
 
 def v2_removed(repo: Path) -> str | None:
     if (repo / "scaffold" / "tests" / "test_f_002.py").exists():
         return "v2 で消した機能の Red テストを作った"
-    if (repo / "build" / "scaffold" / "issues" / "F-002.md").exists():
-        return "v2 で消した機能の Issue の本文を作った"
-    return None if (repo / "scaffold" / "tests" / "test_f_001.py").is_file() else "残る機能の Red テストが無い"
+    if not (repo / "scaffold" / "tests" / "test_f_001.py").is_file():
+        return "残る機能の Red テストが無い"
+    found = bodies(repo)
+    if list(found) != ["F-002"]:
+        return f"本文を作るのは消した機能だけのはず: {list(found)}"
+    body = found["F-002"]
+    if body.splitlines()[2] != "<!-- spec-loop-change: remove; base=v1 -->":
+        return f"撤去の印でない: {body.splitlines()[:3]}"
+    if not sections_in_order(body):
+        return "撤去の本文の節が揃っていない"
+    if "sha256: `" in body.split("## Red テスト", 1)[1]:
+        return "撤去の本文が消した Red テストの sha256 を持つ"
+    return body_has(body, ("理由: 取り消しはやめる", "撤去する API: `GET /orders/cancelable`", "| `F-002-C1` | 削除 |",
+                           "—（`scaffold/tests/test_f_002.py` ごと消した）", "モジュール `spec_impl` の関数 `can_cancel`",
+                           "python3 -m unittest discover -s scaffold/tests\n", "この機能が根拠にした Q&A は無い"), "撤去")
 
 
 def v2_added(repo: Path) -> str | None:
-    body = (repo / "build" / "scaffold" / "issues" / "F-003.md").read_text(encoding="utf-8")
-    for needle in ("`build/merged/spec/return.md`", "| Q-004 | 返品は何日まで？ |"):
-        if needle not in body:
-            return f"v2 で足した機能の本文に {needle!r} が無い"
-    return None
+    found = bodies(repo)
+    if list(found) != ["F-003"]:
+        return f"本文を作るのは足した機能だけのはず: {list(found)}"
+    body = found["F-003"]
+    if body.splitlines()[2] != "<!-- spec-loop-change: add; base=v1 -->":
+        return f"追加の印でない: {body.splitlines()[:3]}"
+    return body_has(body, ("`build/merged/spec/return.md`", "| Q-004 | 返品は何日まで？ |", "| `F-003-C1` | 追加 |",
+                           "変化: 追加（v2 で足した機能）"), "追加")
+
+
+# v2 でケースを足し・消し・題だけ変える（C1 は題だけ・C2 は消す・C3 を足す）
+V2_CASES = copy.deepcopy(IR["features"][0])
+V2_CASES["cases"] = [dict(V2_CASES["cases"][0], title="シルバーの少額は割引しない"),
+                     {"id": "F-001-C3", "title": "ゴールドは 10% 割引", "input": {"rank": "gold", "amount": 1000},
+                      "expected": {"discount": 100}}]
+
+
+def v2_cases(repo: Path) -> str | None:
+    body = bodies(repo).get("F-001", "")
+    problem = body_has(body, ("| `F-001-C1` | 回帰 | シルバーの少額は割引しない |", "| `F-001-C3` | 追加 |",
+                              "削除したケース（Red テストから外した。その振る舞いはもう求めない）: `F-001-C2` 金額が負なら拒否する"),
+                       "ケースを変えた機能")
+    if problem:
+        return problem
+    index = json.loads((repo / ISSUES / "issues.json").read_text(encoding="utf-8"))
+    return None if index[0]["red"] == ["TestF001.test_f_001_c3"] else f"失敗するはずのテストが違う: {index}"
+
+
+def v2_nothing_changed(repo: Path) -> str | None:
+    found = bodies(repo)
+    index = json.loads((repo / ISSUES / "issues.json").read_text(encoding="utf-8"))
+    return None if not found and index == [] else f"機能が変わっていないのに本文を作った: {list(found)} {index}"
+
+
+def add_v3(repo: Path) -> None:
+    """v2 で作った後に v3 を足す（中間表現の題を変える）——本文の再現コマンドは v2 の全体を作り直せること（#262 の R2）。"""
+    path = repo / "docs" / "v3" / "spec" / "spec_ir.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"title": "注文 v3", "features": []}, ensure_ascii=False), encoding="utf-8")
+
+
+def sha_reproducible_after_v3(repo: Path) -> str | None:
+    body = bodies(repo)["F-001"]
+    sha = re.search(r"`build/merged/spec/spec_ir.json`（sha256: `([0-9a-f]{64})`）", body).group(1)
+    scripts = repo.parent / "scripts" / "merge-versions.py"
+
+    def merged_sha(*extra: str) -> str:
+        out = repo / "build" / "merged"
+        proc = subprocess.run([sys.executable, "-I", str(scripts), str(repo / "docs"), str(out), *extra],
+                              capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        return hashlib.sha256((out / "spec" / "spec_ir.json").read_bytes()).hexdigest()
+
+    # 陽性対照: 版を指定しないと v3 まで重なり、本文の sha256 と合わない
+    if merged_sha() == sha:
+        return "v3 を足しても全体が変わらない（試料が判別しない）"
+    command = re.search(r"`(merge-versions\.py [^`]+)`", body).group(1).split()[1:]
+    return None if merged_sha(*command[2:]) == sha else f"本文のコマンド {command} で作った中間表現の sha256 が本文と違う"
+
+
+def add_v2_changed(repo: Path) -> None:
+    for rel, text in v2([V2_CHANGED]).items():
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+
+# v1 の機能 F-002 の期待の型が誤り（v2 で直した）——前の版の中間表現が決まりに反する
+BAD_V1 = edit(lambda ir: ir["features"][1]["cases"][0].update(expected={"ok": "yes"}))
 
 CASES: list[Case] = [
     Case("作る", 0, "作った", post=files_written),
@@ -569,15 +696,51 @@ CASES: list[Case] = [
     Case("docs が無い", 2, "ディレクトリが無い", root=Path("legacy"), pre=plant_old_issues, post=nothing_written),
     Case("v2 の --check は書かない", 0, "新しい", args=("--check",), generate_first=True, extra=v2([V2_CHANGED]),
          post=lambda repo: "--check が build/merged/ を書いた" if (repo / "build" / "merged").exists() else None),
+    # ---- 追加・変更・削除に分ける（段 5d）
+    Case("v2 でケースを足し・消し・題を変える", 0, "modify 1", extra=v2([V2_CASES]), post=v2_cases),
+    Case("v2 で機能を変えない", 0, "Issue の本文 0 件", extra=v2([]), post=v2_nothing_changed),
+    Case("v3 を足しても本文の sha256 が合う", 0, generate_first=True, extra=v2([V2_CHANGED]), pre=add_v3,
+         args=("--check", "--upto", "2"), post=sha_reproducible_after_v3),
+    Case("前の版の中間表現が決まりに反する", 1, "前の版（v1）の中間表現が決まりに反する", ir=BAD_V1,
+         extra=v2([IR["features"][1]]), pre=plant_old_issues, post=nothing_written_issues),
+    # ---- --upto（前の版の時点の鮮度）
+    Case("前の版の時点の --check", 0, "新しい（v1 まで", args=("--check", "--upto", "1"), generate_first=True,
+         pre=add_v2_changed),
+    Case("前の版の時点の --check（陽性対照）", 1, "今の入力から作るものと違う", args=("--check",), generate_first=True,
+         pre=add_v2_changed),
+    Case("v2 で作り直した後の --upto 1", 1, "今の入力から作るものと違う", args=("--check", "--upto", "1"),
+         generate_first=True, extra=v2([V2_CHANGED])),
+    Case("--upto で書く", 2, "--upto は --check か --dry-run と一緒にだけ使う", args=("--upto", "1"),
+         pre=plant_old_issues, post=old_issues_kept),
+    Case("--red-check に --upto", 2, "--upto は --check か --dry-run と一緒にだけ使う", args=("--red-check", "--upto", "1")),
+    Case("無い版の --upto", 2, "v3 が無い", args=("--check", "--upto", "3"), extra=v2([V2_CHANGED])),
+    Case("--upto 0", 2, "1 以上の整数", args=("--dry-run", "--upto", "0")),
+    # ---- --red-check（変わったケースだけ失敗し、ほかは緑）
+    Case("Red の状態: v1 で実装なし", 0, "失敗 3 件", args=("--red-check",), generate_first=True),
+    Case("Red の状態: v1 で実装がある", 1, "なのに緑", args=("--red-check",), generate_first=True, impl=GOOD_IMPL),
+    Case("Red の状態: v2 で前の版の実装", 0, "失敗 1 件（追加・変更）・緑 2 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_CHANGED]), impl=GOOD_IMPL),
+    Case("Red の状態: v2 で実装が無い", 2, "回帰のケース 2 件を判定していない", args=("--red-check",), generate_first=True,
+         extra=v2([V2_CHANGED])),
+    Case("Red の状態: 回帰が壊れた実装", 1, "test_f_002.TestF002.test_f_002_c1: 回帰のケースなのに失敗した",
+         args=("--red-check",), generate_first=True, extra=v2([V2_CHANGED]), impl=WRONG_IMPL),
+    Case("Red の状態: v2 で出力の項目を足す", 0, "失敗 1 件（追加・変更）・緑 2 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_OUTPUT_ADDED]), impl=GOOD_IMPL),
+    Case("Red の状態: v2 で型を広げる", 0, "失敗 0 件（追加・変更）・緑 3 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_WIDENED]), impl=GOOD_IMPL),
+    Case("v2 で impl_module だけ変える", 0, "modify 2", extra=v2([], top={"impl_module": "app_impl"})),
+    Case("Red の状態: v2 で impl_module だけ変える", 0, "失敗 3 件", args=("--red-check",), generate_first=True,
+         extra=v2([], top={"impl_module": "app_impl"}), impl=GOOD_IMPL),
+    Case("Red の状態: scaffold が古い", 1, "作り直してから", args=("--red-check",), generate_first=True, pre=edit_ir_file),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("関門を見ない", "        if code:\n            return code, shown(lines) + [", "        if False:\n            return code, shown(lines) + [",
+    ("関門を見ない", "            if code:\n                return code, shown(lines) + [",
+     "            if False:\n                return code, shown(lines) + [", "確認中の Q&A"),
+    ("失敗時に Issue の本文を消さない", "    if writing:\n        clear_issues(repo)", "    if False:\n        clear_issues(repo)",
      "確認中の Q&A"),
-    ("失敗時に Issue の本文を消さない", "        if writing:\n            clear_issues(repo)", "        if False:\n            clear_issues(repo)",
-     "確認中の Q&A"),
-    ("--dry-run でも Issue の本文を消す", "    writing = not (args.check or args.dry_run)", "    writing = True",
+    ("--dry-run でも Issue の本文を消す", "    writing = not (args.check or args.dry_run or args.red_check)", "    writing = True",
      "--dry-run は失敗しても消さない"),
     # 版が無いのは決まりに反するのではなく移していない——2 で止め、1（重ね合わせの誤り）と言わない
     ("版が無いのを重ね合わせの誤りと言う", "        if not versions.find_versions(docs, probe) and not probe:",
@@ -606,7 +769,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("期待を比べない", '"        self.assertEqual(actual, expected)",', '"        self.assertIsNotNone(actual)",', "誤った実装で失敗する"),
     ("型を見ない", '"            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",', '"            self.assertTrue(True,",',
      "型の違う実装で失敗する"),
-    ("中間表現の実装のモジュールを読まない", 'ir.get("impl_module", DEFAULT_IMPL_MODULE)', "DEFAULT_IMPL_MODULE",
+    ("中間表現の実装のモジュールを読まない",
+     '    impl_module = ir.get("impl_module", DEFAULT_IMPL_MODULE)\n    contract = {',
+     '    impl_module = DEFAULT_IMPL_MODULE\n    contract = {',
      "中間表現の実装のモジュールを使う"),
     ("実装のモジュールの形を見ない", '    if "impl_module" in ir and not module_name(ir["impl_module"]):',
      "    if False:", "実装のモジュールの形"),
@@ -635,15 +800,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # 入力から届かない（殺せると主張しない）
     ("整数を isfinite に渡す", "        return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))",
      "        return math.isfinite(value) and isinstance(value, (int, float))", "number に桁の大きい整数"),
-    ("エラーのケースで error を期待しない", 'expected = case["expected"] if "expected" in case else {"error": case["error"]}',
-     'expected = case.get("expected", {})', "正しい実装で緑"),
+    ("エラーのケースで error を期待しない",
+     '        expected = case["expected"] if "expected" in case else {"error": case["error"]}\n        refs',
+     '        expected = case.get("expected", {})\n        refs', "正しい実装で緑"),
     ("ケースを 1 つしか作らない", '    for case in sorted(feature["cases"], key=case_order):\n        expected',
      '    for case in sorted(feature["cases"], key=case_order)[:1]:\n        expected',
      "Red テストが失敗する"),
-    ("中間表現の sha256 を取らない", "    ir_sha = sha256(raw)", "    ir_sha = sha256(b\"\")", "本文から辿れる"),
-    ("Q&A の回答を写さない", "            lines.append(f\"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |\")",
-     "            lines.append(f\"| {no} |\")", "本文から辿れる"),
-    ("ケースの Q&A を本文に集めない", '    refs = set(feature["qa"]) | {no for case in cases for no in case.get("qa", [])}',
+    ("中間表現の sha256 を取らない", "sha256(loaded.raw)", "sha256(b\"\")", "本文から辿れる"),
+    ("Q&A の回答を写さない", "        lines.append(f\"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |\")",
+     "        lines.append(f\"| {no} |\")", "本文から辿れる"),
+    ("ケースの Q&A を本文に集めない", '    refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}',
      '    refs = set(feature["qa"])', "本文から辿れる"),
     ("GET にも本文を付ける", '        if op["method"] in NO_BODY:', "        if False:", "OpenAPI と型"),
     ("--check が残った Red テストを見ない", "    for rel in sorted(generated_tests(out) - contract.keys()):\n        problems",
@@ -655,7 +821,35 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("機能の並びを保たない", '    return sorted(ir["features"], key=lambda f: f["id"])', '    return list(ir["features"])[::-1]',
      "本文から辿れる"),
     # ---- 版
-    ("v1 だけを読む", "versions.merge(docs)", "versions.merge(docs, 1)", "v2 で機能を変える"),
+    ("v1 だけを読む", "versions.merge(docs, upto)", "versions.merge(docs, 1)", "v2 で機能を変える"),
+    # ---- 追加・変更・削除（段 5d）
+    ("前の版と比べない", "    if number == 1:\n        return 0, [], [Change(ADD", "    if True:\n        return 0, [], [Change(ADD",
+     "v2 で機能を変える"),
+    ("削除を変更と書く", "diffs.REMOVED: REMOVE}", "diffs.REMOVED: MODIFY}", "v2 で機能を消す"),
+    ("ケースの期待の違いを見ない", "literal(case[\"input\"]), literal(expected)\n", "literal(case[\"input\"])\n",
+     "v2 で機能を変える"),
+    ("題だけの違いを変化に数える", "literal(case[\"input\"]), literal(expected)\n",
+     "literal(case[\"input\"]), literal(expected), case[\"title\"]\n", "v2 でケースを足し・消し・題を変える"),
+    ("消したケースを書かない", "    if gone:\n", "    if False:\n", "v2 でケースを足し・消し・題を変える"),
+    ("再現コマンドに版を書かない", 'command = f"merge-versions.py {DOCS} {MERGED_DIR} --upto {number}"',
+     'command = f"merge-versions.py {DOCS} {MERGED_DIR}"', "v3 を足しても本文の sha256 が合う"),
+    # 検査だけ飛ばし、中間表現は返す形にする——`if code:` を潰すと None を読んで落ち、意味ではなく例外で殺される
+    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered)\n",
+     "        problems = check_ir(ir, whole, answered) if gate else []\n", "前の版の中間表現が決まりに反する"),
+    ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
+     "Red の状態: v2 で出力の項目を足す"),
+    ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
+    ("impl_module の変化を見ない", "    if before.impl_module != loaded.ir.get(", "    if False and before.impl_module != loaded.ir.get(",
+     "v2 で impl_module だけ変える"),
+    ("--upto で書くのを断らない", "        if not (args.check or args.dry_run):\n", "        if False:\n", "--upto で書く"),
+    ("--upto を渡さない", "load(repo, args.upto)", "load(repo)", "前の版の時点の --check"),
+    ("回帰の失敗を見ない", '        elif name not in red and got != "pass":', "        elif False:", "Red の状態: 回帰が壊れた実装"),
+    ("変化を捕まえない Red テストを見ない", '        elif name in red and got == "pass":', "        elif False:",
+     "Red の状態: v1 で実装がある"),
+    ("実装が無くても回帰を判定したと言う", "    if expected and green and all(", "    if False and all(",
+     "Red の状態: v2 で実装が無い"),
+    ("--red-check が鮮度を見ない", "    if args.red_check:\n        problems = stale(repo / OUT_DIR, contract)\n        if problems:",
+     "    if args.red_check:\n        problems = stale(repo / OUT_DIR, contract)\n        if False:", "Red の状態: scaffold が古い"),
     ("重ね合わせの誤りを見ない", '    if problems:\n        return 1, problems + ["版の重ね合わせ',
      '    if False:\n        return 1, problems + ["版の重ね合わせ', "重ね合わせが決まりに反する"),
     ("一時ディレクトリの名前で言う", "return [line.replace(str(whole), MERGED_DIR) for line in lines]", "return lines",
@@ -772,6 +966,13 @@ def main() -> int:
         check("HANDOFF_MARKER が references/handoff-issue.md の印と違う", markers[:1] == [marker], f"{marker} vs {markers}")
         check("FEATURE_MARKER が references/handoff-issue.md の印と違う",
               feature_marker is not None and markers[1:2] == [feature_marker.format("<機能の id>")], f"{feature_marker} vs {markers}")
+        change_marker = constant(source, "CHANGE_MARKER")
+        check("CHANGE_MARKER が references/handoff-issue.md の印と違う",
+              change_marker is not None and markers[2:3] == [change_marker.format("<変化>", "<前の版>")],
+              f"{change_marker} vs {markers}")
+        kinds = table_cells(handoff, "### 変化")
+        check("ADD, MODIFY, REMOVE が references/handoff-issue.md の変化の表と違う",
+              kinds == list(constant(source, "ADD, MODIFY, REMOVE") or ()), f"{kinds}")
         sections = table_cells(handoff, "## 節")
         check("SECTIONS が references/handoff-issue.md の節の表と違う", list(constant(source, "SECTIONS") or ()) == sections,
               f"{constant(source, 'SECTIONS')} vs {sections}")
@@ -779,12 +980,17 @@ def main() -> int:
                     f"{constant(source, 'OUT_DIR')}/openapi.json"):
             check(f"置き場所 {rel} が references/tree.md に無い", rel is not None and rel.rsplit("/", 1)[-1] in tree)
         # 2 つのプラグインの境界の写し
-        check("dev-loop の references/spec-gap.md に印が無い", marker is not None and marker in gap)
         skill = DEV_LOOP_SKILL.read_text(encoding="utf-8")
-        check("dev-loop の SKILL.md に印が無い（手順 1 が spec-loop の Issue に気づかない）", marker is not None and marker in skill)
+        # dev-loop は今の形（v2）も、登録済みの前の形（v1）も読む
+        for current in (marker, LEGACY_MARKER):
+            check(f"dev-loop の references/spec-gap.md に印 {current} が無い", current is not None and current in gap)
+            check(f"dev-loop の SKILL.md に印 {current} が無い（手順 1 が spec-loop の Issue に気づかない）",
+                  current is not None and current in skill)
+        check("dev-loop の references/spec-gap.md に変化の印が無い",
+              change_marker is not None and change_marker.split("{}")[0] in gap)
         # 陽性対照: 印を上げたら、`SKILL.md` に残った古い印では当たらない
         check("印の版を変えても SKILL.md の照合が不一致にならない",
-              marker is not None and marker.replace("v1", "v2") not in skill)
+              marker is not None and marker.replace("v2", "v3") not in skill)
         gap_sections = table_cells(gap, "## spec-loop から来た Issue を読む")
         check("dev-loop の references/spec-gap.md の節の表が handoff-issue.md と違う", gap_sections == sections,
               f"{gap_sections} vs {sections}")

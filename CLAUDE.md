@@ -57,6 +57,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
       **入力は版を重ね合わせた全体で、メモリ上で重ねる**——`build/merged/` を書かない（#262）。
+      **v2 以降は前の版の全体と比べて機能を追加・変更・削除に分け、変わった機能だけ本文を作る**（#264。
+      `--red-check` で「変わったケースだけ失敗し、ほかは緑」を、`--check --upto <n-1>` で前の版の時点の鮮度を見る）。
       テストは `scripts/test-scaffold.py`）
     - `scripts/merge-versions.py` - バージョンアップの版（`docs/v<n>/`。v2 以降は差分だけ）を重ねて、ある版の時点の全体を作る
       （#261。決まりは `references/versions.md`。**印 `.merged-versions` の無い出力先は消さない**。
@@ -796,6 +798,9 @@ Skip-description-sync: JSON の typo 修正のみ。要約の内容は変わら�
 ```
 
 **trailer が免除するのは共変だけで、JSON 2 箇所の一致は免除しない**——カタログだけ直すことはできない。
+
+**trailer は `Co-Authored-By:` と同じ最後の段落に置く**（間に空行を入れない）。**git は最後の段落しか trailer と読まない**ので、
+別の段落に置くと**書いてあるのに効かない**（#219 と #264 で 2 回。#264 では「直した」つもりで 2 パス目まで赤のままだった）。
 
 ## Git ワークフロー
 
