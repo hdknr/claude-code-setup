@@ -71,8 +71,17 @@
 - **周の在り処**: ブランチ `issue/284-zero-diff-second-pass`／worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-284`／起点 `0f36460`／
   base: `origin/main`（`refs/remotes/origin/HEAD`）→ `0f364608521fdeb47aa8df0c4ba98c3bb015af39`
-- 実装: 未
-- 交絡を潰した手順: 未
+- 実装: 済み（コミット `80dd886`。dev-loop 1.41.0）
+- 歯止め: `check-all.py` 43/43 緑（コミット `80dd886` の時点で再実行。失敗 0・飛ばし 0）。PR は未作成
+- **割り目 1（手順 4 の完了時）**: 2026-10-20 に `AskUserQuestion` で提案 → **「ここで割る」が選ばれた**
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目 → `/code-review` 1 パス目。base `0f36460` を渡す）
+- 反証・差し戻し: なし
+- 交絡を潰した手順（著者の実験。scratchpad の使い捨てスクリプト `zero-diff-probe.sh`、一時 `HOME`・`GIT_CONFIG_GLOBAL=/dev/null`）:
+  受入基準 C の判定の 2 本を、一時リポジトリで両側に当てた——
+  **陰性**（何も変えない／計画ファイルだけ変える・未コミットとコミット）は 2 本とも 0、
+  **陽性**（成果物 1 行・未コミット → diff 7 / porcelain 1、コミット済み → diff 7 / porcelain 0、未追跡の新規ファイル → diff 0 / porcelain 1、
+  別の計画ファイル → diff 0 / porcelain 1）は**どれか 1 本が非 0**。**どちらか 1 本だけでは陽性を取りこぼす**（コミット済みは porcelain に、
+  未追跡は diff に出ない）ので、2 本とも要ることも同じ実験で見た。観測窓: この 7 通りだけ（rename・削除・サブモジュールは試していない）
 
 ## 既知の限界・決着済みの論点
 
