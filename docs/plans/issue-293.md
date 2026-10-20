@@ -59,8 +59,9 @@
 
 - 周の在り処: ブランチ `issue/293-link-fallback`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-293`・
   起点 `e024b98`・base は `origin/main`（`refs/remotes/origin/HEAD`）の merge-base `e024b980f093851d15c4e0ba574ff4ba08fc1043`
-- 実装: 完了（手順 4）。`test-init-mkdocs.py` 試料 30 件・変異 45 件 OK（足した変異 6 本はどれも「試料が False を返した」で死ぬ——
+- 実装: `07aca86` で完了（手順 4）。`check-all.py` 44/44 緑。次は手順 5（Verifier 1 パス目）と `/code-review` 1 パス目。`test-init-mkdocs.py` 試料 30 件・変異 45 件 OK（足した変異 6 本はどれも「試料が False を返した」で死ぬ——
   例外で死ぬのは既存の「短い行を埋めない」「読めない表で落ちる」の 2 本だけで、どちらも旧い挙動そのもの）
+- 割り目（手順 4）: 訊いた → **「ここで割る」**（2026-10-20）。再開は worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-293` の中で `/clear` → `/dev-loop:dev-loop 293`（手順 5 から）
 - 交絡: 実装中に 2 つ実験した
   - **退路で切れる試料が退路まで届いていなかった**——最初の書き方では、最初のリンクの失敗で大きさの上限を掛けたため、次のファイルの
     **一時ファイルが先に切れて**、退路の書き込みに届かずに 2 で終わっていた（「退路で切れたファイルを残す」の変異が素通りして分かった）。
