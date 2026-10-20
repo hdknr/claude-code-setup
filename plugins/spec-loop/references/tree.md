@@ -107,14 +107,15 @@ dev-loop は本文の sha256 を手元の中間表現と Red テストに当て�
 python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本リポジトリの根>] [--dry-run]
 ```
 
-- **写すのは、正本リポジトリの `CLAUDE.md` がドキュメントのツールを決めておらず、`mkdocs.yml` も無いときだけ。**
-  `mkdocs.yml` が在ればスクリプトは何も写さない。**在るファイルは 1 バイトも変えない**——`pyproject.toml`・`.gitignore` が
+- **写すのは、正本リポジトリの `CLAUDE.md` がドキュメントのツールを決めておらず、MkDocs の設定（`mkdocs.yml`・`mkdocs.yaml`）も
+  無いときだけ。** 設定が在ればスクリプトは何も写さない。**在るファイルは 1 バイトも変えない**——`pyproject.toml`・`.gitignore` が
   在れば触らず、足りない依存・行を示すので、足すかどうかは利用者が決める。
 - 写すもの: `mkdocs.yml`（Material・`use_directory_urls: false`・nav は書かず自動）・`pyproject.toml`（uv。
   **MkDocs は 2 未満に固定**——2.0 は非互換の変更が予告されている）・`.gitignore`（`build/`・`site/`・`.venv/`・`__pycache__/`）・
   `hooks/spec_loop_pages.py`・`docs/index.md`・`docs/qa.md`。閲覧は `uv run mkdocs serve`。
 - **CSV は Markdown に写さない。** 表示用のページに印（`<!-- spec-loop: qa -->`）を書き、フックが CSV から描く。
   `qa` の印は、各版の `docs/v<n>/shared/qa.csv` を**版ごとの節**に描く（重ね合わせない。アンカーは `v<n>-q-001`）。
+  CSV の文字は表のセルにだけ置く（段落に置くと、行頭の `!!! ` や字下げがブロックの記法に読まれる）。
   ほかの CSV を描くときは、フックに描画関数を足す。
 - **表示用のページは `shared/` に置かない**（`docs/qa.md` のように版の外に置く）。`shared/` は 2 つのサインオフが比べる範囲
   （`signoff-tags.md`）なので、表示用のファイルを入れると比べる中身が増える。版の外の名前は重ね合わせにも入らない（`versions.md`）。
