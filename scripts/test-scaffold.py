@@ -436,6 +436,15 @@ for _case in V2_RENAMED["cases"]:
     _case["input"] = {("total" if k == "amount" else k): v for k, v in _case["input"].items()}
 RENAMED_IMPL = GOOD_IMPL.replace("rank, amount", "rank, total").replace("amount < 0", "total < 0")
 RENAMED_NEITHER_IMPL = NEITHER_IMPL.replace("rank, amount", "rank, total").replace("amount < 0", "total < 0")
+# v2 で必須の入力 coupon を足した——前の版の状態の実装には、作業中の版の Red テストが呼び出しでエラーになる（#294 の 2 パス目）
+V2_NEW_INPUT = copy.deepcopy(IR["features"][0])
+V2_NEW_INPUT["operation"]["input"]["coupon"] = {"type": "boolean"}
+for _case in V2_NEW_INPUT["cases"]:
+    _case["input"]["coupon"] = False
+# v2 で関数（operation.id）を改名した——前の版の Red テストは「未実装」で落ちる
+V2_OP_RENAMED = copy.deepcopy(IR["features"][0])
+V2_OP_RENAMED["operation"]["id"] = "compute_discount"
+OP_RENAMED_NEITHER_IMPL = NEITHER_IMPL.replace("def calc_discount(", "def compute_discount(")
 
 
 def v2(features: list[dict], qa: str | None = HEADER + QA_V2, removed: str | None = None,
@@ -833,6 +842,19 @@ CASES: list[Case] = [
     # 陽性対照: 改名は実装したが値はどちらの版でもない——前の版のエラーを緑の代わりにしない
     Case("Red の状態: 入力の改名と、どちらの版でもない値", 1, "前の版の状態を判定できない",
          args=("--red-check", "--in-progress"), generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_NEITHER_IMPL),
+    # 入力の名前・形を変える変更で、実装は前の版の状態——作業中の版の Red テストはエラーになるが、Red の正常な状態（2 パス目）
+    Case("Red の状態: 入力を改名する（前の版の実装）", 0, "失敗 2 件（追加・変更）・緑 1 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_RENAMED]), impl=GOOD_IMPL),
+    Case("Red の状態: 必須の入力を足す（前の版の実装）", 0, "失敗 2 件（追加・変更）・緑 1 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_NEW_INPUT]), impl=GOOD_IMPL),
+    # 陽性対照: 前の版でも失敗する実装なら、作業中の版のエラーを失敗の代わりにしない
+    Case("Red の状態: 必須の入力を足し、前の版でも失敗する実装", 1, "エラー（失敗でも緑でもない）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_NEW_INPUT]), impl=NEITHER_IMPL),
+    # 関数の改名: 前の版の Red テストだけが「未実装」——新しい関数がどちらの版も満たさなければ 1（2 パス目）
+    Case("Red の状態: 関数を改名し、どちらの版でもない値", 1, "前の版の期待も作業中の版の期待も満たさない",
+         args=("--red-check",), generate_first=True, extra=v2([V2_OP_RENAMED]), impl=OP_RENAMED_NEITHER_IMPL),
+    Case("Red の状態: 関数を改名する（前の版の実装）", 0, "失敗 2 件（追加・変更）・緑 1 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_OP_RENAMED]), impl=GOOD_IMPL),
     Case("Red の状態: 作り直し（v1 を実装済み）", 0, "もう緑 3 件", args=("--red-check", "--in-progress"),
          generate_first=True, impl=GOOD_IMPL),
     Case("Red の状態: 作り直し（回帰が壊れた実装）", 1, "回帰のケースなのに失敗した", args=("--red-check", "--in-progress"),
@@ -968,19 +990,25 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("--in-progress を無視する", "        elif in_progress:", "        elif False:", "Red の状態: 作り直し（変更を実装済み）"),
     ("もう緑を止める（#294 の前）", '        elif was in (None, "pass"):\n            satisfied.append(name)',
      '        elif False:\n            satisfied.append(name)', "Red の状態: 既存の振る舞いのケースを足す"),
-    ("どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass", "missing"):', "        elif False:",
+    ("どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass") and (got, was)', "        elif False and (got, was)",
      "Red の状態: どちらの版の期待も満たさない"),
-    ("作り直しでは、どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass", "missing"):',
-     '        elif got != "pass" and was not in (None, "pass", "missing") and not in_progress:',
+    ("作り直しでは、どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass") and (got, was)',
+     '        elif not in_progress and got != "pass" and was not in (None, "pass") and (got, was)',
      "Red の状態: どちらの版の期待も満たさない（作り直し）"),
-    ("前の版の「実装が無い」を食い違いに数える", 'was not in (None, "pass", "missing"):  #', 'was not in (None, "pass"):  #',
+    ("前の版の「実装が無い」を食い違いに数える", ' and (got, was) != ("missing", "missing"):', ":",
      "Red の状態: 実装が無く、変更のケースだけ"),
+    ("前の版だけの「未実装」を食い違いに数えない（2 パス目の前）", 'was not in (None, "pass") and (got, was) != ("missing", "missing"):',
+     'was not in (None, "pass", "missing"):', "Red の状態: 関数を改名し、どちらの版でもない値"),
+    ("作業中の版のエラーを一律に止める（2 パス目の前）", '            if got == "error" and was == "pass":\n                got = "fail"',
+     '            if False:\n                got = "fail"', "Red の状態: 入力を改名する（前の版の実装）"),
+    ("作業中の版のエラーを失敗の代わりにする", '            if got == "error" and was == "pass":\n                got = "fail"',
+     '            if got == "error":\n                got = "fail"', "Red の状態: 必須の入力を足し、前の版でも失敗する実装"),
     ("バイトコードを書く", '[sys.executable, "-B", "-c", DRIVER', '[sys.executable, "-c", DRIVER',
      "Red の状態: 撤去と追加（前の版の実装）"),
-    ("前の版のエラーを一律に止める", '        elif was == "skip" or (was == "error" and got != "pass"):',
-     '        elif was in ("error", "skip"):', "Red の状態: 作り直し（入力の改名を実装済み）"),
-    ("前の版のエラーを緑の代わりにする", '        elif was == "skip" or (was == "error" and got != "pass"):',
-     '        elif was == "skip":', "Red の状態: 入力の改名と、どちらの版でもない値"),
+    ("前の版のエラーを一律に止める", '            elif was == "error" and got == "pass":\n                was = "fail"',
+     '            elif False:\n                was = "fail"', "Red の状態: 作り直し（入力の改名を実装済み）"),
+    ("前の版のエラーを緑の代わりにする", '            elif was == "error" and got == "pass":\n                was = "fail"',
+     '            elif was == "error":\n                was = "pass"', "Red の状態: 入力の改名と、どちらの版でもない値"),
     ("--in-progress を --red-check 以外でも受け付ける", "    if args.in_progress and not args.red_check:", "    if False:",
      "--check に --in-progress"),
     ("撤去の受入基準を全部緑に戻す（#294 の前）", "を撤去し、{KEPT_GREEN}。**", "を撤去し、ほかの Red テストがすべて緑のままであること。**",
