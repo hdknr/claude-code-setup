@@ -80,9 +80,12 @@
 
 - 周の在り処: ブランチ `issue/266-mkdocs-template`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-266`・
   起点 `50b1d1b`・base は `origin/main`（`refs/remotes/origin/HEAD`）の merge-base `50b1d1be2ad0efd20726333e712a4b91dcfccc0a`
+- 実装: `cd952c6` で完了（手順 4）。`check-all.py` 44/44 緑。次は手順 5（Verifier 1 パス目）
 - 関門: まだ通していない
 - 反証・差し戻し: なし
-- 交絡: まだ実験なし
+- 交絡: 実装中に B を 1 回だけ回した（一時ディレクトリで写して `uv sync`・`mkdocs build --strict` が 0、`qa.html` に v1・v2 の節と表）。
+  **陽性対照（壊れた表で `--strict` が落ちること）はまだ取っていない**——手順 5 で取る
+- 割り目（手順 4）: 訊いた → **「ここで割る」**（2026-10-20）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 266`（手順 5 から）
 
 ## 既知の限界・決着済みの論点
 
