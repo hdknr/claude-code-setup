@@ -10,9 +10,11 @@
    **`mkdocs.yml`・`mkdocs.yaml` が在れば何も写さない。** 在るファイル（シンボリックリンク・壊れたリンクを含む）は 1 バイトも変えず、
    `pyproject.toml`・`.gitignore` が在れば足りない依存・行を出力で示す。`--dry-run` は何も書かない。根がディレクトリでなければ 2。
    `mkdocs.yml` は最後に写す。行き先の親がファイルなら 2 で止まり（`mkdocs.yml` は書かない）、直して再実行すれば残りが写る。
+   書き込みが途中で失敗しても（ファイルの大きさの上限で切る）切れたファイルも一時ファイルも残さず、再実行すれば残りが写る。
    雛形の中の `__pycache__` は写さない。
 2. **フックの描き方**——版ごとの節を番号の順（`v10` は `v2` の後）に、表の行をすべて、版をまたいで一意なアンカーで描く。
-   セルの HTML と Markdown の記号（`{` `}` を含む）・`|`・改行をエスケープする。CSV の文字は表のセルにだけ置き、
+   セルの HTML と Markdown の記号（`&`・`\\`・`{` `}` を含む）・`|`・改行（`\\r` を含む）をエスケープする。
+   アンカーに使えない文字（空白・`=`・`(`）は `-` にする（`No` の文字が見出しの属性にならない）。`qa.csv` の無い版は飛ばして次の版を描く。CSV の文字は表のセルにだけ置き、
    行頭の `!!! `・字下げ・`1. ` をブロックの記法にしない。空の `費用への影響` は行を出さない。
    BOM つきの表を読む。空白だけの行は読み飛ばし、列の足りない行は空で埋める。回答の `未回答 ` は未回答と数える。
    読めない表・見出しの違う表・知らない印は**警告**（`mkdocs` のロガー。`--strict` で落ちる）とページ上の注意書き。
@@ -35,6 +37,7 @@ import importlib.util
 import io
 import logging
 import os
+import resource
 import shutil
 import subprocess
 import sys
@@ -168,6 +171,21 @@ def init_parent_is_file(plugin: Path, work: Path) -> bool:
             and code2 == 0 and (root / "mkdocs.yml").is_file() and (root / "hooks" / "spec_loop_pages.py").is_file())
 
 
+def init_cut_off(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    assert_in_tmp(root)
+    # ファイルの大きさの上限で、512 バイトを超える雛形の書き込みを途中で失敗させる（Python は SIGXFSZ を無視するので EFBIG になる）
+    proc = subprocess.run([sys.executable, "-I", str(plugin / INIT), str(root)], capture_output=True, text=True, check=False,
+                          preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (512, resource.RLIM_INFINITY)))
+    big = [rel for rel, data in template_map(plugin).items() if len(data) > 512]
+    after = snapshot(root)
+    stopped = (proc.returncode == 2 and big and not any(rel in after for rel in big)
+               and not any(Path(rel).name.startswith(".") and rel != ".gitignore" for rel in after))
+    code, _ = run_init(plugin, root)
+    return bool(stopped) and code == 0 and snapshot(root) == template_map(plugin)
+
+
 def init_keeps_existing(plugin: Path, work: Path) -> bool:
     root = work / "repo"
     write(root, {"pyproject.toml": '[project]\nname = "x"\ndependencies = ["requests"]\n',
@@ -257,6 +275,30 @@ def hook_escape(plugin: Path, work: Path) -> bool:
     out, _ = render(plugin, docs, "<!-- spec-loop: qa -->")
     return ("&lt;b&gt;A&lt;/b&gt; \\| B？" in out and "<b>" not in out
             and "1 行目<br>2 行目 \\*強調\\* \\`x\\` \\[y\\](z)" in out)
+
+
+def hook_escape_more(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    (docs / "v1" / "shared").mkdir(parents=True)
+    (docs / "v1" / "shared" / "qa.csv").write_bytes(
+        (HEADER + 'Q-001,要求確定,"C:\\dir\\|x & y\r\n次\r三",A: x / B: y,未回答,—,確認中,\n').encode("utf-8"))
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return not warnings and "C:\\\\dir\\\\\\|x &amp; y<br>次<br>三" in out and "\r" not in out
+
+
+def hook_anchor(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": HEADER + "q-001 onclick=alert(1),要求確定,何？,A: x / B: y,未回答,—,確認中,\n"})
+    out, _ = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return ("{#v1-q-001-onclick-alert-1-}" in out and "(#v1-q-001-onclick-alert-1-)" in out
+            and "{#v1-q-001 " not in out and "(#v1-q-001 " not in out)
+
+
+def hook_skips_missing(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/requirements/a.md": "# a\n", "v3/shared/qa.csv": QA_V10})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return not warnings and "## v1" in out and "## v2" not in out and "{#v3-q-010}" in out
 
 
 def hook_cost(plugin: Path, work: Path) -> bool:
@@ -352,6 +394,7 @@ CASES = {
     "mkdocs.yaml が在っても何も写さない": init_config_yaml,
     "mkdocs.yml は最後に写す": init_config_last,
     "親がファイルなら 2 で止まり、直せば残りが写る": init_parent_is_file,
+    "途中で書けなくても切れたファイルを残さず、直せば残りが写る": init_cut_off,
     "在るファイルは変えず、足りないものを示す": init_keeps_existing,
     "壊れたリンクも在るとみなす": init_symlink,
     "--dry-run は書かない": init_dry_run,
@@ -359,6 +402,9 @@ CASES = {
     "版ごとの節・アンカー・件数": hook_versions,
     "版は番号の順・形に合わない名前は読まない": hook_numeric_order,
     "セルをエスケープする": hook_escape,
+    "& と \\ と \\r もエスケープする": hook_escape_more,
+    "アンカーに使えない文字を置き換える": hook_anchor,
+    "qa.csv の無い版は飛ばして次の版を描く": hook_skips_missing,
     "費用への影響は空なら出さない": hook_cost,
     "CSV の文字をブロックの記法にしない": hook_block_syntax,
     "BOM つきの表を読む": hook_bom,
@@ -391,10 +437,10 @@ MUTATIONS: list[tuple] = [
      "空の根には雛形をすべて写す"),
     # 在るかの確認と排他的な作成は二重の守りなので、片方だけ壊しても挙動は変わらない（等価変異）。両方を壊す。
     ("在るファイルを上書きする", INIT, [("        if os.path.lexists(dest):\n", "        if False:\n"),
-                                       ('dest.open("xb")', 'dest.open("wb")')],
+                                       ("os.link(tmp, dest)", '__import__("shutil").copyfile(tmp, dest)')],
      "在るファイルは変えず、足りないものを示す"),
     ("リンクを辿って在るかを見る", INIT, [("        if os.path.lexists(dest):\n", "        if dest.exists():\n"),
-                                         ('dest.open("xb")', 'dest.open("wb")')],
+                                         ("os.link(tmp, dest)", '__import__("shutil").copyfile(tmp, dest)')],
      "壊れたリンクも在るとみなす"),
     ("--dry-run でも書く", INIT, "        if not args.dry_run:\n", "        if True:\n", "--dry-run は書かない"),
     ("gitignore の名前を変えない", INIT, 'RENAMES = {"gitignore": ".gitignore"}', "RENAMES = {}",
@@ -402,13 +448,27 @@ MUTATIONS: list[tuple] = [
     ("足りない依存を示さない", INIT, "            if names:\n", "            if False:\n",
      "在るファイルは変えず、足りないものを示す"),
     ("根を確かめない", INIT, "    if not root.is_dir():\n", "    if False:\n", "根がディレクトリでなければ 2"),
-    ("版を名前の順に並べる", HOOK, "            found.append((int(entry.name[1:]), entry))",
-     "            found.append((entry.name, entry))", "版は番号の順・形に合わない名前は読まない"),
+    ("版を名前の順に並べる", HOOK, "    return sorted(found)\n", "    return sorted(found, key=lambda item: item[1].name)\n",
+     "版は番号の順・形に合わない名前は読まない"),
     ("版の形を見ない", HOOK, "VERSION.fullmatch(entry.name) and ", "entry.name.startswith('v') and ",
      "版は番号の順・形に合わない名前は読まない"),
-    ("アンカーに版を入れない", HOOK, 'return f"v{version}-{number.lower()}"', "return number.lower()",
+    ("アンカーに版を入れない", HOOK, 'return f"v{version}-" + ANCHOR_UNSAFE', "return ANCHOR_UNSAFE",
      "版ごとの節・アンカー・件数"),
-    ("HTML をエスケープしない", HOOK, "html.escape(value.replace", "str(value.replace", "セルをエスケープする"),
+    ("アンカーの文字を置き換えない", HOOK, 'ANCHOR_UNSAFE.sub("-", number.lower())', "number.lower()",
+     "アンカーに使えない文字を置き換える"),
+    ("HTML をエスケープしない", HOOK, [("html.escape(value.replace", "(value.replace"), (", quote=False)", ")")],
+     "セルをエスケープする"),
+    ("& をエスケープしない", HOOK, r'MARKDOWN_SPECIAL.sub(r"\\\1", escaped)', r'MARKDOWN_SPECIAL.sub(r"\\\1", escaped.replace("&amp;", "&"))',
+     "& と \\ と \\r もエスケープする"),
+    ("\\ をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
+     r'MARKDOWN_SPECIAL = re.compile(r"([`*_\[\]{}#|])")', "& と \\ と \\r もエスケープする"),
+    ("\\r を改行にしない", HOOK, '.replace("\\r", "\\n")', "", "& と \\ と \\r もエスケープする"),
+    ("qa.csv の無い版で止まる", HOOK, "        if not path.is_file():\n            continue\n",
+     "        if not path.is_file():\n            break\n", "qa.csv の無い版は飛ばして次の版を描く"),
+    ("一時ファイルを残す", INIT, "        os.unlink(tmp)\n", "        pass\n", "空の根には雛形をすべて写す"),
+    ("行き先へ直に書く", INIT, '        with os.fdopen(fd, "wb") as f:\n            f.write(data)\n',
+     '        with os.fdopen(fd, "wb") as f, open(dest, "xb") as g:\n            g.write(data)\n            f.write(data)\n',
+     "途中で書けなくても切れたファイルを残さず、直せば残りが写る"),
     ("| をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
      r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#])")', "セルをエスケープする"),
     ("{} をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
