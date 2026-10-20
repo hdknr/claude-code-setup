@@ -69,10 +69,12 @@ main への merge → GitHub Pages の自動デプロイ（`docs/plugins/index.m
 - 実装: `8d30068` で完了。`test-check-signoff.py` 試料 43・変異 30 緑、`test-build-proposal.py` 試料 35・変異 30 緑、
   `check-all.py` 44/44 本・失敗 0・飛ばし 0（コミット直前の作業ツリー）
 - 手順 4 の割り目で `AskUserQuestion` → **「ここで割る」**を選択（2026-10-20）
+- 2 パス目の前の割り目で `AskUserQuestion` → **「ここで割る」**を選択（2026-10-20）。再開は Verifier 2 パス目と
+  `/code-review` 2 パス目から（同じ base `2b61f0bd945f1cae3c250adca5b3950e6dedd996` を渡す）
 - 関門 1 パス目（2026-10-20。base `2b61f0bd945f1cae3c250adca5b3950e6dedd996`）: **Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 0 件**
   （A〜G すべて一致・`check-all.py` 44/44・`git status` 前後とも空）、**`/code-review`（high）指摘 9 件**——済み。
   採否は下の表（直す 4 件・残課題 5 件）
-- 1 パス目の指摘対応: 済み（コミットは下の「1 パス目の指摘対応のコミット」）
+- 1 パス目の指摘対応: `122f383` で済み（`check-all.py` 44/44・失敗 0・飛ばし 0）
 - **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）**と** `/code-review` 2 パス目の**両方**。
   そのあと 2 パス目で直した行があれば狭いパス（起点は 2 パス目の指摘対応を始める直前の HEAD）
 - 反証・差し戻し: Verifier の反証 0 件のため差し戻しなし
