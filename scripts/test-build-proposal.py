@@ -46,6 +46,7 @@ QA_ROWS = (
     "Q-005,実現性・コスト,夜間は止めてよいか,A: 止まってよい / B: 24 時間,未回答,—,確認中,B は月額が約 2 倍\n"
 )
 SCHEDULE_CSV = "No,工程,開始,終了,前提\nT-001,要件定義,2026-11-02,2026-11-27,\nT-002,基本設計,2026-11-30,2026-12-25,T-001\n"
+NFC_E, NFD_E = "é", "é"  # é の NFC と NFD
 
 
 def estimate(amount: str) -> str:
@@ -189,6 +190,13 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
                                                       ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
      lambda r: not_made(1)(r) and "ディレクトリ" in r.output and "requirements/dir" in r.output
      and "写すと同じ場所に書かれる" in r.output),
+    # 大文字小文字ではなく Unicode の正規化（NFC/NFD）だけが違うディレクトリ——macOS の FS では同じ場所になる。
+    # 出力に NFD の綴りが出ることまで見る（索引で NFC に潰れていれば衝突が起きず、提案書が作られて赤になる）
+    ("ディレクトリが正規化だけ違うと比較で断る", V2C[:-3] + [("i", f"docs/v2/requirements/x/{NFC_E}/a.md", "100644", "A\n"),
+                                                    ("i", f"docs/v2/requirements/x/{NFD_E}/b.md", "100644", "B\n"), ("c",),
+                                                    ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+     lambda r: not_made(1)(r) and f"requirements/x/{NFD_E}" in r.output and f"requirements/x/{NFC_E}" in r.output
+     and "写すと同じ場所に書かれる" in r.output),
     # 重ね合わせが読まないもの（版の外・版の中の重ねない置き場所）は写さない——そこで並んでも比較は作れる
     ("重ね合わせが読まないものは写さない", V2C[:-3] + [("i", "docs/notes/A.md", "100644", "X\n"), ("i", "docs/notes/a.md", "100644", "Y\n"),
                                               ("i", "docs/v2/proposal/N.md", "100644", "X\n"), ("i", "docs/v2/proposal/n.md", "100644", "Y\n"),
@@ -243,6 +251,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "ファイルとディレクトリが大文字小文字だけ違うと比較で断る"),
     ("ディレクトリ同士の重なりを見ない", "            if other != parent:\n", "            if False:\n",
      "ディレクトリが大文字小文字だけ違うと比較で断る"),
+    ("正規化を畳まない", "    fold = diffs.merge_versions.fold\n", "    fold = lambda p: p.lower()\n",
+     "ディレクトリが正規化だけ違うと比較で断る"),
     ("重ね合わせが読まないものも写す", "        if not merged_reads(path):\n            continue\n", "",
      "重ね合わせが読まないものは写さない"),
     ("比較が作れなくても作る", "    if problems:\n        raise Stop(1, [f\"{tag}: ",
@@ -304,7 +314,10 @@ def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) ->
         elif step[0] == "i":  # 作業ツリーを通さず索引にだけ置く（大文字小文字を区別しない FS でも並べられる）。("i", パス, モード, 中身)
             blob = subprocess.run(["git", "-C", str(root), "hash-object", "-w", "--stdin"], input=step[3].encode(),
                                   check=True, capture_output=True, env=env).stdout.decode().strip()
-            run_git(root, env, "update-index", "--add", "--cacheinfo", f"{step[2]},{blob},{step[1]}")
+            # パスは stdin で渡す——macOS の git は引数のパスを NFC に直す（core.precomposeunicode）ので、
+            # --cacheinfo では NFD の試料が NFC に潰れ、試したつもりで試せていない形になる（#275）
+            subprocess.run(["git", "-C", str(root), "update-index", "--add", "--index-info"],
+                           input=f"{step[2]} {blob}\t{step[1]}\n".encode(), check=True, capture_output=True, env=env)
         elif step[0] == "c":
             run_git(root, env, "commit", "-q", "--allow-empty", "-m", "step")
         elif step[0] == "t":
