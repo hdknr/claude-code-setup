@@ -33,6 +33,8 @@
 | `scripts/merge-versions.py` | 版ごとの差分を重ねて、ある版の時点の全体を作る（標準ライブラリのみ） |
 | `scripts/diff-versions.py` | ある版が前の版から何を足し・変え・消したかを、前の版の時点の全体と比べて出す（標準ライブラリのみ） |
 | `scripts/check-frozen.py` | リリースした版（`release-v<n>` のタグ）の `docs/v<n>/` が直されていないかの確かめ（標準ライブラリと `git`） |
+| `templates/mkdocs/` | 正本リポジトリを MkDocs で閲覧するための雛形（設定・Q&A 表を CSV から描くフック・表示用のページ） |
+| `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
 | `skills/feasibility/` | 実現性・コストのループを 1 回分進めるスキル（見積りを書く側） |
