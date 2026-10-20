@@ -66,9 +66,12 @@ main への merge → GitHub Pages の自動デプロイ（`docs/plugins/index.m
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-270`、起点 `2b61f0b`、
   base 参照 `origin/main` → `2b61f0bd945f1cae3c250adca5b3950e6dedd996`
 - 読み込まれている dev-loop の版: 1.37.0（リポジトリは 1.41.1）
-- 実装: 未着手
+- 実装: `8d30068` で完了。`test-check-signoff.py` 試料 43・変異 30 緑、`test-build-proposal.py` 試料 35・変異 30 緑、
+  `check-all.py` 44/44 本・失敗 0・飛ばし 0（コミット直前の作業ツリー）
+- 手順 4 の割り目で `AskUserQuestion` → **「ここで割る」**を選択（2026-10-20）
+- 関門 1 パス目: 未（次はここ。base `2b61f0bd945f1cae3c250adca5b3950e6dedd996` を Verifier と `/code-review` の両方に渡す）
 - 反証・差し戻し: なし
-- 交絡: 実験なし（まだ）
+- 交絡: 試料は陽性側（素の `v1` と共存して 0）を足した。**旧い名前で同じ試料が作れないこと（陰性側）は未確認**——Verifier に当てさせる
 
 ## 既知の限界・決着済みの論点
 
