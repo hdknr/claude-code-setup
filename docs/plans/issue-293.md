@@ -8,8 +8,8 @@
 
 - `plugins/spec-loop/scripts/init-mkdocs.py` — `place()` に、リンクが使えないときの退路
 - `scripts/test-init-mkdocs.py` — リンクが使えない状況の試料と変異
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 0.10.1
-- `.claude-plugin/marketplace.json` — spec-loop 0.10.1
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 0.11.1
+- `.claude-plugin/marketplace.json` — spec-loop 0.11.1
 - `plugins/spec-loop/skills/*/SKILL.md` — 版のバナー（5 本。中身は変えない）
 - `docs/plans/issue-293.md` — この計画
 

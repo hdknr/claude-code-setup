@@ -101,19 +101,21 @@
 同梱のスクリプトで OpenAPI・型・**Red テスト**（実装が無いと失敗するテスト）と **Issue の本文**を作って、
 **1 機能 = Issue 1 件**で登録します（登録の前に利用者に確かめます）。**Issue の登録で止まり、以降は dev-loop が受け持ちます。**
 v2 以降は前の版と比べて機能を**追加・変更・削除**に分け、**変わった機能だけ**を Issue にします——変更の Issue は
-回帰（変わらないケースが緑のまま）を、削除の Issue は撤去を受入基準に持ちます（形は `references/handoff-issue.md`）。
+回帰（変わらないケースも緑であること）を、削除の Issue は撤去を受入基準に持ちます（形は `references/handoff-issue.md`）。
 dev-loop は Issue の本文の印で spec-loop から来たことを知り、開発中に見つけた仕様の穴を
 Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `references/spec-gap.md`）。
 
 手順と守ることは [`skills/scaffold/SKILL.md`](skills/scaffold/SKILL.md) を正とします。
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check]
+python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]]
 ```
 
 `--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。
 `--upto <n>` を付けると v<n> の時点に当てます（差分の周を始める前の確かめ。`references/versions.md`）。
-`--red-check` は Red テストを走らせ、失敗するのが追加・変更のケースだけで、ほかは緑かを確かめます。
+`--red-check` は Red テストを走らせ、回帰は緑で、追加・変更は失敗するか前の版の実装がもう満たすかを確かめます。
+**実装が前の版の状態にあることを前提にせず**、前の版の Red テストも同じ実装に当てて確かめます。
+この版をもう実装し始めた作り直しの経路では `--in-progress` を付けます。
 実装を置くモジュールは、中間表現の `impl_module` に書きます（`references/spec-ir.md`）。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
