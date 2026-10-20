@@ -1,0 +1,21 @@
+# spec-loop の雛形（init-mkdocs.py が写した）。プロジェクトに合わせて直してよい。
+site_name: 要求と仕様
+docs_dir: docs
+site_dir: site
+use_directory_urls: false
+
+theme:
+  name: material
+  language: ja
+
+# Q&A 表（docs/v<n>/shared/qa.csv）を docs/qa.md に展開する。正本は CSV のまま。
+# フックはサーバーの起動時にしか読まれないので、直したら `mkdocs serve` を起動し直す。
+hooks:
+  - hooks/spec_loop_pages.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
