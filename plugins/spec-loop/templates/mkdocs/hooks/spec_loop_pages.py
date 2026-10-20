@@ -37,6 +37,7 @@ QA_NO_ANSWER = "未回答"
 QA_OPTION_SEPARATOR = " / "
 
 MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")
+ANCHOR_UNSAFE = re.compile(r"[^a-z0-9_-]+")
 
 
 def text(value: str) -> str:
@@ -46,7 +47,8 @@ def text(value: str) -> str:
 
 
 def anchor(version: int, number: str) -> str:
-    return f"v{version}-{number.lower()}"
+    """見出しの `{#…}` とリンクの `(#…)` に置く名前。使えない文字は `-` にする（空白・`}` で属性が割れないように）。"""
+    return f"v{version}-" + ANCHOR_UNSAFE.sub("-", number.lower())
 
 
 def versions(docs_dir: Path) -> list[tuple[int, Path]]:

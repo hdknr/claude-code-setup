@@ -10,7 +10,7 @@
 - 無ければ、雛形のファイルのうち**行き先に無いものだけ**を写す。**在るファイルは 1 バイトも変えない**——
   `pyproject.toml`・`.gitignore` が在れば触らず、足りない依存・無視する行を出力で示す（足すかどうかは人が決める）。
 - 行き先がシンボリックリンクなら（壊れていても）「在る」とみなす。書くときは排他的に作る（確かめた後に
-  別の誰かが作っていても上書きしない）。
+  別の誰かが作っていても上書きしない）。一時ファイルに書き切ってから置くので、途中で書けなくても切れたファイルは残らない。
 - `--dry-run` は何を写すかを示すだけで、何も書かない。
 - 雛形の `gitignore` は `.gitignore` として写す（プラグインの中で本物の `.gitignore` として効かないように名前を変えてある）。
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "mkdocs"
@@ -32,6 +33,8 @@ CONFIG_NAMES = ("mkdocs.yml", "mkdocs.yaml")
 RENAMES = {"gitignore": ".gitignore"}
 # pyproject.toml が在って写さなかったときに、無ければ示す依存
 DEPENDENCIES = ("mkdocs", "mkdocs-material")
+UMASK = os.umask(0)
+os.umask(UMASK)
 
 
 def template_files() -> list[tuple[Path, str]]:
@@ -60,6 +63,23 @@ def missing_dependencies(dest: Path) -> list[str]:
     except (OSError, UnicodeDecodeError):
         return []
     return [name for name in DEPENDENCIES if f'"{name}' not in content and f"'{name}" not in content]
+
+
+def place(dest: Path, data: bytes) -> bool:
+    """`data` を `dest` に置く。既にあれば置かずに False。途中で書けなければ例外で、`dest` は作らない
+    （一時ファイルに書き切ってからリンクで置く——切れたファイルが残ると、再実行が「既にある」と読んで直らない）。"""
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.chmod(tmp, 0o666 & ~UMASK)  # mkstemp は 0600 で作る——素の open で作ったのと同じ権限にする
+        try:
+            os.link(tmp, dest)  # 在れば失敗する（排他）
+        except FileExistsError:
+            return False
+        return True
+    finally:
+        os.unlink(tmp)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -99,10 +119,7 @@ def main(argv: list[str] | None = None) -> int:
                 data = source.read_bytes()
                 # 親の名前がファイル・壊れたリンクなら mkdir は FileExistsError を出す——下の「既にある」と混ぜない
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    with dest.open("xb") as f:
-                        f.write(data)
-                except FileExistsError:
+                if not place(dest, data):
                     kept.append(rel)  # 確かめた後に別の誰かが作った
                     continue
             except OSError as e:
