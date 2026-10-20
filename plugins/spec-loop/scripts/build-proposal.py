@@ -9,12 +9,12 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 - **最初に `check-signoff.py` の `resolve` で照合する。0 でなければ 1 バイトも書かない。**
   照合をスキル（LLM）の判断に任せないため、生成の側で担保する。**版（`<n>`）も照合が決めたものを使う**
   （`--version` を省けば作業中の版）。
-- **承認されたタグの時点の、その版の中身から作る**——`docs/v<n>/shared/qa.csv` は `v<n>/req-signoff-<k>`、
-  `docs/v<n>/feasibility/schedule.csv`・`estimate.csv` は `v<n>/budget-signoff-<k>` の時点のものを `git show` で読む。
+- **承認されたタグの時点の、その版の中身から作る**——`docs/v<n>/shared/qa.csv` は `signoff/v<n>/req-<k>`、
+  `docs/v<n>/feasibility/schedule.csv`・`estimate.csv` は `signoff/v<n>/budget-<k>` の時点のものを `git show` で読む。
   作業ツリーで承認後に直した中身は提案書に入らない。**手書き部分（`docs/v<n>/proposal/*.md`）だけは作業ツリーから読む**
   （承認の対象ではない。ファイル名の順に先頭へ並べる）。
   **v2 以降は、その版の差分の表に加えて、前の版との比較の節が載る**（変更の提案書）——比較は同梱の `diff-versions.py` の
-  `compare` を、**`v<n>/req-signoff-<k>` の時点の `docs/`** に当てる（`git ls-tree`・`git cat-file` で一時ディレクトリに写す。
+  `compare` を、**`signoff/v<n>/req-<k>` の時点の `docs/`** に当てる（`git ls-tree`・`git cat-file` で一時ディレクトリに写す。
   `git archive` は `.gitattributes` で中身が変わるので使わない。写すのは重ね合わせが読むものだけで、
   **大文字小文字・Unicode の正規化だけが違うパスがあれば写さずに 1**——区別しないファイルシステムでは同じ場所に書かれる）。決まりの正は `references/versions.md` の「版の差分」。
   **重ね合わせが作れなければ書かない（1）。** 費用の節は**その版の差分の見積り**で、前の版までの費用は足さない。

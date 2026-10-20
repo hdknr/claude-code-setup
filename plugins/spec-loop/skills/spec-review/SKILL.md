@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.11.1 -->
-> **このスキルの版: 0.11.1**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.12.0 -->
+> **このスキルの版: 0.12.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
