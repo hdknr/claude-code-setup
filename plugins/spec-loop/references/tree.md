@@ -27,6 +27,10 @@ scaffold/                    # dev-loop に渡す契約（scaffold が生成し�
 ├── types.py
 └── tests/test_<機能>.py     # Red テスト
 build/merged/                # 版を重ね合わせた全体（生成物。commit しない。versions.md）
+docs/index.md                # 表紙（下の「ドキュメントのツール」。版の外）
+docs/qa.md                   # Q&A 表の表示用ページ（同上。正本は各版の shared/qa.csv）
+mkdocs.yml                   # MkDocs の設定（同上）
+hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック（同上）
 ```
 
 以下、`shared/`・`spec/` などは**版のディレクトリの中**（`docs/v<n>/shared/`）を指す。
@@ -68,6 +72,7 @@ build/merged/                # 版を重ね合わせた全体（生成物。comm
 | ガントチャート | `build/feasibility/gantt.svg` | `feasibility` |
 | 提案書 | `build/proposal/proposal.md`（と同じ場所の `gantt.svg`） | `proposal` |
 | Issue の本文 | `build/scaffold/issues/<機能の id>.md`（と同じ場所の `issues.json`） | `scaffold` |
+| サイト | `site/`（MkDocs の出力。下の「ドキュメントのツール」） | `mkdocs build` |
 
 **commit しなくてよい**——同梱の生成スクリプトは、同じ入力から同じバイトを作る。
 提案書は**サインオフのタグの時点の中身**から作るので、タグがあれば作り直せる（`signoff-tags.md`）。
@@ -93,7 +98,29 @@ Red テストだけ**——`openapi.json`・`types.py` は指紋を持たず、�
 dev-loop は本文の sha256 を手元の中間表現と Red テストに当てるので、**開発のリポジトリにも正本の版を写して
 重ね合わせるか、どこで当てるかを決めて書く**。
 
+## ドキュメントのツール
+
+**既定は MkDocs。** `docs/` を最初から閲覧できるように、プラグインは雛形（`templates/mkdocs/`）を持ち、
+同梱のスクリプトで正本リポジトリへ写す（**手で写さない**）:
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本リポジトリの根>] [--dry-run]
+```
+
+- **写すのは、正本リポジトリの `CLAUDE.md` がドキュメントのツールを決めておらず、`mkdocs.yml` も無いときだけ。**
+  `mkdocs.yml` が在ればスクリプトは何も写さない。**在るファイルは 1 バイトも変えない**——`pyproject.toml`・`.gitignore` が
+  在れば触らず、足りない依存・行を示すので、足すかどうかは利用者が決める。
+- 写すもの: `mkdocs.yml`（Material・`use_directory_urls: false`・nav は書かず自動）・`pyproject.toml`（uv。
+  **MkDocs は 2 未満に固定**——2.0 は非互換の変更が予告されている）・`.gitignore`（`build/`・`site/`・`.venv/`・`__pycache__/`）・
+  `hooks/spec_loop_pages.py`・`docs/index.md`・`docs/qa.md`。閲覧は `uv run mkdocs serve`。
+- **CSV は Markdown に写さない。** 表示用のページに印（`<!-- spec-loop: qa -->`）を書き、フックが CSV から描く。
+  `qa` の印は、各版の `docs/v<n>/shared/qa.csv` を**版ごとの節**に描く（重ね合わせない。アンカーは `v<n>-q-001`）。
+  ほかの CSV を描くときは、フックに描画関数を足す。
+- **表示用のページは `shared/` に置かない**（`docs/qa.md` のように版の外に置く）。`shared/` は 2 つのサインオフが比べる範囲
+  （`signoff-tags.md`）なので、表示用のファイルを入れると比べる中身が増える。版の外の名前は重ね合わせにも入らない（`versions.md`）。
+- **フックはサーバーの起動時にしか読まれない**——直したら `mkdocs serve` を起動し直す。
+
 ## プロジェクトに任せること
 
-ドキュメントのツール（MkDocs か、別のものか）・サイトの分け方・スライドの形式は、
-**正本リポジトリの `CLAUDE.md` に書いてもらう**。このプラグインは持たない。
+MkDocs 以外のドキュメントのツール・サイトの分け方・スライドの形式は、**正本リポジトリの `CLAUDE.md` に書いてもらう**。
+書いてあれば、そちらが上の既定より先に立つ。

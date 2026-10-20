@@ -5,8 +5,8 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 # req-loop スキル
 
-<!-- skill-version: 0.9.0 -->
-> **このスキルの版: 0.9.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.10.0 -->
+> **このスキルの版: 0.10.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -55,10 +55,19 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 | 拾うもの | 無いとき |
 | --- | --- |
 | 正本のツリーがどこにあるか | `../../references/tree.md` のとおり（Q&A 表の置き場所もそこにある） |
-| ドキュメントのツール（MkDocs など）と、仕様を書くファイル | `../../references/tree.md` のファイルを直接編集する |
+| ドキュメントのツール（MkDocs など）と、仕様を書くファイル | 既定は MkDocs（下の項）。仕様は `../../references/tree.md` のファイルを直接編集する |
 | レビュー会のスライドの形式（テンプレート・別の生成手段） | 下の手順 4 の同梱スクリプトで作る |
 | スライドの出力先 | `../../references/tree.md` の「スライドの置き場所」 |
 | commit・push の決まり | 上の「守ること」のとおり、利用者に任せる |
+
+**`CLAUDE.md` がドキュメントのツールを決めていなければ、MkDocs の雛形を同梱のスクリプトで写す**（手で写さない）:
+
+```bash
+python3 <このスキルの base ディレクトリ>/../../scripts/init-mkdocs.py <正本リポジトリの根>
+```
+
+`mkdocs.yml` が在ればスクリプトは何も写さず、在るファイルも変えない。**出力に「足りない依存・行」があれば利用者に示す**
+（足すかどうかは利用者が決める）。何を写し、どこに置くかは `../../references/tree.md` の「ドキュメントのツール」を正とする。
 
 **Q&A 表がまだ無ければ、見出し行だけの表を作る**（見出しは `../../references/qa-csv.md` の列と同じ文字列・同じ順）。
 見出し行だけの表は検査を通る。

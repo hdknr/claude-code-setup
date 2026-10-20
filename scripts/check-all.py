@@ -96,6 +96,7 @@ TESTS: list[str] = [
     "test-merge-versions.py",
     "test-diff-versions.py",
     "test-check-frozen.py",
+    "test-init-mkdocs.py",
     "test-tab-match.py",
 ]
 
