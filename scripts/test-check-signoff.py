@@ -8,9 +8,10 @@
 見るもの:
 
 1. **比べる場所（v1〜v<n> の `shared/` と v2〜v<n> の `removed.csv`）が食い違うタグの組で非ゼロ（1）**——
-   中身の違い・追加・削除・**前の版の `shared/` だけ**・**`removed.csv` の `shared/` に効く行だけ**の違い。
+   中身の違い・追加・削除・**前の版の `shared/` だけ**・**`removed.csv` の `shared/` に効く行だけ**の違い・
+   **片側だけ `.` で始まる名前の rename**（読む側に新しいファイルが現れる）。
 2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致——**`removed.csv` の `requirements/`・機能の行
-   だけ・理由だけが違う組も**）。
+   だけ・理由だけ・行の順序だけが違う組も**。**`.` で始まる名前だけの違いも**——途中の `.` で始まるディレクトリの中も含む）。
 3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `req-signoff-v<n>` を含む）を数えない**・
    指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ。
 4. **照合できない形を 0 にしない（2）**——タグが無い・片方だけ・指定したタグが無い／命名に合わない／**別の版のもの**・
@@ -146,6 +147,20 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("タグの時点の作業中の版が . で始まるファイルだけ", [("w", SHARED, QA_A), ("w", "docs/v2/.gitkeep", ""), ("c",),
                                                 ("t", R2), ("t", B2), ("w", "docs/v2/spec/s.md", "x\n"), ("c",)],
      [], 2, f"{R2} の時点に docs/v2/ のファイルが 1 つも無い"),
+    # 片側だけ `.` で始まる rename は、読む側に新しいファイルが現れる——違いに数える。
+    # 期待に R100 を入れるのは、rename として出ていることの確かめ（D と A に分かれると、A だけで 1 になり判別しない）
+    ("片側だけ . で始まる名前の rename", [("w", SHARED, QA_A), ("w", "docs/v1/shared/.x", QA_B), ("c",), ("t", R1),
+                                     ("rm", "docs/v1/shared/.x"), ("w", "docs/v1/shared/vis.md", QA_B), ("c",), ("t", B1)],
+     [], 1, "R100\tdocs/v1/shared/.x\tdocs/v1/shared/vis.md"),
+    # 最後の要素だけでなく、途中の `.` で始まるディレクトリの中も重ね合わせは読まない
+    ("shared の . で始まるディレクトリの中だけ違う", [("w", SHARED, QA_A), ("c",), ("t", R1),
+                                             ("w", "docs/v1/shared/.cache/x", "x\n"), ("c",), ("t", B1)],
+     [], 0, f"一致する: {R1}"),
+    # 行の順序だけ違う removed.csv は、同じものを消している
+    ("removed.csv の行の順序だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
+                                    ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\nQ&A,Q-002,不要\n"), ("c",), ("t", R2),
+                                    ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
     # 決まりに反する removed.csv（見出しの順が違う）を、無い removed.csv と同じに読まない
     ("removed.csv が決まりに反する", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
                                    ("w", REMOVED2, "対象,種類,理由\nQ-001,Q&A,x\n"), ("c",), ("t", R2),
@@ -197,6 +212,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("`.` で始まるファイルの違いも数える",
      'if line and not all(hidden(path) for path in line.split("\\t")[1:])]', "if line]",
      "shared の . で始まるファイルだけ違う"),
+    ("片側だけ `.` で始まる rename を数えない",
+     'if line and not all(hidden(path) for path in line.split("\\t")[1:])]',
+     'if line and not any(hidden(path) for path in line.split("\\t")[1:])]', "片側だけ . で始まる名前の rename"),
+    ("`.` で始まるかを最後の要素だけで見る", 'return any(part.startswith(".") for part in path.split("/"))',
+     'return path.split("/")[-1].startswith(".")', "shared の . で始まるディレクトリの中だけ違う"),
+    ("removed.csv の行を並べ替えない", "    return sorted(rows)", "    return rows", "removed.csv の行の順序だけ違う"),
     ("タグの時点に版 n があるかを見ない",
      'shared_files(repo, info[f"{key}_commit"], chosen[key], [f"{DOCS}/v{version}/"])', "pass",
      "タグの時点に作業中の版が無い"),
