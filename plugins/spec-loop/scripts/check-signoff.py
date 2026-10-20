@@ -4,14 +4,14 @@
 usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>] [--req <タグ>] [--budget <タグ>]
 
 **タグの命名と照合の決まりの正は `references/signoff-tags.md` である**（このプラグインの中にある）。
-下の定数（タグの接頭辞・番号の書式・比べる場所）はその写しで、
+下の定数（タグの根と種類・番号の書式・比べる場所）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-check-signoff.py` が突き合わせて見る**。
 **版の見つけ方は同梱の `merge-versions.py` の `find_versions` を使う**（写しを作らない。決まりは `references/versions.md`）。
 
-- タグは `v<n>/req-signoff-<k>`・`v<n>/budget-signoff-<k>`。**`--version` を省けば、作業ツリーの作業中の版
+- タグは `signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>`。**`--version` を省けば、作業ツリーの作業中の版
   （`docs/` の版で番号が最大のもの）のタグだけを数える。**
 - タグを指定しなければ、**`<k>` を数として比べて最大のもの**を使う（`-10` は `-9` より新しい）。
-  **命名に合わないタグ（`v2/req-signoff-3-fix`・`v2/req-signoff-03`・旧い `req-signoff-v3`）は数えない。**
+  **命名に合わないタグ（`signoff/v2/req-3-fix`・`signoff/v2/req-03`・旧い `v2/req-signoff-3` と `req-signoff-v3`）は数えない。**
   **指定したタグが別の版のものなら照合しない（2）**——別の版の承認を組にしない。
 - **比べる場所は `docs/v1/shared/`〜`docs/v<n>/shared/` と `docs/v2/removed.csv`〜`docs/v<n>/removed.csv`**
   （v<n> の時点の共有の範囲は、前の版の `shared/` と、行を消す `removed.csv` にも依る）。
@@ -59,8 +59,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-REQ_PREFIX = "req-signoff"
-BUDGET_PREFIX = "budget-signoff"
+# 素の `v<n>` タグと ref の名前で衝突しないよう、版の前に根を置く（`refs/tags/v1` と `refs/tags/v1/...` は共存できない）
+TAG_ROOT = "signoff"
+REQ_PREFIX = "req"
+BUDGET_PREFIX = "budget"
 # `<n>`（版）と `<k>`（回数）は 1 から始まる整数（先頭に 0 を付けない）
 NUMBER = r"([1-9][0-9]*)"
 DOCS = "docs"
@@ -90,7 +92,12 @@ def git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def tag_pattern(prefix: str, version: int) -> re.Pattern[str]:
-    return re.compile(rf"v{version}/{re.escape(prefix)}-{NUMBER}")
+    return re.compile(rf"{re.escape(TAG_ROOT)}/v{version}/{re.escape(prefix)}-{NUMBER}")
+
+
+def tag_form(prefix: str, version: int) -> str:
+    """メッセージに出す命名（`signoff/v1/req-<k>`）。"""
+    return f"{TAG_ROOT}/v{version}/{prefix}-<k>"
 
 
 def scope(version: int) -> list[str]:
@@ -221,12 +228,12 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
             if given is not None:
                 if not tag_pattern(prefix, version).fullmatch(given):
                     raise Unjudged(f"指定したタグ {given!r} が版 v{version} の命名"
-                                   f"（v{version}/{prefix}-<k>）に合わない。照合していない")
+                                   f"（{tag_form(prefix, version)}）に合わない。照合していない")
                 chosen[key] = given
             else:
                 found = latest(names, prefix, version)
                 if found is None:
-                    raise Unjudged(f"v{version}/{prefix}-<k> のタグが 1 つも無い。照合していない")
+                    raise Unjudged(f"{tag_form(prefix, version)} のタグが 1 つも無い。照合していない")
                 chosen[key] = found
         paths = scope(version)
         info = dict(chosen, top=str(repo), version=version)

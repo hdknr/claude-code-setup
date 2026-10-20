@@ -114,7 +114,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs --
 - **同じ中身を置き直しただけのものは `変更` に数えない**（比較なので）。何を置いたかは `docs/v<n>/` を開けば分かる。
 - **v1 は前の版が無いので、全部が `追加`。**
 - 重ね合わせが決まりに反すれば比べない（1）。その版が無い・読めなければ比べない（2）。
-- **提案書（v2 以降）の「前の版からの変更」の節は、この比較を `v<n>/req-signoff-<k>` の時点の `docs/` に当てて作る**
+- **提案書（v2 以降）の「前の版からの変更」の節は、この比較を `signoff/v<n>/req-<k>` の時点の `docs/` に当てて作る**
   （`signoff-tags.md`。作業ツリーで承認の後に直したものは入らない）。
 
 ## 出力先
@@ -180,8 +180,9 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py
 3. **`scaffold.py` で作り直す。** `scaffold/` の中身は変わらないことがあるが、**Issue の本文は変わる**（中間表現の場所と
    sha256 が `build/merged/spec/spec_ir.json` を指す）。**登録済みの Issue は古い場所を指したまま**なので、
    開発中の Issue があるなら、開発する側に場所が変わったことを伝える。
-4. **承認を取り直す。** 前の名前のタグ（`req-signoff-v<n>`・`budget-signoff-v<n>`）は読まれない。移したコミットで
-   `v1/req-signoff-1`・`v1/budget-signoff-1` を付けてもらう（`signoff-tags.md`。**タグはスキルが付けない**）。
+4. **承認を取り直す。** 前の名前のタグ（`req-signoff-v<n>`・`budget-signoff-v<n>`、版を分けたあとの
+   `v<n>/req-signoff-<k>`・`v<n>/budget-signoff-<k>`）は読まれない。移したコミットで
+   `signoff/v1/req-1`・`signoff/v1/budget-1` を付けてもらう（`signoff-tags.md`。**タグはスキルが付けない**）。
    **中身を変えずに移しただけでも、どのコミットを承認したかは利用者・予算責任者が決める。**
 5. **リリース済みなら、移したコミットに `release-v1` を付けてもらう**（凍結の確かめの起点）。
 6. 正本リポジトリの `CLAUDE.md`・CI がパスを書いていれば直す。
