@@ -51,6 +51,7 @@ TARGET = "scaffold.py"
 SPEC_IR_REF = PLUGIN / "references" / "spec-ir.md"
 HANDOFF_REF = PLUGIN / "references" / "handoff-issue.md"
 TREE_REF = PLUGIN / "references" / "tree.md"
+SCAFFOLD_SKILL = PLUGIN / "skills" / "scaffold" / "SKILL.md"
 SPEC_GAP_REF = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "spec-gap.md"
 # dev-loop の手順 1 は、この印を見て `spec-gap.md` へ送る——印の写しはここにもある
 DEV_LOOP_SKILL = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md"
@@ -414,6 +415,38 @@ QA_V2 = "Q-004,要求確定,返品は何日まで？,A: 7 日 / B: 14 日,A（�
 RETURN_SPEC = "# 返品\n\n7 日以内。\n"
 
 
+# ---- 実装の状態（#294。Red テストと受入基準は、実装が前の版の状態にあることを前提にしない）
+# #281: 前の版の実装がもう満たす追加・変更——既存の振る舞いのケースを足す・入力だけ変える
+V2_SAME_ADDED = copy.deepcopy(IR["features"][0])
+V2_SAME_ADDED["cases"].append({"id": "F-001-C3", "title": "ゴールドの 5000 円は割引なし",
+                               "input": {"rank": "gold", "amount": 5000}, "expected": {"discount": 0}})
+V2_INPUT_ONLY = copy.deepcopy(IR["features"][0])
+V2_INPUT_ONLY["cases"][0]["input"] = {"rank": "silver", "amount": 5000}
+# #281: 型を number から integer に狭める（v1 は number。v2 は試料の元の integer に戻す）
+V1_NUMBER = edit(lambda ir: f1(ir)["operation"]["output"]["discount"].update(type="number"))
+# v2 の変更（V2_CHANGED: シルバーの割引 300）をもう実装した（#282・B）
+V2_IMPL = GOOD_IMPL.replace('    return {"discount": 0}', '    return {"discount": 300 if rank == "silver" else 0}')
+# どちらの版の期待も満たさない（シルバーの割引 7）
+NEITHER_IMPL = GOOD_IMPL.replace('    return {"discount": 0}', '    return {"discount": 7 if rank == "silver" else 0}')
+# v2 で入力 amount を total に改名した——実装すると、前の版の Red テストは呼び出しでエラーになる（#294 の 1 パス目）
+V2_RENAMED = copy.deepcopy(IR["features"][0])
+V2_RENAMED["operation"]["input"] = {("total" if k == "amount" else k): v
+                                    for k, v in V2_RENAMED["operation"]["input"].items()}
+for _case in V2_RENAMED["cases"]:
+    _case["input"] = {("total" if k == "amount" else k): v for k, v in _case["input"].items()}
+RENAMED_IMPL = GOOD_IMPL.replace("rank, amount", "rank, total").replace("amount < 0", "total < 0")
+RENAMED_NEITHER_IMPL = NEITHER_IMPL.replace("rank, amount", "rank, total").replace("amount < 0", "total < 0")
+# v2 で必須の入力 coupon を足した——前の版の状態の実装には、作業中の版の Red テストが呼び出しでエラーになる（#294 の 2 パス目）
+V2_NEW_INPUT = copy.deepcopy(IR["features"][0])
+V2_NEW_INPUT["operation"]["input"]["coupon"] = {"type": "boolean"}
+for _case in V2_NEW_INPUT["cases"]:
+    _case["input"]["coupon"] = False
+# v2 で関数（operation.id）を改名した——前の版の Red テストは「未実装」で落ちる
+V2_OP_RENAMED = copy.deepcopy(IR["features"][0])
+V2_OP_RENAMED["operation"]["id"] = "compute_discount"
+OP_RENAMED_NEITHER_IMPL = NEITHER_IMPL.replace("def calc_discount(", "def compute_discount(")
+
+
 def v2(features: list[dict], qa: str | None = HEADER + QA_V2, removed: str | None = None,
        spec: dict[str, str] | None = None, top: dict | None = None) -> dict[str, str]:
     files = {str(V2 / "spec" / "spec_ir.json"): json.dumps({**(top or {}), "features": features}, ensure_ascii=False,
@@ -467,8 +500,9 @@ def v2_changed(repo: Path) -> str | None:
                   "body": "F-001.md", "red": ["TestF001.test_f_001_c1"]}]:
         return f"issues.json が違う: {index}"
     return body_has(body, ("| `F-001-C1` | 変更 |", "| `F-001-C2` | 回帰 |", "変化: 変更（v1 の時点から v2 で変えた機能）",
-                           "`merge-versions.py docs build/merged --upto 2`", "**`回帰` のケースは前の版の実装で緑で、緑のままであること**",
-                           "`追加`・`変更` のケース（1 件）だけが失敗し、`回帰` のケース（1 件）は緑"), "変更")
+                           "`merge-versions.py docs build/merged --upto 2`", "**`回帰` のケースも緑であること**",
+                           "前の版の実装の上で失敗しうるのは `追加`・`変更` のケース（1 件）だけで",
+                           "**ほかの機能は、周の前に緑だった Red テストが、周の後も緑のままであること**"), "変更")
 
 
 def v2_removed(repo: Path) -> str | None:
@@ -489,6 +523,44 @@ def v2_removed(repo: Path) -> str | None:
     return body_has(body, ("理由: 取り消しはやめる", "撤去する API: `GET /orders/cancelable`", "| `F-002-C1` | 削除 |",
                            "—（`scaffold/tests/test_f_002.py` ごと消した）", "モジュール `spec_impl` の関数 `can_cancel`",
                            "python3 -m unittest discover -s scaffold/tests\n", "この機能が根拠にした Q&A は無い"), "撤去")
+
+
+def outcomes(repo: Path) -> dict[str, str]:
+    """{テストの id: ok／FAIL／ERROR}（`unittest -v` の行から）。"""
+    proc = subprocess.run([sys.executable, "-E", "-s", "-m", "unittest", "discover", "-v", "-s", "scaffold/tests"],
+                          capture_output=True, text=True, cwd=repo)
+    return dict((m.group(1), m.group(2)) for m in re.finditer(r"^\S+ \(([^)]+)\) \.\.\. (ok|FAIL|ERROR)$",
+                                                               proc.stderr, flags=re.MULTILINE))
+
+
+def removal_before_after(repo: Path) -> str | None:
+    """撤去の受入基準が、同じ版で足した機能が未実装のままでも満たせる（前後で緑の集合が減らない）。"""
+    body = bodies(repo).get("F-002", "")
+    if "周の前に緑だった Red テストが、周の後も緑のままであること" not in body:
+        return "撤去の本文の受入基準が、周の前後を比べる形でない"
+    if "ほかの Red テストがすべて緑のまま" in body:
+        return "撤去の本文が、同じ版の未実装の追加と両立しない受入基準を残している"
+    before = outcomes(repo)
+    # 陽性対照: 撤去の前は「全部が緑」ではない（F-003 が未実装）——#280 の行き止まりがこの試料で起きている
+    if not before or all(v == "ok" for v in before.values()):
+        return f"試料が #280 を再現していない（撤去の前に全部が緑か、何も走らない）: {before}"
+    (repo / "spec_impl.py").write_text(GOOD_IMPL.split("\n\n\ndef can_cancel")[0] + "\n", encoding="utf-8")
+    after = outcomes(repo)
+    lost = sorted(t for t, v in before.items() if v == "ok" and after.get(t) != "ok")
+    return f"撤去の後に緑でなくなった: {lost}" if lost else None
+
+
+def red_check_wrote_nothing(repo: Path) -> str | None:
+    """`--red-check` は前の版の Red テストを一時ディレクトリに作る——`scaffold/tests/` と根に置かない。"""
+    tests = sorted(p.name for p in (repo / "scaffold" / "tests").glob("test_*.py"))
+    if tests != ["test_f_001.py", "test_f_003.py"]:
+        return f"scaffold/tests/ に前の版の Red テストが残った: {tests}"
+    if (repo / "tests").exists():
+        return "正本リポジトリの根に tests/ を作った"
+    cache = sorted(str(p.relative_to(repo)) for p in repo.rglob("*.pyc"))
+    if cache:
+        return f"正本リポジトリにバイトコードを書いた: {cache}"
+    return None
 
 
 def v2_added(repo: Path) -> str | None:
@@ -720,7 +792,8 @@ CASES: list[Case] = [
     Case("--upto 0", 2, "1 以上の整数", args=("--dry-run", "--upto", "0")),
     # ---- --red-check（変わったケースだけ失敗し、ほかは緑）
     Case("Red の状態: v1 で実装なし", 0, "失敗 3 件", args=("--red-check",), generate_first=True),
-    Case("Red の状態: v1 で実装がある", 1, "なのに緑", args=("--red-check",), generate_first=True, impl=GOOD_IMPL),
+    # v1 には前の版の Red テストが無い——実装がもう満たすケースは「もう緑」として知らせる（#294。前は 1）
+    Case("Red の状態: v1 で実装がある", 0, "もう緑 3 件", args=("--red-check",), generate_first=True, impl=GOOD_IMPL),
     Case("Red の状態: v2 で前の版の実装", 0, "失敗 1 件（追加・変更）・緑 2 件（回帰）", args=("--red-check",),
          generate_first=True, extra=v2([V2_CHANGED]), impl=GOOD_IMPL),
     Case("Red の状態: v2 で実装が無い", 2, "回帰のケース 2 件を判定していない", args=("--red-check",), generate_first=True,
@@ -735,6 +808,67 @@ CASES: list[Case] = [
     Case("Red の状態: v2 で impl_module だけ変える", 0, "失敗 3 件", args=("--red-check",), generate_first=True,
          extra=v2([], top={"impl_module": "app_impl"}), impl=GOOD_IMPL),
     Case("Red の状態: scaffold が古い", 1, "作り直してから", args=("--red-check",), generate_first=True, pre=edit_ir_file),
+    # ---- 実装の状態（#294）
+    # #281: 前の版の実装がもう満たす追加・変更は止めず、名指しで知らせる
+    Case("Red の状態: 既存の振る舞いのケースを足す", 0, "もう緑: test_f_001.TestF001.test_f_001_c3", args=("--red-check",),
+         generate_first=True, extra=v2([V2_SAME_ADDED]), impl=GOOD_IMPL),
+    Case("Red の状態: 入力だけ変える", 0, "失敗 0 件（追加・変更）・緑 2 件（回帰）・もう緑 1 件", args=("--red-check",),
+         generate_first=True, extra=v2([V2_INPUT_ONLY]), impl=GOOD_IMPL),
+    Case("Red の状態: 型を狭めて整数を返す", 0, "もう緑: test_f_001.TestF001.test_f_001_c1", args=("--red-check",),
+         generate_first=True, ir=V1_NUMBER, extra=v2([IR["features"][0]]), impl=GOOD_IMPL),
+    # 陽性対照: 型を狭めて小数を返す実装は、変更のケースで失敗する（前の版の number では緑）
+    Case("Red の状態: 型を狭めて小数を返す", 0, "失敗 1 件（追加・変更）", args=("--red-check",),
+         generate_first=True, ir=V1_NUMBER, extra=v2([IR["features"][0]]),
+         impl=GOOD_IMPL.replace('{"discount": 0}', '{"discount": 0.0}')),
+    # B: 前の版の期待を満たさず、作業中の版の期待を満たす——実装は前の版の状態に無い
+    Case("Red の状態: 変更をもう実装した", 1, "実装は前の版の状態に無い", args=("--red-check",), generate_first=True,
+         extra=v2([V2_CHANGED]), impl=V2_IMPL),
+    Case("Red の状態: どちらの版の期待も満たさない", 1, "前の版の期待も作業中の版の期待も満たさない", args=("--red-check",),
+         generate_first=True, extra=v2([V2_CHANGED]), impl=NEITHER_IMPL),
+    Case("Red の状態: どちらの版の期待も満たさない（作り直し）", 1, "前の版の期待も作業中の版の期待も満たさない",
+         args=("--red-check", "--in-progress"), generate_first=True, extra=v2([V2_CHANGED]), impl=NEITHER_IMPL),
+    # #282: 作り直しの経路
+    Case("Red の状態: 作り直し（変更を実装済み）", 0, "実装済み 1 件", args=("--red-check", "--in-progress"),
+         generate_first=True, extra=v2([V2_CHANGED]), impl=V2_IMPL),
+    # 実装が全く無く、回帰のケースも無い——前の版のテストも「実装が無い」で、食い違いではない（#294 の 1 パス目）
+    Case("Red の状態: 実装が無く、変更のケースだけ", 0, "失敗 1 件（追加・変更）", args=("--red-check",),
+         generate_first=True, ir=lambda ir: {**ir, "features": [copy.deepcopy(ir["features"][0])]},
+         extra=v2([{**V2_CHANGED, "cases": V2_CHANGED["cases"][:1]}]), impl=""),
+    # 入力の改名を実装済み——前の版の Red テストはエラーになるが、作業中の版のテストが緑なら「前の版で失敗」と同じ
+    Case("Red の状態: 作り直し（入力の改名を実装済み）", 0, "実装済み 2 件", args=("--red-check", "--in-progress"),
+         generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_IMPL),
+    Case("Red の状態: 入力の改名をもう実装した", 1, "実装は前の版の状態に無い", args=("--red-check",),
+         generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_IMPL),
+    # 陽性対照: 改名は実装したが値はどちらの版でもない——前の版のエラーを緑の代わりにしない
+    Case("Red の状態: 入力の改名と、どちらの版でもない値", 1, "前の版の状態を判定できない",
+         args=("--red-check", "--in-progress"), generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_NEITHER_IMPL),
+    # 入力の名前・形を変える変更で、実装は前の版の状態——作業中の版の Red テストはエラーになるが、Red の正常な状態（2 パス目）
+    Case("Red の状態: 入力を改名する（前の版の実装）", 0, "失敗 2 件（追加・変更）・緑 1 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_RENAMED]), impl=GOOD_IMPL),
+    Case("Red の状態: 必須の入力を足す（前の版の実装）", 0, "失敗 2 件（追加・変更）・緑 1 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_NEW_INPUT]), impl=GOOD_IMPL),
+    # 陽性対照: 前の版でも失敗する実装なら、作業中の版のエラーを失敗の代わりにしない
+    Case("Red の状態: 必須の入力を足し、前の版でも失敗する実装", 1, "エラー（失敗でも緑でもない）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_NEW_INPUT]), impl=NEITHER_IMPL),
+    # 関数の改名: 前の版の Red テストだけが「未実装」——新しい関数がどちらの版も満たさなければ 1（2 パス目）
+    Case("Red の状態: 関数を改名し、どちらの版でもない値", 1, "前の版の期待も作業中の版の期待も満たさない",
+         args=("--red-check",), generate_first=True, extra=v2([V2_OP_RENAMED]), impl=OP_RENAMED_NEITHER_IMPL),
+    Case("Red の状態: 関数を改名する（前の版の実装）", 0, "失敗 2 件（追加・変更）・緑 1 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_OP_RENAMED]), impl=GOOD_IMPL),
+    Case("Red の状態: 作り直し（v1 を実装済み）", 0, "もう緑 3 件", args=("--red-check", "--in-progress"),
+         generate_first=True, impl=GOOD_IMPL),
+    Case("Red の状態: 作り直し（回帰が壊れた実装）", 1, "回帰のケースなのに失敗した", args=("--red-check", "--in-progress"),
+         generate_first=True, extra=v2([V2_CHANGED]), impl=WRONG_IMPL),
+    Case("--in-progress だけ", 2, "--in-progress は --red-check と一緒にだけ使う", args=("--in-progress",),
+         pre=plant_old_issues, post=old_issues_kept),
+    Case("--check に --in-progress", 2, "--in-progress は --red-check と一緒にだけ使う", args=("--check", "--in-progress"),
+         generate_first=True),
+    # #280: 撤去と追加が同じ版にある
+    Case("撤去の受入基準は前後を比べる", 0, "remove 1", extra=v2([V2_RETURN], removed="機能,F-002,取り消しはやめる\n"),
+         impl=GOOD_IMPL, post=removal_before_after),
+    Case("Red の状態: 撤去と追加（前の版の実装）", 0, "失敗 1 件（追加・変更）・緑 2 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_RETURN], removed="機能,F-002,取り消しはやめる\n"), impl=GOOD_IMPL,
+         post=red_check_wrote_nothing),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -848,9 +982,41 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "v2 で impl_module だけ変える"),
     ("--upto で書くのを断らない", "        if not (args.check or args.dry_run):\n", "        if False:\n", "--upto で書く"),
     ("--upto を渡さない", "load(repo, args.upto)", "load(repo)", "前の版の時点の --check"),
-    ("回帰の失敗を見ない", '        elif name not in red and got != "pass":', "        elif False:", "Red の状態: 回帰が壊れた実装"),
-    ("変化を捕まえない Red テストを見ない", '        elif name in red and got == "pass":', "        elif False:",
-     "Red の状態: v1 で実装がある"),
+    ("回帰の失敗を見ない", '            if got != "pass":\n                problems.append(f"{name}: {CASE_KEPT}',
+     '            if False:\n                problems.append(f"{name}: {CASE_KEPT}', "Red の状態: 回帰が壊れた実装"),
+    # ---- 実装の状態（#294）
+    ("前の版の Red テストを当てない", "        previous = previous_outcomes(repo, before)", "        previous = {}",
+     "Red の状態: 変更をもう実装した"),
+    ("--in-progress を無視する", "        elif in_progress:", "        elif False:", "Red の状態: 作り直し（変更を実装済み）"),
+    ("もう緑を止める（#294 の前）", '        elif was in (None, "pass"):\n            satisfied.append(name)',
+     '        elif False:\n            satisfied.append(name)', "Red の状態: 既存の振る舞いのケースを足す"),
+    ("どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass") and (got, was)', "        elif False and (got, was)",
+     "Red の状態: どちらの版の期待も満たさない"),
+    ("作り直しでは、どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass") and (got, was)',
+     '        elif not in_progress and got != "pass" and was not in (None, "pass") and (got, was)',
+     "Red の状態: どちらの版の期待も満たさない（作り直し）"),
+    ("前の版の「実装が無い」を食い違いに数える", ' and (got, was) != ("missing", "missing"):', ":",
+     "Red の状態: 実装が無く、変更のケースだけ"),
+    ("前の版だけの「未実装」を食い違いに数えない（2 パス目の前）", 'was not in (None, "pass") and (got, was) != ("missing", "missing"):',
+     'was not in (None, "pass", "missing"):', "Red の状態: 関数を改名し、どちらの版でもない値"),
+    ("作業中の版のエラーを一律に止める（2 パス目の前）", '            if got == "error" and was == "pass":\n                got = "fail"',
+     '            if False:\n                got = "fail"', "Red の状態: 入力を改名する（前の版の実装）"),
+    ("作業中の版のエラーを失敗の代わりにする", '            if got == "error" and was == "pass":\n                got = "fail"',
+     '            if got == "error":\n                got = "fail"', "Red の状態: 必須の入力を足し、前の版でも失敗する実装"),
+    ("バイトコードを書く", '[sys.executable, "-B", "-c", DRIVER', '[sys.executable, "-c", DRIVER',
+     "Red の状態: 撤去と追加（前の版の実装）"),
+    ("前の版のエラーを一律に止める", '            elif was == "error" and got == "pass":\n                was = "fail"',
+     '            elif False:\n                was = "fail"', "Red の状態: 作り直し（入力の改名を実装済み）"),
+    ("前の版のエラーを緑の代わりにする", '            elif was == "error" and got == "pass":\n                was = "fail"',
+     '            elif was == "error":\n                was = "pass"', "Red の状態: 入力の改名と、どちらの版でもない値"),
+    ("--in-progress を --red-check 以外でも受け付ける", "    if args.in_progress and not args.red_check:", "    if False:",
+     "--check に --in-progress"),
+    ("撤去の受入基準を全部緑に戻す（#294 の前）", "を撤去し、{KEPT_GREEN}。**", "を撤去し、ほかの Red テストがすべて緑のままであること。**",
+     "撤去の受入基準は前後を比べる"),
+    ("変更の受入基準を全部緑に戻す（#294 の前）", "**ほかの機能は、{KEPT_GREEN}**",
+     "**ほかの機能の Red テストも緑のままであること。**", "v2 で機能を変える"),
+    ("前の版の Red テストを scaffold/tests に置く", '        tests = Path(tmp) / "tests"',
+     '        tests = repo / OUT_DIR / "tests"', "Red の状態: 撤去と追加（前の版の実装）"),
     ("実装が無くても回帰を判定したと言う", "    if expected and green and all(", "    if False and all(",
      "Red の状態: v2 で実装が無い"),
     ("--red-check が鮮度を見ない", "    if args.red_check:\n        problems = stale(repo / OUT_DIR, contract)\n        if problems:",
@@ -999,6 +1165,14 @@ def main() -> int:
         gap_sections = table_cells(gap, "## spec-loop から来た Issue を読む")
         check("dev-loop の references/spec-gap.md の節の表が handoff-issue.md と違う", gap_sections == sections,
               f"{gap_sections} vs {sections}")
+        # 実装の状態についての前提（#294）——3 つの文書が定数の文言をそのまま持つ
+        scaffold_skill = SCAFFOLD_SKILL.read_text(encoding="utf-8")
+        for const in ("PREMISE", "KEPT_GREEN"):
+            text = constant(source, const)
+            check(f"{const} を本体から読めない", isinstance(text, str) and len(text) > 10, f"{text!r}")
+            for label, doc in (("scaffold の SKILL.md", scaffold_skill), ("handoff-issue.md", handoff),
+                               ("dev-loop の references/spec-gap.md", gap)):
+                check(f"{label} に {const} の文言が無い", isinstance(text, str) and text in doc, f"{text!r}")
         # 突き合わせ自体の陽性対照
         broken = handoff.replace("| `## Red テスト` |", "| `## 赤のテスト` |")
         check("handoff-issue.md の写しを崩しても不一致にならない", table_cells(broken, "## 節") != sections)
