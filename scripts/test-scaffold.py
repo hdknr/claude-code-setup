@@ -693,6 +693,9 @@ CASES: list[Case] = [
     Case("重ね合わせが決まりに反する", 1, "前の版までに無いものを消そうとしている",
          extra=v2([], removed="機能,F-009,無いもの\n"), pre=plant_old_issues, post=nothing_written),
     Case("版に分けていない", 2, "版（v1 など）が 1 つも無い", root=Path("docs"), pre=plant_old_issues, post=nothing_written),
+    # 版の名前が決まりに反する（`v02` だけ）のは移していないのではなく、重ね合わせの誤り——2 でなく 1
+    Case("版の名前だけが決まりに反する", 1, "v02: 版の名前の形", root=Path("docs/v02"), pre=plant_old_issues,
+         post=nothing_written),
     Case("docs が無い", 2, "ディレクトリが無い", root=Path("legacy"), pre=plant_old_issues, post=nothing_written),
     Case("v2 の --check は書かない", 0, "新しい", args=("--check",), generate_first=True, extra=v2([V2_CHANGED]),
          post=lambda repo: "--check が build/merged/ を書いた" if (repo / "build" / "merged").exists() else None),
@@ -745,6 +748,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # 版が無いのは決まりに反するのではなく移していない——2 で止め、1（重ね合わせの誤り）と言わない
     ("版が無いのを重ね合わせの誤りと言う", "        if not versions.find_versions(docs, probe) and not probe:",
      "        if False:", "版に分けていない"),
+    ("版の名前の誤りを、版が無いと言う", "        if not versions.find_versions(docs, probe) and not probe:",
+     "        if not versions.find_versions(docs, probe):", "版の名前だけが決まりに反する"),
     ("決まりに無いキーを見ない", "    for key in sorted(obj.keys() - required - optional):", "    for key in []:", "決まりに無いキー"),
     ("Q&A の実在を見ない", "        elif no not in answered:", "        elif False:", "Q&A が表に無い"),
     ("ケースの Q&A を見ない", '            if "qa" in case:\n                problems += check_qa_refs',
