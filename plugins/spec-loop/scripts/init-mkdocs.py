@@ -12,7 +12,7 @@
 - 行き先がシンボリックリンクなら（壊れていても）「在る」とみなす。書くときは排他的に作る（確かめた後に
   別の誰かが作っていても上書きしない）。一時ファイルに書き切ってからリンクで置くので、途中で書けなくても切れたファイルは残らない。
   リンクを作れないファイルシステム（FAT32 など）では行き先を排他的に作って直に書き、途中で書けなければそれを消す
-  （プロセスが殺されたときだけは切れたファイルが残りうる）。
+  （消すのにも失敗したらそう出力する。消せなかったときと、プロセスが殺されたときは切れたファイルが残りうる）。
 - `--dry-run` は何を写すかを示すだけで、何も書かない。
 - 雛形の `gitignore` は `.gitignore` として写す（プラグインの中で本物の `.gitignore` として効かないように名前を変えてある）。
 
@@ -94,7 +94,8 @@ def place(dest: Path, data: bytes) -> bool:
 
 def place_directly(dest: Path, data: bytes) -> bool:
     """リンクを作れないときの退路。`dest` を排他的に作って書き、途中で書けなければ自分が作った `dest` を消して例外。
-    **プロセスが殺されたとき（SIGKILL・電源断）は切れたファイルが残りうる**——リンクの経路には無い弱さ。"""
+    **消すのにも失敗したとき（そう出力する）と、プロセスが殺されたとき（SIGKILL・電源断）は切れたファイルが残りうる**
+    ——リンクの経路には無い弱さ。"""
     try:
         f = dest.open("xb")
     except FileExistsError:
@@ -103,8 +104,11 @@ def place_directly(dest: Path, data: bytes) -> bool:
         with f:
             f.write(data)
     except BaseException:
-        dest.unlink()  # 排他的に作ったのは自分なので、他人のファイルは消さない
-        raise
+        try:
+            dest.unlink()  # 排他的に作ったのは自分なので、他人のファイルは消さない
+        except OSError as e:
+            print(f"{dest}: 書きかけを消せなかった（{e.strerror}）。消してから再実行する", file=sys.stderr)
+        raise  # 消せても消せなくても、書けなかった理由のほうを上げる
     return True
 
 
