@@ -68,6 +68,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#263。各スキルの差分モードの「差分」はこれで決まる。**同じ中身の置き直しは変更に数えない**。重ねるのは
       `merge-versions.py` の `merge`——写しを作らない。`build-proposal.py` も v2 以降の「前の版からの変更」の節をこの関数で作る。
       テストは `scripts/test-diff-versions.py`）
+    - `templates/mkdocs/` - 正本リポジトリを MkDocs で閲覧するための雛形（#266。**フックは正本リポジトリへ写されて
+      単独で動くので、Q&A の列名の写しを持つ**——`scripts/test-init-mkdocs.py` が `check-qa-csv.py` と突き合わせる。
+      雛形の `gitignore` は写すときに `.gitignore` になる——プラグインの中で本物として効かないように）
+    - `scripts/init-mkdocs.py` - 雛形を正本リポジトリへ写す（**`mkdocs.yml` が在れば何も写さず、在るファイルは 1 バイトも変えない**。
+      決まりは `references/tree.md` の「ドキュメントのツール」。テストは `scripts/test-init-mkdocs.py`）
     - `scripts/check-frozen.py` - リリースした版（`release-v<n>`）の `docs/v<n>/` が直されていないかの確かめ
       （#262。**正本リポジトリの CI で使う**。タグの時点に版が無ければ 2。テストは `scripts/test-check-frozen.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
@@ -170,6 +175,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体の定数が `references/versions.md` と一致することも見る**
   - `test-diff-versions.py` - spec-loop の段 5c（#263）の版の差分の回帰テスト（変異テストを含む）。
     **出力の全行を期待値と突き合わせる**
+  - `test-init-mkdocs.py` - spec-loop の MkDocs の雛形（#266）の回帰テスト（変異テストを含む）。**写し方とフックの描き方を見る。
+    `mkdocs build` は走らせない**（CI に MkDocs と Material の組が無い）
   - `test-check-frozen.py` - spec-loop の凍結の確かめ（#262）の回帰テスト（変異テストを含む）。
     `test-check-signoff.py` と同じく**一時ディレクトリに本物の git リポジトリとタグを作って**当てる
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
