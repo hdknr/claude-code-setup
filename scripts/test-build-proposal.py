@@ -105,6 +105,8 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("手書き部分はファイル名の順", SIGNED, False,
      lambda r: made(r) and 0 < r.text.find("## 背景と目的") < r.text.find("## 推奨案")),
     ("同じ入力から同じバイト", SIGNED, False, lambda r: made(r) and r.text == r.again),
+    ("素の v1 タグと共存する", BASE + [("t", "v1"), ("t", R1), ("t", B1)], False,
+     lambda r: made(r) and "`signoff/v1/req-1`" in r.text),
     ("承認の記録を持たない", SIGNED, False, lambda r: made(r) and "承認済み" not in r.text and "承認の記録ではありません" in r.text),
     # 予算のタグは見積りを直した後、作業ツリーはさらにその後に直している
     ("承認したタグの時点の見積り", BASE + [("t", R1), ("w", ESTIMATE, estimate("5000000")), ("c",),
