@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """確定した仕様の中間表現（`spec_ir.json`）から、dev-loop に渡すものを作る。
 
-usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check]
+usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]]
 
 作るもの（置き場所の正は `references/tree.md`）:
 
@@ -42,9 +42,18 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
   時点の `scaffold/` が新しいか**を `--check --upto <n-1>` で確かめるのに使う（`references/versions.md`）。
   **書く生成では断る**——古い版の契約を置くと、作業中の版の Issue が指すものと食い違う。
 - `--red-check`: 置いてある `scaffold/` が新しいことを確かめてから、Red テストを正本リポジトリの根で走らせ、
-  **失敗したテストが「追加・変更のケース」とちょうど同じか**を見る（前の版の実装の上で、回帰のケースは緑）。
+  **回帰のケースは緑で、追加・変更のケースは前の版か作業中の版のどちらかの期待を満たすか**を見る。
+  **Red テストと受入基準は、実装が前の版の状態にあることを前提にしない**（#294）——**前の版（v<n-1>）の全体から
+  Red テストを一時ディレクトリに作り、同じ実装に当てて確かめる**。追加・変更のケースごとに:
+    - 作業中の版で失敗し、前の版で緑（か前の版に無い）: 期待どおり（Red）
+    - 作業中の版で緑で、前の版でも緑（か前の版に無い）: **0 のまま名指しで知らせる**（もう緑——前の版の実装がもう
+      満たし、Red テストはこの変化を判別しない。#281）
+    - 作業中の版で緑で、前の版で失敗: **実装は前の版の状態に無い**（1）。`--in-progress` なら実装済みとして数える（#282）
+    - どちらでも失敗: 前の版の仕様とも食い違う（1）
   **実装が無い**（どのテストも「未実装」で落ちる）なら、期待が全部失敗のとき（v1・追加だけ）は判定でき、
   そうでなければ**回帰を判定していない**（2）。テストを書き換えない・何も書かない。
+- `--in-progress`: `--red-check` と一緒にだけ使う。**作り直しの経路**（この版の Issue を登録し、実装が始まっている）で、
+  追加・変更のケースが作業中の版の期待をもう満たしていても止めない。
 
 終了コード:
 
@@ -52,7 +61,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 - 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現（前の版のものを含む）が決まりに
   反する（全部を 1 行ずつ出す）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
-- 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、無い版の `--upto` を含む）・`docs/` が無い／版が 1 つも無い／
+- 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto` を含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   予期しない失敗（書き込みの失敗を含む）。書く生成では前の Issue の本文は消す
 
@@ -129,6 +138,10 @@ SECTIONS = ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回�
 CASE_ADDED, CASE_CHANGED, CASE_KEPT, CASE_REMOVED = "追加", "変更", "回帰", "削除"
 # Red テストが「実装が無い」で落ちたときの文言の頭（生成する Red テストの `self.fail` と同じ）
 MISSING = "未実装: "
+# 実装の状態についての前提（#294）。scaffold の `SKILL.md`・`handoff-issue.md`・dev-loop の `spec-gap.md` は
+# この 2 つをそのまま持つ（`scripts/test-scaffold.py` が突き合わせる）。本文は `KEPT_GREEN` を持つ
+PREMISE = "Red テストと受入基準は、実装が前の版の状態にあることを前提にしない"
+KEPT_GREEN = "周の前に緑だった Red テストが、周の後も緑のままであること"
 
 # 生成したファイルの印。**これを持つファイルだけを、消してよい・古いと言ってよい生成物に数える**
 GENERATED = "spec-loop scaffold が生成（手で直さない。spec_ir.json を直して作り直す）"
@@ -735,9 +748,10 @@ class Change:
 class Before:
     """前の版（v<n-1>）の全体から読んだもの。v1 なら空。"""
 
-    def __init__(self, answered: dict | None = None, impl_module: str = DEFAULT_IMPL_MODULE) -> None:
+    def __init__(self, answered: dict | None = None, impl_module: str = DEFAULT_IMPL_MODULE, ir: dict | None = None) -> None:
         self.answered = answered or {}
         self.impl_module = impl_module
+        self.ir = ir or {"features": []}
 
 
 def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
@@ -761,7 +775,7 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
         if code:
             return 1, [f"v{number - 1} の時点の {line}" for line in lines[:-1]] + [
                 f"前の版（v{number - 1}）の中間表現が決まりに反するので、機能を追加・変更・削除に分けない。生成しない"], [], Before()
-        before = Before(answered, before_ir.get("impl_module", DEFAULT_IMPL_MODULE))
+        before = Before(answered, before_ir.get("impl_module", DEFAULT_IMPL_MODULE), before_ir)
     reasons = diffs.removal_reasons(found[number - 1][1])
     kinds = {diffs.ADDED: ADD, diffs.CHANGED: MODIFY, diffs.REMOVED: REMOVE}
     old = {f["id"]: f for f in features_of(before_ir)}
@@ -832,7 +846,7 @@ def test_id(feature: dict, case: dict) -> str:
 
 
 def red_cases(rows: list[tuple[str, dict]]) -> list[dict]:
-    """前の版の実装の上で失敗するはずのケース（追加・変更）。"""
+    """前の版の実装の上で失敗しうるケース（追加・変更）。"""
     return [case for status, case in rows if status in (CASE_ADDED, CASE_CHANGED)]
 
 
@@ -895,8 +909,9 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     lines += ["", SECTIONS[1], ""]
     if change.kind == REMOVE:
         lines += [
-            f"**この機能の実装（モジュール `{impl}` の関数 `{op['id']}`）を撤去し、ほかの Red テストがすべて緑のままであること。**",
+            f"**この機能の実装（モジュール `{impl}` の関数 `{op['id']}`）を撤去し、{KEPT_GREEN}。**",
             "撤去した関数を呼ぶ箇所を残さない。下のケースの振る舞いは、もう求めない。",
+            "同じ版で足した・変えたほかの機能のケースは、まだ実装されずに失敗していてよい——撤去の周はそれを緑にしない。",
         ]
     else:
         lines += [
@@ -905,8 +920,9 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         ]
         if change.kind == MODIFY:
             lines += [
-                f"**`{CASE_KEPT}` のケースは前の版の実装で緑で、緑のままであること**——前の版の実装の上で失敗するのは",
-                f"`{CASE_ADDED}`・`{CASE_CHANGED}` のケースだけである。**ほかの機能の Red テストも緑のままであること。**",
+                f"**`{CASE_KEPT}` のケースは前の版の実装で緑で、緑のままであること**——前の版の実装の上で失敗しうるのは",
+                f"`{CASE_ADDED}`・`{CASE_CHANGED}` のケースだけである。**ほかの機能の Red テストは、{KEPT_GREEN}**",
+                "（同じ版で足した・変えたほかの機能のケースは、この周の前に失敗していてよい）。",
             ]
     lines += ["", "| ケース | 変化 | 確かめること | Red テスト | Q&A |", "| --- | --- | --- | --- | --- |"]
     for status, case in rows:
@@ -920,7 +936,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     if change.kind == REMOVE:
         lines += [
             f"- 消したファイル: `{tfile}`（`scaffold.py` が消した。この機能の Red テストはもう無い）",
-            "- 回帰（正本リポジトリの根で。すべて緑であること）:",
+            "- 回帰（正本リポジトリの根で、撤去の前と後に回す。前に緑だったテストが後も緑であること）:",
             "",
             "```bash",
             f"python3 -m unittest discover -s {OUT_DIR}/tests",
@@ -942,7 +958,8 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         if change.kind == ADD:
             lines.append("実装が無い状態では、ケースの数だけ失敗する。")
         else:
-            lines += [f"前の版の実装の上では、`{CASE_ADDED}`・`{CASE_CHANGED}` のケース（{len(red)} 件）だけが失敗し、"
+            lines += [f"前の版の実装の上で失敗しうるのは `{CASE_ADDED}`・`{CASE_CHANGED}` のケース（{len(red)} 件）だけで"
+                      "（前の版の実装がもう満たすものは緑）、"
                       f"`{CASE_KEPT}` のケース（{len(rows) - len(red)} 件）は緑である。ほかの機能を含む回帰は",
                       f"`python3 -m unittest discover -s {OUT_DIR}/tests` で見る。"]
     lines += ["", SECTIONS[3], ""]
@@ -1025,8 +1042,38 @@ print("\n" + json.dumps(outcomes, ensure_ascii=False))
 RED_TIMEOUT = 600
 
 
-def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before) -> int:
-    """失敗した Red テストが、追加・変更のケースとちょうど同じかを見る。"""
+def run_tests(repo: Path, tests: Path) -> dict:
+    """`tests` の Red テストを正本リポジトリの根で走らせ、{テストの名前: 結果} を返す。走らせられなければ ValueError など。"""
+    proc = subprocess.run([sys.executable, "-c", DRIVER, str(tests), MISSING], cwd=repo,
+                          capture_output=True, text=True, timeout=RED_TIMEOUT)
+    outcomes = json.loads(proc.stdout.rstrip("\n").rsplit("\n", 1)[-1])
+    if proc.returncode != 0 or not isinstance(outcomes, dict):
+        raise ValueError(proc.stderr[-400:])
+    return outcomes
+
+
+def previous_outcomes(repo: Path, before: Before) -> dict:
+    """前の版（v<n-1>）の全体の Red テストを、同じ実装に当てた結果。v1 なら空。
+
+    **`scaffold/` には書かない**——一時ディレクトリに作って走らせる（`--red-check` は何も書かない）。
+    """
+    features = features_of(before.ir)
+    if not features:
+        return {}
+    with tempfile.TemporaryDirectory(prefix="scaffold-previous-") as tmp:
+        tests = Path(tmp) / "tests"
+        tests.mkdir()
+        for feature in features:
+            (tests / test_file(feature)).write_text(red_test(feature, before.impl_module), encoding="utf-8")
+        return run_tests(repo, tests)
+
+
+def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before, in_progress: bool) -> int:
+    """ケースごとに、作業中の版の Red テストと前の版の Red テストの結果を並べて、実装の状態を見る。
+
+    **実装が前の版の状態にあることを前提にしない**（`PREMISE`）——前の版の Red テストを同じ実装に当てて確かめる。
+    `in_progress`: 作り直しの経路。追加・変更のケースは、前の版と作業中の版のどちらの期待を満たしてもよい。
+    """
     impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
     red = set()
     for change in changes:
@@ -1035,11 +1082,8 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before)
             red |= {test_id(change.feature, case) for case in red_cases(rows)}
     expected = [test_id(f, c) for f in features_of(loaded.ir) for c in sorted(f["cases"], key=case_order)]
     try:
-        proc = subprocess.run([sys.executable, "-c", DRIVER, f"{OUT_DIR}/tests", MISSING], cwd=repo,
-                              capture_output=True, text=True, timeout=RED_TIMEOUT)
-        outcomes = json.loads(proc.stdout.rstrip("\n").rsplit("\n", 1)[-1])
-        if proc.returncode != 0 or not isinstance(outcomes, dict):
-            raise ValueError(proc.stderr[-400:])
+        outcomes = run_tests(repo, Path(OUT_DIR) / "tests")
+        previous = previous_outcomes(repo, before)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         print(f"Red テストを走らせられない（{exc.__class__.__name__}: {exc}）。判定していない", file=sys.stderr)
         return 2
@@ -1048,23 +1092,46 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before)
         print(f"実装が無い（どの Red テストも「{MISSING.strip()}」で失敗した）。回帰のケース {len(green)} 件を判定していない"
               f"——前の版の実装を読み込める場所で走らせる", file=sys.stderr)
         return 2
-    problems = []
+    problems, failing, satisfied, done = [], [], [], []
     for name in expected:
-        got = outcomes.get(name)
+        got, was = outcomes.get(name), previous.get(name)
         if got is None:
             problems.append(f"{name}: 走らなかった")
         elif got in ("error", "skip"):
             problems.append(f"{name}: {'エラー' if got == 'error' else '飛ばされた'}（失敗でも緑でもない）")
-        elif name in red and got == "pass":
-            problems.append(f"{name}: {CASE_ADDED}・{CASE_CHANGED}のケースなのに緑（Red テストが変化を捕まえていない）")
-        elif name not in red and got != "pass":
-            problems.append(f"{name}: {CASE_KEPT}のケースなのに失敗した")
+        elif name not in red:
+            if got != "pass":
+                problems.append(f"{name}: {CASE_KEPT}のケースなのに失敗した")
+        elif was in ("error", "skip"):
+            problems.append(f"{name}: 前の版の Red テストが{'エラー' if was == 'error' else '飛ばされた'}"
+                            "（前の版の状態を判定できない）")
+        elif got != "pass" and was not in (None, "pass"):
+            problems.append(f"{name}: {CASE_ADDED}・{CASE_CHANGED}のケースが、前の版の期待も作業中の版の期待も満たさない"
+                            "（前の版の仕様とも食い違う）")
+        elif got != "pass":
+            failing.append(name)
+        elif was in (None, "pass"):
+            satisfied.append(name)
+        elif in_progress:
+            done.append(name)
+        else:
+            problems.append(f"{name}: 前の版の期待を満たさず、作業中の版の期待をもう満たす——実装は前の版の状態に無い"
+                            "（この版をもう実装し始めた作り直しなら --in-progress）")
     for line in problems:
         print(line, file=sys.stderr)
     if problems:
         print(f"Red の状態が期待と違う（{len(problems)} 件）", file=sys.stderr)
         return 1
-    print(f"Red の状態は期待どおり: 失敗 {len(red)} 件（{CASE_ADDED}・{CASE_CHANGED}）・緑 {len(green)} 件（{CASE_KEPT}）")
+    for name in satisfied:
+        print(f"もう緑: {name}（{CASE_ADDED}・{CASE_CHANGED}のケースを、前の版の実装がもう満たす——"
+              "Red テストはこの変化を判別しない。中間表現が仕様のとおりかを確かめる）")
+    summary = (f"Red の状態は期待どおり: 失敗 {len(failing)} 件（{CASE_ADDED}・{CASE_CHANGED}）・"
+               f"緑 {len(green)} 件（{CASE_KEPT}）")
+    if satisfied:
+        summary += f"・もう緑 {len(satisfied)} 件（{CASE_ADDED}・{CASE_CHANGED}。前の版の実装がもう満たす）"
+    if in_progress:
+        summary += f"・実装済み {len(done)} 件（{CASE_ADDED}・{CASE_CHANGED}。作り直しの経路）"
+    print(summary)
     return 0
 
 
@@ -1137,6 +1204,7 @@ def main(argv: list[str]) -> int:
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--red-check", action="store_true")
+    parser.add_argument("--in-progress", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -1153,6 +1221,9 @@ def main(argv: list[str]) -> int:
                   file=sys.stderr)
             return 2
         args.upto = int(args.upto)
+    if args.in_progress and not args.red_check:
+        print("--in-progress は --red-check と一緒にだけ使う（作り直しの経路で Red の状態を見る）", file=sys.stderr)
+        return 2
     if not repo.is_dir():
         print(f"{repo}: ディレクトリが無い。判定していない", file=sys.stderr)
         return 2
@@ -1215,7 +1286,7 @@ def run(repo: Path, args, writing: bool) -> int:
                 print(line, file=sys.stderr)
             print(f"{OUT_DIR}/ が古い（{len(problems)} 件）。作り直してから Red の状態を見る", file=sys.stderr)
             return 1
-        return red_check(repo, loaded, changes, before)
+        return red_check(repo, loaded, changes, before, args.in_progress)
     issues = render_issues(changes, loaded, contract, before)
     counted = "・".join(f"{kind} {sum(1 for c in changes if c.kind == kind)}" for kind in (ADD, MODIFY, REMOVE))
     summary = (f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）。"
