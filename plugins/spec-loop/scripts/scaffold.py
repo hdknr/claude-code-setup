@@ -49,7 +49,11 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
     - 作業中の版で緑で、前の版でも緑（か前の版に無い）: **0 のまま名指しで知らせる**（もう緑——前の版の実装がもう
       満たし、Red テストはこの変化を判別しない。#281）
     - 作業中の版で緑で、前の版で失敗: **実装は前の版の状態に無い**（1）。`--in-progress` なら実装済みとして数える（#282）
-    - どちらでも失敗: 前の版の仕様とも食い違う（1）
+    - どちらでも失敗: 前の版の仕様とも食い違う（1）。**ただしどちらの版でも「未実装」で落ちるなら、実装が無いだけで
+      期待どおり（Red）**——片方の版だけ「未実装」（関数の改名など）なら、もう片方の期待を満たしていないので 1
+    - **エラー**（失敗でも緑でもない）: もう一方の版のテストが緑なら、**その版の「失敗」と同じに読む**（入力の名前や
+      形を変える変更では、呼び出しの形が合わない側の版のテストが呼び出しで落ちる）。そうでなければ 1。
+      **飛ばされた**テストはどちらの版でも 1
   **実装が無い**（どのテストも「未実装」で落ちる）なら、期待が全部失敗のとき（v1・追加だけ）は判定でき、
   そうでなければ**回帰を判定していない**（2）。テストを書き換えない・何も書かない。
 - `--in-progress`: `--red-check` と一緒にだけ使う。**作り直しの経路**（この版の Issue を登録し、実装が始まっている）で、
@@ -1097,6 +1101,13 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before,
     problems, failing, satisfied, done = [], [], [], []
     for name in expected:
         got, was = outcomes.get(name), previous.get(name)
+        if name in red:
+            # 入力の名前や形を変える変更では、呼び出しの形が合わない側の版の Red テストはエラーで落ちる
+            # ——もう一方の版のテストが緑なら、エラーはその版の「失敗」と同じに読む
+            if got == "error" and was == "pass":
+                got = "fail"
+            elif was == "error" and got == "pass":
+                was = "fail"
         if got is None:
             problems.append(f"{name}: 走らなかった")
         elif got in ("error", "skip"):
@@ -1104,12 +1115,11 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before,
         elif name not in red:
             if got != "pass":
                 problems.append(f"{name}: {CASE_KEPT}のケースなのに失敗した")
-        elif was == "skip" or (was == "error" and got != "pass"):
-            # 前の版のテストのエラーは、作業中の版のテストが緑なら「前の版で失敗」と同じに読む
-            # ——入力の名前や形を変える変更を実装すると、前の版のテストは呼び出しで落ちる
+        elif was in ("error", "skip"):
             problems.append(f"{name}: 前の版の Red テストが{'エラー' if was == 'error' else '飛ばされた'}"
                             "（前の版の状態を判定できない）")
-        elif got != "pass" and was not in (None, "pass", "missing"):  # 前の版でも「実装が無い」は食い違いではない
+        elif got != "pass" and was not in (None, "pass") and (got, was) != ("missing", "missing"):
+            # どちらの版でも「実装が無い」は食い違いではない——片方だけなら、もう片方の期待を満たしていない
             problems.append(f"{name}: {CASE_ADDED}・{CASE_CHANGED}のケースが、前の版の期待も作業中の版の期待も満たさない"
                             "（前の版の仕様とも食い違う）")
         elif got != "pass":

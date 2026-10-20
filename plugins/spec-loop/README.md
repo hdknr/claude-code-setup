@@ -101,7 +101,7 @@
 同梱のスクリプトで OpenAPI・型・**Red テスト**（実装が無いと失敗するテスト）と **Issue の本文**を作って、
 **1 機能 = Issue 1 件**で登録します（登録の前に利用者に確かめます）。**Issue の登録で止まり、以降は dev-loop が受け持ちます。**
 v2 以降は前の版と比べて機能を**追加・変更・削除**に分け、**変わった機能だけ**を Issue にします——変更の Issue は
-回帰（変わらないケースが緑のまま）を、削除の Issue は撤去を受入基準に持ちます（形は `references/handoff-issue.md`）。
+回帰（変わらないケースも緑であること）を、削除の Issue は撤去を受入基準に持ちます（形は `references/handoff-issue.md`）。
 dev-loop は Issue の本文の印で spec-loop から来たことを知り、開発中に見つけた仕様の穴を
 Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `references/spec-gap.md`）。
 
