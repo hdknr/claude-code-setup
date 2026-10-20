@@ -11,6 +11,10 @@
    `pyproject.toml`・`.gitignore` が在れば足りない依存・行を出力で示す。`--dry-run` は何も書かない。根がディレクトリでなければ 2。
    `mkdocs.yml` は最後に写す。行き先の親がファイルなら 2 で止まり（`mkdocs.yml` は書かない）、直して再実行すれば残りが写る。
    書き込みが途中で失敗しても（ファイルの大きさの上限で切る）切れたファイルも一時ファイルも残さず、再実行すれば残りが写る。
+   **リンクを作れないとき**（`os.link` を差し替えて `ENOTSUP`（macOS）・`EPERM`（Linux の vfat）を出す——FAT32 のイメージを作れない CI でも回る）も雛形をすべて写し、
+   確かめた後に作られたファイルは上書きせず、途中で書けなければ切れたファイルを残さない。それを消すのにも失敗したら
+   （`Path.unlink` を差し替える）そう出力し、書けなかった理由のほうで 2。リンクと関係ない失敗（`EACCES`）は 2。
+   写したファイルの権限は umask に従う（リンクの経路でも退路でも）。
    雛形の中の `__pycache__` は写さない。
 2. **フックの描き方**——版ごとの節を番号の順（`v10` は `v2` の後）に、表の行をすべて、版をまたいで一意なアンカーで描く。
    セルの HTML と Markdown の記号（`&`・`\\`・`{` `}` を含む）・`|`・改行（`\\r` を含む）をエスケープする。
@@ -33,6 +37,7 @@ dev-loop の検証で見る（#266 の計画ファイル）。
 """
 from __future__ import annotations
 
+import errno
 import importlib.util
 import io
 import logging
@@ -110,6 +115,45 @@ def run_init(plugin: Path, root: Path, *extra: str) -> tuple[int, str]:
     return proc.returncode, proc.stdout + proc.stderr
 
 
+# os.link を差し替えて本体を走らせる。{err} は errno の名前、{race} は真なら失敗の前に行き先を作る（確かめた後に作られた形）、
+# {cut} は真なら、512 バイトを超えるファイルで失敗の前に大きさの上限を 512 バイトにする（一時ファイルは書けたあと、退路の書き込みで切れる。
+# 小さいファイルでは上限を掛けない——掛けると次のファイルの一時ファイルが先に切れて、退路まで届かない）。
+# {stuck} は真なら Path.unlink を EROFS で失敗させる（書きかけを消せない形。一時ファイルは os.unlink で消すので当たらない）
+NO_LINK_RUNNER = """
+import errno, os, pathlib, resource, runpy, sys
+def unlink(self, missing_ok=False):
+    raise OSError(errno.EROFS, os.strerror(errno.EROFS))
+if {stuck}:
+    pathlib.Path.unlink = unlink
+def link(src, dst):
+    if {race}:
+        with open(dst, "x", encoding="utf-8") as f:
+            f.write("他人\\n")
+    if {cut} and os.path.getsize(src) > 512:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (512, resource.RLIM_INFINITY))
+    raise OSError(errno.{err}, os.strerror(errno.{err}))
+os.link = link
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def run_init_no_link(plugin: Path, root: Path, err: str = "ENOTSUP", race: bool = False, cut: bool = False,
+                     stuck: bool = False) -> tuple[int, str]:
+    assert_in_tmp(root)
+    code = NO_LINK_RUNNER.format(err=err, race=race, cut=cut, stuck=stuck)
+    proc = subprocess.run([sys.executable, "-I", "-c", code, str(plugin / INIT), str(root)],
+                          capture_output=True, text=True, check=False)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def modes_follow_umask(root: Path) -> bool:
+    umask = os.umask(0)
+    os.umask(umask)
+    files = [path for path in root.rglob("*") if path.is_file() and not path.is_symlink()]
+    return bool(files) and all(path.stat().st_mode & 0o777 == 0o666 & ~umask for path in files)
+
+
 def template_map(plugin: Path) -> dict[str, bytes]:
     base = plugin / "templates" / "mkdocs"
     out = {}
@@ -133,7 +177,7 @@ def init_empty(plugin: Path, work: Path) -> bool:
     code, _ = run_init(plugin, root)
     expected = template_map(plugin)
     got = {k: v for k, v in snapshot(root).items() if isinstance(v, bytes)}
-    return code == 0 and got == expected and len(expected) >= 6
+    return code == 0 and got == expected and len(expected) >= 6 and modes_follow_umask(root)
 
 
 def init_config_exists(plugin: Path, work: Path) -> bool:
@@ -184,6 +228,58 @@ def init_cut_off(plugin: Path, work: Path) -> bool:
                and not any(Path(rel).name.startswith(".") and rel != ".gitignore" for rel in after))
     code, _ = run_init(plugin, root)
     return bool(stopped) and code == 0 and snapshot(root) == template_map(plugin)
+
+
+def init_no_link(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, _ = run_init_no_link(plugin, root)
+    return code == 0 and snapshot(root) == template_map(plugin) and modes_follow_umask(root)
+
+
+def init_no_link_race(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, out = run_init_no_link(plugin, root, race=True)
+    after = snapshot(root)
+    others = [rel for rel in template_map(plugin)]
+    return (code == 0 and set(after) == set(others) and all(after[rel] == "他人\n".encode("utf-8") for rel in others)
+            and "既にあるので触らない: mkdocs.yml" in out)
+
+
+def init_no_link_cut_off(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, _ = run_init_no_link(plugin, root, cut=True)
+    big = [rel for rel, data in template_map(plugin).items() if len(data) > 512]
+    after = snapshot(root)
+    stopped = (code == 2 and big and not any(rel in after for rel in big)
+               and not any(Path(rel).name.startswith(".") and rel != ".gitignore" for rel in after))
+    code2, _ = run_init_no_link(plugin, root)
+    return bool(stopped) and code2 == 0 and snapshot(root) == template_map(plugin)
+
+
+def init_no_link_eperm(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, _ = run_init_no_link(plugin, root, err="EPERM")
+    return code == 0 and snapshot(root) == template_map(plugin)
+
+
+def init_no_link_stuck(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, out = run_init_no_link(plugin, root, cut=True, stuck=True)
+    reason = [line for line in out.splitlines() if "書けない" in line]
+    return (code == 2 and "書きかけを消せなかった" in out and len(reason) == 1
+            and os.strerror(errno.EROFS) not in reason[0])
+
+
+def init_link_other_error(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, out = run_init_no_link(plugin, root, err="EACCES")
+    return code == 2 and snapshot(root) == {} and "書けない" in out
 
 
 def init_keeps_existing(plugin: Path, work: Path) -> bool:
@@ -395,6 +491,12 @@ CASES = {
     "mkdocs.yml は最後に写す": init_config_last,
     "親がファイルなら 2 で止まり、直せば残りが写る": init_parent_is_file,
     "途中で書けなくても切れたファイルを残さず、直せば残りが写る": init_cut_off,
+    "リンクを作れなくても雛形をすべて写す": init_no_link,
+    "リンクを作れないとき、確かめた後に作られたファイルは上書きしない": init_no_link_race,
+    "リンクを作れないとき、途中で書けなくても切れたファイルを残さない": init_no_link_cut_off,
+    "EPERM（Linux の vfat）でも退路に入る": init_no_link_eperm,
+    "書きかけを消せなければそう言い、書けなかった理由で 2": init_no_link_stuck,
+    "リンクと関係ない失敗は 2": init_link_other_error,
     "在るファイルは変えず、足りないものを示す": init_keeps_existing,
     "壊れたリンクも在るとみなす": init_symlink,
     "--dry-run は書かない": init_dry_run,
@@ -469,6 +571,25 @@ MUTATIONS: list[tuple] = [
     ("行き先へ直に書く", INIT, '        with os.fdopen(fd, "wb") as f:\n            f.write(data)\n',
      '        with os.fdopen(fd, "wb") as f, open(dest, "xb") as g:\n            g.write(data)\n            f.write(data)\n',
      "途中で書けなくても切れたファイルを残さず、直せば残りが写る"),
+    ("一時ファイルの権限を直さない", INIT, "        os.chmod(tmp, 0o666 & ~UMASK)", "        pass", "空の根には雛形をすべて写す"),
+    ("リンクを作れないと止まる", INIT,
+     "            if e.errno not in NO_LINK:\n                raise\n            return place_directly(dest, data)\n",
+     "            raise\n", "リンクを作れなくても雛形をすべて写す"),
+    ("ENOTSUP を退路に入れない", INIT, "errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP,", "errno.EPERM,",
+     "リンクを作れなくても雛形をすべて写す"),
+    ("どの失敗でも退路に入る", INIT, "            if e.errno not in NO_LINK:\n", "            if False:\n",
+     "リンクと関係ない失敗は 2"),
+    ("退路で上書きする", INIT, '        f = dest.open("xb")', '        f = dest.open("wb")',
+     "リンクを作れないとき、確かめた後に作られたファイルは上書きしない"),
+    ("退路で切れたファイルを残す", INIT, "            dest.unlink()  #", "            pass  #",
+     "リンクを作れないとき、途中で書けなくても切れたファイルを残さない"),
+    ("EPERM を退路に入れない", INIT, "{errno.EPERM, errno.ENOTSUP,", "{errno.ENOTSUP,",
+     "EPERM（Linux の vfat）でも退路に入る"),
+    ("書きかけを消せなくても言わない", INIT,
+     '            print(f"{dest}: 書きかけを消せなかった（{e.strerror}）。消してから再実行する", file=sys.stderr)\n',
+     "            pass\n", "書きかけを消せなければそう言い、書けなかった理由で 2"),
+    ("消せなかった理由で止まる", INIT, "        except OSError as e:\n            print(f\"{dest}: 書きかけ",
+     "        except OSError as e:\n            raise\n            print(f\"{dest}: 書きかけ", "書きかけを消せなければそう言い、書けなかった理由で 2"),
     ("| をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
      r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#])")', "セルをエスケープする"),
     ("{} をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
@@ -526,6 +647,8 @@ def check_reference() -> None:
 
 
 def main() -> int:
+    # umask を mkstemp の 0600 にならない値に固定する（077 だと 0o666 & ~077 == 0600 で、権限を直さない変異が殺せない）
+    os.umask(0o022)
     with tempfile.TemporaryDirectory(prefix="init-mkdocs-test-") as tmp:
         tmp_path = Path(tmp)
         plugin = copy_plugin(tmp_path / "plugin")
