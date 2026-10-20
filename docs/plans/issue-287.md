@@ -63,7 +63,10 @@
 - 周の在り処: ブランチ `issue/287-issuance-before-merge`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-287`、起点 `d45103e`、
   base 参照 `origin/main` → `d45103ee635b2bcf5eccaacf1a8d36f6937b7b90`
-- 関門: まだ
+- 実装: 済み（`a4d0978`）。`skill-metrics.py` で生成ブロックを書き直した
+- check-all: `a4d0978` の作業ツリーで 44/44 緑（失敗 0 / 飛ばし 0）
+- 割り目（手順 4）: 訊いた → **「ここで割る」**。再開は手順 5 の 1 パス目から
+- 関門: まだ（次は手順 5 の 1 パス目。Verifier と `/code-review` の両方。base は上の SHA）
 - 反証・差し戻し: まだ
 - 交絡を潰した手順: 実験なし（起票時刻とマージ時刻の比較は観測で、実験ではない）
 
