@@ -53,9 +53,14 @@ HEAD では exit 1 になること。**加えて `--cacheinfo` に戻した版�
 
 - **周の在り処**: ブランチ `issue/275-nfd-dir-fixture`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-275`・
   起点 `50b1d1b`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `50b1d1be2ad0efd20726333e712a4b91dcfccc0a`
-- 関門: 未着手
+- 実装: `20c65bc`。`test-build-proposal.py` は緑（試料 35・変異 30）。`check-all.py` は 43/43 本（失敗 0 / 飛ばし 0）
+- 関門: 未着手（次は手順 5 の 1 パス目）
 - 反証・差し戻し: なし
-- 交絡: 未実施
+- 交絡: 陽性対照を 1 つ取った——`i` を `--cacheinfo` に戻した複製（scratchpad。リポジトリは変えていない）で、
+  新しい試料**だけ**が赤（exit=0・提案書あり）。macOS で B を判別している。Linux での判別力は無い（潰れないため）
+- 割り目（手順 4）: 提案した（`AskUserQuestion`）。人間は**「ここで割る」**を選んだ（2026-10-20）。
+  **再開したら手順 5 の 1 パス目から**——Verifier（`dev-loop:dev-loop-verifier`・別ティア）と `/code-review` の両方に、
+  base `50b1d1be2ad0efd20726333e712a4b91dcfccc0a` と上の受入基準・下の決着済みの論点を渡す
 
 ## 既知の限界・決着済みの論点
 
