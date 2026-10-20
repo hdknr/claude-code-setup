@@ -108,12 +108,14 @@ Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `ref
 手順と守ることは [`skills/scaffold/SKILL.md`](skills/scaffold/SKILL.md) を正とします。
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check]
+python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]]
 ```
 
 `--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。
 `--upto <n>` を付けると v<n> の時点に当てます（差分の周を始める前の確かめ。`references/versions.md`）。
-`--red-check` は Red テストを走らせ、失敗するのが追加・変更のケースだけで、ほかは緑かを確かめます。
+`--red-check` は Red テストを走らせ、回帰は緑で、追加・変更は失敗するか前の版の実装がもう満たすかを確かめます。
+**実装が前の版の状態にあることを前提にせず**、前の版の Red テストも同じ実装に当てて確かめます。
+この版をもう実装し始めた作り直しの経路では `--in-progress` を付けます。
 実装を置くモジュールは、中間表現の `impl_module` に書きます（`references/spec-ir.md`）。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
