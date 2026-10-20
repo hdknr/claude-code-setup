@@ -53,9 +53,17 @@ docstring の「見るもの」が試料の性質を列挙しているので、*
 - **周の在り処**: ブランチ `issue/272-signoff-scaffold-mutants`／worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-272`／起点 `50b1d1b`／
   base: `origin/main`（`refs/remotes/origin/HEAD`）→ `50b1d1be2ad0efd20726333e712a4b91dcfccc0a`
-- 関門: 未着手
+- 実装: 済み（`test-check-signoff.py` 試料 41・変異 29、`test-scaffold.py` 試料 113・変異 68 で緑）
+- 歯止め: `check-all.py` 43/43 緑（失敗 0・飛ばし 0。コミット `test(spec-loop): …` の時点）。PR は未作成
+- **割り目 1（手順 4 の完了時）**: 2026-10-20 に `AskUserQuestion` で提案 → **「ここで割る」が選ばれた**
+- 関門: 未着手——**再開したら手順 5 の Verifier 1 パス目と、手順 6 の `/code-review` 1 パス目から**（どちらも base `50b1d1b`）
 - 反証・差し戻し: なし
-- 交絡を潰した手順: （実装後に書く）
+- 交絡を潰した手順（著者の実験。scratchpad の使い捨てスクリプト）:
+  - **C（新しい試料が要る）**: 新しい変異 4 本を 1 本ずつ本体に当て、**足す前からあった試料を全部**走らせた——
+    **どれも期待どおりのまま**（既存では殺せない）で、殺したのは名指しした新しい試料だけ。
+    出力は Issue の表のとおり（N1 1→0・N2 0→1・N3 0→1・N4 1→2）。陽性対照として、本体のままでは全試料が期待どおり。
+  - **D（rename を作っている）**: `GIT_CONFIG_*` で `diff.renames=false` にすると N1 の試料は**赤**（出力が `A vis.md` だけになる）、
+    既定では緑（`R100` が出る）。陽性・陰性の両側を見た。
 
 ## 既知の限界・決着済みの論点
 
