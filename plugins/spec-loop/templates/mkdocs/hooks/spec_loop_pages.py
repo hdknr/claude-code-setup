@@ -13,6 +13,7 @@
   警告は `mkdocs` のロガーに出すので、`mkdocs build --strict` は落ちる（黙って空の表を出さない）。
 - **列の決まりの検査はしない**——それは spec-loop の `check-qa-csv.py` の仕事。ここが見るのは見出しの行だけ。
 - セルの文字は HTML と Markdown の記号をエスケープし、改行は `<br>` にする（表を壊さない）。
+  **CSV の文字は表のセルにだけ置く**——段落や箇条書きに置くと、行頭の `!!! `・字下げ・`1. ` がブロックの記法に読まれる。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
 """
 
@@ -35,7 +36,7 @@ QA_DONE = "反映済み"
 QA_NO_ANSWER = "未回答"
 QA_OPTION_SEPARATOR = " / "
 
-MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]#|])")
+MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")
 
 
 def text(value: str) -> str:
@@ -67,13 +68,15 @@ def read_qa(path: Path) -> list[dict[str, str]]:
         header = next(reader, None)
         if header != QA_COLUMNS:
             raise ValueError(f"見出しの行が列名（{','.join(QA_COLUMNS)}）と違う: {header}")
-        return [dict(zip(QA_COLUMNS, row + [""] * (len(QA_COLUMNS) - len(row)))) for row in reader if row]
+        # 空白だけの行は空行として読み飛ばす（check-qa-csv.py と同じ）
+        return [dict(zip(QA_COLUMNS, row + [""] * (len(QA_COLUMNS) - len(row))))
+                for row in reader if any(cell.strip() for cell in row)]
 
 
 def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
     done = sum(row["状態"] == QA_DONE for row in rows)
     pending = len(rows) - done
-    answered = sum(row["状態"] != QA_DONE and row["回答"] != QA_NO_ANSWER for row in rows)
+    answered = sum(row["状態"] != QA_DONE and row["回答"].strip() not in ("", QA_NO_ANSWER) for row in rows)
     out = [f"## v{version}", "",
            f"確認中 {pending} 件（うち回答あり・未反映 {answered} 件）・反映済み {done} 件", ""]
     if not rows:
@@ -84,13 +87,13 @@ def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
                    f"| {text(row['回答'])} | {text(row['状態'])} |")
     out.append("")
     for row in rows:
-        out += [f"### {text(row['No'])} {{#{anchor(version, row['No'])}}}", "", text(row["質問"]), ""]
-        out += [f"- {text(option)}" for option in row["選択肢"].split(QA_OPTION_SEPARATOR)]
-        out += ["", "| 項目 | 内容 |", "| --- | --- |"]
+        options = "<br>".join(text(option) for option in row["選択肢"].split(QA_OPTION_SEPARATOR))
+        out += [f"### {text(row['No'])} {{#{anchor(version, row['No'])}}}", "",
+                "| 項目 | 内容 |", "| --- | --- |", f"| 質問 | {text(row['質問'])} |", f"| 選択肢 | {options} |"]
         out += [f"| {name} | {text(row[name])} |" for name in ("回答", "反映先", "状態", "起票元")]
-        out.append("")
         if row["費用への影響"].strip():
-            out += ['!!! note "費用への影響"', "", f"    {text(row['費用への影響'])}", ""]
+            out.append(f"| 費用への影響 | {text(row['費用への影響'])} |")
+        out.append("")
     return out
 
 

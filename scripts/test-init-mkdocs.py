@@ -7,10 +7,14 @@
 ここで見るのは:
 
 1. **写し方**——空の根には雛形をすべて（`gitignore` は `.gitignore` として）バイトどおりに写す。
-   **`mkdocs.yml` が在れば何も写さない。** 在るファイル（シンボリックリンク・壊れたリンクを含む）は 1 バイトも変えず、
+   **`mkdocs.yml`・`mkdocs.yaml` が在れば何も写さない。** 在るファイル（シンボリックリンク・壊れたリンクを含む）は 1 バイトも変えず、
    `pyproject.toml`・`.gitignore` が在れば足りない依存・行を出力で示す。`--dry-run` は何も書かない。根がディレクトリでなければ 2。
+   `mkdocs.yml` は最後に写す。行き先の親がファイルなら 2 で止まり（`mkdocs.yml` は書かない）、直して再実行すれば残りが写る。
+   雛形の中の `__pycache__` は写さない。
 2. **フックの描き方**——版ごとの節を番号の順（`v10` は `v2` の後）に、表の行をすべて、版をまたいで一意なアンカーで描く。
-   セルの HTML と Markdown の記号・`|`・改行をエスケープする。空の `費用への影響` は注記を出さない。
+   セルの HTML と Markdown の記号（`{` `}` を含む）・`|`・改行をエスケープする。CSV の文字は表のセルにだけ置き、
+   行頭の `!!! `・字下げ・`1. ` をブロックの記法にしない。空の `費用への影響` は行を出さない。
+   BOM つきの表を読む。空白だけの行は読み飛ばし、列の足りない行は空で埋める。回答の `未回答 ` は未回答と数える。
    読めない表・見出しの違う表・知らない印は**警告**（`mkdocs` のロガー。`--strict` で落ちる）とページ上の注意書き。
    表が 1 つも無ければそう書き、警告は出さない。印の無いページは変えない。
 3. **写しの突き合わせ**——フックの列名・状態・印は `check-qa-csv.py` の定数と同じ（フックは正本リポジトリへ写されて
@@ -118,6 +122,11 @@ def template_map(plugin: Path) -> dict[str, bytes]:
 def init_empty(plugin: Path, work: Path) -> bool:
     root = work / "repo"
     root.mkdir(parents=True)
+    # 雛形の中に __pycache__ が在っても写さない（copy_plugin は落とすので、ここで置く）
+    cache = plugin / "templates" / "mkdocs" / "hooks" / "__pycache__"
+    assert_in_tmp(cache)
+    cache.mkdir(exist_ok=True)
+    (cache / "spec_loop_pages.cpython-312.pyc").write_bytes(b"\0")
     code, _ = run_init(plugin, root)
     expected = template_map(plugin)
     got = {k: v for k, v in snapshot(root).items() if isinstance(v, bytes)}
@@ -132,6 +141,33 @@ def init_config_exists(plugin: Path, work: Path) -> bool:
     return code == 0 and snapshot(root) == before and "何も写さない" in out
 
 
+def init_config_yaml(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    write(root, {"mkdocs.yaml": "site_name: 既存\n"})
+    before = snapshot(root)
+    code, out = run_init(plugin, root)
+    return code == 0 and snapshot(root) == before and "何も写さない" in out
+
+
+def init_config_last(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, out = run_init(plugin, root, "--dry-run")
+    listed = [line for line in out.splitlines() if line.startswith("写す")]
+    return code == 0 and len(listed) >= 6 and listed[-1].endswith(": mkdocs.yml")
+
+
+def init_parent_is_file(plugin: Path, work: Path) -> bool:
+    root = work / "repo"
+    write(root, {"hooks": "ファイル\n"})
+    code, out = run_init(plugin, root)
+    stopped = code == 2 and not (root / "mkdocs.yml").exists() and (root / "hooks").read_text(encoding="utf-8") == "ファイル\n"
+    (root / "hooks").unlink()
+    code2, _ = run_init(plugin, root)
+    return (stopped and "既にあるので触らない: hooks" not in out
+            and code2 == 0 and (root / "mkdocs.yml").is_file() and (root / "hooks" / "spec_loop_pages.py").is_file())
+
+
 def init_keeps_existing(plugin: Path, work: Path) -> bool:
     root = work / "repo"
     write(root, {"pyproject.toml": '[project]\nname = "x"\ndependencies = ["requests"]\n',
@@ -141,7 +177,7 @@ def init_keeps_existing(plugin: Path, work: Path) -> bool:
     after = snapshot(root)
     kept = all(after[k] == v for k, v in before.items())
     wrote = {"mkdocs.yml", "docs/qa.md", "hooks/spec_loop_pages.py"} <= set(after)
-    return (code == 0 and kept and wrote
+    return (code == 0 and kept and wrote and "既にあるので触らない: pyproject.toml" in out
             and "mkdocs mkdocs-material" in out and "build/ .venv/ __pycache__/" in out
             and "site/" not in out.split(".gitignore に無い行", 1)[-1].split("\n", 1)[0])
 
@@ -201,7 +237,7 @@ def hook_versions(plugin: Path, work: Path) -> bool:
             and "(#v1-q-001)" in out and "{#v1-q-002}" in out and "{#v2-q-002}" in out and "{#v2-q-003}" in out
             and "確認中 1 件（うち回答あり・未反映 0 件）・反映済み 1 件" in out[v1:v2]
             and "確認中 2 件（うち回答あり・未反映 1 件）・反映済み 0 件" in out[v2:]
-            and "- A: 止める" in out and "- B: 24 時間" in out
+            and "| 選択肢 | A: 止める<br>B: 24 時間 |" in out
             and "<!-- spec-loop" not in out)
 
 
@@ -227,7 +263,39 @@ def hook_cost(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
     write(docs, {"v1/shared/qa.csv": QA_V1})
     out, _ = render(plugin, docs, "<!-- spec-loop: qa -->")
-    return out.count('!!! note "費用への影響"') == 1 and "nan" not in out and "    B は月額 2 倍" in out
+    return out.count("| 費用への影響 |") == 1 and "nan" not in out and "| 費用への影響 | B は月額 2 倍 |" in out
+
+
+def hook_block_syntax(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": HEADER + (
+        "Q-001,要求確定,!!! note 注意,A: x / B: y,未回答,—,確認中,\n"
+        'Q-002,要求確定,"    字下げ",1. 一つ目 / 2. 二つ目,未回答,—,確認中,\n'
+        "Q-003,要求確定,1. 割引は？,A: x / B: y,未回答,—,確認中,!!! warning 高い\n"
+        "Q-004,要求確定,末尾 {: #evil },A: x / B: y,未回答,—,確認中,\n")})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    # 表のセル（| で始まる行）と見出し・件数の行のほかに、CSV の文字が出てこない
+    stray = [line for line in out.splitlines()
+             if line and not line.startswith(("|", "## ", "### ", "確認中 "))]
+    return (not warnings and not stray and "| 質問 | !!! note 注意 |" in out
+            and "| 選択肢 | 1. 一つ目<br>2. 二つ目 |" in out and "| 費用への影響 | !!! warning 高い |" in out
+            and "末尾 \\{: \\#evil \\}" in out)
+
+
+def hook_bom(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    (docs / "v1" / "shared").mkdir(parents=True)
+    (docs / "v1" / "shared" / "qa.csv").write_bytes(b"\xef\xbb\xbf" + QA_V1.encode("utf-8"))
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return not warnings and "{#v1-q-001}" in out and "{#v1-q-002}" in out
+
+
+def hook_blank_rows(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1 + ",,,,,,,\n , ,\n\nQ-004,要求確定,短い？,A: x / B: y,未回答 ,—,確認中\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return (not warnings and "{#v1-q-004}" in out and "{#v1-}" not in out and out.count("### ") == 3
+            and "確認中 2 件（うち回答あり・未反映 0 件）・反映済み 1 件" in out)
 
 
 def hook_bad_header(plugin: Path, work: Path) -> bool:
@@ -281,6 +349,9 @@ def merge_ignores_pages(plugin: Path, work: Path) -> bool:
 CASES = {
     "空の根には雛形をすべて写す": init_empty,
     "mkdocs.yml が在れば何も写さない": init_config_exists,
+    "mkdocs.yaml が在っても何も写さない": init_config_yaml,
+    "mkdocs.yml は最後に写す": init_config_last,
+    "親がファイルなら 2 で止まり、直せば残りが写る": init_parent_is_file,
     "在るファイルは変えず、足りないものを示す": init_keeps_existing,
     "壊れたリンクも在るとみなす": init_symlink,
     "--dry-run は書かない": init_dry_run,
@@ -289,6 +360,9 @@ CASES = {
     "版は番号の順・形に合わない名前は読まない": hook_numeric_order,
     "セルをエスケープする": hook_escape,
     "費用への影響は空なら出さない": hook_cost,
+    "CSV の文字をブロックの記法にしない": hook_block_syntax,
+    "BOM つきの表を読む": hook_bom,
+    "空白だけの行は読み飛ばし、短い行は埋める": hook_blank_rows,
     "見出しの違う表は警告": hook_bad_header,
     "読めない表は警告": hook_undecodable,
     "表が無ければそう書く": hook_no_table,
@@ -299,8 +373,22 @@ CASES = {
 
 # (名前, 壊す対象, 壊す前, 壊した後, 殺すはずの試料の名前)。2 箇所を壊すときは (壊す前, 壊した後) の列を渡す
 MUTATIONS: list[tuple] = [
-    ("mkdocs.yml が在っても写す", INIT, "    if os.path.lexists(root / CONFIG):\n", "    if False:\n",
+    ("mkdocs.yml が在っても写す", INIT, "        if os.path.lexists(root / name):\n", "        if False:\n",
      "mkdocs.yml が在れば何も写さない"),
+    ("mkdocs.yaml を設定とみなさない", INIT, 'CONFIG_NAMES = ("mkdocs.yml", "mkdocs.yaml")', 'CONFIG_NAMES = ("mkdocs.yml",)',
+     "mkdocs.yaml が在っても何も写さない"),
+    ("mkdocs.yml を名前の順に写す", INIT, "    return sorted(files, key=lambda item: item[1] == CONFIG)", "    return files",
+     "mkdocs.yml は最後に写す"),
+    ("親が作れないのを「既にある」と読む", INIT, "                dest.parent.mkdir(parents=True, exist_ok=True)\n",
+     "                try:\n                    dest.parent.mkdir(parents=True, exist_ok=True)\n"
+     "                except FileExistsError:\n                    kept.append(rel)\n                    continue\n",
+     "親がファイルなら 2 で止まり、直せば残りが写る"),
+    ("書けなくても 0 で続ける", INIT, "file=sys.stderr)\n                return 2\n", "file=sys.stderr)\n                continue\n",
+     "親がファイルなら 2 で止まり、直せば残りが写る"),
+    ("在って触らないものを示さない", INIT, '        print(f"既にあるので触らない: {rel}")\n', "",
+     "在るファイルは変えず、足りないものを示す"),
+    ("雛形の __pycache__ も写す", INIT, 'if path.is_dir() or "__pycache__" in path.parts:', "if path.is_dir():",
+     "空の根には雛形をすべて写す"),
     # 在るかの確認と排他的な作成は二重の守りなので、片方だけ壊しても挙動は変わらない（等価変異）。両方を壊す。
     ("在るファイルを上書きする", INIT, [("        if os.path.lexists(dest):\n", "        if False:\n"),
                                        ('dest.open("xb")', 'dest.open("wb")')],
@@ -321,8 +409,21 @@ MUTATIONS: list[tuple] = [
     ("アンカーに版を入れない", HOOK, 'return f"v{version}-{number.lower()}"', "return number.lower()",
      "版ごとの節・アンカー・件数"),
     ("HTML をエスケープしない", HOOK, "html.escape(value.replace", "str(value.replace", "セルをエスケープする"),
-    ("| をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]#|])")',
-     r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]#])")', "セルをエスケープする"),
+    ("| をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
+     r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#])")', "セルをエスケープする"),
+    ("{} をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
+     r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]#|])")', "CSV の文字をブロックの記法にしない"),
+    ("質問を段落に置く", HOOK, "\"| 項目 | 内容 |\", \"| --- | --- |\", f\"| 質問 | {text(row['質問'])} |\"",
+     "text(row['質問']), \"\", \"| 項目 | 内容 |\", \"| --- | --- |\"", "CSV の文字をブロックの記法にしない"),
+    ("選択肢を箇条書きにする", HOOK, 'options = "<br>".join(text(option)', 'options = "\\n".join("- " + text(option)',
+     "CSV の文字をブロックの記法にしない"),
+    ("BOM を読まない", HOOK, 'path.open(encoding="utf-8-sig"', 'path.open(encoding="utf-8"', "BOM つきの表を読む"),
+    ("空白だけの行も描く", HOOK, "for row in reader if any(cell.strip() for cell in row)]", "for row in reader if row]",
+     "空白だけの行は読み飛ばし、短い行は埋める"),
+    ("短い行を埋めない", HOOK, 'row + [""] * (len(QA_COLUMNS) - len(row))', "row",
+     "空白だけの行は読み飛ばし、短い行は埋める"),
+    ("未回答の空白を落とさない", HOOK, 'row["回答"].strip() not in', 'row["回答"] not in',
+     "空白だけの行は読み飛ばし、短い行は埋める"),
     ("改行を残す", HOOK, '.replace("\\n", "<br>")', '.replace("\\n", " ")', "セルをエスケープする"),
     ("空の費用にも注記を出す", HOOK, '        if row["費用への影響"].strip():\n', "        if True:\n",
      "費用への影響は空なら出さない"),
@@ -333,7 +434,8 @@ MUTATIONS: list[tuple] = [
     ("警告を出さない", HOOK, '    log.warning("spec-loop: %s", message)\n', "", "見出しの違う表は警告"),
     ("知らない印を消す", HOOK, "        if renderer is None:\n            return problem(",
      "        if renderer is None:\n            return (", "知らない印は警告"),
-    ("回答あり未反映を数えない", HOOK, ' and row["回答"] != QA_NO_ANSWER for row in rows)', " and False for row in rows)",
+    ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER) for row in rows)',
+     " and False for row in rows)",
      "版ごとの節・アンカー・件数"),
 ]
 

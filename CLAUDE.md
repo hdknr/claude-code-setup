@@ -71,7 +71,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `templates/mkdocs/` - 正本リポジトリを MkDocs で閲覧するための雛形（#266。**フックは正本リポジトリへ写されて
       単独で動くので、Q&A の列名の写しを持つ**——`scripts/test-init-mkdocs.py` が `check-qa-csv.py` と突き合わせる。
       雛形の `gitignore` は写すときに `.gitignore` になる——プラグインの中で本物として効かないように）
-    - `scripts/init-mkdocs.py` - 雛形を正本リポジトリへ写す（**`mkdocs.yml` が在れば何も写さず、在るファイルは 1 バイトも変えない**。
+    - `scripts/init-mkdocs.py` - 雛形を正本リポジトリへ写す（**MkDocs の設定が在れば何も写さず、在るファイルは 1 バイトも変えない**。
       決まりは `references/tree.md` の「ドキュメントのツール」。テストは `scripts/test-init-mkdocs.py`）
     - `scripts/check-frozen.py` - リリースした版（`release-v<n>`）の `docs/v<n>/` が直されていないかの確かめ
       （#262。**正本リポジトリの CI で使う**。タグの時点に版が無ければ 2。テストは `scripts/test-check-frozen.py`）
