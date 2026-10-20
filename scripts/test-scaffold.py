@@ -857,6 +857,10 @@ CASES: list[Case] = [
     # 関数の改名: 作業中の版のテストが「未実装」、旧名の実装は前の版でも失敗する——どちらの版も満たさないので 1（#298）
     Case("Red の状態: 関数を改名し、旧名だけ誤った値で残す", 1, "前の版の期待も作業中の版の期待も満たさない",
          args=("--red-check",), generate_first=True, extra=v2([V2_OP_RENAMED]), impl=NEITHER_IMPL),
+    # 関数の改名も、作り直しでは作りかけの実装の誤りを先に挙げる（#300 の 1 パス目）
+    Case("Red の状態: 関数を改名し、どちらの版でもない値（作り直し）", 1, "（作りかけの実装の誤りか、前の版の仕様とも食い違う）",
+         args=("--red-check", "--in-progress"), generate_first=True, extra=v2([V2_OP_RENAMED]),
+         impl=OP_RENAMED_NEITHER_IMPL),
     Case("Red の状態: 関数を改名する（前の版の実装）", 0, "失敗 2 件（追加・変更）・緑 1 件（回帰）", args=("--red-check",),
          generate_first=True, extra=v2([V2_OP_RENAMED]), impl=GOOD_IMPL),
     Case("Red の状態: 作り直し（v1 を実装済み）", 0, "もう緑 3 件", args=("--red-check", "--in-progress"),
