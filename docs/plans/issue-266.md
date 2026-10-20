@@ -88,7 +88,9 @@
   B を実機で当て直した（mkdocs 1.6.1・`--strict` 0）: `!!! note`・`!!! warning`・`1. `・`{: #evil }` はセルの文字のまま、
   `qa.html` に `class="admonition"` 0・`<ol>` 0・`<pre>` 0。**陽性対照**: 同じ build の `index.md` に本物の admonition と番号リストを
   置くと `admonition` 2・`<ol>` 1
-- 次: 2 パス目（Verifier と `/code-review` の両方に、1 パス目の指摘対応の差分と受入基準・既知の限界を渡す）。base は上の SHA のまま
+- 次: 2 パス目（Verifier と `/code-review` の両方に、1 パス目の指摘対応の差分と受入基準・既知の限界を渡す）。base は上の SHA のまま。
+  1 パス目の指摘対応は `b09f1d6`（その親 `2dfef33` からの差分が指摘対応の分）
+- 割り目（手順 6・2 パス目の前）: 訊いた → **「ここで割る」**（2026-10-20）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 266`（2 パス目から）
 - 交絡: 実装中に B を 1 回だけ回した（一時ディレクトリで写して `uv sync`・`mkdocs build --strict` が 0、`qa.html` に v1・v2 の節と表）。
   **陽性対照（壊れた表で `--strict` が落ちること）はまだ取っていない**——手順 5 で取る
 - 手順 5（再開した周・2026-10-20）: B・C・D を実機で当て直した（scratchpad の `verify-b.sh`。mkdocs 1.6.1）。
