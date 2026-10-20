@@ -55,7 +55,9 @@
 
 - 周の在り処: ブランチ `issue/300-in-progress-wording`・worktree `.claude/worktrees/issue-300`・起点 `c5fe55c`・
   base `origin/main` → `c5fe55c71d7ad1295584ecb64b43b899a56b46f0`
-- 関門: 未着手
+- 実装: `f62202e`（`test-scaffold.py` 試料 137・変異 86 が緑、`check-all.py` 44/44 緑）
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
+- 割り目 1: 提案した → **「ここで割る」が選ばれた**。再開は手順 5（Verifier 1 パス目）から
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
