@@ -491,9 +491,9 @@ def v2_changed(repo: Path) -> str | None:
                   "body": "F-001.md", "red": ["TestF001.test_f_001_c1"]}]:
         return f"issues.json が違う: {index}"
     return body_has(body, ("| `F-001-C1` | 変更 |", "| `F-001-C2` | 回帰 |", "変化: 変更（v1 の時点から v2 で変えた機能）",
-                           "`merge-versions.py docs build/merged --upto 2`", "**`回帰` のケースは前の版の実装で緑で、緑のままであること**",
+                           "`merge-versions.py docs build/merged --upto 2`", "**`回帰` のケースも緑であること**",
                            "前の版の実装の上で失敗しうるのは `追加`・`変更` のケース（1 件）だけで",
-                           "**ほかの機能の Red テストは、周の前に緑だった Red テストが、周の後も緑のままであること**"), "変更")
+                           "**ほかの機能は、周の前に緑だった Red テストが、周の後も緑のままであること**"), "変更")
 
 
 def v2_removed(repo: Path) -> str | None:
@@ -548,6 +548,9 @@ def red_check_wrote_nothing(repo: Path) -> str | None:
         return f"scaffold/tests/ に前の版の Red テストが残った: {tests}"
     if (repo / "tests").exists():
         return "正本リポジトリの根に tests/ を作った"
+    cache = sorted(str(p.relative_to(repo)) for p in repo.rglob("*.pyc"))
+    if cache:
+        return f"正本リポジトリにバイトコードを書いた: {cache}"
     return None
 
 
@@ -818,6 +821,10 @@ CASES: list[Case] = [
     # #282: 作り直しの経路
     Case("Red の状態: 作り直し（変更を実装済み）", 0, "実装済み 1 件", args=("--red-check", "--in-progress"),
          generate_first=True, extra=v2([V2_CHANGED]), impl=V2_IMPL),
+    # 実装が全く無く、回帰のケースも無い——前の版のテストも「実装が無い」で、食い違いではない（#294 の 1 パス目）
+    Case("Red の状態: 実装が無く、変更のケースだけ", 0, "失敗 1 件（追加・変更）", args=("--red-check",),
+         generate_first=True, ir=lambda ir: {**ir, "features": [copy.deepcopy(ir["features"][0])]},
+         extra=v2([{**V2_CHANGED, "cases": V2_CHANGED["cases"][:1]}]), impl=""),
     # 入力の改名を実装済み——前の版の Red テストはエラーになるが、作業中の版のテストが緑なら「前の版で失敗」と同じ
     Case("Red の状態: 作り直し（入力の改名を実装済み）", 0, "実装済み 2 件", args=("--red-check", "--in-progress"),
          generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_IMPL),
@@ -961,11 +968,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("--in-progress を無視する", "        elif in_progress:", "        elif False:", "Red の状態: 作り直し（変更を実装済み）"),
     ("もう緑を止める（#294 の前）", '        elif was in (None, "pass"):\n            satisfied.append(name)',
      '        elif False:\n            satisfied.append(name)', "Red の状態: 既存の振る舞いのケースを足す"),
-    ("どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass"):', "        elif False:",
+    ("どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass", "missing"):', "        elif False:",
      "Red の状態: どちらの版の期待も満たさない"),
-    ("作り直しでは、どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass"):',
-     '        elif got != "pass" and was not in (None, "pass") and not in_progress:',
+    ("作り直しでは、どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass", "missing"):',
+     '        elif got != "pass" and was not in (None, "pass", "missing") and not in_progress:',
      "Red の状態: どちらの版の期待も満たさない（作り直し）"),
+    ("前の版の「実装が無い」を食い違いに数える", 'was not in (None, "pass", "missing"):  #', 'was not in (None, "pass"):  #',
+     "Red の状態: 実装が無く、変更のケースだけ"),
+    ("バイトコードを書く", '[sys.executable, "-B", "-c", DRIVER', '[sys.executable, "-c", DRIVER',
+     "Red の状態: 撤去と追加（前の版の実装）"),
     ("前の版のエラーを一律に止める", '        elif was == "skip" or (was == "error" and got != "pass"):',
      '        elif was in ("error", "skip"):', "Red の状態: 作り直し（入力の改名を実装済み）"),
     ("前の版のエラーを緑の代わりにする", '        elif was == "skip" or (was == "error" and got != "pass"):',
@@ -974,7 +985,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "--check に --in-progress"),
     ("撤去の受入基準を全部緑に戻す（#294 の前）", "を撤去し、{KEPT_GREEN}。**", "を撤去し、ほかの Red テストがすべて緑のままであること。**",
      "撤去の受入基準は前後を比べる"),
-    ("変更の受入基準を全部緑に戻す（#294 の前）", "**ほかの機能の Red テストは、{KEPT_GREEN}**",
+    ("変更の受入基準を全部緑に戻す（#294 の前）", "**ほかの機能は、{KEPT_GREEN}**",
      "**ほかの機能の Red テストも緑のままであること。**", "v2 で機能を変える"),
     ("前の版の Red テストを scaffold/tests に置く", '        tests = Path(tmp) / "tests"',
      '        tests = repo / OUT_DIR / "tests"', "Red の状態: 撤去と追加（前の版の実装）"),

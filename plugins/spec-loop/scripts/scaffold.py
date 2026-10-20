@@ -78,7 +78,8 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 | **Python 以外の言語の型・テスト** | OpenAPI から対象リポジトリの道具で作る |
 | **Issue を登録したか・登録した本文が同じか** | 登録はスクリプトの外（`gh issue create --body-file` に、生成した本文をそのまま渡す） |
 | **変わった API（メソッド・パス）を Red テストが捕まえるか** | Red テストは関数を呼ぶ。メソッド・パスだけの変更は本文に前の版の API を書くが、ケースの変化には数えない |
-| **`--red-check` が回したのが前の版の実装か** | 走らせるのは正本リポジトリの根で読み込める実装。開発のリポジトリが別なら、そこで回すかは `CLAUDE.md` が決める |
+| **`--red-check` が回した実装が、開発のリポジトリの実装か** | 走らせるのは正本リポジトリの根で読み込める実装。開発のリポジトリが別なら、そこで回すかは `CLAUDE.md` が決める |
+| **もう緑の追加・変更が、中間表現の書き起こしの誤りか** | 前の版の実装がもう満たすケースは名指しで知らせるだけ（0）。Red テストがその変化を判別しないのが誤りかは意味の問題で、`scaffold` スキルの手順 4 で利用者に示す |
 """
 
 from __future__ import annotations
@@ -920,8 +921,8 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         ]
         if change.kind == MODIFY:
             lines += [
-                f"**`{CASE_KEPT}` のケースは前の版の実装で緑で、緑のままであること**——前の版の実装の上で失敗しうるのは",
-                f"`{CASE_ADDED}`・`{CASE_CHANGED}` のケースだけである。**ほかの機能の Red テストは、{KEPT_GREEN}**",
+                f"**`{CASE_KEPT}` のケースも緑であること**——前の版の実装の上で失敗しうるのは",
+                f"`{CASE_ADDED}`・`{CASE_CHANGED}` のケースだけである。**ほかの機能は、{KEPT_GREEN}**",
                 "（同じ版で足した・変えたほかの機能のケースは、この周の前に失敗していてよい）。",
             ]
     lines += ["", "| ケース | 変化 | 確かめること | Red テスト | Q&A |", "| --- | --- | --- | --- | --- |"]
@@ -1044,7 +1045,8 @@ RED_TIMEOUT = 600
 
 def run_tests(repo: Path, tests: Path) -> dict:
     """`tests` の Red テストを正本リポジトリの根で走らせ、{テストの名前: 結果} を返す。走らせられなければ ValueError など。"""
-    proc = subprocess.run([sys.executable, "-c", DRIVER, str(tests), MISSING], cwd=repo,
+    # -B: 正本リポジトリに __pycache__ を書かない（`--red-check` は何も書かない）
+    proc = subprocess.run([sys.executable, "-B", "-c", DRIVER, str(tests), MISSING], cwd=repo,
                           capture_output=True, text=True, timeout=RED_TIMEOUT)
     outcomes = json.loads(proc.stdout.rstrip("\n").rsplit("\n", 1)[-1])
     if proc.returncode != 0 or not isinstance(outcomes, dict):
@@ -1107,7 +1109,7 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before,
             # ——入力の名前や形を変える変更を実装すると、前の版のテストは呼び出しで落ちる
             problems.append(f"{name}: 前の版の Red テストが{'エラー' if was == 'error' else '飛ばされた'}"
                             "（前の版の状態を判定できない）")
-        elif got != "pass" and was not in (None, "pass"):
+        elif got != "pass" and was not in (None, "pass", "missing"):  # 前の版でも「実装が無い」は食い違いではない
             problems.append(f"{name}: {CASE_ADDED}・{CASE_CHANGED}のケースが、前の版の期待も作業中の版の期待も満たさない"
                             "（前の版の仕様とも食い違う）")
         elif got != "pass":
