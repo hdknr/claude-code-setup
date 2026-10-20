@@ -42,6 +42,8 @@ main への merge のみ。`CLAUDE.md` は公開サイト（`docs/`）にもプ�
 - 周の在り処: ブランチ `issue/299-claude-md-red-check`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-299`、起点 `d45103e`、
   base 参照 `origin/main` → `d45103ee635b2bcf5eccaacf1a8d36f6937b7b90`
+- 実装: `884c70a` で完了。手順 4 の割り目で `AskUserQuestion` → **「ここで割る」**を選択（2026-10-20）
+- 次: 手順 5（Verifier 1 パス目）→ 手順 6（`/code-review` 1 パス目）
 - 関門: 未着手
 - 反証・差し戻し: なし
 - 交絡: 実験なし
