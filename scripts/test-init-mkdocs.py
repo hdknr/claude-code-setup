@@ -647,6 +647,8 @@ def check_reference() -> None:
 
 
 def main() -> int:
+    # umask を mkstemp の 0600 にならない値に固定する（077 だと 0o666 & ~077 == 0600 で、権限を直さない変異が殺せない）
+    os.umask(0o022)
     with tempfile.TemporaryDirectory(prefix="init-mkdocs-test-") as tmp:
         tmp_path = Path(tmp)
         plugin = copy_plugin(tmp_path / "plugin")
