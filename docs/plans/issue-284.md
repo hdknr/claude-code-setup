@@ -79,7 +79,10 @@
   Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 3 件**／`/code-review` **指摘 7 件**（うち 2 件は Verifier と重複）。
   採否は下の表——**直す 6 件・残課題 4 件**
 - 1 パス目の指摘対応: 済み（差分は 0 行ではない——`SKILL.md`・`references/resume.md` を変更）。
-  **次は手順 5 の当て直し（Verifier 2 パス目）→ `/code-review` 2 パス目**。その前が割り目 2
+  **次は手順 5 の当て直し（Verifier 2 パス目）→ `/code-review` 2 パス目**（どちらも base `0f36460` を渡す）。
+  指摘対応はコミット `0a57ba2`。`check-all.py` 43/43 緑（同コミットの内容で。失敗 0・飛ばし 0）
+- **割り目 2（2 パス目の前）**: 2026-10-20 に `AskUserQuestion` で提案 → **「ここで割る」が選ばれた**。
+  **2 パス目の指摘対応を始める直前に、狭いパスの起点 SHA をここに書くこと**
 - 反証・差し戻し: 1 パス目の反証 3 件で手順 4 に差し戻し（1 回）
 - 交絡を潰した手順（1 パス目の指摘対応。scratchpad の `cwd-probe.sh`、一時 `HOME`・`GIT_CONFIG_GLOBAL=/dev/null`）:
   コミット済みの直下の変更・計画ファイルだけ未コミットの状態で、cwd を `.`／`src`／`docs` に変えて判定を当てた——
