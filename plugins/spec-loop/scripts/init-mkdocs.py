@@ -10,7 +10,9 @@
 - 無ければ、雛形のファイルのうち**行き先に無いものだけ**を写す。**在るファイルは 1 バイトも変えない**——
   `pyproject.toml`・`.gitignore` が在れば触らず、足りない依存・無視する行を出力で示す（足すかどうかは人が決める）。
 - 行き先がシンボリックリンクなら（壊れていても）「在る」とみなす。書くときは排他的に作る（確かめた後に
-  別の誰かが作っていても上書きしない）。一時ファイルに書き切ってから置くので、途中で書けなくても切れたファイルは残らない。
+  別の誰かが作っていても上書きしない）。一時ファイルに書き切ってからリンクで置くので、途中で書けなくても切れたファイルは残らない。
+  リンクを作れないファイルシステム（FAT32 など）では行き先を排他的に作って直に書き、途中で書けなければそれを消す
+  （プロセスが殺されたときだけは切れたファイルが残りうる）。
 - `--dry-run` は何を写すかを示すだけで、何も書かない。
 - 雛形の `gitignore` は `.gitignore` として写す（プラグインの中で本物の `.gitignore` として効かないように名前を変えてある）。
 
@@ -20,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import os
 import sys
 import tempfile
@@ -33,6 +36,8 @@ CONFIG_NAMES = ("mkdocs.yml", "mkdocs.yaml")
 RENAMES = {"gitignore": ".gitignore"}
 # pyproject.toml が在って写さなかったときに、無ければ示す依存
 DEPENDENCIES = ("mkdocs", "mkdocs-material")
+# os.link がこれで失敗したら、リンクを作れないファイルシステムとみなして直に書く（権限・容量の不足は含めない）
+NO_LINK = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.EMLINK, errno.ENOSYS}
 UMASK = os.umask(0)
 os.umask(UMASK)
 
@@ -67,7 +72,8 @@ def missing_dependencies(dest: Path) -> list[str]:
 
 def place(dest: Path, data: bytes) -> bool:
     """`data` を `dest` に置く。既にあれば置かずに False。途中で書けなければ例外で、`dest` は作らない
-    （一時ファイルに書き切ってからリンクで置く——切れたファイルが残ると、再実行が「既にある」と読んで直らない）。"""
+    （一時ファイルに書き切ってからリンクで置く——切れたファイルが残ると、再実行が「既にある」と読んで直らない）。
+    リンクを作れないファイルシステム（FAT32 など）では `dest` を排他的に作って直に書く（`place_directly`）。"""
     fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.")
     try:
         with os.fdopen(fd, "wb") as f:
@@ -77,9 +83,29 @@ def place(dest: Path, data: bytes) -> bool:
             os.link(tmp, dest)  # 在れば失敗する（排他）
         except FileExistsError:
             return False
+        except OSError as e:
+            if e.errno not in NO_LINK:
+                raise
+            return place_directly(dest, data)
         return True
     finally:
         os.unlink(tmp)
+
+
+def place_directly(dest: Path, data: bytes) -> bool:
+    """リンクを作れないときの退路。`dest` を排他的に作って書き、途中で書けなければ自分が作った `dest` を消して例外。
+    **プロセスが殺されたとき（SIGKILL・電源断）は切れたファイルが残りうる**——リンクの経路には無い弱さ。"""
+    try:
+        f = dest.open("xb")
+    except FileExistsError:
+        return False
+    try:
+        with f:
+            f.write(data)
+    except BaseException:
+        dest.unlink()  # 排他的に作ったのは自分なので、他人のファイルは消さない
+        raise
+    return True
 
 
 def main(argv: list[str] | None = None) -> int:
