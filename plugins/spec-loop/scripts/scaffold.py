@@ -1102,7 +1102,9 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before,
         elif name not in red:
             if got != "pass":
                 problems.append(f"{name}: {CASE_KEPT}のケースなのに失敗した")
-        elif was in ("error", "skip"):
+        elif was == "skip" or (was == "error" and got != "pass"):
+            # 前の版のテストのエラーは、作業中の版のテストが緑なら「前の版で失敗」と同じに読む
+            # ——入力の名前や形を変える変更を実装すると、前の版のテストは呼び出しで落ちる
             problems.append(f"{name}: 前の版の Red テストが{'エラー' if was == 'error' else '飛ばされた'}"
                             "（前の版の状態を判定できない）")
         elif got != "pass" and was not in (None, "pass"):

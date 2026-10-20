@@ -428,6 +428,14 @@ V1_NUMBER = edit(lambda ir: f1(ir)["operation"]["output"]["discount"].update(typ
 V2_IMPL = GOOD_IMPL.replace('    return {"discount": 0}', '    return {"discount": 300 if rank == "silver" else 0}')
 # どちらの版の期待も満たさない（シルバーの割引 7）
 NEITHER_IMPL = GOOD_IMPL.replace('    return {"discount": 0}', '    return {"discount": 7 if rank == "silver" else 0}')
+# v2 で入力 amount を total に改名した——実装すると、前の版の Red テストは呼び出しでエラーになる（#294 の 1 パス目）
+V2_RENAMED = copy.deepcopy(IR["features"][0])
+V2_RENAMED["operation"]["input"] = {("total" if k == "amount" else k): v
+                                    for k, v in V2_RENAMED["operation"]["input"].items()}
+for _case in V2_RENAMED["cases"]:
+    _case["input"] = {("total" if k == "amount" else k): v for k, v in _case["input"].items()}
+RENAMED_IMPL = GOOD_IMPL.replace("rank, amount", "rank, total").replace("amount < 0", "total < 0")
+RENAMED_NEITHER_IMPL = NEITHER_IMPL.replace("rank, amount", "rank, total").replace("amount < 0", "total < 0")
 
 
 def v2(features: list[dict], qa: str | None = HEADER + QA_V2, removed: str | None = None,
@@ -810,6 +818,14 @@ CASES: list[Case] = [
     # #282: 作り直しの経路
     Case("Red の状態: 作り直し（変更を実装済み）", 0, "実装済み 1 件", args=("--red-check", "--in-progress"),
          generate_first=True, extra=v2([V2_CHANGED]), impl=V2_IMPL),
+    # 入力の改名を実装済み——前の版の Red テストはエラーになるが、作業中の版のテストが緑なら「前の版で失敗」と同じ
+    Case("Red の状態: 作り直し（入力の改名を実装済み）", 0, "実装済み 2 件", args=("--red-check", "--in-progress"),
+         generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_IMPL),
+    Case("Red の状態: 入力の改名をもう実装した", 1, "実装は前の版の状態に無い", args=("--red-check",),
+         generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_IMPL),
+    # 陽性対照: 改名は実装したが値はどちらの版でもない——前の版のエラーを緑の代わりにしない
+    Case("Red の状態: 入力の改名と、どちらの版でもない値", 1, "前の版の状態を判定できない",
+         args=("--red-check", "--in-progress"), generate_first=True, extra=v2([V2_RENAMED]), impl=RENAMED_NEITHER_IMPL),
     Case("Red の状態: 作り直し（v1 を実装済み）", 0, "もう緑 3 件", args=("--red-check", "--in-progress"),
          generate_first=True, impl=GOOD_IMPL),
     Case("Red の状態: 作り直し（回帰が壊れた実装）", 1, "回帰のケースなのに失敗した", args=("--red-check", "--in-progress"),
@@ -950,6 +966,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("作り直しでは、どちらの版でも失敗を見ない", '        elif got != "pass" and was not in (None, "pass"):',
      '        elif got != "pass" and was not in (None, "pass") and not in_progress:',
      "Red の状態: どちらの版の期待も満たさない（作り直し）"),
+    ("前の版のエラーを一律に止める", '        elif was == "skip" or (was == "error" and got != "pass"):',
+     '        elif was in ("error", "skip"):', "Red の状態: 作り直し（入力の改名を実装済み）"),
+    ("前の版のエラーを緑の代わりにする", '        elif was == "skip" or (was == "error" and got != "pass"):',
+     '        elif was == "skip":', "Red の状態: 入力の改名と、どちらの版でもない値"),
     ("--in-progress を --red-check 以外でも受け付ける", "    if args.in_progress and not args.red_check:", "    if False:",
      "--check に --in-progress"),
     ("撤去の受入基準を全部緑に戻す（#294 の前）", "を撤去し、{KEPT_GREEN}。**", "を撤去し、ほかの Red テストがすべて緑のままであること。**",
