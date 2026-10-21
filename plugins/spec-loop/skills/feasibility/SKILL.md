@@ -5,8 +5,8 @@ description: "実現性・コストのループを 1 回分進める。要求・
 
 # feasibility スキル
 
-<!-- skill-version: 0.11.2 -->
-> **このスキルの版: 0.11.2**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.12.0 -->
+> **このスキルの版: 0.12.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -28,7 +28,7 @@ description: "実現性・コストのループを 1 回分進める。要求・
 - `../../references/tree.md` — 見積り・スケジュールの置き場所と、生成物（ガントチャート）の出力先
 - `../../references/feasibility-csv.md` — スケジュールと見積りの表の列
 - `../../references/qa-csv.md` — Q&A 表の列・起票元・状態（費用付きの質問の書き方を含む）
-- `../../references/signoff-tags.md` — 予算責任者の合意（`budget-signoff`）の記録のしかた
+- `../../references/signoff-tags.md` — 予算責任者の合意（`signoff/v<n>/budget-<k>`）の記録のしかた
 
 ## 守ること
 
@@ -179,5 +179,5 @@ python3 <このスキルの base ディレクトリ>/../../scripts/schedule-to-g
     - **費用付きの質問がある**なら、`/spec-loop:req-loop` でレビュー会の資料を作り、回答をもらってから
       `/spec-loop:feasibility` を呼び直す（別のセッションでよい）
     - **予算責任者に見せる準備ができた**なら、そう伝える。**合意したら、予算責任者（か、その代わりの人間）が
-      `v<n>/budget-signoff-<k>` のタグを付ける**（`../../references/signoff-tags.md`）。**このスキルはタグを付けない**
+      `signoff/v<n>/budget-<k>` のタグを付ける**（`../../references/signoff-tags.md`）。**このスキルはタグを付けない**
     - 2 つの承認がそろったら、`/spec-loop:proposal` で提案書を作る

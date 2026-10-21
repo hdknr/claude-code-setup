@@ -49,7 +49,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `scripts/test-check-feasibility-csv.py`）
     - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
       作れなければ**前の出力を消す**。テストは `scripts/test-schedule-to-gantt.py`）
-    - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`v<n>/req-signoff-<k>`）の時点で、
+    - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
       共有の範囲（v1〜v<n> の `shared/` と `removed.csv`）が一致するかの照合（#262。**どちらかの時点に比べる中身が
       無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。テストは `scripts/test-check-signoff.py`）
     - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書を作る
