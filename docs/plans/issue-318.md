@@ -64,8 +64,16 @@
 - 交絡（指摘対応）: 陽性対照——新しい変異を R1 の前（`7d4edc9`）と後のテストの「OpenAPI と型」に当てた（scratchpad の `ctl318r1.py`）。
   無変異は両方緑、変異は前で緑・後で赤（「CalcDiscountInput の項目 ['rank'] が types.py の ['amount', 'rank'] と違う」）。
   入力が空の 2 試料は無変異で緑、変異で同じメッセージの赤（検査がその試料の OpenAPI を実際に読んでいる）
-- 次: 1 パス目の当て直し＝2 パス目（Verifier と `/code-review` の両方。どちらも未着手）。
-  2 パス目の指摘対応を始める直前に、その時点の HEAD を狭いパスの起点としてここに書く
+- 関門 2 パス目（2026-10-21・HEAD `3eb86f9`）: `/code-review`（high）指摘 6 件（採否は未記入・下記の要約）。
+  Verifier（sonnet）は起動したが、利用上限で報告を回収する前にセッションが止まった——**欠票。再実行が要る**
+  - CR1 `types.py` との突き合わせは項目名だけ。`schema_of` で enum を落とす・integer→number にする変異が全 150 試料で緑（不変条件 1）
+  - CR2 docstring の「schema が落ちても赤」が CR1 の変異で偽
+  - CR3 読み取り段で落ちた項目は `types.py` からも落ちるので R1 の検査では見えない（`openapi_shape` の固定 3 項目だけが捕まえる）。`case.ir` と比べる案
+  - CR4 `typed.get(name, [])` が types.py に無い型を空の型として扱う。入力が空の Input を types.py が出さない変異が緑
+  - CR5 計画の R8 の陽性対照は F-001 を壊しており、入力が空の試料（F-002）の検査を判別していない（記録）
+  - CR6 schema の食い違いを捕まえる変異が `MUTATIONS` に無い
+  - **注意**: `/code-review` が、レビュー中に本物の worktree の `scaffold.py` が一時的に `if False:` に書き換わり `o.txt` が在ったと報告（直後に元に戻った）。並行していた Verifier の可能性。再開時に `git status` が空なのは確認済み
+- 次: Verifier 2 パス目を再実行 → 採否の表に CR1〜CR6 と Verifier の反証を書く → 2 パス目の指摘対応の直前の HEAD を狭いパスの起点としてここに書く
 - 割り目 2（2 パス目の前）: 訊いた → **「ここで割る」が選ばれた**（2026-10-21）。
   再開は worktree の中で `/clear` → `/dev-loop:dev-loop 318` → 2 パス目から
 - 割り目 1（手順 4 の完了時）: 訊いた → **「ここで割る」が選ばれた**（2026-10-21）。
