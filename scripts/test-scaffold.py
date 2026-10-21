@@ -720,6 +720,17 @@ def add_v2_changed(repo: Path) -> None:
 
 # v1 の機能 F-002 の期待の型が誤り（v2 で直した）——前の版の中間表現が決まりに反する
 BAD_V1 = edit(lambda ir: ir["features"][1]["cases"][0].update(expected={"ok": "yes"}))
+# v1 の F-001 のパスの変数が入力に無い（#289 より前の scaffold は通した）
+OLD_PATH_V1 = edit(lambda ir: f1(ir)["operation"].update(path="/orders/{order_id}"))
+
+
+def only_f001_modified(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのはパスを直した機能だけのはず: {list(found)}"
+    if "<!-- spec-loop-change: modify; base=v1 -->" not in found["F-001"]:
+        return "パスを直した機能が変更の本文になっていない"
+    return None
 
 CASES: list[Case] = [
     Case("作る", 0, "作った", post=files_written),
@@ -882,6 +893,15 @@ CASES: list[Case] = [
          args=("--check", "--upto", "2"), post=sha_reproducible_after_v3),
     Case("前の版の中間表現が決まりに反する", 1, "前の版（v1）の中間表現が決まりに反する", ir=BAD_V1,
          extra=v2([IR["features"][1]]), pre=plant_old_issues, post=nothing_written_issues),
+    # #319: #289 より前の scaffold が通した v1（凍結していて直せない）のパスの変数は、v2 で直せば作れる
+    Case("前の版だけパスの変数が入力に無い", 0, "modify 1", ir=OLD_PATH_V1, extra=v2([IR["features"][0]]),
+         post=only_f001_modified),
+    # 前の版の Red テストも、前の版の中間表現から作って当てる（パスは Red テストに出ない）
+    Case("前の版だけパスの変数が入力に無い（--red-check）", 0, "失敗 0 件（追加・変更）・緑 3 件（回帰）", args=("--red-check",), generate_first=True,
+         ir=OLD_PATH_V1, extra=v2([IR["features"][0]]), impl=GOOD_IMPL),
+    # 陽性対照: v2 で直さなければ、今の版の誤りとして止まる
+    Case("前の版のパスの変数を直さない", 1, "パスの変数 {order_id} が operation.input の項目に無い", ir=OLD_PATH_V1,
+         extra=v2([]), pre=plant_old_issues, post=nothing_written_issues),
     # ---- --upto（前の版の時点の鮮度）
     Case("前の版の時点の --check", 0, "新しい（v1 まで", args=("--check", "--upto", "1"), generate_first=True,
          pre=add_v2_changed),
@@ -1105,8 +1125,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("再現コマンドに版を書かない", 'command = f"merge-versions.py {DOCS} {MERGED_DIR} --upto {number}"',
      'command = f"merge-versions.py {DOCS} {MERGED_DIR}"', "v3 を足しても本文の sha256 が合う"),
     # 検査だけ飛ばし、中間表現は返す形にする——`if code:` を潰すと None を読んで落ち、意味ではなく例外で殺される
-    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered)\n",
-     "        problems = check_ir(ir, whole, answered) if gate else []\n", "前の版の中間表現が決まりに反する"),
+    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered, path_rules=gate)\n",
+     "        problems = check_ir(ir, whole, answered, path_rules=gate) if gate else []\n", "前の版の中間表現が決まりに反する"),
+    ("前の版にもパスの変数の決まりを当てる", "check_ir(ir, whole, answered, path_rules=gate)",
+     "check_ir(ir, whole, answered, path_rules=True)", "前の版だけパスの変数が入力に無い"),
+    ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate)",
+     "check_ir(ir, whole, answered, path_rules=False)", "前の版のパスの変数を直さない"),
     ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
      "Red の状態: v2 で出力の項目を足す"),
     ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
