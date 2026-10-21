@@ -133,6 +133,8 @@ RESERVED_OUTPUT = "error"
 DEFAULT_IMPL_MODULE = "spec_impl"
 # 引数を持たないメソッド（入力はクエリに載せる）
 NO_BODY = ("GET", "DELETE")
+# パスの変数（`/items/{id}`）。中身は `input` の項目名でなければならない
+PATH_VAR = re.compile(r"\{([^{}]*)\}")
 
 # `references/handoff-issue.md` の写し
 HANDOFF_MARKER = "<!-- spec-loop-handoff: v2 -->"
@@ -325,6 +327,27 @@ def check_source(where: str, sources, whole: Path) -> list[str]:
     return problems
 
 
+def path_vars(path: str) -> list[str]:
+    return PATH_VAR.findall(path)
+
+
+def check_path_vars(where: str, path: str, fields: dict, templates: dict[str, str]) -> list[str]:
+    problems = []
+    if "{" in PATH_VAR.sub("", path) or "}" in PATH_VAR.sub("", path):
+        problems.append(f"{where}: 波括弧が対になっていない: {path!r}")
+    names = path_vars(path)
+    for name in sorted(set(names)):
+        if name not in fields:
+            problems.append(f"{where}: パスの変数 {{{name}}} が operation.input の項目に無い")
+        if names.count(name) > 1:
+            problems.append(f"{where}: パスの変数 {{{name}}} が重複している")
+    # OpenAPI では変数の名前だけが違うパスは同じパスなので、並べると無効になる（メソッドが違っても）
+    template = PATH_VAR.sub("{}", path)
+    if templates.setdefault(template, path) != path:
+        problems.append(f"{where}: {path} は {templates[template]} と変数の名前だけが違う（OpenAPI では同じパス）")
+    return problems
+
+
 def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]]) -> list[str]:
     problems = surrogates(ir)
     if problems:
@@ -345,6 +368,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]]) -> list[str]:
         return problems
 
     feature_ids, operation_ids, routes, case_ids = set(), set(), set(), set()
+    templates = {}  # 変数の名前を消したパス → 最初に使ったパス
     type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
@@ -400,6 +424,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]]) -> list[str]:
                 if "input" in op:
                     problems += check_fields(f"{where}.operation.input", op["input"], False, False)
                     fields_in = op["input"] if isinstance(op["input"], dict) else {}
+                if isinstance(path, str) and path.startswith("/") and one_line(path):
+                    problems += check_path_vars(f"{where}.operation.path", path, fields_in, templates)
                 if "output" in op:
                     problems += check_fields(f"{where}.operation.output", op["output"], True, True)
                     fields_out = op["output"] if isinstance(op["output"], dict) else {}
@@ -575,12 +601,22 @@ def openapi(ir: dict) -> str:
         schemas[f"{base}Input"] = object_schema(op["input"])
         schemas[f"{base}Output"] = object_schema(op["output"])
         entry = {"operationId": op["id"], "summary": f"{feature['id']}: {feature['title']}"}
+        in_path = path_vars(op["path"])
+        rest = {name: op["input"][name] for name in op["input"] if name not in in_path}
+        parameters = [{"name": name, "in": "path", "required": True, "schema": schema_of(op["input"][name])}
+                      for name in in_path]
         if op["method"] in NO_BODY:
-            entry["parameters"] = [{"name": name, "in": "query", "required": True, "schema": schema_of(op["input"][name])}
-                                   for name in sorted(op["input"])]
-        elif op["input"]:
+            parameters += [{"name": name, "in": "query", "required": True, "schema": schema_of(rest[name])}
+                           for name in sorted(rest)]
+        if parameters or op["method"] in NO_BODY:
+            entry["parameters"] = parameters
+        if op["method"] not in NO_BODY and rest:
+            # パスの変数はボディに重ねない——変数を持たない入口は前と同じく入力の型そのものを指す
+            body = f"{base}Input" if not in_path else f"{base}Body"
+            if in_path:
+                schemas[body] = object_schema(rest)
             entry["requestBody"] = {"required": True, "content": {"application/json": {
-                "schema": {"$ref": f"#/components/schemas/{base}Input"}}}}
+                "schema": {"$ref": f"#/components/schemas/{body}"}}}}
         responses = {"200": {"description": "正常", "content": {"application/json": {
             "schema": {"$ref": f"#/components/schemas/{base}Output"}}}}}
         if op.get("errors"):

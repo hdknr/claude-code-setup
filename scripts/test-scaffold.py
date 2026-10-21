@@ -20,9 +20,12 @@
    が書いた実物——メモリ上の重ね合わせと同じバイトであること）。
 4. **決定論的で、`--check` が鮮度を見る**——2 回の生成でバイト一致。生成直後の `--check` は 0（陽性対照）、
    中間表現を直した後・手で直した後・消した機能の Red テストが残ったときは 1。
-5. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
+5. **生成した OpenAPI で、パスの変数がすべて `in: path`・必須で宣言され、クエリ・ボディに重ならない**（#289）。
+   基準の試料（「OpenAPI と型」）と、パスの変数を持つ試料に当てる。パスに在って `input` に無い変数・壊れた波括弧・重複・
+   変数の名前だけが違うパスからは作らない。
+6. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
    `references/spec-gap.md` も同じ印と節を持ち、dev-loop の `SKILL.md` も同じ印を持つ**（2 つのプラグインの境界の写し）。
-6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
+7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
@@ -295,6 +298,9 @@ def body_traceable(repo: Path) -> str | None:
 
 def openapi_shape(repo: Path) -> str | None:
     doc = json.loads((repo / "scaffold" / "openapi.json").read_text(encoding="utf-8"))
+    problem = path_params_problem(doc)
+    if problem:
+        return problem
     post = doc["paths"]["/orders/discount"]["post"]
     if post["operationId"] != "calc_discount" or "400" not in post["responses"] or "requestBody" not in post:
         return f"POST の入口が違う: {post}"
@@ -309,6 +315,65 @@ def openapi_shape(repo: Path) -> str | None:
     if "class CanCancelError" in types:
         return "errors の無い入口に Error の型を作った"
     return None
+
+
+def path_params_problem(doc: dict) -> str | None:
+    """OpenAPI の最低限の妥当性: 各パスの `{x}` がすべて `in: path`・必須で宣言され、パスに無い宣言が無く、
+    クエリ・ボディに重ねていない（#289）。"""
+    schemas = doc["components"]["schemas"]
+    for path, ops in doc["paths"].items():
+        names = re.findall(r"\{([^{}]*)\}", path)
+        for method, op in ops.items():
+            params = op.get("parameters", [])
+            declared = [p["name"] for p in params if p["in"] == "path"]
+            if sorted(declared) != sorted(names):
+                return f"{method.upper()} {path}: path パラメータ {declared} がパスの変数 {names} と違う"
+            if any(not p.get("required") for p in params if p["in"] == "path"):
+                return f"{method.upper()} {path}: path パラメータが必須でない"
+            if any(p["name"] in names for p in params if p["in"] != "path"):
+                return f"{method.upper()} {path}: パスの変数をクエリにも重ねた"
+            ref = op.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {}).get("$ref")
+            if ref and set(schemas[ref.rsplit("/", 1)[1]]["properties"]) & set(names):
+                return f"{method.upper()} {path}: パスの変数をボディにも重ねた"
+    return None
+
+
+def path_vars_declared(repo: Path) -> str | None:
+    doc = json.loads((repo / "scaffold" / "openapi.json").read_text(encoding="utf-8"))
+    problem = path_params_problem(doc)
+    if problem:
+        return problem
+    post = doc["paths"].get("/orders/{rank}/discount", {}).get("post")
+    if post is None or post["requestBody"]["content"]["application/json"]["schema"]["$ref"] != "#/components/schemas/CalcDiscountBody":
+        return f"POST の入口がパスの変数を除いたボディを指さない: {post}"
+    if list(doc["components"]["schemas"]["CalcDiscountBody"]["properties"]) != ["amount"]:
+        return "CalcDiscountBody がパスの変数を除いた項目でない"
+    get = doc["paths"].get("/orders/{shipped}", {}).get("get")
+    if get is None or [(p["name"], p["in"]) for p in get["parameters"]] != [("shipped", "path"), ("limit", "query")]:
+        return f"GET の入口のパラメータが違う: {get}"
+    # 型と Red テストは変わらない——関数はパスの変数も入力の項目として受け取る
+    if "    rank: Literal['silver', 'gold']" not in (repo / "scaffold" / "types.py").read_text(encoding="utf-8"):
+        return "型からパスの変数が落ちた"
+    return None
+
+
+def path_vars_only(repo: Path) -> str | None:
+    doc = json.loads((repo / "scaffold" / "openapi.json").read_text(encoding="utf-8"))
+    problem = path_params_problem(doc)
+    if problem:
+        return problem
+    post = doc["paths"]["/orders/{rank}/{amount}"]["post"]
+    if "requestBody" in post or [p["name"] for p in post["parameters"]] != ["rank", "amount"]:
+        return f"入力がすべてパスの変数の入口が違う: {post}"
+    return None
+
+
+def with_path_vars(ir: dict) -> None:
+    f1(ir)["operation"]["path"] = "/orders/{rank}/discount"
+    second = ir["features"][1]
+    second["operation"]["path"] = "/orders/{shipped}"
+    second["operation"]["input"]["limit"] = {"type": "integer"}
+    second["cases"][0]["input"]["limit"] = 1
 
 
 def deterministic(repo: Path) -> str | None:
@@ -699,6 +764,22 @@ CASES: list[Case] = [
     Case("メソッドが決まりに無い", 1, "operation.method: 決まりに無い", ir=edit(lambda ir: f1(ir)["operation"].update(method="FETCH"))),
     Case("パスが / で始まらない", 1, "operation.path", ir=edit(lambda ir: f1(ir)["operation"].update(path="orders"))),
     Case("入口の重複", 1, "が重複している", ir=edit(lambda ir: ir["features"][1]["operation"].update(method="POST", path="/orders/discount"))),
+    # ---- パスの変数（#289）
+    Case("パスの変数", 0, "作った", ir=edit(with_path_vars), post=path_vars_declared),
+    Case("パスの変数の Red テスト", 0, ir=edit(with_path_vars), post=expect_red(3)),
+    Case("入力がすべてパスの変数", 0, "作った",
+         ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{rank}/{amount}")), post=path_vars_only),
+    Case("パスの変数が入力に無い", 1, "パスの変数 {order_id} が operation.input の項目に無い", pre=plant_old_issues,
+         post=issues_gone, ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{order_id}"))),
+    Case("空のパスの変数", 1, "パスの変数 {} が operation.input の項目に無い",
+         ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{}"))),
+    Case("波括弧が対でない", 1, "波括弧が対になっていない", ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{rank"))),
+    Case("閉じ括弧だけ", 1, "波括弧が対になっていない", ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/rank}"))),
+    Case("パスの変数の重複", 1, "パスの変数 {rank} が重複している",
+         ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{rank}/{rank}"))),
+    Case("変数の名前だけが違うパス", 1, "/orders/{shipped} は /orders/{rank} と変数の名前だけが違う",
+         ir=edit(lambda ir: (f1(ir)["operation"].update(path="/orders/{rank}"),
+                             ir["features"][1]["operation"].update(path="/orders/{shipped}")))),
     Case("入口の id の重複", 1, "operation.id: calc_discount が重複している",
          ir=edit(lambda ir: ir["features"][1]["operation"].update(id="calc_discount"))),
     Case("型の名前が潰れる", 1, "同じ型の名前 CalcDiscountInput",
@@ -930,6 +1011,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "書き込みの途中で失敗する"),
     ("メソッドが決まりに無くても入口の重複を見る", "                elif method in METHODS and (method, path) in routes:",
      "                elif (method, path) in routes:", "メソッドが配列"),
+    # パスの変数（#289）
+    ("パスの変数をクエリで宣言する", 'parameters = [{"name": name, "in": "path"', 'parameters = [{"name": name, "in": "query"',
+     "パスの変数"),
+    ("パスの変数を宣言しない", "                      for name in in_path]", "                      for name in []]", "パスの変数"),
+    ("パスの変数を必須にしない", '"in": "path", "required": True', '"in": "path", "required": False', "パスの変数"),
+    ("パスの変数をクエリ・ボディに重ねる",
+     '        rest = {name: op["input"][name] for name in op["input"] if name not in in_path}',
+     '        rest = dict(op["input"])', "パスの変数"),
+    ("パスの変数を入力と突き合わせない", "        if name not in fields:", "        if False:", "パスの変数が入力に無い"),
+    ("波括弧の対を見ない", '    if "{" in PATH_VAR.sub("", path) or "}" in PATH_VAR.sub("", path):', "    if False:",
+     "波括弧が対でない"),
+    ("閉じ括弧だけを見ない", ' or "}" in PATH_VAR.sub("", path):', ":", "閉じ括弧だけ"),
+    ("パスの変数の重複を見ない", "        if names.count(name) > 1:", "        if False:", "パスの変数の重複"),
+    ("変数の名前だけが違うパスを見ない", "    if templates.setdefault(template, path) != path:", "    if False:",
+     "変数の名前だけが違うパス"),
     ("深い入れ子を読めないと言わない", "    except RecursionError:\n        # 版の", "    except ZeroDivisionError:\n        # 版の",
      "深い入れ子"),
     ("ケースの id を int() で並べる", '    digits = case["id"].rsplit("C", 1)[1].lstrip("0")\n    return len(digits), digits',
