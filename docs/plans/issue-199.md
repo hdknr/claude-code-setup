@@ -141,5 +141,6 @@ Orca 管理の linked worktree（`~/orca/workspaces/claude-code-setup/probe-199`
 ## 7. 本番反映・8. 経験の還元
 
 - PR #234 を作成。PR 側の CI（`check`・`build`）は緑（`gh pr checks 234`）。**マージは人間の承認待ち**。反映経路はマーケットプレイス（マージ後に利用者が `plugin update`）。
-- 起票候補 C3/C4（実物: R1 と同じ実験で rc=1）は人間が「起票しない」を選択。**この周の起票: 0 件**。
+- 起票候補 C3/C4（実物: R1 と同じ実験で rc=1）は人間が「起票しない」を選択。
+- この周の起票: 0 件
 - 焼き戻し: `gh pr checkout` が「別の worktree で checkout 済みのブランチ」で失敗することは orca の `SKILL.md` に書いた。それ以外に焼き戻す学びなし。
