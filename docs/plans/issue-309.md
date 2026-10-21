@@ -76,7 +76,15 @@
   （A・B・D・指摘 1 の陽性対照（build-proposal 側）・C（build-proposal 側）を外部複製で当てて一致。check-all は 10 分を超える見込みで回さず、
   check-signoff 側の C は当てていない）。**`/code-review` high 指摘 5 件**。採否は下の 2 パス目の表——直す 1 件・残課題 4 件
 - **狭いパスの起点**（2 パス目の指摘対応を始める直前の HEAD）: `af2b327f`（`git rev-parse af2b327` で全桁を引く）
-- **次は 2 パス目の指摘 1 の修正 → 狭いパス（Verifier を修正の差分だけに 1 回）**
+- 2 パス目の指摘対応: 指摘 1 を両テストで直した（`V1_COLLISION` を `'refs/tags/v1' exists|cannot (?:lock ref|create) 'refs/tags/v1'` に）。
+  両テスト緑（check-signoff: 試料 43・変異 31、build-proposal: 試料 36・変異 30）。著者の陽性対照: git 2.54 で素の v1 が絡む 2 順は一致・
+  `v1/x`↔`v1/x/y`（両順）と `dup` は不一致。build-proposal の複製で B1 を `v1/req-signoff-1/x`・`("t","v1")` を消す → 赤（理由まで一致）
+- **狭いパス**（起点 `af2b3274c6cad9730288f9afb6192b74a6a8dc23`。Verifier sonnet・`dev-loop:dev-loop-verifier`）: **反証 0 件**。
+  Verifier が設計した変異 7 本が赤（`("t","v1")` を消す／選択肢 1 だけ／選択肢 2 だけ／`dup`／`v1/x`・`v1/x/y`／衝突しない名前 ほか）。
+  素通り 2 本はいずれも陽性対照つきで等価変異と判定（`OLD_NAMES` の片方だけ旧い名前にする／正規表現を旧い形・`exists` に戻す——
+  素の v1 が絡む実物の出力ではどちらも同じに一致し、違いは `v1/x`↔`v1/x/y` の変異が殺す）。check-signoff の全体は Verifier は回さず、著者が修正後に回して緑
+- 2 パス目の指摘対応後の歯止め: `python3 scripts/check-all.py` 44/44 本（失敗 0 / 飛ばし 0）
+- **関門はここで打ち切り**（3 パス目は無い）。次は PR → 人間レビュー
 - 実験: 上の手当て変異のみ（交絡: 「赤」が別の理由で出ていないかを、失敗の一覧の文言で 1 本ずつ確かめた）
 
 ## 既知の限界・決着済みの論点
