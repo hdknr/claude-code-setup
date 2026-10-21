@@ -70,6 +70,13 @@
     `skill-metrics.py --check` 緑・porcelain 前後とも空。変異は `MUTATIONS` 内で殺されることを確認、外での手当ては未確認と申告）
   - `/code-review`（high）: **指摘 8 件**（C1〜C8）。採否は下の表
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `f689aab9ae66c2fa81d7cc02291f0912f0c384eb`
+- 2 パス目の指摘対応: **済み**（`a03b9df`。C1・C2・C6・C7）
+- 狭いパス（`dev-loop:dev-loop-verifier`・sonnet、起点 `f689aab`）: **反証 1 件**——C1 の修正で書いた
+  `` `references/spec-gap.md` `` を `check-skill-pointers.py` が scaffold スキルの中の指し先と読み、赤（`check-all.py` 44 本中 1 本失敗）。
+  変異は当てていない（差分は散文と docstring だけで、指し先の検査のほかに記述を見る検査は無い——素通りは A4・A5「関門が読む」に当たる。陽性対照なし）。
+  **規定では狭いパスの指摘は直さないが、人間が「指し先を直す」を選んだ**（`AskUserQuestion`）——言及をパスの形でない書き方に変えた。当て直しはしていない
+- 割り目 2 の後の歯止め: 指し先の修正後に `check-all.py` を回し直す
+- この周の起票: 0 件
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
@@ -97,3 +104,4 @@
 | C6: 作り直しの経路で「前の版が飛ばされ作業中の版が緑」は確かめたあとの行き先が無い（1 のまま手順 4 を抜けられない） | 示せる——SKILL.md 手順 4 の当の項に次の一手が無い（本文そのもの。R1 と同じ形） | A4 | 直す |
 | C7: docstring は「判定できない」をエラーの側でだけ述べ、飛ばされた側でも出ることを言わない | 示せる——`scaffold.py` の docstring の「飛ばされたテストはどちらの版でも 1」と、分岐（`was in ("error", "skip")`） | A5 | 直す |
 | C8: 計画ファイルの「決めたこと」が R3 以前の理由のまま | 対象外（関門は計画ファイルを検査しない） | 無し | 計画を書き直した（採点の対象ではない） |
+| N1（狭いパス）: C1 の修正の `references/spec-gap.md` が `check-skill-pointers.py` で赤 | 示せる——`ERROR: plugins/spec-loop/skills/scaffold/SKILL.md:122 → references/spec-gap.md` | A6（`check-all.py`） | 人間が決める → **直す**が選ばれた（パスの形でない言及に変えた） |
