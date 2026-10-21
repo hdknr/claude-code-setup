@@ -15,6 +15,8 @@
 3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `v<n>/req-signoff-<k>`・`req-signoff-v<n>` を含む）を数えない**・
    指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ・
    **素の `v1` タグがあっても（先でも後でも）承認のタグを作れて照合が 0 になる**（#270）。
+   **その試料は、承認のタグを #260 の名前（`v1/req-signoff-1`）にするとタグの手順で作れない**（#309。
+   試料が素の `v1` との名前の衝突を判別していることの確かめ——git の挙動はここで毎回当てる）。
 4. **照合できない形を 0 にしない（2）**——タグが無い・片方だけ・指定したタグが無い／命名に合わない／**別の版のもの**・
    どちらかの時点に比べる場所が無い（**両方に無いときも**——`git diff` は差分なしを返す。**旧い構成のタグも**）・
    **タグの時点に `docs/v<n>/` が無い（前の版の `shared/` はある）**・
@@ -87,7 +89,8 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                # #260 の名前と、根の無い名前
                                ("t", "v1/req-signoff-2"), ("t", "v1/req-2")],
      [], 0, f"一致する: {R1}"),
-    # #270: 素の `v1` タグとは ref の名前で衝突しない（版を根にした名前は、どちらの順でも作れなかった）
+    # #270: 素の `v1` タグとは ref の名前で衝突しない。版を根にした #260 の名前では、どちらの順でも
+    # タグの手順で作れない——それを OLD_NAMES で当てる（#309）
     ("素の v1 タグが先にある", [("w", SHARED, QA_A), ("c",), ("t", "v1"), ("t", R1), ("t", B1)],
      [], 0, f"一致する: {R1}"),
     ("素の v1 タグを後から付ける", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1), ("t", "v1")],
@@ -238,6 +241,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "指定が別の版"),
     ("タグの根を見ない", 'rf"{re.escape(TAG_ROOT)}/v{version}/', 'rf"(?:{re.escape(TAG_ROOT)}/)?v{version}/',
      "命名に合わないタグを数えない"),
+    # 殺すのは試料の `v1/req-signoff-2` だけ（#309。その 1 つを消すと生き残ることを手で当てた）
+    ("#260 の名前も数える", 'rf"{re.escape(TAG_ROOT)}/v{version}/{re.escape(prefix)}-{NUMBER}"',
+     'rf"(?:{re.escape(TAG_ROOT)}/v{version}/{re.escape(prefix)}|v{version}/{re.escape(prefix)}-{re.escape(TAG_ROOT)})-{NUMBER}"',
+     "命名に合わないタグを数えない"),
     ("作業中の版を最小にする", "return found[-1][0]", "return found[0][0]", "作業中の版"),
     ("--version を渡さない", "resolve(args.repo, args.req, args.budget, args.version)",
      "resolve(args.repo, args.req, args.budget)", "版を指定"),
@@ -250,6 +257,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # `git diff` 自体が失敗する分岐（`if diff.returncode != 0`）は、手前の検査（コミットを指すか・
     # shared を読めるか）を通った後には作れなかったので、変異を置いていない（殺せると主張しない）
 ]
+
+# #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
+# タグの手順で作れない（`refs/tags/v1` と `refs/tags/v1/...` は共存できない）——試料が衝突を判別している確かめ
+OLD_NAMES = {R1: "v1/req-signoff-1", B1: "v1/budget-signoff-1"}
+COEXIST = ["素の v1 タグが先にある", "素の v1 タグを後から付ける"]
 
 failures: list[str] = []
 
@@ -307,7 +319,11 @@ def run_all(scripts: Path, work: Path, env: dict[str, str]) -> dict[str, tuple[i
     results = {}
     for index, (name, steps, args, _, _) in enumerate(CASES):
         root = work / f"case{index}"
-        build_repo(root, steps, env)
+        try:
+            build_repo(root, steps, env)
+        except subprocess.CalledProcessError as e:  # 1 つの試料が作れなくても、実行全体は落とさない
+            results[name] = (None, f"試料を作れなかった: {' '.join(e.cmd[-2:])}: {e.stderr.decode(errors='replace')}")
+            continue
         args = [str(root / a) if prev == "--repo" else a for prev, a in zip([""] + args, args)]
         if "--repo" not in args:
             args = ["--repo", str(root), *args]
@@ -317,7 +333,23 @@ def run_all(scripts: Path, work: Path, env: dict[str, str]) -> dict[str, tuple[i
     return results
 
 
-def as_expected(name: str, result: tuple[int, str]) -> bool:
+def with_old_names(steps: Steps) -> Steps:
+    return [(s[0], OLD_NAMES.get(s[1], s[1]), *s[2:]) if s[0] == "t" else s for s in steps]
+
+
+def old_names_collide(root: Path, steps: Steps, env: dict[str, str]) -> str:
+    """承認のタグを #260 の名前にして作る。タグの手順で失敗すれば空文字列、そうでなければ何が起きたか。"""
+    old = with_old_names(steps)
+    if old == steps:
+        return "置き換える承認のタグが試料に無い"
+    try:
+        build_repo(root, old, env)
+    except subprocess.CalledProcessError as e:
+        return "" if "tag" in e.cmd else f"タグ以外の手順で作れなかった: {' '.join(e.cmd[-2:])}"
+    return "#260 の名前でも作れた（素の v1 と衝突していない）"
+
+
+def as_expected(name: str, result: tuple[int | None, str]) -> bool:
     expected = next(case for case in CASES if case[0] == name)
     return result[0] == expected[3] and expected[4] in result[1]
 
@@ -378,6 +410,10 @@ def main() -> int:
         results = run_all(scripts, tmp_path / "work", env)
         for name, result in results.items():
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result[0]} {result[1][-300:]}")
+        for index, name in enumerate(COEXIST):
+            steps = next(case[1] for case in CASES if case[0] == name)
+            problem = old_names_collide(tmp_path / f"old{index}", steps, env)
+            check(f"試料が #260 の名前を判別していない: {name}", not problem, problem)
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         reference = REFERENCE.read_text(encoding="utf-8")
@@ -405,7 +441,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件（うち {len(COEXIST)} 件は #260 の名前でも当てた）・変異 {len(MUTATIONS)} 件")
     return 0
 
 
