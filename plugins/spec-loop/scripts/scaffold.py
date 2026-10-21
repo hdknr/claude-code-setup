@@ -112,6 +112,8 @@ HERE = Path(__file__).resolve().parent
 DOCS = "docs"
 # 重ね合わせた全体の置き場所（`merge-versions.py docs build/merged` が書く場所。このスクリプトは書かない）
 MERGED_DIR = "build/merged"
+# 撤去の本文が指す、前の版 v<n-1> の全体の置き場所（`build/merged/` を前の版で上書きさせない）
+PREVIOUS_DIR = "build/merged-v{}"
 # 重ね合わせた全体の根からのパス
 QA_PATH = "shared/qa.csv"
 SPEC_DIR = "spec"
@@ -137,7 +139,7 @@ NO_BODY = ("GET", "DELETE")
 PATH_VAR = re.compile(r"\{([^{}]*)\}")
 
 # `references/handoff-issue.md` の写し
-HANDOFF_MARKER = "<!-- spec-loop-handoff: v2 -->"
+HANDOFF_MARKER = "<!-- spec-loop-handoff: v3 -->"
 FEATURE_MARKER = "<!-- spec-loop-feature: {} -->"
 CHANGE_MARKER = "<!-- spec-loop-change: {}; base={} -->"
 ADD, MODIFY, REMOVE = "add", "modify", "remove"
@@ -495,7 +497,7 @@ class Loaded:
 
     def __init__(self, ir: dict, raw: bytes, answered: dict, number: int, docs: Path) -> None:
         self.ir = ir
-        self.raw = raw  # 中間表現のバイト（Issue の本文の sha256 はこれ）
+        self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
         self.answered = answered  # Q&A の行（No → 行）
         self.number = number  # 重ねた最後の版の番号
         self.docs = docs
@@ -758,6 +760,16 @@ def sha256(data: str | bytes) -> str:
     return hashlib.sha256(data.encode("utf-8") if isinstance(data, str) else data).hexdigest()
 
 
+def fingerprint(feature: dict) -> str:
+    """機能の指紋（`references/handoff-issue.md` の「機能の指紋で固定する」）。
+
+    中間表現の中の機能のオブジェクトだけの sha256——**関係の無い機能を直しても変わらない**（全体の sha256 は変わる。#290）。
+    **dev-loop の `scripts/spec-fingerprint.py` が同じ式の写しを持つ**（プラグインの外を相対パスで指せないため）——
+    一致は `scripts/test-scaffold.py` が両方を走らせて見る。
+    """
+    return sha256(json.dumps(feature, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+
+
 def cell(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n").replace("|", "\\|").replace("\n", "<br>")
 
@@ -920,6 +932,8 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         REMOVE: f"削除（v{number} で消した機能。理由: {cell(change.reason)}）",
     }[change.kind]
     command = f"merge-versions.py {DOCS} {MERGED_DIR} --upto {number}"
+    old_dir = PREVIOUS_DIR.format(number - 1)
+    old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number - 1}"
     lines = [
         HANDOFF_MARKER,
         FEATURE_MARKER.format(feature["id"]),
@@ -931,15 +945,22 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         "",
         f"- 機能: `{feature['id']}` {feature['title']}",
         f"- 変化: {kind_text}",
-        f"- 中間表現: `{merged(IR_PATH)}`（sha256: `{sha256(loaded.raw)}`）"
-        + ("——この機能を消した後の全体" if change.kind == REMOVE else ""),
     ]
     if change.kind == REMOVE:
-        lines.append(f"- 仕様の原文（{previous} の時点）: " + "・".join(f"`{s}`" for s in feature["source"]))
+        lines += [
+            f"- 中間表現（{previous} の時点）: `{old_dir}/{IR_PATH}` の `{feature['id']}`"
+            f"（機能の指紋: `{fingerprint(feature)}`）——v{number} の `{merged(IR_PATH)}` にはこの機能が無い",
+            f"- 仕様の原文（{previous} の時点）: " + "・".join(f"`{old_dir}/{s}`" for s in feature["source"]),
+        ]
     else:
-        lines.append("- 仕様の原文: " + "・".join(f"`{merged(s)}`" for s in feature["source"]))
+        lines += [
+            f"- 中間表現: `{merged(IR_PATH)}` の `{feature['id']}`（機能の指紋: `{fingerprint(feature)}`）",
+            "- 仕様の原文: " + "・".join(f"`{merged(s)}`" for s in feature["source"]),
+        ]
     lines.append(f"- `{MERGED_DIR}/` は正本の版（`{DOCS}/v1/`…）を v{number} まで重ね合わせた全体で、commit しない——spec-loop の"
                  f" `{command}` で作る（**版を指定する**——後の版を足しても同じバイトになる）")
+    if change.kind == REMOVE:
+        lines.append(f"- `{old_dir}/` は {previous} までを重ね合わせた全体で、同じく commit しない——`{old_command}` で作る")
     if change.kind == REMOVE:
         lines += [f"- 撤去する API: `{op['method']} {op['path']}`（`operationId`: `{op['id']}`。`{OUT_DIR}/openapi.json` から消えた）",
                   "- 消えた型: " + "・".join(names) + f"（`{OUT_DIR}/types.py` から消えた）"]
@@ -1017,7 +1038,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         "",
         f"**実装で決めない。** 作業中の版の Q&A 表（`{DOCS}/v<n>/{QA_PATH}`）に起票元 `開発` で起票して、要求側に差し戻す。",
         "手順は dev-loop の `references/spec-gap.md` にある。",
-        f"**上のコマンドで作った手元の `{merged(IR_PATH)}` か Red テストの sha256 が上と違うなら、"
+        "**上のコマンドで作った手元の中間表現の機能の指紋か Red テストの sha256 が上と違うなら、"
         "この Issue は手元の仕様と別の時点のもの**——",
         "実装に入らず、同じく差し戻す。",
     ]
