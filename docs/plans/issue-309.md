@@ -69,6 +69,7 @@
   陽性対照（外部複製で `OLD_NAMES` を両方 `"dup"` に、check-signoff の「後から付ける」から `("t","v1")` を消す）は
   修正前は緑、修正後は 3 件赤（check-signoff 2・build-proposal 1。いずれも「素の v1 との衝突ではない理由で作れなかった: fatal: tag 'dup' already exists」）
 - 指摘対応後の歯止め: `python3 scripts/check-all.py` 44/44 本（失敗 0 / 飛ばし 0）
+- 割り目（手順 6・2 パス目の前）: `AskUserQuestion` で訊き、**「ここで割る」が選ばれた**（2026-10-21）
 - **次は手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**——base `a68da67bbe79c7f39d691f57eefb00543ede13e1`。
   2 パス目の指摘対応を始める直前の HEAD（狭いパスの起点）は、2 パス目の報告を回収した時点で書く
 - 実験: 上の手当て変異のみ（交絡: 「赤」が別の理由で出ていないかを、失敗の一覧の文言で 1 本ずつ確かめた）
