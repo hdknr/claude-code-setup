@@ -658,6 +658,10 @@ def v2_removed(repo: Path) -> str | None:
         return f"作業中の版の全体で、撤去した機能が「無い」にならない（exit={code}）"
     if dev_fingerprint(old / "spec" / "spec_ir.json", "F-002")[0] != 0:
         return "前の版の全体に撤去した機能が無い（試料が判別しない）"
+    # 読めない全体は「無い」（3）ではなく「比べていない」（2）——3 だと読み損ねで撤去が確かめられたことになる（2 パス目 CR2-3）
+    code, _ = dev_fingerprint(repo / "build" / "merged-missing" / "spec" / "spec_ir.json", "F-002")
+    if code != 2:
+        return f"読めない中間表現で、dev-loop のスクリプトが 2 を返さない（exit={code}）"
     return body_has(body, ("理由: 取り消しはやめる", "撤去する API: `GET /orders/cancelable`", "| `F-002-C1` | 削除 |",
                            "—（`scaffold/tests/test_f_002.py` ごと消した）", "モジュール `spec_impl` の関数 `can_cancel`",
                            "python3 -m unittest discover -s scaffold/tests\n", "この機能が根拠にした Q&A は無い"), "撤去")
@@ -1425,19 +1429,28 @@ def main() -> int:
         # 本文の指紋は dev-loop のスクリプトで照合しているので、こちらだけ変えても落ちること
         global DEV_FINGERPRINT
         dev_source = DEV_FINGERPRINT.read_text(encoding="utf-8")
-        before, after = 'separators=(",", ":"))', 'separators=(", ", ":"))'
-        check("変異が届いていない: dev-loop の指紋の式をずらす", dev_source.count(before) == 1,
-              f"壊す箇所が {dev_source.count(before)} 回現れる")
-        mutated_dev = tmp_path / "mutdev" / "spec-fingerprint.py"
-        assert_in_tmp(mutated_dev)
-        mutated_dev.parent.mkdir()
-        mutated_dev.write_text(dev_source.replace(before, after), encoding="utf-8")
-        real_dev, DEV_FINGERPRINT = DEV_FINGERPRINT, mutated_dev
-        try:
-            ok, detail = run_case(scripts, tmp_path / "mutdevwork", by_name["本文から辿れる"])
-        finally:
-            DEV_FINGERPRINT = real_dev
-        check("変異が生き残った: dev-loop の指紋の式をずらす（本文から辿れる で殺せるはず）", not ok, detail)
+        dev_mutations = (
+            ("dev-loop の指紋の式をずらす", 'separators=(",", ":"))', 'separators=(", ", ":"))', "本文から辿れる"),
+            # 読み損ねを「無い」と答えると、撤去の不在の確認が素通りする（2 パス目 CR2-3）
+            ("dev-loop のスクリプトが読めない中間表現に 3 を返す",
+             '読めない: {error}", file=sys.stderr)\n        return 2', '読めない: {error}", file=sys.stderr)\n        return 3',
+             "v2 で機能を消す"),
+        )
+        for index, (name, before, after, killer) in enumerate(dev_mutations):
+            count = dev_source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated_dev = tmp_path / f"mutdev{index}" / "spec-fingerprint.py"
+            assert_in_tmp(mutated_dev)
+            mutated_dev.parent.mkdir()
+            mutated_dev.write_text(dev_source.replace(before, after), encoding="utf-8")
+            real_dev, DEV_FINGERPRINT = DEV_FINGERPRINT, mutated_dev
+            try:
+                ok, detail = run_case(scripts, tmp_path / f"mutdevwork{index}", by_name[killer])
+            finally:
+                DEV_FINGERPRINT = real_dev
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
