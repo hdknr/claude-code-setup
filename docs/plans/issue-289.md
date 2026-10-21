@@ -65,7 +65,11 @@ CI にもこの環境にも入っていない（標準ライブラリのみの�
 - 周の在り処: ブランチ `issue/289-openapi-path-params`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-289`・
   起点 `ccd29c6`・base の参照 `origin/main`・base `ccd29c6e1c10b2c231e653450723bf687b509aa1`
 - 実装: 済み（コミット済み）。`test-scaffold.py` は 試料 147 件・変異 95 件で緑
-- 関門: 未着手
+- 必須マーカーの漏れ（`spec-ir.md` に `（必須）`）を check-norm-markers が捕まえ、直してコミットした
+- 関門: 未着手。次は手順 5（Verifier 1 パス目）
+- 割り目 1（手順 4 の完了時）: 訊いた → **「ここで割る」が選ばれた**（2026-10-21）。
+  再開は worktree の中で `/clear` → `/dev-loop:dev-loop 289` → 手順 5 から。
+  check-all.py の 2 回目（マーカー修正後）の結果は再開した側で確かめる（割る時点で走行中）
 - 反証: —
 - 交絡: 実験 2 つ。(a) 陽性対照——修正前の `scaffold.py`（`ccd29c6`）に新しい試料を当て、パスの変数の試料 8 件が赤、
   変わらないはずの「パスの変数の Red テスト」「OpenAPI と型」の 2 件が緑。修正後は 10 件とも緑。
