@@ -899,6 +899,13 @@ CASES: list[Case] = [
     # 前の版の Red テストも、前の版の中間表現から作って当てる（パスは Red テストに出ない）
     Case("前の版だけパスの変数が入力に無い（--red-check）", 0, "失敗 0 件（追加・変更）・緑 3 件（回帰）", args=("--red-check",), generate_first=True,
          ir=OLD_PATH_V1, extra=v2([IR["features"][0]]), impl=GOOD_IMPL),
+    Case("前の版だけパスの変数が入力に無い（--dry-run）", 0, "modify 1", args=("--dry-run",), ir=OLD_PATH_V1,
+         extra=v2([IR["features"][0]]), post=nothing_written),
+    # 前の版の時点を作る・確かめるときは決まりを外さない（生成するので外せない。spec-ir.md の移行の 3）
+    Case("前の版だけパスの変数が入力に無い（--check --upto 1）", 1, "パスの変数 {order_id} が operation.input の項目に無い",
+         args=("--check", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
+    Case("前の版だけパスの変数が入力に無い（--dry-run --upto 1）", 1, "パスの変数 {order_id} が operation.input の項目に無い",
+         args=("--dry-run", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
     # 陽性対照: v2 で直さなければ、今の版の誤りとして止まる
     Case("前の版のパスの変数を直さない", 1, "パスの変数 {order_id} が operation.input の項目に無い", ir=OLD_PATH_V1,
          extra=v2([]), pre=plant_old_issues, post=nothing_written_issues),
