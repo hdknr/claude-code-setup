@@ -17,6 +17,8 @@
 - `.claude-plugin/marketplace.json` — 2 つのプラグインの版
 - `scripts/test-scaffold.py` — 本文の検査・境界の写しの突き合わせ・試料・変異
 - `docs/plugins/index.md` — 公開ページの 1 文（sha256 → 機能の指紋）
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロックだけ（dev-loop の `SKILL.md` を触ったので
+  `skill-metrics.py` で作り直す。手では書かない。受入基準は下の「生成物の該当判定」がそのまま覆う）
 - `docs/plans/issue-290.md` — この計画ファイル
 - `CLAUDE.md` — 構成の一覧に dev-loop の `spec-fingerprint.py` を足す
 
@@ -106,9 +108,11 @@
   起点 `21bb63b`・base の参照 `origin/main`・base の SHA `21bb63b6974db9698574c924e08b1790d7f1afab`
 - 実装: 済み（コミット済み）。`test-scaffold.py` は試料 149 件・変異 101 件で緑。`check-all.py` は 44 本のうち
   `skill-metrics.py --check` だけが落ち、生成ブロックを作り直して `--check` が 0 になった（**直したあと全部は回し直していない**）
-- 関門: まだ（次は手順 5 の Verifier の 1 パス目。その前に `check-all.py` を回し直す）
-- 割り目: 使用量の上限に達したので、ここで止めた（`AskUserQuestion` では訊いていない）
-- 反証と差し戻し: まだ
+- 割り目（手順 4）: 使用量の上限に達したので止めた（`AskUserQuestion` では訊いていない）。人間が「継続」と指示して同じセッションで続けた
+- 関門の 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件 ／ `/code-review`（high）9 件。採否は下の表——直す 4 件（CR1・CR4・CR5・CR8）・残課題 5 件
+- 1 パス目の指摘対応: 済み（`test-scaffold.py` は緑。dev-loop 側の変異を 1 件足した）
+- 次: 2 パス目（Verifier と `/code-review` の両方。差分は周の base から）。2 パス目の指摘対応の起点 SHA は、2 パス目の報告を受けてから書く
+- 反証と差し戻し: 1 パス目の反証 0 件（Verifier）。手順 4 への差し戻しは指摘対応の 1 回
 - 交絡: 実験なし（試料の陽性対照はテストの中にある）
 
 ## 既知の限界・決着済みの論点
@@ -116,3 +120,19 @@
 - 指紋は Q&A 表と `impl_module` を覆わない——決めたこと 2。Q&A は表を正とする決まり（spec-gap）、`impl_module` は Red テストの sha256 が覆う。
   **撤去の本文は Red テストを持たないので `impl_module` を覆わない**（撤去する関数は本文が名指しする）。
 - P1-11（同じ版の作り直しで、直した機能自身の本文が登録し直されない）は範囲外。機能単位にしても直した機能は不一致で止まる。
+
+### 1 パス目の指摘（Verifier 反証 0 件・`/code-review` 9 件）
+
+Verifier の軽い所見（空の `features` でも 3）は反証ではないとされたので表に載せない（前の版の全体での一致を併せて見るので、空の全体でも誤って通らない）。
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| CR1 | HEAD で `check-plan-scope.py` が落ちる（`dev-loop-design.md` が範囲の外） | 示せる（`check-all.py` で 1/44 失敗） | G | 直す（計画の範囲に足した） |
+| CR2 | 撤去の本文の Q&A の表が「v1 の時点の `build/merged/shared/qa.csv`」と書き、前の版の全体（`build/merged-v1/`）を指さない | 示せる（本文の文言） | 無し（C は仕様の原文と中間表現。Q&A は決めたこと 2 で指紋の外） | 残課題 |
+| CR3 | scaffold 手順 6 は handoff の版を比べないので、v2 で登録済みの Issue を v3 の本文で置き換えられない | 示せない（`gh` の登録を当てていない。筋書き） | 無し（P1-11 と同じ登録側の問題。範囲外） | 残課題 |
+| CR4 | 撤去の本文の末尾「上のコマンドで作った中間表現の指紋が違うなら差し戻す」が、2 つのコマンドのどちらか決まらない（`build/merged` では正しく 3 になる） | 示せる（本文の文言） | C（本文だけから正しい照合が辿れない） | 直す |
+| CR5 | spec-gap の一般則が「中間表現と仕様の原文は `build/merged/` の中」と言い、v3 の撤去と食い違う | 示せる（`spec-gap.md` の文言） | C（dev-loop の照合の経路） | 直す |
+| CR6 | 孤立サロゲートを含む中間表現で `spec-fingerprint.py` が exit 1 で落ちる（0・2・3 以外） | 示せる（再現） | 無し（scaffold は孤立サロゲートを拒むので、生成した本文の照合では起きない） | 残課題 |
+| CR7 | `scaffold.py` の docstring が「機能の指紋で固定する」を指すが、見出しは「機能の指紋と sha256 で固定する」 | 示せる | 無し | 残課題 |
+| CR8 | F の「片方だけ変えると落ちる」は scaffold 側の変異しか当てていない。撤去の前の版のコマンドは文言だけで、本文のコマンドを走らせていない | 示せる（変異の一覧・`v2_removed` のコード） | F・C（証明の主張） | 直す（dev-loop 側の変異を足し、本文のコマンドを走らせる） |
+| CR9 | `if change.kind == REMOVE:` が 2 つ続く・`old_dir` を全種で計算する（v1 で `merged-v0`） | 示せない（不具合は起きない） | 無し | 残課題 |

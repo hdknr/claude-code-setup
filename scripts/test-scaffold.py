@@ -638,7 +638,13 @@ def v2_removed(repo: Path) -> str | None:
     command = "`merge-versions.py docs build/merged-v1 --upto 1`"
     if command not in body:
         return f"撤去の本文に前の版の全体の作り方 {command} が無い"
-    old = merge_with_script(repo, "build/merged-v1", "--upto", "1")
+    # 末尾の照合は、どちらのコマンドで作った全体に何を当てるかを名指しする（1 パス目 CR4）
+    if ("`build/merged-v1/spec/spec_ir.json` での機能の指紋が上と違うか" not in body
+            or "`build/merged/spec/spec_ir.json` にこの機能が残っているなら" not in body):
+        return "撤去の本文の末尾が、前の版の全体での一致と作業中の版の全体での不在を分けて書いていない"
+    # 文言ではなく、本文に書いたコマンドそのものを走らせる（1 パス目 CR8）
+    written = command.strip("`").split()[1:]
+    old = merge_with_script(repo, written[1], *written[2:])
     sources = re.search(r"^- 仕様の原文（v1 の時点）: (.+)$", body, flags=re.MULTILINE)
     paths = re.findall(r"`([^`]+)`", sources.group(1)) if sources else []
     if not paths or any(not p.startswith("build/merged-v1/") or not (repo / p).is_file() for p in paths):
@@ -1415,6 +1421,23 @@ def main() -> int:
 
         # 変異テスト
         by_name = {case.name: case for case in CASES}
+        # 指紋の式の写しの、dev-loop の側だけを崩す（F。scaffold 側の変異は MUTATIONS にある）——
+        # 本文の指紋は dev-loop のスクリプトで照合しているので、こちらだけ変えても落ちること
+        global DEV_FINGERPRINT
+        dev_source = DEV_FINGERPRINT.read_text(encoding="utf-8")
+        before, after = 'separators=(",", ":"))', 'separators=(", ", ":"))'
+        check("変異が届いていない: dev-loop の指紋の式をずらす", dev_source.count(before) == 1,
+              f"壊す箇所が {dev_source.count(before)} 回現れる")
+        mutated_dev = tmp_path / "mutdev" / "spec-fingerprint.py"
+        assert_in_tmp(mutated_dev)
+        mutated_dev.parent.mkdir()
+        mutated_dev.write_text(dev_source.replace(before, after), encoding="utf-8")
+        real_dev, DEV_FINGERPRINT = DEV_FINGERPRINT, mutated_dev
+        try:
+            ok, detail = run_case(scripts, tmp_path / "mutdevwork", by_name["本文から辿れる"])
+        finally:
+            DEV_FINGERPRINT = real_dev
+        check("変異が生き残った: dev-loop の指紋の式をずらす（本文から辿れる で殺せるはず）", not ok, detail)
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:

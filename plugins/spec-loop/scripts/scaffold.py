@@ -1038,10 +1038,15 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         "",
         f"**実装で決めない。** 作業中の版の Q&A 表（`{DOCS}/v<n>/{QA_PATH}`）に起票元 `開発` で起票して、要求側に差し戻す。",
         "手順は dev-loop の `references/spec-gap.md` にある。",
-        "**上のコマンドで作った手元の中間表現の機能の指紋か Red テストの sha256 が上と違うなら、"
-        "この Issue は手元の仕様と別の時点のもの**——",
-        "実装に入らず、同じく差し戻す。",
     ]
+    if change.kind == REMOVE:
+        lines.append(f"**`{old_command}` で作った `{old_dir}/{IR_PATH}` での機能の指紋が上と違うか、"
+                     f"`{command}` で作った `{merged(IR_PATH)}` にこの機能が残っているなら、"
+                     "この Issue は手元の仕様と別の時点のもの**——")
+    else:
+        lines.append("**上のコマンドで作った手元の中間表現の機能の指紋か Red テストの sha256 が上と違うなら、"
+                     "この Issue は手元の仕様と別の時点のもの**——")
+    lines.append("実装に入らず、同じく差し戻す。")
     return "\n".join(lines) + "\n"
 
 
