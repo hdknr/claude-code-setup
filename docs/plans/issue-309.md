@@ -64,7 +64,13 @@
 - 関門 1 パス目: **Verifier（sonnet, `dev-loop:dev-loop-verifier`）反証 0 件**（A・B（2 試料）・C（check-signoff 側）・D を外部複製で当てて一致、
   check-all 44/44。build-proposal 側の C は当てていない）。**`/code-review` high 指摘 9 件**（受入基準を壊す正しさの欠陥なしとの所見）。
   採否は下の表——直す 1 件・残課題 8 件
-- 1 パス目の指摘対応: 指摘 1（衝突の理由を見ない）を両テストで直した。**次は手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目**
+- 1 パス目の指摘対応: 指摘 1（衝突の理由を見ない）を両テストで直した（コミット `a3be098`）。
+  両テスト緑（check-signoff: 試料 43・変異 31、build-proposal: 試料 36・変異 30）。
+  陽性対照（外部複製で `OLD_NAMES` を両方 `"dup"` に、check-signoff の「後から付ける」から `("t","v1")` を消す）は
+  修正前は緑、修正後は 3 件赤（check-signoff 2・build-proposal 1。いずれも「素の v1 との衝突ではない理由で作れなかった: fatal: tag 'dup' already exists」）
+- 指摘対応後の歯止め: `python3 scripts/check-all.py` 44/44 本（失敗 0 / 飛ばし 0）
+- **次は手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**——base `a68da67bbe79c7f39d691f57eefb00543ede13e1`。
+  2 パス目の指摘対応を始める直前の HEAD（狭いパスの起点）は、2 パス目の報告を回収した時点で書く
 - 実験: 上の手当て変異のみ（交絡: 「赤」が別の理由で出ていないかを、失敗の一覧の文言で 1 本ずつ確かめた）
 
 ## 既知の限界・決着済みの論点
