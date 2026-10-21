@@ -337,7 +337,8 @@ def with_old_names(steps: Steps) -> Steps:
     return [(s[0], OLD_NAMES.get(s[1], s[1]), *s[2:]) if s[0] == "t" else s for s in steps]
 
 
-V1_COLLISION = re.compile(r"'refs/tags/v1(/[^']*)?' exists")
+# 衝突の片側が素の v1 そのものであるときだけ数える——v1/x と v1/x/y の衝突も同じ形で落ちる（#309）
+V1_COLLISION = re.compile(r"'refs/tags/v1' exists|cannot (?:lock ref|create) 'refs/tags/v1'")
 
 
 def old_names_collide(root: Path, steps: Steps, env: dict[str, str]) -> str:
