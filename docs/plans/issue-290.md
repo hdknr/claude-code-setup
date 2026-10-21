@@ -111,7 +111,11 @@
 - 割り目（手順 4）: 使用量の上限に達したので止めた（`AskUserQuestion` では訊いていない）。人間が「継続」と指示して同じセッションで続けた
 - 関門の 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件 ／ `/code-review`（high）9 件。採否は下の表——直す 4 件（CR1・CR4・CR5・CR8）・残課題 5 件
 - 1 パス目の指摘対応: 済み（`test-scaffold.py` は緑。dev-loop 側の変異を 1 件足した）
-- 次: 2 パス目（Verifier と `/code-review` の両方。差分は周の base から）。2 パス目の指摘対応の起点 SHA は、2 パス目の報告を受けてから書く
+- 1 パス目の指摘対応の後の `check-all.py`: 44 本のうち `skill-metrics.py --check` だけが落ち（`references/spec-gap.md` も測る）、
+  生成ブロックを作り直して `--check` が 0。**作り直した後に全部は回し直していない**——再開したらまず `check-all.py`
+- 割り目（2 パス目の前）: `AskUserQuestion` で訊き、**「ここで割る」が選ばれた**
+- 次: 2 パス目（Verifier と `/code-review` の両方。差分は周の base `21bb63b6974db9698574c924e08b1790d7f1afab` から。
+  受入基準・既知の限界・1 パス目の採否の表をまるごと渡す）。2 パス目の指摘対応の起点 SHA は、2 パス目の報告を受けてから書く
 - 反証と差し戻し: 1 パス目の反証 0 件（Verifier）。手順 4 への差し戻しは指摘対応の 1 回
 - 交絡: 実験なし（試料の陽性対照はテストの中にある）
 
