@@ -57,6 +57,8 @@
 - 周の在り処: ブランチ `issue/318-openapi-path-param-tests`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-318`・
   起点 `21bb63b`・base の参照 `origin/main`・base `21bb63b6974db9698574c924e08b1790d7f1afab`
 - 実装: 済み。`test-scaffold.py` は 試料 148 件・変異 101 件で緑（新しい検査が今の生成のどの試料も断らない＝基準 4）
+- 割り目 1（手順 4 の完了時）: 訊いた → **「ここで割る」が選ばれた**（2026-10-21）。
+  再開は worktree の中で `/clear` → `/dev-loop:dev-loop 318` → 手順 5 から（Verifier と `/code-review` の 1 パス目。どちらも未着手）
 - 反証: —
 - 交絡: 実験 1 つ。陽性対照——足した 4 変異を、修正前（`21bb63b`）と修正後のテストの試料「パスの変数」に当てた
   （scratchpad の `ctl318.py`）。無変異は両方緑、4 変異は修正前で全部緑・修正後で全部赤。赤の理由は新しい検査のメッセージ
