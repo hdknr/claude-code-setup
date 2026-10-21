@@ -304,6 +304,11 @@ def openapi_shape(repo: Path) -> str | None:
     post = doc["paths"]["/orders/discount"]["post"]
     if post["operationId"] != "calc_discount" or "400" not in post["responses"] or "requestBody" not in post:
         return f"POST の入口が違う: {post}"
+    # パスの変数を持たない入口は #289 の前と同じ形——既存の `scaffold/` の `--check` を古くしない（基準 4）
+    if "parameters" in post or post["requestBody"]["content"]["application/json"]["schema"]["$ref"] != "#/components/schemas/CalcDiscountInput":
+        return f"パスの変数を持たない POST の形が変わった: {post}"
+    if any(name.endswith("Body") for name in doc["components"]["schemas"]):
+        return "パスの変数を持たない入口にボディの型を作った"
     get = doc["paths"]["/orders/cancelable"]["get"]
     if "requestBody" in get or [p["name"] for p in get["parameters"]] != ["shipped"] or "400" in get["responses"]:
         return f"GET の入口が違う: {get}"
@@ -366,6 +371,23 @@ def path_vars_only(repo: Path) -> str | None:
     if "requestBody" in post or [p["name"] for p in post["parameters"]] != ["rank", "amount"]:
         return f"入力がすべてパスの変数の入口が違う: {post}"
     return None
+
+
+def path_vars_put_delete(repo: Path) -> str | None:
+    doc = json.loads((repo / "scaffold" / "openapi.json").read_text(encoding="utf-8"))
+    put = doc["paths"].get("/orders/{rank}/discount", {}).get("put")
+    if put is None or put["requestBody"]["content"]["application/json"]["schema"]["$ref"] != "#/components/schemas/CalcDiscountBody":
+        return f"PUT の入口がパスの変数を除いたボディを指さない: {put}"
+    delete = doc["paths"].get("/orders/{shipped}", {}).get("delete")
+    if delete is None or "requestBody" in delete or [(p["name"], p["in"]) for p in delete["parameters"]] != [("shipped", "path"), ("limit", "query")]:
+        return f"DELETE の入口のパラメータが違う: {delete}"
+    return None
+
+
+def with_path_vars_put_delete(ir: dict) -> None:
+    with_path_vars(ir)
+    f1(ir)["operation"]["method"] = "PUT"
+    ir["features"][1]["operation"]["method"] = "DELETE"
 
 
 def with_path_vars(ir: dict) -> None:
@@ -767,6 +789,7 @@ CASES: list[Case] = [
     # ---- パスの変数（#289）
     Case("パスの変数", 0, "作った", ir=edit(with_path_vars), post=path_vars_declared),
     Case("パスの変数の Red テスト", 0, ir=edit(with_path_vars), post=expect_red(3)),
+    Case("パスの変数（PUT・DELETE）", 0, "作った", ir=edit(with_path_vars_put_delete), post=path_vars_put_delete),
     Case("入力がすべてパスの変数", 0, "作った",
          ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{rank}/{amount}")), post=path_vars_only),
     Case("パスの変数が入力に無い", 1, "パスの変数 {order_id} が operation.input の項目に無い", pre=plant_old_issues,
@@ -1019,6 +1042,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("パスの変数をクエリ・ボディに重ねる",
      '        rest = {name: op["input"][name] for name in op["input"] if name not in in_path}',
      '        rest = dict(op["input"])', "パスの変数"),
+    ("パスの変数を持たない入口もボディの型を指す",
+     '            body = f"{base}Input" if not in_path else f"{base}Body"\n            if in_path:',
+     '            body = f"{base}Body"\n            if True:', "OpenAPI と型"),
+    ("ボディを持つ入口にも空の parameters を足す", '        if parameters or op["method"] in NO_BODY:', "        if True:",
+     "OpenAPI と型"),
     ("パスの変数を入力と突き合わせない", "        if name not in fields:", "        if False:", "パスの変数が入力に無い"),
     ("波括弧の対を見ない", '    if "{" in PATH_VAR.sub("", path) or "}" in PATH_VAR.sub("", path):', "    if False:",
      "波括弧が対でない"),
@@ -1195,6 +1223,12 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
         return False, f"出力に {case.text!r} が無い: {out[-400:]}"
     if case.post:
         problem = case.post(repo)
+        if problem:
+            return False, problem
+    # 作った OpenAPI はどの試料でもパスの変数を宣言している（基準 1。post を持たない試料にも当てる）
+    openapi = repo / "scaffold" / "openapi.json"
+    if case.code == 0 and openapi.is_file():
+        problem = path_params_problem(json.loads(openapi.read_text(encoding="utf-8")))
         if problem:
             return False, problem
     return True, ""
