@@ -24,7 +24,8 @@
    基準の試料（「OpenAPI と型」）と、パスの変数を持つ試料に当てる。パスに在って `input` に無い変数・壊れた波括弧・重複・
    変数の名前だけが違うパスからは作らない。
    **入口ごとに、パラメータとボディを合わせると `<Base>Input` がちょうど復元できる**（#318）——名前・schema・必須の
-   どれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤。exit 0 の全試料に当てる。
+   どれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤。`<Base>Input` の項目と schema は `types.py` の
+   同名の型と突き合わせる（OpenAPI の中で一緒に落ちる・変わるのを見るため）。exit 0 の全試料に当てる。
 6. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
    `references/spec-gap.md` も同じ印と節を持ち、dev-loop の `SKILL.md` も同じ印を持つ**（2 つのプラグインの境界の写し）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
@@ -345,24 +346,41 @@ def path_params_problem(doc: dict) -> str | None:
     return None
 
 
-def typed_dict_fields(types: str) -> dict[str, list[str]]:
-    """`types.py` の型ごとの項目名。`pass` だけの型は項目が無い。"""
-    fields: dict[str, list[str]] = {}
+PY_SCHEMA_TYPES = {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}
+
+
+def typed_dict_fields(types: str) -> dict[str, dict[str, dict]]:
+    """`types.py` の型ごとの項目と、その注釈から戻した JSON Schema。`pass` だけの型は項目が無い。
+    `Literal[...]` は値の Python の型から `type` を、値の並びから `enum` を戻す。"""
+    fields: dict[str, dict[str, dict]] = {}
     for block in re.findall(r"^class (\w+)\(TypedDict\):\n((?:    .+\n)+)", types, flags=re.MULTILINE):
-        fields[block[0]] = re.findall(r"^    (\w+): ", block[1], flags=re.MULTILINE)
+        fields[block[0]] = {}
+        for field, note in re.findall(r"^    (\w+): (.+)$", block[1], flags=re.MULTILINE):
+            if note.startswith("Literal[") and note.endswith("]"):
+                values = ast.literal_eval("[" + note[len("Literal["):-1] + "]")
+                fields[block[0]][field] = {"type": PY_SCHEMA_TYPES[type(values[0]).__name__], "enum": values}
+            else:
+                fields[block[0]][field] = {"type": PY_SCHEMA_TYPES.get(note, note)}
     return fields
 
 
 def input_split_problem(doc: dict, types: str) -> str | None:
     """入口ごとに、パラメータとボディを合わせると `<Base>Input` がちょうど復元できる（#318）。
     名前・schema・必須のどれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤にする。
-    `<Base>Input` の項目は、中間表現から OpenAPI とは別に生成される `types.py` の同名の型と突き合わせる
-    ——OpenAPI の中だけで比べると、Input・パラメータ・ボディから同じ項目が一緒に落ちたときに気づけない。"""
+    `<Base>Input` の項目と schema は、中間表現から OpenAPI とは別に生成される `types.py` の同名の型と突き合わせる
+    ——OpenAPI の中だけで比べると、Input・パラメータ・ボディから同じ項目が一緒に落ちたとき、
+    同じ schema が一緒に変わったとき（`types.py` は OpenAPI の schema を作る `schema_of` を通らない）に気づけない。"""
     schemas = doc["components"]["schemas"]
     typed = typed_dict_fields(types)
     for name in schemas:
-        if name.endswith("Input") and sorted(schemas[name]["properties"]) != sorted(typed.get(name, [])):
-            return f"{name} の項目 {sorted(schemas[name]['properties'])} が types.py の {sorted(typed.get(name, []))} と違う"
+        if not name.endswith("Input"):
+            continue
+        expected = typed.get(name, {})
+        if sorted(schemas[name]["properties"]) != sorted(expected):
+            return f"{name} の項目 {sorted(schemas[name]['properties'])} が types.py の {sorted(expected)} と違う"
+        for field, schema in schemas[name]["properties"].items():
+            if schema != expected[field]:
+                return f"{name} の項目 {field} の schema {schema} が types.py の {expected[field]} と違う"
     for path, ops in doc["paths"].items():
         for method, op in ops.items():
             where = f"{method.upper()} {path}"
@@ -1122,6 +1140,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '        op = feature["operation"]\n        base = pascal(op["id"])\n        schemas[f"{base}Input"]',
      '        op = dict(feature["operation"], input={k: v for k, v in feature["operation"]["input"].items()'
      ' if k != "amount"})\n        base = pascal(op["id"])\n        schemas[f"{base}Input"]', "OpenAPI と型"),
+    ("OpenAPI の schema から enum を落とす", '        out["enum"] = field["enum"]', "        pass", "パスの変数"),
     ("深い入れ子を読めないと言わない", "    except RecursionError:\n        # 版の", "    except ZeroDivisionError:\n        # 版の",
      "深い入れ子"),
     ("ケースの id を int() で並べる", '    digits = case["id"].rsplit("C", 1)[1].lstrip("0")\n    return len(digits), digits',
