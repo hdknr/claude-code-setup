@@ -48,7 +48,9 @@ main への merge のみ。`versions.md` はプラグインの中にあり、利
 - 周の在り処: ブランチ `issue/302-red-check-stale-docs`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-302`、起点 `21bb63b`、
   base 参照 `origin/main` → `21bb63b6974db9698574c924e08b1790d7f1afab`
-- 実装: 未着手
+- 実装: `6d34428` で完了。手順 4 の割り目で `AskUserQuestion` → **「ここで割る」**を選択（2026-10-21）
+- `scripts/check-all.py`: 割った時点で走行中（`6d34428`）——**再開後に回し直して集計行を回収する**（E）
+- 次: 手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。base `21bb63b6974db9698574c924e08b1790d7f1afab` を渡す
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
