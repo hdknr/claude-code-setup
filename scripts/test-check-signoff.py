@@ -12,8 +12,9 @@
    **片側だけ `.` で始まる名前の rename**（読む側に新しいファイルが現れる）。
 2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致——**`removed.csv` の `requirements/`・機能の行
    だけ・理由だけ・行の順序だけが違う組も**。**`.` で始まる名前だけの違いも**——途中の `.` で始まるディレクトリの中も含む）。
-3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `req-signoff-v<n>` を含む）を数えない**・
-   指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ。
+3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `v<n>/req-signoff-<k>`・`req-signoff-v<n>` を含む）を数えない**・
+   指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ・
+   **素の `v1` タグがあっても（先でも後でも）承認のタグを作れて照合が 0 になる**（#270）。
 4. **照合できない形を 0 にしない（2）**——タグが無い・片方だけ・指定したタグが無い／命名に合わない／**別の版のもの**・
    どちらかの時点に比べる場所が無い（**両方に無いときも**——`git diff` は差分なしを返す。**旧い構成のタグも**）・
    **タグの時点に `docs/v<n>/` が無い（前の版の `shared/` はある）**・
@@ -53,8 +54,8 @@ Steps = list[tuple[str, ...]] | None
 SHARED = "docs/v1/shared/qa.csv"
 SHARED2 = "docs/v2/shared/qa.csv"
 REMOVED2 = "docs/v2/removed.csv"
-R1, B1 = "v1/req-signoff-1", "v1/budget-signoff-1"
-R2, B2 = "v2/req-signoff-1", "v2/budget-signoff-1"
+R1, B1 = "signoff/v1/req-1", "signoff/v1/budget-1"
+R2, B2 = "signoff/v2/req-1", "signoff/v2/budget-1"
 
 # (名前, 手順, 引数, 期待する終了コード, 出力に含まれるべき文字列)
 CASES: list[tuple[str, Steps, list[str], int, str]] = [
@@ -73,31 +74,38 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                     ("rm", "docs/v1/shared/nfr.csv"), ("c",), ("t", B1)],
      [], 1, "D\tdocs/v1/shared/nfr.csv"),
     # 文字列順なら -9 が最新になり、-9 の中身（QA_A）と budget（QA_B）が食い違う
-    ("最新を数で選ぶ", [("w", SHARED, QA_A), ("c",), ("t", "v1/req-signoff-9"),
-                     ("w", SHARED, QA_B), ("c",), ("t", "v1/req-signoff-10"), ("t", B1)],
-     [], 0, "一致する: v1/req-signoff-10"),
-    # 古い budget-signoff-1 は一致するが、最新の -2 は食い違う
+    ("最新を数で選ぶ", [("w", SHARED, QA_A), ("c",), ("t", "signoff/v1/req-9"),
+                     ("w", SHARED, QA_B), ("c",), ("t", "signoff/v1/req-10"), ("t", B1)],
+     [], 0, "一致する: signoff/v1/req-10"),
+    # 古い budget-1 は一致するが、最新の -2 は食い違う
     ("新しい予算のタグが違う", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1),
-                         ("w", SHARED, QA_B), ("c",), ("t", "v1/budget-signoff-2")],
-     [], 1, "v1/budget-signoff-2"),
+                         ("w", SHARED, QA_B), ("c",), ("t", "signoff/v1/budget-2")],
+     [], 1, "signoff/v1/budget-2"),
     ("命名に合わないタグを数えない", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1),
-                               ("w", SHARED, QA_B), ("c",), ("t", "v1/req-signoff-2-fix"), ("t", "v1/req-signoff-02"),
-                               ("t", "req-signoff-v2"), ("t", "v01/req-signoff-3")],
+                               ("w", SHARED, QA_B), ("c",), ("t", "signoff/v1/req-2-fix"), ("t", "signoff/v1/req-02"),
+                               ("t", "req-signoff-v2"), ("t", "signoff/v01/req-3"),
+                               # #260 の名前と、根の無い名前
+                               ("t", "v1/req-signoff-2"), ("t", "v1/req-2")],
+     [], 0, f"一致する: {R1}"),
+    # #270: 素の `v1` タグとは ref の名前で衝突しない（版を根にした名前は、どちらの順でも作れなかった）
+    ("素の v1 タグが先にある", [("w", SHARED, QA_A), ("c",), ("t", "v1"), ("t", R1), ("t", B1)],
+     [], 0, f"一致する: {R1}"),
+    ("素の v1 タグを後から付ける", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1), ("t", "v1")],
      [], 0, f"一致する: {R1}"),
     ("指定したタグで照合", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1),
-                       ("w", SHARED, QA_B), ("c",), ("t", "v1/req-signoff-2")],
+                       ("w", SHARED, QA_B), ("c",), ("t", "signoff/v1/req-2")],
      ["--req", R1], 0, f"一致する: {R1}"),
     ("注釈つきタグ", [("w", SHARED, QA_A), ("c",), ("ta", R1), ("ta", B1)],
      [], 0, "一致する"),
     ("サブディレクトリから", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1)],
      ["--repo", "docs"], 0, "一致する"),
-    ("タグが無い", [("w", SHARED, QA_A), ("c",)], [], 2, "v1/req-signoff-<k> のタグが 1 つも無い"),
+    ("タグが無い", [("w", SHARED, QA_A), ("c",)], [], 2, "signoff/v1/req-<k> のタグが 1 つも無い"),
     ("予算のタグだけ無い", [("w", SHARED, QA_A), ("c",), ("t", R1)], [], 2,
-     "v1/budget-signoff-<k> のタグが 1 つも無い"),
+     "signoff/v1/budget-<k> のタグが 1 つも無い"),
     ("指定したタグが無い", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1)],
-     ["--req", "v1/req-signoff-5"], 2, "タグ v1/req-signoff-5 が無い"),
+     ["--req", "signoff/v1/req-5"], 2, "タグ signoff/v1/req-5 が無い"),
     ("指定が命名に合わない", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1)],
-     ["--budget", R1], 2, "命名（v1/budget-signoff-<k>）に合わない"),
+     ["--budget", R1], 2, "命名（signoff/v1/budget-<k>）に合わない"),
     # 作業中の版は v2。v1 のタグを渡しても組にしない
     ("指定が別の版", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R1), ("t", B1), ("t", R2), ("t", B2)],
      ["--req", R1, "--budget", B1], 2, "版 v2 の命名"),
@@ -177,7 +185,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                      ("t", R1), ("t", B1)],
      ["--version", "1"], 2, "版が決まりに反する"),
     ("版を省くと作業中の版のタグを探す", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1), ("w", SHARED2, QA_A), ("c",)],
-     [], 2, "v2/req-signoff-<k> のタグが 1 つも無い"),
+     [], 2, "signoff/v2/req-<k> のタグが 1 つも無い"),
     ("作業ツリーの版が決まりに反する", [("w", "docs/v02/shared/qa.csv", QA_A), ("c",), ("t", R1), ("t", B1)],
      [], 2, "版が決まりに反する"),
     ("作業ツリーに版が無い", [("w", "README.md", "x\n"), ("c",), ("t", R1), ("t", B1)],
@@ -226,8 +234,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if version is None:\n            version = working_version(repo)\n",
      "版を指定しても作業ツリーの版を見る"),
     ("指定の命名を見ない", "if not tag_pattern(prefix, version).fullmatch(given):", "if False:", "指定が命名に合わない"),
-    ("タグの版を見ない", 'rf"v{version}/{re.escape(prefix)}-{NUMBER}"', 'rf"v[0-9]+/{re.escape(prefix)}-{NUMBER}"',
+    ("タグの版を見ない", 'rf"{re.escape(TAG_ROOT)}/v{version}/', 'rf"{re.escape(TAG_ROOT)}/v[0-9]+/',
      "指定が別の版"),
+    ("タグの根を見ない", 'rf"{re.escape(TAG_ROOT)}/v{version}/', 'rf"(?:{re.escape(TAG_ROOT)}/)?v{version}/',
+     "命名に合わないタグを数えない"),
     ("作業中の版を最小にする", "return found[-1][0]", "return found[0][0]", "作業中の版"),
     ("--version を渡さない", "resolve(args.repo, args.req, args.budget, args.version)",
      "resolve(args.repo, args.req, args.budget)", "版を指定"),
@@ -322,10 +332,14 @@ def constant(source: str, name: str) -> str | None:
 
 def reference_mismatches(source: str, markdown: str) -> list[str]:
     problems = []
-    prefixes = re.findall(r"^\| [^|]+ \| `v<n>/([a-z-]+)-<k>` \|", markdown, flags=re.MULTILINE)
+    rows = re.findall(r"^\| [^|]+ \| `([a-z-]+)/v<n>/([a-z-]+)-<k>` \|", markdown, flags=re.MULTILINE)
+    roots = sorted({root for root, _ in rows})
+    if roots != [constant(source, "TAG_ROOT")]:
+        problems.append(f"タグの根 {roots} ≠ 本体 {constant(source, 'TAG_ROOT')!r}")
+    prefixes = [prefix for _, prefix in rows]
     actual = [constant(source, k) for k in ("REQ_PREFIX", "BUDGET_PREFIX")]
     if prefixes != actual:
-        problems.append(f"タグの接頭辞 {prefixes} ≠ 本体 {actual}")
+        problems.append(f"タグの種類 {prefixes} ≠ 本体 {actual}")
     word = re.search(r"`<k>` は (.+?)で、", markdown)
     if NUMBER_WORDS.get(word.group(1) if word else "") != constant(source, "NUMBER"):
         problems.append(f"番号の決まり {word and word.group(1)!r} ≠ 本体 {constant(source, 'NUMBER')!r}")
@@ -337,7 +351,8 @@ def reference_mismatches(source: str, markdown: str) -> list[str]:
 
 
 REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
-    ("予算のタグの接頭辞", "| `v<n>/budget-signoff-<k>` |", "| `v<n>/budget-approval-<k>` |"),
+    ("予算のタグの種類", "| `signoff/v<n>/budget-<k>` |", "| `signoff/v<n>/approval-<k>` |"),
+    ("予算のタグの根", "| `signoff/v<n>/budget-<k>` |", "| `approval/v<n>/budget-<k>` |"),
     ("番号の決まり", "`<k>` は 1 から始まる整数で、", "`<k>` は 0 から始まる整数で、"),
     ("比べる場所（shared）", "比べる場所は `docs/v1/shared/`〜", "比べる場所は `docs/v1/common/`〜"),
     ("比べる場所（removed.csv）", "と `docs/v2/removed.csv`〜", "と `docs/v2/deleted.csv`〜"),

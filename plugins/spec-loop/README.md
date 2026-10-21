@@ -81,13 +81,13 @@
 `/spec-loop:feasibility` で呼びます。1 回の実行で、要求・仕様から規模を数えて見積り（開発費・運用費）と
 スケジュールを更新し、ガントチャートをスクリプトで生成し、**選択肢によって費用が変わる未決定事項を
 費用付きの質問として Q&A 表に起票します**。見積りは `agents/estimate-checker.md` に**別のティアで**検証させます。
-**予算責任者の合意待ちで止まります**——合意を推測で埋めることも、`budget-signoff` のタグを付けることもありません。
+**予算責任者の合意待ちで止まります**——合意を推測で埋めることも、予算の承認のタグ（`signoff/v<n>/budget-<k>`）を付けることもありません。
 
 手順と守ることは [`skills/feasibility/SKILL.md`](skills/feasibility/SKILL.md) を正とします。
 
 ## `proposal` — 提案書のループ
 
-`/spec-loop:proposal` で呼びます。**同じ版の 2 つのサインオフのタグ（`v<n>/req-signoff-<k>`・`v<n>/budget-signoff-<k>`）の時点で
+`/spec-loop:proposal` で呼びます。**同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>`）の時点で
 共有の範囲（`docs/v<n>/shared/` ほか。`references/signoff-tags.md`）が一致するかをスクリプトで照合し、一致したときだけ提案書を生成します**（LLM に判断させません）。
 提案書は**承認したタグの時点の中身**から作るので、承認の後に直した中身は入りません。
 **v2 以降は、前の版との比較（追加・変更・削除）を載せた変更の提案書になります**（`references/versions.md` の「版の差分」）。

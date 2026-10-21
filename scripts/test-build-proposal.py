@@ -9,7 +9,7 @@
 1. **照合が通らないとき、提案書を作らない**——一致しない（1）・照合していない（2）。
    **前に作った提案書とガントチャートも消す**（古いものを今のものと取り違えないため）。
 2. **承認したタグの時点の中身から作る**——承認の後に直した見積り・Q&A 表は入らない。
-   `docs/v<n>/feasibility/` は `v<n>/budget-signoff-<k>`、`docs/v<n>/shared/` は `v<n>/req-signoff-<k>` の時点。
+   `docs/v<n>/feasibility/` は `signoff/v<n>/budget-<k>`、`docs/v<n>/shared/` は `signoff/v<n>/req-<k>` の時点。
    **版は照合が決めたもの**（省けば作業中の版・`--version` で指定）で、**その版の表と手書き部分だけ**が載る。
    **v2 以降で `qa.csv` を置かない版は Q&A 0 行で作り、v1 では `qa.csv` が無ければ作らない。**
 3. **材料が欠けた・決まりに反するときも作らない**——手書き部分が無い・見積りが無い・見積りが決まりに反する。
@@ -39,7 +39,7 @@ TARGET = "build-proposal.py"
 QA = "docs/v1/shared/qa.csv"
 SCHEDULE = "docs/v1/feasibility/schedule.csv"
 ESTIMATE = "docs/v1/feasibility/estimate.csv"
-R1, B1 = "v1/req-signoff-1", "v1/budget-signoff-1"
+R1, B1 = "signoff/v1/req-1", "signoff/v1/budget-1"
 QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 QA_ROWS = (
     "Q-001,要求確定,割引は？,A: なし / B: 3%,A（業務部が回答）,決定表 4 行目,反映済み,\n"
@@ -62,7 +62,7 @@ V2 = SIGNED + [("w", "docs/v2/shared/qa.csv", QA_HEAD + "Q-006,要求確定,返�
                ("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV),
                ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
                ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n返品を受け付ける。\n"), ("c",),
-               ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")]
+               ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")]
 # 前の版との比較: v1 に要求・機能を足して承認し、v2 で Q&A・機能・ファイルをそれぞれ足し・変え・消し、置き直す
 SPEC_V1 = '{"title": "注文", "features": [{"id": "F-001", "title": "割引"}, {"id": "F-002", "title": "送料"}]}'
 SPEC_V2 = '{"features": [{"id": "F-002", "title": "送料（離島）"}, {"id": "F-003", "title": "返品"}]}'
@@ -78,7 +78,7 @@ V2_CHANGES = [
     ("w", "docs/v2/requirements/same.md", "S\n"), ("w", "docs/v2/spec/spec_ir.json", SPEC_V2),
     ("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV), ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
     ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n返品を受け付ける。\n")]
-V2C = SIGNED_R + V2_CHANGES + [("c",), ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")]
+V2C = SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")]
 
 
 class Result:
@@ -105,6 +105,8 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("手書き部分はファイル名の順", SIGNED, False,
      lambda r: made(r) and 0 < r.text.find("## 背景と目的") < r.text.find("## 推奨案")),
     ("同じ入力から同じバイト", SIGNED, False, lambda r: made(r) and r.text == r.again),
+    ("素の v1 タグと共存する", BASE + [("t", "v1"), ("t", R1), ("t", B1)], False,
+     lambda r: made(r) and "`signoff/v1/req-1`" in r.text),
     ("承認の記録を持たない", SIGNED, False, lambda r: made(r) and "承認済み" not in r.text and "承認の記録ではありません" in r.text),
     # 予算のタグは見積りを直した後、作業ツリーはさらにその後に直している
     ("承認したタグの時点の見積り", BASE + [("t", R1), ("w", ESTIMATE, estimate("5000000")), ("c",),
@@ -127,7 +129,7 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("作業中の版から作る", V2, False,
      lambda r: made(r) and "| Q-006 | 返品は？ |" in r.text and "Q-001" not in r.text and "700,000" in r.text
      and "4,800,000" not in r.text and "## 変更の背景" in r.text and "## 推奨案" not in r.text
-     and "`docs/v2/shared/`" in r.text and "`v2/req-signoff-1`" in r.text),
+     and "`docs/v2/shared/`" in r.text and "`signoff/v2/req-1`" in r.text),
     ("版を指定して作る", V2 + [("arg", "--version", "1")], False,
      lambda r: made(r) and "| Q-001 | 割引は？ |" in r.text and "Q-006" not in r.text and "`docs/v1/shared/`" in r.text),
     # v2 の手書き部分が無い——v1 の手書き部分で代わりに作らない
@@ -136,12 +138,12 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      lambda r: not_made(1)(r) and "docs/v2/proposal" in r.output),
     # v2 以降は差分だけ——Q&A を足さない版は qa.csv を置かない（versions.md）。それでも作れる
     ("Q&A を足さない版でも作る", [s for s in V2 if not (len(s) > 1 and s[1] == "docs/v2/shared/qa.csv")]
-     + [("w", "docs/v2/requirements/returns.md", "x\n"), ("c",), ("t", "v2/req-signoff-2"), ("t", "v2/budget-signoff-2")],
+     + [("w", "docs/v2/requirements/returns.md", "x\n"), ("c",), ("t", "signoff/v2/req-2"), ("t", "signoff/v2/budget-2")],
      False, lambda r: made(r) and "（反映済みの決定事項はありません）" in r.text and "Q-001" not in r.text
      and "700,000" in r.text),
     # v1 は qa.csv が要る（v2 以降の扱いを v1 に広げない）
     ("v1 は Q&A 表が無いと作らない", [s for s in SIGNED if s[:2] != ("w", QA)]
-     + [("w", "docs/v1/shared/nfr.csv", "x\n"), ("c",), ("t", "v1/req-signoff-2"), ("t", "v1/budget-signoff-2")],
+     + [("w", "docs/v1/shared/nfr.csv", "x\n"), ("c",), ("t", "signoff/v1/req-2"), ("t", "signoff/v1/budget-2")],
      False, lambda r: not_made(1)(r) and "docs/v1/shared/qa.csv: 承認の時点に無い" in r.output),
     # ---- 前の版との比較（v2 以降）
     ("前の版との比較を載せる", V2C, False,
@@ -163,54 +165,54 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("変更が無い版", SIGNED + [("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV),
                              ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
                              ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n見直しだけ。\n"), ("c",),
-                             ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                             ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: made(r) and "（前の版からの変更はありません）" in r.text),
     # 比較は req のタグの時点から作る——承認の後に作業ツリーとコミットで足した要求は載らない
     ("承認の後に直した差分は比較に入らない", V2C + [("w", "docs/v2/requirements/late.md", "L\n"), ("c",)], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "late.md" not in r.text),
     # req のタグと budget のタグの間に足した要求は載らない（比較は req のタグの時点。共有の範囲の外なので照合は通る）
-    ("比較は要求のタグの時点から作る", SIGNED_R + V2_CHANGES + [("c",), ("t", "v2/req-signoff-1"),
-                                    ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "v2/budget-signoff-1")], False,
+    ("比較は要求のタグの時点から作る", SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"),
+                                    ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "signoff/v2/budget-1")], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "between.md" not in r.text),
     # 大文字小文字だけ違うパスは写す前に断る——区別しない FS では上書きし合い、先に置いたリンクを辿って外に書きうる
     ("大文字小文字だけ違うパスは比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/C.md", "100644", "X\n"), ("c",),
-                                          ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                                          ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and "写すと同じ場所に書かれる" in r.output and "requirements/C.md" in r.output),
     ("リンクと大文字小文字だけ違うファイルは比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/L", "120000", "x"),
                                                     ("i", "docs/v2/requirements/l", "100644", "OVER\n"), ("c",),
-                                                    ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                                                    ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and "写すと同じ場所に書かれる" in r.output),
     ("ファイルとディレクトリが大文字小文字だけ違うと比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/D", "100644", "X\n"),
                                                            ("i", "docs/v2/requirements/d/y.md", "100644", "Y\n"), ("c",),
-                                                           ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                                                           ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and "ファイルとディレクトリの両方" in r.output and "写すと同じ場所に書かれる" in r.output),
     # ファイル名は違ってもディレクトリだけが大文字小文字違い——区別しない FS では片方のディレクトリに寄り、git に無いパスが載る
     ("ディレクトリが大文字小文字だけ違うと比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/Dir/a.md", "100644", "A\n"),
                                                       ("i", "docs/v2/requirements/dir/b.md", "100644", "B\n"), ("c",),
-                                                      ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                                                      ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and "ディレクトリ" in r.output and "requirements/dir" in r.output
      and "写すと同じ場所に書かれる" in r.output),
     # 大文字小文字ではなく Unicode の正規化（NFC/NFD）だけが違うディレクトリ——macOS の FS では同じ場所になる。
     # 出力に NFD の綴りが出ることまで見る（索引で NFC に潰れていれば衝突が起きず、提案書が作られて赤になる）
     ("ディレクトリが正規化だけ違うと比較で断る", V2C[:-3] + [("i", f"docs/v2/requirements/x/{NFC_E}/a.md", "100644", "A\n"),
                                                     ("i", f"docs/v2/requirements/x/{NFD_E}/b.md", "100644", "B\n"), ("c",),
-                                                    ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                                                    ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and f"requirements/x/{NFD_E}" in r.output and f"requirements/x/{NFC_E}" in r.output
      and "写すと同じ場所に書かれる" in r.output),
     # 重ね合わせが読まないもの（版の外・版の中の重ねない置き場所）は写さない——そこで並んでも比較は作れる
     ("重ね合わせが読まないものは写さない", V2C[:-3] + [("i", "docs/notes/A.md", "100644", "X\n"), ("i", "docs/notes/a.md", "100644", "Y\n"),
                                               ("i", "docs/v2/proposal/N.md", "100644", "X\n"), ("i", "docs/v2/proposal/n.md", "100644", "Y\n"),
-                                              ("c",), ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                                              ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text),
     ("v1 は比較の節を持たない", SIGNED_R, False,
      lambda r: made(r) and "前の版" not in r.text and "差分の見積り" not in r.text),
     # 重ね合わせが作れない（前の版に無いものを消す）——比較を作れないので書かない
     ("比較を作れないと作らない", SIGNED_R + [s if s[:2] != ("w", "docs/v2/removed.csv")
                                     else ("w", "docs/v2/removed.csv", "種類,対象,理由\n機能,F-999,誤記\n")
-                                    for s in V2_CHANGES] + [("c",), ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")],
+                                    for s in V2_CHANGES] + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")],
      False, lambda r: not_made(1)(r) and "前の版との比較を作れない" in r.output and "F-999" in r.output),
     ("版の中のシンボリックリンクは比較で断る", V2C[:-2] + [("l", "docs/v2/requirements/link.md", "../../v1/requirements/a.md"), ("c",),
-                                              ("t", "v2/req-signoff-1"), ("t", "v2/budget-signoff-1")], False,
+                                              ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and "シンボリックリンク" in r.output and "link.md" in r.output),
 ]
 
