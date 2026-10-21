@@ -87,13 +87,13 @@
     Verifier の変異: 赤 3 本（`if not readable` を外す／`manifest_at` が「無い」を区別しない／著者の変異）・
     素通り 1 本（N1）・当てられなかった 2 本（`version_in` の `isinstance` を外す／`return False` を `True` に）
   - 関門はここで打ち切り（3 パス目は無い）
-- この周の起票: 0 件
   - PR #256 の CI 初回が `test-check-version-bump.py` の後片付けで落ちた（`rmtree` が `.git` で
     Directory not empty。再実行で緑）。**人間が「この PR で直す」を選んだ**——使い捨てリポジトリで
     `gc.auto 0`・`maintenance.auto false`、`TemporaryDirectory(ignore_cleanup_errors=True)`。
     **関門の外の変更**（PR コメントに明記）。原因は特定していない
   - 割り目（手順 6・2 パス目の前）: 提案した → **「ここで割る」が選ばれた**（2026-10-14）
   - R1 の扱い: 人間が**「残課題として PR に書く」**を選んだ（範囲は広げない）
+- この周の起票: 0 件
 - 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**（2026-10-14）
 - 反証と差し戻し: なし
 - 交絡: 実験なし
