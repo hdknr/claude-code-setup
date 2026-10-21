@@ -894,7 +894,7 @@ CASES: list[Case] = [
     Case("--red-check に --upto", 2, "--upto は --check か --dry-run と一緒にだけ使う", args=("--red-check", "--upto", "1")),
     Case("無い版の --upto", 2, "v3 が無い", args=("--check", "--upto", "3"), extra=v2([V2_CHANGED])),
     Case("--upto 0", 2, "1 以上の整数", args=("--dry-run", "--upto", "0")),
-    # ---- --red-check（変わったケースだけ失敗し、ほかは緑）
+    # ---- --red-check（判定の決まりは scaffold.py の docstring を正とする。#294）
     Case("Red の状態: v1 で実装なし", 0, "失敗 3 件", args=("--red-check",), generate_first=True),
     # v1 には前の版の Red テストが無い——実装がもう満たすケースは「もう緑」として知らせる（#294。前は 1）
     Case("Red の状態: v1 で実装がある", 0, "もう緑 3 件", args=("--red-check",), generate_first=True, impl=GOOD_IMPL),
