@@ -23,6 +23,8 @@
 5. **生成した OpenAPI で、パスの変数がすべて `in: path`・必須で宣言され、クエリ・ボディに重ならない**（#289）。
    基準の試料（「OpenAPI と型」）と、パスの変数を持つ試料に当てる。パスに在って `input` に無い変数・壊れた波括弧・重複・
    変数の名前だけが違うパスからは作らない。
+   **入口ごとに、パラメータとボディを合わせると `<Base>Input` がちょうど復元できる**（#318）——名前・schema・必須の
+   どれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤。exit 0 の全試料に当てる。
 6. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
    `references/spec-gap.md` も同じ印と節を持ち、dev-loop の `SKILL.md` も同じ印を持つ**（2 つのプラグインの境界の写し）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
@@ -340,6 +342,39 @@ def path_params_problem(doc: dict) -> str | None:
             ref = op.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {}).get("$ref")
             if ref and set(schemas[ref.rsplit("/", 1)[1]]["properties"]) & set(names):
                 return f"{method.upper()} {path}: パスの変数をボディにも重ねた"
+    return None
+
+
+def input_split_problem(doc: dict) -> str | None:
+    """入口ごとに、パラメータとボディを合わせると `<Base>Input` がちょうど復元できる（#318）。
+    名前・schema・必須のどれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤にする。"""
+    schemas = doc["components"]["schemas"]
+    for path, ops in doc["paths"].items():
+        for method, op in ops.items():
+            where = f"{method.upper()} {path}"
+            output = op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].rsplit("/", 1)[1]
+            whole = schemas[output.removesuffix("Output") + "Input"]
+            fields = whole["properties"]
+            if whole["required"] != sorted(fields):
+                return f"{where}: 入力の型の required が全項目でない"
+            seen = []
+            for p in op.get("parameters", []):
+                if not p.get("required"):
+                    return f"{where}: {p['in']} パラメータ {p['name']} が必須でない"
+                if p["schema"] != fields.get(p["name"]):
+                    return f"{where}: {p['in']} パラメータ {p['name']} の schema が入力の型と違う"
+                seen.append(p["name"])
+            ref = op.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema", {}).get("$ref")
+            if ref:
+                body = schemas[ref.rsplit("/", 1)[1]]
+                if body["required"] != sorted(body["properties"]):
+                    return f"{where}: ボディの型の required が全項目でない"
+                for name, schema in body["properties"].items():
+                    if schema != fields.get(name):
+                        return f"{where}: ボディの項目 {name} の schema が入力の型と違う"
+                    seen.append(name)
+            if sorted(seen) != sorted(fields):
+                return f"{where}: パラメータとボディの項目 {sorted(seen)} が入力の型の項目 {sorted(fields)} と違う"
     return None
 
 
@@ -1054,6 +1089,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("パスの変数の重複を見ない", "        if names.count(name) > 1:", "        if False:", "パスの変数の重複"),
     ("変数の名前だけが違うパスを見ない", "    if templates.setdefault(template, path) != path:", "    if False:",
      "変数の名前だけが違うパス"),
+    # 入口の型の整合（#318）
+    ("path パラメータの schema を固定する", '"required": True, "schema": schema_of(op["input"][name])}',
+     '"required": True, "schema": {"type": "string"}}', "パスの変数"),
+    ("入力の型をボディの項目に縮める", "                schemas[body] = object_schema(rest)",
+     '                schemas[body] = object_schema(rest)\n                schemas[f"{base}Input"] = object_schema(rest)',
+     "パスの変数"),
+    ("ボディの型の項目を必須にしない", "                schemas[body] = object_schema(rest)",
+     '                schemas[body] = dict(object_schema(rest), required=[])', "パスの変数"),
+    ("クエリを必須にしない", '"in": "query", "required": True', '"in": "query", "required": False', "パスの変数"),
     ("深い入れ子を読めないと言わない", "    except RecursionError:\n        # 版の", "    except ZeroDivisionError:\n        # 版の",
      "深い入れ子"),
     ("ケースの id を int() で並べる", '    digits = case["id"].rsplit("C", 1)[1].lstrip("0")\n    return len(digits), digits',
@@ -1225,10 +1269,12 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
         problem = case.post(repo)
         if problem:
             return False, problem
-    # 作った OpenAPI はどの試料でもパスの変数を宣言している（基準 1。post を持たない試料にも当てる）
+    # 作った OpenAPI はどの試料でもパスの変数を宣言し（#289）、パラメータとボディで入力の型を復元できる（#318）。
+    # post を持たない試料にも当てる
     openapi = repo / "scaffold" / "openapi.json"
     if case.code == 0 and openapi.is_file():
-        problem = path_params_problem(json.loads(openapi.read_text(encoding="utf-8")))
+        doc = json.loads(openapi.read_text(encoding="utf-8"))
+        problem = path_params_problem(doc) or input_split_problem(doc)
         if problem:
             return False, problem
     return True, ""
