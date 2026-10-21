@@ -61,9 +61,14 @@
 
 - 周の在り処: ブランチ `issue/319-prev-version-path-vars`・worktree `.claude/worktrees/issue-319`・
   起点 `21bb63b`・base 参照 `origin/main` → `21bb63b6974db9698574c924e08b1790d7f1afab`
-- 関門: まだ
+- 実装: `bc69185` で済み（`test-scaffold.py`: 試料 151 件・変異 99 件で緑）
+- 関門: まだ（次は手順 5 の 1 パス目——Verifier と `/code-review` の両方）
 - 反証と差し戻し: まだ
-- 交絡: 実験なし（まだ）
+- 交絡: 実験 1 件——旧 scaffold（`f4e5dc9^`）と新 scaffold を同じ試料に当てた（scratchpad の `p5/run.py`）。
+  **陽性対照**: パスの変数を持つ入口は旧版の出力が新版の `--check` で 1、作り直すと 0。
+  **陰性対照**: パスの変数を持たない入口だけなら、旧版の出力のまま新版の `--check` が 0。
+  R1: 凍結を模した v1（`/orders/{order_id}`）で `--check --upto 1` が 1、v2 の生成が 0、旧版の v1 の `--dry-run` は 0。
+  観測窓: この 3 つの試料だけ
 
 ## 既知の限界・決着済みの論点
 
