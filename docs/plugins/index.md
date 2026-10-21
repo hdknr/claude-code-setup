@@ -647,7 +647,7 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 - **選択肢によって費用が変わる未決定事項は、費用への影響を添えた質問として Q&A 表に起票します**
   （`req-loop` の回答待ちに合流します）。
 - 見積りは**書き込みツールを持たない検証役**に、見積りを書いたモデルとは**別のティアで**検証させます。
-- **予算責任者の合意待ちで止まります。** 合意を推測で埋めることも、`budget-signoff` のタグを付けることもありません。
+- **予算責任者の合意待ちで止まります。** 合意を推測で埋めることも、予算の承認のタグ（`signoff/v<n>/budget-<k>`）を付けることもありません。
 
 表の列は
 [プラグインの `references/feasibility-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/feasibility-csv.md)、
@@ -661,7 +661,7 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 /spec-loop:proposal
 ```
 
-**同じ版の 2 つのサインオフのタグ（`v<n>/req-signoff-<k>`・`v<n>/budget-signoff-<k>`）の時点で、
+**同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>`）の時点で、
 共有の範囲（`docs/v<n>/shared/` ほか）が一致するか**をスクリプトで照合し、**一致したときだけ**決裁者向けの提案書を生成します。
 
 - **照合は LLM に判断させません。** 一致しなければ提案書を作らず、どちらの承認を取り直すかを示して止まります。

@@ -62,7 +62,7 @@ description: "提案書のループを 1 回分進める。利用者の要求確
 python3 <このスキルの base ディレクトリ>/../../scripts/check-signoff.py --repo <正本リポジトリ>
 ```
 
-**照合するのは作業中の版（`docs/` の版で番号が最大のもの）のタグ**（`v<n>/req-signoff-<k>`・`v<n>/budget-signoff-<k>`。
+**照合するのは作業中の版（`docs/` の版で番号が最大のもの）のタグ**（`signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>`。
 `../../references/signoff-tags.md`）。前の版の提案書を作り直すときだけ `--version <n>` を渡す（手順 3 も同じ）。
 
 | 終了コード | すること |
