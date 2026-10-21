@@ -49,9 +49,12 @@ main への merge のみ。`versions.md` はプラグインの中にあり、利
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-302`、起点 `21bb63b`、
   base 参照 `origin/main` → `21bb63b6974db9698574c924e08b1790d7f1afab`
 - 実装: `6d34428` で完了。手順 4 の割り目で `AskUserQuestion` → **「ここで割る」**を選択（2026-10-21）
-- `scripts/check-all.py`: 割った時点で走行中（`6d34428`）——**再開後に回し直して集計行を回収する**（E）
-- 次: 手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。base `21bb63b6974db9698574c924e08b1790d7f1afab` を渡す
-- 反証・差し戻し: なし
+- `scripts/check-all.py`: `6d34428` で 44/44（失敗 0）。`468f859` では未回収——**2 パス目の前に回し直す**（E）
+- 1 パス目（2026-10-21）: Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 0 件**。`/code-review`（high）**指摘 5 件**
+  ——採否は下の「1 パス目の指摘の採否」（直す 3・残課題 2）。指摘対応は `468f859`
+- 次: **手順 5 の当て直し（Verifier 2 パス目）と手順 6 の `/code-review` 2 パス目の両方**。base は同じ `21bb63b6974db9698574c924e08b1790d7f1afab`。
+  狭いパスの起点（2 パス目の指摘対応の直前の HEAD）: `468f859`
+- 反証・差し戻し: 1 パス目のレビュー指摘 3 件を手順 4 で直した（差し戻し 1 回）
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
