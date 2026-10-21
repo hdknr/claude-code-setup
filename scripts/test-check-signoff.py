@@ -337,6 +337,9 @@ def with_old_names(steps: Steps) -> Steps:
     return [(s[0], OLD_NAMES.get(s[1], s[1]), *s[2:]) if s[0] == "t" else s for s in steps]
 
 
+V1_COLLISION = re.compile(r"'refs/tags/v1(/[^']*)?' exists")
+
+
 def old_names_collide(root: Path, steps: Steps, env: dict[str, str]) -> str:
     """承認のタグを #260 の名前にして作る。タグの手順で失敗すれば空文字列、そうでなければ何が起きたか。"""
     old = with_old_names(steps)
@@ -345,7 +348,11 @@ def old_names_collide(root: Path, steps: Steps, env: dict[str, str]) -> str:
     try:
         build_repo(root, old, env)
     except subprocess.CalledProcessError as e:
-        return "" if "tag" in e.cmd else f"タグ以外の手順で作れなかった: {' '.join(e.cmd[-2:])}"
+        if "tag" not in e.cmd:
+            return f"タグ以外の手順で作れなかった: {' '.join(e.cmd[-2:])}"
+        # タグの失敗なら何でもよいのではない——同じ名前の付け直しも tag で落ちる（#309）
+        stderr = e.stderr.decode(errors="replace")
+        return "" if V1_COLLISION.search(stderr) else f"素の v1 との衝突ではない理由で作れなかった: {stderr.strip()}"
     return "#260 の名前でも作れた（素の v1 と衝突していない）"
 
 
