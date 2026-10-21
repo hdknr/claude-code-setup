@@ -64,9 +64,13 @@ CI にもこの環境にも入っていない（標準ライブラリのみの�
 
 - 周の在り処: ブランチ `issue/289-openapi-path-params`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-289`・
   起点 `ccd29c6`・base の参照 `origin/main`・base `ccd29c6e1c10b2c231e653450723bf687b509aa1`
+- 実装: 済み（コミット済み）。`test-scaffold.py` は 試料 147 件・変異 95 件で緑
 - 関門: 未着手
 - 反証: —
-- 交絡: 実験なし
+- 交絡: 実験 2 つ。(a) 陽性対照——修正前の `scaffold.py`（`ccd29c6`）に新しい試料を当て、パスの変数の試料 8 件が赤、
+  変わらないはずの「パスの変数の Red テスト」「OpenAPI と型」の 2 件が緑。修正後は 10 件とも緑。
+  (b) 基準 4——修正前後の `openapi()` を同じ中間表現 3 つ（基準・PUT/DELETE/空の入力・PATCH/空の入力）に当ててバイト一致。
+  観測窓はこの 3 つの形だけ（パスの変数を持たない入口の全形は数えていない）
 
 ## 既知の限界・決着済みの論点
 
