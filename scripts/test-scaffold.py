@@ -345,10 +345,24 @@ def path_params_problem(doc: dict) -> str | None:
     return None
 
 
-def input_split_problem(doc: dict) -> str | None:
+def typed_dict_fields(types: str) -> dict[str, list[str]]:
+    """`types.py` の型ごとの項目名。`pass` だけの型は項目が無い。"""
+    fields: dict[str, list[str]] = {}
+    for block in re.findall(r"^class (\w+)\(TypedDict\):\n((?:    .+\n)+)", types, flags=re.MULTILINE):
+        fields[block[0]] = re.findall(r"^    (\w+): ", block[1], flags=re.MULTILINE)
+    return fields
+
+
+def input_split_problem(doc: dict, types: str) -> str | None:
     """入口ごとに、パラメータとボディを合わせると `<Base>Input` がちょうど復元できる（#318）。
-    名前・schema・必須のどれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤にする。"""
+    名前・schema・必須のどれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤にする。
+    `<Base>Input` の項目は、中間表現から OpenAPI とは別に生成される `types.py` の同名の型と突き合わせる
+    ——OpenAPI の中だけで比べると、Input・パラメータ・ボディから同じ項目が一緒に落ちたときに気づけない。"""
     schemas = doc["components"]["schemas"]
+    typed = typed_dict_fields(types)
+    for name in schemas:
+        if name.endswith("Input") and sorted(schemas[name]["properties"]) != sorted(typed.get(name, [])):
+            return f"{name} の項目 {sorted(schemas[name]['properties'])} が types.py の {sorted(typed.get(name, []))} と違う"
     for path, ops in doc["paths"].items():
         for method, op in ops.items():
             where = f"{method.upper()} {path}"
@@ -827,6 +841,11 @@ CASES: list[Case] = [
     Case("パスの変数（PUT・DELETE）", 0, "作った", ir=edit(with_path_vars_put_delete), post=path_vars_put_delete),
     Case("入力がすべてパスの変数", 0, "作った",
          ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{rank}/{amount}")), post=path_vars_only),
+    # 入力が空の入口（#318。新しい検査が誤って断らない）
+    Case("入力が空（GET）", 0, "作った", ir=edit(lambda ir: (ir["features"][1]["operation"].update(input={}),
+                                                       ir["features"][1]["cases"][0].update(input={})))),
+    Case("入力が空（POST）", 0, "作った", ir=edit(lambda ir: (ir["features"][1]["operation"].update(input={}, method="POST"),
+                                                        ir["features"][1]["cases"][0].update(input={})))),
     Case("パスの変数が入力に無い", 1, "パスの変数 {order_id} が operation.input の項目に無い", pre=plant_old_issues,
          post=issues_gone, ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{order_id}"))),
     Case("空のパスの変数", 1, "パスの変数 {} が operation.input の項目に無い",
@@ -1098,6 +1117,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ボディの型の項目を必須にしない", "                schemas[body] = object_schema(rest)",
      '                schemas[body] = dict(object_schema(rest), required=[])', "パスの変数"),
     ("クエリを必須にしない", '"in": "query", "required": True', '"in": "query", "required": False', "パスの変数"),
+    # Input・パラメータ・ボディから同じ項目が一緒に落ちる——OpenAPI の中だけで比べると見えない
+    ("OpenAPI から入力の項目を落とす",
+     '        op = feature["operation"]\n        base = pascal(op["id"])\n        schemas[f"{base}Input"]',
+     '        op = dict(feature["operation"], input={k: v for k, v in feature["operation"]["input"].items()'
+     ' if k != "amount"})\n        base = pascal(op["id"])\n        schemas[f"{base}Input"]', "OpenAPI と型"),
     ("深い入れ子を読めないと言わない", "    except RecursionError:\n        # 版の", "    except ZeroDivisionError:\n        # 版の",
      "深い入れ子"),
     ("ケースの id を int() で並べる", '    digits = case["id"].rsplit("C", 1)[1].lstrip("0")\n    return len(digits), digits',
@@ -1274,7 +1298,8 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
     openapi = repo / "scaffold" / "openapi.json"
     if case.code == 0 and openapi.is_file():
         doc = json.loads(openapi.read_text(encoding="utf-8"))
-        problem = path_params_problem(doc) or input_split_problem(doc)
+        types = (repo / "scaffold" / "types.py").read_text(encoding="utf-8")
+        problem = path_params_problem(doc) or input_split_problem(doc, types)
         if problem:
             return False, problem
     return True, ""
