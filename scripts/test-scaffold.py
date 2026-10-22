@@ -896,7 +896,7 @@ CASES: list[Case] = [
     # #319: #289 より前の scaffold が通した v1（凍結していて直せない）のパスの変数は、v2 で直せば作れる
     Case("前の版だけパスの変数が入力に無い", 0, "modify 1", ir=OLD_PATH_V1, extra=v2([IR["features"][0]]),
          post=only_f001_modified),
-    # 前の版の Red テストも、前の版の中間表現から作って当てる（パスは Red テストに出ない）
+    # --red-check も前の版を比べる相手として読むので、パスの変数で止まらない（前の版の Red テストの中身までは見ない）
     Case("前の版だけパスの変数が入力に無い（--red-check）", 0, "失敗 0 件（追加・変更）・緑 3 件（回帰）", args=("--red-check",), generate_first=True,
          ir=OLD_PATH_V1, extra=v2([IR["features"][0]]), impl=GOOD_IMPL),
     Case("前の版だけパスの変数が入力に無い（--dry-run）", 0, "modify 1", args=("--dry-run",), ir=OLD_PATH_V1,

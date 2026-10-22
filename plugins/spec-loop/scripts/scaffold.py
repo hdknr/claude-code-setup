@@ -542,8 +542,8 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
     """重ね合わせた全体を一時ディレクトリに置き、(終了コード, 出力する行, 中間表現, Q&A の行) を返す。
 
     `gate` なら関門（条件 1）も当てる——前の版の全体には当てない（その版の時点で通ったもので、後の版の Q&A は関わらない）。
-    パスの変数の決まりも前の版には当てない（#319）——#289 より前の scaffold が通した版は凍結していて直せず、
-    前の版の中間表現からは OpenAPI を作らない（ケースの比較と前の版の Red テストにしか使わない）。
+    パスの変数の決まりも前の版には当てない（#319）——#289 より前の scaffold が通した版は、凍結していれば直せず、
+    前の版の中間表現からは OpenAPI を作らない（ケースの比較・前の版の Red テスト・Issue の本文の前の版の API の行にしか使わない）。
     """
     with tempfile.TemporaryDirectory() as tmp:
         whole = Path(tmp)
