@@ -152,7 +152,12 @@ PowerPoint で開いた見た目。判定役（LLM）が新しい線で実際に
 - 関門 1 パス目（2026-10-22）: 1 パス目の指摘対応の起点 `4729e2b`（関門に渡した時点の HEAD。コミット済み）。
   **Verifier 反証 1 件**（`dev-loop:dev-loop-verifier`・sonnet）・**`/code-review` 指摘 6 件**（high）。採否は下の「1 パス目の指摘の採否」
 - 1 パス目の指摘対応: V1/C2・C1 を直す（`tree.md` の移す手順 1 にサインオフのタグ、dev-loop の `spec-gap.md` の列と内部の表。dev-loop 1.44.1）。
-  **残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**
+  **残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**。
+  `check-all.py` は指摘対応のあと 1 回赤（`skill-metrics.py --check`——dev-loop の `spec-gap.md` を直して設計ドキュメントの生成ブロックが古くなった）
+  → `skill-metrics.py` で書き直して **44/44 緑**
+- 2 パス目の前の割り目: AskUserQuestion で「**ここで割る**」が選ばれた（2026-10-23）。再開したら Verifier 2 パス目と `/code-review` 2 パス目を、
+  受入基準・既知の限界・1 パス目の採否の表を渡して回す（base は上の SHA のまま。**範囲を dev-loop に広げたので、2 パス目の経路一覧に
+  dev-loop の差し戻しの経路を足して渡す**）。2 パス目の指摘対応に入る前に、その直前の HEAD の SHA を狭いパスの起点としてここに書く
 - 手順 4 の割り目: AskUserQuestion で「**ここで割る**」が選ばれた（2026-10-22）。再開したら手順 5（Verifier 1 パス目）から。`check-all.py` は割り目の時点で 44/44 緑
 - 実機確認（受入基準 F。2026-10-22）:
     - **SBIPRISM-207**（手元の `sbi-hubspot` の `docs/shared/qa.csv` を scratchpad に写した。正本は触っていない）——
