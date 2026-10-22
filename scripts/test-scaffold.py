@@ -16,8 +16,10 @@
    **ケースの数だけ失敗（エラーではない）**になること。モジュールはあるが関数が無い・誤った値を返す実装でも同じ。
    **陽性対照: 正しい実装を置くと緑になる**（別の理由で落ちているのではないことを見る）。
 3. **Issue の本文から辿れる**——印・節の順・ケースごとの Red テストの名前・Q&A の回答・
-   **本文の sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
-   が書いた実物——メモリ上の重ね合わせと同じバイトであること）。
+   **本文の指紋と sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
+   が書いた実物に、**dev-loop の `scripts/spec-fingerprint.py` を実際に当てた出力**と比べる——2 つのプラグインに
+   置いた指紋の式の写しが揃っていることも、これで見る）。**指紋は機能単位**——関係の無い機能を直しても変わらない
+   （陽性対照: 全体の sha256 は変わる）。撤去の本文は前の版の全体（`build/merged-v<n-1>/`）を指し、そこで辿れる（#290）。
 4. **決定論的で、`--check` が鮮度を見る**——2 回の生成でバイト一致。生成直後の `--check` は 0（陽性対照）、
    中間表現を直した後・手で直した後・消した機能の Red テストが残ったときは 1。
 5. **生成した OpenAPI で、パスの変数がすべて `in: path`・必須で宣言され、クエリ・ボディに重ならない**（#289）。
@@ -59,7 +61,10 @@ SPEC_GAP_REF = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "ref
 # dev-loop の手順 1 は、この印を見て `spec-gap.md` へ送る——印の写しはここにもある
 DEV_LOOP_SKILL = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md"
 # 前の形（段 5d より前）の印——登録済みの Issue はこの形のまま残るので、dev-loop は読み続ける
-LEGACY_MARKER = "<!-- spec-loop-handoff: v1 -->"
+LEGACY_MARKERS = ("<!-- spec-loop-handoff: v2 -->", "<!-- spec-loop-handoff: v1 -->")
+# dev-loop が手元の中間表現から機能の指紋を出すスクリプト——`scaffold.py` の `fingerprint` の写しを持つ
+DEV_FINGERPRINT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "spec-fingerprint.py"
+FINGERPRINT = re.compile(r"`([^`]+)` の `(F-[0-9]+)`（機能の指紋: `([0-9a-f]{64})`）")
 
 HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 QA_DONE = "Q-001,要求確定（決定表）,シルバーで 10000 円未満の割引は？,A: 割引なし / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
@@ -208,12 +213,32 @@ def files_written(repo: Path) -> str | None:
     return None
 
 
-def merge_with_script(repo: Path) -> Path:
-    """`merge-versions.py docs build/merged` を走らせ、重ね合わせた全体の根を返す（Issue の本文が指す場所）。"""
+def merge_with_script(repo: Path, out: str = "build/merged", *extra: str) -> Path:
+    """`merge-versions.py docs <out>` を走らせ、重ね合わせた全体の根を返す（Issue の本文が指す場所）。"""
     proc = subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / "merge-versions.py"),
-                           str(repo / "docs"), str(repo / "build" / "merged")], capture_output=True, text=True)
+                           str(repo / "docs"), str(repo / out), *extra], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    return repo / "build" / "merged"
+    return repo / out
+
+
+def dev_fingerprint(ir_path: Path, feature: str) -> tuple[int, str]:
+    """dev-loop の照合（`spec-gap.md`）が走らせるスクリプトを、そのまま当てる。"""
+    proc = subprocess.run([sys.executable, "-I", str(DEV_FINGERPRINT), str(ir_path), feature],
+                          capture_output=True, text=True)
+    return proc.returncode, proc.stdout.strip()
+
+
+def fingerprint_matches(repo: Path, body: str, feature: str, where: str) -> str | None:
+    """本文の指紋が `where` の中間表現を指し、そこに dev-loop のスクリプトを当てた出力と一致するか。"""
+    found = FINGERPRINT.search(body)
+    if not found or found.group(2) != feature:
+        return f"本文に {feature} の機能の指紋が無い"
+    if found.group(1) != f"{where}/spec/spec_ir.json":
+        return f"本文の指紋が {where}/ の中間表現を指していない: {found.group(1)}"
+    code, out = dev_fingerprint(repo / found.group(1), feature)
+    if code != 0:
+        return f"dev-loop のスクリプトが {found.group(1)} で指紋を出せない（exit={code}）"
+    return None if out == found.group(3) else f"{found.group(1)} の {feature} の指紋が本文と違う"
 
 
 def nothing_written(repo: Path) -> str | None:
@@ -259,7 +284,7 @@ def old_issues_kept(repo: Path) -> str | None:
 def body_traceable(repo: Path) -> str | None:
     body = (repo / "build" / "scaffold" / "issues" / "F-001.md").read_text(encoding="utf-8")
     lines = body.splitlines()
-    if lines[:3] != ["<!-- spec-loop-handoff: v2 -->", "<!-- spec-loop-feature: F-001 -->",
+    if lines[:3] != ["<!-- spec-loop-handoff: v3 -->", "<!-- spec-loop-feature: F-001 -->",
                      "<!-- spec-loop-change: add; base=none -->"]:
         return f"先頭 3 行が印でない: {lines[:3]}"
     positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 仕様の穴を見つけたら")]
@@ -275,15 +300,17 @@ def body_traceable(repo: Path) -> str | None:
                    "実装が無い状態では、ケースの数だけ失敗する。"):
         if needle not in body:
             return f"本文に {needle!r} が無い"
-    # 本文の sha256 と、指しているファイルの実物——中間表現は `merge-versions.py` が書く全体（同じバイトであること）
+    # 本文の指紋と sha256 と、指しているファイルの実物——中間表現は `merge-versions.py` が書く全体に、dev-loop の照合を当てる
     merge_with_script(repo)
+    problem = fingerprint_matches(repo, body, "F-001", "build/merged")
+    if problem:
+        return problem
     shas = dict(re.findall(r"`([^`]+)`（sha256: `([0-9a-f]{64})`）", body))
-    for rel in ("build/merged/spec/spec_ir.json", "scaffold/tests/test_f_001.py"):
-        if rel not in shas:
-            return f"本文に {rel} の sha256 が無い"
-        actual = hashlib.sha256((repo / rel).read_bytes()).hexdigest()
-        if shas[rel] != actual:
-            return f"{rel} の sha256 が実物と違う"
+    rel = "scaffold/tests/test_f_001.py"
+    if rel not in shas:
+        return f"本文に {rel} の sha256 が無い"
+    if shas[rel] != hashlib.sha256((repo / rel).read_bytes()).hexdigest():
+        return f"{rel} の sha256 が実物と違う"
     index = json.loads((repo / "build" / "scaffold" / "issues" / "issues.json").read_text(encoding="utf-8"))
     if [i["title"] for i in index] != ["F-001: 割引額を計算する", "F-002: 注文を取り消せるか"]:
         return f"issues.json の題が違う: {index}"
@@ -577,7 +604,7 @@ def v2_changed(repo: Path) -> str | None:
     if list(found) != ["F-001"]:
         return f"本文を作るのは変えた機能だけのはず: {list(found)}"
     body = found["F-001"]
-    if body.splitlines()[:3] != ["<!-- spec-loop-handoff: v2 -->", "<!-- spec-loop-feature: F-001 -->",
+    if body.splitlines()[:3] != ["<!-- spec-loop-handoff: v3 -->", "<!-- spec-loop-feature: F-001 -->",
                                  "<!-- spec-loop-change: modify; base=v1 -->"]:
         return f"変更の印でない: {body.splitlines()[:3]}"
     if not sections_in_order(body):
@@ -607,6 +634,34 @@ def v2_removed(repo: Path) -> str | None:
         return "撤去の本文の節が揃っていない"
     if "sha256: `" in body.split("## Red テスト", 1)[1]:
         return "撤去の本文が消した Red テストの sha256 を持つ"
+    # 撤去の本文は前の版の全体を指す（#290 の P1-8）——本文のコマンドで作り、仕様の原文と指紋がそこで辿れる
+    command = "`merge-versions.py docs build/merged-v1 --upto 1`"
+    if command not in body:
+        return f"撤去の本文に前の版の全体の作り方 {command} が無い"
+    # 末尾の照合は、どちらのコマンドで作った全体に何を当てるかを名指しする（1 パス目 CR4）
+    if ("`build/merged-v1/spec/spec_ir.json` での機能の指紋が上と違うか" not in body
+            or "`build/merged/spec/spec_ir.json` にこの機能が残っているなら" not in body):
+        return "撤去の本文の末尾が、前の版の全体での一致と作業中の版の全体での不在を分けて書いていない"
+    # 文言ではなく、本文に書いたコマンドそのものを走らせる（1 パス目 CR8）
+    written = command.strip("`").split()[1:]
+    old = merge_with_script(repo, written[1], *written[2:])
+    sources = re.search(r"^- 仕様の原文（v1 の時点）: (.+)$", body, flags=re.MULTILINE)
+    paths = re.findall(r"`([^`]+)`", sources.group(1)) if sources else []
+    if not paths or any(not p.startswith("build/merged-v1/") or not (repo / p).is_file() for p in paths):
+        return f"撤去の本文の仕様の原文が、前の版の全体の中に辿れない: {paths}"
+    problem = fingerprint_matches(repo, body, "F-002", "build/merged-v1")
+    if problem:
+        return problem
+    # 作業中の版の全体には、その機能が無い（dev-loop のスクリプトは 3）。陽性対照: 前の版の全体には在る
+    code, _ = dev_fingerprint(merge_with_script(repo) / "spec" / "spec_ir.json", "F-002")
+    if code != 3:
+        return f"作業中の版の全体で、撤去した機能が「無い」にならない（exit={code}）"
+    if dev_fingerprint(old / "spec" / "spec_ir.json", "F-002")[0] != 0:
+        return "前の版の全体に撤去した機能が無い（試料が判別しない）"
+    # 読めない全体は「無い」（3）ではなく「比べていない」（2）——3 だと読み損ねで撤去が確かめられたことになる（2 パス目 CR2-3）
+    code, _ = dev_fingerprint(repo / "build" / "merged-missing" / "spec" / "spec_ir.json", "F-002")
+    if code != 2:
+        return f"読めない中間表現で、dev-loop のスクリプトが 2 を返さない（exit={code}）"
     return body_has(body, ("理由: 取り消しはやめる", "撤去する API: `GET /orders/cancelable`", "| `F-002-C1` | 削除 |",
                            "—（`scaffold/tests/test_f_002.py` ごと消した）", "モジュール `spec_impl` の関数 `can_cancel`",
                            "python3 -m unittest discover -s scaffold/tests\n", "この機能が根拠にした Q&A は無い"), "撤去")
@@ -686,29 +741,62 @@ def v2_nothing_changed(repo: Path) -> str | None:
 
 
 def add_v3(repo: Path) -> None:
-    """v2 で作った後に v3 を足す（中間表現の題を変える）——本文の再現コマンドは v2 の全体を作り直せること（#262 の R2）。"""
+    """v2 で作った後に v3 を足す（F-001 の題を変える）——本文の再現コマンドは v2 の全体を作り直せること（#262 の R2）。
+
+    **v3 は F-001 そのものを変える**——指紋は機能単位なので、ほかの機能や全体の題だけを変える v3 では、
+    版を指定しなくても指紋が合い、下の陽性対照が判別しない。
+    """
     path = repo / "docs" / "v3" / "spec" / "spec_ir.json"
     path.parent.mkdir(parents=True)
-    path.write_text(json.dumps({"title": "注文 v3", "features": []}, ensure_ascii=False), encoding="utf-8")
+    path.write_text(json.dumps({"features": [dict(V2_CHANGED, title="割引額を計算する（v3）")]}, ensure_ascii=False),
+                    encoding="utf-8")
 
 
 def sha_reproducible_after_v3(repo: Path) -> str | None:
     body = bodies(repo)["F-001"]
-    sha = re.search(r"`build/merged/spec/spec_ir.json`（sha256: `([0-9a-f]{64})`）", body).group(1)
-    scripts = repo.parent / "scripts" / "merge-versions.py"
-
-    def merged_sha(*extra: str) -> str:
-        out = repo / "build" / "merged"
-        proc = subprocess.run([sys.executable, "-I", str(scripts), str(repo / "docs"), str(out), *extra],
-                              capture_output=True, text=True)
-        assert proc.returncode == 0, proc.stdout + proc.stderr
-        return hashlib.sha256((out / "spec" / "spec_ir.json").read_bytes()).hexdigest()
-
-    # 陽性対照: 版を指定しないと v3 まで重なり、本文の sha256 と合わない
-    if merged_sha() == sha:
-        return "v3 を足しても全体が変わらない（試料が判別しない）"
+    ir = repo / "build" / "merged" / "spec" / "spec_ir.json"
+    expected = FINGERPRINT.search(body).group(3)
+    # 陽性対照: 版を指定しないと v3 まで重なり、本文の指紋と合わない
+    merge_with_script(repo)
+    if dev_fingerprint(ir, "F-001")[1] == expected:
+        return "v3 を足しても F-001 の指紋が変わらない（試料が判別しない）"
     command = re.search(r"`(merge-versions\.py [^`]+)`", body).group(1).split()[1:]
-    return None if merged_sha(*command[2:]) == sha else f"本文のコマンド {command} で作った中間表現の sha256 が本文と違う"
+    merge_with_script(repo, command[1], *command[2:])
+    return None if dev_fingerprint(ir, "F-001")[1] == expected else f"本文のコマンド {command} で作った中間表現の指紋が本文と違う"
+
+
+# v2 で F-002 の題だけを変える——F-001 とは関係の無い機能の編集（#290 の CR5）
+V2_OTHER = dict(IR["features"][1], title="注文を取り消せるか（v2 で言い換え）")
+
+
+def note_before_unrelated(repo: Path) -> None:
+    """v2 で F-001 を変えて作った本文の指紋と、全体の sha256 を控え、F-002 だけを直す（同じ版の作り直しの経路）。"""
+    body = bodies(repo)["F-001"]
+    whole = merge_with_script(repo) / "spec" / "spec_ir.json"
+    note = {"fingerprint": FINGERPRINT.search(body).group(3), "whole": hashlib.sha256(whole.read_bytes()).hexdigest()}
+    (repo.parent / "before.json").write_text(json.dumps(note), encoding="utf-8")
+    shutil.rmtree(repo / "build" / "merged")
+    (repo / V2 / "spec" / "spec_ir.json").write_text(json.dumps({"features": [V2_CHANGED, V2_OTHER]}, ensure_ascii=False),
+                                                     encoding="utf-8")
+
+
+def unrelated_edit_keeps_fingerprint(repo: Path) -> str | None:
+    note = json.loads((repo.parent / "before.json").read_text(encoding="utf-8"))
+    whole = merge_with_script(repo) / "spec" / "spec_ir.json"
+    # 陽性対照: 全体の sha256 は変わる（v2 の本文までの照合なら、F-001 の Issue は不一致になっていた）
+    if hashlib.sha256(whole.read_bytes()).hexdigest() == note["whole"]:
+        return "F-002 を直しても全体が変わらない（試料が判別しない）"
+    body = bodies(repo)["F-001"]
+    if FINGERPRINT.search(body).group(3) != note["fingerprint"]:
+        return "関係の無い機能（F-002）を直しただけで、F-001 の指紋が変わった"
+    problem = fingerprint_matches(repo, body, "F-001", "build/merged")
+    if problem:
+        return problem
+    # その機能自身を変えれば指紋は変わる——v1 の F-001 と v2 の F-001
+    old = merge_with_script(repo, "build/merged-v1", "--upto", "1") / "spec" / "spec_ir.json"
+    if dev_fingerprint(old, "F-001")[1] == note["fingerprint"]:
+        return "F-001 を変えても指紋が変わらない"
+    return None
 
 
 def add_v2_changed(repo: Path) -> None:
@@ -878,8 +966,10 @@ CASES: list[Case] = [
     # ---- 追加・変更・削除に分ける（段 5d）
     Case("v2 でケースを足し・消し・題を変える", 0, "modify 1", extra=v2([V2_CASES]), post=v2_cases),
     Case("v2 で機能を変えない", 0, "Issue の本文 0 件", extra=v2([]), post=v2_nothing_changed),
-    Case("v3 を足しても本文の sha256 が合う", 0, generate_first=True, extra=v2([V2_CHANGED]), pre=add_v3,
+    Case("v3 を足しても本文の指紋が合う", 0, generate_first=True, extra=v2([V2_CHANGED]), pre=add_v3,
          args=("--check", "--upto", "2"), post=sha_reproducible_after_v3),
+    Case("関係の無い機能を直しても指紋は変わらない", 0, "modify 2", generate_first=True, extra=v2([V2_CHANGED]),
+         pre=note_before_unrelated, post=unrelated_edit_keeps_fingerprint),
     Case("前の版の中間表現が決まりに反する", 1, "前の版（v1）の中間表現が決まりに反する", ir=BAD_V1,
          extra=v2([IR["features"][1]]), pre=plant_old_issues, post=nothing_written_issues),
     # ---- --upto（前の版の時点の鮮度）
@@ -1077,7 +1167,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ケースを 1 つしか作らない", '    for case in sorted(feature["cases"], key=case_order):\n        expected',
      '    for case in sorted(feature["cases"], key=case_order)[:1]:\n        expected',
      "Red テストが失敗する"),
-    ("中間表現の sha256 を取らない", "sha256(loaded.raw)", "sha256(b\"\")", "本文から辿れる"),
+    ("中間表現の指紋を取らない",
+     "            f\"- 中間表現: `{merged(IR_PATH)}` の `{feature['id']}`（機能の指紋: `{fingerprint(feature)}`）\",",
+     "            f\"- 中間表現: `{merged(IR_PATH)}` の `{feature['id']}`（機能の指紋: `{sha256(b'')}`）\",", "本文から辿れる"),
     ("Q&A の回答を写さない", "        lines.append(f\"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |\")",
      "        lines.append(f\"| {no} |\")", "本文から辿れる"),
     ("ケースの Q&A を本文に集めない", '    refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}',
@@ -1103,7 +1195,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "literal(case[\"input\"]), literal(expected), case[\"title\"]\n", "v2 でケースを足し・消し・題を変える"),
     ("消したケースを書かない", "    if gone:\n", "    if False:\n", "v2 でケースを足し・消し・題を変える"),
     ("再現コマンドに版を書かない", 'command = f"merge-versions.py {DOCS} {MERGED_DIR} --upto {number}"',
-     'command = f"merge-versions.py {DOCS} {MERGED_DIR}"', "v3 を足しても本文の sha256 が合う"),
+     'command = f"merge-versions.py {DOCS} {MERGED_DIR}"', "v3 を足しても本文の指紋が合う"),
+    # ---- 機能の指紋（#290）
+    ("全体の sha256 を本文に書く（#290 の前）",
+     "            f\"- 中間表現: `{merged(IR_PATH)}` の `{feature['id']}`（機能の指紋: `{fingerprint(feature)}`）\",",
+     "            f\"- 中間表現: `{merged(IR_PATH)}` の `{feature['id']}`（機能の指紋: `{sha256(loaded.raw)}`）\",",
+     "関係の無い機能を直しても指紋は変わらない"),
+    ("指紋の式を dev-loop の写しとずらす", 'separators=(",", ":")))', 'separators=(", ", ":")))', "本文から辿れる"),
+    ("撤去の仕様の原文を前の版の全体の外で書く（#290 の前）", '"・".join(f"`{old_dir}/{s}`" for s in feature["source"])',
+     '"・".join(f"`{s}`" for s in feature["source"])', "v2 で機能を消す"),
+    ("撤去の前の版の全体を作業中の版で作る", 'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number - 1}"',
+     'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number}"', "v2 で機能を消す"),
     # 検査だけ飛ばし、中間表現は返す形にする——`if code:` を潰すと None を読んで落ち、意味ではなく例外で殺される
     ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered)\n",
      "        problems = check_ir(ir, whole, answered) if gate else []\n", "前の版の中間表現が決まりに反する"),
@@ -1296,8 +1398,8 @@ def main() -> int:
             check(f"置き場所 {rel} が references/tree.md に無い", rel is not None and rel.rsplit("/", 1)[-1] in tree)
         # 2 つのプラグインの境界の写し
         skill = DEV_LOOP_SKILL.read_text(encoding="utf-8")
-        # dev-loop は今の形（v2）も、登録済みの前の形（v1）も読む
-        for current in (marker, LEGACY_MARKER):
+        # dev-loop は今の形（v3）も、登録済みの前の形（v2・v1）も読む
+        for current in (marker, *LEGACY_MARKERS):
             check(f"dev-loop の references/spec-gap.md に印 {current} が無い", current is not None and current in gap)
             check(f"dev-loop の SKILL.md に印 {current} が無い（手順 1 が spec-loop の Issue に気づかない）",
                   current is not None and current in skill)
@@ -1305,7 +1407,7 @@ def main() -> int:
               change_marker is not None and change_marker.split("{}")[0] in gap)
         # 陽性対照: 印を上げたら、`SKILL.md` に残った古い印では当たらない
         check("印の版を変えても SKILL.md の照合が不一致にならない",
-              marker is not None and marker.replace("v2", "v3") not in skill)
+              marker is not None and marker.replace("v3", "v4") not in skill)
         gap_sections = table_cells(gap, "## spec-loop から来た Issue を読む")
         check("dev-loop の references/spec-gap.md の節の表が handoff-issue.md と違う", gap_sections == sections,
               f"{gap_sections} vs {sections}")
@@ -1323,6 +1425,32 @@ def main() -> int:
 
         # 変異テスト
         by_name = {case.name: case for case in CASES}
+        # 指紋の式の写しの、dev-loop の側だけを崩す（F。scaffold 側の変異は MUTATIONS にある）——
+        # 本文の指紋は dev-loop のスクリプトで照合しているので、こちらだけ変えても落ちること
+        global DEV_FINGERPRINT
+        dev_source = DEV_FINGERPRINT.read_text(encoding="utf-8")
+        dev_mutations = (
+            ("dev-loop の指紋の式をずらす", 'separators=(",", ":"))', 'separators=(", ", ":"))', "本文から辿れる"),
+            # 読み損ねを「無い」と答えると、撤去の不在の確認が素通りする（2 パス目 CR2-3）
+            ("dev-loop のスクリプトが読めない中間表現に 3 を返す",
+             '読めない: {error}", file=sys.stderr)\n        return 2', '読めない: {error}", file=sys.stderr)\n        return 3',
+             "v2 で機能を消す"),
+        )
+        for index, (name, before, after, killer) in enumerate(dev_mutations):
+            count = dev_source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated_dev = tmp_path / f"mutdev{index}" / "spec-fingerprint.py"
+            assert_in_tmp(mutated_dev)
+            mutated_dev.parent.mkdir()
+            mutated_dev.write_text(dev_source.replace(before, after), encoding="utf-8")
+            real_dev, DEV_FINGERPRINT = DEV_FINGERPRINT, mutated_dev
+            try:
+                ok, detail = run_case(scripts, tmp_path / f"mutdevwork{index}", by_name[killer])
+            finally:
+                DEV_FINGERPRINT = real_dev
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
