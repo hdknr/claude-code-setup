@@ -79,7 +79,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 | 守らないもの | なぜ |
 | --- | --- |
-| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が `反映済み`——`暫定反映` は止める）までを見る |
+| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が `反映済み`）までを見る。`暫定反映` の行が表に残れば、指していなくても止める |
 | **Red テストが仕様のケースを漏れなく持つか** | 中間表現に書いたケースだけが生成される。漏れは書き起こしの側で見る |
 | **Python 以外の言語の型・テスト** | OpenAPI から対象リポジトリの道具で作る |
 | **Issue を登録したか・登録した本文が同じか** | 登録はスクリプトの外（`gh issue create --body-file` に、生成した本文をそのまま渡す） |
@@ -299,10 +299,6 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list
             problems.append(f"{where}: Q&A の No の形に反する（{no!r}）")
         elif no not in answered:
             problems.append(f"{where}: {no} は Q&A 表に無い")
-        elif answered[no]["状態"].strip() == qa.PROVISIONAL:
-            # 暫定の回答は利用者が確かめていない。scaffold の経路はサインオフの照合を通らないので、
-            # ここで止めないと確かめる前の回答が Issue になる（抜ける条件 1 とは別の定義。#325）
-            problems.append(f"{where}: {no} は状態が {qa.PROVISIONAL}（利用者の確認待ち）")
         elif answered[no]["状態"].strip() != qa.DONE:
             problems.append(f"{where}: {no} は状態が {qa.DONE} でない")
     if len(set(map(str, refs))) != len(refs):
@@ -570,6 +566,14 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
         except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise Unjudged(f"{merged(IR_PATH)}: 中間表現を読めない（{exc.__class__.__name__}: {exc}）")
         answered = read_answered(whole / QA_PATH) if (whole / QA_PATH).is_file() else {}
+        if gate:
+            # 暫定の回答は利用者が確かめていない。scaffold の経路はサインオフの照合を通らないので、
+            # 中間表現が指すかどうかに依らず、残っていれば止める——指さない機能の仕様にも反映されている（抜ける条件 1 とは別の定義。#325）
+            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]
+            if held:
+                return 1, shown([f"{no}: 状態が {qa.PROVISIONAL}（利用者の確認待ち）" for no in held]) + [
+                    f"{merged(QA_PATH)} に {qa.PROVISIONAL} の行が {len(held)} 件残る。"
+                    "利用者に確かめてもらうまで生成しない（/spec-loop:req-loop）"], None, {}
         problems = check_ir(ir, whole, answered, path_rules=gate)
     if problems:
         return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, {}

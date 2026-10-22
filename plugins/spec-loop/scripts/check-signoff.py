@@ -319,7 +319,8 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
                    f"{len(provisional)} 件残る"]
         pending += [f"    {row['No']}: {row['回答']}" for row in provisional]
         pending.append("利用者が確かめていない回答を承認したことになる。確かめてもらい、"
-                       f"{qa.DONE} にしてから要求確定のサインオフを取り直す（references/signoff-tags.md）")
+                       f"{qa.DONE} にしてから、要求確定と予算の合意の両方のサインオフを取り直す——確かめると {SHARED}qa.csv が変わるので、"
+                       "今の予算の合意のタグとは一致しなくなる（references/signoff-tags.md）")
 
     pair = f"{info['req']}（{info['req_commit'][:7]}）と {info['budget']}（{info['budget_commit'][:7]}）"
     where = f"v1〜v{version} の {SHARED}" + (f" と {REMOVED}" if version > 1 else "")
