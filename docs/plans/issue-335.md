@@ -73,9 +73,12 @@
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/335-prev-version-provisional`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-335`・起点 `24390e5`・base `origin/main` = `24390e5875af318b6272511a060fb2bb4318f5cf`
-- 関門: 未着手
+- 実装: `db1a44a` で完了。`scripts/test-scaffold.py` は修正前に新しい試料 1 本だけ赤（Issue の文言どおりの出力）、修正後に 試料 165 件・変異 113 件で緑
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目）
 - 反証: —
-- 交絡: 再現テストを修正前に赤（陽性対照）にしてから直す
+- 交絡: 再現の試料を修正前に赤（陽性対照）にしてから直した。`今の版にも暫定反映を許す` の変異は `held` の検査が先に止めるので等価——変異として載せていない
+- `check-all.py`: 44/44 本 緑（失敗 0 / 飛ばし 0。`db1a44a` の内容で）
+- 割り目（手順 4）: AskUserQuestion で訊いた → **「ここで割る」**。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 335`、手順 5（Verifier 1 パス目）から
 
 ## 既知の限界・決着済みの論点
 
