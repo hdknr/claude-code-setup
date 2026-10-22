@@ -105,8 +105,9 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
 - **狭いパス**（`dev-loop:dev-loop-verifier`・sonnet。差分は `7726e29` から）: **反証 1 件（F1）・軽微 1 件**。変異: 赤 1・素通り 0。`git status --porcelain` は開始・終了とも空。採否は下の「狭いパスの指摘」（人間が決める）
 - `check-all.py`（`a4626dc` の上）: 44/44 本・失敗 0
 - 起票を訊いた（2026-10-22）: R2-2 を起票する／F1 はこの PR で直す
-- この周の起票: 1 件（R2-2: `check-skill-pointers.py` が spec-loop の指し先を見ない）
-- **次**: F1 の直しをコミット → `check-all.py` → PR → PR コメント → 起票
+- この周の起票: 1 件（#332。R2-2: `check-skill-pointers.py` が spec-loop の指し先を見ない）
+- F1 の直し: コミット済み。`check-all.py` 44/44 本・失敗 0。#332 を起票済み
+- **次**: PR → PR コメント → PR 側の CI → マージは人間
 - 交絡を潰した手順: G は実データの分け直し（実験ではない）。分け直しの判定が自分の新しい区分に寄っていないかは、別ティアの体に分けさせて見る
 
 ## 既知の限界・決着済みの論点
