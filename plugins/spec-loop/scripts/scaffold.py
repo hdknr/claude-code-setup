@@ -350,7 +350,8 @@ def check_path_vars(where: str, path: str, fields: dict, templates: dict[str, st
     return problems
 
 
-def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]]) -> list[str]:
+def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: bool = True) -> list[str]:
+    """`path_rules` が偽なら、パスの変数の決まり（#289）を当てない——前の版の中間表現だけ（#319。`classify`）。"""
     problems = surrogates(ir)
     if problems:
         return problems + ["孤立したサロゲートを含む中間表現は、ほかの規則を見ない"]
@@ -426,7 +427,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]]) -> list[str]:
                 if "input" in op:
                     problems += check_fields(f"{where}.operation.input", op["input"], False, False)
                     fields_in = op["input"] if isinstance(op["input"], dict) else {}
-                if isinstance(path, str) and path.startswith("/") and one_line(path):
+                if path_rules and isinstance(path, str) and path.startswith("/") and one_line(path):
                     problems += check_path_vars(f"{where}.operation.path", path, fields_in, templates)
                 if "output" in op:
                     problems += check_fields(f"{where}.operation.output", op["output"], True, True)
@@ -543,6 +544,8 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
     """重ね合わせた全体を一時ディレクトリに置き、(終了コード, 出力する行, 中間表現, Q&A の行) を返す。
 
     `gate` なら関門（条件 1）も当てる——前の版の全体には当てない（その版の時点で通ったもので、後の版の Q&A は関わらない）。
+    パスの変数の決まりも前の版には当てない（#319）——#289 より前の scaffold が通した版は、凍結していれば直せず、
+    前の版の中間表現からは OpenAPI を作らない（ケースの比較・前の版の Red テスト・Issue の本文の前の版を指す行にしか使わない）。
     """
     with tempfile.TemporaryDirectory() as tmp:
         whole = Path(tmp)
@@ -563,7 +566,7 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
         except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise Unjudged(f"{merged(IR_PATH)}: 中間表現を読めない（{exc.__class__.__name__}: {exc}）")
         answered = read_answered(whole / QA_PATH) if (whole / QA_PATH).is_file() else {}
-        problems = check_ir(ir, whole, answered)
+        problems = check_ir(ir, whole, answered, path_rules=gate)
     if problems:
         return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, {}
     return 0, [], ir, answered
@@ -813,6 +816,7 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
     """(終了コード, 出力する行, 変化, 前の版) を返す。v<n> の全体と v<n-1> の全体を機能の `id` で比べる。
 
     前の版の中間表現も決まりに当てる——反すると、ケースの変化を Red テストの中身で比べられない（1）。
+    **パスの変数の決まりだけは当てない**（`read_whole`。#319）。
     """
     number = loaded.number
     now = {f["id"]: f for f in features_of(loaded.ir)}
