@@ -76,7 +76,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#263。各スキルの差分モードの「差分」はこれで決まる。**同じ中身の置き直しは変更に数えない**。重ねるのは
       `merge-versions.py` の `merge`——写しを作らない。`build-proposal.py` も v2 以降の「前の版からの変更」の節をこの関数で作る。
       テストは `scripts/test-diff-versions.py`）
-    - `templates/mkdocs/` - 正本リポジトリを MkDocs で閲覧するための雛形（#266。**フックは正本リポジトリへ写されて
+    - `templates/mkdocs/` - 正本リポジトリを MkDocs で閲覧するための雛形（#266。本文の `Q-008` を Q&A 表へのリンクにするのもフック（#324）。**フックは正本リポジトリへ写されて
       単独で動くので、Q&A の列名の写しを持つ**——`scripts/test-init-mkdocs.py` が `check-qa-csv.py` と突き合わせる。
       雛形の `gitignore` は写すときに `.gitignore` になる——プラグインの中で本物として効かないように）
     - `scripts/init-mkdocs.py` - 雛形を正本リポジトリへ写す（いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする。
