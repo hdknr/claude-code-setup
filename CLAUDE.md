@@ -40,14 +40,15 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **仕様に書く範囲の線と振り分けの区分**（`spec-scope.md`。#329））。
       **スキルの中ではなくプラグイン直下にある**——スキルからは `../../references/…` で指し、
       `check-skill-pointers.py` が**プラグインの中に収まること**まで見る（#216）
-    - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。テストは
-      `scripts/test-check-qa-csv.py`）
+    - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。共有の `shared/qa.csv` と内部の
+      `spec/qa-dev.csv` を**ファイルの名前で見分ける**——#339。テストは `scripts/test-check-qa-csv.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
       `scripts/test-qa-to-pptx.py`）
     - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
       （**0 でも「抜けた」ではない**。Q&A 表は `qa-to-pptx.py` の `read_rows` で読み、**仕様に反映した状態**
-      （`check-qa-csv.py` の `REFLECTED`——`暫定反映` を含む）でない行を数える——**資料に載る行とは別の定義**（#325）。テストは
+      （`check-qa-csv.py` の `REFLECTED`——`暫定反映` を含む）でない行を数える——**資料に載る行とは別の定義**（#325）。
+      **仕様のディレクトリの中の内部の表（`qa-dev.csv`）も数え、未決定の印の走査からは外す**（#339）。テストは
       `scripts/test-check-spec-exit.py`）
     - `scripts/check-feasibility-csv.py` - スケジュールと見積りの表の検査（`schedule-to-gantt.py` と
       `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは

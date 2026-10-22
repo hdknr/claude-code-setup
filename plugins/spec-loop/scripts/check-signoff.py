@@ -160,7 +160,9 @@ def removed_shared_rows(repo: Path, commit: str, tag: str, path: str) -> list[tu
                        + " / ".join(problems) + "。照合していない")
     rows = []
     for _, kind, target in parsed:
-        if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):
+        # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は共有の範囲の外——開発者が決めるものでサインオフが割れないように（#339）
+        if ((kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))
+                or (kind == REMOVED_FILE and target.startswith(SHARED))):
             rows.append((kind, target))
     return sorted(rows)
 
