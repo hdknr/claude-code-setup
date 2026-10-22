@@ -19,8 +19,9 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
 ## 何を見るか
 
 **スキルのディレクトリの中の Markdown**（`SKILL.md` と `references/*.md`、
-`prompts/*.md`）に現れる **`references/…` `prompts/…` `scripts/…` という形の相対パス**を
-拾い、**そのスキルのディレクトリからの相対で実在するか**を確かめる。
+`prompts/*.md`）と、**プラグイン直下の Markdown**（`agents/*.md` と `references/*.md`。#332）に
+現れる **`references/…` `prompts/…` `scripts/…` という形の相対パス**を拾い、
+**スキルのディレクトリ（プラグイン直下のファイルならプラグインの根）からの相対で実在するか**を確かめる。
 あわせて**散文の指し先**（`上の「X」` と `` `references/x.md` の「X」 ``）の X が、
 **指したファイルの本文にあるか**を確かめる（#205）。
 
@@ -85,6 +86,19 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
 - **太字の違いを同一視すること**——本文は項の一部だけを `**` で囲む。
 - **バッククォートの違いを同一視すること**——本文はコマンド名を囲み、指し先は囲まないことがある。
 - **空白（改行を含む）の違いを同一視すること**——本文は 1 行の幅で折り返す。
+- **プラグイン直下の `agents/*.md` と `references/*.md` も見ること**（#332）——spec-loop は
+  判定役の定義と共有の決まりをここに置く。**見ないと、そこの指し先がすべて機械の外にある**
+  （#329 の 2 パス目の `/code-review` が、節の名前を 3 つ壊しても緑のままだと実測で示した）。
+- **プラグイン直下のファイルの指し先は、プラグインの根から解決すること**——
+  `agents/red-team.md` の `references/spec-scope.md` は、プラグイン直下の `references/` を指している。
+- **`../` で始まる移した先の名指し（`` `../../references/x.md` の「X」 ``）も拾うこと**（#332）——
+  **スキルから共有の決まりの節を指す書き方である。** 拾わないと、パスの実在は見ても節の名前は見ない。
+- **ほかの持ち主を名指しした指し先は解決しないこと**——`` dev-loop の `references/spec-gap.md` ``
+  `` dev-loop のスキルの `scripts/x.py` `` `` このリポジトリの `scripts/x.py` `` は、
+  **このプラグインのファイルではない**。解決すると、正しい記述なのに落ちる。
+- **自分の名前や、プラグインでない名前の名指しは解決すること**——`` spec-loop の `references/x.md` ``
+  （spec-loop の中で）は自分のファイルである。**名指しの免除はプラグインのディレクトリ名と
+  「このリポジトリ」に限る**（限らないと、`の` で終わる語の後ろの指し先がすべて免除される）。
 
 守らない:
 
@@ -106,6 +120,13 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   `…/scripts/x` の形しか拾わないので、`python3 ../../../dev-loop/scripts/x.py` は
   **`scripts/x.py` としてスキルからの相対で解決される**（無ければ「実在しない」で落ちるが、
   **同じ名前がスキルの中にあると緑になる**）。
+- **ほかの持ち主を名指しした指し先が、その持ち主のところに実在するか**——解決しないだけで、
+  **名指しした先（dev-loop のスキル・このリポジトリ）は見ない。**
+- **名指しが同じ行に無い形**——免除を判定するのは**指し先の直前の文字列**である。
+  `dev-loop の` ／ `` `references/x.md` `` と行をまたぐと、囲まれた指し先は免除されない
+  （落ちる側に倒れる）。
+- **プラグイン直下のファイルからの `` `SKILL.md` の「X」 ``**——プラグインの根に `SKILL.md` は無く、
+  どのスキルを指すかが決まらないので照合しない。
 - **使われていないファイル**——**指されていない `references/*.md` があっても落とさない**
   （置いてすぐ指す周と、先に置く周を区別できないため）。
 - **スキルの `scripts/` と、対象リポジトリの `scripts/` の区別**——**付かない。**
@@ -160,6 +181,25 @@ def skill_dirs(root: pathlib.Path):
                 yield skill
 
 
+def targets_in(root: pathlib.Path):
+    """見るファイルを (解決の起点, プラグイン, ファイル) で返す。
+
+    **スキルの中**（`SKILL.md`・`references/*.md`・`prompts/*.md`）はスキルのディレクトリから、
+    **プラグイン直下**（`agents/*.md`・`references/*.md`）はプラグインの根から解決する
+    ——判定役の定義と共有の決まりは `references/x.md` をプラグインの根からの相対で書く（#332）。
+    """
+    for skill in skill_dirs(root):
+        plugin = skill.parent.parent
+        yield skill, plugin, skill / "SKILL.md"
+        for sub in ("references", "prompts"):
+            for path in sorted((skill / sub).glob("*.md")):
+                yield skill, plugin, path
+    for plugin in sorted(p for p in (root / "plugins").iterdir() if p.is_dir()):
+        for sub in ("agents", "references"):
+            for path in sorted((plugin / sub).glob("*.md")):
+                yield plugin, plugin, path
+
+
 # **フェンスの中の起動行**。`bash …/scripts/x.sh` `python3 …/scripts/x.py` の形。
 # **ここを見ないと、いちばん壊れて困る指し先を 1 つも検査しない**
 # ——**実際の起動はすべてコードブロックの中にある**（`/code-review` が指摘。#136）。
@@ -178,7 +218,22 @@ PROSE = re.compile(r"[上下]" + NO + QUOTED)
 # `` `references/resume.md` の「X」 `` / `` `SKILL.md` 手順 4 の「X」 `` —— X は指したファイルにあるはず。
 # **スキルの中の Markdown だけ**を拾う（`CLAUDE.md` は対象リポジトリのものを指している）。
 XREF = re.compile(
-    r"`(SKILL\.md|(?:references|prompts)/[\w.-]+\.md)`\s*(?:手順\s*\d+\s*)?" + NO + QUOTED)
+    r"`(SKILL\.md|(?:\.\./)*(?:references|prompts)/[\w.-]+\.md)`\s*(?:手順\s*\d+\s*)?" + NO + QUOTED)
+# **ほかの持ち主を名指しした指し先**（`dev-loop の` `dev-loop のスキルの` `このリポジトリの`）。
+# **このプラグインからの相対では解決しない**——spec-loop のプラグイン直下の決まりは、
+# dev-loop やこのリポジトリのファイルを名前で指す（#332）。名前はプラグインのディレクトリ名に限る。
+OWNER = re.compile(r"(?:このリポジトリ|([A-Za-z0-9_-]+)(?:\s*のスキル)?)\s*の\s*$")
+
+
+def owned_elsewhere(before: str, plugin: pathlib.Path) -> bool:
+    """指し先の直前の文字列 `before` が、ほかの持ち主を名指ししているか。"""
+    m = OWNER.search(before)
+    if not m:
+        return False
+    if m.group(1) is None:
+        return True  # このリポジトリ
+    name = m.group(1)
+    return name != plugin.name and (plugin.parent / name).is_dir()
 
 
 def normalize(text: str) -> str:
@@ -198,10 +253,11 @@ def body_without_pointers(text: str) -> str:
     return normalize(XREF.sub("", PROSE.sub("", text)))
 
 
-def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path):
+def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.Path):
     """散文の指し先を (行番号, 説明, X が指した先にあるか) で返す。
 
     **フェンスの中は見ない**——コード例の中の書き方は主張ではない。
+    `skill` は指し先を解決する起点（プラグイン直下のファイルならプラグインの根）。
     """
     raw = path.read_text(encoding="utf-8")
     prose = strip_fences(raw)
@@ -211,6 +267,8 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path):
         yield (lineno, f"{m.group(0)}（このファイルに無い）",
                normalize(m.group(1)) in own)
     for m in XREF.finditer(prose):
+        if owned_elsewhere(prose[max(0, m.start() - 40):m.start()], plugin):
+            continue
         target = skill / m.group(1)
         if not target.is_file():
             continue  # 実在しないことは囲まれた指し先の検査が言う
@@ -220,7 +278,7 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path):
                    target.read_text(encoding="utf-8")))
 
 
-def pointers_in(path: pathlib.Path):
+def pointers_in(path: pathlib.Path, plugin: pathlib.Path):
     """そのファイルにある指し先を (行番号, パス) で返す。
 
     **2 種類を拾う:**
@@ -234,7 +292,8 @@ def pointers_in(path: pathlib.Path):
     stripped = strip_fences(raw)
     for lineno, line in enumerate(stripped.split("\n"), 1):
         for m in POINTER.finditer(line):
-            yield lineno, m.group(1)
+            if not owned_elsewhere(line[:m.start()], plugin):
+                yield lineno, m.group(1)
         for m in PARENT.finditer(line):
             yield lineno, m.group(1)
     # **フェンスの中だけ**を見る（`strip_fences` は行数を保って空行にするので、
@@ -251,24 +310,19 @@ def main(argv=None) -> int:
     root = pathlib.Path(argv[0]) if argv else REPO_ROOT
     problems = []
     checked = files = 0
-    for skill in skill_dirs(root):
-        targets = [skill / "SKILL.md"]
-        for sub in ("references", "prompts"):
-            targets += sorted((skill / sub).glob("*.md"))
-        plugin = skill.parent.parent
-        for path in targets:
-            files += 1
-            for lineno, rel in pointers_in(path):
-                checked += 1
-                if not (skill / rel).exists():
-                    problems.append((path.relative_to(root), lineno, rel))
-                elif (leaves_plugin(skill, plugin, rel)
-                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):
-                    problems.append((path.relative_to(root), lineno, f"{rel}（プラグインの外）"))
-            for lineno, what, found in prose_pointers_in(path, skill):
-                checked += 1
-                if not found:
-                    problems.append((path.relative_to(root), lineno, what))
+    for base, plugin, path in targets_in(root):
+        files += 1
+        for lineno, rel in pointers_in(path, plugin):
+            checked += 1
+            if not (base / rel).exists():
+                problems.append((path.relative_to(root), lineno, rel))
+            elif (leaves_plugin(base, plugin, rel)
+                  or not (base / rel).resolve().is_relative_to(plugin.resolve())):
+                problems.append((path.relative_to(root), lineno, f"{rel}（プラグインの外）"))
+        for lineno, what, found in prose_pointers_in(path, base, plugin):
+            checked += 1
+            if not found:
+                problems.append((path.relative_to(root), lineno, what))
 
     if problems:
         print("ERROR: スキルの中の指し先が実在しません:", file=sys.stderr)
@@ -277,6 +331,8 @@ def main(argv=None) -> int:
         print("ERROR:", file=sys.stderr)
         print("ERROR: **指し先はスキルのディレクトリからの相対で書く。**"
               "プラグイン直下の共有物は `../../` で指す。プラグインの外は指せない。", file=sys.stderr)
+        print("ERROR: プラグイン直下の `agents/*.md` と `references/*.md` は、"
+              "プラグインの根からの相対で書く（#332）。", file=sys.stderr)
         print("ERROR: 名前を変えたなら、指している側も直すこと（#136）。", file=sys.stderr)
         print("ERROR: 散文の指し先（上の「X」・`references/x.md` の「X」）は、"
               "X を指した先の文言どおりに書く。節を移したなら、移した先を名指しする（#205）。",
