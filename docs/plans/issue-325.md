@@ -78,7 +78,15 @@
 
 - 周の在り処: ブランチ `issue/325-provisional-answers`・worktree `.claude/worktrees/issue-325`・
   起点 `9d74693`・base 参照 `origin/main` → `9d746936a1527bb633edcccbac606a766d511a11`
-- 実装: 未着手
+- 実装: `21664bb` で済み。個別のテストは緑（`test-check-qa-csv` 45/36・`test-qa-to-pptx`・`test-check-spec-exit` 28/23・
+  `test-scaffold` 160/110・`test-check-signoff` 51/39・`test-build-proposal` 37/30・`test-init-mkdocs` 32/50。試料/変異）
+- 実機確認: `qa-csv.md` の例の表から PPTX を作り、表紙が「回答待ち・未反映 2 件／暫定の回答 1 件」に分かれ、
+  一覧に `Q-003（暫定）`、Q-003 の頁に「暫定の回答（反映済み・確認待ち）」と反映先、反映済みの Q-001 が載らないことを見た。
+  抜ける条件 1 は暫定と反映済みだけの表で 0、確認中を含む表で確認中の 2 行を挙げて満たさない
+- 実験なし（交絡を潰す対象の実験は無い。上の実機確認は出力の目視）
+- `check-all.py`: **結果を回収していない**（割り目の時点で実行中だった）。**再開したら最初に回し直す**
+- 手順 4 の割り目: AskUserQuestion で「**ここで割る**」が選ばれた（2026-10-22）
+- 関門: **まだどれも通していない**。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。base は上の SHA
 
 ## 既知の限界・決着済みの論点
 
