@@ -143,6 +143,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs --
 | 前の版の Red テストが、実装の上で全部緑 | 開発のリポジトリで `python3 -m unittest discover -s scaffold/tests` | 実装が前の版の仕様に追いついていない（乖離）。**先にそれを直す周を回す**（dev-loop で、前の版の Issue の受入基準に戻す） |
 
 - **どちらも v1 を作る前には要らない**（前の版が無い）。
+- **spec-loop 0.13.0 より前に作った `scaffold/` は、1 つ目で古い・決まりに反すると言われることがある**——v<n-1> で作り直せない
+  場合を含め、移行は `spec-ir.md` の「0.13.0 より前に作った `scaffold/` の移行」を正とする。
 - **2 つ目は開発のリポジトリで見る**——`scaffold.py --red-check` はこの代わりにならない（何を比べ、何を見ないかは `scaffold.py` の docstring を正とする）。
 - **確かめずに始めない。** 崩れているのに始めると、v<n> の差分の Red テストが、前の版から持ち越した赤と区別できない。
 
