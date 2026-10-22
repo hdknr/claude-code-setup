@@ -68,6 +68,7 @@
 `/spec-loop:spec-review` で呼びます。1 回の実行で、確定した要求から開発者向けの仕様を書き下し（このスキルが書く側）、
 `agents/` の 3 つの判定役に**別のティアで**レビューさせて、指摘を振り分けます——開発者が決めてよいものは仕様を直し、
 **利用者の判断が要るものは Q&A 表に起票して `req-loop` の回答待ちに差し戻します。**
+範囲の外の場面と実現の手段の指摘は仕様に足しません（線と振り分けの区分は `references/spec-scope.md`）。
 **ループを抜ける条件（`references/spec-exit.md`）を満たしたときだけ「抜けた」と報告します。**
 
 手順と守ることは [`skills/spec-review/SKILL.md`](skills/spec-review/SKILL.md) を正とします。
