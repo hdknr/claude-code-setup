@@ -79,6 +79,8 @@
   #290 で Issue の本文が前の版の全体（`build/merged-v<n-1>/`）を指すようになったので、`spec-ir.md`・`read_whole` の docstring の
   「Issue の本文（前の版の API の行）」を「（前の版を指す行）」にした——**この 1 語は関門を通していない**（PR コメントに書く）。
   周の base を当て直した: `origin/main` → `2069b599f4b5f09eae97b9f8a499fccf16a428a2`。`check-all.py` 44/44 緑。
+- 手順 7: PR #328 の CI は緑（`check`・`build`）。マージは人間の承認待ち（draft）。反映経路はプラグインの版の配布と、マージ後の Pages のデプロイ
+- 手順 8: 焼き戻す学びなし——main との版の衝突は 2 度起きたが、`CLAUDE.md` の「並行する周は、同じ版に上げて衝突する」のとおりに起き、その手順で直した
 - この周の起票: 0 件（残課題はどれも実物で失敗を示せない、または直した）
 - 2 パス目の前の割り目: `AskUserQuestion` で訊いた → **ここで割る**（2026-10-22）。
   再開は worktree `.claude/worktrees/issue-319` の中で `/clear` → `/dev-loop:dev-loop 319`
