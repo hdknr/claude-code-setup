@@ -107,7 +107,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `check-skill-pointers.py` - **スキルの中の指し先**（`references/…` `prompts/…`
     `scripts/…`）が実在するか（#136。**`check-site-links.py` は絶対 URL しか見ない**）。
     **`../` で始まる指し先も見て、プラグインの外へ出たら落とす**（#216）。
-    **散文の指し先（`下の「X」`・`` `references/x.md` の「X」 ``）の X も照合する**（#205）
+    **散文の指し先（`下の「X」`・`` `references/x.md` の「X」 ``）の X も照合する**（#205）。
+    **プラグイン直下の `agents/*.md` と `references/*.md` も見て、プラグインの根から解決する**（#332）
   - `test-check-skill-pointers.py` - 上の回帰テスト（変異テストを含む）
   - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
     （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
