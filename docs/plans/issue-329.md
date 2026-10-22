@@ -85,6 +85,8 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
 - **周の在り処**: ブランチ `issue/329-spec-scope-line`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-329`・
   起点 `9d74693`・base の参照 `origin/main`・base の SHA `9d746936a1527bb633edcccbac606a766d511a11`
 - 実装: 済み（手順 4）。G の分け直しは済み（下の「G の結果」）。`check-all.py` 44/44 緑（G の後の修正の前の版で 1 回）
+- 実装のコミット: `3939a21`。`check-all.py` 44/44 緑（G の後の修正を含む版で 2 回目）
+- **割り目 1（手順 4 の後）: 提案した → 利用者は「ここで割る」を選んだ**（2026-10-22）
 - 関門: 未着手。**次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）**
 - 反証と差し戻し: なし
 - 交絡を潰した手順: G は実データの分け直し（実験ではない）。分け直しの判定が自分の新しい区分に寄っていないかは、別ティアの体に分けさせて見る
