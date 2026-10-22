@@ -214,7 +214,16 @@ PLUGIN_REF = """# 決まり
 
 規定の本体は other の `references/spec-gap.md`。
 同じ式の写しは other のスキルの `scripts/fp.py` にあり、このリポジトリの `scripts/test-x.py` が見る。
+読み方は other の `references/qa.md` の「other にしか無い節」を正とする。
 """
+# **最後の行**は「X」の照合の免除を当てる——`references/qa.md` はこのプラグインにも在り、
+# **X はこちらに無い**ので、**免除しなければ落ちる**（#332 の 1 パス目の `/code-review`）。
+# **名指しが前の行にある**——免除しない（落ちる側）。
+PLUGIN_REF_WRAPPED = PLUGIN_REF + "\n読み方は other の\n`references/qa.md` の「other にしか無い節」を正とする。\n"
+# **大文字小文字だけ違う自分の名前**——macOS の FS では `Demo` のディレクトリが「在る」ことになる。
+PLUGIN_REF_CASE = PLUGIN_REF + "\n自分の決まりは Demo の `references/missing.md` にある。\n"
+# **名前の前が区切りでない**——`foo/other` はプラグインの名指しではない。
+PLUGIN_REF_PATHLIKE = PLUGIN_REF + "\n詳細は foo/other の `references/missing.md` にある。\n"
 # **`../../` の移した先の名指しで、その先に無い**——#332 の再現（spec-review の「振り分けの区分」）。
 PLUGIN_SKILL_BROKEN = PLUGIN_SKILL.replace("振り分けの区分", "壊した区分")
 # **判定役の定義の移した先の名指しで、その先に無い**——#332 の再現（red-team の「振り分けの区分」）。
@@ -332,8 +341,23 @@ MUTATIONS = {
         "    m = None"),
     # 守る 27: 自分の名前や、プラグインでない名前の名指しは解決すること
     "どの名指しも免除する": (
-        "    return name != plugin.name and (plugin.parent / name).is_dir()",
+        "    return name != plugin.name and name in names",
         "    return True"),
+    # 守る 28: 「X」の照合でも、ほかの持ち主を名指しした指し先は照合しないこと
+    "「X」の照合でほかの持ち主の名指しを照合する": (
+        "        if owned_elsewhere(prose[line_start:m.start()], plugin):\n            continue",
+        "        if False:\n            continue"),
+    # 守る 29: 名指しは同じ行だけを見ること
+    "前の行の名指しで免除する": (
+        "prose[line_start:m.start()]",
+        "prose[max(0, m.start() - 40):m.start()]"),
+    # 守る 30: プラグイン名は文字どおりに比べること（FS に依らず殺せるよう、大文字小文字を無視する形で当てる）
+    "プラグイン名の大文字小文字を無視する": (
+        "    return name != plugin.name and name in names",
+        "    return name != plugin.name and name.lower() in {n.lower() for n in names}"),
+    # 守る 31: 名前の前が区切りであること
+    "名前の前の区切りを見ない": (
+        r"(?<![\w/.-])([A-Za-z0-9_-]+)", r"([A-Za-z0-9_-]+)"),
 }
 
 
@@ -469,6 +493,9 @@ def main() -> int:
         plugin_agent_broken = plugin_tree("plugin-agent-broken", agent=PLUGIN_AGENT_BROKEN)
         plugin_own = plugin_tree("plugin-own", ref=PLUGIN_REF_OWN)
         plugin_unknown = plugin_tree("plugin-unknown", ref=PLUGIN_REF_UNKNOWN)
+        plugin_wrapped = plugin_tree("plugin-wrapped", ref=PLUGIN_REF_WRAPPED)
+        plugin_case = plugin_tree("plugin-case", ref=PLUGIN_REF_CASE)
+        plugin_pathlike = plugin_tree("plugin-pathlike", ref=PLUGIN_REF_PATHLIKE)
         print("\nプラグイン直下（#332）")
         check("判定役と共有の決まりの指し先が実在すれば通す（ほかの持ち主の名指しは解決しない）",
               observe(mod, plugin_ok)["rc"] == 0)
@@ -478,6 +505,9 @@ def main() -> int:
               observe(mod, plugin_agent_broken)["rc"] == 1)
         check("自分の名前の名指しは免除しない", observe(mod, plugin_own)["rc"] == 1)
         check("プラグインでない名前の名指しは免除しない", observe(mod, plugin_unknown)["rc"] == 1)
+        check("前の行の名指しでは「X」の照合を免除しない", observe(mod, plugin_wrapped)["rc"] == 1)
+        check("大文字小文字だけ違う自分の名前は免除しない", observe(mod, plugin_case)["rc"] == 1)
+        check("名前の前が区切りでなければ免除しない", observe(mod, plugin_pathlike)["rc"] == 1)
 
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
@@ -527,7 +557,10 @@ def main() -> int:
                           or mutant.main([str(plugin_skill_broken)]) != 1
                           or mutant.main([str(plugin_agent_broken)]) != 1
                           or mutant.main([str(plugin_own)]) != 1
-                          or mutant.main([str(plugin_unknown)]) != 1)
+                          or mutant.main([str(plugin_unknown)]) != 1
+                          or mutant.main([str(plugin_wrapped)]) != 1
+                          or mutant.main([str(plugin_case)]) != 1
+                          or mutant.main([str(plugin_pathlike)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
