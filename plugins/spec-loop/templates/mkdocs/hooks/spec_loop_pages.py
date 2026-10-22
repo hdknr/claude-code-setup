@@ -17,19 +17,19 @@
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
 
 **本文の Q&A の番号（`Q-008`）は、Q&A 表のページ（`qa.md`）のアンカーへのリンクにする**（正本は番号のまま。
-決まりは spec-loop の `references/qa-csv.md` の「本文での番号」）。印を展開した後に掛けるので、描画関数が描いた表のセルにも掛かる。
+決まりは spec-loop の `references/qa-csv.md` の「本文での番号」）。`on_page_content` が**描いた後の HTML** に掛けるので、
+描画関数が描いた表のセルにも掛かる。
 
+- **書き換えるのは HTML の文字だけ**（タグ・属性・コメントは変えない）。次の要素の中は変えない:
+  見出し（`h1`〜`h6`）・コード（`pre`・`code`・`kbd`・`samp`）・リンク（`a`）・`script`・`style`・`textarea`・`title`。
+  **Markdown を読み直さない**——見出しかコードかリンクかは、MkDocs（Python-Markdown と拡張）が描いた結果で決まる
+  （アドモニション・箇条書き・引用の中も、字下げのコードブロックも、生の HTML も同じ扱いになる）。
+- リンク先は MkDocs の `File.url_relative_to` で作る（`use_directory_urls` に従う）。
 - 版は、`docs/v<n>/` の下のページなら `v1`〜`v<n>` のうち、版の外のページならすべての版のうち、
   **その番号を持つ最も新しい版**（版は重ね合わせないので、問い直していない番号は前の版の節にしか無い）。
 - **リンクにする版の Q&A 表に無い番号はリンクにせず警告する**（打ち間違いを拾う）。版の下のページなら、
   その版より新しい版にだけある番号もここに入る。読めない表の番号は数えない（表の警告は Q&A 表のページで出る）。
-- 置き換えないところ: 見出し（Setext は下線の上の段落全体）・フェンス（アドモニション・箇条書き・引用の中を含む）・
-  インラインのコード・`[…]` の中と直後の `(…)`・リンク参照定義の行・HTML のタグ（属性の形をしたもの）とコメント・
-  自動リンク・URL（ASCII の続く限り）・Q&A 表のページ（`qa` の印を持つページ）。`qa.md` が無ければ何もしない。
-- **字下げ（4 文字）のコードブロックは見分けない**——アドモニションや箇条書きの続きと区別できないので、中の番号もリンクになる。
-  コードはフェンスで書く。
-- **見分けないもの**: 生の HTML ブロック（`<details>` など）のタグの間の文字（リンクの記法が置かれ、そのまま表示される）・
-  空行をまたぐ HTML コメント。
+- Q&A 表のページ（`qa` の印を持つページ）と、`qa.md` の無いサイトは変えない。
 """
 
 from __future__ import annotations
@@ -37,7 +37,6 @@ from __future__ import annotations
 import csv
 import html
 import logging
-import posixpath
 import re
 from pathlib import Path
 
@@ -53,27 +52,14 @@ QA_NO_ANSWER = "未回答"
 QA_OPTION_SEPARATOR = " / "
 
 QA_PAGE = "qa.md"
-QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-[0-9]{3,}(?![A-Za-z0-9_])")
-# フェンスの開き（引用・箇条書きの印と字下げの後ろも見る——アドモニションや箇条書きの中のフェンス）と閉じ
-FENCE = re.compile(r"(?:[ \t]*(?:>[ \t]?|[-*+][ \t]+|[0-9]{1,9}[.)][ \t]+))*[ \t]*(`{3,}|~{3,})")
-FENCE_CLOSE = re.compile(r"(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})[ \t]*$")
-ATX_HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
-SETEXT_UNDERLINE = re.compile(r" {0,3}(?:=+|-+)[ \t]*$")
-# 番号を置き換えない範囲（行をまたぐのは空行までの段落の中だけ）。順に: インラインのコード・HTML のコメント・<a> の中・
-# リンク参照定義の行・タグ（属性の形をしているものだけ。`x<y で … y>z` はタグでない）・宣言・自動リンク（URL とメール）・
-# […] と直後の (…) か […]・URL（ASCII の続く限り。和文の句読点で止める）
-PROTECTED = re.compile(
-    r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)"
-    r"|<!--.*?-->"
-    r"|<a\b.*?</a>"
-    r"|(?:^|(?<=\n)) {0,3}\[(?:\\.|[^\]\\])+\]:[^\n]*"
-    r"|</?[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][-A-Za-z0-9_.:]*(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'=<>`]+))?)*\s*/?>"
-    r"|<![A-Za-z][^>]*>"
-    r"|<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>"
-    r"|<[^\s<>@]+@[^\s<>]+>"
-    r"|(?<!\\)!?\[(?:\\.|[^\]\\])*\](?:\([^)]*\)|\[[^\]]*\])?"
-    r"|https?://[!-~]+",
-    re.DOTALL | re.IGNORECASE)
+QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-[0-9]{3,}(?![A-Za-z0-9_-])")
+# HTML の、文字でないもの: コメント・CDATA・宣言と処理命令・タグ（属性の値の中の > で切らない）。group(1) は終わりの /、group(2) は要素名
+MARKUP = re.compile(r"<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[!?][^>]*>"
+                    r"|<(/?)([A-Za-z][A-Za-z0-9-]*)(?:\"[^\"]*\"|'[^']*'|[^'\">])*>", re.DOTALL)
+# 中の文字を変えない要素
+UNLINKED = {"a", "code", "pre", "kbd", "samp", "script", "style", "textarea", "title", "h1", "h2", "h3", "h4", "h5", "h6"}
+# Q&A 表のページ（on_page_markdown が印を見て記録し、on_page_content が飛ばす）
+qa_pages: set[str] = set()
 MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")
 ANCHOR_UNSAFE = re.compile(r"[^a-z0-9_-]+")
 
@@ -166,20 +152,18 @@ def qa_numbers(docs_dir: Path) -> list[tuple[int, set[str]]]:
         path = root / "shared" / "qa.csv"
         if path.is_file():
             try:
-                found.append((version, {row["No"].strip() for row in read_qa(path)}))
+                # 空白を落とさない——Q&A 表のアンカーも落とさずに作るので、落とすとリンクがアンカーに当たらない（警告に回す）
+                found.append((version, {row["No"] for row in read_qa(path)}))
             except (OSError, ValueError, csv.Error):  # UnicodeDecodeError は ValueError の子
                 found.append((version, set()))
     return found
 
 
-def link_numbers(markdown: str, src_path: str, docs_dir: Path) -> str:
-    """本文の Q&A の番号を Q&A 表のアンカーへのリンクにする（置き換えないところはモジュールの docstring）。"""
-    if not (docs_dir / QA_PAGE).is_file():
-        return markdown
+def link_numbers(content: str, src_path: str, target: str, docs_dir: Path) -> str:
+    """描いた HTML の文字の中の Q&A の番号を、`target`（Q&A 表のページの URL）のアンカーへのリンクにする。"""
     top = src_path.split("/", 1)[0]
     limit = int(top[1:]) if VERSION.fullmatch(top) and "/" in src_path else None
     tables = [(version, numbers) for version, numbers in qa_numbers(docs_dir) if limit is None or version <= limit]
-    target = posixpath.relpath(QA_PAGE, posixpath.dirname(src_path) or ".")
     scope = (f"v1〜v{limit} のどの版" if limit is not None else "どの版") + "の Q&A 表"
     unknown: list[str] = []
 
@@ -190,49 +174,27 @@ def link_numbers(markdown: str, src_path: str, docs_dir: Path) -> str:
             if number not in unknown:
                 unknown.append(number)
             return number
-        return f"[{number}]({target}#{anchor(version, number)})"
+        return f'<a href="{html.escape(target + "#" + anchor(version, number))}">{number}</a>'
 
-    def paragraph(lines: list[str]) -> str:
-        block = "".join(lines)
-        out, last = [], 0
-        for match in PROTECTED.finditer(block):
-            out += [QA_NUMBER.sub(link, block[last:match.start()]), match.group(0)]
-            last = match.end()
-        out.append(QA_NUMBER.sub(link, block[last:]))
-        return "".join(out)
-
-    lines = markdown.splitlines(keepends=True)
-    out: list[str] = []
-    pending: list[str] = []
-    fence = ""
-    for index, line in enumerate(lines):
-        if fence:
-            out.append(line)
-            closing = FENCE_CLOSE.match(line)
-            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence):
-                fence = ""
-            continue
-        opening = FENCE.match(line)
-        if opening and opening.group(1)[0] == "`" and "`" in line[opening.end():]:
-            opening = None  # ` のフェンスの情報文字列は ` を持たない（行頭の ```a``` はインラインのコード）
-        following = lines[index + 1] if index + 1 < len(lines) else ""
-        if line.strip() and not opening and not ATX_HEADING.match(line) and SETEXT_UNDERLINE.match(following):
-            out += pending + [line]  # 下線の上の段落は、行が何行あっても全体が見出し
-            pending = []
-            continue
-        # 空行でも段落を切る（閉じない ` が次の段落の ` と組まないように）
-        if opening or not line.strip() or ATX_HEADING.match(line):
-            out.append(paragraph(pending))
-            pending = []
-            out.append(line)
-            fence = opening.group(1) if opening else ""
-            continue
-        pending.append(line)
-    out.append(paragraph(pending))
+    out, last = [], 0
+    inside = {name: 0 for name in UNLINKED}  # 開いている要素の数（入れ子・閉じ忘れの多い HTML でも数で追う）
+    for match in MARKUP.finditer(content):
+        between = content[last:match.start()]
+        out += [between if any(inside.values()) else QA_NUMBER.sub(link, between), match.group(0)]
+        last = match.end()
+        name = (match.group(2) or "").lower()
+        if name in inside and not match.group(0).endswith("/>"):
+            inside[name] = max(inside[name] - 1, 0) if match.group(1) else inside[name] + 1
+    between = content[last:]
+    out.append(between if any(inside.values()) else QA_NUMBER.sub(link, between))
     for number in unknown:
         log.warning("spec-loop: %s: %s は %sにも無いので、リンクにしない（読めない表は数えない）",
                     src_path, number, scope)
     return "".join(out)
+
+
+def page_path(page) -> str:
+    return getattr(page.file, "src_uri", page.file.src_path).replace("\\", "/")
 
 
 def on_page_markdown(markdown: str, page, config, files) -> str:
@@ -245,7 +207,16 @@ def on_page_markdown(markdown: str, page, config, files) -> str:
             return problem(f"{page.file.src_path}: 知らない印 `spec-loop: {name}`（知っているのは {', '.join(RENDERERS)}）")
         return renderer(docs_dir)
 
-    src_path = getattr(page.file, "src_uri", page.file.src_path).replace("\\", "/")
-    is_qa_page = any(match.group("name") == "qa" for match in MARKER.finditer(markdown))
-    markdown = MARKER.sub(replace, markdown)
-    return markdown if is_qa_page else link_numbers(markdown, src_path, docs_dir)
+    if any(match.group("name") == "qa" for match in MARKER.finditer(markdown)):
+        qa_pages.add(page_path(page))
+    else:
+        qa_pages.discard(page_path(page))
+    return MARKER.sub(replace, markdown)
+
+
+def on_page_content(content: str, page, config, files) -> str:
+    src_path = page_path(page)
+    qa = files.get_file_from_path(QA_PAGE)
+    if src_path in qa_pages or qa is None:
+        return content
+    return link_numbers(content, src_path, qa.url_relative_to(page.file), Path(config["docs_dir"]))
