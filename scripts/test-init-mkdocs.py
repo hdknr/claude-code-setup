@@ -23,10 +23,19 @@
    BOM つきの表を読む。空白だけの行は読み飛ばし、列の足りない行は空で埋める。回答の `未回答 ` は未回答と数える。
    読めない表・見出しの違う表・知らない印は**警告**（`mkdocs` のロガー。`--strict` で落ちる）とページ上の注意書き。
    表が 1 つも無ければそう書き、警告は出さない。印の無いページは変えない。
+   **本文の Q&A の番号**は、描いた後の HTML（`on_page_content`）で、`v1`〜ページの版のうちその番号を持つ最も新しい版の
+   アンカーへのリンクにする（版の外のページはすべての版から。リンク先は `File.url_relative_to`——ここでは
+   `use_directory_urls: false` の MkDocs と同じ値を返す偽物で当てる）。表のセルにも掛ける。見出し（容れ物の中・大文字の要素名も）・
+   コード・リンク・`kbd`・`samp`・`script`・`style`・`textarea` の中と、属性（値の中の `>` を含む）・コメント・CDATA は変えない。
+   変えない要素の後ろ・余分な閉じタグの後ろ・自己閉じの `<code/>` の後ろは置き換える。
+   リンクにする版の表に無い番号はリンクにせず 1 度だけ警告し、警告は見た版の範囲を言う。読めない表があっても落ちず、他の版でリンクにする。
+   空白つきの `No` はアンカーと合わないのでリンクにせず警告する。前後が英数字・`-`・`_` の `Q-` は番号でない。
+   Q&A 表のページ（印を外せば掛かる）と、`qa.md` の無いサイトは変えない。
 3. **写しの突き合わせ**——フックの列名・状態・印は `check-qa-csv.py` の定数と同じ（フックは正本リポジトリへ写されて
    単独で動くので import できず、写しを持つ）。
 4. **重ね合わせに混ざらない**——雛形を写した正本で `merge-versions.py` が通り、出力に表示用のファイルが入らない。
 5. **決まりの原本（`references/tree.md`）の「ドキュメントのツール」の節が、写し方のコマンドを載せている。**
+   本文の番号の書き方は `references/qa-csv.md` の「本文での番号」にあり、`tree.md` がそこを指している。
 
 **`mkdocs build` は走らせない**（CI に MkDocs と Material の組を入れていない）。実際に組んで表が出ることは
 dev-loop の検証で見る（#266 の計画ファイル）。
@@ -37,11 +46,13 @@ dev-loop の検証で見る（#266 の計画ファイル）。
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import importlib.util
 import io
 import logging
 import os
+import posixpath
 import resource
 import shutil
 import subprocess
@@ -64,6 +75,8 @@ QA_V1 = HEADER + (
 QA_V2 = HEADER + (
     "Q-002,実現性・コスト,夜間は（問い直し）？,A: 止める / B: 24 時間,B（部長）,—,確認中,B は月額 2 倍\n"
     '"Q-003",要求確定,"1 行目\n2 行目 *強調* `x` [y](z)",A: はい / B: いいえ,未回答,—,確認中,\n'
+    # 暫定の回答で反映した行（#325）——確認中にも「回答あり・未反映」にも数えない
+    "Q-004,要求確定,上限は？,A: なし / B: 5000 円,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 7 行目,暫定反映,\n"
 )
 QA_V10 = HEADER + "Q-010,要求確定,十番目,A: はい / B: いいえ,未回答,—,確認中,\n"
 
@@ -327,18 +340,26 @@ def load_hook(plugin: Path):
     return module
 
 
-def render(plugin: Path, docs: Path, markdown: str) -> tuple[str, list[str]]:
-    hook = load_hook(plugin)
+@contextlib.contextmanager
+def warnings_of():
+    """`mkdocs` のロガーに出た警告を集める。"""
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     logger = logging.getLogger("mkdocs")
     logger.addHandler(handler)
     logger.setLevel(logging.WARNING)
     try:
-        page = SimpleNamespace(file=SimpleNamespace(src_path="qa.md"))
-        out = hook.on_page_markdown(markdown, page, {"docs_dir": str(docs)}, None)
+        yield stream
     finally:
         logger.removeHandler(handler)
+
+
+def render(plugin: Path, docs: Path, markdown: str, src: str = "qa.md", renderers: dict | None = None) -> tuple[str, list[str]]:
+    hook = load_hook(plugin)
+    hook.RENDERERS.update(renderers or {})
+    with warnings_of() as stream:
+        page = SimpleNamespace(file=SimpleNamespace(src_path=src))
+        out = hook.on_page_markdown(markdown, page, {"docs_dir": str(docs)}, None)
     return out, [line for line in stream.getvalue().splitlines() if line]
 
 
@@ -349,8 +370,8 @@ def hook_versions(plugin: Path, work: Path) -> bool:
     v1, v2 = out.index("## v1"), out.index("## v2")
     return (not warnings and out.startswith("# Q&A\n\n") and v1 < v2
             and "(#v1-q-001)" in out and "{#v1-q-002}" in out and "{#v2-q-002}" in out and "{#v2-q-003}" in out
-            and "確認中 1 件（うち回答あり・未反映 0 件）・反映済み 1 件" in out[v1:v2]
-            and "確認中 2 件（うち回答あり・未反映 1 件）・反映済み 0 件" in out[v2:]
+            and "確認中 1 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out[v1:v2]
+            and "確認中 2 件（うち回答あり・未反映 1 件）・暫定反映 1 件・反映済み 0 件" in out[v2:]
             and "| 選択肢 | A: 止める<br>B: 24 時間 |" in out
             and "<!-- spec-loop" not in out)
 
@@ -433,7 +454,7 @@ def hook_blank_rows(plugin: Path, work: Path) -> bool:
     write(docs, {"v1/shared/qa.csv": QA_V1 + ",,,,,,,\n , ,\n\nQ-004,要求確定,短い？,A: x / B: y,未回答 ,—,確認中\n"})
     out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
     return (not warnings and "{#v1-q-004}" in out and "{#v1-}" not in out and out.count("### ") == 3
-            and "確認中 2 件（うち回答あり・未反映 0 件）・反映済み 1 件" in out)
+            and "確認中 2 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out)
 
 
 def hook_bad_header(plugin: Path, work: Path) -> bool:
@@ -471,6 +492,145 @@ def hook_no_marker(plugin: Path, work: Path) -> bool:
     text = "# 表紙\n\n<!-- ふつうのコメント -->\n"
     out, warnings = render(plugin, docs, text)
     return out == text and not warnings
+
+
+def link_site(work: Path) -> Path:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/shared/qa.csv": QA_V2, "v3/requirements/a.md": "# a\n",
+                 "qa.md": "<!-- spec-loop: qa -->\n"})
+    return docs
+
+
+def site_files(docs: Path) -> SimpleNamespace:
+    """MkDocs の `Files` の代わり。`qa.md` の `url_relative_to` は `use_directory_urls: false` の MkDocs と同じ値を返す
+    （実際の MkDocs で同じになることは dev-loop の検証で見る——#324 の計画ファイル）。"""
+    qa = SimpleNamespace(url="qa.html", url_relative_to=lambda other: posixpath.relpath(
+        "qa.html", posixpath.dirname(other.src_path) or "."))
+    return SimpleNamespace(get_file_from_path=lambda path: qa if path == "qa.md" and (docs / path).is_file() else None)
+
+
+def link(plugin: Path, docs: Path, content: str, src: str, markdown: str = "本文\n", hook=None) -> tuple[str, list[str]]:
+    """`on_page_markdown` に `markdown` を通してから、描いた HTML に見立てた `content` を `on_page_content` に通す。"""
+    hook = hook or load_hook(plugin)
+    page = SimpleNamespace(file=SimpleNamespace(src_path=src))
+    config = {"docs_dir": str(docs)}
+    with warnings_of() as stream:
+        hook.on_page_markdown(markdown, page, config, None)
+        out = hook.on_page_content(content, page, config, site_files(docs))
+    return out, [line for line in stream.getvalue().splitlines() if line]
+
+
+def a(number: str, href: str) -> str:
+    return f'<a href="{href}">{number}</a>'
+
+
+def hook_links(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    v2, w2 = link(plugin, docs, "<p>決定（Q-001）と Q-002・Q-003。</p>\n", "v2/requirements/a.md")
+    v1, w1 = link(plugin, docs, "<p>Q-001 と Q-002。</p>\n", "v1/a.md")
+    v3, w3 = link(plugin, docs, "<p>Q-002</p>\n", "v3/requirements/a.md")
+    top, w0 = link(plugin, docs, "<p>Q-001 と Q-002</p>\n", "index.md")
+    return (not (w2 or w1 or w3 or w0)
+            and v2 == f"<p>決定（{a('Q-001', '../../qa.html#v1-q-001')}）と {a('Q-002', '../../qa.html#v2-q-002')}・"
+                      f"{a('Q-003', '../../qa.html#v2-q-003')}。</p>\n"
+            and v1 == f"<p>{a('Q-001', '../qa.html#v1-q-001')} と {a('Q-002', '../qa.html#v1-q-002')}。</p>\n"
+            and v3 == f"<p>{a('Q-002', '../../qa.html#v2-q-002')}</p>\n"
+            and top == f"<p>{a('Q-001', 'qa.html#v1-q-001')} と {a('Q-002', 'qa.html#v2-q-002')}</p>\n")
+
+
+def hook_links_older_version(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    out, warnings = link(plugin, docs, "<p>Q-003</p>\n", "v1/a.md")
+    return out == "<p>Q-003</p>\n" and len(warnings) == 1 and "Q-003" in warnings[0] and "v1〜v1" in warnings[0]
+
+
+# 見出し（容れ物の中・大文字の要素名を含む）・コード・リンク・属性（値の中の > を含む）・コメント・CDATA・script などの中
+LEFT_ALONE = """<h1 id="x">見出し Q-001</h1>
+<H2>Q-002</H2>
+<h6>Q-001</h6>
+<div class="admonition note"><h3 id="q-001">Q-001 の決定</h3></div>
+<blockquote><h2>Q-001</h2></blockquote>
+<pre><code>Q-001
+<span class="err">Q-002</span>
+</code></pre>
+<p><code>Q-001</code> と <a href="qa.html#v1-q-001">Q-001</a> と <a href="b.md">決定（<em>Q-002</em>）</a> と <img alt="Q-001" src="Q-001.png" /></p>
+<p><kbd>Q-001</kbd> <samp>Q-002</samp> <textarea>Q-001</textarea></p>
+<p title="Q-001 > Q-002" data-x='a > Q-002'>段落</p>
+<!-- a > Q-001 -->
+<![CDATA[ a > Q-001 ]]>
+<script>var s = "<p>Q-001</p>";</script>
+<style>/* Q-001 */</style>
+"""
+
+
+def hook_links_left_alone(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    out, warnings = link(plugin, docs, LEFT_ALONE, "index.md")
+    return out == LEFT_ALONE and not warnings
+
+
+def hook_links_after_left_alone(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    page = ("<h1>Q-001</h1>\n<p>Q-001</p>\n<pre><code>Q-001</code></pre>Q-002<a href=\"#\">x</a> Q-001<br/>Q-002"
+            "<p></code>Q-001</p><code/>Q-002\n")
+    out, warnings = link(plugin, docs, page, "index.md")
+    q1, q2 = a("Q-001", "qa.html#v1-q-001"), a("Q-002", "qa.html#v2-q-002")
+    return not warnings and out == (
+        f"<h1>Q-001</h1>\n<p>{q1}</p>\n<pre><code>Q-001</code></pre>{q2}<a href=\"#\">x</a> {q1}<br/>{q2}"
+        f"<p></code>{q1}</p><code/>{q2}\n")
+
+
+def hook_links_unreadable(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    write(docs, {"v2/shared/qa.csv": "No,質問\nQ-003,x\n"})
+    out, warnings = link(plugin, docs, "<p>Q-001 と Q-003</p>\n", "index.md")
+    return (out == f"<p>{a('Q-001', 'qa.html#v1-q-001')} と Q-003</p>\n" and len(warnings) == 1
+            and "Q-003" in warnings[0] and "読めない表は数えない" in warnings[0])
+
+
+def hook_links_spaced_number(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    write(docs, {"v2/shared/qa.csv": QA_V2 + " Q-005,要求確定,空白,A: はい / B: いいえ,未回答,—,確認中,\n"})
+    out, warnings = link(plugin, docs, "<p>Q-005</p>\n", "index.md")
+    return out == "<p>Q-005</p>\n" and len(warnings) == 1 and "Q-005" in warnings[0]
+
+
+def hook_links_unknown(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    out, warnings = link(plugin, docs, "<p>Q-099 と Q-099 と Q-001</p>\n", "index.md")
+    return (out == f"<p>Q-099 と Q-099 と {a('Q-001', 'qa.html#v1-q-001')}</p>\n" and len(warnings) == 1
+            and "Q-099" in warnings[0] and "index.md" in warnings[0])
+
+
+def hook_links_shape(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    write(docs, {"v4/shared/qa.csv": HEADER + "Q-0012,要求確定,四桁,A: はい / B: いいえ,未回答,—,確認中,\n"})
+    out, warnings = link(plugin, docs, "<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x Q-0012 a-Q-001 (Q-001)</p>\n", "index.md")
+    return not warnings and out == (
+        f"<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x {a('Q-0012', 'qa.html#v4-q-0012')} a-Q-001 ({a('Q-001', 'qa.html#v1-q-001')})</p>\n")
+
+
+def hook_links_not_qa_page(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    hook = load_hook(plugin)
+    qa, warnings = link(plugin, docs, "<p>Q-001 と Q-099</p>\n", "qa.md", "<!-- spec-loop: qa -->\n", hook)
+    # 同じページから印を外したら掛かる（`mkdocs serve` で組み直したとき、前に記録した Q&A 表のページを覚えたままにしない）
+    again, more = link(plugin, docs, "<p>Q-001</p>\n", "qa.md", hook=hook)
+    return (not warnings and qa == "<p>Q-001 と Q-099</p>\n"
+            and not more and again == f"<p>{a('Q-001', 'qa.html#v1-q-001')}</p>\n")
+
+
+def hook_links_rendered(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    out, warnings = link(plugin, docs, "<table><tr><td>会員</td><td>Q-002</td></tr></table>\n", "v1/decision.md")
+    return not warnings and out == f"<table><tr><td>会員</td><td>{a('Q-002', '../qa.html#v1-q-002')}</td></tr></table>\n"
+
+
+def hook_links_no_qa_page(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1})
+    out, warnings = link(plugin, docs, "<p>Q-001 と Q-099</p>\n", "index.md")
+    return out == "<p>Q-001 と Q-099</p>\n" and not warnings
 
 
 def merge_ignores_pages(plugin: Path, work: Path) -> bool:
@@ -516,6 +676,17 @@ CASES = {
     "表が無ければそう書く": hook_no_table,
     "知らない印は警告": hook_unknown_marker,
     "印の無いページは変えない": hook_no_marker,
+    "本文の番号を版のアンカーへの相対リンクにする": hook_links,
+    "ページの版より新しい版の番号はリンクにしない": hook_links_older_version,
+    "見出し・コード・リンク・属性・コメントの中は変えない": hook_links_left_alone,
+    "変えない要素の後ろは置き換える": hook_links_after_left_alone,
+    "読めない表があっても他の版でリンクにする": hook_links_unreadable,
+    "空白つきの No はリンクにせず警告": hook_links_spaced_number,
+    "どの版にも無い番号は警告": hook_links_unknown,
+    "番号の形": hook_links_shape,
+    "Q&A 表のページは変えない": hook_links_not_qa_page,
+    "描画した表のセルも置き換える": hook_links_rendered,
+    "qa.md が無ければ変えない": hook_links_no_qa_page,
     "重ね合わせに表示用のファイルが混ざらない": merge_ignores_pages,
 }
 
@@ -615,9 +786,65 @@ MUTATIONS: list[tuple] = [
     ("警告を出さない", HOOK, '    log.warning("spec-loop: %s", message)\n', "", "見出しの違う表は警告"),
     ("知らない印を消す", HOOK, "        if renderer is None:\n            return problem(",
      "        if renderer is None:\n            return (", "知らない印は警告"),
-    ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER) for row in rows)',
-     " and False for row in rows)",
+    ("暫定反映を確認中に数える", HOOK, "    pending = len(rows) - done - provisional\n", "    pending = len(rows) - done\n",
      "版ごとの節・アンカー・件数"),
+    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"] not in (QA_DONE, QA_PROVISIONAL) and', 'row["状態"] != QA_DONE and',
+     "版ごとの節・アンカー・件数"),
+    ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER)\n',
+     " and False\n",
+     "版ごとの節・アンカー・件数"),
+    ("ページの版を上限にしない", HOOK, " if limit is None or version <= limit]", "]",
+     "ページの版より新しい版の番号はリンクにしない"),
+    ("最も古い版を指す", HOOK, "for version, numbers in reversed(tables) if", "for version, numbers in tables if",
+     "本文の番号を版のアンカーへの相対リンクにする"),
+    ("リンク先を相対パスにしない", HOOK, "qa.url_relative_to(page.file)", "qa.url",
+     "本文の番号を版のアンカーへの相対リンクにする"),
+    ("版の下のページを版の外とみなす", HOOK, 'limit = int(top[1:]) if VERSION.fullmatch(top) and "/" in src_path else None',
+     "limit = None", "本文の番号を版のアンカーへの相対リンクにする"),
+    ("見出しの中を変える", HOOK, '"textarea", "title", "h1", "h2", "h3", "h4", "h5", "h6"}', '"textarea", "title"}',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("コードの中を変える", HOOK, 'UNLINKED = {"a", "code", "pre", ', 'UNLINKED = {"a", ',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("リンクの中を変える", HOOK, 'UNLINKED = {"a", ', "UNLINKED = {",
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("kbd・samp・script・style・textarea の中を変える", HOOK, '"kbd", "samp", "script", "style", "textarea", ', "",
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("要素名の大文字を区別する", HOOK, '(match.group(2) or "").lower()', '(match.group(2) or "")',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("属性の値の中の > で切る", HOOK, r'''(?:\"[^\"]*\"|'[^']*'|[^'\">])*>"''', '''[^>]*>"''',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("コメントを > で切る", HOOK, 'MARKUP = re.compile(r"<!--.*?-->|', 'MARKUP = re.compile(r"',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("CDATA を > で切る", HOOK, r'|<!\[CDATA\[.*?\]\]>|', "|",
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("閉じても戻らない", HOOK, "max(inside[name] - 1, 0) if match.group(1) else", "inside[name] if match.group(1) else",
+     "変えない要素の後ろは置き換える"),
+    ("余分な閉じで数を負にする", HOOK, "max(inside[name] - 1, 0)", "inside[name] - 1",
+     "変えない要素の後ろは置き換える"),
+    ("自己閉じを開きとみなす", HOOK, ' and not match.group(0).endswith("/>"):', ":",
+     "変えない要素の後ろは置き換える"),
+    ("読めない表で落ちる", HOOK, "            except (OSError, ValueError, csv.Error):  #", "            except ZeroDivisionError:  #",
+     "読めない表があっても他の版でリンクにする"),
+    ("No の空白を落とす", HOOK, '{row["No"] for row in read_qa(path)}', '{row["No"].strip() for row in read_qa(path)}',
+     "空白つきの No はリンクにせず警告"),
+    ("警告が見た版の範囲を言わない", HOOK, '    scope = (f"v1〜v{limit} のどの版" if limit is not None else "どの版")',
+     '    scope = ("どの版")', "ページの版より新しい版の番号はリンクにしない"),
+    ("知らない番号を警告しない", HOOK, '        log.warning("spec-loop: %s: %s は %sにも', '        str("spec-loop: %s: %s は %sにも',
+     "どの版にも無い番号は警告"),
+    ("知らない番号を何度も警告する", HOOK, "            if number not in unknown:\n                unknown.append(number)\n",
+     "            unknown.append(number)\n", "どの版にも無い番号は警告"),
+    ("番号の前を見ない", HOOK, r'QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-', r'QA_NUMBER = re.compile(r"Q-', "番号の形"),
+    ("番号の後を見ない", HOOK, r'[0-9]{3,}(?![A-Za-z0-9_-])")', r'[0-9]{3,})")', "番号の形"),
+    ("番号の後の - を見ない", HOOK, r'[0-9]{3,}(?![A-Za-z0-9_-])")', r'[0-9]{3,}(?![A-Za-z0-9_])")', "番号の形"),
+    ("番号を 3 桁に限る", HOOK, r'Q-[0-9]{3,}(?!', r'Q-[0-9]{3}(?!', "番号の形"),
+    ("Q&A 表のページにも掛ける", HOOK, "    if src_path in qa_pages or qa is None:", "    if qa is None:",
+     "Q&A 表のページは変えない"),
+    ("Q&A 表のページの記録を消さない", HOOK, "    else:\n        qa_pages.discard(page_path(page))\n", "",
+     "Q&A 表のページは変えない"),
+    ("表のセルの中を変えない", HOOK, '"textarea", "title", ', '"textarea", "title", "td", ',
+     "描画した表のセルも置き換える"),
+    ("qa.md が無くても掛ける", HOOK, " or qa is None:", ":",
+     "qa.md が無ければ変えない"),
 ]
 
 
@@ -627,7 +854,7 @@ def check_copies() -> None:
     spec = importlib.util.spec_from_file_location("check_qa_csv", PLUGIN / "scripts" / "check-qa-csv.py")
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)
-    for name, theirs in (("QA_COLUMNS", checker.COLUMNS), ("QA_DONE", checker.DONE),
+    for name, theirs in (("QA_COLUMNS", checker.COLUMNS), ("QA_DONE", checker.DONE), ("QA_PROVISIONAL", checker.PROVISIONAL),
                          ("QA_NO_ANSWER", checker.NO_ANSWER), ("QA_OPTION_SEPARATOR", checker.OPTION_SEPARATOR)):
         check(f"フックの {name} が check-qa-csv.py と違う", getattr(hook, name) == theirs, f"{getattr(hook, name)!r} != {theirs!r}")
     page = (PLUGIN / "templates" / "mkdocs" / "docs" / "qa.md").read_text(encoding="utf-8")
@@ -642,8 +869,10 @@ def check_reference() -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     check("references/tree.md に「ドキュメントのツール」の節が無い", "\n## ドキュメントのツール\n" in text)
     section = text.split("\n## ドキュメントのツール\n", 1)[-1].split("\n## ", 1)[0]
-    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "shared/"):
+    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "shared/", "`qa-csv.md` の「本文での番号」"):
         check(f"references/tree.md の「ドキュメントのツール」に {word} が無い", word in section)
+    qa = (PLUGIN / "references" / "qa-csv.md").read_text(encoding="utf-8")
+    check("references/qa-csv.md に「本文での番号」の節が無い", "\n## 本文での番号\n" in qa)
 
 
 def main() -> int:

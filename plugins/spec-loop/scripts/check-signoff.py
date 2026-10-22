@@ -24,16 +24,25 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   **どちらかの時点に `docs/v<n>/` のファイルが 1 つも無いときも 2**——前の版の `shared/` があっても、
   その時点に版 n はまだ無い。
 - **作業ツリーの版の並びは、`--version` の有無に依らず検査する**（決まりに反すれば 2）。
+- **要求確定のタグの時点に、暫定の回答（`暫定反映`）の行が残っていれば 3**（#325）——利用者が確かめていない
+  回答を承認したことになるので。数えるのは **v1〜v<n> の `shared/qa.csv` を版の順に重ねた結果**
+  （同じ `No` は後の版が置き換え、`removed.csv` の種類 `Q&A` の行で消す。重ね方の正は `references/versions.md`）。
+  **前の版で暫定だった行を、後の版で `反映済み` に置き換えていれば数えない。**
+  状態の名前は同梱の `check-qa-csv.py` の `PROVISIONAL` を使う（写さない）。表が列検査を通らなければ 2。
+  **一致するかどうかと独立に見る**——一致しなくても、暫定の行があれば 3（両方を出す）。
 - **LLM に判断させないための照合**なので、判定はすべて `git` の出力から決める。
 
 終了コード:
 
 - 0: 一致する（2 つの承認は同じ共有の範囲を見ていた）
 - 1: 一致しない（違うファイルを全部出す）
+- 3: 要求確定のタグの時点に `暫定反映` の行が残る（行を全部出す。一致しないなら、その違いも出す）——
+  **利用者に確かめてもらい、`反映済み` にしてから要求確定のサインオフを取り直す**
 - 2: 照合していない——git でない・git が無い・作業ツリーの版が決まりに反する／1 つも無い（`--version` を省いたとき）・
   タグが無い／片方しか無い・指定したタグが無い／命名に合わない／別の版のもの・
   どちらかの時点で比べる場所にファイルが無い（旧い構成のタグを含む）・どちらかの時点に `docs/v<n>/` が無い・
-  `removed.csv` が読めない／決まり（`merge-versions.py` の読み方）に反する
+  `removed.csv` が読めない／決まり（`merge-versions.py` の読み方）に反する・
+  要求確定のタグの時点の `qa.csv` が読めない／列検査（`check-qa-csv.py`）を通らない
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`git` は要る）。
 
@@ -78,6 +87,7 @@ def _load(name: str, filename: str):
 
 
 versions = _load("merge_versions", "merge-versions.py")
+qa = versions.qa  # `check-qa-csv.py`（状態の名前を写さない）
 
 
 class Unjudged(Exception):
@@ -153,6 +163,55 @@ def removed_shared_rows(repo: Path, commit: str, tag: str, path: str) -> list[tu
         if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):
             rows.append((kind, target))
     return sorted(rows)
+
+
+def provisional_rows(repo: Path, commit: str, tag: str, version: int) -> list[dict[str, str]]:
+    """その時点の v1〜v<version> の Q&A を版の順に重ね、状態が `暫定反映` の行を返す。
+
+    重ね方は `references/versions.md` の「重ねるもの」——同じ `No` は後の版が置き換え、`removed.csv` の
+    種類 `Q&A` の行で消す。**Q&A の行だけを重ねる**（`merge-versions.py` の `merge` は版の中身の全部を検査するので、
+    Q&A と関わらない決まりの違反で照合の答えが変わる）。重ねた結果が `merge` と同じことは
+    このリポジトリの `scripts/test-check-signoff.py` が突き合わせて見る。
+    """
+    whole: dict[str, dict[str, str]] = {}
+    for number in range(1, version + 1):
+        placed: set[str] = set()
+        path = f"{DOCS}/v{number}/{SHARED}qa.csv"
+        listed = git(repo, "ls-tree", "--name-only", commit, "--", path)
+        if listed.returncode != 0:
+            raise Unjudged(f"{tag} の {path} を読めない: {listed.stderr.strip()}。照合していない")
+        if listed.stdout.strip():
+            try:
+                result = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True)
+            except OSError as e:
+                raise Unjudged(f"git を起動できない（{e.strerror}）。照合していない")
+            if result.returncode != 0:
+                raise Unjudged(f"{tag} の {path} を読めない: {result.stderr.decode(errors='replace').strip()}。照合していない")
+            problems: list[str] = []
+            with tempfile.TemporaryDirectory() as tmp:
+                copy = Path(tmp) / "qa.csv"
+                copy.write_bytes(result.stdout)
+                # 読み方は `merge-versions.py` の `read_qa`（列検査を掛ける。写しを作らない）
+                try:
+                    rows = versions.read_qa(copy, problems)
+                except versions.Unreadable as e:
+                    raise Unjudged(f"{tag} の {path} を読めない: {str(e).replace(str(copy), path)}。照合していない")
+                problems = [line.replace(str(copy), path) for line in problems]
+            if problems:
+                raise Unjudged(f"{tag} の {path} が決まりに反する（references/qa-csv.md）: "
+                               + " / ".join(problems) + "。照合していない")
+            for row in rows:
+                whole[row["No"]] = row
+                placed.add(row["No"])
+        if number > 1:
+            for kind, target in removed_shared_rows(repo, commit, tag, f"{DOCS}/v{number}/{REMOVED}") or []:
+                if kind == REMOVED_QA:
+                    # `merge` が拒否する配置——黙って消すと、置いた暫定の行を数え落とす
+                    if target in placed:
+                        raise Unjudged(f"{tag} の {DOCS}/v{number}/ が {target} を同じ版で置きつつ消している"
+                                       "（references/versions.md）。照合していない")
+                    whole.pop(target, None)
+    return [row for row in whole.values() if row["状態"].strip() == qa.PROVISIONAL]
 
 
 def working_version(repo: Path) -> int:
@@ -250,6 +309,19 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
     except Unjudged as e:
         return 2, [str(e)], {}
 
+    try:
+        provisional = provisional_rows(repo, info["req_commit"], info["req"], version)
+    except Unjudged as e:
+        return 2, [str(e)], {}
+    pending = []
+    if provisional:
+        pending = [f"{info['req']}（{info['req_commit'][:7]}）の時点に暫定の回答（{qa.PROVISIONAL}）が "
+                   f"{len(provisional)} 件残る"]
+        pending += [f"    {row['No']}: {row['回答']}" for row in provisional]
+        pending.append("利用者が確かめていない回答を承認したことになる。確かめてもらい、"
+                       f"{qa.DONE} にしてから、要求確定と予算の合意の両方のサインオフを取り直す——確かめると {SHARED}qa.csv が変わるので、"
+                       "今の予算の合意のタグとは一致しなくなる（references/signoff-tags.md）")
+
     pair = f"{info['req']}（{info['req_commit'][:7]}）と {info['budget']}（{info['budget_commit'][:7]}）"
     where = f"v1〜v{version} の {SHARED}" + (f" と {REMOVED}" if version > 1 else "")
     diff = git(repo, "diff", "--name-status", info["req_commit"], info["budget_commit"], "--", *shared_scope(version))
@@ -266,7 +338,9 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
         lines = [f"一致しない: {pair} で {where} が違う（{len(changed)} 件）"]
         lines += [f"    {line}" for line in changed]
         lines.append("2 つの承認は別の範囲を見ていた。どちらかを取り直す（references/signoff-tags.md）")
-        return 1, lines, info
+        return (3, pending + lines, info) if pending else (1, lines, info)
+    if pending:
+        return 3, pending + [f"一致する: {pair} の {where} は同じ"], info
     return 0, [f"一致する: {pair} の {where} は同じ"], info
 
 
