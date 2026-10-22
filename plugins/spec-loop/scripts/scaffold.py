@@ -22,7 +22,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 **変わっていない機能の本文は作らない**（前の版の Issue がある）。v1 だけなら全部が追加。
 ケースの変化は**Red テストが実行する中身**（入力・期待・`operation.id`・期待にある項目の出力の型・`impl_module`）で決める——
 題だけの違い・`integer` を `number` に広げただけの違いは変化に数えない（前の版の実装は落ちない）。
-**`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
+**`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1**（外すのはパスの変数の決まりと、Q&A の `暫定反映` を指さない決まりだけ。#319・#335）。
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
@@ -290,7 +290,8 @@ def check_values(where: str, values, fields: dict) -> list[str]:
     return problems
 
 
-def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list[str]:
+def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]], allowed: tuple[str, ...] = (qa.DONE,)) -> list[str]:
+    """`allowed` は指してよい状態。前の版の比べる相手だけ `暫定反映` も許す（#335。`check_ir`）。"""
     if not isinstance(refs, list):
         return [f"{where}: 配列でない"]
     problems = []
@@ -299,8 +300,8 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list
             problems.append(f"{where}: Q&A の No の形に反する（{no!r}）")
         elif no not in answered:
             problems.append(f"{where}: {no} は Q&A 表に無い")
-        elif answered[no]["状態"].strip() != qa.DONE:
-            problems.append(f"{where}: {no} は状態が {qa.DONE} でない")
+        elif answered[no]["状態"].strip() not in allowed:
+            problems.append(f"{where}: {no} は状態が {'・'.join(allowed)} でない")
     if len(set(map(str, refs))) != len(refs):
         problems.append(f"{where}: Q&A の No が重複している")
     return problems
@@ -350,8 +351,12 @@ def check_path_vars(where: str, path: str, fields: dict, templates: dict[str, st
     return problems
 
 
-def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: bool = True) -> list[str]:
-    """`path_rules` が偽なら、パスの変数の決まり（#289）を当てない——前の版の中間表現だけ（#319。`classify`）。"""
+def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: bool = True,
+             qa_states: tuple[str, ...] = (qa.DONE,)) -> list[str]:
+    """`path_rules` が偽なら、パスの変数の決まり（#289）を当てない——前の版の中間表現だけ（#319。`classify`）。
+
+    `qa_states` は Q&A の参照が指してよい状態。前の版の中間表現だけ `暫定反映` も許す（#335。`read_whole`）。
+    """
     problems = surrogates(ir)
     if problems:
         return problems + ["孤立したサロゲートを含む中間表現は、ほかの規則を見ない"]
@@ -394,7 +399,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
         if "source" in feature:
             problems += check_source(f"{where}.source", feature["source"], whole)
         if "qa" in feature:
-            problems += check_qa_refs(f"{where}.qa", feature["qa"], answered)
+            problems += check_qa_refs(f"{where}.qa", feature["qa"], answered, qa_states)
 
         op = feature.get("operation")
         fields_in, fields_out, errors = {}, {}, []
@@ -473,7 +478,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             elif case["error"] not in errors:
                 problems.append(f"{at}.error: operation.errors に無い: {case['error']!r}")
             if "qa" in case:
-                problems += check_qa_refs(f"{at}.qa", case["qa"], answered)
+                problems += check_qa_refs(f"{at}.qa", case["qa"], answered, qa_states)
     return problems
 
 
@@ -546,6 +551,7 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
     `gate` なら関門（条件 1）も当てる——前の版の全体には当てない（その版の時点で通ったもので、後の版の Q&A は関わらない）。
     パスの変数の決まりも前の版には当てない（#319）——#289 より前の scaffold が通した版は、凍結していれば直せず、
     前の版の中間表現からは OpenAPI を作らない（ケースの比較・前の版の Red テスト・Issue の本文の前の版を指す行にしか使わない）。
+    前の版の中間表現が `暫定反映` の Q&A を指すのも許す（#335）——後の版で `反映済み` に置き換えれば、重ねた表には残らない。
     """
     with tempfile.TemporaryDirectory() as tmp:
         whole = Path(tmp)
@@ -574,7 +580,7 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
                 return 1, shown([f"{no}: 状態が {qa.PROVISIONAL}（利用者の確認待ち）" for no in held]) + [
                     f"{merged(QA_PATH)} に {qa.PROVISIONAL} の行が {len(held)} 件残る。"
                     "利用者に確かめてもらうまで生成しない（/spec-loop:req-loop）"], None, {}
-        problems = check_ir(ir, whole, answered, path_rules=gate)
+        problems = check_ir(ir, whole, answered, path_rules=gate, qa_states=(qa.DONE,) if gate else qa.REFLECTED)
     if problems:
         return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, {}
     return 0, [], ir, answered
@@ -824,7 +830,7 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
     """(終了コード, 出力する行, 変化, 前の版) を返す。v<n> の全体と v<n-1> の全体を機能の `id` で比べる。
 
     前の版の中間表現も決まりに当てる——反すると、ケースの変化を Red テストの中身で比べられない（1）。
-    **パスの変数の決まりだけは当てない**（`read_whole`。#319）。
+    **パスの変数の決まり（#319）と、Q&A の `暫定反映` を指さないこと（#335）は当てない**（`read_whole`）。
     """
     number = loaded.number
     now = {f["id"]: f for f in features_of(loaded.ir)}
