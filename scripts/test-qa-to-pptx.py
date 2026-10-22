@@ -9,7 +9,7 @@
 
 1. **PPTX の部品が揃い、どれも XML として読める**——`[Content_Types].xml` が先頭、
    すべての関係（`.rels`）の行き先が実在し、すべてのスライドに型の宣言がある。
-2. **回答待ち・未反映の行がすべて載り、反映済みの行は載らない**——番号・質問・選択肢を、
+2. **回答待ち・未反映・暫定反映の行がすべて載り、反映済みの行は載らない**——番号・質問・選択肢を、
    **段落の単位で**当てる（選択肢が 1 段落に潰れていても部分一致では通ってしまうので）。
 3. **XML に書けない文字で壊れない**（`&` `<` `"` と制御文字）。**改行でない改行
    （U+2028）で段落を割らない。**
@@ -61,8 +61,13 @@ ROWS = [
      "A: はい & 続ける / B: <いいえ>", "未回答", "—", "確認中", "B は月額が約 2 倍"],
     ["Q-005", "要求確定", "2 行の質問の 1 行目\n2 行目",
      "A: 一 / B: 二", "未回答", "—", "確認中", ""],
+    ["Q-006", "要求確定", "暫定で採った質問",
+     "A: 上限なし / B: 5000 円まで", "A（推奨案を暫定で採用。業務部 2026-10-21 の指示）", "決定表 7 行目", "暫定反映", ""],
 ]
-PENDING = [r for r in ROWS if r[6] == "確認中"]
+# 載る行（反映済みでない行）。暫定反映も載る（#325）
+PENDING = [r for r in ROWS if r[6] != "反映済み"]
+PROVISIONAL = [r for r in ROWS if r[6] == "暫定反映"]
+UNSETTLED = [r for r in PENDING if r not in PROVISIONAL]
 DONE = [r for r in ROWS if r[6] == "反映済み"]
 
 failures: list[str] = []
@@ -161,6 +166,13 @@ def observe(mod, base: Path) -> dict:
         obs["options_as_paragraphs"] = all(
             all(o in flat for o in r[3].split(" / ")) for r in PENDING)
         obs["done_absent"] = not any(r[0] in p or r[2] in p for r in DONE for p in flat)
+        # 未反映と暫定を分けて書く（#325）——表紙の件数・一覧の印・各問の回答の見出し
+        cover = slides[0] if slides else []
+        obs["cover_counts"] = (f"回答待ち・未反映の質問: {len(UNSETTLED)} 件" in cover
+                               and f"暫定の回答（反映済み・確認待ち）: {len(PROVISIONAL)} 件" in cover)
+        obs["index_marks"] = sorted(p.split("  ")[0] for p in flat if "（暫定）  " in p)
+        questions = [p for sl in slides if sl and sl[0].startswith("Q-") for p in sl]
+        obs["answer_labels"] = sorted(p for p in questions if p.startswith(("回答（未反映）: ", "暫定の回答（反映済み・確認待ち）: ")))
         # 決定性: 時刻をまたいで作り直す（zip の時刻を固定していないと、ここで違う）
         time.sleep(2.1)
         again = base / "again.pptx"
@@ -202,14 +214,21 @@ def observe(mod, base: Path) -> dict:
 EXPECTED = {
     "rc": 0, "problems": [], "slides": 1 + 1 + len(PENDING),
     "pending_on_slides": True, "questions_as_paragraphs": True, "options_as_paragraphs": True,
-    "done_absent": True, "deterministic": True,
+    "done_absent": True, "deterministic": True, "cover_counts": True,
+    "index_marks": [f"{r[0]}（暫定）" for r in PROVISIONAL],
+    "answer_labels": sorted([f"回答（未反映）: {r[4]}" for r in UNSETTLED if r[4] != "未回答"]
+                            + [f"暫定の回答（反映済み・確認待ち）: {r[4]}" for r in PROVISIONAL]),
     "bad_rc": 1, "bad_kept": True, "missing_rc": 2, "usage_rc": 2,
     "unwritable_rc": 3, "no_tmp_left": True,
     "same_rc": 2, "same_kept": True, "nested_rc": 0, "nested_made": True,
 }
 
 MUTATIONS: list[tuple[str, str, str]] = [
-    ("反映済みで絞らない", 'if row["状態"].strip() != qa.DONE:', "if True:"),
+    ("反映済みで絞らない", 'return code, lines, [row for row in rows if row["状態"].strip() != qa.DONE]',
+     "return code, lines, rows"),
+    ("暫定を見分けない", 'return row["状態"].strip() == qa.PROVISIONAL', "return False"),
+    ("表紙の件数を分けない", 'body = lines_of(f"回答待ち・未反映の質問: {len(rows) - settled} 件", 2400)',
+     'body = lines_of(f"回答待ち・未反映の質問: {len(rows)} 件", 2400)'),
     ("列検査を飛ばす", "    code, lines = qa.check(path)", "    code, lines = 0, []"),
     ("XML の特殊文字を逃がさない", 'return escape(INVALID_XML.sub("", text))', 'return INVALID_XML.sub("", text)'),
     ("制御文字を落とさない", 'return escape(INVALID_XML.sub("", text))', "return escape(text)"),
@@ -242,8 +261,8 @@ def main() -> int:
         out = base / "empty.pptx"
         rc = run(mod, str(empty), str(out))
         slides, problems = slide_paragraphs(out) if rc == 0 else ([], ["作られない"])
-        check("確認中 0 件でも作り、そう書く",
-              rc == 0 and not problems and any("未反映の質問はありません" in p for s in slides for p in s))
+        check("載せる行が 0 件でも作り、そう書く",
+              rc == 0 and not problems and any("載せる質問はありません" in p for s in slides for p in s))
         many = [[f"Q-{100 + i}", "要求確定", f"質問 {i}", "A: x / B: y", "未回答", "—", "確認中", ""]
                 for i in range(12)]
         out = base / "many.pptx"

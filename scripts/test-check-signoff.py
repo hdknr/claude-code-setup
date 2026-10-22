@@ -22,8 +22,11 @@
    **タグの時点に `docs/v<n>/` が無い（前の版の `shared/` はある）**・
    タグがコミットを指さない・git でない・**作業ツリーの版が決まりに反する／1 つも無い（`--version` を渡しても）**・
    `--version` が版の番号でない。
-5. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ）。
-6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
+5. **要求確定のタグの時点に暫定の回答（`暫定反映`）が残れば 3**（#325）——一致しなくても見る・予算のタグの時点は見ない・
+   前の版の暫定も数える・**後の版で置き換えた／`removed.csv` で消した行は数えない**（その重ね方が `merge-versions.py`
+   の `merge` と同じこと——作業ツリーを重ねて突き合わせる）・Q&A 表が決まりに反する／読めないなら 2。
+6. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ）。
+7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
 `HOME` と `GIT_CONFIG_GLOBAL` を差し替えて利用者の git 設定を読まない。
@@ -33,6 +36,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import shutil
@@ -47,8 +51,15 @@ SCRIPTS = PLUGIN / "scripts"
 TARGET = "check-signoff.py"
 REFERENCE = PLUGIN / "references" / "signoff-tags.md"
 
-QA_A = "No,起票元\nQ-001,要求確定\n"
-QA_B = "No,起票元\nQ-001,要求確定\nQ-002,開発\n"
+# Q&A 表は決まりどおりに書く——要求確定のタグの時点の表を読んで暫定の行を数えるので（#325）
+QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
+QA_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+QA_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,未回答,—,確認中,\n"
+QA_A = QA_HEAD + QA_1
+QA_B = QA_HEAD + QA_1 + QA_2
+# 暫定の回答で反映した行（#325）
+P_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映,\n"
+P_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/a.md,暫定反映,\n"
 
 # 試料の作り方: 手順の列。("w", パス, 中身) 書く／("rm", パス) 消す／("c",) commit／("t", 名前) 軽量タグ／
 # ("ta", 名前) 注釈つきタグ／("tt", 名前) ツリーを指すタグ。None なら git でないディレクトリ
@@ -143,7 +154,8 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                      ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
     # 理由の列は比べない（消したものが同じなら、見た共有の範囲は同じ）
-    ("removed.csv の理由だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
+    # 消す行は前の版に置く——同じ版で置きつつ消す配置は決まりに反する（versions.md。照合は 2）
+    ("removed.csv の理由だけ違う", [("w", SHARED, QA_B),
                                  ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\n"), ("c",), ("t", R2),
                                  ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,重複\n"), ("c",), ("t", B2)],
      [], 0, "一致する"),
@@ -168,7 +180,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                              ("w", "docs/v1/shared/.cache/x", "x\n"), ("c",), ("t", B1)],
      [], 0, f"一致する: {R1}"),
     # 行の順序だけ違う removed.csv は、同じものを消している
-    ("removed.csv の行の順序だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
+    ("removed.csv の行の順序だけ違う", [("w", SHARED, QA_B),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\nQ&A,Q-002,不要\n"), ("c",), ("t", R2),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
@@ -195,7 +207,39 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
      [], 2, "版（v1 など）が 1 つも無い"),
     ("--version が番号でない", [("w", SHARED, QA_A), ("c",), ("t", R1), ("t", B1)],
      ["--version", "01"], 2, "版の番号"),
+    # ---- 暫定の回答（#325）
+    ("暫定の行が残る", [("w", SHARED, QA_HEAD + P_1 + QA_2), ("c",), ("t", R1), ("t", B1)],
+     [], 3, "暫定の回答（暫定反映）が 1 件残る"),
+    # 一致しなくても暫定を見る（両方を出す）
+    ("暫定の行が残り、一致もしない", [("w", SHARED, QA_HEAD + P_1), ("c",), ("t", R1),
+                                ("w", SHARED, QA_HEAD + QA_1), ("c",), ("t", B1)],
+     [], 3, "一致しない"),
+    # 予算のタグの時点は見ない——暫定を数えるのは要求確定の側（予算の側だけにあれば、範囲の食い違いとして 1）
+    ("予算のタグの時点の暫定は見ない", [("w", SHARED, QA_A), ("c",), ("t", R1),
+                                 ("w", SHARED, QA_HEAD + P_1), ("c",), ("t", B1)],
+     [], 1, "一致しない"),
+    ("前の版の暫定が残る", [("w", SHARED, QA_HEAD + P_1), ("w", SHARED2, QA_HEAD + QA_2), ("c",), ("t", R2), ("t", B2)],
+     [], 3, "Q-001: A（推奨案を暫定で採用"),
+    # 後の版で同じ No を反映済みに置き換えた——重ねた結果には暫定が無い
+    ("後の版で反映済みにした暫定は数えない", [("w", SHARED, QA_HEAD + P_1), ("w", SHARED2, QA_HEAD + QA_1), ("c",),
+                                       ("t", R2), ("t", B2)],
+     [], 0, f"一致する: {R2}"),
+    ("removed.csv で消した暫定は数えない", [("w", SHARED, QA_HEAD + QA_1 + P_2),
+                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\n"), ("c",), ("t", R2), ("t", B2)],
+     [], 0, f"一致する: {R2}"),
+    # 同じ版で置きつつ消す配置は `merge` が拒否する——黙って消すと、置いた暫定の行を数え落として 0 になる
+    ("同じ版で置いて消した暫定", [("w", SHARED, QA_HEAD + QA_1), ("w", SHARED2, QA_HEAD + P_2),
+                                ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\n"), ("c",), ("t", R2), ("t", B2)],
+     [], 2, "Q-002 を同じ版で置きつつ消している"),
+    ("要求確定の時点の Q&A 表が決まりに反する", [("w", SHARED, "No,起票元\nQ-001,要求確定\n"), ("c",), ("t", R1), ("t", B1)],
+     [], 2, "docs/v1/shared/qa.csv が決まりに反する（references/qa-csv.md）"),
+    ("要求確定の時点の Q&A 表が空", [("w", SHARED, ""), ("c",), ("t", R1), ("t", B1)],
+     [], 2, "docs/v1/shared/qa.csv を読めない"),
 ]
+
+# 暫定の行の重ね方は `references/versions.md` の「重ねるもの」の写し——本体は Q&A の行だけを自前で重ねる。
+# 作業ツリー（タグの時点と同じ中身）を `merge-versions.py` の `merge` で重ねた結果と、暫定の行が一致すること
+OVERLAY_CASES = ["前の版の暫定が残る", "後の版で反映済みにした暫定は数えない", "removed.csv で消した暫定は数えない"]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -254,6 +298,26 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("コミットに剥がさない", 'f"refs/tags/{tag}^{{commit}}"', 'f"refs/tags/{tag}"', "タグがツリーを指す"),
     ("git でないのを見ない", "if top.returncode != 0 or not top.stdout.strip():", "if False:", "git でない"),
     ("タグ無しを見ない", "if found is None:", "if False:", "タグが無い"),
+    ("暫定の行を見ない", '    return [row for row in whole.values() if row["状態"].strip() == qa.PROVISIONAL]',
+     "    return []", "暫定の行が残る"),
+    ("一致しないとき暫定を見ない", "        return (3, pending + lines, info) if pending else (1, lines, info)",
+     "        return 1, lines, info", "暫定の行が残り、一致もしない"),
+    ("前の版を重ねない", "    for number in range(1, version + 1):", "    for number in range(version, version + 1):",
+     "前の版の暫定が残る"),
+    ("後の版で置き換えない", '                whole[row["No"]] = row', '                whole.setdefault(row["No"], row)',
+     "後の版で反映済みにした暫定は数えない"),
+    ("removed.csv で消さない", "                    whole.pop(target, None)", "                    pass",
+     "removed.csv で消した暫定は数えない"),
+    ("同じ版で置いて消すのを見ない", "                    if target in placed:", "                    if False:",
+     "同じ版で置いて消した暫定"),
+    ("予算の時点の暫定を見る", 'provisional_rows(repo, info["req_commit"], info["req"], version)',
+     'provisional_rows(repo, info["budget_commit"], info["budget"], version)', "予算のタグの時点の暫定は見ない"),
+    ("Q&A 表の決まりを見ない", '            if problems:\n                raise Unjudged(f"{tag} の {path} が決まりに反する（references/qa-csv.md）',
+     '            if False:\n                raise Unjudged(f"{tag} の {path} が決まりに反する（references/qa-csv.md）',
+     "要求確定の時点の Q&A 表が決まりに反する"),
+    ("読めない Q&A 表を 2 にしない", "                except versions.Unreadable as e:\n                    raise Unjudged",
+     "                except versions.Unreadable as e:\n                    rows = []\n                    if False: raise Unjudged",
+     "要求確定の時点の Q&A 表が空"),
     # `git diff` 自体が失敗する分岐（`if diff.returncode != 0`）は、手前の検査（コミットを指すか・
     # shared を読めるか）を通った後には作れなかったので、変異を置いていない（殺せると主張しない）
 ]
@@ -357,6 +421,23 @@ def old_names_collide(root: Path, steps: Steps, env: dict[str, str]) -> str:
     return "#260 の名前でも作れた（素の v1 と衝突していない）"
 
 
+def overlay_mismatch(root: Path, result: tuple[int | None, str]) -> str:
+    """作業ツリーを `merge-versions.py` の `merge` で重ねた暫定の行と、本体が出した暫定の行を比べる。"""
+    spec = importlib.util.spec_from_file_location("merge_versions", SCRIPTS / "merge-versions.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    problems, _, whole, _ = module.merge(root / "docs")
+    if problems:
+        return f"merge が決まりに反すると言う（試料の誤り）: {problems}"
+    # 陽性対照: 重ねる前（版ごと）には暫定の行が在る——無ければ、比べても重ね方を判別しない
+    raw = sum(path.read_text(encoding="utf-8").count(",暫定反映,") for path in (root / "docs").glob("v*/shared/qa.csv"))
+    if not raw:
+        return "試料に暫定の行が無い（重ね方を判別しない）"
+    expected = sorted(no for no, row in whole.qa.items() if row["状態"] == module.qa.PROVISIONAL)
+    observed = sorted(re.findall(r"^    (Q-[0-9]+): ", result[1], flags=re.MULTILINE))
+    return "" if expected == observed else f"merge: {expected} ≠ 本体: {observed}"
+
+
 def as_expected(name: str, result: tuple[int | None, str]) -> bool:
     expected = next(case for case in CASES if case[0] == name)
     return result[0] == expected[3] and expected[4] in result[1]
@@ -418,6 +499,9 @@ def main() -> int:
         results = run_all(scripts, tmp_path / "work", env)
         for name, result in results.items():
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result[0]} {result[1][-300:]}")
+        for name in OVERLAY_CASES:
+            problem = overlay_mismatch(tmp_path / "work" / f"case{[c[0] for c in CASES].index(name)}", results[name])
+            check(f"暫定の行の重ね方が merge-versions.py と違う: {name}", not problem, problem)
         for index, name in enumerate(COEXIST):
             steps = next(case[1] for case in CASES if case[0] == name)
             problem = old_names_collide(tmp_path / f"old{index}", steps, env)

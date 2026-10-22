@@ -3,10 +3,12 @@
 
 usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>]
 
-**載せるのは、まだ仕様に反映していない行だけ**——`状態` が `check-qa-csv.py` の
-`DONE` でない行である（状態の意味は `references/qa-csv.md` を正とする）。
-**状態の名前を列挙して絞らない**——決まりに状態が増えても、反映が残っている行を黙って落とさない。
-表紙・一覧・1 問 1 枚の順に並べる。
+**載せるのは、利用者にまだ見せる行だけ**——`状態` が `check-qa-csv.py` の
+`DONE` でない行である（状態の意味は `references/qa-csv.md` を正とする）。回答待ち・回答はあるが未反映の行に加えて、
+**暫定の回答で反映した行（`PROVISIONAL`）も載る**——確認してもらうため。
+**状態の名前を列挙して絞らない**——決まりに状態が増えても、確認が残っている行を黙って落とさない。
+表紙・一覧・1 問 1 枚の順に並べる。**表紙の件数と各問の回答の見出しは、未反映と暫定で分ける**
+（暫定の行を「未反映」と書かない——仕様には反映済みなので）。
 
 **列の決まりは同じディレクトリの `check-qa-csv.py` から読み込む**（定数を写さない）。
 決まりの正は `references/qa-csv.md` である（このプラグインの中にある）。
@@ -20,7 +22,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 終了コード:
 
-- 0: 作った（載せた質問の数を出す）
+- 0: 作った（載せた質問の数を、回答待ち・未反映と暫定に分けて出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
 - 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
@@ -84,8 +86,11 @@ CT = "application/vnd.openxmlformats-officedocument"
 
 # ---------------------------------------------------------------- 表を読む
 
-def read_pending(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
-    """(終了コード, 出力する行, `DONE` でない行) を返す。検査を通らなければ行は空。"""
+def read_rows(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
+    """(終了コード, 出力する行, 全部の行) を返す。検査を通らなければ行は空。
+
+    `check-spec-exit.py` もこの関数で読む（絞り方は向こうが決める——載せる行と、反映が残っている行は別の定義）。
+    """
     code, lines = qa.check(path)
     if code:
         return code, lines, []
@@ -96,10 +101,18 @@ def read_pending(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
     for fields in reader:
         if not any(f.strip() for f in fields):
             continue
-        row = dict(zip(qa.COLUMNS, fields))
-        if row["状態"].strip() != qa.DONE:
-            rows.append(row)
+        rows.append(dict(zip(qa.COLUMNS, fields)))
     return 0, lines, rows
+
+
+def read_pending(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
+    """(終了コード, 出力する行, `DONE` でない行＝資料に載せる行) を返す。検査を通らなければ行は空。"""
+    code, lines, rows = read_rows(path)
+    return code, lines, [row for row in rows if row["状態"].strip() != qa.DONE]
+
+
+def provisional(row: dict[str, str]) -> bool:
+    return row["状態"].strip() == qa.PROVISIONAL
 
 
 # ---------------------------------------------------------------- XML の部品
@@ -154,8 +167,10 @@ def slide(title: list[str], body: list[str]) -> str:
 
 # ---------------------------------------------------------------- スライドの中身
 
-def cover(title: str, subtitle: str, count: int) -> str:
-    body = lines_of(f"未反映の質問: {count} 件", 2400)
+def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:
+    settled = sum(provisional(row) for row in rows)
+    body = lines_of(f"回答待ち・未反映の質問: {len(rows) - settled} 件", 2400)
+    body += lines_of(f"暫定の回答（反映済み・確認待ち）: {settled} 件", 2400)
     if subtitle:
         body = lines_of(subtitle, 2000) + body
     return slide(lines_of(title, 4000, bold=True), body)
@@ -163,7 +178,7 @@ def cover(title: str, subtitle: str, count: int) -> str:
 
 def index_slides(rows: list[dict[str, str]]) -> list[str]:
     if not rows:
-        return [slide(lines_of("一覧", 3200, bold=True), lines_of("未反映の質問はありません", 2000))]
+        return [slide(lines_of("一覧", 3200, bold=True), lines_of("載せる質問はありません", 2000))]
     chunks = [rows[i:i + INDEX_PER_SLIDE] for i in range(0, len(rows), INDEX_PER_SLIDE)]
     out = []
     for n, chunk in enumerate(chunks, 1):
@@ -171,7 +186,8 @@ def index_slides(rows: list[dict[str, str]]) -> list[str]:
         body = []
         for row in chunk:
             first = split_lines(row["質問"])[0]
-            body += lines_of(f"{row['No']}  {first}", 1600)
+            mark = "（暫定）" if provisional(row) else ""
+            body += lines_of(f"{row['No']}{mark}  {first}", 1600)
         out.append(slide(lines_of(head, 3200, bold=True), body))
     return out
 
@@ -183,7 +199,10 @@ def question_slide(row: dict[str, str]) -> str:
         body += lines_of(option.strip(), 2000, indent=342900)
     if row["費用への影響"].strip():
         body += [paragraph("", 1200)] + lines_of(f"費用への影響: {row['費用への影響']}", 1600)
-    if row["回答"].strip() != qa.NO_ANSWER:
+    if provisional(row):
+        body += [paragraph("", 1200)] + lines_of(f"暫定の回答（反映済み・確認待ち）: {row['回答']}", 1600)
+        body += lines_of(f"反映先: {row['反映先']}", 1600)
+    elif row["回答"].strip() != qa.NO_ANSWER:
         body += [paragraph("", 1200)] + lines_of(f"回答（未反映）: {row['回答']}", 1600)
     return slide(title, body)
 
@@ -317,7 +336,7 @@ def package(slides: list[str], title: str) -> list[tuple[str, str]]:
 
 
 def build(rows: list[dict[str, str]], title: str, subtitle: str) -> list[tuple[str, str]]:
-    slides = [cover(title, subtitle, len(rows))] + index_slides(rows) + [question_slide(r) for r in rows]
+    slides = [cover(title, subtitle, rows)] + index_slides(rows) + [question_slide(r) for r in rows]
     return package(slides, title)
 
 
@@ -380,7 +399,8 @@ def main(argv: list[str]) -> int:
     except OSError as e:
         print(f"{out}: 書けない（{e.strerror}）。既存の出力には触っていない", file=sys.stderr)
         return 3
-    print(f"{out}: 未反映の質問 {len(rows)} 件を載せた")
+    settled = sum(provisional(row) for row in rows)
+    print(f"{out}: 質問 {len(rows)} 件を載せた（回答待ち・未反映 {len(rows) - settled} 件・暫定の回答 {settled} 件）")
     return 0
 
 

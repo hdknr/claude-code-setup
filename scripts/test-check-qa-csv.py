@@ -44,6 +44,7 @@ GOOD_ROWS = (
     "Q-002,仕様レビュー（Red Team）,通信が切れたら？,A: 取り消す / B: 残す,未回答,—,確認中,\n"
     "Q-005,実現性・コスト,夜間は止めてよいか,A: 止まってよい / B: 24 時間,未回答,—,確認中,B は月額が約 2 倍\n"
     "Q-010,開発,上限を超えたら？,A: 拒否 / B: 切り詰める / C: 警告だけ,B（開発が仮置き）,—,確認中,\n"
+    "Q-011,要求確定,上限は？,A: なし / B: 5000 円,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 7 行目,暫定反映,\n"
 )
 # 記事（要求仕様書作成ループ）の Q&A 表の 6 行。記事の表は 2 つに分かれており、
 # Q-005・Q-006 の表には `回答`・`反映先`・`状態` の列が無いので `未回答`・`—`・`確認中` で埋めた。
@@ -79,11 +80,11 @@ def row(**over: str) -> str:
 # (名前, 中身（str は UTF-8 で書く。bytes はそのまま）, 期待する終了コード, 出力に含まれるべき文字列)
 CASES: list[tuple[str, str | bytes, int, str]] = [
     # --- 陽性対照 ---
-    ("決まりどおり", HEADER + GOOD_ROWS, 0, "OK（4 行）"),
+    ("決まりどおり", HEADER + GOOD_ROWS, 0, "OK（5 行）"),
     ("記事の Q-001〜Q-006", HEADER + ARTICLE_ROWS, 0, "OK（6 行）"),
     ("番号が 4 桁", HEADER + row(No="Q-1000"), 0, "OK（1 行）"),
-    ("BOM 付き（Excel）", ("﻿" + HEADER + GOOD_ROWS), 0, "OK（4 行）"),
-    ("空行は飛ばす", HEADER + GOOD_ROWS + "\n,,,,,,,\n", 0, "OK（4 行）"),
+    ("BOM 付き（Excel）", ("﻿" + HEADER + GOOD_ROWS), 0, "OK（5 行）"),
+    ("空行は飛ばす", HEADER + GOOD_ROWS + "\n,,,,,,,\n", 0, "OK（5 行）"),
     ("セルの中の改行（引用符つき）",
      HEADER + 'Q-001,要求確定,"1 行目\n2 行目",A: x / B: y,未回答,—,確認中,\n', 0, "OK（1 行）"),
     ("セルの中の U+2028（Web から貼った文）", HEADER + row(質問="1 文目 2 文目"), 0, "OK（1 行）"),
@@ -127,6 +128,9 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     ("反映済みなのに反映先が無い", HEADER + row(状態="反映済み", 回答="A"), 1, "`反映済み` なのに `反映先` が無い"),
     ("反映済みなのに反映先が無い（前に空白）", HEADER + row(状態="反映済み", 回答="A", 反映先=" —"), 1,
      "`反映済み` なのに `反映先` が無い"),
+    ("暫定反映なのに未回答", HEADER + row(状態="暫定反映", 反映先="決定表 1 行目"), 1, "`暫定反映` なのに `回答` が無い"),
+    ("暫定反映なのに反映先が無い", HEADER + row(状態="暫定反映", 回答="A（推奨案を暫定で採用）"), 1,
+     "`暫定反映` なのに `反映先` が無い"),
     ("回答が空", HEADER + row(回答=""), 1, "`回答` が空（まだなら `未回答`）"),
     ("反映先が空", HEADER + row(反映先=""), 1, "`反映先` が空（まだなら `—`）"),
     ("質問が空", HEADER + row(質問=""), 1, "`質問` が空"),
@@ -166,6 +170,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      'if row["回答"] in ("", NO_ANSWER):', "反映済みなのに未回答（後ろに空白）"),
     ("反映済みの反映先の空白を落とさない", 'if row["反映先"].strip() in ("", NO_TARGET):',
      'if row["反映先"] in ("", NO_TARGET):', "反映済みなのに反映先が無い（前に空白）"),
+    ("暫定反映の回答を見ない", "REFLECTED = (DONE, PROVISIONAL)", "REFLECTED = (DONE,)", "暫定反映なのに未回答"),
     ("番号の重複を見ない", 'if row["No"] in seen:', "if False:", "番号の重複"),
     ("起票元を見ない", 'm["name"] not in SOURCES', "False", "未知の起票元"),
     ("空のセルを見ない", "if column not in MAY_BE_EMPTY and not row[column].strip():", "if False:", "質問が空"),
@@ -273,6 +278,14 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
         if keys != list(constant):
             problems.append(f"「{heading}」の表 {keys} ≠ 本体 {list(constant)}")
 
+    # 反映した状態と、暫定の状態（「状態」の表の下と「暫定の回答」の節）
+    reflected = re.search(r"仕様に反映した状態は `([^`]+)` と `([^`]+)` の 2 つ", markdown)
+    if set(reflected.groups() if reflected else ()) != set(mod.REFLECTED):
+        problems.append(f"反映した状態 {reflected and reflected.groups()!r} ≠ 本体 {mod.REFLECTED!r}")
+    provisional = first_code(markdown, "`状態` は {}。")
+    if provisional != mod.PROVISIONAL:
+        problems.append(f"暫定の状態 {provisional!r} ≠ 本体 {mod.PROVISIONAL!r}")
+
     # 「列」の表のセルに書いた決まりと、本体の写し
     cells = column_cells(markdown)
     write, empty = (lambda c: cells.get(c, ["", ""])[0]), (lambda c: cells.get(c, ["", ""])[1])
@@ -315,6 +328,8 @@ BRACKET_WORDS = {"全角括弧": ("（", "）")}
 # （突き合わせが空振りしていないことの陽性対照）。
 REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("状態の表の 1 行", "| `反映済み` |", "| 反映済み |"),
+    ("反映した状態", "仕様に反映した状態は `暫定反映` と", "仕様に反映した状態は `確認中` と"),
+    ("暫定の状態", "`状態` は `暫定反映`。", "`状態` は `確認中`。"),
     ("空でよい列", "| 費用に関わらない質問は空でよい。", "| 費用に関わらない質問も空を許さない。"),
     ("費用付きの質問の起票元", "**起票元が `実現性・コスト` の行は", "**起票元が `開発` の行は"),
     ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
