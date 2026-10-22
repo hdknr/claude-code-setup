@@ -56,9 +56,11 @@ C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/340-signoff-provisional-removals`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-340`・起点 `4187a08`・base の参照 `origin/main`（SHA `4187a081088ab5c3037efd7e8d2b2968cb34d5d8`）
-- 関門: 未着手
+- 実装: `7dae3bc` で完了。`python3 scripts/check-all.py` 44/44 緑（失敗 0 / 飛ばし 0）。`test-check-signoff.py` 試料 55・変異 43
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目。1 パス目の起点の SHA は渡す時点で書く）
 - 反証・差し戻し: なし
-- 交絡: 未着手
+- 交絡: 実験は変異テストのみ。新しい試料の陽性対照は、拒否の結果を見ない変異（`if problems:` → `if False:`）で旧い挙動（2 以外）が再現することで取っている
+- 割り目（手順 4）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-22）。再開は手順 5 から
 
 ## 既知の限界・決着済みの論点
 
