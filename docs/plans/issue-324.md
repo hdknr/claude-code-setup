@@ -82,8 +82,9 @@ D1〜D6（著者の判断。PR で人間に示す）。
   `v1/requirements/a.html` → `../../qa.html#v1-q-001`・`#v1-q-002`、`v2/spec/b.html` → `#v1-q-001`・`#v2-q-002`、
   `index.html` → `qa.html#v2-q-002`。`qa.html` に `id="v1-q-001"`・`v1-q-002`・`v2-q-002` が在る。見出しと `` `Q-001` `` は素のまま。
   `Q-099` を足すと `--strict` が 1 で落ち、警告にページと番号が出る。**`use_directory_urls: true` では組んでいない。**
-- 手順 4 の割り目: 未（訊く）
-- 関門: 未
+- 実装のコミット: `257c93d`
+- 手順 4 の割り目: AskUserQuestion で訊いた → **ここで割る**（2026-10-22）。worktree の中で `/clear` して `/dev-loop:dev-loop 324` で手順 5 から再開
+- 関門: 未（次は 1 パス目: Verifier と `/code-review`。base `9d746936a1527bb633edcccbac606a766d511a11`）
 - 交絡: 基準 11 の陽性側は「リンクが出る」と「知らない番号で落ちる」の両方を見た（陰性だけではない）
 
 ## 既知の限界・決着済みの論点
