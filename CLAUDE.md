@@ -45,7 +45,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
       `scripts/test-qa-to-pptx.py`）
     - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
-      （**0 でも「抜けた」ではない**。反映済みでない行は `qa-to-pptx.py` の定義で読む。テストは
+      （**0 でも「抜けた」ではない**。Q&A 表は `qa-to-pptx.py` の `read_rows` で読み、**仕様に反映した状態**
+      （`check-qa-csv.py` の `REFLECTED`——`暫定反映` を含む）でない行を数える——**資料に載る行とは別の定義**（#325）。テストは
       `scripts/test-check-spec-exit.py`）
     - `scripts/check-feasibility-csv.py` - スケジュールと見積りの表の検査（`schedule-to-gantt.py` と
       `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは
@@ -54,7 +55,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       作れなければ**前の出力を消す**。テストは `scripts/test-schedule-to-gantt.py`）
     - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
       共有の範囲（v1〜v<n> の `shared/` と `removed.csv`）が一致するかの照合（#262。**どちらかの時点に比べる中身が
-      無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。テストは `scripts/test-check-signoff.py`）
+      無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。**要求確定のタグの時点に `暫定反映` の Q&A が
+      残れば 3**（#325。Q&A の行だけを版の順に重ね、重ね方はテストが `merge-versions.py` と突き合わせる）。
+      テストは `scripts/test-check-signoff.py`）
     - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書を作る
       （照合をスキルの判断に任せないため、**生成の側で照合する**。テストは `scripts/test-build-proposal.py`）
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で

@@ -5,7 +5,7 @@ usage: python3 check-qa-csv.py <qa.csv>
 
 **決まりの正は `references/qa-csv.md` である**（このプラグインの中にある）。
 このスクリプトは、そこに書いた決まりのうち**答えが一意に決まるもの**だけを機械で見る。
-下の定数（列・起票元・状態・「まだ無い」の印・空を許す列・費用付きの質問の起票元・番号の桁・起票元の括弧・選択肢のラベル／数／区切り）は
+下の定数（列・起票元・状態・反映した状態・「まだ無い」の印・空を許す列・費用付きの質問の起票元・番号の桁・起票元の括弧・選択肢のラベル／数／区切り）は
 その写しで、**写しがずれていないかは
 このリポジトリの `scripts/test-check-qa-csv.py` が `references/qa-csv.md` の表と突き合わせて見る**。
 
@@ -37,11 +37,17 @@ from pathlib import Path
 
 COLUMNS = ["No", "起票元", "質問", "選択肢", "回答", "反映先", "状態", "費用への影響"]
 SOURCES = ["要求確定", "仕様レビュー", "実現性・コスト", "開発"]
-STATES = ["確認中", "反映済み"]
-# 回答を仕様に反映し終えた状態。**これ以外の状態の行は、まだ反映が残っている**
+STATES = ["確認中", "暫定反映", "反映済み"]
+# 回答を仕様に反映し終え、利用者の確認も済んだ状態。**これ以外の状態の行は、レビュー会で利用者に見せる**
 # （`qa-to-pptx.py` はこの定数で絞る——状態の名前を写さないため）。
 DONE = "反映済み"
-assert DONE in STATES
+# 推奨案などを暫定で採って仕様に反映したが、利用者の確認がまだの状態
+PROVISIONAL = "暫定反映"
+# 仕様に反映した状態。**この 2 つ以外の行は、仕様への反映が残っている**
+# （`check-spec-exit.py`・`scaffold.py` はこの定数で絞る。列挙の外の状態は「残っている」側に倒れる）。
+# どちらも `回答` と `反映先` を求める
+REFLECTED = (DONE, PROVISIONAL)
+assert set(REFLECTED) <= set(STATES)
 
 NO_ANSWER = "未回答"
 NO_TARGET = "—"
@@ -102,12 +108,12 @@ def check_row(row: dict[str, str]) -> list[str]:
     if row["状態"] and row["状態"] not in STATES:
         problems.append(f"`状態` が決まりに無い: {row['状態']!r}")
 
-    if row["状態"] == DONE:
+    if row["状態"] in REFLECTED:
         # 空の検査と同じく前後の空白を落として比べる（`未回答 ` を回答ありと読まない）
         if row["回答"].strip() in ("", NO_ANSWER):
-            problems.append("`反映済み` なのに `回答` が無い")
+            problems.append(f"`{row['状態']}` なのに `回答` が無い")
         if row["反映先"].strip() in ("", NO_TARGET):
-            problems.append("`反映済み` なのに `反映先` が無い")
+            problems.append(f"`{row['状態']}` なのに `反映先` が無い")
     return problems
 
 

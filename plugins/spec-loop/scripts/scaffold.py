@@ -24,7 +24,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 題だけの違い・`integer` を `number` に広げただけの違いは変化に数えない（前の版の実装は落ちない）。
 **`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
 
-**生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（反映済みでない Q&A・未決定の印が 0 件）を呼び、
+**生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
 **書き込みそのもの（ファイルシステム）が途中で失敗すると、`scaffold/` は一部だけ書かれうる**——そのときも
@@ -79,7 +79,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 | 守らないもの | なぜ |
 | --- | --- |
-| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が `反映済み`）までを見る |
+| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が仕様に反映した状態）までを見る |
 | **Red テストが仕様のケースを漏れなく持つか** | 中間表現に書いたケースだけが生成される。漏れは書き起こしの側で見る |
 | **Python 以外の言語の型・テスト** | OpenAPI から対象リポジトリの道具で作る |
 | **Issue を登録したか・登録した本文が同じか** | 登録はスクリプトの外（`gh issue create --body-file` に、生成した本文をそのまま渡す） |
@@ -299,8 +299,9 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list
             problems.append(f"{where}: Q&A の No の形に反する（{no!r}）")
         elif no not in answered:
             problems.append(f"{where}: {no} は Q&A 表に無い")
-        elif answered[no]["状態"].strip() != qa.DONE:
-            problems.append(f"{where}: {no} は状態が {qa.DONE} でない")
+        elif answered[no]["状態"].strip() not in qa.REFLECTED:
+            # 暫定の回答で反映した行も指してよい（仕様には反映済み。抜ける条件 1 と同じ定義。#325）
+            problems.append(f"{where}: {no} は状態が {'・'.join(qa.REFLECTED)} のどれでもない")
     if len(set(map(str, refs))) != len(refs):
         problems.append(f"{where}: Q&A の No が重複している")
     return problems

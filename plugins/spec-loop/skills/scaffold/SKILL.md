@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.14.1 -->
-> **このスキルの版: 0.14.1**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.15.0 -->
+> **このスキルの版: 0.15.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -66,7 +66,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 ```
 
 - **重ね合わせが 0 以外なら止まる**（版の決まりに反する。出力を示す）。
-- **0 以外なら止まる。** 出力（反映済みでない Q&A・未決定の印）を示し、`/spec-loop:req-loop`・`/spec-loop:spec-review` を案内する。
+- **0 以外なら止まる。** 出力（仕様に反映した状態でない Q&A・未決定の印）を示し、`/spec-loop:req-loop`・`/spec-loop:spec-review` を案内する。
 - **0 でも、抜けたとは限らない**——条件 2〜5 は判定役の報告で決まる（`../../references/spec-exit.md`）。
   **直近の `spec-review` が「抜けた」と報告したかを、利用者に確かめる。** 報告が無い・抜けていないなら止まる。
 
@@ -90,7 +90,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py -
 ```
 
 **1 なら、出力の箇所を直して当て直す**——ただし直すのは書き起こしの誤り（キーの綴り・型）だけで、
-**「Q&A が `反映済み` でない」「`source` が無い」は中間表現を直して通すものではない**（仕様の側の問題である。止まる）。
+**「Q&A が仕様に反映した状態でない」「`source` が無い」は中間表現を直して通すものではない**（仕様の側の問題である。止まる）。
 **2 なら、何を判定していないかを示して止まる。**
 
 ### 4. 生成して、Red の状態を見る
