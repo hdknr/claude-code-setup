@@ -15,6 +15,17 @@
 - セルの文字は HTML と Markdown の記号をエスケープし、改行は `<br>` にする（表を壊さない）。
   **CSV の文字は表のセルにだけ置く**——段落や箇条書きに置くと、行頭の `!!! `・字下げ・`1. ` がブロックの記法に読まれる。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
+
+**本文の Q&A の番号（`Q-008`）は、Q&A 表のページ（`qa.md`）のアンカーへのリンクにする**（正本は番号のまま。
+決まりは spec-loop の `references/qa-csv.md` の「本文での番号」）。印を展開した後に掛けるので、描画関数が描いた表のセルにも掛かる。
+
+- 版は、`docs/v<n>/` の下のページなら `v1`〜`v<n>` のうち、版の外のページならすべての版のうち、
+  **その番号を持つ最も新しい版**（版は重ね合わせないので、問い直していない番号は前の版の節にしか無い）。
+- **どの版の Q&A 表にも無い番号はリンクにせず警告する**（打ち間違いを拾う）。
+- 置き換えないところ: 見出し・フェンス・インラインのコード・`[…]` の中と直後の `(…)`・HTML のタグとコメント・
+  自動リンク・URL・Q&A 表のページ（`qa` の印を持つページ）。`qa.md` が無ければ何もしない。
+- **字下げ（4 文字）のコードブロックは見分けない**——アドモニションや箇条書きの続きと区別できないので、中の番号もリンクになる。
+  コードはフェンスで書く。
 """
 
 from __future__ import annotations
@@ -22,6 +33,7 @@ from __future__ import annotations
 import csv
 import html
 import logging
+import posixpath
 import re
 from pathlib import Path
 
@@ -36,6 +48,21 @@ QA_DONE = "反映済み"
 QA_NO_ANSWER = "未回答"
 QA_OPTION_SEPARATOR = " / "
 
+QA_PAGE = "qa.md"
+QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-[0-9]{3,}(?![A-Za-z0-9_])")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+ATX_HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
+SETEXT_UNDERLINE = re.compile(r" {0,3}(?:=+|-+)[ \t]*$")
+# 番号を置き換えない範囲（行をまたぐのは空行までの段落の中だけ）。順に: インラインのコード・HTML のコメント・<a> の中・
+# タグと自動リンク・[…] と直後の (…) か […]・URL
+PROTECTED = re.compile(
+    r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)"
+    r"|<!--.*?-->"
+    r"|<a\b.*?</a>"
+    r"|<[A-Za-z/!][^>]*>"
+    r"|(?<!\\)!?\[(?:\\.|[^\]\\])*\](?:\([^)]*\)|\[[^\]]*\])?"
+    r"|https?://\S+",
+    re.DOTALL | re.IGNORECASE)
 MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")
 ANCHOR_UNSAFE = re.compile(r"[^a-z0-9_-]+")
 
@@ -121,6 +148,75 @@ RENDERERS = {
 }
 
 
+def qa_numbers(docs_dir: Path) -> list[tuple[int, set[str]]]:
+    """版ごとの Q&A 表の番号。読めない表は空（警告は Q&A 表のページを描くときに出る）。"""
+    found = []
+    for version, root in versions(docs_dir):
+        path = root / "shared" / "qa.csv"
+        if path.is_file():
+            try:
+                found.append((version, {row["No"].strip() for row in read_qa(path)}))
+            except (OSError, ValueError, csv.Error):  # UnicodeDecodeError は ValueError の子
+                found.append((version, set()))
+    return found
+
+
+def link_numbers(markdown: str, src_path: str, docs_dir: Path) -> str:
+    """本文の Q&A の番号を Q&A 表のアンカーへのリンクにする（置き換えないところはモジュールの docstring）。"""
+    if not (docs_dir / QA_PAGE).is_file():
+        return markdown
+    top = src_path.split("/", 1)[0]
+    limit = int(top[1:]) if VERSION.fullmatch(top) and "/" in src_path else None
+    tables = [(version, numbers) for version, numbers in qa_numbers(docs_dir) if limit is None or version <= limit]
+    target = posixpath.relpath(QA_PAGE, posixpath.dirname(src_path) or ".")
+    unknown: list[str] = []
+
+    def link(match: re.Match) -> str:
+        number = match.group(0)
+        version = next((version for version, numbers in reversed(tables) if number in numbers), None)
+        if version is None:
+            if number not in unknown:
+                unknown.append(number)
+            return number
+        return f"[{number}]({target}#{anchor(version, number)})"
+
+    def paragraph(lines: list[str]) -> str:
+        block = "".join(lines)
+        out, last = [], 0
+        for match in PROTECTED.finditer(block):
+            out += [QA_NUMBER.sub(link, block[last:match.start()]), match.group(0)]
+            last = match.end()
+        out.append(QA_NUMBER.sub(link, block[last:]))
+        return "".join(out)
+
+    lines = markdown.splitlines(keepends=True)
+    out: list[str] = []
+    pending: list[str] = []
+    fence = ""
+    for index, line in enumerate(lines):
+        if fence:
+            out.append(line)
+            closing = FENCE.match(line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence) \
+                    and not line[closing.end():].strip():
+                fence = ""
+            continue
+        opening = FENCE.match(line)
+        following = lines[index + 1] if index + 1 < len(lines) else ""
+        # 空行でも段落を切る（閉じない ` が次の段落の ` と組まないように）
+        if opening or not line.strip() or ATX_HEADING.match(line) or SETEXT_UNDERLINE.match(following):
+            out.append(paragraph(pending))
+            pending = []
+            out.append(line)
+            fence = opening.group(1) if opening else ""
+            continue
+        pending.append(line)
+    out.append(paragraph(pending))
+    for number in unknown:
+        log.warning("spec-loop: %s: %s はどの版の Q&A 表にも無いので、リンクにしない", src_path, number)
+    return "".join(out)
+
+
 def on_page_markdown(markdown: str, page, config, files) -> str:
     docs_dir = Path(config["docs_dir"])
 
@@ -131,4 +227,7 @@ def on_page_markdown(markdown: str, page, config, files) -> str:
             return problem(f"{page.file.src_path}: 知らない印 `spec-loop: {name}`（知っているのは {', '.join(RENDERERS)}）")
         return renderer(docs_dir)
 
-    return MARKER.sub(replace, markdown)
+    src_path = getattr(page.file, "src_uri", page.file.src_path).replace("\\", "/")
+    is_qa_page = any(match.group("name") == "qa" for match in MARKER.finditer(markdown))
+    markdown = MARKER.sub(replace, markdown)
+    return markdown if is_qa_page else link_numbers(markdown, src_path, docs_dir)
