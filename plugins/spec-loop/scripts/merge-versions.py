@@ -205,6 +205,28 @@ def read_removed(path: Path, problems: list[str]) -> list[tuple[int, str, str]]:
     return rows
 
 
+def check_removed(removed_path: Path | str, removed: list[tuple[int, str, str]],
+                  placed: dict[str, set[str]], present: dict[str, set[str]], problems: list[str]) -> None:
+    """`removed.csv` の行が、決まりに反する配置か（`references/versions.md` の「削除」）。
+
+    `placed` はその版が置くもの、`present` は前の版までの全体にあるもの（どちらも種類ごと）。
+    `check-signoff.py` も Q&A の行だけを渡して使う（写しを作らない）。
+    """
+    seen: dict[tuple[str, str], int] = {}
+    for line, kind, target in removed:
+        where = f"{removed_path}:{line}"
+        if (kind, target) in seen:
+            problems.append(f"{where}: {seen[(kind, target)]} 行目と同じ対象を 2 度消す: {target}")
+            continue
+        seen[(kind, target)] = line
+        if kind == KIND_FILE and target in STRUCTURED:
+            problems.append(f"{where}: {target} はファイルとしては消せない（行・機能の単位で消す）")
+        elif target in placed[kind]:
+            problems.append(f"{where}: 同じ版で置きつつ消している: {target}")
+        elif target not in present[kind]:
+            problems.append(f"{where}: 前の版までに無いものを消そうとしている: {kind} {target}")
+
+
 class Whole:
     """重ね合わせた全体。"""
 
@@ -235,20 +257,7 @@ class Whole:
             KIND_FEATURE: {f["id"] for f in spec["features"]} if spec else set(),
         }
         present = {KIND_FILE: set(self.files), KIND_QA: set(self.qa), KIND_FEATURE: set(self.features)}
-
-        seen: dict[tuple[str, str], int] = {}
-        for line, kind, target in removed:
-            where = f"{removed_path}:{line}"
-            if (kind, target) in seen:
-                problems.append(f"{where}: {seen[(kind, target)]} 行目と同じ対象を 2 度消す: {target}")
-                continue
-            seen[(kind, target)] = line
-            if kind == KIND_FILE and target in STRUCTURED:
-                problems.append(f"{where}: {target} はファイルとしては消せない（行・機能の単位で消す）")
-            elif target in placed[kind]:
-                problems.append(f"{where}: 同じ版で置きつつ消している: {target}")
-            elif target not in present[kind]:
-                problems.append(f"{where}: 前の版までに無いものを消そうとしている: {kind} {target}")
+        check_removed(removed_path, removed, placed, present, problems)
 
         if problems:
             return

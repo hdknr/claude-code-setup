@@ -37,7 +37,8 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 - 0: 一致する（2 つの承認は同じ共有の範囲を見ていた）
 - 1: 一致しない（違うファイルを全部出す）
 - 3: 要求確定のタグの時点に `暫定反映` の行が残る（行を全部出す。一致しないなら、その違いも出す）——
-  **利用者に確かめてもらい、`反映済み` にしてから要求確定のサインオフを取り直す**
+  **利用者に確かめてもらい、`反映済み` にしてから要求確定と予算の合意の両方のサインオフを取り直す**
+  （確かめると `shared/qa.csv` が変わり、今の予算の合意のタグとも一致しなくなる）
 - 2: 照合していない——git でない・git が無い・作業ツリーの版が決まりに反する／1 つも無い（`--version` を省いたとき）・
   タグが無い／片方しか無い・指定したタグが無い／命名に合わない／別の版のもの・
   どちらかの時点で比べる場所にファイルが無い（旧い構成のタグを含む）・どちらかの時点に `docs/v<n>/` が無い・
@@ -123,15 +124,16 @@ def removed_scope(version: int) -> list[str]:
     return [f"{DOCS}/v{i}/{REMOVED}" for i in range(2, version + 1)]
 
 
-# `removed.csv` の種類（`references/versions.md` の「削除」）
-REMOVED_QA = "Q&A"
-REMOVED_FILE = "ファイル"
+# `removed.csv` の種類（`references/versions.md` の「削除」。`merge-versions.py` のものを使い、写さない）
+REMOVED_QA = versions.KIND_QA
+REMOVED_FILE = versions.KIND_FILE
 
 
-def removed_shared_rows(repo: Path, commit: str, tag: str, path: str) -> list[tuple[str, str]] | None:
-    """その時点の `removed.csv` のうち `shared/` に効く行（種類・対象）。ファイルが無ければ None。
+def read_removed_at(repo: Path, commit: str, tag: str, path: str) -> list[tuple[int, str, str]] | None:
+    """その時点の `removed.csv` の行（行番号・種類・対象）。ファイルが無ければ None。
 
-    理由の列は比べない——消したものが同じなら、2 つの承認が見た共有の範囲は同じなので。
+    **1 つのタグの時点・1 つのパスにつき、ここで 1 回だけ読む**——共有の範囲の比較（`removed_shared_rows`）と
+    暫定の行の重ね合わせ（`provisional_rows`）は、`resolve` が読んだものを使う。
     """
     listed = git(repo, "ls-tree", "--name-only", commit, "--", path)
     if listed.returncode != 0:
@@ -158,20 +160,35 @@ def removed_shared_rows(repo: Path, commit: str, tag: str, path: str) -> list[tu
     if problems:
         raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）: "
                        + " / ".join(problems) + "。照合していない")
+    return parsed
+
+
+def removed_shared_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple[str, str]]:
+    """`removed.csv` の行のうち `shared/` に効く行（種類・対象）。
+
+    理由の列は比べない——消したものが同じなら、2 つの承認が見た共有の範囲は同じなので。
+    無いことと、`shared/` に効く行が無いことは同じ（どちらも `shared/` から何も消さない）。
+    """
     rows = []
-    for _, kind, target in parsed:
+    for _, kind, target in parsed or []:
         if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):
             rows.append((kind, target))
     return sorted(rows)
 
 
-def provisional_rows(repo: Path, commit: str, tag: str, version: int) -> list[dict[str, str]]:
+def provisional_rows(repo: Path, commit: str, tag: str, version: int,
+                     removed: dict[str, list[tuple[int, str, str]] | None]) -> list[dict[str, str]]:
     """その時点の v1〜v<version> の Q&A を版の順に重ね、状態が `暫定反映` の行を返す。
 
     重ね方は `references/versions.md` の「重ねるもの」——同じ `No` は後の版が置き換え、`removed.csv` の
     種類 `Q&A` の行で消す。**Q&A の行だけを重ねる**（`merge-versions.py` の `merge` は版の中身の全部を検査するので、
     Q&A と関わらない決まりの違反で照合の答えが変わる）。重ねた結果が `merge` と同じことは
     このリポジトリの `scripts/test-check-signoff.py` が突き合わせて見る。
+
+    `removed` は `resolve` がその時点で読んだ `removed.csv`（パスごと。`read_removed_at` の結果）。
+    **`merge` が拒否する配置**（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）は 2 にする——
+    判定は `merge-versions.py` の `check_removed`（写しを作らない）。黙って消すと、置いた暫定の行を数え落とすか、
+    `merge` が拒否する中身を承認したことになる。
     """
     whole: dict[str, dict[str, str]] = {}
     for number in range(1, version + 1):
@@ -204,13 +221,16 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int) -> list[di
                 whole[row["No"]] = row
                 placed.add(row["No"])
         if number > 1:
-            for kind, target in removed_shared_rows(repo, commit, tag, f"{DOCS}/v{number}/{REMOVED}") or []:
-                if kind == REMOVED_QA:
-                    # `merge` が拒否する配置——黙って消すと、置いた暫定の行を数え落とす
-                    if target in placed:
-                        raise Unjudged(f"{tag} の {DOCS}/v{number}/ が {target} を同じ版で置きつつ消している"
-                                       "（references/versions.md）。照合していない")
-                    whole.pop(target, None)
+            path = f"{DOCS}/v{number}/{REMOVED}"
+            rows = [row for row in removed[path] or [] if row[1] == REMOVED_QA]
+            # 前の版までに在るかを今の版の行を含めて見てよい——今の版が置いた行は、先に「置きつつ消す」で落ちる
+            problems = []
+            versions.check_removed(path, rows, {REMOVED_QA: placed}, {REMOVED_QA: set(whole)}, problems)
+            if problems:
+                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）: "
+                               + " / ".join(problems) + "。照合していない")
+            for _, _, target in rows:
+                whole.pop(target)
     return [row for row in whole.values() if row["状態"].strip() == qa.PROVISIONAL]
 
 
@@ -304,13 +324,14 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
             shared_files(repo, info[f"{key}_commit"], chosen[key], [f"{DOCS}/v{version}/"])
         removed = {}
         for path in removed_scope(version):
-            removed[path] = [removed_shared_rows(repo, info[f"{key}_commit"], chosen[key], path)
+            removed[path] = [read_removed_at(repo, info[f"{key}_commit"], chosen[key], path)
                              for key in ("req", "budget")]
     except Unjudged as e:
         return 2, [str(e)], {}
 
     try:
-        provisional = provisional_rows(repo, info["req_commit"], info["req"], version)
+        provisional = provisional_rows(repo, info["req_commit"], info["req"], version,
+                                       {path: at_req for path, (at_req, _) in removed.items()})
     except Unjudged as e:
         return 2, [str(e)], {}
     pending = []
@@ -331,8 +352,7 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
     changed = [line for line in diff.stdout.splitlines()
                if line and not all(hidden(path) for path in line.split("\t")[1:])]
     for path, (at_req, at_budget) in removed.items():
-        # 無いことと、`shared/` に効く行が無いことは同じ（どちらも `shared/` から何も消さない）
-        if (at_req or []) != (at_budget or []):
+        if removed_shared_rows(at_req) != removed_shared_rows(at_budget):
             changed.append(f"{REMOVED}\t{path}（shared/ に効く行が違う）")
     if changed:
         lines = [f"一致しない: {pair} で {where} が違う（{len(changed)} 件）"]
