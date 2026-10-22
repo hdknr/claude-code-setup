@@ -350,18 +350,36 @@ PY_SCHEMA_TYPES = {"str": "string", "int": "integer", "float": "number", "bool":
 
 
 def typed_dict_fields(types: str) -> dict[str, dict[str, dict]]:
-    """`types.py` の型ごとの項目と、その注釈から戻した JSON Schema。`pass` だけの型は項目が無い。
-    `Literal[...]` は値の Python の型から `type` を、値の並びから `enum` を戻す。"""
+    """`types.py` の型ごとの項目と、その注釈から戻した JSON Schema の候補。`pass` だけの型は項目が無い。
+    候補は `{"types": 許される type の集合, "enum": 値の並び（Literal のときだけ）}`。
+    `Literal[...]` は値しか持たない——number の enum の値がすべて整数なら integer と区別できないので、
+    整数だけなら integer と number の両方を許し、float が 1 つでもあれば number だけを許す（#318 の N1）。"""
     fields: dict[str, dict[str, dict]] = {}
     for block in re.findall(r"^class (\w+)\(TypedDict\):\n((?:    .+\n)+)", types, flags=re.MULTILINE):
         fields[block[0]] = {}
         for field, note in re.findall(r"^    (\w+): (.+)$", block[1], flags=re.MULTILINE):
             if note.startswith("Literal[") and note.endswith("]"):
                 values = ast.literal_eval("[" + note[len("Literal["):-1] + "]")
-                fields[block[0]][field] = {"type": PY_SCHEMA_TYPES[type(values[0]).__name__], "enum": values}
+                kinds = {PY_SCHEMA_TYPES[type(value).__name__] for value in values}
+                if kinds == {"integer"}:
+                    kinds = {"integer", "number"}
+                elif kinds == {"integer", "number"}:
+                    kinds = {"number"}
+                elif len(kinds) != 1:
+                    kinds = set()
+                fields[block[0]][field] = {"types": kinds, "enum": values}
             else:
-                fields[block[0]][field] = {"type": PY_SCHEMA_TYPES.get(note, note)}
+                fields[block[0]][field] = {"types": {PY_SCHEMA_TYPES.get(note, note)}}
     return fields
+
+
+def schema_matches(schema: dict, expected: dict) -> bool:
+    """OpenAPI の項目の schema が、`types.py` の注釈から戻した候補に合うか。"""
+    if schema.get("type") not in expected["types"]:
+        return False
+    if "enum" in expected:
+        return set(schema) == {"type", "enum"} and schema["enum"] == expected["enum"]
+    return set(schema) == {"type"}
 
 
 def input_split_problem(doc: dict, types: str) -> str | None:
@@ -379,7 +397,7 @@ def input_split_problem(doc: dict, types: str) -> str | None:
         if sorted(schemas[name]["properties"]) != sorted(expected):
             return f"{name} の項目 {sorted(schemas[name]['properties'])} が types.py の {sorted(expected)} と違う"
         for field, schema in schemas[name]["properties"].items():
-            if schema != expected[field]:
+            if not schema_matches(schema, expected[field]):
                 return f"{name} の項目 {field} の schema {schema} が types.py の {expected[field]} と違う"
     for path, ops in doc["paths"].items():
         for method, op in ops.items():
@@ -864,6 +882,13 @@ CASES: list[Case] = [
                                                        ir["features"][1]["cases"][0].update(input={})))),
     Case("入力が空（POST）", 0, "作った", ir=edit(lambda ir: (ir["features"][1]["operation"].update(input={}, method="POST"),
                                                         ir["features"][1]["cases"][0].update(input={})))),
+    # number の enum（#318 の N1。`Literal[...]` は値の型しか持たないので、新しい検査が integer と取り違えて断らない）
+    Case("number の enum の先頭が整数", 0, "作った",
+         ir=edit(lambda ir: (f1(ir)["operation"]["input"]["rank"].update(type="number", enum=[1, 2.5]),
+                             f1(ir)["cases"][0]["input"].update(rank=1), f1(ir)["cases"][1]["input"].update(rank=2.5)))),
+    Case("number の enum の値がすべて整数", 0, "作った",
+         ir=edit(lambda ir: (f1(ir)["operation"]["input"]["rank"].update(type="number", enum=[1, 2]),
+                             f1(ir)["cases"][0]["input"].update(rank=1), f1(ir)["cases"][1]["input"].update(rank=2)))),
     Case("パスの変数が入力に無い", 1, "パスの変数 {order_id} が operation.input の項目に無い", pre=plant_old_issues,
          post=issues_gone, ir=edit(lambda ir: f1(ir)["operation"].update(path="/orders/{order_id}"))),
     Case("空のパスの変数", 1, "パスの変数 {} が operation.input の項目に無い",
