@@ -154,7 +154,8 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                      ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
     # 理由の列は比べない（消したものが同じなら、見た共有の範囲は同じ）
-    ("removed.csv の理由だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
+    # 消す行は前の版に置く——同じ版で置きつつ消す配置は決まりに反する（versions.md。照合は 2）
+    ("removed.csv の理由だけ違う", [("w", SHARED, QA_B),
                                  ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\n"), ("c",), ("t", R2),
                                  ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,重複\n"), ("c",), ("t", B2)],
      [], 0, "一致する"),
@@ -179,7 +180,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                              ("w", "docs/v1/shared/.cache/x", "x\n"), ("c",), ("t", B1)],
      [], 0, f"一致する: {R1}"),
     # 行の順序だけ違う removed.csv は、同じものを消している
-    ("removed.csv の行の順序だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
+    ("removed.csv の行の順序だけ違う", [("w", SHARED, QA_B),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\nQ&A,Q-002,不要\n"), ("c",), ("t", R2),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
@@ -226,6 +227,10 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("removed.csv で消した暫定は数えない", [("w", SHARED, QA_HEAD + QA_1 + P_2),
                                      ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\n"), ("c",), ("t", R2), ("t", B2)],
      [], 0, f"一致する: {R2}"),
+    # 同じ版で置きつつ消す配置は `merge` が拒否する——黙って消すと、置いた暫定の行を数え落として 0 になる
+    ("同じ版で置いて消した暫定", [("w", SHARED, QA_HEAD + QA_1), ("w", SHARED2, QA_HEAD + P_2),
+                                ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\n"), ("c",), ("t", R2), ("t", B2)],
+     [], 2, "Q-002 を同じ版で置きつつ消している"),
     ("要求確定の時点の Q&A 表が決まりに反する", [("w", SHARED, "No,起票元\nQ-001,要求確定\n"), ("c",), ("t", R1), ("t", B1)],
      [], 2, "docs/v1/shared/qa.csv が決まりに反する（references/qa-csv.md）"),
     ("要求確定の時点の Q&A 表が空", [("w", SHARED, ""), ("c",), ("t", R1), ("t", B1)],
@@ -303,6 +308,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "後の版で反映済みにした暫定は数えない"),
     ("removed.csv で消さない", "                    whole.pop(target, None)", "                    pass",
      "removed.csv で消した暫定は数えない"),
+    ("同じ版で置いて消すのを見ない", "                    if target in placed:", "                    if False:",
+     "同じ版で置いて消した暫定"),
     ("予算の時点の暫定を見る", 'provisional_rows(repo, info["req_commit"], info["req"], version)',
      'provisional_rows(repo, info["budget_commit"], info["budget"], version)', "予算のタグの時点の暫定は見ない"),
     ("Q&A 表の決まりを見ない", '            if problems:\n                raise Unjudged(f"{tag} の {path} が決まりに反する（references/qa-csv.md）',
