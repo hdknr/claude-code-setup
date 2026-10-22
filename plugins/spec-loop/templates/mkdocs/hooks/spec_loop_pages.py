@@ -21,11 +21,15 @@
 
 - 版は、`docs/v<n>/` の下のページなら `v1`〜`v<n>` のうち、版の外のページならすべての版のうち、
   **その番号を持つ最も新しい版**（版は重ね合わせないので、問い直していない番号は前の版の節にしか無い）。
-- **どの版の Q&A 表にも無い番号はリンクにせず警告する**（打ち間違いを拾う）。
-- 置き換えないところ: 見出し・フェンス・インラインのコード・`[…]` の中と直後の `(…)`・HTML のタグとコメント・
-  自動リンク・URL・Q&A 表のページ（`qa` の印を持つページ）。`qa.md` が無ければ何もしない。
+- **リンクにする版の Q&A 表に無い番号はリンクにせず警告する**（打ち間違いを拾う）。版の下のページなら、
+  その版より新しい版にだけある番号もここに入る。読めない表の番号は数えない（表の警告は Q&A 表のページで出る）。
+- 置き換えないところ: 見出し（Setext は下線の上の段落全体）・フェンス（アドモニション・箇条書き・引用の中を含む）・
+  インラインのコード・`[…]` の中と直後の `(…)`・リンク参照定義の行・HTML のタグ（属性の形をしたもの）とコメント・
+  自動リンク・URL（ASCII の続く限り）・Q&A 表のページ（`qa` の印を持つページ）。`qa.md` が無ければ何もしない。
 - **字下げ（4 文字）のコードブロックは見分けない**——アドモニションや箇条書きの続きと区別できないので、中の番号もリンクになる。
   コードはフェンスで書く。
+- **見分けないもの**: 生の HTML ブロック（`<details>` など）のタグの間の文字（リンクの記法が置かれ、そのまま表示される）・
+  空行をまたぐ HTML コメント。
 """
 
 from __future__ import annotations
@@ -50,18 +54,25 @@ QA_OPTION_SEPARATOR = " / "
 
 QA_PAGE = "qa.md"
 QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-[0-9]{3,}(?![A-Za-z0-9_])")
-FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+# フェンスの開き（引用・箇条書きの印と字下げの後ろも見る——アドモニションや箇条書きの中のフェンス）と閉じ
+FENCE = re.compile(r"(?:[ \t]*(?:>[ \t]?|[-*+][ \t]+|[0-9]{1,9}[.)][ \t]+))*[ \t]*(`{3,}|~{3,})")
+FENCE_CLOSE = re.compile(r"(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})[ \t]*$")
 ATX_HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
 SETEXT_UNDERLINE = re.compile(r" {0,3}(?:=+|-+)[ \t]*$")
 # 番号を置き換えない範囲（行をまたぐのは空行までの段落の中だけ）。順に: インラインのコード・HTML のコメント・<a> の中・
-# タグと自動リンク・[…] と直後の (…) か […]・URL
+# リンク参照定義の行・タグ（属性の形をしているものだけ。`x<y で … y>z` はタグでない）・宣言・自動リンク（URL とメール）・
+# […] と直後の (…) か […]・URL（ASCII の続く限り。和文の句読点で止める）
 PROTECTED = re.compile(
     r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)"
     r"|<!--.*?-->"
     r"|<a\b.*?</a>"
-    r"|<[A-Za-z/!][^>]*>"
+    r"|(?:^|(?<=\n)) {0,3}\[(?:\\.|[^\]\\])+\]:[^\n]*"
+    r"|</?[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][-A-Za-z0-9_.:]*(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s\"'=<>`]+))?)*\s*/?>"
+    r"|<![A-Za-z][^>]*>"
+    r"|<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>"
+    r"|<[^\s<>@]+@[^\s<>]+>"
     r"|(?<!\\)!?\[(?:\\.|[^\]\\])*\](?:\([^)]*\)|\[[^\]]*\])?"
-    r"|https?://\S+",
+    r"|https?://[!-~]+",
     re.DOTALL | re.IGNORECASE)
 MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")
 ANCHOR_UNSAFE = re.compile(r"[^a-z0-9_-]+")
@@ -169,6 +180,7 @@ def link_numbers(markdown: str, src_path: str, docs_dir: Path) -> str:
     limit = int(top[1:]) if VERSION.fullmatch(top) and "/" in src_path else None
     tables = [(version, numbers) for version, numbers in qa_numbers(docs_dir) if limit is None or version <= limit]
     target = posixpath.relpath(QA_PAGE, posixpath.dirname(src_path) or ".")
+    scope = (f"v1〜v{limit} のどの版" if limit is not None else "どの版") + "の Q&A 表"
     unknown: list[str] = []
 
     def link(match: re.Match) -> str:
@@ -196,15 +208,20 @@ def link_numbers(markdown: str, src_path: str, docs_dir: Path) -> str:
     for index, line in enumerate(lines):
         if fence:
             out.append(line)
-            closing = FENCE.match(line)
-            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence) \
-                    and not line[closing.end():].strip():
+            closing = FENCE_CLOSE.match(line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence):
                 fence = ""
             continue
         opening = FENCE.match(line)
+        if opening and opening.group(1)[0] == "`" and "`" in line[opening.end():]:
+            opening = None  # ` のフェンスの情報文字列は ` を持たない（行頭の ```a``` はインラインのコード）
         following = lines[index + 1] if index + 1 < len(lines) else ""
+        if line.strip() and not opening and not ATX_HEADING.match(line) and SETEXT_UNDERLINE.match(following):
+            out += pending + [line]  # 下線の上の段落は、行が何行あっても全体が見出し
+            pending = []
+            continue
         # 空行でも段落を切る（閉じない ` が次の段落の ` と組まないように）
-        if opening or not line.strip() or ATX_HEADING.match(line) or SETEXT_UNDERLINE.match(following):
+        if opening or not line.strip() or ATX_HEADING.match(line):
             out.append(paragraph(pending))
             pending = []
             out.append(line)
@@ -213,7 +230,8 @@ def link_numbers(markdown: str, src_path: str, docs_dir: Path) -> str:
         pending.append(line)
     out.append(paragraph(pending))
     for number in unknown:
-        log.warning("spec-loop: %s: %s はどの版の Q&A 表にも無いので、リンクにしない", src_path, number)
+        log.warning("spec-loop: %s: %s は %sにも無いので、リンクにしない（読めない表は数えない）",
+                    src_path, number, scope)
     return "".join(out)
 
 

@@ -24,9 +24,12 @@
    読めない表・見出しの違う表・知らない印は**警告**（`mkdocs` のロガー。`--strict` で落ちる）とページ上の注意書き。
    表が 1 つも無ければそう書き、警告は出さない。印の無いページは変えない。
    **本文の Q&A の番号**は、ページからの相対パスで、`v1`〜ページの版のうちその番号を持つ最も新しい版のアンカーへのリンクにする
-   （版の外のページはすべての版から）。描画関数の出力（表のセル）にも掛ける。見出し（ATX・Setext）・フェンス（``` と ~~~）・
-   インラインのコード・`[…]` と直後の `(…)`・`<a>`・HTML のコメント・URL の中は変えない。空行をまたいで ` を組ませない。
-   どの版にも無い番号はリンクにせず 1 度だけ警告する。前後が英数字の `Q-` は番号でない。Q&A 表のページと、`qa.md` の無いサイトは変えない。
+   （版の外のページはすべての版から）。描画関数の出力（表のセル）にも掛ける。見出し（ATX・複数行の Setext）・フェンス（``` と ~~~。
+   アドモニション・箇条書き・引用の中で空行をまたぐものも。閉じは同じ文字・同じ長さ以上・後ろに何も無い行だけ）・
+   インラインのコード・`[…]` と直後の `(…)`・リンク参照定義の行・`<a>`・HTML のコメント・自動リンク（メールを含む）・URL の中は変えない。
+   空行をまたいで ` を組ませない。`#Q-001`（`#` の後に空白が無い）・`<` で始まるがタグの形でない文・URL の後の和文は置き換える。
+   リンクにする版の表に無い番号はリンクにせず 1 度だけ警告し、警告は見た版の範囲を言う。読めない表があっても落ちず、他の版でリンクにする。
+   前後が英数字の `Q-` は番号でない。Q&A 表のページと、`qa.md` の無いサイトは変えない。
 3. **写しの突き合わせ**——フックの列名・状態・印は `check-qa-csv.py` の定数と同じ（フックは正本リポジトリへ写されて
    単独で動くので import できず、写しを持つ）。
 4. **重ね合わせに混ざらない**——雛形を写した正本で `merge-versions.py` が通り、出力に表示用のファイルが入らない。
@@ -503,7 +506,7 @@ def hook_links(plugin: Path, work: Path) -> bool:
 def hook_links_older_version(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
     out, warnings = render(plugin, docs, "Q-003\n", "v1/a.md")
-    return out == "Q-003\n" and len(warnings) == 1 and "Q-003" in warnings[0]
+    return out == "Q-003\n" and len(warnings) == 1 and "Q-003" in warnings[0] and "v1〜v1" in warnings[0]
 
 
 LEFT_ALONE = """# 見出し Q-001
@@ -542,6 +545,86 @@ def hook_links_after_left_alone(plugin: Path, work: Path) -> bool:
     return not warnings and out == (
         "```\nQ-001\n```\n[Q-001](qa.md#v1-q-001)\n\n# Q-001\n[Q-002](qa.md#v2-q-002)\n\n"
         "片方だけの ` [Q-001](qa.md#v1-q-001)\n\n[Q-002](qa.md#v2-q-002) と ` の後\n")
+
+
+NESTED_FENCES = """!!! note
+
+    ```
+    Q-001
+
+    Q-002
+    ```
+
+- ```
+  Q-001
+
+  Q-002
+  ```
+
+```
+~~~
+Q-001
+```
+
+````
+```
+Q-001
+````
+
+```
+``` x
+Q-001
+```
+
+> ~~~
+> Q-001
+>
+> Q-002
+> ~~~
+
+"""
+
+
+def hook_links_nested_fences(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    out, warnings = render(plugin, docs, NESTED_FENCES + "Q-001\n", "index.md")
+    return not warnings and out == NESTED_FENCES + "[Q-001](qa.md#v1-q-001)\n"
+
+
+LEFT_ALONE_MORE = """para Q-001
+more Q-002
+===
+
+[x]: ../v1/Q-001.md
+ [y]: Q-002.md "Q-001"
+
+<Q-001@example.com> と <mailto:Q-002@example.com>
+"""
+
+
+def hook_links_left_alone_more(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    out, warnings = render(plugin, docs, LEFT_ALONE_MORE, "index.md")
+    return out == LEFT_ALONE_MORE and not warnings
+
+
+def hook_links_not_protected(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    page = ("#Q-001\n\n詳細は https://example.com/a。Q-002 で決定\n\nx<y で Q-001 は y>z\n\n```Q-001``` と Q-002\nQ-001\n\n"
+            "Q-002\n# 見出し\n===\n")
+    out, warnings = render(plugin, docs, page, "index.md")
+    return not warnings and out == (
+        "#[Q-001](qa.md#v1-q-001)\n\n詳細は https://example.com/a。[Q-002](qa.md#v2-q-002) で決定\n\n"
+        "x<y で [Q-001](qa.md#v1-q-001) は y>z\n\n```Q-001``` と [Q-002](qa.md#v2-q-002)\n[Q-001](qa.md#v1-q-001)\n\n"
+        "[Q-002](qa.md#v2-q-002)\n# 見出し\n===\n")
+
+
+def hook_links_unreadable(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    write(docs, {"v2/shared/qa.csv": "No,質問\nQ-003,x\n"})
+    out, warnings = render(plugin, docs, "Q-001 と Q-003\n", "index.md")
+    return (out == "[Q-001](qa.md#v1-q-001) と Q-003\n" and len(warnings) == 1
+            and "Q-003" in warnings[0] and "読めない表は数えない" in warnings[0])
 
 
 def hook_links_unknown(plugin: Path, work: Path) -> bool:
@@ -626,6 +709,10 @@ CASES = {
     "ページの版より新しい版の番号はリンクにしない": hook_links_older_version,
     "見出し・コード・リンク・HTML・URL の中は変えない": hook_links_left_alone,
     "変えないところの後ろは置き換える": hook_links_after_left_alone,
+    "アドモニション・箇条書き・引用の中のフェンスと閉じ方": hook_links_nested_fences,
+    "複数行の Setext・リンク参照定義・メールの自動リンクは変えない": hook_links_left_alone_more,
+    "見出しでない # ・タグでない < ・URL の後の和文は置き換える": hook_links_not_protected,
+    "読めない表があっても他の版でリンクにする": hook_links_unreadable,
     "どの版にも無い番号は警告": hook_links_unknown,
     "番号の形": hook_links_shape,
     "Q&A 表のページは変えない": hook_links_not_qa_page,
@@ -745,23 +832,55 @@ MUTATIONS: list[tuple] = [
      "見出し・コード・リンク・HTML・URL の中は変えない"),
     ("フェンスを閉じない", HOOK, '                fence = ""\n            continue\n', "                pass\n            continue\n",
      "変えないところの後ろは置き換える"),
-    ("~~~ をフェンスとみなさない", HOOK, r'FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")', r'FENCE = re.compile(r" {0,3}(`{3,})")',
+    ("~~~ をフェンスとみなさない", HOOK, r'[ \t]+))*[ \t]*(`{3,}|~{3,})")', r'[ \t]+))*[ \t]*(`{3,})")',
      "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("ATX の見出しを見ない", HOOK, " or ATX_HEADING.match(line) or ", " or ",
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("Setext の見出しを見ない", HOOK, " or SETEXT_UNDERLINE.match(following):", ":",
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
+    ("ATX の見出しを見ない", HOOK, " or ATX_HEADING.match(line):", ":",
+     "変えないところの後ろは置き換える"),
+    ("ATX の # の後の空白を見ない", HOOK, r'ATX_HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")',
+     r'ATX_HEADING = re.compile(r" {0,3}#{1,6}")', "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
+    ("Setext の見出しを見ない", HOOK,
+     "        if line.strip() and not opening and not ATX_HEADING.match(line) and SETEXT_UNDERLINE.match(following):\n",
+     "        if False:\n", "見出し・コード・リンク・HTML・URL の中は変えない"),
+    ("ATX の見出しの次の === を Setext の下線とみなす", HOOK, " and not ATX_HEADING.match(line) and SETEXT_UNDERLINE", " and SETEXT_UNDERLINE",
+     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
+    ("Setext の見出しを下線の直前の行だけにする", HOOK, "            out += pending + [line]", "            out += [paragraph(pending), line]",
+     "複数行の Setext・リンク参照定義・メールの自動リンクは変えない"),
+    ("字下げ・箇条書き・引用の後ろのフェンスを見ない", HOOK,
+     r'FENCE = re.compile(r"(?:[ \t]*(?:>[ \t]?|[-*+][ \t]+|[0-9]{1,9}[.)][ \t]+))*[ \t]*(',
+     r'FENCE = re.compile(r" {0,3}(', "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
+    ("閉じで引用の印を見ない", HOOK, r'FENCE_CLOSE = re.compile(r"(?:[ \t]*>[ \t]?)*[ \t]*(',
+     r'FENCE_CLOSE = re.compile(r"[ \t]*(', "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
+    ("閉じで文字を見ない", HOOK, "if closing and closing.group(1)[0] == fence[0] and ", "if closing and ",
+     "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
+    ("閉じで長さを見ない", HOOK, " and len(closing.group(1)) >= len(fence):", ":",
+     "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
+    ("閉じで後ろを見ない", HOOK, r'(`{3,}|~{3,})[ \t]*$")', r'(`{3,}|~{3,})")',
+     "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
+    ("行頭の ```a``` をフェンスとみなす", HOOK, "            opening = None  #", "            pass  #",
+     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
+    ("リンク参照定義の行を守らない", HOOK, r'    r"|(?:^|(?<=\n)) {0,3}\[', r'    r"|(?!)(?:^|(?<=\n)) {0,3}\[',
+     "複数行の Setext・リンク参照定義・メールの自動リンクは変えない"),
+    ("< で始まる文をタグとみなす", HOOK, r'    r"|</?[A-Za-z][A-Za-z0-9-]*(?:', r'    r"|<[A-Za-z/!][^>]*>|</?[A-Za-z][A-Za-z0-9-]*(?:',
+     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
+    ("メールの自動リンクを守らない", HOOK, '    r"|<[^\\s<>@]+@[^\\s<>]+>"\n', "",
+     "複数行の Setext・リンク参照定義・メールの自動リンクは変えない"),
+    ("URL を空白まで守る", HOOK, '    r"|https?://[!-~]+",', '    r"|https?://\\S+",',
+     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
+    ("読めない表で落ちる", HOOK, "            except (OSError, ValueError, csv.Error):  #", "            except ZeroDivisionError:  #",
+     "読めない表があっても他の版でリンクにする"),
+    ("警告が見た版の範囲を言わない", HOOK, '    scope = (f"v1〜v{limit} のどの版" if limit is not None else "どの版")',
+     '    scope = ("どの版")', "ページの版より新しい版の番号はリンクにしない"),
     ("インラインのコードを守らない", HOOK, '    r"(?<!`)(`+)(?!`).*?(?<!`)\\1(?!`)"\n    r"|<!--', '    r"<!--',
      "見出し・コード・リンク・HTML・URL の中は変えない"),
     ("リンクを守らない", HOOK, '    r"|(?<!\\\\)!?\\[', '    r"|(?!)\\[',
      "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("URL を守らない", HOOK, '    r"|https?://\\S+",\n', '    r"",\n',
+    ("URL を守らない", HOOK, '    r"|https?://[!-~]+",\n', '    r"",\n',
      "見出し・コード・リンク・HTML・URL の中は変えない"),
     ("<a> の中を守らない", HOOK, '    r"|<a\\b.*?</a>"\n', "",
      "見出し・コード・リンク・HTML・URL の中は変えない"),
     ("空行をまたいで ` を組ませる", HOOK, "if opening or not line.strip() or ", "if opening or ",
      "変えないところの後ろは置き換える"),
-    ("知らない番号を警告しない", HOOK, '        log.warning("spec-loop: %s: %s はどの版', '        str("spec-loop: %s: %s はどの版',
+    ("知らない番号を警告しない", HOOK, '        log.warning("spec-loop: %s: %s は %sにも', '        str("spec-loop: %s: %s は %sにも',
      "どの版にも無い番号は警告"),
     ("知らない番号を何度も警告する", HOOK, "            if number not in unknown:\n                unknown.append(number)\n",
      "            unknown.append(number)\n", "どの版にも無い番号は警告"),
