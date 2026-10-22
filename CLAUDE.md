@@ -36,7 +36,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       そこから先の生成はスクリプト**。**Issue の登録で止まり、登録の前に利用者に確かめる**）。素のスキルとして張れないのは同上
     - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
-    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件）。
+    - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件・
+      **仕様に書く範囲の線と振り分けの区分**（`spec-scope.md`。#329））。
       **スキルの中ではなくプラグイン直下にある**——スキルからは `../../references/…` で指し、
       `check-skill-pointers.py` が**プラグインの中に収まること**まで見る（#216）
     - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。テストは
