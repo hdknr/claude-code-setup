@@ -15,6 +15,21 @@
 - セルの文字は HTML と Markdown の記号をエスケープし、改行は `<br>` にする（表を壊さない）。
   **CSV の文字は表のセルにだけ置く**——段落や箇条書きに置くと、行頭の `!!! `・字下げ・`1. ` がブロックの記法に読まれる。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
+
+**本文の Q&A の番号（`Q-008`）は、Q&A 表のページ（`qa.md`）のアンカーへのリンクにする**（正本は番号のまま。
+決まりは spec-loop の `references/qa-csv.md` の「本文での番号」）。`on_page_content` が**描いた後の HTML** に掛けるので、
+描画関数が描いた表のセルにも掛かる。
+
+- **書き換えるのは HTML の文字だけ**（タグ・属性・コメントは変えない）。次の要素の中は変えない:
+  見出し（`h1`〜`h6`）・コード（`pre`・`code`・`kbd`・`samp`）・リンク（`a`）・`script`・`style`・`textarea`・`title`。
+  **Markdown を読み直さない**——見出しかコードかリンクかは、MkDocs（Python-Markdown と拡張）が描いた結果で決まる
+  （アドモニション・箇条書き・引用の中も、字下げのコードブロックも、生の HTML も同じ扱いになる）。
+- リンク先は MkDocs の `File.url_relative_to` で作る（`use_directory_urls` に従う）。
+- 版は、`docs/v<n>/` の下のページなら `v1`〜`v<n>` のうち、版の外のページならすべての版のうち、
+  **その番号を持つ最も新しい版**（版は重ね合わせないので、問い直していない番号は前の版の節にしか無い）。
+- **リンクにする版の Q&A 表に無い番号はリンクにせず警告する**（打ち間違いを拾う）。版の下のページなら、
+  その版より新しい版にだけある番号もここに入る。読めない表の番号は数えない（表の警告は Q&A 表のページで出る）。
+- Q&A 表のページ（`qa` の印を持つページ）と、`qa.md` の無いサイトは変えない。
 """
 
 from __future__ import annotations
@@ -33,9 +48,19 @@ VERSION = re.compile(r"v[1-9][0-9]*")
 # spec-loop の references/qa-csv.md の列（check-qa-csv.py の COLUMNS と同じ。写しなので、テストが突き合わせる）
 QA_COLUMNS = ["No", "起票元", "質問", "選択肢", "回答", "反映先", "状態", "費用への影響"]
 QA_DONE = "反映済み"
+QA_PROVISIONAL = "暫定反映"
 QA_NO_ANSWER = "未回答"
 QA_OPTION_SEPARATOR = " / "
 
+QA_PAGE = "qa.md"
+QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-[0-9]{3,}(?![A-Za-z0-9_-])")
+# HTML の、文字でないもの: コメント・CDATA・宣言と処理命令・タグ（属性の値の中の > で切らない）。group(1) は終わりの /、group(2) は要素名
+MARKUP = re.compile(r"<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[!?][^>]*>"
+                    r"|<(/?)([A-Za-z][A-Za-z0-9-]*)(?:\"[^\"]*\"|'[^']*'|[^'\">])*>", re.DOTALL)
+# 中の文字を変えない要素
+UNLINKED = {"a", "code", "pre", "kbd", "samp", "script", "style", "textarea", "title", "h1", "h2", "h3", "h4", "h5", "h6"}
+# Q&A 表のページ（on_page_markdown が印を見て記録し、on_page_content が飛ばす）
+qa_pages: set[str] = set()
 MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")
 ANCHOR_UNSAFE = re.compile(r"[^a-z0-9_-]+")
 
@@ -77,10 +102,13 @@ def read_qa(path: Path) -> list[dict[str, str]]:
 
 def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
     done = sum(row["状態"] == QA_DONE for row in rows)
-    pending = len(rows) - done
-    answered = sum(row["状態"] != QA_DONE and row["回答"].strip() not in ("", QA_NO_ANSWER) for row in rows)
+    # 暫定の回答で反映した行は、反映済みでも確認中でもない（仕様には反映済み・利用者の確認待ち）
+    provisional = sum(row["状態"] == QA_PROVISIONAL for row in rows)
+    pending = len(rows) - done - provisional
+    answered = sum(row["状態"] not in (QA_DONE, QA_PROVISIONAL) and row["回答"].strip() not in ("", QA_NO_ANSWER)
+                   for row in rows)
     out = [f"## v{version}", "",
-           f"確認中 {pending} 件（うち回答あり・未反映 {answered} 件）・反映済み {done} 件", ""]
+           f"確認中 {pending} 件（うち回答あり・未反映 {answered} 件）・暫定反映 {provisional} 件・反映済み {done} 件", ""]
     if not rows:
         return out + ["質問はまだ無い。", ""]
     out += ["| No | 質問 | 回答 | 状態 |", "| --- | --- | --- | --- |"]
@@ -121,6 +149,58 @@ RENDERERS = {
 }
 
 
+def qa_numbers(docs_dir: Path) -> list[tuple[int, set[str]]]:
+    """版ごとの Q&A 表の番号。読めない表は空（警告は Q&A 表のページを描くときに出る）。"""
+    found = []
+    for version, root in versions(docs_dir):
+        path = root / "shared" / "qa.csv"
+        if path.is_file():
+            try:
+                # 空白を落とさない——Q&A 表のアンカーも落とさずに作るので、落とすとリンクがアンカーに当たらない（警告に回す）
+                found.append((version, {row["No"] for row in read_qa(path)}))
+            except (OSError, ValueError, csv.Error):  # UnicodeDecodeError は ValueError の子
+                found.append((version, set()))
+    return found
+
+
+def link_numbers(content: str, src_path: str, target: str, docs_dir: Path) -> str:
+    """描いた HTML の文字の中の Q&A の番号を、`target`（Q&A 表のページの URL）のアンカーへのリンクにする。"""
+    top = src_path.split("/", 1)[0]
+    limit = int(top[1:]) if VERSION.fullmatch(top) and "/" in src_path else None
+    tables = [(version, numbers) for version, numbers in qa_numbers(docs_dir) if limit is None or version <= limit]
+    scope = (f"v1〜v{limit} のどの版" if limit is not None else "どの版") + "の Q&A 表"
+    unknown: list[str] = []
+
+    def link(match: re.Match) -> str:
+        number = match.group(0)
+        version = next((version for version, numbers in reversed(tables) if number in numbers), None)
+        if version is None:
+            if number not in unknown:
+                unknown.append(number)
+            return number
+        return f'<a href="{html.escape(target + "#" + anchor(version, number))}">{number}</a>'
+
+    out, last = [], 0
+    inside = {name: 0 for name in UNLINKED}  # 開いている要素の数（入れ子・閉じ忘れの多い HTML でも数で追う）
+    for match in MARKUP.finditer(content):
+        between = content[last:match.start()]
+        out += [between if any(inside.values()) else QA_NUMBER.sub(link, between), match.group(0)]
+        last = match.end()
+        name = (match.group(2) or "").lower()
+        if name in inside and not match.group(0).endswith("/>"):
+            inside[name] = max(inside[name] - 1, 0) if match.group(1) else inside[name] + 1
+    between = content[last:]
+    out.append(between if any(inside.values()) else QA_NUMBER.sub(link, between))
+    for number in unknown:
+        log.warning("spec-loop: %s: %s は %sにも無いので、リンクにしない（読めない表は数えない）",
+                    src_path, number, scope)
+    return "".join(out)
+
+
+def page_path(page) -> str:
+    return getattr(page.file, "src_uri", page.file.src_path).replace("\\", "/")
+
+
 def on_page_markdown(markdown: str, page, config, files) -> str:
     docs_dir = Path(config["docs_dir"])
 
@@ -131,4 +211,16 @@ def on_page_markdown(markdown: str, page, config, files) -> str:
             return problem(f"{page.file.src_path}: 知らない印 `spec-loop: {name}`（知っているのは {', '.join(RENDERERS)}）")
         return renderer(docs_dir)
 
+    if any(match.group("name") == "qa" for match in MARKER.finditer(markdown)):
+        qa_pages.add(page_path(page))
+    else:
+        qa_pages.discard(page_path(page))
     return MARKER.sub(replace, markdown)
+
+
+def on_page_content(content: str, page, config, files) -> str:
+    src_path = page_path(page)
+    qa = files.get_file_from_path(QA_PAGE)
+    if src_path in qa_pages or qa is None:
+        return content
+    return link_numbers(content, src_path, qa.url_relative_to(page.file), Path(config["docs_dir"]))

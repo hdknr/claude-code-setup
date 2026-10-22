@@ -125,6 +125,13 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("前の提案書を消す", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)],
      True, lambda r: not_made(1)(r) and r.output.count("前に作った出力を消した") == 2),
     ("照合していないと作らない", BASE, True, not_made(2)),
+    # 要求確定の時点に暫定の回答が残る（#325）——照合の 3 をそのまま返し、前の出力も消す
+    ("暫定の回答が残ると作らない",
+     [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）,決定表 4 行目,反映済み",
+                                          "A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映"))]
+     + BASE[1:] + [("t", R1), ("t", B1)],
+     True, lambda r: not_made(3)(r) and "暫定の回答（暫定反映）が 1 件残る" in r.output
+     and r.output.count("前に作った出力を消した") == 2),
     ("見積りが決まりに反すると作らない", BASE[:2] + [("w", ESTIMATE, estimate('"4,800,000"'))] + BASE[3:]
      + [("t", R1), ("t", B1)], False, not_made(1)),
     ("見積りが無いと作らない", [s for s in SIGNED if s[:2] != ("w", ESTIMATE)], False,
