@@ -140,7 +140,12 @@ PowerPoint で開いた見た目。判定役（LLM）が新しい線で実際に
 
 - 周の在り処: ブランチ `issue/339-qa-layers-recommendation`・worktree `.claude/worktrees/issue-339`・
   起点 `4187a08`・base 参照 `origin/main` → `4187a081088ab5c3037efd7e8d2b2968cb34d5d8`
-- 実装: 進行中（スクリプトと各テストは緑。文書を直し終えて `check-all.py` を回す）
+- 実装: 済み（コミット 2 つ。個別のテストは緑——`test-check-qa-csv` 60/43・`test-check-spec-exit` 34/27・`test-qa-to-pptx`・
+  `test-merge-versions` 57/51・`test-diff-versions` 13/12・`test-scaffold` 164/113・`test-check-signoff` 54/41・`test-build-proposal` 38/31・
+  `test-init-mkdocs` 45/82。試料/変異）。`check-all.py` で `check-description-sync.py` が 1 回赤（feasibility の要約が古かった）→
+  要約を直し、proposal・scaffold は trailer で免除
+- 関門 1 パス目: 未着手。**1 パス目の指摘対応の起点は、関門に渡すときの HEAD をここに書く**
+- 手順 4 の割り目: これから AskUserQuestion で訊く
 - 実機確認（受入基準 F。2026-10-22）:
     - **SBIPRISM-207**（手元の `sbi-hubspot` の `docs/shared/qa.csv` を scratchpad に写した。正本は触っていない）——
       前の形のまま新しい検査に当てると 1 で、出力が「移す手順は references/tree.md の「Q&A 表を移す」」を指した。
