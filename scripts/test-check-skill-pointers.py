@@ -203,6 +203,39 @@ TARGET_MASKED = """# デモ
 """
 TARGET_MASKED_RESUME = "# 再開\n\n`SKILL.md` の「戻り先の項」を見る。\n"
 
+# **プラグイン直下**（#332）。判定役の定義と共有の決まりは、プラグインの根からの相対で書く。
+# スキルからは `../../references/qa.md` の「X」で節を指す。**ほかの持ち主の名指し**も置く
+# ——**置かないと、名指しを解決する変異が殺せない**（#332 の実物: spec-loop の `qa-csv.md`・`handoff-issue.md`）。
+PLUGIN_SKILL = "# デモ\n\n区分は `../../references/qa.md` の「振り分けの区分」を正とする。\n"
+PLUGIN_AGENT = "# 判定役\n\n区分は `references/qa.md` の「振り分けの区分」の名前で書く。\n"
+PLUGIN_REF = """# 決まり
+
+## 振り分けの区分
+
+規定の本体は other の `references/spec-gap.md`。
+同じ式の写しは other のスキルの `scripts/fp.py` にあり、このリポジトリの `scripts/test-x.py` が見る。
+読み方は other の `references/qa.md` の「other にしか無い節」を正とする。
+本体はother の `references/spec-gap.md`（名前の直前が日本語の文字でも名指し）。
+"""
+# **最後の行**は「X」の照合の免除を当てる——`references/qa.md` はこのプラグインにも在り、
+# **X はこちらに無い**ので、**免除しなければ落ちる**（#332 の 1 パス目の `/code-review`）。
+# **名指しが前の行にある**——免除しない（落ちる側）。
+PLUGIN_REF_WRAPPED = PLUGIN_REF + "\n読み方は other の\n`references/qa.md` の「other にしか無い節」を正とする。\n"
+# **大文字小文字だけ違う自分の名前**——macOS の FS では `Demo` のディレクトリが「在る」ことになる。
+PLUGIN_REF_CASE = PLUGIN_REF + "\n自分の決まりは Demo の `references/missing.md` にある。\n"
+# **名前の前が区切りでない**——`foo/other` はプラグインの名指しではない。
+PLUGIN_REF_PATHLIKE = PLUGIN_REF + "\n詳細は foo/other の `references/missing.md` にある。\n"
+PLUGIN_REF_DOTTED = PLUGIN_REF + "\n詳細は foo.other の `references/missing.md` にある。\n"
+# **名指しが同じ行の前のほうにある**——指し先の直前ではないので免除しない（#332 の 2 パス目）。
+PLUGIN_REF_EARLY = PLUGIN_REF + "\nother の規定と同じく、自分の `references/missing.md` を見る。\n"
+# **`../../` の移した先の名指しで、その先に無い**——#332 の再現（spec-review の「振り分けの区分」）。
+PLUGIN_SKILL_BROKEN = PLUGIN_SKILL.replace("振り分けの区分", "壊した区分")
+# **判定役の定義の移した先の名指しで、その先に無い**——#332 の再現（red-team の「振り分けの区分」）。
+PLUGIN_AGENT_BROKEN = PLUGIN_AGENT.replace("振り分けの区分", "壊した区分")
+# **自分の名前と、プラグインでない名前の名指し**は免除しない。無いファイルを指しているので落ちるはず。
+PLUGIN_REF_OWN = PLUGIN_REF + "\n自分の決まりは demo の `references/missing.md` にある。\n"
+PLUGIN_REF_UNKNOWN = PLUGIN_REF + "\n詳細は spec の `references/missing.md` にある。\n"
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -215,7 +248,7 @@ def observe(mod, root: Path) -> dict:
 
 MUTATIONS = {
     # 守る 1: 指し先のファイルが実在すること
-    "実在を見ない": ('                if not (skill / rel).exists():', '                if False:'),
+    "実在を見ない": ('            if not (base / rel).exists():', '            if False:'),
     # 守る 2: 囲まれた指し先を拾うこと
     "囲みを見ない": (
         'POINTER = re.compile(r"`((?:references|prompts|scripts)/[\\w./-]+)`")',
@@ -238,21 +271,21 @@ MUTATIONS = {
         'PARENT = re.compile(r"(?!x)x")'),
     # 守る 6: `../` の指し先がプラグインの中に収まること
     "プラグインの外を見逃す": (
-        "                elif (leaves_plugin(skill, plugin, rel)\n"
-        "                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):",
-        "                elif False:"),
+        "            elif (leaves_plugin(base, plugin, rel)\n"
+        "                  or not (base / rel).resolve().is_relative_to(plugin.resolve())):",
+        "            elif False:"),
     # 守る 7: プラグインの境界は `plugins/<name>/` であること
     "境界を `plugins/` に上げる": (
         "        plugin = skill.parent.parent\n",
         "        plugin = skill.parent.parent.parent\n"),
     # 守る 8: 途中で 1 度でもプラグインの外へ出た指し先は、戻ってきても落とすこと
     "行き着く先だけを見る": (
-        "                elif (leaves_plugin(skill, plugin, rel)",
-        "                elif (False"),
+        "            elif (leaves_plugin(base, plugin, rel)",
+        "            elif (False"),
     # 守る 9: symlink の先がプラグインの外なら落とすこと（#230。上の 2 つと別に外す）
     "symlink の先を見ない": (
-        "                      or not (skill / rel).resolve().is_relative_to(plugin.resolve())):",
-        "                      or False):"),
+        "                  or not (base / rel).resolve().is_relative_to(plugin.resolve())):",
+        "                  or False):"),
     # 守る 10: 散文の指し先 `上の「X」` の X が同じファイルにあること（#205）
     "散文の指し先を見ない": (
         "               normalize(m.group(1)) in own)",
@@ -294,6 +327,47 @@ MUTATIONS = {
     "バッククォートを外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[*\\s]"'),
     # 守る 21: 空白（改行を含む）の違いを同一視すること
     "空白を外さない": ('re.sub(r"[*`\\s]"', 're.sub(r"[*`]"'),
+    # 守る 23: プラグイン直下の `agents/*.md` と `references/*.md` も見ること（#332）
+    "プラグイン直下を見ない": (
+        '        for sub in ("agents", "references"):',
+        '        for sub in ():'),
+    # 守る 24: プラグイン直下のファイルの指し先は、プラグインの根から解決すること
+    "プラグイン直下をファイルの場所から解決する": (
+        "                yield plugin, plugin, path",
+        "                yield path.parent, plugin, path"),
+    # 守る 25: `../` で始まる移した先の名指しも拾うこと
+    "`../` の移した先の名指しを拾わない": (
+        'r"`(SKILL\\.md|(?:\\.\\./)*(?:references|prompts)/',
+        'r"`(SKILL\\.md|(?:references|prompts)/'),
+    # 守る 26: ほかの持ち主を名指しした指し先は解決しないこと
+    "ほかの持ち主の名指しを解決する": (
+        "    m = OWNER.search(before)",
+        "    m = None"),
+    # 守る 27: 自分の名前や、プラグインでない名前の名指しは解決すること
+    "どの名指しも免除する": (
+        "    return name != plugin.name and name in names",
+        "    return True"),
+    # 守る 28: 「X」の照合でも、ほかの持ち主を名指しした指し先は照合しないこと
+    "「X」の照合でほかの持ち主の名指しを照合する": (
+        "        if owned_elsewhere(prose[line_start:m.start()], plugin):\n            continue",
+        "        if False:\n            continue"),
+    # 守る 29: 名指しは同じ行だけを見ること
+    "前の行の名指しで免除する": (
+        "prose[line_start:m.start()]",
+        "prose[max(0, m.start() - 40):m.start()]"),
+    # 守る 30: プラグイン名は文字どおりに比べること（FS に依らず殺せるよう、大文字小文字を無視する形で当てる）
+    "プラグイン名の大文字小文字を無視する": (
+        "    return name != plugin.name and name in names",
+        "    return name != plugin.name and name.lower() in {n.lower() for n in names}"),
+    # 守る 31: 名前の前が区切りであること
+    "名前の前の区切りを見ない": (
+        r"(?<![A-Za-z0-9_/.-])([A-Za-z0-9_-]+)", r"([A-Za-z0-9_-]+)"),
+    # 守る 32: 名前の直前が日本語の文字でも、名指しと読むこと
+    "区切りを \\w で書く": (
+        r"(?<![A-Za-z0-9_/.-])", r"(?<![\w/.-])"),
+    # 守る 33: 名指しは指し先の直前だけを見ること
+    "名指しを行の前のほうでも拾う": (
+        r'(?:\s*のスキル)?)\s*の\s*$")', r'(?:\s*のスキル)?)\s*の")'),
 }
 
 
@@ -412,6 +486,43 @@ def main() -> int:
         check("移した先が X を指し先の中にしか持っていなければ落とす",
               observe(mod, target_masked)["rc"] == 1)
 
+        def plugin_tree(name: str, *, skill: str = PLUGIN_SKILL, agent: str = PLUGIN_AGENT,
+                        ref: str = PLUGIN_REF) -> Path:
+            d = base / name
+            assert_not_real_repo(d)
+            make_skill(d, body=skill, files={})
+            plugin = d / "plugins" / "demo"
+            for rel, text in (("agents/judge.md", agent), ("references/qa.md", ref)):
+                (plugin / rel).parent.mkdir(parents=True, exist_ok=True)
+                (plugin / rel).write_text(text, encoding="utf-8")
+            (d / "plugins" / "other").mkdir(parents=True, exist_ok=True)
+            return d
+
+        plugin_ok = plugin_tree("plugin-ok")
+        plugin_skill_broken = plugin_tree("plugin-skill-broken", skill=PLUGIN_SKILL_BROKEN)
+        plugin_agent_broken = plugin_tree("plugin-agent-broken", agent=PLUGIN_AGENT_BROKEN)
+        plugin_own = plugin_tree("plugin-own", ref=PLUGIN_REF_OWN)
+        plugin_unknown = plugin_tree("plugin-unknown", ref=PLUGIN_REF_UNKNOWN)
+        plugin_wrapped = plugin_tree("plugin-wrapped", ref=PLUGIN_REF_WRAPPED)
+        plugin_case = plugin_tree("plugin-case", ref=PLUGIN_REF_CASE)
+        plugin_pathlike = plugin_tree("plugin-pathlike", ref=PLUGIN_REF_PATHLIKE)
+        plugin_dotted = plugin_tree("plugin-dotted", ref=PLUGIN_REF_DOTTED)
+        plugin_early = plugin_tree("plugin-early", ref=PLUGIN_REF_EARLY)
+        print("\nプラグイン直下（#332）")
+        check("判定役と共有の決まりの指し先が実在すれば通す（ほかの持ち主の名指しは解決しない）",
+              observe(mod, plugin_ok)["rc"] == 0)
+        check("`../../references/x.md` の「X」が、その先に無ければ落とす",
+              observe(mod, plugin_skill_broken)["rc"] == 1)
+        check("判定役の定義の `references/x.md` の「X」が、その先に無ければ落とす",
+              observe(mod, plugin_agent_broken)["rc"] == 1)
+        check("自分の名前の名指しは免除しない", observe(mod, plugin_own)["rc"] == 1)
+        check("プラグインでない名前の名指しは免除しない", observe(mod, plugin_unknown)["rc"] == 1)
+        check("前の行の名指しでは「X」の照合を免除しない", observe(mod, plugin_wrapped)["rc"] == 1)
+        check("大文字小文字だけ違う自分の名前は免除しない", observe(mod, plugin_case)["rc"] == 1)
+        check("名前の前が区切りでなければ免除しない", observe(mod, plugin_pathlike)["rc"] == 1)
+        check("名前の前が `.` でも免除しない", observe(mod, plugin_dotted)["rc"] == 1)
+        check("同じ行の前のほうの名指しでは免除しない", observe(mod, plugin_early)["rc"] == 1)
+
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
 
@@ -455,7 +566,17 @@ def main() -> int:
                           or mutant.main([str(xref_split)]) != 1
                           or mutant.main([str(step_broken)]) != 1
                           or mutant.main([str(xref_masked)]) != 1
-                          or mutant.main([str(target_masked)]) != 1)
+                          or mutant.main([str(target_masked)]) != 1
+                          or mutant.main([str(plugin_ok)]) != 0
+                          or mutant.main([str(plugin_skill_broken)]) != 1
+                          or mutant.main([str(plugin_agent_broken)]) != 1
+                          or mutant.main([str(plugin_own)]) != 1
+                          or mutant.main([str(plugin_unknown)]) != 1
+                          or mutant.main([str(plugin_wrapped)]) != 1
+                          or mutant.main([str(plugin_case)]) != 1
+                          or mutant.main([str(plugin_pathlike)]) != 1
+                          or mutant.main([str(plugin_dotted)]) != 1
+                          or mutant.main([str(plugin_early)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
