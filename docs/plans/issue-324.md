@@ -87,6 +87,8 @@ D1〜D6（著者の判断。PR で人間に示す）。
 - 関門 1 パス目（base `9d746936a1527bb633edcccbac606a766d511a11`）: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 3 件、
   `/code-review`（high）指摘 10 件。採否は下の表（直す 8・残課題 4）。指摘対応: P1〜P8 を直した
   （`test-init-mkdocs.py` 試料 45・変異 85 で緑。基準 11 を実際の MkDocs で組み直した——下記）
+- 指摘対応のコミット: `31cc181`（`check-all.py` 44/44 緑）
+- 2 つ目の割り目: AskUserQuestion で訊いた → **ここで割る**（2026-10-22）。worktree の中で `/clear` して `/dev-loop:dev-loop 324` で再開
 - 次: 1 パス目の指摘対応を、Verifier と `/code-review` の **2 パス目**に当てる（手順 5 の当て直しと手順 6 の 2 パス目の両方が残っている）
 - 交絡: 基準 11 の陽性側は「リンクが出る」と「知らない番号で落ちる」の両方を見た（陰性だけではない）
 
