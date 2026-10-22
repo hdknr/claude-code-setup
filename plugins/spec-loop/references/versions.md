@@ -52,7 +52,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 | --- | --- |
 | 仕様レビューを抜ける条件 1（`check-spec-exit.py`） | `build/merged/shared/qa.csv` と `build/merged/spec` に当てる |
 | `scaffold.py` | **自分でメモリ上に重ねる**（`build/merged/` は書かない。同じバイト）。中間表現の `source` は**重ね合わせた全体の根からのパス**（`spec-ir.md`）。**機能を追加・変更・削除に分けるのは、v<n-1> の全体との比較**（下の「版の差分」。`handoff-issue.md`） |
-| Issue の本文 | 中間表現は `build/merged/spec/spec_ir.json`（sha256 はこのバイト）。開発する側は**本文のコマンド**（`--upto <n>` で版を指定する）で作って当てる |
+| Issue の本文 | 中間表現は `build/merged/spec/spec_ir.json`（機能の指紋はこの中の機能。撤去の本文は前の版の全体 `build/merged-v<n-1>/`。`handoff-issue.md`）。開発する側は**本文のコマンド**（`--upto <n>` で版を指定する）で作って当てる |
 
 **その版だけを読むもの**——`check-qa-csv.py`（版ごとの `qa.csv`）・`check-feasibility-csv.py` と `schedule-to-gantt.py`
 （版ごとの `feasibility/`）・`check-signoff.py` と `build-proposal.py`（`signoff-tags.md`）。
@@ -181,7 +181,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py
 
 2. **中間表現の `source` を、重ね合わせた全体の根からのパスに書き換える**（`docs/spec/order.md` → `spec/order.md`。`spec-ir.md`）。
 3. **`scaffold.py` で作り直す。** `scaffold/` の中身は変わらないことがあるが、**Issue の本文は変わる**（中間表現の場所と
-   sha256 が `build/merged/spec/spec_ir.json` を指す）。**登録済みの Issue は古い場所を指したまま**なので、
+   指紋が `build/merged/spec/spec_ir.json` を指す）。**登録済みの Issue は古い場所を指したまま**なので、
    開発中の Issue があるなら、開発する側に場所が変わったことを伝える。
 4. **承認を取り直す。** 前の名前のタグ（`req-signoff-v<n>`・`budget-signoff-v<n>`）は読まれない。移したコミットで
    `signoff/v1/req-1`・`signoff/v1/budget-1` を付けてもらう（`signoff-tags.md`。**タグはスキルが付けない**）。
