@@ -7,7 +7,8 @@
 
 見るもの:
 
-1. **条件 1 を満たさない形を、理由つきで落とす**（反映済みでない行・未決定の印・列検査を通らない表）。
+1. **条件 1 を満たさない形を、理由つきで落とす**（仕様に反映した状態でない行・未決定の印・列検査を通らない表）。
+   **暫定反映の行は止めない**（資料に載る行とは別の定義。#325）。
 2. **満たす形を通す**（陽性対照。`未定義` や `mastodon` のような印でない語で落ちないこと）。
 3. **判定できない形を 0 にしない**（仕様のディレクトリが無い・空・Q&A 表が読めない）。
 4. **0 で終わっても「抜けた」とは言わない**——出力に「条件 2〜5 は判定していない」が出る。
@@ -39,8 +40,10 @@ REFERENCE = PLUGIN / "references" / "spec-exit.md"
 HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 DONE_ROW = "Q-001,仕様レビュー（Red Team）,通信が切れたら？,A: 取り消す / B: 残す,A（業務部が回答）,spec/order.md,反映済み,\n"
 OPEN_ROW = "Q-002,仕様レビュー（Domain Checker）,端数は？,A: 切り捨て / B: 四捨五入,未回答,—,確認中,\n"
-# 回答はあるが未反映——これも反映済みでない
+# 回答はあるが未反映——これも仕様に反映した状態でない
 ANSWERED_ROW = "Q-003,仕様レビュー（Formal Checker）,上限は？,A: 拒否 / B: 切り詰める,B（業務部が回答）,—,確認中,\n"
+# 暫定の回答で反映した——仕様には反映済みなので条件 1 を止めない（#325）
+PROVISIONAL_ROW = "Q-005,仕様レビュー（Red Team）,上限は？,A: なし / B: 5000 円,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
 BAD_ROW = "Q-004,仕様レビュー,選択肢が 1 つ,A: これだけ,未回答,—,確認中,\n"
 CLEAN_SPEC = "# 注文\n\n未定義の状態に遷移しない。\nmastodon のような語も、TODOS も印ではない。\n"
 
@@ -50,6 +53,9 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("満たす", HEADER + DONE_ROW, {"order.md": CLEAN_SPEC}, 0, "条件 2〜5 は判定していない"),
     ("見出しだけの表", HEADER, {"order.md": CLEAN_SPEC}, 0, "条件 1 を満たす"),
     ("確認中の行", HEADER + DONE_ROW + OPEN_ROW, {"order.md": CLEAN_SPEC}, 1, "Q-002: 状態が 確認中"),
+    ("暫定反映は止めない", HEADER + DONE_ROW + PROVISIONAL_ROW, {"order.md": CLEAN_SPEC}, 0,
+     "暫定反映の行（仕様には反映済み・利用者の確認待ち）: 1 件"),
+    ("暫定反映と確認中", HEADER + PROVISIONAL_ROW + OPEN_ROW, {"order.md": CLEAN_SPEC}, 1, "Q-002: 状態が 確認中"),
     ("回答はあるが未反映", HEADER + ANSWERED_ROW, {"order.md": CLEAN_SPEC}, 1, "Q-003: 状態が 確認中"),
     ("列検査を通らない表", HEADER + BAD_ROW, {"order.md": CLEAN_SPEC}, 1, "列検査を通らない"),
     ("TBD", HEADER, {"order.md": CLEAN_SPEC + "リトライ回数は TBD。\n"}, 1, "order.md:5: 未決定の印 TBD"),
@@ -88,6 +94,9 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("反映済みでない行を見ない", "for row in pending:", "for row in []:", "確認中の行"),
+    ("暫定反映を反映した状態に数えない", "not in pptx.qa.REFLECTED", "!= pptx.qa.DONE", "暫定反映は止めない"),
+    ("資料に載る行で数える", "not in pptx.qa.REFLECTED", "not in ()", "暫定反映は止めない"),
+    ("暫定の件数を出さない", "== pptx.qa.PROVISIONAL]", "== None]", "暫定反映は止めない"),
     ("列検査の失敗を見ない", "    if code:\n        problems += lines", "    if False:\n        problems += lines",
      "列検査を通らない表"),
     ("読めない表を 2 にしない", "if code == 2:", "if False:", "Q&A 表が無い"),

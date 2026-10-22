@@ -48,6 +48,7 @@ VERSION = re.compile(r"v[1-9][0-9]*")
 # spec-loop の references/qa-csv.md の列（check-qa-csv.py の COLUMNS と同じ。写しなので、テストが突き合わせる）
 QA_COLUMNS = ["No", "起票元", "質問", "選択肢", "回答", "反映先", "状態", "費用への影響"]
 QA_DONE = "反映済み"
+QA_PROVISIONAL = "暫定反映"
 QA_NO_ANSWER = "未回答"
 QA_OPTION_SEPARATOR = " / "
 
@@ -101,10 +102,13 @@ def read_qa(path: Path) -> list[dict[str, str]]:
 
 def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
     done = sum(row["状態"] == QA_DONE for row in rows)
-    pending = len(rows) - done
-    answered = sum(row["状態"] != QA_DONE and row["回答"].strip() not in ("", QA_NO_ANSWER) for row in rows)
+    # 暫定の回答で反映した行は、反映済みでも確認中でもない（仕様には反映済み・利用者の確認待ち）
+    provisional = sum(row["状態"] == QA_PROVISIONAL for row in rows)
+    pending = len(rows) - done - provisional
+    answered = sum(row["状態"] not in (QA_DONE, QA_PROVISIONAL) and row["回答"].strip() not in ("", QA_NO_ANSWER)
+                   for row in rows)
     out = [f"## v{version}", "",
-           f"確認中 {pending} 件（うち回答あり・未反映 {answered} 件）・反映済み {done} 件", ""]
+           f"確認中 {pending} 件（うち回答あり・未反映 {answered} 件）・暫定反映 {provisional} 件・反映済み {done} 件", ""]
     if not rows:
         return out + ["質問はまだ無い。", ""]
     out += ["| No | 質問 | 回答 | 状態 |", "| --- | --- | --- | --- |"]

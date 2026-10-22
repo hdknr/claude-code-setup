@@ -72,6 +72,11 @@ FINGERPRINT = re.compile(r"`([^`]+)` の `(F-[0-9]+)`（機能の指紋: `([0-9a
 HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 QA_DONE = "Q-001,要求確定（決定表）,シルバーで 10000 円未満の割引は？,A: 割引なし / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
 QA_DONE2 = "Q-002,仕様レビュー（Red Team）,金額が負なら？,A: 拒否する / B: 0 とみなす,A（業務部が回答）,spec/order.md,反映済み,\n"
+# 暫定の回答で反映した行——抜ける条件 1 は通るが、中間表現から指せば止まる（利用者の確認待ち。#325）
+QA_PROVISIONAL = QA_DONE.replace("A（業務部が回答）,決定表 4 行目,反映済み", "A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映")
+assert QA_PROVISIONAL != QA_DONE
+# 中間表現のどこからも指さない暫定の行
+QA_PROVISIONAL_UNCITED = "Q-004,要求確定（決定表）,返品の受付期間は？,A: 7 日 / B: 14 日,A（暫定で採用。業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
 QA_OPEN = "Q-003,開発（#9）,期限切れは？,A: 拒否 / B: 受け付ける,未回答,—,確認中,\n"
 
 IR = {
@@ -931,6 +936,9 @@ CASES: list[Case] = [
     Case("--dry-run は書かない", 0, "何も書いていない", args=("--dry-run",), pre=plant_old_issues, post=old_issues_kept),
     Case("--dry-run は失敗しても消さない", 1, args=("--dry-run",), qa=HEADER + QA_DONE + QA_DONE2 + QA_OPEN,
          pre=plant_old_issues, post=old_issues_kept),
+    Case("暫定反映の Q&A を指す", 1, "Q-001: 状態が 暫定反映", qa=HEADER + QA_PROVISIONAL + QA_DONE2),
+    # 中間表現が指さない暫定の行でも止める——仕様には反映されているので、指さない機能にも効いている（#325 の 2 パス目）
+    Case("暫定反映の Q&A を指さない", 1, "Q-004: 状態が 暫定反映", qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED),
     # 関門
     Case("確認中の Q&A", 1, "Q-003: 状態が 確認中", qa=HEADER + QA_DONE + QA_DONE2 + QA_OPEN, pre=plant_old_contract,
          post=contract_kept_issues_gone),
@@ -1212,6 +1220,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if not versions.find_versions(docs, probe):", "版の名前だけが決まりに反する"),
     ("決まりに無いキーを見ない", "    for key in sorted(obj.keys() - required - optional):", "    for key in []:", "決まりに無いキー"),
     ("Q&A の実在を見ない", "        elif no not in answered:", "        elif False:", "Q&A が表に無い"),
+    ("暫定の行を見ない", "            if held:", "            if False:", "暫定反映の Q&A を指さない"),
+    # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
+    ("中間表現が指す暫定の行だけ見る",
+     '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',
+     '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL\n'
+     '                    and any(no in f.get("qa", []) for f in ir.get("features", []))]',
+     "暫定反映の Q&A を指さない"),
     ("ケースの Q&A を見ない", '            if "qa" in case:\n                problems += check_qa_refs',
      '            if False:\n                problems += check_qa_refs', "ケースの Q&A が表に無い"),
     ("仕様のファイルの実在を見ない", "        elif not path.is_file():", "        elif False:", "仕様のファイルが無い"),
