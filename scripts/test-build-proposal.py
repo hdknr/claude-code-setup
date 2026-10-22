@@ -16,6 +16,10 @@
 4. **作れるときは作る**（陽性対照）——決定事項・未決定の質問・費用の合計・期間・ガントチャートが載り、
    手書き部分がファイル名の順に並ぶ。**同じ入力から同じバイト。**
 5. **承認の記録を持たない**——「承認済み」と書かない。
+6. **素の `v1` タグと共存する試料が、その `v1` を判別している**（#309）——承認のタグを #260 の名前
+   （`v1/req-signoff-1`）にするとタグの手順で作れない。**本体は SHA で読むので `v1` に触れない**——
+   判別しているのは本体の判定ではなく、試料の名前が素の `v1` と衝突しないこと（照合の側は
+   `scripts/test-check-signoff.py` が同じ形で見る）。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
 `HOME` と `GIT_CONFIG_GLOBAL` を差し替える。
@@ -25,6 +29,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -82,7 +87,7 @@ V2C = SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff
 
 
 class Result:
-    def __init__(self, code: int, output: str, text: str | None, svg: bool, again: str | None):
+    def __init__(self, code: int | None, output: str, text: str | None, svg: bool, again: str | None):
         self.code, self.output, self.text, self.svg, self.again = code, output, text, svg, again
 
 
@@ -105,6 +110,7 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("手書き部分はファイル名の順", SIGNED, False,
      lambda r: made(r) and 0 < r.text.find("## 背景と目的") < r.text.find("## 推奨案")),
     ("同じ入力から同じバイト", SIGNED, False, lambda r: made(r) and r.text == r.again),
+    # 本体の判定は v1 に触れない。この試料が判別するのは名前の衝突で、OLD_NAMES で当てる（#309）
     ("素の v1 タグと共存する", BASE + [("t", "v1"), ("t", R1), ("t", B1)], False,
      lambda r: made(r) and "`signoff/v1/req-1`" in r.text),
     ("承認の記録を持たない", SIGNED, False, lambda r: made(r) and "承認済み" not in r.text and "承認の記録ではありません" in r.text),
@@ -272,6 +278,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "作れるときは作る"),
 ]
 
+# #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
+# タグの手順で作れない（`refs/tags/v1` と `refs/tags/v1/...` は共存できない）——試料が衝突を判別している確かめ
+OLD_NAMES = {R1: "v1/req-signoff-1", B1: "v1/budget-signoff-1"}
+COEXIST = ["素の v1 タグと共存する"]
+
 failures: list[str] = []
 
 
@@ -333,7 +344,11 @@ def generate(scripts: Path, root: Path, out: Path, env: dict[str, str], extra: l
 
 
 def run_case(scripts: Path, root: Path, steps, stale: bool, env: dict[str, str]) -> Result:
-    build_repo(root, steps, env)
+    try:
+        build_repo(root, steps, env)
+    except subprocess.CalledProcessError as e:  # 1 つの試料が作れなくても、実行全体は落とさない
+        return Result(None, f"試料を作れなかった: {' '.join(e.cmd[-2:])}: {e.stderr.decode(errors='replace')}",
+                      None, False, None)
     # ("arg", …) の手順は、生成に渡す引数（リポジトリには何もしない）
     extra = [value for step in steps if step[0] == "arg" for value in step[1:]]
     out = root / "build" / "proposal" / "proposal.md"
@@ -392,6 +407,30 @@ def run_all(scripts: Path, work: Path, env: dict[str, str]) -> dict[str, Result]
             for i, (name, steps, stale, _) in enumerate(CASES)}
 
 
+def with_old_names(steps: list[tuple[str, ...]]) -> list[tuple[str, ...]]:
+    return [(s[0], OLD_NAMES.get(s[1], s[1]), *s[2:]) if s[0] == "t" else s for s in steps]
+
+
+# 衝突の片側が素の v1 そのものであるときだけ数える——v1/x と v1/x/y の衝突も同じ形で落ちる（#309）
+V1_COLLISION = re.compile(r"'refs/tags/v1' exists|cannot (?:lock ref|create) 'refs/tags/v1'")
+
+
+def old_names_collide(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) -> str:
+    """承認のタグを #260 の名前にして作る。タグの手順で失敗すれば空文字列、そうでなければ何が起きたか。"""
+    old = with_old_names(steps)
+    if old == steps:
+        return "置き換える承認のタグが試料に無い"
+    try:
+        build_repo(root, old, env)
+    except subprocess.CalledProcessError as e:
+        if "tag" not in e.cmd:
+            return f"タグ以外の手順で作れなかった: {' '.join(e.cmd[-2:])}"
+        # タグの失敗なら何でもよいのではない——同じ名前の付け直しも tag で落ちる（#309）
+        stderr = e.stderr.decode(errors="replace")
+        return "" if V1_COLLISION.search(stderr) else f"素の v1 との衝突ではない理由で作れなかった: {stderr.strip()}"
+    return "#260 の名前でも作れた（素の v1 と衝突していない）"
+
+
 def as_expected(name: str, result: Result) -> bool:
     return next(case for case in CASES if case[0] == name)[3](result)
 
@@ -414,6 +453,10 @@ def main() -> int:
         scripts = copy_scripts(tmp_path / "scripts")
         for name, result in run_all(scripts, tmp_path / "work", env).items():
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result.code} {result.output[-300:]}")
+        for index, name in enumerate(COEXIST):
+            steps = next(case[1] for case in CASES if case[0] == name)
+            problem = old_names_collide(tmp_path / f"old{index}", steps, env)
+            check(f"試料が #260 の名前を判別していない: {name}", not problem, problem)
 
         for subdir in (False, True):
             result = run_no_git(scripts, tmp_path / f"nogit-{subdir}", env, subdir)
