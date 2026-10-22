@@ -900,6 +900,11 @@ def add_v2_changed(repo: Path) -> None:
 BAD_V1 = edit(lambda ir: ir["features"][1]["cases"][0].update(expected={"ok": "yes"}))
 # v1 の F-001 のパスの変数が入力に無い（#289 より前の scaffold は通した）
 OLD_PATH_V1 = edit(lambda ir: f1(ir)["operation"].update(path="/orders/{order_id}"))
+# v1 で F-001 が指す Q-001 が確認中（v2 で反映済みに置き換える）——前の版の時点でも抜ける条件 1 を通らない状態
+QA_OPEN_Q001 = QA_DONE.replace(",反映済み,", ",確認中,")
+assert QA_OPEN_Q001 != QA_DONE
+# v1 の F-001 が表に無い Q-009 も指す（v2 で直した）
+MISSING_QA_V1 = edit(lambda ir: f1(ir).update(qa=["Q-001", "Q-009"]))
 
 
 def only_f001_modified(repo: Path) -> str | None:
@@ -1101,6 +1106,19 @@ CASES: list[Case] = [
          args=("--check", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
     Case("前の版だけパスの変数が入力に無い（--dry-run --upto 1）", 1, "パスの変数 {order_id} が operation.input の項目に無い",
          args=("--dry-run", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
+    # #335: v1 で暫定反映の Q-001 を指し、v2 で反映済みに置き換えた——重ねた表には反映済みしか無い
+    Case("前の版で暫定だった Q&A を後の版で確定する", 0, "作った", qa=HEADER + QA_PROVISIONAL + QA_DONE2,
+         extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), post=v2_changed),
+    # 前の版の時点を作るときは、暫定が残るので止まる（今の版と同じ関門）
+    Case("前の版で暫定だった Q&A（--check --upto 1）", 1, "Q-001: 状態が 暫定反映", args=("--check", "--upto", "1"),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    # 前の版で許すのは暫定反映まで——抜ける条件 1 を通らない状態を指していれば、v2 で確定しても止まる
+    Case("前の版で確認中だった Q&A を後の版で確定する", 1, "v1 の時点の F-001.qa: Q-001 は状態が 反映済み・暫定反映 でない",
+         qa=HEADER + QA_OPEN_Q001 + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
+         post=nothing_written_issues),
+    # 前の版でも Q&A の実在は見る
+    Case("前の版の Q&A が表に無い", 1, "v1 の時点の F-001.qa: Q-009 は Q&A 表に無い", ir=MISSING_QA_V1,
+         extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues, post=nothing_written_issues),
     # 陽性対照: v2 で直さなければ、今の版の誤りとして止まる
     Case("前の版のパスの変数を直さない", 1, "パスの変数 {order_id} が operation.input の項目に無い", ir=OLD_PATH_V1,
          extra=v2([]), pre=plant_old_issues, post=nothing_written_issues),
@@ -1361,12 +1379,19 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("撤去の前の版の全体を作業中の版で作る", 'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number - 1}"',
      'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number}"', "v2 で機能を消す"),
     # 検査だけ飛ばし、中間表現は返す形にする——`if code:` を潰すと None を読んで落ち、意味ではなく例外で殺される
-    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered, path_rules=gate)\n",
-     "        problems = check_ir(ir, whole, answered, path_rules=gate) if gate else []\n", "前の版の中間表現が決まりに反する"),
-    ("前の版にもパスの変数の決まりを当てる", "check_ir(ir, whole, answered, path_rules=gate)",
-     "check_ir(ir, whole, answered, path_rules=True)", "前の版だけパスの変数が入力に無い"),
-    ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate)",
-     "check_ir(ir, whole, answered, path_rules=False)", "前の版のパスの変数を直さない"),
+    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered, path_rules=gate, qa_states=",
+     "        problems = [] if not gate else check_ir(ir, whole, answered, path_rules=gate, qa_states=",
+     "前の版の中間表現が決まりに反する"),
+    ("前の版にもパスの変数の決まりを当てる", "check_ir(ir, whole, answered, path_rules=gate,",
+     "check_ir(ir, whole, answered, path_rules=True,", "前の版だけパスの変数が入力に無い"),
+    ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate,",
+     "check_ir(ir, whole, answered, path_rules=False,", "前の版のパスの変数を直さない"),
+    # #335 の前の形——前の版でも反映済みしか許さない
+    ("前の版にも反映済みだけを許す", "qa_states=(qa.DONE,) if gate else qa.REFLECTED)", "qa_states=(qa.DONE,))",
+     "前の版で暫定だった Q&A を後の版で確定する"),
+    # 前の版で許すのを暫定反映より広げる——確認中を指した前の版が通る
+    ("前の版ではどの状態も許す", "qa_states=(qa.DONE,) if gate else qa.REFLECTED)",
+     "qa_states=(qa.DONE,) if gate else tuple(qa.STATES))", "前の版で確認中だった Q&A を後の版で確定する"),
     ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
      "Red の状態: v2 で出力の項目を足す"),
     ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
