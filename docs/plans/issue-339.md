@@ -45,6 +45,10 @@
 - `scripts/test-build-proposal.py` — 同上
 - `scripts/test-init-mkdocs.py` — 同上
 - `plugins/spec-loop/README.md` — spec-review の区分（5 → 6 つ）。実装中に足した（区分の名前を列挙していた）
+- `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 仕様の穴を起票するときの列（推奨の 2 列）と内部の表。1 パス目の指摘 C1 で足した
+  （dev-loop が書く行が新しい検査で落ちる。受入基準 #10 の「各スキル」に dev-loop の差し戻しも入れる）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — dev-loop の版（1.44.0 → 1.44.1。記述の修正なので patch）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
 - `CLAUDE.md` — スクリプトの説明（該当すれば）
 - `docs/plugins/index.md` — spec-loop の説明（該当すれば）
 - `docs/plans/issue-339.md` — この計画
@@ -144,7 +148,10 @@ PowerPoint で開いた見た目。判定役（LLM）が新しい線で実際に
   `test-merge-versions` 57/51・`test-diff-versions` 13/12・`test-scaffold` 164/113・`test-check-signoff` 54/41・`test-build-proposal` 38/31・
   `test-init-mkdocs` 45/82。試料/変異）。`check-all.py` で `check-description-sync.py` が 1 回赤（feasibility の要約が古かった）→
   要約を直し、proposal・scaffold は trailer で免除
-- 関門 1 パス目: 未着手。**1 パス目の指摘対応の起点は、関門に渡すときの HEAD をここに書く**
+- 関門 1 パス目（2026-10-22）: 1 パス目の指摘対応の起点 `4729e2b`（関門に渡した時点の HEAD。コミット済み）。
+  **Verifier 反証 1 件**（`dev-loop:dev-loop-verifier`・sonnet）・**`/code-review` 指摘 6 件**（high）。採否は下の「1 パス目の指摘の採否」
+- 1 パス目の指摘対応: V1/C2・C1 を直す（`tree.md` の移す手順 1 にサインオフのタグ、dev-loop の `spec-gap.md` の列と内部の表。dev-loop 1.44.1）。
+  **残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**
 - 手順 4 の割り目: AskUserQuestion で「**ここで割る**」が選ばれた（2026-10-22）。再開したら手順 5（Verifier 1 パス目）から。`check-all.py` は割り目の時点で 44/44 緑
 - 実機確認（受入基準 F。2026-10-22）:
     - **SBIPRISM-207**（手元の `sbi-hubspot` の `docs/shared/qa.csv` を scratchpad に写した。正本は触っていない）——
@@ -169,3 +176,14 @@ PowerPoint で開いた見た目。判定役（LLM）が新しい線で実際に
 | 内部の表を MkDocs で描くか | 描かない | 受入基準 D は「フックも同じ表を読む」——共有の表の新しい列を読むこと。内部の表は開発者の `spec/` にある |
 | リリースした版がある正本の移行 | 移さずに止める（人間の決定） | 凍結した版は直せない。読む側に前の形の道を残すと、2 つの形が残り続ける |
 | 内部の表の費用の行は、予算の責任者の合意（`shared/` の照合）に入らない | 採った（限界として書く） | 内部の表は `shared/` の外。費用は `feasibility/` の見積り（根拠に `D-`）に載り、予算の責任者はそれを見て合意する。見積りに載ったかは検証役（estimate-checker）が見る |
+
+### 1 パス目の指摘の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1/C2 | 移す手順がリリースのタグしか見ず、サインオフのタグ（前の形の表を指す）があると照合と提案書が 2 で止まるのに、取り直しを言わない | 示せる（`check-signoff.py` の `provisional_rows` がタグの時点の表を `read_qa` で読む。Verifier・`/code-review` の両方が挙げた。Verifier は git の実験をガードに拒否されコード読解） | #11 | **直す**（手順 1 にサインオフのタグを足し、移した後に両方を取り直すと書く） |
+| C1 | dev-loop の `spec-gap.md` の起票の列が前の 8 列のまま——従って書いた行は新しい検査で落ちる。内部の表にも触れない | 示せる（`spec-gap.md` の列の表） | #10 | **直す**（範囲を dev-loop に広げた。上の「変更範囲」） |
+| C3 | `diff-versions` の Q&A の差分に内部の `D-` の行が入り、`req-loop` もその出力を読む | 示せる（差分に D- が出る。`test-diff-versions` の試料） | 無し（#6 は「差分も行で出る」。`req-loop` は手順 1 で共有の表だけを読むと書いた。差分を利用者に見せる経路は提案書だけで、そこは外している） | 残課題 |
+| C4 | 提案書の `D-` の絞り込みが描画の関数の中で `diff` を書き換える（`compare` の選択肢にすべき） | 示せる（書き換えは在る） | 無し | 残課題 |
+| C5 | `merge-versions` の消す表の振り分けがキーの有無で決まり、他は番号の接頭辞で決める。`scaffold.py` が `INTERNAL_QA_PATH` を写している | 示せる（コード） | 無し（今は `present` の検査が先に弾く） | 残課題 |
+| C6 | 移す手順への指し先（検査とフックの 2 つの写し）が `tree.md` の見出しと突き合わせられていない。フックは推奨が空でコロンの無い選択肢を推奨と描く | 見出しの改名は将来。後者は検査を通らない表 | 無し | 残課題 |
