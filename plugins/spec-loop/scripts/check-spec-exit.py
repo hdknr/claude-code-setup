@@ -4,19 +4,23 @@
 usage: python3 check-spec-exit.py <qa.csv> <仕様のディレクトリ>
 
 **条件の正は `references/spec-exit.md` である**（このプラグインの中にある）。
-条件 1 は「Q&A 表に反映済みでない行が 0 件で、仕様に未決定の印が 0 件」。
+条件 1 は「Q&A 表に、仕様に反映した状態でない行が 0 件で、仕様に未決定の印が 0 件」。
 **条件 2〜5 はこのスクリプトでは判定しない**——判定役の報告で決まる（`spec-review` の本文）。
 **0 で終わっても「抜けた」ではない。** 出力もそう言う。
 
-- 反映済みでない行は、**`qa-to-pptx.py` の `read_pending` で読む**（PPTX に載る行と同じ定義。
-  状態の名前を列挙して絞らない）。Q&A 表の列検査（`check-qa-csv.py`）もそこで掛かる。
+- Q&A 表は **`qa-to-pptx.py` の `read_rows` で読み**、**状態が `check-qa-csv.py` の `REFLECTED`
+  （`反映済み`・`暫定反映`）でない行**を数える。**PPTX に載る行とは別の定義**——暫定の回答で反映した行は
+  資料には載る（確認してもらうため）が、仕様には反映済みなので条件 1 を止めない（#325）。
+  **`REFLECTED` に無い状態は数える側に倒れる**（決まりに状態が増えても、反映が残っている行を黙って落とさない）。
+  暫定の行は件数を出す（要求確定のサインオフの前に確認が要る。`references/signoff-tags.md`）。
+  Q&A 表の列検査（`check-qa-csv.py`）も `read_rows` で掛かる。
 - 未決定の印（`MARKERS`）と、印に当たらない語（`NOT_MARKERS`）は `references/spec-exit.md` の写しで、
   **写しがずれていないかはこのリポジトリの `scripts/test-check-spec-exit.py` が突き合わせて見る**。
 
 終了コード:
 
 - 0: 条件 1 を満たす
-- 1: 条件 1 を満たさない（反映済みでない行と、印のある箇所を**全部** 1 行ずつ出す）。
+- 1: 条件 1 を満たさない（反映した状態でない行と、印のある箇所を**全部** 1 行ずつ出す）。
   **Q&A 表が列検査を通らないときもここ**（決まりに反する表は、確定していない）
 - 2: 判定していない——引数の誤り・Q&A 表が読めない・仕様のディレクトリが無い・
   仕様のファイルが 1 つも無い（**書いていない仕様は、確定していない**ので、0 にはしない）・
@@ -109,7 +113,9 @@ def spec_files(root: Path) -> list[Path]:
 
 def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
     """(終了コード, 出力する行) を返す。"""
-    code, lines, pending = pptx.read_pending(qa_path)
+    code, lines, rows = pptx.read_rows(qa_path)
+    pending = [row for row in rows if row["状態"].strip() not in pptx.qa.REFLECTED]
+    provisional = [row for row in rows if row["状態"].strip() == pptx.qa.PROVISIONAL]
     if code == 2:
         return 2, lines + ["条件 1 を判定していない（Q&A 表を読めない）"]
     if not spec_dir.is_dir():
@@ -138,7 +144,9 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
         for number, marker in find_markers(text):
             problems.append(f"{path}:{number}: 未決定の印 {marker}")
 
-    notes = [f"見なかったファイル（読めない・UTF-8 でない）: {len(unread)} 件"]
+    notes = [f"暫定反映の行（仕様には反映済み・利用者の確認待ち）: {len(provisional)} 件"]
+    notes += [f"    {row['No']}: {row['回答']}" for row in provisional]
+    notes.append(f"見なかったファイル（読めない・UTF-8 でない）: {len(unread)} 件")
     notes += [f"    {path}" for path in unread]
     if problems:
         return 1, problems + notes + ["条件 1 を満たさない。仕様レビューを抜けていない"]
@@ -155,7 +163,7 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
             "条件 1 を判定していない（読めない仕様は確定していない）"
         ]
     return 0, notes + [
-        f"条件 1 を満たす（Q&A 表に反映済みでない行 0 件・仕様 {len(files) - len(unread)} ファイルに未決定の印 0 件）",
+        f"条件 1 を満たす（Q&A 表に反映した状態でない行 0 件・仕様 {len(files) - len(unread)} ファイルに未決定の印 0 件）",
         "**これだけでは抜けていない**——条件 2〜5 は判定していない（references/spec-exit.md）",
     ]
 

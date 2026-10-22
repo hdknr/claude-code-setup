@@ -64,6 +64,8 @@ QA_V1 = HEADER + (
 QA_V2 = HEADER + (
     "Q-002,実現性・コスト,夜間は（問い直し）？,A: 止める / B: 24 時間,B（部長）,—,確認中,B は月額 2 倍\n"
     '"Q-003",要求確定,"1 行目\n2 行目 *強調* `x` [y](z)",A: はい / B: いいえ,未回答,—,確認中,\n'
+    # 暫定の回答で反映した行（#325）——確認中にも「回答あり・未反映」にも数えない
+    "Q-004,要求確定,上限は？,A: なし / B: 5000 円,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 7 行目,暫定反映,\n"
 )
 QA_V10 = HEADER + "Q-010,要求確定,十番目,A: はい / B: いいえ,未回答,—,確認中,\n"
 
@@ -349,8 +351,8 @@ def hook_versions(plugin: Path, work: Path) -> bool:
     v1, v2 = out.index("## v1"), out.index("## v2")
     return (not warnings and out.startswith("# Q&A\n\n") and v1 < v2
             and "(#v1-q-001)" in out and "{#v1-q-002}" in out and "{#v2-q-002}" in out and "{#v2-q-003}" in out
-            and "確認中 1 件（うち回答あり・未反映 0 件）・反映済み 1 件" in out[v1:v2]
-            and "確認中 2 件（うち回答あり・未反映 1 件）・反映済み 0 件" in out[v2:]
+            and "確認中 1 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out[v1:v2]
+            and "確認中 2 件（うち回答あり・未反映 1 件）・暫定反映 1 件・反映済み 0 件" in out[v2:]
             and "| 選択肢 | A: 止める<br>B: 24 時間 |" in out
             and "<!-- spec-loop" not in out)
 
@@ -433,7 +435,7 @@ def hook_blank_rows(plugin: Path, work: Path) -> bool:
     write(docs, {"v1/shared/qa.csv": QA_V1 + ",,,,,,,\n , ,\n\nQ-004,要求確定,短い？,A: x / B: y,未回答 ,—,確認中\n"})
     out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
     return (not warnings and "{#v1-q-004}" in out and "{#v1-}" not in out and out.count("### ") == 3
-            and "確認中 2 件（うち回答あり・未反映 0 件）・反映済み 1 件" in out)
+            and "確認中 2 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out)
 
 
 def hook_bad_header(plugin: Path, work: Path) -> bool:
@@ -615,8 +617,12 @@ MUTATIONS: list[tuple] = [
     ("警告を出さない", HOOK, '    log.warning("spec-loop: %s", message)\n', "", "見出しの違う表は警告"),
     ("知らない印を消す", HOOK, "        if renderer is None:\n            return problem(",
      "        if renderer is None:\n            return (", "知らない印は警告"),
-    ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER) for row in rows)',
-     " and False for row in rows)",
+    ("暫定反映を確認中に数える", HOOK, "    pending = len(rows) - done - provisional\n", "    pending = len(rows) - done\n",
+     "版ごとの節・アンカー・件数"),
+    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"] not in (QA_DONE, QA_PROVISIONAL) and', 'row["状態"] != QA_DONE and',
+     "版ごとの節・アンカー・件数"),
+    ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER)\n',
+     " and False\n",
      "版ごとの節・アンカー・件数"),
 ]
 
@@ -627,7 +633,7 @@ def check_copies() -> None:
     spec = importlib.util.spec_from_file_location("check_qa_csv", PLUGIN / "scripts" / "check-qa-csv.py")
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)
-    for name, theirs in (("QA_COLUMNS", checker.COLUMNS), ("QA_DONE", checker.DONE),
+    for name, theirs in (("QA_COLUMNS", checker.COLUMNS), ("QA_DONE", checker.DONE), ("QA_PROVISIONAL", checker.PROVISIONAL),
                          ("QA_NO_ANSWER", checker.NO_ANSWER), ("QA_OPTION_SEPARATOR", checker.OPTION_SEPARATOR)):
         check(f"フックの {name} が check-qa-csv.py と違う", getattr(hook, name) == theirs, f"{getattr(hook, name)!r} != {theirs!r}")
     page = (PLUGIN / "templates" / "mkdocs" / "docs" / "qa.md").read_text(encoding="utf-8")
