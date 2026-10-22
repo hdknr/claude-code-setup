@@ -23,13 +23,14 @@
    BOM つきの表を読む。空白だけの行は読み飛ばし、列の足りない行は空で埋める。回答の `未回答 ` は未回答と数える。
    読めない表・見出しの違う表・知らない印は**警告**（`mkdocs` のロガー。`--strict` で落ちる）とページ上の注意書き。
    表が 1 つも無ければそう書き、警告は出さない。印の無いページは変えない。
-   **本文の Q&A の番号**は、ページからの相対パスで、`v1`〜ページの版のうちその番号を持つ最も新しい版のアンカーへのリンクにする
-   （版の外のページはすべての版から）。描画関数の出力（表のセル）にも掛ける。見出し（ATX・複数行の Setext）・フェンス（``` と ~~~。
-   アドモニション・箇条書き・引用の中で空行をまたぐものも。閉じは同じ文字・同じ長さ以上・後ろに何も無い行だけ）・
-   インラインのコード・`[…]` と直後の `(…)`・リンク参照定義の行・`<a>`・HTML のコメント・自動リンク（メールを含む）・URL の中は変えない。
-   空行をまたいで ` を組ませない。`#Q-001`（`#` の後に空白が無い）・`<` で始まるがタグの形でない文・URL の後の和文は置き換える。
+   **本文の Q&A の番号**は、描いた後の HTML（`on_page_content`）で、`v1`〜ページの版のうちその番号を持つ最も新しい版の
+   アンカーへのリンクにする（版の外のページはすべての版から。リンク先は `File.url_relative_to`——ここでは
+   `use_directory_urls: false` の MkDocs と同じ値を返す偽物で当てる）。表のセルにも掛ける。見出し（容れ物の中・大文字の要素名も）・
+   コード・リンク・`kbd`・`samp`・`script`・`style`・`textarea` の中と、属性（値の中の `>` を含む）・コメント・CDATA は変えない。
+   変えない要素の後ろ・余分な閉じタグの後ろ・自己閉じの `<code/>` の後ろは置き換える。
    リンクにする版の表に無い番号はリンクにせず 1 度だけ警告し、警告は見た版の範囲を言う。読めない表があっても落ちず、他の版でリンクにする。
-   前後が英数字の `Q-` は番号でない。Q&A 表のページと、`qa.md` の無いサイトは変えない。
+   空白つきの `No` はアンカーと合わないのでリンクにせず警告する。前後が英数字・`-`・`_` の `Q-` は番号でない。
+   Q&A 表のページ（印を外せば掛かる）と、`qa.md` の無いサイトは変えない。
 3. **写しの突き合わせ**——フックの列名・状態・印は `check-qa-csv.py` の定数と同じ（フックは正本リポジトリへ写されて
    単独で動くので import できず、写しを持つ）。
 4. **重ね合わせに混ざらない**——雛形を写した正本で `merge-versions.py` が通り、出力に表示用のファイルが入らない。
@@ -45,11 +46,13 @@ dev-loop の検証で見る（#266 の計画ファイル）。
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import importlib.util
 import io
 import logging
 import os
+import posixpath
 import resource
 import shutil
 import subprocess
@@ -335,19 +338,26 @@ def load_hook(plugin: Path):
     return module
 
 
-def render(plugin: Path, docs: Path, markdown: str, src: str = "qa.md", renderers: dict | None = None) -> tuple[str, list[str]]:
-    hook = load_hook(plugin)
-    hook.RENDERERS.update(renderers or {})
+@contextlib.contextmanager
+def warnings_of():
+    """`mkdocs` のロガーに出た警告を集める。"""
     stream = io.StringIO()
     handler = logging.StreamHandler(stream)
     logger = logging.getLogger("mkdocs")
     logger.addHandler(handler)
     logger.setLevel(logging.WARNING)
     try:
-        page = SimpleNamespace(file=SimpleNamespace(src_path=src))
-        out = hook.on_page_markdown(markdown, page, {"docs_dir": str(docs)}, None)
+        yield stream
     finally:
         logger.removeHandler(handler)
+
+
+def render(plugin: Path, docs: Path, markdown: str, src: str = "qa.md", renderers: dict | None = None) -> tuple[str, list[str]]:
+    hook = load_hook(plugin)
+    hook.RENDERERS.update(renderers or {})
+    with warnings_of() as stream:
+        page = SimpleNamespace(file=SimpleNamespace(src_path=src))
+        out = hook.on_page_markdown(markdown, page, {"docs_dir": str(docs)}, None)
     return out, [line for line in stream.getvalue().splitlines() if line]
 
 
@@ -489,177 +499,136 @@ def link_site(work: Path) -> Path:
     return docs
 
 
+def site_files(docs: Path) -> SimpleNamespace:
+    """MkDocs の `Files` の代わり。`qa.md` の `url_relative_to` は `use_directory_urls: false` の MkDocs と同じ値を返す
+    （実際の MkDocs で同じになることは dev-loop の検証で見る——#324 の計画ファイル）。"""
+    qa = SimpleNamespace(url="qa.html", url_relative_to=lambda other: posixpath.relpath(
+        "qa.html", posixpath.dirname(other.src_path) or "."))
+    return SimpleNamespace(get_file_from_path=lambda path: qa if path == "qa.md" and (docs / path).is_file() else None)
+
+
+def link(plugin: Path, docs: Path, content: str, src: str, markdown: str = "本文\n", hook=None) -> tuple[str, list[str]]:
+    """`on_page_markdown` に `markdown` を通してから、描いた HTML に見立てた `content` を `on_page_content` に通す。"""
+    hook = hook or load_hook(plugin)
+    page = SimpleNamespace(file=SimpleNamespace(src_path=src))
+    config = {"docs_dir": str(docs)}
+    with warnings_of() as stream:
+        hook.on_page_markdown(markdown, page, config, None)
+        out = hook.on_page_content(content, page, config, site_files(docs))
+    return out, [line for line in stream.getvalue().splitlines() if line]
+
+
+def a(number: str, href: str) -> str:
+    return f'<a href="{href}">{number}</a>'
+
+
 def hook_links(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    page = "決定（Q-001）と Q-002・Q-003。\n"
-    v2, w2 = render(plugin, docs, page, "v2/requirements/a.md")
-    v1, w1 = render(plugin, docs, "Q-001 と Q-002。\n", "v1/a.md")
-    v3, w3 = render(plugin, docs, "Q-002\n", "v3/requirements/a.md")
-    top, w0 = render(plugin, docs, "Q-001 と Q-002\n", "index.md")
+    v2, w2 = link(plugin, docs, "<p>決定（Q-001）と Q-002・Q-003。</p>\n", "v2/requirements/a.md")
+    v1, w1 = link(plugin, docs, "<p>Q-001 と Q-002。</p>\n", "v1/a.md")
+    v3, w3 = link(plugin, docs, "<p>Q-002</p>\n", "v3/requirements/a.md")
+    top, w0 = link(plugin, docs, "<p>Q-001 と Q-002</p>\n", "index.md")
     return (not (w2 or w1 or w3 or w0)
-            and v2 == "決定（[Q-001](../../qa.md#v1-q-001)）と [Q-002](../../qa.md#v2-q-002)・[Q-003](../../qa.md#v2-q-003)。\n"
-            and v1 == "[Q-001](../qa.md#v1-q-001) と [Q-002](../qa.md#v1-q-002)。\n"
-            and v3 == "[Q-002](../../qa.md#v2-q-002)\n"
-            and top == "[Q-001](qa.md#v1-q-001) と [Q-002](qa.md#v2-q-002)\n")
+            and v2 == f"<p>決定（{a('Q-001', '../../qa.html#v1-q-001')}）と {a('Q-002', '../../qa.html#v2-q-002')}・"
+                      f"{a('Q-003', '../../qa.html#v2-q-003')}。</p>\n"
+            and v1 == f"<p>{a('Q-001', '../qa.html#v1-q-001')} と {a('Q-002', '../qa.html#v1-q-002')}。</p>\n"
+            and v3 == f"<p>{a('Q-002', '../../qa.html#v2-q-002')}</p>\n"
+            and top == f"<p>{a('Q-001', 'qa.html#v1-q-001')} と {a('Q-002', 'qa.html#v2-q-002')}</p>\n")
 
 
 def hook_links_older_version(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    out, warnings = render(plugin, docs, "Q-003\n", "v1/a.md")
-    return out == "Q-003\n" and len(warnings) == 1 and "Q-003" in warnings[0] and "v1〜v1" in warnings[0]
+    out, warnings = link(plugin, docs, "<p>Q-003</p>\n", "v1/a.md")
+    return out == "<p>Q-003</p>\n" and len(warnings) == 1 and "Q-003" in warnings[0] and "v1〜v1" in warnings[0]
 
 
-LEFT_ALONE = """# 見出し Q-001
-## 見出し Q-002 {#x}
-Setext Q-001
-===
-Setext Q-002
----
-
-```text
-Q-001
-```
-
-~~~
-Q-002
-~~~~
-
-`Q-001` と ``a ` Q-002`` と [Q-001](a.md) と [決定（Q-002）](b.md) と ![図 Q-001](c.png) と [Q-001][r]
-と https://example.com/Q-001 と <https://example.com/Q-002> と <a href="#">Q-001</a> と <!-- Q-002 -->
-と <span title="Q-001">
-
-[r]: https://example.com/Q-002
+# 見出し（容れ物の中・大文字の要素名を含む）・コード・リンク・属性（値の中の > を含む）・コメント・CDATA・script などの中
+LEFT_ALONE = """<h1 id="x">見出し Q-001</h1>
+<H2>Q-002</H2>
+<h6>Q-001</h6>
+<div class="admonition note"><h3 id="q-001">Q-001 の決定</h3></div>
+<blockquote><h2>Q-001</h2></blockquote>
+<pre><code>Q-001
+<span class="err">Q-002</span>
+</code></pre>
+<p><code>Q-001</code> と <a href="qa.html#v1-q-001">Q-001</a> と <a href="b.md">決定（<em>Q-002</em>）</a> と <img alt="Q-001" src="Q-001.png" /></p>
+<p><kbd>Q-001</kbd> <samp>Q-002</samp> <textarea>Q-001</textarea></p>
+<p title="Q-001 > Q-002" data-x='a > Q-002'>段落</p>
+<!-- a > Q-001 -->
+<![CDATA[ a > Q-001 ]]>
+<script>var s = "<p>Q-001</p>";</script>
+<style>/* Q-001 */</style>
 """
 
 
 def hook_links_left_alone(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    out, warnings = render(plugin, docs, LEFT_ALONE, "index.md")
+    out, warnings = link(plugin, docs, LEFT_ALONE, "index.md")
     return out == LEFT_ALONE and not warnings
 
 
 def hook_links_after_left_alone(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    page = "```\nQ-001\n```\nQ-001\n\n# Q-001\nQ-002\n\n片方だけの ` Q-001\n\nQ-002 と ` の後\n"
-    out, warnings = render(plugin, docs, page, "index.md")
+    page = ("<h1>Q-001</h1>\n<p>Q-001</p>\n<pre><code>Q-001</code></pre>Q-002<a href=\"#\">x</a> Q-001<br/>Q-002"
+            "<p></code>Q-001</p><code/>Q-002\n")
+    out, warnings = link(plugin, docs, page, "index.md")
+    q1, q2 = a("Q-001", "qa.html#v1-q-001"), a("Q-002", "qa.html#v2-q-002")
     return not warnings and out == (
-        "```\nQ-001\n```\n[Q-001](qa.md#v1-q-001)\n\n# Q-001\n[Q-002](qa.md#v2-q-002)\n\n"
-        "片方だけの ` [Q-001](qa.md#v1-q-001)\n\n[Q-002](qa.md#v2-q-002) と ` の後\n")
-
-
-NESTED_FENCES = """!!! note
-
-    ```
-    Q-001
-
-    Q-002
-    ```
-
-- ```
-  Q-001
-
-  Q-002
-  ```
-
-```
-~~~
-Q-001
-```
-
-````
-```
-Q-001
-````
-
-```
-``` x
-Q-001
-```
-
-> ~~~
-> Q-001
->
-> Q-002
-> ~~~
-
-"""
-
-
-def hook_links_nested_fences(plugin: Path, work: Path) -> bool:
-    docs = link_site(work)
-    out, warnings = render(plugin, docs, NESTED_FENCES + "Q-001\n", "index.md")
-    return not warnings and out == NESTED_FENCES + "[Q-001](qa.md#v1-q-001)\n"
-
-
-LEFT_ALONE_MORE = """para Q-001
-more Q-002
-===
-
-[x]: ../v1/Q-001.md
- [y]: Q-002.md "Q-001"
-
-<Q-001@example.com> と <mailto:Q-002@example.com>
-"""
-
-
-def hook_links_left_alone_more(plugin: Path, work: Path) -> bool:
-    docs = link_site(work)
-    out, warnings = render(plugin, docs, LEFT_ALONE_MORE, "index.md")
-    return out == LEFT_ALONE_MORE and not warnings
-
-
-def hook_links_not_protected(plugin: Path, work: Path) -> bool:
-    docs = link_site(work)
-    page = ("#Q-001\n\n詳細は https://example.com/a。Q-002 で決定\n\nx<y で Q-001 は y>z\n\n```Q-001``` と Q-002\nQ-001\n\n"
-            "Q-002\n# 見出し\n===\n")
-    out, warnings = render(plugin, docs, page, "index.md")
-    return not warnings and out == (
-        "#[Q-001](qa.md#v1-q-001)\n\n詳細は https://example.com/a。[Q-002](qa.md#v2-q-002) で決定\n\n"
-        "x<y で [Q-001](qa.md#v1-q-001) は y>z\n\n```Q-001``` と [Q-002](qa.md#v2-q-002)\n[Q-001](qa.md#v1-q-001)\n\n"
-        "[Q-002](qa.md#v2-q-002)\n# 見出し\n===\n")
+        f"<h1>Q-001</h1>\n<p>{q1}</p>\n<pre><code>Q-001</code></pre>{q2}<a href=\"#\">x</a> {q1}<br/>{q2}"
+        f"<p></code>{q1}</p><code/>{q2}\n")
 
 
 def hook_links_unreadable(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
     write(docs, {"v2/shared/qa.csv": "No,質問\nQ-003,x\n"})
-    out, warnings = render(plugin, docs, "Q-001 と Q-003\n", "index.md")
-    return (out == "[Q-001](qa.md#v1-q-001) と Q-003\n" and len(warnings) == 1
+    out, warnings = link(plugin, docs, "<p>Q-001 と Q-003</p>\n", "index.md")
+    return (out == f"<p>{a('Q-001', 'qa.html#v1-q-001')} と Q-003</p>\n" and len(warnings) == 1
             and "Q-003" in warnings[0] and "読めない表は数えない" in warnings[0])
+
+
+def hook_links_spaced_number(plugin: Path, work: Path) -> bool:
+    docs = link_site(work)
+    write(docs, {"v2/shared/qa.csv": QA_V2 + " Q-005,要求確定,空白,A: はい / B: いいえ,未回答,—,確認中,\n"})
+    out, warnings = link(plugin, docs, "<p>Q-005</p>\n", "index.md")
+    return out == "<p>Q-005</p>\n" and len(warnings) == 1 and "Q-005" in warnings[0]
 
 
 def hook_links_unknown(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    out, warnings = render(plugin, docs, "Q-099 と Q-099 と Q-001\n", "index.md")
-    return (out == "Q-099 と Q-099 と [Q-001](qa.md#v1-q-001)\n" and len(warnings) == 1
+    out, warnings = link(plugin, docs, "<p>Q-099 と Q-099 と Q-001</p>\n", "index.md")
+    return (out == f"<p>Q-099 と Q-099 と {a('Q-001', 'qa.html#v1-q-001')}</p>\n" and len(warnings) == 1
             and "Q-099" in warnings[0] and "index.md" in warnings[0])
 
 
 def hook_links_shape(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
     write(docs, {"v4/shared/qa.csv": HEADER + "Q-0012,要求確定,四桁,A: はい / B: いいえ,未回答,—,確認中,\n"})
-    out, warnings = render(plugin, docs, "XQ-001 Q-01 Q-001x Q-0012 a-Q-001 (Q-001)\n", "index.md")
-    return not warnings and out == "XQ-001 Q-01 Q-001x [Q-0012](qa.md#v4-q-0012) a-Q-001 ([Q-001](qa.md#v1-q-001))\n"
+    out, warnings = link(plugin, docs, "<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x Q-0012 a-Q-001 (Q-001)</p>\n", "index.md")
+    return not warnings and out == (
+        f"<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x {a('Q-0012', 'qa.html#v4-q-0012')} a-Q-001 ({a('Q-001', 'qa.html#v1-q-001')})</p>\n")
 
 
 def hook_links_not_qa_page(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    write(docs, {"v1/shared/qa.csv": QA_V1 + "Q-004,要求確定,Q-001 と同じ？ Q-099 も？,A: はい / B: いいえ,未回答,—,確認中,\n"})
-    out, warnings = render(plugin, docs, "Q-001\n\n<!-- spec-loop: qa -->\n", "qa.md")
-    return not warnings and "qa.md#" not in out and out.startswith("Q-001\n") and "| 質問 | Q-001 と同じ？ Q-099 も？ |" in out
+    hook = load_hook(plugin)
+    qa, warnings = link(plugin, docs, "<p>Q-001 と Q-099</p>\n", "qa.md", "<!-- spec-loop: qa -->\n", hook)
+    # 同じページから印を外したら掛かる（`mkdocs serve` で組み直したとき、前に記録した Q&A 表のページを覚えたままにしない）
+    again, more = link(plugin, docs, "<p>Q-001</p>\n", "qa.md", hook=hook)
+    return (not warnings and qa == "<p>Q-001 と Q-099</p>\n"
+            and not more and again == f"<p>{a('Q-001', 'qa.html#v1-q-001')}</p>\n")
 
 
 def hook_links_rendered(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    table = {"table": lambda docs_dir: "| 条件 | 根拠 |\n| --- | --- |\n| 会員 | Q-002 |\n"}
-    out, warnings = render(plugin, docs, "<!-- spec-loop: table -->\n", "v1/decision.md", table)
-    return not warnings and "| 会員 | [Q-002](../qa.md#v1-q-002) |" in out
+    out, warnings = link(plugin, docs, "<table><tr><td>会員</td><td>Q-002</td></tr></table>\n", "v1/decision.md")
+    return not warnings and out == f"<table><tr><td>会員</td><td>{a('Q-002', '../qa.html#v1-q-002')}</td></tr></table>\n"
 
 
 def hook_links_no_qa_page(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
     write(docs, {"v1/shared/qa.csv": QA_V1})
-    out, warnings = render(plugin, docs, "Q-001 と Q-099\n", "index.md")
-    return out == "Q-001 と Q-099\n" and not warnings
+    out, warnings = link(plugin, docs, "<p>Q-001 と Q-099</p>\n", "index.md")
+    return out == "<p>Q-001 と Q-099</p>\n" and not warnings
 
 
 def merge_ignores_pages(plugin: Path, work: Path) -> bool:
@@ -707,12 +676,10 @@ CASES = {
     "印の無いページは変えない": hook_no_marker,
     "本文の番号を版のアンカーへの相対リンクにする": hook_links,
     "ページの版より新しい版の番号はリンクにしない": hook_links_older_version,
-    "見出し・コード・リンク・HTML・URL の中は変えない": hook_links_left_alone,
-    "変えないところの後ろは置き換える": hook_links_after_left_alone,
-    "アドモニション・箇条書き・引用の中のフェンスと閉じ方": hook_links_nested_fences,
-    "複数行の Setext・リンク参照定義・メールの自動リンクは変えない": hook_links_left_alone_more,
-    "見出しでない # ・タグでない < ・URL の後の和文は置き換える": hook_links_not_protected,
+    "見出し・コード・リンク・属性・コメントの中は変えない": hook_links_left_alone,
+    "変えない要素の後ろは置き換える": hook_links_after_left_alone,
     "読めない表があっても他の版でリンクにする": hook_links_unreadable,
+    "空白つきの No はリンクにせず警告": hook_links_spaced_number,
     "どの版にも無い番号は警告": hook_links_unknown,
     "番号の形": hook_links_shape,
     "Q&A 表のページは変えない": hook_links_not_qa_page,
@@ -824,76 +791,53 @@ MUTATIONS: list[tuple] = [
      "ページの版より新しい版の番号はリンクにしない"),
     ("最も古い版を指す", HOOK, "for version, numbers in reversed(tables) if", "for version, numbers in tables if",
      "本文の番号を版のアンカーへの相対リンクにする"),
-    ("リンク先を相対パスにしない", HOOK, 'target = posixpath.relpath(QA_PAGE, posixpath.dirname(src_path) or ".")',
-     "target = QA_PAGE", "本文の番号を版のアンカーへの相対リンクにする"),
+    ("リンク先を相対パスにしない", HOOK, "qa.url_relative_to(page.file)", "qa.url",
+     "本文の番号を版のアンカーへの相対リンクにする"),
     ("版の下のページを版の外とみなす", HOOK, 'limit = int(top[1:]) if VERSION.fullmatch(top) and "/" in src_path else None',
      "limit = None", "本文の番号を版のアンカーへの相対リンクにする"),
-    ("フェンスを見ない", HOOK, "        opening = FENCE.match(line)\n", "        opening = None\n",
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("フェンスを閉じない", HOOK, '                fence = ""\n            continue\n', "                pass\n            continue\n",
-     "変えないところの後ろは置き換える"),
-    ("~~~ をフェンスとみなさない", HOOK, r'[ \t]+))*[ \t]*(`{3,}|~{3,})")', r'[ \t]+))*[ \t]*(`{3,})")',
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("ATX の見出しを見ない", HOOK, " or ATX_HEADING.match(line):", ":",
-     "変えないところの後ろは置き換える"),
-    ("ATX の # の後の空白を見ない", HOOK, r'ATX_HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")',
-     r'ATX_HEADING = re.compile(r" {0,3}#{1,6}")', "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
-    ("Setext の見出しを見ない", HOOK,
-     "        if line.strip() and not opening and not ATX_HEADING.match(line) and SETEXT_UNDERLINE.match(following):\n",
-     "        if False:\n", "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("ATX の見出しの次の === を Setext の下線とみなす", HOOK, " and not ATX_HEADING.match(line) and SETEXT_UNDERLINE", " and SETEXT_UNDERLINE",
-     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
-    ("Setext の見出しを下線の直前の行だけにする", HOOK, "            out += pending + [line]", "            out += [paragraph(pending), line]",
-     "複数行の Setext・リンク参照定義・メールの自動リンクは変えない"),
-    ("字下げ・箇条書き・引用の後ろのフェンスを見ない", HOOK,
-     r'FENCE = re.compile(r"(?:[ \t]*(?:>[ \t]?|[-*+][ \t]+|[0-9]{1,9}[.)][ \t]+))*[ \t]*(',
-     r'FENCE = re.compile(r" {0,3}(', "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
-    ("閉じで引用の印を見ない", HOOK, r'FENCE_CLOSE = re.compile(r"(?:[ \t]*>[ \t]?)*[ \t]*(',
-     r'FENCE_CLOSE = re.compile(r"[ \t]*(', "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
-    ("閉じで文字を見ない", HOOK, "if closing and closing.group(1)[0] == fence[0] and ", "if closing and ",
-     "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
-    ("閉じで長さを見ない", HOOK, " and len(closing.group(1)) >= len(fence):", ":",
-     "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
-    ("閉じで後ろを見ない", HOOK, r'(`{3,}|~{3,})[ \t]*$")', r'(`{3,}|~{3,})")',
-     "アドモニション・箇条書き・引用の中のフェンスと閉じ方"),
-    ("行頭の ```a``` をフェンスとみなす", HOOK, "            opening = None  #", "            pass  #",
-     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
-    ("リンク参照定義の行を守らない", HOOK, r'    r"|(?:^|(?<=\n)) {0,3}\[', r'    r"|(?!)(?:^|(?<=\n)) {0,3}\[',
-     "複数行の Setext・リンク参照定義・メールの自動リンクは変えない"),
-    ("< で始まる文をタグとみなす", HOOK, r'    r"|</?[A-Za-z][A-Za-z0-9-]*(?:', r'    r"|<[A-Za-z/!][^>]*>|</?[A-Za-z][A-Za-z0-9-]*(?:',
-     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
-    ("メールの自動リンクを守らない", HOOK, '    r"|<[^\\s<>@]+@[^\\s<>]+>"\n', "",
-     "複数行の Setext・リンク参照定義・メールの自動リンクは変えない"),
-    ("URL を空白まで守る", HOOK, '    r"|https?://[!-~]+",', '    r"|https?://\\S+",',
-     "見出しでない # ・タグでない < ・URL の後の和文は置き換える"),
+    ("見出しの中を変える", HOOK, '"textarea", "title", "h1", "h2", "h3", "h4", "h5", "h6"}', '"textarea", "title"}',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("コードの中を変える", HOOK, 'UNLINKED = {"a", "code", "pre", ', 'UNLINKED = {"a", ',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("リンクの中を変える", HOOK, 'UNLINKED = {"a", ', "UNLINKED = {",
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("kbd・samp・script・style・textarea の中を変える", HOOK, '"kbd", "samp", "script", "style", "textarea", ', "",
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("要素名の大文字を区別する", HOOK, '(match.group(2) or "").lower()', '(match.group(2) or "")',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("属性の値の中の > で切る", HOOK, r'''(?:\"[^\"]*\"|'[^']*'|[^'\">])*>"''', '''[^>]*>"''',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("コメントを > で切る", HOOK, 'MARKUP = re.compile(r"<!--.*?-->|', 'MARKUP = re.compile(r"',
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("CDATA を > で切る", HOOK, r'|<!\[CDATA\[.*?\]\]>|', "|",
+     "見出し・コード・リンク・属性・コメントの中は変えない"),
+    ("閉じても戻らない", HOOK, "max(inside[name] - 1, 0) if match.group(1) else", "inside[name] if match.group(1) else",
+     "変えない要素の後ろは置き換える"),
+    ("余分な閉じで数を負にする", HOOK, "max(inside[name] - 1, 0)", "inside[name] - 1",
+     "変えない要素の後ろは置き換える"),
+    ("自己閉じを開きとみなす", HOOK, ' and not match.group(0).endswith("/>"):', ":",
+     "変えない要素の後ろは置き換える"),
     ("読めない表で落ちる", HOOK, "            except (OSError, ValueError, csv.Error):  #", "            except ZeroDivisionError:  #",
      "読めない表があっても他の版でリンクにする"),
+    ("No の空白を落とす", HOOK, '{row["No"] for row in read_qa(path)}', '{row["No"].strip() for row in read_qa(path)}',
+     "空白つきの No はリンクにせず警告"),
     ("警告が見た版の範囲を言わない", HOOK, '    scope = (f"v1〜v{limit} のどの版" if limit is not None else "どの版")',
      '    scope = ("どの版")', "ページの版より新しい版の番号はリンクにしない"),
-    ("インラインのコードを守らない", HOOK, '    r"(?<!`)(`+)(?!`).*?(?<!`)\\1(?!`)"\n    r"|<!--', '    r"<!--',
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("リンクを守らない", HOOK, '    r"|(?<!\\\\)!?\\[', '    r"|(?!)\\[',
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("URL を守らない", HOOK, '    r"|https?://[!-~]+",\n', '    r"",\n',
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("<a> の中を守らない", HOOK, '    r"|<a\\b.*?</a>"\n', "",
-     "見出し・コード・リンク・HTML・URL の中は変えない"),
-    ("空行をまたいで ` を組ませる", HOOK, "if opening or not line.strip() or ", "if opening or ",
-     "変えないところの後ろは置き換える"),
     ("知らない番号を警告しない", HOOK, '        log.warning("spec-loop: %s: %s は %sにも', '        str("spec-loop: %s: %s は %sにも',
      "どの版にも無い番号は警告"),
     ("知らない番号を何度も警告する", HOOK, "            if number not in unknown:\n                unknown.append(number)\n",
      "            unknown.append(number)\n", "どの版にも無い番号は警告"),
     ("番号の前を見ない", HOOK, r'QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-', r'QA_NUMBER = re.compile(r"Q-', "番号の形"),
-    ("番号の後を見ない", HOOK, r'[0-9]{3,}(?![A-Za-z0-9_])")', r'[0-9]{3,})")', "番号の形"),
+    ("番号の後を見ない", HOOK, r'[0-9]{3,}(?![A-Za-z0-9_-])")', r'[0-9]{3,})")', "番号の形"),
+    ("番号の後の - を見ない", HOOK, r'[0-9]{3,}(?![A-Za-z0-9_-])")', r'[0-9]{3,}(?![A-Za-z0-9_])")', "番号の形"),
     ("番号を 3 桁に限る", HOOK, r'Q-[0-9]{3,}(?!', r'Q-[0-9]{3}(?!', "番号の形"),
-    ("Q&A 表のページにも掛ける", HOOK, "    return markdown if is_qa_page else link_numbers(", "    return link_numbers(",
+    ("Q&A 表のページにも掛ける", HOOK, "    if src_path in qa_pages or qa is None:", "    if qa is None:",
      "Q&A 表のページは変えない"),
-    ("印を展開する前に掛ける", HOOK,
-     "    markdown = MARKER.sub(replace, markdown)\n    return markdown if is_qa_page else link_numbers(markdown, src_path, docs_dir)\n",
-     "    return MARKER.sub(replace, markdown if is_qa_page else link_numbers(markdown, src_path, docs_dir))\n",
+    ("Q&A 表のページの記録を消さない", HOOK, "    else:\n        qa_pages.discard(page_path(page))\n", "",
+     "Q&A 表のページは変えない"),
+    ("表のセルの中を変えない", HOOK, '"textarea", "title", ', '"textarea", "title", "td", ',
      "描画した表のセルも置き換える"),
-    ("qa.md が無くても掛ける", HOOK, "    if not (docs_dir / QA_PAGE).is_file():\n        return markdown\n", "",
+    ("qa.md が無くても掛ける", HOOK, " or qa is None:", ":",
      "qa.md が無ければ変えない"),
 ]
 
