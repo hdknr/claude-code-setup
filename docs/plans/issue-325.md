@@ -19,7 +19,7 @@
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 「`反映済み` でない」の文言
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 照合の 3 の扱い（書いてあれば）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.15.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.16.0。main が #333 で 0.15.0 に先に到達したので、取り込んでもう 1 つ上げた）
 - `.claude-plugin/marketplace.json` — 同上
 - `scripts/test-check-qa-csv.py` — 試料・期待・変異
 - `scripts/test-qa-to-pptx.py` — 同上
