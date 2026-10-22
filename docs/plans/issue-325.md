@@ -19,9 +19,15 @@
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 「`反映済み` でない」の文言
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 照合の 3 の扱い（書いてあれば）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（minor: 0.15.0）
-- `scripts/test-check-qa-csv.py`・`scripts/test-qa-to-pptx.py`・`scripts/test-check-spec-exit.py`・`scripts/test-scaffold.py`・
-  `scripts/test-check-signoff.py`・`scripts/test-build-proposal.py`・`scripts/test-init-mkdocs.py` — 試料・期待・変異
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.15.0）
+- `.claude-plugin/marketplace.json` — 同上
+- `scripts/test-check-qa-csv.py` — 試料・期待・変異
+- `scripts/test-qa-to-pptx.py` — 同上
+- `scripts/test-check-spec-exit.py` — 同上
+- `scripts/test-scaffold.py` — 同上
+- `scripts/test-check-signoff.py` — 同上
+- `scripts/test-build-proposal.py` — 同上
+- `scripts/test-init-mkdocs.py` — 同上
 - `CLAUDE.md` — スクリプトの説明（`check-spec-exit.py` が `qa-to-pptx.py` の定義で読む、の記述・`check-signoff.py`）
 - `docs/plugins/index.md` — 「反映済みでない Q&A」の文言（該当すれば）
 - `docs/plans/issue-325.md` — この計画
@@ -44,6 +50,9 @@
 - **表し方**: 状態 `暫定反映` を足す（列は足さない——見出し行が変わらないので既存の表は通る）
 - **抜ける条件**: `暫定反映` は仕様レビューを抜ける条件 1・scaffold を止めない（反映した行に数える）
 - **サインオフ**: req タグの時点に `暫定反映` の行が残れば `check-signoff.py` が非ゼロで落とす（提案書も作られない）
+- **scaffold**（2026-10-22、1 パス目の `/code-review` 指摘 R1 を受けて、AskUserQuestion）: **中間表現が `暫定反映` の Q&A を指せば
+  scaffold は止める**（`確認中` と同じ扱い）。抜ける条件 1 は今のまま暫定で抜けられる。
+  理由: scaffold の経路は `check-signoff.py` を通らないので、「開発へ進む前にサインオフで止める」が scaffold → dev-loop では成り立たない
 
 ## 乗るデプロイ経路
 
@@ -57,7 +66,7 @@
 | 2 | 暫定の行が資料に載り、未反映と言い回しが分かれる（表紙の件数・一覧・各問） | `qa-to-pptx.py` | 表紙・一覧・各問で状態を見て書き分ける |
 | 3 | 反映済みの行は資料に載らないまま | 同上 | `read_pending` の絞り |
 | 4 | `暫定反映` は抜ける条件 1 を止めず、`確認中` と未知の状態は止める | `check-spec-exit.py`（`spec-review`・`scaffold` が呼ぶ） | `REFLECTED` の外を数える（列挙の外は止める側） |
-| 5 | 中間表現が `暫定反映` の Q&A を指しても scaffold が止まらず、`確認中` なら止まる | `scaffold.py` の `check_qa_refs` | 同上 |
+| 5 | 中間表現が `暫定反映` の Q&A を指せば scaffold が止まり（`確認中` も止まる）、`反映済み` だけなら通る。**人間の決定で 1 パス目に書き換えた**（元は「暫定でも止まらない」） | `scaffold.py` の `check_qa_refs` | `暫定反映` を名指しして止める |
 | 6 | req タグの時点の重ねた Q&A に `暫定反映` が残れば照合が 3 で、提案書を書かない。後の版で `反映済み` に置き換えた・`removed.csv` で消した行は数えない | `check-signoff.py`・`build-proposal.py` | 版を順に重ねて数える（`versions.md` の「重ねるもの」） |
 | 7 | MkDocs のページの件数が暫定を「回答あり・未反映」に数えない | フック | `QA_PROVISIONAL` を分けて数える |
 | 8 | 決まり（`qa-csv.md`）・`req-loop` の手順が、暫定の書き方・確定のときの書き換え・変わったときの反映し直しを持ち、スクリプトの挙動と食い違わない | 文書 | 試料で確かめる |
@@ -84,9 +93,11 @@
   一覧に `Q-003（暫定）`、Q-003 の頁に「暫定の回答（反映済み・確認待ち）」と反映先、反映済みの Q-001 が載らないことを見た。
   抜ける条件 1 は暫定と反映済みだけの表で 0、確認中を含む表で確認中の 2 行を挙げて満たさない
 - 実験なし（交絡を潰す対象の実験は無い。上の実機確認は出力の目視）
-- `check-all.py`: **結果を回収していない**（割り目の時点で実行中だった）。**再開したら最初に回し直す**
+- `check-all.py`: 割り目の時点で実行中だった回は **44/44 緑**（`21664bb` の上）。再開後に `74dd3ab` で回し直し中
 - 手順 4 の割り目: AskUserQuestion で「**ここで割る**」が選ばれた（2026-10-22）
-- 関門: **まだどれも通していない**。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。base は上の SHA
+- 関門 1 パス目（2026-10-22）: **Verifier 反証 0 件**（sonnet）・**`/code-review` 指摘 10 件**（high）。採否は下の「1 パス目の指摘の採否」
+- 1 パス目の指摘対応: R1・R4・R6・R7・R8 を直した（未コミット。テストを回し中）。**残るのは手順 5 の当て直しと `/code-review` 2 パス目の両方**
+- `check-plan-scope.py` が 1 回赤（`触る:` の 1 行に複数パターン）→ 1 行 1 パターンに直して緑
 
 ## 既知の限界・決着済みの論点
 
@@ -94,4 +105,23 @@
 | --- | --- | --- |
 | 状態か列か | 状態（人間の決定） | 見出し行が変わらない |
 | 暫定で抜ける条件を満たしてよいか | よい（人間の決定） | 仕様には反映済み。開発へ進む前にサインオフで止める |
+| 暫定で scaffold を通してよいか | **通さない**（人間の決定。1 パス目） | scaffold の経路は照合を通らない |
 | `check-signoff.py` の重ね合わせは Q&A の行だけを自前で重ねる（`merge-versions.py` の `merge` を使わない） | 採った | `merge` は版の中身の全部を検査するので、Q&A と無関係な決まりの違反で照合が 2 に変わる。重ね方（同じ No は置き換え・`removed.csv` で消す）はテストで `merge-versions.py` の結果と突き合わせる |
+
+### 1 パス目の指摘の採否
+
+Verifier（`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件**（`test-scaffold`・`test-init-mkdocs`・`test-build-proposal` は回していない）。
+`/code-review`（high）: **10 件**。
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| R1 | scaffold は照合を通らないので、暫定の回答が確認前に Issue になる | 示せる（`scaffold.py:302` が `REFLECTED` を通し、scaffold の SKILL・スクリプトに照合の呼び出しが無い） | #5 の前提（決着の理由が誤り） | **直す**（人間の決定: scaffold は暫定で止める） |
+| R2 | Issue 本文の Q&A に状態が写らず、暫定が確定に見える | R1 を直せば、暫定の行は Issue に載らない | 無し | 残課題（R1 で消える） |
+| R3 | 暫定のうちに付けた予算のサインオフは、確定の書き換えで一致しなくなる | 示せる（確定で `qa.csv` の回答と状態が変わる） | 無し（「一致しなければ取り直す」の既存の決まりで扱える。注意書きが無いだけ） | 残課題 |
+| R4 | req-loop 手順 2.3 が「反映したことを表す状態」のまま、暫定なら `暫定反映` と書いていない | 示せる（`req-loop/SKILL.md` 手順 2.3 の文） | #8 | **直す** |
+| R5 | 既に写したフックは古いまま、移行の手順が無い | 示せる（`init-mkdocs` は在るファイルを変えない） | 無し（#7 は雛形の件数。古いフックは壊れず件数がずれるだけ） | 残課題 |
+| R6 | `provisional_rows` が同じ版で置いて消した行を黙って落とす（`merge` は拒否する） | 示せる（その配置で `merge-versions.py` は拒否、照合は 0） | #6（「重ね方は `merge` と同じ」の決着の理由が、この配置で誤り） | **直す**（その配置を 2 にする） |
+| R7 | `signoff-tags.md` で、既存の「提案書は一致したときだけ」と CI の注記が新しい見出しの下に入った | 示せる（`signoff-tags.md` の該当行） | #8（この差分が入れた文書の退行） | **直す** |
+| R8 | 一致しない かつ 暫定あり は 3 になり、proposal の SKILL の 3 の行が食い違いに触れない | 示せる（`check-signoff.py` の分岐と `proposal/SKILL.md:73`） | #8（文書がスクリプトの挙動と食い違う） | **直す** |
+| R9 | 前の版に残った暫定の行を、作業中の版の req-loop・資料が出さない | 示せない（前の版を暫定のまま残して次の版へ進む実データが無い） | 無し | 残課題 |
+| R10 | `provisional_rows` が `removed_shared_rows` の読み込みを写し、余計に git を呼ぶ | 示せる（重複） | 無し | 残課題 |

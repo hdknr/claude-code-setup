@@ -175,6 +175,7 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int) -> list[di
     """
     whole: dict[str, dict[str, str]] = {}
     for number in range(1, version + 1):
+        placed: set[str] = set()
         path = f"{DOCS}/v{number}/{SHARED}qa.csv"
         listed = git(repo, "ls-tree", "--name-only", commit, "--", path)
         if listed.returncode != 0:
@@ -201,9 +202,14 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int) -> list[di
                                + " / ".join(problems) + "。照合していない")
             for row in rows:
                 whole[row["No"]] = row
+                placed.add(row["No"])
         if number > 1:
             for kind, target in removed_shared_rows(repo, commit, tag, f"{DOCS}/v{number}/{REMOVED}") or []:
                 if kind == REMOVED_QA:
+                    # `merge` が拒否する配置——黙って消すと、置いた暫定の行を数え落とす
+                    if target in placed:
+                        raise Unjudged(f"{tag} の {DOCS}/v{number}/ が {target} を同じ版で置きつつ消している"
+                                       "（references/versions.md）。照合していない")
                     whole.pop(target, None)
     return [row for row in whole.values() if row["状態"].strip() == qa.PROVISIONAL]
 
