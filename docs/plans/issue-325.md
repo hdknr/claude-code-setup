@@ -19,7 +19,7 @@
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 「`反映済み` でない」の文言
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 照合の 3 の扱い（書いてあれば）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.16.0。main が #333 で 0.15.0 に先に到達したので、取り込んでもう 1 つ上げた）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.17.0。main が #333 で 0.15.0、#331 で 0.16.0 に先に到達したので、取り込むたびに 1 つ上げた）
 - `.claude-plugin/marketplace.json` — 同上
 - `scripts/test-check-qa-csv.py` — 試料・期待・変異
 - `scripts/test-qa-to-pptx.py` — 同上
@@ -85,7 +85,7 @@
 
 - この周の起票: 4 件（#335 N2・#336 N1・#337 R5・#338 V1/R10。マージ前に人間が承認。2026-10-22）
 
-手順 8: 焼き戻す学びなし（CLAUDE.md の「並行する周は、同じ版に上げて衝突する」の手順がそのまま当たった——main の #333 と 0.15.0 で衝突し、取り込んで 0.16.0 に上げた）。
+手順 8: 焼き戻す学びなし（CLAUDE.md の「並行する周は、同じ版に上げて衝突する」の手順がそのまま当たった——main の #333（0.15.0）・#331（0.16.0）と 2 回衝突し、取り込んで 0.17.0 に上げた）。
 
 ## 関門の進捗（再開点）
 
