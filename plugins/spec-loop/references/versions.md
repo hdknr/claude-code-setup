@@ -63,6 +63,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 | 置き場所 | 単位 | 変更 | 削除 |
 | --- | --- | --- | --- |
 | `shared/qa.csv` | 行（`No`） | 同じ `No` の行を置く | `removed.csv` に種類 `Q&A` |
+| `spec/qa-dev.csv`（内部の Q&A 表。`qa-csv.md` の「層」） | 行（`No`） | 同じ `No` の行を置く | `removed.csv` に種類 `Q&A`（番号が `D-` なので、どちらの表の行かは番号で決まる） |
 | `spec/spec_ir.json` | 機能（`features` の要素の `id`） | 同じ `id` の機能を**ケースまで丸ごと**置く | `removed.csv` に種類 `機能` |
 | `spec/spec_ir.json` | `features` 以外のキー（`title` など） | 同じキーを書く | できない |
 | `shared/`・`requirements/`・`spec/` のほかのファイル | ファイル（版のディレクトリからのパス） | 同じパスのファイルを置く | `removed.csv` に種類 `ファイル` |
@@ -72,7 +73,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 - **行・機能の並びは、前の版の順を保つ。** 置き換えはその場で、追加は版の順に末尾へ。
 - v2 以降の `spec_ir.json` は**差分だけ**なので、`features` 以外のキーは省いてよい。`features` は配列で置く（空でもよい）。
   中身の決まり（`spec-ir.md`）は、**重ね合わせた全体**に当てる。
-- 各版の `qa.csv` は、それだけで `qa-csv.md` の決まりを満たすこと（同梱の検査を版ごとに通す）。
+- 各版の `qa.csv`・`qa-dev.csv` は、それだけで `qa-csv.md` の決まりを満たすこと（同梱の検査を版ごとに通す）。
 - **`feasibility/`・`proposal/` は重ねない。** 版ごとのもの（その版の差分の見積り・変更の提案書）で、出力にも入らない。
 - **`.` で始まる名前は読まない**（`.DS_Store` など）。**シンボリックリンクは置かない**（版の外を読ませない）。
 
@@ -90,7 +91,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 - **消すものは、前の版までの全体に在ること。** 無いものを消そうとするのは誤り（綴りの誤りを黙って通さない）。
 - **同じ版で、置きつつ消さない。** 同じ対象を 2 度書かない。
 - **v1 には置かない**（消すものが無い）。
-- **`shared/qa.csv` と `spec/spec_ir.json` はファイルとしては消せない**——行・機能の単位で消す。
+- **`shared/qa.csv`・`spec/qa-dev.csv`・`spec/spec_ir.json` はファイルとしては消せない**——行・機能の単位で消す。
 
 ## 版の差分
 
@@ -130,6 +131,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs --
 - **重ねた結果で、大文字小文字・Unicode の正規化（NFC/NFD）だけが違うパスが並ぶのも誤り**（`requirements/A.md` と
   `requirements/a.md`）——区別しないファイルシステムでは同じ場所に書かれ、片方が黙って消える。前の版のファイルを変えるなら、同じ綴りで置く。
 - どれかの版に `shared/qa.csv` があれば、行がすべて消えても**見出し行だけの `shared/qa.csv` を書く**（出力を `docs/` と同じ形に保つ）。
+  `spec/qa-dev.csv` も同じ。
 
 ## 差分の周を始める前に
 

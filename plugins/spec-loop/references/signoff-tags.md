@@ -47,7 +47,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-signoff.py --versi
 - **比べる場所は `docs/v1/shared/`〜`docs/v<n>/shared/` と `docs/v2/removed.csv`〜`docs/v<n>/removed.csv`。**
   v<n> の時点の共有の範囲は、前の版の `shared/` と、行を消す `removed.csv` にも依る。
   凍結した版（`versions.md`）は動かないので、前の版を含めても誤って食い違うことはない。
-  **`removed.csv` は `shared/` に効く行だけを比べる**（種類 `Q&A` と、種類 `ファイル` で対象が `shared/` から始まる行）。
+  **`removed.csv` は `shared/` に効く行だけを比べる**（種類 `Q&A` で対象が共有の表の番号（`Q-`）の行と、種類 `ファイル` で対象が `shared/` から始まる行）。**内部の Q&A 表（`spec/qa-dev.csv`。番号 `D-`）は比べない**——開発者が決めて記録するもので、サインオフの後に内部で決めても照合は割れない（`qa-csv.md` の「層」）。
   `requirements/` や機能の削除は共有の範囲の外なので、それだけが違っても一致する。
 - **版を指定しなければ、作業中の版**（作業ツリーの `docs/` で番号が最大の版）。
 - **最新**は、`<k>` を**数として**比べて最大のもの（`-10` は `-9` より新しい）。

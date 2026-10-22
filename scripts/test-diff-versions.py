@@ -38,11 +38,11 @@ SCRIPTS = PLUGIN / "scripts"
 TARGET = "diff-versions.py"
 REFERENCE = PLUGIN / "references" / "versions.md"
 
-QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
+QA_HEAD = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
 
 
 def q(no: str, question: str, answer: str = "未回答", where: str = "—", state: str = "確認中") -> str:
-    return f"{no},要求確定,{question},A: 甲 / B: 乙,{answer},{where},{state},\n"
+    return f"{no},要求確定,{question},A: 甲 / B: 乙,A,理由,{answer},{where},{state},\n"
 
 
 def spec(*features: tuple[str, str], title: str | None = "注文") -> str:
@@ -124,11 +124,18 @@ CASES: list[tuple[str, dict | None, list[str], Callable[[Result], bool]]] = [
     ("--version の誤り", {**V1}, ["--version", "0"], lambda r: r.code == 2 and "1 以上の整数" in r.output),
     # セルの改行で偽の変更行を作らない（1 変更 = 1 行。件数と一覧の行数が食い違わない）
     ("セルの改行は 1 行に留める",
-     {**V1, "v1/shared/qa.csv": V1["v1/shared/qa.csv"] + 'Q-005,要求確定,"一行目\n  追加 Q-999 偽",A: 甲 / B: 乙,未回答,—,確認中,\n'},
+     {**V1, "v1/shared/qa.csv": V1["v1/shared/qa.csv"] + 'Q-005,要求確定,"一行目\n  追加 Q-999 偽",A: 甲 / B: 乙,A,理由,未回答,—,確認中,\n'},
      ["--version", "1"],
      lambda r: r.code == 0 and "Q&A: 追加 4・変更 0・削除 0" in r.output
      and sum(line.startswith("  追加 Q-") for line in r.output.splitlines()) == 4
      and "  追加 Q-005 一行目\\n  追加 Q-999 偽\n" in r.output),
+    # 内部の Q&A 表（spec/qa-dev.csv）も行で比べる。並びは共有の表が先（#339）
+    ("内部の表の行も比べる",
+     {**V1, "v1/spec/qa-dev.csv": QA_HEAD + q("D-001", "内部1"),
+      "v2/spec/qa-dev.csv": QA_HEAD + q("D-001", "内部1", "B（開発）", "spec/a.md", "反映済み") + q("D-002", "内部2"),
+      "v2/shared/qa.csv": QA_HEAD + q("Q-004", "質問4")},
+     [], lambda r: r.code == 0 and "Q&A: 追加 2・変更 1・削除 0" in r.output
+     and "  追加 Q-004 質問4\n  変更 D-001 内部1\n  追加 D-002 内部2\n" in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -149,6 +156,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("範囲外の文言を言い直さない", 'str(e).replace("--upto", "--version", 1)', "str(e)", "その版が無いと比べない"),
     ("改行をそのまま出す", 'return text.replace("\\r\\n", "\\n")', 'return text\n    return text.replace("\\r\\n", "\\n")',
      "セルの改行は 1 行に留める"),
+    ("内部の表を比べない", "compare_maps({**before.qa, **before.internal}, {**now.qa, **now.internal})",
+     "compare_maps(before.qa, now.qa)", "内部の表の行も比べる"),
     ("決まりに反しても比べる", "    if problems:\n        return problems, None\n    number",
      "    if False:\n        return problems, None\n    number", "決まりに反すると比べない"),
 ]

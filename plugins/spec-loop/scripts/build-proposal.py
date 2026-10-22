@@ -203,6 +203,8 @@ def compare_at(top: Path, commit: str, tag: str, version: int):
 
 def changes_section(diff, tag: str) -> list[str]:
     qa_kind, feature_kind, file_kind = diffs.KINDS
+    # 内部の層の Q&A（`D-`）は決裁者に見せない——開発者が決めて記録するもの（`references/qa-csv.md` の「層」。#339）
+    diff.changes[qa_kind] = [c for c in diff.changes[qa_kind] if not qa.INTERNAL_NUMBER.fullmatch(c.key)]
     out = [f"## 前の版（v{diff.version - 1}）からの変更", ""]
     out += [f"> `{tag}` の時点の、v{diff.version - 1} までの全体と v{diff.version} までの全体の比較。"
             "同じ中身を置き直しただけのものは載らない。", ""]
