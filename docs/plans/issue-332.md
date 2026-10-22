@@ -65,7 +65,8 @@
 ## 関門の進捗（再開点）
 
 - **周の在り処**: ブランチ `issue/332-pointer-plugin-level`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-332`、起点 `b4f68bf`、base の参照 `origin/main`（`refs/remotes/origin/HEAD`）→ SHA `b4f68bf7cfa0eb84a122d3a3ebd84d8d4d7884bf`
-- 実装: 済み（コミット後に追記）
+- 実装: 済み（`1235983`）。`check-all.py` 44/44 本・失敗 0（末尾の集計行。コミット直前の作業ツリーで回した）
+- 割り目 1（手順 4 の後）: 訊いた → **「ここで割る」が選ばれた**。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。どちらも未着手
 - Verifier 1 パス目: 未
 - `/code-review` 1 パス目: 未
 - 反証・差し戻し: 0 件
