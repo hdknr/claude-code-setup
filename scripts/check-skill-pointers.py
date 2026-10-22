@@ -99,6 +99,13 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
 - **自分の名前や、プラグインでない名前の名指しは解決すること**——`` spec-loop の `references/x.md` ``
   （spec-loop の中で）は自分のファイルである。**名指しの免除はプラグインのディレクトリ名と
   「このリポジトリ」に限る**（限らないと、`の` で終わる語の後ろの指し先がすべて免除される）。
+- **「X」の照合でも、ほかの持ち主を名指しした指し先は照合しないこと**——
+  `` dev-loop の `references/spec-gap.md` の「X」 `` の X は dev-loop のファイルにある。
+- **名指しは同じ行だけを見ること**——前の行の `dev-loop の` で、次の行の指し先を免除しない
+  （囲まれた指し先と「X」の照合で揃える）。
+- **プラグイン名は文字どおりに比べること**——大文字小文字を区別しない FS でも、
+  `Spec-loop の` を `spec-loop` とは読まない（読むと、OS で結果が変わる）。
+- **名前の前が区切りであること**——`foo/dev-loop の` はプラグインの名指しではない。
 
 守らない:
 
@@ -222,7 +229,8 @@ XREF = re.compile(
 # **ほかの持ち主を名指しした指し先**（`dev-loop の` `dev-loop のスキルの` `このリポジトリの`）。
 # **このプラグインからの相対では解決しない**——spec-loop のプラグイン直下の決まりは、
 # dev-loop やこのリポジトリのファイルを名前で指す（#332）。名前はプラグインのディレクトリ名に限る。
-OWNER = re.compile(r"(?:このリポジトリ|([A-Za-z0-9_-]+)(?:\s*のスキル)?)\s*の\s*$")
+# **名前の前は区切り**——`foo/dev-loop の` の `dev-loop` を名前と読まない（読むと、プラグインでない名指しが免除される）。
+OWNER = re.compile(r"(?:このリポジトリ|(?<![\w/.-])([A-Za-z0-9_-]+)(?:\s*のスキル)?)\s*の\s*$")
 
 
 def owned_elsewhere(before: str, plugin: pathlib.Path) -> bool:
@@ -233,7 +241,10 @@ def owned_elsewhere(before: str, plugin: pathlib.Path) -> bool:
     if m.group(1) is None:
         return True  # このリポジトリ
     name = m.group(1)
-    return name != plugin.name and (plugin.parent / name).is_dir()
+    # **`(plugin.parent / name).is_dir()` にしない**——大文字小文字を区別しない FS（macOS）では
+    # `Spec-loop` が `spec-loop` に当たり、自分の名前が「ほかの持ち主」になる。名前は文字どおりに比べる。
+    names = {p.name for p in plugin.parent.iterdir() if p.is_dir()}
+    return name != plugin.name and name in names
 
 
 def normalize(text: str) -> str:
@@ -267,7 +278,10 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
         yield (lineno, f"{m.group(0)}（このファイルに無い）",
                normalize(m.group(1)) in own)
     for m in XREF.finditer(prose):
-        if owned_elsewhere(prose[max(0, m.start() - 40):m.start()], plugin):
+        # **名指しを見るのは同じ行だけ**——囲まれた指し先（`pointers_in`）と揃える。
+        # 前の行まで見ると、行をまたいだ名指しが免除される（docstring は「落ちる側」と書いている）。
+        line_start = prose.rfind("\n", 0, m.start()) + 1
+        if owned_elsewhere(prose[line_start:m.start()], plugin):
             continue
         target = skill / m.group(1)
         if not target.is_file():
