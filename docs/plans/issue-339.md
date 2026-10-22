@@ -49,6 +49,7 @@
   （dev-loop が書く行が新しい検査で落ちる。受入基準 #10 の「各スキル」に dev-loop の差し戻しも入れる）
 - `plugins/dev-loop/.claude-plugin/plugin.json` — dev-loop の版（1.44.0 → 1.44.1。記述の修正なので patch）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` で書き直す。手で書かない）
 - `CLAUDE.md` — スクリプトの説明（該当すれば）
 - `docs/plugins/index.md` — spec-loop の説明（該当すれば）
 - `docs/plans/issue-339.md` — この計画
@@ -134,7 +135,7 @@
 **この環境では証明できないもの（未証明）**: TFSSTOCKS-37 の 15 問を新しい線で分けた件数（手元に表が無い）。実案件の正本での移行の通し。
 PowerPoint で開いた見た目。判定役（LLM）が新しい線で実際に振り分けるか（スキルの文は検査できるが、判定役の判断は CI で回せない）。
 
-生成物: リポジトリに commit した PPTX・`scaffold/` は無い。`SKILL.md` の測定値は dev-loop だけで、触らない。図なし。**生成物なし**。
+生成物: リポジトリに commit した PPTX・`scaffold/` は無い。図なし。**`SKILL.md` の測定値（設計ドキュメント §8.2 の生成ブロック）は、1 パス目の指摘 C1 で dev-loop の `references/spec-gap.md` を直したので該当する**——`python3 scripts/skill-metrics.py` で書き直し、`--check` で鮮度を見る（着手時は「生成物なし」と判定していた。範囲を dev-loop に広げて変わった）。
 
 ## 未解決の判断・確認待ち
 
