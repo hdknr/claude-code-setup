@@ -75,6 +75,10 @@
   **狭いパスを通した**（Verifier（sonnet）、起点 `5001234`）: 反証 0 件。Verifier が設計した変異 2 件はどちらも赤、素通り 0 件。
   移行 1〜3 の各枝を試料で踏んで、書いてある結果になった（凍結はタグの有無で挙動が変わらないので、凍結の枝は「v1 が反し v2 が直す」で代えた）。
   **関門はここまで。** 以後は人間レビュー。PR #328。
+  PR が `CONFLICTING` だった（main が #290 で spec-loop を 0.14.0 に上げていた）ので取り込み（`ac1a40f`）、0.14.1 に上げた。
+  #290 で Issue の本文が前の版の全体（`build/merged-v<n-1>/`）を指すようになったので、`spec-ir.md`・`read_whole` の docstring の
+  「Issue の本文（前の版の API の行）」を「（前の版を指す行）」にした——**この 1 語は関門を通していない**（PR コメントに書く）。
+  周の base を当て直した: `origin/main` → `2069b599f4b5f09eae97b9f8a499fccf16a428a2`。`check-all.py` 44/44 緑。
 - この周の起票: 0 件（残課題はどれも実物で失敗を示せない、または直した）
 - 2 パス目の前の割り目: `AskUserQuestion` で訊いた → **ここで割る**（2026-10-22）。
   再開は worktree `.claude/worktrees/issue-319` の中で `/clear` → `/dev-loop:dev-loop 319`
