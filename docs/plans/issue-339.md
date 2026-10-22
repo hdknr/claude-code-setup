@@ -145,7 +145,7 @@ PowerPoint で開いた見た目。判定役（LLM）が新しい線で実際に
   `test-init-mkdocs` 45/82。試料/変異）。`check-all.py` で `check-description-sync.py` が 1 回赤（feasibility の要約が古かった）→
   要約を直し、proposal・scaffold は trailer で免除
 - 関門 1 パス目: 未着手。**1 パス目の指摘対応の起点は、関門に渡すときの HEAD をここに書く**
-- 手順 4 の割り目: これから AskUserQuestion で訊く
+- 手順 4 の割り目: AskUserQuestion で「**ここで割る**」が選ばれた（2026-10-22）。再開したら手順 5（Verifier 1 パス目）から。`check-all.py` は割り目の時点で 44/44 緑
 - 実機確認（受入基準 F。2026-10-22）:
     - **SBIPRISM-207**（手元の `sbi-hubspot` の `docs/shared/qa.csv` を scratchpad に写した。正本は触っていない）——
       前の形のまま新しい検査に当てると 1 で、出力が「移す手順は references/tree.md の「Q&A 表を移す」」を指した。
