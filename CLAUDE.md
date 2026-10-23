@@ -41,7 +41,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **スキルの中ではなくプラグイン直下にある**——スキルからは `../../references/…` で指し、
       `check-skill-pointers.py` が**プラグインの中に収まること**まで見る（#216）
     - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。共有の `shared/qa.csv` と内部の
-      `spec/qa-dev.csv` を**ファイルの名前で見分ける**——#339。テストは `scripts/test-check-qa-csv.py`）
+      `spec/qa-dev.csv` を**ファイルの名前で見分ける**——#339。**行の層を番号で決める関数 `is_internal_number` もここに 1 つだけ置き、
+      他のスクリプトはそれを読む**——#353。テストは `scripts/test-check-qa-csv.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
       `scripts/test-qa-to-pptx.py`）
@@ -79,7 +80,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `scaffold.py` と `check-signoff.py` もここの関数で重ね・版を見つける——写しを作らない。
       テストは `scripts/test-merge-versions.py`）
     - `scripts/diff-versions.py` - ある版が前の版から何を足し・変え・消したかを、**前の版の時点の全体との比較**で出す
-      （#263。各スキルの差分モードの「差分」はこれで決まる。**同じ中身の置き直しは変更に数えない**。重ねるのは
+      （#263。各スキルの差分モードの「差分」はこれで決まる。**同じ中身の置き直しは変更に数えない**。**Q&A は層で `Q&A` と `Q&A（内部）` に分けて出す**（#344）。重ねるのは
       `merge-versions.py` の `merge`——写しを作らない。`build-proposal.py` も v2 以降の「前の版からの変更」の節をこの関数で作る。
       テストは `scripts/test-diff-versions.py`）
     - `templates/mkdocs/` - 正本リポジトリを MkDocs で閲覧するための雛形（#266。本文の `Q-008` を Q&A 表へのリンクにするのもフック（#324）。**フックは正本リポジトリへ写されて
