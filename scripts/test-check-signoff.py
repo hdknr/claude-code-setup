@@ -26,7 +26,10 @@
    前の版の暫定も数える・**後の版で置き換えた／`removed.csv` で消した行は数えない**（その重ね方が `merge-versions.py`
    の `merge` と同じこと——作業ツリーを重ねて突き合わせる）・Q&A 表が決まりに反する／読めないなら 2・
    **`merge` が拒否する `removed.csv` の配置（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）も 2**
-   （#338。`merge` が実際に拒否することも突き合わせる）・**3 の案内が「要求確定と予算の合意の両方」を取り直させる**（#336。
+   （#338。`merge` が実際に拒否することも突き合わせる）・**種類 `ファイル` の行で構造ファイルを消す・同じファイルを
+   2 度消す・v1 に `removed.csv` を置くのも 2**（#348）・**拒否のメッセージにパスが 1 度だけ出る**（#351）・
+   **要求確定側と予算側の `removed.csv` を入れ替えると、要求確定側だけが拒否する試料で捕まる**（#349。その試料と
+   「removed.csv だけ違う」の作業ツリー＝予算側は `merge` が受け付ける）・**3 の案内が「要求確定と予算の合意の両方」を取り直させる**（#336。
    出力は試料と変異で、docstring の終了コード 3 の項は文字列で見る）。
 6. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
@@ -36,6 +39,8 @@
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる。
+**試料は 1 度だけ作り、変異は殺すはずの試料だけに当てる**（#350。本体は試料を読むだけなので使い回せ、
+判定に使うのはその 1 つの結果だけなので、全試料を回すのと捕捉は同じ）。
 """
 from __future__ import annotations
 
@@ -145,9 +150,16 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("前の版の shared だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                              ("w", SHARED, QA_B), ("c",), ("t", B2)],
      [], 1, "M\tdocs/v1/shared/qa.csv"),
-    ("removed.csv だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+    # 予算側は `merge` が受け付ける配置（v1 の Q-001 を v2 で消す。v2 は Q-001 を置かない——#349）
+    ("removed.csv だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_HEAD + QA_2), ("c",), ("t", R2),
                             ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
      [], 1, "docs/v2/removed.csv（shared/ に効く行が違う）"),
+    # `merge` が拒否する配置は要求確定側だけ（予算側は受け付ける）——要求確定側の removed.csv で重ねていれば 2、
+    # 予算側で重ねると拒否されず、範囲の違いで 1 になる（#349）
+    ("要求確定側だけが拒否する配置", [("w", SHARED, QA_A), ("w", SHARED2, QA_HEAD + QA_2),
+                                 ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-003,不要\n"), ("c",), ("t", R2),
+                                 ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
+     [], 2, "docs/v2/removed.csv:2: 前の版までに無いものを消そうとしている: Q&A Q-003"),
     ("removed.csv の shared のファイルの行が違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                                          ("w", REMOVED2, "種類,対象,理由\nファイル,shared/nfr.csv,不要\n"), ("c",), ("t", B2)],
      [], 1, "docs/v2/removed.csv（shared/ に効く行が違う）"),
@@ -200,7 +212,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("removed.csv が決まりに反する", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
                                    ("w", REMOVED2, "対象,種類,理由\nQ-001,Q&A,x\n"), ("c",), ("t", R2),
                                    ("rm", REMOVED2), ("c",), ("t", B2)],
-     [], 2, "docs/v2/removed.csv が決まりに反する"),
+     [], 2, "removed.csv が決まりに反する（references/versions.md）: docs/v2/removed.csv:1: 見出し行が決まりと違う"),
     ("範囲の外だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                        ("w", "docs/v2/requirements/a.md", "x\n"), ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
@@ -263,6 +275,32 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,D-001,共有へ移した（Q-002）\n"),
                                     ("c",), ("t", R2), ("t", B2)],
      [], 3, "Q-001: A（推奨案を暫定で採用"),
+    # 種類 `ファイル` の行のうち、版のファイルの一覧を作らずに判定できる形と、v1 の removed.csv（#348）。
+    # 直す前は、どれも暫定の Q-001 を数えて 3 だった
+    ("構造ファイルをファイルとして消す", [("w", SHARED, QA_HEAD + P_1), ("w", SHARED2, QA_HEAD + QA_2),
+                                   ("w", REMOVED2, "種類,対象,理由\nファイル,shared/qa.csv,不要\n"),
+                                   ("c",), ("t", R2), ("t", B2)],
+     [], 2, "docs/v2/removed.csv:2: shared/qa.csv はファイルとしては消せない"),
+    ("同じファイルを 2 度消す", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/shared/nfr.csv", "a\n"),
+                             ("w", SHARED2, QA_HEAD + QA_2),
+                             ("w", REMOVED2, "種類,対象,理由\nファイル,shared/nfr.csv,不要\nファイル,shared/nfr.csv,重複\n"),
+                             ("c",), ("t", R2), ("t", B2)],
+     [], 2, "docs/v2/removed.csv:3: 2 行目と同じ対象を 2 度消す: shared/nfr.csv"),
+    ("v1 に removed.csv を置く", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/removed.csv", "種類,対象,理由\n"),
+                                ("c",), ("t", R1), ("t", B1)],
+     [], 2, "docs/v1/removed.csv: v1 には置かない（消すものが無い）"),
+    # v1 の removed.csv は後の版のタグの時点でも拒否する——`merge` はどの版まで重ねても v1 を見る
+    ("v2 のタグの時点に v1 の removed.csv がある", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/removed.csv", "種類,対象,理由\n"),
+                                              ("w", SHARED2, QA_HEAD + QA_2), ("c",), ("t", R2), ("t", B2)],
+     [], 2, "docs/v1/removed.csv: v1 には置かない（消すものが無い）"),
+    # 陽性対照: 要求確定の時点の正しい種類 `ファイル` の行（前の版に在るファイルを 1 度だけ消す）は拒否しない——
+    # 暫定の Q-001 を数えて 3。ファイルの行を在るとしない・置いたとする変異はここで 2 になる
+    ("要求確定の時点に正しいファイルの行がある", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/shared/nfr.csv", "a\n"),
+                                           ("w", "docs/v1/requirements/r.md", "a\n"), ("w", SHARED2, QA_HEAD + QA_2),
+                                           ("w", REMOVED2, "種類,対象,理由\nファイル,shared/nfr.csv,不要\n"
+                                                           "ファイル,requirements/r.md,不要\n"),
+                                           ("c",), ("t", R2), ("t", B2)],
+     [], 3, "Q-001: A（推奨案を暫定で採用"),
     ("要求確定の時点の Q&A 表が決まりに反する", [("w", SHARED, "No,起票元\nQ-001,要求確定\n"), ("c",), ("t", R1), ("t", B1)],
      [], 2, "docs/v1/shared/qa.csv が決まりに反する（references/qa-csv.md）"),
     ("要求確定の時点の Q&A 表が空", [("w", SHARED, ""), ("c",), ("t", R1), ("t", B1)],
@@ -276,14 +314,27 @@ OVERLAY_CASES = ["前の版の暫定が残る", "後の版で反映済みにし�
 
 # 照合が 2 にする `removed.csv` の配置は、`merge` も拒否する——試料が `merge` の拒否を表していることの確かめ
 # （期待の文字列のうち、`removed.csv` の位置より後ろが `merge` の問題の行にも現れること）
-REFUSED_CASES = ["同じ版で置いて消した暫定", "前の版までに無い行を消す", "同じ行を 2 度消す"]
+REFUSED_CASES = ["同じ版で置いて消した暫定", "前の版までに無い行を消す", "同じ行を 2 度消す",
+                 "構造ファイルをファイルとして消す", "同じファイルを 2 度消す", "v1 に removed.csv を置く",
+                 "v2 のタグの時点に v1 の removed.csv がある"]
+
+# 作業ツリー（予算側と同じ中身）を `merge` が受け付ける——変異の捕捉が、拒否される配置に寄りかからない（#349）
+ACCEPTED_CASES = ["removed.csv だけ違う", "要求確定側だけが拒否する配置", "要求確定の時点に正しいファイルの行がある"]
+
+# `removed.csv` の拒否のメッセージに、そのパスがちょうど 1 度出る（#351）。as_expected で見る
+ONCE = {name: path for path, names in (
+    ("docs/v2/removed.csv", ["removed.csv が決まりに反する", "同じ版で置いて消した暫定", "前の版までに無い行を消す",
+                             "同じ行を 2 度消す", "構造ファイルをファイルとして消す", "同じファイルを 2 度消す",
+                             "要求確定側だけが拒否する配置"]),
+    ("docs/v1/removed.csv", ["v1 に removed.csv を置く", "v2 のタグの時点に v1 の removed.csv がある"])) for name in names}
 
 # 直す前の `provisional_rows` は `removed.csv` の行を `pop(target, None)` で黙って消していた（#338）
 CHECK_REMOVED = (
-    "            versions.check_removed(path, rows, {REMOVED_QA: placed}, {REMOVED_QA: set(whole)}, problems)\n"
+    "            versions.check_removed(path, sorted(rows + files),\n"
+    "                                   {REMOVED_QA: placed, REMOVED_FILE: set()},\n"
+    "                                   {REMOVED_QA: set(whole), REMOVED_FILE: {target for _, _, target in files}}, problems)\n"
     "            if problems:\n"
-    '                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）: "\n'
-    '                               + " / ".join(problems) + "。照合していない")\n'
+    "                raise Unjudged(refused(tag, problems))\n"
     "            for _, _, target in rows:\n"
     "                whole.pop(target)\n")
 UNCHECKED_REMOVED = (
@@ -316,8 +367,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "(kind == REMOVED_QA and qa.is_internal_number(target))", "removed.csv の内部の Q&A の行だけ違う"),
     ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED))):", "and False)):",
      "removed.csv の shared のファイルの行が違う"),
-    ("removed.csv の決まりを見ない", '    if problems:\n        raise Unjudged(f"{tag} の {path} が決まりに反する',
-     '    if False:\n        raise Unjudged(f"{tag} の {path} が決まりに反する', "removed.csv が決まりに反する"),
+    ("removed.csv の決まりを見ない", "    if problems:\n        raise Unjudged(refused(tag, problems))\n    return parsed",
+     "    if False:\n        raise Unjudged(refused(tag, problems))\n    return parsed", "removed.csv が決まりに反する"),
+    # #351 の前の形（前置きにもパスを書く）に戻す
+    ("拒否の前置きにパスを書く", 'return (f"{tag} の時点の {REMOVED} が決まりに反する',
+     'return (f"{tag} の docs/v2/removed.csv が決まりに反する', "同じ行を 2 度消す"),
+    ("拒否の前置きにパスを書く（v1）", 'raise Unjudged(refused(tag, [f"{path}: {versions.V1_REMOVED}"]))',
+     'raise Unjudged(f"{tag} の {path} が決まりに反する: " + f"{path}: {versions.V1_REMOVED}")',
+     "v1 に removed.csv を置く"),
     ("`.` で始まるファイルで版があると言う", "if line and not hidden(line)]", "if line]",
      "タグの時点の作業中の版が . で始まるファイルだけ"),
     ("`.` で始まるファイルの違いも数える",
@@ -364,7 +421,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "後の版で反映済みにした暫定は数えない"),
     ("removed.csv で消さない", "                whole.pop(target)", "                pass",
      "removed.csv で消した暫定は数えない"),
-    ("同じ版で置いて消すのを見ない", "{REMOVED_QA: placed}", "{REMOVED_QA: set()}", "同じ版で置いて消した暫定"),
+    ("同じ版で置いて消すのを見ない", "{REMOVED_QA: placed,", "{REMOVED_QA: set(),", "同じ版で置いて消した暫定"),
     ("内部の Q&A を消した行も重ねる", "row[1] == REMOVED_QA and not qa.is_internal_number(row[2])",
      "row[1] == REMOVED_QA", "内部の Q&A を消しても暫定を数える"),
     ("重ねる行の層を入れ替える", "row[1] == REMOVED_QA and not qa.is_internal_number(row[2])",
@@ -374,7 +431,26 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # 旧い挙動（3 と 0）を表さないまま殺したことになる（#340 の 1 パス目 R3）
     ("merge が拒否する配置を見ない（無い行）", CHECK_REMOVED, UNCHECKED_REMOVED, "前の版までに無い行を消す"),
     ("merge が拒否する配置を見ない（2 度）", CHECK_REMOVED, UNCHECKED_REMOVED, "同じ行を 2 度消す"),
-    ("予算の時点の暫定を見る", 'provisional_rows(repo, info["req_commit"], info["req"], version,',
+    # 要求確定側の removed.csv で重ねる——予算側と入れ替えると、要求確定側だけの拒否を見落とす（#349。
+    # 殺すのは予算側が受け付ける配置の試料。拒否される配置に寄りかからない）
+    ("予算側の removed.csv で重ねる", "{path: at_req for path, (at_req, _) in removed.items()}",
+     "{path: at_budget for path, (_, at_budget) in removed.items()}", "要求確定側だけが拒否する配置"),
+    # #348 の前の形（種類 `ファイル` の行を渡さない・v1 を見ない）に戻す
+    ("ファイルの行を見ない（構造ファイル）", "files = [row for row in removed[path] or [] if row[1] == REMOVED_FILE]",
+     "files = []", "構造ファイルをファイルとして消す"),
+    ("ファイルの行を見ない（2 度）", "files = [row for row in removed[path] or [] if row[1] == REMOVED_FILE]",
+     "files = []", "同じファイルを 2 度消す"),
+    ("v1 の removed.csv を見ない", "            if listed.stdout.strip():\n                raise Unjudged(refused(",
+     "            if False:\n                raise Unjudged(refused(", "v1 に removed.csv を置く"),
+    ("v1 の removed.csv を v1 のタグだけで見る", "            if listed.stdout.strip():\n                raise Unjudged(refused(",
+     "            if listed.stdout.strip() and version == 1:\n                raise Unjudged(refused(",
+     "v2 のタグの時点に v1 の removed.csv がある"),
+    # 判定できない 2 形を判定しようとして、正しいファイルの行まで拒否する
+    ("ファイルの行を前の版までに無いとする", "REMOVED_FILE: {target for _, _, target in files}}",
+     "REMOVED_FILE: set()}", "要求確定の時点に正しいファイルの行がある"),
+    ("ファイルの行を同じ版で置いたとする", "{REMOVED_QA: placed, REMOVED_FILE: set()}",
+     "{REMOVED_QA: placed, REMOVED_FILE: {target for _, _, target in files}}", "要求確定の時点に正しいファイルの行がある"),
+    ("予算の時点の暫定を見る",'provisional_rows(repo, info["req_commit"], info["req"], version,',
      'provisional_rows(repo, info["budget_commit"], info["budget"], version,', "予算のタグの時点の暫定は見ない"),
     # 確かめると予算の合意とも一致しなくなる——案内を要求確定だけに戻させない（#336）
     ("取り直すのを要求確定だけにする", "要求確定と予算の合意の両方のサインオフを取り直す——",
@@ -446,22 +522,34 @@ def build_repo(root: Path, steps: Steps, env: dict[str, str]) -> None:
             run_git(root, env, "tag", step[1], "HEAD^{tree}")
 
 
-def run_all(scripts: Path, work: Path, env: dict[str, str]) -> dict[str, tuple[int, str]]:
-    results = {}
-    for index, (name, steps, args, _, _) in enumerate(CASES):
-        root = work / f"case{index}"
+def build_all(work: Path, env: dict[str, str]) -> dict[str, str]:
+    """試料を 1 度だけ作る（#350）。作れなかった試料の名前と理由を返す。
+
+    本体は試料を読むだけ（`git ls-tree`・`git show`・`git diff <コミット> <コミット>`）なので、
+    元の本体と全部の変異で同じ試料を使い回せる。
+    """
+    broken = {}
+    for index, (name, steps, _, _, _) in enumerate(CASES):
         try:
-            build_repo(root, steps, env)
+            build_repo(work / f"case{index}", steps, env)
         except subprocess.CalledProcessError as e:  # 1 つの試料が作れなくても、実行全体は落とさない
-            results[name] = (None, f"試料を作れなかった: {' '.join(e.cmd[-2:])}: {e.stderr.decode(errors='replace')}")
-            continue
-        args = [str(root / a) if prev == "--repo" else a for prev, a in zip([""] + args, args)]
-        if "--repo" not in args:
-            args = ["--repo", str(root), *args]
-        proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), *args],
-                              capture_output=True, text=True, cwd=work, env=env)
-        results[name] = (proc.returncode, proc.stdout + proc.stderr)
-    return results
+            broken[name] = f"試料を作れなかった: {' '.join(e.cmd[-2:])}: {e.stderr.decode(errors='replace')}"
+    return broken
+
+
+def run_case(scripts: Path, work: Path, env: dict[str, str], broken: dict[str, str], name: str) -> tuple[int | None, str]:
+    """作ってある試料に本体（`scripts` の中の）を当てる。"""
+    if name in broken:
+        return None, broken[name]
+    index = [case[0] for case in CASES].index(name)
+    root = work / f"case{index}"
+    args = CASES[index][2]
+    args = [str(root / a) if prev == "--repo" else a for prev, a in zip([""] + args, args)]
+    if "--repo" not in args:
+        args = ["--repo", str(root), *args]
+    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), *args],
+                          capture_output=True, text=True, cwd=work, env=env)
+    return proc.returncode, proc.stdout + proc.stderr
 
 
 def with_old_names(steps: Steps) -> Steps:
@@ -507,17 +595,23 @@ def overlay_mismatch(root: Path, result: tuple[int | None, str]) -> str:
 
 def merge_not_refusing(root: Path, name: str) -> str:
     """作業ツリーを `merge` で重ね、試料の期待と同じ理由で拒否するか。拒否すれば空文字列。"""
-    spec = importlib.util.spec_from_file_location("merge_versions", SCRIPTS / "merge-versions.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    problems, _, _, _ = module.merge(root / "docs")
+    problems = merge_refusing(root)
     reason = next(case for case in CASES if case[0] == name)[4].split("removed.csv")[-1]
     return "" if any(reason in line for line in problems) else f"merge が {reason!r} で拒否しない: {problems}"
 
 
+def merge_refusing(root: Path) -> list[str]:
+    """作業ツリーを `merge` で重ねたときの問題（受け付けるなら空）。"""
+    spec = importlib.util.spec_from_file_location("merge_versions", SCRIPTS / "merge-versions.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.merge(root / "docs")[0]
+
+
 def as_expected(name: str, result: tuple[int | None, str]) -> bool:
     expected = next(case for case in CASES if case[0] == name)
-    return result[0] == expected[3] and expected[4] in result[1]
+    once = name not in ONCE or result[1].count(ONCE[name]) == 1
+    return result[0] == expected[3] and expected[4] in result[1] and once
 
 
 NUMBER_WORDS = {"1 から始まる整数": r"([1-9][0-9]*)"}
@@ -585,9 +679,14 @@ def main() -> int:
         home.mkdir()
         env = sandbox_env(home)
         scripts = copy_scripts(tmp_path / "scripts")
-        results = run_all(scripts, tmp_path / "work", env)
+        work = tmp_path / "work"
+        broken = build_all(work, env)
+        results = {case[0]: run_case(scripts, work, env, broken, case[0]) for case in CASES}
         for name, result in results.items():
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result[0]} {result[1][-300:]}")
+        for name in ACCEPTED_CASES:
+            problems = merge_refusing(work / f"case{[c[0] for c in CASES].index(name)}")
+            check(f"試料の作業ツリーを merge が拒否する: {name}", not problems, str(problems))
         for name in OVERLAY_CASES:
             problem = overlay_mismatch(tmp_path / "work" / f"case{[c[0] for c in CASES].index(name)}", results[name])
             check(f"暫定の行の重ね方が merge-versions.py と違う: {name}", not problem, problem)
@@ -622,9 +721,9 @@ def main() -> int:
                 continue
             mutated = copy_scripts(tmp_path / f"mut{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            mutated_results = run_all(mutated, tmp_path / f"mutwork{index}", env)
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
-                  not as_expected(killer, mutated_results[killer]), mutated_results[killer][1][-300:])
+            # 殺すはずの試料だけを走らせる——判定に使うのはその 1 つの結果だけなので、捕捉は全試料を回すのと同じ（#350）
+            killed = run_case(mutated, work, env, broken, killer)
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, killed), killed[1][-300:])
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")

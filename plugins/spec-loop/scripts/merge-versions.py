@@ -71,6 +71,8 @@ KIND_FILE, KIND_QA, KIND_FEATURE = "ファイル", "Q&A", "機能"
 KINDS = [KIND_FILE, KIND_QA, KIND_FEATURE]
 STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]
 MARKER = ".merged-versions"
+# v1 の `removed.csv` を拒否する文言（`check-signoff.py` も使う。写さない）
+V1_REMOVED = "v1 には置かない（消すものが無い）"
 
 
 class Unreadable(Exception):
@@ -250,7 +252,7 @@ class Whole:
             problems.append(f"{removed_path}: シンボリックリンクは置かない")
         elif removed_path.exists():
             if number == 1:
-                problems.append(f"{removed_path}: v1 には置かない（消すものが無い）")
+                problems.append(f"{removed_path}: {V1_REMOVED}")
             else:
                 removed = read_removed(removed_path, problems)
 

@@ -86,6 +86,7 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 - 関門: 1 パス目 済み（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet → 反証 1 件（V）。`/code-review` high → 指摘 7 件）。採否は下の表——直す 3 件・残課題 5 件。指摘対応は済み。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目
 - 割り目（手順 6 の 2 パス目の前）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。指摘対応のコミットは `930cfed`（`check-all.py` 44/44 緑）。再開は 2 パス目から——**手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方が残っている**。base は周の base のまま（`4e498b2…`）
 - 関門 2 パス目: 起動（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet、`/code-review` high。base `4e498b2…`）。Verifier 2 パス目: 済み——反証 1 件（V: main が #370 で spec-loop 0.19.0 に先着し `check-version-bump.py origin/main` が赤。親が再現を確認）。`/code-review` 2 パス目: **結果待ち——済んでいない**
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `1c02161484ffbf3a27809a56953c92b9f8aac729`
 - 交絡: 実験なし（変異テストのみ）
 
 ## 既知の限界・決着済みの論点
