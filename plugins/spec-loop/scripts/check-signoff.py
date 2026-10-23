@@ -186,9 +186,10 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
     このリポジトリの `scripts/test-check-signoff.py` が突き合わせて見る。
 
     `removed` は `resolve` がその時点で読んだ `removed.csv`（パスごと。`read_removed_at` の結果）。
-    **`merge` が拒否する配置**（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）は 2 にする——
-    判定は `merge-versions.py` の `check_removed`（写しを作らない）。黙って消すと、置いた暫定の行を数え落とすか、
-    `merge` が拒否する中身を承認したことになる。
+    **Q&A の行について `merge` が拒否する配置**（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）は
+    2 にする——判定は `merge-versions.py` の `check_removed`（写しを作らない）。黙って消すと、置いた暫定の行を
+    数え落とすか、`merge` が拒否する中身を承認したことになる。**種類 `ファイル` の行と v1 の `removed.csv` は見ない**
+    ——ファイルの在りかを版ごとに追っていないので、`merge` が拒否する配置でも 2 にならない（#340 で範囲を決めた）。
     """
     whole: dict[str, dict[str, str]] = {}
     for number in range(1, version + 1):

@@ -7,7 +7,9 @@
 - `plugins/spec-loop/scripts/merge-versions.py` — `Whole.apply` の `removed.csv` の拒否（2 度消す・ファイルとしては消せない・同じ版で置きつつ消す・前の版までに無い）を関数 `check_removed` に出す。**振る舞いは変えない**（メッセージの文言も同じ）
 - `plugins/spec-loop/scripts/check-signoff.py` — `provisional_rows` の拒否を `check_removed` で行う（B）。`removed.csv` の読み込みを 1 か所にまとめ、`resolve` で読んだものを `provisional_rows` に渡す（C）。docstring の終了コード 3 の案内を「両方」に揃える（A の文言の原本との食い違い）
 - `scripts/test-check-signoff.py` — A・B の試料・変異・`merge` との突き合わせ
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版（patch: 0.17.0 → 0.17.1）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（patch: 0.17.0 → 0.17.1）
+- `.claude-plugin/marketplace.json` — 同上
+- `plugins/spec-loop/skills/*/SKILL.md` — 同上（版の 2 行だけ）
 - `CLAUDE.md` — `check-signoff.py` の説明（拒否も `merge-versions.py` の関数で、の一言。該当すれば）
 - `docs/plans/issue-340.md` — この計画
 
@@ -42,6 +44,8 @@
 | C2 | 振る舞いは変えない | 既存の全試料・`test-merge-versions.py`・`test-scaffold.py`・`test-diff-versions.py` | `check-all.py` |
 | V | 版が 3 種類で揃い、歯止めが全部緑 | bump 漏れ | `python3 scripts/check-all.py` |
 
+| D | **（2026-10-23 人間の決定で追加。1 パス目の R1/V1 を受けて）** `CLAUDE.md` と `provisional_rows` の docstring が述べる「2 にする配置」の範囲が、実装の範囲（**Q&A の行**の 3 配置）と一致する。種類 `ファイル` の行・v1 の `removed.csv` は 2 にしないことを書く | `CLAUDE.md`・docstring | 文を実装の範囲に合わせる（実装は広げない） |
+
 組み合わせ: A × B（拒否で 2 のときは 3 の案内を出さない——2 が先）。B × C（拒否に要る行番号を、まとめた読み込みが落とさない）。
 C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-signoff.py`）——`Whole.apply` の振る舞い・文言が変わらないことは各テストが見る。
 
@@ -57,11 +61,32 @@ C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-
 
 - 周の在り処: ブランチ `issue/340-signoff-provisional-removals`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-340`・起点 `4187a08`・base の参照 `origin/main`（SHA `4187a081088ab5c3037efd7e8d2b2968cb34d5d8`）
 - 実装: `7dae3bc` で完了。`python3 scripts/check-all.py` 44/44 緑（失敗 0 / 飛ばし 0）。`test-check-signoff.py` 試料 55・変異 43
-- 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目。1 パス目の起点の SHA は渡す時点で書く）
+- 関門 1 パス目（2026-10-22〜23）: **Verifier**（`dev-loop:dev-loop-verifier`・`sonnet`）**反証 2 件**（V1・V2）・
+  **`/code-review`**（high）**指摘 10 件**（R1〜R10）。採否は下の表。直すのは R2・R3（=V2）・R9 の 3 件、R1（=V1）は人間の決定で文を絞る（受入基準 D を追加）
+- 1 パス目の指摘対応: R2（`CLAUDE.md`・docstring を Q&A の範囲に）・R3（変異を `pop(target, None)` まで戻す形に。陽性対照で 3・0 を再現し traceback 無し）・
+  R9（docstring の終了コード 3 を見る検査と、要求確定だけに戻すと捕まる確かめ）。`test-check-signoff.py` 試料 55・変異 43 緑
+- 次: 2 パス目（手順 5 の当て直しと `/code-review` 2 パス目の**両方**）。その前が 2 つ目の割り目
+- 1 パス目の指摘対応の起点の SHA: `f78d61e`（1 パス目の関門に渡した時点の HEAD。2 パス目の要否の 0 行判定に使う）
 - 反証・差し戻し: なし
 - 交絡: 実験は変異テストのみ。新しい試料の陽性対照は、拒否の結果を見ない変異（`if problems:` → `if False:`）で旧い挙動（2 以外）が再現することで取っている
 - 割り目（手順 4）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-22）。再開は手順 5 から
 
 ## 既知の限界・決着済みの論点
 
-（なし）
+- **種類 `ファイル` の行・v1 の `removed.csv` は、`merge` が拒否しても照合は 2 にしない**——決着: 採らない（範囲外。人間の決定 2026-10-23）。
+  理由: 照合はファイルの存在を版ごとに追っていない。文を Q&A の範囲に絞り（受入基準 D）、広げる実装は残課題にする。
+
+### 1 パス目の指摘の採否（Verifier V・`/code-review` R）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R1/V1 `ファイル` の行（`ファイル,shared/qa.csv`・無いファイル・2 度）と v1 の `removed.csv` を照合が 2 にしない | 示せる（/code-review が試料で 3 と 0 を実測。merge は拒否） | 無し（B は Q&A の 3 配置） | 残課題（人間の決定。D で文を絞る） |
+| R2 `CLAUDE.md` の「merge が拒否する配置は 2」が範囲を絞らずに書かれ偽 | 示せる（R1 の実測） | D（人間が追加） | 直す |
+| R3/V2 変異「merge が拒否する配置を見ない」2 本は `whole.pop(target)` の KeyError で死ぬ（旧い挙動 3・0 を再現しない） | 示せる（/code-review が traceback・exit 1 を実測） | B1・B2（拒否を外す変異で赤——旧い挙動を表していない） | 直す（`pop(target, None)` まで含めて戻す 1 本の変異にする） |
+| R4 `present` に今の版の行を含めて渡している（`check_removed` の docstring と違う・分岐の順に依る） | 示せない（今は等価。並べ替えたら、の仮定） | 無し | 残課題 |
+| R5 終了コード 2 の一覧と proposal の SKILL.md に配置の拒否が無い | 示せない（誤読の仮定） | 無し | 残課題 |
+| R6 既存の試料「removed.csv だけ違う」の予算側は merge が拒否する配置 | 示せる（merge が「置きつつ消している」） | 無し（既存の試料。C2 は変わらない） | 残課題 |
+| R7 変異ごとに全試料を作り直す（約 10 分） | 示せる（実行時間） | 無し | 残課題 |
+| R8 試料「暫定の行が残ると両方を取り直す」は既存の試料と同じ手順 | 示せる | 無し | 残課題 |
+| R9 docstring の終了コード 3 の「両方」を見るテストが無い | 示せる（docstring を戻しても緑——試料も変異も出力しか見ない） | A（経路に docstring を挙げた） | 直す |
+| R10 拒否のメッセージにパスが 2 度出る | 示せる | 無し | 残課題 |
