@@ -289,6 +289,18 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("v1 に removed.csv を置く", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/removed.csv", "種類,対象,理由\n"),
                                 ("c",), ("t", R1), ("t", B1)],
      [], 2, "docs/v1/removed.csv: v1 には置かない（消すものが無い）"),
+    # v1 の removed.csv は後の版のタグの時点でも拒否する——`merge` はどの版まで重ねても v1 を見る
+    ("v2 のタグの時点に v1 の removed.csv がある", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/removed.csv", "種類,対象,理由\n"),
+                                              ("w", SHARED2, QA_HEAD + QA_2), ("c",), ("t", R2), ("t", B2)],
+     [], 2, "docs/v1/removed.csv: v1 には置かない（消すものが無い）"),
+    # 陽性対照: 要求確定の時点の正しい種類 `ファイル` の行（前の版に在るファイルを 1 度だけ消す）は拒否しない——
+    # 暫定の Q-001 を数えて 3。ファイルの行を在るとしない・置いたとする変異はここで 2 になる
+    ("要求確定の時点に正しいファイルの行がある", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/shared/nfr.csv", "a\n"),
+                                           ("w", "docs/v1/requirements/r.md", "a\n"), ("w", SHARED2, QA_HEAD + QA_2),
+                                           ("w", REMOVED2, "種類,対象,理由\nファイル,shared/nfr.csv,不要\n"
+                                                           "ファイル,requirements/r.md,不要\n"),
+                                           ("c",), ("t", R2), ("t", B2)],
+     [], 3, "Q-001: A（推奨案を暫定で採用"),
     ("要求確定の時点の Q&A 表が決まりに反する", [("w", SHARED, "No,起票元\nQ-001,要求確定\n"), ("c",), ("t", R1), ("t", B1)],
      [], 2, "docs/v1/shared/qa.csv が決まりに反する（references/qa-csv.md）"),
     ("要求確定の時点の Q&A 表が空", [("w", SHARED, ""), ("c",), ("t", R1), ("t", B1)],
@@ -303,17 +315,18 @@ OVERLAY_CASES = ["前の版の暫定が残る", "後の版で反映済みにし�
 # 照合が 2 にする `removed.csv` の配置は、`merge` も拒否する——試料が `merge` の拒否を表していることの確かめ
 # （期待の文字列のうち、`removed.csv` の位置より後ろが `merge` の問題の行にも現れること）
 REFUSED_CASES = ["同じ版で置いて消した暫定", "前の版までに無い行を消す", "同じ行を 2 度消す",
-                 "構造ファイルをファイルとして消す", "同じファイルを 2 度消す", "v1 に removed.csv を置く"]
+                 "構造ファイルをファイルとして消す", "同じファイルを 2 度消す", "v1 に removed.csv を置く",
+                 "v2 のタグの時点に v1 の removed.csv がある"]
 
 # 作業ツリー（予算側と同じ中身）を `merge` が受け付ける——変異の捕捉が、拒否される配置に寄りかからない（#349）
-ACCEPTED_CASES = ["removed.csv だけ違う", "要求確定側だけが拒否する配置"]
+ACCEPTED_CASES = ["removed.csv だけ違う", "要求確定側だけが拒否する配置", "要求確定の時点に正しいファイルの行がある"]
 
 # `removed.csv` の拒否のメッセージに、そのパスがちょうど 1 度出る（#351）。as_expected で見る
 ONCE = {name: path for path, names in (
     ("docs/v2/removed.csv", ["removed.csv が決まりに反する", "同じ版で置いて消した暫定", "前の版までに無い行を消す",
                              "同じ行を 2 度消す", "構造ファイルをファイルとして消す", "同じファイルを 2 度消す",
                              "要求確定側だけが拒否する配置"]),
-    ("docs/v1/removed.csv", ["v1 に removed.csv を置く"])) for name in names}
+    ("docs/v1/removed.csv", ["v1 に removed.csv を置く", "v2 のタグの時点に v1 の removed.csv がある"])) for name in names}
 
 # 直す前の `provisional_rows` は `removed.csv` の行を `pop(target, None)` で黙って消していた（#338）
 CHECK_REMOVED = (
@@ -424,6 +437,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "files = []", "同じファイルを 2 度消す"),
     ("v1 の removed.csv を見ない", "            if listed.stdout.strip():\n                raise Unjudged(refused(",
      "            if False:\n                raise Unjudged(refused(", "v1 に removed.csv を置く"),
+    ("v1 の removed.csv を v1 のタグだけで見る", "            if listed.stdout.strip():\n                raise Unjudged(refused(",
+     "            if listed.stdout.strip() and version == 1:\n                raise Unjudged(refused(",
+     "v2 のタグの時点に v1 の removed.csv がある"),
+    # 判定できない 2 形を判定しようとして、正しいファイルの行まで拒否する
+    ("ファイルの行を前の版までに無いとする", "REMOVED_FILE: {target for _, _, target in files}}",
+     "REMOVED_FILE: set()}", "要求確定の時点に正しいファイルの行がある"),
+    ("ファイルの行を同じ版で置いたとする", "{REMOVED_QA: placed, REMOVED_FILE: set()}",
+     "{REMOVED_QA: placed, REMOVED_FILE: {target for _, _, target in files}}", "要求確定の時点に正しいファイルの行がある"),
     ("予算の時点の暫定を見る",'provisional_rows(repo, info["req_commit"], info["req"], version,',
      'provisional_rows(repo, info["budget_commit"], info["budget"], version,', "予算のタグの時点の暫定は見ない"),
     # 確かめると予算の合意とも一致しなくなる——案内を要求確定だけに戻させない（#336）
