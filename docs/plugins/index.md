@@ -643,6 +643,9 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
   [プラグインの `references/spec-scope.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-scope.md)）。
 - **ループを抜ける条件を満たしたときだけ「抜けた」と報告します。** 満たさないか、判定できなければ、
   どの条件が満たせていないかを示して止まります。
+- **収束を判定役に委ねません。** 判定役は指摘に重さを付け、利用者の判断が要るか同じ入力で結果が割れるものだけが条件に効きます。
+  2 回目のレビューのあとの直しは、その差分だけを判定役に確かめさせ（未レビューの直しを残して「抜けた」としない）、
+  条件を満たさない回が続けば回数の上限で利用者に判断を返します。仕様の規模も毎回記録し、要求が変わらないのに仕様が増えたら削る見直しを入れます。
 
 抜ける条件は
 [プラグインの `references/spec-exit.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-exit.md)、
