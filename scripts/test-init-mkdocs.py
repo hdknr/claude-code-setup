@@ -67,18 +67,20 @@ INIT = Path("scripts") / "init-mkdocs.py"
 HOOK = Path("templates") / "mkdocs" / "hooks" / "spec_loop_pages.py"
 REFERENCE = PLUGIN / "references" / "tree.md"
 
-HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
+HEADER = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+# 前の形（spec-loop 0.17.0 まで）の見出し——推奨の 2 列が無い
+OLD_HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 QA_V1 = HEADER + (
-    "Q-001,要求確定,割引は <b>A</b> | B？,A: なし / B: 3%,A（業務部）,決定表 4 行目,反映済み,\n"
-    "Q-002,実現性・コスト,夜間は？,A: 止める / B: 24 時間,未回答,—,確認中,B は月額 2 倍\n"
+    "Q-001,要求確定,割引は <b>A</b> | B？,A: なし / B: 3%,A,理由,A（業務部）,決定表 4 行目,反映済み,\n"
+    "Q-002,実現性・コスト,夜間は？,A: 止める / B: 24 時間,A,理由,未回答,—,確認中,B は月額 2 倍\n"
 )
 QA_V2 = HEADER + (
-    "Q-002,実現性・コスト,夜間は（問い直し）？,A: 止める / B: 24 時間,B（部長）,—,確認中,B は月額 2 倍\n"
-    '"Q-003",要求確定,"1 行目\n2 行目 *強調* `x` [y](z)",A: はい / B: いいえ,未回答,—,確認中,\n'
+    "Q-002,実現性・コスト,夜間は（問い直し）？,A: 止める / B: 24 時間,A,理由,B（部長）,—,確認中,B は月額 2 倍\n"
+    '"Q-003",要求確定,"1 行目\n2 行目 *強調* `x` [y](z)",A: はい / B: いいえ,A,理由,未回答,—,確認中,\n'
     # 暫定の回答で反映した行（#325）——確認中にも「回答あり・未反映」にも数えない
-    "Q-004,要求確定,上限は？,A: なし / B: 5000 円,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 7 行目,暫定反映,\n"
+    "Q-004,要求確定,上限は？,A: なし / B: 5000 円,A,理由,A（暫定で採用。業務部 2026-10-21 の指示）,決定表 7 行目,暫定反映,\n"
 )
-QA_V10 = HEADER + "Q-010,要求確定,十番目,A: はい / B: いいえ,未回答,—,確認中,\n"
+QA_V10 = HEADER + "Q-010,要求確定,十番目,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"
 
 failures: list[str] = []
 
@@ -372,7 +374,7 @@ def hook_versions(plugin: Path, work: Path) -> bool:
             and "(#v1-q-001)" in out and "{#v1-q-002}" in out and "{#v2-q-002}" in out and "{#v2-q-003}" in out
             and "確認中 1 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out[v1:v2]
             and "確認中 2 件（うち回答あり・未反映 1 件）・暫定反映 1 件・反映済み 0 件" in out[v2:]
-            and "| 選択肢 | A: 止める<br>B: 24 時間 |" in out
+            and "| 選択肢 | **A: 止める**（推奨）<br>B: 24 時間 |" in out
             and "<!-- spec-loop" not in out)
 
 
@@ -398,14 +400,14 @@ def hook_escape_more(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
     (docs / "v1" / "shared").mkdir(parents=True)
     (docs / "v1" / "shared" / "qa.csv").write_bytes(
-        (HEADER + 'Q-001,要求確定,"C:\\dir\\|x & y\r\n次\r三",A: x / B: y,未回答,—,確認中,\n').encode("utf-8"))
+        (HEADER + 'Q-001,要求確定,"C:\\dir\\|x & y\r\n次\r三",A: x / B: y,A,理由,未回答,—,確認中,\n').encode("utf-8"))
     out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
     return not warnings and "C:\\\\dir\\\\\\|x &amp; y<br>次<br>三" in out and "\r" not in out
 
 
 def hook_anchor(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
-    write(docs, {"v1/shared/qa.csv": HEADER + "q-001 onclick=alert(1),要求確定,何？,A: x / B: y,未回答,—,確認中,\n"})
+    write(docs, {"v1/shared/qa.csv": HEADER + "q-001 onclick=alert(1),要求確定,何？,A: x / B: y,A,理由,未回答,—,確認中,\n"})
     out, _ = render(plugin, docs, "<!-- spec-loop: qa -->")
     return ("{#v1-q-001-onclick-alert-1-}" in out and "(#v1-q-001-onclick-alert-1-)" in out
             and "{#v1-q-001 " not in out and "(#v1-q-001 " not in out)
@@ -428,10 +430,10 @@ def hook_cost(plugin: Path, work: Path) -> bool:
 def hook_block_syntax(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
     write(docs, {"v1/shared/qa.csv": HEADER + (
-        "Q-001,要求確定,!!! note 注意,A: x / B: y,未回答,—,確認中,\n"
-        'Q-002,要求確定,"    字下げ",1. 一つ目 / 2. 二つ目,未回答,—,確認中,\n'
-        "Q-003,要求確定,1. 割引は？,A: x / B: y,未回答,—,確認中,!!! warning 高い\n"
-        "Q-004,要求確定,末尾 {: #evil },A: x / B: y,未回答,—,確認中,\n")})
+        "Q-001,要求確定,!!! note 注意,A: x / B: y,A,理由,未回答,—,確認中,\n"
+        'Q-002,要求確定,"    字下げ",1. 一つ目 / 2. 二つ目,A,理由,未回答,—,確認中,\n'
+        "Q-003,要求確定,1. 割引は？,A: x / B: y,A,理由,未回答,—,確認中,!!! warning 高い\n"
+        "Q-004,要求確定,末尾 {: #evil },A: x / B: y,A,理由,未回答,—,確認中,\n")})
     out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
     # 表のセル（| で始まる行）と見出し・件数の行のほかに、CSV の文字が出てこない
     stray = [line for line in out.splitlines()
@@ -451,10 +453,30 @@ def hook_bom(plugin: Path, work: Path) -> bool:
 
 def hook_blank_rows(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
-    write(docs, {"v1/shared/qa.csv": QA_V1 + ",,,,,,,\n , ,\n\nQ-004,要求確定,短い？,A: x / B: y,未回答 ,—,確認中\n"})
+    write(docs, {"v1/shared/qa.csv": QA_V1 + ",,,,,,,,,\n , ,\n\nQ-004,要求確定,短い？,A: x / B: y,A,理由,未回答 ,—,確認中\n"})
     out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
     return (not warnings and "{#v1-q-004}" in out and "{#v1-}" not in out and out.count("### ") == 3
             and "確認中 2 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out)
+
+
+def hook_recommendation(plugin: Path, work: Path) -> bool:
+    """推奨の選択肢だけを太字にして「（推奨）」を添え、理由（推奨しないなら「推奨なし」）を出す。一覧に推奨の列（#267）。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": HEADER + "Q-001,要求確定,どちら？,A: 甲 / B: 乙,B,乙が安い,未回答,—,確認中,\n"
+                 "Q-002,要求確定,誰が？,A: 広報 / B: 各部,なし,事実の確認,未回答,—,確認中,\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return (not warnings and "| 選択肢 | A: 甲<br>**B: 乙**（推奨） |" in out and "| 推奨の理由 | 乙が安い |" in out
+            and "| 選択肢 | A: 広報<br>B: 各部 |" in out and "| 推奨なし | 事実の確認 |" in out
+            and "| No | 質問 | 推奨 | 回答 | 状態 |" in out and "| どちら？ | B | 未回答 |" in out
+            and out.count("（推奨）") == 1)
+
+
+def hook_old_header(plugin: Path, work: Path) -> bool:
+    """前の形（推奨の列が無い）の表は警告し、移す手順を指す（#337）。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": OLD_HEADER + "Q-001,要求確定,何？,A: x / B: y,未回答,—,確認中,\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return (len(warnings) == 1 and "references/tree.md の「Q&A 表を移す」" in warnings[0] and "表示できない" in out)
 
 
 def hook_bad_header(plugin: Path, work: Path) -> bool:
@@ -590,7 +612,7 @@ def hook_links_unreadable(plugin: Path, work: Path) -> bool:
 
 def hook_links_spaced_number(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    write(docs, {"v2/shared/qa.csv": QA_V2 + " Q-005,要求確定,空白,A: はい / B: いいえ,未回答,—,確認中,\n"})
+    write(docs, {"v2/shared/qa.csv": QA_V2 + " Q-005,要求確定,空白,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"})
     out, warnings = link(plugin, docs, "<p>Q-005</p>\n", "index.md")
     return out == "<p>Q-005</p>\n" and len(warnings) == 1 and "Q-005" in warnings[0]
 
@@ -604,7 +626,7 @@ def hook_links_unknown(plugin: Path, work: Path) -> bool:
 
 def hook_links_shape(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    write(docs, {"v4/shared/qa.csv": HEADER + "Q-0012,要求確定,四桁,A: はい / B: いいえ,未回答,—,確認中,\n"})
+    write(docs, {"v4/shared/qa.csv": HEADER + "Q-0012,要求確定,四桁,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"})
     out, warnings = link(plugin, docs, "<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x Q-0012 a-Q-001 (Q-001)</p>\n", "index.md")
     return not warnings and out == (
         f"<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x {a('Q-0012', 'qa.html#v4-q-0012')} a-Q-001 ({a('Q-001', 'qa.html#v1-q-001')})</p>\n")
@@ -672,6 +694,8 @@ CASES = {
     "BOM つきの表を読む": hook_bom,
     "空白だけの行は読み飛ばし、短い行は埋める": hook_blank_rows,
     "見出しの違う表は警告": hook_bad_header,
+    "推奨を目立たせる": hook_recommendation,
+    "前の形の表は移す手順を指す": hook_old_header,
     "読めない表は警告": hook_undecodable,
     "表が無ければそう書く": hook_no_table,
     "知らない印は警告": hook_unknown_marker,
@@ -767,7 +791,12 @@ MUTATIONS: list[tuple] = [
      r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]#|])")', "CSV の文字をブロックの記法にしない"),
     ("質問を段落に置く", HOOK, "\"| 項目 | 内容 |\", \"| --- | --- |\", f\"| 質問 | {text(row['質問'])} |\"",
      "text(row['質問']), \"\", \"| 項目 | 内容 |\", \"| --- | --- |\"", "CSV の文字をブロックの記法にしない"),
-    ("選択肢を箇条書きにする", HOOK, 'options = "<br>".join(text(option)', 'options = "\\n".join("- " + text(option)',
+    ("推奨を太字にしない", HOOK, 'f"**{text(option)}**（推奨）" if', 'text(option) if', "推奨を目立たせる"),
+    ("推奨しないのを理由と書く", HOOK, 'reason = "推奨なし" if recommended == QA_NO_RECOMMENDATION else "推奨の理由"',
+     'reason = "推奨の理由"', "推奨を目立たせる"),
+    ("一覧に推奨を出さない", HOOK, "f\"| {text(row['推奨'])} | {text(row['回答'])} |", "f\"| {text(row['回答'])} |", "推奨を目立たせる"),
+    ("前の形の表で手順を指さない", HOOK, 'if header and "推奨" not in header else ""', 'if False else ""', "前の形の表は移す手順を指す"),
+    ("選択肢を箇条書きにする", HOOK, 'options = "<br>".join(', 'options = "\\n- ".join(',
      "CSV の文字をブロックの記法にしない"),
     ("BOM を読まない", HOOK, 'path.open(encoding="utf-8-sig"', 'path.open(encoding="utf-8"', "BOM つきの表を読む"),
     ("空白だけの行も描く", HOOK, "for row in reader if any(cell.strip() for cell in row)]", "for row in reader if row]",
@@ -855,7 +884,8 @@ def check_copies() -> None:
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)
     for name, theirs in (("QA_COLUMNS", checker.COLUMNS), ("QA_DONE", checker.DONE), ("QA_PROVISIONAL", checker.PROVISIONAL),
-                         ("QA_NO_ANSWER", checker.NO_ANSWER), ("QA_OPTION_SEPARATOR", checker.OPTION_SEPARATOR)):
+                         ("QA_NO_ANSWER", checker.NO_ANSWER), ("QA_OPTION_SEPARATOR", checker.OPTION_SEPARATOR),
+                         ("QA_NO_RECOMMENDATION", checker.NO_RECOMMENDATION)):
         check(f"フックの {name} が check-qa-csv.py と違う", getattr(hook, name) == theirs, f"{getattr(hook, name)!r} != {theirs!r}")
     page = (PLUGIN / "templates" / "mkdocs" / "docs" / "qa.md").read_text(encoding="utf-8")
     check("雛形の docs/qa.md に qa の印が無い", "<!-- spec-loop: qa -->" in page)

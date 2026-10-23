@@ -69,15 +69,19 @@ LEGACY_MARKERS = ("<!-- spec-loop-handoff: v2 -->", "<!-- spec-loop-handoff: v1 
 DEV_FINGERPRINT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "spec-fingerprint.py"
 FINGERPRINT = re.compile(r"`([^`]+)` の `(F-[0-9]+)`（機能の指紋: `([0-9a-f]{64})`）")
 
-HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
-QA_DONE = "Q-001,要求確定（決定表）,シルバーで 10000 円未満の割引は？,A: 割引なし / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
-QA_DONE2 = "Q-002,仕様レビュー（Red Team）,金額が負なら？,A: 拒否する / B: 0 とみなす,A（業務部が回答）,spec/order.md,反映済み,\n"
+HEADER = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+QA_DONE = "Q-001,要求確定（決定表）,シルバーで 10000 円未満の割引は？,A: 割引なし / B: 3% 割引,A,理由,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+QA_DONE2 = "Q-002,仕様レビュー（Red Team）,金額が負なら？,A: 拒否する / B: 0 とみなす,A,理由,A（業務部が回答）,spec/order.md,反映済み,\n"
 # 暫定の回答で反映した行——抜ける条件 1 は通るが、中間表現から指せば止まる（利用者の確認待ち。#325）
 QA_PROVISIONAL = QA_DONE.replace("A（業務部が回答）,決定表 4 行目,反映済み", "A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映")
 assert QA_PROVISIONAL != QA_DONE
 # 中間表現のどこからも指さない暫定の行
-QA_PROVISIONAL_UNCITED = "Q-004,要求確定（決定表）,返品の受付期間は？,A: 7 日 / B: 14 日,A（暫定で採用。業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
-QA_OPEN = "Q-003,開発（#9）,期限切れは？,A: 拒否 / B: 受け付ける,未回答,—,確認中,\n"
+QA_PROVISIONAL_UNCITED = "Q-004,要求確定（決定表）,返品の受付期間は？,A: 7 日 / B: 14 日,A,理由,A（暫定で採用。業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
+# 内部の Q&A 表（spec/qa-dev.csv）の行。中間表現から D- の番号で指せる（#339）
+QA_INTERNAL_DONE = "D-001,仕様レビュー（Red Team）,取り消しの記録の保存先は,A: 同じ表 / B: 別の表,B,検索が速い,B（開発 2026-10-22）,spec/order.md,反映済み,\n"
+QA_INTERNAL_OPEN = QA_INTERNAL_DONE.replace("B（開発 2026-10-22）,spec/order.md,反映済み", "未回答,—,確認中")
+assert QA_INTERNAL_OPEN != QA_INTERNAL_DONE
+QA_OPEN = "Q-003,開発（#9）,期限切れは？,A: 拒否 / B: 受け付ける,A,理由,未回答,—,確認中,\n"
 
 IR = {
     "spec_ir_version": 1,
@@ -171,6 +175,18 @@ def edit(fn: Callable[[dict], None]) -> Callable[[dict], dict]:
 
 def f1(ir: dict) -> dict:
     return ir["features"][0]
+
+
+def cite_internal(ir: dict) -> None:
+    ir["features"][1]["qa"] = ["D-001"]
+
+
+def internal_in_issue(repo: Path) -> str | None:
+    body = (repo / "build" / "scaffold" / "issues" / "F-002.md").read_text(encoding="utf-8")
+    if "| D-001 |" not in body:
+        return "Issue の本文に内部の Q&A（D-001）が載っていない"
+    # 写した元にも内部の表を挙げる——共有の表だけを挙げると、dev-loop がそこを引いて D-001 を見つけられない（#339）
+    return None if "`build/merged/spec/qa-dev.csv`" in body else "Issue の本文が内部の表を写した元に挙げていない"
 
 
 class Case:
@@ -615,7 +631,7 @@ V2_OUTPUT_ADDED["cases"][0]["expected"] = {"discount": 300, "rate": 3}
 # v2 で割引の型を number に広げただけ（期待は同じ）——前の版の実装はどのケースも緑のまま
 V2_WIDENED = copy.deepcopy(IR["features"][0])
 V2_WIDENED["operation"]["output"]["discount"] = {"type": "number"}
-QA_V2 = "Q-004,要求確定,返品は何日まで？,A: 7 日 / B: 14 日,A（業務部が回答）,spec/return.md,反映済み,\n"
+QA_V2 = "Q-004,要求確定,返品は何日まで？,A: 7 日 / B: 14 日,A,理由,A（業務部が回答）,spec/return.md,反映済み,\n"
 RETURN_SPEC = "# 返品\n\n7 日以内。\n"
 
 
@@ -939,6 +955,11 @@ CASES: list[Case] = [
     Case("暫定反映の Q&A を指す", 1, "Q-001: 状態が 暫定反映", qa=HEADER + QA_PROVISIONAL + QA_DONE2),
     # 中間表現が指さない暫定の行でも止める——仕様には反映されているので、指さない機能にも効いている（#325 の 2 パス目）
     Case("暫定反映の Q&A を指さない", 1, "Q-004: 状態が 暫定反映", qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED),
+    Case("内部の Q&A を指す", 0, ir=edit(cite_internal), spec={"order.md": SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_DONE},
+         post=internal_in_issue),
+    Case("内部の Q&A が反映済みでない（関門が止める）", 1, "qa-dev.csv: D-001: 状態が 確認中", ir=edit(cite_internal),
+         spec={"order.md": SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_DONE.replace("反映済み", "確認中")}),
+    Case("内部の表に無い D- を指す", 1, "D-001 は Q&A 表に無い", ir=edit(cite_internal)),
     # 関門
     Case("確認中の Q&A", 1, "Q-003: 状態が 確認中", qa=HEADER + QA_DONE + QA_DONE2 + QA_OPEN, pre=plant_old_contract,
          post=contract_kept_issues_gone),
@@ -1221,6 +1242,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("決まりに無いキーを見ない", "    for key in sorted(obj.keys() - required - optional):", "    for key in []:", "決まりに無いキー"),
     ("Q&A の実在を見ない", "        elif no not in answered:", "        elif False:", "Q&A が表に無い"),
     ("暫定の行を見ない", "            if held:", "            if False:", "暫定反映の Q&A を指さない"),
+    ("内部の表を読まない", "        for path in (QA_PATH, INTERNAL_QA_PATH):", "        for path in (QA_PATH,):", "内部の Q&A を指す"),
+    ("D- の番号を指せない", 'QA_NO = re.compile(r"[QD]-[0-9]{3,}")', 'QA_NO = re.compile(r"Q-[0-9]{3,}")', "内部の Q&A を指す"),
+    ("写した元に内部の表を挙げない", "(QA_PATH, *([INTERNAL_QA_PATH] if any(", "(QA_PATH, *([] if any(", "内部の Q&A を指す"),
     # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
     ("中間表現が指す暫定の行だけ見る",
      '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',

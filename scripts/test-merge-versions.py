@@ -49,12 +49,16 @@ SCRIPTS = PLUGIN / "scripts"
 TARGET = "merge-versions.py"
 REFERENCE = PLUGIN / "references" / "versions.md"
 
-QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
-Q1 = "Q-001,要求確定,質問1,A: 甲 / B: 乙,A（業務部が回答）,決定表 1 行目,反映済み,\n"
-Q2 = "Q-002,要求確定,質問2,A: 甲 / B: 乙,未回答,—,確認中,\n"
-Q2B = "Q-002,要求確定,質問2,A: 甲 / B: 乙,B（業務部が回答）,決定表 2 行目,反映済み,\n"
-Q3 = "Q-003,開発,質問3,A: 甲 / B: 乙,未回答,—,確認中,\n"
-BAD_QA = "Q-004,要求確定,質問4,A: 甲 / B: 乙,未回答,—,保留,\n"  # 状態が決まりに無い
+QA_HEAD = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+Q1 = "Q-001,要求確定,質問1,A: 甲 / B: 乙,A,理由,A（業務部が回答）,決定表 1 行目,反映済み,\n"
+Q2 = "Q-002,要求確定,質問2,A: 甲 / B: 乙,A,理由,未回答,—,確認中,\n"
+Q2B = "Q-002,要求確定,質問2,A: 甲 / B: 乙,A,理由,B（業務部が回答）,決定表 2 行目,反映済み,\n"
+Q3 = "Q-003,開発,質問3,A: 甲 / B: 乙,A,理由,未回答,—,確認中,\n"
+# 内部の Q&A 表（spec/qa-dev.csv）の行（#339）
+D1 = "D-001,仕様レビュー,内部1,A: 甲 / B: 乙,A,理由,未回答,—,確認中,\n"
+D1B = "D-001,仕様レビュー,内部1,A: 甲 / B: 乙,A,理由,A（開発 2026-10-22）,spec/order.md,反映済み,\n"
+D2 = "D-002,仕様レビュー,内部2,A: 甲 / B: 乙,B,理由,未回答,—,確認中,\n"
+BAD_QA = "Q-004,要求確定,質問4,A: 甲 / B: 乙,A,理由,未回答,—,保留,\n"  # 状態が決まりに無い
 
 SPEC1 = {"spec_ir_version": 1, "title": "注文", "features": [
     {"id": "F-001", "title": "割引", "cases": [{"id": "F-001-C1"}]},
@@ -230,6 +234,17 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      {**V1, "v2/removed.csv": REMOVED_HEAD + "Q&A,Q-001,取り下げ\nQ&A,Q-002,取り下げ\n"}, "none", [],
      lambda r: made(r) and r.text("shared/qa.csv") == QA_HEAD),
     ("出力のバイトが決まっている", MAIN, "none", [], lambda r: made(r) and r.tree == GOLDEN),
+    ("内部の表を行で重ねる", {**MAIN, "v1/spec/qa-dev.csv": QA_HEAD + D1, "v2/spec/qa-dev.csv": QA_HEAD + D2 + D1B}, "none", [],
+     lambda r: made(r) and r.text("spec/qa-dev.csv") == QA_HEAD + D1B + D2 and r.text("shared/qa.csv") == QA_HEAD + Q1 + Q2B + Q3),
+    ("内部の行を removed.csv で消す",
+     {**V1, "v1/spec/qa-dev.csv": QA_HEAD + D1 + D2, "v2/removed.csv": REMOVED_HEAD + "Q&A,D-001,共有へ移した（Q-003）\n"},
+     "none", [], lambda r: made(r) and r.text("spec/qa-dev.csv") == QA_HEAD + D2 and r.text("shared/qa.csv") == QA_HEAD + Q1 + Q2),
+    ("内部の表の決まり違反（番号が Q-）", {**MAIN, "v2/spec/qa-dev.csv": QA_HEAD + Q3}, "none", [],
+     lambda r: refused(r, "`D-001` の形でない")),
+    ("内部の表をファイルとして消す", {**V1, "v1/spec/qa-dev.csv": QA_HEAD + D1,
+                               "v2/removed.csv": REMOVED_HEAD + "ファイル,spec/qa-dev.csv,x\n"}, "none", [],
+     lambda r: refused(r, "ファイルとしては消せない")),
+    ("内部の表に無い D- を消す", with_removed("Q&A,D-009,x\n"), "none", [], lambda r: refused(r, "前の版までに無いもの")),
     ("大文字小文字だけ違うパス", {**V1, "v2/requirements/A.md": "x\n"}, "stale", [],
      lambda r: refused(r, "正規化だけ違う") and "前に作った出力を消した" in r.output),
     ("正規化だけ違うパス", {**V1, "v1/requirements/" + NFC: "nfc\n", "v2/requirements/" + NFD: "nfd\n"}, "none", [],
@@ -330,7 +345,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "大文字の V は版でない"),
     ("印を先に書く", "        for path in sorted(rendered):\n",
      '        put(out / MARKER, b"x\\n")\n        for path in sorted(rendered):\n', "途中で落ちても印は無い"),
-    ("行が 0 なら qa.csv を書かない", "        if self.has_qa:\n            buffer", "        if self.qa:\n            buffer",
+    ("内部の表を重ねない", '        for row in internal_rows:\n            self.internal[row["No"]] = row\n', "", "内部の表を行で重ねる"),
+    ("内部の表をファイルとして写す", "STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]", "STRUCTURED = [QA_PATH, SPEC_PATH]",
+     "内部の表をファイルとして消す"),
+    ("内部の行を消さない", "            table = (self.qa if target in self.qa else self.internal) if kind == KIND_QA else None",
+     "            table = self.qa if kind == KIND_QA else None", "内部の行を removed.csv で消す"),
+    ("行が 0 なら qa.csv を書かない", "(self.has_qa, QA_PATH, self.qa)", "(bool(self.qa), QA_PATH, self.qa)",
      "Q&A が全部消えても qa.csv を書く"),
 ]
 
@@ -495,7 +515,7 @@ def check_reference() -> None:
     kinds = re.findall(r"`([^`]+)`", kinds_line.split("|")[2])
     check("removed.csv の種類が versions.md と違う", kinds == module.KINDS, f"{kinds} vs {module.KINDS}")
     check("ファイルとして消せないものが versions.md と違う",
-          f"**`{module.STRUCTURED[0]}` と `{module.STRUCTURED[1]}` はファイルとしては消せない**" in text)
+          "**" + "・".join(f"`{path}`" for path in module.STRUCTURED) + " はファイルとしては消せない**" in text)
     check("重ねる置き場所が versions.md と違う",
           "（" + "・".join(f"`{a}/`" for a in module.AREAS) + "）" in text)
     check("出力先の印が versions.md と違う", f"（`{module.MARKER}`）" in text)

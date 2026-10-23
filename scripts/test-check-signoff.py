@@ -52,14 +52,14 @@ TARGET = "check-signoff.py"
 REFERENCE = PLUGIN / "references" / "signoff-tags.md"
 
 # Q&A 表は決まりどおりに書く——要求確定のタグの時点の表を読んで暫定の行を数えるので（#325）
-QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
-QA_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A（業務部が回答）,決定表 4 行目,反映済み,\n"
-QA_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,未回答,—,確認中,\n"
+QA_HEAD = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+QA_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+QA_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A,理由,未回答,—,確認中,\n"
 QA_A = QA_HEAD + QA_1
 QA_B = QA_HEAD + QA_1 + QA_2
 # 暫定の回答で反映した行（#325）
-P_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映,\n"
-P_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/a.md,暫定反映,\n"
+P_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映,\n"
+P_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A,理由,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/a.md,暫定反映,\n"
 
 # 試料の作り方: 手順の列。("w", パス, 中身) 書く／("rm", パス) 消す／("c",) commit／("t", 名前) 軽量タグ／
 # ("ta", 名前) 注釈つきタグ／("tt", 名前) ツリーを指すタグ。None なら git でないディレクトリ
@@ -153,6 +153,15 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                      ("w", REMOVED2, "種類,対象,理由\nファイル,requirements/r.md,不要\n機能,F-001,不要\n"),
                                      ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+    # 内部の層の Q&A（spec/qa-dev.csv の D-）は共有の範囲の外——表を変えても、removed.csv で消しても一致のまま（#339）
+    ("removed.csv の内部の Q&A の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                         ("w", REMOVED2, "種類,対象,理由\nQ&A,D-001,共有へ移した（Q-003）\n"),
+                                         ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+    ("内部の Q&A 表だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD), ("c",), ("t", R1),
+                           ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD + "D-001,仕様レビュー,分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"),
+                           ("c",), ("t", B1)],
+     [], 0, "一致する"),
     # 理由の列は比べない（消したものが同じなら、見た共有の範囲は同じ）
     # 消す行は前の版に置く——同じ版で置きつつ消す配置は決まりに反する（versions.md。照合は 2）
     ("removed.csv の理由だけ違う", [("w", SHARED, QA_B),
@@ -256,9 +265,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("前の版を範囲に含めない", "for i in range(1, version + 1)]", "for i in range(version, version + 1)]",
      "前の版の shared だけ違う"),
     ("removed.csv を比べない", "if (at_req or []) != (at_budget or []):", "if False:", "removed.csv だけ違う"),
-    ("removed.csv の行を絞らない", "if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):",
+    ("removed.csv の行を絞らない",
+     "if ((kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))\n                or (kind == REMOVED_FILE and target.startswith(SHARED))):",
      "if True:", "removed.csv の範囲の外の行だけ違う"),
-    ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED)):", "and False):",
+    ("内部の Q&A を消した行も比べる", "(kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))", "kind == REMOVED_QA",
+     "removed.csv の内部の Q&A の行だけ違う"),
+    ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED))):", "and False)):",
      "removed.csv の shared のファイルの行が違う"),
     ("removed.csv の決まりを見ない", '    if problems:\n        raise Unjudged(f"{tag} の {path} が決まりに反する',
      '    if False:\n        raise Unjudged(f"{tag} の {path} が決まりに反する', "removed.csv が決まりに反する"),
