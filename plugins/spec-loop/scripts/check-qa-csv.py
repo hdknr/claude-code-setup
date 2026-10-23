@@ -6,7 +6,7 @@ usage: python3 check-qa-csv.py <qa.csv | qa-dev.csv>
 **決まりの正は `references/qa-csv.md` である**（このプラグインの中にある）。
 このスクリプトは、そこに書いた決まりのうち**答えが一意に決まるもの**だけを機械で見る。
 下の定数（列・起票元・状態・反映した状態・「まだ無い」の印・空を許す列・費用付きの質問の起票元・番号の桁・起票元の括弧・選択肢のラベル／数／区切り・
-推奨しない印・内部の表の名前と番号・内部の表で使わない状態）は
+推奨しない印・内部の表の名前と番号・内部の表で使わない状態・暫定の回答の印）は
 その写しで、**写しがずれていないかは
 このリポジトリの `scripts/test-check-qa-csv.py` が `references/qa-csv.md` の表と突き合わせて見る**。
 
@@ -62,6 +62,9 @@ INTERNAL_NAME = "qa-dev.csv"
 INTERNAL_FORBIDDEN = {PROVISIONAL}
 assert INTERNAL_FORBIDDEN <= set(STATES)
 
+# `反映済み` の行の `回答` にこの語があれば、利用者が確かめていない暫定の回答として扱う（`is_provisional`）
+PROVISIONAL_ANSWER = "暫定で採用"
+
 NO_ANSWER = "未回答"
 NO_TARGET = "—"
 # 推奨しない質問の `推奨`。空と区別する（理由は `推奨の理由` に書く）
@@ -92,6 +95,13 @@ def is_internal_number(number: str) -> bool:
     """番号（`D-001` など）が内部の層の行か。**行の層を番号で決めるのはここだけ**——`merge-versions.py`・
     `diff-versions.py`・`scaffold.py`・`build-proposal.py`・`check-signoff.py` はこれを読む（#353）。"""
     return INTERNAL_NUMBER.fullmatch(number) is not None
+
+
+def is_provisional(row: dict[str, str]) -> bool:
+    """利用者が確かめていない暫定の回答で仕様に反映した行か——`暫定反映`、または `反映済み` で `回答` に `PROVISIONAL_ANSWER`。
+    **行が暫定かを決めるのはここだけ**——`build-proposal.py` はこれを読む（#374）。`確認中` の行は反映していないので暫定ではない。"""
+    state = row["状態"].strip()
+    return state == PROVISIONAL or (state == DONE and PROVISIONAL_ANSWER in row["回答"])
 
 
 def option_labels(value: str) -> tuple[list[str], str | None]:
