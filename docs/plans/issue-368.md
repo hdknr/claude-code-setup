@@ -91,7 +91,10 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
 
 - **周の在り処**: ブランチ `issue/368-spec-review-precheck`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-368`・
   起点 `ae7b544`・base の参照 `origin/main`・base の SHA `ae7b544963a87562aa0bb5ae635e12ba2b898b19`
-- 関門: 未着手
+- 実装: `74a92ff`（`check-all.py` 44/44 緑・`check-plan-scope.py` 範囲内）。D4 の確かめ方の判別は手元で確認
+  （`command -v tlc`/`alloy` は missing・陽性対照 `java`/`python3` は found。在るディレクトリは readable、無いパス・`chmod 000` は NOT）
+- 割り目（手順 4）: 訊いた → **「ここで割る」**（2026-10-23）
+- 関門: 未着手。**次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）**——どちらにも base `ae7b544963a87562aa0bb5ae635e12ba2b898b19` と受入基準・この節の下の表を渡す
 - 反証と差し戻し: なし
 - 交絡を潰した手順: 実験は D4 の確かめ方の判別だけ（陽性対照つき。手順 5 で書く）
 
