@@ -840,13 +840,14 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
     if IR_PATH in rendered:
         code, lines, before_ir, answered = read_whole(rendered, gate=False)
         if code:
-            # 前の版の時点で暫定だった Q&A は、後の版で確定しても前の版の中間表現を直さない——v<n-1> は scaffold できていない（#335）
-            provisional = any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1])
-            return 1, [f"v{number - 1} の時点の {line}" for line in lines[:-1]] + ([
-                f"v{number - 1} の時点では {qa.PROVISIONAL} の Q&A が残り、v{number - 1} の scaffold は作れていない"
-                f"（後の版で {qa.DONE} にしても前の版の時点は変わらない）。v{number - 1} で利用者に確かめ、"
-                f"`--check --upto {number - 1}` が 0 になってから v{number} を始める（references/versions.md）"] if provisional else []) + [
-                f"前の版（v{number - 1}）の中間表現が決まりに反するので、機能を追加・変更・削除に分けない。生成しない"], [], Before()
+            out = [f"v{number - 1} の時点の {line}" for line in lines[:-1]]
+            # 前の版の時点で暫定だった Q&A を指していた——v<n-1> は scaffold できておらず、差分を測る土台が無い（#335）
+            if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):
+                out.append(f"v{number - 1} の時点では {qa.PROVISIONAL} の Q&A が残り、v{number - 1} の scaffold は作れていない"
+                           f"（`--check --upto {number - 1}` が 0 にならない）。v{number} の差分を測る土台が無い"
+                           "——references/versions.md の「差分の周を始める前に」")
+            out.append(f"前の版（v{number - 1}）の中間表現が決まりに反するので、機能を追加・変更・削除に分けない。生成しない")
+            return 1, out, [], Before()
         before = Before(answered, before_ir.get("impl_module", DEFAULT_IMPL_MODULE), before_ir)
     reasons = diffs.removal_reasons(found[number - 1][1])
     kinds = {diffs.ADDED: ADD, diffs.CHANGED: MODIFY, diffs.REMOVED: REMOVE}

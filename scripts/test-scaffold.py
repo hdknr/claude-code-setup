@@ -1108,7 +1108,8 @@ CASES: list[Case] = [
     Case("前の版だけパスの変数が入力に無い（--dry-run --upto 1）", 1, "パスの変数 {order_id} が operation.input の項目に無い",
          args=("--dry-run", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
     # #335: v1 で暫定反映の Q-001 を指し、v2 で反映済みに置き換えた——v1 は scaffold できていないので止め、そう名指しする
-    Case("前の版で暫定だった Q&A を後の版で確定する", 1, "v1 の時点では 暫定反映 の Q&A が残り、v1 の scaffold は作れていない",
+    Case("前の版で暫定だった Q&A を後の版で確定する", 1, "v1 の時点では 暫定反映 の Q&A が残り、v1 の scaffold は作れていない"
+         "（`--check --upto 1` が 0 にならない）。v2 の差分を測る土台が無い——references/versions.md の「差分の周を始める前に」",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
          post=nothing_written_issues),
     Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の F-001.qa: Q-001 は状態が 暫定反映（反映済み でない）",
@@ -1392,10 +1393,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate)",
      "check_ir(ir, whole, answered, path_rules=False)", "前の版のパスの変数を直さない"),
     # #335: 前の版の暫定反映を名指ししない／状態を問わず名指しする
-    ("前の版の暫定反映を名指ししない", "] if provisional else []) + [", "] if False else []) + [",
+    ("前の版の暫定反映を名指ししない", 'if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):',
+     "if False:", "前の版で暫定だった Q&A を後の版で確定する"),
+    ("前の版の誤りならいつも暫定反映を名指しする", 'if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):',
+     "if True:", "前の版で確認中だった Q&A を後の版で確定する"),
+    ("名指しで今の版を確かめさせる", "`--check --upto {number - 1}` が 0 にならない", "`--check --upto {number}` が 0 にならない",
      "前の版で暫定だった Q&A を後の版で確定する"),
-    ("前の版の誤りならいつも暫定反映を名指しする", "] if provisional else []) + [", "] if True else []) + [",
-     "前の版で確認中だった Q&A を後の版で確定する"),
     ("Q&A の参照の状態を出さない", "は状態が {state}（{qa.DONE} でない）", "は状態が {qa.DONE} でない",
      "前の版で暫定だった Q&A を後の版で確定する"),
     ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
