@@ -64,6 +64,8 @@ assert INTERNAL_FORBIDDEN <= set(STATES)
 
 # `反映済み` の行の `回答` にこの語があれば、利用者が確かめていない暫定の回答として扱う（`is_provisional`）
 PROVISIONAL_ANSWER = "暫定で採用"
+# 後に活用が続く書き方（`暫定で採用しない`・`暫定で採用していた`・`暫定で採用された`）は印に数えない
+PROVISIONAL_MARK = re.compile(re.escape(PROVISIONAL_ANSWER) + "(?![しさすせれ])")
 
 NO_ANSWER = "未回答"
 NO_TARGET = "—"
@@ -98,10 +100,10 @@ def is_internal_number(number: str) -> bool:
 
 
 def is_provisional(row: dict[str, str]) -> bool:
-    """利用者が確かめていない暫定の回答で仕様に反映した行か——`暫定反映`、または `反映済み` で `回答` に `PROVISIONAL_ANSWER`。
+    """利用者が確かめていない暫定の回答で仕様に反映した行か——`暫定反映`、または `反映済み` で `回答` に `PROVISIONAL_MARK`。
     **行が暫定かを決めるのはここだけ**——`build-proposal.py` はこれを読む（#374）。`確認中` の行は反映していないので暫定ではない。"""
     state = row["状態"].strip()
-    return state == PROVISIONAL or (state == DONE and PROVISIONAL_ANSWER in row["回答"])
+    return state == PROVISIONAL or (state == DONE and PROVISIONAL_MARK.search(row["回答"]) is not None)
 
 
 def option_labels(value: str) -> tuple[list[str], str | None]:
