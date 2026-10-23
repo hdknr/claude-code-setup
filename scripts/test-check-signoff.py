@@ -307,10 +307,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("removed.csv を比べない", "if removed_shared_rows(at_req) != removed_shared_rows(at_budget):", "if False:",
      "removed.csv だけ違う"),
     ("removed.csv の行を絞らない",
-     "if ((kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))\n                or (kind == REMOVED_FILE and target.startswith(SHARED))):",
+     "if ((kind == REMOVED_QA and not qa.is_internal_number(target))\n                or (kind == REMOVED_FILE and target.startswith(SHARED))):",
      "if True:", "removed.csv の範囲の外の行だけ違う"),
-    ("内部の Q&A を消した行も比べる", "(kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))", "kind == REMOVED_QA",
+    ("内部の Q&A を消した行も比べる", "(kind == REMOVED_QA and not qa.is_internal_number(target))", "kind == REMOVED_QA",
      "removed.csv の内部の Q&A の行だけ違う"),
+    # 層の判定（`check-qa-csv.py` の `is_internal_number`）を入れ替える（#353）
+    ("比べる行の層を入れ替える", "(kind == REMOVED_QA and not qa.is_internal_number(target))",
+     "(kind == REMOVED_QA and qa.is_internal_number(target))", "removed.csv の内部の Q&A の行だけ違う"),
     ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED))):", "and False)):",
      "removed.csv の shared のファイルの行が違う"),
     ("removed.csv の決まりを見ない", '    if problems:\n        raise Unjudged(f"{tag} の {path} が決まりに反する',
@@ -362,8 +365,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("removed.csv で消さない", "                whole.pop(target)", "                pass",
      "removed.csv で消した暫定は数えない"),
     ("同じ版で置いて消すのを見ない", "{REMOVED_QA: placed}", "{REMOVED_QA: set()}", "同じ版で置いて消した暫定"),
-    ("内部の Q&A を消した行も重ねる", "row[1] == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(row[2])",
+    ("内部の Q&A を消した行も重ねる", "row[1] == REMOVED_QA and not qa.is_internal_number(row[2])",
      "row[1] == REMOVED_QA", "内部の Q&A を消しても暫定を数える"),
+    ("重ねる行の層を入れ替える", "row[1] == REMOVED_QA and not qa.is_internal_number(row[2])",
+     "row[1] == REMOVED_QA and qa.is_internal_number(row[2])", "removed.csv で消した暫定は数えない"),
     # 拒否の条件式は `merge-versions.py` にしか無い——本体で壊せるのは、それを呼ぶかどうか（#338）。
     # 直す前の挙動（黙って `pop(target, None)`）に戻す——拒否だけ外すと `pop` の KeyError で落ち、
     # 旧い挙動（3 と 0）を表さないまま殺したことになる（#340 の 1 パス目 R3）

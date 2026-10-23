@@ -37,6 +37,9 @@ REAL_REPO = Path(__file__).resolve().parent.parent
 PLUGIN = REAL_REPO / "plugins" / "spec-loop"
 SCRIPT = PLUGIN / "scripts" / "check-qa-csv.py"
 REFERENCE = PLUGIN / "references" / "qa-csv.md"
+# 移す手順を指す側（本体の `MIGRATION` と MkDocs のフックの `QA_MIGRATION`）と、指される側（#345）
+HOOK = PLUGIN / "templates" / "mkdocs" / "hooks" / "spec_loop_pages.py"
+REFERENCES = PLUGIN / "references"
 
 HEADER = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
 # 前の形（spec-loop 0.17.0 まで）の見出し——推奨の 2 列が無い
@@ -225,7 +228,52 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "全部を出す（最初の 1 件で止めない）"),
 ]
 
+# 番号 → 内部の層か（`is_internal_number`。層を番号で決めるのはここだけ——#353）
+NUMBER_LAYERS = [("D-001", True), ("D-1234", True), ("Q-001", False), ("D-01", False), ("D-001x", False),
+                 ("d-001", False), ("", False)]
+NUMBER_MUTATIONS = [
+    ("番号の層を見ない（常に共有）", "return INTERNAL_NUMBER.fullmatch(number) is not None", "return False"),
+    ("番号の層を入れ替える", "return INTERNAL_NUMBER.fullmatch(number) is not None",
+     "return INTERNAL_NUMBER.fullmatch(number) is None"),
+    ("番号の先頭だけ見る", "return INTERNAL_NUMBER.fullmatch(number) is not None", "return INTERNAL_NUMBER.match(number) is not None"),
+]
+
+# `references/tree.md の「X」`（バッククォートで囲んだ形も）。X は指した先の見出し
+POINTER = re.compile(r"references/(?P<file>[\w.-]+\.md)`? の「(?P<heading>[^」]+)」")
+HEADING = re.compile(r"#{1,6} (?P<text>.+)")
+# 指される側を崩す——見出しを改名すると、指す側が古くなったことを検査が言う（陽性対照は崩す前に緑であること）
+POINTER_MUTATIONS = [("tree.md の見出しを改名する", "tree.md", "\n## Q&A 表を移す\n", "\n## Q&A 表の移し方\n")]
+
 failures: list[str] = []
+
+
+def number_layer_mismatches(mod) -> list[str]:
+    return [f"{number!r} → {mod.is_internal_number(number)}（期待: {want}）"
+            for number, want in NUMBER_LAYERS if mod.is_internal_number(number) != want]
+
+
+def pointer_sources(mod) -> dict[str, str]:
+    """指す側の文字列。本体は定数、フックはソース全体（定数と docstring の両方を見る）。"""
+    return {"check-qa-csv.py の MIGRATION": mod.MIGRATION, HOOK.name: HOOK.read_text(encoding="utf-8")}
+
+
+def pointer_mismatches(sources: dict[str, str], references: dict[str, str]) -> list[str]:
+    problems = []
+    for where, text in sources.items():
+        found = list(POINTER.finditer(text))
+        if not found:
+            problems.append(f"{where}: 移す手順への指し先が無い")
+        for m in found:
+            markdown = references.get(m["file"])
+            if markdown is None:
+                problems.append(f"{where}: references/{m['file']} が無い")
+                continue
+            # 「層 — 共有の表と内部の表」は「層」で指す（` — ` の前が見出しの名前）
+            headings = {name for line in markdown.splitlines() if (h := HEADING.fullmatch(line))
+                        for name in (h["text"].strip(), h["text"].split(" — ", 1)[0].strip())}
+            if m["heading"] not in headings:
+                problems.append(f"{where}: references/{m['file']} に見出し「{m['heading']}」が無い")
+    return problems
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
@@ -450,6 +498,24 @@ def main() -> int:
                                capture_output=True, text=True)
         check("引数が無ければ 2 で使い方を出す", usage.returncode == 2 and "usage:" in usage.stderr, usage.stderr)
 
+        print("4b. 番号から層を決める（is_internal_number）")
+        problems = number_layer_mismatches(mod)
+        check("番号の層が期待どおり", not problems, "; ".join(problems))
+
+        print("4c. 移す手順への指し先が references/ の見出しにある")
+        references = {p.name: p.read_text(encoding="utf-8") for p in REFERENCES.glob("*.md")}
+        sources = pointer_sources(mod)
+        problems = pointer_mismatches(sources, references)
+        check("指し先の見出しが実在する", not problems, "; ".join(problems))
+        check("フックの定数 QA_MIGRATION も指し先として数える",
+              "QA_MIGRATION = " in sources[HOOK.name] and sources[HOOK.name].count("の「Q&A 表を移す」") >= 2)
+        for name, file, before, after in POINTER_MUTATIONS:
+            if references[file].count(before) != 1:
+                check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {references[file].count(before)} 回現れる")
+                continue
+            broken = {**references, file: references[file].replace(before, after)}
+            check(f"崩すと不一致になる: {name}", bool(pointer_mismatches(sources, broken)))
+
         print("5. 変異テスト")
         source = SCRIPT.read_text(encoding="utf-8")
         by_name = {name: (code, text, path) for (name, _, code, text), path in zip(CASES, paths)}
@@ -464,12 +530,26 @@ def main() -> int:
             mutant = load(broken)
             code, text, path = by_name[killer]
             check(f"変異を殺せる: {name}（{killer}）", not matches(run_case(mutant, path), code, text))
+        for index, (name, before, after) in enumerate(NUMBER_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            broken = root / f"number-mutant-{index}.py"
+            broken.write_text(source.replace(before, after), encoding="utf-8")
+            assert_in_tmp(broken)
+            check(f"変異を殺せる: {name}（番号の層）", bool(number_layer_mismatches(load(broken))))
+        broken = root / "pointer-mutant.py"
+        broken.write_text(source.replace('MIGRATION = "references/tree.md の「Q&A 表を移す」"',
+                                         'MIGRATION = "references/tree.md の「Q&A 表を直す」"'), encoding="utf-8")
+        assert_in_tmp(broken)
+        check("変異を殺せる: 本体の指し先を無い見出しにする",
+              bool(pointer_mismatches(pointer_sources(load(broken)), references)))
 
     print()
     if failures:
         print(f"FAIL: {len(failures)} 件")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + 1} 件")
     return 0
 
 

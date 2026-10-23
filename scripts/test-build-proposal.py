@@ -221,7 +221,8 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("内部の Q&A は比較に載せない", V2C[:-3] + [("w", "docs/v2/spec/qa-dev.csv", QA_HEAD
                                              + "D-001,仕様レビュー,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,B（開発）,spec/a.md,反映済み,\n"),
                                             ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
-     lambda r: made(r) and "D-001" not in r.text and "ワーカーを分けるか" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text),
+     lambda r: made(r) and "D-001" not in r.text and "ワーカーを分けるか" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text
+     and "Q&A（内部）" not in r.text),
     # 内部の表は比べる前に外す——内部の表の決まりの違反（`暫定反映`・前の版に無い D- を消す）でも、照合と同じく提案書は作れる
     ("内部の表の違反でも比較を作る", V2C[:-3] + [("w", "docs/v2/spec/qa-dev.csv", QA_HEAD
                                                + "D-001,仕様レビュー,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,B（開発）,spec/a.md,暫定反映,\n"),
@@ -229,6 +230,12 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
                                                "ファイル,requirements/b.md,a.md に統合した\n機能,F-001,割引を廃止した\nQ&A,D-009,共有へ移した（Q-007）\n"),
                                               ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: made(r) and "D-00" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text),
+    # 前の版（v1）の内部の表も比べる前に外す——v1 の内部の表の違反（`暫定反映`）で比較が作れなくならない（#343）
+    ("前の版の内部の表の違反でも比較を作る",
+     SIGNED_R[:-3] + [("w", "docs/v1/spec/qa-dev.csv", QA_HEAD
+                       + "D-001,仕様レビュー,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,B（開発）,spec/a.md,暫定反映,\n"),
+                      ("c",), ("t", R1), ("t", B1)] + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")],
+     False, lambda r: made(r) and "D-001" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text),
     ("v1 は比較の節を持たない", SIGNED_R, False,
      lambda r: made(r) and "前の版" not in r.text and "差分の見積り" not in r.text),
     # 重ね合わせが作れない（前の版に無いものを消す）——比較を作れないので書かない
@@ -243,9 +250,18 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("内部の Q&A も比較に載せる", "        drop_internal(Path(tmp) / signoff.DOCS)\n", "", "内部の Q&A は比較に載せない"),
+    # 外さなくても `Q&A（内部）` の節は描かない（共有の種類だけ描く。#344）——外すことが効くのは内部の表の違反のほう
+    ("内部の Q&A も比較に載せる", "        drop_internal(Path(tmp) / signoff.DOCS)\n", "", "内部の表の違反でも比較を作る"),
     ("removed.csv の D- の行を外さない", "if len(kept) != len(rows):", "if False:", "内部の表の違反でも比較を作る"),
     ("内部の表を外さない", "            internal.unlink()\n", "            pass\n", "内部の表の違反でも比較を作る"),
+    ("最後の版の内部の表だけ外す", "for root in sorted(p for p in docs.iterdir() if mv.VERSION.fullmatch(p.name)):",
+     "for root in sorted(p for p in docs.iterdir() if mv.VERSION.fullmatch(p.name))[-1:]:", "前の版の内部の表の違反でも比較を作る"),
+    # 層の判定（`check-qa-csv.py` の `is_internal_number`）を外す・入れ替える（#353）
+    ("removed.csv の層を見ない", "r[0] == mv.KIND_QA and qa.is_internal_number(r[1].strip())", "False",
+     "内部の表の違反でも比較を作る"),
+    ("removed.csv の層を入れ替える", "r[0] == mv.KIND_QA and qa.is_internal_number(r[1].strip())",
+     "r[0] == mv.KIND_QA and not qa.is_internal_number(r[1].strip())", "内部の表の違反でも比較を作る"),
+    ("件数の表に内部の層も載せる", "for k in diffs.SHARED_KINDS])", "for k in diffs.KINDS])", "内部の Q&A は比較に載せない"),
     ("v2 以降も Q&A 表を必須にする", 'if info["version"] > 1 and not exists(', 'if False and not exists(',
      "Q&A を足さない版でも作る"),
     ("v1 でも Q&A 表を省ける", 'if info["version"] > 1 and not exists(', 'if not exists(',

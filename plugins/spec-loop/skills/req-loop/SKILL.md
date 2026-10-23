@@ -5,8 +5,8 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 # req-loop スキル
 
-<!-- skill-version: 0.18.1 -->
-> **このスキルの版: 0.18.1**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.19.0 -->
+> **このスキルの版: 0.19.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -90,6 +90,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/init-mkdocs.p
   （同じパスは置き換えの意味になる）。消すなら作業中の版の `removed.csv` に書く。書き方は `../../references/versions.md` の
   「重ねるもの」と「削除」。
 - 何が前の版から変わったかは `diff-versions.py` で確かめられる（`../../references/versions.md` の「版の差分」）。
+  **Q&A は層で分かれて出る**——レビュー会で扱うのは `Q&A` の節（共有の層）だけで、`Q&A（内部）` の節は開発者が決めたことである。
 - **新しい版（`docs/v<n>/`）を作る前に、前の版の時点が崩れていないかを確かめる**——確かめ方と崩れていたときの扱いは
   `../../references/versions.md` の「差分の周を始める前に」を正とする。崩れていたら、新しい版を作らずに止まって示す。
 

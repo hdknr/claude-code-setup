@@ -172,7 +172,7 @@ def removed_shared_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple
     rows = []
     for _, kind, target in parsed or []:
         # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は共有の範囲の外——開発者が決めるものでサインオフが割れないように（#339）
-        if ((kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))
+        if ((kind == REMOVED_QA and not qa.is_internal_number(target))
                 or (kind == REMOVED_FILE and target.startswith(SHARED))):
             rows.append((kind, target))
     return sorted(rows)
@@ -229,7 +229,7 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
             path = f"{DOCS}/v{number}/{REMOVED}"
             # 内部の層の Q&A（`D-`）を消した行は見ない——ここで重ねるのは共有の `qa.csv` だけ（#339）
             rows = [row for row in removed[path] or []
-                    if row[1] == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(row[2])]
+                    if row[1] == REMOVED_QA and not qa.is_internal_number(row[2])]
             # 前の版までに在るかを今の版の行を含めて見てよい——今の版が置いた行は、先に「置きつつ消す」で落ちる
             problems = []
             versions.check_removed(path, rows, {REMOVED_QA: placed}, {REMOVED_QA: set(whole)}, problems)

@@ -7,7 +7,9 @@ usage: python3 diff-versions.py <docs ディレクトリ> [--version <n>]
 
 - **v<n> の差分 ＝ v<n-1> の時点の全体と v<n> の時点の全体の比較。** 全体は同梱の `merge-versions.py` の `merge` で重ねる
   （**重ね方を写さない**）。`--version` を省けば作業中の版（番号が最大の版）。
-- 単位は重ね合わせと同じ——Q&A は行（`No`。共有の表と内部の表の両方。並びは共有が先）、機能は `id`、ほかのファイルは版のディレクトリからのパス。
+- 単位は重ね合わせと同じ——Q&A は行（`No`）、機能は `id`、ほかのファイルは版のディレクトリからのパス。
+  **Q&A は層で 2 つの種類に分けて出す**——`Q&A` は共有の層（`Q-`）、`Q&A（内部）` は内部の層（`D-`）。
+  層は番号で決める（`check-qa-csv.py` の `is_internal_number`）。利用者に見せてよいのは `Q&A` の節だけ（#344）。
   **追加**は v<n> にだけある、**変更**は両方にあって中身が違う、**削除**は v<n-1> にだけある。
 - **同じ中身を置き直しただけのものは変更に数えない**（比較なので）。**v1 は前の版が無いので、全部が追加。**
 - 削除には `docs/v<n>/removed.csv` の `理由` を添える。
@@ -50,8 +52,13 @@ merge_versions = _load("merge_versions", "merge-versions.py")
 
 ADDED, CHANGED, REMOVED = "追加", "変更", "削除"
 STATUSES = [ADDED, CHANGED, REMOVED]
-# 種類の名前は removed.csv の `種類` と同じ（理由を引き当てるため）
-KINDS = [merge_versions.KIND_QA, merge_versions.KIND_FEATURE, merge_versions.KIND_FILE]
+# Q&A は層で 2 つの種類に分ける——`Q&A` は共有の層（`Q-`。利用者に見せる）、`Q&A（内部）` は内部の層（`D-`。#344）
+KIND_QA_INTERNAL = merge_versions.KIND_QA + "（内部）"
+# 種類の名前は removed.csv の `種類` と同じ（理由を引き当てるため）。内部の行も removed.csv では `Q&A`
+REMOVED_KIND = {KIND_QA_INTERNAL: merge_versions.KIND_QA}
+# 利用者・決裁者に見せる種類（提案書はこれだけを描く）
+SHARED_KINDS = [merge_versions.KIND_QA, merge_versions.KIND_FEATURE, merge_versions.KIND_FILE]
+KINDS = [merge_versions.KIND_QA, KIND_QA_INTERNAL, merge_versions.KIND_FEATURE, merge_versions.KIND_FILE]
 
 
 # dataclass は使わない——ほかのスクリプトが importlib で読み込むと sys.modules に無く、dataclass が落ちる
@@ -87,6 +94,13 @@ def compare_maps(before: dict, after: dict) -> list[Change]:
     return changes
 
 
+def qa_layers(whole) -> tuple[dict, dict]:
+    """重ねた全体の Q&A の行を (共有, 内部) に分ける。層は番号で決める（`check-qa-csv.py` の `is_internal_number`）。"""
+    rows = {**whole.qa, **whole.internal}
+    internal = {no: row for no, row in rows.items() if merge_versions.qa.is_internal_number(no)}
+    return {no: row for no, row in rows.items() if no not in internal}, internal
+
+
 def removal_reasons(root: Path) -> dict[tuple[str, str], str]:
     """`removed.csv` の (種類, 対象) → 理由。決まりの検査は `merge` が済ませている。"""
     path = root / merge_versions.REMOVED
@@ -117,7 +131,9 @@ def compare(docs: Path, version: int | None = None) -> tuple[list[str], Diff | N
     else:
         before = merge_versions.Whole()
     diff = Diff(number)
-    diff.changes[merge_versions.KIND_QA] = compare_maps({**before.qa, **before.internal}, {**now.qa, **now.internal})
+    (before_shared, before_internal), (now_shared, now_internal) = qa_layers(before), qa_layers(now)
+    diff.changes[merge_versions.KIND_QA] = compare_maps(before_shared, now_shared)
+    diff.changes[KIND_QA_INTERNAL] = compare_maps(before_internal, now_internal)
     diff.changes[merge_versions.KIND_FEATURE] = compare_maps(before.features, now.features)
     diff.changes[merge_versions.KIND_FILE] = compare_maps(dict(sorted(before.files.items())),
                                                           dict(sorted(now.files.items())))
@@ -125,14 +141,14 @@ def compare(docs: Path, version: int | None = None) -> tuple[list[str], Diff | N
     for kind in KINDS:
         for change in diff.changes[kind]:
             if change.status == REMOVED:
-                change.reason = reasons.get((kind, change.key), "")
+                change.reason = reasons.get((REMOVED_KIND.get(kind, kind), change.key), "")
     return [], diff
 
 
 def label(kind: str, change: Change) -> str:
     """一覧に添える 1 行の説明（Q&A は質問、機能は題）。"""
     value = change.after if change.after is not None else change.before
-    if kind == merge_versions.KIND_QA:
+    if kind in (merge_versions.KIND_QA, KIND_QA_INTERNAL):
         return value.get("質問", "").strip()
     if kind == merge_versions.KIND_FEATURE:
         title = value.get("title") if isinstance(value, dict) else None
