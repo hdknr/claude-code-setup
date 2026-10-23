@@ -992,6 +992,28 @@ def release_without_version(repo: Path) -> None:
     git_in(repo, "tag", "release-v1")
 
 
+def other_release_edited(repo: Path) -> None:
+    """`release-v1` と `release-v2` を付けて `docs/v2/` だけを直す——v1 の凍結は変わらない（2 パス目の P2-1）。
+    `check-frozen.py` を版で絞らずに呼べば 1 になる。"""
+    release()(repo)
+    git_in(repo, "tag", "release-v2")
+    spec = repo / "docs" / "v2" / "spec" / "return.md"
+    spec.write_text(spec.read_text(encoding="utf-8") + "\n凍結の後に足した行\n", encoding="utf-8")
+
+
+def other_release_without_version(repo: Path) -> None:
+    """`docs/v2/` を持たないコミットに `release-v2` を付け、その後に `release-v1` を付ける——v1 の凍結は変わらない。
+    `check-frozen.py` を版で絞らずに呼べば 2 になる。"""
+    (repo / "README.md").write_text("x\n", encoding="utf-8")
+    git_in(repo, "init", "-q")
+    git_in(repo, "add", "README.md")
+    git_in(repo, "commit", "-q", "-m", "before v1")
+    git_in(repo, "tag", "release-v2")
+    git_in(repo, "add", "-A")
+    git_in(repo, "commit", "-q", "-m", "v1")
+    git_in(repo, "tag", "release-v1")
+
+
 def drop_v1_ir(repo: Path) -> None:
     (repo / "docs" / "v1" / "spec" / "spec_ir.json").unlink()
 
@@ -1271,6 +1293,13 @@ CASES: list[Case] = [
     Case("別の版のタグで凍結と読まない", 1, "v1 の scaffold は作れていない",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=release("release-v2"),
          absent="凍結していて"),
+    # 他の版のタグの状態は v1 の凍結を変えない（2 パス目の P2-1）——直された版・版の無いタグが v2 の側にあっても全部を追加にする
+    Case("他の版のタグの後の直しで止めない", 0, "v1 は release-v1 で凍結していて直せない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=other_release_edited,
+         absent="直されている"),
+    Case("他の版のタグの時点に版が無くても判定する", 0, "v1 は release-v1 で凍結していて直せない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE),
+         pre=other_release_without_version, absent="凍結しているかを判定していない"),
     # git を起動できなければ凍結を判定しない（P1-9）
     Case("凍結を判定できない（git を起動できない）", 2, "git を起動できない",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), env={"PATH": ""},
@@ -1602,8 +1631,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "親のリポジトリのタグで凍結と読まない"),
     ("浅い clone を見ない", 'shallow.stdout.strip() != "false"', "False", "凍結を判定できない（浅い clone）"),
     # 1 パス目の指摘対応（P1-1・P1-2・P1-4・P1-6・P1-9）
-    ("凍結のタグの時点と比べない", "    code, lines = frozen.check(repo)\n", "    code, lines = 0, []\n",
+    ("凍結のタグの時点と比べない", "    code, lines = frozen.check(repo, only=number)\n", "    code, lines = 0, []\n",
      "凍結した前の版がタグの後に直されている"),
+    # 2 パス目の指摘対応（P2-1）
+    ("凍結の確かめを前の版に絞らない（直された他の版）", "frozen.check(repo, only=number)", "frozen.check(repo)",
+     "他の版のタグの後の直しで止めない"),
+    ("凍結の確かめを前の版に絞らない（版の無い他のタグ）", "frozen.check(repo, only=number)", "frozen.check(repo)",
+     "他の版のタグの時点に版が無くても判定する"),
     ("タグの時点に版が無くても凍結と読む", "    if code == 2:\n        raise Unjudged(", "    if False:\n        raise Unjudged(",
      "凍結のタグの時点に前の版が無い"),
     ("凍結した版が直されていても止めない", "        if edited:\n", "        if False:\n",

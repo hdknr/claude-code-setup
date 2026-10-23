@@ -64,7 +64,8 @@ def releases(names: list[str]) -> list[tuple[int, str]]:
     return sorted((int(m.group(1)), name) for name in names if (m := RELEASE.fullmatch(name)))
 
 
-def check(repo: Path) -> tuple[int, list[str]]:
+def check(repo: Path, only: int | None = None) -> tuple[int, list[str]]:
+    """`only` を渡せば、`release-v<only>` だけを確かめる（他の版のタグは見ない。`scaffold.py` が前の版の凍結を見るため）。"""
     try:
         top = git(repo, "rev-parse", "--show-toplevel")
         if top.returncode != 0 or not top.stdout.strip():
@@ -84,7 +85,7 @@ def check(repo: Path) -> tuple[int, list[str]]:
         listed = git(repo, "tag", "--list")
         if listed.returncode != 0:
             raise Unjudged(f"タグを読めない: {listed.stderr.strip()}。判定していない")
-        found = releases(listed.stdout.split())
+        found = [(n, tag) for n, tag in releases(listed.stdout.split()) if only is None or n == only]
         if not found:
             return 0, ["凍結した版が無い（release-v<n> のタグが 1 つも無い）。確かめるものが無い"]
 
