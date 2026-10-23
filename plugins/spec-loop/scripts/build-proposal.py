@@ -25,7 +25,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   主な決定事項に載せず、「利用者にまだ確かめていない決定」の節に載せる（0 件でも節を出す。#366）。
 - **仕様書（`spec.md`）も同じ実行で作る**（#371）——材料は `signoff/v<n>/req-<k>` の時点の v1〜v<n> を重ねた全体
   （前の版との比較と同じ写しから。**v1 でも重ね合わせの決まりを通す**）と、作業中の版の `proposal/spec/*.md`（手書き。任意）。
-  `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio` は載せていないと書く（draw.io は起動しない）。
+  `spec/`・`requirements/` の `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio` は載せていないと書く（draw.io は起動しない）。
   載せるものと置き場所の正は `references/tree.md` の「仕様書」。
 - **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
 - **始める前に、前に作った出力（提案書・`gantt.svg`・`spec.md`・2 つの PPTX・`spec-figure-*.svg`）を消し、
@@ -85,11 +85,12 @@ SPEC_NAME = "spec.md"
 SPEC_PPTX_NAME = "spec.pptx"
 SPEC_HAND_DIR = HAND_DIR + "/spec"
 FIGURE_PREFIX = "spec-figure-"
+FIGURE_DIRS = ("spec/", "requirements/")
 # 重ねた全体（版のディレクトリからのパス）
 DECISION_PATH = "shared/decision_table.csv"
 SCOPE_PATH = "spec/scope.md"
 OUT_OF_SCOPE = "範囲の外"
-FIGURE_NOTE = "PPTX に載せていない（Markdown の仕様書で見る）"
+FIGURE_NOTE = "PPTX に載せていない（{} で見る）"
 
 
 def in_version(version: int, path: str) -> str:
@@ -413,8 +414,8 @@ def out_of_scope(text: str) -> list[str] | None:
 
 
 def figures_of(whole) -> tuple[list[str], list[str]]:
-    """(載せる図——`.svg`、書き出しが無いので載せない `.drawio`)。どちらもパスの順。"""
-    paths = sorted(whole.files)
+    """(載せる図——`.svg`、書き出しが無いので載せない `.drawio`)。どちらもパスの順。図は `spec/`・`requirements/` の中だけ。"""
+    paths = sorted(p for p in whole.files if p.startswith(FIGURE_DIRS))
     svgs = [p for p in paths if p.lower().endswith(".svg")]
     exported = {p.lower() for p in svgs}
     missing = [p for p in paths if p.lower().endswith(".drawio")
@@ -542,9 +543,10 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
                out.parent / SPEC_NAME: spec_text.encode("utf-8")}
     outputs.update({out.parent / name: content for name, content in figures.items()})
     if args.pptx:
-        for path, body, name in ((out.with_suffix(".pptx"), text, args.title),
-                                 (out.parent / SPEC_PPTX_NAME, spec_text, args.spec_title)):
-            outputs[path] = pptx.package(pptx.markdown_slides(body, FIGURE_NOTE), name)
+        # 図を見る先は、その PPTX の元の Markdown（ガントチャートは提案書、構成の図は仕様書にしか無い）
+        for path, body, name, source in ((out.with_suffix(".pptx"), text, args.title, out.name),
+                                         (out.parent / SPEC_PPTX_NAME, spec_text, args.spec_title, SPEC_NAME)):
+            outputs[path] = pptx.package(pptx.markdown_slides(body, FIGURE_NOTE.format(source)), name)
     return outputs
 
 
@@ -576,7 +578,10 @@ def main(argv: list[str]) -> int:
 
     # git を起動できなくても、古い出力は消してから 2 で終わる（ここで落ちると古い提案書が残る）
     out = args.out if args.out else repo_top(args.repo) / DEFAULT_OUT
-    if out.name in (SPEC_NAME, GANTT_NAME) or out.suffix == ".pptx" or out.name.startswith(FIGURE_PREFIX):
+    # 大文字小文字だけ違う名前も重なる（区別しない FS では同じファイル）。`spec.html` なら PPTX が仕様書の PPTX と重なる
+    reserved = {name.lower() for name in (SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME)}
+    if ({out.name.lower(), out.with_suffix(".pptx").name.lower()} & reserved or out.suffix.lower() == ".pptx"
+            or out.name.lower().startswith(FIGURE_PREFIX)):
         print(f"{out}: 仕様書・ガントチャート・PPTX・図と同じ名前になる。提案書は作っていない", file=sys.stderr)
         return 2
     stales = [out, out.parent / GANTT_NAME, out.parent / SPEC_NAME, out.with_suffix(".pptx"), out.parent / SPEC_PPTX_NAME]

@@ -92,13 +92,15 @@ SCOPE_MD = "# 範囲\n\n## 線\n\n既定の線\n\n## 範囲の外\n\n| 場面 | 
 SVG = '<svg xmlns="http://www.w3.org/2000/svg"><text>構成</text></svg>\n'
 SPEC_STEPS = [("w", DECISION, "会員,金額,割引\nシルバー,10000 未満,0%\nゴールド,すべて,5%\n"),
               ("w", "docs/v1/spec/scope.md", SCOPE_MD), ("w", "docs/v1/spec/a.md", "仕様 A\n"),
-              ("w", "docs/v1/spec/arch.drawio.svg", SVG), ("w", "docs/v1/requirements/flow.drawio", "<mxfile/>\n"),
+              ("w", "docs/v1/spec/arch.drawio.svg", SVG), ("w", "docs/v1/shared/chart.svg", SVG), ("w", "docs/v1/requirements/flow.drawio", "<mxfile/>\n"),
               ("w", "docs/v1/proposal/spec/01-notes.md", "## 試作で確かめること\n\n読み取りの速さ。\n")]
 SIGNED_S = BASE[:-1] + SPEC_STEPS + [("c",), ("t", R1), ("t", B1)]
 # 回答に「暫定で採用」と書いて反映済みにした行（#366 の実データの形）と、確認中のまま「暫定で採用」と書いた行
 PROVISIONAL_QA = (QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（推奨案を暫定で採用。開発側の指示）")
                   + "Q-007,要求確定,返品は？,A: 可 / B: 不可,A,理由,B（暫定で採用の予定）,—,確認中,\n")
 PROVISIONAL = [("w", QA, PROVISIONAL_QA)] + BASE[1:] + [("t", R1), ("t", B1)]
+# 確定した回答が暫定の経緯に触れただけの行（後に活用が続く）——暫定の行ではない
+SETTLED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（暫定で採用していた B を取り下げ、業務部が A に決定）"))] + BASE[1:] + [("t", R1), ("t", B1)]
 STALE = ["proposal.md", "gantt.svg", "spec.md", "spec.pptx", "spec-figure-01.svg"]
 FIGURE_NOTE = "PPTX に載せていない"
 
@@ -309,6 +311,9 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("確定した行は暫定にしない", SIGNED, False,
      lambda r: made(r) and "| Q-001 | 割引は？ |" in section(r.text, "## 主な決定事項")
      and "（ありません）" in section(r.text, "### 利用者にまだ確かめていない決定（0 件）")),
+    ("活用の続く書き方は暫定にしない", SETTLED, False,
+     lambda r: made(r) and "| Q-001 | 割引は？ |" in section(r.text, "## 主な決定事項")
+     and "（ありません）" in section(r.text, "### 利用者にまだ確かめていない決定（0 件）")),
     ("承認の後に書き足した暫定は載らない", SIGNED + [("w", QA, PROVISIONAL_QA), ("c",)], False,
      lambda r: made(r) and "### 利用者にまだ確かめていない決定（0 件）" in r.text and "Q-007" not in r.text),
     # ---- 仕様書（#371）
@@ -322,6 +327,9 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      and "![spec/arch.drawio.svg](spec-figure-01.svg)" in r.spec and "spec-figure-01.svg" in r.names
      and "- `requirements/flow.drawio`" in r.spec and "| 図 | 1（書き出しが無いので載せていない図 1） |" in r.spec
      and "—（中間表現が無い）" in r.spec and "| spec/a.md |" in r.spec and not r.pptx),
+    # `Spec.html` は PPTX が `Spec.pptx`——仕様書の PPTX と大文字小文字だけ違う（区別しない FS では同じファイル）
+    ("出力の名前が仕様書の PPTX と重なると作らない", SIGNED + [("out", "Spec.html"), ("arg", "--pptx")], False,
+     lambda r: r.code == 2 and "同じ名前になる" in r.output and r.text is None and r.spec is None and not r.names),
     ("仕様書も同じ入力から同じバイト", SIGNED_S, False, lambda r: made(r) and r.spec == r.again_spec),
     # 承認の後に直した決定表・足した仕様は入らない
     ("仕様書は承認したタグの時点から", SIGNED_S + [("w", DECISION, "会員,金額,割引\nブロンズ,すべて,1%\n"),
@@ -346,6 +354,7 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      and "利用者にまだ確かめていない決定" in pptx_text(r.pptx["proposal.pptx"])
      and "ゴールド ／ すべて ／ 5%" in pptx_text(r.pptx["spec.pptx"])
      and FIGURE_NOTE in pptx_text(r.pptx["spec.pptx"])
+     and "（spec.md で見る）" in pptx_text(r.pptx["spec.pptx"]) and "（proposal.md で見る）" in pptx_text(r.pptx["proposal.pptx"])
      and r.pptx["spec.pptx:bytes"] == r.again_pptx.get("spec.pptx:bytes")
      and r.pptx["proposal.pptx:bytes"] == r.again_pptx.get("proposal.pptx:bytes")),
 ]
@@ -443,15 +452,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("前の仕様書を消さない", "out.parent / SPEC_NAME, out.with_suffix", "out.with_suffix", "前の提案書を消す"),
     ("前の図を消さない", 'stales += sorted(out.parent.glob(f"{FIGURE_PREFIX}*.svg"))', "stales += []", "前の提案書を消す"),
     ("PPTX を作らない", "    if args.pptx:\n", "    if False:\n", "PPTX も作る"),
+    ("PPTX の図はどれも仕様書で見ると書く", "FIGURE_NOTE.format(source)", "FIGURE_NOTE.format(SPEC_NAME)", "PPTX も作る"),
+    ("shared/ の図も載せる", "for p in whole.files if p.startswith(FIGURE_DIRS)", "for p in whole.files", "仕様書を作る"),
+    ("出力の PPTX の名前を照らさない", ', out.with_suffix(".pptx").name.lower()}', "}", "出力の名前が仕様書の PPTX と重なると作らない"),
+    ("出力の PPTX の名前を大文字小文字で区別する", 'out.with_suffix(".pptx").name.lower()}', 'out.with_suffix(".pptx").name}',
+     "出力の名前が仕様書の PPTX と重なると作らない"),
     ("頼まれなくても PPTX を作る", "    if args.pptx:\n", "    if True:\n", "仕様書を作る"),
 ]
 
 # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す。(名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 QA_TARGET = "check-qa-csv.py"
 QA_MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("反映済みの暫定を見ない", ' or (state == DONE and PROVISIONAL_ANSWER in row["回答"])', "", "暫定の行を節に載せる"),
-    ("確認中も暫定にする", "(state == DONE and PROVISIONAL_ANSWER", "(PROVISIONAL_ANSWER", "確認中の行は暫定にしない"),
-    ("どの反映済みも暫定にする", 'PROVISIONAL_ANSWER in row["回答"])', "True)", "確定した行は暫定にしない"),
+    ("反映済みの暫定を見ない", ' or (state == DONE and PROVISIONAL_MARK.search(row["回答"]) is not None)', "", "暫定の行を節に載せる"),
+    ("確認中も暫定にする", "(state == DONE and PROVISIONAL_MARK", "(PROVISIONAL_MARK", "確認中の行は暫定にしない"),
+    ("どの反映済みも暫定にする", 'PROVISIONAL_MARK.search(row["回答"]) is not None)', "True)", "確定した行は暫定にしない"),
+    ("活用の続く書き方も暫定にする", ' + "(?![しさすせれ])"', "", "活用の続く書き方は暫定にしない"),
 ]
 
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
@@ -527,7 +542,8 @@ def run_case(scripts: Path, root: Path, steps, stale: bool, env: dict[str, str])
                       None, False, None)
     # ("arg", …) の手順は、生成に渡す引数（リポジトリには何もしない）
     extra = [value for step in steps if step[0] == "arg" for value in step[1:]]
-    out = root / "build" / "proposal" / "proposal.md"
+    # ("out", 名前) の手順は、出力の名前（リポジトリには何もしない）
+    out = root / "build" / "proposal" / next((step[1] for step in steps if step[0] == "out"), "proposal.md")
     if stale:
         write_stale(out)
     code, output = generate(scripts, root, out, env, extra)

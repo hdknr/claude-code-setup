@@ -86,7 +86,8 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
   切った時点の base は `eab8581b1f0d687b98e5552e9053df8570470c97`。**main（#361）を取り込んだので式を当て直した: `git merge-base origin/main HEAD` = `fdcf631bcc50b87bd40c0e3eb1826ab0f850414e`**——関門にはこれを渡す
 - 実装: 済み（`60006cc`・取り込み `26fc08e`）。`check-all.py` 44/44 緑・PR 限定の 3 本（変更範囲・description・版）も緑
 - 関門 1 パス目: **Verifier（dev-loop:dev-loop-verifier・sonnet）反証 2 件**（どちらも一時リポジトリで再現済み）／**`/code-review`（base `fdcf631`）指摘 9 件**。どちらも `test-build-proposal.py`（51 試料・58 変異）・`test-check-qa-csv.py`（60・47）・鮮度 2 本が緑と報告。`check-all.py` は関門側では回していない
-- **次にやること**: 下の「1 パス目の指摘」の採否を決めて（実物で示せるか・破る受入基準）直す → 手順 5・6 の 2 パス目の前の割り目
+- 1 パス目の指摘対応: 直す 4 件（V1/CR5・CR1・CR2・CR4）。`test-build-proposal.py` 53 試料・63 変異、`test-check-qa-csv.py` 60・47 で緑
+- **次にやること**: 2 パス目（Verifier と `/code-review`。base は同じ `fdcf631`）
 - 手順 4 の割り目: 提案した（AskUserQuestion）→ **「ここで割る」が選ばれた**。再開は手順 5 の 1 パス目から
 - 交絡: 実験なし（出力の目視は生成物を読んだだけ）
 
@@ -97,18 +98,20 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 | 前の版の暫定の行 | 載せない | 主な決定事項と同じ範囲（その版の `qa.csv`）に揃える |
 | レビュー会の資料が `反映済み`＋「暫定で採用」を載せない | 残課題 | req-loop の話で、この Issue の受入基準の外 |
 | PPTX に図を載せない | 採った | 標準ライブラリだけで SVG を PPTX に埋められない。載せていないことを書く |
+| 仕様書の規模の暫定の数（v1〜v<n>）と提案書の暫定の節（その版）が食い違いうる | 残す | D2 で提案書は主な決定事項と同じ範囲に揃えた。仕様書は重ねた全体を数える（1 パス目 CR9） |
+| v1 でも重ね合わせを通す | 採った | D3（1 パス目 CR7） |
 
-### 1 パス目の指摘（採否は未決——再開時に決める）
+### 1 パス目の指摘
 
 | # | 出所 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- | --- |
-| V1 / CR5 | 両方 | `is_provisional` が部分一致で「暫定で採用しない」「暫定で採用していた A を取り下げ」を暫定に数える | 示せる（Verifier が再現） | 2 | 未決（直す候補） |
-| V2 | Verifier | `--out` を任意の場所に向けると同じ場所の手書きの `spec.md`・`<stem>.pptx`・`spec-figure-*.svg` を消す | 示せる（Verifier が再現） | 5（副作用） | 未決 |
-| CR1 | code-review | 提案書の PPTX のガントの注記が「Markdown の仕様書で見る」と、ガントの無い文書を指す | 読めば示せる（`build-proposal.py:547`） | 7 | 未決（直す候補） |
-| CR2 | code-review | `--out` の stem が `spec`（`spec.html` 等）・大文字違いだと出力が衝突する | 未確認 | 5 | 未決 |
-| CR3 | code-review | `out_of_scope` が「範囲の外」を含む最初の見出し（どのレベルでも）を拾う | 未確認 | 6 | 未決 |
-| CR4 | code-review | `figures_of` が `shared/` の図も拾う（D4 は `spec/`・`requirements/`） | 未確認 | 6 | 未決（直す候補） |
-| CR6 | code-review | 書き込みが途中で失敗すると一部だけ残り、traceback で終わる | 未確認 | 5 | 未決 |
-| CR7 | code-review | v1 でも重ね合わせを通すので、v1 の重ね合わせの問題で提案書まで止まる | 未確認 | —（D3 の決定どおり） | 未決（D3 で決着済みの可能性） |
-| CR8 | code-review | `markdown_slides` で裸の `>` 行が空の段落になり行数の枠を食う | 未確認 | 7 | 未決 |
-| CR9 | code-review | 仕様書の暫定の数（v1〜vn）と提案書の暫定の節（その版だけ）が食い違いうる | 未確認 | 1 | 未決 |
+| V1 / CR5 | 両方 | `is_provisional` が部分一致で「暫定で採用しない」「暫定で採用していた A を取り下げ」を暫定に数える | 示せる（Verifier が再現。修正前の形の変異「活用の続く書き方も暫定にする」が新しい試料で赤） | 2 | **直す**——後に活用が続く書き方を数えない（`PROVISIONAL_MARK`。`qa-csv.md` に明記） |
+| V2 | Verifier | `--out` を任意の場所に向けると同じ場所の手書きの `spec.md`・`<stem>.pptx`・`spec-figure-*.svg` を消す | 示せる（Verifier が再現） | 無し（不変条件 5 は「古い出力を消す」を求めており、手書きとの同居は基準の外） | 残課題 |
+| CR1 | code-review | 提案書の PPTX のガントの注記が「Markdown の仕様書で見る」と、ガントの無い文書を指す | 示せる（`--pptx` の提案書の PPTX の文字列） | 7 | **直す**——注記は元の Markdown（`proposal.md`／`spec.md`）を名指す |
+| CR2 | code-review | `--out` の stem が `spec`（`spec.html` 等）・大文字違いだと出力が衝突する | 示せる（`Spec.html --pptx` の試料が修正前の形の変異で赤） | 5・7（終了 0 で提案書の PPTX が無い） | **直す**——PPTX の名前と大文字小文字も照らす |
+| CR3 | code-review | `out_of_scope` が「範囲の外」を含む最初の見出しを拾う | 示せない（`spec-scope.md` の節は 線・原則・範囲の外 で、題に「範囲の外」を含む実物は無い） | 6 | 残課題 |
+| CR4 | code-review | `figures_of` が `shared/` の図も拾う（D4・`tree.md` は `spec/`・`requirements/`） | 示せる（`shared/chart.svg` を足した試料が修正前の形の変異で赤） | 6 | **直す**——`FIGURE_DIRS` で絞る |
+| CR6 | code-review | 書き込みが途中で失敗すると一部だけ残り、traceback で終わる | 示せない（`spec.md` という名のディレクトリなど、作り物の配置でしか起きない） | 5 | 残課題 |
+| CR7 | code-review | v1 でも重ね合わせを通すので、v1 の重ね合わせの問題で提案書まで止まる | — | 無し（D3 で決めたとおり） | 決着済み（D3） |
+| CR8 | code-review | `markdown_slides` で裸の `>` 行が空の段落になり行数の枠を食う | 示せない（見た目だけ。未証明の「見た目」） | 無し | 残課題 |
+| CR9 | code-review | 仕様書の暫定の数（v1〜vn）と提案書の暫定の節（その版だけ）が食い違いうる | 示せない（D2 の決めたとおりの帰結） | 無し（D2） | 残課題（既知の限界に足す） |

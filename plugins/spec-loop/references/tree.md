@@ -103,7 +103,7 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | 節 | 材料 |
 | --- | --- |
 | 規模 | 要求・仕様のファイルの数・決定表の行・共有の Q&A（決定・暫定・未決定）・中間表現の機能・図の数 |
-| 構成の図 | `.svg` のファイル（`.drawio.svg` を含む）。`.svg` の無い `.drawio` は**載せていないと書く** |
+| 構成の図 | `spec/`・`requirements/` の `.svg` のファイル（`.drawio.svg` を含む）。`.svg` の無い `.drawio` は**載せていないと書く** |
 | 機能の一覧 | 中間表現（`spec/spec_ir.json`）の `features`。scaffold の前は無いと書く |
 | 決定表 | `shared/decision_table.csv`（1 行目を見出しとして、そのまま表にする） |
 | 範囲の外 | 範囲の文書（`spec/scope.md`。`spec-scope.md`）の、見出しに「範囲の外」を含む節の本文 |
