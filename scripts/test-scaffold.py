@@ -178,7 +178,8 @@ def f1(ir: dict) -> dict:
 
 
 def cite_internal(ir: dict) -> None:
-    ir["features"][1]["qa"] = ["D-001"]
+    # 共有の行も併せて指す——内部の行だけだと、層の判定を `all` にしても写した元が変わらない（#353 の狭いパス）
+    ir["features"][1]["qa"] = ["D-001", "Q-001"]
 
 
 def internal_in_issue(repo: Path) -> str | None:
@@ -186,7 +187,11 @@ def internal_in_issue(repo: Path) -> str | None:
     if "| D-001 |" not in body:
         return "Issue の本文に内部の Q&A（D-001）が載っていない"
     # 写した元にも内部の表を挙げる——共有の表だけを挙げると、dev-loop がそこを引いて D-001 を見つけられない（#339）
-    return None if "`build/merged/spec/qa-dev.csv`" in body else "Issue の本文が内部の表を写した元に挙げていない"
+    if "`build/merged/spec/qa-dev.csv`" not in body:
+        return "Issue の本文が内部の表を写した元に挙げていない"
+    # 共有の行（Q-001）しか指さない機能は、内部の表を挙げない——層の判定を外すと全部の Issue に出る（#353）
+    shared = (repo / "build" / "scaffold" / "issues" / "F-001.md").read_text(encoding="utf-8")
+    return "共有の Q&A しか指さない Issue が内部の表を写した元に挙げている" if "qa-dev.csv" in shared else None
 
 
 class Case:
@@ -1270,6 +1275,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内部の表を読まない", "        for path in (QA_PATH, INTERNAL_QA_PATH):", "        for path in (QA_PATH,):", "内部の Q&A を指す"),
     ("D- の番号を指せない", 'QA_NO = re.compile(r"[QD]-[0-9]{3,}")', 'QA_NO = re.compile(r"Q-[0-9]{3,}")', "内部の Q&A を指す"),
     ("写した元に内部の表を挙げない", "(QA_PATH, *([INTERNAL_QA_PATH] if any(", "(QA_PATH, *([] if any(", "内部の Q&A を指す"),
+    # 層の判定（`check-qa-csv.py` の `is_internal_number`）を入れ替える（#353）
+    ("写した元の層を入れ替える", "if any(qa.is_internal_number(no) for no in refs)",
+     "if not any(qa.is_internal_number(no) for no in refs)", "内部の Q&A を指す"),
+    ("写した元の層を見ない（常に内部の表を挙げる）", "if any(qa.is_internal_number(no) for no in refs)", "if True",
+     "内部の Q&A を指す"),
+    ("写した元の層を全部の行で見る", "if any(qa.is_internal_number(no) for no in refs)",
+     "if all(qa.is_internal_number(no) for no in refs)", "内部の Q&A を指す"),
     # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
     ("中間表現が指す暫定の行だけ見る",
      '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',

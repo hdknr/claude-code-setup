@@ -348,8 +348,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内部の表を重ねない", '        for row in internal_rows:\n            self.internal[row["No"]] = row\n', "", "内部の表を行で重ねる"),
     ("内部の表をファイルとして写す", "STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]", "STRUCTURED = [QA_PATH, SPEC_PATH]",
      "内部の表をファイルとして消す"),
-    ("内部の行を消さない", "            table = (self.qa if target in self.qa else self.internal) if kind == KIND_QA else None",
-     "            table = self.qa if kind == KIND_QA else None", "内部の行を removed.csv で消す"),
+    # 層の判定（`check-qa-csv.py` の `is_internal_number`）を外す・入れ替える（#353）
+    ("内部の行を消さない", "(self.internal if qa.is_internal_number(target) else self.qa)", "self.qa", "内部の行を removed.csv で消す"),
+    ("共有の行を内部の表から消す", "(self.internal if qa.is_internal_number(target) else self.qa)", "self.internal", "Q&A を消す"),
+    ("消す表の層を入れ替える", "(self.internal if qa.is_internal_number(target) else self.qa)",
+     "(self.qa if qa.is_internal_number(target) else self.internal)", "内部の行を removed.csv で消す"),
     ("行が 0 なら qa.csv を書かない", "(self.has_qa, QA_PATH, self.qa)", "(bool(self.qa), QA_PATH, self.qa)",
      "Q&A が全部消えても qa.csv を書く"),
 ]
