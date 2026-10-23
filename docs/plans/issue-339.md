@@ -47,7 +47,7 @@
 - `plugins/spec-loop/README.md` — spec-review の区分（5 → 6 つ）。実装中に足した（区分の名前を列挙していた）
 - `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 仕様の穴を起票するときの列（推奨の 2 列）と内部の表。1 パス目の指摘 C1 で足した
   （dev-loop が書く行が新しい検査で落ちる。受入基準 #10 の「各スキル」に dev-loop の差し戻しも入れる）
-- `plugins/dev-loop/.claude-plugin/plugin.json` — dev-loop の版（1.44.0 → 1.44.1。記述の修正なので patch）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — dev-loop の版（1.44.0 → 1.45.0。手順の分岐（内部の表への起票）を足したので minor。2 パス目の R10 で人間が決めた）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` で書き直す。手で書かない）
 - `CLAUDE.md` — スクリプトの説明（該当すれば）
@@ -155,6 +155,10 @@ PowerPoint で開いた見た目。判定役（LLM）が新しい線で実際に
   **残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**。
   `check-all.py` は指摘対応のあと 1 回赤（`skill-metrics.py --check`——dev-loop の `spec-gap.md` を直して設計ドキュメントの生成ブロックが古くなった）
   → `skill-metrics.py` で書き直して **44/44 緑**
+- 関門 2 パス目（2026-10-23）: Verifier 反証 2 件・`/code-review` 指摘 10 件（同じ行に畳んで 10 行）。採否は下の「2 パス目の指摘の採否」。
+  R1〜R9 を直した（`6aad421`）。`check-all.py` は 1 回赤（`skill-metrics.py --check`）→ 書き直して **44/44 緑**（`6aad421`）
+- 狭いパス（2026-10-23）: 起点 `89c26db`。反証 1 件（N1。直さない——人間が決める）。著者の変異 4 本は赤、Verifier の変異 1 本が素通り（陽性対照あり）
+- R10 は人間の決定で dev-loop を 1.45.0 に上げた（版の数字だけ）
 - 2 パス目の前の割り目: AskUserQuestion で「**ここで割る**」が選ばれた（2026-10-23）。再開したら Verifier 2 パス目と `/code-review` 2 パス目を、
   受入基準・既知の限界・1 パス目の採否の表を渡して回す（base は上の SHA のまま。**範囲を dev-loop に広げたので、2 パス目の経路一覧に
   dev-loop の差し戻しの経路を足して渡す**）。2 パス目の指摘対応に入る前に、その直前の HEAD の SHA を狭いパスの起点としてここに書く
@@ -210,4 +214,16 @@ Verifier の 2 件は `/code-review` の R1・R2・R3 と重なる（同じ行�
 | R7 | `qa-csv.md` の内部の例 D-001 に「C: 遅れを受け入れる」があり、`spec-scope.md` の線では共有に起票する形 | 示せる（2 つの文書） | #10 | **直す**（C を外す） |
 | R8 | `feasibility` の「推奨の選択肢で見積もる」が `推奨` = `なし` のときに決まらない | 示せる（`qa-csv.md` の例 D-002 が `なし`） | #10 | **直す**（`なし` なら選択肢の幅で見積もり名指しする） |
 | R9 | 「層を移す」が、元の番号を指しているもの（中間表現の `qa`・見積りの根拠・本文の `Q-008`）を直すと言わない | 示せる（移すと `scaffold` が「Q&A 表に無い」で止まる） | #10・#11 | **直す** |
-| R10 | dev-loop の版を patch で上げたが、手順の分岐の追加なので minor（`CLAUDE.md` の刻み方） | 示せる（`CLAUDE.md` の表） | 無し（#12 は版の一致） | 残課題（人間が決める） |
+| R10 | dev-loop の版を patch で上げたが、手順の分岐の追加なので minor（`CLAUDE.md` の刻み方） | 示せる（`CLAUDE.md` の表） | 無し（#12 は版の一致） | 残課題としたが、**人間が「この PR で 1.45.0 に上げる」と決めた**（2026-10-23、AskUserQuestion）。版の数字だけの変更 |
+
+### 狭いパスの指摘
+
+狭いパス（2026-10-23）: `dev-loop:dev-loop-verifier`・sonnet、起点 `89c26db`。反証 1 件（受入基準を破る実害は 0 件）。
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| N1 | `drop_internal` を最後の版だけに絞る変異が `test-build-proposal.py` を素通りする（内部の表を置いた試料が v2 だけ）。コードは正しい | 示せる（Verifier が複製で v1 の試料を足し、変異ありで 1・元で 0） | #8 の前の版の側が無検査（コードは満たす） | 人間が決める → **起票（#343）** |
+
+## 起票
+
+- この周の起票: 3 件（#343 狭いパスの N1・#344 1 パス目の C3・#345 1 パス目の C5／C6。2026-10-23 に人間が承認）
