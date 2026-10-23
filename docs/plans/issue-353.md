@@ -85,6 +85,7 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 - 割り目（手順 4 の後）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。再開は手順 5（Verifier 1 パス目と `/code-review` 1 パス目）から
 - 関門: 1 パス目 済み（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet → 反証 1 件（V）。`/code-review` high → 指摘 7 件）。採否は下の表——直す 3 件・残課題 5 件。指摘対応は済み。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目
 - 割り目（手順 6 の 2 パス目の前）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。指摘対応のコミットは `930cfed`（`check-all.py` 44/44 緑）。再開は 2 パス目から——**手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方が残っている**。base は周の base のまま（`4e498b2…`）
+- 関門 2 パス目: 起動（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet、`/code-review` high。base `4e498b2…`）。Verifier 2 パス目: 済み——反証 1 件（V: main が #370 で spec-loop 0.19.0 に先着し `check-version-bump.py origin/main` が赤。親が再現を確認）。`/code-review` 2 パス目: **結果待ち——済んでいない**
 - 交絡: 実験なし（変異テストのみ）
 
 ## 既知の限界・決着済みの論点
@@ -107,3 +108,16 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 | `/code-review` | `test-check-qa-csv.py` の変異の件数が 4c の変異を数えない | 示せる（4c は `check` に出るが「変異 N 件」に入らない） | 無し | 残課題 |
 | `/code-review` | フックの定数 `QA_MIGRATION` を別のファイルに向けても 4c が緑 | 示せる（リポジトリの外の複製で定数を `qa-csv.md` に向けて `test-check-qa-csv.py` が exit 0） | C1 | 直す（定数を単独の指し先として数え、別ファイルに向ける変異を足した） |
 | Verifier | `check-plan-scope.py` が赤（変更範囲の外に 9 ファイル） | 示せる（`python3 scripts/check-plan-scope.py origin/main` が 9 本を挙げた） | V | 直す（「変更範囲」を 1 行 1 パターンに書き直し、proposal・scaffold の `SKILL.md`（版の 2 行）を足した。再実行で exit 0） |
+
+### 2 パス目の指摘の採否
+
+| 関門 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| Verifier・`/code-review` | main が #370 で spec-loop 0.19.0 に先着。版が据え置き扱いになり、#370 は `check-signoff.py` の同じ箇所に `qa.INTERNAL_NUMBER.fullmatch` を足している | 示せる（`python3 scripts/check-version-bump.py origin/main` が exit 1） | V・A1 | 直す（main を取り込み、`is_internal_number` に置き換え直し、0.20.0 に上げる） |
+| `/code-review` | feasibility の `SKILL.md` に足した「予算責任者に見せる見積りの根拠に引くのは `Q&A` の節だけ」は、同じファイルの手順 3（内部の費用の行を `D-` の番号で拾う）と `qa-csv.md` の「層」に反する | 示せる（`feasibility/SKILL.md` の 97 行と 125〜127 行が食い違う） | B4 | 直す |
+| `/code-review` | scaffold の層の判定を外す変異（常に内部の表を挙げる）が `test-scaffold.py` を素通りする | 示せる（リポジトリの外で `if True else` にして全ケース緑） | E | 直す（`D-` を指さない機能で内部の表が出ないことを見るケースと変異を足す） |
+| `/code-review` | 4c の「フックの定数を別のファイルに向ける」は `references/` を落としていて「指し先が無い」で落ちる。別の実在する見出し（`references/qa-csv.md の「層」`）に向けると緑 | 示せる（リポジトリの外で緑） | C1 | 直す（定数は `tree.md` の「Q&A 表を移す」を指すことまで見る） |
+| `/code-review` | E の「常に内部」の変異が test-merge-versions にしか無い | 示せない（挙げた変異はいまのテストで赤。scaffold は上の行） | 無し | 残課題 |
+| `/code-review` | 本体の指し先の変異だけが置換の回数を確かめていない | 示せない（失敗する側に倒れる。理由の表示が違うだけ） | 無し | 残課題 |
+| `/code-review` | `HEADING` がコードフェンスの中の `#` 行も見出しと数える | 示せない（いまの `references/*.md` で当たる例が無い） | 無し | 残課題 |
+| `/code-review` | `versions.md` が `Q&A（内部）` を誰が使うかを書いていない | 示せない（書いてあることは事実。誤読の起点は feasibility の引用で、上の行で直す） | 無し | 残課題 |
