@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""2 つのサインオフのタグの照合が通ったときだけ、決裁者向けの提案書（Markdown）を作る。
+"""2 つのサインオフのタグの照合が通ったときだけ、決裁者向けの提案書と仕様書（Markdown。`--pptx` で PPTX も）を作る。
 
-usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>] [--req <タグ>] [--budget <タグ>] [--out <出力先.md>] [--title <題>]
+usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>] [--req <タグ>] [--budget <タグ>] [--out <出力先.md>] [--title <題>] [--spec-title <題>] [--pptx]
 
 **ツリー・生成物の置き場所の正は `references/tree.md`、版の決まりの正は `references/versions.md`、
 タグの決まりの正は `references/signoff-tags.md` である**（どれもこのプラグインの中にある）。
@@ -21,8 +21,15 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **v2 以降で `shared/qa.csv` を置かない版**（Q&A を足さない版。`references/versions.md`）は、Q&A を 0 行として作る。
   v1 では `qa.csv` が無ければ作らない。
 - 読んだ表は決まりの検査（`check-qa-csv.py`・`check-feasibility-csv.py`）を通す。通らなければ書かない。
-- **始める前に、前に作った出力（提案書と同じ場所の `gantt.svg`）を消す**——作れなかったときに、
-  古い提案書を今のものと取り違えないため。
+- **暫定の行**（判別は `check-qa-csv.py` の `is_provisional`。決まりの正は `references/qa-csv.md` の「暫定の行の判別」）は
+  主な決定事項に載せず、「利用者にまだ確かめていない決定」の節に載せる（0 件でも節を出す。#366）。
+- **仕様書（`spec.md`）も同じ実行で作る**（#371）——材料は `signoff/v<n>/req-<k>` の時点の v1〜v<n> を重ねた全体
+  （前の版との比較と同じ写しから。**v1 でも重ね合わせの決まりを通す**）と、作業中の版の `proposal/spec/*.md`（手書き。任意）。
+  `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio` は載せていないと書く（draw.io は起動しない）。
+  載せるものと置き場所の正は `references/tree.md` の「仕様書」。
+- **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
+- **始める前に、前に作った出力（提案書・`gantt.svg`・`spec.md`・2 つの PPTX・`spec-figure-*.svg`）を消し、
+  全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
 - **提案書は承認の記録を持たない。** 載せるのは生成元のタグとコミットだけで、「承認済み」とは書かない。
 - 同じ入力から同じバイトを作る（時刻を書かない）。標準ライブラリだけを使う（`git` は要る）。
 
@@ -30,10 +37,11 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）——書いていない
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が仕様書・ガントチャート・PPTX・図と重なる——書いていない
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
 
-**守らないもの**: 手書き部分の中身（判断であって一意に決まらない）・見た目（Markdown を表示して目で見る）。
+**守らないもの**: 手書き部分の中身（判断であって一意に決まらない）・見た目（Markdown を表示して目で見る）・
+PPTX がアプリで開けること（見るのは部品の揃いと XML の整形式まで）・前の版の暫定の行（提案書に載るのはその版の `qa.csv` だけ）。
 """
 
 from __future__ import annotations
@@ -63,6 +71,7 @@ qa = _load("check_qa_csv", "check-qa-csv.py")
 feasibility = _load("check_feasibility_csv", "check-feasibility-csv.py")
 gantt = _load("schedule_to_gantt", "schedule-to-gantt.py")
 diffs = _load("diff_versions", "diff-versions.py")
+pptx = _load("qa_to_pptx", "qa-to-pptx.py")
 
 # 版のディレクトリ（`docs/v<n>/`）からのパス
 QA_PATH = "shared/qa.csv"
@@ -71,6 +80,16 @@ ESTIMATE_PATH = "feasibility/estimate.csv"
 HAND_DIR = "proposal"
 DEFAULT_OUT = "build/proposal/proposal.md"
 GANTT_NAME = "gantt.svg"
+# 仕様書（#374）。出力は提案書と同じ場所。手書き部分は提案書の手書き部分の下のディレクトリ（提案書には入らない）
+SPEC_NAME = "spec.md"
+SPEC_PPTX_NAME = "spec.pptx"
+SPEC_HAND_DIR = HAND_DIR + "/spec"
+FIGURE_PREFIX = "spec-figure-"
+# 重ねた全体（版のディレクトリからのパス）
+DECISION_PATH = "shared/decision_table.csv"
+SCOPE_PATH = "spec/scope.md"
+OUT_OF_SCOPE = "範囲の外"
+FIGURE_NOTE = "PPTX に載せていない（Markdown の仕様書で見る）"
 
 
 def in_version(version: int, path: str) -> str:
@@ -138,9 +157,9 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
         if not merged_reads(path):
             continue
         if kind != "blob":
-            raise Stop(2, [f"{tag}:{path}: サブモジュールは読まない。前の版との比較を作れない"])
+            raise Stop(2, [f"{tag}:{path}: サブモジュールは読まない。仕様書・前の版との比較を作れない"])
         if PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
-            raise Stop(2, [f"{tag}:{path}: 写せないパス。前の版との比較を作れない"])
+            raise Stop(2, [f"{tag}:{path}: 写せないパス。仕様書・前の版との比較を作れない"])
         entries.append((mode, sha, path))
     fold = diffs.merge_versions.fold
     seen: dict[str, str] = {}
@@ -160,7 +179,7 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
             if other != parent:
                 clashes.append(f"{tag}: ディレクトリ {other} と {parent} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
     if clashes:
-        raise Stop(1, sorted(set(clashes)) + ["前の版との比較を作れない（写すと同じ場所に書かれる）"])
+        raise Stop(1, sorted(set(clashes)) + ["仕様書・前の版との比較を作れない（写すと同じ場所に書かれる）"])
     batch = subprocess.run(["git", "-C", str(top), "cat-file", "--batch"],
                            input=b"".join(sha.encode() + b"\n" for _, sha, _ in entries), capture_output=True)
     if batch.returncode != 0:
@@ -176,9 +195,9 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         parent = target.parent.resolve()
         if parent != root and root not in parent.parents:
-            raise Stop(2, [f"{tag}:{path}: 写す先が一時ディレクトリの外に出る。前の版との比較を作れない"])
+            raise Stop(2, [f"{tag}:{path}: 写す先が一時ディレクトリの外に出る。仕様書・前の版との比較を作れない"])
         if os.path.lexists(target):
-            raise Stop(1, [f"{tag}:{path}: 写す先に既に別のものがある。前の版との比較を作れない"])
+            raise Stop(1, [f"{tag}:{path}: 写す先に既に別のものがある。仕様書・前の版との比較を作れない"])
         if mode == "120000":
             # リンクのまま置く——重ね合わせの決まりが断る（版の外を読ませない）
             target.symlink_to(content.decode("utf-8", "surrogateescape"))
@@ -208,19 +227,25 @@ def drop_internal(docs: Path) -> None:
 
 
 def compare_at(top: Path, commit: str, tag: str, version: int):
-    """`commit` の時点の v<version-1> と v<version> の全体を比べる。比べられなければ Stop。"""
+    """`commit` の時点の v1〜v<version> を重ねた全体と、v2 以降なら v<version-1> との比較を返す。作れなければ Stop。
+
+    全体は仕様書の材料、比較は「前の版からの変更」の節（提案書と仕様書）。**v1 でも重ね合わせの決まりを通す**（#374）。
+    """
     with tempfile.TemporaryDirectory() as tmp:
         copy_docs(top, commit, tag, Path(tmp))
         drop_internal(Path(tmp) / signoff.DOCS)
         prefix = str(Path(tmp)) + "/"
         try:
-            problems, diff = diffs.compare(Path(tmp) / signoff.DOCS, version)
+            problems, _, whole, _ = diffs.merge_versions.merge(Path(tmp) / signoff.DOCS, version)
+            diff = None
+            if not problems and version > 1:
+                problems, diff = diffs.compare(Path(tmp) / signoff.DOCS, version)
         except diffs.merge_versions.Unreadable as e:
             raise Stop(2, [f"{tag}: {str(e).replace(prefix, '')}"])
     if problems:
         raise Stop(1, [f"{tag}: {line.replace(prefix, '')}" for line in problems]
-                   + ["前の版との比較を作れない（重ね合わせが決まりに反する）"])
-    return diff
+                   + ["仕様書・前の版との比較を作れない（重ね合わせが決まりに反する）"])
+    return whole, diff
 
 
 def changes_section(diff, tag: str) -> list[str]:
@@ -297,19 +322,28 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
                f"`{info['budget']}`（`{info['budget_commit']}`）の時点の `{in_version(version, 'shared/')}`・"
                f"`{in_version(version, 'feasibility/')}` と、"
                f"`{in_version(version, HAND_DIR)}/` の手書き部分。**決裁者の承認の記録ではありません。**")
-    out.append("")
+    out += [">", f"> 何を作るかは、同じ場所の仕様書（[{SPEC_NAME}]({SPEC_NAME})）を見る。", ""]
     for _, body in hand:
         out += [body.rstrip("\n"), ""]
     if diff is not None:
         out += changes_section(diff, info["req"])
 
-    done = [r for r in qa_rows if r["状態"].strip() == qa.DONE]
-    pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE]
+    # 暫定の行（`check-qa-csv.py` の `is_provisional`）は利用者の合意ではないので、決定事項と分けて載せる（#374）
+    provisional = [r for r in qa_rows if qa.is_provisional(r)]
+    done = [r for r in qa_rows if r["状態"].strip() == qa.DONE and not qa.is_provisional(r)]
+    pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE and not qa.is_provisional(r)]
     out += ["## 主な決定事項", ""]
     if done:
         out += table(["No", "質問", "回答", "反映先"], [[r["No"], r["質問"], r["回答"], r["反映先"]] for r in done])
     else:
         out.append("（反映済みの決定事項はありません）")
+    out.append("")
+    out += [f"### 利用者にまだ確かめていない決定（{len(provisional)} 件）", ""]
+    if provisional:
+        out += ["> 暫定で採った回答で、利用者の合意ではない。仕様レビューを抜けたことも合意の代わりにはならない。", ""]
+        out += table(["No", "質問", "回答", "反映先"], [[r["No"], r["質問"], r["回答"], r["反映先"]] for r in provisional])
+    else:
+        out.append("（ありません）")
     out.append("")
     if pending:
         out += [f"### 承認の時点で未決定の質問（{len(pending)} 件）", ""]
@@ -336,8 +370,147 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
     return "\n".join(out)
 
 
-def build(args) -> tuple[str, str, int]:
-    """(提案書, ガントチャート, 工程数) を返す。作れなければ Stop。"""
+def read_hand(directory: Path) -> list[tuple[str, str]]:
+    """手書き部分（`directory` 直下の `*.md`、ファイル名の順）。作業ツリーから読む。"""
+    hand = []
+    for path in sorted(directory.glob("*.md")) if directory.is_dir() else []:
+        try:
+            hand.append((path.name, path.read_text(encoding="utf-8-sig")))
+        except (OSError, UnicodeDecodeError):
+            raise Stop(2, [f"{path}: UTF-8 として読めない。中身を検査していない"])
+    return hand
+
+
+def decode(content: bytes, label: str) -> str:
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise Stop(2, [f"{label}: UTF-8 として読めない。仕様書を作れない"])
+
+
+def heading_level(line: str) -> int:
+    level = len(line) - len(line.lstrip("#"))
+    return level if 0 < level <= 6 and line[level:level + 1] == " " else 0
+
+
+def out_of_scope(text: str) -> list[str] | None:
+    """範囲の文書の「範囲の外」の節の本文（見出しは除く。次の同じか上の水準の見出しまで）。節が無ければ None。"""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        level = heading_level(line)
+        if level and OUT_OF_SCOPE in line:
+            body = []
+            for rest in lines[i + 1:]:
+                if 0 < heading_level(rest) <= level:
+                    break
+                body.append(rest)
+            while body and not body[0].strip():
+                body.pop(0)
+            while body and not body[-1].strip():
+                body.pop()
+            return body
+    return None
+
+
+def figures_of(whole) -> tuple[list[str], list[str]]:
+    """(載せる図——`.svg`、書き出しが無いので載せない `.drawio`)。どちらもパスの順。"""
+    paths = sorted(whole.files)
+    svgs = [p for p in paths if p.lower().endswith(".svg")]
+    exported = {p.lower() for p in svgs}
+    missing = [p for p in paths if p.lower().endswith(".drawio")
+               and f"{p}.svg".lower() not in exported and f"{p[:-len('.drawio')]}.svg".lower() not in exported]
+    return svgs, missing
+
+
+def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, diff,
+                 proposal_name: str) -> tuple[str, dict[str, bytes]]:
+    """(仕様書, 図のファイル名 → 中身) を返す。材料は req のタグの時点の重ねた全体と、仕様書の手書き部分。"""
+    version = info["version"]
+    span = f"`{signoff.DOCS}/v1/`" if version == 1 else f"`{signoff.DOCS}/v1/`〜`{signoff.DOCS}/v{version}/` を重ね合わせた全体"
+    out = [f"# {title}", ""]
+    out.append(f"> この仕様書は生成物です。生成元: `{info['req']}`（`{info['req_commit']}`）の時点の "
+               f"{span}（`shared/`・`requirements/`・`spec/`。"
+               f"内部の Q&A 表は除く）と、`{in_version(version, SPEC_HAND_DIR)}/` の手書き部分。"
+               "**決裁者の承認の記録ではありません。**")
+    out += [">", f"> 費用・期間・推奨案は、同じ場所の提案書（[{proposal_name}]({proposal_name})）を見る。", ""]
+    for _, body in hand:
+        out += [body.rstrip("\n"), ""]
+    if not hand:
+        out += [f"（手書き部分（`{in_version(version, SPEC_HAND_DIR)}/*.md`）はありません——画面の一覧・"
+                "試作で確かめること・要約は載っていない）", ""]
+
+    files = sorted(whole.files)
+    decision = whole.files.get(DECISION_PATH)
+    decision_rows = None
+    if decision is not None:
+        try:
+            decision_rows = [r for r in csv.reader(io.StringIO(decode(decision, DECISION_PATH), newline=""))
+                             if any(c.strip() for c in r)]
+        except csv.Error as e:
+            raise Stop(2, [f"{info['req']}:{DECISION_PATH}: CSV として読めない（{e}）。仕様書を作れない"])
+    shared_rows = list(whole.qa.values())
+    provisional = sum(1 for r in shared_rows if qa.is_provisional(r))
+    decided = sum(1 for r in shared_rows if r["状態"].strip() == qa.DONE and not qa.is_provisional(r))
+    svgs, missing = figures_of(whole)
+    out += ["## 規模", ""]
+    out += table(["もの", "数"], [
+        ["要求のファイル（`requirements/`）", str(sum(1 for p in files if p.startswith("requirements/")))],
+        ["仕様のファイル（`spec/`。中間表現と内部の Q&A 表を除く）", str(sum(1 for p in files if p.startswith("spec/")))],
+        ["決定表の行（見出しを除く）", str(len(decision_rows) - 1) if decision_rows else "—（決定表が無い）"],
+        ["Q&A（共有。v1 から重ねた全体）",
+         f"{len(shared_rows)}（決定 {decided}・暫定 {provisional}・未決定 {len(shared_rows) - decided - provisional}）"],
+        ["機能（中間表現）", str(len(whole.features)) if whole.spec is not None else "—（中間表現が無い）"],
+        ["図", f"{len(svgs)}（書き出しが無いので載せていない図 {len(missing)}）"],
+    ])
+    out.append("")
+
+    figures: dict[str, bytes] = {}
+    out += ["## 構成の図", ""]
+    for n, path in enumerate(svgs, 1):
+        name = f"{FIGURE_PREFIX}{n:02d}.svg"
+        figures[name] = whole.files[path]
+        out += [f"![{path}]({name})", "", f"`{path}`", ""]
+    if not svgs:
+        out += ["（図はありません）", ""]
+    if missing:
+        out += ["書き出し（`.svg`）が無いので載せていない図:", ""] + [f"- `{path}`" for path in missing] + [""]
+
+    out += ["## 機能の一覧", ""]
+    if whole.features:
+        out += table(["id", "題"], [[fid, str(f.get("title", ""))] for fid, f in whole.features.items()])
+    else:
+        out.append("（中間表現（`spec/spec_ir.json`）に機能がまだ無い——機能の一覧は scaffold の後に載る。画面の一覧は手書き部分に書く）")
+    out.append("")
+
+    out += ["## 決定表", ""]
+    if decision_rows:
+        width = max(len(r) for r in decision_rows)
+        padded = [r + [""] * (width - len(r)) for r in decision_rows]
+        out += table([cell(c) for c in padded[0]], padded[1:])
+    else:
+        out.append(f"（決定表（`{DECISION_PATH}`）が無いか空）")
+    out.append("")
+
+    out += [f"## {OUT_OF_SCOPE}", ""]
+    scope = whole.files.get(SCOPE_PATH)
+    body = out_of_scope(decode(scope, SCOPE_PATH)) if scope is not None else None
+    if body is not None and any(line.strip() for line in body):
+        out += body + [""]
+    else:
+        out += [f"（範囲の文書（`{SCOPE_PATH}`）に「{OUT_OF_SCOPE}」の節が無い——範囲の外とした場面は記録されていない）", ""]
+
+    if diff is not None:
+        out += changes_section(diff, info["req"])
+
+    out += ["## 仕様と要求のファイル", ""]
+    listed = [p for p in files if p.startswith(("spec/", "requirements/"))]
+    out += table(["パス"], [[p] for p in listed]) if listed else ["（ありません）"]
+    out.append("")
+    return "\n".join(out), figures
+
+
+def build(args, out: Path) -> dict[Path, bytes | list]:
+    """書くもの（出力先 → 中身。PPTX は部品の一覧）を返す。作れなければ Stop——1 つでも作れなければ何も書かない。"""
     code, lines, info = signoff.resolve(args.repo, args.req, args.budget, args.version)
     if code:
         raise Stop(code, lines)
@@ -357,18 +530,22 @@ def build(args) -> tuple[str, str, int]:
         raise Stop(1, [f"{info['budget']}:{schedule_path}: 工程が 1 行も無い。提案書の材料が無い"])
     if not estimate:
         raise Stop(1, [f"{info['budget']}:{estimate_path}: 費用が 1 行も無い。提案書の材料が無い"])
-    diff = compare_at(top, info["req_commit"], info["req"], info["version"]) if info["version"] > 1 else None
+    whole, diff = compare_at(top, info["req_commit"], info["req"], info["version"])
     hand_dir = top / in_version(info["version"], HAND_DIR)
-    hand = []
-    for path in sorted(hand_dir.glob("*.md")) if hand_dir.is_dir() else []:
-        try:
-            hand.append((path.name, path.read_text(encoding="utf-8-sig")))
-        except (OSError, UnicodeDecodeError):
-            raise Stop(2, [f"{path}: UTF-8 として読めない。中身を検査していない"])
+    hand = read_hand(hand_dir)
     if not hand:
         raise Stop(1, [f"{hand_dir}: 手書き部分（*.md）が無い。背景と目的・推奨案・代替案・リスクを書いてから作る"])
     text = compose(args.title, info, hand, qa_rows, schedule, estimate, diff)
-    return text, gantt.render(schedule), len(schedule)
+    spec_text, figures = compose_spec(args.spec_title, info, read_hand(top / in_version(info["version"], SPEC_HAND_DIR)),
+                                      whole, diff, out.name)
+    outputs = {out: text.encode("utf-8"), out.parent / GANTT_NAME: gantt.render(schedule).encode("utf-8"),
+               out.parent / SPEC_NAME: spec_text.encode("utf-8")}
+    outputs.update({out.parent / name: content for name, content in figures.items()})
+    if args.pptx:
+        for path, body, name in ((out.with_suffix(".pptx"), text, args.title),
+                                 (out.parent / SPEC_PPTX_NAME, spec_text, args.spec_title)):
+            outputs[path] = pptx.package(pptx.markdown_slides(body, FIGURE_NOTE), name)
+    return outputs
 
 
 def repo_top(repo: Path) -> Path:
@@ -393,19 +570,25 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--budget")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--title", default="提案書")
+    parser.add_argument("--spec-title", default="仕様書")
+    parser.add_argument("--pptx", action="store_true", help="提案書と仕様書の PPTX も作る")
     args = parser.parse_args(argv)
 
     # git を起動できなくても、古い出力は消してから 2 で終わる（ここで落ちると古い提案書が残る）
     out = args.out if args.out else repo_top(args.repo) / DEFAULT_OUT
-    svg = out.parent / GANTT_NAME
-    for stale in (out, svg):
+    if out.name in (SPEC_NAME, GANTT_NAME) or out.suffix == ".pptx" or out.name.startswith(FIGURE_PREFIX):
+        print(f"{out}: 仕様書・ガントチャート・PPTX・図と同じ名前になる。提案書は作っていない", file=sys.stderr)
+        return 2
+    stales = [out, out.parent / GANTT_NAME, out.parent / SPEC_NAME, out.with_suffix(".pptx"), out.parent / SPEC_PPTX_NAME]
+    stales += sorted(out.parent.glob(f"{FIGURE_PREFIX}*.svg")) if out.parent.is_dir() else []
+    for stale in stales:
         if stale.is_file():
             stale.unlink()
             print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
 
     try:
         try:
-            text, chart, count = build(args)
+            outputs = build(args, out)
         except signoff.Unjudged as e:
             raise Stop(2, [str(e)])
         except OSError as e:
@@ -416,9 +599,12 @@ def main(argv: list[str]) -> int:
         print("提案書は作っていない", file=sys.stderr)
         return stop.code
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(text.encode("utf-8"))
-    svg.write_bytes(chart.encode("utf-8"))
-    print(f"{out}: 提案書を書いた（ガントチャート {svg}・{count} 工程）")
+    for path, content in outputs.items():
+        if isinstance(content, list):
+            pptx.write(content, path)
+        else:
+            path.write_bytes(content)
+    print(f"{out}: 提案書を書いた（同じ場所に {'・'.join(p.name for p in outputs if p != out)}）")
     return 0
 
 
