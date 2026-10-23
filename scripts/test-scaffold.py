@@ -177,8 +177,9 @@ class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
                  post: Callable[[Path], str | None] | None = None, generate_first: bool = False, impl: str | None = None,
-                 extra: dict[str, str] | None = None, root: Path = V1):
-        self.name, self.code, self.text = name, code, text
+                 extra: dict[str, str] | None = None, root: Path = V1, absent: str = ""):
+        # absent: 出力に現れてはならない文言（対照）
+        self.name, self.code, self.text, self.absent = name, code, text, absent
         self.ir, self.raw, self.qa, self.spec = ir, raw, qa, spec
         self.args, self.pre, self.post = args, pre, post
         self.generate_first, self.impl = generate_first, impl
@@ -1106,16 +1107,21 @@ CASES: list[Case] = [
          args=("--check", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
     Case("前の版だけパスの変数が入力に無い（--dry-run --upto 1）", 1, "パスの変数 {order_id} が operation.input の項目に無い",
          args=("--dry-run", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
-    # #335: v1 で暫定反映の Q-001 を指し、v2 で反映済みに置き換えた——重ねた表には反映済みしか無い
-    Case("前の版で暫定だった Q&A を後の版で確定する", 0, "作った", qa=HEADER + QA_PROVISIONAL + QA_DONE2,
-         extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), post=v2_changed),
-    # 前の版の時点を作るときは、暫定が残るので止まる（今の版と同じ関門）
+    # #335: v1 で暫定反映の Q-001 を指し、v2 で反映済みに置き換えた——v1 は scaffold できていないので止め、そう名指しする
+    Case("前の版で暫定だった Q&A を後の版で確定する", 1, "v1 の時点では 暫定反映 の Q&A が残り、v1 の scaffold は作れていない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
+         post=nothing_written_issues),
+    Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の F-001.qa: Q-001 は状態が 暫定反映（反映済み でない）",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    # 前の版の時点を作るときも止まる（今の版と同じ関門）
     Case("前の版で暫定だった Q&A（--check --upto 1）", 1, "Q-001: 状態が 暫定反映", args=("--check", "--upto", "1"),
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
-    # 前の版で許すのは暫定反映まで——抜ける条件 1 を通らない状態を指していれば、v2 で確定しても止まる
-    Case("前の版で確認中だった Q&A を後の版で確定する", 1, "v1 の時点の F-001.qa: Q-001 は状態が 反映済み・暫定反映 でない",
+    Case("前の版で暫定だった Q&A（--dry-run --upto 1）", 1, "Q-001: 状態が 暫定反映", args=("--dry-run", "--upto", "1"),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    # 対照: 前の版で確認中だった——止まるが、暫定反映の案内は出さない
+    Case("前の版で確認中だった Q&A を後の版で確定する", 1, "v1 の時点の F-001.qa: Q-001 は状態が 確認中（反映済み でない）",
          qa=HEADER + QA_OPEN_Q001 + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
-         post=nothing_written_issues),
+         post=nothing_written_issues, absent="scaffold は作れていない"),
     # 前の版でも Q&A の実在は見る
     Case("前の版の Q&A が表に無い", 1, "v1 の時点の F-001.qa: Q-009 は Q&A 表に無い", ir=MISSING_QA_V1,
          extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues, post=nothing_written_issues),
@@ -1379,19 +1385,19 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("撤去の前の版の全体を作業中の版で作る", 'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number - 1}"',
      'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number}"', "v2 で機能を消す"),
     # 検査だけ飛ばし、中間表現は返す形にする——`if code:` を潰すと None を読んで落ち、意味ではなく例外で殺される
-    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered, path_rules=gate, qa_states=",
-     "        problems = [] if not gate else check_ir(ir, whole, answered, path_rules=gate, qa_states=",
-     "前の版の中間表現が決まりに反する"),
-    ("前の版にもパスの変数の決まりを当てる", "check_ir(ir, whole, answered, path_rules=gate,",
-     "check_ir(ir, whole, answered, path_rules=True,", "前の版だけパスの変数が入力に無い"),
-    ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate,",
-     "check_ir(ir, whole, answered, path_rules=False,", "前の版のパスの変数を直さない"),
-    # #335 の前の形——前の版でも反映済みしか許さない
-    ("前の版にも反映済みだけを許す", "qa_states=(qa.DONE,) if gate else qa.REFLECTED)", "qa_states=(qa.DONE,))",
+    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered, path_rules=gate)\n",
+     "        problems = check_ir(ir, whole, answered, path_rules=gate) if gate else []\n", "前の版の中間表現が決まりに反する"),
+    ("前の版にもパスの変数の決まりを当てる", "check_ir(ir, whole, answered, path_rules=gate)",
+     "check_ir(ir, whole, answered, path_rules=True)", "前の版だけパスの変数が入力に無い"),
+    ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate)",
+     "check_ir(ir, whole, answered, path_rules=False)", "前の版のパスの変数を直さない"),
+    # #335: 前の版の暫定反映を名指ししない／状態を問わず名指しする
+    ("前の版の暫定反映を名指ししない", "] if provisional else []) + [", "] if False else []) + [",
      "前の版で暫定だった Q&A を後の版で確定する"),
-    # 前の版で許すのを暫定反映より広げる——確認中を指した前の版が通る
-    ("前の版ではどの状態も許す", "qa_states=(qa.DONE,) if gate else qa.REFLECTED)",
-     "qa_states=(qa.DONE,) if gate else tuple(qa.STATES))", "前の版で確認中だった Q&A を後の版で確定する"),
+    ("前の版の誤りならいつも暫定反映を名指しする", "] if provisional else []) + [", "] if True else []) + [",
+     "前の版で確認中だった Q&A を後の版で確定する"),
+    ("Q&A の参照の状態を出さない", "は状態が {state}（{qa.DONE} でない）", "は状態が {qa.DONE} でない",
+     "前の版で暫定だった Q&A を後の版で確定する"),
     ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
      "Red の状態: v2 で出力の項目を足す"),
     ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
@@ -1506,6 +1512,8 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
         return False, f"exit={proc.returncode}（期待 {case.code}）{out[-400:]}"
     if case.text and case.text not in out:
         return False, f"出力に {case.text!r} が無い: {out[-400:]}"
+    if case.absent and case.absent in out:
+        return False, f"出力に {case.absent!r} がある: {out[-400:]}"
     if case.post:
         problem = case.post(repo)
         if problem:
