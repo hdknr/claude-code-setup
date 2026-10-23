@@ -174,9 +174,9 @@ def _load(name: str, filename: str):
 
 spec_exit = _load("check_spec_exit", "check-spec-exit.py")
 qa = spec_exit.pptx.qa
-# 内部の層の Q&A 表（`check-qa-csv.py` の `INTERNAL_NAME`）。重ねた全体の中の場所
-INTERNAL_QA_PATH = "spec/" + qa.INTERNAL_NAME
 versions = _load("merge_versions", "merge-versions.py")
+# 内部の層の Q&A 表の、重ねた全体の中の場所（`merge-versions.py` のもの。写さない——#353）
+INTERNAL_QA_PATH = versions.INTERNAL_QA_PATH
 # 比べ方は `diff-versions.py` のもの（`compare_maps` は純粋な関数。重ねるのはこのスクリプトの `versions`）
 diffs = _load("diff_versions", "diff-versions.py")
 
@@ -1056,7 +1056,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}
     # 内部の層の行（`D-`）を指していれば、写した元に内部の表も挙げる（#339）
     tables = "・".join(f"`{merged(path)}`" for path in
-                       (QA_PATH, *([INTERNAL_QA_PATH] if any(qa.INTERNAL_NUMBER.fullmatch(no) for no in refs) else [])))
+                       (QA_PATH, *([INTERNAL_QA_PATH] if any(qa.is_internal_number(no) for no in refs) else [])))
     if change.kind == REMOVE:
         lines += qa_rows(refs, before.answered, f"{previous} の時点の {tables} ")
     else:
