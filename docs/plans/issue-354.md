@@ -67,6 +67,10 @@
 - 1 パス目の指摘対応の差分（起点 `e938a0a`・計画ファイルを除く）: `docs/plugins/index.md` 12 行追加・7 行削除——0 行ではないので 2 パス目を回す
 - 2 パス目: 再開後（2026-10-23）に Verifier（`dev-loop:dev-loop-verifier`・sonnet）と `/code-review` を起動。base `f712197f0664ff85bd6853451ce4fbdcca4521c8`・HEAD `3a178e2`
 - **2 パス目の指摘対応を始める直前の SHA（狭いパスの起点）: `3a178e2`**
+- 2 パス目の結果: Verifier **反証 1 件**（P1）・`/code-review` **指摘 4 件**（P1〜P4。P1 は両方が挙げた）。採否は下の「2 パス目の指摘の採否」（直す 2・残課題 2）
+- 2 パス目の指摘対応: `1fff8c5`（P1・P2）
+- 狭いパス（起点 `3a178e2`・`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件**。Verifier が設計した試料で P1（旧い構成で `--version 1` も「版（v1 など）が 1 つも無い」rc=2、`--req`/`--budget` に旧いタグを渡しても同じ）と P2（`v1/req-signoff-1` があると `git tag v1` が `cannot lock ref` で失敗、`release-v1` は作れる）を実走して一致。赤になった変異 0・素通りした変異 0
+- 2 パス目の指摘対応後の当て直し: `check-all.py` 44/44（失敗 0 / 飛ばし 0。`1fff8c5` で）・`check-site-links.py` 0・`mkdocs build --strict`（CPython 3.13 ＋ ロックした依存）警告 0 で成功
 - 割り目（2 パス目の前）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-23）。再開は 2 パス目から
 - 次: 2 パス目——**手順 5 の Verifier と手順 6 の `/code-review` の両方**を、base `f712197f0664ff85bd6853451ce4fbdcca4521c8`・HEAD `5bfc829` 以降に当てる
 - 反証と差し戻し: 1 パス目の Verifier 反証 0 件・差し戻しなし
@@ -117,4 +121,4 @@
 
 ## 起票
 
-この周の起票: 0 件（予定）
+- この周の起票: 0 件（残課題 R6・R7・P3・P4 はどれも実物で失敗を示せず、起票の条件 (a) を満たさない。PR コメントの残課題に載せる）
