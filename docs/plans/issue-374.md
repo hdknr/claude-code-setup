@@ -14,7 +14,8 @@
 - `scripts/test-build-proposal.py` — 回帰テスト（E）
 - `scripts/test-check-qa-csv.py` — `is_provisional` の印が `qa-csv.md` と一致すること
 - `CLAUDE.md` — `build-proposal.py` の行
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（minor: 0.21.1 → 0.22.0）と description
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.21.1 → 0.22.0。main が #361 で先に 0.22.0 に達したので、取り込んで 0.23.0 に上げた）と description
+- `.claude-plugin/marketplace.json` — 同上
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plans/issue-374.md` — この計画
 
