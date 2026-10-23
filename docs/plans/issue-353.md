@@ -84,6 +84,7 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 - 実装: 済み（手順 4）。`check-all.py` 44/44 緑。`test-check-qa-csv` 60/47・`test-diff-versions` 13/15・`test-merge-versions` 57/53・`test-build-proposal` 40/37
 - 割り目（手順 4 の後）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。再開は手順 5（Verifier 1 パス目と `/code-review` 1 パス目）から
 - 関門: 1 パス目 済み（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet → 反証 1 件（V）。`/code-review` high → 指摘 7 件）。採否は下の表——直す 3 件・残課題 5 件。指摘対応は済み。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目
+- 割り目（手順 6 の 2 パス目の前）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。指摘対応のコミットは `930cfed`（`check-all.py` 44/44 緑）。再開は 2 パス目から——**手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方が残っている**。base は周の base のまま（`4e498b2…`）
 - 交絡: 実験なし（変異テストのみ）
 
 ## 既知の限界・決着済みの論点
