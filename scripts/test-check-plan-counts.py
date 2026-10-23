@@ -51,7 +51,20 @@ CASES: list[tuple[str, str, str, bool, str]] = [
     ("175 は対象", "issue-175.md", "# t\n", False, "が無い"),
     ("文の途中の言及は見ない", "issue-300.md",
      "# t\n\n手順 8 の「この周の起票」の行は下に書く。\n\n" + OK, True, ""),
+    # 1 パス目の指摘（CR2）: 箇条の印以外の行頭で書いた 2 本目が素通りしていた
+    ("正しい行と番号つきの行", "issue-300.md", "# t\n\n" + OK + "1. この周の起票: 2 件\n", False, "形が崩れている"),
+    ("正しい行と見出しの行", "issue-300.md", "# t\n\n" + OK + "\n## この周の起票: 2 件\n", False, "形が崩れている"),
+    ("正しい行と引用の行", "issue-300.md", "# t\n\n" + OK + "\n> この周の起票: 2 件\n", False, "形が崩れている"),
+    # 1 パス目の指摘（CR5・V(a)）: 字下げの無い項で入れ子の範囲が終わる。後ろの項の子は件数の行の子ではない
+    ("入れ子の範囲は字下げの無い項で終わる", "issue-300.md", "# t\n\n" + OK + "- 次\n  - 次の子\n", True, ""),
 ]
+
+# 落ちる試料のうち、出力に**出てはならない**文字列。崩れた行が 1 本でもあれば「無い」とは言わない
+# （1 パス目の指摘 CR6・V(b)。言うと、直す相手を取り違える）
+ABSENT: dict[str, str] = {
+    "`- ` が無い": "が無い",
+    "字下げした行": "が無い",
+}
 
 
 def assert_not_real_repo(root: Path) -> None:
@@ -104,6 +117,8 @@ def mismatches(mod) -> list[str]:
                 bad.append(f"{name}（通るべきが rc={rc}）")
             elif not ok and (rc == 0 or needle not in text):
                 bad.append(f"{name}（落ちるべきが rc={rc}・『{needle}』が出力に無い）")
+            elif name in ABSENT and ABSENT[name] in text:
+                bad.append(f"{name}（『{ABSENT[name]}』が出力に出てはならない）")
     return bad
 
 
@@ -120,6 +135,10 @@ MUTANTS: list[tuple[str, str, str]] = [
     ("免除を外す（0 から）", "FIRST_ISSUE = 175", "FIRST_ISSUE = 0"),
     ("全部免除する", "FIRST_ISSUE = 175", "FIRST_ISSUE = 10**9"),
     ("免除の境界を 1 ずらす", ">= FIRST_ISSUE", "> FIRST_ISSUE"),
+    ("形が崩れた行を箇条の印の行頭に限る（番号・見出し・引用を見ない）",
+     "(?:(?:[-*+]|\\d+[.)]|#+|>)\\s*)*", "(?:[-*+]\\s+)?"),
+    ("入れ子の範囲を字下げの無い行で打ち切らない", 'if line[:1] not in (" ", "\\t"):', 'if False:'),
+    ("崩れた行があっても「無い」と言う", "if not hits and not found:", "if not hits:"),
     ("接尾辞つきの名前を対象から外す", 'PLAN_NAME = re.compile(r"^issue-(\\d+)")', 'PLAN_NAME = re.compile(r"^issue-(\\d+)\\.md$")'),
 ]
 
