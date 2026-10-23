@@ -4,7 +4,7 @@
 
 触る:
 
-- `docs/plugins/index.md` — spec-loop の節だけ。版の構成・凍結・移し方の小節を足し、`spec-review` の小節に 3 つの判定役の説明を足す。同じ小節の振り分けの区分の行を `references/spec-scope.md` の 6 区分に合わせる
+- `docs/plugins/index.md` — spec-loop の節だけ。版の構成・凍結・移し方の小節を足し、`spec-review` の小節に 3 つの判定役の説明を足す。同じ小節の振り分けの区分の行を `references/spec-scope.md` の 6 区分に合わせる。**1 パス目の指摘対応（R3）で `feasibility` の小節の費用の振り分けの行にも広げた**——新しい spec-review の記述（費用だけの選択は内部の表）と同じページで食い違うため
 - `docs/plans/issue-354.md` — この計画
 
 触らない:
@@ -38,6 +38,8 @@
 | C1 | タグの命名が `signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>`（`signoff-tags.md`） | 旧い名前を新しい名前として書く | grep |
 | C2 | 振り分けの区分が `spec-scope.md` の 6 区分（判定役の案は「退ける」以外） | 既存の「5 つ」の行が残る | 差分 |
 | C3 | Q&A 表の層（共有 `shared/qa.csv`・内部 `spec/qa-dev.csv`） | 判定役の振り分けの案から内部の表が抜ける | 差分 |
+| C4 | （1 パス目の指摘対応で追加）`feasibility` の小節が、費用だけが変わる選択を共有の表に起票せず内部の表（`spec/qa-dev.csv`）に拾うと書き、`feasibility/SKILL.md` と一致する | 共有の表への起票だけが残る | `feasibility/SKILL.md` の description・123-125 行と突き合わせる |
+| A4 | （1 パス目の指摘対応で追加）警告が 0.7.0〜0.11.x の名前のタグ（`v<n>/req-signoff-<k>`）も読まないこと・消さないと `v<n>` でリリースできないことを書き、片付け方は `signoff-tags.md` を指す。移し方の手順を写さない | 版の範囲が違う／手順の一部だけを写す | `git show e6f570e:` と `8d30068` の前後の `plugin.json`・`signoff-tags.md` と突き合わせる |
 | D1 | `python3 scripts/check-site-links.py` が通る | 新しい絶対リンクのアンカーが無い | 実行 |
 | D2 | `uv run mkdocs build --strict` が通る | 書式・リンク | 実行 |
 | E | `python3 scripts/check-all.py` が通る（歯止めを全部） | — | 実行 |
@@ -80,6 +82,18 @@
 | Issue 本文は「振り分けの 5 区分」と書く | 原本の 6 区分に合わせる | Issue 自身が「着手時点の `references/` を正として書く」と書いており、`spec-scope.md` は #339 で 6 区分になっている |
 | 見積りの検証役（estimate-checker）も判定役として書くか | 書かない（`feasibility` の小節の既存の 1 行のまま） | Issue の対象は spec-review の 3 役 |
 | `plugins/spec-loop/README.md` の判定役の記述も直すか | 触らない | 食い違いは無い（名前と書き込みツールを持たないことだけ）。プラグインの版を上げる周になる |
+
+### 1 パス目の指摘の採否（Verifier 反証 0 件・`/code-review` 指摘 7 件）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| R1 | 警告が「0.6.0 以前」だけを対象にし、0.7.0〜0.11.x の #260 の名前のタグ（`v<n>/req-signoff-<k>`）を書いていない。消さないと `v<n>` でリリースできない | 示せる——`git show e6f570e:plugins/spec-loop/references/signoff-tags.md` の 10 行が `v<n>/req-signoff-<k>`、`8d30068` で 0.11.1 → 0.12.0 に改名。`signoff-tags.md` 25-34 行が「読まない」「手元とリモートから消す」 | A3・C1 | 直す |
+| R2 | 警告の移し方の括弧書きが 6 手順のうち 4 つだけを写している | 示せる——`versions.md` の「移し方」は 6 手順（`release-v1` の付け直し・CLAUDE.md と CI のパスを含む） | A1（写しを作らない） | 直す（括弧書きを消して指し先だけにする） |
+| R3 | `feasibility` の小節の既存の行が、費用だけが変わる選択も Q&A 表に起票すると読める（#339 以降は内部の表） | 示せる——`feasibility/SKILL.md` 3 行の description「共有の表に起票せず、内部の Q&A 表の行として見積りに拾う」 | C3 | 直す |
+| R4 | タグの行に #260 の名前の片付け（`--prune-tags`）への指し先が無い | R1 と同じ実物 | C1 | R1 に畳む（警告から `signoff-tags.md` を指す） |
+| R5 | `check-signoff.py --version 1` では「版が無い」ではなく「タグが無い」と出る（終了コードは 2） | 示せる——`check-signoff.py` 297 行 | A3（症状の記述） | 直す |
+| R6 | 冒頭の「指摘と判定を返すだけ」と、Domain Checker が番号付きの条件を判定しないことが食い違う | 示せない——`domain-checker.md` は自分を判定役と呼び、指摘ごとの判定を返す。読み手の解釈の問題 | 無し | 残課題 |
+| R7 | 条件 5 が Domain Checker の行にだけ付いている | 示せない——その行が既に「3 役の指摘が 1 件残らず振り分け済み」と書いている | 無し | 残課題 |
 
 ## 起票
 
