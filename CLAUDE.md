@@ -58,7 +58,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
       共有の範囲（v1〜v<n> の `shared/` と `removed.csv`）が一致するかの照合（#262。**どちらかの時点に比べる中身が
       無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。**要求確定のタグの時点に `暫定反映` の Q&A が
-      残れば 3**（#325。Q&A の行だけを版の順に重ね、重ね方はテストが `merge-versions.py` と突き合わせる）。
+      残れば 3**（#325。Q&A の行だけを版の順に重ね、重ね方はテストが `merge-versions.py` と突き合わせる。
+      **要求確定のタグの時点の `removed.csv` の共有の Q&A の行（内部の層の `D-` は除く）について `merge` が拒否する配置は 2——判定は `merge-versions.py` の `check_removed`**（#338）。
+      **種類 `ファイル` の行の配置と v1 の `removed.csv` は、`merge` が拒否しても 2 にしない**——v2 以降の `removed.csv` の
+      形式の違反は、種類によらず両方のタグで 2）。
       テストは `scripts/test-check-signoff.py`）
     - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書を作る
       （照合をスキルの判断に任せないため、**生成の側で照合する**。テストは `scripts/test-build-proposal.py`）
