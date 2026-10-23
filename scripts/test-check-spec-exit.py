@@ -37,14 +37,17 @@ SCRIPTS = PLUGIN / "scripts"
 TARGET = "check-spec-exit.py"
 REFERENCE = PLUGIN / "references" / "spec-exit.md"
 
-HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
-DONE_ROW = "Q-001,仕様レビュー（Red Team）,通信が切れたら？,A: 取り消す / B: 残す,A（業務部が回答）,spec/order.md,反映済み,\n"
-OPEN_ROW = "Q-002,仕様レビュー（Domain Checker）,端数は？,A: 切り捨て / B: 四捨五入,未回答,—,確認中,\n"
+HEADER = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+DONE_ROW = "Q-001,仕様レビュー（Red Team）,通信が切れたら？,A: 取り消す / B: 残す,A,理由,A（業務部が回答）,spec/order.md,反映済み,\n"
+OPEN_ROW = "Q-002,仕様レビュー（Domain Checker）,端数は？,A: 切り捨て / B: 四捨五入,A,理由,未回答,—,確認中,\n"
 # 回答はあるが未反映——これも仕様に反映した状態でない
-ANSWERED_ROW = "Q-003,仕様レビュー（Formal Checker）,上限は？,A: 拒否 / B: 切り詰める,B（業務部が回答）,—,確認中,\n"
+ANSWERED_ROW = "Q-003,仕様レビュー（Formal Checker）,上限は？,A: 拒否 / B: 切り詰める,B,理由,B（業務部が回答）,—,確認中,\n"
 # 暫定の回答で反映した——仕様には反映済みなので条件 1 を止めない（#325）
-PROVISIONAL_ROW = "Q-005,仕様レビュー（Red Team）,上限は？,A: なし / B: 5000 円,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
-BAD_ROW = "Q-004,仕様レビュー,選択肢が 1 つ,A: これだけ,未回答,—,確認中,\n"
+PROVISIONAL_ROW = "Q-005,仕様レビュー（Red Team）,上限は？,A: なし / B: 5000 円,A,理由,A（業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
+BAD_ROW = "Q-004,仕様レビュー,選択肢が 1 つ,A: これだけ,A,理由,未回答,—,確認中,\n"
+# 内部の Q&A 表（spec/qa-dev.csv）の行。質問の文に印の語（未定）を入れておく——表は印として数えない（#339）
+INTERNAL_DONE = "D-001,仕様レビュー（Red Team）,上限が未定のときの再試行の間隔は,A: 10 秒 / B: 60 秒,B,呼び出しの上限,B（開発 2026-10-22）,spec/order.md,反映済み,\n"
+INTERNAL_OPEN = "D-002,仕様レビュー（Red Team）,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"
 CLEAN_SPEC = "# 注文\n\n未定義の状態に遷移しない。\nmastodon のような語も、TODOS も印ではない。\n"
 
 # (名前, qa.csv の中身（None なら作らない）, {仕様の相対パス: 中身}（None ならディレクトリを作らない）,
@@ -84,6 +87,15 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     # 全角の英字は IGNORECASE では半角にならない
     ("全角の ＴＢＤ", HEADER, {"order.md": "仕様はＴＢＤ。\n"}, 1, "未決定の印 TBD"),
     ("ドット始まりは見ない", HEADER, {"order.md": CLEAN_SPEC, ".cache/x.md": "TODO\n"}, 0, "条件 1 を満たす"),
+    ("内部の表の確認中は止める", HEADER + DONE_ROW, {"order.md": CLEAN_SPEC, "qa-dev.csv": HEADER + INTERNAL_OPEN}, 1,
+     "D-002: 状態が 確認中"),
+    ("内部の表の反映済みは通す（文の印は数えない）", HEADER + DONE_ROW,
+     {"order.md": CLEAN_SPEC, "qa-dev.csv": HEADER + INTERNAL_DONE}, 0, "条件 1 を満たす"),
+    ("内部の表が列検査を通らない", HEADER, {"order.md": CLEAN_SPEC, "qa-dev.csv": HEADER + DONE_ROW}, 1,
+     "`No` が `D-001` の形でない"),
+    ("内部の表が読めない", HEADER, {"order.md": CLEAN_SPEC, "qa-dev.csv": b"\xff\xfe\x00"}, 2, "内部の Q&A 表を読めない"),
+    ("内部の表だけでは仕様が無い", HEADER, {"qa-dev.csv": HEADER + INTERNAL_DONE}, 2, "ファイルが 1 つも無い"),
+    ("入れ子の qa-dev.csv は仕様のファイル", HEADER, {"order.md": CLEAN_SPEC, "sub/qa-dev.csv": "未定\n"}, 1, "未決定の印 未定"),
     ("仕様のディレクトリが無い", HEADER, None, 2, "ディレクトリが無い"),
     ("仕様が空", HEADER, {}, 2, "ファイルが 1 つも無い"),
     ("ドット始まりしか無い", HEADER, {".keep": ""}, 2, "ファイルが 1 つも無い"),
@@ -93,11 +105,17 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("反映済みでない行を見ない", "for row in pending:", "for row in []:", "確認中の行"),
+    ("反映済みでない行を見ない", "for row in table_rows:", "for row in []:", "確認中の行"),
+    ("内部の表を読まない", "if internal_path.exists()", "if False", "内部の表の確認中は止める"),
+    ("内部の表を印の走査に入れる", "        if path == root / pptx.qa.INTERNAL_NAME:", "        if False:",
+     "内部の表の反映済みは通す（文の印は数えない）"),
+    ("どこの qa-dev.csv も外す", "        if path == root / pptx.qa.INTERNAL_NAME:", "        if path.name == pptx.qa.INTERNAL_NAME:",
+     "入れ子の qa-dev.csv は仕様のファイル"),
+    ("内部の読めない表を 2 にしない", "    if internal_code == 2:", "    if False:", "内部の表が読めない"),
     ("暫定反映を反映した状態に数えない", "not in pptx.qa.REFLECTED", "!= pptx.qa.DONE", "暫定反映は止めない"),
     ("資料に載る行で数える", "not in pptx.qa.REFLECTED", "not in ()", "暫定反映は止めない"),
     ("暫定の件数を出さない", "== pptx.qa.PROVISIONAL]", "== None]", "暫定反映は止めない"),
-    ("列検査の失敗を見ない", "    if code:\n        problems += lines", "    if False:\n        problems += lines",
+    ("列検査の失敗を見ない", "        if table_code:\n            problems += table_lines", "        if False:\n            problems += table_lines",
      "列検査を通らない表"),
     ("読めない表を 2 にしない", "if code == 2:", "if False:", "Q&A 表が無い"),
     ("大文字・小文字を区別する", "re.compile(\"|\".join(parts), re.IGNORECASE)", "re.compile(\"|\".join(parts))",

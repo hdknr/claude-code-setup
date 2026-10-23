@@ -45,10 +45,10 @@ QA = "docs/v1/shared/qa.csv"
 SCHEDULE = "docs/v1/feasibility/schedule.csv"
 ESTIMATE = "docs/v1/feasibility/estimate.csv"
 R1, B1 = "signoff/v1/req-1", "signoff/v1/budget-1"
-QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
+QA_HEAD = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
 QA_ROWS = (
-    "Q-001,要求確定,割引は？,A: なし / B: 3%,A（業務部が回答）,決定表 4 行目,反映済み,\n"
-    "Q-005,実現性・コスト,夜間は止めてよいか,A: 止まってよい / B: 24 時間,未回答,—,確認中,B は月額が約 2 倍\n"
+    "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+    "Q-005,実現性・コスト,夜間は止めてよいか,A: 止まってよい / B: 24 時間,A,理由,未回答,—,確認中,B は月額が約 2 倍\n"
 )
 SCHEDULE_CSV = "No,工程,開始,終了,前提\nT-001,要件定義,2026-11-02,2026-11-27,\nT-002,基本設計,2026-11-30,2026-12-25,T-001\n"
 NFC_E, NFD_E = "é", "é"  # é の NFC と NFD
@@ -63,7 +63,7 @@ BASE = [("w", QA, QA_HEAD + QA_ROWS), ("w", SCHEDULE, SCHEDULE_CSV), ("w", ESTIM
         ("w", "docs/v1/proposal/01-background.md", "## 背景と目的\n\n受注を自動化する。\n"), ("c",)]
 SIGNED = BASE + [("t", R1), ("t", B1)]
 # v2: その版の差分だけを置き、v2 のタグで承認する（v1 は凍結したまま）
-V2 = SIGNED + [("w", "docs/v2/shared/qa.csv", QA_HEAD + "Q-006,要求確定,返品は？,A: 可 / B: 不可,A,決定表 9 行目,反映済み,\n"),
+V2 = SIGNED + [("w", "docs/v2/shared/qa.csv", QA_HEAD + "Q-006,要求確定,返品は？,A: 可 / B: 不可,A,理由,A,決定表 9 行目,反映済み,\n"),
                ("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV),
                ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
                ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n返品を受け付ける。\n"), ("c",),
@@ -76,7 +76,7 @@ SIGNED_R = BASE[:-1] + [("w", "docs/v1/requirements/a.md", "A\n"), ("w", "docs/v
                         ("c",), ("t", R1), ("t", B1)]
 V2_CHANGES = [
     ("w", "docs/v2/shared/qa.csv", QA_HEAD + QA_ROWS.splitlines(True)[0].replace("A（業務部が回答）", "B（業務部が回答）")
-     + "Q-006,要求確定,返品は？,A: 可 / B: 不可,A,決定表 9 行目,反映済み,\n"),
+     + "Q-006,要求確定,返品は？,A: 可 / B: 不可,A,理由,A,決定表 9 行目,反映済み,\n"),
     ("w", "docs/v2/removed.csv", "種類,対象,理由\nQ&A,Q-005,夜間の停止を決めた\nファイル,requirements/b.md,a.md に統合した\n"
      "機能,F-001,割引を廃止した\n"),
     ("w", "docs/v2/requirements/a.md", "A2\n"), ("w", "docs/v2/requirements/c.md", "C\n"),
@@ -217,6 +217,18 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
                                               ("i", "docs/v2/proposal/N.md", "100644", "X\n"), ("i", "docs/v2/proposal/n.md", "100644", "Y\n"),
                                               ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text),
+    # 内部の層の Q&A（spec/qa-dev.csv の D-）は決裁者に見せない——比較の節にも件数にも入れない（#339）
+    ("内部の Q&A は比較に載せない", V2C[:-3] + [("w", "docs/v2/spec/qa-dev.csv", QA_HEAD
+                                             + "D-001,仕様レビュー,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,B（開発）,spec/a.md,反映済み,\n"),
+                                            ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "D-001" not in r.text and "ワーカーを分けるか" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text),
+    # 内部の表は比べる前に外す——内部の表の決まりの違反（`暫定反映`・前の版に無い D- を消す）でも、照合と同じく提案書は作れる
+    ("内部の表の違反でも比較を作る", V2C[:-3] + [("w", "docs/v2/spec/qa-dev.csv", QA_HEAD
+                                               + "D-001,仕様レビュー,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,B（開発）,spec/a.md,暫定反映,\n"),
+                                              ("w", "docs/v2/removed.csv", "種類,対象,理由\nQ&A,Q-005,夜間の停止を決めた\n"
+                                               "ファイル,requirements/b.md,a.md に統合した\n機能,F-001,割引を廃止した\nQ&A,D-009,共有へ移した（Q-007）\n"),
+                                              ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "D-00" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text),
     ("v1 は比較の節を持たない", SIGNED_R, False,
      lambda r: made(r) and "前の版" not in r.text and "差分の見積り" not in r.text),
     # 重ね合わせが作れない（前の版に無いものを消す）——比較を作れないので書かない
@@ -231,6 +243,9 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("内部の Q&A も比較に載せる", "        drop_internal(Path(tmp) / signoff.DOCS)\n", "", "内部の Q&A は比較に載せない"),
+    ("removed.csv の D- の行を外さない", "if len(kept) != len(rows):", "if False:", "内部の表の違反でも比較を作る"),
+    ("内部の表を外さない", "            internal.unlink()\n", "            pass\n", "内部の表の違反でも比較を作る"),
     ("v2 以降も Q&A 表を必須にする", 'if info["version"] > 1 and not exists(', 'if False and not exists(',
      "Q&A を足さない版でも作る"),
     ("v1 でも Q&A 表を省ける", 'if info["version"] > 1 and not exists(', 'if not exists(',

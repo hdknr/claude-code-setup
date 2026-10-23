@@ -5,13 +5,19 @@
 
 | 印 | 描くもの |
 | --- | --- |
-| `qa` | 各版の `docs/v<n>/shared/qa.csv` を、版ごとの節に（件数・一覧・質問ごとの詳細） |
+| `qa` | 各版の `docs/v<n>/shared/qa.csv` を、版ごとの節に（件数・一覧・質問ごとの詳細。推奨の選択肢と理由も） |
+
+**描くのは共有の層の表だけ**——内部の層の表（`docs/v<n>/spec/qa-dev.csv`）は描かない（開発者が決めて記録するもの。
+spec-loop の `references/qa-csv.md` の「層」）。
 
 - **版は重ね合わせない。** v2 で同じ `No` の行を置いて問い直した質問は、v1 と v2 の両方の節に出る。
   アンカーは `v<n>-q-001` の形で、版をまたいで一意。
 - **読めない表・見出しが列名と違う表・知らない印は、警告を出し、ページにも注意書きを置く。**
   警告は `mkdocs` のロガーに出すので、`mkdocs build --strict` は落ちる（黙って空の表を出さない）。
 - **列の決まりの検査はしない**——それは spec-loop の `check-qa-csv.py` の仕事。ここが見るのは見出しの行だけ。
+  **推奨の列が無い見出しは前の形（spec-loop 0.17.0 まで）の表**で、警告に移す手順の指し先を添える。
+  逆に、前の形のフック（推奨の列を知らない）は新しい表を「見出しが違う」で警告する——どちらでも黙って崩れた表は出ない。
+  **フックを新しくする手順は spec-loop の `references/tree.md` の「Q&A 表を移す」**。
 - セルの文字は HTML と Markdown の記号をエスケープし、改行は `<br>` にする（表を壊さない）。
   **CSV の文字は表のセルにだけ置く**——段落や箇条書きに置くと、行頭の `!!! `・字下げ・`1. ` がブロックの記法に読まれる。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
@@ -46,10 +52,12 @@ MARKER = re.compile(r"<!--\s*spec-loop:\s*(?P<name>[A-Za-z0-9_-]+)\s*-->")
 VERSION = re.compile(r"v[1-9][0-9]*")
 
 # spec-loop の references/qa-csv.md の列（check-qa-csv.py の COLUMNS と同じ。写しなので、テストが突き合わせる）
-QA_COLUMNS = ["No", "起票元", "質問", "選択肢", "回答", "反映先", "状態", "費用への影響"]
+QA_COLUMNS = ["No", "起票元", "質問", "選択肢", "推奨", "推奨の理由", "回答", "反映先", "状態", "費用への影響"]
 QA_DONE = "反映済み"
 QA_PROVISIONAL = "暫定反映"
 QA_NO_ANSWER = "未回答"
+QA_NO_RECOMMENDATION = "なし"
+QA_MIGRATION = "spec-loop の references/tree.md の「Q&A 表を移す」"
 QA_OPTION_SEPARATOR = " / "
 
 QA_PAGE = "qa.md"
@@ -94,7 +102,8 @@ def read_qa(path: Path) -> list[dict[str, str]]:
         reader = csv.reader(f)
         header = next(reader, None)
         if header != QA_COLUMNS:
-            raise ValueError(f"見出しの行が列名（{','.join(QA_COLUMNS)}）と違う: {header}")
+            hint = f"。推奨の列が無い——前の形の表なら、移す手順は {QA_MIGRATION}" if header and "推奨" not in header else ""
+            raise ValueError(f"見出しの行が列名（{','.join(QA_COLUMNS)}）と違う: {header}{hint}")
         # 空白だけの行は空行として読み飛ばす（check-qa-csv.py と同じ）
         return [dict(zip(QA_COLUMNS, row + [""] * (len(QA_COLUMNS) - len(row))))
                 for row in reader if any(cell.strip() for cell in row)]
@@ -111,15 +120,19 @@ def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
            f"確認中 {pending} 件（うち回答あり・未反映 {answered} 件）・暫定反映 {provisional} 件・反映済み {done} 件", ""]
     if not rows:
         return out + ["質問はまだ無い。", ""]
-    out += ["| No | 質問 | 回答 | 状態 |", "| --- | --- | --- | --- |"]
+    out += ["| No | 質問 | 推奨 | 回答 | 状態 |", "| --- | --- | --- | --- | --- |"]
     for row in rows:
         out.append(f"| [{text(row['No'])}](#{anchor(version, row['No'])}) | {text(row['質問'])} "
-                   f"| {text(row['回答'])} | {text(row['状態'])} |")
+                   f"| {text(row['推奨'])} | {text(row['回答'])} | {text(row['状態'])} |")
     out.append("")
     for row in rows:
-        options = "<br>".join(text(option) for option in row["選択肢"].split(QA_OPTION_SEPARATOR))
+        recommended = row["推奨"].strip()
+        options = "<br>".join(f"**{text(option)}**（推奨）" if option.split(":", 1)[0].strip() == recommended
+                              else text(option) for option in row["選択肢"].split(QA_OPTION_SEPARATOR))
+        reason = "推奨なし" if recommended == QA_NO_RECOMMENDATION else "推奨の理由"
         out += [f"### {text(row['No'])} {{#{anchor(version, row['No'])}}}", "",
-                "| 項目 | 内容 |", "| --- | --- |", f"| 質問 | {text(row['質問'])} |", f"| 選択肢 | {options} |"]
+                "| 項目 | 内容 |", "| --- | --- |", f"| 質問 | {text(row['質問'])} |", f"| 選択肢 | {options} |",
+                f"| {reason} | {text(row['推奨の理由'])} |"]
         out += [f"| {name} | {text(row[name])} |" for name in ("回答", "反映先", "状態", "起票元")]
         if row["費用への影響"].strip():
             out.append(f"| 費用への影響 | {text(row['費用への影響'])} |")
