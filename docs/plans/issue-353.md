@@ -73,7 +73,8 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 - 周の在り処: ブランチ `issue/353-qa-layer-one-place`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-353`・
   起点 `4e498b2`・base の参照 `origin/main`・base の SHA `4e498b28d799d41a8774386b17af8e2f3108b802`
 - 実装: 済み（手順 4）。`check-all.py` 44/44 緑。`test-check-qa-csv` 60/47・`test-diff-versions` 13/15・`test-merge-versions` 57/53・`test-build-proposal` 40/37
-- 関門: 未着手
+- 割り目（手順 4 の後）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。再開は手順 5（Verifier 1 パス目と `/code-review` 1 パス目）から
+- 関門: 未着手（Verifier 1 パス目・`/code-review` 1 パス目ともまだ）
 - 交絡: 実験なし（変異テストのみ）
 
 ## 既知の限界・決着済みの論点
