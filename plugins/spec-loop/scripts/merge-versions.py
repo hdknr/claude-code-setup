@@ -10,7 +10,8 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 - v1 に v2、…、v<n> の差分を順に重ねる。`--upto` を省けば、番号が最大の版（作業中の版）まで。
 - 出力は版に分ける前の `docs/` と同じ形（`shared/`・`requirements/`・`spec/`）。
 - **同じ入力から同じバイトを作る**——時刻を使わず、行・機能は前の版の順、ファイルはパスの順。
-- 各版の `qa.csv` は同梱の `check-qa-csv.py` で検査する（**列の決まりを写さない**）。
+- 各版の `qa.csv`（と内部の `spec/qa-dev.csv`）は同梱の `check-qa-csv.py` で検査する（**列の決まりを写さない**）。
+  内部の表も共有の表と同じく行（`No`）で重ねる。`removed.csv` の `Q&A` は、番号（`Q-`／`D-`）で消す表が決まる。
 - 標準ライブラリだけを使う。
 
 終了コード:
@@ -62,11 +63,13 @@ VERSION_LIKE = re.compile(r"v[0-9]")
 AREAS = ["shared", "requirements", "spec"]
 QA_PATH = "shared/qa.csv"
 SPEC_PATH = "spec/spec_ir.json"
+# 内部の層の Q&A 表（`check-qa-csv.py` の `INTERNAL_NAME`。#339）
+INTERNAL_QA_PATH = "spec/" + qa.INTERNAL_NAME
 REMOVED = "removed.csv"
 REMOVED_COLUMNS = ["種類", "対象", "理由"]
 KIND_FILE, KIND_QA, KIND_FEATURE = "ファイル", "Q&A", "機能"
 KINDS = [KIND_FILE, KIND_QA, KIND_FEATURE]
-STRUCTURED = [QA_PATH, SPEC_PATH]
+STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]
 MARKER = ".merged-versions"
 
 
@@ -233,9 +236,11 @@ class Whole:
     def __init__(self) -> None:
         self.files: dict[str, bytes] = {}
         self.qa: dict[str, dict[str, str]] = {}  # 挿入順 = 並び順
+        self.internal: dict[str, dict[str, str]] = {}  # 内部の Q&A 表（同上）
         self.spec: dict | None = None
         self.features: dict[str, dict] = {}
         self.has_qa = False  # どれかの版に qa.csv があれば、行が 0 でも見出しだけ書く（出力を docs/ と同じ形に）
+        self.has_internal = False  # 内部の表も同じ
 
     def apply(self, number: int, root: Path, problems: list[str]) -> None:
         files = list_files(root, problems)
@@ -250,13 +255,14 @@ class Whole:
                 removed = read_removed(removed_path, problems)
 
         qa_rows = read_qa(files[QA_PATH], problems) if QA_PATH in files else []
+        internal_rows = read_qa(files[INTERNAL_QA_PATH], problems) if INTERNAL_QA_PATH in files else []
         spec = read_spec(files[SPEC_PATH], problems) if SPEC_PATH in files else None
         placed = {
             KIND_FILE: set(files) - set(STRUCTURED),
-            KIND_QA: {row["No"] for row in qa_rows},
+            KIND_QA: {row["No"] for row in qa_rows + internal_rows},
             KIND_FEATURE: {f["id"] for f in spec["features"]} if spec else set(),
         }
-        present = {KIND_FILE: set(self.files), KIND_QA: set(self.qa), KIND_FEATURE: set(self.features)}
+        present = {KIND_FILE: set(self.files), KIND_QA: set(self.qa) | set(self.internal), KIND_FEATURE: set(self.features)}
         check_removed(removed_path, removed, placed, present, problems)
 
         if problems:
@@ -268,26 +274,32 @@ class Whole:
                 except OSError as e:
                     raise Unreadable(f"{source}: 読めない（{e.strerror}）") from None
         self.has_qa = self.has_qa or QA_PATH in files
+        self.has_internal = self.has_internal or INTERNAL_QA_PATH in files
         for row in qa_rows:
             self.qa[row["No"]] = row
+        for row in internal_rows:
+            self.internal[row["No"]] = row
         if spec is not None:
             base = self.spec or {}
             self.spec = {**base, **{k: v for k, v in spec.items() if k != "features"}}
             for feature in spec["features"]:
                 self.features[feature["id"]] = feature
         for _, kind, target in removed:
-            {KIND_FILE: self.files, KIND_QA: self.qa, KIND_FEATURE: self.features}[kind].pop(target)
+            table = (self.qa if target in self.qa else self.internal) if kind == KIND_QA else None
+            {KIND_FILE: self.files, KIND_QA: table, KIND_FEATURE: self.features}[kind].pop(target)
 
     def render(self, problems: list[str]) -> dict[str, bytes]:
         """書く前に、出力の全部をバイトにする——書いている途中で作れないと分かる経路を残さない。"""
         rendered = dict(self.files)
-        if self.has_qa:
+        for present, path, rows in ((self.has_qa, QA_PATH, self.qa), (self.has_internal, INTERNAL_QA_PATH, self.internal)):
+            if not present:
+                continue
             buffer = io.StringIO(newline="")
             writer = csv.writer(buffer, lineterminator="\n")
             writer.writerow(qa.COLUMNS)
-            for row in self.qa.values():
+            for row in rows.values():
                 writer.writerow([row[c] for c in qa.COLUMNS])
-            rendered[QA_PATH] = buffer.getvalue().encode("utf-8")
+            rendered[path] = buffer.getvalue().encode("utf-8")
         if self.spec is not None:
             whole = {**self.spec, "features": list(self.features.values())}
             try:

@@ -9,6 +9,11 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 **状態の名前を列挙して絞らない**——決まりに状態が増えても、確認が残っている行を黙って落とさない。
 表紙・一覧・1 問 1 枚の順に並べる。**表紙の件数と各問の回答の見出しは、未反映と暫定で分ける**
 （暫定の行を「未反映」と書かない——仕様には反映済みなので）。
+**推奨を目立たせる**——一覧の各行に推奨のラベル、各問の頁で推奨の選択肢を太字にして「（推奨）」を添え、推奨の理由を載せる
+（推奨しない質問は「推奨なし」と理由。#267）。
+
+**載せるのは共有の層の表だけ**——内部の層の表（`check-qa-csv.py` の `INTERNAL_NAME`）を渡されたら作らない（2）。
+内部の質問は開発者が決めるもので、利用者に見せない（`references/qa-csv.md` の「層」。#330）。
 
 **列の決まりは同じディレクトリの `check-qa-csv.py` から読み込む**（定数を写さない）。
 決まりの正は `references/qa-csv.md` である（このプラグインの中にある）。
@@ -24,7 +29,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 - 0: 作った（載せた質問の数を、回答待ち・未反映と暫定に分けて出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
-- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**（**同上**）
+- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
 
 出力先の親ディレクトリが無ければ作る（既定の出力先 `build/req-loop/` は、
@@ -187,16 +192,33 @@ def index_slides(rows: list[dict[str, str]]) -> list[str]:
         for row in chunk:
             first = split_lines(row["質問"])[0]
             mark = "（暫定）" if provisional(row) else ""
-            body += lines_of(f"{row['No']}{mark}  {first}", 1600)
+            body += lines_of(f"{row['No']}{mark}  {first}  ［{recommendation_label(row)}］", 1600)
         out.append(slide(lines_of(head, 3200, bold=True), body))
     return out
+
+
+def recommended(row: dict[str, str]) -> str | None:
+    """推奨する選択肢のラベル。推奨しないなら None。"""
+    value = row["推奨"].strip()
+    return None if value == qa.NO_RECOMMENDATION else value
+
+
+def recommendation_label(row: dict[str, str]) -> str:
+    label = recommended(row)
+    return "推奨なし" if label is None else f"推奨 {label}"
 
 
 def question_slide(row: dict[str, str]) -> str:
     title = lines_of(f"{row['No']}（{row['起票元']}）", 2800, bold=True)
     body = lines_of(row["質問"], 2200, bold=True) + [paragraph("", 1200)]
     for option in row["選択肢"].split(qa.OPTION_SEPARATOR):
-        body += lines_of(option.strip(), 2000, indent=342900)
+        option = option.strip()
+        if qa.OPTION.fullmatch(option)["label"] == recommended(row):
+            body += lines_of(f"{option}（推奨）", 2000, bold=True, indent=342900)
+        else:
+            body += lines_of(option, 2000, indent=342900)
+    head = "推奨の理由" if recommended(row) else "推奨なし"
+    body += [paragraph("", 1200)] + lines_of(f"{head}: {row['推奨の理由']}", 1600)
     if row["費用への影響"].strip():
         body += [paragraph("", 1200)] + lines_of(f"費用への影響: {row['費用への影響']}", 1600)
     if provisional(row):
@@ -387,6 +409,9 @@ def main(argv: list[str]) -> int:
     # **出力先が入力の表そのものなら書かない**——置き換えで正本の表が PPTX になり、戻せない。
     if out.exists() and src.exists() and out.samefile(src):
         print(f"{out}: 入力の表と同じファイルなので書かない", file=sys.stderr)
+        return 2
+    if qa.is_internal(src):
+        print(f"{src}: 内部の層の表なので PPTX を作らない（資料に載せるのは共有の表 shared/qa.csv だけ）", file=sys.stderr)
         return 2
     code, lines, rows = read_pending(src)
     if code:
