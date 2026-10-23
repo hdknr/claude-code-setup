@@ -80,7 +80,8 @@ C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-
   F1 は直さない（狭いパスの指摘は人間が決める）——**示せて D に触れるので、PR コメントで「満たしていない受入基準」として名指しする**
 - `check-all.py`: HEAD `865bbca` で 44/44 緑 → `origin/main`（`24390e5`）を取り込み（`575a90b`、衝突なし）→ 44/44 緑
 - PR #347（2026-10-23）: PR 側の CI `check` pass・`build` pass（`deploy` は skipping）・`MERGEABLE`。レビュー記録は PR コメント。**マージは人間の承認待ち**
-- この周の起票: 0 件
+- この周の起票: 4 件（#348 R1/V1・#349 R6/S1・#350 R7・#351 R10。マージの前に AskUserQuestion で人間が承認 2026-10-23）
+- F1（狭いパス）: 人間の決定で**この PR で 1 語直す**（`CLAUDE.md`・docstring を「v2 以降の `removed.csv` の形式の違反は…」に）。関門は通さず人間レビューで見る
 - 反証・差し戻し: なし
 - 交絡: 実験は変異テストのみ。新しい試料の陽性対照は、拒否の結果を見ない変異（`if problems:` → `if False:`）で旧い挙動（2 以外）が再現することで取っている
 - 割り目（手順 4）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-22）。再開は手順 5 から
@@ -122,4 +123,4 @@ C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
-| F1 `CLAUDE.md` と docstring の「`removed.csv` の形式の違反は種類によらず 2」は v1 の `removed.csv` に当てはまらない（v1 は読まないので形式の違反でも 0） | 示せる（Verifier が v1 に見出し違反・理由が空を置いて両タグとも 0 を実測。`removed_scope` は v2 から: check-signoff.py:122-123） | D（文の範囲が実装と完全には一致しない。「v1 は 2 にしない」の直後なので v2 以降と読めば成り立つ曖昧さ） | 人間が決める |
+| F1 `CLAUDE.md` と docstring の「`removed.csv` の形式の違反は種類によらず 2」は v1 の `removed.csv` に当てはまらない（v1 は読まないので形式の違反でも 0） | 示せる（Verifier が v1 に見出し違反・理由が空を置いて両タグとも 0 を実測。`removed_scope` は v2 から: check-signoff.py:122-123） | D（文の範囲が実装と完全には一致しない。「v1 は 2 にしない」の直後なので v2 以降と読めば成り立つ曖昧さ） | 人間が決める → この PR で直す（2026-10-23） |
