@@ -72,6 +72,7 @@ Q&A: 追加 1・変更 1・削除 1
   変更 Q-002 質問2
   追加 Q-004 質問4
   削除 Q-003 質問3（理由: 不要になった）
+Q&A（内部）: 追加 0・変更 0・削除 0
 機能: 追加 1・変更 1・削除 1
   変更 F-002 送料 v2
   追加 F-003 ポイント
@@ -129,13 +130,17 @@ CASES: list[tuple[str, dict | None, list[str], Callable[[Result], bool]]] = [
      lambda r: r.code == 0 and "Q&A: 追加 4・変更 0・削除 0" in r.output
      and sum(line.startswith("  追加 Q-") for line in r.output.splitlines()) == 4
      and "  追加 Q-005 一行目\\n  追加 Q-999 偽\n" in r.output),
-    # 内部の Q&A 表（spec/qa-dev.csv）も行で比べる。並びは共有の表が先（#339）
+    # 内部の Q&A 表（spec/qa-dev.csv）も行で比べ、層で種類を分ける——`Q&A` に D- を、`Q&A（内部）` に Q- を出さない。
+    # 内部の行の削除にも removed.csv（種類は `Q&A`）の理由が付く（#339・#344）
     ("内部の表の行も比べる",
-     {**V1, "v1/spec/qa-dev.csv": QA_HEAD + q("D-001", "内部1"),
+     {**V1, "v1/spec/qa-dev.csv": QA_HEAD + q("D-001", "内部1") + q("D-003", "内部3"),
       "v2/spec/qa-dev.csv": QA_HEAD + q("D-001", "内部1", "B（開発）", "spec/a.md", "反映済み") + q("D-002", "内部2"),
-      "v2/shared/qa.csv": QA_HEAD + q("Q-004", "質問4")},
-     [], lambda r: r.code == 0 and "Q&A: 追加 2・変更 1・削除 0" in r.output
-     and "  追加 Q-004 質問4\n  変更 D-001 内部1\n  追加 D-002 内部2\n" in r.output),
+      "v2/shared/qa.csv": QA_HEAD + q("Q-004", "質問4"),
+      "v2/removed.csv": "種類,対象,理由\nQ&A,D-003,共有へ移した\n"},
+     [], lambda r: r.code == 0
+     and "Q&A: 追加 1・変更 0・削除 0\n  追加 Q-004 質問4\n"
+     "Q&A（内部）: 追加 1・変更 1・削除 1\n  変更 D-001 内部1\n  追加 D-002 内部2\n  削除 D-003 内部3（理由: 共有へ移した）\n機能:"
+     in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -147,7 +152,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "v3 は v2 の時点と比べる"),
     ("後の版まで重ねる", "merge_versions.merge(docs, version)\n", "merge_versions.merge(docs, None)\n",
      "版を指定すると後の版を見ない"),
-    ("削除の理由を添えない", 'change.reason = reasons.get((kind, change.key), "")', 'change.reason = ""',
+    ("削除の理由を添えない", 'change.reason = reasons.get((REMOVED_KIND.get(kind, kind), change.key), "")', 'change.reason = ""',
      "3 種の追加・変更・削除"),
     ("理由を v1 から読む", "removal_reasons(versions[number - 1][1])", "removal_reasons(versions[0][1])",
      "3 種の追加・変更・削除"),
@@ -156,8 +161,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("範囲外の文言を言い直さない", 'str(e).replace("--upto", "--version", 1)', "str(e)", "その版が無いと比べない"),
     ("改行をそのまま出す", 'return text.replace("\\r\\n", "\\n")', 'return text\n    return text.replace("\\r\\n", "\\n")',
      "セルの改行は 1 行に留める"),
-    ("内部の表を比べない", "compare_maps({**before.qa, **before.internal}, {**now.qa, **now.internal})",
-     "compare_maps(before.qa, now.qa)", "内部の表の行も比べる"),
+    ("内部の表を比べない", "diff.changes[KIND_QA_INTERNAL] = compare_maps(before_internal, now_internal)",
+     "diff.changes[KIND_QA_INTERNAL] = []", "内部の表の行も比べる"),
+    # 層の判定（`check-qa-csv.py` の `is_internal_number`）を外す・入れ替える（#353）
+    ("層を見ない（全部を共有に）", "if merge_versions.qa.is_internal_number(no)}", "if False}", "内部の表の行も比べる"),
+    ("層を入れ替える", "if merge_versions.qa.is_internal_number(no)}", "if not merge_versions.qa.is_internal_number(no)}",
+     "内部の表の行も比べる"),
+    ("内部の削除の理由を引き当てない", "REMOVED_KIND.get(kind, kind)", "kind", "内部の表の行も比べる"),
     ("決まりに反しても比べる", "    if problems:\n        return problems, None\n    number",
      "    if False:\n        return problems, None\n    number", "決まりに反すると比べない"),
 ]
@@ -201,7 +211,7 @@ def check_reference() -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     check("references/versions.md に「版の差分」の節が無い", "\n## 版の差分\n" in text)
     section = text.split("\n## 版の差分\n", 1)[-1].split("\n## ", 1)[0]
-    for word in ("追加", "変更", "削除", "scripts/diff-versions.py"):
+    for word in ("追加", "変更", "削除", "scripts/diff-versions.py", "`Q&A（内部）`"):
         check(f"references/versions.md の「版の差分」に {word} が無い", word in section)
 
 

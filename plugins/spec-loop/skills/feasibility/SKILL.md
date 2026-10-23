@@ -5,8 +5,8 @@ description: "実現性・コストのループを 1 回分進める。要求・
 
 # feasibility スキル
 
-<!-- skill-version: 0.19.0 -->
-> **このスキルの版: 0.19.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.20.0 -->
+> **このスキルの版: 0.20.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -93,6 +93,9 @@ python3 <このスキルの base ディレクトリ>/../../scripts/diff-versions
 
 - **追加**は新しく作る分、**変更**は既存を直す分、**削除**は撤去する分として、それぞれの数え方で数える
   （変更と削除を 0 円と見なさない——直す・撤去する手間がある）。
+- **Q&A は層で分かれて出る**——`Q&A` の節は共有の層、`Q&A（内部）` の節は開発者が決めたことである。**2 つの節を混ぜて数えない**。
+  `Q&A（内部）` の節の費用の行も見積りに拾う（手順 3。根拠に `D-` の番号）——内部の層を見せないのは利用者で、
+  予算の責任者ではない（`../../references/versions.md` の「版の差分」・`../../references/qa-csv.md` の「層」）。
 - **変更の大きさ**（何が変わったか）は、作業中の版のファイルと、**版を重ね合わせた全体**（`merge-versions.py docs build/merged`
   が作る `build/merged/`。前の版の時点は**別の出力先**に `merge-versions.py docs build/merged-v<n-1> --upto <n-1>`——
   `build/merged/` に `--upto` を付けると、全体の重ね合わせが前の版の時点に置き換わる）を開き比べて読む。v2 以降の版のディレクトリは差分しか持たない。
