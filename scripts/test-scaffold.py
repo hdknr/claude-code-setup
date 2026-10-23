@@ -178,7 +178,8 @@ def f1(ir: dict) -> dict:
 
 
 def cite_internal(ir: dict) -> None:
-    ir["features"][1]["qa"] = ["D-001"]
+    # 共有の行も併せて指す——内部の行だけだと、層の判定を `all` にしても写した元が変わらない（#353 の狭いパス）
+    ir["features"][1]["qa"] = ["D-001", "Q-001"]
 
 
 def internal_in_issue(repo: Path) -> str | None:
@@ -1279,6 +1280,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "if not any(qa.is_internal_number(no) for no in refs)", "内部の Q&A を指す"),
     ("写した元の層を見ない（常に内部の表を挙げる）", "if any(qa.is_internal_number(no) for no in refs)", "if True",
      "内部の Q&A を指す"),
+    ("写した元の層を全部の行で見る", "if any(qa.is_internal_number(no) for no in refs)",
+     "if all(qa.is_internal_number(no) for no in refs)", "内部の Q&A を指す"),
     # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
     ("中間表現が指す暫定の行だけ見る",
      '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',
