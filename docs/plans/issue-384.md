@@ -104,7 +104,12 @@
 
 - 周の在り処: ブランチ `issue/384-dev-loop-count-line-gates`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-384`・
   起点 `eab8581`・base 参照 `origin/main` → `eab8581b1f0d687b98e5552e9053df8570470c97`
-- 実装: 未着手
+- 実装: 済（`ca93434`・`8ff6445`。`check-all.py` 46/46 緑。1 回目は `check-skill-pointers.py`（SKILL.md の `scripts/…` を
+  スキルの中と読まれた）と `check-plan-scope.py`（触る側に 1 行で複数パターン）で落ち、直した）
+- 実データ: `check-plan-counts.py` は直す前の main で 288・309・365・373 の 4 本だけを落とした（入れ子の判定を
+  継続行で落とす形にしていた最初の版は 175・194・216 を誤って落としたので、箇条の項だけを見る形に直した）
+- 割り目 1（手順 4 の後）: 提案済み——選択「ここで割る」（2026-10-23）。再開は手順 5 の 1 パス目から
+- 関門 1 パス目: まだ
 - 交絡: 実験なし（検査の陽性対照は回帰テストの中）
 
 ## 既知の限界・決着済みの論点
