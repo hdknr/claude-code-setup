@@ -80,7 +80,8 @@
 - 関門:
   - 1 パス目 Verifier（`dev-loop:dev-loop-verifier`、sonnet）: **反証 0 件**
   - 1 パス目 /code-review（high）: **指摘 8 件**（直す 2・残課題 6。採否は下の表）
-  - 指摘対応: CR6・CR7（CR2 も同じ行で解消）を直した。次は **2 パス目の Verifier と /code-review の両方**（割り目で訊いてから）
+  - 指摘対応: CR6・CR7（CR2 も同じ行で解消）を直した。次は **2 パス目の Verifier と /code-review の両方**（どちらも未着手）。指摘対応はコミット済み（`4dab561`、`check-all.py` 44/44 緑）。
+    手順 6 の割り目: 提案した → 「ここで割る」が選ばれた（2026-10-23）
 - 反証・差し戻し: Verifier の反証 0 件。/code-review の指摘で手順 4 に差し戻し 1 回
 - 交絡: CR2 を直したことの確認に変異を 1 本当てた——リポジトリの外の複製（`.git` なし）で、変異の前に
   `check-skill-pointers` が緑（陽性側）、`tree.md` の `## 置き方の決まり` を改名すると `proposal/SKILL.md:80` で赤
