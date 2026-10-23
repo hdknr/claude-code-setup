@@ -252,9 +252,20 @@ def number_layer_mismatches(mod) -> list[str]:
             for number, want in NUMBER_LAYERS if mod.is_internal_number(number) != want]
 
 
-def pointer_sources(mod) -> dict[str, str]:
-    """指す側の文字列。本体は定数、フックはソース全体（定数と docstring の両方を見る）。"""
-    return {"check-qa-csv.py の MIGRATION": mod.MIGRATION, HOOK.name: HOOK.read_text(encoding="utf-8")}
+HOOK_CONSTANT = re.compile(r'^QA_MIGRATION = "(?P<value>[^"]*)"$', re.M)
+
+
+def pointer_sources(mod, hook: str | None = None) -> dict[str, str]:
+    """指す側の文字列。本体は定数、フックは定数とソース全体（docstring も見る）。
+
+    フックの定数は単独でも数える——ソース全体だけだと、docstring の指し先が当たる限り、
+    定数が別のファイルを指していても緑になる。
+    """
+    hook = HOOK.read_text(encoding="utf-8") if hook is None else hook
+    constant = HOOK_CONSTANT.search(hook)
+    return {"check-qa-csv.py の MIGRATION": mod.MIGRATION,
+            f"{HOOK.name} の QA_MIGRATION": constant["value"] if constant else "",
+            HOOK.name: hook}
 
 
 def pointer_mismatches(sources: dict[str, str], references: dict[str, str]) -> list[str]:
@@ -507,8 +518,15 @@ def main() -> int:
         sources = pointer_sources(mod)
         problems = pointer_mismatches(sources, references)
         check("指し先の見出しが実在する", not problems, "; ".join(problems))
-        check("フックの定数 QA_MIGRATION も指し先として数える",
-              "QA_MIGRATION = " in sources[HOOK.name] and sources[HOOK.name].count("の「Q&A 表を移す」") >= 2)
+        check("フックの定数 QA_MIGRATION を単独の指し先として数える", bool(sources[f"{HOOK.name} の QA_MIGRATION"]))
+        hook = HOOK.read_text(encoding="utf-8")
+        before = 'QA_MIGRATION = "spec-loop の references/tree.md の「Q&A 表を移す」"'
+        if hook.count(before) != 1:
+            check("崩すと不一致になる: フックの定数を別のファイルに向ける", False, f"崩す箇所が {hook.count(before)} 回現れる")
+        else:
+            broken = hook.replace(before, 'QA_MIGRATION = "spec-loop の qa-csv.md の「Q&A 表を移す」"')
+            check("崩すと不一致になる: フックの定数を別のファイルに向ける",
+                  bool(pointer_mismatches(pointer_sources(mod, broken), references)))
         for name, file, before, after in POINTER_MUTATIONS:
             if references[file].count(before) != 1:
                 check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {references[file].count(before)} 回現れる")
