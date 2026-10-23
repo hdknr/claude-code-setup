@@ -5,8 +5,8 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 # req-loop スキル
 
-<!-- skill-version: 0.21.0 -->
-> **このスキルの版: 0.21.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.21.1 -->
+> **このスキルの版: 0.21.1**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -23,11 +23,10 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 ## データの決まり
 
-**列・起票元・状態・「まだ無い」の印は、このスキルに書かない。** 正は次の 3 つで、
-このスキルと同じプラグインの中にある:
+**列・起票元・状態・「まだ無い」の印は、次の 3 つを正とする**（このスキルと同じプラグインの中にある）:
 
 - `../../references/tree.md` — 正本リポジトリのどこに何を置くか（Q&A 表・決定表・スライドの置き場所）
-- `../../references/qa-csv.md` — Q&A 表の列・起票元・状態と、その意味
+- `../../references/qa-csv.md` — Q&A 表の列・起票元・状態と、その意味・「まだ無い」の印
 - `../../references/signoff-tags.md` — サインオフのタグ（このスキルはタグを付けない）
 
 **起票する前に `../../references/qa-csv.md` を読む。** 書式の誤りは下の検査が落とすが、
