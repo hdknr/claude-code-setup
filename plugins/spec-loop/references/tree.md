@@ -17,6 +17,7 @@ docs/v<n>/
 ├── spec/                    # 開発者向け：守るべき性質とそれを確かめるテスト（spec-review が書き下す）
 │   ├── scope.md             # 範囲の文書：受け持つ範囲・受け持たない範囲（形は spec-scope.md）
 │   ├── qa-dev.csv           # 内部の層の Q&A 表：開発者が決めて記録する質問（列は qa-csv.md。shared/ に置かない）
+│   ├── review-runs.csv       # 仕様レビューの実行の記録：1 回 1 行（列と上限は spec-exit.md の「実行の上限と記録」）
 │   ├── formal/              # 形式検査のモデル（決定表の検査・TLA+・Alloy など）
 │   └── spec_ir.json         # 仕様の中間表現（scaffold が書き起こす。形は spec-ir.md）
 ├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り
