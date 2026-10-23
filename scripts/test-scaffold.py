@@ -1270,6 +1270,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内部の表を読まない", "        for path in (QA_PATH, INTERNAL_QA_PATH):", "        for path in (QA_PATH,):", "内部の Q&A を指す"),
     ("D- の番号を指せない", 'QA_NO = re.compile(r"[QD]-[0-9]{3,}")', 'QA_NO = re.compile(r"Q-[0-9]{3,}")', "内部の Q&A を指す"),
     ("写した元に内部の表を挙げない", "(QA_PATH, *([INTERNAL_QA_PATH] if any(", "(QA_PATH, *([] if any(", "内部の Q&A を指す"),
+    # 層の判定（`check-qa-csv.py` の `is_internal_number`）を入れ替える（#353）
+    ("写した元の層を入れ替える", "if any(qa.is_internal_number(no) for no in refs)",
+     "if not any(qa.is_internal_number(no) for no in refs)", "内部の Q&A を指す"),
     # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
     ("中間表現が指す暫定の行だけ見る",
      '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',

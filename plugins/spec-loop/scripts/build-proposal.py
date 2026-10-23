@@ -200,7 +200,7 @@ def drop_internal(docs: Path) -> None:
         removed = root / mv.REMOVED
         if removed.is_file() and not removed.is_symlink():
             rows = list(csv.reader(io.StringIO(mv.read_text(removed), newline="")))
-            kept = [r for r in rows if not (len(r) >= 2 and r[0] == mv.KIND_QA and qa.INTERNAL_NUMBER.fullmatch(r[1].strip()))]
+            kept = [r for r in rows if not (len(r) >= 2 and r[0] == mv.KIND_QA and qa.is_internal_number(r[1].strip()))]
             if len(kept) != len(rows):
                 buffer = io.StringIO(newline="")
                 csv.writer(buffer, lineterminator="\n").writerows(kept)
@@ -224,13 +224,13 @@ def compare_at(top: Path, commit: str, tag: str, version: int):
 
 
 def changes_section(diff, tag: str) -> list[str]:
-    qa_kind, feature_kind, file_kind = diffs.KINDS
+    qa_kind, feature_kind, file_kind = diffs.SHARED_KINDS
     out = [f"## 前の版（v{diff.version - 1}）からの変更", ""]
     out += [f"> `{tag}` の時点の、v{diff.version - 1} までの全体と v{diff.version} までの全体の比較。"
             "同じ中身を置き直しただけのものは載らない。", ""]
-    out += table(["種類", *diffs.STATUSES], [[k, *(str(diff.count(k, s)) for s in diffs.STATUSES)] for k in diffs.KINDS])
+    out += table(["種類", *diffs.STATUSES], [[k, *(str(diff.count(k, s)) for s in diffs.STATUSES)] for k in diffs.SHARED_KINDS])
     out.append("")
-    if not any(diff.changes[k] for k in diffs.KINDS):
+    if not any(diff.changes[k] for k in diffs.SHARED_KINDS):
         return out + ["（前の版からの変更はありません）", ""]
 
     def answer(row) -> str:
