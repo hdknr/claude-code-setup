@@ -11,11 +11,20 @@
 - `plugins/spec-loop/scripts/scaffold.py` — `INTERNAL_QA_PATH` は `merge-versions.py` の定数を読む（写しをやめる）。`D-` の判定は `is_internal_number`
 - `plugins/spec-loop/scripts/check-signoff.py` — `D-` の判定 2 箇所を `is_internal_number` に
 - `plugins/spec-loop/references/versions.md` — 「版の差分」に層の分け方を書く
-- `plugins/spec-loop/skills/req-loop/SKILL.md`・`skills/spec-review/SKILL.md`・`skills/feasibility/SKILL.md` — 差分の読み方（利用者向けは `Q&A` の節）。版の 2 行
+- `plugins/spec-loop/skills/req-loop/SKILL.md` — 差分の読み方（利用者向けは `Q&A` の節）。版の 2 行
+- `plugins/spec-loop/skills/spec-review/SKILL.md` — 同上（1 パス目の指摘で読み方を足した）
+- `plugins/spec-loop/skills/feasibility/SKILL.md` — 同上（同）
+- `plugins/spec-loop/skills/proposal/SKILL.md` — 版の 2 行だけ（全 `SKILL.md` に版を書く規則。1 パス目の Verifier の反証で範囲に足した）
+- `plugins/spec-loop/skills/scaffold/SKILL.md` — 同上
 - `plugins/spec-loop/README.md` — 該当すれば
 - `scripts/test-check-qa-csv.py` — `is_internal_number` の試料と変異。移す手順への指し先（`check-qa-csv.py` の `MIGRATION` と MkDocs のフックの `QA_MIGRATION`）を `references/tree.md` の見出しと突き合わせる（C）
-- `scripts/test-merge-versions.py`・`scripts/test-diff-versions.py`・`scripts/test-build-proposal.py`・`scripts/test-scaffold.py`・`scripts/test-check-signoff.py` — 層の判定を外す・入れ替える変異（E）。`test-build-proposal.py` に v1 に内部の表を置く試料（D）。`test-diff-versions.py` の期待値の更新（B）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（0.18.1 → 0.19.0。差分の出力の形が変わる＝読む側に効くので minor。0.x）
+- `scripts/test-merge-versions.py` — 層の判定を外す・入れ替える変異（E）
+- `scripts/test-diff-versions.py` — 同上。期待値の更新（B）
+- `scripts/test-build-proposal.py` — 同上。v1 に内部の表を置く試料（D）
+- `scripts/test-scaffold.py` — 同上
+- `scripts/test-check-signoff.py` — 同上
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.18.1 → 0.19.0。差分の出力の形が変わる＝読む側に効くので minor。0.x）
+- `.claude-plugin/marketplace.json` — 同上
 - `CLAUDE.md` — `diff-versions.py` の説明（層を分ける）
 - `docs/plans/issue-353.md` — この計画
 
@@ -74,7 +83,7 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
   起点 `4e498b2`・base の参照 `origin/main`・base の SHA `4e498b28d799d41a8774386b17af8e2f3108b802`
 - 実装: 済み（手順 4）。`check-all.py` 44/44 緑。`test-check-qa-csv` 60/47・`test-diff-versions` 13/15・`test-merge-versions` 57/53・`test-build-proposal` 40/37
 - 割り目（手順 4 の後）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。再開は手順 5（Verifier 1 パス目と `/code-review` 1 パス目）から
-- 関門: 未着手（Verifier 1 パス目・`/code-review` 1 パス目ともまだ）
+- 関門: 1 パス目 済み（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet → 反証 1 件（V）。`/code-review` high → 指摘 7 件）。採否は下の表——直す 3 件・残課題 5 件。指摘対応は済み。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目
 - 交絡: 実験なし（変異テストのみ）
 
 ## 既知の限界・決着済みの論点
@@ -84,3 +93,16 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 | 指し先の見出しの照合は完全一致か | 完全一致、または ` — ` の前の部分（「層 — 共有の表と内部の表」を「層」で指す）を見出しの名前とする | フックの docstring が `qa-csv.md` の「層」を指しており、実在する見出しの名前の部分。照合の範囲は本体の `MIGRATION` とフックのソース全体 |
 | `build-proposal` の変異「内部の Q&A も比較に載せる」の殺し役 | 「内部の表の違反でも比較を作る」に替えた | 共有の種類だけを描くようになり（B3）、`drop_internal` を外しても `Q&A（内部）` は提案書に出ない。外すことが効くのは内部の表の違反のほう |
 | `check-qa-csv.py` の「ファイルの名前で層を決める」 | 残す（範囲外） | 表 1 枚を検査するときの層。番号の層と食い違わないことは `merge` の `read_qa` が検査で保証する |
+
+### 1 パス目の指摘の採否
+
+| 関門 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| `/code-review` | feasibility・spec-review の `SKILL.md` に層で分かれた差分の読み方が無い | 示せる（`git diff 4e498b2` で両ファイルの差分が版の 2 行だけ） | B4 | 直す（両 `SKILL.md` に 1 項） |
+| `/code-review` | `build-proposal` だけが `removed.csv` の対象を `strip()` してから層を決める | 示せない（`build-proposal` は照合が 0 のときだけ動き、前に空白のある `D-` 行は照合（`check-signoff`）が 2 を返すので提案書の経路に届かない。食い違いは #353 以前から） | 無し | 残課題 |
+| `/code-review` | `scaffold.py` の `QA_NO` が番号の形式（`Q-`・`D-`）の写し | 示せない（形式を変えたときの話） | 無し（A1 は層の判定の式。番号の形式は範囲外） | 残課題 |
+| `/code-review` | `scaffold.py` の `QA_PATH` が `merge-versions.py` の写し | 示せない（パスを変えたときの話） | 無し（A3 は内部の表のパス） | 残課題 |
+| `/code-review` | `diff-versions.py` の `qa_layers` が表で分けるのと同値（等価変異が素通り） | 示せる（変異 `return whole.qa, whole.internal` は緑になるはず。`read_qa` が表と番号の一致を保証） | 無し（B1 の出力の分け方は守られている。番号で分けるのは A1 の読み手として計画で決めたこと） | 残課題 |
+| `/code-review` | `test-check-qa-csv.py` の変異の件数が 4c の変異を数えない | 示せる（4c は `check` に出るが「変異 N 件」に入らない） | 無し | 残課題 |
+| `/code-review` | フックの定数 `QA_MIGRATION` を別のファイルに向けても 4c が緑 | 示せる（リポジトリの外の複製で定数を `qa-csv.md` に向けて `test-check-qa-csv.py` が exit 0） | C1 | 直す（定数を単独の指し先として数え、別ファイルに向ける変異を足した） |
+| Verifier | `check-plan-scope.py` が赤（変更範囲の外に 9 ファイル） | 示せる（`python3 scripts/check-plan-scope.py origin/main` が 9 本を挙げた） | V | 直す（「変更範囲」を 1 行 1 パターンに書き直し、proposal・scaffold の `SKILL.md`（版の 2 行）を足した。再実行で exit 0） |
