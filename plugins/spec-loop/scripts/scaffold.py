@@ -1048,10 +1048,13 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
                       f"`python3 -m unittest discover -s {OUT_DIR}/tests` で見る。"]
     lines += ["", SECTIONS[3], ""]
     refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}
+    # 内部の層の行（`D-`）を指していれば、写した元に内部の表も挙げる（#339）
+    tables = "・".join(f"`{merged(path)}`" for path in
+                       (QA_PATH, *([INTERNAL_QA_PATH] if any(qa.INTERNAL_NUMBER.fullmatch(no) for no in refs) else [])))
     if change.kind == REMOVE:
-        lines += qa_rows(refs, before.answered, f"{previous} の時点の `{merged(QA_PATH)}` ")
+        lines += qa_rows(refs, before.answered, f"{previous} の時点の {tables} ")
     else:
-        lines += qa_rows(refs, loaded.answered, f"生成した時点の `{merged(QA_PATH)}` ")
+        lines += qa_rows(refs, loaded.answered, f"生成した時点の {tables} ")
     lines += [
         "",
         SECTIONS[4],
