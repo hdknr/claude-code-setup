@@ -26,7 +26,8 @@
    前の版の暫定も数える・**後の版で置き換えた／`removed.csv` で消した行は数えない**（その重ね方が `merge-versions.py`
    の `merge` と同じこと——作業ツリーを重ねて突き合わせる）・Q&A 表が決まりに反する／読めないなら 2・
    **`merge` が拒否する `removed.csv` の配置（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）も 2**
-   （#338。`merge` が実際に拒否することも突き合わせる）・**3 の案内が「要求確定と予算の合意の両方」を取り直させる**（#336）。
+   （#338。`merge` が実際に拒否することも突き合わせる）・**3 の案内が「要求確定と予算の合意の両方」を取り直させる**（#336。
+   出力は試料と変異で、docstring の終了コード 3 の項は文字列で見る）。
 6. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -258,6 +259,18 @@ OVERLAY_CASES = ["前の版の暫定が残る", "後の版で反映済みにし�
 # （期待の文字列のうち、`removed.csv` の位置より後ろが `merge` の問題の行にも現れること）
 REFUSED_CASES = ["同じ版で置いて消した暫定", "前の版までに無い行を消す", "同じ行を 2 度消す"]
 
+# 直す前の `provisional_rows` は `removed.csv` の行を `pop(target, None)` で黙って消していた（#338）
+CHECK_REMOVED = (
+    "            versions.check_removed(path, rows, {REMOVED_QA: placed}, {REMOVED_QA: set(whole)}, problems)\n"
+    "            if problems:\n"
+    '                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）: "\n'
+    '                               + " / ".join(problems) + "。照合していない")\n'
+    "            for _, _, target in rows:\n"
+    "                whole.pop(target)\n")
+UNCHECKED_REMOVED = (
+    "            for _, _, target in rows:\n"
+    "                whole.pop(target, None)\n")
+
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("最新を文字列で選ぶ", "numbered = [(int(m.group(1)), name)", "numbered = [(m.group(1), name)", "最新を数で選ぶ"),
@@ -327,15 +340,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("removed.csv で消さない", "                whole.pop(target)", "                pass",
      "removed.csv で消した暫定は数えない"),
     ("同じ版で置いて消すのを見ない", "{REMOVED_QA: placed}", "{REMOVED_QA: set()}", "同じ版で置いて消した暫定"),
-    # 拒否の条件式は `merge-versions.py` にしか無い——本体で壊せるのは、その結果を見るかどうか（#338）
-    ("merge が拒否する配置を見ない（無い行）",
-     '            if problems:\n                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）',
-     '            if False:\n                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）',
-     "前の版までに無い行を消す"),
-    ("merge が拒否する配置を見ない（2 度）",
-     '            if problems:\n                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）',
-     '            if False:\n                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）',
-     "同じ行を 2 度消す"),
+    # 拒否の条件式は `merge-versions.py` にしか無い——本体で壊せるのは、それを呼ぶかどうか（#338）。
+    # 直す前の挙動（黙って `pop(target, None)`）に戻す——拒否だけ外すと `pop` の KeyError で落ち、
+    # 旧い挙動（3 と 0）を表さないまま殺したことになる（#340 の 1 パス目 R3）
+    ("merge が拒否する配置を見ない（無い行）", CHECK_REMOVED, UNCHECKED_REMOVED, "前の版までに無い行を消す"),
+    ("merge が拒否する配置を見ない（2 度）", CHECK_REMOVED, UNCHECKED_REMOVED, "同じ行を 2 度消す"),
     ("予算の時点の暫定を見る", 'provisional_rows(repo, info["req_commit"], info["req"], version,',
      'provisional_rows(repo, info["budget_commit"], info["budget"], version,', "予算のタグの時点の暫定は見ない"),
     # 確かめると予算の合意とも一致しなくなる——案内を要求確定だけに戻させない（#336）
@@ -519,6 +528,18 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
 ]
 
 
+# 終了コード 3 の案内は、出力（試料が見る）と docstring の両方にある——docstring は試料からは見えない（#340 の R9）
+RETAKE_BOTH = "要求確定と予算の合意の両方のサインオフを取り直す"
+
+
+def docstring_exit3_mismatch(source: str) -> str:
+    """docstring の終了コード 3 の項が「両方を取り直す」でなければ、何が違うか。"""
+    item = re.search(r"^- 3: (.+?)(?=^- [0-9]: )", source, flags=re.MULTILINE | re.DOTALL)
+    if not item:
+        return "docstring に終了コード 3 の項が無い"
+    return "" if RETAKE_BOTH in item.group(1) else f"終了コード 3 の項に「{RETAKE_BOTH}」が無い"
+
+
 def copy_scripts(dest: Path) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -550,6 +571,12 @@ def main() -> int:
             check(f"試料が #260 の名前を判別していない: {name}", not problem, problem)
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
+        problem = docstring_exit3_mismatch(source)
+        check("docstring の終了コード 3 が両方を取り直させない", not problem, problem)
+        # 崩すと捕まる: 要求確定だけを取り直す文言（#325 の 1 パス目までの形）に戻す
+        reverted = source.replace(f"{RETAKE_BOTH}**", "要求確定のサインオフを取り直す**")
+        check("docstring を要求確定だけに戻しても捕まらない",
+              reverted != source and bool(docstring_exit3_mismatch(reverted)))
         reference = REFERENCE.read_text(encoding="utf-8")
         problems = reference_mismatches(source, reference)
         check("本体の定数が references/signoff-tags.md と一致しない", not problems, "; ".join(problems))
