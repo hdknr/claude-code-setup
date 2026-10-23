@@ -65,7 +65,11 @@ C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-
   **`/code-review`**（high）**指摘 10 件**（R1〜R10）。採否は下の表。直すのは R2・R3（=V2）・R9 の 3 件、R1（=V1）は人間の決定で文を絞る（受入基準 D を追加）
 - 1 パス目の指摘対応: R2（`CLAUDE.md`・docstring を Q&A の範囲に）・R3（変異を `pop(target, None)` まで戻す形に。陽性対照で 3・0 を再現し traceback 無し）・
   R9（docstring の終了コード 3 を見る検査と、要求確定だけに戻すと捕まる確かめ）。`test-check-signoff.py` 試料 55・変異 43 緑
-- 次: 2 パス目（手順 5 の当て直しと `/code-review` 2 パス目の**両方**）。その前が 2 つ目の割り目
+- 1 パス目の指摘対応のコミット: `64d90d6`。0 行判定: `git diff f78d61e -- ':(top)' ':(top,exclude)docs/plans/issue-340.md'` が 3 ファイル（CLAUDE.md・check-signoff.py・test-check-signoff.py）→ **2 パス目を回す**
+- `check-all.py`: 指摘対応のあと 43/44 緑・`check-plan-scope.py` だけ赤（計画の変更範囲で 1 行に 3 パターンを書いていた）→ 1 行 1 パターンに直して単体で緑。**全体の当て直しは 2 パス目の前にもう一度回す**
+- 割り目 2（手順 6）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-23）
+- **残り（再開したらここから）**: ① 手順 5 の Verifier 当て直し（2 パス目）と ② `/code-review` 2 パス目の**両方**。base は `4187a08…`（周の base のまま）。
+  2 パス目で直した行があれば、その起点 SHA を指摘対応の前にここへ書き、狭いパスを当てる
 - 1 パス目の指摘対応の起点の SHA: `f78d61e`（1 パス目の関門に渡した時点の HEAD。2 パス目の要否の 0 行判定に使う）
 - 反証・差し戻し: なし
 - 交絡: 実験は変異テストのみ。新しい試料の陽性対照は、拒否の結果を見ない変異（`if problems:` → `if False:`）で旧い挙動（2 以外）が再現することで取っている
