@@ -75,6 +75,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **v2 以降は前の版の全体と比べて機能を追加・変更・削除に分け、変わった機能だけ本文を作る**（#264。
       `--red-check` で Red テストを実装に当て（**判定の決まりは `scaffold.py` の docstring を正とする**。#294）、
       `--check --upto <n-1>` で前の版の時点の鮮度を見る）。
+      **前の版の時点に `反映済み` でない Q&A が残れば、指しているかに依らず止める——凍結した前の版なら止めずに全部を追加にする**
+      （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
       テストは `scripts/test-scaffold.py`）
     - `scripts/merge-versions.py` - バージョンアップの版（`docs/v<n>/`。v2 以降は差分だけ）を重ねて、ある版の時点の全体を作る
       （#261。決まりは `references/versions.md`。**印 `.merged-versions` の無い出力先は消さない**。
