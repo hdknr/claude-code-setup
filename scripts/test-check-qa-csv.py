@@ -38,31 +38,34 @@ PLUGIN = REAL_REPO / "plugins" / "spec-loop"
 SCRIPT = PLUGIN / "scripts" / "check-qa-csv.py"
 REFERENCE = PLUGIN / "references" / "qa-csv.md"
 
-HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
+HEADER = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+# 前の形（spec-loop 0.17.0 まで）の見出し——推奨の 2 列が無い
+OLD_HEADER = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
 GOOD_ROWS = (
-    "Q-001,要求確定（決定表）,割引は A・B のどちらにしますか？,A: 割引なし / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
-    "Q-002,仕様レビュー（Red Team）,通信が切れたら？,A: 取り消す / B: 残す,未回答,—,確認中,\n"
-    "Q-005,実現性・コスト,夜間は止めてよいか,A: 止まってよい / B: 24 時間,未回答,—,確認中,B は月額が約 2 倍\n"
-    "Q-010,開発,上限を超えたら？,A: 拒否 / B: 切り詰める / C: 警告だけ,B（開発が仮置き）,—,確認中,\n"
-    "Q-011,要求確定,上限は？,A: なし / B: 5000 円,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 7 行目,暫定反映,\n"
+    "Q-001,要求確定（決定表）,割引は A・B のどちらにしますか？,A: 割引なし / B: 3% 割引,A,差をはっきりさせる,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+    "Q-002,仕様レビュー（Red Team）,通信が切れたら？,A: 取り消す / B: 残す,B,問い合わせを減らす,未回答,—,確認中,\n"
+    "Q-005,実現性・コスト,夜間は止めてよいか,A: 止まってよい / B: 24 時間,A,月額が半分,未回答,—,確認中,B は月額が約 2 倍\n"
+    "Q-010,開発,上限を超えたら？,A: 拒否 / B: 切り詰める / C: 警告だけ,C,止めずに気づける,B（開発が仮置き）,—,確認中,\n"
+    "Q-011,要求確定,上限は？,A: なし / B: 5000 円,なし,見積り待ち,A（暫定で採用。業務部 2026-10-21 の指示）,決定表 7 行目,暫定反映,\n"
 )
 # 記事（要求仕様書作成ループ）の Q&A 表の 6 行。記事の表は 2 つに分かれており、
 # Q-005・Q-006 の表には `回答`・`反映先`・`状態` の列が無いので `未回答`・`—`・`確認中` で埋めた。
-# Q-001 の `10,000` は区切りのコンマを含むので引用符で囲んだ。それ以外は記事の文のまま。
+# Q-001 の `10,000` は区切りのコンマを含むので引用符で囲んだ。記事に推奨は無いので `推奨` は `なし`（理由に「記事に推奨が無い」）。
+# それ以外は記事の文のまま。
 ARTICLE_ROWS = (
     'Q-001,要求確定（決定表）,"シルバー会員で 10,000 円未満のとき、割引は A・B のどちらにしますか？",'
-    "A: 割引なし（0%） / B: 3% 割引,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+    "A: 割引なし（0%） / B: 3% 割引,なし,記事に推奨が無い,A（業務部が回答）,決定表 4 行目,反映済み,\n"
     "Q-002,仕様レビュー（Red Team）,決済の途中で通信が切れたとき、注文は A・B のどちらで扱いますか？,"
-    "A: 取り消す / B: 「決済待ち」で残し、後で再開できる,未回答,—,確認中,\n"
+    "A: 取り消す / B: 「決済待ち」で残し、後で再開できる,なし,記事に推奨が無い,未回答,—,確認中,\n"
     "Q-003,仕様レビュー（Domain Checker）,割引後の金額に 1 円未満の端数が出たら、A・B のどちらで丸めますか？,"
-    "A: 切り捨て / B: 四捨五入,未回答,—,確認中,\n"
+    "A: 切り捨て / B: 四捨五入,なし,記事に推奨が無い,未回答,—,確認中,\n"
     "Q-004,仕様レビュー（形式検査・Z3 の反例）,クーポンを使うと「注文額の 60% 以上」の下限を割るとき、A・B のどちらにしますか？,"
-    "A: 下限の金額で止める / B: この条件ではクーポンを使えなくする,未回答,—,確認中,\n"
+    "A: 下限の金額で止める / B: この条件ではクーポンを使えなくする,なし,記事に推奨が無い,未回答,—,確認中,\n"
     "Q-005,実現性・コスト（運用費の見積り）,夜間（0〜6 時）のシステム停止について、A・B のどちらにしますか？,"
-    "A: 夜間は止まってよい / B: 24 時間稼働させる,未回答,—,確認中,"
+    "A: 夜間は止まってよい / B: 24 時間稼働させる,なし,記事に推奨が無い,未回答,—,確認中,"
     "B は冗長構成が要り、月額が A の約 2 倍、開発は 2 週間増える（仮の値）\n"
     "Q-006,実現性・コスト（運用費の見積り）,注文データを検索できる期間は、A・B のどちらにしますか？,"
-    "A: 直近 1 年（それ以前はアーカイブ） / B: 全期間,未回答,—,確認中,B は保管と検索の費用が年ごとに増える（仮の値）\n"
+    "A: 直近 1 年（それ以前はアーカイブ） / B: 全期間,なし,記事に推奨が無い,未回答,—,確認中,B は保管と検索の費用が年ごとに増える（仮の値）\n"
 )
 
 
@@ -70,7 +73,7 @@ def row(**over: str) -> str:
     """決まりどおりの 1 行を作り、指定した列だけ差し替える。"""
     base = {
         "No": "Q-001", "起票元": "要求確定", "質問": "どちらにしますか？",
-        "選択肢": "A: する / B: しない", "回答": "未回答", "反映先": "—",
+        "選択肢": "A: する / B: しない", "推奨": "A", "推奨の理由": "手間が少ない", "回答": "未回答", "反映先": "—",
         "状態": "確認中", "費用への影響": "",
     }
     base.update(over)
@@ -84,9 +87,9 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     ("記事の Q-001〜Q-006", HEADER + ARTICLE_ROWS, 0, "OK（6 行）"),
     ("番号が 4 桁", HEADER + row(No="Q-1000"), 0, "OK（1 行）"),
     ("BOM 付き（Excel）", ("﻿" + HEADER + GOOD_ROWS), 0, "OK（5 行）"),
-    ("空行は飛ばす", HEADER + GOOD_ROWS + "\n,,,,,,,\n", 0, "OK（5 行）"),
+    ("空行は飛ばす", HEADER + GOOD_ROWS + "\n,,,,,,,,,\n", 0, "OK（5 行）"),
     ("セルの中の改行（引用符つき）",
-     HEADER + 'Q-001,要求確定,"1 行目\n2 行目",A: x / B: y,未回答,—,確認中,\n', 0, "OK（1 行）"),
+     HEADER + 'Q-001,要求確定,"1 行目\n2 行目",A: x / B: y,A,理由,未回答,—,確認中,\n', 0, "OK（1 行）"),
     ("セルの中の U+2028（Web から貼った文）", HEADER + row(質問="1 文目 2 文目"), 0, "OK（1 行）"),
     ("費用への影響は空でよい", HEADER + row(), 0, "OK（1 行）"),
     ("費用付きの質問に費用への影響", HEADER + row(起票元="実現性・コスト（運用費）", 費用への影響="B は月額が約 2 倍"), 0,
@@ -98,8 +101,28 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     ("列が欠けている", HEADER.replace(",費用への影響", "") + row(), 1, "見出し行が決まりと違う"),
     ("列の順序が違う", HEADER.replace("回答,反映先", "反映先,回答") + row(), 1, "見出し行が決まりと違う"),
     ("余分な列", HEADER.replace("\n", ",備考\n") + row(), 1, "見出し行が決まりと違う"),
+    ("前の形の見出し（推奨の列が無い）", OLD_HEADER + "Q-001,要求確定,質問,A: x / B: y,未回答,—,確認中,\n", 1,
+     "移す手順は references/tree.md の「Q&A 表を移す」"),
+    # --- 推奨 ---
+    ("推奨しない（なし と理由）", HEADER + row(推奨="なし", 推奨の理由="事実の確認"), 0, "OK（1 行）"),
+    ("推奨が 3 つ目の選択肢", HEADER + row(選択肢="A: x / B: y / C: z", 推奨="C"), 0, "OK（1 行）"),
+    ("推奨が空", HEADER + row(推奨=""), 1, "`推奨` が空（推奨しないなら `なし`）"),
+    ("推奨の理由が空", HEADER + row(推奨の理由=""), 1, "`推奨の理由` が空"),
+    ("なしでも理由が空", HEADER + row(推奨="なし", 推奨の理由=" "), 1, "`推奨の理由` が空"),
+    ("推奨が選択肢に無いラベル", HEADER + row(推奨="C"), 1, "`推奨` が選択肢のラベルでも `なし` でもない"),
+    ("推奨が選択肢の文", HEADER + row(推奨="する"), 1, "`推奨` が選択肢のラベルでも `なし` でもない"),
+    ("推奨が小文字のラベル", HEADER + row(推奨="a"), 1, "`推奨` が選択肢のラベルでも `なし` でもない"),
+    ("推奨に空白が付く", HEADER + row(推奨="A "), 1, "`推奨` が選択肢のラベルでも `なし` でもない"),
+    # --- 内部の層（ファイルの名前が qa-dev.csv） ---
+    ("内部: 決まりどおり", HEADER + row(No="D-001", 回答="B（開発 山田 2026-10-22）", 反映先="spec/jobs.md", 状態="反映済み")
+     + row(No="D-002"), 0, "OK（2 行）"),
+    ("内部: 番号が Q-", HEADER + row(No="Q-001"), 1, "`No` が `D-001` の形でない"),
+    ("内部: 暫定反映", HEADER + row(No="D-001", 回答="A（暫定）", 反映先="spec/a.md", 状態="暫定反映"), 1,
+     "内部の表で `暫定反映` は使わない"),
+    ("内部: 推奨の決まりも同じ", HEADER + row(No="D-001", 推奨=""), 1, "`推奨` が空"),
+    ("共有: 番号が D-", HEADER + row(No="D-001"), 1, "`No` が `Q-001` の形でない"),
     # --- 行 ---
-    ("行の列数が違う", HEADER + "Q-001,要求確定,質問,A: x / B: y,未回答,—,確認中\n", 1, "列の数が 7"),
+    ("行の列数が違う", HEADER + "Q-001,要求確定,質問,A: x / B: y,A,理由,未回答,—,確認中\n", 1, "列の数が 9"),
     ("番号の書式", HEADER + row(No="Q-1"), 1, "`No` が `Q-001` の形でない"),
     ("番号が 2 桁", HEADER + row(No="Q-01"), 1, "`No` が `Q-001` の形でない"),
     ("番号が全角数字", HEADER + row(No="Q-００１"), 1, "`No` が `Q-001` の形でない"),
@@ -160,18 +183,28 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("起票元を前方一致で見る", 'SOURCE.fullmatch(row["起票元"])', 'SOURCE.match(row["起票元"])', "起票元の括弧が閉じていない"),
     ("起票元の空の括弧を許す", "{DETAIL_OPEN}.+{DETAIL_CLOSE}", "{DETAIL_OPEN}.*{DETAIL_CLOSE}", "起票元の括弧が空"),
     ("ラベルの重複を見ない", "if len(set(labels)) != len(labels):", "if False:", "選択肢のラベル重複"),
-    ("番号の書式を見ない", 'not NUMBER.fullmatch(row["No"])', "False", "番号の書式"),
+    ("番号の書式を見ない", 'not number.fullmatch(row["No"])', "False", "番号の書式"),
     ("番号を 2 桁から許す", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-[0-9]{2,}")', "番号が 2 桁"),
     ("番号を 3 桁までにする", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-[0-9]{3}")', "番号が 4 桁"),
     ("番号を Unicode の数字で見る", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-\d{3,}")',
      "番号が全角数字"),
-    ("番号を前方一致で見る", 'not NUMBER.fullmatch(row["No"])', 'not NUMBER.match(row["No"])', "番号の後ろに余計な文字"),
+    ("番号を前方一致で見る", 'not number.fullmatch(row["No"])', 'not number.match(row["No"])', "番号の後ろに余計な文字"),
     ("反映済みの回答の空白を落とさない", 'if row["回答"].strip() in ("", NO_ANSWER):',
      'if row["回答"] in ("", NO_ANSWER):', "反映済みなのに未回答（後ろに空白）"),
     ("反映済みの反映先の空白を落とさない", 'if row["反映先"].strip() in ("", NO_TARGET):',
      'if row["反映先"] in ("", NO_TARGET):', "反映済みなのに反映先が無い（前に空白）"),
     ("暫定反映の回答を見ない", "REFLECTED = (DONE, PROVISIONAL)", "REFLECTED = (DONE,)", "暫定反映なのに未回答"),
     ("番号の重複を見ない", 'if row["No"] in seen:', "if False:", "番号の重複"),
+    ("推奨のラベルを見ない",
+     'elif row["推奨"].strip() and row["推奨"] != NO_RECOMMENDATION and row["推奨"] not in labels:', "elif False:",
+     "推奨が選択肢に無いラベル"),
+    ("推奨を空白を落として比べる", 'and row["推奨"] not in labels:', 'and row["推奨"].strip() not in labels:', "推奨に空白が付く"),
+    ("なしを許さない", 'and row["推奨"] != NO_RECOMMENDATION', "", "推奨しない（なし と理由）"),
+    ("内部の層を見ない", "return path.name == INTERNAL_NAME", "return False", "内部: 番号が Q-"),
+    ("内部の番号を Q- にする", r'INTERNAL_NUMBER = re.compile(r"D-[0-9]{3,}")', r'INTERNAL_NUMBER = re.compile(r"Q-[0-9]{3,}")',
+     "内部: 決まりどおり"),
+    ("内部で暫定反映を許す", "elif internal and row[\"状態\"] in INTERNAL_FORBIDDEN:", "elif False:", "内部: 暫定反映"),
+    ("前の形の見出しで手順を指さない", 'if "推奨" not in header:', "if False:", "前の形の見出し（推奨の列が無い）"),
     ("起票元を見ない", 'm["name"] not in SOURCES', "False", "未知の起票元"),
     ("空のセルを見ない", "if column not in MAY_BE_EMPTY and not row[column].strip():", "if False:", "質問が空"),
     ("列の数を見ない", "if len(fields) != len(COLUMNS):", "if False:", "行の列数が違う"),
@@ -188,7 +221,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # 引用符つきの改行は `splitlines()` でも壊れない（csv が繋ぎ直す）ので、殺すのは U+2028 の試料
     ("splitlines で割る", 'csv.reader(io.StringIO(text, newline=""))', "csv.reader(text.splitlines())",
      "セルの中の U+2028（Web から貼った文）"),
-    ("最初の 1 件で止める", "for problem in check_row(row):", "for problem in check_row(row)[:1]:",
+    ("最初の 1 件で止める", "for problem in check_row(row, internal):", "for problem in check_row(row, internal)[:1]:",
      "全部を出す（最初の 1 件で止めない）"),
 ]
 
@@ -216,9 +249,11 @@ def load(script: Path):
     return mod
 
 
-def write_case(root: Path, index: int, content: str | bytes) -> Path:
-    path = root / f"case-{index}.csv"
+def write_case(root: Path, index: int, content: str | bytes, internal: bool = False) -> Path:
+    # 内部の層の試料は、層を決めるファイルの名前（qa-dev.csv）で書く
+    path = root / f"case-{index}" / "qa-dev.csv" if internal else root / f"case-{index}.csv"
     assert_in_tmp(path)
+    path.parent.mkdir(exist_ok=True)
     if isinstance(content, bytes):
         path.write_bytes(content)
     else:
@@ -303,6 +338,19 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
     expected = rf"Q-[0-9]{{{digits.group(1)},}}" if digits else None
     if expected != mod.NUMBER.pattern:
         problems.append(f"番号の書式 {expected!r} ≠ 本体 {mod.NUMBER.pattern!r}")
+    internal_prefix = first_code(write("No"), "内部の表は {}（")
+    internal_expected = expected.replace("Q-", internal_prefix, 1) if expected and internal_prefix else None
+    if internal_expected != mod.INTERNAL_NUMBER.pattern:
+        problems.append(f"内部の番号の書式 {internal_expected!r} ≠ 本体 {mod.INTERNAL_NUMBER.pattern!r}")
+    none_marker = first_code(write("推奨"), "推奨しないなら {}（")
+    if none_marker != mod.NO_RECOMMENDATION:
+        problems.append(f"推奨しない印 {none_marker!r} ≠ 本体 {mod.NO_RECOMMENDATION!r}")
+    internal_path = first_code(markdown, "\\| 内部 \\| {}（番号")
+    if (internal_path or "").rsplit("/", 1)[-1] != mod.INTERNAL_NAME:
+        problems.append(f"内部の表の名前 {internal_path!r} ≠ 本体 {mod.INTERNAL_NAME!r}")
+    forbidden = re.findall(r"内部の表では \*\*`([^`]+)` を使わない", markdown)
+    if set(forbidden) != set(mod.INTERNAL_FORBIDDEN):
+        problems.append(f"内部の表で使わない状態 {forbidden!r} ≠ 本体 {sorted(mod.INTERNAL_FORBIDDEN)!r}")
     separator = first_code(write("選択肢"), "の形を {} で")
     if separator != mod.OPTION_SEPARATOR:
         problems.append(f"選択肢の区切り {separator!r} ≠ 本体 {mod.OPTION_SEPARATOR!r}")
@@ -340,11 +388,15 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("選択肢の数", "で 2 つ以上つなぐ", "で 3 つ以上つなぐ"),
     ("選択肢のラベル", "ラベルは英大文字 1 字で、", "ラベルは英字 1 字で、"),
     ("起票元の括弧", "詳細は全角括弧で添えて", "詳細は半角括弧で添えて"),
+    ("内部の番号", "内部の表は `D-`（", "内部の表は `E-`（"),
+    ("推奨しない印", "推奨しないなら `なし`（", "推奨しないなら `—`（"),
+    ("内部の表の名前", "| 内部 | `docs/v<n>/spec/qa-dev.csv`（番号", "| 内部 | `docs/v<n>/spec/qa-internal.csv`（番号"),
+    ("内部の表で使わない状態", "内部の表では **`暫定反映` を使わない**", "内部の表では **`確認中` を使わない**"),
 ]
 
 
-def reference_example(markdown: str) -> str | None:
-    m = re.search(r"^## 例\n.*?```csv\n(.*?)```", markdown, re.S | re.M)
+def reference_example(markdown: str, heading: str = "例") -> str | None:
+    m = re.search(rf"^## {re.escape(heading)}\n.*?```csv\n(.*?)```", markdown, re.S | re.M)
     return m.group(1) if m else None
 
 
@@ -354,7 +406,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        paths = [write_case(root, i, content) for i, (_, content, _, _) in enumerate(CASES)]
+        paths = [write_case(root, i, content, name.startswith("内部:")) for i, (name, content, _, _) in enumerate(CASES)]
 
         print("1・2. 試料（陽性対照を含む）")
         for (name, _, code, text), path in zip(CASES, paths):
@@ -374,6 +426,11 @@ def main() -> int:
         if example is not None:
             result = run_case(mod, write_case(root, 900, example))
             check("「例」が決まりを破っていない", result[0] == 0, result[1])
+        internal = reference_example(reference, "内部の表の例")
+        check("「内部の表の例」のブロックがある", internal is not None)
+        if internal is not None:
+            result = run_case(mod, write_case(root, 901, internal, internal=True))
+            check("「内部の表の例」が決まりを破っていない", result[0] == 0, result[1])
 
         print("4. リポジトリの外で単体で動く")
         alone = root / "alone"

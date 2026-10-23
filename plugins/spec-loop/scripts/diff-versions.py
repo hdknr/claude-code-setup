@@ -7,7 +7,7 @@ usage: python3 diff-versions.py <docs ディレクトリ> [--version <n>]
 
 - **v<n> の差分 ＝ v<n-1> の時点の全体と v<n> の時点の全体の比較。** 全体は同梱の `merge-versions.py` の `merge` で重ねる
   （**重ね方を写さない**）。`--version` を省けば作業中の版（番号が最大の版）。
-- 単位は重ね合わせと同じ——Q&A は行（`No`）、機能は `id`、ほかのファイルは版のディレクトリからのパス。
+- 単位は重ね合わせと同じ——Q&A は行（`No`。共有の表と内部の表の両方。並びは共有が先）、機能は `id`、ほかのファイルは版のディレクトリからのパス。
   **追加**は v<n> にだけある、**変更**は両方にあって中身が違う、**削除**は v<n-1> にだけある。
 - **同じ中身を置き直しただけのものは変更に数えない**（比較なので）。**v1 は前の版が無いので、全部が追加。**
 - 削除には `docs/v<n>/removed.csv` の `理由` を添える。
@@ -117,7 +117,7 @@ def compare(docs: Path, version: int | None = None) -> tuple[list[str], Diff | N
     else:
         before = merge_versions.Whole()
     diff = Diff(number)
-    diff.changes[merge_versions.KIND_QA] = compare_maps(before.qa, now.qa)
+    diff.changes[merge_versions.KIND_QA] = compare_maps({**before.qa, **before.internal}, {**now.qa, **now.internal})
     diff.changes[merge_versions.KIND_FEATURE] = compare_maps(before.features, now.features)
     diff.changes[merge_versions.KIND_FILE] = compare_maps(dict(sorted(before.files.items())),
                                                           dict(sorted(now.files.items())))

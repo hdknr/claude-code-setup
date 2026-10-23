@@ -47,28 +47,34 @@ SCRIPT = SCRIPTS / "qa-to-pptx.py"
 CHECKER = SCRIPTS / "check-qa-csv.py"
 
 A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
-HEADER = ["No", "起票元", "質問", "選択肢", "回答", "反映先", "状態", "費用への影響"]
+HEADER = ["No", "起票元", "質問", "選択肢", "推奨", "推奨の理由", "回答", "反映先", "状態", "費用への影響"]
 
 ODD_QUESTION = "特殊文字 & <タグ> \"引用\"\x0b は？ 同じ段落"
 ROWS = [
     ["Q-001", "要求確定（決定表）", "シルバー会員で 10000 円未満のとき、割引は？",
-     "A: 割引なし（0%） / B: 3% 割引", "A（業務部が回答）", "決定表 4 行目", "反映済み", ""],
+     "A: 割引なし（0%） / B: 3% 割引", "A", "差をはっきりさせる", "A（業務部が回答）", "決定表 4 行目", "反映済み", ""],
     ["Q-002", "仕様レビュー（Red Team）", "決済の途中で通信が切れたとき、注文は？",
-     "A: 取り消す / B: 決済待ちで残す", "未回答", "—", "確認中", ""],
+     "A: 取り消す / B: 決済待ちで残す", "B", "問い合わせを減らす", "未回答", "—", "確認中", ""],
     ["Q-003", "要求確定", "回答済みだが未反映の質問",
-     "A: はい / B: いいえ / C: 保留", "B（業務部が回答）", "—", "確認中", ""],
+     "A: はい / B: いいえ / C: 保留", "C", "急がない", "B（業務部が回答）", "—", "確認中", ""],
     ["Q-004", "実現性・コスト", ODD_QUESTION,
-     "A: はい & 続ける / B: <いいえ>", "未回答", "—", "確認中", "B は月額が約 2 倍"],
+     "A: はい & 続ける / B: <いいえ>", "なし", "見積り待ち & <確認>", "未回答", "—", "確認中", "B は月額が約 2 倍"],
     ["Q-005", "要求確定", "2 行の質問の 1 行目\n2 行目",
-     "A: 一 / B: 二", "未回答", "—", "確認中", ""],
+     "A: 一 / B: 二", "なし", "事実の確認", "未回答", "—", "確認中", ""],
     ["Q-006", "要求確定", "暫定で採った質問",
-     "A: 上限なし / B: 5000 円まで", "A（推奨案を暫定で採用。業務部 2026-10-21 の指示）", "決定表 7 行目", "暫定反映", ""],
+     "A: 上限なし / B: 5000 円まで", "A", "上限の説明が手間", "A（暫定で採用。業務部 2026-10-21 の指示）", "決定表 7 行目", "暫定反映", ""],
 ]
 # 載る行（反映済みでない行）。暫定反映も載る（#325）
-PENDING = [r for r in ROWS if r[6] != "反映済み"]
-PROVISIONAL = [r for r in ROWS if r[6] == "暫定反映"]
+PENDING = [r for r in ROWS if r[8] != "反映済み"]
+PROVISIONAL = [r for r in ROWS if r[8] == "暫定反映"]
 UNSETTLED = [r for r in PENDING if r not in PROVISIONAL]
-DONE = [r for r in ROWS if r[6] == "反映済み"]
+DONE = [r for r in ROWS if r[8] == "反映済み"]
+# 内部の層の表（qa-dev.csv）——資料に載せない（#330）
+INTERNAL_ROWS = [["D-001", "仕様レビュー", "ワーカーを分けるか", "A: 分ける / B: 分けない", "B", "費用", "未回答", "—", "確認中", ""]]
+
+
+def marked(option: str, row: list[str]) -> bool:
+    return option.split(":")[0] == row[4]
 
 failures: list[str] = []
 
@@ -164,7 +170,14 @@ def observe(mod, base: Path) -> dict:
         obs["questions_as_paragraphs"] = all(
             all(line in flat for line in r[2].replace("\x0b", "").split("\n")) for r in PENDING)
         obs["options_as_paragraphs"] = all(
-            all(o in flat for o in r[3].split(" / ")) for r in PENDING)
+            all((f"{o}（推奨）" if marked(o, r) else o) in flat for o in r[3].split(" / ")) for r in PENDING)
+        # 推奨を目立たせる（#267）——推奨の選択肢だけに「（推奨）」、理由（推奨しないなら「推奨なし」と理由）、一覧のラベル
+        obs["only_recommended_marked"] = sorted(p for p in flat if p.endswith("（推奨）")) == sorted(
+            f"{o}（推奨）" for r in PENDING for o in r[3].split(" / ") if marked(o, r))
+        obs["reasons"] = all((f"推奨の理由: {r[5]}" if r[4] != "なし" else f"推奨なし: {r[5]}") in flat for r in PENDING)
+        obs["index_recommendation"] = all(
+            any(p.startswith(r[0]) and p.endswith("［推奨なし］" if r[4] == "なし" else f"［推奨 {r[4]}］") for p in flat)
+            for r in PENDING)
         obs["done_absent"] = not any(r[0] in p or r[2] in p for r in DONE for p in flat)
         # 未反映と暫定を分けて書く（#325）——表紙の件数・一覧の印・各問の回答の見出し
         cover = slides[0] if slides else []
@@ -179,7 +192,14 @@ def observe(mod, base: Path) -> dict:
         run(mod, str(good), str(again), "--subtitle", "2026-10-13")
         obs["deterministic"] = again.exists() and again.read_bytes() == out.read_bytes()
 
-    bad = write_csv(base / "bad.csv", ROWS + [["Q-006", "未知の起票元", "q", "A: x", "未回答", "—", "確認中", ""]])
+    bad = write_csv(base / "bad.csv", ROWS + [["Q-006", "未知の起票元", "q", "A: x", "A", "r", "未回答", "—", "確認中", ""]])
+
+    # 内部の層の表を渡されたら作らない（#330）
+    (base / "internal").mkdir(exist_ok=True)
+    internal = write_csv(base / "internal" / "qa-dev.csv", INTERNAL_ROWS)
+    internal_out = base / "internal.pptx"
+    obs["internal_rc"] = run(mod, str(internal), str(internal_out))
+    obs["internal_absent"] = not internal_out.exists()
     kept = base / "kept.pptx"
     kept.write_bytes(b"OLD")
     obs["bad_rc"] = run(mod, str(bad), str(kept))
@@ -215,9 +235,11 @@ EXPECTED = {
     "rc": 0, "problems": [], "slides": 1 + 1 + len(PENDING),
     "pending_on_slides": True, "questions_as_paragraphs": True, "options_as_paragraphs": True,
     "done_absent": True, "deterministic": True, "cover_counts": True,
+    "only_recommended_marked": True, "reasons": True, "index_recommendation": True,
+    "internal_rc": 2, "internal_absent": True,
     "index_marks": [f"{r[0]}（暫定）" for r in PROVISIONAL],
-    "answer_labels": sorted([f"回答（未反映）: {r[4]}" for r in UNSETTLED if r[4] != "未回答"]
-                            + [f"暫定の回答（反映済み・確認待ち）: {r[4]}" for r in PROVISIONAL]),
+    "answer_labels": sorted([f"回答（未反映）: {r[6]}" for r in UNSETTLED if r[6] != "未回答"]
+                            + [f"暫定の回答（反映済み・確認待ち）: {r[6]}" for r in PROVISIONAL]),
     "bad_rc": 1, "bad_kept": True, "missing_rc": 2, "usage_rc": 2,
     "unwritable_rc": 3, "no_tmp_left": True,
     "same_rc": 2, "same_kept": True, "nested_rc": 0, "nested_made": True,
@@ -240,6 +262,10 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("一時ファイルを消さない", "        Path(tmp).unlink(missing_ok=True)\n", ""),
     ("入力と同じ出力先を拒まない", "    if out.exists() and src.exists() and out.samefile(src):",
      "    if False:"),
+    ("推奨を目立たせない", '        if qa.OPTION.fullmatch(option)["label"] == recommended(row):', "        if False:"),
+    ("推奨の理由を載せない", '    body += [paragraph("", 1200)] + lines_of(f"{head}: {row[\'推奨の理由\']}", 1600)\n', ""),
+    ("推奨しないのを推奨と書く", 'return "推奨なし" if label is None else f"推奨 {label}"', 'return f"推奨 {label}"'),
+    ("内部の表も載せる", "    if qa.is_internal(src):", "    if False:"),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
 ]
 
@@ -263,7 +289,7 @@ def main() -> int:
         slides, problems = slide_paragraphs(out) if rc == 0 else ([], ["作られない"])
         check("載せる行が 0 件でも作り、そう書く",
               rc == 0 and not problems and any("載せる質問はありません" in p for s in slides for p in s))
-        many = [[f"Q-{100 + i}", "要求確定", f"質問 {i}", "A: x / B: y", "未回答", "—", "確認中", ""]
+        many = [[f"Q-{100 + i}", "要求確定", f"質問 {i}", "A: x / B: y", "A", "r", "未回答", "—", "確認中", ""]
                 for i in range(12)]
         out = base / "many.pptx"
         rc = run(mod, str(write_csv(base / "many.csv", many)), str(out))
