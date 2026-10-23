@@ -13,9 +13,14 @@
 - `CLAUDE.md` — プロジェクト構成の `scripts/` の一覧に 2 本を足す
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 3 の 5 番目（狭いパスの終点）、手順 6（D・E・F）、手順 8（A の検査の案内・B・C・D）、版の 2 行
 - `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — 狭いパスの差し込みの差分の取り方（F）
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（minor。手順の追加）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（minor。手順の追加）
+- `.claude-plugin/marketplace.json` — 同上
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロックだけ（`skill-metrics.py` で書き直す）
-- `docs/plans/issue-205.md`・`issue-288.md`・`issue-309.md`・`issue-365.md`・`issue-373.md` — 件数の行を直す（A・B）
+- `docs/plans/issue-205.md` — 件数の行の古い括弧を直す（B）
+- `docs/plans/issue-288.md` — 件数の行に `- ` を足す（A）
+- `docs/plans/issue-309.md` — 件数の行を足す（A）
+- `docs/plans/issue-365.md` — 件数の行の `- ` と値（#383 を数える）（A・B）
+- `docs/plans/issue-373.md` — 件数の行を足す（A）
 - `docs/plans/issue-384.md` — この計画
 
 触らない:
