@@ -42,7 +42,8 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 - 2: 照合していない——git でない・git が無い・作業ツリーの版が決まりに反する／1 つも無い（`--version` を省いたとき）・
   タグが無い／片方しか無い・指定したタグが無い／命名に合わない／別の版のもの・
   どちらかの時点で比べる場所にファイルが無い（旧い構成のタグを含む）・どちらかの時点に `docs/v<n>/` が無い・
-  `removed.csv` が読めない／決まり（`merge-versions.py` の読み方）に反する・
+  `removed.csv` が読めない／決まり（`merge-versions.py` の読み方）に反する・要求確定のタグの時点の `removed.csv` の
+  配置を `merge` が拒否する（判定する形は `provisional_rows` の docstring）・
   要求確定のタグの時点の `qa.csv` が読めない／列検査（`check-qa-csv.py`）を通らない
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`git` は要る）。
@@ -158,9 +159,15 @@ def read_removed_at(repo: Path, commit: str, tag: str, path: str) -> list[tuple[
             raise Unjudged(f"{tag} の {path} が UTF-8 として読めない。照合していない")
         problems = [line.replace(str(copy), path) for line in problems]
     if problems:
-        raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）: "
-                       + " / ".join(problems) + "。照合していない")
+        raise Unjudged(refused(tag, problems))
     return parsed
+
+
+def refused(tag: str, problems: list[str]) -> str:
+    """`removed.csv` の拒否のメッセージ。**パスは前置きに書かない**——`problems` の各行が
+    `docs/v<n>/removed.csv` で始まるので、書くと 2 度出る（#351）。"""
+    return (f"{tag} の時点の {REMOVED} が決まりに反する（references/versions.md）: "
+            + " / ".join(problems) + "。照合していない")
 
 
 def removed_shared_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple[str, str]]:
@@ -190,9 +197,12 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
     `removed` は `resolve` がその時点で読んだ `removed.csv`（パスごと。`read_removed_at` の結果）。
     **共有の Q&A の行（内部の層の `D-` は除く。#339）について `merge` が拒否する配置**（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）は
     2 にする——判定は `merge-versions.py` の `check_removed`（写しを作らない）。黙って消すと、置いた暫定の行を
-    数え落とすか、`merge` が拒否する中身を承認したことになる。**この関数は種類 `ファイル` の行と v1 の `removed.csv` の
-    配置を見ない**——ファイルの在りかを版ごとに追っていないので、`merge` が拒否する配置でも 2 にならない（#340 で
-    範囲を決めた）。v2 以降の `removed.csv` の形式の違反は種類によらず `read_removed_at` が 2 にする。呼ぶのは要求確定のタグの
+    数え落とすか、`merge` が拒否する中身を承認したことになる。**種類 `ファイル` の行は、版のファイルの一覧を作らずに
+    判定できる形——構造ファイル（`shared/qa.csv` など）を消す・同じファイルを 2 度消す——と、v1 に `removed.csv` を
+    置くことも 2 にする**（#348。v1 の文言は `merge-versions.py` の `V1_REMOVED`）。**種類 `ファイル` の行の
+    「前の版までに無いファイルを消す」「同じ版で置きつつ消す」と、種類 `機能` の行の配置は 2 にしない**——判定に
+    版ごとのファイル（機能）の一覧が要り、`merge-versions.py` の読み方を git の上で写すことになるので。
+    v2 以降の `removed.csv` の形式の違反は種類によらず `read_removed_at` が 2 にする。呼ぶのは要求確定のタグの
     時点だけなので、予算の合意のタグの時点の配置は見ない。
     """
     whole: dict[str, dict[str, str]] = {}
@@ -225,17 +235,28 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
             for row in rows:
                 whole[row["No"]] = row
                 placed.add(row["No"])
-        if number > 1:
-            path = f"{DOCS}/v{number}/{REMOVED}"
+        path = f"{DOCS}/v{number}/{REMOVED}"
+        if number == 1:
+            # v1 の `removed.csv` は読まない（`removed_scope` は v2 から）が、在ること自体を `merge` は拒否する（#348）
+            listed = git(repo, "ls-tree", "--name-only", commit, "--", path)
+            if listed.returncode != 0:
+                raise Unjudged(f"{tag} の {path} を読めない: {listed.stderr.strip()}。照合していない")
+            if listed.stdout.strip():
+                raise Unjudged(refused(tag, [f"{path}: {versions.V1_REMOVED}"]))
+        else:
             # 内部の層の Q&A（`D-`）を消した行は見ない——ここで重ねるのは共有の `qa.csv` だけ（#339）
             rows = [row for row in removed[path] or []
                     if row[1] == REMOVED_QA and not qa.is_internal_number(row[2])]
+            # 種類 `ファイル` の行は、版のファイルの一覧を作らずに判定できる形（構造ファイルを消す・2 度消す）だけを見る（#348）。
+            # 置いたものは空・在るものは行の対象そのものとして渡す——「置きつつ消す」「前の版までに無い」は判定しない
+            files = [row for row in removed[path] or [] if row[1] == REMOVED_FILE]
             # 前の版までに在るかを今の版の行を含めて見てよい——今の版が置いた行は、先に「置きつつ消す」で落ちる
             problems = []
-            versions.check_removed(path, rows, {REMOVED_QA: placed}, {REMOVED_QA: set(whole)}, problems)
+            versions.check_removed(path, sorted(rows + files),
+                                   {REMOVED_QA: placed, REMOVED_FILE: set()},
+                                   {REMOVED_QA: set(whole), REMOVED_FILE: {target for _, _, target in files}}, problems)
             if problems:
-                raise Unjudged(f"{tag} の {path} が決まりに反する（references/versions.md）: "
-                               + " / ".join(problems) + "。照合していない")
+                raise Unjudged(refused(tag, problems))
             for _, _, target in rows:
                 whole.pop(target)
     return [row for row in whole.values() if row["状態"].strip() == qa.PROVISIONAL]
