@@ -65,6 +65,7 @@
 - 1 パス目の指摘対応: `5bfc829`。変更範囲を `feasibility` の小節の 1 行に広げ、受入基準 C4・A4 を足した。
   当て直し: `check-all.py` 44/44（失敗 0 / 飛ばし 0）・`check-site-links.py` 0・`mkdocs build --strict`（CPython 3.13 ＋ ロックした依存・`--site-dir` を scratchpad に）警告 0 で成功
 - **2 パス目の指摘対応を始める直前の SHA（狭いパスの起点）: 指摘対応に入る前に書く**
+- 割り目（2 パス目の前）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-23）。再開は 2 パス目から
 - 次: 2 パス目——**手順 5 の Verifier と手順 6 の `/code-review` の両方**を、base `f712197f0664ff85bd6853451ce4fbdcca4521c8`・HEAD `5bfc829` 以降に当てる
 - 反証と差し戻し: 1 パス目の Verifier 反証 0 件・差し戻しなし
 - 交絡: 実験あり（A3 の終了コード）。一時ディレクトリに `docs/shared/`・`docs/spec/` 直下の旧い構成と
