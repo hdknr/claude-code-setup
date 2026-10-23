@@ -124,7 +124,8 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
 - 割り目 1（手順 4 の後）: `AskUserQuestion` で訊き、**「ここで割る」が選ばれた**（2026-10-23）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 373`、**手順 5 の 1 パス目から**
 - 関門 1 パス目（2026-10-23。再開した周で）: **Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 3 件・弱い指摘 3 件**（`check-all.py` 44/44・`git status` は開始・終了とも空）／**`/code-review`（high）指摘 10 件**（1 度 API エラーで止まり、再開して完走）。重なりを除いて **13 行、すべて「直す」**（採否は下の「1 パス目の指摘と採否」）
 - 1 パス目の指摘対応: 済み（`spec-exit.md`・`tree.md`・SKILL 手順 1/2/3/5/6/7・`formal-checker.md`。記録を `docs/` の外の `spec-review/v<n>.csv` へ移した）。`check-all.py` 44/44・失敗 0。親が再現した: C3（`diff-versions` が `変更 spec/review-runs.csv`）・C4（記録だけの `spec/` で条件 1 が rc=0）・C5（`wc -l`）
-- **残っている関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**。そのあと 2 パス目で直した行があれば狭いパス
+- 割り目 2（2 パス目の前）: `AskUserQuestion` で訊き、**「ここで割る」が選ばれた**（2026-10-23）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 373`
+- **残っている関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**（どちらも未着手。2 パス目の指摘対応を始める前に、その直前の HEAD の SHA を狭いパスの起点としてここに書く）。そのあと 2 パス目で直した行があれば狭いパス
 - 交絡: C3・C4 の再現は、旧い置き場所で失敗し・置かなければ通る（陽性・陰性の両側）を見た。移した後は `docs/` の外なのでスクリプトは読まない（読む経路が無いことはコードの範囲から。`merge-versions.py`・`diff-versions.py`・`check-spec-exit.py` は `docs/` と `spec/` の引数の下しか見ない）
 - 反証・差し戻し: まだ
 - 交絡: まだ
