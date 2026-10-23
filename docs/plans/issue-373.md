@@ -12,7 +12,7 @@
 - `plugins/spec-loop/agents/domain-checker.md` — 同上
 - `plugins/spec-loop/agents/formal-checker.md` — 同上・対象の選び方・構成の大きさ
 - `docs/plugins/index.md` — spec-review の節に 1 項（収束の決まりを指す）
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.19.0 → 0.20.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor: 0.19.0 → 0.20.0。main が先に 0.20.0 に達したので、2 パス目の指摘対応のあとで main を取り込み 0.21.0 に上げた）
 - `.claude-plugin/marketplace.json` — 同上
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plans/issue-373.md` — この計画
@@ -75,7 +75,7 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
    （1 パス目の C3・C4 を受けて、置き場所を `docs/v<n>/spec/` から正本の `spec-review/v<n>.csv`（`docs/` の外）に移した。もとは「未決定の印に当たる語を含まない」を基準にしていたが、`spec/` に置くこと自体が C4 の穴を作っていた）
 7. **規模の目安と減らす見直し**（E）——報告に出す数・見直しの引き金・判定役への「減らせる指摘を先に」が書いてある
 8. **F**——実データの 9〜14 回目（取れる範囲）を新しい条件に当てた結果が、この計画と PR に書いてある。取れないものはその旨
-9. **版**——3 種類（marketplace・plugin.json・spec-loop の全 SKILL.md の 2 行）が 0.20.0 で揃う
+9. **版**——3 種類（marketplace・plugin.json・spec-loop の全 SKILL.md の 2 行）が揃い、main より上（0.21.0。main が並行する周で 0.20.0 に達したため）
 10. **既存の決まりを壊さない**——指す先（`../../references/…`・節の名前）が実在する（`check-skill-pointers.py`）。`check-all.py` が緑
 
 ### 経路（不変条件 1・4 を破りうる入口）
