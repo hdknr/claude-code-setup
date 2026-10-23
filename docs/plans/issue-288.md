@@ -71,7 +71,8 @@
 - 周の在り処: ブランチ `issue/288-spec-loop-pointer-form`、worktree
   `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-288`、起点 `ae7b544`、
   base の参照 `origin/main`、base の SHA `ae7b544963a87562aa0bb5ae635e12ba2b898b19`
-- 関門: まだ
+- 実装: 済み（コミット済み。`check-all.py` 44/44 緑）。手順 4 の割り目: 提案した → 「ここで割る」が選ばれた（2026-10-23）
+- 関門: まだ（次は手順 5 の Verifier 1 パス目と /code-review 1 パス目）
 - 反証・差し戻し: まだ
 - 交絡: 実験なし
 
