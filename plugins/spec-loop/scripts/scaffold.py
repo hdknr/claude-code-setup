@@ -889,8 +889,9 @@ def released(repo: Path, number: int) -> tuple[str | None, list[str]]:
     tag = next((tag for n, tag in frozen.releases(listed.stdout.split()) if n == number), None)
     if tag is None:
         return None, []
-    # タグがあるだけでは信じない——タグの時点の `docs/v<n>/` と今が同じかは `check-frozen.py` が決める（写さない）
-    code, lines = frozen.check(repo)
+    # タグがあるだけでは信じない——タグの時点の `docs/v<n>/` と今が同じかは `check-frozen.py` が決める（写さない）。
+    # 確かめるのは v<number> だけ——他の版のタグの状態で、この版の凍結を決めない（#361 の 2 パス目）
+    code, lines = frozen.check(repo, only=number)
     if code == 2:
         raise Unjudged(f"{lines[0]}（check-frozen.py）。v{number} が凍結しているかを判定していない")
     return tag, (lines[:-1] if code else [])
