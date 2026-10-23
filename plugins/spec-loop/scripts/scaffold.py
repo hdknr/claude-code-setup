@@ -27,7 +27,8 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 後の版で確定しても止め**、v<n-1> を scaffold できていないことを名指しする（#335・#358。手当ては
 `references/versions.md` の「前の版の時点が崩れていたら」）。**ただし前の版が凍結していれば（`release-v<n-1>`）止めない**
 ——直せないので v<n-1> の時点を信じず、v<n> の機能を全部追加にし、v<n> で消した機能の撤去の本文は作らない（そう出力する。#357）。
-凍結を見るのはこのときだけで、`git` を起動できない・浅い clone なら判定しない（2）。
+凍結を見るのはこのときだけで、`git` を起動できない・浅い clone なら判定しない（2）。**タグがあるだけでは凍結と読まない**
+——`check-frozen.py` がタグの後に直されたと言えば止め（1）、判定できなければ 2。前の版に中間表現が無くても Q&A の状態は見る。
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
@@ -70,11 +71,11 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
 - 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現（前の版のものを含む）が決まりに
-  反する（全部を 1 行ずつ出す）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
+  反する（全部を 1 行ずつ出す）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
 - 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto` を含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
-  前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone）・
+  前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
   予期しない失敗（書き込みの失敗を含む）。書く生成では前の Issue の本文は消す
 
 **`scaffold/` は失敗しても消さない**——commit 済みの契約で、古ければ `--check` が言う。
@@ -843,6 +844,7 @@ class Before:
         self.answered = answered or {}
         self.impl_module = impl_module
         self.ir = ir or {"features": []}
+        self.trusted = True  # 凍結した前の版が崩れていて信じなかったなら False（全部を追加にした。#357）
 
 
 # 前の版の時点が崩れていたときの手当ての原本（見出しは `scripts/test-scaffold.py` が `versions.md` と突き合わせる）
@@ -859,8 +861,10 @@ def unsettled_qa(rendered: dict[str, bytes]) -> list[tuple[str, str]]:
     return found
 
 
-def released(repo: Path, number: int) -> str | None:
-    """v<number> を凍結したリリースのタグの名前。無ければ None（`references/versions.md` の「凍結」）。
+def released(repo: Path, number: int) -> tuple[str | None, list[str]]:
+    """(v<number> を凍結したリリースのタグの名前, 凍結した版が直されていればその行)。タグが無ければ (None, [])
+    （`references/versions.md` の「凍結」）。**タグがあれば `check-frozen.py` の `check` で確かめる**——タグの後に直した版・
+    タグの時点に版が無いタグを、凍結していて直せないと読まない（直されていれば行を返して 1、判定できなければ 2）。
 
     **git の作業ツリーの根でなければ None**——タグを持てない（根が別なら、そのタグは根の `docs/` を指す。
     `check-frozen.py` も根の `docs/` を見る）。**git を起動できない・浅い clone なら判定しない**（タグが見えないのを
@@ -874,7 +878,7 @@ def released(repo: Path, number: int) -> str | None:
 
     top = git("rev-parse", "--show-toplevel")
     if top.returncode != 0 or Path(top.stdout.strip()).resolve() != repo.resolve():
-        return None
+        return None, []
     shallow = git("rev-parse", "--is-shallow-repository")
     if shallow.returncode != 0 or shallow.stdout.strip() != "false":
         raise Unjudged(f"浅い clone か確かめられない・浅い clone である（タグがそろっていない）。"
@@ -882,7 +886,14 @@ def released(repo: Path, number: int) -> str | None:
     listed = git("tag", "--list")
     if listed.returncode != 0:
         raise Unjudged(f"タグを読めない: {listed.stderr.strip()}。v{number} が凍結しているかを判定していない")
-    return next((tag for n, tag in frozen.releases(listed.stdout.split()) if n == number), None)
+    tag = next((tag for n, tag in frozen.releases(listed.stdout.split()) if n == number), None)
+    if tag is None:
+        return None, []
+    # タグがあるだけでは信じない——タグの時点の `docs/v<n>/` と今が同じかは `check-frozen.py` が決める（写さない）
+    code, lines = frozen.check(repo)
+    if code == 2:
+        raise Unjudged(f"{lines[0]}（check-frozen.py）。v{number} が凍結しているかを判定していない")
+    return tag, (lines[:-1] if code else [])
 
 
 def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
@@ -904,27 +915,32 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
     if problems:
         return 1, problems + [f"前の版（v{number - 1}）の全体を重ねられない。生成しない"], [], Before()
     reasons = diffs.removal_reasons(found[number - 1][1])
+    # 前の版の時点が崩れている——`反映済み` でない Q&A が残れば、v<n-1> の scaffold は作れていない（確認中は条件 1、
+    # 暫定反映は held で止まる）。中間表現が指しているかに依らず、前の版に中間表現が無くても、状態を直接見る（#335・#358）
+    unsettled = unsettled_qa(rendered)
+    if unsettled:
+        out = [f"v{number - 1} の時点の {no}: 状態が {state}（{qa.DONE} でない）" for no, state in unsettled]
+        tag, edited = released(loaded.docs.parent, number - 1)
+        if edited:
+            return 1, out + edited + [f"v{number - 1} は凍結しているのに直されている。直した分を {tag} の時点に戻してから"
+                                      "作る（凍結した版を信じてよいかが決まらない）。生成しない"], [], Before()
+        if tag is None:
+            out.append(f"v{number - 1} の時点では {qa.DONE} でない Q&A が残り、v{number - 1} の scaffold は作れていない"
+                       f"（`--check --upto {number - 1}` が 0 にならない）。v{number} の差分を測る土台が無い"
+                       f"——{BROKEN_REMEDY}")
+            out.append(f"前の版（v{number - 1}）の時点が崩れているので、機能を追加・変更・削除に分けない。生成しない")
+            return 1, out, [], Before()
+        # 凍結した版は直せない——v<n-1> の時点を信じず、全部を追加にする（変わらない機能の Issue も渡る。#357）
+        dropped = sorted(key for kind, key in reasons if kind == versions.KIND_FEATURE)
+        out.append(f"v{number - 1} は {tag} で凍結していて直せない。v{number - 1} の時点を信じず、v{number} の機能を"
+                   f"全部 {ADD} として本文を作る——{BROKEN_REMEDY}")
+        if dropped:
+            out.append(f"v{number} で消した機能（{'・'.join(dropped)}）の撤去の本文は作らない（比べる前の版を信じないので）")
+        distrusted = Before()
+        distrusted.trusted = False
+        return 0, out, [Change(ADD, f) for _, f in sorted(now.items())], distrusted
     before_ir, before = {"features": []}, Before()
     if IR_PATH in rendered:
-        # 前の版の時点が崩れている——`反映済み` でない Q&A が残れば、v<n-1> の scaffold は作れていない（確認中は条件 1、
-        # 暫定反映は held で止まる）。中間表現が指しているかに依らず、状態を直接見る（#335・#358）
-        unsettled = unsettled_qa(rendered)
-        if unsettled:
-            out = [f"v{number - 1} の時点の {no}: 状態が {state}（{qa.DONE} でない）" for no, state in unsettled]
-            tag = released(loaded.docs.parent, number - 1)
-            if tag is None:
-                out.append(f"v{number - 1} の時点では {qa.DONE} でない Q&A が残り、v{number - 1} の scaffold は作れていない"
-                           f"（`--check --upto {number - 1}` が 0 にならない）。v{number} の差分を測る土台が無い"
-                           f"——{BROKEN_REMEDY}")
-                out.append(f"前の版（v{number - 1}）の時点が崩れているので、機能を追加・変更・削除に分けない。生成しない")
-                return 1, out, [], Before()
-            # 凍結した版は直せない——v<n-1> の時点を信じず、全部を追加にする（変わらない機能の Issue も渡る。#357）
-            dropped = sorted(key for kind, key in reasons if kind == versions.KIND_FEATURE)
-            out.append(f"v{number - 1} は {tag} で凍結していて直せない。v{number - 1} の時点を信じず、v{number} の機能を"
-                       f"全部 {ADD} として本文を作る——{BROKEN_REMEDY}")
-            if dropped:
-                out.append(f"v{number} で消した機能（{'・'.join(dropped)}）の撤去の本文は作らない（比べる前の版を信じないので）")
-            return 0, out, [Change(ADD, f) for _, f in sorted(now.items())], Before()
         code, lines, before_ir, answered = read_whole(rendered, gate=False)
         if code:
             out = [f"v{number - 1} の時点の {line}" for line in lines[:-1]]
@@ -1475,7 +1491,7 @@ def run(repo: Path, args, writing: bool) -> int:
     issues = render_issues(changes, loaded, contract, before)
     counted = "・".join(f"{kind} {sum(1 for c in changes if c.kind == kind)}" for kind in (ADD, MODIFY, REMOVE))
     summary = (f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）。"
-               f"v{loaded.number - 1} から変わっていない機能の本文は作らない" if loaded.number > 1 else
+               f"v{loaded.number - 1} から変わっていない機能の本文は作らない" if loaded.number > 1 and before.trusted else
                f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）")
     if args.dry_run:
         print(f"作れる（{summary}）。何も書いていない")
