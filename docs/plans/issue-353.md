@@ -85,7 +85,7 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 - 割り目（手順 4 の後）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。再開は手順 5（Verifier 1 パス目と `/code-review` 1 パス目）から
 - 関門: 1 パス目 済み（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet → 反証 1 件（V）。`/code-review` high → 指摘 7 件）。採否は下の表——直す 3 件・残課題 5 件。指摘対応は済み。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目
 - 割り目（手順 6 の 2 パス目の前）: 提案した → 人間の選択は「ここで割る」（2026-10-23）。指摘対応のコミットは `930cfed`（`check-all.py` 44/44 緑）。再開は 2 パス目から——**手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方が残っている**。base は周の base のまま（`4e498b2…`）
-- 関門 2 パス目: 起動（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet、`/code-review` high。base `4e498b2…`）。Verifier 2 パス目: 済み——反証 1 件（V: main が #370 で spec-loop 0.19.0 に先着し `check-version-bump.py origin/main` が赤。親が再現を確認）。`/code-review` 2 パス目: **結果待ち——済んでいない**
+- 関門 2 パス目: 起動（2026-10-23。Verifier = `dev-loop:dev-loop-verifier`・sonnet、`/code-review` high。base `4e498b2…`）。Verifier 2 パス目: 済み——反証 1 件（V: main が #370 で spec-loop 0.19.0 に先着し `check-version-bump.py origin/main` が赤。親が再現を確認）。`/code-review` 2 パス目: 済み——指摘 8 件（採否は下の表——直す 4 件・残課題 4 件）。指摘対応: main を取り込み（`812155b`）、修正（`3e787a0`）。`check-all.py` 44/44 緑（`3e787a0`）。狭いパス: 済み（Verifier・sonnet。1 回目は API エラーで欠票→再開して回収）——指摘 1 件（下の表。人間が決める）
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `1c02161484ffbf3a27809a56953c92b9f8aac729`
 - 交絡: 実験なし（変異テストのみ）
 
@@ -122,3 +122,11 @@ B × D（提案書は内部を外したうえで、共有の種類だけ描く�
 | `/code-review` | 本体の指し先の変異だけが置換の回数を確かめていない | 示せない（失敗する側に倒れる。理由の表示が違うだけ） | 無し | 残課題 |
 | `/code-review` | `HEADING` がコードフェンスの中の `#` 行も見出しと数える | 示せない（いまの `references/*.md` で当たる例が無い） | 無し | 残課題 |
 | `/code-review` | `versions.md` が `Q&A（内部）` を誰が使うかを書いていない | 示せない（書いてあることは事実。誤読の起点は feasibility の引用で、上の行で直す） | 無し | 残課題 |
+
+### 狭いパスの指摘
+
+| 関門 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| Verifier（狭いパス） | scaffold の層の判定を `any` → `all` にする変異が `test-scaffold.py` を素通りする（`Q-` と `D-` の両方を指す機能で内部の表が写した元から落ちる） | 示せる（リポジトリの外の複製で緑。陽性対照: 試料の F-002 を `["D-001","Q-001"]` にすると赤） | E | 人間が決める |
+
+赤になった変異（Verifier が設計）: `check-signoff.py` の 2 箇所の層の判定、`MIGRATION`・`QA_MIGRATION` を `tree.md` の別の見出しに向ける。
