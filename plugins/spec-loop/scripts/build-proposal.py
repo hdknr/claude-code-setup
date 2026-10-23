@@ -186,10 +186,32 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
             target.write_bytes(content)
 
 
+def drop_internal(docs: Path) -> None:
+    """内部の層の Q&A（`spec/qa-dev.csv` と `removed.csv` の `D-` の行）を比べる前に外す。
+
+    提案書は共有の表だけを見る（`references/qa-csv.md` の「層」。#339）——載せないだけでなく、
+    内部の表の決まりの違反で比較が作れなくなることもない（照合も内部の表を見ない）。
+    """
+    mv = diffs.merge_versions
+    for root in sorted(p for p in docs.iterdir() if mv.VERSION.fullmatch(p.name)):
+        internal = root / mv.INTERNAL_QA_PATH
+        if os.path.lexists(internal):
+            internal.unlink()
+        removed = root / mv.REMOVED
+        if removed.is_file() and not removed.is_symlink():
+            rows = list(csv.reader(io.StringIO(mv.read_text(removed), newline="")))
+            kept = [r for r in rows if not (len(r) >= 2 and r[0] == mv.KIND_QA and qa.INTERNAL_NUMBER.fullmatch(r[1].strip()))]
+            if len(kept) != len(rows):
+                buffer = io.StringIO(newline="")
+                csv.writer(buffer, lineterminator="\n").writerows(kept)
+                removed.write_text(buffer.getvalue(), encoding="utf-8")
+
+
 def compare_at(top: Path, commit: str, tag: str, version: int):
     """`commit` の時点の v<version-1> と v<version> の全体を比べる。比べられなければ Stop。"""
     with tempfile.TemporaryDirectory() as tmp:
         copy_docs(top, commit, tag, Path(tmp))
+        drop_internal(Path(tmp) / signoff.DOCS)
         prefix = str(Path(tmp)) + "/"
         try:
             problems, diff = diffs.compare(Path(tmp) / signoff.DOCS, version)
@@ -203,8 +225,6 @@ def compare_at(top: Path, commit: str, tag: str, version: int):
 
 def changes_section(diff, tag: str) -> list[str]:
     qa_kind, feature_kind, file_kind = diffs.KINDS
-    # 内部の層の Q&A（`D-`）は決裁者に見せない——開発者が決めて記録するもの（`references/qa-csv.md` の「層」。#339）
-    diff.changes[qa_kind] = [c for c in diff.changes[qa_kind] if not qa.INTERNAL_NUMBER.fullmatch(c.key)]
     out = [f"## 前の版（v{diff.version - 1}）からの変更", ""]
     out += [f"> `{tag}` の時点の、v{diff.version - 1} までの全体と v{diff.version} までの全体の比較。"
             "同じ中身を置き直しただけのものは載らない。", ""]

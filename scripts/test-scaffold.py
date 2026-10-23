@@ -183,7 +183,10 @@ def cite_internal(ir: dict) -> None:
 
 def internal_in_issue(repo: Path) -> str | None:
     body = (repo / "build" / "scaffold" / "issues" / "F-002.md").read_text(encoding="utf-8")
-    return None if "| D-001 |" in body else "Issue の本文に内部の Q&A（D-001）が載っていない"
+    if "| D-001 |" not in body:
+        return "Issue の本文に内部の Q&A（D-001）が載っていない"
+    # 写した元にも内部の表を挙げる——共有の表だけを挙げると、dev-loop がそこを引いて D-001 を見つけられない（#339）
+    return None if "`build/merged/spec/qa-dev.csv`" in body else "Issue の本文が内部の表を写した元に挙げていない"
 
 
 class Case:
@@ -1241,6 +1244,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("暫定の行を見ない", "            if held:", "            if False:", "暫定反映の Q&A を指さない"),
     ("内部の表を読まない", "        for path in (QA_PATH, INTERNAL_QA_PATH):", "        for path in (QA_PATH,):", "内部の Q&A を指す"),
     ("D- の番号を指せない", 'QA_NO = re.compile(r"[QD]-[0-9]{3,}")', 'QA_NO = re.compile(r"Q-[0-9]{3,}")', "内部の Q&A を指す"),
+    ("写した元に内部の表を挙げない", "(QA_PATH, *([INTERNAL_QA_PATH] if any(", "(QA_PATH, *([] if any(", "内部の Q&A を指す"),
     # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
     ("中間表現が指す暫定の行だけ見る",
      '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',

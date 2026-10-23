@@ -222,6 +222,13 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
                                              + "D-001,仕様レビュー,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,B（開発）,spec/a.md,反映済み,\n"),
                                             ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: made(r) and "D-001" not in r.text and "ワーカーを分けるか" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text),
+    # 内部の表は比べる前に外す——内部の表の決まりの違反（`暫定反映`・前の版に無い D- を消す）でも、照合と同じく提案書は作れる
+    ("内部の表の違反でも比較を作る", V2C[:-3] + [("w", "docs/v2/spec/qa-dev.csv", QA_HEAD
+                                               + "D-001,仕様レビュー,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,B（開発）,spec/a.md,暫定反映,\n"),
+                                              ("w", "docs/v2/removed.csv", "種類,対象,理由\nQ&A,Q-005,夜間の停止を決めた\n"
+                                               "ファイル,requirements/b.md,a.md に統合した\n機能,F-001,割引を廃止した\nQ&A,D-009,共有へ移した（Q-007）\n"),
+                                              ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "D-00" not in r.text and "| Q&A | 1 | 1 | 1 |" in r.text),
     ("v1 は比較の節を持たない", SIGNED_R, False,
      lambda r: made(r) and "前の版" not in r.text and "差分の見積り" not in r.text),
     # 重ね合わせが作れない（前の版に無いものを消す）——比較を作れないので書かない
@@ -236,9 +243,9 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("内部の Q&A も比較に載せる",
-     "    diff.changes[qa_kind] = [c for c in diff.changes[qa_kind] if not qa.INTERNAL_NUMBER.fullmatch(c.key)]\n", "",
-     "内部の Q&A は比較に載せない"),
+    ("内部の Q&A も比較に載せる", "        drop_internal(Path(tmp) / signoff.DOCS)\n", "", "内部の Q&A は比較に載せない"),
+    ("removed.csv の D- の行を外さない", "if len(kept) != len(rows):", "if False:", "内部の表の違反でも比較を作る"),
+    ("内部の表を外さない", "            internal.unlink()\n", "            pass\n", "内部の表の違反でも比較を作る"),
     ("v2 以降も Q&A 表を必須にする", 'if info["version"] > 1 and not exists(', 'if False and not exists(',
      "Q&A を足さない版でも作る"),
     ("v1 でも Q&A 表を省ける", 'if info["version"] > 1 and not exists(', 'if not exists(',
