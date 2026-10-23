@@ -23,7 +23,7 @@
 - `scripts/test-build-proposal.py` — 同上。v1 に内部の表を置く試料（D）
 - `scripts/test-scaffold.py` — 同上
 - `scripts/test-check-signoff.py` — 同上
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.18.1 → 0.19.0。差分の出力の形が変わる＝読む側に効くので minor。0.x）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.18.1 → 0.20.0。main が #370 で 0.19.0 に先着したため。差分の出力の形が変わる＝読む側に効くので minor。0.x）
 - `.claude-plugin/marketplace.json` — 同上
 - `CLAUDE.md` — `diff-versions.py` の説明（層を分ける）
 - `docs/plans/issue-353.md` — この計画
