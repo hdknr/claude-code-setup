@@ -268,12 +268,18 @@ def pointer_sources(mod, hook: str | None = None) -> dict[str, str]:
             HOOK.name: hook}
 
 
+# 定数が指すべき先——実在する別の見出し（`references/qa-csv.md の「層」` など）を指しても、移す手順ではない
+MIGRATION_TARGET = ("tree.md", "Q&A 表を移す")
+
+
 def pointer_mismatches(sources: dict[str, str], references: dict[str, str]) -> list[str]:
     problems = []
     for where, text in sources.items():
         found = list(POINTER.finditer(text))
         if not found:
             problems.append(f"{where}: 移す手順への指し先が無い")
+        if where != HOOK.name and found and (found[0]["file"], found[0]["heading"]) != MIGRATION_TARGET:
+            problems.append(f"{where}: 移す手順（references/{MIGRATION_TARGET[0]} の「{MIGRATION_TARGET[1]}」）を指していない")
         for m in found:
             markdown = references.get(m["file"])
             if markdown is None:
@@ -524,7 +530,8 @@ def main() -> int:
         if hook.count(before) != 1:
             check("崩すと不一致になる: フックの定数を別のファイルに向ける", False, f"崩す箇所が {hook.count(before)} 回現れる")
         else:
-            broken = hook.replace(before, 'QA_MIGRATION = "spec-loop の qa-csv.md の「Q&A 表を移す」"')
+            # 実在する別の見出しに向ける——見出しの実在だけを見る検査では緑のまま（#353 の 2 パス目）
+            broken = hook.replace(before, 'QA_MIGRATION = "spec-loop の references/qa-csv.md の「層」"')
             check("崩すと不一致になる: フックの定数を別のファイルに向ける",
                   bool(pointer_mismatches(pointer_sources(mod, broken), references)))
         for name, file, before, after in POINTER_MUTATIONS:
