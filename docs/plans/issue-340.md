@@ -78,6 +78,9 @@ C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-
 - **狭いパス**（`git diff 88e6fff`・`dev-loop:dev-loop-verifier`・`sonnet`。変異は Verifier が設計）: **反証 1 件**（F1）。新しい文の主張を試料 13 件で実測し、F1 以外は一致。
   素通りした変異: なし（文の修正なので変異ではなく試料の実測。陽性対照は `ok/ok` が 0、Q&A の拒否する配置が要求確定側で 2）。
   F1 は直さない（狭いパスの指摘は人間が決める）——**示せて D に触れるので、PR コメントで「満たしていない受入基準」として名指しする**
+- `check-all.py`: HEAD `865bbca` で 44/44 緑 → `origin/main`（`24390e5`）を取り込み（`575a90b`、衝突なし）→ 44/44 緑
+- PR #347（2026-10-23）: PR 側の CI `check` pass・`build` pass（`deploy` は skipping）・`MERGEABLE`。レビュー記録は PR コメント。**マージは人間の承認待ち**
+- この周の起票: 0 件
 - 反証・差し戻し: なし
 - 交絡: 実験は変異テストのみ。新しい試料の陽性対照は、拒否の結果を見ない変異（`if problems:` → `if False:`）で旧い挙動（2 以外）が再現することで取っている
 - 割り目（手順 4）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-22）。再開は手順 5 から
