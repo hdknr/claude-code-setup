@@ -17,7 +17,6 @@ docs/v<n>/
 ├── spec/                    # 開発者向け：守るべき性質とそれを確かめるテスト（spec-review が書き下す）
 │   ├── scope.md             # 範囲の文書：受け持つ範囲・受け持たない範囲（形は spec-scope.md）
 │   ├── qa-dev.csv           # 内部の層の Q&A 表：開発者が決めて記録する質問（列は qa-csv.md。shared/ に置かない）
-│   ├── review-runs.csv       # 仕様レビューの実行の記録：1 回 1 行（列と上限は spec-exit.md の「実行の上限と記録」）
 │   ├── formal/              # 形式検査のモデル（決定表の検査・TLA+・Alloy など）
 │   └── spec_ir.json         # 仕様の中間表現（scaffold が書き起こす。形は spec-ir.md）
 ├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り
@@ -30,6 +29,7 @@ scaffold/                    # dev-loop に渡す契約（scaffold が生成し�
 ├── types.py
 └── tests/test_<機能>.py     # Red テスト
 build/merged/                # 版を重ね合わせた全体（生成物。commit しない。versions.md）
+spec-review/v<n>.csv         # 仕様レビューの実行の記録（版ごと。commit する。docs/ の外——列と理由は spec-exit.md の「実行の上限と記録」）
 docs/index.md                # 表紙（下の「ドキュメントのツール」。版の外）
 docs/qa.md                   # Q&A 表の表示用ページ（同上。正本は各版の shared/qa.csv）
 mkdocs.yml                   # MkDocs の設定（同上）
