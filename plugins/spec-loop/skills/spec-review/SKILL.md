@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.21.0 -->
-> **このスキルの版: 0.21.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.21.1 -->
+> **このスキルの版: 0.21.1**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -23,7 +23,7 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 ## データの決まり
 
-**列・状態・ツリー・抜ける条件・範囲の線は、このスキルに書かない。** 正は次の 4 つで、このスキルと同じプラグインの中にある:
+**列・状態・ツリー・抜ける条件・範囲の線は、次の 4 つを正とする**（このスキルと同じプラグインの中にある）:
 
 - `../../references/tree.md` — 仕様（開発者向け）・要求・Q&A 表の置き場所
 - `../../references/qa-csv.md` — Q&A 表の列・起票元・状態
