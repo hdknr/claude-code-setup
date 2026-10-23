@@ -55,7 +55,9 @@
 
 - 周の在り処: ブランチ `issue/365-feasibility-scale-yardstick`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-365`・
   起点 `04bcc12`・base 参照 `origin/main` → `04bcc12dc5f07d2aef7d2813322c808959a5fe04`
-- 関門: 未着手
+- 実装: 済（コミット済み。`check-all.py` 44/44 緑）
+- 割り目 1（手順 4 の後）: 提案済み——選択「ここで割る」（2026-10-23）。再開は手順 5 の 1 パス目から
+- 関門: 未着手（次は 1 パス目の Verifier と `/code-review`）
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 
