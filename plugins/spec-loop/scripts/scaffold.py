@@ -22,7 +22,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 **変わっていない機能の本文は作らない**（前の版の Issue がある）。v1 だけなら全部が追加。
 ケースの変化は**Red テストが実行する中身**（入力・期待・`operation.id`・期待にある項目の出力の型・`impl_module`）で決める——
 題だけの違い・`integer` を `number` に広げただけの違いは変化に数えない（前の版の実装は落ちない）。
-**`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
+**`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1**——前の版の時点で `暫定反映` の Q&A を指していれば、後の版で確定しても止め、v<n-1> を scaffold できていないことを名指しする（#335）。
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
@@ -302,8 +302,8 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list
             problems.append(f"{where}: Q&A の No の形に反する（{no!r}）")
         elif no not in answered:
             problems.append(f"{where}: {no} は Q&A 表に無い")
-        elif answered[no]["状態"].strip() != qa.DONE:
-            problems.append(f"{where}: {no} は状態が {qa.DONE} でない")
+        elif (state := answered[no]["状態"].strip()) != qa.DONE:
+            problems.append(f"{where}: {no} は状態が {state}（{qa.DONE} でない）")
     if len(set(map(str, refs))) != len(refs):
         problems.append(f"{where}: Q&A の No が重複している")
     return problems
@@ -848,8 +848,14 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
     if IR_PATH in rendered:
         code, lines, before_ir, answered = read_whole(rendered, gate=False)
         if code:
-            return 1, [f"v{number - 1} の時点の {line}" for line in lines[:-1]] + [
-                f"前の版（v{number - 1}）の中間表現が決まりに反するので、機能を追加・変更・削除に分けない。生成しない"], [], Before()
+            out = [f"v{number - 1} の時点の {line}" for line in lines[:-1]]
+            # 前の版の時点で暫定だった Q&A を指していた——v<n-1> は scaffold できておらず、差分を測る土台が無い（#335）
+            if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):
+                out.append(f"v{number - 1} の時点では {qa.PROVISIONAL} の Q&A が残り、v{number - 1} の scaffold は作れていない"
+                           f"（`--check --upto {number - 1}` が 0 にならない）。v{number} の差分を測る土台が無い"
+                           "——references/versions.md の「差分の周を始める前に」")
+            out.append(f"前の版（v{number - 1}）の中間表現が決まりに反するので、機能を追加・変更・削除に分けない。生成しない")
+            return 1, out, [], Before()
         before = Before(answered, before_ir.get("impl_module", DEFAULT_IMPL_MODULE), before_ir)
     reasons = diffs.removal_reasons(found[number - 1][1])
     kinds = {diffs.ADDED: ADD, diffs.CHANGED: MODIFY, diffs.REMOVED: REMOVE}
