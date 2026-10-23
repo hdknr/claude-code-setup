@@ -82,10 +82,12 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 
 ## 関門の進捗（再開点）
 
-- 周の在り処: ブランチ `issue/374-proposal-provisional-spec`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-374`・起点 `eab8581`・base 参照 `origin/main` = `eab8581b1f0d687b98e5552e9053df8570470c97`
-- 実装: 着手
-- 関門: 未
-- 交絡: 実験なし
+- 周の在り処: ブランチ `issue/374-proposal-provisional-spec`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-374`・起点 `eab8581`・base 参照 `origin/main`。
+  切った時点の base は `eab8581b1f0d687b98e5552e9053df8570470c97`。**main（#361）を取り込んだので式を当て直した: `git merge-base origin/main HEAD` = `fdcf631bcc50b87bd40c0e3eb1826ab0f850414e`**——関門にはこれを渡す
+- 実装: 済み（`60006cc`・取り込み `26fc08e`）。`check-all.py` 44/44 緑・PR 限定の 3 本（変更範囲・description・版）も緑
+- 関門: 未（次は手順 5 の 1 パス目——Verifier と `/code-review`）
+- 手順 4 の割り目: 提案済み（選択は下に書き戻す）
+- 交絡: 実験なし（出力の目視は生成物を読んだだけ）
 
 ## 既知の限界・決着済みの論点
 
