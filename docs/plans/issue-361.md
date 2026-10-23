@@ -72,8 +72,10 @@
 
 - 周の在り処: ブランチ `issue/361-prev-version-unsettled`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-361`・起点 `ae7b544`・base 参照 `origin/main` = `ae7b544963a87562aa0bb5ae635e12ba2b898b19`
 - 実装: `d000a29`（`check-all.py` 44/44 緑・`test-scaffold.py` 試料 184・変異 129）
-- 関門: 未着手（次は手順 5 の Verifier 1 パス目と `/code-review` 1 パス目）
-- 反証: なし
+- 関門 1 パス目（2026-10-23）: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 2 件＋指摘 2 件、受入基準を破る反証 0 件／`/code-review`（high）指摘 9 件。重複を畳んで 11 行（下の採否の表）。直す 5 件（P1-1・P1-2・P1-4・P1-6・P1-9）を `eb0218e` で直した（`check-all.py` 44/44 緑・`test-scaffold.py` 試料 189・変異 135）
+- 手順 4 への差し戻し: 1 回（1 パス目の指摘対応）
+- 次: 2 パス目——手順 5 の当て直し（Verifier）と手順 6 の `/code-review` の両方。base は周の base のまま（`ae7b544`）。2 パス目の指摘対応を始める直前の SHA（狭いパスの起点）は、2 パス目の報告を受けてから書く
+- 反証: 1 パス目の採否の表を参照
 - 交絡を潰した手順: 凍結の試料は陽性対照（タグあり・崩れていない＝今までどおり）と陰性対照（タグなし・親のリポジトリのタグ）を置いた。凍結した版を作れたことは同じ試料で `check-frozen.py` が 0 を返すことで見る
 - 割り目（手順 4）: 「ここで割る」を選んだ（AskUserQuestion。2026-10-23）。再開は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）から
 
