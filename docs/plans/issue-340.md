@@ -82,6 +82,11 @@ C2 × merge-versions の利用者（`scaffold.py`・`diff-versions.py`・`check-
 - PR #347（2026-10-23）: PR 側の CI `check` pass・`build` pass（`deploy` は skipping）・`MERGEABLE`。レビュー記録は PR コメント。**マージは人間の承認待ち**
 - この周の起票: 4 件（#348 R1/V1・#349 R6/S1・#350 R7・#351 R10。マージの前に AskUserQuestion で人間が承認 2026-10-23）
 - F1（狭いパス）: 人間の決定で**この PR で 1 語直す**（`CLAUDE.md`・docstring を「v2 以降の `removed.csv` の形式の違反は…」に）。関門は通さず人間レビューで見る
+- **`origin/main`（`f712197`、#339 を含む）の取り込み**（2026-10-23）: spec-loop が 0.18.0 に進んでいて `check-version-bump.py` が赤 → 取り込んで **0.18.1** に上げた。
+  衝突は版の 7 ファイル（main 側を取って上げた）・`merge-versions.py`（main の内側のループは `check_removed` と同じ中身——呼び出しを残し、`present` は main の「共有＋内部」）・`check-signoff.py`・`test-check-signoff.py`。
+  **#339 の内部の層の Q&A（`D-`）と、この周の拒否が重なると、要求確定のタグの `removed.csv` で `D-` を消す正しい配置が「前の版までに無い」で 2 になる**（C2 を破る——#339 の時点では `pop(target, None)` で黙って通っていた）。
+  → `provisional_rows` が重ねに渡す行から `D-` を除いた（`removed_shared_rows` と同じ絞り）。試料「内部の Q&A を消しても暫定を数える」（3。`merge` との突き合わせにも入れた）と変異「内部の Q&A を消した行も重ねる」を足した。`CLAUDE.md`・docstring に「`D-` は除く」を書いた。
+  **この修正は関門を通していない**（人間レビューで見る。PR コメントに名指し）
 - 反証・差し戻し: なし
 - 交絡: 実験は変異テストのみ。新しい試料の陽性対照は、拒否の結果を見ない変異（`if problems:` → `if False:`）で旧い挙動（2 以外）が再現することで取っている
 - 割り目（手順 4）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-22）。再開は手順 5 から

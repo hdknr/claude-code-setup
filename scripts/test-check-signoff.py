@@ -55,14 +55,14 @@ TARGET = "check-signoff.py"
 REFERENCE = PLUGIN / "references" / "signoff-tags.md"
 
 # Q&A 表は決まりどおりに書く——要求確定のタグの時点の表を読んで暫定の行を数えるので（#325）
-QA_HEAD = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\n"
-QA_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A（業務部が回答）,決定表 4 行目,反映済み,\n"
-QA_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,未回答,—,確認中,\n"
+QA_HEAD = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+QA_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（業務部が回答）,決定表 4 行目,反映済み,\n"
+QA_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A,理由,未回答,—,確認中,\n"
 QA_A = QA_HEAD + QA_1
 QA_B = QA_HEAD + QA_1 + QA_2
 # 暫定の回答で反映した行（#325）
-P_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映,\n"
-P_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/a.md,暫定反映,\n"
+P_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映,\n"
+P_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A,理由,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/a.md,暫定反映,\n"
 
 # 試料の作り方: 手順の列。("w", パス, 中身) 書く／("rm", パス) 消す／("c",) commit／("t", 名前) 軽量タグ／
 # ("ta", 名前) 注釈つきタグ／("tt", 名前) ツリーを指すタグ。None なら git でないディレクトリ
@@ -156,6 +156,15 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                      ("w", REMOVED2, "種類,対象,理由\nファイル,requirements/r.md,不要\n機能,F-001,不要\n"),
                                      ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+    # 内部の層の Q&A（spec/qa-dev.csv の D-）は共有の範囲の外——表を変えても、removed.csv で消しても一致のまま（#339）
+    ("removed.csv の内部の Q&A の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                         ("w", REMOVED2, "種類,対象,理由\nQ&A,D-001,共有へ移した（Q-003）\n"),
+                                         ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+    ("内部の Q&A 表だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD), ("c",), ("t", R1),
+                           ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD + "D-001,仕様レビュー,分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"),
+                           ("c",), ("t", B1)],
+     [], 0, "一致する"),
     # 理由の列は比べない（消したものが同じなら、見た共有の範囲は同じ）
     # 消す行は前の版に置く——同じ版で置きつつ消す配置は決まりに反する（versions.md。照合は 2）
     ("removed.csv の理由だけ違う", [("w", SHARED, QA_B),
@@ -245,6 +254,15 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("同じ行を 2 度消す", [("w", SHARED, QA_HEAD + QA_1 + P_2),
                          ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\nQ&A,Q-002,重複\n"), ("c",), ("t", R2), ("t", B2)],
      [], 2, "docs/v2/removed.csv:3: 2 行目と同じ対象を 2 度消す: Q-002"),
+    # 内部の層の Q&A（`D-`）を消す行は重ねに渡さない——共有の表だけを重ねるので、渡すと「前の版までに無い」で 2 になる
+    # （#339 と #340 を重ねて生じた形。`merge` は内部の表も見て受け入れる）
+    ("内部の Q&A を消しても暫定を数える", [("w", SHARED, QA_HEAD + P_1),
+                                    ("w", "docs/v1/spec/qa-dev.csv",
+                                     QA_HEAD + "D-001,仕様レビュー,分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"),
+                                    ("w", SHARED2, QA_HEAD + QA_2),
+                                    ("w", REMOVED2, "種類,対象,理由\nQ&A,D-001,共有へ移した（Q-002）\n"),
+                                    ("c",), ("t", R2), ("t", B2)],
+     [], 3, "Q-001: A（推奨案を暫定で採用"),
     ("要求確定の時点の Q&A 表が決まりに反する", [("w", SHARED, "No,起票元\nQ-001,要求確定\n"), ("c",), ("t", R1), ("t", B1)],
      [], 2, "docs/v1/shared/qa.csv が決まりに反する（references/qa-csv.md）"),
     ("要求確定の時点の Q&A 表が空", [("w", SHARED, ""), ("c",), ("t", R1), ("t", B1)],
@@ -253,7 +271,8 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
 
 # 暫定の行の重ね方は `references/versions.md` の「重ねるもの」の写し——本体は Q&A の行だけを自前で重ねる。
 # 作業ツリー（タグの時点と同じ中身）を `merge-versions.py` の `merge` で重ねた結果と、暫定の行が一致すること
-OVERLAY_CASES = ["前の版の暫定が残る", "後の版で反映済みにした暫定は数えない", "removed.csv で消した暫定は数えない"]
+OVERLAY_CASES = ["前の版の暫定が残る", "後の版で反映済みにした暫定は数えない", "removed.csv で消した暫定は数えない",
+                 "内部の Q&A を消しても暫定を数える"]
 
 # 照合が 2 にする `removed.csv` の配置は、`merge` も拒否する——試料が `merge` の拒否を表していることの確かめ
 # （期待の文字列のうち、`removed.csv` の位置より後ろが `merge` の問題の行にも現れること）
@@ -287,9 +306,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "前の版の shared だけ違う"),
     ("removed.csv を比べない", "if removed_shared_rows(at_req) != removed_shared_rows(at_budget):", "if False:",
      "removed.csv だけ違う"),
-    ("removed.csv の行を絞らない", "if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):",
+    ("removed.csv の行を絞らない",
+     "if ((kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))\n                or (kind == REMOVED_FILE and target.startswith(SHARED))):",
      "if True:", "removed.csv の範囲の外の行だけ違う"),
-    ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED)):", "and False):",
+    ("内部の Q&A を消した行も比べる", "(kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))", "kind == REMOVED_QA",
+     "removed.csv の内部の Q&A の行だけ違う"),
+    ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED))):", "and False)):",
      "removed.csv の shared のファイルの行が違う"),
     ("removed.csv の決まりを見ない", '    if problems:\n        raise Unjudged(f"{tag} の {path} が決まりに反する',
      '    if False:\n        raise Unjudged(f"{tag} の {path} が決まりに反する', "removed.csv が決まりに反する"),
@@ -340,6 +362,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("removed.csv で消さない", "                whole.pop(target)", "                pass",
      "removed.csv で消した暫定は数えない"),
     ("同じ版で置いて消すのを見ない", "{REMOVED_QA: placed}", "{REMOVED_QA: set()}", "同じ版で置いて消した暫定"),
+    ("内部の Q&A を消した行も重ねる", "row[1] == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(row[2])",
+     "row[1] == REMOVED_QA", "内部の Q&A を消しても暫定を数える"),
     # 拒否の条件式は `merge-versions.py` にしか無い——本体で壊せるのは、それを呼ぶかどうか（#338）。
     # 直す前の挙動（黙って `pop(target, None)`）に戻す——拒否だけ外すと `pop` の KeyError で落ち、
     # 旧い挙動（3 と 0）を表さないまま殺したことになる（#340 の 1 パス目 R3）

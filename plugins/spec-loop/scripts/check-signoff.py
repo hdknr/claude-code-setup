@@ -171,7 +171,9 @@ def removed_shared_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple
     """
     rows = []
     for _, kind, target in parsed or []:
-        if kind == REMOVED_QA or (kind == REMOVED_FILE and target.startswith(SHARED)):
+        # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は共有の範囲の外——開発者が決めるものでサインオフが割れないように（#339）
+        if ((kind == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(target))
+                or (kind == REMOVED_FILE and target.startswith(SHARED))):
             rows.append((kind, target))
     return sorted(rows)
 
@@ -186,7 +188,7 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
     このリポジトリの `scripts/test-check-signoff.py` が突き合わせて見る。
 
     `removed` は `resolve` がその時点で読んだ `removed.csv`（パスごと。`read_removed_at` の結果）。
-    **Q&A の行について `merge` が拒否する配置**（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）は
+    **共有の Q&A の行（内部の層の `D-` は除く。#339）について `merge` が拒否する配置**（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）は
     2 にする——判定は `merge-versions.py` の `check_removed`（写しを作らない）。黙って消すと、置いた暫定の行を
     数え落とすか、`merge` が拒否する中身を承認したことになる。**この関数は種類 `ファイル` の行と v1 の `removed.csv` の
     配置を見ない**——ファイルの在りかを版ごとに追っていないので、`merge` が拒否する配置でも 2 にならない（#340 で
@@ -225,7 +227,9 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
                 placed.add(row["No"])
         if number > 1:
             path = f"{DOCS}/v{number}/{REMOVED}"
-            rows = [row for row in removed[path] or [] if row[1] == REMOVED_QA]
+            # 内部の層の Q&A（`D-`）を消した行は見ない——ここで重ねるのは共有の `qa.csv` だけ（#339）
+            rows = [row for row in removed[path] or []
+                    if row[1] == REMOVED_QA and not qa.INTERNAL_NUMBER.fullmatch(row[2])]
             # 前の版までに在るかを今の版の行を含めて見てよい——今の版が置いた行は、先に「置きつつ消す」で落ちる
             problems = []
             versions.check_removed(path, rows, {REMOVED_QA: placed}, {REMOVED_QA: set(whole)}, problems)
