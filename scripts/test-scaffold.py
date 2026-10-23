@@ -193,8 +193,9 @@ class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
                  post: Callable[[Path], str | None] | None = None, generate_first: bool = False, impl: str | None = None,
-                 extra: dict[str, str] | None = None, root: Path = V1):
-        self.name, self.code, self.text = name, code, text
+                 extra: dict[str, str] | None = None, root: Path = V1, absent: str = ""):
+        # absent: 出力に現れてはならない文言（対照）
+        self.name, self.code, self.text, self.absent = name, code, text, absent
         self.ir, self.raw, self.qa, self.spec = ir, raw, qa, spec
         self.args, self.pre, self.post = args, pre, post
         self.generate_first, self.impl = generate_first, impl
@@ -916,6 +917,11 @@ def add_v2_changed(repo: Path) -> None:
 BAD_V1 = edit(lambda ir: ir["features"][1]["cases"][0].update(expected={"ok": "yes"}))
 # v1 の F-001 のパスの変数が入力に無い（#289 より前の scaffold は通した）
 OLD_PATH_V1 = edit(lambda ir: f1(ir)["operation"].update(path="/orders/{order_id}"))
+# v1 で F-001 が指す Q-001 が確認中（v2 で反映済みに置き換える）——前の版の時点でも抜ける条件 1 を通らない状態
+QA_OPEN_Q001 = QA_DONE.replace(",反映済み,", ",確認中,")
+assert QA_OPEN_Q001 != QA_DONE
+# v1 の F-001 が表に無い Q-009 も指す（v2 で直した）
+MISSING_QA_V1 = edit(lambda ir: f1(ir).update(qa=["Q-001", "Q-009"]))
 
 
 def only_f001_modified(repo: Path) -> str | None:
@@ -1122,6 +1128,25 @@ CASES: list[Case] = [
          args=("--check", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
     Case("前の版だけパスの変数が入力に無い（--dry-run --upto 1）", 1, "パスの変数 {order_id} が operation.input の項目に無い",
          args=("--dry-run", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
+    # #335: v1 で暫定反映の Q-001 を指し、v2 で反映済みに置き換えた——v1 は scaffold できていないので止め、そう名指しする
+    Case("前の版で暫定だった Q&A を後の版で確定する", 1, "v1 の時点では 暫定反映 の Q&A が残り、v1 の scaffold は作れていない"
+         "（`--check --upto 1` が 0 にならない）。v2 の差分を測る土台が無い——references/versions.md の「差分の周を始める前に」",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
+         post=nothing_written_issues),
+    Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の F-001.qa: Q-001 は状態が 暫定反映（反映済み でない）",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    # 前の版の時点を作るときも止まる（今の版と同じ関門）
+    Case("前の版で暫定だった Q&A（--check --upto 1）", 1, "Q-001: 状態が 暫定反映", args=("--check", "--upto", "1"),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    Case("前の版で暫定だった Q&A（--dry-run --upto 1）", 1, "Q-001: 状態が 暫定反映", args=("--dry-run", "--upto", "1"),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    # 対照: 前の版で確認中だった——止まるが、暫定反映の案内は出さない
+    Case("前の版で確認中だった Q&A を後の版で確定する", 1, "v1 の時点の F-001.qa: Q-001 は状態が 確認中（反映済み でない）",
+         qa=HEADER + QA_OPEN_Q001 + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
+         post=nothing_written_issues, absent="scaffold は作れていない"),
+    # 前の版でも Q&A の実在は見る
+    Case("前の版の Q&A が表に無い", 1, "v1 の時点の F-001.qa: Q-009 は Q&A 表に無い", ir=MISSING_QA_V1,
+         extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues, post=nothing_written_issues),
     # 陽性対照: v2 で直さなければ、今の版の誤りとして止まる
     Case("前の版のパスの変数を直さない", 1, "パスの変数 {order_id} が operation.input の項目に無い", ir=OLD_PATH_V1,
          extra=v2([]), pre=plant_old_issues, post=nothing_written_issues),
@@ -1391,6 +1416,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "check_ir(ir, whole, answered, path_rules=True)", "前の版だけパスの変数が入力に無い"),
     ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate)",
      "check_ir(ir, whole, answered, path_rules=False)", "前の版のパスの変数を直さない"),
+    # #335: 前の版の暫定反映を名指ししない／状態を問わず名指しする
+    ("前の版の暫定反映を名指ししない", 'if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):',
+     "if False:", "前の版で暫定だった Q&A を後の版で確定する"),
+    ("前の版の誤りならいつも暫定反映を名指しする", 'if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):',
+     "if True:", "前の版で確認中だった Q&A を後の版で確定する"),
+    ("名指しで今の版を確かめさせる", "`--check --upto {number - 1}` が 0 にならない", "`--check --upto {number}` が 0 にならない",
+     "前の版で暫定だった Q&A を後の版で確定する"),
+    ("Q&A の参照の状態を出さない", "は状態が {state}（{qa.DONE} でない）", "は状態が {qa.DONE} でない",
+     "前の版で暫定だった Q&A を後の版で確定する"),
     ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
      "Red の状態: v2 で出力の項目を足す"),
     ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
@@ -1505,6 +1539,8 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
         return False, f"exit={proc.returncode}（期待 {case.code}）{out[-400:]}"
     if case.text and case.text not in out:
         return False, f"出力に {case.text!r} が無い: {out[-400:]}"
+    if case.absent and case.absent in out:
+        return False, f"出力に {case.absent!r} がある: {out[-400:]}"
     if case.post:
         problem = case.post(repo)
         if problem:
