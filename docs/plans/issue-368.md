@@ -105,7 +105,7 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
   - Verifier（`dev-loop:dev-loop-verifier`・sonnet。報告冒頭で Bash/Read のみと申告）: **反証 0 件**（軽微 2 件 M1・M2）。`check-all.py` 44/44 緑・`skill-metrics.py --check`・`check-diagram-freshness.py` 緑（生成物なしと一致）・`git status --porcelain` 前後とも空
   - `/code-review`（high）: **指摘 10 件**（CR2-1〜CR2-10）。`git status --porcelain` 前後とも空
   - 採否は下の「2 パス目の指摘の採否」。**直す 3 行**（CR2-1・CR2-3・CR2-10）
-- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `ebba8c3`
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD。採否の表をコミットした後）: `ae3e7d2`
 - 反証と差し戻し: 1 パス目で反証 3 件＋指摘 10 件 → 手順 4 へ差し戻して直した。2 パス目は直して狭いパスへ（3 パス目は無い）
 - 交絡を潰した手順: 実験は D4 の確かめ方の判別だけ（陽性対照つき。手順 5 で書く）
 
