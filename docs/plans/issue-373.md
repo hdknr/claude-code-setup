@@ -119,7 +119,9 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
 
 - **周の在り処**: ブランチ `issue/373-spec-review-convergence`／worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-373`／起点 `04bcc12`／base の参照 `origin/main`、SHA `04bcc12dc5f07d2aef7d2813322c808959a5fe04`
 - 実装: 済み（`check-all.py` 44/44・失敗 0）。不変条件 6 は試料の `review-runs.csv` で確かめた（決まった語だけの表で条件 1 が 0、`TODO` を足すと拾われる——陽性対照）
-- 関門: まだ
+- 実装のコミット: `eec26eb`
+- 割り目 1（手順 4 の後）: `AskUserQuestion` で訊き、**「ここで割る」が選ばれた**（2026-10-23）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 373`、**手順 5 の 1 パス目から**
+- 関門: まだ（Verifier・`/code-review` とも 1 パス目未着手。反証 0 件ではなく「未実施」）
 - 反証・差し戻し: まだ
 - 交絡: まだ
 
