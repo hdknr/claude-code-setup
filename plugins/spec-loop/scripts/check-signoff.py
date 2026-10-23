@@ -190,7 +190,7 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
     2 にする——判定は `merge-versions.py` の `check_removed`（写しを作らない）。黙って消すと、置いた暫定の行を
     数え落とすか、`merge` が拒否する中身を承認したことになる。**この関数は種類 `ファイル` の行と v1 の `removed.csv` の
     配置を見ない**——ファイルの在りかを版ごとに追っていないので、`merge` が拒否する配置でも 2 にならない（#340 で
-    範囲を決めた）。`removed.csv` の形式の違反は種類によらず `read_removed_at` が 2 にする。呼ぶのは要求確定のタグの
+    範囲を決めた）。v2 以降の `removed.csv` の形式の違反は種類によらず `read_removed_at` が 2 にする。呼ぶのは要求確定のタグの
     時点だけなので、予算の合意のタグの時点の配置は見ない。
     """
     whole: dict[str, dict[str, str]] = {}
