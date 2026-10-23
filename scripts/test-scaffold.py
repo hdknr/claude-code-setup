@@ -186,7 +186,11 @@ def internal_in_issue(repo: Path) -> str | None:
     if "| D-001 |" not in body:
         return "Issue の本文に内部の Q&A（D-001）が載っていない"
     # 写した元にも内部の表を挙げる——共有の表だけを挙げると、dev-loop がそこを引いて D-001 を見つけられない（#339）
-    return None if "`build/merged/spec/qa-dev.csv`" in body else "Issue の本文が内部の表を写した元に挙げていない"
+    if "`build/merged/spec/qa-dev.csv`" not in body:
+        return "Issue の本文が内部の表を写した元に挙げていない"
+    # 共有の行（Q-001）しか指さない機能は、内部の表を挙げない——層の判定を外すと全部の Issue に出る（#353）
+    shared = (repo / "build" / "scaffold" / "issues" / "F-001.md").read_text(encoding="utf-8")
+    return "共有の Q&A しか指さない Issue が内部の表を写した元に挙げている" if "qa-dev.csv" in shared else None
 
 
 class Case:
@@ -1273,6 +1277,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # 層の判定（`check-qa-csv.py` の `is_internal_number`）を入れ替える（#353）
     ("写した元の層を入れ替える", "if any(qa.is_internal_number(no) for no in refs)",
      "if not any(qa.is_internal_number(no) for no in refs)", "内部の Q&A を指す"),
+    ("写した元の層を見ない（常に内部の表を挙げる）", "if any(qa.is_internal_number(no) for no in refs)", "if True",
+     "内部の Q&A を指す"),
     # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
     ("中間表現が指す暫定の行だけ見る",
      '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',
