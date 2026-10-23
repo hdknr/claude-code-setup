@@ -5,6 +5,10 @@ usage: python3 check-spec-exit.py <qa.csv> <仕様のディレクトリ>
 
 **条件の正は `references/spec-exit.md` である**（このプラグインの中にある）。
 条件 1 は「Q&A 表に、仕様に反映した状態でない行が 0 件で、仕様に未決定の印が 0 件」。
+**Q&A 表は 2 つ見る**——引数の共有の表と、仕様のディレクトリの中の内部の表（`check-qa-csv.py` の `INTERNAL_NAME`。
+あれば）。内部の表の行も、反映していなければ条件 1 を止める（資料には載らないが、開発者が決めた記録が要る。#339）。
+**内部の表は未決定の印を探すファイルから外す**——表として検査するもので、質問の文に印の語が入りうる。
+仕様のファイルの数にも数えない（内部の表だけがあっても、仕様は書いていない）。
 **条件 2〜5 はこのスクリプトでは判定しない**——判定役の報告で決まる（`spec-review` の本文）。
 **0 で終わっても「抜けた」ではない。** 出力もそう言う。
 
@@ -107,6 +111,8 @@ def spec_files(root: Path) -> list[Path]:
             continue
         if any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
+        if path == root / pptx.qa.INTERNAL_NAME:
+            continue  # 内部の Q&A 表。印ではなく表として見る（check の中）
         files.append(path)
     return files
 
@@ -114,7 +120,6 @@ def spec_files(root: Path) -> list[Path]:
 def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
     """(終了コード, 出力する行) を返す。"""
     code, lines, rows = pptx.read_rows(qa_path)
-    pending = [row for row in rows if row["状態"].strip() not in pptx.qa.REFLECTED]
     provisional = [row for row in rows if row["状態"].strip() == pptx.qa.PROVISIONAL]
     if code == 2:
         return 2, lines + ["条件 1 を判定していない（Q&A 表を読めない）"]
@@ -123,13 +128,21 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
     files = spec_files(spec_dir)
     if not files:
         return 2, [f"{spec_dir}: ファイルが 1 つも無い。条件 1 を判定していない（書いていない仕様は確定していない）"]
+    internal_path = spec_dir / pptx.qa.INTERNAL_NAME
+    internal_code, internal_lines, internal_rows = (pptx.read_rows(internal_path) if internal_path.exists()
+                                                    else (0, [], []))
+    if internal_code == 2:
+        return 2, internal_lines + ["条件 1 を判定していない（内部の Q&A 表を読めない）"]
 
     problems = []
-    if code:
-        problems += lines
-        problems.append(f"{qa_path}: 列検査を通らない（決まりに反する表は確定していない）")
-    for row in pending:
-        problems.append(f"{qa_path}: {row['No']}: 状態が {row['状態']}（{row['質問']}）")
+    for path, table_code, table_lines, table_rows in ((qa_path, code, lines, rows),
+                                                      (internal_path, internal_code, internal_lines, internal_rows)):
+        if table_code:
+            problems += table_lines
+            problems.append(f"{path}: 列検査を通らない（決まりに反する表は確定していない）")
+        for row in table_rows:
+            if row["状態"].strip() not in pptx.qa.REFLECTED:
+                problems.append(f"{path}: {row['No']}: 状態が {row['状態']}（{row['質問']}）")
 
     unread = []
     for path in files:
@@ -163,7 +176,7 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
             "条件 1 を判定していない（読めない仕様は確定していない）"
         ]
     return 0, notes + [
-        f"条件 1 を満たす（Q&A 表に反映した状態でない行 0 件・仕様 {len(files) - len(unread)} ファイルに未決定の印 0 件）",
+        f"条件 1 を満たす（Q&A 表（共有・内部）に反映した状態でない行 0 件・仕様 {len(files) - len(unread)} ファイルに未決定の印 0 件）",
         "**これだけでは抜けていない**——条件 2〜5 は判定していない（references/spec-exit.md）",
     ]
 

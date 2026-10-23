@@ -129,7 +129,8 @@ TYPES = ("string", "integer", "number", "boolean")
 FEATURE_ID = re.compile(r"F-[0-9]{3,}")
 NAME = re.compile(r"[a-z][a-z0-9_]*")
 ERROR_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
-QA_NO = re.compile(r"Q-[0-9]{3,}")
+# 共有の表（`Q-`）と内部の表（`D-`）の番号。どちらの表の行も根拠に指せる（`references/spec-ir.md`。#339）
+QA_NO = re.compile(r"[QD]-[0-9]{3,}")
 # 正常時の出力の項目に使えない名前（失敗の形 `{"error": …}` と見分けられないため）
 RESERVED_OUTPUT = "error"
 DEFAULT_IMPL_MODULE = "spec_impl"
@@ -173,6 +174,8 @@ def _load(name: str, filename: str):
 
 spec_exit = _load("check_spec_exit", "check-spec-exit.py")
 qa = spec_exit.pptx.qa
+# 内部の層の Q&A 表（`check-qa-csv.py` の `INTERNAL_NAME`）。重ねた全体の中の場所
+INTERNAL_QA_PATH = "spec/" + qa.INTERNAL_NAME
 versions = _load("merge_versions", "merge-versions.py")
 # 比べ方は `diff-versions.py` のもの（`compare_maps` は純粋な関数。重ねるのはこのスクリプトの `versions`）
 diffs = _load("diff_versions", "diff-versions.py")
@@ -565,7 +568,10 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
             ir = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise Unjudged(f"{merged(IR_PATH)}: 中間表現を読めない（{exc.__class__.__name__}: {exc}）")
-        answered = read_answered(whole / QA_PATH) if (whole / QA_PATH).is_file() else {}
+        answered = {}
+        for path in (QA_PATH, INTERNAL_QA_PATH):
+            if (whole / path).is_file():
+                answered.update(read_answered(whole / path))
         if gate:
             # 暫定の回答は利用者が確かめていない。scaffold の経路はサインオフの照合を通らないので、
             # 中間表現が指すかどうかに依らず、残っていれば止める——指さない機能の仕様にも反映されている（抜ける条件 1 とは別の定義。#325）
@@ -785,8 +791,10 @@ def cell(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n").replace("|", "\\|").replace("\n", "<br>")
 
 
-def qa_sort_key(no: str) -> int:
-    return int(no.split("-", 1)[1])
+def qa_sort_key(no: str) -> tuple[bool, int]:
+    # 共有の表（Q-）が先、内部の表（D-）が後。番号は別の連番なので、数だけで並べると混ざる
+    prefix, number = no.split("-", 1)
+    return prefix != "Q", int(number)
 
 
 def qa_rows(refs: set[str], answered: dict, where: str) -> list[str]:
@@ -1040,10 +1048,13 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
                       f"`python3 -m unittest discover -s {OUT_DIR}/tests` で見る。"]
     lines += ["", SECTIONS[3], ""]
     refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}
+    # 内部の層の行（`D-`）を指していれば、写した元に内部の表も挙げる（#339）
+    tables = "・".join(f"`{merged(path)}`" for path in
+                       (QA_PATH, *([INTERNAL_QA_PATH] if any(qa.INTERNAL_NUMBER.fullmatch(no) for no in refs) else [])))
     if change.kind == REMOVE:
-        lines += qa_rows(refs, before.answered, f"{previous} の時点の `{merged(QA_PATH)}` ")
+        lines += qa_rows(refs, before.answered, f"{previous} の時点の {tables} ")
     else:
-        lines += qa_rows(refs, loaded.answered, f"生成した時点の `{merged(QA_PATH)}` ")
+        lines += qa_rows(refs, loaded.answered, f"生成した時点の {tables} ")
     lines += [
         "",
         SECTIONS[4],
