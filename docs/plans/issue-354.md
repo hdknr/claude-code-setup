@@ -1,0 +1,83 @@
+# Issue #354 — 公開ページの spec-loop の節に、版の構成と判定役の役目を足す（#271・#277 のまとめ）
+
+## 変更範囲
+
+触る:
+
+- `docs/plugins/index.md` — spec-loop の節だけ。版の構成・凍結・移し方の小節を足し、`spec-review` の小節に 3 つの判定役の説明を足す。同じ小節の振り分けの区分の行を `references/spec-scope.md` の 6 区分に合わせる
+- `docs/plans/issue-354.md` — この計画
+
+触らない:
+
+- `plugins/spec-loop/` の中（`references/`・`agents/`・`README.md`・`SKILL.md`）——決まりの原本で、この周は指すだけ。プラグインの版は上げない
+- 公開ページの spec-loop 以外の節
+
+### 同じことを述べている箇所の数
+
+- 版の構成・凍結・移し方: 原本は `references/versions.md` の 1 か所。公開ページには**指し先と要点（1〜2 行）だけ**を置き、ツリー・コマンド・手順の写しは置かない → 新しい複製は 0（要点の 1 行ずつ）
+- 判定役の役目: 原本は `agents/*.md`（3 ファイル）と `references/spec-exit.md` の条件の表。公開ページの説明が 1 か所増える（README にも短い言及がある）。**分けない理由**: 利用者が公開ページだけで分かること自体が受入基準 B なので、要約を置かざるをえない。食い違いを防ぐため、条件の番号は `spec-exit.md` の表と突き合わせ、細部は定義ファイルへ指す
+- 振り分けの区分: 公開ページの既存の行が「5 つ」（`shared`/内部を分ける前の数え方）。原本 `spec-scope.md` は 6 区分（判定役の案は「退ける」以外の 5 つ）。同じ小節なので直す
+
+## 乗るデプロイ経路
+
+`docs/` の変更 → main へのマージで GitHub Pages に自動デプロイ（`.github/workflows/docs.yml`）。
+
+## verify の受入基準
+
+不変条件と、それを破りうる経路:
+
+| # | 不変条件 | 破りうる経路 | 確かめ方 |
+| --- | --- | --- | --- |
+| A1 | 版の構成（`docs/v<n>/`・v1 から置く・v2 以降は差分・作業中は最大の番号・リリースは凍結）を**指し先として**書き、`references/versions.md` の写し（ツリー・手順）を作らない | 要点の言い換えが原本と食い違う／ツリーや `git mv` の手順を写す | 差分を原本と突き合わせる。コードブロックを足していないこと |
+| A2 | `check-frozen.py` が何を確かめるか（リリースした版の `docs/v<n>/` が直されていないか・CI で走らせる・タグはスキルが付けない）を書き、原本の「凍結」を指す | 終了コードなどを写して古くなる | 同上 |
+| A3 | 旧い構成（`docs/shared/` 直下）・旧いタグ（`req-signoff-v<n>` など）を 0.7.0 以降読まないこと、症状、移し方の指し先 | **症状の記述（scaffold・check-signoff が 2 を返す）が事実と違う**／版の番号が違う | **一時ディレクトリに旧い構成の正本リポジトリを作り、`scaffold.py --check` 相当と `check-signoff.py` を実際に走らせて終了コードを見る**。0.7.0 は `git show e6f570e:plugins/spec-loop/.claude-plugin/plugin.json`（#262 で 0.6.0 → 0.7.0） |
+| B1 | 公開ページだけで 3 役それぞれの役目（何をするか・何を判定するか・何をしないか）が分かる | 説明が名前の言い換えに留まる | 読む |
+| B2 | 判定する条件の番号が `spec-exit.md` の表・`agents/*.md` と一致（Red Team = 2・3、Formal Checker = 4、Domain Checker は番号付きの条件を持たない） | Domain Checker に番号を付ける／条件の中身を取り違える | 表・定義と突き合わせる |
+| B3 | 3 役とも書き込みツールを持たず（`tools: Read, Grep, Glob, Bash`）、仕様を書いた側と別のティアで呼ばれること | 「読み取り専用」と書いて Bash を落とす | 定義の frontmatter |
+| B4 | Red Team の名前の由来（攻撃側に立って弱点を探す役）を一言 | 無い | 読む |
+| C1 | タグの命名が `signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>`（`signoff-tags.md`） | 旧い名前を新しい名前として書く | grep |
+| C2 | 振り分けの区分が `spec-scope.md` の 6 区分（判定役の案は「退ける」以外） | 既存の「5 つ」の行が残る | 差分 |
+| C3 | Q&A 表の層（共有 `shared/qa.csv`・内部 `spec/qa-dev.csv`） | 判定役の振り分けの案から内部の表が抜ける | 差分 |
+| D1 | `python3 scripts/check-site-links.py` が通る | 新しい絶対リンクのアンカーが無い | 実行 |
+| D2 | `uv run mkdocs build --strict` が通る | 書式・リンク | 実行 |
+| E | `python3 scripts/check-all.py` が通る（歯止めを全部） | — | 実行 |
+
+掛け算: 受入基準を Verifier と `/code-review` の両方に、1 パス目・2 パス目（該当すれば）とも渡す。
+
+証明できないもの（未証明）: 「利用者が迷わなくなるか」は読み手の理解で、この環境では測れない。B1 は「ページの記述だけで 3 つの問いに答えられるか」を関門に読ませる範囲まで。
+
+生成物: **生成物なし**——`docs/plugins/index.md` は手書き。`diagrams/exports.json`・`skill-metrics.py` の生成ブロックは触らない（`SKILL.md` を触らない）。mkdocs の `site/` はコミットしない。
+
+## 未解決の判断・確認待ち
+
+なし。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/354-spec-loop-public-page`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-354`・起点 `f712197`・base の参照 `origin/main`・base の SHA `f712197f0664ff85bd6853451ce4fbdcca4521c8`
+- 関門: まだ当てていない
+- 反証と差し戻し: なし
+- 交絡: 実験あり（A3 の終了コード）。一時ディレクトリに `docs/shared/`・`docs/spec/` 直下の旧い構成と
+  旧いタグ（`req-signoff-v1`・`budget-signoff-v1`）を持つリポジトリを作り（`GIT_CONFIG_GLOBAL=/dev/null`・`HOME` 差し替え）、
+  `scaffold.py --dry-run` → **2**「版（v1 など）が 1 つも無い（…「移し方」で移す）。判定していない」、
+  `check-signoff.py` → **2**「作業ツリーの docs/ に版（v1 など）が 1 つも無い。照合していない」。
+  **陽性対照**: 同じリポジトリを `git mv` で `docs/v1/` に移し `signoff/v1/req-1`・`signoff/v1/budget-1` を付けると、
+  「版が無い」の文言は消え、別の理由（試料の Q&A 表の見出し）で止まる——**2 は構成のせいで出ていた**。
+  観測窓: この 2 本のスクリプト・この 1 つの試料。`proposal`（`build-proposal.py`）は走らせていないので、ページには 2 本の名前だけを書いた
+- `mkdocs build --strict`: **手元の uv の venv（CPython 3.12.8）では main の時点（`f712197` を `git archive` で展開）でも失敗する**——
+  `docs/plans/issue-332.md` の `<![` で標準ライブラリの `html.parser` が `AssertionError`。この周の変更とは無関係で、同じコミットの main の CI（`docs.yml`）は成功。
+  **CPython 3.13.11 ＋ ロックした依存（`uv export` → `uv run --isolated --no-project`）では `--strict` で警告 0・成功**。
+  新しいアンカー `spec-loop-judges`・`spec-loop-versions` と、ページ内リンク `#spec-loop-versions` が HTML にあることを確認
+- `check-site-links.py`: 0（250 ファイル）
+
+## 既知の限界・決着済みの論点
+
+| 論点 | 決着 | 理由 |
+| --- | --- | --- |
+| Issue 本文は「振り分けの 5 区分」と書く | 原本の 6 区分に合わせる | Issue 自身が「着手時点の `references/` を正として書く」と書いており、`spec-scope.md` は #339 で 6 区分になっている |
+| 見積りの検証役（estimate-checker）も判定役として書くか | 書かない（`feasibility` の小節の既存の 1 行のまま） | Issue の対象は spec-review の 3 役 |
+| `plugins/spec-loop/README.md` の判定役の記述も直すか | 触らない | 食い違いは無い（名前と書き込みツールを持たないことだけ）。プラグインの版を上げる周になる |
+
+## 起票
+
+この周の起票: 0 件（予定）
