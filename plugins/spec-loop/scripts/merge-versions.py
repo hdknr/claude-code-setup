@@ -287,7 +287,8 @@ class Whole:
             for feature in spec["features"]:
                 self.features[feature["id"]] = feature
         for _, kind, target in removed:
-            table = (self.qa if target in self.qa else self.internal) if kind == KIND_QA else None
+            # 消す表は番号で決まる（`D-` なら内部の表）。番号と表が食い違わないことは `read_qa` の検査が保証する
+            table = (self.internal if qa.is_internal_number(target) else self.qa) if kind == KIND_QA else None
             {KIND_FILE: self.files, KIND_QA: table, KIND_FEATURE: self.features}[kind].pop(target)
 
     def render(self, problems: list[str]) -> dict[str, bytes]:

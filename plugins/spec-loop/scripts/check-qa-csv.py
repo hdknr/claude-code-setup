@@ -88,6 +88,12 @@ def is_internal(path: Path) -> bool:
     return path.name == INTERNAL_NAME
 
 
+def is_internal_number(number: str) -> bool:
+    """番号（`D-001` など）が内部の層の行か。**行の層を番号で決めるのはここだけ**——`merge-versions.py`・
+    `diff-versions.py`・`scaffold.py`・`build-proposal.py`・`check-signoff.py` はこれを読む（#353）。"""
+    return INTERNAL_NUMBER.fullmatch(number) is not None
+
+
 def option_labels(value: str) -> tuple[list[str], str | None]:
     """(ラベルの並び, 決まりに反するときの理由) を返す。"""
     options = value.split(OPTION_SEPARATOR)
