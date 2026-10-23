@@ -55,7 +55,9 @@
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/354-spec-loop-public-page`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-354`・起点 `f712197`・base の参照 `origin/main`・base の SHA `f712197f0664ff85bd6853451ce4fbdcca4521c8`
-- 関門: まだ当てていない
+- 実装: `e938a0a`（手順 4 完了）。**1 パス目の起点（関門に渡す時点の HEAD）: `e938a0a`**
+- 割り目（手順 4 の後）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-23）。再開は手順 5 から
+- 関門: まだ当てていない（次: 1 パス目の Verifier と `/code-review`。起点 `e938a0a`・base `f712197f0664ff85bd6853451ce4fbdcca4521c8`）
 - 反証と差し戻し: なし
 - 交絡: 実験あり（A3 の終了コード）。一時ディレクトリに `docs/shared/`・`docs/spec/` 直下の旧い構成と
   旧いタグ（`req-signoff-v1`・`budget-signoff-v1`）を持つリポジトリを作り（`GIT_CONFIG_GLOBAL=/dev/null`・`HOME` 差し替え）、
@@ -69,6 +71,7 @@
   **CPython 3.13.11 ＋ ロックした依存（`uv export` → `uv run --isolated --no-project`）では `--strict` で警告 0・成功**。
   新しいアンカー `spec-loop-judges`・`spec-loop-versions` と、ページ内リンク `#spec-loop-versions` が HTML にあることを確認
 - `check-site-links.py`: 0（250 ファイル）
+- `check-all.py`: 44/44（失敗 0 / 飛ばし 0）——`e938a0a` と同じ中身の作業ツリーで
 
 ## 既知の限界・決着済みの論点
 
