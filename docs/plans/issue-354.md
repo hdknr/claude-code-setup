@@ -59,8 +59,14 @@
 - 周の在り処: ブランチ `issue/354-spec-loop-public-page`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-354`・起点 `f712197`・base の参照 `origin/main`・base の SHA `f712197f0664ff85bd6853451ce4fbdcca4521c8`
 - 実装: `e938a0a`（手順 4 完了）。**1 パス目の起点（関門に渡す時点の HEAD）: `e938a0a`**
 - 割り目（手順 4 の後）: AskUserQuestion で訊き、**「ここで割る」が選ばれた**（2026-10-23）。再開は手順 5 から
-- 関門: まだ当てていない（次: 1 パス目の Verifier と `/code-review`。起点 `e938a0a`・base `f712197f0664ff85bd6853451ce4fbdcca4521c8`）
-- 反証と差し戻し: なし
+- 関門 1 パス目（起点 `e938a0a`・base `f712197f0664ff85bd6853451ce4fbdcca4521c8`）: **済み**
+    - Verifier（`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件**。A3 を一時リポジトリで実走して一致。D2（`mkdocs build --strict`）は未実行と報告——依存の取得にネットワークが要るため
+    - `/code-review`: **指摘 7 件**。採否は下の「1 パス目の指摘の採否」（直す 4・R1 に畳む 1・残課題 2）
+- 1 パス目の指摘対応: `5bfc829`。変更範囲を `feasibility` の小節の 1 行に広げ、受入基準 C4・A4 を足した。
+  当て直し: `check-all.py` 44/44（失敗 0 / 飛ばし 0）・`check-site-links.py` 0・`mkdocs build --strict`（CPython 3.13 ＋ ロックした依存・`--site-dir` を scratchpad に）警告 0 で成功
+- **2 パス目の指摘対応を始める直前の SHA（狭いパスの起点）: 指摘対応に入る前に書く**
+- 次: 2 パス目——**手順 5 の Verifier と手順 6 の `/code-review` の両方**を、base `f712197f0664ff85bd6853451ce4fbdcca4521c8`・HEAD `5bfc829` 以降に当てる
+- 反証と差し戻し: 1 パス目の Verifier 反証 0 件・差し戻しなし
 - 交絡: 実験あり（A3 の終了コード）。一時ディレクトリに `docs/shared/`・`docs/spec/` 直下の旧い構成と
   旧いタグ（`req-signoff-v1`・`budget-signoff-v1`）を持つリポジトリを作り（`GIT_CONFIG_GLOBAL=/dev/null`・`HOME` 差し替え）、
   `scaffold.py --dry-run` → **2**「版（v1 など）が 1 つも無い（…「移し方」で移す）。判定していない」、
