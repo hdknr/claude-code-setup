@@ -10,6 +10,7 @@
 - `.claude-plugin/marketplace.json` — 同上
 - `docs/plugins/index.md` — spec-review の節に 1 項
 - `docs/plans/issue-368.md` — この計画
+- `CLAUDE.md` — 手順 8 の焼き戻し（マージの後に別の PR で。「並行する周は、同じ版に上げて衝突する」の手順 2 に、`--ours` でファイルごと取らない）
 
 触らない:
 
@@ -168,3 +169,8 @@ main へのマージで GitHub Pages（`docs/plugins/index.md`）。プラグイ
 | NP3: 狭いパスで、形式検査の対象の選び直し（業務フローが前からあるか）をいつ何から行うかが書いていない | 示せる（文面） | 1・2 の周辺 | 人間が決める |
 
 - この周の起票: 0 件
+
+### 手順 8（マージの後）
+
+- PR #387 は 2026-10-24 にマージ。main の Check plugin catalog・Deploy docs to GitHub Pages とも成功、公開ページに新しい文言が出ることを確かめた
+- 焼き戻し: `CLAUDE.md` に「衝突は塊ごとに解く。`--ours`／`--theirs` でファイルごと取らない」（人間が「足す（別の PR）」を選んだ）
