@@ -22,6 +22,8 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う
 （`zipfile` と XML の文字列で OOXML を直接書く）。
 
+**提案書・仕様書の PPTX も同じ仕組みで作る**——`build-proposal.py` が `markdown_slides` と `package`・`write` を読む（#374）。
+
 **出力は入力と引数だけで決まる**（zip の時刻を固定し、日付を埋め込まない）。
 日付を表紙に入れたいなら `--subtitle` で渡す。
 
@@ -227,6 +229,62 @@ def question_slide(row: dict[str, str]) -> str:
     elif row["回答"].strip() != qa.NO_ANSWER:
         body += [paragraph("", 1200)] + lines_of(f"回答（未反映）: {row['回答']}", 1600)
     return slide(title, body)
+
+
+# ---------------------------------------------------------------- Markdown から（提案書・仕様書）
+
+MARKDOWN_LINES_PER_SLIDE = 14
+MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+MARKDOWN_TABLE_RULE = re.compile(r"\|(?:\s*:?-+:?\s*\|)+")
+MARKDOWN_CELL = re.compile(r"(?<!\\)\|")
+
+
+def markdown_row(line: str) -> str:
+    """表の 1 行を ` ／ ` でつないだ 1 行にする（`\\|` は区切りではない。`<br>` は空白に）。"""
+    cells = MARKDOWN_CELL.split(line.strip().strip("|"))
+    return " ／ ".join(c.strip().replace("\\|", "|").replace("<br>", " ") for c in cells)
+
+
+def markdown_slides(text: str, figure_note: str) -> list[str]:
+    """`build-proposal.py` が作った Markdown（提案書・仕様書）を、見出し（`# `・`## `）ごとのスライドにする。
+
+    最初の `# ` は表紙の題で、最初の見出しまでの行は表紙の本文。`### ` は太字の行、表は 1 行ずつ ` ／ ` でつなぐ
+    （見出しの行は太字）。長い節は `MARKDOWN_LINES_PER_SLIDE` 行ずつに分ける。コードフェンスの中は字句のまま。
+    **画像は載せない**——画像の行は `figure_note` を添えた 1 行に置き換える（標準ライブラリだけでは SVG を埋められない）。
+    """
+    lines = split_lines(text)
+    title, cover_body, sections, fence = "", [], [], False
+    for i, raw in enumerate(lines):
+        line = raw.rstrip()
+        if line.lstrip().startswith("```"):
+            fence = not fence
+            continue
+        if not fence and line.startswith("# ") and not title:
+            title = line[2:].strip()
+            continue
+        if not fence and (line.startswith("# ") or line.startswith("## ")):
+            sections.append((line.split(" ", 1)[1].strip(), []))
+            continue
+        body = sections[-1][1] if sections else cover_body
+        if fence:
+            body.append((line, False))
+        elif not line.strip() or MARKDOWN_TABLE_RULE.fullmatch(line.strip()):
+            continue
+        elif line.startswith("#"):
+            body.append((line.lstrip("#").strip(), True))
+        elif line.lstrip().startswith("|"):
+            header = i + 1 < len(lines) and MARKDOWN_TABLE_RULE.fullmatch(lines[i + 1].strip()) is not None
+            body.append((markdown_row(line), header))
+        else:
+            stripped = line.lstrip("> ").rstrip() if line.startswith(">") else line
+            body.append((MARKDOWN_IMAGE.sub(lambda m: f"（図「{m.group(1)}」は{figure_note}）", stripped), False))
+    out = [slide(lines_of(title, 4000, bold=True), [p for t, b in cover_body for p in lines_of(t, 1600, b)])]
+    for head, body in sections:
+        chunks = [body[i:i + MARKDOWN_LINES_PER_SLIDE] for i in range(0, len(body), MARKDOWN_LINES_PER_SLIDE)] or [[]]
+        for n, chunk in enumerate(chunks, 1):
+            name = head if len(chunks) == 1 else f"{head}（{n}/{len(chunks)}）"
+            out.append(slide(lines_of(name, 3200, bold=True), [p for t, b in chunk for p in lines_of(t, 1600, b)]))
+    return out
 
 
 # ---------------------------------------------------------------- パッケージ

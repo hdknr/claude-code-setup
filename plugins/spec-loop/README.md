@@ -25,7 +25,7 @@
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
 | `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、共有の範囲が一致するかの照合（標準ライブラリと `git`） |
-| `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書を作る（標準ライブラリと `git`） |
+| `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で PPTX も）を作る（標準ライブラリと `git`） |
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
 | `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |
 | `scripts/scaffold.py` | 中間表現から OpenAPI・型・Red テスト・Issue の本文を作る。関門（仕様レビューを抜ける条件 1）を自分で通す（標準ライブラリのみ） |
@@ -93,6 +93,7 @@
 共有の範囲（`docs/v<n>/shared/` ほか。`references/signoff-tags.md`）が一致するかをスクリプトで照合し、一致したときだけ提案書を生成します**（LLM に判断させません）。
 提案書は**承認したタグの時点の中身**から作るので、承認の後に直した中身は入りません。
 **v2 以降は、前の版との比較（追加・変更・削除）を載せた変更の提案書になります**（`references/versions.md` の「版の差分」）。
+**提案書と一緒に仕様書（規模・構成の図・機能・決定表・範囲の外）も作り、利用者にまだ確かめていない暫定の決定は合意と分けて載せます**（`references/tree.md` の「仕様書」・`references/qa-csv.md` の「暫定の行の判別」）。
 **決裁者の承認待ちで止まります。**
 
 手順と守ることは [`skills/proposal/SKILL.md`](skills/proposal/SKILL.md) を正とします。
@@ -153,12 +154,12 @@ python3 <spec-loop の base ディレクトリ>/scripts/qa-to-pptx.py <Q&A 表�
 python3 <spec-loop の base ディレクトリ>/scripts/check-feasibility-csv.py <schedule.csv> <estimate.csv>
 python3 <spec-loop の base ディレクトリ>/scripts/schedule-to-gantt.py <schedule.csv> <出力先.svg>
 python3 <spec-loop の base ディレクトリ>/scripts/check-signoff.py [--repo <正本リポジトリ>] [--version <n>] [--req <タグ>] [--budget <タグ>]
-python3 <spec-loop の base ディレクトリ>/scripts/build-proposal.py [--repo <正本リポジトリ>] [--version <n>] [--out <出力先.md>] [--title <題>]
+python3 <spec-loop の base ディレクトリ>/scripts/build-proposal.py [--repo <正本リポジトリ>] [--version <n>] [--out <出力先.md>] [--title <題>] [--spec-title <題>] [--pptx]
 python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py [--repo <正本リポジトリ>]
 python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs [--version <n>]
 ```
 
-生成するもの（ガントチャート・提案書）は、作れなかったときに前の出力を消します。
+生成するもの（ガントチャート・提案書・仕様書）は、作れなかったときに前の出力を消します。
 何を守り何を守らないか（終了コードを含む）は、各スクリプトの docstring を正とします。
 
 ## 前提

@@ -23,6 +23,7 @@ docs/v<n>/
 │   ├── schedule.csv         # スケジュールの正本（列は feasibility-csv.md）
 │   └── estimate.csv         # 見積りの正本（同上）
 ├── proposal/                # 決裁者向け提案書の手書き部分
+│   └── spec/                # 仕様書の手書き部分（下の「仕様書」。任意）
 └── removed.csv              # v2 以降だけ。前の版から消したもの（versions.md）
 scaffold/                    # dev-loop に渡す契約（scaffold が生成し、commit する。下の「scaffold の出力」）
 ├── openapi.json
@@ -59,6 +60,7 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
   `shared/`・`requirements/`・`feasibility/` から生成する。**v2 以降の「前の版からの変更」の表も生成する**
   （`versions.md` の「版の差分」）。手書き部分は `proposal/*.md` に置き、
   **ファイル名の順に**提案書の先頭へ並ぶ（`01-background.md`・`02-recommendation.md` のように番号を付ける）。
+  **`proposal/spec/*.md` は仕様書の手書き部分で、提案書には入らない**（下の「仕様書」）。
 
 ## スライドの置き場所
 
@@ -78,7 +80,8 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
 | 生成物 | 既定の出力先 | 作るスキル |
 | --- | --- | --- |
 | ガントチャート | `build/feasibility/gantt.svg` | `feasibility` |
-| 提案書 | `build/proposal/proposal.md`（と同じ場所の `gantt.svg`） | `proposal` |
+| 提案書 | `build/proposal/proposal.md`（と同じ場所の `gantt.svg`。`--pptx` なら `proposal.pptx`） | `proposal` |
+| 仕様書 | `build/proposal/spec.md`（と同じ場所の `spec-figure-NN.svg`。`--pptx` なら `spec.pptx`。下の「仕様書」） | `proposal` |
 | Issue の本文 | `build/scaffold/issues/<機能の id>.md`（と同じ場所の `issues.json`） | `scaffold` |
 | サイト | `site/`（MkDocs の出力。下の「ドキュメントのツール」） | `mkdocs build` |
 
@@ -87,6 +90,33 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
 
 Issue の本文は**登録すれば GitHub に残る**ので、commit しなくてよい。**作れなかったときは前の本文を消す**
 （古い本文を登録させない）。
+
+## 仕様書
+
+**提案書だけでは「その費用で何を作るのか」が議論できない**（#371）ので、`proposal` は提案書と同じ実行で**仕様書**も作る。
+**照合が通らなければ、提案書と同じく作らない**（前に作ったものも消す）。
+
+- **材料は `signoff/v<n>/req-<k>` の時点の、v1〜v<n> を重ね合わせた全体**（`shared/`・`requirements/`・`spec/`。重ね方は `versions.md`）。
+  **作業ツリーの仕様は読まない**——承認の後に直した仕様が説明に紛れ込む。**内部の層の Q&A 表は載せない**（`qa-csv.md` の「層」）。
+- 機械で載せるもの:
+
+| 節 | 材料 |
+| --- | --- |
+| 規模 | 要求・仕様のファイルの数・決定表の行・共有の Q&A（決定・暫定・未決定）・中間表現の機能・図の数 |
+| 構成の図 | `spec/`・`requirements/` の `.svg` のファイル（`.drawio.svg` を含む）。`.svg` の無い `.drawio` は**載せていないと書く** |
+| 機能の一覧 | 中間表現（`spec/spec_ir.json`）の `features`。scaffold の前は無いと書く |
+| 決定表 | `shared/decision_table.csv`（1 行目を見出しとして、そのまま表にする） |
+| 範囲の外 | 範囲の文書（`spec/scope.md`。`spec-scope.md`）の、見出しに「範囲の外」を含む節の本文 |
+| 前の版からの変更 | v2 以降だけ。提案書と同じ比較（`versions.md` の「版の差分」） |
+| 仕様と要求のファイル | `spec/`・`requirements/` のパスの一覧 |
+
+- **一意に決まらないもの**——画面の一覧・試作で確かめること・要約・説明のときに確かめたいこと——は、
+  作業中の版の **`proposal/spec/*.md`** に手で書く（ファイル名の順に仕様書の先頭へ並ぶ。無ければ無いと書く）。
+  提案書の手書き部分と同じく承認の対象ではないので作業ツリーから読むが、**材料は承認された中身だけにする**。
+- **図は書き出し済みの `.svg` を写すだけで、draw.io を起動しない**。図の描き方（drawio のソースと書き出し）は #268 で決める。
+- **提案書と仕様書は互いを指す**——提案書の冒頭に「何を作るかは `spec.md`」、仕様書の冒頭に「費用・期間・推奨案は提案書」。
+- **PPTX**（`--pptx`）は、レビュー会の資料と同じ仕組み（`qa-to-pptx.py`。標準ライブラリだけ）で、Markdown の見出しごとに 1 枚にする。
+  **図は PPTX に載せない**（標準ライブラリだけでは SVG を埋められない）——載せていないことをスライドに書く。
 
 ## scaffold の出力
 

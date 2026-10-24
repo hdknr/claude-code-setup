@@ -66,8 +66,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       ——版ごとのファイル（機能）の一覧が要り、`merge-versions.py` の読み方の写しになるので。v2 以降の `removed.csv` の
       形式の違反は、種類によらず両方のタグで 2）。
       テストは `scripts/test-check-signoff.py`）
-    - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書を作る
-      （照合をスキルの判断に任せないため、**生成の側で照合する**。テストは `scripts/test-build-proposal.py`）
+    - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書と仕様書を作る
+      （照合をスキルの判断に任せないため、**生成の側で照合する**。**暫定の行の判別は `check-qa-csv.py` の `is_provisional` を読む**——#374。
+      `--pptx` の PPTX は `qa-to-pptx.py` の `markdown_slides` で作る。テストは `scripts/test-build-proposal.py`）
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
       **入力は版を重ね合わせた全体で、メモリ上で重ねる**——`build/merged/` を書かない（#262）。
