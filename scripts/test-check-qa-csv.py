@@ -386,6 +386,15 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
     if provisional != mod.PROVISIONAL:
         problems.append(f"暫定の状態 {provisional!r} ≠ 本体 {mod.PROVISIONAL!r}")
 
+    provisional_answer = first_code(markdown, "`回答` に {} を含む行を、暫定の行として扱う")
+    if provisional_answer != mod.PROVISIONAL_ANSWER:
+        problems.append(f"暫定の回答の印 {provisional_answer!r} ≠ 本体 {mod.PROVISIONAL_ANSWER!r}")
+    # 印に数えない書き方（「数えない書き方」の 1 列の表）
+    m = re.search(r"^\| 数えない書き方[^\n]*\n\| --- \|\n((?:\| `[^`]+` \|\n)*)", markdown, re.M)
+    excluded = re.findall(r"`([^`]+)`", m.group(1)) if m else []
+    if excluded != list(mod.PROVISIONAL_NOT):
+        problems.append(f"暫定の印に数えない書き方 {excluded} ≠ 本体 {list(mod.PROVISIONAL_NOT)}")
+
     # 「列」の表のセルに書いた決まりと、本体の写し
     cells = column_cells(markdown)
     write, empty = (lambda c: cells.get(c, ["", ""])[0]), (lambda c: cells.get(c, ["", ""])[1])
@@ -443,6 +452,8 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("状態の表の 1 行", "| `反映済み` |", "| 反映済み |"),
     ("反映した状態", "仕様に反映した状態は `暫定反映` と", "仕様に反映した状態は `確認中` と"),
     ("暫定の状態", "`状態` は `暫定反映`。", "`状態` は `確認中`。"),
+    ("暫定の回答の印", "`回答` に `暫定で採用` を含む行を", "`回答` に `暫定` を含む行を"),
+    ("暫定の印に数えない書き方", "| `していた` |\n", ""),
     ("空でよい列", "| 費用に関わらない質問は空でよい。", "| 費用に関わらない質問も空を許さない。"),
     ("費用付きの質問の起票元", "**起票元が `実現性・コスト` の行は", "**起票元が `開発` の行は"),
     ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
