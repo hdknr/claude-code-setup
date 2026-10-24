@@ -156,6 +156,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `scripts/` に無い**——`plugins/dev-loop/skills/dev-loop/scripts/find-cycle.py`
     に置いてある（**`dev-loop` はどのリポジトリでも使うスキル**なので、
     対象リポジトリの `scripts/` に在ることを当てにできない）
+  - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
+    **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**
   - `collect-guard-rejections.py` - worktree 隔離セッションのガードによる拒否を
     トランスクリプトから収集する（**CI からは呼ばない**——入力が `~/.claude/projects` にあり、
     リポジトリの外で利用者ごとに違う。`token-metrics.py` と同じ形）

@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.45.0 -->
-> **このスキルの版: 1.45.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.46.0 -->
+> **このスキルの版: 1.46.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1538,6 +1538,17 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 1. レビュー承認 → merge
 2. CI／CD の完了を待つ（`/loop` で完了待ちを自動化してよい）
 3. デプロイ後の疎通・マイグレーション等、リポジトリの手順に従って本番状態を確認
+
+**マージすると決めたら、手続きはスクリプトに任せてよい（任意）**——CI と `mergeable` を待ち、
+worktree を点検し、squash し、worktree を撤去して、閉じるはずの Issue が閉じたかを確かめる:
+
+```bash
+python3 <このスキルの base ディレクトリ>/scripts/merge-pr.py <PR 番号>
+```
+
+**マージしてよいかは決めない**——承認は上の 1 のまま人間が持つ。**メインの作業ツリーから呼ぶ**
+（撤去する worktree の中からは断る）。**終了コードと、何を守り何を守らないかは、スクリプトの
+docstring を正とする**（[#389](https://github.com/hdknr/claude-code-setup/issues/389)）。
 
 **破壊的・不可逆な反映（DB マイグレーション・インフラ apply 等）は CLAUDE.md の前提条件を確認し、
 必要なら人間の承認を得てから**実行する。
