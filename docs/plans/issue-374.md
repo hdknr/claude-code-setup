@@ -87,7 +87,9 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 - 実装: 済み（`60006cc`・取り込み `26fc08e`）。`check-all.py` 44/44 緑・PR 限定の 3 本（変更範囲・description・版）も緑
 - 関門 1 パス目: **Verifier（dev-loop:dev-loop-verifier・sonnet）反証 2 件**（どちらも一時リポジトリで再現済み）／**`/code-review`（base `fdcf631`）指摘 9 件**。どちらも `test-build-proposal.py`（51 試料・58 変異）・`test-check-qa-csv.py`（60・47）・鮮度 2 本が緑と報告。`check-all.py` は関門側では回していない
 - 1 パス目の指摘対応: 直す 4 件（V1/CR5・CR1・CR2・CR4）。`test-build-proposal.py` 53 試料・63 変異、`test-check-qa-csv.py` 60・47 で緑
-- **次にやること**: 2 パス目（Verifier と `/code-review`。base は同じ `fdcf631`）
+- 指摘対応のコミット: `b0d48af`（`check-all.py` 44/44 緑）。**2 パス目の狭いパスの起点は、2 パス目の指摘対応を始める直前の HEAD を、指摘対応に入る前にここへ書く**
+- 2 パス目の前の割り目: 提案した（AskUserQuestion）→ **「ここで割る」が選ばれた**（2026-10-24）
+- **次にやること**: 手順 5 の当て直し（Verifier）と手順 6 の 2 パス目（`/code-review`）の**両方**。base は同じ `fdcf631bcc50b87bd40c0e3eb1826ab0f850414e`。1 パス目の指摘対応（下の表の「直す」4 件）を重点に。渡す文面は前回の委譲文に 2 パス目の差し込みを足す
 - 手順 4 の割り目: 提案した（AskUserQuestion）→ **「ここで割る」が選ばれた**。再開は手順 5 の 1 パス目から
 - 交絡: 実験なし（出力の目視は生成物を読んだだけ）
 
