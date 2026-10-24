@@ -99,7 +99,9 @@ SIGNED_S = BASE[:-1] + SPEC_STEPS + [("c",), ("t", R1), ("t", B1)]
 PROVISIONAL_QA = (QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（推奨案を暫定で採用。開発側の指示）")
                   + "Q-007,要求確定,返品は？,A: 可 / B: 不可,A,理由,B（暫定で採用の予定）,—,確認中,\n")
 PROVISIONAL = [("w", QA, PROVISIONAL_QA)] + BASE[1:] + [("t", R1), ("t", B1)]
-# 確定した回答が暫定の経緯に触れただけの行（後に活用が続く）——暫定の行ではない
+# 回答に肯定の書き方で「暫定で採用します」と書いた行——暫定の行（否定・取り下げの書き方だけを除く）
+AFFIRMED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A を暫定で採用します（業務部の確認待ち）"))] + BASE[1:] + [("t", R1), ("t", B1)]
+# 確定した回答が暫定の経緯に触れただけの行（否定・取り下げの書き方が続く）——暫定の行ではない
 SETTLED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（暫定で採用していた B を取り下げ、業務部が A に決定）"))] + BASE[1:] + [("t", R1), ("t", B1)]
 STALE = ["proposal.md", "gantt.svg", "spec.md", "spec.pptx", "spec-figure-01.svg"]
 FIGURE_NOTE = "PPTX に載せていない"
@@ -135,6 +137,16 @@ def section(text: str, head: str) -> str:
 
 def pptx_text(parts: dict) -> str:
     return "".join(re.findall(r"<a:t>([^<]*)</a:t>", "".join(v for k, v in sorted(parts.items()) if k.startswith("ppt/slides/slide"))))
+
+
+def slide_texts(parts: dict) -> list[str]:
+    """スライドごとの文字（スライドの番号の順）。"""
+    names = sorted((k for k in parts if re.fullmatch(r"ppt/slides/slide\d+\.xml", k)), key=lambda k: int(re.sub(r"\D", "", k)))
+    return ["".join(re.findall(r"<a:t>([^<]*)</a:t>", parts[k])) for k in names]
+
+
+def collided(r: Result) -> bool:
+    return r.code == 2 and "同じ名前になる" in r.output and r.text is None and r.spec is None and not r.names
 
 
 def pptx_ok(parts: dict) -> bool:
@@ -301,21 +313,32 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      lambda r: not_made(1)(r) and "シンボリックリンク" in r.output and "link.md" in r.output),
     # ---- 暫定の回答（#366。判別は check-qa-csv.py の is_provisional）
     ("暫定の行を節に載せる", PROVISIONAL, False,
-     lambda r: made(r) and "| Q-001 | 割引は？ | A（推奨案を暫定で採用。開発側の指示） |" in section(r.text, "### 利用者にまだ確かめていない決定（1 件）")
+     lambda r: made(r) and "| Q-001 | 割引は？ | A（推奨案を暫定で採用。開発側の指示） |" in section(r.text, "## 利用者にまだ確かめていない決定（1 件）")
      and "Q-001" not in section(r.text, "## 主な決定事項") and "利用者の合意ではない" in r.text),
     # 確認中の行は「暫定で採用」と書いてあっても反映していない——未決定の質問に載り、暫定の節には載らない
     ("確認中の行は暫定にしない", PROVISIONAL, False,
-     lambda r: made(r) and "| Q-007 |" in section(r.text, "### 承認の時点で未決定の質問（2 件）")
-     and "Q-007" not in section(r.text, "### 利用者にまだ確かめていない決定")),
+     lambda r: made(r) and "| Q-007 |" in section(r.text, "## 承認の時点で未決定の質問（2 件）")
+     and "Q-007" not in section(r.text, "## 利用者にまだ確かめていない決定")),
     # 陽性対照: 確定の書き方の反映済みの行は決定事項に載り、暫定の節は 0 件
     ("確定した行は暫定にしない", SIGNED, False,
      lambda r: made(r) and "| Q-001 | 割引は？ |" in section(r.text, "## 主な決定事項")
-     and "（ありません）" in section(r.text, "### 利用者にまだ確かめていない決定（0 件）")),
-    ("活用の続く書き方は暫定にしない", SETTLED, False,
+     and "（ありません）" in section(r.text, "## 利用者にまだ確かめていない決定（0 件）")),
+    ("否定・取り下げの書き方は暫定にしない", SETTLED, False,
      lambda r: made(r) and "| Q-001 | 割引は？ |" in section(r.text, "## 主な決定事項")
-     and "（ありません）" in section(r.text, "### 利用者にまだ確かめていない決定（0 件）")),
+     and "（ありません）" in section(r.text, "## 利用者にまだ確かめていない決定（0 件）")),
+    ("肯定の書き方は暫定にする", AFFIRMED, False,
+     lambda r: made(r) and "| Q-001 |" in section(r.text, "## 利用者にまだ確かめていない決定（1 件）")
+     and "Q-001" not in section(r.text, "## 主な決定事項") and "前の版までの" not in r.text),
+    # v2 以降の暫定の節は、その版の Q&A だけを見ていると言う（前の版の暫定の行は載せない——D2）
+    ("v2 の暫定の節はこの版の Q&A と書く", V2C, False,
+     lambda r: made(r) and "## この版の Q&A で利用者にまだ確かめていない決定（" in r.text
+     and "前の版までの Q&A の暫定の行はここに載らない" in r.text),
+    # PPTX は `##` ごとにスライドを分ける——暫定の行が「主な決定事項」の題のスライドに載らない
+    ("暫定の行は決定事項のスライドに載らない", PROVISIONAL + [("arg", "--pptx")], False,
+     lambda r: made(r) and any("推奨案を暫定で採用" in t for t in slide_texts(r.pptx.get("proposal.pptx", {})))
+     and not any("主な決定事項" in t and "推奨案を暫定で採用" in t for t in slide_texts(r.pptx.get("proposal.pptx", {})))),
     ("承認の後に書き足した暫定は載らない", SIGNED + [("w", QA, PROVISIONAL_QA), ("c",)], False,
-     lambda r: made(r) and "### 利用者にまだ確かめていない決定（0 件）" in r.text and "Q-007" not in r.text),
+     lambda r: made(r) and "## 利用者にまだ確かめていない決定（0 件）" in r.text and "Q-007" not in r.text),
     # ---- 仕様書（#371）
     ("仕様書を作る", SIGNED_S, False,
      lambda r: made(r) and "[spec.md](spec.md)" in r.text and "[proposal.md](proposal.md)" in r.spec
@@ -329,7 +352,13 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      and "—（中間表現が無い）" in r.spec and "| spec/a.md |" in r.spec and not r.pptx),
     # `Spec.html` は PPTX が `Spec.pptx`——仕様書の PPTX と大文字小文字だけ違う（区別しない FS では同じファイル）
     ("出力の名前が仕様書の PPTX と重なると作らない", SIGNED + [("out", "Spec.html"), ("arg", "--pptx")], False,
-     lambda r: r.code == 2 and "同じ名前になる" in r.output and r.text is None and r.spec is None and not r.names),
+     collided),
+    ("出力の名前がガントチャートと重なると作らない", SIGNED + [("out", "Gantt.svg")], False, collided),
+    ("出力が PPTX の名前だと作らない", SIGNED + [("out", "proposal.pptx"), ("arg", "--pptx")], False, collided),
+    ("出力の名前が図と重なると作らない", SIGNED + [("out", "spec-figure-01.md")], False, collided),
+    ("範囲の外の節が空", [s if s[:2] != ("w", "docs/v1/spec/scope.md") else ("w", "docs/v1/spec/scope.md", "# 範囲\n\n## 範囲の外\n\n## 付録\n\nX\n")
+                       for s in SIGNED_S], False,
+     lambda r: made(r) and "「範囲の外」の節は空" in r.spec and "節が無い" not in r.spec),
     ("仕様書も同じ入力から同じバイト", SIGNED_S, False, lambda r: made(r) and r.spec == r.again_spec),
     # 承認の後に直した決定表・足した仕様は入らない
     ("仕様書は承認したタグの時点から", SIGNED_S + [("w", DECISION, "会員,金額,割引\nブロンズ,すべて,1%\n"),
@@ -458,6 +487,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("出力の PPTX の名前を大文字小文字で区別する", 'out.with_suffix(".pptx").name.lower()}', 'out.with_suffix(".pptx").name}',
      "出力の名前が仕様書の PPTX と重なると作らない"),
     ("頼まれなくても PPTX を作る", "    if args.pptx:\n", "    if True:\n", "仕様書を作る"),
+    ("ガントチャートの名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME)", "(SPEC_NAME, SPEC_PPTX_NAME)",
+     "出力の名前がガントチャートと重なると作らない"),
+    ("PPTX の拡張子の出力を照らさない", ' or out.suffix.lower() == ".pptx"', "", "出力が PPTX の名前だと作らない"),
+    ("図の接頭辞を照らさない", "            or out.name.lower().startswith(FIGURE_PREFIX)):", "            ):", "出力の名前が図と重なると作らない"),
+    ("暫定の節を決定事項の下に置く", '[f"## {scope}利用者にまだ', '[f"### {scope}利用者にまだ', "暫定の行は決定事項のスライドに載らない"),
+    ("v2 でもこの版と書かない", 'scope = "この版の Q&A で" if diff is not None else ""', 'scope = ""', "v2 の暫定の節はこの版の Q&A と書く"),
+    ("v1 でもこの版と書く", 'scope = "この版の Q&A で" if diff is not None else ""', 'scope = "この版の Q&A で"', "確定した行は暫定にしない"),
+    ("空の範囲の外も節が無いと書く", "    elif body is not None:\n", "    elif False:\n", "範囲の外の節が空"),
 ]
 
 # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す。(名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -466,7 +503,11 @@ QA_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("反映済みの暫定を見ない", ' or (state == DONE and PROVISIONAL_MARK.search(row["回答"]) is not None)', "", "暫定の行を節に載せる"),
     ("確認中も暫定にする", "(state == DONE and PROVISIONAL_MARK", "(PROVISIONAL_MARK", "確認中の行は暫定にしない"),
     ("どの反映済みも暫定にする", 'PROVISIONAL_MARK.search(row["回答"]) is not None)', "True)", "確定した行は暫定にしない"),
-    ("活用の続く書き方も暫定にする", ' + "(?![しさすせれ])"', "", "活用の続く書き方は暫定にしない"),
+    ("否定の書き方も暫定にする", '"(?!" + "|".join(re.escape(s) for s in PROVISIONAL_NOT) + ")"', '""',
+     "否定・取り下げの書き方は暫定にしない"),
+    # 2 パス目の前の形（後に活用が続けば一律に除く）——肯定の書き方を取りこぼす
+    ("肯定の書き方も落とす", '"(?!" + "|".join(re.escape(s) for s in PROVISIONAL_NOT) + ")"', '"(?![しさすせれ])"',
+     "肯定の書き方は暫定にする"),
 ]
 
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
@@ -547,14 +588,14 @@ def run_case(scripts: Path, root: Path, steps, stale: bool, env: dict[str, str])
     if stale:
         write_stale(out)
     code, output = generate(scripts, root, out, env, extra)
-    text = out.read_text(encoding="utf-8") if out.is_file() else None
+    text = out.read_text(encoding="utf-8", errors="replace") if out.is_file() else None
     svg = (out.parent / "gantt.svg").is_file()
-    spec = (out.parent / "spec.md").read_text(encoding="utf-8") if (out.parent / "spec.md").is_file() else None
+    spec = (out.parent / "spec.md").read_text(encoding="utf-8", errors="replace") if (out.parent / "spec.md").is_file() else None
     names = frozenset(p.name for p in out.parent.iterdir()) - {"proposal.md", "gantt.svg", "spec.md"} if out.parent.is_dir() else frozenset()
     again_out = root / "build" / "again" / "proposal.md"
     generate(scripts, root, again_out, env, extra)
-    again = again_out.read_text(encoding="utf-8") if again_out.is_file() else None
-    again_spec = (again_out.parent / "spec.md").read_text(encoding="utf-8") if (again_out.parent / "spec.md").is_file() else None
+    again = again_out.read_text(encoding="utf-8", errors="replace") if again_out.is_file() else None
+    again_spec = (again_out.parent / "spec.md").read_text(encoding="utf-8", errors="replace") if (again_out.parent / "spec.md").is_file() else None
     return Result(code, output, text, svg, again, spec, names, read_pptx(out.parent), read_pptx(again_out.parent), again_spec)
 
 
@@ -596,9 +637,9 @@ def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = Fa
     else:
         code, output = generate(scripts, root, out, no_git_env)
     names = frozenset(p.name for p in out.parent.iterdir()) - {"proposal.md", "gantt.svg", "spec.md"}
-    return Result(code, output, out.read_text(encoding="utf-8") if out.is_file() else None,
+    return Result(code, output, out.read_text(encoding="utf-8", errors="replace") if out.is_file() else None,
                   (out.parent / "gantt.svg").is_file(), None,
-                  (out.parent / "spec.md").read_text(encoding="utf-8") if (out.parent / "spec.md").is_file() else None, names)
+                  (out.parent / "spec.md").read_text(encoding="utf-8", errors="replace") if (out.parent / "spec.md").is_file() else None, names)
 
 
 # git を起動できないとき: 古い出力を消し、2 で終わる（トレースバックの 1 にしない）

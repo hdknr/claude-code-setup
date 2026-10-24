@@ -339,7 +339,11 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
     else:
         out.append("（反映済みの決定事項はありません）")
     out.append("")
-    out += [f"### 利用者にまだ確かめていない決定（{len(provisional)} 件）", ""]
+    # `##` にする——`###` だと PPTX で「主な決定事項」の題のスライドに暫定の行が載る（`markdown_slides` は `##` で分ける）
+    scope = "この版の Q&A で" if diff is not None else ""
+    out += [f"## {scope}利用者にまだ確かめていない決定（{len(provisional)} 件）", ""]
+    if diff is not None:
+        out += ["前の版までの Q&A の暫定の行はここに載らない（仕様書の規模の「暫定」に数える）。", ""]
     if provisional:
         out += ["> 暫定で採った回答で、利用者の合意ではない。仕様レビューを抜けたことも合意の代わりにはならない。", ""]
         out += table(["No", "質問", "回答", "反映先"], [[r["No"], r["質問"], r["回答"], r["反映先"]] for r in provisional])
@@ -347,7 +351,7 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
         out.append("（ありません）")
     out.append("")
     if pending:
-        out += [f"### 承認の時点で未決定の質問（{len(pending)} 件）", ""]
+        out += [f"## 承認の時点で未決定の質問（{len(pending)} 件）", ""]
         out += table(["No", "質問", "選択肢", "費用への影響"],
                      [[r["No"], r["質問"], r["選択肢"], r["費用への影響"]] for r in pending])
         out.append("")
@@ -495,8 +499,10 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
     out += [f"## {OUT_OF_SCOPE}", ""]
     scope = whole.files.get(SCOPE_PATH)
     body = out_of_scope(decode(scope, SCOPE_PATH)) if scope is not None else None
-    if body is not None and any(line.strip() for line in body):
+    if body:
         out += body + [""]
+    elif body is not None:
+        out += [f"（範囲の文書（`{SCOPE_PATH}`）の「{OUT_OF_SCOPE}」の節は空——範囲の外とした場面はまだ無い）", ""]
     else:
         out += [f"（範囲の文書（`{SCOPE_PATH}`）に「{OUT_OF_SCOPE}」の節が無い——範囲の外とした場面は記録されていない）", ""]
 

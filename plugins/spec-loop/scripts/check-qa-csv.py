@@ -64,8 +64,11 @@ assert INTERNAL_FORBIDDEN <= set(STATES)
 
 # `反映済み` の行の `回答` にこの語があれば、利用者が確かめていない暫定の回答として扱う（`is_provisional`）
 PROVISIONAL_ANSWER = "暫定で採用"
-# 後に活用が続く書き方（`暫定で採用しない`・`暫定で採用していた`・`暫定で採用された`）は印に数えない
-PROVISIONAL_MARK = re.compile(re.escape(PROVISIONAL_ANSWER) + "(?![しさすせれ])")
+# 後にこの書き方が続くもの（否定・取り下げた経緯）は印に数えない。`暫定で採用します`・`暫定で採用した` は数える
+# （列挙の正は `references/qa-csv.md` の「暫定の行の判別」。`test-check-qa-csv.py` が突き合わせる）
+PROVISIONAL_NOT = ("しない", "しなかった", "しません", "せず", "していた", "された", "されていた")
+PROVISIONAL_MARK = re.compile(re.escape(PROVISIONAL_ANSWER)
+                              + "(?!" + "|".join(re.escape(s) for s in PROVISIONAL_NOT) + ")")
 
 NO_ANSWER = "未回答"
 NO_TARGET = "—"
