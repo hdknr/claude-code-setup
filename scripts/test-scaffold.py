@@ -44,6 +44,7 @@ import ast
 import copy
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -59,6 +60,7 @@ TARGET = "scaffold.py"
 SPEC_IR_REF = PLUGIN / "references" / "spec-ir.md"
 HANDOFF_REF = PLUGIN / "references" / "handoff-issue.md"
 TREE_REF = PLUGIN / "references" / "tree.md"
+VERSIONS_REF = PLUGIN / "references" / "versions.md"
 SCAFFOLD_SKILL = PLUGIN / "skills" / "scaffold" / "SKILL.md"
 SPEC_GAP_REF = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "spec-gap.md"
 # dev-loop の手順 1 は、この印を見て `spec-gap.md` へ送る——印の写しはここにもある
@@ -198,9 +200,9 @@ class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
                  post: Callable[[Path], str | None] | None = None, generate_first: bool = False, impl: str | None = None,
-                 extra: dict[str, str] | None = None, root: Path = V1, absent: str = ""):
-        # absent: 出力に現れてはならない文言（対照）
-        self.name, self.code, self.text, self.absent = name, code, text, absent
+                 extra: dict[str, str] | None = None, root: Path = V1, absent: str = "", env: dict[str, str] | None = None):
+        # absent: 出力に現れてはならない文言（対照）。env: 生成のコマンドの環境に重ねるもの（`git` を外す試料）
+        self.name, self.code, self.text, self.absent, self.env = name, code, text, absent, env
         self.ir, self.raw, self.qa, self.spec = ir, raw, qa, spec
         self.args, self.pre, self.post = args, pre, post
         self.generate_first, self.impl = generate_first, impl
@@ -937,6 +939,109 @@ def only_f001_modified(repo: Path) -> str | None:
         return "パスを直した機能が変更の本文になっていない"
     return None
 
+
+# ---- 前の版の時点が崩れている（#361。反映済みでない Q&A が v1 に残る）
+QA_OPEN_UNCITED = QA_PROVISIONAL_UNCITED.replace(",暫定反映,", ",確認中,")
+assert QA_OPEN_UNCITED != QA_PROVISIONAL_UNCITED
+# 試料の git は利用者の設定を読まない（`test-check-signoff.py` と同じ形）
+GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
+
+
+def git_in(where: Path, *args: str) -> None:
+    assert_in_tmp(where)
+    subprocess.run(["git", "-C", str(where), *args], check=True, capture_output=True, env=GIT_ENV)
+
+
+def release(tag: str | None = "release-v1", top: str = "") -> Callable[[Path], None]:
+    """試料を git のリポジトリにして commit し、`tag` を付ける（`top` は根にする親のディレクトリ）。"""
+    def apply(repo: Path) -> None:
+        root = repo / top if top else repo
+        git_in(root, "init", "-q")
+        git_in(root, "add", "-A")
+        git_in(root, "commit", "-q", "-m", "v1")
+        if tag:
+            git_in(root, "tag", tag)
+    return apply
+
+
+def shallow_release(repo: Path) -> None:
+    release()(repo)
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True,
+                          env=GIT_ENV).stdout.strip()
+    (repo / ".git" / "shallow").write_text(head + "\n", encoding="utf-8")
+    # 浅い clone はタグを取らない——タグが見えないのを「凍結していない」と読まないこと（タグが残ると、
+    # `check-frozen.py` の浅い clone の検査が先に 2 を返し、scaffold 側の検査を外しても判別しない）
+    git_in(repo, "tag", "-d", "release-v1")
+
+
+def edited_after_release(repo: Path) -> None:
+    """凍結した後に `docs/v1/` を直す（作業ツリー）——`check-frozen.py` は 1。"""
+    release()(repo)
+    spec = repo / "docs" / "v1" / "spec" / "order.md"
+    spec.write_text(spec.read_text(encoding="utf-8") + "\n凍結の後に足した行\n", encoding="utf-8")
+
+
+def release_without_version(repo: Path) -> None:
+    """`docs/v1/` を持たないコミットに `release-v1` を付ける——`check-frozen.py` は 2。"""
+    (repo / "README.md").write_text("x\n", encoding="utf-8")
+    git_in(repo, "init", "-q")
+    git_in(repo, "add", "README.md")
+    git_in(repo, "commit", "-q", "-m", "before v1")
+    git_in(repo, "tag", "release-v1")
+
+
+def other_release_edited(repo: Path) -> None:
+    """`release-v1` と `release-v2` を付けて `docs/v2/` だけを直す——v1 の凍結は変わらない（2 パス目の P2-1）。
+    `check-frozen.py` を版で絞らずに呼べば 1 になる。"""
+    release()(repo)
+    git_in(repo, "tag", "release-v2")
+    spec = repo / "docs" / "v2" / "spec" / "return.md"
+    spec.write_text(spec.read_text(encoding="utf-8") + "\n凍結の後に足した行\n", encoding="utf-8")
+
+
+def other_release_without_version(repo: Path) -> None:
+    """`docs/v2/` を持たないコミットに `release-v2` を付け、その後に `release-v1` を付ける——v1 の凍結は変わらない。
+    `check-frozen.py` を版で絞らずに呼べば 2 になる。"""
+    (repo / "README.md").write_text("x\n", encoding="utf-8")
+    git_in(repo, "init", "-q")
+    git_in(repo, "add", "README.md")
+    git_in(repo, "commit", "-q", "-m", "before v1")
+    git_in(repo, "tag", "release-v2")
+    git_in(repo, "add", "-A")
+    git_in(repo, "commit", "-q", "-m", "v1")
+    git_in(repo, "tag", "release-v1")
+
+
+def drop_v1_ir(repo: Path) -> None:
+    (repo / "docs" / "v1" / "spec" / "spec_ir.json").unlink()
+
+
+def frozen_all_added(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"凍結した前の版が崩れていたら v2 の機能を全部 追加 にするはず: {list(found)}"
+    if "<!-- spec-loop-change: add; base=v1 -->" not in found["F-001"]:
+        return "凍結した前の版から変わっていない機能が 追加 の本文になっていない"
+    # 凍結した版を作れることそのもの（C）——凍結の確かめは直されていないと言う
+    proc = subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / "check-frozen.py"), "--repo", str(repo)],
+                          capture_output=True, text=True)
+    if proc.returncode != 0:
+        return f"凍結の確かめが 0 でない（凍結した版を作れていない）: {proc.stdout}{proc.stderr}"
+    return None
+
+
+def remedy(repo: Path) -> None:
+    """`versions.md` の「前の版の時点が崩れていたら」の手当てを、書いてあるとおりに流す（#355）。"""
+    aside = repo.parent / "v2-aside"
+    shutil.move(str(repo / V2), str(aside))  # 1. docs/ の外へ退ける
+    (repo / V1 / "shared" / "qa.csv").write_text(HEADER + QA_DONE + QA_DONE2, encoding="utf-8")  # 2. 確定する
+    scaffold = [sys.executable, "-I", str(repo.parent / "scripts" / TARGET), "--repo", str(repo)]
+    # 3. v1 で作る（失敗すれば v1 の scaffold/ が無く、本体の `--check --upto 1` が古いと言う）
+    subprocess.run(scaffold, capture_output=True, text=True)
+    shutil.move(str(aside), str(repo / V2))  # 4. 戻す
+
 CASES: list[Case] = [
     Case("作る", 0, "作った", post=files_written),
     Case("Red テストが失敗する", 0, post=expect_red(3)),
@@ -1134,21 +1239,94 @@ CASES: list[Case] = [
     Case("前の版だけパスの変数が入力に無い（--dry-run --upto 1）", 1, "パスの変数 {order_id} が operation.input の項目に無い",
          args=("--dry-run", "--upto", "1"), ir=OLD_PATH_V1, extra=v2([IR["features"][0]])),
     # #335: v1 で暫定反映の Q-001 を指し、v2 で反映済みに置き換えた——v1 は scaffold できていないので止め、そう名指しする
-    Case("前の版で暫定だった Q&A を後の版で確定する", 1, "v1 の時点では 暫定反映 の Q&A が残り、v1 の scaffold は作れていない"
-         "（`--check --upto 1` が 0 にならない）。v2 の差分を測る土台が無い——references/versions.md の「差分の周を始める前に」",
+    Case("前の版で暫定だった Q&A を後の版で確定する", 1, "v1 の時点では 反映済み でない Q&A が残り、v1 の scaffold は作れていない"
+         "（`--check --upto 1` が 0 にならない）。v2 の差分を測る土台が無い——references/versions.md の「前の版の時点が崩れていたら」",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
          post=nothing_written_issues),
-    Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の F-001.qa: Q-001 は状態が 暫定反映（反映済み でない）",
+    Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の Q-001: 状態が 暫定反映（反映済み でない）",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
     # 前の版の時点を作るときも止まる（今の版と同じ関門）
     Case("前の版で暫定だった Q&A（--check --upto 1）", 1, "Q-001: 状態が 暫定反映", args=("--check", "--upto", "1"),
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
     Case("前の版で暫定だった Q&A（--dry-run --upto 1）", 1, "Q-001: 状態が 暫定反映", args=("--dry-run", "--upto", "1"),
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
-    # 対照: 前の版で確認中だった——止まるが、暫定反映の案内は出さない
-    Case("前の版で確認中だった Q&A を後の版で確定する", 1, "v1 の時点の F-001.qa: Q-001 は状態が 確認中（反映済み でない）",
+    # #361: 前の版で確認中だった——条件 1 で v1 の scaffold も作れないので、同じく名指しする（#335 の対照を反転。人間の判断）
+    Case("前の版で確認中だった Q&A を後の版で確定する", 1, "v1 の時点の Q-001: 状態が 確認中（反映済み でない）",
          qa=HEADER + QA_OPEN_Q001 + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
-         post=nothing_written_issues, absent="scaffold は作れていない"),
+         post=nothing_written_issues),
+    Case("前の版で確認中だった Q&A（名指し）", 1, "v1 の scaffold は作れていない",
+         qa=HEADER + QA_OPEN_Q001 + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    # #358: 中間表現が指していない行でも止まる（v2 の QA_V2 が Q-004 を反映済みに置き換える）
+    Case("前の版に指していない暫定反映の行がある", 1, "v1 の時点の Q-004: 状態が 暫定反映（反映済み でない）",
+         qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED, extra=v2([V2_CHANGED]), pre=plant_old_issues,
+         post=nothing_written_issues),
+    Case("前の版に指していない暫定反映の行がある（--dry-run）", 1, "v1 の scaffold は作れていない", args=("--dry-run",),
+         qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED, extra=v2([V2_CHANGED]), post=nothing_written),
+    Case("前の版に指していない暫定反映の行がある（--red-check）", 1, "v1 の scaffold は作れていない", args=("--red-check",),
+         qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED, extra=v2([V2_CHANGED]), impl=GOOD_IMPL),
+    Case("前の版に指していない確認中の行がある", 1, "v1 の時点の Q-004: 状態が 確認中（反映済み でない）",
+         qa=HEADER + QA_DONE + QA_DONE2 + QA_OPEN_UNCITED, extra=v2([V2_CHANGED]), pre=plant_old_issues,
+         post=nothing_written_issues),
+    # 内部の表（qa-dev.csv）の行も見る——v2 で D-001 を反映済みに置き換える
+    Case("前の版の内部の表に確認中の行がある", 1, "v1 の時点の D-001: 状態が 確認中（反映済み でない）",
+         spec={"order.md": SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_OPEN},
+         extra=v2([V2_CHANGED], spec={"return.md": RETURN_SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_DONE}),
+         pre=plant_old_issues, post=nothing_written_issues),
+    # #355: versions.md の手当て（v2 を docs/ の外へ退け、v1 を確定して作り、戻す）を流すと、前の版の時点が新しくなり v2 を作れる
+    Case("前の版の時点を直す手当て（--check --upto 1）", 0, "新しい（v1 まで", args=("--check", "--upto", "1"),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=remedy),
+    Case("前の版の時点を直す手当て（v2 を作る）", 0, "modify 1",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=remedy,
+         post=lambda repo: None if list(bodies(repo)) == ["F-001"] else f"本文は v2 で変えた機能だけのはず: {list(bodies(repo))}"),
+    # #357: 凍結した v1（release-v1）に暫定反映が残る状態は作れる——直せないので止めず、v2 の機能を全部 追加 にする
+    Case("凍結した前の版が崩れている", 0, "v1 は release-v1 で凍結していて直せない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2,
+         extra=v2([V2_CHANGED], qa=HEADER + QA_DONE, removed="機能,F-002,取り消しはやめる\n"), pre=release(),
+         post=frozen_all_added, absent="変わっていない機能の本文は作らない"),
+    # タグがあるだけでは凍結と読まない（1 パス目の P1-1）——タグの後に直した版は止め、タグの時点に版が無ければ判定しない
+    Case("凍結した前の版がタグの後に直されている", 1, "v1 は凍結しているのに直されている",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=edited_after_release,
+         absent="凍結していて直せない"),
+    Case("凍結のタグの時点に前の版が無い", 2, "v1 が凍結しているかを判定していない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=release_without_version),
+    # 別の版のタグは v1 の凍結を言わない（P1-4）
+    Case("別の版のタグで凍結と読まない", 1, "v1 の scaffold は作れていない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=release("release-v2"),
+         absent="凍結していて"),
+    # 他の版のタグの状態は v1 の凍結を変えない（2 パス目の P2-1）——直された版・版の無いタグが v2 の側にあっても全部を追加にする
+    Case("他の版のタグの後の直しで止めない", 0, "v1 は release-v1 で凍結していて直せない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=other_release_edited,
+         absent="直されている"),
+    Case("他の版のタグの時点に版が無くても判定する", 0, "v1 は release-v1 で凍結していて直せない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE),
+         pre=other_release_without_version, absent="凍結しているかを判定していない"),
+    # git を起動できなければ凍結を判定しない（P1-9）
+    Case("凍結を判定できない（git を起動できない）", 2, "git を起動できない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), env={"PATH": ""},
+         pre=plant_old_issues, post=nothing_written_issues),
+    # 前の版に中間表現が無くても、Q&A の状態は見る（P1-6）
+    Case("中間表現の無い前の版に暫定反映の行がある", 1, "v1 の時点の Q-004: 状態が 暫定反映（反映済み でない）",
+         qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED,
+         extra=v2(IR["features"], top={k: v for k, v in IR.items() if k != "features"}), pre=drop_v1_ir,
+         post=nothing_written),
+    Case("凍結した前の版が崩れている（撤去を名指し）", 0, "v2 で消した機能（F-002）の撤去の本文は作らない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2,
+         extra=v2([V2_CHANGED], qa=HEADER + QA_DONE, removed="機能,F-002,取り消しはやめる\n"), pre=release()),
+    # 対照: git でもタグが無ければ凍結していない——止まる
+    Case("凍結していない git の前の版が崩れている", 1, "v1 の scaffold は作れていない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=release(None),
+         absent="凍結していて"),
+    # 対照: 親のリポジトリのタグは、この docs/ の凍結を言わない（check-frozen.py も根の docs/ を見る）
+    Case("親のリポジトリのタグで凍結と読まない", 1, "v1 の scaffold は作れていない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=release(top=".."),
+         absent="凍結していて"),
+    # 浅い clone はタグがそろわない——凍結しているかを判定しない
+    Case("凍結を判定できない（浅い clone）", 2, "v1 が凍結しているかを判定していない",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=shallow_release),
+    # 陽性対照: 凍結していても、前の版が崩れていなければ今までどおり変わった機能だけ
+    Case("凍結した前の版が崩れていない", 0, "modify 1", extra=v2([V2_CHANGED]), pre=release(),
+         post=lambda repo: None if list(bodies(repo)) == ["F-001"] else f"本文は変えた機能だけのはず: {list(bodies(repo))}",
+         absent="凍結していて"),
     # 前の版でも Q&A の実在は見る
     Case("前の版の Q&A が表に無い", 1, "v1 の時点の F-001.qa: Q-009 は Q&A 表に無い", ir=MISSING_QA_V1,
          extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues, post=nothing_written_issues),
@@ -1428,15 +1606,49 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "check_ir(ir, whole, answered, path_rules=True)", "前の版だけパスの変数が入力に無い"),
     ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate)",
      "check_ir(ir, whole, answered, path_rules=False)", "前の版のパスの変数を直さない"),
-    # #335: 前の版の暫定反映を名指ししない／状態を問わず名指しする
-    ("前の版の暫定反映を名指ししない", 'if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):',
-     "if False:", "前の版で暫定だった Q&A を後の版で確定する"),
-    ("前の版の誤りならいつも暫定反映を名指しする", 'if any(f"は状態が {qa.PROVISIONAL}" in line for line in lines[:-1]):',
-     "if True:", "前の版で確認中だった Q&A を後の版で確定する"),
+    # #361: 前の版の Q&A の状態を直接見る（#358）・名指し（#335）・凍結した前の版（#357）
+    ("前の版の Q&A の状態を見ない", "    unsettled = unsettled_qa(rendered)\n", "    unsettled = []\n",
+     "前の版に指していない暫定反映の行がある"),
+    ("前の版の暫定反映だけを見る", 'if row["状態"].strip() != qa.DONE]', 'if row["状態"].strip() == qa.PROVISIONAL]',
+     "前の版に指していない確認中の行がある"),
+    ("前の版の内部の表を見ない", "    for path in (QA_PATH, INTERNAL_QA_PATH):\n        if path in rendered:",
+     "    for path in (QA_PATH,):\n        if path in rendered:", "前の版の内部の表に確認中の行がある"),
+    ("前の版の確認中なら名指ししない", "    if unsettled:\n", "    if any(s == qa.PROVISIONAL for _, s in unsettled):\n",
+     "前の版で確認中だった Q&A（名指し）"),
     ("名指しで今の版を確かめさせる", "`--check --upto {number - 1}` が 0 にならない", "`--check --upto {number}` が 0 にならない",
      "前の版で暫定だった Q&A を後の版で確定する"),
-    ("Q&A の参照の状態を出さない", "は状態が {state}（{qa.DONE} でない）", "は状態が {qa.DONE} でない",
-     "前の版で暫定だった Q&A を後の版で確定する"),
+    ("凍結を見ない（いつも止める）", "        tag, edited = released(loaded.docs.parent, number - 1)\n", "        tag, edited = None, []\n",
+     "凍結した前の版が崩れている"),
+    ("凍結していなくても止めない", "        tag, edited = released(loaded.docs.parent, number - 1)\n", '        tag, edited = "release-v0", []\n',
+     "前の版に指していない暫定反映の行がある"),
+    ("凍結した前の版で全部を追加にしない", "return 0, out, [Change(ADD, f) for _, f in sorted(now.items())], distrusted",
+     "return 0, out, [], distrusted", "凍結した前の版が崩れている"),
+    ("凍結した前の版で撤去を名指ししない", "        if dropped:\n", "        if False:\n",
+     "凍結した前の版が崩れている（撤去を名指し）"),
+    ("凍結しても崩れていない前の版は信じる（崩れていなくても全部を追加にする）", "    if unsettled:\n",
+     "    if unsettled or released(loaded.docs.parent, number - 1)[0]:\n", "凍結した前の版が崩れていない"),
+    ("親のリポジトリのタグを読む", "Path(top.stdout.strip()).resolve() != repo.resolve()", "False",
+     "親のリポジトリのタグで凍結と読まない"),
+    ("浅い clone を見ない", 'shallow.stdout.strip() != "false"', "False", "凍結を判定できない（浅い clone）"),
+    # 1 パス目の指摘対応（P1-1・P1-2・P1-4・P1-6・P1-9）
+    ("凍結のタグの時点と比べない", "    code, lines = frozen.check(repo, only=number)\n", "    code, lines = 0, []\n",
+     "凍結した前の版がタグの後に直されている"),
+    # 2 パス目の指摘対応（P2-1）
+    ("凍結の確かめを前の版に絞らない（直された他の版）", "frozen.check(repo, only=number)", "frozen.check(repo)",
+     "他の版のタグの後の直しで止めない"),
+    ("凍結の確かめを前の版に絞らない（版の無い他のタグ）", "frozen.check(repo, only=number)", "frozen.check(repo)",
+     "他の版のタグの時点に版が無くても判定する"),
+    ("タグの時点に版が無くても凍結と読む", "    if code == 2:\n        raise Unjudged(", "    if False:\n        raise Unjudged(",
+     "凍結のタグの時点に前の版が無い"),
+    ("凍結した版が直されていても止めない", "        if edited:\n", "        if False:\n",
+     "凍結した前の版がタグの後に直されている"),
+    ("別の版のタグでも凍結と読む", "if n == number), None)", "if True), None)", "別の版のタグで凍結と読まない"),
+    ("git を起動できないのを判定していないと言わない", "        except OSError as exc:\n            raise Unjudged(f\"git を起動できない",
+     "        except ValueError as exc:\n            raise Unjudged(f\"git を起動できない", "凍結を判定できない（git を起動できない）"),
+    ("凍結の経路でも変わっていない機能を省いたと言う", "if loaded.number > 1 and before.trusted else",
+     "if loaded.number > 1 else", "凍結した前の版が崩れている"),
+    # `check_qa_refs` の状態の行（`は状態が {state}`）は、今の版では関門が、前の版では `unsettled_qa` が先に止めるので
+    # 届かない——変異を入れても殺せない（等価変異）。守りとして残すが変異には入れない（#361）
     ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
      "Red の状態: v2 で出力の項目を足す"),
     ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
@@ -1545,7 +1757,8 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
             return False, f"前段の生成が失敗した: {first.stdout}{first.stderr}"
     if case.pre:
         case.pre(repo)
-    proc = subprocess.run(command + list(case.args), capture_output=True, text=True)
+    proc = subprocess.run(command + list(case.args), capture_output=True, text=True,
+                          env={**os.environ, **case.env} if case.env else None)
     out = proc.stdout + proc.stderr
     if proc.returncode != case.code:
         return False, f"exit={proc.returncode}（期待 {case.code}）{out[-400:]}"
@@ -1652,6 +1865,15 @@ def main() -> int:
             for label, doc in (("scaffold の SKILL.md", scaffold_skill), ("handoff-issue.md", handoff),
                                ("dev-loop の references/spec-gap.md", gap)):
                 check(f"{label} に {const} の文言が無い", isinstance(text, str) and text in doc, f"{text!r}")
+        # 前の版の時点が崩れていたときの手当ての指し先（#361）——versions.md にその見出しがある
+        remedy_ref = constant(source, "BROKEN_REMEDY")
+        versions_ref = VERSIONS_REF.read_text(encoding="utf-8")
+        remedy_heading = re.fullmatch(r"references/versions\.md の「(.+)」", remedy_ref or "")
+        check("BROKEN_REMEDY が references/versions.md の見出しを指していない",
+              remedy_heading is not None and f"\n### {remedy_heading.group(1)}\n" in versions_ref, f"{remedy_ref!r}")
+        check("見出しを改名しても BROKEN_REMEDY の照合が不一致にならない（照合が壊れている）",
+              remedy_heading is not None
+              and f"\n### {remedy_heading.group(1)}\n" not in versions_ref.replace(remedy_heading.group(1), "前の版を直す"))
         # 突き合わせ自体の陽性対照
         broken = handoff.replace("| `## Red テスト` |", "| `## 赤のテスト` |")
         check("handoff-issue.md の写しを崩しても不一致にならない", table_cells(broken, "## 節") != sections)
