@@ -42,7 +42,10 @@ def nxt(key, seq):
     i = counts.get(key, 0)
     counts[key] = i + 1
     json.dump(counts, open(counts_path, "w"))
-    return seq[min(i, len(seq) - 1)]
+    v = seq[min(i, len(seq) - 1)]
+    if v == "FAIL":  # この読みだけ gh が失敗する
+        print("gh: something went wrong", file=sys.stderr); sys.exit(1)
+    return v
 if scn.get("fail_all"):
     print("gh: something went wrong", file=sys.stderr); sys.exit(1)
 if args[:2] == ["pr", "view"]:
@@ -146,7 +149,21 @@ def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after
 
 
 def unknown_then(sha):
-    return [pr(sha, mergeable="UNKNOWN"), pr(sha, mergeable="UNKNOWN"), pr(sha)]
+    # 待っている間に head が動く（UNKNOWN の間は別の SHA）——マージに渡すのは、待って見た最後の SHA
+    return [pr("1" * 40, mergeable="UNKNOWN"), pr("1" * 40, mergeable="UNKNOWN"), pr(sha)]
+
+
+def with_closing(closing):
+    def make(sha):
+        p = pr(sha)
+        p["closingIssuesReferences"] = closing
+        return [p]
+    return make
+
+
+def untracked_hidden(main, wt):
+    git(main, "config", "status.showUntrackedFiles", "no")
+    (wt / "dirty.txt").write_text("d\n", encoding="utf-8")
 
 
 def running_then(sha):
@@ -171,9 +188,17 @@ CASES = {
         prepare=lambda m, w: (w / "dirty.txt").write_text("d\n")), 6, False, True),
     "push していなければマージしない": (dict(make_view=lambda s: [pr("0" * 40)]), 6, False, True),
     "cwd が worktree の中ならマージしない": (dict(make_view=lambda s: [pr(s)], cwd_in_wt=True), 6, False, True),
+    "未追跡を隠す設定（showUntrackedFiles=no）でも見る": (
+        dict(make_view=lambda s: [pr(s)], prepare=untracked_hidden), 6, False, True),
     "マージが失敗したら worktree を残す": (dict(make_view=lambda s: [pr(s)], merge_rc=1), 8, True, True),
+    "merge が 0 でも MERGED にならなければ 8・worktree を残す": (
+        dict(make_view=lambda s: [pr(s)], after=["OPEN"]), 8, True, True),
+    "マージの後に gh が失敗したら判定できなかった（worktree を残す）": (
+        dict(make_view=lambda s: [pr(s)], after=["FAIL"]), 7, True, True),
+    "Issue の状態が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s)], issues={ISSUE_URL: ["FAIL"]}), 7, True, False),
+    "閉じる Issue の形が読めなければマージしない": (dict(make_view=with_closing([None])), 7, False, True),
     "Issue が閉じなければ 9": (dict(make_view=lambda s: [pr(s)], issues={ISSUE_URL: ["OPEN"]}), 9, True, False),
-    "PR が MERGED にならなければ 9": (dict(make_view=lambda s: [pr(s)], after=["OPEN"]), 9, True, False),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
     "draft なら何もしない": (dict(make_view=lambda s: [pr(s, draft=True)]), 2, False, True),
     "gh が失敗したら判定できなかった": (dict(make_view=lambda s: [pr(s)], fail_all=True), 7, False, True),
@@ -206,17 +231,18 @@ MUTATIONS = {
     "--match-head-commit を渡さない": (
         '"--squash", "--match-head-commit", head_sha]', '"--squash"]'),
     # 守る 6: 未コミットを持つ worktree
-    "未コミットを見ない": ('if git(["status", "--porcelain"], cwd=str(path)).strip():', 'if False:'),
+    "未コミットを見ない": ('if git(["status", "--porcelain", "--untracked-files=all"], cwd=str(path)).strip():',
+                          'if False:'),
     # 守る 7: push していない worktree
     "push を見ない": ('if local != head_sha:', 'if False:'),
     # 守る 8: 自分が中にいる worktree
     "cwd を見ない": ('if here == path.resolve():', 'if False:'),
     # 守る 9: ロックされた worktree も撤去できる
     "unlock しない": ('if wt["locked"]:', 'if False:'),
-    # 守る 10: マージが失敗したら worktree を残す（撤去をマージの前に移す）
+    # 守る 10: MERGED を確かめるまで worktree を残す（撤去をマージの前に移す）
     "撤去をマージの前に置く": (
-        '    res = run(["gh", "pr", "merge"',
-        '    remove_worktree(wt) if wt and not wt["main"] else None\n    res = run(["gh", "pr", "merge"'),
+        '        res = run(["gh", "pr", "merge"',
+        '        remove_worktree(wt) if wt and not wt["main"] else None\n        res = run(["gh", "pr", "merge"'),
     # 守る 11: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
     # 守る 12: 判定できなかったことを時間切れと答えない
@@ -230,13 +256,15 @@ KILLS = {
     "CheckRun の失敗を見ない": ["CheckRun の失敗で止まる"],
     "CONFLICTING を見ない": ["衝突していれば止まる"],
     "--match-head-commit を渡さない": [],  # 引数で見る（下）
-    "未コミットを見ない": ["未コミットがあればマージしない"],
+    "未コミットを見ない": ["未コミットがあればマージしない", "未追跡を隠す設定（showUntrackedFiles=no）でも見る"],
     "push を見ない": ["push していなければマージしない"],
     "cwd を見ない": ["cwd が worktree の中ならマージしない"],
     "unlock しない": ["UNKNOWN の後に MERGEABLE（ロック済み worktree）"],
-    "撤去をマージの前に置く": ["マージが失敗したら worktree を残す"],
+    "撤去をマージの前に置く": ["マージが失敗したら worktree を残す",
+                       "merge が 0 でも MERGED にならなければ 8・worktree を残す"],
     "Issue が閉じたかを見ない": ["Issue が閉じなければ 9"],
-    "判定できなかったを時間切れと答える": ["gh が失敗したら判定できなかった"],
+    "判定できなかったを時間切れと答える": ["gh が失敗したら判定できなかった",
+                            "マージの後に gh が失敗したら判定できなかった（worktree を残す）"],
 }
 
 

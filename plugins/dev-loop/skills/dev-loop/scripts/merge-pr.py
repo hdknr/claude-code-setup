@@ -26,12 +26,15 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **衝突していればマージしない**——`CONFLICTING` は待っても直らない。
 - **見ていないコミットをマージしない**——待って確かめた head の SHA を `--match-head-commit` に渡す。
 - **未コミットの変更を持つ worktree のブランチをマージしない**——撤去で失う。
+  未追跡は `status.showUntrackedFiles` の設定に依らず見る（`no` だと見落とし、撤去で黙って消える）。
 - **push していない worktree のブランチをマージしない**——worktree の HEAD と PR の head の SHA を突き合わせる。
 - **自分が中にいる worktree を撤去しようとしない**——cwd がその worktree の中なら、マージの前に止める。
 - **ロックされた worktree も撤去できる**——unlock してから `git worktree remove`（**`--force` は使わない**）。
-- **マージが失敗したら worktree を残す**——撤去はマージの後に置く（点検はマージの前に済ませる）。
+- **`MERGED` を確かめるまで worktree を残す**——撤去はその後に置く（点検はマージの前に済ませる）。
+  `gh pr merge` が 0 で終わっても `MERGED` とは限らない（マージキューに入っただけのことがある）。
 - **閉じるはずの Issue が閉じたかを確かめる**——`closingIssuesReferences` の各 Issue が `CLOSED` になるまで待つ。
-- **判定できなかったことを、通った・時間切れと答えない**——`gh` や `git` が失敗したら 7 で止める。
+- **判定できなかったことを、通った・時間切れ・閉じないと答えない**——`gh` や `git` が失敗した・
+  出力の形が読めないなら、**マージの前でも後でも** 7 で止める。
 
 ## 終了コード
 
@@ -42,10 +45,12 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **4**: 衝突している（マージしていない）
 - **5**: 時間切れ——期限までに CI が通りきらない・`UNKNOWN` のまま・検査が 0 本（マージしていない）
 - **6**: worktree が撤去できる状態にない——未コミット・push していない・cwd がその中（マージしていない）
-- **7**: 判定できなかった——`gh` や `git` が失敗した・出力が読めない（**どの段かは出力が言う**）
-- **8**: マージに失敗した（worktree は残っている）
-- **9**: **マージはした**が、後片付けか確かめが済んでいない——worktree を撤去できなかった・
-  PR が `MERGED` にならない・閉じるはずの Issue が閉じない
+- **7**: 判定できなかった——`gh` や `git` が失敗した・出力が読めない（**どの段かと、マージ・撤去が
+  済んだかは出力が言う**。`MERGED` を確かめられないまま 7 になったときは worktree を残している）
+- **8**: マージできなかった——`gh pr merge` が失敗した・0 で終わったのに期限までに `MERGED` にならない
+  （worktree は残っている）
+- **9**: **マージはした**（`MERGED` を確かめた）が、後片付けか確かめが済んでいない——
+  worktree を撤去できなかった・閉じるはずの Issue が閉じない
 
 ## 何を守らないか
 
@@ -56,6 +61,9 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **必須の検査と任意の検査を分けない**——`statusCheckRollup` の全部を見る。任意の検査が落ちても止まる。
 - **`Refs` で開けたままにした Issue は確かめない**——閉じるはずのもの（`closingIssuesReferences`）だけ。
 - **head ブランチがメインの作業ツリーにあるときは撤去しない**——点検（未コミット・push）だけ当てる。
+- **ignore されたファイルは点検しない**——撤去で失う（`.env` など）。見ると `.venv` や `__pycache__` を
+  持つふつうの worktree が撤去できなくなる。
+- **呼んだ側のセッションの cwd は見ない**——見るのはこのスクリプトの cwd だけ。`cd` してから呼べば素通りする。
 """
 from __future__ import annotations
 
@@ -116,6 +124,8 @@ def classify_checks(rollup) -> tuple[str, list[str]]:
         return "none", []
     failed, pending = [], []
     for c in rollup:
+        if not isinstance(c, dict):
+            raise Undetermined(f"検査の形が読めない: {c!r}")
         kind = c.get("__typename")
         name = c.get("name") or c.get("context") or "(名前なし)"
         if kind == "CheckRun":
@@ -191,6 +201,8 @@ def find_worktree(branch: str) -> dict | None:
         blocks.append(cur)
     for i, b in enumerate(blocks):
         if b.get("branch") == f"refs/heads/{branch}":
+            if "worktree" not in b:
+                raise Undetermined("git worktree list の出力に worktree の行が無い")
             return {"path": b["worktree"], "head": b.get("HEAD", ""),
                     "locked": "locked" in b, "main": i == 0}
     return None
@@ -202,7 +214,7 @@ def inspect_worktree(wt: dict, head_sha: str) -> list[str]:
     path = Path(wt["path"])
     if not path.is_dir():
         raise Undetermined(f"worktree のディレクトリが無い: {path}（git worktree prune を検討）")
-    if git(["status", "--porcelain"], cwd=str(path)).strip():
+    if git(["status", "--porcelain", "--untracked-files=all"], cwd=str(path)).strip():
         reasons.append(f"未コミットの変更がある: {path}")
     local = git(["rev-parse", "HEAD"], cwd=str(path)).strip()
     if local != head_sha:
@@ -228,13 +240,34 @@ def remove_worktree(wt: dict) -> str | None:
 
 
 def wait_for(fn, interval: float, timeout: float) -> bool:
+    """`fn` が真になるまで待つ。期限の最後の読みが `Undetermined` なら、偽ではなくそれを投げる。"""
     deadline = time.monotonic() + timeout
     while True:
-        if fn():
-            return True
+        try:
+            if fn():
+                return True
+            err = None
+        except Undetermined as e:
+            err = e
         if time.monotonic() >= deadline:
+            if err:
+                raise err
             return False
         time.sleep(interval)
+
+
+def closing_refs(pr: dict) -> list[str]:
+    """閉じるはずの Issue。形が読めなければ、マージの前に `Undetermined`。"""
+    closing = pr.get("closingIssuesReferences") or []
+    if not isinstance(closing, list):
+        raise Undetermined("closingIssuesReferences が配列でない")
+    refs = []
+    for issue in closing:
+        ref = (issue.get("url") or issue.get("number")) if isinstance(issue, dict) else None
+        if not ref:
+            raise Undetermined(f"closingIssuesReferences の要素が読めない: {issue!r}")
+        refs.append(str(ref))
+    return refs
 
 
 class Parser(argparse.ArgumentParser):
@@ -254,6 +287,7 @@ def main(argv: list[str]) -> int:
     if not a.number.isdigit():
         p.error(f"PR 番号が数字でない: {a.number!r}")
 
+    done = []  # 判定できなかったときに、どこまで済んだかを言う
     try:
         rc, pr = wait_until_ready(a.number, a.interval, a.timeout)
         if rc:
@@ -262,7 +296,7 @@ def main(argv: list[str]) -> int:
         branch = pr.get("headRefName") or ""
         if not head_sha or not branch:
             raise Undetermined("headRefOid / headRefName が読めない")
-        closing = pr.get("closingIssuesReferences") or []
+        closing = closing_refs(pr)
         print(f"CI は全部通り、MERGEABLE である。head: {branch} @ {head_sha[:12]}")
 
         wt = find_worktree(branch)
@@ -277,50 +311,49 @@ def main(argv: list[str]) -> int:
             print(f"worktree を点検した: {where}{'（ロックされている）' if wt['locked'] else ''}")
         else:
             print(f"ブランチ {branch} を持つ worktree は無い。")
+
+        res = run(["gh", "pr", "merge", a.number, "--squash", "--match-head-commit", head_sha])
+        if res.returncode != 0:
+            print(f"マージに失敗した（rc={res.returncode}）: {res.stderr.strip()}", file=sys.stderr)
+            print("worktree は残してある。", file=sys.stderr)
+            return 8
+        done.append(f"gh pr merge は 0 で終わった（{head_sha[:12]}）が、MERGED はまだ確かめていない。worktree は残してある")
+
+        def merged() -> bool:
+            return gh_json(["pr", "view", a.number, "--json", "state"]).get("state") == "MERGED"
+
+        if not wait_for(merged, a.interval, a.settle):
+            print(f"gh pr merge は 0 で終わったが、PR #{a.number} が {a.settle:g} 秒で MERGED にならない"
+                  "（マージキューに入っただけかもしれない）。worktree は残してある。", file=sys.stderr)
+            return 8
+        done[-1] = f"PR #{a.number} を squash マージした（{head_sha[:12]}・MERGED を確かめた）"
+        print(f"{done[-1]}。")
+
+        problems = []
+        if wt and not wt["main"]:
+            err = remove_worktree(wt)
+            if err:
+                problems.append(f"worktree を撤去できなかった（{wt['path']}）: {err}")
+            else:
+                done.append(f"worktree を撤去した: {wt['path']}")
+                print(done[-1])
+        print(f"ブランチ {branch} は消していない（squash したブランチは git branch -d が通らない）。")
+
+        if not closing:
+            print("閉じるはずの Issue は無い（closingIssuesReferences が空）。")
+        for ref in closing:
+            def closed(ref=ref) -> bool:
+                return gh_json(["issue", "view", ref, "--json", "state"]).get("state") == "CLOSED"
+
+            if wait_for(closed, a.interval, a.settle):
+                print(f"Issue が閉じた: {ref}")
+            else:
+                problems.append(f"Issue が閉じない（{a.settle:g} 秒）: {ref}")
     except Undetermined as e:
         print(f"**判定できなかった**: {e}", file=sys.stderr)
+        for d in done:
+            print(f"  済んだこと: {d}", file=sys.stderr)
         return 7
-
-    res = run(["gh", "pr", "merge", a.number, "--squash", "--match-head-commit", head_sha])
-    if res.returncode != 0:
-        print(f"マージに失敗した（rc={res.returncode}）: {res.stderr.strip()}", file=sys.stderr)
-        print("worktree は残してある。", file=sys.stderr)
-        return 8
-    print(f"PR #{a.number} を squash マージした（{head_sha[:12]}）。")
-
-    problems = []
-    if wt and not wt["main"]:
-        err = remove_worktree(wt)
-        if err:
-            problems.append(f"worktree を撤去できなかった（{wt['path']}）: {err}")
-        else:
-            print(f"worktree を撤去した: {wt['path']}")
-    print(f"ブランチ {branch} は消していない（squash したブランチは git branch -d が通らない）。")
-
-    def merged() -> bool:
-        try:
-            return gh_json(["pr", "view", a.number, "--json", "state"]).get("state") == "MERGED"
-        except Undetermined:
-            return False
-
-    if not wait_for(merged, a.interval, a.settle):
-        problems.append(f"PR #{a.number} が MERGED にならない（{a.settle:g} 秒）")
-
-    if not closing:
-        print("閉じるはずの Issue は無い（closingIssuesReferences が空）。")
-    for issue in closing:
-        ref = issue.get("url") or str(issue.get("number"))
-
-        def closed(ref=ref) -> bool:
-            try:
-                return gh_json(["issue", "view", ref, "--json", "state"]).get("state") == "CLOSED"
-            except Undetermined:
-                return False
-
-        if wait_for(closed, a.interval, a.settle):
-            print(f"Issue が閉じた: {ref}")
-        else:
-            problems.append(f"Issue が閉じない（{a.settle:g} 秒）: {ref}")
 
     if problems:
         print("**マージはした**が、済んでいないことがある:", file=sys.stderr)
