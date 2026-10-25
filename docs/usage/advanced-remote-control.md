@@ -10,6 +10,31 @@ PC で長時間走らせている Claude Code を、外出先の iPhone から�
 確認した環境: Claude Code 2.1.310（macOS）、iPhone の Claude アプリ、Team プラン。
 一次資料: [Remote Control（公式ドキュメント）](https://code.claude.com/docs/en/remote-control)
 
+## 仕組み（システム概要）
+
+```mermaid
+flowchart LR
+  subgraph PC["自宅の PC"]
+    S["作業中のセッション<br/>claude ＋ /remote-control<br/>（ファイル・MCP・設定<br/>もここにある）"]
+  end
+  subgraph A["Anthropic（クラウド）"]
+    R["中継<br/>会話を同期"]
+    P["プッシュ通知"]
+  end
+  subgraph M["外出先の iPhone"]
+    App["Claude アプリ<br/>Code タブ"]
+  end
+  S <-- "① ミラー<br/>PC から外向きに接続" --> R
+  R <-- "画面の表示・指示" --> App
+  S -. "② 止まったら<br/>通知を依頼" .-> P
+  P -. "通知" .-> App
+```
+
+- **Claude Code は最初から最後まで PC で動きます。** iPhone は「その画面をのぞいて指示を返す窓」で、ファイルがクラウドへ上がるわけではありません。
+- **PC からは外向きの HTTPS（443 番）だけを使います。** 起動時に Anthropic API へ登録して仕事を待ち、iPhone からの指示は Anthropic の中継を通って届きます。PC 側で受け付けのポートを開ける必要はありません。
+- **① ミラーと ② 通知は別の経路です。** ① がつながっていても、② の設定（`/config` と iPhone の通知先の登録）が済んでいなければ通知は届きません。
+- **③ 止まらない設定**（手順 3）は PC の中だけで完結する設定で、通信には関わりません。
+
 ## 先に要点
 
 | やりたいこと | 必要なこと |
