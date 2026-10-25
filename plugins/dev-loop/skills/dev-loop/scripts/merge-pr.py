@@ -129,12 +129,18 @@ def classify_checks(rollup) -> tuple[str, list[str]]:
         kind = c.get("__typename")
         name = c.get("name") or c.get("context") or "(名前なし)"
         if kind == "CheckRun":
+            if not isinstance(c.get("status"), str):
+                raise Undetermined(f"検査の status が読めない: {c!r}")
             if c.get("status") != "COMPLETED":
                 pending.append(name)
+            elif not isinstance(c.get("conclusion"), str):
+                raise Undetermined(f"検査の conclusion が読めない: {c!r}")
             elif c.get("conclusion") not in CHECK_PASS:
                 failed.append(f"{name}（{c.get('conclusion')}）")
         elif kind == "StatusContext":
             state = c.get("state")
+            if not isinstance(state, str):
+                raise Undetermined(f"検査の state が読めない: {c!r}")
             if state in STATUS_PENDING:
                 pending.append(name)
             elif state != "SUCCESS":
@@ -153,6 +159,8 @@ def wait_until_ready(number: str, interval: float, timeout: float) -> tuple[int,
     deadline = time.monotonic() + timeout
     while True:
         pr = view_pr(number)
+        if not isinstance(pr.get("state"), str) or not isinstance(pr.get("isDraft"), bool):
+            raise Undetermined(f"state・isDraft が読めない: {pr.get('state')!r}・{pr.get('isDraft')!r}")
         if pr.get("state") != "OPEN":
             print(f"PR #{number} は {pr.get('state')} である。何もしない。", file=sys.stderr)
             return 2, pr
@@ -258,9 +266,9 @@ def wait_for(fn, interval: float, timeout: float) -> bool:
 
 def closing_refs(pr: dict) -> list[str]:
     """閉じるはずの Issue。形が読めなければ、マージの前に `Undetermined`。"""
-    closing = pr.get("closingIssuesReferences") or []
+    closing = pr.get("closingIssuesReferences")
     if not isinstance(closing, list):
-        raise Undetermined("closingIssuesReferences が配列でない")
+        raise Undetermined(f"closingIssuesReferences が配列でない: {closing!r}")
     refs = []
     for issue in closing:
         ref = (issue.get("url") or issue.get("number")) if isinstance(issue, dict) else None

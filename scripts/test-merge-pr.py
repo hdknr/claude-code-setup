@@ -161,6 +161,14 @@ def with_closing(closing):
     return make
 
 
+def without(key):
+    def make(sha):
+        p = pr(sha)
+        del p[key]
+        return [p]
+    return make
+
+
 def untracked_hidden(main, wt):
     git(main, "config", "status.showUntrackedFiles", "no")
     (wt / "dirty.txt").write_text("d\n", encoding="utf-8")
@@ -198,6 +206,14 @@ CASES = {
     "Issue の状態が読めなければ判定できなかった": (
         dict(make_view=lambda s: [pr(s)], issues={ISSUE_URL: ["FAIL"]}), 7, True, False),
     "閉じる Issue の形が読めなければマージしない": (dict(make_view=with_closing([None])), 7, False, True),
+    "閉じる Issue の欄が無ければマージしない": (dict(make_view=without("closingIssuesReferences")), 7, False, True),
+    "閉じる Issue の欄が null ならマージしない": (dict(make_view=with_closing(None)), 7, False, True),
+    "state が無ければ判定できなかった": (dict(make_view=without("state")), 7, False, True),
+    "isDraft が無ければ判定できなかった": (dict(make_view=without("isDraft")), 7, False, True),
+    "CheckRun の conclusion が無ければ判定できなかった": (dict(make_view=lambda s: [pr(s, checks=[
+        {"__typename": "CheckRun", "name": "check", "status": "COMPLETED"}])]), 7, False, True),
+    "StatusContext の state が無ければ判定できなかった": (dict(make_view=lambda s: [pr(s, checks=[
+        {"__typename": "StatusContext", "context": "ci"}])]), 7, False, True),
     "Issue が閉じなければ 9": (dict(make_view=lambda s: [pr(s)], issues={ISSUE_URL: ["OPEN"]}), 9, True, False),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
     "draft なら何もしない": (dict(make_view=lambda s: [pr(s, draft=True)]), 2, False, True),
