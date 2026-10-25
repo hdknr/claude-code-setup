@@ -239,8 +239,13 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("内部の行を removed.csv で消す",
      {**V1, "v1/spec/qa-dev.csv": QA_HEAD + D1 + D2, "v2/removed.csv": REMOVED_HEAD + "Q&A,D-001,共有へ移した（Q-003）\n"},
      "none", [], lambda r: made(r) and r.text("spec/qa-dev.csv") == QA_HEAD + D2 and r.text("shared/qa.csv") == QA_HEAD + Q1 + Q2),
+    # 印つきの内部の番号（#278）も、層の判定で内部の表から消す
+    ("印つきの内部の行を removed.csv で消す",
+     {**V1, "v1/spec/qa-dev.csv": QA_HEAD + D1.replace("D-001", "D-S-001") + D2,
+      "v2/removed.csv": REMOVED_HEAD + "Q&A,D-S-001,共有へ移した（Q-S-001）\n"},
+     "none", [], lambda r: made(r) and r.text("spec/qa-dev.csv") == QA_HEAD + D2 and r.text("shared/qa.csv") == QA_HEAD + Q1 + Q2),
     ("内部の表の決まり違反（番号が Q-）", {**MAIN, "v2/spec/qa-dev.csv": QA_HEAD + Q3}, "none", [],
-     lambda r: refused(r, "`D-001` の形でない")),
+     lambda r: refused(r, "`D-S-001` の形でない")),
     ("内部の表をファイルとして消す", {**V1, "v1/spec/qa-dev.csv": QA_HEAD + D1,
                                "v2/removed.csv": REMOVED_HEAD + "ファイル,spec/qa-dev.csv,x\n"}, "none", [],
      lambda r: refused(r, "ファイルとしては消せない")),
@@ -353,6 +358,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("共有の行を内部の表から消す", "(self.internal if qa.is_internal_number(target) else self.qa)", "self.internal", "Q&A を消す"),
     ("消す表の層を入れ替える", "(self.internal if qa.is_internal_number(target) else self.qa)",
      "(self.qa if qa.is_internal_number(target) else self.internal)", "内部の行を removed.csv で消す"),
+    # 前の形（`D-001`）だけを内部と読む写しに戻す（#278）——前の形の試料は緑のままで、印つきの試料だけが赤になる
+    ("印つきの内部の番号を内部と読まない", "(self.internal if qa.is_internal_number(target) else self.qa)",
+     "(self.internal if target.startswith('D-') and target[2].isdigit() else self.qa)", "印つきの内部の行を removed.csv で消す"),
     ("行が 0 なら qa.csv を書かない", "(self.has_qa, QA_PATH, self.qa)", "(bool(self.qa), QA_PATH, self.qa)",
      "Q&A が全部消えても qa.csv を書く"),
 ]
