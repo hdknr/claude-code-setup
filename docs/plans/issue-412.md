@@ -68,10 +68,11 @@ Issue 本文の「案」は検査対象であって要件ではない（とく�
     - クォートしない zsh では `plugins/b`（手元に無い）が落ちた。
     - R1（Already up to date の merge ＋ `reset --soft`）・R2（取り込んだ後の周のコミット）は、旧い形が空／混ざる、新しい形が変わらない、を同じリポジトリで並べて見た。
     - 実データ: `47a45e9`（#389 の取り込み）で、新しい形は 8 件（`A scripts/check-plan-counts.py` を含み、`plugins/spec-loop/scripts/` の 3 件を含む）、旧い形の `-- scripts/` は 5 件。
-- 実装のコミット: `32824c2`。`check-all.py` 47/47 緑（初回は件数の行を足す前に走り `check-plan-counts.py` だけ赤→足して単独で再実行し緑）
+- 実装のコミット: `32824c2`。`check-all.py` は初回に件数の行を足す前に走り `check-plan-counts.py` だけ赤→足して**単独で**再実行し緑（**通しの 47/47 緑はこの時点では観測していない**。関門の 1 パス目で 2 体がそれぞれ通しで 47/47 緑を観測した）
 - 割り目（手順 4）: AskUserQuestion で「ここで割る」が選ばれた（2026-10-25）
-- 関門: 未着手。次は手順 5 から——Verifier（`dev-loop:dev-loop-verifier`・sonnet）と `/code-review` の 1 パス目。
-  base は `e7aedeeb9b22dda924562cd6cbd183f916fbdf20`。1 パス目の指摘対応の起点は、関門に渡すときの HEAD の SHA をここに書く
+- 関門 1 パス目: 済み（2026-10-25。再開したセッションで手順 5 から）——Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 0 件**、`/code-review`（high）**指摘 6 件**（採否は下の表。直す 2 件・残課題 4 件）。
+  起動直後に親がこの計画ファイルの進捗欄を書き換えたため、両体の `git status --porcelain` の 2 回目に ` M docs/plans/issue-412.md` が出た（関門の変更ではない）。
+  base は `e7aedeeb9b22dda924562cd6cbd183f916fbdf20`。関門に渡したときの HEAD: `26d4860aa5239d92e4bb8523a6bcacfa40dd6da5`（1 パス目の指摘対応の起点）
 
 ## 起票
 
@@ -85,3 +86,16 @@ Issue 本文の「案」は検査対象であって要件ではない（とく�
 | Issue 本文の案のパス `plugins/*/scripts/` | 採らない | 末尾が `/` の glob の pathspec は `plugins/` の下に当たらない（実測）。`'plugins/*/scripts/*'` にした |
 | Issue 本文の案 `--diff-filter=A` | 採らない | `plugins/*/scripts/` 側の検査の強化は `M` で、`A` だけにすると R3 の取りこぼしが戻る。`--name-status` で `A`/`M` を見分ける |
 | 取り込みが fast-forward だったとき、merge コミットが無い | 本文に書かない | 周が自分のコミットを持たない取り込みで、周の途中ではまず起きない。`git log --merges -1` が別の merge を返しうるので、件名で確かめる、と書いた |
+| （1 パス目 C4 で理由を補う）`git rebase origin/main` で取り込んだときも merge コミットが無い | 本文に書かない（残課題） | 節の手順は `git merge origin/main` を指定しており、rebase はその手順の外。件名で確かめれば自分の取り込みでないことには気づける |
+
+### 1 パス目の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| C1 | クォートしない場合に落ちるのは「main が足したプラグイン」だけではなく、手元に在るプラグインの中の新しいファイルと入れ子（`skills/*/scripts`）も落ちる | 示せる——一時リポジトリ（bash）で `A plugins/a/scripts/new-in-a.py` と `A plugins/d/skills/d/scripts/f.py` が落ち、`A scripts/new.py` だけが出た（親も再現） | G5 | 直す |
+| C2 | 手順 1〜5 の 1 番目が `git merge` のままで、取り込む前に見る段が手順に無い | 示せない（取り込んだ後に走らせると空になることは本文が既に書き、取り込んだ後の形を示している） | 無し | 残課題 |
+| C3 | `git reset --soft` の後は ORIG_HEAD が HEAD と同じにならない（周のコミットを指し、逆向きに混ざる） | 示せる——一時リポジトリで `reset --soft HEAD~1` 直後に ORIG_HEAD≠HEAD、差分は `D scripts/after.py`（親も再現） | G5 | 直す |
+| C4 | `git rebase` で取り込んだとき `git log --merges -1` が main 側の merge を返し、代わりの手段が無い | 示せる（一時リポジトリ）が、節の手順（`git merge`）の外 | 無し | 残課題（決着の表に理由を補った） |
+| C5 | 計画ファイルの「47/47 緑」は通しで観測していない | 記録の正確さ（関門は記録を検査しない） | 無し | 残課題（記録は直した） |
+| C6 | 周の中で 2 回以上取り込んだとき、直近の merge だけを見ると前の取り込みの検査が出ない | 示せない（起きた記録が無い） | 無し | 残課題 |
+| V | Verifier: 反証 0 件 | — | — | — |
