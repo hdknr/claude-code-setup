@@ -128,6 +128,6 @@
 | R5 | `references/ledger.md` の再開の規則 5 が、`blocked` を「進行中」に数える `show` と噛み合わない | 示せる（試料の出力） | 無し | 残課題 |
 | R6 | 取り下げた依存先を持つ Issue が「依存待ち」に永遠に残り、ふつうの待ちと区別できない | 示せる（試料の出力） | 無し（L6 は「出さない」を求めるだけ） | 残課題 |
 | R7 | テストが `GIT_*` を外さず `HOME`・`GIT_CONFIG_GLOBAL` も差し替えないので、`GIT_DIR` が他のリポジトリを指す環境では、そのリポジトリにコミット・`user.email`・台帳を書く | 示せる: `GIT_DIR=<victim>/.git` で回すと victim のコミットが 1 → 2、`user.email=t@example.invalid`、`.claude/plans/cruise-c.json` ができた（scratchpad の `probe_gitdir.sh`） | L12 | 直す——`test-check-signoff.py` と同じく `GIT_*` を外し、`HOME`・`GIT_CONFIG_GLOBAL`・`GIT_CONFIG_NOSYSTEM` を差し替える |
-| R8 | 形の検査が真偽値の番号・依存（`isinstance(True, int)`）・文字列でない文字の欄を通す。`--deps 1,1` の重複も通る | 示せる: `{"number": true}` で `next` が `True`・rc 0 | L7（真偽値・型）。依存の重複は無し | 直す——真偽値と文字列でない欄を形の誤りにし、依存の重複は拒む（重複は小さく、R2 と同じ関数で済むので一緒に入れる） |
+| R8 | 形の検査が真偽値の番号・依存（`isinstance(True, int)`）・文字列でない文字の欄を通す。`--deps 1,1` の重複も通る | 示せる: `{"number": true}` で `next` が `True`・rc 0 | L7（真偽値・型）。依存の重複は無し | 真偽値・型は直す（形の誤りで 4）。**依存の重複は残課題**（破る受入基準が無い） |
 | R9 | `show` が `|`・改行をエスケープせず表が崩れる | 示せる（試料の出力） | 無し | 残課題 |
 | R10 | 対象リポジトリが `.claude/plans/` を gitignore しているとは限らない・保存でファイルのモードが 0600 になる | 示せる（grep・試料） | 無し | 残課題 |

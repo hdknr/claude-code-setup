@@ -57,7 +57,20 @@ def check(name: str, cond: bool) -> None:
 
 
 def git(root, *args):
-    subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
+    # サブモジュールの試料はローカルのパスから足すので、file プロトコルを許す（この呼び出しだけ）
+    subprocess.run(["git", "-c", "protocol.file.allow=always", *args],
+                   cwd=root, capture_output=True, text=True, check=False)
+
+
+def isolate_env(home: Path) -> None:
+    """**`GIT_*` を外し、`HOME` と git の設定を差し替える**——`GIT_DIR` が他のリポジトリを指す環境
+    （フックの中から回したなど）では、外さないと試料の `git commit`・`git config` と本体の場所の解決が
+    そのリポジトリに当たる（#390 の 1 パス目で実測）。本体は子プロセスで git を呼ぶので、`os.environ` ごと替える。"""
+    for key in [k for k in os.environ if k.startswith("GIT_")]:
+        del os.environ[key]
+    home.mkdir()
+    (home / "gitconfig").write_text("[user]\n\temail = t@example.invalid\n\tname = t\n", encoding="utf-8")
+    os.environ.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(home / "gitconfig"), GIT_CONFIG_NOSYSTEM="1")
 
 
 def build_repo(root: Path) -> Path:
@@ -189,39 +202,98 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["plans の外に書いていない"] = sorted(p.name for p in (root / ".claude").iterdir()) == ["plans", "worktrees"] \
         and not list(root.rglob("escaped*"))
 
+    # L7: 中身の崩れた台帳（手で直した）。**3 ではなく 4、next は答えない、書き換えない**
+    def plant(name, issues):
+        f = root / ".claude" / "plans" / f"cruise-{name}.json"
+        f.write_text(json.dumps({"format": 1, "name": name, "issues": issues}), encoding="utf-8")
+        return f
+
+    def entry(n, deps):
+        return {"number": n, "state": "todo", "deps": deps}
+
+    for name, issues in (("dup", [entry(1, []), entry(1, [])]),
+                         ("cyc", [entry(1, [2]), entry(2, [1])]),
+                         ("miss", [entry(1, [9])])):
+        f = plant(name, issues)
+        before = f.read_bytes()
+        o[f"崩れた {name}"] = (run(mod, ["next", name], root)[:2], run(mod, ["set", name, "1", "note=x"], root)[0],
+                              run(mod, ["add", name, "5"], root)[0], f.read_bytes() == before)
+    plant("bool", [{"number": True, "state": "todo", "deps": []}])
+    o["真偽値の番号"] = run(mod, ["next", "bool"], root)[:2]
+
     # L9: git の外
     outside = tmp / f"outside-{tag}"
     outside.mkdir()
     o["git の外"] = run(mod, ["show", "c"], outside)[0]
+
+    # L10: 書けない（`.claude/plans` がファイル）。**別のリポジトリで**——上の台帳を巻き込まない
+    flat = tmp / f"flat-{tag}"
+    flat.mkdir()
+    git(flat, "init", "-q")
+    (flat / ".claude").mkdir()
+    (flat / ".claude" / "plans").write_text("ファイル\n", encoding="utf-8")
+    o["書けない init"] = run(mod, ["init", "c"], flat)[0]
+
+    # L1: `--separate-git-dir` とサブモジュール。**作業ツリーの外を指さない**
+    base = tmp / f"layouts-{tag}"
+    base.mkdir()
+
+    def where2(cwd):
+        r = run(mod, ["path", "c"], cwd)
+        return (r[0], str(r[1]).strip().replace(str(base), "<base>"))
+
+    git(base, "init", "-q", "--separate-git-dir", str(base / "sepgit"), "sep")
+    git(base / "sep", "commit", "-q", "--allow-empty", "-m", "x")
+    git(base / "sep", "worktree", "add", "-q", str(base / "sep-wt"))
+    o["sep(メイン)"] = where2(base / "sep")
+    o["sep(worktree)"] = where2(base / "sep-wt")
+    git(base, "init", "-q", "lib")
+    git(base / "lib", "commit", "-q", "--allow-empty", "-m", "l")
+    git(base, "init", "-q", "sup")
+    git(base / "sup", "commit", "-q", "--allow-empty", "-m", "s")
+    git(base / "sup", "submodule", "add", "-q", str(base / "lib"), "m")
+    git(base / "sup" / "m", "worktree", "add", "-q", str(base / "m-wt"))
+    o["sub(メイン)"] = where2(base / "sup" / "m")
+    o["sub(worktree)"] = where2(base / "m-wt")
     return o
 
 
 # 1 件ずつ (探す文字列, 置き換え) の組。複数の組で 1 つの変異にしてよい。
 MUTATIONS = {
-    # 守る 1: 場所は cwd に依らない
-    "worktree の git-dir の親を使う": [
-        ('"--git-common-dir"],', '"--git-dir"],')],
-    # 守る 2: init で上書きしない
+    # 守る: 場所は cwd に依らない
+    "共通ディレクトリでなく worktree の git-dir を使う": [
+        ("git_dir, common = Path(lines[0]), Path(lines[1])", "git_dir, common = Path(lines[0]), Path(lines[0])")],
+    # 守る: separate-git-dir・サブモジュールでも作業ツリーの外に書かない
+    "共通ディレクトリの親を無条件に使う": [
+        ('    if common.name == ".git":\n', "    if True:\n")],
+    # 守る: init で上書きしない
     "在る台帳に init で上書きする": [
         ("    if path.exists():\n        raise Refused", "    if False:\n        raise Refused")],
-    # 守る 3: 決まった一覧に無い状態を拒む
+    # 守る: 決まった一覧に無い状態を拒む
     "無い状態を通す": [
         ('        if issue["state"] not in STATES:\n            raise Refused',
          '        if False:\n            raise Refused')],
-    # 守る 4: 依存の循環を拒む
+    # 守る: 依存の循環を拒む
     "循環を見ない": [
         ("    for n in graph:\n        visit(n, [])", "    pass")],
-    # 守る 5: next は依存がすべてマージ済みのものだけ
+    # 守る: next は依存がすべてマージ済みのものだけ
     "依存が未着手でなければ済んだと読む": [
         ('all(state.get(d) == DONE for d in i["deps"])', 'all(state.get(d) != "todo" for d in i["deps"])')],
-    # 守る 6: 読めない台帳を空と読まない
+    # 守る: 読めない台帳を空と読まない
     "無い台帳を空と読む": [
         ('        raise Unknown(f"台帳が無い: {path}")',
          '        return {"format": FORMAT, "name": "", "issues": []}')],
-    # 守る 7: 名前にパスの区切りと先頭のドットを許さない
+    # 守る: 中身の崩れた台帳に答えない
+    "読み込みで整合を見ない": [
+        ("    try:\n        validate(data)\n    except Refused as exc:\n        raise Unknown(f\"台帳の中身",
+         "    try:\n        pass\n    except Refused as exc:\n        raise Unknown(f\"台帳の中身")],
+    # 守る: 書けなかったときに表に無い終了コードで終えない
+    "書けないときに素の例外で終える": [
+        ("    except OSError as exc:  # 書けない", "    except ImportError as exc:  # 書けない")],
+    # 守る: 名前にパスの区切りと先頭のドットを許さない
     "名前を何でも通す": [
         ('NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")', 'NAME_RE = re.compile(r".+")')],
-    # 守る 8: 拒んだ操作では台帳を変えない（検査してから書く）
+    # 守る: 拒んだ操作では台帳を変えない（検査してから書く）
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -231,6 +303,7 @@ MUTATIONS = {
 def main() -> int:
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t).resolve()
+        isolate_env(tmp / "home")
         mod = load()
         o = scenario(mod, tmp, "correct")
 
@@ -240,6 +313,13 @@ def main() -> int:
         check("メインの作業ツリーの .claude/plans/cruise-c.json",
               o["path(main)"] == "<root>/.claude/plans/cruise-c.json")
         check("worktree の中から init してもメインに置かれる", o["init"] == 0 and o["init の置き場所"])
+        check("separate-git-dir: メインの作業ツリーからは作業ツリーの下",
+              o["sep(メイン)"] == (0, "<base>/sep/.claude/plans/cruise-c.json"))
+        check("separate-git-dir: worktree の中からは決められないので 4（git-dir の隣に書かない）",
+              o["sep(worktree)"][0] == 4)
+        check("サブモジュール: 作業ツリーの下（.git/modules の下ではない）",
+              o["sub(メイン)"] == (0, "<base>/sup/m/.claude/plans/cruise-c.json"))
+        check("サブモジュールの worktree の中からも同じパス", o["sub(worktree)"] == o["sub(メイン)"])
 
         print("\ninit（L2）")
         check("2 度目の init は 3", o["init(2 度目)"] == 3)
@@ -269,6 +349,11 @@ def main() -> int:
         check("壊れた JSON の next / set は 4", o["next(壊れた JSON)"] == 4 and o["set(壊れた JSON)"] == 4)
         check("壊れた JSON を書き換えない", o["壊れた JSON を書き換えない"])
         check("形が違う台帳は 4", o["next(形が違う)"] == 4)
+        check("真偽値の番号は形の誤りで 4（next は答えない）", o["真偽値の番号"] == (4, ""))
+        for name in ("dup", "cyc", "miss"):
+            check(f"中身の崩れた台帳（{name}）: next は答えずに 4・set / add も 3 ではなく 4・書き換えない",
+                  o[f"崩れた {name}"] == ((4, ""), 4, 4, True))
+        check("書けない（.claude/plans がファイル）init は 4", o["書けない init"] == 4)
 
         print("\n名前（L8）・git の外（L9）")
         check("../x・a/b・.x・x/../../../escaped は 2",
