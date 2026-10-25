@@ -817,7 +817,7 @@ MUTATIONS: list[tuple] = [
      "        if renderer is None:\n            return (", "知らない印は警告"),
     ("暫定反映を確認中に数える", HOOK, "    pending = len(rows) - done - provisional\n", "    pending = len(rows) - done\n",
      "版ごとの節・アンカー・件数"),
-    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"] not in (QA_DONE, QA_PROVISIONAL) and', 'row["状態"] != QA_DONE and',
+    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"] != QA_DONE and not qa_is_provisional(row) and', 'row["状態"] != QA_DONE and',
      "版ごとの節・アンカー・件数"),
     ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER)\n',
      " and False\n",
@@ -895,6 +895,43 @@ def check_copies() -> None:
           '"mkdocs>=1.6,<2"' in (PLUGIN / "templates" / "mkdocs" / "pyproject.toml").read_text(encoding="utf-8"))
 
 
+# 暫定の判別の写し（フックの `qa_is_provisional`）と本体（`check-qa-csv.py` の `is_provisional`）を同じ行に当てる（#404）。
+# 本体は `状態` だけで決める——`回答` の書き方（#403 の否定・#366 の実データの形）で答えが変わらない
+JUDGE_ROWS = [("暫定反映", "A（業務部 2026-10-21 の指示）"), (" 暫定反映 ", "A"),
+              ("反映済み", "A（推奨案を暫定で採用。開発側の指示）"), ("反映済み", "A（暫定で採用していない）"),
+              ("反映済み", "A（業務部が回答）"), ("確認中", "B（暫定で採用の予定）"), ("確認中", "未回答")]
+JUDGE_MUTATIONS = [
+    ("写しで暫定を見ない", '    return row["状態"].strip() == QA_PROVISIONAL\n', "    return False\n"),
+    ("写しを文言の一致に戻す", '    return row["状態"].strip() == QA_PROVISIONAL\n',
+     '    return row["状態"].strip() == QA_PROVISIONAL or (row["状態"].strip() == QA_DONE and "暫定で採用" in row["回答"])\n'),
+    ("写しで状態の空白を落とさない", '    return row["状態"].strip() == QA_PROVISIONAL\n', '    return row["状態"] == QA_PROVISIONAL\n'),
+]
+
+
+def judge_mismatches(hook, checker) -> list[str]:
+    rows = [{"状態": state, "回答": answer} for state, answer in JUDGE_ROWS]
+    return [f"{row} → フック {hook.qa_is_provisional(row)}・本体 {checker.is_provisional(row)}"
+            for row in rows if hook.qa_is_provisional(row) != checker.is_provisional(row)]
+
+
+def check_judge_copy() -> None:
+    """フックの暫定の判別の写しが、本体と同じ行に同じ答えを出すか（写しなので、テストが試料で突き合わせる）。"""
+    spec = importlib.util.spec_from_file_location("check_qa_csv_judge", PLUGIN / "scripts" / "check-qa-csv.py")
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+    problems = judge_mismatches(load_hook(PLUGIN), checker)
+    check("フックの qa_is_provisional が check-qa-csv.py の is_provisional と違う", not problems, "; ".join(problems))
+    source = (PLUGIN / HOOK).read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix="init-mkdocs-judge-") as tmp:
+        for index, (name, before, after) in enumerate(JUDGE_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_plugin(Path(tmp) / f"judge{index}")
+            (mutated / HOOK).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（判別の突き合わせで殺せるはず）", bool(judge_mismatches(load_hook(mutated), checker)))
+
+
 def check_reference() -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     check("references/tree.md に「ドキュメントのツール」の節が無い", "\n## ドキュメントのツール\n" in text)
@@ -931,6 +968,7 @@ def main() -> int:
                 survived = False
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not survived)
     check_copies()
+    check_judge_copy()
     check_reference()
 
     if failures:
