@@ -103,6 +103,9 @@
 - Verifier: 2 パス目 済み（反証 1 件・補足 1 件）
 - `/code-review`: 2 パス目 済み（指摘 10 件）
 - 2 パス目の指摘対応: 12 件のうち 8 件を直す（下の表）。**狭いパスの起点: `5719bb1eb638c8f58ffe7c16e6afc900da78e97b`**（指摘対応を始める直前の HEAD）
+- 2 パス目の指摘対応: 済み（`4d40015`）。テストは陽性対照が緑・変異 31 件すべて赤。実環境で読むだけ走らせて rc=1（flag の層を cmux の `--settings` から拾った）
+- `check-all.py`（`4d40015` の時点）: 48/48・失敗 0
+- 狭いパス: 済み（反証 1 件——N-1。素通りの変異 14 本——N-2。自作変異 33 本のうち赤 23）。指摘は直さず人間に渡す
 - **次に残っているもの: 手順 5 の Verifier の当て直し（2 パス目）と、手順 6 の `/code-review` の 2 パス目の両方**。2 パス目の指摘対応を始める直前に、その時点の HEAD を狭いパスの起点としてここに書く
 - 交絡を潰した手順: スリープの点検で、Claude 自身の `caffeinate -t 300` が「防止されている」を作る交絡を見つけ、判定から外した（上の「実測した前提」）
 
@@ -151,3 +154,10 @@
 | R2-8 | `-t` の無い `caffeinate` を、`-m`（ディスクだけ）・`-u`（既定 5 秒）でもスリープ防止と数える | 示せる（`man caffeinate`: 「-m … prevent the disk from idle sleeping」。プローブで行が返る） | 5 | 直す |
 | R2-9 | `autoContinueAtUsageLimit: true` だけで「良い」。2.1.310 は課金の種類とフラグでも自動継続を止める | 示せない（本体の文字列のみ。この利用者の課金の種類は確かめていない） | 無し | 残課題 |
 | R2-10 | macOS の managed preferences plist を読まない | 示せない（このホストに無い） | 無し | 残課題 |
+
+### 狭いパスの指摘（直さない。採否は人間が決める）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| N-1 | V2-1 の修正で `read_text` を `OSError` だけの `try` に移したため、UTF-8 として読めない設定ファイルで `UnicodeDecodeError` が素通しになり、Traceback・終了コード 1 で終わる（修正前は `ValueError` で `Unreadable` だった） | 示せる（著者も再現: `\xff\xfe{` を書いたファイルで `read_json` が `UnicodeDecodeError` を投げる） | 1・3 | 人が決める（**満たしていない受入基準**として PR に名指し） |
+| N-2 | テストが素通しにする変異 10 本（deny・ask の照合の `<引数>`、managed-only 下の deny・ask、`MANAGED_LAYERS` の managed.d、`allowManagedPermissionRulesOnly` の truthy、`.config.json` の書込可・通常ファイルの判定、`NotADirectoryError`、`managed_dropins` の OSError）と、`is_claude` の名前の照合・`TIMEOUT_OK` の `5m`・`expanduser` の 4 本 | 示せる（Verifier が各変異に陽性対照を添えた） | 無し（テストの網の穴。本体の挙動は正しい） | 人が決める |
