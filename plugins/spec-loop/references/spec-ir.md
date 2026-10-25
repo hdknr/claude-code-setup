@@ -150,7 +150,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
       "id": "F-001",
       "title": "注文の割引額を計算する",
       "source": ["spec/order.md"],
-      "qa": ["Q-001"],
+      "qa": ["Q-R-001"],
       "operation": {
         "id": "calc_discount",
         "method": "POST",
@@ -161,7 +161,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
       },
       "cases": [
         {"id": "F-001-C1", "title": "シルバーで 10000 円未満は割引なし",
-         "input": {"rank": "silver", "amount": 9999}, "expected": {"discount": 0}, "qa": ["Q-001"]},
+         "input": {"rank": "silver", "amount": 9999}, "expected": {"discount": 0}, "qa": ["Q-R-001"]},
         {"id": "F-001-C2", "title": "金額が負なら拒否する",
          "input": {"rank": "gold", "amount": -1}, "error": "INVALID_AMOUNT"}
       ]
