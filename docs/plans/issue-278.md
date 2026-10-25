@@ -99,7 +99,11 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 
 - **周の在り処**: ブランチ `issue/278-qa-number-loop-mark`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-278`・
   起点 `0330977`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `0330977fc31ed62314e1dbb8c16f876b946d8e46`
-- 関門: まだ
+- 実装: 済み（`99424a7`）。`check-all.py` 46/46 緑（初回は 3 本赤——`test-check-spec-exit.py`・`test-merge-versions.py` が
+  旧いエラー文 `` `D-001` の形でない`` を期待していた・この計画ファイルに件数の行が無かった。直して緑）
+- 実装中の発見: `scaffold.py` の並びの鍵が `int("S-001")` で落ちた（印つきの番号を指す試料で exit=2）——`number_order` に寄せた
+- 割り目（手順 4 の終わり）: 訊いた → 人間は「このまま続ける」を選んだ
+- 関門: まだ（次は手順 5 の Verifier 1 パス目と手順 6 の `/code-review` 1 パス目）
 - 反証・差し戻し: まだ
 - 交絡: 実験なし
 
