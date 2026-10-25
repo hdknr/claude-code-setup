@@ -84,7 +84,8 @@
 - ブランチ: `issue/394-cruise-env-check`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-394`
 - 起点: `0330977`（Merge pull request #401）
-- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `0330977fc31ed62314e1dbb8c16f876b946d8e46`
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `8e9751c95cc1866796612412e4c52e783277059e`
+  （1 パス目は `0330977fc31ed62314e1dbb8c16f876b946d8e46`。#389（#406）を取り込んだ `a57dc91` で系譜が動いたので、同じ式 `git merge-base origin/main HEAD` を当て直した）
 
 ## 関門の進捗（再開点）
 
@@ -94,7 +95,11 @@
 - `check-all.py`（実装の時点）: 47/47・失敗 0
 - Verifier: 1 パス目 済み（反証 3 件）
 - `/code-review`: 1 パス目 済み（指摘 10 件）
-- 反証・差し戻し: 1 パス目の 13 件のうち 11 件を直す（採否は下の表）→ 手順 4 へ差し戻し
+- 反証・差し戻し: 1 パス目の 13 件のうち 11 件を直す（採否は下の表）→ 手順 4 へ差し戻し → `16ddc51` で直した（テストは陽性対照が緑・変異 21 件すべて赤）
+- main の取り込み: `a57dc91`（#389 が 1.47.0 に先に到達 → 1.48.0 に上げた。衝突は塊ごとに解き、生成ブロックは main 側を取って再生成）
+- `check-all.py`（取り込みの後）: 48/48・失敗 0
+- 割り目（2 パス目の前）: AskUserQuestion で訊いた → **「ここで割る」**（2026-10-25）。再開は手順 5 の Verifier 2 パス目と `/code-review` 2 パス目から
+- **次に残っているもの: 手順 5 の Verifier の当て直し（2 パス目）と、手順 6 の `/code-review` の 2 パス目の両方**。2 パス目の指摘対応を始める直前に、その時点の HEAD を狭いパスの起点としてここに書く
 - 交絡を潰した手順: スリープの点検で、Claude 自身の `caffeinate -t 300` が「防止されている」を作る交絡を見つけ、判定から外した（上の「実測した前提」）
 
 ## 起票
