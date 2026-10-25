@@ -53,7 +53,7 @@
 
 ### この環境で証明できないもの
 
-- **本物の GitHub の挙動**: 下のブランチを base にした PR に対する `closingIssuesReferences` の中身、`gh pr edit --base` の後の CI の再実行。偽の `gh` と一時リポジトリでは当たらない。
+- **本物の GitHub の挙動**: 下のブランチを base にした PR に対する `closingIssuesReferences` の中身、`gh pr edit --base` の後の CI の再実行、下のブランチが GitHub 側で消えたときの上の PR の base の自動付け替え（1 パス目 C1）。偽の `gh` と一時リポジトリでは当たらない。
   ここに寄りかかる主張は書かない（S2 の守り方は `baseRefName` と既定ブランチの比較だけに依る）。人間のレビューに回す。
 
 ### 生成物
@@ -72,7 +72,8 @@
 | `ledger.py` に「積み先」の鍵を足すか | 採らない | 積んでいることは依存と状態から読める。積み先と base の正は計画ファイル（台帳はポインタ。`ledger.md` の分担）。2 箇所に書くと片方だけ古くなる |
 | 素の `gh pr merge` で base を付け替えずにマージする経路を機械で止めるか | 採らない（文書で守る） | `gh` を包む手段はこのリポジトリに無い。`merge-pr.py` を通る経路だけを機械で止める |
 | 利用者不在で積んでよいか | ここでは決めない | #393（判断の線）の範囲。stacked.md は「利用者が許した範囲に従う」まで |
-| `--force-with-lease` を使う | 採る（上の周の自分のブランチだけ） | `rebase --onto` の後は push が非 fast-forward になる。既定ブランチ・下のブランチには使わないと書いた |
+| `--force-with-lease` を使う | 採る（上の周の自分のブランチだけ・**期待する SHA を名指しする形**） | `rebase --onto` の後は push が非 fast-forward になる。素の形は fetch の直後では何も守らない（1 パス目 C2 で実測して直した） |
+| 下のブランチが GitHub 側で消えたときの base の自動付け替え（1 パス目 C1） | 残課題・未証明 | 本物の GitHub の挙動。stacked.md は「確かめていない」と書くところまで弱めた |
 | 本物の GitHub の挙動（下のブランチを base にした PR の `closingIssuesReferences`、`gh pr edit --base` の後の CI） | 未証明 | 偽の `gh` と一時リポジトリでは当たらない。主張をそこに寄りかからせない |
 | 素の `git rebase main` が衝突するか | 「衝突しうる」まで | 衝突したのは下に後からコミットを足した試料の 1 件だけ。衝突しない場合を否定していない |
 
@@ -120,6 +121,9 @@
 - 歯止め: 初回の `check-all.py` は 49 本中 `check-plan-counts.py` だけ赤（件数の行が無い）→足した。2 回目は `check-plan-scope.py` だけ赤（版の 2 ファイルを 1 行に書いていた）→分けた。3 回目（`25c3f4c`）で 49/49 緑（失敗 0 / 飛ばし 0）。
 - 実装のコミット: `ee115ac`・`25c3f4c`
 - 割り目（手順 4）: AskUserQuestion で「このまま続ける」が選ばれた（2026-10-25）
-- 関門 1 パス目: 起動済み（2026-10-25）——Verifier（`dev-loop:dev-loop-verifier`・sonnet・参照＋差分で `prompts/verifier.md` を読ませた）と `/code-review`（high・`review-handoff.md` を埋めて貼った）。Verifier は**反証 0 件**（軽微な所見 3 件。採否は下の「1 パス目の採否」）。読んだ行数 169 で `wc -l` と一致。`/code-review` は**報告待ち（結果ではない）**。base は `7865e116e98f6a4d0b1acdb5c3547d66590e7204`。関門に渡したときの HEAD（1 パス目の指摘対応の起点）: `78348f8ba0027b8d2b475106c167d79f65383870`
+- 関門 1 パス目: 起動済み（2026-10-25）——Verifier（`dev-loop:dev-loop-verifier`・sonnet・参照＋差分で `prompts/verifier.md` を読ませた）と `/code-review`（high・`review-handoff.md` を埋めて貼った）。Verifier は**反証 0 件**（軽微な所見 3 件。採否は下の「1 パス目の採否」）。読んだ行数 169 で `wc -l` と一致。`/code-review`（high）は**指摘 10 件**（C1〜C10）。採否は下の「1 パス目の採否」——直す 6 件（C2・C3・C4・C5・C6・C7・C9 のうち C3 は範囲の越え。計 7 件）・残課題 4 件（C1・C8・C10・V1/V2）。
+  指摘対応のコミットは下の「1 パス目の指摘対応」。手順 4 への差し戻し: 無し（Verifier 反証 0 件）。
+- 1 パス目の指摘対応: stacked.md（C2・C4・C5・C6・C7・C9、C1 は主張を「確かめていない」まで弱めた）・ledger.md（C3）。`check-all.py` は 1 回目 `skill-metrics.py --check` だけ赤（stacked.md の行数）→再生成→ 49/49 緑。
+  **残っているのは 2 つ**——Verifier の当て直し（2 パス目）と `/code-review` の 2 パス目。どちらも base は同じ `7865e11…`。base は `7865e116e98f6a4d0b1acdb5c3547d66590e7204`。関門に渡したときの HEAD（1 パス目の指摘対応の起点）: `78348f8ba0027b8d2b475106c167d79f65383870`
 
 - この周の起票: 0 件（暫定。手順 8 で人間に訊いて確定する）
