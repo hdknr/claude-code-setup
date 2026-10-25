@@ -165,6 +165,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `scripts/` に無い**——`plugins/dev-loop/skills/dev-loop/scripts/find-cycle.py`
     に置いてある（**`dev-loop` はどのリポジトリでも使うスキル**なので、
     対象リポジトリの `scripts/` に在ることを当てにできない）
+  - `test-check-unattended-env.py` - **利用者が不在になる前の環境点検**の回帰テスト（#394。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py`**（`test-find-cycle.py` と同じ形）。
+    **本体は CI からは呼ばない**——入力が利用者の `~/.claude` にある。**項目と、何を守らないかは本体の docstring を正とする**
   - `test-ledger.py` - **複数 Issue の台帳の回帰テスト**（#390。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/ledger.py`**（`test-find-cycle.py` と同じ形）。
     テンポラリに**本物の worktree** を作り、その中からでもメインの作業ツリーの台帳を指すことを見る
