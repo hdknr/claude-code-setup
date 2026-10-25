@@ -20,9 +20,11 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 
 ## 台帳の場所
 
-`<メインの作業ツリー>/.claude/plans/cruise-<名前>.json`。**メインの作業ツリーは
-`git rev-parse --path-format=absolute --git-common-dir` の親から決める**——worktree の中から走らせても
-同じファイルを指す（worktree の `.claude/plans/` は周を畳むと一緒に消える）。
+`<メインの作業ツリー>/.claude/plans/cruise-<名前>.json`。**メインの作業ツリーにいれば
+`git rev-parse --show-toplevel`、worktree の中なら共通ディレクトリ（`--git-common-dir`）が `.git` ならその親、
+そうでなければ共通ディレクトリの `core.worktree`（サブモジュール）から決め、どれでも決まらなければ 4**
+——worktree の中から走らせても同じファイルを指す（worktree の `.claude/plans/` は周を畳むと一緒に消える）。
+**共通ディレクトリの親を無条件に使わない**——`--separate-git-dir` のリポジトリとサブモジュールで外に書く。
 
 ## 台帳の形
 
@@ -55,18 +57,23 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | 0 | 通った（`next` で着手できるものが 0 件でも 0） |
 | 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形） |
 | 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り） |
-| 4 | 判定できなかった（git の外・台帳が無い・JSON が読めない・形が違う）。**「着手できるものなし」とは答えていない** |
+| 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
 
 守る:
 
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
+- **`--separate-git-dir` のリポジトリとサブモジュールでも、作業ツリーの外に書かない**——worktree の中から
+  メインの作業ツリーを決められなければ 4。
 - **在る台帳を `init` で上書きしない。**
 - **決まった一覧に無い状態・鍵を拒む**——綴りを誤った状態を書くと、`next` の判定から黙って外れる。
 - **依存の誤り（台帳に無い依存先・自己依存・循環）を、`add` でも `set deps=` でも拒む**——循環があると、どの Issue も永遠に着手できない。
 - **`next` は「未着手で、依存がすべてマージ済み」のものだけを出す**——依存が PR 中・止まっている・取り下げなら出さない。
-- **読めない台帳を「空」と読まない**——壊れた JSON・形の違う台帳・無い台帳は 4 で止まり、書き換えない。
+- **読めない台帳を「空」と読まない**——壊れた JSON・形の違う台帳（真偽値の番号を含む）・無い台帳は 4 で止まり、書き換えない。
+- **ファイルの上で中身の崩れた台帳（循環・無い依存先・同じ番号が 2 つ）に答えない**——手で直した台帳でも、
+  `next` に答えさせず、`set`・`add` を「拒んだ」（3）とも言わずに 4 で止まる。
+- **書けなかったときに、表に無い終了コードで終えない**——書けない・名前が長すぎる・`.claude/plans` がファイルなら 4。
 - **台帳の名前にパスの区切りと先頭のドットを許さない**——`.claude/plans/` の外に書かない。
 - **拒んだ操作では台帳を変えない**——全体を検査してから一時ファイルに書き、`os.replace` で置き換える。
 
@@ -115,17 +122,35 @@ class Usage(Exception):
     """引数が違う。"""
 
 
-def main_worktree(cwd=None):
-    """メインの作業ツリーの絶対パス。**worktree の中からでも同じ値を返す。**"""
+def _git(cwd, *args):
     try:
-        proc = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            cwd=cwd, capture_output=True, text=True, check=False)
+        proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
     except OSError as exc:
         raise Unknown(f"git を起動できなかった: {exc}") from exc
-    if proc.returncode != 0 or not proc.stdout.strip():
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
+def main_worktree(cwd=None):
+    """メインの作業ツリーの絶対パス。**worktree の中からでも同じ値を返す。**
+
+    **共通ディレクトリの親を無条件に使わない**——`--separate-git-dir` のリポジトリとサブモジュールでは、
+    共通ディレクトリが作業ツリーの直下に無い（`git worktree list` の先頭も同じ誤りを返す）。
+    """
+    lines = _git(cwd, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir").splitlines()
+    if len(lines) != 2:
         raise Unknown("git のリポジトリの中ではない（場所を決められない）")
-    return Path(proc.stdout.strip().splitlines()[0]).parent
+    git_dir, common = Path(lines[0]), Path(lines[1])
+    if git_dir == common:  # メインの作業ツリーにいる
+        top = _git(cwd, "rev-parse", "--show-toplevel")
+        if not top:
+            raise Unknown("作業ツリーの外にいる（場所を決められない）")
+        return Path(top)
+    if common.name == ".git":
+        return common.parent
+    worktree = _git(cwd, "--git-dir", str(common), "config", "--get", "core.worktree")
+    if worktree:  # サブモジュール: 共通ディレクトリの設定が作業ツリーを持つ
+        return (common / worktree).resolve()
+    raise Unknown(f"worktree の中から、メインの作業ツリーを決められない（共通ディレクトリ: {common}）")
 
 
 def ledger_path(name, cwd=None):
@@ -154,11 +179,23 @@ def load(path):
     if not isinstance(data, dict) or data.get("format") != FORMAT or not isinstance(data.get("issues"), list):
         raise Unknown(f"台帳の形が違う: {path}")
     for issue in data["issues"]:
-        if (not isinstance(issue, dict) or not isinstance(issue.get("number"), int)
+        if (not isinstance(issue, dict) or not is_number(issue.get("number"))
                 or issue.get("state") not in STATES or not isinstance(issue.get("deps"), list)
-                or not all(isinstance(d, int) for d in issue["deps"])):
+                or not all(is_number(d) for d in issue["deps"])
+                or not all(isinstance(issue.get(k, ""), str) for k in (*TEXT_KEYS, "updated"))):
             raise Unknown(f"台帳の形が違う: {path}: {issue!r}")
+    # **ファイルの上で既に崩れている台帳は、拒んだ（3）ではなく判定できなかった（4）**——
+    # 引数が悪いのではないので、3 と答えると原因を取り違える。`next` に答えさせてもいけない
+    try:
+        validate(data)
+    except Refused as exc:
+        raise Unknown(f"台帳の中身が崩れている: {path}: {exc}") from exc
     return data
+
+
+def is_number(value):
+    # bool は int の部分型なので、`true` を番号として通さないよう分けて見る
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def validate(data):
@@ -198,13 +235,19 @@ def validate(data):
 
 def save(path, data):
     validate(data)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    except OSError as exc:  # 書けない・名前が長すぎる・`.claude/plans` がファイル
+        raise Unknown(f"台帳を書けなかった（台帳は変えていない）: {path}: {exc}") from exc
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.write("\n")
         os.replace(tmp, path)
+    except OSError as exc:
+        Path(tmp).unlink(missing_ok=True)
+        raise Unknown(f"台帳を書けなかった（台帳は変えていない）: {path}: {exc}") from exc
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
