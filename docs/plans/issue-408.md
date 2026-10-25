@@ -9,7 +9,7 @@ PR #406（#389）の 2 パス目の `/code-review` の残課題 R2-2。
 - `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py` — 7 で終わるとき、積んだ `problems` も出す。「守る」に 1 行
 - `scripts/test-merge-pr.py` — 撤去が失敗し、かつ Issue の読みが失敗する試料。出力に撤去の失敗があることを見る。変異 1 件
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行のみ
-- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（1.47.0 → 1.47.1。不具合の修正なので patch）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（1.47.0 → 1.47.1。不具合の修正なので patch。main の #410 が 1.48.0 に上げたので、取り込んで 1.48.1）
 - `.claude-plugin/marketplace.json` — 同上
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（版の行で動く場合だけ。`skill-metrics.py` が書く）
 - `docs/plans/issue-408.md` — この計画
@@ -55,13 +55,20 @@ PR #406（#389）の 2 パス目の `/code-review` の残課題 R2-2。
 
 - なし
 
+## 直す線
+
+- `既定`。出所: 1 パス目の採否の前に `AskUserQuestion` で利用者が選んだ（2026-10-25。`.claude/dev-loop.md` に行が無い。規定は取り込んだ main の #395 から掛かる）
+
 ## 関門の進捗（再開点）
 
-- 周の在り処: ブランチ `issue/408-merge-pr-undetermined-problems`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-408`・起点 `e7aedee`・base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `e7aedeeb9b22dda924562cd6cbd183f916fbdf20`
+- 周の在り処: ブランチ `issue/408-merge-pr-undetermined-problems`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-408`・起点 `e7aedee`・base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ 1 パス目は `e7aedeeb9b22dda924562cd6cbd183f916fbdf20`。main の取り込み（`0e23c9c`）で系譜が動いたので式を当て直し、2 パス目からは `f21e2ebac131f21af533f581d3d941d89f198ae7`
 - 実装: `5a554dc` でコミット済み。`check-all.py` は 47 本中 46 本が緑で、落ちたのは件数の行の 1 本だけ（行を足したあと、単体で緑）
 - 割り目 1（手順 4 の後）: 利用者は「ここで割る」を選んだ（2026-10-25）。次は手順 5（Verifier の 1 パス目）から
-- 関門: まだ通していない
-- 反証・差し戻し: なし
+- 関門: 1 パス目を通した——Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 1 件・`/code-review`（high）指摘 7 件。どちらも同じ 1 件（版が main を下回る）を挙げ、実装への反証は 0 件
+- 1 パス目の指摘対応: main を取り込み版を 1.48.1 へ（`0e23c9c`）。直す行はこの 1 件だけ
+- 取り込み後の `check-all.py`: 47/47 本が緑（失敗 0 / 飛ばし 0）
+- 次: 2 パス目（手順 5 の Verifier の当て直しと手順 6 の `/code-review` の両方。base は `f21e2eb`）。どちらも未着手
+- 反証・差し戻し: 反証 1 件（X1）。手順 4 への差し戻しは版の取り込みだけで、実装は変えていない
 - 交絡: 実験は A2（修正前の本体で赤）——陽性対照は修正後の本体で同じ試料が緑になること。
   実測: 修正前の本体で新しい試料 2 件のうち「7」だけが赤（rc=7・撤去の失敗が出力に無い）、対照の「9」は緑。修正後は全試料・全変異（13 件）が緑／赤どおり
 - この周の起票: 0 件
@@ -71,3 +78,15 @@ PR #406（#389）の 2 パス目の `/code-review` の残課題 R2-2。
 | 論点 | 決着 | 理由 |
 | --- | --- | --- |
 | R2-1・N-1 を同じ周で直すか | 直さない | Issue の「範囲の外」 |
+
+### 関門の指摘の採否（1 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| P1-V1 / P1-C1: 版 1.47.1 が main（1.48.0・#410）を下回り `check-version-bump.py` が赤 | 示せる（`版が 1.48.0 -> 1.47.1 に下がっている`） | X1 | 直す（main を取り込み 1.48.1） |
+| P1-C2: テストの文字列の照合が stdout＋stderr のどこでもよく、7 の報告の中にあるかを見ない | 示せない（仮の書き換えが要る） | 無し | 残課題 |
+| P1-C3: `problems` が「Issue が閉じない」で埋まったあとに 7 になる経路の試料が無い | 示せない（回帰の仮定） | 無し（A1 の試料は撤去の失敗） | 残課題 |
+| P1-C4: docstring の終了コード 7 の行が「済んでいないこと」に触れない（計画の「2 箇所」のうち 1 箇所しか直していない） | 示せる（`merge-pr.py` の終了コード 7 の行） | 無し | 残課題（直す線は既定） |
+| P1-C5: 陽性対照の FAIL の行が期待の文字列を出さない | 示せない（失敗したときだけ出る） | 無し | 残課題 |
+| P1-C6: 変異が「狙った性質で」赤になったかを見ない（既存の作り） | 示せない | 無し | 残課題 |
+| P1-C7: 撤去の失敗の作り方が 1 種類（未追跡ファイル）だけ | 示せない | 無し（未証明に注記する価値はある） | 残課題 |
