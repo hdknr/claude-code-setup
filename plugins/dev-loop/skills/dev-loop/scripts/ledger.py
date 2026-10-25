@@ -22,7 +22,8 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 
 `<メインの作業ツリー>/.claude/plans/cruise-<名前>.json`。**メインの作業ツリーにいれば
 `git rev-parse --show-toplevel`、worktree の中なら共通ディレクトリ（`--git-common-dir`）が `.git` ならその親、
-そうでなければ共通ディレクトリの `core.worktree`（サブモジュール）から決め、どれでも決まらなければ 4**
+そうでなければ共通ディレクトリの `core.worktree`（サブモジュール）から決め、どれでも決まらなければ 4。
+共通ディレクトリが bare なら、メインの作業ツリーは無いので 4**
 ——worktree の中から走らせても同じファイルを指す（worktree の `.claude/plans/` は周を畳むと一緒に消える）。
 **共通ディレクトリの親を無条件に使わない**——`--separate-git-dir` のリポジトリとサブモジュールで外に書く。
 
@@ -64,16 +65,18 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 守る:
 
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
-- **`--separate-git-dir` のリポジトリとサブモジュールでも、作業ツリーの外に書かない**——worktree の中から
-  メインの作業ツリーを決められなければ 4。
+- **`--separate-git-dir` のリポジトリ（先の名前が `.git` でないもの）とサブモジュールと bare リポジトリの worktree でも、
+  作業ツリーの外に書かない**——worktree の中からメインの作業ツリーを決められなければ 4。
 - **在る台帳を `init` で上書きしない。**
 - **決まった一覧に無い状態・鍵を拒む**——綴りを誤った状態を書くと、`next` の判定から黙って外れる。
 - **依存の誤り（台帳に無い依存先・自己依存・循環）を、`add` でも `set deps=` でも拒む**——循環があると、どの Issue も永遠に着手できない。
 - **`next` は「未着手で、依存がすべてマージ済み」のものだけを出す**——依存が PR 中・止まっている・取り下げなら出さない。
-- **読めない台帳を「空」と読まない**——壊れた JSON・形の違う台帳（真偽値の番号を含む）・無い台帳は 4 で止まり、書き換えない。
+- **読めない台帳を「空」と読まない**——壊れた JSON・形の違う台帳（真偽値の番号・`format` が int の 1 でない・
+  決まった一覧に無い欄・ファイル名と違う `name` を含む）・無い台帳・読む権限の無い台帳は 4 で止まり、書き換えない。
 - **ファイルの上で中身の崩れた台帳（循環・無い依存先・同じ番号が 2 つ）に答えない**——手で直した台帳でも、
   `next` に答えさせず、`set`・`add` を「拒んだ」（3）とも言わずに 4 で止まる。
-- **書けなかったときに、表に無い終了コードで終えない**——書けない・名前が長すぎる・`.claude/plans` がファイルなら 4。
+- **書けなかったときに、表に無い終了コードで終えない**——書けない・読めない・名前が長すぎる・`.claude/plans` がファイルなら 4
+  （**在るかを確かめる段も含む**——`Path.exists()` は Python 3.13 以前で権限や名前の長さの誤りを例外で返す）。
 - **台帳の名前にパスの区切りと先頭のドットを許さない**——`.claude/plans/` の外に書かない。
 - **拒んだ操作では台帳を変えない**——全体を検査してから一時ファイルに書き、`os.replace` で置き換える。
 
@@ -85,6 +88,9 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **台帳と実物（PR・worktree・ブランチ）が一致しているか**——書いてある値を出すだけで、`gh` も `git worktree` も見ない。
   再開する側が実物で確かめる（`references/ledger.md`）。
 - **stacked な周**（依存が PR 中で、その上に積んで先に始める）——`next` には出さない（#392）。
+- **`--separate-git-dir` の先が `.git` という名前のリポジトリ**——worktree の中から、その git-dir の親を
+  メインの作業ツリーと読む（作業ツリーの外に書く）。**git 自身がこの配置を通常のリポジトリと区別しない**
+  （`git worktree list` の先頭も同じ値を返す）ので、ここからは見分けられない（#390 の 2 パス目）。
 """
 
 import argparse
@@ -100,6 +106,7 @@ from pathlib import Path
 STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "dropped")
 KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note")
 TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note")
+ISSUE_FIELDS = {"number", "updated", *KEYS}
 DONE = "merged"
 NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
 FORMAT = 1
@@ -140,6 +147,9 @@ def main_worktree(cwd=None):
     if len(lines) != 2:
         raise Unknown("git のリポジトリの中ではない（場所を決められない）")
     git_dir, common = Path(lines[0]), Path(lines[1])
+    if _git(cwd, "--git-dir", str(common), "config", "--bool", "core.bare") == "true":
+        # bare の worktree: 共通ディレクトリが `<dir>/.git` でも、その親は作業ツリーではない
+        raise Unknown(f"bare リポジトリで、メインの作業ツリーが無い（共通ディレクトリ: {common}）")
     if git_dir == common:  # メインの作業ツリーにいる
         top = _git(cwd, "rev-parse", "--show-toplevel")
         if not top:
@@ -169,17 +179,32 @@ def parse_deps(text):
     return [parse_number(t) for t in text.split(",") if t.strip()]
 
 
+def exists(path):
+    """**`Path.exists()`／`is_file()` を使わない**——Python 3.13 以前は権限・名前の長さの誤りを例外で返し、
+    3.14 は False を返す（権限の無いことを「無い」と言う）。無いときだけ False、他は判定できなかった。"""
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise Unknown(f"台帳の在り処を確かめられない: {path}: {exc}") from exc
+    return True
+
+
 def load(path):
-    if not path.is_file():
+    if not exists(path):
         raise Unknown(f"台帳が無い: {path}")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise Unknown(f"台帳を読めない: {path}: {exc}") from exc
-    if not isinstance(data, dict) or data.get("format") != FORMAT or not isinstance(data.get("issues"), list):
+    # `format` は int の 1 だけ——`true == 1`・`1.0 == 1` が通るので型も見る
+    if (not isinstance(data, dict) or set(data) != {"format", "name", "issues"}
+            or type(data["format"]) is not int or data["format"] != FORMAT
+            or data["name"] != path.name[len("cruise-"):-len(".json")] or not isinstance(data["issues"], list)):
         raise Unknown(f"台帳の形が違う: {path}")
     for issue in data["issues"]:
-        if (not isinstance(issue, dict) or not is_number(issue.get("number"))
+        if (not isinstance(issue, dict) or not set(issue) <= ISSUE_FIELDS or not is_number(issue.get("number"))
                 or issue.get("state") not in STATES or not isinstance(issue.get("deps"), list)
                 or not all(is_number(d) for d in issue["deps"])
                 or not all(isinstance(issue.get(k, ""), str) for k in (*TEXT_KEYS, "updated"))):
@@ -272,7 +297,7 @@ def ready(data):
 
 
 def cmd_init(path, name):
-    if path.exists():
+    if exists(path):
         raise Refused(f"台帳は既に在る（上書きしない）: {path}")
     save(path, {"format": FORMAT, "name": name, "issues": []})
     print(path)
@@ -290,8 +315,7 @@ def cmd_add(path, number, deps, title):
 
 
 def cmd_set(path, number, pairs):
-    data = load(path)
-    issue = find(data, number)
+    # `鍵=値` を先に読む——Issue を先に引くと、台帳に無い Issue への形の誤りが 2 ではなく 3 になる
     changes = {}
     for pair in pairs:
         if "=" not in pair:
@@ -300,6 +324,8 @@ def cmd_set(path, number, pairs):
         if key not in KEYS:
             raise Refused(f"決まった一覧に無い鍵 {key!r}（{', '.join(KEYS)}）")
         changes[key] = parse_deps(value) if key == "deps" else value
+    data = load(path)
+    issue = find(data, number)
     issue.update(changes)
     issue["updated"] = now()
     save(path, data)
