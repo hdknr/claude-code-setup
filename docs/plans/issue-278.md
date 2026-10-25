@@ -18,9 +18,17 @@
 - `scripts/test-check-qa-csv.py` — 試料・変異・`qa-csv.md` との突き合わせ
 - `scripts/test-scaffold.py` — `QA_NO` の変異と試料
 - `scripts/test-init-mkdocs.py` — フックの番号の形の変異と試料・`check-qa-csv.py` との突き合わせ
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
-- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
+- `scripts/test-check-spec-exit.py` — 期待するエラー文（書式の例が `D-S-001` になった。実装中に広げた）
+- `scripts/test-merge-versions.py` — 同上と、1 パス目の指摘 10 の試料・変異
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（`proposal/SKILL.md` は本文の例の番号も。1 パス目の指摘 3）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
 - `docs/plans/issue-278.md` — この計画
+- `plugins/spec-loop/references/spec-ir.md` — 1 パス目の指摘対応で広げた（例の番号の指し先。下の「1 パス目の指摘の採否」の 3）
+- `plugins/spec-loop/references/versions.md` — 同上（例の番号・番号の振り方の散文。3・5）
+- `plugins/spec-loop/references/spec-scope.md` — 同上（番号の前後。4）
 
 触らない:
 
@@ -70,8 +78,8 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 | --- | --- | --- | --- |
 | 1 | 印つきの番号（4 つの印 × 共有／内部）が検査を通る | `check-qa-csv.py` の `NUMBER`・`INTERNAL_NUMBER` | 試料（全印） |
 | 2 | 印と起票元が合わない行を落とす（共有・内部の両方。起票元に詳細の括弧があっても） | `check_row` | 試料＋変異 |
-| 3 | 印の無い前の形の番号（`Q-001`・`D-001`）を今までどおり通す | 同上 | 既存の試料（GOOD_ROWS・記事の行・`qa-csv.md` の例） |
-| 4 | 層の判定: `D-S-001` は内部、`Q-D-001` は共有 | `is_internal_number`（`merge-versions`・`diff-versions`・`scaffold`・`build-proposal`・`check-signoff` が読む） | 試料（`is_internal_number` を直接と、`merge-versions` の `removed.csv` 経由で 1 つ） |
+| 3 | 印の無い前の形の番号（`Q-001`・`D-001`）を今までどおり通す | 同上 | 既存の試料（GOOD_ROWS・記事の行。**`qa-csv.md` の例は印つきに振り直したので前の形を含まない**——1 パス目の指摘 11 で直した） |
+| 4 | 層の判定: `D-S-001` は内部、`Q-D-001` は共有 | `is_internal_number`（`merge-versions`・`diff-versions`・`scaffold`・`build-proposal`・`check-signoff` が読む） | 試料（`is_internal_number` を直接と、`merge-versions` の `removed.csv` 経由で 1 つ——**後者は 1 パス目まで無かった**（指摘 10）。試料「印つきの内部の行を removed.csv で消す」と、前の形だけを内部と読む変異を足した） |
 | 5 | 中間表現の `qa` が印つきの番号（共有・内部）を指せ、内部の表を写す | `scaffold.py` の `QA_NO` と層の判定 | 試料 |
 | 6 | 本文の印つきの番号がリンクになり、前の形も今までどおり | フックの `QA_NUMBER` | 試料＋変異。印の集合を `check-qa-csv.py` と突き合わせる |
 | 7 | 決まりの原本と写しが一致する（印の対応・書式） | `qa-csv.md` ↔ `check-qa-csv.py` | `test-check-qa-csv.py` の突き合わせ＋参照の変異 |
@@ -103,8 +111,12 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
   旧いエラー文 `` `D-001` の形でない`` を期待していた・この計画ファイルに件数の行が無かった。直して緑）
 - 実装中の発見: `scaffold.py` の並びの鍵が `int("S-001")` で落ちた（印つきの番号を指す試料で exit=2）——`number_order` に寄せた
 - 割り目（手順 4 の終わり）: 訊いた → 人間は「このまま続ける」を選んだ
-- 関門: まだ（次は手順 5 の Verifier 1 パス目と手順 6 の `/code-review` 1 パス目）
-- 反証・差し戻し: まだ
+- 関門 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）の報告が 2 通届いた（起動は 1 回）。1 通は反証 0 件（軽微 1 件＝`versions.md:71`。
+  `/code-review` の 5 と同じ）、もう 1 通は**反証 1 件**——`check-all.py` で `check-plan-scope.py` が落ちる（計画の「触る」の 1 行に
+  パターンを 3 つ並べており、最初の 1 つしか読まれない・`test-check-spec-exit.py` と `test-merge-versions.py` が無い）。
+  **実装時の「46/46 緑」の自己申告と食い違う**——直して `check-plan-scope.py` を当て直し、緑（25 パターン・23 ファイル）。採否の表の 15。
+  `/code-review`（high）の報告も 2 通（8 件と 10 件。重なりを除いて 14 件）→ 直す 9・残課題 5（下の「1 パス目の指摘の採否」）。base は `0330977fc31ed62314e1dbb8c16f876b946d8e46`
+- 反証・差し戻し: Verifier の反証 0 件。`/code-review` の指摘対応で手順 4 に戻った（受入基準 8 の散文。範囲を上で広げた）
 - 交絡: 実験なし
 
 ## 手順 8
@@ -117,4 +129,24 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 | --- | --- | --- |
 | 新しい行が印をつけているかを検査しない | 採った（限界） | D2。表から新旧を見分けられない |
 | 行の並びを検査しない | 採った（限界） | D4 |
-| 同じループを 2 つ並行して動かすとぶつかる | 採った（限界） | D3。唯一の制約として書く |
+| 同じ印の番号を 2 か所で同時に振るとぶつかる | 採った（限界） | D3。**1 パス目で理由を直した**——「同じループを 2 つ並行して動かさない」は dev-loop（Issue ごとに周を並行して回す）と層の移し替えで成り立たない。ぶつかったら後からマージする側を振り直す、と書く |
+
+### 1 パス目の指摘の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| 1 | `D` の印は dev-loop の並行する周でぶつかる。「唯一の制約」が偽 | 示せる——`git worktree list` に dev-loop の周が数十本並行している（このリポジトリ） | 8 | 直す（`qa-csv.md`・`spec-gap.md`） |
+| 2 | 層を移す側が元の起票元の印で振ると、そのループとぶつかる | 1 と同じ文の誤り（並行の実物は無い） | 8 | 直す（1 と同じ文で） |
+| 3 | `qa-csv.md` の例を振り直したので、他の散文の例の番号（`proposal` の `Q-003`・`spec-ir.md` の `Q-001`・`tree.md` の `Q-005`・`versions.md` の `Q-003`）が指し先を失った | 示せる——`grep` で該当行 | 8 | 直す |
+| 4 | `spec-scope.md` の「番号が後」が印つきと前の形の前後を決めていない | 示せる——`spec-scope.md:175` と `qa-csv.md` の並び | 8 | 直す（`qa-csv.md` の並びを指す） |
+| 5 | `versions.md:71` の「前の版までの続きの番号」が印ごとの連番を言わない | 示せる——`versions.md:71` | 8 | 直す |
+| 6 | 前の版の行を別のループが問い直して起票元を変えると、印と合わずに落ちる。起票元を保つ決まりが無い | 示せる——`check_row` が印と起票元の不一致を落とす | 8 | 直す（起票元も元のまま、と書く） |
+| 7 | `Q-S-001` と `Q-S-0001` を別の番号として通す | 示せない（実データに無い。前の形の `Q-001`/`Q-0001` でも同じで、この周が作った形ではない） | 無し | 残課題 |
+| 8 | spec-review・feasibility が、同じ実行で 2 行目を振る前に重ね合わせを作り直す注意を持たない | 示せない（起きた記録が無い。この周の前から無い注意） | 無し | 残課題 |
+| 9 | dev-loop 1.47.0 が印つきの番号を振るが、対象リポジトリの spec-loop が 0.23.0 以前なら検査が落とす。落とし先が無い | 示せる——base（`0330977`）の `check-qa-csv.py` の `NUMBER` は `Q-[0-9]{3,}` だけを通す | 8 | 直す（`spec-gap.md` に前の形へ落とす 1 文） |
+| 10 | 不変条件 4 の守り方「`merge-versions` の `removed.csv` 経由で 1 つ」の試料が無い | 示せる——`test-merge-versions.py` の差分はエラー文の期待値だけ | 4 | 直す（試料と変異を足した） |
+| 11 | 不変条件 3 の守り方に `qa-csv.md` の例を挙げるが、例は全部印つきになった | 示せる——`qa-csv.md` の例の行 | 3（守り方の記述） | 直す（計画の記述） |
+| 12 | 書式違反のエラー文の例が起票元に依らず `Q-S-001` | 示せる（文言）が、受入基準を破らない | 無し | 残課題 |
+| 13 | `number_order` が呼ぶたびに印の順を作り直し、正規表現を 2 回当てる | 示せない（効率。失敗ではない） | 無し | 残課題 |
+| 15 | （Verifier）`check-plan-scope.py` が落ちる | 示せる——`check-all.py` の集計行「落ちたもの: check-plan-scope.py」 | 9 | 直す（計画の「触る」を 1 行 1 パターンに） |
+| 14 | `test-check-qa-csv.py` の「`開発` の行に印の無い Q-001」の注記が、試料の選び方の理由として判別していない | 示せる（変異は起票元に依らず赤）が、試料は変異を殺している | 無し | 残課題 |
