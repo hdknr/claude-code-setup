@@ -68,7 +68,10 @@ Issue 本文の「案」は検査対象であって要件ではない（とく�
     - クォートしない zsh では `plugins/b`（手元に無い）が落ちた。
     - R1（Already up to date の merge ＋ `reset --soft`）・R2（取り込んだ後の周のコミット）は、旧い形が空／混ざる、新しい形が変わらない、を同じリポジトリで並べて見た。
     - 実データ: `47a45e9`（#389 の取り込み）で、新しい形は 8 件（`A scripts/check-plan-counts.py` を含み、`plugins/spec-loop/scripts/` の 3 件を含む）、旧い形の `-- scripts/` は 5 件。
-- 関門: 未着手
+- 実装のコミット: `32824c2`。`check-all.py` 47/47 緑（初回は件数の行を足す前に走り `check-plan-counts.py` だけ赤→足して単独で再実行し緑）
+- 割り目（手順 4）: AskUserQuestion で「ここで割る」が選ばれた（2026-10-25）
+- 関門: 未着手。次は手順 5 から——Verifier（`dev-loop:dev-loop-verifier`・sonnet）と `/code-review` の 1 パス目。
+  base は `e7aedeeb9b22dda924562cd6cbd183f916fbdf20`。1 パス目の指摘対応の起点は、関門に渡すときの HEAD の SHA をここに書く
 
 ## 起票
 
