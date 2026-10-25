@@ -83,9 +83,12 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 
 - **周の在り処**: ブランチ `issue/404-provisional-state-only`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-404`・
   起点 `0330977`・base の参照 `origin/main`・base の SHA `0330977fc31ed62314e1dbb8c16f876b946d8e46`
-- 関門: まだ
+- 実装: 済み（`da67dab`）。`check-all.py` 46/46 緑（ローカル）
+- 関門: 1 パス目を起動（Verifier `dev-loop:dev-loop-verifier`・sonnet／`/code-review` high）——報告を回収する前にセッションが切れた（`/clear`）。
+  **再開した周で 1 パス目を回し直す**（2026-10-25。`resume.md` の「報告待ちは済んでいない」）——**報告待ち（進捗ではない）**
 - 反証・差し戻し: まだ
-- 交絡: 実験なし（まだ）
+- 交絡: 実験なし（変異テストは試料の判別を見るもので、主張を支える実験ではない）
+- 割り目 1（手順 4 の完了時）: 訊いた（AskUserQuestion）→ **このまま続ける**
 - この周の起票: 0 件
 
 ## 既知の限界・決着済みの論点
