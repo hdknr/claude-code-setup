@@ -111,7 +111,7 @@
 
 ## 起票
 
-- この周の起票: 0 件
+- この周の起票: 0 件（2026-10-25 にマージ前に訊いた——起票しない）
 
 ## 既知の限界・決着済みの論点
 
@@ -159,5 +159,5 @@
 
 | # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- |
-| N-1 | V2-1 の修正で `read_text` を `OSError` だけの `try` に移したため、UTF-8 として読めない設定ファイルで `UnicodeDecodeError` が素通しになり、Traceback・終了コード 1 で終わる（修正前は `ValueError` で `Unreadable` だった） | 示せる（著者も再現: `\xff\xfe{` を書いたファイルで `read_json` が `UnicodeDecodeError` を投げる） | 1・3 | 人が決める（**満たしていない受入基準**として PR に名指し） |
+| N-1 | V2-1 の修正で `read_text` を `OSError` だけの `try` に移したため、UTF-8 として読めない設定ファイルで `UnicodeDecodeError` が素通しになり、Traceback・終了コード 1 で終わる（修正前は `ValueError` で `Unreadable` だった） | 示せる（著者も再現: `\xff\xfe{` を書いたファイルで `read_json` が `UnicodeDecodeError` を投げる） | 1・3 | 人が決めた → **この PR で直す**（2026-10-25 に AskUserQuestion で回答。`read_json` の 2 つ目の except に ValueError を足し、テスト 1 本・変異 1 本を足した。関門には当て直していない） |
 | N-2 | テストが素通しにする変異 10 本（deny・ask の照合の `<引数>`、managed-only 下の deny・ask、`MANAGED_LAYERS` の managed.d、`allowManagedPermissionRulesOnly` の truthy、`.config.json` の書込可・通常ファイルの判定、`NotADirectoryError`、`managed_dropins` の OSError）と、`is_claude` の名前の照合・`TIMEOUT_OK` の `5m`・`expanduser` の 4 本 | 示せる（Verifier が各変異に陽性対照を添えた） | 無し（テストの網の穴。本体の挙動は正しい） | 人が決める |

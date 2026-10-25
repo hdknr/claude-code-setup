@@ -161,7 +161,8 @@ def read_json(path):
         text = p.read_text(encoding="utf-8")
     except (FileNotFoundError, NotADirectoryError):
         return None
-    except OSError as e:
+    except (OSError, ValueError) as e:
+        # ValueError: UTF-8 として読めない（UnicodeDecodeError）——例外で落とさない
         return Unreadable(p, str(e))
     try:
         data = json.loads(text)

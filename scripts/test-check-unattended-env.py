@@ -190,6 +190,12 @@ def suite(script: Path) -> list[str]:
         finally:
             locked.chmod(0o755)
         check("無いファイルは未設定", mod.read_json(Path(tmp) / "nope.json") is None, bad)
+        binary = Path(tmp) / "binary.json"
+        binary.write_bytes(b"\xff\xfe{")
+        try:
+            check("UTF-8 として読めなければ判定できない", isinstance(mod.read_json(binary), mod.Unreadable), bad)
+        except ValueError:
+            check("UTF-8 として読めないファイルで例外を投げない", False, bad)
     with scenario(script) as env:
         env.all_good()
         _, items, _ = run(mod, env, flag=env.project / "no-such-flag.json")
@@ -416,8 +422,12 @@ MUTATIONS = {
         "    except ValueError as e:\n        return {}"),
     "exists() のように読めない親を無いとする": (
         "    except (FileNotFoundError, NotADirectoryError):\n        return None\n"
-        "    except OSError as e:\n        return Unreadable(p, str(e))",
-        "    except OSError:\n        return None"),
+        "    except (OSError, ValueError) as e:\n",
+        "    except (FileNotFoundError, NotADirectoryError, OSError):\n        return None\n"
+        "    except ValueError as e:\n"),
+    "読めない文字コードで例外を投げる": (
+        "    except (OSError, ValueError) as e:\n        # ValueError",
+        "    except OSError as e:\n        # ValueError"),
     "層を低い順に見る": (
         "    for name, _path, data in reversed(stack):\n        if only is not None",
         "    for name, _path, data in stack:\n        if only is not None"),
