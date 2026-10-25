@@ -481,6 +481,9 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 1. `git merge origin/main`
 2. **生成ブロック（設計ドキュメント §8.2）が衝突したら、main 側を取ってから
    `python3 scripts/skill-metrics.py` で書き直す**——手で両側を混ぜない（生成ブロックは手で書かない）
+   - **衝突は塊ごとに解く。`git checkout --ours`／`--theirs` でファイルごと取らない**——**衝突していない側の変更まで捨てる。**
+     #368 の周では、版の行だけが衝突した 7 ファイルを `--ours` で取り、**main（#288）の `SKILL.md` の本文の変更を落としかけた**。
+     **戻すなら `git checkout -m -- <ファイル>`**（衝突の印を付けた状態に作り直す）。4 番目の「正味の差分」で気づける
 3. **版を次の patch に上げる**（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）
 4. `git diff origin/main` で、**main との正味の差分がその周の変更だけ**であることを見る
 5. `python3 scripts/check-all.py` を回し、push したあと `gh pr checks <n>` で PR 側を見る
