@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import re
@@ -263,13 +264,16 @@ PROVISIONAL_MUTATIONS = [
 ]
 
 # 暫定の判別を読む側（#404）。どれも `is_provisional` を呼び、`暫定反映` を自分で比べない——
-# 判別を状態だけにしたので、写しに戻しても挙動は同じ（変異が挙動では殺せない）。だから構造で見る
-READERS = {"build-proposal.py": "qa.is_provisional(", "qa-to-pptx.py": "qa.is_provisional(",
-           "check-spec-exit.py": "pptx.qa.is_provisional(", "scaffold.py": "qa.is_provisional(",
-           "check-signoff.py": "qa.is_provisional("}
-# `PROVISIONAL` と状態を比べる形（`==`・`!=`・`in`）と、状態の名前の文字列
-COMPARES = re.compile(r"""(?:[=!]=|\bin\b)[^\n#]*\bPROVISIONAL\b|\bPROVISIONAL\b\s*[=!]=|["']暫定反映["']""")
+# 判別を状態だけにしたので、写しに戻しても挙動は同じ（変異が挙動では殺せない）。だから構造で見る:
+# - 呼ぶ数を固定する——呼ぶ箇所の 1 つを写しに替えると数が減る（書き方に依らない。`.startswith` でも `in` でも）
+# - 判別の部品（状態の名前・定数）に触れてよいのは、メッセージへの差し込み（f-string の `{qa.PROVISIONAL}`）だけ
+# 守らないもの: 呼ぶ箇所を残したまま、新しい経路で部品を使わずに暫定を決める形（`.startswith("暫定")` を足す）。
+# 呼ぶ数は、読む箇所を足したら直す（数が違うと赤になり、どのファイルかを言う）
+READERS = {"build-proposal.py": 3, "qa-to-pptx.py": 4, "check-spec-exit.py": 1, "scaffold.py": 1, "check-signoff.py": 1}
+JUDGE_NAMES = {"PROVISIONAL", "INTERNAL_FORBIDDEN", "STATES"}
+JUDGE_TEXTS = {"暫定反映", *JUDGE_NAMES}
 HOOK_JUDGE = '    return row["状態"].strip() == QA_PROVISIONAL\n'
+HOOK_CALLS = 2
 READER_MUTATIONS = [
     ("scaffold を写しに戻す", "scaffold.py", "if qa.is_provisional(row)]",
      'if row["状態"].strip() == qa.PROVISIONAL]'),
@@ -281,8 +285,26 @@ READER_MUTATIONS = [
      'mark = "（暫定）" if row["状態"].strip() == "暫定反映" else ""'),
     ("提案書を写しに戻す（in で）", "build-proposal.py", "provisional = [r for r in qa_rows if qa.is_provisional(r)]",
      'provisional = [r for r in qa_rows if r["状態"].strip() in (qa.PROVISIONAL,)]'),
+    # 1 パス目のレビューが素通りを示した形（#404）
+    ("資料を写しに戻す（内部で使わない状態の集合で）", "qa-to-pptx.py", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if row["状態"].strip() in qa.INTERNAL_FORBIDDEN else ""'),
+    ("資料を写しに戻す（startswith で）", "qa-to-pptx.py", "    if qa.is_provisional(row):",
+     '    if row["状態"].startswith("暫定"):'),
+    ("資料を写しに戻す（定数を左に）", "qa-to-pptx.py", "    if qa.is_provisional(row):",
+     '    if qa.PROVISIONAL in row["状態"]:'),
+    ("提案書を写しに戻す（内部で使わない状態の集合で）", "build-proposal.py",
+     "provisional = [r for r in qa_rows if qa.is_provisional(r)]",
+     'provisional = [r for r in qa_rows if r["状態"].strip() in qa.INTERNAL_FORBIDDEN]'),
+    ("scaffold で getattr から比べる", "scaffold.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == getattr(qa, "PROVISIONAL")]'),
+    ("scaffold で定数を別名で取り込む", "scaffold.py", "from __future__ import annotations\n",
+     "from __future__ import annotations\nfrom check_qa_csv import PROVISIONAL as P  # noqa\n"),
     ("フックを写しの外で比べる", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
      'provisional = sum(row["状態"] == QA_PROVISIONAL for row in rows)'),
+    ("フックを写しの外で比べる（文字列で）", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
+     'provisional = sum(row["状態"] == "暫定反映" for row in rows)'),
+    ("フックで暫定を数えない", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
+     "provisional = 0"),
 ]
 
 
@@ -297,22 +319,58 @@ def reader_sources() -> dict[str, str]:
     return sources
 
 
+def judge_touches(tree: ast.AST, names: set[str], texts: set[str], allowed: tuple[ast.AST, ...] = ()) -> list[int]:
+    """判別の部品（名前・状態の文字列）に触れている行。f-string の差し込みの中と、`allowed` の節の中は除く。"""
+    skip = {id(sub) for node in allowed for sub in ast.walk(node)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FormattedValue):
+            skip |= {id(sub) for sub in ast.walk(node.value)}
+    lines = []
+    for node in ast.walk(tree):
+        if id(node) in skip:
+            continue
+        if (isinstance(node, ast.Name) and node.id in names) or (isinstance(node, ast.Attribute) and node.attr in names) \
+                or (isinstance(node, ast.Constant) and node.value in texts):
+            lines.append(node.lineno)
+        elif isinstance(node, ast.ImportFrom):
+            lines += [node.lineno for alias in node.names if alias.name in names]
+    return sorted(set(lines))
+
+
+def calls_to(tree: ast.AST, name: str) -> int:
+    return sum(isinstance(node, ast.Call) and ((isinstance(node.func, ast.Attribute) and node.func.attr == name)
+                                               or (isinstance(node.func, ast.Name) and node.func.id == name))
+               for node in ast.walk(tree))
+
+
 def reader_problems(sources: dict[str, str]) -> list[str]:
-    problems = [f"{name}: {call} を呼んでいない" for name, call in READERS.items() if call not in sources.get(name, "")]
+    problems = []
     for name, text in sources.items():
         if name == SCRIPT.name:
             continue
+        try:
+            tree = ast.parse(text)
+        except SyntaxError as e:
+            problems.append(f"{name}: 構文を読めない（{e}）")
+            continue
         if name == HOOK.name:
-            # フックは写しを 1 つだけ持つ（`qa_is_provisional`）。比べてよいのはその本体の 1 行だけ
+            # フックは写しを 1 つだけ持つ（`qa_is_provisional`）。部品に触れてよいのは、その本体と定数の定義だけ
             if HOOK_JUDGE not in text:
                 problems.append(f"{name}: qa_is_provisional の本体（状態だけで決める 1 行）が無い")
-            rest = text.replace(HOOK_JUDGE, "", 1)
-            if re.search(r"(?:[=!]=|\bin\b)[^\n#]*\bQA_PROVISIONAL\b|\bQA_PROVISIONAL\b\s*[=!]=", rest):
-                problems.append(f"{name}: qa_is_provisional の外で暫定を比べている")
+            allowed = tuple(node for node in tree.body
+                            if (isinstance(node, ast.FunctionDef) and node.name == "qa_is_provisional")
+                            or (isinstance(node, ast.Assign)
+                                and any(isinstance(t, ast.Name) and t.id == "QA_PROVISIONAL" for t in node.targets)))
+            for line in judge_touches(tree, {"QA_PROVISIONAL"}, {"暫定反映", "QA_PROVISIONAL"}, allowed):
+                problems.append(f"{name}:{line}: qa_is_provisional の外で暫定を決めている")
+            if (got := calls_to(tree, "qa_is_provisional")) != HOOK_CALLS:
+                problems.append(f"{name}: qa_is_provisional を呼ぶ数が {got}（期待: {HOOK_CALLS}）")
             continue
-        for number, line in enumerate(text.splitlines(), 1):
-            if COMPARES.search(line):
-                problems.append(f"{name}:{number}: 暫定を is_provisional を通さずに比べている: {line.strip()}")
+        for line in judge_touches(tree, JUDGE_NAMES, JUDGE_TEXTS):
+            problems.append(f"{name}:{line}: 暫定を is_provisional を通さずに決めている")
+        if name in READERS and (got := calls_to(tree, "is_provisional")) != READERS[name]:
+            problems.append(f"{name}: is_provisional を呼ぶ数が {got}（期待: {READERS[name]}）")
+    problems += [f"{name}: 読む側が無い" for name in READERS if name not in sources]
     return problems
 
 

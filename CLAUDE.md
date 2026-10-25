@@ -43,7 +43,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。共有の `shared/qa.csv` と内部の
       `spec/qa-dev.csv` を**ファイルの名前で見分ける**——#339。**行の層を番号で決める関数 `is_internal_number` もここに 1 つだけ置き、
       他のスクリプトはそれを読む**——#353。**暫定の行の判別 `is_provisional`（`状態` だけで決め、`回答` の文言は見ない）も同じで、
-      全段が読み、テストが静的に見る**——#404。テストは `scripts/test-check-qa-csv.py`）
+      全段が読み、テストが静的に見る**（MkDocs のフックだけは単独で動くので写しを持ち、テストが本体と突き合わせる）——#404。テストは `scripts/test-check-qa-csv.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
       `scripts/test-qa-to-pptx.py`）

@@ -16,9 +16,16 @@
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 判別の指し先・暫定の節の説明
 - `plugins/spec-loop/README.md` — proposal の 1 行
 - `scripts/test-check-qa-csv.py` — 判別の試料（否定の書き方を含む）・読む側の静的な確かめ・参照との突き合わせ
-- `scripts/test-build-proposal.py` / `scripts/test-qa-to-pptx.py` / `scripts/test-check-spec-exit.py` / `scripts/test-scaffold.py` / `scripts/test-check-signoff.py` / `scripts/test-init-mkdocs.py` — 同じ行の試料と変異
+- `scripts/test-build-proposal.py` — 同じ行の試料と変異
+- `scripts/test-qa-to-pptx.py` — 同上
+- `scripts/test-check-spec-exit.py` — 同上
+- `scripts/test-scaffold.py` — 同上
+- `scripts/test-check-signoff.py` — 同上
+- `scripts/test-init-mkdocs.py` — 同上（1 パス目の P1-3 で状態の空白の試料も）
 - `CLAUDE.md` — `build-proposal.py` ほかの行
-- `plugins/spec-loop/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` / `plugins/spec-loop/skills/*/SKILL.md` — 版（minor）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（minor）
+- `.claude-plugin/marketplace.json` — 版（minor）
+- `plugins/spec-loop/skills/*/SKILL.md` — 版（minor）。proposal は本文も（判別の指し先・移す手順の指し先——1 パス目の P1-7）
 - `docs/plans/issue-404.md` — この計画
 
 触らない:
@@ -85,8 +92,11 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
   起点 `0330977`・base の参照 `origin/main`・base の SHA `0330977fc31ed62314e1dbb8c16f876b946d8e46`
 - 実装: 済み（`da67dab`）。`check-all.py` 46/46 緑（ローカル）
 - 関門: 1 パス目を起動（Verifier `dev-loop:dev-loop-verifier`・sonnet／`/code-review` high）——報告を回収する前にセッションが切れた（`/clear`）。
-  **再開した周で 1 パス目を回し直す**（2026-10-25。`resume.md` の「報告待ちは済んでいない」）——**報告待ち（進捗ではない）**
-- 反証・差し戻し: まだ
+  **再開した周で 1 パス目を回し直した**（2026-10-25）。**前のセッションの 2 本も遅れて届いた**ので、4 本とも票に数える:
+    - Verifier（前のセッション）: 反証 0 件・軽微 2 件（静的な確かめの取りこぼし＝P1-1 と同じ・既知の残課題の再掲）
+    - Verifier（再開後）: **反証 0 件**（7 本のテストと変異で確かめた。陽性対照あり）
+    - `/code-review`（前のセッション）: 10 件 ／ `/code-review`（再開後）: 8 件（重複を畳んで下の採否の表に 13 行）
+- 反証・差し戻し: 1 パス目の指摘のうち 8 行を直す（手順 4 へ差し戻し）。2 パス目はまだ
 - 交絡: 実験なし（変異テストは試料の判別を見るもので、主張を支える実験ではない）
 - 割り目 1（手順 4 の完了時）: 訊いた（AskUserQuestion）→ **このまま続ける**
 - この周の起票: 0 件
@@ -100,3 +110,21 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 | 写しに戻す変異を挙動で殺す | 採らない | 同値なので殺せない（D4）。静的に見る |
 | 提案書の暫定の節の中身（1 件以上）を CLI の試料で当てる | 採らない（`compose` を直接呼んで当てる） | 照合の 3 の後では到達しない。`test-build-proposal.py` が `compose` に暫定・確定・未決定の 3 行を渡し、節の振り分けの変異 3 本を殺す |
 | 公開ページ `docs/plugins/index.md:742` の「中間表現が暫定の回答の Q&A を指していれば止めます」 | 残課題（触らない） | 実際は指すかに依らず止まる（#325 の 2 パス目からの古い記述）。この周の前からある食い違いで、判別の決定ではない |
+
+### 1 パス目の指摘の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| P1-1 | 静的な確かめ（`COMPARES`）が `in qa.INTERNAL_FORBIDDEN`・`.startswith(...)`・`qa.PROVISIONAL in ...`・別名・`getattr` の写しを取りこぼす。呼ぶ箇所が複数のファイルは 1 箇所を写しに替えても「呼んでいない」に当たらない | 示せる（両レビューが `reader_problems` に変異した本文を渡して `[]`） | 2・7 | 直す（AST で見る・呼ぶ数を固定する） |
+| P1-2 | フックは文字列 `"暫定反映"` との比較と `provisional = 0` を素通しする | 示せる（同上） | 2・7 | 直す（同上） |
+| P1-3 | フックの `qa_section` が `反映済み` を空白を落とさずに比べ、`暫定反映` は落として比べる（この周で食い違った） | 示せる（` 反映済み` の行が確認中に数えられる。コードを読めば決まる） | 3 | 直す（両方 `.strip()`） |
+| P1-4 | `tree.md` の移す手順で、リリースした版の確かめが表を直した後（手順 3）にあり、「上の手順 1」が節の中の手順 1 と読める。手順 4 の理由（「同じ理由」）が誤り——古いタグは読めて照合は 0 を返す | 示せる（本文の順と、`test-check-signoff.py` の「文言だけ暫定の反映済みは照合を止めない」が 0） | 6 | 直す |
+| P1-5 | 候補の洗い出しの `grep` が、`回答` が複数行の行で `状態` と「暫定」を別の物理行に分け、取りこぼす | 示せる（複数行のセルの CSV に `grep` を当てれば `反映済み` の行に「暫定」が出ない） | 6 | 直す（`csv` で読む 1 行にする） |
+| P1-6 | `qa-csv.md` の移す手順の指し先が親の節（「Q&A 表を移す」＝見出しの移し方）で、0.24.0 の小節ではない | 示せる（本文） | 6 | 直す |
+| P1-7 | proposal スキルが移す手順を指さず、前の形の表のまま提案書を作ると、暫定のつもりの行が主な決定事項に載る（照合は 0） | 示せる（P1-4 と同じテスト） | 6 | 直す（手順 3 の前に指す） |
+| P1-8 | `CLAUDE.md` が「全段が読み」と書くが、フックは写しを持つ | 示せる（本文） | 2（の記述） | 直す |
+| P1-9 | proposal の frontmatter・JSON 2 箇所の説明が「暫定の決定を合意と分けて載せる」のまま（節は常に 0 件） | 示せない（節は 0 件で出るので偽ではない。誤読の余地だけ） | 無し | 残課題 |
+| P1-10 | proposal `SKILL.md` の「推奨案の根拠に暫定の回答を引くときは暫定と明記」は、承認したタグの時点に暫定の行が無いので空文 | 示せない（空文で、誤った判別を指示してはいない。判別は `qa-csv.md` を指す） | 無し | 残課題 |
+| P1-11 | `build-proposal.py` の v2 の注記「前の版までの Q&A の暫定の行はここに載らない」が古い（照合が v1〜vn を重ねて 3 で止めるので前の版にも残らない） | 示せない（空で真。#374 からある文） | 無し | 残課題 |
+| P1-12 | `build-proposal.py` の `done` から `and not is_provisional` を外した——将来判別を広げると二重に載る | 示せない（D1 の下では同値。「将来」） | 無し | 残課題 |
+| P1-13 | `test-qa-to-pptx.py` の Q-007 は `read_pending` が先に落とすので、資料の段では判別を見分けない（文言に戻す変異を置いていない） | 示せる（変異は緑のまま） | 無し——資料は `反映済み` の行を載せないので、文言の判別に戻しても資料は変わらない（段の性質）。3 の「同じ答え」は「載らない」で満たす | 残課題（1×2 の組み合わせのうち、資料の段は文言に戻す変異が原理的に届かない） |
