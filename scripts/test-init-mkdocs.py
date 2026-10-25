@@ -626,10 +626,14 @@ def hook_links_unknown(plugin: Path, work: Path) -> bool:
 
 def hook_links_shape(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
-    write(docs, {"v4/shared/qa.csv": HEADER + "Q-0012,要求確定,四桁,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"})
-    out, warnings = link(plugin, docs, "<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x Q-0012 a-Q-001 (Q-001)</p>\n", "index.md")
+    write(docs, {"v4/shared/qa.csv": HEADER + "Q-0012,要求確定,四桁,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"
+                 # 起票したループの印つきの番号（#278）
+                 + "Q-S-012,仕様レビュー,印つき,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n"})
+    out, warnings = link(plugin, docs, "<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x Q-0012 a-Q-001 (Q-001)"
+                         " Q-S-012 Q-X-001 Q-S012 Q-s-012 XQ-S-012 Q-S-012-a</p>\n", "index.md")
     return not warnings and out == (
-        f"<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x {a('Q-0012', 'qa.html#v4-q-0012')} a-Q-001 ({a('Q-001', 'qa.html#v1-q-001')})</p>\n")
+        f"<p>XQ-001 Q-01 Q-001x Q-001-a Q-001_x {a('Q-0012', 'qa.html#v4-q-0012')} a-Q-001 ({a('Q-001', 'qa.html#v1-q-001')})"
+        f" {a('Q-S-012', 'qa.html#v4-q-s-012')} Q-X-001 Q-S012 Q-s-012 XQ-S-012 Q-S-012-a</p>\n")
 
 
 def hook_links_not_qa_page(plugin: Path, work: Path) -> bool:
@@ -862,10 +866,14 @@ MUTATIONS: list[tuple] = [
      "どの版にも無い番号は警告"),
     ("知らない番号を何度も警告する", HOOK, "            if number not in unknown:\n                unknown.append(number)\n",
      "            unknown.append(number)\n", "どの版にも無い番号は警告"),
-    ("番号の前を見ない", HOOK, r'QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-', r'QA_NUMBER = re.compile(r"Q-', "番号の形"),
-    ("番号の後を見ない", HOOK, r'[0-9]{3,}(?![A-Za-z0-9_-])")', r'[0-9]{3,})")', "番号の形"),
-    ("番号の後の - を見ない", HOOK, r'[0-9]{3,}(?![A-Za-z0-9_-])")', r'[0-9]{3,}(?![A-Za-z0-9_])")', "番号の形"),
-    ("番号を 3 桁に限る", HOOK, r'Q-[0-9]{3,}(?!', r'Q-[0-9]{3}(?!', "番号の形"),
+    ("番号の前を見ない", HOOK, r'QA_NUMBER = re.compile(rf"(?<![A-Za-z0-9_-])Q-', r'QA_NUMBER = re.compile(rf"Q-', "番号の形"),
+    ("番号の後を見ない", HOOK, r'[0-9]{{3,}}(?![A-Za-z0-9_-])")', r'[0-9]{{3,}})")', "番号の形"),
+    ("番号の後の - を見ない", HOOK, r'[0-9]{{3,}}(?![A-Za-z0-9_-])")', r'[0-9]{{3,}}(?![A-Za-z0-9_])")', "番号の形"),
+    ("番号を 3 桁に限る", HOOK, r'[0-9]{{3,}}(?!', r'[0-9]{{3}}(?!', "番号の形"),
+    # 印つきの番号（#278）をリンクにしない・印の無い前の形をリンクにしない
+    ("印を見ない", HOOK, r'Q-(?:[{QA_MARKS}]-)?[0-9]', r'Q-[0-9]', "番号の形"),
+    ("印を省けなくする", HOOK, r'Q-(?:[{QA_MARKS}]-)?[0-9]', r'Q-[{QA_MARKS}]-[0-9]', "番号の形"),
+    ("印に他の英字を許す", HOOK, 'QA_MARKS = "RSFD"', 'QA_MARKS = "A-Z"', "番号の形"),
     ("Q&A 表のページにも掛ける", HOOK, "    if src_path in qa_pages or qa is None:", "    if qa is None:",
      "Q&A 表のページは変えない"),
     ("Q&A 表のページの記録を消さない", HOOK, "    else:\n        qa_pages.discard(page_path(page))\n", "",
@@ -885,7 +893,8 @@ def check_copies() -> None:
     spec.loader.exec_module(checker)
     for name, theirs in (("QA_COLUMNS", checker.COLUMNS), ("QA_DONE", checker.DONE), ("QA_PROVISIONAL", checker.PROVISIONAL),
                          ("QA_NO_ANSWER", checker.NO_ANSWER), ("QA_OPTION_SEPARATOR", checker.OPTION_SEPARATOR),
-                         ("QA_NO_RECOMMENDATION", checker.NO_RECOMMENDATION)):
+                         ("QA_NO_RECOMMENDATION", checker.NO_RECOMMENDATION),
+                         ("QA_MARKS", "".join(checker.MARKS.values()))):
         check(f"フックの {name} が check-qa-csv.py と違う", getattr(hook, name) == theirs, f"{getattr(hook, name)!r} != {theirs!r}")
     page = (PLUGIN / "templates" / "mkdocs" / "docs" / "qa.md").read_text(encoding="utf-8")
     check("雛形の docs/qa.md に qa の印が無い", "<!-- spec-loop: qa -->" in page)
