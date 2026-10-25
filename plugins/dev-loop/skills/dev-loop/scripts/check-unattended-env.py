@@ -19,10 +19,10 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 項目 | 見るもの | 良い | 要対処 |
 | --- | --- | --- | --- |
 | 許可 | settings の `permissions`（`allow`・`ask`・`deny`・`defaultMode`・`disableBypassPermissionsMode`） | 名指しのコマンドごとに、`allow` に当たるか `defaultMode` が `bypassPermissions`（`disableBypassPermissionsMode` で落とされていない） | `deny` か `ask` に当たる（`allow` があっても）／どれも無い |
-| 自動継続 | settings の `autoContinueAtUsageLimit` | `true` | 未設定・`false`・真偽値でない |
-| 質問の待ち | settings の `askUserQuestionTimeout` | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
-| 通知 | `~/.claude.json` の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true` | 未設定・`false` |
-| スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が在る | どちらも無い |
+| 自動継続 | settings の `autoContinueAtUsageLimit`（**managed・flag・user の層だけ**） | `true` | 未設定・`false`・真偽値でない |
+| 質問の待ち | settings の `askUserQuestionTimeout`（**managed・flag・user の層だけ**） | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
+| 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true` | 未設定・`false` |
+| スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が system の idle sleep を防いでいる（`-i`・`-d`・`-s` か、アサーションのフラグ無し） | どちらも無い |
 
 **人が見る**（手元のファイルからは判定できないので、毎回出す。終了コードには効かない）:
 
@@ -34,6 +34,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 
 **managed > flag（`--settings`）> local > project > user** の順に重ねる。`permissions.allow`・
 `permissions.ask`・`permissions.deny` は**全層を足し合わせ**、それ以外は**いちばん上の層の値**を採る。
+**例外が 2 つある**: `autoContinueAtUsageLimit`・`askUserQuestionTimeout` は **managed・flag・user の層しか読まない**
+（project・local に書いても効かない）。managed の `allowManagedPermissionRulesOnly` が `true` なら、
+**許可の規則は managed の層のものだけ**を数える。
 
 - user: `~/.claude/settings.json`（`CLAUDE_CONFIG_DIR` を置いていれば `$CLAUDE_CONFIG_DIR/settings.json`）
 - project: `<project>/.claude/settings.json`、local: `<project>/.claude/settings.local.json`
@@ -41,10 +44,15 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   gitignore された `settings.local.json` は worktree に無い。リポジトリでなければ cwd）
 - flag: `--flag-settings` で渡す。**渡さなければ、最寄りの祖先の `claude` の `--settings <file>`・`--settings=<file>`
   から拾う**（cmux は前者の形で起動する）。**最寄りの `claude` に無ければ、それより外側は見ない**。
-  **渡された・拾ったパスが無ければ「判定できない」**（未設定ではない）
+  `claude` は `argv[0]` の名前が `claude` か、`…/versions/<版>` の本体を指す。
+  **渡された・拾ったパスが無ければ「判定できない」**（未設定ではない）。**`ps` が失敗したときと、
+  最寄りの `claude` が spare（`--bg-spare`。設定は引き継ぎで渡り、argv に無い）のときも「判定できない」**——
+  flag の層を読めない層として積む
 - managed: `--managed-settings` で渡す。既定は macOS の
   `/Library/Application Support/ClaudeCode/managed-settings.json`、Linux の `/etc/claude-code/managed-settings.json`。
   **同じ場所の `managed-settings.d/*.json` を名前順に、その上に重ねる**
+- グローバル設定（通知）: `<設定のディレクトリ>/.config.json` が在って空でなければそれ、
+  無ければ `$CLAUDE_CONFIG_DIR/.claude.json`（置いていなければ `~/.claude.json`）
 
 ## 終了コード
 
@@ -59,7 +67,11 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - `autoContinueAtUsageLimit` は settings の真偽値で、**未設定のときの既定は別の条件で決まる**
   （文字列からは読み切れない）。だから**未設定を要対処にする**——明示させる
 - `askUserQuestionTimeout` は settings の `60s` `5m` `10m` `never` で、既定は `never`
-- `agentPushNotifEnabled`・`inputNeededNotifEnabled` は `~/.claude.json` にある
+- `autoContinueAtUsageLimit`・`askUserQuestionTimeout` は `["policySettings","flagSettings","userSettings"]` の
+  層だけから読む（`EM()`）
+- `agentPushNotifEnabled`・`inputNeededNotifEnabled` はグローバル設定にある。グローバル設定の場所は
+  `<設定のディレクトリ>/.config.json` が在って空でなければそれ、無ければ `.claude<接尾辞>.json`（`y_()`）
+- managed（policySettings）の `allowManagedPermissionRulesOnly` が `true` なら、managed 以外の規則は無視される
 - `managed-settings.d` を読む（`managed-settings.d read failed:` の文言がある）
 - managed の `permissions.disableBypassPermissionsMode` は「a session that requests it anyway is downgraded」
 - 設定のディレクトリは「$CLAUDE_CONFIG_DIR or ~/.claude」
@@ -79,20 +91,27 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **層の優先順位**——下の層の `true` を、上の層の `false` が打ち消す
 - **`deny`・`ask` は `allow` より強い**——どちらかに当たれば要対処
 - **Claude 自身の `caffeinate -t` を、スリープ防止の根拠にしない**——`-it 300`・`-t300` のようにまとめた形と、
-  `-w`（プロセスの終わりまで）も時限として数える
+  `-w`（プロセスの終わりまで）も時限として数える。`-m`（ディスク）・`-u`（利用者の操作。既定 5 秒）だけの形は数えない
 - **人が見る項目を、要対処が無くても毎回出す**
 - **何も書かない**——設定ファイルにも、どこにも
 
 守らない:
 
 - **許可の照合は近似である**——`Bash`・`Bash(*)`・`Bash(<前置き>:*)`・`Bash(<前置き> *)`・
-  `Bash(<前置き>*)`・`Bash(<コマンド>)` の形だけを見る。**ハーネスの照合器が正**で、
+  `Bash(<前置き>*)`・`Bash(<コマンド>)` の形だけを見る。**名指しのコマンドは引数つきで呼ばれるものとして
+  照合する**——引数の無い `Bash(git push)` は `git push -u origin <ブランチ>` に当たらないので、覆っていない。**ハーネスの照合器が正**で、
   **auto モードの分類器が何を通すかは見ない**（`allow` の無いコマンドは、分類器が拒否しても
   答える人がいないので要対処にしている）
 - **サーバから配られる managed settings**——ファイルに無いものは見えない
 - **`managed-settings.d/` の重ね方**——名前順に後のものが勝つとしているのは慣例からの推定で、本体の文字列では確かめていない
-- **`CLAUDE_CONFIG_DIR` を置いたときの `.claude.json` の場所**——`$CLAUDE_CONFIG_DIR/.claude.json` を読む。
-  本体の文字列では確かめていない
+- **グローバル設定のファイル名の接尾辞**——本体は `.claude<接尾辞>.json` で、接尾辞は認証の形で変わる
+  （`-custom-oauth` など）。**接尾辞の無い `.claude.json` だけを見る**。本体が `.config.json` を選ぶ条件の
+  うち、空のファイルを書き込み可能な権限で選ぶ分岐は写したが、それより前の分岐（`J()`）は読み切れていない
+- **祖先の `claude` の `--allowedTools`・`--disallowedTools`・`--permission-mode`**——規則の出所だが読まない
+- **`autoContinueAtUsageLimit: true` が十分であること**——本体は課金の種類とフラグでも自動継続を止める。
+  `true` は必要条件で、「良い」はそれを満たしたことしか言わない
+- **macOS の managed preferences（plist）**——読まない
+- **`caffeinate <コマンド>` の形**——コマンドが終われば防止も終わるが、`-t` の無い形として数える
 - **`ask` の規則と `bypassPermissions` の組**——`bypassPermissions` でも `ask` は要対処にしている（確認が出るかは確かめていない。安全側）
 - **submodule・`--separate-git-dir` の作業ツリー**——`--project` の既定の root を誤りうる。`--project` で渡す
 - **`--settings` に JSON を直接渡した形と、パスに空白を含む形**——`ps` の出力からは正しく切れない。
@@ -105,6 +124,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -136,11 +156,16 @@ class Unreadable:
 def read_json(path):
     """無ければ None（未設定）、壊れていれば `Unreadable`。"""
     p = Path(path)
-    if not p.exists():
-        return None
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
+        # exists() は使わない——親ディレクトリを読めないときの PermissionError を飲んで「無い」と言う
+        text = p.read_text(encoding="utf-8")
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as e:
+        return Unreadable(p, str(e))
+    try:
+        data = json.loads(text)
+    except ValueError as e:
         return Unreadable(p, str(e))
     if not isinstance(data, dict):
         return Unreadable(p, "オブジェクトでない")
@@ -156,6 +181,12 @@ def run(cmd):
     return proc.returncode == 0, proc.stdout
 
 
+def is_claude(argv0):
+    """`claude`、または `…/versions/<版>` で走る本体。"""
+    p = Path(argv0)
+    return p.name == "claude" or (p.parent.name == "versions" and re.fullmatch(r"\d+(\.\d+)+", p.name) is not None)
+
+
 def find_flag_settings(pid=None):
     """祖先の `claude … --settings <file>` を探す。(パス or None, 失敗の理由 or None)。"""
     pid = pid or os.getppid()
@@ -167,8 +198,10 @@ def find_flag_settings(pid=None):
             return None, f"ps が pid {pid} を読めなかった"
         ppid, _, command = out.strip().partition(" ")
         argv = command.split()
-        if argv and Path(argv[0]).name == "claude":
+        if argv and is_claude(argv[0]):
             # 最寄りの claude で止める——外側の claude の --settings は、このセッションのものではない
+            if "--bg-spare" in argv:
+                return None, f"最寄りの claude（pid {pid}）は spare から引き継いだセッションで、--settings は argv に無い"
             for i, arg in enumerate(argv):
                 if arg == "--settings" and i + 1 < len(argv):
                     return argv[i + 1], None
@@ -191,15 +224,16 @@ def config_dir(home, env):
 def managed_dropins(managed_path):
     """`managed-settings.json` と同じ場所の `managed-settings.d/*.json`（名前順）。"""
     d = Path(managed_path).parent / "managed-settings.d"
-    if not d.is_dir():
-        return []
     try:
+        # is_dir() も PermissionError を飲むので使わない
         return sorted(p for p in d.iterdir() if p.suffix == ".json")
+    except (FileNotFoundError, NotADirectoryError):
+        return []
     except OSError as e:
         return [Unreadable(d, str(e))]
 
 
-def layers(project, flag_path, managed_path, home, env=None):
+def layers(project, flag_path, managed_path, home, env=None, flag_note=None):
     """低い層から高い層の順に (名前, パス, 中身) を返す。"""
     env = os.environ if env is None else env
     stack = [("user", config_dir(home, env) / "settings.json")]
@@ -209,7 +243,12 @@ def layers(project, flag_path, managed_path, home, env=None):
     if flag_path:
         # 渡された（拾った）のに無いのは「未設定」ではない——読むはずのファイルが読めていない
         path = Path(flag_path)
-        stack.append(("flag", path, read_json(path) if path.exists() else Unreadable(path, "ファイルが無い")))
+        data = read_json(path)
+        stack.append(("flag", path, Unreadable(path, "ファイルが無い") if data is None else data))
+    elif flag_note:
+        # 祖先を読めなかった——flag の層が在るかどうか分からないので、読めない層として積む
+        where = Path("（祖先の claude）")
+        stack.append(("flag", where, Unreadable(where, flag_note)))
     if managed_path:
         stack.append(("managed", Path(managed_path), read_json(managed_path)))
         for dropin in managed_dropins(managed_path):
@@ -220,12 +259,19 @@ def layers(project, flag_path, managed_path, home, env=None):
     return stack
 
 
-def effective(stack, key):
+SESSION_LAYERS = ("user", "flag", "managed", "managed.d")  # 本体の EM() が読む層
+MANAGED_LAYERS = ("managed", "managed.d")
+
+
+def effective(stack, key, only=None):
     """いちばん上の層の値。(値, 層の名前) か、未設定なら (None, None)。
 
     **値を見つける前に読めない層を通ったら (`Unreadable`, 層の名前)**——その層が値を
-    上書きしているかもしれないので、下の層の値を「良い」の根拠にしない。"""
+    上書きしているかもしれないので、下の層の値を「良い」の根拠にしない。
+    `only` を渡せば、その名前の層だけを見る。"""
     for name, _path, data in reversed(stack):
+        if only is not None and name not in only:
+            continue
         if isinstance(data, Unreadable):
             return data, name
         if isinstance(data, dict) and key in data:
@@ -248,9 +294,17 @@ def unknown_item(label, value, layer):
     return (UNKNOWN, label, f"{layer} の層 {value.path} を読めなかった（{value.reason}）——上書きされているかもしれない", "")
 
 
-def collect_rules(stack, kind):
+def managed_rules_only(stack):
+    """managed の `allowManagedPermissionRulesOnly` が true か。"""
+    return any(isinstance(data, dict) and data.get("allowManagedPermissionRulesOnly") is True
+               for name, _path, data in stack if name in MANAGED_LAYERS)
+
+
+def collect_rules(stack, kind, managed_only=False):
     rules = []
-    for _name, _path, data in stack:
+    for name, _path, data in stack:
+        if managed_only and name not in MANAGED_LAYERS:
+            continue
         if isinstance(data, dict):
             perms = data.get("permissions")
             if isinstance(perms, dict) and isinstance(perms.get(kind), list):
@@ -279,17 +333,20 @@ def rule_matches(rule, command):
 
 def check_permissions(stack, commands):
     items = []
-    allow = collect_rules(stack, "allow")
-    ask = collect_rules(stack, "ask")
-    deny = collect_rules(stack, "deny")
+    managed_only = managed_rules_only(stack)
+    allow = collect_rules(stack, "allow", managed_only)
+    ask = collect_rules(stack, "ask", managed_only)
+    deny = collect_rules(stack, "deny", managed_only)
     broken = [(name, data) for name, _path, data in stack if isinstance(data, Unreadable)]
     mode, mode_layer = perm_value(stack, "defaultMode")
     bypass_off, _ = perm_value(stack, "disableBypassPermissionsMode")
     bypass_ok = mode == "bypassPermissions" and bypass_off not in ("disable", True)
     for command in commands:
-        denied = [r for r in deny if rule_matches(r, command)]
-        asked = [r for r in ask if rule_matches(r, command)]
-        allowed = [r for r in allow if rule_matches(r, command)]
+        # 名指しのコマンドは引数つきで呼ばれる——引数の無い Bash(git push) は覆っていない
+        call = command + " <引数>"
+        denied = [r for r in deny if rule_matches(r, call)]
+        asked = [r for r in ask if rule_matches(r, call)]
+        allowed = [r for r in allow if rule_matches(r, call)]
         label = f"許可: `{command}`"
         if denied:
             items.append((ACTION, label, f"deny に当たる（{', '.join(denied)}）",
@@ -310,6 +367,8 @@ def check_permissions(stack, commands):
             shown = mode or "未設定"
             if mode == "bypassPermissions":
                 shown += "。ただし disableBypassPermissionsMode で落とされる"
+            if managed_only:
+                shown += "。managed の allowManagedPermissionRulesOnly で、managed 以外の規則は効かない"
             items.append((ACTION, label,
                           f"allow に無い（defaultMode: {shown}）——拒否・確認されても答える人がいない",
                           f'settings の permissions.allow に "Bash({command}:*)" を足す'))
@@ -317,7 +376,7 @@ def check_permissions(stack, commands):
 
 
 def check_auto_continue(stack):
-    value, layer = effective(stack, "autoContinueAtUsageLimit")
+    value, layer = effective(stack, "autoContinueAtUsageLimit", SESSION_LAYERS)
     label = "自動継続（autoContinueAtUsageLimit）"
     if isinstance(value, Unreadable):
         return [unknown_item(label, value, layer)]
@@ -325,11 +384,12 @@ def check_auto_continue(stack):
         return [(GOOD, label, f"true（{layer}）", "")]
     shown = "未設定（既定は条件で変わる）" if layer is None else f"{json.dumps(value)}（{layer}）"
     return [(ACTION, label, shown,
-             'settings に "autoContinueAtUsageLimit": true を書く（/config の「Continue automatically at usage limit」）')]
+             'user の settings に "autoContinueAtUsageLimit": true を書く'
+             '（/config の「Continue automatically at usage limit」。project・local では効かない）')]
 
 
 def check_question_timeout(stack):
-    value, layer = effective(stack, "askUserQuestionTimeout")
+    value, layer = effective(stack, "askUserQuestionTimeout", SESSION_LAYERS)
     label = "質問の待ち（askUserQuestionTimeout）"
     if isinstance(value, Unreadable):
         return [unknown_item(label, value, layer)]
@@ -337,13 +397,27 @@ def check_question_timeout(stack):
         return [(GOOD, label, f"{value}（{layer}）", "")]
     shown = "未設定（既定は never）" if layer is None else f"{json.dumps(value)}（{layer}）"
     return [(ACTION, label, shown,
-             'settings に "askUserQuestionTimeout": "10m" などを書く（60s / 5m / 10m）——never だと質問で止まり続ける')]
+             'user の settings に "askUserQuestionTimeout": "10m" などを書く（60s / 5m / 10m。project・local では効かない）'
+             '——never だと質問で止まり続ける')]
+
+
+def global_config_path(home, env):
+    """本体の y_() の写し: `<設定のディレクトリ>/.config.json` が在って空でなければそれ、
+    無ければ `$CLAUDE_CONFIG_DIR/.claude.json`（置いていなければ `~/.claude.json`）。接尾辞は見ない（docstring）。"""
+    legacy = (Path(env["CLAUDE_CONFIG_DIR"]).expanduser() if env.get("CLAUDE_CONFIG_DIR") else home) / ".claude.json"
+    candidate = config_dir(home, env) / ".config.json"
+    try:
+        st = candidate.stat()
+    except OSError:
+        return legacy
+    if stat.S_ISREG(st.st_mode) and (st.st_size > 0 or (st.st_mode & 0o222 and not legacy.exists())):
+        return candidate
+    return legacy
 
 
 def check_notifications(home, env=None):
     env = os.environ if env is None else env
-    # CLAUDE_CONFIG_DIR を置いたときは、その中の .claude.json（近似。docstring）
-    path = (config_dir(home, env) if env.get("CLAUDE_CONFIG_DIR") else home) / ".claude.json"
+    path = global_config_path(home, env)
     data = read_json(path)
     items = []
     keys = (("agentPushNotifEnabled", "Push when Claude decides"),
@@ -385,12 +459,27 @@ def timed_caffeinate(argv):
     return False
 
 
+def prevents_idle_sleep(argv):
+    """system の idle sleep を防ぐか——`-i`・`-d`・`-s` を持つか、アサーションのフラグが 1 つも無い
+    （`man caffeinate`: 無ければ idle sleep を防ぐ）。`-m`（ディスク）・`-u`（利用者の操作）だけなら防がない。"""
+    flags = ""
+    for arg in argv[1:]:
+        if not arg.startswith("-"):
+            if arg.isdigit():
+                continue
+            break
+        flags += re.sub(r"\d", "", arg[1:])
+    assertions = set(flags) & set("dimsu")
+    return not assertions or bool(assertions & set("ids"))
+
+
 def long_lived_caffeinate(ps_text):
-    """`-t`・`-w` の無い caffeinate のコマンド行。"""
+    """`-t`・`-w` の無い、idle sleep を防ぐ caffeinate のコマンド行。"""
     found = []
     for line in ps_text.splitlines():
         argv = line.split()
-        if argv and Path(argv[0]).name == "caffeinate" and not timed_caffeinate(argv):
+        if (argv and Path(argv[0]).name == "caffeinate" and not timed_caffeinate(argv)
+                and prevents_idle_sleep(argv)):
             found.append(line.strip())
     return found
 
@@ -443,13 +532,12 @@ def exit_code(items):
 
 
 def gather(project, commands, flag_path, managed_path, home, platform, flag_note=None, env=None):
-    stack = layers(project, flag_path, managed_path, home, env)
+    stack = layers(project, flag_path, managed_path, home, env, flag_note)
     items = []
     for name, path, data in stack:
         if isinstance(data, Unreadable):
-            items.append((UNKNOWN, f"設定（{name}）", f"{path} を読めなかった: {data.reason}", ""))
-    if flag_note:
-        items.append((UNKNOWN, "設定（flag）", flag_note, "--flag-settings で渡す"))
+            items.append((UNKNOWN, f"設定（{name}）", f"{path} を読めなかった: {data.reason}",
+                          "--flag-settings で渡す" if name == "flag" else ""))
     items += check_permissions(stack, commands)
     items += check_auto_continue(stack)
     items += check_question_timeout(stack)
