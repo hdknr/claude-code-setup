@@ -91,6 +91,9 @@ jobs:
       - name: 不在の前の環境点検のテスト（#394）
         run: python3 scripts/test-check-unattended-env.py
 
+      - name: 複数 Issue の台帳のテスト（#390）
+        run: python3 scripts/test-ledger.py
+
       - name: PR のマージの手続きのテスト（#389）
         run: python3 scripts/test-merge-pr.py
 
