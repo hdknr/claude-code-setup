@@ -46,7 +46,7 @@
 - 返り値の文字列:
   - `config_off`: `Push not sent — mobile push is disabled in /config.`
   - `user_present`: `Not sent — this terminal is active, so your output here already reaches the user; a separate notification would be redundant.`
-  - `no_transport`: `Terminal notification sent. Mobile push not sent (Remote Control inactive).`（端末の通知を出せないときは `Mobile push not sent (Remote Control inactive).`）
+  - `no_transport`: `Terminal notification sent. Mobile push not sent (Remote Control inactive).`（非対話のセッションでは `Mobile push not sent (Remote Control inactive).`。前置きの有無は `localSent=!e`——OS の通知の成否ではない。S6）
   - 送信: `Terminal notification sent. Mobile push requested.`（同じく `Mobile push requested.`）
 - **使用中**（`Ins()`）: 端末のフォーカスが分かればそれ、分からなければ**最後の操作から 60 秒以内**（`P3e=60000`）
 - **Remote Control がつながっていなければ `config_off` は出ない**（① は transport があるときだけ）。**使用中なら ③ より先に止まる**
@@ -111,8 +111,11 @@
 - 等価変異を 1 つ捨てた: 「`report` の出力先を定義時に束縛する」は単独では緑（`report` を `--push-result` から呼ばない限り挙動が変わらない）。代わりに陽性対照を外で取った——旧い束縛＋「判定のあとも設定を読む」変異は**緑**（F1 の再現）、修正後の束縛＋同じ変異は**赤**
 - `check-all.py`（指摘対応の後）: 49/49・失敗 0
 - 割り目（手順 6・2 パス目の前）: AskUserQuestion で訊いた → **「ここで割る」**（2026-10-25）
-- 次: **手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**が残っている。どちらも base `7865e116e98f6a4d0b1acdb5c3547d66590e7204` に当て、1 パス目の指摘対応（`f1afb35`）を重点に見させる
-- 狭いパスの起点: 2 パス目の指摘対応を始める直前の HEAD を、指摘対応に入る前にここへ書く（まだ無い）
+- 再開（2026-10-25）: `find-cycle.py` が当てたのはこの worktree 1 本。ブランチ・コミットとも記録と一致。base が HEAD の祖先であることを確かめた
+- Verifier 2 パス目: 済み——**反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。本体の文字列・判定の順・`Ins()` を自分で読み、`check-all.py` 49/49 を確かめた。変異は内蔵のものの出力を読んだだけで、個別には当て直していない）
+- `/code-review` 2 パス目: 済み——**指摘 7 件**（採否は下の表。直す 5・残課題 2）
+- 狭いパスの起点: `5b6853e`（2 パス目の指摘対応を始める直前の HEAD）
+- 2 パス目の指摘対応: 済み（S1・S2・S3・S4・S6）。S6 の `e` は本体で `create({isNonInteractiveSession:e,…})` と親が確かめた。テストに 5 件（読む入口が呼ばれない・行ごとの原因と対処・知らない返り値を原因に出す）、変異に 4 件を足した（変異 47 件すべて赤）。S3 の変異は `/code-review` が修正前のテストで緑を確かめている（陽性対照）。§8.2 を再生成
 
 ## 起票
 
@@ -139,3 +142,15 @@
 | F6 `claude rc` を「アプリの『デバイスを追加』の流れ」と書くが根拠が無い | 示せる——計画の実測した前提に無い | 8 | 直す（括弧書きを落とす） |
 | F7 docstring の「リモートのセッションでは ① ② を飛ばす」が本体と違う——`p=CLAUDE_CODE_REMOTE\|\|Pn()\|\|Izs(l)` が立つと ③ も飛ばして必ず送る | 示せる——本体 `p=c\|\|Izs(l),m=p\|\|Vc()`、`function Izs(r){return cC()&&cS.of(r).transportPersists===!0}` | 8 | 直す |
 | F8 `PushNotification` はフラグ（`tengu_kairos_push_notifications`）で無いことがあり、その場合の道が無い | 示せる——本体の `isEnabled`（`/code-review` の引用。自分では文字列の在処だけ確かめた） | 無し | 残課題 |
+
+### 2 パス目の指摘と採否（Verifier: 反証 0 件／`/code-review`: 7 件）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| S1 `SKILL.md` の手順 2 が「iPhone から操作しているあいだも省く」「頼まれた直後に送ると毎回省かれる」を事実として書く（F5 は公開ページだけ弱めた） | 示せる——計画の未証明の表と `SKILL.md` の文。本体 `Ins()` はフォーカスが分かれば PC の端末のフォーカスだけで決まる | 8 | 直す（端末の使用中だけを事実として書き、iPhone は「確かめていないので閉じる」に） |
+| S2 `SKILL.md` の手順 1 が「`/remote-control` を打ち、出た QR コードを読む」——QR は 2 回目に出る（公開ページ）、人が打つことも書いていない。2 回目の QR は計画では未証明 | 示せる——公開ページ 52〜57 行と `SKILL.md` の文 | 7・8 | 直す（人が打つと書き、つなぎ方は公開ページの手順 1 を指す。QR の段取りは書かない） |
+| S3 不変条件 5「設定を読まない」をテストは出力に「設定の層」が無いことでしか見ない——`gather` を呼んで出力しない変異が緑 | 示せる——`/code-review` が外で当てて緑 | 5 | 直す（`main` の `--push-result` で `layers`・`find_flag_settings`・`default_project` が呼ばれないことを見る。変異を足す） |
+| S4 原因・対処を一部の行でしか見ない——`config_off` の対処・`no_transport` の原因を入れ替える変異、知らない返り値の原因から `{text!r}` を落とす変異が緑 | 示せる——同上 | 1 | 直す（行ごとに原因・対処の要の語を見る。変異を足す） |
+| S5 終了コード 2 が「やり直す」と「判定できない」で同じ——別のコード（3）にすべき | 示せない——起こりうる誤読の想定で、ラベルで分ける規定に従った読み違いの実物は無い | 無し（F2 で終了コードは 2 のまま、ラベルで分けると決めた。理由「終了コードでは分けられない」は書いていない——計画の文言は「終了コードは 2 のまま」） | 残課題 |
+| S6 docstring の「端末の通知を出せたときだけ前に `Terminal notification sent.` が付く」は誤り——本体は `localSent=!e`（非対話でない）で、OS の通知の成否を見ない。付くのは `no_transport` と送信の 2 つだけ | 示せる——本体 `let r=!e;if(!m)return s({pushSent:!1,localSent:r,…` を親が読んで確かめた | 8 | 直す（docstring と計画の「実測した前提」） |
+| S7 `report_push` が `report` の出力の繰り返しを写している | 示せない（いま挙動は食い違っていない） | 無し | 残課題 |

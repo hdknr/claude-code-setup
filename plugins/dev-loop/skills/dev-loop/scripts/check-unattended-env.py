@@ -39,7 +39,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 
 **送るのはモデル、離れるのは人**なので、スクリプトは**返り値の判定だけ**をする（設定は読まない）。
 手順（いつ送るか）は `SKILL.md` の環境点検の項を正とする。返り値の文字列は部分一致で見る——
-端末の通知を出せたときだけ前に `Terminal notification sent.` が付く。
+`Remote Control inactive` と `Mobile push requested` には、非対話のセッション（`isNonInteractiveSession`。`-p` など）でなければ前に
+`Terminal notification sent.` が付く（本体は OS の通知が実際に出たかを見ていない）。
 
 | 返り値に含まれる | 判定 | 原因 | 対処 |
 | --- | --- | --- | --- |

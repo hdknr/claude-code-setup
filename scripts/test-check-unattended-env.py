@@ -437,6 +437,14 @@ def suite(script: Path) -> list[str]:
           and "iPhone に届いたか" in buf.getvalue(), bad)
     check("Remote Control が切れていれば /remote-control を案内する",
           "/remote-control" in mod.check_push_result("Mobile push not sent (Remote Control inactive).")[0][3], bad)
+    # 原因と対処は行ごとに見る——判定だけ見ると、原因・対処を別の行と入れ替えても緑になる
+    for text, cause, fix in (
+            ("Push not sent — mobile push is disabled in /config.", "agentPushNotifEnabled", "/config でオン"),
+            ("Mobile push not sent (Remote Control inactive).", "Remote Control につながっていない", "/remote-control"),
+            ("Mobile push requested.", "要求しただけ", "iPhone に届いたか")):
+        (_, _, got_cause, got_fix), = mod.check_push_result(text)
+        check(f"返り値 {text!r} の原因と対処", cause in got_cause and fix in got_fix, bad)
+    check("知らない返り値は、その文字列を原因に出す", "'Notification delivered.'" in unknown[0][2], bad)
     with scenario(script) as env:
         env.all_good()
         before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
@@ -445,6 +453,11 @@ def suite(script: Path) -> list[str]:
         saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_CONFIG_DIR")}
         os.environ["HOME"] = str(env.home)
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        # 設定を読まないことは、読む入口が呼ばれないことで見る——出力に出さずに読む変異は出力では見えない
+        reads = []
+        originals = {n: getattr(mod, n) for n in ("layers", "find_flag_settings", "default_project")}
+        for n, f in originals.items():
+            setattr(mod, n, lambda *a, _n=n, _f=f, **k: (reads.append(_n), _f(*a, **k))[1])
         try:
             with contextlib.redirect_stdout(buf):
                 code = mod.main(["--push-result", "Push not sent — mobile push is disabled in /config.",
@@ -452,6 +465,8 @@ def suite(script: Path) -> list[str]:
                                  "--managed-settings", str(env.project / "no-managed.json"),
                                  "--flag-settings", str(env.project / "no-flag.json")])
         finally:
+            for n, f in originals.items():
+                setattr(mod, n, f)
             for k, v in saved.items():
                 if v is None:
                     os.environ.pop(k, None)
@@ -460,6 +475,7 @@ def suite(script: Path) -> list[str]:
         after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
         check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in buf.getvalue()
               and "[要対処] 通知の試験" in buf.getvalue(), bad)
+        check("--push-result は設定を読まない", reads == [], bad)
         check("--push-result は何も書かない", before == after, bad)
 
     # 人が見る: Remote Control は claude rc との違い、モバイルの登録は通知の試験を指す
@@ -600,6 +616,20 @@ MUTATIONS = {
         "        report(*gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
         "                       args.managed_settings, Path.home(), sys.platform))\n"
         "        return push_code\n"),
+    "--push-result のあと設定を読むが出さない": (
+        "        return report_push(check_push_result(args.push_result))\n",
+        "        gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
+        "               args.managed_settings, Path.home(), sys.platform)\n"
+        "        return report_push(check_push_result(args.push_result))\n"),
+    "/config のオフの対処を Remote Control にする": (
+        '"「Push when Claude decides」（agentPushNotifEnabled）がオフ", "/config でオン"),',
+        '"「Push when Claude decides」（agentPushNotifEnabled）がオフ", "作業中のセッションで /remote-control"),'),
+    "Remote Control が切れた原因を /config にする": (
+        '"いまのセッションが Remote Control につながっていない", "作業中のセッションで /remote-control"),',
+        '"「Push when Claude decides」（agentPushNotifEnabled）がオフ", "作業中のセッションで /remote-control"),'),
+    "知らない返り値を原因に出さない": (
+        'f"知らない返り値: {text!r}"',
+        '"知らない返り値"'),
     "送信の要求を良いにする": (
         '    ("Mobile push requested", HUMAN,',
         '    ("Mobile push requested", GOOD,'),
