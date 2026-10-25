@@ -35,6 +35,7 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **閉じるはずの Issue が閉じたかを確かめる**——`closingIssuesReferences` の各 Issue が `CLOSED` になるまで待つ。
 - **判定できなかったことを、通った・時間切れ・閉じないと答えない**——`gh` や `git` が失敗した・
   出力の形が読めないなら、**マージの前でも後でも** 7 で止める。
+- **7 で止めても、済んでいないことを黙らない**——それまでに積んだ撤去の失敗などは、7 の出力にも出す。
 
 ## 終了コード
 
@@ -296,6 +297,7 @@ def main(argv: list[str]) -> int:
         p.error(f"PR 番号が数字でない: {a.number!r}")
 
     done = []  # 判定できなかったときに、どこまで済んだかを言う
+    problems = []  # 同じく、済んでいないことを言う
     try:
         rc, pr = wait_until_ready(a.number, a.interval, a.timeout)
         if rc:
@@ -337,7 +339,6 @@ def main(argv: list[str]) -> int:
         done[-1] = f"PR #{a.number} を squash マージした（{head_sha[:12]}・MERGED を確かめた）"
         print(f"{done[-1]}。")
 
-        problems = []
         if wt and not wt["main"]:
             err = remove_worktree(wt)
             if err:
@@ -361,6 +362,8 @@ def main(argv: list[str]) -> int:
         print(f"**判定できなかった**: {e}", file=sys.stderr)
         for d in done:
             print(f"  済んだこと: {d}", file=sys.stderr)
+        for pr_ in problems:
+            print(f"  済んでいないこと: {pr_}", file=sys.stderr)
         return 7
 
     if problems:

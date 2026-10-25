@@ -58,6 +58,8 @@ elif args[:2] == ["pr", "merge"]:
     rc = scn.get("merge_rc", 0)
     if rc:
         print("merge failed", file=sys.stderr)
+    elif scn.get("merge_drop"):  # 点検のあとで worktree に未追跡を置き、撤去を失敗させる
+        open(scn["merge_drop"], "w").write("late\n")
     sys.exit(rc)
 elif args[:2] == ["issue", "view"]:
     print(json.dumps({"state": nxt("issue:" + args[2], scn.get("issues", {}).get(args[2], ["CLOSED"]))}))
@@ -120,7 +122,8 @@ def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False) 
 
 
 def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after=None, issues=None,
-             merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5") -> dict:
+             merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5",
+             merge_drop=False) -> dict:
     root = base / name
     main, wt, sha = make_repo(root, lock=lock)
     if prepare:
@@ -130,6 +133,8 @@ def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after
         scn["after"] = after
     if issues:
         scn["issues"] = issues
+    if merge_drop:
+        scn["merge_drop"] = str(wt / "late.txt")
     bin_dir = root / "bin"
     bin_dir.mkdir()
     (bin_dir / "gh").write_text(FAKE_GH, encoding="utf-8")
@@ -180,7 +185,7 @@ def running_then(sha):
 
 
 CASES = {
-    # 名前: (試料の引数, 期待する rc, マージが呼ばれるか, worktree が残るか)
+    # 名前: (試料の引数, 期待する rc, マージが呼ばれるか, worktree が残るか[, 出力に要る文字列])
     "UNKNOWN の後に MERGEABLE（ロック済み worktree）": (dict(make_view=unknown_then), 0, True, False),
     "検査が走っている間は待つ": (dict(make_view=running_then), 0, True, False),
     "UNKNOWN のまま時間切れ": (dict(make_view=lambda s: [pr(s, mergeable="UNKNOWN")], timeout="0.3"), 5, False, True),
@@ -215,6 +220,12 @@ CASES = {
     "StatusContext の state が無ければ判定できなかった": (dict(make_view=lambda s: [pr(s, checks=[
         {"__typename": "StatusContext", "context": "ci"}])]), 7, False, True),
     "Issue が閉じなければ 9": (dict(make_view=lambda s: [pr(s)], issues={ISSUE_URL: ["OPEN"]}), 9, True, False),
+    "撤去が失敗して Issue が閉じなければ 9・撤去の失敗を出す": (
+        dict(make_view=lambda s: [pr(s)], merge_drop=True, issues={ISSUE_URL: ["OPEN"]}), 9, True, True,
+        "worktree を撤去できなかった"),
+    "撤去が失敗して Issue が読めなければ 7・撤去の失敗を出す": (
+        dict(make_view=lambda s: [pr(s)], merge_drop=True, issues={ISSUE_URL: ["FAIL"]}), 7, True, True,
+        "worktree を撤去できなかった"),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
     "draft なら何もしない": (dict(make_view=lambda s: [pr(s, draft=True)]), 2, False, True),
     "gh が失敗したら判定できなかった": (dict(make_view=lambda s: [pr(s)], fail_all=True), 7, False, True),
@@ -229,8 +240,9 @@ def run_all(base: Path, script: Path) -> dict:
 
 
 def as_expected(name: str, r: dict) -> bool:
-    _, rc, merged, wt_left = CASES[name]
-    return r["rc"] == rc and bool(r["merges"]) == merged and r["wt_exists"] == wt_left
+    _, rc, merged, wt_left, *said = CASES[name]
+    return (r["rc"] == rc and bool(r["merges"]) == merged and r["wt_exists"] == wt_left
+            and all(t in r["out"] for t in said))
 
 
 MUTATIONS = {
@@ -263,6 +275,9 @@ MUTATIONS = {
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
     # 守る 12: 判定できなかったことを時間切れと答えない
     "判定できなかったを時間切れと答える": ('        return 7\n', '        return 5\n'),
+    # 守る 13: 7 でも済んでいないことを出す
+    "7 で済んでいないことを出さない": ('        for pr_ in problems:\n            print(f"  済んでいないこと',
+                                 '        for pr_ in []:\n            print(f"  済んでいないこと'),
 }
 
 # 変異ごとに、赤になるはずの試料（陽性対照で緑だったものに限って読む）
@@ -281,6 +296,7 @@ KILLS = {
     "Issue が閉じたかを見ない": ["Issue が閉じなければ 9"],
     "判定できなかったを時間切れと答える": ["gh が失敗したら判定できなかった",
                             "マージの後に gh が失敗したら判定できなかった（worktree を残す）"],
+    "7 で済んでいないことを出さない": ["撤去が失敗して Issue が読めなければ 7・撤去の失敗を出す"],
 }
 
 
@@ -301,7 +317,7 @@ def main() -> int:
         print("陽性対照: 壊さない本体で、全試料が期待どおりか")
         good = run_all(base / "good", SCRIPT)
         for name, r in good.items():
-            _, rc, merged, wt_left = CASES[name]
+            _, rc, merged, wt_left, *_ = CASES[name]
             check(f"{name}: rc={r['rc']}（期待 {rc}）・マージ {bool(r['merges'])}・worktree 残る {r['wt_exists']}",
                   as_expected(name, r))
         happy = good["UNKNOWN の後に MERGEABLE（ロック済み worktree）"]
