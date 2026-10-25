@@ -23,6 +23,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 - 読んだ表は決まりの検査（`check-qa-csv.py`・`check-feasibility-csv.py`）を通す。通らなければ書かない。
 - **暫定の行**（判別は `check-qa-csv.py` の `is_provisional`。決まりの正は `references/qa-csv.md` の「暫定の行の判別」）は
   主な決定事項に載せず、「利用者にまだ確かめていない決定」の節に載せる（0 件でも節を出す。#366）。
+  **照合が 3 で止めるので、書いた提案書ではこの節は 0 件になる**（#404 で判別を状態だけにした）——節は、決裁者に
+  「残っていない」ことを示すために出す。
 - **仕様書（`spec.md`）も同じ実行で作る**（#371）——材料は `signoff/v<n>/req-<k>` の時点の v1〜v<n> を重ねた全体
   （前の版との比較と同じ写しから。**v1 でも重ね合わせの決まりを通す**）と、作業中の版の `proposal/spec/*.md`（手書き。任意）。
   `spec/`・`requirements/` の `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio` は載せていないと書く（draw.io は起動しない）。
@@ -331,7 +333,7 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
 
     # 暫定の行（`check-qa-csv.py` の `is_provisional`）は利用者の合意ではないので、決定事項と分けて載せる（#374）
     provisional = [r for r in qa_rows if qa.is_provisional(r)]
-    done = [r for r in qa_rows if r["状態"].strip() == qa.DONE and not qa.is_provisional(r)]
+    done = [r for r in qa_rows if r["状態"].strip() == qa.DONE]
     pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE and not qa.is_provisional(r)]
     out += ["## 主な決定事項", ""]
     if done:
@@ -455,7 +457,7 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
             raise Stop(2, [f"{info['req']}:{DECISION_PATH}: CSV として読めない（{e}）。仕様書を作れない"])
     shared_rows = list(whole.qa.values())
     provisional = sum(1 for r in shared_rows if qa.is_provisional(r))
-    decided = sum(1 for r in shared_rows if r["状態"].strip() == qa.DONE and not qa.is_provisional(r))
+    decided = sum(1 for r in shared_rows if r["状態"].strip() == qa.DONE)
     svgs, missing = figures_of(whole)
     out += ["## 規模", ""]
     out += table(["もの", "数"], [

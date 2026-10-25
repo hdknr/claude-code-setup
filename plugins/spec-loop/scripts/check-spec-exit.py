@@ -16,7 +16,7 @@ usage: python3 check-spec-exit.py <qa.csv> <仕様のディレクトリ>
   （`反映済み`・`暫定反映`）でない行**を数える。**PPTX に載る行とは別の定義**——暫定の回答で反映した行は
   資料には載る（確認してもらうため）が、仕様には反映済みなので条件 1 を止めない（#325）。
   **`REFLECTED` に無い状態は数える側に倒れる**（決まりに状態が増えても、反映が残っている行を黙って落とさない）。
-  暫定の行は件数を出す（要求確定のサインオフの前に確認が要る。`references/signoff-tags.md`）。
+  暫定の行（判別は `check-qa-csv.py` の `is_provisional`）は件数を出す（要求確定のサインオフの前に確認が要る。`references/signoff-tags.md`）。
   Q&A 表の列検査（`check-qa-csv.py`）も `read_rows` で掛かる。
 - 未決定の印（`MARKERS`）と、印に当たらない語（`NOT_MARKERS`）は `references/spec-exit.md` の写しで、
   **写しがずれていないかはこのリポジトリの `scripts/test-check-spec-exit.py` が突き合わせて見る**。
@@ -120,7 +120,7 @@ def spec_files(root: Path) -> list[Path]:
 def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
     """(終了コード, 出力する行) を返す。"""
     code, lines, rows = pptx.read_rows(qa_path)
-    provisional = [row for row in rows if row["状態"].strip() == pptx.qa.PROVISIONAL]
+    provisional = [row for row in rows if pptx.qa.is_provisional(row)]
     if code == 2:
         return 2, lines + ["条件 1 を判定していない（Q&A 表を読めない）"]
     if not spec_dir.is_dir():
