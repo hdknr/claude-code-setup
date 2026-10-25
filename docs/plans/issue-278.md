@@ -25,6 +25,7 @@
 - `.claude-plugin/marketplace.json` — 版
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（`proposal/SKILL.md` は本文の例の番号も。1 パス目の指摘 3）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す。main の #406 を取り込んで版を 1.48.0 に上げ直したため）
 - `docs/plans/issue-278.md` — この計画
 - `plugins/spec-loop/references/spec-ir.md` — 1 パス目の指摘対応で広げた（例の番号の指し先。下の「1 パス目の指摘の採否」の 3）
 - `plugins/spec-loop/references/versions.md` — 同上（例の番号・番号の振り方の散文。3・5）
@@ -68,7 +69,7 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
   「前のループが終わるまで次を始めない」順序ではない（spec-review は利用者の判断が要る指摘を req-loop に差し戻し、feasibility は途中の
   成果物から見積もる。unity-signage では spec-review と feasibility が同時に動いていた）。人間が「制約は足さない」と決めた。
 - **D7 版**: spec-loop は 0.x なので minor（0.23.0 → 0.24.0。前の形を通すので既存の表は壊れない）。dev-loop は spec-gap.md の
-  起票の手順が変わるので minor（1.46.0 → 1.47.0）。
+  起票の手順が変わるので minor（1.46.0 → 1.47.0。main の #406 が先に 1.47.0 に到達したので、取り込んで 1.48.0 に上げ直した）。
 
 ## verify の受入基準
 
