@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.52.0 -->
-> **このスキルの版: 1.52.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.53.0 -->
+> **このスキルの版: 1.53.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1723,6 +1723,10 @@ draft PR も同じ扱い）。禁じているのは**飛ばしたうえで「実
 
   **直さない。読むだけ**——直し方を出す。**項目・判定・終了コード、何を守り何を守らないかは、
   スクリプトの docstring を正とする。**
+- **利用者が不在のあいだに周を回すなら、止まる場面で進んでよい範囲（不在の線）は利用者の宣言だけで決まる（必須）**
+  ——宣言が無ければ止まる。**線を永続メモリに持たない**（PR を通らない。[#393](https://github.com/hdknr/claude-code-setup/issues/393)）。
+  **線・既定・宣言の置き場所と書き方は `references/absent-lines.md` を正とする**（このスキルと同じ場所にある）。
+  **利用者が居る周では読まなくてよい。**
 
 これらは Claude Code の汎用スキル。導入していない環境では、手動での待機・確認に読み替えてよい。
 
