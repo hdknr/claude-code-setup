@@ -19,6 +19,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/references/spec-gap.md` - **仕様の穴を実装で決めず、spec-loop の Q&A 表に差し戻す**規定
       （#219。spec-loop から来た Issue の読み方も持つ。**Issue の印と節は spec-loop の `references/handoff-issue.md`
       の写しで、`scripts/test-scaffold.py` が突き合わせる**——dev-loop から spec-loop を相対パスで指せないため）
+    - `skills/dev-loop/scripts/ledger.py` - 依存のある複数 Issue を回すときの**台帳**（依存グラフと状態）を
+      メインの作業ツリーの `.claude/plans/cruise-<名前>.json` に読み書きする（#390。**worktree の中から走らせても同じファイル**。
+      いつ書きどう再開するかは `references/ledger.md`、守る／守らないは docstring を正とする。テストは `scripts/test-ledger.py`）
     - `skills/dev-loop/scripts/spec-fingerprint.py` - spec-loop から来た Issue の**機能の指紋**を手元の中間表現から出す
       （#290。**式は spec-loop の `scaffold.py` の `fingerprint` の写しで、`scripts/test-scaffold.py` が両方を走らせて
       一致を見る**——同じ理由）
@@ -164,6 +167,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-unattended-env.py` - **利用者が不在になる前の環境点検**の回帰テスト（#394。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py`**（`test-find-cycle.py` と同じ形）。
     **本体は CI からは呼ばない**——入力が利用者の `~/.claude` にある。**項目と、何を守らないかは本体の docstring を正とする**
+  - `test-ledger.py` - **複数 Issue の台帳の回帰テスト**（#390。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/ledger.py`**（`test-find-cycle.py` と同じ形）。
+    テンポラリに**本物の worktree** を作り、その中からでもメインの作業ツリーの台帳を指すことを見る
   - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
     **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**

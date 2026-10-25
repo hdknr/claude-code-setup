@@ -82,6 +82,7 @@ TESTS: list[str] = [
     "test-count-resume-recreations.py",
     "test-find-cycle.py",
     "test-check-unattended-env.py",
+    "test-ledger.py",
     "test-check-duplicate-counts.py",
     "test-worktree-scripts.py",
     "test-check-skill-pointers.py",
