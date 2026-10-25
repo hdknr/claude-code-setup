@@ -61,6 +61,11 @@ elif args[:2] == ["pr", "merge"]:
     elif scn.get("merge_drop"):  # 点検のあとで worktree に未追跡を置き、撤去を失敗させる
         open(scn["merge_drop"], "w").write("late\n")
     sys.exit(rc)
+elif args[:2] == ["repo", "view"]:
+    name = scn.get("default", "main")
+    if name == "FAIL":
+        print("gh: something went wrong", file=sys.stderr); sys.exit(1)
+    print(json.dumps({"defaultBranchRef": {"name": name}}))
 elif args[:2] == ["issue", "view"]:
     print(json.dumps({"state": nxt("issue:" + args[2], scn.get("issues", {}).get(args[2], ["CLOSED"]))}))
 else:
@@ -112,18 +117,18 @@ def make_repo(root: Path, lock: bool = True) -> tuple[Path, Path, str]:
     return main, wt, git(wt, "rev-parse", "HEAD").strip()
 
 
-def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False) -> dict:
+def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False, base="main") -> dict:
     if checks is None:
         checks = [{"__typename": "CheckRun", "name": "check", "status": "COMPLETED", "conclusion": "SUCCESS"},
                   {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS"}]
-    return {"state": state, "isDraft": draft, "mergeable": mergeable, "headRefName": BRANCH,
+    return {"state": state, "isDraft": draft, "baseRefName": base, "mergeable": mergeable, "headRefName": BRANCH,
             "headRefOid": sha, "statusCheckRollup": checks,
             "closingIssuesReferences": [{"number": 42, "url": ISSUE_URL}]}
 
 
 def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after=None, issues=None,
              merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5",
-             merge_drop=False) -> dict:
+             merge_drop=False, default=None) -> dict:
     root = base / name
     main, wt, sha = make_repo(root, lock=lock)
     if prepare:
@@ -133,6 +138,8 @@ def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after
         scn["after"] = after
     if issues:
         scn["issues"] = issues
+    if default:
+        scn["default"] = default
     if merge_drop:
         scn["merge_drop"] = str(wt / "late.txt")
     bin_dir = root / "bin"
@@ -226,6 +233,12 @@ CASES = {
     "撤去が失敗して Issue が読めなければ 7・撤去の失敗を出す": (
         dict(make_view=lambda s: [pr(s)], merge_drop=True, issues={ISSUE_URL: ["FAIL"]}), 7, True, True,
         "worktree を撤去できなかった"),
+    "base が既定ブランチでなければマージしない（積んだ周）": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower")]), 10, False, True, "載せ替えていない"),
+    "既定ブランチが main でなくても、base が既定ブランチならマージする": (
+        dict(make_view=lambda s: [pr(s, base="master")], default="master"), 0, True, False),
+    "既定ブランチが読めなければマージしない": (dict(make_view=lambda s: [pr(s)], default="FAIL"), 7, False, True),
+    "baseRefName が無ければ判定できなかった": (dict(make_view=without("baseRefName")), 7, False, True),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
     "draft なら何もしない": (dict(make_view=lambda s: [pr(s, draft=True)]), 2, False, True),
     "gh が失敗したら判定できなかった": (dict(make_view=lambda s: [pr(s)], fail_all=True), 7, False, True),
@@ -255,27 +268,29 @@ MUTATIONS = {
     "CheckRun の失敗を見ない": ('elif c.get("conclusion") not in CHECK_PASS:', 'elif False:'),
     # 守る 4: 衝突していればマージしない
     "CONFLICTING を見ない": ('if mergeable == "CONFLICTING":', 'if False:'),
-    # 守る 5: 見ていないコミットをマージしない
+    # 守る 5: base が既定ブランチでない PR をマージしない
+    "base を見ない": ('if base != default:', 'if False:'),
+    # 守る 6: 見ていないコミットをマージしない
     "--match-head-commit を渡さない": (
         '"--squash", "--match-head-commit", head_sha]', '"--squash"]'),
-    # 守る 6: 未コミットを持つ worktree
+    # 守る 7: 未コミットを持つ worktree
     "未コミットを見ない": ('if git(["status", "--porcelain", "--untracked-files=all"], cwd=str(path)).strip():',
                           'if False:'),
-    # 守る 7: push していない worktree
+    # 守る 8: push していない worktree
     "push を見ない": ('if local != head_sha:', 'if False:'),
-    # 守る 8: 自分が中にいる worktree
+    # 守る 9: 自分が中にいる worktree
     "cwd を見ない": ('if here == path.resolve():', 'if False:'),
-    # 守る 9: ロックされた worktree も撤去できる
+    # 守る 10: ロックされた worktree も撤去できる
     "unlock しない": ('if wt["locked"]:', 'if False:'),
-    # 守る 10: MERGED を確かめるまで worktree を残す（撤去をマージの前に移す）
+    # 守る 11: MERGED を確かめるまで worktree を残す（撤去をマージの前に移す）
     "撤去をマージの前に置く": (
         '        res = run(["gh", "pr", "merge"',
         '        remove_worktree(wt) if wt and not wt["main"] else None\n        res = run(["gh", "pr", "merge"'),
-    # 守る 11: 閉じるはずの Issue を確かめる
+    # 守る 12: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
-    # 守る 12: 判定できなかったことを時間切れと答えない
+    # 守る 13: 判定できなかったことを時間切れと答えない
     "判定できなかったを時間切れと答える": ('        return 7\n', '        return 5\n'),
-    # 守る 13: 7 でも済んでいないことを出す
+    # 守る 14: 7 でも済んでいないことを出す
     "7 で済んでいないことを出さない": ('        for pr_ in problems:\n            print(f"  済んでいないこと',
                                  '        for pr_ in []:\n            print(f"  済んでいないこと'),
 }
@@ -286,6 +301,7 @@ KILLS = {
     "検査 0 本を通過と読む": ["検査が 0 本なら時間切れ"],
     "CheckRun の失敗を見ない": ["CheckRun の失敗で止まる"],
     "CONFLICTING を見ない": ["衝突していれば止まる"],
+    "base を見ない": ["base が既定ブランチでなければマージしない（積んだ周）"],
     "--match-head-commit を渡さない": [],  # 引数で見る（下）
     "未コミットを見ない": ["未コミットがあればマージしない", "未追跡を隠す設定（showUntrackedFiles=no）でも見る"],
     "push を見ない": ["push していなければマージしない"],

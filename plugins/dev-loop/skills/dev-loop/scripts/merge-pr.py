@@ -24,6 +24,9 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
   （`CONFLICTING` の PR は `no checks reported` で CI が 1 本も走っていなかった。`CLAUDE.md`）。
 - **失敗した検査があれば、期限を待たずに止める**——`CheckRun` は `conclusion`、`StatusContext` は `state` で読む。
 - **衝突していればマージしない**——`CONFLICTING` は待っても直らない。
+- **base が既定ブランチでない PR をマージしない**——積んだ周（stacked）の PR は下の周のブランチを base にしている。
+  下を squash してもそのブランチは残る（下の「ブランチを消さない」）ので、**載せ替えずにマージすると上の変更は
+  既定ブランチではなく下のブランチへ入り、止まらない**（#392。載せ替えは `references/stacked.md`）。
 - **見ていないコミットをマージしない**——待って確かめた head の SHA を `--match-head-commit` に渡す。
 - **未コミットの変更を持つ worktree のブランチをマージしない**——撤去で失う。
   未追跡は `status.showUntrackedFiles` の設定に依らず見る（`no` だと見落とし、撤去で黙って消える）。
@@ -52,6 +55,8 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
   （worktree は残っている）
 - **9**: **マージはした**（`MERGED` を確かめた）が、後片付けか確かめが済んでいない——
   worktree を撤去できなかった・閉じるはずの Issue が閉じない
+- **10**: PR の base が既定ブランチでない——積んだ周を載せ替えていない（マージしていない。
+  `references/stacked.md` の「下の周がマージされたら」）
 
 ## 何を守らないか
 
@@ -76,7 +81,7 @@ import sys
 import time
 from pathlib import Path
 
-PR_FIELDS = "state,isDraft,mergeable,headRefName,headRefOid,closingIssuesReferences,statusCheckRollup"
+PR_FIELDS = "state,isDraft,baseRefName,mergeable,headRefName,headRefOid,closingIssuesReferences,statusCheckRollup"
 
 CHECK_PASS = {"SUCCESS", "NEUTRAL", "SKIPPED"}
 STATUS_PENDING = {"PENDING", "EXPECTED"}
@@ -117,6 +122,15 @@ def view_pr(number: str) -> dict:
     return gh_json(["pr", "view", number, "--json", PR_FIELDS])
 
 
+def default_branch() -> str:
+    data = gh_json(["repo", "view", "--json", "defaultBranchRef"])
+    ref = data.get("defaultBranchRef")
+    name = ref.get("name") if isinstance(ref, dict) else None
+    if not isinstance(name, str) or not name:
+        raise Undetermined(f"既定ブランチが読めない: {ref!r}")
+    return name
+
+
 def classify_checks(rollup) -> tuple[str, list[str]]:
     """検査を `pass` / `pending` / `fail` / `none` に分ける。2 つ目は名指しする検査。"""
     if not isinstance(rollup, list):
@@ -155,7 +169,7 @@ def classify_checks(rollup) -> tuple[str, list[str]]:
     return "pass", []
 
 
-def wait_until_ready(number: str, interval: float, timeout: float) -> tuple[int, dict]:
+def wait_until_ready(number: str, default: str, interval: float, timeout: float) -> tuple[int, dict]:
     """CI が全部通り、`MERGEABLE` になるまで待つ。(終了コード, 最後に読んだ PR)。0 なら進んでよい。"""
     deadline = time.monotonic() + timeout
     while True:
@@ -168,6 +182,13 @@ def wait_until_ready(number: str, interval: float, timeout: float) -> tuple[int,
         if pr.get("isDraft"):
             print(f"PR #{number} は draft である。何もしない。", file=sys.stderr)
             return 2, pr
+        base = pr.get("baseRefName")
+        if not isinstance(base, str) or not base:
+            raise Undetermined(f"baseRefName が読めない: {base!r}")
+        if base != default:
+            print(f"PR #{number} の base は {base} で、既定ブランチ {default} でない（積んだ周を載せ替えていない）。"
+                  "マージしない。", file=sys.stderr)
+            return 10, pr
         mergeable = pr.get("mergeable")
         checks, names = classify_checks(pr.get("statusCheckRollup"))
         if checks == "fail":
@@ -299,7 +320,7 @@ def main(argv: list[str]) -> int:
     done = []  # 判定できなかったときに、どこまで済んだかを言う
     problems = []  # 同じく、済んでいないことを言う
     try:
-        rc, pr = wait_until_ready(a.number, a.interval, a.timeout)
+        rc, pr = wait_until_ready(a.number, default_branch(), a.interval, a.timeout)
         if rc:
             return rc
         head_sha = pr.get("headRefOid") or ""
