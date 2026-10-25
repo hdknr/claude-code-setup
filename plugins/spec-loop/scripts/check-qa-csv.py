@@ -62,14 +62,6 @@ INTERNAL_NAME = "qa-dev.csv"
 INTERNAL_FORBIDDEN = {PROVISIONAL}
 assert INTERNAL_FORBIDDEN <= set(STATES)
 
-# `反映済み` の行の `回答` にこの語があれば、利用者が確かめていない暫定の回答として扱う（`is_provisional`）
-PROVISIONAL_ANSWER = "暫定で採用"
-# 後にこの書き方が続くもの（否定・取り下げた経緯）は印に数えない。`暫定で採用します`・`暫定で採用した` は数える
-# （列挙の正は `references/qa-csv.md` の「暫定の行の判別」。`test-check-qa-csv.py` が突き合わせる）
-PROVISIONAL_NOT = ("しない", "しなかった", "しません", "せず", "していた", "された", "されていた")
-PROVISIONAL_MARK = re.compile(re.escape(PROVISIONAL_ANSWER)
-                              + "(?!" + "|".join(re.escape(s) for s in PROVISIONAL_NOT) + ")")
-
 NO_ANSWER = "未回答"
 NO_TARGET = "—"
 # 推奨しない質問の `推奨`。空と区別する（理由は `推奨の理由` に書く）
@@ -103,10 +95,11 @@ def is_internal_number(number: str) -> bool:
 
 
 def is_provisional(row: dict[str, str]) -> bool:
-    """利用者が確かめていない暫定の回答で仕様に反映した行か——`暫定反映`、または `反映済み` で `回答` に `PROVISIONAL_MARK`。
-    **行が暫定かを決めるのはここだけ**——`build-proposal.py` はこれを読む（#374）。`確認中` の行は反映していないので暫定ではない。"""
-    state = row["状態"].strip()
-    return state == PROVISIONAL or (state == DONE and PROVISIONAL_MARK.search(row["回答"]) is not None)
+    """利用者が確かめていない暫定の回答で仕様に反映した行か——`状態` が `PROVISIONAL` の行だけ。**`回答` の文言は見ない**
+    （#404。文言の一致は否定と肯定の書き方を両方は見分けられなかった——決まりの正は `references/qa-csv.md` の「暫定の行の判別」）。
+    **行が暫定かを決めるのはここだけ**——`build-proposal.py`・`qa-to-pptx.py`・`check-spec-exit.py`・`scaffold.py`・
+    `check-signoff.py` はこれを読む（MkDocs の雛形のフックは単独で動くので写しを持つ）。"""
+    return row["状態"].strip() == PROVISIONAL
 
 
 def option_labels(value: str) -> tuple[list[str], str | None]:

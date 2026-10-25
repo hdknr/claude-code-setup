@@ -238,6 +238,84 @@ NUMBER_MUTATIONS = [
     ("番号の先頭だけ見る", "return INTERNAL_NUMBER.fullmatch(number) is not None", "return INTERNAL_NUMBER.match(number) is not None"),
 ]
 
+# 行 → 暫定の行か（`is_provisional`。暫定を決めるのはここだけで、`状態` だけを見る——#404）。
+# `回答` の書き方は答えを変えない: #403 の否定の書き方も、#366 の実データの形（`反映済み`＋「暫定で採用」）も確定の行
+PROVISIONAL_ROWS = [
+    ("暫定反映", "A（暫定で採用。業務部 2026-10-21 の指示）", True),
+    ("暫定反映", "A（業務部 2026-10-21 の指示）", True),
+    (" 暫定反映 ", "A", True),
+    ("反映済み", "A（推奨案を暫定で採用。開発側の指示）", False),
+    ("反映済み", "A を暫定で採用します（業務部の確認待ち）", False),
+    ("反映済み", "A（暫定で採用していない）", False),
+    ("反映済み", "A（暫定で採用されなかった B は取り下げ）", False),
+    ("反映済み", "A（暫定で採用しなければ間に合わない）", False),
+    ("反映済み", "A（業務部が回答）", False),
+    ("確認中", "B（暫定で採用の予定）", False),
+    ("確認中", "未回答", False),
+]
+PROVISIONAL_MUTATIONS = [
+    ("暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False"),
+    ("反映済みも暫定にする", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() in (PROVISIONAL, DONE)'),
+    ("文言の一致に戻す", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() == PROVISIONAL or (row["状態"].strip() == DONE and "暫定で採用" in row["回答"])'),
+    ("状態の空白を落とさない", 'return row["状態"].strip() == PROVISIONAL', 'return row["状態"] == PROVISIONAL'),
+]
+
+# 暫定の判別を読む側（#404）。どれも `is_provisional` を呼び、`暫定反映` を自分で比べない——
+# 判別を状態だけにしたので、写しに戻しても挙動は同じ（変異が挙動では殺せない）。だから構造で見る
+READERS = {"build-proposal.py": "qa.is_provisional(", "qa-to-pptx.py": "qa.is_provisional(",
+           "check-spec-exit.py": "pptx.qa.is_provisional(", "scaffold.py": "qa.is_provisional(",
+           "check-signoff.py": "qa.is_provisional("}
+# `PROVISIONAL` と状態を比べる形（`==`・`!=`・`in`）と、状態の名前の文字列
+COMPARES = re.compile(r"""(?:[=!]=|\bin\b)[^\n#]*\bPROVISIONAL\b|\bPROVISIONAL\b\s*[=!]=|["']暫定反映["']""")
+HOOK_JUDGE = '    return row["状態"].strip() == QA_PROVISIONAL\n'
+READER_MUTATIONS = [
+    ("scaffold を写しに戻す", "scaffold.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == qa.PROVISIONAL]'),
+    ("照合を写しに戻す", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == qa.PROVISIONAL]'),
+    ("条件 1 を写しに戻す", "check-spec-exit.py", "if pptx.qa.is_provisional(row)]",
+     'if row["状態"].strip() == pptx.qa.PROVISIONAL]'),
+    ("資料を写しに戻す（文字列で）", "qa-to-pptx.py", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if row["状態"].strip() == "暫定反映" else ""'),
+    ("提案書を写しに戻す（in で）", "build-proposal.py", "provisional = [r for r in qa_rows if qa.is_provisional(r)]",
+     'provisional = [r for r in qa_rows if r["状態"].strip() in (qa.PROVISIONAL,)]'),
+    ("フックを写しの外で比べる", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
+     'provisional = sum(row["状態"] == QA_PROVISIONAL for row in rows)'),
+]
+
+
+def provisional_mismatches(mod) -> list[str]:
+    return [f"{state!r}・{answer!r} → {mod.is_provisional({'状態': state, '回答': answer})}（期待: {want}）"
+            for state, answer, want in PROVISIONAL_ROWS if mod.is_provisional({"状態": state, "回答": answer}) != want]
+
+
+def reader_sources() -> dict[str, str]:
+    sources = {p.name: p.read_text(encoding="utf-8") for p in sorted((PLUGIN / "scripts").glob("*.py"))}
+    sources[HOOK.name] = HOOK.read_text(encoding="utf-8")
+    return sources
+
+
+def reader_problems(sources: dict[str, str]) -> list[str]:
+    problems = [f"{name}: {call} を呼んでいない" for name, call in READERS.items() if call not in sources.get(name, "")]
+    for name, text in sources.items():
+        if name == SCRIPT.name:
+            continue
+        if name == HOOK.name:
+            # フックは写しを 1 つだけ持つ（`qa_is_provisional`）。比べてよいのはその本体の 1 行だけ
+            if HOOK_JUDGE not in text:
+                problems.append(f"{name}: qa_is_provisional の本体（状態だけで決める 1 行）が無い")
+            rest = text.replace(HOOK_JUDGE, "", 1)
+            if re.search(r"(?:[=!]=|\bin\b)[^\n#]*\bQA_PROVISIONAL\b|\bQA_PROVISIONAL\b\s*[=!]=", rest):
+                problems.append(f"{name}: qa_is_provisional の外で暫定を比べている")
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if COMPARES.search(line):
+                problems.append(f"{name}:{number}: 暫定を is_provisional を通さずに比べている: {line.strip()}")
+    return problems
+
+
 # `references/tree.md の「X」`（バッククォートで囲んだ形も）。X は指した先の見出し
 POINTER = re.compile(r"references/(?P<file>[\w.-]+\.md)`? の「(?P<heading>[^」]+)」")
 HEADING = re.compile(r"#{1,6} (?P<text>.+)")
@@ -386,14 +464,10 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
     if provisional != mod.PROVISIONAL:
         problems.append(f"暫定の状態 {provisional!r} ≠ 本体 {mod.PROVISIONAL!r}")
 
-    provisional_answer = first_code(markdown, "`回答` に {} を含む行を、暫定の行として扱う")
-    if provisional_answer != mod.PROVISIONAL_ANSWER:
-        problems.append(f"暫定の回答の印 {provisional_answer!r} ≠ 本体 {mod.PROVISIONAL_ANSWER!r}")
-    # 印に数えない書き方（「数えない書き方」の 1 列の表）
-    m = re.search(r"^\| 数えない書き方[^\n]*\n\| --- \|\n((?:\| `[^`]+` \|\n)*)", markdown, re.M)
-    excluded = re.findall(r"`([^`]+)`", m.group(1)) if m else []
-    if excluded != list(mod.PROVISIONAL_NOT):
-        problems.append(f"暫定の印に数えない書き方 {excluded} ≠ 本体 {list(mod.PROVISIONAL_NOT)}")
+    # 暫定の行の判別（「暫定の行の判別」。状態だけで決める——#404）
+    judged = first_code(markdown, "`状態` が {} の行だけを、暫定の行として扱う")
+    if judged != mod.PROVISIONAL:
+        problems.append(f"暫定の行の判別の状態 {judged!r} ≠ 本体 {mod.PROVISIONAL!r}")
 
     # 「列」の表のセルに書いた決まりと、本体の写し
     cells = column_cells(markdown)
@@ -452,8 +526,7 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("状態の表の 1 行", "| `反映済み` |", "| 反映済み |"),
     ("反映した状態", "仕様に反映した状態は `暫定反映` と", "仕様に反映した状態は `確認中` と"),
     ("暫定の状態", "`状態` は `暫定反映`。", "`状態` は `確認中`。"),
-    ("暫定の回答の印", "`回答` に `暫定で採用` を含む行を", "`回答` に `暫定` を含む行を"),
-    ("暫定の印に数えない書き方", "| `していた` |\n", ""),
+    ("暫定の行の判別の状態", "`状態` が `暫定反映` の行だけを、", "`状態` が `反映済み` の行だけを、"),
     ("空でよい列", "| 費用に関わらない質問は空でよい。", "| 費用に関わらない質問も空を許さない。"),
     ("費用付きの質問の起票元", "**起票元が `実現性・コスト` の行は", "**起票元が `開発` の行は"),
     ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
@@ -530,6 +603,18 @@ def main() -> int:
         problems = number_layer_mismatches(mod)
         check("番号の層が期待どおり", not problems, "; ".join(problems))
 
+        print("4b'. 暫定の行の判別（is_provisional。状態だけで決め、回答の文言は見ない——#404）")
+        problems = provisional_mismatches(mod)
+        check("暫定の判別が期待どおり（否定・肯定の書き方を含む）", not problems, "; ".join(problems))
+        sources = reader_sources()
+        problems = reader_problems(sources)
+        check("読む側が全部 is_provisional を通す（写しを持たない）", not problems, "; ".join(problems))
+        for name, file, before, after in READER_MUTATIONS:
+            if sources[file].count(before) != 1:
+                check(f"崩すと見える: {name}", False, f"崩す箇所が {sources[file].count(before)} 回現れる")
+                continue
+            check(f"崩すと見える: {name}", bool(reader_problems({**sources, file: sources[file].replace(before, after)})))
+
         print("4c. 移す手順への指し先が references/ の見出しにある")
         references = {p.name: p.read_text(encoding="utf-8") for p in REFERENCES.glob("*.md")}
         sources = pointer_sources(mod)
@@ -574,6 +659,14 @@ def main() -> int:
             broken.write_text(source.replace(before, after), encoding="utf-8")
             assert_in_tmp(broken)
             check(f"変異を殺せる: {name}（番号の層）", bool(number_layer_mismatches(load(broken))))
+        for index, (name, before, after) in enumerate(PROVISIONAL_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            broken = root / f"provisional-mutant-{index}.py"
+            broken.write_text(source.replace(before, after), encoding="utf-8")
+            assert_in_tmp(broken)
+            check(f"変異を殺せる: {name}（暫定の判別）", bool(provisional_mismatches(load(broken))))
         broken = root / "pointer-mutant.py"
         broken.write_text(source.replace('MIGRATION = "references/tree.md の「Q&A 表を移す」"',
                                          'MIGRATION = "references/tree.md の「Q&A 表を直す」"'), encoding="utf-8")
@@ -585,7 +678,7 @@ def main() -> int:
     if failures:
         print(f"FAIL: {len(failures)} 件")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(READER_MUTATIONS) + 1} 件")
     return 0
 
 
