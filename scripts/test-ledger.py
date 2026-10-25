@@ -220,11 +220,36 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                               run(mod, ["add", name, "5"], root)[0], f.read_bytes() == before)
     plant("bool", [{"number": True, "state": "todo", "deps": []}])
     o["真偽値の番号"] = run(mod, ["next", "bool"], root)[:2]
+    # 形の誤り（#390 の 2 パス目）: `true == 1`・`1.0 == 1` の format・決まった一覧に無い欄・ファイル名と違う name
+    plans = root / ".claude" / "plans"
+    for name, data in (("ftrue", {"format": True, "name": "ftrue", "issues": [entry(1, [])]}),
+                       ("ffloat", {"format": 1.0, "name": "ffloat", "issues": [entry(1, [])]}),
+                       ("extra", {"format": 1, "name": "extra", "issues": [{**entry(1, []), "colour": "red"}]}),
+                       ("other", {"format": 1, "name": "OTHER", "issues": [entry(1, [])]})):
+        (plans / f"cruise-{name}.json").write_text(json.dumps(data), encoding="utf-8")
+        o[f"形の誤り {name}"] = run(mod, ["next", name], root)[:2]
+    # 台帳に無い Issue への `鍵=値` の形の誤りは 2（Issue を先に引くと 3 になる）
+    o["set 台帳に無い・鍵=値でない"] = run(mod, ["set", "c", "42", "bad"], root)[0]
+    # 名前が長すぎる・読む権限が無い: 在るかを確かめる段で素の例外にしない（Python 3.13 以前）
+    o["名前が長すぎる show"] = run(mod, ["show", "x" * 300], root)[0]
+    o["名前が長すぎる init"] = run(mod, ["init", "x" * 300], root)[0]
+    locked = tmp / f"locked-{tag}"
+    locked.mkdir()
+    git(locked, "init", "-q")
+    (locked / ".claude" / "plans").mkdir(parents=True)
+    (locked / ".claude" / "plans").chmod(0)
+    try:
+        r = run(mod, ["next", "c"], locked)
+        o["読めない plans の next"] = (r[0], "台帳が無い" not in str(r[2]))
+    finally:
+        (locked / ".claude" / "plans").chmod(0o755)
 
-    # L9: git の外
+    # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
+    # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
     outside = tmp / f"outside-{tag}"
     outside.mkdir()
-    o["git の外"] = run(mod, ["show", "c"], outside)[0]
+    o["git の外"] = (run(mod, ["path", "c"], outside)[0], run(mod, ["init", "c"], outside)[0],
+                     list(outside.iterdir()))
 
     # L10: 書けない（`.claude/plans` がファイル）。**別のリポジトリで**——上の台帳を巻き込まない
     flat = tmp / f"flat-{tag}"
@@ -233,6 +258,17 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     (flat / ".claude").mkdir()
     (flat / ".claude" / "plans").write_text("ファイル\n", encoding="utf-8")
     o["書けない init"] = run(mod, ["init", "c"], flat)[0]
+    # 保存の段まで届く「書けない」: 台帳は在って読めるが、`.claude/plans` に一時ファイルを作れない。
+    # **上の試料は在るかを確かめる段で 4 になり、保存の段に届かない**（#390 の 2 パス目）
+    ro = tmp / f"ro-{tag}"
+    ro.mkdir()
+    git(ro, "init", "-q")
+    run(mod, ["init", "c"], ro)
+    (ro / ".claude" / "plans").chmod(0o555)
+    try:
+        o["書けない add"] = run(mod, ["add", "c", "1"], ro)[0]
+    finally:
+        (ro / ".claude" / "plans").chmod(0o755)
 
     # L1: `--separate-git-dir` とサブモジュール。**作業ツリーの外を指さない**
     base = tmp / f"layouts-{tag}"
@@ -255,6 +291,12 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     git(base / "sup" / "m", "worktree", "add", "-q", str(base / "m-wt"))
     o["sub(メイン)"] = where2(base / "sup" / "m")
     o["sub(worktree)"] = where2(base / "m-wt")
+    # bare を `<dir>/.git` に置いた形（#390 の 2 パス目）: 根からも worktree からも、作業ツリーでない <dir> を指さない
+    git(base, "clone", "-q", "--bare", str(base / "lib"), str(base / "bp" / ".git"))
+    git(base / "bp", "worktree", "add", "-q", str(base / "bp" / "main-wt"))
+    o["bare(根)"] = where2(base / "bp")[0]
+    o["bare(worktree)"] = where2(base / "bp" / "main-wt")[0]
+    o["bare の worktree が在る"] = (base / "bp" / "main-wt" / ".git").is_file()
     return o
 
 
@@ -268,7 +310,7 @@ MUTATIONS = {
         ('    if common.name == ".git":\n', "    if True:\n")],
     # 守る: init で上書きしない
     "在る台帳に init で上書きする": [
-        ("    if path.exists():\n        raise Refused", "    if False:\n        raise Refused")],
+        ("    if exists(path):\n        raise Refused", "    if False:\n        raise Refused")],
     # 守る: 決まった一覧に無い状態を拒む
     "無い状態を通す": [
         ('        if issue["state"] not in STATES:\n            raise Refused',
@@ -320,6 +362,9 @@ def main() -> int:
         check("サブモジュール: 作業ツリーの下（.git/modules の下ではない）",
               o["sub(メイン)"] == (0, "<base>/sup/m/.claude/plans/cruise-c.json"))
         check("サブモジュールの worktree の中からも同じパス", o["sub(worktree)"] == o["sub(メイン)"])
+        check("bare（<dir>/.git）の試料が作れている（作れないと 4 == 4 で素通りする）", o["bare の worktree が在る"])
+        check("bare: 根からも worktree の中からも 4（作業ツリーでない <dir> を指さない）",
+              (o["bare(根)"], o["bare(worktree)"]) == (4, 4))
 
         print("\ninit（L2）")
         check("2 度目の init は 3", o["init(2 度目)"] == 3)
@@ -331,6 +376,7 @@ def main() -> int:
                     "add 2 度目", "set 台帳に無い", "set 無い状態", "set 無い鍵"):
             check(f"{key} は 3", o[key] == 3)
         check("鍵=値でない set は 2", o["set 鍵=値でない"] == 2)
+        check("台帳に無い Issue でも、鍵=値でない set は 2（3 ではない）", o["set 台帳に無い・鍵=値でない"] == 2)
         check("番号でない add は 2", o["add 番号でない"] == 2)
         check("拒んだ操作のあとも台帳が 1 バイトも変わらない", o["拒んだ後も同じ"])
 
@@ -353,13 +399,20 @@ def main() -> int:
         for name in ("dup", "cyc", "miss"):
             check(f"中身の崩れた台帳（{name}）: next は答えずに 4・set / add も 3 ではなく 4・書き換えない",
                   o[f"崩れた {name}"] == ((4, ""), 4, 4, True))
+        for name in ("ftrue", "ffloat", "extra", "other"):
+            check(f"形の誤り（{name}）は 4（next は答えない）", o[f"形の誤り {name}"] == (4, ""))
         check("書けない（.claude/plans がファイル）init は 4", o["書けない init"] == 4)
+        check("書けない（.claude/plans に一時ファイルを作れない）add は 4", o["書けない add"] == 4)
+        check("名前が長すぎる show / init は 4（素の例外にしない）",
+              (o["名前が長すぎる show"], o["名前が長すぎる init"]) == (4, 4))
+        check("読む権限の無い .claude/plans の next は 4 で、「台帳が無い」とは言わない",
+              o["読めない plans の next"] == (4, True))
 
         print("\n名前（L8）・git の外（L9）")
         check("../x・a/b・.x・x/../../../escaped は 2",
               (o["名前 ../x"], o["名前 a/b"], o["名前 .x"], o["名前 x/../../../escaped"]) == (2, 2, 2, 2))
         check(".claude/plans の外に書いていない", o["plans の外に書いていない"])
-        check("git の外は 4", o["git の外"] == 4)
+        check("git の外は path も init も 4 で、何も書かない", o["git の外"] == (4, 4, []))
 
         print("\n終了コードが docstring の表と一致する（L10）")
         source = SCRIPT.read_text(encoding="utf-8")
@@ -383,8 +436,15 @@ def main() -> int:
             d.mkdir()
             broken = d / "ledger.py"
             broken.write_text(mutated, encoding="utf-8")
+            # **読み込めない変異は「殺せた」ではなく「当てられなかった」**——構文の誤りでも下の例外で
+            # 殺せたと数えてしまい、主張を 1 度も当てずに緑になる（#390 の 2 パス目）
             try:
-                got = scenario(load(broken), tmp, f"mut-{abs(hash(name))}")
+                mutant = load(broken)
+            except Exception as exc:
+                check(f"変異を読み込める（当てられなかった）: {name}: {type(exc).__name__}", False)
+                continue
+            try:
+                got = scenario(mutant, tmp, f"mut-{abs(hash(name))}")
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
