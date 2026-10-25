@@ -265,8 +265,10 @@ PROVISIONAL_MUTATIONS = [
 
 # 暫定の判別を読む側（#404）。どれも `is_provisional` を呼び、`暫定反映` を自分で比べない——
 # 判別を状態だけにしたので、写しに戻しても挙動は同じ（変異が挙動では殺せない）。だから構造で見る:
-# - 呼ぶ数を固定する——呼ぶ箇所の 1 つを写しに替えると数が減る（書き方に依らない。`.startswith` でも `in` でも）
-# - 判別の部品（状態の名前・定数）に触れてよいのは、メッセージへの差し込み（f-string の `{qa.PROVISIONAL}`）だけ
+# - 呼ぶ数を固定する——呼ぶ箇所の 1 つを写しに替えると数が減る（書き方に依らない。`.startswith` でも `in` でも）。
+#   数えるのは `qa.is_provisional(...)` の形だけで、読む側に同名の関数・名前を置かせない（手元の写しを呼んでも数が合う形を塞ぐ）
+# - 判別の部品（状態の名前・定数）に触れてよいのは、メッセージへの差し込み（f-string の `{qa.PROVISIONAL}`）だけ。
+#   比較の中の差し込み（`== f"{qa.PROVISIONAL}"`）はメッセージではないので除かない
 # 守らないもの: 呼ぶ箇所を残したまま、新しい経路で部品を使わずに暫定を決める形（`.startswith("暫定")` を足す）。
 # 呼ぶ数は、読む箇所を足したら直す（数が違うと赤になり、どのファイルかを言う）
 READERS = {"build-proposal.py": 3, "qa-to-pptx.py": 4, "check-spec-exit.py": 1, "scaffold.py": 1, "check-signoff.py": 1}
@@ -305,6 +307,17 @@ READER_MUTATIONS = [
      'provisional = sum(row["状態"] == "暫定反映" for row in rows)'),
     ("フックで暫定を数えない", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
      "provisional = 0"),
+    # 2 パス目のレビューが素通りを示した形（#404）——手元に同名の写しを置いて呼ぶ。比較の右辺の f-string で部品に触れる
+    ("照合に同名の写しを置く（比較の右辺の f-string で）", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if is_provisional(row)]\n\n\ndef is_provisional(row):\n    return row["状態"].strip() == f"{qa.PROVISIONAL}"'),
+    ("照合を比較の右辺の f-string で写しに戻す", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == f"{qa.PROVISIONAL}"]'),
+    ("資料に部品を使わない同名の写しを置く", "qa-to-pptx.py", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if is_provisional(row) else ""\n'
+     '            is_provisional = lambda r: r["状態"].strip() in qa.REFLECTED and r["状態"].strip() != qa.DONE'),
+    # 呼ぶ数を保ったまま同名の写しだけ置く——数では見えず、定義の確かめだけが捕まえる
+    ("照合に呼ぶ数を保ったまま同名の写しを置く", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if qa.is_provisional(row)]\n\n\ndef is_provisional(row):\n    return row["状態"].strip() in qa.REFLECTED'),
 ]
 
 
@@ -320,10 +333,12 @@ def reader_sources() -> dict[str, str]:
 
 
 def judge_touches(tree: ast.AST, names: set[str], texts: set[str], allowed: tuple[ast.AST, ...] = ()) -> list[int]:
-    """判別の部品（名前・状態の文字列）に触れている行。f-string の差し込みの中と、`allowed` の節の中は除く。"""
+    """判別の部品（名前・状態の文字列）に触れている行。f-string の差し込みの中と、`allowed` の節の中は除く。
+    差し込みでも比較の中にあるもの（`== f"{qa.PROVISIONAL}"`）は除かない——メッセージではなく判別である。"""
     skip = {id(sub) for node in allowed for sub in ast.walk(node)}
+    compared = {id(sub) for node in ast.walk(tree) if isinstance(node, ast.Compare) for sub in ast.walk(node)}
     for node in ast.walk(tree):
-        if isinstance(node, ast.FormattedValue):
+        if isinstance(node, ast.FormattedValue) and id(node) not in compared:
             skip |= {id(sub) for sub in ast.walk(node.value)}
     lines = []
     for node in ast.walk(tree):
@@ -337,10 +352,22 @@ def judge_touches(tree: ast.AST, names: set[str], texts: set[str], allowed: tupl
     return sorted(set(lines))
 
 
-def calls_to(tree: ast.AST, name: str) -> int:
+def calls_to(tree: ast.AST, name: str, attribute_only: bool = False) -> int:
+    """`name` を呼ぶ数。`attribute_only` なら `qa.is_provisional(...)` の形だけ数える——裸の名前は手元の写しでありうる。"""
     return sum(isinstance(node, ast.Call) and ((isinstance(node.func, ast.Attribute) and node.func.attr == name)
-                                               or (isinstance(node.func, ast.Name) and node.func.id == name))
+                                               or (not attribute_only and isinstance(node.func, ast.Name)
+                                                   and node.func.id == name))
                for node in ast.walk(tree))
+
+
+def defines(tree: ast.AST, name: str) -> list[int]:
+    """`name` を定義している行（関数・代入・取り込みの別名）——読む側が同名の写しを置いていないか。"""
+    lines = [node.lineno for node in ast.walk(tree)
+             if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name)
+             or (isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Store))]
+    lines += [node.lineno for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+              for alias in node.names if (alias.asname or alias.name) == name]
+    return sorted(set(lines))
 
 
 def reader_problems(sources: dict[str, str]) -> list[str]:
@@ -368,7 +395,9 @@ def reader_problems(sources: dict[str, str]) -> list[str]:
             continue
         for line in judge_touches(tree, JUDGE_NAMES, JUDGE_TEXTS):
             problems.append(f"{name}:{line}: 暫定を is_provisional を通さずに決めている")
-        if name in READERS and (got := calls_to(tree, "is_provisional")) != READERS[name]:
+        for line in defines(tree, "is_provisional"):
+            problems.append(f"{name}:{line}: is_provisional を手元に置いている（写し）")
+        if name in READERS and (got := calls_to(tree, "is_provisional", attribute_only=True)) != READERS[name]:
             problems.append(f"{name}: is_provisional を呼ぶ数が {got}（期待: {READERS[name]}）")
     problems += [f"{name}: 読む側が無い" for name in READERS if name not in sources]
     return problems

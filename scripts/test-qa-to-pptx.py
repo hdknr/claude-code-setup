@@ -66,6 +66,9 @@ ROWS = [
     # `反映済み` で `回答` に「暫定で採用」と書いた行（#366 の実データの形）。暫定は状態だけで決まるので確定の行——載らない（#404）
     ["Q-007", "要求確定", "文言だけ暫定の質問",
      "A: 可 / B: 不可", "A", "理由", "A（推奨案を暫定で採用。開発側の指示）", "決定表 9 行目", "反映済み", ""],
+    # `確認中` で `回答` に「暫定で採用」と書いた行——載るが暫定ではない（未反映）。資料の段で文言の判別を見分ける試料（#404 の 2 パス目）
+    ["Q-008", "要求確定", "文言だけ暫定の未反映の質問",
+     "A: 月次 / B: 週次", "A", "手間", "B（暫定で採用の予定）", "—", "確認中", ""],
 ]
 # 載る行（反映済みでない行）。暫定反映も載る（#325）
 PENDING = [r for r in ROWS if r[8] != "反映済み"]
@@ -257,6 +260,15 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("反映済みで絞らない", 'return code, lines, [row for row in rows if row["状態"].strip() != qa.DONE]',
      "return code, lines, rows"),
     ("一覧で暫定を見分けない", 'mark = "（暫定）" if qa.is_provisional(row) else ""', 'mark = ""'),
+    # 文言の判別を足す（#404 の 2 パス目）——Q-008 が一覧・各問・表紙で暫定に化ける
+    ("一覧で文言も暫定とみなす", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if qa.is_provisional(row) or "暫定で採用" in row["回答"] else ""'),
+    ("各問で文言も暫定とみなす", "    if qa.is_provisional(row):",
+     '    if qa.is_provisional(row) or "暫定で採用" in row["回答"]:'),
+    ("表紙で文言も暫定に数える", "def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:\n"
+     "    settled = sum(qa.is_provisional(row) for row in rows)",
+     "def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:\n"
+     '    settled = sum(qa.is_provisional(row) or "暫定で採用" in row["回答"] for row in rows)'),
     ("表紙の件数を分けない", 'body = lines_of(f"回答待ち・未反映の質問: {len(rows) - settled} 件", 2400)',
      'body = lines_of(f"回答待ち・未反映の質問: {len(rows)} 件", 2400)'),
     ("列検査を飛ばす", "    code, lines = qa.check(path)", "    code, lines = 0, []"),
