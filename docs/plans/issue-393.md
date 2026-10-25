@@ -81,7 +81,9 @@ main へのマージ → (a) プラグインのカタログ（利用者は `clau
 
 - 周の在り処: ブランチ `issue/393-absent-lines`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-393`・
   起点 `7865e11`・base の参照 `origin/main`・base の SHA `7865e116e98f6a4d0b1acdb5c3547d66590e7204`
-- 関門: 未着手
+- 実装: `d550971`（ほかに件数の行のコミット）。`check-all.py` 49/49 のうち落ちたのは件数の行だけ（足して単独で緑）
+- 関門: 未着手（次は手順 5 の 1 パス目: Verifier と `/code-review`）
+- 割り目（手順 4）: 訊いた結果をここに書く
 - 反証・差し戻し: なし
 - 交絡: 実験なし
 - 直す線: `既定`（出所: 手順 3 の回答。2026-10-25 の `AskUserQuestion`。`.claude/dev-loop.md` は無い）
@@ -90,3 +92,7 @@ main へのマージ → (a) プラグインのカタログ（利用者は `clau
 
 - 点検スクリプトに宣言の表示を足さない（利用者の決定）
 - 不在の線の機械の検査（`.claude/dev-loop.md` の形の検査）は作らない——既定（止まる）に倒れるので、誤記は安全側
+
+## 起票
+
+- この周の起票: 0 件
