@@ -12,7 +12,8 @@
 - `plugins/dev-loop/skills/dev-loop/references/ledger.md` — 「どう再開するか」の 4 番目（「台帳はまだ扱っていない（#392）」）を stacked.md へ繋ぐ
 - `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py` — PR の base が既定ブランチでなければマージしない（新しい終了コード）
 - `scripts/test-merge-pr.py` — 上の試料と変異
-- `plugins/dev-loop/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` で再生成。手で書かない）
 - `docs/plans/issue-392.md` — この計画
 
