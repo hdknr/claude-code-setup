@@ -164,6 +164,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-unattended-env.py` - **利用者が不在になる前の環境点検**の回帰テスト（#394。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py`**（`test-find-cycle.py` と同じ形）。
     **本体は CI からは呼ばない**——入力が利用者の `~/.claude` にある。**項目と、何を守らないかは本体の docstring を正とする**
+  - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
+    **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**
   - `collect-guard-rejections.py` - worktree 隔離セッションのガードによる拒否を
     トランスクリプトから収集する（**CI からは呼ばない**——入力が `~/.claude/projects` にあり、
     リポジトリの外で利用者ごとに違う。`token-metrics.py` と同じ形）
