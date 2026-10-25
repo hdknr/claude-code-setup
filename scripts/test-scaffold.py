@@ -83,6 +83,10 @@ QA_PROVISIONAL_UNCITED = "Q-004,要求確定（決定表）,返品の受付期�
 QA_INTERNAL_DONE = "D-001,仕様レビュー（Red Team）,取り消しの記録の保存先は,A: 同じ表 / B: 別の表,B,検索が速い,B（開発 2026-10-22）,spec/order.md,反映済み,\n"
 QA_INTERNAL_OPEN = QA_INTERNAL_DONE.replace("B（開発 2026-10-22）,spec/order.md,反映済み", "未回答,—,確認中")
 assert QA_INTERNAL_OPEN != QA_INTERNAL_DONE
+# 起票したループの印つきの番号（#278）。共有の表と内部の表の両方を、中間表現から指せる
+QA_MARKED = "Q-S-001,仕様レビュー（Red Team）,在庫が足りなければ？,A: 拒否する / B: 取り寄せ,A,理由,A（業務部が回答）,spec/order.md,反映済み,\n"
+QA_INTERNAL_MARKED = QA_INTERNAL_DONE.replace("D-001,", "D-S-001,", 1)
+assert QA_INTERNAL_MARKED != QA_INTERNAL_DONE
 QA_OPEN = "Q-003,開発（#9）,期限切れは？,A: 拒否 / B: 受け付ける,A,理由,未回答,—,確認中,\n"
 
 IR = {
@@ -182,6 +186,23 @@ def f1(ir: dict) -> dict:
 def cite_internal(ir: dict) -> None:
     # 共有の行も併せて指す——内部の行だけだと、層の判定を `all` にしても写した元が変わらない（#353 の狭いパス）
     ir["features"][1]["qa"] = ["D-001", "Q-001"]
+
+
+def cite_marked(ir: dict) -> None:
+    # 前の形の番号（Q-001）も併せて指し、表の並びを見る
+    ir["features"][1]["qa"] = ["D-S-001", "Q-S-001", "Q-001"]
+
+
+def marked_in_issue(repo: Path) -> str | None:
+    body = (repo / "build" / "scaffold" / "issues" / "F-002.md").read_text(encoding="utf-8")
+    order = ("Q-001", "Q-S-001", "D-S-001")  # 共有の表が先・前の形の番号が先（`check-qa-csv.py` の `number_order`）
+    missing = [no for no in order if f"| {no} |" not in body]
+    if missing:
+        return f"Issue の本文に印つきの Q&A（{', '.join(missing)}）が載っていない"
+    if [body.index(f"| {no} |") for no in order] != sorted(body.index(f"| {no} |") for no in order):
+        return f"Issue の本文の Q&A が {' → '.join(order)} の順に並んでいない"
+    # 印つきの D- も内部の層と読む——読まなければ写した元に内部の表が出ない
+    return None if "`build/merged/spec/qa-dev.csv`" in body else "印つきの内部の番号を内部の層と読んでいない"
 
 
 def internal_in_issue(repo: Path) -> str | None:
@@ -1076,6 +1097,10 @@ CASES: list[Case] = [
     Case("内部の Q&A が反映済みでない（関門が止める）", 1, "qa-dev.csv: D-001: 状態が 確認中", ir=edit(cite_internal),
          spec={"order.md": SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_DONE.replace("反映済み", "確認中")}),
     Case("内部の表に無い D- を指す", 1, "D-001 は Q&A 表に無い", ir=edit(cite_internal)),
+    Case("印つきの番号を指す", 0, ir=edit(cite_marked), qa=HEADER + QA_DONE + QA_DONE2 + QA_MARKED,
+         spec={"order.md": SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_MARKED}, post=marked_in_issue),
+    Case("印の形に反する番号を指す", 1, "Q&A の No の形に反する（'Q-X-001'）",
+         ir=edit(lambda ir: ir["features"][1].__setitem__("qa", ["Q-X-001"]))),
     # 関門
     Case("確認中の Q&A", 1, "Q-003: 状態が 確認中", qa=HEADER + QA_DONE + QA_DONE2 + QA_OPEN, pre=plant_old_contract,
          post=contract_kept_issues_gone),
@@ -1451,7 +1476,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("Q&A の実在を見ない", "        elif no not in answered:", "        elif False:", "Q&A が表に無い"),
     ("暫定の行を見ない", "            if held:", "            if False:", "暫定反映の Q&A を指さない"),
     ("内部の表を読まない", "        for path in (QA_PATH, INTERNAL_QA_PATH):", "        for path in (QA_PATH,):", "内部の Q&A を指す"),
-    ("D- の番号を指せない", 'QA_NO = re.compile(r"[QD]-[0-9]{3,}")', 'QA_NO = re.compile(r"Q-[0-9]{3,}")', "内部の Q&A を指す"),
+    ("D- の番号を指せない", "(qa.NUMBER.fullmatch(no) or qa.is_internal_number(no))", "qa.NUMBER.fullmatch(no)",
+     "内部の Q&A を指す"),
+    ("番号の形を見ない", "(qa.NUMBER.fullmatch(no) or qa.is_internal_number(no))", "True", "印の形に反する番号を指す"),
     ("写した元に内部の表を挙げない", "(QA_PATH, *([INTERNAL_QA_PATH] if any(", "(QA_PATH, *([] if any(", "内部の Q&A を指す"),
     # 層の判定（`check-qa-csv.py` の `is_internal_number`）を入れ替える（#353）
     ("写した元の層を入れ替える", "if any(qa.is_internal_number(no) for no in refs)",

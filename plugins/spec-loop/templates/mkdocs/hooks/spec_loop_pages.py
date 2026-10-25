@@ -61,7 +61,9 @@ QA_MIGRATION = "spec-loop の references/tree.md の「Q&A 表を移す」"
 QA_OPTION_SEPARATOR = " / "
 
 QA_PAGE = "qa.md"
-QA_NUMBER = re.compile(r"(?<![A-Za-z0-9_-])Q-[0-9]{3,}(?![A-Za-z0-9_-])")
+# 起票元ごとの番号の印（`Q-S-001`。#278）。印の無い前の形の番号（`Q-001`）もリンクにする
+QA_MARKS = "RSFD"
+QA_NUMBER = re.compile(rf"(?<![A-Za-z0-9_-])Q-(?:[{QA_MARKS}]-)?[0-9]{{3,}}(?![A-Za-z0-9_-])")
 # HTML の、文字でないもの: コメント・CDATA・宣言と処理命令・タグ（属性の値の中の > で切らない）。group(1) は終わりの /、group(2) は要素名
 MARKUP = re.compile(r"<!--.*?-->|<!\[CDATA\[.*?\]\]>|<[!?][^>]*>"
                     r"|<(/?)([A-Za-z][A-Za-z0-9-]*)(?:\"[^\"]*\"|'[^']*'|[^'\">])*>", re.DOTALL)
