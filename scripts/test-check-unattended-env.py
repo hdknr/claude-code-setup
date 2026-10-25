@@ -66,6 +66,9 @@ class Env:
     def user(self, data):
         return self.write(self.home / ".claude" / "settings.json", data)
 
+    def project_settings(self, data):
+        return self.write(self.project / ".claude" / "settings.json", data)
+
     def local(self, data):
         return self.write(self.project / ".claude" / "settings.local.json", data)
 
@@ -93,6 +96,8 @@ esac
 *-axo*) printf '{text}\\n' ;;
 *"-p 500"*) printf '  400 /Users/x/.local/bin/claude --session-id s --settings /tmp/flag.json\\n' ;;
 *"-p 400"*) printf '    1 /sbin/launchd\\n' ;;
+*"-p 600"*) printf '    1 /opt/claude --settings=/tmp/eq.json -p\\n' ;;
+*"-p 700"*) printf '  500 /Users/x/.local/bin/claude --session-id inner\\n' ;;
 *) exit 1 ;;
 esac
 """)
@@ -117,8 +122,10 @@ def scenario(mod_path: Path):
             os.environ["PATH"] = old
 
 
-def run(mod, env, flag=None, managed=None, platform="darwin"):
-    stack, items = mod.gather(env.project, COMMANDS, flag, managed, env.home, platform)
+def run(mod, env, flag=None, managed=None, platform="darwin", environ=None):
+    # environ は既定で空——実環境の CLAUDE_CONFIG_DIR を読むと、実 HOME の外の利用者の設定を読む
+    stack, items = mod.gather(env.project, COMMANDS, flag, managed, env.home, platform,
+                              env=environ if environ is not None else {})
     buf = io.StringIO()
     code = mod.report(stack, items, out=buf)
     return code, items, buf.getvalue()
@@ -148,6 +155,20 @@ def suite(script: Path) -> list[str]:
         code, items, _ = run(mod, env)
         check("壊れた JSON は判定できない", status_of(items, "設定（local）") == [mod.UNKNOWN], bad)
         check("判定できないだけなら 2", code == 2, bad)
+        check("読めない上の層を飛ばして下の層の true を良いにしない",
+              status_of(items, "自動継続") == [mod.UNKNOWN], bad)
+        check("読めない上の層があれば質問の待ちも判定できない",
+              status_of(items, "質問の待ち") == [mod.UNKNOWN], bad)
+        check("読めない層があれば allow だけで許可を良いにしない",
+              status_of(items, "`git push`") == [mod.UNKNOWN], bad)
+        env.user({"permissions": {"deny": ["Bash(git push:*)"]}})
+        _, items, _ = run(mod, env)
+        check("読めない層があっても deny に当たれば要対処", status_of(items, "`git push`") == [mod.ACTION], bad)
+    with scenario(script) as env:
+        env.all_good()
+        _, items, _ = run(mod, env, flag=env.project / "no-such-flag.json")
+        check("flag のパスが無ければ判定できない", status_of(items, "設定（flag）") == [mod.UNKNOWN], bad)
+        check("flag のパスが無ければ自動継続も判定できない", status_of(items, "自動継続") == [mod.UNKNOWN], bad)
     with scenario(script) as env:
         env.all_good()
         env.global_config("[1]")
@@ -175,6 +196,53 @@ def suite(script: Path) -> list[str]:
         _, items, _ = run(mod, env, flag=flag, managed=managed)
         check("managed の never が user の 10m に勝つ", status_of(items, "質問の待ち") == [mod.ACTION], bad)
 
+        check("managed の false が flag の true に勝つ",
+              status_of(run(mod, env, flag=flag, managed=env.write(
+                  env.project / "managed.json", {"autoContinueAtUsageLimit": False}))[1], "自動継続")
+              == [mod.ACTION], bad)
+    with scenario(script) as env:
+        env.all_good()
+        env.project_settings({"autoContinueAtUsageLimit": True})
+        env.local({"autoContinueAtUsageLimit": False})
+        _, items, _ = run(mod, env)
+        check("local の false が project の true に勝つ", status_of(items, "自動継続") == [mod.ACTION], bad)
+        env.local({})
+        env.project_settings({"autoContinueAtUsageLimit": False})
+        _, items, _ = run(mod, env)
+        check("project の false が user の true に勝つ", status_of(items, "自動継続") == [mod.ACTION], bad)
+    # managed-settings.d は managed の上に重なる
+    with scenario(script) as env:
+        env.all_good()
+        mdir = env.project / "managed"
+        (mdir / "managed-settings.d").mkdir(parents=True)
+        env.write(mdir / "managed-settings.d" / "10.json", {"askUserQuestionTimeout": "never"})
+        _, items, _ = run(mod, env, managed=mdir / "managed-settings.json")
+        check("managed-settings.d の never が user の 10m に勝つ", status_of(items, "質問の待ち") == [mod.ACTION], bad)
+        env.write(mdir / "managed-settings.d" / "20.json", "{ broken")
+        _, items, _ = run(mod, env, managed=mdir / "managed-settings.json")
+        check("managed-settings.d の壊れたファイルは判定できない",
+              status_of(items, "設定（managed.d）") == [mod.UNKNOWN], bad)
+    # CLAUDE_CONFIG_DIR
+    with scenario(script) as env:
+        alt = env.home.parent / "alt"
+        alt.mkdir()
+        assert_not_real_home(alt)
+        env.write(alt / "settings.json", {"autoContinueAtUsageLimit": True})
+        env.write(alt / ".claude.json", {"agentPushNotifEnabled": True})
+        _, items, _ = run(mod, env, environ={"CLAUDE_CONFIG_DIR": str(alt)})
+        check("CLAUDE_CONFIG_DIR の settings.json を user の層にする", status_of(items, "自動継続") == [mod.GOOD], bad)
+        check("CLAUDE_CONFIG_DIR の .claude.json を通知に読む",
+              status_of(items, "agentPushNotifEnabled") == [mod.GOOD], bad)
+
+    # 通知の値も厳密に
+    with scenario(script) as env:
+        env.all_good()
+        env.global_config({"agentPushNotifEnabled": False, "inputNeededNotifEnabled": "true"})
+        _, items, _ = run(mod, env)
+        check("通知の false は要対処", status_of(items, "agentPushNotifEnabled") == [mod.ACTION], bad)
+        check("通知の文字列 \"true\" は良いにしない",
+              status_of(items, "inputNeededNotifEnabled") == [mod.ACTION], bad)
+
     # 値の検査は厳密に
     with scenario(script) as env:
         env.all_good()
@@ -190,6 +258,12 @@ def suite(script: Path) -> list[str]:
         _, items, _ = run(mod, env)
         check("deny は allow に勝つ", status_of(items, "`git push`") == [mod.ACTION], bad)
         check("deny は他のコマンドに漏れない", status_of(items, "`gh pr merge`") == [mod.GOOD], bad)
+    with scenario(script) as env:
+        env.all_good()
+        env.local({"permissions": {"ask": ["Bash(git push:*)"]}})
+        _, items, _ = run(mod, env)
+        check("ask は allow に勝つ", status_of(items, "`git push`") == [mod.ACTION], bad)
+        check("ask は他のコマンドに漏れない", status_of(items, "`gh pr merge`") == [mod.GOOD], bad)
     # 規則の書式
     for rule, cmd, want in (("Bash", "git push", True), ("Bash(*)", "git push", True),
                             ("Bash(git:*)", "git push", True), ("Bash(git push *)", "git push", True),
@@ -205,6 +279,12 @@ def suite(script: Path) -> list[str]:
         env.local({"permissions": {"defaultMode": "auto"}})
         _, items, _ = run(mod, env)
         check("上の層の defaultMode が勝つ", status_of(items, "`git push`") == [mod.ACTION], bad)
+        env.local({})
+        managed = env.write(env.project / "managed.json",
+                            {"permissions": {"disableBypassPermissionsMode": "disable"}})
+        _, items, _ = run(mod, env, managed=managed)
+        check("disableBypassPermissionsMode があれば bypass を良いにしない",
+              status_of(items, "`git push`") == [mod.ACTION], bad)
 
     # 守る: Claude 自身の caffeinate -t を根拠にしない
     with scenario(script) as env:
@@ -215,6 +295,13 @@ def suite(script: Path) -> list[str]:
         env.processes(["/usr/bin/caffeinate -i -t 300", "caffeinate -i"])
         _, items, _ = run(mod, env)
         check("-t の無い caffeinate があれば良い", status_of(items, "スリープ") == [mod.GOOD], bad)
+        for line in ("caffeinate -it 300", "caffeinate -t300 -i", "caffeinate -i -w 123"):
+            env.processes(["/usr/bin/caffeinate -i -t 300", line])
+            _, items, _ = run(mod, env)
+            check(f"{line} は時限として数える", status_of(items, "スリープ") == [mod.ACTION], bad)
+        env.processes(["caffeinate -di"])
+        _, items, _ = run(mod, env)
+        check("caffeinate -di は時限でない", status_of(items, "スリープ") == [mod.GOOD], bad)
         env.sleep(0, fail=True)
         _, items, _ = run(mod, env)
         check("pmset が失敗すれば判定できない", status_of(items, "スリープ") == [mod.UNKNOWN], bad)
@@ -227,6 +314,10 @@ def suite(script: Path) -> list[str]:
         check("祖先の --settings を拾う", path == "/tmp/flag.json" and note is None, bad)
         path, note = mod.find_flag_settings(999)
         check("ps が読めなければ理由を返す", path is None and note, bad)
+        path, note = mod.find_flag_settings(600)
+        check("--settings=<file> の形も拾う", path == "/tmp/eq.json" and note is None, bad)
+        path, note = mod.find_flag_settings(700)
+        check("最寄りの claude で止まり、外側の --settings を拾わない", path is None and note is None, bad)
 
     # 守る: 何も書かない
     with scenario(script) as env:
@@ -245,13 +336,58 @@ MUTATIONS = {
         "        return Unreadable(p, str(e))",
         "        return {}"),
     "層を低い順に見る": (
-        "    for name, _path, data in reversed(stack):\n        if isinstance(data, dict) and key in data:",
-        "    for name, _path, data in stack:\n        if isinstance(data, dict) and key in data:"),
+        "    for name, _path, data in reversed(stack):\n        if isinstance(data, Unreadable):\n"
+        "            return data, name\n        if isinstance(data, dict) and key in data:",
+        "    for name, _path, data in stack:\n        if isinstance(data, Unreadable):\n"
+        "            return data, name\n        if isinstance(data, dict) and key in data:"),
+    "読めない上の層を飛ばす": (
+        "        if isinstance(data, Unreadable):\n            return data, name\n        if isinstance(data, dict) and key in data:",
+        "        if isinstance(data, dict) and key in data:"),
+    "読めない層があっても allow で良いにする": (
+        "        elif broken:\n",
+        "        elif False:\n"),
+    "ask を読まない": (
+        "        elif asked:\n",
+        "        elif False:\n"),
+    "flag のパスが無ければ未設定とする": (
+        'read_json(path) if path.exists() else Unreadable(path, "ファイルが無い")',
+        "read_json(path)"),
+    "--settings= を拾わない": (
+        '                if arg.startswith("--settings="):',
+        '                if False:'),
+    "最寄りの claude で止まらない": (
+        "                    return arg[len(\"--settings=\"):], None\n            return None, None\n",
+        "                    return arg[len(\"--settings=\"):], None\n"),
+    "managed-settings.d を読まない": (
+        "        for dropin in managed_dropins(managed_path):",
+        "        for dropin in []:"),
+    "disableBypassPermissionsMode を見ない": (
+        'bypass_off not in ("disable", True)',
+        "True"),
+    "CLAUDE_CONFIG_DIR を見ない": (
+        '    value = env.get("CLAUDE_CONFIG_DIR")\n',
+        "    value = None\n"),
+    "project と local の並びを入れ替える": (
+        '    stack.append(("project", project / ".claude" / "settings.json"))\n'
+        '    stack.append(("local", project / ".claude" / "settings.local.json"))\n',
+        '    stack.append(("local", project / ".claude" / "settings.local.json"))\n'
+        '    stack.append(("project", project / ".claude" / "settings.json"))\n'),
+    "managed を flag より下に置く": (
+        "    if flag_path:\n",
+        "    if managed_path:\n"
+        "        stack.append((\"managed\", Path(managed_path), read_json(managed_path)))\n"
+        "        managed_path = None\n    if flag_path:\n"),
+    "通知を truthy で見る": (
+        "data.get(key) is True",
+        "data.get(key)"),
+    "まとめた caffeinate -it を数えない": (
+        'r"-[dimsutw]*[tw][dimsutw]*\\d*"',
+        'r"-[tw]"'),
     "allow を deny より先に見る": (
         "        if denied:\n",
         "        if denied and not allowed:\n"),
     "caffeinate -t を数える": (
-        'if argv and Path(argv[0]).name == "caffeinate" and "-t" not in argv:',
+        'if argv and Path(argv[0]).name == "caffeinate" and not timed_caffeinate(argv):',
         'if argv and Path(argv[0]).name == "caffeinate":'),
     "人が見るを出さない": (
         "    items += human_items(stack)\n",
@@ -260,8 +396,8 @@ MUTATIONS = {
         "    if UNKNOWN in statuses:\n        return 2",
         "    if UNKNOWN in statuses:\n        return 0"),
     "設定を書く": (
-        "    stack = layers(project, flag_path, managed_path, home)\n",
-        "    stack = layers(project, flag_path, managed_path, home)\n    (home / '.claude.json').write_text('{}')\n"),
+        "    stack = layers(project, flag_path, managed_path, home, env)\n",
+        "    stack = layers(project, flag_path, managed_path, home, env)\n    (home / '.claude.json').write_text('{}')\n"),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),
