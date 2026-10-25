@@ -138,8 +138,6 @@ TYPES = ("string", "integer", "number", "boolean")
 FEATURE_ID = re.compile(r"F-[0-9]{3,}")
 NAME = re.compile(r"[a-z][a-z0-9_]*")
 ERROR_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
-# 共有の表（`Q-`）と内部の表（`D-`）の番号。どちらの表の行も根拠に指せる（`references/spec-ir.md`。#339）
-QA_NO = re.compile(r"[QD]-[0-9]{3,}")
 # 正常時の出力の項目に使えない名前（失敗の形 `{"error": …}` と見分けられないため）
 RESERVED_OUTPUT = "error"
 DEFAULT_IMPL_MODULE = "spec_impl"
@@ -309,7 +307,9 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list
         return [f"{where}: 配列でない"]
     problems = []
     for no in refs:
-        if not isinstance(no, str) or not QA_NO.fullmatch(no):
+        # 共有の表（`Q-`）と内部の表（`D-`）の番号。どちらの表の行も根拠に指せる（`references/spec-ir.md`。#339）。
+        # 番号の形は `check-qa-csv.py` の定数を読む——起票元の印（#278）を写さない
+        if not isinstance(no, str) or not (qa.NUMBER.fullmatch(no) or qa.is_internal_number(no)):
             problems.append(f"{where}: Q&A の No の形に反する（{no!r}）")
         elif no not in answered:
             problems.append(f"{where}: {no} は Q&A 表に無い")
@@ -809,17 +809,11 @@ def cell(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n").replace("|", "\\|").replace("\n", "<br>")
 
 
-def qa_sort_key(no: str) -> tuple[bool, int]:
-    # 共有の表（Q-）が先、内部の表（D-）が後。番号は別の連番なので、数だけで並べると混ざる
-    prefix, number = no.split("-", 1)
-    return prefix != "Q", int(number)
-
-
 def qa_rows(refs: set[str], answered: dict, where: str) -> list[str]:
     if not refs:
         return ["この機能が根拠にした Q&A は無い。"]
     lines = ["| No | 質問 | 回答 | 反映先 |", "| --- | --- | --- | --- |"]
-    for no in sorted(refs, key=qa_sort_key):
+    for no in sorted(refs, key=qa.number_order):
         row = answered[no]
         lines.append(f"| {no} | {cell(row['質問'])} | {cell(row['回答'])} | {cell(row['反映先'])} |")
     return lines + ["", f"（{where}から写した。）"]

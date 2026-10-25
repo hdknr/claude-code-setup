@@ -6,14 +6,15 @@ usage: python3 check-qa-csv.py <qa.csv | qa-dev.csv>
 **決まりの正は `references/qa-csv.md` である**（このプラグインの中にある）。
 このスクリプトは、そこに書いた決まりのうち**答えが一意に決まるもの**だけを機械で見る。
 下の定数（列・起票元・状態・反映した状態・「まだ無い」の印・空を許す列・費用付きの質問の起票元・番号の桁・起票元の括弧・選択肢のラベル／数／区切り・
-推奨しない印・内部の表の名前と番号・内部の表で使わない状態・暫定の回答の印）は
+推奨しない印・内部の表の名前と番号・内部の表で使わない状態・暫定の回答の印・起票元ごとの番号の印）は
 その写しで、**写しがずれていないかは
 このリポジトリの `scripts/test-check-qa-csv.py` が `references/qa-csv.md` の表と突き合わせて見る**。
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う。
 
 **どちらの層の表かは、ファイルの名前で決める**——`qa-dev.csv` なら内部の層（番号は `D-`、`暫定反映` を使わない）、
-それ以外は共有の層（番号は `Q-`）。照合が一時ファイルに写して読むときも、共有の表は `qa.csv` の名前のまま写す。
+それ以外は共有の層（番号は `Q-`）。番号には起票したループの印が付き（`Q-S-001`・`D-F-001`）、
+**印と `起票元` が合うか**を見る。印の無い前の形の番号（`Q-001`・`D-001`）も通す（凍結した版を振り直せないので）。照合が一時ファイルに写して読むときも、共有の表は `qa.csv` の名前のまま写す。
 
 判定:
 
@@ -28,7 +29,8 @@ usage: python3 check-qa-csv.py <qa.csv | qa-dev.csv>
 | **質問・回答の中身** | 「利用者が答えられる言葉か」「回答が選択肢のどれかを選んでいるか」は判断であって、一意に決まらない |
 | **推奨の理由の中身・質問がどちらの層に属するか** | 理由が妥当か・利用者に見える結果が変わるかは判断である（線は `references/spec-scope.md`）。見るのは推奨のラベルが選択肢にあり、理由が空でないことまで |
 | **`反映先` が実在するか** | 書き方が自由（`決定表 4 行目`）で、ファイルのパスとは限らない |
-| **行の並び順・番号の欠番** | 欠番は削除した行の跡として正当にありうる |
+| **行の並び順・番号の欠番** | 欠番は削除した行の跡として正当にありうる。並び順の決まりはあるが、凍結した前の版の表を並べ直せない |
+| **新しい行が印を付けているか** | 印の無い番号は前の形として正当にありうる。表からは、新しく起票した行か前の形の行かを見分けられない |
 | **他のファイルとの整合** | 決定表・見積りがこの表の回答と合っているかは見ない |
 """
 
@@ -80,9 +82,14 @@ MAY_BE_EMPTY = {"費用への影響"}
 COST_SOURCE = "実現性・コスト"
 assert COST_SOURCE in SOURCES
 
-# `\d` は全角や他の文字体系の数字にも合い、`Q-001` と `Q-００１` が別の番号になるので使わない
-NUMBER = re.compile(r"Q-[0-9]{3,}")
-INTERNAL_NUMBER = re.compile(r"D-[0-9]{3,}")
+# 起票元ごとの番号の印（#278）。ループごとに 001 から振るので、並行して起票するループの番号がぶつからない
+MARKS = {"要求確定": "R", "仕様レビュー": "S", "実現性・コスト": "F", "開発": "D"}
+assert list(MARKS) == SOURCES
+MARK = "[" + "".join(MARKS.values()) + "]"
+# `\d` は全角や他の文字体系の数字にも合い、`Q-001` と `Q-００１` が別の番号になるので使わない。
+# 印は省けてよい——印の無い番号は前の形（spec-loop 0.23.0 まで）
+NUMBER = re.compile(rf"Q-(?:(?P<mark>{MARK})-)?[0-9]{{3,}}")
+INTERNAL_NUMBER = re.compile(rf"D-(?:(?P<mark>{MARK})-)?[0-9]{{3,}}")
 # `仕様レビュー` または `仕様レビュー（Red Team）`
 DETAIL_OPEN, DETAIL_CLOSE = "（", "）"
 SOURCE = re.compile(rf"(?P<name>[^{DETAIL_OPEN}]+)(?:{DETAIL_OPEN}.+{DETAIL_CLOSE})?")
@@ -100,6 +107,17 @@ def is_internal_number(number: str) -> bool:
     """番号（`D-001` など）が内部の層の行か。**行の層を番号で決めるのはここだけ**——`merge-versions.py`・
     `diff-versions.py`・`scaffold.py`・`build-proposal.py`・`check-signoff.py` はこれを読む（#353）。"""
     return INTERNAL_NUMBER.fullmatch(number) is not None
+
+
+def number_order(number: str) -> tuple[bool, int, int]:
+    """番号の並びの鍵（`references/qa-csv.md` の「番号の振り方」）。共有の表（`Q-`）が先、内部の表（`D-`）が後。
+    同じ表の中は印の無い前の形の番号が先、そのあと印の順（`MARKS`）、同じ印の中は数の順。**番号の並べ方を決めるのはここだけ**
+    ——`scaffold.py` はこれを読む。決まりどおりの番号（`NUMBER`・`INTERNAL_NUMBER`）だけを渡す。"""
+    m = (INTERNAL_NUMBER if is_internal_number(number) else NUMBER).fullmatch(number)
+    if m is None:
+        raise ValueError(f"Q&A の番号の形に反する: {number!r}")
+    marks = list(MARKS.values())
+    return is_internal_number(number), (marks.index(m["mark"]) + 1 if m["mark"] else 0), int(number.rsplit("-", 1)[1])
 
 
 def is_provisional(row: dict[str, str]) -> bool:
@@ -133,16 +151,24 @@ def check_row(row: dict[str, str], internal: bool = False) -> list[str]:
                     "推奨": f"（推奨しないなら `{NO_RECOMMENDATION}`）"}
             problems.append(f"`{column}` が空{hint.get(column, '')}")
 
-    number, example = (INTERNAL_NUMBER, "D-001") if internal else (NUMBER, "Q-001")
-    if row["No"] and not number.fullmatch(row["No"]):
-        problems.append(f"`No` が `{example}` の形でない: {row['No']!r}")
-
+    source = None
     if row["起票元"]:
         m = SOURCE.fullmatch(row["起票元"])
         if not m or m["name"] not in SOURCES:
             problems.append(f"`起票元` が決まりに無い: {row['起票元']!r}")
-        elif m["name"] == COST_SOURCE and not row["費用への影響"].strip():
-            problems.append(f"起票元が `{COST_SOURCE}` なのに `費用への影響` が空")
+        else:
+            source = m["name"]
+            if source == COST_SOURCE and not row["費用への影響"].strip():
+                problems.append(f"起票元が `{COST_SOURCE}` なのに `費用への影響` が空")
+
+    number, example = (INTERNAL_NUMBER, "D-S-001") if internal else (NUMBER, "Q-S-001")
+    if row["No"]:
+        n = number.fullmatch(row["No"])
+        if not n:
+            problems.append(f"`No` が `{example}` の形でない: {row['No']!r}")
+        # 印の無い前の形の番号は、起票元と照らさない
+        elif n["mark"] and source and n["mark"] != MARKS[source]:
+            problems.append(f"`No` の印 `{n['mark']}` が起票元 `{source}` の印 `{MARKS[source]}` と合わない: {row['No']!r}")
 
     if row["選択肢"]:
         labels, problem = option_labels(row["選択肢"])
