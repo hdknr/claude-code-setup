@@ -86,7 +86,9 @@ main へのマージ → (a) プラグインのカタログ（利用者は `clau
 - 周の在り処: ブランチ `issue/391-implementer-prompt`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-391`・
   起点 `f21e2eb`・base の参照 `origin/main`・base の SHA `f21e2ebac131f21af533f581d3d941d89f198ae7`
 - 直す線（この周）: 既定（出所: 手順 3 の `AskUserQuestion` の回答）
-- 手順 4 実装: 着手
+- 手順 4 実装: 済（`075b0ef`）。`check-all.py` 47/47 緑
+- 割り目（手順 4）: 訊いた → 「ここで割る」
+- 再開したらすること: 手順 5 Verifier 1 パス目・手順 6 `/code-review` 1 パス目（どちらも base `f21e2ebac131f21af533f581d3d941d89f198ae7`）
 - 交絡を潰した手順: 実験なし
 
 ## 既知の限界・決着済みの論点
