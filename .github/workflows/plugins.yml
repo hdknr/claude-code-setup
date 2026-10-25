@@ -55,6 +55,10 @@ jobs:
       - name: スキルの中の指し先（#136）
         run: python3 scripts/check-skill-pointers.py
 
+      # 計画ファイルの件数の行（dev-loop 手順 8）。周の途中の計画ファイルも見るので、PR の CI がマージ前の関門になる。
+      - name: 計画ファイルの件数の行（#384）
+        run: python3 scripts/check-plan-counts.py
+
       # ubuntu-latest の /bin/sh は dash。macOS 側は zsh / bash なので、
       # 両方で回すことで「片方のシェルだけで壊れる」類（#57 で実際に踏んだ）を止める。
       - name: link-skills.sh のテスト
@@ -99,6 +103,9 @@ jobs:
 
       - name: check-skill-pointers.py のテスト
         run: python3 scripts/test-check-skill-pointers.py
+
+      - name: check-plan-counts.py のテスト
+        run: python3 scripts/test-check-plan-counts.py
 
       # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリで使う）。
       - name: spec-loop の Q&A 表の検査のテスト（#215）

@@ -66,8 +66,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       ——版ごとのファイル（機能）の一覧が要り、`merge-versions.py` の読み方の写しになるので。v2 以降の `removed.csv` の
       形式の違反は、種類によらず両方のタグで 2）。
       テストは `scripts/test-check-signoff.py`）
-    - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書を作る
-      （照合をスキルの判断に任せないため、**生成の側で照合する**。テストは `scripts/test-build-proposal.py`）
+    - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書と仕様書を作る
+      （照合をスキルの判断に任せないため、**生成の側で照合する**。**暫定の行の判別は `check-qa-csv.py` の `is_provisional` を読む**——#374。
+      `--pptx` の PPTX は `qa-to-pptx.py` の `markdown_slides` で作る。テストは `scripts/test-build-proposal.py`）
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
       **入力は版を重ね合わせた全体で、メモリ上で重ねる**——`build/merged/` を書かない（#262）。
@@ -122,6 +123,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **散文の指し先（`下の「X」`・`` `references/x.md` の「X」 ``）の X も照合する**（#205）。
     **プラグイン直下の `agents/*.md` と `references/*.md` も見て、プラグインの根から解決する**（#332）
   - `test-check-skill-pointers.py` - 上の回帰テスト（変異テストを含む）
+  - `check-plan-counts.py` - **計画ファイルの件数の行**（`- この周の起票: N 件`。dev-loop 手順 8）が
+    集める側のパターンに当たる形で 1 本だけあり、入れ子の中に無いか（#384。**周の途中の計画ファイルも見る**
+    ——PR の CI がマージ前の関門になる。**免除の条件と、何を守らないかは docstring を正とする**）
+  - `test-check-plan-counts.py` - 上の回帰テスト（変異テストを含む）
   - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
     （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
@@ -479,6 +484,9 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 1. `git merge origin/main`
 2. **生成ブロック（設計ドキュメント §8.2）が衝突したら、main 側を取ってから
    `python3 scripts/skill-metrics.py` で書き直す**——手で両側を混ぜない（生成ブロックは手で書かない）
+   - **衝突は塊ごとに解く。`git checkout --ours`／`--theirs` でファイルごと取らない**——**衝突していない側の変更まで捨てる。**
+     #368 の周では、版の行だけが衝突した 7 ファイルを `--ours` で取り、**main（#288）の `SKILL.md` の本文の変更を落としかけた**。
+     **戻すなら `git checkout -m -- <ファイル>`**（衝突の印を付けた状態に作り直す）。4 番目の「正味の差分」で気づける
 3. **版を次の patch に上げる**（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）
 4. `git diff origin/main` で、**main との正味の差分がその周の変更だけ**であることを見る
 5. `python3 scripts/check-all.py` を回し、push したあと `gh pr checks <n>` で PR 側を見る
