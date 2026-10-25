@@ -58,6 +58,8 @@ PR #406（#389）の 2 パス目の `/code-review` の残課題 R2-2。
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/408-merge-pr-undetermined-problems`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-408`・起点 `e7aedee`・base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `e7aedeeb9b22dda924562cd6cbd183f916fbdf20`
+- 実装: `5a554dc` でコミット済み。`check-all.py` は 47 本中 46 本が緑で、落ちたのは件数の行の 1 本だけ（行を足したあと、単体で緑）
+- 割り目 1（手順 4 の後）: 利用者は「ここで割る」を選んだ（2026-10-25）。次は手順 5（Verifier の 1 パス目）から
 - 関門: まだ通していない
 - 反証・差し戻し: なし
 - 交絡: 実験は A2（修正前の本体で赤）——陽性対照は修正後の本体で同じ試料が緑になること。
