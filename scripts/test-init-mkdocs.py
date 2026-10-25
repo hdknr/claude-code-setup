@@ -459,6 +459,28 @@ def hook_blank_rows(plugin: Path, work: Path) -> bool:
             and "確認中 2 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out)
 
 
+def hook_state_spaces(plugin: Path, work: Path) -> bool:
+    # 状態の前後の空白は、3 つの件数のどれでも同じに落とす——暫定だけ落とすと件数が食い違う（#404）
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": HEADER + (
+        "Q-001,要求確定,一？,A: x / B: y,A,理由,A（業務部）,決定表 1 行目, 反映済み ,\n"
+        "Q-002,要求確定,二？,A: x / B: y,A,理由,A（暫定で採用。業務部の指示）,決定表 2 行目, 暫定反映 ,\n"
+        "Q-003,要求確定,三？,A: x / B: y,A,理由,B（部長）,—,確認中 ,\n")})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return not warnings and "確認中 1 件（うち回答あり・未反映 1 件）・暫定反映 1 件・反映済み 1 件" in out
+
+
+def hook_worded_rows(plugin: Path, work: Path) -> bool:
+    # 暫定は状態だけで決まる——`回答` に「暫定で採用」と書いた `反映済み`（#366 の形）・`確認中` の行は暫定に数えない（#404 の 2 パス目）
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": HEADER + (
+        "Q-001,要求確定,一？,A: x / B: y,A,理由,A（推奨案を暫定で採用。開発側の指示）,決定表 1 行目,反映済み,\n"
+        "Q-002,要求確定,二？,A: x / B: y,A,理由,A（業務部 2026-10-21 の指示）,決定表 2 行目,暫定反映,\n"
+        "Q-003,要求確定,三？,A: x / B: y,A,理由,B（暫定で採用の予定）,—,確認中,\n")})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return not warnings and "確認中 1 件（うち回答あり・未反映 1 件）・暫定反映 1 件・反映済み 1 件" in out
+
+
 def hook_recommendation(plugin: Path, work: Path) -> bool:
     """推奨の選択肢だけを太字にして「（推奨）」を添え、理由（推奨しないなら「推奨なし」）を出す。一覧に推奨の列（#267）。"""
     docs = work / "docs"
@@ -697,6 +719,8 @@ CASES = {
     "CSV の文字をブロックの記法にしない": hook_block_syntax,
     "BOM つきの表を読む": hook_bom,
     "空白だけの行は読み飛ばし、短い行は埋める": hook_blank_rows,
+    "状態の前後の空白は件数のどれでも落とす": hook_state_spaces,
+    "回答の文言では暫定に数えない": hook_worded_rows,
     "見出しの違う表は警告": hook_bad_header,
     "推奨を目立たせる": hook_recommendation,
     "前の形の表は移す手順を指す": hook_old_header,
@@ -821,8 +845,18 @@ MUTATIONS: list[tuple] = [
      "        if renderer is None:\n            return (", "知らない印は警告"),
     ("暫定反映を確認中に数える", HOOK, "    pending = len(rows) - done - provisional\n", "    pending = len(rows) - done\n",
      "版ごとの節・アンカー・件数"),
-    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"] not in (QA_DONE, QA_PROVISIONAL) and', 'row["状態"] != QA_DONE and',
-     "版ごとの節・アンカー・件数"),
+    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"].strip() != QA_DONE and not qa_is_provisional(row) and',
+     'row["状態"].strip() != QA_DONE and', "版ごとの節・アンカー・件数"),
+    ("件数で文言も暫定に数える", HOOK, "    provisional = sum(qa_is_provisional(row) for row in rows)\n",
+     '    provisional = sum(qa_is_provisional(row) or "暫定で採用" in row["回答"] for row in rows)\n',
+     "回答の文言では暫定に数えない"),
+    ("文言で暫定の反映済みを反映済みに数えない", HOOK, '    done = sum(row["状態"].strip() == QA_DONE for row in rows)\n',
+     '    done = sum(row["状態"].strip() == QA_DONE and "暫定" not in row["回答"] for row in rows)\n',
+     "回答の文言では暫定に数えない"),
+    ("反映済みの空白を落とさない", HOOK, '    done = sum(row["状態"].strip() == QA_DONE for row in rows)\n',
+     '    done = sum(row["状態"] == QA_DONE for row in rows)\n', "状態の前後の空白は件数のどれでも落とす"),
+    ("回答あり未反映で空白を落とさない", HOOK, 'row["状態"].strip() != QA_DONE and not qa_is_provisional(row) and',
+     'row["状態"] != QA_DONE and not qa_is_provisional(row) and', "状態の前後の空白は件数のどれでも落とす"),
     ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER)\n',
      " and False\n",
      "版ごとの節・アンカー・件数"),
@@ -904,6 +938,43 @@ def check_copies() -> None:
           '"mkdocs>=1.6,<2"' in (PLUGIN / "templates" / "mkdocs" / "pyproject.toml").read_text(encoding="utf-8"))
 
 
+# 暫定の判別の写し（フックの `qa_is_provisional`）と本体（`check-qa-csv.py` の `is_provisional`）を同じ行に当てる（#404）。
+# 本体は `状態` だけで決める——`回答` の書き方（#403 の否定・#366 の実データの形）で答えが変わらない
+JUDGE_ROWS = [("暫定反映", "A（業務部 2026-10-21 の指示）"), (" 暫定反映 ", "A"),
+              ("反映済み", "A（推奨案を暫定で採用。開発側の指示）"), ("反映済み", "A（暫定で採用していない）"),
+              ("反映済み", "A（業務部が回答）"), ("確認中", "B（暫定で採用の予定）"), ("確認中", "未回答")]
+JUDGE_MUTATIONS = [
+    ("写しで暫定を見ない", '    return row["状態"].strip() == QA_PROVISIONAL\n', "    return False\n"),
+    ("写しを文言の一致に戻す", '    return row["状態"].strip() == QA_PROVISIONAL\n',
+     '    return row["状態"].strip() == QA_PROVISIONAL or (row["状態"].strip() == QA_DONE and "暫定で採用" in row["回答"])\n'),
+    ("写しで状態の空白を落とさない", '    return row["状態"].strip() == QA_PROVISIONAL\n', '    return row["状態"] == QA_PROVISIONAL\n'),
+]
+
+
+def judge_mismatches(hook, checker) -> list[str]:
+    rows = [{"状態": state, "回答": answer} for state, answer in JUDGE_ROWS]
+    return [f"{row} → フック {hook.qa_is_provisional(row)}・本体 {checker.is_provisional(row)}"
+            for row in rows if hook.qa_is_provisional(row) != checker.is_provisional(row)]
+
+
+def check_judge_copy() -> None:
+    """フックの暫定の判別の写しが、本体と同じ行に同じ答えを出すか（写しなので、テストが試料で突き合わせる）。"""
+    spec = importlib.util.spec_from_file_location("check_qa_csv_judge", PLUGIN / "scripts" / "check-qa-csv.py")
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+    problems = judge_mismatches(load_hook(PLUGIN), checker)
+    check("フックの qa_is_provisional が check-qa-csv.py の is_provisional と違う", not problems, "; ".join(problems))
+    source = (PLUGIN / HOOK).read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix="init-mkdocs-judge-") as tmp:
+        for index, (name, before, after) in enumerate(JUDGE_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_plugin(Path(tmp) / f"judge{index}")
+            (mutated / HOOK).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（判別の突き合わせで殺せるはず）", bool(judge_mismatches(load_hook(mutated), checker)))
+
+
 def check_reference() -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     check("references/tree.md に「ドキュメントのツール」の節が無い", "\n## ドキュメントのツール\n" in text)
@@ -940,6 +1011,7 @@ def main() -> int:
                 survived = False
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not survived)
     check_copies()
+    check_judge_copy()
     check_reference()
 
     if failures:

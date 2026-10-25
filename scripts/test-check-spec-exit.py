@@ -44,6 +44,8 @@ OPEN_ROW = "Q-002,仕様レビュー（Domain Checker）,端数は？,A: 切り�
 ANSWERED_ROW = "Q-003,仕様レビュー（Formal Checker）,上限は？,A: 拒否 / B: 切り詰める,B,理由,B（業務部が回答）,—,確認中,\n"
 # 暫定の回答で反映した——仕様には反映済みなので条件 1 を止めない（#325）
 PROVISIONAL_ROW = "Q-005,仕様レビュー（Red Team）,上限は？,A: なし / B: 5000 円,A,理由,A（業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
+# `反映済み` で `回答` に「暫定で採用」と書いた行（#366 の実データの形）。暫定は状態だけで決まる——暫定に数えない（#404）
+WORDED_ROW = "Q-006,仕様レビュー（Red Team）,返品は？,A: 可 / B: 不可,A,理由,A（推奨案を暫定で採用。開発側の指示）,spec/order.md,反映済み,\n"
 BAD_ROW = "Q-004,仕様レビュー,選択肢が 1 つ,A: これだけ,A,理由,未回答,—,確認中,\n"
 # 内部の Q&A 表（spec/qa-dev.csv）の行。質問の文に印の語（未定）を入れておく——表は印として数えない（#339）
 INTERNAL_DONE = "D-001,仕様レビュー（Red Team）,上限が未定のときの再試行の間隔は,A: 10 秒 / B: 60 秒,B,呼び出しの上限,B（開発 2026-10-22）,spec/order.md,反映済み,\n"
@@ -58,6 +60,8 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("確認中の行", HEADER + DONE_ROW + OPEN_ROW, {"order.md": CLEAN_SPEC}, 1, "Q-002: 状態が 確認中"),
     ("暫定反映は止めない", HEADER + DONE_ROW + PROVISIONAL_ROW, {"order.md": CLEAN_SPEC}, 0,
      "暫定反映の行（仕様には反映済み・利用者の確認待ち）: 1 件"),
+    ("文言だけ暫定の反映済みは暫定に数えない", HEADER + DONE_ROW + WORDED_ROW, {"order.md": CLEAN_SPEC}, 0,
+     "暫定反映の行（仕様には反映済み・利用者の確認待ち）: 0 件"),
     ("暫定反映と確認中", HEADER + PROVISIONAL_ROW + OPEN_ROW, {"order.md": CLEAN_SPEC}, 1, "Q-002: 状態が 確認中"),
     ("回答はあるが未反映", HEADER + ANSWERED_ROW, {"order.md": CLEAN_SPEC}, 1, "Q-003: 状態が 確認中"),
     ("列検査を通らない表", HEADER + BAD_ROW, {"order.md": CLEAN_SPEC}, 1, "列検査を通らない"),
@@ -114,7 +118,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内部の読めない表を 2 にしない", "    if internal_code == 2:", "    if False:", "内部の表が読めない"),
     ("暫定反映を反映した状態に数えない", "not in pptx.qa.REFLECTED", "!= pptx.qa.DONE", "暫定反映は止めない"),
     ("資料に載る行で数える", "not in pptx.qa.REFLECTED", "not in ()", "暫定反映は止めない"),
-    ("暫定の件数を出さない", "== pptx.qa.PROVISIONAL]", "== None]", "暫定反映は止めない"),
+    ("暫定の件数を出さない", "if pptx.qa.is_provisional(row)]", "if False]", "暫定反映は止めない"),
     ("列検査の失敗を見ない", "        if table_code:\n            problems += table_lines", "        if False:\n            problems += table_lines",
      "列検査を通らない表"),
     ("読めない表を 2 にしない", "if code == 2:", "if False:", "Q&A 表が無い"),
@@ -202,6 +206,16 @@ def reference_markers(markdown: str) -> tuple[list[str], list[str]]:
     return markers, not_markers
 
 
+# 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——条件 1 は写しを持たずにそれを読む（#404）
+CHECKER = "check-qa-csv.py"
+CHECKER_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("判別の本体で暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False", "暫定反映は止めない"),
+    ("判別の本体を文言の一致に戻す", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() == PROVISIONAL or (row["状態"].strip() == DONE and "暫定で採用" in row["回答"])',
+     "文言だけ暫定の反映済みは暫定に数えない"),
+]
+
+
 def copy_scripts(dest: Path) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -247,12 +261,24 @@ def main() -> int:
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
                   not as_expected(killer, mutated_results[killer]), mutated_results[killer][1][-300:])
 
+        checker = (SCRIPTS / CHECKER).read_text(encoding="utf-8")
+        for index, (name, before, after, killer) in enumerate(CHECKER_MUTATIONS):
+            count = checker.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"checker-mut{index}")
+            (mutated / CHECKER).write_text(checker.replace(before, after), encoding="utf-8")
+            mutated_results = run_all(mutated, tmp_path / f"checker-mutwork{index}")
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
+                  not as_expected(killer, mutated_results[killer]), mutated_results[killer][1][-300:])
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS)} 件")
     return 0
 
 

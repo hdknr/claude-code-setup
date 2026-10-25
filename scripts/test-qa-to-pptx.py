@@ -63,6 +63,12 @@ ROWS = [
      "A: 一 / B: 二", "なし", "事実の確認", "未回答", "—", "確認中", ""],
     ["Q-006", "要求確定", "暫定で採った質問",
      "A: 上限なし / B: 5000 円まで", "A", "上限の説明が手間", "A（暫定で採用。業務部 2026-10-21 の指示）", "決定表 7 行目", "暫定反映", ""],
+    # `反映済み` で `回答` に「暫定で採用」と書いた行（#366 の実データの形）。暫定は状態だけで決まるので確定の行——載らない（#404）
+    ["Q-007", "要求確定", "文言だけ暫定の質問",
+     "A: 可 / B: 不可", "A", "理由", "A（推奨案を暫定で採用。開発側の指示）", "決定表 9 行目", "反映済み", ""],
+    # `確認中` で `回答` に「暫定で採用」と書いた行——載るが暫定ではない（未反映）。資料の段で文言の判別を見分ける試料（#404 の 2 パス目）
+    ["Q-008", "要求確定", "文言だけ暫定の未反映の質問",
+     "A: 月次 / B: 週次", "A", "手間", "B（暫定で採用の予定）", "—", "確認中", ""],
 ]
 # 載る行（反映済みでない行）。暫定反映も載る（#325）
 PENDING = [r for r in ROWS if r[8] != "反映済み"]
@@ -245,10 +251,24 @@ EXPECTED = {
     "same_rc": 2, "same_kept": True, "nested_rc": 0, "nested_made": True,
 }
 
+# 判別の本体を壊す（資料の側には写しが無いので、本体を壊せば資料が変わる）
+CHECKER_MUTATIONS: list[tuple[str, str, str]] = [
+    ("判別の本体で暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False"),
+]
+
 MUTATIONS: list[tuple[str, str, str]] = [
     ("反映済みで絞らない", 'return code, lines, [row for row in rows if row["状態"].strip() != qa.DONE]',
      "return code, lines, rows"),
-    ("暫定を見分けない", 'return row["状態"].strip() == qa.PROVISIONAL', "return False"),
+    ("一覧で暫定を見分けない", 'mark = "（暫定）" if qa.is_provisional(row) else ""', 'mark = ""'),
+    # 文言の判別を足す（#404 の 2 パス目）——Q-008 が一覧・各問・表紙で暫定に化ける
+    ("一覧で文言も暫定とみなす", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if qa.is_provisional(row) or "暫定で採用" in row["回答"] else ""'),
+    ("各問で文言も暫定とみなす", "    if qa.is_provisional(row):",
+     '    if qa.is_provisional(row) or "暫定で採用" in row["回答"]:'),
+    ("表紙で文言も暫定に数える", "def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:\n"
+     "    settled = sum(qa.is_provisional(row) for row in rows)",
+     "def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:\n"
+     '    settled = sum(qa.is_provisional(row) or "暫定で採用" in row["回答"] for row in rows)'),
     ("表紙の件数を分けない", 'body = lines_of(f"回答待ち・未反映の質問: {len(rows) - settled} 件", 2400)',
      'body = lines_of(f"回答待ち・未反映の質問: {len(rows)} 件", 2400)'),
     ("列検査を飛ばす", "    code, lines = qa.check(path)", "    code, lines = 0, []"),
@@ -322,6 +342,25 @@ def main() -> int:
             if "time.localtime" in replacement:
                 mutated = mutated.replace("import tempfile\n", "import tempfile\nimport time\n", 1)
             (d / SCRIPT.name).write_text(mutated, encoding="utf-8")
+            work = d / "work"
+            work.mkdir()
+            try:
+                got = observe(load(d / SCRIPT.name), work)
+                diff = [k for k, v in EXPECTED.items() if got.get(k) != v]
+            except Exception as e:  # noqa: BLE001
+                diff = [f"例外: {type(e).__name__}"]
+            check(f"変異を殺せる: {name}（違った観測: {', '.join(diff) or 'なし'}）", bool(diff))
+
+        # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——資料は写しを持たずにそれを読む（#404）
+        checker = CHECKER.read_text(encoding="utf-8")
+        for n, (name, needle, replacement) in enumerate(CHECKER_MUTATIONS):
+            if checker.count(needle) != 1:
+                check(f"変異を当てる先が 1 箇所ある: {name}（{checker.count(needle)} 箇所）", False)
+                continue
+            d = base / f"checker-mut-{n}"
+            d.mkdir()
+            shutil.copy(SCRIPT, d / SCRIPT.name)
+            (d / CHECKER.name).write_text(checker.replace(needle, replacement, 1), encoding="utf-8")
             work = d / "work"
             work.mkdir()
             try:
