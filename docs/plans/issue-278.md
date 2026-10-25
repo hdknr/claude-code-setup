@@ -124,7 +124,7 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
   書き直した（`4e54feb`）。`check-all.py` 47/47 緑（取り込み前は `skill-metrics.py --check`・`check-version-bump.py`・`check-plan-scope.py` の 3 本赤）
 - 次: 2 パス目——**手順 5 の Verifier の当て直し**と**手順 6 の `/code-review` 2 パス目**の**両方**（base は上の `8e9751c…`）。
   2 パス目で直す行があれば、その直前の HEAD を狭いパスの起点としてここに書いてから直す
-- 割り目（2 パス目の前）: 訊く
+- 割り目（2 パス目の前）: 訊いた → 人間は「ここで割る」を選んだ
 - 交絡: 実験なし
 
 ## 手順 8
