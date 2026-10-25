@@ -459,6 +459,17 @@ def hook_blank_rows(plugin: Path, work: Path) -> bool:
             and "確認中 2 件（うち回答あり・未反映 0 件）・暫定反映 0 件・反映済み 1 件" in out)
 
 
+def hook_state_spaces(plugin: Path, work: Path) -> bool:
+    # 状態の前後の空白は、3 つの件数のどれでも同じに落とす——暫定だけ落とすと件数が食い違う（#404）
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": HEADER + (
+        "Q-001,要求確定,一？,A: x / B: y,A,理由,A（業務部）,決定表 1 行目, 反映済み ,\n"
+        "Q-002,要求確定,二？,A: x / B: y,A,理由,A（暫定で採用。業務部の指示）,決定表 2 行目, 暫定反映 ,\n"
+        "Q-003,要求確定,三？,A: x / B: y,A,理由,B（部長）,—,確認中 ,\n")})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return not warnings and "確認中 1 件（うち回答あり・未反映 1 件）・暫定反映 1 件・反映済み 1 件" in out
+
+
 def hook_recommendation(plugin: Path, work: Path) -> bool:
     """推奨の選択肢だけを太字にして「（推奨）」を添え、理由（推奨しないなら「推奨なし」）を出す。一覧に推奨の列（#267）。"""
     docs = work / "docs"
@@ -693,6 +704,7 @@ CASES = {
     "CSV の文字をブロックの記法にしない": hook_block_syntax,
     "BOM つきの表を読む": hook_bom,
     "空白だけの行は読み飛ばし、短い行は埋める": hook_blank_rows,
+    "状態の前後の空白は件数のどれでも落とす": hook_state_spaces,
     "見出しの違う表は警告": hook_bad_header,
     "推奨を目立たせる": hook_recommendation,
     "前の形の表は移す手順を指す": hook_old_header,
@@ -817,8 +829,12 @@ MUTATIONS: list[tuple] = [
      "        if renderer is None:\n            return (", "知らない印は警告"),
     ("暫定反映を確認中に数える", HOOK, "    pending = len(rows) - done - provisional\n", "    pending = len(rows) - done\n",
      "版ごとの節・アンカー・件数"),
-    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"] != QA_DONE and not qa_is_provisional(row) and', 'row["状態"] != QA_DONE and',
-     "版ごとの節・アンカー・件数"),
+    ("暫定反映を回答あり未反映に数える", HOOK, 'row["状態"].strip() != QA_DONE and not qa_is_provisional(row) and',
+     'row["状態"].strip() != QA_DONE and', "版ごとの節・アンカー・件数"),
+    ("反映済みの空白を落とさない", HOOK, '    done = sum(row["状態"].strip() == QA_DONE for row in rows)\n',
+     '    done = sum(row["状態"] == QA_DONE for row in rows)\n', "状態の前後の空白は件数のどれでも落とす"),
+    ("回答あり未反映で空白を落とさない", HOOK, 'row["状態"].strip() != QA_DONE and not qa_is_provisional(row) and',
+     'row["状態"] != QA_DONE and not qa_is_provisional(row) and', "状態の前後の空白は件数のどれでも落とす"),
     ("回答あり未反映を数えない", HOOK, ' and row["回答"].strip() not in ("", QA_NO_ANSWER)\n',
      " and False\n",
      "版ごとの節・アンカー・件数"),
