@@ -28,7 +28,7 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   回答を承認したことになるので。数えるのは **v1〜v<n> の `shared/qa.csv` を版の順に重ねた結果**
   （同じ `No` は後の版が置き換え、`removed.csv` の種類 `Q&A` の行で消す。重ね方の正は `references/versions.md`）。
   **前の版で暫定だった行を、後の版で `反映済み` に置き換えていれば数えない。**
-  状態の名前は同梱の `check-qa-csv.py` の `PROVISIONAL` を使う（写さない）。表が列検査を通らなければ 2。
+  暫定の行の判別は同梱の `check-qa-csv.py` の `is_provisional` を使う（写さない——#404）。表が列検査を通らなければ 2。
   **一致するかどうかと独立に見る**——一致しなくても、暫定の行があれば 3（両方を出す）。
 - **LLM に判断させないための照合**なので、判定はすべて `git` の出力から決める。
 
@@ -259,7 +259,7 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
                 raise Unjudged(refused(tag, problems))
             for _, _, target in rows:
                 whole.pop(target)
-    return [row for row in whole.values() if row["状態"].strip() == qa.PROVISIONAL]
+    return [row for row in whole.values() if qa.is_provisional(row)]
 
 
 def working_version(repo: Path) -> int:
