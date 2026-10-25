@@ -102,6 +102,8 @@
 
 - 実装: 済み（`ledger.py`・`references/ledger.md`・`test-ledger.py`・`SKILL.md` の 1 項・版 1.47.0）。
   自分で確かめた変異 8 件すべてが、意図した観測で殺せることを見た（陽性対照: 壊さない本体で全試料が緑）
+- 割り目 1（手順 4 の後）: AskUserQuestion で「ここで割る」が選ばれた（2026-10-25）。実装コミット `e8f530c`
+- 次にすること: 手順 5（Verifier の 1 パス目）と手順 6（`/code-review` の 1 パス目）。base は上の「周の在り処」の SHA
 - Verifier: 未
 - `/code-review`: 未
 - 反証と差し戻し: なし
