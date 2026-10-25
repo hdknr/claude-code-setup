@@ -490,6 +490,10 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 3. **版を次の patch に上げる**（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）
 4. `git diff origin/main` で、**main との正味の差分がその周の変更だけ**であることを見る
 5. `python3 scripts/check-all.py` を回し、push したあと `gh pr checks <n>` で PR 側を見る
+   - **取り込んだ main が足した歯止めは、その時点からこの周にも掛かる**——**版の衝突だけを直すつもりで取り込むと、ここで赤になる。**
+     #389 の周では、main 側の #384（PR #399）が足した `check-plan-counts.py` が取り込んだ直後に落ち
+     （`件数の行（- この周の起票: N 件）が無い`）、**周を始めた時点には無かった規約**に合わせて計画ファイルを書き足した。
+     **赤の出どころが自分の周の変更か、取り込んだ main の歯止めかを、落ちた検査の出力で見分ける**
 
 **PR を作ってからマージされるまでの間にも、main は進む。** マージの直前に
 `gh pr view <n> --json mergeable` を見る。
