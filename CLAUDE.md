@@ -123,6 +123,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **散文の指し先（`下の「X」`・`` `references/x.md` の「X」 ``）の X も照合する**（#205）。
     **プラグイン直下の `agents/*.md` と `references/*.md` も見て、プラグインの根から解決する**（#332）
   - `test-check-skill-pointers.py` - 上の回帰テスト（変異テストを含む）
+  - `check-plan-counts.py` - **計画ファイルの件数の行**（`- この周の起票: N 件`。dev-loop 手順 8）が
+    集める側のパターンに当たる形で 1 本だけあり、入れ子の中に無いか（#384。**周の途中の計画ファイルも見る**
+    ——PR の CI がマージ前の関門になる。**免除の条件と、何を守らないかは docstring を正とする**）
+  - `test-check-plan-counts.py` - 上の回帰テスト（変異テストを含む）
   - `check-site-links.py` - 公開サイトへの絶対リンクが解決するか
     （`plugins/` だけでなく `CLAUDE.md` や `scripts/` も見る。**範囲の限界は docstring を正とする**）
   - `check-diagram-freshness.py` - drawio を編集して書き出しを更新していない乖離
