@@ -107,7 +107,9 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
 ## 関門の進捗（再開点）
 
 - **周の在り処**: ブランチ `issue/278-qa-number-loop-mark`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-278`・
-  起点 `0330977`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `0330977fc31ed62314e1dbb8c16f876b946d8e46`
+  起点 `0330977`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `0330977fc31ed62314e1dbb8c16f876b946d8e46`。
+  **main（#406）を取り込んで系譜が動いたので、式を当て直した**——`git merge-base origin/main HEAD` = `8e9751c95cc1866796612412e4c52e783277059e`
+  （2 パス目の関門にはこちらを渡す。前の SHA のままだと #406 の変更が差分に混ざる）
 - 実装: 済み（`99424a7`）。`check-all.py` 46/46 緑（初回は 3 本赤——`test-check-spec-exit.py`・`test-merge-versions.py` が
   旧いエラー文 `` `D-001` の形でない`` を期待していた・この計画ファイルに件数の行が無かった。直して緑）
 - 実装中の発見: `scaffold.py` の並びの鍵が `int("S-001")` で落ちた（印つきの番号を指す試料で exit=2）——`number_order` に寄せた
@@ -117,7 +119,12 @@ main へのマージ。プラグインは利用者の `plugin update` で届く�
   パターンを 3 つ並べており、最初の 1 つしか読まれない・`test-check-spec-exit.py` と `test-merge-versions.py` が無い）。
   **実装時の「46/46 緑」の自己申告と食い違う**——直して `check-plan-scope.py` を当て直し、緑（25 パターン・23 ファイル）。採否の表の 15。
   `/code-review`（high）の報告も 2 通（8 件と 10 件。重なりを除いて 14 件）→ 直す 9・残課題 5（下の「1 パス目の指摘の採否」）。base は `0330977fc31ed62314e1dbb8c16f876b946d8e46`
-- 反証・差し戻し: Verifier の反証 0 件。`/code-review` の指摘対応で手順 4 に戻った（受入基準 8 の散文。範囲を上で広げた）
+- 反証・差し戻し: Verifier の反証 1 件（計画の変更範囲）。`/code-review` の指摘対応とあわせて手順 4 に戻った（受入基準 8 の散文・4 の試料・9。範囲を上で広げた）
+- 1 パス目の指摘対応: 済み（`3670c4e`）。main（#406）を取り込み（dev-loop が先に 1.47.0 に到達）、dev-loop を 1.48.0 に上げ直して生成ブロックを
+  書き直した（`4e54feb`）。`check-all.py` 47/47 緑（取り込み前は `skill-metrics.py --check`・`check-version-bump.py`・`check-plan-scope.py` の 3 本赤）
+- 次: 2 パス目——**手順 5 の Verifier の当て直し**と**手順 6 の `/code-review` 2 パス目**の**両方**（base は上の `8e9751c…`）。
+  2 パス目で直す行があれば、その直前の HEAD を狭いパスの起点としてここに書いてから直す
+- 割り目（2 パス目の前）: 訊く
 - 交絡: 実験なし
 
 ## 手順 8
