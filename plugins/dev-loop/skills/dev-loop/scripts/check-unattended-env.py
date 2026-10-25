@@ -44,10 +44,10 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 返り値に含まれる | 判定 | 原因 | 対処 |
 | --- | --- | --- | --- |
 | `mobile push is disabled in /config` | 要対処 | 「Push when Claude decides」（`agentPushNotifEnabled`）がオフ | `/config` でオン |
-| `this terminal is active` | 判定できない | 使用中と判定された（端末が前面、分からなければ最後の操作から 60 秒以内） | **失敗ではない。** 遅らせて、端末からも iPhone からも離れてから送り直す |
+| `this terminal is active` | やり直す（2） | 使用中と判定された（端末のフォーカスが分かればそれだけで決まり、分からなければ最後の操作から 60 秒以内） | **失敗ではない。** 遅らせて、端末を前面から外し、端末にも iPhone にも触らずに送り直す |
 | `Remote Control inactive` | 要対処 | いまのセッションが Remote Control につながっていない | 作業中のセッションで `/remote-control` |
 | `Mobile push requested` | 人が見る | **要求しただけ**——届いたかはサーバと iPhone で決まる | iPhone に届いたか。届かなければ iPhone の通知の許可・集中モード・アカウントと組織 |
-| （どれでもない・空） | 判定できない | 知らない文言（版が違う・写し間違い） | 返り値をそのまま渡し直す |
+| （どれでもない・空） | 判定できない（2） | 知らない文言（版が違う・写し間違い） | **送り直さない。** 返り値を言い換えずにそのまま渡し直す |
 
 **判定の順に注意**（本体の `PushNotification`）: **使用中は Remote Control の有無より先に止まる**ので、
 省かれた陰で Remote Control が切れていても分からない。**Remote Control がつながっていなければ
@@ -83,7 +83,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **1**: 要対処がある
 - **2**: 要対処は無いが、判定できないがある（設定が壊れている・`pmset` が無い・macOS 以外 など）
 
-`--push-result` も同じ 3 つで返す（**使用中で省かれたのは 2**——要対処ではない）。
+`--push-result` も同じ 3 つで返す。**2 は「やり直す」（使用中で省かれた）と「判定できない」（知らない返り値）の両方**
+——**終了コードでは分けられないので、ラベルを読む**（前者は送り直す、後者は返り値を渡し直す）。
 
 ## 実測した前提（2026-10-25・Claude Code 2.1.310・macOS）
 
@@ -106,8 +107,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   ——**待機中に保たれる根拠にならない**。`-t` の付いた `caffeinate` は数えない
 - `PushNotification` の判定は ① Remote Control がつながっていて `agentPushNotifEnabled` が偽 → `config_off`、
   ② 使用中 → `user_present`、③ Remote Control がつながっていない → `no_transport`、④ 送信、の順
-  （リモートのセッションでは ① ② を飛ばす）。使用中は、端末のフォーカスが分かればそれ、分からなければ
-  最後の操作から 60 秒以内（`Ins()`）。返り値の文字列は上の「通知の試験」の表のとおり
+  （`CLAUDE_CODE_REMOTE`・リモートのセッション・transport が持続するセッションでは ①〜③ をすべて飛ばして送る）。
+  使用中は、端末のフォーカスが分かればそれだけで決まり、分からなければ最後の操作から 60 秒以内（`Ins()`）。
+  返り値の文字列は上の「通知の試験」の表のとおり
 - 「No mobile registered」は `/config` の表示（`has_active_channel === false`）で、`PushNotification` の返り値ではない
 - `claude remote-control`（`claude rc`）は「spawned sessions」を起こす待ち受け（`--help`）
 
@@ -124,7 +126,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **Claude 自身の `caffeinate -t` を、スリープ防止の根拠にしない**——`-it 300`・`-t300` のようにまとめた形と、
   `-w`（プロセスの終わりまで）も時限として数える。`-m`（ディスク）・`-u`（利用者の操作。既定 5 秒）だけの形は数えない
 - **人が見る項目を、要対処が無くても毎回出す**
-- **使用中で省かれた通知を失敗と数えない**——`--push-result` は 2（やり直す）で返し、1 にしない
+- **使用中で省かれた通知を失敗と数えない**——`--push-result` は「やり直す」（2）で返し、1 にしない。
+  **知らない返り値とはラベルで分ける**（どちらも 2）
 - **送信の要求を「届いた」と言わない**——`Mobile push requested` は人が見る（iPhone に届いたか）
 - **知らない返り値を「良い」に混ぜない**——判定できない
 - **何も書かない**——設定ファイルにも、どこにも
@@ -179,6 +182,7 @@ MANAGED_DEFAULTS = {
 }
 
 GOOD, ACTION, UNKNOWN, HUMAN = "良い", "要対処", "判定できない", "人が見る"
+RETRY = "やり直す"  # --push-result だけが使う。原因は分かっていて、送り直せば済む
 
 
 class Unreadable:
@@ -565,9 +569,9 @@ def human_items(stack):
 PUSH_RESULTS = (  # (返り値に含まれる文字列, 判定, 原因, 対処)。判定の順は本体の PushNotification と同じ
     ("mobile push is disabled in /config", ACTION,
      "「Push when Claude decides」（agentPushNotifEnabled）がオフ", "/config でオン"),
-    ("this terminal is active", UNKNOWN,
-     "使用中と判定された（端末が前面、分からなければ最後の操作から 60 秒以内）",
-     "失敗ではない。遅らせて、端末からも iPhone からも離れてから送り直す"),
+    ("this terminal is active", RETRY,
+     "使用中と判定された（端末のフォーカスが分かればそれだけで決まり、分からなければ最後の操作から 60 秒以内）",
+     "失敗ではない。遅らせて、端末を前面から外し（別のアプリを前面に）、端末にも iPhone にも触らずに送り直す"),
     ("Remote Control inactive", ACTION,
      "いまのセッションが Remote Control につながっていない", "作業中のセッションで /remote-control"),
     ("Mobile push requested", HUMAN,
@@ -580,7 +584,8 @@ def check_push_result(text):
     for needle, status, cause, fix in PUSH_RESULTS:
         if needle in text:
             return [(status, "通知の試験", cause, fix)]
-    return [(UNKNOWN, "通知の試験", f"知らない返り値: {text!r}", "PushNotification の返り値をそのまま渡し直す")]
+    return [(UNKNOWN, "通知の試験", f"知らない返り値: {text!r}",
+             "送り直さない——PushNotification の返り値を言い換えずにそのまま渡し直す。それでも知らないなら版が違う")]
 
 
 def report_push(items, out=None):
@@ -595,7 +600,7 @@ def exit_code(items):
     statuses = {s for s, *_ in items}
     if ACTION in statuses:
         return 1
-    if UNKNOWN in statuses:
+    if UNKNOWN in statuses or RETRY in statuses:
         return 2
     return 0
 
@@ -616,7 +621,8 @@ def gather(project, commands, flag_path, managed_path, home, platform, flag_note
     return stack, items
 
 
-def report(stack, items, out=sys.stdout):
+def report(stack, items, out=None):
+    out = out or sys.stdout
     print("設定の層（低 → 高）:", file=out)
     for name, path, data in stack:
         state = "無い" if data is None else ("読めない" if isinstance(data, Unreadable) else "在る")

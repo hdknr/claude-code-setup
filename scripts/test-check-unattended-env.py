@@ -408,7 +408,7 @@ def suite(script: Path) -> list[str]:
     push = {
         "Push not sent — mobile push is disabled in /config.": mod.ACTION,
         "Not sent — this terminal is active, so your output here already reaches the user; "
-        "a separate notification would be redundant.": mod.UNKNOWN,
+        "a separate notification would be redundant.": mod.RETRY,
         "Terminal notification sent. Mobile push not sent (Remote Control inactive).": mod.ACTION,
         "Mobile push not sent (Remote Control inactive).": mod.ACTION,
         "Terminal notification sent. Mobile push requested.": mod.HUMAN,
@@ -421,7 +421,16 @@ def suite(script: Path) -> list[str]:
         check(f"返り値 {text!r} は {want}", [s for s, *_ in items] == [want], bad)
     active = mod.check_push_result("Not sent — this terminal is active, so ...")
     check("使用中で省かれたのは失敗（1）ではなく 2", mod.exit_code(active) == 2, bad)
-    check("使用中の対処は離れてから送り直す", "離れて" in active[0][3] and "失敗ではない" in active[0][3], bad)
+    check("使用中の対処は送り直す", "送り直す" in active[0][3] and "失敗ではない" in active[0][3], bad)
+    check("使用中の対処は端末を前面から外す（フォーカスが分かれば 60 秒は効かない）", "前面から外し" in active[0][3], bad)
+    unknown = mod.check_push_result("Notification delivered.")
+    check("知らない返り値も 2 だが、ラベルで使用中と分かれる",
+          mod.exit_code(unknown) == 2 and unknown[0][0] != active[0][0], bad)
+    check("知らない返り値は送り直させない", "送り直さない" in unknown[0][3] and "前面から外し" not in unknown[0][3], bad)
+    buf = io.StringIO()
+    mod.report_push(active, out=buf)
+    check("使用中は [やり直す] と出し、[判定できない] と出さない",
+          "[やり直す]" in buf.getvalue() and "[判定できない]" not in buf.getvalue(), bad)
     buf = io.StringIO()
     code = mod.report_push(mod.check_push_result("Terminal notification sent. Mobile push requested."), out=buf)
     check("送信の要求は 0 で、届いたかを人が見る", code == 0 and "[人が見る]" in buf.getvalue()
@@ -567,15 +576,30 @@ MUTATIONS = {
         "    items += human_items(stack)\n",
         "\n"),
     "判定できないを 0 にする": (
-        "    if UNKNOWN in statuses:\n        return 2",
-        "    if UNKNOWN in statuses:\n        return 0"),
+        "    if UNKNOWN in statuses or RETRY in statuses:\n        return 2",
+        "    if UNKNOWN in statuses or RETRY in statuses:\n        return 0"),
     "設定を書く": (
         "    stack = layers(project, flag_path, managed_path, home, env, flag_note)\n",
         "    stack = layers(project, flag_path, managed_path, home, env, flag_note)\n"
         "    (home / '.claude.json').write_text('{}')\n"),
     "使用中で省かれたのを要対処にする": (
-        '    ("this terminal is active", UNKNOWN,',
+        '    ("this terminal is active", RETRY,',
         '    ("this terminal is active", ACTION,'),
+    "使用中を判定できないにする": (
+        '    ("this terminal is active", RETRY,',
+        '    ("this terminal is active", UNKNOWN,'),
+    "知らない返り値を送り直させる": (
+        '"送り直さない——PushNotification の返り値を言い換えずにそのまま渡し直す。それでも知らないなら版が違う"',
+        '"失敗ではない。遅らせて、端末を前面から外し（別のアプリを前面に）、端末にも iPhone にも触らずに送り直す"'),
+    "使用中の対処が画面ロックだけ": (
+        '"失敗ではない。遅らせて、端末を前面から外し（別のアプリを前面に）、端末にも iPhone にも触らずに送り直す"),',
+        '"失敗ではない。遅らせて、画面をロックし、端末からも iPhone からも離れてから送り直す"),'),
+    "--push-result のあとも設定を読んで点検を出す": (
+        "        return report_push(check_push_result(args.push_result))\n",
+        "        push_code = report_push(check_push_result(args.push_result))\n"
+        "        report(*gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
+        "                       args.managed_settings, Path.home(), sys.platform))\n"
+        "        return push_code\n"),
     "送信の要求を良いにする": (
         '    ("Mobile push requested", HUMAN,',
         '    ("Mobile push requested", GOOD,'),
