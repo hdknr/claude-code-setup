@@ -44,7 +44,8 @@
 - ブランチ: `issue/390-cruise-ledger`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-390`
 - 起点: `0330977`（Merge pull request #401）
-- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `0330977fc31ed62314e1dbb8c16f876b946d8e46`
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `0330977fc31ed62314e1dbb8c16f876b946d8e46`（1 パス目）。
+  **main（#406）を取り込んだので式を当て直した** → `8e9751c95cc1866796612412e4c52e783277059e`（2 パス目以降はこちら）
 
 ## 設計
 
@@ -103,11 +104,14 @@
 - 実装: 済み（`ledger.py`・`references/ledger.md`・`test-ledger.py`・`SKILL.md` の 1 項・版 1.47.0）。
   自分で確かめた変異 8 件すべてが、意図した観測で殺せることを見た（陽性対照: 壊さない本体で全試料が緑）
 - 割り目 1（手順 4 の後）: AskUserQuestion で「ここで割る」が選ばれた（2026-10-25）。実装コミット `e8f530c`
-- 次にすること: 手順 5（Verifier の 1 パス目）と手順 6（`/code-review` の 1 パス目）。base は上の「周の在り処」の SHA
-- Verifier: 未
-- `/code-review`: 未
-- 反証と差し戻し: なし
-- 交絡: 未
+- Verifier 1 パス目: 済み（sonnet・`dev-loop:dev-loop-verifier`）。**受入基準の反証 0 件**、基準外の穴 3 件（採否の表の R1・R2・R4 と同じ）
+- `/code-review` 1 パス目: 済み（high）。**指摘 10 件**（採否の表 R1〜R10）。直す 6 件（R1・R2・R3・R4・R7・R8 の型）・残課題 4 件（R5・R6・R9・R10）と R8 の依存の重複
+- 1 パス目の指摘対応: 済み（`daba4cf`）。`test-ledger.py` は全合格・「守る」11 行に変異 11 件（新しい 3 件も殺せる）。
+  R7 は `probe_gitdir.sh` で修正前に victim へコミットが入り、修正後は入らないことを見た（陽性対照つき）
+- main（#406）を取り込み、版を 1.48.0 へ（#406 が 1.47.0 に先に到達）
+- 反証と差し戻し: 1 パス目の反証（受入基準を破るもの）は R1・R2・R3・R4・R7・R8 の 6 件。手順 4 へ差し戻して直した
+- 交絡: R1 の試料は `git worktree list` でも同じ誤りが出ることを見た（`git` 自身が知らない配置）。R7 は修正前後の対照
+- 次にすること: **手順 5 の当て直し（Verifier 2 パス目）**と **`/code-review` 2 パス目**の**両方**。base は `8e9751c…`
 
 ## 既知の限界・決着済みの論点
 
