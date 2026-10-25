@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.52.0 -->
-> **このスキルの版: 1.52.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.53.0 -->
+> **このスキルの版: 1.53.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1723,6 +1723,23 @@ draft PR も同じ扱い）。禁じているのは**飛ばしたうえで「実
 
   **直さない。読むだけ**——直し方を出す。**項目・判定・終了コード、何を守り何を守らないかは、
   スクリプトの docstring を正とする。**
+
+  **通知が届くかは、点検のあとに試して確かめる**——設定が正しくても届かない形が 2 つある
+  （[#407](https://github.com/hdknr/claude-code-setup/issues/407)）:
+    1. **iPhone を*いまのセッション*につなぐ。** 作業中のセッションで `/remote-control` を打ち、
+       出た QR コードを iPhone で読む。**`claude rc`（アプリの「デバイスを追加」の流れ）は新しいセッションの
+       待ち受けで、そこから送った 1 行は作業中のセッションに届かない。** iPhone から 1 行送り、届くのを見る。
+    2. **誰も操作していない状態で送る。** 端末からも iPhone からも操作しているあいだは
+       `PushNotification` が「this terminal is active」で省く——**頼まれた直後に送ると毎回省かれる。**
+       バックグラウンドのタイマー（例: `sleep 120`）を張り、そのあいだに人が画面をロックして
+       iPhone のアプリを閉じ、タイマーが終わってから送る。
+    3. **返り値をそのまま渡して判定する**:
+       ```bash
+       python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --push-result '<返り値>'
+       ```
+       **省かれた（終了コード 2）は失敗ではない**——離れてからもう一度送る。**省かれた陰で別の原因が
+       隠れている**ので、直すたびに送り直して次の返り値を見る。**`Mobile push requested` は要求しただけ**——
+       iPhone に届いたかは人に訊く。返り値と原因の表は docstring を正とする。
 
 これらは Claude Code の汎用スキル。導入していない環境では、手動での待機・確認に読み替えてよい。
 

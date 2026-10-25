@@ -116,11 +116,15 @@ Claude Code の通知ツールは、送れなかったときに理由を返し�
 | --- | --- |
 | `Push not sent — mobile push is disabled in /config.` | **Push when Claude decides** がオフ |
 | `Not sent — this terminal is active` | 端末を**使用中**と判定された（下記） |
+| `Mobile push not sent (Remote Control inactive).` | いまのセッションが Remote Control につながっていない（手順 1 の `/remote-control`） |
 | `Terminal notification sent. Mobile push requested.` なのに届かない | iPhone 側（通知の許可・集中モード・サインインしているアカウント） |
+
+判定には順番があります。**使用中だと、Remote Control が切れていても「this terminal is active」が先に返ります。** また **Remote Control がつながっていないと、`/config` がオフでも「disabled in /config」は返りません。** 1 つ直したら、もう一度送らせて次の返り値を見てください（Claude Code 2.1.310 の本体で確かめました）。
 
 !!! warning "操作中は通知が省かれる"
     PC のターミナルに打鍵中・前面にあるあいだだけでなく、**iPhone から操作しているあいだも「使用中」と判定され**、通知は送られません。
     操作中に「通知を送って」と頼むと、毎回省かれます。
+    本体の判定は「ターミナルが前面にあるか（分からなければ、最後の操作から 60 秒以内か）」です。
 
 **試験の手順**（操作していない状態を作ってから送らせる）:
 

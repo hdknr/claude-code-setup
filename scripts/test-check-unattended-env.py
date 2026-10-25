@@ -404,6 +404,62 @@ def suite(script: Path) -> list[str]:
         path, note = mod.find_flag_settings(810)
         check("spare のセッションは判定できない理由を返す", path is None and note, bad)
 
+    # 通知の試験: 返り値は本体（2.1.310）の文字列と一字一句同じものを当てる。端末の通知あり・なしの 2 形ずつ
+    push = {
+        "Push not sent — mobile push is disabled in /config.": mod.ACTION,
+        "Not sent — this terminal is active, so your output here already reaches the user; "
+        "a separate notification would be redundant.": mod.UNKNOWN,
+        "Terminal notification sent. Mobile push not sent (Remote Control inactive).": mod.ACTION,
+        "Mobile push not sent (Remote Control inactive).": mod.ACTION,
+        "Terminal notification sent. Mobile push requested.": mod.HUMAN,
+        "Mobile push requested.": mod.HUMAN,
+        "": mod.UNKNOWN,
+        "Notification delivered.": mod.UNKNOWN,
+    }
+    for text, want in push.items():
+        items = mod.check_push_result(text)
+        check(f"返り値 {text!r} は {want}", [s for s, *_ in items] == [want], bad)
+    active = mod.check_push_result("Not sent — this terminal is active, so ...")
+    check("使用中で省かれたのは失敗（1）ではなく 2", mod.exit_code(active) == 2, bad)
+    check("使用中の対処は離れてから送り直す", "離れて" in active[0][3] and "失敗ではない" in active[0][3], bad)
+    buf = io.StringIO()
+    code = mod.report_push(mod.check_push_result("Terminal notification sent. Mobile push requested."), out=buf)
+    check("送信の要求は 0 で、届いたかを人が見る", code == 0 and "[人が見る]" in buf.getvalue()
+          and "iPhone に届いたか" in buf.getvalue(), bad)
+    check("Remote Control が切れていれば /remote-control を案内する",
+          "/remote-control" in mod.check_push_result("Mobile push not sent (Remote Control inactive).")[0][3], bad)
+    with scenario(script) as env:
+        env.all_good()
+        before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
+        buf = io.StringIO()
+        # 変異で判定の分岐が外れても実環境を読まないよう、HOME・project・managed・flag をテンポラリに向ける
+        saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_CONFIG_DIR")}
+        os.environ["HOME"] = str(env.home)
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        try:
+            with contextlib.redirect_stdout(buf):
+                code = mod.main(["--push-result", "Push not sent — mobile push is disabled in /config.",
+                                 "--project", str(env.project),
+                                 "--managed-settings", str(env.project / "no-managed.json"),
+                                 "--flag-settings", str(env.project / "no-flag.json")])
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
+        check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in buf.getvalue()
+              and "[要対処] 通知の試験" in buf.getvalue(), bad)
+        check("--push-result は何も書かない", before == after, bad)
+
+    # 人が見る: Remote Control は claude rc との違い、モバイルの登録は通知の試験を指す
+    with scenario(script) as env:
+        env.all_good()
+        _, _, out = run(mod, env)
+        check("Remote Control の項が claude rc の待ち受けと区別する", "claude rc" in out and "/remote-control" in out, bad)
+        check("モバイルの登録の項が --push-result を指す", "--push-result" in out, bad)
+
     # 守る: 何も書かない
     with scenario(script) as env:
         env.all_good()
@@ -517,6 +573,27 @@ MUTATIONS = {
         "    stack = layers(project, flag_path, managed_path, home, env, flag_note)\n",
         "    stack = layers(project, flag_path, managed_path, home, env, flag_note)\n"
         "    (home / '.claude.json').write_text('{}')\n"),
+    "使用中で省かれたのを要対処にする": (
+        '    ("this terminal is active", UNKNOWN,',
+        '    ("this terminal is active", ACTION,'),
+    "送信の要求を良いにする": (
+        '    ("Mobile push requested", HUMAN,',
+        '    ("Mobile push requested", GOOD,'),
+    "Remote Control が切れていても見ない": (
+        '    ("Remote Control inactive", ACTION,',
+        '    ("Remote Control inactive", HUMAN,'),
+    "/config のオフを見ない": (
+        '    ("mobile push is disabled in /config", ACTION,',
+        '    ("mobile push is disabled in /config", GOOD,'),
+    "知らない返り値を良いにする": (
+        '    return [(UNKNOWN, "通知の試験", f"知らない返り値',
+        '    return [(GOOD, "通知の試験", f"知らない返り値'),
+    "--push-result を見ない": (
+        "    if args.push_result is not None:\n",
+        "    if False:\n"),
+    "人が見るの Remote Control が claude rc を言わない": (
+        '         "作業中のセッションで /remote-control——claude rc の待ち受けは別のセッションを起こす。"\n',
+        '         "作業中のセッションで /remote-control。"\n'),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),
