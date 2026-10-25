@@ -87,6 +87,10 @@ jobs:
       - name: 周の探索のテスト（#136 段 1）
         run: python3 scripts/test-find-cycle.py
 
+      # 本体は CI から呼ばない（入力が利用者の ~/.claude にある）。テストだけ回す。
+      - name: 不在の前の環境点検のテスト（#394）
+        run: python3 scripts/test-check-unattended-env.py
+
       - name: ガード拒否の収集のテスト（#122）
         run: python3 scripts/test-collect-guard-rejections.py
 
