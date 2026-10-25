@@ -97,6 +97,20 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     ("費用への影響は空でよい", HEADER + row(), 0, "OK（1 行）"),
     ("費用付きの質問に費用への影響", HEADER + row(起票元="実現性・コスト（運用費）", 費用への影響="B は月額が約 2 倍"), 0,
      "OK（1 行）"),
+    # --- 起票したループの印（#278） ---
+    ("印つきの番号（4 つの印）", HEADER + row(No="Q-R-001") + row(No="Q-S-001", 起票元="仕様レビュー（Red Team）")
+     + row(No="Q-F-001", 起票元="実現性・コスト", 費用への影響="B は約 2 倍") + row(No="Q-D-001", 起票元="開発（#9）"), 0, "OK（4 行）"),
+    # 前の形の番号は起票元と照らさない（`開発` の行に印の無い Q-001）
+    ("前の形の番号と印つきの番号が混ざる", HEADER + row(No="Q-001", 起票元="開発") + row(No="Q-R-001"), 0, "OK（2 行）"),
+    ("印つきの番号が 4 桁", HEADER + row(No="Q-R-1000"), 0, "OK（1 行）"),
+    ("印が起票元と合わない", HEADER + row(No="Q-S-001"), 1, "`No` の印 `S` が起票元 `要求確定` の印 `R` と合わない"),
+    ("印が起票元（括弧つき）と合わない", HEADER + row(No="Q-R-001", 起票元="仕様レビュー（Red Team）"), 1,
+     "`No` の印 `R` が起票元 `仕様レビュー` の印 `S` と合わない"),
+    ("未知の印", HEADER + row(No="Q-X-001"), 1, "`No` が `Q-S-001` の形でない"),
+    ("印が小文字", HEADER + row(No="Q-r-001"), 1, "`No` が `Q-S-001` の形でない"),
+    ("印の後ろに - が無い", HEADER + row(No="Q-R001"), 1, "`No` が `Q-S-001` の形でない"),
+    ("印が 2 つ", HEADER + row(No="Q-R-S-001"), 1, "`No` が `Q-S-001` の形でない"),
+    ("印つきの番号が 2 桁", HEADER + row(No="Q-R-01"), 1, "`No` が `Q-S-001` の形でない"),
     # --- 読めない（中身を検査していない） ---
     ("空のファイル", "", 2, "空のファイル"),
     ("UTF-8 でない", HEADER.encode("cp932"), 2, "UTF-8 として読めない"),
@@ -119,17 +133,22 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
     # --- 内部の層（ファイルの名前が qa-dev.csv） ---
     ("内部: 決まりどおり", HEADER + row(No="D-001", 回答="B（開発 山田 2026-10-22）", 反映先="spec/jobs.md", 状態="反映済み")
      + row(No="D-002"), 0, "OK（2 行）"),
-    ("内部: 番号が Q-", HEADER + row(No="Q-001"), 1, "`No` が `D-001` の形でない"),
+    ("内部: 印つきの番号", HEADER + row(No="D-S-001", 起票元="仕様レビュー（Red Team）")
+     + row(No="D-F-001", 起票元="実現性・コスト", 費用への影響="ワーカー 1 台分") + row(No="D-D-001", 起票元="開発（#9）"), 0,
+     "OK（3 行）"),
+    ("内部: 印が起票元と合わない", HEADER + row(No="D-F-001"), 1, "`No` の印 `F` が起票元 `要求確定` の印 `R` と合わない"),
+    ("内部: 番号が Q-S-", HEADER + row(No="Q-S-001", 起票元="仕様レビュー"), 1, "`No` が `D-S-001` の形でない"),
+    ("内部: 番号が Q-", HEADER + row(No="Q-001"), 1, "`No` が `D-S-001` の形でない"),
     ("内部: 暫定反映", HEADER + row(No="D-001", 回答="A（暫定）", 反映先="spec/a.md", 状態="暫定反映"), 1,
      "内部の表で `暫定反映` は使わない"),
     ("内部: 推奨の決まりも同じ", HEADER + row(No="D-001", 推奨=""), 1, "`推奨` が空"),
-    ("共有: 番号が D-", HEADER + row(No="D-001"), 1, "`No` が `Q-001` の形でない"),
+    ("共有: 番号が D-", HEADER + row(No="D-001"), 1, "`No` が `Q-S-001` の形でない"),
     # --- 行 ---
     ("行の列数が違う", HEADER + "Q-001,要求確定,質問,A: x / B: y,A,理由,未回答,—,確認中\n", 1, "列の数が 9"),
-    ("番号の書式", HEADER + row(No="Q-1"), 1, "`No` が `Q-001` の形でない"),
-    ("番号が 2 桁", HEADER + row(No="Q-01"), 1, "`No` が `Q-001` の形でない"),
-    ("番号が全角数字", HEADER + row(No="Q-００１"), 1, "`No` が `Q-001` の形でない"),
-    ("番号の後ろに余計な文字", HEADER + row(No="Q-001x"), 1, "`No` が `Q-001` の形でない"),
+    ("番号の書式", HEADER + row(No="Q-1"), 1, "`No` が `Q-S-001` の形でない"),
+    ("番号が 2 桁", HEADER + row(No="Q-01"), 1, "`No` が `Q-S-001` の形でない"),
+    ("番号が全角数字", HEADER + row(No="Q-００１"), 1, "`No` が `Q-S-001` の形でない"),
+    ("番号の後ろに余計な文字", HEADER + row(No="Q-001x"), 1, "`No` が `Q-S-001` の形でない"),
     ("番号の重複", HEADER + row() + row(), 1, ":3: `No` が 2 行目と重複"),
     ("未知の起票元", HEADER + row(起票元="営業"), 1, "`起票元` が決まりに無い"),
     ("未知の起票元（括弧つき）", HEADER + row(起票元="営業（電話）"), 1, "`起票元` が決まりに無い"),
@@ -167,6 +186,9 @@ CASES: list[tuple[str, str | bytes, int, str]] = [
 # 本体を 1 箇所ずつ壊す。(名前, 壊す前, 壊した後, それを殺すはずの試料)
 # **殺すはずの試料が期待どおりでなくなること**まで見る——別の試料で偶然落ちたのを
 # 「殺せた」と数えないため。
+# 番号の書式の行（本体の写しではなく、変異が届く箇所の名指し。届かなければ「変異が届く」で落ちる）
+NUMBER_LINE = 'NUMBER = re.compile(rf"Q-(?:(?P<mark>{MARK})-)?[0-9]{{3,}}")'
+INTERNAL_LINE = 'INTERNAL_NUMBER = re.compile(rf"D-(?:(?P<mark>{MARK})-)?[0-9]{{3,}}")'
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("見出しを見ない", "if header != COLUMNS:", "if False:", "列の順序が違う"),
     ("状態を見ない", 'row["状態"] not in STATES', "False", "未知の状態"),
@@ -186,12 +208,23 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("起票元を前方一致で見る", 'SOURCE.fullmatch(row["起票元"])', 'SOURCE.match(row["起票元"])', "起票元の括弧が閉じていない"),
     ("起票元の空の括弧を許す", "{DETAIL_OPEN}.+{DETAIL_CLOSE}", "{DETAIL_OPEN}.*{DETAIL_CLOSE}", "起票元の括弧が空"),
     ("ラベルの重複を見ない", "if len(set(labels)) != len(labels):", "if False:", "選択肢のラベル重複"),
-    ("番号の書式を見ない", 'not number.fullmatch(row["No"])', "False", "番号の書式"),
-    ("番号を 2 桁から許す", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-[0-9]{2,}")', "番号が 2 桁"),
-    ("番号を 3 桁までにする", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-[0-9]{3}")', "番号が 4 桁"),
-    ("番号を Unicode の数字で見る", r'NUMBER = re.compile(r"Q-[0-9]{3,}")', r'NUMBER = re.compile(r"Q-\d{3,}")',
-     "番号が全角数字"),
-    ("番号を前方一致で見る", 'not number.fullmatch(row["No"])', 'not number.match(row["No"])', "番号の後ろに余計な文字"),
+    ("番号の書式を見ない", "        if not n:\n", "        if False:\n", "番号の書式"),
+    ("番号を 2 桁から許す", NUMBER_LINE, NUMBER_LINE.replace("{{3,}}", "{{2,}}"), "番号が 2 桁"),
+    ("番号を 3 桁までにする", NUMBER_LINE, NUMBER_LINE.replace("{{3,}}", "{{3}}"), "番号が 4 桁"),
+    ("番号を Unicode の数字で見る", NUMBER_LINE, NUMBER_LINE.replace("[0-9]", "\\d"), "番号が全角数字"),
+    ("印を省けなくする", NUMBER_LINE, NUMBER_LINE.replace("(?:(?P<mark>{MARK})-)?", "(?P<mark>{MARK})-"),
+     "前の形の番号と印つきの番号が混ざる"),
+    ("印を省けなくする（内部）", INTERNAL_LINE, INTERNAL_LINE.replace("(?:(?P<mark>{MARK})-)?", "(?P<mark>{MARK})-"),
+     "内部: 決まりどおり"),
+    ("印に他の英字を許す", 'MARK = "[" + "".join(MARKS.values()) + "]"', 'MARK = "[A-Z]"', "未知の印"),
+    ("印を起票元と照らさない", 'elif n["mark"] and source and n["mark"] != MARKS[source]:', "elif False:",
+     "印が起票元と合わない"),
+    ("前の形の番号も起票元と照らす", 'elif n["mark"] and source and', 'elif source and', "前の形の番号と印つきの番号が混ざる"),
+    ("起票元を詳細ごと照らす", '            source = m["name"]\n', '            source = row["起票元"]\n',
+     "印が起票元（括弧つき）と合わない"),
+    ("印の対応を入れ替える", '"仕様レビュー": "S", "実現性・コスト": "F"', '"仕様レビュー": "F", "実現性・コスト": "S"',
+     "印つきの番号（4 つの印）"),
+    ("番号を前方一致で見る", 'n = number.fullmatch(row["No"])', 'n = number.match(row["No"])', "番号の後ろに余計な文字"),
     ("反映済みの回答の空白を落とさない", 'if row["回答"].strip() in ("", NO_ANSWER):',
      'if row["回答"] in ("", NO_ANSWER):', "反映済みなのに未回答（後ろに空白）"),
     ("反映済みの反映先の空白を落とさない", 'if row["反映先"].strip() in ("", NO_TARGET):',
@@ -204,8 +237,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("推奨を空白を落として比べる", 'and row["推奨"] not in labels:', 'and row["推奨"].strip() not in labels:', "推奨に空白が付く"),
     ("なしを許さない", 'and row["推奨"] != NO_RECOMMENDATION', "", "推奨しない（なし と理由）"),
     ("内部の層を見ない", "return path.name == INTERNAL_NAME", "return False", "内部: 番号が Q-"),
-    ("内部の番号を Q- にする", r'INTERNAL_NUMBER = re.compile(r"D-[0-9]{3,}")', r'INTERNAL_NUMBER = re.compile(r"Q-[0-9]{3,}")',
-     "内部: 決まりどおり"),
+    ("内部の番号を Q- にする", INTERNAL_LINE, INTERNAL_LINE.replace('rf"D-', 'rf"Q-'), "内部: 決まりどおり"),
     ("内部で暫定反映を許す", "elif internal and row[\"状態\"] in INTERNAL_FORBIDDEN:", "elif False:", "内部: 暫定反映"),
     ("前の形の見出しで手順を指さない", 'if "推奨" not in header:', "if False:", "前の形の見出し（推奨の列が無い）"),
     ("起票元を見ない", 'm["name"] not in SOURCES', "False", "未知の起票元"),
@@ -215,11 +247,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("空のファイルを 2 にしない", "if not text.strip():", "if False:", "空のファイル"),
     ("UTF-8 でないのを 2 にしない", 'return 2, [f"{path}: UTF-8', 'return 1, [f"{path}: UTF-8', "UTF-8 でない"),
     ("費用への影響の空を許さない", 'MAY_BE_EMPTY = {"費用への影響"}', "MAY_BE_EMPTY = set()", "費用への影響は空でよい"),
-    ("費用付きの質問の空を見ない", 'elif m["name"] == COST_SOURCE and not row["費用への影響"].strip():', "elif False:",
+    ("費用付きの質問の空を見ない", 'if source == COST_SOURCE and not row["費用への影響"].strip():', "if False:",
      "費用付きの質問で費用への影響が空"),
     ("費用付きの質問の空白を落とさない", 'and not row["費用への影響"].strip():', 'and not row["費用への影響"]:',
      "費用付きの質問（括弧つき）で費用への影響が空白だけ"),
-    ("費用付きの質問を起票元の詳細ごと比べる", 'elif m["name"] == COST_SOURCE', 'elif row["起票元"] == COST_SOURCE',
+    ("費用付きの質問を起票元の詳細ごと比べる", 'if source == COST_SOURCE', 'if row["起票元"] == COST_SOURCE',
      "費用付きの質問（括弧つき）で費用への影響が空白だけ"),
     # 引用符つきの改行は `splitlines()` でも壊れない（csv が繋ぎ直す）ので、殺すのは U+2028 の試料
     ("splitlines で割る", 'csv.reader(io.StringIO(text, newline=""))', "csv.reader(text.splitlines())",
@@ -230,7 +262,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 
 # 番号 → 内部の層か（`is_internal_number`。層を番号で決めるのはここだけ——#353）
 NUMBER_LAYERS = [("D-001", True), ("D-1234", True), ("Q-001", False), ("D-01", False), ("D-001x", False),
-                 ("d-001", False), ("", False)]
+                 ("d-001", False), ("", False),
+                 # 印つき（#278）。`Q-D-` は開発が共有の表に起票した行で、内部の層ではない
+                 ("D-S-001", True), ("D-D-001", True), ("Q-D-001", False), ("D-X-001", False), ("D-S001", False)]
+# 番号の並び（`number_order`。`references/qa-csv.md` の「番号の振り方」）——共有が先、前の形が先、印の順、数の順
+NUMBER_ORDER = ["Q-001", "Q-1000", "Q-R-005", "Q-S-002", "Q-S-999", "Q-S-1000", "Q-F-001", "Q-D-001", "D-001", "D-S-002"]
+ORDER_MUTATIONS = [
+    ("印の順を見ない", 'marks.index(m["mark"]) + 1 if m["mark"] else 0', "0"),
+    ("数を文字列で比べる", 'int(number.rsplit("-", 1)[1])', 'number.rsplit("-", 1)[1]'),
+    ("層を見ない", "return is_internal_number(number), (", "return False, ("),
+    ("前の形を後ろに並べる", 'marks.index(m["mark"]) + 1 if m["mark"] else 0', 'marks.index(m["mark"]) if m["mark"] else 9'),
+    ("形に反する番号で止まらない", "    if m is None:\n        raise ValueError", "    if False:\n        raise ValueError"),
+]
 NUMBER_MUTATIONS = [
     ("番号の層を見ない（常に共有）", "return INTERNAL_NUMBER.fullmatch(number) is not None", "return False"),
     ("番号の層を入れ替える", "return INTERNAL_NUMBER.fullmatch(number) is not None",
@@ -245,6 +288,24 @@ HEADING = re.compile(r"#{1,6} (?P<text>.+)")
 POINTER_MUTATIONS = [("tree.md の見出しを改名する", "tree.md", "\n## Q&A 表を移す\n", "\n## Q&A 表の移し方\n")]
 
 failures: list[str] = []
+
+
+def number_order_mismatches(mod) -> list[str]:
+    problems = []
+    try:
+        got = sorted(reversed(NUMBER_ORDER), key=mod.number_order)
+    except Exception as e:  # noqa: BLE001 — 変異の結果を観測するため
+        return [f"{type(e).__name__}: {e}"]
+    if got != NUMBER_ORDER:
+        problems.append(f"並び {got} ≠ 期待 {NUMBER_ORDER}")
+    try:
+        mod.number_order("Q-X-001")
+        problems.append("形に反する番号（Q-X-001）で止まらない")
+    except ValueError:
+        pass
+    except Exception as e:  # noqa: BLE001 — ValueError 以外で落ちるのも「止まり方」の違反
+        problems.append(f"形に反する番号（Q-X-001）が ValueError でなく {type(e).__name__}")
+    return problems
 
 
 def number_layer_mismatches(mod) -> list[str]:
@@ -353,6 +414,11 @@ def table_keys(markdown: str, heading: str) -> list[str]:
     return keys
 
 
+def section(markdown: str, heading: str) -> str:
+    m = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", markdown, re.S | re.M)
+    return m.group(1) if m else ""
+
+
 def column_cells(markdown: str) -> dict[str, list[str]]:
     """「列」の表を {列名: [書くもの, 空のとき]} で返す。"""
     m = re.search(r"^## 列\n(.*?)(?=^## |\Z)", markdown, re.S | re.M)
@@ -408,12 +474,18 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
         marker = first_code(empty(column), "まだなら {}")
         if marker != constant:
             problems.append(f"`{column}` の「まだ無い」の印 {marker!r} ≠ 本体 {constant!r}")
-    digits = re.search(r"`Q-` に (\d+) 桁以上", write("No"))
-    expected = rf"Q-[0-9]{{{digits.group(1)},}}" if digits else None
+    # 起票元ごとの番号の印（「起票元」の表の 2 列目）
+    marks = dict(re.findall(r"^\| `([^`]+)` \| `([^`]+)` \|", section(markdown, "起票元"), re.M))
+    if marks != mod.MARKS:
+        problems.append(f"番号の印 {marks} ≠ 本体 {mod.MARKS}")
+    digits = re.search(r"(\d+) 桁以上の数字", write("No"))
+    prefix = first_code(write("No"), "{} に起票元の印と `-` を付け")
+    mark = "[" + "".join(marks.values()) + "]"
+    expected = rf"{prefix}(?:(?P<mark>{mark})-)?[0-9]{{{digits.group(1)},}}" if digits and prefix else None
     if expected != mod.NUMBER.pattern:
         problems.append(f"番号の書式 {expected!r} ≠ 本体 {mod.NUMBER.pattern!r}")
     internal_prefix = first_code(write("No"), "内部の表は {}（")
-    internal_expected = expected.replace("Q-", internal_prefix, 1) if expected and internal_prefix else None
+    internal_expected = expected.replace(prefix, internal_prefix, 1) if expected and internal_prefix else None
     if internal_expected != mod.INTERNAL_NUMBER.pattern:
         problems.append(f"内部の番号の書式 {internal_expected!r} ≠ 本体 {mod.INTERNAL_NUMBER.pattern!r}")
     none_marker = first_code(write("推奨"), "推奨しないなら {}（")
@@ -458,7 +530,10 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("費用付きの質問の起票元", "**起票元が `実現性・コスト` の行は", "**起票元が `開発` の行は"),
     ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
     ("反映先の「まだ無い」の印", "まだなら `—` と書く", "まだなら `-` と書く"),
-    ("番号の桁", "`Q-` に 3 桁以上の数字", "`Q-` に 4 桁以上の数字"),
+    ("番号の桁", "3 桁以上の数字（`Q-S-001`", "4 桁以上の数字（`Q-S-001`"),
+    ("番号の頭", "`Q-` に起票元の印と", "`P-` に起票元の印と"),
+    ("番号の印", "| `仕様レビュー` | `S` |", "| `仕様レビュー` | `T` |"),
+    ("番号の印（実現性・コスト）", "| `実現性・コスト` | `F` |", "| `実現性・コスト` | `C` |"),
     # ` | ` に崩すと表の行が割れて「欠落」で赤になり、値の比較を確かめられない
     ("選択肢の区切り", "の形を ` / ` で", "の形を ` ; ` で"),
     ("選択肢の数", "で 2 つ以上つなぐ", "で 3 つ以上つなぐ"),
@@ -530,6 +605,10 @@ def main() -> int:
         problems = number_layer_mismatches(mod)
         check("番号の層が期待どおり", not problems, "; ".join(problems))
 
+        print("4b'. 番号の並び（number_order）")
+        problems = number_order_mismatches(mod)
+        check("番号の並びが期待どおり", not problems, "; ".join(problems))
+
         print("4c. 移す手順への指し先が references/ の見出しにある")
         references = {p.name: p.read_text(encoding="utf-8") for p in REFERENCES.glob("*.md")}
         sources = pointer_sources(mod)
@@ -574,6 +653,14 @@ def main() -> int:
             broken.write_text(source.replace(before, after), encoding="utf-8")
             assert_in_tmp(broken)
             check(f"変異を殺せる: {name}（番号の層）", bool(number_layer_mismatches(load(broken))))
+        for index, (name, before, after) in enumerate(ORDER_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            broken = root / f"order-mutant-{index}.py"
+            broken.write_text(source.replace(before, after), encoding="utf-8")
+            assert_in_tmp(broken)
+            check(f"変異を殺せる: {name}（番号の並び）", bool(number_order_mismatches(load(broken))))
         broken = root / "pointer-mutant.py"
         broken.write_text(source.replace('MIGRATION = "references/tree.md の「Q&A 表を移す」"',
                                          'MIGRATION = "references/tree.md の「Q&A 表を直す」"'), encoding="utf-8")
@@ -585,7 +672,7 @@ def main() -> int:
     if failures:
         print(f"FAIL: {len(failures)} 件")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + 1} 件")
     return 0
 
 

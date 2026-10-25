@@ -240,7 +240,7 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      {**V1, "v1/spec/qa-dev.csv": QA_HEAD + D1 + D2, "v2/removed.csv": REMOVED_HEAD + "Q&A,D-001,共有へ移した（Q-003）\n"},
      "none", [], lambda r: made(r) and r.text("spec/qa-dev.csv") == QA_HEAD + D2 and r.text("shared/qa.csv") == QA_HEAD + Q1 + Q2),
     ("内部の表の決まり違反（番号が Q-）", {**MAIN, "v2/spec/qa-dev.csv": QA_HEAD + Q3}, "none", [],
-     lambda r: refused(r, "`D-001` の形でない")),
+     lambda r: refused(r, "`D-S-001` の形でない")),
     ("内部の表をファイルとして消す", {**V1, "v1/spec/qa-dev.csv": QA_HEAD + D1,
                                "v2/removed.csv": REMOVED_HEAD + "ファイル,spec/qa-dev.csv,x\n"}, "none", [],
      lambda r: refused(r, "ファイルとしては消せない")),
