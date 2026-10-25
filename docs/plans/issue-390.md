@@ -13,7 +13,7 @@
 - `plugins/dev-loop/skills/dev-loop/references/ledger.md` — 新規。いつ台帳を使い、いつ書き換え、どう再開するか
 - `scripts/test-ledger.py` — 新規。テンポラリの本物の git リポジトリ（worktree つき）で当てる回帰テスト（変異テストを含む）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 「並列化の指針」に `references/ledger.md` を指す項を足す。版の 2 行
-- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（1.46.0 → 1.48.0。道具の追加なので minor。main が #406 で 1.47.0 に先に到達したので取り込んで 1 つ上げた）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（1.46.0 → 1.49.0。道具の追加なので minor。main が #406 で 1.47.0・#395 で 1.48.0 に先に到達したので、取り込むたびに 1 つ上げた）
 - `.claude-plugin/marketplace.json` — 同上
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書く。手で書かない）
 - `scripts/check-all.py` — `TESTS` に `test-ledger.py` を足す
