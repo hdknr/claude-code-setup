@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.49.0 -->
-> **このスキルの版: 1.49.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.50.0 -->
+> **このスキルの版: 1.50.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1753,3 +1753,10 @@ draft PR も同じ扱い）。禁じているのは**飛ばしたうえで「実
   レンズを変えることに意味がある。
 - 層の関係と使い分けは設計ドキュメントを参照:
   <https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#five-layers>
+
+### 複数の Issue を回すとき
+
+**依存のある複数の Issue を 1 つの親セッションで回すなら、依存と状態を台帳ファイルに持ち、再開はそこから行う（必須）**
+——親の文脈にだけ持つと、圧縮とセッションの終わりで消える（#390）。
+**台帳は `scripts/ledger.py` で読み書きし、いつ書きどう再開するかは `references/ledger.md` を正とする**
+（このスキルと同じ場所にある）。**1 Issue = 1 周の通常の周では読まなくてよい。**
