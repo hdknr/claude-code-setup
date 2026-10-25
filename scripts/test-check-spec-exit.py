@@ -96,7 +96,7 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("内部の表の反映済みは通す（文の印は数えない）", HEADER + DONE_ROW,
      {"order.md": CLEAN_SPEC, "qa-dev.csv": HEADER + INTERNAL_DONE}, 0, "条件 1 を満たす"),
     ("内部の表が列検査を通らない", HEADER, {"order.md": CLEAN_SPEC, "qa-dev.csv": HEADER + DONE_ROW}, 1,
-     "`No` が `D-001` の形でない"),
+     "`No` が `D-S-001` の形でない"),
     ("内部の表が読めない", HEADER, {"order.md": CLEAN_SPEC, "qa-dev.csv": b"\xff\xfe\x00"}, 2, "内部の Q&A 表を読めない"),
     ("内部の表だけでは仕様が無い", HEADER, {"qa-dev.csv": HEADER + INTERNAL_DONE}, 2, "ファイルが 1 つも無い"),
     ("入れ子の qa-dev.csv は仕様のファイル", HEADER, {"order.md": CLEAN_SPEC, "sub/qa-dev.csv": "未定\n"}, 1, "未決定の印 未定"),

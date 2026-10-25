@@ -162,6 +162,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `scripts/` に無い**——`plugins/dev-loop/skills/dev-loop/scripts/find-cycle.py`
     に置いてある（**`dev-loop` はどのリポジトリでも使うスキル**なので、
     対象リポジトリの `scripts/` に在ることを当てにできない）
+  - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
+    **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**
   - `collect-guard-rejections.py` - worktree 隔離セッションのガードによる拒否を
     トランスクリプトから収集する（**CI からは呼ばない**——入力が `~/.claude/projects` にあり、
     リポジトリの外で利用者ごとに違う。`token-metrics.py` と同じ形）
@@ -488,6 +491,14 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 3. **版を次の patch に上げる**（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）
 4. `git diff origin/main` で、**main との正味の差分がその周の変更だけ**であることを見る
 5. `python3 scripts/check-all.py` を回し、push したあと `gh pr checks <n>` で PR 側を見る
+
+**取り込んだ main が足した歯止めは、その時点からこの周にも掛かる**——版の衝突が無い取り込みでも同じである。
+#389 の周では、main 側の #384（PR #399）が足した `check-plan-counts.py` が取り込んだ直後に落ちた
+（``件数の行（`- この周の起票: N 件`）が無い``）。**件数の行の規約そのものは、周を始めた時点の
+`SKILL.md` 手順 7・8 に既にあった**（マージの前に書く）——マージの前に書くはずだった行が、**この検査が周の途中の計画ファイルも見る**ので、
+取り込んだ時点から要るようになった。**落ちた検査の出力は自分の周のファイルを名指しするので、その検査が
+取り込みで入ったことは出力からは分からない。** 取り込みで増えた検査は `git diff --stat ORIG_HEAD HEAD -- scripts/` で見る
+（`git merge` の直後なら `ORIG_HEAD` は取り込む前の HEAD を指す）。
 
 **PR を作ってからマージされるまでの間にも、main は進む。** マージの直前に
 `gh pr view <n> --json mergeable` を見る。

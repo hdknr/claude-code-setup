@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.24.0 -->
-> **このスキルの版: 0.24.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.25.0 -->
+> **このスキルの版: 0.25.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -69,8 +69,8 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 - **0 以外なら止まる。** 出力（仕様に反映した状態でない Q&A・未決定の印）を示し、`/spec-loop:req-loop`・`/spec-loop:spec-review` を案内する。
 - **0 でも、抜けたとは限らない**——条件 2〜5 は判定役の報告で決まる（`../../references/spec-exit.md`）。
   **直近の `spec-review` が「抜けた」と報告したかを、利用者に確かめる。** 報告が無い・抜けていないなら止まる。
-- **spec-loop 0.23.0 までの表で、`反映済み` の `回答` に「暫定で採用」と書いて暫定を表していたなら、先に移す**
-  （`../../references/tree.md` の「暫定の行を状態へ移す（spec-loop 0.24.0）」）——**移さないとその行は確定として扱われ、
+- **spec-loop 0.24.0 までの表で、`反映済み` の `回答` に「暫定で採用」と書いて暫定を表していたなら、先に移す**
+  （`../../references/tree.md` の「暫定の行を状態へ移す（spec-loop 0.25.0）」）——**移さないとその行は確定として扱われ、
   そこから Red テストと Issue を作る**（判別は状態だけ。`../../references/qa-csv.md` の「暫定の行の判別」）。
   どれが該当するかは機械では決められないので、移したかを人間に確かめてから進む。
 
