@@ -91,9 +91,10 @@
 - 実装: 済み（`515febe`）。`test-check-unattended-env.py` は陽性対照が緑・変異 8 件すべて赤
 - 割り目（手順 4）: AskUserQuestion で訊いた → **「ここで割る」**（2026-10-25）。再開は手順 5 の Verifier 1 パス目から
 - `check-all.py`: 47 本のうち `check-plan-counts.py` だけ赤（件数の行が無かった）→ 下に足した
-- Verifier: 未
-- `/code-review`: 未
-- 反証・差し戻し: なし
+- `check-all.py`（実装の時点）: 47/47・失敗 0
+- Verifier: 1 パス目 済み（反証 3 件）
+- `/code-review`: 1 パス目 済み（指摘 10 件）
+- 反証・差し戻し: 1 パス目の 13 件のうち 11 件を直す（採否は下の表）→ 手順 4 へ差し戻し
 - 交絡を潰した手順: スリープの点検で、Claude 自身の `caffeinate -t 300` が「防止されている」を作る交絡を見つけ、判定から外した（上の「実測した前提」）
 
 ## 起票
@@ -106,4 +107,21 @@
 | --- | --- | --- |
 | 設定を直す `--fix` | 採らない | 不在の前に利用者の設定を書き換える道具は危険が勝る。直し方を出すだけにする |
 | モバイルの登録 | 人が見る | サーバ側の状態で、手元のファイルに無い |
-| 許可ルールの照合 | 近似 | ハーネスの照合器が正。書式 2 つと全許可だけを当て、docstring に限界を書く |
+| 許可ルールの照合 | 近似 | ハーネスの照合器が正。書式 2 つと全許可だけを当て、docstring に限界を書く（**`ask` を読まなかったのは近似ではなく漏れ**——V1 で直す） |
+
+### 1 パス目の指摘（Verifier 3 件・`/code-review` 10 件）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1/R1 | `permissions.ask` を読まない。allow と ask の両方に当たると「良い」 | 示せる（両関門のプローブ: allow＋ask で `良い`） | 4・1 | 直す |
+| V2 | 通知の `false`・文字列 `"true"`、managed>flag、project<local の並びを当てるテストが無い（変異が生存） | 示せる（Verifier の変異 4 本が生存） | 7・2（テストの経路） | 直す（テストを足す） |
+| V3 | `remoteControlAtStartup` を `~/.claude.json` から読まない | 本体の文字列のみ。人が見る項目で終了コードに効かない | 無し | 残課題 |
+| R2 | 読めない上の層を飛ばして下の層の値で「良い」 | 示せる（プローブ: local が壊れていて user の true で `良い`） | 1 | 直す |
+| R3 | `ps` から拾った flag のパスが無い／読めないと黙って「無い」 | 示せる（プローブ） | 1 | 直す |
+| R4 | `--settings=<x>` の形を拾わない | 示せる（2.1.310 の本体が子に `--settings=${x}` を渡す文字列） | 2・1 | 直す |
+| R5 | `managed-settings.d/` を読まない | 示せる（本体に `managed-settings.d` と `managed-settings.d read failed:`） | 2 | 直す |
+| R6 | `caffeinate -it 300`・`-t300` を `-t` 無しと数える | 示せる（プローブ） | 5 | 直す（`-w` も時限として数える） |
+| R7 | managed の `permissions.disableBypassPermissionsMode` を見ない | 示せる（本体に「a session that requests it anyway is downgraded」） | 4 | 直す |
+| R8 | `CLAUDE_CONFIG_DIR` を無視する | 示せる（本体に「($CLAUDE_CONFIG_DIR or ~/.claude)」） | 2 | 直す |
+| R9 | 祖先をたどるのが最寄りの `claude` で止まらず、外側の `--settings` を拾う | 偽の `ps` で示せる（テストに足す） | 2 | 直す |
+| R10 | submodule・separate-git-dir で project の root を誤る | 示せない（読解のみ。ここで回していない） | 無し | 残課題 |
