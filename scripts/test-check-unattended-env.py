@@ -98,6 +98,8 @@ esac
 *"-p 400"*) printf '    1 /sbin/launchd\\n' ;;
 *"-p 600"*) printf '    1 /opt/claude --settings=/tmp/eq.json -p\\n' ;;
 *"-p 700"*) printf '  500 /Users/x/.local/bin/claude --session-id inner\\n' ;;
+*"-p 800"*) printf '  400 /Users/x/.local/share/claude/versions/2.1.310 --session-id v --settings /tmp/v.json\\n' ;;
+*"-p 810"*) printf '  400 claude bg-spare --bg-spare /tmp/claim.sock\\n' ;;
 *) exit 1 ;;
 esac
 """)
@@ -122,9 +124,9 @@ def scenario(mod_path: Path):
             os.environ["PATH"] = old
 
 
-def run(mod, env, flag=None, managed=None, platform="darwin", environ=None):
+def run(mod, env, flag=None, managed=None, platform="darwin", environ=None, flag_note=None):
     # environ は既定で空——実環境の CLAUDE_CONFIG_DIR を読むと、実 HOME の外の利用者の設定を読む
-    stack, items = mod.gather(env.project, COMMANDS, flag, managed, env.home, platform,
+    stack, items = mod.gather(env.project, COMMANDS, flag, managed, env.home, platform, flag_note,
                               env=environ if environ is not None else {})
     buf = io.StringIO()
     code = mod.report(stack, items, out=buf)
@@ -155,15 +157,39 @@ def suite(script: Path) -> list[str]:
         code, items, _ = run(mod, env)
         check("壊れた JSON は判定できない", status_of(items, "設定（local）") == [mod.UNKNOWN], bad)
         check("判定できないだけなら 2", code == 2, bad)
-        check("読めない上の層を飛ばして下の層の true を良いにしない",
-              status_of(items, "自動継続") == [mod.UNKNOWN], bad)
-        check("読めない上の層があれば質問の待ちも判定できない",
-              status_of(items, "質問の待ち") == [mod.UNKNOWN], bad)
+        check("自動継続を読まない local が壊れていても、自動継続は user で決まる",
+              status_of(items, "自動継続") == [mod.GOOD], bad)
         check("読めない層があれば allow だけで許可を良いにしない",
               status_of(items, "`git push`") == [mod.UNKNOWN], bad)
         env.user({"permissions": {"deny": ["Bash(git push:*)"]}})
         _, items, _ = run(mod, env)
         check("読めない層があっても deny に当たれば要対処", status_of(items, "`git push`") == [mod.ACTION], bad)
+    with scenario(script) as env:
+        env.all_good()
+        _, items, _ = run(mod, env, flag=env.write(env.project / "flag.json", "{ broken"))
+        check("読めない上の層を飛ばして下の層の true を良いにしない",
+              status_of(items, "自動継続") == [mod.UNKNOWN], bad)
+        check("読めない上の層があれば質問の待ちも判定できない",
+              status_of(items, "質問の待ち") == [mod.UNKNOWN], bad)
+    with scenario(script) as env:
+        env.all_good()
+        _, items, _ = run(mod, env, flag_note="ps が pid 1 を読めなかった")
+        check("祖先を読めなければ flag の層は判定できない", status_of(items, "設定（flag）") == [mod.UNKNOWN], bad)
+        check("祖先を読めなければ自動継続も判定できない", status_of(items, "自動継続") == [mod.UNKNOWN], bad)
+        check("祖先を読めなければ allow だけで許可を良いにしない",
+              status_of(items, "`git push`") == [mod.UNKNOWN], bad)
+    # 親ディレクトリを読めないファイルは「無い」ではない（exists() は PermissionError を飲む）
+    with tempfile.TemporaryDirectory() as tmp:
+        locked = Path(tmp) / "locked"
+        locked.mkdir()
+        target = locked / "settings.json"
+        target.write_text("{}", encoding="utf-8")
+        locked.chmod(0)
+        try:
+            check("親ディレクトリを読めなければ判定できない", isinstance(mod.read_json(target), mod.Unreadable), bad)
+        finally:
+            locked.chmod(0o755)
+        check("無いファイルは未設定", mod.read_json(Path(tmp) / "nope.json") is None, bad)
     with scenario(script) as env:
         env.all_good()
         _, items, _ = run(mod, env, flag=env.project / "no-such-flag.json")
@@ -186,12 +212,14 @@ def suite(script: Path) -> list[str]:
     # 守る: 層の優先順位
     with scenario(script) as env:
         env.all_good()
-        env.local({"autoContinueAtUsageLimit": False})
-        _, items, _ = run(mod, env)
-        check("local の false が user の true を打ち消す", status_of(items, "自動継続") == [mod.ACTION], bad)
+        flag = env.write(env.project / "flag.json", {"autoContinueAtUsageLimit": False})
+        _, items, _ = run(mod, env, flag=flag)
+        check("flag の false が user の true を打ち消す", status_of(items, "自動継続") == [mod.ACTION], bad)
+        env.user({"permissions": {"allow": ["Bash(git push:*)", "Bash(gh pr merge *)"]},
+                  "autoContinueAtUsageLimit": False, "askUserQuestionTimeout": "10m"})
         flag = env.write(env.project / "flag.json", {"autoContinueAtUsageLimit": True})
         _, items, _ = run(mod, env, flag=flag)
-        check("flag の true が local の false に勝つ", status_of(items, "自動継続") == [mod.GOOD], bad)
+        check("flag の true が user の false に勝つ", status_of(items, "自動継続") == [mod.GOOD], bad)
         managed = env.write(env.project / "managed.json", {"askUserQuestionTimeout": "never"})
         _, items, _ = run(mod, env, flag=flag, managed=managed)
         check("managed の never が user の 10m に勝つ", status_of(items, "質問の待ち") == [mod.ACTION], bad)
@@ -200,16 +228,26 @@ def suite(script: Path) -> list[str]:
               status_of(run(mod, env, flag=flag, managed=env.write(
                   env.project / "managed.json", {"autoContinueAtUsageLimit": False}))[1], "自動継続")
               == [mod.ACTION], bad)
+    # 自動継続・質問の待ちは project・local から読まない（2.1.310 の EM() は policy・flag・user だけ）
+    with scenario(script) as env:
+        env.global_config({"agentPushNotifEnabled": True, "inputNeededNotifEnabled": True})
+        env.local({"autoContinueAtUsageLimit": True, "askUserQuestionTimeout": "10m"})
+        env.project_settings({"autoContinueAtUsageLimit": True, "askUserQuestionTimeout": "10m"})
+        _, items, _ = run(mod, env)
+        check("local・project の true は自動継続に効かない", status_of(items, "自動継続") == [mod.ACTION], bad)
+        check("local・project の 10m は質問の待ちに効かない", status_of(items, "質問の待ち") == [mod.ACTION], bad)
+    # project と local の並び（許可の defaultMode で当てる）
     with scenario(script) as env:
         env.all_good()
-        env.project_settings({"autoContinueAtUsageLimit": True})
-        env.local({"autoContinueAtUsageLimit": False})
+        env.user({"autoContinueAtUsageLimit": True, "askUserQuestionTimeout": "10m"})
+        env.project_settings({"permissions": {"defaultMode": "auto"}})
+        env.local({"permissions": {"defaultMode": "bypassPermissions"}})
         _, items, _ = run(mod, env)
-        check("local の false が project の true に勝つ", status_of(items, "自動継続") == [mod.ACTION], bad)
-        env.local({})
-        env.project_settings({"autoContinueAtUsageLimit": False})
+        check("local の defaultMode が project に勝つ", status_of(items, "`git push`") == [mod.GOOD], bad)
+        env.project_settings({"permissions": {"defaultMode": "bypassPermissions"}})
+        env.local({"permissions": {"defaultMode": "auto"}})
         _, items, _ = run(mod, env)
-        check("project の false が user の true に勝つ", status_of(items, "自動継続") == [mod.ACTION], bad)
+        check("local の auto が project の bypass を打ち消す", status_of(items, "`git push`") == [mod.ACTION], bad)
     # managed-settings.d は managed の上に重なる
     with scenario(script) as env:
         env.all_good()
@@ -234,6 +272,18 @@ def suite(script: Path) -> list[str]:
         check("CLAUDE_CONFIG_DIR の .claude.json を通知に読む",
               status_of(items, "agentPushNotifEnabled") == [mod.GOOD], bad)
 
+    # グローバル設定は <設定のディレクトリ>/.config.json が在って空でなければそれ（2.1.310 の y_()）
+    with scenario(script) as env:
+        env.all_good()
+        env.write(env.home / ".claude" / ".config.json",
+                  {"agentPushNotifEnabled": False, "inputNeededNotifEnabled": True})
+        _, items, _ = run(mod, env)
+        check(".config.json が在ればそちらを通知に読む", status_of(items, "agentPushNotifEnabled") == [mod.ACTION], bad)
+        env.write(env.home / ".claude" / ".config.json", "")
+        _, items, _ = run(mod, env)
+        check("空の .config.json は飛ばして .claude.json を読む",
+              status_of(items, "agentPushNotifEnabled") == [mod.GOOD], bad)
+
     # 通知の値も厳密に
     with scenario(script) as env:
         env.all_good()
@@ -246,7 +296,8 @@ def suite(script: Path) -> list[str]:
     # 値の検査は厳密に
     with scenario(script) as env:
         env.all_good()
-        env.local({"autoContinueAtUsageLimit": "true", "askUserQuestionTimeout": "15m"})
+        env.user({"permissions": {"allow": ["Bash(git push:*)", "Bash(gh pr merge *)"]},
+                  "autoContinueAtUsageLimit": "true", "askUserQuestionTimeout": "15m"})
         _, items, _ = run(mod, env)
         check("文字列の \"true\" は良いにしない", status_of(items, "自動継続") == [mod.ACTION], bad)
         check("列挙に無い値は良いにしない", status_of(items, "質問の待ち") == [mod.ACTION], bad)
@@ -270,6 +321,23 @@ def suite(script: Path) -> list[str]:
                             ("Bash(git push)", "git push", True), ("Bash(gh pr:*)", "git push", False),
                             ("Bash(git push:*)", "git pushx", False), ("Read", "git push", False)):
         check(f"規則 {rule} と {cmd} → {want}", mod.rule_matches(rule, cmd) is want, bad)
+    with scenario(script) as env:
+        env.all_good()
+        env.user({"permissions": {"allow": ["Bash(git push)", "Bash(gh pr merge:*)"]},
+                  "autoContinueAtUsageLimit": True, "askUserQuestionTimeout": "10m"})
+        _, items, _ = run(mod, env)
+        check("引数の無い Bash(git push) は引数つきの git push を覆わない",
+              status_of(items, "`git push`") == [mod.ACTION], bad)
+        check("Bash(gh pr merge:*) は覆う", status_of(items, "`gh pr merge`") == [mod.GOOD], bad)
+    with scenario(script) as env:
+        env.all_good()
+        managed = env.write(env.project / "managed.json", {"allowManagedPermissionRulesOnly": True,
+                                                           "permissions": {"allow": ["Bash(gh pr merge:*)"]}})
+        _, items, _ = run(mod, env, managed=managed)
+        check("allowManagedPermissionRulesOnly なら user の allow は効かない",
+              status_of(items, "`git push`") == [mod.ACTION], bad)
+        check("allowManagedPermissionRulesOnly でも managed の allow は効く",
+              status_of(items, "`gh pr merge`") == [mod.GOOD], bad)
     with scenario(script) as env:
         env.all_good()
         env.user({"permissions": {"defaultMode": "bypassPermissions"},
@@ -302,6 +370,13 @@ def suite(script: Path) -> list[str]:
         env.processes(["caffeinate -di"])
         _, items, _ = run(mod, env)
         check("caffeinate -di は時限でない", status_of(items, "スリープ") == [mod.GOOD], bad)
+        for line in ("caffeinate -m", "caffeinate -u", "caffeinate -mu"):
+            env.processes(["/usr/bin/caffeinate -i -t 300", line])
+            _, items, _ = run(mod, env)
+            check(f"{line} は system の idle sleep を防がない", status_of(items, "スリープ") == [mod.ACTION], bad)
+        env.processes(["/usr/bin/caffeinate"])
+        _, items, _ = run(mod, env)
+        check("フラグの無い caffeinate は idle sleep を防ぐ", status_of(items, "スリープ") == [mod.GOOD], bad)
         env.sleep(0, fail=True)
         _, items, _ = run(mod, env)
         check("pmset が失敗すれば判定できない", status_of(items, "スリープ") == [mod.UNKNOWN], bad)
@@ -318,11 +393,15 @@ def suite(script: Path) -> list[str]:
         check("--settings=<file> の形も拾う", path == "/tmp/eq.json" and note is None, bad)
         path, note = mod.find_flag_settings(700)
         check("最寄りの claude で止まり、外側の --settings を拾わない", path is None and note is None, bad)
+        path, note = mod.find_flag_settings(800)
+        check("versions/<版> で走る本体を claude と見る", path == "/tmp/v.json" and note is None, bad)
+        path, note = mod.find_flag_settings(810)
+        check("spare のセッションは判定できない理由を返す", path is None and note, bad)
 
     # 守る: 何も書かない
     with scenario(script) as env:
         env.all_good()
-        env.local({"autoContinueAtUsageLimit": False})
+        env.local({"permissions": {"defaultMode": "auto"}})
         before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
         run(mod, env)
         after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
@@ -333,13 +412,42 @@ def suite(script: Path) -> list[str]:
 
 MUTATIONS = {
     "読めなかったものを空として扱う": (
-        "        return Unreadable(p, str(e))",
-        "        return {}"),
+        "    except ValueError as e:\n        return Unreadable(p, str(e))",
+        "    except ValueError as e:\n        return {}"),
+    "exists() のように読めない親を無いとする": (
+        "    except (FileNotFoundError, NotADirectoryError):\n        return None\n"
+        "    except OSError as e:\n        return Unreadable(p, str(e))",
+        "    except OSError:\n        return None"),
     "層を低い順に見る": (
-        "    for name, _path, data in reversed(stack):\n        if isinstance(data, Unreadable):\n"
-        "            return data, name\n        if isinstance(data, dict) and key in data:",
-        "    for name, _path, data in stack:\n        if isinstance(data, Unreadable):\n"
-        "            return data, name\n        if isinstance(data, dict) and key in data:"),
+        "    for name, _path, data in reversed(stack):\n        if only is not None",
+        "    for name, _path, data in stack:\n        if only is not None"),
+    "自動継続を全層から読む": (
+        'effective(stack, "autoContinueAtUsageLimit", SESSION_LAYERS)',
+        'effective(stack, "autoContinueAtUsageLimit")'),
+    "質問の待ちを全層から読む": (
+        'effective(stack, "askUserQuestionTimeout", SESSION_LAYERS)',
+        'effective(stack, "askUserQuestionTimeout")'),
+    "managed 以外の規則も数える": (
+        "    managed_only = managed_rules_only(stack)\n",
+        "    managed_only = False\n"),
+    "引数なしの規則で覆ったとする": (
+        '        call = command + " <引数>"\n',
+        "        call = command\n"),
+    "ps の失敗で flag の層を積まない": (
+        "    elif flag_note:\n",
+        "    elif False:\n"),
+    ".config.json を見ない": (
+        '    candidate = config_dir(home, env) / ".config.json"\n',
+        "    return legacy\n"),
+    "versions の本体を claude と見ない": (
+        'return p.name == "claude" or (',
+        'return p.name == "claude" and ('),
+    "spare を見ない": (
+        '            if "--bg-spare" in argv:\n',
+        "            if False:\n"),
+    "-m・-u もスリープ防止と数える": (
+        "                and prevents_idle_sleep(argv)):",
+        "                and True):"),
     "読めない上の層を飛ばす": (
         "        if isinstance(data, Unreadable):\n            return data, name\n        if isinstance(data, dict) and key in data:",
         "        if isinstance(data, dict) and key in data:"),
@@ -350,8 +458,8 @@ MUTATIONS = {
         "        elif asked:\n",
         "        elif False:\n"),
     "flag のパスが無ければ未設定とする": (
-        'read_json(path) if path.exists() else Unreadable(path, "ファイルが無い")',
-        "read_json(path)"),
+        'Unreadable(path, "ファイルが無い") if data is None else data',
+        "data"),
     "--settings= を拾わない": (
         '                if arg.startswith("--settings="):',
         '                if False:'),
@@ -387,8 +495,8 @@ MUTATIONS = {
         "        if denied:\n",
         "        if denied and not allowed:\n"),
     "caffeinate -t を数える": (
-        'if argv and Path(argv[0]).name == "caffeinate" and not timed_caffeinate(argv):',
-        'if argv and Path(argv[0]).name == "caffeinate":'),
+        'Path(argv[0]).name == "caffeinate" and not timed_caffeinate(argv)',
+        'Path(argv[0]).name == "caffeinate"'),
     "人が見るを出さない": (
         "    items += human_items(stack)\n",
         "\n"),
@@ -396,8 +504,9 @@ MUTATIONS = {
         "    if UNKNOWN in statuses:\n        return 2",
         "    if UNKNOWN in statuses:\n        return 0"),
     "設定を書く": (
-        "    stack = layers(project, flag_path, managed_path, home, env)\n",
-        "    stack = layers(project, flag_path, managed_path, home, env)\n    (home / '.claude.json').write_text('{}')\n"),
+        "    stack = layers(project, flag_path, managed_path, home, env, flag_note)\n",
+        "    stack = layers(project, flag_path, managed_path, home, env, flag_note)\n"
+        "    (home / '.claude.json').write_text('{}')\n"),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),
