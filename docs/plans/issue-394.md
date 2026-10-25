@@ -99,6 +99,8 @@
 - main の取り込み: `a57dc91`（#389 が 1.47.0 に先に到達 → 1.48.0 に上げた。衝突は塊ごとに解き、生成ブロックは main 側を取って再生成）
 - `check-all.py`（取り込みの後）: 48/48・失敗 0
 - 割り目（2 パス目の前）: AskUserQuestion で訊いた → **「ここで割る」**（2026-10-25）。再開は手順 5 の Verifier 2 パス目と `/code-review` 2 パス目から
+- 再開（2026-10-25）: 肯定的な確認でブランチ・HEAD `b8608f4` が一致。base は式を当て直して `8e9751c` のまま（祖先）
+- Verifier 2 パス目・`/code-review` 2 パス目: 起動済み（**結果はまだ無い——済んでいない**）
 - **次に残っているもの: 手順 5 の Verifier の当て直し（2 パス目）と、手順 6 の `/code-review` の 2 パス目の両方**。2 パス目の指摘対応を始める直前に、その時点の HEAD を狭いパスの起点としてここに書く
 - 交絡を潰した手順: スリープの点検で、Claude 自身の `caffeinate -t 300` が「防止されている」を作る交絡を見つけ、判定から外した（上の「実測した前提」）
 
@@ -130,3 +132,20 @@
 | R8 | `CLAUDE_CONFIG_DIR` を無視する | 示せる（本体に「($CLAUDE_CONFIG_DIR or ~/.claude)」） | 2 | 直す |
 | R9 | 祖先をたどるのが最寄りの `claude` で止まらず、外側の `--settings` を拾う | 偽の `ps` で示せる（テストに足す） | 2 | 直す |
 | R10 | submodule・separate-git-dir で project の root を誤る | 示せない（読解のみ。ここで回していない） | 無し | 残課題 |
+
+### 2 パス目の指摘
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V2-1 | 設定ファイルの親ディレクトリが検索不可だと `read_json` が `None`（未設定）を返す——`Path.exists()` が PermissionError を飲む | 示せる（著者も再現: 親を 000 にして `None`。無いファイルと同じ値） | 1 | 直す |
+| V2-N1 | `caffeinate -i sleep 3` のようにコマンドを走らせる形を時限でないと数える | プローブで `timed_caffeinate` が False。実環境にこの形は無い | 無し（基準 5 の文言は「`-t` の無い `caffeinate`」） | 残課題 |
+| R2-1 | `autoContinueAtUsageLimit`・`askUserQuestionTimeout` を project・local の層からも取る。2.1.310 は policy・flag・user しか読まない | 示せる（著者も本体で確認: `mEi=["policySettings","flagSettings","userSettings"]`、`uCt(){return EM("askUserQuestionTimeout")[0]}`、`aZt(){return EM("autoContinueAtUsageLimit")[0]}`。レビューのプローブ: local だけ true で `良い`） | 2・8 | 直す |
+| R2-2 | managed の `allowManagedPermissionRulesOnly` を見ず、managed 以外の allow で「良い」 | 示せる（著者も本体で確認: 「permission rules are restricted to managed settings (allowManagedPermissionRulesOnly)」。プローブで `良い`） | 4 | 直す |
+| R2-3 | 引数なしの `Bash(git push)` を「名指しのコマンドを覆う」と数える。dev-loop は引数つきで呼ぶ | 示せる（プローブ: 本体の `rule_matches("Bash(git push)", "git push -u origin b")` は False なのに点検は `良い`） | 4 | 直す |
+| R2-4 | `ps` が失敗したとき、flag の層を `Unreadable` として積まず、別行の判定できないだけ。各項目は下の層から「良い」になる | 示せる（偽の `ps` を失敗させて当てる——テストに足す） | 1 | 直す |
+| R2-5 | 通知を `~/.claude.json` から読む。2.1.310 は `<設定ディレクトリ>/.config.json` が在って空でなければそちらを読む | 示せる（著者も本体で確認: `y_(){…let t=x(Le(),".config.json")…if(_.isFile()&&(_.size>0||…))return t…return o}`） | 1・8 | 直す |
+| R2-6 | 祖先の argv の `--allowedTools`・`--disallowedTools`・`--permission-mode` を読まない | 示せない（本体の文字列で規則の出所であることは分かるが、実環境にこの形の起動は無い） | 無し | 残課題 |
+| R2-7 | 最寄りの `claude` を `argv[0]` の名前だけで探す。`versions/<版>` で走る本体を飛ばし、spare（`claude bg-spare`）は argv に `--settings` を持たないので flag の層を黙って落とす | 示せる（著者も `ps` で確認: pid 35147 の argv0 が `…/versions/2.1.307`、pid 87865 が `claude bg-spare --bg-spare …claim.sock` で `--settings` なし） | 1・2 | 直す |
+| R2-8 | `-t` の無い `caffeinate` を、`-m`（ディスクだけ）・`-u`（既定 5 秒）でもスリープ防止と数える | 示せる（`man caffeinate`: 「-m … prevent the disk from idle sleeping」。プローブで行が返る） | 5 | 直す |
+| R2-9 | `autoContinueAtUsageLimit: true` だけで「良い」。2.1.310 は課金の種類とフラグでも自動継続を止める | 示せない（本体の文字列のみ。この利用者の課金の種類は確かめていない） | 無し | 残課題 |
+| R2-10 | macOS の managed preferences plist を読まない | 示せない（このホストに無い） | 無し | 残課題 |
