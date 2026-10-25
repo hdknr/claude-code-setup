@@ -491,6 +491,14 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 4. `git diff origin/main` で、**main との正味の差分がその周の変更だけ**であることを見る
 5. `python3 scripts/check-all.py` を回し、push したあと `gh pr checks <n>` で PR 側を見る
 
+**取り込んだ main が足した歯止めは、その時点からこの周にも掛かる**——版の衝突が無い取り込みでも同じである。
+#389 の周では、main 側の #384（PR #399）が足した `check-plan-counts.py` が取り込んだ直後に落ちた
+（``件数の行（`- この周の起票: N 件`）が無い``）。**件数の行の規約そのものは、周を始めた時点の
+`SKILL.md` 手順 7・8 に既にあった**（マージの前に書く）——マージの前に書くはずだった行が、**この検査が周の途中の計画ファイルも見る**ので、
+取り込んだ時点から要るようになった。**落ちた検査の出力は自分の周のファイルを名指しするので、その検査が
+取り込みで入ったことは出力からは分からない。** 取り込みで増えた検査は `git diff --stat ORIG_HEAD HEAD -- scripts/` で見る
+（`git merge` の直後なら `ORIG_HEAD` は取り込む前の HEAD を指す）。
+
 **PR を作ってからマージされるまでの間にも、main は進む。** マージの直前に
 `gh pr view <n> --json mergeable` を見る。
 
