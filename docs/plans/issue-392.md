@@ -121,7 +121,7 @@
 - 歯止め: 初回の `check-all.py` は 49 本中 `check-plan-counts.py` だけ赤（件数の行が無い）→足した。2 回目は `check-plan-scope.py` だけ赤（版の 2 ファイルを 1 行に書いていた）→分けた。3 回目（`25c3f4c`）で 49/49 緑（失敗 0 / 飛ばし 0）。
 - 実装のコミット: `ee115ac`・`25c3f4c`
 - 割り目（手順 4）: AskUserQuestion で「このまま続ける」が選ばれた（2026-10-25）
-- 関門 1 パス目: 起動済み（2026-10-25）——Verifier（`dev-loop:dev-loop-verifier`・sonnet・参照＋差分で `prompts/verifier.md` を読ませた）と `/code-review`（high・`review-handoff.md` を埋めて貼った）。Verifier は**反証 0 件**（軽微な所見 3 件。採否は下の「1 パス目の採否」）。読んだ行数 169 で `wc -l` と一致。`/code-review`（high）は**指摘 10 件**（C1〜C10）。採否は下の「1 パス目の採否」——直す 6 件（C2・C3・C4・C5・C6・C7・C9 のうち C3 は範囲の越え。計 7 件）・残課題 4 件（C1・C8・C10・V1/V2）。
+- 関門 1 パス目: 起動済み（2026-10-25）——Verifier（`dev-loop:dev-loop-verifier`・sonnet・参照＋差分で `prompts/verifier.md` を読ませた）と `/code-review`（high・`review-handoff.md` を埋めて貼った）。Verifier は**反証 0 件**（軽微な所見 3 件。採否は下の「1 パス目の採否」）。読んだ行数 169 で `wc -l` と一致。`/code-review`（high）は**指摘 10 件**（C1〜C10）。採否は下の「1 パス目の採否」——直す 7 件（C2・C3・C4・C5・C6・C7・C9。C3 は範囲の越えを戻すもの）・残課題 3 件（C1・C8・C10）。Verifier の所見 V1・V2 は残課題、V3 は変えない。指摘対応のコミット: `b40812a`。
   指摘対応のコミットは下の「1 パス目の指摘対応」。手順 4 への差し戻し: 無し（Verifier 反証 0 件）。
 - 1 パス目の指摘対応: stacked.md（C2・C4・C5・C6・C7・C9、C1 は主張を「確かめていない」まで弱めた）・ledger.md（C3）。`check-all.py` は 1 回目 `skill-metrics.py --check` だけ赤（stacked.md の行数）→再生成→ 49/49 緑。
   **残っているのは 2 つ**——Verifier の当て直し（2 パス目）と `/code-review` の 2 パス目。どちらも base は同じ `7865e11…`。base は `7865e116e98f6a4d0b1acdb5c3547d66590e7204`。関門に渡したときの HEAD（1 パス目の指摘対応の起点）: `78348f8ba0027b8d2b475106c167d79f65383870`
