@@ -478,6 +478,11 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
     marks = dict(re.findall(r"^\| `([^`]+)` \| `([^`]+)` \|", section(markdown, "起票元"), re.M))
     if marks != mod.MARKS:
         problems.append(f"番号の印 {marks} ≠ 本体 {mod.MARKS}")
+    # 行の並びの印の順（「番号の振り方」）——`number_order` は `MARKS` の順で並べる。辞書の比較は順を見ないので別に当てる
+    order = re.search(r"そのあと印の順（((?:`[^`]+`・?)+)）", section(markdown, "番号の振り方"))
+    order = re.findall(r"`([^`]+)`", order.group(1)) if order else None
+    if order != list(mod.MARKS.values()):
+        problems.append(f"行の並びの印の順 {order} ≠ 本体 {list(mod.MARKS.values())}")
     digits = re.search(r"(\d+) 桁以上の数字", write("No"))
     prefix = first_code(write("No"), "{} に起票元の印と `-` を付け")
     mark = "[" + "".join(marks.values()) + "]"
@@ -534,6 +539,7 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("番号の頭", "`Q-` に起票元の印と", "`P-` に起票元の印と"),
     ("番号の印", "| `仕様レビュー` | `S` |", "| `仕様レビュー` | `T` |"),
     ("番号の印（実現性・コスト）", "| `実現性・コスト` | `F` |", "| `実現性・コスト` | `C` |"),
+    ("行の並びの印の順", "そのあと印の順（`R`・`S`・`F`・`D`）", "そのあと印の順（`D`・`F`・`S`・`R`）"),
     # ` | ` に崩すと表の行が割れて「欠落」で赤になり、値の比較を確かめられない
     ("選択肢の区切り", "の形を ` / ` で", "の形を ` ; ` で"),
     ("選択肢の数", "で 2 つ以上つなぐ", "で 3 つ以上つなぐ"),
