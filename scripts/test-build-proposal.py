@@ -28,6 +28,7 @@
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import shutil
@@ -95,13 +96,14 @@ SPEC_STEPS = [("w", DECISION, "会員,金額,割引\nシルバー,10000 未満,0
               ("w", "docs/v1/spec/arch.drawio.svg", SVG), ("w", "docs/v1/shared/chart.svg", SVG), ("w", "docs/v1/requirements/flow.drawio", "<mxfile/>\n"),
               ("w", "docs/v1/proposal/spec/01-notes.md", "## 試作で確かめること\n\n読み取りの速さ。\n")]
 SIGNED_S = BASE[:-1] + SPEC_STEPS + [("c",), ("t", R1), ("t", B1)]
-# 回答に「暫定で採用」と書いて反映済みにした行（#366 の実データの形）と、確認中のまま「暫定で採用」と書いた行
+# 回答に「暫定で採用」と書いて反映済みにした行（#366 の実データの形）と、確認中のまま「暫定で採用」と書いた行。
+# 暫定は `状態` だけで決まる（#404）——前者は確定の行、後者は未決定の質問
 PROVISIONAL_QA = (QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（推奨案を暫定で採用。開発側の指示）")
                   + "Q-007,要求確定,返品は？,A: 可 / B: 不可,A,理由,B（暫定で採用の予定）,—,確認中,\n")
 PROVISIONAL = [("w", QA, PROVISIONAL_QA)] + BASE[1:] + [("t", R1), ("t", B1)]
-# 回答に肯定の書き方で「暫定で採用します」と書いた行——暫定の行（否定・取り下げの書き方だけを除く）
+# 回答に肯定の書き方で「暫定で採用します」と書いた行——状態が `反映済み` なので確定の行（文言は見ない。#404）
 AFFIRMED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A を暫定で採用します（業務部の確認待ち）"))] + BASE[1:] + [("t", R1), ("t", B1)]
-# 確定した回答が暫定の経緯に触れただけの行（否定・取り下げの書き方が続く）——暫定の行ではない
+# 確定した回答が暫定の経緯に触れただけの行（否定・取り下げの書き方が続く）——確定の行
 SETTLED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（暫定で採用していた B を取り下げ、業務部が A に決定）"))] + BASE[1:] + [("t", R1), ("t", B1)]
 STALE = ["proposal.md", "gantt.svg", "spec.md", "spec.pptx", "spec-figure-01.svg"]
 FIGURE_NOTE = "PPTX に載せていない"
@@ -311,10 +313,11 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("版の中のシンボリックリンクは比較で断る", V2C[:-2] + [("l", "docs/v2/requirements/link.md", "../../v1/requirements/a.md"), ("c",),
                                               ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and "シンボリックリンク" in r.output and "link.md" in r.output),
-    # ---- 暫定の回答（#366。判別は check-qa-csv.py の is_provisional）
-    ("暫定の行を節に載せる", PROVISIONAL, False,
-     lambda r: made(r) and "| Q-001 | 割引は？ | A（推奨案を暫定で採用。開発側の指示） |" in section(r.text, "## 利用者にまだ確かめていない決定（1 件）")
-     and "Q-001" not in section(r.text, "## 主な決定事項") and "利用者の合意ではない" in r.text),
+    # ---- 暫定の回答（#366。判別は check-qa-csv.py の is_provisional——`状態` だけで決める。#404）
+    # `反映済み` に「暫定で採用」と書いた行は確定の行——主な決定事項に載り、暫定の節は 0 件（暫定反映 の行は照合の 3 で作らない）
+    ("文言だけ暫定の反映済みは決定事項に載せる", PROVISIONAL, False,
+     lambda r: made(r) and "| Q-001 | 割引は？ | A（推奨案を暫定で採用。開発側の指示） |" in section(r.text, "## 主な決定事項")
+     and "（ありません）" in section(r.text, "## 利用者にまだ確かめていない決定（0 件）")),
     # 確認中の行は「暫定で採用」と書いてあっても反映していない——未決定の質問に載り、暫定の節には載らない
     ("確認中の行は暫定にしない", PROVISIONAL, False,
      lambda r: made(r) and "| Q-007 |" in section(r.text, "## 承認の時点で未決定の質問（2 件）")
@@ -326,17 +329,18 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("否定・取り下げの書き方は暫定にしない", SETTLED, False,
      lambda r: made(r) and "| Q-001 | 割引は？ |" in section(r.text, "## 主な決定事項")
      and "（ありません）" in section(r.text, "## 利用者にまだ確かめていない決定（0 件）")),
-    ("肯定の書き方は暫定にする", AFFIRMED, False,
-     lambda r: made(r) and "| Q-001 |" in section(r.text, "## 利用者にまだ確かめていない決定（1 件）")
-     and "Q-001" not in section(r.text, "## 主な決定事項") and "前の版までの" not in r.text),
+    ("肯定の書き方も文言では暫定にしない", AFFIRMED, False,
+     lambda r: made(r) and "| Q-001 | 割引は？ |" in section(r.text, "## 主な決定事項")
+     and "（ありません）" in section(r.text, "## 利用者にまだ確かめていない決定（0 件）") and "前の版までの" not in r.text),
     # v2 以降の暫定の節は、その版の Q&A だけを見ていると言う（前の版の暫定の行は載せない——D2）
     ("v2 の暫定の節はこの版の Q&A と書く", V2C, False,
      lambda r: made(r) and "## この版の Q&A で利用者にまだ確かめていない決定（" in r.text
      and "前の版までの Q&A の暫定の行はここに載らない" in r.text),
-    # PPTX は `##` ごとにスライドを分ける——暫定の行が「主な決定事項」の題のスライドに載らない
-    ("暫定の行は決定事項のスライドに載らない", PROVISIONAL + [("arg", "--pptx")], False,
-     lambda r: made(r) and any("推奨案を暫定で採用" in t for t in slide_texts(r.pptx.get("proposal.pptx", {})))
-     and not any("主な決定事項" in t and "推奨案を暫定で採用" in t for t in slide_texts(r.pptx.get("proposal.pptx", {})))),
+    # PPTX は `##` ごとにスライドを分ける——暫定の節が「主な決定事項」の題のスライドに載らない
+    ("暫定の節は決定事項のスライドと分ける", SIGNED + [("arg", "--pptx")], False,
+     lambda r: made(r) and any("利用者にまだ確かめていない決定" in t for t in slide_texts(r.pptx.get("proposal.pptx", {})))
+     and not any("主な決定事項" in t and "利用者にまだ確かめていない決定" in t
+                 for t in slide_texts(r.pptx.get("proposal.pptx", {})))),
     ("承認の後に書き足した暫定は載らない", SIGNED + [("w", QA, PROVISIONAL_QA), ("c",)], False,
      lambda r: made(r) and "## 利用者にまだ確かめていない決定（0 件）" in r.text and "Q-007" not in r.text),
     # ---- 仕様書（#371）
@@ -455,11 +459,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("区分ごとに合計しない","sum(int(r['金額']) for r in estimate if r['区分'] == c)", "sum(int(r['金額']) for r in estimate)",
      "作れるときは作る"),
     # ---- 暫定の回答（#366）
-    ("暫定の行を決定事項に混ぜる", 'done = [r for r in qa_rows if r["状態"].strip() == qa.DONE and not qa.is_provisional(r)]',
-     'done = [r for r in qa_rows if r["状態"].strip() == qa.DONE]', "暫定の行を節に載せる"),
-    ("暫定の節に載せない", "provisional = [r for r in qa_rows if qa.is_provisional(r)]", "provisional = []", "暫定の行を節に載せる"),
-    ("暫定の行を未決定にも載せる", 'pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE and not qa.is_provisional(r)]',
-     'pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE or qa.is_provisional(r)]', "確認中の行は暫定にしない"),
+    ("確認中を決定事項に載せる", 'done = [r for r in qa_rows if r["状態"].strip() == qa.DONE]',
+     'done = [r for r in qa_rows if r["状態"].strip() != qa.DONE]', "文言だけ暫定の反映済みは決定事項に載せる"),
     ("暫定の判別を作業ツリーの表で行う", 'show(top, info["req_commit"], info["req"], qa_path)',
      '(top / qa_path).read_text(encoding="utf-8")', "承認の後に書き足した暫定は載らない"),
     # ---- 仕様書（#371）
@@ -491,7 +492,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "出力の名前がガントチャートと重なると作らない"),
     ("PPTX の拡張子の出力を照らさない", ' or out.suffix.lower() == ".pptx"', "", "出力が PPTX の名前だと作らない"),
     ("図の接頭辞を照らさない", "            or out.name.lower().startswith(FIGURE_PREFIX)):", "            ):", "出力の名前が図と重なると作らない"),
-    ("暫定の節を決定事項の下に置く", '[f"## {scope}利用者にまだ', '[f"### {scope}利用者にまだ', "暫定の行は決定事項のスライドに載らない"),
+    ("暫定の節を決定事項の下に置く", '[f"## {scope}利用者にまだ', '[f"### {scope}利用者にまだ', "暫定の節は決定事項のスライドと分ける"),
     ("v2 でもこの版と書かない", 'scope = "この版の Q&A で" if diff is not None else ""', 'scope = ""', "v2 の暫定の節はこの版の Q&A と書く"),
     ("v1 でもこの版と書く", 'scope = "この版の Q&A で" if diff is not None else ""', 'scope = "この版の Q&A で"', "確定した行は暫定にしない"),
     ("空の範囲の外も節が無いと書く", "    elif body is not None:\n", "    elif False:\n", "範囲の外の節が空"),
@@ -500,15 +501,54 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す。(名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 QA_TARGET = "check-qa-csv.py"
 QA_MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("反映済みの暫定を見ない", ' or (state == DONE and PROVISIONAL_MARK.search(row["回答"]) is not None)', "", "暫定の行を節に載せる"),
-    ("確認中も暫定にする", "(state == DONE and PROVISIONAL_MARK", "(PROVISIONAL_MARK", "確認中の行は暫定にしない"),
-    ("どの反映済みも暫定にする", 'PROVISIONAL_MARK.search(row["回答"]) is not None)', "True)", "確定した行は暫定にしない"),
-    ("否定の書き方も暫定にする", '"(?!" + "|".join(re.escape(s) for s in PROVISIONAL_NOT) + ")"', '""',
-     "否定・取り下げの書き方は暫定にしない"),
-    # 2 パス目の前の形（後に活用が続けば一律に除く）——肯定の書き方を取りこぼす
-    ("肯定の書き方も落とす", '"(?!" + "|".join(re.escape(s) for s in PROVISIONAL_NOT) + ")"', '"(?![しさすせれ])"',
-     "肯定の書き方は暫定にする"),
+    # 照合（`check-signoff.py`）も同じ判別を読むので、暫定の行を見なければ作ってしまう
+    ("判別の本体で暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False", "暫定の回答が残ると作らない"),
+    # #374 の形（`反映済み` の `回答` の文言で暫定を決める）に戻す——照合が 3 で止め、文言だけの行で作れなくなる
+    ("判別の本体を文言の一致に戻す", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() == PROVISIONAL or (row["状態"].strip() == DONE and "暫定で採用" in row["回答"])',
+     "文言だけ暫定の反映済みは決定事項に載せる"),
+    ("どの反映済みも暫定にする", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() in (PROVISIONAL, DONE)', "確定した行は暫定にしない"),
 ]
+
+# 照合を通った提案書では暫定の節は 0 件にしかならない（`暫定反映` が残れば照合が 3）ので、節の中身は `compose` を直接呼んで見る。
+# 照合を通らない経路（`compose` だけを使う）でも、暫定の行を決定事項に混ぜないことの歯止め
+COMPOSE_ROWS = [
+    {"No": "Q-101", "起票元": "要求確定", "質問": "暫定の質問", "選択肢": "A: x / B: y", "推奨": "A", "推奨の理由": "r",
+     "回答": "A（業務部 2026-10-21 の指示）", "反映先": "決定表 1 行目", "状態": "暫定反映", "費用への影響": ""},
+    {"No": "Q-102", "起票元": "要求確定", "質問": "確定の質問", "選択肢": "A: x / B: y", "推奨": "A", "推奨の理由": "r",
+     "回答": "A（推奨案を暫定で採用。開発側の指示）", "反映先": "決定表 2 行目", "状態": "反映済み", "費用への影響": ""},
+    {"No": "Q-103", "起票元": "要求確定", "質問": "未決定の質問", "選択肢": "A: x / B: y", "推奨": "A", "推奨の理由": "r",
+     "回答": "未回答", "反映先": "—", "状態": "確認中", "費用への影響": ""},
+]
+COMPOSE_MUTATIONS: list[tuple[str, str, str]] = [
+    ("暫定の節に載せない", "provisional = [r for r in qa_rows if qa.is_provisional(r)]", "provisional = []"),
+    ("暫定の行を未決定にも載せる", 'pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE and not qa.is_provisional(r)]',
+     'pending = [r for r in qa_rows if r["状態"].strip() != qa.DONE]'),
+    ("暫定の行を決定事項に混ぜる", 'done = [r for r in qa_rows if r["状態"].strip() == qa.DONE]',
+     'done = [r for r in qa_rows if r["状態"].strip() in (qa.DONE, qa.PROVISIONAL)]'),
+]
+
+
+def compose_problems(scripts: Path) -> list[str]:
+    """`scripts` の中の `build-proposal.py` の `compose` に暫定・確定・未決定の 3 行を渡し、載る節を見る。"""
+    spec = importlib.util.spec_from_file_location("build_proposal_compose", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    info = {"version": 1, "req": R1, "req_commit": "0" * 40, "budget": B1, "budget_commit": "0" * 40}
+    schedule = [{"No": "S-001", "工程": "設計", "開始": "2026-11-01", "終了": "2026-11-30", "前提": "—"}]
+    estimate_rows = [{"No": "E-001", "区分": "開発費", "項目": "設計", "金額": "1000", "根拠": "r"}]
+    text = module.compose("提案書", info, [], COMPOSE_ROWS, schedule, estimate_rows, None)
+    problems = []
+    if "| Q-101 |" not in section(text, "## 利用者にまだ確かめていない決定（1 件）"):
+        problems.append("暫定の行が暫定の節（1 件）に無い")
+    if "Q-101" in section(text, "## 主な決定事項") or "Q-101" in section(text, "## 承認の時点で未決定の質問"):
+        problems.append("暫定の行が決定事項か未決定に載る")
+    if "| Q-102 |" not in section(text, "## 主な決定事項"):
+        problems.append("文言だけ暫定の反映済みの行が決定事項に無い")
+    if "| Q-103 |" not in section(text, "## 承認の時点で未決定の質問（1 件）"):
+        problems.append("確認中の行が未決定（1 件）に無い")
+    return problems
 
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
 # タグの手順で作れない（`refs/tags/v1` と `refs/tags/v1/...` は共存できない）——試料が衝突を判別している確かめ
@@ -748,12 +788,24 @@ def main() -> int:
             result = run_case(mutated, tmp_path / f"mutqawork{index}", killer_case[1], killer_case[2], env)
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, result), result.output[-300:])
 
+        problems = compose_problems(SCRIPTS)
+        check("compose が暫定・確定・未決定を分けない", not problems, "; ".join(problems))
+        source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
+        for index, (name, before, after) in enumerate(COMPOSE_MUTATIONS):
+            count = source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"mutcompose{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（compose を直接呼んで殺せるはず）", bool(compose_problems(mutated)))
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 2} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(QA_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 3} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS)} 件")
     return 0
 
 

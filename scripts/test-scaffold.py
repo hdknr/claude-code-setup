@@ -77,6 +77,9 @@ QA_DONE2 = "Q-002,仕様レビュー（Red Team）,金額が負なら？,A: 拒�
 # 暫定の回答で反映した行——抜ける条件 1 は通るが、中間表現から指せば止まる（利用者の確認待ち。#325）
 QA_PROVISIONAL = QA_DONE.replace("A（業務部が回答）,決定表 4 行目,反映済み", "A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映")
 assert QA_PROVISIONAL != QA_DONE
+# `反映済み` で `回答` に「暫定で採用」と書いた行（#366 の実データの形）。暫定は状態だけで決まる——止めない（#404）
+QA_WORDED = QA_DONE.replace("A（業務部が回答）", "A（推奨案を暫定で採用。開発側の指示）")
+assert QA_WORDED != QA_DONE
 # 中間表現のどこからも指さない暫定の行
 QA_PROVISIONAL_UNCITED = "Q-004,要求確定（決定表）,返品の受付期間は？,A: 7 日 / B: 14 日,A,理由,A（暫定で採用。業務部 2026-10-21 の指示）,spec/order.md,暫定反映,\n"
 # 内部の Q&A 表（spec/qa-dev.csv）の行。中間表現から D- の番号で指せる（#339）
@@ -1092,6 +1095,7 @@ CASES: list[Case] = [
     Case("暫定反映の Q&A を指す", 1, "Q-001: 状態が 暫定反映", qa=HEADER + QA_PROVISIONAL + QA_DONE2),
     # 中間表現が指さない暫定の行でも止める——仕様には反映されているので、指さない機能にも効いている（#325 の 2 パス目）
     Case("暫定反映の Q&A を指さない", 1, "Q-004: 状態が 暫定反映", qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED),
+    Case("文言だけ暫定の反映済みは止めない", 0, qa=HEADER + QA_WORDED + QA_DONE2),
     Case("内部の Q&A を指す", 0, ir=edit(cite_internal), spec={"order.md": SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_DONE},
          post=internal_in_issue),
     Case("内部の Q&A が反映済みでない（関門が止める）", 1, "qa-dev.csv: D-001: 状態が 確認中", ir=edit(cite_internal),
@@ -1489,8 +1493,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "if all(qa.is_internal_number(no) for no in refs)", "内部の Q&A を指す"),
     # 2 パス目の前の形（中間表現が指す行だけ見る）に戻す——指さない暫定の行が止まらず 0 になる
     ("中間表現が指す暫定の行だけ見る",
-     '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]',
-     '            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL\n'
+     '            held = [no for no, row in answered.items() if qa.is_provisional(row)]',
+     '            held = [no for no, row in answered.items() if qa.is_provisional(row)\n'
      '                    and any(no in f.get("qa", []) for f in ir.get("features", []))]',
      "暫定反映の Q&A を指さない"),
     ("ケースの Q&A を見ない", '            if "qa" in case:\n                problems += check_qa_refs',
@@ -1819,6 +1823,15 @@ def constant(source: str, name: str):
     return ast.literal_eval(found.group(1)) if found else None
 
 
+CHECKER = "check-qa-csv.py"
+CHECKER_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("判別の本体で暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False", "暫定反映の Q&A を指さない"),
+    ("判別の本体を文言の一致に戻す", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() == PROVISIONAL or (row["状態"].strip() == DONE and "暫定で採用" in row["回答"])',
+     "文言だけ暫定の反映済みは止めない"),
+]
+
+
 def copy_scripts(dest: Path, source: str | None = None) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -1933,6 +1946,17 @@ def main() -> int:
             finally:
                 DEV_FINGERPRINT = real_dev
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+        # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——scaffold は写しを持たずにそれを読む（#404）
+        checker = (SCRIPTS / CHECKER).read_text(encoding="utf-8")
+        for index, (name, before, after, killer) in enumerate(CHECKER_MUTATIONS):
+            count = checker.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"checker-mut{index}")
+            (mutated / CHECKER).write_text(checker.replace(before, after), encoding="utf-8")
+            ok, detail = run_case(mutated, tmp_path / f"checker-mutwork{index}", by_name[killer])
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
@@ -1947,7 +1971,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS)} 件")
     return 0
 
 

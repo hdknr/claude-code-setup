@@ -593,7 +593,7 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
         if gate:
             # 暫定の回答は利用者が確かめていない。scaffold の経路はサインオフの照合を通らないので、
             # 中間表現が指すかどうかに依らず、残っていれば止める——指さない機能の仕様にも反映されている（抜ける条件 1 とは別の定義。#325）
-            held = [no for no, row in answered.items() if row["状態"].strip() == qa.PROVISIONAL]
+            held = [no for no, row in answered.items() if qa.is_provisional(row)]
             if held:
                 return 1, shown([f"{no}: 状態が {qa.PROVISIONAL}（利用者の確認待ち）" for no in held]) + [
                     f"{merged(QA_PATH)} に {qa.PROVISIONAL} の行が {len(held)} 件残る。"

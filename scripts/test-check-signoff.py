@@ -67,6 +67,8 @@ QA_A = QA_HEAD + QA_1
 QA_B = QA_HEAD + QA_1 + QA_2
 # 暫定の回答で反映した行（#325）
 P_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,決定表 4 行目,暫定反映,\n"
+# `反映済み` で `回答` に「暫定で採用」と書いた行（#366 の実データの形）。暫定は状態だけで決まる——照合を止めない（#404）
+W_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（推奨案を暫定で採用。開発側の指示）,決定表 4 行目,反映済み,\n"
 P_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A,理由,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/a.md,暫定反映,\n"
 
 # 試料の作り方: 手順の列。("w", パス, 中身) 書く／("rm", パス) 消す／("c",) commit／("t", 名前) 軽量タグ／
@@ -234,6 +236,8 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     # ---- 暫定の回答（#325）
     ("暫定の行が残る", [("w", SHARED, QA_HEAD + P_1 + QA_2), ("c",), ("t", R1), ("t", B1)],
      [], 3, "暫定の回答（暫定反映）が 1 件残る"),
+    ("文言だけ暫定の反映済みは照合を止めない", [("w", SHARED, QA_HEAD + W_1 + QA_2), ("c",), ("t", R1), ("t", B1)],
+     [], 0, f"一致する: {R1}"),
     # 確かめると shared/qa.csv が変わり、今の予算の合意とも一致しなくなる——要求確定だけを取り直させない（#336）
     ("暫定の行が残ると両方を取り直す", [("w", SHARED, QA_HEAD + P_1 + QA_2), ("c",), ("t", R1), ("t", B1)],
      [], 3, "要求確定と予算の合意の両方のサインオフを取り直す"),
@@ -411,7 +415,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("コミットに剥がさない", 'f"refs/tags/{tag}^{{commit}}"', 'f"refs/tags/{tag}"', "タグがツリーを指す"),
     ("git でないのを見ない", "if top.returncode != 0 or not top.stdout.strip():", "if False:", "git でない"),
     ("タグ無しを見ない", "if found is None:", "if False:", "タグが無い"),
-    ("暫定の行を見ない", '    return [row for row in whole.values() if row["状態"].strip() == qa.PROVISIONAL]',
+    ("暫定の行を見ない", '    return [row for row in whole.values() if qa.is_provisional(row)]',
      "    return []", "暫定の行が残る"),
     ("一致しないとき暫定を見ない", "        return (3, pending + lines, info) if pending else (1, lines, info)",
      "        return 1, lines, info", "暫定の行が残り、一致もしない"),
@@ -588,7 +592,7 @@ def overlay_mismatch(root: Path, result: tuple[int | None, str]) -> str:
     raw = sum(path.read_text(encoding="utf-8").count(",暫定反映,") for path in (root / "docs").glob("v*/shared/qa.csv"))
     if not raw:
         return "試料に暫定の行が無い（重ね方を判別しない）"
-    expected = sorted(no for no, row in whole.qa.items() if row["状態"] == module.qa.PROVISIONAL)
+    expected = sorted(no for no, row in whole.qa.items() if module.qa.is_provisional(row))
     observed = sorted(re.findall(r"^    (Q-[0-9]+): ", result[1], flags=re.MULTILINE))
     return "" if expected == observed else f"merge: {expected} ≠ 本体: {observed}"
 
@@ -663,6 +667,15 @@ def docstring_exit3_mismatch(source: str) -> str:
     return "" if RETAKE_BOTH in item.group(1) else f"終了コード 3 の項に「{RETAKE_BOTH}」が無い"
 
 
+CHECKER = "check-qa-csv.py"
+CHECKER_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("判別の本体で暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False", "暫定の行が残る"),
+    ("判別の本体を文言の一致に戻す", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() == PROVISIONAL or (row["状態"].strip() == DONE and "暫定で採用" in row["回答"])',
+     "文言だけ暫定の反映済みは照合を止めない"),
+]
+
+
 def copy_scripts(dest: Path) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -725,12 +738,24 @@ def main() -> int:
             killed = run_case(mutated, work, env, broken, killer)
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, killed), killed[1][-300:])
 
+        # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——照合は写しを持たずにそれを読む（#404）
+        checker = (SCRIPTS / CHECKER).read_text(encoding="utf-8")
+        for index, (name, before, after, killer) in enumerate(CHECKER_MUTATIONS):
+            count = checker.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"checker-mut{index}")
+            (mutated / CHECKER).write_text(checker.replace(before, after), encoding="utf-8")
+            killed = run_case(mutated, work, env, broken, killer)
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, killed), killed[1][-300:])
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件（うち {len(COEXIST)} 件は #260 の名前でも当てた）・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件（うち {len(COEXIST)} 件は #260 の名前でも当てた）・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS)} 件")
     return 0
 
 

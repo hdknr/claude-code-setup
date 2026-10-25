@@ -45,7 +45,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `check-skill-pointers.py` が**プラグインの中に収まること**まで見る（#216）
     - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。共有の `shared/qa.csv` と内部の
       `spec/qa-dev.csv` を**ファイルの名前で見分ける**——#339。**行の層を番号で決める関数 `is_internal_number` もここに 1 つだけ置き、
-      他のスクリプトはそれを読む**——#353。テストは `scripts/test-check-qa-csv.py`）
+      他のスクリプトはそれを読む**——#353。**暫定の行の判別 `is_provisional`（`状態` だけで決め、`回答` の文言は見ない）も同じで、
+      全段が読み、テストが静的に見る**（MkDocs のフックだけは単独で動くので写しを持ち、テストが本体と突き合わせる）——#404。テストは `scripts/test-check-qa-csv.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
       `scripts/test-qa-to-pptx.py`）
@@ -70,7 +71,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       形式の違反は、種類によらず両方のタグで 2）。
       テストは `scripts/test-check-signoff.py`）
     - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書と仕様書を作る
-      （照合をスキルの判断に任せないため、**生成の側で照合する**。**暫定の行の判別は `check-qa-csv.py` の `is_provisional` を読む**——#374。
+      （照合をスキルの判断に任せないため、**生成の側で照合する**。**暫定の行の判別は `check-qa-csv.py` の `is_provisional` を読む**——#374・#404。
       `--pptx` の PPTX は `qa-to-pptx.py` の `markdown_slides` で作る。テストは `scripts/test-build-proposal.py`）
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
