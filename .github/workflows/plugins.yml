@@ -87,6 +87,9 @@ jobs:
       - name: 周の探索のテスト（#136 段 1）
         run: python3 scripts/test-find-cycle.py
 
+      - name: PR のマージの手続きのテスト（#389）
+        run: python3 scripts/test-merge-pr.py
+
       - name: ガード拒否の収集のテスト（#122）
         run: python3 scripts/test-collect-guard-rejections.py
 
