@@ -100,6 +100,7 @@ TESTS: list[str] = [
     "test-init-mkdocs.py",
     "test-tab-match.py",
     "test-check-plan-counts.py",
+    "test-merge-pr.py",
 ]
 
 
