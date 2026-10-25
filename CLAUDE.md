@@ -499,18 +499,20 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 取り込みで入ったことは出力からは分からない。** 取り込みで増えた検査は、**取り込む前に**見る:
 
 ```bash
-git diff --name-status HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'
+git diff --name-status --no-renames HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'
 ```
 
 - **3 点（`...`）なので、周の側の変更は出ない。** **取り込んだ後に走らせると、取り込んだ分は出ない**——周を切った点が進むので。
-- **取り込んだ後なら、その merge コミットを `<merge>` として `git diff --name-status <merge>^1 <merge> -- scripts/ 'plugins/*/scripts/*'`**
-  （直近なら `git log --merges -1 --format=%H`。**件名で自分の取り込みだと確かめる**）。
-  **`ORIG_HEAD` には頼らない**——後の操作で取り込む前の HEAD を指さなくなる。「Already up to date」の `git merge` の後は HEAD と同じになって出力が空になり、
-  `git reset --soft` の後は周のコミットを指して、周がコミットした変更が（逆向きに）混ざる（#412。一時リポジトリで実測）。
+- **取り込んだ後なら、その merge コミットを `<merge>` として `git diff --name-status --no-renames <merge>^1 <merge> -- scripts/ 'plugins/*/scripts/*'`**
+  （直近なら `git log --merges -1 --format='%H %s'`。**件名で自分の取り込みだと確かめる**）。
+  **`ORIG_HEAD HEAD` では見ない**——取り込んだ後に周がコミットすると、`ORIG_HEAD` は動かないまま、そのコミットが取り込んだ分に混ざる。
+  **後の操作で `ORIG_HEAD` 自体も動く**——「Already up to date」の `git merge` の後は HEAD と同じになって出力が空になり、
+  `git reset --soft` の後は周のコミットを指して、取り込んだ分は 1 行も出ず、周がコミットした変更の逆（`D`）だけが出る（#412。一時リポジトリで実測）。
 - **パスはクォートし、末尾を `*` にする。** `'plugins/*/scripts/'`（末尾が `/`）は `plugins/` の下に 1 件も当たらない。
-  **クォートしないとシェルが手元に在るファイルだけに展開する**ので、main が足したファイルは——手元に在るプラグインの中でも——落ち、
-  `plugins/dev-loop/skills/dev-loop/scripts/` のような入れ子も落ちる（クォートすれば git の `*` は `/` を跨いで当たる。bash・zsh で実測）。
-- **`A` が足した、`M` が変えたファイル**である。**検査でないスクリプトも出る**ので、検査かどうかは名前と中身で見る
+  **クォートしないとシェルが手元に在るファイルだけに展開する**——取り込む前の形では main が足したファイルが（手元に在るプラグインの中でも）落ち、
+  取り込んだ後の形でも `plugins/dev-loop/skills/dev-loop/scripts/` のような入れ子は落ちる（クォートすれば git の `*` は `/` を跨いで当たる。bash・zsh で実測）。
+- **`A` が足した、`M` が変えた、`D` が消したファイル**である。**`--no-renames` を外すと、足した検査が消えたファイルの改名（`R`）として出ることがある。**
+  **検査でないスクリプトも出る**ので、検査かどうかは名前と中身で見る
   （#389 の取り込み `47a45e9` では 8 件が出て、足した検査は `check-plan-counts.py` とそのテスト）。
 
 **PR を作ってからマージされるまでの間にも、main は進む。** マージの直前に
