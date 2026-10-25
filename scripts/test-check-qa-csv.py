@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import re
@@ -281,6 +282,170 @@ NUMBER_MUTATIONS = [
     ("番号の先頭だけ見る", "return INTERNAL_NUMBER.fullmatch(number) is not None", "return INTERNAL_NUMBER.match(number) is not None"),
 ]
 
+# 行 → 暫定の行か（`is_provisional`。暫定を決めるのはここだけで、`状態` だけを見る——#404）。
+# `回答` の書き方は答えを変えない: #403 の否定の書き方も、#366 の実データの形（`反映済み`＋「暫定で採用」）も確定の行
+PROVISIONAL_ROWS = [
+    ("暫定反映", "A（暫定で採用。業務部 2026-10-21 の指示）", True),
+    ("暫定反映", "A（業務部 2026-10-21 の指示）", True),
+    (" 暫定反映 ", "A", True),
+    ("反映済み", "A（推奨案を暫定で採用。開発側の指示）", False),
+    ("反映済み", "A を暫定で採用します（業務部の確認待ち）", False),
+    ("反映済み", "A（暫定で採用していない）", False),
+    ("反映済み", "A（暫定で採用されなかった B は取り下げ）", False),
+    ("反映済み", "A（暫定で採用しなければ間に合わない）", False),
+    ("反映済み", "A（業務部が回答）", False),
+    ("確認中", "B（暫定で採用の予定）", False),
+    ("確認中", "未回答", False),
+]
+PROVISIONAL_MUTATIONS = [
+    ("暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False"),
+    ("反映済みも暫定にする", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() in (PROVISIONAL, DONE)'),
+    ("文言の一致に戻す", 'return row["状態"].strip() == PROVISIONAL',
+     'return row["状態"].strip() == PROVISIONAL or (row["状態"].strip() == DONE and "暫定で採用" in row["回答"])'),
+    ("状態の空白を落とさない", 'return row["状態"].strip() == PROVISIONAL', 'return row["状態"] == PROVISIONAL'),
+]
+
+# 暫定の判別を読む側（#404）。どれも `is_provisional` を呼び、`暫定反映` を自分で比べない——
+# 判別を状態だけにしたので、写しに戻しても挙動は同じ（変異が挙動では殺せない）。だから構造で見る:
+# - 呼ぶ数を固定する——呼ぶ箇所の 1 つを写しに替えると数が減る（書き方に依らない。`.startswith` でも `in` でも）。
+#   数えるのは `qa.is_provisional(...)` の形だけで、読む側に同名の関数・名前を置かせない（手元の写しを呼んでも数が合う形を塞ぐ）
+# - 判別の部品（状態の名前・定数）に触れてよいのは、メッセージへの差し込み（f-string の `{qa.PROVISIONAL}`）だけ。
+#   比較の中の差し込み（`== f"{qa.PROVISIONAL}"`）はメッセージではないので除かない
+# 守らないもの: 呼ぶ箇所を残したまま、新しい経路で部品を使わずに暫定を決める形（`.startswith("暫定")` を足す）。
+# 呼ぶ数は、読む箇所を足したら直す（数が違うと赤になり、どのファイルかを言う）
+READERS = {"build-proposal.py": 3, "qa-to-pptx.py": 4, "check-spec-exit.py": 1, "scaffold.py": 1, "check-signoff.py": 1}
+JUDGE_NAMES = {"PROVISIONAL", "INTERNAL_FORBIDDEN", "STATES"}
+JUDGE_TEXTS = {"暫定反映", *JUDGE_NAMES}
+HOOK_JUDGE = '    return row["状態"].strip() == QA_PROVISIONAL\n'
+HOOK_CALLS = 2
+READER_MUTATIONS = [
+    ("scaffold を写しに戻す", "scaffold.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == qa.PROVISIONAL]'),
+    ("照合を写しに戻す", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == qa.PROVISIONAL]'),
+    ("条件 1 を写しに戻す", "check-spec-exit.py", "if pptx.qa.is_provisional(row)]",
+     'if row["状態"].strip() == pptx.qa.PROVISIONAL]'),
+    ("資料を写しに戻す（文字列で）", "qa-to-pptx.py", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if row["状態"].strip() == "暫定反映" else ""'),
+    ("提案書を写しに戻す（in で）", "build-proposal.py", "provisional = [r for r in qa_rows if qa.is_provisional(r)]",
+     'provisional = [r for r in qa_rows if r["状態"].strip() in (qa.PROVISIONAL,)]'),
+    # 1 パス目のレビューが素通りを示した形（#404）
+    ("資料を写しに戻す（内部で使わない状態の集合で）", "qa-to-pptx.py", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if row["状態"].strip() in qa.INTERNAL_FORBIDDEN else ""'),
+    ("資料を写しに戻す（startswith で）", "qa-to-pptx.py", "    if qa.is_provisional(row):",
+     '    if row["状態"].startswith("暫定"):'),
+    ("資料を写しに戻す（定数を左に）", "qa-to-pptx.py", "    if qa.is_provisional(row):",
+     '    if qa.PROVISIONAL in row["状態"]:'),
+    ("提案書を写しに戻す（内部で使わない状態の集合で）", "build-proposal.py",
+     "provisional = [r for r in qa_rows if qa.is_provisional(r)]",
+     'provisional = [r for r in qa_rows if r["状態"].strip() in qa.INTERNAL_FORBIDDEN]'),
+    ("scaffold で getattr から比べる", "scaffold.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == getattr(qa, "PROVISIONAL")]'),
+    ("scaffold で定数を別名で取り込む", "scaffold.py", "from __future__ import annotations\n",
+     "from __future__ import annotations\nfrom check_qa_csv import PROVISIONAL as P  # noqa\n"),
+    ("フックを写しの外で比べる", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
+     'provisional = sum(row["状態"] == QA_PROVISIONAL for row in rows)'),
+    ("フックを写しの外で比べる（文字列で）", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
+     'provisional = sum(row["状態"] == "暫定反映" for row in rows)'),
+    ("フックで暫定を数えない", HOOK.name, "provisional = sum(qa_is_provisional(row) for row in rows)",
+     "provisional = 0"),
+    # 2 パス目のレビューが素通りを示した形（#404）——手元に同名の写しを置いて呼ぶ。比較の右辺の f-string で部品に触れる
+    ("照合に同名の写しを置く（比較の右辺の f-string で）", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if is_provisional(row)]\n\n\ndef is_provisional(row):\n    return row["状態"].strip() == f"{qa.PROVISIONAL}"'),
+    ("照合を比較の右辺の f-string で写しに戻す", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if row["状態"].strip() == f"{qa.PROVISIONAL}"]'),
+    ("資料に部品を使わない同名の写しを置く", "qa-to-pptx.py", 'mark = "（暫定）" if qa.is_provisional(row) else ""',
+     'mark = "（暫定）" if is_provisional(row) else ""\n'
+     '            is_provisional = lambda r: r["状態"].strip() in qa.REFLECTED and r["状態"].strip() != qa.DONE'),
+    # 呼ぶ数を保ったまま同名の写しだけ置く——数では見えず、定義の確かめだけが捕まえる
+    ("照合に呼ぶ数を保ったまま同名の写しを置く", "check-signoff.py", "if qa.is_provisional(row)]",
+     'if qa.is_provisional(row)]\n\n\ndef is_provisional(row):\n    return row["状態"].strip() in qa.REFLECTED'),
+]
+
+
+def provisional_mismatches(mod) -> list[str]:
+    return [f"{state!r}・{answer!r} → {mod.is_provisional({'状態': state, '回答': answer})}（期待: {want}）"
+            for state, answer, want in PROVISIONAL_ROWS if mod.is_provisional({"状態": state, "回答": answer}) != want]
+
+
+def reader_sources() -> dict[str, str]:
+    sources = {p.name: p.read_text(encoding="utf-8") for p in sorted((PLUGIN / "scripts").glob("*.py"))}
+    sources[HOOK.name] = HOOK.read_text(encoding="utf-8")
+    return sources
+
+
+def judge_touches(tree: ast.AST, names: set[str], texts: set[str], allowed: tuple[ast.AST, ...] = ()) -> list[int]:
+    """判別の部品（名前・状態の文字列）に触れている行。f-string の差し込みの中と、`allowed` の節の中は除く。
+    差し込みでも比較の中にあるもの（`== f"{qa.PROVISIONAL}"`）は除かない——メッセージではなく判別である。"""
+    skip = {id(sub) for node in allowed for sub in ast.walk(node)}
+    compared = {id(sub) for node in ast.walk(tree) if isinstance(node, ast.Compare) for sub in ast.walk(node)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FormattedValue) and id(node) not in compared:
+            skip |= {id(sub) for sub in ast.walk(node.value)}
+    lines = []
+    for node in ast.walk(tree):
+        if id(node) in skip:
+            continue
+        if (isinstance(node, ast.Name) and node.id in names) or (isinstance(node, ast.Attribute) and node.attr in names) \
+                or (isinstance(node, ast.Constant) and node.value in texts):
+            lines.append(node.lineno)
+        elif isinstance(node, ast.ImportFrom):
+            lines += [node.lineno for alias in node.names if alias.name in names]
+    return sorted(set(lines))
+
+
+def calls_to(tree: ast.AST, name: str, attribute_only: bool = False) -> int:
+    """`name` を呼ぶ数。`attribute_only` なら `qa.is_provisional(...)` の形だけ数える——裸の名前は手元の写しでありうる。"""
+    return sum(isinstance(node, ast.Call) and ((isinstance(node.func, ast.Attribute) and node.func.attr == name)
+                                               or (not attribute_only and isinstance(node.func, ast.Name)
+                                                   and node.func.id == name))
+               for node in ast.walk(tree))
+
+
+def defines(tree: ast.AST, name: str) -> list[int]:
+    """`name` を定義している行（関数・代入・取り込みの別名）——読む側が同名の写しを置いていないか。"""
+    lines = [node.lineno for node in ast.walk(tree)
+             if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name)
+             or (isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Store))]
+    lines += [node.lineno for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+              for alias in node.names if (alias.asname or alias.name) == name]
+    return sorted(set(lines))
+
+
+def reader_problems(sources: dict[str, str]) -> list[str]:
+    problems = []
+    for name, text in sources.items():
+        if name == SCRIPT.name:
+            continue
+        try:
+            tree = ast.parse(text)
+        except SyntaxError as e:
+            problems.append(f"{name}: 構文を読めない（{e}）")
+            continue
+        if name == HOOK.name:
+            # フックは写しを 1 つだけ持つ（`qa_is_provisional`）。部品に触れてよいのは、その本体と定数の定義だけ
+            if HOOK_JUDGE not in text:
+                problems.append(f"{name}: qa_is_provisional の本体（状態だけで決める 1 行）が無い")
+            allowed = tuple(node for node in tree.body
+                            if (isinstance(node, ast.FunctionDef) and node.name == "qa_is_provisional")
+                            or (isinstance(node, ast.Assign)
+                                and any(isinstance(t, ast.Name) and t.id == "QA_PROVISIONAL" for t in node.targets)))
+            for line in judge_touches(tree, {"QA_PROVISIONAL"}, {"暫定反映", "QA_PROVISIONAL"}, allowed):
+                problems.append(f"{name}:{line}: qa_is_provisional の外で暫定を決めている")
+            if (got := calls_to(tree, "qa_is_provisional")) != HOOK_CALLS:
+                problems.append(f"{name}: qa_is_provisional を呼ぶ数が {got}（期待: {HOOK_CALLS}）")
+            continue
+        for line in judge_touches(tree, JUDGE_NAMES, JUDGE_TEXTS):
+            problems.append(f"{name}:{line}: 暫定を is_provisional を通さずに決めている")
+        for line in defines(tree, "is_provisional"):
+            problems.append(f"{name}:{line}: is_provisional を手元に置いている（写し）")
+        if name in READERS and (got := calls_to(tree, "is_provisional", attribute_only=True)) != READERS[name]:
+            problems.append(f"{name}: is_provisional を呼ぶ数が {got}（期待: {READERS[name]}）")
+    problems += [f"{name}: 読む側が無い" for name in READERS if name not in sources]
+    return problems
+
+
 # `references/tree.md の「X」`（バッククォートで囲んだ形も）。X は指した先の見出し
 POINTER = re.compile(r"references/(?P<file>[\w.-]+\.md)`? の「(?P<heading>[^」]+)」")
 HEADING = re.compile(r"#{1,6} (?P<text>.+)")
@@ -452,14 +617,10 @@ def reference_mismatches(mod, markdown: str) -> list[str]:
     if provisional != mod.PROVISIONAL:
         problems.append(f"暫定の状態 {provisional!r} ≠ 本体 {mod.PROVISIONAL!r}")
 
-    provisional_answer = first_code(markdown, "`回答` に {} を含む行を、暫定の行として扱う")
-    if provisional_answer != mod.PROVISIONAL_ANSWER:
-        problems.append(f"暫定の回答の印 {provisional_answer!r} ≠ 本体 {mod.PROVISIONAL_ANSWER!r}")
-    # 印に数えない書き方（「数えない書き方」の 1 列の表）
-    m = re.search(r"^\| 数えない書き方[^\n]*\n\| --- \|\n((?:\| `[^`]+` \|\n)*)", markdown, re.M)
-    excluded = re.findall(r"`([^`]+)`", m.group(1)) if m else []
-    if excluded != list(mod.PROVISIONAL_NOT):
-        problems.append(f"暫定の印に数えない書き方 {excluded} ≠ 本体 {list(mod.PROVISIONAL_NOT)}")
+    # 暫定の行の判別（「暫定の行の判別」。状態だけで決める——#404）
+    judged = first_code(markdown, "`状態` が {} の行だけを、暫定の行として扱う")
+    if judged != mod.PROVISIONAL:
+        problems.append(f"暫定の行の判別の状態 {judged!r} ≠ 本体 {mod.PROVISIONAL!r}")
 
     # 「列」の表のセルに書いた決まりと、本体の写し
     cells = column_cells(markdown)
@@ -529,8 +690,7 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("状態の表の 1 行", "| `反映済み` |", "| 反映済み |"),
     ("反映した状態", "仕様に反映した状態は `暫定反映` と", "仕様に反映した状態は `確認中` と"),
     ("暫定の状態", "`状態` は `暫定反映`。", "`状態` は `確認中`。"),
-    ("暫定の回答の印", "`回答` に `暫定で採用` を含む行を", "`回答` に `暫定` を含む行を"),
-    ("暫定の印に数えない書き方", "| `していた` |\n", ""),
+    ("暫定の行の判別の状態", "`状態` が `暫定反映` の行だけを、", "`状態` が `反映済み` の行だけを、"),
     ("空でよい列", "| 費用に関わらない質問は空でよい。", "| 費用に関わらない質問も空を許さない。"),
     ("費用付きの質問の起票元", "**起票元が `実現性・コスト` の行は", "**起票元が `開発` の行は"),
     ("回答の「まだ無い」の印", "まだなら `未回答` と書く", "まだなら `未定` と書く"),
@@ -611,7 +771,19 @@ def main() -> int:
         problems = number_layer_mismatches(mod)
         check("番号の層が期待どおり", not problems, "; ".join(problems))
 
-        print("4b'. 番号の並び（number_order）")
+        print("4b'. 暫定の行の判別（is_provisional。状態だけで決め、回答の文言は見ない——#404）")
+        problems = provisional_mismatches(mod)
+        check("暫定の判別が期待どおり（否定・肯定の書き方を含む）", not problems, "; ".join(problems))
+        sources = reader_sources()
+        problems = reader_problems(sources)
+        check("読む側が全部 is_provisional を通す（写しを持たない）", not problems, "; ".join(problems))
+        for name, file, before, after in READER_MUTATIONS:
+            if sources[file].count(before) != 1:
+                check(f"崩すと見える: {name}", False, f"崩す箇所が {sources[file].count(before)} 回現れる")
+                continue
+            check(f"崩すと見える: {name}", bool(reader_problems({**sources, file: sources[file].replace(before, after)})))
+
+        print("4b''. 番号の並び（number_order）")
         problems = number_order_mismatches(mod)
         check("番号の並びが期待どおり", not problems, "; ".join(problems))
 
@@ -659,6 +831,14 @@ def main() -> int:
             broken.write_text(source.replace(before, after), encoding="utf-8")
             assert_in_tmp(broken)
             check(f"変異を殺せる: {name}（番号の層）", bool(number_layer_mismatches(load(broken))))
+        for index, (name, before, after) in enumerate(PROVISIONAL_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            broken = root / f"provisional-mutant-{index}.py"
+            broken.write_text(source.replace(before, after), encoding="utf-8")
+            assert_in_tmp(broken)
+            check(f"変異を殺せる: {name}（暫定の判別）", bool(provisional_mismatches(load(broken))))
         for index, (name, before, after) in enumerate(ORDER_MUTATIONS):
             if source.count(before) != 1:
                 check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
@@ -678,7 +858,7 @@ def main() -> int:
     if failures:
         print(f"FAIL: {len(failures)} 件")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(READER_MUTATIONS) + 1} 件")
     return 0
 
 

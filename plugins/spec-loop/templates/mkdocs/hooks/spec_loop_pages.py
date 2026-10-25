@@ -111,12 +111,18 @@ def read_qa(path: Path) -> list[dict[str, str]]:
                 for row in reader if any(cell.strip() for cell in row)]
 
 
+def qa_is_provisional(row: dict[str, str]) -> bool:
+    """暫定の行か——check-qa-csv.py の is_provisional の写し（状態だけで決め、回答の文言は見ない。テストが試料で突き合わせる）。"""
+    return row["状態"].strip() == QA_PROVISIONAL
+
+
 def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
-    done = sum(row["状態"] == QA_DONE for row in rows)
+    # 状態は前後の空白を落として比べる——qa_is_provisional と揃える（片方だけ落とすと 3 つの件数が食い違う）
+    done = sum(row["状態"].strip() == QA_DONE for row in rows)
     # 暫定の回答で反映した行は、反映済みでも確認中でもない（仕様には反映済み・利用者の確認待ち）
-    provisional = sum(row["状態"] == QA_PROVISIONAL for row in rows)
+    provisional = sum(qa_is_provisional(row) for row in rows)
     pending = len(rows) - done - provisional
-    answered = sum(row["状態"] not in (QA_DONE, QA_PROVISIONAL) and row["回答"].strip() not in ("", QA_NO_ANSWER)
+    answered = sum(row["状態"].strip() != QA_DONE and not qa_is_provisional(row) and row["回答"].strip() not in ("", QA_NO_ANSWER)
                    for row in rows)
     out = [f"## v{version}", "",
            f"確認中 {pending} 件（うち回答あり・未反映 {answered} 件）・暫定反映 {provisional} 件・反映済み {done} 件", ""]

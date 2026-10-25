@@ -5,7 +5,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 **載せるのは、利用者にまだ見せる行だけ**——`状態` が `check-qa-csv.py` の
 `DONE` でない行である（状態の意味は `references/qa-csv.md` を正とする）。回答待ち・回答はあるが未反映の行に加えて、
-**暫定の回答で反映した行（`PROVISIONAL`）も載る**——確認してもらうため。
+**暫定の回答で反映した行も載る**——確認してもらうため（判別は `check-qa-csv.py` の `is_provisional`。写さない——#404）。
 **状態の名前を列挙して絞らない**——決まりに状態が増えても、確認が残っている行を黙って落とさない。
 表紙・一覧・1 問 1 枚の順に並べる。**表紙の件数と各問の回答の見出しは、未反映と暫定で分ける**
 （暫定の行を「未反映」と書かない——仕様には反映済みなので）。
@@ -118,10 +118,6 @@ def read_pending(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
     return code, lines, [row for row in rows if row["状態"].strip() != qa.DONE]
 
 
-def provisional(row: dict[str, str]) -> bool:
-    return row["状態"].strip() == qa.PROVISIONAL
-
-
 # ---------------------------------------------------------------- XML の部品
 
 def clean(text: str) -> str:
@@ -175,7 +171,7 @@ def slide(title: list[str], body: list[str]) -> str:
 # ---------------------------------------------------------------- スライドの中身
 
 def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:
-    settled = sum(provisional(row) for row in rows)
+    settled = sum(qa.is_provisional(row) for row in rows)
     body = lines_of(f"回答待ち・未反映の質問: {len(rows) - settled} 件", 2400)
     body += lines_of(f"暫定の回答（反映済み・確認待ち）: {settled} 件", 2400)
     if subtitle:
@@ -193,7 +189,7 @@ def index_slides(rows: list[dict[str, str]]) -> list[str]:
         body = []
         for row in chunk:
             first = split_lines(row["質問"])[0]
-            mark = "（暫定）" if provisional(row) else ""
+            mark = "（暫定）" if qa.is_provisional(row) else ""
             body += lines_of(f"{row['No']}{mark}  {first}  ［{recommendation_label(row)}］", 1600)
         out.append(slide(lines_of(head, 3200, bold=True), body))
     return out
@@ -223,7 +219,7 @@ def question_slide(row: dict[str, str]) -> str:
     body += [paragraph("", 1200)] + lines_of(f"{head}: {row['推奨の理由']}", 1600)
     if row["費用への影響"].strip():
         body += [paragraph("", 1200)] + lines_of(f"費用への影響: {row['費用への影響']}", 1600)
-    if provisional(row):
+    if qa.is_provisional(row):
         body += [paragraph("", 1200)] + lines_of(f"暫定の回答（反映済み・確認待ち）: {row['回答']}", 1600)
         body += lines_of(f"反映先: {row['反映先']}", 1600)
     elif row["回答"].strip() != qa.NO_ANSWER:
@@ -482,7 +478,7 @@ def main(argv: list[str]) -> int:
     except OSError as e:
         print(f"{out}: 書けない（{e.strerror}）。既存の出力には触っていない", file=sys.stderr)
         return 3
-    settled = sum(provisional(row) for row in rows)
+    settled = sum(qa.is_provisional(row) for row in rows)
     print(f"{out}: 質問 {len(rows)} 件を載せた（回答待ち・未反映 {len(rows) - settled} 件・暫定の回答 {settled} 件）")
     return 0
 
