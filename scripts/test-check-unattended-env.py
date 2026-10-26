@@ -13,11 +13,13 @@
 **変異テストを含む。** 本体の docstring の「守る」の各行に変異を 1 つ以上当て、
 **壊したのに緑のままなら失格**とする。**変異の前に、元の本体で全部緑であること（陽性対照）を見る。**
 """
+import builtins
 import contextlib
 import importlib.util
 import io
 import json
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -110,6 +112,48 @@ esac
                    "autoContinueAtUsageLimit": True, "askUserQuestionTimeout": "10m"})
         self.global_config({"agentPushNotifEnabled": True, "inputNeededNotifEnabled": True})
         return self
+
+
+PATH_READS = ("read_text", "read_bytes", "open", "stat", "exists", "is_file", "is_dir", "iterdir", "glob", "rglob")
+READ_ENTRIES = ([(Path, n) for n in PATH_READS]
+                + [(builtins, "open"), (subprocess, "run"), (subprocess, "Popen")])
+
+
+@contextlib.contextmanager
+def recording_reads():
+    """OS への読む入口を呼ばれた順に記録する（呼び出しはそのまま通す）。
+
+    **関数名ではなく OS への入口で見る**——本体の読む入口は道具関数に散っており
+    （`read_json`・`run`・`managed_dropins`・`global_config_path`）、関数名でフックすると
+    入口を足すたびに素通りする（#424 の N2: `check_notifications` を呼ぶ変異が素通りした）。
+    **記録するのは `READ_ENTRIES` だけで、ほかは素通りする**——`Path` の他のメソッド（`resolve` など。
+    3.14 では `lstat`・`is_symlink` も `stat` を経由しない）・`os` の直呼び（`os.stat`・`os.listdir`・
+    `os.scandir`・`os.lstat`・`os.path.*`・`os.open`・`os.system`）・`io.open`・import 時に束ねた名前
+    （`from subprocess import run`）・環境変数の読み取り。本体は `--push-result` の分岐でどれも使っていない
+    （環境変数は全点検の側で読む）。
+    **`os.stat`・`os.path.*` を差し替えないのは、argparse が gettext 経由で `os.stat` を呼ぶから**——記録が本体の読みでなくなる。
+    **ほかの `os` の直呼びと `io.open` は、差し替えても `--push-result` の記録は汚れない（#424 の 2 パス目で測った）が、
+    足していないだけである**——だから 3.14 の `lstat`・`is_symlink` を呼ぶ変異は、ローカル（3.14）では素通りする
+    （CI の 3.12 では `stat` を経由するので捕まる）。
+    **記録名には持ち主を付ける**（`Path.open` と `builtins.open` を分ける）——同じ名前だと、陽性対照の
+    「`Path` の読みを拾う」が `builtins.open` だけで満たされ、`Path` の差し替えが死んでいても緑になる。
+    **記録器が効いていることは、使う側が陽性対照で見る。**"""
+    reads: list[str] = []
+    originals = [(owner, name, getattr(owner, name)) for owner, name in READ_ENTRIES]
+
+    def wrap(name, f):
+        def recorded(*a, **k):
+            reads.append(name)
+            return f(*a, **k)
+        return recorded
+
+    for owner, name, f in originals:
+        setattr(owner, name, wrap(f"{owner.__name__}.{name}", f))
+    try:
+        yield reads
+    finally:
+        for owner, name, f in originals:
+            setattr(owner, name, f)
 
 
 @contextlib.contextmanager
@@ -445,37 +489,55 @@ def suite(script: Path) -> list[str]:
         (_, _, got_cause, got_fix), = mod.check_push_result(text)
         check(f"返り値 {text!r} の原因と対処", cause in got_cause and fix in got_fix, bad)
     check("知らない返り値は、その文字列を原因に出す", "'Notification delivered.'" in unknown[0][2], bad)
+    check("使用中の原因はフォーカスと 60 秒を言う（本体の Ins() と P3e=60000）",
+          "フォーカス" in active[0][2] and "から 60 秒以内" in active[0][2], bad)
     with scenario(script) as env:
         env.all_good()
         before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
-        buf = io.StringIO()
         # 変異で判定の分岐が外れても実環境を読まないよう、HOME・project・managed・flag をテンポラリに向ける
         saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_CONFIG_DIR")}
         os.environ["HOME"] = str(env.home)
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
-        # 設定を読まないことは、読む入口が呼ばれないことで見る——出力に出さずに読む変異は出力では見えない
-        reads = []
-        originals = {n: getattr(mod, n) for n in ("layers", "find_flag_settings", "default_project")}
-        for n, f in originals.items():
-            setattr(mod, n, lambda *a, _n=n, _f=f, **k: (reads.append(_n), _f(*a, **k))[1])
+        paths = ["--project", str(env.project),
+                 "--managed-settings", str(env.project / "no-managed.json"),
+                 "--flag-settings", str(env.project / "no-flag.json")]
+        runs = {}
         try:
-            with contextlib.redirect_stdout(buf):
-                code = mod.main(["--push-result", "Push not sent — mobile push is disabled in /config.",
-                                 "--project", str(env.project),
-                                 "--managed-settings", str(env.project / "no-managed.json"),
-                                 "--flag-settings", str(env.project / "no-flag.json")])
+            # 読まないことは、OS への入口が呼ばれないことで見る——出力に出さずに読む変異は出力では見えない
+            for key, argv in (("config_off", ["--push-result", "Push not sent — mobile push is disabled in /config."]),
+                              ("empty", ["--push-result", ""]),
+                              ("full", [])):
+                buf = io.StringIO()
+                with recording_reads() as reads, contextlib.redirect_stdout(buf):
+                    code = mod.main(argv + paths)
+                runs[key] = (code, buf.getvalue(), list(reads))
+            # 陽性対照のもう半分: 本体の run() から subprocess に届くこと（Linux の全点検はコマンドを走らせない）。
+            # 走らせるのは偽の ps——本物のコマンドを起こすと、テストが実環境を読む
+            with recording_reads() as reads:
+                patched = all(getattr(o, n).__name__ == "recorded" for o, n in READ_ENTRIES)
+                ran, _ = mod.run([str(env.bin / "ps"), "-p", "500"])
+            runs["cmd"] = (patched and ran, list(reads))
         finally:
-            for n, f in originals.items():
-                setattr(mod, n, f)
             for k, v in saved.items():
                 if v is None:
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
         after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
-        check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in buf.getvalue()
-              and "[要対処] 通知の試験" in buf.getvalue(), bad)
-        check("--push-result は設定を読まない", reads == [], bad)
+        code, out, reads = runs["config_off"]
+        check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in out
+              and "[要対処] 通知の試験" in out, bad)
+        check("--push-result は設定もファイルもコマンドも読まない", reads == [], bad)
+        code, out, reads = runs["empty"]
+        check("空の --push-result も判定に回り、全点検に落ちない（2）",
+              code == 2 and "[判定できない] 通知の試験" in out and "設定の層" not in out and reads == [], bad)
+        # 陽性対照: 同じ記録器が全点検の読みを拾う——拾わなければ上の「読まない」は何も証明しない。
+        # 「何か 1 つ拾った」では足りない（コマンドだけ拾って Path の差し替えが死んでいても緑になる）ので、入口の種類ごとに見る
+        check("記録器は全点検の Path の読みを拾う（陽性対照）",
+              any(r.startswith("Path.") for r in runs["full"][2]) and "設定の層" in runs["full"][1], bad)
+        patched, cmd_reads = runs["cmd"]
+        check("記録器は全部の入口を差し替え、本体の run() のコマンドを拾う（陽性対照）",
+              patched and "subprocess.run" in cmd_reads, bad)
         check("--push-result は何も書かない", before == after, bad)
 
     # 人が見る: Remote Control は claude rc との違い、モバイルの登録は通知の試験を指す
@@ -616,6 +678,23 @@ MUTATIONS = {
         "        report(*gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
         "                       args.managed_settings, Path.home(), sys.platform))\n"
         "        return push_code\n"),
+    "空の --push-result を見ない": (
+        "    if args.push_result is not None:\n",
+        "    if args.push_result:\n"),
+    "--push-result で通知の設定を読むが出さない": (
+        "        return report_push(check_push_result(args.push_result))\n",
+        "        check_notifications(Path.home())\n"
+        "        return report_push(check_push_result(args.push_result))\n"),
+    "--push-result でスリープを見るが出さない": (
+        "        return report_push(check_push_result(args.push_result))\n",
+        "        check_sleep('darwin')\n"  # sys.platform を渡すと Linux の CI では何も読まずに返り、素通りする
+        "        return report_push(check_push_result(args.push_result))\n"),
+    "使用中の 60 秒を 30 秒にする": (
+        "分からなければ最後の操作から 60 秒以内）\",",
+        "分からなければ最後の操作から 30 秒以内）\","),
+    "使用中の 60 秒を 160 秒にする": (  # 「60 秒以内」の部分一致では素通りする
+        "分からなければ最後の操作から 60 秒以内）\",",
+        "分からなければ最後の操作から 160 秒以内）\","),
     "--push-result のあと設定を読むが出さない": (
         "        return report_push(check_push_result(args.push_result))\n",
         "        gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
