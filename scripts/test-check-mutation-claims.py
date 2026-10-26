@@ -560,6 +560,56 @@ def observe_interrupt(mod, root: Path) -> dict:
     return {"raised": raised, "judged": sorted(judged), "left": left}
 
 
+def observe_midstart(mod, root: Path) -> dict:
+    """**作業者を起こしている途中の中断**を観測する（守る 22 / #431）。`--jobs 2` で当てる。
+
+    **`ThreadPoolExecutor` はスレッドを起こしてから数に入れる**ので、**その間の中断では、
+    起きた作業者が `with` の後始末に待たれない。** **本物の SIGINT はそこに着地することも
+    しないこともある**（2 パス目の `/code-review` の実測で 40 回中 9 回）——**揺れる観測では
+    変異を殺せたり殺せなかったりする。** **だから `Thread.start` を差し替え、2 人目を起こした
+    直後に `KeyboardInterrupt` を投げて、その間を決定的に作る。**
+    **投げる前に間を置く**——**作業者に主張を取らせる形なら、その間に取る。**
+    **終わったあと、待たれなかった作業者も終わるのを待ってから数える**
+    ——**数える前に返ると、あとから当てた主張が数に入らない。**
+    """
+    judged: list[int] = []
+    real_judge = mod.judge
+    real_start = threading.Thread.start
+    caller = threading.current_thread()
+    started: list[threading.Thread] = []
+
+    def start(self):
+        real_start(self)
+        if threading.current_thread() is caller:
+            started.append(self)
+            if len(started) == 2:
+                time.sleep(0.3)
+                raise KeyboardInterrupt
+
+    def recording(claim, box, baselines):
+        judged.append(claim.lineno)
+        return real_judge(claim, box, baselines)
+
+    mod.judge = recording
+    threading.Thread.start = start
+    try:
+        with sweeping(mod) as made, \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            raised = None
+            try:
+                mod.main(["--jobs", "2", str(root)])
+            except BaseException as exc:  # noqa: BLE001 — 中断を受けるのがこの観測
+                raised = type(exc).__name__
+            threading.Thread.start = real_start
+            for thread in started:
+                thread.join(PARALLEL_WAIT)
+            left = sum(1 for box in made if box.exists())
+    finally:
+        threading.Thread.start = real_start
+        mod.judge = real_judge
+    return {"raised": raised, "judged": sorted(judged), "left": left}
+
+
 def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
     """**退避先の消し残し**を観測する（守る 14 / #157）。
 
@@ -724,6 +774,9 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         # **これが無いと「中断されても作業者に次を取らせる」変異が殺せない**——
         # **上の観測はどれも中断しないか、作業者を起こす前に中断する。**
         observe_interrupt(mod, intr),
+        # **これが無いと「作業者を起こし終える前に主張を取らせる」変異が殺せない**——
+        # **上の観測は全員を起こし終えてから中断する。**
+        observe_midstart(mod, intr),
     )
 
 
@@ -823,8 +876,12 @@ MUTATIONS = {
         "            pass\n    return results"),
     # 守る 21: 中断されたら、作業者は次の主張を取らない（#431）
     "中断されても作業者に次を取らせる": (
-        "                    stop.set()\n                    raise\n",
-        "                    pass\n                    raise\n"),
+        "                    stop.set()\n                    # **待っている",
+        "                    pass\n                    # **待っている"),
+    # 守る 22: 作業者を全員起こし終えるまで、どの作業者も主張を取らない（#431）
+    "作業者を起こし終える前に主張を取らせる": (
+        "            go.wait()\n",
+        "            pass\n"),
 }
 
 
@@ -864,7 +921,7 @@ def run_all(escape: Path) -> int:
 
         mod = load()
         base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
-        (rc, out), (rc_na, out_na), (rc_missing, _), leak, para, stopped = base
+        (rc, out), (rc_na, out_na), (rc_missing, _), leak, para, stopped, midstart = base
         got = verdicts(out)
 
         print("3 つの判定が出そろうか")
@@ -1013,7 +1070,7 @@ def run_all(escape: Path) -> int:
         check("原本を書き換えていない",
               (root / "scripts" / "subject.py").read_text(encoding="utf-8") == SUBJECT)
 
-        print("\n並列に当てる（守る 17〜21 / #431）")
+        print("\n並列に当てる（守る 17〜22 / #431）")
         check("`--jobs 2` で 2 件が同時に当たる（待ち合わせが揃う）",
               para["met"] == [True, True])
         check("同時に当てた 2 件は別の退避先にいる", para["boxes"] == 2)
@@ -1023,6 +1080,10 @@ def run_all(escape: Path) -> int:
         check("中断は投げ直す", stopped["raised"] == "KeyboardInterrupt")
         check("中断のあと、作業者は次の主張を取らない（守る 21）", stopped["judged"] == [1, 2])
         check("中断のあとも退避先が 1 つも残らない", stopped["left"] == 0)
+        check("起こしている途中の中断も投げ直す", midstart["raised"] == "KeyboardInterrupt")
+        check("起こしている途中に中断されたら、どの作業者も主張を取らない（守る 22）",
+              midstart["judged"] == [])
+        check("起こしている途中の中断のあとも退避先が 1 つも残らない", midstart["left"] == 0)
         check("並列でも判定と終了コードは直列と同じ（既定の並列の観測と `--jobs 1` を比べる）",
               observe(mod, root, "--jobs", "1") == (rc, out))
         try:

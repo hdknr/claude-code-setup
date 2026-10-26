@@ -125,6 +125,9 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 - **中断されたら、作業者は次の主張を取らない**（#431）——**走っている `red` の終わりは待ってから畳む。**
   **取らせ続けると、残りの主張をすべて当て終えるまで後始末に入れない**——`check-all.py` の中断は
   猶予の 3 秒で SIGKILL に変わるので、**退避先が丸ごと残る**（1 パス目の `/code-review` の指摘を実測した）。
+- **作業者を全員起こし終えるまで、どの作業者も主張を取らない**（#431）——**起こしている途中の中断では、
+  起こした作業者が後始末に待たれないことがある**（`ThreadPoolExecutor` はスレッドを起こしてから数に入れる）。
+  **待たれない作業者が主張を当てると、走っている `red` の足元から退避先を消す**（2 パス目の `/code-review` が実測した）。
 
 守らない:
 
@@ -506,10 +509,13 @@ def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[
     pending = iter(range(len(claims)))
     lock = threading.Lock()
     stop = threading.Event()
+    # **全員を起こし終えてから立てる。** 中断されたときも立てる（`stop` と一緒に）。
+    go = threading.Event()
 
     def work(box: pathlib.Path) -> None:
         baselines: dict[str, tuple[int | None, str]] = {}
         try:
+            go.wait()
             while not stop.is_set():
                 with lock:
                     i = next(pending, None)
@@ -527,15 +533,20 @@ def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[
         for _ in range(min(jobs, len(claims))):
             boxes.append(make_sandbox(root))
         if len(boxes) == 1:
+            go.set()
             work(boxes[0])
         else:
             with ThreadPoolExecutor(max_workers=len(boxes)) as pool:
-                # **起こしている途中の中断も受ける。** **先に起きた作業者は、
-                # 次の作業者を起こしている間にもう主張を当てている**——**`submit` を
-                # `try` の外に置くと、その間の中断で止まらない**（1 パス目の指摘に足した観測の陽性対照で、
-                # 正しいはずの本体が 20 回中 3 回、3 件目を当てた。広げたあとは 40 回中 0 回）。
+                # **起こしている途中の中断も受ける。** **`submit` を `try` の外に置くと、
+                # 起きた作業者が `go` を待ったまま `with` の後始末に待たれ、終わらない。**
                 try:
                     futures = [pool.submit(work, box) for box in boxes]
+                    # **ここまで来れば、起こした作業者は全員 `with` の後始末に待たれる。**
+                    # **`ThreadPoolExecutor` はスレッドを起こしてから数に入れる**ので、
+                    # **その間に中断されると、起きた作業者が待たれずに残る**——**先に主張を
+                    # 取らせていると、その作業者の `red` の足元から `finally` が退避先を消す**
+                    # （2 パス目の `/code-review` が実測した）。
+                    go.set()
                     for future in futures:
                         future.result()
                 except BaseException:
@@ -543,6 +554,8 @@ def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[
                     # **走っている `red` が終わるのは待つ**——**待たずに畳むと、
                     # 走っている `red` の足元から退避先を消す。**
                     stop.set()
+                    # **待っている作業者を起こす。** **`stop` を見て、何も取らずに抜ける。**
+                    go.set()
                     raise
     finally:
         # **退避先は全部畳む。** **作った分だけ**——**途中の `make_sandbox` が落ちても、
