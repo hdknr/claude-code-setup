@@ -509,13 +509,12 @@ def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[
     pending = iter(range(len(claims)))
     lock = threading.Lock()
     stop = threading.Event()
-    # **全員を起こし終えてから立てる。** 中断されたときも立てる（`stop` と一緒に）。
+    # **全員を起こし終えてから立てる。**
     go = threading.Event()
 
     def work(box: pathlib.Path) -> None:
         baselines: dict[str, tuple[int | None, str]] = {}
         try:
-            go.wait()
             while not stop.is_set():
                 with lock:
                     i = next(pending, None)
@@ -528,19 +527,27 @@ def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[
             stop.set()
             raise
 
+    def gated(box: pathlib.Path) -> None:
+        # **全員を起こし終えるか、中断されるまで待つ。** **中断のときは `work` が
+        # `stop` を見て、何も取らずに抜ける。** **`go` と `stop` を 1 つの合図にしない**
+        # ——**中断の側で `go` を立てると、`stop` との順序を間違えたときに主張を取らせる**
+        # （狭いパスの Verifier が、順序を入れ替えた変異で示した）。
+        while not (go.is_set() or stop.is_set()):
+            go.wait(0.05)
+        work(box)
+
     boxes: list[pathlib.Path] = []
     try:
         for _ in range(min(jobs, len(claims))):
             boxes.append(make_sandbox(root))
         if len(boxes) == 1:
-            go.set()
             work(boxes[0])
         else:
             with ThreadPoolExecutor(max_workers=len(boxes)) as pool:
                 # **起こしている途中の中断も受ける。** **`submit` を `try` の外に置くと、
-                # 起きた作業者が `go` を待ったまま `with` の後始末に待たれ、終わらない。**
+                # `stop` が立たず、起きた作業者が `go` を待ったまま `with` の後始末に待たれ、終わらない。**
                 try:
-                    futures = [pool.submit(work, box) for box in boxes]
+                    futures = [pool.submit(gated, box) for box in boxes]
                     # **ここまで来れば、起こした作業者は全員 `with` の後始末に待たれる。**
                     # **`ThreadPoolExecutor` はスレッドを起こしてから数に入れる**ので、
                     # **その間に中断されると、起きた作業者が待たれずに残る**——**先に主張を
@@ -554,8 +561,6 @@ def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[
                     # **走っている `red` が終わるのは待つ**——**待たずに畳むと、
                     # 走っている `red` の足元から退避先を消す。**
                     stop.set()
-                    # **待っている作業者を起こす。** **`stop` を見て、何も取らずに抜ける。**
-                    go.set()
                     raise
     finally:
         # **退避先は全部畳む。** **作った分だけ**——**途中の `make_sandbox` が落ちても、

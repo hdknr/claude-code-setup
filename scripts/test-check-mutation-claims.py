@@ -55,6 +55,36 @@ SCRIPT = REAL_REPO / "scripts" / "check-mutation-claims.py"
 failures: list[str] = []
 
 
+# **観測 1 回（変異の前の本体・変異 1 件）にかけてよい秒数。** 止まらなければ数秒で終わる。
+SNAPSHOT_LIMIT = 120
+
+
+@contextlib.contextmanager
+def watchdog(what: str, escape: Path, tmp: Path):
+    """**止まって返らない変異を、失敗として終わらせる**（#431）。
+
+    **作業者に待たせる仕組みを壊す変異は、観測を止めたまま返さない**——**赤くはなるが、
+    失敗のメッセージを出さずに CI のジョブの時間切れまで止まる**（狭いパスの Verifier が示した）。
+    **止まった作業者は `with` の後始末が待つので、このプロセスは普通には終われない**
+    ——**後始末をしてから `os._exit` で抜ける。**
+    """
+    def hung() -> None:
+        # **観測は標準出力を差し替えている**ので、元の出力に書く。
+        print(f"  FAIL {what}（観測が {SNAPSHOT_LIMIT} 秒で返らない——止まった）",
+              file=sys.__stdout__, flush=True)
+        escape.unlink(missing_ok=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+        os._exit(1)
+
+    timer = threading.Timer(SNAPSHOT_LIMIT, hung)
+    timer.daemon = True
+    timer.start()
+    try:
+        yield
+    finally:
+        timer.cancel()
+
+
 def check(name: str, cond: bool) -> None:
     print(f"  {'ok  ' if cond else 'FAIL'} {name}")
     if not cond:
@@ -571,16 +601,33 @@ def observe_midstart(mod, root: Path) -> dict:
     **投げる前に間を置く**——**作業者に主張を取らせる形なら、その間に取る。**
     **終わったあと、待たれなかった作業者も終わるのを待ってから数える**
     ——**数える前に返ると、あとから当てた主張が数に入らない。**
+
+    **本体は別のスレッドで回し、`PARALLEL_WAIT` 秒で返らなければ「止まった」と数える。**
+    **中断で `stop` を立てない変異では、作業者が合図を待ったまま `with` の後始末が終わらない**
+    ——**数えたあと、本体が作った `Event` を全部立てて作業者を起こす**（このプロセスが終われるように）。
+    **`Event` を記録するのは本体の `threading` の参照だけ**——**このテストの待ち合わせには触れない。**
     """
     judged: list[int] = []
+    events: list[threading.Event] = []
     real_judge = mod.judge
     real_start = threading.Thread.start
-    caller = threading.current_thread()
+    real_threading = mod.threading
     started: list[threading.Thread] = []
+    outcome: dict = {"raised": None}
+
+    class Recording:
+        def __getattr__(self, name):
+            return getattr(threading, name)
+
+        @staticmethod
+        def Event():
+            event = threading.Event()
+            events.append(event)
+            return event
 
     def start(self):
         real_start(self)
-        if threading.current_thread() is caller:
+        if threading.current_thread() is runner:
             started.append(self)
             if len(started) == 2:
                 time.sleep(0.3)
@@ -590,24 +637,35 @@ def observe_midstart(mod, root: Path) -> dict:
         judged.append(claim.lineno)
         return real_judge(claim, box, baselines)
 
+    def run():
+        try:
+            mod.main(["--jobs", "2", str(root)])
+        except BaseException as exc:  # noqa: BLE001 — 中断を受けるのがこの観測
+            outcome["raised"] = type(exc).__name__
+
+    runner = threading.Thread(target=run, daemon=True)
     mod.judge = recording
+    mod.threading = Recording()
     threading.Thread.start = start
     try:
         with sweeping(mod) as made, \
                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            raised = None
-            try:
-                mod.main(["--jobs", "2", str(root)])
-            except BaseException as exc:  # noqa: BLE001 — 中断を受けるのがこの観測
-                raised = type(exc).__name__
+            runner.start()
+            runner.join(PARALLEL_WAIT)
+            hung = runner.is_alive()
+            if hung:
+                for event in events:
+                    event.set()
+                runner.join(PARALLEL_WAIT * 4)
             threading.Thread.start = real_start
             for thread in started:
                 thread.join(PARALLEL_WAIT)
             left = sum(1 for box in made if box.exists())
     finally:
         threading.Thread.start = real_start
+        mod.threading = real_threading
         mod.judge = real_judge
-    return {"raised": raised, "judged": sorted(judged), "left": left}
+    return {"raised": outcome["raised"], "judged": sorted(judged), "hung": hung, "left": left}
 
 
 def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
@@ -876,12 +934,12 @@ MUTATIONS = {
         "            pass\n    return results"),
     # 守る 21: 中断されたら、作業者は次の主張を取らない（#431）
     "中断されても作業者に次を取らせる": (
-        "                    stop.set()\n                    # **待っている",
-        "                    pass\n                    # **待っている"),
+        "                    stop.set()\n                    raise\n",
+        "                    pass\n                    raise\n"),
     # 守る 22: 作業者を全員起こし終えるまで、どの作業者も主張を取らない（#431）
     "作業者を起こし終える前に主張を取らせる": (
-        "            go.wait()\n",
-        "            pass\n"),
+        "        while not (go.is_set() or stop.is_set()):\n            go.wait(0.05)\n",
+        "        pass\n"),
 }
 
 
@@ -920,7 +978,8 @@ def run_all(escape: Path) -> int:
         build_interrupt(intr)
 
         mod = load()
-        base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
+        with watchdog("変異の前の本体の観測", escape, Path(tmp)):
+            base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
         (rc, out), (rc_na, out_na), (rc_missing, _), leak, para, stopped, midstart = base
         got = verdicts(out)
 
@@ -1083,6 +1142,7 @@ def run_all(escape: Path) -> int:
         check("起こしている途中の中断も投げ直す", midstart["raised"] == "KeyboardInterrupt")
         check("起こしている途中に中断されたら、どの作業者も主張を取らない（守る 22）",
               midstart["judged"] == [])
+        check("起こしている途中の中断で止まらない（中断が `stop` を立てる）", not midstart["hung"])
         check("起こしている途中の中断のあとも退避先が 1 つも残らない", midstart["left"] == 0)
         check("並列でも判定と終了コードは直列と同じ（既定の並列の観測と `--jobs 1` を比べる）",
               observe(mod, root, "--jobs", "1") == (rc, out))
@@ -1112,8 +1172,9 @@ def run_all(escape: Path) -> int:
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
-            changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent, par,
-                               intr) != base
+            with watchdog(f"変異を殺せる: {name}", escape, Path(tmp)):
+                changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent, par,
+                                   intr) != base
             # **変異が的を書き換えたまま終わることがある**（復元は `judge` の中だけ）。
             # **次の変異の観測を汚さないよう、毎回戻す。**
             if escape.read_text(encoding="utf-8") != ESCAPE_BODY:
