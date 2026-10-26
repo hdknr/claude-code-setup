@@ -146,14 +146,6 @@ while not (d / "{{other}}").exists():
         sys.exit(1)
     time.sleep(0.02)
 """.format(flags=FLAGS)
-INTERVAL = """\
-import pathlib, time
-d = pathlib.Path("{flags}")
-d.mkdir(exist_ok=True)
-start = time.time()
-time.sleep(0.1)
-(d / "ser-{{me}}").write_text(f"{{{{start}}}} {{{{time.time()}}}}")
-""".format(flags=FLAGS)
 
 
 def clear_flags(root: Path) -> None:
@@ -162,11 +154,6 @@ def clear_flags(root: Path) -> None:
     if d.exists():
         for f in d.iterdir():
             f.unlink()
-
-
-def interval(root: Path, me: str) -> tuple[float, float]:
-    start, end = (root / FLAGS / f"ser-{me}").read_text().split()
-    return float(start), float(end)
 
 
 def order(out: str) -> list[str]:
@@ -201,9 +188,6 @@ def build_fake(root: Path) -> Path:
     # **互いの開始を待ち合わせる 2 本。** 同時に走らなければ、片方が時間切れで落ちる。
     for me, other in (("a", "b"), ("b", "a")):
         (scripts / f"par-{me}.py").write_text(BARRIER.format(me=me, other=other))
-    # **開始と終了の時刻を残す 2 本。** 区間が重なれば、同時に走っている。
-    for me in ("a", "b"):
-        (scripts / f"ser-{me}.py").write_text(INTERVAL.format(me=me))
     target = scripts / "check-all.py"
     target.write_text(TARGET.read_text())
     return target
@@ -285,19 +269,18 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
     got.append(("--jobs 2 で同時に走る", rc == 0))
 
-    # 6) --jobs 1 なら同時に走らない（区間が重ならない）
+    # 6) --jobs 1 なら同時に走らない（待ち合わせる 2 本の先の 1 本が、相手を待って時間切れで落ちる）
+    #    **区間の重なりでは見ない**（#431）——**0.1 秒の区間は起動の遅れに負ける。**
+    #    `test-check-all.py` を同時に 30 本 × 2 回走らせると、60 回中 7 回、2 本が同時に起動しても
+    #    区間が重ならず、「--jobs を無視する」変異を取りこぼした（`check-all.py` の中でも 1 回踏んだ）。
+    #    **待ち合わせは相手を 2 秒待つ**ので、同時に起動していれば、遅れても出会う。
     mod = load(target, f"{tag}_ser")
     mod.SCRIPTS = root / "scripts"
-    mod.GUARDS = [("ser-a.py", [], False), ("ser-b.py", [], False)]
+    mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
     mod.TESTS = []
     clear_flags(root)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "1"])
-    try:
-        (a0, a1), (b0, b1) = interval(root, "a"), interval(root, "b")
-        serial = a1 <= b0 or b1 <= a0
-    except (OSError, ValueError):
-        serial = False
-    got.append(("--jobs 1 で同時に走らない", rc == 0 and serial))
+    got.append(("--jobs 1 で同時に走らない", rc != 0 and "相手が来ない" in out))
 
     # 7) 既定（--jobs を渡さない）でも同時に走る——既定が直列なら速くならない。
     #    **区間の重なりではなく待ち合わせで見る**——重なりは起動の遅れに負けるが、
