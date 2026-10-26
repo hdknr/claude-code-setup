@@ -13,11 +13,14 @@
 **変異テストを含む。** 本体の docstring の「守る」の各行に変異を 1 つ以上当て、
 **壊したのに緑のままなら失格**とする。**変異の前に、元の本体で全部緑であること（陽性対照）を見る。**
 """
+import builtins
 import contextlib
 import importlib.util
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -112,6 +115,11 @@ esac
         return self
 
 
+PATH_READS = ("read_text", "read_bytes", "open", "stat", "exists", "is_file", "is_dir", "iterdir", "glob", "rglob")
+READ_ENTRIES = ([(Path, n) for n in PATH_READS]
+                + [(builtins, "open"), (subprocess, "run"), (subprocess, "Popen")])
+
+
 @contextlib.contextmanager
 def recording_reads():
     """OS への読む入口を呼ばれた順に記録する（呼び出しはそのまま通す）。
@@ -119,15 +127,14 @@ def recording_reads():
     **関数名ではなく OS への入口で見る**——本体の読む入口は道具関数に散っており
     （`read_json`・`run`・`managed_dropins`・`global_config_path`）、関数名でフックすると
     入口を足すたびに素通りする（#424 の N2: `check_notifications` を呼ぶ変異が素通りした）。
-    **取りこぼす形**: `os.stat`・`os.listdir`・`os.scandir` を直に呼ぶ読み方と、環境変数の読み取り。
-    本体はいまどれも使っていない。**記録器が効いていることは、使う側が陽性対照で見る。**"""
-    import builtins
-    import subprocess
+    **記録するのは `READ_ENTRIES` だけで、ほかは素通りする**——`Path` の他のメソッド（`resolve` など。
+    3.14 では `lstat`・`is_symlink` も `stat` を経由しない）・`os` の直呼び（`os.stat`・`os.listdir`・
+    `os.path.*`・`os.open`・`os.system`）・`io.open`・import 時に束ねた名前（`from subprocess import run`）・
+    環境変数の読み取り。本体は `--push-result` の分岐でどれも使っていない（環境変数は全点検の側で読む）。
+    **`os` まで差し替えないのは、argparse が gettext 経由で `os.stat` を呼ぶから**——記録が本体の読みでなくなる。
+    **記録器が効いていることは、使う側が陽性対照で見る。**"""
     reads: list[str] = []
-    targets = [(Path, n) for n in ("read_text", "read_bytes", "open", "stat", "exists", "is_file",
-                                   "is_dir", "iterdir", "glob", "rglob")]
-    targets += [(builtins, "open"), (subprocess, "run"), (subprocess, "Popen")]
-    originals = [(owner, name, getattr(owner, name)) for owner, name in targets]
+    originals = [(owner, name, getattr(owner, name)) for owner, name in READ_ENTRIES]
 
     def wrap(name, f):
         def recorded(*a, **k):
@@ -478,7 +485,7 @@ def suite(script: Path) -> list[str]:
         check(f"返り値 {text!r} の原因と対処", cause in got_cause and fix in got_fix, bad)
     check("知らない返り値は、その文字列を原因に出す", "'Notification delivered.'" in unknown[0][2], bad)
     check("使用中の原因はフォーカスと 60 秒を言う（本体の Ins() と P3e=60000）",
-          "フォーカス" in active[0][2] and "60 秒以内" in active[0][2], bad)
+          "フォーカス" in active[0][2] and "から 60 秒以内" in active[0][2], bad)
     with scenario(script) as env:
         env.all_good()
         before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
@@ -499,6 +506,11 @@ def suite(script: Path) -> list[str]:
                 with recording_reads() as reads, contextlib.redirect_stdout(buf):
                     code = mod.main(argv + paths)
                 runs[key] = (code, buf.getvalue(), list(reads))
+            # 陽性対照のもう半分: 本体の run() から subprocess に届くこと（Linux の全点検はコマンドを走らせない）
+            with recording_reads() as reads:
+                patched = all(getattr(o, n).__name__ == "recorded" for o, n in READ_ENTRIES)
+                mod.run([sys.executable, "-c", ""])
+            runs["cmd"] = (patched, list(reads))
         finally:
             for k, v in saved.items():
                 if v is None:
@@ -513,8 +525,13 @@ def suite(script: Path) -> list[str]:
         code, out, reads = runs["empty"]
         check("空の --push-result も判定に回り、全点検に落ちない（2）",
               code == 2 and "[判定できない] 通知の試験" in out and "設定の層" not in out and reads == [], bad)
-        # 陽性対照: 同じ記録器が全点検の読みを拾う——拾わなければ上の「読まない」は何も証明しない
-        check("記録器は全点検の読みを拾う（陽性対照）", runs["full"][2] != [] and "設定の層" in runs["full"][1], bad)
+        # 陽性対照: 同じ記録器が全点検の読みを拾う——拾わなければ上の「読まない」は何も証明しない。
+        # 「何か 1 つ拾った」では足りない（コマンドだけ拾って Path の差し替えが死んでいても緑になる）ので、入口の種類ごとに見る
+        check("記録器は全点検の Path の読みを拾う（陽性対照）",
+              bool(set(PATH_READS) & set(runs["full"][2])) and "設定の層" in runs["full"][1], bad)
+        patched, cmd_reads = runs["cmd"]
+        check("記録器は全部の入口を差し替え、本体の run() のコマンドを拾う（陽性対照）",
+              patched and "run" in cmd_reads, bad)
         check("--push-result は何も書かない", before == after, bad)
 
     # 人が見る: Remote Control は claude rc との違い、モバイルの登録は通知の試験を指す
@@ -669,6 +686,9 @@ MUTATIONS = {
     "使用中の 60 秒を 30 秒にする": (
         "分からなければ最後の操作から 60 秒以内）\",",
         "分からなければ最後の操作から 30 秒以内）\","),
+    "使用中の 60 秒を 160 秒にする": (  # 「60 秒以内」の部分一致では素通りする
+        "分からなければ最後の操作から 60 秒以内）\",",
+        "分からなければ最後の操作から 160 秒以内）\","),
     "--push-result のあと設定を読むが出さない": (
         "        return report_push(check_push_result(args.push_result))\n",
         "        gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
