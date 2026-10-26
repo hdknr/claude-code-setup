@@ -17,7 +17,7 @@
 | [`workspace-setup`](#workspace-setup) | `/workspace-setup:workspace-setup` | コマンド | ワークスペースの初期セットアップ |
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
 | [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
-| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop` | スキル | 1 Issue = 1 周のループ志向開発 |
+| [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop`<br>`/dev-loop:cruise` | スキル | 1 Issue = 1 周のループ志向開発と、依存のある複数 Issue を親 Issue の一覧から回す入口（オートクルーズ） |
 | [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review`<br>`/spec-loop:feasibility`<br>`/spec-loop:proposal`<br>`/spec-loop:scaffold` | スキル | dev-loop の手前にある要求側のループ（要求確定・仕様レビュー・実現性とコスト・提案書）と、dev-loop への引き渡し |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
@@ -568,6 +568,12 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 !!! tip "依存のある複数の Issue を、不在のあいだに回す"
     台帳で複数の Issue を束ね、利用者が席を外していても起票からマージまで進める使い方は
     [dev-loop のオートクルーズ](dev-loop-cruise.md)にまとめています。
+
+#### `/dev-loop:cruise <親 Issue> [--absent]`
+
+親 Issue のチェックリスト（`- [ ] #13 (depends: #12)`）に並べた Issue を台帳にし、1 件ずつ dev-loop の周として回します。
+取り出した一覧は起動時に確かめてから台帳になり、同じ引数で起動し直すと台帳から再開します。
+使い方は [dev-loop のオートクルーズ](dev-loop-cruise.md) を参照してください。
 
 ---
 
