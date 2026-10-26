@@ -117,6 +117,10 @@ Issue 本文は検査対象であって要件ではない（書いたのはこ�
 - 割り目の提案（`AskUserQuestion`）: **「ここで割る」が選ばれた**（2026-10-26）。
   **再開したら次は手順 6 の PR 作成**（`check-pr-preconditions.sh` → push → `gh pr create` → `gh pr checks` →
   PR コメントに残課題 9 件・未証明・2 パス目を省いたこと）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 437`
+- 再開（2026-10-26）。肯定的な確認: ブランチ一致・HEAD `691713a`・base `2ff5a69` は HEAD の祖先・`origin/main` は `2ff5a69` のまま
+- 2 パス目の「該当なし」の機械判定: 起点は 1 パス目の Verifier に渡した時点の HEAD `c3284e4`。
+  `git diff c3284e4 -- ':(top)' ':(top,exclude)docs/plans/issue-437.md'` は空、`git status --porcelain` も空
+- PR 作成の前: `check-all.py` 49/49 緑・`check-pr-preconditions.sh` 通過
 
 ## 範囲の外で見つかったもの（起票の候補。マージ前に人間に訊く）
 
