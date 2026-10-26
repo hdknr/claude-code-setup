@@ -41,15 +41,48 @@ import json
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "scripts" / "check-mutation-claims.py"
 
 failures: list[str] = []
+
+
+# **観測 1 回（変異の前の本体・変異 1 件）にかけてよい秒数。** 止まらなければ数秒で終わる。
+SNAPSHOT_LIMIT = 120
+
+
+@contextlib.contextmanager
+def watchdog(what: str, escape: Path, tmp: Path):
+    """**止まって返らない変異を、失敗として終わらせる**（#431）。
+
+    **作業者に待たせる仕組みを壊す変異は、観測を止めたまま返さない**——**赤くはなるが、
+    失敗のメッセージを出さずに CI のジョブの時間切れまで止まる**（狭いパスの Verifier が示した）。
+    **止まった作業者は `with` の後始末が待つので、このプロセスは普通には終われない**
+    ——**後始末をしてから `os._exit` で抜ける。**
+    """
+    def hung() -> None:
+        # **観測は標準出力を差し替えている**ので、元の出力に書く。
+        print(f"  FAIL {what}（観測が {SNAPSHOT_LIMIT} 秒で返らない——止まった）",
+              file=sys.__stdout__, flush=True)
+        escape.unlink(missing_ok=True)
+        shutil.rmtree(tmp, ignore_errors=True)
+        os._exit(1)
+
+    timer = threading.Timer(SNAPSHOT_LIMIT, hung)
+    timer.daemon = True
+    timer.start()
+    try:
+        yield
+    finally:
+        timer.cancel()
 
 
 def check(name: str, cond: bool) -> None:
@@ -380,15 +413,259 @@ def build_only_not_applied(root: Path) -> None:
         encoding="utf-8")
 
 
-def observe(mod, root: Path) -> tuple[int, str]:
+@contextlib.contextmanager
+def sweeping(mod):
+    """本体が作った退避先を記録し、**抜けるときに掃く**。記録した並びを渡す。
+
+    **「畳まない」変異（#431）が実 `$TMPDIR` に退避先を残さないため。**
+    **掃く前に数えるのは呼ぶ側の仕事**——ここは数えずに掃くだけ。
+    """
+    made: list[Path] = []
+    real_make = mod.make_sandbox
+
+    def recording(root):
+        box = real_make(root)
+        made.append(box)
+        return box
+
+    mod.make_sandbox = recording
+    try:
+        yield made
+    finally:
+        mod.make_sandbox = real_make
+        for box in made:
+            shutil.rmtree(box, ignore_errors=True)
+
+
+def observe(mod, root: Path, *args: str) -> tuple[int, str]:
     """本体の判定をまとめて観測する。**判定と理由の両方を見る。**"""
     buf = io.StringIO()
     try:
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            rc = mod.main([str(root)])
+        with sweeping(mod), contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            rc = mod.main([*args, str(root)])
     except Exception as exc:  # noqa: BLE001 — 変異で落ちるのは「殺せた」と数える
         return -1, f"{type(exc).__name__}"
     return rc, buf.getvalue()
+
+
+# **待ち合わせの時間切れ。** **直列に戻す変異では、毎回これだけ待つ。**
+# **並列なら 2 人がすぐに揃う**（退避先は作業者を起こす前に作り終えている）。
+PARALLEL_WAIT = 5
+
+
+def build_parallel(root: Path) -> None:
+    """**2 件だけ**の木。先頭は `確認`、2 件目は `当てられなかった` になる（#431）。
+
+    **2 件の判定を違えておく**——**同じだと、判定が別の主張に付いても出力が変わらない。**
+    **`SUBJECT` を使わない**——**自分の中にマーカーを 1 つ持つので 3 件になり、
+    3 件目が待ち合わせの相手を持たずに時間切れまで待つ**（置いた直後に自分で踏んだ）。
+    """
+    assert_not_real_repo(root)
+    (root / "scripts").mkdir(parents=True)
+    (root / "scripts" / "subject.py").write_text("# KEEP\n# SENTINEL\n", encoding="utf-8")
+    (root / "scripts" / "subject_test.py").write_text(SUBJECT_TEST, encoding="utf-8")
+    (root / "claims.md").write_text(
+        marker(file="scripts/subject.py", old="# KEEP", new="# GONE", red=RED) + "\n"
+        + marker(file="scripts/subject.py", old="NOWHERE", new="X", red=RED) + "\n",
+        encoding="utf-8")
+
+
+def observe_parallel(mod, root: Path) -> dict:
+    """**並列に当てているか**を観測する（#431）。`--jobs 2` で `build_parallel` の木を当てる。
+
+    **出力だけでは並列かどうか分からない**——**直列でも同じ判定が同じ順に出る。**
+    **だから `judge` を差し替えて、2 件が*同時に*当てられていること（待ち合わせ）と、
+    そのとき別々の退避先にいることを見る。** **先頭の主張を遅く終わらせる**ので、
+    **終わった順に並べる形は判定の対応がずれて出力に出る。**
+    **終わったあとに退避先が残っていないかも数える**（掃くのは `sweeping`）。
+
+    **終了コードと要約の行を返さない。** **この木は `当てられなかった` を含むので、
+    返すと「当てられなかったを緑と数える」変異をここで殺してしまい、
+    `snapshot` の `only_na` の主張（「その木が無いと殺せない」）が偽になる**
+    ——**一度 `rc` を返し、`check-mutation-claims.py` が実リポジトリで
+    その主張を「当てられなかった」にした。** **返すのは並列化の観測だけ。**
+    """
+    barrier = threading.Barrier(2, timeout=PARALLEL_WAIT)
+    met: list[bool] = []
+    boxes: set[str] = set()
+    real_judge = mod.judge
+
+    def meeting(claim, box, baselines):
+        boxes.add(str(box))
+        try:
+            barrier.wait()
+            met.append(True)
+        except threading.BrokenBarrierError:
+            met.append(False)
+        verdict = real_judge(claim, box, baselines)
+        if claim.lineno == 1:
+            time.sleep(0.3)
+        return verdict
+
+    buf = io.StringIO()
+    mod.judge = meeting
+    try:
+        with sweeping(mod) as made, \
+                contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            raised = None
+            try:
+                mod.main(["--jobs", "2", str(root)])
+            except Exception as exc:  # noqa: BLE001 — 変異で落ちるのは「殺せた」と数える
+                raised = type(exc).__name__
+            left = sum(1 for box in made if box.exists())
+    finally:
+        mod.judge = real_judge
+    order = []
+    for line in buf.getvalue().splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in ("確認", "緑のまま", "当てられなかった"):
+            order.append((parts[1].rstrip(":"), parts[0]))
+    return {"raised": raised, "met": met, "boxes": len(boxes), "order": order, "left": left}
+
+
+def build_interrupt(root: Path) -> None:
+    """**3 件**の木。2 人の作業者が先頭の 2 件を当てている最中に中断する（守る 21 / #431）。
+
+    **3 件目は、中断のあとに作業者が次を取ったかどうかの証拠になる。**
+    """
+    assert_not_real_repo(root)
+    (root / "scripts").mkdir(parents=True)
+    (root / "scripts" / "subject.py").write_text("# KEEP\n# SENTINEL\n", encoding="utf-8")
+    (root / "scripts" / "subject_test.py").write_text(SUBJECT_TEST, encoding="utf-8")
+    (root / "claims.md").write_text(
+        "".join(marker(file="scripts/subject.py", old=old, new="X", red=RED) + "\n"
+                for old in ("# KEEP", "# SENTINEL", "NOWHERE")),
+        encoding="utf-8")
+
+
+def observe_interrupt(mod, root: Path) -> dict:
+    """**中断のあとに次の主張を取らないか**を観測する（守る 21 / #431）。`--jobs 2` で当てる。
+
+    **本物の SIGINT を自分に送る**——**中断が届くのは主スレッドだけで、作業者には届かない。**
+    **その差を作るのが本物の配送なので、作業者の中で例外を投げて真似てはならない。**
+    **2 人が待ち合わせてから送り、主スレッドが受け取ったのを見てから当て終える**
+    ——**受け取る前に終えると、止める前に次を取ってしまい、本体が正しくても 3 件目が当たる。**
+    **SIGINT の扱いはここで既定に戻す**——**非対話のシェルの背景で起こすと無視になっている。**
+    """
+    barrier = threading.Barrier(2, timeout=PARALLEL_WAIT)
+    arrived = threading.Event()
+    judged: list[int] = []
+    real_judge = mod.judge
+
+    def handler(signum, frame):
+        arrived.set()
+        raise KeyboardInterrupt
+
+    def interrupted(claim, box, baselines):
+        judged.append(claim.lineno)
+        if claim.lineno in (1, 2):
+            try:
+                barrier.wait()
+            except threading.BrokenBarrierError:
+                pass
+            if claim.lineno == 1:
+                # **主スレッドを名指しして送る。** `os.kill` でプロセスに送ると、
+                # **作業者のスレッドに配送されることがあり、主スレッドは待ちから起きない**
+                # ——**本体が正しくても 3 件目が当たる**（置いた直後に 3 回中 1 回踏んだ）。
+                signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+            arrived.wait(PARALLEL_WAIT)
+            # **受け取った直後の数行（`stop.set()`）を主スレッドが進める間を置く。**
+            time.sleep(0.2)
+        return real_judge(claim, box, baselines)
+
+    previous = signal.signal(signal.SIGINT, handler)
+    mod.judge = interrupted
+    try:
+        with sweeping(mod) as made, \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            raised = None
+            try:
+                mod.main(["--jobs", "2", str(root)])
+            except BaseException as exc:  # noqa: BLE001 — 中断を受けるのがこの観測
+                raised = type(exc).__name__
+            left = sum(1 for box in made if box.exists())
+    finally:
+        mod.judge = real_judge
+        signal.signal(signal.SIGINT, previous)
+    return {"raised": raised, "judged": sorted(judged), "left": left}
+
+
+def observe_midstart(mod, root: Path) -> dict:
+    """**作業者を起こしている途中の中断**を観測する（守る 22 / #431）。`--jobs 2` で当てる。
+
+    **`ThreadPoolExecutor` はスレッドを起こしてから数に入れる**ので、**その間の中断では、
+    起きた作業者が `with` の後始末に待たれない。** **本物の SIGINT はそこに着地することも
+    しないこともある**（2 パス目の `/code-review` の実測で 40 回中 9 回）——**揺れる観測では
+    変異を殺せたり殺せなかったりする。** **だから `Thread.start` を差し替え、2 人目を起こした
+    直後に `KeyboardInterrupt` を投げて、その間を決定的に作る。**
+    **投げる前に間を置く**——**作業者に主張を取らせる形なら、その間に取る。**
+    **終わったあと、待たれなかった作業者も終わるのを待ってから数える**
+    ——**数える前に返ると、あとから当てた主張が数に入らない。**
+
+    **本体は別のスレッドで回し、`PARALLEL_WAIT` 秒で返らなければ「止まった」と数える。**
+    **中断で `stop` を立てない変異では、作業者が合図を待ったまま `with` の後始末が終わらない**
+    ——**数えたあと、本体が作った `Event` を全部立てて作業者を起こす**（このプロセスが終われるように）。
+    **`Event` を記録するのは本体の `threading` の参照だけ**——**このテストの待ち合わせには触れない。**
+    """
+    judged: list[int] = []
+    events: list[threading.Event] = []
+    real_judge = mod.judge
+    real_start = threading.Thread.start
+    real_threading = mod.threading
+    started: list[threading.Thread] = []
+    outcome: dict = {"raised": None}
+
+    class Recording:
+        def __getattr__(self, name):
+            return getattr(threading, name)
+
+        @staticmethod
+        def Event():
+            event = threading.Event()
+            events.append(event)
+            return event
+
+    def start(self):
+        real_start(self)
+        if threading.current_thread() is runner:
+            started.append(self)
+            if len(started) == 2:
+                time.sleep(0.3)
+                raise KeyboardInterrupt
+
+    def recording(claim, box, baselines):
+        judged.append(claim.lineno)
+        return real_judge(claim, box, baselines)
+
+    def run():
+        try:
+            mod.main(["--jobs", "2", str(root)])
+        except BaseException as exc:  # noqa: BLE001 — 中断を受けるのがこの観測
+            outcome["raised"] = type(exc).__name__
+
+    runner = threading.Thread(target=run, daemon=True)
+    mod.judge = recording
+    mod.threading = Recording()
+    threading.Thread.start = start
+    try:
+        with sweeping(mod) as made, \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            runner.start()
+            runner.join(PARALLEL_WAIT)
+            hung = runner.is_alive()
+            if hung:
+                for event in events:
+                    event.set()
+                runner.join(PARALLEL_WAIT * 4)
+            threading.Thread.start = real_start
+            for thread in started:
+                thread.join(PARALLEL_WAIT)
+            left = sum(1 for box in made if box.exists())
+    finally:
+        threading.Thread.start = real_start
+        mod.threading = real_threading
+        mod.judge = real_judge
+    return {"raised": outcome["raised"], "judged": sorted(judged), "hung": hung, "left": left}
 
 
 def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
@@ -522,8 +799,8 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
 
 
 def snapshot(mod, root: Path, only_na: Path, missing: Path,
-             leak_root: Path, leak_parent: Path) -> tuple:
-    """4 つの観測を、まとめて 1 つにする。
+             leak_root: Path, leak_parent: Path, par: Path, intr: Path) -> tuple:
+    """観測を、まとめて 1 つにする。
 
     **どれが欠けても殺せない変異がある。**
     """
@@ -549,6 +826,15 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         # **だから、キーをそのまま持つ定数の辞書にする**——**形を変えずに、観測だけ殺す。**
         # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        {\"inside\": \"RuntimeError\", \"inside_left\": 0, \"dotgit\": \"RuntimeError\", \"dotgit_left\": 0, \"stopped\": \"KeyboardInterrupt\", \"stopped_left\": 0, \"unresolved\": \"OSError\", \"unresolved_left\": 0, \"normal\": (True, True)},", "red": "python3 scripts/test-check-mutation-claims.py"}
         observe_leak(mod, leak_root, leak_parent),
+        # **これが無いと並列化の変異（#431）が殺せない**——**直列に戻しても、
+        # 退避先を共有しても、ほかの観測は同じ判定を同じ順に返す。**
+        observe_parallel(mod, par),
+        # **これが無いと「中断されても作業者に次を取らせる」変異が殺せない**——
+        # **上の観測はどれも中断しないか、作業者を起こす前に中断する。**
+        observe_interrupt(mod, intr),
+        # **これが無いと「作業者を起こし終える前に主張を取らせる」変異が殺せない**——
+        # **上の観測は全員を起こし終えてから中断する。**
+        observe_midstart(mod, intr),
     )
 
 
@@ -630,6 +916,30 @@ MUTATIONS = {
     "当て直した 2 回の揺れを見ない": (
         "    if first != second:",
         "    if False:"),
+    # 守る 17: 主張を並列に当てる（#431）
+    "`--jobs` を無視して直列に当てる": (
+        "        for _ in range(min(jobs, len(claims))):",
+        "        for _ in range(min(1, len(claims))):"),
+    # 守る 18: 同時に当てる作業者どうしは退避先を共有しない（#431）
+    "作業者で退避先を共有する": (
+        "            boxes.append(make_sandbox(root))",
+        "            boxes.append(boxes[0] if boxes else make_sandbox(root))"),
+    # 守る 19: 出力は主張の収集順（#431）
+    "終わった順に判定を並べる": (
+        "                results[i] = judge(claims[i], box, baselines)",
+        "                results[results.index(None)] = judge(claims[i], box, baselines)"),
+    # 守る 20: 実行が終われば、作った退避先を全部畳む（#431）
+    "退避先を畳まない": (
+        "            shutil.rmtree(box, ignore_errors=True)\n    return results",
+        "            pass\n    return results"),
+    # 守る 21: 中断されたら、作業者は次の主張を取らない（#431）
+    "中断されても作業者に次を取らせる": (
+        "                    stop.set()\n                    raise\n",
+        "                    pass\n                    raise\n"),
+    # 守る 22: 作業者を全員起こし終えるまで、どの作業者も主張を取らない（#431）
+    "作業者を起こし終える前に主張を取らせる": (
+        "        while not (go.is_set() or stop.is_set()):\n            go.wait(0.05)\n",
+        "        pass\n"),
 }
 
 
@@ -660,10 +970,17 @@ def run_all(escape: Path) -> int:
         early = Path(tmp) / "early-exit"
         early.mkdir()
         build_early_exit(early)
+        par = Path(tmp) / "parallel"
+        par.mkdir()
+        build_parallel(par)
+        intr = Path(tmp) / "interrupt"
+        intr.mkdir()
+        build_interrupt(intr)
 
         mod = load()
-        base = snapshot(mod, root, only_na, missing, leak_root, leak_parent)
-        (rc, out), (rc_na, out_na), (rc_missing, _), leak = base
+        with watchdog("変異の前の本体の観測", escape, Path(tmp)):
+            base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
+        (rc, out), (rc_na, out_na), (rc_missing, _), leak, para, stopped, midstart = base
         got = verdicts(out)
 
         print("3 つの判定が出そろうか")
@@ -812,6 +1129,31 @@ def run_all(escape: Path) -> int:
         check("原本を書き換えていない",
               (root / "scripts" / "subject.py").read_text(encoding="utf-8") == SUBJECT)
 
+        print("\n並列に当てる（守る 17〜22 / #431）")
+        check("`--jobs 2` で 2 件が同時に当たる（待ち合わせが揃う）",
+              para["met"] == [True, True])
+        check("同時に当てた 2 件は別の退避先にいる", para["boxes"] == 2)
+        check("出力は収集順で、判定が自分の主張に付く",
+              para["order"] == [("claims.md:1", "確認"), ("claims.md:2", "当てられなかった")])
+        check("終わったあと退避先が 1 つも残らない", para["left"] == 0)
+        check("中断は投げ直す", stopped["raised"] == "KeyboardInterrupt")
+        check("中断のあと、作業者は次の主張を取らない（守る 21）", stopped["judged"] == [1, 2])
+        check("中断のあとも退避先が 1 つも残らない", stopped["left"] == 0)
+        check("起こしている途中の中断も投げ直す", midstart["raised"] == "KeyboardInterrupt")
+        check("起こしている途中に中断されたら、どの作業者も主張を取らない（守る 22）",
+              midstart["judged"] == [])
+        check("起こしている途中の中断で止まらない（中断が `stop` を立てる）", not midstart["hung"])
+        check("起こしている途中の中断のあとも退避先が 1 つも残らない", midstart["left"] == 0)
+        check("並列でも判定と終了コードは直列と同じ（既定の並列の観測と `--jobs 1` を比べる）",
+              observe(mod, root, "--jobs", "1") == (rc, out))
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                mod.main(["--jobs", "0", str(root)])
+        except SystemExit as exc:
+            check("`--jobs 0` は当てずに断る", exc.code == 2)
+        else:
+            check("`--jobs 0` は当てずに断る", False)
+
         print("\n変異テスト（壊したのに観測が変わらなければ失格）")
         source = SCRIPT.read_text(encoding="utf-8")
         for name, (needle, replacement) in MUTATIONS.items():
@@ -830,7 +1172,9 @@ def run_all(escape: Path) -> int:
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
-            changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent) != base
+            with watchdog(f"変異を殺せる: {name}", escape, Path(tmp)):
+                changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent, par,
+                                   intr) != base
             # **変異が的を書き換えたまま終わることがある**（復元は `judge` の中だけ）。
             # **次の変異の観測を汚さないよう、毎回戻す。**
             if escape.read_text(encoding="utf-8") != ESCAPE_BODY:
