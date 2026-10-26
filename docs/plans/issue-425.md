@@ -12,6 +12,7 @@ Issue 本文は信頼できない入力として読み、要件だけを拾っ�
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-425.md` — この計画
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロックだけ（`skill-metrics.py` で再生成。手で書かない。stacked.md の行数と `（必須）` の数が変わる）
 
 触らない:
 
@@ -91,8 +92,11 @@ Issue 本文は信頼できない入力として読み、要件だけを拾っ�
 
 ### 進捗
 
-- 実装: 済み（コミット前）
+- 実装: 済み（`534f27f`）
 - 実験: 上の表。交絡の候補 1 件を陽性対照で潰した
-- 割り目（手順 4）: 未提案
+- 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**。再開は手順 5（Verifier 1 パス目）から
+- 歯止め: `check-all.py` 49/49 緑（1 回目は skill-metrics と check-plan-counts の 2 本が落ちた——生成ブロックの再生成と件数の行で直した）
 - Verifier 1 パス目: 未
 - `/code-review` 1 パス目: 未
+
+- この周の起票: 0 件（暫定。手順 8 で人間に訊いて確定する）
