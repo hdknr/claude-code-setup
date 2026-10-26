@@ -146,6 +146,7 @@
 - 2 パス目の指摘対応: `b4fe8dc`（stacked.md: R2・R3・R7・R8、ledger.md: R6）。R2 と R8 の文面が述べる事実は一時リポジトリで再現した（計画ファイルを未コミットのまま rebase すると rc=1。コミットすると range-diff に `>`。3 点の diff は rebase の前は新しい検査が `A`、後は空——陽性対照つき）。`check-all.py`: 1 回目は `skill-metrics.py --check` だけ赤（stacked.md の行数が変わった）→ 作り直し → 49/49 緑。
 - 狭いパス: 済み（`dev-loop:dev-loop-verifier`・sonnet・`774ee9a..b4fe8dc`）——**反証 3 件**（F1〜F3。下の表。直さず人間に渡す）。著者の変異: なし。Verifier の変異は赤 2（F1 の字面どおりのコミット・F2 の未 push コミット）、素通り 0（「rebase 後に 3 点 diff が空」は未実測と申告——著者の `r2.sh` では実測済み）。`git status` の終了時の差分は親がこの計画ファイルを書いたもの（Verifier はリポジトリに書いていない）。
 - 関門はこれで打ち切り（2 パス＋狭いパス）。次は手順 6 の PR 作成。
+- main の取り込み（2026-10-26）: main が #407（PR #422）で dev-loop を同じ 1.53.0 に上げていた → `git merge origin/main`。衝突は生成ブロックだけ（main 側を取り `skill-metrics.py` で作り直した）。版を **1.54.0** に上げた（3 箇所）。取り込みで入った歯止め: `check-unattended-env.py` とそのテストの変更（`M`）だけで、足された検査は無い。正味の差分は周の 9 ファイルのまま。
 
 ### 狭いパスの採否（人間が決める）
 
