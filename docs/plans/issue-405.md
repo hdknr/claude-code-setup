@@ -86,7 +86,8 @@ CI で確かめるもの: 大文字小文字を区別するファイルシステ
 - 実験: なし（回帰テストの試料のみ）
 - 実装のコミット: `1a9ebbc`。`check-all.py --base origin/main` 49/49 緑
 - 関門 1 パス目: Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 2 件・副次 3 件／`/code-review`（high）指摘 9 件。採否は下の表（直す 6・残課題 5・変更なし 2）
-- 次: 1 パス目の指摘対応 → 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目（両方が残っている）
+- 1 パス目の指摘対応: 済み（`e9aad4f`。直す 6 件すべて。試料 77・変異 85 緑（python3.14・3.12）。`check-all.py --base origin/main` 49/49 緑）
+- 次: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目——**両方とも未**
 - 割り目 1（手順 4 の後）: 提案した → **割る** を選ばれた（2026-10-26）
 - この周の起票: 0 件
 
