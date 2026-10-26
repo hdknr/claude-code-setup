@@ -546,6 +546,13 @@ def observe_interrupt(mod, root: Path) -> dict:
     **2 人が待ち合わせてから送り、主スレッドが受け取ったのを見てから当て終える**
     ——**受け取る前に終えると、止める前に次を取ってしまい、本体が正しくても 3 件目が当たる。**
     **SIGINT の扱いはここで既定に戻す**——**非対話のシェルの背景で起こすと無視になっている。**
+
+    **受け取るまで送り直す**（#447）——**1 回目の SIGINT で主スレッドが起きないことがある。**
+    **そのとき作業者は `PARALLEL_WAIT` 秒を待ち切って当て終え、`stop` が立っていないので 3 件目を取る**
+    ——**本体が正しくても落ちる**（30 本同時の負荷で 600 回中 3〜5 回。落ちた回は全部、
+    2 人の `arrived.wait` が時間切れだった）。**なぜ起きないかは特定していない。**
+    **送り直すので、ハンドラは 1 回だけ投げる**——**2 回目の配送で、主スレッドの後始末の途中に
+    もう 1 度 `KeyboardInterrupt` を起こさないため。**
     """
     barrier = threading.Barrier(2, timeout=PARALLEL_WAIT)
     arrived = threading.Event()
@@ -553,6 +560,8 @@ def observe_interrupt(mod, root: Path) -> dict:
     real_judge = mod.judge
 
     def handler(signum, frame):
+        if arrived.is_set():
+            return
         arrived.set()
         raise KeyboardInterrupt
 
@@ -567,7 +576,10 @@ def observe_interrupt(mod, root: Path) -> dict:
                 # **主スレッドを名指しして送る。** `os.kill` でプロセスに送ると、
                 # **作業者のスレッドに配送されることがあり、主スレッドは待ちから起きない**
                 # ——**本体が正しくても 3 件目が当たる**（置いた直後に 3 回中 1 回踏んだ）。
+                deadline = time.monotonic() + PARALLEL_WAIT
                 signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+                while not arrived.wait(0.1) and time.monotonic() < deadline:
+                    signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
             arrived.wait(PARALLEL_WAIT)
             # **受け取った直後の数行（`stop.set()`）を主スレッドが進める間を置く。**
             time.sleep(0.2)
