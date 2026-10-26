@@ -209,8 +209,9 @@ def untracked_hidden(main, wt):
 
 
 LOWER_HEAD = "e" * 40
+MERGE = "f" * 40  # 下の PR のマージコミット
 LOWER = {"number": 41, "baseRefName": "main", "headRefName": "issue/41-lower", "headRefOid": LOWER_HEAD,
-         "isCrossRepository": False}
+         "isCrossRepository": False, "mergeCommit": {"oid": MERGE}}
 DEVELOP = dict(LOWER, headRefName="develop")
 
 
@@ -282,20 +283,20 @@ CASES = {
         dict(make_view=lambda s: [pr(s, base="develop")]), 0, True, False),
     "base を head にするマージ済み PR があっても、その base に入っていて先へ進んでいればマージする": (
         dict(make_view=lambda s: [pr(s, base="develop")], lowers=[DEVELOP],
-             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 1}), 0, True, False),
+             compare={f"{MERGE}...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 1}), 0, True, False),
     # #426 の 1 パス目: develop を merge commit でリリースした後に機能が入り、先端は main より先にある
     "develop を merge commit でリリースした後、develop が main より先でもマージする": (
         dict(make_view=lambda s: [pr(s, base="develop")], lowers=[DEVELOP],
-             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 3, "main...develop": 3}),
+             compare={f"{MERGE}...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 3, "main...develop": 3}),
         0, True, False),
     "下を merge commit でマージしてブランチを残しても、base が下のままならマージしない": (
         dict(make_view=lambda s: [pr(s, base="issue/41-lower")], lowers=[LOWER],
-             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...issue/41-lower": 0}),
+             compare={f"{MERGE}...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...issue/41-lower": 0}),
         10, False, True, "進んでいない"),
     # 「守らない」に書いた形: merge commit のリリース直後、develop にまだ何も入っていない
     "develop を merge commit でリリースした直後は、develop へ出す PR も止まる（守らない）": (
         dict(make_view=lambda s: [pr(s, base="develop")], lowers=[DEVELOP],
-             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 0}), 10, False, True),
+             compare={f"{MERGE}...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 0}), 10, False, True),
     "待っている間に下がマージされたら、マージの直前に見直して止める": (
         dict(make_view=lambda s: [pr(s, base="issue/41-lower", checks=[
             {"__typename": "CheckRun", "name": "check", "status": "IN_PROGRESS", "conclusion": None}]),
@@ -311,15 +312,29 @@ CASES = {
         0, True, False),
     "base が付け替わっても下の元のコミットがあればマージしない（#427 R4）": (
         dict(make_view=lambda s: [pr(s)], commits=[{"oid": "a" * 40}, {"oid": "b" * 40}],
+             timeline=[["automatic_base_change_succeeded", "2026-10-26T04:09:54Z", ""]],
              merged=[{"number": 41, "commits": [{"oid": "a" * 40}]}]), 10, False, True, "載せ替えていない"),
     "base に別のマージ済み PR があっても、コミットを共有しなければマージする": (
-        dict(make_view=lambda s: [pr(s)], commits=[{"oid": "b" * 40}],
+        dict(make_view=lambda s: [pr(s)], timeline=[CHANGED("2026-10-26T04:19:16Z")],
+             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:20:00Z"}],
              merged=[{"number": 41, "commits": [{"oid": "a" * 40}]}]), 0, True, False),
+    # #426 の 2 パス目: squash した後に同じブランチで続けて出した PR・develop を squash で出すリリースの PR
+    "付け替えていなければ、マージ済みの PR とコミットを共有していてもマージする": (
+        dict(make_view=lambda s: [pr(s)], commits=[{"oid": "a" * 40}, {"oid": "b" * 40}],
+             merged=[{"number": 41, "commits": [{"oid": "a" * 40}]}]), 0, True, False),
+    # #426 の 2 パス目: develop を head にするマージ済み PR の base（リリースのブランチ）が消えている
+    "前のマージ済み PR の base が消えていても、マージコミットと比べてマージする": (
+        dict(make_view=lambda s: [pr(s, base="develop")], lowers=[dict(DEVELOP, baseRefName="release/1.2")],
+             compare={f"release/1.2...{LOWER_HEAD}": "FAIL", f"{MERGE}...{LOWER_HEAD}": 0,
+                      f"{LOWER_HEAD}...develop": 1}), 0, True, False),
+    "マージ済みの PR の mergeCommit が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower")],
+             lowers=[{k: v for k, v in LOWER.items() if k != "mergeCommit"}], ahead=2), 7, False, True),
     # 本物の GitHub（#427）の PR #4 の形: force push → 付け替え → 検査はその後に始まったが base_ref は前の base
     "付け替えより前に届いた head は、検査が後に始まっていてもマージしない（#427 R1）": (
         dict(make_view=lambda s: [pr(s, checks=started("2026-10-26T04:19:21Z"))],
              timeline=[FORCED("2026-10-26T04:19:15Z"), CHANGED("2026-10-26T04:19:16Z")],
-             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:19:14Z"}]), 11, False, True, "push し直す"),
+             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:19:14Z"}]), 11, False, True, "新しいコミットを push する"),
     "付け替えの後のコミットならマージする": (
         dict(make_view=lambda s: [pr(s)], timeline=[CHANGED("2026-10-26T04:19:16Z")],
              commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:20:00Z"}]), 0, True, False),
@@ -346,7 +361,8 @@ CASES = {
     "compare が読めなければ判定できなかった": (
         dict(make_view=lambda s: [pr(s, base="issue/41-lower")], lowers=[LOWER], ahead="FAIL"), 7, False, True),
     "マージ済みの PR の一覧が読めなければ判定できなかった": (
-        dict(make_view=lambda s: [pr(s)], merged="FAIL"), 7, False, True),
+        dict(make_view=lambda s: [pr(s)], timeline=[CHANGED("2026-10-26T04:19:16Z")], merged="FAIL"),
+        7, False, True),
     "既定ブランチが main でなくても、base が既定ブランチならマージする": (
         dict(make_view=lambda s: [pr(s, base="master")], default="master"), 0, True, False),
     "既定ブランチが読めなければマージしない": (dict(make_view=lambda s: [pr(s)], default="FAIL"), 7, False, True),
@@ -381,7 +397,7 @@ MUTATIONS = {
     # 守る 4: 衝突していればマージしない
     "CONFLICTING を見ない": ('if mergeable == "CONFLICTING":', 'if False:'),
     # 守る 5: 下の周がマージされたのに base が下のブランチのまま（squash・rebase）
-    "下の PR の head がその base に入っているかを見ない": ('if ahead_by(lower_base, lower_head) > 0:', 'if False:'),
+    "下の PR の head がその base に入っているかを見ない": ('if ahead_by(merge_oid, lower_head) > 0:', 'if False:'),
     # 守る 6: 下の周を merge commit でマージしてブランチを残した
     "base がマージ済みの head から進んだかを見ない": ('if ahead_by(lower_head, base) == 0:', 'if False:'),
     # 守る 7: 待っている間に下の周がマージされた
@@ -392,29 +408,31 @@ MUTATIONS = {
         'reason = unrebased(number, base, default) or (base != default and "base が既定ブランチでない")'),
     # 守る 9: base が付け替わっても載せ替えていない（#427 R4）
     "マージ済みの元のコミットを見ない": ('if shared:', 'if False:'),
-    # 守る 10: 付け替えの後に回っていない検査（#427 R1）
+    # 守る 10: 付け替えていない PR を、コミットを共有するだけで止めない（#426 の 2 パス目）
+    "付け替えが無くても元のコミットを見る": ('if not base_events(number, "")[0]:', 'if False:'),
+    # 守る 11: 付け替えの後に回っていない検査（#427 R1）
     "付け替えの後の検査かを見ない": ('if stale:', 'if False:'),
-    # 守る 11: 見ていないコミットをマージしない
+    # 守る 12: 見ていないコミットをマージしない
     "--match-head-commit を渡さない": (
         '"--squash", "--match-head-commit", head_sha]', '"--squash"]'),
-    # 守る 12: 未コミットを持つ worktree
+    # 守る 13: 未コミットを持つ worktree
     "未コミットを見ない": ('if git(["status", "--porcelain", "--untracked-files=all"], cwd=str(path)).strip():',
                           'if False:'),
-    # 守る 13: push していない worktree
+    # 守る 14: push していない worktree
     "push を見ない": ('if local != head_sha:', 'if False:'),
-    # 守る 14: 自分が中にいる worktree
+    # 守る 15: 自分が中にいる worktree
     "cwd を見ない": ('if here == path.resolve():', 'if False:'),
-    # 守る 15: ロックされた worktree も撤去できる
+    # 守る 16: ロックされた worktree も撤去できる
     "unlock しない": ('if wt["locked"]:', 'if False:'),
-    # 守る 16: MERGED を確かめるまで worktree を残す（撤去をマージの前に移す）
+    # 守る 17: MERGED を確かめるまで worktree を残す（撤去をマージの前に移す）
     "撤去をマージの前に置く": (
         '        res = run(["gh", "pr", "merge"',
         '        remove_worktree(wt) if wt and not wt["main"] else None\n        res = run(["gh", "pr", "merge"'),
-    # 守る 17: 閉じるはずの Issue を確かめる
+    # 守る 18: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
-    # 守る 18: 判定できなかったことを時間切れと答えない
+    # 守る 19: 判定できなかったことを時間切れと答えない
     "判定できなかったを時間切れと答える": ('        return 7\n', '        return 5\n'),
-    # 守る 19: 7 でも済んでいないことを出す
+    # 守る 20: 7 でも済んでいないことを出す
     "7 で済んでいないことを出さない": ('        for pr_ in problems:\n            print(f"  済んでいないこと',
                                  '        for pr_ in []:\n            print(f"  済んでいないこと'),
 }
@@ -432,6 +450,7 @@ KILLS = {
                                "base を head にするマージ済み PR があっても、その base に入っていて先へ進んでいればマージする",
                                "develop を merge commit でリリースした後、develop が main より先でもマージする"],
     "マージ済みの元のコミットを見ない": ["base が付け替わっても下の元のコミットがあればマージしない（#427 R4）"],
+    "付け替えが無くても元のコミットを見る": ["付け替えていなければ、マージ済みの PR とコミットを共有していてもマージする"],
     "付け替えの後の検査かを見ない": ["付け替えより前に届いた head は、検査が後に始まっていてもマージしない（#427 R1）",
                           "自動の付け替えも付け替えに数える"],
     "--match-head-commit を渡さない": [],  # 引数で見る（下）
@@ -473,9 +492,10 @@ def main() -> int:
         check("squash で、待って見た head の SHA を --match-head-commit に渡す", merge_args_ok(happy))
         check("UNKNOWN の間に読み直している（pr view が 3 回以上）",
               sum(1 for c in happy["calls"] if c[:2] == ["pr", "view"] and c[-1] not in ("state", "commits")) >= 3)
-        check("base と head が変わらない間は引き直さず、マージの直前に 1 回だけ見直す（commits を 2 回読む）",
+        check("base と head が変わらない間は引き直さず、マージの直前に 1 回だけ見直す"
+              "（timeline を 3 回読む: 最初・付け替えの検査・直前の見直し）",
               sum(1 for c in good["検査が走っている間は待つ"]["calls"]
-                  if c[:2] == ["pr", "view"] and c[-1] == "commits") == 2)
+                  if c[:1] == ["api"] and c[2].endswith("/timeline")) == 3)
         check("ブランチを消さない（--delete-branch を渡さない）",
               all("--delete-branch" not in c and "-d" not in c for c in happy["merges"]))
 

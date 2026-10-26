@@ -24,9 +24,10 @@
 - **`merge-pr.py` でマージした下のブランチは残る。** `merge-pr.py` はブランチを消さない（squash したブランチは `git branch -d` が通らない。docstring）。
   **上の PR の base を下のブランチのままにしてマージすると、上の変更は既定ブランチではなく下のブランチへ入る**
   ——**止まらないので気づけない。**
-- **下のブランチが消えると（「Automatically delete head branches」）、GitHub は上の PR の base を既定ブランチへ付け替える。
+- **下のブランチが消えると（「Automatically delete head branches」）、GitHub は上の PR の base を付け替える。
   head は下の元のコミットを持ったままである**——**base の名前だけ見ても、載せ替えていないことが分からない**
-  （[#427](https://github.com/hdknr/claude-code-setup/issues/427) で本物の GitHub で確かめた。timeline に `automatic_base_change_succeeded` が残る）。
+  （[#427](https://github.com/hdknr/claude-code-setup/issues/427) で本物の GitHub で確かめた。timeline に `automatic_base_change_succeeded` が残る。
+  **確かめたのは下を既定ブランチへ出した形**で、上の base は既定ブランチへ付け替わった。下を別のブランチへ出した形は確かめていない）。
 - **`merge-pr.py` は、載せ替えていない積んだ周の PR をマージしない**——**何で見分けるか（と、見分けられない形）は docstring を正とする**
   （[#426](https://github.com/hdknr/claude-code-setup/issues/426)。**base が既定ブランチでないことだけでは止めない**）。
 

@@ -28,18 +28,22 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
   下の周のブランチを base にしている。下を squash してもそのブランチは残る（下の「ブランチを消さない」）ので、
   **載せ替えずにマージすると上の変更は既定ブランチではなく下のブランチへ入り、止まらない**（#392。載せ替えは
   `references/stacked.md`）。**見分け方**: base が既定ブランチでなく、base を head とする**マージ済みの PR** があり、
-  **その PR の head** がその PR の base に入っていない（compare の `ahead_by` が 1 以上——squash・rebase でマージした）。
-  **base の先端では比べない**——`develop` は既定ブランチへ出した後も先へ進むので、先端で比べると `develop` へ出す PR が
-  全部止まる（#426 の 1 パス目）。
+  **その PR の head** がその PR のマージコミット（`mergeCommit`）に入っていない（compare の `ahead_by` が 1 以上——
+  squash・rebase でマージした）。**base の先端では比べない**——`develop` は既定ブランチへ出した後も先へ進むので、
+  先端で比べると `develop` へ出す PR が全部止まる（#426 の 1 パス目）。**その PR の base の名前でも比べない**——
+  リリースのブランチのように後で消えると、compare が読めず止まり続ける（#426 の 2 パス目）。
 - **下の周を merge commit でマージしてブランチを残しても、上の PR をマージしない**——下の head は既定ブランチに入るので
   上の見分け方では見えない。**見分け方**: base の先端が、base を head とするマージ済みの PR の head から進んでいない
   （compare の `ahead_by` が 0）。
 - **待っている間に下の周がマージされても、マージしない**——base の名前も head も変わらないので、マージの直前に見直す。
 - **積んでいない PR を、base が既定ブランチでないことだけで止めない**——`develop` へ出す PR は積んだ周ではない（#426）。
 - **base が付け替わっても、載せ替えていない PR をマージしない**——下の PR をマージして head を消すと
-  （「Automatically delete head branches」）、GitHub は上の PR の base を既定ブランチへ付け替える。**head は
-  下の元のコミットを持ったまま**である（#427 で本物の GitHub で確かめた）。**見分け方**: PR の commits に、
-  同じ base へマージ済みの PR（作成日の新しい順に 30 件）の commits が入っている。
+  （「Automatically delete head branches」）、GitHub は上の PR の base を付け替える。**head は
+  下の元のコミットを持ったまま**である（#427 で本物の GitHub で確かめた——確かめたのは下を既定ブランチへ出した形で、
+  上の base は既定ブランチへ付け替わった。下を別のブランチへ出した形は確かめていない）。**見分け方**: timeline に
+  付け替えがあり、PR の commits に、同じ base へマージ済みの PR（作成日の新しい順に 30 件）の commits が入っている。
+- **付け替えていない PR を、マージ済みの PR とコミットを共有することだけで止めない**——squash した後に同じブランチで
+  続けて出した PR・`develop` を squash で既定ブランチへ出すリリースの PR は、前の PR の元のコミットを持つ（#426 の 2 パス目）。
 - **base を付け替えた後に届いていない head の検査を、通過と読まない**——既定の型の `pull_request:` は付け替え
   （`edited`）では回り直さず、**検査の再実行も前の base のまま回る**（どちらも #427 で確かめた）ので、緑は前の base と
   比べた結果のままである。**head が最後の付け替え（timeline の `base_ref_changed`・`automatic_base_change_succeeded`）
@@ -75,7 +79,7 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
   worktree を撤去できなかった・閉じるはずの Issue が閉じない
 - **10**: 積んだ周を載せ替えていない——base が下のブランチのまま・base は付け替わったが head に下の元のコミットがある
   （マージしていない。`references/stacked.md` の「下の周がマージされたら」）
-- **11**: head が最後の base の付け替えより前に届いている——検査は前の base と比べた結果（マージしていない。push し直す）
+- **11**: head が最後の base の付け替えより前に届いている——検査は前の base と比べた結果（マージしていない。新しいコミットを push する）
 
 ## 何を守らないか
 
@@ -94,10 +98,13 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **`develop` を squash で既定ブランチへ出す運用では、`develop` へ出す PR も 10 で止まる**——下の周の squash と形が同じ。
 - **`develop` を merge commit で既定ブランチへ出した直後、`develop` に 1 つもコミットが入るまでは、`develop` へ出す PR も
   10 で止まる**——下の周を merge commit でマージしてブランチを残した形と同じ（#426 の 1 パス目で利用者が選んだ）。
+- **下の周を merge commit でマージしてブランチを残した後、下のブランチにコミットが足されると、上の PR を止めない**
+  ——下のブランチへマージする。`develop` を merge commit で出した後に `develop` が先へ進んだ形と区別できない（#426 の 2 パス目）。
 - **base へマージ済みの PR は、作成日の新しい順に 30 件しか見ない**（`gh pr list` はマージ日ではなく作成日の順に返す）
   ——それより前に作られた PR の元のコミットを持つ head は、その PR が最近マージされたものでも素通りする。
 - **force push でない push の時刻は読めない**——commit の `committedDate` で代える。付け替えの前に作って後で
-  push したコミットは止まる（push し直せば通る）。**未来の日付を付けたコミットは素通りする。** 同じ秒は付け替えの前と読む。
+  push したコミットは止まる（**新しいコミットを** push すれば通る——同じコミットを push し直しても、timeline にも
+  `committedDate` にも何も残らないので 11 のまま。#426 の 2 パス目）。**未来の日付を付けたコミットは素通りする。** 同じ秒は付け替えの前と読む。
 - **付け替えの後に回る型（`edited`）の検査だけで緑になっていても止まる**——どの base と比べた検査かは見ない。
 - **最後に読んでから `gh pr merge` までの間の付け替えは見ない**——`--match-head-commit` は head しか固定しない。
 """
@@ -202,22 +209,27 @@ def unrebased(number: str, base: str, default: str) -> str | None:
     """積んだ周を載せ替えていないなら、その理由。そうでなければ None。"""
     if base != default:
         lowers = gh_list(["pr", "list", "--head", base, "--state", "merged", "--limit", "10",
-                          "--json", "number,baseRefName,headRefOid,isCrossRepository"])
+                          "--json", "number,baseRefName,headRefOid,isCrossRepository,mergeCommit"])
         for lower in lowers:
             n, lower_base, lower_head = lower.get("number"), lower.get("baseRefName"), lower.get("headRefOid")
-            cross = lower.get("isCrossRepository")
+            cross, merge = lower.get("isCrossRepository"), lower.get("mergeCommit")
+            merge_oid = merge.get("oid") if isinstance(merge, dict) else None
             if (not isinstance(n, int) or not isinstance(lower_base, str) or not lower_base
-                    or not isinstance(lower_head, str) or not lower_head or not isinstance(cross, bool)):
+                    or not isinstance(lower_head, str) or not lower_head or not isinstance(cross, bool)
+                    or not isinstance(merge_oid, str) or not merge_oid):
                 raise Undetermined(f"マージ済みの PR の形が読めない: {lower!r}")
             if cross:
                 continue  # fork の同名ブランチ。base のブランチではない
-            # 比べるのは base の先端ではなく、マージした PR の head——develop は先に進む（#426）
-            if ahead_by(lower_base, lower_head) > 0:
+            # 比べるのは base の先端ではなく、マージした PR の head——develop は先に進む（#426）。
+            # 相手はその PR の base の名前ではなくマージコミット——リリースのブランチは後で消える（#426 の 2 パス目）
+            if ahead_by(merge_oid, lower_head) > 0:
                 return (f"base の {base} は、{lower_base} へ squash／rebase でマージ済みの PR #{n} の head で、"
                         f"その head は {lower_base} に入っていない（下の周がマージされたのに載せ替えていない）")
             if ahead_by(lower_head, base) == 0:
                 return (f"base の {base} は、{lower_base} へマージ済みの PR #{n} の head から進んでいない"
                         "（下の周がマージされたのに載せ替えていない）")
+    if not base_events(number, "")[0]:
+        return None  # 付け替えていない PR は、コミットを共有するだけでは止めない（#426 の 2 パス目）
     own = oids(gh_json(["pr", "view", number, "--json", "commits"]).get("commits"))
     merged = gh_list(["pr", "list", "--state", "merged", "--base", base, "--limit", str(MERGED_LOOKBACK),
                       "--json", "number,commits"])
@@ -241,13 +253,8 @@ def parse_time(value, what: str) -> datetime:
         raise Undetermined(f"{what}の時刻が読めない: {value!r}") from e
 
 
-def stale_head(number: str, head_sha: str) -> str | None:
-    """head が最後の base の付け替えより前に届いていれば、その説明。付け替えが無い・後に届いたなら None。
-
-    **検査の開始時刻では比べない**——付け替えの前の push で起動された検査が、付け替えの後に始まることがある
-    （#427 で本物の GitHub で見た。`base_ref` は前の base のまま）。検査の再実行も前の base のまま回る（同じく見た）。
-    head が届いた時刻は、force push なら timeline の `head_ref_force_pushed`、そうでなければ commit の `committedDate`。
-    """
+def base_events(number: str, head_sha: str) -> tuple[list[datetime], list[datetime]]:
+    """timeline の (base の付け替えの時刻, `head_sha` への force push の時刻)。"""
     events = BASE_CHANGES + (FORCE_PUSHED,)
     jq = " or ".join(f'.event == "{e}"' for e in events)
     res = run(["gh", "api", "--paginate", f"repos/{{owner}}/{{repo}}/issues/{number}/timeline",
@@ -267,6 +274,17 @@ def stale_head(number: str, head_sha: str) -> str | None:
                 arrivals.append(parse_time(at, "force push"))
         else:
             changes.append(parse_time(at, "base の付け替え"))
+    return changes, arrivals
+
+
+def stale_head(number: str, head_sha: str) -> str | None:
+    """head が最後の base の付け替えより前に届いていれば、その説明。付け替えが無い・後に届いたなら None。
+
+    **検査の開始時刻では比べない**——付け替えの前の push で起動された検査が、付け替えの後に始まることがある
+    （#427 で本物の GitHub で見た。`base_ref` は前の base のまま）。検査の再実行も前の base のまま回る（同じく見た）。
+    head が届いた時刻は、force push なら timeline の `head_ref_force_pushed`、そうでなければ commit の `committedDate`。
+    """
+    changes, arrivals = base_events(number, head_sha)
     if not changes:
         return None
     commits = gh_json(["pr", "view", number, "--json", "commits"]).get("commits")
@@ -356,7 +374,8 @@ def wait_until_ready(number: str, default: str, interval: float, timeout: float)
         if checks == "pass" and mergeable == "MERGEABLE":
             stale = stale_head(number, pr.get("headRefOid") or "")
             if stale:
-                print(f"PR #{number}: {stale}。push し直す（検査の再実行は前の base のまま回る）。マージしない。",
+                print(f"PR #{number}: {stale}。新しいコミットを push する（同じコミットの push し直しも検査の再実行も、"
+                      "前の base のままで変わらない）。マージしない。",
                       file=sys.stderr)
                 return 11, pr
             # 待っている間に下の周がマージされても、base の名前も head も変わらない——マージの直前に見直す
