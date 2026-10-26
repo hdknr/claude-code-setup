@@ -69,12 +69,15 @@ elif args[:2] == ["repo", "view"]:
         print("gh: something went wrong", file=sys.stderr); sys.exit(1)
     print(json.dumps({"defaultBranchRef": {"name": name}}))
 elif args[:2] == ["pr", "list"]:
-    out = scn.get("lowers", []) if "--head" in args else scn.get("merged", [])
+    if "--head" in args:  # lowers_seq: 読むたびに次へ（待っている間に下がマージされる）
+        out = nxt("lowers", scn["lowers_seq"]) if "lowers_seq" in scn else scn.get("lowers", [])
+    else:
+        out = scn.get("merged", [])
     if out == "FAIL":
         print("gh: something went wrong", file=sys.stderr); sys.exit(1)
     print(json.dumps(out))
 elif args[0] == "api" and "/compare/" in args[1]:
-    ahead = scn.get("ahead", 0)
+    ahead = scn.get("compare", {}).get(args[1].split("/compare/")[1], scn.get("ahead", 0))
     if ahead == "FAIL":
         print("gh: something went wrong", file=sys.stderr); sys.exit(1)
     print(json.dumps({"ahead_by": ahead}))
@@ -205,7 +208,10 @@ def untracked_hidden(main, wt):
     (wt / "dirty.txt").write_text("d\n", encoding="utf-8")
 
 
-LOWER = {"number": 41, "baseRefName": "main", "headRefName": "issue/41-lower", "isCrossRepository": False}
+LOWER_HEAD = "e" * 40
+LOWER = {"number": 41, "baseRefName": "main", "headRefName": "issue/41-lower", "headRefOid": LOWER_HEAD,
+         "isCrossRepository": False}
+DEVELOP = dict(LOWER, headRefName="develop")
 
 
 def CHANGED(at):
@@ -274,9 +280,32 @@ CASES = {
         10, False, True, "載せ替えていない"),
     "base が既定ブランチでなくても、積んでいなければマージする（develop・#426）": (
         dict(make_view=lambda s: [pr(s, base="develop")]), 0, True, False),
-    "base を head にするマージ済み PR があっても、その base に入っていればマージする": (
-        dict(make_view=lambda s: [pr(s, base="develop")], lowers=[dict(LOWER, headRefName="develop")], ahead=0),
+    "base を head にするマージ済み PR があっても、その base に入っていて先へ進んでいればマージする": (
+        dict(make_view=lambda s: [pr(s, base="develop")], lowers=[DEVELOP],
+             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 1}), 0, True, False),
+    # #426 の 1 パス目: develop を merge commit でリリースした後に機能が入り、先端は main より先にある
+    "develop を merge commit でリリースした後、develop が main より先でもマージする": (
+        dict(make_view=lambda s: [pr(s, base="develop")], lowers=[DEVELOP],
+             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 3, "main...develop": 3}),
         0, True, False),
+    "下を merge commit でマージしてブランチを残しても、base が下のままならマージしない": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower")], lowers=[LOWER],
+             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...issue/41-lower": 0}),
+        10, False, True, "進んでいない"),
+    # 「守らない」に書いた形: merge commit のリリース直後、develop にまだ何も入っていない
+    "develop を merge commit でリリースした直後は、develop へ出す PR も止まる（守らない）": (
+        dict(make_view=lambda s: [pr(s, base="develop")], lowers=[DEVELOP],
+             compare={f"main...{LOWER_HEAD}": 0, f"{LOWER_HEAD}...develop": 0}), 10, False, True),
+    "待っている間に下がマージされたら、マージの直前に見直して止める": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower", checks=[
+            {"__typename": "CheckRun", "name": "check", "status": "IN_PROGRESS", "conclusion": None}]),
+            pr(s, base="issue/41-lower")], lowers_seq=[[], [LOWER]], ahead=2), 10, False, True, "載せ替えていない"),
+    "マージ済みの PR の isCrossRepository が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower")],
+             lowers=[{k: v for k, v in LOWER.items() if k != "isCrossRepository"}], ahead=2), 7, False, True),
+    "マージ済みの PR の headRefOid が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower")],
+             lowers=[{k: v for k, v in LOWER.items() if k != "headRefOid"}], ahead=2), 7, False, True),
     "fork の同名ブランチのマージ済み PR は下の周と読まない": (
         dict(make_view=lambda s: [pr(s, base="develop")], lowers=[dict(LOWER, isCrossRepository=True)], ahead=2),
         0, True, False),
@@ -351,37 +380,41 @@ MUTATIONS = {
     "CheckRun の失敗を見ない": ('elif c.get("conclusion") not in CHECK_PASS:', 'elif False:'),
     # 守る 4: 衝突していればマージしない
     "CONFLICTING を見ない": ('if mergeable == "CONFLICTING":', 'if False:'),
-    # 守る 5: 下の周がマージされたのに base が下のブランチのまま
-    "下のブランチがその base に入っているかを見ない": ('if ahead > 0:', 'if False:'),
-    # 守る 6: base を既定ブランチでないことだけで止めない（#426）
+    # 守る 5: 下の周がマージされたのに base が下のブランチのまま（squash・rebase）
+    "下の PR の head がその base に入っているかを見ない": ('if ahead_by(lower_base, lower_head) > 0:', 'if False:'),
+    # 守る 6: 下の周を merge commit でマージしてブランチを残した
+    "base がマージ済みの head から進んだかを見ない": ('if ahead_by(lower_head, base) == 0:', 'if False:'),
+    # 守る 7: 待っている間に下の周がマージされた
+    "マージの直前に見直さない": ('reason = None if fresh else unrebased(number, base, default)', 'reason = None'),
+    # 守る 8: base を既定ブランチでないことだけで止めない（#426）
     "base が既定ブランチでなければ止める": (
         'reason = unrebased(number, base, default)',
         'reason = unrebased(number, base, default) or (base != default and "base が既定ブランチでない")'),
-    # 守る 7: base が付け替わっても載せ替えていない（#427 R4）
+    # 守る 9: base が付け替わっても載せ替えていない（#427 R4）
     "マージ済みの元のコミットを見ない": ('if shared:', 'if False:'),
-    # 守る 8: 付け替えの後に回っていない検査（#427 R1）
+    # 守る 10: 付け替えの後に回っていない検査（#427 R1）
     "付け替えの後の検査かを見ない": ('if stale:', 'if False:'),
-    # 守る 6: 見ていないコミットをマージしない
+    # 守る 11: 見ていないコミットをマージしない
     "--match-head-commit を渡さない": (
         '"--squash", "--match-head-commit", head_sha]', '"--squash"]'),
-    # 守る 7: 未コミットを持つ worktree
+    # 守る 12: 未コミットを持つ worktree
     "未コミットを見ない": ('if git(["status", "--porcelain", "--untracked-files=all"], cwd=str(path)).strip():',
                           'if False:'),
-    # 守る 8: push していない worktree
+    # 守る 13: push していない worktree
     "push を見ない": ('if local != head_sha:', 'if False:'),
-    # 守る 9: 自分が中にいる worktree
+    # 守る 14: 自分が中にいる worktree
     "cwd を見ない": ('if here == path.resolve():', 'if False:'),
-    # 守る 10: ロックされた worktree も撤去できる
+    # 守る 15: ロックされた worktree も撤去できる
     "unlock しない": ('if wt["locked"]:', 'if False:'),
-    # 守る 11: MERGED を確かめるまで worktree を残す（撤去をマージの前に移す）
+    # 守る 16: MERGED を確かめるまで worktree を残す（撤去をマージの前に移す）
     "撤去をマージの前に置く": (
         '        res = run(["gh", "pr", "merge"',
         '        remove_worktree(wt) if wt and not wt["main"] else None\n        res = run(["gh", "pr", "merge"'),
-    # 守る 12: 閉じるはずの Issue を確かめる
+    # 守る 17: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
-    # 守る 13: 判定できなかったことを時間切れと答えない
+    # 守る 18: 判定できなかったことを時間切れと答えない
     "判定できなかったを時間切れと答える": ('        return 7\n', '        return 5\n'),
-    # 守る 14: 7 でも済んでいないことを出す
+    # 守る 19: 7 でも済んでいないことを出す
     "7 で済んでいないことを出さない": ('        for pr_ in problems:\n            print(f"  済んでいないこと',
                                  '        for pr_ in []:\n            print(f"  済んでいないこと'),
 }
@@ -392,9 +425,12 @@ KILLS = {
     "検査 0 本を通過と読む": ["検査が 0 本なら時間切れ"],
     "CheckRun の失敗を見ない": ["CheckRun の失敗で止まる"],
     "CONFLICTING を見ない": ["衝突していれば止まる"],
-    "下のブランチがその base に入っているかを見ない": ["下がマージされたのに base が下のブランチのままならマージしない（積んだ周）"],
+    "下の PR の head がその base に入っているかを見ない": ["下がマージされたのに base が下のブランチのままならマージしない（積んだ周）"],
+    "base がマージ済みの head から進んだかを見ない": ["下を merge commit でマージしてブランチを残しても、base が下のままならマージしない"],
+    "マージの直前に見直さない": ["待っている間に下がマージされたら、マージの直前に見直して止める"],
     "base が既定ブランチでなければ止める": ["base が既定ブランチでなくても、積んでいなければマージする（develop・#426）",
-                               "base を head にするマージ済み PR があっても、その base に入っていればマージする"],
+                               "base を head にするマージ済み PR があっても、その base に入っていて先へ進んでいればマージする",
+                               "develop を merge commit でリリースした後、develop が main より先でもマージする"],
     "マージ済みの元のコミットを見ない": ["base が付け替わっても下の元のコミットがあればマージしない（#427 R4）"],
     "付け替えの後の検査かを見ない": ["付け替えより前に届いた head は、検査が後に始まっていてもマージしない（#427 R1）",
                           "自動の付け替えも付け替えに数える"],
@@ -437,9 +473,9 @@ def main() -> int:
         check("squash で、待って見た head の SHA を --match-head-commit に渡す", merge_args_ok(happy))
         check("UNKNOWN の間に読み直している（pr view が 3 回以上）",
               sum(1 for c in happy["calls"] if c[:2] == ["pr", "view"] and c[-1] not in ("state", "commits")) >= 3)
-        check("base と head が変わらない間は積んだ周の判定を引き直さない（commits を 1 回だけ読む）",
+        check("base と head が変わらない間は引き直さず、マージの直前に 1 回だけ見直す（commits を 2 回読む）",
               sum(1 for c in good["検査が走っている間は待つ"]["calls"]
-                  if c[:2] == ["pr", "view"] and c[-1] == "commits") == 1)
+                  if c[:2] == ["pr", "view"] and c[-1] == "commits") == 2)
         check("ブランチを消さない（--delete-branch を渡さない）",
               all("--delete-branch" not in c and "-d" not in c for c in happy["merges"]))
 

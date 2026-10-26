@@ -126,6 +126,20 @@ PR #1 `lower`→`main`、PR #2 `upper`→`lower`（`upper` は `lower` の上）
 
 | パス | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- |
+| 1（CR1・V1） | `develop` を merge commit でリリースした後、`develop` が `main` より進むと、`develop` 向けの PR が全部 10 で止まる（`compare(lower_base...base)` が base の先端を見ている） | 示せる（CR が偽の `gh` で `ahead=3` → rc=10。V も同じ筋道） | M1 | 直す（形は利用者に訊く——CR2 と両立させる） |
+| 1（CR2） | 下の PR を merge commit でマージし、ブランチを残すと、上（base は下のまま）が M2・M3・M4 を素通りして下のブランチへマージされる | 示せる（`ahead_by=0` で 10 にならない。コードの読みと偽の `gh` の形） | M2 | 直す（形は利用者に訊く——CR1 と両立させる） |
+| 1（CR3・V 補足） | 待っている間に下の PR がマージされ、base 名も head も変わらないと `unrebased` を引き直さずにマージする | 示せる（`seen` の判定。偽の `gh` で作れる） | M2 | 直す（0 を返す直前に引き直す） |
+| 1（CR5） | `isCrossRepository` が無い・null だと fork と読んで飛ばし、通過する | 示せる（CR が偽の `gh` で rc=0） | M6 | 直す（bool でなければ 7） |
+| 1（CR6） | `gh pr list` は作成日の順で、「直近 30 件」は「最近マージした 30 件」ではない | 示せる（このリポジトリの `gh pr list --state merged` が `createdAt` 降順・`mergedAt` 降順ではない） | M7（docstring の主張） | 直す（docstring の文言） |
+| 1（CR4） | 「同じ秒は前と読む」（`<=`）を固定するテストが無い（`<` にしても緑） | 示せる（変異が素通り）。コードは正しい | 無し | 残課題 |
+| 1（CR7） | `pr view --json commits` を 2 回引く・main 向けの全 PR で 30 件の commits を引く | 示せない（量の問題。上限には当たっていない） | 無し | 残課題 |
+| 1（CR8） | `test-merge-pr.py` の変異の注釈の番号が重複している | 示せる（注釈）。判定には効かない | 無し | 残課題（ただし CR1〜3 で変異を 2 件足して注釈を書き直すので、そのとき 1〜19 に振り直した） |
+
+CR1・CR2 の形（利用者が選んだ「A: 2 段の判定」）: base を head にするマージ済みの PR について、
+(a) **その PR の head** がその base に入っていない（squash・rebase）か、(b) base の先端がその PR の head から進んでいない
+（merge commit でマージしてブランチを残した）なら 10。**代わりに止まる形**: `develop` を merge commit でリリースした直後、
+`develop` に何も入っていない間の `develop` 向けの PR——docstring の「守らない」に書いた。
+**本物の GitHub では当てていない**（偽の `gh` の試料だけ。compare の `ahead_by` の意味は git の到達可能性そのもの）。
 
 ## 関門の進捗（再開点）
 
@@ -143,6 +157,11 @@ PR #1 `lower`→`main`、PR #2 `upper`→`lower`（`upper` は `lower` の上）
 - 歯止め: `check-all.py` 49/49 緑（`e893cbf` の前）
 - 実装のコミット: `e893cbf`（push・PR はまだ）
 - 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**。再開は手順 5（Verifier 1 パス目）から。
-  Verifier と `/code-review` の 1 パス目はどちらも未着手（反証 0 件ではなく、回していない）
+- **1 パス目（2026-10-26・再開したセッション）**: Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 1 件**（CR1 と同じ）。
+  `check-all.py` 49/49・`skill-metrics.py --check` 最新・`git status` 前後とも空。
+  `/code-review`（high）**指摘 8 件**。採否は上の表——直す 5 件（CR1・CR2・CR3・CR5・CR6）、残課題 3 件
+- **1 パス目の指摘対応**: 済み（`merge-pr.py` の 2 段の判定・マージ直前の見直し・`isCrossRepository` の型・docstring。
+  `test-merge-pr.py` に試料 7 件・変異 2 件。111 ok）
+- **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**。その前が 2 つ目の割り目
 - 本物の GitHub の試験用リポジトリ `hdknr/dev-loop-stacked-probe`: 開いた PR は #2（`upper`。base `main` に自動で付け替わった形）だけ。関門が実物で当て直すならここを使える（`mp.sh` は scratchpad——セッションと一緒に消える）
 - この周の起票: 0 件（手順 8 で人間に訊いて確定する）
