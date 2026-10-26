@@ -113,6 +113,38 @@ esac
 
 
 @contextlib.contextmanager
+def recording_reads():
+    """OS への読む入口を呼ばれた順に記録する（呼び出しはそのまま通す）。
+
+    **関数名ではなく OS への入口で見る**——本体の読む入口は道具関数に散っており
+    （`read_json`・`run`・`managed_dropins`・`global_config_path`）、関数名でフックすると
+    入口を足すたびに素通りする（#424 の N2: `check_notifications` を呼ぶ変異が素通りした）。
+    **取りこぼす形**: `os.stat`・`os.listdir`・`os.scandir` を直に呼ぶ読み方と、環境変数の読み取り。
+    本体はいまどれも使っていない。**記録器が効いていることは、使う側が陽性対照で見る。**"""
+    import builtins
+    import subprocess
+    reads: list[str] = []
+    targets = [(Path, n) for n in ("read_text", "read_bytes", "open", "stat", "exists", "is_file",
+                                   "is_dir", "iterdir", "glob", "rglob")]
+    targets += [(builtins, "open"), (subprocess, "run"), (subprocess, "Popen")]
+    originals = [(owner, name, getattr(owner, name)) for owner, name in targets]
+
+    def wrap(name, f):
+        def recorded(*a, **k):
+            reads.append(name)
+            return f(*a, **k)
+        return recorded
+
+    for owner, name, f in originals:
+        setattr(owner, name, wrap(name, f))
+    try:
+        yield reads
+    finally:
+        for owner, name, f in originals:
+            setattr(owner, name, f)
+
+
+@contextlib.contextmanager
 def scenario(mod_path: Path):
     with tempfile.TemporaryDirectory() as tmp:
         env = Env(Path(tmp))
@@ -445,37 +477,44 @@ def suite(script: Path) -> list[str]:
         (_, _, got_cause, got_fix), = mod.check_push_result(text)
         check(f"返り値 {text!r} の原因と対処", cause in got_cause and fix in got_fix, bad)
     check("知らない返り値は、その文字列を原因に出す", "'Notification delivered.'" in unknown[0][2], bad)
+    check("使用中の原因はフォーカスと 60 秒を言う（本体の Ins() と P3e=60000）",
+          "フォーカス" in active[0][2] and "60 秒以内" in active[0][2], bad)
     with scenario(script) as env:
         env.all_good()
         before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
-        buf = io.StringIO()
         # 変異で判定の分岐が外れても実環境を読まないよう、HOME・project・managed・flag をテンポラリに向ける
         saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_CONFIG_DIR")}
         os.environ["HOME"] = str(env.home)
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
-        # 設定を読まないことは、読む入口が呼ばれないことで見る——出力に出さずに読む変異は出力では見えない
-        reads = []
-        originals = {n: getattr(mod, n) for n in ("layers", "find_flag_settings", "default_project")}
-        for n, f in originals.items():
-            setattr(mod, n, lambda *a, _n=n, _f=f, **k: (reads.append(_n), _f(*a, **k))[1])
+        paths = ["--project", str(env.project),
+                 "--managed-settings", str(env.project / "no-managed.json"),
+                 "--flag-settings", str(env.project / "no-flag.json")]
+        runs = {}
         try:
-            with contextlib.redirect_stdout(buf):
-                code = mod.main(["--push-result", "Push not sent — mobile push is disabled in /config.",
-                                 "--project", str(env.project),
-                                 "--managed-settings", str(env.project / "no-managed.json"),
-                                 "--flag-settings", str(env.project / "no-flag.json")])
+            # 読まないことは、OS への入口が呼ばれないことで見る——出力に出さずに読む変異は出力では見えない
+            for key, argv in (("config_off", ["--push-result", "Push not sent — mobile push is disabled in /config."]),
+                              ("empty", ["--push-result", ""]),
+                              ("full", [])):
+                buf = io.StringIO()
+                with recording_reads() as reads, contextlib.redirect_stdout(buf):
+                    code = mod.main(argv + paths)
+                runs[key] = (code, buf.getvalue(), list(reads))
         finally:
-            for n, f in originals.items():
-                setattr(mod, n, f)
             for k, v in saved.items():
                 if v is None:
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
         after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
-        check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in buf.getvalue()
-              and "[要対処] 通知の試験" in buf.getvalue(), bad)
-        check("--push-result は設定を読まない", reads == [], bad)
+        code, out, reads = runs["config_off"]
+        check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in out
+              and "[要対処] 通知の試験" in out, bad)
+        check("--push-result は設定もファイルもコマンドも読まない", reads == [], bad)
+        code, out, reads = runs["empty"]
+        check("空の --push-result も判定に回り、全点検に落ちない（2）",
+              code == 2 and "[判定できない] 通知の試験" in out and "設定の層" not in out and reads == [], bad)
+        # 陽性対照: 同じ記録器が全点検の読みを拾う——拾わなければ上の「読まない」は何も証明しない
+        check("記録器は全点検の読みを拾う（陽性対照）", runs["full"][2] != [] and "設定の層" in runs["full"][1], bad)
         check("--push-result は何も書かない", before == after, bad)
 
     # 人が見る: Remote Control は claude rc との違い、モバイルの登録は通知の試験を指す
@@ -616,6 +655,20 @@ MUTATIONS = {
         "        report(*gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
         "                       args.managed_settings, Path.home(), sys.platform))\n"
         "        return push_code\n"),
+    "空の --push-result を見ない": (
+        "    if args.push_result is not None:\n",
+        "    if args.push_result:\n"),
+    "--push-result で通知の設定を読むが出さない": (
+        "        return report_push(check_push_result(args.push_result))\n",
+        "        check_notifications(Path.home())\n"
+        "        return report_push(check_push_result(args.push_result))\n"),
+    "--push-result でスリープを見るが出さない": (
+        "        return report_push(check_push_result(args.push_result))\n",
+        "        check_sleep('darwin')\n"  # sys.platform を渡すと Linux の CI では何も読まずに返り、素通りする
+        "        return report_push(check_push_result(args.push_result))\n"),
+    "使用中の 60 秒を 30 秒にする": (
+        "分からなければ最後の操作から 60 秒以内）\",",
+        "分からなければ最後の操作から 30 秒以内）\","),
     "--push-result のあと設定を読むが出さない": (
         "        return report_push(check_push_result(args.push_result))\n",
         "        gather(args.project or default_project(), tuple(DEFAULT_COMMANDS), args.flag_settings,\n"
