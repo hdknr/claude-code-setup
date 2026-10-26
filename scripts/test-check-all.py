@@ -182,6 +182,8 @@ def build_fake(root: Path) -> Path:
     # **宣言の先頭を遅らせる。** 終わった順に出す本体だと、後ろの行が先に出る（契約 1 の順序）。
     (scripts / "ok-a.py").write_text("import time; time.sleep(0.05); print('a ok')\n")
     (scripts / "ok-b.py").write_text("print('b ok')\n")
+    # 回帰テストの側の先頭も遅らせる——歯止めの順だけ見ると、回帰テストの順は誰も見ない。
+    (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n")
     (scripts / "ok-c.py").write_text("print('c ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
@@ -201,7 +203,7 @@ def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("ok-a.py", [], False), ("ok-c.py", [], False),
                   ("needs-base.py", [], True)]
-    mod.TESTS = ["ok-b.py"]
+    mod.TESTS = ["ok-t.py", "ok-b.py"]
     if bad_guard:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
         # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
@@ -226,8 +228,10 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         ("飛ばしたものを数えて出す", "飛ばし 1" in out),
         ("飛ばしたことを黙らない", "飛ばしたものは回していない" in out),
         ("SKIP でも残りは回る", "OK   ok-b.py" in out),
-        # **先頭の ok-a.py がいちばん遅く終わる**（build_fake）ので、終わった順に出すと崩れる。
-        ("出力は宣言順", order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "ok-b.py"]),
+        # **歯止めと回帰テストの各先頭（ok-a.py・ok-t.py）が遅く終わる**（build_fake）ので、
+        # 終わった順に出すと崩れる。
+        ("出力は宣言順",
+         order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "ok-t.py", "ok-b.py"]),
     ]
 
     # 2) 歯止めだけが落ちる
@@ -522,6 +526,8 @@ MUTANTS = {
     "既定を直列にする": ("default=os.cpu_count() or 1,", "default=1,"),
     "宣言順に出さない": ("        for label, fut in guard_runs:\n",
                          "        for label, fut in reversed(guard_runs):\n"),
+    "回帰テストを宣言順に出さない": ("            for name, fut in test_runs:\n",
+                                     "            for name, fut in reversed(test_runs):\n"),
     "--jobs 0 を通す": ("    if opts.jobs < 1:\n", "    if False:\n"),
 }
 

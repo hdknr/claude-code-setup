@@ -32,7 +32,8 @@
 - **起動は宣言順。** いちばん重い `check-mutation-claims.py` を `GUARDS` の先頭に置いてある
   ——並列のとき、律速になる 1 本が最後に起動されないように。
 - **出力は宣言順**（終わった順ではない）。先頭が最も重いので、最初の行が出るまで待つ。
-- **Ctrl-C で、まだ起動していないものは起動しない。**
+- **Ctrl-C で、まだ起動していないものは起動せず、走っているものは止める**
+  （親だけに SIGINT が届いた場合も——子を止めるのは親である）。
 
 **この検査が守らないもの**——**何を守らないかを書いておかないと、緑であることが
 安心の根拠に化ける**:
@@ -53,6 +54,7 @@ import argparse
 import os
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -118,16 +120,44 @@ TESTS: list[str] = [
 ]
 
 
+# **走っている子。** 中断したときに親が自分で止める——ワーカーのスレッドは
+# KeyboardInterrupt を受けないので、`subprocess.run` の「例外で子を kill する」が働かない。
+# 端末の Ctrl-C はプロセスグループ全体に届くが、**親だけに送られた SIGINT では子は止まらない**（#430 の 1 パス目）。
+_live: set[subprocess.Popen] = set()
+_live_lock = threading.Lock()
+_stopping = False
+
+
 def run(name: str, args: list[str]) -> tuple[bool, str]:
     """スクリプトを回して (通ったか, 出力) を返す。出力は落ちたときだけ見せる。"""
-    proc = subprocess.run(
-        [sys.executable, str(SCRIPTS / name), *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=SCRIPTS.parent,
-    )
-    return proc.returncode == 0, (proc.stdout + proc.stderr)
+    with _live_lock:
+        # **止めると決めたあとに起動しない**——kill の一覧を取ったあとに生まれた子は止められない。
+        if _stopping:
+            return False, "中断したので回していない"
+        proc = subprocess.Popen(
+            [sys.executable, str(SCRIPTS / name), *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=SCRIPTS.parent,
+        )
+        _live.add(proc)
+    try:
+        out, err = proc.communicate()
+    finally:
+        with _live_lock:
+            _live.discard(proc)
+    return proc.returncode == 0, (out + err)
+
+
+def stop_all() -> None:
+    """これ以上起動せず、走っている子を kill して刈り取る。"""
+    global _stopping
+    with _live_lock:
+        _stopping = True
+        procs = list(_live)
+    for proc in procs:
+        proc.kill()
 
 
 def base_resolves(ref: str) -> bool:
@@ -207,8 +237,9 @@ def main() -> int:
                     failed.append(name)
                     logs.append((name, out))
     except KeyboardInterrupt:
-        # **まだ起動していないものを起動しない。** 走っている子は同じ SIGINT を受けて終わる。
+        # **まだ起動していないものを起動せず、走っている子を止める。**
         pool.shutdown(wait=False, cancel_futures=True)
+        stop_all()
         raise
     pool.shutdown()
 
