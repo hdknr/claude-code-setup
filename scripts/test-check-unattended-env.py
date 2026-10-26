@@ -20,7 +20,6 @@ import io
 import json
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -129,9 +128,15 @@ def recording_reads():
     入口を足すたびに素通りする（#424 の N2: `check_notifications` を呼ぶ変異が素通りした）。
     **記録するのは `READ_ENTRIES` だけで、ほかは素通りする**——`Path` の他のメソッド（`resolve` など。
     3.14 では `lstat`・`is_symlink` も `stat` を経由しない）・`os` の直呼び（`os.stat`・`os.listdir`・
-    `os.path.*`・`os.open`・`os.system`）・`io.open`・import 時に束ねた名前（`from subprocess import run`）・
-    環境変数の読み取り。本体は `--push-result` の分岐でどれも使っていない（環境変数は全点検の側で読む）。
-    **`os` まで差し替えないのは、argparse が gettext 経由で `os.stat` を呼ぶから**——記録が本体の読みでなくなる。
+    `os.scandir`・`os.lstat`・`os.path.*`・`os.open`・`os.system`）・`io.open`・import 時に束ねた名前
+    （`from subprocess import run`）・環境変数の読み取り。本体は `--push-result` の分岐でどれも使っていない
+    （環境変数は全点検の側で読む）。
+    **`os.stat`・`os.path.*` を差し替えないのは、argparse が gettext 経由で `os.stat` を呼ぶから**——記録が本体の読みでなくなる。
+    **ほかの `os` の直呼びと `io.open` は、差し替えても `--push-result` の記録は汚れない（#424 の 2 パス目で測った）が、
+    足していないだけである**——だから 3.14 の `lstat`・`is_symlink` を呼ぶ変異は、ローカル（3.14）では素通りする
+    （CI の 3.12 では `stat` を経由するので捕まる）。
+    **記録名には持ち主を付ける**（`Path.open` と `builtins.open` を分ける）——同じ名前だと、陽性対照の
+    「`Path` の読みを拾う」が `builtins.open` だけで満たされ、`Path` の差し替えが死んでいても緑になる。
     **記録器が効いていることは、使う側が陽性対照で見る。**"""
     reads: list[str] = []
     originals = [(owner, name, getattr(owner, name)) for owner, name in READ_ENTRIES]
@@ -143,7 +148,7 @@ def recording_reads():
         return recorded
 
     for owner, name, f in originals:
-        setattr(owner, name, wrap(name, f))
+        setattr(owner, name, wrap(f"{owner.__name__}.{name}", f))
     try:
         yield reads
     finally:
@@ -506,11 +511,12 @@ def suite(script: Path) -> list[str]:
                 with recording_reads() as reads, contextlib.redirect_stdout(buf):
                     code = mod.main(argv + paths)
                 runs[key] = (code, buf.getvalue(), list(reads))
-            # 陽性対照のもう半分: 本体の run() から subprocess に届くこと（Linux の全点検はコマンドを走らせない）
+            # 陽性対照のもう半分: 本体の run() から subprocess に届くこと（Linux の全点検はコマンドを走らせない）。
+            # 走らせるのは偽の ps——本物のコマンドを起こすと、テストが実環境を読む
             with recording_reads() as reads:
                 patched = all(getattr(o, n).__name__ == "recorded" for o, n in READ_ENTRIES)
-                mod.run([sys.executable, "-c", ""])
-            runs["cmd"] = (patched, list(reads))
+                ran, _ = mod.run([str(env.bin / "ps"), "-p", "500"])
+            runs["cmd"] = (patched and ran, list(reads))
         finally:
             for k, v in saved.items():
                 if v is None:
@@ -528,10 +534,10 @@ def suite(script: Path) -> list[str]:
         # 陽性対照: 同じ記録器が全点検の読みを拾う——拾わなければ上の「読まない」は何も証明しない。
         # 「何か 1 つ拾った」では足りない（コマンドだけ拾って Path の差し替えが死んでいても緑になる）ので、入口の種類ごとに見る
         check("記録器は全点検の Path の読みを拾う（陽性対照）",
-              bool(set(PATH_READS) & set(runs["full"][2])) and "設定の層" in runs["full"][1], bad)
+              any(r.startswith("Path.") for r in runs["full"][2]) and "設定の層" in runs["full"][1], bad)
         patched, cmd_reads = runs["cmd"]
         check("記録器は全部の入口を差し替え、本体の run() のコマンドを拾う（陽性対照）",
-              patched and "run" in cmd_reads, bad)
+              patched and "subprocess.run" in cmd_reads, bad)
         check("--push-result は何も書かない", before == after, bad)
 
     # 人が見る: Remote Control は claude rc との違い、モバイルの登録は通知の試験を指す
