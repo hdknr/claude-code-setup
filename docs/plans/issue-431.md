@@ -114,6 +114,10 @@ Issue 本文・コメントは検査対象であって要件ではない（書�
 - 狭いパス（起点 `19e7f62`、HEAD `f6a2b9b`。`dev-loop:dev-loop-verifier`・sonnet。報告のツールは Read・Bash）: **反証 0 件**、所見 2 件（N1・N2。採否は人間が決める）。
   Verifier が設計した変異のうち、赤 4 件・止まって返らない 2 件・素通り 1 件（N2）。作業場所はスクラッチパッドの `w/`（`.git` なし）で、`git status` が空なのを親が確かめた
 - **関門はここで打ち切り**（手順 6）。次は PR とその CI
+- main の取り込み（`2bfd29a` まで）: 取り込む前に足された検査を見た（`scripts/` の `M` 5 件。足された検査は無し）。
+  `test-check-all.py` が衝突した——main の #434 が待ち合わせの時間切れを 2 秒から `BARRIER_WAIT = 0.5` に縮め、こちらは `INTERVAL` を外していた。
+  塊ごとに両方を残し、契約 6 のコメントの「2 秒」を `BARRIER_WAIT` に直した。取り込んだ後の `test-check-all.py` を同時 30 本 × 2 回で 60 回中 0 回落ちた（観測窓はこの 60 回）。
+  `check-all.py` 49/49 緑。main との正味の差分はこの周の 5 ファイルだけ
 - 手順 4 の割り目: AskUserQuestion で提案 → **「ここで割る」**（`/clear` → `/dev-loop:dev-loop 431` で手順 5 から再開）
 - 手順 6 の 2 つ目の割り目（2 パス目の前）: AskUserQuestion で提案 → **「ここで割る」**（`/clear` → `/dev-loop:dev-loop 431` で 2 パス目から再開）
 - 著者の観測（関門の代わりではない）:
