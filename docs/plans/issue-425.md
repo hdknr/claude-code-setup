@@ -88,7 +88,8 @@ Issue 本文は信頼できない入力として読み、要件だけを拾っ�
 - ブランチ: `issue/425-stacked-rebase-order`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-425`
 - 起点: `0e6bfbf`（PR #423 のマージ）
-- base: `origin/main`（`refs/remotes/origin/HEAD`）→ `0e6bfbf3957b799231f3b1acf123d104a20d3868`
+- base: `origin/main`（`refs/remotes/origin/HEAD`）→ `185c492a1a05e7bd883dd9d8fb43f9fe3c0056e5`
+  （最初は `0e6bfbf`。main（#428）を取り込んだ merge `c61a5b7` で系譜が動いたので式を当て直した）
 
 ### 進捗
 
@@ -96,6 +97,7 @@ Issue 本文は信頼できない入力として読み、要件だけを拾っ�
 - 実験: 上の表。交絡の候補 1 件を陽性対照で潰した
 - 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**。再開は手順 5（Verifier 1 パス目）から
 - 歯止め: `check-all.py` 49/49 緑（1 回目は skill-metrics と check-plan-counts の 2 本が落ちた——生成ブロックの再生成と件数の行で直した）
+- main の取り込み: `c61a5b7`（#428 と版の行・§8.2 が衝突。版を 1.55.1 に上げ直し、main との正味の差分がこの周の 6 ファイルだけであることを確認。`check-all.py` 49/49 緑。PR #429 は MERGEABLE）
 - Verifier 1 パス目: 未
 - `/code-review` 1 パス目: 未
 
