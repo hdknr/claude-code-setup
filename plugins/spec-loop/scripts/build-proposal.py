@@ -34,7 +34,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
   `spec.md`・PPTX・`spec-figure-*.svg`）の名前の一覧で、出力より先に書く。**印の無い場所では何も消さない**——`--out` を
   手書きの `spec.md` の在る場所に向けても消さない（#397）。**書こうとする名前のファイルが印に無いまま在れば、上書きせずに 2。**
-  **引数の誤り（名前が無い・ディレクトリ・名前の衝突）は消す前に見て 2 で止めるが、印が名指しする前の出力は消す**（#398）。
+  **引数の誤り（名前が無い・ディレクトリ・名前の衝突・印に残せない名前）は消す前に見て 2 で止めるが、印が名指しする前の出力は消す**（#398。
+  ディレクトリを渡したなら、その中の印が名指しするものも消す）。
   **spec-loop 0.25.0 までが作った出力には印が無い**ので、消してから作り直す（`references/tree.md` の移行の節）。
 - **提案書は承認の記録を持たない。** 載せるのは生成元のタグとコミットだけで、「承認済み」とは書かない。
 - 同じ入力から同じバイトを作る（時刻を書かない）。標準ライブラリだけを使う（`git` は要る）。
@@ -43,7 +44,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・空白・改行を含むか `#` で始まる・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
   印に無いファイルが出力の名前で在る・書けない——書いていない
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
 
@@ -610,6 +611,9 @@ def bad_out(out: Path) -> str | None:
     """出力先の誤り。消す前・作る前に見る（`with_suffix` は名前が空だと例外を投げるので、名前を先に見る）。"""
     if out.name in ("", ".", ".."):
         return f"{out}: 出力先にファイルの名前が無い（`--out` には `<ディレクトリ>/proposal.md` の形で渡す）"
+    # 印は 1 行 1 名前で、読むときに前後の空白を落とし `#` の行を飛ばす——そう読み違える名前は印に残せない
+    if out.name != out.name.strip() or len(out.name.splitlines()) != 1 or out.name.startswith("#"):
+        return f"{out}: 出力の名前が空白・改行を含むか `#` で始まる（印 {MANIFEST} に名前として残せない）"
     if out.is_dir():
         return f"{out}: 出力先がディレクトリ（`--out` には `<ディレクトリ>/proposal.md` の形で渡す）"
     # 大文字小文字だけ違う名前も重なる（区別しない FS では同じファイル）。`spec.html` なら PPTX が仕様書の PPTX と重なる
@@ -626,8 +630,8 @@ def write_outputs(outputs: dict[Path, bytes | list], directory: Path) -> None:
         if path.exists() or path.is_symlink():
             raise Stop(2, [f"{path}: 前にこの道具が作った出力か確かめられない（印 {directory / MANIFEST} に無い）。上書きしない",
                            "手で置いたものでなければ（spec-loop 0.25.0 までが作った出力など）、消してから作り直す"])
-    directory.mkdir(parents=True, exist_ok=True)
     try:
+        directory.mkdir(parents=True, exist_ok=True)  # 親が普通のファイルでも traceback にしない
         (directory / MANIFEST).write_text("\n".join([MANIFEST_HEAD, *sorted(p.name for p in outputs)]) + "\n", encoding="utf-8")
         for path, content in outputs.items():
             if isinstance(content, list):
@@ -656,6 +660,8 @@ def main(argv: list[str]) -> int:
     # 引数の誤りは消す前に見る。誤りで止まっても、印が名指しする前の出力は消す（残すと今回のものと取り違える。#398）
     problem = bad_out(out)
     remove_owned(out.parent)
+    if out.is_dir() and out.resolve() != out.parent.resolve():
+        remove_owned(out)  # ディレクトリを渡したなら、指したつもりの場所の前の出力も消す
     if problem:
         print(f"{problem}。提案書は作っていない", file=sys.stderr)
         return 2

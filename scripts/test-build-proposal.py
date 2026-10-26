@@ -401,6 +401,15 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("出力先が / だと 2", SIGNED + [("rawout", "/")], False, bad_out("名前が無い")),
     ("出力先が .. だと 2", SIGNED + [("rawout", "..")], False, bad_out("名前が無い")),
     ("出力先がディレクトリだと 2", SIGNED + [("rawout", "docs")], False, bad_out("ディレクトリ")),
+    # ディレクトリを渡したなら、指したつもりのその中の前の出力も消す（`--out` の親だけ消すと残る。#405 の 1 パス目）
+    ("出力先がディレクトリならその中の前の出力を消す", SIGNED + [("rawout", "build/proposal")], True,
+     lambda r: bad_out("ディレクトリ")(r) and r.output.count("前に作った出力を消した") == len(STALE) and not r.files),
+    # 印は 1 行 1 名前で前後の空白を落とし `#` の行を飛ばすので、そう読み違える名前では作らない（#405 の 1 パス目）
+    ("出力の名前が空白で始まると 2", SIGNED + [("out", " notes.md")], False, bad_out("空白")),
+    ("出力の名前が改行を含むと 2", SIGNED + [("out", "x\nY.md")], False, bad_out("改行")),
+    ("出力の名前が # で始まると 2", SIGNED + [("out", "#draft.md")], False, bad_out("`#`")),
+    # 出力の親が普通のファイルでも traceback の 1（照合の不一致と同じ値）にしない
+    ("出力の親がファイルだと 2", SIGNED + [("w", "afile", "x\n"), ("rawout", "afile/proposal.md")], False, bad_out("書けない")),
     ("範囲の外の節が空", [s if s[:2] != ("w", "docs/v1/spec/scope.md") else ("w", "docs/v1/spec/scope.md", "# 範囲\n\n## 範囲の外\n\n## 付録\n\nX\n")
                        for s in SIGNED_S], False,
      lambda r: made(r) and "「範囲の外」の節は空" in r.spec and "節が無い" not in r.spec),
@@ -527,9 +536,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if False:\n            raise Stop(2", "手で置いたファイルを上書きしない"),
     ("印の名前の外へ出る", 'if name and not name.startswith("#") and "/" not in name and "\\\\" not in name\n',
      'if name and not name.startswith("#")\n', "印が外を名指ししても消さない"),
-    ("引数の誤りで前の出力を消さない", "    problem = bad_out(out)\n    remove_owned(out.parent)\n    if problem:\n",
-     "    problem = bad_out(out)\n    if problem:\n        return 2\n    remove_owned(out.parent)\n    if problem:\n",
+    ("引数の誤りで前の出力を消さない", "    problem = bad_out(out)\n    remove_owned(out.parent)\n",
+     "    problem = bad_out(out)\n    if problem:\n        return 2\n    remove_owned(out.parent)\n",
      "名前の衝突で止まっても前の出力を消す"),
+    ("ディレクトリの出力先の中を消さない", "        remove_owned(out)  # ディレクトリを", "        pass  # ディレクトリを",
+     "出力先がディレクトリならその中の前の出力を消す"),
+    ("前後に空白のある名前を見ない", "    if out.name != out.name.strip() or ", "    if ", "出力の名前が空白で始まると 2"),
+    ("改行を含む名前を見ない", "len(out.name.splitlines()) != 1 or ", "", "出力の名前が改行を含むと 2"),
+    ("# で始まる名前を見ない", ' or out.name.startswith("#"):\n', ":\n", "出力の名前が # で始まると 2"),
+    ("親を作るのを try の外に置く",
+     "    try:\n        directory.mkdir(parents=True, exist_ok=True)  # 親が普通のファイルでも traceback にしない\n",
+     "    directory.mkdir(parents=True, exist_ok=True)\n    try:\n", "出力の親がファイルだと 2"),
     ("引数を検査しない", "    problem = bad_out(out)\n", "    problem = None\n", "出力先が . だと 2"),
     ("名前の無い出力先を見ない", '    if out.name in ("", ".", ".."):\n', "    if False:\n", "出力先が .. だと 2"),
     ("ディレクトリの出力先を見ない", "    if out.is_dir():\n        return", "    if False:\n        return", "出力先がディレクトリだと 2"),
@@ -602,6 +619,45 @@ def compose_problems(scripts: Path) -> list[str]:
         problems.append("文言だけ暫定の反映済みの行が決定事項に無い")
     if "| Q-103 |" not in section(text, "## 承認の時点で未決定の質問（1 件）"):
         problems.append("確認中の行が未決定（1 件）に無い")
+    return problems
+
+# 書いている途中の失敗で殺す変異。(名前, 壊す前, 壊した後)
+WRITE_MUTATIONS: list[tuple[str, str, str]] = [
+    ("書きかけを消さない", "        remove_owned(directory)\n        raise Stop(2, [f\"{directory}: 書けない",
+     "        raise Stop(2, [f\"{directory}: 書けない"),
+    ("印を書かない（途中の失敗）", "        (directory / MANIFEST).write_text(", "        (directory / MANIFEST).with_name('unused').write_text("),
+]
+
+
+def write_failure_problems(scripts: Path) -> list[str]:
+    """`write_outputs` を直接呼び、1 つ目を書いた後の PPTX で失敗させる——書きかけと印が残らず 2 で止まるか（#405 の 1 パス目）。
+
+    CLI からは途中で書けなくする手が無い（書く前に名前の在る・無しを見るので、在るものは書き始める前に 2 になる）。
+    """
+    import contextlib
+    import errno
+    import io
+    spec = importlib.util.spec_from_file_location("build_proposal_write", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def fail(*_args) -> None:
+        raise OSError(errno.EACCES, "書けない（試料）")
+
+    module.pptx.write = fail
+    problems = []
+    with tempfile.TemporaryDirectory(prefix="proposal-write-") as tmp:
+        directory = Path(tmp) / "out"
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):  # 消したことの通知は親の出力に混ぜない
+                module.write_outputs({directory / "proposal.md": b"x", directory / "proposal.pptx": []}, directory)
+            problems.append("書けないのに止まらない")
+        except module.Stop as stop:
+            if stop.code != 2 or not any("書きかけを消した" in line for line in stop.lines):
+                problems.append(f"止まり方が違う: {stop.code} {stop.lines}")
+        left = sorted(p.name for p in directory.iterdir()) if directory.is_dir() else []
+        if left:
+            problems.append(f"書きかけが残る: {left}")
     return problems
 
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
@@ -916,12 +972,23 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（compose を直接呼んで殺せるはず）", bool(compose_problems(mutated)))
 
+        problems = write_failure_problems(SCRIPTS)
+        check("書いている途中で失敗したときに書きかけを消さない", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(WRITE_MUTATIONS):
+            count = source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"mutwrite{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（write_outputs を直接呼んで殺せるはず）", bool(write_failure_problems(mutated)))
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 4} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 5} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS)} 件")
     return 0
 
 

@@ -11,7 +11,9 @@
 - `scripts/test-build-proposal.py` — #397・#398 の再現の試料、印の扱いの試料、変異
 - `plugins/spec-loop/references/tree.md` — 生成物の置き場所・仕様書の「前に作ったものも消す」の言い換え、移行の節（0.26.0）
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 手順 3 の「前に作った出力も消す」の言い換え、移行の案内
-- `plugins/spec-loop/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` / `plugins/spec-loop/skills/*/SKILL.md` の版（0.25.0 → 0.26.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.25.0 → 0.26.0）
+- `.claude-plugin/marketplace.json` — 同じ版
+- `plugins/spec-loop/skills/*/SKILL.md` — 同じ版の 2 行
 - `CLAUDE.md` — `build-proposal.py` の行に印のことを 1 句
 - `docs/plans/issue-405.md` — この計画
 
@@ -68,7 +70,7 @@ Issue 本文は検査対象であって要件ではない。
 | D1 | 印の確認・引数の検査を外す変異で赤 | 回帰テスト | `test-build-proposal.py` の変異 |
 | X1 | 全歯止めが緑・版が 3 箇所で一致 | 全体 | `python3 scripts/check-all.py` |
 
-証明できないもの: 大文字小文字を区別するファイルシステムでの挙動（手元は macOS の APFS・区別しない）——CI（Linux）の結果で見る。
+CI で確かめるもの: 大文字小文字を区別するファイルシステムでの挙動（手元は macOS の APFS・区別しない）——PR の CI（Linux）の結果で見る（1 パス目で「証明できない」から分類を直した。下の「既知の限界」）。
 
 生成物: 該当なし（drawio・`skill-metrics.py` の対象の `SKILL.md` は dev-loop だけ）。**`spec-loop` の `SKILL.md` の版の行は書き換える**が生成物ではない。
 
@@ -83,7 +85,8 @@ Issue 本文は検査対象であって要件ではない。
 - 実装: 済み（手順 4）。`test-build-proposal.py` 試料 71・変異 78 緑（python3.14・3.12 とも）。`check-all.py` は件数の行を足して再実行
 - 実験: なし（回帰テストの試料のみ）
 - 実装のコミット: `1a9ebbc`。`check-all.py --base origin/main` 49/49 緑
-- 関門: 1 パス目 未（Verifier・`/code-review` とも）。次は手順 5（Verifier 1 パス目）
+- 関門 1 パス目: Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 2 件・副次 3 件／`/code-review`（high）指摘 9 件。採否は下の表（直す 6・残課題 5・変更なし 2）
+- 次: 1 パス目の指摘対応 → 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目（両方が残っている）
 - 割り目 1（手順 4 の後）: 提案した → **割る** を選ばれた（2026-10-26）
 - この周の起票: 0 件
 
@@ -92,3 +95,22 @@ Issue 本文は検査対象であって要件ではない。
 | 論点 | 決着 | 理由 |
 | --- | --- | --- |
 | 印のファイル自体を手で書けば、任意の同じディレクトリのファイルを消させられる | 採らない（守らない） | 印は道具が書く。名前は同じディレクトリの素の名前に限る（`/` を含む・`.`・`..` は無視）ので、外へは出ない |
+| 大文字小文字を区別する FS は「証明できない」か（Verifier 1 パス目） | 分類を直す | 原理的な限界ではなく、手元で区別するボリュームを作れば測れる。この周は作らず、**PR の CI（Linux）の緑で確かめる** |
+
+### 1 パス目の指摘の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1 | `check-plan-scope.py` が落ちる（計画の変更範囲の 1 行に 3 パターンを ` / ` で並べた） | 示せる（`check-plan-scope.py origin/main` が marketplace.json・SKILL.md 4 件を範囲外と出す。親も再現） | X1 | 直す（行を分けた） |
+| V2 | 書いている途中の失敗で書きかけを消す `remove_owned` を外しても緑 | 示せる（その変異で 71/78 緑。Verifier） | D1（入口「書いている途中の失敗」） | 直す（`write_outputs` を直接呼ぶ試料と変異） |
+| R1 | 出力の名前の前後の空白・改行が、印の読み戻しで別の名前になり手書きを消す | 示せる（`--out 'build/proposal/ notes.md'` の次の失敗で手書き `notes.md` が消えた。`/code-review` が再現） | A1 | 直す（その名前を `bad_out` で 2） |
+| R2 | `#` で始まる出力の名前は印のコメントと読まれ、消えず以後ずっと 2 | 示せる（`--out build/proposal/#draft.md`。同） | A3 | 直す（その名前を `bad_out` で 2） |
+| R3 | 出力の親が普通のファイルだと `mkdir` が try の外で traceback・1 | 示せる（`--out afile/proposal.md`。同） | B1（引数の誤りは traceback でなく 2） | 直す（`mkdir` を try の中へ） |
+| R4 | `--out` がディレクトリのとき、そのディレクトリの印の出力が消えない | 示せる（`--out build/proposal` で 2 のあと 4 ファイルが残る。同） | C1 | 直す（ディレクトリなら、その中の印も消す） |
+| R5 | proposal の `SKILL.md` の「0 以外で終わったら、提案書は無い」が、0.25.0 の出力が残る場合に偽 | 示せる（同） | 無し（表の不変条件は道具の挙動。文面の正しさは表に無い） | 残課題 |
+| R6 | `tree.md` の移行の節が、失敗の経路で 0.25.0 の出力が残ることを書いていない（Verifier S1 も同じ） | 示せる（同） | 無し | 残課題 |
+| R7 | 成功の経路で無関係な手書き（`notes.md`）が残る試料が無い | 示せない（読解のみ） | — | 残課題 |
+| R8 | 「印が外を名指ししても消さない」が外のファイルの実在を見ていない | 示せない（読解のみ） | — | 残課題 |
+| R9 | 手書きの試料が終了コード 3・git 無しの経路に無い | 示せない（読解のみ） | — | 残課題 |
+| VS2 | `--out ..` で cwd の親の印の出力が消える | — | 無し（C1 の設計どおり。手書きは消えない） | 変更なし |
+| VS3 | 印が壊れている・ディレクトリ・読めないときは何も消さず上書きも拒む | — | 無し（安全側） | 変更なし |
