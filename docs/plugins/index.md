@@ -565,6 +565,10 @@ GitHub Issue 1 件を、**検証（verify）が通ることを停止条件**と�
 /dev-loop:dev-loop 42
 ```
 
+!!! tip "依存のある複数の Issue を、不在のあいだに回す"
+    台帳で複数の Issue を束ね、利用者が席を外していても起票からマージまで進める使い方は
+    [dev-loop のオートクルーズ](dev-loop-cruise.md)にまとめています。
+
 ---
 
 ## spec-loop
