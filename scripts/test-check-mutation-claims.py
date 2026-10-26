@@ -41,6 +41,7 @@ import json
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -492,6 +493,73 @@ def observe_parallel(mod, root: Path) -> dict:
     return {"raised": raised, "met": met, "boxes": len(boxes), "order": order, "left": left}
 
 
+def build_interrupt(root: Path) -> None:
+    """**3 件**の木。2 人の作業者が先頭の 2 件を当てている最中に中断する（守る 21 / #431）。
+
+    **3 件目は、中断のあとに作業者が次を取ったかどうかの証拠になる。**
+    """
+    assert_not_real_repo(root)
+    (root / "scripts").mkdir(parents=True)
+    (root / "scripts" / "subject.py").write_text("# KEEP\n# SENTINEL\n", encoding="utf-8")
+    (root / "scripts" / "subject_test.py").write_text(SUBJECT_TEST, encoding="utf-8")
+    (root / "claims.md").write_text(
+        "".join(marker(file="scripts/subject.py", old=old, new="X", red=RED) + "\n"
+                for old in ("# KEEP", "# SENTINEL", "NOWHERE")),
+        encoding="utf-8")
+
+
+def observe_interrupt(mod, root: Path) -> dict:
+    """**中断のあとに次の主張を取らないか**を観測する（守る 21 / #431）。`--jobs 2` で当てる。
+
+    **本物の SIGINT を自分に送る**——**中断が届くのは主スレッドだけで、作業者には届かない。**
+    **その差を作るのが本物の配送なので、作業者の中で例外を投げて真似てはならない。**
+    **2 人が待ち合わせてから送り、主スレッドが受け取ったのを見てから当て終える**
+    ——**受け取る前に終えると、止める前に次を取ってしまい、本体が正しくても 3 件目が当たる。**
+    **SIGINT の扱いはここで既定に戻す**——**非対話のシェルの背景で起こすと無視になっている。**
+    """
+    barrier = threading.Barrier(2, timeout=PARALLEL_WAIT)
+    arrived = threading.Event()
+    judged: list[int] = []
+    real_judge = mod.judge
+
+    def handler(signum, frame):
+        arrived.set()
+        raise KeyboardInterrupt
+
+    def interrupted(claim, box, baselines):
+        judged.append(claim.lineno)
+        if claim.lineno in (1, 2):
+            try:
+                barrier.wait()
+            except threading.BrokenBarrierError:
+                pass
+            if claim.lineno == 1:
+                # **主スレッドを名指しして送る。** `os.kill` でプロセスに送ると、
+                # **作業者のスレッドに配送されることがあり、主スレッドは待ちから起きない**
+                # ——**本体が正しくても 3 件目が当たる**（置いた直後に 3 回中 1 回踏んだ）。
+                signal.pthread_kill(threading.main_thread().ident, signal.SIGINT)
+            arrived.wait(PARALLEL_WAIT)
+            # **受け取った直後の数行（`stop.set()`）を主スレッドが進める間を置く。**
+            time.sleep(0.2)
+        return real_judge(claim, box, baselines)
+
+    previous = signal.signal(signal.SIGINT, handler)
+    mod.judge = interrupted
+    try:
+        with sweeping(mod) as made, \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            raised = None
+            try:
+                mod.main(["--jobs", "2", str(root)])
+            except BaseException as exc:  # noqa: BLE001 — 中断を受けるのがこの観測
+                raised = type(exc).__name__
+            left = sum(1 for box in made if box.exists())
+    finally:
+        mod.judge = real_judge
+        signal.signal(signal.SIGINT, previous)
+    return {"raised": raised, "judged": sorted(judged), "left": left}
+
+
 def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
     """**退避先の消し残し**を観測する（守る 14 / #157）。
 
@@ -623,7 +691,7 @@ def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
 
 
 def snapshot(mod, root: Path, only_na: Path, missing: Path,
-             leak_root: Path, leak_parent: Path, par: Path) -> tuple:
+             leak_root: Path, leak_parent: Path, par: Path, intr: Path) -> tuple:
     """観測を、まとめて 1 つにする。
 
     **どれが欠けても殺せない変異がある。**
@@ -653,6 +721,9 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         # **これが無いと並列化の変異（#431）が殺せない**——**直列に戻しても、
         # 退避先を共有しても、ほかの観測は同じ判定を同じ順に返す。**
         observe_parallel(mod, par),
+        # **これが無いと「中断されても作業者に次を取らせる」変異が殺せない**——
+        # **上の観測はどれも中断しないか、作業者を起こす前に中断する。**
+        observe_interrupt(mod, intr),
     )
 
 
@@ -750,6 +821,10 @@ MUTATIONS = {
     "退避先を畳まない": (
         "            shutil.rmtree(box, ignore_errors=True)\n    return results",
         "            pass\n    return results"),
+    # 守る 21: 中断されたら、作業者は次の主張を取らない（#431）
+    "中断されても作業者に次を取らせる": (
+        "                    stop.set()\n                    raise\n",
+        "                    pass\n                    raise\n"),
 }
 
 
@@ -783,10 +858,13 @@ def run_all(escape: Path) -> int:
         par = Path(tmp) / "parallel"
         par.mkdir()
         build_parallel(par)
+        intr = Path(tmp) / "interrupt"
+        intr.mkdir()
+        build_interrupt(intr)
 
         mod = load()
-        base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par)
-        (rc, out), (rc_na, out_na), (rc_missing, _), leak, para = base
+        base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
+        (rc, out), (rc_na, out_na), (rc_missing, _), leak, para, stopped = base
         got = verdicts(out)
 
         print("3 つの判定が出そろうか")
@@ -935,13 +1013,16 @@ def run_all(escape: Path) -> int:
         check("原本を書き換えていない",
               (root / "scripts" / "subject.py").read_text(encoding="utf-8") == SUBJECT)
 
-        print("\n並列に当てる（守る 17〜20 / #431）")
+        print("\n並列に当てる（守る 17〜21 / #431）")
         check("`--jobs 2` で 2 件が同時に当たる（待ち合わせが揃う）",
               para["met"] == [True, True])
         check("同時に当てた 2 件は別の退避先にいる", para["boxes"] == 2)
         check("出力は収集順で、判定が自分の主張に付く",
               para["order"] == [("claims.md:1", "確認"), ("claims.md:2", "当てられなかった")])
         check("終わったあと退避先が 1 つも残らない", para["left"] == 0)
+        check("中断は投げ直す", stopped["raised"] == "KeyboardInterrupt")
+        check("中断のあと、作業者は次の主張を取らない（守る 21）", stopped["judged"] == [1, 2])
+        check("中断のあとも退避先が 1 つも残らない", stopped["left"] == 0)
         check("並列でも判定と終了コードは直列と同じ（既定の並列の観測と `--jobs 1` を比べる）",
               observe(mod, root, "--jobs", "1") == (rc, out))
         try:
@@ -970,7 +1051,8 @@ def run_all(escape: Path) -> int:
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
-            changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent, par) != base
+            changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent, par,
+                               intr) != base
             # **変異が的を書き換えたまま終わることがある**（復元は `judge` の中だけ）。
             # **次の変異の観測を汚さないよう、毎回戻す。**
             if escape.read_text(encoding="utf-8") != ESCAPE_BODY:

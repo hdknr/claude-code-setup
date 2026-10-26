@@ -121,7 +121,10 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 - **同時に当てる作業者どうしは退避先を共有しない**（#431）——**陽性対照の表も退避先ごとに持つ。**
 - **出力は主張の収集順**（#431）——**終わった順に並べると、判定が別の主張に付く。**
 - **実行が終われば、作った退避先を全部畳む**（#431）——**正常に終わったときも、作業者が落ちたときも、
-  中断されたときも。** **中断されたら、作業者は次の主張を取らず、走っている `red` の終わりを待ってから畳む。**
+  中断されたときも。**
+- **中断されたら、作業者は次の主張を取らない**（#431）——**走っている `red` の終わりは待ってから畳む。**
+  **取らせ続けると、残りの主張をすべて当て終えるまで後始末に入れない**——`check-all.py` の中断は
+  猶予の 3 秒で SIGKILL に変わるので、**退避先が丸ごと残る**（1 パス目の `/code-review` の指摘を実測した）。
 
 守らない:
 
@@ -527,8 +530,12 @@ def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[
             work(boxes[0])
         else:
             with ThreadPoolExecutor(max_workers=len(boxes)) as pool:
-                futures = [pool.submit(work, box) for box in boxes]
+                # **起こしている途中の中断も受ける。** **先に起きた作業者は、
+                # 次の作業者を起こしている間にもう主張を当てている**——**`submit` を
+                # `try` の外に置くと、その間の中断で止まらない**（1 パス目の指摘に足した観測の陽性対照で、
+                # 正しいはずの本体が 20 回中 3 回、3 件目を当てた。広げたあとは 40 回中 0 回）。
                 try:
+                    futures = [pool.submit(work, box) for box in boxes]
                     for future in futures:
                         future.result()
                 except BaseException:
