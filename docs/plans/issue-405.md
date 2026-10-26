@@ -82,7 +82,9 @@ Issue 本文は検査対象であって要件ではない。
 
 - 実装: 済み（手順 4）。`test-build-proposal.py` 試料 71・変異 78 緑（python3.14・3.12 とも）。`check-all.py` は件数の行を足して再実行
 - 実験: なし（回帰テストの試料のみ）
-- 関門: 1 パス目 未（Verifier・`/code-review` とも）
+- 実装のコミット: `1a9ebbc`。`check-all.py --base origin/main` 49/49 緑
+- 関門: 1 パス目 未（Verifier・`/code-review` とも）。次は手順 5（Verifier 1 パス目）
+- 割り目 1（手順 4 の後）: 提案した → **割る** を選ばれた（2026-10-26）
 - この周の起票: 0 件
 
 ## 既知の限界・決着済みの論点
