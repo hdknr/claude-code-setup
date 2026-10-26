@@ -25,6 +25,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/spec-fingerprint.py` - spec-loop から来た Issue の**機能の指紋**を手元の中間表現から出す
       （#290。**式は spec-loop の `scaffold.py` の `fingerprint` の写しで、`scripts/test-scaffold.py` が両方を走らせて
       一致を見る**——同じ理由）
+    - `skills/cruise/` - **オートクルーズの入口**（#446。`/dev-loop:cruise <親 Issue> [--absent]`）。親 Issue のチェックリストから
+      `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**）。
+      **dev-loop スキルを `../dev-loop/` で指す**ので、**素のスキルとしては張れない**。書式と守る／守らないは docstring を正とする。
+      テストは `scripts/test-parent-issue.py`
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
     - `skills/req-loop/` - 要求確定のループ（#216。1 周 = レビュー会 1 回。**回答待ちで止まる**）。
       **共有の `references/` と `scripts/` を `../../` で指す**ので、**素のスキルとしては張れない**
@@ -172,6 +176,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-ledger.py` - **複数 Issue の台帳の回帰テスト**（#390。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/ledger.py`**（`test-find-cycle.py` と同じ形）。
     テンポラリに**本物の worktree** を作り、その中からでもメインの作業ツリーの台帳を指すことを見る
+  - `test-parent-issue.py` - **親 Issue の一覧から台帳を作る入口の回帰テスト**（#446。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/cruise/scripts/parent-issue.py`**（同じ形）。本文は `--body-file` と偽の `gh` で渡し、
+    台帳は**本物の `ledger.py`** で作る
   - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
     **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**
