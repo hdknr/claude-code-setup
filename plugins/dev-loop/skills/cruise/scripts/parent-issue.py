@@ -30,8 +30,10 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 
 - **チェックリストの行**（`-`・`*`・`+`・`1.`・`1)` のあとに `[ ]` か `[x]`）だけを読む。ほかの行は読まない。
   **コードフェンスの中（インデントされたものを含む）と HTML コメント（`<!-- … -->`）の中も読まない。**
-  フェンスは**開いたのと同じ文字で、同じ長さ以上の行**で閉じる（インデントは開きの幅＋3 まで）。
-  `` ` `` の印の後ろに `` ` `` がある行はフェンスではない（インラインコード）。
+  フェンスは**開いたのと同じ文字で、同じ長さ以上の行**で閉じる（インデントは開きの幅＋3 まで。タブは 4 桁の区切りまで数える）。
+  `` ` `` の印の後ろに `` ` `` がある行はフェンスではない（インラインコード）。フェンスの開きの行の `<!--` は情報文字列で、コメントではない。
+  HTML コメントは GitHub の画面に合わせて、**行頭の `<!--` から `-->` を含む行まで**と、**1 行の中で閉じる `<!-- … -->`** を読まない。
+  **インラインコードの中の `<!--` と、行の途中で同じ行に閉じない `<!--` はコメントではない**（画面にそのまま見える）。
 - 回す Issue の行は `#番号` で始める。番号の後ろの文は題として台帳に入れる。**`#番号` で始まらないチェックリストの行**
   （受入基準など）と**引用（`>`）の中のチェックリストの行**は台帳に入れず、`show` に**読み飛ばした行**として出す
   ——親 Issue に受入基準が混ざっていてもよい。
@@ -60,10 +62,13 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 - **コードフェンスの中のチェックリストは読まない**——書式の例を貼った本文で、例の Issue を回さない。
   **閉じは開きと同じ文字・同じ長さ以上で見る**——違う印で閉じたと読むと、例を読み、本物を落とす。
 - **開きの幅＋3 より深い印では閉じない**——フェンスの中にインデントして貼った例の印で閉じたと読むと、例を読む。
+- **インデントのタブは 4 桁の区切りまで数える**——タブを 1 桁と数えると、タブで字下げした例の印で閉じたと読む。
 - **`` ` `` の印の後ろに `` ` `` がある行をフェンスの開きと読まない**——インラインコードを開きと読むと、見える行を落とし、隠れた行を読む。
 - **閉じていないコードフェンスは拒む**——閉じ忘れの後ろの行を、黙って全部落とさない。
 - **HTML コメントの中のチェックリストは読まない**——Issue の画面に見えない行を、確かめさせずに回さない。
-- **本文の終わりまで閉じない `<!--` は拒む**——行の途中の `<!--`（インラインコードを含む）から後ろを、黙って全部落とさない。
+- **インラインコードの中の `<!--` をコメントの開きと読まない**——画面に見える行を、後ろの `-->` まで黙って落とさない。
+- **行の途中で同じ行に閉じない `<!--` をコメントの開きと読まない**——画面では文字のまま見える（次の項目で段落が切れる）。
+- **本文の終わりまで閉じない行頭の `<!--` は拒む**——閉じ忘れの後ろの行を、黙って全部落とさない。
 - **同じ番号が 2 行あれば拒む。**
 - **一覧に無い依存先・自己依存・未チェックの間の循環を拒む**——どれも、その Issue が永遠に着手できない台帳になる。
 - **`[x]` の行への依存は満たされたものとして外す**——依存先が済んでいるのに着手できない台帳にしない。
@@ -102,6 +107,7 @@ DEP_LIST_RE = re.compile(r"^#[0-9]+(\s*,\s*#[0-9]+)*$")
 SUSPECT_RE = re.compile(r"depend|依存", re.IGNORECASE)
 REF_RE = re.compile(r"#[0-9]+")
 FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
+CODE_RE = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)")
 
 
 class Refused(Exception):
@@ -113,20 +119,33 @@ class Unknown(Exception):
 
 
 def visible(line, in_comment):
-    """HTML コメント（`<!-- … -->`）を除いた行の残りと、行末でコメントの中にいるかを返す。"""
-    out = ""
-    while line:
-        if in_comment:
-            end = line.find("-->")
-            if end < 0:
-                return out, True
-            line, in_comment = line[end + 3:], False
+    """HTML コメントを除いた行の残りと、行末でコメントの中にいるかを返す（GitHub の画面に合わせる）。
+    行頭の `<!--` は `-->` を含む行まで続く（その行の残りも読まない）。行の途中の `<!--` は同じ行で閉じるときだけ
+    コメントで、閉じなければ文字のまま。インラインコードの中の `<!--`・`-->` は見ない。"""
+    masked = CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
+    if in_comment:
+        return "", masked.find("-->") < 0
+    out, pos = "", 0
+    while True:
+        start = masked.find("<!--", pos)
+        if start < 0:
+            return out + line[pos:], False
+        after = start + 4
+        if masked.startswith(">", after) or masked.startswith("->", after):
+            end = after + (1 if masked[after] == ">" else 2)
         else:
-            start = line.find("<!--")
-            if start < 0:
-                return out + line, False
-            out, line, in_comment = out + line[:start], line[start + 4:], True
-    return out, in_comment
+            close = masked.find("-->", after)
+            if close < 0:
+                if line[:start].strip() == "":
+                    return out, True
+                return out + line[pos:], False
+            end = close + 3
+        out, pos = out + line[pos:start], end
+
+
+def width(indent):
+    """インデントの幅（タブは 4 桁の区切りまで）。"""
+    return len(indent.expandtabs(4))
 
 
 def opens(line):
@@ -135,7 +154,7 @@ def opens(line):
     m = FENCE_RE.match(line)
     if not m or (m.group("fence")[0] == "`" and "`" in m.group("info")):
         return None
-    return m.group("fence"), len(m.group("indent"))
+    return m.group("fence"), width(m.group("indent"))
 
 
 def closes(line, fence, indent):
@@ -143,7 +162,7 @@ def closes(line, fence, indent):
     インデントが開きの幅＋3 まで（それより深い印はフェンスの中身）。"""
     m = FENCE_RE.match(line)
     return bool(m) and m.group("fence")[0] == fence[0] and len(m.group("fence")) >= len(fence) \
-        and not m.group("info").strip() and len(m.group("indent")) <= indent + 3
+        and not m.group("info").strip() and width(m.group("indent")) <= indent + 3
 
 
 def parse(body):
@@ -154,14 +173,14 @@ def parse(body):
             if closes(line, fence, indent):
                 fence = None
             continue
+        opened = None if in_comment else opens(line)
+        if opened:
+            (fence, indent), fence_line = opened, lineno
+            continue
         was_in_comment = in_comment
         line, in_comment = visible(line, in_comment)
         if in_comment and not was_in_comment:
             comment_line = lineno
-        opened = opens(line)
-        if opened:
-            (fence, indent), fence_line = opened, lineno
-            continue
         m = CHECK_RE.match(line)
         if not m:
             continue
@@ -197,7 +216,7 @@ def parse(body):
     if fence:
         raise Refused(f"{fence_line} 行目のコードフェンス {fence} が閉じていない（後ろの行を読めない）")
     if in_comment:
-        raise Refused(f"{comment_line} 行目の <!-- が閉じていない（後ろの行を読めない。インラインコードの <!-- もコメントと読む）")
+        raise Refused(f"{comment_line} 行目の <!-- が閉じていない（後ろの行を読めない）")
     if not items:
         raise Refused("未チェックの Issue が 0 件（回すものが無い）")
     listed = {i["number"] for i in items}
