@@ -88,6 +88,9 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
@@ -133,7 +136,6 @@ def run_main(mod, argv: list[str]) -> tuple[int, str]:
 
 # ------------------------------------------------------------- 偽の scripts/
 FLAGS = "flags"
-SLOW_HEAD = 0.3
 # **待ち合わせの時間切れ（秒）。** 並列を壊す変異では毎回ここまで待ち切るので、変異の数だけ
 # `test-check-all.py` が延びる（それを 5 回回す `check-mutation-claims.py` ごと）——2 秒から縮めた（#434）。
 # **縮めすぎると、変異の前の本体で相手の起動が遅れたときに偽の赤になる**（負荷の高い `check-all.py` の中・CI）。
@@ -174,18 +176,9 @@ def build_fake(root: Path) -> Path:
     # **宣言の先頭を遅らせる。** 終わった順に出す本体だと、後ろの行が先に出る（契約 1 の順序）。
     (scripts / "ok-a.py").write_text("import time; time.sleep(0.05); print('a ok')\n")
     (scripts / "ok-b.py").write_text("print('b ok')\n")
-    # 回帰テストの側の先頭も遅らせる——歯止めの順だけ見ると、回帰テストの順は誰も見ない。
+    # 回帰テストの側の先頭。**順序を見る契約 1 では、遅延ではなく `hold_head_test` が後に終わらせる**（#437）。
     (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n")
     (scripts / "ok-c.py").write_text("print('c ok')\n")
-    # **順序を見る契約 1 だけが使う、遅い回帰テストの先頭**（#431）。
-    # **「回帰テストを終わった順に出す」変異は、歯止めの結果を全部待ってから `as_completed` に入る。**
-    # **そこで回帰テストが 2 本とも終わっていると、終わった順ではなく集合の順に出て、
-    # 宣言順と偶然揃うことがある**——`test-check-all.py` を同時に 10 本走らせると 30 回中 3 回、
-    # この変異を取りこぼした（先頭が 0.05 秒のとき）。**歯止めの側の先頭まで遅くすると、
-    # 回帰テストが終わってから歯止めを待つことになって悪化した**（両方 0.3 秒で 60 回中 5 回）。
-    # **だから遅くするのは回帰テストの先頭だけ**——**歯止めを待ち終えても、まだ走っているように。**
-    # **全部の契約を遅くしない**——**先頭はほかの契約でも走るので、伸ばすとテスト全体が伸びる。**
-    (scripts / "slow-t.py").write_text(f"import time; time.sleep({SLOW_HEAD}); print('slow ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
@@ -197,11 +190,11 @@ def build_fake(root: Path) -> Path:
     return target
 
 
-def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool, slow_heads: bool = False) -> None:
+def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("ok-a.py", [], False), ("ok-c.py", [], False),
                   ("needs-base.py", [], True)]
-    mod.TESTS = ["slow-t.py" if slow_heads else "ok-t.py", "ok-b.py"]
+    mod.TESTS = ["ok-t.py", "ok-b.py"]
     if bad_guard:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
         # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
@@ -212,6 +205,82 @@ def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool, slow_heads: bool =
         mod.TESTS.append("bad-test.py")
 
 
+class RecordingPool(ThreadPoolExecutor):
+    """本体の `ThreadPoolExecutor` の代わり。作業者の数と、名前ごとの future を覚える。"""
+
+    def __init__(self, max_workers=None, *args, **kwargs):
+        super().__init__(max_workers, *args, **kwargs)
+        self.workers = max_workers
+        self.futures: dict[str, object] = {}
+
+    def submit(self, fn, /, *args, **kwargs):
+        fut = super().submit(fn, *args, **kwargs)
+        self.futures[args[0]] = fut
+        return fut
+
+
+def record_pools(mod) -> list[RecordingPool]:
+    """本体が作るプールを `RecordingPool` に差し替え、作られたものを返すリストを渡す。"""
+    pools: list[RecordingPool] = []
+
+    class Pool(RecordingPool):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            pools.append(self)
+
+    mod.ThreadPoolExecutor = Pool
+    return pools
+
+
+TESTS_HEADER = "=== 回帰テスト ==="
+# **同期が成り立たないとき（本体の形が変わった・作業者が 1 つ）に、待ちを打ち切る秒数。**
+# 打ち切っても本体の出力は変わらない——**順序を壊す変異を捕まえる確かさが、時間の競争に戻るだけ。**
+HOLD_LIMIT = 5.0
+
+
+def main_waits(ident: int) -> bool:
+    """スレッド `ident` が `threading` の `wait`（`Future.result`・`as_completed` の中）で止まっているか。"""
+    frame = sys._current_frames().get(ident)
+    return (frame is not None and frame.f_code.co_name == "wait"
+            and frame.f_code.co_filename.endswith("threading.py"))
+
+
+def hold_head_test(mod, pools: list[RecordingPool], head: str, after: str) -> None:
+    """回帰テストの先頭 `head` の結果を、次の 3 つが揃うまで返さない（#437）。
+
+    1. `after` の future が終わっている
+    2. 本体が回帰テストの見出しを出した（歯止めの結果を待ち終えた）
+    3. 本体のスレッドが待ちに入った
+
+    **終わった順に出す変異（`as_completed`）は、歯止めを待ち終えてから回帰テストに入る。**
+    **そこで回帰テストが 2 本とも終わっていると、終わった順ではなく集合の順に出て、宣言順と偶然揃う**
+    ——先頭を遅い試料（0.3 秒）にしても、`test-check-all.py` を同時に 30 本 × 3 回走らせると 90 回中 6 回
+    取りこぼした（歯止めの起動の遅れが、試料の遅延に勝つ）。**時間で競わず、同期で決める**:
+    待ちに入った時点で `head` はまだ終わっておらず、`after` は終わっているので、
+    `as_completed` は必ず `after` を先に出す。宣言順に待つ本体は `head` を待つので、宣言順のまま出る。
+    """
+    ident = threading.get_ident()
+    real_run = mod.run
+
+    def run(name: str, args: list[str]) -> tuple[bool, str]:
+        res = real_run(name, args)
+        # **作業者が 1 つなら `after` は `head` の後ろに並ぶ**——待つと詰まるので待たない
+        # （そのとき終わった順は宣言順と同じで、順序を壊す変異はもともと判別できない）。
+        if name != head or not pools or (pools[0].workers or 0) < 2:
+            return res
+        end = time.monotonic() + HOLD_LIMIT
+        while time.monotonic() < end:
+            fut = pools[0].futures.get(after)
+            # **`redirect_stdout` は `sys.stdout` を差し替えるので、作業者のスレッドからも本体の出力が見える。**
+            out = getattr(sys.stdout, "getvalue", lambda: "")()
+            if fut is not None and fut.done() and TESTS_HEADER in out and main_waits(ident):
+                break
+            time.sleep(0.005)
+        return res
+
+    mod.run = run
+
+
 # ------------------------------------------------------------------- 契約
 # **本体を壊したときに、少なくとも 1 つが破れなければならない。**
 def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
@@ -219,17 +288,18 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
 
     # 1) 全部通る。base は解決できない → base を要する 1 本は SKIP。
     mod = load(target, f"{tag}_pass")
-    wire(mod, root, bad_guard=False, bad_test=False, slow_heads=True)
+    wire(mod, root, bad_guard=False, bad_test=False)
+    hold_head_test(mod, record_pools(mod), "ok-t.py", after="ok-b.py")
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
     got += [
         ("全部通れば rc=0", rc == 0),
         ("飛ばしたものを数えて出す", "飛ばし 1" in out),
         ("飛ばしたことを黙らない", "飛ばしたものは回していない" in out),
         ("SKIP でも残りは回る", "OK   ok-b.py" in out),
-        # **歯止めと回帰テストの各先頭（ok-a.py・slow-t.py）が遅く終わる**（build_fake）ので、
-        # 終わった順に出すと崩れる。
+        # **歯止めの先頭（ok-a.py）は遅く終わり**（build_fake）、**回帰テストの先頭（ok-t.py）は
+        # ok-b.py より後に終わる**（hold_head_test）ので、終わった順に出すと崩れる。
         ("出力は宣言順",
-         order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "slow-t.py", "ok-b.py"]),
+         order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "ok-t.py", "ok-b.py"]),
     ]
 
     # 2) 歯止めだけが落ちる
@@ -278,13 +348,18 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     #    `test-check-all.py` を同時に 30 本 × 2 回走らせると、60 回中 7 回、2 本が同時に起動しても
     #    区間が重ならず、「--jobs を無視する」変異を取りこぼした（`check-all.py` の中でも 1 回踏んだ）。
     #    **待ち合わせは相手を `BARRIER_WAIT` 秒待つ**（区間の 5 倍）ので、同時に起動していれば、遅れても出会う。
+    #    **ただし待ち合わせは「同時に走る」側を時間に依らずには示せない**——相手の起動が `BARRIER_WAIT` より
+    #    遅れると、同時に投げても時間切れで落ちる。30 本 × 3 回で 90 回中 2 回、「--jobs を無視する」変異を
+    #    取りこぼした（#437）。**だから作業者の数も見る**——時間に依らない。
     mod = load(target, f"{tag}_ser")
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
     mod.TESTS = []
+    pools = record_pools(mod)
     clear_flags(root)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "1"])
     got.append(("--jobs 1 で同時に走らない", rc != 0 and "相手が来ない" in out))
+    got.append(("--jobs 1 で作業者を 1 つにする", [p.workers for p in pools] == [1]))
 
     # 7) 既定（--jobs を渡さない）でも同時に走る——既定が直列なら速くならない。
     #    **区間の重なりではなく待ち合わせで見る**——重なりは起動の遅れに負けるが、
