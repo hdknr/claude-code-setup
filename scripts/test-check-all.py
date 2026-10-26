@@ -529,6 +529,20 @@ MUTANTS = {
     "回帰テストを宣言順に出さない": ("            for name, fut in test_runs:\n",
                                      "            for name, fut in reversed(test_runs):\n"),
     "--jobs 0 を通す": ("    if opts.jobs < 1:\n", "    if False:\n"),
+    # **終わった順に出す**本体を写した変異（`as_completed`。#430 の 2 パス目）。`reversed()` だけでは、
+    # 受入基準 P11 が挙げる「終わった順」を表す変異が無かった。歯止めの側は SKIP（すぐ終わる）が先に出るので
+    # 試料の遅延に依らず崩れる——**遅延を外しても 2 本とも捕まえた**ので、遅延が要るとは言えない。
+    "歯止めを終わった順に出す": (
+        "        for label, fut in guard_runs:\n",
+        "        import concurrent.futures as _cf\n"
+        "        _m = {f: (l, f) for l, f in guard_runs if f is not None}\n"
+        "        for label, fut in [r for r in guard_runs if r[1] is None]"
+        " + [_m[f] for f in _cf.as_completed(_m)]:\n"),
+    "回帰テストを終わった順に出す": (
+        "            for name, fut in test_runs:\n",
+        "            import concurrent.futures as _cf\n"
+        "            _m = {f: (n, f) for n, f in test_runs}\n"
+        "            for name, fut in [_m[f] for f in _cf.as_completed(_m)]:\n"),
 }
 
 

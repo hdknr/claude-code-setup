@@ -33,7 +33,9 @@
   ——並列のとき、律速になる 1 本が最後に起動されないように。
 - **出力は宣言順**（終わった順ではない）。先頭が最も重いので、最初の行が出るまで待つ。
 - **Ctrl-C で、まだ起動していないものは起動せず、走っているものは止める**
-  （親だけに SIGINT が届いた場合も——子を止めるのは親である）。
+  （親だけに SIGINT が届いた場合も——子を止めるのは親である）。**孫まで止める**——
+  子は自分のプロセスグループで起こし、止めるときはグループに SIGINT を送って
+  後始末の猶予を与え、残ったら SIGKILL する。**POSIX 専用**（`os.killpg`）。
 
 **この検査が守らないもの**——**何を守らないかを書いておかないと、緑であることが
 安心の根拠に化ける**:
@@ -52,9 +54,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import subprocess
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -122,10 +126,14 @@ TESTS: list[str] = [
 
 # **走っている子。** 中断したときに親が自分で止める——ワーカーのスレッドは
 # KeyboardInterrupt を受けないので、`subprocess.run` の「例外で子を kill する」が働かない。
-# 端末の Ctrl-C はプロセスグループ全体に届くが、**親だけに送られた SIGINT では子は止まらない**（#430 の 1 パス目）。
+# **子は 1 本ずつ自分のプロセスグループで起こし、止めるときはグループごと止める**——
+# 子だけを kill すると、子が起こした孫（`check-mutation-claims.py` の配下）が孤児として残る（#430 の 2 パス目）。
+# 端末の Ctrl-C は親のグループにしか届かなくなるので、子への SIGINT は親が送る。
 _live: set[subprocess.Popen] = set()
 _live_lock = threading.Lock()
 _stopping = False
+# 子が自分の後始末（一時ディレクトリの削除など）を済ませるのを待つ秒数。過ぎたら SIGKILL。
+GRACE = 3.0
 
 
 def run(name: str, args: list[str]) -> tuple[bool, str]:
@@ -140,6 +148,7 @@ def run(name: str, args: list[str]) -> tuple[bool, str]:
             stderr=subprocess.PIPE,
             text=True,
             cwd=SCRIPTS.parent,
+            process_group=0,
         )
         _live.add(proc)
     try:
@@ -150,14 +159,28 @@ def run(name: str, args: list[str]) -> tuple[bool, str]:
     return proc.returncode == 0, (out + err)
 
 
+def signal_group(proc: subprocess.Popen, sig: int) -> None:
+    try:
+        os.killpg(proc.pid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass  # グループにもう誰もいない
+
+
 def stop_all() -> None:
-    """これ以上起動せず、走っている子を kill して刈り取る。"""
+    """これ以上起動せず、走っている子のグループに SIGINT を送り、
+    `GRACE` 秒待ってから残ったグループを SIGKILL する。刈り取りは各ワーカーの `communicate()` が行う。"""
     global _stopping
     with _live_lock:
         _stopping = True
         procs = list(_live)
     for proc in procs:
-        proc.kill()
+        signal_group(proc, signal.SIGINT)
+    deadline = time.monotonic() + GRACE
+    while time.monotonic() < deadline and any(p.poll() is None for p in procs):
+        time.sleep(0.05)
+    # **子が終わっていても送る**——子が先に終わり、孫だけがグループに残っていることがある。
+    for proc in procs:
+        signal_group(proc, signal.SIGKILL)
 
 
 def base_resolves(ref: str) -> bool:
