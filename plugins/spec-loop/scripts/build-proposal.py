@@ -30,8 +30,12 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   `spec/`・`requirements/` の `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio` は載せていないと書く（draw.io は起動しない）。
   載せるものと置き場所の正は `references/tree.md` の「仕様書」。
 - **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
-- **始める前に、前に作った出力（提案書・`gantt.svg`・`spec.md`・2 つの PPTX・`spec-figure-*.svg`）を消し、
-  全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
+- **始める前に、前に作った出力を消し、全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
+  **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
+  `spec.md`・PPTX・`spec-figure-*.svg`）の名前の一覧で、出力より先に書く。**印の無い場所では何も消さない**——`--out` を
+  手書きの `spec.md` の在る場所に向けても消さない（#397）。**書こうとする名前のファイルが印に無いまま在れば、上書きせずに 2。**
+  **引数の誤り（名前が無い・ディレクトリ・名前の衝突）は消す前に見て 2 で止めるが、印が名指しする前の出力は消す**（#398）。
+  **spec-loop 0.25.0 までが作った出力には印が無い**ので、消してから作り直す（`references/tree.md` の移行の節）。
 - **提案書は承認の記録を持たない。** 載せるのは生成元のタグとコミットだけで、「承認済み」とは書かない。
 - 同じ入力から同じバイトを作る（時刻を書かない）。標準ライブラリだけを使う（`git` は要る）。
 
@@ -39,7 +43,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が仕様書・ガントチャート・PPTX・図と重なる——書いていない
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
+  印に無いファイルが出力の名前で在る・書けない——書いていない
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
 
 **守らないもの**: 手書き部分の中身（判断であって一意に決まらない）・見た目（Markdown を表示して目で見る）・
@@ -88,6 +93,9 @@ SPEC_PPTX_NAME = "spec.pptx"
 SPEC_HAND_DIR = HAND_DIR + "/spec"
 FIGURE_PREFIX = "spec-figure-"
 FIGURE_DIRS = ("spec/", "requirements/")
+# 出力と同じ場所に置く印（書いた出力のファイル名の一覧）。次の実行はここに載る名前だけを消す（#405）
+MANIFEST = ".build-proposal"
+MANIFEST_HEAD = "# build-proposal.py が作った出力の一覧。手で直さない（ここに載るファイルは次の実行で消える）"
 # 重ねた全体（版のディレクトリからのパス）
 DECISION_PATH = "shared/decision_table.csv"
 SCOPE_PATH = "spec/scope.md"
@@ -572,6 +580,65 @@ def repo_top(repo: Path) -> Path:
     return repo
 
 
+def owned_names(directory: Path) -> list[str]:
+    """印が名指しする、前回この道具が書いた出力の名前。印が無ければ空——消してよいと確かめられるものが無い。"""
+    manifest = directory / MANIFEST
+    if not manifest.is_file():
+        return []
+    try:
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    # 同じ場所の素の名前だけ（印を書き換えられても、外のファイルや印そのものは消さない）
+    return [name for name in (line.strip() for line in lines)
+            if name and not name.startswith("#") and "/" not in name and "\\" not in name
+            and name not in (".", "..", MANIFEST)]
+
+
+def remove_owned(directory: Path) -> None:
+    """印に載る出力と印を消す。載っていないもの（手書きのファイル）は、名前が出力と同じでも消さない。"""
+    for name in owned_names(directory):
+        stale = directory / name
+        if stale.is_file() or stale.is_symlink():
+            stale.unlink()
+            print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
+    if (directory / MANIFEST).is_file():
+        (directory / MANIFEST).unlink()
+
+
+def bad_out(out: Path) -> str | None:
+    """出力先の誤り。消す前・作る前に見る（`with_suffix` は名前が空だと例外を投げるので、名前を先に見る）。"""
+    if out.name in ("", ".", ".."):
+        return f"{out}: 出力先にファイルの名前が無い（`--out` には `<ディレクトリ>/proposal.md` の形で渡す）"
+    if out.is_dir():
+        return f"{out}: 出力先がディレクトリ（`--out` には `<ディレクトリ>/proposal.md` の形で渡す）"
+    # 大文字小文字だけ違う名前も重なる（区別しない FS では同じファイル）。`spec.html` なら PPTX が仕様書の PPTX と重なる
+    reserved = {name.lower() for name in (SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)}
+    if ({out.name.lower(), out.with_suffix(".pptx").name.lower()} & reserved or out.suffix.lower() == ".pptx"
+            or out.name.lower().startswith(FIGURE_PREFIX)):
+        return f"{out}: 仕様書・ガントチャート・PPTX・図・印と同じ名前になる"
+    return None
+
+
+def write_outputs(outputs: dict[Path, bytes | list], directory: Path) -> None:
+    """印を先に書いてから出力を書く——途中で失敗しても、書きかけは印に載っているので次の実行で消える。"""
+    for path in outputs:
+        if path.exists() or path.is_symlink():
+            raise Stop(2, [f"{path}: 前にこの道具が作った出力か確かめられない（印 {directory / MANIFEST} に無い）。上書きしない",
+                           "手で置いたものでなければ（spec-loop 0.25.0 までが作った出力など）、消してから作り直す"])
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        (directory / MANIFEST).write_text("\n".join([MANIFEST_HEAD, *sorted(p.name for p in outputs)]) + "\n", encoding="utf-8")
+        for path, content in outputs.items():
+            if isinstance(content, list):
+                pptx.write(content, path)
+            else:
+                path.write_bytes(content)
+    except OSError as e:
+        remove_owned(directory)
+        raise Stop(2, [f"{directory}: 書けない（{e.strerror}）。書きかけを消した"])
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo", default=".", type=Path)
@@ -586,18 +653,12 @@ def main(argv: list[str]) -> int:
 
     # git を起動できなくても、古い出力は消してから 2 で終わる（ここで落ちると古い提案書が残る）
     out = args.out if args.out else repo_top(args.repo) / DEFAULT_OUT
-    # 大文字小文字だけ違う名前も重なる（区別しない FS では同じファイル）。`spec.html` なら PPTX が仕様書の PPTX と重なる
-    reserved = {name.lower() for name in (SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME)}
-    if ({out.name.lower(), out.with_suffix(".pptx").name.lower()} & reserved or out.suffix.lower() == ".pptx"
-            or out.name.lower().startswith(FIGURE_PREFIX)):
-        print(f"{out}: 仕様書・ガントチャート・PPTX・図と同じ名前になる。提案書は作っていない", file=sys.stderr)
+    # 引数の誤りは消す前に見る。誤りで止まっても、印が名指しする前の出力は消す（残すと今回のものと取り違える。#398）
+    problem = bad_out(out)
+    remove_owned(out.parent)
+    if problem:
+        print(f"{problem}。提案書は作っていない", file=sys.stderr)
         return 2
-    stales = [out, out.parent / GANTT_NAME, out.parent / SPEC_NAME, out.with_suffix(".pptx"), out.parent / SPEC_PPTX_NAME]
-    stales += sorted(out.parent.glob(f"{FIGURE_PREFIX}*.svg")) if out.parent.is_dir() else []
-    for stale in stales:
-        if stale.is_file():
-            stale.unlink()
-            print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
 
     try:
         try:
@@ -606,17 +667,12 @@ def main(argv: list[str]) -> int:
             raise Stop(2, [str(e)])
         except OSError as e:
             raise Stop(2, [f"git を起動できない（{e.strerror}）。提案書の材料を読んでいない"])
+        write_outputs(outputs, out.parent)
     except Stop as stop:
         for line in stop.lines:
             print(line, file=sys.stderr)
         print("提案書は作っていない", file=sys.stderr)
         return stop.code
-    out.parent.mkdir(parents=True, exist_ok=True)
-    for path, content in outputs.items():
-        if isinstance(content, list):
-            pptx.write(content, path)
-        else:
-            path.write_bytes(content)
     print(f"{out}: 提案書を書いた（同じ場所に {'・'.join(p.name for p in outputs if p != out)}）")
     return 0
 

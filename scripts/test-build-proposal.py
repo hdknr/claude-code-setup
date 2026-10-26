@@ -20,6 +20,10 @@
    （`v1/req-signoff-1`）にするとタグの手順で作れない。**本体は SHA で読むので `v1` に触れない**——
    判別しているのは本体の判定ではなく、試料の名前が素の `v1` と衝突しないこと（照合の側は
    `scripts/test-check-signoff.py` が同じ形で見る）。
+7. **消すのは、印（`.build-proposal`）が名指しする前の出力だけ**（#397・#398・#405）——手で置いたファイルは
+   失敗の経路でも消さず、作れる経路でも上書きしない（2）。印が同じ場所の外を名指ししても外は消さない。
+   `--out` の誤り（`.`・`/`・`..`・ディレクトリ・名前の衝突）は traceback ではなく 2 で、それでも印の名指しする前の出力は消す。
+   **陽性対照は本物の前の実行**——試料の前の出力は印を手で書くので、本体が印に何を載せるかはそこでしか見えない。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
 `HOME` と `GIT_CONFIG_GLOBAL` を差し替える。
@@ -106,14 +110,22 @@ AFFIRMED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A 
 # 確定した回答が暫定の経緯に触れただけの行（否定・取り下げの書き方が続く）——確定の行
 SETTLED = [("w", QA, QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（暫定で採用していた B を取り下げ、業務部が A に決定）"))] + BASE[1:] + [("t", R1), ("t", B1)]
 STALE = ["proposal.md", "gantt.svg", "spec.md", "spec.pptx", "spec-figure-01.svg"]
+# 出力と同じ場所に本体が置く印（#405）。試料の「前の出力」は、本体が書くのと同じ形の印と一緒に置く
+MANIFEST = ".build-proposal"
+# 手で置いたファイル（印に無い）。前 3 つは出力と同じ名前、最後は出力と関係の無い名前（#397）
+HAND = ["proposal.md", "spec.md", "spec-figure-01.svg", "notes.md"]
+HAND_TEXT = "手書き\n"
 FIGURE_NOTE = "PPTX に載せていない"
 
 
 class Result:
     def __init__(self, code: int | None, output: str, text: str | None, svg: bool, again: str | None,
                  spec: str | None = None, names: frozenset = frozenset(), pptx: dict | None = None,
-                 again_pptx: dict | None = None, again_spec: str | None = None):
+                 again_pptx: dict | None = None, again_spec: str | None = None, directory: Path | None = None):
         self.code, self.output, self.text, self.svg, self.again = code, output, text, svg, again
+        # 出力の場所に残ったファイル（名前 → 中身。印も含む）
+        self.files = ({p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}
+                      if directory is not None and directory.is_dir() else {})
         self.spec, self.names, self.again_spec = spec, names, again_spec
         self.pptx, self.again_pptx = pptx or {}, again_pptx or {}
 
@@ -149,6 +161,16 @@ def slide_texts(parts: dict) -> list[str]:
 
 def collided(r: Result) -> bool:
     return r.code == 2 and "同じ名前になる" in r.output and r.text is None and r.spec is None and not r.names
+
+
+def hand_kept(r: Result) -> bool:
+    """手で置いたファイルが 1 つも消えず、書き換わってもいない（#397）。"""
+    return all(r.files.get(name) == HAND_TEXT.encode("utf-8") for name in HAND)
+
+
+def bad_out(word: str) -> Callable[[Result], bool]:
+    # 引数の誤りは traceback ではなく 2（#398）
+    return lambda r: r.code == 2 and word in r.output and "Traceback" not in r.output and "提案書は作っていない" in r.output
 
 
 def pptx_ok(parts: dict) -> bool:
@@ -360,6 +382,25 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("出力の名前がガントチャートと重なると作らない", SIGNED + [("out", "Gantt.svg")], False, collided),
     ("出力が PPTX の名前だと作らない", SIGNED + [("out", "proposal.pptx"), ("arg", "--pptx")], False, collided),
     ("出力の名前が図と重なると作らない", SIGNED + [("out", "spec-figure-01.md")], False, collided),
+    ("出力の名前が印と重なると作らない", SIGNED + [("out", MANIFEST)], False, collided),
+    # ---- 何を消すか（#397・#398・#405）
+    # 印に無いファイルは、名前が出力と同じでも消さない——失敗の経路でも、作れる経路でも
+    ("手で置いたファイルは作れないときも消さない", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)], "hand",
+     lambda r: r.code == 1 and hand_kept(r) and "前に作った出力を消した" not in r.output),
+    ("手で置いたファイルを上書きしない", SIGNED, "hand",
+     lambda r: r.code == 2 and hand_kept(r) and "上書きしない" in r.output and not r.svg and MANIFEST not in r.files
+     and set(r.files) == set(HAND)),
+    # 印が同じ場所の外を名指ししても、外は消さない
+    ("印が外を名指ししても消さない", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)], "evil",
+     lambda r: r.code == 1 and hand_kept(r) and "前に作った出力を消した" not in r.output),
+    # 名前の衝突で止まっても、印の名指しする前の出力は消す（残すと今回のものと取り違える。#398）
+    ("名前の衝突で止まっても前の出力を消す", SIGNED + [("out", "Spec.html"), ("arg", "--pptx")], True,
+     lambda r: collided(r) and r.output.count("前に作った出力を消した") == len(STALE) and not r.files),
+    # `--out` の誤りは traceback ではなく 2（#398）
+    ("出力先が . だと 2", SIGNED + [("rawout", ".")], False, bad_out("名前が無い")),
+    ("出力先が / だと 2", SIGNED + [("rawout", "/")], False, bad_out("名前が無い")),
+    ("出力先が .. だと 2", SIGNED + [("rawout", "..")], False, bad_out("名前が無い")),
+    ("出力先がディレクトリだと 2", SIGNED + [("rawout", "docs")], False, bad_out("ディレクトリ")),
     ("範囲の外の節が空", [s if s[:2] != ("w", "docs/v1/spec/scope.md") else ("w", "docs/v1/spec/scope.md", "# 範囲\n\n## 範囲の外\n\n## 付録\n\nX\n")
                        for s in SIGNED_S], False,
      lambda r: made(r) and "「範囲の外」の節は空" in r.spec and "節が無い" not in r.spec),
@@ -479,8 +520,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "仕様書の手書きは提案書に入らない"),
     ("仕様書に比較の節を出さない", '    if diff is not None:\n        out += changes_section(diff, info["req"])\n\n    out += ["## 仕様と要求',
      '    out += ["## 仕様と要求', "v2 の仕様書は重ねた全体と変更"),
-    ("前の仕様書を消さない", "out.parent / SPEC_NAME, out.with_suffix", "out.with_suffix", "前の提案書を消す"),
-    ("前の図を消さない", 'stales += sorted(out.parent.glob(f"{FIGURE_PREFIX}*.svg"))', "stales += []", "前の提案書を消す"),
+    # ---- 何を消すか（#405）。印に何を載せるかは本物の前の実行で見る（下の PREVIOUS_MUTATIONS）
+    ("印を見ずに名前で消す", "    for name in owned_names(directory):\n",
+     '    for name in ["proposal.md", "spec.md", "gantt.svg", "spec-figure-01.svg"]:\n', "手で置いたファイルは作れないときも消さない"),
+    ("印に無いファイルを上書きする", "        if path.exists() or path.is_symlink():\n            raise Stop(2",
+     "        if False:\n            raise Stop(2", "手で置いたファイルを上書きしない"),
+    ("印の名前の外へ出る", 'if name and not name.startswith("#") and "/" not in name and "\\\\" not in name\n',
+     'if name and not name.startswith("#")\n', "印が外を名指ししても消さない"),
+    ("引数の誤りで前の出力を消さない", "    problem = bad_out(out)\n    remove_owned(out.parent)\n    if problem:\n",
+     "    problem = bad_out(out)\n    if problem:\n        return 2\n    remove_owned(out.parent)\n    if problem:\n",
+     "名前の衝突で止まっても前の出力を消す"),
+    ("引数を検査しない", "    problem = bad_out(out)\n", "    problem = None\n", "出力先が . だと 2"),
+    ("名前の無い出力先を見ない", '    if out.name in ("", ".", ".."):\n', "    if False:\n", "出力先が .. だと 2"),
+    ("ディレクトリの出力先を見ない", "    if out.is_dir():\n        return", "    if False:\n        return", "出力先がディレクトリだと 2"),
+    ("印の名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME)",
+     "出力の名前が印と重なると作らない"),
     ("PPTX を作らない", "    if args.pptx:\n", "    if False:\n", "PPTX も作る"),
     ("PPTX の図はどれも仕様書で見ると書く", "FIGURE_NOTE.format(source)", "FIGURE_NOTE.format(SPEC_NAME)", "PPTX も作る"),
     ("shared/ の図も載せる", "for p in whole.files if p.startswith(FIGURE_DIRS)", "for p in whole.files", "仕様書を作る"),
@@ -488,7 +542,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("出力の PPTX の名前を大文字小文字で区別する", 'out.with_suffix(".pptx").name.lower()}', 'out.with_suffix(".pptx").name}',
      "出力の名前が仕様書の PPTX と重なると作らない"),
     ("頼まれなくても PPTX を作る", "    if args.pptx:\n", "    if True:\n", "仕様書を作る"),
-    ("ガントチャートの名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME)", "(SPEC_NAME, SPEC_PPTX_NAME)",
+    ("ガントチャートの名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)", "(SPEC_NAME, SPEC_PPTX_NAME, MANIFEST)",
      "出力の名前がガントチャートと重なると作らない"),
     ("PPTX の拡張子の出力を照らさない", ' or out.suffix.lower() == ".pptx"', "", "出力が PPTX の名前だと作らない"),
     ("図の接頭辞を照らさない", "            or out.name.lower().startswith(FIGURE_PREFIX)):", "            ):", "出力の名前が図と重なると作らない"),
@@ -609,13 +663,15 @@ def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) ->
             run_git(root, env, "tag", step[1])
 
 
-def generate(scripts: Path, root: Path, out: Path, env: dict[str, str], extra: list[str] = ()) -> tuple[int, str]:
+def generate(scripts: Path, root: Path, out: Path | str, env: dict[str, str], extra: list[str] = ()) -> tuple[int, str]:
     proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(root), "--out", str(out), *extra],
                           capture_output=True, text=True, cwd=root, env=env)
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def run_case(scripts: Path, root: Path, steps, stale: bool, env: dict[str, str]) -> Result:
+def run_case(scripts: Path, root: Path, steps, stale: bool | str, env: dict[str, str]) -> Result:
+    """`stale`: True なら本体が作ったのと同じ形の前の出力（印つき）を、"hand" なら手で置いたファイル（印なし）を、
+    "evil" なら同じ場所の外を名指しする印を置いてから生成する。"""
     try:
         build_repo(root, steps, env)
     except subprocess.CalledProcessError as e:  # 1 つの試料が作れなくても、実行全体は落とさない
@@ -625,24 +681,47 @@ def run_case(scripts: Path, root: Path, steps, stale: bool, env: dict[str, str])
     extra = [value for step in steps if step[0] == "arg" for value in step[1:]]
     # ("out", 名前) の手順は、出力の名前（リポジトリには何もしない）
     out = root / "build" / "proposal" / next((step[1] for step in steps if step[0] == "out"), "proposal.md")
-    if stale:
+    # ("rawout", 値) の手順は、`--out` にそのまま渡す値（cwd は試料の根）。`.`・`/` は Path にすると名前が消えるので文字列で渡す
+    raw = next((step[1] for step in steps if step[0] == "rawout"), None)
+    if stale == "hand":
+        write_hand(out)
+    elif stale == "evil":
+        write_evil(out)
+    elif stale:
         write_stale(out)
-    code, output = generate(scripts, root, out, env, extra)
+    code, output = generate(scripts, root, raw if raw is not None else out, env, extra)
     text = out.read_text(encoding="utf-8", errors="replace") if out.is_file() else None
     svg = (out.parent / "gantt.svg").is_file()
     spec = (out.parent / "spec.md").read_text(encoding="utf-8", errors="replace") if (out.parent / "spec.md").is_file() else None
-    names = frozenset(p.name for p in out.parent.iterdir()) - {"proposal.md", "gantt.svg", "spec.md"} if out.parent.is_dir() else frozenset()
+    names = frozenset(p.name for p in out.parent.iterdir()) - {"proposal.md", "gantt.svg", "spec.md", MANIFEST} if out.parent.is_dir() else frozenset()
     again_out = root / "build" / "again" / "proposal.md"
     generate(scripts, root, again_out, env, extra)
     again = again_out.read_text(encoding="utf-8", errors="replace") if again_out.is_file() else None
     again_spec = (again_out.parent / "spec.md").read_text(encoding="utf-8", errors="replace") if (again_out.parent / "spec.md").is_file() else None
-    return Result(code, output, text, svg, again, spec, names, read_pptx(out.parent), read_pptx(again_out.parent), again_spec)
+    return Result(code, output, text, svg, again, spec, names, read_pptx(out.parent), read_pptx(again_out.parent), again_spec,
+                  out.parent)
 
 
 def write_stale(out: Path) -> None:
     out.parent.mkdir(parents=True)
     for name in STALE:
         (out.parent / name).write_text("古い出力\n", encoding="utf-8")
+    (out.parent / MANIFEST).write_text("# 本体が書くのと同じ形\n" + "\n".join(STALE) + "\n", encoding="utf-8")
+
+
+def write_hand(out: Path) -> None:
+    out.parent.mkdir(parents=True)
+    for name in HAND:
+        (out.parent / name).write_text(HAND_TEXT, encoding="utf-8")
+
+
+def write_evil(out: Path) -> None:
+    """同じ場所の外（上・下のディレクトリ）を名指しする印。名指しされたファイルは消えてはならない。"""
+    write_hand(out)
+    (out.parent / "sub").mkdir()
+    (out.parent / "sub" / "x.md").write_text(HAND_TEXT, encoding="utf-8")
+    (out.parent.parent / "outside.md").write_text(HAND_TEXT, encoding="utf-8")
+    (out.parent / MANIFEST).write_text("../outside.md\nsub/x.md\n..\n.\n" + MANIFEST + "\n", encoding="utf-8")
 
 
 def read_pptx(directory: Path) -> dict:
@@ -676,7 +755,7 @@ def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = Fa
         code, output = proc.returncode, proc.stdout + proc.stderr
     else:
         code, output = generate(scripts, root, out, no_git_env)
-    names = frozenset(p.name for p in out.parent.iterdir()) - {"proposal.md", "gantt.svg", "spec.md"}
+    names = frozenset(p.name for p in out.parent.iterdir()) - {"proposal.md", "gantt.svg", "spec.md", MANIFEST}
     return Result(code, output, out.read_text(encoding="utf-8", errors="replace") if out.is_file() else None,
                   (out.parent / "gantt.svg").is_file(), None,
                   (out.parent / "spec.md").read_text(encoding="utf-8", errors="replace") if (out.parent / "spec.md").is_file() else None, names)
@@ -693,6 +772,32 @@ NO_GIT_MUTATIONS = [
      "    except ZeroDivisionError:\n        pass", True),  # `--out` を渡すと根を求めないので、下位からでないと届かない
     ("git で根を求められないと .git をたどらない", "    for parent in (repo.resolve(), *repo.resolve().parents):",
      "    for parent in ():", True),
+]
+
+
+def run_previous(scripts: Path, root: Path, env: dict[str, str]) -> tuple[int, int, str, list[str]]:
+    """本物の前の実行（PPTX と図を含む）のあとに照合で止め、前の実行が書いたものが全部消えるかを見る（陽性対照。#405）。
+
+    試料の前の出力（`write_stale`）は印を手で書くので、**本体が印に何を載せるか**はこちらでしか見えない。
+    返すのは (前の実行の終了コード, 止めた実行の終了コード, 出力, 残ったファイル)。
+    """
+    build_repo(root, SIGNED_S, env)
+    out = root / "build" / "proposal" / "proposal.md"
+    first, _ = generate(scripts, root, out, env, ["--pptx"])
+    second, output = generate(scripts, root, out, env, ["--pptx", "--req", "signoff/v1/req-99"])
+    return first, second, output, sorted(p.name for p in out.parent.iterdir()) if out.parent.is_dir() else []
+
+
+def previous_removed(result: tuple[int, int, str, list[str]]) -> bool:
+    first, second, output, left = result
+    # 前の実行は提案書・ガントチャート・仕様書・図 1 つ・PPTX 2 つ（6 つ）を書いた
+    return first == 0 and second == 2 and not left and output.count("前に作った出力を消した") == 6
+
+
+# 本物の前の実行で殺す変異。(名前, 壊す前, 壊した後)
+PREVIOUS_MUTATIONS = [
+    ("印に PPTX と図を載せない", "*sorted(p.name for p in outputs)]", '*sorted(p.name for p in outputs if p.suffix == ".md")]'),
+    ("印を書かない", "        (directory / MANIFEST).write_text(", "        (directory / 'unused').write_text("),
 ]
 
 
@@ -757,7 +862,18 @@ def main() -> int:
             check(f"試料が期待どおりでない: git を起動できない（下位から: {subdir}）", no_git(result),
                   f"exit={result.code} {result.output[-300:]}")
 
+        result = run_previous(scripts, tmp_path / "previous", env)
+        check("試料が期待どおりでない: 本物の前の実行が書いたものを消す", previous_removed(result), str(result[:2]) + result[2][-300:])
+
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
+        for index, (name, before, after) in enumerate(PREVIOUS_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"mut-prev{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            result = run_previous(mutated, tmp_path / f"mutwork-prev{index}", env)
+            check(f"変異が生き残った: {name}", not previous_removed(result), result[2][-300:])
         for index, (name, before, after, subdir) in enumerate(NO_GIT_MUTATIONS):
             if source.count(before) != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
@@ -805,7 +921,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 3} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 4} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS)} 件")
     return 0
 
 
