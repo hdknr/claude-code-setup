@@ -133,6 +133,7 @@ def run_main(mod, argv: list[str]) -> tuple[int, str]:
 
 # ------------------------------------------------------------- 偽の scripts/
 FLAGS = "flags"
+SLOW_HEAD = 0.3
 # **待ち合わせの時間切れ（秒）。** 並列を壊す変異では毎回ここまで待ち切るので、変異の数だけ
 # `test-check-all.py` が延びる（それを 5 回回す `check-mutation-claims.py` ごと）——2 秒から縮めた（#434）。
 # **縮めすぎると、変異の前の本体で相手の起動が遅れたときに偽の赤になる**（負荷の高い `check-all.py` の中・CI）。
@@ -149,14 +150,6 @@ while not (d / "{{other}}").exists():
         sys.exit(1)
     time.sleep(0.02)
 """.format(flags=FLAGS, wait=BARRIER_WAIT)
-INTERVAL = """\
-import pathlib, time
-d = pathlib.Path("{flags}")
-d.mkdir(exist_ok=True)
-start = time.time()
-time.sleep(0.1)
-(d / "ser-{{me}}").write_text(f"{{{{start}}}} {{{{time.time()}}}}")
-""".format(flags=FLAGS)
 
 
 def clear_flags(root: Path) -> None:
@@ -165,11 +158,6 @@ def clear_flags(root: Path) -> None:
     if d.exists():
         for f in d.iterdir():
             f.unlink()
-
-
-def interval(root: Path, me: str) -> tuple[float, float]:
-    start, end = (root / FLAGS / f"ser-{me}").read_text().split()
-    return float(start), float(end)
 
 
 def order(out: str) -> list[str]:
@@ -189,25 +177,31 @@ def build_fake(root: Path) -> Path:
     # 回帰テストの側の先頭も遅らせる——歯止めの順だけ見ると、回帰テストの順は誰も見ない。
     (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n")
     (scripts / "ok-c.py").write_text("print('c ok')\n")
+    # **順序を見る契約 1 だけが使う、遅い回帰テストの先頭**（#431）。
+    # **「回帰テストを終わった順に出す」変異は、歯止めの結果を全部待ってから `as_completed` に入る。**
+    # **そこで回帰テストが 2 本とも終わっていると、終わった順ではなく集合の順に出て、
+    # 宣言順と偶然揃うことがある**——`test-check-all.py` を同時に 10 本走らせると 30 回中 3 回、
+    # この変異を取りこぼした（先頭が 0.05 秒のとき）。**歯止めの側の先頭まで遅くすると、
+    # 回帰テストが終わってから歯止めを待つことになって悪化した**（両方 0.3 秒で 60 回中 5 回）。
+    # **だから遅くするのは回帰テストの先頭だけ**——**歯止めを待ち終えても、まだ走っているように。**
+    # **全部の契約を遅くしない**——**先頭はほかの契約でも走るので、伸ばすとテスト全体が伸びる。**
+    (scripts / "slow-t.py").write_text(f"import time; time.sleep({SLOW_HEAD}); print('slow ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
     # **互いの開始を待ち合わせる 2 本。** 同時に走らなければ、片方が時間切れで落ちる。
     for me, other in (("a", "b"), ("b", "a")):
         (scripts / f"par-{me}.py").write_text(BARRIER.format(me=me, other=other))
-    # **開始と終了の時刻を残す 2 本。** 区間が重なれば、同時に走っている。
-    for me in ("a", "b"):
-        (scripts / f"ser-{me}.py").write_text(INTERVAL.format(me=me))
     target = scripts / "check-all.py"
     target.write_text(TARGET.read_text())
     return target
 
 
-def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
+def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool, slow_heads: bool = False) -> None:
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("ok-a.py", [], False), ("ok-c.py", [], False),
                   ("needs-base.py", [], True)]
-    mod.TESTS = ["ok-t.py", "ok-b.py"]
+    mod.TESTS = ["slow-t.py" if slow_heads else "ok-t.py", "ok-b.py"]
     if bad_guard:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
         # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
@@ -225,17 +219,17 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
 
     # 1) 全部通る。base は解決できない → base を要する 1 本は SKIP。
     mod = load(target, f"{tag}_pass")
-    wire(mod, root, bad_guard=False, bad_test=False)
+    wire(mod, root, bad_guard=False, bad_test=False, slow_heads=True)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
     got += [
         ("全部通れば rc=0", rc == 0),
         ("飛ばしたものを数えて出す", "飛ばし 1" in out),
         ("飛ばしたことを黙らない", "飛ばしたものは回していない" in out),
         ("SKIP でも残りは回る", "OK   ok-b.py" in out),
-        # **歯止めと回帰テストの各先頭（ok-a.py・ok-t.py）が遅く終わる**（build_fake）ので、
+        # **歯止めと回帰テストの各先頭（ok-a.py・slow-t.py）が遅く終わる**（build_fake）ので、
         # 終わった順に出すと崩れる。
         ("出力は宣言順",
-         order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "ok-t.py", "ok-b.py"]),
+         order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "slow-t.py", "ok-b.py"]),
     ]
 
     # 2) 歯止めだけが落ちる
@@ -279,19 +273,18 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
     got.append(("--jobs 2 で同時に走る", rc == 0))
 
-    # 6) --jobs 1 なら同時に走らない（区間が重ならない）
+    # 6) --jobs 1 なら同時に走らない（待ち合わせる 2 本の先の 1 本が、相手を待って時間切れで落ちる）
+    #    **区間の重なりでは見ない**（#431）——**0.1 秒の区間は起動の遅れに負ける。**
+    #    `test-check-all.py` を同時に 30 本 × 2 回走らせると、60 回中 7 回、2 本が同時に起動しても
+    #    区間が重ならず、「--jobs を無視する」変異を取りこぼした（`check-all.py` の中でも 1 回踏んだ）。
+    #    **待ち合わせは相手を `BARRIER_WAIT` 秒待つ**（区間の 5 倍）ので、同時に起動していれば、遅れても出会う。
     mod = load(target, f"{tag}_ser")
     mod.SCRIPTS = root / "scripts"
-    mod.GUARDS = [("ser-a.py", [], False), ("ser-b.py", [], False)]
+    mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
     mod.TESTS = []
     clear_flags(root)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "1"])
-    try:
-        (a0, a1), (b0, b1) = interval(root, "a"), interval(root, "b")
-        serial = a1 <= b0 or b1 <= a0
-    except (OSError, ValueError):
-        serial = False
-    got.append(("--jobs 1 で同時に走らない", rc == 0 and serial))
+    got.append(("--jobs 1 で同時に走らない", rc != 0 and "相手が来ない" in out))
 
     # 7) 既定（--jobs を渡さない）でも同時に走る——既定が直列なら速くならない。
     #    **区間の重なりではなく待ち合わせで見る**——重なりは起動の遅れに負けるが、
