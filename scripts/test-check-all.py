@@ -13,6 +13,8 @@
 
 **この runner の壊れ方は「落とす」である**——登録から 1 本落とす・落ちたのに数えない・
 飛ばしたのに黙っている。**契約はその 3 つに対応させてある。**
+**並列にしてから（#430）は、壊れ方がもう 3 つ増えた**——並列にならない・`--jobs 1` でも
+並列になる・出力が宣言順でなくなる。**契約の 5) 〜 8) がそれに対応する。**
 
 **変異は 2 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
 **このファイルの中の判別**（CI の yaml の読み方）に当てる。**後者は自分自身を壊す。**
@@ -130,17 +132,66 @@ def run_main(mod, argv: list[str]) -> tuple[int, str]:
 
 
 # ------------------------------------------------------------- 偽の scripts/
+FLAGS = "flags"
+BARRIER = """\
+import pathlib, sys, time
+d = pathlib.Path("{flags}")
+d.mkdir(exist_ok=True)
+(d / "{{me}}").touch()
+end = time.time() + 2
+while not (d / "{{other}}").exists():
+    if time.time() > end:
+        print("相手が来ない——同時に走っていない")
+        sys.exit(1)
+    time.sleep(0.02)
+""".format(flags=FLAGS)
+INTERVAL = """\
+import pathlib, time
+d = pathlib.Path("{flags}")
+d.mkdir(exist_ok=True)
+start = time.time()
+time.sleep(0.1)
+(d / "ser-{{me}}").write_text(f"{{{{start}}}} {{{{time.time()}}}}")
+""".format(flags=FLAGS)
+
+
+def clear_flags(root: Path) -> None:
+    assert_not_real_repo(root)
+    d = root / FLAGS
+    if d.exists():
+        for f in d.iterdir():
+            f.unlink()
+
+
+def interval(root: Path, me: str) -> tuple[float, float]:
+    start, end = (root / FLAGS / f"ser-{me}").read_text().split()
+    return float(start), float(end)
+
+
+def order(out: str) -> list[str]:
+    """OK/FAIL/SKIP の行に出た名前を、出た順に返す。"""
+    return [l.split()[1] for l in out.splitlines()
+            if l.startswith(("  OK  ", "  FAIL", "  SKIP"))]
+
+
 def build_fake(root: Path) -> Path:
     """偽の scripts/ を作り、そこに置いた check-all.py のパスを返す。"""
     assert_not_real_repo(root)
     scripts = root / "scripts"
     scripts.mkdir(parents=True)
-    (scripts / "ok-a.py").write_text("print('a ok')\n")
+    # **宣言の先頭を遅らせる。** 終わった順に出す本体だと、後ろの行が先に出る（契約 1 の順序）。
+    (scripts / "ok-a.py").write_text("import time; time.sleep(0.05); print('a ok')\n")
     (scripts / "ok-b.py").write_text("print('b ok')\n")
     (scripts / "ok-c.py").write_text("print('c ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
+    # **互いの開始を待ち合わせる 2 本。** 同時に走らなければ、片方が時間切れで落ちる。
+    for me, other in (("a", "b"), ("b", "a")):
+        (scripts / f"par-{me}.py").write_text(BARRIER.format(me=me, other=other))
+    # **開始と終了の時刻を残す 2 本。** 区間が重なれば、同時に走っている。
+    for me in ("a", "b"):
+        (scripts / f"ser-{me}.py").write_text(INTERVAL.format(me=me))
     target = scripts / "check-all.py"
     target.write_text(TARGET.read_text())
     return target
@@ -175,6 +226,8 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         ("飛ばしたものを数えて出す", "飛ばし 1" in out),
         ("飛ばしたことを黙らない", "飛ばしたものは回していない" in out),
         ("SKIP でも残りは回る", "OK   ok-b.py" in out),
+        # **先頭の ok-a.py がいちばん遅く終わる**（build_fake）ので、終わった順に出すと崩れる。
+        ("出力は宣言順", order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "ok-b.py"]),
     ]
 
     # 2) 歯止めだけが落ちる
@@ -208,6 +261,55 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         ("--guards-only で回帰テストを回さない", "OK   ok-b.py" not in out),
         ("--guards-only でも飛ばしたことを出す", "飛ばしたものは回していない" in out),
     ]
+
+    # 5) --jobs 2 なら同時に走る（待ち合わせる 2 本が両方通る）
+    mod = load(target, f"{tag}_par")
+    mod.SCRIPTS = root / "scripts"
+    mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
+    mod.TESTS = []
+    clear_flags(root)
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
+    got.append(("--jobs 2 で同時に走る", rc == 0))
+
+    # 6) --jobs 1 なら同時に走らない（区間が重ならない）
+    mod = load(target, f"{tag}_ser")
+    mod.SCRIPTS = root / "scripts"
+    mod.GUARDS = [("ser-a.py", [], False), ("ser-b.py", [], False)]
+    mod.TESTS = []
+    clear_flags(root)
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "1"])
+    try:
+        (a0, a1), (b0, b1) = interval(root, "a"), interval(root, "b")
+        serial = a1 <= b0 or b1 <= a0
+    except (OSError, ValueError):
+        serial = False
+    got.append(("--jobs 1 で同時に走らない", rc == 0 and serial))
+
+    # 7) 既定（--jobs を渡さない）でも同時に走る——既定が直列なら速くならない。
+    #    **区間の重なりではなく待ち合わせで見る**——重なりは起動の遅れに負けるが、
+    #    待ち合わせは時間切れまで待つので、負荷の高いとき（check-all.py の中）でも揺れない。
+    #    **CPU が 1 つの機械では既定が 1 なので、この表明は成り立たない**（そのときは見ない）。
+    if (os.cpu_count() or 1) > 1:
+        mod = load(target, f"{tag}_default")
+        mod.SCRIPTS = root / "scripts"
+        mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
+        mod.TESTS = []
+        clear_flags(root)
+        rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
+        got.append(("既定で同時に走る", rc == 0))
+
+    # 8) --jobs 0 は回さずに断る（argparse の誤り＝終了コード 2）
+    mod = load(target, f"{tag}_zero")
+    wire(mod, root, bad_guard=False, bad_test=False)
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "0"])
+        refused = False
+    except SystemExit as exc:
+        refused = exc.code == 2
+    except Exception:  # noqa: BLE001 — 断らずに別の形で落ちたら、それも失格
+        refused = False
+    got.append(("--jobs 0 を断る", refused))
     return got
 
 
@@ -410,8 +512,17 @@ MUTANTS = {
         '        print("**飛ばしたものは回していない。** '
         '手元の緑をそのまま「全部緑」と報告しない。")\n',
         "        pass\n"),
-    "最初の失敗で止める": ("            logs.append((label, out))\n",
-                           "            logs.append((label, out))\n            break\n"),
+    "最初の失敗で止める": ("                logs.append((label, out))\n",
+                           "                logs.append((label, out))\n                break\n"),
+    # 以下は #430（並列）
+    "直列に戻す": ("ThreadPoolExecutor(max_workers=opts.jobs)",
+                   "ThreadPoolExecutor(max_workers=1)"),
+    "--jobs を無視する": ("ThreadPoolExecutor(max_workers=opts.jobs)",
+                          "ThreadPoolExecutor(max_workers=os.cpu_count())"),
+    "既定を直列にする": ("default=os.cpu_count() or 1,", "default=1,"),
+    "宣言順に出さない": ("        for label, fut in guard_runs:\n",
+                         "        for label, fut in reversed(guard_runs):\n"),
+    "--jobs 0 を通す": ("    if opts.jobs < 1:\n", "    if False:\n"),
 }
 
 

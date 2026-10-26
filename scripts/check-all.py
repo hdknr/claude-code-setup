@@ -4,6 +4,7 @@
     python3 scripts/check-all.py                    # base は origin/main を既定で使う
     python3 scripts/check-all.py --base origin/main # 明示する
     python3 scripts/check-all.py --guards-only      # 回帰テストを飛ばす
+    python3 scripts/check-all.py --jobs 1           # 直列に回す（既定は CPU の数だけ並列）
 
 なぜ必要か（#117 の 1）: #110 の周で、**直前の編集のあと 7 本のうち 2 本しか回さずに
 コミットし、CI を割った**。**落ちたのは回さなかったほう**で、しかも計画ファイルの
@@ -24,6 +25,15 @@
   「1 本直してはまた回す」を繰り返すことになる。**
 - **飛ばしたものは、黙って飛ばさず SKIP として数えて出す。**
 
+**並列に回す**（#430）。直列では 1 回に 842 秒かかっていた（2026-10-26、10 コアの macOS）。
+**スクリプトを分けて別々に回す形にはしない**——入口が複数になると、また選ぶ余地ができる。
+
+- **既定は CPU の数だけ並列**（`--jobs`）。**`--jobs 1` で直列**になる。
+- **起動は宣言順。** いちばん重い `check-mutation-claims.py` を `GUARDS` の先頭に置いてある
+  ——並列のとき、律速になる 1 本が最後に起動されないように。
+- **出力は宣言順**（終わった順ではない）。先頭が最も重いので、最初の行が出るまで待つ。
+- **Ctrl-C で、まだ起動していないものは起動しない。**
+
 **この検査が守らないもの**——**何を守らないかを書いておかないと、緑であることが
 安心の根拠に化ける**:
 
@@ -32,6 +42,7 @@
 | **`git push` したかどうか** | 手元で緑にしても**PR は赤のまま**でありうる（#117 の 2）。**PR 側は `gh pr checks` で見る**。このスクリプトはネットワークに出ない |
 | **CI が回すもののうち、ここに無いもの** | 収録は下の `GUARDS` / `TESTS` が正。**`scripts/` に検査を足してここへ登録し忘れると落ちる**（`test-check-all.py` がそれを見る）が、**CI のワークフローに直接書かれたステップ**（`mkdocs build` など）は**見ていない** |
 | **検査そのものの正しさ** | 各検査の回帰テストが見る。**このスクリプトは「全部回したか」だけを見る** |
+| **並列に回して安全であること** | **各スクリプトが一時ディレクトリで作業する（実リポジトリと固定のパスに書かない）ことを前提にしている。** #430 の時点の 49 本は、並列で回して全部通り、作業ツリーに変化が無かった（確かめたのはそこまで）が、**後から足した 1 本が実リポジトリに書けば、並列のときだけ壊れうる**。疑わしいときは `--jobs 1` で回して比べる |
 
 標準ライブラリのみ。
 """
@@ -39,14 +50,19 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
 
 # 歯止め。(スクリプト名, 追加引数, base-ref を要するか)
 GUARDS: list[tuple[str, list[str], bool]] = [
+    # **他の歯止めを子プロセスで回すので、1 本だけ重い**（直列で 166 秒。#430 の時点）。
+    # **起動は宣言順なので先頭に置く**——後ろに置くと、並列のとき律速の 1 本が遅れて起動される。
+    ("check-mutation-claims.py", [], False),
     ("check-plugin-versions.py", [], False),
     ("check-norm-markers.py", [], False),
     ("check-duplicate-counts.py", [], False),
@@ -55,10 +71,6 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-site-links.py", [], False),
     ("check-diagram-freshness.py", [], False),
     ("skill-metrics.py", ["--check"], False),
-    # **他の歯止めを子プロセスで回すので、1 本だけ重い。**
-    # **並び順に意味は無い**——落ちても止めず、SKIP でも止めないので、
-    # どこに置いても出力の順番しか変わらない。
-    ("check-mutation-claims.py", [], False),
     ("check-version-bump.py", [], True),
     ("check-description-sync.py", [], True),
     ("check-plan-scope.py", [], True),
@@ -141,7 +153,15 @@ def main() -> int:
         action="store_true",
         help="回帰テストを飛ばす（飛ばしたことは出力に出る）",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="同時に回す本数（既定: CPU の数。1 で直列）",
+    )
     opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
 
     have_base = base_resolves(opts.base)
 
@@ -149,31 +169,48 @@ def main() -> int:
     skipped: list[str] = []
     logs: list[tuple[str, str]] = []
 
-    print("=== 歯止め ===")
-    for name, extra, needs_base in GUARDS:
-        label = name if not extra else f"{name} {' '.join(extra)}"
-        if needs_base and not have_base:
-            print(f"  SKIP {label:<40} base `{opts.base}` が解決できない")
-            skipped.append(label)
-            continue
-        args = [*extra, opts.base] if needs_base else extra
-        ok, out = run(name, args)
-        print(f"  {'OK  ' if ok else 'FAIL'} {label}")
-        if not ok:
-            failed.append(label)
-            logs.append((label, out))
+    pool = ThreadPoolExecutor(max_workers=opts.jobs)
+    try:
+        # **全部を先に投げてから、宣言順に結果を待つ。** 出力は終わった順ではなく宣言順。
+        guard_runs = []
+        for name, extra, needs_base in GUARDS:
+            label = name if not extra else f"{name} {' '.join(extra)}"
+            if needs_base and not have_base:
+                guard_runs.append((label, None))
+                continue
+            args = [*extra, opts.base] if needs_base else extra
+            guard_runs.append((label, pool.submit(run, name, args)))
+        test_runs = ([] if opts.guards_only
+                     else [(name, pool.submit(run, name, [])) for name in TESTS])
 
-    if opts.guards_only:
-        print("=== 回帰テスト === SKIP（--guards-only）")
-        skipped.extend(TESTS)
-    else:
-        print("=== 回帰テスト ===")
-        for name in TESTS:
-            ok, out = run(name, [])
-            print(f"  {'OK  ' if ok else 'FAIL'} {name}")
+        print(f"=== 歯止め === （{opts.jobs} 並列）")
+        for label, fut in guard_runs:
+            if fut is None:
+                print(f"  SKIP {label:<40} base `{opts.base}` が解決できない")
+                skipped.append(label)
+                continue
+            ok, out = fut.result()
+            print(f"  {'OK  ' if ok else 'FAIL'} {label}", flush=True)
             if not ok:
-                failed.append(name)
-                logs.append((name, out))
+                failed.append(label)
+                logs.append((label, out))
+
+        if opts.guards_only:
+            print("=== 回帰テスト === SKIP（--guards-only）")
+            skipped.extend(TESTS)
+        else:
+            print("=== 回帰テスト ===")
+            for name, fut in test_runs:
+                ok, out = fut.result()
+                print(f"  {'OK  ' if ok else 'FAIL'} {name}", flush=True)
+                if not ok:
+                    failed.append(name)
+                    logs.append((name, out))
+    except KeyboardInterrupt:
+        # **まだ起動していないものを起動しない。** 走っている子は同じ SIGINT を受けて終わる。
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    pool.shutdown()
 
     for label, out in logs:
         print(f"\n----- {label} の出力 -----")
