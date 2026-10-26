@@ -140,4 +140,9 @@ PR #1 `lower`→`main`、PR #2 `upper`→`lower`（`upper` は `lower` の上）
 
 - 実験: 上の 2 つの表（本物の GitHub）。交絡の候補 1 件を陽性対照で潰した。2 段目で、M4 の最初の実装を判別していない交絡を 1 件見つけて実装を変え、同じ形で当て直した
 - 実装: 済み（`merge-pr.py`・`test-merge-pr.py`・`stacked.md`・`SKILL.md` 手順 7 の 1 行・版 1.56.0・§8.2 の再生成）。`test-merge-pr.py` 100 ok
+- 歯止め: `check-all.py` 49/49 緑（`e893cbf` の前）
+- 実装のコミット: `e893cbf`（push・PR はまだ）
+- 割り目（手順 4）: 提案した → **「ここで割る」が選ばれた**。再開は手順 5（Verifier 1 パス目）から。
+  Verifier と `/code-review` の 1 パス目はどちらも未着手（反証 0 件ではなく、回していない）
+- 本物の GitHub の試験用リポジトリ `hdknr/dev-loop-stacked-probe`: 開いた PR は #2（`upper`。base `main` に自動で付け替わった形）だけ。関門が実物で当て直すならここを使える（`mp.sh` は scratchpad——セッションと一緒に消える）
 - この周の起票: 0 件（手順 8 で人間に訊いて確定する）
