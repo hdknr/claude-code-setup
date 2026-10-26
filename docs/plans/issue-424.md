@@ -92,6 +92,8 @@ CI（`plugins.yml`）でテストが回る。
 - Verifier 2 パス目（当て直し）: 済み——反証 0 件（sonnet。`git status --porcelain` 前後とも空。テスト 3.14・3.12 とも OK。docstring の argparse／3.14 の主張は「未確認」。`check-all.py` は回していない）
 - `/code-review` 2 パス目: 済み——指摘 7 件（high。porcelain 前後とも空。変異 52 件すべて赤を確認。下の「2 パス目の指摘の採否」）
 - 2 パス目の指摘対応の起点（狭いパス用）: `f492965`（指摘対応を始める直前の HEAD）
+- 2 パス目の指摘対応: 済み（`28aedc3`）。直す 4 行（採否の表）。陽性対照: `/code-review` の probe の 3 形（`Path` の差し替えが死ぬ × `read_json` が `open(p)` × `Path.stat` を読む `--push-result` の変異）が、直す前は全部緑、直した後は「Path の読みを拾う」で赤（3.14・3.12）。テスト 3.14・3.12 とも OK。`check-all.py`（`28aedc3` の作業ツリー）49/49・失敗 0
+- 狭いパス（Verifier・sonnet・`git diff f492965`）: 済み——反証 0 件。Verifier が設計した変異 4 本（記録名を戻す・`subprocess.run` を外す・偽の `ps` の分岐を変える・`--push-result` で `Popen`）はすべて赤、素通り 0 本。porcelain 前後とも空。「`os.lstat` 等を差し替えても記録は汚れない」は Verifier では未確認（`/code-review` 2 パス目の probe が測った）
 
 ## 起票
 
