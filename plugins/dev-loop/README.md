@@ -50,6 +50,22 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 > 実験の交絡は
 > [§2.4](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#confounded) を参照。
 
+### `/dev-loop:cruise <親 Issue> [--absent]`
+
+依存のある複数の Issue を、**親 Issue のチェックリスト**から台帳にして、1 件ずつ dev-loop の周として回す
+（オートクルーズ。#446）。取り出した一覧と依存は、起動時に利用者が確かめてから台帳になる。
+同じ親 Issue で起動し直すと台帳から再開する。
+
+```markdown
+- [ ] #12
+- [ ] #13 (depends: #12)
+```
+
+**手順は [`skills/cruise/SKILL.md`](skills/cruise/SKILL.md)、書式の決まりは
+[`skills/cruise/scripts/parent-issue.py`](skills/cruise/scripts/parent-issue.py) の docstring を正とする。**
+**素のスキルとしては置けない**——同じプラグインの `skills/dev-loop/` を `../dev-loop/` で指しているため。
+使い方の案内は [dev-loop のオートクルーズ](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-cruise/)。
+
 ## プロジェクト固有部分の扱い
 
 このスキルは特定プロジェクトに依存しない。実機検証コマンド・デプロイ経路・一次ソース

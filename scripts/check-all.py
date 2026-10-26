@@ -101,6 +101,7 @@ TESTS: list[str] = [
     "test-find-cycle.py",
     "test-check-unattended-env.py",
     "test-ledger.py",
+    "test-parent-issue.py",
     "test-check-duplicate-counts.py",
     "test-worktree-scripts.py",
     "test-check-skill-pointers.py",
