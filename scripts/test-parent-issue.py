@@ -40,6 +40,9 @@ BASIC = """説明の段落（ここは読まない）。
 * [ ] #12
 - [x] #11
 + [ ] #15 (depends: #11)
+- [ ] 受入基準: 依存の順に回る
+- [ ] 16 (depends: #12)
+- [ ] #0
 
 ```markdown
 - [ ] #77
@@ -48,8 +51,6 @@ BASIC = """説明の段落（ここは読まない）。
 
 # 拒む形（C3・C4）。どれも 3 で、台帳を作らない
 REJECTED = {
-    "番号で始まらない": "- [ ] #12\n- [ ] ログイン画面\n",
-    "番号が 0": "- [ ] #0\n",
     "依存の中身が #番号 でない": "- [ ] #12\n- [ ] #13 (depends: 12)\n",
     "依存の中身が空": "- [ ] #12\n- [ ] #13 (depends: )\n",
     "(depends:) が 2 つ": "- [ ] #12\n- [ ] #14\n- [ ] #13 (depends: #12) (depends: #14)\n",
@@ -215,9 +216,8 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
 
 # 1 件ずつ (探す文字列, 置き換え) の組。docstring の「守る」の順に 1 行 1 件。
 MUTATIONS = {
-    "番号で始まらない行を飛ばす": [
-        ("        if not item or int(item.group(1)) == 0:\n            raise Refused",
-         "        if not item or int(item.group(1)) == 0:\n            continue\n            raise Refused")],
+    "読み飛ばした行を出さない": [
+        ('            skipped.append(f"{lineno} 行目: {line.strip()}")', "            pass")],
     "依存の中身を見ない": [
         ("            if not DEP_LIST_RE.match(text):", "            if False:")],
     "(depends:) の外の依存らしい語を見ない": [
@@ -257,6 +257,10 @@ def main() -> int:
               [int(r[0]) for r in rows] == [12, 15, 13, 14])
         check("依存と題", rows == [("12", "-", ""), ("15", "-", ""), ("13", "#12", "ログイン画面"), ("14", "#12, #13", "")])
         check("指紋は 12 桁", re.fullmatch(r"[0-9a-f]{12}", o["指紋"]) is not None)
+        skipped = str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("指紋:")[0].splitlines()
+        check("#番号 で始まらない行（受入基準・# の書き忘れ・#0）は読み飛ばした行として出る（「依存」を含んでも拒まない）",
+              [l.strip() for l in skipped] == ["7 行目: - [ ] 受入基準: 依存の順に回る",
+                                              "8 行目: - [ ] 16 (depends: #12)", "9 行目: - [ ] #0"])
 
         print("\n拒む形（C3・C4）: show も apply も 3 で、台帳を作らない")
         for name in REJECTED:

@@ -29,7 +29,9 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 ```
 
 - **チェックリストの行**（`-`・`*`・`+` のあとに `[ ]` か `[x]`）だけを読む。ほかの行は読まない。**コードフェンスの中も読まない。**
-- 行は `#番号` で始める。番号の後ろの文は題として台帳に入れる。依存は `(depends: #番号, #番号)` を 1 つだけ書く。
+- 回す Issue の行は `#番号` で始める。番号の後ろの文は題として台帳に入れる。**`#番号` で始まらないチェックリストの行**
+  （受入基準など）は台帳に入れず、`show` に**読み飛ばした行**として出す——親 Issue に受入基準が混ざっていてもよい。
+- 依存は `(depends: #番号, #番号)` を 1 つだけ書く。
 - **`[x]` の行は済んだもの**として台帳に入れず、それへの依存は満たされたと読む（「マージ済み」とは読まない）。
 
 ## 終了コード
@@ -45,7 +47,8 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 
 守る:
 
-- **チェックリストの行が `#番号` で始まらなければ拒む**——番号の無い行を黙って飛ばすと、回すはずの課題が台帳から落ちる。
+- **`#番号` で始まらないチェックリストの行は、`show` に読み飛ばした行として出す**——黙って飛ばすと、`# ` の書き忘れで
+  回すはずの課題が台帳から落ちたことに、確かめる側が気づけない。
 - **`(depends: …)` の中身が `#番号` のカンマ区切りでなければ拒む。**
 - **依存の書き方らしい語（`depend`・`依存`）が `(depends: …)` の外にあれば拒む**——書き損じた依存を黙って落とさない。
 - **コードフェンスの中のチェックリストは読まない**——書式の例を貼った本文で、例の Issue を回さない。
@@ -97,8 +100,8 @@ class Unknown(Exception):
 
 
 def parse(body):
-    """本文から [{"number", "deps", "title"}]（未チェックだけ・依存先が先）を返す。"""
-    items, done, in_fence = [], set(), False
+    """本文から ([{"number", "deps", "title"}]（未チェックだけ・依存先が先）, 読み飛ばした行) を返す。"""
+    items, skipped, done, in_fence = [], [], set(), False
     for lineno, line in enumerate(body.splitlines(), 1):
         if FENCE_RE.match(line):
             in_fence = not in_fence
@@ -108,7 +111,8 @@ def parse(body):
             continue
         item = ITEM_RE.match(m.group(2).strip())
         if not item or int(item.group(1)) == 0:
-            raise Refused(f"{lineno} 行目: チェックリストの行が #番号 で始まらない: {line.strip()}")
+            skipped.append(f"{lineno} 行目: {line.strip()}")
+            continue
         number, rest = int(item.group(1)), item.group(2)
         found = DEPS_RE.findall(rest)
         if len(found) > 1:
@@ -138,7 +142,7 @@ def parse(body):
             if d not in listed and d not in done:
                 raise Refused(f"#{i['number']} の依存先 #{d} が一覧に無い（済んでいるなら [x] の行で書く）")
         i["deps"] = [d for d in dict.fromkeys(i["deps"]) if d in listed]
-    return order(items)
+    return order(items), skipped
 
 
 def order(items):
@@ -185,10 +189,14 @@ def ledger(ledger_script, cwd, *args):
     return proc
 
 
-def cmd_show(items):
+def cmd_show(items, skipped):
     for i in items:
         deps = ", ".join(f"#{d}" for d in i["deps"]) or "-"
         print(f"#{i['number']}\t依存: {deps}\t{i['title']}")
+    if skipped:
+        print("読み飛ばした行（#番号 で始まらない）:")
+        for line in skipped:
+            print(f"  {line}")
     print(f"指紋: {digest(items)}")
 
 
@@ -244,9 +252,9 @@ def main(argv=None, cwd=None, ledger_script=LEDGER):
         print("引数が違う: 親 Issue の番号は正の整数", file=sys.stderr)
         return EXIT_USAGE
     try:
-        items = parse(read_body(args.parent, args.body_file, cwd))
+        items, skipped = parse(read_body(args.parent, args.body_file, cwd))
         if args.cmd == "show":
-            cmd_show(items)
+            cmd_show(items, skipped)
         else:
             cmd_apply(items, args.parent, args.digest, ledger_script, cwd)
     except Refused as exc:

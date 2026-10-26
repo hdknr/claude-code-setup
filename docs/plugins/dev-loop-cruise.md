@@ -98,8 +98,10 @@ python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py
 ```
 
 - `[x]` の行は済んだものとして扱い、台帳に入れません。それへの依存は満たされたと読みます。
-- 書式を誤った行（番号で始まらない・`(depends: …)` の外に「depends」「依存」がある、など）があると、台帳を作らずに止まります。
-  **黙って読み飛ばしはしません。** 書式の決まりは
+- `#番号` で始まらないチェックボックス（受入基準など）は台帳に入れず、起動時の確認に「読み飛ばした行」として並びます。
+  `#` の書き忘れはここで気づけます。
+- 依存の書き方を誤った行（`(depends: …)` の外に「depends」「依存」がある、など）があると、台帳を作らずに止まります。
+  書式の決まりは
   [`parent-issue.py` の docstring](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/scripts/parent-issue.py)
   を正とします。
 
@@ -110,7 +112,7 @@ python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py
 /dev-loop:cruise 50 --absent   # 不在で回す
 ```
 
-1. **取り出した一覧と依存が表示されるので、確かめて答えます。** 親 Issue の本文は誰でも書き換えられる入力として扱うので、
+1. **取り出した一覧と依存（と読み飛ばした行）が表示されるので、確かめて答えます。** 親 Issue の本文は誰でも書き換えられる入力として扱うので、
    `--absent` を付けても、ここだけは起動の時点で訊かれます。確かめた後に本文が書き換えられていたら、台帳は作られません。
 2. **台帳が作られ、着手できる Issue から順に dev-loop の周として回ります。**
    台帳は `<メインの作業ツリー>/.claude/plans/cruise-issue-<親>.json` に置かれます。
