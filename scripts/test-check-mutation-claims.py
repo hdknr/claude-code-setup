@@ -447,6 +447,12 @@ def observe_parallel(mod, root: Path) -> dict:
     そのとき別々の退避先にいることを見る。** **先頭の主張を遅く終わらせる**ので、
     **終わった順に並べる形は判定の対応がずれて出力に出る。**
     **終わったあとに退避先が残っていないかも数える**（掃くのは `sweeping`）。
+
+    **終了コードと要約の行を返さない。** **この木は `当てられなかった` を含むので、
+    返すと「当てられなかったを緑と数える」変異をここで殺してしまい、
+    `snapshot` の `only_na` の主張（「その木が無いと殺せない」）が偽になる**
+    ——**一度 `rc` を返し、`check-mutation-claims.py` が実リポジトリで
+    その主張を「当てられなかった」にした。** **返すのは並列化の観測だけ。**
     """
     barrier = threading.Barrier(2, timeout=PARALLEL_WAIT)
     met: list[bool] = []
@@ -470,10 +476,11 @@ def observe_parallel(mod, root: Path) -> dict:
     try:
         with sweeping(mod) as made, \
                 contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            raised = None
             try:
-                rc = mod.main(["--jobs", "2", str(root)])
+                mod.main(["--jobs", "2", str(root)])
             except Exception as exc:  # noqa: BLE001 — 変異で落ちるのは「殺せた」と数える
-                rc = type(exc).__name__
+                raised = type(exc).__name__
             left = sum(1 for box in made if box.exists())
     finally:
         mod.judge = real_judge
@@ -482,7 +489,7 @@ def observe_parallel(mod, root: Path) -> dict:
         parts = line.split()
         if len(parts) >= 2 and parts[0] in ("確認", "緑のまま", "当てられなかった"):
             order.append((parts[1].rstrip(":"), parts[0]))
-    return {"rc": rc, "met": met, "boxes": len(boxes), "order": order, "left": left}
+    return {"raised": raised, "met": met, "boxes": len(boxes), "order": order, "left": left}
 
 
 def observe_leak(mod, leak_root: Path, parent: Path) -> dict:
