@@ -3,6 +3,7 @@ r"""「この変異を入れると赤になる」という散文の主張を、�
 
     python3 scripts/check-mutation-claims.py          # リポジトリ全体
     python3 scripts/check-mutation-claims.py <root>   # 別のツリー（テスト用）
+    python3 scripts/check-mutation-claims.py --jobs 1 # 直列に当てる（既定は CPU の数だけ並列）
 
 なぜ必要か（#151）: このリポジトリは**「この行を外すと落ちる」「X を Y にすると赤」を
 docstring・計画ファイル・コミットメッセージに書く作法**を持っている。
@@ -57,6 +58,14 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 だから**`.git` を丸ごと除外して複製し、複製の中に `.git` が 1 つも無いことを確かめてから**
 当てる。**原本は 1 バイトも書き換えない。**
 
+## 並列 — 作業者ごとに退避先を分ける（#431）
+
+**主張は `--jobs` 人の作業者で当てる**（既定は CPU の数）。**退避先は作業者の数だけ作り**、
+**陽性対照の表も作業者ごとに持つ**——**同じ退避先で 2 件を同時に当てると、互いの変異を見る**
+（変異は退避先のファイルを書き換えて戻す）。**作業者は空いたら次の主張を取る。**
+**出力は主張の収集順**で、終わった順ではない。**`--jobs 1` は並列化の前と同じ**
+（退避先 1 つ・陽性対照の表 1 つ・収集順に 1 件ずつ。スレッドを起こさない）。
+
 ## 何を守り、何を守らないか
 
 守る:
@@ -108,6 +117,17 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
   **これが無いと、0 で終わる SKIP のうち出力が変わるものが素通りする**
   ——**上の「出力が変わらない」は、たまたま一致する場合しか捕まえない。**
   **どの回でも走らなかった場合は、それと分かる別の理由で倒す**（打ち切り・コマンド不在）。
+- **主張を並列に当てる**（#431）——**`--jobs` が 2 以上なら、実際に同時に当てる。**
+- **同時に当てる作業者どうしは退避先を共有しない**（#431）——**陽性対照の表も退避先ごとに持つ。**
+- **出力は主張の収集順**（#431）——**終わった順に並べると、判定が別の主張に付く。**
+- **実行が終われば、作った退避先を全部畳む**（#431）——**正常に終わったときも、作業者が落ちたときも、
+  中断されたときも。**
+- **中断されたら、作業者は次の主張を取らない**（#431）——**走っている `red` の終わりは待ってから畳む。**
+  **取らせ続けると、残りの主張をすべて当て終えるまで後始末に入れない**——`check-all.py` の中断は
+  猶予の 3 秒で SIGKILL に変わるので、**退避先が丸ごと残る**（1 パス目の `/code-review` の指摘を実測した）。
+- **作業者を全員起こし終えるまで、どの作業者も主張を取らない**（#431）——**起こしている途中の中断では、
+  起こした作業者が後始末に待たれないことがある**（`ThreadPoolExecutor` はスレッドを起こしてから数に入れる）。
+  **待たれない作業者が主張を当てると、走っている `red` の足元から退避先を消す**（2 パス目の `/code-review` が実測した）。
 
 守らない:
 
@@ -140,6 +160,12 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
   黙って別の意味になる。**
 - **マーカーはリポジトリの中身なので、信頼できる入力として扱っている。**
   **`red` は任意のコマンドを起動する**——**外から持ち込んだツリーに対して回さないこと。**
+- **並列のときの判定が直列と一致するのは、`red` が退避先の外で互いに干渉しない場合だけである**（#431）。
+  **退避先は分けても、`$TMPDIR` の決まった名前・固定のパス・ポートは分けていない。**
+  **時間に敏感な `red` は、並列の負荷で揺れうる**（揺れれば「当てられなかった」に倒れるので、黙っては通らない）。
+  **疑わしいときは `--jobs 1` で回して比べる。**
+- **作業者が 1 人のとき以外は、主張がどの作業者に当たるかは決まらない。** **同じ `red` を持つ主張が
+  別の作業者に分かれると、陽性対照をそれぞれの退避先で取り直す**（`red` の回数が直列より増える）。
 - **マーカーが 1 件も無い状態は、ここでは緑になる。** 「主張が無い」と「マーカーを消した」を
   区別できないため。**実リポジトリに 1 件以上あることは、回帰テストの側が見る。**
 
@@ -148,6 +174,7 @@ mutation-claim: {"file": "scripts/x.py", "old": "a == b", "new": "True", "red": 
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import pathlib
@@ -157,6 +184,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from markdown_fences import strip_fences, unclosed_fence  # noqa: E402
@@ -469,8 +498,88 @@ def judge(claim: Claim, box: pathlib.Path, baselines: dict) -> tuple[str, str]:
     return STILL_GREEN, "変異を当てても rc=0 のまま（主張が偽か、変異が届いていない）"
 
 
+def judge_all(claims: list[Claim], root: pathlib.Path, jobs: int) -> list[tuple[str, str]]:
+    """主張を `jobs` 人の作業者で当て、**収集順に** (判定, 理由) を返す（#431）。
+
+    **作業者ごとに退避先と陽性対照の表を持つ。** **同じ退避先で 2 件を同時に当てると、
+    互いの変異を見る**——**対照を取った退避先と変異を当てる退避先も同じでなければならない。**
+    **作業者が 1 人なら、スレッドを起こさずにその場で回す**——**`--jobs 1` は並列化の前と同じ形。**
+    """
+    results: list[tuple[str, str] | None] = [None] * len(claims)
+    pending = iter(range(len(claims)))
+    lock = threading.Lock()
+    stop = threading.Event()
+    # **全員を起こし終えてから立てる。**
+    go = threading.Event()
+
+    def work(box: pathlib.Path) -> None:
+        baselines: dict[str, tuple[int | None, str]] = {}
+        try:
+            while not stop.is_set():
+                with lock:
+                    i = next(pending, None)
+                if i is None:
+                    return
+                # **終わった順に並べない。** 主張の位置に書く。
+                results[i] = judge(claims[i], box, baselines)
+        except BaseException:
+            # **1 人が落ちたら、残りは次の主張を取らない**——**落ちた原因を待たせない。**
+            stop.set()
+            raise
+
+    def gated(box: pathlib.Path) -> None:
+        # **全員を起こし終えるか、中断されるまで待つ。** **中断のときは `work` が
+        # `stop` を見て、何も取らずに抜ける。** **`go` と `stop` を 1 つの合図にしない**
+        # ——**中断の側で `go` を立てると、`stop` との順序を間違えたときに主張を取らせる**
+        # （狭いパスの Verifier が、順序を入れ替えた変異で示した）。
+        while not (go.is_set() or stop.is_set()):
+            go.wait(0.05)
+        work(box)
+
+    boxes: list[pathlib.Path] = []
+    try:
+        for _ in range(min(jobs, len(claims))):
+            boxes.append(make_sandbox(root))
+        if len(boxes) == 1:
+            work(boxes[0])
+        else:
+            with ThreadPoolExecutor(max_workers=len(boxes)) as pool:
+                # **起こしている途中の中断も受ける。** **`submit` を `try` の外に置くと、
+                # `stop` が立たず、起きた作業者が `go` を待ったまま `with` の後始末に待たれ、終わらない。**
+                try:
+                    futures = [pool.submit(gated, box) for box in boxes]
+                    # **ここまで来れば、起こした作業者は全員 `with` の後始末に待たれる。**
+                    # **`ThreadPoolExecutor` はスレッドを起こしてから数に入れる**ので、
+                    # **その間に中断されると、起きた作業者が待たれずに残る**——**先に主張を
+                    # 取らせていると、その作業者の `red` の足元から `finally` が退避先を消す**
+                    # （2 パス目の `/code-review` が実測した）。
+                    go.set()
+                    for future in futures:
+                        future.result()
+                except BaseException:
+                    # **中断（Ctrl-C）は主スレッドにしか届かない。** 作業者に次を取らせない。
+                    # **走っている `red` が終わるのは待つ**——**待たずに畳むと、
+                    # 走っている `red` の足元から退避先を消す。**
+                    stop.set()
+                    raise
+    finally:
+        # **退避先は全部畳む。** **作った分だけ**——**途中の `make_sandbox` が落ちても、
+        # それより前に作った分は残さない**（作りかけは `make_sandbox` が自分で畳む）。
+        for box in boxes:
+            shutil.rmtree(box, ignore_errors=True)
+    return results  # type: ignore[return-value]
+
+
 def main(argv=None) -> int:
-    root = pathlib.Path(argv[0]) if argv else REPO_ROOT
+    parser = argparse.ArgumentParser(description="散文の変異の主張を機械で当てる")
+    parser.add_argument("root", nargs="?", type=pathlib.Path, default=REPO_ROOT,
+                        help="対象の木（既定はこのリポジトリ）")
+    parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1,
+                        help="同時に当てる主張の数（既定は CPU の数。1 で直列）")
+    opts = parser.parse_args(argv)
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    root = opts.root
     # **綴り間違いや置き場所の変更を「主張 0 件」で通さない。**
     if not root.is_dir():
         print(f"ERROR: 対象の木が無い: {root}", file=sys.stderr)
@@ -479,14 +588,8 @@ def main(argv=None) -> int:
 
     results: list[tuple[Claim, str, str]] = []
     if claims:
-        box = make_sandbox(root)
-        try:
-            baselines: dict[str, tuple[int | None, str]] = {}
-            for claim in claims:
-                verdict, reason = judge(claim, box, baselines)
-                results.append((claim, verdict, reason))
-        finally:
-            shutil.rmtree(box, ignore_errors=True)
+        for claim, (verdict, reason) in zip(claims, judge_all(claims, root, opts.jobs)):
+            results.append((claim, verdict, reason))
 
     counts = {VERIFIED: 0, STILL_GREEN: 0, NOT_APPLIED: len(broken)}
     for _, verdict, _ in results:
