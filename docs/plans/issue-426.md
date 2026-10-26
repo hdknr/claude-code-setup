@@ -161,7 +161,10 @@ CR1・CR2 の形（利用者が選んだ「A: 2 段の判定」）: base を hea
   `check-all.py` 49/49・`skill-metrics.py --check` 最新・`git status` 前後とも空。
   `/code-review`（high）**指摘 8 件**。採否は上の表——直す 5 件（CR1・CR2・CR3・CR5・CR6）、残課題 3 件
 - **1 パス目の指摘対応**: 済み（`merge-pr.py` の 2 段の判定・マージ直前の見直し・`isCrossRepository` の型・docstring。
-  `test-merge-pr.py` に試料 7 件・変異 2 件。111 ok）
-- **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**。その前が 2 つ目の割り目
+  `test-merge-pr.py` に試料 7 件・変異 2 件。111 ok。`check-all.py` 49/49 緑）。コミット `f702b02`
+- **残っている関門**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**（どちらも未着手）。
+  その後に 2 パス目の指摘対応と狭いパス
+- 割り目（2 パス目の前）: 提案した → **「ここで割る」が選ばれた**。再開は Verifier 2 パス目から
+  （2 パス目の差分は周の base `f418dd7` から取る。指摘対応で増えたのは `f702b02`）
 - 本物の GitHub の試験用リポジトリ `hdknr/dev-loop-stacked-probe`: 開いた PR は #2（`upper`。base `main` に自動で付け替わった形）だけ。関門が実物で当て直すならここを使える（`mp.sh` は scratchpad——セッションと一緒に消える）
 - この周の起票: 0 件（手順 8 で人間に訊いて確定する）
