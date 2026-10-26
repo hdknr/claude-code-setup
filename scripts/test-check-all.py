@@ -134,18 +134,22 @@ def run_main(mod, argv: list[str]) -> tuple[int, str]:
 # ------------------------------------------------------------- 偽の scripts/
 FLAGS = "flags"
 SLOW_HEAD = 0.3
+# **待ち合わせの時間切れ（秒）。** 並列を壊す変異では毎回ここまで待ち切るので、変異の数だけ
+# `test-check-all.py` が延びる（それを 5 回回す `check-mutation-claims.py` ごと）——2 秒から縮めた（#434）。
+# **縮めすぎると、変異の前の本体で相手の起動が遅れたときに偽の赤になる**（負荷の高い `check-all.py` の中・CI）。
+BARRIER_WAIT = 0.5
 BARRIER = """\
 import pathlib, sys, time
 d = pathlib.Path("{flags}")
 d.mkdir(exist_ok=True)
 (d / "{{me}}").touch()
-end = time.time() + 2
+end = time.time() + {wait}
 while not (d / "{{other}}").exists():
     if time.time() > end:
         print("相手が来ない——同時に走っていない")
         sys.exit(1)
     time.sleep(0.02)
-""".format(flags=FLAGS)
+""".format(flags=FLAGS, wait=BARRIER_WAIT)
 
 
 def clear_flags(root: Path) -> None:
@@ -273,7 +277,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     #    **区間の重なりでは見ない**（#431）——**0.1 秒の区間は起動の遅れに負ける。**
     #    `test-check-all.py` を同時に 30 本 × 2 回走らせると、60 回中 7 回、2 本が同時に起動しても
     #    区間が重ならず、「--jobs を無視する」変異を取りこぼした（`check-all.py` の中でも 1 回踏んだ）。
-    #    **待ち合わせは相手を 2 秒待つ**ので、同時に起動していれば、遅れても出会う。
+    #    **待ち合わせは相手を `BARRIER_WAIT` 秒待つ**（区間の 5 倍）ので、同時に起動していれば、遅れても出会う。
     mod = load(target, f"{tag}_ser")
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
