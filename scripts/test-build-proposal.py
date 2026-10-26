@@ -390,6 +390,9 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("手で置いたファイルを上書きしない", SIGNED, "hand",
      lambda r: r.code == 2 and hand_kept(r) and "上書きしない" in r.output and not r.svg and MANIFEST not in r.files
      and set(r.files) == set(HAND)),
+    # 手で置いたのが仕様書だけでも上書きしない——提案書の名前だけ見る検査を判別する（#405 の 2 パス目）
+    ("手で置いた仕様書だけでも上書きしない", SIGNED, "handspec",
+     lambda r: r.code == 2 and "上書きしない" in r.output and r.files == {"spec.md": HAND_TEXT.encode("utf-8")}),
     # 印が同じ場所の外を名指ししても、外は消さない
     ("印が外を名指ししても消さない", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)], "evil",
      lambda r: r.code == 1 and hand_kept(r) and "前に作った出力を消した" not in r.output),
@@ -408,6 +411,9 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     ("出力の名前が空白で始まると 2", SIGNED + [("out", " notes.md")], False, bad_out("空白")),
     ("出力の名前が改行を含むと 2", SIGNED + [("out", "x\nY.md")], False, bad_out("改行")),
     ("出力の名前が # で始まると 2", SIGNED + [("out", "#draft.md")], False, bad_out("`#`")),
+    # 印を読む側は `\` を含む名前を捨て、印は UTF-8 で書く——どちらも印に残せない（#405 の 2 パス目）
+    ("出力の名前が \\ を含むと 2", SIGNED + [("out", "a\\b.md")], False, bad_out("`\\`")),
+    ("出力の名前が UTF-8 で書けないと 2", SIGNED + [("out", "x\udcff.md")], False, bad_out("UTF-8")),
     # 出力の親が普通のファイルでも traceback の 1（照合の不一致と同じ値）にしない
     ("出力の親がファイルだと 2", SIGNED + [("w", "afile", "x\n"), ("rawout", "afile/proposal.md")], False, bad_out("書けない")),
     ("範囲の外の節が空", [s if s[:2] != ("w", "docs/v1/spec/scope.md") else ("w", "docs/v1/spec/scope.md", "# 範囲\n\n## 範囲の外\n\n## 付録\n\nX\n")
@@ -530,7 +536,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("仕様書に比較の節を出さない", '    if diff is not None:\n        out += changes_section(diff, info["req"])\n\n    out += ["## 仕様と要求',
      '    out += ["## 仕様と要求', "v2 の仕様書は重ねた全体と変更"),
     # ---- 何を消すか（#405）。印に何を載せるかは本物の前の実行で見る（下の PREVIOUS_MUTATIONS）
-    ("印を見ずに名前で消す", "    for name in owned_names(directory):\n",
+    ("印を見ずに名前で消す", "    for name in names:\n",
      '    for name in ["proposal.md", "spec.md", "gantt.svg", "spec-figure-01.svg"]:\n', "手で置いたファイルは作れないときも消さない"),
     ("印に無いファイルを上書きする", "        if path.exists() or path.is_symlink():\n            raise Stop(2",
      "        if False:\n            raise Stop(2", "手で置いたファイルを上書きしない"),
@@ -549,7 +555,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    directory.mkdir(parents=True, exist_ok=True)\n    try:\n", "出力の親がファイルだと 2"),
     ("引数を検査しない", "    problem = bad_out(out)\n", "    problem = None\n", "出力先が . だと 2"),
     ("名前の無い出力先を見ない", '    if out.name in ("", ".", ".."):\n', "    if False:\n", "出力先が .. だと 2"),
-    ("ディレクトリの出力先を見ない", "    if out.is_dir():\n        return", "    if False:\n        return", "出力先がディレクトリだと 2"),
+    ("ディレクトリの出力先を見ない", "    if is_directory:\n        return", "    if False:\n        return", "出力先がディレクトリだと 2"),
+    ("\\ を含む名前を見ない", '    if "\\\\" in out.name:\n', "    if False:\n", "出力の名前が \\ を含むと 2"),
+    ("UTF-8 で書けない名前を見ない", '        out.name.encode("utf-8")\n', "        pass\n", "出力の名前が UTF-8 で書けないと 2"),
+    ("仕様書の名前の上書きを見ない", "    for path in outputs:\n        if path.exists()",
+     "    for path in list(outputs)[:1]:\n        if path.exists()", "手で置いた仕様書だけでも上書きしない"),
     ("印の名前を照らさない", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)", "(SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME)",
      "出力の名前が印と重なると作らない"),
     ("PPTX を作らない", "    if args.pptx:\n", "    if False:\n", "PPTX も作る"),
@@ -660,6 +670,48 @@ def write_failure_problems(scripts: Path) -> list[str]:
             problems.append(f"書きかけが残る: {left}")
     return problems
 
+# 読めない印・辿れない出力先で殺す変異。(名前, 壊す前, 壊した後)
+OWN_MUTATIONS: list[tuple[str, str, str]] = [
+    ("読めない印を消す", "    if names is None:\n        return\n", "    names = names or []\n"),
+    ("辿れない出力先を見ない", '        return f"{out}: 出力先を確かめられない（{e.strerror}）"\n', "        is_directory = False\n"),
+]
+
+
+def ownership_problems(scripts: Path) -> list[str]:
+    """読めない印は消さない／辿れない出力先は traceback でなく 2（#405 の 2 パス目）。
+
+    読めない印は `remove_owned` を直接呼ぶ。辿れない出力先は CLI で走らせる——python3.12 の `pathlib` は
+    `is_dir`・`is_file` で `PermissionError` を投げ、3.14 は投げない。`bad_out` が `stat` で見るので、どちらでも同じ文言の 2。
+    """
+    import contextlib
+    import io
+    spec = importlib.util.spec_from_file_location("build_proposal_own", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    problems = []
+    with tempfile.TemporaryDirectory(prefix="proposal-own-") as tmp:
+        directory = Path(tmp) / "out"
+        directory.mkdir()
+        (directory / MANIFEST).write_bytes(b"\xff\nproposal.md\n")
+        (directory / "proposal.md").write_text("古い出力\n", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            module.remove_owned(directory)
+        if sorted(p.name for p in directory.iterdir()) != sorted([MANIFEST, "proposal.md"]):
+            problems.append(f"読めない印のあとに残るものが違う: {sorted(p.name for p in directory.iterdir())}")
+
+        locked = Path(tmp) / "locked"
+        locked.mkdir()
+        locked.chmod(0)
+        try:
+            proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", tmp,
+                                   "--out", str(locked / "sub" / "proposal.md")], capture_output=True, text=True, cwd=tmp)
+        finally:
+            locked.chmod(0o755)
+        output = proc.stdout + proc.stderr
+        if proc.returncode != 2 or "Traceback" in output or "確かめられない" not in output:
+            problems.append(f"辿れない出力先: {proc.returncode} {output[-300:]}")
+    return problems
+
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
 # タグの手順で作れない（`refs/tags/v1` と `refs/tags/v1/...` は共存できない）——試料が衝突を判別している確かめ
 OLD_NAMES = {R1: "v1/req-signoff-1", B1: "v1/budget-signoff-1"}
@@ -741,6 +793,8 @@ def run_case(scripts: Path, root: Path, steps, stale: bool | str, env: dict[str,
     raw = next((step[1] for step in steps if step[0] == "rawout"), None)
     if stale == "hand":
         write_hand(out)
+    elif stale == "handspec":
+        write_hand(out, ["spec.md"])
     elif stale == "evil":
         write_evil(out)
     elif stale:
@@ -765,9 +819,9 @@ def write_stale(out: Path) -> None:
     (out.parent / MANIFEST).write_text("# 本体が書くのと同じ形\n" + "\n".join(STALE) + "\n", encoding="utf-8")
 
 
-def write_hand(out: Path) -> None:
+def write_hand(out: Path, names: list[str] = HAND) -> None:
     out.parent.mkdir(parents=True)
-    for name in HAND:
+    for name in names:
         (out.parent / name).write_text(HAND_TEXT, encoding="utf-8")
 
 
@@ -983,12 +1037,23 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（write_outputs を直接呼んで殺せるはず）", bool(write_failure_problems(mutated)))
 
+        problems = ownership_problems(SCRIPTS)
+        check("読めない印か辿れない出力先の扱いが違う", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(OWN_MUTATIONS):
+            count = source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"mutown{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（読めない印か辿れない出力先で殺せるはず）", bool(ownership_problems(mutated)))
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 5} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 6} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS)} 件")
     return 0
 
 

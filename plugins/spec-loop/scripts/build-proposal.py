@@ -33,7 +33,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 - **始める前に、前に作った出力を消し、全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
   `spec.md`・PPTX・`spec-figure-*.svg`）の名前の一覧で、出力より先に書く。**印の無い場所では何も消さない**——`--out` を
-  手書きの `spec.md` の在る場所に向けても消さない（#397）。**書こうとする名前のファイルが印に無いまま在れば、上書きせずに 2。**
+  手書きの `spec.md` の在る場所に向けても消さない（#397）。**書こうとする名前のファイルが印に無いまま在れば、上書きせずに 2。** **読めない印は消さない**（名指しした出力も消さない）。
   **引数の誤り（名前が無い・ディレクトリ・名前の衝突・印に残せない名前）は消す前に見て 2 で止めるが、印が名指しする前の出力は消す**（#398。
   ディレクトリを渡したなら、その中の印が名指しするものも消す）。
   **spec-loop 0.25.0 までが作った出力には印が無い**ので、消してから作り直す（`references/tree.md` の移行の節）。
@@ -44,7 +44,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・空白・改行を含むか `#` で始まる・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・空白・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
   印に無いファイルが出力の名前で在る・書けない——書いていない
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
 
@@ -59,6 +59,7 @@ import csv
 import importlib.util
 import io
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -581,15 +582,24 @@ def repo_top(repo: Path) -> Path:
     return repo
 
 
-def owned_names(directory: Path) -> list[str]:
-    """印が名指しする、前回この道具が書いた出力の名前。印が無ければ空——消してよいと確かめられるものが無い。"""
-    manifest = directory / MANIFEST
-    if not manifest.is_file():
-        return []
+def is_dir(path: Path) -> bool:
+    """辿れない親の下でも例外を投げない `is_dir`（python3.12 の `pathlib` は `PermissionError` を投げる）。"""
     try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def owned_names(directory: Path) -> list[str] | None:
+    """印が名指しする、前回この道具が書いた出力の名前。印が無ければ空——消してよいと確かめられるものが無い。
+    印が在るか・何を名指しするかを読めなければ None（印を消さずに残す）。"""
+    manifest = directory / MANIFEST
+    try:
+        if not manifest.is_file():
+            return []
         lines = manifest.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
-        return []
+        return None
     # 同じ場所の素の名前だけ（印を書き換えられても、外のファイルや印そのものは消さない）
     return [name for name in (line.strip() for line in lines)
             if name and not name.startswith("#") and "/" not in name and "\\" not in name
@@ -597,8 +607,12 @@ def owned_names(directory: Path) -> list[str]:
 
 
 def remove_owned(directory: Path) -> None:
-    """印に載る出力と印を消す。載っていないもの（手書きのファイル）は、名前が出力と同じでも消さない。"""
-    for name in owned_names(directory):
+    """印に載る出力と印を消す。載っていないもの（手書きのファイル）は、名前が出力と同じでも消さない。
+    読めない印は消さない——消すと、名指ししていた出力がこの道具のものだった跡が無くなる。"""
+    names = owned_names(directory)
+    if names is None:
+        return
+    for name in names:
         stale = directory / name
         if stale.is_file() or stale.is_symlink():
             stale.unlink()
@@ -614,7 +628,20 @@ def bad_out(out: Path) -> str | None:
     # 印は 1 行 1 名前で、読むときに前後の空白を落とし `#` の行を飛ばす——そう読み違える名前は印に残せない
     if out.name != out.name.strip() or len(out.name.splitlines()) != 1 or out.name.startswith("#"):
         return f"{out}: 出力の名前が空白・改行を含むか `#` で始まる（印 {MANIFEST} に名前として残せない）"
-    if out.is_dir():
+    # 印を読む側は `\` を含む名前を捨てる。印は UTF-8 で書く——どちらも印に残せない
+    if "\\" in out.name:
+        return f"{out}: 出力の名前が `\\` を含む（印 {MANIFEST} に名前として残せない）"
+    try:
+        out.name.encode("utf-8")
+    except UnicodeEncodeError:
+        return f"{out}: 出力の名前が UTF-8 で書けない（印 {MANIFEST} に名前として残せない）"
+    try:
+        is_directory = stat.S_ISDIR(out.stat().st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        is_directory = False  # 無い・親が普通のファイル——後者は書くときに 2
+    except OSError as e:
+        return f"{out}: 出力先を確かめられない（{e.strerror}）"
+    if is_directory:
         return f"{out}: 出力先がディレクトリ（`--out` には `<ディレクトリ>/proposal.md` の形で渡す）"
     # 大文字小文字だけ違う名前も重なる（区別しない FS では同じファイル）。`spec.html` なら PPTX が仕様書の PPTX と重なる
     reserved = {name.lower() for name in (SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)}
@@ -660,7 +687,7 @@ def main(argv: list[str]) -> int:
     # 引数の誤りは消す前に見る。誤りで止まっても、印が名指しする前の出力は消す（残すと今回のものと取り違える。#398）
     problem = bad_out(out)
     remove_owned(out.parent)
-    if out.is_dir() and out.resolve() != out.parent.resolve():
+    if is_dir(out) and out.resolve() != out.parent.resolve():
         remove_owned(out)  # ディレクトリを渡したなら、指したつもりの場所の前の出力も消す
     if problem:
         print(f"{problem}。提案書は作っていない", file=sys.stderr)
