@@ -133,18 +133,22 @@ def run_main(mod, argv: list[str]) -> tuple[int, str]:
 
 # ------------------------------------------------------------- 偽の scripts/
 FLAGS = "flags"
+# **待ち合わせの時間切れ（秒）。** 並列を壊す変異では毎回ここまで待ち切るので、変異の数だけ
+# `test-check-all.py` が延びる（それを 5 回回す `check-mutation-claims.py` ごと）——2 秒から縮めた（#434）。
+# **縮めすぎると、変異の前の本体で相手の起動が遅れたときに偽の赤になる**（負荷の高い `check-all.py` の中・CI）。
+BARRIER_WAIT = 0.5
 BARRIER = """\
 import pathlib, sys, time
 d = pathlib.Path("{flags}")
 d.mkdir(exist_ok=True)
 (d / "{{me}}").touch()
-end = time.time() + 2
+end = time.time() + {wait}
 while not (d / "{{other}}").exists():
     if time.time() > end:
         print("相手が来ない——同時に走っていない")
         sys.exit(1)
     time.sleep(0.02)
-""".format(flags=FLAGS)
+""".format(flags=FLAGS, wait=BARRIER_WAIT)
 INTERVAL = """\
 import pathlib, time
 d = pathlib.Path("{flags}")
