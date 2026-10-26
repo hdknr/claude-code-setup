@@ -133,6 +133,7 @@ def run_main(mod, argv: list[str]) -> tuple[int, str]:
 
 # ------------------------------------------------------------- 偽の scripts/
 FLAGS = "flags"
+SLOW_HEAD = 0.3
 BARRIER = """\
 import pathlib, sys, time
 d = pathlib.Path("{flags}")
@@ -185,6 +186,15 @@ def build_fake(root: Path) -> Path:
     # 回帰テストの側の先頭も遅らせる——歯止めの順だけ見ると、回帰テストの順は誰も見ない。
     (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n")
     (scripts / "ok-c.py").write_text("print('c ok')\n")
+    # **順序を見る契約 1 だけが使う、遅い回帰テストの先頭**（#431）。
+    # **「回帰テストを終わった順に出す」変異は、歯止めの結果を全部待ってから `as_completed` に入る。**
+    # **そこで回帰テストが 2 本とも終わっていると、終わった順ではなく集合の順に出て、
+    # 宣言順と偶然揃うことがある**——`test-check-all.py` を同時に 10 本走らせると 30 回中 3 回、
+    # この変異を取りこぼした（先頭が 0.05 秒のとき）。**歯止めの側の先頭まで遅くすると、
+    # 回帰テストが終わってから歯止めを待つことになって悪化した**（両方 0.3 秒で 60 回中 5 回）。
+    # **だから遅くするのは回帰テストの先頭だけ**——**歯止めを待ち終えても、まだ走っているように。**
+    # **全部の契約を遅くしない**——**先頭はほかの契約でも走るので、伸ばすとテスト全体が伸びる。**
+    (scripts / "slow-t.py").write_text(f"import time; time.sleep({SLOW_HEAD}); print('slow ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
@@ -199,11 +209,11 @@ def build_fake(root: Path) -> Path:
     return target
 
 
-def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
+def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool, slow_heads: bool = False) -> None:
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("ok-a.py", [], False), ("ok-c.py", [], False),
                   ("needs-base.py", [], True)]
-    mod.TESTS = ["ok-t.py", "ok-b.py"]
+    mod.TESTS = ["slow-t.py" if slow_heads else "ok-t.py", "ok-b.py"]
     if bad_guard:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
         # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
@@ -221,17 +231,17 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
 
     # 1) 全部通る。base は解決できない → base を要する 1 本は SKIP。
     mod = load(target, f"{tag}_pass")
-    wire(mod, root, bad_guard=False, bad_test=False)
+    wire(mod, root, bad_guard=False, bad_test=False, slow_heads=True)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
     got += [
         ("全部通れば rc=0", rc == 0),
         ("飛ばしたものを数えて出す", "飛ばし 1" in out),
         ("飛ばしたことを黙らない", "飛ばしたものは回していない" in out),
         ("SKIP でも残りは回る", "OK   ok-b.py" in out),
-        # **歯止めと回帰テストの各先頭（ok-a.py・ok-t.py）が遅く終わる**（build_fake）ので、
+        # **歯止めと回帰テストの各先頭（ok-a.py・slow-t.py）が遅く終わる**（build_fake）ので、
         # 終わった順に出すと崩れる。
         ("出力は宣言順",
-         order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "ok-t.py", "ok-b.py"]),
+         order(out) == ["ok-a.py", "ok-c.py", "needs-base.py", "slow-t.py", "ok-b.py"]),
     ]
 
     # 2) 歯止めだけが落ちる
