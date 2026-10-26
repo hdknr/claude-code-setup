@@ -52,6 +52,8 @@ if args[:2] == ["pr", "view"]:
     fields = args[args.index("--json") + 1]
     if fields == "state":
         print(json.dumps({"state": nxt("after", scn.get("after", ["MERGED"]))}))
+    elif fields == "commits":
+        print(json.dumps({"commits": scn.get("commits", [{"oid": "c" * 40}])}))
     else:
         print(json.dumps(nxt("view", scn["view"])))
 elif args[:2] == ["pr", "merge"]:
@@ -66,6 +68,21 @@ elif args[:2] == ["repo", "view"]:
     if name == "FAIL":
         print("gh: something went wrong", file=sys.stderr); sys.exit(1)
     print(json.dumps({"defaultBranchRef": {"name": name}}))
+elif args[:2] == ["pr", "list"]:
+    out = scn.get("lowers", []) if "--head" in args else scn.get("merged", [])
+    if out == "FAIL":
+        print("gh: something went wrong", file=sys.stderr); sys.exit(1)
+    print(json.dumps(out))
+elif args[0] == "api" and "/compare/" in args[1]:
+    ahead = scn.get("ahead", 0)
+    if ahead == "FAIL":
+        print("gh: something went wrong", file=sys.stderr); sys.exit(1)
+    print(json.dumps({"ahead_by": ahead}))
+elif args[0] == "api" and "--paginate" in args and args[2].endswith("/timeline"):
+    rows = scn.get("timeline", [])
+    if rows == "FAIL":
+        print("gh: something went wrong", file=sys.stderr); sys.exit(1)
+    print("\n".join(r if isinstance(r, str) else "\t".join(r) for r in rows))
 elif args[:2] == ["issue", "view"]:
     print(json.dumps({"state": nxt("issue:" + args[2], scn.get("issues", {}).get(args[2], ["CLOSED"]))}))
 else:
@@ -128,12 +145,14 @@ def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False, 
 
 def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after=None, issues=None,
              merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5",
-             merge_drop=False, default=None) -> dict:
+             merge_drop=False, default=None, **gh) -> dict:
     root = base / name
     main, wt, sha = make_repo(root, lock=lock)
     if prepare:
         prepare(main, wt)
-    scn = {"view": make_view(sha), "merge_rc": merge_rc, "fail_all": fail_all}
+    # 試料の "HEAD" は、この試料の head の SHA に置き換える（commits の oid と timeline の commit_id）
+    gh = json.loads(json.dumps(gh).replace('"HEAD"', json.dumps(sha)))
+    scn = {"view": make_view(sha), "merge_rc": merge_rc, "fail_all": fail_all, **gh}
     if after:
         scn["after"] = after
     if issues:
@@ -186,6 +205,23 @@ def untracked_hidden(main, wt):
     (wt / "dirty.txt").write_text("d\n", encoding="utf-8")
 
 
+LOWER = {"number": 41, "baseRefName": "main", "headRefName": "issue/41-lower", "isCrossRepository": False}
+
+
+def CHANGED(at):
+    return ["base_ref_changed", at, ""]
+
+
+def FORCED(at, commit="HEAD"):
+    return ["head_ref_force_pushed", at, commit]
+
+
+def started(at):
+    return [{"__typename": "CheckRun", "name": "check", "status": "COMPLETED", "conclusion": "SUCCESS",
+             "startedAt": at},
+            {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS", "startedAt": at}]
+
+
 def running_then(sha):
     running = [{"__typename": "CheckRun", "name": "check", "status": "IN_PROGRESS", "conclusion": None}]
     return [pr(sha, checks=running), pr(sha)]
@@ -233,8 +269,55 @@ CASES = {
     "撤去が失敗して Issue が読めなければ 7・撤去の失敗を出す": (
         dict(make_view=lambda s: [pr(s)], merge_drop=True, issues={ISSUE_URL: ["FAIL"]}), 7, True, True,
         "worktree を撤去できなかった"),
-    "base が既定ブランチでなければマージしない（積んだ周）": (
-        dict(make_view=lambda s: [pr(s, base="issue/41-lower")]), 10, False, True, "載せ替えていない"),
+    "下がマージされたのに base が下のブランチのままならマージしない（積んだ周）": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower")], lowers=[LOWER], ahead=2),
+        10, False, True, "載せ替えていない"),
+    "base が既定ブランチでなくても、積んでいなければマージする（develop・#426）": (
+        dict(make_view=lambda s: [pr(s, base="develop")]), 0, True, False),
+    "base を head にするマージ済み PR があっても、その base に入っていればマージする": (
+        dict(make_view=lambda s: [pr(s, base="develop")], lowers=[dict(LOWER, headRefName="develop")], ahead=0),
+        0, True, False),
+    "fork の同名ブランチのマージ済み PR は下の周と読まない": (
+        dict(make_view=lambda s: [pr(s, base="develop")], lowers=[dict(LOWER, isCrossRepository=True)], ahead=2),
+        0, True, False),
+    "base が付け替わっても下の元のコミットがあればマージしない（#427 R4）": (
+        dict(make_view=lambda s: [pr(s)], commits=[{"oid": "a" * 40}, {"oid": "b" * 40}],
+             merged=[{"number": 41, "commits": [{"oid": "a" * 40}]}]), 10, False, True, "載せ替えていない"),
+    "base に別のマージ済み PR があっても、コミットを共有しなければマージする": (
+        dict(make_view=lambda s: [pr(s)], commits=[{"oid": "b" * 40}],
+             merged=[{"number": 41, "commits": [{"oid": "a" * 40}]}]), 0, True, False),
+    # 本物の GitHub（#427）の PR #4 の形: force push → 付け替え → 検査はその後に始まったが base_ref は前の base
+    "付け替えより前に届いた head は、検査が後に始まっていてもマージしない（#427 R1）": (
+        dict(make_view=lambda s: [pr(s, checks=started("2026-10-26T04:19:21Z"))],
+             timeline=[FORCED("2026-10-26T04:19:15Z"), CHANGED("2026-10-26T04:19:16Z")],
+             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:19:14Z"}]), 11, False, True, "push し直す"),
+    "付け替えの後のコミットならマージする": (
+        dict(make_view=lambda s: [pr(s)], timeline=[CHANGED("2026-10-26T04:19:16Z")],
+             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:20:00Z"}]), 0, True, False),
+    "付け替えの後の force push なら、古い日付のコミットでもマージする": (
+        dict(make_view=lambda s: [pr(s)],
+             timeline=[CHANGED("2026-10-26T04:19:16Z"), FORCED("2026-10-26T04:19:30Z")],
+             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:00:00Z"}]), 0, True, False),
+    "別の head への force push は、届いた時刻に数えない": (
+        dict(make_view=lambda s: [pr(s)],
+             timeline=[CHANGED("2026-10-26T04:19:16Z"), FORCED("2026-10-26T04:19:30Z", "d" * 40)],
+             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:19:14Z"}]), 11, False, True),
+    "自動の付け替えも付け替えに数える": (
+        dict(make_view=lambda s: [pr(s)],
+             timeline=[["automatic_base_change_succeeded", "2026-10-26T04:09:54Z", ""]],
+             commits=[{"oid": "HEAD", "committedDate": "2026-10-26T04:08:00Z"}]), 11, False, True),
+    "付け替えが無ければ head の時刻を見ない": (
+        dict(make_view=lambda s: [pr(s)], timeline=[FORCED("2026-10-26T04:19:15Z")]), 0, True, False),
+    "timeline が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s)], timeline="FAIL"), 7, False, True),
+    "timeline の行の形が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s)], timeline=["base_ref_changed 2026-10-26T04:19:16Z"]), 7, False, True),
+    "付け替えがあって head が commits に無ければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s)], timeline=[CHANGED("2026-10-26T04:19:16Z")]), 7, False, True),
+    "compare が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s, base="issue/41-lower")], lowers=[LOWER], ahead="FAIL"), 7, False, True),
+    "マージ済みの PR の一覧が読めなければ判定できなかった": (
+        dict(make_view=lambda s: [pr(s)], merged="FAIL"), 7, False, True),
     "既定ブランチが main でなくても、base が既定ブランチならマージする": (
         dict(make_view=lambda s: [pr(s, base="master")], default="master"), 0, True, False),
     "既定ブランチが読めなければマージしない": (dict(make_view=lambda s: [pr(s)], default="FAIL"), 7, False, True),
@@ -268,8 +351,16 @@ MUTATIONS = {
     "CheckRun の失敗を見ない": ('elif c.get("conclusion") not in CHECK_PASS:', 'elif False:'),
     # 守る 4: 衝突していればマージしない
     "CONFLICTING を見ない": ('if mergeable == "CONFLICTING":', 'if False:'),
-    # 守る 5: base が既定ブランチでない PR をマージしない
-    "base を見ない": ('if base != default:', 'if False:'),
+    # 守る 5: 下の周がマージされたのに base が下のブランチのまま
+    "下のブランチがその base に入っているかを見ない": ('if ahead > 0:', 'if False:'),
+    # 守る 6: base を既定ブランチでないことだけで止めない（#426）
+    "base が既定ブランチでなければ止める": (
+        'reason = unrebased(number, base, default)',
+        'reason = unrebased(number, base, default) or (base != default and "base が既定ブランチでない")'),
+    # 守る 7: base が付け替わっても載せ替えていない（#427 R4）
+    "マージ済みの元のコミットを見ない": ('if shared:', 'if False:'),
+    # 守る 8: 付け替えの後に回っていない検査（#427 R1）
+    "付け替えの後の検査かを見ない": ('if stale:', 'if False:'),
     # 守る 6: 見ていないコミットをマージしない
     "--match-head-commit を渡さない": (
         '"--squash", "--match-head-commit", head_sha]', '"--squash"]'),
@@ -301,7 +392,12 @@ KILLS = {
     "検査 0 本を通過と読む": ["検査が 0 本なら時間切れ"],
     "CheckRun の失敗を見ない": ["CheckRun の失敗で止まる"],
     "CONFLICTING を見ない": ["衝突していれば止まる"],
-    "base を見ない": ["base が既定ブランチでなければマージしない（積んだ周）"],
+    "下のブランチがその base に入っているかを見ない": ["下がマージされたのに base が下のブランチのままならマージしない（積んだ周）"],
+    "base が既定ブランチでなければ止める": ["base が既定ブランチでなくても、積んでいなければマージする（develop・#426）",
+                               "base を head にするマージ済み PR があっても、その base に入っていればマージする"],
+    "マージ済みの元のコミットを見ない": ["base が付け替わっても下の元のコミットがあればマージしない（#427 R4）"],
+    "付け替えの後の検査かを見ない": ["付け替えより前に届いた head は、検査が後に始まっていてもマージしない（#427 R1）",
+                          "自動の付け替えも付け替えに数える"],
     "--match-head-commit を渡さない": [],  # 引数で見る（下）
     "未コミットを見ない": ["未コミットがあればマージしない", "未追跡を隠す設定（showUntrackedFiles=no）でも見る"],
     "push を見ない": ["push していなければマージしない"],
@@ -340,7 +436,10 @@ def main() -> int:
         check("偽の gh が呼ばれている（本物の gh に届いていない）", bool(happy["calls"]))
         check("squash で、待って見た head の SHA を --match-head-commit に渡す", merge_args_ok(happy))
         check("UNKNOWN の間に読み直している（pr view が 3 回以上）",
-              sum(1 for c in happy["calls"] if c[:2] == ["pr", "view"] and c[-1] != "state") >= 3)
+              sum(1 for c in happy["calls"] if c[:2] == ["pr", "view"] and c[-1] not in ("state", "commits")) >= 3)
+        check("base と head が変わらない間は積んだ周の判定を引き直さない（commits を 1 回だけ読む）",
+              sum(1 for c in good["検査が走っている間は待つ"]["calls"]
+                  if c[:2] == ["pr", "view"] and c[-1] == "commits") == 1)
         check("ブランチを消さない（--delete-branch を渡さない）",
               all("--delete-branch" not in c and "-d" not in c for c in happy["merges"]))
 
