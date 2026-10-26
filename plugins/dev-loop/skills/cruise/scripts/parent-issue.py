@@ -67,6 +67,7 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 - **閉じていないコードフェンスは拒む**——閉じ忘れの後ろの行を、黙って全部落とさない。
 - **HTML コメントの中のチェックリストは読まない**——Issue の画面に見えない行を、確かめさせずに回さない。
 - **インラインコードの中の `<!--` をコメントの開きと読まない**——画面に見える行を、後ろの `-->` まで黙って落とさない。
+- **開いたコメントの `-->` は、インラインコードの形でも閉じと読む**——コメントの中に code span は無いので、伏せると閉じを見落とし、後ろの見える行を落とす。
 - **行の途中で同じ行に閉じない `<!--` をコメントの開きと読まない**——画面では文字のまま見える（次の項目で段落が切れる）。
 - **本文の終わりまで閉じない行頭の `<!--` は拒む**——閉じ忘れの後ろの行を、黙って全部落とさない。
 - **同じ番号が 2 行あれば拒む。**
@@ -121,20 +122,21 @@ class Unknown(Exception):
 def visible(line, in_comment):
     """HTML コメントを除いた行の残りと、行末でコメントの中にいるかを返す（GitHub の画面に合わせる）。
     行頭の `<!--` は `-->` を含む行まで続く（その行の残りも読まない）。行の途中の `<!--` は同じ行で閉じるときだけ
-    コメントで、閉じなければ文字のまま。インラインコードの中の `<!--`・`-->` は見ない。"""
+    コメントで、閉じなければ文字のまま。インラインコードの中の `<!--` は開きと見ないが、開いた後の `-->` は
+    インラインコードの形でも閉じと読む（コメントの中に code span は無い）。"""
     masked = CODE_RE.sub(lambda m: " " * len(m.group(0)), line)
     if in_comment:
-        return "", masked.find("-->") < 0
+        return "", line.find("-->") < 0
     out, pos = "", 0
     while True:
         start = masked.find("<!--", pos)
         if start < 0:
             return out + line[pos:], False
         after = start + 4
-        if masked.startswith(">", after) or masked.startswith("->", after):
-            end = after + (1 if masked[after] == ">" else 2)
+        if line.startswith(">", after) or line.startswith("->", after):
+            end = after + (1 if line[after] == ">" else 2)
         else:
-            close = masked.find("-->", after)
+            close = line.find("-->", after)
             if close < 0:
                 if line[:start].strip() == "":
                     return out, True
