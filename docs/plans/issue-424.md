@@ -89,7 +89,9 @@ CI（`plugins.yml`）でテストが回る。
 - 1 パス目の指摘対応の差分: 非 0 行（`git diff a49d457 -- ':(top)' ':(top,exclude)docs/plans/issue-424.md'` にテストの変更）→ 2 パス目を回す
 - 次: **手順 5 の Verifier 当て直し（2 パス目）**と **`/code-review` 2 パス目**の両方（base `159d0e6ec03dd3345816a4232f615199ffa4d6ec`。指摘対応の範囲は `a49d457..587f73c`）
 - 割り目（手順 6・2 パス目の前）: AskUserQuestion で訊いた → **「ここで割る」**（2026-10-26）
-- 2 パス目の指摘対応の起点（狭いパス用）: 2 パス目の関門の報告を受けたあと、指摘対応を始める直前の HEAD を書く
+- Verifier 2 パス目（当て直し）: 済み——反証 0 件（sonnet。`git status --porcelain` 前後とも空。テスト 3.14・3.12 とも OK。docstring の argparse／3.14 の主張は「未確認」。`check-all.py` は回していない）
+- `/code-review` 2 パス目: 済み——指摘 7 件（high。porcelain 前後とも空。変異 52 件すべて赤を確認。下の「2 パス目の指摘の採否」）
+- 2 パス目の指摘対応の起点（狭いパス用）: `f492965`（指摘対応を始める直前の HEAD）
 
 ## 起票
 
@@ -122,3 +124,17 @@ CI（`plugins.yml`）でテストが回る。
 | 空の判定を 1 つのチェックに畳んでいる | 示せない（診断の問題） | 無し | 残課題 |
 | `mock.patch`／`ExitStack` を使っていない | 示せない（簡素化） | 無し | 残課題 |
 | argparse の `.mo` がある環境で元の本体が赤になる | 示せない（観測は `os.path.exists` だけで、`open` は観測していない） | 無し | 残課題 |
+
+### 2 パス目の指摘の採否
+
+関門: Verifier（sonnet・`dev-loop:dev-loop-verifier`。反証 0 件）、`/code-review` high（7 件）。
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| Path の陽性対照が `builtins.open` で満たされる（記録名がどちらも `"open"`）——1 パス目の「診断の問題」という決着の理由が誤り | 示せる（関門の probe: `READ_ENTRIES` から `Path` を外し `read_json` を `open(p)` にすると全部緑、`Path.stat` を呼ぶ `--push-result` の変異も緑） | 3 | 直す（記録名に持ち主を付ける: `Path.open` と `builtins.open`） |
+| `os` を差し替えない理由が `os.stat` にしか当たらない（`os.listdir`・`os.lstat`・`io.open` 等は差し替えても `--push-result` の記録は空） | 示せる（関門の probe。3.14 では `lstat`・`is_symlink` の変異がローカルで素通り） | 2（限界の申告） | 直す（理由を `os.stat`・`os.path.*` に限り、ほかは「足していない」と書く）。記録器の拡張は残課題 |
+| 陽性対照のコマンドが本物の Python を起動する | 示せる（`mod.run([sys.executable, …])` が実の site-packages の `.pth` を読む） | 5 | 直す（偽の `ps` に向ける） |
+| 計画と docstring で `os.scandir` が食い違う | 示せる（docstring に無い） | 2（限界の申告） | 直す（docstring に足す。上の行と一緒に） |
+| 変異に依らない陽性対照が `suite()` の中で変異ごとに回り、対照の崩れが「変異を捕まえた」に数えられる | 示せない（そう数えられた変異は挙がっていない） | 無し | 残課題 |
+| チェック名「設定もファイルもコマンドも読まない」が言い過ぎ（argparse の `os.stat` は記録しない） | 示せない（誤った判定は出ていない） | 無し | 残課題 |
+| 「読むが出さない」変異が空の判定でも赤になる | 示せない（記録のための指摘。畳みは決着済み） | 無し | 残課題 |
