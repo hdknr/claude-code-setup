@@ -30,7 +30,8 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 
 - **チェックリストの行**（`-`・`*`・`+`・`1.`・`1)` のあとに `[ ]` か `[x]`）だけを読む。ほかの行は読まない。
   **コードフェンスの中（インデントされたものを含む）と HTML コメント（`<!-- … -->`）の中も読まない。**
-  フェンスは**開いたのと同じ文字で、同じ長さ以上の行**で閉じる。
+  フェンスは**開いたのと同じ文字で、同じ長さ以上の行**で閉じる（インデントは開きの幅＋3 まで）。
+  `` ` `` の印の後ろに `` ` `` がある行はフェンスではない（インラインコード）。
 - 回す Issue の行は `#番号` で始める。番号の後ろの文は題として台帳に入れる。**`#番号` で始まらないチェックリストの行**
   （受入基準など）と**引用（`>`）の中のチェックリストの行**は台帳に入れず、`show` に**読み飛ばした行**として出す
   ——親 Issue に受入基準が混ざっていてもよい。
@@ -44,7 +45,7 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 | 0 | 通った（`show` は取り出した結果と指紋を出した。`apply` は台帳を作った） |
 | 2 | 引数が違う |
 | 3 | 拒んだ——**台帳は作っていない**（書式の誤り・回すものが 0 件・指紋の不一致・台帳が既に在る） |
-| 4 | 判定できなかった（`gh` が失敗した・本文が読めない・`ledger.py` が失敗した・git の外）。**「回すものなし」とは答えていない** |
+| 4 | 判定できなかった（`gh` が失敗した・本文が読めない・`ledger.py` が失敗した・git の外（`apply`））。**「回すものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
 
@@ -58,8 +59,11 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 - **題に `#番号` があれば拒む**——`(blocked by #12)` のような別の書き方の依存を、題として黙って落とさない。
 - **コードフェンスの中のチェックリストは読まない**——書式の例を貼った本文で、例の Issue を回さない。
   **閉じは開きと同じ文字・同じ長さ以上で見る**——違う印で閉じたと読むと、例を読み、本物を落とす。
+- **開きの幅＋3 より深い印では閉じない**——フェンスの中にインデントして貼った例の印で閉じたと読むと、例を読む。
+- **`` ` `` の印の後ろに `` ` `` がある行をフェンスの開きと読まない**——インラインコードを開きと読むと、見える行を落とし、隠れた行を読む。
 - **閉じていないコードフェンスは拒む**——閉じ忘れの後ろの行を、黙って全部落とさない。
 - **HTML コメントの中のチェックリストは読まない**——Issue の画面に見えない行を、確かめさせずに回さない。
+- **本文の終わりまで閉じない `<!--` は拒む**——行の途中の `<!--`（インラインコードを含む）から後ろを、黙って全部落とさない。
 - **同じ番号が 2 行あれば拒む。**
 - **一覧に無い依存先・自己依存・未チェックの間の循環を拒む**——どれも、その Issue が永遠に着手できない台帳になる。
 - **`[x]` の行への依存は満たされたものとして外す**——依存先が済んでいるのに着手できない台帳にしない。
@@ -97,7 +101,7 @@ DEPS_RE = re.compile(r"\(depends:([^)]*)\)")
 DEP_LIST_RE = re.compile(r"^#[0-9]+(\s*,\s*#[0-9]+)*$")
 SUSPECT_RE = re.compile(r"depend|依存", re.IGNORECASE)
 REF_RE = re.compile(r"#[0-9]+")
-FENCE_RE = re.compile(r"^\s*(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
+FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 
 
 class Refused(Exception):
@@ -125,11 +129,21 @@ def visible(line, in_comment):
     return out, in_comment
 
 
-def closes(line, fence):
-    """`line` が `fence`（開いたフェンスの印）を閉じるか——同じ文字で、同じ長さ以上で、後ろに何も無い。"""
+def opens(line):
+    """`line` がフェンスを開くなら (印, インデントの幅) を、開かなければ None を返す。
+    `` ` `` の印の後ろに `` ` `` があればインラインコードで、フェンスではない（CommonMark）。"""
+    m = FENCE_RE.match(line)
+    if not m or (m.group("fence")[0] == "`" and "`" in m.group("info")):
+        return None
+    return m.group("fence"), len(m.group("indent"))
+
+
+def closes(line, fence, indent):
+    """`line` が `fence`（開いたフェンスの印）を閉じるか——同じ文字で、同じ長さ以上で、後ろに何も無く、
+    インデントが開きの幅＋3 まで（それより深い印はフェンスの中身）。"""
     m = FENCE_RE.match(line)
     return bool(m) and m.group("fence")[0] == fence[0] and len(m.group("fence")) >= len(fence) \
-        and not m.group("info").strip()
+        and not m.group("info").strip() and len(m.group("indent")) <= indent + 3
 
 
 def parse(body):
@@ -137,13 +151,16 @@ def parse(body):
     items, skipped, done, fence, in_comment = [], [], set(), None, False
     for lineno, line in enumerate(body.splitlines(), 1):
         if fence:
-            if closes(line, fence):
+            if closes(line, fence, indent):
                 fence = None
             continue
+        was_in_comment = in_comment
         line, in_comment = visible(line, in_comment)
-        opened = FENCE_RE.match(line)
+        if in_comment and not was_in_comment:
+            comment_line = lineno
+        opened = opens(line)
         if opened:
-            fence, fence_line = opened.group("fence"), lineno
+            (fence, indent), fence_line = opened, lineno
             continue
         m = CHECK_RE.match(line)
         if not m:
@@ -179,6 +196,8 @@ def parse(body):
         items.append({"number": number, "deps": deps, "title": " ".join(outside.split())})
     if fence:
         raise Refused(f"{fence_line} 行目のコードフェンス {fence} が閉じていない（後ろの行を読めない）")
+    if in_comment:
+        raise Refused(f"{comment_line} 行目の <!-- が閉じていない（後ろの行を読めない。インラインコードの <!-- もコメントと読む）")
     if not items:
         raise Refused("未チェックの Issue が 0 件（回すものが無い）")
     listed = {i["number"] for i in items}
