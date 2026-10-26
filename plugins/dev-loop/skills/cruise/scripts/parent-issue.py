@@ -28,10 +28,13 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 - [x] #11
 ```
 
-- **チェックリストの行**（`-`・`*`・`+` のあとに `[ ]` か `[x]`）だけを読む。ほかの行は読まない。**コードフェンスの中も読まない。**
+- **チェックリストの行**（`-`・`*`・`+`・`1.`・`1)` のあとに `[ ]` か `[x]`）だけを読む。ほかの行は読まない。
+  **コードフェンスの中（インデントされたものを含む）と HTML コメント（`<!-- … -->`）の中も読まない。**
+  フェンスは**開いたのと同じ文字で、同じ長さ以上の行**で閉じる。
 - 回す Issue の行は `#番号` で始める。番号の後ろの文は題として台帳に入れる。**`#番号` で始まらないチェックリストの行**
-  （受入基準など）は台帳に入れず、`show` に**読み飛ばした行**として出す——親 Issue に受入基準が混ざっていてもよい。
-- 依存は `(depends: #番号, #番号)` を 1 つだけ書く。
+  （受入基準など）と**引用（`>`）の中のチェックリストの行**は台帳に入れず、`show` に**読み飛ばした行**として出す
+  ——親 Issue に受入基準が混ざっていてもよい。
+- 依存は `(depends: #番号, #番号)` を 1 つだけ書く。**題に `#番号` を書かない**（`blocked by #12` のような書き方を依存と読めないので拒む）。
 - **`[x]` の行は済んだもの**として台帳に入れず、それへの依存は満たされたと読む（「マージ済み」とは読まない）。
 
 ## 終了コード
@@ -49,9 +52,14 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 
 - **`#番号` で始まらないチェックリストの行は、`show` に読み飛ばした行として出す**——黙って飛ばすと、`# ` の書き忘れで
   回すはずの課題が台帳から落ちたことに、確かめる側が気づけない。
+- **引用の中のチェックリストの行は台帳に入れず、読み飛ばした行として出す**——引用した他人の一覧を回さず、黙っても落とさない。
 - **`(depends: …)` の中身が `#番号` のカンマ区切りでなければ拒む。**
 - **依存の書き方らしい語（`depend`・`依存`）が `(depends: …)` の外にあれば拒む**——書き損じた依存を黙って落とさない。
+- **題に `#番号` があれば拒む**——`(blocked by #12)` のような別の書き方の依存を、題として黙って落とさない。
 - **コードフェンスの中のチェックリストは読まない**——書式の例を貼った本文で、例の Issue を回さない。
+  **閉じは開きと同じ文字・同じ長さ以上で見る**——違う印で閉じたと読むと、例を読み、本物を落とす。
+- **閉じていないコードフェンスは拒む**——閉じ忘れの後ろの行を、黙って全部落とさない。
+- **HTML コメントの中のチェックリストは読まない**——Issue の画面に見えない行を、確かめさせずに回さない。
 - **同じ番号が 2 行あれば拒む。**
 - **一覧に無い依存先・自己依存・未チェックの間の循環を拒む**——どれも、その Issue が永遠に着手できない台帳になる。
 - **`[x]` の行への依存は満たされたものとして外す**——依存先が済んでいるのに着手できない台帳にしない。
@@ -83,12 +91,13 @@ EXIT_REJECTED = 3
 EXIT_UNKNOWN = 4
 
 LEDGER = Path(__file__).resolve().parents[2] / "dev-loop" / "scripts" / "ledger.py"
-CHECK_RE = re.compile(r"^\s*[-*+]\s+\[([ xX])\]\s*(.*)$")
+CHECK_RE = re.compile(r"^\s*(?P<quote>(?:>\s*)+)?(?:[-*+]|[0-9]+[.)])\s+\[(?P<mark>[ xX])\]\s*(?P<rest>.*)$")
 ITEM_RE = re.compile(r"^#([0-9]+)(?![0-9A-Za-z_])(.*)$")
 DEPS_RE = re.compile(r"\(depends:([^)]*)\)")
 DEP_LIST_RE = re.compile(r"^#[0-9]+(\s*,\s*#[0-9]+)*$")
 SUSPECT_RE = re.compile(r"depend|依存", re.IGNORECASE)
-FENCE_RE = re.compile(r"^\s{0,3}(```|~~~)")
+REF_RE = re.compile(r"#[0-9]+")
+FENCE_RE = re.compile(r"^\s*(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 
 
 class Refused(Exception):
@@ -99,17 +108,50 @@ class Unknown(Exception):
     """判定できなかった。"""
 
 
+def visible(line, in_comment):
+    """HTML コメント（`<!-- … -->`）を除いた行の残りと、行末でコメントの中にいるかを返す。"""
+    out = ""
+    while line:
+        if in_comment:
+            end = line.find("-->")
+            if end < 0:
+                return out, True
+            line, in_comment = line[end + 3:], False
+        else:
+            start = line.find("<!--")
+            if start < 0:
+                return out + line, False
+            out, line, in_comment = out + line[:start], line[start + 4:], True
+    return out, in_comment
+
+
+def closes(line, fence):
+    """`line` が `fence`（開いたフェンスの印）を閉じるか——同じ文字で、同じ長さ以上で、後ろに何も無い。"""
+    m = FENCE_RE.match(line)
+    return bool(m) and m.group("fence")[0] == fence[0] and len(m.group("fence")) >= len(fence) \
+        and not m.group("info").strip()
+
+
 def parse(body):
     """本文から ([{"number", "deps", "title"}]（未チェックだけ・依存先が先）, 読み飛ばした行) を返す。"""
-    items, skipped, done, in_fence = [], [], set(), False
+    items, skipped, done, fence, in_comment = [], [], set(), None, False
     for lineno, line in enumerate(body.splitlines(), 1):
-        if FENCE_RE.match(line):
-            in_fence = not in_fence
+        if fence:
+            if closes(line, fence):
+                fence = None
+            continue
+        line, in_comment = visible(line, in_comment)
+        opened = FENCE_RE.match(line)
+        if opened:
+            fence, fence_line = opened.group("fence"), lineno
             continue
         m = CHECK_RE.match(line)
-        if in_fence or not m:
+        if not m:
             continue
-        item = ITEM_RE.match(m.group(2).strip())
+        if m.group("quote"):
+            skipped.append(f"{lineno} 行目（引用の中）: {line.strip()}")
+            continue
+        item = ITEM_RE.match(m.group("rest").strip())
         if not item or int(item.group(1)) == 0:
             skipped.append(f"{lineno} 行目: {line.strip()}")
             continue
@@ -126,12 +168,17 @@ def parse(body):
         outside = DEPS_RE.sub("", rest)
         if SUSPECT_RE.search(outside):
             raise Refused(f"{lineno} 行目: 依存の書き方らしい語が (depends: #番号) の外にある: {line.strip()}")
+        if REF_RE.search(outside):
+            raise Refused(f"{lineno} 行目: 題に #番号 がある（依存なら (depends: #番号) で書き、そうでなければ # を外す）: "
+                          f"{line.strip()}")
         if number in done or any(i["number"] == number for i in items):
             raise Refused(f"{lineno} 行目: #{number} が 2 行ある")
-        if m.group(1) in "xX":
+        if m.group("mark") in "xX":
             done.add(number)
             continue
         items.append({"number": number, "deps": deps, "title": " ".join(outside.split())})
+    if fence:
+        raise Refused(f"{fence_line} 行目のコードフェンス {fence} が閉じていない（後ろの行を読めない）")
     if not items:
         raise Refused("未チェックの Issue が 0 件（回すものが無い）")
     listed = {i["number"] for i in items}
@@ -222,7 +269,7 @@ def cmd_apply(items, parent, expected, ledger_script, cwd):
     for i in items:
         args = ["add", name, str(i["number"]), "--deps", ",".join(map(str, i["deps"]))]
         if i["title"]:
-            args += ["--title", i["title"]]
+            args.append(f"--title={i['title']}")  # 題が - で始まっても値として渡す
         proc = ledger(ledger_script, cwd, *args)
         if proc.returncode != 0:
             path.unlink(missing_ok=True)

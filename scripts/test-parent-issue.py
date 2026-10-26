@@ -63,7 +63,34 @@ REJECTED = {
     "depends（括弧なし）": "- [ ] #12\n- [ ] #13 depends #12\n",
     "依存:（日本語）": "- [ ] #12\n- [ ] #13 依存: #12\n",
     "Depends（大文字）": "- [ ] #12\n- [ ] #13 (Depends: #12)\n",
+    "依存の語だけ（#番号 なし）": "- [ ] #12\n- [ ] #13 ログイン画面に依存する\n",
+    "題に #番号（blocked by）": "- [ ] #12\n- [ ] #13 (blocked by #12)\n",
+    "閉じていないコードフェンス": "- [ ] #12\n```\n- [ ] #13\n",
 }
+
+# 読む範囲（C3・C5）: 違う印で閉じないフェンス・インデントされたフェンス・長いフェンスの中の短い印・
+# 番号つきリスト・引用・HTML コメント・- で始まる題
+EXTRA = """```
+~~~
+- [ ] #99
+```
+- [ ] #12
+- 例:
+    ```
+    - [ ] #98
+    ```
+````markdown
+```
+- [ ] #97
+```
+````
+1. [ ] #13 (depends: #12)
+> - [ ] #96
+<!--
+- [ ] #95
+-->
+- [ ] #14 -wip <!-- - [ ] #94 -->
+"""
 
 
 def load(script: Path = SCRIPT):
@@ -155,11 +182,25 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["show"] = (rc, out)
     o["指紋"] = dig
 
-    # C3・C4: 拒む形。show も apply も 3 で、台帳を作らない
+    # C3・C4: 拒む形。show も apply も 3 で、台帳を作らない。**apply は書式で拒んだこと**を見る
+    # ——指紋は 0…0 なので、書式を通してしまっても指紋の不一致で 3 になる（それと見分ける）
     for name, text in REJECTED.items():
         rc_show = show(name, text)[0]
-        rc_apply = run(mod, ["apply", "51", "--body-file", body(name, text), "--digest", "0" * 12], root)[0]
-        o[f"拒む {name}"] = (rc_show, rc_apply, ledgers())
+        rc_apply, _, err = run(mod, ["apply", "51", "--body-file", body(name, text), "--digest", "0" * 12], root)
+        o[f"拒む {name}"] = (rc_show, rc_apply, "指紋が違う" in str(err), ledgers())
+
+    # C3・C5: 読む範囲。apply で台帳の題まで見る（- で始まる題が ledger.py に値として届く）
+    rc, out, dig_extra = show("extra", EXTRA)
+    o["読む範囲"] = (rc, re.findall(r"^#(\d+)\t依存: ([^\t]*)\t(.*)$", str(out), re.M),
+                   str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("指紋:")[0].strip())
+    o["読む範囲の apply"] = run(mod, ["apply", "53", "--body-file", body("extra2", EXTRA), "--digest", dig_extra],
+                              root)[0]
+    try:
+        data = json.loads((plans / "cruise-issue-53.json").read_text(encoding="utf-8"))
+        o["読む範囲の台帳"] = [(i["number"], i["deps"], i["title"]) for i in data["issues"]]
+    except (OSError, ValueError, KeyError):
+        o["読む範囲の台帳"] = None
+    (plans / "cruise-issue-53.json").unlink(missing_ok=True)
 
     # C6: 指紋が違えば作らない（show の後に本文を書き換えた）
     changed = BASIC.replace("#13 ログイン画面", "#13 書き換えた題")
@@ -218,12 +259,20 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
 MUTATIONS = {
     "読み飛ばした行を出さない": [
         ('            skipped.append(f"{lineno} 行目: {line.strip()}")', "            pass")],
+    "引用の中も読む": [
+        ('        if m.group("quote"):', "        if False:")],
     "依存の中身を見ない": [
         ("            if not DEP_LIST_RE.match(text):", "            if False:")],
     "(depends:) の外の依存らしい語を見ない": [
         ("        if SUSPECT_RE.search(outside):", "        if False:")],
-    "コードフェンスの中も読む": [
-        ("            in_fence = not in_fence", "            in_fence = False")],
+    "題の #番号 を見ない": [
+        ("        if REF_RE.search(outside):", "        if False:")],
+    "フェンスの閉じを開きと突き合わせない": [
+        ('m.group("fence")[0] == fence[0] and len(m.group("fence")) >= len(fence)', "True")],
+    "閉じていないフェンスを通す": [
+        ("    if fence:\n        raise", "    if False:\n        raise")],
+    "HTML コメントの中も読む": [
+        ("        line, in_comment = visible(line, in_comment)", "        pass")],
     "同じ番号を通す": [
         ('        if number in done or any(i["number"] == number for i in items):', "        if False:")],
     "一覧に無い依存先を通す": [
@@ -264,7 +313,16 @@ def main() -> int:
 
         print("\n拒む形（C3・C4）: show も apply も 3 で、台帳を作らない")
         for name in REJECTED:
-            check(name, o[f"拒む {name}"] == (3, 3, []))
+            check(f"{name}（apply は指紋ではなく書式で拒む）", o[f"拒む {name}"] == (3, 3, False, []))
+
+        print("\n読む範囲（C3・C5）")
+        rc, rows, skipped_extra = o["読む範囲"]
+        check("show は 0", rc == 0)
+        check("フェンス（違う印・インデント・長い印）とコメントの中は読まない・番号つきリストは読む",
+              rows == [("12", "-", ""), ("14", "-", "-wip"), ("13", "#12", "")])
+        check("引用の中の行は読み飛ばした行として出る", skipped_extra == "16 行目（引用の中）: > - [ ] #96")
+        check("- で始まる題も台帳に入る（apply は 0）",
+              o["読む範囲の apply"] == 0 and o["読む範囲の台帳"] == [(12, [], ""), (14, [], "-wip"), (13, [12], "")])
 
         print("\n指紋（C6）")
         check("書き換えた本文は 3 で、台帳を作らない", o["指紋の不一致"] == (3, []))
