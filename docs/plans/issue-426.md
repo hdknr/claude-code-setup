@@ -180,4 +180,11 @@ CR1・CR2 の形（利用者が選んだ「A: 2 段の判定」）: base を hea
   （`check-all.py` 49/49・`git status` 前後とも空。「気づいた点」に CR2-6 と同じ形）。`/code-review`（high）**指摘 10 件**。
   採否は上の表——直す 4 件（CR2-1/9・CR2-3・CR2-5・CR2-6）、直せず人間に渡す 1 件（CR2-7）、残課題 4 件
 - **狭いパスの起点**: `9a34169`（2 パス目の指摘対応を始める直前の HEAD）
+- **2 パス目の指摘対応**: 済み（直す 4 件・CR2-7 は「守らない」に書いた）。`test-merge-pr.py` 緑。コミット `ff52f89`
+- **狭いパス**: Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 0 件**。Verifier が設計した変異 4 件（`mergeCommit` を `lower_base` に戻す・
+  gate の向きを逆にする・`BASE_CHANGES` から自動の付け替えを外す・マージ直前の見直しを外す）は**全部赤、素通り 0 件**。
+  `git status` 前後とも空。**未確認 3 件**（人間に渡す。直さない）: (1) 同じ SHA の push が timeline・`committedDate` に残らないことは
+  本物の GitHub で当てていない（コードの読み）、(2) 自動の付け替えの直後に timeline のイベントが遅れて出るなら、その間 M3 が素通りする
+  （遅延の有無は確かめていない）、(3) `mergeCommit` の本物の形——**このリポジトリの `gh pr list --state merged --json mergeCommit` で
+  `{"oid": …}` を見た**（2026-10-26。PR #433・#432）
 - この周の起票: 0 件（手順 8 で人間に訊いて確定する）
