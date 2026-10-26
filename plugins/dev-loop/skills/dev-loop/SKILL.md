@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.55.1 -->
-> **このスキルの版: 1.55.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.56.0 -->
+> **このスキルの版: 1.56.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1623,7 +1623,7 @@ docstring を正とする**（[#389](https://github.com/hdknr/claude-code-setup/
 
 **積んだ周は、下の周がマージされたら載せ替えてからマージする（必須）。** 載せ替えずにマージすると、
 上の変更は既定ブランチではなく下のブランチへ入る——**手順は `references/stacked.md` の「下の周がマージされたら」を正とする**
-（`merge-pr.py` は base が既定ブランチでない PR をマージしない）。
+（`merge-pr.py` は載せ替えていない積んだ周の PR をマージしない。見分け方は docstring を正とする）。
 
 **破壊的・不可逆な反映（DB マイグレーション・インフラ apply 等）は CLAUDE.md の前提条件を確認し、
 必要なら人間の承認を得てから**実行する。
