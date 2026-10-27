@@ -348,7 +348,7 @@ def cmd_show(items, skipped, lines, ignored, table):
     print("線（cruise: の行）:")
     for key in table:
         print(f"  {key} = {lines[key]}" if key in lines
-              else f"  {key}: 書いていない（.claude/dev-loop.md の宣言、無ければ既定）")
+              else f"  {key}: 書いていない（台帳に残さない。各周の読み方は absent-lines.md の「cruise で確かめた線」）")
     for line in ignored:
         print(f"  無視した行: {line}")
     print(f"指紋: {digest(items, lines)}")
@@ -393,7 +393,7 @@ def cmd_apply(items, lines, parent, expected, ledger_script, cwd):
             path.unlink(missing_ok=True)
             raise Unknown(f"ledger.py lines が失敗したので、作った台帳を消した: {proc.stderr.strip()}")
     print(f"台帳を作った: {path}（{len(items)} 件）")
-    print("線: " + (", ".join(f"{k} = {v}" for k, v in lines.items()) or "本文に無い（.claude/dev-loop.md の宣言と既定に従う）"))
+    print("線: " + (", ".join(f"{k} = {v}" for k, v in lines.items()) or "本文に無い（台帳に残していない）"))
     print(f"続きは: ledger.py show {name}")
 
 
