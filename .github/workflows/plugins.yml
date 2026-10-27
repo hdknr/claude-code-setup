@@ -111,6 +111,10 @@ jobs:
       - name: 利用上限の後の継続の計数のテスト（#454）
         run: python3 scripts/test-count-usage-limit-resumes.py
 
+      # 本体は CI から呼ばない（書く先が利用者の ~/.claude にある。hook として登録して使う）。テストだけ回す。
+      - name: 利用上限の停止を記録する hook のテスト（#468）
+        run: python3 scripts/test-record-stop-failure.py
+
       # 本体は CI から呼べない（claude を起こして課金する）。テストだけ回す。
       - name: dev-loop の Eval の実行と要約のテスト（#190）
         run: python3 scripts/test-run-dev-loop-evals.py
