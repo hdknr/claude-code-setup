@@ -376,7 +376,8 @@ MUTATIONS = {
     # 守る: 拒んだ操作では台帳を変えない（検査してから書く）
     "一覧に無い線を書く": [
         ("def check_line(key, value):\n", "def check_line(key, value):\n    return\n")],
-    # `cmd_lines` と `validate` の 2 箇所で拒むので、片方だけ外しても挙動は変わらない（等価変異）——両方を外す
+    # `cmd_lines` だけ外しても `validate` が拒むので挙動は変わらない（等価変異）——両方を外す
+    # （`validate` だけ外す変異は、手で崩した台帳 `lsrc` の観測で殺せる）
     "出所の無い線を書く": [
         ('    if not source.strip():\n        raise Refused("出所が空', '    if False:\n        raise Refused("出所が空'),
         ('    if "lines" in data and not data["lines"]["source"].strip():',
