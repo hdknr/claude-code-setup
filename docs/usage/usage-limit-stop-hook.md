@@ -14,7 +14,8 @@
 hook の本体は [`scripts/record-stop-failure.py`](https://github.com/hdknr/claude-code-setup/blob/main/scripts/record-stop-failure.py) です（標準ライブラリのみ）。
 
 - `~/.claude/usage-limit-stops.jsonl` に 1 行追記します
-- macOS なら通知を出し、「止まっても『継続』と打たずにリセットまで待ってください」と添えます
+- macOS なら通知を出します。上限らしい `error`（`rate_limit`・`billing_error`）のときだけ、
+  「止まっても『継続』と打たずにリセットまで待ってください」と添えます
 
 **何を書き、何を書かないか（案件の中身は書きません）と、何を守らないかは、スクリプトの docstring を正とします。**
 
@@ -30,7 +31,6 @@ hook の本体は [`scripts/record-stop-failure.py`](https://github.com/hdknr/cl
   "hooks": {
     "StopFailure": [
       {
-        "matcher": "rate_limit",
         "hooks": [
           {
             "type": "command",
@@ -44,6 +44,11 @@ hook の本体は [`scripts/record-stop-failure.py`](https://github.com/hdknr/cl
 ```
 
 既に `hooks` があるなら、その中に `StopFailure` の項目だけを足します。
+
+**matcher は書きません**——`StopFailure` を全部記録し、記録の `error` の値で後から見分けます。
+利用上限がどの値で来るかを確かめていないためです（下の「確かめていないこと」）。
+Claude Code 2.1.311 の本体は `billing_error` を「usage limit reached — check plan」、`rate_limit` を
+「rate limited — wait and retry」に対応づけており、**`rate_limit` だけに絞ると、上限の停止を取りこぼすおそれがあります**。
 
 `StopFailure` は、API のエラー（rate limit・認証の失敗など）でターンが終わったときに `Stop` の代わりに発火するイベントで、
 matcher は入力の `error` に当たります（値には `rate_limit` のほか `authentication_failed`・`overloaded`・`billing_error` などがあります。
@@ -62,7 +67,7 @@ Claude Code 2.1.311 の本体の文字列から読みました）。**hook の�
 
 **確かめていないこと**:
 
-- **利用上限（claude.ai の上限）で実際に発火するか、`error` が `rate_limit` になるか**——上限を狙って起こせません。
+- **利用上限（claude.ai の上限）で実際に発火するか、`error` がどの値（`rate_limit`・`billing_error` ほか）になるか**——上限を狙って起こせません。
   **記録が無いことは「発火しない」の証拠になりません**（hook の登録が誤っていても記録は無いままです）
 - 自動継続の待ちの間に何回発火するか
 - user の settings に書いた形・対話のセッションでの発火——確かめたのは `--settings` と `claude -p` の組だけです

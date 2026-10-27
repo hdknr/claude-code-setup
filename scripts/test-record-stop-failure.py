@@ -44,23 +44,36 @@ CASES = [
     ("null-error", b'{"error": null}', "fake"),
     ("empty", b"", "fake"),
     ("non-utf8", b"\xff\xfe{", "fake"),
+    ("billing", json.dumps({"hook_event_name": "StopFailure", "error": "billing_error"}).encode(), "fake"),
+    # 対にならないサロゲート——json.loads は通すが UTF-8 では書けない
+    ("surrogate", b'{"error": "\\ud800x", "session_id": "\\udc00"}', "fake"),
+    # NUL——subprocess の引数にできない
+    ("nul", b'{"error": "a\\u0000b"}', "fake"),
+    ("odd-values", json.dumps({"error": "E" * 5000, "session_id": {"a": "SECRET-SID"},
+                               "hook_event_name": {"cwd": SECRET_CWD}, "error_details": {"k": "SECRET-DET"}}).encode(),
+     "fake"),
     ("broken-osascript", GOOD, "broken"),
     ("no-osascript", GOOD, "none"),
 ]
 
 MUTATIONS = {
     "last_assistant_message を書く": (
-        '"error": data["error"]}',
-        '"error": data["error"], "message": data.get("last_assistant_message")}'),
+        '"error": text(data["error"], SHORT)}',
+        '"error": text(data["error"], SHORT), "message": data.get("last_assistant_message")}'),
     "cwd の生の値を書く": (
         'row["cwd_hash"] = hashlib.sha256(cwd.encode("utf-8")).hexdigest()[:12]',
         'row["cwd_hash"] = cwd'),
-    "error_details を切らない": ("str(details)[:DETAILS]", "str(details)"),
+    "error_details を切らない": ('text(data.get("error_details"), DETAILS)', 'text(data.get("error_details"), None)'),
+    "error などを切らない": ("SHORT = 100", "SHORT = None"),
+    "文字列でない値を書く": ("value[:limit] if isinstance(value, str) else None",
+                             "value[:limit] if isinstance(value, str) else value"),
     "オブジェクトでない入力を見分けない": ("if not isinstance(data, dict):", "if data is None:"),
     "error が無い入力を見分けない": ('if not isinstance(data.get("error"), str):', "if False:"),
     "追記せずに上書きする": ('path.open("a"', 'path.open("w"'),
-    "通知の失敗を握らない": ("except (OSError, subprocess.SubprocessError):", "except ValueError:"),
-    "待てと添えない": ('body = f"{error}。{WAIT}"', "body = error"),
+    "書けない文字で記録を落とす": ("ensure_ascii=True", "ensure_ascii=False"),
+    "通知の失敗を握らない": ("except Exception:  # noqa: BLE001 — 通知の", "except OSError:  # 通知の"),
+    "待てと添えない": ('f"{error}。{WAIT}" if limit', "error if limit"),
+    "上限でなくても待てと添える": ("if limit else error", 'if limit else f"{error}。{WAIT}"'),
 }
 
 failures: list[str] = []
@@ -111,7 +124,7 @@ def run_case(script: Path, root: Path, bins: dict[str, Path], name: str, stdin: 
         row = json.loads(line)
         row.pop("time", None)
         rows.append(row)
-    args = osa_log.read_bytes().decode("utf-8").split("\0")[:-1] if osa_log.exists() else []
+    args = osa_log.read_bytes().decode("utf-8", "replace").split("\0")[:-1] if osa_log.exists() else []
     return {"codes": codes, "errs": errs, "rows": rows, "raw": raw_log, "osa": args}
 
 
@@ -147,10 +160,21 @@ def main() -> int:
               (row["error"], row["session_id"], row["hook_event_name"]) == ("rate_limit", "s1", "StopFailure"))
         check("cwd はハッシュの先頭 12 文字", len(row["cwd_hash"]) == 12 and row["cwd_hash"] != SECRET_CWD)
         check("error_details は先頭 200 文字", row["error_details"] == "D" * 200)
-        leaked = [n for n, o in obs.items() if SECRET_MSG in o["raw"] or SECRET_CWD in o["raw"]
+        leaked = [n for n, o in obs.items() if SECRET_MSG in o["raw"] or SECRET_CWD in o["raw"] or "SECRET-" in o["raw"]
                   or any(SECRET_MSG in a or SECRET_CWD in a for a in o["osa"])]
         check("last_assistant_message と cwd の生の値は記録にも通知にも出ない", leaked == [])
         check("cwd が無ければ cwd_hash を書かない", "cwd_hash" not in obs["auth"]["rows"][0])
+
+        odd = obs["odd-values"]["rows"]
+        check("error は先頭 100 文字", len(odd) == 1 and odd[0].get("error") == "E" * 100)
+        check("文字列でない session_id・hook_event_name・error_details は書かない",
+              len(odd) == 1 and odd[0].get("session_id") is None and odd[0].get("hook_event_name") is None
+              and "error_details" not in odd[0])
+        check("対にならないサロゲートでも記録は残る",
+              obs["surrogate"]["rows"] == [{"hook_event_name": None, "session_id": "\udc00", "error": "\ud800x"}])
+        check("NUL を含む error でも記録は残る（通知は出せない）",
+              obs["nul"]["rows"] == [{"hook_event_name": None, "session_id": None, "error": "a\x00b"}]
+              and obs["nul"]["osa"] == [])
 
         print("\n読めない入力")
         expect = {"not-json": "JSON として読めない", "list": "JSON のオブジェクトでない",
@@ -163,6 +187,12 @@ def main() -> int:
         osa = good["osa"]
         check("通知の本文に error と「継続と打たずに」を添える",
               len(osa) == 2 * 4 and "rate_limit" in osa[2] and WAIT in osa[2])
+        billing = obs["billing"]["osa"]
+        check("billing_error にも「継続と打たずに」と「利用上限」を添える",
+              len(billing) == 4 and WAIT in billing[2] and "利用上限" in billing[3])
+        auth = obs["auth"]["osa"]
+        check("上限らしくない error には「継続と打たずに」を添えない",
+              len(auth) == 4 and "authentication_failed" in auth[2] and WAIT not in auth[2])
         check("利用上限なら題に「利用上限」", "利用上限" in osa[3])
         check("利用上限でなければ題に「利用上限」と書かない",
               len(obs["auth"]["osa"]) == 4 and "利用上限" not in obs["auth"]["osa"][3])
