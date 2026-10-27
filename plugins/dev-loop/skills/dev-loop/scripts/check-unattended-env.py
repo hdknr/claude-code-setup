@@ -147,7 +147,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   うち、空のファイルを書き込み可能な権限で選ぶ分岐は写したが、それより前の分岐（`J()`）は読み切れていない
 - **祖先の `claude` の `--allowedTools`・`--disallowedTools`・`--permission-mode`**——規則の出所だが読まない
 - **`autoContinueAtUsageLimit: true` が十分であること**——本体は課金の種類とフラグでも自動継続を止める。
-  `true` は必要条件で、「良い」はそれを満たしたことしか言わない
+  `true` は必要条件で、「良い」はそれを満たしたことしか言わない。**実データでも足りない形がある**（#454。
+  `scripts/count-usage-limit-resumes.py` で数えた）——週の上限では待ちを張らず、Claude Code が終わると待ちは消える。
+  不在で回すならタイマーを保険に張る（`docs/plugins/dev-loop-cruise.md` の §5）
 - **macOS の managed preferences（plist）**——読まない
 - **`caffeinate <コマンド>` の形**——コマンドが終われば防止も終わるが、`-t` の無い形として数える
 - **`ask` の規則と `bypassPermissions` の組**——`bypassPermissions` でも `ask` は要対処にしている（確認が出るかは確かめていない。安全側）

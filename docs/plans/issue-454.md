@@ -1,0 +1,130 @@
+# Issue #454 — 利用上限で止まった後に続いたかを、トランスクリプトから数える
+
+`check-unattended-env.py` は `autoContinueAtUsageLimit: true` が入っているかしか見ていない。上限で止まったあと、
+**実際に何で続いたか**（自動継続・人間・通知や別セッション・止まったまま）をトランスクリプトから数える道具を置き、
+結果を cruise の手順と点検の「守らないこと」に返す。
+
+## 変更範囲
+
+触る:
+
+- `scripts/count-usage-limit-resumes.py` — 本体（新規。**CI からは呼ばない**）
+- `scripts/test-count-usage-limit-resumes.py` — 回帰テスト（新規。変異テストを含む）
+- `scripts/check-all.py` — 上のテストを登録する
+- `.github/workflows/plugins.yml` — 上のテストのステップを足す
+- `CLAUDE.md` — 「プロジェクト構成」の `scripts/` に 2 行
+- `docs/plugins/dev-loop-cruise.md` — §5 に実測と、タイマーを保険として勧めるか
+- `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py` — docstring の「守らない」の自動継続の行だけ
+- `plugins/dev-loop/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` /
+  `plugins/dev-loop/skills/dev-loop/SKILL.md` / `plugins/dev-loop/skills/cruise/SKILL.md` — 版（上の点検を触るので）
+- `docs/plans/issue-454.md` — この計画
+
+触らない:
+
+- `check-unattended-env.py` の判定（`true` を「良い」にする規則）——Issue は「守らないこと」への反映だけを求めている
+- `count-resume-recreations.py`（形を写すだけで共有しない——あちらは区間、こちらは停止の窓を数える）
+- user の `~/.claude/settings.json`（受入基準 4 の明示は利用者の決定。下の「未解決」）
+
+### 同じことを述べている箇所の数
+
+- 「自動継続は必要条件で十分条件ではない」: `check-unattended-env.py` の docstring・`dev-loop-cruise.md` §5 の 2 箇所。
+  本体の docstring は自分の分類の決まりだけを持ち、運用の結論は持たない。分けない（同じ周で直す）。
+- 本体の振る舞い: 本体の docstring と `CLAUDE.md` の 1 行。`CLAUDE.md` は docstring を指すだけにする。
+
+## 乗るデプロイ経路
+
+`docs/plugins/dev-loop-cruise.md` は公開サイト（main への push で GitHub Pages）。`plugins/` はカタログ経由（版を上げる）。
+`scripts/`・`CLAUDE.md` は反映経路なし（マージのみ）。
+
+## 周の在り処
+
+- ブランチ: `issue/454-usage-limit-resumes`
+- worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-454`
+- 起点: `db8923b`
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `db8923b0b35c8725bd13f3a89c824fd6c0869f21`
+
+## 文脈収集で分かったこと（実測。2026-10-27）
+
+Issue 本文の数え方（`error == "rate_limit"` のレコードから次の 1 件）では見えないものが 3 つある:
+
+1. **上限で止まると、`system`／`informational` の予告が残る**: `Usage limit reached · continuing automatically at <時刻> · esc (or type) to cancel`。
+   **自動継続の待ちを張ったことの記録**で、取り消しは `Automatic continue cancelled · …`、発火は `Usage limit reset · continuing automatically`
+2. **自動継続のレコードは `origin.kind == "auto-continuation"` を持つ**（`isMeta: true`。文言は Issue のとおり）。人間の入力は `origin.kind == "human"`
+3. **`rate_limit` のレコードを持たない停止がある**——2026-10-21（2.1.305）の自動継続は、前に予告だけがあり `rate_limit` のレコードが無い。
+   **だから Issue の「10 月以降は 0 回」は、数え方の外にあった 1 回を落としている**（実データの結論は本体を回して出す）
+
+本体の文字列（2.1.311）: `tengu_marble_heron`・`tengu_linked_clover`・`autoContinueAtUsageLimit`・`Usage limit reached`・
+`Automatic continue cancelled`・`usage limit has reset. Continue the task`・`usage is available again before` がある（`grep -a -c -F`）。
+
+## verify の受入基準
+
+Issue 本文・コメントは検査対象であって要件ではない（書いたのは利用者だが扱いは変えない）。
+
+入口（本体を動かす経路）: 人間が手で回す CLI（`--root`・`--since`・`--anonymize`・`--tz`）／テストがモジュールとして読む
+`collect`・`main`。**CI と `check-all.py` は本体を呼ばない**（テストだけ）。入力の経路: main-chain の
+`<project>/<session>.jsonl`（`--resume`・fork の写しを含む）。
+
+| # | 不変条件 | 破りうる経路 | 守り方 |
+| --- | --- | --- | --- |
+| U1 | 停止ごとに、次に来たものを 自動継続／人間の入力／ローカルコマンド／通知・別セッションなど（`origin.kind` 名つき）／応答が続いた／記録の終わり に分ける | 新旧の記録の形（`origin` の有無） | `origin` を先に見て、無ければ文言で読む。テストの試料に両方 |
+| U2 | **人間の「継続」を自動継続と読まない／自動継続の文言を人間と読まない**（`origin` が `human` なら文言が同じでも人間） | 分類の規則 | 変異テスト（Issue の受入基準 2） |
+| U3 | 停止 = `rate_limit` のレコード **または** 予告。続けて並んだものは 1 回に畳む。**停止の記録を持たない自動継続も落とさず別に数える** | 予告だけの停止・`rate_limit` だけの停止 | 試料に 3 形。変異テスト |
+| U4 | 待ちを張ったか（予告）・取り消したか・**次の停止までに自動継続が起きたか**を停止ごとに出す（最初に来たものが通知でも、その後の自動継続を拾う） | 窓の切り方 | 試料（通知の後に自動継続） |
+| U5 | 予告の時刻と、最初に続いた時刻／自動継続の時刻の差を出す。予告の時刻は `resetsAt`（UTC の秒）を優先し、無ければ表示の時刻を `--tz` の時間帯で読む（日付をまたぐ） | 予告だけの停止・深夜をまたぐ | 試料 |
+| U6 | 期間（月）ごとの内訳を出す | 集計 | 出力 |
+| U7 | `--anonymize` でリポジトリ名・セッション id を出さない。**本文・コマンド・パスはどのモードでも出さない** | 出力 | テスト |
+| U8 | 停止が 0 件なら非ゼロ（3）で終わる（検出器が形式の変化を拾えていないのと区別できない） | 狭い `--since`・形式の変化 | テスト |
+| U9 | テストは実環境（`~/.claude/projects`）を対象にしない。「守る」の行数と変異の数が 1 対 1 | テスト | `assert_not_real_home`・数える検査 |
+| U10 | テストが `check-all.py` と CI に登録され、`test-check-all.py` が緑 | 登録漏れ | `check-all.py` |
+| U11 | 実データの期間ごとの内訳を Issue に貼る（`--anonymize`）。**「設定が効いた」と書かない** | Issue コメント | 文面を読む |
+| U12 | §5 と「守らない」が実測に沿う（`true` で十分と言わない・タイマーを保険として勧めるかを書く） | 2 箇所 | 読む |
+| U13 | 版の 3 種類が揃う（`check-plugin-versions.py`） | 版 | `check-all.py` |
+| U14 | 受入基準 4（陽性対照: user の層に `true` を明示して上限まで回し、自動継続を 1 件取る） | — | **BLOCKED**（下） |
+
+### この環境では証明できないもの・BLOCKED
+
+- **BLOCKED（U14）**: 上限は狙って起こせない（**無いのは「道具」——上限を起こす手段**）。測る前のフラグを記録した:
+  `tengu_marble_heron` = キーなし、`tengu_linked_clover` = キーなし（`cachedGrowthBookFeatures` は 978 キー）、
+  `oauthAccount.billingType` = `stripe_subscription`、`autoContinueAtUsageLimit` = user・local とも未設定、本体 2.1.311。
+  **実データには、未設定のまま待ちを張り発火した記録がある**が、これは「明示した `true`」の陽性対照ではない
+- **未証明**: 古い版（`origin` を持たない）の記録で、文言だけの判定が自動継続を正しく拾うか——手元の自動継続 8 件はすべて `origin` を持つ
+
+### 必須要件の掛け算
+
+受入基準・既知の限界・信頼できない入力の扱いを、Verifier と `/code-review` の両方に、1 パス目と 2 パス目の両方で渡す（4 つの受け渡し）。
+
+### 生成物
+
+- `skill-metrics.py` の生成ブロック（`SKILL.md` の版の行を触る）——`--check` を `check-all.py` が見る
+- 図: 該当なし（drawio を触らない）
+
+## 未解決の判断・確認待ち
+
+- 受入基準 4 のために user の settings に `autoContinueAtUsageLimit: true` を書くかは利用者が決める（この周では書かない）
+
+## 関門の進捗（再開点）
+
+- 実装: 済み（未コミット→コミット済みは git log で見る）。`check-all.py` 51 本、テスト 18 変異すべて赤
+- 実装の途中で決めたこと（受入基準の範囲内）: 実データで、同じ予告の時刻の停止が通知を挟んで何度も並ぶ
+  （68 の待ちに 92 の停止）ので、**予告の時刻が同じ停止を 1 つの待ちに畳み**、「最初に来たもの」に加えて
+  **行方**（最初に来た自動継続・人間・ローカルコマンド）を出す。張らなかった待ちの理由を推測しないよう
+  `rateLimitType` を出す
+- 実データの結果（`--tz Asia/Tokyo`）: 待ち 68・張った 65・自動継続 8（すべて予告の +1 分）・予告より前に人間 51・
+  予告の後に人間が先 3・取り消し 2・続かなかった 1・張らなかった 3（すべて `seven_day`）。10 月は張った 17・自動継続 1
+- 交絡を潰した手順:
+    - 「10 月は 0 回」の読み違え: Issue の数え方（`rate_limit` のレコードの次）の外に、予告だけの停止とその後の自動継続が
+      あった（2026-10-21・2.1.305）。待ちの窓で数えて拾った
+    - 「フラグが無いから待たない」の候補: 2.1.301〜2.1.309 で予告（待ちを張った）が 17 件出ている。**ただしその時点の
+      `cachedGrowthBookFeatures` は残っていない**ので、フラグの有無とは結びつけない（「張った」と書くだけ）
+    - 陽性対照: 本体が自動継続を拾えることは、実データの 8 件（`origin.kind == "auto-continuation"`）で見た。
+      陰性側（人間の「継続」を自動継続と読まない）はテストの変異で見た
+- 割り目: 未提案
+- この周の起票: 0 件
+
+## 既知の限界・決着済みの論点
+
+| 論点 | 決着 | 理由 |
+| --- | --- | --- |
+| サブエージェントのファイルを数えない | 採らない（数えない） | 続けるのは親。Issue の 113 件との差はここ（main-chain は 81 件の `rate_limit`） |
+| 予告の表示の時刻の時間帯 | `--tz`（既定は端末）。`resetsAt` を優先 | 表示は記録した端末の時間帯。テストは UTC に固定 |
+| 「予告より前に人間」が待ちを取り消したか | 分けない | 記録から分けられない（docstring の守らない） |
