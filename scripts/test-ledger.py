@@ -292,8 +292,11 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["origin の空"] = (run(mod, ["add", "fo", "3", "--deps", "1", "--origin", " "], root)[0],
                         run(mod, ["set", "fo", "2", "origin="], root)[0])
     # 出所を持つ行は依存を空にできない（下の「origin の値」に #4 が無く #2 の依存が残ることで見る）
+    # #6 は依存を持ち出所の無い行——同じ呼び出しで依存を消して出所を書く形（後の値で見ないと通る）
+    run(mod, ["add", "fo", "6", "--deps", "1"], root)
     o["origin の依存なし"] = (run(mod, ["add", "fo", "4", "--origin", "#1 狭いパス"], root)[0],
-                            run(mod, ["set", "fo", "2", "deps="], root)[0])
+                            run(mod, ["set", "fo", "2", "deps="], root)[0],
+                            run(mod, ["set", "fo", "6", "deps=", "origin=w"], root)[0])
     try:
         o["origin の値"] = [(i["number"], i["origin"], i["deps"]) for i in json.loads(
             (plans / "cruise-fo.json").read_text(encoding="utf-8"))["issues"]]
@@ -301,7 +304,7 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         o["origin の値"] = None
     r = str(run(mod, ["show", "fo"], root)[1])
     o["origin の show"] = ("| 出所 |" in r, "| #1 狭いパス |" in r,
-                           "周の途中で足した行のうち済んでいないもの: #1(todo), #2(todo)" in r)
+                           "周の途中で足した行のうち済んでいないもの: #2(todo)" in r)
     run(mod, ["set", "fo", "1", "state=merged"], root)
     run(mod, ["set", "fo", "2", "state=dropped"], root)
     r = str(run(mod, ["show", "fo"], root)[1])
@@ -420,8 +423,8 @@ MUTATIONS = {
     # 守る: 出所を持つ行は元の周に依存する
     "add の依存の無い origin を通す": [
         ("    if origin is not None and not deps:", "    if False:")],
-    "set で出所のある行の依存を消せる": [
-        ('    if "deps" in changes and not changes["deps"] and changes.get("origin", issue.get("origin")):',
+    "set で出所があって依存の無い行を作れる": [
+        ('    if ("deps" in changes or "origin" in changes) and after.get("origin") and not after["deps"]:',
          "    if False:")],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
@@ -528,11 +531,11 @@ def main() -> int:
 
         print("\n周の途中で足した行の出所（L13・#464）")
         check("add --origin が出所を残す", o["origin の add"][0] == 0 and "出所: #1 狭いパス" in str(o["origin の add"][1]))
-        check("set origin= が通り、親 Issue から作った行は空・足した行は依存を持つ", o["origin の set"] == 0
-              and o["origin の値"] == [(1, "手", []), (2, "#1 狭いパス", [1])])
+        check("依存の無い行への set origin= は 3、親 Issue から作った行は空・足した行は依存を持つ", o["origin の set"] == 3
+              and o["origin の値"] == [(1, "", []), (2, "#1 狭いパス", [1]), (6, "", [1])])
         check("add --origin の空・set origin= は 3（台帳は変えない）", o["origin の空"] == (3, 3))
-        check("add --origin に --deps が無い・出所のある行の set deps= は 3（台帳は変えない）",
-              o["origin の依存なし"] == (3, 3))
+        check("add --origin に --deps が無い・出所のある行の set deps=・依存を消して出所を書く set は 3（台帳は変えない）",
+              o["origin の依存なし"] == (3, 3, 3))
         check("show が出所の列と、済んでいない足した行を出す", o["origin の show"] == (True, True, True))
         check("足した行がすべて merged か dropped なら「なし」", o["origin の show(済み)"])
         check("足した行の無い台帳の show は、その行を出さない", o["origin の無い show"])

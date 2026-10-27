@@ -100,7 +100,8 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`set origin=` で空にするのも拒む**——同じ理由。
 - **`add --origin` に `--deps` が無ければ拒む**——無いと元の周のマージより先に `next` に出る。
   **依存が*元の周*かどうかは見ない**——番号の意味を知らない。
-- **出所を持つ行の `set deps=` で依存を空にするのも拒む**——同じ理由。
+- **`set` で、出所を持ち依存が空の行を作らない**——同じ理由。出所を持つ行の `deps=` で依存を消すのも、
+  依存の空の行に `origin=` で出所を後付けするのも拒む（同じ呼び出しで両方を渡したら、渡した後の値で見る）。
 - **`lines` は出所の無い値を書かない**——`--source` が空なら拒む。**`lines` は置き換えで、渡さなかった項目は消える**
   ——前の確認の値が、確かめ直した後に黙って残らない。
 
@@ -390,8 +391,9 @@ def cmd_set(path, number, pairs):
             changes[key] = value
     data = load(path)
     issue = find(data, number)
-    if "deps" in changes and not changes["deps"] and changes.get("origin", issue.get("origin")):
-        raise Refused(f"#{number} は出所を持つので依存を空にしない（元の周のマージより先に next に出る）")
+    after = {**issue, **changes}
+    if ("deps" in changes or "origin" in changes) and after.get("origin") and not after["deps"]:
+        raise Refused(f"#{number} を出所があって依存の無い行にしない（元の周のマージより先に next に出る）")
     issue.update(changes)
     issue["updated"] = now()
     save(path, data)
