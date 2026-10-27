@@ -50,7 +50,7 @@ Issue の「決めること」A・B・C。**線は `仕様の穴 = 推奨で決�
     `qa-dev.csv` は feasibility が 2 つのタグの間に正当に書く（費用の行）うえ、#339 で「内部の層はサインオフを割らない」と決めている。
 - **B（#372）: 予算側だけにある、`merge` が拒否する配置**
   - 選択肢: (a) 比べる範囲に `docs/v1/removed.csv` と、範囲の中のファイル・機能の行を入れる ／ (b) 予算側にも配置の検査を当てる（2）
-  - **決めた値: (a)**。`removed.csv` で比べる行は「共有の層の Q&A」「範囲の中（`shared/`・`requirements/`・`spec/`。`spec/qa-dev.csv` を除く）のファイル」「機能」。
+  - **決めた値: (a)**。`removed.csv` で比べる行は**内部の層の Q&A（`D-`）以外の全部**（1 パス目の F1 副次で、最初の「範囲の中のファイル・機能・共有の Q&A」からIssue の B に合わせて直した——範囲の外のファイルの行は `merge` が拒否する）。
   - 理由: A と同じ「範囲」の定義で説明できる（C）。(b) は予算側の時点に `merge` の読み方を写すことになる（#348 で避けた形）。
 - **C**: 範囲は「2 つの承認が見た中身」= v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` を除く）と `removed.csv`（v1 を含む）。
   **外すのは `feasibility/`・`proposal/`（予算の合意と決裁の側が書くもの）と内部の層だけ。**
@@ -76,7 +76,8 @@ Issue 本文は検査対象であって要件ではない。
 
 - **I1（#367）**: 2 つのタグの時点で `requirements/`・`spec/`（`spec/qa-dev.csv` を除く）の中身が違えば、一致とは言わない（1。違うパスを出す）。前の版のものも同じ。
 - **I2（#372）**: 予算側だけに `docs/v1/removed.csv` がある・`removed.csv` の範囲の中（`requirements/`・`spec/`）のファイルの行や機能の行が違うなら、一致とは言わない（1）。
-- **I3（陽性対照）**: 範囲の外（`feasibility/`・`proposal/`・`spec/qa-dev.csv`・内部の層の Q&A の行・`removed.csv` の範囲の外のファイルの行・理由の列・行の順序・`.` で始まる名前）だけが違えば、今までどおり 0。
+- **I3（陽性対照）**: 範囲の外（`feasibility/`・`proposal/`・`spec/qa-dev.csv`・内部の層の Q&A の行・理由の列・行の順序・`.` で始まる名前）だけが違えば、今までどおり 0。
+  （最初は「`removed.csv` の範囲の外のファイルの行」も 0 に入れていたが、Issue の B と食い違う写し違いだったので外した——下の「既知の限界」。）
 - **I4**: 今までの判定（2 の条件・3 の暫定・`shared/` の比較）は変わらない（既存の試料が緑）。
 - **I5**: 範囲の説明（docstring・`signoff-tags.md`・`tree.md`・`README.md`・`CLAUDE.md`）が本体の範囲と一致する。
 
@@ -85,7 +86,7 @@ Issue 本文は検査対象であって要件ではない。
 | 経路 | 守り方 | 確かめ方 |
 | --- | --- | --- |
 | `git diff` の比べる場所（`compare_scope`） | `requirements/`・`spec/`・`docs/v1/removed.csv` を足し、`spec/qa-dev.csv` を除く | 試料: `spec/` だけ違う・`requirements/` だけ違う・前の版の `spec/` だけ違う・v1 の `removed.csv` が予算側だけ（1）／`qa-dev.csv` だけ違う・`feasibility/` だけ違う（0） |
-| `removed.csv` の行（`removed_scope_rows`） | 範囲の中のファイル・機能・共有の Q&A の行を比べる | 試料: `ファイル,spec/…`・`ファイル,requirements/…`・`機能,…` の行が予算側だけ（1）／`ファイル,feasibility/…`・`D-` の行だけ（0） |
+| `removed.csv` の行（`removed_scope_rows`） | 内部の層の Q&A 以外の行を全部比べる | 試料: `ファイル,spec/…`・`ファイル,requirements/…`・`ファイル,feasibility/…`・`機能,…` の行が予算側だけ（1）／`D-` の行だけ（0） |
 | `build-proposal.py`（`resolve` を呼ぶ） | 本体を変えない | `test-build-proposal.py` が緑。2 つのタグの間に `requirements/` を足すと作らない |
 
 各経路の守りを外す変異で赤になる（陽性対照つき）。
@@ -109,8 +110,10 @@ Issue 本文は検査対象であって要件ではない。
 - 1 パス目の指摘対応: F1・F1 副次・CR2・CR3・CR6 を直した。差分は 0 行でない → 2 パス目を回す
 - 割り目（2 パス目の前）: 不在のため訊かず続けた
 - 2 パス目の起点: `9caf7f5`（この後のコミットは計画ファイルだけ）
-- Verifier 2 パス目: 起動（sonnet）
-- `/code-review` 2 パス目: 起動（high）
+- Verifier 2 パス目: 通した——反証 1 件（S1）
+- `/code-review` 2 パス目: 通した——指摘 10 件（P1〜P10）
+- 2 パス目の指摘対応: P1・P2（計画の文言）・P3・P4・P9・P10 を直した。終点は下の狭いパスに渡すコミット
+- 狭いパス: 起動（sonnet）
 
 ## 起票
 
@@ -141,3 +144,21 @@ Verifier（sonnet）: 反証 1 件（F1。副次の指摘つき）。`/code-revi
 | CR6 | `README.md` の 93 行目が「共有の範囲（`shared/` ほか）」のままで、同じファイルの 27 行目と食い違う | 示せる（文言） | I5（`README.md` は列挙の中） | 直す |
 | CR7 | 定数と `signoff-tags.md` の突き合わせが `DOCS` を見なくなった | 示せない（走らせていない） | 無し | 残課題 |
 | CR8 | `requirements/`・`spec/` のモードだけの変更（chmod）も 1 になる | 示せない（走らせていない） | 無し | 残課題 |
+
+### 2 パス目の指摘の採否
+
+Verifier（sonnet）: 反証 1 件（S1）。`/code-review`（high）: 10 件。どちらも `git status --porcelain` は前後とも空。
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| S1 | `removed.csv` の同じ行が片側だけ 2 回あるのを見る試料が無い（`sorted(set(rows))` の変異が生き残る） | 示せる（Verifier の変異） | 無し（この周より前からの振る舞い） | 残課題 |
+| P1 | 前の版の `requirements/` だけ違う試料が無い（前の版の `requirements/` を外す変異が生き残る） | 示せる（`/code-review` の試料: 本体 1・変異 0） | I1（前の版も同じ） | 直す（試料と変異を足した） |
+| P2 | 計画の I3・経路の表・決めた値 B が、1 パス目の対応の後も古いまま | 示せる（文言） | — （計画ファイル。成果物ではない） | 直す（計画の文言） |
+| P3 | `signoff-tags.md` の「比べる場所が無い・空なら 2」が、空かを見る場所（`shared/`）と食い違う | 示せる（文言と `scope()`） | I5 | 直す |
+| P4 | `scope()` の docstring が「比べる場所」のまま | 示せる（文言） | I5 | 直す |
+| P5 | 大文字小文字だけ違う `Requirements/` が予算側だけにあっても 0（macOS の重ね合わせは読む） | 示せる（`/code-review` の試料: 0） | 無し（`shared/` から同じ穴。#276 が台帳にある） | 残課題（#276） |
+| P6 | `spec/spec_ir.json`（scaffold が書く）を 2 つのタグの間で書くと 1 | 示せない（走らせていない） | 無し | 残課題（#478 に書き足す） |
+| P7 | 日本語のパスが `\346…` のように 8 進で出る（`core.quotePath`） | 示せる（`/code-review` の試料） | 無し（パスは出ている） | 残課題 |
+| P8 | 公開ページ・description の「共有の範囲（shared/ ほか）」 | 示せる（文言） | 無し（I5 の列挙の外。決着済みの「ほか」） | 残課題 |
+| P9 | `signoff-tags.md` の「比べないのは `feasibility/`・`proposal/` と内部の層」が、ほかの置き場所（`notes/` など）も比べないことと食い違う | 示せる（`/code-review` の試料: `notes/a.md` だけ違って 0） | I5 | 直す |
+| P10 | 0.x の壊れる変更を minor で入れたのに、移行の手順を `references/` に書いていない | 示せる（`CLAUDE.md` の「プラグインの更新」の規定） | 無し（受入基準の外だが、対象リポジトリの `CLAUDE.md` の規約——原則「`CLAUDE.md` のルールを守る」） | 直す（`signoff-tags.md` に移行の節） |

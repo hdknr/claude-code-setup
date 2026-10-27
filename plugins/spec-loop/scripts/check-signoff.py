@@ -122,7 +122,8 @@ def tag_form(prefix: str, version: int) -> str:
 
 
 def scope(version: int) -> list[str]:
-    """比べる場所（版 1〜n の `shared/` と、版 2〜n の `removed.csv`）。"""
+    """空かを見る場所（版 1〜n の `shared/` と、版 2〜n の `removed.csv`）——どちらかの時点で 1 つも無ければ 2。
+    比べる場所は `compare_scope`（`requirements/`・`spec/` も含む）。"""
     return shared_scope(version) + removed_scope(version)
 
 
