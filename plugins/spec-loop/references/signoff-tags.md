@@ -50,8 +50,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-signoff.py --versi
   v<n> の時点の中身は、前の版と、行を消す `removed.csv` にも依る。
   凍結した版（`versions.md`）は動かないので、前の版を含めても誤って食い違うことはない。
   **v1 の `removed.csv` は在ること自体を比べる**（v1 には置かない決まりなので、予算側にだけあっても一致と言わない。#372）。
-  **`removed.csv` は範囲に効く行だけを比べる**（種類 `Q&A` で対象が共有の表の番号（`Q-`）の行・種類 `機能` の行・
-  種類 `ファイル` で対象が `shared/`・`requirements/`・`spec/` から始まる行）。
+  **`removed.csv` は内部の層の Q&A の行（`D-`）を除いて全部比べる**——`feasibility/` などのファイルの行は
+  重ね合わせ（`versions.md`）が拒否するので、予算側だけにあっても一致と言わない（#372）。
   **比べないのは `feasibility/`・`proposal/`（予算の合意と決裁の側が書く）と内部の層**——内部の Q&A 表
   （`spec/qa-dev.csv`。番号 `D-`）は開発者が決めて記録するもので、2 つのタグの間に feasibility が費用の行を書く。
   サインオフの後に内部で決めても照合は割れない（`qa-csv.md` の「層」）。

@@ -18,13 +18,14 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   `requirements/`・`spec/` から数えた見積りに合意するので、そこが違えば別の中身を見ていたことになる（#367）。
   v<n> の時点の中身は前の版と、行を消す `removed.csv` にも依る。**v1 の `removed.csv` は在ること自体を比べる**
   （`merge` が拒否するものが予算側だけにあっても、一致と言わない。#372）。
-  **`removed.csv` は範囲に効く行だけを比べる**——種類 `Q&A` で共有の層の番号（`Q-`）の行・種類 `機能` の行・
-  種類 `ファイル` で対象が `shared/`・`requirements/`・`spec/` から始まる行（`spec/qa-dev.csv` を除く）。
+  **`removed.csv` は内部の層の Q&A の行（`D-`）を除いて全部比べる**——`feasibility/` などのファイルの行は
+  重ね合わせ（`merge`）が拒否するので、予算側だけにあっても一致と言わない（#372 の B）。
   **外すのは `feasibility/`・`proposal/`（予算の合意と決裁の側が書く）と内部の層**（`spec/qa-dev.csv`・`D-` の行。
   開発者が決めて記録するもので、2 つのタグの間に feasibility が費用の行を書く。#339）。
 - **`.` で始まる名前（`.gitkeep`・`.DS_Store`）は数えない**——重ね合わせ（`merge-versions.py`）が読まないので、
   承認が見た範囲に入らない。
-- **どちらかの時点で比べる場所にファイルが 1 つも無ければ、一致とは言わない（2）。**
+- **どちらかの時点で `shared/`（と `removed.csv`）にファイルが 1 つも無ければ、一致とは言わない（2）**——
+  `requirements/`・`spec/` があっても（承認の中心は共有の表なので、`shared/` を空にしたタグを組にしない）。
   比べる中身が無くても `git diff --quiet` は 0 を返すので、それを「一致」と読まない。
   **どちらかの時点に `docs/v<n>/` のファイルが 1 つも無いときも 2**——前の版の `shared/` があっても、
   その時点に版 n はまだ無い。
@@ -144,7 +145,6 @@ def compare_scope(version: int) -> list[str]:
 # `removed.csv` の種類（`references/versions.md` の「削除」。`merge-versions.py` のものを使い、写さない）
 REMOVED_QA = versions.KIND_QA
 REMOVED_FILE = versions.KIND_FILE
-REMOVED_FEATURE = versions.KIND_FEATURE
 
 
 def read_removed_at(repo: Path, commit: str, tag: str, path: str) -> list[tuple[int, str, str]] | None:
@@ -188,17 +188,17 @@ def refused(tag: str, problems: list[str]) -> str:
 
 
 def removed_scope_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple[str, str]]:
-    """`removed.csv` の行のうち、比べる範囲に効く行（種類・対象）。
+    """`removed.csv` の行のうち比べる行（種類・対象）——内部の層の Q&A の行を除いた全部。
 
     理由の列は比べない——消したものが同じなら、2 つの承認が見た中身は同じなので。
-    無いことと、範囲に効く行が無いことは同じ（どちらも範囲から何も消さない）。
+    無いことと、比べる行が無いことは同じ（どちらも何も消さない）。
+    範囲の外（`feasibility/` など）のファイルの行も比べる——重ね合わせ（`merge`）が拒否する行が予算側だけにあるのを、
+    一致と言わない（#372 の B）。
     """
     rows = []
     for _, kind, target in parsed or []:
-        # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は範囲の外——開発者が決めるものでサインオフが割れないように（#339）
-        if ((kind == REMOVED_QA and not qa.is_internal_number(target))
-                or kind == REMOVED_FEATURE
-                or (kind == REMOVED_FILE and target.startswith(SCOPE_DIRS) and target != INTERNAL_QA)):
+        # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は比べない——開発者が決めるものでサインオフが割れないように（#339）
+        if not (kind == REMOVED_QA and qa.is_internal_number(target)):
             rows.append((kind, target))
     return sorted(rows)
 
@@ -399,7 +399,7 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
                if line and not all(hidden(path) for path in line.split("\t")[1:])]
     for path, (at_req, at_budget) in removed.items():
         if removed_scope_rows(at_req) != removed_scope_rows(at_budget):
-            changed.append(f"{REMOVED}\t{path}（範囲に効く行が違う）")
+            changed.append(f"{REMOVED}\t{path}（比べる行が違う）")
     if changed:
         lines = [f"一致しない: {pair} で {where} が違う（{len(changed)} 件）"]
         lines += [f"    {line}" for line in changed]

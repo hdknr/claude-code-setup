@@ -272,6 +272,13 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     # 比較は req のタグの時点から作る——承認の後に作業ツリーとコミットで足した要求は載らない
     ("承認の後に直した差分は比較に入らない", V2C + [("w", "docs/v2/requirements/late.md", "L\n"), ("c",)], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "late.md" not in r.text),
+    # 比較は req のタグの時点から作る——2 つのタグの間で removed.csv の理由の列だけを変える（照合は理由を比べないので通る。
+    # 提案書の「削除の理由」は req のタグの時点のもの）。#375 で一度「等価変異」として外し、関門に反証された
+    ("比較は要求のタグの時点から作る", SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"),
+                                    ("w", "docs/v2/removed.csv", "種類,対象,理由\nQ&A,Q-005,予算側でだけ書き換えた理由\n"
+                                     "ファイル,requirements/b.md,a.md に統合した\n機能,F-001,割引を廃止した\n"),
+                                    ("c",), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "夜間の停止を決めた" in r.text and "予算側でだけ書き換えた理由" not in r.text),
     # req のタグと budget のタグの間に要求を足すと、照合が 1 で止める（#375。見積りの根拠が承認と違う）
     ("2 つのタグの間に要求を足すと照合で止まる", SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"),
                                              ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "signoff/v2/budget-1")], False,
@@ -490,8 +497,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("比較を作業ツリーから作る", "        copy_docs(top, commit, tag, Path(tmp))\n",
      "        __import__('shutil').copytree(top / signoff.DOCS, Path(tmp) / signoff.DOCS, symlinks=True)\n",
      "承認の後に直した差分は比較に入らない"),
-    # 「比較を予算のタグの時点から作る」は #375 から等価変異——照合が比べる範囲（shared/・requirements/・spec/）が
-    # 重ね合わせの読むもの（merge-versions.py の AREAS）と同じになり、照合が通る組では 2 つの時点の比較が同じになる
+    ("比較を予算のタグの時点から作る", 'compare_at(top, info["req_commit"], info["req"]',
+     'compare_at(top, info["budget_commit"], info["req"]', "比較は要求のタグの時点から作る"),
     ("大文字小文字だけ違うパスを断らない", "    if clashes:\n", "    if False:\n", "大文字小文字だけ違うパスは比較で断る"),
     ("ファイルとディレクトリの重なりを見ない", "            if fold(parent) in seen:\n", "            if False:\n",
      "ファイルとディレクトリが大文字小文字だけ違うと比較で断る"),
