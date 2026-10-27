@@ -346,11 +346,14 @@ def check_source(where: str, sources, whole: Path) -> list[str]:
 def check_ref(where: str, ref, sources, whole: Path) -> list[str]:
     """ケースの `ref`——仕様の中でそのケースの元になった行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。#465）。
     機能の `source` の原文のどれかに、前後に英数字・`_`・`-` が続かない形で現れなければ断る（別の番号の一部は数えない）。
-    後ろに `.`・`/`・`:` と英数字が続く形（`R-F10.1`・`R-F10/2`）も別の番号とみなす——文末の `R-F10.` は在ることにする。
+    英数字には全角の英数字も含める（`R-F10ａ` は別の番号）。後ろに `.`・`/`・`:` と数字が続く形（`R-F10.1`・`R-F10/2`）も別の番号とみなし、
+    数字で始まる `ref` は前に英数字と `.`・`/`・`:` が付く形（`R-F10.1` の `1`）を別の番号の一部とみなす——
+    `R-F10.`（文末）・`R-F10.md`・`R-F10/R-F11` の `R-F11` は在ることにする。
     **値（入力・期待）が仕様と一致するかは見ない**——仕様の表の書式は spec-loop の決まりに無い。"""
     if not isinstance(ref, str) or not one_line(ref) or ref != ref.strip():
         return [f"{where}: 仕様の中の番号（1 行・前後に空白なし）でない: {ref!r}"]
-    pattern = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(ref)}(?![A-Za-z0-9_-]|[./:][A-Za-z0-9])")
+    sub = r"(?<![A-Za-z0-9Ａ-Ｚａ-ｚ０-９][./:])" if ref[:1].isdigit() else ""
+    pattern = re.compile(rf"(?<![A-Za-z0-9_\-Ａ-Ｚａ-ｚ０-９]){sub}{re.escape(ref)}(?![A-Za-z0-9_\-Ａ-Ｚａ-ｚ０-９]|[./:][0-9])")
     spec_root = (whole / SPEC_DIR).resolve()
     for rel in sources if isinstance(sources, list) else []:
         # 読むのは check_source が通す原文だけ（全体の根からの相対・spec/ の中）——外のファイルを読まない
