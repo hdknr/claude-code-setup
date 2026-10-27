@@ -856,6 +856,8 @@ OLD_NAMES = {R1: "v1/req-signoff-1", B1: "v1/budget-signoff-1"}
 COEXIST = ["素の v1 タグと共存する"]
 
 failures: list[str] = []
+# この python で当てなかった変異の名前——OK の件数に数えず、名指しする（#440 の 2 パス目）
+skipped: list[str] = []
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
@@ -1191,7 +1193,7 @@ def main() -> int:
         for index, (name, before, after) in enumerate(LOCKED_MUTATIONS):
             if "3.12 でだけ" in name and sys.version_info >= (3, 13):
                 # 3.13 以降の `is_file` は辿れない symlink で例外を投げないので、この変異は判別できない（CI の 3.12 で当てる）
-                print(f"当てていない（python {sys.version_info.major}.{sys.version_info.minor}）: {name}", file=sys.stderr)
+                skipped.append(name)
                 continue
             count = source.count(before)
             if count != 1:
@@ -1206,7 +1208,8 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) - len(skipped)} 件"
+          + (f"（python {sys.version_info.major}.{sys.version_info.minor} では当てていない {len(skipped)} 件: {'・'.join(skipped)}）" if skipped else ""))
     return 0
 
 
