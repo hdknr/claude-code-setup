@@ -1133,6 +1133,18 @@ CASES: list[Case] = [
     Case("Q&A が表に無い", 1, "Q-099 は Q&A 表に無い", ir=edit(lambda ir: f1(ir).update(qa=["Q-099"]))),
     Case("ケースの Q&A が表に無い", 1, "Q-098 は Q&A 表に無い", ir=edit(lambda ir: f1(ir)["cases"][0].update(qa=["Q-098"]))),
     Case("Q&A の重複", 1, "Q&A の No が重複している", ir=edit(lambda ir: f1(ir).update(qa=["Q-001", "Q-001"]))),
+    # ケースの ref——仕様の原文にその番号が在るか（#465）。在れば通る（陽性対照）・無い／別の番号の一部／空なら断る
+    Case("ケースの ref が仕様に在る", 0, ir=edit(lambda ir: f1(ir)["cases"][0].update(ref="R-F10")),
+         spec={"order.md": SPEC + "| R-F10 | silver | 9999 | 0 |\n"}),
+    Case("ケースの ref が仕様に無い", 1, "R-F10 が仕様の原文（source）のどこにも無い",
+         ir=edit(lambda ir: f1(ir)["cases"][0].update(ref="R-F10"))),
+    Case("ケースの ref が別の番号の一部にしか無い", 1, "R-F10 が仕様の原文（source）のどこにも無い",
+         ir=edit(lambda ir: f1(ir)["cases"][0].update(ref="R-F10")), spec={"order.md": SPEC + "| R-F100 | x |\n| R-F10a | y |\n"}),
+    Case("--check もケースの ref を見る", 1, "R-F10 が仕様の原文（source）のどこにも無い", args=("--check",),
+         ir=edit(lambda ir: f1(ir)["cases"][0].update(ref="R-F10"))),
+    Case("ケースの ref が空", 1,"仕様の中の番号（1 行・前後に空白なし）でない", ir=edit(lambda ir: f1(ir)["cases"][0].update(ref=""))),
+    Case("ケースの ref を仕様の外のファイルで探さない", 1, "R-F10 が仕様の原文（source）のどこにも無い",
+         ir=edit(lambda ir: f1(ir)["cases"][0].update(ref="R-F10")), extra={"docs/v1/requirements/r.md": "R-F10\n"}),
     Case("仕様のファイルが無い", 1, "spec/missing.md が無い", ir=edit(lambda ir: f1(ir).update(source=["spec/missing.md"]))),
     Case("仕様の外のファイル", 1, "の中に無い", ir=edit(lambda ir: f1(ir).update(source=["shared/qa.csv"]))),
     # 版のディレクトリのパスは指さない（重ね合わせた全体の根からのパス）
@@ -1465,6 +1477,14 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("ケースの ref を見ない", '            if "ref" in case:\n                problems += check_ref',
+     '            if False:\n                problems += check_ref', "ケースの ref が仕様に無い"),
+    ("ref の部分一致を許す", 'pattern = re.compile(rf"(?<![A-Za-z0-9_-]){re.escape(ref)}(?![A-Za-z0-9_-])")',
+     'pattern = re.compile(re.escape(ref))', "ケースの ref が別の番号の一部にしか無い"),
+    ("ref の空を許す", "    if not isinstance(ref, str) or not one_line(ref) or ref != ref.strip():", "    if not isinstance(ref, str):",
+     "ケースの ref が空"),
+    ("ref を在れば通す", "                return []\n        except (OSError, UnicodeDecodeError, ValueError):", "                pass\n        except (OSError, UnicodeDecodeError, ValueError):",
+     "ケースの ref が仕様に在る"),
     ("関門を見ない", "            if code:\n                return code, shown(lines) + [",
      "            if False:\n                return code, shown(lines) + [", "確認中の Q&A"),
     ("失敗時に Issue の本文を消さない", "    if writing:\n        clear_issues(repo)", "    if False:\n        clear_issues(repo)",
