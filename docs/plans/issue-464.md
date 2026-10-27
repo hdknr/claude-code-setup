@@ -96,7 +96,9 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
 - 関門 2 パス目: 通した。**Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件**（軽微な観察 1 件。R3 と同じ）・
   **`/code-review` high 指摘 9 件**。採否は下の「2 パス目の採否」（直す 2 件・残課題 7 件）
 - 狭いパスの起点: `2263be575bbc290616eb9235239f63751eaa1953`（2 パス目の指摘対応を始める直前の HEAD）
-- 次: 2 パス目の指摘対応（R2・R5）→ コミット → **狭いパス**（その差分だけに別ティアの Verifier を 1 回。変異は Verifier が設計）
+- 2 パス目の指摘対応: 済み（R2・R5。`6f08b9c`）。著者の変異 2 件は赤。既存の「add の空の origin を通す」が新しい拒否に覆われて素通りしたので試料に `--deps 1` を足して赤に戻した。`check-all.py` 51/51 緑
+- 狭いパス: 通した。**Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 2 件・軽微 1 件**（下の「狭いパスの指摘」。直さず人間が決める）
+- 次: PR を作り、PR コメントにレビュー結果・未証明・満たしていない受入基準（F1）・残課題を書く → 手順 8
 - 2 つ目の割り目（2 パス目の前）: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（2 パス目から）
 - 手順 4 の割り目: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（手順 5 から）
 - 負荷の重なり: #460 の A/B 測定（`ab.py` → `check-all.py`）の最中に、こちらの `test-ledger.py`・`test-parent-issue.py` を走らせた（プロセスを確かめる前だった）。利用者に申告済み
@@ -142,3 +144,11 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
 | R7 | 親のチェックリストの行に `set origin=` を書けて、§6 で周の途中の行に数えられる | 示せる（手で `set` すれば） | 無し（手で書き換える経路。出所の欠落ではない） | 残課題 |
 | R8 | `parent-issue.py` の docstring が線の意味を `absent-lines.md` だけに指す | 示せる（docstring） | 無し | 残課題 |
 | R9 | `<!-- cruise-found: #<親> -->` の印を読むものが無い | 示せる（読む箇所が無い） | 無し | 残課題 |
+
+### 狭いパスの指摘（起点 `2263be5`。直さない——採否は人間が決める）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| F1 | 依存の空の行に `set origin=<非空>` で出所を後付けでき、元の周より先に `next` に出る（R2 の第 3 の入口）。`test-ledger.py` の「origin の set」がこの状態 `(1, "手", [])` を期待値にしている | 示せる（一時リポジトリで `add t 2` → `set t 2 origin=x` が rc=0、`next` に `2`） | I4 | 人間が決める（**満たしていない受入基準**として PR に名指し） |
+| F2 | 変異「`set` の依存の検査が同じ呼び出しの `origin=` を見ない」（`changes.get("origin", …)` → `issue.get("origin")`）が素通りする。試料が出所を持つ行にしか `set deps=` を当てていない | 示せる（陽性対照: `set t 5 deps= origin=w` が原本 rc=3・変異 rc=0） | I4（守りの検証不足） | 人間が決める |
+| F3 | 「宣言が無ければどの線も止まる」の形が `docs/plugins/dev-loop-cruise.md:66`・`SKILL.md:1773` に残る（文脈は不在の線に限る） | 示せない | I1（弱い） | 人間が決める |
