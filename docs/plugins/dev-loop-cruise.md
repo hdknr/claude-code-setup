@@ -41,7 +41,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 
 **部品がそろうのは dev-loop 1.55.0 からで、積んだ周のマージの歯止め（[#426](https://github.com/hdknr/claude-code-setup/issues/426)）が
 入ったのは 1.56.0、起動のコマンド `/dev-loop:cruise`（[#446](https://github.com/hdknr/claude-code-setup/issues/446)）が
-入ったのは 1.57.0、親 Issue の線（`cruise:` の行。[#458](https://github.com/hdknr/claude-code-setup/issues/458)）が入ったのは 1.58.0 です。**
+入ったのは 1.57.0、親 Issue の線（`cruise:` の行。[#458](https://github.com/hdknr/claude-code-setup/issues/458)）が入ったのは 1.58.0、周の途中で見つかった課題を台帳に足す線（[#464](https://github.com/hdknr/claude-code-setup/issues/464)）が入ったのは 1.59.0 です。**
 1.55.0 より前の版には、台帳も不在の線も入っていません。
 
 ```bash
@@ -120,6 +120,13 @@ cruise: 直す線 = 既定
   訊かずに推奨で決めて確認の Issue を立てて進みます（`直す線` は周ごとに訊かなくなるだけです）。
   `実機確認` と `マージ` は `--absent` の周だけに効きます。`.claude/dev-loop.md` の `不在の線:` の宣言も `--absent` の周だけに効きます。
 - **`直す線` をどこにも書いていなければ、起動時に 1 度だけ訊かれます**（周ごとには訊きません）。
+- **`周の途中の課題 = 台帳に足して直す` にすると、周の途中で見つかった課題も同じ cruise の中で直します**（書いていなければ起動時に訊かれます。既定は `外に出す`）。
+  各周はマージの前に、関門の残課題・狭いパスの指摘・仕様の穴・範囲の外にした機能・利用者の判断が要る行を振り分け、
+  **実物で失敗を示せる行**だけを Issue にして台帳に足します（依存は元の周。台帳の「出所」の列に、どの周のどの関門の行かが残ります）。
+  利用者の判断が要る行は止めておき、居るときは周の合間にまとめて訊かれます。`--absent` なら訊かずに、終えるときに渡されます。
+  元の周のマージの判断（狭いパスの指摘は人が決める、など）は変わりません。振り分けの決まりは
+  [`references/found-lines.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/found-lines.md)
+  を正とします。
 - **`本番反映` の行は無視されます**（広げられません）。書けない値や同じ線の 2 行は、台帳を作らずに止まります。
 - 線の意味と、各周がどの順で読むか（台帳 → `.claude/dev-loop.md` → 既定）は
   [`references/absent-lines.md` の「cruise で確かめた線」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/absent-lines.md)
