@@ -76,7 +76,7 @@ cruise の操作: gh workflow run infra-apply.yml
   [`references/fix-line.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/fix-line.md)
   を正とします。
 
-## 2. 環境を点検する（起動時に 1 度）
+## 2. 環境を点検する（起動時に 1 度） { #env-check }
 
 ```bash
 python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise            # 席を外すとき
@@ -100,6 +100,11 @@ python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py -
 端末を操作していない状態で試しに送って確かめます。手順は
 [リモートコントロールの設定手順（不在中の運用）](../usage/advanced-remote-control.md)と、
 スキル本文の「待ち時間・定時処理は別スキル」を正とします。
+
+利用上限で止まったことをその場で記録・通知したいなら、`StopFailure` の hook を user の settings に足します
+（[利用上限の停止をその場で記録する](../usage/usage-limit-stop-hook.md)。登録は利用者が行います。
+**上限で実際に発火するかは確かめていません**）。下の「利用上限で止まったとき」の自動継続の確認
+（[#456](https://github.com/hdknr/claude-code-setup/issues/456)）を取りこぼさないためのものです。
 
 ## 3. 親 Issue に一覧を書いて起動する
 
