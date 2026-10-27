@@ -107,10 +107,17 @@ drawio の書き出しは該当なし（図を触らない予定。触るなら 
   **#464 のマージ後に main を取り込むので、base は取り込んだ後に `git merge-base origin/main HEAD` で当て直す**
 - **#464 のマージ後に main（`e7c36c6`）を fast-forward で取り込んだ**。取り込みで増えた検査は無し。**base を当て直した: `e7c36c6859e5d756f6bf47d54b286ad2546fdd7d`**（`origin/main` との merge-base）
 - **進んだところ**: 手順 4（実装）済み。版 1.59.0 → 1.60.0（minor。能力の追加）。`check-all.py` 51/51 緑（初回は 3 本落ちた——cruise `SKILL.md` の指し先の形・dev-loop の frontmatter の共変（trailer で免除）・計画の変更範囲の書式。直して緑）。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）
-- 関門: Verifier 未着手・`/code-review` 未着手（反証 0 件——まだ当てていない）
-- 手順 5 の反証と差し戻し: なし（未着手）
+- 関門（1 パス目・2026-10-27・再開したセッション）: **Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 2 件**・
+  **`/code-review`（high）指摘 10 件**（うち 2 件は Verifier と同じ）。採否は下の「1 パス目の指摘の採否」——直す 4 件・残課題 6 件
+- **1 パス目の指摘対応: 済み**（`3fc9b37`。成果物の差分あり——`check-unattended-env.py`・そのテスト・`references/ledger.md`・§8.2 の生成ブロック）。
+  足した変異 3 本（種類の違うフェンスで閉じる・崩れた行を見ない・起動場所の案内を `.git` にする）はどれも赤。`check-all.py` 51/51 緑
+- **残っている関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**。その後に 2 パス目の指摘対応と狭いパス
+- 手順 5 の反証と差し戻し: 1 パス目に 2 件（V1・V2）→ 手順 4 に差し戻して直した
 - 交絡を潰した手順: 実験なし
 - 割り目の選択（手順 4・2026-10-27・AskUserQuestion）: **ここで割る**——worktree の中で `/clear` して `/dev-loop:dev-loop 466`、手順 5 から
+- 割り目の選択（手順 6 の 2 パス目の前・2026-10-27・AskUserQuestion）: **ここで割る**——worktree の中で `/clear` して `/dev-loop:dev-loop 466`、
+  **Verifier 2 パス目と `/code-review` 2 パス目から**（base は `e7c36c6859e5d756f6bf47d54b286ad2546fdd7d` のまま。
+  2 パス目の差分を指摘対応に絞るなら、指摘対応は `e1bcb9f..3fc9b37`——既存コードの改変を含むので周辺も対象に入れる）
 
 ## 既知の限界・決着済みの論点
 
