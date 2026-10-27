@@ -31,10 +31,8 @@
 - **既定は CPU の数だけ並列**（`--jobs`）。**`--jobs 1` で直列**になる。
 - **起動は宣言順。** いちばん重い `check-mutation-claims.py` を `GUARDS` の先頭に置いてある
   ——並列のとき、律速になる 1 本が最後に起動されないように。
-- **入れ子は直列**（#460）。`check-mutation-claims.py` は自分も `--jobs`（既定は CPU の数）で並列に当てるので、
-  ここからは `--jobs 1` で起こす。既定のままだと親の作業者と入れ子の作業者が CPU を取り合い、
-  `test-worktree-scripts.py` の陽性対照が打ち切り（300 秒）に届いた（2026-10-27、10 コアの macOS で wall 678 秒・失敗）。
-  入れ子を `--jobs 1` にすると 441 秒で通り、`--jobs 3` は 520 秒だった（各 1 回）。
+- **入れ子は親の半分**（#460）。`check-mutation-claims.py` は自分も `--jobs`（既定は CPU の数）で並列に当てるので、
+  ここからは `--jobs` を親の半分（少なくとも 1）にして起こす——`--jobs 1` なら入れ子まで直列になる。
 - **出力は宣言順**（終わった順ではない）。先頭が最も重いので、最初の行が出るまで待つ。
 - **Ctrl-C で、まだ起動していないものは起動せず、走っているものは止める**
   （親だけに SIGINT が届いた場合も——子を止めるのは親である）。**孫まで止める**——
@@ -72,9 +70,8 @@ SCRIPTS = Path(__file__).resolve().parent
 GUARDS: list[tuple[str, list[str], bool]] = [
     # **他の歯止めを子プロセスで回すので、1 本だけ重い**（直列で 166 秒。#430 の時点）。
     # **起動は宣言順なので先頭に置く**——後ろに置くと、並列のとき律速の 1 本が遅れて起動される。
-    # **中では直列に当てさせる**（#460）——既定（CPU の数）のままだと、親の作業者と入れ子の作業者が
-    # 同じ CPU を取り合い、重い `red` が打ち切り（300 秒）に届いた。測った値は docstring の並列の節。
-    ("check-mutation-claims.py", ["--jobs", "1"], False),
+    # **中の並列数は `NESTED` が決める**（#460）。
+    ("check-mutation-claims.py", [], False),
     ("check-plugin-versions.py", [], False),
     ("check-norm-markers.py", [], False),
     ("check-duplicate-counts.py", [], False),
@@ -87,6 +84,16 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-description-sync.py", [], True),
     ("check-plan-scope.py", [], True),
 ]
+
+# 中で自分も `--jobs` で並列に回すもの（#460）。親の並列数から決めた `--jobs` を渡す——
+# 渡さないと入れ子の既定（CPU の数）で起き、親の作業者と同じ CPU を取り合う。
+NESTED = "check-mutation-claims.py"
+
+
+def nested_jobs(jobs: int) -> int:
+    """入れ子に渡す `--jobs`。親の半分で、少なくとも 1（親が 1 なら入れ子も直列）。"""
+    return max(1, jobs // 2)
+
 
 # 回帰テスト（歯止め自体が何も見ていない状態に退化していないかを見る）
 TESTS: list[str] = [
@@ -240,6 +247,8 @@ def main() -> int:
                 guard_runs.append((label, None))
                 continue
             args = [*extra, opts.base] if needs_base else extra
+            if name == NESTED:
+                args = [*args, "--jobs", str(nested_jobs(opts.jobs))]
             guard_runs.append((label, pool.submit(run, name, args)))
         test_runs = ([] if opts.guards_only
                      else [(name, pool.submit(run, name, [])) for name in TESTS])
