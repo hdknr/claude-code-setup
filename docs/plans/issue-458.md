@@ -91,9 +91,11 @@
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/458-cruise-confirmed-lines`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-458`・起点 `4f4b6f9`・base 参照 `origin/main` → `4f4b6f90255309fb2ae5be05ad49ae252076ec6b`
-- 関門: 未着手
+- 実装: 済み（コミット `bbed533` を amend したもの。`check-all.py` は 51/51 のうち 2 本が落ち、指し先と件数の行を直して個別に緑を確認——全体の回し直しは関門の前に行う）
+- 関門: 未着手（次は手順 5 の Verifier 1 パス目と手順 6 の `/code-review` 1 パス目）
 - 反証: なし（まだ関門に当てていない）
 - 交絡: 実験なし
+- 割り目（手順 4）: 利用者に訊く
 
 ## 起票
 
