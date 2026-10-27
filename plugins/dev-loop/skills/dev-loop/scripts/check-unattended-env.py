@@ -642,8 +642,25 @@ def exit_code(items):
 DECLARE = re.compile(r"^cruise の操作:(.*)$")
 # 宣言の形に届かなかった行（字下げ・箇条書き・引用・全角コロン）——黙って読み飛ばさずに要対処にする
 NEAR = re.compile(r"^\s*(?:(?:[-*+>]|\d+[.)])\s*)*cruise\s*の\s*操作")
-# フェンスは開いた記号と同じ種類・同じ長さ以上で、後ろに何も無い行でだけ閉じる（CommonMark）
+# フェンスは開いた記号と同じ種類・同じ長さ以上で、後ろに何も無い行でだけ閉じる（CommonMark）。
+# `` ` `` の印の後ろに `` ` `` があればインラインコードで、フェンスを開かない
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+
+
+def uncommented(line, in_comment):
+    """HTML コメント（`<!--` 〜 `-->`）を除いた行の残りと、行末でコメントの中にいるかを返す。
+    コメントの中の宣言は、無効にしたものとして読まない（複数行にまたがっても）。"""
+    out = ""
+    while True:
+        if in_comment:
+            close = line.find("-->")
+            if close < 0:
+                return out, True
+            line, in_comment = line[close + 3:], False
+        start = line.find("<!--")
+        if start < 0:
+            return out + line, False
+        out, line, in_comment = out + line[:start], line[start + 4:], True
 
 
 def declared_commands(project):
@@ -651,17 +668,20 @@ def declared_commands(project):
     path = Path(project) / ".claude" / "dev-loop.md"
     label = "周で使う操作の宣言"
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")  # BOM を行頭に残さない
     except FileNotFoundError:
         text = ""
     except (OSError, UnicodeDecodeError) as exc:
         return [], [(UNKNOWN, label, f"{path} を読めなかった（{exc}）——宣言した操作を点検できない", "")]
-    commands, empty, broken, fence = [], 0, 0, None
+    commands, empty, broken, fence, in_comment = [], 0, 0, None, False
     for line in text.splitlines():
         f = FENCE.match(line)
-        if fence is None and f:
-            fence = f.group(1)
-            continue
+        if fence is None:
+            line, in_comment = uncommented(line, in_comment)
+            f = FENCE.match(line)
+            if f and not (f.group(1)[0] == "`" and "`" in f.group(2)):
+                fence = f.group(1)
+                continue
         if fence is not None:
             if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():
                 fence = None

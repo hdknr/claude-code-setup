@@ -629,6 +629,23 @@ def suite(script: Path) -> list[str]:
         check("cruise: 崩れた宣言の行（全角コロン・字下げ・箇条書き）は要対処で本数を出す",
               mod.ACTION in status_of(items, "周で使う操作の宣言")
               and "3 本" in detail_of(items, "周で使う操作の宣言"), bad)
+        # BOM 付きのファイルでも先頭行の宣言を読む（行頭に BOM が残ると、宣言にも崩れた行にも当たらない）
+        (env.project / ".claude" / "dev-loop.md").write_bytes("﻿cruise の操作: gh bom\n".encode("utf-8"))
+        code, items, out = run_cruise(mod, env)
+        check("cruise: BOM 付きのファイルの先頭行の宣言を読む", status_of(items, "`gh bom`") == [mod.ACTION], bad)
+        # HTML コメントの中の宣言は無効にしたものとして読まない（複数行・1 行とも）。コメントの外は読む
+        env.write(env.project / ".claude" / "dev-loop.md",
+                  "<!--\ncruise の操作: gh disabled\n-->\n<!-- cruise の操作: gh inline -->\n"
+                  "cruise の操作: gh after-comment\n")
+        code, items, out = run_cruise(mod, env)
+        check("cruise: HTML コメントの中の宣言は読まず、外は読む",
+              "gh disabled" not in out and "gh inline" not in out
+              and status_of(items, "`gh after-comment`") == [mod.ACTION], bad)
+        # 情報文字列に ` を含む ``` の行はインラインコードで、フェンスを開かない（開くと後ろの宣言を全部落とす）
+        env.write(env.project / ".claude" / "dev-loop.md", "``` `x` ```\ncruise の操作: gh after-code\n")
+        code, items, out = run_cruise(mod, env)
+        check("cruise: ` を含む情報文字列の行はフェンスを開かない",
+              status_of(items, "`gh after-code`") == [mod.ACTION], bad)
         # cruise でなければ足さない（不在の周の既存の点検を変えない）
         code, items, out = run(mod, env)
         check("cruise でなければ、止まりうる操作・起動場所・宣言を出さない",
@@ -665,6 +682,15 @@ MUTATIONS = {
         "        if False:\n            if f and"),
     "種類の違うフェンスの記号でも閉じる": (
         "            if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():\n",
+        "            if f:\n"),
+    "BOM を行頭に残す": (
+        '        text = path.read_text(encoding="utf-8-sig")',
+        '        text = path.read_text(encoding="utf-8")'),
+    "HTML コメントを除かない": (
+        "            line, in_comment = uncommented(line, in_comment)\n",
+        "            pass\n"),
+    "` を含む情報文字列でもフェンスを開く": (
+        '            if f and not (f.group(1)[0] == "`" and "`" in f.group(2)):\n',
         "            if f:\n"),
     "崩れた宣言の行を見ない": (
         "    if broken:\n",
