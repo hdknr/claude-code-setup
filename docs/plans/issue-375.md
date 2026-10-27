@@ -22,7 +22,9 @@ v1 の `removed.csv`・`shared/` の外のファイルの行を範囲に入れ�
 - `plugins/spec-loop/references/tree.md` — 置き方の決まりの「2 つのサインオフが同じ範囲を見ていたかは `shared/` の中身で確かめる」
 - `plugins/spec-loop/README.md` — `check-signoff.py` の行
 - `CLAUDE.md` — `check-signoff.py` の行
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版（0.26.0 → 0.27.0。0.x なので振る舞いの変更も minor）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.0 → 0.27.0。0.x なので振る舞いの変更も minor）
+- `.claude-plugin/marketplace.json` — 同じ版
+- `plugins/spec-loop/skills/*/SKILL.md` — 同じ版の 2 行
 - `docs/plans/issue-375.md` — この計画
 
 触らない:
