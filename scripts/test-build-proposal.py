@@ -726,7 +726,7 @@ LOCKED_MUTATIONS: list[tuple[str, str, str]] = [
      "            print(line, file=sys.stderr)\n        return 2\n    if problem:"),
     ("symlink より先に is_file を見る（3.12 でだけ死ぬ）", "            if stale.is_symlink() or stale.is_file():",
      "            if stale.is_file() or stale.is_symlink():"),
-    ("書きかけを消せなくても消したと言う","        if left:\n            raise Stop(2, [f\"{directory}: 書けない",
+    ("書きかけを消せなくても消したと言う", "        if left:\n            raise Stop(2, [f\"{directory}: 書けない",
      "        if False:\n            raise Stop(2, [f\"{directory}: 書けない"),
 ]
 
