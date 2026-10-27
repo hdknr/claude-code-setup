@@ -24,7 +24,8 @@
 - `plugins/dev-loop/skills/dev-loop/references/ledger.md` — 状態の追加に伴う書く時点
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — `本番反映 = しない` の「利用者待ち」と新しい状態の関係（要るなら）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行（中身を変えるなら最小限）
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（minor）・description（変えるなら 2 つを揃える）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（minor）・description
+- `.claude-plugin/marketplace.json` — 同上（2 つを揃える）
 - `docs/plugins/dev-loop-cruise.md` — 起動場所・起動時の点検・操作待ちの説明
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書く。手で書かない）
 - `CLAUDE.md` — `check-unattended-env.py` の行の「`--absent` の起動時だけ」が偽になるなら直す
@@ -57,7 +58,7 @@ main への push で GitHub Pages が自動デプロイする（`docs/` の変�
    `next` が出す依存しない次の周へ進む。操作待ちの周に依存する周は待つ（`merged` でないので `next` に出ない——既存の判定のまま）。
    §4-5 の「まとめて 1 度だけ訊く」（#464）と同じ場所で、操作待ちの行も利用者に渡す
 5. **親の起動場所**: cruise `SKILL.md` の冒頭と公開ページに「親はメインの作業ツリーから worktree 隔離なしで起動する」を既定として書く。
-   **隔離されたセッションで起動されたことを検出したら、その旨を利用者に見せる**（止めるかは未決定）
+   **隔離されたセッションで起動されたことを検出したら、その旨を利用者に見せる**（止めない——下の「未解決」で決めた）
 
 ## verify の受入基準
 

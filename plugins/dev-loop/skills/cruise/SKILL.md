@@ -106,9 +106,11 @@ python3 <このスキルの base ディレクトリ>/scripts/parent-issue.py sho
 **台帳を作ったら（再開なら読んだら）、`--absent` に依らず、周で使う操作の権限を点検する（#466）**——
 利用者が居る cruise でも、**権限の拒否・確認で周が止まり、利用者の操作を待つ**:
 
+スクリプトは `../dev-loop/scripts/check-unattended-env.py`（このスキルの base ディレクトリからの相対）で、引数は:
+
 ```bash
-python3 <このスキルの base ディレクトリ>/../dev-loop/scripts/check-unattended-env.py --cruise --present   # 居る cruise
-python3 <このスキルの base ディレクトリ>/../dev-loop/scripts/check-unattended-env.py --cruise             # --absent
+check-unattended-env.py --cruise --present   # 居る cruise
+check-unattended-env.py --cruise             # --absent
 ```
 
 **読むだけで、設定を書き換えない。** 何を見るか（周で使う操作の宣言 `cruise の操作:`・止まりうる操作・親の起動場所）は
