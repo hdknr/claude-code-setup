@@ -10,7 +10,8 @@
 
 **試料は合成である。** 形は #454 の周で実データから読んだもの（`rate_limit` のレコード・
 `system`／`informational` の予告・`origin.kind`）に合わせてある。**実物そのものは CI に持ち込めない**
-（リポジトリの外で、公開できない）。時間帯は `UTC` に固定する（端末の時間帯に依らない）。
+（リポジトリの外で、公開できない）。時間帯は `UTC` に固定する（端末の時間帯に依らない）——
+**`--tz` の効き目だけは、固定の +9 時間でもう 1 度読んで見る**（UTC だけでは時間帯を無視しても緑になる）。
 
 **変異テストを含む。** 本体の docstring の「守る」の行数だけ変異を当て、
 **壊したのに観測が変わらなければ失格**とする。行を足したら変異も足す。
@@ -29,6 +30,7 @@ SCRIPT = REAL_REPO / "scripts" / "count-usage-limit-resumes.py"
 REAL_HOME_PROJECTS = Path(os.path.expanduser("~")) / ".claude" / "projects"
 REPO = "/work/app"
 UTC = datetime.timezone.utc
+JST = datetime.timezone(datetime.timedelta(hours=9))
 AUTO_TEXT = ("Your claude.ai usage limit has reset. Continue the task you were working on when the limit "
              "was reached; do not repeat work that is already complete.")
 EARLY_TEXT = ("Your claude.ai usage is available again before the usage-limit reset. Continue the task you "
@@ -117,10 +119,15 @@ def build_tree(root: Path) -> None:
           .tool_result("2026-09-10T09:03:00")
           .user("2026-09-10T10:01:00", AUTO_TEXT, kind="auto-continuation", meta=True))
     sa.write(root)
-    # 履歴のコピー（fork / --resume）: sa の最初の停止を同じ uuid で別ファイルに写す
+    # 履歴のコピー（fork / --resume）: sa の最初の停止を同じ uuid で別ファイルに写す。
+    # **途中で切れていて、sa より先に読まれる**（`-aaa` < `-work-app`）——先に読んだほうが勝つと行方が変わる
     copy = Session("sacopy")
     copy.rows = [dict(sa.rows[0]), dict(sa.rows[1])]
-    copy.write(root, project="-work-app--claude-worktrees-x")
+    copy.write(root, project="-aaa")
+    # sa の自動継続の記録だけを写したコピー——停止の記録を持たない側に数えてはならない
+    auto_copy = Session("saauto")
+    auto_copy.rows = [dict(sa.rows[-1])]
+    auto_copy.write(root, project="-aab")
     # sb: 人間の「継続」（予告より前）と、人間が自動継続の文言を打った形（予告の後）
     (Session("sb").limit("2026-09-11T09:00:00", "2026-09-11T10:00:00").armed("2026-09-11T09:00:01", "10am")
      .user("2026-09-11T09:30:00", "継続", kind="human")
@@ -143,9 +150,14 @@ def build_tree(root: Path) -> None:
     # sg: resetsAt（01:00）と表示（「10am」——端末の時間帯で書かれた）が食い違う。resetsAt を使う
     (Session("sg").limit("2026-09-18T00:00:00", "2026-09-18T01:00:00").armed("2026-09-18T00:00:01", "10am")
      .user("2026-09-18T01:01:00", AUTO_TEXT, kind="auto-continuation", meta=True).write(root))
-    # sh: 週の上限。予告を張らない。人間が来る
+    # sh: 週の上限。予告を張らない。本体が差し込んだ isMeta（origin なし）の後に人間が来る
     (Session("sh").limit("2026-09-19T00:00:00", "2026-09-21T00:00:00", kind="seven_day")
+     .user("2026-09-19T04:00:00", "Caveat: injected", meta=True)
      .user("2026-09-19T05:00:00", "継続", kind="human").write(root))
+    # si: 人間が予告より前に来て続いた後、予告の 10 時間後に自動継続（その間の停止の記録が無い）
+    (Session("si").limit("2026-09-22T09:00:00", "2026-09-22T10:00:00").armed("2026-09-22T09:00:01", "10am")
+     .user("2026-09-22T09:30:00", "継続", kind="human").reply("2026-09-22T09:31:00")
+     .user("2026-09-22T20:01:00", AUTO_TEXT, kind="auto-continuation", meta=True).write(root))
 
 
 def build_blind(root: Path) -> None:
@@ -165,11 +177,13 @@ def observe(mod, root: Path, blind: Path) -> dict:
         "waits": sorted((s["session"], s["ts"], s["armed"], s["cancelled"], s["limit"], iso(mod.reset_of(s)),
                          s["first"], s["fate"], iso(s["auto_ts"])) for s in stops),
         "orphans": len(orphans), "dups": stats["duplicate_stops"],
+        "jst": sorted((s["session"], str(iso(mod.reset_of(s)))) for s in mod.collect(root, tz=JST)[0]),
     }
-    for name, path, anon in (("plain", root, False), ("anon", root, True), ("blind", blind, False)):
+    for name, path, extra in (("plain", root, []), ("anon", root, ["--anonymize"]), ("blind", blind, []),
+                              ("since", root, ["--since", "2026-09-19"]), ("future", root, ["--since", "2099-01-01"])):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            status = mod.main(["--root", str(path), "--tz", "UTC"] + (["--anonymize"] if anon else []))
+            status = mod.main(["--root", str(path), "--tz", "UTC"] + extra)
         out[name] = (status, buf.getvalue())
     return out
 
@@ -198,6 +212,14 @@ MUTATIONS = {
     "上限の種類を出さない": ('quota.get("rateLimitType")', "None"),
     "停止が 0 件でも 0 で終わる": ('return "\\n".join(lines) + "\\n", 3', 'return "\\n".join(lines) + "\\n", 0'),
     "--anonymize でも一覧を出す": ("if not anonymize:", "if True:"),
+    "isMeta を人間の入力と読む": ('    if rec.get("isMeta") or rec.get("isCompactSummary"):\n        return OTHER\n', ""),
+    "コピーの窓の長さを見ない（先に読んだほうが勝つ）":
+        ('if len(s["inputs"]) <= len(stops[s["id"]]["inputs"]):', "if True:"),
+    "同じ自動継続を待ちと停止の記録を持たない側の両方に数える": ('o["id"] not in windowed and ', ""),
+    "予告の時刻から遅い自動継続も待ちに入れる": ("and at > reset_of(stop) + LATE)", "and False)"),
+    "表示の時刻を UTC で読む（--tz を無視する）":
+        ("local = at.astimezone(tz)", "local = at.astimezone(datetime.timezone.utc)"),
+    "--since を見ない": ('(s for s in stops.values() if not since or s["ts"] >= since)', "(s for s in stops.values())"),
 }
 
 
@@ -214,9 +236,10 @@ def main() -> int:
             waits.setdefault(w[0], []).append(w)
 
         print("待ちと行方")
-        check("待ちは 9（コピーは畳む・同じ予告の時刻の停止は 1 つ）",
-              len(correct["waits"]) == 9 and correct["dups"] == 1 and len(waits["sa"]) == 1)
+        check("待ちは 10（コピーは畳む・同じ予告の時刻の停止は 1 つ）",
+              len(correct["waits"]) == 10 and correct["dups"] == 1 and len(waits["sa"]) == 1)
         sa = waits["sa"][0]
+        check("先に読んだコピーの窓が短くても、長いほうの窓で行方を決める", sa[7] == "自動継続")
         check("通知が先でも、その後の自動継続を拾う（予告の 1 分後）",
               sa[6:] == ("task-notification", "自動継続", "2026-09-10T10:01:00+00:00") and sa[2] and sa[4] == "five_hour")
         sb1, sb2 = waits["sb"]
@@ -226,19 +249,25 @@ def main() -> int:
         check("origin の無い旧い形は、早く使えるようになったときの文言でも自動継続", sc1[6:8] == ("自動継続", "自動継続"))
         check("origin が human でもスラッシュコマンドはローカルコマンド", sc2[6] == "ローカルコマンド")
         check("予告だけの停止も待ちで、その後の自動継続を拾う", waits["sd"][0][7] == "自動継続" and waits["sd"][0][2])
-        check("停止の記録を持たない自動継続は別に数える", correct["orphans"] == 1 and "se" not in waits)
+        check("停止の記録を持たない自動継続は別に数える（予告の 10 時間後のものも。コピーの自動継続は数えない）",
+              correct["orphans"] == 2 and "se" not in waits)
+        si = waits["si"][0]
+        check("予告の時刻から遅い自動継続は、その待ちのものと読まない", si[7:] == ("予告より前に人間", None))
         sf = waits["sf"]
         check("resetsAt の無い rate_limit と予告は 1 つの待ち。表示は日付をまたぐ。取り消しを数える",
               len(sf) == 1 and sf[0][3] and sf[0][5] == "2026-09-17T01:00:00+00:00" and sf[0][7] == "取り消し")
         check("予告の時刻は resetsAt を先に使う", waits["sg"][0][5] == "2026-09-18T01:00:00+00:00")
+        check("表示の時刻は --tz の時間帯で読む（+9 時間の 23 時 UTC は 8 時。「1am」は翌日の 16 時 UTC）",
+              dict(correct["jst"])["sf"] == "2026-09-17T16:00:00+00:00")
         sh = waits["sh"][0]
-        check("週の上限は張らず、上限の種類を持つ", sh[2] is False and sh[4] == "seven_day")
+        check("張らなかった待ちは上限の種類を持つ。origin の無い isMeta は人間の入力ではない",
+              sh[2] is False and sh[4] == "seven_day" and sh[6] == "その他の入力" and sh[7] == "予告より前に人間")
 
         print("\n出力")
         status, text = correct["plain"]
         check("停止があれば 0 で終わる", status == 0)
-        check("月ごとの行方（張った 8・自動継続 4・前 2・後 1・取り消し 1・続かなかった 0）",
-              "| 2026-09 | 9 | 8 | 4 | 2 | 1 | 1 | 0 | 0 | 1 |" in text)
+        check("月ごとの行方（張った 9・自動継続 4・前 3・後 1・取り消し 1・続かなかった 0）",
+              "| 2026-09 | 10 | 9 | 4 | 3 | 1 | 1 | 0 | 0 | 2 |" in text)
         check("張らなかった待ちの上限の種類を出す", "seven_day 1" in text)
         check("自動継続の差（分）を出す", "最小 -10・中央 +1・最大 +1（4 件）" in text)
         check("本文を出さない", "task-notification>x" not in text and "Continue the task" not in text and "/usage" not in text)
@@ -248,6 +277,10 @@ def main() -> int:
               and "## 待ちの一覧" not in atext)
         bstatus, btext = correct["blind"]
         check("停止が 0 件なら終了コード 3", bstatus == 3 and "検出できていない" in btext)
+        sstatus, stext = correct["since"]
+        check("--since より前の停止を数えない（sh・si の 2 件）", sstatus == 0 and "待ち: 2・" in stext)
+        fstatus, ftext = correct["future"]
+        check("--since を狭くして 0 件なら終了コード 3", fstatus == 3 and "検出できていない" in ftext)
 
         print("\n変異テスト（壊したのに観測が変わらなければ失格）")
         source = SCRIPT.read_text(encoding="utf-8")

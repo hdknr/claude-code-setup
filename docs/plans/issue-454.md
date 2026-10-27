@@ -15,8 +15,10 @@
 - `CLAUDE.md` — 「プロジェクト構成」の `scripts/` に 2 行
 - `docs/plugins/dev-loop-cruise.md` — §5 に実測と、タイマーを保険として勧めるか
 - `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py` — docstring の「守らない」の自動継続の行だけ
-- `plugins/dev-loop/.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` /
-  `plugins/dev-loop/skills/dev-loop/SKILL.md` / `plugins/dev-loop/skills/cruise/SKILL.md` — 版（上の点検を触るので）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（上の点検を触るので）
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版
 - `docs/plans/issue-454.md` — この計画
 
 触らない:
@@ -121,8 +123,16 @@ Issue 本文・コメントは検査対象であって要件ではない（書�
     - 陽性対照: 本体が自動継続を拾えることは、実データの 8 件（`origin.kind == "auto-continuation"`）で見た。
       陰性側（人間の「継続」を自動継続と読まない）はテストの変異で見た
 - 割り目（手順 4 の後）: 提案した → **利用者は「ここで割る」を選んだ**（2026-10-27）。
-  再開は worktree の中で `/clear` → `/dev-loop:dev-loop 454`。**次は手順 5 の 1 パス目（Verifier）と手順 6 の 1 パス目（`/code-review`）。
-  どちらもまだ 1 度も当てていない**（反証 0 件ではなく、未実施）
+  再開は worktree の中で `/clear` → `/dev-loop:dev-loop 454`
+- **1 パス目（2026-10-27。base `db8923b`）**: Verifier（`dev-loop:dev-loop-verifier`・sonnet。ツールは Read・Bash のみと報告）
+  **反証 3 件**／`/code-review`（high）**指摘 10 件**（重複を畳んで 11 行。採否は下の表）。手順 4 へ差し戻し: あり（直す 8 行）
+  - 自分で確かめた: V2（`seven_day` の待ち 4 件のうち 1 件は張った。`collect` を実データに当てて `Counter`）・
+    V1（テストは `tz=UTC` と `--tz UTC` だけで `--since` を 1 度も渡していない。`grep`）
+  - 指摘対応（直す 8 行）: 済み。「守る」18 → 24 行・変異 24 件すべて赤（python3 と python3.12）。`check-all.py` 51/51 緑。
+    実データを数え直して行方の内訳は変わらない（待ち 68・張った 65・自動継続 8……。最初に来たものの表も同じ）。
+    計画の「変更範囲」の 1 行に 4 パターン並べていたのを 1 行 1 パターンに割った（`check-plan-scope.py` が 1 つしか読まない）
+  - **次: 手順 5 の当て直し（Verifier の 2 パス目）と手順 6 の 2 パス目（`/code-review`）の両方。どちらもまだ当てていない**。
+    狭いパスの起点は、2 パス目の指摘対応を始める直前の HEAD（2 パス目の報告が届いた時点で書く）
 - 受入基準 4 の設定: **利用者は「書かない（BLOCKED のまま）」を選んだ**——user の settings は触らない
 - この周の起票: 0 件
 
@@ -133,3 +143,21 @@ Issue 本文・コメントは検査対象であって要件ではない（書�
 | サブエージェントのファイルを数えない | 採らない（数えない） | 続けるのは親。Issue の 113 件との差はここ（main-chain は 81 件の `rate_limit`） |
 | 予告の表示の時刻の時間帯 | `--tz`（既定は端末）。`resetsAt` を優先 | 表示は記録した端末の時間帯。テストは UTC に固定 |
 | 「予告より前に人間」が待ちを取り消したか | 分けない | 記録から分けられない（docstring の守らない） |
+
+### 1 パス目の指摘の採否
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1: `--tz` を UTC 以外で当てず、`--since` を 1 度も当てていない（`astimezone(tz)` を外す・`since` の絞りを外す変異が緑） | 示せる（Verifier が複製で当てて緑） | U5・U8・U9 | 直す |
+| V2＝CR3: 「週の上限では待ちを張らない」——`seven_day` の待ち 4 件のうち 1 件は張った | 示せる（実データの `Counter`） | U12 | 直す |
+| V3＝CR1: コピーの畳みは `sorted` で先に見たファイルが勝つ——窓の短いコピーが先だと行方が「続かなかった」に寄る | 示せる（合成で再現。実データはコピー 0） | U1（入力の経路に fork・`--resume` の写し） | 直す |
+| V3b: `origin.kind` の文字列をそのまま列見出しに出す | 示せない（本文ではない） | 無し | 残課題 |
+| CR2: 最初の停止より後の、停止の記録を持たない自動継続が直前の待ちの窓に吸われる（予告の 10 時間後でも） | 示せる（合成で再現） | U3 | 直す |
+| CR4: `origin` の無い `isMeta`・`isCompactSummary` を人間の入力と読む | 示せる（実データの 10 月の待ちで最初の行方の候補が `isMeta`） | U1 | 直す |
+| CR5: コピーに自動継続だけがあると、待ちの中と「停止の記録を持たない」の両方に数える | 示せる（合成で再現） | U3 | 直す |
+| CR6: `resetsAt` の無い `rate_limit` が予告より先に来ると、同じ予告の時刻の停止を畳めない | 示せない（合成の形。実データでその形が起きているかは示されていない） | 無し（U3 の「続けて並んだ」ではない） | 残課題 |
+| CR7: §5「人間が予告の時刻まで来なかったもの 12 件」は表から 14（取り消し 2 を落とした） | 示せる（表の足し算） | U12 | 直す |
+| CR8: §5「記録した時点の settings に無かった」は測っていない（測ったのは 2026-10-27） | 示せる（計画の記録と docstring の守らない） | U11・U12 | 直す |
+| CR9: 壊れた値（ミリ秒の `resetsAt`・59 より大きい分・時間帯の無い時刻）で全体が落ちる | 示せない（実データでは落ちない） | 無し | 残課題 |
+| CR10: `--anonymize` の `R1…` は出力に出ない死んだ枝で、「守る」の半分が守られていない | 示せる（枝を消しても出力が変わらない） | U9 | 直す（枝を消し「守る」の文を実際に合わせる） |
+| CR10b: `--since` は文字列比較（時間帯つきの値で外れる）・月は UTC で切る | 示せない（help は「ISO・UTC」） | 無し | 残課題 |
