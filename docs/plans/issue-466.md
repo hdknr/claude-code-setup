@@ -106,11 +106,11 @@ drawio の書き出しは該当なし（図を触らない予定。触るなら 
   起点 `bd8fa53`・base の参照 `origin/main`（解決した SHA `bd8fa5385ce161f25e581d35d226b548cf0de809`）。
   **#464 のマージ後に main を取り込むので、base は取り込んだ後に `git merge-base origin/main HEAD` で当て直す**
 - **#464 のマージ後に main（`e7c36c6`）を fast-forward で取り込んだ**。取り込みで増えた検査は無し。**base を当て直した: `e7c36c6859e5d756f6bf47d54b286ad2546fdd7d`**（`origin/main` との merge-base）
-- **進んだところ**: 手順 4（実装）済み。版 1.59.0 → 1.60.0（minor。能力の追加）
+- **進んだところ**: 手順 4（実装）済み。版 1.59.0 → 1.60.0（minor。能力の追加）。`check-all.py` 51/51 緑（初回は 3 本落ちた——cruise `SKILL.md` の指し先の形・dev-loop の frontmatter の共変（trailer で免除）・計画の変更範囲の書式。直して緑）。次は手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）
 - 関門: Verifier 未着手・`/code-review` 未着手（反証 0 件——まだ当てていない）
 - 手順 5 の反証と差し戻し: なし（未着手）
 - 交絡を潰した手順: 実験なし
-- 割り目の選択: 未（手順 4 の割り目で訊く）
+- 割り目の選択（手順 4・2026-10-27・AskUserQuestion）: **ここで割る**——worktree の中で `/clear` して `/dev-loop:dev-loop 466`、手順 5 から
 
 ## 既知の限界・決着済みの論点
 
