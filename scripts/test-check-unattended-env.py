@@ -194,6 +194,10 @@ def detail_of(items, label_part):
     return " / ".join(d for _s, label, d, _f in items if label_part in label)
 
 
+def fix_of(items, label_part):
+    return " / ".join(f for _s, label, _d, f in items if label_part in label)
+
+
 def status_of(items, label_part):
     return [s for s, label, *_ in items if label_part in label]
 
@@ -609,6 +613,22 @@ def suite(script: Path) -> list[str]:
         env.write(env.project / ".claude" / "dev-loop.md", "cruise の操作:   \n")
         code, items, out = run_cruise(mod, env)
         check("cruise: 値の無い宣言の行は要対処", mod.ACTION in status_of(items, "周で使う操作の宣言"), bad)
+        # 種類の違うフェンスでは閉じない（~~~ の中の ``` で閉じたと読むと、中を読み外を落とす）
+        env.write(env.project / ".claude" / "dev-loop.md",
+                  "~~~\n```\ncruise の操作: gh inside\n~~~\ncruise の操作: gh after\n"
+                  "````\n```\ncruise の操作: gh inside2\n````\n")
+        code, items, out = run_cruise(mod, env)
+        check("cruise: 種類の違うフェンスの記号では閉じない（中を読まず、外を落とさない）",
+              status_of(items, "`gh after`") == [mod.ACTION]
+              and not status_of(items, "gh inside") and "gh inside" not in out, bad)
+        # 宣言の形に届かなかった行は黙って読み飛ばさない（有効な行が他にあっても）
+        env.write(env.project / ".claude" / "dev-loop.md",
+                  "cruise の操作: gh ok\ncruise の操作： gh fullwidth\n  cruise の操作: gh indented\n"
+                  "- cruise の操作: gh listed\n本文で cruise の操作 に触れる行\n")
+        code, items, out = run_cruise(mod, env)
+        check("cruise: 崩れた宣言の行（全角コロン・字下げ・箇条書き）は要対処で本数を出す",
+              mod.ACTION in status_of(items, "周で使う操作の宣言")
+              and "3 本" in detail_of(items, "周で使う操作の宣言"), bad)
         # cruise でなければ足さない（不在の周の既存の点検を変えない）
         code, items, out = run(mod, env)
         check("cruise でなければ、止まりうる操作・起動場所・宣言を出さない",
@@ -627,8 +647,9 @@ def suite(script: Path) -> list[str]:
         check("起動場所: メインの作業ツリーは良い",
               status_of(run_cruise(mod, env, cwd=repo)[1], "親の起動場所") == [mod.GOOD], bad)
         r = run_cruise(mod, env, cwd=repo / ".claude" / "worktrees" / "w")
-        check("起動場所: worktree の中は要対処で、メインの作業ツリーを示す",
-              status_of(r[1], "親の起動場所") == [mod.ACTION] and str(repo.resolve()) in r[2], bad)
+        check("起動場所: worktree の中は要対処で、案内がメインの作業ツリーを示す",
+              status_of(r[1], "親の起動場所") == [mod.ACTION]
+              and f"メインの作業ツリー（{repo.resolve()}）" in fix_of(r[1], "親の起動場所"), bad)
         check("起動場所: git の外は判定できない",
               status_of(run_cruise(mod, env, cwd=outside)[1], "親の起動場所") == [mod.UNKNOWN], bad)
 
@@ -640,8 +661,17 @@ MUTATIONS = {
         "        commands = tuple(commands) + tuple(c for c in declared if c not in commands)\n",
         "        commands = tuple(commands)\n"),
     "フェンスの中の行も宣言にする": (
-        "        m = None if fenced else DECLARE.match(line)\n",
-        "        m = DECLARE.match(line)\n"),
+        "        if fence is not None:\n            if f and",
+        "        if False:\n            if f and"),
+    "種類の違うフェンスの記号でも閉じる": (
+        "            if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():\n",
+        "            if f:\n"),
+    "崩れた宣言の行を見ない": (
+        "    if broken:\n",
+        "    if False:\n"),
+    "起動場所の案内を .git にする": (
+        "{common.parent if common.name == '.git' else common}",
+        "{common}"),
     "値の無い宣言の行を見ない": (
         "    if empty:\n",
         "    if False:\n"),

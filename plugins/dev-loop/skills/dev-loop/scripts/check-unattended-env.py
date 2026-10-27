@@ -41,9 +41,10 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 
 - `--cruise` は 3 つを足す:
     - **周で使う操作の宣言**——`--project` の `.claude/dev-loop.md` の `cruise の操作: <コマンド>` の行（1 行 1 コマンド。
-      コードフェンスの中は読まない）を、点検するコマンド（既定か `--command`）に足す。**本番反映の口**
+      コードフェンスの中は読まない。フェンスは開いた記号と同じ種類・同じ長さ以上の行でだけ閉じる）を、点検するコマンド（既定か `--command`）に足す。**本番反映の口**
       （`gh workflow run …`・`aws ecs run-task …` など）は既定に無いので、ここで宣言させる。
-      宣言が無ければ「人が見る」で、既定だけを見たと出す。読めなければ「判定できない」、値の無い行は「要対処」
+      宣言が無ければ「人が見る」で、既定だけを見たと出す。読めなければ「判定できない」、値の無い行は「要対処」。
+      **宣言の形に届かなかった行**（字下げ・箇条書き・引用・全角コロン）も読まずに「要対処」
     - **止まりうる操作**（人が見る）——**自動モードの分類器と worktree 隔離のガードは settings に現れない**ので、
       上で「良い」と出た操作も止まりうる。点検したコマンドを全部並べ、(a) 許可を足す・(b) その操作だけ利用者が打つ
       （`ledger.py user-ops`）・(c) その周を cruise の外に出す、の選び方を添える。**選ばせるのは cruise の `SKILL.md`**
@@ -152,7 +153,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **送信の要求を「届いた」と言わない**——`Mobile push requested` は人が見る（iPhone に届いたか）
 - **知らない返り値を「良い」に混ぜない**——判定できない
 - **何も書かない**——設定ファイルにも、どこにも
-- **`--cruise` で、宣言した操作を点検から落とさない**——既定（か `--command`）に足す。フェンスの中の行は宣言にしない
+- **`--cruise` で、宣言した操作を点検から落とさない**——既定（か `--command`）に足す。フェンスの中の行は宣言にしない。
+  **種類の違うフェンスの記号では閉じない**。**宣言の形に届かなかった行を黙って読み飛ばさない**（要対処）
 - **`--cruise` で、止まりうる操作を「良い」と出した操作からも外さない**——settings の判定とは別の区分で全部出す
 - **`--cruise` で、worktree の中からの起動を「良い」にしない**——判定できなければ「判定できない」
 - **`--present` で、許可の項目を落とさない**——落とすのは不在に限る項目だけ
@@ -638,7 +640,10 @@ def exit_code(items):
 
 
 DECLARE = re.compile(r"^cruise の操作:(.*)$")
-FENCE = re.compile(r"^\s*(```|~~~)")
+# 宣言の形に届かなかった行（字下げ・箇条書き・引用・全角コロン）——黙って読み飛ばさずに要対処にする
+NEAR = re.compile(r"^\s*(?:(?:[-*+>]|\d+[.)])\s*)*cruise\s*の\s*操作")
+# フェンスは開いた記号と同じ種類・同じ長さ以上で、後ろに何も無い行でだけ閉じる（CommonMark）
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 
 
 def declared_commands(project):
@@ -651,13 +656,19 @@ def declared_commands(project):
         text = ""
     except (OSError, UnicodeDecodeError) as exc:
         return [], [(UNKNOWN, label, f"{path} を読めなかった（{exc}）——宣言した操作を点検できない", "")]
-    commands, empty, fenced = [], 0, False
+    commands, empty, broken, fence = [], 0, 0, None
     for line in text.splitlines():
-        if FENCE.match(line):
-            fenced = not fenced
+        f = FENCE.match(line)
+        if fence is None and f:
+            fence = f.group(1)
             continue
-        m = None if fenced else DECLARE.match(line)
+        if fence is not None:
+            if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():
+                fence = None
+            continue
+        m = DECLARE.match(line)
         if not m:
+            broken += bool(NEAR.match(line))
             continue
         value = m.group(1).strip()
         if not value:
@@ -665,6 +676,9 @@ def declared_commands(project):
         elif value not in commands:
             commands.append(value)
     items = []
+    if broken:
+        items.append((ACTION, label, f"{path} に書式の崩れた `cruise の操作` の行が {broken} 本ある——読まなかった",
+                      "行頭から半角のコロンで `cruise の操作: <コマンド>` と書く（字下げ・箇条書き・全角コロンにしない）"))
     if empty:
         items.append((ACTION, label, f"{path} に値の無い `cruise の操作:` の行が {empty} 本ある",
                       "1 行に 1 コマンドを書く（例: `cruise の操作: gh workflow run infra-apply.yml`）"))
