@@ -24,7 +24,7 @@
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
-| `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、共有の範囲が一致するかの照合（標準ライブラリと `git`） |
+| `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、2 つの承認が見た中身（`shared/`・`requirements/`・`spec/`・`removed.csv`）が一致するかの照合（標準ライブラリと `git`） |
 | `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で PPTX も）を作る（標準ライブラリと `git`） |
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
 | `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |

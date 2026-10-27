@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""2 つのサインオフのタグの時点で、版の共有の範囲が一致するかを照合する（提案書の関門）。
+"""2 つのサインオフのタグの時点で、2 つの承認が見た版の中身が一致するかを照合する（提案書の関門）。
 
 usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>] [--req <タグ>] [--budget <タグ>]
 
@@ -13,10 +13,15 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 - タグを指定しなければ、**`<k>` を数として比べて最大のもの**を使う（`-10` は `-9` より新しい）。
   **命名に合わないタグ（`signoff/v2/req-3-fix`・`signoff/v2/req-03`・旧い `v2/req-signoff-3` と `req-signoff-v3`）は数えない。**
   **指定したタグが別の版のものなら照合しない（2）**——別の版の承認を組にしない。
-- **比べる場所は `docs/v1/shared/`〜`docs/v<n>/shared/` と `docs/v2/removed.csv`〜`docs/v<n>/removed.csv`**
-  （v<n> の時点の共有の範囲は、前の版の `shared/` と、行を消す `removed.csv` にも依る）。
-  **`removed.csv` は `shared/` に効く行だけを比べる**——種類 `Q&A` と、種類 `ファイル` で対象が `shared/` から
-  始まる行。`requirements/` や機能の削除だけが違っても一致のまま（範囲の外なので）。
+- **比べる場所は v1〜v<n> の `shared/`・`requirements/`・`spec/`（内部の Q&A 表 `spec/qa-dev.csv` を除く）と
+  `removed.csv`（v1 のものも）**——2 つの承認が見た中身（#375）。利用者は要求と仕様を承認し、予算責任者は
+  `requirements/`・`spec/` から数えた見積りに合意するので、そこが違えば別の中身を見ていたことになる（#367）。
+  v<n> の時点の中身は前の版と、行を消す `removed.csv` にも依る。**v1 の `removed.csv` は在ること自体を比べる**
+  （`merge` が拒否するものが予算側だけにあっても、一致と言わない。#372）。
+  **`removed.csv` は範囲に効く行だけを比べる**——種類 `Q&A` で共有の層の番号（`Q-`）の行・種類 `機能` の行・
+  種類 `ファイル` で対象が `shared/`・`requirements/`・`spec/` から始まる行（`spec/qa-dev.csv` を除く）。
+  **外すのは `feasibility/`・`proposal/`（予算の合意と決裁の側が書く）と内部の層**（`spec/qa-dev.csv`・`D-` の行。
+  開発者が決めて記録するもので、2 つのタグの間に feasibility が費用の行を書く。#339）。
 - **`.` で始まる名前（`.gitkeep`・`.DS_Store`）は数えない**——重ね合わせ（`merge-versions.py`）が読まないので、
   承認が見た範囲に入らない。
 - **どちらかの時点で比べる場所にファイルが 1 つも無ければ、一致とは言わない（2）。**
@@ -34,7 +39,7 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 
 終了コード:
 
-- 0: 一致する（2 つの承認は同じ共有の範囲を見ていた）
+- 0: 一致する（2 つの承認は同じ中身を見ていた）
 - 1: 一致しない（違うファイルを全部出す）
 - 3: 要求確定のタグの時点に `暫定反映` の行が残る（行を全部出す。一致しないなら、その違いも出す）——
   **利用者に確かめてもらい、`反映済み` にしてから要求確定と予算の合意の両方のサインオフを取り直す**
@@ -54,7 +59,7 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 | --- | --- |
 | **タグを付け直していないか** | 付け直した後の状態しか見えない。`references/signoff-tags.md` の「付け直さない」は運用で守る |
 | **誰がタグを付けたか** | 署名を検査しない。タグを付けられる人を絞るのはリポジトリの権限 |
-| **共有の範囲の外**（`requirements/`・`feasibility/`） | 2 つの承認が共通に見るのは `shared/` だけ（`references/tree.md`） |
+| **比べる範囲の外**（`feasibility/`・`proposal/`・`spec/qa-dev.csv`） | 予算の合意・決裁の側と開発者の内部が書くもの。2 つの承認の間で変わってよい |
 | **タグの時点の版の並びが決まりに反するか** | 照合するのは比べる場所の中身だけ。版の並びは作業ツリーで `merge-versions.py` が見る |
 """
 
@@ -79,6 +84,9 @@ NUMBER = r"([1-9][0-9]*)"
 DOCS = "docs"
 SHARED = "shared/"
 REMOVED = "removed.csv"
+# 2 つの承認が見た中身（版のディレクトリからのパス。#375）。内部の Q&A 表は外す（#339）
+SCOPE_DIRS = (SHARED, "requirements/", "spec/")
+INTERNAL_QA = "spec/qa-dev.csv"
 
 
 def _load(name: str, filename: str):
@@ -125,15 +133,24 @@ def removed_scope(version: int) -> list[str]:
     return [f"{DOCS}/v{i}/{REMOVED}" for i in range(2, version + 1)]
 
 
+def compare_scope(version: int) -> list[str]:
+    """`git diff` で比べる場所（pathspec）。版 1〜n の `shared/`・`requirements/`・`spec/` と v1 の `removed.csv`、
+    内部の Q&A 表を除く。v2 以降の `removed.csv` は行で比べる（`removed_scope_rows`）。"""
+    paths = [f"{DOCS}/v{i}/{d}" for i in range(1, version + 1) for d in SCOPE_DIRS]
+    paths.append(f"{DOCS}/v1/{REMOVED}")
+    return paths + [f":(exclude){DOCS}/v{i}/{INTERNAL_QA}" for i in range(1, version + 1)]
+
+
 # `removed.csv` の種類（`references/versions.md` の「削除」。`merge-versions.py` のものを使い、写さない）
 REMOVED_QA = versions.KIND_QA
 REMOVED_FILE = versions.KIND_FILE
+REMOVED_FEATURE = versions.KIND_FEATURE
 
 
 def read_removed_at(repo: Path, commit: str, tag: str, path: str) -> list[tuple[int, str, str]] | None:
     """その時点の `removed.csv` の行（行番号・種類・対象）。ファイルが無ければ None。
 
-    **1 つのタグの時点・1 つのパスにつき、ここで 1 回だけ読む**——共有の範囲の比較（`removed_shared_rows`）と
+    **1 つのタグの時点・1 つのパスにつき、ここで 1 回だけ読む**——範囲の比較（`removed_scope_rows`）と
     暫定の行の重ね合わせ（`provisional_rows`）は、`resolve` が読んだものを使う。
     """
     listed = git(repo, "ls-tree", "--name-only", commit, "--", path)
@@ -170,17 +187,18 @@ def refused(tag: str, problems: list[str]) -> str:
             + " / ".join(problems) + "。照合していない")
 
 
-def removed_shared_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple[str, str]]:
-    """`removed.csv` の行のうち `shared/` に効く行（種類・対象）。
+def removed_scope_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple[str, str]]:
+    """`removed.csv` の行のうち、比べる範囲に効く行（種類・対象）。
 
-    理由の列は比べない——消したものが同じなら、2 つの承認が見た共有の範囲は同じなので。
-    無いことと、`shared/` に効く行が無いことは同じ（どちらも `shared/` から何も消さない）。
+    理由の列は比べない——消したものが同じなら、2 つの承認が見た中身は同じなので。
+    無いことと、範囲に効く行が無いことは同じ（どちらも範囲から何も消さない）。
     """
     rows = []
     for _, kind, target in parsed or []:
-        # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は共有の範囲の外——開発者が決めるものでサインオフが割れないように（#339）
+        # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は範囲の外——開発者が決めるものでサインオフが割れないように（#339）
         if ((kind == REMOVED_QA and not qa.is_internal_number(target))
-                or (kind == REMOVED_FILE and target.startswith(SHARED))):
+                or kind == REMOVED_FEATURE
+                or (kind == REMOVED_FILE and target.startswith(SCOPE_DIRS) and target != INTERNAL_QA)):
             rows.append((kind, target))
     return sorted(rows)
 
@@ -372,16 +390,16 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
                        "今の予算の合意のタグとは一致しなくなる（references/signoff-tags.md）")
 
     pair = f"{info['req']}（{info['req_commit'][:7]}）と {info['budget']}（{info['budget_commit'][:7]}）"
-    where = f"v1〜v{version} の {SHARED}" + (f" と {REMOVED}" if version > 1 else "")
-    diff = git(repo, "diff", "--name-status", info["req_commit"], info["budget_commit"], "--", *shared_scope(version))
+    where = f"v1〜v{version} の {'・'.join(SCOPE_DIRS)}（{INTERNAL_QA} を除く）と {REMOVED}"
+    diff = git(repo, "diff", "--name-status", info["req_commit"], info["budget_commit"], "--", *compare_scope(version))
     if diff.returncode != 0:
         return 2, [f"{where} を比べられない: {diff.stderr.strip()}。照合していない"], {}
     # 重ね合わせが読まないもの（`.` で始まる名前）だけの違いは、承認が見た範囲の違いではない
     changed = [line for line in diff.stdout.splitlines()
                if line and not all(hidden(path) for path in line.split("\t")[1:])]
     for path, (at_req, at_budget) in removed.items():
-        if removed_shared_rows(at_req) != removed_shared_rows(at_budget):
-            changed.append(f"{REMOVED}\t{path}（shared/ に効く行が違う）")
+        if removed_scope_rows(at_req) != removed_scope_rows(at_budget):
+            changed.append(f"{REMOVED}\t{path}（範囲に効く行が違う）")
     if changed:
         lines = [f"一致しない: {pair} で {where} が違う（{len(changed)} 件）"]
         lines += [f"    {line}" for line in changed]

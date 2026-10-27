@@ -272,10 +272,10 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     # 比較は req のタグの時点から作る——承認の後に作業ツリーとコミットで足した要求は載らない
     ("承認の後に直した差分は比較に入らない", V2C + [("w", "docs/v2/requirements/late.md", "L\n"), ("c",)], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "late.md" not in r.text),
-    # req のタグと budget のタグの間に足した要求は載らない（比較は req のタグの時点。共有の範囲の外なので照合は通る）
-    ("比較は要求のタグの時点から作る", SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"),
-                                    ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "signoff/v2/budget-1")], False,
-     lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "between.md" not in r.text),
+    # req のタグと budget のタグの間に要求を足すと、照合が 1 で止める（#375。見積りの根拠が承認と違う）
+    ("2 つのタグの間に要求を足すと照合で止まる", SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"),
+                                             ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "signoff/v2/budget-1")], False,
+     lambda r: not_made(1)(r) and "docs/v2/requirements/between.md" in r.output),
     # 大文字小文字だけ違うパスは写す前に断る——区別しない FS では上書きし合い、先に置いたリンクを辿って外に書きうる
     ("大文字小文字だけ違うパスは比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/C.md", "100644", "X\n"), ("c",),
                                           ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
@@ -490,8 +490,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("比較を作業ツリーから作る", "        copy_docs(top, commit, tag, Path(tmp))\n",
      "        __import__('shutil').copytree(top / signoff.DOCS, Path(tmp) / signoff.DOCS, symlinks=True)\n",
      "承認の後に直した差分は比較に入らない"),
-    ("比較を予算のタグの時点から作る", 'compare_at(top, info["req_commit"], info["req"]',
-     'compare_at(top, info["budget_commit"], info["req"]', "比較は要求のタグの時点から作る"),
+    # 「比較を予算のタグの時点から作る」は #375 から等価変異——照合が比べる範囲（shared/・requirements/・spec/）が
+    # 重ね合わせの読むもの（merge-versions.py の AREAS）と同じになり、照合が通る組では 2 つの時点の比較が同じになる
     ("大文字小文字だけ違うパスを断らない", "    if clashes:\n", "    if False:\n", "大文字小文字だけ違うパスは比較で断る"),
     ("ファイルとディレクトリの重なりを見ない", "            if fold(parent) in seen:\n", "            if False:\n",
      "ファイルとディレクトリが大文字小文字だけ違うと比較で断る"),
