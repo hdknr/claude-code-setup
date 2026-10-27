@@ -96,7 +96,9 @@
 - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 済み。反証 1 件（A〜I を破るものは 0 件。`lines` 失敗時の `unlink` が未テスト）
 - `/code-review` 1 パス目（high）: 済み。指摘 10 件。直す 2 件（#1・#9）、残課題 8 件（下の採否の表）
 - 1 パス目の指摘対応: 済み（absent-lines.md の居る周の効き方・`show`／`apply` の書いていない線の文言・cruise/SKILL.md §2・公開ページ）
-- 次: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目——**両方が残っている**
+- 1 パス目の指摘対応のコミット: `d5c8ec6`（`check-all.py` 51/51 緑）
+- 次: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目——**両方が残っている**。2 パス目の指摘対応を始める直前の HEAD（狭いパスの起点）は、2 パス目の報告を受けてから記録する
+- 割り目（手順 6・2 パス目の前）: 利用者が「ここで割る」を選んだ（2026-10-27・AskUserQuestion）。再開は Verifier 2 パス目と `/code-review` 2 パス目から
 - 反証: 1 パス目で Verifier 1 件・`/code-review` 10 件。差し戻し（手順 4）は 2 件
 - 交絡: 実験なし
 - 割り目（手順 4）: 利用者が「ここで割る」を選んだ（2026-10-27・AskUserQuestion）。再開は手順 5 から
