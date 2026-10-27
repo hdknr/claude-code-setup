@@ -94,6 +94,7 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
 - 1 パス目の指摘対応: 済み（直す 7 件。CR6 の変異 2 件・CR9 の変異 1 件を足し、どれも赤になることを確かめた）。
   `test-ledger.py`・`test-parent-issue.py` 緑、`skill-metrics.py` で生成ブロックを書き直し、`check-all.py` 51/51 緑。版は 1.59.0 のまま（この PR で既に上げている）
 - 次: **手順 5 の Verifier 2 パス目と `/code-review` 2 パス目の両方**（どちらも残っている）。2 パス目の指摘対応を始める直前に、狭いパスの起点 SHA をここに書く
+- 2 つ目の割り目（2 パス目の前）: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（2 パス目から）
 - 手順 4 の割り目: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（手順 5 から）
 - 負荷の重なり: #460 の A/B 測定（`ab.py` → `check-all.py`）の最中に、こちらの `test-ledger.py`・`test-parent-issue.py` を走らせた（プロセスを確かめる前だった）。利用者に申告済み
 - 交絡を潰した手順: 実験なし
