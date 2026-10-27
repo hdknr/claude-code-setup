@@ -14,8 +14,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.58.0 -->
-> **このスキルの版: 1.58.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.59.0 -->
+> **このスキルの版: 1.59.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -86,8 +86,11 @@ python3 <このスキルの base ディレクトリ>/scripts/parent-issue.py sho
    「台帳ができた」でもない。理由を利用者に見せ、**下の 3 以降（台帳がある前提の手順）へ進まない。**
 
 **台帳を作ったら、`直す線` が親 Issue の線にも `.claude/dev-loop.md` にも無いときだけ、ここで 1 度だけ訊く**
-（`AskUserQuestion`。選択肢は `既定`・`広げる`）。**答えを `ledger.py lines` で台帳に残す**——置き換えなので、`apply` が残した線も一緒に渡す。
-出所は「利用者の確認（起動時）」と日時。**各周の手順 3 は台帳から読み、周ごとには訊かない。** 答えが返らなければ書かない（各周は `../dev-loop/SKILL.md` 手順 3 のとおり訊き、答えが返らなければ `既定`）。
+（`AskUserQuestion`。選択肢は `既定`・`広げる`）。**`周の途中の課題` が親 Issue の線に無ければ、同じ問いの中で 1 度だけ訊く**
+（選択肢は `外に出す`・`台帳に足して直す`。意味は `../dev-loop/references/found-lines.md`）。
+**答えを `ledger.py lines` で台帳に残す**——置き換えなので、`apply` が残した線も一緒に渡す。
+出所は「利用者の確認（起動時）」と日時。**各周は台帳から読み、周ごとには訊かない。** 答えが返らなければ書かない
+（`直す線` は各周が `../dev-loop/SKILL.md` 手順 3 のとおり訊き、答えが返らなければ `既定`。`周の途中の課題` は `外に出す`）。
 
 ## 3. 不在で回すとき（`--absent`）
 
@@ -115,6 +118,9 @@ python3 <このスキルの base ディレクトリ>/scripts/parent-issue.py sho
 4. **マージは dev-loop の `SKILL.md` 手順 7 のとおり**（`../dev-loop/scripts/merge-pr.py` に任せてよい）。
    **不在の周は、`マージ` の線（台帳の確かめた線か宣言）が無ければマージせずに止まる**（`../dev-loop/references/absent-lines.md` の「`マージ = 関門を通ればマージ`」）。
 5. **周を 1 つ閉じたら、`ledger.py show issue-<親>` を読み直してから次へ。**
+   **台帳の線が `周の途中の課題 = 台帳に足して直す` なら、閉じた周が足した行も台帳に入っている**（出所の列）。
+   **利用者が居る cruise は、ここで「利用者の判断待ち」の行をまとめて 1 度だけ訊く**——訊く場所はここだけで、
+   答えの書き方は `../dev-loop/references/found-lines.md` の「利用者の判断をまとめて訊く」を正とする。**`--absent` なら訊かない。**
 
 ## 5. 割って続ける
 
@@ -126,6 +132,8 @@ python3 <このスキルの base ディレクトリ>/scripts/parent-issue.py sho
 
 `ledger.py show issue-<親>` が、すべてマージ済みか取り下げと出したら終える。
 **止まっている Issue が残っていれば、その `note` を利用者に渡して終える**——「済んだ」と報告しない。
+**周の途中で足した行**（`show` の「周の途中で足した行のうち済んでいないもの」）**が残っていれば、出所ごとに渡す**——
+「なし」でなければ「済んだ」と報告しない（`../dev-loop/references/found-lines.md`）。
 **1 で名指しされた Issue（親 Issue にあって台帳に無い）が残っていれば、それも渡す**——台帳がすべて済んでも、親 Issue の一覧は済んでいない。
 **推奨で決めた確認の Issue（台帳の `decisions`）のうち開いているものを `gh issue view` で集めて渡す**——
 **開いたものが 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする

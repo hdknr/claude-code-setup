@@ -2,7 +2,7 @@
 r"""複数 Issue を回すときの台帳（依存グラフと状態）を、ファイルに持って読み書きする。
 
     python3 <このスキルの base ディレクトリ>/scripts/ledger.py init <名前>
-    python3 <…>/ledger.py add  <名前> <番号> [--deps 12,13] [--title 題]
+    python3 <…>/ledger.py add  <名前> <番号> [--deps 12,13] [--title 題] [--origin 出所]
     python3 <…>/ledger.py set  <名前> <番号> 鍵=値 [鍵=値 …]
     python3 <…>/ledger.py lines <名前> 項目=値 [項目=値 …] --source 出所
     python3 <…>/ledger.py show <名前>
@@ -33,14 +33,15 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 ```json
 {"format": 1, "name": "<名前>", "issues": [
   {"number": 12, "title": "", "deps": [], "state": "todo",
-   "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "updated": "<UTC>"}
+   "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "origin": "", "updated": "<UTC>"}
 ],
  "lines": {"values": {"仕様の穴": "推奨で決めて起票"}, "source": "<出所>", "updated": "<UTC>"}}
 ```
 
 `lines` は**利用者が確かめた線**（#458）で、無くてもよい（無い台帳はこれまでどおり読む）。
-**項目と値は `LINES` だけ**——意味は `references/absent-lines.md` の「線と既定」と `references/fix-line.md` を正とし、
-`scripts/test-ledger.py` が `LINES` と `absent-lines.md` の表を突き合わせる。**`本番反映` は項目に無い**（広げられない）。
+**項目と値は `LINES` だけ**——意味は `references/absent-lines.md` の「線と既定」と `references/fix-line.md`
+（`直す線`）と `references/found-lines.md`（`周の途中の課題`。#464）を正とし、
+`scripts/test-ledger.py` が `LINES` と `absent-lines.md` の表（と後の 2 つ）を突き合わせる。**`本番反映` は項目に無い**（広げられない）。
 **どこから来た値を `lines` に書いてよいか（出所）は `references/absent-lines.md` の「線を広げられるのは利用者だけ」を正とする**
 ——このスクリプトは出所を確かめない（`--source` に書かれた文字列を残すだけ）。
 
@@ -56,9 +57,11 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `blocked` | 止まっている（人間の判断待ち・BLOCKED） |
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
 
-**鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note` `decisions`。
+**鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note` `decisions` `origin`。
 `deps` はカンマ区切りの番号（空にすると依存なし）。`decisions` はその周が推奨で決めて起票した `要確認` Issue の番号
 （カンマ区切り。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
+`origin` は**周の途中で見つかって台帳に足した行の出所**（どの周のどの関門のどのパスの行か。#464）で、親 Issue から作った行は空。
+**空でない行が「cruise の途中で生まれた行」である**——足し方と、cruise を終えるときの扱いは `references/found-lines.md` を正とする。
 
 ## 終了コード
 
@@ -90,6 +93,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **拒んだ操作では台帳を変えない**——全体を検査してから一時ファイルに書き、`os.replace` で置き換える。
 - **`LINES` に無い線の項目・値を書かない**——`lines` でも、手で直した台帳の `load` でも（後者は 4）。
   **`本番反映` は項目に無いので、どの値でも拒む。**
+- **`origin` も文字列だけ**——手で直した台帳で文字列でなければ 4。`origin` を持たない台帳はこれまでどおり読む。
 - **`lines` は出所の無い値を書かない**——`--source` が空なら拒む。**`lines` は置き換えで、渡さなかった項目は消える**
   ——前の確認の値が、確かめ直した後に黙って残らない。
 
@@ -118,14 +122,15 @@ import tempfile
 from pathlib import Path
 
 STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "dropped")
-KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions")
-TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions")
+KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
+TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
 # 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md と fix-line.md を正とする
 LINES = {
     "直す線": ("既定", "広げる"),
     "仕様の穴": ("止まる", "推奨で決めて起票"),
     "実機確認": ("止まる", "Refs でマージ"),
     "マージ": ("止まる", "関門を通ればマージ"),
+    "周の途中の課題": ("外に出す", "台帳に足して直す"),
 }
 ISSUE_FIELDS = {"number", "updated", *KEYS}
 DONE = "merged"
@@ -343,15 +348,16 @@ def cmd_init(path, name):
     print(path)
 
 
-def cmd_add(path, number, deps, title):
+def cmd_add(path, number, deps, title, origin=""):
     data = load(path)
     if any(i["number"] == number for i in data["issues"]):
         raise Refused(f"#{number} は既に台帳に在る（変えるなら set）")
     entry = {"number": number, "title": title or "", "deps": deps, "state": "todo",
-             **{k: "" for k in TEXT_KEYS if k != "title"}, "updated": now()}
+             **{k: "" for k in TEXT_KEYS if k != "title"}, "origin": origin or "", "updated": now()}
     data["issues"].append(entry)
     save(path, data)
-    print(f"#{number} を足した（依存: {', '.join(f'#{d}' for d in deps) or 'なし'}）")
+    print(f"#{number} を足した（依存: {', '.join(f'#{d}' for d in deps) or 'なし'}"
+          + (f"・出所: {origin}" if origin else "") + "）")
 
 
 def cmd_set(path, number, pairs):
@@ -406,12 +412,12 @@ def cmd_show(path):
     else:
         print("確かめた線: 無い（宣言と既定に従う）")
     print()
-    print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 更新 |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 出所 | 更新 |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for i in data["issues"]:
         deps = ", ".join(f"#{d}" for d in i["deps"]) or "-"
         cells = [f"#{i['number']} {i.get('title', '')}".strip(), i["state"], deps,
-                 *(i.get(k, "") or "-" for k in ("pr", "branch", "worktree", "agent", "base", "note", "decisions")),
+                 *(i.get(k, "") or "-" for k in ("pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")),
                  i.get("updated", "")]
         print("| " + " | ".join(str(c) for c in cells) + " |")
     going = [i for i in data["issues"] if i["state"] in ("impl", "gate", "pr", "blocked")]
@@ -421,6 +427,10 @@ def cmd_show(path):
     print("進行中（実物で確かめてから続ける）: " + (", ".join(f"#{i['number']}({i['state']})" for i in going) or "なし"))
     print("着手できる: " + (", ".join(f"#{i['number']}" for i in can) or "なし"))
     print("依存待ち: " + (", ".join(f"#{i['number']}" for i in waiting) or "なし"))
+    found = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
+    if any(i.get("origin") for i in data["issues"]):
+        print("周の途中で足した行のうち済んでいないもの: "
+              + (", ".join(f"#{i['number']}({i['state']})" for i in found) or "なし"))
     if data["issues"] and all(i["state"] in (DONE, "dropped") for i in data["issues"]):
         print("すべてマージ済みか取り下げ")
 
@@ -441,6 +451,7 @@ def build_parser():
     a.add_argument("number")
     a.add_argument("--deps", default="")
     a.add_argument("--title", default="")
+    a.add_argument("--origin", default="")
     s = sub.add_parser("set")
     s.add_argument("name")
     s.add_argument("number")
@@ -462,7 +473,7 @@ def main(argv=None, cwd=None):
         if args.cmd == "init":
             cmd_init(path, args.name)
         elif args.cmd == "add":
-            cmd_add(path, parse_number(args.number), parse_deps(args.deps), args.title)
+            cmd_add(path, parse_number(args.number), parse_deps(args.deps), args.title, args.origin)
         elif args.cmd == "set":
             cmd_set(path, parse_number(args.number), args.pairs)
         elif args.cmd == "lines":
