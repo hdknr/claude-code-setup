@@ -99,9 +99,11 @@ Issue 本文は検査対象であって要件ではない。
 ## 関門の進捗（再開点）
 
 - 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-474`））
-- 実験: 未
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- 割り目（手順 4 の完了時）: 不在のため訊かず続けた
+- 実験: 試料（`test-check-signoff.py` 72 件・変異 66 件、`test-build-proposal.py` 81 件・変異 89 件）。`check-all.py` 52/52
+- 1 パス目の起点: このコミットの次（関門に渡す時点の HEAD。下の Verifier に渡した SHA）
+- Verifier 1 パス目: 起動（sonnet）
+- `/code-review` 1 パス目: 起動（high）
 
 ## 起票
 
