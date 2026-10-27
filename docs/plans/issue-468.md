@@ -97,7 +97,9 @@ docs と `CLAUDE.md` は**本体の docstring を正とする**と書いて列�
   - matcher なし → 1 行（`error: authentication_failed`・`error_details` 無し）／ `authentication_failed` → 1 行／ `rate_limit` → 記録なし。
     **同じ設定で matcher だけを変えて有無が分かれた**ので、「hook が壊れていて出ない」ではなく matcher が `error` に当たっていると読める
   - 確かめていないもの: user の settings の層・対話のセッション・利用上限での発火（docs の「確かめていないこと」に書いた）
-- 割り目: （手順 4 の終わりで訊く）
+- 割り目（手順 4 の終わり）: 利用者が「ここで割る」を選んだ（2026-10-27）
+- 次にすること: 手順 5 の 1 パス目（Verifier。別ティア・`dev-loop:dev-loop-verifier`）と手順 6 の 1 パス目（`/code-review`）。
+  どちらも未着手・反証 0 件（まだ当てていない）。base は上の「周の在り処」の SHA
 
 ## 既知の限界・決着済みの論点
 
