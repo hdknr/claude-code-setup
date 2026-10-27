@@ -24,6 +24,8 @@
    失敗の経路でも消さず、作れる経路でも上書きしない（2）。印が同じ場所の外を名指ししても外は消さない。
    `--out` の誤り（`.`・`/`・`..`・ディレクトリ・名前の衝突）は traceback ではなく 2 で、それでも印の名指しする前の出力は消す。
    **陽性対照は本物の前の実行**——試料の前の出力は印を手で書くので、本体が印に何を載せるかはそこでしか見えない。
+8. **前の出力を消せない場所（書けないディレクトリ）では、traceback・1 ではなく 2 で、残ったものを名指しし、印を残す**（#440）
+   ——`--out` の親・`--out` に渡したディレクトリ・書きかけの片付けの 3 つの入口。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
 `HOME` と `GIT_CONFIG_GLOBAL` を差し替える。
@@ -542,10 +544,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if False:\n            raise Stop(2", "手で置いたファイルを上書きしない"),
     ("印の名前の外へ出る", 'if name and not name.startswith("#") and "/" not in name and "\\\\" not in name\n',
      'if name and not name.startswith("#")\n', "印が外を名指ししても消さない"),
-    ("引数の誤りで前の出力を消さない", "    problem = bad_out(out)\n    remove_owned(out.parent)\n",
-     "    problem = bad_out(out)\n    if problem:\n        return 2\n    remove_owned(out.parent)\n",
+    ("引数の誤りで前の出力を消さない", "    problem = bad_out(out)\n    left = remove_owned(out.parent)\n",
+     "    problem = bad_out(out)\n    if problem:\n        return 2\n    left = remove_owned(out.parent)\n",
      "名前の衝突で止まっても前の出力を消す"),
-    ("ディレクトリの出力先の中を消さない", "        remove_owned(out)  # ディレクトリを", "        pass  # ディレクトリを",
+    ("ディレクトリの出力先の中を消さない", "        left += remove_owned(out)  # ディレクトリを", "        pass  # ディレクトリを",
      "出力先がディレクトリならその中の前の出力を消す"),
     ("前後に空白のある名前を見ない", "    if out.name != out.name.strip() or ", "    if ", "出力の名前が空白で始まると 2"),
     ("改行を含む名前を見ない", "len(out.name.splitlines()) != 1 or ", "", "出力の名前が改行を含むと 2"),
@@ -633,8 +635,7 @@ def compose_problems(scripts: Path) -> list[str]:
 
 # 書いている途中の失敗で殺す変異。(名前, 壊す前, 壊した後)
 WRITE_MUTATIONS: list[tuple[str, str, str]] = [
-    ("書きかけを消さない", "        remove_owned(directory)\n        raise Stop(2, [f\"{directory}: 書けない",
-     "        raise Stop(2, [f\"{directory}: 書けない"),
+    ("書きかけを消さない", "        left = remove_owned(directory)\n", "        left = []\n"),
     ("印を書かない（途中の失敗）", "        (directory / MANIFEST).write_text(", "        (directory / MANIFEST).with_name('unused').write_text("),
 ]
 
@@ -672,7 +673,7 @@ def write_failure_problems(scripts: Path) -> list[str]:
 
 # 読めない印・辿れない出力先で殺す変異。(名前, 壊す前, 壊した後)
 OWN_MUTATIONS: list[tuple[str, str, str]] = [
-    ("読めない印を消す", "    if names is None:\n        return\n", "    names = names or []\n"),
+    ("読めない印を消す", "    if names is None:\n        return []\n", "    names = names or []\n"),
     ("辿れない出力先を見ない", '        return f"{out}: 出力先を確かめられない（{e.strerror}）"\n', "        is_directory = False\n"),
 ]
 
@@ -710,6 +711,117 @@ def ownership_problems(scripts: Path) -> list[str]:
         output = proc.stdout + proc.stderr
         if proc.returncode != 2 or "Traceback" in output or "確かめられない" not in output:
             problems.append(f"辿れない出力先: {proc.returncode} {output[-300:]}")
+    return problems
+
+# 前の出力を消せない場所で殺す変異（#440）。(名前, 壊す前, 壊した後)
+LOCKED_MUTATIONS: list[tuple[str, str, str]] = [
+    ("消せない出力で traceback", "        except OSError as e:\n            left.append(f\"{stale}",
+     "        except FileNotFoundError as e:\n            left.append(f\"{stale}"),
+    ("消せなかったのに印を消す", "    if not left:\n        try:\n            if manifest.is_file():",
+     "    if True:\n        try:\n            if manifest.is_file():"),
+    ("消せなくても続ける", "    if left:  # 消せない場所には", "    if False:  # 消せない場所には"),
+    ("ディレクトリの出力先で消せないことを見ない", "        left += remove_owned(out)  # ディレクトリを", "        remove_owned(out)  # ディレクトリを"),
+    ("書きかけを消せなくても消したと言う", "        if left:\n            raise Stop(2, [f\"{directory}: 書けない",
+     "        if False:\n            raise Stop(2, [f\"{directory}: 書けない"),
+]
+
+
+def locked_problems(scripts: Path) -> list[str]:
+    """前の出力を消せない（出力先のディレクトリが書けない）とき、traceback・1 ではなく 2 で、残ったものを名指しし、印を残す（#440）。
+
+    入口は `remove_owned` の呼び出しの 3 箇所——`--out` の親・`--out` に渡したディレクトリ（CLI）と、
+    `write_outputs` の書きかけの片付け（直接呼ぶ。CLI からは途中で書けなくする手が無い）。
+    **消せない場所で unlink が通る環境（root）では判別しないので、問題として返す**——「当てられなかった」は緑ではない。
+    印だけを残すこと（I3）はファイルシステムでは作れない（消せるかはディレクトリで決まる）ので、`Path.unlink` を差し替えて見る。
+    """
+    import contextlib
+    import errno
+    import io
+    spec = importlib.util.spec_from_file_location("build_proposal_locked", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    problems = []
+    with tempfile.TemporaryDirectory(prefix="proposal-locked-") as tmp:
+        probe = Path(tmp) / "probe"
+        probe.mkdir()
+        (probe / "x").write_text("x", encoding="utf-8")
+        probe.chmod(0o555)
+        try:
+            (probe / "x").unlink()
+            return ["書けないディレクトリでも消せる（root で走っている？）——試料が判別しない"]
+        except OSError:
+            pass
+        finally:
+            probe.chmod(0o755)
+
+        def locked_dir(path: Path) -> Path:
+            path.mkdir()
+            (path / MANIFEST).write_text("# 印\nproposal.md\nspec.md\n", encoding="utf-8")
+            for name in ("proposal.md", "spec.md"):
+                (path / name).write_text("古い出力\n", encoding="utf-8")
+            path.chmod(0o555)
+            return path
+
+        for label, directory, out in (("--out の親", Path(tmp) / "ro", Path(tmp) / "ro" / "proposal.md"),
+                                      ("--out のディレクトリ", Path(tmp) / "rodir", Path(tmp) / "rodir")):
+            locked_dir(directory)
+            try:
+                proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", tmp, "--out", str(out)],
+                                      capture_output=True, text=True, cwd=tmp)
+            finally:
+                directory.chmod(0o755)
+            output = proc.stdout + proc.stderr
+            if proc.returncode != 2 or "Traceback" in output:
+                problems.append(f"{label}: 2 で止まらない: {proc.returncode} {output[-300:]}")
+            if not all(f"消せない: {directory / name}" in output for name in ("proposal.md", "spec.md")):
+                problems.append(f"{label}: 残ったものを名指ししない: {output[-300:]}")
+            left = sorted(p.name for p in directory.iterdir())
+            if left != sorted([MANIFEST, "proposal.md", "spec.md"]):
+                problems.append(f"{label}: 残るものが違う: {left}")
+
+        directory = Path(tmp) / "half"
+        directory.mkdir()
+
+        def fail(*_args) -> None:
+            directory.chmod(0o555)  # 1 つ目を書いた後で書けなくする——書きかけを消せない
+            raise OSError(errno.EACCES, "書けない（試料）")
+
+        module.pptx.write = fail
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                module.write_outputs({directory / "proposal.md": b"x", directory / "proposal.pptx": []}, directory)
+            problems.append("書きかけ: 書けないのに止まらない")
+        except module.Stop as stop:
+            if stop.code != 2 or not any("書きかけを消せなかった" in line for line in stop.lines) \
+                    or not any(f"消せない: {directory / 'proposal.md'}" in line for line in stop.lines):
+                problems.append(f"書きかけ: 止まり方が違う: {stop.code} {stop.lines}")
+        except OSError as e:
+            problems.append(f"書きかけ: 片付けの失敗が例外で逃げる: {e!r}")
+        finally:
+            directory.chmod(0o755)
+
+        directory = Path(tmp) / "partial"
+        directory.mkdir()
+        (directory / MANIFEST).write_text("# 印\nproposal.md\nspec.md\n", encoding="utf-8")
+        for name in ("proposal.md", "spec.md"):
+            (directory / name).write_text("古い出力\n", encoding="utf-8")
+        original = Path.unlink
+
+        def unlink(self, *args, **kwargs):
+            if self.name == "proposal.md":
+                raise OSError(errno.EACCES, "消せない（試料）")
+            return original(self, *args, **kwargs)
+
+        Path.unlink = unlink
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                left = module.remove_owned(directory)
+        except OSError as e:
+            return problems + [f"1 つ消せない: 例外で逃げる: {e!r}"]
+        finally:
+            Path.unlink = original
+        if not left or (directory / MANIFEST).exists() is False:
+            problems.append(f"1 つ消せないのに印を消すか、名指ししない: {left} {sorted(p.name for p in directory.iterdir())}")
     return problems
 
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
@@ -1048,12 +1160,23 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（読めない印か辿れない出力先で殺せるはず）", bool(ownership_problems(mutated)))
 
+        problems = locked_problems(SCRIPTS)
+        check("前の出力を消せない場所の扱いが違う", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(LOCKED_MUTATIONS):
+            count = source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"mutlocked{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（消せない出力先で殺せるはず）", bool(locked_problems(mutated)))
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 6} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS)} 件")
     return 0
 
 
