@@ -289,8 +289,11 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["origin の add"] = run(mod, ["add", "fo", "2", "--deps", "1", "--origin", "#1 狭いパス"], root)[:2]
     o["origin の set"] = run(mod, ["set", "fo", "1", "origin=手"], root)[0]
     # 空の出所は拒み、台帳を変えない（下の「origin の値」に #3 が無く #2 の出所が残ることで見る）
-    o["origin の空"] = (run(mod, ["add", "fo", "3", "--origin", " "], root)[0],
+    o["origin の空"] = (run(mod, ["add", "fo", "3", "--deps", "1", "--origin", " "], root)[0],
                         run(mod, ["set", "fo", "2", "origin="], root)[0])
+    # 出所を持つ行は依存を空にできない（下の「origin の値」に #4 が無く #2 の依存が残ることで見る）
+    o["origin の依存なし"] = (run(mod, ["add", "fo", "4", "--origin", "#1 狭いパス"], root)[0],
+                            run(mod, ["set", "fo", "2", "deps="], root)[0])
     try:
         o["origin の値"] = [(i["number"], i["origin"], i["deps"]) for i in json.loads(
             (plans / "cruise-fo.json").read_text(encoding="utf-8"))["issues"]]
@@ -414,6 +417,12 @@ MUTATIONS = {
         ("    if origin is not None and not origin.strip():", "    if False:")],
     "set の空の origin を通す": [
         ('        elif key == "origin" and not value.strip():', '        elif False:')],
+    # 守る: 出所を持つ行は元の周に依存する
+    "add の依存の無い origin を通す": [
+        ("    if origin is not None and not deps:", "    if False:")],
+    "set で出所のある行の依存を消せる": [
+        ('    if "deps" in changes and not changes["deps"] and changes.get("origin", issue.get("origin")):',
+         "    if False:")],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -522,6 +531,8 @@ def main() -> int:
         check("set origin= が通り、親 Issue から作った行は空・足した行は依存を持つ", o["origin の set"] == 0
               and o["origin の値"] == [(1, "手", []), (2, "#1 狭いパス", [1])])
         check("add --origin の空・set origin= は 3（台帳は変えない）", o["origin の空"] == (3, 3))
+        check("add --origin に --deps が無い・出所のある行の set deps= は 3（台帳は変えない）",
+              o["origin の依存なし"] == (3, 3))
         check("show が出所の列と、済んでいない足した行を出す", o["origin の show"] == (True, True, True))
         check("足した行がすべて merged か dropped なら「なし」", o["origin の show(済み)"])
         check("足した行の無い台帳の show は、その行を出さない", o["origin の無い show"])

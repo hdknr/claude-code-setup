@@ -70,7 +70,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | --- | --- |
 | 0 | 通った（`next` で着手できるものが 0 件でも 0） |
 | 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形） |
-| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空） |
+| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空） |
 | 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
@@ -98,6 +98,9 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`add --origin` に空を渡したら拒む**——空にすると「周の途中で足した行」の集計から外れる。
   **`--origin` を渡し忘れた `add` は見分けられない**——親 Issue から作る行と同じ形なので、足す手順（`references/found-lines.md`）が守る。
 - **`set origin=` で空にするのも拒む**——同じ理由。
+- **`add --origin` に `--deps` が無ければ拒む**——無いと元の周のマージより先に `next` に出る。
+  **依存が*元の周*かどうかは見ない**——番号の意味を知らない。
+- **出所を持つ行の `set deps=` で依存を空にするのも拒む**——同じ理由。
 - **`lines` は出所の無い値を書かない**——`--source` が空なら拒む。**`lines` は置き換えで、渡さなかった項目は消える**
   ——前の確認の値が、確かめ直した後に黙って残らない。
 
@@ -355,6 +358,8 @@ def cmd_init(path, name):
 def cmd_add(path, number, deps, title, origin=None):
     if origin is not None and not origin.strip():
         raise Refused("--origin が空（渡すなら、どの周のどの関門のどのパスの行かを書く）")
+    if origin is not None and not deps:
+        raise Refused("--origin を渡すなら --deps に元の周を書く（無いと元の周のマージより先に next に出る）")
     data = load(path)
     if any(i["number"] == number for i in data["issues"]):
         raise Refused(f"#{number} は既に台帳に在る（変えるなら set）")
@@ -385,6 +390,8 @@ def cmd_set(path, number, pairs):
             changes[key] = value
     data = load(path)
     issue = find(data, number)
+    if "deps" in changes and not changes["deps"] and changes.get("origin", issue.get("origin")):
+        raise Refused(f"#{number} は出所を持つので依存を空にしない（元の周のマージより先に next に出る）")
     issue.update(changes)
     issue["updated"] = now()
     save(path, data)
