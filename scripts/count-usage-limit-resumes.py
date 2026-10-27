@@ -23,10 +23,12 @@
   前者だけを数えると、その停止のあとの自動継続が丸ごと落ちる）。
 - **待ち**——停止を畳んだもの。**同じファイルの中で、次の 2 つは 1 つの待ちに畳む**:
     - 続けて並んだ停止の記録（間に入力も応答も来ていない。`rate_limit` のレコードと予告は同時に出る）
-    - **予告の時刻が同じ停止**（2 分の幅）——待ちの間に通知が来て応答し、また上限に当たる形が多い
+    - **予告の時刻が同じ停止**（2 分の幅）——待ちの間に通知が来て応答し、また上限に当たる形が多い。
+      **`resetsAt` は `resetsAt` と、表示の時刻は表示の時刻と比べる**（表示の時刻は `--tz` に依る）
 - **窓**——待ちの最初の停止から、**同じファイルの、予告の時刻が違う次の停止まで**（無ければ記録の終わりまで）。
-  **ただし予告の時刻から `LATE`（30 分）より後に来た自動継続は、窓に入れない**——自動継続は予告の時刻に発火する
-  （#454 の周の実データで +1 分）ので、それより遅いものは記録の無い別の停止のものと読む。
+  **ただし人間の入力かローカルコマンドが窓に来たあと、予告の時刻から `LATE`（30 分）より後に来た自動継続は、
+  窓に入れない**——自動継続は予告の時刻に発火する（#454 の周の実データで +1 分）ので、人間が続けたあとの遅いものは
+  記録の無い別の停止のものと読む。**誰も続けていなければ遅くても窓に入れる**（スリープで遅れることがある）。
 - **最初に来たもの**——窓の中で最初の入力か応答（#454 の Issue 本文の表と同じ切り口）:
 
   | 分類 | 何で決めるか |
@@ -53,8 +55,8 @@
 
 - **予告の時刻**——**`resetsAt` を優先し**、無ければ予告の表示（`at 6:40pm`）を `--tz` の時間帯で読む
   （**予告の時刻以降で最初のその時刻**。日付をまたぐ）。差は、行方を決めたものの時刻から引く。
-- **停止の記録を持たない自動継続**——窓の外に来た自動継続（ファイルの最初の停止より前か、予告の時刻から
-  `LATE` より後）。**落とさずに別の列で数える。** 同じ `uuid` がどれかの待ちの窓に入っていれば数えない（コピー）。
+- **停止の記録を持たない自動継続**——窓の外に来た自動継続（ファイルの最初の停止より前か、人間が続けたあとの
+  予告の時刻から `LATE` より後）。**落とさずに別の列で数える。** 同じ `uuid` がどれかの待ちの窓に入っていれば数えない（コピー）。
 
 ## 0 件を「止まらなかった」と読まないために
 
@@ -74,13 +76,17 @@
 - **履歴のコピーによる二重計上**——fork / `--resume` は履歴を別ファイルに写すので、
   待ちの最初のレコードの `uuid` で畳む。
 - **コピーの窓が短くても、長いほうを使う**——どちらのファイルを先に読むかで行方が変わらない。
+- **窓の長さが同じコピーは、窓の中身で決める**——fork は停止の直後から分かれる。読む順では決めない。
 - **同じ自動継続を、待ちの中と停止の記録を持たない側の両方に数えない**——コピーにその記録だけが写ることがある。
 - **続けて並んだ停止の記録を 1 つの待ちに畳む**——予告の時刻が取れない停止でも。
 - **予告の時刻が同じ停止を 1 つの待ちに畳む**——間に通知と応答が挟まっても。
+- **畳むときは `resetsAt` 同士・表示の時刻同士で比べる**——`--tz` が違っても同じ待ちを割らない。
+- **畳んだあとに並んだ停止の記録も、続けて並んだものと読む**——`rate_limit` と予告の組が畳まれても割らない。
 - **予告だけの停止を落とさない**——`rate_limit` のレコードを持たない停止がある。
 - **最初に来たものの後の自動継続を拾う**——窓は次の待ちまで。
 - **停止の記録を持たない自動継続を落とさない**——別の列で数える。
-- **予告の時刻から `LATE` より後の自動継続を、その待ちのものと読まない**——停止の記録を持たない側に数える。
+- **人間が続けたあと、予告の時刻から `LATE` より後の自動継続を、その待ちのものと読まない**——停止の記録を持たない側に数える。
+- **誰も続けていない待ちでは、遅い自動継続もその待ちのもの**——スリープで遅れた自動継続を「続かなかった」にしない。
 - **予告の時刻は `resetsAt` を先に使う**——表示の時刻は時間帯に依る。
 - **表示の時刻を `--tz` の時間帯で読む**——UTC で読むと、時間帯の差だけ予告の時刻がずれる。
 - **表示の時刻が日付をまたぐ**——予告より前の時刻なら翌日。
@@ -101,7 +107,7 @@
 | **「予告より前に人間」が待ちを取り消したか** | 待ちを止めたのか、止まった後に打たれたのかは記録から分けられない |
 | **タイマーが張られていたか** | タイマーが打った入力は `origin.kind` の名前で出るが、**その名前を確かめた実物は無い**（手元に 0 件） |
 | **`origin` を持たない版で文言が同じであること** | 手元の自動継続はすべて `origin` を持つ（#454 の周） |
-| **表示の時刻の時間帯** | 表示は記録した端末の時間帯。**`--tz` が違えば差がずれる**（`resetsAt` がある待ちには効かない） |
+| **表示の時刻の時間帯** | 表示は記録した端末の時間帯。**`--tz` が違えば差と「予告より前／後に人間」の分け方がずれ、人間が続けたあとの自動継続を別の停止のものと読むことがある**（`resetsAt` がある待ちには効かない）。**既定は実行した時点の端末のオフセット**で、夏時間をまたぐ記録は 1 時間ずれうる |
 | **別のセッションの待ち** | 同じ上限に複数のセッションが当たると、それぞれ 1 つの待ちに数える（上限の回数ではない） |
 
 ## 出力について
@@ -219,16 +225,26 @@ def reset_of(stop):
     return stop["reset"] or stop["shown_reset"]
 
 
-def same_wait(stop, reset) -> bool:
-    """予告の時刻が同じなら同じ待ち（表示は分までなので 2 分の幅で比べる）。"""
-    known = reset_of(stop)
-    return known is not None and reset is not None and abs((known - reset).total_seconds()) < 120
+def same_wait(stop, reset, shown) -> bool:
+    """予告の時刻が同じなら同じ待ち（表示は分までなので 2 分の幅で比べる）。
+
+    **`resetsAt` は `resetsAt` と、表示の時刻は表示の時刻と比べる**——表示の時刻は `--tz` に依るので、
+    `resetsAt` と比べると時間帯の差だけ食い違って、同じ待ちを割る。比べる相手が無いときだけ互いに比べる。
+    """
+    if reset is not None and stop["reset"] is not None:
+        known, new = stop["reset"], reset
+    elif shown is not None and stop["shown_reset"] is not None:
+        known, new = stop["shown_reset"], shown
+    else:
+        known, new = reset_of(stop), reset or shown
+    return known is not None and new is not None and abs((known - new).total_seconds()) < 120
 
 
 def scan_file(path: pathlib.Path, stats: collections.Counter, tz):
     """1 ファイルから (停止の一覧, 停止の記録を持たない自動継続の一覧) を返す。"""
     stops, orphans = [], []
     stop = None
+    burst = False  # 直前に数えたレコードが停止の記録（間に入力も応答も来ていない）
     session = path.stem
     try:
         handle = open(path, encoding="utf-8", errors="replace")
@@ -258,7 +274,7 @@ def scan_file(path: pathlib.Path, stats: collections.Counter, tz):
                 shown = shown_reset(notice, at, tz)
                 # 続けて並んだ停止の記録（間に入力も応答も来ていない）と、予告の時刻が同じ停止は 1 つの待ちに畳む
                 # ——待ちの間に通知が来て応答し、また上限に当たる形が多い（#454 の周の実データ）。
-                if stop is None or (stop["inputs"] and not same_wait(stop, reset or shown)):
+                if stop is None or (not burst and not same_wait(stop, reset, shown)):
                     stop = new_stop(rec, session, uuid)
                     stops.append(stop)
                 stop["reset"] = stop["reset"] or reset
@@ -266,6 +282,7 @@ def scan_file(path: pathlib.Path, stats: collections.Counter, tz):
                 if ARMED.search(notice):
                     stop["armed"] = True
                     stop["shown_reset"] = stop["shown_reset"] or shown
+                burst = True
                 continue
             if notice.startswith(CANCELLED) and stop is not None:
                 stop["cancelled"] = True
@@ -279,9 +296,12 @@ def scan_file(path: pathlib.Path, stats: collections.Counter, tz):
                 label = REPLY
             else:
                 continue
-            # 予告の時刻から LATE より後の自動継続は、この待ちのものではない（記録の無い別の停止のもの）
+            burst = False
+            # 人間かローカルコマンドが続けたあと、予告の時刻から LATE より後に来た自動継続は、この待ちのものではない
+            # （記録の無い別の停止のもの）。**誰も続けていなければ外さない**——スリープで遅れた自動継続がある
             late = (label == AUTO and stop is not None and at is not None and reset_of(stop) is not None
-                    and at > reset_of(stop) + LATE)
+                    and at > reset_of(stop) + LATE
+                    and any(seen in (HUMAN, LOCAL) for seen, _ in stop["inputs"]))
             if stop is None or late:
                 if label == AUTO:
                     orphans.append({"id": uuid, "session": session, "ts": rec.get("timestamp") or "",
@@ -311,6 +331,14 @@ def settle(stop) -> dict:
     return stop
 
 
+def window_key(stop):
+    return len(stop["inputs"]), [(label, iso_or_empty(at)) for label, at in stop["inputs"]]
+
+
+def iso_or_empty(at) -> str:
+    return at.isoformat() if at else ""
+
+
 def collect(root: pathlib.Path, since: str | None = None, tz=datetime.timezone.utc):
     """全ファイルを走査し、(待ちの一覧, 停止の記録を持たない自動継続の一覧, 統計) を返す。"""
     stats = collections.Counter()
@@ -323,8 +351,9 @@ def collect(root: pathlib.Path, since: str | None = None, tz=datetime.timezone.u
             windowed.update(s["autos"])
             if s["id"] in stops:
                 stats["duplicate_stops"] += 1
-                # コピーは途中で切れていることがある——読む順に依らず、窓の長いほうを使う
-                if len(s["inputs"]) <= len(stops[s["id"]]["inputs"]):
+                # コピーは途中で切れていることがある——読む順に依らず、窓の長いほうを使う。
+                # 長さが同じなら窓の中身で決める（fork は停止の直後から分かれる）
+                if window_key(s) <= window_key(stops[s["id"]]):
                     continue
             stops[s["id"]] = settle(s)
         for o in lone:

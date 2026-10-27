@@ -159,6 +159,29 @@ def build_tree(root: Path) -> None:
      .user("2026-09-22T09:30:00", "継続", kind="human").reply("2026-09-22T09:31:00")
      .user("2026-09-22T20:01:00", AUTO_TEXT, kind="auto-continuation", meta=True).write(root))
 
+    # sj: 表示は +9 時間の端末（「7pm」＝ 10 時 UTC）を UTC で読む。予告だけの停止が resetsAt を持つ待ちに並ぶ
+    (Session("sj").limit("2026-09-23T09:00:00", "2026-09-23T10:00:00").armed("2026-09-23T09:00:01", "7pm")
+     .user("2026-09-23T09:01:00", "<task-notification>x</task-notification>", kind="task-notification")
+     .reply("2026-09-23T09:01:30").armed("2026-09-23T09:02:00", "7pm")
+     .user("2026-09-23T10:01:00", AUTO_TEXT, kind="auto-continuation", meta=True).write(root))
+    # sk: 予告の無い停止に、同じ resetsAt の rate_limit と予告の組が並ぶ（表示は sj と同じ時間帯）
+    (Session("sk").limit("2026-09-24T09:00:00", "2026-09-24T10:00:00", kind="seven_day")
+     .user("2026-09-24T09:01:00", "<task-notification>x</task-notification>", kind="task-notification")
+     .reply("2026-09-24T09:01:30").limit("2026-09-24T09:02:00", "2026-09-24T10:00:00")
+     .armed("2026-09-24T09:02:01", "7pm")
+     .user("2026-09-24T10:01:00", AUTO_TEXT, kind="auto-continuation", meta=True).write(root))
+    # sl: 誰も来ないまま、予告の 45 分後に自動継続（スリープで遅れた）
+    (Session("sl").limit("2026-09-25T09:00:00", "2026-09-25T10:00:00").armed("2026-09-25T09:00:01", "10am")
+     .user("2026-09-25T10:45:00", AUTO_TEXT, kind="auto-continuation", meta=True).reply("2026-09-25T10:45:30")
+     .write(root))
+    # sm: 停止の直後から分かれた fork——窓の長さは同じ（1 件ずつ）。人間の側が先に読まれる（`-aac` < `-work-app`）
+    sm = (Session("sm").limit("2026-09-26T09:00:00", "2026-09-26T10:00:00").armed("2026-09-26T09:00:01", "10am")
+          .user("2026-09-26T10:01:00", AUTO_TEXT, kind="auto-continuation", meta=True))
+    sm.write(root)
+    fork = Session("smfork")
+    fork.rows = [dict(sm.rows[0]), dict(sm.rows[1])]
+    fork.user("2026-09-26T09:30:00", "継続", kind="human").write(root, project="-aac")
+
 
 def build_blind(root: Path) -> None:
     """停止が 1 つも無い（形式が変わった・検出器が壊れた）。"""
@@ -197,8 +220,14 @@ MUTATIONS = {
     "ローカルコマンドを人間の入力に混ぜる": ("if text.startswith(LOCAL_MARKS):", "if False:"),
     "道具の結果を入力と読む": ("if only_tool_results(content):", "if False:"),
     "履歴のコピーを畳まない": ('if s["id"] in stops:', "if False:"),
-    "続けて並んだ停止の記録を畳まない": ('(stop["inputs"] and not same_wait', "(not same_wait"),
-    "予告の時刻が同じ停止を畳まない": ("and not same_wait(stop, reset or shown))", ")"),
+    "続けて並んだ停止の記録を畳まない": ("(not burst and not same_wait", "(not same_wait"),
+    "予告の時刻が同じ停止を畳まない": ("and not same_wait(stop, reset, shown))", ")"),
+    "畳む判定で表示の時刻を resetsAt と比べる":
+        ('    if reset is not None and stop["reset"] is not None:\n        known, new = stop["reset"], reset\n'
+         '    elif shown is not None and stop["shown_reset"] is not None:\n        known, new = stop["shown_reset"], shown\n'
+         '    else:\n        known', "    if True:\n        known"),
+    "畳んだあとに並んだ停止の記録を、続けて並んだものと読まない":
+        ("(not burst and not same_wait", '(stop["inputs"] and not same_wait'),
     "予告だけの停止を落とす": ("if is_limit or notice.startswith(STOP_NOTICE):", "if is_limit:"),
     "最初に来たものの後の自動継続を拾わない":
         ('next((at for label, at in inputs if label == AUTO), None)',
@@ -214,9 +243,14 @@ MUTATIONS = {
     "--anonymize でも一覧を出す": ("if not anonymize:", "if True:"),
     "isMeta を人間の入力と読む": ('    if rec.get("isMeta") or rec.get("isCompactSummary"):\n        return OTHER\n', ""),
     "コピーの窓の長さを見ない（先に読んだほうが勝つ）":
-        ('if len(s["inputs"]) <= len(stops[s["id"]]["inputs"]):', "if True:"),
+        ('if window_key(s) <= window_key(stops[s["id"]]):', "if True:"),
     "同じ自動継続を待ちと停止の記録を持たない側の両方に数える": ('o["id"] not in windowed and ', ""),
-    "予告の時刻から遅い自動継続も待ちに入れる": ("and at > reset_of(stop) + LATE)", "and False)"),
+    "人間が続けたあとの遅い自動継続も待ちに入れる": ("and at > reset_of(stop) + LATE\n", "and False\n"),
+    "誰も続けていない待ちでも、遅い自動継続を外す":
+        ("\n                    and any(seen in (HUMAN, LOCAL) for seen, _ in stop[\"inputs\"]))", ")"),
+    "窓の長さが同じコピーは、先に読んだほうが勝つ":
+        ('return len(stop["inputs"]), [(label, iso_or_empty(at)) for label, at in stop["inputs"]]',
+         'return len(stop["inputs"])'),
     "表示の時刻を UTC で読む（--tz を無視する）":
         ("local = at.astimezone(tz)", "local = at.astimezone(datetime.timezone.utc)"),
     "--since を見ない": ('(s for s in stops.values() if not since or s["ts"] >= since)', "(s for s in stops.values())"),
@@ -236,8 +270,8 @@ def main() -> int:
             waits.setdefault(w[0], []).append(w)
 
         print("待ちと行方")
-        check("待ちは 10（コピーは畳む・同じ予告の時刻の停止は 1 つ）",
-              len(correct["waits"]) == 10 and correct["dups"] == 1 and len(waits["sa"]) == 1)
+        check("待ちは 14（コピーは畳む・同じ予告の時刻の停止は 1 つ）",
+              len(correct["waits"]) == 14 and correct["dups"] == 2 and len(waits["sa"]) == 1)
         sa = waits["sa"][0]
         check("先に読んだコピーの窓が短くても、長いほうの窓で行方を決める", sa[7] == "自動継続")
         check("通知が先でも、その後の自動継続を拾う（予告の 1 分後）",
@@ -263,13 +297,22 @@ def main() -> int:
         check("張らなかった待ちは上限の種類を持つ。origin の無い isMeta は人間の入力ではない",
               sh[2] is False and sh[4] == "seven_day" and sh[6] == "その他の入力" and sh[7] == "予告より前に人間")
 
+        check("予告だけの停止は、表示の時刻同士で比べて resetsAt を持つ待ちに畳む（--tz が違っても割らない）",
+              len(waits["sj"]) == 1 and waits["sj"][0][7] == "自動継続")
+        check("畳んだあとの rate_limit と予告の組も、続けて並んだものとして畳む",
+              len(waits["sk"]) == 1 and waits["sk"][0][2] and waits["sk"][0][7] == "自動継続")
+        check("誰も来ないまま遅れた自動継続は、その待ちのもの（予告の 45 分後）",
+              waits["sl"][0][6:] == ("自動継続", "自動継続", "2026-09-25T10:45:00+00:00"))
+        check("窓の長さが同じコピーは、読む順に依らず窓の中身で決める",
+              len(waits["sm"]) == 1 and waits["sm"][0][7] == "自動継続")
+
         print("\n出力")
         status, text = correct["plain"]
         check("停止があれば 0 で終わる", status == 0)
-        check("月ごとの行方（張った 9・自動継続 4・前 3・後 1・取り消し 1・続かなかった 0）",
-              "| 2026-09 | 10 | 9 | 4 | 3 | 1 | 1 | 0 | 0 | 2 |" in text)
+        check("月ごとの行方（張った 13・自動継続 8・前 3・後 1・取り消し 1・続かなかった 0）",
+              "| 2026-09 | 14 | 13 | 8 | 3 | 1 | 1 | 0 | 0 | 2 |" in text)
         check("張らなかった待ちの上限の種類を出す", "seven_day 1" in text)
-        check("自動継続の差（分）を出す", "最小 -10・中央 +1・最大 +1（4 件）" in text)
+        check("自動継続の差（分）を出す", "最小 -10・中央 +1・最大 +45（8 件）" in text)
         check("本文を出さない", "task-notification>x" not in text and "Continue the task" not in text and "/usage" not in text)
         astatus, atext = correct["anon"]
         check("--anonymize はリポジトリ名とセッションを伏せる",
@@ -278,7 +321,7 @@ def main() -> int:
         bstatus, btext = correct["blind"]
         check("停止が 0 件なら終了コード 3", bstatus == 3 and "検出できていない" in btext)
         sstatus, stext = correct["since"]
-        check("--since より前の停止を数えない（sh・si の 2 件）", sstatus == 0 and "待ち: 2・" in stext)
+        check("--since より前の停止を数えない（sh〜sm の 6 件）", sstatus == 0 and "待ち: 6・" in stext)
         fstatus, ftext = correct["future"]
         check("--since を狭くして 0 件なら終了コード 3", fstatus == 3 and "検出できていない" in ftext)
 
