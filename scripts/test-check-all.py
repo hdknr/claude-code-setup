@@ -386,6 +386,16 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     except Exception:  # noqa: BLE001 — 断らずに別の形で落ちたら、それも失格
         refused = False
     got.append(("--jobs 0 を断る", refused))
+
+    # 9) 入れ子の並列を絞る（#460）——`check-mutation-claims.py` を `--jobs 1` で起こす。
+    #    **実物の `GUARDS` のまま、起動の引数だけを記録する**（`run` を差し替えるので何も走らない）。
+    mod = load(target, f"{tag}_nested")
+    mod.TESTS = []
+    calls: list[tuple[str, list[str]]] = []
+    mod.run = lambda name, args: (calls.append((name, list(args))), (True, ""))[1]
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
+    got.append(("check-mutation-claims.py を --jobs 1 で起こす",
+                ("check-mutation-claims.py", ["--jobs", "1"]) in calls))
     return got
 
 
@@ -601,6 +611,9 @@ MUTANTS = {
     "回帰テストを宣言順に出さない": ("            for name, fut in test_runs:\n",
                                      "            for name, fut in reversed(test_runs):\n"),
     "--jobs 0 を通す": ("    if opts.jobs < 1:\n", "    if False:\n"),
+    # 以下は #460（入れ子の並列）
+    "入れ子を既定の並列で起こす": ('("check-mutation-claims.py", ["--jobs", "1"], False)',
+                                   '("check-mutation-claims.py", [], False)'),
     # **終わった順に出す**本体を写した変異（`as_completed`。#430 の 2 パス目）。`reversed()` だけでは、
     # 受入基準 P11 が挙げる「終わった順」を表す変異が無かった。歯止めの側は SKIP（すぐ終わる）が先に出るので
     # 試料の遅延に依らず崩れる——**遅延を外しても 2 本とも捕まえた**ので、遅延が要るとは言えない。
