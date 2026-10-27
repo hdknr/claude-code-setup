@@ -698,10 +698,17 @@ BARE_URLS = ("https://ex.com/Q-001 と http://h/docs/Q-001.md と https://ex.com
              "www.ex.com/Q-002 と 参照https://ex.com/a/Q-002 と")
 
 
+# URL の後ろの全角の句読点・閉じ括弧・描いた HTML の実体参照で URL を終える。URL の直前の番号も URL に入れない（#376 の 1 パス目）
+AFTER_URLS = ("（https://ex.com/a）。{q}で 、https://ex.com/b、{q} &lt;https://ex.com/c&gt;{q} https://ex.com/d&quot;{q} "
+              "{q}https://ex.com/e https://ex.com/f. {q}")
+
+
 def hook_links_bare_url(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
     out, warnings = link(plugin, docs, f"<p>{BARE_URLS}（Q-001）</p>\n", "index.md")
-    return not warnings and out == f"<p>{BARE_URLS}（{a('Q-001', 'qa.html#v1-q-001')}）</p>\n"
+    after, warned = link(plugin, docs, f"<p>{AFTER_URLS.format(q='Q-001')}</p>\n", "index.md")
+    return (not warnings and out == f"<p>{BARE_URLS}（{a('Q-001', 'qa.html#v1-q-001')}）</p>\n"
+            and not warned and after == f"<p>{AFTER_URLS.format(q=a('Q-001', 'qa.html#v1-q-001'))}</p>\n")
 
 
 def hook_decision_table(plugin: Path, work: Path) -> bool:
@@ -713,7 +720,7 @@ def hook_decision_table(plugin: Path, work: Path) -> bool:
     v1, v3 = out.index("## v1"), out.index("## v3")
     return (not warnings and v1 < v3 and "## v2" not in out
             and "| 条件 | 結果 |\n| --- | --- |\n| A\\|x | &lt;b&gt;y&lt;/b&gt; |\n\n## v3" in out
-            and "| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n| 1 | 2 |  |\n| 4 | 5 | 6 |\n" in out[v3:]
+            and "| 列1 | 列2 | 列3 |  |\n| --- | --- | --- | --- |\n| 1 | 2 |  |  |\n| 4 | 5 | 6 | 7 |\n" in out[v3:]
             and "<!-- spec-loop" not in out)
 
 
@@ -729,10 +736,26 @@ def hook_decision_table_unreadable(plugin: Path, work: Path) -> bool:
     (docs / "v1" / "shared").mkdir(parents=True)
     (docs / "v1" / "shared" / "decision_table.csv").write_bytes(b"\xff\xfe")
     (docs / "v2" / "shared").mkdir(parents=True)
-    (docs / "v2" / "shared" / "decision_table.csv").write_text(" , \n", encoding="utf-8")
+    (docs / "v2" / "shared" / "decision_table.csv").write_text(" , \n条件,結果\nA,B\n", encoding="utf-8")
+    (docs / "v3" / "shared").mkdir(parents=True)
+    (docs / "v3" / "shared" / "decision_table.csv").write_text("", encoding="utf-8")
     out, warnings = render(plugin, docs, "<!-- spec-loop: decision_table -->")
-    return (len(warnings) == 2 and "v1/shared/decision_table.csv" in warnings[0]
-            and "v2/shared/decision_table.csv: 見出しの行が無い" in warnings[1] and out.count("表示できない") == 2)
+    return (len(warnings) == 3 and "v1/shared/decision_table.csv" in warnings[0]
+            and "v2/shared/decision_table.csv: 見出しの行が無い" in warnings[1]
+            and "v3/shared/decision_table.csv: 見出しの行が無い" in warnings[2]
+            and out.count("表示できない") == 3 and "| 条件 | 結果 |" not in out)
+
+
+# 雛形の決定表のページ（I4）——在って、印を持ち、空の根に写る（#376 の 1 パス目）
+def init_decision_table_page(plugin: Path, work: Path) -> bool:
+    page = plugin / "templates" / "mkdocs" / "docs" / "decision-table.md"
+    if not page.is_file() or "<!-- spec-loop: decision_table -->" not in page.read_text(encoding="utf-8"):
+        return False
+    root = work / "root"
+    root.mkdir(parents=True)
+    code, _ = run_init(plugin, root)
+    copied = root / "docs" / "decision-table.md"
+    return code == 0 and copied.is_file() and copied.read_bytes() == page.read_bytes()
 
 
 CASES = {
@@ -786,6 +809,7 @@ CASES = {
     "決定表を版ごとに見出しの行どおりに描く": hook_decision_table,
     "決定表が無ければそう書く": hook_decision_table_none,
     "読めない・見出しの無い決定表は警告": hook_decision_table_unreadable,
+    "雛形の決定表のページは印を持ち、空の根に写る": init_decision_table_page,
     "重ね合わせに表示用のファイルが混ざらない": merge_ignores_pages,
 }
 
@@ -795,23 +819,33 @@ MUTATIONS: list[tuple] = [
      "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), QA_NUMBER.sub(link, url.group(0))]",
      "素の URL の中の番号は変えない"),
     ("URL を見ない", HOOK, "        for url in URL.finditer(between):", "        for url in []:", "素の URL の中の番号は変えない"),
-    ("www. の URL を見ない", HOOK, 'URL = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*://|www\\.)', 'URL = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*://)',
+    ("www. の URL を見ない", HOOK, 'URL = re.compile(r"(?:[A-Za-z]+://|www\\.)', 'URL = re.compile(r"(?:[A-Za-z]+://)',
      "素の URL の中の番号は変えない"),
     ("URL の後ろを書き換えない", HOOK, 'return "".join(parts + [QA_NUMBER.sub(link, between[start:])])',
      'return "".join(parts + [between[start:]])', "素の URL の中の番号は変えない"),
     ("決定表を描かない", HOOK, '    "decision_table": render_decision_table,\n', "", "決定表を版ごとに見出しの行どおりに描く"),
     ("決定表の見出しを描かない", HOOK, '"| " + " | ".join(text(cell) for cell in header) + " |",',
      '"| " + " | ".join("" for cell in header) + " |",', "決定表を版ごとに見出しの行どおりに描く"),
-    ("決定表をエスケープしない", HOOK, '" | ".join(text(cell) for cell in (row + [""]', '" | ".join(cell for cell in (row + [""]',
+    ("決定表をエスケープしない", HOOK, '" | ".join(text(cell) for cell in row + [""]', '" | ".join(cell for cell in row + [""]',
      "決定表を版ごとに見出しの行どおりに描く"),
-    ("決定表の短い行を埋めない", HOOK, "(row + [\"\"] * (len(header) - len(row)))[:len(header)]", "row",
+    ("決定表の短い行を埋めない", HOOK, "for cell in row + [\"\"] * (width - len(row))) + \" |\"", "for cell in row) + \" |\"",
+     "決定表を版ごとに見出しの行どおりに描く"),
+    ("決定表の長い行を切る", HOOK, "        width = max([len(header)] + [len(row) for row in body])", "        width = len(header)",
      "決定表を版ごとに見出しの行どおりに描く"),
     ("決定表の BOM を読まない", HOOK, 'with path.open(newline="", encoding="utf-8-sig") as f:',
      'with path.open(newline="", encoding="utf-8") as f:', "決定表を版ごとに見出しの行どおりに描く"),
-    ("決定表の空白だけの行も描く", HOOK, "rows = [row for row in csv.reader(f) if any(cell.strip() for cell in row)]",
-     "rows = [row for row in csv.reader(f) if row]", "決定表を版ごとに見出しの行どおりに描く"),
-    ("見出しの無い決定表を黙る", HOOK, '            if not rows:  # 空白だけの行は', '            if False:  # 空白だけの行は',
+    ("決定表の空白だけの行も描く", HOOK, 'body = [row for row in reader if "".join(row).strip()]',
+     "body = [row for row in reader if row]", "決定表を版ごとに見出しの行どおりに描く"),
+    ("見出しの無い決定表を黙る", HOOK, "            if not any(cell.strip() for cell in header):  # 最初の行が見出し",
+     "            if not header:  # 最初の行が見出し", "読めない・見出しの無い決定表は警告"),
+    ("空の見出しの次の行を繰り上げる", HOOK, "                header = next(reader, [])\n",
+     "                header = next((row for row in reader if any(cell.strip() for cell in row)), [])\n",
      "読めない・見出しの無い決定表は警告"),
+    ("URL を全角の句読点で終えない", HOOK, "(?=[\\s<>\\\"'（）「」『』。、]|", "(?=[\\s<>\\\"']|", "素の URL の中の番号は変えない"),
+    ("URL を実体参照で終えない", HOOK, "|&(?:lt|gt|quot|#39|#x27);|$)", "|$)", "素の URL の中の番号は変えない"),
+    ("スキームに数字と記号を許す", HOOK, '(?:[A-Za-z]+://|www', '(?:[A-Za-z][A-Za-z0-9+.-]*://|www', "素の URL の中の番号は変えない"),
+    ("雛形の決定表のページに印が無い", "templates/mkdocs/docs/decision-table.md", "<!-- spec-loop: decision_table -->", "",
+     "雛形の決定表のページは印を持ち、空の根に写る"),
     ("mkdocs.yml が在っても写す", INIT, "        if os.path.lexists(root / name):\n", "        if False:\n",
      "mkdocs.yml が在れば何も写さない"),
     ("mkdocs.yaml を設定とみなさない", INIT, 'CONFIG_NAMES = ("mkdocs.yml", "mkdocs.yaml")', 'CONFIG_NAMES = ("mkdocs.yml",)',

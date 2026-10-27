@@ -23,7 +23,8 @@ spec-loop の `references/qa-csv.md` の「層」）。
   **CSV の文字は表のセルにだけ置く**——段落や箇条書きに置くと、行頭の `!!! `・字下げ・`1. ` がブロックの記法に読まれる。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
 - **決定表（`decision_table`）は列を決めない**——見出しの行をそのまま表の見出しにする（列の決まりは正本リポジトリが持つ）。
-  見出しの行が空・空白だけなら警告する。版は重ね合わせない（Q&A 表と同じ）。
+  **最初の行が見出し**で、空・空白だけなら警告する（次の行を見出しに繰り上げない）。見出しより長い行があれば、
+  見出しの右を空で埋めて**全部の列を描く**（黙って切らない。`build-proposal.py` の仕様書と同じ）。版は重ね合わせない（Q&A 表と同じ）。
 
 **本文の Q&A の番号（`Q-008`）は、Q&A 表のページ（`qa.md`）のアンカーへのリンクにする**（正本は番号のまま。
 決まりは spec-loop の `references/qa-csv.md` の「本文での番号」）。`on_page_content` が**描いた後の HTML** に掛けるので、
@@ -41,7 +42,9 @@ spec-loop の `references/qa-csv.md` の「層」）。
 - Q&A 表のページ（`qa` の印を持つページ）と、`qa.md` の無いサイトは変えない。
 - **素の本文に書いた URL（`https://ex.com/Q-001`・`…?id=Q-001`・`…#Q-001`）の中の番号は変えない**（#341）——
   `<a>` の中は上の決まりで変えないが、素の URL は MkDocs が `<a>` にしないので、文字の中から URL を先に除く。
-  URL は `<スキーム>://` か `www.` で始まり、空白・`<`・`>`・引用符の手前までとみなす。
+  URL は `<英字のスキーム>://` か `www.` で始まり、空白・`<`・`>`・引用符（描いた HTML の `&lt;`・`&gt;`・`&quot;`・`&#x27;` も）・
+  全角の括弧と句読点（`（）「」『』。、`）の手前までとみなす（文の区切りの後ろの番号をリンクにするため）。
+  半角の記号（`.`・`)` など）は URL の中にも現れるので区切りにしない——`https://ex.com/a.Q-001` の番号はリンクにならない。
 """
 
 from __future__ import annotations
@@ -69,7 +72,7 @@ QA_OPTION_SEPARATOR = " / "
 QA_PAGE = "qa.md"
 DECISION_TABLE = "decision_table.csv"
 # 素の本文の URL（#341）。番号のリンク化はこの中を変えない
-URL = re.compile(r"(?:[A-Za-z][A-Za-z0-9+.-]*://|www\.)[^\s<>\"']+")
+URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"'（）「」『』。、]|&(?:lt|gt|quot|#39|#x27);|$)")
 # 起票元ごとの番号の印（`Q-S-001`。#278）。印の無い前の形の番号（`Q-001`）もリンクにする
 QA_MARKS = "RSFD"
 QA_NUMBER = re.compile(rf"(?<![A-Za-z0-9_-])Q-(?:[{QA_MARKS}]-)?[0-9]{{3,}}(?![A-Za-z0-9_-])")
@@ -183,16 +186,19 @@ def render_decision_table(docs_dir: Path) -> str:
             continue
         try:
             with path.open(newline="", encoding="utf-8-sig") as f:
-                rows = [row for row in csv.reader(f) if any(cell.strip() for cell in row)]
-            if not rows:  # 空白だけの行は読み飛ばしたので、残った最初の行が見出し
-                raise ValueError("見出しの行が無い")
+                reader = csv.reader(f)
+                header = next(reader, [])
+                body = [row for row in reader if "".join(row).strip()]
+            if not any(cell.strip() for cell in header):  # 最初の行が見出し——空なら次の行を繰り上げずに警告
+                raise ValueError("見出しの行が無い（最初の行が空）")
         except (OSError, ValueError, csv.Error) as e:  # UnicodeDecodeError は ValueError の子
             out += [problem(f"{path.relative_to(docs_dir)}: {e}"), ""]
             continue
-        header, body = rows[0], rows[1:]
+        width = max([len(header)] + [len(row) for row in body])  # 見出しより長い行も切らない
+        header = header + [""] * (width - len(header))
         out += [f"## v{version}", "", "| " + " | ".join(text(cell) for cell in header) + " |",
                 "| " + " | ".join("---" for _ in header) + " |"]
-        out += ["| " + " | ".join(text(cell) for cell in (row + [""] * (len(header) - len(row)))[:len(header)]) + " |"
+        out += ["| " + " | ".join(text(cell) for cell in row + [""] * (width - len(row))) + " |"
                 for row in body]
         out.append("")
     if not out:
