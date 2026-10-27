@@ -386,6 +386,26 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     except Exception:  # noqa: BLE001 — 断らずに別の形で落ちたら、それも失格
         refused = False
     got.append(("--jobs 0 を断る", refused))
+
+    # 9) 入れ子の並列を絞る（#460）——`check-mutation-claims.py` に、親より少ない `--jobs` を渡す。
+    #    **実物の `GUARDS` のまま、起動の引数だけを記録する**（`run` を差し替えるので何も走らない）。
+    #    **値そのものは見ない**——見るのは「渡すこと」「親が 1 なら 1」「親が 2 以上なら親より少ない」。
+    def nested_args(jobs: str) -> list[list[str]]:
+        mod = load(target, f"{tag}_nested{jobs}")
+        mod.TESTS = []
+        calls: list[tuple[str, list[str]]] = []
+        mod.run = lambda name, args: (calls.append((name, list(args))), (True, ""))[1]
+        run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", jobs])
+        return [args for name, args in calls if name == "check-mutation-claims.py"]
+
+    def inner(args: list[list[str]]) -> int | None:
+        if len(args) != 1 or args[0][:-1] != ["--jobs"] or not args[0][-1].isdigit():
+            return None
+        return int(args[0][-1])
+
+    one, four = inner(nested_args("1")), inner(nested_args("4"))
+    got.append(("--jobs 1 なら入れ子も --jobs 1", one == 1))
+    got.append(("--jobs 4 なら入れ子は 1 以上 4 未満", four is not None and 1 <= four < 4))
     return got
 
 
@@ -601,6 +621,11 @@ MUTANTS = {
     "回帰テストを宣言順に出さない": ("            for name, fut in test_runs:\n",
                                      "            for name, fut in reversed(test_runs):\n"),
     "--jobs 0 を通す": ("    if opts.jobs < 1:\n", "    if False:\n"),
+    # 以下は #460（入れ子の並列）
+    "入れ子に --jobs を渡さない": ('                args = [*args, "--jobs", str(nested_jobs(opts.jobs))]\n',
+                                   "                pass\n"),
+    "入れ子に親と同じ並列数を渡す": ("    return max(1, jobs // 2)\n", "    return jobs\n"),
+    "入れ子を 0 にしうる": ("    return max(1, jobs // 2)\n", "    return jobs // 2\n"),
     # **終わった順に出す**本体を写した変異（`as_completed`。#430 の 2 パス目）。`reversed()` だけでは、
     # 受入基準 P11 が挙げる「終わった順」を表す変異が無かった。歯止めの側は SKIP（すぐ終わる）が先に出るので
     # 試料の遅延に依らず崩れる——**遅延を外しても 2 本とも捕まえた**ので、遅延が要るとは言えない。
