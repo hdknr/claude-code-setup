@@ -118,6 +118,7 @@ TESTS: list[str] = [
     "test-collect-guard-rejections.py",
     "test-count-resume-recreations.py",
     "test-count-usage-limit-resumes.py",
+    "test-record-stop-failure.py",
     "test-find-cycle.py",
     "test-check-unattended-env.py",
     "test-ledger.py",

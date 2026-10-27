@@ -56,6 +56,7 @@ nav:
     - 拡張機能: usage/advanced-extensions.md
     - トークン最適化: usage/advanced-token-management.md
     - リモートコントロールの設定手順（不在中の運用）: usage/advanced-remote-control.md
+    - 利用上限の停止をその場で記録する（StopFailure の hook）: usage/usage-limit-stop-hook.md
   - プラグイン:
     - プラグイン一覧: plugins/index.md
     - dev-loop の設計（ループ志向開発）: plugins/dev-loop-design.md

@@ -200,6 +200,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **PR・Issue に貼るなら `--anonymize`**。**何を数え、何を守らないかは docstring を正とする**）
   - `test-count-usage-limit-resumes.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
     呼ばないがテストは回す**）
+  - `record-stop-failure.py` - **`StopFailure` の hook**。利用上限などで止まったその場で `~/.claude/usage-limit-stops.jsonl` に
+    1 行残して通知する（#468。**CI からは呼ばない**——書く先が利用者の `~/.claude` にある。**登録は利用者が行う**——
+    手順は `docs/usage/usage-limit-stop-hook.md`。**何を書き、何を守らないかは docstring を正とする**）
+  - `test-record-stop-failure.py` - 上の回帰テスト（変異テストを含む。一時 `HOME` と偽の `osascript` で回す）
   - `run-dev-loop-evals.py` - `dev-loop` の Eval を**陽性対照と一緒に 1 コマンドで回し、貼れる要約を出す**
     （#190。**CI からは呼ばない**——`claude` を起こして課金する。下の「振る舞いを Eval で当てる」。
     **対照の定義と、何を守り何を守らないかは docstring を正とする**）
