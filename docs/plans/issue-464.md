@@ -93,7 +93,10 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
   **`/code-review` high 指摘 10 件**。採否は下の表（直す 7 件・残課題 3 件、Verifier の弱い点は同じ表に畳んだ）。手順 4 への差し戻し: あり（直す 7 件）
 - 1 パス目の指摘対応: 済み（直す 7 件。CR6 の変異 2 件・CR9 の変異 1 件を足し、どれも赤になることを確かめた）。
   `test-ledger.py`・`test-parent-issue.py` 緑、`skill-metrics.py` で生成ブロックを書き直し、`check-all.py` 51/51 緑。版は 1.59.0 のまま（この PR で既に上げている）
-- 次: **手順 5 の Verifier 2 パス目と `/code-review` 2 パス目の両方**（どちらも残っている）。2 パス目の指摘対応を始める直前に、狭いパスの起点 SHA をここに書く
+- 関門 2 パス目: 通した。**Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件**（軽微な観察 1 件。R3 と同じ）・
+  **`/code-review` high 指摘 9 件**。採否は下の「2 パス目の採否」（直す 2 件・残課題 7 件）
+- 狭いパスの起点: `2263be575bbc290616eb9235239f63751eaa1953`（2 パス目の指摘対応を始める直前の HEAD）
+- 次: 2 パス目の指摘対応（R2・R5）→ コミット → **狭いパス**（その差分だけに別ティアの Verifier を 1 回。変異は Verifier が設計）
 - 2 つ目の割り目（2 パス目の前）: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（2 パス目から）
 - 手順 4 の割り目: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（手順 5 から）
 - 負荷の重なり: #460 の A/B 測定（`ab.py` → `check-all.py`）の最中に、こちらの `test-ledger.py`・`test-parent-issue.py` を走らせた（プロセスを確かめる前だった）。利用者に申告済み
@@ -125,3 +128,17 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
 | V3 | 元の周が `dropped` になると、依存に元の周を持つ足した行が依存待ちのまま着手できない | 示せない（起こりうる。§6 で出所ごとに渡されるので見落としにはならない） | 無し | 残課題 |
 
 （V2 は CR3 と同じ）
+
+### 2 パス目の採否（R = `/code-review`、Verifier は反証 0 件・観察 1 件は R3 と同じ）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| R1 | 利用者の判断の行は `add`（`todo`）→ `set state=blocked` の 2 手で、間で途切れると `next` に出る | 示せない（途切れるのは起こりうる） | 無し | 残課題 |
+| R2 | `add --origin` に `--deps` が無くても通り、元の周より先に `next` に出る。`set deps=` で出所のある行の依存を消せる | 示せる（scratch リポジトリで `add issue-1 50 --origin "#2 …"` が rc=0、`next` が `2` と `50` を返した） | I4 | 直す（出所のある行は依存を空にできない——`add` と `set` の両方で拒む） |
+| R3 | `parent-issue.py show` の `直す線` の「書いていない（台帳に残さない…）」が、§2 の「起動時に訊いて台帳に残す」と食い違う | 示せる（`parent-issue.py:135` と cruise §2） | 無し（`直す線` の文面と §2 の 1 度だけ訊く規定は #458 からのもので、この周の受入基準の外） | 残課題 |
+| R4 | 再開時の `show` が台帳を読まず、台帳に値があっても「書いていない（起動時に訊く）」と出す | 示せない（再開の cruise を回して見せていない。`直す線` も同じ形で #458 から） | 無し | 残課題 |
+| R5 | `absent-lines.md` の必須 2 文（「宣言が無ければどの線も止まる」・読む順の「`.claude/dev-loop.md`」）が `周の途中の課題` と食い違う | 示せる（`absent-lines.md:23` と読む順の項） | I1 | 直す（2 文を表の線に限り、`周の途中の課題` を名指しで外す） |
+| R6 | `test-ledger.py` の検査名「親 Issue から作った行は空」が、`set origin=手` の後を見ている | 示せる（`test-ledger.py:522`） | 無し（素の `add` の空は「origin の無い show」で別に見ている） | 残課題 |
+| R7 | 親のチェックリストの行に `set origin=` を書けて、§6 で周の途中の行に数えられる | 示せる（手で `set` すれば） | 無し（手で書き換える経路。出所の欠落ではない） | 残課題 |
+| R8 | `parent-issue.py` の docstring が線の意味を `absent-lines.md` だけに指す | 示せる（docstring） | 無し | 残課題 |
+| R9 | `<!-- cruise-found: #<親> -->` の印を読むものが無い | 示せる（読む箇所が無い） | 無し | 残課題 |
