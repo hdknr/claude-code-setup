@@ -4,6 +4,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
     python3 <このスキルの base ディレクトリ>/scripts/ledger.py init <名前>
     python3 <…>/ledger.py add  <名前> <番号> [--deps 12,13] [--title 題]
     python3 <…>/ledger.py set  <名前> <番号> 鍵=値 [鍵=値 …]
+    python3 <…>/ledger.py lines <名前> 項目=値 [項目=値 …] --source 出所
     python3 <…>/ledger.py show <名前>
     python3 <…>/ledger.py next <名前>
     python3 <…>/ledger.py path <名前>
@@ -32,9 +33,16 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 ```json
 {"format": 1, "name": "<名前>", "issues": [
   {"number": 12, "title": "", "deps": [], "state": "todo",
-   "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "updated": "<UTC>"}
-]}
+   "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "updated": "<UTC>"}
+],
+ "lines": {"values": {"仕様の穴": "推奨で決めて起票"}, "source": "<出所>", "updated": "<UTC>"}}
 ```
+
+`lines` は**利用者が確かめた線**（#458）で、無くてもよい（無い台帳はこれまでどおり読む）。
+**項目と値は `LINES` だけ**——意味は `references/absent-lines.md` の「線と既定」と `references/fix-line.md` を正とし、
+`scripts/test-ledger.py` が `LINES` と `absent-lines.md` の表を突き合わせる。**`本番反映` は項目に無い**（広げられない）。
+**どこから来た値を `lines` に書いてよいか（出所）は `references/absent-lines.md` の「線を広げられるのは利用者だけ」を正とする**
+——このスクリプトは出所を確かめない（`--source` に書かれた文字列を残すだけ）。
 
 **状態**（`set state=` に渡せるのはこれだけ）:
 
@@ -48,8 +56,9 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `blocked` | 止まっている（人間の判断待ち・BLOCKED） |
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
 
-**鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note`。
-`deps` はカンマ区切りの番号（空にすると依存なし）。
+**鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note` `decisions`。
+`deps` はカンマ区切りの番号（空にすると依存なし）。`decisions` はその周が推奨で決めて起票した `要確認` Issue の番号
+（カンマ区切り。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
 
 ## 終了コード
 
@@ -57,7 +66,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | --- | --- |
 | 0 | 通った（`next` で着手できるものが 0 件でも 0） |
 | 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形） |
-| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り） |
+| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空） |
 | 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
@@ -79,6 +88,10 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   （**在るかを確かめる段も含む**——`Path.exists()` は Python 3.13 以前で権限や名前の長さの誤りを例外で返す）。
 - **台帳の名前にパスの区切りと先頭のドットを許さない**——`.claude/plans/` の外に書かない。
 - **拒んだ操作では台帳を変えない**——全体を検査してから一時ファイルに書き、`os.replace` で置き換える。
+- **`LINES` に無い線の項目・値を書かない**——`lines` でも、手で直した台帳の `load` でも（後者は 4）。
+  **`本番反映` は項目に無いので、どの値でも拒む。**
+- **`lines` は出所の無い値を書かない**——`--source` が空なら拒む。**`lines` は置き換えで、渡さなかった項目は消える**
+  ——前の確認の値が、確かめ直した後に黙って残らない。
 
 守らない:
 
@@ -87,6 +100,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **状態の遷移の順序**——やり直し・取り下げで逆行が正当に起きるので縛らない。
 - **台帳と実物（PR・worktree・ブランチ）が一致しているか**——書いてある値を出すだけで、`gh` も `git worktree` も見ない。
   再開する側が実物で確かめる（`references/ledger.md`）。
+- **`lines` の値の出所が本当に利用者か**——`--source` の文字列を残すだけで、確かめない（出所の決まりは `references/absent-lines.md`）。
 - **stacked な周**（依存が PR 中で、その上に積んで先に始める）——`next` には出さない（#392）。
 - **`--separate-git-dir` の先が `.git` という名前のリポジトリ**——worktree の中から、その git-dir の親を
   メインの作業ツリーと読む（作業ツリーの外に書く）。**git 自身がこの配置を通常のリポジトリと区別しない**
@@ -104,8 +118,15 @@ import tempfile
 from pathlib import Path
 
 STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "dropped")
-KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note")
-TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note")
+KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions")
+TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions")
+# 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md と fix-line.md を正とする
+LINES = {
+    "直す線": ("既定", "広げる"),
+    "仕様の穴": ("止まる", "推奨で決めて起票"),
+    "実機確認": ("止まる", "Refs でマージ"),
+    "マージ": ("止まる", "関門を通ればマージ"),
+}
 ISSUE_FIELDS = {"number", "updated", *KEYS}
 DONE = "merged"
 NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
@@ -169,14 +190,21 @@ def ledger_path(name, cwd=None):
     return main_worktree(cwd) / ".claude" / "plans" / f"cruise-{name}.json"
 
 
-def parse_number(text):
+def parse_number(text, error=None):
     if not re.fullmatch(r"[1-9][0-9]*", text.strip()):
-        raise Usage(f"Issue 番号が違う: {text!r}")
+        raise (error or Usage)(f"Issue 番号が違う: {text!r}")
     return int(text.strip())
 
 
-def parse_deps(text):
-    return [parse_number(t) for t in text.split(",") if t.strip()]
+def parse_deps(text, error=None):
+    return [parse_number(t, error) for t in text.split(",") if t.strip()]
+
+
+def check_line(key, value):
+    if key not in LINES:
+        raise Refused(f"決まった一覧に無い線 {key!r}（{', '.join(LINES)}。本番反映は広げられない）")
+    if value not in LINES[key]:
+        raise Refused(f"{key} に宣言できない値 {value!r}（{' / '.join(LINES[key])}）")
 
 
 def exists(path):
@@ -199,7 +227,7 @@ def load(path):
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise Unknown(f"台帳を読めない: {path}: {exc}") from exc
     # `format` は int の 1 だけ——`true == 1`・`1.0 == 1` が通るので型も見る
-    if (not isinstance(data, dict) or set(data) != {"format", "name", "issues"}
+    if (not isinstance(data, dict) or not {"format", "name", "issues"} <= set(data) <= {"format", "name", "issues", "lines"}
             or type(data["format"]) is not int or data["format"] != FORMAT
             or data["name"] != path.name[len("cruise-"):-len(".json")] or not isinstance(data["issues"], list)):
         raise Unknown(f"台帳の形が違う: {path}")
@@ -209,6 +237,12 @@ def load(path):
                 or not all(is_number(d) for d in issue["deps"])
                 or not all(isinstance(issue.get(k, ""), str) for k in (*TEXT_KEYS, "updated"))):
             raise Unknown(f"台帳の形が違う: {path}: {issue!r}")
+    if "lines" in data:
+        lines = data["lines"]
+        if (not isinstance(lines, dict) or set(lines) != {"values", "source", "updated"}
+                or not isinstance(lines["values"], dict)
+                or not all(isinstance(lines[k], str) for k in ("source", "updated"))):
+            raise Unknown(f"台帳の線の形が違う: {path}: {lines!r}")
     # **ファイルの上で既に崩れている台帳は、拒んだ（3）ではなく判定できなかった（4）**——
     # 引数が悪いのではないので、3 と答えると原因を取り違える。`next` に答えさせてもいけない
     try:
@@ -225,6 +259,12 @@ def is_number(value):
 
 def validate(data):
     """台帳全体の整合。**書き込む前に必ず通す。**"""
+    for key, value in data.get("lines", {}).get("values", {}).items():
+        check_line(key, value)
+    if "lines" in data and not data["lines"]["source"].strip():
+        raise Refused("線の出所が空")
+    for issue in data["issues"]:
+        parse_deps(issue.get("decisions", ""), Refused)
     numbers = [i["number"] for i in data["issues"]]
     if len(numbers) != len(set(numbers)):
         raise Refused("同じ Issue が 2 度ある")
@@ -323,7 +363,12 @@ def cmd_set(path, number, pairs):
         key, value = pair.split("=", 1)
         if key not in KEYS:
             raise Refused(f"決まった一覧に無い鍵 {key!r}（{', '.join(KEYS)}）")
-        changes[key] = parse_deps(value) if key == "deps" else value
+        if key == "deps":
+            changes[key] = parse_deps(value)
+        elif key == "decisions":
+            changes[key] = ",".join(map(str, parse_deps(value, Refused)))
+        else:
+            changes[key] = value
     data = load(path)
     issue = find(data, number)
     issue.update(changes)
@@ -332,16 +377,41 @@ def cmd_set(path, number, pairs):
     print(f"#{number}: " + ", ".join(f"{k}={v}" for k, v in changes.items()))
 
 
+def cmd_lines(path, pairs, source):
+    values = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise Usage(f"`項目=値` の形ではない: {pair!r}")
+        key, value = (t.strip() for t in pair.split("=", 1))
+        if key in values:
+            raise Refused(f"{key} を 2 度渡した")
+        check_line(key, value)
+        values[key] = value
+    if not source.strip():
+        raise Refused("出所が空（--source に、誰がいつ確かめたかを書く）")
+    data = load(path)
+    data["lines"] = {"values": values, "source": source, "updated": now()}
+    save(path, data)
+    print("線: " + (", ".join(f"{k} = {v}" for k, v in values.items()) or "なし（宣言と既定に従う）"))
+
+
 def cmd_show(path):
     data = load(path)
     print(f"台帳: {path}")
+    if "lines" in data:
+        lines = data["lines"]
+        print("確かめた線（出所: {}・{}）: {}".format(
+            lines["source"], lines["updated"],
+            ", ".join(f"{k} = {v}" for k, v in lines["values"].items()) or "なし（宣言と既定に従う）"))
+    else:
+        print("確かめた線: 無い（宣言と既定に従う）")
     print()
-    print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 更新 |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 更新 |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for i in data["issues"]:
         deps = ", ".join(f"#{d}" for d in i["deps"]) or "-"
         cells = [f"#{i['number']} {i.get('title', '')}".strip(), i["state"], deps,
-                 *(i.get(k, "") or "-" for k in ("pr", "branch", "worktree", "agent", "base", "note")),
+                 *(i.get(k, "") or "-" for k in ("pr", "branch", "worktree", "agent", "base", "note", "decisions")),
                  i.get("updated", "")]
         print("| " + " | ".join(str(c) for c in cells) + " |")
     going = [i for i in data["issues"] if i["state"] in ("impl", "gate", "pr", "blocked")]
@@ -375,6 +445,10 @@ def build_parser():
     s.add_argument("name")
     s.add_argument("number")
     s.add_argument("pairs", nargs="+")
+    ln = sub.add_parser("lines")
+    ln.add_argument("name")
+    ln.add_argument("pairs", nargs="*")
+    ln.add_argument("--source", required=True)
     return p
 
 
@@ -391,6 +465,8 @@ def main(argv=None, cwd=None):
             cmd_add(path, parse_number(args.number), parse_deps(args.deps), args.title)
         elif args.cmd == "set":
             cmd_set(path, parse_number(args.number), args.pairs)
+        elif args.cmd == "lines":
+            cmd_lines(path, args.pairs, args.source)
         elif args.cmd == "show":
             cmd_show(path)
         elif args.cmd == "next":

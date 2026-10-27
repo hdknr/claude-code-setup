@@ -244,6 +244,42 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     finally:
         (locked / ".claude" / "plans").chmod(0o755)
 
+    # L12（#458）: 確かめた線と、要確認 Issue の番号
+    run(mod, ["init", "ln"], root)
+    run(mod, ["add", "ln", "1"], root)
+    lf = root / ".claude" / "plans" / "cruise-ln.json"
+    o["lines 通る"] = run(mod, ["lines", "ln", "仕様の穴=推奨で決めて起票", "直す線=既定", "--source", "s1"], root)[0]
+    before = snapshot(lf)
+    o["lines 拒む"] = tuple(run(mod, ["lines", "ln", *pairs, "--source", src], root)[0] for pairs, src in (
+        (["本番反映=する"], "s"), (["仕様の穴=決める"], "s"), (["速さ=速い"], "s"),
+        (["直す線=既定", "直す線=広げる"], "s"), (["直す線=既定"], " ")))
+    o["lines 鍵=値でない"] = run(mod, ["lines", "ln", "直す線", "--source", "s"], root)[0]
+    o["lines 拒んだ後も同じ"] = snapshot(lf) == before
+    o["lines 置き換え"] = run(mod, ["lines", "ln", "マージ=止まる", "--source", "s2"], root)[0]
+    try:
+        o["lines の値"] = json.loads(lf.read_text(encoding="utf-8"))["lines"]
+    except (OSError, ValueError, KeyError):
+        o["lines の値"] = None
+    r = run(mod, ["show", "ln"], root)
+    o["lines の show"] = (r[0], "確かめた線（出所: s2・" in str(r[1]) and "マージ = 止まる" in str(r[1]))
+    o["線の無い show"] = "確かめた線: 無い" in str(run(mod, ["show", "c"], root)[1])
+    o["decisions"] = (run(mod, ["set", "ln", "1", "decisions=12, 13"], root)[0],
+                      run(mod, ["set", "ln", "1", "decisions=x"], root)[0])
+    try:
+        o["decisions の値"] = json.loads(lf.read_text(encoding="utf-8"))["issues"][0]["decisions"]
+    except (OSError, ValueError, KeyError, IndexError):
+        o["decisions の値"] = None
+    # 手で崩した線は 4（next は答えない）。線と decisions を持たない台帳はこれまでどおり読む
+    for name, extra in (("lbad", {"lines": {"values": {"本番反映": "する"}, "source": "s", "updated": ""}}),
+                        ("lval", {"lines": {"values": {"マージ": "する"}, "source": "s", "updated": ""}}),
+                        ("lsrc", {"lines": {"values": {}, "source": " ", "updated": ""}}),
+                        ("lshape", {"lines": {"values": {}, "source": "s"}}),
+                        ("ldec", {"issues": [{**entry(1, []), "decisions": "x"}]}),
+                        ("lold", {})):
+        data = {"format": 1, "name": name, "issues": [entry(1, [])], **extra}
+        (plans / f"cruise-{name}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        o[f"線の形 {name}"] = run(mod, ["next", name], root)[:2]
+
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
     outside = tmp / f"outside-{tag}"
@@ -336,6 +372,10 @@ MUTATIONS = {
     "名前を何でも通す": [
         ('NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")', 'NAME_RE = re.compile(r".+")')],
     # 守る: 拒んだ操作では台帳を変えない（検査してから書く）
+    "一覧に無い線を書く": [
+        ("def check_line(key, value):\n", "def check_line(key, value):\n    return\n")],
+    "出所の無い線を書く": [
+        ('    if not source.strip():\n        raise Refused("出所が空', '    if False:\n        raise Refused("出所が空')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -407,6 +447,32 @@ def main() -> int:
               (o["名前が長すぎる show"], o["名前が長すぎる init"]) == (4, 4))
         check("読む権限の無い .claude/plans の next は 4 で、「台帳が無い」とは言わない",
               o["読めない plans の next"] == (4, True))
+
+        print("\n確かめた線と要確認（L12・#458）")
+        check("lines は通る", o["lines 通る"] == 0)
+        check("本番反映・一覧に無い値・一覧に無い項目・同じ項目 2 度・空の出所は 3",
+              o["lines 拒む"] == (3, 3, 3, 3, 3))
+        check("項目=値でない lines は 2", o["lines 鍵=値でない"] == 2)
+        check("拒んだ lines のあとも台帳が 1 バイトも変わらない", o["lines 拒んだ後も同じ"])
+        check("lines は置き換え（渡さなかった項目は消える）・出所を残す",
+              o["lines 置き換え"] == 0 and o["lines の値"] is not None
+              and o["lines の値"]["values"] == {"マージ": "止まる"} and o["lines の値"]["source"] == "s2")
+        check("show が確かめた線と出所を出す", o["lines の show"] == (0, True))
+        check("線の無い台帳の show は「無い」と出す", o["線の無い show"])
+        check("decisions は番号のカンマ区切りだけ（番号でなければ 3）",
+              o["decisions"] == (0, 3) and o["decisions の値"] == "12,13")
+        for name in ("lbad", "lval", "lsrc", "lshape", "ldec"):
+            check(f"手で崩した線・decisions（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
+        check("線と decisions を持たない台帳はこれまでどおり読む", o["線の形 lold"] == (0, "1\n"))
+        absent = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "absent-lines.md"
+                  ).read_text(encoding="utf-8").split("## 線と既定")[1].split("\n## ")[0]
+        rows = {k: (d, v) for k, d, v in re.findall(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|", absent, re.M)}
+        skill = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md").read_text(encoding="utf-8")
+        check(f"LINES が absent-lines.md の「線と既定」の表 {rows} と一致する（直す線を除く）",
+              {k: v for k, v in mod.LINES.items() if k != "直す線"} == rows)
+        check("本番反映は LINES に無い", "本番反映" not in mod.LINES and "| `本番反映` |" in absent)
+        check("直す線は SKILL.md 手順 3 の 2 値（既定・広げる）",
+              mod.LINES["直す線"] == ("既定", "広げる") and "`直す線: 既定` か `直す線: 広げる`" in skill)
 
         print("\n名前（L8）・git の外（L9）")
         check("../x・a/b・.x・x/../../../escaped は 2",

@@ -10,6 +10,7 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 本文は `gh issue view <親> --json body -q .body` で取る（cwd のリポジトリ）。`--body-file` を渡せば、
 そのファイルを本文として読む（テスト用）。台帳の読み書きは dev-loop の `scripts/ledger.py` に任せ、
 子プロセスで呼ぶ——台帳の形・置き場所・状態は `ledger.py` の docstring を正とする。台帳の名前は `issue-<親>`。
+**線の項目と値は `ledger.py` の `LINES` を読み込んで使う**（写しを作らない）。
 
 ## なぜ在るのか（#446）
 
@@ -40,14 +41,29 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 - 依存は `(depends: #番号, #番号)` を 1 つだけ書く。**題に `#番号` を書かない**（`blocked by #12` のような書き方を依存と読めないので拒む）。
 - **`[x]` の行は済んだもの**として台帳に入れず、それへの依存は満たされたと読む（「マージ済み」とは読まない）。
 
+### 線（#458）
+
+```markdown
+cruise: 直す線 = 既定
+cruise: 仕様の穴 = 推奨で決めて起票
+```
+
+- **行頭（インデントは可）が `cruise:` の行**を、その cruise の線として読む。チェックリストの行ではない。
+  **コードフェンス・HTML コメントの中は読まず、引用の中の行は読み飛ばした行として出す**（チェックリストと同じ）。
+- 項目と値は `ledger.py` の `LINES` だけ。**線の意味と、どの周に効くかは dev-loop の `references/absent-lines.md` を正とする。**
+- **`本番反映` の行は台帳に入れず、無視した行として出す**——広げられない。
+- `show` は書いていない項目も「書いていない」と出す。**指紋に線を含める**——確かめた後に線を書き換えたら `apply` は台帳を作らない。
+- `apply` は台帳を作ったあと、線を `ledger.py lines` で残す（出所は「利用者の確認」と親 Issue の番号と指紋）。
+  **本文の線は、`show` の出力を利用者が確かめた後でしか台帳に入らない**——出所は本文ではなく確認である。
+
 ## 終了コード
 
 | コード | 意味 |
 | --- | --- |
 | 0 | 通った（`show` は取り出した結果と指紋を出した。`apply` は台帳を作った） |
 | 2 | 引数が違う |
-| 3 | 拒んだ——**台帳は作っていない**（書式の誤り・回すものが 0 件・指紋の不一致・台帳が既に在る） |
-| 4 | 判定できなかった（`gh` が失敗した・本文が読めない・`ledger.py` が失敗した・git の外（`apply`））。**「回すものなし」とは答えていない** |
+| 3 | 拒んだ——**台帳は作っていない**（書式の誤り・回すものが 0 件・指紋の不一致・台帳が既に在る・`LINES` に無い線の項目や値・同じ項目の線が 2 行） |
+| 4 | 判定できなかった（`gh` が失敗した・本文が読めない・`ledger.py` が失敗した・`ledger.py` の `LINES` を読めない・git の外（`apply`））。**「回すものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
 
@@ -77,6 +93,14 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 - **`apply` は本文を取り直し、指紋が `show` と同じときだけ台帳を作る**——確かめた後の書き換えを台帳に入れない。
 - **台帳が既に在れば作り直さず、親 Issue にあって台帳に無い Issue を名指しする**——再開は台帳から行う。
 - **`apply` の途中で `ledger.py` が失敗したら、この実行で作った台帳を消す**——半端な台帳を正として再開させない。
+- **`LINES` に無い線の項目・値を拒む**——誤記を既定に倒して黙らせず、確かめる場面で直させる。
+- **同じ項目の線が 2 行あれば拒む**——どちらを確かめたのかが分からない。
+- **`本番反映` の線は台帳に入れず、無視した行として出す**——広げられない線を、黙って落としたように見せない。
+- **`cruise:` を含むが線の形でない行は、読み飛ばした行として出す**——書き損じた線を黙って落とさない。
+- **指紋に線を含める**——確かめた後に線だけを書き換えても、台帳を作らない。
+- **`apply` は確かめた線を台帳に残す**——各周が台帳から読む。
+- **台帳が既に在れば、本文の線が台帳の確かめた線と違うことも名指しする**——台帳は変えない（確かめ直すのは利用者）。
+- **チェックリストの行が 1 本も無いことと、全部チェック済みのことを分けて言う**——前者は親 Issue でない Issue（1 件なら `/dev-loop:dev-loop`）。
 
 守らない:
 
@@ -85,10 +109,13 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 - **親 Issue のチェックボックスの更新**——読むだけで、本文を書き換えない。
 - **一覧の Issue が開いているか・在るか**——各周の手順 1（`gh issue view`）で見る。
 - **本物の `gh` の出力の形**——テストは `--body-file` と偽の `gh` で当てる。
+- **本文から消した線**——台帳の確かめた線と比べるのは、本文にある項目だけ（消した項目は名指ししない）。
+- **線が `.claude/dev-loop.md` の宣言とどう重なるか**——読み順は dev-loop の `references/absent-lines.md` が決める。
 """
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import subprocess
@@ -106,6 +133,9 @@ ITEM_RE = re.compile(r"^#([0-9]+)(?![0-9A-Za-z_])(.*)$")
 DEPS_RE = re.compile(r"\(depends:([^)]*)\)")
 DEP_LIST_RE = re.compile(r"^#[0-9]+(\s*,\s*#[0-9]+)*$")
 SUSPECT_RE = re.compile(r"depend|依存", re.IGNORECASE)
+LINE_RE = re.compile(r"^\s*cruise:\s*(?P<key>[^=]*?)\s*=\s*(?P<value>.*?)\s*$")
+MENTION_RE = re.compile(r"cruise:", re.IGNORECASE)
+FORBIDDEN = "本番反映"
 REF_RE = re.compile(r"#[0-9]+")
 FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
 CODE_RE = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)")
@@ -167,9 +197,21 @@ def closes(line, fence, indent):
         and not m.group("info").strip() and width(m.group("indent")) <= indent + 3
 
 
-def parse(body):
-    """本文から ([{"number", "deps", "title"}]（未チェックだけ・依存先が先）, 読み飛ばした行) を返す。"""
+def lines_table(ledger_script):
+    """`ledger.py` の `LINES`（線の項目と値）。写しを作らないために読み込む。"""
+    try:
+        spec = importlib.util.spec_from_file_location("cruise_ledger", ledger_script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.LINES
+    except Exception as exc:  # 読めない理由は問わない——判定できなかった
+        raise Unknown(f"ledger.py の LINES を読めなかった: {exc}") from exc
+
+
+def parse(body, table):
+    """本文から ([{"number", "deps", "title"}]（未チェックだけ・依存先が先）, 読み飛ばした行, 線, 無視した行) を返す。"""
     items, skipped, done, fence, in_comment = [], [], set(), None, False
+    lines, ignored = {}, []
     for lineno, line in enumerate(body.splitlines(), 1):
         if fence:
             if closes(line, fence, indent):
@@ -183,8 +225,23 @@ def parse(body):
         line, in_comment = visible(line, in_comment)
         if in_comment and not was_in_comment:
             comment_line = lineno
+        decl = LINE_RE.match(line)
+        if decl:
+            key, value = decl.group("key"), decl.group("value")
+            if key == FORBIDDEN:
+                ignored.append(f"{lineno} 行目（本番反映は広げられない）: {line.strip()}")
+                continue
+            if key not in table or value not in table[key]:
+                raise Refused(f"{lineno} 行目: 宣言できない線 {key} = {value}（"
+                              + "・".join(f"{k}: {' / '.join(v)}" for k, v in table.items()) + "）")
+            if key in lines:
+                raise Refused(f"{lineno} 行目: 線 {key} が 2 行ある")
+            lines[key] = value
+            continue
         m = CHECK_RE.match(line)
         if not m:
+            if MENTION_RE.search(line):
+                skipped.append(f"{lineno} 行目（cruise: の線の形ではない）: {line.strip()}")
             continue
         if m.group("quote"):
             skipped.append(f"{lineno} 行目（引用の中）: {line.strip()}")
@@ -220,7 +277,10 @@ def parse(body):
     if in_comment:
         raise Refused(f"{comment_line} 行目の <!-- が閉じていない（後ろの行を読めない）")
     if not items:
-        raise Refused("未チェックの Issue が 0 件（回すものが無い）")
+        if done:
+            raise Refused("未チェックの Issue が 0 件（すべて [x]——回すものが無い）")
+        raise Refused("回す Issue のチェックリストの行（- [ ] #番号）が 1 本も無い"
+                      "（親 Issue でなければ、1 件は /dev-loop:dev-loop <番号> で回す）")
     listed = {i["number"] for i in items}
     for i in items:
         for d in i["deps"]:
@@ -229,7 +289,7 @@ def parse(body):
             if d not in listed and d not in done:
                 raise Refused(f"#{i['number']} の依存先 #{d} が一覧に無い（済んでいるなら [x] の行で書く）")
         i["deps"] = [d for d in dict.fromkeys(i["deps"]) if d in listed]
-    return order(items), skipped
+    return order(items), skipped, lines, ignored
 
 
 def order(items):
@@ -246,8 +306,9 @@ def order(items):
     return out
 
 
-def digest(items):
-    raw = json.dumps([[i["number"], i["deps"], i["title"]] for i in items], ensure_ascii=False)
+def digest(items, lines):
+    raw = json.dumps([[[i["number"], i["deps"], i["title"]] for i in items], sorted(lines.items())],
+                     ensure_ascii=False)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:12]
 
 
@@ -276,7 +337,7 @@ def ledger(ledger_script, cwd, *args):
     return proc
 
 
-def cmd_show(items, skipped):
+def cmd_show(items, skipped, lines, ignored, table):
     for i in items:
         deps = ", ".join(f"#{d}" for d in i["deps"]) or "-"
         print(f"#{i['number']}\t依存: {deps}\t{i['title']}")
@@ -284,12 +345,18 @@ def cmd_show(items, skipped):
         print("読み飛ばした行（#番号 で始まらない）:")
         for line in skipped:
             print(f"  {line}")
-    print(f"指紋: {digest(items)}")
+    print("線（cruise: の行）:")
+    for key in table:
+        print(f"  {key} = {lines[key]}" if key in lines
+              else f"  {key}: 書いていない（.claude/dev-loop.md の宣言、無ければ既定）")
+    for line in ignored:
+        print(f"  無視した行: {line}")
+    print(f"指紋: {digest(items, lines)}")
 
 
-def cmd_apply(items, parent, expected, ledger_script, cwd):
-    if digest(items) != expected:
-        raise Refused(f"指紋が違う（show の後に本文が変わったか、別の親 Issue）: {digest(items)} ≠ {expected}")
+def cmd_apply(items, lines, parent, expected, ledger_script, cwd):
+    if digest(items, lines) != expected:
+        raise Refused(f"指紋が違う（show の後に本文が変わったか、別の親 Issue）: {digest(items, lines)} ≠ {expected}")
     name = f"issue-{parent}"
     proc = ledger(ledger_script, cwd, "path", name)
     if proc.returncode != 0:
@@ -297,11 +364,16 @@ def cmd_apply(items, parent, expected, ledger_script, cwd):
     path = Path(proc.stdout.strip())
     if path.exists():
         try:
-            have = {i["number"] for i in json.loads(path.read_text(encoding="utf-8"))["issues"]}
-        except (OSError, ValueError, KeyError, TypeError) as exc:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            have = {i["number"] for i in data["issues"]}
+            confirmed = data.get("lines", {}).get("values", {})
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             raise Unknown(f"既に在る台帳を読めなかった: {exc}") from exc
         missing = [f"#{i['number']}" for i in items if i["number"] not in have]
         note = f"親 Issue にあって台帳に無い: {', '.join(missing)}" if missing else "親 Issue の Issue はすべて台帳に在る"
+        differ = [f"{k} = {v}（台帳: {confirmed.get(k, '無い')}）" for k, v in lines.items() if confirmed.get(k) != v]
+        if differ:
+            note += f"。本文の線が台帳の確かめた線と違う（台帳は変えていない）: {', '.join(differ)}"
         raise Refused(f"台帳が既に在る（再開は ledger.py show {name}）: {path}。{note}")
     proc = ledger(ledger_script, cwd, "init", name)
     if proc.returncode != 0:
@@ -314,7 +386,14 @@ def cmd_apply(items, parent, expected, ledger_script, cwd):
         if proc.returncode != 0:
             path.unlink(missing_ok=True)
             raise Unknown(f"ledger.py add #{i['number']} が失敗したので、作った台帳を消した: {proc.stderr.strip()}")
+    if lines:
+        proc = ledger(ledger_script, cwd, "lines", name, *(f"{k}={v}" for k, v in lines.items()),
+                      f"--source=利用者の確認（親 Issue #{parent} の cruise: の行・指紋 {expected}）")
+        if proc.returncode != 0:
+            path.unlink(missing_ok=True)
+            raise Unknown(f"ledger.py lines が失敗したので、作った台帳を消した: {proc.stderr.strip()}")
     print(f"台帳を作った: {path}（{len(items)} 件）")
+    print("線: " + (", ".join(f"{k} = {v}" for k, v in lines.items()) or "本文に無い（.claude/dev-loop.md の宣言と既定に従う）"))
     print(f"続きは: ledger.py show {name}")
 
 
@@ -339,11 +418,12 @@ def main(argv=None, cwd=None, ledger_script=LEDGER):
         print("引数が違う: 親 Issue の番号は正の整数", file=sys.stderr)
         return EXIT_USAGE
     try:
-        items, skipped = parse(read_body(args.parent, args.body_file, cwd))
+        table = lines_table(ledger_script)
+        items, skipped, lines, ignored = parse(read_body(args.parent, args.body_file, cwd), table)
         if args.cmd == "show":
-            cmd_show(items, skipped)
+            cmd_show(items, skipped, lines, ignored, table)
         else:
-            cmd_apply(items, args.parent, args.digest, ledger_script, cwd)
+            cmd_apply(items, lines, args.parent, args.digest, ledger_script, cwd)
     except Refused as exc:
         print(f"拒んだ（台帳は作っていない）: {exc}", file=sys.stderr)
         return EXIT_REJECTED

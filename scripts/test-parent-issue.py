@@ -60,6 +60,11 @@ REJECTED = {
     "一覧に無い依存先": "- [ ] #13 (depends: #12)\n",
     "循環": "- [ ] #12 (depends: #13)\n- [ ] #13 (depends: #12)\n",
     "未チェックが 0 件": "- [x] #12\n本文だけ\n",
+    "チェックリストの行が無い": "本文だけ\n- 箇条書き\n",
+    "線の項目が一覧に無い": "- [ ] #12\ncruise: 速さ = 速い\n",
+    "線の値が一覧に無い": "- [ ] #12\ncruise: 仕様の穴 = 決める\n",
+    "線の値が空": "- [ ] #12\ncruise: 直す線 =\n",
+    "同じ線が 2 行": "- [ ] #12\ncruise: 直す線 = 既定\ncruise: 直す線 = 広げる\n",
     "depends（括弧なし）": "- [ ] #12\n- [ ] #13 depends #12\n",
     "依存:（日本語）": "- [ ] #12\n- [ ] #13 依存: #12\n",
     "Depends（大文字）": "- [ ] #12\n- [ ] #13 (Depends: #12)\n",
@@ -68,6 +73,21 @@ REJECTED = {
     "閉じていないコードフェンス": "- [ ] #12\n```\n- [ ] #13\n",
     "閉じていない HTML コメント": "- [ ] #12\n<!--\n- [ ] #13\n",
 }
+
+# 線（C13・#458）。フェンス・コメントの中は読まない。引用・形の違う行は読み飛ばした行に出る
+LINED = """cruise: 仕様の穴 = 推奨で決めて起票
+  cruise: 直す線 = 既定
+cruise: 本番反映 = する
+> cruise: マージ = 関門を通ればマージ
+- cruise: 実機確認 = Refs でマージ
+Cruise: マージ
+```
+cruise: マージ = 関門を通ればマージ
+```
+<!--
+cruise: 実機確認 = Refs でマージ
+-->
+"""
 
 # 読む範囲（C3・C5）: 違う印で閉じないフェンス・インデントされたフェンス・長いフェンスの中の短い印・
 # 番号つきリスト・引用・HTML コメント・- で始まる題
@@ -223,7 +243,7 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     # C3・C5: 読む範囲。apply で台帳の題まで見る（- で始まる題が ledger.py に値として届く）
     rc, out, dig_extra = show("extra", EXTRA)
     o["読む範囲"] = (rc, re.findall(r"^#(\d+)\t依存: ([^\t]*)\t(.*)$", str(out), re.M),
-                   str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("指紋:")[0].strip())
+                   str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("線（cruise: の行）:")[0].strip())
     o["読む範囲の apply"] = run(mod, ["apply", "53", "--body-file", body("extra2", EXTRA), "--digest", dig_extra],
                               root)[0]
     try:
@@ -260,13 +280,46 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     # C9: ledger.py が add で失敗したら、作った台帳を消す（path と init は本物に任せる）
     fake = tmp / f"{tag}-ledger.py"
     fake.write_text(
-        "import subprocess, sys\n"
-        f"if sys.argv[1] == 'add' and sys.argv[3] == '13':\n    sys.exit(1)\n"
-        f"sys.exit(subprocess.run([sys.executable, {str(LEDGER)!r}, *sys.argv[1:]]).returncode)\n",
+        "import importlib.util, subprocess, sys\n"
+        f"spec = importlib.util.spec_from_file_location('real_ledger', {str(LEDGER)!r})\n"
+        "real = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(real)\nLINES = real.LINES\n"
+        "if __name__ == '__main__':\n"
+        "    if sys.argv[1] == 'add' and sys.argv[3] == '13':\n        sys.exit(1)\n"
+        f"    sys.exit(subprocess.run([sys.executable, {str(LEDGER)!r}, *sys.argv[1:]]).returncode)\n",
         encoding="utf-8")
     o["add の失敗"] = (run(mod, ["apply", "52", "--body-file", body("basic3", BASIC), "--digest", dig], root,
                           ledger_script=fake)[0],
                       "cruise-issue-52.json" in ledgers())
+
+    # C13（#458）: 線。show に出る・指紋に入る・apply で台帳に残る・本番反映は無視・形の違う行は読み飛ばす
+    lined = BASIC + LINED
+    rc, out, dig_l = show("lined", lined)
+    o["線の show"] = (rc, [l.strip() for l in str(out).split("線（cruise: の行）:\n")[-1].split("指紋:")[0].splitlines()
+                          if l.strip()],
+                    str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("線（cruise: の行）:")[0].strip())
+    o["線は指紋に入る"] = dig_l != dig
+    flipped = lined.replace("仕様の穴 = 推奨で決めて起票", "仕様の穴 = 止まる")
+    o["線だけ書き換えた apply"] = (run(mod, ["apply", "54", "--body-file", body("flipped", flipped), "--digest", dig_l],
+                                     root)[0], "cruise-issue-54.json" in ledgers())
+    o["線の apply"] = run(mod, ["apply", "54", "--body-file", body("lined2", lined), "--digest", dig_l], root)[0]
+    try:
+        data = json.loads((plans / "cruise-issue-54.json").read_text(encoding="utf-8"))
+        o["線の台帳"] = (data.get("lines", {}).get("values"), "指紋 " + dig_l in data.get("lines", {}).get("source", ""))
+    except (OSError, ValueError, KeyError):
+        o["線の台帳"] = None
+    o["線なしの台帳"] = "lines" in json.loads((plans / "cruise-issue-50.json").read_text(encoding="utf-8")) \
+        if (plans / "cruise-issue-50.json").is_file() else None
+    # 2 度目: 本文の線が台帳と違えば名指しし、台帳は変えない
+    before = (plans / "cruise-issue-54.json").read_bytes() if (plans / "cruise-issue-54.json").is_file() else None
+    _, _, dig_f = show("flipped2", flipped)
+    rc, _, err = run(mod, ["apply", "54", "--body-file", body("flipped3", flipped), "--digest", dig_f], root)
+    o["線の 2 度目"] = (rc, "仕様の穴 = 止まる（台帳: 推奨で決めて起票）" in str(err),
+                     before is not None and (plans / "cruise-issue-54.json").read_bytes() == before)
+    rc, _, err = run(mod, ["apply", "54", "--body-file", body("lined3", lined), "--digest", dig_l], root)
+    o["線が同じ 2 度目"] = (rc, "線が台帳の確かめた線と違う" in str(err))
+    # チェックリストが無い・全部済み は別の言葉
+    o["空の言い分け"] = (run(mod, ["show", "55", "--body-file", body("none", REJECTED["チェックリストの行が無い"])], root)[2],
+                       run(mod, ["show", "55", "--body-file", body("alldone", REJECTED["未チェックが 0 件"])], root)[2])
 
     # C10: gh の失敗は 4。gh が通れば同じ本文から同じ指紋（陽性対照）
     fake_gh(home, None)
@@ -328,11 +381,27 @@ MUTATIONS = {
     "本文の順のまま足す": [
         ("    return order(items)", "    return items")],
     "指紋を比べない": [
-        ("    if digest(items) != expected:", "    if False:")],
+        ("    if digest(items, lines) != expected:", "    if False:")],
     "在る台帳を見ない": [
         ("    if path.exists():", "    if False:")],
     "失敗した台帳を残す": [
-        ("            path.unlink(missing_ok=True)", "            pass")],
+        ("            path.unlink(missing_ok=True)\n            raise Unknown(f\"ledger.py add", "            pass\n            raise Unknown(f\"ledger.py add")],
+    "一覧に無い線を通す": [
+        ("            if key not in table or value not in table[key]:", "            if key not in table:")],
+    "同じ線の 2 行を通す": [
+        ("            if key in lines:\n", "            if False:\n")],
+    "本番反映の線を黙って落とす": [
+        ('                ignored.append(f"{lineno} 行目（本番反映は広げられない）: {line.strip()}")', "                pass")],
+    "形の違う cruise: の行を黙って落とす": [
+        ('                skipped.append(f"{lineno} 行目（cruise: の線の形ではない）: {line.strip()}")', "                pass")],
+    "指紋に線を含めない": [
+        ("sorted(lines.items())]", "[]]")],
+    "確かめた線を台帳に残さない": [
+        ("    if lines:\n        proc = ledger(", "    if False:\n        proc = ledger(")],
+    "本文の線の違いを名指ししない": [
+        ("        if differ:\n", "        if False:\n")],
+    "チェックリストが無いことを全部済んだと言う": [
+        ("        if done:\n", "        if True:\n")],
 }
 
 
@@ -351,7 +420,7 @@ def main() -> int:
               [int(r[0]) for r in rows] == [12, 15, 13, 14])
         check("依存と題", rows == [("12", "-", ""), ("15", "-", ""), ("13", "#12", "ログイン画面"), ("14", "#12, #13", "")])
         check("指紋は 12 桁", re.fullmatch(r"[0-9a-f]{12}", o["指紋"]) is not None)
-        skipped = str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("指紋:")[0].splitlines()
+        skipped = str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("線（cruise: の行）:")[0].splitlines()
         check("#番号 で始まらない行（受入基準・# の書き忘れ・#0）は読み飛ばした行として出る（「依存」を含んでも拒まない）",
               [l.strip() for l in skipped] == ["7 行目: - [ ] 受入基準: 依存の順に回る",
                                               "8 行目: - [ ] 16 (depends: #12)", "9 行目: - [ ] #0"])
@@ -387,6 +456,29 @@ def main() -> int:
 
         print("\nledger.py の失敗（C9）")
         check("4 で、作った台帳を残さない", o["add の失敗"] == (4, False))
+
+        print("\n線（C13・#458）")
+        n = BASIC.count("\n")
+        check("show は 0 で、線を項目の順に出す（書いていない項目も出す）・本番反映は無視した行",
+              o["線の show"][:2] == (0, ["直す線 = 既定", "仕様の穴 = 推奨で決めて起票",
+                                         "実機確認: 書いていない（.claude/dev-loop.md の宣言、無ければ既定）",
+                                         "マージ: 書いていない（.claude/dev-loop.md の宣言、無ければ既定）",
+                                         f"無視した行: {n + 3} 行目（本番反映は広げられない）: cruise: 本番反映 = する"]))
+        check("引用・リストの中・形の違う cruise: の行は読み飛ばした行に出る（フェンス・コメントの中は出ない）",
+              o["線の show"][2].splitlines()[-3:] == [
+                  f"  {n + 4} 行目（cruise: の線の形ではない）: > cruise: マージ = 関門を通ればマージ",
+                  f"  {n + 5} 行目（cruise: の線の形ではない）: - cruise: 実機確認 = Refs でマージ",
+                  f"  {n + 6} 行目（cruise: の線の形ではない）: Cruise: マージ"])
+        check("線は指紋に入る", o["線は指紋に入る"])
+        check("線だけ書き換えた本文の apply は 3 で、台帳を作らない", o["線だけ書き換えた apply"] == (3, False))
+        check("apply は 0 で、確かめた線と指紋を出所として台帳に残す",
+              o["線の apply"] == 0 and o["線の台帳"] == ({"仕様の穴": "推奨で決めて起票", "直す線": "既定"}, True))
+        check("線の無い本文の台帳には lines を書かない", o["線なしの台帳"] is False)
+        check("2 度目に本文の線が違えば 3 で名指しし、台帳を変えない", o["線の 2 度目"] == (3, True, True))
+        check("2 度目に本文の線が同じなら名指ししない", o["線が同じ 2 度目"] == (3, False))
+        none, alldone = o["空の言い分け"]
+        check("チェックリストが無いことと、全部済んだことを別の言葉で言う",
+              "1 本も無い" in none and "/dev-loop:dev-loop" in none and "すべて [x]" in alldone)
 
         print("\n判定できない（C10）・引数")
         check("gh の失敗は 4", o["gh の失敗"] == 4)
