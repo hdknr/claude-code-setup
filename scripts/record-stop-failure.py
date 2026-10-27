@@ -32,6 +32,7 @@ fire-and-forget——hook の出力と終了コードは無視される」（本
 - `error` が無い入力でも例外を出さず、`unreadable` の 1 行を残す
 - 前の行を消さずに追記する（`~/.claude` が無ければ作る）
 - 書けない文字（対にならないサロゲート）が来ても記録は残る
+- `cwd` が書けない文字を含んでも、`error` を含む記録を残す（ハッシュを取るところで落とさない）
 - 通知が失敗しても（`osascript` が無い・失敗する・引数にできない値）記録は残り、0 で終わる
 - 上限らしい `error`（`LIMIT`）なら、通知に「『継続』と打たずにリセットまで待つ」（#456）を添える
 - 上限らしくない `error` には「待て」を添えない（認証の失敗などに待っても直らない）
@@ -89,7 +90,7 @@ def parse(raw: bytes) -> dict:
            "session_id": text(data.get("session_id"), SHORT), "error": text(data["error"], SHORT)}
     cwd = data.get("cwd")
     if isinstance(cwd, str):
-        row["cwd_hash"] = hashlib.sha256(cwd.encode("utf-8")).hexdigest()[:12]
+        row["cwd_hash"] = hashlib.sha256(cwd.encode("utf-8", "surrogatepass")).hexdigest()[:12]
     details = text(data.get("error_details"), DETAILS)
     if details is not None:
         row["error_details"] = details

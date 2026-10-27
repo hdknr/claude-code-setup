@@ -52,7 +52,8 @@ Claude Code 2.1.311 の本体は `billing_error` を「usage limit reached — c
 
 `StopFailure` は、API のエラー（rate limit・認証の失敗など）でターンが終わったときに `Stop` の代わりに発火するイベントで、
 matcher は入力の `error` に当たります（値には `rate_limit` のほか `authentication_failed`・`overloaded`・`billing_error` などがあります。
-Claude Code 2.1.311 の本体の文字列から読みました）。**hook の出力と終了コードは無視されます**——hook が壊れていても、何も表示されません。
+Claude Code 2.1.311 の本体の文字列から読みました）。**hook の出力と終了コードは無視されます**（本体の説明文）。hook が壊れているときに何か表示されるかは確かめていません
+——**何も出ないことを「hook が動いた」と読まないでください**（記録のファイルに行が増えたかで確かめます）。
 
 ## 確かめたこと・確かめていないこと
 

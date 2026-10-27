@@ -47,6 +47,8 @@ CASES = [
     ("billing", json.dumps({"hook_event_name": "StopFailure", "error": "billing_error"}).encode(), "fake"),
     # 対にならないサロゲート——json.loads は通すが UTF-8 では書けない
     ("surrogate", b'{"error": "\\ud800x", "session_id": "\\udc00"}', "fake"),
+    # cwd のサロゲート——ハッシュを取るときに符号化するので、ここで落ちると上限の記録ごと失う
+    ("surrogate-cwd", b'{"error": "rate_limit", "cwd": "\\ud800"}', "fake"),
     # NUL——subprocess の引数にできない
     ("nul", b'{"error": "a\\u0000b"}', "fake"),
     ("odd-values", json.dumps({"error": "E" * 5000, "session_id": {"a": "SECRET-SID"},
@@ -61,8 +63,9 @@ MUTATIONS = {
         '"error": text(data["error"], SHORT)}',
         '"error": text(data["error"], SHORT), "message": data.get("last_assistant_message")}'),
     "cwd の生の値を書く": (
-        'row["cwd_hash"] = hashlib.sha256(cwd.encode("utf-8")).hexdigest()[:12]',
+        'row["cwd_hash"] = hashlib.sha256(cwd.encode("utf-8", "surrogatepass")).hexdigest()[:12]',
         'row["cwd_hash"] = cwd'),
+    "cwd の書けない文字で記録を落とす": ('cwd.encode("utf-8", "surrogatepass")', 'cwd.encode("utf-8")'),
     "error_details を切らない": ('text(data.get("error_details"), DETAILS)', 'text(data.get("error_details"), None)'),
     "error などを切らない": ("SHORT = 100", "SHORT = None"),
     "文字列でない値を書く": ("value[:limit] if isinstance(value, str) else None",
@@ -172,6 +175,10 @@ def main() -> int:
               and "error_details" not in odd[0])
         check("対にならないサロゲートでも記録は残る",
               obs["surrogate"]["rows"] == [{"hook_event_name": None, "session_id": "\udc00", "error": "\ud800x"}])
+        sc = obs["surrogate-cwd"]
+        check("cwd が対にならないサロゲートでも error を残し、通知に「継続と打たずに」を添える",
+              len(sc["rows"]) == 1 and sc["rows"][0].get("error") == "rate_limit" and len(sc["rows"][0].get("cwd_hash", "")) == 12
+              and len(sc["osa"]) == 4 and WAIT in sc["osa"][2])
         check("NUL を含む error でも記録は残る（通知は出せない）",
               obs["nul"]["rows"] == [{"hook_event_name": None, "session_id": None, "error": "a\x00b"}]
               and obs["nul"]["osa"] == [])

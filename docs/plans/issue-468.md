@@ -111,6 +111,7 @@ docs と `CLAUDE.md` は**本体の docstring を正とする**と書いて列�
 - 手順 5 の 2 パス目（Verifier。`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件・軽微な所見 3 件**（下の 2 パス目の表の V2-）。
   テストは 3.14・3.12・3.9 で緑、変異 12 件すべて赤。生成物の検査 2 本は緑。`mkdocs build --strict` は Verifier は走らせていない
 - 手順 6 の 2 パス目（`/code-review` high）: **指摘 5 件**（下の 2 パス目の表の CR2-。CR2-1 は V2-1 と同じ）。直す 3 件・残課題 2 件
+- 2 パス目の指摘対応を始める直前の HEAD（狭いパスの起点）: `35196a76148ceac03f258e07a4aad4a9b8150686`
 
 ## 既知の限界・決着済みの論点
 
