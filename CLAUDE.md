@@ -26,7 +26,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#290。**式は spec-loop の `scaffold.py` の `fingerprint` の写しで、`scripts/test-scaffold.py` が両方を走らせて
       一致を見る**——同じ理由）
     - `skills/cruise/` - **オートクルーズの入口**（#446。`/dev-loop:cruise <親 Issue> [--absent]`）。親 Issue のチェックリストから
-      `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**）。
+      `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**。
+      親 Issue の `cruise:` の行（線）も確かめてから台帳に残す——#458。線の項目と値は `ledger.py` の `LINES` を読む）。
       **dev-loop スキルを `../dev-loop/` で指す**ので、**素のスキルとしては張れない**。書式と守る／守らないは docstring を正とする。
       テストは `scripts/test-parent-issue.py`
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
