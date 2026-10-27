@@ -278,6 +278,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                         ("lshape", {"lines": {"values": {}, "source": "s"}}),
                         ("ldec", {"issues": [{**entry(1, []), "decisions": "x"}]}),
                         ("lorig", {"issues": [{**entry(1, []), "origin": 5}]}),
+                        ("uops", {"user_ops": {"commands": "gh x", "source": "s", "updated": ""}}),
+                        ("usrc", {"user_ops": {"commands": ["gh x"], "source": " ", "updated": ""}}),
+                        ("udup", {"user_ops": {"commands": ["gh x", "gh x"], "source": "s", "updated": ""}}),
                         ("lold", {})):
         data = {"format": 1, "name": name, "issues": [entry(1, [])], **extra}
         (plans / f"cruise-{name}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -310,6 +313,31 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     r = str(run(mod, ["show", "fo"], root)[1])
     o["origin の show(済み)"] = "周の途中で足した行のうち済んでいないもの: なし" in r
     o["origin の無い show"] = "周の途中で足した行" not in str(run(mod, ["show", "ln"], root)[1])
+
+    # L14（#466）: 利用者の操作待ちと、利用者が打つ操作
+    run(mod, ["init", "uo"], root)
+    for args in (["1"], ["2", "--deps", "1"], ["3"]):
+        run(mod, ["add", "uo", *args], root)
+    uf = plans / "cruise-uo.json"
+    o["await の set"] = run(mod, ["set", "uo", "1", "state=await", "note=利用者が打つ: gh workflow run x"], root)[0]
+    o["next(依存が操作待ち)"] = run(mod, ["next", "uo"], root)[1].split()
+    r = str(run(mod, ["show", "uo"], root)[1])
+    o["await の show"] = ("利用者の操作待ち: #1（利用者が打つ: gh workflow run x）" in r, "#1(await)" in r,
+                          "利用者が打つ操作" not in r)
+    o["user-ops 通る"] = run(mod, ["user-ops", "uo", "gh workflow run x", "aws ecs run-task", "--source", "s1"], root)[0]
+    o["user-ops の show"] = "利用者が打つ操作（出所: s1・" in str(run(mod, ["show", "uo"], root)[1])
+    before = snapshot(uf)
+    o["user-ops 拒む"] = tuple(run(mod, ["user-ops", "uo", *cmds, "--source", src], root)[0] for cmds, src in (
+        (["gh x"], " "), ([" "], "s"), (["gh x", "gh x"], "s")))
+    o["user-ops 拒んだ後も同じ"] = snapshot(uf) == before
+    o["user-ops 置き換え"] = run(mod, ["user-ops", "uo", "--source", "s2"], root)[0]
+    try:
+        o["user-ops の値"] = {k: v for k, v in json.loads(uf.read_text(encoding="utf-8"))["user_ops"].items()
+                             if k != "updated"}
+    except (OSError, ValueError, KeyError):
+        o["user-ops の値"] = None
+    run(mod, ["set", "uo", "1", "state=merged"], root)
+    o["next(操作が済んだ)"] = run(mod, ["next", "uo"], root)[1].split()
 
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
@@ -426,6 +454,11 @@ MUTATIONS = {
     "set で出所があって依存の無い行を作れる": [
         ('    if ("deps" in changes or "origin" in changes) and after.get("origin") and not after["deps"]:',
          "    if False:")],
+    "user_ops の出所を見ない": [
+        ('        raise Refused("出所が空（--source に、誰がいつ決めたかを書く）")',
+         '        pass')],
+    "await に依存する行を next に出す": [
+        ('all(state.get(d) == DONE for d in i["deps"])', 'all(state.get(d) in (DONE, "await") for d in i["deps"])')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -511,8 +544,8 @@ def main() -> int:
         check("線の無い台帳の show は「無い」と出す", o["線の無い show"])
         check("decisions は番号のカンマ区切りだけ（番号でなければ 3）",
               o["decisions"] == (0, 3) and o["decisions の値"] == "12,13")
-        for name in ("lbad", "lval", "lsrc", "lshape", "ldec", "lorig"):
-            check(f"手で崩した線・decisions・origin（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
+        for name in ("lbad", "lval", "lsrc", "lshape", "ldec", "lorig", "uops", "usrc", "udup"):
+            check(f"手で崩した線・decisions・origin・user_ops（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
         check("線と decisions と origin を持たない台帳はこれまでどおり読む", o["線の形 lold"] == (0, "1\n"))
         absent = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "absent-lines.md"
                   ).read_text(encoding="utf-8").split("## 線と既定")[1].split("\n## ")[0]
@@ -539,6 +572,18 @@ def main() -> int:
         check("show が出所の列と、済んでいない足した行を出す", o["origin の show"] == (True, True, True))
         check("足した行がすべて merged か dropped なら「なし」", o["origin の show(済み)"])
         check("足した行の無い台帳の show は、その行を出さない", o["origin の無い show"])
+
+        print("\n利用者の操作待ちと利用者が打つ操作（L14・#466）")
+        check("await を書ける", o["await の set"] == 0)
+        check("await に依存する #2 は next に出ず、依存しない #3 は出る", o["next(依存が操作待ち)"] == ["3"])
+        check("show が操作待ちを note つきで出し、進行中にも数え、user_ops の無い台帳では出さない",
+              o["await の show"] == (True, True, True))
+        check("user-ops は通り、show が出所つきで出す", o["user-ops 通る"] == 0 and o["user-ops の show"])
+        check("user-ops の空の出所・空のコマンド・同じコマンド 2 度は 3", o["user-ops 拒む"] == (3, 3, 3))
+        check("拒んだ user-ops のあとも台帳が 1 バイトも変わらない", o["user-ops 拒んだ後も同じ"])
+        check("user-ops は置き換え（渡さなければ空）・出所を残す",
+              o["user-ops 置き換え"] == 0 and o["user-ops の値"] == {"commands": [], "source": "s2"})
+        check("操作待ちが merged になれば依存する #2 が出る", o["next(操作が済んだ)"] == ["2", "3"])
 
         print("\n名前（L8）・git の外（L9）")
         check("../x・a/b・.x・x/../../../escaped は 2",
