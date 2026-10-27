@@ -700,15 +700,21 @@ BARE_URLS = ("https://ex.com/Q-001 と http://h/docs/Q-001.md と https://ex.com
 
 # URL の後ろの全角の句読点・閉じ括弧・描いた HTML の実体参照で URL を終える。URL の直前の番号も URL に入れない（#376 の 1 パス目）
 AFTER_URLS = ("（https://ex.com/a）。{q}で 、https://ex.com/b、{q} &lt;https://ex.com/c&gt;{q} https://ex.com/d&quot;{q} "
-              "{q}https://ex.com/e https://ex.com/f. {q}")
+              "{q}https://ex.com/e https://ex.com/f. {q} https://ex.com/g\"{q} https://ex.com/h'{q} https://ex.com/i&#39;{q} "
+              "「https://ex.com/j」{q} https://ex.com/k，{q} https://ex.com/l：{q} 【https://ex.com/m】{q} "
+              "（https://ex.com/n）、https://ex.com/o/Q-002 と （https://ex.com/r）{q}")
+# URL の中の全角の丸括弧（対）と、文字の区間の終わりの URL（#376 の 2 パス目）
+INSIDE_URLS = ("https://ja.wikipedia.org/wiki/仕様（改訂）/Q-001 と https://ex.com/p/Q-001")
 
 
 def hook_links_bare_url(plugin: Path, work: Path) -> bool:
     docs = link_site(work)
     out, warnings = link(plugin, docs, f"<p>{BARE_URLS}（Q-001）</p>\n", "index.md")
     after, warned = link(plugin, docs, f"<p>{AFTER_URLS.format(q='Q-001')}</p>\n", "index.md")
+    inside, warned2 = link(plugin, docs, f"<p>{INSIDE_URLS}</p>\n<li>https://ex.com/q/Q-001</li>\n", "index.md")
     return (not warnings and out == f"<p>{BARE_URLS}（{a('Q-001', 'qa.html#v1-q-001')}）</p>\n"
-            and not warned and after == f"<p>{AFTER_URLS.format(q=a('Q-001', 'qa.html#v1-q-001'))}</p>\n")
+            and not warned and after == f"<p>{AFTER_URLS.format(q=a('Q-001', 'qa.html#v1-q-001'))}</p>\n"
+            and not warned2 and inside == f"<p>{INSIDE_URLS}</p>\n<li>https://ex.com/q/Q-001</li>\n")
 
 
 def hook_decision_table(plugin: Path, work: Path) -> bool:
@@ -815,10 +821,11 @@ CASES = {
 
 # (名前, 壊す対象, 壊す前, 壊した後, 殺すはずの試料の名前)。2 箇所を壊すときは (壊す前, 壊した後) の列を渡す
 MUTATIONS: list[tuple] = [
-    ("素の URL の中も書き換える", HOOK, "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), url.group(0)]",
-     "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), QA_NUMBER.sub(link, url.group(0))]",
+    ("素の URL の中も書き換える", HOOK, "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), between[url.start():end]]",
+     "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), QA_NUMBER.sub(link, between[url.start():end])]",
      "素の URL の中の番号は変えない"),
-    ("URL を見ない", HOOK, "        for url in URL.finditer(between):", "        for url in []:", "素の URL の中の番号は変えない"),
+    ("URL を見ない", HOOK, "        while (url := URL.search(between, start)) is not None:", "        while (url := None) is not None:",
+     "素の URL の中の番号は変えない"),
     ("www. の URL を見ない", HOOK, 'URL = re.compile(r"(?:[A-Za-z]+://|www\\.)', 'URL = re.compile(r"(?:[A-Za-z]+://)',
      "素の URL の中の番号は変えない"),
     ("URL の後ろを書き換えない", HOOK, 'return "".join(parts + [QA_NUMBER.sub(link, between[start:])])',
@@ -841,7 +848,14 @@ MUTATIONS: list[tuple] = [
     ("空の見出しの次の行を繰り上げる", HOOK, "                header = next(reader, [])\n",
      "                header = next((row for row in reader if any(cell.strip() for cell in row)), [])\n",
      "読めない・見出しの無い決定表は警告"),
-    ("URL を全角の句読点で終えない", HOOK, "(?=[\\s<>\\\"'（）「」『』。、]|", "(?=[\\s<>\\\"']|", "素の URL の中の番号は変えない"),
+    ("URL を全角の句読点で終えない", HOOK, 'URL_STOP = set("。、，．：；！？「」『』【】〈〉《》")', 'URL_STOP = set()',
+     "素の URL の中の番号は変えない"),
+    ("URL の全角の丸括弧を対で数えない", HOOK, "            depth += 1\n", "            pass\n", "素の URL の中の番号は変えない"),
+    ("URL を対の無い閉じ丸括弧で終えない", HOOK, "            if depth == 0:\n                return index\n", "            if depth == 0:\n                continue\n",
+     "素の URL の中の番号は変えない"),
+    ("URL を引用符で終えない", HOOK, "(?=[\\s<>\\\"']|", "(?=[\\s<>]|", "素の URL の中の番号は変えない"),
+    ("URL を文字の区間の終わりで終えない", HOOK, "#x27);|$)", "#x27);)", "素の URL の中の番号は変えない"),
+    ("URL の残りの次の URL を見ない", HOOK, "            start = end\n", "            start = url.end()\n", "素の URL の中の番号は変えない"),
     ("URL を実体参照で終えない", HOOK, "|&(?:lt|gt|quot|#39|#x27);|$)", "|$)", "素の URL の中の番号は変えない"),
     ("スキームに数字と記号を許す", HOOK, '(?:[A-Za-z]+://|www', '(?:[A-Za-z][A-Za-z0-9+.-]*://|www', "素の URL の中の番号は変えない"),
     ("雛形の決定表のページに印が無い", "templates/mkdocs/docs/decision-table.md", "<!-- spec-loop: decision_table -->", "",
@@ -1082,7 +1096,8 @@ def check_reference() -> None:
     check("references/tree.md に「ドキュメントのツール」の節が無い", "\n## ドキュメントのツール\n" in text)
     section = text.split("\n## ドキュメントのツール\n", 1)[-1].split("\n## ", 1)[0]
     for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "shared/",
-                 "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない"):
+                 "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない",
+                 "spec-loop 0.28.0 で、フックは素の本文の URL の中の番号を書き換えなくなり"):
         check(f"references/tree.md の「ドキュメントのツール」に {word} が無い", word in section)
     qa = (PLUGIN / "references" / "qa-csv.md").read_text(encoding="utf-8")
     check("references/qa-csv.md に「本文での番号」の節が無い", "\n## 本文での番号\n" in qa)

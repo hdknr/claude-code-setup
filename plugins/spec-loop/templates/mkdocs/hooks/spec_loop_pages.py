@@ -43,7 +43,9 @@ spec-loop の `references/qa-csv.md` の「層」）。
 - **素の本文に書いた URL（`https://ex.com/Q-001`・`…?id=Q-001`・`…#Q-001`）の中の番号は変えない**（#341）——
   `<a>` の中は上の決まりで変えないが、素の URL は MkDocs が `<a>` にしないので、文字の中から URL を先に除く。
   URL は `<英字のスキーム>://` か `www.` で始まり、空白・`<`・`>`・引用符（描いた HTML の `&lt;`・`&gt;`・`&quot;`・`&#x27;` も）・
-  全角の括弧と句読点（`（）「」『』。、`）の手前までとみなす（文の区切りの後ろの番号をリンクにするため）。
+  全角の句読点・かぎ括弧（`。、，．：；！？「」『』【】〈〉《》`）の手前までとみなす（文の区切りの後ろの番号をリンクにするため）。
+  **全角の丸括弧は対で数える**——URL の中で開いた `（` に対応する `）` は URL の中、対の無い `）` で終える
+  （`https://ja.wikipedia.org/wiki/仕様（改訂）/Q-001` を割らず、`（https://ex.com/a）。Q-001` の番号はリンクにする）。
   半角の記号（`.`・`)` など）は URL の中にも現れるので区切りにしない——`https://ex.com/a.Q-001` の番号はリンクにならない。
 """
 
@@ -72,7 +74,24 @@ QA_OPTION_SEPARATOR = " / "
 QA_PAGE = "qa.md"
 DECISION_TABLE = "decision_table.csv"
 # 素の本文の URL（#341）。番号のリンク化はこの中を変えない
-URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"'（）「」『』。、]|&(?:lt|gt|quot|#39|#x27);|$)")
+URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"']|&(?:lt|gt|quot|#39|#x27);|$)")
+# URL を終える全角の文字（丸括弧は対で数えるので url_end が見る）
+URL_STOP = set("。、，．：；！？「」『』【】〈〉《》")
+
+
+def url_end(candidate: str) -> int:
+    """URL の候補のうち、URL とみなす長さ。全角の句読点・かぎ括弧と、対の無い全角の閉じ丸括弧の手前で終える。"""
+    depth = 0
+    for index, char in enumerate(candidate):
+        if char in URL_STOP:
+            return index
+        if char == "（":
+            depth += 1
+        elif char == "）":
+            if depth == 0:
+                return index
+            depth -= 1
+    return len(candidate)
 # 起票元ごとの番号の印（`Q-S-001`。#278）。印の無い前の形の番号（`Q-001`）もリンクにする
 QA_MARKS = "RSFD"
 QA_NUMBER = re.compile(rf"(?<![A-Za-z0-9_-])Q-(?:[{QA_MARKS}]-)?[0-9]{{3,}}(?![A-Za-z0-9_-])")
@@ -246,9 +265,11 @@ def link_numbers(content: str, src_path: str, target: str, docs_dir: Path) -> st
     def link_text(between: str) -> str:
         """文字の中の番号をリンクにする。素の URL の中は変えない（#341）。"""
         parts, start = [], 0
-        for url in URL.finditer(between):
-            parts += [QA_NUMBER.sub(link, between[start:url.start()]), url.group(0)]
-            start = url.end()
+        # 全角の文字で終えた URL の残りから探し直す（残りの中の次の URL も見る）
+        while (url := URL.search(between, start)) is not None:
+            end = url.start() + url_end(url.group(0))
+            parts += [QA_NUMBER.sub(link, between[start:url.start()]), between[url.start():end]]
+            start = end
         return "".join(parts + [QA_NUMBER.sub(link, between[start:])])
 
     out, last = [], 0
