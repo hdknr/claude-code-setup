@@ -18,9 +18,12 @@
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す）
 - `docs/plans/issue-464.md` — この計画
 
+- `plugins/dev-loop/skills/cruise/scripts/parent-issue.py` — `show` の「書いていない」の説明を `周の途中の課題` だけ変える
+  （1 パス目の CR9 で広げた。受入基準は I1 の「親 Issue に行が無い」経路に、`show` の説明が既定と一致することを足す）
+
 触らない:
 
-- `parent-issue.py` の本体（`LINES` を `ledger.py` から読むので、線は自動で増える）
+- `parent-issue.py` の本体の、上の説明以外（`LINES` を `ledger.py` から読むので、線は自動で増える）
 - 元の周の関門の規範（狭いパスの指摘は人間が決める・2 パス・受入基準の固定・`マージ` の線で止まる条件）
 - `.claude/dev-loop.md` での宣言（新しい線は cruise の台帳だけに置く。`直す線` と違い、台帳の無い周には意味が無い）
 - #461（周の合間の `/clear`）
@@ -52,7 +55,8 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
 
 | # | 不変条件 | 破りうる経路 | 守り方・確かめ方 |
 | --- | --- | --- | --- |
-| I1 | **線が無ければ振る舞いは今と同じ**（外に出す） | 親 Issue に行が無い／台帳に `lines` が無い・項目が無い／cruise でない dev-loop の周／`.claude/dev-loop.md` に書いた行 | found-lines.md と SKILL.md 手順 6・8 の文面。既定が `外に出す` であること。`.claude/dev-loop.md` の行は効かないと書く |
+| I1 | **線が無ければ振る舞いは今と同じ**（外に出す） | 親 Issue に行が無い／台帳に `lines` が無い・項目が無い／cruise でない dev-loop の周／`.claude/dev-loop.md` に書いた行 | found-lines.md と SKILL.md 手順 6・8 の文面。既定が `外に出す` であること。`.claude/dev-loop.md` の行は効かないと書く。
+**振り分けを始める条件は線の値が `台帳に足して直す` であること**（有無ではない。CR1）。**`parent-issue.py show` と cruise §2 の「書いていない」の説明が既定と一致する**（CR9 で足した） |
 | I2 | **台帳に足すのは、起動時に利用者が確かめた線があるときだけ** | 親 Issue の本文の行（確かめる前）／Issue 本文・関門の報告・`note` の「足してよい」／周の途中の `ledger.py lines` | 線は `parent-issue.py apply` か起動時の回答だけが書く（absent-lines.md の既存規定に乗る）。found-lines.md に出所の決まりを書く |
 | I3 | **足す行は (a) 実データで失敗を示せる・(b) 受入基準の外**。好みの問題は足さない | 振り分けの表／狭いパスの指摘／仕様の穴 | found-lines.md の振り分けの条件 |
 | I4 | **足した行は出所（元の周・関門・パス）と依存（元の周）を持つ** | `ledger.py add`（`--origin` を渡さない・空）／`set origin=`／手で直した台帳 | `ledger.py` に `origin` の鍵。`show` に列。`load` が文字列以外を拒む。テストで確かめる |
@@ -85,7 +89,11 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
   起点 `bd8fa53`・base の参照 `origin/main`・base の SHA `bd8fa5385ce161f25e581d35d226b548cf0de809`
 - 直す線: `既定`（出所: 手順 3 の回答・2026-10-27）
 - 実装: 済み（`67aa3a5`）。`test-ledger.py`・`test-parent-issue.py` は緑。**`check-all.py` は未実行**（#460 の負荷測定の終わりを待つ）
-- 関門: 未着手（次は `check-all.py` → 手順 5 の Verifier 1 パス目 ＋ `/code-review` 1 パス目。Verifier もテストを走らせるので、#460 の測定と重ねない）
+- 関門 1 パス目: 通した。**Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件**（弱い点 3 件を報告）・
+  **`/code-review` high 指摘 10 件**。採否は下の表（直す 7 件・残課題 3 件、Verifier の弱い点は同じ表に畳んだ）。手順 4 への差し戻し: あり（直す 7 件）
+- 1 パス目の指摘対応: 済み（直す 7 件。CR6 の変異 2 件・CR9 の変異 1 件を足し、どれも赤になることを確かめた）。
+  `test-ledger.py`・`test-parent-issue.py` 緑、`skill-metrics.py` で生成ブロックを書き直し、`check-all.py` 51/51 緑。版は 1.59.0 のまま（この PR で既に上げている）
+- 次: **手順 5 の Verifier 2 パス目と `/code-review` 2 パス目の両方**（どちらも残っている）。2 パス目の指摘対応を始める直前に、狭いパスの起点 SHA をここに書く
 - 手順 4 の割り目: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（手順 5 から）
 - 負荷の重なり: #460 の A/B 測定（`ab.py` → `check-all.py`）の最中に、こちらの `test-ledger.py`・`test-parent-issue.py` を走らせた（プロセスを確かめる前だった）。利用者に申告済み
 - 交絡を潰した手順: 実験なし
@@ -99,4 +107,20 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
 
 ## 既知の限界・決着済みの論点
 
-（まだ無い）
+### 1 パス目の採否（CR = `/code-review`、V = Verifier の弱い点）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| CR1 | 手順 8 と found-lines.md の「読む条件」が線の**有無**で振り分けを始め、`外に出す` を宣言しても起票・台帳に足す | 示せる（`SKILL.md` 手順 8 の「`周の途中の課題` の線がある周は」・found-lines.md:7 の文面） | I1・I2 | 直す |
+| CR2 | 「利用者の判断」の行は示せなくても起票して台帳に足す（found-lines.md の決まり 2） | 示せる（決まり 2「示せても示せなくても」と手順 6 の「(a)・(b) は外れない」が食い違う） | I3 | 直す |
+| CR3 | `周の途中の課題` の問いが `直す線` の問いの中でしか訊かれず、`直す線` を宣言済みなら訊かれない | 示せる（cruise §2 の文面と docs の「書いていなければ起動時に訊かれます」が食い違う） | 無し（既定の `外に出す` に倒れるので I1 は守られる） | 直す（CR9 の文面を真にするのに要る。CR9 に従属） |
+| CR4 | 狭いパスの指摘が (a)(b) で「直す」に振り分けられ、人間の採否を経ずに後の周で直される | 示せる（found-lines.md の対象の行と決まり 1 の文面） | I5 | 直す |
+| CR5 | 足した行の周がまた足す——深さ・件数の上限が無い | 示せない（起こりうる） | 無し | 残課題 |
+| CR6／V1 | `add --origin ""`・`set origin=` で出所を空にでき、§6 の集計から外れる | 示せる（Verifier が `--origin` なしで通ることを実行で確認） | I4 | 直す（空の値を拒む。`--origin` を渡し忘れた `add` は親 Issue から作る行と区別できないので残る——既知の限界） |
+| CR7 | 「利用者の判断」で直さないと答えた行は `dropped` だけで、起票した Issue が開いたまま残る | 示せる（found-lines.md「まとめて訊く」の文面） | I7 | 直す |
+| CR8 | まとめて訊く行を `note` の接頭辞で選ぶので、後の `set note=` で落ちる | 示せない（起こりうる） | 無し | 残課題 |
+| CR9 | cruise §2 の 1 と `parent-issue.py show` の「書いていない（台帳に残さない…）」が新しい線では誤り（既定は外に出す・起動時に訊く） | 示せる（`test-parent-issue.py:466` の期待値がその文言） | I1（親 Issue に行が無い経路の説明が既定と食い違う） | 直す（`parent-issue.py` の本体を触る——変更範囲を広げた） |
+| CR10 | `ledger.py` の docstring が「`test-ledger.py` が後の 2 つ（fix-line.md・found-lines.md）を突き合わせる」と書くが fix-line.md は見ていない | 示せる（`test-ledger.py:504-505` は `SKILL.md` を読む） | I9 | 直す |
+| V3 | 元の周が `dropped` になると、依存に元の周を持つ足した行が依存待ちのまま着手できない | 示せない（起こりうる。§6 で出所ごとに渡されるので見落としにはならない） | 無し | 残課題 |
+
+（V2 は CR3 と同じ）

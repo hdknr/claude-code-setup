@@ -288,6 +288,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     run(mod, ["add", "fo", "1"], root)
     o["origin の add"] = run(mod, ["add", "fo", "2", "--deps", "1", "--origin", "#1 狭いパス"], root)[:2]
     o["origin の set"] = run(mod, ["set", "fo", "1", "origin=手"], root)[0]
+    # 空の出所は拒み、台帳を変えない（下の「origin の値」に #3 が無く #2 の出所が残ることで見る）
+    o["origin の空"] = (run(mod, ["add", "fo", "3", "--origin", " "], root)[0],
+                        run(mod, ["set", "fo", "2", "origin="], root)[0])
     try:
         o["origin の値"] = [(i["number"], i["origin"], i["deps"]) for i in json.loads(
             (plans / "cruise-fo.json").read_text(encoding="utf-8"))["issues"]]
@@ -406,6 +409,11 @@ MUTATIONS = {
     "origin の型を見ない": [
         ('TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")',
          'TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions")')],
+    # 守る: origin を空で書かない
+    "add の空の origin を通す": [
+        ("    if origin is not None and not origin.strip():", "    if False:")],
+    "set の空の origin を通す": [
+        ('        elif key == "origin" and not value.strip():', '        elif False:')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -513,6 +521,7 @@ def main() -> int:
         check("add --origin が出所を残す", o["origin の add"][0] == 0 and "出所: #1 狭いパス" in str(o["origin の add"][1]))
         check("set origin= が通り、親 Issue から作った行は空・足した行は依存を持つ", o["origin の set"] == 0
               and o["origin の値"] == [(1, "手", []), (2, "#1 狭いパス", [1])])
+        check("add --origin の空・set origin= は 3（台帳は変えない）", o["origin の空"] == (3, 3))
         check("show が出所の列と、済んでいない足した行を出す", o["origin の show"] == (True, True, True))
         check("足した行がすべて merged か dropped なら「なし」", o["origin の show(済み)"])
         check("足した行の無い台帳の show は、その行を出さない", o["origin の無い show"])

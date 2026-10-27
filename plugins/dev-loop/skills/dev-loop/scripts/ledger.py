@@ -41,7 +41,8 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 `lines` は**利用者が確かめた線**（#458）で、無くてもよい（無い台帳はこれまでどおり読む）。
 **項目と値は `LINES` だけ**——意味は `references/absent-lines.md` の「線と既定」と `references/fix-line.md`
 （`直す線`）と `references/found-lines.md`（`周の途中の課題`。#464）を正とし、
-`scripts/test-ledger.py` が `LINES` と `absent-lines.md` の表（と後の 2 つ）を突き合わせる。**`本番反映` は項目に無い**（広げられない）。
+`scripts/test-ledger.py` が `LINES` を `absent-lines.md` の表と、`直す線` は `SKILL.md` 手順 3 と、`周の途中の課題` は
+`found-lines.md` と突き合わせる（`fix-line.md` は見ていない）。**`本番反映` は項目に無い**（広げられない）。
 **どこから来た値を `lines` に書いてよいか（出所）は `references/absent-lines.md` の「線を広げられるのは利用者だけ」を正とする**
 ——このスクリプトは出所を確かめない（`--source` に書かれた文字列を残すだけ）。
 
@@ -94,6 +95,9 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`LINES` に無い線の項目・値を書かない**——`lines` でも、手で直した台帳の `load` でも（後者は 4）。
   **`本番反映` は項目に無いので、どの値でも拒む。**
 - **`origin` も文字列だけ**——手で直した台帳で文字列でなければ 4。`origin` を持たない台帳はこれまでどおり読む。
+- **`add --origin` に空を渡したら拒む**——空にすると「周の途中で足した行」の集計から外れる。
+  **`--origin` を渡し忘れた `add` は見分けられない**——親 Issue から作る行と同じ形なので、足す手順（`references/found-lines.md`）が守る。
+- **`set origin=` で空にするのも拒む**——同じ理由。
 - **`lines` は出所の無い値を書かない**——`--source` が空なら拒む。**`lines` は置き換えで、渡さなかった項目は消える**
   ——前の確認の値が、確かめ直した後に黙って残らない。
 
@@ -124,7 +128,7 @@ from pathlib import Path
 STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "dropped")
 KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
 TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
-# 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md と fix-line.md を正とする
+# 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md・fix-line.md・found-lines.md を正とする
 LINES = {
     "直す線": ("既定", "広げる"),
     "仕様の穴": ("止まる", "推奨で決めて起票"),
@@ -348,7 +352,9 @@ def cmd_init(path, name):
     print(path)
 
 
-def cmd_add(path, number, deps, title, origin=""):
+def cmd_add(path, number, deps, title, origin=None):
+    if origin is not None and not origin.strip():
+        raise Refused("--origin が空（渡すなら、どの周のどの関門のどのパスの行かを書く）")
     data = load(path)
     if any(i["number"] == number for i in data["issues"]):
         raise Refused(f"#{number} は既に台帳に在る（変えるなら set）")
@@ -373,6 +379,8 @@ def cmd_set(path, number, pairs):
             changes[key] = parse_deps(value)
         elif key == "decisions":
             changes[key] = ",".join(map(str, parse_deps(value, Refused)))
+        elif key == "origin" and not value.strip():
+            raise Refused("origin を空にしない（空にすると、cruise を終えるときの「周の途中で足した行」から外れる）")
         else:
             changes[key] = value
     data = load(path)
@@ -451,7 +459,7 @@ def build_parser():
     a.add_argument("number")
     a.add_argument("--deps", default="")
     a.add_argument("--title", default="")
-    a.add_argument("--origin", default="")
+    a.add_argument("--origin", default=None)
     s = sub.add_parser("set")
     s.add_argument("name")
     s.add_argument("number")

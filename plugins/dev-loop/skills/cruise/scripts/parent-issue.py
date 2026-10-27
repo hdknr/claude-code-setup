@@ -98,6 +98,8 @@ cruise: 仕様の穴 = 推奨で決めて起票
 - **`本番反映` の線は台帳に入れず、無視した行として出す**——広げられない線を、黙って落としたように見せない。
 - **`cruise:` を含むが線の形でない行は、読み飛ばした行として出す**——書き損じた線を黙って落とさない。
 - **指紋に線を含める**——確かめた後に線だけを書き換えても、台帳を作らない。
+- **書いていない `周の途中の課題` は、他の項目と違う説明で出す**（起動時に訊く・既定は外に出す・`.claude/dev-loop.md` は効かない）
+  ——他の項目と同じ「台帳に残さない」を見せると、確かめる場面の説明が既定と食い違う（#464）。
 - **`apply` は確かめた線を台帳に残す**——各周が台帳から読む。
 - **台帳が既に在れば、本文の線が台帳の確かめた線と違うことも名指しする**——台帳は変えない（確かめ直すのは利用者）。
 - **チェックリストの行が 1 本も無いことと、全部チェック済みのことを分けて言う**——前者は親 Issue でない Issue（1 件なら `/dev-loop:dev-loop`）。
@@ -128,6 +130,11 @@ EXIT_REJECTED = 3
 EXIT_UNKNOWN = 4
 
 LEDGER = Path(__file__).resolve().parents[2] / "dev-loop" / "scripts" / "ledger.py"
+# show が「書いていない」項目に添える説明（項目ごとに違うものだけ名指しし、残りは None の文）
+UNWRITTEN = {
+    None: "台帳に残さない。各周の読み方は absent-lines.md の「cruise で確かめた線」",
+    "周の途中の課題": "起動時に 1 度だけ訊く。答えが無ければ外に出す。.claude/dev-loop.md の行は効かない。意味は found-lines.md",
+}
 CHECK_RE = re.compile(r"^\s*(?P<quote>(?:>\s*)+)?(?:[-*+]|[0-9]+[.)])\s+\[(?P<mark>[ xX])\]\s*(?P<rest>.*)$")
 ITEM_RE = re.compile(r"^#([0-9]+)(?![0-9A-Za-z_])(.*)$")
 DEPS_RE = re.compile(r"\(depends:([^)]*)\)")
@@ -347,8 +354,7 @@ def cmd_show(items, skipped, lines, ignored, table):
             print(f"  {line}")
     print("線（cruise: の行）:")
     for key in table:
-        print(f"  {key} = {lines[key]}" if key in lines
-              else f"  {key}: 書いていない（台帳に残さない。各周の読み方は absent-lines.md の「cruise で確かめた線」）")
+        print(f"  {key} = {lines[key]}" if key in lines else f"  {key}: 書いていない（{UNWRITTEN.get(key, UNWRITTEN[None])}）")
     for line in ignored:
         print(f"  無視した行: {line}")
     print(f"指紋: {digest(items, lines)}")
