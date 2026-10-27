@@ -84,7 +84,10 @@ docs/plugins/dev-loop-cruise.md・test-ledger.py の期待値・test-parent-issu
 - 周の在り処: ブランチ `issue/464-cruise-found-lines`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-464`・
   起点 `bd8fa53`・base の参照 `origin/main`・base の SHA `bd8fa5385ce161f25e581d35d226b548cf0de809`
 - 直す線: `既定`（出所: 手順 3 の回答・2026-10-27）
-- 関門: 未着手
+- 実装: 済み（`67aa3a5`）。`test-ledger.py`・`test-parent-issue.py` は緑。**`check-all.py` は未実行**（#460 の負荷測定の終わりを待つ）
+- 関門: 未着手（次は `check-all.py` → 手順 5 の Verifier 1 パス目 ＋ `/code-review` 1 パス目。Verifier もテストを走らせるので、#460 の測定と重ねない）
+- 手順 4 の割り目: 訊いた → 「ここで割る」（2026-10-27）。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 464`（手順 5 から）
+- 負荷の重なり: #460 の A/B 測定（`ab.py` → `check-all.py`）の最中に、こちらの `test-ledger.py`・`test-parent-issue.py` を走らせた（プロセスを確かめる前だった）。利用者に申告済み
 - 交絡を潰した手順: 実験なし
 - 並行: #460 と並行。#460 が負荷を測っている間は `check-all.py` を走らせない（利用者の指示・2026-10-27）
 
