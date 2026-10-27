@@ -26,6 +26,7 @@
 """
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -57,7 +58,7 @@ def git(cwd, *args):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
 
 
-def make_repo(root: Path) -> Path:
+def _build_repo(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     assert_not_real_repo(root)
     git(root, "init", "-q")
@@ -94,7 +95,7 @@ def fake_git_dir(base: Path) -> Path:
     return d
 
 
-def make_ahead_clones(base: Path) -> dict:
+def _build_ahead_clones(base: Path) -> dict:
     """**origin が、手元より進んでいるクローン**を 2 つ作る（#148）。
 
     **2 つ要る理由は、変異を*見分ける*ためである。** 「start-point を渡さない」と
@@ -159,7 +160,7 @@ def make_ahead_clones(base: Path) -> dict:
             "bare": bare, "seed": seed}
 
 
-def make_dangling_origin_head(base: Path) -> Path:
+def _build_dangling_origin_head(base: Path) -> Path:
     """**`refs/remotes/origin/HEAD` が実在しない参照を指しているクローン**を作る（#148）。
 
     上流で既定ブランチが改名され、こちらの `origin/HEAD` が古い名前を指したまま、
@@ -191,6 +192,59 @@ def make_dangling_origin_head(base: Path) -> Path:
     # **実在しない名前を指させる**（上流の改名を模す）
     git(work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
     return work
+
+
+# **足場は 1 度だけ作り、使うたびに複製する**（#449）。**`observe()` は 21 回走る**
+# （正しい版 1 ＋ 変異 20）ので、足場を毎回 `git init`・`commit`・`clone`・`push` で
+# 組み直すと、**それだけで子プロセスが 1 回に 50 本ほど増える**——`check-all.py` の並列と
+# `check-mutation-claims.py` の並列が重なったとき、この 1 本が打ち切り（300 秒）に届いた。
+# **複製は使い捨てで、観測どうしは今までどおり足場を共有しない。**
+_templates: dict[str, tuple[Path, object]] = {}
+_template_root: tempfile.TemporaryDirectory | None = None
+
+
+def _from_template(key: str, build, dest: Path):
+    """`build` で作った雛形を `dest` に複製し、**複製の中のパスに付け替えた**戻り値を返す。"""
+    global _template_root
+    if _template_root is None:
+        _template_root = tempfile.TemporaryDirectory()
+    if key not in _templates:
+        src = Path(_template_root.name) / key
+        _templates[key] = (src, build(src))
+    src, built = _templates[key]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    assert_not_real_repo(dest.parent)
+    shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True)
+    assert_not_real_repo(dest)
+    # **remote は雛形の bare を絶対パスで指している。** **付け替えないと、複製から
+    # push した先が雛形になり、次の複製に他の観測の書き込みが見える**
+    # （`demonstrate_base_rule` は seed から push する）。
+    for config in dest.rglob("config"):
+        text = config.read_text(encoding="utf-8")
+        if str(src) in text:
+            config.write_text(text.replace(str(src), str(dest)), encoding="utf-8")
+    left = [c for c in dest.rglob("config") if str(src) in c.read_text(encoding="utf-8")]
+    assert not left, f"複製が雛形を指したまま: {left}"
+
+    def moved(value):
+        if isinstance(value, Path):
+            return dest / value.relative_to(src)
+        if isinstance(value, dict):
+            return {k: moved(v) for k, v in value.items()}
+        return value
+    return moved(built)
+
+
+def make_repo(root: Path) -> Path:
+    return _from_template("repo", _build_repo, root)
+
+
+def make_ahead_clones(base: Path) -> dict:
+    return _from_template("ahead", _build_ahead_clones, base)
+
+
+def make_dangling_origin_head(base: Path) -> Path:
+    return _from_template("dangling", _build_dangling_origin_head, base)
 
 
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
