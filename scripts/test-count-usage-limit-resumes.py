@@ -202,6 +202,16 @@ def build_tree(root: Path) -> None:
     late_copy = Session("sqcopy")
     late_copy.rows = [dict(sq.rows[0]), dict(sq.rows[1])]
     late_copy.user("2026-09-30T10:01:00", AUTO_TEXT, kind="auto-continuation", meta=True).write(root, project="-aad")
+    # sr: スリープ明けに溜まった通知 → 5 秒後に遅れた自動継続（予告の 40 分後）——直前の記録だけでは外さない
+    (Session("sr").limit("2026-10-01T09:00:00", "2026-10-01T10:00:00").armed("2026-10-01T09:00:01", "10am")
+     .user("2026-10-01T10:40:00", "<task-notification>x</task-notification>", kind="task-notification")
+     .user("2026-10-01T10:40:05", AUTO_TEXT, kind="auto-continuation", meta=True).write(root))
+    # ss: 予告の後に通知と応答 → 予告の 10 時間後の自動継続（外れる）→ 応答 → 人間——人間はこの待ちの行方ではない
+    (Session("ss").limit("2026-10-02T09:00:00", "2026-10-02T10:00:00").armed("2026-10-02T09:00:01", "10am")
+     .user("2026-10-02T10:10:00", "<task-notification>x</task-notification>", kind="task-notification")
+     .reply("2026-10-02T10:10:30")
+     .user("2026-10-02T20:00:00", AUTO_TEXT, kind="auto-continuation", meta=True).reply("2026-10-02T20:00:30")
+     .user("2026-10-02T21:00:00", "つづき", kind="human").write(root))
 
 
 def build_blind(root: Path) -> None:
@@ -269,13 +279,17 @@ MUTATIONS = {
     "人間が続けたあとの遅い自動継続も待ちに入れる": ("and at > reset_of(stop) + LATE\n", "and False\n"),
     "誰も続けていない待ちでも、遅い自動継続を外す":
         ("\n                    and (any(seen in (AUTO, HUMAN, LOCAL) for seen, _ in stop[\"inputs\"])\n"
-         "                         or any(t is not None and t > reset_of(stop) for _, t in stop[\"inputs\"])))", ")"),
+         "                         or any(t is not None and reset_of(stop) < t < at - LATE for _, t in stop[\"inputs\"])))",
+         ")"),
     "ローカルコマンドが続けたあとの遅い自動継続を待ちに入れる":
         ("any(seen in (AUTO, HUMAN, LOCAL) for", "any(seen in (AUTO, HUMAN) for"),
     "自動継続が既に来た待ちの遅い自動継続を待ちに入れる":
         ("any(seen in (AUTO, HUMAN, LOCAL) for", "any(seen in (HUMAN, LOCAL) for"),
     "予告の時刻より後の記録を見ない":
-        ("\n                         or any(t is not None and t > reset_of(stop) for _, t in stop[\"inputs\"])", ""),
+        ("\n                         or any(t is not None and reset_of(stop) < t < at - LATE for _, t in stop[\"inputs\"])", ""),
+    "遅れた自動継続の直前の記録でも外す": ("reset_of(stop) < t < at - LATE", "t > reset_of(stop)"),
+    "外した自動継続で窓を閉じない":
+        ("                stop = None  # 外した自動継続で窓を閉じる——後の入力は記録の無い別の停止のもの\n", ""),
     "窓の中身を種類だけで比べる":
         ("[(label, iso_or_empty(at)) for label, at in stop[\"inputs\"]]", "[label for label, at in stop[\"inputs\"]]"),
     "窓の長さが同じコピーは、先に読んだほうが勝つ":
@@ -300,8 +314,8 @@ def main() -> int:
             waits.setdefault(w[0], []).append(w)
 
         print("待ちと行方")
-        check("待ちは 18（コピーは畳む・同じ予告の時刻の停止は 1 つ）",
-              len(correct["waits"]) == 18 and correct["dups"] == 3 and len(waits["sa"]) == 1)
+        check("待ちは 20（コピーは畳む・同じ予告の時刻の停止は 1 つ）",
+              len(correct["waits"]) == 20 and correct["dups"] == 3 and len(waits["sa"]) == 1)
         sa = waits["sa"][0]
         check("先に読んだコピーの窓が短くても、長いほうの窓で行方を決める", sa[7] == "自動継続")
         check("通知が先でも、その後の自動継続を拾う（予告の 1 分後）",
@@ -314,7 +328,7 @@ def main() -> int:
         check("origin が human でもスラッシュコマンドはローカルコマンド", sc2[6] == "ローカルコマンド")
         check("予告だけの停止も待ちで、その後の自動継続を拾う", waits["sd"][0][7] == "自動継続" and waits["sd"][0][2])
         check("停止の記録を持たない自動継続は別に数える（予告の 5〜10 時間後のものも。コピーの自動継続は数えない）",
-              correct["orphans"] == 5 and "se" not in waits)
+              correct["orphans"] == 6 and "se" not in waits)
         si = waits["si"][0]
         check("予告の時刻から遅い自動継続は、その待ちのものと読まない", si[7:] == ("予告より前に人間", None))
         sf = waits["sf"]
@@ -345,6 +359,10 @@ def main() -> int:
               waits["sp"][0][7:] == ("予告より前に人間", None))
         check("自動継続の時刻だけが違うコピーは、読む順に依らず同じほう（遅いほう）を使う",
               len(waits["sq"]) == 1 and waits["sq"][0][8] == "2026-09-30T10:05:00+00:00")
+        check("遅れた自動継続の直前（5 秒前）の通知だけでは外さない",
+              waits["sr"][0][7:] == ("自動継続", "2026-10-01T10:40:05+00:00"))
+        check("外した自動継続のあとの人間の入力は、その待ちの行方にしない",
+              waits["ss"][0][7:] == ("続かなかった", None))
 
         print("\n出力")
         status, text = correct["plain"]
@@ -352,7 +370,7 @@ def main() -> int:
         check("月ごとの行方（張った 17・自動継続 10・前 4・後 1・取り消し 1・続かなかった 1）",
               "| 2026-09 | 18 | 17 | 10 | 4 | 1 | 1 | 1 | 0 | 5 |" in text)
         check("張らなかった待ちの上限の種類を出す", "seven_day 1" in text)
-        check("自動継続の差（分）を出す", "最小 -10・中央 +1・最大 +45（10 件）" in text)
+        check("自動継続の差（分）を出す", "最小 -10・中央 +1・最大 +45（11 件）" in text)
         check("本文を出さない", "task-notification>x" not in text and "Continue the task" not in text and "/usage" not in text)
         astatus, atext = correct["anon"]
         check("--anonymize はリポジトリ名とセッションを伏せる",
@@ -361,7 +379,7 @@ def main() -> int:
         bstatus, btext = correct["blind"]
         check("停止が 0 件なら終了コード 3", bstatus == 3 and "検出できていない" in btext)
         sstatus, stext = correct["since"]
-        check("--since より前の停止を数えない（sh〜sq の 10 件）", sstatus == 0 and "待ち: 10・" in stext)
+        check("--since より前の停止を数えない（sh〜ss の 12 件）", sstatus == 0 and "待ち: 12・" in stext)
         fstatus, ftext = correct["future"]
         check("--since を狭くして 0 件なら終了コード 3", fstatus == 3 and "検出できていない" in ftext)
 
