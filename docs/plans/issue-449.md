@@ -94,11 +94,14 @@
 
 ## 関門の進捗（再開点）
 
-- 実装: 済み（`scripts/test-worktree-scripts.py`）
+- 実装: 済み（`scripts/test-worktree-scripts.py`。コミット `2353aaa`）。`check-all.py` 50/50（計画の件数の行を足した後）
 - 実験の交絡: 最初の新版の計測（wall 59 秒）は裏で `check-all.py` を回していたので捨てた。
   比較は交互に回した A/B だけを使う
-- Verifier: 未
-- `/code-review`: 未
+- 割り目（手順 4 の後）: 利用者が「ここで割る」を選んだ（2026-10-27）
+- **次にすること**: 手順 5 の Verifier（1 パス目。base `0fd44ac9622f66697a7e8f4e446b754e4b745fdf`）→ 手順 6 の `/code-review`（1 パス目）
+- Verifier: 未（反証 - 件）
+- `/code-review`: 未（指摘 - 件）
+- 狭いパス: 未
 
 ## 既知の限界・決着済みの論点
 
