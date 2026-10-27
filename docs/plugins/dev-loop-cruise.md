@@ -28,7 +28,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 積んだ周（stacked） | `references/stacked.md` | 未マージの下の周の上で、上の周を先に始める |
 | マージ | `scripts/merge-pr.py` | CI 待ち → squash → worktree の撤去 → Issue が閉じたかの確認 |
 | 不在の線 | `references/absent-lines.md` | 利用者がいないとき、止まる代わりに進んでよい範囲 |
-| 環境点検 | `scripts/check-unattended-env.py` | 席を外す前に、許可・自動継続・通知などを読むだけで点検する |
+| 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども |
 | 直す線 | `references/fix-line.md` | 関門の指摘をどこまで周の中で直すか |
 
 **スキルの base ディレクトリ**は、プラグインで入れていれば
@@ -61,25 +61,39 @@ PR を通る場所なので、許可の範囲が利用者の目を通ります�
 不在の線: 実機確認 = Refs でマージ
 不在の線: マージ = 関門を通ればマージ
 直す線: 既定
+cruise の操作: gh workflow run infra-apply.yml
 ```
 
 - **書かなければ、どの線も「止まる」です。** マージも宣言が無ければしません（PR を出して止まります）。
   必要な線だけを書きます。
 - **本番反映（デプロイ・migrate・本番の設定値）は広げられません。** main への push で自動デプロイする
   リポジトリでは、マージ自体が本番反映に数えられるので、`マージ` の線も効きません。
+- **`cruise の操作:` は、周で打つ操作のうち既定の点検（`git push`・`gh pr create`・`gh pr merge`・`gh pr comment`・`gh issue create`）に
+  無いもの**を 1 行 1 コマンドで書きます（本番反映の口など）。起動時の点検がその許可を見ます。**利用者が居る cruise でも書いておきます。**
 - 値の一覧と、それぞれの線で何が起きるかは
   [`references/absent-lines.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/absent-lines.md)
   を、`直す線` は
   [`references/fix-line.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/fix-line.md)
   を正とします。
 
-## 2. 環境を点検する（席を外す前に 1 度）
+## 2. 環境を点検する（起動時に 1 度）
 
 ```bash
-python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py
+python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise            # 席を外すとき
+python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --present  # 居るとき
 ```
 
-許可ルール（`git push`・`gh pr create`・`gh pr merge` など）、利用上限での自動継続、質問の待ち、通知、スリープを読み、
+**cruise は台帳を作ったあと、`--absent` に依らずこれを回して結果を見せます。** 利用者が居ても、権限の拒否や確認で
+周が止まり、操作を待つことになるためです（[#466](https://github.com/hdknr/claude-code-setup/issues/466)）。
+
+- **許可ルール**——既定の操作と `cruise の操作:` で宣言した操作が `allow` に当たるか。
+- **止まりうる操作**——自動モードの分類器と worktree 隔離のガードは settings に現れないので、許可があっても止まりえます。
+  起動時に操作ごとに選びます: 許可を足す／**その操作だけ自分で打つ**（台帳に残り、周はその操作の手前で「操作待ち」になって
+  依存しない次の周へ進みます）／その周を cruise の外に出す。
+- **親の起動場所**——**cruise の親は、メインの作業ツリーから worktree に入らずに起動するのが既定です。**
+  worktree の中から起動すると、別の worktree・別のリポジトリへの操作がガードに拒まれます。
+- **席を外すとき**（`--present` なし）は、利用上限での自動継続・質問の待ち・通知・スリープも読みます。
+
 足りないものと直し方を出します。**直すのは利用者です**（スクリプトは書き換えません）。
 
 通知は、設定が正しくても届かない形があります。iPhone を**いまのセッション**につなぎ（`/remote-control`）、
@@ -222,6 +236,8 @@ Claude Code が終わって消えた待ちがあります。一方で、張っ�
 ## 6. 戻ってきたら見るもの
 
 - **台帳**——`ledger.py show issue-<親>` で、どれがマージ済みで、どれが止まっているか（`note` に理由）。
+- **利用者の操作待ち**——台帳の「利用者の操作待ち」に、打ってほしいコマンドが周ごとに載っています。
+  打ったあとで同じ引数で起動し直すと、cruise が実物を確かめてからその周の続きを回します。
 - **各 PR のコメント**——関門の残課題、名指しの未証明、訊かずに進めた箇所が書かれています。
   `マージ` の線でマージした PR も、戻ってから PR コメントで確かめる前提です。
 - **`要確認` ラベルの Issue**（ラベルが無いリポジトリでは題の先頭が `要確認:`）——`仕様の穴` の線で、

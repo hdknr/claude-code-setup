@@ -177,6 +177,23 @@ def run(mod, env, flag=None, managed=None, platform="darwin", environ=None, flag
     return code, items, buf.getvalue()
 
 
+def run_cruise(mod, env, present=True, cwd=None):
+    stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None, env={},
+                              cruise=True, present=present, cwd=cwd)
+    buf = io.StringIO()
+    code = mod.report(stack, items, out=buf)
+    return code, items, buf.getvalue()
+
+
+def git(cwd: Path, *args):
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
+                   cwd=cwd, check=True, capture_output=True)
+
+
+def detail_of(items, label_part):
+    return " / ".join(d for _s, label, d, _f in items if label_part in label)
+
+
 def status_of(items, label_part):
     return [s for s, label, *_ in items if label_part in label]
 
@@ -556,10 +573,93 @@ def suite(script: Path) -> list[str]:
         after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
         check("ファイルを書かない・増やさない", before == after, bad)
 
+    # cruise の起動時（#466）: 宣言した操作を点検に足す・フェンスの中は宣言にしない
+    with scenario(script) as env:
+        env.all_good()
+        env.write(env.project / ".claude" / "dev-loop.md",
+                  "# 追補\n\ncruise の操作: gh workflow run infra-apply.yml\n"
+                  "```\ncruise の操作: aws ecs run-task\n```\n")
+        code, items, out = run_cruise(mod, env, present=True)
+        check("cruise: 宣言した操作の許可を点検する（allow に無いので要対処）",
+              status_of(items, "`gh workflow run infra-apply.yml`") == [mod.ACTION], bad)
+        check("cruise: フェンスの中の行は宣言にしない", not status_of(items, "aws ecs run-task")
+              and "aws ecs run-task" not in out, bad)
+        check("cruise: 宣言は良い（件数つき）", status_of(items, "周で使う操作の宣言") == [mod.GOOD]
+              and "1 件" in detail_of(items, "周で使う操作の宣言"), bad)
+        check("cruise: 止まりうる操作は既定・宣言を全部並べる（良いと出た操作も）",
+              status_of(items, "止まりうる操作") == [mod.HUMAN]
+              and all(f"`{c}`" in detail_of(items, "止まりうる操作")
+                      for c in (*COMMANDS, "gh workflow run infra-apply.yml")), bad)
+        check("cruise: 止まりうる操作の選び方 (a)(b)(c) を添える",
+              all(k in out for k in ("(a) 許可を足す", "(b) その操作だけ利用者が打つ", "(c) その周を cruise の外に出す")), bad)
+        check("present: 許可の項目は落とさない（既定の 2 つは良い）",
+              status_of(items, "`git push`") == [mod.GOOD] and status_of(items, "`gh pr merge`") == [mod.GOOD], bad)
+        check("present: 不在に限る項目を出さない",
+              not any(status_of(items, k) for k in ("自動継続", "質問の待ち", "通知", "スリープ", "モバイルの登録")), bad)
+        check("present: 要対処の文言は「確認で周が止まる」", "確認で周が止まる" in detail_of(items, "infra-apply"), bad)
+        check("present: 要対処があれば 1", code == 1, bad)
+        code, items, out = run_cruise(mod, env, present=False)
+        check("不在の cruise は不在の項目も出す", bool(status_of(items, "自動継続")) and bool(status_of(items, "スリープ"))
+              and "答える人がいない" in detail_of(items, "infra-apply"), bad)
+        # 宣言が無ければ人が見る・値の無い行は要対処
+        env.write(env.project / ".claude" / "dev-loop.md", "# 追補\n")
+        code, items, out = run_cruise(mod, env)
+        check("cruise: 宣言が無ければ人が見る（既定だけを見た）",
+              status_of(items, "周で使う操作の宣言") == [mod.HUMAN], bad)
+        env.write(env.project / ".claude" / "dev-loop.md", "cruise の操作:   \n")
+        code, items, out = run_cruise(mod, env)
+        check("cruise: 値の無い宣言の行は要対処", mod.ACTION in status_of(items, "周で使う操作の宣言"), bad)
+        # cruise でなければ足さない（不在の周の既存の点検を変えない）
+        code, items, out = run(mod, env)
+        check("cruise でなければ、止まりうる操作・起動場所・宣言を出さない",
+              not any(status_of(items, k) for k in ("止まりうる操作", "親の起動場所", "周で使う操作の宣言")), bad)
+
+    # cruise の起動時（#466）: 親の起動場所
+    with scenario(script) as env:
+        env.all_good()
+        repo = env.project.parent / "repo"
+        repo.mkdir()
+        git(repo, "init", "-q")
+        git(repo, "commit", "-q", "--allow-empty", "-m", "x")
+        git(repo, "worktree", "add", "-q", str(repo / ".claude" / "worktrees" / "w"))
+        outside = env.project.parent / "outside"
+        outside.mkdir()
+        check("起動場所: メインの作業ツリーは良い",
+              status_of(run_cruise(mod, env, cwd=repo)[1], "親の起動場所") == [mod.GOOD], bad)
+        r = run_cruise(mod, env, cwd=repo / ".claude" / "worktrees" / "w")
+        check("起動場所: worktree の中は要対処で、メインの作業ツリーを示す",
+              status_of(r[1], "親の起動場所") == [mod.ACTION] and str(repo.resolve()) in r[2], bad)
+        check("起動場所: git の外は判定できない",
+              status_of(run_cruise(mod, env, cwd=outside)[1], "親の起動場所") == [mod.UNKNOWN], bad)
+
     return bad
 
 
 MUTATIONS = {
+    "宣言した操作を点検に足さない": (
+        "        commands = tuple(commands) + tuple(c for c in declared if c not in commands)\n",
+        "        commands = tuple(commands)\n"),
+    "フェンスの中の行も宣言にする": (
+        "        m = None if fenced else DECLARE.match(line)\n",
+        "        m = DECLARE.match(line)\n"),
+    "値の無い宣言の行を見ない": (
+        "    if empty:\n",
+        "    if False:\n"),
+    "止まりうる操作から宣言した操作を落とす": (
+        "        items += stoppable_items(commands)\n",
+        "        items += stoppable_items(commands[:2])\n"),
+    "worktree の中からの起動を良いにする": (
+        "    if git_dir != common:\n",
+        "    if False:\n"),
+    "起動場所を判定できないとき良いにする": (
+        '        return [(UNKNOWN, label, "git で worktree の中かを判定できなかった", "")]',
+        '        return [(GOOD, label, "git で worktree の中かを判定できなかった", "")]'),
+    "--present で許可の項目を落とす": (
+        "    items += check_permissions(stack, commands, present)\n",
+        "    items += [] if present else check_permissions(stack, commands, present)\n"),
+    "--present でも不在の項目を出す": (
+        "    if not present:\n        items += check_auto_continue(stack)\n",
+        "    if True:\n        items += check_auto_continue(stack)\n"),
     "読めなかったものを空として扱う": (
         "    except ValueError as e:\n        return Unreadable(p, str(e))",
         "    except ValueError as e:\n        return {}"),
@@ -734,6 +834,9 @@ MUTATIONS = {
 
 
 def main() -> int:
+    # 起動場所のテストが本物の git を走らせる——GIT_DIR などが他のリポジトリを指す環境で、そちらを読まない
+    for key in [k for k in os.environ if k.startswith("GIT_")]:
+        del os.environ[key]
     print("陽性対照（元の本体）")
     bad = suite(SCRIPT)
     for name in bad:

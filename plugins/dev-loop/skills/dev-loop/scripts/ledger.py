@@ -5,6 +5,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
     python3 <…>/ledger.py add  <名前> <番号> [--deps 12,13] [--title 題] [--origin 出所]
     python3 <…>/ledger.py set  <名前> <番号> 鍵=値 [鍵=値 …]
     python3 <…>/ledger.py lines <名前> 項目=値 [項目=値 …] --source 出所
+    python3 <…>/ledger.py user-ops <名前> [コマンド …] --source 出所
     python3 <…>/ledger.py show <名前>
     python3 <…>/ledger.py next <名前>
     python3 <…>/ledger.py path <名前>
@@ -35,8 +36,14 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   {"number": 12, "title": "", "deps": [], "state": "todo",
    "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "origin": "", "updated": "<UTC>"}
 ],
- "lines": {"values": {"仕様の穴": "推奨で決めて起票"}, "source": "<出所>", "updated": "<UTC>"}}
+ "lines": {"values": {"仕様の穴": "推奨で決めて起票"}, "source": "<出所>", "updated": "<UTC>"},
+ "user_ops": {"commands": ["gh workflow run infra-apply.yml"], "source": "<出所>", "updated": "<UTC>"}}
 ```
+
+`user_ops` は**利用者が自分で打つと決めた操作**（#466）で、無くてもよい。cruise の起動時の点検で
+**止まりうる操作**（`check-unattended-env.py`）を見せ、利用者が「その操作だけ自分で打つ」を選んだものを置く。
+**周はそれを打たずに `await` で止め、依存しない次の周へ進む**——どう使うかは `references/ledger.md` を正とする。
+`lines` と同じく置き換えで、出所の無い値を書かない。
 
 `lines` は**利用者が確かめた線**（#458）で、無くてもよい（無い台帳はこれまでどおり読む）。
 **項目と値は `LINES` だけ**——意味は `references/absent-lines.md` の「線と既定」と `references/fix-line.md`
@@ -56,6 +63,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `pr` | PR を出し、マージを待っている |
 | `merged` | マージ済み（**依存先として「済んだ」と読むのはこれだけ**） |
 | `blocked` | 止まっている（人間の判断待ち・BLOCKED） |
+| `await` | 利用者の操作待ち（#466）——止まりうる操作（権限の拒否・`user_ops`）を利用者が打つのを待つ。打つコマンドは `note` に。**依存先としては「済んでいない」と読む** |
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
 
 **鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note` `decisions` `origin`。
@@ -102,6 +110,9 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   **依存が*元の周*かどうかは見ない**——番号の意味を知らない。
 - **`set` で、出所を持ち依存が空の行を作らない**——同じ理由。出所を持つ行の `deps=` で依存を消すのも、
   依存の空の行に `origin=` で出所を後付けするのも拒む（同じ呼び出しで両方を渡したら、渡した後の値で見る）。
+- **`user_ops` も出所の無い値を書かない**——`--source` が空・空のコマンド・同じコマンドを 2 度は拒む。置き換えで、渡さなければ空になる。
+  手で直した台帳で形が違えば 4。`user_ops` を持たない台帳はこれまでどおり読む。
+- **`await` の行は `next` に出さず、それに依存する行も出さない**——操作が済むまで、依存する周は始めない。
 - **`lines` は出所の無い値を書かない**——`--source` が空なら拒む。**`lines` は置き換えで、渡さなかった項目は消える**
   ——前の確認の値が、確かめ直した後に黙って残らない。
 
@@ -129,7 +140,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "dropped")
+STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "await", "dropped")
 KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
 TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
 # 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md・fix-line.md・found-lines.md を正とする
@@ -220,6 +231,15 @@ def check_line(key, value):
         raise Refused(f"{key} に宣言できない値 {value!r}（{' / '.join(LINES[key])}）")
 
 
+def check_user_ops(commands, source):
+    if not source.strip():
+        raise Refused("出所が空（--source に、誰がいつ決めたかを書く）")
+    if any(not c.strip() for c in commands):
+        raise Refused("空のコマンドがある")
+    if len(commands) != len(set(commands)):
+        raise Refused("同じコマンドを 2 度渡した")
+
+
 def exists(path):
     """**`Path.exists()`／`is_file()` を使わない**——Python 3.13 以前は権限・名前の長さの誤りを例外で返し、
     3.14 は False を返す（権限の無いことを「無い」と言う）。無いときだけ False、他は判定できなかった。"""
@@ -240,7 +260,7 @@ def load(path):
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise Unknown(f"台帳を読めない: {path}: {exc}") from exc
     # `format` は int の 1 だけ——`true == 1`・`1.0 == 1` が通るので型も見る
-    if (not isinstance(data, dict) or not {"format", "name", "issues"} <= set(data) <= {"format", "name", "issues", "lines"}
+    if (not isinstance(data, dict) or not {"format", "name", "issues"} <= set(data) <= {"format", "name", "issues", "lines", "user_ops"}
             or type(data["format"]) is not int or data["format"] != FORMAT
             or data["name"] != path.name[len("cruise-"):-len(".json")] or not isinstance(data["issues"], list)):
         raise Unknown(f"台帳の形が違う: {path}")
@@ -256,6 +276,12 @@ def load(path):
                 or not isinstance(lines["values"], dict)
                 or not all(isinstance(lines[k], str) for k in ("source", "updated"))):
             raise Unknown(f"台帳の線の形が違う: {path}: {lines!r}")
+    if "user_ops" in data:
+        ops = data["user_ops"]
+        if (not isinstance(ops, dict) or set(ops) != {"commands", "source", "updated"}
+                or not isinstance(ops["commands"], list) or not all(isinstance(c, str) for c in ops["commands"])
+                or not all(isinstance(ops[k], str) for k in ("source", "updated"))):
+            raise Unknown(f"台帳の利用者が打つ操作の形が違う: {path}: {ops!r}")
     # **ファイルの上で既に崩れている台帳は、拒んだ（3）ではなく判定できなかった（4）**——
     # 引数が悪いのではないので、3 と答えると原因を取り違える。`next` に答えさせてもいけない
     try:
@@ -276,6 +302,8 @@ def validate(data):
         check_line(key, value)
     if "lines" in data and not data["lines"]["source"].strip():
         raise Refused("線の出所が空")
+    if "user_ops" in data:
+        check_user_ops(data["user_ops"]["commands"], data["user_ops"]["source"])
     for issue in data["issues"]:
         parse_deps(issue.get("decisions", ""), Refused)
     numbers = [i["number"] for i in data["issues"]]
@@ -418,6 +446,15 @@ def cmd_lines(path, pairs, source):
     print("線: " + (", ".join(f"{k} = {v}" for k, v in values.items()) or "なし（宣言と既定に従う）"))
 
 
+def cmd_user_ops(path, commands, source):
+    commands = [c.strip() for c in commands]
+    check_user_ops(commands, source)
+    data = load(path)
+    data["user_ops"] = {"commands": commands, "source": source, "updated": now()}
+    save(path, data)
+    print("利用者が打つ操作: " + (", ".join(commands) or "なし"))
+
+
 def cmd_show(path):
     data = load(path)
     print(f"台帳: {path}")
@@ -428,6 +465,9 @@ def cmd_show(path):
             ", ".join(f"{k} = {v}" for k, v in lines["values"].items()) or "なし（宣言と既定に従う）"))
     else:
         print("確かめた線: 無い（宣言と既定に従う）")
+    if data.get("user_ops", {}).get("commands"):
+        ops = data["user_ops"]
+        print("利用者が打つ操作（出所: {}・{}）: {}".format(ops["source"], ops["updated"], ", ".join(ops["commands"])))
     print()
     print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 出所 | 更新 |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
@@ -437,13 +477,15 @@ def cmd_show(path):
                  *(i.get(k, "") or "-" for k in ("pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")),
                  i.get("updated", "")]
         print("| " + " | ".join(str(c) for c in cells) + " |")
-    going = [i for i in data["issues"] if i["state"] in ("impl", "gate", "pr", "blocked")]
+    going = [i for i in data["issues"] if i["state"] in ("impl", "gate", "pr", "blocked", "await")]
     can = ready(data)
     waiting = [i for i in data["issues"] if i["state"] == "todo" and i not in can]
     print()
     print("進行中（実物で確かめてから続ける）: " + (", ".join(f"#{i['number']}({i['state']})" for i in going) or "なし"))
     print("着手できる: " + (", ".join(f"#{i['number']}" for i in can) or "なし"))
     print("依存待ち: " + (", ".join(f"#{i['number']}" for i in waiting) or "なし"))
+    awaiting = [i for i in data["issues"] if i["state"] == "await"]
+    print("利用者の操作待ち: " + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in awaiting) or "なし"))
     found = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
     if any(i.get("origin") for i in data["issues"]):
         print("周の途中で足した行のうち済んでいないもの: "
@@ -477,6 +519,10 @@ def build_parser():
     ln.add_argument("name")
     ln.add_argument("pairs", nargs="*")
     ln.add_argument("--source", required=True)
+    uo = sub.add_parser("user-ops")
+    uo.add_argument("name")
+    uo.add_argument("commands", nargs="*")
+    uo.add_argument("--source", required=True)
     return p
 
 
@@ -495,6 +541,8 @@ def main(argv=None, cwd=None):
             cmd_set(path, parse_number(args.number), args.pairs)
         elif args.cmd == "lines":
             cmd_lines(path, args.pairs, args.source)
+        elif args.cmd == "user-ops":
+            cmd_user_ops(path, args.commands, args.source)
         elif args.cmd == "show":
             cmd_show(path)
         elif args.cmd == "next":
