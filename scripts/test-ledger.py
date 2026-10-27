@@ -277,10 +277,39 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                         ("lsrc", {"lines": {"values": {}, "source": " ", "updated": ""}}),
                         ("lshape", {"lines": {"values": {}, "source": "s"}}),
                         ("ldec", {"issues": [{**entry(1, []), "decisions": "x"}]}),
+                        ("lorig", {"issues": [{**entry(1, []), "origin": 5}]}),
                         ("lold", {})):
         data = {"format": 1, "name": name, "issues": [entry(1, [])], **extra}
         (plans / f"cruise-{name}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         o[f"線の形 {name}"] = run(mod, ["next", name], root)[:2]
+
+    # L13（#464）: 周の途中で足した行の出所
+    run(mod, ["init", "fo"], root)
+    run(mod, ["add", "fo", "1"], root)
+    o["origin の add"] = run(mod, ["add", "fo", "2", "--deps", "1", "--origin", "#1 狭いパス"], root)[:2]
+    o["origin の set"] = run(mod, ["set", "fo", "1", "origin=手"], root)[0]
+    # 空の出所は拒み、台帳を変えない（下の「origin の値」に #3 が無く #2 の出所が残ることで見る）
+    o["origin の空"] = (run(mod, ["add", "fo", "3", "--deps", "1", "--origin", " "], root)[0],
+                        run(mod, ["set", "fo", "2", "origin="], root)[0])
+    # 出所を持つ行は依存を空にできない（下の「origin の値」に #4 が無く #2 の依存が残ることで見る）
+    # #6 は依存を持ち出所の無い行——同じ呼び出しで依存を消して出所を書く形（後の値で見ないと通る）
+    run(mod, ["add", "fo", "6", "--deps", "1"], root)
+    o["origin の依存なし"] = (run(mod, ["add", "fo", "4", "--origin", "#1 狭いパス"], root)[0],
+                            run(mod, ["set", "fo", "2", "deps="], root)[0],
+                            run(mod, ["set", "fo", "6", "deps=", "origin=w"], root)[0])
+    try:
+        o["origin の値"] = [(i["number"], i["origin"], i["deps"]) for i in json.loads(
+            (plans / "cruise-fo.json").read_text(encoding="utf-8"))["issues"]]
+    except (OSError, ValueError, KeyError):
+        o["origin の値"] = None
+    r = str(run(mod, ["show", "fo"], root)[1])
+    o["origin の show"] = ("| 出所 |" in r, "| #1 狭いパス |" in r,
+                           "周の途中で足した行のうち済んでいないもの: #2(todo)" in r)
+    run(mod, ["set", "fo", "1", "state=merged"], root)
+    run(mod, ["set", "fo", "2", "state=dropped"], root)
+    r = str(run(mod, ["show", "fo"], root)[1])
+    o["origin の show(済み)"] = "周の途中で足した行のうち済んでいないもの: なし" in r
+    o["origin の無い show"] = "周の途中で足した行" not in str(run(mod, ["show", "ln"], root)[1])
 
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
@@ -382,6 +411,21 @@ MUTATIONS = {
         ('    if not source.strip():\n        raise Refused("出所が空', '    if False:\n        raise Refused("出所が空'),
         ('    if "lines" in data and not data["lines"]["source"].strip():',
          '    if False:')],
+    # 守る: origin も文字列だけ
+    "origin の型を見ない": [
+        ('TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")',
+         'TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions")')],
+    # 守る: origin を空で書かない
+    "add の空の origin を通す": [
+        ("    if origin is not None and not origin.strip():", "    if False:")],
+    "set の空の origin を通す": [
+        ('        elif key == "origin" and not value.strip():', '        elif False:')],
+    # 守る: 出所を持つ行は元の周に依存する
+    "add の依存の無い origin を通す": [
+        ("    if origin is not None and not deps:", "    if False:")],
+    "set で出所があって依存の無い行を作れる": [
+        ('    if ("deps" in changes or "origin" in changes) and after.get("origin") and not after["deps"]:',
+         "    if False:")],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -467,18 +511,34 @@ def main() -> int:
         check("線の無い台帳の show は「無い」と出す", o["線の無い show"])
         check("decisions は番号のカンマ区切りだけ（番号でなければ 3）",
               o["decisions"] == (0, 3) and o["decisions の値"] == "12,13")
-        for name in ("lbad", "lval", "lsrc", "lshape", "ldec"):
-            check(f"手で崩した線・decisions（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
-        check("線と decisions を持たない台帳はこれまでどおり読む", o["線の形 lold"] == (0, "1\n"))
+        for name in ("lbad", "lval", "lsrc", "lshape", "ldec", "lorig"):
+            check(f"手で崩した線・decisions・origin（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
+        check("線と decisions と origin を持たない台帳はこれまでどおり読む", o["線の形 lold"] == (0, "1\n"))
         absent = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "absent-lines.md"
                   ).read_text(encoding="utf-8").split("## 線と既定")[1].split("\n## ")[0]
         rows = {k: (d, v) for k, d, v in re.findall(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|", absent, re.M)}
         skill = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md").read_text(encoding="utf-8")
-        check(f"LINES が absent-lines.md の「線と既定」の表 {rows} と一致する（直す線を除く）",
-              {k: v for k, v in mod.LINES.items() if k != "直す線"} == rows)
+        check(f"LINES が absent-lines.md の「線と既定」の表 {rows} と一致する（直す線・周の途中の課題を除く）",
+              {k: v for k, v in mod.LINES.items() if k not in ("直す線", "周の途中の課題")} == rows)
         check("本番反映は LINES に無い", "本番反映" not in mod.LINES and "| `本番反映` |" in absent)
         check("直す線は SKILL.md 手順 3 の 2 値（既定・広げる）",
               mod.LINES["直す線"] == ("既定", "広げる") and "`直す線: 既定` か `直す線: 広げる`" in skill)
+        found = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "found-lines.md"
+                 ).read_text(encoding="utf-8")
+        check("周の途中の課題は found-lines.md の 2 値（既定が外に出す）",
+              mod.LINES["周の途中の課題"] == ("外に出す", "台帳に足して直す")
+              and "`周の途中の課題 = 外に出す`（既定）" in found and "`周の途中の課題 = 台帳に足して直す`" in found)
+
+        print("\n周の途中で足した行の出所（L13・#464）")
+        check("add --origin が出所を残す", o["origin の add"][0] == 0 and "出所: #1 狭いパス" in str(o["origin の add"][1]))
+        check("依存の無い行への set origin= は 3、親 Issue から作った行は空・足した行は依存を持つ", o["origin の set"] == 3
+              and o["origin の値"] == [(1, "", []), (2, "#1 狭いパス", [1]), (6, "", [1])])
+        check("add --origin の空・set origin= は 3（台帳は変えない）", o["origin の空"] == (3, 3))
+        check("add --origin に --deps が無い・出所のある行の set deps=・依存を消して出所を書く set は 3（台帳は変えない）",
+              o["origin の依存なし"] == (3, 3, 3))
+        check("show が出所の列と、済んでいない足した行を出す", o["origin の show"] == (True, True, True))
+        check("足した行がすべて merged か dropped なら「なし」", o["origin の show(済み)"])
+        check("足した行の無い台帳の show は、その行を出さない", o["origin の無い show"])
 
         print("\n名前（L8）・git の外（L9）")
         check("../x・a/b・.x・x/../../../escaped は 2",

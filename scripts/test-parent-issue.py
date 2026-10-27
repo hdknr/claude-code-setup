@@ -396,6 +396,8 @@ MUTATIONS = {
         ('                skipped.append(f"{lineno} 行目（cruise: の線の形ではない）: {line.strip()}")', "                pass")],
     "指紋に線を含めない": [
         ("sorted(lines.items())]", "[]]")],
+    "周の途中の課題の書いていない説明を他の項目と同じにする": [
+        ("UNWRITTEN.get(key, UNWRITTEN[None])", "UNWRITTEN[None]")],
     "確かめた線を台帳に残さない": [
         ("    if lines:\n        proc = ledger(", "    if False:\n        proc = ledger(")],
     "本文の線の違いを名指ししない": [
@@ -463,6 +465,8 @@ def main() -> int:
               o["線の show"][:2] == (0, ["直す線 = 既定", "仕様の穴 = 推奨で決めて起票",
                                          "実機確認: 書いていない（台帳に残さない。各周の読み方は absent-lines.md の「cruise で確かめた線」）",
                                          "マージ: 書いていない（台帳に残さない。各周の読み方は absent-lines.md の「cruise で確かめた線」）",
+                                         "周の途中の課題: 書いていない（起動時に 1 度だけ訊く。答えが無ければ外に出す。"
+                                         ".claude/dev-loop.md の行は効かない。意味は found-lines.md）",
                                          f"無視した行: {n + 3} 行目（本番反映は広げられない）: cruise: 本番反映 = する"]))
         check("引用・リストの中・形の違う cruise: の行は読み飛ばした行に出る（フェンス・コメントの中は出ない）",
               o["線の show"][2].splitlines()[-3:] == [
