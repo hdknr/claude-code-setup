@@ -118,7 +118,8 @@ docs と `CLAUDE.md` は**本体の docstring を正とする**と書いて列�
 - 狭いパス: 取り込みが HEAD に入ったので、差分は `git diff 35196a7 00930e3`（指摘対応のコミットだけ）で当てる
 - 狭いパス（Verifier・sonnet）: **反証 1 件（軽微）**——下の N-1。著者の変異は赤、Verifier の変異 2 件（`replace`・`ignore`）が素通り。直さず人間に渡す
 - 2 パス目の後の `mkdocs build --strict`（`plans/` を外した一時の設定）: 通る
-- 関門はここで打ち切り（2 パス＋狭いパス）。次: push・PR 作成・PR コメント
+- 関門はここで打ち切り（2 パス＋狭いパス）
+- PR #471 を作り、関門の結果・未証明・残課題を PR コメントに書いた。CI: `check`・`build` とも pass（`deploy` は PR なので skipping）、`MERGEABLE`。次: 人間のレビューとマージ（手順 7）、手順 8
 
 ## 既知の限界・決着済みの論点
 
