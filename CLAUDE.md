@@ -194,6 +194,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **何を数え、何を守らないかは docstring を正とする**）
   - `test-count-resume-recreations.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
     呼ばないがテストは回す**）
+  - `count-usage-limit-resumes.py` - **利用上限で止まった待ちが、何で続いたか**（自動継続・予告より前の人間・
+    取り消し……）をトランスクリプトから数える（#454。**CI からは呼ばない**——`token-metrics.py` と同じ形。
+    **PR・Issue に貼るなら `--anonymize`**。**何を数え、何を守らないかは docstring を正とする**）
+  - `test-count-usage-limit-resumes.py` - 上の回帰テスト（変異テストを含む。**本体は CI から
+    呼ばないがテストは回す**）
   - `run-dev-loop-evals.py` - `dev-loop` の Eval を**陽性対照と一緒に 1 コマンドで回し、貼れる要約を出す**
     （#190。**CI からは呼ばない**——`claude` を起こして課金する。下の「振る舞いを Eval で当てる」。
     **対照の定義と、何を守り何を守らないかは docstring を正とする**）
