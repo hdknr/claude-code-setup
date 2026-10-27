@@ -257,7 +257,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["lines 拒んだ後も同じ"] = snapshot(lf) == before
     o["lines 置き換え"] = run(mod, ["lines", "ln", "マージ=止まる", "--source", "s2"], root)[0]
     try:
-        o["lines の値"] = json.loads(lf.read_text(encoding="utf-8"))["lines"]
+        # `updated` は時刻なので観測に入れない——入れると、走った秒が違うだけで全変異が「殺せた」になる
+        o["lines の値"] = {k: v for k, v in json.loads(lf.read_text(encoding="utf-8"))["lines"].items()
+                          if k != "updated"}
     except (OSError, ValueError, KeyError):
         o["lines の値"] = None
     r = run(mod, ["show", "ln"], root)
@@ -374,8 +376,11 @@ MUTATIONS = {
     # 守る: 拒んだ操作では台帳を変えない（検査してから書く）
     "一覧に無い線を書く": [
         ("def check_line(key, value):\n", "def check_line(key, value):\n    return\n")],
+    # `cmd_lines` と `validate` の 2 箇所で拒むので、片方だけ外しても挙動は変わらない（等価変異）——両方を外す
     "出所の無い線を書く": [
-        ('    if not source.strip():\n        raise Refused("出所が空', '    if False:\n        raise Refused("出所が空')],
+        ('    if not source.strip():\n        raise Refused("出所が空', '    if False:\n        raise Refused("出所が空'),
+        ('    if "lines" in data and not data["lines"]["source"].strip():',
+         '    if False:')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
