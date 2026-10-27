@@ -22,6 +22,7 @@
 - `scripts/test-ledger.py` — 同上
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §3（起動時の点検を `--absent` 以外にも）・§4（止まりうる操作に当たったら台帳に書いて次へ）・§6（操作待ちの行を渡す）・親の起動場所
 - `plugins/dev-loop/skills/dev-loop/references/ledger.md` — 状態の追加に伴う書く時点
+- `plugins/dev-loop/skills/dev-loop/references/found-lines.md` — cruise §4 の番号の指し先（2 パス目の S1 で広げた）
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — `本番反映 = しない` の「利用者待ち」と新しい状態の関係（要るなら）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行（中身を変えるなら最小限）
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版（minor）・description
@@ -111,7 +112,9 @@ drawio の書き出しは該当なし（図を触らない予定。触るなら 
   **`/code-review`（high）指摘 10 件**（うち 2 件は Verifier と同じ）。採否は下の「1 パス目の指摘の採否」——直す 4 件・残課題 6 件
 - **1 パス目の指摘対応: 済み**（`3fc9b37`。成果物の差分あり——`check-unattended-env.py`・そのテスト・`references/ledger.md`・§8.2 の生成ブロック）。
   足した変異 3 本（種類の違うフェンスで閉じる・崩れた行を見ない・起動場所の案内を `.git` にする）はどれも赤。`check-all.py` 51/51 緑
-- **残っている関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**。その後に 2 パス目の指摘対応と狭いパス
+- 関門（2 パス目・2026-10-27・再開したセッション）: **Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 1 件**・
+  **`/code-review`（high）指摘 10 件**。採否は下の「2 パス目の指摘の採否」——直す 8 件・残課題 3 件
+- **残っている関門: 2 パス目の指摘対応と、その差分だけへの狭いパス**（起点は main を取り込んだ後の HEAD。取り込んだら書く）
 - 手順 5 の反証と差し戻し: 1 パス目に 2 件（V1・V2）→ 手順 4 に差し戻して直した
 - 交絡を潰した手順: 実験なし
 - 割り目の選択（手順 4・2026-10-27・AskUserQuestion）: **ここで割る**——worktree の中で `/clear` して `/dev-loop:dev-loop 466`、手順 5 から
@@ -141,5 +144,21 @@ drawio の書き出しは該当なし（図を触らない予定。触るなら 
 | R8 | `user-ops` に空白を含むコマンドを引用せずに渡すと単語ごとに記録される | 示せない（この周で起きた記録は無い） | 無し | 残課題 |
 | R9 | `--present` を `--cruise` 無しでも受け付け、不在の点検の要対処を消せる | 示せない（誤って回した記録は無い） | 無し（受入基準は cruise の点検） | 残課題 |
 | R10 | `show` が空の `user_ops` と未設定を区別しない | 示せない | 無し | 残課題 |
+
+### 2 パス目の指摘の採否（Verifier 1 件・`/code-review` 10 件。2026-10-27）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V3 | UTF-8 BOM 付きの `.claude/dev-loop.md` で先頭行の宣言を黙って落とし、「行が無い」と出す | 示せる（Verifier が `printf '\xef\xbb\xbf…'` のファイルで `--cruise --present`） | B（書式の揺れ・宣言が無いときに黙って既定だけ） | 直す |
+| S1 | `references/found-lines.md` の「訊く場所は §4 の 5 だけ」が、§4 に 5 を挿したため操作待ちの項を指す | 示せる（`found-lines.md:86` と cruise §4 の番号） | D（§4 のまとめて訊く場所で操作待ちを渡す） | 直す |
+| S2 | (c) で `dropped` にした周に依存する `todo` の周に、終わる条件も渡し方も無い | 示せる（`ledger.py` の `ready()` は依存が `merged` であることを要る・cruise §6 の終わる条件は `await`／`blocked` とその依存だけ） | D（§6 で残った周を「済んだ」と報告しない） | 直す |
+| S3 | 再開のたびに止まりうる操作を `AskUserQuestion` で訊く——`--absent` の再開では利用者が居ない | 示せる（cruise §1 の再開で §3 を回し直す・§3 の質問は `--absent` でも出る） | D（cruise 全体が止まらない） | 直す |
+| S4 | コロンの無い散文・字下げのコード例の `cruise の操作…` を崩れた宣言として要対処にする | 示せる（`/code-review` の probe） | 無し（過検出で安全側。B は守られる） | 残課題 |
+| S5 | HTML コメントの中の宣言を読む（複数行）／黙って落とす（1 行） | 示せる（probe で `<!--\ncruise の操作: gh disabled\n-->` → 「良い」） | B（経路に「コメント」と挙げてある） | 直す |
+| S6 | 情報文字列にバッククォートを含む行をフェンスとして開き、後ろの宣言を全部落とす | 示せる（probe で `` ```x` `` の後の宣言が `commands=[]`） | B（フェンス） | 直す |
+| S7 | §4-4 の `merge-pr.py` は `gh pr merge` を子プロセスで呼ぶので、`user_ops` の (b) を素通りし、点検も実際に Bash に渡すコマンドを見ていない | 示せる（cruise §4-4・§4-5 の文面と `merge-pr.py` の `gh pr merge`） | A・G（(b) を選んだ操作を cruise が打つ） | 直す |
+| S8 | §4-5 が拒否を即 `await` にし、`guard-rejections.md` の「割って打ち直す」を経ない | 示せる（文面） | 無し（周を余計に待たせるが、cruise 全体は止まらない） | 残課題 |
+| S9 | `references/ledger.md` の手順 5 は `blocked` を進行中に数え、cruise §6 は `blocked`＋`await` だけなら終えると言う | 示せる（`references/ledger.md:76` と cruise §6） | D | 直す |
+| S10 | 公開ページ §0 の版の段落が 1.59.0 で止まり、`--cruise --present` が 1.60.0 からだと書いていない | 示せる（`docs/plugins/dev-loop-cruise.md:44`） | 無し | 残課題 |
 
 - この周の起票: 0 件
