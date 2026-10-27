@@ -83,7 +83,7 @@ tfs-stocks の cruise（台帳 5 件）では、狭いパスの指摘・テス�
 
 ## 利用者の判断をまとめて訊く
 
-**周ごとにばらばらに訊かない（必須）。** 訊く場所は **cruise の周と周の合間**（cruise の `SKILL.md` §4 の 5）だけである:
+**周ごとにばらばらに訊かない（必須）。** 訊く場所は **cruise の周と周の合間**（cruise の `SKILL.md` §4 の 6）だけである:
 
 - **利用者が居る cruise**——台帳の `blocked` のうち `note` が「利用者の判断待ち」の行を、**1 度の `AskUserQuestion` にまとめて訊く**。
   答えで直すことになれば `state=todo`（`note` に答えと日時）、直さないなら `state=dropped`（`note` に理由）にし、

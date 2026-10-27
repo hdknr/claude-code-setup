@@ -3,6 +3,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 
     python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py [--project <dir>]
         [--command '<コマンド>' ...] [--flag-settings <file>] [--managed-settings <file>]
+    python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise [--present] [...]
     python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --push-result '<返り値>'
 
 **直さない。読むだけ**——何が足りないかと、どう直すかを出す。**利用者の設定を書き換える道具は、
@@ -32,6 +33,26 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **iPhone がつながる先は、いまのセッション（`/remote-control`）であって `claude rc` の待ち受けではない**
   ——待ち受けは新しいセッションを起こすので、そこから送った 1 行は作業中のセッションに届かない
 - **蓋を閉じる・電源が変わる**——`pmset` の値は電源ごとで、蓋を閉じればスリープする
+
+## cruise の起動時（`--cruise`・`--present`。#466）
+
+**cruise は `--absent` に依らず、台帳を作ったら 1 度これを回す**（cruise `SKILL.md` §3）——
+利用者が居る cruise でも、**権限の拒否・確認で周が止まり、利用者の操作を待つ**（#466 の実測）。
+
+- `--cruise` は 3 つを足す:
+    - **周で使う操作の宣言**——`--project` の `.claude/dev-loop.md` の `cruise の操作: <コマンド>` の行（1 行 1 コマンド。
+      コードフェンスの中は読まない。フェンスは開いた記号と同じ種類・同じ長さ以上の行でだけ閉じる）を、点検するコマンド（既定か `--command`）に足す。**本番反映の口**
+      （`gh workflow run …`・`aws ecs run-task …` など）は既定に無いので、ここで宣言させる。
+      宣言が無ければ「人が見る」で、既定だけを見たと出す。読めなければ「判定できない」、値の無い行は「要対処」。
+      **宣言の形に届かなかった行**（字下げ・箇条書き・引用・全角コロン）も読まずに「要対処」
+    - **止まりうる操作**（人が見る）——**自動モードの分類器と worktree 隔離のガードは settings に現れない**ので、
+      上で「良い」と出た操作も止まりうる。点検したコマンドを全部並べ、(a) 許可を足す・(b) その操作だけ利用者が打つ
+      （`ledger.py user-ops`）・(c) その周を cruise の外に出す、の選び方を添える。**選ばせるのは cruise の `SKILL.md`**
+    - **親の起動場所**——cwd が worktree の中（`--git-dir` ≠ `--git-common-dir`）なら要対処。**cruise の親は
+      メインの作業ツリーから、worktree に入らずに起動するのが既定**（#466）——隔離のガードが別の worktree・別のリポジトリへの
+      操作を拒むので
+- `--present` は**利用者が居る cruise**——不在に限る項目（自動継続・質問の待ち・通知・スリープ・人が見る 3 つ）を出さない。
+  許可の要対処の文言も「確認で周が止まる」にする（答える人は居るが、そこで止まる）
 
 ## 通知の試験（`--push-result`）
 
@@ -132,6 +153,11 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **送信の要求を「届いた」と言わない**——`Mobile push requested` は人が見る（iPhone に届いたか）
 - **知らない返り値を「良い」に混ぜない**——判定できない
 - **何も書かない**——設定ファイルにも、どこにも
+- **`--cruise` で、宣言した操作を点検から落とさない**——既定（か `--command`）に足す。フェンスの中の行は宣言にしない。
+  **種類の違うフェンスの記号では閉じない**。**宣言の形に届かなかった行を黙って読み飛ばさない**（要対処）
+- **`--cruise` で、止まりうる操作を「良い」と出した操作からも外さない**——settings の判定とは別の区分で全部出す
+- **`--cruise` で、worktree の中からの起動を「良い」にしない**——判定できなければ「判定できない」
+- **`--present` で、許可の項目を落とさない**——落とすのは不在に限る項目だけ
 
 守らない:
 
@@ -160,6 +186,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **macOS 以外のスリープ**——判定できないと出す
 - **2.1.310 以外の版でキー名が同じであること**——`PushNotification` の返り値の文字列も同じ
 - **iPhone に届いたこと**——`Mobile push requested` から先は見えない
+- **分類器・ガードが実際にどの操作を止めるか**——試さない（副作用の無い試し方は別の Issue）。止まりうるとして全部並べるだけ
+- **セッションが worktree 隔離にあること**——見ているのは cwd だけ。メインの作業ツリーにいても、後で `EnterWorktree` すれば隔離される
+- **`.claude/dev-loop.md` の宣言の網羅**——宣言に無い操作は見えない
 - **iPhone からの操作が使用中になるか**——本体からは読み切れていない（利用者の実測。#407）。だから手順は両方から離れる形にしてある
 """
 
@@ -376,7 +405,7 @@ def rule_matches(rule, command):
     return command == body
 
 
-def check_permissions(stack, commands):
+def check_permissions(stack, commands, present=False):
     items = []
     managed_only = managed_rules_only(stack)
     allow = collect_rules(stack, "allow", managed_only)
@@ -386,6 +415,7 @@ def check_permissions(stack, commands):
     mode, mode_layer = perm_value(stack, "defaultMode")
     bypass_off, _ = perm_value(stack, "disableBypassPermissionsMode")
     bypass_ok = mode == "bypassPermissions" and bypass_off not in ("disable", True)
+    wait = "確認で周が止まる（利用者の操作を待つ）" if present else "確認されても答える人がいない"
     for command in commands:
         # 名指しのコマンドは引数つきで呼ばれる——引数の無い Bash(git push) は覆っていない
         call = command + " <引数>"
@@ -398,7 +428,7 @@ def check_permissions(stack, commands):
                           "deny の規則を外すか、この周の手順からそのコマンドを外す"))
         elif asked:
             # ask は allow より強い——確認を出して、答える人がいないまま止まる
-            items.append((ACTION, label, f"ask に当たる（{', '.join(asked)}）——確認されても答える人がいない",
+            items.append((ACTION, label, f"ask に当たる（{', '.join(asked)}）——" + wait,
                           "ask の規則を外すか、この周の手順からそのコマンドを外す"))
         elif broken:
             # 読めない層に deny・ask があるかもしれない
@@ -415,7 +445,7 @@ def check_permissions(stack, commands):
             if managed_only:
                 shown += "。managed の allowManagedPermissionRulesOnly で、managed 以外の規則は効かない"
             items.append((ACTION, label,
-                          f"allow に無い（defaultMode: {shown}）——拒否・確認されても答える人がいない",
+                          f"allow に無い（defaultMode: {shown}）——拒否・" + wait,
                           f'settings の permissions.allow に "Bash({command}:*)" を足す'))
     return items
 
@@ -609,19 +639,126 @@ def exit_code(items):
     return 0
 
 
-def gather(project, commands, flag_path, managed_path, home, platform, flag_note=None, env=None):
+DECLARE = re.compile(r"^cruise の操作:(.*)$")
+# 宣言の形に届かなかった行（字下げ・箇条書き・引用・全角コロン）——黙って読み飛ばさずに要対処にする
+NEAR = re.compile(r"^\s*(?:(?:[-*+>]|\d+[.)])\s*)*cruise\s*の\s*操作")
+# フェンスは開いた記号と同じ種類・同じ長さ以上で、後ろに何も無い行でだけ閉じる（CommonMark）。
+# `` ` `` の印の後ろに `` ` `` があればインラインコードで、フェンスを開かない
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+
+
+def uncommented(line, in_comment):
+    """HTML コメント（`<!--` 〜 `-->`）を除いた行の残りと、行末でコメントの中にいるかを返す。
+    コメントの中の宣言は、無効にしたものとして読まない（複数行にまたがっても）。"""
+    out = ""
+    while True:
+        if in_comment:
+            close = line.find("-->")
+            if close < 0:
+                return out, True
+            line, in_comment = line[close + 3:], False
+        start = line.find("<!--")
+        if start < 0:
+            return out + line, False
+        out, line, in_comment = out + line[:start], line[start + 4:], True
+
+
+def declared_commands(project):
+    """`.claude/dev-loop.md` の `cruise の操作:` の行。(コマンドの一覧, 項目の一覧)。"""
+    path = Path(project) / ".claude" / "dev-loop.md"
+    label = "周で使う操作の宣言"
+    try:
+        text = path.read_text(encoding="utf-8-sig")  # BOM を行頭に残さない
+    except FileNotFoundError:
+        text = ""
+    except (OSError, UnicodeDecodeError) as exc:
+        return [], [(UNKNOWN, label, f"{path} を読めなかった（{exc}）——宣言した操作を点検できない", "")]
+    commands, empty, broken, fence, in_comment = [], 0, 0, None, False
+    for line in text.splitlines():
+        f = FENCE.match(line)
+        if fence is None:
+            line, in_comment = uncommented(line, in_comment)
+            f = FENCE.match(line)
+            if f and not (f.group(1)[0] == "`" and "`" in f.group(2)):
+                fence = f.group(1)
+                continue
+        if fence is not None:
+            if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():
+                fence = None
+            continue
+        m = DECLARE.match(line)
+        if not m:
+            broken += bool(NEAR.match(line))
+            continue
+        value = m.group(1).strip()
+        if not value:
+            empty += 1
+        elif value not in commands:
+            commands.append(value)
+    items = []
+    if broken:
+        items.append((ACTION, label, f"{path} に書式の崩れた `cruise の操作` の行が {broken} 本ある——読まなかった",
+                      "行頭から半角のコロンで `cruise の操作: <コマンド>` と書く（字下げ・箇条書き・全角コロンにしない）"))
+    if empty:
+        items.append((ACTION, label, f"{path} に値の無い `cruise の操作:` の行が {empty} 本ある",
+                      "1 行に 1 コマンドを書く（例: `cruise の操作: gh workflow run infra-apply.yml`）"))
+    if commands:
+        items.append((GOOD, label, f"{path} から {len(commands)} 件: " + ", ".join(f"`{c}`" for c in commands), ""))
+    else:
+        items.append((HUMAN, label, f"{path} に `cruise の操作:` の行が無い——既定の操作だけを見た",
+                      "本番反映の口など、周で打つ操作を `cruise の操作: <コマンド>` で 1 行 1 コマンド宣言する"))
+    return commands, items
+
+
+def stoppable_items(commands):
+    return [(HUMAN, "止まりうる操作",
+             "自動モードの分類器と worktree 隔離のガードは settings に現れない——上で良いと出た操作も止まりうる: "
+             + ", ".join(f"`{c}`" for c in commands),
+             "操作ごとに (a) 許可を足す（/permissions・update-config）(b) その操作だけ利用者が打つ（ledger.py user-ops）"
+             "(c) その周を cruise の外に出す、を利用者が選ぶ")]
+
+
+def parent_location(cwd=None):
+    label = "親の起動場所"
+    try:
+        proc = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir"],
+                              cwd=cwd, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return [(UNKNOWN, label, f"git を起動できなかった（{exc}）", "")]
+    lines = proc.stdout.split("\n")[:2] if proc.returncode == 0 else []
+    if len(lines) != 2 or not all(lines):
+        return [(UNKNOWN, label, "git で worktree の中かを判定できなかった", "")]
+    git_dir, common = (Path(x) for x in lines)
+    if git_dir != common:
+        return [(ACTION, label, f"worktree の中から起動している（{git_dir}）——別の worktree・別のリポジトリへの操作が"
+                 "隔離のガードに拒まれうる",
+                 f"メインの作業ツリー（{common.parent if common.name == '.git' else common}）で、worktree に入らずに起動し直す")]
+    return [(GOOD, label, "worktree の外（メインの作業ツリー）", "")]
+
+
+def gather(project, commands, flag_path, managed_path, home, platform, flag_note=None, env=None,
+           cruise=False, present=False, cwd=None):
     stack = layers(project, flag_path, managed_path, home, env, flag_note)
     items = []
+    declared_items = []
+    if cruise:
+        declared, declared_items = declared_commands(project)
+        commands = tuple(commands) + tuple(c for c in declared if c not in commands)
     for name, path, data in stack:
         if isinstance(data, Unreadable):
             items.append((UNKNOWN, f"設定（{name}）", f"{path} を読めなかった: {data.reason}",
                           "--flag-settings で渡す" if name == "flag" else ""))
-    items += check_permissions(stack, commands)
-    items += check_auto_continue(stack)
-    items += check_question_timeout(stack)
-    items += check_notifications(home, env)
-    items += check_sleep(platform)
-    items += human_items(stack)
+    items += declared_items
+    items += check_permissions(stack, commands, present)
+    if cruise:
+        items += stoppable_items(commands)
+        items += parent_location(cwd)
+    if not present:
+        items += check_auto_continue(stack)
+        items += check_question_timeout(stack)
+        items += check_notifications(home, env)
+        items += check_sleep(platform)
+        items += human_items(stack)
     return stack, items
 
 
@@ -660,6 +797,10 @@ def main(argv=None):
                     help="許可を点検するコマンド（繰り返し可。既定: %s）" % ", ".join(DEFAULT_COMMANDS))
     ap.add_argument("--flag-settings", default=None)
     ap.add_argument("--managed-settings", default=None)
+    ap.add_argument("--cruise", action="store_true",
+                    help="cruise の起動時: 宣言した操作・止まりうる操作・親の起動場所を足す")
+    ap.add_argument("--present", action="store_true",
+                    help="利用者が居る: 不在に限る項目（自動継続・質問の待ち・通知・スリープ）を出さない")
     ap.add_argument("--push-result", default=None,
                     help="PushNotification の返り値を判定する（設定は読まない）")
     args = ap.parse_args(argv)
@@ -672,7 +813,8 @@ def main(argv=None):
         flag_path, flag_note = find_flag_settings()
     managed = args.managed_settings or MANAGED_DEFAULTS.get(sys.platform)
     stack, items = gather(args.project or default_project(), tuple(args.command or DEFAULT_COMMANDS),
-                          flag_path, managed, Path.home(), sys.platform, flag_note)
+                          flag_path, managed, Path.home(), sys.platform, flag_note,
+                          cruise=args.cruise, present=args.present)
     return report(stack, items)
 
 

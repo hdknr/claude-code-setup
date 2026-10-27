@@ -28,6 +28,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/cruise/` - **オートクルーズの入口**（#446。`/dev-loop:cruise <親 Issue> [--absent]`）。親 Issue のチェックリストから
       `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**。
       親 Issue の `cruise:` の行（線）も確かめてから台帳に残す——#458。線の項目と値は `ledger.py` の `LINES` を読む）。
+      **親はメインの作業ツリーから worktree に入らずに起動し、起動時に周で使う操作の権限を点検する**（#466）。
       **dev-loop スキルを `../dev-loop/` で指す**ので、**素のスキルとしては張れない**。書式と守る／守らないは docstring を正とする。
       テストは `scripts/test-parent-issue.py`
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
@@ -173,6 +174,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     に置いてある（**`dev-loop` はどのリポジトリでも使うスキル**なので、
     対象リポジトリの `scripts/` に在ることを当てにできない）
   - `test-check-unattended-env.py` - **利用者が不在になる前の環境点検**の回帰テスト（#394。変異テストを含む）。
+    **cruise の起動時の点検（`--cruise`・`--present`）も見る**——利用者が居る cruise でも回す（#466）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py`**（`test-find-cycle.py` と同じ形）。
     **本体は CI からは呼ばない**——入力が利用者の `~/.claude` にある。**項目と、何を守らないかは本体の docstring を正とする**
   - `test-ledger.py` - **複数 Issue の台帳の回帰テスト**（#390。変異テストを含む）。
