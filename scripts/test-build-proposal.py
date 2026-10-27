@@ -721,7 +721,12 @@ LOCKED_MUTATIONS: list[tuple[str, str, str]] = [
      "    if True:\n        try:\n            if manifest.is_file():"),
     ("消せなくても続ける", "    if left:  # 消せない場所には", "    if False:  # 消せない場所には"),
     ("ディレクトリの出力先で消せないことを見ない", "        left += remove_owned(out)  # ディレクトリを", "        remove_owned(out)  # ディレクトリを"),
-    ("書きかけを消せなくても消したと言う", "        if left:\n            raise Stop(2, [f\"{directory}: 書けない",
+    ("消せないのに作っていないと言わない",
+     "            print(line, file=sys.stderr)\n        print(\"提案書は作っていない\", file=sys.stderr)\n        return 2\n    if problem:",
+     "            print(line, file=sys.stderr)\n        return 2\n    if problem:"),
+    ("symlink より先に is_file を見る（3.12 でだけ死ぬ）", "            if stale.is_symlink() or stale.is_file():",
+     "            if stale.is_file() or stale.is_symlink():"),
+    ("書きかけを消せなくても消したと言う","        if left:\n            raise Stop(2, [f\"{directory}: 書けない",
      "        if False:\n            raise Stop(2, [f\"{directory}: 書けない"),
 ]
 
@@ -775,6 +780,8 @@ def locked_problems(scripts: Path) -> list[str]:
                 problems.append(f"{label}: 2 で止まらない: {proc.returncode} {output[-300:]}")
             if not all(f"消せない: {directory / name}" in output for name in ("proposal.md", "spec.md")):
                 problems.append(f"{label}: 残ったものを名指ししない: {output[-300:]}")
+            if "提案書は作っていない" not in output:
+                problems.append(f"{label}: 「提案書は作っていない」と言わない: {output[-300:]}")
             left = sorted(p.name for p in directory.iterdir())
             if left != sorted([MANIFEST, "proposal.md", "spec.md"]):
                 problems.append(f"{label}: 残るものが違う: {left}")
@@ -822,6 +829,25 @@ def locked_problems(scripts: Path) -> list[str]:
             Path.unlink = original
         if not left or (directory / MANIFEST).exists() is False:
             problems.append(f"1 つ消せないのに印を消すか、名指ししない: {left} {sorted(p.name for p in directory.iterdir())}")
+
+        # 辿れない先を指す symlink は消せる——python3.12 の `is_file` はここで例外を投げる（3.14 は投げないので、この変異は 3.12 でだけ死ぬ）
+        unreachable = Path(tmp) / "unreachable"
+        unreachable.mkdir()
+        (unreachable / "target").write_text("x", encoding="utf-8")
+        directory = Path(tmp) / "symlink"
+        directory.mkdir()
+        (directory / MANIFEST).write_text("# 印\nproposal.md\n", encoding="utf-8")
+        (directory / "proposal.md").symlink_to(unreachable / "target")
+        unreachable.chmod(0)
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                left = module.remove_owned(directory)
+        except OSError as e:
+            left = [f"例外で逃げる: {e!r}"]
+        finally:
+            unreachable.chmod(0o755)
+        if left or list(directory.iterdir()):
+            problems.append(f"辿れない先の symlink を消さない: {left} {sorted(p.name for p in directory.iterdir())}")
     return problems
 
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
@@ -1163,6 +1189,10 @@ def main() -> int:
         problems = locked_problems(SCRIPTS)
         check("前の出力を消せない場所の扱いが違う", not problems, "; ".join(problems))
         for index, (name, before, after) in enumerate(LOCKED_MUTATIONS):
+            if "3.12 でだけ" in name and sys.version_info >= (3, 13):
+                # 3.13 以降の `is_file` は辿れない symlink で例外を投げないので、この変異は判別できない（CI の 3.12 で当てる）
+                print(f"当てていない（python {sys.version_info.major}.{sys.version_info.minor}）: {name}", file=sys.stderr)
+                continue
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")

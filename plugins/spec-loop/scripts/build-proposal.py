@@ -617,7 +617,8 @@ def remove_owned(directory: Path) -> list[str]:
     for name in names:
         stale = directory / name
         try:
-            if stale.is_file() or stale.is_symlink():
+            # symlink を先に見る——python3.12 の `is_file` は辿れない先を指す symlink で例外を投げる
+            if stale.is_symlink() or stale.is_file():
                 stale.unlink()
                 print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
         except OSError as e:
