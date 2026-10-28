@@ -19,7 +19,8 @@ usage: python3 diff-versions.py <docs ディレクトリ> [--version <n>]
 
 - 0: 出した
 - 1: 入力が決まりに反する（重ね合わせが作れない）——比べていない
-- 2: 引数の誤り・入力が無い／読めない・その版が無い——比べていない
+- 2: 引数の誤り・入力が無い／読めない・その版が無い・想定外の例外（深い入れ子の `RecursionError`・128KB を超えるセルの
+  `csv.Error` など。#286）——比べていない
 
 **守らないもの**:
 
@@ -189,7 +190,8 @@ def main(argv: list[str]) -> int:
         version = int(args[at + 1])
         del args[at:at + 2]
     if len(args) != 1:
-        print(__doc__.splitlines()[2], file=sys.stderr)
+        print(__doc__.splitlines()[2] if __doc__ else
+              f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     docs = Path(args[0])
     if not docs.is_dir():
@@ -211,4 +213,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

@@ -14,6 +14,8 @@
 4. **判定できない形を 0 にしない（2）**——タグの時点に `docs/v<n>/` が無い・タグがコミットを指さない・
    HEAD が無い・git でない・**浅い clone**（`actions/checkout` の既定。タグが見えない——
    同じ元からの深い clone では判定できることを陽性対照にする）。
+4'. **想定外の例外も 2 で、トレースバックの 1 にしない。`-OO`（docstring が無い）で引数なしに呼んでも想定外の例外にならない**（#286）。
+   **想定外の例外を作る入力は無い**——読むのは git の出力だけで、CSV も JSON も読まない。`subprocess.run` を差し替えて作る。
 5. **本体の定数が `references/versions.md` と一致する**（写しのずれ）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -196,6 +198,40 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
 ]
 
 
+# 想定外の例外は 2・-OO（docstring が無い）で引数なしに呼んでも想定外の例外にならない（#286）。(名前, 壊す前, 壊した後)
+OO_MUTATIONS = [
+    ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
+     "    except ImportError as e:  # 想定外の例外も「判定していない」（2）"),
+    ("-OO で docstring が無いと落ちる", "description=__doc__.splitlines()[0] if __doc__ else None",
+     "description=__doc__.splitlines()[0] if True else None"),
+]
+# 想定外の例外を作る入力はこの本体に無い（読むのは git の出力だけで、CSV も JSON も読まない）。
+# だから `subprocess.run` を差し替えて ValueError を投げさせ、入口（`__main__`）から走らせる
+UNEXPECTED_RUNNER = """
+import runpy, subprocess, sys
+def run(*args, **kwargs):
+    raise ValueError("試料")
+subprocess.run = run
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def oo_problems(scripts: Path, cwd: Path, env: dict[str, str]) -> list[str]:
+    problems = []
+    proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True,
+                          cwd=cwd, env=env)
+    output = proc.stdout + proc.stderr
+    if proc.returncode != 2 or "想定外の例外" in output or "Traceback" in output:
+        problems.append(f"-OO の引数なし: 終了 {proc.returncode}: {output[-300:]!r}")
+    proc = subprocess.run([sys.executable, "-I", "-c", UNEXPECTED_RUNNER, str(scripts / TARGET)], capture_output=True,
+                          text=True, cwd=cwd, env=env)
+    output = proc.stdout + proc.stderr
+    if proc.returncode != 2 or "想定外の例外で止まった（ValueError: 試料）" not in output or "Traceback" in output:
+        problems.append(f"想定外の例外: 終了 {proc.returncode}: {output[-300:]!r}")
+    return problems
+
+
 def copy_scripts(dest: Path) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -237,12 +273,23 @@ def main() -> int:
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
                   not as_expected(killer, mutated_results[killer]), mutated_results[killer][1][-300:])
 
+        (tmp_path / "oo").mkdir()  # git でない場所——引数なしは今のディレクトリを見るので 2
+        problems = oo_problems(scripts, tmp_path / "oo", env)
+        check("想定外の例外・-OO の引数なしで 2 にならない", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(OO_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"oo-mut{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}", bool(oo_problems(mutated, tmp_path / "oo", env)))
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件")
     return 0
 
 

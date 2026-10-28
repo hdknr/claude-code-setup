@@ -13,6 +13,8 @@
 3. **判定できない形を 0 にしない**（仕様のディレクトリが無い・空・Q&A 表が読めない）。
 4. **0 で終わっても「抜けた」とは言わない**——出力に「条件 2〜5 は判定していない」が出る。
 5. **本体の定数が `references/spec-exit.md` の「未決定の印」の表と一致する**（写しのずれ）。
+3'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、トレースバックの 1 にしない**。`-OO`（docstring が無い）で
+   引数なしに呼んでも使い方の誤りとして 2（#286）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -105,6 +107,9 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("ドット始まりしか無い", HEADER, {".keep": ""}, 2, "ファイルが 1 つも無い"),
     ("Q&A 表が無い", None, {"order.md": CLEAN_SPEC}, 2, "Q&A 表を読めない"),
     ("Q&A 表が UTF-8 でない", b"\xff\xfe\x00", {"order.md": CLEAN_SPEC}, 2, "Q&A 表を読めない"),
+    # 想定外の例外（128KB 超のセルの csv.Error）も 2 で、トレースバックの 1 にしない（#286）
+    ("巨大なセル", HEADER + OPEN_ROW.replace("端数は？", "x" * 200_000), {"order.md": CLEAN_SPEC}, 2,
+     "想定外の例外で止まった（Error: field larger"),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -145,7 +150,19 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("TBD を印から外す", 'MARKERS = ("TBD", "TODO", "未定", "要確認")', 'MARKERS = ("TODO", "未定", "要確認")', "TBD"),
     ("満たしても但し書きを出さない", '        "**これだけでは抜けていない**——条件 2〜5 は判定していない（references/spec-exit.md）",\n',
      "", "満たす"),
+    ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
+     "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "巨大なセル"),
 ]
+
+# -OO（docstring が無い）で引数なしに呼んでも、使い方の誤りとして 2（#286）。(名前, 壊す前, 壊した後)
+OO_MUTATIONS = [("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else")]
+
+
+def oo_problems(scripts: Path, cwd: Path) -> list[str]:
+    proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=cwd)
+    if proc.returncode != 2 or "usage:" not in proc.stderr or "Traceback" in proc.stderr:
+        return [f"-OO の引数なし: 終了 {proc.returncode}: {proc.stderr[-300:]!r}"]
+    return []
 
 failures: list[str] = []
 
@@ -195,7 +212,7 @@ def run_all(scripts: Path, work: Path) -> dict[str, tuple[int, str]]:
 
 def as_expected(name: str, result: tuple[int, str]) -> bool:
     expected = next(case for case in CASES if case[0] == name)
-    return result[0] == expected[3] and expected[4] in result[1]
+    return result[0] == expected[3] and expected[4] in result[1] and "Traceback" not in result[1]
 
 
 def reference_markers(markdown: str) -> tuple[list[str], list[str]]:
@@ -273,12 +290,22 @@ def main() -> int:
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
                   not as_expected(killer, mutated_results[killer]), mutated_results[killer][1][-300:])
 
+        problems = oo_problems(scripts, tmp_path)
+        check("-OO の引数なしで使い方の誤り（2）にならない", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(OO_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"oo-mut{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}", bool(oo_problems(mutated, tmp_path)))
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS) + len(OO_MUTATIONS)} 件")
     return 0
 
 
