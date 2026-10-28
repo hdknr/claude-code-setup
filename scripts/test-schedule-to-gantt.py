@@ -14,10 +14,12 @@
 4. **決まりに反する表・読めない表からは描かない**（1・2）。**前に作った出力は消す。**
 4'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、前の出力を消す。** 出力先に書けないときも
    トレースバックの 1 にせず 2。`-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
-   `main` の外へ逃げた例外は入口が 2 にする（`Path.stat` を差し替えて例外を起こす）。
+   `main` の外へ逃げた例外は入口が 2 にする（`Path.mkdir` を差し替えて例外を起こす）。
 4''. **前の出力を消せない（書けない・辿れないディレクトリ）ときは、どの経路でも 2 で、残った出力を名指しする**（#499）
    ——表が決まりに反する（1 の経路）・読めない・想定外の例外・書けないの 4 つで。想定外の例外には化けない。
    **陽性対照**: 消せる場所では「消せない」と言わず、出力先が無ければ 1 のまま、出力先がディレクトリなら消さずに 1。
+   名前が長すぎる（在りえない）出力先は 1 のまま・辿れない先を指す symlink はリンクを消して 1。
+   消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
 5. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **守らないもの**: 見た目（文字が枠からはみ出すか）。ブラウザで開いて目で見る。
@@ -120,7 +122,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("想定外の例外で前の出力を消さない", "    except Exception as e:  # 想定外の例外（巨大なセルの csv.Error など）でも",
      "    except ImportError as e:  # 想定外の例外（巨大なセルの csv.Error など）でも", "巨大なセル"),
     # 無い（ENOENT）まで「消せない」と読むと、出力先が無いだけで 2 になる（#499）
-    ("無いを消せないと読む", "        if e.errno in ABSENT:", "        if False:", "終了が開始より前は描かない"),
+    ("無いを消せないと読む", "        if e.errno in ABSENT:  # 無い（", "        if False:  # 無い（", "終了が開始より前は描かない"),
 ]
 
 # 想定外の例外は 2（#286）。前の出力を消せないとき・書けないとき・-OO の引数なしは CASES の外で見る。(名前, 壊す前, 壊した後)
@@ -131,8 +133,13 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("消せないのに元の終了コードのまま", "        print(left, file=sys.stderr)\n        return 2\n",
      "        print(left, file=sys.stderr)\n        return code\n"),
     ("消せないことを名指ししない", "        print(left, file=sys.stderr)\n", "        pass\n"),
-    ("消せない失敗も無いと読む", "        if e.errno in ABSENT:", "        if True:"),
-    ("ディレクトリも消そうとする", "        if not stat.S_ISREG(out.stat().st_mode):", "        if False:"),
+    ("消せない失敗も無いと読む", "        if e.errno in ABSENT:  # 無い（", "        if True:  # 無い（"),
+    ("ディレクトリも消そうとする", "        if not stat.S_ISREG(mode):", "        if False:"),
+    # 1 パス目の指摘対応（CR3・CR4・CR5）
+    ("長すぎる名前を消せないと読む", "errno.ELOOP, errno.ENAMETOOLONG)", "errno.ELOOP)"),
+    ("辿れない先のリンクを消せないと読む", "                mode = stat.S_IFREG  # 先は", "                raise  # 先は"),
+    ("消す途中の想定外の例外を名指ししない", "    except Exception as e:  # 想定外の例外でも、消せなかった",
+     "    except ImportError as e:  # 想定外の例外でも、消せなかった"),
     ("書けないときを捕まえない", "    except OSError as e:  # 書きかけを", "    except ImportError as e:  # 書きかけを"),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
@@ -193,18 +200,45 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     code, output = generate(scripts, bad, root / "dir.svg")
     if code != 1 or not (root / "dir.svg").is_dir() or LEFT in output:
         problems.append(f"出力先がディレクトリ: 終了 {code}: {output[-300:]!r}")
-    # main の外へ逃げた例外（出力先の `Path.stat` だけを差し替える。python3.12 の `resolve` も stat を呼ぶ）は、
-    # 入口が 2 にする（トレースバックの 1 にしない）
-    script = str(scripts / TARGET)
-    inject = ("import pathlib, runpy, sys\n"
-              "real = pathlib.Path.stat\n"
-              "def boom(self, *a, **k):\n"
-              "    if self.name == 'x.svg':\n        raise RuntimeError('boom')\n"
-              "    return real(self, *a, **k)\n"
-              "pathlib.Path.stat = boom\n"
-              f"sys.argv = [{script!r}, {str(bad)!r}, {str(root / 'x.svg')!r}]\n"
-              f"runpy.run_path({script!r}, run_name='__main__')\n")
-    proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+    # 名前が長すぎる出力先——その名前のファイルは在りえないので「無い」。1 のまま（CR3）
+    code, output = generate(scripts, bad, root / ("a" * 300 + ".svg"))
+    if code != 1 or LEFT in output:
+        problems.append(f"長すぎる名前の出力先: 終了 {code}: {output[-300:]!r}")
+    # 辿れない先を指す symlink——リンクは消せるので消して 1（CR4）
+    shut = root / "shut"
+    shut.mkdir()
+    (shut / "g.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    link = root / "link.svg"
+    link.symlink_to(shut / "g.svg")
+    shut.chmod(0o000)
+    try:
+        code, output = generate(scripts, bad, link)
+    finally:
+        shut.chmod(0o755)
+    if code != 1 or LEFT in output or link.is_symlink() or not (shut / "g.svg").is_file():
+        problems.append(f"辿れない先の symlink: 終了 {code}: {output[-300:]!r}")
+
+    def injected(method: str, source: Path, name: str, match: str | None = None) -> subprocess.CompletedProcess:
+        """出力先 `build/<name>` について、名前が `match`（既定は `name`）のパスの `Path.<method>` だけを差し替えて
+        RuntimeError を起こす（python3.12 の `resolve` も stat を呼ぶので絞る）。"""
+        script = str(scripts / TARGET)
+        inject = ("import pathlib, runpy, sys\n"
+                  f"real = pathlib.Path.{method}\n"
+                  "def boom(self, *a, **k):\n"
+                  f"    if self.name == {match or name!r}:\n        raise RuntimeError('boom')\n"
+                  "    return real(self, *a, **k)\n"
+                  f"pathlib.Path.{method} = boom\n"
+                  f"sys.argv = [{script!r}, {str(source)!r}, {str(root / 'build' / name)!r}]\n"
+                  f"runpy.run_path({script!r}, run_name='__main__')\n")
+        return subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+
+    # 消す途中の想定外の例外も「消せない」と名指しする——「想定外の例外で止まった」に化けない（CR5）
+    proc = injected("lstat", bad, "y.svg")
+    if (proc.returncode != 2 or f"{LEFT}{root / 'build' / 'y.svg'}（RuntimeError: boom）" not in proc.stderr
+            or "想定外の例外で止まった" in proc.stderr or "Traceback" in proc.stderr):
+        problems.append(f"消す途中の想定外の例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # main の外へ逃げた例外（書く前の `Path.mkdir`）は、入口が 2 にする（トレースバックの 1 にしない）
+    proc = injected("mkdir", good, "x.svg", match="build")
     if proc.returncode != 2 or "想定外の例外で止まった（RuntimeError: boom" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"main の外へ逃げた例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)

@@ -111,22 +111,37 @@ def render(rows: list[dict[str, str]]) -> str:
     return "\n".join(out) + "\n"
 
 
-# 「無い」と読んでよい stat の失敗（python3.12 の `Path.is_file` が無視するものと同じ）。ほかの失敗（辿れないなど）は消せなかったと言う
-ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP)
+# 「無い」と読んでよい stat の失敗（python3.12 の `Path.is_file` が無視するものと、その名前では在りえない ENAMETOOLONG）。
+# ほかの失敗（辿れないなど）は消せなかったと言う
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP, errno.ENAMETOOLONG)
 
 
 def remove_stale(out: Path) -> str | None:
-    """前に作った出力（通常のファイル）を消す。消せなかったら、名指しする行を返す（#499）。
+    """前に作った出力（通常のファイル。それを指す symlink はリンクを）消す。消せなかったら、名指しする行を返す（#499）。
 
-    `Path.is_file` で確かめない——python3.14 は辿れないディレクトリでも黙って False を返し、残った出力を見逃す。"""
+    `Path.is_file` で確かめない——python3.14 は辿れないディレクトリでも黙って False を返し、残った出力を見逃す。
+    symlink は `lstat` で見て、リンクそのものを消す（`unlink` が消すのはリンク）。先がディレクトリ・辿れる先が無い（壊れたリンク）なら
+    今までどおり消さない。先が辿れない（EACCES など）なら、リンクを消す——出力先の名前に古いものが残らない。"""
     try:
-        if not stat.S_ISREG(out.stat().st_mode):
+        mode = out.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            try:
+                mode = out.stat().st_mode
+            except OSError as e:
+                if e.errno in ABSENT:
+                    return None  # 壊れたリンク——この道具の出力ではない
+                mode = stat.S_IFREG  # 先は確かめられないが、リンクは消せる
+        if not stat.S_ISREG(mode):
             return None  # ディレクトリなど、この道具の出力でないものは消さない
         out.unlink()
     except OSError as e:
         if e.errno in ABSENT:  # 無い（確かめてから消すまでに消えたものを含む）
             return None
         return f"前に作った出力を消せない: {out}（{e.strerror}）。今の表から作ったものではない"
+    except ValueError:  # 符号化できない名前など——その名前のファイルは在りえない（3.12 の `is_file` も無いと読んだ）
+        return None
+    except Exception as e:  # 想定外の例外でも、消せなかったことを名指しする（「想定外の例外」に化けさせない）
+        return f"前に作った出力を消せない: {out}（{type(e).__name__}: {e}）。今の表から作ったものではない"
     print(f"{out}: 前に作った出力を消した（今の表から作ったものではないため）", file=sys.stderr)
     return None
 
