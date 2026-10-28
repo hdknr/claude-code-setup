@@ -12,8 +12,12 @@
 2. **表の中身が図に出る**——工程の数だけ棒があり、表の順に並び、棒の位置と幅が日付から決まる。
 3. **整形式の XML**——工程の名前に `&`・`<`・制御文字が入っても。
 4. **決まりに反する表・読めない表からは描かない**（1・2）。**前に作った出力は消す。**
-4'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、前の出力を消す。** 前の出力を消せない・出力先に書けないときも
+4'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、前の出力を消す。** 出力先に書けないときも
    トレースバックの 1 にせず 2。`-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
+   `main` の外へ逃げた例外は入口が 2 にする（`Path.stat` を差し替えて例外を起こす）。
+4''. **前の出力を消せない（書けない・辿れないディレクトリ）ときは、どの経路でも 2 で、残った出力を名指しする**（#499）
+   ——表が決まりに反する（1 の経路）・読めない・想定外の例外・書けないの 4 つで。想定外の例外には化けない。
+   **陽性対照**: 消せる場所では「消せない」と言わず、出力先が無ければ 1 のまま、出力先がディレクトリなら消さずに 1。
 5. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **守らないもの**: 見た目（文字が枠からはみ出すか）。ブラウザで開いて目で見る。
@@ -84,7 +88,8 @@ CASES: list[tuple[str, str | bytes | None, bool, bool, Callable[[Result], bool]]
     ("終了が開始より前は描かない", HEAD + "T-001,a,2026-11-05,2026-11-02,\n", False, False,
      lambda r: r.code == 1 and r.svg is None and "ガントチャートは作っていない" in r.output),
     ("前の出力を消す", HEAD + "T-001,a,2026-11-05,2026-11-02,\n", True, False,
-     lambda r: r.code == 1 and r.svg is None and "前に作った出力を消した" in r.output),
+     lambda r: r.code == 1 and r.svg is None and "前に作った出力を消した" in r.output
+     and "前に作った出力を消せない" not in r.output),
     ("工程が無い", HEAD, False, False, lambda r: r.code == 1 and r.svg is None and "描く工程が 1 行も無い" in r.output),
     ("読めない表", None, True, False, lambda r: r.code == 2 and r.svg is None),
     # 想定外の例外（128KB 超のセルの csv.Error）も 2 で、前の出力を消す（#286）
@@ -114,42 +119,94 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("空の表を通す", "if not problems and not rows:", "if False:", "工程が無い"),
     ("想定外の例外で前の出力を消さない", "    except Exception as e:  # 想定外の例外（巨大なセルの csv.Error など）でも",
      "    except ImportError as e:  # 想定外の例外（巨大なセルの csv.Error など）でも", "巨大なセル"),
+    # 無い（ENOENT）まで「消せない」と読むと、出力先が無いだけで 2 になる（#499）
+    ("無いを消せないと読む", "        if e.errno in ABSENT:", "        if False:", "終了が開始より前は描かない"),
 ]
 
 # 想定外の例外は 2（#286）。前の出力を消せないとき・書けないとき・-OO の引数なしは CASES の外で見る。(名前, 壊す前, 壊した後)
 ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("入口で想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）"),
+    # ここから #499
+    ("消せないのに元の終了コードのまま", "        print(left, file=sys.stderr)\n        return 2\n",
+     "        print(left, file=sys.stderr)\n        return code\n"),
+    ("消せないことを名指ししない", "        print(left, file=sys.stderr)\n", "        pass\n"),
+    ("消せない失敗も無いと読む", "        if e.errno in ABSENT:", "        if True:"),
+    ("ディレクトリも消そうとする", "        if not stat.S_ISREG(out.stat().st_mode):", "        if False:"),
     ("書けないときを捕まえない", "    except OSError as e:  # 書きかけを", "    except ImportError as e:  # 書きかけを"),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
 
+LEFT = "前に作った出力を消せない: "
+
+
 def entry_problems(scripts: Path, root: Path) -> list[str]:
-    """CASES の外の 3 つ（#286）:
-    前の出力を消せない場所（書けないディレクトリ）で巨大なセル——内側の捕捉が消そうとして `PermissionError` を投げても、
-    入口が 2 にする（トレースバックの 1 にしない）。書けない出力先は 2 で「書けない」と言う。`-OO` の引数なしは使い方の誤りで 2。"""
+    """CASES の外のもの。#286: 書けない出力先は 2 で「書けない」と言う・`-OO` の引数なしは使い方の誤りで 2・
+    `main` の外へ逃げた例外を入口が 2 にする。#499: 前の出力を消せない場所では、どの経路でも 2 で残った出力を名指しする
+    （想定外の例外に化けない）。陽性対照として、出力先がディレクトリなら消さずに 1。"""
     assert_in_tmp(root)
     root.mkdir(parents=True)
     problems = []
-    big, good = root / "big.csv", root / "good.csv"
+    big, good, bad = root / "big.csv", root / "good.csv", root / "bad.csv"
     big.write_text(HEAD + "T-001," + "x" * 200_000 + ",2026-11-02,2026-11-03,\n", encoding="utf-8")
     good.write_text(HEAD + GOOD, encoding="utf-8")
-    locked = root / "locked"
-    locked.mkdir()
-    (locked / "gantt.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    bad.write_text("bad\n", encoding="utf-8")  # Issue #499 の再現: 見出しが決まりと違う（1 の経路）
+    locked, hidden = root / "locked", root / "hidden"
+    for directory in (locked, hidden):
+        directory.mkdir()
+        (directory / "gantt.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (locked / "ro.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (locked / "ro.svg").chmod(0o444)
     locked.chmod(0o555)
+    hidden.chmod(0o000)  # 辿れない——python3.14 の `is_file` は黙って False を返す
     try:
-        if _writable(locked):
+        if _writable(locked) or _writable(hidden):
             return ["書けないディレクトリに書ける（root で走っている？）——試料が判別しない"]
-        code, output = generate(scripts, big, locked / "gantt.svg")
-        if code != 2 or "想定外の例外" not in output or "Traceback" in output:
-            problems.append(f"消せない前の出力: 終了 {code}: {output[-300:]!r}")
+
+        def left_named(output: str, name: str, directory: Path) -> bool:
+            return f"{LEFT}{directory / name}（" in output and "Traceback" not in output and "PermissionError" not in output
+
+        for label, source, directory, extra in (
+            ("消せない前の出力（表が決まりに反する）", bad, locked, "見出し行が決まりと違う"),
+            ("消せない前の出力（読めない表）", root / "none.csv", locked, ""),
+            ("消せない前の出力（想定外の例外）", big, locked, "想定外の例外で止まった（Error: field larger"),
+            ("辿れない場所の前の出力", bad, hidden, "見出し行が決まりと違う"),
+        ):
+            code, output = generate(scripts, source, directory / "gantt.svg")
+            if code != 2 or not left_named(output, "gantt.svg", directory) or extra not in output:
+                problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
         code, output = generate(scripts, good, locked / "new.svg")
-        if code != 2 or "書けない（" not in output or "Traceback" in output:
+        if code != 2 or "書けない（" not in output or "Traceback" in output or LEFT in output:
             problems.append(f"書けない出力先: 終了 {code}: {output[-300:]!r}")
+        code, output = generate(scripts, good, locked / "ro.svg")  # 書けず、書けなかった前の出力も消せない
+        if code != 2 or "書けない（" not in output or not left_named(output, "ro.svg", locked):
+            problems.append(f"書けない出力先の消せない前の出力: 終了 {code}: {output[-300:]!r}")
     finally:
+        hidden.chmod(0o755)
         locked.chmod(0o755)
+        (locked / "ro.svg").chmod(0o644)
+    if not (locked / "gantt.svg").is_file() or not (hidden / "gantt.svg").is_file():
+        problems.append("消せないはずの前の出力が消えた——試料が判別しない")
+    # 陽性対照: 出力先がディレクトリなら、この道具の出力ではないので消さずに 1
+    (root / "dir.svg").mkdir()
+    code, output = generate(scripts, bad, root / "dir.svg")
+    if code != 1 or not (root / "dir.svg").is_dir() or LEFT in output:
+        problems.append(f"出力先がディレクトリ: 終了 {code}: {output[-300:]!r}")
+    # main の外へ逃げた例外（出力先の `Path.stat` だけを差し替える。python3.12 の `resolve` も stat を呼ぶ）は、
+    # 入口が 2 にする（トレースバックの 1 にしない）
+    script = str(scripts / TARGET)
+    inject = ("import pathlib, runpy, sys\n"
+              "real = pathlib.Path.stat\n"
+              "def boom(self, *a, **k):\n"
+              "    if self.name == 'x.svg':\n        raise RuntimeError('boom')\n"
+              "    return real(self, *a, **k)\n"
+              "pathlib.Path.stat = boom\n"
+              f"sys.argv = [{script!r}, {str(bad)!r}, {str(root / 'x.svg')!r}]\n"
+              f"runpy.run_path({script!r}, run_name='__main__')\n")
+    proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+    if proc.returncode != 2 or "想定外の例外で止まった（RuntimeError: boom" not in proc.stderr or "Traceback" in proc.stderr:
+        problems.append(f"main の外へ逃げた例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)
     if proc.returncode != 2 or "usage:" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"-OO の引数なし: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
@@ -250,7 +307,7 @@ def main() -> int:
                   not as_expected(killer, mutated_results[killer]), mutated_results[killer].output[-300:])
 
         problems = entry_problems(scripts, tmp_path / "entry")
-        check("消せない前の出力・書けない出力先・-OO の引数なしで 2 にならない", not problems, "; ".join(problems))
+        check("消せない前の出力・書けない出力先・-OO の引数なし・逃げた例外で期待どおりでない", not problems, "; ".join(problems))
         for index, (name, before, after) in enumerate(ENTRY_MUTATIONS):
             if source.count(before) != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
