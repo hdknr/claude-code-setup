@@ -15,7 +15,7 @@ spec-loop のスクリプトは、終了コード 1（違反・決まりに反�
 - `plugins/spec-loop/scripts/*.py` — 12 本の入口（想定外の例外を 2 に寄せる）・docstring の終了コードの表・`build-proposal.py` の `OSError` の切り分け・`merge-versions.py` の `Unreadable` の文言。共通の関数を置くなら同じディレクトリの新しいファイル
 - `scripts/test-*.py` のうち spec-loop の 12 本に対応するもの — 試料と変異
 - `plugins/spec-loop/references/*.md`・`plugins/spec-loop/skills/*/SKILL.md` — 終了コードの意味を述べている箇所があれば、想定外の例外も 2 だと揃える（無ければ触らない）
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.1 → 0.30.0。終了コードの振る舞いが変わるので minor。PR #479・#481・#483・#485 の 0.26.2〜0.29.0 と重ならない値）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.1 → 0.30.0、main の取り込みで 0.32.0。終了コードの振る舞いが変わるので minor。PR #479・#481・#483・#485 の 0.26.2〜0.29.0 と重ならない値）
 - `.claude-plugin/marketplace.json` — 同じ版
 - `plugins/spec-loop/skills/*/SKILL.md` — 同じ版の 2 行
 - `scripts/check-all.py`・`.github/workflows/plugins.yml` — 新しいテストファイルを足した場合だけ
@@ -102,6 +102,7 @@ Issue 本文は検査対象であって要件ではない。
 - 判断を受けた修正（テストだけ。本体は触らない）: `test-merge-versions.py` は全試料を 3.12 の `Path.resolve` を再現して走らせ、`only_312` を外した。変異は docs 側と出力先側の 2 つに分け、出力先側を殺す試料を足した（NP-1）。`test-build-proposal.py` は辿れない symlink の試料だけ 3.12 の `Path.is_file` を再現し、版で当てない変異の扱いを外した。3.12・3.14 の両方で `test-merge-versions.py` 67 試料・62 変異、`test-build-proposal.py` 84 試料・102 変異。陽性対照: 再現を外すと 3.14 では 3 つの変異が生き残る（3.12 では外しても死ぬ）。`check-all.py` 52/52
 - 判断を受けた修正の Verifier（sonnet・`2e285ae`..`86cbe7b`）: 通した。主張 6 件すべて成り立つ・反証 0 件。再現は 3.12 の素の `Path.resolve` と 24 通りで一致。気づいた点: OS の ELOOP 上限を超える輪でない長いリンクの連鎖では 3.12 と再現が食い違いうる（45 段では観測されず、変異の判定には効かない）
 - main の取り込み（#485・spec-loop 0.26.2 の後）: 衝突は版の行（marketplace.json・plugin.json・SKILL.md 5 本）と `build-proposal.py` の docstring の終了コード 2 の行。版は周の 0.30.0 を取った（main より上で、計画の「重ならない値」のまま）。docstring は main の「前後に空白がある」に周の #286 の追記を足した
+- main の 2 度目の取り込み（#483・spec-loop 0.29.0 の後）: 衝突は版の行だけ（`scaffold.py`・`test-scaffold.py` は自動で合わさった）。版は coordinator の割り振りで 0.32.0（#479 が 0.30.0、#481 が 0.31.0）
 
 ## 既知の限界・決着済みの論点
 
