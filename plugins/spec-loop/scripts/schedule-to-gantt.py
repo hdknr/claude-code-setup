@@ -17,16 +17,21 @@ usage: python3 schedule-to-gantt.py <schedule.csv> <出力先.svg>
 - 1: 表が決まりに反する・描く工程が 1 行も無い——**書かない。前に作った出力があれば消す**
   （古いガントチャートを今の表のものと取り違えないため）
 - 2: 引数の誤り・表が読めない（中身を検査していない）・書けない・想定外の例外（巨大なセルの `csv.Error` など。#286）
-  ——同じく書かず、前の出力を消す（引数の誤りでは出力先が分からないので消さない。
-  前の出力そのものを消せないときは、消せなかった理由を出して 2）
+  ——同じく書かず、前の出力を消す（引数の誤りでは出力先が分からないので消さない）
+- **前の出力を消せない**（出力先のディレクトリが書けない・辿れないなど）**ときは、どの経路でも 2**——表が決まりに反していても 1 にしない。
+  **残った前の出力を、消せなかった理由つきで名指しする**（今の表のものと取り違えないため。#499）。
+  前の出力があるかどうかを確かめられないとき（辿れないディレクトリ）も、消せなかったものとして名指しする。
 
 **守らないもの**: 見た目（文字が枠からはみ出すか・読みやすいか）。ブラウザで開いて目で見る。
 """
 
 from __future__ import annotations
 
+import errno
 import importlib.util
+import os
 import re
+import stat
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -107,10 +112,56 @@ def render(rows: list[dict[str, str]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def remove_stale(out: Path) -> None:
-    if out.is_file():
+# 「無い」と読んでよい stat の失敗（python3.12 の `Path.is_file` が無視するもの）。ほかの失敗（辿れないなど）は消せなかったと言う。
+# ENAMETOOLONG は、名前の 1 つが NAME_MAX を超えるとき（その名前のファイルは在りえない）だけ「無い」と読む——
+# パス全体が PATH_MAX を超えるだけなら、ファイルは在りうる（相対パスで辿れる）ので消せなかったと言う（#499 の 2 パス目）
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP)
+NAME_MAX = 255
+
+
+def absent(out: Path, e: OSError) -> bool:
+    if e.errno in ABSENT:
+        return True
+    return e.errno == errno.ENAMETOOLONG and any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)
+
+
+def remove_stale(out: Path) -> str | None:
+    """前に作った出力（通常のファイル。それを指す symlink はリンクを）消す。消せなかったら、名指しする行を返す（#499）。
+
+    `Path.is_file` で確かめない——python3.14 は辿れないディレクトリでも黙って False を返し、残った出力を見逃す。
+    symlink は `lstat` で見て、リンクそのものを消す（`unlink` が消すのはリンク）。先がディレクトリ・辿れる先が無い（壊れたリンク）なら
+    今までどおり消さない。先が辿れない（EACCES など）なら、リンクを消す——出力先の名前に古いものが残らない。"""
+    try:
+        mode = out.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            try:
+                mode = out.stat().st_mode
+            except OSError as e:
+                if absent(out, e):
+                    return None  # 壊れたリンク——この道具の出力ではない
+                mode = stat.S_IFREG  # 先は確かめられないが、リンクは消せる
+        if not stat.S_ISREG(mode):
+            return None  # ディレクトリなど、この道具の出力でないものは消さない
         out.unlink()
-        print(f"{out}: 前に作った出力を消した（今の表から作ったものではないため）", file=sys.stderr)
+    except OSError as e:
+        if absent(out, e):  # 無い（確かめてから消すまでに消えたものを含む）
+            return None
+        return f"前に作った出力を消せない: {out}（{e.strerror}）。今の表から作ったものではない"
+    except ValueError:  # 符号化できない名前など——その名前のファイルは在りえない（3.12 の `is_file` も無いと読んだ）
+        return None
+    except Exception as e:  # 想定外の例外でも、消せなかったことを名指しする（「想定外の例外」に化けさせない）
+        return f"前に作った出力を消せない: {out}（{type(e).__name__}: {e}）。今の表から作ったものではない"
+    print(f"{out}: 前に作った出力を消した（今の表から作ったものではないため）", file=sys.stderr)
+    return None
+
+
+def stop(out: Path, code: int) -> int:
+    """前の出力を消して終わる。消せなければ、どの経路でも 2 にして名指しする（1 の「表が決まりに反する」と取り違えない）。"""
+    left = remove_stale(out)
+    if left:
+        print(left, file=sys.stderr)
+        return 2
+    return code
 
 
 def main(argv: list[str]) -> int:
@@ -125,27 +176,26 @@ def main(argv: list[str]) -> int:
             svg = render(rows).encode("utf-8")
     except feasibility.Unreadable as e:
         print(e, file=sys.stderr)
-        remove_stale(out)
-        return 2
+        return stop(out, 2)
     except Exception as e:  # 想定外の例外（巨大なセルの csv.Error など）でも、前の出力を残さない（#286）
         print(f"{source}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
-        remove_stale(out)
-        return 2
+        return stop(out, 2)
     if not problems and not rows:
         problems = [f"{source}: 描く工程が 1 行も無い"]
     if problems:
         for line in problems:
             print(line, file=sys.stderr)
         print("ガントチャートは作っていない", file=sys.stderr)
-        remove_stale(out)
-        return 1
+        return stop(out, 1)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(svg)
     except OSError as e:  # 書きかけを今の表のものと取り違えないよう消す
         print(f"{out}: 書けない（{e.strerror}）", file=sys.stderr)
-        remove_stale(out)
-        return 2
+        return stop(out, 2)
+    except Exception as e:  # 書く途中の想定外の例外でも、前の出力を消すか名指しする（入口に逃がさない。#499 の 2 パス目）
+        print(f"{out}: 書く途中の想定外の例外で止まった（{type(e).__name__}: {e}）", file=sys.stderr)
+        return stop(out, 2)
     print(f"{out}: {len(rows)} 工程のガントチャートを書いた")
     return 0
 
