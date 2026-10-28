@@ -103,9 +103,9 @@ cruise の frontmatter（起動場所だけ）で計 5。「タイマーで再�
 - 周の在り処: ブランチ `issue/484-cruise-parent-outside-worktree`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-484`、
   起点 `9950e48`、base `origin/main` → `9950e48576e9b93fd1be04981d9070ea91b74d2d`
 - 割り目（手順 4 の完了時）: 不在のため訊かず続けた
-- 1 パス目の起点: （関門に渡すときに書く）
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- 1 パス目の起点: `e926993`（Verifier 1 パス目に渡した時点の HEAD）
+- Verifier 1 パス目: 通した（反証 3 件。`sonnet`・`dev-loop:dev-loop-verifier`）
+- `/code-review` 1 パス目: 通した（指摘 10 件）。採否は下の表。4 に戻った（直す 7 件）
 - 交絡を潰した手順: 実験なし
 
 ## 既知の限界・決着済みの論点
@@ -113,3 +113,23 @@ cruise の frontmatter（起動場所だけ）で計 5。「タイマーで再�
 - 閾値は決めない（#492）。台帳の `note` には止まった理由を書かない（起動し直せば台帳からふつうに続くため）
 - `resume.md` の `ExitWorktree` の「測っていない」は書き換えない——観測は 1 例（`/clear` の前に `EnterWorktree` を呼んでいたセッション）
 - D は #466 で入っている（`check-unattended-env.py --cruise`）
+
+### 1 パス目の採否（直す線: 既定）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1 / CR1 | dev-loop 手順 4 の足した行の指し先（「SKILL.md の『4. 周を回す』」）が dev-loop 自身の `SKILL.md` に解決され、`check-skill-pointers.py` が落ちる | 示せる——`check-skill-pointers.py` が `SKILL.md:531 → … （SKILL.md に無い）` で exit 1 | I7 | 直す |
+| V2 / CR7a | 冒頭の「（止めはしない）」が、§1 の「再開で戻れなければ周を始めず止まる」と食い違う | 示せる——cruise `SKILL.md` 35 行目と §1 の追加文 | I4 | 直す（冒頭を新規の起動に限る） |
+| CR7b | §1 で `ExitWorktree` を試すのが `show`/`apply` の後なので、閉じ込められた状態ではその前に拒まれうる | 示せない——#484 の記録では `/clear` 後の起動は worktree を作る段まで進んでおり、`show`/`apply` が拒まれた記録は無い | 無し | 残課題 |
+| V3 | §1 の `ExitWorktree` の書き方が `resume.md` の「再開の既定形では no-op」と合っていない | 示せない（「1 度試す」は害が無く、断定もしていない——Verifier も注意喚起と言っている） | 無し | 残課題 |
+| CR2 | 居る cruise で子が `AskUserQuestion`（割り目・仕様の穴・起票の承認）を出せるかの扱いが無い。割り目の「この worktree で `/clear`」も子には当たらない | 示せない（サブエージェントの `AskUserQuestion` は測っていない） | 無し | 残課題 |
+| CR3 | 再開の経路（`ledger.md` の「どう再開するか」→ `resume.md` の「既に worktree がある場合」の `EnterWorktree(path)`）・操作待ちの続き・積んだ周の載せ替えで、親が周の worktree に入る指示が残る | 示せる——cruise §1 → `ledger.md` 66 行目 → `resume.md` 109 行目の節。cruise §4 の 5 の「その周の続きを回す」は誰が回すかを言っていない | I1 | 直す（進行中の周の続きも子に回させる） |
+| CR4 | 子への例外が新規の周の段落にしか無く、手順 4 の入り直し（497〜502 行）・`resume.md`・`prepare-worktree.sh` の出力の「次にすること」は `EnterWorktree` のまま | 示せる——該当の各行 | I2 | 直す（例外の範囲を広げる） |
+| CR5 | 「回し直した点検が外と出したら戻れた」は、点検が cwd しか見ない（`check-unattended-env.py` docstring 190 行目の「守らない」）ので、隔離が解けた証拠にならない | 示せる——docstring 190 行目 | I4・I5 | 直す（点検は cwd だけと書き、外への操作が拒まれないかで判断する） |
+| CR6 | §6 で cruise を終えるときにタイマーを止めない | 示せない（終えた後の空回りの記録は無い） | 無し（I3 は「着手できる周が残っているのに始めない」場合） | 残課題 |
+| CR8 | 親が止まる前に、走っている子の報告を回収して台帳に書く規定が無い | 示せない | 無し | 残課題 |
+| CR9a | 公開ページが「`/clear` しても隔離されたまま」を一般則として書いている（1 例） | 示せる——`dev-loop-cruise.md` 217 行目 | I5 | 直す（#484 で起きたことと書く） |
+| CR9b | §5 の通知の「`/clear` して起動し直す」は閉じ込められた状態では効かない | 示せない——§1 の閉じ込めの場合は「新しいセッションを開く」と §1 側で既に書いている | 無し | 残課題 |
+| CR10 | 計画ファイルに件数の行が無く `check-plan-counts.py` が落ちる | 示せる | 無し（周の記録。関門の対象外だが CI に要る） | 直す（手順 8 の行を書く） |
+
+- この周の起票: 1 件（#492——`仕様の穴` の線で立てた確認の Issue。起票の承認は不在のため訊いていない）
