@@ -1084,12 +1084,20 @@ def read_pptx(directory: Path) -> dict:
     return found
 
 
-def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = False) -> Result:
+def run_no_git(scripts: Path, root: Path, env: dict[str, str], subdir: bool = False, worktree: bool = False) -> Result:
     """作れる状態のリポジトリと古い出力を置いてから、git を起動できない PATH で生成する。
 
     `subdir` なら `--out` を渡さず下位ディレクトリから走らせる——既定の出力先（根の下）の古い出力が消えるか。
+    `worktree` なら根を `git worktree add` で作る——根の `.git` が**ファイル**の形（#218 の狭いパス NP-1。#291）。
+    これが無いと、`.git` を上へたどる判定を `.is_dir()` にしても緑のまま（試料の `.git` が常にディレクトリなので）。
     """
-    build_repo(root, SIGNED, env)
+    if worktree:
+        main = root.parent / f"{root.name}-main"
+        build_repo(main, SIGNED, env)
+        run_git(main, env, "worktree", "add", "-q", str(root))
+        check("試料が worktree 型でない（根の .git がファイルでない）", (root / ".git").is_file(), str(root))
+    else:
+        build_repo(root, SIGNED, env)
     out = root / "build" / "proposal" / "proposal.md"
     write_stale(out)
     empty = root.parent / f"{root.name}-empty-path"
@@ -1112,12 +1120,18 @@ def no_git(r: Result) -> bool:
     return not_made(2)(r) and r.output.count("前に作った出力を消した") == len(STALE) and "Traceback" not in r.output
 
 
-# (名前, 壊す前, 壊した後, 殺す試料は下位ディレクトリから走らせるか)
+# git を起動できない試料の形: (下位ディレクトリから走らせるか, 根を worktree 型にするか)
+NO_GIT_SHAPES = [(False, False), (True, False), (True, True)]
+
+# (名前, 壊す前, 壊した後, 殺す試料は下位ディレクトリから走らせるか, 根を worktree 型にするか)
 NO_GIT_MUTATIONS = [
     ("git を起動できないと落ちる", "    except signoff.Unjudged:\n        pass",
-     "    except ZeroDivisionError:\n        pass", True),  # `--out` を渡すと根を求めないので、下位からでないと届かない
+     "    except ZeroDivisionError:\n        pass", True, False),  # `--out` を渡すと根を求めないので、下位からでないと届かない
     ("git で根を求められないと .git をたどらない", "    for parent in (repo.resolve(), *repo.resolve().parents):",
-     "    for parent in ():", True),
+     "    for parent in ():", True, False),
+    # worktree の根は `.git` がファイル。ディレクトリ型の試料ではこの変異が生き残る（#218 の狭いパス NP-1。#291）
+    ("worktree 型の根の .git を見落とす", '        if (parent / ".git").exists():', '        if (parent / ".git").is_dir():',
+     True, True),
 ]
 
 
@@ -1203,9 +1217,9 @@ def main() -> int:
             problem = old_names_collide(tmp_path / f"old{index}", steps, env)
             check(f"試料が #260 の名前を判別していない: {name}", not problem, problem)
 
-        for subdir in (False, True):
-            result = run_no_git(scripts, tmp_path / f"nogit-{subdir}", env, subdir)
-            check(f"試料が期待どおりでない: git を起動できない（下位から: {subdir}）", no_git(result),
+        for subdir, worktree in NO_GIT_SHAPES:
+            result = run_no_git(scripts, tmp_path / f"nogit-{subdir}-{worktree}", env, subdir, worktree)
+            check(f"試料が期待どおりでない: git を起動できない（下位から: {subdir}・worktree 型: {worktree}）", no_git(result),
                   f"exit={result.code} {result.output[-300:]}")
 
         result = run_previous(scripts, tmp_path / "previous", env)
@@ -1220,13 +1234,13 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             result = run_previous(mutated, tmp_path / f"mutwork-prev{index}", env)
             check(f"変異が生き残った: {name}", not previous_removed(result), result[2][-300:])
-        for index, (name, before, after, subdir) in enumerate(NO_GIT_MUTATIONS):
+        for index, (name, before, after, subdir, worktree) in enumerate(NO_GIT_MUTATIONS):
             if source.count(before) != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
                 continue
             mutated = copy_scripts(tmp_path / f"mut-nogit{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            result = run_no_git(mutated, tmp_path / f"mutwork-nogit{index}", env, subdir)
+            result = run_no_git(mutated, tmp_path / f"mutwork-nogit{index}", env, subdir, worktree)
             check(f"変異が生き残った: {name}", not no_git(result), result.output[-300:])
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
@@ -1310,7 +1324,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 8} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS)} 件")
     return 0
 
 
