@@ -302,7 +302,7 @@ git stash drop <印の現在の stash@{n}>   # 印で見つけ直してから落
     -b <規約どおりの名前> <start-point>
   ```
 
-  で作ってから**`EnterWorktree` に `path` を渡して入る**
+  で作ってから **`EnterWorktree` に `path` を渡して入る**
   （**配下に作ること**——`SKILL.md` 手順 4 の置き場所の項）。
   **3 つとも落とさない（必須）**——**`<start-point>` を落とすと HEAD に落ち**、
   **絶対パスを落とすと別の worktree の中に入れ子で生え**、
