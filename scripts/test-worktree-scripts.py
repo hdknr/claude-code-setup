@@ -247,6 +247,18 @@ def make_dangling_origin_head(base: Path) -> Path:
     return _from_template("dangling", _build_dangling_origin_head, base)
 
 
+def cruise_exception_follows(stdout: str, wt: Path) -> bool:
+    """「次にすること」の**直後の行**が、cruise の子は `EnterWorktree` を呼ばず、
+    **作った worktree の絶対パス**を cwd にすると言っているか（#502）。"""
+    lines = stdout.splitlines()
+    idx = [i for i, l in enumerate(lines) if l.startswith("次にすること: EnterWorktree に path=")]
+    if len(idx) != 1 or idx[0] + 1 >= len(lines):
+        return False
+    nxt = lines[idx[0] + 1]
+    return ("cruise" in nxt and "EnterWorktree を呼ばない" in nxt
+            and f"{wt.resolve()} を cwd にして" in nxt)
+
+
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
     """両スクリプトの分岐をまとめて観測する。**1 回の観測で 1 つの偽リポジトリを使い切る。**"""
     repo = make_repo(base / "repo")
@@ -260,6 +272,9 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **「確認の材料を出す」という約束の変異が殺せない**（最初そうなっていた）。
         "確認の材料が出ている": ("ブランチ: issue/42-sample" in first.stdout
                                 and "起点:" in first.stdout),
+        # **案内の直後の行に、cruise の子の例外が出るか**（#502）。
+        # **「出力のどこかに在る」では見ない**——離れた行に置くと、案内だけを読んだ子が呼ぶ。
+        "cruise の子の例外が案内の直後にある": cruise_exception_follows(first.stdout, wt),
         "2 回目は断る": again.returncode,
         "数字以外は断る": bad_num.returncode,
         "作られた場所": wt.is_dir(),
@@ -394,6 +409,10 @@ MUTATIONS = {
     # 守る 4: 肯定的な確認の材料を出す
     "確認の材料を出さない": (PREPARE,
         'echo "ブランチ: ${ACTUAL_BRANCH}"',
+        'true'),
+    # 守る 16（prepare）: 入場の案内に、cruise の子の例外を並べる（#502）
+    "cruise の子の例外を出さない": (PREPARE,
+        'echo "  **ただし cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない**——${PATH_ABS} を cwd にして（cd ${PATH_ABS} && …）作業する（SKILL.md 手順 4 が正）。"',
         'true'),
     # --- check-pr-preconditions.sh の 守る 4 行 ---
     # 守る 1: worktree にいるか
@@ -1009,6 +1028,8 @@ def main() -> int:
         check("規約どおりの場所に作る", correct["作られた場所"])
         check("規約どおりの名前で切る", correct["切られたブランチ"] == "issue/42-sample")
         check("確認の材料（ブランチ名と起点）を出力する", correct["確認の材料が出ている"])
+        check("案内の直後に、cruise の子は EnterWorktree を呼ばず作ったパスを cwd にすると出す（#502）",
+              correct["cruise の子の例外が案内の直後にある"])
         check("別の worktree から走らせても入れ子で生えない", correct["入れ子で生えていない"])
         check("別の worktree から走らせても規約の場所に作る",
               correct["別 worktree からでも規約の場所"])
