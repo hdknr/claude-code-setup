@@ -1,0 +1,105 @@
+# Issue #523 — dev-loop: '*' を残さない形の太字の崩れが 4 箇所残る（#519 の残課題）
+
+- 出所: cruise #474（`/dev-loop:cruise 474 --absent` の再開・2026-10-28）の周。**不在の周**である——訊く場面は
+  `references/absent-lines.md` の「訊く場面」のとおり訊かずに進める。
+- 元の課題: #519 の `/code-review` 1 パス目（CR1-1〜CR1-4）。本文の印は `<!-- cruise-found: #474 -->`。元の周の PR は #526。
+- 使った線（出所: cruise の確かめた線（台帳 `issue-474`）。親から受けた指示で確かめた）:
+  `仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`周の途中の課題 = 台帳に足して直す`。
+- 直す線: **既定**（出所: cruise の確かめた線（台帳 `issue-474`））。
+- 親の指示（この周に固有）: **文言は変えず、`**` の前後の空白・位置だけで直す**。版は dev-loop を 1.63.4 に上げる。
+  #522（`SKILL.md` 301 行のバッククォート）と #524（`stacked.md`）はこの周の外。
+- 新規の周と判定した根拠: `find-cycle.py 523` は終了コード 1 だが、当たったのは経路 2（worktree の全件表示）の
+  `issue-368-lesson`（SHA `3523fe7` に `523` が部分一致しただけ）だけで、計画ファイル・ブランチ・コミットは 0 件。
+
+## 失敗（実物）
+
+dev-loop プラグインの Markdown（`evals/` を除く 16 本）を GitHub の Markdown API（`gh api -X POST /markdown`、`mode=gfm`）でファイルごとに描き、
+**原文の太字**（フェンスとコードスパンを除き、ブロックの中で `**` を順に組んだもの）と**描画の `<strong>`** を順に突き合わせると、base `107e557` で
+食い違うのは次の 5 塊だけ（著者が実走して確かめた）:
+
+| ファイル | 原文の組 / `<strong>` | 崩れる `**` | 描画 |
+| --- | --- | --- | --- |
+| `skills/dev-loop/SKILL.md` | 1488 / 1485 | 823 行 `…手段が無い」**なので` | 4 つの太字が 1 つの `<strong>`（`交絡が潰せない…` から `…名指しで残す` まで） |
+| `agents/dev-loop-verifier.md` | 78 / 77 | 84 行 `…未確認」**の形で`、85 行 `ものは**「未確認」と明記**する` | 2 つの太字が 1 つ |
+| `skills/dev-loop/prompts/verifier.md` | 125 / 124 | 105 行 `（陽性対照）**を先に` | 2 つの太字が 1 つ |
+| `skills/dev-loop/prompts/review-handoff.md` | 98 / 97 | 89 行 `（陽性対照）**を先に` | 2 つの太字が 1 つ |
+| `skills/dev-loop/references/stacked.md` | 121 / 120 | （#524。この周の外） | 2 つの太字が 1 つ |
+
+型: CommonMark の flanking の規則で、`**` の片側が句読点（`」` `）`）・反対側が文字のとき閉じ（または `は**「` で開き）が成立せず、
+**崩れた `**` が後ろの別の `**` と誤って組む**ので、`*` が 1 つも字のまま残らない（#519 の数え方では見えなかった）。
+
+## 変更範囲
+
+触る:
+
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 823 行の `**` の外側に空白を 1 つ足す（文言は変えない）と、版の 2 行（1.63.3 → 1.63.4）
+- `plugins/dev-loop/agents/dev-loop-verifier.md` — 84 行・85 行の 2 箇所に空白を足す
+- `plugins/dev-loop/skills/dev-loop/prompts/verifier.md` — 105 行の 1 箇所
+- `plugins/dev-loop/skills/dev-loop/prompts/review-handoff.md` — 89 行の 1 箇所
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/.claude-plugin/plugin.json` — `version`
+- `.claude-plugin/marketplace.json` — dev-loop の `version`
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`scripts/skill-metrics.py` が書き直す場合だけ。手で書かない）
+- `docs/plans/issue-523.md` — この計画ファイル
+
+触らない:
+
+- `SKILL.md` 301 行の入れ子のバッククォート（#522）・`references/stacked.md` の太字の入れ子（#524）——親の指示でこの周の外
+- dev-loop の文言・規範（空白のほかは 1 字も変えない）
+- 他のプラグイン・`scripts/`
+
+## 複製の数
+
+崩れは 4 ファイル 5 箇所で、同じ規範の複製ではなく**同じ記法の誤りが独立に 5 回**ある。ただし `prompts/verifier.md` と `prompts/review-handoff.md` の
+「（陽性対照）**を先に」は同じ文の写し（2 箇所）で、両方直す。分けない理由: 直し方が 1 種類（空白を足す）で、型も確かめ方も同じ。
+
+## デプロイ経路
+
+main へのマージ → プラグインの配布（`marketplace.json` のカタログと symlink 経路）と GitHub Pages の再ビルド（plugins/ のファイルはサイトに取り込まれない）。
+マージはこの周ではしない（親がする）。
+
+## 受入基準（不変条件 × 経路）
+
+| # | 不変条件 | 破りうる経路 | 確かめ方 |
+| --- | --- | --- | --- |
+| A1 | 直した 4 ファイルで、原文の太字と描画の `<strong>` が**順に 1 対 1 で一致する**（意図した文言がちょうど `<strong>` で囲まれる） | GitHub の描画（cmark-gfm）の flanking の組み違い | ファイルごとに gfm で描き、原文の `**` の組と `<strong>` の中身（空白を除いて正規化）を difflib で突き合わせる。変更後: 4 ファイルとも食い違い 0 塊・数が一致（1488/1488・78/78・125/125・98/98）。**陽性対照**: base `107e557` で同じ突き合わせが 4 ファイルに 1 塊ずつ（数は 1485・77・124・97）を出し、塊が Issue の 4 箇所そのもの |
+| A2 | 直していない太字が壊れない——描画の `<strong>` の並びのうち、直した箇所の外は変わらず、`<em>` の数も変わらない | 足した空白が別の組を崩す | A1 の突き合わせで全件一致（直した箇所の外にも食い違いが出ない）。`<em>` の数が base と同じ（SKILL.md 42・agent 2・prompt 4・handoff 4） |
+| A3 | 文言は変わらない——変えるのは `**` の外側に空白を足すことだけ | 編集の取り違え | `git diff -w <base> -- plugins/dev-loop/ .claude-plugin/` に版の行のほか差分が無い |
+| A4 | dev-loop の他のファイル（`evals/` を除く 16 本のうち残り 12 本）で、同じ突き合わせの食い違いが増えない（`stacked.md` の 1 塊＝#524 だけが残る） | 走査漏れ | 16 本すべてを同じ突き合わせで描く |
+| A5 | 版が 3 種類（`marketplace.json`・`plugin.json`・dev-loop の `SKILL.md` 2 本の 2 行）で 1.63.4 に揃う | 版の上げ忘れ・片側だけ | `python3 scripts/check-plugin-versions.py`・`check-version-bump.py origin/main` |
+| A6 | 歯止めが全部緑 | どれか | `python3 scripts/check-all.py --jobs 2` と、push 後の `gh pr checks` |
+| A7 | 生成物の鮮度——`SKILL.md` を触るので §8.2 の生成ブロックが該当。図は触らないので該当なし | 版の行・空白の変更で測定値が動く | `python3 scripts/skill-metrics.py --check` が 0（check-all の中でも回る）。書き直しを走らせた結果は「変更なし」 |
+
+組み合わせ（必須要件の掛け算）: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目で渡す（4 つの受け渡し。2 パス目が該当なしなら 2 つ）。
+
+**未証明**: 無し（描画は GitHub の API で実際に描いて確かめられる）。
+**BLOCKED**: 無し。
+**実験**: 描画の観測。交絡の候補——(1)「突き合わせの道具が崩れを見分けられず、いつでも一致を出す」→ base で同じ道具が Issue の 4 箇所だけを食い違いとして出すこと（陽性対照）で潰す。
+(2)「一致したのは正規化（空白・`*`・タグを落とす）が差を消したから」→ 正規化は両側に同じく掛け、base では食い違いが出ること、`<strong>` の数そのものが 1 ずつ（SKILL.md は 3）増えて原文の組の数と一致することで潰す。
+(3)「API が描画器を変えた」→ base と変更後を同じセッションで続けて描いた。
+突き合わせの道具は scratchpad の `strong_spans.py`（リポジトリに置かない。周の外）。
+
+## 未解決・確認待ち
+
+無し。
+
+## 起票
+
+- この周の起票: 0 件（起票の承認は不在のため訊いていない）
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/523-bold-strong-span`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-523`、
+  起点 `107e557`、base の参照 `origin/main`、base の SHA `107e5574eaf861c51f7b8a80a401c8d63750f0b2`
+  （`EnterWorktree` は使わず、`git -C <worktree>` と絶対パスで作業している——親の指示）
+- 手順 4 の割り目: 不在のため訊かず続けた
+- 1 パス目の指摘対応の起点の SHA: （1 パス目の関門に渡すときに書く）
+- Verifier 1 パス目: 未
+- `/code-review` 1 パス目: 未
+- 交絡を潰した手順: base `107e557` の 16 本を同じ API・同じ突き合わせで描き、Issue の 4 箇所（と #524 の stacked.md）だけが食い違いとして出ることを確かめた（陽性対照）
+
+## 既知の限界・決着済みの論点
+
+- 論点: `references/stacked.md` の食い違い 1 塊を直すか。決着: 直さない（`触らない:`）。理由: #524 の範囲で、親の指示でこの周の外。
+- 論点: 描画に空白が 1 つ見える（「」 なので」「は 「未確認」」など）。決着: 採った。理由: #496・#516・#519 と同じ直し方で、Issue の「直し方」が挙げる手段。括弧の内側に入れる案は文言（記号の位置）を変えるので採らない。
+- 論点: 突き合わせの道具は近似（ブロックの切り方・正規化）である。決着: 受入基準の判定に使ってよい。理由: 陽性対照（base で Issue の箇所だけを出す）と、`<strong>` の数そのものの一致で裏づけている。
