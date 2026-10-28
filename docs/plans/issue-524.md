@@ -88,6 +88,10 @@ main へのマージ → プラグインの配布（`marketplace.json` のカタ
 - 狭いパス: 該当なし
 - 手順 6 の 2 つ目の割り目: 2 パス目が無いので無し
 - check-all（1 回目・d212670）: 52/52 本が緑
+- check-all（2 回目・416e3c5）: 52/52 本が緑。PR #530 を作成
+- main の取り込み（親の指示。#522 の PR #529 が 1.63.5 でマージされた）: `git merge origin/main` → merge コミット `352a390`。取り込む前に `git diff --name-status --no-renames HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'` は 0 件（増えた歯止め無し）。
+  衝突は 4 ファイルの版の行だけ（各 1 塊）で、塊ごとに 1.63.6 の側を取った（ファイルごとの `--ours` は使っていない）。`git diff --stat origin/main` はこの周の 6 ファイルだけ。`check-version-bump.py origin/main`（worktree で）は 1.63.5 → 1.63.6 OK
+- check-all（3 回目・352a390）: 52/52 本が緑
 - 交絡を潰した手順: base `a0ea899` と変更後を同じ API・同じ突き合わせで続けて描き、base では Issue の 1 塊だけが食い違いとして出ることを確かめた（陽性対照）。加えて描画の HTML に `<strong>状態に依らない</strong>` が変更後にだけ在ることを直接見た（著者と、両方の関門が独立に）
 
 ## 既知の限界・決着済みの論点
