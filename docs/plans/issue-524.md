@@ -1,0 +1,91 @@
+# Issue #524 — dev-loop: stacked.md 147 行の太字の入れ子で、内側の強調が描かれない（#519 の残課題）
+
+- 出所: cruise #474（`/dev-loop:cruise 474 --absent` の再開・2026-10-28）の周。**不在の周**である——訊く場面は
+  `references/absent-lines.md` の「訊く場面」のとおり訊かずに進める。
+- 元の課題: #519 の `/code-review` 1 パス目（CR1-8）。本文の印は `<!-- cruise-found: #474 -->`。元の周の PR は #526。
+- 使った線（出所: cruise の確かめた線（台帳 `issue-474`）。親から受けた指示で確かめた）:
+  `仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`周の途中の課題 = 台帳に足して直す`。
+- 直す線: **既定**（出所: cruise の確かめた線（台帳 `issue-474`））。
+- 親の指示（この周に固有）: **文言は変えず、記号と空白だけで直す**。触る中身は `references/stacked.md` だけ。版は dev-loop を **1.63.6** に上げる
+  （並行する #522 の周が 1.63.5 に上げ、先にマージされる。取り込んでも 1.63.6 のまま main より上に保つ）。
+- 新規の周と判定した根拠: `find-cycle.py 524` が終了コード 0（5 本とも当たらなかった）。
+
+## 失敗（実物）
+
+`plugins/dev-loop/skills/dev-loop/references/stacked.md` 147 行は太字の中に太字を入れている
+（`- **依存先を … のもの。**状態に依らない**——`blocked` も含む）の `note` を` … `にする（必須）。**`）。
+GitHub の Markdown API（`gh api -X POST /markdown`、`mode=gfm`）でファイルを描くと、base `a0ea899` で
+147〜148 行の全体が 1 つの `<strong>` になり、`状態に依らない` は `<strong>` で分けて囲まれない
+（原文の組 121 / `<strong>` 120、食い違い 1 塊。著者が実走して確かめた）。
+
+## 変更範囲
+
+触る:
+
+- `plugins/dev-loop/skills/dev-loop/references/stacked.md` — 147 行の外側の太字を、内側の太字の前後で閉じ・開き直す（`**` と空白だけ。文言は変えない）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行（1.63.4 → 1.63.6）
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/.claude-plugin/plugin.json` — `version`
+- `.claude-plugin/marketplace.json` — dev-loop の `version`
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`scripts/skill-metrics.py` が書き直す場合だけ。手で書かない）
+- `docs/plans/issue-524.md` — この計画ファイル
+
+触らない:
+
+- `SKILL.md` の本文（版の 2 行のほか）——#522 の周が触る
+- dev-loop の文言・規範（`**` と空白のほかは 1 字も変えない）
+- 他のプラグイン・`scripts/`
+
+## 複製の数
+
+1 箇所（`stacked.md` 147 行）。同じ文の写しは他に無い（`grep -rn '状態に依らない' plugins/` で 1 件）。分けるものが無い。
+
+## デプロイ経路
+
+main へのマージ → プラグインの配布（`marketplace.json` のカタログと symlink 経路）と GitHub Pages の再ビルド（plugins/ のファイルはサイトに取り込まれない）。
+マージはこの周ではしない（親がする）。
+
+## 受入基準（不変条件 × 経路）
+
+| # | 不変条件 | 破りうる経路 | 確かめ方 |
+| --- | --- | --- | --- |
+| A1 | 147 行の意図した文言——`依存先を … のもの。`・`状態に依らない`・`——blocked も含む）の note を … にする（必須）。`——がそれぞれちょうど 1 つの `<strong>` で囲まれ、`前に` は `<em>` のまま | GitHub の描画（cmark-gfm）の flanking の組み違い | gfm で `stacked.md` 全体を描き、原文の `**` の組と `<strong>` の中身を突き合わせる（scratchpad の `strong_spans.py`）。変更後: 食い違い 0 塊・数が一致。**陽性対照**: base `a0ea899` で同じ突き合わせが Issue の 1 塊だけを出す（121 / 120） |
+| A2 | 直していない太字・強調が壊れない——`stacked.md` の他の `<strong>` の並びと、`<em>` の数が変わらない | 足した `**` が別の組を崩す | A1 の突き合わせで全件一致。`<em>` の数が base と同じ（3） |
+| A3 | 文言は変わらない——変えるのは `**` と空白だけ | 編集の取り違え | `stacked.md` の差分から `*` と空白を除くと前後が一致する（`git diff --word-diff` でも確かめる） |
+| A4 | dev-loop の他のファイル（`evals/` を除く）で、同じ突き合わせの食い違いが増えない | 走査漏れ・版の行の編集 | 版の行を触った `SKILL.md` 2 本も同じ突き合わせで描き、base と同じ結果 |
+| A5 | 版が 3 種類（`marketplace.json`・`plugin.json`・dev-loop の `SKILL.md` 2 本の 2 行）で 1.63.6 に揃い、main より上 | 版の上げ忘れ・片側だけ・取り込みで main と並ぶ | `python3 scripts/check-plugin-versions.py`・`check-version-bump.py origin/main` |
+| A6 | 歯止めが全部緑 | どれか | `python3 scripts/check-all.py --jobs 2` と、push 後の `gh pr checks` |
+| A7 | 生成物の鮮度——`SKILL.md` の版の行を触るので §8.2 の生成ブロックが該当。図は触らないので該当なし | 版の行で測定値が動く | `python3 scripts/skill-metrics.py --check` が 0（check-all の中でも回る） |
+
+組み合わせ（必須要件の掛け算）: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目で渡す（4 つの受け渡し。2 パス目が該当なしなら 2 つ）。
+
+**未証明**: 無し（描画は GitHub の API で実際に描いて確かめられる）。
+**BLOCKED**: 無し。
+**実験**: 描画の観測。交絡の候補——(1)「突き合わせの道具がいつでも一致を出す」→ base で同じ道具が Issue の 1 塊だけを食い違いとして出すこと（陽性対照）で潰す。
+(2)「一致したのは正規化が差を消したから」→ `<strong>` の数そのものが 120 → 122 と増えて原文の組の数と一致することで潰す。
+(3)「API が描画器を変えた」→ base と変更後を同じセッションで続けて描く。
+突き合わせの道具は scratchpad の `strong_spans.py`（#523 の周のもの。リポジトリに置かない。周の外）。
+
+## 未解決・確認待ち
+
+無し。
+
+## 起票
+
+- この周の起票: 0 件（起票の承認は不在のため訊いていない）
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/524-stacked-nested-bold`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-524`、
+  起点 `a0ea899`、base の参照 `origin/main`、base の SHA `a0ea8994c0e0e209a56f3e1de61d3bda497346bf`
+  （`EnterWorktree` は使わず、`git -C <worktree>` と絶対パスで作業している——親の指示）
+- 手順 4 の割り目: （未）
+
+## 既知の限界・決着済みの論点
+
+- 論点: 直し方。決着: Issue の「直し方」のとおり、外側の太字を内側の太字の前後で閉じ・開き直す（3 つの隣り合う `<strong>`）。
+  採らなかった案: 内側を `*状態に依らない*`（`<strong>` の中の `<em>`。同じ文の `*前に*` と同じ形）にする案——Issue が直し方を名指ししており、
+  意図した文言を `<strong>` で囲む点で Issue の求めに合うのは前者。後者は「内側の強調」を太字から斜体に変える。
+- 論点: 3 つの `<strong>` の間に空白が見える（「のもの。 状態に依らない ——」）。決着: 採った。理由: `**` の外側の空白が無いと
+  flanking の規則で開き・閉じが成り立たない（`。**` の直後が文字、`**——` の直前が文字）。#496・#516・#519・#523 と同じ直し方。
+- 論点: 突き合わせの道具は近似（ブロックの切り方・正規化）である。決着: 受入基準の判定に使ってよい。理由: 陽性対照（base で Issue の箇所だけを出す）と、`<strong>` の数そのものの一致で裏づける。
