@@ -42,7 +42,7 @@ GitHub Issue 1 件を **検証（verify）が通ることを停止条件**とし
 > **「小さいから」では縮退しない。** 1 行の typo 修正でも**ファイルを変更する周は
 > worktree → PR** に乗り、2 つの関門を通る。何を落としてよく何を落とせないかは
 > [`skills/dev-loop/SKILL.md`](skills/dev-loop/SKILL.md) の「縮退の線」の節に**そこだけ**
-> まとめてある（ここで列挙すると片方だけが古くなる）。落としてよい側は**各手順の「（任意）」**に
+> まとめてある（ここで列挙すると片方だけが古くなる）。落としてよい側は**各手順の「（任意）」** に
 > 付いている。線の引き方の根拠は
 > [dev-loop の設計 §4.1](https://hdknr.github.io/claude-code-setup/plugins/dev-loop-design/#degradation)、
 > BLOCKED と「未証明」の違いは
