@@ -21,7 +21,7 @@ usage: python3 check-frozen.py [--repo <正本リポジトリ>]
 
 - 0: 凍結した版は直されていない（凍結した版が無いときも 0。出力で区別する）
 - 1: 直されている（違うファイルを版ごとに全部出す）
-- 2: 判定していない——git でない・git が無い・HEAD が無い・浅い clone・タグの時点に `docs/v<n>/` が無い
+- 2: 判定していない——git でない・git が無い・HEAD が無い・浅い clone・タグの時点に `docs/v<n>/` が無い・想定外の例外（#286）
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`git` は要る）。
 CI で走らせるなら、タグを取得できるよう履歴をすべて取る（GitHub Actions なら `actions/checkout` に `fetch-depth: 0`）。
@@ -121,7 +121,7 @@ def check(repo: Path, only: int | None = None) -> tuple[int, list[str]]:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--repo", default=".", type=Path)
     args = parser.parse_args(argv)
     code, lines = check(args.repo)
@@ -131,4 +131,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

@@ -17,6 +17,8 @@
    書けない出力先は 3 で、**一時ファイルを残さない。**
 5. **出力が入力と引数だけで決まる**——時刻をまたいで 2 回作り、バイトが一致する。
 6. **リポジトリの外で単体で動く**——2 本のスクリプトだけを一時ディレクトリに写し、`python3 -I` で走らせる。
+7. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、既存の出力に触らず、トレースバックの 1 にしない**。
+   `-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
 
 **見ないもの**: PowerPoint・LibreOffice で開けること（CI に無い。周の検証で手で当てる）、
 文字がはみ出さないこと（本体の docstring の「守らないもの」）。
@@ -290,6 +292,33 @@ MUTATIONS: list[tuple[str, str, str]] = [
 ]
 
 
+# 想定外の例外は 2（#286）。入口の捕捉と、-OO で docstring が無いときの使い方を壊す。(名前, 壊す前, 壊した後)
+ENTRY_GUARD = "    except Exception as e:  # 想定外の例外も「判定していない」（2）"
+ENTRY_MUTATIONS = [
+    ("想定外の例外を 2 に寄せない", ENTRY_GUARD, ENTRY_GUARD.replace("Exception", "ImportError")),
+    ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
+]
+
+
+def unexpected_problems(directory: Path, base: Path) -> list[str]:
+    """巨大なセル（128KB 超。`csv.Error`）の表を CLI に渡すと 2 で、既存の出力に触らず、トレースバックの 1 にならないか。
+    `-OO`（docstring が無い）で引数なしに呼ぶと、使い方の誤りとして 2 か（#286）。`directory` に本体と検査の 2 本を置く。"""
+    problems = []
+    big = write_csv(base / f"big-{directory.name}.csv", [ROWS[1][:2] + ["x" * 200_000] + ROWS[1][3:]])
+    out = base / f"big-{directory.name}.pptx"
+    out.write_bytes(b"old")
+    r = subprocess.run([sys.executable, "-I", str(directory / SCRIPT.name), str(big), str(out)],
+                       capture_output=True, text=True, cwd=base)
+    if r.returncode != 2 or "想定外の例外" not in r.stderr or "field larger" not in r.stderr or "Traceback" in r.stderr:
+        problems.append(f"巨大なセル: 終了 {r.returncode}: {r.stderr[-300:]!r}")
+    if out.read_bytes() != b"old":
+        problems.append("巨大なセル: 既存の出力が変わった")
+    r = subprocess.run([sys.executable, "-I", "-OO", str(directory / SCRIPT.name)], capture_output=True, text=True, cwd=base)
+    if r.returncode != 2 or "usage:" not in r.stderr or "Traceback" in r.stderr:
+        problems.append(f"-OO の引数なし: 終了 {r.returncode}: {r.stderr[-300:]!r}")
+    return problems
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
@@ -328,6 +357,20 @@ def main() -> int:
                             str(base / "real" / "good.csv"), str(alone / "o.pptx")],
                            capture_output=True, text=True, cwd=alone)
         check("python3 -I で 0 で終わり、出力がある", r.returncode == 0 and (alone / "o.pptx").exists())
+
+        print("\n想定外の例外は 2（#286）")
+        problems = unexpected_problems(alone, base)
+        check(f"巨大なセルで 2・既存の出力に触らない・-OO の引数なしで 2（{'; '.join(problems) or '問題なし'}）", not problems)
+        source = SCRIPT.read_text(encoding="utf-8")
+        for n, (name, needle, replacement) in enumerate(ENTRY_MUTATIONS):
+            if source.count(needle) != 1:
+                check(f"変異を当てる先が 1 箇所ある: {name}（{source.count(needle)} 箇所）", False)
+                continue
+            d = base / f"entry-mut-{n}"
+            d.mkdir()
+            shutil.copy(CHECKER, d / CHECKER.name)
+            (d / SCRIPT.name).write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+            check(f"変異を殺せる: {name}", bool(unexpected_problems(d, base)))
 
         print("\n変異テスト（壊したのに期待どおりなら失格）")
         source = SCRIPT.read_text(encoding="utf-8")

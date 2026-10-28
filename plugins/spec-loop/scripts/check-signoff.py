@@ -50,7 +50,8 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   どちらかの時点で比べる場所にファイルが無い（旧い構成のタグを含む）・どちらかの時点に `docs/v<n>/` が無い・
   `removed.csv` が読めない／決まり（`merge-versions.py` の読み方）に反する・要求確定のタグの時点の `removed.csv` の
   配置を `merge` が拒否する（判定する形は `provisional_rows` の docstring）・
-  要求確定のタグの時点の `qa.csv` が読めない／列検査（`check-qa-csv.py`）を通らない
+  要求確定のタグの時点の `qa.csv` が読めない／列検査（`check-qa-csv.py`）を通らない・
+  想定外の例外（128KB を超えるセルの `csv.Error` など。#286）
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う（`git` は要る）。
 
@@ -173,8 +174,9 @@ def read_removed_at(repo: Path, commit: str, tag: str, path: str) -> list[tuple[
         copy.write_bytes(result.stdout)
         try:
             parsed = versions.read_removed(copy, problems)
-        except versions.Unreadable:
-            raise Unjudged(f"{tag} の {path} が UTF-8 として読めない。照合していない")
+        except versions.Unreadable as e:
+            # 文言は `Unreadable` のものを出す——権限などの読めなさを「UTF-8 として読めない」と言わない（#286）
+            raise Unjudged(f"{tag} の {path} を読めない: {str(e).replace(str(copy), path)}。照合していない")
         problems = [line.replace(str(copy), path) for line in problems]
     if problems:
         raise Unjudged(refused(tag, problems))
@@ -419,7 +421,7 @@ def positive(text: str) -> int:
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--repo", default=".", type=Path)
     parser.add_argument("--version", type=positive)
     parser.add_argument("--req")
@@ -432,4 +434,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)
