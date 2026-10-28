@@ -30,7 +30,9 @@ usage: python3 check-spec-exit.py <qa.csv> <仕様のディレクトリ>
   仕様のディレクトリが無い・
   仕様のファイルが 1 つも無い（**書いていない仕様は、確定していない**ので、0 にはしない）・
   **図（`FIGURE_SUFFIXES`）以外に読めないファイルがある**（UTF-16・`.xlsx` など。見ていないものを
-  「印 0 件」と言わない）・**読めた仕様のファイルが 1 つも無い**（図だけ）。
+  「印 0 件」と言わない）・**読めた仕様のファイルが 1 つも無い**（図だけ）・
+  **読めた仕様のファイルがどれも中身が空**（空白・改行だけを含む。**中身のあるファイルが 1 つでもあれば止めない**。
+  見た仕様に中身が 0 なら、書いていない仕様と同じ。#291）。
   **NUL を含むファイルは読めない側に数える**——ASCII だけの UTF-16 は UTF-8 として*読めてしまう*
   （NUL は UTF-8 として有効）ので、復号の成否だけでは見分けられない。
   **印のある箇所が別に見つかったら 1 を優先する**（読めないファイルがあっても、満たさないことは確か）
@@ -146,6 +148,7 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
                 problems.append(f"{path}: {row['No']}: 状態が {row['状態']}（{row['質問']}）")
 
     unread = []
+    blank = []
     for path in files:
         try:
             text = path.read_text(encoding="utf-8-sig")
@@ -155,6 +158,8 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
         if "\0" in text:
             unread.append(path)
             continue
+        if not text.strip():
+            blank.append(path)
         for number, marker in find_markers(text):
             problems.append(f"{path}:{number}: 未決定の印 {marker}")
 
@@ -175,6 +180,12 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
         return 2, notes + [
             f"{spec_dir}: どの仕様も読めなかった（{len(files)} ファイルすべて）。"
             "条件 1 を判定していない（読めない仕様は確定していない）"
+        ]
+    if len(blank) == len(files) - len(unread):
+        # 読めた仕様がどれも空なら、中身のある仕様は 0 ファイル——「1 つも無い」と同じ扱い（#291）
+        return 2, notes + [
+            f"{spec_dir}: 読めた仕様がどれも中身が空（{len(blank)} ファイル）。"
+            "条件 1 を判定していない（書いていない仕様は確定していない）"
         ]
     return 0, notes + [
         f"条件 1 を満たす（Q&A 表（共有・内部）に反映した状態でない行 0 件・仕様 {len(files) - len(unread)} ファイルに未決定の印 0 件）",
