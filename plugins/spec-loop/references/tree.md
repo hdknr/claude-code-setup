@@ -42,7 +42,7 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
 ## 置き方の決まり
 
 - **`shared/` には、両方の読者に見せてよいものだけを置く。** 2 つのサインオフが
-  同じ範囲を見ていたかは、`shared/` の中身で確かめる（`signoff-tags.md`）。
+  同じ中身を見ていたかは、`shared/`・`requirements/`・`spec/`（`qa-dev.csv` を除く）で確かめる（`signoff-tags.md`）。
 - **内部の層の Q&A 表（`spec/qa-dev.csv`）は `shared/` に置かない。** 開発者が決めて記録する質問で、利用者に渡さず、
   サインオフも比べない（`qa-csv.md` の「層」）。共有の表（`shared/qa.csv`）に置くのは利用者が決める質問だけ。
 - **`requirements/` から `feasibility/` へはリンクしない。** 利用者に見せる費用は、

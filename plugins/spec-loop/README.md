@@ -24,7 +24,7 @@
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
-| `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、共有の範囲が一致するかの照合（標準ライブラリと `git`） |
+| `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、2 つの承認が見た中身（`shared/`・`requirements/`・`spec/`・`removed.csv`）が一致するかの照合（標準ライブラリと `git`） |
 | `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で PPTX も）を作る（標準ライブラリと `git`） |
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
 | `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |
@@ -90,7 +90,7 @@
 ## `proposal` — 提案書のループ
 
 `/spec-loop:proposal` で呼びます。**同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>`）の時点で
-共有の範囲（`docs/v<n>/shared/` ほか。`references/signoff-tags.md`）が一致するかをスクリプトで照合し、一致したときだけ提案書を生成します**（LLM に判断させません）。
+2 つの承認が見た中身（`docs/v<n>/shared/`・`requirements/`・`spec/` ほか。`references/signoff-tags.md`）が一致するかをスクリプトで照合し、一致したときだけ提案書を生成します**（LLM に判断させません）。
 提案書は**承認したタグの時点の中身**から作るので、承認の後に直した中身は入りません。
 **v2 以降は、前の版との比較（追加・変更・削除）を載せた変更の提案書になります**（`references/versions.md` の「版の差分」）。
 **提案書と一緒に仕様書（規模・構成の図・機能・決定表・範囲の外）も作ります。利用者にまだ確かめていない暫定の回答（`暫定反映`）が残るうちは作りません**（`references/tree.md` の「仕様書」・`references/qa-csv.md` の「暫定の行の判別」）。
