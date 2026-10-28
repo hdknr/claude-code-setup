@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import errno
 import importlib.util
+import os
 import re
 import stat
 import sys
@@ -111,9 +112,17 @@ def render(rows: list[dict[str, str]]) -> str:
     return "\n".join(out) + "\n"
 
 
-# 「無い」と読んでよい stat の失敗（python3.12 の `Path.is_file` が無視するものと、その名前では在りえない ENAMETOOLONG）。
-# ほかの失敗（辿れないなど）は消せなかったと言う
-ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP, errno.ENAMETOOLONG)
+# 「無い」と読んでよい stat の失敗（python3.12 の `Path.is_file` が無視するもの）。ほかの失敗（辿れないなど）は消せなかったと言う。
+# ENAMETOOLONG は、名前の 1 つが NAME_MAX を超えるとき（その名前のファイルは在りえない）だけ「無い」と読む——
+# パス全体が PATH_MAX を超えるだけなら、ファイルは在りうる（相対パスで辿れる）ので消せなかったと言う（#499 の 2 パス目）
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP)
+NAME_MAX = 255
+
+
+def absent(out: Path, e: OSError) -> bool:
+    if e.errno in ABSENT:
+        return True
+    return e.errno == errno.ENAMETOOLONG and any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)
 
 
 def remove_stale(out: Path) -> str | None:
@@ -128,14 +137,14 @@ def remove_stale(out: Path) -> str | None:
             try:
                 mode = out.stat().st_mode
             except OSError as e:
-                if e.errno in ABSENT:
+                if absent(out, e):
                     return None  # 壊れたリンク——この道具の出力ではない
                 mode = stat.S_IFREG  # 先は確かめられないが、リンクは消せる
         if not stat.S_ISREG(mode):
             return None  # ディレクトリなど、この道具の出力でないものは消さない
         out.unlink()
     except OSError as e:
-        if e.errno in ABSENT:  # 無い（確かめてから消すまでに消えたものを含む）
+        if absent(out, e):  # 無い（確かめてから消すまでに消えたものを含む）
             return None
         return f"前に作った出力を消せない: {out}（{e.strerror}）。今の表から作ったものではない"
     except ValueError:  # 符号化できない名前など——その名前のファイルは在りえない（3.12 の `is_file` も無いと読んだ）
@@ -183,6 +192,9 @@ def main(argv: list[str]) -> int:
         out.write_bytes(svg)
     except OSError as e:  # 書きかけを今の表のものと取り違えないよう消す
         print(f"{out}: 書けない（{e.strerror}）", file=sys.stderr)
+        return stop(out, 2)
+    except Exception as e:  # 書く途中の想定外の例外でも、前の出力を消すか名指しする（入口に逃がさない。#499 の 2 パス目）
+        print(f"{out}: 書く途中の想定外の例外で止まった（{type(e).__name__}: {e}）", file=sys.stderr)
         return stop(out, 2)
     print(f"{out}: {len(rows)} 工程のガントチャートを書いた")
     return 0

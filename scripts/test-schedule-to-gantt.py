@@ -14,11 +14,15 @@
 4. **決まりに反する表・読めない表からは描かない**（1・2）。**前に作った出力は消す。**
 4'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、前の出力を消す。** 出力先に書けないときも
    トレースバックの 1 にせず 2。`-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
-   `main` の外へ逃げた例外は入口が 2 にする（`Path.mkdir` を差し替えて例外を起こす）。
+   `main` の外へ逃げた例外は入口が 2 にする。
 4''. **前の出力を消せない（書けない・辿れないディレクトリ）ときは、どの経路でも 2 で、残った出力を名指しする**（#499）
    ——表が決まりに反する（1 の経路）・読めない・想定外の例外・書けないの 4 つで。想定外の例外には化けない。
    **陽性対照**: 消せる場所では「消せない」と言わず、出力先が無ければ 1 のまま、出力先がディレクトリなら消さずに 1。
-   名前が長すぎる（在りえない）出力先は 1 のまま・辿れない先を指す symlink はリンクを消して 1。
+   名前の 1 つが NAME_MAX を超える（在りえない）出力先・親がファイルの出力先（ENOTDIR）は 1 のまま。
+   パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2。
+   辿れない先を指す symlink はリンクを消して 1、壊れた symlink とディレクトリを指す symlink は消さずに 1。
+   書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
+   入口の捕捉は、書いたあとの標準出力の例外で見る（`sys.stdout` を差し替える）。
    消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
 5. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -30,6 +34,7 @@
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -122,7 +127,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("想定外の例外で前の出力を消さない", "    except Exception as e:  # 想定外の例外（巨大なセルの csv.Error など）でも",
      "    except ImportError as e:  # 想定外の例外（巨大なセルの csv.Error など）でも", "巨大なセル"),
     # 無い（ENOENT）まで「消せない」と読むと、出力先が無いだけで 2 になる（#499）
-    ("無いを消せないと読む", "        if e.errno in ABSENT:  # 無い（", "        if False:  # 無い（", "終了が開始より前は描かない"),
+    ("無いを消せないと読む", "        if absent(out, e):  # 無い（", "        if False:  # 無い（", "終了が開始より前は描かない"),
 ]
 
 # 想定外の例外は 2（#286）。前の出力を消せないとき・書けないとき・-OO の引数なしは CASES の外で見る。(名前, 壊す前, 壊した後)
@@ -133,10 +138,14 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("消せないのに元の終了コードのまま", "        print(left, file=sys.stderr)\n        return 2\n",
      "        print(left, file=sys.stderr)\n        return code\n"),
     ("消せないことを名指ししない", "        print(left, file=sys.stderr)\n", "        pass\n"),
-    ("消せない失敗も無いと読む", "        if e.errno in ABSENT:  # 無い（", "        if True:  # 無い（"),
+    ("消せない失敗も無いと読む", "        if absent(out, e):  # 無い（", "        if True:  # 無い（"),
     ("ディレクトリも消そうとする", "        if not stat.S_ISREG(mode):", "        if False:"),
     # 1 パス目の指摘対応（CR3・CR4・CR5）
-    ("長すぎる名前を消せないと読む", "errno.ELOOP, errno.ENAMETOOLONG)", "errno.ELOOP)"),
+    ("長すぎる名前を消せないと読む", "    return e.errno == errno.ENAMETOOLONG and any(", "    return False and any("),
+    # 2 パス目の指摘対応（V2-1・V2-2・P2-1・P2-2・P2-4）
+    ("長すぎるパスも無いと読む", "any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)", "True"),
+    ("壊れたリンクも消す", "                    return None  # 壊れたリンク", "                    mode = stat.S_IFREG  # 壊れたリンク"),
+    ("書く途中の想定外の例外を逃がす", "    except Exception as e:  # 書く途中の", "    except ImportError as e:  # 書く途中の"),
     ("辿れない先のリンクを消せないと読む", "                mode = stat.S_IFREG  # 先は", "                raise  # 先は"),
     ("消す途中の想定外の例外を名指ししない", "    except Exception as e:  # 想定外の例外でも、消せなかった",
      "    except ImportError as e:  # 想定外の例外でも、消せなかった"),
@@ -200,10 +209,37 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     code, output = generate(scripts, bad, root / "dir.svg")
     if code != 1 or not (root / "dir.svg").is_dir() or LEFT in output:
         problems.append(f"出力先がディレクトリ: 終了 {code}: {output[-300:]!r}")
-    # 名前が長すぎる出力先——その名前のファイルは在りえないので「無い」。1 のまま（CR3）
+    # 名前の 1 つが長すぎる出力先——その名前のファイルは在りえないので「無い」。1 のまま（CR3）
     code, output = generate(scripts, bad, root / ("a" * 300 + ".svg"))
     if code != 1 or LEFT in output:
         problems.append(f"長すぎる名前の出力先: 終了 {code}: {output[-300:]!r}")
+    # パス全体が PATH_MAX（Linux 4096・macOS 1024）を超えるだけの出力先——ファイルは在りうるので名指しして 2（P2-1）
+    deep, fd = root, os.open(root, os.O_RDONLY)
+    try:
+        for _ in range(25):
+            os.mkdir("d" * 200, dir_fd=fd)
+            child = os.open("d" * 200, os.O_RDONLY, dir_fd=fd)
+            os.close(fd)
+            fd, deep = child, deep / ("d" * 200)
+        os.close(os.open("gantt.svg", os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=fd))
+    finally:
+        os.close(fd)
+    code, output = generate(scripts, bad, deep / "gantt.svg")
+    if code != 2 or f"{LEFT}{deep / 'gantt.svg'}（" not in output:
+        problems.append(f"長すぎるパスの前の出力: 終了 {code}: {output[-200:]!r}")
+    # 親がファイルの出力先（ENOTDIR）——無いので 1 のまま（V2-1）
+    (root / "afile").write_text("", encoding="utf-8")
+    code, output = generate(scripts, bad, root / "afile" / "x.svg")
+    if code != 1 or LEFT in output:
+        problems.append(f"親がファイルの出力先: 終了 {code}: {output[-300:]!r}")
+    # 壊れた symlink・ディレクトリを指す symlink——この道具の出力ではないので消さずに 1（V2-2・P2-4）
+    (root / "broken.svg").symlink_to(root / "nowhere.svg")
+    (root / "adir").mkdir()
+    (root / "dirlink.svg").symlink_to(root / "adir")
+    for name in ("broken.svg", "dirlink.svg"):
+        code, output = generate(scripts, bad, root / name)
+        if code != 1 or LEFT in output or "前に作った出力を消した" in output or not (root / name).is_symlink():
+            problems.append(f"消さない symlink {name}: 終了 {code}: {output[-300:]!r}")
     # 辿れない先を指す symlink——リンクは消せるので消して 1（CR4）
     shut = root / "shut"
     shut.mkdir()
@@ -218,14 +254,14 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     if code != 1 or LEFT in output or link.is_symlink() or not (shut / "g.svg").is_file():
         problems.append(f"辿れない先の symlink: 終了 {code}: {output[-300:]!r}")
 
-    def injected(method: str, source: Path, name: str, match: str | None = None) -> subprocess.CompletedProcess:
-        """出力先 `build/<name>` について、名前が `match`（既定は `name`）のパスの `Path.<method>` だけを差し替えて
+    def injected(method: str, source: Path, name: str) -> subprocess.CompletedProcess:
+        """出力先 `build/<name>` について、そのパスの `Path.<method>` だけを差し替えて
         RuntimeError を起こす（python3.12 の `resolve` も stat を呼ぶので絞る）。"""
         script = str(scripts / TARGET)
         inject = ("import pathlib, runpy, sys\n"
                   f"real = pathlib.Path.{method}\n"
                   "def boom(self, *a, **k):\n"
-                  f"    if self.name == {match or name!r}:\n        raise RuntimeError('boom')\n"
+                  f"    if self.name == {name!r}:\n        raise RuntimeError('boom')\n"
                   "    return real(self, *a, **k)\n"
                   f"pathlib.Path.{method} = boom\n"
                   f"sys.argv = [{script!r}, {str(source)!r}, {str(root / 'build' / name)!r}]\n"
@@ -237,8 +273,21 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     if (proc.returncode != 2 or f"{LEFT}{root / 'build' / 'y.svg'}（RuntimeError: boom）" not in proc.stderr
             or "想定外の例外で止まった" in proc.stderr or "Traceback" in proc.stderr):
         problems.append(f"消す途中の想定外の例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
-    # main の外へ逃げた例外（書く前の `Path.mkdir`）は、入口が 2 にする（トレースバックの 1 にしない）
-    proc = injected("mkdir", good, "x.svg", match="build")
+    # 書く途中の想定外の例外も入口に逃がさず、前の出力を消して 2（P2-2）
+    (root / "build").mkdir(exist_ok=True)
+    (root / "build" / "w.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    proc = injected("write_bytes", good, "w.svg")
+    if (proc.returncode != 2 or "書く途中の想定外の例外で止まった（RuntimeError: boom）" not in proc.stderr
+            or "前に作った出力を消した" not in proc.stderr or (root / "build" / "w.svg").exists() or "Traceback" in proc.stderr):
+        problems.append(f"書く途中の想定外の例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # main の外へ逃げた例外（書いたあとの標準出力）は、入口が 2 にする（トレースバックの 1 にしない）
+    script = str(scripts / TARGET)
+    inject = ("import runpy, sys\n"
+              "class Shut:\n    def write(self, s):\n        raise RuntimeError('boom')\n    def flush(self):\n        pass\n"
+              "sys.stdout = Shut()\n"
+              f"sys.argv = [{script!r}, {str(good)!r}, {str(root / 'build' / 'z.svg')!r}]\n"
+              f"runpy.run_path({script!r}, run_name='__main__')\n")
+    proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
     if proc.returncode != 2 or "想定外の例外で止まった（RuntimeError: boom" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"main の外へ逃げた例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)
