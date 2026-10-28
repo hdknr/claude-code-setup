@@ -168,7 +168,7 @@ def main_case(r: Result) -> bool:
 # ／"failwrite"（無い出力先に、2 つ目の書き込みで失敗する）／"failwrite-empty"（用意された空の出力先に、同上）
 # ／"crash"（2 つ目の書き込みで後始末の走らない落ち方をする）
 # ／"marker-empty"（用意された空の出力先に、印を書きかけたところで失敗する）
-# ／"stale-loop"（印つきの前の出力があり、docs は自分を指すシンボリックリンク）
+# ／"stale-loop"（印つきの前の出力があり、docs は自分を指すシンボリックリンク）／"parent-loop"（docs を含む印つきの場所が出力先で、docs は自分を指すリンク）
 # 入力の木が None なら docs を作らない
 CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("全部の経路を重ねる", MAIN, "none", [], main_case),
@@ -225,6 +225,10 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     # docs が自分を指すリンクでも、読めない入力と同じに前の出力を消す——3.12 は resolve で RuntimeError を投げる（#286 の 1 パス目）
     ("入力が自分を指すリンクでも前の出力を消す", None, "stale-loop", [],
      lambda r: r.code == 2 and r.tree is None and "前に作った出力を消した" in r.output),
+    # そのリンクを含む印つきの場所は、入力を含む場所として断り、消さない（#286 の 2 パス目——先に消す分岐が消していた）
+    ("自分を指すリンクを含む場所は消さない", None, "parent-loop", [],
+     lambda r: r.code == 2 and "を含む場所には書かない" in r.output and "前に作った出力を消した" not in r.output
+     and r.tree is not None and "keep.md" in r.tree),
     ("読めないファイル", {**MAIN, "v2/requirements/d.md": UNREADABLE}, "stale", [],
      lambda r: r.code == 2 and r.tree is None and "読めない" in r.output and "前に作った出力を消した" in r.output),
     ("読めないディレクトリ", {**MAIN, "v2/requirements/sub": UNREADABLE_DIR}, "stale", [],
@@ -344,9 +348,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n        remove_stale(out)\n',
      '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n', "入力が無いと前の出力を消す"),
     # 3.14 の resolve はリンクの輪で投げず、下の「ディレクトリが無い」で消すので、この変異は 3.12 でだけ死ぬ
-    ("辿れない入力で前の出力を消さない（3.12 でだけ死ぬ）",
-     '重ね合わせは作っていない", file=sys.stderr)\n        remove_stale(out)\n        return 2\n    out_real = out.resolve()',
-     '重ね合わせは作っていない", file=sys.stderr)\n        return 2\n    out_real = out.resolve()',
+    ("辿るのに Path.resolve を使う（3.12 でだけ死ぬ）",
+     "docs_real, out_real = Path(os.path.realpath(docs)), Path(os.path.realpath(out))",
+     "docs_real, out_real = docs.resolve(), out.resolve()",
      "入力が自分を指すリンクでも前の出力を消す"),
     ("読めないとき前の出力を消さない",
      '        print("重ね合わせは作っていない", file=sys.stderr)\n        remove_stale(out)\n        return 2',
@@ -509,7 +513,7 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
     assert_in_tmp(root)
     docs = root / "docs"
     locked = build(docs, tree)
-    out = {"inside": docs / "merged", "docs": docs, "parent": root}.get(prepare, root / "build" / "merged")
+    out = {"inside": docs / "merged", "docs": docs, "parent": root, "parent-loop": root}.get(prepare, root / "build" / "merged")
     preexisting = None
     if prepare == "parent":
         (root / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
@@ -517,6 +521,11 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         (root / "real").mkdir()
         out.parent.mkdir(parents=True)
         os.symlink(root / "real", out)
+    elif prepare == "parent-loop":
+        docs.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(docs, docs)
+        (root / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
+        (root / "keep.md").write_text("消してはいけない\n", encoding="utf-8")
     elif prepare == "stale-loop":
         docs.parent.mkdir(parents=True, exist_ok=True)
         os.symlink(docs, docs)

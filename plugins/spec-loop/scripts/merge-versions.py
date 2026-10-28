@@ -40,6 +40,7 @@ import csv
 import importlib.util
 import io
 import json
+import os
 import re
 import shutil
 import sys
@@ -399,13 +400,9 @@ def main(argv: list[str]) -> int:
     if out.is_symlink():
         print(f"{out}: 出力先にシンボリックリンクは使わない（印で持ち主を確かめられない）", file=sys.stderr)
         return 2
-    try:
-        docs_real = docs.resolve()
-    except (OSError, RuntimeError) as e:  # 自分を指すシンボリックリンク（3.12 は RuntimeError）——読めない入力と同じに前の出力を消す（#286）
-        print(f"{docs}: 辿れない（{e}）。重ね合わせは作っていない", file=sys.stderr)
-        remove_stale(out)
-        return 2
-    out_real = out.resolve()
+    # 3.12 の Path.resolve はリンクの輪で RuntimeError を投げる（3.13 からは投げない）。os.path.realpath は
+    # どちらでも投げないので、下の出力先の検査と「ディレクトリが無い」の後始末が、版によらず同じ順で走る（#286）
+    docs_real, out_real = Path(os.path.realpath(docs)), Path(os.path.realpath(out))
     if out_real == docs_real or docs_real in out_real.parents:
         print(f"{out}: {docs} の中には書かない（次の重ね合わせで入力に混ざる）", file=sys.stderr)
         return 2
