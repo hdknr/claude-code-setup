@@ -5,8 +5,8 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 # req-loop スキル
 
-<!-- skill-version: 0.32.0 -->
-> **このスキルの版: 0.32.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.33.0 -->
+> **このスキルの版: 0.33.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
