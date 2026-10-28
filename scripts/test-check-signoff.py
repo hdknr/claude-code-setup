@@ -7,11 +7,14 @@
 
 見るもの:
 
-1. **比べる場所（v1〜v<n> の `shared/` と v2〜v<n> の `removed.csv`）が食い違うタグの組で非ゼロ（1）**——
-   中身の違い・追加・削除・**前の版の `shared/` だけ**・**`removed.csv` の `shared/` に効く行だけ**の違い・
+1. **比べる場所（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`spec/qa-dev.csv` を除く）と `removed.csv`）が
+   食い違うタグの組で非ゼロ（1）**——中身の違い・追加・削除・**前の版の `shared/`・`spec/` だけ**・
+   **`requirements/`・`spec/` だけ**（#367）・**予算側だけの v1 の `removed.csv`**（#372）・
+   **`removed.csv` の範囲に効く行（共有の Q&A・範囲の中のファイル・機能）だけ**の違い・
    **片側だけ `.` で始まる名前の rename**（読む側に新しいファイルが現れる）。
-2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致——**`removed.csv` の `requirements/`・機能の行
-   だけ・理由だけ・行の順序だけが違う組も**。**`.` で始まる名前だけの違いも**——途中の `.` で始まるディレクトリの中も含む）。
+2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致——**`feasibility/`・`proposal/`・`spec/qa-dev.csv`
+   だけ・`removed.csv` の内部の Q&A の行・理由・行の順序だけが違う組も**（`removed.csv` のファイルの行は範囲の外の対象でも比べる——
+   `merge` が拒否する行なので。#372 の B）。**`.` で始まる名前だけの違いも**——途中の `.` で始まるディレクトリの中も含む）。
 3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `v<n>/req-signoff-<k>`・`req-signoff-v<n>` を含む）を数えない**・
    指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ・
    **素の `v1` タグがあっても（先でも後でも）承認のタグを作れて照合が 0 になる**（#270）。
@@ -157,7 +160,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     # 予算側は `merge` が受け付ける配置（v1 の Q-001 を v2 で消す。v2 は Q-001 を置かない——#349）
     ("removed.csv だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_HEAD + QA_2), ("c",), ("t", R2),
                             ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
-     [], 1, "docs/v2/removed.csv（shared/ に効く行が違う）"),
+     [], 1, "docs/v2/removed.csv（比べる行が違う）"),
     # `merge` が拒否する配置は要求確定側だけ（予算側は受け付ける）——要求確定側の removed.csv で重ねていれば 2、
     # 予算側で重ねると拒否されず、範囲の違いで 1 になる（#349）
     ("要求確定側だけが拒否する配置", [("w", SHARED, QA_A), ("w", SHARED2, QA_HEAD + QA_2),
@@ -166,17 +169,37 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
      [], 2, "docs/v2/removed.csv:2: 前の版までに無いものを消そうとしている: Q&A Q-003"),
     ("removed.csv の shared のファイルの行が違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                                          ("w", REMOVED2, "種類,対象,理由\nファイル,shared/nfr.csv,不要\n"), ("c",), ("t", B2)],
-     [], 1, "docs/v2/removed.csv（shared/ に効く行が違う）"),
-    # requirements/ や機能の削除は共有の範囲の外——removed.csv のファイルが違っても一致のまま
-    ("removed.csv の範囲の外の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
-                                     ("w", REMOVED2, "種類,対象,理由\nファイル,requirements/r.md,不要\n機能,F-001,不要\n"),
+     [], 1, "docs/v2/removed.csv（比べる行が違う）"),
+    # requirements/・spec/ のファイルと機能の削除は範囲の中——承認が見た中身から消すので（#375）
+    ("removed.csv の requirements のファイルの行が違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                                 ("w", REMOVED2, "種類,対象,理由\nファイル,requirements/r.md,不要\n"),
+                                                 ("c",), ("t", B2)],
+     [], 1, "docs/v2/removed.csv（比べる行が違う）"),
+    ("removed.csv の spec のファイルの行が違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                         ("w", REMOVED2, "種類,対象,理由\nファイル,spec/spec.json,不要\n"),
+                                         ("c",), ("t", B2)],
+     [], 1, "docs/v2/removed.csv（比べる行が違う）"),
+    ("removed.csv の機能の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                   ("w", REMOVED2, "種類,対象,理由\n機能,F-001,不要\n"), ("c",), ("t", B2)],
+     [], 1, "docs/v2/removed.csv（比べる行が違う）"),
+    # 範囲の外（feasibility/・proposal/・内部の Q&A 表）のファイルの行も比べる——merge が拒否する行が予算側だけにあるのを
+    # 一致と言わない（#372 の B。#375 の 1 パス目で反証された）
+    ("removed.csv の範囲の外のファイルの行も比べる", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                     ("w", REMOVED2, "種類,対象,理由\nファイル,feasibility/f.md,不要\n"
+                                                     "ファイル,proposal/p.md,不要\n"),
                                      ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+     [], 1, "docs/v2/removed.csv（比べる行が違う）"),
+    # 前の版の内部の Q&A 表も外す（#375 の 1 パス目）
+    ("前の版の内部の Q&A 表だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD), ("w", SHARED2, QA_B),
+                                  ("c",), ("t", R2),
+                                  ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD + "D-001,仕様レビュー,分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"),
+                                  ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
     # 内部の層の Q&A（spec/qa-dev.csv の D-）は共有の範囲の外——表を変えても、removed.csv で消しても一致のまま（#339）
     ("removed.csv の内部の Q&A の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                                          ("w", REMOVED2, "種類,対象,理由\nQ&A,D-001,共有へ移した（Q-003）\n"),
                                          ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
     ("内部の Q&A 表だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD), ("c",), ("t", R1),
                            ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD + "D-001,仕様レビュー,分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"),
                            ("c",), ("t", B1)],
@@ -194,7 +217,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     # 重ね合わせ（merge-versions.py）は `.` で始まる名前を読まない——承認が見た範囲に入らない
     ("shared の . で始まるファイルだけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                                        ("w", "docs/v1/shared/.DS_Store", "x\n"), ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
     ("タグの時点の作業中の版が . で始まるファイルだけ", [("w", SHARED, QA_A), ("w", "docs/v2/.gitkeep", ""), ("c",),
                                                 ("t", R2), ("t", B2), ("w", "docs/v2/spec/s.md", "x\n"), ("c",)],
      [], 2, f"{R2} の時点に docs/v2/ のファイルが 1 つも無い"),
@@ -211,15 +234,34 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("removed.csv の行の順序だけ違う", [("w", SHARED, QA_B),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\nQ&A,Q-002,不要\n"), ("c",), ("t", R2),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
     # 決まりに反する removed.csv（見出しの順が違う）を、無い removed.csv と同じに読まない
     ("removed.csv が決まりに反する", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
                                    ("w", REMOVED2, "対象,種類,理由\nQ-001,Q&A,x\n"), ("c",), ("t", R2),
                                    ("rm", REMOVED2), ("c",), ("t", B2)],
      [], 2, "removed.csv が決まりに反する（references/versions.md）: docs/v2/removed.csv:1: 見出し行が決まりと違う"),
+    # 見積りの根拠（requirements/・spec/）が 2 つのタグの間で変われば、予算の合意は承認と別の中身を見ている（#367）
+    ("requirements だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                            ("w", "docs/v2/requirements/a.md", "x\n"), ("c",), ("t", B2)],
+     [], 1, "A\tdocs/v2/requirements/a.md"),
+    ("spec だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/spec/s.md", "x\n"), ("c",), ("t", R1),
+                    ("w", "docs/v1/spec/s.md", "y\n"), ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/spec/s.md"),
+    ("前の版の requirements だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/requirements/r.md", "x\n"), ("w", SHARED2, QA_B),
+                                    ("c",), ("t", R2), ("w", "docs/v1/requirements/r.md", "y\n"), ("c",), ("t", B2)],
+     [], 1, "M\tdocs/v1/requirements/r.md"),
+    ("前の版の spec だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/spec/s.md", "x\n"), ("w", SHARED2, QA_B), ("c",),
+                            ("t", R2), ("w", "docs/v1/spec/s.md", "y\n"), ("c",), ("t", B2)],
+     [], 1, "M\tdocs/v1/spec/s.md"),
+    # v1 には removed.csv を置かない（merge が拒否する）——予算側にだけあっても一致と言わない（#372）
+    ("v1 の removed.csv が予算側だけ", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                   ("w", "docs/v1/removed.csv", "種類,対象,理由\n"), ("c",), ("t", B2)],
+     [], 1, "A\tdocs/v1/removed.csv"),
+    # 範囲の外（予算の合意と決裁の側が書くもの）だけ違うなら一致
     ("範囲の外だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
-                       ("w", "docs/v2/requirements/a.md", "x\n"), ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/ と removed.csv は同じ"),
+                       ("w", "docs/v2/feasibility/estimate.md", "x\n"), ("w", "docs/v1/proposal/p.md", "x\n"),
+                       ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
     # 作業中の版は v2 だがタグは v1 にしかない。v1 の範囲に v2 は入らない
     ("版を指定", [("w", SHARED, QA_A), ("c",), ("t", R1), ("w", SHARED2, QA_A), ("c",), ("t", B1)],
      ["--version", "1"], 0, f"一致する: {R1}"),
@@ -364,21 +406,36 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "両方に shared が無い"),
     ("根で走らせない", "        repo = Path(top.stdout.strip())\n", "", "サブディレクトリから"),
     ("差分を見ない", "    if changed:", "    if False:", "中身が違う"),
-    ("比べる場所を絞らない", 'info["budget_commit"], "--", *shared_scope(version))', 'info["budget_commit"])', "一致"),
-    ("前の版を範囲に含めない", "for i in range(1, version + 1)]", "for i in range(version, version + 1)]",
-     "前の版の shared だけ違う"),
-    ("removed.csv を比べない", "if removed_shared_rows(at_req) != removed_shared_rows(at_budget):", "if False:",
+    ("比べる場所を絞らない", 'info["budget_commit"], "--", *compare_scope(version))', 'info["budget_commit"])', "一致"),
+    ("前の版を範囲に含めない", "for i in range(1, version + 1) for d in SCOPE_DIRS]",
+     "for i in range(version, version + 1) for d in SCOPE_DIRS]", "前の版の shared だけ違う"),
+    ("前の版の spec を範囲に含めない", "for i in range(1, version + 1) for d in SCOPE_DIRS]",
+     "for i in range(1, version + 1) for d in SCOPE_DIRS if d == SHARED or i == version]", "前の版の spec だけ違う"),
+    ("前の版の requirements を範囲に入れない", "for i in range(1, version + 1) for d in SCOPE_DIRS]",
+     "for i in range(1, version + 1) for d in SCOPE_DIRS if d != \"requirements/\" or i == version]",
+     "前の版の requirements だけ違う"),
+    ("requirements を範囲に入れない", 'SCOPE_DIRS = (SHARED, "requirements/", "spec/")', 'SCOPE_DIRS = (SHARED, "spec/")',
+     "requirements だけ違う"),
+    ("spec を範囲に入れない", 'SCOPE_DIRS = (SHARED, "requirements/", "spec/")', 'SCOPE_DIRS = (SHARED, "requirements/")',
+     "spec だけ違う"),
+    ("内部の Q&A 表を除かない", '    return paths + [f":(exclude){DOCS}/v{i}/{INTERNAL_QA}" for i in range(1, version + 1)]',
+     "    return paths", "内部の Q&A 表だけ違う"),
+    ("v1 の removed.csv を比べない", '    paths.append(f"{DOCS}/v1/{REMOVED}")\n', "", "v1 の removed.csv が予算側だけ"),
+    ("removed.csv を比べない", "if removed_scope_rows(at_req) != removed_scope_rows(at_budget):", "if False:",
      "removed.csv だけ違う"),
-    ("removed.csv の行を絞らない",
-     "if ((kind == REMOVED_QA and not qa.is_internal_number(target))\n                or (kind == REMOVED_FILE and target.startswith(SHARED))):",
-     "if True:", "removed.csv の範囲の外の行だけ違う"),
-    ("内部の Q&A を消した行も比べる", "(kind == REMOVED_QA and not qa.is_internal_number(target))", "kind == REMOVED_QA",
+    ("内部の Q&A を消した行も比べる", "if not (kind == REMOVED_QA and qa.is_internal_number(target)):", "if True:",
      "removed.csv の内部の Q&A の行だけ違う"),
     # 層の判定（`check-qa-csv.py` の `is_internal_number`）を入れ替える（#353）
-    ("比べる行の層を入れ替える", "(kind == REMOVED_QA and not qa.is_internal_number(target))",
-     "(kind == REMOVED_QA and qa.is_internal_number(target))", "removed.csv の内部の Q&A の行だけ違う"),
-    ("removed.csv の shared のファイルの行を見ない", "and target.startswith(SHARED))):", "and False)):",
-     "removed.csv の shared のファイルの行が違う"),
+    ("比べる行の層を入れ替える", "if not (kind == REMOVED_QA and qa.is_internal_number(target)):",
+     "if not (kind == REMOVED_QA and not qa.is_internal_number(target)):", "removed.csv の内部の Q&A の行だけ違う"),
+    ("範囲の外のファイルの行を比べない", "if not (kind == REMOVED_QA and qa.is_internal_number(target)):",
+     "if not (kind == REMOVED_QA and qa.is_internal_number(target)) and (kind != REMOVED_FILE or target.startswith(SCOPE_DIRS)):",
+     "removed.csv の範囲の外のファイルの行も比べる"),
+    ("機能の行を比べない", "if not (kind == REMOVED_QA and qa.is_internal_number(target)):",
+     "if not (kind == REMOVED_QA and qa.is_internal_number(target)) and kind != versions.KIND_FEATURE:",
+     "removed.csv の機能の行だけ違う"),
+    ("前の版の内部の Q&A 表を除かない", '    return paths + [f":(exclude){DOCS}/v{i}/{INTERNAL_QA}" for i in range(1, version + 1)]',
+     '    return paths + [f":(exclude){DOCS}/v{version}/{INTERNAL_QA}"]', "前の版の内部の Q&A 表だけ違う"),
     ("removed.csv の決まりを見ない", "    if problems:\n        raise Unjudged(refused(tag, problems))\n    return parsed",
      "    if False:\n        raise Unjudged(refused(tag, problems))\n    return parsed", "removed.csv が決まりに反する"),
     # #351 の前の形（前置きにもパスを書く）に戻す
@@ -693,10 +750,16 @@ def reference_mismatches(source: str, markdown: str) -> list[str]:
     word = re.search(r"`<k>` は (.+?)で、", markdown)
     if NUMBER_WORDS.get(word.group(1) if word else "") != constant(source, "NUMBER"):
         problems.append(f"番号の決まり {word and word.group(1)!r} ≠ 本体 {constant(source, 'NUMBER')!r}")
-    place = re.search(r"比べる場所は `([^`/]+)/v1/([^`]+)`〜`[^`]+` と `[^`/]+/v2/([^`]+)`〜", markdown)
-    expected = (constant(source, "DOCS"), constant(source, "SHARED"), constant(source, "REMOVED"))
-    if (place.groups() if place else None) != expected:
-        problems.append(f"比べる場所 {place and place.groups()!r} ≠ 本体 {expected!r}")
+    place = re.search(r"比べる場所は v1〜v<n> の ((?:`[^`]+`・?)+) と `([^`]+)`（v1 のものも）", markdown)
+    dirs = re.search(r"^SCOPE_DIRS = \((.+)\)$", source, flags=re.MULTILINE)
+    actual = (tuple(constant(source, part) if not part.startswith('"') else part.strip('"')
+                    for part in dirs.group(1).split(", ")) if dirs else None, constant(source, "REMOVED"))
+    found = (tuple(re.findall(r"`([^`]+)`", place.group(1))), place.group(2)) if place else None
+    if found != actual:
+        problems.append(f"比べる場所 {found!r} ≠ 本体 {actual!r}")
+    internal = constant(source, "INTERNAL_QA")
+    if not internal or f"（`{internal}`。番号 `D-`）" not in markdown:
+        problems.append(f"比べない内部の Q&A 表 ≠ 本体 {internal!r}")
     return problems
 
 
@@ -704,8 +767,10 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("予算のタグの種類", "| `signoff/v<n>/budget-<k>` |", "| `signoff/v<n>/approval-<k>` |"),
     ("予算のタグの根", "| `signoff/v<n>/budget-<k>` |", "| `approval/v<n>/budget-<k>` |"),
     ("番号の決まり", "`<k>` は 1 から始まる整数で、", "`<k>` は 0 から始まる整数で、"),
-    ("比べる場所（shared）", "比べる場所は `docs/v1/shared/`〜", "比べる場所は `docs/v1/common/`〜"),
-    ("比べる場所（removed.csv）", "と `docs/v2/removed.csv`〜", "と `docs/v2/deleted.csv`〜"),
+    ("比べる場所（shared）", "比べる場所は v1〜v<n> の `shared/`・", "比べる場所は v1〜v<n> の `common/`・"),
+    ("比べる場所（spec）", "`requirements/`・`spec/` と `removed.csv`（v1 のものも）", "`requirements/` と `removed.csv`（v1 のものも）"),
+    ("比べる場所（removed.csv）", "と `removed.csv`（v1 のものも）", "と `deleted.csv`（v1 のものも）"),
+    ("比べない内部の Q&A 表", "（`spec/qa-dev.csv`。番号 `D-`）", "（`spec/qa-internal.csv`。番号 `D-`）"),
 ]
 
 

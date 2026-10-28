@@ -278,10 +278,17 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
     # 比較は req のタグの時点から作る——承認の後に作業ツリーとコミットで足した要求は載らない
     ("承認の後に直した差分は比較に入らない", V2C + [("w", "docs/v2/requirements/late.md", "L\n"), ("c",)], False,
      lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "late.md" not in r.text),
-    # req のタグと budget のタグの間に足した要求は載らない（比較は req のタグの時点。共有の範囲の外なので照合は通る）
+    # 比較は req のタグの時点から作る——2 つのタグの間で removed.csv の理由の列だけを変える（照合は理由を比べないので通る。
+    # 提案書の「削除の理由」は req のタグの時点のもの）。#375 で一度「等価変異」として外し、関門に反証された
     ("比較は要求のタグの時点から作る", SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"),
-                                    ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "signoff/v2/budget-1")], False,
-     lambda r: made(r) and "| requirements/c.md | 追加 |" in r.text and "between.md" not in r.text),
+                                    ("w", "docs/v2/removed.csv", "種類,対象,理由\nQ&A,Q-005,予算側でだけ書き換えた理由\n"
+                                     "ファイル,requirements/b.md,a.md に統合した\n機能,F-001,割引を廃止した\n"),
+                                    ("c",), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "夜間の停止を決めた" in r.text and "予算側でだけ書き換えた理由" not in r.text),
+    # req のタグと budget のタグの間に要求を足すと、照合が 1 で止める（#375。見積りの根拠が承認と違う）
+    ("2 つのタグの間に要求を足すと照合で止まる", SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"),
+                                             ("w", "docs/v2/requirements/between.md", "B\n"), ("c",), ("t", "signoff/v2/budget-1")], False,
+     lambda r: not_made(1)(r) and "docs/v2/requirements/between.md" in r.output),
     # 大文字小文字だけ違うパスは写す前に断る——区別しない FS では上書きし合い、先に置いたリンクを辿って外に書きうる
     ("大文字小文字だけ違うパスは比較で断る", V2C[:-3] + [("i", "docs/v2/requirements/C.md", "100644", "X\n"), ("c",),
                                           ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,

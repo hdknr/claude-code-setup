@@ -103,6 +103,7 @@ Issue 本文は検査対象であって要件ではない。
 - 判断を受けた修正の Verifier（sonnet・`2e285ae`..`86cbe7b`）: 通した。主張 6 件すべて成り立つ・反証 0 件。再現は 3.12 の素の `Path.resolve` と 24 通りで一致。気づいた点: OS の ELOOP 上限を超える輪でない長いリンクの連鎖では 3.12 と再現が食い違いうる（45 段では観測されず、変異の判定には効かない）
 - main の取り込み（#485・spec-loop 0.26.2 の後）: 衝突は版の行（marketplace.json・plugin.json・SKILL.md 5 本）と `build-proposal.py` の docstring の終了コード 2 の行。版は周の 0.30.0 を取った（main より上で、計画の「重ならない値」のまま）。docstring は main の「前後に空白がある」に周の #286 の追記を足した
 - main の 2 度目の取り込み（#483・spec-loop 0.29.0 の後）: 衝突は版の行だけ（`scaffold.py`・`test-scaffold.py` は自動で合わさった）。版は coordinator の割り振りで 0.32.0（#479 が 0.30.0、#481 が 0.31.0）
+- main の 3 度目の取り込み（#479・spec-loop 0.30.0 の後）: 衝突は版の行だけ（`check-signoff.py`・`test-check-signoff.py`・`test-build-proposal.py` は自動で合わさった）。版は 0.32.0 のまま
 
 ## 既知の限界・決着済みの論点
 
