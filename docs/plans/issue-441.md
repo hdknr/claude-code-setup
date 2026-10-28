@@ -116,6 +116,7 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 - main の取り込み（狭いパスの後）: `origin/main`（`4d38e2d`、#483）を merge。取り込む前に `git diff --name-status --no-renames HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'` で見た——足された検査は無い（`scaffold.py` とそのテストの変更だけ）。衝突は 7 ファイルの版の行だけで、塊ごとに解き 0.33.0 にした
 - check-all（取り込みと起票の記録の後、`c072927`。`--jobs 2`）: 52/52 緑（失敗 0）
 - PR: 作る（マージは cruise の親がする）
+- PR #505 の後の main の取り込み 2 回目: `origin/main`（`d775a85`。#479 spec-loop 0.30.0・#500 dev-loop 1.62.0）を merge。取り込む前に見た足された検査は無い（`check-signoff.py` とテスト 2 本の変更だけ）。衝突は 7 ファイルの版の行だけで、塊ごとに解き 0.33.0 のまま。main 側の本文の変更（`tree.md`・`README.md` の照合の範囲の 1 行）はこの周の文面と重ならない
 - 2 パス目の指摘対応: V2-1（P2-1・P2-6・P2-9）・P2-2・P2-3 を直した。終点 `3d5331b`（起点 `d38b0c3` → 終点の 2 点）
 
 ## 起票
