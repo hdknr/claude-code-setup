@@ -78,6 +78,8 @@ main へのマージ → GitHub Pages の再ビルド（このファイルはサ
 - 2 パス目: **該当なし**——1 パス目の指摘対応の成果物の差分 0 行。起点 `48ecab5`。`git diff 48ecab5 -- ':(top)' ':(top,exclude)docs/plans/issue-496.md'` が空、`git status --porcelain` は計画ファイルだけ
 - 狭いパス: 該当なし
 - 手順 6 の 2 つ目の割り目: 2 パス目が無いので無し
+- check-all（2 回目・0c2ffe4）: 52/52 本が緑
+- PR #518: CI は check が pass、build が pass、deploy は skipping。`mergeable` は MERGEABLE（0c2ffe4 の時点）。マージは親が行う
 - 1 パス目の指摘対応の起点の SHA: `48ecab5`（Verifier 1 パス目に渡した時点の HEAD）
 - 交絡を潰した手順: 変更前の段落を同じ API で描き、`**` が字のまま出ることを確かめた（陽性対照）
 
