@@ -45,7 +45,9 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
 - 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・空白・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
-  印に無いファイルが出力の名前で在る・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440）——書いていない
+  印に無いファイルが出力の名前で在る・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440）・
+  想定外の例外（128KB を超えるセルの `csv.Error` など。#286。前の出力は作り始める前に消してあり、書いている途中なら書きかけを消す）——書いていない。
+  **git を起動できない・手書き部分を読めない・出力を書けない・一時ファイルを読み書きできないは、別の文言で strerror とパスを出す**
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
 
 **守らないもの**: 手書き部分の中身（判断であって一意に決まらない）・見た目（Markdown を表示して目で見る）・
@@ -115,8 +117,16 @@ class Stop(Exception):
         self.code, self.lines = code, lines
 
 
+def run_git(top: Path, *args: str, **kwargs) -> subprocess.CompletedProcess:
+    """`git` を起動する。起動できなければ Stop(2)——手書き部分の読み・出力の書き込みの失敗と文言を分ける（#286）。"""
+    try:
+        return subprocess.run(["git", "-C", str(top), *args], capture_output=True, **kwargs)
+    except OSError as e:
+        raise Stop(2, [f"git を起動できない（{e.strerror}: {e.filename}）。提案書の材料を読んでいない"])
+
+
 def show(top: Path, commit: str, tag: str, path: str) -> str:
-    result = subprocess.run(["git", "-C", str(top), "show", f"{commit}:{path}"], capture_output=True)
+    result = run_git(top, "show", f"{commit}:{path}")
     if result.returncode != 0:
         raise Stop(1, [f"{tag}:{path}: 承認の時点に無い。提案書の材料が無い"])
     try:
@@ -126,8 +136,7 @@ def show(top: Path, commit: str, tag: str, path: str) -> str:
 
 
 def exists(top: Path, commit: str, path: str) -> bool:
-    result = subprocess.run(["git", "-C", str(top), "ls-tree", "--name-only", commit, "--", path],
-                            capture_output=True, text=True)
+    result = run_git(top, "ls-tree", "--name-only", commit, "--", path, text=True)
     if result.returncode != 0:
         raise Stop(2, [f"{commit[:7]}:{path}: 在るかを確かめられない: {result.stderr.strip()}"])
     return bool(result.stdout.strip())
@@ -153,8 +162,7 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
     （macOS の既定）では同じ場所に書かれ、片方が黙って消えるか、先に置いたリンクを辿って一時ディレクトリの外に
     書く。どのファイルシステムでも同じ答えにするため、写す前に一覧で断る。書く先が既にあるときも断る。
     """
-    listing = subprocess.run(["git", "-C", str(top), "ls-tree", "-r", "-z", "--full-tree", commit, "--", signoff.DOCS],
-                             capture_output=True)
+    listing = run_git(top, "ls-tree", "-r", "-z", "--full-tree", commit, "--", signoff.DOCS)
     if listing.returncode != 0:
         raise Stop(2, [f"{tag}: {signoff.DOCS}/ を一覧できない: {listing.stderr.decode('utf-8', 'replace').strip()}"])
     entries, versions = [], set()
@@ -193,8 +201,7 @@ def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
                 clashes.append(f"{tag}: ディレクトリ {other} と {parent} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
     if clashes:
         raise Stop(1, sorted(set(clashes)) + ["仕様書・前の版との比較を作れない（写すと同じ場所に書かれる）"])
-    batch = subprocess.run(["git", "-C", str(top), "cat-file", "--batch"],
-                           input=b"".join(sha.encode() + b"\n" for _, sha, _ in entries), capture_output=True)
+    batch = run_git(top, "cat-file", "--batch", input=b"".join(sha.encode() + b"\n" for _, sha, _ in entries))
     if batch.returncode != 0:
         raise Stop(2, [f"{tag}: {signoff.DOCS}/ を読めない: {batch.stderr.decode('utf-8', 'replace').strip()}"])
     data, at, root = batch.stdout, 0, dest.resolve()
@@ -393,7 +400,9 @@ def read_hand(directory: Path) -> list[tuple[str, str]]:
     for path in sorted(directory.glob("*.md")) if directory.is_dir() else []:
         try:
             hand.append((path.name, path.read_text(encoding="utf-8-sig")))
-        except (OSError, UnicodeDecodeError):
+        except OSError as e:  # 権限などを「UTF-8 として読めない」「git を起動できない」と言わない（#286）
+            raise Stop(2, [f"{path}: 手書き部分を読めない（{e.strerror}）。中身を検査していない"])
+        except UnicodeDecodeError:
             raise Stop(2, [f"{path}: UTF-8 として読めない。中身を検査していない"])
     return hand
 
@@ -681,15 +690,17 @@ def write_outputs(outputs: dict[Path, bytes | list], directory: Path) -> None:
                 pptx.write(content, path)
             else:
                 path.write_bytes(content)
-    except OSError as e:
+    except Exception as e:  # 想定外の例外でも書きかけを残さない（#286）。印に載っているので消せる
+        reason = (f"{e.filename or directory}: 出力を書けない（{e.strerror}）" if isinstance(e, OSError)
+                  else f"{directory}: 書いている途中に想定外の例外（{type(e).__name__}: {e}）")
         left = remove_owned(directory)
         if left:
-            raise Stop(2, [f"{directory}: 書けない（{e.strerror}）。書きかけを消せなかった", *left_lines(left)])
-        raise Stop(2, [f"{directory}: 書けない（{e.strerror}）。書きかけを消した"])
+            raise Stop(2, [f"{reason}。書きかけを消せなかった", *left_lines(left)])
+        raise Stop(2, [f"{reason}。書きかけを消した"])
 
 
 def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--repo", default=".", type=Path)
     parser.add_argument("--version", type=signoff.positive)
     parser.add_argument("--req")
@@ -721,8 +732,8 @@ def main(argv: list[str]) -> int:
             outputs = build(args, out)
         except signoff.Unjudged as e:
             raise Stop(2, [str(e)])
-        except OSError as e:
-            raise Stop(2, [f"git を起動できない（{e.strerror}）。提案書の材料を読んでいない"])
+        except OSError as e:  # git の起動（`run_git`）と手書き部分（`read_hand`）は先に捕まえる。残るのは一時ファイルの読み書き
+            raise Stop(2, [f"{e.filename or '（パス不明）'}: 読み書きできない（{e.strerror}）。提案書の材料を読み終えていない"])
         write_outputs(outputs, out.parent)
     except Stop as stop:
         for line in stop.lines:
@@ -734,4 +745,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

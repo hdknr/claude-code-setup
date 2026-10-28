@@ -19,8 +19,9 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 - 0: 書いた
 - 1: 入力が決まりに反する（重ねた結果が書けない形になる・UTF-8 で書けない文字を含む、も含む）——**書かない。前に作った出力があれば消す**（問題は 1 件で止めず、
   最初に問題のあった版の中は全部出す。それより後の版は前の版の全体に依るので見ない）
-- 2: 引数の誤り・入力が無い／読めない・出力先に書けない——**書かない**。
-  **入力が無い・読めないときは**、出力先が印の在るディレクトリなら前の出力を消す。
+- 2: 引数の誤り・入力が無い／読めない・出力先に書けない・想定外の例外（巨大なセルの `csv.Error`・深い入れ子の
+  `RecursionError` など。#286）——**書かない**（書いている途中なら書きかけを消す）。
+  **入力が無い・読めないときは**（重ねている途中の想定外の例外を含む）、出力先が印の在るディレクトリなら前の出力を消す。
   **出力先そのものを断ったとき**（印の無い空でない場所・シンボリックリンク・`docs/` の中・`docs/` を含む場所）は**消さない**
 
 **守らないもの**:
@@ -390,7 +391,8 @@ def main(argv: list[str]) -> int:
         upto = int(args[at + 1])
         del args[at:at + 2]
     if len(args) != 2:
-        print(__doc__.splitlines()[2], file=sys.stderr)
+        print(__doc__.splitlines()[2] if __doc__ else
+              f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     docs, out = Path(args[0]), Path(args[1])
 
@@ -424,6 +426,11 @@ def main(argv: list[str]) -> int:
         print("重ね合わせは作っていない", file=sys.stderr)
         remove_stale(out)
         return 2
+    except Exception as e:  # 想定外の例外（巨大なセルの csv.Error・深い入れ子の RecursionError など）も読めない入力と同じに扱う（#286）
+        print(f"{docs}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない。重ね合わせは作っていない",
+              file=sys.stderr)
+        remove_stale(out)
+        return 2
     if problems:
         for line in problems:
             print(line, file=sys.stderr)
@@ -439,8 +446,9 @@ def main(argv: list[str]) -> int:
             put(out / path, rendered[path])
         # 印は最後に書く——途中で失敗した出力を、出来上がったものと取り違えないため
         put(out / MARKER, "merge-versions.py が作った。手で直さない\n".encode("utf-8"))
-    except OSError as e:
-        print(f"{out}: 書けない（{e.strerror}）。書きかけを消した", file=sys.stderr)
+    except Exception as e:  # 想定外の例外でも書きかけを残さない——印の無い書きかけは、次の実行が断る（#286）
+        reason = e.strerror if isinstance(e, OSError) else f"想定外の例外 {type(e).__name__}: {e}"
+        print(f"{out}: 書けない（{reason}）。書きかけを消した", file=sys.stderr)
         if not existed:
             shutil.rmtree(out, ignore_errors=True)
         elif out.is_dir():
@@ -456,4 +464,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

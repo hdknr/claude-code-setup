@@ -31,6 +31,8 @@
    **要求確定側と予算側の `removed.csv` を入れ替えると、要求確定側だけが拒否する試料で捕まる**（#349。その試料と
    「removed.csv だけ違う」の作業ツリー＝予算側は `merge` が受け付ける）・**3 の案内が「要求確定と予算の合意の両方」を取り直させる**（#336。
    出力は試料と変異で、docstring の終了コード 3 の項は文字列で見る）。
+5'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、トレースバックの 1 にしない**。`-OO`（docstring が無い）で
+   引数なしに呼んでも想定外の例外にならない。**`removed.csv` が権限などで読めないとき「UTF-8 として読めない」と言わない**（#286）。
 6. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -309,6 +311,10 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
      [], 2, "docs/v1/shared/qa.csv が決まりに反する（references/qa-csv.md）"),
     ("要求確定の時点の Q&A 表が空", [("w", SHARED, ""), ("c",), ("t", R1), ("t", B1)],
      [], 2, "docs/v1/shared/qa.csv を読めない"),
+    # 想定外の例外（128KB 超のセルの csv.Error）も 2 で、トレースバックの 1 にしない（#286）
+    ("要求確定の時点の Q&A 表に巨大なセル", [("w", SHARED, QA_HEAD + QA_2.replace("上限は？", "x" * 200_000)), ("c",),
+                                       ("t", R1), ("t", B1)],
+     [], 2, "想定外の例外で止まった（Error: field larger"),
 ]
 
 # 暫定の行の重ね方は `references/versions.md` の「重ねるもの」の写し——本体は Q&A の行だけを自前で重ねる。
@@ -347,6 +353,8 @@ UNCHECKED_REMOVED = (
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
+     "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "要求確定の時点の Q&A 表に巨大なセル"),
     ("最新を文字列で選ぶ", "numbered = [(int(m.group(1)), name)", "numbered = [(m.group(1), name)", "最新を数で選ぶ"),
     ("命名を前方一致で見る", "if (m := pattern.fullmatch(name))", "if (m := pattern.match(name))",
      "命名に合わないタグを数えない"),
@@ -615,7 +623,53 @@ def merge_refusing(root: Path) -> list[str]:
 def as_expected(name: str, result: tuple[int | None, str]) -> bool:
     expected = next(case for case in CASES if case[0] == name)
     once = name not in ONCE or result[1].count(ONCE[name]) == 1
-    return result[0] == expected[3] and expected[4] in result[1] and once
+    return result[0] == expected[3] and expected[4] in result[1] and once and "Traceback" not in result[1]
+
+
+# 想定外の例外・読めなさの原因（#286）。(名前, 壊す前, 壊した後)
+ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
+    ("-OO で docstring が無いと落ちる", "description=__doc__.splitlines()[0] if __doc__ else None",
+     "description=__doc__.splitlines()[0] if True else None"),
+    ("removed.csv の読めなさを UTF-8 と言う",
+     '            raise Unjudged(f"{tag} の {path} を読めない: {str(e).replace(str(copy), path)}。照合していない")\n        problems = [line',
+     '            raise Unjudged(f"{tag} の {path} が UTF-8 として読めない。照合していない")\n        problems = [line'),
+]
+UNREADABLE_REMOVED = "removed.csv で消した暫定は数えない"  # v2 の removed.csv を持つ試料
+
+
+def entry_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
+    """CASES の外の 2 つ（#286）:
+    `-OO`（docstring が無い）で引数なしに呼んでも、想定外の例外にもトレースバックにもならない（git でない場所なので 2）。
+    `removed.csv` が権限などで読めないとき、`Unreadable` の文言を出し「UTF-8 として読めない」と言わない——
+    写しは本体が一時ディレクトリに書くので CLI からは作れず、`read_removed` を差し替えて `read_removed_at` を呼ぶ。"""
+    problems = []
+    proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True,
+                          cwd=work.parent, env=env)
+    output = proc.stdout + proc.stderr
+    if proc.returncode != 2 or "想定外の例外" in output or "Traceback" in output:
+        problems.append(f"-OO の引数なし: 終了 {proc.returncode}: {output[-300:]!r}")
+    spec = importlib.util.spec_from_file_location(f"check_signoff_{id(scripts)}", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def denied(path, _problems):
+        raise module.versions.Unreadable(f"{path}: 読めない（Permission denied）")
+
+    module.versions.read_removed = denied
+    root = work / f"case{[c[0] for c in CASES].index(UNREADABLE_REMOVED)}"
+    saved = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(env)  # 本体の git も利用者の設定を読まない
+    try:
+        module.read_removed_at(root, R2, R2, REMOVED2)
+        problems.append("読めない removed.csv で止まらない")
+    except module.Unjudged as e:
+        if "Permission denied" not in str(e) or "UTF-8" in str(e) or f"{REMOVED2}: 読めない" not in str(e):
+            problems.append(f"読めない removed.csv の文言: {e}")
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+    return problems
 
 
 NUMBER_WORDS = {"1 から始まる整数": r"([1-9][0-9]*)"}
@@ -738,6 +792,16 @@ def main() -> int:
             killed = run_case(mutated, work, env, broken, killer)
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, killed), killed[1][-300:])
 
+        problems = entry_problems(scripts, work, env)
+        check("-OO の引数なし・読めない removed.csv の文言", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(ENTRY_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"entry-mut{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}", bool(entry_problems(mutated, work, env)))
+
         # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——照合は写しを持たずにそれを読む（#404）
         checker = (SCRIPTS / CHECKER).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(CHECKER_MUTATIONS):
@@ -755,7 +819,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件（うち {len(COEXIST)} 件は #260 の名前でも当てた）・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件（うち {len(COEXIST)} 件は #260 の名前でも当てた）・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS) + len(ENTRY_MUTATIONS)} 件")
     return 0
 
 

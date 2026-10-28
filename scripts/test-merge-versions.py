@@ -20,6 +20,9 @@
    **2 回続けて作るだけでは、日付のように粒の粗い時刻を捕まえない**ので、出力の全バイト（印を含む）を期待値と突き合わせる。
 8. **書いている途中で失敗したら、書きかけを残さない**——書き込みの口（`put`）を差し替えて 2 つ目で失敗させる。
    用意された空の出力先は消さない（印を書きかけて失敗しても、直下に書きかけを残さない）。**途中で落ちても（後始末が走らなくても）印は無い。**
+9. **想定外の例外（128KB 超のセルの `csv.Error`・深い入れ子の `RecursionError`）も 2 で、前の出力を消す**。
+   書いている途中の想定外の例外でも書きかけを残さない。前の出力を消そうとして上がった例外も入口が 2 にする
+   （トレースバックの 1 にしない）。`-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 7. **決まりの写しがずれていない**——本体の定数が `references/versions.md` と一致する。
 
@@ -68,7 +71,10 @@ SPEC2 = {"title": "注文 v2", "features": [{"id": "F-003", "title": "ポイン�
 REMOVED_HEAD = "種類,対象,理由\n"
 # 入力の木の特別な値: シンボリックリンク（版の外のファイル／ディレクトリへ）と、読めないファイル／ディレクトリ
 LINK, LINK_DIR, UNREADABLE, UNREADABLE_DIR = None, "\0link-dir", "\0unreadable", "\0unreadable-dir"
-UNREADABLE_CASES = {"読めないファイル", "読めないディレクトリ"}
+UNREADABLE_CASES = {"読めないファイル", "読めないディレクトリ", "読めない中間表現", "前の出力を消せないときの想定外の例外"}
+# 128KB を超えるセル（csv.Error）と深い入れ子（RecursionError）——どちらも想定外の例外（#286）
+BIG_QA = QA_HEAD + Q3.replace("質問3", "x" * 200_000)
+DEEP_JSON = "[" * 200_000 + "]" * 200_000
 
 
 def js(data) -> str:
@@ -219,6 +225,11 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: r.code == 2 and r.tree is None and "読めない" in r.output and "前に作った出力を消した" in r.output),
     ("読めないディレクトリ", {**MAIN, "v2/requirements/sub": UNREADABLE_DIR}, "stale", [],
      lambda r: r.code == 2 and r.tree is None and "読めない" in r.output and "前に作った出力を消した" in r.output),
+    # 権限で読めないものを「UTF-8 として読めない」と言わない。UTF-8 でないものは UTF-8 と言う（#286）
+    ("読めない中間表現", {**MAIN, "v2/spec/spec_ir.json": UNREADABLE}, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "spec_ir.json: 読めない（" in r.output and "UTF-8" not in r.output),
+    ("UTF-8 でない中間表現", {**MAIN, "v2/spec/spec_ir.json": b"\xff\xfe{}"}, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "spec_ir.json: UTF-8 として読めない" in r.output),
     ("ファイルの形の版名", {**MAIN, "v3.md": "x\n"}, "none", [], lambda r: refused(r, "版の名前の形")),
     ("版がシンボリックリンク", {**MAIN, "v3": LINK_DIR}, "none", [], lambda r: refused(r, "版はディレクトリで置く")),
     ("置き場所がシンボリックリンク", {**V1, "v2/requirements": LINK_DIR}, "none", [],
@@ -267,6 +278,18 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("大文字の V は版でない", {**MAIN, "V3/requirements/a.md": "x\n"}, "none", [], main_case),
     ("途中で落ちても印は無い", MAIN, "crash", [],
      lambda r: r.code != 0 and r.leftover is not None and ".merged-versions" not in r.leftover),
+    # 想定外の例外も 2（判定していない）で、トレースバックの 1 にしない。前の出力は読めない入力と同じに消す（#286）
+    ("巨大なセル", {**MAIN, "v2/shared/qa.csv": BIG_QA}, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "想定外の例外で止まった（Error: field larger" in r.output
+     and "前に作った出力を消した" in r.output and "Traceback" not in r.output),
+    ("深い入れ子", {**MAIN, "v2/spec/spec_ir.json": DEEP_JSON}, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "想定外の例外で止まった（RecursionError" in r.output
+     and "前に作った出力を消した" in r.output and "Traceback" not in r.output),
+    ("書いている途中の想定外の例外", MAIN, "failwrite-unexpected", [],
+     lambda r: r.code == 2 and "想定外の例外 ValueError" in r.output and "書きかけを消した" in r.output and r.leftover is None),
+    # 前の出力を消そうとして PermissionError——内側の捕捉の中で上がった例外は、入口が 2 にする
+    ("前の出力を消せないときの想定外の例外", {**MAIN, "v2/shared/qa.csv": BIG_QA}, "stale-locked", [],
+     lambda r: r.code == 2 and "想定外の例外で止まった（PermissionError" in r.output and "Traceback" not in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -363,7 +386,28 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "(self.internal if target.startswith('D-') and target[2].isdigit() else self.qa)", "印つきの内部の行を removed.csv で消す"),
     ("行が 0 なら qa.csv を書かない", "(self.has_qa, QA_PATH, self.qa)", "(bool(self.qa), QA_PATH, self.qa)",
      "Q&A が全部消えても qa.csv を書く"),
+    # 読めなさの原因を取り違える・想定外の例外（#286）
+    ("権限で読めないのを UTF-8 と言う", '        raise Unreadable(f"{path}: 読めない（{e.strerror}）") from None\n    except UnicodeDecodeError:',
+     '        raise Unreadable(f"{path}: UTF-8 として読めない") from None\n    except UnicodeDecodeError:', "読めない中間表現"),
+    ("想定外の例外で前の出力を消さない", "    except Exception as e:  # 想定外の例外（巨大なセルの csv.Error",
+     "    except ImportError as e:  # 想定外の例外（巨大なセルの csv.Error", "巨大なセル"),
+    ("深い入れ子で前の出力を消さない", "    except Exception as e:  # 想定外の例外（巨大なセルの csv.Error",
+     "    except csv.Error as e:  # 想定外の例外（巨大なセルの csv.Error", "深い入れ子"),
+    ("書いている途中の想定外の例外で書きかけを残す", "    except Exception as e:  # 想定外の例外でも書きかけを残さない",
+     "    except OSError as e:  # 想定外の例外でも書きかけを残さない", "書いている途中の想定外の例外"),
+    ("入口で想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
+     "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "前の出力を消せないときの想定外の例外"),
 ]
+
+# -OO（docstring が無い）で引数なしに呼んでも、使い方の誤りとして 2（#286）。(名前, 壊す前, 壊した後)
+OO_MUTATIONS = [("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else")]
+
+
+def oo_problems(scripts: Path, cwd: Path) -> list[str]:
+    proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=cwd)
+    if proc.returncode != 2 or "usage:" not in proc.stderr or "Traceback" in proc.stderr:
+        return [f"-OO の引数なし: 終了 {proc.returncode}: {proc.stderr[-300:]!r}"]
+    return []
 
 failures: list[str] = []
 
@@ -404,6 +448,8 @@ def build(docs: Path, tree: dict | None) -> list[Path]:
             path.mkdir()
             (path / "e.md").write_text("読めない\n", encoding="utf-8")
             locked.append(path)
+        elif isinstance(content, bytes):
+            path.write_bytes(content)
         else:
             path.write_text(content, encoding="utf-8")
     for path in locked:
@@ -434,6 +480,8 @@ def put(dest, content):
     elif len(calls) == 2:
         if mode == "crash":
             raise KeyboardInterrupt
+        if mode == "unexpected":
+            raise ValueError("試料")
         raise OSError(28, "No space left on device")
     real(dest, content)
 module.put = put
@@ -460,7 +508,7 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         (root / "real").mkdir()
         out.parent.mkdir(parents=True)
         os.symlink(root / "real", out)
-    elif prepare == "stale":
+    elif prepare in ("stale", "stale-locked"):
         out.mkdir(parents=True)
         (out / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
         (out / "old.md").write_text("古い\n", encoding="utf-8")
@@ -469,8 +517,16 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         (out / "keep.md").write_text("正本\n", encoding="utf-8")
     elif prepare in ("failwrite-empty", "marker-empty"):
         out.mkdir(parents=True)
-    fail = {"failwrite": "oserror", "failwrite-empty": "oserror", "crash": "crash", "marker-empty": "marker"}.get(prepare)
-    code, output = merge(scripts, docs, out, extra, fail)
+    fail = {"failwrite": "oserror", "failwrite-empty": "oserror", "crash": "crash", "marker-empty": "marker",
+            "failwrite-unexpected": "unexpected"}.get(prepare)
+    if prepare == "stale-locked":
+        out.parent.chmod(0o555)  # 前の出力（の中身）は消せても、出力先そのものは消せない
+        try:
+            code, output = merge(scripts, docs, out, extra, fail)
+        finally:
+            out.parent.chmod(0o755)
+    else:
+        code, output = merge(scripts, docs, out, extra, fail)
     leftover = (sorted(p.relative_to(out).as_posix() for p in out.rglob("*"))
                 if out.is_dir() and not out.is_symlink() else None)
     for path in locked:
@@ -563,6 +619,16 @@ def main() -> int:
             result = run_case(mutated, tmp_path / f"mutwork{index}", *killer_case[1:4])
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, result), result.output[-300:])
 
+        problems = oo_problems(scripts, tmp_path)
+        check("-OO の引数なしで使い方の誤り（2）にならない", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(OO_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"oo-mut{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}", bool(oo_problems(mutated, tmp_path)))
+
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
         for message in failures:
@@ -571,7 +637,7 @@ def main() -> int:
     skip = [name for name, *_ in CASES if skipped(name)]
     if skip:
         print(f"飛ばした（root では読めない入力を作れない）: 試料 {'・'.join(skip)} と、それを名指しした変異")
-    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS) + len(OO_MUTATIONS)} 件")
     return 0
 
 

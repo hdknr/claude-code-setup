@@ -27,6 +27,10 @@
 8. **前の出力を消せない場所（書けないディレクトリ）では、traceback・1 ではなく 2 で、残ったものを名指しし、印を残す**（#440）
    ——`--out` の親・`--out` に渡したディレクトリ・書きかけの片付けの 3 つの入口。
 
+9. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、前の出力を消し、トレースバックの 1 にしない**。読めなさの原因を
+   取り違えない——git を起動できない・手書き部分を読めない・出力を書けないを別の文言で、strerror とパスを添えて出す。
+   書いている途中の想定外の例外でも書きかけを残さない。`-OO`（docstring が無い）で引数なしに呼んでも想定外の例外にならない（#286）。
+
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
 `HOME` と `GIT_CONFIG_GLOBAL` を差し替える。
 
@@ -448,10 +452,24 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      and "（spec.md で見る）" in pptx_text(r.pptx["spec.pptx"]) and "（proposal.md で見る）" in pptx_text(r.pptx["proposal.pptx"])
      and r.pptx["spec.pptx:bytes"] == r.again_pptx.get("spec.pptx:bytes")
      and r.pptx["proposal.pptx:bytes"] == r.again_pptx.get("proposal.pptx:bytes")),
+    # ---- 想定外の例外・読めなさの原因（#286）
+    # 128KB 超のセル（csv.Error）は照合の中で上がる。2 で、前の出力を消し、トレースバックの 1 にしない
+    ("Q&A 表に巨大なセル", [("w", QA, QA_HEAD + QA_ROWS.replace("割引は？", "x" * 200_000))] + BASE[1:] + [("t", R1), ("t", B1)],
+     True, lambda r: r.code == 2 and r.text is None and not r.svg and r.spec is None and not r.names
+     and "想定外の例外で止まった（Error: field larger" in r.output and "前に作った出力を消した" in r.output
+     and "Traceback" not in r.output),
+    # 権限で読めない手書き部分を「UTF-8 として読めない」「git を起動できない」と言わない
+    ("手書き部分が読めない", SIGNED + [("chmod", "docs/v1/proposal/01-background.md", 0)], False,
+     lambda r: not_made(2)(r) and "01-background.md: 手書き部分を読めない（" in r.output
+     and "UTF-8" not in r.output and "git を起動" not in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
+     "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "Q&A 表に巨大なセル"),
+    ("手書き部分の読めなさを捕まえない", "        except OSError as e:  # 権限などを", "        except ImportError as e:  # 権限などを",
+     "手書き部分が読めない"),
     # 外さなくても `Q&A（内部）` の節は描かない（共有の種類だけ描く。#344）——外すことが効くのは内部の表の違反のほう
     ("内部の Q&A も比較に載せる", "        drop_internal(Path(tmp) / signoff.DOCS)\n", "", "内部の表の違反でも比較を作る"),
     ("removed.csv の D- の行を外さない", "if len(kept) != len(rows):", "if False:", "内部の表の違反でも比較を作る"),
@@ -635,6 +653,8 @@ def compose_problems(scripts: Path) -> list[str]:
 
 # 書いている途中の失敗で殺す変異。(名前, 壊す前, 壊した後)
 WRITE_MUTATIONS: list[tuple[str, str, str]] = [
+    ("想定外の例外で書きかけを残す", "    except Exception as e:  # 想定外の例外でも書きかけを残さない（#286）",
+     "    except OSError as e:  # 想定外の例外でも書きかけを残さない（#286）"),
     ("書きかけを消さない", "        left = remove_owned(directory)\n", "        left = []\n"),
     ("印を書かない（途中の失敗）", "        (directory / MANIFEST).write_text(", "        (directory / MANIFEST).with_name('unused').write_text("),
 ]
@@ -652,23 +672,69 @@ def write_failure_problems(scripts: Path) -> list[str]:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    def fail(*_args) -> None:
-        raise OSError(errno.EACCES, "書けない（試料）")
-
-    module.pptx.write = fail
     problems = []
-    with tempfile.TemporaryDirectory(prefix="proposal-write-") as tmp:
-        directory = Path(tmp) / "out"
-        try:
-            with contextlib.redirect_stderr(io.StringIO()):  # 消したことの通知は親の出力に混ぜない
-                module.write_outputs({directory / "proposal.md": b"x", directory / "proposal.pptx": []}, directory)
-            problems.append("書けないのに止まらない")
-        except module.Stop as stop:
-            if stop.code != 2 or not any("書きかけを消した" in line for line in stop.lines):
-                problems.append(f"止まり方が違う: {stop.code} {stop.lines}")
-        left = sorted(p.name for p in directory.iterdir()) if directory.is_dir() else []
-        if left:
-            problems.append(f"書きかけが残る: {left}")
+    # OSError は書けなかったパスと strerror を出す。想定外の例外（ValueError）でも書きかけを残さず 2（#286）
+    for error, words in ((OSError(errno.EACCES, "書けない（試料）", "proposal.pptx"), ["proposal.pptx: 出力を書けない（書けない（試料））"]),
+                         (ValueError("試料"), ["想定外の例外（ValueError: 試料）"])):
+        def fail(*_args, error=error) -> None:
+            raise error
+
+        module.pptx.write = fail
+        with tempfile.TemporaryDirectory(prefix="proposal-write-") as tmp:
+            directory = Path(tmp) / "out"
+            try:
+                with contextlib.redirect_stderr(io.StringIO()):  # 消したことの通知は親の出力に混ぜない
+                    module.write_outputs({directory / "proposal.md": b"x", directory / "proposal.pptx": []}, directory)
+                problems.append(f"{type(error).__name__}: 書けないのに止まらない")
+            except module.Stop as stop:
+                if (stop.code != 2 or not any("書きかけを消した" in line for line in stop.lines)
+                        or not all(any(w in line for line in stop.lines) for w in words)):
+                    problems.append(f"{type(error).__name__}: 止まり方が違う: {stop.code} {stop.lines}")
+            except Exception as e:  # noqa: BLE001 — 変異の結果を観測するため
+                problems.append(f"{type(error).__name__}: 捕まえない: {type(e).__name__}: {e}")
+            left = sorted(p.name for p in directory.iterdir()) if directory.is_dir() else []
+            if left:
+                problems.append(f"{type(error).__name__}: 書きかけが残る: {left}")
+    return problems
+
+# 想定外の例外・git の起動・-OO（#286）。(名前, 壊す前, 壊した後)
+ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
+    ("git を起動できないのを捕まえない", '    except OSError as e:\n        raise Stop(2, [f"git を起動できない',
+     '    except ImportError as e:\n        raise Stop(2, [f"git を起動できない'),
+    ("-OO で docstring が無いと落ちる", "description=__doc__.splitlines()[0] if __doc__ else None",
+     "description=__doc__.splitlines()[0] if True else None"),
+]
+
+
+def entry_problems(scripts: Path, root: Path, env: dict[str, str]) -> list[str]:
+    """CASES の外の 2 つ（#286）:
+    材料を読んでいる途中で git を起動できなくなったら、「git を起動できない」と strerror とパスを出して 2——照合（`check-signoff.py`）
+    が先に git を起動するので CLI からは作れず、`show` を `PATH` に git の無い環境で呼ぶ。
+    `-OO`（docstring が無い）で引数なしに呼んでも、想定外の例外にもトレースバックにもならない（git でない場所なので 2）。"""
+    assert_in_tmp(root)
+    root.mkdir(parents=True)
+    problems = []
+    spec = importlib.util.spec_from_file_location(f"build_proposal_{id(root)}", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    (root / "empty-path").mkdir()
+    saved = os.environ.get("PATH")
+    os.environ["PATH"] = str(root / "empty-path")
+    try:
+        module.show(root, "HEAD", "t", "x")
+        problems.append("git を起動できないのに止まらない")
+    except module.Stop as stop:
+        if stop.code != 2 or not any("git を起動できない（" in line and ": git）" in line for line in stop.lines):
+            problems.append(f"git を起動できない: {stop.code} {stop.lines}")
+    except Exception as e:  # noqa: BLE001 — 変異の結果を観測するため
+        problems.append(f"git を起動できない: {type(e).__name__}: {e}")
+    finally:
+        os.environ["PATH"] = saved if saved is not None else ""
+    proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True,
+                          cwd=root, env=env)
+    output = proc.stdout + proc.stderr
+    if proc.returncode != 2 or "想定外の例外" in output or "Traceback" in output:
+        problems.append(f"-OO の引数なし: 終了 {proc.returncode}: {output[-300:]!r}")
     return problems
 
 # 読めない印・辿れない出力先で殺す変異。(名前, 壊す前, 壊した後)
@@ -726,8 +792,8 @@ LOCKED_MUTATIONS: list[tuple[str, str, str]] = [
      "            print(line, file=sys.stderr)\n        return 2\n    if problem:"),
     ("symlink より先に is_file を見る（3.12 でだけ死ぬ）", "            if stale.is_symlink() or stale.is_file():",
      "            if stale.is_file() or stale.is_symlink():"),
-    ("書きかけを消せなくても消したと言う", "        if left:\n            raise Stop(2, [f\"{directory}: 書けない",
-     "        if False:\n            raise Stop(2, [f\"{directory}: 書けない"),
+    ("書きかけを消せなくても消したと言う", "        if left:\n            raise Stop(2, [f\"{reason}。書きかけを消せなかった",
+     "        if False:\n            raise Stop(2, [f\"{reason}。書きかけを消せなかった"),
 ]
 
 
@@ -909,6 +975,8 @@ def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) ->
             run_git(root, env, "commit", "-q", "--allow-empty", "-m", "step")
         elif step[0] == "t":
             run_git(root, env, "tag", step[1])
+        elif step[0] == "chmod":  # 作業ツリーのファイルの権限（commit の後。手書き部分は作業ツリーから読む）
+            (root / step[1]).chmod(step[2])
 
 
 def generate(scripts: Path, root: Path, out: Path | str, env: dict[str, str], extra: list[str] = ()) -> tuple[int, str]:
@@ -1177,6 +1245,16 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（write_outputs を直接呼んで殺せるはず）", bool(write_failure_problems(mutated)))
 
+        problems = entry_problems(SCRIPTS, tmp_path / "entry", env)
+        check("git を起動できない・-OO の引数なしの扱いが違う", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(ENTRY_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"mutentry{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}", bool(entry_problems(mutated, tmp_path / f"mutentrywork{index}", env)))
+
         problems = ownership_problems(SCRIPTS)
         check("読めない印か辿れない出力先の扱いが違う", not problems, "; ".join(problems))
         for index, (name, before, after) in enumerate(OWN_MUTATIONS):
@@ -1208,7 +1286,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) - len(skipped)} 件"
+    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) - len(skipped)} 件"
           + (f"（python {sys.version_info.major}.{sys.version_info.minor} では当てていない {len(skipped)} 件: {'・'.join(skipped)}）" if skipped else ""))
     return 0
 

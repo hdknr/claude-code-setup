@@ -16,7 +16,8 @@
 - `--dry-run` は何を写すかを示すだけで、何も書かない。
 - 雛形の `gitignore` は `.gitignore` として写す（プラグインの中で本物の `.gitignore` として効かないように名前を変えてある）。
 
-終了コード: 0 写した・写すものが無い ／ 2 根がディレクトリでない・雛形が読めない・書けない（行き先の親がファイルのときを含む）。
+終了コード: 0 写した・写すものが無い ／ 2 根がディレクトリでない・雛形が読めない・書けない（行き先の親がファイルのときを含む）・
+想定外の例外（#286。書いている途中でも一時ファイルは消し、退路で作りかけたファイルも消す——上の「書けない」と同じ）。
 """
 
 from __future__ import annotations
@@ -175,4 +176,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

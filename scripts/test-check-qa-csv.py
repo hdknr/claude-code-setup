@@ -15,6 +15,8 @@
    本体の定数はその写しである。**写しがずれたらここで落ちる。** `references/qa-csv.md` の
    「例」のブロックも本体に通す（決まりの文書が、自分の例で決まりを破っていないか）。
 4. **リポジトリの外で単体で動く**——本体だけを一時ディレクトリに写し、`python3 -I` で走らせる。
+4a. **想定外の例外（128KB 超のセルの `csv.Error`）も CLI では 2 で、トレースバックの 1 にしない**。`-OO`（docstring が無い）で
+    引数なしに呼んでも使い方の誤りとして 2。**読み込んだ `check` は例外をそのまま返す**（2 に寄せるのは入口だけ。#286）。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
@@ -717,6 +719,30 @@ def reference_example(markdown: str, heading: str = "例") -> str | None:
     return m.group(1) if m else None
 
 
+# 想定外の例外は 2（#286）。入口の捕捉と、-OO で docstring が無いときの使い方を壊す。(名前, 壊す前, 壊した後)
+ENTRY_GUARD = "    except Exception as e:  # 想定外の例外も「判定していない」（2）"
+ENTRY_MUTATIONS = [
+    ("想定外の例外を 2 に寄せない", ENTRY_GUARD, ENTRY_GUARD.replace("Exception", "ImportError")),
+    ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
+]
+
+
+def unexpected_problems(script: Path, root: Path) -> list[str]:
+    """巨大なセル（128KB 超。`csv.Error`）の表を CLI に渡すと 2 で、トレースバックの 1 にならないか。
+    `-OO`（docstring が無い）で引数なしに呼ぶと、使い方の誤りとして 2 か（#286）。"""
+    problems = []
+    big = root / "big.csv"
+    assert_in_tmp(big)
+    big.write_text(HEADER + row(質問="x" * 200_000), encoding="utf-8")
+    r = subprocess.run([sys.executable, "-I", str(script), str(big)], capture_output=True, text=True, cwd=root)
+    if r.returncode != 2 or "想定外の例外" not in r.stderr or "field larger" not in r.stderr or "Traceback" in r.stderr:
+        problems.append(f"巨大なセル: 終了 {r.returncode}: {r.stderr[-300:]!r}")
+    r = subprocess.run([sys.executable, "-I", "-OO", str(script)], capture_output=True, text=True, cwd=root)
+    if r.returncode != 2 or "usage:" not in r.stderr or "Traceback" in r.stderr:
+        problems.append(f"-OO の引数なし: 終了 {r.returncode}: {r.stderr[-300:]!r}")
+    return problems
+
+
 def main() -> int:
     mod = load(SCRIPT)
     reference = REFERENCE.read_text(encoding="utf-8")
@@ -766,6 +792,27 @@ def main() -> int:
         usage = subprocess.run([sys.executable, "-I", str(copied)], cwd=alone, env=env,
                                capture_output=True, text=True)
         check("引数が無ければ 2 で使い方を出す", usage.returncode == 2 and "usage:" in usage.stderr, usage.stderr)
+
+        print("4a. 想定外の例外は 2（#286）")
+        problems = unexpected_problems(SCRIPT, root)
+        check("巨大なセルで 2・-OO の引数なしで 2（トレースバックにならない）", not problems, "; ".join(problems))
+        big = root / "big.csv"
+        try:
+            mod.check(big)
+            check("読み込んだ check は例外を呼び出し元へ返す（2 に寄せるのは CLI の入口だけ）", False, "例外が出ない")
+        except Exception as e:  # noqa: BLE001
+            check("読み込んだ check は例外を呼び出し元へ返す（2 に寄せるのは CLI の入口だけ）",
+                  "field larger" in str(e), f"{type(e).__name__}: {e}")
+        source = SCRIPT.read_text(encoding="utf-8")
+        for index, (name, before, after) in enumerate(ENTRY_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutant = root / f"entry-mutant-{index}" / SCRIPT.name
+            mutant.parent.mkdir()
+            mutant.write_text(source.replace(before, after), encoding="utf-8")
+            assert_in_tmp(mutant)
+            check(f"変異を殺せる: {name}", bool(unexpected_problems(mutant, root)))
 
         print("4b. 番号から層を決める（is_internal_number）")
         problems = number_layer_mismatches(mod)
@@ -858,7 +905,7 @@ def main() -> int:
     if failures:
         print(f"FAIL: {len(failures)} 件")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(READER_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(READER_MUTATIONS) + len(ENTRY_MUTATIONS) + 1} 件")
     return 0
 
 

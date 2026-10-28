@@ -76,7 +76,8 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 - 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto` を含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
-  予期しない失敗（書き込みの失敗を含む）。書く生成では前の Issue の本文は消す
+  予期しない失敗（書き込みの失敗・128KB を超えるセルの `csv.Error` を含む）。書く生成では前の Issue の本文は消す。
+  **ただし引数を解釈する前・判定の外で上がった想定外の例外は、入口が 2 にするだけで本文を消さない**（書く生成かが決まっていない。#286）
 
 **`scaffold/` は失敗しても消さない**——commit 済みの契約で、古ければ `--check` が言う。
 
@@ -1498,4 +1499,8 @@ def run(repo: Path, args, writing: bool) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

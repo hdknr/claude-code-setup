@@ -16,7 +16,7 @@ usage: python3 check-feasibility-csv.py <schedule.csv> <estimate.csv>
 
 - 0: 2 つとも決まりどおり
 - 1: 決まりに反する箇所がある（**全部を 1 行ずつ出す**。最初の 1 件で止めない）
-- 2: 中身を検査していない——引数の誤り・読めない・UTF-8 でない・空。
+- 2: 中身を検査していない——引数の誤り・読めない・UTF-8 でない・空・想定外の例外（128KB を超えるセルの `csv.Error` など。#286）。
   **反する箇所が別のファイルに見つかっても 2 を優先する**（見ていないファイルを「決まりどおり」と言わない）
 
 **この検査が守らないもの**:
@@ -180,7 +180,8 @@ def check_estimate(path: Path, text: str | None = None) -> tuple[list[str], list
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print(__doc__.splitlines()[2], file=sys.stderr)
+        print(__doc__.splitlines()[2] if __doc__ else
+              f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     problems, unreadable, counts = [], [], []
     for path, checker in ((Path(argv[0]), check_schedule), (Path(argv[1]), check_estimate)):
@@ -202,4 +203,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

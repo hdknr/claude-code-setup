@@ -20,6 +20,8 @@ usage: python3 check-qa-csv.py <qa.csv | qa-dev.csv>
 
 - 決まりに反する箇所があれば、**全部を 1 行ずつ出して**非ゼロ（1）で終わる（最初の 1 件で止めない）。
 - ファイルが読めない・UTF-8 でない・空のときは 2 で終わる（**中身を検査していない**）。
+  **想定外の例外（128KB を超えるセルの `csv.Error` など）も 2**——トレースバックの 1（違反）にしない（#286）。
+  2 に寄せるのは CLI の入口だけで、読み込んだ `check` は例外をそのまま呼び出し元へ返す。
 - 反する箇所が無ければ 0 で終わり、検査した行数を出す。
 
 **この検査が守らないもの**:
@@ -236,7 +238,8 @@ def check(path: Path) -> tuple[int, list[str]]:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 1:
-        print(__doc__.splitlines()[2], file=sys.stderr)
+        print(__doc__.splitlines()[2] if __doc__ else
+              f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     code, lines = check(Path(argv[0]))
     for line in lines:
@@ -245,4 +248,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)
