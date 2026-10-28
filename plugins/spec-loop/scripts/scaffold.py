@@ -87,7 +87,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 | 守らないもの | なぜ |
 | --- | --- |
-| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が `反映済み`）までを見る。`暫定反映` の行が表に残れば、指していなくても止める |
+| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が `反映済み`・ケースの `ref` の番号が原文に在ること。#465）までを見る。`暫定反映` の行が表に残れば、指していなくても止める |
 | **Red テストが仕様のケースを漏れなく持つか** | 中間表現に書いたケースだけが生成される。漏れは書き起こしの側で見る |
 | **Python 以外の言語の型・テスト** | OpenAPI から対象リポジトリの道具で作る |
 | **Issue を登録したか・登録した本文が同じか** | 登録はスクリプトの外（`gh issue create --body-file` に、生成した本文をそのまま渡す） |
@@ -343,6 +343,33 @@ def check_source(where: str, sources, whole: Path) -> list[str]:
     return problems
 
 
+def check_ref(where: str, ref, sources, whole: Path) -> list[str]:
+    """ケースの `ref`——仕様の中でそのケースの元になった行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。#465）。
+    機能の `source` の原文のどれかに、前後に英数字・`_`・`-` が続かない形で現れなければ断る（別の番号の一部は数えない）。
+    英数字には全角の英数字も含める（`R-F10ａ` は別の番号）。後ろに `.`・`/`・`:` と数字が続く形（`R-F10.1`・`R-F10/2`）も別の番号とみなし、
+    数字で始まる `ref` は前に英数字と `.`・`/`・`:` が付く形（`R-F10.1` の `1`）を別の番号の一部とみなす——
+    `R-F10.`（文末）・`R-F10.md`・`R-F10/R-F11` の `R-F11` は在ることにする。
+    **値（入力・期待）が仕様と一致するかは見ない**——仕様の表の書式は spec-loop の決まりに無い。"""
+    if not isinstance(ref, str) or not one_line(ref) or ref != ref.strip():
+        return [f"{where}: 仕様の中の番号（1 行・前後に空白なし）でない: {ref!r}"]
+    sub = r"(?<![A-Za-z0-9Ａ-Ｚａ-ｚ０-９][./:])" if ref[:1].isdigit() else ""
+    pattern = re.compile(rf"(?<![A-Za-z0-9_\-Ａ-Ｚａ-ｚ０-９]){sub}{re.escape(ref)}(?![A-Za-z0-9_\-Ａ-Ｚａ-ｚ０-９]|[./:][0-9])")
+    spec_root = (whole / SPEC_DIR).resolve()
+    for rel in sources if isinstance(sources, list) else []:
+        # 読むのは check_source が通す原文だけ（全体の根からの相対・spec/ の中）——外のファイルを読まない
+        if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
+            continue
+        path = (whole / rel).resolve()
+        if not path.is_relative_to(spec_root):
+            continue
+        try:
+            if path.is_file() and pattern.search(path.read_text(encoding="utf-8")):
+                return []
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue  # 読めない原文は source の検査と未決定の印の関門が言う
+    return [f"{where}: {ref} が仕様の原文（source）のどこにも無い——書き起こしの誤りか、仕様の後からの修正とのずれ"]
+
+
 def path_vars(path: str) -> list[str]:
     return PATH_VAR.findall(path)
 
@@ -463,7 +490,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             continue
         for cindex, case in enumerate(cases or []):
             at = f"{where}.cases[{cindex}]"
-            found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa"})
+            found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa", "ref"})
             if found:
                 problems += found
                 if not isinstance(case, dict):
@@ -488,6 +515,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
                 problems.append(f"{at}.error: operation.errors に無い: {case['error']!r}")
             if "qa" in case:
                 problems += check_qa_refs(f"{at}.qa", case["qa"], answered)
+            if "ref" in case:
+                problems += check_ref(f"{at}.ref", case["ref"], feature.get("source"), whole)
     return problems
 
 
