@@ -16,7 +16,9 @@ usage: python3 schedule-to-gantt.py <schedule.csv> <出力先.svg>
 - 0: 書いた
 - 1: 表が決まりに反する・描く工程が 1 行も無い——**書かない。前に作った出力があれば消す**
   （古いガントチャートを今の表のものと取り違えないため）
-- 2: 引数の誤り・表が読めない（中身を検査していない）——同じく書かず、前の出力を消す
+- 2: 引数の誤り・表が読めない（中身を検査していない）・書けない・想定外の例外（巨大なセルの `csv.Error` など。#286）
+  ——同じく書かず、前の出力を消す（引数の誤りでは出力先が分からないので消さない。
+  前の出力そのものを消せないときは、消せなかった理由を出して 2）
 
 **守らないもの**: 見た目（文字が枠からはみ出すか・読みやすいか）。ブラウザで開いて目で見る。
 """
@@ -113,13 +115,20 @@ def remove_stale(out: Path) -> None:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print(__doc__.splitlines()[2], file=sys.stderr)
+        print(__doc__.splitlines()[2] if __doc__ else
+              f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     source, out = Path(argv[0]), Path(argv[1])
     try:
         problems, rows = feasibility.check_schedule(source)
+        if not problems and rows:
+            svg = render(rows).encode("utf-8")
     except feasibility.Unreadable as e:
         print(e, file=sys.stderr)
+        remove_stale(out)
+        return 2
+    except Exception as e:  # 想定外の例外（巨大なセルの csv.Error など）でも、前の出力を残さない（#286）
+        print(f"{source}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
         remove_stale(out)
         return 2
     if not problems and not rows:
@@ -130,11 +139,20 @@ def main(argv: list[str]) -> int:
         print("ガントチャートは作っていない", file=sys.stderr)
         remove_stale(out)
         return 1
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(render(rows).encode("utf-8"))
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(svg)
+    except OSError as e:  # 書きかけを今の表のものと取り違えないよう消す
+        print(f"{out}: 書けない（{e.strerror}）", file=sys.stderr)
+        remove_stale(out)
+        return 2
     print(f"{out}: {len(rows)} 工程のガントチャートを書いた")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

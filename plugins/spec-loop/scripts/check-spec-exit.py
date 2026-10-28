@@ -26,7 +26,8 @@ usage: python3 check-spec-exit.py <qa.csv> <仕様のディレクトリ>
 - 0: 条件 1 を満たす
 - 1: 条件 1 を満たさない（反映した状態でない行と、印のある箇所を**全部** 1 行ずつ出す）。
   **Q&A 表が列検査を通らないときもここ**（決まりに反する表は、確定していない）
-- 2: 判定していない——引数の誤り・Q&A 表が読めない・仕様のディレクトリが無い・
+- 2: 判定していない——引数の誤り・Q&A 表が読めない・想定外の例外（128KB を超えるセルの `csv.Error` など。#286）・
+  仕様のディレクトリが無い・
   仕様のファイルが 1 つも無い（**書いていない仕様は、確定していない**ので、0 にはしない）・
   **図（`FIGURE_SUFFIXES`）以外に読めないファイルがある**（UTF-16・`.xlsx` など。見ていないものを
   「印 0 件」と言わない）・**読めた仕様のファイルが 1 つも無い**（図だけ）。
@@ -183,7 +184,8 @@ def check(qa_path: Path, spec_dir: Path) -> tuple[int, list[str]]:
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print(__doc__.splitlines()[2], file=sys.stderr)
+        print(__doc__.splitlines()[2] if __doc__ else
+              f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     code, lines = check(Path(argv[0]), Path(argv[1]))
     for line in lines:
@@ -192,4 +194,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)

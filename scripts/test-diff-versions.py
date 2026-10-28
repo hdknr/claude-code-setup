@@ -15,6 +15,8 @@
 6. **比べられないときは比べない**——その版が無い（2。文言は `--version`）・決まりに反する（1）・`docs` が無い（2）。
 7. **同じ入力から同じ出力。**
    **1 変更は 1 行**——セルの改行は `\\n` と書き、偽の変更行を作らない（件数と一覧の行数が食い違わない）。
+6'. **想定外の例外（深い入れ子の `RecursionError`・128KB 超のセルの `csv.Error`）も 2 で、トレースバックの 1 にしない**。
+   `-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
 8. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 9. **決まりの原本（`references/versions.md`）に「版の差分」の節があり、3 つの変化の名前とコマンドが載っている。**
 
@@ -95,6 +97,10 @@ class Result:
 
 
 def run(scripts: Path, docs: Path, extra: list[str]) -> tuple[int, str]:
+    if extra == ["-OO"]:  # docstring の無い実行で、引数なし（#286）
+        proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True,
+                              cwd=docs.parent)
+        return proc.returncode, proc.stdout + proc.stderr
     proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), str(docs), *extra],
                           capture_output=True, text=True, cwd=docs.parent)
     return proc.returncode, proc.stdout + proc.stderr
@@ -141,6 +147,13 @@ CASES: list[tuple[str, dict | None, list[str], Callable[[Result], bool]]] = [
      and "Q&A: 追加 1・変更 0・削除 0\n  追加 Q-004 質問4\n"
      "Q&A（内部）: 追加 1・変更 1・削除 1\n  変更 D-001 内部1\n  追加 D-002 内部2\n  削除 D-003 内部3（理由: 共有へ移した）\n機能:"
      in r.output),
+    # 想定外の例外（深い入れ子の RecursionError・128KB 超のセルの csv.Error）も 2 で、トレースバックの 1 にしない（#286）
+    ("深い入れ子", {**V1, "v2/spec/spec_ir.json": "[" * 200_000 + "]" * 200_000}, [],
+     lambda r: r.code == 2 and "想定外の例外で止まった（RecursionError" in r.output and "Traceback" not in r.output),
+    ("巨大なセル", {**V1, "v2/shared/qa.csv": QA_HEAD + q("Q-004", "x" * 200_000)}, [],
+     lambda r: r.code == 2 and "想定外の例外で止まった（Error: field larger" in r.output and "Traceback" not in r.output),
+    ("-OO の引数なし", None, ["-OO"],
+     lambda r: r.code == 2 and "usage:" in r.output and "Traceback" not in r.output),
 ]
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -170,6 +183,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内部の削除の理由を引き当てない", "REMOVED_KIND.get(kind, kind)", "kind", "内部の表の行も比べる"),
     ("決まりに反しても比べる", "    if problems:\n        return problems, None\n    number",
      "    if False:\n        return problems, None\n    number", "決まりに反すると比べない"),
+    ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
+     "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "深い入れ子"),
+    ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else",
+     "-OO の引数なし"),
 ]
 
 failures: list[str] = []

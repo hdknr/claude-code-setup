@@ -30,6 +30,9 @@
    同名の型と突き合わせる（OpenAPI の中で一緒に落ちる・変わるのを見るため）。exit 0 の全試料に当てる。
 6. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
    `references/spec-gap.md` も同じ印と節を持ち、dev-loop の `SKILL.md` も同じ印を持つ**（2 つのプラグインの境界の写し）。
+6'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、古い Issue の本文を残さない**。`-OO`（docstring が無い）で
+   引数なしに呼んでもトレースバックにならない。判定（`run`）の外——引数の解釈——で上がった想定外の例外も入口が 2 にする
+   （`argparse` を差し替えて作る。#286）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -1226,6 +1229,9 @@ CASES: list[Case] = [
     Case("メソッドが配列", 1, "operation.method: 決まりに無い", pre=plant_old_issues, post=issues_gone,
          ir=edit(lambda ir: f1(ir)["operation"].update(method=["POST"]))),
     Case("深い入れ子", 2, "中間表現を読めない", raw="[" * 200000 + "]" * 200000, pre=plant_old_issues, post=issues_gone),
+    # 128KB 超のセル（csv.Error）も予期しない失敗として 2 で、古い Issue の本文を残さない（#286）
+    Case("巨大なセル", 2, "予期しない失敗（Error: field larger", pre=plant_old_issues, post=issues_gone, absent="Traceback",
+         qa=HEADER + QA_DONE.replace("シルバーで 10000 円未満の割引は？", "x" * 200_000) + QA_DONE2),
     Case("仕様のパスに NUL", 2, "予期しない失敗", pre=plant_old_issues, post=issues_gone,
          ir=edit(lambda ir: f1(ir).update(source=["spec/a\u0000b.md"]))),
     Case("桁の多いケースの id", 0, "作った",
@@ -1589,6 +1595,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if False:\n            try:\n                clear_issues(repo)", "仕様のパスに NUL"),
     ("予期しない失敗を捕まえない", "    except Exception as exc:  # 予期しない失敗", "    except ZeroDivisionError as exc:  # 予期しない失敗",
      "書き込みの途中で失敗する"),
+    ("巨大なセルの予期しない失敗を捕まえない", "    except Exception as exc:  # 予期しない失敗",
+     "    except ZeroDivisionError as exc:  # 予期しない失敗", "巨大なセル"),
     ("メソッドが決まりに無くても入口の重複を見る", "                elif method in METHODS and (method, path) in routes:",
      "                elif (method, path) in routes:", "メソッドが配列"),
     # パスの変数（#289）
@@ -1881,6 +1889,24 @@ def constant(source: str, name: str):
     return ast.literal_eval(found.group(1)) if found else None
 
 
+# 入口の捕捉（#286）。`argparse` の解釈で ValueError を投げさせ、`__main__` から走らせる
+ENTRY_GUARD = "    except Exception as e:  # 想定外の例外も「判定していない」（2）"
+UNEXPECTED_RUNNER = """
+import argparse, runpy, sys
+def parse_args(self, *args, **kwargs):
+    raise ValueError("試料")
+argparse.ArgumentParser.parse_args = parse_args
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+
+
+def entry_caught(script: Path, cwd: Path) -> tuple[bool, str]:
+    proc = subprocess.run([sys.executable, "-I", "-c", UNEXPECTED_RUNNER, str(script)], capture_output=True, text=True, cwd=cwd)
+    output = proc.stdout + proc.stderr
+    return (proc.returncode == 2 and "想定外の例外で止まった（ValueError: 試料）" in output and "Traceback" not in output), output
+
+
 CHECKER = "check-qa-csv.py"
 CHECKER_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("判別の本体で暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False", "暫定反映の Q&A を指さない"),
@@ -2023,6 +2049,24 @@ def main() -> int:
             mutated = copy_scripts(tmp_path / f"mut{index}", source.replace(before, after))
             ok, detail = run_case(mutated, tmp_path / f"mutwork{index}", by_name[killer])
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+
+        # -OO（docstring が無い）で引数なしに呼んでも、想定外の例外にもトレースバックにもならない（#286）。
+        # 引数なしは今のディレクトリを正本として読むので、空のディレクトリでは docs/ が無くて 2
+        (tmp_path / "oo").mkdir()
+        proc = subprocess.run([sys.executable, "-I", "-OO", str(SCRIPTS / TARGET)], capture_output=True, text=True,
+                              cwd=tmp_path / "oo")
+        output = proc.stdout + proc.stderr
+        check("-OO の引数なしで 2 にならない", proc.returncode == 2 and "予期しない失敗" not in output
+              and "想定外の例外" not in output and "Traceback" not in output, output[-300:])
+        # 予期しない失敗は `run` の中なら本体が捕まえる。その外（引数の解釈）で上がった例外も入口が 2 にする（#286）
+        caught, output = entry_caught(SCRIPTS / TARGET, tmp_path / "oo")
+        check("引数の解釈で上がった想定外の例外を入口が 2 にしない", caught, output[-300:])
+        if source.count(ENTRY_GUARD) != 1:
+            check("変異が届いていない: 入口で想定外の例外を 2 に寄せない", False, f"壊す箇所が {source.count(ENTRY_GUARD)} 回現れる")
+        else:
+            mutated = copy_scripts(tmp_path / "entry-mut", source.replace(ENTRY_GUARD, ENTRY_GUARD.replace("Exception", "ImportError")))
+            caught, output = entry_caught(mutated / TARGET, tmp_path / "oo")
+            check("変異が生き残った: 入口で想定外の例外を 2 に寄せない", not caught, output[-300:])
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")

@@ -16,6 +16,8 @@
    （`Path.unlink` を差し替える）そう出力し、書けなかった理由のほうで 2。リンクと関係ない失敗（`EACCES`）は 2。
    写したファイルの権限は umask に従う（リンクの経路でも退路でも）。
    雛形の中の `__pycache__` は写さない。
+   **想定外の例外**（`os.link` を差し替えて `ValueError`）も 2 で、トレースバックの 1 にせず何も残さない。`-OO`（docstring が無い）で
+   引数なしに呼んでも写す（#286）。
 2. **フックの描き方**——版ごとの節を番号の順（`v10` は `v2` の後）に、表の行をすべて、版をまたいで一意なアンカーで描く。
    セルの HTML と Markdown の記号（`&`・`\\`・`{` `}` を含む）・`|`・改行（`\\r` を含む）をエスケープする。
    アンカーに使えない文字（空白・`=`・`(`）は `-` にする（`No` の文字が見出しの属性にならない）。`qa.csv` の無い版は飛ばして次の版を描く。CSV の文字は表のセルにだけ置き、
@@ -133,7 +135,8 @@ def run_init(plugin: Path, root: Path, *extra: str) -> tuple[int, str]:
 # os.link を差し替えて本体を走らせる。{err} は errno の名前、{race} は真なら失敗の前に行き先を作る（確かめた後に作られた形）、
 # {cut} は真なら、512 バイトを超えるファイルで失敗の前に大きさの上限を 512 バイトにする（一時ファイルは書けたあと、退路の書き込みで切れる。
 # 小さいファイルでは上限を掛けない——掛けると次のファイルの一時ファイルが先に切れて、退路まで届かない）。
-# {stuck} は真なら Path.unlink を EROFS で失敗させる（書きかけを消せない形。一時ファイルは os.unlink で消すので当たらない）
+# {stuck} は真なら Path.unlink を EROFS で失敗させる（書きかけを消せない形。一時ファイルは os.unlink で消すので当たらない）。
+# {unexpected} は真なら OSError でなく ValueError を投げる（想定外の例外。#286）
 NO_LINK_RUNNER = """
 import errno, os, pathlib, resource, runpy, sys
 def unlink(self, missing_ok=False):
@@ -146,6 +149,8 @@ def link(src, dst):
             f.write("他人\\n")
     if {cut} and os.path.getsize(src) > 512:
         resource.setrlimit(resource.RLIMIT_FSIZE, (512, resource.RLIM_INFINITY))
+    if {unexpected}:
+        raise ValueError("試料")
     raise OSError(errno.{err}, os.strerror(errno.{err}))
 os.link = link
 sys.argv = sys.argv[1:]
@@ -154,9 +159,9 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 
 
 def run_init_no_link(plugin: Path, root: Path, err: str = "ENOTSUP", race: bool = False, cut: bool = False,
-                     stuck: bool = False) -> tuple[int, str]:
+                     stuck: bool = False, unexpected: bool = False) -> tuple[int, str]:
     assert_in_tmp(root)
-    code = NO_LINK_RUNNER.format(err=err, race=race, cut=cut, stuck=stuck)
+    code = NO_LINK_RUNNER.format(err=err, race=race, cut=cut, stuck=stuck, unexpected=unexpected)
     proc = subprocess.run([sys.executable, "-I", "-c", code, str(plugin / INIT), str(root)],
                           capture_output=True, text=True, check=False)
     return proc.returncode, proc.stdout + proc.stderr
@@ -295,6 +300,25 @@ def init_link_other_error(plugin: Path, work: Path) -> bool:
     root.mkdir(parents=True)
     code, out = run_init_no_link(plugin, root, err="EACCES")
     return code == 2 and snapshot(root) == {} and "書けない" in out
+
+
+def init_unexpected(plugin: Path, work: Path) -> bool:
+    """想定外の例外（`os.link` が ValueError）も 2 で、トレースバックの 1 にせず、切れたファイルも一時ファイルも残さない（#286）。"""
+    root = work / "repo"
+    root.mkdir(parents=True)
+    code, out = run_init_no_link(plugin, root, unexpected=True)
+    return code == 2 and snapshot(root) == {} and "想定外の例外で止まった（ValueError: 試料）" in out and "Traceback" not in out
+
+
+def init_optimized(plugin: Path, work: Path) -> bool:
+    """`-OO`（docstring が無い）で引数なしに呼んでも、トレースバックにならず今のディレクトリに写す（#286）。"""
+    root = work / "repo"
+    root.mkdir(parents=True)
+    assert_in_tmp(root)
+    proc = subprocess.run([sys.executable, "-I", "-OO", str(plugin / INIT)], capture_output=True, text=True, check=False,
+                          cwd=root)
+    output = proc.stdout + proc.stderr
+    return proc.returncode == 0 and "Traceback" not in output and (root / "mkdocs.yml").is_file()
 
 
 def init_keeps_existing(plugin: Path, work: Path) -> bool:
@@ -777,6 +801,8 @@ CASES = {
     "EPERM（Linux の vfat）でも退路に入る": init_no_link_eperm,
     "書きかけを消せなければそう言い、書けなかった理由で 2": init_no_link_stuck,
     "リンクと関係ない失敗は 2": init_link_other_error,
+    "想定外の例外は 2 で、切れたファイルを残さない": init_unexpected,
+    "-OO の引数なしでも写す": init_optimized,
     "在るファイルは変えず、足りないものを示す": init_keeps_existing,
     "壊れたリンクも在るとみなす": init_symlink,
     "--dry-run は書かない": init_dry_run,
@@ -821,6 +847,8 @@ CASES = {
 
 # (名前, 壊す対象, 壊す前, 壊した後, 殺すはずの試料の名前)。2 箇所を壊すときは (壊す前, 壊した後) の列を渡す
 MUTATIONS: list[tuple] = [
+    ("想定外の例外を 2 に寄せない", INIT, "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
+     "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "想定外の例外は 2 で、切れたファイルを残さない"),
     ("素の URL の中も書き換える", HOOK, "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), between[url.start():end]]",
      "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), QA_NUMBER.sub(link, between[url.start():end])]",
      "素の URL の中の番号は変えない"),

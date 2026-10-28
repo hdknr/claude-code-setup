@@ -31,7 +31,8 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 - 0: 作った（載せた質問の数を、回答待ち・未反映と暫定に分けて出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
-- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**（**同上**）
+- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・想定外の例外（128KB を超えるセルの
+  `csv.Error` など。書いている途中でも一時ファイルを消すので既存の出力は残る。#286）（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
 
 出力先の親ディレクトリが無ければ作る（既定の出力先 `build/req-loop/` は、
@@ -457,7 +458,8 @@ def parse(argv: list[str]) -> tuple[Path, Path, str, str] | None:
 def main(argv: list[str]) -> int:
     parsed = parse(argv)
     if parsed is None:
-        print(__doc__.splitlines()[2], file=sys.stderr)
+        print(__doc__.splitlines()[2] if __doc__ else
+              f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     src, out, title, subtitle = parsed
     # **出力先が入力の表そのものなら書かない**——置き換えで正本の表が PPTX になり、戻せない。
@@ -484,4 +486,8 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except Exception as e:  # 想定外の例外も「判定していない」（2）。トレースバックの 1（違反）に化けさせない（#286）
+        print(f"{Path(__file__).name}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        sys.exit(2)
