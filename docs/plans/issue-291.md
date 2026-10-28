@@ -1,0 +1,109 @@
+# Issue #291: spec-loop の #217〜#219 の狭いパスで素通りした変異に試料を足す
+
+元の周: #217（狭いパス N1）・#218（狭いパス NP-1）・#219（狭いパス N1・N2）。
+**不在の周**——`/dev-loop:cruise 474 --absent` の再開（2026-10-28）から任された 1 周。出所は台帳 `issue-474` の確かめた線。
+
+## 使った線と出所
+
+- `仕様の穴 = 推奨で決めて起票`——cruise の確かめた線（台帳 `issue-474`）。#217 N1 の判断（下の「仕様の穴」）に使う
+- `直す線 = 既定`——cruise の確かめた線（台帳 `issue-474`）
+- `周の途中の課題 = 台帳に足して直す`——cruise の確かめた線（台帳 `issue-474`）。台帳は親が書く（この周は書かない）
+- 割り目・起票の承認は不在のため訊かない（`references/absent-lines.md` の「訊く場面」）
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/scripts/check-spec-exit.py` — #217 N1: 読めた仕様がどれも中身が空（空白だけ）なら 2。docstring の終了コード 2 の列挙
+- `scripts/test-check-spec-exit.py` — #217 N1 の試料と変異・docstring の「見るもの」3
+- `scripts/test-build-proposal.py` — #218 NP-1: `.git` がファイルの worktree 型の根の試料（git なし・下位から）と変異 1 件
+- `scripts/test-scaffold.py` — #219 N1・N2: `impl_module` の `a.class`・`a.Bad-Name` の試料と変異 2 件
+- `.claude-plugin/marketplace.json`・`plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版を 0.35.0 に（本体を変えるので。並行する #276 が 0.34.0）
+- `docs/plans/issue-291.md` — この計画
+
+触らない:
+
+- `plugins/spec-loop/references/spec-exit.md` — 「終了コードと、何を見て何を見ないかは、スクリプトの docstring を正とする」と指すだけで、2 の列挙を持たない
+- `plugins/spec-loop/scripts/build-proposal.py`・`scaffold.py` — 本体の挙動は正しい（NP-1・N1・N2 はテストの穴）
+- `scaffold.py` の関門は `check-spec-exit.py` の `check` をそのまま呼ぶ（写しは無い）ので、#217 N1 の変更はそこにも効く——本体は触らない
+- #219 N3（`except OSError as again`）は Issue の対象外
+
+**周の大きさ（同じことを述べている箇所）**: 終了コード 2 の条件を列挙しているのは `check-spec-exit.py` の docstring の 1 箇所と、
+`test-check-spec-exit.py` の docstring の「見るもの」3 の 1 箇所（合わせて 2）。`spec-exit.md`・`CLAUDE.md`・`README.md` は指すだけ。
+分けない理由: 両方とも同じ変更の説明で、片方だけ直すと古くなる——同じ周で直す。
+
+## 仕様の穴（不在の線で推奨により決める）
+
+**穴**: #217 N1——中身が空のファイル 1 つだけの仕様で `check-spec-exit.py` が 0（「仕様 1 ファイルに印 0 件」）。
+ファイルが 0 個なら 2（書いていない仕様は確定していない）だが、空のファイルの扱いは決めていなかった。
+
+| 案 | 内容 |
+| --- | --- |
+| **A（推す）** | 読めた仕様のファイルが**どれも**中身が空（`strip()` して空。空白・改行だけを含む）なら 2。中身のあるファイルが 1 つでもあれば今までどおり |
+| B | 空のファイルが 1 つでもあれば 2 |
+| C | 今のまま 0（docstring の「守らないもの」に書く） |
+
+**決めた値: A。** 理由: 「ファイルが 1 つも無い」「どの仕様も読めなかった」の 2 と同じ形——**見た仕様に中身が 0** なら書いていない仕様と同じである。
+B は中身のある仕様の横に置いた空のメモ（`notes.md` など）でも止まり、確定の判定と関係が無い。C は「書いていない仕様は確定していない」と食い違う。
+**印のある箇所・反映が残る行が別に見つかれば 1 を優先する**（既存の「読めないファイル」と同じ）。
+**別の値なら直す場所**: `check-spec-exit.py` の `check` の空の判定（`blank`）と docstring、`test-check-spec-exit.py` の試料「空のファイルと中身のある仕様」（B なら期待を 2 に）。
+
+## 乗るデプロイ経路
+
+**プラグインのカタログ**（spec-loop 0.35.0。利用者が `claude plugin update` で取る）と GitHub Pages（`docs/plans/` は nav に無い）。
+マージは親（cruise）が行う。
+
+## verify の受入基準
+
+不変条件と、それを破りうる経路:
+
+| # | 不変条件 | 破りうる経路 | 守り方・確かめ方 |
+| --- | --- | --- | --- |
+| A | 読めた仕様のファイルがどれも中身が空（空白だけを含む）なら、条件 1 を**判定していない（2）**。印・反映が残る行が別にあれば 1 | (a) `check-spec-exit.py` の CLI、(b) `scaffold.py` の関門（`spec_exit.check` を呼ぶ）、(c) 空のファイル＋図だけ、(d) 空白・改行だけのファイル、(e) 空のファイル＋確認中の Q&A 行（1 が優先）、(f) BOM だけのファイル | (a)(c)(d)(e)(f) は `test-check-spec-exit.py` の試料。(b) は**この不変条件に届かない**——`scaffold.py` の仕様のディレクトリには中間表現 `spec/spec_ir.json` が必ずあり（中身がある）、中間表現が空白だけなら重ね合わせが先に 1（「JSON として読めない」）で止める。実際に走らせて確かめる（verify。下の進捗） |
+| B | 中身のあるファイルが 1 つでもあれば、空のファイルが横にあっても今までどおり（陽性対照。案 A と B を分ける） | 空の判定を「どれか 1 つ」で書く | 試料「空のファイルと中身のある仕様」が 0 |
+| C | A の判定を外す・空白を空に数えない変異が、足した試料で赤になる | 変異が本体に 1 回現れない／殺す試料の名前違い | ハーネスの「壊す箇所が 1 回現れる」と killer |
+| D | #218 NP-1: `.git` がファイルの worktree 型の根で、git を起動できず下位から走らせても、根の古い出力を消して 2 | `repo_top()` の `.exists()` を `.is_dir()` にする | 試料（worktree 型・git なし・下位から）が本体で緑（陽性対照）、変異で赤。**足す前の試料（ディレクトリ型）では変異が生き残る**ことも見る（穴が実在した） |
+| E | #219 N1・N2: `impl_module` の 2 つ目以降の部の予約語・名前の形を拒否する（1） | `module_name` の `iskeyword` を外す・最初の部しか見ない | 試料 `a.class`・`a.Bad-Name` が本体で 1（陽性対照）、変異で赤。**足す前の試料では両変異が生き残る**ことも見る |
+| F | 版が 3 種類（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）で 0.35.0 に揃う | 1 箇所の上げ忘れ | `check-plugin-versions.py`・`check-version-bump.py origin/main` |
+| G | 歯止めが全部緑 | 他の歯止め（件数の写し・指し先・plan-scope 等） | `python3 scripts/check-all.py --jobs 2`、push 後に `gh pr checks` |
+
+**必須要件の掛け算**: 受入基準を Verifier と `/code-review` の両方に × 1 パス目・2 パス目 = 4 つの受け渡し（2 パス目が該当なしなら 2）。
+
+**この環境では証明できないもの**: 無し。
+
+**生成物**: 図の書き出しは触らない。`skill-metrics.py` の生成ブロックは dev-loop の `SKILL.md` を測る——spec-loop の `SKILL.md` の版の行だけを変えるので当たらない
+（`check-all.py` の `skill-metrics.py --check` で確かめる）。spec-loop の生成物（`scaffold/` など）はこのリポジトリに無い。
+
+## 未解決の判断・確認待ち
+
+- #217 N1 の決めた値（案 A）の確認——`要確認:` の Issue #510 で利用者に渡す（本文の先頭に `<!-- cruise-decision: #474 -->`。台帳の `decisions` には親が足す）
+
+## 関門の進捗（再開点）
+
+- **周の在り処**: ブランチ `issue/291-narrow-pass-fixtures`／worktree
+  `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-291`／起点 `30785f3`／
+  base: `origin/main`（`refs/remotes/origin/HEAD`）→ `30785f34038755c69b9fc27f14029d64e1b288a2`
+- `find-cycle.py 291` は終了コード 1——当たったのは全件の worktree 一覧と、#291 を件数の例に挙げたコミット `65e2c13`（#305）だけで、
+  この周のブランチ・worktree・計画ファイルは無かった。新規の周として始めた
+- 親の指示で `cd`・`EnterWorktree` を使わず、`git -C <worktree>` と絶対パスで作業する
+- 実装: 済み（`test-check-spec-exit.py` 試料 42・変異 36、`test-build-proposal.py` 試料 88・変異 104、`test-scaffold.py` 試料 211・変異 156 で緑）
+- verify（著者）:
+    - **新しい変異は、足す前の試料では生き残る**（穴が実在した）——新しい試料を除いた全試料を、変異を当てた本体で走らせた:
+      spec-exit の 5 変異は足す前の 36 試料で落ちたもの 0 件。build-proposal の `.is_dir()` 変異はディレクトリ型の 2 形で期待どおり（生き残る）・
+      worktree 型で期待どおりでない（殺す）・CASES は全部期待どおり。scaffold の 2 変異は足す前の 209 試料で落ちたもの 0 件、
+      新しい試料で殺す（「最初の部しか見ない」は両方の試料で、「予約語を許す」は `a.class` だけで）
+    - (b) scaffold の関門: 一時の正本で、中間表現が空白だけ → 1（JSON として読めない。関門より前）、中間表現が空白だけ＋空の `order.md` → 同じ 1、
+      ふつうの中間表現＋空の `order.md` → 0（中間表現に中身があるので A の 2 に当たらない——案 A の帰結。確認の Issue に書く）
+- 交絡: 実験は変異テストと試料の実行。変異は「壊す箇所が 1 回現れる」で届いていることを見る（ハーネス）。
+  「足す前の試料で生き残る」は、同じ変異が新しい試料で落ちること（陽性対照）と並べて見た——生き残りが変異の壊れでないことを示す
+
+## 既知の限界・決着済みの論点
+
+- **scaffold の関門では、案 A の 2 に当たらない**——仕様のディレクトリに中身のある中間表現が必ずあるので。空の `order.md` だけの仕様でも
+  中間表現があれば作る。採った: 案 A のまま（`仕様の穴` の線で決めた値。確認の Issue で利用者に渡す）。案 B なら止まる
+
+（関門の指摘の採否はここに 1 件 1 行で書く）
+
+## 経験の還元（手順 8）
+
+- この周の起票: 1 件（#510 は `仕様の穴` の線で立てた確認の Issue。起票の承認は不在のため訊いていない）
