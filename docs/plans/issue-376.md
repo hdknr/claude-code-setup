@@ -14,8 +14,8 @@
 - `plugins/spec-loop/templates/mkdocs/hooks/spec_loop_pages.py` — 素の URL を除いて番号をリンクにする・`decision_table` の描画関数・docstring
 - `plugins/spec-loop/templates/mkdocs/docs/decision-table.md` — 決定表の表示用ページ（新規。`init-mkdocs.py` は雛形を全部写すので本体は変えない）
 - `scripts/test-init-mkdocs.py` — 素の URL・決定表の試料と変異、`tree.md` の照合の語
-- `plugins/spec-loop/references/tree.md` — ツリー・写すもの・`decision_table` の印・CSV へ直接リンクしない決まり・0.28.0 の取り込み
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.0 → 0.28.0。機能の追加で minor。#477 が 0.26.1・#479 が 0.27.0 に上げるので重ならない値）
+- `plugins/spec-loop/references/tree.md` — ツリー・写すもの・`decision_table` の印・CSV へ直接リンクしない決まり・0.31.0 の取り込み
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.0 → 0.31.0。機能の追加で minor。main が 0.29.0（#483）まで進み、#479 が 0.30.0・#486 が 0.32.0 を使うので重ならない値）
 - `.claude-plugin/marketplace.json` — 同じ版
 - `plugins/spec-loop/skills/*/SKILL.md` — 同じ版の 2 行
 - `docs/plans/issue-376.md` — この計画
@@ -104,6 +104,7 @@ URL の中の番号は変わらず、地の文の番号はリンクになり、�
 - PR: 作る（マージは止まる。#476）
 - main の取り込み（衝突解消・版の上げ直し）: PR #481 が CONFLICTING になったので `origin/main`（spec-loop 0.26.1。#477・#488）を merge。衝突は spec-loop の版の行（7 ファイル）だけで、版は 0.28.0 のまま（main の 0.26.1 より上で、#479 が 0.27.0 を使うので重ならない。`tree.md` の「0.28.0 で」も真のまま）
 - 続けて main が #485（spec-loop 0.26.2）で進んだので再度 merge。衝突は同じく版の行（7 ファイル）だけで、0.28.0 のまま（0.26.2 より上）
+- さらに main が #483（spec-loop 0.29.0）で進んだので再度 merge。衝突は版の行（7 ファイル）だけ。版を 0.31.0 に上げ直し、`tree.md` の「spec-loop 0.28.0 で」とその照合（`test-init-mkdocs.py`）も 0.31.0 に直した
 
 ## 起票
 

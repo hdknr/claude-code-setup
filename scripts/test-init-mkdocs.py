@@ -1097,7 +1097,7 @@ def check_reference() -> None:
     section = text.split("\n## ドキュメントのツール\n", 1)[-1].split("\n## ", 1)[0]
     for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "shared/",
                  "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない",
-                 "spec-loop 0.28.0 で、フックは素の本文の URL の中の番号を書き換えなくなり"):
+                 "spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり"):
         check(f"references/tree.md の「ドキュメントのツール」に {word} が無い", word in section)
     qa = (PLUGIN / "references" / "qa-csv.md").read_text(encoding="utf-8")
     check("references/qa-csv.md に「本文での番号」の節が無い", "\n## 本文での番号\n" in qa)

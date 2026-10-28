@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.28.0 -->
-> **このスキルの版: 0.28.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.31.0 -->
+> **このスキルの版: 0.31.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -84,6 +84,8 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 - **1 機能 = Issue 1 件**になるので、機能の切り方は仕様が書き分けている単位（画面の操作・API・バッチ）に合わせる。
 - 各機能の `source` に、その機能を書いた仕様のファイルを**重ね合わせた全体の根からのパス**（`spec/order.md`）で、
   `qa` に決定の根拠にした Q&A の No を書く。
+- **仕様が決定表の行やテストケースに番号を振っていれば、各ケースの `ref` にその番号を書く**（`R-F10` など）——
+  生成と `--check` が、その番号が `source` の原文に在るかを確かめる（書き起こしの誤り・仕様の後からの修正とのずれを拾う。#465）。
 - **既にあるなら、仕様と食い違うところだけを直す。** 機能の `id` とケースの `id` を振り直さない——
   登録済みの Issue と Red テストの名前がずれる。
 
