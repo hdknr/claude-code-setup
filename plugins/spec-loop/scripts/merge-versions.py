@@ -32,6 +32,12 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 | **重ね合わせた `spec_ir.json` の中身の決まり** | `spec-ir.md` の決まりは `scaffold.py` が全体に当てる |
 | **凍結した版が直されていないか** | `release-v<n>` のタグとの照合で、git が要る（このスクリプトは git を使わない） |
 | **大文字小文字を区別しないファイルシステムでの版名 `V2`** | `v` の次が数字の名前だけを版と読むので、`V2/` は版でない名前として読まない |
+| **置き場所の中のファイル名の綴り違い（`shared/QA.csv`）** | ディレクトリの中は書かれた名前（`iterdir`）で読むので、どのファイルシステムでも構造ファイルではない「ふつうのファイル」になる |
+
+**版の直下は書かれた綴りで読む**（#276）——`removed.csv`・置き場所（`shared/` など）をパスを組み立てて開くと、
+大文字小文字を区別しないファイルシステムでだけ `Removed.csv`・`Shared/` が開けてしまい、タグから写して重ねる
+`build-proposal.py` や区別するファイルシステムと答えが食い違う。**綴りだけ違う名前（大文字小文字・Unicode の正規化）は
+決まりに反する（1）として名指しし、中身は読まない。** 綴りどおりに在るかは `exact` で見る（`build-proposal.py` も使う）。
 """
 
 from __future__ import annotations
@@ -115,10 +121,45 @@ def find_versions(docs: Path, problems: list[str]) -> list[tuple[int, Path]]:
     return found
 
 
-def list_files(root: Path, problems: list[str]) -> dict[str, Path]:
-    """版のディレクトリの、重ねる置き場所にあるファイル（`.` で始まる名前は読まない）。"""
+def names(directory: Path) -> set[str]:
+    """ディレクトリの中の名前を、書かれた綴りのまま（`Path.exists` は区別しないファイルシステムで綴りを無視する。#276）。"""
+    try:
+        return {entry.name for entry in directory.iterdir()}
+    except OSError as e:
+        raise Unreadable(f"{directory}: 読めない（{e.strerror}）") from None
+
+
+def exact(root: Path, relative: str) -> Path | None:
+    """`root` からの `relative`（`/` 区切り）が、書かれた綴りのとおりに在ればそのパス。無ければ・辿れなければ None。"""
+    path = root
+    for part in relative.split("/"):
+        try:
+            if part not in os.listdir(path):
+                return None
+        except OSError:
+            return None
+        path = path / part
+    return path
+
+
+def misnamed(root: Path, entries: set[str]) -> list[str]:
+    """版の直下で、置き場所・`removed.csv` と大文字小文字・Unicode の正規化だけ違う名前（#276）。"""
+    expected = {fold(name): name for name in [*AREAS, REMOVED]}
+    found = []
+    for name in sorted(entries):
+        want = expected.get(fold(name))
+        if want is not None and name != want:
+            found.append(f"{root / name}: {want} と大文字小文字・Unicode の正規化だけ違う名前は置かない"
+                         f"（区別しないファイルシステムでだけ {want} として読まれる）")
+    return found
+
+
+def list_files(root: Path, entries: set[str], problems: list[str]) -> dict[str, Path]:
+    """版のディレクトリの、重ねる置き場所にあるファイル（`.` で始まる名前は読まない）。置き場所は綴りどおりの名前だけ。"""
     files: dict[str, Path] = {}
     for area in AREAS:
+        if area not in entries:
+            continue
         top = root / area
         if top.is_symlink():
             problems.append(f"{top}: シンボリックリンクは置かない")
@@ -247,12 +288,16 @@ class Whole:
         self.has_internal = False  # 内部の表も同じ
 
     def apply(self, number: int, root: Path, problems: list[str]) -> None:
-        files = list_files(root, problems)
+        entries = names(root)
+        problems.extend(misnamed(root, entries))
+        files = list_files(root, entries, problems)
         removed_path = root / REMOVED
         removed = []
-        if removed_path.is_symlink():
+        if REMOVED not in entries:
+            pass
+        elif removed_path.is_symlink():
             problems.append(f"{removed_path}: シンボリックリンクは置かない")
-        elif removed_path.exists():
+        else:
             if number == 1:
                 problems.append(f"{removed_path}: {V1_REMOVED}")
             else:

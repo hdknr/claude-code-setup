@@ -12,7 +12,8 @@
 2. **重ねないもの**——`feasibility/`・`proposal/`・`.` で始まる名前・版でない名前（`videos/`・`index.md`）。
 3. **決まりに反する入力からは作らない（1）**——版の欠番・形に合わない版名（ファイルでも）・シンボリックリンク
    （版・置き場所・ファイル・`removed.csv`）・`qa.csv` の決まり違反・機能の `id` の重複と欠落・`removed.csv` の誤り・
-   重ねた結果のファイルとディレクトリの衝突・大文字小文字や Unicode の正規化だけが違うパス・UTF-8 で書けない文字。
+   重ねた結果のファイルとディレクトリの衝突・大文字小文字や Unicode の正規化だけが違うパス・UTF-8 で書けない文字・
+   **版の直下の、置き場所・`removed.csv` と綴りだけ違う名前（`Removed.csv`・`Shared/`。#276）——中身は読まない**。
    **前に作った出力は消す。** **入力が無い・読めない（2）ときも消す。**
 4. **正本を消さない（2）**——印の無い空でない出力先・シンボリックリンクの出力先・`docs/` の中・`docs/` そのもの・
    `docs/` を含む場所には書かない。**中身は触らない。**
@@ -100,6 +101,7 @@ V2 = {
     "v2/feasibility/estimate.csv": "見積り v2\n",
 }
 MAIN = {**V1, **V2}
+NO_REMOVED = {k: v for k, v in MAIN.items() if k != "v2/removed.csv"}
 NFC, NFD = "\u30ac\u30a4\u30c9.md", "\u30ab\u3099\u30a4\u30c8\u3099.md"  # ガイド.md の NFC と NFD
 # MAIN を重ねた出力の全バイト（印を含む）。2 回作って比べるだけでは日付のような時刻を捕まえないので、値で突き合わせる
 GOLDEN = {
@@ -288,6 +290,17 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("印を書きかけて失敗しても直下に残さない", MAIN, "marker-empty", [],
      lambda r: r.code == 2 and r.leftover == []),
     ("大文字の V は版でない", {**MAIN, "V3/requirements/a.md": "x\n"}, "none", [], main_case),
+    # 版の直下の名前は綴りどおりに読む（#276）——区別しない FS でだけ removed.csv・shared/ として開けてしまう。
+    # 中身（v2 でも置く a.md を消す行・決まりに反する qa.csv）は読まない——読めば別の問題が並ぶ（区別しない FS でだけ判別できる）。
+    # 置き場所の試料は v2 に綴りどおりの置き場所を置かない（区別しない FS では同じディレクトリに書かれて試料にならない）
+    ("綴りの違う Removed.csv は断る", {**NO_REMOVED, "v2/Removed.csv": REMOVED_HEAD + "ファイル,requirements/a.md,x\n"}, "stale", [],
+     lambda r: refused(r, "Removed.csv: removed.csv と大文字小文字") and "置きつつ消している" not in r.output),
+    ("綴りの違う Shared/ は断る", {**V1, "v2/Shared/qa.csv": QA_HEAD + BAD_QA}, "none", [],
+     lambda r: refused(r, "Shared: shared と大文字小文字") and "保留" not in r.output),
+    ("綴りの違う Requirements/ は断る", {**V1, "v2/Requirements/d.md": "D\n"}, "none", [],
+     lambda r: refused(r, "Requirements: requirements と大文字小文字")),
+    ("綴りの違う SPEC/ は断る", {**V1, "v2/SPEC/x.md": "X\n"}, "none", [],
+     lambda r: refused(r, "SPEC: spec と大文字小文字")),
     ("途中で落ちても印は無い", MAIN, "crash", [],
      lambda r: r.code != 0 and r.leftover is not None and ".merged-versions" not in r.leftover),
     # 想定外の例外も 2（判定していない）で、トレースバックの 1 にしない。前の出力は読めない入力と同じに消す（#286）
@@ -373,8 +386,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "版がシンボリックリンク"),
     ("置き場所のシンボリックリンクを読む", "        if top.is_symlink():\n", "        if False:\n",
      "置き場所がシンボリックリンク"),
-    ("removed.csv のリンクを読む", "        if removed_path.is_symlink():\n", "        if False:\n",
+    ("removed.csv のリンクを読む", "        elif removed_path.is_symlink():\n", "        elif False:\n",
      "removed.csv がシンボリックリンク"),
+    ("版の直下の綴り違いを見ない", "        problems.extend(misnamed(root, entries))\n", "", "綴りの違う Shared/ は断る"),
+    ("綴り違いに removed.csv を含めない", "expected = {fold(name): name for name in [*AREAS, REMOVED]}",
+     "expected = {fold(name): name for name in AREAS}", "綴りの違う Removed.csv は断る"),
+    ("綴り違いを畳まずに比べる", "want = expected.get(fold(name))", "want = expected.get(name)", "綴りの違う Requirements/ は断る"),
+    ("綴りが同じでも断る", "if want is not None and name != want:", "if want is not None:", "全部の経路を重ねる"),
     ("衝突を見ない", "problems.extend(collisions(list(rendered)))", "pass", "ファイルとディレクトリの衝突"),
     ("大文字小文字を畳まない", 'unicodedata.normalize("NFC", path).casefold()', 'unicodedata.normalize("NFC", path)',
      "大文字小文字だけ違うパス"),

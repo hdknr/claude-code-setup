@@ -314,6 +314,22 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
                                                     ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and f"requirements/x/{NFD_E}" in r.output and f"requirements/x/{NFC_E}" in r.output
      and "写すと同じ場所に書かれる" in r.output),
+    # 版の直下の、置き場所・removed.csv と綴りだけ違う名前も写して、重ね合わせに断らせる（#276）——写さないと、作業ツリーの差分
+    # （区別しない FS では Removed.csv を removed.csv として読み、v2 でも置く same.md を消して 1）と食い違い、提案書だけ作れてしまう
+    ("綴りの違う Removed.csv は比較で断る", SIGNED_R + [("w", "docs/v2/Removed.csv", "種類,対象,理由\nファイル,requirements/same.md,置き直した\n")
+                                               if s[:2] == ("w", "docs/v2/removed.csv") else s for s in V2_CHANGES]
+     + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: not_made(1)(r) and "docs/v2/Removed.csv: removed.csv と大文字小文字" in r.output),
+    # v2 に綴りどおりの shared/ を置かない——並べると、写す前の衝突の検査（別の 1）が先に断り、この経路を通らない
+    ("綴りの違う Shared/ は比較で断る", SIGNED_R + [s for s in V2_CHANGES if s[:2] != ("w", "docs/v2/shared/qa.csv")]
+     + [("i", "docs/v2/Shared/nfr.csv", "100644", "x\n"), ("c",),
+                                           ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: not_made(1)(r) and "docs/v2/Shared: shared と大文字小文字" in r.output),
+    # 内部の層は綴りどおりの spec/qa-dev.csv だけを外す（#276）——spec/QA-dev.csv は重ね合わせではふつうのファイルで、作業ツリーの差分にも
+    # 「追加」で出る。**判別できるのは区別しない FS だけ**（区別する FS では綴りを見ずに外しても当たらない）——変異は CASE_FOLD_ONLY
+    ("綴りの違う内部の表はふつうのファイル", V2C[:-3] + [("i", "docs/v2/spec/QA-dev.csv", "100644", "x\n"), ("c",),
+                                                ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "| spec/QA-dev.csv | 追加 | — |" in r.text and "| ファイル | 2 | 1 | 1 |" in r.text),
     # 重ね合わせが読まないもの（版の外・版の中の重ねない置き場所）は写さない——そこで並んでも比較は作れる
     ("重ね合わせが読まないものは写さない", V2C[:-3] + [("i", "docs/notes/A.md", "100644", "X\n"), ("i", "docs/notes/a.md", "100644", "Y\n"),
                                               ("i", "docs/v2/proposal/N.md", "100644", "X\n"), ("i", "docs/v2/proposal/n.md", "100644", "Y\n"),
@@ -530,6 +546,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "ディレクトリが大文字小文字だけ違うと比較で断る"),
     ("正規化を畳まない", "    fold = diffs.merge_versions.fold\n", "    fold = lambda p: p.lower()\n",
      "ディレクトリが正規化だけ違うと比較で断る"),
+    ("綴りの違う置き場所を写さない", "    return mv.fold(inside[0]) in {mv.fold(name) for name in [*mv.AREAS, mv.REMOVED]}",
+     "    return inside[0] in mv.AREAS or inside == (mv.REMOVED,)", "綴りの違う Shared/ は比較で断る"),
+    ("綴りの違う removed.csv を写さない", "for name in [*mv.AREAS, mv.REMOVED]}", "for name in mv.AREAS}",
+     "綴りの違う Removed.csv は比較で断る"),
+    ("内部の表を綴りを見ずに外す", "        internal = mv.exact(root, mv.INTERNAL_QA_PATH)\n        if internal is not None:\n",
+     "        internal = root / mv.INTERNAL_QA_PATH\n        if os.path.lexists(internal):\n", "綴りの違う内部の表はふつうのファイル"),
     ("重ね合わせが読まないものも写す", "        if not merged_reads(path):\n            continue\n", "",
      "重ね合わせが読まないものは写さない"),
     ("比較が作れなくても作る", "    if problems:\n        raise Stop(1, [f\"{tag}: ",
@@ -1186,6 +1208,18 @@ def copy_scripts(dest: Path) -> Path:
     return dest
 
 
+# 大文字小文字を区別しない FS でだけ判別できる試料（区別する FS では旧い実装でも期待どおりになる）。名指しした変異は、
+# 区別する FS では飛ばし、飛ばしたことを出力に書く（緑のふりをしない）。試料そのものはどの FS でも走らせる
+CASE_FOLD_ONLY = {"綴りの違う内部の表はふつうのファイル"}
+folded_skips: list[str] = []
+
+
+def case_insensitive(tmp: Path) -> bool:
+    probe = tmp / "case-probe"
+    probe.write_text("x", encoding="utf-8")
+    return (tmp / "CASE-PROBE").exists()
+
+
 def main() -> int:
     if shutil.which("git") is None:
         print("git が無いので走らせていない（緑ではない）", file=sys.stderr)
@@ -1228,7 +1262,11 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             result = run_no_git(mutated, tmp_path / f"mutwork-nogit{index}", env, subdir)
             check(f"変異が生き残った: {name}", not no_git(result), result.output[-300:])
+        fold_fs = case_insensitive(tmp_path)
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
+            if killer in CASE_FOLD_ONLY and not fold_fs:
+                folded_skips.append(name)
+                continue
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
@@ -1310,7 +1348,9 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS)} 件")
+    if folded_skips:
+        print(f"飛ばした（大文字小文字を区別する FS では判別できない）: 変異 {'・'.join(folded_skips)}")
+    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS)} 件")
     return 0
 
 
