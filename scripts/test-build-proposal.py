@@ -415,6 +415,10 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      lambda r: bad_out("ディレクトリ")(r) and r.output.count("前に作った出力を消した") == len(STALE) and not r.files),
     # 印は 1 行 1 名前で前後の空白を落とし `#` の行を飛ばすので、そう読み違える名前では作らない（#405 の 1 パス目）
     ("出力の名前が空白で始まると 2", SIGNED + [("out", " notes.md")], False, bad_out("空白")),
+    ("出力の名前が空白で終わると 2", SIGNED + [("out", "notes.md ")], False, bad_out("空白")),
+    # 落とすのは前後だけなので、名前の途中の空白は読み違えない——拒まずに作る（#442）
+    ("出力の名前の途中の空白は通る", SIGNED + [("out", "my proposal.md")], False,
+     lambda r: made(r) and "my proposal.md" in r.files.get(MANIFEST, b"").decode("utf-8")),
     ("出力の名前が改行を含むと 2", SIGNED + [("out", "x\nY.md")], False, bad_out("改行")),
     ("出力の名前が # で始まると 2", SIGNED + [("out", "#draft.md")], False, bad_out("`#`")),
     # 印を読む側は `\` を含む名前を捨て、印は UTF-8 で書く——どちらも印に残せない（#405 の 2 パス目）
@@ -568,7 +572,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ディレクトリの出力先の中を消さない", "        left += remove_owned(out)  # ディレクトリを", "        pass  # ディレクトリを",
      "出力先がディレクトリならその中の前の出力を消す"),
     ("前後に空白のある名前を見ない", "    if out.name != out.name.strip() or ", "    if ", "出力の名前が空白で始まると 2"),
-    ("改行を含む名前を見ない", "len(out.name.splitlines()) != 1 or ", "", "出力の名前が改行を含むと 2"),
+    ("名前の途中の空白も拒む", "    if out.name != out.name.strip() or ", '    if " " in out.name or ',
+     "出力の名前の途中の空白は通る"),
+    ("改行を含む名前を見ない","len(out.name.splitlines()) != 1 or ", "", "出力の名前が改行を含むと 2"),
     ("# で始まる名前を見ない", ' or out.name.startswith("#"):\n', ":\n", "出力の名前が # で始まると 2"),
     ("親を作るのを try の外に置く",
      "    try:\n        directory.mkdir(parents=True, exist_ok=True)  # 親が普通のファイルでも traceback にしない\n",

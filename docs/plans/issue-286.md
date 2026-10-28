@@ -101,6 +101,7 @@ Issue 本文は検査対象であって要件ではない。
 - 利用者の判断（2026-10-28、`/dev-loop:cruise 474` の再開時に訊いた）: NP-1・P2-4・P2-6 は**この PR で直す**。直した差分に Verifier を当て直してからマージ待ちに戻す
 - 判断を受けた修正（テストだけ。本体は触らない）: `test-merge-versions.py` は全試料を 3.12 の `Path.resolve` を再現して走らせ、`only_312` を外した。変異は docs 側と出力先側の 2 つに分け、出力先側を殺す試料を足した（NP-1）。`test-build-proposal.py` は辿れない symlink の試料だけ 3.12 の `Path.is_file` を再現し、版で当てない変異の扱いを外した。3.12・3.14 の両方で `test-merge-versions.py` 67 試料・62 変異、`test-build-proposal.py` 84 試料・102 変異。陽性対照: 再現を外すと 3.14 では 3 つの変異が生き残る（3.12 では外しても死ぬ）。`check-all.py` 52/52
 - 判断を受けた修正の Verifier（sonnet・`2e285ae`..`86cbe7b`）: 通した。主張 6 件すべて成り立つ・反証 0 件。再現は 3.12 の素の `Path.resolve` と 24 通りで一致。気づいた点: OS の ELOOP 上限を超える輪でない長いリンクの連鎖では 3.12 と再現が食い違いうる（45 段では観測されず、変異の判定には効かない）
+- main の取り込み（#485・spec-loop 0.26.2 の後）: 衝突は版の行（marketplace.json・plugin.json・SKILL.md 5 本）と `build-proposal.py` の docstring の終了コード 2 の行。版は周の 0.30.0 を取った（main より上で、計画の「重ならない値」のまま）。docstring は main の「前後に空白がある」に周の #286 の追記を足した
 
 ## 既知の限界・決着済みの論点
 
