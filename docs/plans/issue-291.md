@@ -18,7 +18,9 @@
 - `scripts/test-check-spec-exit.py` — #217 N1 の試料と変異・docstring の「見るもの」3
 - `scripts/test-build-proposal.py` — #218 NP-1: `.git` がファイルの worktree 型の根の試料（git なし・下位から）と変異 1 件
 - `scripts/test-scaffold.py` — #219 N1・N2: `impl_module` の `a.class`・`a.Bad-Name` の試料と変異 2 件
-- `.claude-plugin/marketplace.json`・`plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版を 0.35.0 に（本体を変えるので。並行する #276 が 0.34.0）
+- `.claude-plugin/marketplace.json` — 版を 0.35.0 に（本体を変えるので。並行する #276 が 0.34.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 同上
+- `plugins/spec-loop/skills/*/SKILL.md` — 同上（版の 2 行だけ）
 - `docs/plans/issue-291.md` — この計画
 
 触らない:
