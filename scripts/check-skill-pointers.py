@@ -93,6 +93,10 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   `agents/red-team.md` の `references/spec-scope.md` は、プラグイン直下の `references/` を指している。
 - **`../` で始まる移した先の名指し（`` `../../references/x.md` の「X」 ``）も拾うこと**（#332）——
   **スキルから共有の決まりの節を指す書き方である。** 拾わないと、パスの実在は見ても節の名前は見ない。
+- **`../` の後ろに名前の付いたディレクトリを通る移した先の名指し（`` `../cruise/SKILL.md` の「X」 ``
+  `` `../dev-loop/references/x.md` の「X」 ``）も拾うこと**（#503）——**同じプラグインの隣のスキルの節を指す書き方である。**
+  `../` の後ろを `references/`・`prompts/` に限ると、パスの実在は見ても節の名前は見ない
+  （#484 の 2 パス目の `/code-review` が、cruise の見出しを書き換えても緑のままだと実測で示した）。
 - **ほかの持ち主を名指しした指し先は解決しないこと**——`` dev-loop の `references/spec-gap.md` ``
   `` dev-loop のスキルの `scripts/x.py` `` `` このリポジトリの `scripts/x.py` `` は、
   **このプラグインのファイルではない**。解決すると、正しい記述なのに落ちる。
@@ -233,8 +237,11 @@ NO = r"の\s*"
 PROSE = re.compile(r"[上下]" + NO + QUOTED)
 # `` `references/resume.md` の「X」 `` / `` `SKILL.md` 手順 4 の「X」 `` —— X は指したファイルにあるはず。
 # **スキルの中とプラグイン直下の Markdown だけ**を拾う（`CLAUDE.md` は対象リポジトリのものを指している）。
+# **`../` で始まる形は、後ろを `references/`・`prompts/` に限らない**（#503）——限ると、
+# `` `../cruise/SKILL.md` の「X」 `` のように隣のスキルを通る指し先の X を照合しない（`PARENT` と同じ理由）。
 XREF = re.compile(
-    r"`(SKILL\.md|(?:\.\./)*(?:references|prompts)/[\w.-]+\.md)`\s*(?:手順\s*\d+\s*)?" + NO + QUOTED)
+    r"`(SKILL\.md|(?:references|prompts)/[\w.-]+\.md|(?:\.\./)+[\w.-][\w./-]*\.md)`"
+    r"\s*(?:手順\s*\d+\s*)?" + NO + QUOTED)
 # **ほかの持ち主を名指しした指し先**（`dev-loop の` `dev-loop のスキルの` `このリポジトリの`）。
 # **このプラグインからの相対では解決しない**——spec-loop のプラグイン直下の決まりは、
 # dev-loop やこのリポジトリのファイルを名前で指す（#332）。名前はプラグインのディレクトリ名に限る。
