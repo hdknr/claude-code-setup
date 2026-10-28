@@ -399,7 +399,13 @@ def main(argv: list[str]) -> int:
     if out.is_symlink():
         print(f"{out}: 出力先にシンボリックリンクは使わない（印で持ち主を確かめられない）", file=sys.stderr)
         return 2
-    docs_real, out_real = docs.resolve(), out.resolve()
+    try:
+        docs_real = docs.resolve()
+    except (OSError, RuntimeError) as e:  # 自分を指すシンボリックリンク（3.12 は RuntimeError）——読めない入力と同じに前の出力を消す（#286）
+        print(f"{docs}: 辿れない（{e}）。重ね合わせは作っていない", file=sys.stderr)
+        remove_stale(out)
+        return 2
+    out_real = out.resolve()
     if out_real == docs_real or docs_real in out_real.parents:
         print(f"{out}: {docs} の中には書かない（次の重ね合わせで入力に混ざる）", file=sys.stderr)
         return 2

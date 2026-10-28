@@ -168,6 +168,7 @@ def main_case(r: Result) -> bool:
 # ／"failwrite"（無い出力先に、2 つ目の書き込みで失敗する）／"failwrite-empty"（用意された空の出力先に、同上）
 # ／"crash"（2 つ目の書き込みで後始末の走らない落ち方をする）
 # ／"marker-empty"（用意された空の出力先に、印を書きかけたところで失敗する）
+# ／"stale-loop"（印つきの前の出力があり、docs は自分を指すシンボリックリンク）
 # 入力の木が None なら docs を作らない
 CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("全部の経路を重ねる", MAIN, "none", [], main_case),
@@ -220,6 +221,9 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("出力先のシンボリックリンクには書かない", MAIN, "symlink", [],
      lambda r: r.code == 2 and "シンボリックリンクは使わない" in r.output),
     ("入力が無いと前の出力を消す", None, "stale", [],
+     lambda r: r.code == 2 and r.tree is None and "前に作った出力を消した" in r.output),
+    # docs が自分を指すリンクでも、読めない入力と同じに前の出力を消す——3.12 は resolve で RuntimeError を投げる（#286 の 1 パス目）
+    ("入力が自分を指すリンクでも前の出力を消す", None, "stale-loop", [],
      lambda r: r.code == 2 and r.tree is None and "前に作った出力を消した" in r.output),
     ("読めないファイル", {**MAIN, "v2/requirements/d.md": UNREADABLE}, "stale", [],
      lambda r: r.code == 2 and r.tree is None and "読めない" in r.output and "前に作った出力を消した" in r.output),
@@ -339,6 +343,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("入力が無いとき前の出力を消さない",
      '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n        remove_stale(out)\n',
      '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n', "入力が無いと前の出力を消す"),
+    # 3.14 の resolve はリンクの輪で投げず、下の「ディレクトリが無い」で消すので、この変異は 3.12 でだけ死ぬ
+    ("辿れない入力で前の出力を消さない（3.12 でだけ死ぬ）",
+     '重ね合わせは作っていない", file=sys.stderr)\n        remove_stale(out)\n        return 2\n    out_real = out.resolve()',
+     '重ね合わせは作っていない", file=sys.stderr)\n        return 2\n    out_real = out.resolve()',
+     "入力が自分を指すリンクでも前の出力を消す"),
     ("読めないとき前の出力を消さない",
      '        print("重ね合わせは作っていない", file=sys.stderr)\n        remove_stale(out)\n        return 2',
      '        print("重ね合わせは作っていない", file=sys.stderr)\n        return 2', "読めないファイル"),
@@ -508,6 +517,12 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         (root / "real").mkdir()
         out.parent.mkdir(parents=True)
         os.symlink(root / "real", out)
+    elif prepare == "stale-loop":
+        docs.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(docs, docs)
+        out.mkdir(parents=True)
+        (out / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
+        (out / "old.md").write_text("古い\n", encoding="utf-8")
     elif prepare in ("stale", "stale-locked"):
         out.mkdir(parents=True)
         (out / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
@@ -542,6 +557,11 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         again = snapshot(second)
     tree_out = None if prepare in ("docs", "parent") else snapshot(out)
     return Result(code, output, tree_out, preexisting, again, docs_intact, leftover)
+
+
+def only_312(name: str) -> bool:
+    """python 3.13 以降では届かない変異（`Path.resolve` がリンクの輪で投げなくなった）。CI は 3.12。"""
+    return "3.12 でだけ" in name and sys.version_info >= (3, 13)
 
 
 def skipped(name: str) -> bool:
@@ -607,7 +627,7 @@ def main() -> int:
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
-            if skipped(killer):
+            if skipped(killer) or only_312(name):
                 continue
             count = source.count(before)
             if count != 1:
@@ -637,7 +657,9 @@ def main() -> int:
     skip = [name for name, *_ in CASES if skipped(name)]
     if skip:
         print(f"飛ばした（root では読めない入力を作れない）: 試料 {'・'.join(skip)} と、それを名指しした変異")
-    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS) + len(OO_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) and not only_312(m[0]) for m in MUTATIONS) + len(OO_MUTATIONS)} 件"
+          + (f"（python {sys.version_info.major}.{sys.version_info.minor} では当てていない "
+             f"{sum(only_312(m[0]) for m in MUTATIONS)} 件）" if any(only_312(m[0]) for m in MUTATIONS) else ""))
     return 0
 
 

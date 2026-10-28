@@ -87,13 +87,34 @@ Issue 本文は検査対象であって要件ではない。
 - 実装: 実装役に委譲（`prompts/implementer.md`）——`c7f2df9`。親が確かめたこと: `check-all.py` 52/52 緑、128KB 超のセルの `qa.csv` で `check-qa-csv.py` が rc=2（「想定外の例外で止まった（Error: field larger than field limit (131072)）。判定していない」）
 - 実装役の報告の留意点: 共通の関数は置かず各 `__main__` に同じ形で入れた（テストが `-I` で単体を写して走らせるため）。I3 の `KeyboardInterrupt` に専用の試料は無い。`check-frozen.py`・`init-mkdocs.py`・`scaffold.py`（引数の解析）は実入力で想定外の例外を作れず、差し替え（`subprocess.run`・`os.link`・`argparse` に ValueError）で当てた。`build-proposal.py` の一時ファイルの読み書きの `OSError` の文言には試料が無い
 - 割り目（手順 4 の完了時）: 不在の周なので訊いていない（`absent-lines.md` の「訊く場面」）。再開は `/dev-loop:dev-loop 286` を `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-286` の中で
-- 1 パス目の指摘対応の起点: 下のコミット（計画ファイルを足したコミット）——1 パス目の 2 つの関門に渡した時点の HEAD
-- Verifier 1 パス目: 起動（2026-10-28）
-- `/code-review` 1 パス目: 起動（2026-10-28）
+- 1 パス目の指摘対応の起点: `f63bd10`——1 パス目の 2 つの関門に渡した時点の HEAD
+- Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 通した。反証 0 件（見てほしい点 3 件——下の表の V1〜V3）
+- `/code-review` 1 パス目（high）: 通した。指摘 10 件（下の表の CR1〜CR10）。「直す」は CR2 の 1 件
+- 手順 4 への差し戻し: 1 件（CR2）——`merge-versions.py` で `docs` を辿れない（3.12 の `resolve` がリンクの輪で `RuntimeError`）とき、前の出力を消して 2。試料「入力が自分を指すリンクでも前の出力を消す」と変異「辿れない入力で前の出力を消さない（3.12 でだけ死ぬ）」を足した（3.12 で 61 変異・3.14 で 60 変異＋当てていない 1 件）
+- 割り目（2 パス目の前）: 不在の周なので訊いていない
+- 残っている着地先: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 
 ## 既知の限界・決着済みの論点
 
-（まだなし）
+- **計画の記述の訂正（V1）**: 「`merge-versions.py` の `Unreadable` →『UTF-8 として読めない』」は誤りだった——`merge-versions.py` は基準時点から `strerror` と UTF-8 を分けていた。この周で I6 のために直したのは `check-signoff.py` の `read_removed_at`（`Unreadable` の文言を通す）。I6 の不変条件そのものは変えない
+- **`proposal` 以外の 4 スキルの `SKILL.md`（V3）**: 下の採否の表を参照
+
+### 1 パス目の採否
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2: `merge-versions.py` で `docs` が辿れない（自分を指すリンク）と、3.12 では 2 なのに前の出力が残る | 示せる——親が python3.12 で走らせた: 修正後（`c7f2df9`）rc=2・`old.md` が残る（「想定外の例外で止まった（RuntimeError: Symlink loop…）」）。docstring は「入力が無い・読めないときは…前の出力を消す」 | I7 | **直す**（`merge-versions.py` で `resolve` を分けて捕まえ、`remove_stale`。試料と変異を足した） |
+| CR5: `schedule-to-gantt.py` で前の出力を消せないと、決まりの違反（1）が 2 になり、古い svg が残る | 示せる——親が python3.12 で走らせた: rc=2、「想定外の例外で止まった（PermissionError: … gantt.svg）」 | 無し——docstring の 2 は「前の出力そのものを消せないときは、消せなかった理由を出して 2」。修正前は同じ入力がトレースバックの 1 だった | 残課題（文言が「前の出力が残っている」と言わない） |
+| CR1: `build-proposal.py` で手書き部分のディレクトリが読めないと、`glob` が空を返して「無い」（1）になる | 示せない（著者は CLI では走らせていない。関門は `glob` が空を返すことだけを確かめた） | 無し（I5 が見るのはファイルの読みの失敗。ディレクトリの列挙はこの周より前からの挙動） | 残課題 |
+| CR3: CLI から git を起動できないとき、出る文言は `check-signoff.py` のもので、ファイル名が付かない（`run_git` の文言は CLI から届かない） | 示せない（著者は走らせていない） | 無し——文言は「git を起動できない（strerror）」で、起動できなかったものは名指しされている | 残課題 |
+| CR4: `check-spec-exit.py` の `rglob` は読めないサブディレクトリを黙って飛ばし、条件 1 を満たすと言いうる | 示せない（著者は走らせていない。この周より前からの挙動） | 無し（I1 は想定外の例外の扱い） | 残課題 |
+| CR6: `init-mkdocs.py` の想定外の例外では、写したファイルの一覧が出ない | 示せない（著者は走らせていない） | 無し——docstring の「書けないと同じ」は一時ファイルの後始末を指す | 残課題 |
+| CR7: `build-proposal.py` の `main` の残りの `except OSError` のコメントは「一時ファイルだけ」と言うが、他の `OSError` も来る | 示せない（コメントの正確さ） | 無し | 残課題 |
+| CR8: `check-signoff.py` の新しい文言でパスが 2 度出る | 示せない（著者は走らせていない） | 無し | 残課題 |
+| CR9: `test-init-mkdocs.py` の `-OO` の試料は何も判別しない（`init-mkdocs.py` は `__doc__` を読まない） | 示せない | 無し（I4 は成り立つ。判別しない試料が 1 つあるだけ） | 残課題 |
+| CR10: 同じ入口の形が 12 本に写してあり、テストが文言を錨にしている | 示せない（保守の指摘） | 無し | 残課題 |
+| V2: `init-mkdocs.py` を引数なしで走らせると rc=0 で書く | 示せない（既存の設計どおり） | 無し | 残課題 |
+| V3: `proposal` 以外の 4 スキルの `SKILL.md` に想定外の例外の 2 の追記が無い | 示せない——`grep -n "終了コード" plugins/spec-loop/skills/*/SKILL.md` は `proposal` の表と、`scaffold` の「docstring を正とする」の 2 行だけ（散文の「1 なら」「2 なら」までは数えていない） | 無し | 残課題（決着: 表を持つのは `proposal` だけで、そこは直した） |
 
 ## 起票
 
