@@ -104,6 +104,7 @@ Issue 本文は検査対象であって要件ではない。
 - main の取り込み（#485・spec-loop 0.26.2 の後）: 衝突は版の行（marketplace.json・plugin.json・SKILL.md 5 本）と `build-proposal.py` の docstring の終了コード 2 の行。版は周の 0.30.0 を取った（main より上で、計画の「重ならない値」のまま）。docstring は main の「前後に空白がある」に周の #286 の追記を足した
 - main の 2 度目の取り込み（#483・spec-loop 0.29.0 の後）: 衝突は版の行だけ（`scaffold.py`・`test-scaffold.py` は自動で合わさった）。版は coordinator の割り振りで 0.32.0（#479 が 0.30.0、#481 が 0.31.0）
 - main の 3 度目の取り込み（#479・spec-loop 0.30.0 の後）: 衝突は版の行だけ（`check-signoff.py`・`test-check-signoff.py`・`test-build-proposal.py` は自動で合わさった）。版は 0.32.0 のまま
+- main の 4・5 度目の取り込み（#500・#501・#481 の後。spec-loop 0.31.0）: 衝突は版の行と `test-init-mkdocs.py` の `MUTATIONS` の先頭（周の「想定外の例外を 2 に寄せない」と #481 の URL・決定表の変異を両方残した）。版は 0.32.0 のまま
 
 ## 既知の限界・決着済みの論点
 
