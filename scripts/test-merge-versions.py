@@ -169,6 +169,7 @@ def main_case(r: Result) -> bool:
 # ／"crash"（2 つ目の書き込みで後始末の走らない落ち方をする）
 # ／"marker-empty"（用意された空の出力先に、印を書きかけたところで失敗する）
 # ／"stale-loop"（印つきの前の出力があり、docs は自分を指すシンボリックリンク）／"parent-loop"（docs を含む印つきの場所が出力先で、docs は自分を指すリンク）
+# ／"out-loop"（出力先が、自分を指すリンクの下にある）
 # 入力の木が None なら docs を作らない
 CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("全部の経路を重ねる", MAIN, "none", [], main_case),
@@ -229,6 +230,9 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("自分を指すリンクを含む場所は消さない", None, "parent-loop", [],
      lambda r: r.code == 2 and "を含む場所には書かない" in r.output and "前に作った出力を消した" not in r.output
      and r.tree is not None and "keep.md" in r.tree),
+    # 出力先が輪の下でも、辿るところでは止まらず、書けないとして 2（#286 の狭いパスの NP-1——輪を out 側に置く試料が無かった）
+    ("出力先が自分を指すリンクの下でも書けないとして止まる", MAIN, "out-loop", [],
+     lambda r: r.code == 2 and "書けない" in r.output and "想定外の例外" not in r.output),
     ("読めないファイル", {**MAIN, "v2/requirements/d.md": UNREADABLE}, "stale", [],
      lambda r: r.code == 2 and r.tree is None and "読めない" in r.output and "前に作った出力を消した" in r.output),
     ("読めないディレクトリ", {**MAIN, "v2/requirements/sub": UNREADABLE_DIR}, "stale", [],
@@ -347,11 +351,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("入力が無いとき前の出力を消さない",
      '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n        remove_stale(out)\n',
      '        print(f"{docs}: ディレクトリが無い", file=sys.stderr)\n', "入力が無いと前の出力を消す"),
-    # 3.14 の resolve はリンクの輪で投げず、下の「ディレクトリが無い」で消すので、この変異は 3.12 でだけ死ぬ
-    ("辿るのに Path.resolve を使う（3.12 でだけ死ぬ）",
+    # 試料は 3.12 の Path.resolve を再現して走らせる（下の RESOLVE_312）ので、どちらの変異もどの版でも死ぬ
+    ("docs を辿るのに Path.resolve を使う",
      "docs_real, out_real = Path(os.path.realpath(docs)), Path(os.path.realpath(out))",
-     "docs_real, out_real = docs.resolve(), out.resolve()",
+     "docs_real, out_real = docs.resolve(), Path(os.path.realpath(out))",
      "入力が自分を指すリンクでも前の出力を消す"),
+    ("出力先を辿るのに Path.resolve を使う",
+     "docs_real, out_real = Path(os.path.realpath(docs)), Path(os.path.realpath(out))",
+     "docs_real, out_real = Path(os.path.realpath(docs)), out.resolve()",
+     "出力先が自分を指すリンクの下でも書けないとして止まる"),
     ("読めないとき前の出力を消さない",
      '        print("重ね合わせは作っていない", file=sys.stderr)\n        remove_stale(out)\n        return 2',
      '        print("重ね合わせは作っていない", file=sys.stderr)\n        return 2', "読めないファイル"),
@@ -476,9 +484,33 @@ def snapshot(out: Path) -> dict[str, bytes] | None:
     return {p.relative_to(out).as_posix(): p.read_bytes() for p in sorted(out.rglob("*")) if p.is_file()}
 
 
+# python 3.13 から `Path.resolve` はリンクの輪で投げなくなった（3.12 は RuntimeError）。試料はすべて 3.12 の振る舞いを
+# 再現して走らせる——「辿るのに Path.resolve を使う」変異を、走らせた版によらず殺すため（#286 の P2-4・P2-6）。
+# 3.12 では再現しなくても同じに投げる。輪かどうかは os.path.realpath(strict=True) の ELOOP で見る
+RESOLVE_312 = '''
+import errno, os, pathlib
+_resolve = pathlib.Path.resolve
+def _resolve_312(self, strict=False):
+    try:
+        os.path.realpath(self, strict=True)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise RuntimeError(f"Symlink loop from {str(self)!r}")
+    return _resolve(self, strict)
+pathlib.Path.resolve = _resolve_312
+'''
+
+# 本体を `__main__` として走らせる（入口の想定外の例外の捕捉もそのまま通る）
+MAIN_DRIVER = RESOLVE_312 + '''
+import runpy, sys
+script = sys.argv[1]
+sys.argv = [script, *sys.argv[2:]]
+runpy.run_path(script, run_name="__main__")
+'''
+
 # 書き込みの口（`put`）を差し替えて、2 つ目の書き込みで失敗させる。"crash" は後始末の走らない落ち方（OSError でない）。
 # "marker" は印を書きかけたところで失敗させる——用意された出力先の直下に書きかけのファイルが残る形を作る
-FAIL_DRIVER = '''
+FAIL_DRIVER = RESOLVE_312 + '''
 import importlib.util, sys
 spec = importlib.util.spec_from_file_location("merge_versions", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
@@ -503,7 +535,7 @@ sys.exit(module.main(sys.argv[3:]))
 
 
 def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | None = None) -> tuple[int, str]:
-    head = ["-c", FAIL_DRIVER, str(scripts / TARGET), fail] if fail else [str(scripts / TARGET)]
+    head = ["-c", FAIL_DRIVER, str(scripts / TARGET), fail] if fail else ["-c", MAIN_DRIVER, str(scripts / TARGET)]
     proc = subprocess.run([sys.executable, "-I", *head, str(docs), str(out), *extra],
                           capture_output=True, text=True, cwd=docs.parent)
     return proc.returncode, proc.stdout + proc.stderr
@@ -513,7 +545,8 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
     assert_in_tmp(root)
     docs = root / "docs"
     locked = build(docs, tree)
-    out = {"inside": docs / "merged", "docs": docs, "parent": root, "parent-loop": root}.get(prepare, root / "build" / "merged")
+    out = {"inside": docs / "merged", "docs": docs, "parent": root, "parent-loop": root,
+           "out-loop": root / "loop" / "merged"}.get(prepare, root / "build" / "merged")
     preexisting = None
     if prepare == "parent":
         (root / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
@@ -526,6 +559,8 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         os.symlink(docs, docs)
         (root / ".merged-versions").write_text("前の出力\n", encoding="utf-8")
         (root / "keep.md").write_text("消してはいけない\n", encoding="utf-8")
+    elif prepare == "out-loop":
+        os.symlink(out.parent, out.parent)
     elif prepare == "stale-loop":
         docs.parent.mkdir(parents=True, exist_ok=True)
         os.symlink(docs, docs)
@@ -566,11 +601,6 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         again = snapshot(second)
     tree_out = None if prepare in ("docs", "parent") else snapshot(out)
     return Result(code, output, tree_out, preexisting, again, docs_intact, leftover)
-
-
-def only_312(name: str) -> bool:
-    """python 3.13 以降では届かない変異（`Path.resolve` がリンクの輪で投げなくなった）。CI は 3.12。"""
-    return "3.12 でだけ" in name and sys.version_info >= (3, 13)
 
 
 def skipped(name: str) -> bool:
@@ -636,7 +666,7 @@ def main() -> int:
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
-            if skipped(killer) or only_312(name):
+            if skipped(killer):
                 continue
             count = source.count(before)
             if count != 1:
@@ -666,9 +696,7 @@ def main() -> int:
     skip = [name for name, *_ in CASES if skipped(name)]
     if skip:
         print(f"飛ばした（root では読めない入力を作れない）: 試料 {'・'.join(skip)} と、それを名指しした変異")
-    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) and not only_312(m[0]) for m in MUTATIONS) + len(OO_MUTATIONS)} 件"
-          + (f"（python {sys.version_info.major}.{sys.version_info.minor} では当てていない "
-             f"{sum(only_312(m[0]) for m in MUTATIONS)} 件）" if any(only_312(m[0]) for m in MUTATIONS) else ""))
+    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS) + len(OO_MUTATIONS)} 件")
     return 0
 
 

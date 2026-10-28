@@ -790,7 +790,7 @@ LOCKED_MUTATIONS: list[tuple[str, str, str]] = [
     ("消せないのに作っていないと言わない",
      "            print(line, file=sys.stderr)\n        print(\"提案書は作っていない\", file=sys.stderr)\n        return 2\n    if problem:",
      "            print(line, file=sys.stderr)\n        return 2\n    if problem:"),
-    ("symlink より先に is_file を見る（3.12 でだけ死ぬ）", "            if stale.is_symlink() or stale.is_file():",
+    ("symlink より先に is_file を見る", "            if stale.is_symlink() or stale.is_file():",
      "            if stale.is_file() or stale.is_symlink():"),
     ("書きかけを消せなくても消したと言う", "        if left:\n            raise Stop(2, [f\"{reason}。書きかけを消せなかった",
      "        if False:\n            raise Stop(2, [f\"{reason}。書きかけを消せなかった"),
@@ -808,6 +808,7 @@ def locked_problems(scripts: Path) -> list[str]:
     import contextlib
     import errno
     import io
+    import stat
     spec = importlib.util.spec_from_file_location("build_proposal_locked", scripts / TARGET)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -896,7 +897,8 @@ def locked_problems(scripts: Path) -> list[str]:
         if not left or (directory / MANIFEST).exists() is False:
             problems.append(f"1 つ消せないのに印を消すか、名指ししない: {left} {sorted(p.name for p in directory.iterdir())}")
 
-        # 辿れない先を指す symlink は消せる——python3.12 の `is_file` はここで例外を投げる（3.14 は投げないので、この変異は 3.12 でだけ死ぬ）
+        # 辿れない先を指す symlink は消せる——python3.12 の `is_file` はここで例外を投げる（3.13 からは投げない）。
+        # 3.12 の `is_file` を再現して走らせ、「symlink より先に is_file を見る」変異を走らせた版によらず殺す（#286 の P2-4・P2-6）
         unreachable = Path(tmp) / "unreachable"
         unreachable.mkdir()
         (unreachable / "target").write_text("x", encoding="utf-8")
@@ -905,12 +907,27 @@ def locked_problems(scripts: Path) -> list[str]:
         (directory / MANIFEST).write_text("# 印\nproposal.md\n", encoding="utf-8")
         (directory / "proposal.md").symlink_to(unreachable / "target")
         unreachable.chmod(0)
+        original_is_file = Path.is_file
+
+        def is_file_312(self: Path, **kwargs) -> bool:
+            # 3.12 の `Path.is_file` は、この 4 つ以外の errno（EACCES など）を投げる
+            try:
+                return stat.S_ISREG(self.stat().st_mode)
+            except OSError as e:
+                if e.errno not in (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP):
+                    raise
+                return False
+            except ValueError:
+                return False
+
+        Path.is_file = is_file_312
         try:
             with contextlib.redirect_stderr(io.StringIO()):
                 left = module.remove_owned(directory)
         except OSError as e:
             left = [f"例外で逃げる: {e!r}"]
         finally:
+            Path.is_file = original_is_file
             unreachable.chmod(0o755)
         if left or list(directory.iterdir()):
             problems.append(f"辿れない先の symlink を消さない: {left} {sorted(p.name for p in directory.iterdir())}")
@@ -922,8 +939,6 @@ OLD_NAMES = {R1: "v1/req-signoff-1", B1: "v1/budget-signoff-1"}
 COEXIST = ["素の v1 タグと共存する"]
 
 failures: list[str] = []
-# この python で当てなかった変異の名前——OK の件数に数えず、名指しする（#440 の 2 パス目）
-skipped: list[str] = []
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
@@ -1269,10 +1284,6 @@ def main() -> int:
         problems = locked_problems(SCRIPTS)
         check("前の出力を消せない場所の扱いが違う", not problems, "; ".join(problems))
         for index, (name, before, after) in enumerate(LOCKED_MUTATIONS):
-            if "3.12 でだけ" in name and sys.version_info >= (3, 13):
-                # 3.13 以降の `is_file` は辿れない symlink で例外を投げないので、この変異は判別できない（CI の 3.12 で当てる）
-                skipped.append(name)
-                continue
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
@@ -1286,8 +1297,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) - len(skipped)} 件"
-          + (f"（python {sys.version_info.major}.{sys.version_info.minor} では当てていない {len(skipped)} 件: {'・'.join(skipped)}）" if skipped else ""))
+    print(f"OK: 試料 {len(CASES) + 7} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS)} 件")
     return 0
 
 
