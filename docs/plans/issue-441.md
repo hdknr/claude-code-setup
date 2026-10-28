@@ -19,7 +19,7 @@ proposal の `SKILL.md` 手順 3 の「0 以外で終わったら、提案書は
 - `plugins/spec-loop/references/tree.md` — 「生成物の置き場所」の印の段落と「前の出力の印（spec-loop 0.26.0）」に、失敗の経路で残ること
 - `plugins/spec-loop/README.md` — 「作れなかったときに前の出力を消します」（提案書は印が名指しするものだけ）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（proposal 以外の 4 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.2 → 0.26.3。記述の修正なので patch）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.2 → 0.26.3 → 取り込みで **0.33.0**。記述の修正なので本来は patch。並行する PR（#479 → 0.30.0・#481 → 0.31.0・#486 → 0.32.0）と重ならない値として、cruise の親が 0.33.0 を割り振った——main は #483 で 0.29.0）
 - `.claude-plugin/marketplace.json` — 同じ版
 - `docs/plans/issue-441.md` — この計画
 
@@ -66,7 +66,7 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 - **I4**: `SKILL.md` が、0 以外で終わったあとに残ったファイルを**今回の提案書として渡さない**こと、移行の手当て（`tree.md` の「前の出力の印」）を指す。
 - **I5**: `tree.md` の移行の節が、成功の経路（2 で止まる）に加えて失敗の経路（1・2・3・git 無しでも残る）を書き、手当て（人間に確かめて消す）が両方に掛かる。
 - **I6**: 既存の正しい記述を壊さない——成功の経路の「上書きせずに 2」、`--out` の誤りで印が名指しする前の出力を消すこと、#440 の消せなければ 2。
-- **I7**: 版が 3 種類（`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md` の 2 行）で 0.26.3 に揃う。`check-all.py` が緑。指し先（`../../references/tree.md` の「…」）が実在する（`check-skill-pointers.py`）。
+- **I7**: 版が 3 種類（`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md` の 2 行）で揃う（0.26.3。main の取り込み後は 0.33.0）。`check-all.py` が緑。指し先（`../../references/tree.md` の「…」）が実在する（`check-skill-pointers.py`）。
 
 経路（「失敗したら前の出力は消える」を読者が読み取る入口。名前の grep ではなく、文面の入口で数える）:
 
@@ -112,6 +112,8 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 - Verifier 2 パス目（sonnet。テンプレートを 169 行読んだと報告＝`wc -l` と一致。1 パス目の体は 170 行と報告していた——1 行の食い違い）: 通した——反証 1 件（V2-1）。`git status --porcelain` は前後とも空
 - `/code-review` 2 パス目（high）: 通した——指摘 10 件（P2-1〜P2-10）。`git status --porcelain` は前後とも空
 - 2 パス目の起点（2 パス目の指摘対応を始める直前の HEAD）: `d38b0c3`（関門の結果を書いたコミット。`cb7073f` との違いは計画ファイルだけ）
+- 狭いパス（sonnet。テンプレートを 169 行読んだと報告＝`wc -l` と一致）: 通した——反証 0 件。未確認 1 件（「図が増えた」で 2 になる——図の入った試料を走らせていない。`--pptx` と同じ仕組みまでは確かめた）。人間が決める
+- main の取り込み（狭いパスの後）: `origin/main`（`4d38e2d`、#483）を merge。取り込む前に `git diff --name-status --no-renames HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'` で見た——足された検査は無い（`scaffold.py` とそのテストの変更だけ）。衝突は 7 ファイルの版の行だけで、塊ごとに解き 0.33.0 にした
 - 2 パス目の指摘対応: V2-1（P2-1・P2-6・P2-9）・P2-2・P2-3 を直した。終点 `3d5331b`（起点 `d38b0c3` → 終点の 2 点）
 
 ## 起票
