@@ -33,6 +33,7 @@ build/merged/                # 版を重ね合わせた全体（生成物。comm
 spec-review/v<n>.csv         # 仕様レビューの実行の記録（版ごと。commit する。docs/ の外——列と理由は spec-exit.md の「実行の上限と記録」）
 docs/index.md                # 表紙（下の「ドキュメントのツール」。版の外）
 docs/qa.md                   # Q&A 表の表示用ページ（同上。正本は各版の shared/qa.csv）
+docs/decision-table.md       # 決定表の表示用ページ（同上。正本は各版の shared/decision_table.csv）
 mkdocs.yml                   # MkDocs の設定（同上）
 hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック（同上）
 ```
@@ -156,11 +157,14 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
   在れば触らず、足りない依存・行を示すので、足すかどうかは利用者が決める。
 - 写すもの: `mkdocs.yml`（Material・`use_directory_urls: false`・nav は書かず自動）・`pyproject.toml`（uv。
   **MkDocs は 2 未満に固定**——2.0 は非互換の変更が予告されている）・`.gitignore`（`build/`・`site/`・`.venv/`・`__pycache__/`）・
-  `hooks/spec_loop_pages.py`・`docs/index.md`・`docs/qa.md`。閲覧は `uv run mkdocs serve`。
+  `hooks/spec_loop_pages.py`・`docs/index.md`・`docs/qa.md`・`docs/decision-table.md`。閲覧は `uv run mkdocs serve`。
 - **CSV は Markdown に写さない。** 表示用のページに印（`<!-- spec-loop: qa -->`）を書き、フックが CSV から描く。
   `qa` の印は、各版の `docs/v<n>/shared/qa.csv` を**版ごとの節**に描く（重ね合わせない。アンカーは `v<n>-q-001`）。
+  `decision_table` の印は、各版の `docs/v<n>/shared/decision_table.csv` を**見出しの行どおり**に版ごとの節に描く（#369）。
   CSV の文字は表のセルにだけ置く（段落に置くと、行頭の `!!! ` や字下げがブロックの記法に読まれる）。
   ほかの CSV を描くときは、フックに描画関数を足す。
+- **要求・仕様から CSV へ直接リンクしない**——ブラウザでは CSV のページが開けない（#369）。リンクは表示用のページ
+  （`docs/qa.md`・`docs/decision-table.md`。版の節は `#v1` のようなアンカー）へ張る。
 - **本文の Q&A の番号（`Q-008`）は、フックが Q&A 表（`docs/qa.md`）のアンカーへのリンクにする**（描画関数が描いた表のセルを含む。
   Q&A 表のページそのものは除く）。リンクする版・置き換えないところはフックの docstring を正とする。
   **本文の書き方の決まりは `qa-csv.md` の「本文での番号」を正とする。**
@@ -169,6 +173,9 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
   **印つきの番号（`Q-S-008`。spec-loop 0.24.0 から）をリンクにするのは 0.24.0 以降のフックだけ**——それより前に写したフックは
   印つきの番号を素通しし、リンクにも「表に無い番号」の警告にもしない（黙って素の文字のまま出る）。0.24.0 に上げたら、
   印つきの番号を起票する前に、同じ手順 4 の形でフックを取り込む。
+  **spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり（#341）、`decision_table` の印を描くようになった（#369）**——
+  同じ手順 4 の形でフックを取り込み、雛形の `docs/decision-table.md` を写す（在れば変えない）。それまで CSV へ直接張っていたリンクは
+  `docs/decision-table.md` へ張り替える。
 - **表示用のページは `shared/` に置かない**（`docs/qa.md` のように版の外に置く）。`shared/` は 2 つのサインオフが比べる範囲
   （`signoff-tags.md`）なので、表示用のファイルを入れると比べる中身が増える。版の外の名前は重ね合わせにも入らない（`versions.md`）。
 - **フックはサーバーの起動時にしか読まれない**——直したら `mkdocs serve` を起動し直す。

@@ -6,6 +6,7 @@
 | 印 | 描くもの |
 | --- | --- |
 | `qa` | 各版の `docs/v<n>/shared/qa.csv` を、版ごとの節に（件数・一覧・質問ごとの詳細。推奨の選択肢と理由も） |
+| `decision_table` | 各版の `docs/v<n>/shared/decision_table.csv` を、版ごとの節に（見出しの行どおりの表。#369） |
 
 **描くのは共有の層の表だけ**——内部の層の表（`docs/v<n>/spec/qa-dev.csv`）は描かない（開発者が決めて記録するもの。
 spec-loop の `references/qa-csv.md` の「層」）。
@@ -21,6 +22,9 @@ spec-loop の `references/qa-csv.md` の「層」）。
 - セルの文字は HTML と Markdown の記号をエスケープし、改行は `<br>` にする（表を壊さない）。
   **CSV の文字は表のセルにだけ置く**——段落や箇条書きに置くと、行頭の `!!! `・字下げ・`1. ` がブロックの記法に読まれる。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
+- **決定表（`decision_table`）は列を決めない**——見出しの行をそのまま表の見出しにする（列の決まりは正本リポジトリが持つ）。
+  **最初の行が見出し**で、空・空白だけなら警告する（次の行を見出しに繰り上げない）。見出しより長い行があれば、
+  見出しの右を空で埋めて**全部の列を描く**（黙って切らない。`build-proposal.py` の仕様書と同じ）。版は重ね合わせない（Q&A 表と同じ）。
 
 **本文の Q&A の番号（`Q-008`）は、Q&A 表のページ（`qa.md`）のアンカーへのリンクにする**（正本は番号のまま。
 決まりは spec-loop の `references/qa-csv.md` の「本文での番号」）。`on_page_content` が**描いた後の HTML** に掛けるので、
@@ -36,6 +40,13 @@ spec-loop の `references/qa-csv.md` の「層」）。
 - **リンクにする版の Q&A 表に無い番号はリンクにせず警告する**（打ち間違いを拾う）。版の下のページなら、
   その版より新しい版にだけある番号もここに入る。読めない表の番号は数えない（表の警告は Q&A 表のページで出る）。
 - Q&A 表のページ（`qa` の印を持つページ）と、`qa.md` の無いサイトは変えない。
+- **素の本文に書いた URL（`https://ex.com/Q-001`・`…?id=Q-001`・`…#Q-001`）の中の番号は変えない**（#341）——
+  `<a>` の中は上の決まりで変えないが、素の URL は MkDocs が `<a>` にしないので、文字の中から URL を先に除く。
+  URL は `<英字のスキーム>://` か `www.` で始まり、空白・`<`・`>`・引用符（描いた HTML の `&lt;`・`&gt;`・`&quot;`・`&#x27;` も）・
+  全角の句読点・かぎ括弧（`。、，．：；！？「」『』【】〈〉《》`）の手前までとみなす（文の区切りの後ろの番号をリンクにするため）。
+  **全角の丸括弧は対で数える**——URL の中で開いた `（` に対応する `）` は URL の中、対の無い `）` で終える
+  （`https://ja.wikipedia.org/wiki/仕様（改訂）/Q-001` を割らず、`（https://ex.com/a）。Q-001` の番号はリンクにする）。
+  半角の記号（`.`・`)` など）は URL の中にも現れるので区切りにしない——`https://ex.com/a.Q-001` の番号はリンクにならない。
 """
 
 from __future__ import annotations
@@ -61,6 +72,26 @@ QA_MIGRATION = "spec-loop の references/tree.md の「Q&A 表を移す」"
 QA_OPTION_SEPARATOR = " / "
 
 QA_PAGE = "qa.md"
+DECISION_TABLE = "decision_table.csv"
+# 素の本文の URL（#341）。番号のリンク化はこの中を変えない
+URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"']|&(?:lt|gt|quot|#39|#x27);|$)")
+# URL を終える全角の文字（丸括弧は対で数えるので url_end が見る）
+URL_STOP = set("。、，．：；！？「」『』【】〈〉《》")
+
+
+def url_end(candidate: str) -> int:
+    """URL の候補のうち、URL とみなす長さ。全角の句読点・かぎ括弧と、対の無い全角の閉じ丸括弧の手前で終える。"""
+    depth = 0
+    for index, char in enumerate(candidate):
+        if char in URL_STOP:
+            return index
+        if char == "（":
+            depth += 1
+        elif char == "）":
+            if depth == 0:
+                return index
+            depth -= 1
+    return len(candidate)
 # 起票元ごとの番号の印（`Q-S-001`。#278）。印の無い前の形の番号（`Q-001`）もリンクにする
 QA_MARKS = "RSFD"
 QA_NUMBER = re.compile(rf"(?<![A-Za-z0-9_-])Q-(?:[{QA_MARKS}]-)?[0-9]{{3,}}(?![A-Za-z0-9_-])")
@@ -165,8 +196,38 @@ def render_qa(docs_dir: Path) -> str:
     return "\n".join(out)
 
 
+def render_decision_table(docs_dir: Path) -> str:
+    """各版の `shared/decision_table.csv` を、見出しの行どおりの表にする（#369）。"""
+    out: list[str] = []
+    for version, root in versions(docs_dir):
+        path = root / "shared" / DECISION_TABLE
+        if not path.is_file():  # 決定表の無い版は飛ばす
+            continue
+        try:
+            with path.open(newline="", encoding="utf-8-sig") as f:
+                reader = csv.reader(f)
+                header = next(reader, [])
+                body = [row for row in reader if "".join(row).strip()]
+            if not any(cell.strip() for cell in header):  # 最初の行が見出し——空なら次の行を繰り上げずに警告
+                raise ValueError("見出しの行が無い（最初の行が空）")
+        except (OSError, ValueError, csv.Error) as e:  # UnicodeDecodeError は ValueError の子
+            out += [problem(f"{path.relative_to(docs_dir)}: {e}"), ""]
+            continue
+        width = max([len(header)] + [len(row) for row in body])  # 見出しより長い行も切らない
+        header = header + [""] * (width - len(header))
+        out += [f"## v{version}", "", "| " + " | ".join(text(cell) for cell in header) + " |",
+                "| " + " | ".join("---" for _ in header) + " |"]
+        out += ["| " + " | ".join(text(cell) for cell in row + [""] * (width - len(row))) + " |"
+                for row in body]
+        out.append("")
+    if not out:
+        return "決定表（`docs/v<n>/shared/decision_table.csv`）はまだ無い。\n"
+    return "\n".join(out)
+
+
 RENDERERS = {
     "qa": render_qa,
+    "decision_table": render_decision_table,
 }
 
 
@@ -201,17 +262,27 @@ def link_numbers(content: str, src_path: str, target: str, docs_dir: Path) -> st
             return number
         return f'<a href="{html.escape(target + "#" + anchor(version, number))}">{number}</a>'
 
+    def link_text(between: str) -> str:
+        """文字の中の番号をリンクにする。素の URL の中は変えない（#341）。"""
+        parts, start = [], 0
+        # 全角の文字で終えた URL の残りから探し直す（残りの中の次の URL も見る）
+        while (url := URL.search(between, start)) is not None:
+            end = url.start() + url_end(url.group(0))
+            parts += [QA_NUMBER.sub(link, between[start:url.start()]), between[url.start():end]]
+            start = end
+        return "".join(parts + [QA_NUMBER.sub(link, between[start:])])
+
     out, last = [], 0
     inside = {name: 0 for name in UNLINKED}  # 開いている要素の数（入れ子・閉じ忘れの多い HTML でも数で追う）
     for match in MARKUP.finditer(content):
         between = content[last:match.start()]
-        out += [between if any(inside.values()) else QA_NUMBER.sub(link, between), match.group(0)]
+        out += [between if any(inside.values()) else link_text(between), match.group(0)]
         last = match.end()
         name = (match.group(2) or "").lower()
         if name in inside and not match.group(0).endswith("/>"):
             inside[name] = max(inside[name] - 1, 0) if match.group(1) else inside[name] + 1
     between = content[last:]
-    out.append(between if any(inside.values()) else QA_NUMBER.sub(link, between))
+    out.append(between if any(inside.values()) else link_text(between))
     for number in unknown:
         log.warning("spec-loop: %s: %s は %sにも無いので、リンクにしない（読めない表は数えない）",
                     src_path, number, scope)
