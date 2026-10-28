@@ -35,8 +35,8 @@ worktree 隔離のセッションの親は、**別の worktree・別のリポジ
 **worktree の中から起動されていたら、下の 3 の点検がそう言う**——利用者に見せ、起動し直すかを決めてもらう（新規の起動では止めはしない。**再開では下の 1 のとおり `ExitWorktree` を試し、戻れなければ止まる**）。
 
 **親は、周の worktree にも入らない（#484）。** 各周は、worktree の絶対パスで作業するサブエージェントに回させ（下の 4 の 2）、
-**親は `EnterWorktree` を呼ばない**——親が周ごとに `EnterWorktree(path=…)` で入ると、**`/clear` してもセッションは最後に入った
-worktree に隔離されたまま**で、ガードが次の周の worktree を作る操作を拒む（#484 で実際に起きた）。
+**親は `EnterWorktree` を呼ばない**——#484 では、周ごとに `EnterWorktree(path=…)` で入った親が、**`/clear` しても最後に入った
+worktree に隔離されたまま**で、ガードが次の周の worktree を作る操作を拒んだ。
 
 使い方の案内（利用者向け）は公開ページを参照:
 <https://hdknr.github.io/claude-code-setup/plugins/dev-loop-cruise/>
@@ -74,8 +74,8 @@ cruise: 直す線 = 既定
   （2026-10-28。`/clear` の前に `EnterWorktree` を呼んでいたセッション）、効く条件は確かめていない
   （`EnterWorktree` を呼んでいないセッションでは no-op。`../dev-loop/references/resume.md`）。
   **回し直した点検が「worktree の外」と出しても、言えるのは cwd が外に出たことだけである**——点検は cwd しか見ず、セッションの隔離は見ない
-  （`../dev-loop/scripts/check-unattended-env.py` の docstring の「守らない」）。**隔離が解けたかは、続く外への操作（次の周の worktree を作るなど）が
-  拒まれないかで分かる。拒まれたら戻れなかったものとして扱う。**
+  （`../dev-loop/scripts/check-unattended-env.py` の docstring の「守らない」）。**隔離が解けたかは、周を始める前に親が外への操作を 1 度打って確かめる**
+  （メインの作業ツリーを cwd にした `git worktree list` など）。**拒まれたら戻れなかったものとして扱う。**
   **戻れなければ周を始めず**、下の 5 の「次の周を始めないと決めたら」のとおり止まる（利用者に要る操作は、メインの作業ツリーで
   新しいセッションを開き、同じ引数で起動し直すこと）。
   **`apply` が「本文の線が台帳の確かめた線と違う」と名指ししたら、利用者に見せる**——台帳の線は変わっていない。
