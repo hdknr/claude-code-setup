@@ -90,10 +90,11 @@ base と変更後で 301 行が違う描画になる（陽性対照）ことで�
 
 ## 起票
 
-- この周の起票: 0 件
+- この周の起票: 0 件（関門の残課題 CR1-1 は示せないので外に出した。起票の承認は不在のため訊いていない）
 
 ## 関門の進捗（再開点）
 
+- PR: #529
 - 周の在り処: ブランチ `issue/522-nested-backtick-codespan`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-522`、
   起点 `a0ea899`、base の参照 `origin/main`、base の SHA `a0ea8994c0e0e209a56f3e1de61d3bda497346bf`
   （`EnterWorktree` は使わず、`git -C <worktree>` と絶対パスで作業している——親の指示）
