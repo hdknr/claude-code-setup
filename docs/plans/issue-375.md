@@ -22,7 +22,7 @@ v1 の `removed.csv`・`shared/` の外のファイルの行を範囲に入れ�
 - `plugins/spec-loop/references/tree.md` — 置き方の決まりの「2 つのサインオフが同じ範囲を見ていたかは `shared/` の中身で確かめる」
 - `plugins/spec-loop/README.md` — `check-signoff.py` の行
 - `CLAUDE.md` — `check-signoff.py` の行
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.0 → 0.27.0。0.x なので振る舞いの変更も minor）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.26.0 → 0.27.0、main の取り込みで 0.30.0。0.x なので振る舞いの変更も minor）
 - `.claude-plugin/marketplace.json` — 同じ版
 - `plugins/spec-loop/skills/*/SKILL.md` — 同じ版の 2 行
 - `docs/plans/issue-375.md` — この計画
@@ -116,6 +116,7 @@ Issue 本文は検査対象であって要件ではない。
 - 狭いパス: 通した（sonnet）——反証 0 件（P10 の移行の記述を 0.26.0 と 0.27.0 の本体で当てて一致）
 - PR: 作る（マージは止まる——このリポジトリのマージはサイトを再デプロイするので `マージ` の線が効かない。#476）
 - main の取り込み（衝突解消・版の上げ直し）: `ccaa49e`（#440・#476 まで）と `f88215c`（#442 まで）。衝突は 2 回とも spec-loop の版の行だけで、周の 0.27.0 を取った（main は 0.26.1 → 0.26.2。0.27.0 はその次の minor のまま）。正味の差分は取り込み前と同じ 15 ファイル
+- main の取り込み 3 回目（#465・spec-loop 0.29.0 まで）: 衝突は版の行だけ。版を 0.30.0 に上げ直し（coordinator の割り振り）、`signoff-tags.md` の移行の節の版を 0.30.0・「0.29.x まで」に直した
 
 ## 起票
 
