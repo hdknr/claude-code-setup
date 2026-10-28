@@ -44,8 +44,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・空白・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
-  印に無いファイルが出力の名前で在る・書けない——書いていない
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
+  印に無いファイルが出力の名前で在る・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440）——書いていない
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
 
 **守らないもの**: 手書き部分の中身（判断であって一意に決まらない）・見た目（Markdown を表示して目で見る）・
@@ -606,19 +606,35 @@ def owned_names(directory: Path) -> list[str] | None:
             and name not in (".", "..", MANIFEST)]
 
 
-def remove_owned(directory: Path) -> None:
-    """印に載る出力と印を消す。載っていないもの（手書きのファイル）は、名前が出力と同じでも消さない。
-    読めない印は消さない——消すと、名指ししていた出力がこの道具のものだった跡が無くなる。"""
+def remove_owned(directory: Path) -> list[str]:
+    """印に載る出力と印を消し、消せなかったものを（理由つきで）返す。載っていないもの（手書きのファイル）は、名前が出力と同じでも消さない。
+    読めない印は消さない——消すと、名指ししていた出力がこの道具のものだった跡が無くなる。
+    消せなかった出力があれば印も残す（#440）——次の実行が、残った出力をこの道具のものと確かめて消せるように。"""
     names = owned_names(directory)
     if names is None:
-        return
+        return []
+    left = []
     for name in names:
         stale = directory / name
-        if stale.is_file() or stale.is_symlink():
-            stale.unlink()
-            print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
-    if (directory / MANIFEST).is_file():
-        (directory / MANIFEST).unlink()
+        try:
+            # symlink を先に見る——python3.12 の `is_file` は辿れない先を指す symlink で例外を投げる
+            if stale.is_symlink() or stale.is_file():
+                stale.unlink()
+                print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
+        except OSError as e:
+            left.append(f"{stale}（{e.strerror}）")
+    manifest = directory / MANIFEST
+    if not left:
+        try:
+            if manifest.is_file():
+                manifest.unlink()
+        except OSError as e:
+            left.append(f"{manifest}（{e.strerror}）")
+    return left
+
+
+def left_lines(left: list[str]) -> list[str]:
+    return [f"前に作った出力を消せない: {name}" for name in left]
 
 
 def bad_out(out: Path) -> str | None:
@@ -627,7 +643,7 @@ def bad_out(out: Path) -> str | None:
         return f"{out}: 出力先にファイルの名前が無い（`--out` には `<ディレクトリ>/proposal.md` の形で渡す）"
     # 印は 1 行 1 名前で、読むときに前後の空白を落とし `#` の行を飛ばす——そう読み違える名前は印に残せない
     if out.name != out.name.strip() or len(out.name.splitlines()) != 1 or out.name.startswith("#"):
-        return f"{out}: 出力の名前が空白・改行を含むか `#` で始まる（印 {MANIFEST} に名前として残せない）"
+        return f"{out}: 出力の名前の前後に空白があるか、改行を含むか、`#` で始まる（印 {MANIFEST} に名前として残せない）"
     # 印を読む側は `\` を含む名前を捨てる。印は UTF-8 で書く——どちらも印に残せない
     if "\\" in out.name:
         return f"{out}: 出力の名前が `\\` を含む（印 {MANIFEST} に名前として残せない）"
@@ -666,7 +682,9 @@ def write_outputs(outputs: dict[Path, bytes | list], directory: Path) -> None:
             else:
                 path.write_bytes(content)
     except OSError as e:
-        remove_owned(directory)
+        left = remove_owned(directory)
+        if left:
+            raise Stop(2, [f"{directory}: 書けない（{e.strerror}）。書きかけを消せなかった", *left_lines(left)])
         raise Stop(2, [f"{directory}: 書けない（{e.strerror}）。書きかけを消した"])
 
 
@@ -686,9 +704,14 @@ def main(argv: list[str]) -> int:
     out = args.out if args.out else repo_top(args.repo) / DEFAULT_OUT
     # 引数の誤りは消す前に見る。誤りで止まっても、印が名指しする前の出力は消す（残すと今回のものと取り違える。#398）
     problem = bad_out(out)
-    remove_owned(out.parent)
+    left = remove_owned(out.parent)
     if is_dir(out) and out.resolve() != out.parent.resolve():
-        remove_owned(out)  # ディレクトリを渡したなら、指したつもりの場所の前の出力も消す
+        left += remove_owned(out)  # ディレクトリを渡したなら、指したつもりの場所の前の出力も消す
+    if left:  # 消せない場所には書けもしない。残ったものを今回のものと取り違えないよう名指しする（#440）
+        for line in left_lines(left) + ([problem] if problem else []):
+            print(line, file=sys.stderr)
+        print("提案書は作っていない", file=sys.stderr)
+        return 2
     if problem:
         print(f"{problem}。提案書は作っていない", file=sys.stderr)
         return 2
