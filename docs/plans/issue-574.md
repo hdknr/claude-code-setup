@@ -95,9 +95,14 @@ main へのマージ → CI（`plugins.yml` が `check-skill-pointers.py` とテ
 - 周の在り処: ブランチ `issue/574-outside-pointer-one-error`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-574`・
   起点 `4abb280`・base の参照 `origin/main`・base の SHA `4abb280dda86eac24190df155e9196f6c0fbb730`
 - 手順 4 の割り目: 不在のため訊かず続けた。
-- 関門: 未着手
-- 反証と差し戻し: なし
-- 交絡を潰した手順: （実装後に書く）
+- 関門: 1 パス目に渡した（起点 `57ada7d`——1 パス目の関門に渡した時点の HEAD）。Verifier 1 パス目・`/code-review` 1 パス目: 実施中
+- 反証と差し戻し: なし（1 パス目の結果待ち）
+- 交絡を潰した手順: 陽性対照——修正前の版（`4abb280` の `check-skill-pointers.py`）に新しいテストを当て、外へ出る 3 形（名指しあり・名指し無し・symlink）の
+  検査が FAIL（エラー 2 つ）、変えていない 2 形（ファイル名だけ・`SKILL.md`）が ok であることを見た。手で作った木（名指しあり）でも修正前は `ERROR:   ` の行が 2 本、修正後は 1 本。
+  「エラーは 1 つ」は終了コードでは分けられないので、テストは stderr の `ERROR:   ` の行を数える（`errors`）。
+- 歯止め: `check-all.py` は 54 本中、`check-plan-counts.py`（件数の行が無かった——足した）と `check-mutation-claims.py`（`test-worktree-scripts.py:384` の陽性対照が 300 秒で打ち切り。
+  load average 約 200 の下で、`test-worktree-scripts.py` 単独でも 3 分 30 秒かかった。この周はそのファイルを触らない）が落ちた。`check-plan-counts.py` は足したあと緑。
+  `check-mutation-claims.py` は単独で回し直しても同じ打ち切りで「当てられなかった」1 件——PR 側の CI で見る。
 
 ## 既知の限界・決着済みの論点
 
