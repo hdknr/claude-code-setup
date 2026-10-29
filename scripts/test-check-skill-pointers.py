@@ -286,25 +286,30 @@ SIBLING_PROMPT_BROKEN = SIBLING_PROMPT.replace("渡す文面", "送る文面")
 SIBLING_STEP_BROKEN = SIBLING_SKILL.replace("5. 周を閉じる", "5. 周を畳む")
 # **ほかの持ち主の名指しが前に付いた `../` の指し先**（#542）——`../` の先は自分のプラグインなので、名指しがあっても照合する。
 # **#503 の `/code-review` 2 パス目（CR2-5）の実物の形**: spec-loop の中の `` dev-loop の `../req-loop/SKILL.md` の「壊れた節」 ``。
-# **名指しの名前（`other`）は木にプラグインのディレクトリとして置く**——置くと `other の`・`other のスキルの` が持ち主の名指しと読まれる。
+# **名指しの名前は木にプラグインのディレクトリとして置く**——置くと `<名前> の`・`<名前> のスキルの` が持ち主の名指しと読まれる。
+# **名前は `SIBLING_OWNER` の 1 つから作る**——試料・陽性対照・`sibling_tree` の `mkdir` が別々に名前を持つと、試料の名前だけがずれたとき
+# 陽性対照は緑のまま、試料は名指しと読まれずに空振りする（#575 の 1 パス目の `/code-review`）。
 # **置かなくても、`../` に名指しの免除を掛ける変異（28b）は殺せる**——`このリポジトリの` の試料は、名前のディレクトリに依らず名指しと読まれる
 # （#575。#542 の 2 パス目の `/code-review` CR2-1——以前ここは「置かないと殺せない」と書いていた）。
-# **置かないと素通りするのは、`<名前> の` の形の名指しだけ `../` でも免除する変異である**——`other の` が名指しと読まれないので、
-# `SIBLING_OWNED_BROKEN` は免除に届かないまま 1 で落ちる。**だから同じ木で `other の` が持ち主と読まれることを見る**（下の `SIBLING_OWNER_READ`）。
+# **置かないと素通りするのは、名前のディレクトリに依る形（`<名前> の`・`<名前> のスキルの`）の名指しだけ `../` でも免除する変異である**
+# ——名前が名指しと読まれないので、`SIBLING_OWNED_BROKEN`・`SIBLING_OWNED_SKILL_BROKEN` は免除に届かないまま 1 で落ちる。
+# **だから同じ木で `<名前> の` が持ち主と読まれることを見る**（下の `SIBLING_OWNER_READ`）。
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1)\n", "new": "        rel = m.group(1)\n        _b = prose[line_start: m.start()]\n        if rel.startswith(\"../\") and owned_elsewhere(_b, plugin) and \"このリポジトリ\" not in _b and \"のスキル\" not in _b:\n            continue\n", "red": "python3 scripts/test-check-skill-pointers.py"}
-SIBLING_OWNED_OK = SIBLING_XREF_OK + "\n読み方は other の `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
-SIBLING_OWNED_BROKEN = SIBLING_XREF_OK + "\n読み方は other の `../sib/SKILL.md` の「壊れた節」を正とする。\n"
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1)\n", "new": "        rel = m.group(1)\n        _b = prose[line_start: m.start()]\n        if rel.startswith(\"../\") and owned_elsewhere(_b, plugin) and \"のスキル\" in _b:\n            continue\n", "red": "python3 scripts/test-check-skill-pointers.py"}
+SIBLING_OWNER = "other"
+SIBLING_OWNED_OK = SIBLING_XREF_OK + f"\n読み方は {SIBLING_OWNER} の `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
+SIBLING_OWNED_BROKEN = SIBLING_XREF_OK + f"\n読み方は {SIBLING_OWNER} の `../sib/SKILL.md` の「壊れた節」を正とする。\n"
 # **名指しの形を 3 つとも置く**——`<名前> の`・`<名前> のスキルの`・`このリポジトリの`。1 つの形だけ免除を残す変異
-# （`このリポジトリ` か `のスキル` が前にあれば `../` でも免除する）は、`other の` の試料だけでは殺せない（#542 の 1 パス目の `/code-review`）。
-SIBLING_OWNED_SKILL_OK = SIBLING_XREF_OK + "\n読み方は other のスキルの `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
-SIBLING_OWNED_SKILL_BROKEN = SIBLING_XREF_OK + "\n読み方は other のスキルの `../sib/SKILL.md` の「壊れた節」を正とする。\n"
+# （`このリポジトリ` か `のスキル` が前にあれば `../` でも免除する）は、`<名前> の` の試料だけでは殺せない（#542 の 1 パス目の `/code-review`）。
+SIBLING_OWNED_SKILL_OK = SIBLING_XREF_OK + f"\n読み方は {SIBLING_OWNER} のスキルの `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
+SIBLING_OWNED_SKILL_BROKEN = SIBLING_XREF_OK + f"\n読み方は {SIBLING_OWNER} のスキルの `../sib/SKILL.md` の「壊れた節」を正とする。\n"
 SIBLING_OWNED_REPO_OK = SIBLING_XREF_OK + "\n読み方は このリポジトリの `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
 SIBLING_OWNED_REPO_BROKEN = SIBLING_XREF_OK + "\n読み方は このリポジトリの `../sib/SKILL.md` の「壊れた節」を正とする。\n"
-# **陽性対照: この木で `other の` が持ち主の名指しと読まれる**（#575）——`../` で始まらない指し先は名指しで「X」の照合を免除するので、
+# **陽性対照: この木で `<名前> の` が持ち主の名指しと読まれる**（#575）——`../` で始まらない指し先は名指しで「X」の照合を免除するので、
 # X が指した先（スキルの `references/r.md`）に無くても 0 で終わる。**`sibling_tree` の `mkdir` を消すと 1 になる。**
-# **名指しを外した対照は 1 で落ちる**——対照が無いと、指し先が解決されずに照合が飛んでいても 0 のままで、陽性対照が何も見ていない。
-SIBLING_OWNER_READ = SIBLING_XREF_OK + "\n区分は other の `references/r.md` の「other にしか無い節」を正とする。\n"
-SIBLING_OWNER_PLAIN = SIBLING_OWNER_READ.replace("other の `references/r.md`", "`references/r.md`")
+# **名指しを外した対照は 1 で落ちる**——陽性対照の 0 が、名指しの免除から来ていて、指し先がほかの理由で照合されないからではないことを見る。
+SIBLING_OWNER_READ = SIBLING_XREF_OK + f"\n区分は {SIBLING_OWNER} の `references/r.md` の「{SIBLING_OWNER} にしか無い節」を正とする。\n"
+SIBLING_OWNER_PLAIN = SIBLING_OWNER_READ.replace(f"{SIBLING_OWNER} の `references/r.md`", "`references/r.md`")
 # **スキルの `references/*.md`・`prompts/*.md` から指した節だけが壊れる。**
 SIBLING_SRC_REF_BROKEN = SIBLING_SKILL.replace("6. 参照から指す節", "6. 参照から指す項")
 SIBLING_SRC_PROMPT_BROKEN = SIBLING_SKILL.replace("7. 文面から指す節", "7. 文面から指す項")
@@ -708,8 +713,8 @@ def main() -> int:
                          prompt: str = SIBLING_PROMPT, body: str = SIBLING_XREF_OK) -> Path:
             d = base / name
             assert_not_real_repo(d)
-            # mutation-claim: {"file": "scripts/test-check-skill-pointers.py", "old": "            (d / \"plugins\" / \"other\").mkdir(parents=True, exist_ok=True)  # `other の` を持ち主と読ませる（#542・#575）\n", "new": "", "red": "python3 scripts/test-check-skill-pointers.py"}
-            (d / "plugins" / "other").mkdir(parents=True, exist_ok=True)  # `other の` を持ち主と読ませる（#542・#575）
+            # mutation-claim: {"file": "scripts/test-check-skill-pointers.py", "old": "            (d / \"plugins\" / SIBLING_OWNER).mkdir(parents=True, exist_ok=True)  # 名指しの名前を持ち主と読ませる（#542・#575）\n", "new": "", "red": "python3 scripts/test-check-skill-pointers.py"}
+            (d / "plugins" / SIBLING_OWNER).mkdir(parents=True, exist_ok=True)  # 名指しの名前を持ち主と読ませる（#542・#575）
             make_skill(d, body=body, files={
                 "references/r.md": SIBLING_SRC_REF, "prompts/q.md": SIBLING_SRC_PROMPT})
             sib_dir = d / "plugins" / "demo" / "skills" / "sib"
