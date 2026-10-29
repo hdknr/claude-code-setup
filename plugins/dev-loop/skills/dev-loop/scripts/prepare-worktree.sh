@@ -78,6 +78,9 @@
 # - **その `cd` の例は、シェルに貼れる形で出す。** パスは一重引用符で囲み、中の `'` を `'\''` にする——
 #   **素のまま出すと、空白を含むパスで `cd` が割れる**（#502 の `/code-review` 1 パス目で実測）。
 #   **`%q` は bash 3.2 で非 ASCII を壊す**（同 2 パス目で実測）。
+# - **既に当たるもの（終了コード 3）の見出しと一覧は、同じ出力先（標準エラー）に出す。**
+#   **見出しだけ標準出力に出すと、標準出力だけを読んだ側には見出しの下が空に見える**
+#   ——当たったものが無いと読める（#544。#502 の `/code-review` 1 パス目で実測）。
 #
 # ## 何を守らないか
 #
@@ -150,8 +153,8 @@ EXISTING_WT="$(printf '%s\n' "$WT_ALL" | grep -F "issue-${NUMBER}" || true)"
 EXISTING_BR="$BR_ALL"
 if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then
   echo "既に当たるものがある。**作らない。**" >&2
-  [ -n "$EXISTING_WT" ] && echo "  worktree:" && printf '    %s\n' "$EXISTING_WT" >&2
-  [ -n "$EXISTING_BR" ] && echo "  ブランチ:" && printf '    %s\n' "$EXISTING_BR" >&2
+  [ -n "$EXISTING_WT" ] && echo "  worktree:" >&2 && printf '    %s\n' "$EXISTING_WT" >&2
+  [ -n "$EXISTING_BR" ] && echo "  ブランチ:" >&2 && printf '    %s\n' "$EXISTING_BR" >&2
   echo >&2
   echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2
   exit 3
