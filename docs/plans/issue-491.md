@@ -109,10 +109,10 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 試し 1・2 はメインの作業ツリーを cwd に、haiku で回した（費用は計 $0.107）:
 
 - 試し 1: `claude -p "Reply with exactly the word ok…" --output-format stream-json --verbose --model haiku --max-turns 1 --max-budget-usd 0.5` → `result` 1 つ・$0.087・init の `permissionMode` = `default`・`plugins` の dev-loop = **1.63.6**（main は 1.63.8）
-- 試し 2: 背景の `Agent`（`sleep 20`）を起こしてから `date` を打たせ、`--allowedTools "Bash(sleep 20)" "Agent"` → **`result` が 3 つ**（最初は背景の体が走っている間。子は終わらずに待ち、通知で 1 ターン足した）・`subagent_stats.killed.parent` = 0・completed = 1・$0.020・`permissionMode` = `auto`・`date` は拒否されなかった（`permission_denials` 空）
+- 試し 2: 背景の `Agent`（`sleep 20`）を起こしてから `date` を打たせ、`--allowedTools "Bash(sleep 20)" "Agent"` → **`result` が 3 つ**（どれも体の通知より後の行。最初の `result` がいつ出たかは行の順からは言えない）・`subagent_stats.killed.parent` = 0・completed = 1・$0.020・`permissionMode` = `auto`・`date` は拒否されなかった（`permission_denials` 空）
 - 交絡の候補と潰し方:
   - 「子が背景の体を待つ」は**この版（2.1.312）・背景の体 1 つ・20 秒**の観測。`/code-review` の fork（別の形の背景の実行）を待つかは測っていない——C1 に寄りかかる主張は書かない
-  - 許可モードが試し 1 と 2 で分かれた（同じ settings の `defaultMode: auto`）。原因は確かめていない——**だから起動口は `--permission-mode` を名指しさせ、`status` が init の値を出す**（どちらの値でも、親が子の実際のモードを見られる）
+  - 許可モードが試し 1 と 2 で分かれた。settings は同じ（`defaultMode: auto`）だが、モデル（haiku-4-5／haiku-5-5）と引数も違った。どれが効いたかは分けていない——**だから起動口は `--permission-mode` を名指しさせ、`status` が init の値を出す**（どちらの値でも、親が子の実際のモードを見られる）
   - `date` が拒否されなかったのは許可モードが `auto` だったから、が候補（`--allowedTools` に無い）。`default` での拒否は測っていない——`permission_denials` の形は試しでは空しか見ていない
   - 版: dev-loop 1.63.6 は `installed_plugins.json` の記録の版で、キャッシュの最大版ではない（CLAUDE.md の「キャッシュに在ることは、読み込まれることではない」と同じ）
 
@@ -124,6 +124,8 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 
 - 手順 4: 完了（`392e91d`）。割り目は訊かない（不在の周。`absent-lines.md` の「訊く場面」）。続けた
 - 1 パス目の指摘対応の起点: `392e91d37b17ee8997dcf8badf10a27f10a50dd1`（1 パス目の関門に渡した HEAD）
+- 2 パス目: Verifier（sonnet。169 行）反証 2 件／`/code-review`（high）指摘 10 件。採否は表の P2-*（直す 5・残課題 6・記録 1）
+- 狭いパスの起点: `adbbc9056a775577592cca2d4785408e08734959`（2 パス目の指摘対応を始める直前）
 - 1 パス目の指摘対応: `392e91d`..`1a9a566`（コミット済み）。2 パス目の割り目は訊かない（不在の周）。残り: 手順 5 の当て直しと `/code-review` 2 パス目の両方
 - 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet。テンプレート 170 行を読んだと報告）反証 5 件／`/code-review`（high）指摘 10 件。採否は下の表（直す 8・残課題 3。重なりは 1 行に畳んだ）。手順 4 への差し戻し: あり（直す行）
 
@@ -144,6 +146,18 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 | P1-R9／V5 記録を書けなかったときの孤児の子・読めない古い記録で以後起こせない | 示せない（書けない状態を実データで作っていない） | 無し | 残課題 |
 | P1-R10／V1 計画の L1 と決着が `--append-system-prompt-file` のまま | 示せる——計画 L1 と `child-cycle.py` の引数 | L1（文面と実装の食い違い） | 直す（計画の文面を実装に合わせる。仕組みは変えない——下の決着） |
 | P1-V3 変異の「殺せた」が例外でも数わる | 示せない（いまの 12 件はどれも観測の差で殺せている——関門 2 体が確かめた） | 無し | 残課題 |
+| P2-V1 init が同じプロセスで 3 回出て、2 回目から他のプラグインの版が変わった。「起動の時点の版」と言い切り、status は最初の init だけを読む | 示せる——probe2 の 11 行目（cmux 1.1.1・spec-loop 0.26.0）と 35・42 行目（cmux 1.1.9・spec-loop 0.35.0）。dev-loop は 3 回とも 1.63.6 | C3・S3 | 直す |
+| P2-V2 試し 2 の引数は出力からは確かめられない | 示せない（誤りの証拠は無い。引数はこの周で打ったコマンドの記録） | 無し | 残課題 |
+| P2-R1 要確認の印を最後の result からしか取らない（前の result の拒否を落としうる） | 示せない（試しの拒否はどれも空で、result ごとの拒否が累積かを測っていない） | 無し | 残課題 |
+| P2-R2 最後の文に委譲先の体の発言（`parent_tool_use_id` つき）が入る | 示せる——probe2 の 21・31・32 行目は `parent_tool_use_id` つきの assistant。子が委譲先の途中で止まれば、それが「最後の文」になる | S3 | 直す |
+| P2-R3 「許可モードは起動時の点検で決めた値」とあるが、点検に許可モードを決める段は無い | 示せる——cruise `SKILL.md` §3 と `check-unattended-env.py` に該当の段が無い | L1（名指しする値の出所）・D1 | 直す |
+| P2-R4 スラッシュコマンドで読み込んだ子に「読んだ行数」を照合させても意味を持たない | 示せない（子を起こしていない。子は差し込まれた本文の先頭の base ディレクトリから `SKILL.md` を読める） | 無し | 残課題 |
+| P2-R5 `kill(pid, 0)` が通った後に `ps` が失敗すると「走っていない」を返す（docstring は 4） | 示せる——`is_running` の `if proc.returncode != 0: return False` と終了コードの表 | S4・L2 | 直す |
+| P2-R6 cmux のラッパーを挟む間は `claude` の名前が無く「走っていない」と読む | 示せない（この環境の `claude` は cmux の shim だが、子を起こしていないので、その間の `ps` を見ていない） | 無し | 残課題（`--session-id` で照合する案） |
+| P2-R7 「記録の版で、キャッシュの最大版でもない」は試しで判別していない（記録の項が複数・最大版も 1.63.6） | 示せる——`installed_plugins.json` の dev-loop の項 6 つ・キャッシュの最大版 1.63.6 | C3 | 直す |
+| P2-R8 `--allowed-tools` を確かめずに渡す（bypass と同じだけ広げられる） | 示せる（そのまま渡す） | 無し（L2 が拒むと決めたのは bypassPermissions だけ） | 残課題 |
+| P2-R9 計画の「実測」の節に 1 パス目で取り下げた主張が残る | 計画ファイルは関門の検査の対象外 | 無し | 記録として直す（成果物ではない） |
+| P2-R10 「1 対 1」は数だけ・「2 体目」の変異が 30 秒の偽の claude を残す | 示せる（テストの読み） | 無し | 残課題 |
 
 - 決着: 子の記録を台帳の新しい鍵にしない——`agent` の値に `claude-p:<記録のパス>` を書く（`ledger.py` の形を変えると #584・他の周と衝突し、台帳の読み手が全部変わる）
 - 決着: 委譲文は**中身を `--append-system-prompt` で**渡す（`-p` の文はスラッシュコマンドだけにして、dev-loop の引数を汚さない）。`--append-system-prompt-file` は 2.1.312 の本体には在るがヘルプの一覧に無いので使わない。代わりに委譲文が `ps` に出るので、走っているかの判定は最初の `-p` の引数だけを見る（P1-R8）
