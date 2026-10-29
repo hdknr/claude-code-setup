@@ -119,7 +119,9 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 
 ## 関門の進捗（再開点）
 
-- 手順 4: 未完了
+- 手順 4: 完了（`392e91d`）。割り目は訊かない（不在の周。`absent-lines.md` の「訊く場面」）。続けた
+- 1 パス目の指摘対応の起点: `392e91d37b17ee8997dcf8badf10a27f10a50dd1`（1 パス目の関門に渡した HEAD）
+- 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）・`/code-review` を起動中
 
 ## 既知の限界・決着済みの論点
 
