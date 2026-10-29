@@ -277,7 +277,12 @@ def exists_headers_have_lists(res) -> bool:
     """終了コード 3 の見出し（`  worktree:`・`  ブランチ:`）が、**どの出力先でも**
     直後の行に一覧を伴うか（#544）。**出力先ごとに見る**——両方を足し合わせて見ると、
     見出しが標準出力・一覧が標準エラーに割れた形でも並んで見えて、緑になる。
-    **見出しが 2 つとも出ていなければ偽**——出ていないものの下は見られない。"""
+    **見出しが 2 つとも出ていなければ偽**——出ていないものの下は見られない。
+    **見出しが標準出力に出ていても偽**——出力先は標準エラーである（守る 18）。
+    出力先ごとの並びだけを見ると、見出しと一覧をそろって標準出力へ移した形が緑になる
+    （#544 の `/code-review` 1 パス目と Verifier 1 パス目）。"""
+    if any(line in EXISTS_HEADERS for line in res.stdout.splitlines()):
+        return False
     seen = set()
     for stream in (res.stdout, res.stderr):
         lines = stream.splitlines()
