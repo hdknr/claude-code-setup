@@ -95,8 +95,11 @@ main へのマージ → CI（`plugins.yml` が `check-skill-pointers.py` とテ
 - 周の在り処: ブランチ `issue/574-outside-pointer-one-error`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-574`・
   起点 `4abb280`・base の参照 `origin/main`・base の SHA `4abb280dda86eac24190df155e9196f6c0fbb730`
 - 手順 4 の割り目: 不在のため訊かず続けた。
-- 関門: 1 パス目に渡した（起点 `57ada7d`——1 パス目の関門に渡した時点の HEAD）。Verifier 1 パス目・`/code-review` 1 パス目: 実施中
-- 反証と差し戻し: なし（1 パス目の結果待ち）
+- 関門: 1 パス目の起点 `57ada7d`（1 パス目の関門に渡した時点の HEAD）。
+  Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 反証 1 件。`/code-review` 1 パス目（high）: 指摘 7 件。
+  1 パス目の指摘対応: `66c294f`（成果物の差分あり——2 パス目を回す）。
+  2 つ目の割り目: 不在のため訊かず続けた。2 パス目は Verifier の当て直しと `/code-review` 2 パス目の両方が残り（実施中）。
+- 反証と差し戻し: 1 パス目で直す 3 件（採否の表）→ 手順 4 に戻して直した。
 - 交絡を潰した手順: 陽性対照——修正前の版（`4abb280` の `check-skill-pointers.py`）に新しいテストを当て、外へ出る 3 形（名指しあり・名指し無し・symlink）の
   検査が FAIL（エラー 2 つ）、変えていない 2 形（ファイル名だけ・`SKILL.md`）が ok であることを見た。手で作った木（名指しあり）でも修正前は `ERROR:   ` の行が 2 本、修正後は 1 本。
   「エラーは 1 つ」は終了コードでは分けられないので、テストは stderr の `ERROR:   ` の行を数える（`errors`）。
