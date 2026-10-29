@@ -116,7 +116,13 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   `` dev-loop の `references/spec-gap.md` の「X」 `` の X は dev-loop のファイルにある。
 - **`../` で始まる移した先の名指しは、ほかの持ち主の名指しがあっても「X」を照合すること**（#542）——
   `` dev-loop の `../req-loop/SKILL.md` の「X」 `` の `../req-loop/SKILL.md` は、パスの実在の検査と同じく自分のプラグインから解決する
-  （`../` の先がプラグインの外なら、実在の検査が落とす）。照合しないと、パスは見ても節の名前は見ない（#503 の 2 パス目の `/code-review`）。
+  （`../` の先がプラグインの外なら「X」は照合せず、パスの検査だけが落とす——次の項）。照合しないと、パスは見ても節の名前は見ない（#503 の 2 パス目の `/code-review`）。
+- **プラグインの外へ出る指し先の「X」は照合しないこと**（#574）——`../` の先が外（字面で外へ出る・symlink の先が外）でも、
+  `references/x.md`・`prompts/x.md` の symlink の先が外でも、**エラーはパスの検査の 1 つだけ**にする（先が実在すれば「プラグインの外」、実在しなければ「実在しない」の行）。
+  照合すると、外のファイル（隣のプラグインなど）を読んで同じ指し先に 2 つ目のエラーを出していた（#542 の `/code-review` 1・2 パス目）。
+- **パスの検査が拾わない `SKILL.md` とファイル名だけの指し先は、symlink の先が外でも「X」を照合すること**（#574）——
+  パスの検査はこの 2 つの形を拾わないので、照合を飛ばすと、節が無くてもエラーが 0 になる。
+  **照合で言えるのは節が無いことまでで、外であることは言わない**（「守らない」の symlink の項）。
 - **名指しは同じ行だけを見ること**——前の行の `dev-loop の` で、次の行の指し先を免除しない
   （囲まれた指し先と「X」の照合で揃える）。
 - **プラグイン名は文字どおりに比べること**——大文字小文字を区別しない FS でも、
@@ -152,6 +158,8 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   **`../` で始まる指し先は、名指しがあっても名指しした先ではなく自分のプラグインから解決する**（#542）——
   名指しした持ち主のファイルのつもりで `` dev-loop の `../../references/x.md` `` と書いても、自分のプラグインの同じ相対パスで
   パスの実在も「X」も見る（そこに無ければ落ちる側に倒れ、たまたま在れば別のファイルで照合される）。
+- **`SKILL.md` とファイル名だけの指し先の symlink の先がプラグインの外であること**（#574）——パスの検査はこの 2 つの形を
+  拾わず、「X」の照合は外のファイルで行う。**節がそこに在れば 0 で通り、無ければ「…に無い」の 1 つだけが出る**（「プラグインの外」は出ない）。
 - **名指しが同じ行に無い形**——免除を判定するのは**指し先の直前の文字列**である。
   `dev-loop の` ／ `` `references/x.md` `` と行をまたぐと、囲まれた指し先は免除されない
   （落ちる側に倒れる）。
@@ -212,6 +220,16 @@ def leaves_plugin(skill: pathlib.Path, plugin: pathlib.Path, rel: str) -> bool:
         elif part != ".":
             depth += 1
     return False
+
+
+def outside_plugin(base: pathlib.Path, plugin: pathlib.Path, rel: str) -> bool:
+    """`base` から `rel` を辿った先がプラグインの外か——字面で 1 段でも外へ出るか、`resolve()` の先が外か。
+
+    **パスの検査（`main`）と「X」の照合（`prose_pointers_in`）が同じこの式を使う**（#574）——
+    式が 2 箇所にあると、片方だけ外と判定して、同じ指し先に 2 つのエラーが出るか 0 になる。
+    """
+    return (leaves_plugin(base, plugin, rel)
+            or not (base / rel).resolve().is_relative_to(plugin.resolve()))
 
 
 def skill_dirs(root: pathlib.Path):
@@ -326,8 +344,8 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
         # 前の行まで見ると、行をまたいだ名指しが免除される（docstring は「落ちる側」と書いている）。
         line_start = prose.rfind("\n", 0, m.start()) + 1
         rel = m.group(1)
-        # **`../` で始まる指し先には名指しの免除を掛けない**（#542）——パスの実在の検査（`pointers_in`）は `../` を
-        # 名指しに依らず解決し、プラグインの外へ出れば落とすので、実在の検査を通った `../` の先は自分のプラグインのファイルである。
+        # **`../` で始まる指し先には名指しの免除を掛けない**（#542）——パスの検査（`pointers_in`・`main`）は `../` を
+        # 名指しに依らず解決する。先がプラグインの外なら、下の `outside_plugin` で照合を飛ばす（#574）。
         if not rel.startswith("../") and owned_elsewhere(prose[line_start:m.start()], plugin):
             continue
         # **ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決する**（#541）。
@@ -339,6 +357,11 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
             target = skill / rel
         if target is None or not target.is_file():
             continue  # 実在しないことは囲まれた指し先の検査が言う（ファイル名だけの形は見ない）
+        # **プラグインの外の先は照合しない**（#574）——外であることはパスの検査が「プラグインの外」の 1 つで言う。
+        # 照合すると外のファイルを読み、同じ指し先に 2 つ目のエラーを出す。**`/` を含む形だけ**——パスの検査が
+        # 拾わない `SKILL.md` とファイル名だけの形まで飛ばすと、エラーが 0 になる。
+        if "/" in rel and outside_plugin(skill, plugin, rel):
+            continue
         lineno = prose.count("\n", 0, m.start()) + 1
         yield (lineno, f"{m.group(0)}（{m.group(1)} に無い）",
                normalize(m.group(2)) in body_without_pointers(
@@ -383,8 +406,7 @@ def main(argv=None) -> int:
             checked += 1
             if not (base / rel).exists():
                 problems.append((path.relative_to(root), lineno, rel))
-            elif (leaves_plugin(base, plugin, rel)
-                  or not (base / rel).resolve().is_relative_to(plugin.resolve())):
+            elif outside_plugin(base, plugin, rel):
                 problems.append((path.relative_to(root), lineno, f"{rel}（プラグインの外）"))
         for lineno, what, found in prose_pointers_in(path, base, plugin):
             checked += 1
