@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.34.0 -->
-> **このスキルの版: 0.34.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.38.0 -->
+> **このスキルの版: 0.38.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
