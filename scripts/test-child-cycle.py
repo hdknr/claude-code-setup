@@ -75,6 +75,9 @@ FIXTURES = {
     "利用上限の拒否": [INIT, {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "seven_day",
                                                                          "resetsAt": 1793269200}}, result(1)],
     "長い文": [INIT, say("あ" * 5000), result(1)],
+    "委譲先の発言が最後": [INIT, say("子の報告"), {"type": "assistant", "parent_tool_use_id": "toolu_x",
+                                                "message": {"content": [{"type": "text", "text": "委譲先の発言"}]}}, result(1)],
+    "途中で版が変わる": [INIT, dict(INIT, plugins=[{"name": "dev-loop", "version": "1.64.0"}]), result(1)],
     "上限が近いだけ": [INIT, {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "rateLimitType": "five_hour"}},
                  {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed_warning", "rateLimitType": "seven_day"}}, result(1)],
 }
@@ -96,6 +99,8 @@ MUTATIONS = {
                        ('last = results[-1]', 'last = results[0]')],
     "result が無くても済んだと読む": [('return ["result が無い"]', "return []")],
     "要確認の印を見ない": [("    if problems:", "    if False:")],
+    "委譲先の発言を最後の文にする": [(' and not event.get("parent_tool_use_id")', "")],
+    "途中の init の版を出さない": [("    if later != dev_loop:", "    if False:")],
     "上限が近いだけでも拒否と読む": [('(None, "allowed", "allowed_warning")', '(None,)')],
     "要約の行を切り詰めない": [('return text if len(text) <= limit else text[: limit - 1] + "…"', "return text")],
 }
@@ -375,12 +380,14 @@ def main() -> int:
         check("dev-loop の版・許可モード・セッションを出す", "dev-loop の版: 1.63.6 ／ 許可モード: auto ／ セッション: s-1" in str(out))
         check("最後の文は最後の assistant の文（最後の result の文は空）", "最後の文: 最後の報告: PR #9" in str(out))
         expected = {"済んだ（result が 3 つ）": 0, "最後の result が API の誤り": 3, "result が無い": 3, "成功でない": 3,
-                    "拒否された操作": 3, "殺された体": 3, "利用上限の拒否": 3, "長い文": 0, "上限が近いだけ": 0}
+                    "拒否された操作": 3, "殺された体": 3, "利用上限の拒否": 3, "長い文": 0, "上限が近いだけ": 0, "委譲先の発言が最後": 0, "途中で版が変わる": 0}
         for name, code in expected.items():
             check(f"{name} は {code}", o[f"要約 {name}"][0] == code)
         check("拒否された操作の道具の名前を出す", "拒否された操作: Bash" in o["要約 拒否された操作"][1])
         check("利用上限の種類を出す", "利用上限: rejected（seven_day" in o["要約 利用上限の拒否"][1])
         check("読めなかった行を数える", "読めなかった行: 1" in o["要約 result が無い"][1])
+        check("最後の文は子自身の発言（委譲先の発言ではない）", "最後の文: 子の報告" in o["要約 委譲先の発言が最後"][1])
+        check("途中の init で dev-loop の版が変わったら両方を出す", "dev-loop の版: 1.63.6, → 途中から 1.64.0" in o["要約 途中で版が変わる"][1])
         check("長い文を切り詰める（要約は 1500 文字未満）", len(o["要約 長い文"][1]) < 1500)
 
         print("\n終了コードが docstring の表と一致する")

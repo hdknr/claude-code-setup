@@ -43,7 +43,7 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 | 1 | status: 走っている（それまでの要約を出す） |
 | 2 | 引数が違う（名前・番号の形・選べない許可モード） |
 | 3 | launch: 起こさなかった（委譲文が無い・空・`{{` が残る・`bypassPermissions`・同じ Issue の子が走っている）／ status: 終わったが要確認（`result` が無い・最後の `result` が成功でない・API の誤り・拒否された操作・殺された体・利用上限の拒否） |
-| 4 | 判定できなかった（メインの作業ツリーを決められない・記録が無い・読めない・`claude` を起こせない・プロセスを確かめられない）。**「終わった」とも「走っている」とも答えていない** |
+| 4 | 判定できなかった（メインの作業ツリーを決められない・記録が無い・読めない・`claude` を起こせない・プロセスは居るが `ps` で確かめられない）。**「終わった」とも「走っている」とも答えていない** |
 
 ## 何を守り、何を守らないか
 
@@ -61,6 +61,8 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 - **そのうえで、最初の `-p` の引数がその Issue の `/dev-loop:dev-loop <番号>` であること**——委譲文（`--append-system-prompt` の中身）は `ps` に出るので、
   その中に書かれた別の番号に当たらない。`#5` を `#50` に当てない。
 - **最後の `result` を読む**——最初の `result` は背景の体を待つ前のものでありうる。
+- **最後の文は子自身の発言から取る**——委譲先の体の発言（`parent_tool_use_id` つき）も同じ出力に流れる。
+- **dev-loop の版が途中の init で変わったら、両方を出す**——同じプロセスで init が 2 度以上出て、他のプラグインの版が途中から変わった（実測）。
 - **終わったのに `result` が無ければ 3**——落ちた子を「済んだ」と言わない。
 - **要確認の印（成功でない・API の誤り・拒否・殺された体・利用上限の拒否）が 1 つでもあれば 3。**
 - **`allowed` と `allowed_warning`（上限が近いだけ）を利用上限の拒否と読まない**——拒否と読むのはそれ以外の `status` である。
@@ -164,7 +166,8 @@ def is_running(pid, number):
     except OSError as exc:
         raise Unknown(f"ps を起こせない: {exc}") from exc
     if proc.returncode != 0:
-        return False
+        # kill(0) は通ったのに ps が確かめられない——「走っていない」と読まない（終わった直後の競合でも 4 に倒す）
+        raise Unknown(f"プロセス {pid} は居るが、ps で確かめられない（終了コード {proc.returncode}）")
     # 実物は `claude -p …`、スクリプトの claude なら `<インタプリタ> <…>/claude -p …`。
     # **部分一致にしない**——パスに claude を含む別のプロセス（このリポジトリ自身の名前など）を拾う
     tokens = proc.stdout.split()
@@ -241,7 +244,7 @@ def cmd_launch(args, cwd=None):
 
 
 def summarize(out_path):
-    init, results, limit, last_text, broken = None, [], None, "", 0
+    init, last_init, results, limit, last_text, broken = None, None, [], None, "", 0
     try:
         lines = Path(out_path).read_text(encoding="utf-8", errors="replace").splitlines()
     except FileNotFoundError:
@@ -258,19 +261,21 @@ def summarize(out_path):
             broken += 1
             continue
         kind = event.get("type")
-        if kind == "system" and event.get("subtype") == "init" and init is None:
-            init = event
+        if kind == "system" and event.get("subtype") == "init":
+            # 同じプロセスで init が 2 度以上出て、途中から他のプラグインの版が変わった（probe2）——最初と最後の両方を持つ
+            init = init or event
+            last_init = event
         elif kind == "result":
             results.append(event)
         elif kind == "rate_limit_event":
             info = event.get("rate_limit_info") or {}
             if info.get("status") not in (None, "allowed", "allowed_warning"):
                 limit = info
-        elif kind == "assistant":
+        elif kind == "assistant" and not event.get("parent_tool_use_id"):  # 委譲先の体の発言は子の文ではない
             for block in (event.get("message") or {}).get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "text" and block.get("text", "").strip():
                     last_text = block["text"]
-    return {"init": init, "results": results, "limit": limit, "last_text": last_text, "broken": broken}
+    return {"init": init, "last_init": last_init, "results": results, "limit": limit, "last_text": last_text, "broken": broken}
 
 
 def concerns(summary):
@@ -302,7 +307,12 @@ def cmd_status(args, cwd=None):
     running = is_running(meta["pid"], number)
     summary = summarize(meta["out"])
     init = summary["init"] or {}
-    dev_loop = [p.get("version") for p in init.get("plugins") or [] if isinstance(p, dict) and p.get("name") == "dev-loop"]
+    def dev_loop_of(event):
+        return [p.get("version") for p in (event or {}).get("plugins") or [] if isinstance(p, dict) and p.get("name") == "dev-loop"]
+    dev_loop = dev_loop_of(init)
+    later = dev_loop_of(summary["last_init"])
+    if later != dev_loop:
+        dev_loop = dev_loop + [f"→ 途中から {', '.join(map(str, later)) or '無し'}"]
     print(f"#{number}: {'走っている' if running else '終わった'}（pid {meta['pid']}・記録 {found[-1]}）")
     print(f"dev-loop の版: {', '.join(map(str, dev_loop)) or '無し'} ／ 許可モード: {init.get('permissionMode', '無し')}"
           f" ／ セッション: {init.get('session_id', '無し')}")
