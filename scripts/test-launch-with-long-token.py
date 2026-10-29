@@ -26,7 +26,7 @@ FAKE_SECURITY = r"""#!/bin/sh
 printf '%s\n' "$*" >> "$FAKE_DIR/security.log"
 case "$1" in
 find-generic-password)
-    case "$FAKE_SEC" in missing) exit 44 ;; esac
+    case "$FAKE_SEC" in missing) exit 44 ;; locked) exit 36 ;; esac
     for a in "$@"; do
         if [ "$a" = "-w" ]; then
             case "$FAKE_SEC" in empty) printf '\n' ;; *) printf '%s\n' "$FAKE_TOKEN" ;; esac
@@ -115,6 +115,17 @@ def suite(script: Path) -> list[str]:
             check(f"止まる（{name}）: 2", code == 2)
             check(f"止まる（{name}）: claude を起動しない", e.log("claude.log") == "")
             check(f"止まる（{name}）: 理由と手順を出す", "claude を起動しない" in out and "cruise-long-lived-token" in out)
+    # 項目が無い（44）とほかの理由（ロック 36 など）を分けて言う
+    tmp, e = scenario()
+    with tmp:
+        code, out = e.run(script, FAKE_SEC="missing")
+        check("44 は「無い」と入れ方を言う", "が無い" in out and "--store-token" in out)
+        code, out = e.run(script, FAKE_SEC="locked")
+        check("44 でなければ「読めなかった」と終了コードを言い、「無い」と言わない",
+              code == 2 and "読めなかった" in out and "36" in out and "が無い" not in out
+              and e.log("claude.log") == "")
+        code, out = e.run(script, "--status", FAKE_SEC="locked")
+        check("--status: 44 でなければ「読めなかった」", code == 2 and "読めなかった" in out and "が無い" not in out)
     tmp, e = scenario(security=False)
     with tmp:
         code, out = e.run(script)
@@ -167,6 +178,15 @@ def suite(script: Path) -> list[str]:
     with tmp:
         code, out = e.run(script, "--account", "../x")
         check("--account: 不正な名前は 2 で、security を呼ばない", code == 2 and e.log("security.log") == "")
+        for args in (("--account", "--store-token"), ("--account", "-x")):
+            code, out = e.run(script, *args)
+            check(f"--account: - で始まる名前（{args[1]}）は 2 で、security を呼ばない",
+                  code == 2 and e.log("security.log") == "" and e.log("claude.log") == "")
+        for args in (("--store-token", "--account", "work"), ("--status", "--account", "work"),
+                     ("x", "--account", "work")):
+            code, out = e.run(script, *args)
+            check(f"--account が最初に無い（{' '.join(args)}）と 2 で止まり、security も claude も呼ばない",
+                  code == 2 and "最初に置く" in out and e.log("security.log") == "" and e.log("claude.log") == "")
     return bad
 
 
@@ -174,8 +194,7 @@ MUTATIONS = {
     "macOS でなくても読む": ('if [ "$(uname -s)" != "Darwin" ]; then', 'if false; then'),
     "先に使われる認証を見ない": ("for name in ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY; do", "for name in; do"),
     "API キーを見ない": ("for name in ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY; do", "for name in ANTHROPIC_AUTH_TOKEN; do"),
-    "項目が無くても起動する": ('if ! token=$(security find-generic-password -s "$SERVICE" -w 2>/dev/null); then',
-                     'if ! token=$(security find-generic-password -s "$SERVICE" -w 2>/dev/null) && false; then'),
+    "項目が無くても起動する": ('if [ "$rc" -eq 44 ]; then\n    stop 2', 'if false; then\n    stop 2'),
     "値が空でも起動する": ('if [ -z "$token" ]; then', "if false; then"),
     "security が無くても進む": ("if ! command -v security >/dev/null 2>&1; then", "if false; then"),
     "引数を割る": ('exec claude "$@"', "exec claude $*"),
@@ -186,10 +205,15 @@ MUTATIONS = {
     "-w を最後に置かない": ('-j "launch-with-long-token.sh --store-token $(date -u +%Y-%m-%dT%H:%M:%SZ)" -w',
                       '-w -j "launch-with-long-token.sh --store-token $(date -u +%Y-%m-%dT%H:%M:%SZ)"'),
     "-U を付けない": ("exec security add-generic-password -U -a", "exec security add-generic-password -a"),
-    "--status で値を読む": ('if ! attrs=$(security find-generic-password -s "$SERVICE" 2>/dev/null); then',
-                       'if ! attrs=$(security find-generic-password -s "$SERVICE" -w 2>/dev/null); then'),
+    "--status で値を読む": ('    attrs=$(security find-generic-password -s "$SERVICE" 2>/dev/null)',
+                       '    attrs=$(security find-generic-password -s "$SERVICE" -w 2>/dev/null)'),
     "--account を無視する": ('    SERVICE="claude-long-token-$2"\n', '    SERVICE="claude-long-token"\n'),
     "--account の名前を検めない": ("if ! printf '%s' \"$2\" | grep -Eq", "if false && printf '%s' \"$2\" | grep -Eq"),
+    "- で始まる名前を通す": ("grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'", "grep -Eq '^[A-Za-z0-9._-]+$'"),
+    "--account を先頭でしか見ない": ('    if [ "$arg" = "--account" ]; then', "    if false; then"),
+    "読めなかったのを「無い」と言う": ('if [ "$rc" -eq 44 ]; then\n    stop 2', 'if [ "$rc" -ne 0 ]; then\n    stop 2'),
+    "--status で読めなかったのを「無い」と言う": ('    if [ "$rc" -eq 44 ]; then\n        echo', '    if [ "$rc" -ne 0 ]; then\n        echo'),
+    "44 でない失敗を見ない": ('elif [ "$rc" -ne 0 ]; then\n    # 44', 'elif false; then\n    # 44'),
     "案内に --account を付けない": ('    ACCT="--account $2 "\n', '    ACCT=""\n'),
 }
 

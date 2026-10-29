@@ -571,9 +571,15 @@ def suite(script: Path) -> list[str]:
         env.all_good()
         before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
         # 変異で判定の分岐が外れても実環境を読まないよう、HOME・project・managed・flag をテンポラリに向ける
-        saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_CONFIG_DIR")}
+        # 認証は本番の経路（env=None → os.environ）で読む——実環境の値を読まないよう、偽のセッションの環境に差し替える（#584 の CR9）
+        auth_keys = ("CLAUDECODE", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                     "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "GITHUB_ACTIONS")
+        saved = {k: os.environ.get(k) for k in ("HOME", "CLAUDE_CONFIG_DIR", *auth_keys)}
         os.environ["HOME"] = str(env.home)
         os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        for k in auth_keys:
+            os.environ.pop(k, None)
+        os.environ.update(SESSION_ENV)
         paths = ["--project", str(env.project),
                  "--managed-settings", str(env.project / "no-managed.json"),
                  "--flag-settings", str(env.project / "no-flag.json")]
@@ -600,6 +606,8 @@ def suite(script: Path) -> list[str]:
                 else:
                     os.environ[k] = v
         after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
+        check("認証: 本番の経路（env を渡さない main）でも os.environ から読む",
+              "[良い] 認証" in runs["full"][1] and FAKE_TOKEN not in runs["full"][1], bad)
         code, out, reads = runs["config_off"]
         check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in out
               and "[要対処] 通知の試験" in out, bad)
@@ -998,6 +1006,9 @@ MUTATIONS = {
     "認証: 認証を出さない": (
         "    items += check_auth(stack, os.environ if env is None else env, present)\n",
         "\n"),
+    "認証: 本番の経路で os.environ を読まない": (
+        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
+        "    items += check_auth(stack, {} if env is None else env, present)\n"),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),
