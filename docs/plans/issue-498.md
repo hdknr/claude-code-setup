@@ -177,3 +177,9 @@ Verifier（sonnet）: 反証 0 件（所見 1 は CR1 と同じ）。`/code-revi
 | 作れた経路（0）で残る、印に無い出力の名前のファイル（0.25.0 の `proposal.pptx` を `--pptx` 無しで作ったとき）を名指しするか | #498 実装役（変更範囲の `触らない:`） | 示せる（作れた経路は名指ししない——`leftover_lines` を呼ばない） | 利用者の判断 |
 | CR5（名指しを 1 箇所に寄せる）・CR7（場所の決め方の写し） | #498 /code-review 1 パス目 | 示せない | 外に出す |
 | P2-5（`write_outputs` の「書けない」の分岐を試料が通らない） | #498 /code-review 2 パス目 | 示せない | 外に出す |
+
+### main の取り込み（PR #539 の後）
+
+- PR #539 が `CONFLICTING` 相当で CI が 1 本も走らなかった（`no checks reported`）——main に #521（spec-loop 0.36.0。#499）と #532（#503）が入っていた。
+- 取り込む前に `git diff --name-status --no-renames HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'` を見た——足された検査は無い（`schedule-to-gantt.py`・`check-skill-pointers.py` とそのテストの変更だけ）。
+- `origin/main`（`1e9c216`）を merge。衝突は 7 ファイルの版の行だけで、塊ごとに解き **0.37.0 のまま**（main の 0.36.0 より上）。main 側の本文の変更（`README.md`・`tree.md` のガントチャートの 1 段落）はこの周の文面と重ならない。`git diff origin/main` の正味の差分はこの周の 12 ファイルだけ。

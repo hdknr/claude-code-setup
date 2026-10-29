@@ -65,7 +65,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは
       `scripts/test-check-feasibility-csv.py`）
     - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
-      作れなければ**前の出力を消す**。テストは `scripts/test-schedule-to-gantt.py`）
+      作れなければ**前の出力を消す**——**消せなければ 2 で止まり、残った出力を名指しする**（#499）。テストは `scripts/test-schedule-to-gantt.py`）
     - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
       2 つの承認が見た中身（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` を除く）と `removed.csv`。#375）が一致するかの照合（#262。**どちらかの時点に比べる中身が
       無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。**要求確定のタグの時点に `暫定反映` の Q&A が
