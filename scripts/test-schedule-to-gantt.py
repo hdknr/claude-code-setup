@@ -25,7 +25,7 @@
    名指しして 2——「書く途中の想定外の例外」にしない（#582。同じく `main` に届かせる）。
    パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2。
    先を辿れない symlink（先がファイルでもディレクトリでも）は、先が前の出力かを確かめられないので消さずに名指しして 2
-   （表が正しくて書けないときも。#535）、壊れた symlink（先の名前が NAME_MAX を超えるものを含む）とディレクトリを指す symlink は消さずに 1。
+   （表が正しくて書けないときも。#535）、壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）とディレクトリを指す symlink は消さずに 1。
    書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
    入口の捕捉は、書いたあとの標準出力の例外で見る（`sys.stdout` を差し替える）。
    消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
@@ -157,7 +157,8 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
      "                mode = stat.S_IFREG; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
     ("辿れない先のリンクを黙って残す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
      "                return None; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
-    ("先の長すぎる名前を出力先の名前で見る", "if absent(out.parent / os.readlink(out), e):", "if absent(out, e):"),
+    ("先の長すぎる名前を出力先の名前で見る", "if absent(Path(os.path.realpath(out)), e):", "if absent(out, e):"),
+    ("先の鎖を解かずに 1 段目だけ見る", "if absent(Path(os.path.realpath(out)), e):", "if absent(out.parent / os.readlink(out), e):"),
     ("辿れないのがリンクの先だと言わない", "（リンクの先を辿れない: {e.strerror}）", "（{e.strerror}）"),
     ("消す途中の想定外の例外を名指ししない", "    except Exception as e:  # 想定外の例外でも、消せなかった",
      "    except ImportError as e:  # 想定外の例外でも、消せなかった"),
@@ -256,7 +257,9 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     (root / "adir").mkdir()
     (root / "dirlink.svg").symlink_to(root / "adir")
     (root / "longlink.svg").symlink_to("b" * 300)  # 先の名前が NAME_MAX を超える——在りえない先の壊れたリンク（#535 の CR1-1）
-    for name in ("broken.svg", "dirlink.svg", "longlink.svg"):
+    (root / "mid.svg").symlink_to("b" * 300)
+    (root / "chainlink.svg").symlink_to("mid.svg")  # 別のリンクを経由して在りえない先に着く（R2-1）
+    for name in ("broken.svg", "dirlink.svg", "longlink.svg", "chainlink.svg"):
         code, output = generate(scripts, bad, root / name)
         if code != 1 or LEFT in output or "前に作った出力を消した" in output or not (root / name).is_symlink():
             problems.append(f"消さない symlink {name}: 終了 {code}: {output[-300:]!r}")
