@@ -103,6 +103,9 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
 - **ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決すること**——スキルの
   `references/r.md` の `` `s.md` `` は `references/s.md` を指す。スキルのディレクトリ（プラグイン直下ならプラグインの根）から
   解決すると、`references/` の中の指し先がどれも「無い」になって照合されない。**`` `SKILL.md` `` はこれまでどおりスキルのディレクトリから解決する。**
+- **ファイル名だけの指し先は、ディレクトリの中の名前と文字どおりに比べること**——`is_file()` で探すと、
+  大文字小文字を区別しない FS（macOS）では `` `QA.md` `` が `qa.md` に当たって照合され、Linux（CI）では飛ばされる
+  （**OS で結果が変わる**。#541 の 1 パス目の `/code-review` が実測で示した）。
 - **ほかの持ち主を名指しした指し先は解決しないこと**——`` dev-loop の `references/spec-gap.md` ``
   `` dev-loop のスキルの `scripts/x.py` `` `` このリポジトリの `scripts/x.py` `` は、
   **このプラグインのファイルではない**。解決すると、正しい記述なのに落ちる。
@@ -318,7 +321,14 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
         # **ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決する**（#541）。
         # **そこに無ければ照合しない**——別のディレクトリ・別のプラグインを指していることがあり、どこかが決まらない
         # （docstring の「守らない」）。`SKILL.md` はこれまでどおりスキルのディレクトリから。
-        target = (path.parent if "/" not in rel and rel != "SKILL.md" else skill) / rel
+        # **名前はディレクトリの中の名前と文字どおりに比べる**——`is_file()` だけだと、大文字小文字を区別しない FS（macOS）で
+        # `QA.md` が `qa.md` に当たり、OS で結果が変わる（#541 の 1 パス目の `/code-review`）。
+        if "/" not in rel and rel != "SKILL.md":
+            if rel not in {p.name for p in path.parent.iterdir()}:
+                continue
+            target = path.parent / rel
+        else:
+            target = skill / rel
         if not target.is_file():
             continue  # 実在しないことは囲まれた指し先の検査が言う（ファイル名だけの形は見ない）
         lineno = prose.count("\n", 0, m.start()) + 1

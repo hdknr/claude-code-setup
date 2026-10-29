@@ -282,6 +282,9 @@ BARE_PLUGIN_QA = "# qa\n\n## プラグインの隣の「節」\n"
 # **1 本ずつ壊す**——スキルの `references/` から指した節だけ／プラグイン直下から指した節だけ。
 BARE_DST_REF_BROKEN = BARE_DST_REF.replace("スキルの隣の節", "スキルの隣の項")
 BARE_PLUGIN_QA_BROKEN = BARE_PLUGIN_QA.replace("プラグインの隣の「節」", "プラグインの隣の「項」")
+# **大文字小文字だけ違うファイル名**——同じディレクトリに文字どおりには無いので照合しない（0）。
+# **macOS の FS では `QA.md` が `qa.md` に「在る」ことになる**（#541 の 1 パス目の `/code-review`）。
+BARE_PLUGIN_REF_CASE = BARE_PLUGIN_REF + "\n大文字の `QA.md` の「どこにも無い節」は照合しない。\n"
 
 PLAIN = """# デモ
 
@@ -395,7 +398,12 @@ MUTATIONS = {
         "|[\\w.-]+\\.md|(?:\\.\\./)+", "|(?:\\.\\./)+"),
     # 守る 25d: ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決すること（#541）
     "ファイル名だけの指し先をスキルのディレクトリから解決する": (
-        '(path.parent if "/" not in rel and rel != "SKILL.md" else skill) / rel', "skill / rel"),
+        "            target = path.parent / rel", "            target = skill / rel"),
+    # 守る 25e: ファイル名だけの指し先は、ディレクトリの中の名前と文字どおりに比べること
+    # （FS に依らず殺せるよう、大文字小文字を無視する形で当てる——守る 30 と同じ）
+    "ファイル名だけの指し先の大文字小文字を無視する": (
+        "            if rel not in {p.name for p in path.parent.iterdir()}:",
+        "            if rel.lower() not in {p.name.lower() for p in path.parent.iterdir()}:"),
     # 守る 26: ほかの持ち主を名指しした指し先は解決しないこと
     "ほかの持ち主の名指しを解決する": (
         "    m = OWNER.search(before)",
@@ -617,19 +625,21 @@ def main() -> int:
         check("スキルの `prompts/*.md` から隣のスキルを指した節が無ければ落とす",
               observe(mod, sibling_src_prompt_broken)["rc"] == 1)
 
-        def bare_tree(name: str, *, dst: str = BARE_DST_REF, qa: str = BARE_PLUGIN_QA) -> Path:
+        def bare_tree(name: str, *, dst: str = BARE_DST_REF, qa: str = BARE_PLUGIN_QA,
+                      ref: str = BARE_PLUGIN_REF) -> Path:
             d = base / name
             assert_not_real_repo(d)
             make_skill(d, body=BARE_SKILL, files={"references/r.md": BARE_SRC_REF, "references/s.md": dst})
             refs = d / "plugins" / "demo" / "references"
             refs.mkdir(parents=True, exist_ok=True)
-            (refs / "a.md").write_text(BARE_PLUGIN_REF, encoding="utf-8")
+            (refs / "a.md").write_text(ref, encoding="utf-8")
             (refs / "qa.md").write_text(qa, encoding="utf-8")
             return d
 
         bare_ok = bare_tree("bare-ok")
         bare_skill_broken = bare_tree("bare-skill-broken", dst=BARE_DST_REF_BROKEN)
         bare_plugin_broken = bare_tree("bare-plugin-broken", qa=BARE_PLUGIN_QA_BROKEN)
+        bare_case = bare_tree("bare-case", ref=BARE_PLUGIN_REF_CASE)
         print("\nディレクトリの付かないファイル名の移した先の名指し（#541）")
         check("同じディレクトリの節が在れば通す（折り返し・『』を越えて。同じディレクトリに無いファイル名は照合しない）",
               observe(mod, bare_ok)["rc"] == 0)
@@ -637,6 +647,8 @@ def main() -> int:
               observe(mod, bare_skill_broken)["rc"] == 1)
         check("プラグイン直下の `references/` から隣のファイルを指した節が無ければ落とす（#503 の CR2-3 の再現）",
               observe(mod, bare_plugin_broken)["rc"] == 1)
+        check("大文字小文字だけ違うファイル名は照合しない（文字どおりに比べる。OS に依らない）",
+              observe(mod, bare_case)["rc"] == 0)
 
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
@@ -701,7 +713,8 @@ def main() -> int:
                           or mutant.main([str(sibling_src_prompt_broken)]) != 1
                           or mutant.main([str(bare_ok)]) != 0
                           or mutant.main([str(bare_skill_broken)]) != 1
-                          or mutant.main([str(bare_plugin_broken)]) != 1)
+                          or mutant.main([str(bare_plugin_broken)]) != 1
+                          or mutant.main([str(bare_case)]) != 0)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
