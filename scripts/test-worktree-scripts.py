@@ -288,25 +288,26 @@ EXISTS_HEADERS = ("  worktree:", "  ブランチ:")
 
 
 def exists_headers_have_lists(res) -> bool:
-    """終了コード 3 の見出し（`  worktree:`・`  ブランチ:`）が、**どの出力先でも**
-    直後の行に一覧を伴うか（#544）。**出力先ごとに見る**——両方を足し合わせて見ると、
-    見出しが標準出力・一覧が標準エラーに割れた形でも並んで見えて、緑になる。
-    **見出しが 2 つとも出ていなければ偽**——出ていないものの下は見られない。
-    **見出しが標準出力に出ていても偽**——出力先は標準エラーである（守る 18）。
-    出力先ごとの並びだけを見ると、見出しと一覧をそろって標準出力へ移した形が緑になる
-    （#544 の `/code-review` 1 パス目と Verifier 1 パス目）。"""
+    """終了コード 3 の見出し（`  worktree:`・`  ブランチ:`）が**標準エラーに 2 つとも出て**、
+    それぞれ**標準エラーの中で**直後の行に一覧を伴うか（#544。出力先は標準エラーである——守る 18）。
+    **見出しが標準出力に 1 つでも出ていたら偽**——見出しと一覧をそろって標準出力へ移した形を落とす
+    （#544 の `/code-review` 1 パス目と Verifier 1 パス目）。
+    **一覧は標準エラーの中で見出しの直後に探す**——見出しを標準エラーに出し、一覧を標準出力に出す形は、
+    標準エラーで見出しの直後に字下げした行が来ないので偽になる。**見るのは直後の行が字下げした空でない行かどうかだけ**
+    ——別の字下げした行が来れば真になる（一覧の中身は `exists_lists_indented` が git の出力と突き合わせて見る）。
+    **標準出力は見出しの有無だけを見て、並びは見ない**——見出しがあればその時点で偽なので、
+    標準出力の中の並びを見る場面が無い（#559。以前は標準出力も並びを走査していたが、決して当たらなかった）。"""
     if any(line in EXISTS_HEADERS for line in res.stdout.splitlines()):
         return False
     seen = set()
-    for stream in (res.stdout, res.stderr):
-        lines = stream.splitlines()
-        for i, line in enumerate(lines):
-            if line not in EXISTS_HEADERS:
-                continue
-            seen.add(line)
-            if i + 1 >= len(lines) or not (lines[i + 1].startswith("    ")
-                                            and lines[i + 1].strip()):
-                return False
+    lines = res.stderr.splitlines()
+    for i, line in enumerate(lines):
+        if line not in EXISTS_HEADERS:
+            continue
+        seen.add(line)
+        if i + 1 >= len(lines) or not (lines[i + 1].startswith("    ")
+                                        and lines[i + 1].strip()):
+            return False
     return seen == set(EXISTS_HEADERS)
 
 
@@ -366,9 +367,9 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **「出力のどこかに在る」では見ない**——離れた行に置くと、案内だけを読んだ子が呼ぶ。
         "cruise の子の例外が案内の直後にある": cruise_exception_follows(first.stdout, wt),
         "2 回目は断る": again.returncode,
-        # **3 の見出しの下に一覧があるか、出力先ごとに見る**（#544）。
+        # **3 の見出しの下に一覧があるか、標準エラーの中で見る**（#544。見出しが標準出力にあれば偽）。
         # **標準出力だけを読む側には、見出しだけ出て下が空に見えていた。**
-        "3 の見出しの下に一覧がある（出力先ごと）": exists_headers_have_lists(again),
+        "3 の見出しの下に一覧がある（標準エラー）": exists_headers_have_lists(again),
         # **一覧のどの行も同じ字下げか**（#558）。行数も残す——`main()` が「一致が複数」の試料であることを見る。
         "3 の一覧のどの行も同じ字下げ": again_lists[0],
         "3 の一覧の行数（worktree, ブランチ）": again_lists[1],
@@ -1169,8 +1170,8 @@ def main() -> int:
         check("確認の材料（ブランチ名と起点）を出力する", correct["確認の材料が出ている"])
         check("案内の直後に、cruise の子は EnterWorktree を呼ばず作ったパスを cwd にすると出す（#502）",
               correct["cruise の子の例外が案内の直後にある"])
-        check("3 で終わるとき、見出しの下に一覧がある——標準出力だけを見ても空でない（#544）",
-              correct["3 の見出しの下に一覧がある（出力先ごと）"])
+        check("3 で終わるとき、見出しの下に一覧がある——どちらも標準エラーに出て、標準出力に見出しは出ない（#544）",
+              correct["3 の見出しの下に一覧がある（標準エラー）"])
         check("3 の試料は一致が複数ある（worktree もブランチも 2 行以上。#558）",
               min(correct["3 の一覧の行数（worktree, ブランチ）"]) >= 2)
         check("3 で終わるとき、一覧のどの行にも同じ字下げが付く（#558）",
