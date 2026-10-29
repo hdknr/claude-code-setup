@@ -236,6 +236,38 @@ PLUGIN_AGENT_BROKEN = PLUGIN_AGENT.replace("振り分けの区分", "壊した�
 PLUGIN_REF_OWN = PLUGIN_REF + "\n自分の決まりは demo の `references/missing.md` にある。\n"
 PLUGIN_REF_UNKNOWN = PLUGIN_REF + "\n詳細は spec の `references/missing.md` にある。\n"
 
+# **`../` の後ろに名前の付いたディレクトリを通る移した先の名指し**（#503）——同じプラグインの隣のスキルの節を指す。
+# **#484 の実物**: dev-loop `SKILL.md` の `` `../cruise/SKILL.md` の「4. 周を回す」 `` と、cruise の
+# `` `../dev-loop/references/x.md` の「X」 ``。`SKILL.md`・`references/`・`prompts/` と、`手順 N` を挟んで
+# `の`／`「` で折り返す形を 1 本ずつ置く。
+# **壊れた試料は、どれも指し先を 1 本だけ壊す**——1 本の試料が先の行で落ちると、後ろの行の形を拾わなくなる変異が
+# 殺せない（#503 の 1 パス目の `/code-review` が、`手順 N`・折り返しの形だけを拾わなくする変異で全合格のままだと実測で示した）。
+SIBLING_XREF_OK = """# デモ
+
+入り方は `../sib/SKILL.md` の「4. 周を回す」を正とする。
+線は `../sib/references/x.md` の「隣の『節』」を正とする。
+文面は `../sib/prompts/p.md` の「渡す文面」を使う。
+閉じ方は `../sib/SKILL.md` 手順 5 の
+「5. 周を閉じる」を見る。
+"""
+SIBLING_SKILL = "# 隣\n\n## 4. 周を回す\n\n## 5. 周を閉じる\n\n## 6. 参照から指す節\n\n## 7. 文面から指す節\n"
+# **書く側も `SKILL.md` だけにしない**——スキルの `references/*.md` と `prompts/*.md` も、スキルのディレクトリから
+# 解決して照合する（#503 の 2 パス目の `/code-review` が、ファイルの場所から解決する変異と `prompts/` を走査しない変異で
+# 全合格のままだと実測で示した）。
+SIBLING_SRC_REF = "# r\n\n入り方は `../sib/SKILL.md` の「6. 参照から指す節」を見る。\n"
+SIBLING_SRC_PROMPT = "# q\n\n入り方は `../sib/SKILL.md` の「7. 文面から指す節」を見る。\n"
+SIBLING_REF = "# x\n\n## 隣の「節」\n"
+SIBLING_PROMPT = "# p\n\n## 渡す文面\n"
+# **#484 の `/code-review` 2 パス目の再現**——隣のスキルの見出しを書き換えた（1 行目の指し先だけが壊れる）。
+SIBLING_SKILL_BROKEN = SIBLING_SKILL.replace("4. 周を回す", "4. 周を束ねる")
+SIBLING_REF_BROKEN = SIBLING_REF.replace("隣の「節」", "隣の「別の節」")
+SIBLING_PROMPT_BROKEN = SIBLING_PROMPT.replace("渡す文面", "送る文面")
+# **`手順 N` を挟んで折り返した指し先だけが壊れる。**
+SIBLING_STEP_BROKEN = SIBLING_SKILL.replace("5. 周を閉じる", "5. 周を畳む")
+# **スキルの `references/*.md`・`prompts/*.md` から指した節だけが壊れる。**
+SIBLING_SRC_REF_BROKEN = SIBLING_SKILL.replace("6. 参照から指す節", "6. 参照から指す項")
+SIBLING_SRC_PROMPT_BROKEN = SIBLING_SKILL.replace("7. 文面から指す節", "7. 文面から指す項")
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -304,8 +336,8 @@ MUTATIONS = {
         "               True or body_without_pointers("),
     # 守る 14: `手順 N` を挟んだ形も拾うこと
     "手順 N を挟んだ形を拾わない": (
-        "`\\s*(?:手順\\s*\\d+\\s*)?\" + NO + QUOTED)",
-        "`\\s*\" + NO + QUOTED)"),
+        'r"\\s*(?:手順\\s*\\d+\\s*)?" + NO + QUOTED)',
+        'r"\\s*" + NO + QUOTED)'),
     # 守る 15: 指し先そのものの文字列は数えないこと
     "指し先が自分を見つける": (
         '    return normalize(XREF.sub("", PROSE.sub("", text)))',
@@ -337,8 +369,12 @@ MUTATIONS = {
         "                yield path.parent, plugin, path"),
     # 守る 25: `../` で始まる移した先の名指しも拾うこと
     "`../` の移した先の名指しを拾わない": (
-        'r"`(SKILL\\.md|(?:\\.\\./)*(?:references|prompts)/',
-        'r"`(SKILL\\.md|(?:references|prompts)/'),
+        '|(?:\\.\\./)+[\\w.-][\\w./-]*\\.md)`"',
+        ')`"'),
+    # 守る 25b: `../` の後ろに名前の付いたディレクトリを通る移した先の名指しも拾うこと（#503）
+    "`../` の後ろを references/・prompts/ に限る": (
+        '(?:\\.\\./)+[\\w.-][\\w./-]*\\.md)`"',
+        '(?:\\.\\./)+(?:references|prompts)/[\\w.-]+\\.md)`"'),
     # 守る 26: ほかの持ち主を名指しした指し先は解決しないこと
     "ほかの持ち主の名指しを解決する": (
         "    m = OWNER.search(before)",
@@ -523,6 +559,43 @@ def main() -> int:
         check("名前の前が `.` でも免除しない", observe(mod, plugin_dotted)["rc"] == 1)
         check("同じ行の前のほうの名指しでは免除しない", observe(mod, plugin_early)["rc"] == 1)
 
+        def sibling_tree(name: str, *, sib: str = SIBLING_SKILL, ref: str = SIBLING_REF,
+                         prompt: str = SIBLING_PROMPT) -> Path:
+            d = base / name
+            assert_not_real_repo(d)
+            make_skill(d, body=SIBLING_XREF_OK, files={
+                "references/r.md": SIBLING_SRC_REF, "prompts/q.md": SIBLING_SRC_PROMPT})
+            sib_dir = d / "plugins" / "demo" / "skills" / "sib"
+            (sib_dir / "references").mkdir(parents=True, exist_ok=True)
+            (sib_dir / "SKILL.md").write_text(sib, encoding="utf-8")
+            (sib_dir / "references" / "x.md").write_text(ref, encoding="utf-8")
+            (sib_dir / "prompts").mkdir(parents=True, exist_ok=True)
+            (sib_dir / "prompts" / "p.md").write_text(prompt, encoding="utf-8")
+            return d
+
+        sibling_ok = sibling_tree("sibling-xref-ok")
+        sibling_skill_broken = sibling_tree("sibling-skill-broken", sib=SIBLING_SKILL_BROKEN)
+        sibling_ref_broken = sibling_tree("sibling-ref-broken", ref=SIBLING_REF_BROKEN)
+        sibling_prompt_broken = sibling_tree("sibling-prompt-broken", prompt=SIBLING_PROMPT_BROKEN)
+        sibling_step_broken = sibling_tree("sibling-step-broken", sib=SIBLING_STEP_BROKEN)
+        sibling_src_ref_broken = sibling_tree("sibling-src-ref-broken", sib=SIBLING_SRC_REF_BROKEN)
+        sibling_src_prompt_broken = sibling_tree("sibling-src-prompt-broken", sib=SIBLING_SRC_PROMPT_BROKEN)
+        print("\n隣のスキルを通る `../` の移した先の名指し（#503）")
+        check("隣のスキルの節が在れば通す（`手順 N`・折り返し・『』を越えて）",
+              observe(mod, sibling_ok)["rc"] == 0)
+        check("隣のスキルの `SKILL.md` の見出しを書き換えたら落とす（#484 の再現）",
+              observe(mod, sibling_skill_broken)["rc"] == 1)
+        check("隣のスキルの `references/x.md` の節を書き換えたら落とす",
+              observe(mod, sibling_ref_broken)["rc"] == 1)
+        check("隣のスキルの `prompts/x.md` の節を書き換えたら落とす",
+              observe(mod, sibling_prompt_broken)["rc"] == 1)
+        check("`手順 N` を挟んで折り返した隣のスキルの指し先も、その先に無ければ落とす",
+              observe(mod, sibling_step_broken)["rc"] == 1)
+        check("スキルの `references/*.md` から隣のスキルを指した節が無ければ落とす（スキルのディレクトリから解決）",
+              observe(mod, sibling_src_ref_broken)["rc"] == 1)
+        check("スキルの `prompts/*.md` から隣のスキルを指した節が無ければ落とす",
+              observe(mod, sibling_src_prompt_broken)["rc"] == 1)
+
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
 
@@ -576,7 +649,14 @@ def main() -> int:
                           or mutant.main([str(plugin_case)]) != 1
                           or mutant.main([str(plugin_pathlike)]) != 1
                           or mutant.main([str(plugin_dotted)]) != 1
-                          or mutant.main([str(plugin_early)]) != 1)
+                          or mutant.main([str(plugin_early)]) != 1
+                          or mutant.main([str(sibling_ok)]) != 0
+                          or mutant.main([str(sibling_skill_broken)]) != 1
+                          or mutant.main([str(sibling_ref_broken)]) != 1
+                          or mutant.main([str(sibling_prompt_broken)]) != 1
+                          or mutant.main([str(sibling_step_broken)]) != 1
+                          or mutant.main([str(sibling_src_ref_broken)]) != 1
+                          or mutant.main([str(sibling_src_prompt_broken)]) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
