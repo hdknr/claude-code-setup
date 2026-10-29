@@ -11,7 +11,7 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 
 ## 何を見るか
 
-`plugins/` の下の Markdown（`*.md`）。段落（空行・見出し・リストの項・表の行で区切る）ごとに、
+`plugins/` の下の Markdown（`*.md`）。段落（空行・見出し・リストの項・表の行・引用の始まりで区切る）ごとに、
 `*` がちょうど 2 つ並んだ区切り（`**`）を前から順に拾い、**1 つ目を開き、2 つ目を閉じ**……と
 著者の意図どおりに組んだとみなして、それぞれが CommonMark の規則で開け閉めできるかを見る:
 
@@ -49,6 +49,16 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **`plugins/` に Markdown が 1 本も無ければ落とす**——何も見ていない検査を緑にしない。
 - **コードスパンは段落の中でだけ組む**——閉じないバッククォートが後ろの段落を飲み込んで、崩れを黙って隠さない
   （ファイル全体で組んだ最初の版は、#519 の前の `SKILL.md` で崩れ 23 個のうち 21 個を見落とした）。
+- **引用の始まりで段落を区切る**——引用は段落を割り込む。引用でない行が引用の段落に続くのは続き（lazy continuation）として組む。
+- **番号つきの項が段落を割り込めるのは `1.`（`1)`）だけ**——段落の途中で `2.` から始まる行は本文の続きである。
+  リストの項で始まった段落では、次の番号の行は隣の項として区切る。
+- **区切り線（`***` `---` `___`）と、行頭の `<!--` で始まる HTML のコメントのブロックは段落の本文として見ない**
+  ——GitHub はどちらも Markdown の本文として描かない（区切り線の `***` を対にならない `**` と数えない）。
+- **引用の中のフェンスも剥がす**——`>` を剥がしてからフェンスを探す。
+- **段落の中の HTML のコメントは中身だけを伏せ、`<!--` と `-->` は句読点として残す**——`**…**<!-- 印 -->` の
+  `**` の隣は `<` で、GitHub でも句読点である（伏せた字を文字と数えると、免除の印を置いた行が崩れて見える）。
+- **コメントとコードスパンは前から順に、先に始まったほうが勝つ**——コメントの中のバッククォートはスパンを開かない
+  （開かせると、後ろの本物のバッククォートまでを伏せて崩れを隠す）。
 
 守らない:
 
@@ -57,6 +67,8 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **著者の意図が「前から順に組む」でない形**——`**` を字のまま見せたい段落（コードスパンに
   入れていない）は、組み方を推測できないので、崩れとして出る（免除の印で名指しする）。
 - **リンクの URL・自動リンク・HTML の属性の中の `**`**——段落の本文として数える。
+- **行頭の `<!--` で始まる行の、`-->` より後ろに書いた本文**——GitHub は行ごと HTML のブロックとして字のまま描くが、
+  この検査は行ごと見ない（`**` が字のまま見えても落とさない）。
 - **インデントしたコードブロック**（4 つの空白で始まる行）——段落の本文として数える。
 - **表のセルをまたいで組んだ形**——表は 1 行を 1 段落として組む。セルごとには分けない。
 - **一般カテゴリ S の記号**（`→` `×` など ASCII 以外の記号）を句読点として扱わない——cmark-gfm と同じ。
@@ -84,9 +96,14 @@ TARGET_DIR = "plugins"
 EXEMPT = re.compile(r"bold-flanking-ok:[ \t]*((?:(?!-->)\S)(?:(?!-->).)*)")
 
 # 段落を始める行（引用の `>` を剥がしたあとに見る）。見出し・表の行は 1 行で段落が終わる。
-LIST_ITEM = re.compile(r"(?:[-*+]|\d+[.)])(?:[ \t]|$)")
+BULLET = re.compile(r"[-*+](?:[ \t]|$)")
+ORDERED = re.compile(r"(\d{1,9})[.)](?:[ \t]|$)")
 HEADING = re.compile(r"#{1,6}(?:[ \t]|$)")
 QUOTE = re.compile(r"[ \t]*(?:>[ \t]?)*")
+# 区切り線（`***` `---` `___`・空白を挟んでもよい）と setext の下線。段落の本文ではない。
+THEMATIC = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+# 行頭の `<!--` は HTML のブロックを始め、`-->` を含む行で終わる——中は Markdown として描かれない。
+COMMENT_BLOCK = re.compile(r" {0,3}<!--")
 
 ASCII_PUNCT = set(string.punctuation)
 
@@ -127,18 +144,66 @@ def strip_frontmatter(text: str) -> str:
     return text
 
 
-def mask_code_spans(text: str) -> str:
-    """コードスパンの中身を `x` に置き換える。**両端のバッククォートは残す**（句読点として数える）。
+def unquote(lines: list[str]) -> tuple[list[str], list[bool]]:
+    """引用の `>` を同じ数の空白に置き換えた行と、引用の行かどうかを返す（字の位置を保つ）。
 
-    開きのバッククォートの列と、**同じ長さの**列で閉じる（CommonMark の規則）。閉じが無ければ字のまま。
-    逃がしたバッククォート（`\\``）はスパンを開かない。改行は残す（行の位置を保つ）。
+    CommonMark は引用の印を剥がしてから中を読むので、`> **太字**` の `**` の前は行頭（空白）である。
     """
-    out = list(text)
+    bodies, quoted = [], []
+    for line in lines:
+        prefix = QUOTE.match(line).group(0)
+        bodies.append(" " * len(prefix) + line[len(prefix):])
+        quoted.append(">" in prefix)
+    return bodies, quoted
+
+
+def blank_non_paragraphs(lines: list[str]) -> list[str]:
+    """HTML のコメントのブロックと区切り線を空行にする（行数を保つ）。どちらも段落の本文ではない。"""
+    out = list(lines)
+    i = 0
+    while i < len(out):
+        if COMMENT_BLOCK.match(out[i]):
+            head = out[i].index("<!--") + 4
+            j = i
+            while j < len(out) and "-->" not in (out[j][head:] if j == i else out[j]):
+                j += 1
+            for k in range(i, min(j, len(out) - 1) + 1):
+                out[k] = ""
+            i = j + 1
+            continue
+        if THEMATIC.match(out[i]):
+            out[i] = ""
+        i += 1
+    return out
+
+
+def mask_inline(text: str) -> tuple[str, str]:
+    """段落の中のコードスパンと HTML のコメントを伏せる。`(区切りを数える本文, 免除の印を拾う本文)` を返す。
+
+    **前から順に、先に始まったほうが勝つ**（CommonMark の規則）——コメントの中のバッククォートはスパンを開かず、
+    コードスパンの中の `<!--` はコメントを開かない。
+    - **コードスパン**は中身を `x` に置き換え、**両端のバッククォートは残す**（句読点として数える）。
+      開きの列と**同じ長さの**列で閉じる。閉じが無ければ字のまま。どちらの本文でも伏せる（中の印は効かない）。
+    - **HTML のコメント**は中身だけを `x` に置き換え、**`<!--` と `-->` は残す**（`<` `>` は句読点）。
+      免除の印はコメントに書くので、印を拾う本文では伏せない。
+    逃がした字（`\\`` など）は何も開かない。改行は残す（行の位置を保つ）。
+    """
+    runs_out, marks_out = list(text), list(text)
     i, n = 0, len(text)
     while i < n:
         char = text[i]
         if char == "\\":
             i += 2
+            continue
+        if text.startswith("<!--", i):
+            close = text.find("-->", i + 4)
+            if close < 0:
+                i += 4
+                continue
+            for p in range(i + 4, close):
+                if runs_out[p] != "\n":
+                    runs_out[p] = "x"
+            i = close + 3
             continue
         if char != "`":
             i += 1
@@ -163,34 +228,39 @@ def mask_code_spans(text: str) -> str:
             i = j
             continue
         for p in range(j, close):
-            if out[p] != "\n":
-                out[p] = "x"
+            if runs_out[p] != "\n":
+                runs_out[p] = marks_out[p] = "x"
         i = close + run
-    return "".join(out)
+    return "".join(runs_out), "".join(marks_out)
 
 
-def mask_html_comments(text: str) -> str:
-    """HTML のコメントの中身を `x` に置き換える（改行は残す）。免除の印を書く場所である。"""
-    return re.sub(r"<!--.*?-->", lambda m: re.sub(r"[^\n]", "x", m.group(0)), text, flags=re.S)
+def blocks(lines: list[str], quoted: list[bool]):
+    """段落ごとに `(先頭の行番号, [行, …])` を返す。行番号は 1 始まり。
 
-
-def blocks(lines: list[str]):
-    """段落ごとに `(先頭の行番号, [行, …])` を返す。行番号は 1 始まり。"""
+    区切るのは: 空行・見出し・表の行（どちらも 1 行で終わる）・リストの項・引用の始まり。
+    **番号つきの項が段落を割り込めるのは `1.` だけ**（CommonMark）——ただしリストの項で始まった段落では、
+    次の番号の行は隣の項である。**引用でない行が引用の段落に続くのは、割り込みではなく続き**（lazy continuation）。
+    """
     current: list[str] = []
     start = 0
-    for lineno, line in enumerate(lines, 1):
-        body = line[QUOTE.match(line).end():]
-        if not body.strip():
+    in_list = False
+    for lineno, (line, is_quote) in enumerate(zip(lines, quoted), 1):
+        body = line.lstrip()
+        if not body:
             if current:
                 yield start, current
             current = []
             continue
         single = bool(HEADING.match(body)) or body.startswith("|")
-        if current and (single or LIST_ITEM.match(body)):
+        ordered = ORDERED.match(body)
+        item = bool(BULLET.match(body)) or bool(ordered and (ordered.group(1) == "1" or in_list))
+        enters_quote = is_quote and not quoted[lineno - 2]
+        if current and (single or item or enters_quote):
             yield start, current
             current = []
         if not current:
             start = lineno
+            in_list = bool(BULLET.match(body) or ordered)
         current.append(line)
         if single:
             yield start, current
@@ -224,18 +294,17 @@ def runs(text: str):
 
 def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
     """崩れ `(行番号, 理由, 断片)` の一覧と、使われなかった免除の印の行番号を返す。"""
-    plain = strip_fences(strip_frontmatter(text)).split("\n")
+    bodies, quoted = unquote(strip_frontmatter(text).split("\n"))
+    plain = blank_non_paragraphs(strip_fences("\n".join(bodies)).split("\n"))
 
     problems: list[tuple[int, str, str]] = []
     exempt: set[int] = set()
     # **段落を先に切り、コードスパンは段落の中でだけ組む**——コードスパンは段落をまたがない。
     # ファイル全体で組むと、閉じない 1 つのバッククォートが後ろの段落を全部飲み込み、崩れが黙って消える
     # （#519 の前の `SKILL.md` で、301 行の入れ子のバッククォートが 135 行を飲み、崩れ 23 個のうち 21 個が見えなくなった）。
-    for start, block in blocks(plain):
-        code_free = mask_code_spans("\n".join(block))
-        lines = code_free.split("\n")
-        exempt.update(start + row for row, line in enumerate(lines) if EXEMPT.search(line))
-        joined = mask_html_comments(code_free)
+    for start, block in blocks(plain, quoted):
+        joined, marks = mask_inline("\n".join(block))
+        exempt.update(start + row for row, line in enumerate(marks.split("\n")) if EXEMPT.search(line))
         offsets = [0]
         for line in block:
             offsets.append(offsets[-1] + len(line) + 1)
