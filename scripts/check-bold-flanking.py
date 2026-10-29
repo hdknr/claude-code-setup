@@ -76,6 +76,7 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   **段落の中で区切りの行が表を開けなかったら、その段落ではもう表を開かない**——GitHub と同じ（`text⏎|---|---|⏎|---|---|`・
   `x⏎|---|---|⏎y | z⏎|---|---|`）。**段落の続き（lazy）の区切りの形の行は表を試さないので、開けなかったことにならない**——その行を
   見出しにして、容れ物の中の区切りの行が表を開く（`> q⏎|---|---|⏎> |---|---|`。#580。#562 の狭いパス NP-1）。
+  **容れ物から 4 桁以上（タブを含めて）字下げした区切りの形の行も表を試さない**——表を開かず、開けなかったことにもならない（GitHub と同じ）。
 - **表の行は `|` が無くても表の行として組む**——表は空行か、ブロックの始まり（見出し・引用・リストの項（番号も空の項も問わない）・フェンス・
   コメント・区切り線・インデントしたコード）か、容れ物が変わる（引用の深さが変わる・項の外へ出る）まで続く。GitHub と同じく、段落の続き
   （lazy continuation）にはならず、`===` の行や行だけのインライン HTML も表の行である（#562。#525 の狭いパスが示した穴）。
@@ -391,10 +392,11 @@ def blocks(lines: list[str]):
             flush()
             out.append((lineno, [shown]))
             continue
-        if para and not lazy and depth == para_depth and "|" in inner and TABLE_DELIM.match(inner):
+        if para and not lazy and depth == para_depth and indent_of(inner.expandtabs(4)) < 4 \
+                and "|" in inner and TABLE_DELIM.match(inner):
             # 区切りの行（段落の続きでないもの）は、段落の最後の行を見出しの行にして表を開く（#562）。
-            # 開けなければ、その段落ではもう開かない（GitHub と同じ）。段落の続き（lazy）の区切りの形の行は
-            # ここに来ない——表を試さないので、開けなかったことにならない（#580）
+            # 開けなければ、その段落ではもう開かない（GitHub と同じ）。段落の続き（lazy）と 4 桁以上字下げした
+            # 区切りの形の行はここに来ない——表を試さないので、開けなかったことにならない（#580）
             if not refused and cells(last) == cells(inner):
                 head = para.pop()
                 flush()

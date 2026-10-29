@@ -204,6 +204,11 @@ SAMPLES = {
     'table-lazy-delim-header-nested.md': '>> q\n> |---|---|\n>> |---|---|\n>> foo **x\n>> bar** y\n',
     'table-refused-apart.md': 'x\n|---|---|\ny | z\n|---|---|\nfoo **x\nbar** y\n',
     'table-refused-next-para.md': 'text\n|---|---|\n\na | b\n--- | ---\nfoo **x\nbar** y\n',
+    # 守る 23: 4 桁以上（タブを含めて）字下げした区切りの形の行は表を試さない——開かず、開けなかったことにもならない（#580 の /code-review 1 パス目）。
+    # どれも GitHub の描画（gfm）と一致を確かめた。indented-delim-later は字下げを見ない版で崩れ無し、indented-delim は main でも 3・4 行目（誤検出）だった。
+    'table-indented-delim-later.md': 'x\n    ---|---\ny | z\n---|---\nfoo **x\nbar** y\n',
+    'table-tab-delim-later.md': 'x\n\t---|---\ny | z\n---|---\nfoo **x\nbar** y\n',
+    'table-indented-delim.md': 'a | b\n    --- | ---\nfoo **x\nbar** y\n',
     # #525 の狭いパスで素通りした変異を殺す試料（#563）。どれも GitHub の描画（gfm）と判定が一致することを確かめた（#563 の周）。
     # 守る 7: info にバッククォートを含む ``` はフェンスではない（段落。GitHub は 2 行目の `**` を字のまま描く）。
     'fence-info-backtick.md': '``` `a`\nX**「例」**Y\n',
@@ -332,6 +337,9 @@ EXPECTED = {
     'table-lazy-delim-header-nested.md': ((4, 5), ()),
     'table-refused-apart.md': ((), ()),
     'table-refused-next-para.md': ((6, 7), ()),
+    'table-indented-delim-later.md': ((5, 6), ()),
+    'table-tab-delim-later.md': ((5, 6), ()),
+    'table-indented-delim.md': ((), ()),
     'fence-info-backtick.md': ((2, 2), ()),
     'thematic-underscore.md': ((1, 3), ()),
     'heading-indent.md': ((), ()),
@@ -511,6 +519,12 @@ MUTATIONS = {
     "前の行が区切りの形なら見出しの行にしない（#580 の前の形）": (23,
         "            if not refused and cells(last) == cells(inner):",
         '            if not (len(para) > 1 and "|" in last and TABLE_DELIM.match(last)) and cells(last) == cells(inner):'),
+    "字下げした区切りの形の行でも表を試す": (23,
+        "depth == para_depth and indent_of(inner.expandtabs(4)) < 4 \\\n",
+        "depth == para_depth and True \\\n"),
+    "タブを字下げに数えない": (23,
+        "indent_of(inner.expandtabs(4)) < 4",
+        "indent_of(inner) < 4"),
     "開けなかった印を段落ごとに戻さない": (23,
         "            para_start, para_depth = lineno, depth\n            refused = False",
         "            para_start, para_depth = lineno, depth"),
