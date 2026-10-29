@@ -24,7 +24,8 @@
    表が正しくて出力先が符号化できない（名前・親のディレクトリの名前）ときは、書く途中の `ValueError` を「書けない」と
    名指しして 2——「書く途中の想定外の例外」にしない（#582。同じく `main` に届かせる）。
    パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2。
-   辿れない先を指す symlink はリンクを消して 1、壊れた symlink とディレクトリを指す symlink は消さずに 1。
+   先を辿れない symlink（先がファイルでもディレクトリでも）は、先が前の出力かを確かめられないので消さずに名指しして 2
+   （表が正しくて書けないときも。#535）、壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）とディレクトリを指す symlink は消さずに 1。
    書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
    入口の捕捉は、書いたあとの標準出力の例外で見る（`sys.stdout` を差し替える）。
    消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
@@ -151,7 +152,14 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("長すぎるパスも無いと読む", "any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)", "True"),
     ("壊れたリンクも消す", "                    return None  # 壊れたリンク", "                    mode = stat.S_IFREG  # 壊れたリンク"),
     ("書く途中の想定外の例外を逃がす", "    except Exception as e:  # 書く途中の", "    except ImportError as e:  # 書く途中の"),
-    ("辿れない先のリンクを消せないと読む", "                mode = stat.S_IFREG  # 先は", "                raise  # 先は"),
+    # #535: 先を辿れない symlink は消さずに名指しする
+    ("辿れない先のリンクを消す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
+     "                mode = stat.S_IFREG; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
+    ("辿れない先のリンクを黙って残す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
+     "                return None; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
+    ("先の長すぎる名前を出力先の名前で見る", "if absent(Path(os.path.realpath(out)), e):", "if absent(out, e):"),
+    ("先の鎖を解かずに 1 段目だけ見る", "if absent(Path(os.path.realpath(out)), e):", "if absent(out.parent / os.readlink(out), e):"),
+    ("辿れないのがリンクの先だと言わない", "（リンクの先を辿れない: {e.strerror}）", "（{e.strerror}）"),
     ("消す途中の想定外の例外を名指ししない", "    except Exception as e:  # 想定外の例外でも、消せなかった",
      "    except ImportError as e:  # 想定外の例外でも、消せなかった"),
     ("書けないときを捕まえない", "    except OSError as e:  # 書きかけを", "    except ImportError as e:  # 書きかけを"),
@@ -248,23 +256,39 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     (root / "broken.svg").symlink_to(root / "nowhere.svg")
     (root / "adir").mkdir()
     (root / "dirlink.svg").symlink_to(root / "adir")
-    for name in ("broken.svg", "dirlink.svg"):
+    (root / "longlink.svg").symlink_to("b" * 300)  # 先の名前が NAME_MAX を超える——在りえない先の壊れたリンク（#535 の CR1-1）
+    (root / "mid.svg").symlink_to("b" * 300)
+    (root / "chainlink.svg").symlink_to("mid.svg")  # 別のリンクを経由して在りえない先に着く（R2-1）
+    for name in ("broken.svg", "dirlink.svg", "longlink.svg", "chainlink.svg"):
         code, output = generate(scripts, bad, root / name)
         if code != 1 or LEFT in output or "前に作った出力を消した" in output or not (root / name).is_symlink():
             problems.append(f"消さない symlink {name}: 終了 {code}: {output[-300:]!r}")
-    # 辿れない先を指す symlink——リンクは消せるので消して 1（CR4）
+    # 先を辿れない symlink——先が前の出力かを確かめられない（先の古い中身は残り、先がディレクトリかも分からない）ので、
+    # リンクを消さずに名指しして 2（#535。#499 の CR4 で「リンクを消して 1」にしていたのを改めた）。
+    # 先がファイル・ディレクトリ（表が決まりに反する経路）と、表が正しくて書けない経路で、2・リンクの名指し・リンクと先が残る・
+    # 「消した」と traceback が出ないことを見る
     shut = root / "shut"
     shut.mkdir()
     (shut / "g.svg").write_text("<svg>古い</svg>", encoding="utf-8")
-    link = root / "link.svg"
-    link.symlink_to(shut / "g.svg")
-    shut.chmod(0o000)
-    try:
-        code, output = generate(scripts, bad, link)
-    finally:
-        shut.chmod(0o755)
-    if code != 1 or LEFT in output or link.is_symlink() or not (shut / "g.svg").is_file():
-        problems.append(f"辿れない先の symlink: 終了 {code}: {output[-300:]!r}")
+    (shut / "d.svg").mkdir()
+    for label, name, target, source, extra in (
+        ("辿れない先の symlink", "link.svg", "g.svg", bad, "見出し行が決まりと違う"),
+        ("辿れない先がディレクトリの symlink", "dlink.svg", "d.svg", bad, "見出し行が決まりと違う"),
+        ("辿れない先の symlink（表が正しい）", "glink.svg", "g.svg", good, "書けない（"),
+    ):
+        link = root / name
+        link.symlink_to(shut / target)
+        shut.chmod(0o000)
+        try:
+            code, output = generate(scripts, source, link)
+        finally:
+            shut.chmod(0o755)
+        if (code != 2 or f"{LEFT}{link}（リンクの先を辿れない: " not in output or extra not in output
+                or "前に作った出力を消した" in output or "Traceback" in output
+                or not link.is_symlink() or not (shut / target).exists()):
+            problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
+    if (shut / "g.svg").read_text(encoding="utf-8") != "<svg>古い</svg>" or not (shut / "d.svg").is_dir():
+        problems.append("辿れない先の symlink の先が変わった——先に触っている")
 
     def injected(method: str, source: Path, name: str) -> subprocess.CompletedProcess:
         """出力先 `build/<name>` について、そのパスの `Path.<method>` だけを差し替えて
