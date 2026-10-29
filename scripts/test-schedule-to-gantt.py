@@ -161,6 +161,7 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("符号化できない出力先を書く途中の想定外の例外と読む", "    except ValueError as e:  # 出力先の名前が符号化できない",
      "    except ImportError as e:  # 出力先の名前が符号化できない"),
     ("符号化できない出力先の型と理由を書かない", "出力先の名前が使えない: {type(e).__name__}: {e}）", "出力先の名前が使えない: ）"),
+    ("符号化できない出力先を名指ししない", 'print(f"{out}: 書けない（出力先の名前が使えない', 'print(f"書けない（出力先の名前が使えない'),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
@@ -319,8 +320,10 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
                   f"sys.argv = [{script!r}, {str(good)!r}, {str(root / name)!r}]\n"
                   f"runpy.run_path({script!r}, run_name='__main__')\n")
         proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
-        # 例外の型と理由まで名指しする（型と理由が落ちても緑にならないように。#582 の 1 パス目 CR1）
-        named = re.search(rf"書けない（出力先の名前が使えない: {kind}: [^）\n]+）", proc.stderr)
+        # 出力先と、例外の型と理由まで名指しする（落ちても緑にならないように。#582 の 1 パス目 CR1・2 パス目 CR2-1）。
+        # 標準エラーは単独のサロゲートを backslashreplace で書くので、期待する出力先も同じ形にする
+        shown = str(root / name).encode("utf-8", "backslashreplace").decode("utf-8")
+        named = re.search(re.escape(shown) + rf": 書けない（出力先の名前が使えない: {kind}: [^）\n]+）", proc.stderr)
         if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr
                 or LEFT in proc.stderr or "Traceback" in proc.stderr):
             problems.append(f"符号化できない出力先に書く（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
