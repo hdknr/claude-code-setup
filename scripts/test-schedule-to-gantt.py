@@ -39,6 +39,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -159,6 +160,7 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     # #582: 書く途中の ValueError（符号化できない出力先）を「書けない」と読む分岐
     ("符号化できない出力先を書く途中の想定外の例外と読む", "    except ValueError as e:  # 出力先の名前が符号化できない",
      "    except ImportError as e:  # 出力先の名前が符号化できない"),
+    ("符号化できない出力先の型と理由を書かない", "出力先の名前が使えない: {type(e).__name__}: {e}）", "出力先の名前が使えない: ）"),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
@@ -311,12 +313,15 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
             problems.append(f"符号化できない出力先（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     # 表が正しく、出力先が符号化できない——書く途中の ValueError も「書けない」と名指しして 2。「想定外の例外」にしない（#582）。
     # 親のディレクトリの名前に NUL があると mkdir で、名前の側なら write_bytes で起きる
-    for label, name in (("NUL", "x\0.svg"), ("単独のサロゲート", "\ud800.svg"), ("親に NUL", "d\0/gantt.svg")):
+    for label, name, kind in (("NUL", "x\0.svg", "ValueError"), ("単独のサロゲート", "\ud800.svg", "UnicodeEncodeError"),
+                              ("親に NUL", "d\0/gantt.svg", "ValueError")):
         inject = ("import runpy, sys\n"
                   f"sys.argv = [{script!r}, {str(good)!r}, {str(root / name)!r}]\n"
                   f"runpy.run_path({script!r}, run_name='__main__')\n")
         proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
-        if (proc.returncode != 2 or "書けない（出力先の名前が使えない: " not in proc.stderr or "想定外の例外" in proc.stderr
+        # 例外の型と理由まで名指しする（型と理由が落ちても緑にならないように。#582 の 1 パス目 CR1）
+        named = re.search(rf"書けない（出力先の名前が使えない: {kind}: [^）\n]+）", proc.stderr)
+        if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr
                 or LEFT in proc.stderr or "Traceback" in proc.stderr):
             problems.append(f"符号化できない出力先に書く（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)
