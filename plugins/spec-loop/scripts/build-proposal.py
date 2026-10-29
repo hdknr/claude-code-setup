@@ -16,7 +16,10 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **v2 以降は、その版の差分の表に加えて、前の版との比較の節が載る**（変更の提案書）——比較は同梱の `diff-versions.py` の
   `compare` を、**`signoff/v<n>/req-<k>` の時点の `docs/`** に当てる（`git ls-tree`・`git cat-file` で一時ディレクトリに写す。
   `git archive` は `.gitattributes` で中身が変わるので使わない。写すのは重ね合わせが読むものだけで、
-  **大文字小文字・Unicode の正規化だけが違うパスがあれば写さずに 1**——区別しないファイルシステムでは同じ場所に書かれる）。決まりの正は `references/versions.md` の「版の差分」。
+  **大文字小文字・Unicode の正規化だけが違うパスがあれば写さずに 1**——区別しないファイルシステムでは同じ場所に書かれる。
+  **版の直下の、置き場所・`removed.csv` と綴りだけ違う名前（`Removed.csv`・`Shared/`）も写し、重ね合わせに 1 で断らせる**——
+  写さなければ、作業ツリーで重ねる側（綴りだけ違う名前を断る）と答えが食い違う。#276。
+  内部の層を外すときも綴りどおりの名前だけを外す）。決まりの正は `references/versions.md` の「版の差分」。
   **重ね合わせが作れなければ書かない（1）。** 費用の節は**その版の差分の見積り**で、前の版までの費用は足さない。
   **v2 以降で `shared/qa.csv` を置かない版**（Q&A を足さない版。`references/versions.md`）は、Q&A を 0 行として作る。
   v1 では `qa.csv` が無ければ作らない。
@@ -148,7 +151,11 @@ def exists(top: Path, commit: str, path: str) -> bool:
 
 
 def merged_reads(path: str) -> bool:
-    """重ね合わせが読むものか——`docs/v…` の名前そのものと、版の中の置き場所・`removed.csv`（`.` で始まる名前は読まない）。"""
+    """重ね合わせが読むものか——`docs/v…` の名前そのものと、版の中の置き場所・`removed.csv`（`.` で始まる名前は読まない）。
+
+    **版の直下の名前は、綴りだけ違うもの（`Removed.csv`・`Shared/`）も写す**——重ね合わせがそれを 1 で断る（#276）。
+    写さないと、作業ツリーで重ねる側と答えが食い違う。
+    """
     parts = PurePosixPath(path).parts
     if len(parts) < 2 or parts[0] != signoff.DOCS or not diffs.merge_versions.VERSION_LIKE.match(parts[1]):
         return False
@@ -157,7 +164,8 @@ def merged_reads(path: str) -> bool:
     inside = parts[2:]
     if any(p.startswith(".") for p in inside):
         return False
-    return inside[0] in diffs.merge_versions.AREAS or inside == (diffs.merge_versions.REMOVED,)
+    mv = diffs.merge_versions
+    return mv.fold(inside[0]) in {mv.fold(name) for name in [*mv.AREAS, mv.REMOVED]}
 
 
 def copy_docs(top: Path, commit: str, tag: str, dest: Path) -> None:
@@ -235,14 +243,16 @@ def drop_internal(docs: Path) -> None:
 
     提案書は共有の表だけを見る（`references/qa-csv.md` の「層」。#339）——載せないだけでなく、
     内部の表の決まりの違反で比較が作れなくなることもない（照合も内部の表を見ない）。
+    **綴りどおりの名前だけを外す**（`merge-versions.py` の `exact`）——区別しないファイルシステムで `spec/QA-dev.csv`
+    （重ね合わせではふつうのファイル）を内部の表として消すと、作業ツリーの差分と比較が食い違う（#276）。
     """
     mv = diffs.merge_versions
     for root in sorted(p for p in docs.iterdir() if mv.VERSION.fullmatch(p.name)):
-        internal = root / mv.INTERNAL_QA_PATH
-        if os.path.lexists(internal):
+        internal = mv.exact(root, mv.INTERNAL_QA_PATH)
+        if internal is not None:
             internal.unlink()
-        removed = root / mv.REMOVED
-        if removed.is_file() and not removed.is_symlink():
+        removed = mv.exact(root, mv.REMOVED)
+        if removed is not None and removed.is_file() and not removed.is_symlink():
             rows = list(csv.reader(io.StringIO(mv.read_text(removed), newline="")))
             kept = [r for r in rows if not (len(r) >= 2 and r[0] == mv.KIND_QA and qa.is_internal_number(r[1].strip()))]
             if len(kept) != len(rows):
