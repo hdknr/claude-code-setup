@@ -14,7 +14,9 @@
 `scripts/collect-guard-rejections.py` を指していたが、**あれはリポジトリの `scripts/` に
 あり、スキルの中には無い。** **この歯止めを置いた瞬間に捕まった。**
 """
+import contextlib
 import importlib.util
+import io
 import os
 import tempfile
 from pathlib import Path
@@ -135,6 +137,19 @@ SYMLINKED = """# デモ
 
 詳しくは `references/x.md` を見る。
 """
+
+# **プラグインの外へ出る指し先に「X」が付いた形**（#574）——エラーはパスの検査の「プラグインの外」の 1 つだけ。
+# **Issue の形（名指しあり）・名指し無し・字面は中で symlink の先が外**の 3 つを置く。「X」は外のファイルにも無い節にする
+# ——在る節だと、外でも照合する変異で 2 つ目のエラーが出ず、変異が殺せない。修正前の版はどれも 2 つ出した（#542 の `/code-review`）。
+OUTSIDE_OWNED = "# デモ\n\n読み方は other の `../../../other/README.md` の「無い節」を正とする。\n"
+OUTSIDE_PLAIN = "# デモ\n\n読み方は `../../../other/README.md` の「無い節」を正とする。\n"
+OUTSIDE_SYMLINKED = "# デモ\n\n詳しくは `references/x.md` の「無い節」を見る。\n"
+# **パスの検査が拾わないファイル名だけの指し先は、symlink の先が外でも照合する**（#574）——飛ばすとエラーが 0 になる。
+# プラグイン直下の `references/a.md` から、隣のプラグインへの symlink `references/o.md` を `` `o.md` `` で指す。
+BARE_OUTSIDE_REF = "# 決まり\n\n層は `o.md` の「無い節」を正とする。\n"
+# **`SKILL.md` の symlink の先が外**の形も置く——ファイル名だけの形は `skill / rel` で解決しないので、`/` を見ずに外かを
+# 判定する変異でも結果が変わらない。**`SKILL.md` の試料が無いと、その変異（守る 28d）が殺せない。**
+SKILL_OUTSIDE_REF = "# r\n\n本体は `SKILL.md` の「無い節」を見る。\n"
 
 # **散文の指し先**（#205）。**『』と本文の「」・太字・バッククォート・改行の違いを同一視する**ことを
 # 試料に入れる——**揃えた書き方だけだと、正規化を外す変異が殺せない。** 太字とバッククォートは
@@ -307,6 +322,14 @@ def observe(mod, root: Path) -> dict:
     return {"rc": mod.main([str(root)])}
 
 
+def errors(mod, root: Path) -> int:
+    """指し先ごとのエラーの行（`ERROR:   <ファイル>:<行> → …`）の数。**終了コードだけでは 1 つと 2 つを分けられない**（#574）。"""
+    err = io.StringIO()
+    with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+        mod.main([str(root)])
+    return sum(1 for line in err.getvalue().splitlines() if line.startswith("ERROR:   "))
+
+
 MUTATIONS = {
     # 守る 1: 指し先のファイルが実在すること
     "実在を見ない": ('            if not (base / rel).exists():', '            if False:'),
@@ -332,8 +355,7 @@ MUTATIONS = {
         'PARENT = re.compile(r"(?!x)x")'),
     # 守る 6: `../` の指し先がプラグインの中に収まること
     "プラグインの外を見逃す": (
-        "            elif (leaves_plugin(base, plugin, rel)\n"
-        "                  or not (base / rel).resolve().is_relative_to(plugin.resolve())):",
+        "            elif outside_plugin(base, plugin, rel):",
         "            elif False:"),
     # 守る 7: プラグインの境界は `plugins/<name>/` であること
     "境界を `plugins/` に上げる": (
@@ -341,12 +363,12 @@ MUTATIONS = {
         "        plugin = skill.parent.parent.parent\n"),
     # 守る 8: 途中で 1 度でもプラグインの外へ出た指し先は、戻ってきても落とすこと
     "行き着く先だけを見る": (
-        "            elif (leaves_plugin(base, plugin, rel)",
-        "            elif (False"),
+        "    return (leaves_plugin(base, plugin, rel)",
+        "    return (False"),
     # 守る 9: symlink の先がプラグインの外なら落とすこと（#230。上の 2 つと別に外す）
     "symlink の先を見ない": (
-        "                  or not (base / rel).resolve().is_relative_to(plugin.resolve())):",
-        "                  or False):"),
+        "            or not (base / rel).resolve().is_relative_to(plugin.resolve()))",
+        "            or False)"),
     # 守る 10: 散文の指し先 `上の「X」` の X が同じファイルにあること（#205）
     "散文の指し先を見ない": (
         "               normalize(m.group(1)) in own)",
@@ -434,6 +456,14 @@ MUTATIONS = {
     "`../` の「X」にも名指しの免除を掛ける": (
         "        if not rel.startswith(\"../\") and owned_elsewhere(",
         "        if owned_elsewhere("),
+    # 守る 28c: プラグインの外へ出る指し先の「X」は照合しないこと（#574）
+    "外の指し先でも「X」を照合する": (
+        "        if \"/\" in rel and outside_plugin(skill, plugin, rel):\n            continue",
+        "        if False:\n            continue"),
+    # 守る 28d: パスの検査が拾わない `SKILL.md` とファイル名だけの指し先は、外でも「X」を照合すること（#574）
+    "`SKILL.md` も外なら「X」を照合しない": (
+        "        if \"/\" in rel and outside_plugin(skill, plugin, rel):",
+        "        if outside_plugin(skill, plugin, rel):"),
     # 守る 29: 名指しは同じ行だけを見ること
     "前の行の名指しで免除する": (
         "prose[line_start:m.start()]",
@@ -520,9 +550,9 @@ def main() -> int:
         check("隣のプラグインを指したら、実在しても落とす", observe(mod, sibling)["rc"] == 1)
         check("外へ出て名前で戻る指し先は、実在しても落とす", observe(mod, roundtrip)["rc"] == 1)
 
-        def symlink_tree(name: str, target: str) -> Path:
+        def symlink_tree(name: str, target: str, body: str = SYMLINKED) -> Path:
             """`references/x.md` を `target`（`references/` からの相対）への symlink にした木。"""
-            d = parent_tree(name, SYMLINKED)
+            d = parent_tree(name, body)
             (d / "plugins" / "other" / "references").mkdir(parents=True, exist_ok=True)
             (d / "plugins" / "other" / "references" / "o.md").write_text("# 隣\n", encoding="utf-8")
             link = d / "plugins" / "demo" / "skills" / "demo" / "references" / "x.md"
@@ -537,6 +567,33 @@ def main() -> int:
         check("symlink の先がプラグインの外なら、字面が中でも落とす",
               observe(mod, symlink_out)["rc"] == 1)
         check("symlink の先がプラグインの中なら通す", observe(mod, symlink_in)["rc"] == 0)
+
+        outside_owned = parent_tree("outside-owned", OUTSIDE_OWNED)
+        outside_plain = parent_tree("outside-plain", OUTSIDE_PLAIN)
+        outside_symlinked = symlink_tree("outside-symlinked", "../../../../other/references/o.md", OUTSIDE_SYMLINKED)
+        bare_outside = parent_tree("bare-outside", "# デモ\n")
+        (bare_outside / "plugins" / "other" / "references").mkdir(parents=True, exist_ok=True)
+        (bare_outside / "plugins" / "other" / "references" / "o.md").write_text("# 隣\n", encoding="utf-8")
+        (bare_outside / "plugins" / "demo" / "references" / "a.md").write_text(BARE_OUTSIDE_REF, encoding="utf-8")
+        os.symlink("../../other/references/o.md", bare_outside / "plugins" / "demo" / "references" / "o.md")
+        skill_outside = parent_tree("skill-outside", "# デモ\n")
+        (skill_outside / "plugins" / "other" / "SKILL.md").write_text("# 隣\n", encoding="utf-8")
+        skill_md = skill_outside / "plugins" / "demo" / "skills" / "demo" / "SKILL.md"
+        skill_md.unlink()
+        os.symlink("../../../other/SKILL.md", skill_md)
+        (skill_md.parent / "references").mkdir(parents=True, exist_ok=True)
+        (skill_md.parent / "references" / "r.md").write_text(SKILL_OUTSIDE_REF, encoding="utf-8")
+        print("\nプラグインの外へ出る指し先の「X」（#574）")
+        check("名指しの付いた外への `../` の「X」は、エラー 1 つ（プラグインの外）で落とす（#542 の CR1-3 の再現）",
+              observe(mod, outside_owned)["rc"] == 1 and errors(mod, outside_owned) == 1)
+        check("名指しの無い外への `../` の「X」も、エラー 1 つで落とす",
+              observe(mod, outside_plain)["rc"] == 1 and errors(mod, outside_plain) == 1)
+        check("symlink の先が外の `references/x.md` の「X」も、エラー 1 つで落とす",
+              observe(mod, outside_symlinked)["rc"] == 1 and errors(mod, outside_symlinked) == 1)
+        check("ファイル名だけの指し先は、symlink の先が外でも「X」を照合して落とす（パスの検査が拾わない）",
+              observe(mod, bare_outside)["rc"] == 1 and errors(mod, bare_outside) == 1)
+        check("`SKILL.md` も、symlink の先が外でも「X」を照合して落とす（パスの検査が拾わない）",
+              observe(mod, skill_outside)["rc"] == 1 and errors(mod, skill_outside) == 1)
 
         def prose_tree(name: str, body: str, resume: str) -> Path:
             d = base / name
@@ -755,7 +812,12 @@ def main() -> int:
                           or mutant.main([str(bare_ok)]) != 0
                           or mutant.main([str(bare_skill_broken)]) != 1
                           or mutant.main([str(bare_plugin_broken)]) != 1
-                          or mutant.main([str(bare_case)]) != 0)
+                          or mutant.main([str(bare_case)]) != 0
+                          or errors(mutant, outside_owned) != 1
+                          or errors(mutant, outside_plain) != 1
+                          or errors(mutant, outside_symlinked) != 1
+                          or errors(mutant, bare_outside) != 1
+                          or errors(mutant, skill_outside) != 1)
             except Exception:
                 killed = True
             check(f"変異を殺せる: {name}", killed)
