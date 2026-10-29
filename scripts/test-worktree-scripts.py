@@ -310,6 +310,29 @@ def exists_headers_have_lists(res) -> bool:
     return seen == set(EXISTS_HEADERS)
 
 
+def exists_lists_indented(res, repo: Path, number: str) -> tuple:
+    """終了コード 3 の一覧が、**どの行にも同じ字下げ（4 文字）を付けて**標準エラーに出ているか（#558）。
+    **期待値は git に同じ問いを投げて作る**——見出しの直後から、git が返した行数ぶんが
+    `"    " + その行` と一致し、その次の行が一覧の続きでないこと。
+    **1 行目だけを見ると、2 行目から字下げを落とした形が緑になる**（`exists_headers_have_lists` はそれを見ない）。
+    返すのは (一致したか, 見出しごとの git の行数)。**行数が 2 未満の試料では 2 行目が無く、判別しない**
+    ——`main()` が行数も見る（一致が複数ある試料であること）。"""
+    wt = [l for l in git(repo, "worktree", "list").stdout.splitlines() if f"issue-{number}" in l]
+    br = git(repo, "branch", "--all", "--list", f"*{number}*").stdout.splitlines()
+    lines = res.stderr.splitlines()
+    ok = True
+    for header, expected in (("  worktree:", wt), ("  ブランチ:", br)):
+        if lines.count(header) != 1:
+            ok = False
+            continue
+        i = lines.index(header) + 1
+        got = lines[i:i + len(expected)]
+        rest = lines[i + len(expected)] if i + len(expected) < len(lines) else ""
+        if got != ["    " + l for l in expected] or rest.startswith("    "):
+            ok = False
+    return ok, (len(wt), len(br))
+
+
 def cd_example_runs(line: str, wt: Path) -> bool:
     """例外の行の `cd …` を**そのままシェルに渡して**、作った worktree に入れるか。"""
     m = re.search(r"（(cd .*?) && …）", line)
@@ -324,7 +347,13 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     """両スクリプトの分岐をまとめて観測する。**1 回の観測で 1 つの偽リポジトリを使い切る。**"""
     repo = make_repo(base / "repo")
     first = run(prepare, repo, "42", "sample")
+    # **一致が複数ある試料にする**（#558）。worktree もブランチも 2 つずつ当たる——
+    # **1 つずつしか当たらないと、2 行目から字下げを落とした形が素通りする。**
+    git(repo, "branch", "issue/42-extra")
+    git(repo, "worktree", "add", "-q", "--detach",
+        str(repo / ".claude" / "worktrees" / "issue-42-extra"))
     again = run(prepare, repo, "42", "sample")
+    again_lists = exists_lists_indented(again, repo, "42")
     bad_num = run(prepare, repo, "abc", "x")
     wt = repo / ".claude" / "worktrees" / "issue-42"
     out = {
@@ -340,6 +369,9 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **3 の見出しの下に一覧があるか、出力先ごとに見る**（#544）。
         # **標準出力だけを読む側には、見出しだけ出て下が空に見えていた。**
         "3 の見出しの下に一覧がある（出力先ごと）": exists_headers_have_lists(again),
+        # **一覧のどの行も同じ字下げか**（#558）。行数も残す——`main()` が「一致が複数」の試料であることを見る。
+        "3 の一覧のどの行も同じ字下げ": again_lists[0],
+        "3 の一覧の行数（worktree, ブランチ）": again_lists[1],
         # **空白を含むパスでも、例外の行の `cd` が貼ればそのまま通るか**（#502 の `/code-review` 1 パス目）。
         # **ふつうの一時ディレクトリには空白が無い**ので、それだけでは素のまま出す変異が殺せない。
         "空白を含むパスでも cd の例が通る": _spaced_cd_example_runs(prepare, base),
@@ -490,6 +522,10 @@ MUTATIONS = {
     "3 の見出しを標準出力に出す": (PREPARE,
         'echo "  worktree:" >&2 && printf',
         'echo "  worktree:" && printf'),
+    # 守る 19（prepare）: 3 の一覧のどの行にも同じ字下げを付ける（#558）
+    "3 の一覧の 2 行目から字下げを落とす": (PREPARE,
+        "indent_list() { sed 's/^/    /'; }",
+        "indent_list() { sed '1s/^/    /'; }"),
     # --- check-pr-preconditions.sh の「守る」（「守る」の行数と変異の数の 1 対 1 は、`main()` が 2 本の合計で数える） ---
     # 守る 1: worktree にいるか
     "worktree 判定をしない": (PRECOND,
@@ -1135,6 +1171,10 @@ def main() -> int:
               correct["cruise の子の例外が案内の直後にある"])
         check("3 で終わるとき、見出しの下に一覧がある——標準出力だけを見ても空でない（#544）",
               correct["3 の見出しの下に一覧がある（出力先ごと）"])
+        check("3 の試料は一致が複数ある（worktree もブランチも 2 行以上。#558）",
+              min(correct["3 の一覧の行数（worktree, ブランチ）"]) >= 2)
+        check("3 で終わるとき、一覧のどの行にも同じ字下げが付く（#558）",
+              correct["3 の一覧のどの行も同じ字下げ"])
         check("空白を含むパスでも、例外の行の cd の例がそのまま通る（#502）",
               correct["空白を含むパスでも cd の例が通る"])
         # **`observe()` の外で見る**——`MUTATIONS` の変異でこの試料にしか殺せないものは無いので、観測ごとには回さない（#449）。

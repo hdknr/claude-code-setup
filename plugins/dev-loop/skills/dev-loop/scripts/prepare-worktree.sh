@@ -81,6 +81,9 @@
 # - **既に当たるもの（終了コード 3）の見出しと一覧は、同じ出力先（標準エラー）に出す。**
 #   **見出しだけ標準出力に出すと、標準出力だけを読んだ側には見出しの下が空に見える**
 #   ——当たったものが無いと読める（#544。#502 の `/code-review` 1 パス目で実測）。
+# - **既に当たるもの（終了コード 3）の一覧は、どの行にも同じ字下げを付ける。**
+#   **一致が複数あるとき、2 行目から字下げが落ちると、見出しの下の一覧が 1 行目で終わって見える**
+#   ——2 行目以降は見出しと同じ並びか、それより左に出る（#558。#544 の `/code-review` 1 パス目で実測）。
 #
 # ## 何を守らないか
 #
@@ -151,10 +154,13 @@ if ! WT_ALL="$(git worktree list 2>/dev/null)" || ! BR_ALL="$(git branch --all -
 fi
 EXISTING_WT="$(printf '%s\n' "$WT_ALL" | grep -F "issue-${NUMBER}" || true)"
 EXISTING_BR="$BR_ALL"
+# **一覧のどの行にも同じ字下げを付ける。** 一致は複数ありうる（当たり方は部分一致で広い）。
+# `printf '    %s\n' "$一覧"` は引数が 1 つなので**字下げが 1 行目にしか付かない**（#558。#544 の `/code-review` 1 パス目）。
+indent_list() { sed 's/^/    /'; }
 if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then
   echo "既に当たるものがある。**作らない。**" >&2
-  [ -n "$EXISTING_WT" ] && echo "  worktree:" >&2 && printf '    %s\n' "$EXISTING_WT" >&2
-  [ -n "$EXISTING_BR" ] && echo "  ブランチ:" >&2 && printf '    %s\n' "$EXISTING_BR" >&2
+  [ -n "$EXISTING_WT" ] && echo "  worktree:" >&2 && printf '%s\n' "$EXISTING_WT" | indent_list >&2
+  [ -n "$EXISTING_BR" ] && echo "  ブランチ:" >&2 && printf '%s\n' "$EXISTING_BR" | indent_list >&2
   echo >&2
   echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2
   exit 3
