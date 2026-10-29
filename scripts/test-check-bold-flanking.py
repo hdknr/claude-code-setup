@@ -196,6 +196,35 @@ SAMPLES = {
     'table-para-nolead.md': 'text\na | b\n--- | ---\nfoo **x\nbar** y\n',
     'table-para-last-line.md': 'text\n| a | b | c |\n| a | b |\n|---|---|\nfoo **x\nbar** y\n',
     'table-header-nopipe.md': 'x\n|---|\nfoo **x\nbar** y\n',
+    # #525 の狭いパスで素通りした変異を殺す試料（#563）。どれも GitHub の描画（gfm）と判定が一致することを確かめた（#563 の周）。
+    # 守る 7: info にバッククォートを含む ``` はフェンスではない（段落。GitHub は 2 行目の `**` を字のまま描く）。
+    'fence-info-backtick.md': '``` `a`\nX**「例」**Y\n',
+    # 守る 18: `___` も区切り線（段落を割る。GitHub は `**x` と `b**` を字のまま描く）。
+    'thematic-underscore.md': 'a **x\n___\nb** c\n',
+    # 守る 4・16: 4 つ字下げした `#` `>` は見出し・引用を始めない（段落の続き。GitHub は 1 つの太字に組む）。
+    'heading-indent.md': '本文 **x\n    # y** z\n',
+    'quote-indent.md': '本文 **x\n    > y** z\n',
+    # 守る 13: 複数行のコメントのブロックの本文行に書いた印も、残った印として落とす。
+    'comment-body-mark.md': '<!--\nbold-flanking-ok: 古い印\n-->\n',
+    # 守る 17: 項の印の後ろに空白が 5 つ以上なら、中身は印の 1 つ後ろから始まり、残りはインデントしたコード（GitHub はコードとして描く）。
+    'item-wide-gap.md': '-     X**「例」**Y\n',
+    # 守る 16: 引用が終わると、中で開いたコメントのブロックも閉じる——4 行目は段落（行頭が `<!--` でない）。
+    # GitHub は閉じないコメントの後ろを生の HTML の `-->` まで見せないが、段落の中のコメントの後ろの `**「例」**W` は字のまま見える。
+    'quote-comment-closed.md': '> <!--\n> x\n\nZ <!-- c --> **「例」**W\n',
+    # エラーの抜粋（#564）——どの行も、抜粋の窓（`**` の前 6 字・後ろ 8 字）に伏せる範囲（コードスパン・コメントの中身）が入る。
+    # frontmatter の後ろ・段落・引用（窓が行頭の `>` に届く）・コメント・リストの項・見出し・表の見出しの行と表の行・行をまたぐ段落。
+    # 抜粋そのものは EXCERPTS で見る。
+    "excerpt.md": (
+        "---\ntitle: t\n---\n"
+        "ab `code` X**「y」\n\n"
+        "> `c`X**「y」\n\n"
+        "> q <!-- cm --> X**「y」\n\n"
+        "- `li`X**「y」\n\n"
+        "# `hd`X**「y」\n\n"
+        "| `th`X**「y」 | b |\n"
+        "| --- | --- |\n"
+        "| `td`X**「y」 | d |\n\n"
+        "`c1`\nX**「y」\n"),
     # 崩れていない形（誤検出しない）——句読点の両側・空白の外側・引用・表のセル・GitHub が句読点と見ない記号。
     "clean.md": (
         "# 見出しの **太字**\n\n"
@@ -290,8 +319,28 @@ EXPECTED = {
     'table-para-nolead.md': ((4, 5), ()),
     'table-para-last-line.md': ((5, 6), ()),
     'table-header-nopipe.md': ((3, 4), ()),
+    'fence-info-backtick.md': ((2, 2), ()),
+    'thematic-underscore.md': ((1, 3), ()),
+    'heading-indent.md': ((), ()),
+    'quote-indent.md': ((), ()),
+    'comment-body-mark.md': ((), (2,)),
+    'item-wide-gap.md': ((), ()),
+    'quote-comment-closed.md': ((4,), ()),
+    "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19), ()),
     "clean.md": ((), ()),
 }
+
+# 期待: `excerpt.md` の抜粋（行番号, 抜粋）。**元の行の字**が出る——伏せ字（`x`）でも、引用の印を置き換えた空白でもない（#564）。
+EXCERPTS = (
+    (4, "ode` X**「y」"),
+    (6, "> `c`X**「y」"),
+    (8, " --> X**「y」"),
+    (10, " `li`X**「y」"),
+    (12, " `hd`X**「y」"),
+    (14, " `th`X**「y」 | "),
+    (16, " `td`X**「y」 | "),
+    (19, "`c1`⏎X**「y」"),
+)
 
 
 def write(root: Path, name: str, body: str) -> None:
@@ -306,6 +355,8 @@ def observe(mod, tree: Path, empty: Path, clean: Path) -> dict:
     for path in sorted((tree / "plugins").glob("*.md")):
         found, unused = mod.scan(path.read_text(encoding="utf-8"))
         out[path.name] = (tuple(lineno for lineno, _, _ in found), tuple(unused))
+        if path.name == "excerpt.md":
+            out["excerpt"] = tuple((lineno, fragment) for lineno, _, fragment in found)
     # 本体の出力は読まない（終了コードだけを見る）。出すと試料の数だけ端末が埋まる。
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         out["exit:tree"] = mod.main([str(tree)])
@@ -472,6 +523,37 @@ MUTATIONS = {
     "容れ物の変化で表を終わらせない": (24,
         "            if (depth, len(lists)) != table or",
         "            if False or"),
+    "抜粋を伏せ字から切る": (25,
+        '            fragment = original[max(0, pos - 6):pos + 8].replace("\\n", "⏎")',
+        '            fragment = joined[max(0, pos - 6):pos + 8].replace("\\n", "⏎")'),
+    "抜粋を引用の印を空白にした行から切る": (25,
+        '        original = "\\n".join(source[start - 1:start - 1 + len(block)])',
+        '        original = "\\n".join(block)'),
+    # #525 の狭いパスで素通りした変異（#563）。どれも下の試料（#563 の段）が殺す。
+    "info にバッククォートがあってもフェンスを開く": (7,
+        'FENCE_OPEN = re.compile(r" {0,3}(`{3,}(?=[^`]*$)|~{3,})")',
+        'FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,})")'),
+    "_ の区切り線を見ない": (18,
+        'THEMATIC = re.compile(r" {0,3}([-*_])',
+        'THEMATIC = re.compile(r" {0,3}([-*])'),
+    "区切りの行のあとで表を開かない": (23,
+        "            table = (depth, len(lists))\n            continue",
+        "            table = None\n            continue"),
+    "見出しの字下げに上限を置かない": (4,
+        'HEADING = re.compile(r" {0,3}#{1,6}',
+        'HEADING = re.compile(r" *#{1,6}'),
+    "引用の印の字下げに上限を置かない": (16,
+        'QUOTE_MARK = re.compile(r" {0,3}>[ ]?")',
+        'QUOTE_MARK = re.compile(r" *>[ ]?")'),
+    "コメントのブロックの本文行の印を拾わない": (13,
+        "                if EXEMPT.search(line):\n                    marks.append(lineno)\n",
+        ""),
+    "項の印の後ろの空白を上限なく中身の桁に数える": (17,
+        "    content = marker_end + (gap if 1 <= gap <= 4 else 1)",
+        "    content = marker_end + (gap if 1 <= gap else 1)"),
+    "引用が終わってもコメントのブロックを閉じない": (16,
+        "            if got < comment:\n                comment = None",
+        "            if False:\n                comment = None"),
 }
 
 
@@ -497,6 +579,12 @@ def main() -> int:
         for name, expected in EXPECTED.items():
             check(f"{name}: {expected}", correct.get(name) == expected)
         check("試料と期待が 1 対 1", set(SAMPLES) == set(EXPECTED))
+
+        print("\nエラーの抜粋（元の行から切る。#564）")
+        got = dict(correct.get("excerpt", ()))
+        for lineno, fragment in EXCERPTS:
+            check(f"excerpt.md:{lineno} の抜粋が {fragment!r}（伏せ字でない）", got.get(lineno) == fragment)
+        check("excerpt.md の抜粋が期待と 1 対 1", tuple(correct.get("excerpt", ())) == EXCERPTS)
 
         print("\n終了コード")
         check("崩れがあれば 1", correct["exit:tree"] == 1)
