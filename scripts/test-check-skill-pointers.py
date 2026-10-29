@@ -264,6 +264,17 @@ SIBLING_REF_BROKEN = SIBLING_REF.replace("隣の「節」", "隣の「別の節�
 SIBLING_PROMPT_BROKEN = SIBLING_PROMPT.replace("渡す文面", "送る文面")
 # **`手順 N` を挟んで折り返した指し先だけが壊れる。**
 SIBLING_STEP_BROKEN = SIBLING_SKILL.replace("5. 周を閉じる", "5. 周を畳む")
+# **ほかの持ち主の名指しが前に付いた `../` の指し先**（#542）——`../` の先は自分のプラグインなので、名指しがあっても照合する。
+# **#503 の `/code-review` 2 パス目（CR2-5）の実物の形**: spec-loop の中の `` dev-loop の `../req-loop/SKILL.md` の「壊れた節」 ``。
+# 名指しの名前（`other`）は木にプラグインのディレクトリとして置く——置かないと名指しと読まれず、免除を掛ける変異が殺せない。
+SIBLING_OWNED_OK = SIBLING_XREF_OK + "\n読み方は other の `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
+SIBLING_OWNED_BROKEN = SIBLING_XREF_OK + "\n読み方は other の `../sib/SKILL.md` の「壊れた節」を正とする。\n"
+# **名指しの形を 3 つとも置く**——`<名前> の`・`<名前> のスキルの`・`このリポジトリの`。1 つの形だけ免除を残す変異
+# （`このリポジトリ` か `のスキル` が前にあれば `../` でも免除する）は、`other の` の試料だけでは殺せない（#542 の 1 パス目の `/code-review`）。
+SIBLING_OWNED_SKILL_OK = SIBLING_XREF_OK + "\n読み方は other のスキルの `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
+SIBLING_OWNED_SKILL_BROKEN = SIBLING_XREF_OK + "\n読み方は other のスキルの `../sib/SKILL.md` の「壊れた節」を正とする。\n"
+SIBLING_OWNED_REPO_OK = SIBLING_XREF_OK + "\n読み方は このリポジトリの `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
+SIBLING_OWNED_REPO_BROKEN = SIBLING_XREF_OK + "\n読み方は このリポジトリの `../sib/SKILL.md` の「壊れた節」を正とする。\n"
 # **スキルの `references/*.md`・`prompts/*.md` から指した節だけが壊れる。**
 SIBLING_SRC_REF_BROKEN = SIBLING_SKILL.replace("6. 参照から指す節", "6. 参照から指す項")
 SIBLING_SRC_PROMPT_BROKEN = SIBLING_SKILL.replace("7. 文面から指す節", "7. 文面から指す項")
@@ -417,8 +428,12 @@ MUTATIONS = {
         "    return True"),
     # 守る 28: 「X」の照合でも、ほかの持ち主を名指しした指し先は照合しないこと
     "「X」の照合でほかの持ち主の名指しを照合する": (
-        "        if owned_elsewhere(prose[line_start:m.start()], plugin):\n            continue",
+        "        if not rel.startswith(\"../\") and owned_elsewhere(prose[line_start:m.start()], plugin):\n            continue",
         "        if False:\n            continue"),
+    # 守る 28b: `../` で始まる移した先の名指しは、ほかの持ち主の名指しがあっても「X」を照合すること（#542）
+    "`../` の「X」にも名指しの免除を掛ける": (
+        "        if not rel.startswith(\"../\") and owned_elsewhere(",
+        "        if owned_elsewhere("),
     # 守る 29: 名指しは同じ行だけを見ること
     "前の行の名指しで免除する": (
         "prose[line_start:m.start()]",
@@ -592,10 +607,11 @@ def main() -> int:
         check("同じ行の前のほうの名指しでは免除しない", observe(mod, plugin_early)["rc"] == 1)
 
         def sibling_tree(name: str, *, sib: str = SIBLING_SKILL, ref: str = SIBLING_REF,
-                         prompt: str = SIBLING_PROMPT) -> Path:
+                         prompt: str = SIBLING_PROMPT, body: str = SIBLING_XREF_OK) -> Path:
             d = base / name
             assert_not_real_repo(d)
-            make_skill(d, body=SIBLING_XREF_OK, files={
+            (d / "plugins" / "other").mkdir(parents=True, exist_ok=True)  # 名指しの名前をプラグインとして置く（#542）
+            make_skill(d, body=body, files={
                 "references/r.md": SIBLING_SRC_REF, "prompts/q.md": SIBLING_SRC_PROMPT})
             sib_dir = d / "plugins" / "demo" / "skills" / "sib"
             (sib_dir / "references").mkdir(parents=True, exist_ok=True)
@@ -612,6 +628,12 @@ def main() -> int:
         sibling_step_broken = sibling_tree("sibling-step-broken", sib=SIBLING_STEP_BROKEN)
         sibling_src_ref_broken = sibling_tree("sibling-src-ref-broken", sib=SIBLING_SRC_REF_BROKEN)
         sibling_src_prompt_broken = sibling_tree("sibling-src-prompt-broken", sib=SIBLING_SRC_PROMPT_BROKEN)
+        sibling_owned_ok = sibling_tree("sibling-owned-ok", body=SIBLING_OWNED_OK)
+        sibling_owned_broken = sibling_tree("sibling-owned-broken", body=SIBLING_OWNED_BROKEN)
+        sibling_owned_skill_ok = sibling_tree("sibling-owned-skill-ok", body=SIBLING_OWNED_SKILL_OK)
+        sibling_owned_skill_broken = sibling_tree("sibling-owned-skill-broken", body=SIBLING_OWNED_SKILL_BROKEN)
+        sibling_owned_repo_ok = sibling_tree("sibling-owned-repo-ok", body=SIBLING_OWNED_REPO_OK)
+        sibling_owned_repo_broken = sibling_tree("sibling-owned-repo-broken", body=SIBLING_OWNED_REPO_BROKEN)
         print("\n隣のスキルを通る `../` の移した先の名指し（#503）")
         check("隣のスキルの節が在れば通す（`手順 N`・折り返し・『』を越えて）",
               observe(mod, sibling_ok)["rc"] == 0)
@@ -627,6 +649,16 @@ def main() -> int:
               observe(mod, sibling_src_ref_broken)["rc"] == 1)
         check("スキルの `prompts/*.md` から隣のスキルを指した節が無ければ落とす",
               observe(mod, sibling_src_prompt_broken)["rc"] == 1)
+        check("ほかの持ち主の名指しが付いた `../` の指し先も、節が在れば通す（#542）",
+              observe(mod, sibling_owned_ok)["rc"] == 0)
+        check("ほかの持ち主の名指しが付いた `../` の指し先も、節が無ければ落とす（#503 の CR2-5 の再現。#542）",
+              observe(mod, sibling_owned_broken)["rc"] == 1)
+        check("`<名前> のスキルの` の名指しが付いた `../` の指し先も、節が在れば通し、無ければ落とす（#542）",
+              observe(mod, sibling_owned_skill_ok)["rc"] == 0
+              and observe(mod, sibling_owned_skill_broken)["rc"] == 1)
+        check("`このリポジトリの` の名指しが付いた `../` の指し先も、節が在れば通し、無ければ落とす（#542）",
+              observe(mod, sibling_owned_repo_ok)["rc"] == 0
+              and observe(mod, sibling_owned_repo_broken)["rc"] == 1)
 
         def bare_tree(name: str, *, dst: str = BARE_DST_REF, qa: str = BARE_PLUGIN_QA,
                       ref: str = BARE_PLUGIN_REF) -> Path:
@@ -714,6 +746,12 @@ def main() -> int:
                           or mutant.main([str(sibling_step_broken)]) != 1
                           or mutant.main([str(sibling_src_ref_broken)]) != 1
                           or mutant.main([str(sibling_src_prompt_broken)]) != 1
+                          or mutant.main([str(sibling_owned_ok)]) != 0
+                          or mutant.main([str(sibling_owned_broken)]) != 1
+                          or mutant.main([str(sibling_owned_skill_ok)]) != 0
+                          or mutant.main([str(sibling_owned_skill_broken)]) != 1
+                          or mutant.main([str(sibling_owned_repo_ok)]) != 0
+                          or mutant.main([str(sibling_owned_repo_broken)]) != 1
                           or mutant.main([str(bare_ok)]) != 0
                           or mutant.main([str(bare_skill_broken)]) != 1
                           or mutant.main([str(bare_plugin_broken)]) != 1
