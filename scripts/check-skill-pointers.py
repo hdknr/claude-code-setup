@@ -22,8 +22,8 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
 `prompts/*.md`）と、**プラグイン直下の Markdown**（`agents/*.md` と `references/*.md`。#332）に
 現れる **`references/…` `prompts/…` `scripts/…` という形の相対パス**を拾い、
 **スキルのディレクトリ（プラグイン直下のファイルならプラグインの根）からの相対で実在するか**を確かめる。
-あわせて**散文の指し先**（`上の「X」` と `` `references/x.md` の「X」 ``）の X が、
-**指したファイルの本文にあるか**を確かめる（#205）。
+あわせて**散文の指し先**（`上の「X」` と `` `references/x.md` の「X」 ``・`` `x.md` の「X」 ``）の X が、
+**指したファイルの本文にあるか**を確かめる（#205・#541）。
 
 ## 何を守り、何を守らないか
 
@@ -97,6 +97,12 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   `` `../dev-loop/references/x.md` の「X」 ``）も拾うこと**（#503）——**同じプラグインの隣のスキルの節を指す書き方である。**
   `../` の後ろを `references/`・`prompts/` に限ると、パスの実在は見ても節の名前は見ない
   （#484 の 2 パス目の `/code-review` が、cruise の見出しを書き換えても緑のままだと実測で示した）。
+- **ディレクトリの付かないファイル名の移した先の名指し（`` `qa-csv.md` の「X」 ``）も拾うこと**（#541）——
+  **同じディレクトリの決まりを指す書き方である**（spec-loop のプラグイン直下の `references/` が多く使う）。
+  拾わないと、指した先の見出しを書き換えても緑のままだった（#503 の 2 パス目の `/code-review`）。
+- **ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決すること**——スキルの
+  `references/r.md` の `` `s.md` `` は `references/s.md` を指す。スキルのディレクトリ（プラグイン直下ならプラグインの根）から
+  解決すると、`references/` の中の指し先がどれも「無い」になって照合されない。**`` `SKILL.md` `` はこれまでどおりスキルのディレクトリから解決する。**
 - **ほかの持ち主を名指しした指し先は解決しないこと**——`` dev-loop の `references/spec-gap.md` ``
   `` dev-loop のスキルの `scripts/x.py` `` `` このリポジトリの `scripts/x.py` `` は、
   **このプラグインのファイルではない**。解決すると、正しい記述なのに落ちる。
@@ -146,6 +152,11 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   は自分の名前なので免除されず、プラグインの根から解決されて落ちる（落ちる側に倒れる）。
 - **プラグイン直下のファイルからの `` `SKILL.md` の「X」 ``**——プラグインの根に `SKILL.md` は無く、
   どのスキルを指すかが決まらないので照合しない。
+- **ファイル名だけの指し先が、書いたファイルと同じディレクトリに無いとき**——**照合せず、実在も見ない**（#541）。
+  **別のディレクトリを指していることがある**——cruise の `SKILL.md` の `` `resume.md` `` は dev-loop スキルの `references/` を、
+  dev-loop の `references/spec-gap.md` の `` `qa-csv.md` `` は spec-loop のプラグインの `references/` を指す。
+  **どこを指すかが字面から決まらないので、照合する相手が無い。** 照合させたいなら `` `../dev-loop/references/resume.md` `` のようにパスで書く。
+  **同じディレクトリのファイルを改名すると、その指し先も照合されなくなる**（落ちる側に倒れない）。
 - **使われていないファイル**——**指されていない `references/*.md` があっても落とさない**
   （置いてすぐ指す周と、先に置く周を区別できないため）。
 - **名指しの無い、スキルの `scripts/` と対象リポジトリの `scripts/` の区別**——**付かない。**
@@ -239,8 +250,10 @@ PROSE = re.compile(r"[上下]" + NO + QUOTED)
 # **スキルの中とプラグイン直下の Markdown だけ**を拾う（`CLAUDE.md` は対象リポジトリのものを指している）。
 # **`../` で始まる形は、後ろを `references/`・`prompts/` に限らない**（#503）——限ると、
 # `` `../cruise/SKILL.md` の「X」 `` のように隣のスキルを通る指し先の X を照合しない（`PARENT` と同じ理由）。
+# **ディレクトリの付かないファイル名も拾う**（#541）——`` `qa-csv.md` の「X」 `` は、書いたファイルと同じディレクトリの
+# ファイルを指す（解決は `prose_pointers_in`）。
 XREF = re.compile(
-    r"`(SKILL\.md|(?:references|prompts)/[\w.-]+\.md|(?:\.\./)+[\w.-][\w./-]*\.md)`"
+    r"`(SKILL\.md|(?:references|prompts)/[\w.-]+\.md|[\w.-]+\.md|(?:\.\./)+[\w.-][\w./-]*\.md)`"
     r"\s*(?:手順\s*\d+\s*)?" + NO + QUOTED)
 # **ほかの持ち主を名指しした指し先**（`dev-loop の` `dev-loop のスキルの` `このリポジトリの`）。
 # **このプラグインからの相対では解決しない**——spec-loop のプラグイン直下の決まりは、
@@ -301,9 +314,13 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
         line_start = prose.rfind("\n", 0, m.start()) + 1
         if owned_elsewhere(prose[line_start:m.start()], plugin):
             continue
-        target = skill / m.group(1)
+        rel = m.group(1)
+        # **ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決する**（#541）。
+        # **そこに無ければ照合しない**——別のディレクトリ・別のプラグインを指していることがあり、どこかが決まらない
+        # （docstring の「守らない」）。`SKILL.md` はこれまでどおりスキルのディレクトリから。
+        target = (path.parent if "/" not in rel and rel != "SKILL.md" else skill) / rel
         if not target.is_file():
-            continue  # 実在しないことは囲まれた指し先の検査が言う
+            continue  # 実在しないことは囲まれた指し先の検査が言う（ファイル名だけの形は見ない）
         lineno = prose.count("\n", 0, m.start()) + 1
         yield (lineno, f"{m.group(0)}（{m.group(1)} に無い）",
                normalize(m.group(2)) in body_without_pointers(
