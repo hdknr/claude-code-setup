@@ -122,6 +122,7 @@ TESTS: list[str] = [
     "test-record-stop-failure.py",
     "test-find-cycle.py",
     "test-check-unattended-env.py",
+    "test-launch-with-long-token.py",
     "test-ledger.py",
     "test-parent-issue.py",
     "test-child-cycle.py",

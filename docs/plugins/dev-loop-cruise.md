@@ -30,6 +30,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 不在の線 | `references/absent-lines.md` | 利用者がいないとき、止まる代わりに進んでよい範囲 |
 | 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども |
 | 直す線 | `references/fix-line.md` | 関門の指摘をどこまで周の中で直すか |
+| 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
 | 子プロセスの周（任意） | `../cruise/scripts/child-cycle.py`・`../cruise/references/child-process.md` | 周を `claude -p` の子プロセスで回す起動口と要約。親の `/clear` の道連れにならない。**既定はサブエージェントのまま**（[#491](https://github.com/hdknr/claude-code-setup/issues/491)） |
 
 **スキルの base ディレクトリ**は、プラグインで入れていれば
@@ -107,6 +108,8 @@ python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py -
 - **親の起動場所**——**cruise の親は、メインの作業ツリーから worktree に入らずに起動するのが既定です。**
   worktree の中から起動すると、別の worktree・別のリポジトリへの操作がガードに拒まれます。
 - **席を外すとき**（`--present` なし）は、利用上限での自動継続・質問の待ち・通知・スリープも読みます。
+- **認証**——長期トークンで起動したか、対話ログイン（8 時間で切れる）かを出します。対話ログインなら、起動時に長期トークンで回すかを訊きます
+  （[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)。**長期トークンでは Remote Control と通知が使えない見込みで、まだ測っていません**）。
 
 足りないものと直し方を出します。**直すのは利用者です**（スクリプトは書き換えません）。
 

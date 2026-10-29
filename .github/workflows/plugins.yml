@@ -97,6 +97,8 @@ jobs:
       # 本体は CI から呼ばない（入力が利用者の ~/.claude にある）。テストだけ回す。
       - name: 不在の前の環境点検のテスト（#394）
         run: python3 scripts/test-check-unattended-env.py
+      - name: 長期トークンの起動口のテスト（#584）
+        run: python3 scripts/test-launch-with-long-token.py
 
       - name: 複数 Issue の台帳のテスト（#390）
         run: python3 scripts/test-ledger.py
