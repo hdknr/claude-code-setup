@@ -50,7 +50,8 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 - ブランチ: `issue/491-cruise-claude-p-child`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-491`
 - 起点: `4abb280`（`origin/main`）
-- base: `origin/main` → `4abb280dda86eac24190df155e9196f6c0fbb730`
+- base: `origin/main` → `4abb280dda86eac24190df155e9196f6c0fbb730`（1 パス目まで）
+- 取り込み: `origin/main` を `066c440` で取り込んだ（版の行だけ衝突。塊ごとに 1.64.0 を取った。main は 1.63.9）。**式を当て直した base**: `066c440a7861267c397389cd9037581ed73f6023`（2 パス目から）
 - 作り方: `prepare-worktree.sh`（メインの作業ツリーを cwd に）。`EnterWorktree` は呼ばない（cruise の子）
 
 ## 線（出所）
@@ -123,6 +124,7 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 
 - 手順 4: 完了（`392e91d`）。割り目は訊かない（不在の周。`absent-lines.md` の「訊く場面」）。続けた
 - 1 パス目の指摘対応の起点: `392e91d37b17ee8997dcf8badf10a27f10a50dd1`（1 パス目の関門に渡した HEAD）
+- 1 パス目の指摘対応: `392e91d`..`1a9a566`（コミット済み）。2 パス目の割り目は訊かない（不在の周）。残り: 手順 5 の当て直しと `/code-review` 2 パス目の両方
 - 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet。テンプレート 170 行を読んだと報告）反証 5 件／`/code-review`（high）指摘 10 件。採否は下の表（直す 8・残課題 3。重なりは 1 行に畳んだ）。手順 4 への差し戻し: あり（直す行）
 
 ## 既知の限界・決着済みの論点
