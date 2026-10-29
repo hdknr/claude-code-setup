@@ -144,6 +144,9 @@ SYMLINKED = """# デモ
 OUTSIDE_OWNED = "# デモ\n\n読み方は other の `../../../other/README.md` の「無い節」を正とする。\n"
 OUTSIDE_PLAIN = "# デモ\n\n読み方は `../../../other/README.md` の「無い節」を正とする。\n"
 OUTSIDE_SYMLINKED = "# デモ\n\n詳しくは `references/x.md` の「無い節」を見る。\n"
+# **外へ出て自分のプラグインの名前で戻る形**（字面でだけ外。`resolve()` の先は中）にも「X」を付ける——無いと、「X」の経路の判定から
+# 字面の半分（`leaves_plugin`）だけを落とす変異が素通りする（#574 の 1 パス目の Verifier と `/code-review`）。
+OUTSIDE_ROUNDTRIP = "# デモ\n\n決まりは `../../../demo/references/qa.md` の「無い節」を正とする。\n"
 # **パスの検査が拾わないファイル名だけの指し先は、symlink の先が外でも照合する**（#574）——飛ばすとエラーが 0 になる。
 # プラグイン直下の `references/a.md` から、隣のプラグインへの symlink `references/o.md` を `` `o.md` `` で指す。
 BARE_OUTSIDE_REF = "# 決まり\n\n層は `o.md` の「無い節」を正とする。\n"
@@ -570,6 +573,7 @@ def main() -> int:
 
         outside_owned = parent_tree("outside-owned", OUTSIDE_OWNED)
         outside_plain = parent_tree("outside-plain", OUTSIDE_PLAIN)
+        outside_roundtrip = parent_tree("outside-roundtrip", OUTSIDE_ROUNDTRIP)
         outside_symlinked = symlink_tree("outside-symlinked", "../../../../other/references/o.md", OUTSIDE_SYMLINKED)
         bare_outside = parent_tree("bare-outside", "# デモ\n")
         (bare_outside / "plugins" / "other" / "references").mkdir(parents=True, exist_ok=True)
@@ -586,6 +590,8 @@ def main() -> int:
         print("\nプラグインの外へ出る指し先の「X」（#574）")
         check("名指しの付いた外への `../` の「X」は、エラー 1 つ（プラグインの外）で落とす（#542 の CR1-3 の再現）",
               observe(mod, outside_owned)["rc"] == 1 and errors(mod, outside_owned) == 1)
+        check("外へ出て名前で戻る `../` の「X」も、エラー 1 つで落とす（字面でだけ外）",
+              observe(mod, outside_roundtrip)["rc"] == 1 and errors(mod, outside_roundtrip) == 1)
         check("名指しの無い外への `../` の「X」も、エラー 1 つで落とす",
               observe(mod, outside_plain)["rc"] == 1 and errors(mod, outside_plain) == 1)
         check("symlink の先が外の `references/x.md` の「X」も、エラー 1 つで落とす",
@@ -815,6 +821,7 @@ def main() -> int:
                           or mutant.main([str(bare_case)]) != 0
                           or errors(mutant, outside_owned) != 1
                           or errors(mutant, outside_plain) != 1
+                          or errors(mutant, outside_roundtrip) != 1
                           or errors(mutant, outside_symlinked) != 1
                           or errors(mutant, bare_outside) != 1
                           or errors(mutant, skill_outside) != 1)
