@@ -269,6 +269,12 @@ SIBLING_STEP_BROKEN = SIBLING_SKILL.replace("5. 周を閉じる", "5. 周を畳�
 # 名指しの名前（`other`）は木にプラグインのディレクトリとして置く——置かないと名指しと読まれず、免除を掛ける変異が殺せない。
 SIBLING_OWNED_OK = SIBLING_XREF_OK + "\n読み方は other の `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
 SIBLING_OWNED_BROKEN = SIBLING_XREF_OK + "\n読み方は other の `../sib/SKILL.md` の「壊れた節」を正とする。\n"
+# **名指しの形を 3 つとも置く**——`<名前> の`・`<名前> のスキルの`・`このリポジトリの`。1 つの形だけ免除を残す変異
+# （`このリポジトリ` か `のスキル` が前にあれば `../` でも免除する）は、`other の` の試料だけでは殺せない（#542 の 1 パス目の `/code-review`）。
+SIBLING_OWNED_SKILL_OK = SIBLING_XREF_OK + "\n読み方は other のスキルの `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
+SIBLING_OWNED_SKILL_BROKEN = SIBLING_XREF_OK + "\n読み方は other のスキルの `../sib/SKILL.md` の「壊れた節」を正とする。\n"
+SIBLING_OWNED_REPO_OK = SIBLING_XREF_OK + "\n読み方は このリポジトリの `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
+SIBLING_OWNED_REPO_BROKEN = SIBLING_XREF_OK + "\n読み方は このリポジトリの `../sib/SKILL.md` の「壊れた節」を正とする。\n"
 # **スキルの `references/*.md`・`prompts/*.md` から指した節だけが壊れる。**
 SIBLING_SRC_REF_BROKEN = SIBLING_SKILL.replace("6. 参照から指す節", "6. 参照から指す項")
 SIBLING_SRC_PROMPT_BROKEN = SIBLING_SKILL.replace("7. 文面から指す節", "7. 文面から指す項")
@@ -624,6 +630,10 @@ def main() -> int:
         sibling_src_prompt_broken = sibling_tree("sibling-src-prompt-broken", sib=SIBLING_SRC_PROMPT_BROKEN)
         sibling_owned_ok = sibling_tree("sibling-owned-ok", body=SIBLING_OWNED_OK)
         sibling_owned_broken = sibling_tree("sibling-owned-broken", body=SIBLING_OWNED_BROKEN)
+        sibling_owned_skill_ok = sibling_tree("sibling-owned-skill-ok", body=SIBLING_OWNED_SKILL_OK)
+        sibling_owned_skill_broken = sibling_tree("sibling-owned-skill-broken", body=SIBLING_OWNED_SKILL_BROKEN)
+        sibling_owned_repo_ok = sibling_tree("sibling-owned-repo-ok", body=SIBLING_OWNED_REPO_OK)
+        sibling_owned_repo_broken = sibling_tree("sibling-owned-repo-broken", body=SIBLING_OWNED_REPO_BROKEN)
         print("\n隣のスキルを通る `../` の移した先の名指し（#503）")
         check("隣のスキルの節が在れば通す（`手順 N`・折り返し・『』を越えて）",
               observe(mod, sibling_ok)["rc"] == 0)
@@ -643,6 +653,12 @@ def main() -> int:
               observe(mod, sibling_owned_ok)["rc"] == 0)
         check("ほかの持ち主の名指しが付いた `../` の指し先も、節が無ければ落とす（#503 の CR2-5 の再現。#542）",
               observe(mod, sibling_owned_broken)["rc"] == 1)
+        check("`<名前> のスキルの` の名指しが付いた `../` の指し先も、節が在れば通し、無ければ落とす（#542）",
+              observe(mod, sibling_owned_skill_ok)["rc"] == 0
+              and observe(mod, sibling_owned_skill_broken)["rc"] == 1)
+        check("`このリポジトリの` の名指しが付いた `../` の指し先も、節が在れば通し、無ければ落とす（#542）",
+              observe(mod, sibling_owned_repo_ok)["rc"] == 0
+              and observe(mod, sibling_owned_repo_broken)["rc"] == 1)
 
         def bare_tree(name: str, *, dst: str = BARE_DST_REF, qa: str = BARE_PLUGIN_QA,
                       ref: str = BARE_PLUGIN_REF) -> Path:
@@ -732,6 +748,10 @@ def main() -> int:
                           or mutant.main([str(sibling_src_prompt_broken)]) != 1
                           or mutant.main([str(sibling_owned_ok)]) != 0
                           or mutant.main([str(sibling_owned_broken)]) != 1
+                          or mutant.main([str(sibling_owned_skill_ok)]) != 0
+                          or mutant.main([str(sibling_owned_skill_broken)]) != 1
+                          or mutant.main([str(sibling_owned_repo_ok)]) != 0
+                          or mutant.main([str(sibling_owned_repo_broken)]) != 1
                           or mutant.main([str(bare_ok)]) != 0
                           or mutant.main([str(bare_skill_broken)]) != 1
                           or mutant.main([str(bare_plugin_broken)]) != 1
