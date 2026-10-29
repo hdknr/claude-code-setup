@@ -317,6 +317,30 @@ BARE_PLUGIN_QA_BROKEN = BARE_PLUGIN_QA.replace("プラグインの隣の「節�
 # **macOS の FS では `QA.md` が `qa.md` に「在る」ことになる**（#541 の 1 パス目の `/code-review`）。
 BARE_PLUGIN_REF_CASE = BARE_PLUGIN_REF + "\n大文字の `QA.md` の「どこにも無い節」は照合しない。\n"
 
+# **持ち主の名前が付いた、`../` で始まらない指し先の「X」は照合しない**——その免除は `references/x.md` の形（`PLUGIN_REF`）の
+# ほかに `SKILL.md`・`prompts/x.md`・ファイル名だけの形にも掛かる。**3 つの形にも試料を置く**（#573。#542 の 1 パス目の
+# `/code-review` CR1-1——`references/x.md` の試料だけでは、免除をほかの形から外す変異がどの検査も通った）。
+# **指した先は自分のプラグインに実在し、X はそこに無い**——実在しなければ照合が飛ぶので、免除を外しても 0 のままで変異が殺せない。
+# **ファイル名だけの形はスキルの `references/` から隣のファイルを指す**（`SKILL.md` から書くと、隣に置くファイルが走査の外になる）。
+# **形ごとに名指しを外した対照を置く**（どれも 1 で落ちる）——対照が無いと、指し先が解決されずに照合が飛んでいても通る木は 0 のまま。
+# 変異は免除を判定する文字列（`line_start`）を形ごとに空にする——`if not rel.startswith("../") and owned_elsewhere(…)` の行を書き換えると、
+# 既存の変異の当て先が消えて、試料と関係なく赤になる（当て先が 1 箇所あるかの検査が落ちる）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if m.group(1) == \"SKILL.md\" else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if m.group(1).startswith(\"prompts/\") else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if \"/\" not in m.group(1) and m.group(1) != \"SKILL.md\" else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+OWNED_SKILL = """# デモ
+
+入り方は other の `SKILL.md` の「other にしか無い節」を正とする。
+文面は other の `prompts/p.md` の「other にしか無い節」を使う。
+"""
+OWNED_PROMPT = "# p\n"
+OWNED_SRC_REF = "# r\n\n区分は other の `s.md` の「other にしか無い節」を正とする。\n"
+OWNED_DST_REF = "# s\n"
+# **対照は 1 本ずつ名指しを外す**——ほかの 2 つの形は免除されたまま。
+OWNED_SKILL_PLAIN = OWNED_SKILL.replace("other の `SKILL.md`", "`SKILL.md`")
+OWNED_PROMPT_PLAIN = OWNED_SKILL.replace("other の `prompts/p.md`", "`prompts/p.md`")
+OWNED_BARE_PLAIN = OWNED_SRC_REF.replace("other の `s.md`", "`s.md`")
+
 PLAIN = """# デモ
 
 参照ファイル references/resume.md を読む（囲んでいないので拾わない）。
@@ -749,6 +773,25 @@ def main() -> int:
         check("大文字小文字だけ違うファイル名は照合しない（文字どおりに比べる。OS に依らない）",
               observe(mod, bare_case)["rc"] == 0)
 
+        def owned_tree(name: str, *, skill: str = OWNED_SKILL, ref: str = OWNED_SRC_REF) -> Path:
+            d = base / name
+            assert_not_real_repo(d)
+            (d / "plugins" / "other").mkdir(parents=True, exist_ok=True)  # 名指しの名前をプラグインとして置く
+            make_skill(d, body=skill, files={
+                "prompts/p.md": OWNED_PROMPT, "references/r.md": ref, "references/s.md": OWNED_DST_REF})
+            return d
+
+        owned_ok = owned_tree("owned-ok")
+        owned_skill_plain = owned_tree("owned-skill-plain", skill=OWNED_SKILL_PLAIN)
+        owned_prompt_plain = owned_tree("owned-prompt-plain", skill=OWNED_PROMPT_PLAIN)
+        owned_bare_plain = owned_tree("owned-bare-plain", ref=OWNED_BARE_PLAIN)
+        print("\n持ち主の名前による「X」の照合の免除の形（#573）")
+        check("持ち主の名前が付いた `SKILL.md`・`prompts/x.md`・ファイル名だけの指し先は、X が自分の先に無くても照合しない",
+              observe(mod, owned_ok)["rc"] == 0)
+        check("名指しを外した `SKILL.md` の指し先は照合して落とす（対照）", observe(mod, owned_skill_plain)["rc"] == 1)
+        check("名指しを外した `prompts/x.md` の指し先は照合して落とす（対照）", observe(mod, owned_prompt_plain)["rc"] == 1)
+        check("名指しを外したファイル名だけの指し先は照合して落とす（対照）", observe(mod, owned_bare_plain)["rc"] == 1)
+
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
 
@@ -820,6 +863,10 @@ def main() -> int:
                           or mutant.main([str(bare_skill_broken)]) != 1
                           or mutant.main([str(bare_plugin_broken)]) != 1
                           or mutant.main([str(bare_case)]) != 0
+                          or mutant.main([str(owned_ok)]) != 0
+                          or mutant.main([str(owned_skill_plain)]) != 1
+                          or mutant.main([str(owned_prompt_plain)]) != 1
+                          or mutant.main([str(owned_bare_plain)]) != 1
                           or errors(mutant, outside_owned) != 1
                           or errors(mutant, outside_plain) != 1
                           or errors(mutant, outside_roundtrip) != 1
