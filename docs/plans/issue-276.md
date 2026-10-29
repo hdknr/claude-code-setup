@@ -85,11 +85,15 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 | `build-proposal.py` の `copy_docs`（タグ） | `merged_reads` が綴りだけ違う名前も写す→`merge` が断る | 試料（タグの `Removed.csv`・`Shared/`）＋変異 |
 | `build-proposal.py` の `drop_internal`（写した一時ディレクトリ） | 綴りどおりの名前だけを外す | 試料（タグの `spec/QA-dev.csv` が比較の節に載る）。**区別しない FS でだけ判別できる**——Linux では旧い実装でも緑 |
 | `check-signoff.py`（タグ） | 触らない（git の名前で読む） | 読む（既知の限界） |
+| **（再開で追加）** `merge-versions.py` の綴りの照合（git の作業ツリーの中・区別しない FS で作業ツリーのフォルダの綴りがコミットと違う） | `tracked`（`git ls-files`）・`spelled`（同じ項目のときだけ index の綴り） | 試料（`git-stale`・`git-renamed`・`git-both`）＋変異。旧い実装への陽性対照。I2 の実験（作業ツリー対コミットの書き出し） |
+| **（再開で追加）** 同（区別する FS で、綴りだけ違う別のフォルダが並ぶ） | `same_entry` が別の項目と見る／`has_content` が `.` だけのフォルダを数えない | 試料（`git-alongside`・`git-stale`）。Case-sensitive APFS のイメージと CI（Linux） |
+| **（再開で追加）** git の外の docs・`.git` が在るのに git が失敗する | 外なら作業ツリーの綴り（既存の試料はすべてこの経路）／失敗は 2 | 既存の試料・`git-broken` の試料＋変異 |
 
 証明できるもの／できないもの:
 
 - I1・I2 の判別は、試料を macOS（区別しない）と CI の Linux（区別する）の両方で走らせて見る。**手元は macOS だけ、Linux は CI だけ**。
 - I3 の判別は**区別しない FS でだけ**できる（区別する FS では旧い実装でも `spec/QA-dev.csv` を消さない）。手元の macOS で判別し、CI ではその変異を飛ばしたと出す。
+- **（再開で追加）未証明**: `GIT_DIR`・`GIT_INDEX_FILE` を設定した環境、sparse checkout・submodule の中の docs——試していない（docstring の「守らないもの」に一部を書いた）
 - **未証明**: HFS+（NFD に寄せる FS）での挙動——ASCII の名前は正規化で変わらないので I1 の対象名には効かないが、測っていない。
 
 生成物: **該当なし**——このリポジトリの生成物（図の書き出し・`SKILL.md` の測定値の生成ブロック）はどちらも dev-loop の `SKILL.md`・drawio が源で、
@@ -133,6 +137,21 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 - main の取り込み: `c871d16`（spec-loop の版の衝突 7 ファイルを塊ごとに 0.38.0 で解き、`scripts/test-build-proposal.py` の末尾の集計行は両側を合わせた）。
   取り込む前に `git diff --name-status --no-renames HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'` を見た——足した検査は無い（`M` だけ 11 件）
 - **再開後の周の base**: 参照 `origin/main` → 取り込み後の merge-base（下の「再開後の関門の進捗」に SHA を書く）
+
+#### 再開後の関門の進捗（再開点）
+
+- 周の base（再開後）: 参照 `origin/main` → `7a2363955db8ca4842a7c55b961bae4f034adfb2`（取り込み後の merge-base。HEAD の祖先）
+- 設計の変更のコミット: `b2754f6`。**再開後の 1 パス目の起点（指摘対応の 0 行判定に使う）: `b2754f6`**（1 パス目の関門に渡す時点の HEAD。計画ファイルの更新はこの後）
+- `check-all.py`（`b2754f6` の内容で）: 52/52 本・失敗 0
+- 交絡を潰した手順（実験 2 つ）:
+  1. **新しい試料（`scripts/test-merge-versions.py`）を旧い実装（PR #517 の head `2e0f8ea`）に当てた陽性対照**——macOS で
+     「コミットが正しい綴りなら作業ツリーの古い綴りで断らない」が旧で 1（CR2-1 の退行を再現）、「コミットが綴り違いなら…断る」が旧で 0（CR2-2）。
+     新しい実装は全部緑。**区別する FS は Case-sensitive APFS のディスクイメージ（`TMPDIR` をその中に）で測った**——新は緑
+     （区別しない FS でだけ作れる試料 2 件と変異「index を見ない」は飛ばしたと出る）、旧は CR2-1 の類型（`.DS_Store` だけの `Requirements/` が並ぶ）で 1
+  2. **I2 の実験**——本物の git リポジトリで CR2-1・CR2-2・Issue の再現（`Removed.csv`）を作り、作業ツリーで重ねた終了コードと、
+     同じコミットを `git archive` で書き出して重ねた終了コード（タグから写す側が見る綴り）を比べた。新: macOS・区別する FS とも
+     `0/0`・`1/1`・`1/1`（一致）。旧: macOS で `1/0`・`0/1`・`1/1`、区別する FS で `1/0`・`1/1`・`1/1`。違うのは実装だけ（同じ試料・同じスクリプト）。
+     観測窓: macOS（APFS）と Case-sensitive APFS の 2 つ・各 1 回。Linux の実機は CI だけ。HFS+ は測っていない
 
 #### 選んだ設計（CR2-1・CR2-2 を直す）
 
