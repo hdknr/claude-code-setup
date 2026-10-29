@@ -33,7 +33,7 @@ REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "child-cycle.py"
 LEDGER = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "ledger.py"
 NAME = "issue-50"
-BRIEF = "あなたは cruise の子である。\n台帳を書かない。\n"
+BRIEF = "あなたは cruise の子である。\n台帳を書かない。\n終わったら親が -p /dev-loop:dev-loop 5 を起こす。\n"  # 別の番号を含む（P1-R8）
 
 failures: list[str] = []
 
@@ -64,9 +64,9 @@ def say(text):
     return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
 
 
-# 子は背景の体を待つ間に最初の result を出し、通知で続けて、result を計 3 つ出した（実測）
+# 背景の体を待った子は、体の通知の後で result を計 3 つ並べて出し、最後は空（ターン 0・文が空）だった（probe2 の行の順）
 FIXTURES = {
-    "済んだ（result が 3 つ）": [INIT, say("背景の体を待つ"), result(3), say("最後の報告: PR #9"), result(1), result(0)],
+    "済んだ（result が 3 つ）": [INIT, say("背景の体を待つ"), say("最後の報告: PR #9"), result(3), result(1), result(0, result="")],
     "最後の result が API の誤り": [INIT, result(3), result(1, api_error_status=529)],
     "result が無い": [INIT, say("途中"), "壊れた行"],
     "成功でない": [INIT, result(5, subtype="error_max_turns", is_error=True)],
@@ -75,10 +75,13 @@ FIXTURES = {
     "利用上限の拒否": [INIT, {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "seven_day",
                                                                          "resetsAt": 1793269200}}, result(1)],
     "長い文": [INIT, say("あ" * 5000), result(1)],
+    "上限が近いだけ": [INIT, {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "rateLimitType": "five_hour"}},
+                 {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed_warning", "rateLimitType": "seven_day"}}, result(1)],
 }
 
 MUTATIONS = {
     "子を切り離さない": [("start_new_session=True", "start_new_session=False")],
+    "子の標準入力を閉じない": [("stdin=subprocess.DEVNULL, ", "")],
     "cwd をメインの作業ツリーにしない": [("cwd=main_tree, stdin", "cwd=None, stdin")],
     "許可モードを既定に任せる": [('launch.add_argument("--permission-mode", required=True)',
                          'launch.add_argument("--permission-mode", default="auto")')],
@@ -86,11 +89,14 @@ MUTATIONS = {
     "委譲文の {{ と空を拒まない": [('    if not brief.strip():', '    if False:'), ('    if "{{" in brief:', '    if False:')],
     "走っている子がいても 2 体目を起こす": [('        if is_running(meta["pid"], number):', '        if False:')],
     "起こせなかった記録を残す": [("            leftover.unlink(missing_ok=True)", "            pass")],
-    "pid が居れば走っていると読む": [('    return any(Path(t).name == "claude" for t in tokens[:2]) and', '    return True or')],
+    "claude でない pid も走っていると読む": [('    if not any(Path(t).name == "claude" for t in tokens[:2]):\n        return False\n', '')],
+    "コマンド全体から番号を探す": [('    return at >= 0 and tokens[at + 1:at + 3] == ["/dev-loop:dev-loop", str(number)]',
+                        '    return re.search(rf"/dev-loop:dev-loop {number}(\\s|$)", proc.stdout) is not None')],
     "最初の result を読む": [('last = summary["results"][-1]', 'last = summary["results"][0]'),
                        ('last = results[-1]', 'last = results[0]')],
     "result が無くても済んだと読む": [('return ["result が無い"]', "return []")],
     "要確認の印を見ない": [("    if problems:", "    if False:")],
+    "上限が近いだけでも拒否と読む": [('(None, "allowed", "allowed_warning")', '(None,)')],
     "要約の行を切り詰めない": [('return text if len(text) <= limit else text[: limit - 1] + "…"', "return text")],
 }
 
@@ -216,8 +222,19 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
         os.environ["FAKE_CLAUDE_SLEEP"] = "30"
         t0 = time.time()
-        rc, out, err = run(mod, ["launch", NAME, "50", "--brief", str(brief), "--permission-mode", "auto",
-                                 "--model", "haiku", "--allowed-tools", "Bash(git status)", "Agent"], sub)
+        # 親の標準入力に中身を置く——子が継げば読める（P1-R4）
+        r, w = os.pipe()
+        os.write(w, b"PARENT-INPUT")
+        os.close(w)
+        saved = os.dup(0)
+        os.dup2(r, 0)
+        os.close(r)
+        try:
+            rc, out, err = run(mod, ["launch", NAME, "50", "--brief", str(brief), "--permission-mode", "auto",
+                                     "--model", "haiku", "--allowed-tools", "Bash(git status)", "Agent"], sub)
+        finally:
+            os.dup2(saved, 0)
+            os.close(saved)
         o["launch の戻りが速い"] = time.time() - t0 < 5
         m = re.search(r"pid (\d+)", str(out))
         pid = int(m.group(1)) if m else None
@@ -301,6 +318,11 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         started.append(sleeper.pid)
         plant(main, 80, sleeper.pid, [INIT, result(1)], "a")
         o["claude でない pid"] = run(mod, ["status", NAME, "80"], main)[0]
+        # claude でないが、-p の引数がその Issue のもの（P1-V2）
+        imposter = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "-p", "/dev-loop:dev-loop", "81"])
+        started.append(imposter.pid)
+        plant(main, 81, imposter.pid, [INIT, result(1)], "a")
+        o["-p を持つが claude でない pid"] = run(mod, ["status", NAME, "81"], main)[0]
     finally:
         for pid in started:
             stop(pid)
@@ -330,9 +352,10 @@ def main() -> int:
         print("\n走っている間（L2・S1）")
         check("status は 1", o["status(走っている)"] == 1)
         check("同じ Issue の 2 体目は 3 で、記録を増やさない", o["2 体目"] == 3 and o["2 体目の後の記録の数"] == 1)
-        check("#50 の子の pid でも、#5 の記録からは走っていない", o["#5 は走っていない"] != 1)
+        check("#50 の子の pid でも、#5 の記録からは走っていない（委譲文に「-p /dev-loop:dev-loop 5」があっても）", o["#5 は走っていない"] != 1)
         check("止めた子は走っていない（result が無いので 3）", o["status(止めた後)"] == 3)
         check("pid が居ても claude でなければ走っていない", o["claude でない pid"] == 0)
+        check("-p /dev-loop:dev-loop 81 を持っていても claude でなければ走っていない", o["-p を持つが claude でない pid"] == 0)
 
         print("\n拒む（L2）")
         check("{{ が残る委譲文は 3", o["{{ が残る"] == 3)
@@ -350,9 +373,9 @@ def main() -> int:
         check("端から端: 終わった子は 0", rc == 0)
         check("result を 3 つ数え、最後の result（ターン 0）を読む", "result: 3 個 ／ 最後: success・is_error=False・ターン 0" in str(out))
         check("dev-loop の版・許可モード・セッションを出す", "dev-loop の版: 1.63.6 ／ 許可モード: auto ／ セッション: s-1" in str(out))
-        check("最後の文は最後の assistant の文", "最後の文: 最後の報告: PR #9" in str(out))
+        check("最後の文は最後の assistant の文（最後の result の文は空）", "最後の文: 最後の報告: PR #9" in str(out))
         expected = {"済んだ（result が 3 つ）": 0, "最後の result が API の誤り": 3, "result が無い": 3, "成功でない": 3,
-                    "拒否された操作": 3, "殺された体": 3, "利用上限の拒否": 3, "長い文": 0}
+                    "拒否された操作": 3, "殺された体": 3, "利用上限の拒否": 3, "長い文": 0, "上限が近いだけ": 0}
         for name, code in expected.items():
             check(f"{name} は {code}", o[f"要約 {name}"][0] == code)
         check("拒否された操作の道具の名前を出す", "拒否された操作: Bash" in o["要約 拒否された操作"][1])

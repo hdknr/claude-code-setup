@@ -10,7 +10,7 @@ cruise の各周を、親のサブエージェントではなく `claude -p` の
 触る:
 
 - `plugins/dev-loop/skills/cruise/scripts/child-cycle.py` — 新規。`launch`（子を切り離して起動し、記録を残す）と `status`（出力から要約の行を出す）
-- `plugins/dev-loop/skills/cruise/prompts/child-cycle.md` — 新規。子に `--append-system-prompt-file` で渡す委譲文のテンプレート
+- `plugins/dev-loop/skills/cruise/prompts/child-cycle.md` — 新規。子に `--append-system-prompt` で中身を渡す委譲文のテンプレート
 - `plugins/dev-loop/skills/cruise/references/child-process.md` — 新規。子プロセスで回す形・4 つの未確認点の確かめた範囲・利用者が測る手順
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §4 の 2 に「子プロセスで回す（任意）」、§1 の再開と §5 に子の確かめ方。版の 2 行
 - `plugins/dev-loop/skills/dev-loop/references/ledger.md` — 「どう再開するか」の 2 に、子プロセスの周の確かめ方を 1 行
@@ -19,7 +19,9 @@ cruise の各周を、親のサブエージェントではなく `claude -p` の
 - `.github/workflows/plugins.yml` — テストのステップを登録
 - `docs/plugins/dev-loop-cruise.md` — 部品の表に 1 行と、子プロセスで回す形の短い節
 - `CLAUDE.md` — プロジェクト構成の `cruise/` と `scripts/` の一覧に 1 行ずつ
-- `.claude-plugin/marketplace.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/skills/dev-loop/SKILL.md`・`plugins/dev-loop/skills/cruise/SKILL.md` — 版（3 種類）
+- `.claude-plugin/marketplace.json` — 版（3 種類）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（3 種類）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版（3 種類）
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す場合だけ）
 - `docs/plans/issue-491.md` — この計画
 
@@ -73,7 +75,7 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 - **C2（Issue 案 2）** 子が走っている間に親が `/clear` し、同じ引数で起動し直した親が台帳と実物からその周を拾えることを 1 回示す
 - **C3（Issue 案 3）** 未確認点 1〜4 の結果が `references/` に、確かめた範囲とともに書かれている——**確かめた（測った）ことと確かめていないことを分け、測ったことは実測の出力と一致する**
 - **L1** `launch` は子を**親から切り離して**起動する（新しいセッション。標準入力は閉じる）。cwd はメインの作業ツリー（どこから呼んでも）。
-  起動の引数は `-p "/dev-loop:dev-loop <番号>"`・`--output-format stream-json`・`--verbose`・**利用者が名指しした `--permission-mode`**・`--append-system-prompt-file <委譲文>`。
+  起動の引数は `-p "/dev-loop:dev-loop <番号>"`・`--output-format stream-json`・`--verbose`・**利用者が名指しした `--permission-mode`**・`--append-system-prompt <委譲文の中身>`。
   入口: worktree の中・サブディレクトリから呼ぶ／`--permission-mode` を渡し忘れる／CLI に無い値を渡す
 - **L2** `launch` は次を拒んで子を起こさない: 委譲文が無い・`{{` が残る、`--permission-mode` が無い・選べる値に無い、同じ Issue の子がまだ走っている、メインの作業ツリーが決まらない
 - **L3** `launch` は記録（pid・引数・出力と標準エラーのパス・起動時刻）をメインの作業ツリーの `.claude/plans/cruise-<名前>-children/` に残し、**周の worktree の中には書かない**。標準出力に記録のパスを出す
@@ -115,13 +117,13 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 
 ## 未解決・確認待ち
 
-- 要確認 Issue（置き換えか選べるか）: #590（推奨: 選べる形。既定はサブエージェントのまま）
+- 要確認 Issue（置き換えか選べるか）: #590（推奨: 選べる形。既定はサブエージェントのまま）——利用者が承認して閉じた（2026-10-29。親から伝達）
 
 ## 関門の進捗（再開点）
 
 - 手順 4: 完了（`392e91d`）。割り目は訊かない（不在の周。`absent-lines.md` の「訊く場面」）。続けた
 - 1 パス目の指摘対応の起点: `392e91d37b17ee8997dcf8badf10a27f10a50dd1`（1 パス目の関門に渡した HEAD）
-- 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）・`/code-review` を起動中
+- 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet。テンプレート 170 行を読んだと報告）反証 5 件／`/code-review`（high）指摘 10 件。採否は下の表（直す 8・残課題 3。重なりは 1 行に畳んだ）。手順 4 への差し戻し: あり（直す行）
 
 ## 既知の限界・決着済みの論点
 
@@ -129,9 +131,20 @@ main へのマージで、公開サイト（`docs/`）が GitHub Pages に出て
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
+| P1-R1 許可モードの一覧が `manual` を持ち `default` を持たない | 示せる——2.1.312 の本体の文字列に `["acceptEdits","auto","bypassPermissions","default","dontAsk","plan"]`（ヘルプは `manual` を出す）。`launch --permission-mode default` は 2 | L1・L2 | 直す |
+| P1-R2／V4 試し 1・2 は「同じ settings」ではない——モデル（haiku-4-5 と haiku-5-5）と引数（`--max-turns`／`--allowedTools`）が違う | 示せる——probe1 の 11 行目・probe2 の 11 行目の init の `model` | C3 | 直す |
+| P1-R3 `allowed_warning` を利用上限の拒否と読む | 示せる——本体の文字列に `allowed_warning`（33 箇所）。試料で 3 になる | S4 | 直す |
+| P1-R4／V2 `stdin=DEVNULL` を外す変異と、「claude である」の半分を外す変異（`True and`）が素通りする | 示せる——関門が変異を当てて緑（2 体とも） | L1・S1 | 直す |
+| P1-R5 委譲文は「親は要約の行と報告だけを読む」と言うが、`status` は最後の文を 300 字で切る | 示せる——probe2 で報告は 2 つ目の result | 無し（S3・S5 のとおりの振る舞い。D1 の必須は実物で確かめるので外れない） | 残課題 |
+| P1-R6 §4-2 の子プロセスの項が「委譲文に書くこと」の列挙の中にあり、委譲文が「親の版の SKILL.md を絶対パスで指し、行数を wc -l と照合」を落としている | 示せる——cruise `SKILL.md` §4-2 の 1 項目目と `prompts/child-cycle.md` | D1 | 直す |
+| P1-R7／V 「最初の result を出した後もプロセスは終わらず」は probe2 の行の順では示せない（result は 40・41・43 行で、通知の 29・37 行より後） | 示せる——probe2 の行番号 | C3 | 直す |
+| P1-R8 走っているかの判定が委譲文の中の `/dev-loop:dev-loop N` にも当たる | 示せる——委譲文を引数で渡すので `ps` に出る | S1 | 直す |
+| P1-R9／V5 記録を書けなかったときの孤児の子・読めない古い記録で以後起こせない | 示せない（書けない状態を実データで作っていない） | 無し | 残課題 |
+| P1-R10／V1 計画の L1 と決着が `--append-system-prompt-file` のまま | 示せる——計画 L1 と `child-cycle.py` の引数 | L1（文面と実装の食い違い） | 直す（計画の文面を実装に合わせる。仕組みは変えない——下の決着） |
+| P1-V3 変異の「殺せた」が例外でも数わる | 示せない（いまの 12 件はどれも観測の差で殺せている——関門 2 体が確かめた） | 無し | 残課題 |
 
 - 決着: 子の記録を台帳の新しい鍵にしない——`agent` の値に `claude-p:<記録のパス>` を書く（`ledger.py` の形を変えると #584・他の周と衝突し、台帳の読み手が全部変わる）
-- 決着: 委譲文は `--append-system-prompt-file` で渡す（`-p` の文はスラッシュコマンドだけにして、dev-loop の引数を汚さない）
+- 決着: 委譲文は**中身を `--append-system-prompt` で**渡す（`-p` の文はスラッシュコマンドだけにして、dev-loop の引数を汚さない）。`--append-system-prompt-file` は 2.1.312 の本体には在るがヘルプの一覧に無いので使わない。代わりに委譲文が `ps` に出るので、走っているかの判定は最初の `-p` の引数だけを見る（P1-R8）
 
 ## 手順 8
 

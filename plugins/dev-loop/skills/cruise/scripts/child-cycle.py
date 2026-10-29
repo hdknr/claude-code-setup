@@ -49,18 +49,21 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 
 守る:
 
-- **子を親から切り離す**——新しいセッションで起こし、標準入力を閉じ、終わるのを待たずに戻る。
+- **子を親から切り離す**——新しいセッションで起こし、終わるのを待たずに戻る。
+- **子の標準入力を閉じる**——親の標準入力を子に継がせない（端末なら子が親の入力を読み、待ちうる）。
 - **cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも、子はメインの作業ツリーで起きる。
 - **許可モードを名指しさせる**——渡さなければ 2。既定に任せると、同じ settings でも子のモードが分かれた（実測）。
 - **`bypassPermissions` を拒む**——cruise は権限を広げない（`../../dev-loop/references/absent-lines.md` の「広げても外れないもの」）。
 - **委譲文の `{{` の残りと空を拒む**——差し込み忘れの委譲文で子を起こさない。
 - **同じ Issue の子が走っている間は、2 体目を起こさない**——同じ worktree を 2 体が触る。
 - **記録は台帳の隣に置き、子を起こせなかったら記録を残さない**——残すと、起きていない子を `status` が「判定」する。
-- **走っているかは、pid が居て、そのコマンドが `claude`（先頭の 2 語のどちらかの名前）で、その Issue の `/dev-loop:dev-loop <番号>` を持つことで決める**
-  ——pid の使い回しを「走っている」と言わない。
+- **走っているかは、pid が居て、そのコマンドが `claude`（先頭の 2 語のどちらかの名前）であることで決める**——pid の使い回しを「走っている」と言わない。
+- **そのうえで、最初の `-p` の引数がその Issue の `/dev-loop:dev-loop <番号>` であること**——委譲文（`--append-system-prompt` の中身）は `ps` に出るので、
+  その中に書かれた別の番号に当たらない。`#5` を `#50` に当てない。
 - **最後の `result` を読む**——最初の `result` は背景の体を待つ前のものでありうる。
 - **終わったのに `result` が無ければ 3**——落ちた子を「済んだ」と言わない。
 - **要確認の印（成功でない・API の誤り・拒否・殺された体・利用上限の拒否）が 1 つでもあれば 3。**
+- **`allowed` と `allowed_warning`（上限が近いだけ）を利用上限の拒否と読まない**——拒否と読むのはそれ以外の `status` である。
 - **要約の行を切り詰める**——出力を丸ごと親の文脈に積まない。
 
 守らない:
@@ -71,6 +74,8 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 - **stream-json の形の変化**——鍵の名前は 2.1.312 の実測に合わせている。版が変わって鍵が消えたら、その行は「無し」と出る。
 - **子が台帳を書かないこと**——委譲文で頼むだけである（`prompts/child-cycle.md`）。
 - **記録のディレクトリの後片付け**——消さない。
+- **子を起こした後に記録を書けなかったとき**——子は走り続け、記録が無いので `status` も 2 体目の歯止めも見えない（pid は 4 の理由に出す）。
+  **読めない古い記録が 1 つでもあれば、その Issue の `launch` は 4 で止まる**（読めない記録を「走っていない」と読まない）。
 """
 
 import argparse
@@ -89,8 +94,10 @@ EXIT_USAGE = 2
 EXIT_REJECTED = 3
 EXIT_UNKNOWN = 4
 
-# `claude --help` の --permission-mode の選べる値（2.1.312）
-PERMISSION_MODES = ("acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan")
+# --permission-mode の値（2.1.312）。本体の文字列の選べる値は acceptEdits・auto・bypassPermissions・default・dontAsk・plan で、
+# `claude --help` は default の代わりに manual を出す。**どちらも起動して確かめてはいない**ので両方を通す
+# （CLI が拒めば子はすぐ終わり、status が「result が無い」と標準エラーの末尾を出す）
+PERMISSION_MODES = ("acceptEdits", "auto", "bypassPermissions", "default", "manual", "dontAsk", "plan")
 REFUSED_MODES = ("bypassPermissions",)
 MAX_TEXT = 300
 LEDGER = Path(__file__).resolve().parent.parent.parent / "dev-loop" / "scripts" / "ledger.py"
@@ -161,7 +168,11 @@ def is_running(pid, number):
     # 実物は `claude -p …`、スクリプトの claude なら `<インタプリタ> <…>/claude -p …`。
     # **部分一致にしない**——パスに claude を含む別のプロセス（このリポジトリ自身の名前など）を拾う
     tokens = proc.stdout.split()
-    return any(Path(t).name == "claude" for t in tokens[:2]) and re.search(rf"/dev-loop:dev-loop {number}(\s|$)", proc.stdout) is not None
+    if not any(Path(t).name == "claude" for t in tokens[:2]):
+        return False
+    # 最初の `-p` の引数だけを見る——委譲文は後ろの `--append-system-prompt` の値で、別の番号を書いていてもよい
+    at = tokens.index("-p") if "-p" in tokens else -1
+    return at >= 0 and tokens[at + 1:at + 3] == ["/dev-loop:dev-loop", str(number)]
 
 
 def read_meta(path):
@@ -253,7 +264,7 @@ def summarize(out_path):
             results.append(event)
         elif kind == "rate_limit_event":
             info = event.get("rate_limit_info") or {}
-            if info.get("status") not in (None, "allowed"):
+            if info.get("status") not in (None, "allowed", "allowed_warning"):
                 limit = info
         elif kind == "assistant":
             for block in (event.get("message") or {}).get("content") or []:
