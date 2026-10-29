@@ -248,7 +248,8 @@ def make_dangling_origin_head(base: Path) -> Path:
 
 
 def _spaced_cd_example_runs(prepare: Path, base: Path) -> bool:
-    repo = make_repo(base / "sp ace" / "repo")
+    # **空白と日本語の両方を置く**——`printf %q` は bash 3.2 で非 ASCII を壊した（#502 の 2 パス目）。
+    repo = make_repo(base / "sp ace" / "日本" / "repo")
     res = run(prepare, repo, "45", "spaced")
     return res.returncode == 0 and cruise_exception_follows(
         res.stdout, repo / ".claude" / "worktrees" / "issue-45")
@@ -439,7 +440,7 @@ MUTATIONS = {
         'true'),
     # 守る 17（prepare）: cd の例をシェルに貼れる形で出す（#502 の `/code-review` 1 パス目）
     "cd の例を素のパスで出す": (PREPARE,
-        "printf -v PATH_Q '%q' \"$PATH_ABS\"",
+        'PATH_Q="\'$(printf \'%s\' "$PATH_ABS" | sed "s/\'/\'\\\\\\\\\'\'/g")\'"',
         'PATH_Q="$PATH_ABS"'),
     # --- check-pr-preconditions.sh の 守る 4 行 ---
     # 守る 1: worktree にいるか
