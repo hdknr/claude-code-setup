@@ -26,6 +26,8 @@ from pathlib import Path
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "check-unattended-env.py"
 COMMANDS = ("git push", "gh pr merge")
+FAKE_TOKEN = "fake-token-not-real-584"  # 本物のトークンではない。出力に出ないことを見る印
+SESSION_ENV = {"CLAUDECODE": "1", "CLAUDE_CODE_OAUTH_TOKEN": FAKE_TOKEN}  # 長期トークンで起動したセッション
 
 failures: list[str] = []
 
@@ -171,14 +173,15 @@ def scenario(mod_path: Path):
 def run(mod, env, flag=None, managed=None, platform="darwin", environ=None, flag_note=None):
     # environ は既定で空——実環境の CLAUDE_CONFIG_DIR を読むと、実 HOME の外の利用者の設定を読む
     stack, items = mod.gather(env.project, COMMANDS, flag, managed, env.home, platform, flag_note,
-                              env=environ if environ is not None else {})
+                              env=environ if environ is not None else dict(SESSION_ENV))
     buf = io.StringIO()
     code = mod.report(stack, items, out=buf)
     return code, items, buf.getvalue()
 
 
-def run_cruise(mod, env, present=True, cwd=None):
-    stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None, env={},
+def run_cruise(mod, env, present=True, cwd=None, environ=None):
+    stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None,
+                              env=environ if environ is not None else dict(SESSION_ENV),
                               cruise=True, present=present, cwd=cwd)
     buf = io.StringIO()
     code = mod.report(stack, items, out=buf)
@@ -214,6 +217,58 @@ def suite(script: Path) -> list[str]:
         check("全部良ければ 0", code == 0, bad)
         check("人が見るを毎回出す", sum(1 for s, *_ in items if s == mod.HUMAN) == 3, bad)
         check("人が見るは出力にも出る", "[人が見る] モバイルの登録" in out, bad)
+
+    # 認証（#584）: 長期トークン／8 時間のトークン／先に使われる認証／判定できない。値は出さない
+    with scenario(script) as env:
+        env.all_good()
+        code, items, out = run(mod, env)
+        check("認証: 長期トークンは良い", status_of(items, "認証") == [mod.GOOD], bad)
+        check("認証: 長期トークンでは使えない見込みの機能と測る表を添える",
+              "Remote Control" in fix_of(items, "認証") and mod.TOKEN_PAGE in fix_of(items, "認証"), bad)
+        check("認証: トークンの値を出さない", FAKE_TOKEN not in out, bad)
+        code, items, out = run(mod, env, environ={"CLAUDECODE": "1"})
+        check("認証: どれも無ければ 8 時間のトークンで要対処", status_of(items, "認証") == [mod.ACTION]
+              and "8 時間" in detail_of(items, "認証") and code == 1, bad)
+        check("認証: 直し方に起動口の絶対パスと --store-token", str(mod.LAUNCHER) in fix_of(items, "認証")
+              and mod.LAUNCHER.is_absolute() and "--store-token" in fix_of(items, "認証"), bad)
+        check("認証: 起動口は本体と同じ場所の実在するファイル",
+              (SCRIPT.parent / mod.LAUNCHER.name).is_file(), bad)
+        _, items, _ = run(mod, env, environ={"CLAUDECODE": "1", "CLAUDE_CODE_OAUTH_TOKEN": "  "})
+        check("認証: 空白だけのトークンは長期トークンではない", status_of(items, "認証") == [mod.ACTION], bad)
+        _, items, _ = run(mod, env, environ={"CLAUDE_CODE_OAUTH_TOKEN": FAKE_TOKEN})
+        check("認証: セッションの外は判定できない", status_of(items, "認証") == [mod.UNKNOWN], bad)
+        _, items, _ = run(mod, env, environ={**SESSION_ENV, "CLAUDECODE": "0"})
+        check("認証: CLAUDECODE が 1 でなければ判定できない", status_of(items, "認証") == [mod.UNKNOWN], bad)
+        for extra, want, name in (({"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"}, mod.UNKNOWN, "消去が真"),
+                                  ({"GITHUB_ACTIONS": "true"}, mod.UNKNOWN, "GITHUB_ACTIONS が真"),
+                                  ({"GITHUB_ACTIONS": "true", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "0"}, mod.GOOD,
+                                   "GITHUB_ACTIONS が真でも消去が偽"),
+                                  ({"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "off"}, mod.GOOD, "消去が偽")):
+            _, items, _ = run(mod, env, environ={**SESSION_ENV, **extra})
+            check(f"認証: {name}", status_of(items, "認証") == [want], bad)
+        for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+            _, items, out = run(mod, env, environ={**SESSION_ENV, name: "fake-key-584"})
+            check(f"認証: {name} があれば人が見る", status_of(items, "認証") == [mod.HUMAN]
+                  and name in detail_of(items, "認証"), bad)
+            check(f"認証: {name} の値を出さない", "fake-key-584" not in out and FAKE_TOKEN not in out, bad)
+        _, items, _ = run(mod, env, environ={**SESSION_ENV, "ANTHROPIC_API_KEY": " "})
+        check("認証: 空白だけの API キーは数えない", status_of(items, "認証") == [mod.GOOD], bad)
+        env.user({"apiKeyHelper": "/bin/echo", "permissions": {"allow": ["Bash(git push:*)", "Bash(gh pr merge *)"]}})
+        _, items, _ = run(mod, env)
+        check("認証: apiKeyHelper があれば人が見る", status_of(items, "認証") == [mod.HUMAN]
+              and "apiKeyHelper（user）" in detail_of(items, "認証"), bad)
+    with scenario(script) as env:
+        env.all_good()
+        env.local("{ broken")
+        _, items, _ = run(mod, env)
+        check("認証: apiKeyHelper を読めない層があれば判定できない", status_of(items, "認証") == [mod.UNKNOWN], bad)
+    with scenario(script) as env:
+        env.all_good()
+        _, items, _ = run_cruise(mod, env, present=True, environ={"CLAUDECODE": "1"})
+        check("認証: 居る cruise でも出し、8 時間のトークンは人が見る", status_of(items, "認証") == [mod.HUMAN]
+              and "--store-token" in fix_of(items, "認証"), bad)
+        _, items, _ = run_cruise(mod, env, present=True)
+        check("認証: 居る cruise でも長期トークンは良い", status_of(items, "認証") == [mod.GOOD], bad)
 
     # 守る: 読めなかったものを良いに混ぜない
     with scenario(script) as env:
@@ -883,6 +938,66 @@ MUTATIONS = {
     "人が見るの Remote Control が claude rc を言わない": (
         '         "作業中のセッションで /remote-control——claude rc の待ち受けは別のセッションを起こす。"\n',
         '         "作業中のセッションで /remote-control。"\n'),
+    "認証: セッションの外を判定できないにしない": (
+        '    if env.get("CLAUDECODE") != "1":\n',
+        "    if False:\n"),
+    "認証: 消去の設定を見ない": (
+        "    if env_scrubbed(env):\n",
+        "    if False:\n"),
+    "認証: GITHUB_ACTIONS を見ない": (
+        '    return truthy(scrub) or (truthy(env.get("GITHUB_ACTIONS")) and not off)',
+        "    return truthy(scrub)"),
+    "認証: 消去が偽でも GITHUB_ACTIONS で消すとする": (
+        '(truthy(env.get("GITHUB_ACTIONS")) and not off)',
+        'truthy(env.get("GITHUB_ACTIONS"))'),
+    "認証: 先に使われる認証を見ない": (
+        "    if ahead:\n",
+        "    if False:\n"),
+    "認証: API キーを見ない": (
+        'AHEAD_OF_TOKEN = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")',
+        'AHEAD_OF_TOKEN = ("ANTHROPIC_AUTH_TOKEN",)'),
+    "認証: ANTHROPIC_AUTH_TOKEN を見ない": (
+        'AHEAD_OF_TOKEN = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")',
+        'AHEAD_OF_TOKEN = ("ANTHROPIC_API_KEY",)'),
+    "認証: 空白だけの API キーを数える": (
+        'ahead = [name for name in AHEAD_OF_TOKEN if str(env.get(name) or "").strip()]',
+        "ahead = [name for name in AHEAD_OF_TOKEN if env.get(name)]"),
+    "認証: API キーの値を出す": (
+        'ahead = [name for name in AHEAD_OF_TOKEN if str(env.get(name) or "").strip()]',
+        'ahead = [name + "=" + str(env.get(name)) for name in AHEAD_OF_TOKEN if str(env.get(name) or "").strip()]'),
+    "認証: apiKeyHelper を見ない": (
+        "    if helper is not None:\n        ahead.append",
+        "    if False:\n        ahead.append"),
+    "認証: apiKeyHelper の読めない層を飛ばす": (
+        "    if isinstance(helper, Unreadable):\n        return [unknown_item(label, helper, layer)]",
+        "    if isinstance(helper, Unreadable):\n        helper = None"),
+    "認証: 空白だけのトークンを長期トークンとする": (
+        'if str(env.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip():',
+        'if env.get("CLAUDE_CODE_OAUTH_TOKEN") is not None:'),
+    "認証: トークンの値を出す": (
+        '(GOOD, label, "長期トークン（CLAUDE_CODE_OAUTH_TOKEN）で起動している',
+        '(GOOD, label, env["CLAUDE_CODE_OAUTH_TOKEN"] + "長期トークン（CLAUDE_CODE_OAUTH_TOKEN）で起動している'),
+    "認証: 8 時間のトークンを良いにする": (
+        "    return [(HUMAN if present else ACTION, label,",
+        "    return [(GOOD, label,"),
+    "認証: 居ても 8 時間のトークンを要対処にする": (
+        "    return [(HUMAN if present else ACTION, label,",
+        "    return [(ACTION, label,"),
+    "認証: 起動口を案内しない": (
+        'f"長期トークンで回すなら: 別の端末で bash {LAUNCHER} --store-token',
+        'f"長期トークンで回すなら: 別の端末で claude setup-token'),
+    "認証: 起動口の名前を違えるz": (
+        'LAUNCHER = Path(__file__).resolve().parent / "launch-with-long-token.sh"',
+        'LAUNCHER = Path(__file__).resolve().parent / "launch-long-token.sh"'),
+    "認証: 使えない見込みの機能を添えない": (
+        '"長期トークンは推論だけに絞られ、Remote Control とそれにつながる通知は使えない見込み"',
+        '"長期トークン"'),
+    "認証: 居る cruise で認証を出さない": (
+        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
+        "    items += [] if present else check_auth(stack, os.environ if env is None else env, present)\n"),
+    "認証: 認証を出さない": (
+        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
+        "\n"),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),

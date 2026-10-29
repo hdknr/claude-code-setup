@@ -25,6 +25,13 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 質問の待ち | settings の `askUserQuestionTimeout`（**managed・flag・user の層だけ**） | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
 | 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true` | 未設定・`false` |
 | スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が system の idle sleep を防いでいる（`-i`・`-d`・`-s` か、アサーションのフラグ無し） | どちらも無い |
+| 認証（#584。`--present` でも出す） | このスクリプトの環境変数（**Claude Code の Bash から回せば、セッションの環境を継いでいる**）と settings の `apiKeyHelper` | `CLAUDE_CODE_OAUTH_TOKEN` が空でない（長期トークン） | どれも無い——対話ログインの OAuth（8 時間で切れる。`--present` では人が見る）。直し方に起動口 `launch-with-long-token.sh` の絶対パス |
+
+認証の項目は、ほかに 2 つの判定を持つ（値は出力に出さない。見るのは空かどうかだけ）:
+
+- **人が見る**——`ANTHROPIC_AUTH_TOKEN`・`ANTHROPIC_API_KEY` が空でない、か `apiKeyHelper` がある。長期トークン・対話ログインより先に使われうるので、どれで認証しているかは `/status` で見る
+- **判定できない**——`CLAUDECODE` が `1` でない（Claude Code のセッションの外で回した。セッションの起動のしかたは外から見えない）か、
+  サブプロセスの環境から認証の変数が消される（`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` が真、または `GITHUB_ACTIONS` が真で前者が偽でない）
 
 **人が見る**（手元のファイルからは判定できないので、毎回出す。終了コードには効かない）:
 
@@ -52,6 +59,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
       メインの作業ツリーから、worktree に入らずに起動するのが既定**（#466）——隔離のガードが別の worktree・別のリポジトリへの
       操作を拒むので
 - `--present` は**利用者が居る cruise**——不在に限る項目（自動継続・質問の待ち・通知・スリープ・人が見る 3 つ）を出さない。
+  **認証は出す**（cruise の起動時に長期トークンで回すかを訊くため。#584）——8 時間のトークンは要対処ではなく人が見る（居れば `/login` で戻れる）。
   許可の要対処の文言も「確認で周が止まる」にする（答える人は居るが、そこで止まる）
 
 ## 通知の試験（`--push-result`）
@@ -135,6 +143,15 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - 「No mobile registered」は `/config` の表示（`has_active_channel === false`）で、`PushNotification` の返り値ではない
 - `claude remote-control`（`claude rc`）は「spawned sessions」を起こす待ち受け（`--help`）
 
+認証（#584。**2.1.312 の本体の文字列で読んだ。実走の陽性対照は取っていない**——長期トークンが手元に無い）:
+
+- 認証のトークンの出所は `ANTHROPIC_AUTH_TOKEN` → `CLAUDE_CODE_OAUTH_TOKEN` → OAuth のファイル記述子 → `apiKeyHelper` → … →
+  保存した claude.ai のログイン（対話ログイン）の順に選ぶ。API キー（`ANTHROPIC_API_KEY`・`apiKeyHelper`）があれば OAuth のトークンは使わない
+- Bash などの子の環境から認証の変数を消すのは、`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` が真か、`GITHUB_ACTIONS` が真で前者が偽でないときだけ
+- 「env-var and setup-token sessions default to user:inference only」・「Remote Control requires a full-scope login token.
+  Long-lived tokens (from `claude setup-token` or CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only」——
+  **長期トークンでは Remote Control が使えない見込み**で、上の `PushNotification` は Remote Control が要る。**どちらも実測していない**
+
 ## 何を守り、何を守らないか
 
 守る:
@@ -158,6 +175,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **`--cruise` で、止まりうる操作を「良い」と出した操作からも外さない**——settings の判定とは別の区分で全部出す
 - **`--cruise` で、worktree の中からの起動を「良い」にしない**——判定できなければ「判定できない」
 - **`--present` で、許可の項目を落とさない**——落とすのは不在に限る項目だけ
+- **認証で、セッションの外の環境・変数が消される環境を「8 時間」とも「長期トークン」とも言わない**——判定できない
+- **認証で、長期トークンより先に使われうる認証があるのに「長期トークン」と言わない**——人が見る
+- **認証のトークンの値を出さない**——空かどうかしか見ない
 
 守らない:
 
@@ -190,6 +210,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **セッションが worktree 隔離にあること**——見ているのは cwd だけ。メインの作業ツリーにいても、後で `EnterWorktree` すれば隔離される
 - **`.claude/dev-loop.md` の宣言の網羅**——宣言に無い操作は見えない
 - **iPhone からの操作が使用中になるか**——本体からは読み切れていない（利用者の実測。#407）。だから手順は両方から離れる形にしてある
+- **長期トークンが有効か（期限切れ・取り消し）・8 時間を超えて止まらないこと**——値を読まないので見えない（公開ページの測る表）
+- **対話ログインの保存先（キーチェーン・`~/.claude/.credentials.json`）**——読まない。長期トークンも API キーの類も無ければ、
+  セッションは対話ログインで起動したと見なす（ほかの出所——OAuth のファイル記述子・クラウドの事業者——は見ない）
 """
 
 import argparse
@@ -584,6 +607,52 @@ def check_sleep(platform):
              "別の端末で `caffeinate -i` を回しておく（または `sudo pmset -c sleep 0`）")]
 
 
+LAUNCHER = Path(__file__).resolve().parent / "launch-with-long-token.sh"
+TOKEN_PAGE = "https://hdknr.github.io/claude-code-setup/usage/cruise-long-lived-token/"
+AHEAD_OF_TOKEN = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")  # 長期トークンより先に使われうる（docstring）
+
+
+def truthy(value):
+    return value is not None and str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def env_scrubbed(env):
+    """本体の写し: 子の環境から認証の変数を消すか。`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` が真、
+    または `GITHUB_ACTIONS` が真で前者が偽（`0` `false` `no` `off`）でない。"""
+    scrub = env.get("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB")
+    off = scrub is not None and str(scrub).strip().lower() in ("0", "false", "no", "off")
+    return truthy(scrub) or (truthy(env.get("GITHUB_ACTIONS")) and not off)
+
+
+def check_auth(stack, env, present=False):
+    """認証の方式（#584）。**値は出さない**——空かどうかだけを見る。
+    居る（`present`）なら、8 時間のトークンは要対処ではなく人が見る——居れば `/login` で戻れる。"""
+    label = "認証"
+    if env.get("CLAUDECODE") != "1":
+        return [(UNKNOWN, label, "Claude Code のセッションの外で回している——セッションがどの認証で起動したかは、その中でしか見えない",
+                 "cruise のセッションの中（Bash）で回す")]
+    if env_scrubbed(env):
+        return [(UNKNOWN, label, "子の環境から認証の変数が消される設定（CLAUDE_CODE_SUBPROCESS_ENV_SCRUB／GITHUB_ACTIONS）——ここからは見えない",
+                 "/status の認証の行で見る")]
+    ahead = [name for name in AHEAD_OF_TOKEN if str(env.get(name) or "").strip()]
+    helper, layer = effective(stack, "apiKeyHelper")
+    if isinstance(helper, Unreadable):
+        return [unknown_item(label, helper, layer)]
+    if helper is not None:
+        ahead.append(f"apiKeyHelper（{layer}）")
+    if ahead:
+        return [(HUMAN, label, ", ".join(ahead) + " がある——長期トークン・対話ログインより先に使われうる",
+                 f"どれで認証しているかを /status で見る。長期トークンで回すなら、外して起動口で起動し直す: bash {LAUNCHER}")]
+    if str(env.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip():
+        return [(GOOD, label, "長期トークン（CLAUDE_CODE_OAUTH_TOKEN）で起動している——対話ログインの 8 時間のトークンではない",
+                 "長期トークンは推論だけに絞られ、Remote Control とそれにつながる通知は使えない見込み"
+                 f"（本体の文字列。実測していない。測る表: {TOKEN_PAGE}）")]
+    return [(HUMAN if present else ACTION, label,
+             "対話ログインの OAuth で起動している——アクセストークンは 8 時間で切れ、更新に失敗すると 401 で止まる",
+             f"長期トークンで回すなら: 別の端末で bash {LAUNCHER} --store-token（入れる・入れ替える）→"
+             f" このセッションを終えて bash {LAUNCHER} で起動し直す（入れ方: {TOKEN_PAGE}）")]
+
+
 def human_items(stack):
     rc, layer = effective(stack, "remoteControlAtStartup")
     if isinstance(rc, Unreadable):
@@ -759,6 +828,7 @@ def gather(project, commands, flag_path, managed_path, home, platform, flag_note
         items += check_notifications(home, env)
         items += check_sleep(platform)
         items += human_items(stack)
+    items += check_auth(stack, os.environ if env is None else env, present)
     return stack, items
 
 
