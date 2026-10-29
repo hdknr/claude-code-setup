@@ -104,6 +104,9 @@ jobs:
       - name: 親 Issue の一覧から台帳を作るテスト（#446）
         run: python3 scripts/test-parent-issue.py
 
+      - name: 周を claude -p の子プロセスで回す起動口と要約のテスト（#491）
+        run: python3 scripts/test-child-cycle.py
+
       - name: PR のマージの手続きのテスト（#389）
         run: python3 scripts/test-merge-pr.py
 

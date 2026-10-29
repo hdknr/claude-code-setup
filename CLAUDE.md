@@ -31,6 +31,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **親はメインの作業ツリーから worktree に入らずに起動し、起動時に周で使う操作の権限を点検する**（#466）。
       **dev-loop スキルを `../dev-loop/` で指す**ので、**素のスキルとしては張れない**。書式と守る／守らないは docstring を正とする。
       テストは `scripts/test-parent-issue.py`
+      - `skills/cruise/scripts/child-cycle.py` - 周を **`claude -p` の子プロセス**で回す起動口と、出力（stream-json）の要約（#491。**任意で、既定はサブエージェントのまま**。
+        子は親から切り離して起き、記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く。回し方と確かめた範囲は `references/child-process.md`、
+        守る／守らないは docstring を正とする。テストは `scripts/test-child-cycle.py`）
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
     - `skills/req-loop/` - 要求確定のループ（#216。1 周 = レビュー会 1 回。**回答待ちで止まる**）。
       **共有の `references/` と `scripts/` を `../../` で指す**ので、**素のスキルとしては張れない**
@@ -187,6 +190,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-parent-issue.py` - **親 Issue の一覧から台帳を作る入口の回帰テスト**（#446。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/cruise/scripts/parent-issue.py`**（同じ形）。本文は `--body-file` と偽の `gh` で渡し、
     台帳は**本物の `ledger.py`** で作る
+  - `test-child-cycle.py` - **周を `claude -p` の子プロセスで回す起動口と要約の回帰テスト**（#491。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/cruise/scripts/child-cycle.py`**（同じ形）。**偽の `claude` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**
+    ——本物を起こさない。**本物の `claude` の出力の形は見ない**（試料の鍵は 2.1.312 の実測に合わせてある）
   - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
     **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**

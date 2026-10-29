@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.63.8 -->
-> **このスキルの版: 1.63.8**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.64.0 -->
+> **このスキルの版: 1.64.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -193,6 +193,10 @@ check-unattended-env.py --cruise             # --absent
    `../dev-loop/references/resume.md` へ進む続き）・下の 5 の操作待ちの周の続き・積んだ周の載せ替え（`../dev-loop/references/stacked.md`）。
    **`resume.md` の「既に worktree がある場合」が `EnterWorktree` で入ると書いていても、親は入らない**——それを読んで続けるのは子で、子も入らない（上の項）。
    子が実装をさらに委譲するなら `../dev-loop/prompts/implementer.md` を使う。
+   - **周を `claude -p` の子プロセスで回してもよい（任意。#491）**——親の `/clear`・終了の道連れにならず、子は起動の時点で入っている版を読み込む。
+     **既定はサブエージェントのまま**——関門が子の中で回りきるか・利用上限で何が起きるかは、実際の周で確かめていない。
+     **子で回すと決めたら、`references/child-process.md` を読んでから起こす**（このスキルと同じ場所にある。起動口は `scripts/child-cycle.py`）。
+     **上の必須（台帳は親だけ・子の報告は実物で確かめる・マージは親）はそのまま掛かる。**
 3. **依存先がマージ待ちのうちに積んで始めるかは、人間が決める**——`../dev-loop/references/stacked.md` の「台帳を使う周では」を正とする。
    **`--absent` の起動で、利用者が積んでよいと言っていなければ積まない。**
 4. **マージは dev-loop の `SKILL.md` 手順 7 のとおり**（`../dev-loop/scripts/merge-pr.py` に任せてよい）。
@@ -217,6 +221,8 @@ check-unattended-env.py --cruise             # --absent
 **周を重ねるほど親の文脈が積み上がる。** 周と周の間で `/clear` してから、**同じ引数で起動し直せば台帳から再開する**
 （上の 1）。タイマーで再開するなら、渡すプロンプトも同じ引数（`/dev-loop:cruise <親> [--absent]`）にする
 ——**タイマーを張るかどうかは利用者が決める。**
+**子プロセスで回している周（台帳の `agent` が `claude-p:` で始まる）は、`/clear` の後も走り続ける**——再開した親は
+`references/child-process.md` の「親が `/clear` した後・タイマーで起動し直した後」のとおり確かめ、走っていれば 2 体目を起こさない。
 
 **着手できる周が残っているのに、親が次の周を始めないと決めたら**（文脈の残りが少ない、など理由に依らない）、**その場で次の 3 つをして止まる（#484）**
 ——タイマーは同じセッションにプロンプトを注入するだけで `/clear` できないので、放っておくと**以後の発火はすべて同じ判断で終わる**
