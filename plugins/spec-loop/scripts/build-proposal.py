@@ -37,6 +37,10 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **引数の誤り（名前が無い・ディレクトリ・名前の衝突・印に残せない名前）は消す前に見て 2 で止めるが、印が名指しする前の出力は消す**（#398。
   ディレクトリを渡したなら、その中の印が名指しするものも消す）。
   **spec-loop 0.25.0 までが作った出力には印が無い**ので、消してから作り直す（`references/tree.md` の移行の節）。
+  **作れなかったとき（0 以外のどの経路でも）は、出力の場所に残った今回の出力ではないファイルを名指しする**（#498。消さない）——
+  出力の名前（`--out` の名前・`proposal.md`・`gantt.svg`・`spec.md`・それらの PPTX・`spec-figure-*.svg`。大文字小文字を区別しない）の
+  ファイルのうち読める印に無いものと、読めない印（とその場所の出力の名前のファイル）。印が名指しするのに消せなかった出力は「消せない」で名指しする。
+  **出力の名前でないファイル（手書きの `notes.md` など）と、作れた経路（0）で残る印に無いファイルは名指ししない。**
 - **提案書は承認の記録を持たない。** 載せるのは生成元のタグとコミットだけで、「承認済み」とは書かない。
 - 同じ入力から同じバイトを作る（時刻を書かない）。標準ライブラリだけを使う（`git` は要る）。
 
@@ -646,6 +650,48 @@ def left_lines(left: list[str]) -> list[str]:
     return [f"前に作った出力を消せない: {name}" for name in left]
 
 
+def output_named(name: str, out_name: str) -> bool:
+    """この道具の出力の名前か（大文字小文字を区別しない）。PPTX は `--pptx` の有無に依らない——前の出力は今回の引数と関係が無い。"""
+    names = {out_name, Path(DEFAULT_OUT).name, GANTT_NAME, SPEC_NAME, SPEC_PPTX_NAME}
+    names |= {str(Path(n).with_suffix(".pptx")) for n in names if n not in ("", ".", "..")}
+    lower = name.lower()
+    return lower in {n.lower() for n in names} or (lower.startswith(FIGURE_PREFIX) and lower.endswith(".svg"))
+
+
+def leftover_lines(out: Path) -> list[str]:
+    """作れなかったときに出力の場所に残った、今回の出力ではないファイルを名指しする行（#498）。何も消さない。
+
+    名指しするのは、出力の名前のファイルのうち読める印に無いもの（spec-loop 0.25.0 までの出力・手で置いたもの）と、
+    読めない印とその場所の出力の名前のファイル。印が名指しするのに消せなかった出力は `left_lines` が名指しするので数えない。"""
+    directories = [out.parent]
+    if is_dir(out) and out.resolve() != out.parent.resolve():
+        directories.append(out)  # ディレクトリを渡したなら、その中も（`main` が消す場所と同じ）
+    lines = []
+    for directory in directories:
+        try:
+            entries = sorted(directory.iterdir())
+        except (FileNotFoundError, NotADirectoryError):
+            continue  # 場所が無い——残っているものも無い
+        except OSError as e:
+            lines.append(f"{directory}: 前の出力が残っているかを確かめられない（{e.strerror}）")
+            continue
+        owned = owned_names(directory) if any(p.name == MANIFEST for p in entries) else []
+        if owned is None:
+            lines.append(f"{directory / MANIFEST}: 印を読めない——この場所の前の出力は消していない（この道具が作ったものか確かめられない）")
+        for path in entries:
+            try:
+                regular = path.is_symlink() or stat.S_ISREG(path.stat().st_mode)
+            except OSError:
+                regular = True  # 確かめられないものも名指しする（消さないので害が無い）
+            if not regular or path.name == MANIFEST or not output_named(path.name, out.name):
+                continue
+            if owned is None:
+                lines.append(f"{path}: 今回の出力ではない（印が読めない。消していない）")
+            elif path.name not in owned:
+                lines.append(f"{path}: 今回の出力ではない（印 {MANIFEST} に無い——spec-loop 0.25.0 までの出力か手で置いたもの。消していない）")
+    return lines
+
+
 def bad_out(out: Path) -> str | None:
     """出力先の誤り。消す前・作る前に見る（`with_suffix` は名前が空だと例外を投げるので、名前を先に見る）。"""
     if out.name in ("", ".", ".."):
@@ -719,11 +765,13 @@ def main(argv: list[str]) -> int:
     if is_dir(out) and out.resolve() != out.parent.resolve():
         left += remove_owned(out)  # ディレクトリを渡したなら、指したつもりの場所の前の出力も消す
     if left:  # 消せない場所には書けもしない。残ったものを今回のものと取り違えないよう名指しする（#440）
-        for line in left_lines(left) + ([problem] if problem else []):
+        for line in left_lines(left) + ([problem] if problem else []) + leftover_lines(out):
             print(line, file=sys.stderr)
         print("提案書は作っていない", file=sys.stderr)
         return 2
     if problem:
+        for line in leftover_lines(out):  # 印に無い前の出力も、今回のものと取り違えないよう名指しする（#498）
+            print(line, file=sys.stderr)
         print(f"{problem}。提案書は作っていない", file=sys.stderr)
         return 2
 
@@ -736,10 +784,14 @@ def main(argv: list[str]) -> int:
             raise Stop(2, [f"{e.filename or '（パス不明）'}: 読み書きできない（{e.strerror}）。提案書の材料を読み終えていない"])
         write_outputs(outputs, out.parent)
     except Stop as stop:
-        for line in stop.lines:
+        for line in stop.lines + leftover_lines(out):
             print(line, file=sys.stderr)
         print("提案書は作っていない", file=sys.stderr)
         return stop.code
+    except Exception:  # 想定外の例外も、残った前の出力を名指ししてから外側の 2 に渡す（#286・#498）
+        for line in leftover_lines(out):
+            print(line, file=sys.stderr)
+        raise
     print(f"{out}: 提案書を書いた（同じ場所に {'・'.join(p.name for p in outputs if p != out)}）")
     return 0
 
