@@ -83,8 +83,8 @@ Mac Studio で、キーチェーンの対話ログインの OAuth（8 時間）�
 3. **長期トークンより先に使われる認証が環境にあれば、起動口は止まる**——`ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`
    （本体の文字列で、`ANTHROPIC_AUTH_TOKEN` は `CLAUDE_CODE_OAUTH_TOKEN` より先、承認済みの API キーは OAuth より先に使われる）
 4. **`check-unattended-env.py` は長期トークンと 8 時間のトークンを区別して出す**（`--present` でも出し、8 時間は人が見る）
-   - `CLAUDE_CODE_OAUTH_TOKEN` が空でない → 良い（長期トークン）＋ 人が見る（長期トークンで使えない見込みの機能。docs を指す）
-   - どれも無い → 要対処（対話ログインの OAuth は 8 時間で切れる）。直し方に起動口の絶対パスと docs
+   - `CLAUDE_CODE_OAUTH_TOKEN` が空でない → 良い（長期トークン）。その行の添え書きに、長期トークンで使えない見込みの機能と docs の測る表
+   - どれも無い → 要対処（不在）／人が見る（`--present`）（対話ログインの OAuth は 8 時間で切れる）。直し方に起動口の絶対パス・`--store-token`・docs
    - `ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`・`apiKeyHelper` がある → 人が見る（どれで認証しているかは `/status`）
    - Claude Code のセッションの外（`CLAUDECODE` が `1` でない）・サブプロセスの環境の消去（`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`／`GITHUB_ACTIONS`）が効く → 判定できない
    - トークンの値を出力に出さない
