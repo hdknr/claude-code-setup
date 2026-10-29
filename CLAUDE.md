@@ -121,6 +121,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-duplicate-counts.py` - 上の回帰テスト（変異テストを含む）。
     **`次の 6 つ` のような助詞を伴わない件数表現は収集しない**（#150。
     **広げる案は実データに当てて捨てた**——**何を守り何を守らないかは docstring を正とする**）
+  - `check-bold-flanking.py` - **`plugins/` の Markdown の太字の `**` が、CommonMark（GitHub の描画）の flanking の規則で
+    開け閉めできるか**（#525。決めた値は #537。手で直す周が 3 度続き、どの周も一部しか見つけていなかった）。
+    **免除は行ごとの印 `bold-flanking-ok: <理由>` で名指しする。何を守り何を守らないかは docstring を正とする**
+  - `test-check-bold-flanking.py` - 上の回帰テスト（変異テストを含む。試料は GitHub の描画で確かめた形）
   - `check-mutation-claims.py` - **散文で書かれた「この変異で赤になる」を機械で当てる**
     （#151。**`mutation-claim:` で始まる 1 行を主張の隣に置く**。
     **退避先に `.git` を持ち込まない**——worktree の `.git` は本体を指すファイルなので、

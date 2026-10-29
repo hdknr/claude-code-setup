@@ -52,6 +52,10 @@ jobs:
       - name: 件数の食い違い（#138）
         run: python3 scripts/check-duplicate-counts.py
 
+      # `**` の片側が句読点・反対側が文字だと、GitHub の描画で太字にならない（#525。決めた値は #537）。対象は plugins/ の Markdown。
+      - name: 太字の flanking の崩れ（#525）
+        run: python3 scripts/check-bold-flanking.py
+
       - name: スキルの中の指し先（#136）
         run: python3 scripts/check-skill-pointers.py
 
@@ -80,6 +84,9 @@ jobs:
 
       - name: check-duplicate-counts.py のテスト
         run: python3 scripts/test-check-duplicate-counts.py
+
+      - name: check-bold-flanking.py のテスト
+        run: python3 scripts/test-check-bold-flanking.py
 
       - name: worktree スクリプトのテスト（#136 段 3）
         run: python3 scripts/test-worktree-scripts.py

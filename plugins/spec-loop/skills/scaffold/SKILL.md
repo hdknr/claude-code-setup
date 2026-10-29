@@ -5,13 +5,13 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.37.0 -->
-> **このスキルの版: 0.37.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.37.1 -->
+> **このスキルの版: 0.37.1**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
 
-確定した仕様を **dev-loop の入力（Issue 1 件）**に変える引き渡しを、**1 回分**進めるスキル。
+確定した仕様を **dev-loop の入力（Issue 1 件）** に変える引き渡しを、**1 回分**進めるスキル。
 **仕様を中間表現に書き起こすのはこのスキル、そこから先の生成は同梱のスクリプト**が行う。
 **止まる地点は Issue の登録まで**——以降は dev-loop（`/dev-loop:dev-loop <issue-number>`）が受け持つ。
 
