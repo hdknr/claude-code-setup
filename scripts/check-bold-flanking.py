@@ -76,6 +76,8 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **表の行は `|` が無くても表の行として組む**——表は空行か、ブロックの始まり（見出し・引用・リストの項（番号も空の項も問わない）・フェンス・
   コメント・区切り線・インデントしたコード）か、容れ物が変わる（引用の深さが変わる・項の外へ出る）まで続く。GitHub と同じく、段落の続き
   （lazy continuation）にはならず、`===` の行や行だけのインライン HTML も表の行である（#562。#525 の狭いパスが示した穴）。
+- **エラーの抜粋は元の行から切り出す**——判定はコードスパンとコメントの中身を伏せた文字列で行うが、抜粋は同じ位置で
+  ファイルの元の行（引用の `>` も含む）から切る。伏せ字（`x` の並び）を見せない（#564。#525 の `/code-review` 1 パス目 CR1-9）。
 
 守らない:
 
@@ -440,8 +442,12 @@ def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
     # **段落を先に切り、コードスパンは段落の中でだけ組む**——コードスパンは段落をまたがない。
     # ファイル全体で組むと、閉じない 1 つのバッククォートが後ろの段落を全部飲み込み、崩れが黙って消える
     # （#519 の前の `SKILL.md` で、301 行の入れ子のバッククォートが 135 行を飲み、崩れ 23 個のうち 21 個が見えなくなった）。
+    source = text.split("\n")
     for start, block in found_blocks:
         joined, marks = mask_inline("\n".join(block))
+        # 抜粋は元の行から切る（#564）——伏せ字（`x`）を見せない。段落の行は元のファイルの連続した行で、
+        # 引用の印を同じ数の空白に置き換えただけなので長さが同じ——伏せ字の文字列と同じ位置で切れる。
+        original = "\n".join(source[start - 1:start - 1 + len(block)])
         exempt.update(start + row for row, line in enumerate(marks.split("\n")) if EXEMPT.search(line))
         offsets = [0]
         for line in block:
@@ -452,7 +458,7 @@ def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
             after = joined[pos + length] if pos + length < len(joined) else None
             row = next(r for r in range(len(block)) if offsets[r + 1] > pos)
             lineno = start + row
-            fragment = joined[max(0, pos - 6):pos + 8].replace("\n", "⏎")
+            fragment = original[max(0, pos - 6):pos + 8].replace("\n", "⏎")
             if index % 2 == 0:
                 if index == len(found) - 1:
                     reason = "対になる `**` が段落の中に無い（字のまま残る）"

@@ -196,6 +196,20 @@ SAMPLES = {
     'table-para-nolead.md': 'text\na | b\n--- | ---\nfoo **x\nbar** y\n',
     'table-para-last-line.md': 'text\n| a | b | c |\n| a | b |\n|---|---|\nfoo **x\nbar** y\n',
     'table-header-nopipe.md': 'x\n|---|\nfoo **x\nbar** y\n',
+    # エラーの抜粋（#564）——どの行も、抜粋の窓（`**` の前 6 字・後ろ 8 字）に伏せる範囲（コードスパン・コメントの中身）が入る。
+    # frontmatter の後ろ・段落・引用（窓が行頭の `>` に届く）・コメント・リストの項・見出し・表の見出しの行と表の行・行をまたぐ段落。
+    # 抜粋そのものは EXCERPTS で見る。
+    "excerpt.md": (
+        "---\ntitle: t\n---\n"
+        "ab `code` X**「y」\n\n"
+        "> `c`X**「y」\n\n"
+        "> q <!-- cm --> X**「y」\n\n"
+        "- `li`X**「y」\n\n"
+        "# `hd`X**「y」\n\n"
+        "| `th`X**「y」 | b |\n"
+        "| --- | --- |\n"
+        "| `td`X**「y」 | d |\n\n"
+        "`c1`\nX**「y」\n"),
     # 崩れていない形（誤検出しない）——句読点の両側・空白の外側・引用・表のセル・GitHub が句読点と見ない記号。
     "clean.md": (
         "# 見出しの **太字**\n\n"
@@ -290,8 +304,21 @@ EXPECTED = {
     'table-para-nolead.md': ((4, 5), ()),
     'table-para-last-line.md': ((5, 6), ()),
     'table-header-nopipe.md': ((3, 4), ()),
+    "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19), ()),
     "clean.md": ((), ()),
 }
+
+# 期待: `excerpt.md` の抜粋（行番号, 抜粋）。**元の行の字**が出る——伏せ字（`x`）でも、引用の印を置き換えた空白でもない（#564）。
+EXCERPTS = (
+    (4, "ode` X**「y」"),
+    (6, "> `c`X**「y」"),
+    (8, " --> X**「y」"),
+    (10, " `li`X**「y」"),
+    (12, " `hd`X**「y」"),
+    (14, " `th`X**「y」 | "),
+    (16, " `td`X**「y」 | "),
+    (19, "`c1`⏎X**「y」"),
+)
 
 
 def write(root: Path, name: str, body: str) -> None:
@@ -306,6 +333,8 @@ def observe(mod, tree: Path, empty: Path, clean: Path) -> dict:
     for path in sorted((tree / "plugins").glob("*.md")):
         found, unused = mod.scan(path.read_text(encoding="utf-8"))
         out[path.name] = (tuple(lineno for lineno, _, _ in found), tuple(unused))
+        if path.name == "excerpt.md":
+            out["excerpt"] = tuple((lineno, fragment) for lineno, _, fragment in found)
     # 本体の出力は読まない（終了コードだけを見る）。出すと試料の数だけ端末が埋まる。
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         out["exit:tree"] = mod.main([str(tree)])
@@ -472,6 +501,12 @@ MUTATIONS = {
     "容れ物の変化で表を終わらせない": (24,
         "            if (depth, len(lists)) != table or",
         "            if False or"),
+    "抜粋を伏せ字から切る": (25,
+        '            fragment = original[max(0, pos - 6):pos + 8].replace("\\n", "⏎")',
+        '            fragment = joined[max(0, pos - 6):pos + 8].replace("\\n", "⏎")'),
+    "抜粋を引用の印を空白にした行から切る": (25,
+        '        original = "\\n".join(source[start - 1:start - 1 + len(block)])',
+        '        original = "\\n".join(block)'),
 }
 
 
@@ -497,6 +532,12 @@ def main() -> int:
         for name, expected in EXPECTED.items():
             check(f"{name}: {expected}", correct.get(name) == expected)
         check("試料と期待が 1 対 1", set(SAMPLES) == set(EXPECTED))
+
+        print("\nエラーの抜粋（元の行から切る。#564）")
+        got = dict(correct.get("excerpt", ()))
+        for lineno, fragment in EXCERPTS:
+            check(f"excerpt.md:{lineno} の抜粋が {fragment!r}（伏せ字でない）", got.get(lineno) == fragment)
+        check("excerpt.md の抜粋が期待と 1 対 1", tuple(correct.get("excerpt", ())) == EXCERPTS)
 
         print("\n終了コード")
         check("崩れがあれば 1", correct["exit:tree"] == 1)
