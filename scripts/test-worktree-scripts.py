@@ -247,6 +247,39 @@ def make_dangling_origin_head(base: Path) -> Path:
     return _from_template("dangling", _build_dangling_origin_head, base)
 
 
+def _spaced_cd_example_runs(prepare: Path, base: Path) -> bool:
+    # **空白と日本語の両方を置く**——`printf %q` は bash 3.2 で非 ASCII を壊した（#502 の 2 パス目）。
+    repo = make_repo(base / "sp ace" / "日本" / "repo")
+    res = run(prepare, repo, "45", "spaced")
+    return res.returncode == 0 and cruise_exception_follows(
+        res.stdout, repo / ".claude" / "worktrees" / "issue-45")
+
+
+def cruise_exception_follows(stdout: str, wt: Path) -> bool:
+    """「次にすること」の**直後の行**が、cruise の子は `EnterWorktree` を呼ばず、
+    **作った worktree の絶対パス**を cwd にすると言っているか（#502）。"""
+    lines = stdout.splitlines()
+    idx = [i for i, l in enumerate(lines) if l.startswith("次にすること: EnterWorktree に path=")]
+    if len(idx) != 1 or idx[0] + 1 >= len(lines):
+        return False
+    nxt = lines[idx[0] + 1]
+    # **主語まで続けて当てる**——「cruise の子以外は EnterWorktree を呼ばない」のような
+    # 反転でも、語が散らばって在るだけなら緑になる（#502 の `/code-review` 1 パス目）。
+    return ("cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない" in nxt
+            and f"{wt.resolve()} を cwd にして" in nxt
+            and cd_example_runs(nxt, wt))
+
+
+def cd_example_runs(line: str, wt: Path) -> bool:
+    """例外の行の `cd …` を**そのままシェルに渡して**、作った worktree に入れるか。"""
+    m = re.search(r"（(cd .*?) && …）", line)
+    if not m:
+        return False
+    res = subprocess.run(["bash", "-c", f"{m.group(1)} && pwd -P"],
+                         capture_output=True, text=True)
+    return res.returncode == 0 and res.stdout.strip() == str(wt.resolve())
+
+
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
     """両スクリプトの分岐をまとめて観測する。**1 回の観測で 1 つの偽リポジトリを使い切る。**"""
     repo = make_repo(base / "repo")
@@ -260,7 +293,13 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **「確認の材料を出す」という約束の変異が殺せない**（最初そうなっていた）。
         "確認の材料が出ている": ("ブランチ: issue/42-sample" in first.stdout
                                 and "起点:" in first.stdout),
+        # **案内の直後の行に、cruise の子の例外が出るか**（#502）。
+        # **「出力のどこかに在る」では見ない**——離れた行に置くと、案内だけを読んだ子が呼ぶ。
+        "cruise の子の例外が案内の直後にある": cruise_exception_follows(first.stdout, wt),
         "2 回目は断る": again.returncode,
+        # **空白を含むパスでも、例外の行の `cd` が貼ればそのまま通るか**（#502 の `/code-review` 1 パス目）。
+        # **ふつうの一時ディレクトリには空白が無い**ので、それだけでは素のまま出す変異が殺せない。
+        "空白を含むパスでも cd の例が通る": _spaced_cd_example_runs(prepare, base),
         "数字以外は断る": bad_num.returncode,
         "作られた場所": wt.is_dir(),
         "切られたブランチ": git(wt, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
@@ -395,6 +434,14 @@ MUTATIONS = {
     "確認の材料を出さない": (PREPARE,
         'echo "ブランチ: ${ACTUAL_BRANCH}"',
         'true'),
+    # 守る 16（prepare）: 入場の案内に、cruise の子の例外を並べる（#502）
+    "cruise の子の例外を出さない": (PREPARE,
+        'echo "  **ただし cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない**——${PATH_ABS} を cwd にして（cd ${PATH_Q} && …）作業する（dev-loop の SKILL.md 手順 4 と cruise の SKILL.md「4. 周を回す」が正）。"',
+        'true'),
+    # 守る 17（prepare）: cd の例をシェルに貼れる形で出す（#502 の `/code-review` 1 パス目）
+    "cd の例を素のパスで出す": (PREPARE,
+        'PATH_Q="\'$(printf \'%s\' "$PATH_ABS" | sed "s/\'/\'\\\\\\\\\'\'/g")\'"',
+        'PATH_Q="$PATH_ABS"'),
     # --- check-pr-preconditions.sh の 守る 4 行 ---
     # 守る 1: worktree にいるか
     "worktree 判定をしない": (PRECOND,
@@ -1009,6 +1056,10 @@ def main() -> int:
         check("規約どおりの場所に作る", correct["作られた場所"])
         check("規約どおりの名前で切る", correct["切られたブランチ"] == "issue/42-sample")
         check("確認の材料（ブランチ名と起点）を出力する", correct["確認の材料が出ている"])
+        check("案内の直後に、cruise の子は EnterWorktree を呼ばず作ったパスを cwd にすると出す（#502）",
+              correct["cruise の子の例外が案内の直後にある"])
+        check("空白を含むパスでも、例外の行の cd の例がそのまま通る（#502）",
+              correct["空白を含むパスでも cd の例が通る"])
         check("別の worktree から走らせても入れ子で生えない", correct["入れ子で生えていない"])
         check("別の worktree から走らせても規約の場所に作る",
               correct["別 worktree からでも規約の場所"])

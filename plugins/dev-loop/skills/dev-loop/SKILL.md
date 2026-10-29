@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.63.6 -->
-> **このスキルの版: 1.63.6**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.63.7 -->
+> **このスキルの版: 1.63.7**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -529,7 +529,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   **スクリプトは道具を呼べないので、入場は道具の仕事である。**
   **cruise から周を委ねられたサブエージェントは `EnterWorktree` を呼ばず、worktree の絶対パスを cwd にして作業する**
   ——**この手順 4 と `references/resume.md` が `EnterWorktree` で入る・入り直すと書いている箇所のどれでも**
-  （`prepare-worktree.sh` の出力の「次にすること」も）。肯定的な確認も `cd <worktree> && …` で当てる
+  （`prepare-worktree.sh` の出力の「次にすること」も——**出力自身が直後の行でこの例外と cwd にするパスを言う**。#502）。肯定的な確認も `cd <worktree> && …` で当てる
   （`../cruise/SKILL.md` の「4. 周を回す」を正とする。#484）。
 
   - **周の base は 1 つに決まっている（必須。ここが原本）。**
