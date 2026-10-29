@@ -14,7 +14,7 @@
 # **セッションをそこへ入れるのは道具の仕事**である。作ったあとに
 # `EnterWorktree` へ `path` を渡すこと。
 # **ただし cruise から周を委ねられたサブエージェントは `EnterWorktree` を呼ばず、
-# 作った worktree の絶対パスを cwd にして作業する**（`SKILL.md` 手順 4 と cruise の `SKILL.md` §4 が正。#484・#502）。
+# 作った worktree の絶対パスを cwd にして作業する**（dev-loop の `SKILL.md` 手順 4 と cruise の `SKILL.md`「4. 周を回す」が正。#484・#502）。
 #
 # **既存の worktree には入らない。** 再開の周は形が違う——
 # **`find-cycle.py` で探し、`references/resume.md` に従う。**
@@ -75,6 +75,8 @@
 #   **cruise から周を委ねられたサブエージェントは呼ばない**（#484）。**出力だけを見た子が呼ばないよう、
 #   案内の直後の行に例外と、cwd にするパスを出す**（#502）。**呼び出し元が cruise の子かは
 #   シェルからは分からない**ので、判定せずに両方を出す。
+# - **その `cd` の例は、シェルに貼れる形で出す。** パスは `%q` で引用する——
+#   **素のまま出すと、空白を含むパスで `cd` が割れる**（#502 の `/code-review` 1 パス目で実測）。
 #
 # ## 何を守らないか
 #
@@ -272,6 +274,8 @@ echo "base:     ${BASE_SHA}"
 
 echo
 echo "次にすること: EnterWorktree に path=${PATH_ABS} を渡して入る。"
-echo "  **ただし cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない**——${PATH_ABS} を cwd にして（cd ${PATH_ABS} && …）作業する（SKILL.md 手順 4 が正）。"
+# **`cd` の例はシェルに貼れる形で出す**——空白を含むパスで素のまま出すと `cd` が割れる（#502 の `/code-review` 1 パス目）。
+printf -v PATH_Q '%q' "$PATH_ABS"
+echo "  **ただし cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない**——${PATH_ABS} を cwd にして（cd ${PATH_Q} && …）作業する（dev-loop の SKILL.md 手順 4 と cruise の SKILL.md「4. 周を回す」が正）。"
 echo "計画ファイルの「周の在り処」に、上のブランチ名・パス・起点・**base** を書くこと。"
 echo "**base は関門にそのまま渡す SHA である**（SKILL.md 手順 4 が正）。"

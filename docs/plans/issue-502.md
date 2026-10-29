@@ -90,10 +90,12 @@
 - 周の在り処: ブランチ `issue/502-cruise-child-next-step`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-502`、
   起点コミット `94bcd42`、base の参照 `origin/main`（refs/remotes/origin/HEAD・取り直した）、base の SHA `94bcd423f3be1767106cd108e7649de033449940`
 - 手順 4 の割り目: 不在のため訊かず続けた
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
-- 1 パス目の指摘対応の起点の SHA: 未
-- 反証と差し戻し: 未
+- PR: #533
+- Verifier 1 パス目: 通した（dev-loop:dev-loop-verifier・sonnet）。反証 0 件（所見 1: 行を離す変異は無い——I4 は満たす）。verifier.md を「170 行」と報告（`wc -l` は 169。Read の表示の末尾の空行と読む）
+- `/code-review` 1 パス目: 通した（high）。指摘 6 件（直す 3・残課題 3）
+- 1 パス目の指摘対応の起点の SHA: `3570066f1ec656e4f39b4cd85b434cc9807eb781`（1 パス目の関門に渡した時点の HEAD）
+- 反証と差し戻し: Verifier 反証 0 件。`/code-review` の指摘 3 件を 1 パス目の指摘対応で直した（手順 4 への差し戻しなし）
+- 範囲の拡張: なし（直した 3 件は `触る:` の 2 ファイルの中）
 - 交絡: 実験なし（スクリプトの出力の観測とテストのみ）
 
 ## 既知の限界・決着済みの論点
@@ -102,6 +104,12 @@
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
+| CR1-1 出力の指し先が「SKILL.md 手順 4」だけで、冒頭の説明（手順 4 と cruise §4）と食い違う・どの SKILL.md か分からない | 示せる——`prepare-worktree.sh` 275 行と 17 行の文面 | I5 | 直す（出力・冒頭とも「dev-loop の SKILL.md 手順 4 と cruise の SKILL.md『4. 周を回す』」に） |
+| CR1-2 `cd ${PATH_ABS}` が引用されず、空白を含むパスで割れる | 示せる——`sp ace` の下で作り、出た `cd …` を `bash -c` に渡すと `cd: …/sp: No such file or directory`（rc=1） | I1（cwd にする指示が使えない） | 直す（`printf -v PATH_Q '%q'`。テストに空白パスの観測と変異「cd の例を素のパスで出す」・守る 1 行） |
+| CR1-3 rc=3 の案内が `references/resume.md` を指し、そこは例外なしに `EnterWorktree` を勧める | 示せない——cruise §4 の 2（「resume.md が…書いていても…子も入らない」）と dev-loop 手順 4 が既に例外を包括している。出力自身は勧めない | 無し（I3 は出力の勧めを数える） | 残課題 |
+| CR1-4 `cruise_exception_follows` が語の在否だけ見て、主語の反転を通す | 示せる——「cruise の子以外は EnterWorktree を呼ばない…」が `True` | I4 | 直す（「cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない」を続けて当てる。反転が `False` になることを確かめた） |
+| CR1-5 rc=3 で見出し（stdout）と一覧（stderr）が割れる（既存のコード） | 示せる——stdout だけ見ると「  worktree:」「  ブランチ:」が中身なしで出る（rc=3） | 無し（この周の受入基準の外） | 残課題（cruise の台帳の候補として親に報告——振り分け: 直す） |
+| CR1-6 同じ決まりがヘッダで 2 回（やらないこと・守る）——計画の複製の数 4 は 5 | 示せない（失敗ではなく重複） | 無し | 残課題 |
 
 ## 手順 8（経験の還元）
 
