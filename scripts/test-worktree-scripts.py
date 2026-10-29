@@ -255,6 +255,20 @@ def _spaced_cd_example_runs(prepare: Path, base: Path) -> bool:
         res.stdout, repo / ".claude" / "worktrees" / "issue-45")
 
 
+def _quoted_cd_example_runs(prepare: Path, base: Path) -> bool:
+    """`'` と `$` を含むパスでも、例外の行の `cd` の例がそのまま通るか（#543）。
+    **空白だけの試料では引用の中身が試されない**——一重引用符で囲むだけで `'` を `'\\''` に
+    置き換えない形も、二重引用符で囲む形も、空白と日本語の試料は通る（#502 の狭いパスで素通りした）。
+    **`'` は前者を、`$` は後者を殺す**——どちらかを試料から外すと、片方の変異が素通りする
+    （`QUOTE_MUTATIONS` が当てて確かめる）。"""
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"its\" / \"$HOME x\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"it's\" / \"HOME x\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
+    repo = make_repo(base / "it's" / "$HOME x" / "repo")
+    res = run(prepare, repo, "46", "quoted")
+    return res.returncode == 0 and cruise_exception_follows(
+        res.stdout, repo / ".claude" / "worktrees" / "issue-46")
+
+
 def cruise_exception_follows(stdout: str, wt: Path) -> bool:
     """「次にすること」の**直後の行**が、cruise の子は `EnterWorktree` を呼ばず、
     **作った worktree の絶対パス**を cwd にすると言っているか（#502）。"""
@@ -446,6 +460,9 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     return out
 
 
+# **守る 17 の当て先。** 下の `QUOTE_MUTATIONS`（#543）も同じ行に当てる。
+QUOTE_NEEDLE = 'PATH_Q="\'$(printf \'%s\' "$PATH_ABS" | sed "s/\'/\'\\\\\\\\\'\'/g")\'"'
+
 MUTATIONS = {
     # 守る 1: 先に見る（再開の周を新規として踏み潰さない）
     "先に見ずに作る": (PREPARE,
@@ -468,9 +485,7 @@ MUTATIONS = {
         'echo "  **ただし cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない**——${PATH_ABS} を cwd にして（cd ${PATH_Q} && …）作業する（dev-loop の SKILL.md 手順 4 と cruise の SKILL.md「4. 周を回す」が正）。"',
         'true'),
     # 守る 17（prepare）: cd の例をシェルに貼れる形で出す（#502 の `/code-review` 1 パス目）
-    "cd の例を素のパスで出す": (PREPARE,
-        'PATH_Q="\'$(printf \'%s\' "$PATH_ABS" | sed "s/\'/\'\\\\\\\\\'\'/g")\'"',
-        'PATH_Q="$PATH_ABS"'),
+    "cd の例を素のパスで出す": (PREPARE, QUOTE_NEEDLE, 'PATH_Q="$PATH_ABS"'),
     # 守る 18（prepare）: 3 の見出しと一覧を同じ出力先に出す（#544）
     "3 の見出しを標準出力に出す": (PREPARE,
         'echo "  worktree:" >&2 && printf',
@@ -546,6 +561,33 @@ MUTATIONS = {
         'MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"',
         'MAIN="$(cd "$(git rev-parse --show-toplevel)/$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P)"'),
 }
+
+# **守る 17（cd の例をシェルに貼れる形で出す）を、引用の中身で壊す変異**（#543。#502 の狭いパスの N1 で素通りした 2 件）。
+# **`MUTATIONS` に入れない**——同じ守るを別の形で壊すもので、「守る」の行数と変異の数の 1 対 1 に数えない。
+# **`observe()` も回さない**——当てるのは `_quoted_cd_example_runs` だけ（`observe()` の回数を増やさない。#449）。
+QUOTE_MUTATIONS = {
+    "一重引用符で囲むだけで ' を置き換えない": 'PATH_Q="\'$PATH_ABS\'"',
+    "二重引用符で囲む": 'PATH_Q="\\"$PATH_ABS\\""',
+}
+
+
+def check_quote_mutations(base: Path) -> None:
+    """`QUOTE_MUTATIONS` を当て、**`'` と `$` の試料では赤・空白と日本語の試料では緑**になることを見る。
+    **後者が陽性対照である**——空白の試料でも落ちるなら、その変異は引用の中身ではなく別のところで
+    壊れており、`'` と `$` の試料が要る理由を示さない。"""
+    source = PREPARE.read_text(encoding="utf-8")
+    check("引用の変異を当てる先が 1 箇所ある", source.count(QUOTE_NEEDLE) == 1)
+    if source.count(QUOTE_NEEDLE) != 1:
+        return
+    for i, (name, replacement) in enumerate(QUOTE_MUTATIONS.items()):
+        d = base / f"quote-{i}"
+        (d / "scripts").mkdir(parents=True)
+        mutated = d / "scripts" / PREPARE.name
+        mutated.write_text(source.replace(QUOTE_NEEDLE, replacement, 1), encoding="utf-8")
+        check(f"陽性対照: 空白と日本語の試料は素通りする: {name}",
+              _spaced_cd_example_runs(mutated, d / "spaced"))
+        check(f"変異を殺せる（' と $ の試料）: {name}",
+              not _quoted_cd_example_runs(mutated, d / "quoted"))
 
 
 def counting_git_dir(base: Path, log: Path) -> Path:
@@ -1095,6 +1137,9 @@ def main() -> int:
               correct["3 の見出しの下に一覧がある（出力先ごと）"])
         check("空白を含むパスでも、例外の行の cd の例がそのまま通る（#502）",
               correct["空白を含むパスでも cd の例が通る"])
+        # **`observe()` の外で見る**——`MUTATIONS` の変異でこの試料にしか殺せないものは無いので、観測ごとには回さない（#449）。
+        check("' と $ を含むパスでも、例外の行の cd の例がそのまま通る（#543）",
+              _quoted_cd_example_runs(PREPARE, base / "quoted"))
         check("別の worktree から走らせても入れ子で生えない", correct["入れ子で生えていない"])
         check("別の worktree から走らせても規約の場所に作る",
               correct["別 worktree からでも規約の場所"])
@@ -1181,6 +1226,9 @@ def main() -> int:
             check("「未取得」だけでは 2 変異を区別できない（だから 2 つ目を置いている）",
                   a[k_stale] == b[k_stale])
             check("「取得済み」を足すと 2 変異が区別できる", a[k_fresh] != b[k_fresh])
+
+        print("\ncd の例の引用を中身で壊す変異（#543。陽性対照つき）")
+        check_quote_mutations(base / "quote-mut")
 
         print("\n渡す形そのもの（規定が壊れたら赤くなるか）")
         check_norm_shape()
