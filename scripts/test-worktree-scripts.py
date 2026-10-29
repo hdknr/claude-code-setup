@@ -194,10 +194,10 @@ def _build_dangling_origin_head(base: Path) -> Path:
     return work
 
 
-# **足場は 1 度だけ作り、使うたびに複製する**（#449）。**`observe()` は 24 回走る**
-# （正しい版 1 ＋ 変異 23）ので、足場を毎回 `git init`・`commit`・`clone`・`push` で
-# 組み直すと、**それだけで子プロセスが 1 回に 50 本ほど増える**——`check-all.py` の中の
-# `check-mutation-claims.py` で、この 1 本が打ち切り（300 秒）に届いたことがある（3 回中 2 回。原因は特定していない）。
+# **足場は 1 度だけ作り、使うたびに複製する**（#449）。**`observe()` は正しい版で 1 回、
+# `MUTATIONS` の変異ごとに 1 回走る**（変異の数は `main()` の出力が言う）ので、
+# 足場を毎回 `git init`・`commit`・`clone`・`push` で組み直すと、**それだけで子プロセスが 1 回に 50 本ほど増える**
+# ——`check-all.py` の中の `check-mutation-claims.py` で、この 1 本が打ち切り（300 秒）に届いたことがある（3 回中 2 回。原因は特定していない）。
 # **複製は使い捨てで、観測どうしは今までどおり足場を共有しない。**
 _templates: dict[str, tuple[Path, object]] = {}
 _template_root: tempfile.TemporaryDirectory | None = None
@@ -490,7 +490,7 @@ MUTATIONS = {
     "3 の見出しを標準出力に出す": (PREPARE,
         'echo "  worktree:" >&2 && printf',
         'echo "  worktree:" && printf'),
-    # --- check-pr-preconditions.sh の 守る 4 行 ---
+    # --- check-pr-preconditions.sh の「守る」（「守る」の行数と変異の数の 1 対 1 は、`main()` が 2 本の合計で数える） ---
     # 守る 1: worktree にいるか
     "worktree 判定をしない": (PRECOND,
         'if [ "$GIT_DIR" = "$COMMON_DIR" ]; then',
