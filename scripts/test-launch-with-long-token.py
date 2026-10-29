@@ -105,6 +105,8 @@ def suite(script: Path) -> list[str]:
         check("起動: 空白を含む引数を割らない", "arg=[a b]" in claude and "arg=[--x]" in claude)
         check("起動: トークンを出力に出さない", TOKEN not in out)
         check("起動: トークンを引数に載せない", TOKEN not in e.log("security.log") and TOKEN not in claude)
+        code, out = e.run(script, SHELLOPTS="xtrace")
+        check("起動: 受け継いだ xtrace でもトークンを出さない", code == 7 and TOKEN not in out)
 
     # 止まる: 項目が無い・値が空・security が無い・macOS でない
     for name, kw, extra in (("項目が無い", {}, {"FAKE_SEC": "missing"}), ("値が空", {}, {"FAKE_SEC": "empty"}),
@@ -183,10 +185,26 @@ def suite(script: Path) -> list[str]:
             check(f"--account: - で始まる名前（{args[1]}）は 2 で、security を呼ばない",
                   code == 2 and e.log("security.log") == "" and e.log("claude.log") == "")
         for args in (("--store-token", "--account", "work"), ("--status", "--account", "work"),
-                     ("x", "--account", "work")):
+                     ("x", "--account", "work"), ("--store-token", "--account=work"), ("x", "--account=work")):
             code, out = e.run(script, *args)
             check(f"--account が最初に無い（{' '.join(args)}）と 2 で止まり、security も claude も呼ばない",
-                  code == 2 and "最初に置く" in out and e.log("security.log") == "" and e.log("claude.log") == "")
+                  code == 2 and e.log("security.log") == "" and e.log("claude.log") == "")
+        for args in (("--store-token", "work"), ("--status", "x")):
+            code, out = e.run(script, *args)
+            check(f"{args[0]} の後ろの引数は 2 で止まり、security を呼ばない",
+                  code == 2 and "後ろに引数を置かない" in out and e.log("security.log") == "")
+        code, out = e.run(script, "--account", "a\n-x", "--status")
+        check("--account: 改行を含む名前は 2 で、security を呼ばない", code == 2 and e.log("security.log") == "")
+    tmp, e = scenario()
+    with tmp:
+        code, out = e.run(script, "--account", "work", "--store-token")
+        line = e.log("security.log").strip().splitlines()[-1] if e.log("security.log").strip() else ""
+        check("--account work --store-token は claude-long-token-work に入れる",
+              line.startswith("add-generic-password") and "-s claude-long-token-work " in line)
+        code, out = e.run(script, "--account", "work", "--status")
+        line = e.log("security.log").strip().splitlines()[-1]
+        check("--account work --status は claude-long-token-work を見る",
+              code == 0 and line == "find-generic-password -s claude-long-token-work" and "claude-long-token-work" in out)
     return bad
 
 
@@ -208,9 +226,16 @@ MUTATIONS = {
     "--status で値を読む": ('    attrs=$(security find-generic-password -s "$SERVICE" 2>/dev/null)',
                        '    attrs=$(security find-generic-password -s "$SERVICE" -w 2>/dev/null)'),
     "--account を無視する": ('    SERVICE="claude-long-token-$2"\n', '    SERVICE="claude-long-token"\n'),
-    "--account の名前を検めない": ("if ! printf '%s' \"$2\" | grep -Eq", "if false && printf '%s' \"$2\" | grep -Eq"),
-    "- で始まる名前を通す": ("grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'", "grep -Eq '^[A-Za-z0-9._-]+$'"),
-    "--account を先頭でしか見ない": ('    if [ "$arg" = "--account" ]; then', "    if false; then"),
+    "--account の名前を検めない": ('if ! [[ "$2" =~', 'if false && [[ "$2" =~'),
+    "- で始まる名前を通す": ('[[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]', '[[ "$2" =~ ^[A-Za-z0-9._-]+$ ]]'),
+    "名前を行ごとに照合する": ('if ! [[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then',
+                       "if ! printf '%s' \"$2\" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'; then"),
+    "xtrace を止めない": ("set +x\n", "\n"),
+    "--account= の形を見ない": (' || [ "${arg#--account=}" != "$arg" ]', ""),
+    "--store-token・--status の後ろの引数を捨てる": ("    if [ $# -gt 1 ]; then\n", "    if false; then\n"),
+    "--store-token で --account を無視する": ('exec security add-generic-password -U -a "$USER" -s "$SERVICE"',
+                                        'exec security add-generic-password -U -a "$USER" -s "claude-long-token"'),
+    "--account を先頭でしか見ない": ('    if [ "$arg" = "--account" ] || [ "${arg#--account=}" != "$arg" ]; then', "    if false; then"),
     "読めなかったのを「無い」と言う": ('if [ "$rc" -eq 44 ]; then\n    stop 2', 'if [ "$rc" -ne 0 ]; then\n    stop 2'),
     "--status で読めなかったのを「無い」と言う": ('    if [ "$rc" -eq 44 ]; then\n        echo', '    if [ "$rc" -ne 0 ]; then\n        echo'),
     "44 でない失敗を見ない": ('elif [ "$rc" -ne 0 ]; then\n    # 44', 'elif false; then\n    # 44'),

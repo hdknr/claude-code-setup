@@ -6,7 +6,7 @@
 #     bash <このスキルの base ディレクトリ>/scripts/launch-with-long-token.sh --status        # 入っているか
 #     bash <このスキルの base ディレクトリ>/scripts/launch-with-long-token.sh --account <名前> [上のどれか]
 #
-# --account <名前>: アカウントごとに別の項目（サービス名 claude-long-token-<名前>）を使う。名前は英数字で始め、英数字と . _ -（`-` で始まる名前は断る）。**--account は最初に置く**——ほかの位置にあれば止まる（2）。
+# --account <名前>: アカウントごとに別の項目（サービス名 claude-long-token-<名前>）を使う。名前は英数字で始め、英数字と . _ -（`-` で始まる名前は断る）。**--account は最初に置く**——ほかの位置（`--account=…` の形も）にあれば止まる（2）。--store-token・--status の後ろに引数があっても止まる（2）。
 #   週の上限に近いアカウントから別のアカウントに切り替えて起動し直すため（利用者の指示 2026-10-29。
 #   切り替えるのは利用者で、cruise は切り替えない）。付けなければ claude-long-token。
 #
@@ -50,10 +50,13 @@
 #   3: 長期トークンより先に使われる認証が環境にある
 #   --store-token は security の終了コード
 
+# 受け継いだ xtrace（SHELLOPTS・BASH_ENV の set -x）でトークンを標準エラーに出さない
+set +x
 SERVICE="claude-long-token"
 ACCT=""
 if [ "$1" = "--account" ]; then
-    if ! printf '%s' "$2" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*$'; then
+    # 文字列全体で照合する（grep は行ごとなので、改行を含む名前を通してしまう）
+    if ! [[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
         echo "launch-with-long-token: --account の名前は英数字で始め、英数字と . _ - だけ（受け取った: '$2'）" >&2
         exit 2
     fi
@@ -62,7 +65,7 @@ if [ "$1" = "--account" ]; then
     shift 2
 fi
 for arg in "$@"; do
-    if [ "$arg" = "--account" ]; then
+    if [ "$arg" = "--account" ] || [ "${arg#--account=}" != "$arg" ]; then
         # 先頭でないと黙って既定の項目を使う（--store-token なら既定の項目を上書きする）ので、止める
         echo "launch-with-long-token: --account は最初に置く（例: --account work --store-token）" >&2
         exit 2
@@ -87,6 +90,15 @@ if ! command -v security >/dev/null 2>&1; then
     stop 2 "security コマンドが無い"
 fi
 
+case "$1" in
+--store-token | --status)
+    if [ $# -gt 1 ]; then
+        # 後ろの引数は使わない——黙って捨てると、別のアカウントのつもりで既定の項目を上書きする
+        echo "launch-with-long-token: $1 の後ろに引数を置かない（アカウントは最初に --account <名前>）" >&2
+        exit 2
+    fi
+    ;;
+esac
 case "$1" in
 --store-token)
     if [ "$CLAUDECODE" = "1" ]; then

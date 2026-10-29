@@ -270,6 +270,39 @@ def suite(script: Path) -> list[str]:
         _, items, _ = run_cruise(mod, env, present=True)
         check("認証: 居る cruise でも長期トークンは良い", status_of(items, "認証") == [mod.GOOD], bad)
 
+    # 認証の本番の経路（env を渡さない main → os.environ）を、flag・managed を読める形で最後の分岐まで当てる（#584 の CR2-3）
+    with scenario(script) as env:
+        env.all_good()
+        flag = env.write(env.project / "flag.json", {})
+        managed = env.write(env.project / "managed.json", {})
+        auth_keys = ("HOME", "CLAUDE_CONFIG_DIR", "CLAUDECODE", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY",
+                     "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "GITHUB_ACTIONS")
+        saved = {k: os.environ.get(k) for k in auth_keys}
+        outs = {}
+        try:
+            for name, extra in (("token", {}), ("apikey", {"ANTHROPIC_API_KEY": "fake-key-584"}),
+                                ("scrub", {"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"}),
+                                ("login", {"CLAUDE_CODE_OAUTH_TOKEN": ""})):
+                for k in auth_keys:
+                    os.environ.pop(k, None)
+                os.environ.update({"HOME": str(env.home), **SESSION_ENV, **extra})
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    mod.main(["--project", str(env.project), "--flag-settings", str(flag),
+                              "--managed-settings", str(managed)])
+                outs[name] = buf.getvalue()
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        check("認証（main）: 長期トークンは良い", "[良い] 認証" in outs["token"] and FAKE_TOKEN not in outs["token"], bad)
+        check("認証（main）: API キーがあれば人が見る", "[人が見る] 認証" in outs["apikey"]
+              and "fake-key-584" not in outs["apikey"], bad)
+        check("認証（main）: 消去が真なら判定できない", "[判定できない] 認証" in outs["scrub"], bad)
+        check("認証（main）: トークンが無ければ要対処", "[要対処] 認証" in outs["login"], bad)
+
     # 守る: 読めなかったものを良いに混ぜない
     with scenario(script) as env:
         env.all_good()
@@ -1012,6 +1045,10 @@ MUTATIONS = {
     "認証: 本番の経路で os.environ を読まない": (
         "    items += check_auth(stack, os.environ if env is None else env, present)\n",
         "    items += check_auth(stack, {} if env is None else env, present)\n"),
+    "認証: 本番の経路で CLAUDECODE しか読まない": (
+        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
+        "    items += check_auth(stack, {k: os.environ[k] for k in ('CLAUDECODE',) if k in os.environ}"
+        " if env is None else env, present)\n"),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),
