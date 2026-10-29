@@ -196,6 +196,21 @@ SAMPLES = {
     'table-para-nolead.md': 'text\na | b\n--- | ---\nfoo **x\nbar** y\n',
     'table-para-last-line.md': 'text\n| a | b | c |\n| a | b |\n|---|---|\nfoo **x\nbar** y\n',
     'table-header-nopipe.md': 'x\n|---|\nfoo **x\nbar** y\n',
+    # #525 の狭いパスで素通りした変異を殺す試料（#563）。どれも GitHub の描画（gfm）と判定が一致することを確かめた（#563 の周）。
+    # 守る 7: info にバッククォートを含む ``` はフェンスではない（段落。GitHub は 2 行目の `**` を字のまま描く）。
+    'fence-info-backtick.md': '``` `a`\nX**「例」**Y\n',
+    # 守る 18: `___` も区切り線（段落を割る。GitHub は `**x` と `b**` を字のまま描く）。
+    'thematic-underscore.md': 'a **x\n___\nb** c\n',
+    # 守る 4・16: 4 つ字下げした `#` `>` は見出し・引用を始めない（段落の続き。GitHub は 1 つの太字に組む）。
+    'heading-indent.md': '本文 **x\n    # y** z\n',
+    'quote-indent.md': '本文 **x\n    > y** z\n',
+    # 守る 13: 複数行のコメントのブロックの本文行に書いた印も、残った印として落とす。
+    'comment-body-mark.md': '<!--\nbold-flanking-ok: 古い印\n-->\n',
+    # 守る 17: 項の印の後ろに空白が 5 つ以上なら、中身は印の 1 つ後ろから始まり、残りはインデントしたコード（GitHub はコードとして描く）。
+    'item-wide-gap.md': '-     X**「例」**Y\n',
+    # 守る 16: 引用が終わると、中で開いたコメントのブロックも閉じる——4 行目は段落（行頭が `<!--` でない）。
+    # GitHub は閉じないコメントの後ろを生の HTML の `-->` まで見せないが、段落の中のコメントの後ろの `**「例」**W` は字のまま見える。
+    'quote-comment-closed.md': '> <!--\n> x\n\nZ <!-- c --> **「例」**W\n',
     # エラーの抜粋（#564）——どの行も、抜粋の窓（`**` の前 6 字・後ろ 8 字）に伏せる範囲（コードスパン・コメントの中身）が入る。
     # frontmatter の後ろ・段落・引用（窓が行頭の `>` に届く）・コメント・リストの項・見出し・表の見出しの行と表の行・行をまたぐ段落。
     # 抜粋そのものは EXCERPTS で見る。
@@ -304,6 +319,13 @@ EXPECTED = {
     'table-para-nolead.md': ((4, 5), ()),
     'table-para-last-line.md': ((5, 6), ()),
     'table-header-nopipe.md': ((3, 4), ()),
+    'fence-info-backtick.md': ((2, 2), ()),
+    'thematic-underscore.md': ((1, 3), ()),
+    'heading-indent.md': ((), ()),
+    'quote-indent.md': ((), ()),
+    'comment-body-mark.md': ((), (2,)),
+    'item-wide-gap.md': ((), ()),
+    'quote-comment-closed.md': ((4,), ()),
     "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19), ()),
     "clean.md": ((), ()),
 }
@@ -507,6 +529,31 @@ MUTATIONS = {
     "抜粋を引用の印を空白にした行から切る": (25,
         '        original = "\\n".join(source[start - 1:start - 1 + len(block)])',
         '        original = "\\n".join(block)'),
+    # #525 の狭いパスで素通りした変異（#563）。どれも下の試料（#563 の段）が殺す。
+    "info にバッククォートがあってもフェンスを開く": (7,
+        'FENCE_OPEN = re.compile(r" {0,3}(`{3,}(?=[^`]*$)|~{3,})")',
+        'FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,})")'),
+    "_ の区切り線を見ない": (18,
+        'THEMATIC = re.compile(r" {0,3}([-*_])',
+        'THEMATIC = re.compile(r" {0,3}([-*])'),
+    "区切りの行のあとで表を開かない": (23,
+        "            table = (depth, len(lists))\n            continue",
+        "            table = None\n            continue"),
+    "見出しの字下げに上限を置かない": (4,
+        'HEADING = re.compile(r" {0,3}#{1,6}',
+        'HEADING = re.compile(r" *#{1,6}'),
+    "引用の印の字下げに上限を置かない": (16,
+        'QUOTE_MARK = re.compile(r" {0,3}>[ ]?")',
+        'QUOTE_MARK = re.compile(r" *>[ ]?")'),
+    "コメントのブロックの本文行の印を拾わない": (13,
+        "                if EXEMPT.search(line):\n                    marks.append(lineno)\n",
+        ""),
+    "項の印の後ろの空白を上限なく中身の桁に数える": (17,
+        "    content = marker_end + (gap if 1 <= gap <= 4 else 1)",
+        "    content = marker_end + (gap if 1 <= gap else 1)"),
+    "引用が終わってもコメントのブロックを閉じない": (16,
+        "            if got < comment:\n                comment = None",
+        "            if False:\n                comment = None"),
 }
 
 
