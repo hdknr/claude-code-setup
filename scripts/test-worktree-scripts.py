@@ -490,7 +490,7 @@ MUTATIONS = {
     "3 の見出しを標準出力に出す": (PREPARE,
         'echo "  worktree:" >&2 && printf',
         'echo "  worktree:" && printf'),
-    # --- check-pr-preconditions.sh の「守る」（行の数は数えて出す。`main()`） ---
+    # --- check-pr-preconditions.sh の「守る」（「守る」の行数と変異の数の 1 対 1 は、`main()` が 2 本の合計で数える） ---
     # 守る 1: worktree にいるか
     "worktree 判定をしない": (PRECOND,
         'if [ "$GIT_DIR" = "$COMMON_DIR" ]; then',
