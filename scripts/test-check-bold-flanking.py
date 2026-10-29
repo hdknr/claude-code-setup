@@ -174,6 +174,12 @@ SAMPLES = {
     'table-cells-differ.md': '| a | b |\n|---|\nfoo **x\nbar** y\n',
     'table-cells-escaped.md': '| a \\| b |\n|---|---|\nfoo **x\nbar** y\n',
     'table-header-apart.md': '| a | b |\n\n|---|---|\nfoo **x\nbar** y\n',
+    # 守る 23: 引用の段落の続き（lazy continuation）の `|` の行・`|` だけの行は見出しの行にならない（#562 の 1 パス目の Verifier）。
+    'table-lazy-header.md': '> q\n| a | b |\n|---|---|\nfoo **x\nbar** y\n',
+    'table-bare-pipe.md': '|\n|---|\nfoo **x\nbar** y\n',
+    # 守る 23: 隣の項の行は見出しの行にならない・段落の続きの区切りの行は表を開かない（#562 の 1 パス目の /code-review）。
+    'table-sibling-items.md': '- | a | b |\n- |---|---|\n  foo **x\n  bar** y\n',
+    'table-lazy-delim.md': '> a | b\n--- | ---\nfoo **x\nbar** y\n',
     # 崩れていない形（誤検出しない）——句読点の両側・空白の外側・引用・表のセル・GitHub が句読点と見ない記号。
     "clean.md": (
         "# 見出しの **太字**\n\n"
@@ -251,6 +257,10 @@ EXPECTED = {
     'table-cells-differ.md': ((), ()),
     'table-cells-escaped.md': ((), ()),
     'table-header-apart.md': ((), ()),
+    'table-lazy-header.md': ((), ()),
+    'table-bare-pipe.md': ((), ()),
+    'table-sibling-items.md': ((), ()),
+    'table-lazy-delim.md': ((), ()),
     "clean.md": ((), ()),
 }
 
@@ -395,7 +405,8 @@ MUTATIONS = {
         "        if not para and indent_of(inner) >= 4:\n            continue",
         "        if False:\n            continue"),
     "先頭の | が無い表を見分けない": (23,
-        '            if para and len(para) == 1 and "|" in para[0] and cells(para[0]) == cells(inner):',
+        '            if para and len(para) == 1 and not lazy and depth == para_depth and "|" in para[0] \\\n'
+        "                    and cells(para[0]) == cells(inner):",
         "            if False:"),
     "先頭の | がある表を見分けない": (23,
         "            if not para and header is not None and header[:3] == (lineno - 1, depth, len(lists)) \\\n"
@@ -410,6 +421,18 @@ MUTATIONS = {
     "逃がした | もセルの区切りに数える": (23,
         '    parts = re.split(r"(?<!\\\\)\\|", text)',
         '    parts = re.split(r"\\|", text)'),
+    "段落の続きの行を見出しの行にする": (23,
+        "            header = None if continued else (lineno, depth, len(lists), inner)",
+        "            header = (lineno, depth, len(lists), inner)"),
+    "| だけの行にセルを数える": (23,
+        '    if parts == [""]:\n        return 0',
+        '    if parts == [""]:\n        return 1'),
+    "隣の項の行を見出しの行にする": (23,
+        "            header = None  # 前の項の行は",
+        "            pass  # 前の項の行は"),
+    "段落の続きの区切りの行で表を開く": (23,
+        "if para and len(para) == 1 and not lazy and depth == para_depth and",
+        "if para and len(para) == 1 and"),
     "| の無い行を表の行にしない": (24,
         "                out.append((lineno, [shown]))\n                continue",
         "                table = None"),

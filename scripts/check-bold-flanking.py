@@ -69,7 +69,9 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   （開かせると、後ろの本物のバッククォートまでを伏せて崩れを隠す）。
 - **インデントしたコードブロック（段落の外で、容れ物から 4 つ以上字下げした行）は見ない**——段落の中の字下げした行は続きとして組む。
 - **表は区切りの行（`--- | ---`）で見分ける**——先頭の `|` があってもなくても、直前の 1 行を見出しの行とし、見出しの行と以降の行を
-  1 行ずつの段落にする。**見出しの行と区切りの行のセルの数が違えば表にしない**（GitHub も表にしない。外側の `|` と `\|` は数えない。#562）。
+  1 行ずつの段落にする。**見出しの行と区切りの行のセルの数が違えば表にしない**（GitHub も表にしない。外側の `|` と `\|` は数えない。`|` だけの行はセルを持たない。#562）。
+  **浅い容れ物からの段落の続き（lazy continuation）の行は見出しの行にも区切りの行にもしない**（`> q⏎| a | b |⏎|---|---|`・
+  `> a | b⏎--- | ---` は引用の段落の続き）。**隣の項の行は見出しの行にしない**（`- | a | b |⏎- |---|---|` は 2 つの項）。
 - **表の行は `|` が無くても表の行として組む**——表は空行か、ブロックの始まり（見出し・引用・リストの項（番号も空の項も問わない）・フェンス・
   コメント・区切り線・インデントしたコード）か、容れ物が変わる（引用の深さが変わる・項の外へ出る）まで続く。GitHub と同じく、段落の続き
   （lazy continuation）にはならず、`===` の行や行だけのインライン HTML も表の行である（#562。#525 の狭いパスが示した穴）。
@@ -243,6 +245,8 @@ def cells(row: str) -> int:
     parts = re.split(r"(?<!\\)\|", text)
     if text.startswith("|"):
         parts = parts[1:]
+    if parts == [""]:
+        return 0  # `|` だけの行はセルを持たない（GitHub は表にしない）
     if len(parts) > 1 and re.search(r"(?<!\\)\|$", text):
         parts = parts[:-1]
     return len(parts)
@@ -356,6 +360,7 @@ def blocks(lines: list[str]):
                 item = None  # 空の項と `1.` 以外の番号の項は、段落を割り込めない
         if item is not None:
             flush()
+            header = None  # 前の項の行は、この項の表の見出しの行にならない（#562 の 1 パス目）
             lists.append(base + offset)
             inner = inner[offset:] if len(inner) >= offset else ""
             if THEMATIC.match(inner):
@@ -384,7 +389,8 @@ def blocks(lines: list[str]):
             continue
         if "|" in inner and TABLE_DELIM.match(inner):
             # 見出しの行は直前の 1 行——先頭の `|` が無ければ 1 行の段落、あれば下で出した行（#562）
-            if para and len(para) == 1 and "|" in para[0] and cells(para[0]) == cells(inner):
+            if para and len(para) == 1 and not lazy and depth == para_depth and "|" in para[0] \
+                    and cells(para[0]) == cells(inner):
                 out.append((para_start, para))
                 para = []
                 table = (depth, len(lists))
@@ -394,9 +400,11 @@ def blocks(lines: list[str]):
                 table = (depth, len(lists))
                 continue
         if inner.lstrip(" ").startswith("|"):
+            # 浅い容れ物からの段落の続き（lazy continuation）は表の見出しの行にならない（#562 の 1 パス目）
+            continued = lazy or (bool(para) and depth < para_depth)
             flush()
             out.append((lineno, [shown]))
-            header = (lineno, depth, len(lists), inner)
+            header = None if continued else (lineno, depth, len(lists), inner)
             continue
         if not para:
             para_start, para_depth = lineno, depth
