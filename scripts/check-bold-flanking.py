@@ -11,7 +11,7 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 
 ## 何を見るか
 
-`plugins/` の下の Markdown（`*.md`）。段落（空行・見出し・リストの項・表の行・引用の始まりで区切る）ごとに、
+`plugins/` の下の Markdown（`*.md`）。段落（空行・見出し・リストの項・表の行・引用の始まり・区切り線・フェンスなどで区切る）ごとに、
 `*` がちょうど 2 つ並んだ区切り（`**`）を前から順に拾い、**1 つ目を開き、2 つ目を閉じ**……と
 著者の意図どおりに組んだとみなして、それぞれが CommonMark の規則で開け閉めできるかを見る:
 
@@ -30,12 +30,14 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **開きの `**` が開けない形を落とす**（`X**「…」**`）。
 - **閉じの `**` が閉じられない形を落とす**（`**「…」**Y`）。
 - **対にならない `**` を落とす**——段落の中の `**` が奇数なら、最後の 1 つは字のまま残る。
-- **段落をまたいで組まない**——空行・見出し・リストの項・表の行で区切る（区切らないと、
+- **段落をまたいで組まない**——空行・見出し（`#` と setext の `===` `---`）・リストの項・表の行で区切る（区切らないと、
   前の段落の閉じ忘れが後ろの段落の組み方を全部ずらす）。
 - **段落の中では行をまたいで組む**——このリポジトリの本文は、太字を行の途中で折り返している。
 - **`***`（太字の斜体）も太字の区切りとして数える**——数えないと、それより後ろの組み方が
   1 つずつずれる（`SKILL.md` の `***リポジトリで*…**` で実際にずれた）。
-- **コードフェンスとコードスパンの中は見ない**（フェンスは `markdown_fences.py`）。
+- **コードフェンスとコードスパンの中は見ない**——フェンスは開いたのと同じ字で、同じ長さ以上の列で閉じる（`markdown_fences.py`
+  と同じ規則）。**ただし `markdown_fences.py` は使わない**——容れ物（引用の深さ・リストの項）を持たないので、
+  引用の中のフェンスや、フェンスの中の `> ```` を正しく読めない（#525 の 2 パス目の関門が示した。#537 の手段からの逸脱）。
 - **コードスパンの両端のバッククォートは句読点として残す**——GitHub の描画でも `**` の隣の
   バッククォートは句読点として数えられる（`X**` + コードスパン + `**Y` は崩れる。#519 が直した形）。
 - **バックスラッシュで逃がした `*` は数えない**（`\**` の `\*` は字の `*` で、区切りではない）。
@@ -45,20 +47,28 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   HTML のコメント（`<!-- bold-flanking-ok: 理由 -->`）に書く。
 - **免除の印もコードの外だけを拾う**——コードスパン・フェンスの中に例として書いた印は効かない。
 - **崩れの無い行に置いた免除の印を落とす**——直したあとに残った印は、次に同じ行が崩れたときに
-  黙って通してしまうので、残させない。
+  黙って通してしまうので、残させない。**行だけの HTML のコメントに書いた印も拾って落とす**（その行に崩れは無いので効かない）。
 - **`plugins/` に Markdown が 1 本も無ければ落とす**——何も見ていない検査を緑にしない。
 - **コードスパンは段落の中でだけ組む**——閉じないバッククォートが後ろの段落を飲み込んで、崩れを黙って隠さない
   （ファイル全体で組んだ最初の版は、#519 の前の `SKILL.md` で崩れ 23 個のうち 21 個を見落とした）。
-- **引用の始まりで段落を区切る**——引用は段落を割り込む。引用でない行が引用の段落に続くのは続き（lazy continuation）として組む。
-- **番号つきの項が段落を割り込めるのは `1.`（`1)`）だけ**——段落の途中で `2.` から始まる行は本文の続きである。
-  リストの項で始まった段落では、次の番号の行は隣の項として区切る。
+- **引用は深さで読む**——段落より深い引用（`>` が増える行）は段落を割り込む。浅い行・引用でない行は、
+  ブロックの始まりでなければ段落の続き（lazy continuation）として組む。引用が終わると、中で開いたフェンスと
+  コメントのブロックも閉じる。
+- **リストの項は中身の桁で読む**——項の中の行（中身の桁まで字下げした行）は項の中として読み、字下げの浅い行は
+  ブロックの始まり（項の印・区切り線・フェンス・コメント・見出し）なら項を閉じ、そうでなければ続きとして組む。
+  **段落を割り込める項は、空でない `-` `*` `+` と、空でない `1.`（`1)`）だけ**——段落の途中の `2.` から始まる行は続きである。
+  項を閉じて現れた項の印は、番号や種類によらず次の項として区切る。
 - **区切り線（`***` `---` `___`）と、行頭の `<!--` で始まる HTML のコメントのブロックは段落の本文として見ない**
-  ——GitHub はどちらも Markdown の本文として描かない（区切り線の `***` を対にならない `**` と数えない）。
-- **引用の中のフェンスも剥がす**——`>` を剥がしてからフェンスを探す。
+  ——引用・リストの項の中でも。GitHub はどちらも Markdown の本文として描かない（区切り線の `***` を対にならない `**` と数えない）。
+  コメントのブロックは `<!--` から数えて最初の `-->` で閉じる（`<!-->` は同じ行で閉じる）。
+- **フェンスとコメントのブロックは、文書の順に、先に始まったほうが勝つ**——コメントの中の ``` はフェンスを開かず、
+  フェンスの中の `<!--` や `> ```` はコメントやフェンスを始めない。
 - **段落の中の HTML のコメントは中身だけを伏せ、`<!--` と `-->` は句読点として残す**——`**…**<!-- 印 -->` の
   `**` の隣は `<` で、GitHub でも句読点である（伏せた字を文字と数えると、免除の印を置いた行が崩れて見える）。
-- **コメントとコードスパンは前から順に、先に始まったほうが勝つ**——コメントの中のバッククォートはスパンを開かない
+- **段落の中のコメントとコードスパンは前から順に、先に始まったほうが勝つ**——コメントの中のバッククォートはスパンを開かない
   （開かせると、後ろの本物のバッククォートまでを伏せて崩れを隠す）。
+- **インデントしたコードブロック（段落の外で、容れ物から 4 つ以上字下げした行）は見ない**——段落の中の字下げした行は続きとして組む。
+- **表は区切りの行（`--- | ---`）で見分ける**——先頭の `|` が無い表でも、見出しの行と以降の行を 1 行ずつの段落にする。
 
 守らない:
 
@@ -69,7 +79,7 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **リンクの URL・自動リンク・HTML の属性の中の `**`**——段落の本文として数える。
 - **行頭の `<!--` で始まる行の、`-->` より後ろに書いた本文**——GitHub は行ごと HTML のブロックとして字のまま描くが、
   この検査は行ごと見ない（`**` が字のまま見えても落とさない）。
-- **インデントしたコードブロック**（4 つの空白で始まる行）——段落の本文として数える。
+- **タブの字下げ・項の印の後ろの 5 つ以上の空白・リストの項の中の引用**——容れ物の桁は空白で数える近似である。
 - **表のセルをまたいで組んだ形**——表は 1 行を 1 段落として組む。セルごとには分けない。
 - **一般カテゴリ S の記号**（`→` `×` など ASCII 以外の記号）を句読点として扱わない——cmark-gfm と同じ。
   **CommonMark 0.31 は S も句読点に数える**ので、新しい版の描画器とは判定がずれうる。
@@ -86,8 +96,6 @@ import string
 import sys
 import unicodedata
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from markdown_fences import strip_fences  # noqa: E402
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET_DIR = "plugins"
@@ -95,15 +103,21 @@ TARGET_DIR = "plugins"
 # 免除。**理由を名指しさせる**——理由の無い印は効かない。HTML のコメントの閉じは理由に含めない。
 EXEMPT = re.compile(r"bold-flanking-ok:[ \t]*((?:(?!-->)\S)(?:(?!-->).)*)")
 
-# 段落を始める行（引用の `>` を剥がしたあとに見る）。見出し・表の行は 1 行で段落が終わる。
-BULLET = re.compile(r"[-*+](?:[ \t]|$)")
-ORDERED = re.compile(r"(\d{1,9})[.)](?:[ \t]|$)")
-HEADING = re.compile(r"#{1,6}(?:[ \t]|$)")
-QUOTE = re.compile(r"[ \t]*(?:>[ \t]?)*")
-# 区切り線（`***` `---` `___`・空白を挟んでもよい）と setext の下線。段落の本文ではない。
+# 行の頭の容れ物（引用の `>`）。1 つずつ剥がして深さを数える。
+QUOTE_MARK = re.compile(r" {0,3}>[ ]?")
+# リストの項（容れ物の中で見る）。`(印の前の空白, 印, 印の後ろの空白, 中身)`。
+BULLET = re.compile(r"( {0,3})([-*+])(?:([ \t]+)(.*)|$)")
+ORDERED = re.compile(r"( {0,3})(\d{1,9})[.)](?:([ \t]+)(.*)|$)")
+HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
+# 区切り線（`***` `---` `___`・空白を挟んでもよい）。段落の本文ではない。
 THEMATIC = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+# setext の下線（段落の直後の `===` `---`）。段落を見出しにして終わらせる。
+SETEXT = re.compile(r" {0,3}(?:=+|-+)[ \t]*$")
+FENCE_OPEN = re.compile(r" {0,3}(`{3,}(?=[^`]*$)|~{3,})")
 # 行頭の `<!--` は HTML のブロックを始め、`-->` を含む行で終わる——中は Markdown として描かれない。
 COMMENT_BLOCK = re.compile(r" {0,3}<!--")
+# 表の区切りの行（`--- | ---`・`|:--|--:|`）。直前の 1 行が見出しの行になる。
+TABLE_DELIM = re.compile(r" {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$")
 
 ASCII_PUNCT = set(string.punctuation)
 
@@ -142,39 +156,6 @@ def strip_frontmatter(text: str) -> str:
         if lines[end].strip() == "---":
             return "\n".join([""] * (end + 1) + lines[end + 1:])
     return text
-
-
-def unquote(lines: list[str]) -> tuple[list[str], list[bool]]:
-    """引用の `>` を同じ数の空白に置き換えた行と、引用の行かどうかを返す（字の位置を保つ）。
-
-    CommonMark は引用の印を剥がしてから中を読むので、`> **太字**` の `**` の前は行頭（空白）である。
-    """
-    bodies, quoted = [], []
-    for line in lines:
-        prefix = QUOTE.match(line).group(0)
-        bodies.append(" " * len(prefix) + line[len(prefix):])
-        quoted.append(">" in prefix)
-    return bodies, quoted
-
-
-def blank_non_paragraphs(lines: list[str]) -> list[str]:
-    """HTML のコメントのブロックと区切り線を空行にする（行数を保つ）。どちらも段落の本文ではない。"""
-    out = list(lines)
-    i = 0
-    while i < len(out):
-        if COMMENT_BLOCK.match(out[i]):
-            head = out[i].index("<!--") + 4
-            j = i
-            while j < len(out) and "-->" not in (out[j][head:] if j == i else out[j]):
-                j += 1
-            for k in range(i, min(j, len(out) - 1) + 1):
-                out[k] = ""
-            i = j + 1
-            continue
-        if THEMATIC.match(out[i]):
-            out[i] = ""
-        i += 1
-    return out
 
 
 def mask_inline(text: str) -> tuple[str, str]:
@@ -234,39 +215,160 @@ def mask_inline(text: str) -> tuple[str, str]:
     return "".join(runs_out), "".join(marks_out)
 
 
-def blocks(lines: list[str], quoted: list[bool]):
-    """段落ごとに `(先頭の行番号, [行, …])` を返す。行番号は 1 始まり。
+def quote_depth(line: str, limit: int | None = None) -> tuple[int, int]:
+    """行の頭の引用の印を最大 `limit` 個剥がし、`(深さ, 剥がした字数)` を返す。"""
+    depth, pos = 0, 0
+    while limit is None or depth < limit:
+        m = QUOTE_MARK.match(line, pos)
+        if not m:
+            break
+        depth, pos = depth + 1, m.end()
+    return depth, pos
 
-    区切るのは: 空行・見出し・表の行（どちらも 1 行で終わる）・リストの項・引用の始まり。
-    **番号つきの項が段落を割り込めるのは `1.` だけ**（CommonMark）——ただしリストの項で始まった段落では、
-    次の番号の行は隣の項である。**引用でない行が引用の段落に続くのは、割り込みではなく続き**（lazy continuation）。
+
+def indent_of(text: str) -> int:
+    return len(text) - len(text.lstrip(" "))
+
+
+def item_of(inner: str):
+    """リストの項なら `(順序つきか, 番号, 中身が空か, 中身の始まる桁)` を返す。"""
+    m = BULLET.match(inner) or ORDERED.match(inner)
+    if not m:
+        return None
+    ordered = m.re is ORDERED
+    body = m.group(4) or ""
+    gap = len(m.group(3) or "")
+    marker_end = m.end(2) if not ordered else m.start(3) if m.group(3) is not None else len(inner)
+    content = marker_end + (gap if 1 <= gap <= 4 else 1)
+    return ordered, (m.group(2) if ordered else ""), not body.strip(), content
+
+
+def blocks(lines: list[str]):
+    """段落ごとに `(先頭の行番号, [行, …])` を、本文でない行の免除の印の行番号と一緒に返す。
+
+    **1 行ずつ、文書の順に** 容れ物（引用の深さ・リストの項の中身の桁）と、開いているフェンス・HTML のコメントの
+    ブロック・表を持ちながら読む——別々の段で剥がすと、段の順番が CommonMark の読み方とずれる
+    （1 パス目の指摘対応の版は、フェンスの中の `> ```` でフェンスを閉じ、コメントの中の ``` でフェンスを開いた）。
+    段落の行は、引用の印を同じ数の空白に置き換えて返す（`> **太字**` の `**` の前は行頭＝空白）。
     """
-    current: list[str] = []
-    start = 0
-    in_list = False
-    for lineno, (line, is_quote) in enumerate(zip(lines, quoted), 1):
-        body = line.lstrip()
-        if not body:
-            if current:
-                yield start, current
-            current = []
+    out: list[tuple[int, list[str]]] = []
+    marks: list[int] = []
+    para: list[str] = []
+    para_start = para_depth = 0
+    lists: list[int] = []  # 開いているリストの項の、中身の始まる桁（引用を剥がした後の桁）
+    fence = None  # (字, 長さ, 引用の深さ, リストの桁)
+    comment = None  # 引用の深さ
+    table = False
+
+    def flush():
+        nonlocal para
+        if para:
+            out.append((para_start, para))
+        para = []
+
+    for lineno, line in enumerate(lines, 1):
+        if fence is not None:
+            char, length, depth, base = fence
+            got, pos = quote_depth(line, depth)
+            rest = line[pos:]
+            if got < depth or (rest.strip() and indent_of(rest) < base):
+                fence = None  # 容れ物が終わればフェンスも閉じる
+            else:
+                if re.match(rf" {{0,3}}{re.escape(char)}{{{length},}}[ \t]*$", rest[base:] if len(rest) >= base else rest):
+                    fence = None
+                continue
+        if comment is not None:
+            got, pos = quote_depth(line, comment)
+            if got < comment:
+                comment = None
+            else:
+                if EXEMPT.search(line):
+                    marks.append(lineno)
+                if "-->" in line[pos:]:
+                    comment = None
+                continue
+
+        depth, pos = quote_depth(line)
+        content = line[pos:]
+        shown = " " * pos + content
+        if not content.strip():
+            flush()
+            table = False
             continue
-        single = bool(HEADING.match(body)) or body.startswith("|")
-        ordered = ORDERED.match(body)
-        item = bool(BULLET.match(body)) or bool(ordered and (ordered.group(1) == "1" or in_list))
-        enters_quote = is_quote and not quoted[lineno - 2]
-        if current and (single or item or enters_quote):
-            yield start, current
-            current = []
-        if not current:
-            start = lineno
-            in_list = bool(BULLET.match(body) or ordered)
-        current.append(line)
-        if single:
-            yield start, current
-            current = []
-    if current:
-        yield start, current
+
+        # 新しい引用（段落より深い）は段落を割り込む。浅い行は続き（lazy continuation）として下で扱う。
+        if para and depth > para_depth:
+            flush()
+
+        indent = indent_of(content)
+        popped = False
+        stripped = content[indent:]
+        starts_block = any(r.match(stripped) for r in (THEMATIC, FENCE_OPEN, COMMENT_BLOCK, HEADING)) \
+            or item_of(stripped) is not None
+        while lists and indent < lists[-1]:
+            if para and not starts_block:
+                break  # 項の中の段落の続き（lazy continuation）。ブロックの始まりなら項を閉じる（別の種類のリストの項でも）
+            lists.pop()
+            popped = True
+        base = lists[-1] if lists and indent >= lists[-1] else 0
+        inner = content[base:] if indent >= base else content.lstrip(" ")
+        lazy = bool(lists) and indent < lists[-1]
+
+        if THEMATIC.match(inner):  # 区切り線（段落の直後の `---` は setext の下線——どちらも段落を終わらせる）
+            flush()
+            continue
+        if para and not lazy and SETEXT.match(inner):
+            flush()
+            continue
+
+        item = None if lazy else item_of(inner)
+        if item is not None:
+            ordered, number, empty, offset = item
+            if para and not popped and (empty or (ordered and number != "1")):
+                item = None  # 空の項と `1.` 以外の番号の項は、段落を割り込めない
+        if item is not None:
+            flush()
+            lists.append(base + offset)
+            inner = inner[offset:] if len(inner) >= offset else ""
+            if THEMATIC.match(inner):
+                continue
+            if not inner.strip():
+                continue
+
+        fence_open = FENCE_OPEN.match(inner)
+        if fence_open:
+            flush()
+            run = fence_open.group(1)
+            fence = (run[0], len(run), depth, lists[-1] if lists else 0)
+            continue
+        if COMMENT_BLOCK.match(inner):
+            flush()
+            if EXEMPT.search(line):
+                marks.append(lineno)
+            if "-->" not in inner[inner.index("<!--"):]:
+                comment = depth
+            continue
+        if not para and indent_of(inner) >= 4:
+            continue  # インデントしたコードブロック
+        if HEADING.match(inner):
+            flush()
+            out.append((lineno, [shown]))
+            continue
+        if para and len(para) == 1 and "|" in inner and "|" in para[0] and TABLE_DELIM.match(inner):
+            header = para
+            para = []
+            out.append((para_start, header))
+            table = True
+            continue
+        if table or inner.lstrip(" ").startswith("|"):
+            flush()
+            out.append((lineno, [shown]))
+            continue
+        if not para:
+            para_start, para_depth = lineno, depth
+        para.append(shown)
+    flush()
+    return out, marks
 
 
 def runs(text: str):
@@ -294,15 +396,15 @@ def runs(text: str):
 
 def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
     """崩れ `(行番号, 理由, 断片)` の一覧と、使われなかった免除の印の行番号を返す。"""
-    bodies, quoted = unquote(strip_frontmatter(text).split("\n"))
-    plain = blank_non_paragraphs(strip_fences("\n".join(bodies)).split("\n"))
+    found_blocks, comment_marks = blocks(strip_frontmatter(text).split("\n"))
 
     problems: list[tuple[int, str, str]] = []
-    exempt: set[int] = set()
+    # 本文でない行（HTML のコメントのブロック）に書いた印も拾う——その行に崩れは無いので、残った印として落ちる。
+    exempt: set[int] = set(comment_marks)
     # **段落を先に切り、コードスパンは段落の中でだけ組む**——コードスパンは段落をまたがない。
     # ファイル全体で組むと、閉じない 1 つのバッククォートが後ろの段落を全部飲み込み、崩れが黙って消える
     # （#519 の前の `SKILL.md` で、301 行の入れ子のバッククォートが 135 行を飲み、崩れ 23 個のうち 21 個が見えなくなった）。
-    for start, block in blocks(plain, quoted):
+    for start, block in found_blocks:
         joined, marks = mask_inline("\n".join(block))
         exempt.update(start + row for row, line in enumerate(marks.split("\n")) if EXEMPT.search(line))
         offsets = [0]
