@@ -68,7 +68,11 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **段落の中のコメントとコードスパンは前から順に、先に始まったほうが勝つ**——コメントの中のバッククォートはスパンを開かない
   （開かせると、後ろの本物のバッククォートまでを伏せて崩れを隠す）。
 - **インデントしたコードブロック（段落の外で、容れ物から 4 つ以上字下げした行）は見ない**——段落の中の字下げした行は続きとして組む。
-- **表は区切りの行（`--- | ---`）で見分ける**——先頭の `|` が無い表でも、見出しの行と以降の行を 1 行ずつの段落にする。
+- **表は区切りの行（`--- | ---`）で見分ける**——先頭の `|` があってもなくても、直前の 1 行を見出しの行とし、見出しの行と以降の行を
+  1 行ずつの段落にする。**見出しの行と区切りの行のセルの数が違えば表にしない**（GitHub も表にしない。外側の `|` と `\|` は数えない。#562）。
+- **表の行は `|` が無くても表の行として組む**——表は空行か、ブロックの始まり（見出し・引用・リストの項（番号も空の項も問わない）・フェンス・
+  コメント・区切り線・インデントしたコード）か、容れ物が変わる（引用の深さが変わる・項の外へ出る）まで続く。GitHub と同じく、段落の続き
+  （lazy continuation）にはならず、`===` の行や行だけのインライン HTML も表の行である（#562。#525 の狭いパスが示した穴）。
 
 守らない:
 
@@ -81,6 +85,9 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   この検査は行ごと見ない（`**` が字のまま見えても落とさない）。
 - **タブの字下げ・項の印の後ろの 5 つ以上の空白・リストの項の中の引用**——容れ物の桁は空白で数える近似である。
 - **表のセルをまたいで組んだ形**——表は 1 行を 1 段落として組む。セルごとには分けない。
+- **段落の 2 行目以降を見出しの行にした表**（`text⏎a | b⏎--- | ---`）——GitHub は最後の行を見出しの行にして表を作るが、
+  この検査は 1 行の段落のときだけ表にする（先頭が `|` の見出しの行なら表にする）。
+- **HTML のブロック（`<div>` など）で表を終わらせない**——コメントのほかの HTML のブロックを持たない。
 - **一般カテゴリ S の記号**（`→` `×` など ASCII 以外の記号）を句読点として扱わない——cmark-gfm と同じ。
   **CommonMark 0.31 は S も句読点に数える**ので、新しい版の描画器とは判定がずれうる。
 - **`plugins/` の外**（`docs/`・`CLAUDE.md`・計画ファイル）——#537 で、最初の対象を `plugins/` に決めた。
@@ -230,6 +237,17 @@ def indent_of(text: str) -> int:
     return len(text) - len(text.lstrip(" "))
 
 
+def cells(row: str) -> int:
+    """表の行のセルの数。外側の `|` と、逃がした `\\|` は区切りに数えない。"""
+    text = row.strip()
+    parts = re.split(r"(?<!\\)\|", text)
+    if text.startswith("|"):
+        parts = parts[1:]
+    if len(parts) > 1 and re.search(r"(?<!\\)\|$", text):
+        parts = parts[:-1]
+    return len(parts)
+
+
 def item_of(inner: str):
     """リストの項なら `(順序つきか, 番号, 中身が空か, 中身の始まる桁)` を返す。"""
     m = BULLET.match(inner) or ORDERED.match(inner)
@@ -258,7 +276,8 @@ def blocks(lines: list[str]):
     lists: list[int] = []  # 開いているリストの項の、中身の始まる桁（引用を剥がした後の桁）
     fence = None  # (字, 長さ, 引用の深さ, リストの桁)
     comment = None  # 引用の深さ
-    table = False
+    table = None  # 開いている表の容れ物 (引用の深さ, 開いているリストの項の数)
+    header = None  # 直前に 1 行の段落として出した、先頭が `|` の行 (行番号, 引用の深さ, 項の数, 本文)
 
     def flush():
         nonlocal para
@@ -293,7 +312,7 @@ def blocks(lines: list[str]):
         shown = " " * pos + content
         if not content.strip():
             flush()
-            table = False
+            table = None
             continue
 
         # 新しい引用（段落より深い）は段落を割り込む。浅い行は続き（lazy continuation）として下で扱う。
@@ -313,6 +332,15 @@ def blocks(lines: list[str]):
         base = lists[-1] if lists and indent >= lists[-1] else 0
         inner = content[base:] if indent >= base else content.lstrip(" ")
         lazy = bool(lists) and indent < lists[-1]
+
+        if table is not None:
+            # 表は空行・ブロックの始まり・容れ物の変化で終わる。それ以外の行は `|` が無くても表の行（#562）
+            if (depth, len(lists)) != table or item_of(inner) is not None or indent_of(inner) >= 4 \
+                    or any(r.match(inner) for r in (THEMATIC, FENCE_OPEN, COMMENT_BLOCK, HEADING)):
+                table = None
+            else:
+                out.append((lineno, [shown]))
+                continue
 
         if THEMATIC.match(inner):  # 区切り線（段落の直後の `---` は setext の下線——どちらも段落を終わらせる）
             flush()
@@ -354,15 +382,21 @@ def blocks(lines: list[str]):
             flush()
             out.append((lineno, [shown]))
             continue
-        if para and len(para) == 1 and "|" in inner and "|" in para[0] and TABLE_DELIM.match(inner):
-            header = para
-            para = []
-            out.append((para_start, header))
-            table = True
-            continue
-        if table or inner.lstrip(" ").startswith("|"):
+        if "|" in inner and TABLE_DELIM.match(inner):
+            # 見出しの行は直前の 1 行——先頭の `|` が無ければ 1 行の段落、あれば下で出した行（#562）
+            if para and len(para) == 1 and "|" in para[0] and cells(para[0]) == cells(inner):
+                out.append((para_start, para))
+                para = []
+                table = (depth, len(lists))
+                continue
+            if not para and header is not None and header[:3] == (lineno - 1, depth, len(lists)) \
+                    and cells(header[3]) == cells(inner):
+                table = (depth, len(lists))
+                continue
+        if inner.lstrip(" ").startswith("|"):
             flush()
             out.append((lineno, [shown]))
+            header = (lineno, depth, len(lists), inner)
             continue
         if not para:
             para_start, para_depth = lineno, depth
