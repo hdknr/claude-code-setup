@@ -20,7 +20,9 @@ Mac Studio で、キーチェーンの対話ログインの OAuth（8 時間）�
 - `docs/plugins/dev-loop-cruise.md` — 部品の一覧と「2. 環境を点検する」から指す
 - `mkdocs.yml` — nav に足す
 - `CLAUDE.md` — `scripts/` の一覧に 1 行（テスト）
-- `.claude-plugin/marketplace.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/skills/dev-loop/SKILL.md`・`plugins/dev-loop/skills/cruise/SKILL.md` — 版（3 種類）
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す場合だけ）
 - `docs/plans/issue-584.md` — この計画
 

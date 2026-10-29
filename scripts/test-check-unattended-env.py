@@ -607,7 +607,10 @@ def suite(script: Path) -> list[str]:
                     os.environ[k] = v
         after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file()}
         check("認証: 本番の経路（env を渡さない main）でも os.environ から読む",
-              "[良い] 認証" in runs["full"][1] and FAKE_TOKEN not in runs["full"][1], bad)
+              # この全点検は flag の層を読めない形なので、認証は apiKeyHelper のところで「判定できない」になる。
+              # 見分けるのは、os.environ を読まなかったときの「セッションの外」が出ないこと
+              "] 認証: " in runs["full"][1] and "セッションの外" not in runs["full"][1]
+              and FAKE_TOKEN not in runs["full"][1], bad)
         code, out, reads = runs["config_off"]
         check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in out
               and "[要対処] 通知の試験" in out, bad)
