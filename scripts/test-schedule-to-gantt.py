@@ -21,6 +21,8 @@
    名前の 1 つが NAME_MAX を超える（在りえない）出力先・親がファイルの出力先（ENOTDIR）は 1 のまま。
    符号化できない（NUL・単独のサロゲートを含む）出力先も在りえないので 1 のまま——**CLI からは届かない**
    （argv に渡らない）ので、同じプロセスの中で `sys.argv` を差し替えて `main` に届かせる（#534）。
+   表が正しくて出力先が符号化できない（名前・親のディレクトリの名前）ときは、書く途中の `ValueError` を「書けない」と
+   名指しして 2——「書く途中の想定外の例外」にしない（#582。同じく `main` に届かせる）。
    パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2。
    辿れない先を指す symlink はリンクを消して 1、壊れた symlink とディレクトリを指す symlink は消さずに 1。
    書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
@@ -154,6 +156,9 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("書けないときを捕まえない", "    except OSError as e:  # 書きかけを", "    except ImportError as e:  # 書きかけを"),
     # #534: 符号化できない名前も「無い」と読む分岐（CLI からは届かない）
     ("符号化できない名前を消せないと読む", "    except ValueError:  # 符号化できない", "    except ImportError:  # 符号化できない"),
+    # #582: 書く途中の ValueError（符号化できない出力先）を「書けない」と読む分岐
+    ("符号化できない出力先を書く途中の想定外の例外と読む", "    except ValueError as e:  # 出力先の名前が符号化できない",
+     "    except ImportError as e:  # 出力先の名前が符号化できない"),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
@@ -304,6 +309,16 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         if (proc.returncode != 1 or LEFT in proc.stderr or "見出し行が決まりと違う" not in proc.stderr
                 or "Traceback" in proc.stderr):
             problems.append(f"符号化できない出力先（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # 表が正しく、出力先が符号化できない——書く途中の ValueError も「書けない」と名指しして 2。「想定外の例外」にしない（#582）。
+    # 親のディレクトリの名前に NUL があると mkdir で、名前の側なら write_bytes で起きる
+    for label, name in (("NUL", "x\0.svg"), ("単独のサロゲート", "\ud800.svg"), ("親に NUL", "d\0/gantt.svg")):
+        inject = ("import runpy, sys\n"
+                  f"sys.argv = [{script!r}, {str(good)!r}, {str(root / name)!r}]\n"
+                  f"runpy.run_path({script!r}, run_name='__main__')\n")
+        proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+        if (proc.returncode != 2 or "書けない（出力先の名前が使えない: " not in proc.stderr or "想定外の例外" in proc.stderr
+                or LEFT in proc.stderr or "Traceback" in proc.stderr):
+            problems.append(f"符号化できない出力先に書く（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)
     if proc.returncode != 2 or "usage:" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"-OO の引数なし: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
