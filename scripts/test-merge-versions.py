@@ -322,6 +322,12 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     # index に綴りの違う 2 つ（shared/・Shared/）が在り、区別しない FS では 1 つのフォルダ——タグと同じく 1
     ("index の綴り違いは同じフォルダでも断る", {**V1, "v2/shared/a.md": "A\n"}, "git-both", [],
      lambda r: refused(r, "Shared: shared と大文字小文字")),
+    # removed.csv のファイルも同じ（1 パス目の Verifier の反証）——コミットが Removed.csv なら作業ツリーで removed.csv に改名しても 1、
+    # コミットが removed.csv なら作業ツリーで Removed.csv に改名しても削除を当てて 0（区別しない FS では git も変更と見ない）
+    ("コミットの Removed.csv は作業ツリーの綴りに依らず断る", {**V1, "v2/Removed.csv": REMOVED_HEAD + "ファイル,requirements/a.md,x\n"},
+     "git-renamed-file", [], lambda r: refused(r, "Removed.csv: removed.csv と大文字小文字")),
+    ("コミットの removed.csv は作業ツリーの綴りに依らず読む", {**V1, "v2/removed.csv": REMOVED_HEAD + "ファイル,requirements/a.md,x\n"},
+     "git-renamed-file", [], lambda r: made(r) and "requirements/a.md" not in r.tree and "requirements/b.md" in r.tree),
     ("git が失敗すれば判定しない", {**V1}, "git-broken", [],
      lambda r: r.code == 2 and "git ls-files が失敗した" in r.output and r.tree is None),
     ("途中で落ちても印は無い", MAIN, "crash", [],
@@ -426,6 +432,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("index に在る名前は寄せない", "    for name in entries:\n        # 自分自身も含む",
      "    for name in entries:\n        if name in index:\n            result.add(name)\n            continue\n        # 自分自身も含む",
      "index の綴り違いは同じフォルダでも断る"),
+    ("版の直下のファイルを index から集めない", "        if len(parts) >= 2:", "        if len(parts) >= 3:",
+     "コミットの removed.csv は作業ツリーの綴りに依らず読む"),
     ("git の失敗を見ない", "    if proc.returncode != 0:\n", "    if False:\n", "git が失敗すれば判定しない"),
     ("衝突を見ない", "problems.extend(collisions(list(rendered)))", "pass", "ファイルとディレクトリの衝突"),
     ("大文字小文字を畳まない", 'unicodedata.normalize("NFC", path).casefold()', 'unicodedata.normalize("NFC", path)',
@@ -594,7 +602,8 @@ def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | No
 
 
 # 区別しない FS でだけ・区別する FS でだけ作れる（判別できる）試料。もう片方の FS では試料を走らせず、殺す変異も当てない
-CASE_FOLD_ONLY = {"コミットが綴り違いなら作業ツリーの綴りに依らず断る", "index の綴り違いは同じフォルダでも断る"}
+CASE_FOLD_ONLY = {"コミットが綴り違いなら作業ツリーの綴りに依らず断る", "index の綴り違いは同じフォルダでも断る",
+                  "コミットの Removed.csv は作業ツリーの綴りに依らず断る", "コミットの removed.csv は作業ツリーの綴りに依らず読む"}
 # 試料はどの FS でも走るが、区別する FS では殺せない変異（作業ツリーの綴りのままでも、`.DS_Store` だけのフォルダは数えないので 0）
 FOLD_ONLY_MUTATIONS = {"index を見ない"}
 CASE_SENSITIVE_ONLY = {"別の項目の綴り違いは index に寄せない"}
@@ -633,6 +642,10 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
     elif prepare == "git-stale":
         (v2 / "Requirements").mkdir()
         (v2 / "Requirements" / ".DS_Store").write_text("x", encoding="utf-8")
+    elif prepare == "git-renamed-file" and folds:
+        name = next(p.name for p in v2.iterdir() if p.name.casefold() == "removed.csv")
+        (v2 / name).rename(v2 / "tmp-rename")
+        (v2 / "tmp-rename").rename(v2 / ("removed.csv" if name == "Removed.csv" else "Removed.csv"))
     elif prepare == "git-renamed" and folds:
         (v2 / "Requirements").rename(v2 / "tmp-rename")
         (v2 / "tmp-rename").rename(v2 / "requirements")

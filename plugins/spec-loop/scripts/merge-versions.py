@@ -162,7 +162,7 @@ def tracked(docs: Path) -> dict[str, set[str]] | None:
     found: dict[str, set[str]] = {}
     for raw in proc.stdout.split(b"\0"):
         parts = raw.decode("utf-8", "surrogateescape").split("/")
-        if len(parts) >= 3:
+        if len(parts) >= 2:  # 版の直下のファイル（`v2/removed.csv`）も——2 つ目が版の直下の名前
             found.setdefault(parts[0], set()).add(parts[1])
     return found
 
