@@ -73,7 +73,11 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   **段落の最後の行を見出しの行にして**（前の行は段落として残す）、見出しの行と以降の行を 1 行ずつの段落にする（GitHub と同じ。#562）。
   **見出しの行と区切りの行のセルの数が違えば表にしない**（外側の `|` と `\|` は数えない。`|` だけの行はセルを持たない）。
   **段落の続き（lazy continuation——浅い引用・項の字下げが足りない）の区切りの行は表を開かない**（`> a | b⏎--- | ---` は引用の段落）。
-  **段落の途中の区切りの形の行は見出しの行にしない**——表を開けなかった区切りの行で、GitHub もそれを見出しにしない（`text⏎|---|---|⏎|---|---|`）。
+  **段落の中で区切りの行が表を開けなかったら、その段落ではもう表を開かない**——GitHub と同じ（`text⏎|---|---|⏎|---|---|`・
+  `x⏎|---|---|⏎y | z⏎|---|---|`）。**段落の続き（lazy）の区切りの形の行は表を試さないので、開けなかったことにならない**——その行を
+  見出しにして、容れ物の中の区切りの行が表を開く（`> q⏎|---|---|⏎> |---|---|`。#580。#562 の狭いパス NP-1）。
+  **容れ物から 4 桁以上（タブを含めて）字下げした区切りの形の行も表を試さない**——表を開かず、開けなかったことにもならない（GitHub と同じ）。
+  タブの桁は行の頭から 4 桁ごとに数え、引用の印の直後のタブは印の後ろの空白 1 桁をそこから使う（`>⇥--- | ---` は 2 桁の字下げ）。
 - **表の行は `|` が無くても表の行として組む**——表は空行か、ブロックの始まり（見出し・引用・リストの項（番号も空の項も問わない）・フェンス・
   コメント・区切り線・インデントしたコード）か、容れ物が変わる（引用の深さが変わる・項の外へ出る）まで続く。GitHub と同じく、段落の続き
   （lazy continuation）にはならず、`===` の行や行だけのインライン HTML も表の行である（#562。#525 の狭いパスが示した穴）。
@@ -241,6 +245,21 @@ def indent_of(text: str) -> int:
     return len(text) - len(text.lstrip(" "))
 
 
+def width_at(line: str, start: int) -> int:
+    """`line[start:]` の頭の空白（タブを含む）が占める桁数。
+
+    タブの位置は**行の頭から** 4 桁ごとに数える（容れ物を剥がした後の文字列の頭からではない）。引用の印 `>` の
+    直後のタブは、印の後ろの任意の空白 1 桁をそこから使う（CommonMark と同じ）。
+    """
+    end = start
+    while end < len(line) and line[end] in " \t":
+        end += 1
+    width = len(line[:end].expandtabs(4)) - len(line[:start].expandtabs(4))
+    if 0 < start < len(line) and line[start - 1] == ">" and line[start] == "\t":
+        width -= 1
+    return width
+
+
 def cells(row: str) -> int:
     """表の行のセルの数。外側の `|` と、逃がした `\\|` は区切りに数えない。"""
     text = row.strip()
@@ -252,11 +271,6 @@ def cells(row: str) -> int:
     if len(parts) > 1 and re.search(r"(?<!\\)\|$", text):
         parts = parts[:-1]
     return len(parts)
-
-
-def is_delim(text: str) -> bool:
-    """表の区切りの行の形か（`|` を含むもの）。"""
-    return "|" in text and TABLE_DELIM.match(text) is not None
 
 
 def item_of(inner: str):
@@ -289,6 +303,7 @@ def blocks(lines: list[str]):
     comment = None  # 引用の深さ
     table = None  # 開いている表の容れ物 (引用の深さ, 開いているリストの項の数)
     last = ""  # 段落の最後の行の、容れ物を剥がした本文（表の見出しの行の候補）
+    refused = False  # この段落で、区切りの行が表を開けなかったか（GitHub はその段落でもう表を開かない）
 
     def flush():
         nonlocal para
@@ -393,17 +408,21 @@ def blocks(lines: list[str]):
             flush()
             out.append((lineno, [shown]))
             continue
-        if para and not lazy and depth == para_depth and "|" in inner and TABLE_DELIM.match(inner) \
-                and cells(last) == cells(inner) and not (len(para) > 1 and is_delim(last)):
+        if para and not lazy and depth == para_depth and width_at(line, pos + base) < 4 \
+                and "|" in inner and TABLE_DELIM.match(inner):
             # 区切りの行（段落の続きでないもの）は、段落の最後の行を見出しの行にして表を開く（#562）。
-            # 段落の途中の区切りの形の行は、表を開けなかった区切りの行で、見出しの行にならない（GitHub と同じ）
-            head = para.pop()
-            flush()
-            out.append((lineno - 1, [head]))
-            table = (depth, len(lists))
-            continue
+            # 開けなければ、その段落ではもう開かない（GitHub と同じ）。段落の続き（lazy）と 4 桁以上字下げした
+            # 区切りの形の行はここに来ない——表を試さないので、開けなかったことにならない（#580）
+            if not refused and cells(last) == cells(inner):
+                head = para.pop()
+                flush()
+                out.append((lineno - 1, [head]))
+                table = (depth, len(lists))
+                continue
+            refused = True
         if not para:
             para_start, para_depth = lineno, depth
+            refused = False
         para.append(shown)
         last = inner
     flush()
