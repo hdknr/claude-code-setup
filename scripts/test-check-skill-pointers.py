@@ -398,12 +398,15 @@ MUTATIONS = {
         "|[\\w.-]+\\.md|(?:\\.\\./)+", "|(?:\\.\\./)+"),
     # 守る 25d: ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決すること（#541）
     "ファイル名だけの指し先をスキルのディレクトリから解決する": (
-        "            target = path.parent / rel", "            target = skill / rel"),
+        "    same_dir = {p.name: p for p in path.parent.iterdir()}",
+        "    same_dir = {p.name: p for p in skill.iterdir()}"),
     # 守る 25e: ファイル名だけの指し先は、ディレクトリの中の名前と文字どおりに比べること
-    # （FS に依らず殺せるよう、大文字小文字を無視する形で当てる——守る 30 と同じ）
+    # **変異は大文字小文字を無視して名前から実体を引く形にする**——実体（`qa.md`）に届くので、大文字小文字を区別する FS
+    # （Linux の CI）でも照合して 1 になる。**名前の照合だけを緩めて `path.parent / rel` を開く形では、Linux で `QA.md` が
+    # 無くて飛ぶので殺せない**（#541 の 2 パス目の `/code-review` が `docker run python:3.12-slim` で示した）。
     "ファイル名だけの指し先の大文字小文字を無視する": (
-        "            if rel not in {p.name for p in path.parent.iterdir()}:",
-        "            if rel.lower() not in {p.name.lower() for p in path.parent.iterdir()}:"),
+        "            target = same_dir.get(rel)",
+        "            target = next((q for n, q in same_dir.items() if n.lower() == rel.lower()), None)"),
     # 守る 26: ほかの持ち主を名指しした指し先は解決しないこと
     "ほかの持ち主の名指しを解決する": (
         "    m = OWNER.search(before)",

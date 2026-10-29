@@ -307,6 +307,9 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
     raw = path.read_text(encoding="utf-8")
     prose = strip_fences(raw)
     own = body_without_pointers(raw)
+    # **ファイル名だけの指し先は、この一覧から名前で実体を引く**（#541）——`is_file()` で探すと、大文字小文字を
+    # 区別しない FS（macOS）で `QA.md` が `qa.md` に当たり、OS で結果が変わる（1 パス目の `/code-review`）。
+    same_dir = {p.name: p for p in path.parent.iterdir()}
     for m in PROSE.finditer(prose):
         lineno = prose.count("\n", 0, m.start()) + 1
         yield (lineno, f"{m.group(0)}（このファイルに無い）",
@@ -321,15 +324,11 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
         # **ファイル名だけの指し先は、書いたファイルと同じディレクトリから解決する**（#541）。
         # **そこに無ければ照合しない**——別のディレクトリ・別のプラグインを指していることがあり、どこかが決まらない
         # （docstring の「守らない」）。`SKILL.md` はこれまでどおりスキルのディレクトリから。
-        # **名前はディレクトリの中の名前と文字どおりに比べる**——`is_file()` だけだと、大文字小文字を区別しない FS（macOS）で
-        # `QA.md` が `qa.md` に当たり、OS で結果が変わる（#541 の 1 パス目の `/code-review`）。
         if "/" not in rel and rel != "SKILL.md":
-            if rel not in {p.name for p in path.parent.iterdir()}:
-                continue
-            target = path.parent / rel
+            target = same_dir.get(rel)  # 文字どおりに比べる。無ければ照合しない
         else:
             target = skill / rel
-        if not target.is_file():
+        if target is None or not target.is_file():
             continue  # 実在しないことは囲まれた指し先の検査が言う（ファイル名だけの形は見ない）
         lineno = prose.count("\n", 0, m.start()) + 1
         yield (lineno, f"{m.group(0)}（{m.group(1)} に無い）",
