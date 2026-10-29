@@ -140,7 +140,8 @@ def remove_stale(out: Path) -> str | None:
             try:
                 mode = out.stat().st_mode
             except OSError as e:
-                if absent(out, e):
+                # 長すぎる名前は先のパスで見る（先の名前が NAME_MAX を超えるなら在りえない——壊れたリンク。#535 の CR1-1）
+                if absent(out.parent / os.readlink(out), e):
                     return None  # 壊れたリンク——この道具の出力ではない
                 return f"前に作った出力を消せない: {out}（リンクの先を辿れない: {e.strerror}）。今の表から作ったものではない"
         if not stat.S_ISREG(mode):
