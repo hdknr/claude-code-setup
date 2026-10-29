@@ -148,10 +148,12 @@ OUTSIDE_SYMLINKED = "# デモ\n\n詳しくは `references/x.md` の「無い節�
 # 字面の半分（`leaves_plugin`）だけを落とす変異が素通りする（#574 の 1 パス目の Verifier と `/code-review`）。
 OUTSIDE_ROUNDTRIP = "# デモ\n\n決まりは `../../../demo/references/qa.md` の「無い節」を正とする。\n"
 # **パスの検査が拾わないファイル名だけの指し先は、symlink の先が外でも照合する**（#574）——飛ばすとエラーが 0 になる。
-# プラグイン直下の `references/a.md` から、隣のプラグインへの symlink `references/o.md` を `` `o.md` `` で指す。
+# スキルの `SKILL.md` から、隣のプラグインへの symlink `o.md`（スキルのディレクトリ）を `` `o.md` `` で指す。**`SKILL.md` から書く**——
+# 同じディレクトリがスキルのディレクトリなので `skill / rel` が実体になり、`/` を見ずに外かを判定する変異（`rel != "SKILL.md"`）で
+# 結果が変わる。プラグイン直下から書くと `skill / rel` は実在しないファイルを指し、その変異が素通りした（#574 の 2 パス目の `/code-review`）。
 BARE_OUTSIDE_REF = "# 決まり\n\n層は `o.md` の「無い節」を正とする。\n"
-# **`SKILL.md` の symlink の先が外**の形も置く——ファイル名だけの形は `skill / rel` で解決しないので、`/` を見ずに外かを
-# 判定する変異でも結果が変わらない。**`SKILL.md` の試料が無いと、その変異（守る 28d）が殺せない。**
+# **`SKILL.md` の symlink の先が外**の形も置く——**この試料が無いと、`/` を見ずに外かを判定する変異（守る 28d）が殺せない**
+# （ファイル名だけの試料が殺すのは `rel != "SKILL.md"` の形の変異で、28d の変異は `SKILL.md` の側でしか結果が変わらない）。
 SKILL_OUTSIDE_REF = "# r\n\n本体は `SKILL.md` の「無い節」を見る。\n"
 
 # **散文の指し先**（#205）。**『』と本文の「」・太字・バッククォート・改行の違いを同一視する**ことを
@@ -575,11 +577,10 @@ def main() -> int:
         outside_plain = parent_tree("outside-plain", OUTSIDE_PLAIN)
         outside_roundtrip = parent_tree("outside-roundtrip", OUTSIDE_ROUNDTRIP)
         outside_symlinked = symlink_tree("outside-symlinked", "../../../../other/references/o.md", OUTSIDE_SYMLINKED)
-        bare_outside = parent_tree("bare-outside", "# デモ\n")
+        bare_outside = parent_tree("bare-outside", BARE_OUTSIDE_REF)
         (bare_outside / "plugins" / "other" / "references").mkdir(parents=True, exist_ok=True)
         (bare_outside / "plugins" / "other" / "references" / "o.md").write_text("# 隣\n", encoding="utf-8")
-        (bare_outside / "plugins" / "demo" / "references" / "a.md").write_text(BARE_OUTSIDE_REF, encoding="utf-8")
-        os.symlink("../../other/references/o.md", bare_outside / "plugins" / "demo" / "references" / "o.md")
+        os.symlink("../../../other/references/o.md", bare_outside / "plugins" / "demo" / "skills" / "demo" / "o.md")
         skill_outside = parent_tree("skill-outside", "# デモ\n")
         (skill_outside / "plugins" / "other" / "SKILL.md").write_text("# 隣\n", encoding="utf-8")
         skill_md = skill_outside / "plugins" / "demo" / "skills" / "demo" / "SKILL.md"

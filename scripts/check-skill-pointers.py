@@ -116,9 +116,9 @@ r"""スキルの中の指し先（`references/…` `prompts/…` `scripts/…`�
   `` dev-loop の `references/spec-gap.md` の「X」 `` の X は dev-loop のファイルにある。
 - **`../` で始まる移した先の名指しは、ほかの持ち主の名指しがあっても「X」を照合すること**（#542）——
   `` dev-loop の `../req-loop/SKILL.md` の「X」 `` の `../req-loop/SKILL.md` は、パスの実在の検査と同じく自分のプラグインから解決する
-  （`../` の先がプラグインの外なら「X」は照合せず、パスの検査の「プラグインの外」だけが落とす——次の項）。照合しないと、パスは見ても節の名前は見ない（#503 の 2 パス目の `/code-review`）。
+  （`../` の先がプラグインの外なら「X」は照合せず、パスの検査だけが落とす——次の項）。照合しないと、パスは見ても節の名前は見ない（#503 の 2 パス目の `/code-review`）。
 - **プラグインの外へ出る指し先の「X」は照合しないこと**（#574）——`../` の先が外（字面で外へ出る・symlink の先が外）でも、
-  `references/x.md`・`prompts/x.md` の symlink の先が外でも、**エラーはパスの検査の「プラグインの外」の 1 つだけ**にする。
+  `references/x.md`・`prompts/x.md` の symlink の先が外でも、**エラーはパスの検査の 1 つだけ**にする（先が実在すれば「プラグインの外」、実在しなければ「実在しない」の行）。
   照合すると、外のファイル（隣のプラグインなど）を読んで同じ指し先に 2 つ目のエラーを出していた（#542 の `/code-review` 1・2 パス目）。
 - **パスの検査が拾わない `SKILL.md` とファイル名だけの指し先は、symlink の先が外でも「X」を照合すること**（#574）——
   パスの検査はこの 2 つの形を拾わないので、照合を飛ばすと、節が無くてもエラーが 0 になる。
@@ -344,7 +344,7 @@ def prose_pointers_in(path: pathlib.Path, skill: pathlib.Path, plugin: pathlib.P
         # 前の行まで見ると、行をまたいだ名指しが免除される（docstring は「落ちる側」と書いている）。
         line_start = prose.rfind("\n", 0, m.start()) + 1
         rel = m.group(1)
-        # **`../` で始まる指し先には名指しの免除を掛けない**（#542）——パスの実在の検査（`pointers_in`）は `../` を
+        # **`../` で始まる指し先には名指しの免除を掛けない**（#542）——パスの検査（`pointers_in`・`main`）は `../` を
         # 名指しに依らず解決する。先がプラグインの外なら、下の `outside_plugin` で照合を飛ばす（#574）。
         if not rel.startswith("../") and owned_elsewhere(prose[line_start:m.start()], plugin):
             continue
