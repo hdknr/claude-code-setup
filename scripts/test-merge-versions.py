@@ -328,6 +328,14 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      "git-renamed-file", [], lambda r: refused(r, "Removed.csv: removed.csv と大文字小文字")),
     ("コミットの removed.csv は作業ツリーの綴りに依らず読む", {**V1, "v2/removed.csv": REMOVED_HEAD + "ファイル,requirements/a.md,x\n"},
      "git-renamed-file", [], lambda r: made(r) and "requirements/a.md" not in r.tree and "requirements/b.md" in r.tree),
+    # docs・版のフォルダ自身の古い綴り（再開後の 2 パス目の /code-review）——docs が作業ツリーで Docs でも、コミットが Docs/ で docs と
+    # 打っても、index の綴りで読む。版のフォルダが V2（.DS_Store だけ残る）でも、コミットの v2 として読む
+    ("docs のフォルダの綴りが違っても index で断る", {**V1, "v2/Removed.csv": REMOVED_HEAD + "ファイル,requirements/a.md,x\n"},
+     "git-docs-stale", [], lambda r: refused(r, "Removed.csv: removed.csv と大文字小文字")),
+    ("コミットの Docs/ を docs で読んでも index で断る", {**V1, "v2/Removed.csv": REMOVED_HEAD + "ファイル,requirements/a.md,x\n"},
+     "git-docs-upper", [], lambda r: refused(r, "Removed.csv: removed.csv と大文字小文字")),
+    ("版のフォルダの古い綴りでも index の版として読む", {**V1, "v2/requirements/d.md": "D\n"}, "git-version-stale", [],
+     lambda r: made(r) and "requirements/d.md" in r.tree),
     ("git が失敗すれば判定しない", {**V1}, "git-broken", [],
      lambda r: r.code == 2 and "git ls-files が失敗した" in r.output and r.tree is None),
     ("途中で落ちても印は無い", MAIN, "crash", [],
@@ -426,14 +434,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "中身の無い綴り違いは数えない"),
     ("index を見ない", "        entries = spelled(root, index)\n", "        entries = names(root)\n",
      "コミットが正しい綴りなら作業ツリーの古い綴りで断らない"),
-    ("git を呼ばない", "    index = tracked(docs) if versions and not problems else None\n", "    index = None\n",
+    ("git を呼ばない", "    index = tracked(docs) if docs.is_dir() else None\n", "    index = None\n",
      "コミットが綴り違いなら作業ツリーの綴りに依らず断る"),
     ("同じ項目かを見ない", " and same_entry(root / m, root / name)}", "}", "別の項目の綴り違いは index に寄せない"),
     ("index に在る名前は寄せない", "    for name in entries:\n        # 自分自身も含む",
      "    for name in entries:\n        if name in index:\n            result.add(name)\n            continue\n        # 自分自身も含む",
      "index の綴り違いは同じフォルダでも断る"),
-    ("版の直下のファイルを index から集めない", "        if len(parts) >= 2:", "        if len(parts) >= 3:",
+    ("版の直下のファイルを index から集めない", "        if len(rest) >= 2:", "        if len(rest) >= 3:",
      "コミットの removed.csv は作業ツリーの綴りに依らず読む"),
+    ("index をリポジトリの根からの綴りで引かない", '"ls-files", "-z", "--full-name", "--"', '"ls-files", "-z", "--"',
+     "docs のフォルダの綴りが違っても index で断る"),
+    ("docs の綴りを畳まずに index を引く", '":(top,icase)"', '":(top)"', "コミットの Docs/ を docs で読んでも index で断る"),
+    ("docs と同じ項目かを見ない", "prefixes[head] = head == rel or same_entry(top.joinpath(*head), start)",
+     "prefixes[head] = head == rel", "コミットの Docs/ を docs で読んでも index で断る"),
+    ("版の名前を index に寄せない", "    for name in sorted(spelled(docs, index)):\n", "    for name in sorted(names(docs)):\n",
+     "版のフォルダの古い綴りでも index の版として読む"),
     ("git の失敗を見ない", "    if proc.returncode != 0:\n", "    if False:\n", "git が失敗すれば判定しない"),
     ("衝突を見ない", "problems.extend(collisions(list(rendered)))", "pass", "ファイルとディレクトリの衝突"),
     ("大文字小文字を畳まない", 'unicodedata.normalize("NFC", path).casefold()', 'unicodedata.normalize("NFC", path)',
@@ -603,7 +618,9 @@ def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | No
 
 # 区別しない FS でだけ・区別する FS でだけ作れる（判別できる）試料。もう片方の FS では試料を走らせず、殺す変異も当てない
 CASE_FOLD_ONLY = {"コミットが綴り違いなら作業ツリーの綴りに依らず断る", "index の綴り違いは同じフォルダでも断る",
-                  "コミットの Removed.csv は作業ツリーの綴りに依らず断る", "コミットの removed.csv は作業ツリーの綴りに依らず読む"}
+                  "コミットの Removed.csv は作業ツリーの綴りに依らず断る", "コミットの removed.csv は作業ツリーの綴りに依らず読む",
+                  "docs のフォルダの綴りが違っても index で断る", "コミットの Docs/ を docs で読んでも index で断る",
+                  "版のフォルダの古い綴りでも index の版として読む"}
 # 試料はどの FS でも走るが、区別する FS では殺せない変異（作業ツリーの綴りのままでも、`.DS_Store` だけのフォルダは数えないので 0）
 FOLD_ONLY_MUTATIONS = {"index を見ない"}
 CASE_SENSITIVE_ONLY = {"別の項目の綴り違いは index に寄せない"}
@@ -630,6 +647,9 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
     if prepare == "git-broken":
         (root / ".git").write_text("gitdir: /nonexistent\n", encoding="utf-8")
         return
+    if prepare == "git-docs-upper":  # コミットのフォルダは Docs（試料は docs で打つ）
+        docs.rename(root / "tmp-rename")
+        (root / "tmp-rename").rename(root / "Docs")
     git(root, "init", "-q")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "試料")
@@ -642,6 +662,16 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
     elif prepare == "git-stale":
         (v2 / "Requirements").mkdir()
         (v2 / "Requirements" / ".DS_Store").write_text("x", encoding="utf-8")
+    elif prepare in ("git-docs-stale", "git-docs-upper") and folds:
+        if prepare == "git-docs-stale":
+            docs.rename(root / "tmp-rename")
+            (root / "tmp-rename").rename(root / "Docs")
+        (docs / "v2" / "Removed.csv").rename(docs / "v2" / "tmp-rename")
+        (docs / "v2" / "tmp-rename").rename(docs / "v2" / "removed.csv")
+    elif prepare == "git-version-stale" and folds:
+        (docs / "v2").rename(docs / "tmp-rename")
+        (docs / "tmp-rename").rename(docs / "V2")
+        (docs / "V2" / ".DS_Store").write_text("x", encoding="utf-8")
     elif prepare == "git-renamed-file" and folds:
         name = next(p.name for p in v2.iterdir() if p.name.casefold() == "removed.csv")
         (v2 / name).rename(v2 / "tmp-rename")

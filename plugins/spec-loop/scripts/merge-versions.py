@@ -44,9 +44,10 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 
 - **綴りは `spelled` が決める。** 区別しない FS では、作業ツリーのフォルダの綴り（`iterdir`）がコミットの綴りと食い違いうる
   ——git は既に在るフォルダに書き込むので、古い `Requirements/` が（追跡しない `.DS_Store` などで）残っていると、
-  `requirements/` のファイルもそこに書かれる。だから `docs` が git の作業ツリーの中なら `git ls-files` を 1 回呼び、
-  **作業ツリーの名前が index に無く、index に綴りだけ違う名前が在り、FS がその 2 つを同じ項目として開くとき（`lstat` の dev・ino が同じ）**
-  だけ、index の綴りを名前とする。区別する FS では 2 つは別の項目なので、作業ツリーの綴りのまま。
+  `requirements/` のファイルもそこに書かれる。だから `docs` が git の作業ツリーの中なら `git ls-files` をリポジトリの根からの綴りで
+  1 回引き（`docs` のフォルダ自身の綴りがコミットと違っても引けるように）、**版のフォルダの名前（`docs` の直下）と版の直下の名前について**、
+  **FS が index の綴りの名前と作業ツリーの名前を同じ項目として開くとき（`lstat` の dev・ino が同じ）**は index の綴りを名前とする。
+  区別する FS では 2 つは別の項目なので、作業ツリーの綴りのまま。**置き場所より深いフォルダの綴りは照合しない**（作業ツリーの綴りで読む）。
   index に無い名前（`git add` 前）と、git の外（上へ辿って `.git` が無い）は作業ツリーの綴りで読む。
 - **綴りだけ違うディレクトリでも、読む名前（`.` で始まらない）のファイルを持たなければ数えない**（`has_content`）——
   `build-proposal.py` は `.` で始まる名前を写さないので、タグの側にもその名前は現れない。
@@ -110,14 +111,11 @@ def read_text(path: Path) -> str:
         raise Unreadable(f"{path}: UTF-8 として読めない") from None
 
 
-def find_versions(docs: Path, problems: list[str]) -> list[tuple[int, Path]]:
+def find_versions(docs: Path, problems: list[str], index: set[str] | None = None) -> list[tuple[int, Path]]:
+    """版のディレクトリ。名前は `spelled` の綴りで読む——区別しない FS で古い `V2/` が残っていても、index の `v2/` として読む。"""
     found = []
-    try:
-        entries = sorted(docs.iterdir())
-    except OSError as e:
-        raise Unreadable(f"{docs}: 読めない（{e.strerror}）") from None
-    for entry in entries:
-        name = entry.name
+    for name in sorted(spelled(docs, index)):
+        entry = docs / name
         if not VERSION_LIKE.match(name):
             continue
         if not VERSION.fullmatch(name):
@@ -143,27 +141,48 @@ def names(directory: Path) -> set[str]:
         raise Unreadable(f"{directory}: 読めない（{e.strerror}）") from None
 
 
-def tracked(docs: Path) -> dict[str, set[str]] | None:
-    """git の index にある、版ごとの直下の名前（版のディレクトリ名 → 綴りの集合）。`docs` が git の作業ツリーの外なら None。
+def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
+    """git の index にある、`docs` からの名前（`()` → `docs` の直下の綴り、`("v2",)` → 版の直下の綴り）。
+    `docs` が git の作業ツリーの外なら None。
 
     外かどうかは上へ辿って `.git`（ディレクトリかファイル）を探して決める——git を呼んで失敗の理由を読み分けない。
     `.git` が在るのに git が無い・失敗したら `Unreadable`（2。綴りを照合していない）。
+    **`docs` のフォルダ自身の綴りがコミットと違ってもよい**——index はリポジトリの根からの綴り（`--full-name`）で
+    大文字小文字を畳んで引き（`:(icase)`）、FS が `docs` と同じ項目として開く接頭辞のものだけを使う。
     """
     start = docs.resolve()
     if not any((d / ".git").exists() for d in (start, *start.parents)):
         return None
-    try:
-        proc = subprocess.run(["git", "ls-files", "-z"], cwd=start, capture_output=True)
-    except OSError as e:
-        raise Unreadable(f"{docs}: git の作業ツリーの中だが git を走らせられない（{e.strerror}）——版の直下の綴りを照合できない") from None
-    if proc.returncode != 0:
-        detail = proc.stderr.decode("utf-8", "replace").strip()
-        raise Unreadable(f"{docs}: git ls-files が失敗した（{detail}）——版の直下の綴りを照合できない")
-    found: dict[str, set[str]] = {}
-    for raw in proc.stdout.split(b"\0"):
-        parts = raw.decode("utf-8", "surrogateescape").split("/")
-        if len(parts) >= 2:  # 版の直下のファイル（`v2/removed.csv`）も——2 つ目が版の直下の名前
-            found.setdefault(parts[0], set()).add(parts[1])
+
+    def git(*args: str) -> bytes:
+        try:
+            proc = subprocess.run(["git", *args], cwd=start, capture_output=True)
+        except OSError as e:
+            raise Unreadable(f"{docs}: git の作業ツリーの中だが git を走らせられない（{e.strerror}）——版の直下の綴りを照合できない") from None
+        if proc.returncode != 0:
+            detail = proc.stderr.decode("utf-8", "replace").strip()
+            raise Unreadable(f"{docs}: git ls-files が失敗した（{detail}）——版の直下の綴りを照合できない")
+        return proc.stdout
+
+    top = Path(os.fsdecode(git("rev-parse", "--show-toplevel").rstrip(b"\n")))
+    rel = start.parts[len(top.parts):]
+    if len(start.parts) < len(top.parts) or [fold(p) for p in start.parts[:len(top.parts)]] != [fold(p) for p in top.parts]:
+        return {}
+    spec = [":(top,icase)" + "/".join(rel)] if rel else []
+    found: dict[tuple[str, ...], set[str]] = {}
+    prefixes: dict[tuple[str, ...], bool] = {}
+    for raw in git("ls-files", "-z", "--full-name", "--", *spec).split(b"\0"):
+        parts = tuple(raw.decode("utf-8", "surrogateescape").split("/"))
+        head, rest = parts[:len(rel)], parts[len(rel):]
+        if not rest or [fold(p) for p in head] != [fold(p) for p in rel]:
+            continue
+        if head not in prefixes:
+            prefixes[head] = head == rel or same_entry(top.joinpath(*head), start)
+        if not prefixes[head]:
+            continue
+        found.setdefault((), set()).add(rest[0])
+        if len(rest) >= 2:  # 版の直下の名前（`v2/removed.csv` のような版の直下のファイルも）
+            found.setdefault((rest[0],), set()).add(rest[1])
     return found
 
 
@@ -484,18 +503,18 @@ def merge(docs: Path, upto: int | None = None) -> tuple[list[str], list[tuple[in
     無い・読めない入力と、無い版の `upto` は `Unreadable` を投げる。
     """
     problems: list[str] = []
-    versions = find_versions(docs, problems)
+    index = tracked(docs) if docs.is_dir() else None
+    versions = find_versions(docs, problems, None if index is None else index.get((), set()))
     if not problems and not versions:
         problems.append(f"{docs}: 版（v1 など）が 1 つも無い")
     if upto is not None and not problems and upto > len(versions):
         raise OutOfRange(f"--upto {upto}: v{upto} が無い（最大は v{len(versions)}）")
     whole = Whole()
     rendered: dict[str, bytes] = {}
-    index = tracked(docs) if versions and not problems else None
     for number, root in versions[:upto]:
         if problems:
             break
-        whole.apply(number, root, problems, None if index is None else index.get(root.name, set()))
+        whole.apply(number, root, problems, None if index is None else index.get((root.name,), set()))
     if not problems:
         rendered = whole.render(problems)
         problems.extend(collisions(list(rendered)))
