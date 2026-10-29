@@ -14,6 +14,10 @@
    （版・置き場所・ファイル・`removed.csv`）・`qa.csv` の決まり違反・機能の `id` の重複と欠落・`removed.csv` の誤り・
    重ねた結果のファイルとディレクトリの衝突・大文字小文字や Unicode の正規化だけが違うパス・UTF-8 で書けない文字・
    **版の直下の、置き場所・`removed.csv` と綴りだけ違う名前（`Removed.csv`・`Shared/`。#276）——中身は読まない**。
+   **綴りは git が見る綴り**——コミットが正しい綴りで、作業ツリーに古い綴りのフォルダ（`.DS_Store` だけ）が残っていても 0、
+   コミットが綴り違いなら作業ツリーのフォルダの綴りに依らず 1（本物の git リポジトリを一時ディレクトリに作って当てる）。
+   **`.git` が在るのに `git ls-files` が失敗したら 2**。区別しない FS でだけ・区別する FS でだけ判別できる試料と変異は、
+   走らせなかったことを出力に書く（緑のふりをしない）。
    **前に作った出力は消す。** **入力が無い・読めない（2）ときも消す。**
 4. **正本を消さない（2）**——印の無い空でない出力先・シンボリックリンクの出力先・`docs/` の中・`docs/` そのもの・
    `docs/` を含む場所には書かない。**中身は触らない。**
@@ -301,6 +305,25 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: refused(r, "Requirements: requirements と大文字小文字")),
     ("綴りの違う SPEC/ は断る", {**V1, "v2/SPEC/x.md": "X\n"}, "none", [],
      lambda r: refused(r, "SPEC: spec と大文字小文字")),
+    # 綴りだけ違っても、読む名前を持たないディレクトリ（`.DS_Store` だけ）は数えない——タグにも写らない（#276 の CR2-1）
+    ("中身の無い綴り違いは数えない", {**V1, "v2/requirements/d.md": "D\n", "v2/Shared/.DS_Store": "x"}, "none", [],
+     lambda r: made(r) and "requirements/d.md" in r.tree),
+    # コミットは正しい綴りで、作業ツリーに古い綴りのフォルダが残る（#276 の CR2-1。区別しない FS では requirements/ がそのフォルダに
+    # 書かれる——試料は改名で作る。区別する FS では .DS_Store だけの Requirements/ が並ぶ）。git が見る綴りは requirements なので 0
+    ("コミットが正しい綴りなら作業ツリーの古い綴りで断らない", {**V1, "v2/requirements/d.md": "D\n"}, "git-stale", [],
+     lambda r: made(r) and "requirements/d.md" in r.tree),
+    # コミットが綴り違い（#276 の CR2-2。区別しない FS では作業ツリーのフォルダを正しい綴りに改名しても git は変更と見ない）——1
+    ("コミットが綴り違いなら作業ツリーの綴りに依らず断る", {**V1, "v2/Requirements/d.md": "D\n"}, "git-renamed", [],
+     lambda r: refused(r, "Requirements: requirements と大文字小文字")),
+    # 区別する FS でだけ作れる形: コミットは正しい綴り、追跡しない別のフォルダ Requirements/ に読むファイルがある——git にも別の名前で 1
+    ("別の項目の綴り違いは index に寄せない", {**V1, "v2/requirements/d.md": "D\n"}, "git-alongside", [],
+     lambda r: refused(r, "Requirements: requirements と大文字小文字")),
+    # `.git` が在るのに git ls-files が失敗する（壊れた .git）——綴りを照合していないので 2
+    # index に綴りの違う 2 つ（shared/・Shared/）が在り、区別しない FS では 1 つのフォルダ——タグと同じく 1
+    ("index の綴り違いは同じフォルダでも断る", {**V1, "v2/shared/a.md": "A\n"}, "git-both", [],
+     lambda r: refused(r, "Shared: shared と大文字小文字")),
+    ("git が失敗すれば判定しない", {**V1}, "git-broken", [],
+     lambda r: r.code == 2 and "git ls-files が失敗した" in r.output and r.tree is None),
     ("途中で落ちても印は無い", MAIN, "crash", [],
      lambda r: r.code != 0 and r.leftover is not None and ".merged-versions" not in r.leftover),
     # 想定外の例外も 2（判定していない）で、トレースバックの 1 にしない。前の出力は読めない入力と同じに消す（#286）
@@ -392,7 +415,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("綴り違いに removed.csv を含めない", "expected = {fold(name): name for name in [*AREAS, REMOVED]}",
      "expected = {fold(name): name for name in AREAS}", "綴りの違う Removed.csv は断る"),
     ("綴り違いを畳まずに比べる", "want = expected.get(fold(name))", "want = expected.get(name)", "綴りの違う Requirements/ は断る"),
-    ("綴りが同じでも断る", "if want is not None and name != want:", "if want is not None:", "全部の経路を重ねる"),
+    ("綴りが同じでも断る", "if want is None or name == want:", "if want is None:", "全部の経路を重ねる"),
+    ("中身の無い綴り違いも数える", "            continue  # 読む名前を持たない", "            pass  # 読む名前を持たない",
+     "中身の無い綴り違いは数えない"),
+    ("index を見ない", "        entries = spelled(root, index)\n", "        entries = names(root)\n",
+     "コミットが正しい綴りなら作業ツリーの古い綴りで断らない"),
+    ("git を呼ばない", "    index = tracked(docs) if versions and not problems else None\n", "    index = None\n",
+     "コミットが綴り違いなら作業ツリーの綴りに依らず断る"),
+    ("同じ項目かを見ない", " and same_entry(root / m, root / name)}", "}", "別の項目の綴り違いは index に寄せない"),
+    ("index に在る名前は寄せない", "    for name in entries:\n        # 自分自身も含む",
+     "    for name in entries:\n        if name in index:\n            result.add(name)\n            continue\n        # 自分自身も含む",
+     "index の綴り違いは同じフォルダでも断る"),
+    ("git の失敗を見ない", "    if proc.returncode != 0:\n", "    if False:\n", "git が失敗すれば判定しない"),
     ("衝突を見ない", "problems.extend(collisions(list(rendered)))", "pass", "ファイルとディレクトリの衝突"),
     ("大文字小文字を畳まない", 'unicodedata.normalize("NFC", path).casefold()', 'unicodedata.normalize("NFC", path)',
      "大文字小文字だけ違うパス"),
@@ -559,10 +593,66 @@ def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | No
     return proc.returncode, proc.stdout + proc.stderr
 
 
+# 区別しない FS でだけ・区別する FS でだけ作れる（判別できる）試料。もう片方の FS では試料を走らせず、殺す変異も当てない
+CASE_FOLD_ONLY = {"コミットが綴り違いなら作業ツリーの綴りに依らず断る", "index の綴り違いは同じフォルダでも断る"}
+# 試料はどの FS でも走るが、区別する FS では殺せない変異（作業ツリーの綴りのままでも、`.DS_Store` だけのフォルダは数えないので 0）
+FOLD_ONLY_MUTATIONS = {"index を見ない"}
+CASE_SENSITIVE_ONLY = {"別の項目の綴り違いは index に寄せない"}
+fs_skips: list[str] = []
+FOLDS: list[bool] = []
+
+
+def case_insensitive(tmp: Path) -> bool:
+    if not FOLDS:
+        probe = tmp / "case-probe"
+        probe.write_text("x", encoding="utf-8")
+        FOLDS.append((tmp / "CASE-PROBE").exists())
+    return FOLDS[0]
+
+
+def git(root: Path, *args: str) -> None:
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args], cwd=root, env=env,
+                   check=True, capture_output=True)
+
+
+def prepare_git(root: Path, docs: Path, prepare: str) -> None:
+    """本物の git リポジトリに試料をコミットしてから、作業ツリーのフォルダの綴りを変える（#276）。"""
+    if prepare == "git-broken":
+        (root / ".git").write_text("gitdir: /nonexistent\n", encoding="utf-8")
+        return
+    git(root, "init", "-q")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "試料")
+    v2 = docs / "v2"
+    folds = case_insensitive(root.parent)
+    if prepare == "git-stale" and folds:
+        (v2 / "requirements").rename(v2 / "tmp-rename")
+        (v2 / "tmp-rename").rename(v2 / "Requirements")
+        (v2 / "Requirements" / ".DS_Store").write_text("x", encoding="utf-8")
+    elif prepare == "git-stale":
+        (v2 / "Requirements").mkdir()
+        (v2 / "Requirements" / ".DS_Store").write_text("x", encoding="utf-8")
+    elif prepare == "git-renamed" and folds:
+        (v2 / "Requirements").rename(v2 / "tmp-rename")
+        (v2 / "tmp-rename").rename(v2 / "requirements")
+    elif prepare == "git-both":
+        blob = (v2 / "shared" / "a.md").read_bytes()
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        sha = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=root, env=env, input=blob,
+                             check=True, capture_output=True).stdout.decode().strip()
+        git(root, "update-index", "--add", "--cacheinfo", f"100644,{sha},docs/v2/Shared/b.md")
+    elif prepare == "git-alongside" and not folds:
+        (v2 / "Requirements").mkdir()
+        (v2 / "Requirements" / "x.md").write_text("X\n", encoding="utf-8")
+
+
 def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[str], twice: bool = False) -> Result:
     assert_in_tmp(root)
     docs = root / "docs"
     locked = build(docs, tree)
+    if prepare.startswith("git-"):
+        prepare_git(root, docs, prepare)
     out = {"inside": docs / "merged", "docs": docs, "parent": root, "parent-loop": root,
            "out-loop": root / "loop" / "merged"}.get(prepare, root / "build" / "merged")
     preexisting = None
@@ -622,7 +712,11 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
 
 
 def skipped(name: str) -> bool:
-    """root は mode 000 でも読めるので、読めない入力の試料を作れない。"""
+    """root は mode 000 でも読めるので、読めない入力の試料を作れない。FS に依る試料は、作れない FS では飛ばす（#276）。"""
+    if name in CASE_FOLD_ONLY | CASE_SENSITIVE_ONLY and FOLDS and FOLDS[0] == (name in CASE_SENSITIVE_ONLY):
+        if name not in fs_skips:
+            fs_skips.append(name)
+        return True
     return name in UNREADABLE_CASES and hasattr(os, "geteuid") and os.geteuid() == 0
 
 
@@ -670,6 +764,9 @@ def main() -> int:
     check_reference()
     with tempfile.TemporaryDirectory(prefix="merge-versions-test-") as tmp:
         tmp_path = Path(tmp)
+        case_insensitive(tmp_path)
+        if shutil.which("git") is None:
+            check("git が無いので git の試料を走らせられない（緑ではない）", False)
         scripts = copy_scripts(tmp_path / "scripts")
         results = run_all(scripts, tmp_path / "work")
         for name, result in results.items():
@@ -685,6 +782,9 @@ def main() -> int:
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             if skipped(killer):
+                continue
+            if name in FOLD_ONLY_MUTATIONS and not FOLDS[0]:
+                fs_skips.append(name)
                 continue
             count = source.count(before)
             if count != 1:
@@ -713,8 +813,15 @@ def main() -> int:
         return 1
     skip = [name for name, *_ in CASES if skipped(name)]
     if skip:
-        print(f"飛ばした（root では読めない入力を作れない）: 試料 {'・'.join(skip)} と、それを名指しした変異")
-    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS) + len(OO_MUTATIONS)} 件")
+        fs = [name for name in skip if name in fs_skips]
+        if fs:
+            print(f"飛ばした（この FS では作れない・判別できない。#276）: 試料 {'・'.join(fs)} と、それを名指しした変異")
+        if len(fs) < len(skip):
+            print(f"飛ばした（root では読めない入力を作れない）: 試料 {'・'.join(n for n in skip if n not in fs)} と、それを名指しした変異")
+    lone = [name for name in fs_skips if name in FOLD_ONLY_MUTATIONS]
+    if lone:
+        print(f"飛ばした（区別する FS では殺せない。#276）: 変異 {'・'.join(lone)}")
+    print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS) - len(lone) + len(OO_MUTATIONS)} 件")
     return 0
 
 
