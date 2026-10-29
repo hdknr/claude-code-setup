@@ -194,8 +194,8 @@ def _build_dangling_origin_head(base: Path) -> Path:
     return work
 
 
-# **足場は 1 度だけ作り、使うたびに複製する**（#449）。**`observe()` は 21 回走る**
-# （正しい版 1 ＋ 変異 20）ので、足場を毎回 `git init`・`commit`・`clone`・`push` で
+# **足場は 1 度だけ作り、使うたびに複製する**（#449）。**`observe()` は 24 回走る**
+# （正しい版 1 ＋ 変異 23）ので、足場を毎回 `git init`・`commit`・`clone`・`push` で
 # 組み直すと、**それだけで子プロセスが 1 回に 50 本ほど増える**——`check-all.py` の中の
 # `check-mutation-claims.py` で、この 1 本が打ち切り（300 秒）に届いたことがある（3 回中 2 回。原因は特定していない）。
 # **複製は使い捨てで、観測どうしは今までどおり足場を共有しない。**
@@ -270,6 +270,27 @@ def cruise_exception_follows(stdout: str, wt: Path) -> bool:
             and cd_example_runs(nxt, wt))
 
 
+EXISTS_HEADERS = ("  worktree:", "  ブランチ:")
+
+
+def exists_headers_have_lists(res) -> bool:
+    """終了コード 3 の見出し（`  worktree:`・`  ブランチ:`）が、**どの出力先でも**
+    直後の行に一覧を伴うか（#544）。**出力先ごとに見る**——両方を足し合わせて見ると、
+    見出しが標準出力・一覧が標準エラーに割れた形でも並んで見えて、緑になる。
+    **見出しが 2 つとも出ていなければ偽**——出ていないものの下は見られない。"""
+    seen = set()
+    for stream in (res.stdout, res.stderr):
+        lines = stream.splitlines()
+        for i, line in enumerate(lines):
+            if line not in EXISTS_HEADERS:
+                continue
+            seen.add(line)
+            if i + 1 >= len(lines) or not (lines[i + 1].startswith("    ")
+                                            and lines[i + 1].strip()):
+                return False
+    return seen == set(EXISTS_HEADERS)
+
+
 def cd_example_runs(line: str, wt: Path) -> bool:
     """例外の行の `cd …` を**そのままシェルに渡して**、作った worktree に入れるか。"""
     m = re.search(r"（(cd .*?) && …）", line)
@@ -297,6 +318,9 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **「出力のどこかに在る」では見ない**——離れた行に置くと、案内だけを読んだ子が呼ぶ。
         "cruise の子の例外が案内の直後にある": cruise_exception_follows(first.stdout, wt),
         "2 回目は断る": again.returncode,
+        # **3 の見出しの下に一覧があるか、出力先ごとに見る**（#544）。
+        # **標準出力だけを読む側には、見出しだけ出て下が空に見えていた。**
+        "3 の見出しの下に一覧がある（出力先ごと）": exists_headers_have_lists(again),
         # **空白を含むパスでも、例外の行の `cd` が貼ればそのまま通るか**（#502 の `/code-review` 1 パス目）。
         # **ふつうの一時ディレクトリには空白が無い**ので、それだけでは素のまま出す変異が殺せない。
         "空白を含むパスでも cd の例が通る": _spaced_cd_example_runs(prepare, base),
@@ -442,6 +466,10 @@ MUTATIONS = {
     "cd の例を素のパスで出す": (PREPARE,
         'PATH_Q="\'$(printf \'%s\' "$PATH_ABS" | sed "s/\'/\'\\\\\\\\\'\'/g")\'"',
         'PATH_Q="$PATH_ABS"'),
+    # 守る 18（prepare）: 3 の見出しと一覧を同じ出力先に出す（#544）
+    "3 の見出しを標準出力に出す": (PREPARE,
+        'echo "  worktree:" >&2 && printf',
+        'echo "  worktree:" && printf'),
     # --- check-pr-preconditions.sh の 守る 4 行 ---
     # 守る 1: worktree にいるか
     "worktree 判定をしない": (PRECOND,
@@ -1058,6 +1086,8 @@ def main() -> int:
         check("確認の材料（ブランチ名と起点）を出力する", correct["確認の材料が出ている"])
         check("案内の直後に、cruise の子は EnterWorktree を呼ばず作ったパスを cwd にすると出す（#502）",
               correct["cruise の子の例外が案内の直後にある"])
+        check("3 で終わるとき、見出しの下に一覧がある——標準出力だけを見ても空でない（#544）",
+              correct["3 の見出しの下に一覧がある（出力先ごと）"])
         check("空白を含むパスでも、例外の行の cd の例がそのまま通る（#502）",
               correct["空白を含むパスでも cd の例が通る"])
         check("別の worktree から走らせても入れ子で生えない", correct["入れ子で生えていない"])
