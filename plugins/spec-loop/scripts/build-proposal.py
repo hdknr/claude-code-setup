@@ -37,8 +37,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **引数の誤り（名前が無い・ディレクトリ・名前の衝突・印に残せない名前）は消す前に見て 2 で止めるが、印が名指しする前の出力は消す**（#398。
   ディレクトリを渡したなら、その中の印が名指しするものも消す）。
   **spec-loop 0.25.0 までが作った出力には印が無い**ので、消してから作り直す（`references/tree.md` の移行の節）。
-  **作れなかったとき（0 以外。引数の解釈に失敗した `argparse` の 2 は出力先が決まる前なので除く）は、出力の場所に残った今回の出力ではないファイルを名指しする**（#498。消さない）——
-  出力の名前（`--out` の名前・`proposal.md`・`gantt.svg`・`spec.md`・それらの PPTX・`spec-figure-*.svg`。大文字小文字を区別しない）の
+  **作れなかったとき（0 以外。出力先が決まる前に止まった 2——引数の解釈に失敗した `argparse` の 2 と、`--out` を渡さずに根を求める途中の想定外の例外——は除く）は、出力の場所に残った今回の出力ではないファイルを名指しする**（#498。消さない）——
+  出力の名前（`--out` の名前・`proposal.md`・`gantt.svg`・`spec.md`・提案書と仕様書の PPTX・`spec-figure-<数字>.svg`。大文字小文字を区別しない）の
   ファイルのうち読める印に無いものと、読めない印（とその場所の出力の名前のファイル）。印が名指しするのに消せなかった出力は「消せない」で名指しする。
   **出力の名前でないファイル（手書きの `notes.md` など）と、作れた経路（0）で残る印に無いファイルは名指ししない。**
 - **提案書は承認の記録を持たない。** 載せるのは生成元のタグとコミットだけで、「承認済み」とは書かない。
@@ -65,6 +65,7 @@ import csv
 import importlib.util
 import io
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -651,11 +652,22 @@ def left_lines(left: list[str]) -> list[str]:
 
 
 def output_named(name: str, out_name: str) -> bool:
-    """この道具の出力の名前か（大文字小文字を区別しない）。PPTX は `--pptx` の有無に依らない——前の出力は今回の引数と関係が無い。"""
-    names = {out_name, Path(DEFAULT_OUT).name, GANTT_NAME, SPEC_NAME, SPEC_PPTX_NAME}
-    names |= {str(Path(n).with_suffix(".pptx")) for n in names if n not in ("", ".", "..")}
+    """この道具の出力の名前か（大文字小文字を区別しない）。PPTX は提案書（`--out` の名前・`proposal.md`）と仕様書のものだけで、
+    `--pptx` の有無に依らない——前の出力は今回の引数と関係が無い。図は `spec-figure-<数字>.svg` だけ。"""
+    proposals = {n for n in (out_name, Path(DEFAULT_OUT).name) if n not in ("", ".", "..")}
+    names = proposals | {str(Path(n).with_suffix(".pptx")) for n in proposals} | {GANTT_NAME, SPEC_NAME, SPEC_PPTX_NAME}
     lower = name.lower()
-    return lower in {n.lower() for n in names} or (lower.startswith(FIGURE_PREFIX) and lower.endswith(".svg"))
+    return lower in {n.lower() for n in names} or re.fullmatch(re.escape(FIGURE_PREFIX) + r"[0-9]+\.svg", lower) is not None
+
+
+def manifest_names(directory: Path) -> list[str] | None:
+    """在る印が名指しする名前。普通のファイルとして読めない印（ディレクトリ・辿れない symlink・権限）は None——読めない印として名指しする。"""
+    try:
+        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):
+            return None
+    except OSError:
+        return None
+    return owned_names(directory)
 
 
 def leftover_lines(out: Path) -> list[str]:
@@ -675,7 +687,7 @@ def leftover_lines(out: Path) -> list[str]:
         except OSError as e:
             lines.append(f"{directory}: 前の出力が残っているかを確かめられない（{e.strerror}）")
             continue
-        owned = owned_names(directory) if any(p.name == MANIFEST for p in entries) else []
+        owned = manifest_names(directory) if any(p.name == MANIFEST for p in entries) else []
         if owned is None:
             lines.append(f"{directory / MANIFEST}: 印を読めない——この場所の前の出力は消していない（この道具が作ったものか確かめられない）")
         for path in entries:

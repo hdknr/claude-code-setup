@@ -30,7 +30,7 @@
 9. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、前の出力を消し、トレースバックの 1 にしない**。読めなさの原因を
    取り違えない——git を起動できない・手書き部分を読めない・出力を書けないを別の文言で、strerror とパスを添えて出す。
    書いている途中の想定外の例外でも書きかけを残さない。`-OO`（docstring が無い）で引数なしに呼んでも想定外の例外にならない（#286）。
-10. **作れなかったとき（0 以外。argparse の 2 は出力先が決まる前なので除く）、残った前の出力を名指しし、消さない**（#498）——印に無い出力の名前のファイル
+10. **作れなかったとき（0 以外。出力先が決まる前に止まった 2——argparse・`--out` 無しで根を求める途中の想定外の例外——は除く）、残った前の出力を名指しし、消さない**（#498）——印に無い出力の名前のファイル
    （大文字小文字・PPTX・図を含む）と読めない印。経路は 1・2・3・git を起動できない（既定の出力先を含む）・引数の誤り・想定外の例外・
    上書きしない・前の出力を消せない（#440）・辿れない場所。**陽性対照は印つき**——消えて名指しされない。出力と関係の無い名前（`notes.md`）は名指ししない。
 
@@ -953,7 +953,8 @@ def locked_problems(scripts: Path) -> list[str]:
 # 作れなかったときに残った前の出力の名指し（#498）。
 # 出力の名前のファイル（大文字小文字・PPTX・図を含む）と、出力と関係の無い名前の 1 つ（名指ししない）
 LEFT_NAMED = ["proposal.md", "gantt.svg", "spec.md", "Spec.pptx", "proposal.pptx", "spec-figure-01.svg"]
-LEFT_OTHER = "notes.md"
+# 出力と関係の無い名前（名指ししない）。`gantt.pptx` は一度も出力したことが無く、図は `spec-figure-<数字>.svg` だけ（#498 の 2 パス目 P2-4）
+LEFT_OTHERS = ["notes.md", "gantt.pptx", "spec-figure-notes.svg"]
 LEFT_TEXT = "前の出力\n"
 NOT_THIS = "今回の出力ではない"
 # (名前, 試料, 出力の形, git を起動できなくするか, 印なし・読めない印のときの終了コード, 印つきのときの終了コード)
@@ -977,7 +978,7 @@ LEFT_SCENARIOS: list[tuple[str, list[tuple[str, ...]], str, bool, int, int]] = [
 def place_left(directory: Path, shape: str) -> None:
     """前の出力を置く。shape: "hand"（印なし）・"unreadable"（読めない印）・"marked"（読める印が全部を名指しする）。"""
     directory.mkdir(parents=True)
-    for name in LEFT_NAMED + [LEFT_OTHER]:
+    for name in LEFT_NAMED + LEFT_OTHERS:
         (directory / name).write_text(LEFT_TEXT, encoding="utf-8")
     if shape in ("unreadable", "marked"):
         (directory / MANIFEST).write_text("# 印\n" + "\n".join(LEFT_NAMED) + "\n", encoding="utf-8")
@@ -986,7 +987,7 @@ def place_left(directory: Path, shape: str) -> None:
 
 
 def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str | None = None) -> list[str]:
-    """作れなかったとき（0 以外。argparse の 2 は出力先が決まる前なので除く）、印に無い出力の名前のファイルと読めない印を名指しし、消さない（#498）。
+    """作れなかったとき（0 以外。出力先が決まる前に止まった 2——argparse・`--out` 無しで根を求める途中の想定外の例外——は除く）、印に無い出力の名前のファイルと読めない印を名指しし、消さない（#498）。
 
     陽性対照は印つき——消えて名指しされない。`only` を渡せば、その名前の経路（と下の消せない・辿れない場所）だけを走らせる（変異用）。
     **読めない印が読めてしまう環境（root）では判別しないので、問題として返す**——「当てられなかった」は緑ではない。
@@ -1030,10 +1031,11 @@ def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str 
             expected = marked_code if shape == "marked" else code
             if proc.returncode != expected or "Traceback" in output:
                 problems.append(f"{label}: 終了コードが {proc.returncode}（期待 {expected}）: {output[-300:]}")
-            if f"/{LEFT_OTHER}: {NOT_THIS}" in output:
-                problems.append(f"{label}: 出力の名前でない {LEFT_OTHER} を名指しする")
-            if (place / LEFT_OTHER).read_text(encoding="utf-8") != LEFT_TEXT:
-                problems.append(f"{label}: {LEFT_OTHER} が変わった")
+            for other in LEFT_OTHERS:
+                if f"/{other}: {NOT_THIS}" in output:
+                    problems.append(f"{label}: 出力の名前でない {other} を名指しする")
+                if (place / other).read_text(encoding="utf-8") != LEFT_TEXT:
+                    problems.append(f"{label}: {other} が変わった")
             if shape == "marked":
                 if NOT_THIS in output:
                     problems.append(f"{label}: 印が名指しして消した出力を名指しする: {output[-300:]}")
@@ -1068,6 +1070,18 @@ def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str 
             or f"/proposal.md: {NOT_THIS}" in output):
         problems.append(f"消せない場所: {proc.returncode} {output[-400:]}")
 
+    # 印がディレクトリ（普通のファイルとして読めない印）: 「印に無い」ではなく「印を読めない」と名指しする（#498 の 2 パス目 P2-3）
+    odd = work / "odd"
+    odd.mkdir()
+    (odd / MANIFEST).mkdir()
+    (odd / "proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(work), "--out", str(odd / "proposal.md")],
+                          capture_output=True, text=True, cwd=work)
+    output = proc.stdout + proc.stderr
+    if (proc.returncode != 2 or f"{MANIFEST}: 印を読めない" not in output or "proposal.md: 今回の出力ではない（印が読めない" not in output
+            or (odd / "proposal.md").read_text(encoding="utf-8") != LEFT_TEXT):
+        problems.append(f"印がディレクトリ: {proc.returncode} {output[-400:]}")
+
     # 辿れない場所: 残っているかを確かめられないと言い、想定外の例外にしない
     unreachable = work / "unreachable"
     unreachable.mkdir()
@@ -1097,9 +1111,14 @@ LEFTOVER_MUTATIONS: list[tuple[str, str, str, str]] = [
      "            if owned is None:\n                continue\n                lines.append(", "1 一致しない"),
     ("印に載る出力も名指しする", "            elif path.name not in owned:", "            else:", "1 一致しない"),
     ("出力の名前でないものも名指しする", " or not output_named(path.name, out.name):", ":", "1 一致しない"),
-    ("図の名前を見ない", " or (lower.startswith(FIGURE_PREFIX) and lower.endswith(\".svg\"))", "", "1 一致しない"),
-    ("PPTX の名前を見ない", "    names |= {str(Path(n).with_suffix(\".pptx\"))", "    names |= set() or {str(Path(n).with_suffix(\".md\"))",
-     "1 一致しない"),
+    ("図の名前を見ない", ' or re.fullmatch(re.escape(FIGURE_PREFIX) + r"[0-9]+\\.svg", lower) is not None', "", "1 一致しない"),
+    ("図の名前を接頭辞だけで見る", 're.fullmatch(re.escape(FIGURE_PREFIX) + r"[0-9]+\\.svg", lower) is not None',
+     '(lower.startswith(FIGURE_PREFIX) and lower.endswith(".svg"))', "1 一致しない"),
+    ("PPTX の名前を見ない", '{str(Path(n).with_suffix(".pptx")) for n in proposals}', "set()", "1 一致しない"),
+    ("PPTX を固定の名前すべてに付ける", '{str(Path(n).with_suffix(".pptx")) for n in proposals}',
+     '{str(Path(n).with_suffix(".pptx")) for n in proposals | {GANTT_NAME}}', "1 一致しない"),
+    ("ディレクトリの印を印なしと読む", "        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):\n            return None",
+     "        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):\n            return []", "1 一致しない"),
     ("大文字小文字を区別する", "    return lower in {n.lower() for n in names}", "    return name in names", "1 一致しない"),
     ("ディレクトリの出力先の中を見ない", "        directories.append(out)  # ディレクトリを渡したなら", "        pass  # ディレクトリを渡したなら",
      "引数の誤り（ディレクトリ）"),
@@ -1497,7 +1516,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES) + 8 + len(LEFT_SCENARIOS) * 3 + 2} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES) + 8 + len(LEFT_SCENARIOS) * 3 + 3} 件・変異 {len(MUTATIONS) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS)} 件")
     return 0
 
 
