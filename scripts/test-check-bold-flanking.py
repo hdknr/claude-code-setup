@@ -229,11 +229,14 @@ SAMPLES = {
     'table-pipeless-then-pipe.md': 'a\n:--:\n|--|\nfoo **x\nbar** y\n',
     'table-pipeless-lazy.md': '> a\n:--:\nfoo **x\nbar** y\n',
     'table-pipeless-indent-4.md': 'a\n    :--:\nfoo **x\nbar** y\n',
-    # 守る 23: `|` もコロンも無い `---` は、容れ物の中でタブで字下げしても表にならない（GitHub は setext の下線で、太字に組む）。
-    # コロンがあれば同じ字下げでも 1 列の表（#581 の 1 パス目の /code-review。GitHub の描画（gfm）と一致を確かめた。
-    # setext-tab の 2 本は main でも一致し、1 パス目の形では 3・4 行目（誤検出）。tab-item-colon は main では崩れ無し（見逃し））。
-    'table-pipeless-setext-tab-item.md': '- a\n  \t--\n  foo **x\n  bar** y\n',
-    'table-pipeless-setext-tab-quote.md': '> a\n>\t---\n> foo **x\n> bar** y\n',
+    # 守る 4・23: 容れ物の中でタブで字下げした `-` だけの行も、4 桁に届かなければ setext の下線で段落を終わらせる——表にも段落の続きにもしない。
+    # GitHub は `<h2>**a</h2>` と `b**` に分け、`**` は字のまま（1・3 行目）。main と 2 パス目の前（87eed09）は段落の続きとして組んで崩れ無し（見逃し）、
+    # 1 パス目の形（93bd951）は表と読んだ。setext-refused は下線で段落が終わるので、下線の前の `:--` の「開けなかった」が後ろの表に残らない
+    # （GitHub は c|d の表で 6・7 行目。87eed09 は崩れ無し）。コロンがあれば同じ字下げでも 1 列の表（tab-item-colon。main は見逃し）。
+    # どれも GitHub の描画（gfm）と一致を確かめた（#581 の 1・2 パス目の /code-review）。
+    'table-pipeless-setext-tab-item.md': '- **a\n  \t--\n  b**\n',
+    'table-pipeless-setext-tab-quote.md': '> **a\n>\t---\n> b**\n',
+    'table-pipeless-setext-refused.md': '> a | b\n> :--\n>\t--\n> c | d\n> --- | ---\n> foo **x\n> bar** y\n',
     'table-pipeless-tab-item-colon.md': '- a\n  \t:--:\n  foo **x\n  bar** y\n',
     # #525 の狭いパスで素通りした変異を殺す試料（#563）。どれも GitHub の描画（gfm）と判定が一致することを確かめた（#563 の周）。
     # 守る 7: info にバッククォートを含む ``` はフェンスではない（段落。GitHub は 2 行目の `**` を字のまま描く）。
@@ -380,8 +383,9 @@ EXPECTED = {
     'table-pipeless-then-pipe.md': ((4, 5), ()),
     'table-pipeless-lazy.md': ((), ()),
     'table-pipeless-indent-4.md': ((), ()),
-    'table-pipeless-setext-tab-item.md': ((), ()),
-    'table-pipeless-setext-tab-quote.md': ((), ()),
+    'table-pipeless-setext-tab-item.md': ((1, 3), ()),
+    'table-pipeless-setext-tab-quote.md': ((1, 3), ()),
+    'table-pipeless-setext-refused.md': ((6, 7), ()),
     'table-pipeless-tab-item-colon.md': ((3, 4), ()),
     'fence-info-backtick.md': ((2, 2), ()),
     'thematic-underscore.md': ((1, 3), ()),
@@ -447,7 +451,7 @@ MUTATIONS = {
         "        if HEADING.match(inner):",
         "        if False:"),
     "setext の下線で区切らない": (4,
-        "        if para and not lazy and SETEXT.match(inner):",
+        '        if para and not lazy and width_at(line, pos + base) < 4 and SETEXT.match(inner.lstrip(" \\t")):',
         "        if False:"),
     "リストの項で区切らない": (4,
         "        if item is not None:\n            flush()",
@@ -586,14 +590,14 @@ MUTATIONS = {
     "引用の段落の続きの区切りの行で表を開く": (23,
         "        if para and not lazy and depth == para_depth and",
         "        if para and not lazy and"),
-    # #581 の前の形——区切りの行に `|` を要る。pipeless の 4 本（見逃しに戻る）と pipeless-refused（誤検出に戻る）が殺す
+    # #581 の前の形——区切りの行に `|` を要る。pipeless の 4 本と tab-item-colon（見逃しに戻る）、pipeless-refused（誤検出に戻る）が殺す
     "区切りの行に | を要る（#581 の前の形）": (23,
-        '                and ("|" in inner or ":" in inner) and TABLE_DELIM.match(inner):',
+        "                and TABLE_DELIM.match(inner):",
         '                and "|" in inner and TABLE_DELIM.match(inner):'),
-    # #581 の 1 パス目の形——`|` もコロンも要らない。容れ物の中でタブで字下げした `---` を表の区切りにする。pipeless-setext-tab の 2 本が殺す
-    "区切りの行に | もコロンも要らない（#581 の 1 パス目の形）": (23,
-        '                and ("|" in inner or ":" in inner) and TABLE_DELIM.match(inner):',
-        "                and TABLE_DELIM.match(inner):"),
+    # #581 の前の形——setext の下線の字下げを空白でだけ数える。pipeless-setext-tab の 2 本（見逃し）と setext-refused が殺す
+    "setext の下線でタブを数えない（#581 の前の形）": (4,
+        '        if para and not lazy and width_at(line, pos + base) < 4 and SETEXT.match(inner.lstrip(" \\t")):',
+        "        if para and not lazy and SETEXT.match(inner):"),
     "セルの数を見ない": (23,
         "    return len(parts)",
         "    return 1"),

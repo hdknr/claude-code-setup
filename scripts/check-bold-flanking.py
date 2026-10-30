@@ -134,7 +134,7 @@ FENCE_OPEN = re.compile(r" {0,3}(`{3,}(?=[^`]*$)|~{3,})")
 # 行頭の `<!--` は HTML のブロックを始め、`-->` を含む行で終わる——中は Markdown として描かれない。
 COMMENT_BLOCK = re.compile(r" {0,3}<!--")
 # 表の区切りの行（`--- | ---`・`|:--|--:|`・`|` の無い `:--:`）。直前の 1 行が見出しの行になる。
-# `|` もコロンも無い `---` は表の区切りの行にしない（GitHub は setext の下線として読む。`blocks` が `|` かコロンを要る）。
+# `|` もコロンも無い `---` は、段落の直後なら先に setext の下線として読む（`blocks` の順。タブの字下げも桁で数える）。
 TABLE_DELIM = re.compile(r" {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$")
 
 ASCII_PUNCT = set(string.punctuation)
@@ -374,7 +374,8 @@ def blocks(lines: list[str]):
         if THEMATIC.match(inner):  # 区切り線（段落の直後の `---` は setext の下線——どちらも段落を終わらせる）
             flush()
             continue
-        if para and not lazy and SETEXT.match(inner):
+        if para and not lazy and width_at(line, pos + base) < 4 and SETEXT.match(inner.lstrip(" \t")):
+            # 字下げはタブを含めて桁で数える——容れ物の後ろのタブ（`>⇥---`）も 4 桁に届かなければ下線（#581）
             flush()
             continue
 
@@ -412,9 +413,8 @@ def blocks(lines: list[str]):
             out.append((lineno, [shown]))
             continue
         if para and not lazy and depth == para_depth and width_at(line, pos + base) < 4 \
-                and ("|" in inner or ":" in inner) and TABLE_DELIM.match(inner):
-            # `|` の無い区切りの行も、コロンがあれば 1 列の表を開く（`a⏎:--:`。#581）。`|` もコロンも無い `---` は表にならない
-            # ——GitHub は setext の下線として読む（容れ物の中でタブで字下げした `>⇥---` は `SETEXT` に当たらずここへ来る）
+                and TABLE_DELIM.match(inner):
+            # `|` は要らない——`a⏎:--:` は 1 列の表（#581）。`|` もコロンも無い `---` は、上で setext の下線として先に終わっている
             # 区切りの行（段落の続きでないもの）は、段落の最後の行を見出しの行にして表を開く（#562）。
             # 開けなければ、その段落ではもう開かない（GitHub と同じ）。段落の続き（lazy）と 4 桁以上字下げした
             # 区切りの形の行はここに来ない——表を試さないので、開けなかったことにならない（#580）
