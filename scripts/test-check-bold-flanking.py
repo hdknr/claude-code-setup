@@ -315,6 +315,59 @@ SAMPLES = {
     'item-nested-3.md': '- - - a **x\n      ---\n      y**\n',
     # 守る 17: 区切り線の形（`- - -`）は項を始めない——区切り線のあとの 4 つ字下げはインデントしたコード（V2-2。GitHub は崩れ無し）。
     'item-thematic-not-item.md': '  a\n- - -  \n    x** y\n',
+    # #667 の試料。どれも GitHub の描画（gfm）と一致を確かめた（#667 の周）。
+    # 守る 4: 空行は空白とタブだけの行——U+3000・NBSP・`\v`・`\f` だけの行は段落の行（GitHub は 1 つの太字。main は 1・3 行目を誤検出）。
+    'blank-ideographic.md': '**a\n\u3000\nb**\n',
+    'blank-nbsp.md': '**a\n\u00a0\nb**\n',
+    'blank-vt.md': '**a\n\x0b\nb**\n',
+    'blank-ff.md': '**a\n\x0c\nb**\n',
+    'blank-quote-ideographic.md': '> **a\n> \u3000\n> b**\n',
+    # 項の中で字下げの足りない U+3000 の行は空行として項に当たらず、段落の続き（main は 1・3 行目を誤検出）
+    'blank-item-ideographic.md': '- **a\n\u3000\n  b**\n',
+    # 段落の無いところの、字下げの無い U+3000 の行は項に当たらず、項を閉じる——後ろの 4 つ字下げはインデントしたコード
+    # （GitHub は崩れ無し。main は項の中の段落と読んで 5 行目を誤検出。上の試料はこの形を殺せない——段落が開いていれば続きになるので）
+    'blank-item-closes.md': '- a\n\n\u3000\n\n    X**「例」**Y\n',
+    # U+3000 の行は段落を始める——次の 4 つ字下げした行はインデントしたコードでなく続き（main は 3 行目を誤検出）
+    'blank-ideographic-then-indent.md': '\u3000\n    **x\ny**\n',
+    # 対照: 空白とタブだけの行・CRLF の空行は段落を切る（GitHub は段落を分け、`**` が字のまま）
+    'blank-space-tab.md': '**a\n \t \nb**\n',
+    'blank-crlf.md': '**a\r\n\r\nb**\r\n',
+    # 中身が U+3000・NBSP だけの項は空の項でなく、段落を割り込む（GitHub は段落と項。main は見逃し）
+    'item-ideographic-interrupts.md': 'a **x\n- \u3000\ny** z\n',
+    'item-nbsp-ordered-interrupts.md': 'a **x\n1. \u00a0\ny** z\n',
+    # 表の見出しの行の U+3000 はセルの中身——1 列の表（GitHub は段落 `a **x` と表。`**` は字のまま）
+    'table-header-ideographic.md': 'a **x\n\u3000\n|-|\ny** z\n',
+    # 守る 17: 割り込める番号は値で比べる——`01.` `001)` は割り込み、`00.` `02.` は割り込まない（main は `01.` `001)` を見逃し）
+    'ordered-01-interrupts.md': 'a **x\n01. y** z\n',
+    'ordered-001-paren-interrupts.md': 'a **x\n001) y** z\n',
+    'ordered-00-continues.md': 'a **x\n00. y** z\n',
+    'ordered-02-continues.md': 'a **x\n02. y** z\n',
+    # 1 パス目の関門（#667 の周）の指摘を守る試料。どれも GitHub の描画（gfm）と一致を確かめた。
+    # 守る 4: 表の行末の `\v`・`\f` は空白として剥がす（GitHub は 1 列・2 列の表。1 パス目の版は見逃し、main は一致）。
+    # 行末の U+3000・NBSP と行の頭の `\v` はセルの中身で、表にならない（GitHub は 1 つの太字。main は 1・4 行目を誤検出）
+    'table-row-vt-end.md': 'a **x\n|a|\x0b\n|-|\ny** z\n',
+    'table-row-ff-end.md': 'a **x\n|a|b|\x0c\n|-|-|\ny** z\n',
+    'table-row-vt-lead.md': 'a **x\n\x0b|a|\n|-|\ny** z\n',
+    'table-row-ideographic-end.md': 'a **x\n|a|\u3000\n|-|\ny** z\n',
+    # 2 パス目の関門（#667 の周）の指摘を守る試料。どれも GitHub の描画（gfm）と一致を確かめた。
+    # 守る 4: `\v`・`\f` だけの見出しの行は 1 つのセル——表を開く（GitHub は段落と 1 列の表。2 パス目の版は見逃し、main は一致）。
+    # `|\v` は表にならない（GitHub は 1 つの太字。1 パス目の版は (1, 4) の誤検出）
+    'table-header-vt.md': 'a **x\n\x0b\n|-|\ny** z\n',
+    'table-header-ff-spaced.md': 'a **x\n \x0c \n|-|\ny** z\n',
+    'table-header-pipe-vt.md': 'a **x\n|\x0b\n|-|\ny** z\n',
+    # 守る 4: 容れ物の印の直後の U+3000 も段落を始める——次の 4 つ字下げした行は続き（GitHub は引用の中の 1 つの太字。main は 3 行目を誤検出）
+    'quote-ideographic-then-indent.md': '> \u3000\n    **x\ny**\n',
+    # 守る 17: 番号は ASCII の数字だけ——全角の `１.`・アラビア・インドの `١.` は項でない（GitHub は 1 つの太字。1 パス目の版は誤検出）
+    'ordered-fullwidth-continues.md': 'a **x\n\uff11. y** z\n',
+    'ordered-arabic-indic-continues.md': 'a **x\n\u0661. y** z\n',
+    # #648 の狭いパス NP-1〜3（要確認 #661 で、後の周で足すと決めた）。検査の答えは main から GitHub と同じで、殺すのは変異。
+    # 守る 16: 3 段の項の中身の桁（`- - a` の内側は 4 桁）——1 桁足りずに積むと `===` を下線と読む（GitHub は 1 つの太字）
+    'item-nested-setext-cont.md': '- - a **x\n   ===\n   y**\n',
+    # 守る 17: `* * *` も区切り線で、項を始めない——区切り線のあとの 4 つ字下げはインデントしたコード（GitHub は崩れ無し）
+    'item-thematic-star.md': '  a\n* * *  \n    x** y\n',
+    # 守る 17: 容れ物を開いた直後の区切り線も項を始めない（引用の直後・項の直後。GitHub はどちらも区切り線とインデントしたコード）
+    'quote-thematic-after-open.md': 'a\n> - - -\n>     x** y\n',
+    'item-thematic-after-open.md': 'a\n1. * * *\n       x** y\n',
     # エラーの抜粋（#564）——どの行も、抜粋の窓（`**` の前 6 字・後ろ 8 字）に伏せる範囲（コードスパン・コメントの中身）が入る。
     # frontmatter の後ろ・段落・引用（窓が行頭の `>` に届く）・コメント・リストの項・見出し・表の見出しの行と表の行・行をまたぐ段落。
     # 抜粋そのものは EXCERPTS で見る。
@@ -489,6 +542,37 @@ EXPECTED = {
     'quote-blank-closes.md': ((), ()),
     'item-nested-3.md': ((1, 3), ()),
     'item-thematic-not-item.md': ((), ()),
+    'blank-ideographic.md': ((), ()),
+    'blank-nbsp.md': ((), ()),
+    'blank-vt.md': ((), ()),
+    'blank-ff.md': ((), ()),
+    'blank-quote-ideographic.md': ((), ()),
+    'blank-item-ideographic.md': ((), ()),
+    'blank-item-closes.md': ((), ()),
+    'blank-ideographic-then-indent.md': ((), ()),
+    'blank-space-tab.md': ((1, 3), ()),
+    'blank-crlf.md': ((1, 3), ()),
+    'item-ideographic-interrupts.md': ((1, 3), ()),
+    'item-nbsp-ordered-interrupts.md': ((1, 3), ()),
+    'table-header-ideographic.md': ((1, 4), ()),
+    'ordered-01-interrupts.md': ((1, 2), ()),
+    'ordered-001-paren-interrupts.md': ((1, 2), ()),
+    'ordered-00-continues.md': ((), ()),
+    'ordered-02-continues.md': ((), ()),
+    'table-row-vt-end.md': ((1, 4), ()),
+    'table-row-ff-end.md': ((1, 4), ()),
+    'table-row-vt-lead.md': ((), ()),
+    'table-row-ideographic-end.md': ((), ()),
+    'table-header-vt.md': ((1, 4), ()),
+    'table-header-ff-spaced.md': ((1, 4), ()),
+    'table-header-pipe-vt.md': ((), ()),
+    'quote-ideographic-then-indent.md': ((), ()),
+    'ordered-fullwidth-continues.md': ((), ()),
+    'ordered-arabic-indic-continues.md': ((), ()),
+    'item-nested-setext-cont.md': ((), ()),
+    'item-thematic-star.md': ((), ()),
+    'quote-thematic-after-open.md': ((), ()),
+    'item-thematic-after-open.md': ((), ()),
     "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19, 21, 24), ()),
     "clean.md": ((), ()),
 }
@@ -543,7 +627,7 @@ MUTATIONS = {
         "                if index == len(found) - 1:",
         "                if False:"),
     "空行で区切らない": (4,
-        "        if not text[at:].strip():\n            flush()",
+        "        if is_blank(text[at:]):\n            flush()",
         "        if False:\n            flush()"),
     "見出しで区切らない": (4,
         "        if HEADING.match(inner):",
@@ -615,11 +699,11 @@ MUTATIONS = {
         "        if maybe_lazy and not new and not any(r.match(inner) for r in starts):",
         "        if maybe_lazy and not new:"),
     "どの項でも段落を割り込む": (17,
-        '            if para and not maybe_lazy and not new and (empty or (ordered and number != "1")):',
+        '            if para and not maybe_lazy and not new and (empty or (ordered and number != 1)):',
         "            if False:"),
     "項を閉じた印も割り込みの規則で見る": (17,
-        '            if para and not maybe_lazy and not new and (empty or (ordered and number != "1")):',
-        '            if para and not new and (empty or (ordered and number != "1")):'),
+        '            if para and not maybe_lazy and not new and (empty or (ordered and number != 1)):',
+        '            if para and not new and (empty or (ordered and number != 1)):'),
     "項の中身の桁で読まない": (17,
         "            at += container\n",
         "            at += indent_of(text[at:])\n"),
@@ -782,8 +866,8 @@ MUTATIONS = {
         "            quote = QUOTE_MARK.match(text, pos)\n",
         '            quote = None if any(c != ">" for c in stack[:matched] + new) else QUOTE_MARK.match(text, pos)\n'),
     "`*` の並びだけの行も区切りに数える（#581 の NP-3）": (26,
-        '                 if "".join(c for c in rows[next(r for r in range(len(block)) if offsets[r + 1] > pos)] if not is_space(c)) != "*" * length]',
-        "                 ]"),
+        '            if bare[row] != "*" * length:',
+        "            if True:"),
     "段落の続きでも setext の下線にする（#581 の NP-1）": (4,
         "        if maybe_lazy and not new and not any(r.match(inner) for r in starts):",
         "        if maybe_lazy and not new and not SETEXT.match(inner) and not any(r.match(inner) for r in starts):"),
@@ -801,8 +885,8 @@ MUTATIONS = {
         '    extra = lazy and row[:1] == " " and row.lstrip(" ").startswith("|")',
         "    extra = False"),
     "`*` の並びだけの行の空白を str.strip で剥がす（#623 の CR1-5）": (26,
-        "if not is_space(c)) != \"*\" * length]",
-        "if c.strip()) != \"*\" * length]"),
+        '        bare = ["".join(c for c in row if not is_space(c)) for row in joined.split("\\n")]',
+        '        bare = ["".join(c for c in row if c.strip()) for row in joined.split("\\n")]'),
     "容れ物の中のフェンスを行の頭から閉じる（#623 の CR1-2）": (16,
         '{{{fence[1]},}}[ \\t]*$", text[at:]):',
         '{{{fence[1]},}}[ \\t]*$", text):'),
@@ -819,6 +903,53 @@ MUTATIONS = {
     "抜粋の行をタブを開いた行から作る（#623 の CR1-3）": (25,
         '        shown = " " * start + line[start:]',
         '        shown = " " * pos + text[pos:]'),
+    # #667 の変異。上の SAMPLES の #667 の段の試料が殺す。
+    # 空行の判定を `str.strip` に戻す（main の形）——U+3000・NBSP・`\v`・`\f` だけの行を空行と読む。呼ぶ場所ごとに分けて壊す
+    "空行を str.strip で判定する（#667）": (4,
+        "        if is_blank(text[at:]):\n            flush()",
+        "        if not text[at:].strip():\n            flush()"),
+    "容れ物の空行を str.strip で判定する（#667）": (4,
+        "        elif not is_blank(text[at:]):",
+        "        elif text[at:].strip():"),
+    "空の項を str.strip で判定する（#667）": (4,
+        "is_blank(body), content",
+        "not body.strip(), content"),
+    "中身の無い行を str.strip で判定する（#667）": (4,
+        "        if is_blank(inner):",
+        "        if not inner.strip():"),
+    "表の行の端を str.strip で剥がす（#667）": (4,
+        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f") or row.strip(" \\t")',
+        "    text = row.strip()"),
+    # 1 パス目の版の形——行末の `\v`・`\f` を剥がさない（#667 の /code-review 1 パス目 CR1-1）
+    "表の行末の \\v \\f を剥がさない（#667 の CR1-1）": (4,
+        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f") or row.strip(" \\t")',
+        '    text = row.strip(" \\t") or row.strip(" \\t")'),
+    # 2 パス目の版の形——`\v`・`\f` だけの見出しの行を剥がしてセル 0 にする（#667 の 2 パス目 CR2-1）
+    "\\v \\f だけの見出しの行を剥がして空にする（#667 の CR2-1）": (4,
+        ' or row.strip(" \\t")\n',
+        '\n'),
+    # 容れ物の印の直後の中身だけ `str.strip` で空と読む（A1 の経路 (d)。#667 の 2 パス目 CR2-2）
+    "容れ物の印の直後の中身を str.strip で判定する（#667 の CR2-2）": (4,
+        "        if is_blank(inner):",
+        "        if is_blank(inner) or (bool(new) and not inner.strip()):"),
+    # 番号に ASCII でない数字も当てる（#667 の CR1-2）——`１.` が値 1 として段落を割り込む
+    "番号に ASCII でない数字も当てる（#667 の CR1-2）": (17,
+        "([0-9]{1,9})[.)]",
+        "(\\d{1,9})[.)]"),
+    # 割り込める番号を文字列 `"1"` と比べる（main の形）——`01.` `001)` が割り込まない
+    "割り込める番号を文字列で比べる（#667）": (17,
+        "(int(m.group(2)) if ordered else 0)",
+        '((1 if m.group(2) == "1" else 2) if ordered else 0)'),
+    # #648 の狭いパスの変異（要確認 #661 で後で直すと決めた）。Verifier が設計した形
+    "項の中身の桁を 1 桁足りずに積む（#648 の狭いパス NP-1）": (16,
+        "            at += container\n",
+        "            at += max(container - 1, 0)\n"),
+    "`* * *` を項として開く（#648 の狭いパス NP-2）": (17,
+        "            item = None if THEMATIC.match(text[pos:]) else item_of(text[pos:])",
+        '            item = None if THEMATIC.match(text[pos:]) and text[pos:].lstrip()[:1] == "-" else item_of(text[pos:])'),
+    "容れ物を開いた直後の区切り線を項として開く（#648 の狭いパス NP-3）": (17,
+        "            item = None if THEMATIC.match(text[pos:]) else item_of(text[pos:])",
+        "            item = None if THEMATIC.match(text[pos:]) and not new else item_of(text[pos:])"),
 }
 
 
