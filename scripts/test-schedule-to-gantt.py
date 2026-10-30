@@ -31,7 +31,7 @@
    パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2——名前がちょうど NAME_MAX
    （255 バイト）の出力先も（境界。#536）。
    出力先が symlink なら、リンクも先も消さない: 先を辿れない symlink（先がファイルでもディレクトリでも。#535）も、
-   辿れる先の通常のファイルを指す symlink（鎖を経由しても。#626）も、リンクと先のパス（鎖を解いた先）を名指しして 2
+   辿れる先の通常のファイルを指す symlink（鎖を経由しても。#626）も、リンクと先のパス（鎖を解いた先。辿れないときは辿れたところまで）を名指しして 2
    （表が正しくて書けないときも。先のパスの名指しは #625）。表が正しく書ける辿れる先の symlink は 0 で、先に書く（陽性対照）。
    壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）とディレクトリを指す symlink は消さずに 1。
    書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
@@ -268,7 +268,7 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         problems.append(f"出力先がディレクトリ: 終了 {code}: {output[-300:]!r}")
     # 名前の 1 つが長すぎる出力先——その名前のファイルは在りえないので「無い」。1 のまま（CR3）。
     # ちょうど 256 バイト（NAME_MAX + 1）の名前も——反対側の境界（`> NAME_MAX` を `> NAME_MAX + 1` にすると 2 になる。#625）
-    for size in (300, 256):
+    for size in (304, 256):  # 304 は今までの試料（"a" * 300 + ".svg"）
         code, output = generate(scripts, bad, root / ("a" * (size - 4) + ".svg"))
         if code != 1 or LEFT in output:
             problems.append(f"長すぎる名前（{size} バイト）の出力先: 終了 {code}: {output[-300:]!r}")
@@ -332,7 +332,7 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
             code, output = generate(scripts, source, link)
         finally:
             shut.chmod(0o755)
-        # 先のパス（鎖を解いた先）も名指しする（#625）
+        # 先のパス（辿れたところまで鎖を解いたもの）も名指しする（#625）
         if (code != 2 or f"{LEFT}{link}（リンクの先を辿れない: " not in output or extra not in output
                 or f"。先: {os.path.realpath(shut / target)}）" not in output
                 or "前に作った出力を消した" in output or "Traceback" in output
@@ -408,8 +408,9 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
     if proc.returncode != 2 or "想定外の例外で止まった（RuntimeError: boom" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"main の外へ逃げた例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
-    # 符号化できない出力先（NUL・単独のサロゲート）——その名前のファイルは在りえないので「無い」。1 のまま（#534）。
-    # CLI からは届かない（argv に NUL・単独のサロゲートは渡らない）ので、同じプロセスの中で sys.argv を差し替えて main に届かせる
+    # 符号化できない出力先（NUL・バイトに戻せない孤立サロゲート——U+DC80〜U+DCFF は除く。#591）——その名前のファイルは在りえないので
+    # 「無い」。1 のまま（#534）。CLI からは届かない（argv に NUL は渡らず、孤立サロゲートは U+DC80〜U+DCFF の形でしか渡らない）ので、
+    # 同じプロセスの中で sys.argv を差し替えて main に届かせる
     for label, name in (("NUL", "x\0.svg"), ("単独のサロゲート", "\ud800.svg")):
         inject = ("import runpy, sys\n"
                   f"sys.argv = [{script!r}, {str(bad)!r}, {str(root / name)!r}]\n"

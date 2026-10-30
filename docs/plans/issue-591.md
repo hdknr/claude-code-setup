@@ -23,7 +23,8 @@
 - `plugins/spec-loop/references/tree.md` — #625・#626 の振る舞い（「生成物の置き場所」）
 - `plugins/spec-loop/README.md` — 同上（単体で呼ぶスクリプトの節）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（5 本）。feasibility の手順 4 の symlink の 1 文
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-591.md` — この計画
 
 触らない:
@@ -107,10 +108,13 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 
 ## 関門の進捗（再開点）
 
-- 実装: 未着手
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
-- 実験: なし（まだ）
+- 実装: 済（`7a69120`）。手順 4 の割り目: 不在のため訊かず続けた
+- **1 パス目の指摘対応の起点: `7a691202e11d3914387f7c5c5119733482669941`**（1 パス目の 2 つの関門に渡した時点の HEAD）
+- Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 反証 0 件（python3.12 でスイート緑 `OK: 試料 13 件・変異 46 件`。独立した変異は設計していない——スイート 18 分のため）
+- `/code-review` 1 パス目（high）: 指摘 10 件（下の採否の表 CR1〜CR10）。直す 7 件・残課題 3 件。手順 4 への差し戻し: なし（反証は 0 件）
+- 実験（交絡）: U+DC80 の名前を書けるディレクトリ・書けないディレクトリで（macOS・3.12/3.14）——書けるディレクトリは EILSEQ、書けないディレクトリは EACCES。
+  Linux では書けるディレクトリなら書けてしまう（ext4 は 0x80 のバイトを名前に持てる）ので、試料は書けないディレクトリに置いた（交絡: 「OS が名前を拒む」と「OSError の分岐」の取り違えを潰した）。陽性対照: 同じ試料で厳密に符号化する変異は「名前が使えない」になって赤
+- 2 パス目: 未（指摘対応のあと）
 
 ## 既知の限界・決着済みの論点
 
@@ -118,3 +122,22 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 | --- | --- | --- |
 | #592 を `check-feasibility-csv.py` の `read_rows` で直す（`Unreadable` にする） | 採らなかった | Issue は schedule-to-gantt.py の文言。`read_rows` を変えると `check-feasibility-csv.py` 単体と `build-proposal.py`（並行する #550 の周）の振る舞いが変わる。schedule-to-gantt.py の中で「名前が使えないときの ValueError」だけを見分ける |
 | #591 の試料を書けるディレクトリに置く | 採らなかった | Linux（ext4）は 0x80 のバイトを名前に持てるので書けてしまい（0）、OSError の分岐を通らない。書けないディレクトリなら両 OS で OSError |
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1 `check-plan-scope.py` が `marketplace.json` を範囲の外と言う（1 行に 2 パスを書いた） | 示せる——`python3 scripts/check-plan-scope.py 6972781` が 1 | I7 | 直す（1 行 1 パスに） |
+| CR2 件数の行が無く `check-plan-counts.py` が落ちる | 示せる——`check-plan-counts.py` が ERROR | I7 | 直す（行を足す） |
+| CR3 テストのコメント（符号化できない出力先の試料）が「argv に単独のサロゲートは渡らない」と無条件に書く | 示せる——その行の文と、U+DC80 の試料（CLI から届く） | I1 | 直す |
+| CR4 README が symlink の出力先すべてを 2 と書く（壊れたリンク・ディレクトリを指すリンクは 1） | 示せる——壊れたリンクの出力先で 1（Verifier も手で当てた） | I6 | 直す |
+| CR5 feasibility の SKILL.md が同じく symlink すべてを 2 と書く | 示せる——同上 | I6（文書の経路） | 直す |
+| CR6 docstring の「鎖を解いた先」は、先を辿れないときは辿れたところまで | 示せる——`link.svg → shut/g.svg → ../far/real.svg`（shut 000）で「先: …/shut/g.svg」 | I4 | 直す（docstring とテストの記述） |
+| CR7 300 バイトの試料が 304 から 300 に変わった | 示せる——差分 | I5（「そのまま」） | 直す（304 に戻す） |
+| CR8 #592 の見分けを前もって `unusable_name` で検査するほうが単純 | 示せない（いまの経路で誤る実物が無い） | 無し | 残課題 |
+| CR9 入力のパスの NUL がそのまま標準エラーに出る（端末で名前が切れて見える） | 示せる（NUL のバイトが出る）。ただし出力先の側（#582）も同じ形 | 無し（I3 は名前・型・理由を言うこと） | 残課題 |
+| CR10 `realpath` を使わない分岐でも計算する | 示せない（性能の好み） | 無し | 残課題 |
+
+## 手順 8
+
+- この周の起票: 0 件（起票の承認は不在のため訊いていない）
