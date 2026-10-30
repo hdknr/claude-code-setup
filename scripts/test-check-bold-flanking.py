@@ -342,6 +342,16 @@ SAMPLES = {
     'ordered-001-paren-interrupts.md': 'a **x\n001) y** z\n',
     'ordered-00-continues.md': 'a **x\n00. y** z\n',
     'ordered-02-continues.md': 'a **x\n02. y** z\n',
+    # 1 パス目の関門（#667 の周）の指摘を守る試料。どれも GitHub の描画（gfm）と一致を確かめた。
+    # 守る 4: 表の行末の `\v`・`\f` は空白として剥がす（GitHub は 1 列・2 列の表。1 パス目の版は見逃し、main は一致）。
+    # 行末の U+3000・NBSP と行の頭の `\v` はセルの中身で、表にならない（GitHub は 1 つの太字。main は 1・4 行目を誤検出）
+    'table-row-vt-end.md': 'a **x\n|a|\x0b\n|-|\ny** z\n',
+    'table-row-ff-end.md': 'a **x\n|a|b|\x0c\n|-|-|\ny** z\n',
+    'table-row-vt-lead.md': 'a **x\n\x0b|a|\n|-|\ny** z\n',
+    'table-row-ideographic-end.md': 'a **x\n|a|\u3000\n|-|\ny** z\n',
+    # 守る 17: 番号は ASCII の数字だけ——全角の `１.`・アラビア・インドの `١.` は項でない（GitHub は 1 つの太字。1 パス目の版は誤検出）
+    'ordered-fullwidth-continues.md': 'a **x\n\uff11. y** z\n',
+    'ordered-arabic-indic-continues.md': 'a **x\n\u0661. y** z\n',
     # #648 の狭いパス NP-1〜3（要確認 #661 で、後の周で足すと決めた）。検査の答えは main から GitHub と同じで、殺すのは変異。
     # 守る 16: 3 段の項の中身の桁（`- - a` の内側は 4 桁）——1 桁足りずに積むと `===` を下線と読む（GitHub は 1 つの太字）
     'item-nested-setext-cont.md': '- - a **x\n   ===\n   y**\n',
@@ -541,6 +551,12 @@ EXPECTED = {
     'ordered-001-paren-interrupts.md': ((1, 2), ()),
     'ordered-00-continues.md': ((), ()),
     'ordered-02-continues.md': ((), ()),
+    'table-row-vt-end.md': ((1, 4), ()),
+    'table-row-ff-end.md': ((1, 4), ()),
+    'table-row-vt-lead.md': ((), ()),
+    'table-row-ideographic-end.md': ((), ()),
+    'ordered-fullwidth-continues.md': ((), ()),
+    'ordered-arabic-indic-continues.md': ((), ()),
     'item-nested-setext-cont.md': ((), ()),
     'item-thematic-star.md': ((), ()),
     'quote-thematic-after-open.md': ((), ()),
@@ -890,8 +906,16 @@ MUTATIONS = {
         "        if is_blank(inner):",
         "        if not inner.strip():"),
     "表の行の端を str.strip で剥がす（#667）": (4,
-        '    text = row.strip(" \\t")',
+        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f")',
         "    text = row.strip()"),
+    # 1 パス目の版の形——行末の `\v`・`\f` を剥がさない（#667 の /code-review 1 パス目 CR1-1）
+    "表の行末の \\v \\f を剥がさない（#667 の CR1-1）": (4,
+        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f")',
+        '    text = row.strip(" \\t")'),
+    # 番号に ASCII でない数字も当てる（#667 の CR1-2）——`１.` が値 1 として段落を割り込む
+    "番号に ASCII でない数字も当てる（#667 の CR1-2）": (17,
+        "([0-9]{1,9})[.)]",
+        "(\\d{1,9})[.)]"),
     # 割り込める番号を文字列 `"1"` と比べる（main の形）——`01.` `001)` が割り込まない
     "割り込める番号を文字列で比べる（#667）": (17,
         "(int(m.group(2)) if ordered else 0)",
