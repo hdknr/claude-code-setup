@@ -1111,6 +1111,8 @@ def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str 
                         problems.append(f"{label}: 今回の出力 {n} を名指しする: {output[-300:]}")
                 if "提案書を書いた" not in output:
                     problems.append(f"{label}: 書いたと言わない: {output[-300:]}")
+                if NOT_THIS not in proc.stderr or NOT_THIS in proc.stdout:  # 0 の経路の名指しは標準エラーに出す（#553。2 パス目 P2-1）
+                    problems.append(f"{label}: 0 の経路の名指しが標準エラーに出ない: stdout={proc.stdout[-200:]}")
             missing = [n for n in left if f"/{n}: {NOT_THIS}" not in output and f"/{n}: 前にこの道具が作った出力か確かめられない" not in output]
             if missing:
                 problems.append(f"{label}: 残った前の出力を名指ししない: {missing}: {output[-300:]}")
@@ -1175,6 +1177,17 @@ def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str 
                   "spec.md": named_lines(output, "spec.md")}
         if code != 2 or counts != {"Proposal.md": 1, "spec.md": 1} or (place / "Proposal.md").read_text(encoding="utf-8") != LEFT_TEXT:
             problems.append(f"綴りだけ違う項目とハードリンク: {code} {counts} {output[-400:]}")
+        # 区別する FS でだけ: 綴りだけ違う 2 つのファイル（inode が違う）を両方置く——ぶつかる `proposal.md` は「上書きしない」で、
+        # `Proposal.md` は別の項目として「今回の出力ではない」で、それぞれ 1 度（2 パス目 P2-2。区別しない FS では 2 つを置けない）
+        both = work / "spelled-both"
+        both.mkdir()
+        (both / "proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
+        (both / "Proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
+        if len(list(both.iterdir())) == 2:
+            code, output = generate(scripts, root, both / "proposal.md", env)
+            counts = {n: named_lines(output, n) for n in ("proposal.md", "Proposal.md")}
+            if code != 2 or counts != {"proposal.md": 1, "Proposal.md": 1}:
+                problems.append(f"綴りだけ違う 2 つのファイル: {code} {counts} {output[-400:]}")
 
     # 辿れない場所: 残っているかを確かめられないと言い、想定外の例外にしない
     if only in (None, "辿れない場所"):
@@ -1253,6 +1266,8 @@ def figure_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]
 LEFT_FIXED = ["消せない場所", "印がディレクトリ", "印が辿れない symlink", "綴りだけ違う項目とハードリンク", "辿れない場所", "図が増える"]
 # 大文字小文字を区別する FS では判別できない変異（区別する FS では綴りだけ違う 2 つは別の項目で、ぶつからない）
 LEFTOVER_CASE_FOLD_ONLY = {"綴りだけ違う項目を別の項目と読む"}
+# 区別しない FS では判別できない変異（綴りだけ違う 2 つのファイルを置けない。2 パス目 P2-2）
+LEFTOVER_CASE_SENSITIVE_ONLY = {"綴りだけ違う別のファイルを同じ項目と読む"}
 
 
 def left_names() -> set[str]:
@@ -1293,6 +1308,11 @@ LEFTOVER_MUTATIONS: list[tuple[str, str, str, str]] = [
     # #551 の 1 パス目 CR3・CR2: 項目ではなくファイル（inode）で見る・名前だけで見る
     ("ハードリンクを同じ項目と読む", "    if a.name == b.name:\n        return True\n    if a.name.lower() != b.name.lower():\n        return False\n",
      "    if a.name == b.name:\n        return True\n", "綴りだけ違う項目とハードリンク"),
+    ("綴りだけ違う別のファイルを同じ項目と読む", "    return (sa.st_dev, sa.st_ino) == (sb.st_dev, sb.st_ino)\n\n\ndef leftover_lines",
+     "    return True\n\n\ndef leftover_lines", "綴りだけ違う項目とハードリンク"),
+    # #553 の 2 パス目 P2-1: 0 の経路の名指しを標準出力に出す
+    ("0 の経路の名指しを標準出力に出す", "    for line in leftover_lines(out):\n        print(line, file=sys.stderr)\n    return 0",
+     "    for line in leftover_lines(out):\n        print(line)\n    return 0", "上書きしない"),
     ("綴りだけ違う項目を別の項目と読む", "    if a.name.lower() != b.name.lower():\n        return False\n", "    if True:\n        return False\n",
      "綴りだけ違う項目とハードリンク"),
     ("上書きしないと言ったファイルを渡さない", "leftover_lines(out, stop.named):", "leftover_lines(out):", "上書きしない"),
@@ -1568,7 +1588,7 @@ def copy_scripts(dest: Path) -> Path:
 # 区別する FS では飛ばし、飛ばしたことを出力に書く（緑のふりをしない）。試料そのものはどの FS でも走らせる
 CASE_FOLD_ONLY = {"綴りの違う内部の表はふつうのファイル"}
 folded_skips: list[str] = []
-folded_left: list[str] = []  # LEFTOVER_MUTATIONS のうち、大文字小文字を区別する FS で飛ばしたもの
+folded_left: list[str] = []  # LEFTOVER_MUTATIONS のうち、その FS では判別できないので飛ばしたもの
 
 
 def case_insensitive(tmp: Path) -> bool:
@@ -1706,7 +1726,7 @@ def main() -> int:
             if killer not in left_names():  # 名札の綴りの誤りを「殺した」と数えない（#550 の 1 パス目 CR1）
                 check(f"変異の名札の試料が無い: {name}", False, killer)
                 continue
-            if name in LEFTOVER_CASE_FOLD_ONLY and not fold_fs:
+            if (name in LEFTOVER_CASE_FOLD_ONLY and not fold_fs) or (name in LEFTOVER_CASE_SENSITIVE_ONLY and fold_fs):
                 folded_left.append(name)
                 continue
             count = source.count(before)
@@ -1724,7 +1744,7 @@ def main() -> int:
             print(f"  - {message}")
         return 1
     if folded_skips or folded_left:
-        print(f"飛ばした（大文字小文字を区別する FS では判別できない）: 変異 {'・'.join(folded_skips + folded_left)}")
+        print(f"飛ばした（その FS では判別できない——大文字小文字を区別する／しない）: 変異 {'・'.join(folded_skips + folded_left)}")
     print(f"OK: 試料 {len(CASES) + 8 + sum(len(left_shapes(s[5])) for s in LEFT_SCENARIOS) + len(LEFT_FIXED)} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS) - len(folded_left)} 件")
     return 0
 
