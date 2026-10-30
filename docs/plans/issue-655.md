@@ -128,7 +128,7 @@ V1-2: docstring の「守る」では 25f の行が 25d の直後（25e の前�
 - 2 パス目の指摘対応: 起点 `2a234ec0847ec2622da280bfad260e5da159df97`・終点 `01efd7141c661e5720a942ad47ed035cfce40fd2`
 - 狭いパス: 済（起点 2a234ec → 終点 01efd71。sonnet・`dev-loop:dev-loop-verifier`。169 行）。**反証 1 件（F1）**・素通りした変異 1 件（S1 = 既知の CR2-3）。採否は利用者の直接の指示（2026-10-29）で推奨により決め、確認の Issue #705 を立てた
 - 反証と差し戻し: Verifier 1 パス目 0 件・2 パス目 0 件・狭いパス 1 件（F1）。手順 4 への差し戻しなし（直したのは `/code-review` の指摘）
-- PR: #706（`Fixes #655`）。関門の結果は PR コメント。check-all 56/56（origin/main 取り込み後）。PR 側の CI: 下の行
+- PR: #706（`Fixes #655`）。関門の結果は PR コメント。check-all 56/56（origin/main 取り込み後）。PR 側の CI: 429b86f で build・check（15 分）とも pass、deploy は skip、`mergeable: MERGEABLE`。この行を足した計画だけのコミットの CI は親への報告で書く。**マージは親が決める（この周ではしない）**
 - 交絡（実験）: 変異は `pointers_in` の免除の行（変異の表の当て先ではない）と、`prose_pointers_in` では `line_start`・`same_dir.get(rel)  #`・`target = skill / rel` に当てる（#600 の交絡を避ける）。陽性対照（変異なしで 0）を併せて取った。
   **足した試料が変異を殺していることは、試料を消した版と並べて見た**（直した後のテスト。退避先）:
     - 書き手 `SKILL.md` の免除を外す: 試料あり → `owned_ok` が落ちる（赤）／`SKILL.md` の 2 行を消す → 落ちるのは名指しを外した対照だけ（`owned_ok` は通る）
