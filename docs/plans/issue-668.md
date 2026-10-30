@@ -214,3 +214,5 @@ dup-counts-ok: の経路
   **狭めた `red` は雛形を作った直後に複製するので、この競合に当たりやすくなった**——この周の変更が持ち込んだ欠陥（受入基準 I4・I7: 狭めた `red` が主張と無関係な理由で落ちる）。
   手当て: テストの読み込み時に `GIT_CONFIG_*` で `maintenance.auto=false`・`gc.auto=0` を渡す（`test-check-version-bump.py` の #253 と同じ形）。**手元では競合を再現できていない**（時間に依る）——確かめたのは、設定が子の git に効くこと（`git config --get` が false と 0）と、狭めた `red` 5 本と全体が緑のことまで。
 - この手当ては 2 パスの関門の後の変更なので、その差分だけに狭いパスと同じ形の Verifier を当てる（下に結果）。
+- 手当ての Verifier（sonnet。`git diff aabec22 4ddbcf6`）——**反証 0 件**（指示 169 行。`git status --porcelain` は前後とも空）。環境変数が子の全部の git に届くこと・既にある `GIT_CONFIG_COUNT` に足せること・主張 6 本が理由どおりに確認のままであることを確かめた。競合そのものは誰も再現していない——確かめる手段は CI の回し直しだけ。
+- `check-all.py`（`4ddbcf6`）: 56/56 本、失敗 0。PR 側の CI（`4ddbcf6`）: `check` pass（14m21s。散文の変異主張を含む）・`build` pass・`deploy` skipping、`mergeable: MERGEABLE`。
