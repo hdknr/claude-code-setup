@@ -29,6 +29,7 @@ spec-loop の `references/qa-csv.md` の「層」）。
   **git は使わない**（単独で動く）ので、コミットの綴りは正しいのに手元のフォルダだけ古い綴り（`Shared/`）が残る形でも警告する
   ——重ね合わせは index の綴りで読んで通すが、ここはディスクの綴りで読む（ディスク上で改名すれば消える）。
   見るのは版の中で表に届く綴りだけ——綴りの決まり全体（`removed.csv`・ほかのファイル）は重ね合わせの検査の仕事。
+  **一覧を読めないフォルダ（実行の権限だけ）を通って表に届くなら、綴りを確かめられないので警告して描かない**（綴りどおりでも。CLI の検査と同じく止める側）。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
 - **決定表（`decision_table`）は列を決めない**——見出しの行をそのまま表の見出しにする（列の決まりは正本リポジトリが持つ）。
   **最初の行が見出し**で、空・空白だけなら警告する（次の行を見出しに繰り上げない）。見出しより長い行があれば、
@@ -136,29 +137,38 @@ def fold(name: str) -> str:
     return unicodedata.normalize("NFC", name).casefold()
 
 
-def lookup(root: Path, *parts: str) -> tuple[Path | None, list[Path]]:
-    """`root` の下の `parts` を書いた綴りで探す（#514）。(綴りどおりに在るファイル（無ければ None）, 綴りだけ違う名前で届くファイル)。
+def lookup(root: Path, *parts: str) -> tuple[Path | None, list[Path], list[Path]]:
+    """`root` の下の `parts` を書いた綴りで探す（#514）。
+    (綴りどおりに在るファイル（無ければ None）, 綴りだけ違う名前で届くファイル, 綴りを確かめられないフォルダ)。
 
     パスを組み立てて開かない——区別しないファイルシステムでは `root / "shared" / "qa.csv"` が `Shared/qa.csv` を開く。
-    各段の名前を一覧（`os.listdir`）から、`fold` で同じになるものを全部たどる。一覧を読めない段はたどらない。
+    各段の名前を一覧（`os.listdir`）から、`fold` で同じになるものを全部たどる。**一覧を読めないフォルダ（実行の権限だけ）を
+    通して書いた綴りのパスで表に届くなら、綴りを確かめられないので読まずに返す**（CLI の `check-qa-csv.py` の `misspelled` と
+    同じく止める側。黙って描かないと、区別する FS でも綴りどおりの表が消える）。
     """
-    found = [(root, True)]
-    for part in parts:
+    found = [(root, True, ())]
+    unverified = []
+    for index, part in enumerate(parts):
         step = []
-        for directory, spelled in found:
+        for directory, spelled, _ in found:
             try:
                 entries = sorted(os.listdir(directory))
             except OSError:
+                if spelled and directory.joinpath(*parts[index:]).is_file():
+                    unverified.append(directory)
                 continue
-            step += [(directory / entry, spelled and entry == part) for entry in entries if fold(entry) == fold(part)]
+            step += [(directory / entry, spelled and entry == part, ()) for entry in entries if fold(entry) == fold(part)]
         found = step
-    files = [(path, spelled) for path, spelled in found if path.is_file()]
-    return next((path for path, spelled in files if spelled), None), [path for path, spelled in files if not spelled]
+    files = [(path, spelled) for path, spelled, _ in found if path.is_file()]
+    return (next((path for path, spelled in files if spelled), None), [path for path, spelled in files if not spelled],
+            unverified)
 
 
-def misspelled_problems(docs_dir: Path, wrong: list[Path], want: str) -> list[str]:
-    """綴りだけ違う名前で届いた表の警告（ページの注意書き）。"""
-    return [problem(f"{path.relative_to(docs_dir)}: {want} と大文字小文字・Unicode の正規化だけ違う名前なので読まない"
+def misspelled_problems(docs_dir: Path, wrong: list[Path], want: str, unverified: list[Path] = ()) -> list[str]:
+    """綴りだけ違う名前で届いた表と、綴りを確かめられないフォルダの警告（ページの注意書き）。"""
+    return [problem(f"{path.relative_to(docs_dir)}: 一覧を読めないので、{want} の綴りを確かめられず読まない"
+                    f"（区別しないファイルシステムでは綴りだけ違う名前を開けてしまう。一覧を読めるように権限を直す）")
+            for path in unverified] + [problem(f"{path.relative_to(docs_dir)}: {want} と大文字小文字・Unicode の正規化だけ違う名前なので読まない"
                     f"（区別しないファイルシステムでだけ {want} として開けてしまう。直し方は {SPELLING_MIGRATION}）")
             for path in wrong]
 
@@ -228,8 +238,8 @@ def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
 def render_qa(docs_dir: Path) -> str:
     out: list[str] = []
     for version, root in versions(docs_dir):
-        path, wrong = lookup(root, SHARED, QA_TABLE)
-        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{QA_TABLE}"):
+        path, wrong, unverified = lookup(root, SHARED, QA_TABLE)
+        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{QA_TABLE}", unverified):
             out += [warning, ""]
         if path is None:
             continue
@@ -248,8 +258,8 @@ def render_decision_table(docs_dir: Path) -> str:
     """各版の `shared/decision_table.csv` を、見出しの行どおりの表にする（#369）。"""
     out: list[str] = []
     for version, root in versions(docs_dir):
-        path, wrong = lookup(root, SHARED, DECISION_TABLE)
-        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}"):
+        path, wrong, unverified = lookup(root, SHARED, DECISION_TABLE)
+        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}", unverified):
             out += [warning, ""]
         if path is None:  # 決定表の無い版は飛ばす
             continue
@@ -286,7 +296,7 @@ def qa_numbers(docs_dir: Path) -> list[tuple[int, set[str]]]:
     綴りだけ違う名前で届く表は読まない（`lookup`。#514）——その番号は「表に無い番号」としてリンクにしない。"""
     found = []
     for version, root in versions(docs_dir):
-        path, _ = lookup(root, SHARED, QA_TABLE)
+        path, _, _ = lookup(root, SHARED, QA_TABLE)
         if path is not None:
             try:
                 # 空白を落とさない——Q&A 表のアンカーも落とさずに作るので、落とすとリンクがアンカーに当たらない（警告に回す）

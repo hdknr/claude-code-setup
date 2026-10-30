@@ -621,6 +621,20 @@ def hook_both_spellings(plugin: Path, work: Path) -> bool:
             and numbers == [(1, {"Q-001", "Q-002"})])
 
 
+def hook_unlisted(plugin: Path, work: Path) -> bool:
+    """一覧を読めない版のフォルダ（実行の権限だけ）を通して綴りどおりの表に届くなら、警告して描かない（2 パス目の P2-1）。
+    黙って描かないと、区別する FS でも綴りどおりの表が消える。CLI（`check-qa-csv.py` の `misspelled`）と同じく止める側。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/shared/qa.csv": QA_V2})
+    (docs / "v2").chmod(0o311)
+    try:
+        out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    finally:
+        (docs / "v2").chmod(0o755)
+    return (len(warnings) == 1 and "v2: 一覧を読めないので、shared/qa.csv の綴りを確かめられず読まない" in warnings[0]
+            and "## v1" in out and "{#v2-q-003}" not in out)
+
+
 def qa_numbers_of(plugin: Path, docs: Path):
     return load_hook(plugin).qa_numbers(docs)
 
@@ -908,6 +922,7 @@ CASES = {
     "綴り違いの Q&A 表は警告して描かない": hook_misspelled_qa,
     "綴り違いの決定表は警告して描かない": hook_misspelled_decision_table,
     "綴り違いの表の番号はリンクにしない": hook_links_misspelled,
+    "一覧を読めない版のフォルダの表は警告して描かない": hook_unlisted,
     "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く": hook_both_spellings,
     "重ね合わせに表示用のファイルが混ざらない": merge_ignores_pages,
 }
@@ -1128,23 +1143,24 @@ MUTATIONS: list[tuple] = [
     ("qa.md が無くても掛ける", HOOK, " or qa is None:", ":",
      "qa.md が無ければ変えない"),
     # 版の中の表を書いた綴りで探す（#514）
-    ("Q&A 表をパスを組み立てて開く", HOOK, "        path, wrong = lookup(root, SHARED, QA_TABLE)\n",
-     "        path, wrong = (root / SHARED / QA_TABLE if (root / SHARED / QA_TABLE).is_file() else None), []\n",
+    ("Q&A 表をパスを組み立てて開く", HOOK, "        path, wrong, unverified = lookup(root, SHARED, QA_TABLE)\n",
+     "        path, wrong, unverified = (root / SHARED / QA_TABLE if (root / SHARED / QA_TABLE).is_file() else None), [], []\n",
      "綴り違いの Q&A 表は警告して描かない"),
-    ("番号をパスを組み立てて読む", HOOK, "        path, _ = lookup(root, SHARED, QA_TABLE)\n",
+    ("番号をパスを組み立てて読む", HOOK, "        path, _, _ = lookup(root, SHARED, QA_TABLE)\n",
      "        path = root / SHARED / QA_TABLE if (root / SHARED / QA_TABLE).is_file() else None\n",
      "綴り違いの表の番号はリンクにしない"),
-    ("決定表をパスを組み立てて開く", HOOK, "        path, wrong = lookup(root, SHARED, DECISION_TABLE)\n",
-     "        path, wrong = (root / SHARED / DECISION_TABLE if (root / SHARED / DECISION_TABLE).is_file() else None), []\n",
+    ("決定表をパスを組み立てて開く", HOOK, "        path, wrong, unverified = lookup(root, SHARED, DECISION_TABLE)\n",
+     "        path, wrong, unverified = (root / SHARED / DECISION_TABLE if (root / SHARED / DECISION_TABLE).is_file() else None), [], []\n",
      "綴り違いの決定表は警告して描かない"),
-    ("綴り違いを警告しない", HOOK, "    return [problem(f\"{path.relative_to(docs_dir)}: {want} と",
-     "    return [] and [problem(f\"{path.relative_to(docs_dir)}: {want} と", "綴り違いの Q&A 表は警告して描かない"),
-    ("綴りが違っても綴りどおりと読む", HOOK, "(directory / entry, spelled and entry == part)", "(directory / entry, spelled)",
+    ("綴り違いを警告しない", HOOK, "            for path in wrong]", "            for path in wrong if False]", "綴り違いの Q&A 表は警告して描かない"),
+    ("綴りが違っても綴りどおりと読む", HOOK, "(directory / entry, spelled and entry == part, ())", "(directory / entry, spelled, ())",
      "綴り違いの Q&A 表は警告して描かない"),
     ("フックの綴りを大文字小文字で畳まない", HOOK, '    return unicodedata.normalize("NFC", name).casefold()',
      '    return unicodedata.normalize("NFC", name)', "綴り違いの Q&A 表は警告して描かない"),
-    ("区別する FS で綴り違いのほうを読む", HOOK, "    return next((path for path, spelled in files if spelled), None),",
-     "    return next((path for path, spelled in files), None),", "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く"),
+    ("一覧を読めないフォルダを黙って飛ばす", HOOK, "                if spelled and directory.joinpath(*parts[index:]).is_file():\n",
+     "                if False:\n", "一覧を読めない版のフォルダの表は警告して描かない"),
+    ("区別する FS で綴り違いのほうを読む", HOOK, "    return (next((path for path, spelled in files if spelled), None),",
+     "    return (next((path for path, spelled in files), None),", "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く"),
 ]
 # 片方の FS でしか前の振る舞いと見分けられない変異——区別する FS では、前の振る舞いも綴り違いを開けず黙って飛ばすので、
 # 番号を読む側の変異は見分けられない。綴りどおりと綴り違いが並ぶ試料は区別する FS でしか作れない
