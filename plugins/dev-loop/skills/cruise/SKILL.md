@@ -286,9 +286,9 @@ check-unattended-env.py --cruise             # --absent
 gh issue list --state open --search '"cruise-decision: #<親>" in:body' --limit 200 --json number,title,body --jq '.[] | select(.body | startswith("<!-- cruise-decision: #<親> -->")) | "\(.number) \(.title)"'
 ```
 
-**ラベル `要確認` では絞らない**——ラベルを付ける決まりより前に立てた確認の Issue や、付け忘れたものに付いていない（#474 では印のある 51 件のうち 20 件にしか無かった）。
+**ラベル `要確認` では絞らない**——ラベルを付ける決まりより前に立てた確認の Issue や、付け忘れたものに付いていない（ラベルができた後に立てた #649・#651・#652・#661 にも付いていない）。
 印は本文の先頭にあり、検索は印の語で絞り（`#<親>` で始まる別の番号は `startswith` が外す）、`--limit` が数えるのは当たった Issue だけである。
-**`decisions` にあって開いたものと、検索で見つかったものの両方を、1 つの一覧で渡す**——`decisions` に無かったものには「台帳に無かった」と添える。
+**`decisions` の番号は 1 件ずつ `gh issue view <番号> --json state` で開いているかを確かめ、開いたものと、検索で見つかったものの両方を、1 つの一覧で渡す**——`decisions` に無かったものには「台帳に無かった」と添える。
 **一覧に 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする
 （`../dev-loop/references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
 **親が自分で確認の Issue（題の先頭が `要確認:`）を立てるときも、題・ラベル・本文は `../dev-loop/references/absent-lines.md` の「確認の Issue の書き方」を正とする**
