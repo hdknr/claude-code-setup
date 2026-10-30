@@ -51,12 +51,14 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
   `requirements/` のファイルもそこに書かれる。だから `docs` が git の作業ツリーの中なら `git ls-files` をリポジトリの根からの綴りで
   1 回引き（`docs` のフォルダ自身の綴りがコミットと違っても引けるように）、**どの段の名前についても**（版のフォルダ・版の直下・
   置き場所より深いフォルダとファイル。#569）、
-  **FS が index の綴りの名前と作業ツリーの名前を同じ項目として開くとき（`lstat` の dev・ino が同じ）**は index の綴りを名前とする。
+  **FS が index の綴りの名前と作業ツリーの名前を同じ項目として開くとき（`lstat` の dev・ino が同じで、そのフォルダに畳むと同じになる名前が
+  ほかに無い——区別する FS で綴りだけ違う名前のハードリンクを並べると dev・ino は同じでも別の項目。#676）**は index の綴りを名前とする。
   区別する FS では 2 つは別の項目なので、作業ツリーの綴りのまま。
   index に無い名前（`git add` 前）と、git の外（`git rev-parse --is-inside-work-tree` が `true` を返さない。#572）は作業ツリーの綴りで読む。
 - **追跡しているファイルは、自分の index のパスでだけ数える**（`owners`）——index に綴りの違う 2 つ（`Sub/a.md`・`sub/b.md`、`v2/…`・`V2/…`）が在り、
   区別しない FS で 1 つのフォルダになっていても、別の綴りで追跡しているファイルを取り込まない。タグを読む `build-proposal.py` の
-  `copy_docs` はコミットの木からパスを作るので、それと揃う。**重ねた結果でフォルダの綴りだけが違うのも 1**（`collisions`。`copy_docs` と同じ判定）。
+  `copy_docs` はコミットの木からパスを作るので、それと揃う。**捨てるのは綴りだけ違う同じ項目だけ**（`claims`）——追跡しているファイルの
+  ハードリンクを別の名前で置いた管理外のファイル（#676）と、`git add` 前のファイル（#677）は数える。**重ねた結果でフォルダの綴りだけが違うのも 1**（`collisions`。`copy_docs` と同じ判定）。
   **区別しない FS に展開した `git archive` の書き出しは綴りを失う**ので、この形の比べ相手にはならない。
 - **git はリポジトリの場所を指す環境変数（`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR`）を外して呼ぶ**（`run_git`。#570）——
   フックの中ではこれらが相対パスで設定されていることがあり、引き継ぐと `docs` から見た別の場所を読む。**`GIT_INDEX_FILE` は外さない**
@@ -78,6 +80,7 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from collections import Counter
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -243,6 +246,7 @@ def owners(docs: Path, paths: set[str]) -> dict[tuple[int, int], set[str]]:
     区別しない FS では、綴りの違う 2 つのパス（`Sub/a.md`・`sub/a.md`、`v2/…`・`V2/…`）が同じファイルを開く。
     **追跡しているファイルは、自分の index のパスでだけ数える**（`walk`）——タグを読む側（`build-proposal.py` の `copy_docs`）は
     コミットの木からパスを作るので、別の綴りで追跡しているファイルを、辿っているフォルダの追跡していないファイルとして取り込まない（#569 の 2 パス目の指摘）。
+    実体の番号はハードリンクでも同じなので、この表だけでは捨てない——綴りだけ違う同じ項目かは `claims` が見る（#676）。
     """
     found: dict[tuple[int, int], set[str]] = {}
     for path in paths:
@@ -269,9 +273,11 @@ def spelled(root: Path, index: set[str] | None) -> set[str]:
     if not index:
         return entries
     result = set()
+    # 畳むと同じ名前が 2 つ並ぶのは区別する FS だけ——そこでは実体が同じ（ハードリンク）でも別の項目なので寄せない（#676）
+    folded = Counter(fold(name) for name in entries)
     for name in entries:
         # 自分自身も含む——index に綴りの違う 2 つが在り、区別しない FS で 1 つのフォルダになっていれば、両方の綴りが名前になる
-        same = {m for m in index if fold(m) == fold(name) and same_entry(root / m, root / name)}
+        same = {m for m in index if fold(m) == fold(name) and folded[fold(name)] == 1 and same_entry(root / m, root / name)}
         result |= same or {name}
     return result
 
@@ -356,7 +362,7 @@ def walk(root: Path, directory: Path, files: dict[str, Path], problems: list[str
          owned: dict[tuple[int, int], set[str]] | None = None) -> None:
     """読めないディレクトリを黙って飛ばさない（`Path.rglob` は飛ばす。`names` が `Unreadable` を投げる）。
     `prefix` は `docs` からのこのディレクトリの名前（index の綴り）。`owned` は `owners` の表——追跡しているファイルは、
-    自分の index のパス（`prefix` と名前）でだけ数える。"""
+    自分の index のパス（`prefix` と名前）でだけ数える（綴りだけ違う同じ項目で追跡しているものを捨てる。`claims`）。"""
     for name in sorted(spelled(directory, None if index is None else index.get(prefix, set()))):
         if name.startswith("."):
             continue
@@ -372,13 +378,38 @@ def walk(root: Path, directory: Path, files: dict[str, Path], problems: list[str
 
 
 def claims(owned: dict[tuple[int, int], set[str]], path: Path, relative: str) -> bool:
-    """`path` のファイルを `relative`（`docs` からの index の綴り）として数えてよいか——追跡していないか、そのパスで追跡している。"""
+    """`path` のファイルを `relative`（`docs` からの index の綴り）として数えてよいか。
+
+    捨てるのは、**同じ実体を、綴りだけ違う（`fold` が同じ）パスで追跡していて、FS が 2 つを同じ項目として開く**ときだけ
+    ——区別しない FS で 1 つになったフォルダを別の綴りで辿った形（#569 の 2 パス目の指摘）。**ハードリンクは実体が同じでも
+    別の項目**なので数える（#676）——名前が違う別名・区別する FS で別のフォルダにある別名・同じフォルダで綴りだけ違う名前の別名。
+    """
     try:
         st = os.lstat(path)
     except OSError:
         return True
     paths = owned.get((st.st_dev, st.st_ino))
-    return paths is None or relative in paths
+    if paths is None:
+        return True  # 追跡していない（git に足す前のファイル。#677）
+    if relative in paths:
+        return True
+    docs = path.parents[relative.count("/")]
+    return not any(fold(other) == fold(relative) and same_item(docs / other, path) for other in paths)
+
+
+def same_item(a: Path, b: Path) -> bool:
+    """綴りだけ違う 2 つのパスを、FS が同じ項目（ディレクトリの同じ 1 項目）として開くか。
+
+    親のフォルダが同じ項目で、その中に名前を畳むと同じになる項目が 1 つしか無ければ同じ——区別しない FS では 1 つ、
+    区別する FS で綴りだけ違う名前のハードリンクを並べれば 2 つ。読めなければ別の項目と読む（数える側に倒す）。
+    """
+    if not same_entry(a.parent, b.parent):
+        return False
+    try:
+        listed = os.listdir(b.parent)
+    except OSError:
+        return False
+    return sum(fold(name) == fold(b.name) for name in listed) == 1
 
 
 def read_qa(path: Path, problems: list[str]) -> list[dict[str, str]]:
