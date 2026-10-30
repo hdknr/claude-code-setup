@@ -357,7 +357,7 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     before = snapshot(gf)
     # todo でない行（5・9）・別のまとめの行（3）・1 件だけ（代表を 2 度）・同じ番号 2 度
     o["group 拒む"] = tuple(run(mod, ["group", "gr", *a], root)[0]
-                           for a in (["5", "9"], ["4", "3"], ["4", "4"], ["4", "6", "6"], ["4", "6", "4"]))
+                           for a in (["5", "9"], ["4", "3"], ["4", "4"], ["4", "6", "6"], ["4", "6", "4"], ["4"]))
     o["group 拒んだ後も同じ"] = snapshot(gf) == before
     o["next(まとめ)"] = run(mod, ["next", "gr"], root)[1].splitlines()
     o["group 一部が依存待ち"] = run(mod, ["group", "gr", "7", "8"], root)[0]
@@ -365,6 +365,13 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["まとめの set"] = run(mod, ["set", "gr", "2", "state=impl", "branch=b", "pr=#9", "worktree=/w", "agent=a", "base=s"],
                            root)[0]
     run(mod, ["set", "gr", "3", "note=三だけ", "title=三"], root)
+    # 抜く前に、代表に書いた周の在り処が #3 にも入ったかを見る（抜く形は値を消すので、抜いた後では見えない）
+    try:
+        o["まとめの値(抜く前)"] = [(i["number"], i["state"], i["branch"], i["pr"], i["worktree"], i["agent"], i["base"],
+                                  i["note"], i["title"])
+                                 for i in json.loads(gf.read_text(encoding="utf-8"))["issues"] if i["number"] in (2, 3)]
+    except (OSError, ValueError, KeyError):
+        o["まとめの値(抜く前)"] = None
     before = snapshot(gf)
     o["代表を抜く"] = run(mod, ["set", "gr", "2", "group="], root)[0]
     o["set group=非空"] = run(mod, ["set", "gr", "6", "group=7"], root)[0]
@@ -387,9 +394,13 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         run(mod, ["add", "gc", *args], root)
     o["まとめの循環"] = run(mod, ["group", "gc", "10", "12"], root)[0]
     run(mod, ["group", "gc", "13", "14"], root)
-    # まとめの行への set deps= で同じ形を作る（13 ← 11 は 11 → 10 で、まとめ 13・14 とは循環しない——対照）
-    o["まとめの循環(set)"] = (run(mod, ["set", "gc", "11", "deps=14"], root)[0],
-                            run(mod, ["set", "gc", "13", "deps=11"], root)[0])
+    # まとめの行への set deps= で作る循環。**行ごとには循環しない形にする**——20・21 をまとめ、22 → 21、20 → 22。
+    # 行ごとには 20 → 22 → 21 で閉じないが、まとめ（20・21）→ 22 → まとめ で閉じる。22 → 21 は対照（通る）
+    for args in (["20"], ["21"], ["22"]):
+        run(mod, ["add", "gc", *args], root)
+    run(mod, ["group", "gc", "20", "21"], root)
+    o["まとめの循環(set)"] = (run(mod, ["set", "gc", "22", "deps=21"], root)[0],
+                            run(mod, ["set", "gc", "20", "deps=22"], root)[0])
     run(mod, ["set", "gr", "1", "state=merged"], root)
     o["next(まとめが着手できる)"] = run(mod, ["next", "gr"], root)[1].splitlines()
     r = str(run(mod, ["show", "gr"], root)[1])
@@ -675,8 +686,8 @@ def main() -> int:
 
         print("\nまとめ（L15・#641）")
         check("group が作れる", o["group 作る"] == (0, "まとめ #2: #2, #3\n"))
-        check("todo でない行・別のまとめの行・代表を 2 度・同じ番号 2 度・代表を後ろにもう 1 度の group は 3",
-              o["group 拒む"] == (3, 3, 3, 3, 3))
+        check("todo でない行・別のまとめの行・代表を 2 度・同じ番号 2 度・代表を後ろにもう 1 度の group は 3、代表だけは 2",
+              o["group 拒む"] == (3, 3, 3, 3, 3, 2))
         check("拒んだ group のあとも台帳が 1 バイトも変わらない", o["group 拒んだ後も同じ"])
         check("next はまとめを 1 行（代表が先）で出し、中の依存（3 → 2）は済んだと読む",
               o["next(まとめ)"] == ["1", "2 3", "4", "6", "7"])
@@ -693,6 +704,9 @@ def main() -> int:
                                 (6, "todo", "", "", "", "", "", "", "", ""), (7, "todo", "7", "", "", "", "", "", "", ""),
                                 (8, "todo", "7", "", "", "", "", "", "", "")])
         check("まとめを 1 つと数えた循環は group で 3", o["まとめの循環"] == 3)
+        check("代表に書いた周の在り処（6 鍵）はまとめの全行に、note・title はその行だけ（抜く前）",
+              o["まとめの値(抜く前)"] == [(2, "impl", "b", "#9", "/w", "a", "s", "", ""),
+                                       (3, "impl", "b", "#9", "/w", "a", "s", "三だけ", "三")])
         check("まとめの行への set deps= で作る循環は 3、循環しない set deps= は通る", o["まとめの循環(set)"] == (0, 3))
         check("show がまとめの列とまとめの行を出す", o["まとめの show"] == (True, True, True))
         check("依存がそろえばまとめが着手できる（next・show）",
