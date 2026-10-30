@@ -281,6 +281,11 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                         ("uops", {"user_ops": {"commands": "gh x", "source": "s", "updated": ""}}),
                         ("usrc", {"user_ops": {"commands": ["gh x"], "source": " ", "updated": ""}}),
                         ("udup", {"user_ops": {"commands": ["gh x", "gh x"], "source": "s", "updated": ""}}),
+                        # まとめ（#641）: group が番号でない・代表が自分のまとめに入っていない・状態がそろっていない
+                        ("gnum", {"issues": [{**entry(1, []), "group": "x"}]}),
+                        ("ghead", {"issues": [{**entry(1, []), "group": "2"}, {**entry(2, []), "group": ""}]}),
+                        ("gstate", {"issues": [{**entry(1, []), "group": "1"},
+                                               {**entry(2, []), "state": "impl", "group": "1"}]}),
                         ("lold", {})):
         data = {"format": 1, "name": name, "issues": [entry(1, [])], **extra}
         (plans / f"cruise-{name}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -338,6 +343,40 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         o["user-ops の値"] = None
     run(mod, ["set", "uo", "1", "state=merged"], root)
     o["next(操作が済んだ)"] = run(mod, ["next", "uo"], root)[1].split()
+
+    # L15（#641）: まとめ。2・3 は中に依存（3 → 2）のあるまとめ、7・8 は 8 だけが着手できない（8 → 1）まとめ
+    run(mod, ["init", "gr"], root)
+    for args in (["1"], ["2"], ["3", "--deps", "2"], ["4"], ["5"], ["6"], ["7"], ["8", "--deps", "1"]):
+        run(mod, ["add", "gr", *args], root)
+    gf = plans / "cruise-gr.json"
+    run(mod, ["set", "gr", "5", "state=impl"], root)
+    o["group 作る"] = run(mod, ["group", "gr", "2", "3"], root)[:2]
+    before = snapshot(gf)
+    # todo でない行（5）・別のまとめの行（3）・1 件だけ・同じ番号 2 度
+    o["group 拒む"] = tuple(run(mod, ["group", "gr", *a], root)[0] for a in (["4", "5"], ["4", "3"], ["4"], ["4", "6", "6"]))
+    o["group 拒んだ後も同じ"] = snapshot(gf) == before
+    o["next(まとめ)"] = run(mod, ["next", "gr"], root)[1].splitlines()
+    o["group 一部が依存待ち"] = run(mod, ["group", "gr", "7", "8"], root)[0]
+    o["next(一部が依存待ちのまとめ)"] = run(mod, ["next", "gr"], root)[1].splitlines()
+    o["まとめの set"] = run(mod, ["set", "gr", "2", "state=impl", "branch=b"], root)[0]
+    run(mod, ["set", "gr", "3", "note=三だけ"], root)
+    before = snapshot(gf)
+    o["代表を抜く"] = run(mod, ["set", "gr", "2", "group="], root)[0]
+    o["set group=非空"] = run(mod, ["set", "gr", "6", "group=7"], root)[0]
+    o["代表を抜く・非空 の後も同じ"] = snapshot(gf) == before
+    o["1 件を抜く"] = run(mod, ["set", "gr", "3", "group=", "state=todo", "note=落ちた"], root)[0]
+    try:
+        o["まとめの値"] = [(i["number"], i["state"], i.get("group"), i["branch"], i["note"])
+                          for i in json.loads(gf.read_text(encoding="utf-8"))["issues"] if i["number"] in (2, 3, 6, 7, 8)]
+    except (OSError, ValueError, KeyError):
+        o["まとめの値"] = None
+    r = str(run(mod, ["show", "gr"], root)[1])
+    o["まとめの show"] = ("| まとめ |" in r, "まとめ: #2（impl）= #2; #7（todo）= #7, #8" in r,
+                         "| #8 | todo | #1 |" in r and "| #7 |" in r)
+    run(mod, ["set", "gr", "1", "state=merged"], root)
+    o["next(まとめが着手できる)"] = run(mod, ["next", "gr"], root)[1].splitlines()
+    r = str(run(mod, ["show", "gr"], root)[1])
+    o["まとめの show(着手できる)"] = "着手できる: #4, #6, #7（まとめ: #8）" in r
 
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
@@ -459,6 +498,30 @@ MUTATIONS = {
          '        pass')],
     "await に依存する行を next に出す": [
         ('all(state.get(d) == DONE for d in i["deps"])', 'all(state.get(d) in (DONE, "await") for d in i["deps"])')],
+    # 守る（#641）: まとめ
+    "group が todo でない行をまとめる": [
+        ('        if issue["state"] != "todo":\n            raise Refused(f"#{issue[\'number\']} は todo でない',
+         '        if False:\n            raise Refused(f"#{issue[\'number\']} は todo でない')],
+    "group が別のまとめの行を引き込む": [
+        ('        if issue.get("group", ""):\n            raise Refused(f"#{issue[\'number\']} は既に',
+         '        if False:\n            raise Refused(f"#{issue[\'number\']} は既に')],
+    "代表の抜けたまとめを通す": [
+        ('        if head not in known or find(data, head).get("group") != str(head):', '        if False:')],
+    "まとめの全行に書かない": [
+        ("    if shared:\n        for other in others:", "    if False:\n        for other in others:")],
+    "状態のそろわないまとめを通す": [
+        ('        if len({r["state"] for r in rows}) != 1:', '        if False:')],
+    "1 行だけ着手できるまとめも出す": [
+        ('        if all(r["number"] in can for r in rows):', '        if any(r["number"] in can for r in rows):')],
+    "まとめの中の依存を済んだと読まない": [
+        ('or (i.get("group", "") and group.get(d) == i["group"])', "or False")],
+    "set group= に空でない値を通す": [
+        ('        elif key == "group" and value.strip():', "        elif False:")],
+    "抜ける前のまとめに伝える": [
+        ('    issue.update(changes)\n    issue["updated"] = now()\n    # まとめ',
+         '    _g = issue.get("group", "")\n    issue.update(changes)\n    issue["updated"] = now()\n    # まとめ'),
+        ('others = [i for i in data["issues"] if i is not issue and issue.get("group", "") and i.get("group", "") == issue["group"]]',
+         'others = [i for i in data["issues"] if i is not issue and _g and i.get("group", "") == _g]')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -584,6 +647,27 @@ def main() -> int:
         check("user-ops は置き換え（渡さなければ空）・出所を残す",
               o["user-ops 置き換え"] == 0 and o["user-ops の値"] == {"commands": [], "source": "s2"})
         check("操作待ちが merged になれば依存する #2 が出る", o["next(操作が済んだ)"] == ["2", "3"])
+
+        print("\nまとめ（L15・#641）")
+        check("group が作れる", o["group 作る"] == (0, "まとめ #2: #2, #3\n"))
+        check("todo でない行・別のまとめの行・1 件だけ・同じ番号 2 度の group は 3", o["group 拒む"] == (3, 3, 3, 3))
+        check("拒んだ group のあとも台帳が 1 バイトも変わらない", o["group 拒んだ後も同じ"])
+        check("next はまとめを 1 行（代表が先）で出し、中の依存（3 → 2）は済んだと読む",
+              o["next(まとめ)"] == ["1", "2 3", "4", "6", "7"])
+        check("1 行が依存待ち（8 → 1）のまとめは出さず、着手できる 7 も個別に出さない",
+              o["group 一部が依存待ち"] == 0 and o["next(一部が依存待ちのまとめ)"] == ["1", "2 3", "4", "6"])
+        check("まとめの set は通る", o["まとめの set"] == 0)
+        check("代表を抜く（他の行が残る）・set group= に空でない値は 3（台帳は変えない）",
+              (o["代表を抜く"], o["set group=非空"]) == (3, 3) and o["代表を抜く・非空 の後も同じ"])
+        check("1 件を抜ける", o["1 件を抜く"] == 0)
+        check("周の在り処はまとめの全行に、note はその行だけ、抜けた行の state はその行だけ",
+              o["まとめの値"] == [(2, "impl", "2", "b", ""), (3, "todo", "", "b", "落ちた"),
+                                (6, "todo", "", "", ""), (7, "todo", "7", "", ""), (8, "todo", "7", "", "")])
+        check("show がまとめの列とまとめの行を出す", o["まとめの show"] == (True, True, True))
+        check("依存がそろえばまとめが着手できる（next・show）",
+              o["next(まとめが着手できる)"] == ["4", "6", "7 8"] and o["まとめの show(着手できる)"])
+        for name in ("gnum", "ghead", "gstate"):
+            check(f"手で崩したまとめ（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
 
         print("\n名前（L8）・git の外（L9）")
         check("../x・a/b・.x・x/../../../escaped は 2",
