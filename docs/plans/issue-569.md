@@ -60,7 +60,10 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 起点: `eef9331`（origin/main）
 - base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）を解決した `eef93311c540b522c2df260b88a2f86bff804277`（1 パス目まで）
 - 載せ替え: 1 パス目のあと origin/main（`51c1902`。#653 で spec-loop 0.39.0）を取り込んだ（merge `6741b74`。衝突なし——両側が 0.39.0 で版の行が黙って揃った）。
-  **式を当て直した base: `51c19026d70b3668e1e2e4dbeabbf1451eeb21e7`**（`git merge-base origin/main HEAD`。2 パス目に渡す）。版は 0.40.0 に上げ直した
+  **式を当て直した base: `51c19026d70b3668e1e2e4dbeabbf1451eeb21e7`**（`git merge-base origin/main HEAD`。2 回目の取り込みで置き換わった）。版は 0.40.0 に上げ直した
+- 載せ替え 2: 1 パス目の指摘対応（`357d557`）のあと origin/main（#650 で spec-loop 0.40.0・`build-proposal.py` と `test-build-proposal.py` の変更）を取り込んだ
+  （merge `9d40d2e`。衝突なし。この周の `test-build-proposal.py` の試料の変更は残った——3 箇所）。版は 0.41.0 に上げ直した。
+  **式を当て直した base: `0b58732751d577596891d3766f63c119be046700`**（`git merge-base origin/main HEAD`。2 パス目に渡す）
 
 ## verify の受入基準
 
@@ -136,8 +139,12 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
   - Verifier 1 パス目（sonnet・`dev-loop:dev-loop-verifier`。読んだ行数 181 = `wc -l` と一致）: 反証 1 件（R1）・未確認 3 件（F の大半・D・外での変異の当て直し）。
     **Verifier は頼まれていない `check-all.py` を走らせ、終わらないまま残した**（pid 78938・79009。`pkill` は権限で拒否、親の `TaskStop` も所有者が違うので不可——親に報告する）。
     F は親の `check-all.py` で確かめた（下）。
+    （その後、Verifier の残したジョブは自分で終わった——Verifier の完了通知。）
   - 指摘対応: CR1-2・CR1-3・CR1-6・R1 を直した（下の表）。実装中の取り込みで版を 0.40.0 に上げ直した。差分は 0 行でないので 2 パス目を回す。
   - 割り目（手順 6）: 不在のため訊かず続けた。
+- 歯止め（取り込みと 0.41.0 のあと、`9d40d2e` ＋版の変更）: `check-all.py` 56 本のうち 55 本が緑。落ちたのは `check-mutation-claims.py` だけで、
+  `scripts/test-worktree-scripts.py:417` の主張が負荷で 300 秒で打ち切られた「当てられなかった」（他の 27 件は確認）。`--jobs 1` で回し直しても同じ
+  （1 パス目の前に実測）。この周はこのファイルを触らない——PR の CI で見る。
 - 中断: 利用上限で 1 度止まり、親が再開（2026-10-30）。再開時に worktree の状態（未コミット 3 件）を確かめて続けた。
 - 実装中に変えた設計: #570 で `GIT_INDEX_FILE` を外す案は**やめた**——git は相対の `GIT_INDEX_FILE` を作業ツリーの根から解決する（実測。
   git 2.54。根の `idx` が壊れていれば `docs` から呼んでも失敗し、`docs/idx` が壊れていても根の `idx` を読んだ）ので、外すとフックの
