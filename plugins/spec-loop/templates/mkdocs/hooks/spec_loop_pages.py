@@ -21,6 +21,14 @@ spec-loop の `references/qa-csv.md` の「層」）。
   **フックを新しくする手順は spec-loop の `references/tree.md` の「Q&A 表を移す」**。
 - セルの文字は HTML と Markdown の記号をエスケープし、改行は `<br>` にする（表を壊さない）。
   **CSV の文字は表のセルにだけ置く**——段落や箇条書きに置くと、行頭の `!!! `・字下げ・`1. ` がブロックの記法に読まれる。
+- **版の中の表は、書いた綴りのとおりに探す**（`lookup`。#514）——`root / "shared" / "qa.csv"` を開くと、大文字小文字を区別しない
+  ファイルシステム（macOS の既定）でだけ `docs/v2/Shared/qa.csv` を開いてしまい、重ね合わせ（spec-loop の `merge-versions.py`）が
+  断る綴りをここだけが描く。**綴りだけ違う名前（大文字小文字・Unicode の正規化）で表に届くなら、警告して読まない**——区別する
+  ファイルシステム（GitHub Pages の Linux）では前は黙って描かなかったので、どちらでも同じ警告にした。直し方は spec-loop の
+  `references/versions.md` の「綴りの誤りの移行」。**区別するファイルシステムで綴りどおりの表も並ぶなら、そちらは描く。**
+  **git は使わない**（単独で動く）ので、コミットの綴りは正しいのに手元のフォルダだけ古い綴り（`Shared/`）が残る形でも警告する
+  ——重ね合わせは index の綴りで読んで通すが、ここはディスクの綴りで読む（ディスク上で改名すれば消える）。
+  見るのは版の中で表に届く綴りだけ——綴りの決まり全体（`removed.csv`・ほかのファイル）は重ね合わせの検査の仕事。
 - 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
 - **決定表（`decision_table`）は列を決めない**——見出しの行をそのまま表の見出しにする（列の決まりは正本リポジトリが持つ）。
   **最初の行が見出し**で、空・空白だけなら警告する（次の行を見出しに繰り上げない）。見出しより長い行があれば、
@@ -54,7 +62,9 @@ from __future__ import annotations
 import csv
 import html
 import logging
+import os
 import re
+import unicodedata
 from pathlib import Path
 
 log = logging.getLogger("mkdocs.hooks.spec_loop_pages")
@@ -72,7 +82,10 @@ QA_MIGRATION = "spec-loop の references/tree.md の「Q&A 表を移す」"
 QA_OPTION_SEPARATOR = " / "
 
 QA_PAGE = "qa.md"
+SHARED = "shared"
+QA_TABLE = "qa.csv"
 DECISION_TABLE = "decision_table.csv"
+SPELLING_MIGRATION = "spec-loop の references/versions.md の「綴りの誤りの移行」"
 # 素の本文の URL（#341）。番号のリンク化はこの中を変えない
 URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"']|&(?:lt|gt|quot|#39|#x27);|$)")
 # URL を終える全角の文字（丸括弧は対で数えるので url_end が見る）
@@ -115,6 +128,39 @@ def text(value: str) -> str:
 def anchor(version: int, number: str) -> str:
     """見出しの `{#…}` とリンクの `(#…)` に置く名前。使えない文字は `-` にする（空白・`}` で属性が割れないように）。"""
     return f"v{version}-" + ANCHOR_UNSAFE.sub("-", number.lower())
+
+
+def fold(name: str) -> str:
+    """大文字小文字・Unicode の正規化を畳む——spec-loop の `merge-versions.py` の `fold` の写し（フックは単独で動くので読み込まない。
+    写しがずれていないかは、spec-loop のリポジトリの `scripts/test-init-mkdocs.py` が試料で突き合わせる）。"""
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def lookup(root: Path, *parts: str) -> tuple[Path | None, list[Path]]:
+    """`root` の下の `parts` を書いた綴りで探す（#514）。(綴りどおりに在るファイル（無ければ None）, 綴りだけ違う名前で届くファイル)。
+
+    パスを組み立てて開かない——区別しないファイルシステムでは `root / "shared" / "qa.csv"` が `Shared/qa.csv` を開く。
+    各段の名前を一覧（`os.listdir`）から、`fold` で同じになるものを全部たどる。一覧を読めない段はたどらない。
+    """
+    found = [(root, True)]
+    for part in parts:
+        step = []
+        for directory, spelled in found:
+            try:
+                entries = sorted(os.listdir(directory))
+            except OSError:
+                continue
+            step += [(directory / entry, spelled and entry == part) for entry in entries if fold(entry) == fold(part)]
+        found = step
+    files = [(path, spelled) for path, spelled in found if path.is_file()]
+    return next((path for path, spelled in files if spelled), None), [path for path, spelled in files if not spelled]
+
+
+def misspelled_problems(docs_dir: Path, wrong: list[Path], want: str) -> list[str]:
+    """綴りだけ違う名前で届いた表の警告（ページの注意書き）。"""
+    return [problem(f"{path.relative_to(docs_dir)}: {want} と大文字小文字・Unicode の正規化だけ違う名前なので読まない"
+                    f"（区別しないファイルシステムでだけ {want} として開けてしまう。直し方は {SPELLING_MIGRATION}）")
+            for path in wrong]
 
 
 def versions(docs_dir: Path) -> list[tuple[int, Path]]:
@@ -182,8 +228,10 @@ def qa_section(version: int, rows: list[dict[str, str]]) -> list[str]:
 def render_qa(docs_dir: Path) -> str:
     out: list[str] = []
     for version, root in versions(docs_dir):
-        path = root / "shared" / "qa.csv"
-        if not path.is_file():
+        path, wrong = lookup(root, SHARED, QA_TABLE)
+        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{QA_TABLE}"):
+            out += [warning, ""]
+        if path is None:
             continue
         try:
             rows = read_qa(path)
@@ -200,8 +248,10 @@ def render_decision_table(docs_dir: Path) -> str:
     """各版の `shared/decision_table.csv` を、見出しの行どおりの表にする（#369）。"""
     out: list[str] = []
     for version, root in versions(docs_dir):
-        path = root / "shared" / DECISION_TABLE
-        if not path.is_file():  # 決定表の無い版は飛ばす
+        path, wrong = lookup(root, SHARED, DECISION_TABLE)
+        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}"):
+            out += [warning, ""]
+        if path is None:  # 決定表の無い版は飛ばす
             continue
         try:
             with path.open(newline="", encoding="utf-8-sig") as f:
@@ -232,11 +282,12 @@ RENDERERS = {
 
 
 def qa_numbers(docs_dir: Path) -> list[tuple[int, set[str]]]:
-    """版ごとの Q&A 表の番号。読めない表は空（警告は Q&A 表のページを描くときに出る）。"""
+    """版ごとの Q&A 表の番号。読めない表は空（警告は Q&A 表のページを描くときに出る）。
+    綴りだけ違う名前で届く表は読まない（`lookup`。#514）——その番号は「表に無い番号」としてリンクにしない。"""
     found = []
     for version, root in versions(docs_dir):
-        path = root / "shared" / "qa.csv"
-        if path.is_file():
+        path, _ = lookup(root, SHARED, QA_TABLE)
+        if path is not None:
             try:
                 # 空白を落とさない——Q&A 表のアンカーも落とさずに作るので、落とすとリンクがアンカーに当たらない（警告に回す）
                 found.append((version, {row["No"] for row in read_qa(path)}))

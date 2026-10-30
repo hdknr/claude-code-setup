@@ -17,6 +17,12 @@
 4. **リポジトリの外で単体で動く**——本体だけを一時ディレクトリに写し、`python3 -I` で走らせる。
 4a. **想定外の例外（128KB 超のセルの `csv.Error`）も CLI では 2 で、トレースバックの 1 にしない**。`-OO`（docstring が無い）で
     引数なしに呼んでも使い方の誤りとして 2。**読み込んだ `check` は例外をそのまま返す**（2 に寄せるのは入口だけ。#286）。
+4d. **書いたパスと大文字小文字だけ違う名前を開かない**（`misspelled`。#514）——CLI に `docs/v2/shared/qa.csv` と渡して、
+    ディスクが `docs/v2/Shared/qa.csv` なら 2 でディスクの綴りを名指しする。**試料はどちらのファイルシステムでも同じ答えを
+    期待する**（区別しない FS では前は中身を読み、区別する FS では前は名指しせずに「読めない」だった——どちらでも変異で赤になる）。
+    区別する FS でだけ作れる試料（綴りどおりと綴り違いが並ぶ）は、区別しない FS では飛ばす。**`fold` の写しが
+    `merge-versions.py` の `fold` と同じ答えを返すか**と、**読み込んだ `check` は綴りを見ない**（`merge-versions.py` が index の
+    綴りのパスで呼ぶ。#569）も見る。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
@@ -743,6 +749,84 @@ def unexpected_problems(script: Path, root: Path) -> list[str]:
     return problems
 
 
+MERGE_VERSIONS = PLUGIN / "scripts" / "merge-versions.py"
+# `fold` の写しを突き合わせる試料（大文字小文字・全角・長い s・ß・トルコの İ・NFD の濁点・ギリシャの終わりのシグマ）
+FOLD_SAMPLES = ["shared", "Shared", "ＳＨＡＲＥＤ", "ſhared", "Straße", "STRASSE", "İ", "i̇", "\u304b\u3099", "\u304c", "ΣΑΣ", "σας"]
+NAMED = "大文字小文字だけ違う名前なので"
+NFD_DIR = "\u304b\u3099"  # NFD の「が」——書く側は NFC の「が」（U+304C）で渡す
+
+
+def spelling_cases(root: Path) -> list[tuple[str, str, int | None, str | None, bool]]:
+    """(名前, CLI に渡すパス（root から）, 期待する終了コード（None は問わない）, 名指しに含むディスクの綴り（None は名指ししないこと）, 区別する FS でだけ)。"""
+    table = HEADER + GOOD_ROWS
+    files = {
+        "docs/v2/Shared/qa.csv": table,
+        "docs/v3/spec/QA-dev.csv": HEADER,
+        "docs/V4/shared/qa.csv": table,
+        "docs/v5/shared/qa.csv": table,
+        f"docs/{NFD_DIR}/shared/qa.csv": table,
+        "outer/docs8/v1/shared/qa.csv": table,
+    }
+    for name, content in files.items():
+        path = root / name
+        assert_in_tmp(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    both = root / "docs" / "v6"
+    (both / "shared").mkdir(parents=True)
+    (both / "shared" / "qa.csv").write_text(table, encoding="utf-8")
+    sensitive = not (both / "Shared").exists()
+    if sensitive:
+        (both / "Shared").mkdir()
+        (both / "Shared" / "qa.csv").write_text(HEADER + "壊れた行\n", encoding="utf-8")
+    return [
+        ("置き場所の綴り違い（Shared/）を名指しして 2", "docs/v2/shared/qa.csv", 2, "docs/v2/Shared", False),
+        ("構造ファイルの綴り違い（spec/QA-dev.csv）を名指しして 2", "docs/v3/spec/qa-dev.csv", 2, "docs/v3/spec/QA-dev.csv", False),
+        ("版のフォルダの綴り違い（V4/）を名指しして 2", "docs/v4/shared/qa.csv", 2, "docs/V4", False),
+        ("絶対パスで渡しても名指しして 2", str(root / "docs/v2/shared/qa.csv"), 2, str(root / "docs/v2/Shared"), False),
+        ("綴りどおりなら読む（陽性対照）", "docs/v5/shared/qa.csv", 0, None, False),
+        ("正規化だけ違う段（NFD のフォルダを NFC で書く）では止めない", "docs/\u304c/shared/qa.csv", None, None, False),
+        ("末尾 3 段より上の綴りは見ない", "outer/Docs8/v1/shared/qa.csv", None, None, False),
+        ("区別する FS で綴りどおりと綴り違いが並ぶなら、綴りどおりを読む", "docs/v6/shared/qa.csv", 0, None, True),
+    ], sensitive
+
+
+def spelling_mismatches(script: Path, root: Path) -> list[str]:
+    """CLI に渡して、`spelling_cases` の期待と違ったものを返す。"""
+    root.mkdir()
+    cases, sensitive = spelling_cases(root)
+    found = []
+    for name, arg, code, named, only_sensitive in cases:
+        if only_sensitive and not sensitive:
+            continue
+        r = subprocess.run([sys.executable, "-I", str(script), arg], capture_output=True, text=True, cwd=root)
+        if code is not None and r.returncode != code:
+            found.append(f"{name}: 終了 {r.returncode}（期待 {code}）: {r.stderr[-200:]!r}")
+        elif named is None and NAMED in r.stderr:
+            found.append(f"{name}: 名指ししてはいけないのにした: {r.stderr[-200:]!r}")
+        elif named is not None and not (f"{named}: " in r.stderr and NAMED in r.stderr and "中身を検査していない" in r.stderr):
+            found.append(f"{name}: {named} を名指ししない: {r.stderr[-200:]!r}")
+    return found
+
+
+def fold_mismatches(mod) -> list[str]:
+    """`fold` の写しが `merge-versions.py` の `fold` と同じ答えを返すか。"""
+    merge = load(MERGE_VERSIONS)
+    return [f"{sample!r}: {mod.fold(sample)!r} != {merge.fold(sample)!r}" for sample in FOLD_SAMPLES
+            if mod.fold(sample) != merge.fold(sample)]
+
+
+SPELLING_MUTATIONS = [
+    ("入口で綴りを見ない", "    problem = misspelled(path)\n    if problem:", "    problem = None\n    if problem:"),
+    ("版の段を見ない", "SPELLED_DEPTH = 3\n", "SPELLED_DEPTH = 2\n"),
+    ("末尾 3 段より上も見る", "SPELLED_DEPTH = 3\n", "SPELLED_DEPTH = 4\n"),
+    ("正規化だけの違いでも止める",
+     "if name in entries or any(unicodedata.normalize(\"NFC\", entry) == unicodedata.normalize(\"NFC\", name) for entry in entries):",
+     "if name in entries:"),
+    ("綴りを大文字小文字で畳まない", '    return unicodedata.normalize("NFC", name).casefold()', '    return unicodedata.normalize("NFC", name)'),
+]
+
+
 def main() -> int:
     mod = load(SCRIPT)
     reference = REFERENCE.read_text(encoding="utf-8")
@@ -813,6 +897,27 @@ def main() -> int:
             mutant.write_text(source.replace(before, after), encoding="utf-8")
             assert_in_tmp(mutant)
             check(f"変異を殺せる: {name}", bool(unexpected_problems(mutant, root)))
+
+        print("4d. 書いたパスと大文字小文字だけ違う名前を開かない（misspelled。#514）")
+        problems = spelling_mismatches(SCRIPT, root / "spelling")
+        check("綴りの試料が期待どおり（どちらの FS でも同じ答え）", not problems, "; ".join(problems))
+        problems = fold_mismatches(mod)
+        check("fold の写しが merge-versions.py の fold と同じ答え", not problems, "; ".join(problems))
+        library = mod.check(root / "spelling" / "docs" / "v2" / "shared" / "qa.csv")
+        check("読み込んだ check は綴りを見ない（merge-versions.py が index の綴りで呼ぶ。#569）",
+              not any(NAMED in line for line in library[1]), "; ".join(library[1]))
+        for index, (name, before, after) in enumerate(SPELLING_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutant = root / f"spelling-mutant-{index}" / SCRIPT.name
+            mutant.parent.mkdir()
+            mutant.write_text(source.replace(before, after), encoding="utf-8")
+            assert_in_tmp(mutant)
+            killed = spelling_mismatches(mutant, mutant.parent / "work")
+            if "casefold" in before:
+                killed += fold_mismatches(load(mutant))
+            check(f"変異を殺せる: {name}（綴り）", bool(killed))
 
         print("4b. 番号から層を決める（is_internal_number）")
         problems = number_layer_mismatches(mod)
@@ -905,7 +1010,7 @@ def main() -> int:
     if failures:
         print(f"FAIL: {len(failures)} 件")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(READER_MUTATIONS) + len(ENTRY_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(READER_MUTATIONS) + len(ENTRY_MUTATIONS) + len(SPELLING_MUTATIONS) + 1} 件")
     return 0
 
 

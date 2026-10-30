@@ -56,6 +56,13 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 
 **その版だけを読むもの**——`check-qa-csv.py`（版ごとの `qa.csv`）・`check-feasibility-csv.py` と `schedule-to-gantt.py`
 （版ごとの `feasibility/`）・`check-signoff.py` と `build-proposal.py`（`signoff-tags.md`）。
+**版ごとに読む検査・資料の生成（`check-qa-csv.py`・`qa-to-pptx.py`・`check-feasibility-csv.py`・`schedule-to-gantt.py`）は、渡されたパスの
+末尾 3 段（版・置き場所・ファイル）がディスクの綴りと大文字小文字だけ違えば、読まずにディスクの綴りを名指しして 2 で止まる**
+（`check-qa-csv.py` の `misspelled`。#514）——区別しないファイルシステムでは `docs/v2/shared/qa.csv` が `docs/v2/Shared/qa.csv` を開いて
+しまい、重ね合わせが断る綴り（下の「名前の綴りは git が見る綴りで決める」）をそこだけが読むため。**MkDocs のフック（`tree.md` の
+「ドキュメントのツール」）も、版の中の表に綴りだけ違う名前で届くなら警告して描かない。** どちらも区別するファイルシステムで同じ答えになる。
+**読む側は git を使わない**（ディスクの綴りで読む）ので、コミットの綴りは正しいのに手元のフォルダだけ古い綴りが残る形でも止まる
+——下の「綴りの誤りの移行」の 3。**`check-signoff.py`・`build-proposal.py` はタグの時点を git の木のパスで読む**ので、この形は起きない。
 **前の版の全体と比べるもの**——`diff-versions.py` と、v2 以降の `build-proposal.py` の「前の版からの変更」（下の「版の差分」）。
 
 ### 重ねるもの
@@ -222,12 +229,13 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py
   **浅い clone なら 2**（タグが見えないのを「凍結した版が無い」と読まない）。
 - **タグはスキルが付けない。** どの版をリリースしたかは人間が決める。
 
-## 綴りの誤りの移行（0.38.0・0.41.0）
+## 綴りの誤りの移行
 
 **spec-loop 0.38.0 から、版の直下の置き場所・`removed.csv` の綴り違い（`Removed.csv`・`Shared/`）が、0.41.0 から、置き場所の中の
 構造ファイルの綴り違い（`shared/QA.csv`・`spec/QA-dev.csv`・`spec/Spec_IR.json`）が、決まりに反する（1）になった**（#276・#511）。
 それまで区別するファイルシステム（Linux）では黙って読まれず 0 で通り、区別しないファイルシステム（macOS の既定）では正しい綴りとして
-読まれていた正本リポジトリは、この版から 1 で止まる。次の順で直す:
+読まれていた正本リポジトリは、この版から 1 で止まる。**0.44.0 から、版ごとに読む側（検査・資料の生成と
+MkDocs のフック）も、書いた綴りと大文字小文字だけ違う名前を読まずに名指しして止まる**（#514。上の「その版だけを読むもの」）。次の順で直す:
 
 1. **見つける**——`merge-versions.py docs build/merged` を走らせる。1 なら、出力のうち
    **`… と大文字小文字・Unicode の正規化だけ違う名前は置かない`** を含む行（後ろに「（区別しないファイルシステムでだけ … として開けてしまう）」が続く）が、
@@ -245,7 +253,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py
    **凍結した版（下の「凍結」）の綴りを直すと、`check-frozen.py` が 1 になる**——直すかどうか（直して `release-v<n>` を付け直すか）は人間が決める。
 3. **作業ツリーにだけ古い綴りが残る形**——コミットの綴りは正しいのに、手元のフォルダ名だけ古い綴りのまま（追跡しない `.DS_Store` が残った
    フォルダに git が書き込んだ）。`git status` は空のまま。**区別しないファイルシステムでは、重ね合わせは index の綴りで読むので 1 にならない**
-   （どの段でも。#569）——直さなくてよいが、揃えるならディスク上で 2 段に改名する（`mv docs/v2/Requirements docs/v2/req-tmp && mv docs/v2/req-tmp docs/v2/requirements`）。
+   （どの段でも。#569）。**ただし版ごとに読む側は git を使わずディスクの綴りで読むので、その形でも止まる**（フックは警告する。#514）
+   ——ディスク上で 2 段に改名して揃える（`mv docs/v2/Shared docs/v2/shared-tmp && mv docs/v2/shared-tmp docs/v2/shared`）。
    **区別するファイルシステムでは、綴りの違うフォルダは git にも別の項目**（`git status` に未追跡で出る）なので 1 になる——中身を正しい綴りへ
    移すか、要らなければ消す。
 4. 走らせ直して 0 になることを確かめる。**直したコミットに付いていた承認のタグ（`signoff-tags.md`）は、直したコミットに付け直してもらう**

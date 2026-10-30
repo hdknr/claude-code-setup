@@ -20,6 +20,8 @@ usage: python3 check-qa-csv.py <qa.csv | qa-dev.csv>
 
 - 決まりに反する箇所があれば、**全部を 1 行ずつ出して**非ゼロ（1）で終わる（最初の 1 件で止めない）。
 - ファイルが読めない・UTF-8 でない・空のときは 2 で終わる（**中身を検査していない**）。
+  **書いたパスの末尾（版・置き場所・ファイル）に、ディスクでは大文字小文字だけ違う名前があるときも 2**——`docs/v2/shared/qa.csv` と書いて
+  ディスクが `docs/v2/Shared/qa.csv` なら、区別しないファイルシステムでも開かずに、ディスクの綴りを名指しする（`misspelled`。#514）。
   **想定外の例外（128KB を超えるセルの `csv.Error` など）も 2**——トレースバックの 1（違反）にしない（#286）。
   2 に寄せるのは CLI の入口だけで、読み込んだ `check` は例外をそのまま呼び出し元へ返す。
 - 反する箇所が無ければ 0 で終わり、検査した行数を出す。
@@ -40,8 +42,10 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 COLUMNS = ["No", "起票元", "質問", "選択肢", "推奨", "推奨の理由", "回答", "反映先", "状態", "費用への影響"]
@@ -91,6 +95,50 @@ OPTION_LABEL = "[A-Z]"
 OPTION = re.compile(rf"(?P<label>{OPTION_LABEL}): \S.*")
 OPTION_SEPARATOR = " / "
 MIN_OPTIONS = 2
+
+
+# 書いた綴りを確かめるパスの末尾の段の数——版（`v<n>`）・置き場所（`shared/`・`spec/`・`feasibility/`）・ファイル（#514）
+SPELLED_DEPTH = 3
+# 綴りの誤りを直す手順（`misspelled` の名指しに添える）
+SPELLING_MIGRATION = "spec-loop の references/versions.md の「綴りの誤りの移行」"
+
+
+def fold(name: str) -> str:
+    """大文字小文字・Unicode の正規化を畳む——`merge-versions.py` の `fold` の写し（この検査は単体で動くので読み込まない。
+    写しがずれていないかは、このリポジトリの `scripts/test-check-qa-csv.py` が試料で突き合わせる）。"""
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def misspelled(path: Path) -> str | None:
+    """書いたパスの末尾 `SPELLED_DEPTH` 段に、ディスクでは大文字小文字だけ違う名前の段があれば、それを名指しする文（無ければ None。#514）。
+
+    区別しないファイルシステムでは `docs/v2/shared/qa.csv` が `docs/v2/Shared/qa.csv` を開いてしまい、重ね合わせ
+    （`merge-versions.py`）が断る綴りを、版ごとに読む側だけが読む。区別するファイルシステムではそのパスは開けないが、
+    同じ文で止める——どちらでも同じ答えにする。**CLI の入口でだけ当てる**（`check` には入れない——`merge-versions.py` は
+    index の綴りで組み立てたパスで `check` を呼ぶ。#569）。決まりの正は `references/versions.md` の「その版だけを読むもの」。
+
+    見ないもの: 書いた綴りのとおりに在る段（綴りが決まりどおりかは重ね合わせの検査の仕事）・正規化だけ違う段（決まりの名前は
+    ASCII なので違いようがなく、止めると NFD で作られた利用者のフォルダで誤って止まる）・末尾 `SPELLED_DEPTH` 段より上・
+    一覧を読めない段と、綴りだけ違う名前も無い段（開けなければ読む側が「読めない」と言う）。
+    """
+    parts = path.parts
+    for depth in range(max(len(parts) - SPELLED_DEPTH, 1 if path.anchor else 0), len(parts)):
+        name = parts[depth]
+        if name in (".", ".."):
+            continue
+        parent = Path(*parts[:depth]) if depth else Path(".")
+        try:
+            entries = os.listdir(parent)
+        except (OSError, ValueError):  # ValueError: 名前に NUL（CLI からは届かない）
+            return None
+        if name in entries or any(unicodedata.normalize("NFC", entry) == unicodedata.normalize("NFC", name) for entry in entries):
+            continue
+        found = sorted(entry for entry in entries if fold(entry) == fold(name))
+        if not found:
+            return None
+        return (f"{parent / found[0]}: {name} と大文字小文字だけ違う名前なので、{path} として読まない"
+                f"（区別しないファイルシステムでだけ {name} として開けてしまう。直し方は {SPELLING_MIGRATION}）")
+    return None
 
 
 def is_internal(path: Path) -> bool:
@@ -241,7 +289,12 @@ def main(argv: list[str]) -> int:
         print(__doc__.splitlines()[2] if __doc__ else
               f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
-    code, lines = check(Path(argv[0]))
+    path = Path(argv[0])
+    problem = misspelled(path)
+    if problem:  # 綴りだけ違う名前を開かない（#514）——中身を読む前に止める
+        print(f"{problem}。中身を検査していない", file=sys.stderr)
+        return 2
+    code, lines = check(path)
     for line in lines:
         print(line, file=sys.stderr if code else sys.stdout)
     return code

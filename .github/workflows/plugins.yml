@@ -172,8 +172,10 @@ jobs:
 
       # 同じテストを、大文字小文字を区別しない FS（ext4 の casefold）の上でもう 1 度回す（#571）——区別しない FS でだけ
       # 判別できる試料（git の index の綴りで読むもの）は、上の区別する FS では飛ばされる。印の環境変数があると、
-      # 一時ディレクトリが区別する FS ならテストが赤になる（用意に失敗して黙って緑にならない）
-      - name: spec-loop の版の重ね合わせのテスト（大文字小文字を区別しない FS。#571）
+      # 一時ディレクトリが区別する FS ならテストが赤になる（用意に失敗して黙って緑にならない）。
+      # MkDocs のフックのテストも同じ形で回す（#514——綴り違いの表を前は区別しない FS でだけ描いていたので、番号を読む側の変異は
+      # 区別しない FS でしか見分けられない）
+      - name: spec-loop の版の重ね合わせ・MkDocs のフックのテスト（大文字小文字を区別しない FS。#571・#514）
         run: |
           truncate -s 512M "$RUNNER_TEMP/casefold.img"
           mkfs.ext4 -q -O casefold "$RUNNER_TEMP/casefold.img"
@@ -183,6 +185,7 @@ jobs:
           sudo chattr +F /mnt/casefold/tmp
           sudo chown "$(id -u):$(id -g)" /mnt/casefold/tmp
           TMPDIR=/mnt/casefold/tmp MERGE_VERSIONS_TEST_REQUIRE_CASE_FOLD=1 python3 scripts/test-merge-versions.py
+          TMPDIR=/mnt/casefold/tmp MKDOCS_TEST_REQUIRE_CASE_FOLD=1 python3 scripts/test-init-mkdocs.py
 
       # 本体は plugins/spec-loop/scripts/ にある（ある版が前の版から何を足し・変え・消したか）。
       - name: spec-loop の版の差分のテスト（#263）

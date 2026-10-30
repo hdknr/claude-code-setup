@@ -18,6 +18,8 @@ usage: python3 schedule-to-gantt.py <schedule.csv> <出力先.svg>
   （古いガントチャートを今の表のものと取り違えないため）
 - 2: 引数の誤り・表が読めない（中身を検査していない。入力のパスの名前が使えない——NUL・符号化できない孤立サロゲート——ときを含む。
   名前は開く前に確かめ、理由を「NUL を含む」「バイトに戻せない文字を含む: <理由>」と書く。#592・#662。NUL は `\\x00` と出す）・
+  **書いたパスと大文字小文字だけ違う名前を開く表**（`docs/v2/feasibility/schedule.csv` と書いてディスクが `Feasibility/`。
+  `check-qa-csv.py` の `misspelled`。#514。前の出力は同じく消す）・
   書けない（出力先の名前が使えないときを含む）・想定外の例外（巨大なセルの `csv.Error` など。#286）
   ——同じく書かず、前の出力を消す（引数の誤りでは出力先が分からないので消さない）。
   **名前が使えない**のは、NUL を含む名前と、surrogateescape でバイトに戻せない孤立サロゲート（U+D800〜U+DC7F・U+DD00〜U+DFFF）を含む名前で、
@@ -223,6 +225,10 @@ def main(argv: list[str]) -> int:
     problem = name_problem(source)
     if problem:  # 入力のパスの名前が使えない——開く前に読めないと言う（#592・#662 の CR8。CLI からは届かない）
         print(f"{shown(source)}: 読めない（入力のパスの名前が使えない: {problem}）。中身を検査していない", file=sys.stderr)
+        return stop(out, 2)
+    problem = feasibility.qa.misspelled(source)
+    if problem:  # 区別しないファイルシステムでだけ開ける綴り違いの表から描かない（#514）
+        print(f"{problem}。中身を検査していない", file=sys.stderr)
         return stop(out, 2)
     try:
         problems, rows = feasibility.check_schedule(source)
