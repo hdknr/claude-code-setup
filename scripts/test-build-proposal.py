@@ -37,6 +37,9 @@
    「今回の出力ではない」で重ねない（#551）。**作れたとき（0）も、印に無い出力の名前のファイルを名指しする**（#553。終了コードは 0 のまま）。
 11. **図が増えたとき**（#508）——印があれば 0 で両方の図を書く。印に無い `spec-figure-02.svg` があれば、図が増えない実行は 0 で名指しし、
    図が増える実行は「上書きしない」の 2 で 1 度だけ名指しして消さない。
+12. **一時ディレクトリの外を消さない・リンクの古い出力を消さない・読めない印を書き換えない**（#512）——`drop_internal` は途中のリンク
+   （`docs/v2/spec`）を辿って外の `qa-dev.csv` を消さない。印が名指しする出力が先の在る symlink なら、リンクも先も消さずに先のパスを名指しして 2
+   （辿れない先も同じ。壊れたリンクは消す）。印が読めない（UTF-8 で読めない・symlink）なら書き換えず・先に書かずに 2。`same_entry` は親の違う名前を同じ項目と読まない。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
 `HOME` と `GIT_CONFIG_GLOBAL` を差し替える。
@@ -558,8 +561,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    return inside[0] in mv.AREAS or inside == (mv.REMOVED,)", "綴りの違う Shared/ は比較で断る"),
     ("綴りの違う removed.csv を写さない", "for name in [*mv.AREAS, mv.REMOVED]}", "for name in mv.AREAS}",
      "綴りの違う Removed.csv は比較で断る"),
-    ("内部の表を綴りを見ずに外す", "        internal = mv.exact(root, mv.INTERNAL_QA_PATH)\n        if internal is not None:\n",
-     "        internal = root / mv.INTERNAL_QA_PATH\n        if os.path.lexists(internal):\n", "綴りの違う内部の表はふつうのファイル"),
+    ("内部の表を綴りを見ずに外す", "        internal = mv.exact(root, mv.INTERNAL_QA_PATH)\n        if internal is not None and",
+     "        internal = root / mv.INTERNAL_QA_PATH\n        if os.path.lexists(internal) and", "綴りの違う内部の表はふつうのファイル"),
     ("重ね合わせが読まないものも写す", "        if not merged_reads(path):\n            continue\n", "",
      "重ね合わせが読まないものは写さない"),
     ("比較が作れなくても作る", "    if problems:\n        raise Stop(1, [f\"{tag}: ",
@@ -834,8 +837,8 @@ LOCKED_MUTATIONS: list[tuple[str, str, str]] = [
     ("消せないのに作っていないと言わない",
      "            print(line, file=sys.stderr)\n        print(\"提案書は作っていない\", file=sys.stderr)\n        return 2\n    if problem:",
      "            print(line, file=sys.stderr)\n        return 2\n    if problem:"),
-    ("symlink より先に is_file を見る", "            if stale.is_symlink() or stale.is_file():",
-     "            if stale.is_file() or stale.is_symlink():"),
+    ("symlink より先に is_file を見る", "            if stale.is_symlink():\n                target",
+     "            if not stale.is_file() and stale.is_symlink():\n                target"),
     ("書きかけを消せなくても消したと言う", "        if left:\n            raise Stop(2, [f\"{reason}。書きかけを消せなかった",
      "        if False:\n            raise Stop(2, [f\"{reason}。書きかけを消せなかった"),
 ]
@@ -941,8 +944,9 @@ def locked_problems(scripts: Path) -> list[str]:
         if not left or (directory / MANIFEST).exists() is False:
             problems.append(f"1 つ消せないのに印を消すか、名指ししない: {left} {sorted(p.name for p in directory.iterdir())}")
 
-        # 辿れない先を指す symlink は消せる——python3.12 の `is_file` はここで例外を投げる（3.13 からは投げない）。
-        # 3.12 の `is_file` を再現して走らせ、「symlink より先に is_file を見る」変異を走らせた版によらず殺す（#286 の P2-4・P2-6）
+        # 辿れない先を指す symlink は、消さずに「リンクの先を辿れない」と先のパスを名指しし、印を残す（#512。先に前の出力が残りうる）
+        # ——python3.12 の `is_file` はここで例外を投げる（3.13 からは投げない）。3.12 の `is_file` を再現して走らせ、
+        # 「symlink より先に is_file を見る」変異（例外が「辿れない」の文言を落とす）を走らせた版によらず殺す（#286 の P2-4・P2-6）
         unreachable = Path(tmp) / "unreachable"
         unreachable.mkdir()
         (unreachable / "target").write_text("x", encoding="utf-8")
@@ -973,9 +977,129 @@ def locked_problems(scripts: Path) -> list[str]:
         finally:
             Path.is_file = original_is_file
             unreachable.chmod(0o755)
-        if left or list(directory.iterdir()):
-            problems.append(f"辿れない先の symlink を消さない: {left} {sorted(p.name for p in directory.iterdir())}")
+        if (len(left) != 1 or "リンクの先を辿れない" not in left[0] or f"先: {os.path.realpath(unreachable)}" not in left[0]
+                or sorted(p.name for p in directory.iterdir()) != sorted([MANIFEST, "proposal.md"])):
+            problems.append(f"辿れない先の symlink を名指しして残さない: {left} {sorted(p.name for p in directory.iterdir())}")
     return problems
+
+# 一時ディレクトリの外・リンクの古い出力・読めない印（#512）。(名前, 壊す前, 壊した後)
+LINK_FIXTURES = 3 + 2 + 3 + 1  # link_problems の試料の数（drop_internal・古い出力・読めない印・same_entry）
+LINK_MUTATIONS: list[tuple[str, str, str]] = [
+    ("途中のリンクを辿って外の内部の表を消す",
+     "        if internal is not None and not any(parent.is_symlink() for parent in internal.parents if root in parent.parents):",
+     "        if internal is not None:"),
+    ("辿れる先のリンクを消して消したと言う", "                else:\n                    left.append(f\"{stale}（リンクの先に前の出力が残る",
+     "                if False:\n                    left.append(f\"{stale}（リンクの先に前の出力が残る"),
+    ("壊れたリンクを残す", "                    pass  # 壊れたリンク——消す", "                    continue  # 壊れたリンク——消す"),
+    ("読めない印でも書く", "    if unreadable_manifest(out.parent):", "    if False:"),
+    ("UTF-8 で読めない印を印なしと読む", "    except (OSError, UnicodeDecodeError):\n        return None",
+     "    except UnicodeDecodeError:\n        return []\n    except OSError:\n        return None"),
+    ("symlink の印を辿って読む", "        if not stat.S_ISREG(mode):\n            return None\n        lines",
+     "        if stat.S_ISLNK(mode) and manifest.is_file():\n            pass\n        elif not stat.S_ISREG(mode):\n            return None\n        lines"),
+    ("親の違う項目を同じと読む",
+     "    if os.path.normcase(os.path.abspath(a.parent)) != os.path.normcase(os.path.abspath(b.parent)):\n        return False\n", ""),
+]
+
+
+def link_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
+    """一時ディレクトリの外を消さない・リンクの古い出力を消さずに名指し・読めない印を書き換えない（#512）。
+
+    1. `drop_internal` を直接呼ぶ——`docs/v2/spec` がリンクなら先の `qa-dev.csv` を消さない（重ね合わせがリンクを断る）。
+       `qa-dev.csv` そのものがリンクなら一時ディレクトリの中のリンクだけ消え、先は残る。**陽性対照はリンクの無い `spec/`**——外す。
+    2. CLI（照合が通る git のリポジトリ。0 になりうる経路）——印が名指しする `proposal.md` が通常のファイルを指すリンクなら、
+       リンクも先も消さず「リンクの先に前の出力が残る」と先のパスを名指しして 2、印を残す。**陽性対照は壊れたリンク**——消えて 0。
+    3. CLI（同じ）——印が UTF-8 で読めない・辿れない symlink・読める先を指す symlink なら、印を書き換えず・先に書かずに 2。
+    4. `same_entry` を直接呼ぶ——親の違う同じ名前は同じ項目ではない（#512 の P2-6。CLI の経路は同じ親しか渡さない）。
+    """
+    import contextlib
+    import io
+    spec = importlib.util.spec_from_file_location("build_proposal_link", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    problems = []
+    work.mkdir(parents=True)
+    outside = work / "outside"
+    outside.mkdir()
+    for shape in ("dir-link", "file-link", "plain"):
+        docs = work / f"copy-{shape}" / "docs"
+        (docs / "v1").mkdir(parents=True)
+        (docs / "v2").mkdir()
+        far = outside / f"{shape}-qa-dev.csv"
+        far.write_text("No\n", encoding="utf-8")
+        if shape == "dir-link":
+            (outside / shape).mkdir()
+            far = outside / shape / "qa-dev.csv"
+            far.write_text("No\n", encoding="utf-8")
+            (docs / "v2" / "spec").symlink_to(outside / shape)
+        else:
+            (docs / "v2" / "spec").mkdir()
+            inner = docs / "v2" / "spec" / "qa-dev.csv"
+            if shape == "file-link":
+                inner.symlink_to(far)
+            else:
+                inner.write_text("No\n", encoding="utf-8")
+        try:
+            module.drop_internal(docs)
+        except Exception as e:  # noqa: BLE001 — 例外も「判別した」と数えない
+            problems.append(f"drop_internal（{shape}）: 例外 {e!r}")
+            continue
+        if not far.exists():
+            problems.append(f"drop_internal（{shape}）: 一時ディレクトリの外の {far.name} を消した")
+        if shape == "dir-link" and not (docs / "v2" / "spec").is_symlink():
+            problems.append("drop_internal（dir-link）: リンクの置き場所を残さない（重ね合わせに断らせられない）")
+        if shape != "dir-link" and os.path.lexists(docs / "v2" / "spec" / "qa-dev.csv"):
+            problems.append(f"drop_internal（{shape}）: 内部の表を外さない")
+
+    def signed(name: str) -> tuple[Path, Path]:
+        root = work / name
+        build_repo(root, SIGNED, env)
+        place = root / "build" / "proposal"
+        place.mkdir(parents=True)
+        return root, place
+
+    # 2. リンクになった古い出力
+    for shape in ("live", "broken"):
+        root, place = signed(f"stale-{shape}")
+        far = work / f"stale-{shape}-far.md"
+        if shape == "live":
+            far.write_text(LEFT_TEXT, encoding="utf-8")
+        (place / "proposal.md").symlink_to(far)
+        (place / MANIFEST).write_text("# 印\nproposal.md\n", encoding="utf-8")
+        code, output = generate(scripts, root, place / "proposal.md", env)
+        if shape == "live":
+            if (code != 2 or "リンクの先に前の出力が残る" not in output or f"先: {os.path.realpath(far)}" not in output
+                    or "前に作った出力を消した" in output or not (place / "proposal.md").is_symlink()
+                    or far.read_text(encoding="utf-8") != LEFT_TEXT or not (place / MANIFEST).exists()):
+                problems.append(f"辿れる先のリンクの古い出力: {code} {output[-400:]}")
+        elif code != 0 or (place / "proposal.md").is_symlink():
+            problems.append(f"壊れたリンクの古い出力（陽性対照）: {code} {output[-400:]}")
+
+    # 3. 読めない印
+    for shape in ("utf8", "dangling", "linked"):
+        root, place = signed(f"manifest-{shape}")
+        far = work / f"manifest-{shape}-far"
+        if shape == "utf8":
+            (place / MANIFEST).write_bytes(b"\xff\nproposal.md\n")
+        else:
+            if shape == "linked":
+                far.write_text("# 印\n", encoding="utf-8")
+            (place / MANIFEST).symlink_to(far)
+        before = (place / MANIFEST).read_bytes() if shape != "dangling" else None
+        code, output = generate(scripts, root, place / "proposal.md", env)
+        after = (place / MANIFEST).read_bytes() if shape != "dangling" and os.path.exists(place / MANIFEST) else None
+        if (code != 2 or "読めない印は書き換えない" not in output or f"{MANIFEST}: 印を読めない" not in output
+                or os.path.lexists(place / "proposal.md") or after != before
+                or (shape == "dangling" and os.path.lexists(far)) or (shape != "utf8" and not (place / MANIFEST).is_symlink())):
+            problems.append(f"読めない印（{shape}）: {code} {output[-400:]}")
+
+    # 4. same_entry
+    with contextlib.redirect_stderr(io.StringIO()):
+        if module.same_entry(work / "x" / "proposal.md", work / "y" / "proposal.md"):
+            problems.append("same_entry: 親の違う同じ名前を同じ項目と読む")
+        if not module.same_entry(work / "x" / "proposal.md", work / "x" / "proposal.md"):
+            problems.append("same_entry: 同じパスを同じ項目と読まない（陽性対照）")
+    return problems
+
 
 # 作れなかったときに残った前の出力の名指し（#498）。
 # 出力の名前のファイル（大文字小文字・PPTX・図を含む）と、出力と関係の無い名前の 1 つ（名指ししない）
@@ -1295,8 +1419,8 @@ LEFTOVER_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("PPTX の名前を見ない", '{str(Path(n).with_suffix(".pptx")) for n in proposals}', "set()", "1 一致しない"),
     ("PPTX を固定の名前すべてに付ける", '{str(Path(n).with_suffix(".pptx")) for n in proposals}',
      '{str(Path(n).with_suffix(".pptx")) for n in proposals | {GANTT_NAME}}', "1 一致しない"),
-    ("ディレクトリの印を印なしと読む", "        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):\n            return None",
-     "        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):\n            return []", "印がディレクトリ"),
+    ("ディレクトリの印を印なしと読む", "        if not stat.S_ISREG(mode):\n            return None",
+     "        if stat.S_ISDIR(mode):\n            return []\n        if not stat.S_ISREG(mode):\n            return None", "印がディレクトリ"),
     ("大文字小文字を区別する", "    return lower in {n.lower() for n in names}", "    return name in names", "1 一致しない"),
     ("ディレクトリの出力先の中を見ない", "        directories.append(out)  # ディレクトリを渡したなら", "        pass  # ディレクトリを渡したなら",
      "引数の誤り（ディレクトリ）"),
@@ -1323,8 +1447,8 @@ LEFTOVER_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("図の名前を前方一致で見る", "re.fullmatch(re.escape(FIGURE_PREFIX)", "re.match(re.escape(FIGURE_PREFIX)", "1 一致しない"),
     ("`--out` の名前を出力の名前に数えない", "proposals = {n for n in (out_name, Path(DEFAULT_OUT).name)",
      "proposals = {n for n in (Path(DEFAULT_OUT).name,)", "1 一致しない・別の --out の名前"),
-    ("辿れない印を印なしと読む", "    except OSError:\n        return None\n    return owned_names(directory)",
-     "    except OSError:\n        return []\n    return owned_names(directory)", "印が辿れない symlink"),
+    ("辿れない印を印なしと読む", "            mode = manifest.lstat().st_mode  # symlink を辿らない",
+     "            mode = manifest.stat().st_mode  # symlink を辿らない", "印が辿れない symlink"),
     # #508: 図を印に載せないと、図が増えた次の実行が前の図を消せずに「上書きしない」の 2 になる
     ("図を印に載せない", "*sorted(p.name for p in outputs)]", "*sorted(p.name for p in outputs if not p.name.startswith(FIGURE_PREFIX))]",
      "図が増える"),
@@ -1720,6 +1844,17 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（消せない出力先で殺せるはず）", bool(locked_problems(mutated)))
 
+        problems = link_problems(SCRIPTS, tmp_path / "link", env)
+        check("一時ディレクトリの外・リンクの古い出力・読めない印の扱いが違う", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(LINK_MUTATIONS):
+            count = source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"mutlink{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（#512 の試料で殺せるはず）", bool(link_problems(mutated, tmp_path / f"mutlinkwork{index}", env)))
+
         problems = leftover_problems(SCRIPTS, tmp_path / "leftover", env)
         check("作れなかったときに残った前の出力の名指しが違う", not problems, "; ".join(problems))
         for index, (name, before, after, killer) in enumerate(LEFTOVER_MUTATIONS):
@@ -1745,7 +1880,7 @@ def main() -> int:
         return 1
     if folded_skips or folded_left:
         print(f"飛ばした（その FS では判別できない——大文字小文字を区別する／しない）: 変異 {'・'.join(folded_skips + folded_left)}")
-    print(f"OK: 試料 {len(CASES) + 8 + sum(len(left_shapes(s[5])) for s in LEFT_SCENARIOS) + len(LEFT_FIXED)} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS) - len(folded_left)} 件")
+    print(f"OK: 試料 {len(CASES) + 8 + sum(len(left_shapes(s[5])) for s in LEFT_SCENARIOS) + len(LEFT_FIXED) + LINK_FIXTURES} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(LINK_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS) - len(folded_left)} 件")
     return 0
 
 

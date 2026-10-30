@@ -37,6 +37,9 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
   `spec.md`・PPTX・`spec-figure-*.svg`）の名前の一覧で、出力より先に書く。**印の無い場所では何も消さない**——`--out` を
   手書きの `spec.md` の在る場所に向けても消さない（#397）。**書こうとする名前のファイルが印に無いまま在れば、上書きせずに 2。** **読めない印は消さない**（名指しした出力も消さない）。
+  **読めない印（UTF-8 で読めない・ディレクトリ・symlink——辿れても辿れなくても）は書き換えもせず、作れても書く前に 2 で止まる**（#512。書けば読めない印の跡が消え、
+  symlink の印なら先——出力の場所の外——に書く）。**印が名指しする出力が symlink なら、先が在る（辿れない先を含む）かぎりリンクも先も消さず、
+  リンクと先のパスを「消せない」で名指しして 2**（#512。`schedule-to-gantt.py` の #626 と同じ——リンクを消しても先の古い中身は残る）。壊れたリンクは消す。
   **引数の誤り（名前が無い・ディレクトリ・名前の衝突・印に残せない名前）は消す前に見て 2 で止めるが、印が名指しする前の出力は消す**（#398。
   ディレクトリを渡したなら、その中の印が名指しするものも消す）。
   **spec-loop 0.25.0 までが作った出力には印が無い**ので、消してから作り直す（`references/tree.md` の移行の節）。
@@ -55,7 +58,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
 - 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
-  印に無いファイルが出力の名前で在る・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440）・
+  印に無いファイルが出力の名前で在る・印が読めない（書き換えない。#512）・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440。
+  印が名指しする出力が先の在る symlink のときを含む——#512）・
   想定外の例外（128KB を超えるセルの `csv.Error` など。#286。前の出力は作り始める前に消してあり、書いている途中なら書きかけを消す）——書いていない。
   **git を起動できない・手書き部分を読めない・出力を書けない・一時ファイルを読み書きできないは、別の文言で strerror とパスを出す**
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
@@ -249,11 +253,14 @@ def drop_internal(docs: Path) -> None:
     内部の表の決まりの違反で比較が作れなくなることもない（照合も内部の表を見ない）。
     **綴りどおりの名前だけを外す**（`merge-versions.py` の `exact`）——区別しないファイルシステムで `spec/QA-dev.csv`
     （重ね合わせではふつうのファイル）を内部の表として消すと、作業ツリーの差分と比較が食い違う（#276）。
+    **途中の名前（`spec/`）がシンボリックリンクなら外さない**（#512）——`exact` はリンクを辿るので、消すとリンクの先の
+    一時ディレクトリの外のファイルを消す。外さずに残せば、重ね合わせがリンクの置き場所を断る。
+    対象そのもの（`qa-dev.csv`）がリンクなら、消えるのは一時ディレクトリの中のリンクだけである。
     """
     mv = diffs.merge_versions
     for root in sorted(p for p in docs.iterdir() if mv.VERSION.fullmatch(p.name)):
         internal = mv.exact(root, mv.INTERNAL_QA_PATH)
-        if internal is not None:
+        if internal is not None and not any(parent.is_symlink() for parent in internal.parents if root in parent.parents):
             internal.unlink()
         removed = mv.exact(root, mv.REMOVED)
         if removed is not None and removed.is_file() and not removed.is_symlink():
@@ -620,11 +627,17 @@ def is_dir(path: Path) -> bool:
 
 def owned_names(directory: Path) -> list[str] | None:
     """印が名指しする、前回この道具が書いた出力の名前。印が無ければ空——消してよいと確かめられるものが無い。
-    印が在るか・何を名指しするかを読めなければ None（印を消さずに残す）。"""
+    印が在るか・何を名指しするかを読めなければ None（印を消さずに残す）。**普通のファイルでない印（ディレクトリ・symlink——
+    辿れても辿れなくても）も読めない印である**（#512）——この道具は印を普通のファイルとして書くので、別の形の印は書いたものと確かめられず、
+    書けば symlink の先（出力の場所の外）に書く。"""
     manifest = directory / MANIFEST
     try:
-        if not manifest.is_file():
+        try:
+            mode = manifest.lstat().st_mode  # symlink を辿らない
+        except (FileNotFoundError, NotADirectoryError):
             return []
+        if not stat.S_ISREG(mode):
+            return None
         lines = manifest.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeDecodeError):
         return None
@@ -637,7 +650,10 @@ def owned_names(directory: Path) -> list[str] | None:
 def remove_owned(directory: Path) -> list[str]:
     """印に載る出力と印を消し、消せなかったものを（理由つきで）返す。載っていないもの（手書きのファイル）は、名前が出力と同じでも消さない。
     読めない印は消さない——消すと、名指ししていた出力がこの道具のものだった跡が無くなる。
-    消せなかった出力があれば印も残す（#440）——次の実行が、残った出力をこの道具のものと確かめて消せるように。"""
+    消せなかった出力があれば印も残す（#440）——次の実行が、残った出力をこの道具のものと確かめて消せるように。
+    **symlink は、先が在れば（辿れなくても）リンクも先も消さず、リンクと先のパスを消せなかったものとして返す**（#512。
+    `schedule-to-gantt.py` の #626 と同じ）——リンクを消しても先の古い中身は残るので、「消した」と言えば古い中身を今のものと取り違える。
+    先のパスは鎖を解いた先（辿れないときは辿れたところまで）。壊れたリンク（先が無い）は消す——残る古い中身が無い。"""
     names = owned_names(directory)
     if names is None:
         return []
@@ -646,9 +662,22 @@ def remove_owned(directory: Path) -> list[str]:
         stale = directory / name
         try:
             # symlink を先に見る——python3.12 の `is_file` は辿れない先を指す symlink で例外を投げる
-            if stale.is_symlink() or stale.is_file():
-                stale.unlink()
-                print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
+            if stale.is_symlink():
+                target = os.path.realpath(stale)  # 非 strict——辿れなくても例外を出さず、辿れたところまで解く
+                try:
+                    stale.stat()
+                except (FileNotFoundError, NotADirectoryError):
+                    pass  # 壊れたリンク——消す
+                except OSError as e:
+                    left.append(f"{stale}（リンクの先を辿れない: {e.strerror}。先: {target}）")
+                    continue
+                else:
+                    left.append(f"{stale}（リンクの先に前の出力が残る——リンクを消しても先は消えない。先: {target}）")
+                    continue
+            elif not stale.is_file():
+                continue
+            stale.unlink()
+            print(f"{stale}: 前に作った出力を消した", file=sys.stderr)
         except OSError as e:
             left.append(f"{stale}（{e.strerror}）")
     manifest = directory / MANIFEST
@@ -674,14 +703,10 @@ def output_named(name: str, out_name: str) -> bool:
     return lower in {n.lower() for n in names} or re.fullmatch(re.escape(FIGURE_PREFIX) + r"[0-9]+\.svg", lower) is not None
 
 
-def manifest_names(directory: Path) -> list[str] | None:
-    """在る印が名指しする名前。普通のファイルとして読めない印（ディレクトリ・辿れない symlink・権限）は None——読めない印として名指しする。"""
-    try:
-        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):
-            return None
-    except OSError:
-        return None
-    return owned_names(directory)
+def unreadable_manifest(directory: Path) -> bool:
+    """在るのに読めない印か（#512）。作れたあと、書く前に見る（作れない経路は今までどおりその終了コードで止まる）——書けば読めない印を黙って書き換え（UTF-8 で読めない印）、
+    symlink の印なら先（出力の場所の外）に書く。"""
+    return owned_names(directory) is None
 
 
 def same_entry(a: Path, b: Path) -> bool:
@@ -719,7 +744,7 @@ def leftover_lines(out: Path, named: tuple[Path, ...] = ()) -> list[str]:
         except OSError as e:
             lines.append(f"{directory}: 前の出力が残っているかを確かめられない（{e.strerror}）")
             continue
-        owned = manifest_names(directory) if any(p.name == MANIFEST for p in entries) else []
+        owned = owned_names(directory)
         if owned is None:
             lines.append(f"{directory / MANIFEST}: 印を読めない——この場所の前の出力は消していない（この道具が作ったものか確かめられない）")
         for path in entries:
@@ -828,6 +853,8 @@ def main(argv: list[str]) -> int:
             raise Stop(2, [str(e)])
         except OSError as e:  # git の起動（`run_git`）と手書き部分（`read_hand`）は先に捕まえる。残るのは一時ファイルの読み書き
             raise Stop(2, [f"{e.filename or '（パス不明）'}: 読み書きできない（{e.strerror}）。提案書の材料を読み終えていない"])
+        if unreadable_manifest(out.parent):  # 読めない印は書き換えない・symlink の印の先に書かない（#512）。名指しは `leftover_lines` が言う
+            raise Stop(2, [f"{out.parent / MANIFEST}: 読めない印は書き換えない（中身を確かめて直すか、場所ごと消してから作り直す）"])
         write_outputs(outputs, out.parent)
     except Stop as stop:
         for line in stop.lines + leftover_lines(out, stop.named):
