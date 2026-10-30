@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.66.1 -->
-> **このスキルの版: 1.66.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.67.1 -->
+> **このスキルの版: 1.67.1**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1394,7 +1394,8 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   この項の対象外——手順 8 のとおり起票する。**不在の線の `仕様の穴` で立てる確認の Issue も対象外**——関門の指摘ではなく、
   この周が決めずに残したものの起票だからである。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」を正とする。
   **cruise の台帳の確かめた線が `周の途中の課題 = 台帳に足して直す` なら、(c) はその線で満たす**——(a)・(b) は外れない。
-  振り分けと台帳への足し方は `references/found-lines.md` を正とする。）
+  振り分けと台帳への足し方は `references/found-lines.md` を正とする。**その線で直す行は、触るファイルごとに 1 件の Issue にまとめて起票する**——
+  「残課題を束ねた Issue は作らない」はそれを禁じない（#641。単位は `references/found-lines.md` の「台帳に足す」を正とする）。）
 
 - **必須の 2 パス（初回・指摘対応後）は、差分の大小や道具立てに依らない（必須）。** 下の fan-out や
   `Workflow` は**任意**だが、**2 パスは任意ではない**。「差分が小さいから 1 回で足りる」は fan-out を

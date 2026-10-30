@@ -4,6 +4,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
     python3 <このスキルの base ディレクトリ>/scripts/ledger.py init <名前>
     python3 <…>/ledger.py add  <名前> <番号> [--deps 12,13] [--title 題] [--origin 出所]
     python3 <…>/ledger.py set  <名前> <番号> 鍵=値 [鍵=値 …]
+    python3 <…>/ledger.py group <名前> <代表> <番号> [<番号> …]
     python3 <…>/ledger.py lines <名前> 項目=値 [項目=値 …] --source 出所
     python3 <…>/ledger.py user-ops <名前> [コマンド …] --source 出所
     python3 <…>/ledger.py show <名前>
@@ -34,7 +35,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 ```json
 {"format": 1, "name": "<名前>", "issues": [
   {"number": 12, "title": "", "deps": [], "state": "todo",
-   "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "origin": "", "updated": "<UTC>"}
+   "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "origin": "", "group": "", "updated": "<UTC>"}
 ],
  "lines": {"values": {"仕様の穴": "推奨で決めて起票"}, "source": "<出所>", "updated": "<UTC>"},
  "user_ops": {"commands": ["gh workflow run infra-apply.yml"], "source": "<出所>", "updated": "<UTC>"}}
@@ -66,19 +67,33 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `await` | 利用者の操作待ち（#466）——止まりうる操作（権限の拒否・`user_ops`）を利用者が打つのを待つ。打つコマンドは `note` に。**依存先としては「済んでいない」と読む** |
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
 
-**鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note` `decisions` `origin`。
+**鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note` `decisions` `origin` `group`。
 `deps` はカンマ区切りの番号（空にすると依存なし）。`decisions` はその周が推奨で決めて起票した `要確認` Issue の番号
 （カンマ区切り。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
 `origin` は**周の途中で見つかって台帳に足した行の出所**（どの周のどの関門のどのパスの行か。#464）で、親 Issue から作った行は空。
 **空でない行が「cruise の途中で生まれた行」である**——足し方と、cruise を終えるときの扱いは `references/found-lines.md` を正とする。
+`group` は**まとめ**（#641）——その行が入ったまとめの**代表の番号**（文字列）で、まとめに入っていない行は空（欄が無い台帳もこれまでどおり読む）。
+
+## まとめ（#641）
+
+**同じファイルを触る複数の行を、1 つの周・1 つの PR で回すための束**である。いつ・何をまとめるかは cruise の
+`../cruise/references/grouping.md` を正とする（このスキルの base ディレクトリからの相対）。ここにあるのは台帳の上の振る舞いだけ:
+
+- **作るのは `group <名前> <代表> <番号>…` だけ**——代表を含めて 2 件以上（代表だけなら引数が違うので 2）の、`todo` でどのまとめにも入っていない行を束ね、各行の `group` に代表の番号を書く。
+- **`set` の `state` `pr` `branch` `worktree` `agent` `base`（周の在り処）は、まとめの全行に書く**——`note` `title` `deps` `decisions` `origin` はその行だけ。
+- **抜けるのは `set <番号> group=`**（空だけを渡せる）。**同じ呼び出しの `state` などは、抜けた後のその行だけに効く**——落ちた行を戻す形
+  （まとめの PR のマージの後に `set <番号> group= state=todo pr= branch= worktree= agent= base=`。いつ戻すかは grouping.md の「マージの後」）。
+  **代表は、他の行が残るあいだは抜けられない。**
+- **`next` はまとめを 1 行で出す**——代表を先頭に、残りを台帳の順に空白で区切る。**全行が着手できるときだけ**出し、行を個別には出さない。
+  **まとめの中の依存は済んだと読む**（一緒にマージされるので）。まとめの無い台帳の出力は 1 行 1 番号のまま。
 
 ## 終了コード
 
 | コード | 意味 |
 | --- | --- |
 | 0 | 通った（`next` で着手できるものが 0 件でも 0） |
-| 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形） |
-| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空） |
+| 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形・`group` に代表のほかの番号が無い） |
+| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（まとめを 1 つと数えた循環・在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空・まとめに入れられない行（`todo` でない・別のまとめに入っている・同じ番号を 2 度）・`set group=` に空でない値・他の行が残るまとめから代表を抜く・まとめの状態をそろえなくする操作） |
 | 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
@@ -115,6 +130,22 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`await` の行は `next` に出さず、それに依存する行も出さない**——操作が済むまで、依存する周は始めない。
 - **`lines` は出所の無い値を書かない**——`--source` が空なら拒む。**`lines` は置き換えで、渡さなかった項目は消える**
   ——前の確認の値が、確かめ直した後に黙って残らない。
+- **`group` は `todo` の行だけをまとめる**——進行中・止まった行を引き込むと、その行の worktree と PR を持ったまま別の周に入る。
+- **`group` は別のまとめに入った行を引き込まない**——1 つの行が 2 つの周に入る。
+- **代表は自分のまとめに入っている**——代表が抜けた（`set <代表> group=` で他の行が残る）・代表が台帳に無い台帳を作らない
+  （手で直した台帳なら 4）。
+- **`group` は番号の文字列だけ**——空白を剥がさない（`" 1"` を通すと、検査は 1 つのまとめと読み、`next`・`set` は別のまとめと読む）。手で直した台帳なら 4。
+- **まとめを 1 つの節点と数えた循環を拒む**——行ごとには循環が無くても、まとめの外の行を経てまとめに戻る依存（10 ← 11 ← 12 で 10 と 12 をまとめる）は、
+  そのまとめを永遠に着手させない。`group` でも、まとめの行への `set deps=` でも拒む（手で直した台帳なら 4）。
+- **`group` は同じ番号を 2 度受け付けない**——代表を後ろにもう 1 度書いた形も。
+- **まとめの行は状態がそろう**——`set` の周の在り処（`state` ほか）はまとめの全行に書く。
+- **状態のそろわないまとめを持つ台帳は崩れている**——手で直した台帳なら 4 で、`next` に答えない。
+- **`next` はまとめを、全行が着手できるときだけ 1 行で出す**——1 行だけ着手できても出さない（残りを置いて周を始めない）。
+- **まとめの中の依存は済んだと読む**——読まないと、中に依存のあるまとめが永遠に出ない。
+- **`set group=` は抜けるだけ**——空でない値を拒む（まとめに入れるのは `group` で、件数と状態を確かめてから）。
+- **抜けた行に同じ呼び出しで渡した `state` などは、その行だけに効く**——抜ける前のまとめに伝えると、落ちた 1 件を戻すつもりで全行を戻す。
+  **抜けても、周の在り処（`pr` `branch` `worktree` `agent` `base`）は自分では消さない**——消すのは呼ぶ側
+  （戻すなら同じ呼び出しで `pr= branch= worktree= agent= base=` を渡す。手順は `../cruise/references/grouping.md`）。
 
 守らない:
 
@@ -141,8 +172,10 @@ import tempfile
 from pathlib import Path
 
 STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "await", "dropped")
-KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
-TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")
+KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")
+TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")
+# まとめの全行に書く鍵（周の在り処）。ほかの鍵はその行だけ
+SHARED_KEYS = ("state", "pr", "branch", "worktree", "agent", "base")
 # 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md・fix-line.md・found-lines.md を正とする
 LINES = {
     "直す線": ("既定", "広げる"),
@@ -310,6 +343,18 @@ def validate(data):
     if len(numbers) != len(set(numbers)):
         raise Refused("同じ Issue が 2 度ある")
     known = set(numbers)
+    members = {}
+    for issue in data["issues"]:
+        if issue.get("group", ""):
+            # 空白を剥がさない——" 1" を通すと、検査は 1 つのまとめと読み、`units`・`set` は別のまとめと読む
+            if not re.fullmatch(r"[1-9][0-9]*", issue["group"]):
+                raise Refused(f"#{issue['number']}: group が番号でない {issue['group']!r}")
+            members.setdefault(int(issue["group"]), []).append(issue)
+    for head, rows in members.items():
+        if head not in known or find(data, head).get("group") != str(head):
+            raise Refused(f"まとめ #{head}: 代表が台帳に無いか、代表が自分のまとめに入っていない")
+        if len({r["state"] for r in rows}) != 1:
+            raise Refused(f"まとめ #{head}: 行の状態がそろっていない（" + ", ".join(f"#{r['number']}={r['state']}" for r in rows) + "）")
     graph = {}
     for issue in data["issues"]:
         if issue["state"] not in STATES:
@@ -320,7 +365,18 @@ def validate(data):
             if dep not in known:
                 raise Refused(f"#{issue['number']}: 依存先 #{dep} が台帳に無い（先に add する）")
         graph[issue["number"]] = issue["deps"]
-    # 循環: 深さ優先で、いま辿っている途中の節点に戻ったら循環
+    find_cycle(graph)
+    # まとめを 1 つの節点と数えた循環（まとめの中の依存は数えない）——行ごとには循環が無くても、
+    # まとめの外の行を経てまとめに戻る依存があると、そのまとめは永遠に着手できない
+    node = {i["number"]: int(i["group"]) if i.get("group") else i["number"] for i in data["issues"]}
+    contracted = {n: set() for n in node.values()}
+    for issue in data["issues"]:
+        contracted[node[issue["number"]]].update(node[d] for d in issue["deps"] if node[d] != node[issue["number"]])
+    find_cycle(contracted)
+
+
+def find_cycle(graph):
+    """循環: 深さ優先で、いま辿っている途中の節点に戻ったら循環。"""
     visiting, done = set(), set()
 
     def visit(n, path):
@@ -371,10 +427,32 @@ def find(data, number):
 
 
 def ready(data):
-    """着手できる Issue: 未着手で、依存がすべてマージ済み。"""
+    """着手できる Issue: 未着手で、依存がすべてマージ済み（まとめの中の依存は済んだと読む）。行ごとに見る。"""
     state = {i["number"]: i["state"] for i in data["issues"]}
+    group = {i["number"]: i.get("group", "") for i in data["issues"]}
     return [i for i in data["issues"]
-            if i["state"] == "todo" and all(state.get(d) == DONE for d in i["deps"])]
+            if i["state"] == "todo"
+            and all(state.get(d) == DONE or (i.get("group", "") and group.get(d) == i["group"]) for d in i["deps"])]
+
+
+def units(data):
+    """着手できる周の並び。まとめに入っていない行は 1 件ずつ、まとめは全行が着手できるときだけ 1 つ（代表が先頭）。"""
+    can = {i["number"] for i in ready(data)}
+    out, seen = [], set()
+    for i in data["issues"]:
+        g = i.get("group", "")
+        if not g:
+            if i["number"] in can:
+                out.append([i])
+            continue
+        if g in seen:
+            continue
+        seen.add(g)
+        rows = [r for r in data["issues"] if r.get("group", "") == g]
+        if all(r["number"] in can for r in rows):
+            head = int(g)
+            out.append(sorted(rows, key=lambda r: r["number"] != head))
+    return out
 
 
 def cmd_init(path, name):
@@ -415,6 +493,8 @@ def cmd_set(path, number, pairs):
             changes[key] = ",".join(map(str, parse_deps(value, Refused)))
         elif key == "origin" and not value.strip():
             raise Refused("origin を空にしない（空にすると、cruise を終えるときの「周の途中で足した行」から外れる）")
+        elif key == "group" and value.strip():
+            raise Refused("set group= に渡せるのは空だけ（抜ける）。まとめに入れるのは group で")
         else:
             changes[key] = value
     data = load(path)
@@ -424,8 +504,35 @@ def cmd_set(path, number, pairs):
         raise Refused(f"#{number} を出所があって依存の無い行にしない（元の周のマージより先に next に出る）")
     issue.update(changes)
     issue["updated"] = now()
+    # まとめの全行に周の在り処を書く——抜けた行は、抜けた後の値（空）で見るので、その行だけに効く
+    shared = {k: v for k, v in changes.items() if k in SHARED_KEYS}
+    others = [i for i in data["issues"] if i is not issue and issue.get("group", "") and i.get("group", "") == issue["group"]]
+    if shared:
+        for other in others:
+            other.update(shared)
+            other["updated"] = issue["updated"]
     save(path, data)
-    print(f"#{number}: " + ", ".join(f"{k}={v}" for k, v in changes.items()))
+    print(f"#{number}: " + ", ".join(f"{k}={v}" for k, v in changes.items())
+          + (f"（まとめ #{issue['group']} の " + ", ".join(f"#{o['number']}" for o in others) + " にも）" if shared and others else ""))
+
+
+def cmd_group(path, head, numbers):
+    rows = [head, *numbers]
+    if len(rows) != len(set(rows)):  # 代表を後ろにもう 1 度書いた形も含めて
+        raise Refused("同じ番号を 2 度渡した")
+    data = load(path)
+    issues = [find(data, n) for n in rows]
+    for issue in issues:
+        if issue["state"] != "todo":
+            raise Refused(f"#{issue['number']} は todo でない（{issue['state']}）——進行中・止まった行はまとめない")
+        if issue.get("group", ""):
+            raise Refused(f"#{issue['number']} は既にまとめ #{issue['group']} に入っている")
+    stamp = now()
+    for issue in issues:
+        issue["group"] = str(head)
+        issue["updated"] = stamp
+    save(path, data)
+    print(f"まとめ #{head}: " + ", ".join(f"#{n}" for n in rows))
 
 
 def cmd_lines(path, pairs, source):
@@ -469,20 +576,22 @@ def cmd_show(path):
         ops = data["user_ops"]
         print("利用者が打つ操作（出所: {}・{}）: {}".format(ops["source"], ops["updated"], ", ".join(ops["commands"])))
     print()
-    print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 出所 | 更新 |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 出所 | まとめ | 更新 |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for i in data["issues"]:
         deps = ", ".join(f"#{d}" for d in i["deps"]) or "-"
         cells = [f"#{i['number']} {i.get('title', '')}".strip(), i["state"], deps,
                  *(i.get(k, "") or "-" for k in ("pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")),
-                 i.get("updated", "")]
+                 f"#{i['group']}" if i.get("group") else "-", i.get("updated", "")]
         print("| " + " | ".join(str(c) for c in cells) + " |")
     going = [i for i in data["issues"] if i["state"] in ("impl", "gate", "pr", "blocked", "await")]
-    can = ready(data)
-    waiting = [i for i in data["issues"] if i["state"] == "todo" and i not in can]
+    can = units(data)
+    started = {r["number"] for u in can for r in u}
+    waiting = [i for i in data["issues"] if i["state"] == "todo" and i["number"] not in started]
     print()
     print("進行中（実物で確かめてから続ける）: " + (", ".join(f"#{i['number']}({i['state']})" for i in going) or "なし"))
-    print("着手できる: " + (", ".join(f"#{i['number']}" for i in can) or "なし"))
+    print("着手できる: " + (", ".join(f"#{u[0]['number']}" + (
+        "（まとめ: " + ", ".join(f"#{r['number']}" for r in u[1:]) + "）" if len(u) > 1 else "") for u in can) or "なし"))
     print("依存待ち: " + (", ".join(f"#{i['number']}" for i in waiting) or "なし"))
     awaiting = [i for i in data["issues"] if i["state"] == "await"]
     print("利用者の操作待ち: " + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in awaiting) or "なし"))
@@ -490,14 +599,19 @@ def cmd_show(path):
     if any(i.get("origin") for i in data["issues"]):
         print("周の途中で足した行のうち済んでいないもの: "
               + (", ".join(f"#{i['number']}({i['state']})" for i in found) or "なし"))
+    heads = sorted({i["group"] for i in data["issues"] if i.get("group")}, key=int)
+    if heads:
+        print("まとめ: " + "; ".join(
+            f"#{h}（{find(data, int(h))['state']}）= " + ", ".join(
+                f"#{i['number']}" for i in data["issues"] if i.get("group") == h) for h in heads))
     if data["issues"] and all(i["state"] in (DONE, "dropped") for i in data["issues"]):
         print("すべてマージ済みか取り下げ")
 
 
 def cmd_next(path):
     data = load(path)
-    for i in ready(data):
-        print(i["number"])
+    for unit in units(data):
+        print(" ".join(str(i["number"]) for i in unit))
 
 
 def build_parser():
@@ -511,6 +625,10 @@ def build_parser():
     a.add_argument("--deps", default="")
     a.add_argument("--title", default="")
     a.add_argument("--origin", default=None)
+    g = sub.add_parser("group")
+    g.add_argument("name")
+    g.add_argument("head")
+    g.add_argument("numbers", nargs="+")
     s = sub.add_parser("set")
     s.add_argument("name")
     s.add_argument("number")
@@ -539,6 +657,8 @@ def main(argv=None, cwd=None):
             cmd_add(path, parse_number(args.number), parse_deps(args.deps), args.title, args.origin)
         elif args.cmd == "set":
             cmd_set(path, parse_number(args.number), args.pairs)
+        elif args.cmd == "group":
+            cmd_group(path, parse_number(args.head), [parse_number(n) for n in args.numbers])
         elif args.cmd == "lines":
             cmd_lines(path, args.pairs, args.source)
         elif args.cmd == "user-ops":
