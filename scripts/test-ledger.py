@@ -346,14 +346,17 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
 
     # L15（#641）: まとめ。2・3 は中に依存（3 → 2）のあるまとめ、7・8 は 8 だけが着手できない（8 → 1）まとめ
     run(mod, ["init", "gr"], root)
-    for args in (["1"], ["2"], ["3", "--deps", "2"], ["4"], ["5"], ["6"], ["7"], ["8", "--deps", "1"]):
+    for args in (["1"], ["2"], ["3", "--deps", "2"], ["4"], ["5"], ["6"], ["7"], ["8", "--deps", "1"], ["9"]):
         run(mod, ["add", "gr", *args], root)
     gf = plans / "cruise-gr.json"
+    # 5 と 9 はどちらも進行中——状態はそろうので、todo の検査が無いと状態の検査では拒めない
     run(mod, ["set", "gr", "5", "state=impl"], root)
+    run(mod, ["set", "gr", "9", "state=impl"], root)
     o["group 作る"] = run(mod, ["group", "gr", "2", "3"], root)[:2]
     before = snapshot(gf)
-    # todo でない行（5）・別のまとめの行（3）・1 件だけ・同じ番号 2 度
-    o["group 拒む"] = tuple(run(mod, ["group", "gr", *a], root)[0] for a in (["4", "5"], ["4", "3"], ["4"], ["4", "6", "6"]))
+    # todo でない行（5・9）・別のまとめの行（3）・1 件だけ（代表を 2 度）・同じ番号 2 度
+    o["group 拒む"] = tuple(run(mod, ["group", "gr", *a], root)[0]
+                           for a in (["5", "9"], ["4", "3"], ["4", "4"], ["4", "6", "6"]))
     o["group 拒んだ後も同じ"] = snapshot(gf) == before
     o["next(まとめ)"] = run(mod, ["next", "gr"], root)[1].splitlines()
     o["group 一部が依存待ち"] = run(mod, ["group", "gr", "7", "8"], root)[0]
@@ -454,7 +457,7 @@ MUTATIONS = {
         ("    for n in graph:\n        visit(n, [])", "    pass")],
     # 守る: next は依存がすべてマージ済みのものだけ
     "依存が未着手でなければ済んだと読む": [
-        ('all(state.get(d) == DONE for d in i["deps"])', 'all(state.get(d) != "todo" for d in i["deps"])')],
+        ('all(state.get(d) == DONE or (i.get', 'all(state.get(d) != "todo" or (i.get')],
     # 守る: 読めない台帳を空と読まない
     "無い台帳を空と読む": [
         ('        raise Unknown(f"台帳が無い: {path}")',
@@ -480,8 +483,8 @@ MUTATIONS = {
          '    if False:')],
     # 守る: origin も文字列だけ
     "origin の型を見ない": [
-        ('TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")',
-         'TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions")')],
+        ('TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")',
+         'TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "group")')],
     # 守る: origin を空で書かない
     "add の空の origin を通す": [
         ("    if origin is not None and not origin.strip():", "    if False:")],
@@ -497,7 +500,7 @@ MUTATIONS = {
         ('        raise Refused("出所が空（--source に、誰がいつ決めたかを書く）")',
          '        pass')],
     "await に依存する行を next に出す": [
-        ('all(state.get(d) == DONE for d in i["deps"])', 'all(state.get(d) in (DONE, "await") for d in i["deps"])')],
+        ('all(state.get(d) == DONE or (i.get', 'all(state.get(d) in (DONE, "await") or (i.get')],
     # 守る（#641）: まとめ
     "group が todo でない行をまとめる": [
         ('        if issue["state"] != "todo":\n            raise Refused(f"#{issue[\'number\']} は todo でない',
