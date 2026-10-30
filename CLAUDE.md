@@ -173,7 +173,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **変異テストを含む**（**何を守り何を守らないかは docstring を正とする**）
   - `test-check-plan-scope.py` - 変更範囲の検査の回帰テスト（変異テストを含む）
   - `test-worktree-scripts.py` - **入場と PR 前提条件の回帰テスト**（変異テストを含む。**`MUTATIONS` の変異の数は出力が言う**——
-    2 本の「守る」の行数の合計と等しいことはテスト自身が見る。#545）。
+    スクリプトごとに「守る」の行数と等しいことはテスト自身が見る——2 本の合計では見ない。#545・#595）。
     **周の base の取り方も、ここで陽性対照つきで実証している**（#148）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/` にある**
     （`prepare-worktree.sh` / `check-pr-preconditions.sh`）
@@ -668,7 +668,7 @@ probe スキルを `claude -p` で起動し、**トランスクリプトに印�
 
 **入場と PR 前提条件もスクリプトにした**（#136 段 3）——`prepare-worktree.sh` と
 `check-pr-preconditions.sh`。**手順 4 の入場は #96 / #110 / #113 で繰り返し穴が見つかったのに、
-テストが 1 本も無かった**。**いまは変異テストで押さえている**（`MUTATIONS` の変異の数は `test-worktree-scripts.py` の出力が言う——2 本の「守る」の行数の合計と等しいことはテスト自身が見る）。
+テストが 1 本も無かった**。**いまは変異テストで押さえている**（`MUTATIONS` の変異の数は `test-worktree-scripts.py` の出力が言う——スクリプトごとに「守る」の行数と等しいことはテスト自身が見る。2 本の合計では見ない。#595）。
 
 **`EnterWorktree` / `ExitWorktree` はスクリプトから呼べない。** だから
 **スクリプトは素の git で済む部分だけ**を担い、**入場そのものは道具に残す**

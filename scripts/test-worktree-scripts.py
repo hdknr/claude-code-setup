@@ -13,7 +13,8 @@
 **歯止めが無いと、テストがこのリポジトリに worktree を作ってしまう。**
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**壊したのに緑のままなら失格**とする。
-**「守る」の行数と変異の数が 1 対 1 か**は、**テスト自身が数える。**
+**「守る」の行数と変異の数が、スクリプトごとに 1 対 1 か**は、**テスト自身が数える**
+（2 本の合計では数えない——「守る」を別のスクリプトへ 1 行移しても合計は変わらない。#595）。
 
 **#148 で 2 つ目の主題が入った**——**周の base をどこから取るか**である。
 **`prepare-worktree.sh` の start-point**（変異で当てる）と、
@@ -256,14 +257,20 @@ def _spaced_cd_example_runs(prepare: Path, base: Path) -> bool:
 
 
 def _quoted_cd_example_runs(prepare: Path, base: Path) -> bool:
-    """`'` と `$` を含むパスでも、例外の行の `cd` の例がそのまま通るか（#543）。
+    """`'`・`$`・`"`・バッククォート・`\\` を含むパスでも、例外の行の `cd` の例がそのまま通るか（#543・#576）。
     **空白だけの試料では引用の中身が試されない**——一重引用符で囲むだけで `'` を `'\\''` に
     置き換えない形も、二重引用符で囲む形も、空白と日本語の試料は通る（#502 の狭いパスで素通りした）。
-    **`'` は前者を、`$` は後者を殺す**——どちらかを試料から外すと、片方の変異が素通りする
-    （`QUOTE_MUTATIONS` が当てて確かめる）。"""
+    **`'` は前者を殺す。** **二重引用符の中で特別な 4 文字（`$`・`"`・バッククォート・`\\`）は、
+    1 文字ずつ「それだけを逃がさない」変異を殺す**——どれかを試料から外すと、その文字を逃がさない変異が素通りする
+    （`QUOTE_MUTATIONS` が当てて確かめる）。**`$` だけを置いていたときは、`$` だけを逃がす二重引用符の変異が
+    素通りした**（#576）。**`\\` は 2 つ並べる**——二重引用符の中の `\\` は、後ろが特別な文字でなければそのまま残るので、
+    1 つだけでは「`\\` を逃がさない」変異が素通りする。"""
     # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"its\" / \"$HOME x\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
     # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"it's\" / \"HOME x\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
-    repo = make_repo(base / "it's" / "$HOME x" / "repo")
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "'dq\"x'", "new": "'dqx'", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"b`q\"", "new": "\"bq\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"b\\\\\\\\s\"", "new": "\"bs\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
+    repo = make_repo(base / "it's" / "$HOME x" / 'dq"x' / "b`q" / "b\\\\s" / "repo")
     res = run(prepare, repo, "46", "quoted")
     return res.returncode == 0 and cruise_exception_follows(
         res.stdout, repo / ".claude" / "worktrees" / "issue-46")
@@ -344,6 +351,18 @@ def cd_example_runs(line: str, wt: Path) -> bool:
     return res.returncode == 0 and res.stdout.strip() == str(wt.resolve())
 
 
+def stdout_head_unchanged(res, main: Path, number: str, slug: str) -> bool:
+    """作るとき（0）の標準出力の冒頭が、照合の前に出していたときと同じ 3 行か（#560）——
+    メインの作業ツリー・作ろうとしているもの・空行。**origin の有無・名指しの base・壊れた `origin/HEAD` の
+    どの経路でも見る**（`observe()`）——origin の無い木だけでは、取り直しと解決の経路で冒頭の前に
+    標準出力へ書く変更が見えない（#560 の周の `/code-review` 1 パス目 CR1-5）。"""
+    wt = main / ".claude" / "worktrees" / f"issue-{number}"
+    return res.returncode == 0 and res.stdout.splitlines()[:3] == [
+        f"メインの作業ツリー: {main.resolve()}",
+        f"作ろうとしているもの: {wt.resolve()}  [issue/{number}-{slug}]",
+        ""]
+
+
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
     """両スクリプトの分岐をまとめて観測する。**1 回の観測で 1 つの偽リポジトリを使い切る。**"""
     repo = make_repo(base / "repo")
@@ -366,7 +385,12 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **案内の直後の行に、cruise の子の例外が出るか**（#502）。
         # **「出力のどこかに在る」では見ない**——離れた行に置くと、案内だけを読んだ子が呼ぶ。
         "cruise の子の例外が案内の直後にある": cruise_exception_follows(first.stdout, wt),
+        # **作るとき（0）の標準出力の冒頭は変えない**（#560）——出す行も順番も、照合の前に出していたときと同じ。
+        "0 の標準出力の冒頭": stdout_head_unchanged(first, repo, "42", "sample"),
         "2 回目は断る": again.returncode,
+        # **3 で断るとき、標準出力には何も出さない**（#560）。**「作ろうとしているもの」が残ると、
+        # 標準出力だけを読む側には断ったことが分からない**（#544 の `/code-review` 2 パス目 CR2-1）。
+        "3 の標準出力が空": again.stdout == "",
         # **3 の見出しの下に一覧があるか、標準エラーの中で見る**（#544。見出しが標準出力にあれば偽）。
         # **標準出力だけを読む側には、見出しだけ出て下が空に見えていた。**
         "3 の見出しの下に一覧がある（標準エラー）": exists_headers_have_lists(again),
@@ -441,6 +465,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         res = run(prepare, work, "55", "ahead")
         wt3 = work / ".claude" / "worktrees" / "issue-55"
         out[f"進んだ origin（{label}）: rc"] = res.returncode
+        out[f"進んだ origin（{label}）: 0 の標準出力の冒頭"] = stdout_head_unchanged(res, work, "55", "ahead")
         if wt3.is_dir():
             head = git(wt3, "rev-parse", "HEAD").stdout.strip()
             out[f"進んだ origin（{label}）: 切った先"] = (
@@ -465,6 +490,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
               env=dict(os.environ, DEV_LOOP_BASE_REF="origin/sibling"))
     wt56 = stale / ".claude" / "worktrees" / "issue-56"
     out["まだ取れていない参照: rc"] = sib.returncode
+    out["まだ取れていない参照: 0 の標準出力の冒頭"] = stdout_head_unchanged(sib, stale, "56", "sibling")
     out["まだ取れていない参照: 切った先"] = (
         "sibling" if wt56.is_dir()
         and git(wt56, "rev-parse", "HEAD").stdout.strip() == ahead["SIB"]
@@ -481,6 +507,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     dang = make_dangling_origin_head(base / "dangling")
     dres = run(prepare, dang, "66", "dangling")
     out["壊れた origin/HEAD: rc"] = dres.returncode
+    out["壊れた origin/HEAD: 0 の標準出力の冒頭"] = stdout_head_unchanged(dres, dang, "66", "dangling")
     out["壊れた origin/HEAD: 作れた"] = (
         dang / ".claude" / "worktrees" / "issue-66").is_dir()
     out["壊れた origin/HEAD: 黙らない"] = "壊れている" in (dres.stderr + dres.stdout)
@@ -493,10 +520,27 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     return out
 
 
+QUOTE_LINE = re.compile(r"^PATH_Q=.*$", re.M)
+
+
+def find_quote_line(source: str) -> str | None:
+    """**守る 17 の当て先**——`PATH_Q=` で始まる行を、**行の中身ではなく行頭で**探す（#577）。
+    **1 本だけあればその行を返し、無いか 2 本以上なら `None`。**
+    **中身の完全一致で探すと、`PATH_Q` を正しく書き換えただけで当て先が見つからず**、
+    `check_quote_mutations` の陽性対照も変異も走らなくなる（#543 の `/code-review` 1 パス目 CR1-4。
+    検査は「当てる先が 1 箇所ある」で赤になるので黙って緑にはならないが、直すまで引用の検査が 1 つも走らない）。"""
+    found = QUOTE_LINE.findall(source)
+    return found[0] if len(found) == 1 else None
+
+
 # **守る 17 の当て先。** 下の `QUOTE_MUTATIONS`（#543）も同じ行に当てる。
-QUOTE_NEEDLE = 'PATH_Q="\'$(printf \'%s\' "$PATH_ABS" | sed "s/\'/\'\\\\\\\\\'\'/g")\'"'
+# **見つからなければ、本体に無い文字列を置く**——`main()` の「変異を当てる先が 1 箇所ある」が赤になる。
+QUOTE_NEEDLE = (find_quote_line(PREPARE.read_text(encoding="utf-8"))
+                or "<prepare-worktree.sh に PATH_Q= で始まる行が 1 本だけではない>")
 
 MUTATIONS = {
+    # **「守る」の行数と変異の数の 1 対 1 は、`main()` がスクリプトごとに数える**——各項目の第 1 要素で振り分ける
+    # （2 本の合計では数えない。#595）。**見出しは並びの目印で、数えるときには使わない。**
     # --- prepare-worktree.sh の「守る」 ---
     # 守る 1: 先に見る（再開の周を新規として踏み潰さない）
     "先に見ずに作る": (PREPARE,
@@ -528,6 +572,13 @@ MUTATIONS = {
     "3 の一覧の 2 行目から字下げを落とす": (PREPARE,
         "indent_list() { sed 's/^/    /'; }",
         "indent_list() { sed '1s/^/    /'; }"),
+    # 守る 20（prepare）: 3 で断るとき、標準出力には何も出さない（#560）
+    # **3 で断る経路にだけ標準出力の行を足す**——0 の出力は変えない。**照合の前に足す形では 0 の冒頭も変わり、
+    # 観測「0 の標準出力の冒頭」だけで死ぬので、「3 の標準出力が空」が要ることを示さない**（#560 の `/code-review` 1 パス目 CR1-1）。
+    "3 で断るときに作ろうとしているものを出す": (PREPARE,
+        '  echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2\n  exit 3\n',
+        '  echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2\n'
+        '  echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"\n  exit 3\n'),
     # 守る 6（prepare）: 判定できなかったことを「当たらなかった」と答えない
     # **root の守りを壊すと、背後の守りが終了コード 6 で受け止める**ので観測が変わる。
     "見られなくても作る": (PREPARE,
@@ -577,7 +628,7 @@ MUTATIONS = {
     "相対のまま root 起点で解決する": (PREPARE,
         'MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"',
         'MAIN="$(cd "$(git rev-parse --show-toplevel)/$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P)"'),
-    # --- check-pr-preconditions.sh の「守る」（「守る」の行数と変異の数の 1 対 1 は、`main()` が 2 本の合計で数える） ---
+    # --- check-pr-preconditions.sh の「守る」 ---
     # 守る 1: worktree にいるか
     "worktree 判定をしない": (PRECOND,
         'if [ "$GIT_DIR" = "$COMMON_DIR" ]; then',
@@ -600,32 +651,129 @@ MUTATIONS = {
         '  GIT_DIR=""; COMMON_DIR=""\nfi'),
 }
 
-# **守る 17（cd の例をシェルに貼れる形で出す）を、引用の中身で壊す変異**（#543。#502 の狭いパスの N1 で素通りした 2 件）。
+# **守る 17（cd の例をシェルに貼れる形で出す）を、引用の中身で壊す変異**（#543。#502 の狭いパスの N1 で素通りした 2 件と、#576）。
 # **`MUTATIONS` に入れない**——同じ守るを別の形で壊すもので、「守る」の行数と変異の数の 1 対 1 に数えない。
 # **`observe()` も回さない**——当てるのは `_quoted_cd_example_runs` だけ（`observe()` の回数を増やさない。#449）。
+# **二重引用符の形は、特別な 4 文字（`$`・`"`・バッククォート・`\`）のうち 1 文字だけを逃がさない形を 1 つずつ置く**
+# ——4 つとも逃がす形は正しい（下の `QUOTE_CONTROLS`）ので、各変異が死ぬ理由は逃がさなかった 1 文字だけになり、
+# 試料のその文字が要ることを 1 文字ずつ示せる（`_quoted_cd_example_runs` の mutation-claim が当てる）。
 QUOTE_MUTATIONS = {
     "一重引用符で囲むだけで ' を置き換えない": 'PATH_Q="\'$PATH_ABS\'"',
     "二重引用符で囲む": 'PATH_Q="\\"$PATH_ABS\\""',
+    # #576 の CR1-1——`$` だけを逃がす。試料に `$` しか無かったときは素通りした。
+    "二重引用符で囲み $ だけを逃がす":
+        r'''PATH_Q="\"$(printf '%s' "$PATH_ABS" | sed 's/[$]/\\&/g')\""''',
+    "二重引用符で囲み $ を逃がさない":
+        r'''PATH_Q="\"$(printf '%s' "$PATH_ABS" | sed 's/[`"\]/\\&/g')\""''',
+    "二重引用符で囲み \" を逃がさない":
+        r'''PATH_Q="\"$(printf '%s' "$PATH_ABS" | sed 's/[$`\]/\\&/g')\""''',
+    "二重引用符で囲み ` を逃がさない":
+        r'''PATH_Q="\"$(printf '%s' "$PATH_ABS" | sed 's/[$"\]/\\&/g')\""''',
+    "二重引用符で囲み \\ を逃がさない":
+        r'''PATH_Q="\"$(printf '%s' "$PATH_ABS" | sed 's/[$`"]/\\&/g')\""''',
+}
+
+# **陽性対照——正しい引用の別の形。** どちらも引用の試料を通らなければならない。
+# **4 つとも逃がす二重引用符の形**が通るので、上の二重引用符の変異は「二重引用符だから」ではなく
+# 逃がさなかった 1 文字で死んでいる。**`sed -e` の形**は `PATH_Q` を正しく書き換えた例で、
+# 当て先が行頭で見つかり（`find_quote_line`）、引用の検査が走り続けることを示す（#577）。
+QUOTE_CONTROLS = {
+    "二重引用符で囲み 4 文字とも逃がす":
+        r'''PATH_Q="\"$(printf '%s' "$PATH_ABS" | sed 's/[$`"\]/\\&/g')\""''',
+    "sed に -e を付ける（PATH_Q の正しい書き換え）":
+        r'''PATH_Q="'$(printf '%s' "$PATH_ABS" | sed -e "s/'/'\\\\''/g")'"''',
 }
 
 
 def check_quote_mutations(base: Path) -> None:
-    """`QUOTE_MUTATIONS` を当て、**`'` と `$` の試料では赤・空白と日本語の試料では緑**になることを見る。
+    """`QUOTE_MUTATIONS` を当て、**引用の試料（`_quoted_cd_example_runs`）では赤・空白と日本語の試料では緑**になることを見る。
     **後者が陽性対照である**——空白の試料でも落ちるなら、その変異は引用の中身ではなく別のところで
-    壊れており、`'` と `$` の試料が要る理由を示さない。"""
+    壊れており、引用の試料が要る理由を示さない。
+    **`QUOTE_CONTROLS` は両方の試料で緑**になることを見る——正しい形まで落とす試料なら、変異が死んでも何も示さない。
+    **書き換えた行も行頭で見つかる**ことを併せて見る（#577）。"""
     source = PREPARE.read_text(encoding="utf-8")
-    check("引用の変異を当てる先が 1 箇所ある", source.count(QUOTE_NEEDLE) == 1)
-    if source.count(QUOTE_NEEDLE) != 1:
+    needle = find_quote_line(source)
+    check("引用の変異を当てる先（PATH_Q= で始まる行）が 1 箇所ある", needle is not None)
+    if needle is None:
         return
     for i, (name, replacement) in enumerate(QUOTE_MUTATIONS.items()):
         d = base / f"quote-{i}"
         (d / "scripts").mkdir(parents=True)
         mutated = d / "scripts" / PREPARE.name
-        mutated.write_text(source.replace(QUOTE_NEEDLE, replacement, 1), encoding="utf-8")
+        mutated.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
         check(f"陽性対照: 空白と日本語の試料は素通りする: {name}",
               _spaced_cd_example_runs(mutated, d / "spaced"))
-        check(f"変異を殺せる（' と $ の試料）: {name}",
+        check(f"変異を殺せる（引用の試料）: {name}",
               not _quoted_cd_example_runs(mutated, d / "quoted"))
+    for i, (name, replacement) in enumerate(QUOTE_CONTROLS.items()):
+        d = base / f"quote-control-{i}"
+        (d / "scripts").mkdir(parents=True)
+        rewritten = source.replace(needle, replacement, 1)
+        check(f"陽性対照: 書き換えた行も行頭で当て先として見つかる: {name}",
+              find_quote_line(rewritten) == replacement)
+        control = d / "scripts" / PREPARE.name
+        control.write_text(rewritten, encoding="utf-8")
+        check(f"陽性対照: 正しい形は引用の試料も通る: {name}",
+              _quoted_cd_example_runs(control, d / "quoted"))
+        check(f"陽性対照: 正しい形は空白と日本語の試料も通る: {name}",
+              _spaced_cd_example_runs(control, d / "spaced"))
+
+
+def promise_count_pairs(bodies: dict[Path, str]) -> dict[Path, tuple[int, int]]:
+    """スクリプトごとに (「何を守るか」の `# - ` の行数, そのスクリプトに当てる `MUTATIONS` の数) を返す（#595）。
+    **変異の振り分けは各項目の第 1 要素で決める**——`MUTATIONS` の見出しのコメントでは数えない。"""
+    out = {}
+    for script, body in bodies.items():
+        section = body.split("## 何を守るか")[1].split("## 何を守らないか")[0]
+        promises = len([l for l in section.splitlines() if l.startswith("# - ")])
+        mutants = sum(1 for target, _, _ in MUTATIONS.values() if target == script)
+        out[script] = (promises, mutants)
+    return out
+
+
+def _move_one_promise(bodies: dict[Path, str], src: Path, dst: Path) -> dict[Path, str]:
+    """`src` の「何を守るか」の最初の `# - ` の行を、`dst` の「何を守るか」の先頭へ移した本文を返す（メモリの上だけ）。"""
+    head, rest = bodies[src].split("## 何を守るか", 1)
+    section, tail = rest.split("## 何を守らないか", 1)
+    lines = section.splitlines(keepends=True)
+    line = lines.pop(next(i for i, l in enumerate(lines) if l.startswith("# - ")))
+    moved = dict(bodies)
+    moved[src] = head + "## 何を守るか" + "".join(lines) + "## 何を守らないか" + tail
+    dhead, drest = bodies[dst].split("## 何を守るか", 1)
+    moved[dst] = dhead + "## 何を守るか\n" + line + drest
+    return moved
+
+
+def promise_count_failures(bodies: dict[Path, str]) -> list[str]:
+    """**出荷した判定**——「守る」の行数と変異の数が食い違うスクリプトを、`check()` の名前の形で返す（#595）。
+    **本物の本文にも、移した本文にも、この同じ関数を当てる**（`check_promise_counts`）——実証が自前の判定を持つと、
+    この関数を合計の比較に戻しても実証は緑のまま残る（#560 の周の `/code-review` 1 パス目 CR1-2）。"""
+    return [f"{script.name}: 「守る」{promises} 行に対して変異が {mutants} 件"
+            for script, (promises, mutants) in promise_count_pairs(bodies).items()
+            if promises != mutants]
+
+
+def check_promise_counts() -> None:
+    """「守る」の行数と変異の数が、**スクリプトごとに** 1 対 1 か（#595）。
+    **2 本の合計では見ない**——合計だけを比べていたときは、「守る」を一方のスクリプトから他方へ 1 行移しても
+    合計が変わらず緑のままだった（#545 の周で実証）。
+    **その移す変異で赤になることを、ここで毎回当てて示す**——本物の 2 本の本文から、prepare の「守る」を 1 行
+    precond へ移した本文をメモリの上に作り、**合計は等しいまま（合計で数えると素通りする）**で、
+    **出荷した判定（`promise_count_failures`）が食い違いを見つける**ことを見る。"""
+    bodies = {s: s.read_text(encoding="utf-8") for s in (PREPARE, PRECOND)}
+    pairs = promise_count_pairs(bodies)
+    real = promise_count_failures(bodies)
+    for script, (promises, mutants) in pairs.items():
+        name = f"{script.name}: 「守る」{promises} 行に対して変異が {mutants} 件"
+        check(name, name not in real)
+    check("どの変異も 2 本のどちらかに当てる",
+          sum(m for _, m in pairs.values()) == len(MUTATIONS))
+    moved_bodies = _move_one_promise(bodies, PREPARE, PRECOND)
+    moved = promise_count_pairs(moved_bodies)
+    check("「守る」を prepare から precond へ 1 行移すと、合計は等しいまま（合計で数えると素通りする）",
+          sum(p for p, _ in moved.values()) == sum(m for _, m in moved.values()))
+    check("「守る」を prepare から precond へ 1 行移すと、出荷した判定は 2 本とも食い違いを見つける",
+          len(promise_count_failures(moved_bodies)) == 2)
 
 
 def counting_git_dir(base: Path, log: Path) -> Path:
@@ -1173,6 +1321,15 @@ def main() -> int:
               correct["cruise の子の例外が案内の直後にある"])
         check("3 で終わるとき、見出しの下に一覧がある——どちらも標準エラーに出て、標準出力に見出しは出ない（#544）",
               correct["3 の見出しの下に一覧がある（標準エラー）"])
+        check("3 で断るとき、標準出力には何も出さない——「作ろうとしているもの」も出ない（#560）",
+              correct["3 の標準出力が空"])
+        check("作るとき（0）の標準出力の冒頭は変わらない——メインの作業ツリー・作ろうとしているもの・空行（#560）",
+              correct["0 の標準出力の冒頭"])
+        check("origin あり・名指しの base・壊れた origin/HEAD の経路でも、0 の標準出力の冒頭は変わらない（#560）",
+              all(correct[k] for k in ("進んだ origin（未取得）: 0 の標準出力の冒頭",
+                                       "進んだ origin（取得済み）: 0 の標準出力の冒頭",
+                                       "まだ取れていない参照: 0 の標準出力の冒頭",
+                                       "壊れた origin/HEAD: 0 の標準出力の冒頭")))
         check("3 の試料は一致が複数ある（worktree もブランチも 2 行以上。#558）",
               min(correct["3 の一覧の行数（worktree, ブランチ）"]) >= 2)
         check("3 で終わるとき、一覧のどの行にも同じ字下げが付く（#558）",
@@ -1180,7 +1337,7 @@ def main() -> int:
         check("空白を含むパスでも、例外の行の cd の例がそのまま通る（#502）",
               correct["空白を含むパスでも cd の例が通る"])
         # **`observe()` の外で見る**——`MUTATIONS` の変異でこの試料にしか殺せないものは無いので、観測ごとには回さない（#449）。
-        check("' と $ を含むパスでも、例外の行の cd の例がそのまま通る（#543）",
+        check("'・$・\"・バッククォート・\\ を含むパスでも、例外の行の cd の例がそのまま通る（#543・#576）",
               _quoted_cd_example_runs(PREPARE, base / "quoted"))
         check("別の worktree から走らせても入れ子で生えない", correct["入れ子で生えていない"])
         check("別の worktree から走らせても規約の場所に作る",
@@ -1284,14 +1441,8 @@ def main() -> int:
         print("\n断る周でネットワークに出ないか")
         check_no_network_on_reject(base / "reject")
 
-        print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
-        promises = 0
-        for script in (PREPARE, PRECOND):
-            body = script.read_text(encoding="utf-8")
-            section = body.split("## 何を守るか")[1].split("## 何を守らないか")[0]
-            promises += len([l for l in section.splitlines() if l.startswith("# - ")])
-        check(f"2 本の「守る」{promises} 行に対して変異が {len(MUTATIONS)} 件",
-              promises == len(MUTATIONS))
+        print("\n「守る」の行数と変異の数が、スクリプトごとに 1 対 1 か（手で数えない。#595）")
+        check_promise_counts()
 
         print("\n選んだ base の形を、実際に当てて確かめる（#148。陽性対照つき）")
         demonstrate_base_rule(base / "rule")
