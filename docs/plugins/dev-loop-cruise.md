@@ -30,6 +30,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 不在の線 | `references/absent-lines.md` | 利用者がいないとき、止まる代わりに進んでよい範囲 |
 | 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども |
 | 直す線 | `references/fix-line.md` | 関門の指摘をどこまで周の中で直すか |
+| まとめの周 | `../cruise/references/grouping.md`・`scripts/ledger.py`（`group`） | 周の途中で足した、同じファイルを触る行を 1 周・1 PR にまとめる（[#641](https://github.com/hdknr/claude-code-setup/issues/641)） |
 | 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
 | 子プロセスの周（任意） | `../cruise/scripts/child-cycle.py`・`../cruise/references/child-process.md` | 周を `claude -p` の子プロセスで回す起動口と要約。親の `/clear` の道連れにならない。**既定はサブエージェントのまま**（[#491](https://github.com/hdknr/claude-code-setup/issues/491)） |
 
@@ -43,7 +44,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 
 **部品がそろうのは dev-loop 1.55.0 からで、積んだ周のマージの歯止め（[#426](https://github.com/hdknr/claude-code-setup/issues/426)）が
 入ったのは 1.56.0、起動のコマンド `/dev-loop:cruise`（[#446](https://github.com/hdknr/claude-code-setup/issues/446)）が
-入ったのは 1.57.0、親 Issue の線（`cruise:` の行。[#458](https://github.com/hdknr/claude-code-setup/issues/458)）が入ったのは 1.58.0、周の途中で見つかった課題を台帳に足す線（[#464](https://github.com/hdknr/claude-code-setup/issues/464)）が入ったのは 1.59.0 です。**
+入ったのは 1.57.0、親 Issue の線（`cruise:` の行。[#458](https://github.com/hdknr/claude-code-setup/issues/458)）が入ったのは 1.58.0、周の途中で見つかった課題を台帳に足す線（[#464](https://github.com/hdknr/claude-code-setup/issues/464)）が入ったのは 1.59.0、同じファイルを触る足した行を 1 周にまとめる手順（[#641](https://github.com/hdknr/claude-code-setup/issues/641)）が入ったのは 1.67.0 です。**
 1.55.0 より前の版には、台帳も不在の線も入っていません。
 
 ```bash
@@ -162,6 +163,11 @@ cruise: 直す線 = 既定
   利用者の判断が要る行は止めておき、居るときは周の合間にまとめて訊かれます。`--absent` なら訊かずに、終えるときに渡されます。
   元の周のマージの判断（狭いパスの指摘は人が決める、など）は変わりません。振り分けの決まりは
   [`references/found-lines.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/found-lines.md)
+  を正とします。
+  **直す行は触るファイルごとに 1 件の Issue（チェックリスト）で起票され、同じファイルを触る足した行は、次の周を選ぶ前に 1 周・1 PR にまとめられます**
+  （2〜5 件。訊かずにまとめ、居るときは報告に並びます。PR に `Fixes` が並び、マージの後に閉じなかった元の Issue は PR を名指しして閉じます）。
+  いつ・何をまとめるかは
+  [`references/grouping.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/references/grouping.md)
   を正とします。
 - **`本番反映` の行は無視されます**（広げられません）。書けない値や同じ線の 2 行は、台帳を作らずに止まります。
 - 線の意味と、各周がどの順で読むか（台帳 → `.claude/dev-loop.md` → 既定）は

@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.66.0 -->
-> **このスキルの版: 1.66.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.67.0 -->
+> **このスキルの版: 1.67.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -192,6 +192,9 @@ check-unattended-env.py --cruise             # --absent
 **台帳の読み書きと再開の決まりは `../dev-loop/references/ledger.md` を正とする**（いつ書くか・書くのは親だけ・実物で確かめる）。
 
 1. **着手できる Issue を選ぶ**——`ledger.py next issue-<親>`。並行に始めてよいのは、台帳上で互いに依存していないものだけ。
+   **1 行に番号が複数並んでいたら、それはまとめ（代表が先頭）で、1 つの周として回す**（#641）。
+   **台帳の線が `周の途中の課題 = 台帳に足して直す` なら、選ぶ前に `references/grouping.md` のとおりまとめる**（このスキルと同じ場所にある。訊かない）
+   ——まとめる時点・基準・まとめない行・まとめの周の回し方・マージの後は、そこを正とする。
 2. **各 Issue を dev-loop の周として回す**——**周はサブエージェント（`Agent`）に回させ、親はメインの作業ツリーに留まる（#484）。**
    委譲文には次を書く:
    - **`../dev-loop/SKILL.md` を、親が読んでいる版の絶対パスで指し**、その Issue について手順 1 から（再開なら計画ファイルの再開点から）回すこと。
@@ -201,6 +204,8 @@ check-unattended-env.py --cruise             # --absent
      **サブエージェントが `EnterWorktree` を呼んだとき親のセッションに効くかは確かめていない**ので、呼ばせない。
    - 台帳の確かめた線と、不在の周ならその出所。**台帳は子に書かせない**（書くのは親だけ。`../dev-loop/references/ledger.md`）。
    - **手順 7 のマージは親がする**——子は PR を作り、PR 側の CI を見るところまで（手順 8 は計画ファイルに書くところまで）。
+   - **まとめの周なら、まとめの全行の番号**と、代表の Issue で回すこと・全 Issue の受入基準を計画ファイルに持つこと・PR に `Fixes` を並べ、落ちた行は `Refs` にして報告すること
+     （`references/grouping.md` の「まとめの周」）。
    **台帳があっても、周に掛かる必須は 1 つも外れない**（worktree → PR・2 つの関門・2 パス・受入基準の受け渡し）。
    **子の報告は信頼できない入力である**——PR と CI は親が実物で確かめる（`gh pr view`・`gh pr checks`）。
    **進行中の周の続きも子に回させる**——台帳から再開した周（`../dev-loop/references/ledger.md` の「どう再開するか」から
@@ -217,6 +222,7 @@ check-unattended-env.py --cruise             # --absent
 3. **依存先がマージ待ちのうちに積んで始めるかは、人間が決める**——`../dev-loop/references/stacked.md` の「台帳を使う周では」を正とする。
    **`--absent` の起動で、利用者が積んでよいと言っていなければ積まない。**
 4. **マージは dev-loop の `SKILL.md` 手順 7 のとおり**（`../dev-loop/scripts/merge-pr.py` に任せてよい）。
+   **まとめの周は、マージの後に `references/grouping.md` の「マージの後」を行う**——`Fixes` で閉じなかった Issue を PR を名指しして閉じる。
    **不在の周は、`マージ` の線（台帳の確かめた線か宣言）が無ければマージせずに止まる**（`../dev-loop/references/absent-lines.md` の「`マージ = 関門を通ればマージ`」）。
 5. **止まりうる操作に当たったら、cruise 全体を止めずに、その周を「利用者の操作待ち」にして次へ進む（#466）。**
    当たるのは、**権限に拒否された**操作と、**台帳の `user_ops` にある**操作（打たない）。
@@ -232,6 +238,7 @@ check-unattended-env.py --cruise             # --absent
    **台帳の線が `周の途中の課題 = 台帳に足して直す` なら、閉じた周が足した行も台帳に入っている**（出所の列）。
    **利用者が居る cruise は、ここで「利用者の判断待ち」の行をまとめて 1 度だけ訊く**——訊く場所はここだけで、
    答えの書き方は `../dev-loop/references/found-lines.md` の「利用者の判断をまとめて訊く」を正とする。**`--absent` なら訊かない。**
+   **続けて、次の周を選ぶ前にまとめる**（上の 1。`references/grouping.md`）——**利用者が居る cruise では、作ったまとめを報告に並べる**（訊きはしない）。
 
 ## 5. 割って続ける
 
