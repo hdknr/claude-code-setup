@@ -198,6 +198,7 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 
 - PR #692（`Fixes #668`）。取り込み: 狭いパスの後・PR の前に `origin/main`（`e450e90`。#662 の PR #683）を取り込んだ（`1dd199a`）。衝突なし。main の dev-loop は 1.68.0 のままなので 1.68.1 は main より上。
   取り込みで変わった検査は `build-proposal.py`・`schedule-to-gantt.py` とそのテスト（この周のファイルに触れない）。
+- `check-all.py`（`386768e`）: 56/56 本、失敗 0。PR 側の CI（`386768e`）: `check` pass（10m43s）・`build` pass・`deploy` skipping、`mergeable: MERGEABLE`。この行を足した計画だけのコミットの CI は PR で見る。
 - マージは親（cruise）がする。**狭いパスの指摘が 3 件ある**（`references/absent-lines.md` の `マージ = 関門を通ればマージ` は、狭いパスの指摘を持つ PR をマージしない）——推奨で決めた確認の Issue は #693。
 
 dup-counts-ok: 直したテストで
