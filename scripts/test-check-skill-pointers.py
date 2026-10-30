@@ -214,6 +214,11 @@ STEP_BROKEN = """# デモ
 # かが決まらないので照合しない（守らない）——無い項を指して 0 を見る。**ほかの持ち主の名指し**は免除する（名指しを外した対照は 1）。
 # 変異は免除の判定の文字列（`line_start`）をこの形のときだけ空にする（#600 の交絡を避ける）。
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if m.group(1) is None else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+# **`下の手順 N` も置く**（1 パス目の `/code-review` CR1-2——`上の手順 N` だけでは、`下` の側だけを壊す変異が素通りした）。
+# 変異は `rel` の行に当てる——正規表現の `[上下]の` に当てると、変異の表の 14b の当て先が変わって試料と関係なく赤になる（#600 の交絡）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n", "new": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n        if m.group(0)[0] == \"下\":\n            rel = \"SKILL.md\"\n", "red": "python3 scripts/test-check-skill-pointers.py"}
+# **`の` と `「` の間の太字の始まり（`手順 N の **「X」**`）も置く**（1 パス目の `/code-review` CR1-1）——通る形は `prompts/` に、
+# 壊れた形は別の木（`step_bare_bold_broken`）に置く。
 STEP_BARE_SKILL = """# デモ
 
 **手で「直す」項**
@@ -221,13 +226,16 @@ STEP_BARE_SKILL = """# デモ
 詳しくは手順 2 の
 「手で『直す』項」を見る。
 """
-STEP_BARE_REF = "# r\n\n**ローカルの項**\n\n詳しくは手順 2 の「手で『直す』項」を見る。上の手順 1 の「ローカルの項」も見る。\n"
-STEP_BARE_PROMPT = "# p\n\n直し方は手順 2 の「手で『直す』項」を使う。\n"
+STEP_BARE_REF = ("# r\n\n**ローカルの項**\n\n詳しくは手順 2 の「手で『直す』項」を見る。上の手順 1 の「ローカルの項」も見る。\n"
+                 "下の手順 4 の「下にある項」も見る。\n\n**下にある項**\n")
+STEP_BARE_PROMPT = "# p\n\n直し方は手順 2 の「手で『直す』項」を使う。閉じ方は手順 2 の **「手で『直す』項」** を見る。\n"
 STEP_BARE_PLUGIN_REF = "# a\n\n手順 2 の「どこにも無い項」は、プラグイン直下からは照合しない。\n"
 STEP_BARE_OWNED = "# o\n\n読み方は other の手順 3 の「other にしか無い項」を正とする。\n"
 # **1 本ずつ壊す**——`SKILL.md` の項（3 つの書き手が指す）／`上の手順 N` の項／指し先の中にしか無い X／名指しを外す。
 STEP_BARE_SKILL_BROKEN = STEP_BARE_SKILL.replace("**手で「直す」項**", "**手で「直した」項**")
 STEP_BARE_REF_LOCAL_BROKEN = STEP_BARE_REF.replace("**ローカルの項**", "**ローカルの節**")
+STEP_BARE_REF_DOWN_BROKEN = STEP_BARE_REF.replace("**下にある項**", "**下にある節**")
+STEP_BARE_SKILL_BOLD_BROKEN = STEP_BARE_SKILL + "\n閉じ方は手順 2 の **「どこにも無い項」** を見る。\n"
 STEP_BARE_SKILL_SELF = STEP_BARE_SKILL + "\n手順 9 の「自分の中にしか無い項」を見る。\n"
 STEP_BARE_OWNED_PLAIN = STEP_BARE_OWNED.replace("other の手順", "手順")
 
@@ -554,6 +562,10 @@ MUTATIONS = {
     "ファイルの名前の無い `手順 N` を拾わない": (
         '|(?:[上下]の\\s*)?手順\\s*\\d+\\s*)" + NO',
         ')" + NO'),
+    # 守る 14d: `の` と `「` の間の太字の始まりも跨ぐこと（#655）
+    "`の` と `「` の間の太字を跨がない": (
+        " + NO + BOLD + QUOTED)",
+        " + NO + QUOTED)"),
     # 守る 14c: `上の手順 N の「X」`・`下の手順 N の「X」` は、書いたファイルの中を見ること（#655）
     "`上の手順 N` も `SKILL.md` で照合する": (
         'path.name if m.group(0)[0] in "上下" else "SKILL.md"',
@@ -813,15 +825,21 @@ def main() -> int:
         step_bare_ok = step_tree("step-bare-ok")
         step_bare_broken = step_tree("step-bare-broken", skill=STEP_BARE_SKILL_BROKEN)
         step_bare_local_broken = step_tree("step-bare-local-broken", ref=STEP_BARE_REF_LOCAL_BROKEN)
+        step_bare_down_broken = step_tree("step-bare-down-broken", ref=STEP_BARE_REF_DOWN_BROKEN)
+        step_bare_bold_broken = step_tree("step-bare-bold-broken", skill=STEP_BARE_SKILL_BOLD_BROKEN)
         step_bare_self = step_tree("step-bare-self", skill=STEP_BARE_SKILL_SELF)
         step_bare_owned_plain = step_tree("step-bare-owned-plain", owned=STEP_BARE_OWNED_PLAIN)
         check("ファイルの名前の無い `手順 N の「X」` は、X が `SKILL.md` に在れば通す（書き手が `SKILL.md`・`references/`・`prompts/`。"
               "`上の手順 N` は書いたファイル。プラグイン直下と名指しの付いた形は照合しない。#655）",
               observe(mod, step_bare_ok)["rc"] == 0)
         check("ファイルの名前の無い `手順 N の「X」` は、`SKILL.md` の項を書き換えたら落とす（#646 の CR2-5 の再現。#655）",
-              observe(mod, step_bare_broken)["rc"] == 1 and errors(mod, step_bare_broken) == 3)
+              observe(mod, step_bare_broken)["rc"] == 1 and errors(mod, step_bare_broken) == 4)
         check("`上の手順 N の「X」` は、書いたファイルの項を書き換えたら落とす（#655）",
               observe(mod, step_bare_local_broken)["rc"] == 1)
+        check("`下の手順 N の「X」` も、書いたファイルの項を書き換えたら落とす（#655）",
+              observe(mod, step_bare_down_broken)["rc"] == 1)
+        check("`手順 N の **「X」**`（`の` と `「` の間の太字）も、X が無ければ落とす（#655）",
+              observe(mod, step_bare_bold_broken)["rc"] == 1)
         check("ファイルの名前の無い `手順 N の「X」` の X が指し先の中にしか無ければ落とす（#655）",
               observe(mod, step_bare_self)["rc"] == 1)
         check("名指しを外したファイルの名前の無い `手順 N の「X」` は照合して落とす（対照。#655）",
@@ -1085,6 +1103,8 @@ def main() -> int:
                           or mutant.main([str(step_bare_broken)]) != 1
                           or mutant.main([str(step_bare_local_broken)]) != 1
                           or mutant.main([str(step_bare_self)]) != 1
+                          or mutant.main([str(step_bare_down_broken)]) != 1
+                          or mutant.main([str(step_bare_bold_broken)]) != 1
                           or mutant.main([str(step_bare_owned_plain)]) != 1
                           or mutant.main([str(xref_masked)]) != 1
                           or mutant.main([str(target_masked)]) != 1
