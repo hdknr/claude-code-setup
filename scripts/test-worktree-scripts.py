@@ -497,6 +497,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
 QUOTE_NEEDLE = 'PATH_Q="\'$(printf \'%s\' "$PATH_ABS" | sed "s/\'/\'\\\\\\\\\'\'/g")\'"'
 
 MUTATIONS = {
+    # --- prepare-worktree.sh の「守る」 ---
     # 守る 1: 先に見る（再開の周を新規として踏み潰さない）
     "先に見ずに作る": (PREPARE,
         'if [ -n "$EXISTING_WT" ] || [ -n "$EXISTING_BR" ]; then',
@@ -527,27 +528,6 @@ MUTATIONS = {
     "3 の一覧の 2 行目から字下げを落とす": (PREPARE,
         "indent_list() { sed 's/^/    /'; }",
         "indent_list() { sed '1s/^/    /'; }"),
-    # --- check-pr-preconditions.sh の「守る」（「守る」の行数と変異の数の 1 対 1 は、`main()` が 2 本の合計で数える） ---
-    # 守る 1: worktree にいるか
-    "worktree 判定をしない": (PRECOND,
-        'if [ "$GIT_DIR" = "$COMMON_DIR" ]; then',
-        'if false; then'),
-    # 守る 2: 正しい worktree にいるか
-    "ブランチを突き合わせない": (PRECOND,
-        'if [ -n "$EXPECTED" ] && [ "$BRANCH" != "$EXPECTED" ]; then',
-        'if false; then'),
-    # 守る 3: detached を見分ける
-    "detached を見分けない": (PRECOND,
-        'if ! git symbolic-ref -q HEAD >/dev/null; then',
-        'if false; then'),
-    # 守る 4: 終了コードで区別する
-    "終了コードを一律にする": (PRECOND,
-        '  exit 3\nfi',
-        '  exit 1\nfi'),
-    # 守る 5: 判定できなかったことを「メインにいる」と答えない
-    "判定できなくても答える": (PRECOND,
-        '  exit 4\nfi',
-        '  GIT_DIR=""; COMMON_DIR=""\nfi'),
     # 守る 6（prepare）: 判定できなかったことを「当たらなかった」と答えない
     # **root の守りを壊すと、背後の守りが終了コード 6 で受け止める**ので観測が変わる。
     "見られなくても作る": (PREPARE,
@@ -597,6 +577,27 @@ MUTATIONS = {
     "相対のまま root 起点で解決する": (PREPARE,
         'MAIN="$(cd "$(dirname "$COMMON")" && pwd -P)"',
         'MAIN="$(cd "$(git rev-parse --show-toplevel)/$(dirname "$(git rev-parse --git-common-dir)")" && pwd -P)"'),
+    # --- check-pr-preconditions.sh の「守る」（「守る」の行数と変異の数の 1 対 1 は、`main()` が 2 本の合計で数える） ---
+    # 守る 1: worktree にいるか
+    "worktree 判定をしない": (PRECOND,
+        'if [ "$GIT_DIR" = "$COMMON_DIR" ]; then',
+        'if false; then'),
+    # 守る 2: 正しい worktree にいるか
+    "ブランチを突き合わせない": (PRECOND,
+        'if [ -n "$EXPECTED" ] && [ "$BRANCH" != "$EXPECTED" ]; then',
+        'if false; then'),
+    # 守る 3: detached を見分ける
+    "detached を見分けない": (PRECOND,
+        'if ! git symbolic-ref -q HEAD >/dev/null; then',
+        'if false; then'),
+    # 守る 4: 終了コードで区別する
+    "終了コードを一律にする": (PRECOND,
+        '  exit 3\nfi',
+        '  exit 1\nfi'),
+    # 守る 5: 判定できなかったことを「メインにいる」と答えない
+    "判定できなくても答える": (PRECOND,
+        '  exit 4\nfi',
+        '  GIT_DIR=""; COMMON_DIR=""\nfi'),
 }
 
 # **守る 17（cd の例をシェルに貼れる形で出す）を、引用の中身で壊す変異**（#543。#502 の狭いパスの N1 で素通りした 2 件）。
