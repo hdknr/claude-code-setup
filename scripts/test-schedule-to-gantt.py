@@ -18,15 +18,22 @@
 4''. **前の出力を消せない（書けない・辿れないディレクトリ）ときは、どの経路でも 2 で、残った出力を名指しする**（#499）
    ——表が決まりに反する（1 の経路）・読めない・想定外の例外・書けないの 4 つで。想定外の例外には化けない。
    **陽性対照**: 消せる場所では「消せない」と言わず、出力先が無ければ 1 のまま、出力先がディレクトリなら消さずに 1。
-   名前の 1 つが NAME_MAX を超える（在りえない）出力先・親がファイルの出力先（ENOTDIR）は 1 のまま。
-   符号化できない（NUL・単独のサロゲートを含む）出力先も在りえないので 1 のまま——**CLI からは届かない**
-   （argv に渡らない）ので、同じプロセスの中で `sys.argv` を差し替えて `main` に届かせる（#534）。
+   名前の 1 つが NAME_MAX を超える（在りえない）出力先・親がファイルの出力先（ENOTDIR）は 1 のまま——名前がちょうど 256 バイトの
+   出力先も（反対側の境界。#625）。
+   符号化できない（NUL・surrogateescape でバイトに戻せない孤立サロゲート——U+D800〜U+DC7F・U+DD00〜U+DFFF——を含む）出力先も
+   在りえないので 1 のまま——**CLI からは届かない**（argv に渡らない）ので、同じプロセスの中で `sys.argv` を差し替えて `main` に届かせる（#534）。
    表が正しくて出力先が符号化できない（名前・親のディレクトリの名前）ときは、書く途中の `ValueError` を「書けない」と
    名指しして 2——「書く途中の想定外の例外」にしない（#582。同じく `main` に届かせる）。
+   **U+DC80〜U+DCFF の名前は `ValueError` にならない**（バイトに戻せる。CLI から届く）——書けないディレクトリの中の
+   `\\udc80.svg` は `OSError` の「書けない（<理由>）」で 2 になり、「出力先の名前が使えない」とは言わない（#591）。
+   入力のパスに NUL・バイトに戻せない孤立サロゲートがあるときは、「読めない（入力のパスの名前が使えない: <型>: <理由>）」で 2——
+   「想定外の例外」にしない（#592。同じく `main` に届かせる）。前の出力は消す。
    パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2——名前がちょうど NAME_MAX
    （255 バイト）の出力先も（境界。#536）。
-   先を辿れない symlink（先がファイルでもディレクトリでも）は、先が前の出力かを確かめられないので消さずに名指しして 2
-   （表が正しくて書けないときも。#535）、壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）とディレクトリを指す symlink は消さずに 1。
+   出力先が symlink なら、リンクも先も消さない: 先を辿れない symlink（先がファイルでもディレクトリでも。#535）も、
+   辿れる先の通常のファイルを指す symlink（鎖を経由しても。#626）も、リンクと先のパス（鎖を解いた先。辿れないときは辿れたところまで）を名指しして 2
+   （表が正しくて書けないときも。先のパスの名指しは #625）。表が正しく書ける辿れる先の symlink は 0 で、先に書く（陽性対照）。
+   壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）とディレクトリを指す symlink は消さずに 1。
    書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
    入口の捕捉は、書いたあとの標準出力の例外で見る（`sys.stdout` を差し替える）。
    消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
@@ -160,9 +167,20 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
      "                mode = stat.S_IFREG; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
     ("辿れない先のリンクを黙って残す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
      "                return None; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
-    ("先の長すぎる名前を出力先の名前で見る", "if absent(Path(os.path.realpath(out)), e):", "if absent(out, e):"),
-    ("先の鎖を解かずに 1 段目だけ見る", "if absent(Path(os.path.realpath(out)), e):", "if absent(out.parent / os.readlink(out), e):"),
-    ("辿れないのがリンクの先だと言わない", "（リンクの先を辿れない: {e.strerror}）", "（{e.strerror}）"),
+    ("先の長すぎる名前を出力先の名前で見る", "if absent(target, e):", "if absent(out, e):"),
+    ("先の鎖を解かずに 1 段目だけ見る", "target = Path(os.path.realpath(out))", "target = out.parent / os.readlink(out)"),
+    # 名指しの先とは別に、壊れたリンクの判定（absent）だけが鎖を解かない形（chainlink.svg の試料が殺す。#591 の周の 2 パス目 CR2-2）
+    ("壊れたリンクの判定だけ鎖を解かない", "if absent(target, e):", "if absent(out.parent / os.readlink(out), e):"),
+    ("辿れないのがリンクの先だと言わない", "（リンクの先を辿れない: {e.strerror}。先: {target}）", "（{e.strerror}。先: {target}）"),
+    # #625: 辿れない先のリンクは、先のパスも名指しする
+    ("辿れない先のパスを名指ししない", "（リンクの先を辿れない: {e.strerror}。先: {target}）", "（リンクの先を辿れない: {e.strerror}）"),
+    # #626: 辿れる先の通常のファイルを指すリンクも、消さずにリンクと先のパスを名指しする
+    ("辿れる先のリンクを消す", "            if stat.S_ISREG(mode):  # 辿れる先", "            if False:  # 辿れる先"),
+    ("辿れる先のリンクを黙って残す", "                return f\"前に作った出力を消せない: {out}（リンクの先に前の出力が残る",
+     "                return None; f\"前に作った出力を消せない: {out}（リンクの先に前の出力が残る"),
+    ("辿れる先のパスを名指ししない", "（リンクの先に前の出力が残る。先: {target}）", "（リンクの先に前の出力が残る）"),
+    # #625: 名前の長さの反対側の境界——256 バイトの名前は在りえない
+    ("名前が NAME_MAX + 1 でも在りうると読む", "part)) > NAME_MAX for part", "part)) > NAME_MAX + 1 for part"),
     ("消す途中の想定外の例外を名指ししない", "    except Exception as e:  # 想定外の例外でも、消せなかった",
      "    except ImportError as e:  # 想定外の例外でも、消せなかった"),
     ("書けないときを捕まえない", "    except OSError as e:  # 書きかけを", "    except ImportError as e:  # 書きかけを"),
@@ -173,6 +191,15 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
      "    except ImportError as e:  # 出力先の名前が符号化できない"),
     ("符号化できない出力先の型と理由を書かない", "出力先の名前が使えない: {type(e).__name__}: {e}）", "出力先の名前が使えない: ）"),
     ("符号化できない出力先を名指ししない", 'print(f"{out}: 書けない（出力先の名前が使えない', 'print(f"書けない（出力先の名前が使えない'),
+    # #591: U+DC80〜U+DCFF はバイトに戻せる——厳密に符号化して ValueError にすると「出力先の名前が使えない」になる
+    ("U+DC80 の名前も符号化できないと読む", "        out.write_bytes(svg)\n", "        str(out).encode('utf-8')\n        out.write_bytes(svg)\n"),
+    # #592: 入力のパスの名前が使えない ValueError を「読めない」と言う分岐
+    ("入力の名前が使えないを想定外の例外と読む", "if isinstance(e, ValueError) and unusable_name(source):", "if False:"),
+    ("入力の ValueError をすべて名前のせいにする", "if isinstance(e, ValueError) and unusable_name(source):", "if isinstance(e, ValueError):"),
+    ("入力の名前の型と理由を書かない", "入力のパスの名前が使えない: {type(e).__name__}: {e}）", "入力のパスの名前が使えない: ）"),
+    ("入力の NUL を使える名前と読む", 'return b"\\0" in os.fsencode(path)', "return False"),
+    ("入力の孤立サロゲートを使える名前と読む", "    except UnicodeEncodeError:\n        return True", "    except UnicodeEncodeError:\n        return False"),
+    ("U+DC80 の入力の名前も使えないと読む", 'return b"\\0" in os.fsencode(path)', 'return b"\\0" in str(path).encode("utf-8")'),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
@@ -221,6 +248,15 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         code, output = generate(scripts, good, locked / "ro.svg")  # 書けず、書けなかった前の出力も消せない
         if code != 2 or "書けない（" not in output or not left_named(output, "ro.svg", locked):
             problems.append(f"書けない出力先の消せない前の出力: 終了 {code}: {output[-300:]!r}")
+        # U+DC80〜U+DCFF の名前はバイトに戻せる（CLI から届く）ので ValueError にならず、OSError の「書けない（<理由>）」で 2。
+        # 「出力先の名前が使えない」と言わない（#591）。書けないディレクトリに置くのは、Linux（ext4）では 0x80 のバイトの名前に
+        # 書けてしまうから——どちらの OS でも OSError（EACCES か EILSEQ）になる
+        dc80 = locked / "\udc80.svg"
+        code, output = generate(scripts, good, dc80)
+        shown = str(dc80).encode("utf-8", "backslashreplace").decode("utf-8")
+        if (code != 2 or f"{shown}: 書けない（" not in output or "名前が使えない" in output
+                or "想定外の例外" in output or "Traceback" in output):
+            problems.append(f"U+DC80 の名前の出力先: 終了 {code}: {output[-300:]!r}")
     finally:
         hidden.chmod(0o755)
         locked.chmod(0o755)
@@ -232,10 +268,12 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     code, output = generate(scripts, bad, root / "dir.svg")
     if code != 1 or not (root / "dir.svg").is_dir() or LEFT in output:
         problems.append(f"出力先がディレクトリ: 終了 {code}: {output[-300:]!r}")
-    # 名前の 1 つが長すぎる出力先——その名前のファイルは在りえないので「無い」。1 のまま（CR3）
-    code, output = generate(scripts, bad, root / ("a" * 300 + ".svg"))
-    if code != 1 or LEFT in output:
-        problems.append(f"長すぎる名前の出力先: 終了 {code}: {output[-300:]!r}")
+    # 名前の 1 つが長すぎる出力先——その名前のファイルは在りえないので「無い」。1 のまま（CR3）。
+    # ちょうど 256 バイト（NAME_MAX + 1）の名前も——反対側の境界（`> NAME_MAX` を `> NAME_MAX + 1` にすると 2 になる。#625）
+    for size in (304, 256):  # 304 は今までの試料（"a" * 300 + ".svg"）
+        code, output = generate(scripts, bad, root / ("a" * (size - 4) + ".svg"))
+        if code != 1 or LEFT in output:
+            problems.append(f"長すぎる名前（{size} バイト）の出力先: 終了 {code}: {output[-300:]!r}")
     def deep_output(base: Path, name: str) -> Path:
         """`base` の下に 200 バイトの名前のディレクトリを 25 段掘り（パス全体が PATH_MAX を超える）、`name` の前の出力を置く。
         素のパスでは辿れないので、ディレクトリの記述子から相対に作る。"""
@@ -284,10 +322,14 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     shut.mkdir()
     (shut / "g.svg").write_text("<svg>古い</svg>", encoding="utf-8")
     (shut / "d.svg").mkdir()
+    (root / "far").mkdir()
+    (root / "far" / "real.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (shut / "c.svg").symlink_to(Path("..") / "far" / "real.svg")  # shut の中のリンク——辿れないので、名指しする先はここで止まる
     for label, name, target, source, extra in (
         ("辿れない先の symlink", "link.svg", "g.svg", bad, "見出し行が決まりと違う"),
         ("辿れない先がディレクトリの symlink", "dlink.svg", "d.svg", bad, "見出し行が決まりと違う"),
         ("辿れない先の symlink（表が正しい）", "glink.svg", "g.svg", good, "書けない（"),
+        ("辿れない先の symlink（先の中にまたリンク）", "clink.svg", "c.svg", bad, "見出し行が決まりと違う"),
     ):
         link = root / name
         link.symlink_to(shut / target)
@@ -296,12 +338,47 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
             code, output = generate(scripts, source, link)
         finally:
             shut.chmod(0o755)
+        # 先のパス（辿れたところまで鎖を解いたもの）も名指しする（#625）——shut の中のリンク（c.svg）は解かずにそこで止まる
+        # （期待値は shut を開けたあとに作るので、shut までを解き、名前は解かない）
+        stopped = Path(os.path.realpath(shut)) / target
         if (code != 2 or f"{LEFT}{link}（リンクの先を辿れない: " not in output or extra not in output
+                or f"。先: {stopped}）" not in output
                 or "前に作った出力を消した" in output or "Traceback" in output
                 or not link.is_symlink() or not (shut / target).exists()):
             problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
     if (shut / "g.svg").read_text(encoding="utf-8") != "<svg>古い</svg>" or not (shut / "d.svg").is_dir():
         problems.append("辿れない先の symlink の先が変わった——先に触っている")
+    # 辿れる先の通常のファイルを指す symlink（鎖を経由しても）——リンクを消しても先の古い中身は残るので、リンクも先も消さずに
+    # リンクと先のパス（鎖を解いた先）を名指しして 2（#626。#499 では「リンクを消して 1」だった）。表が正しくて書けない（先が書けない）経路も
+    kept = root / "kept"
+    kept.mkdir()
+    for target in ("g.svg", "ro.svg"):
+        (kept / target).write_text("<svg>古い</svg>", encoding="utf-8")
+    (kept / "ro.svg").chmod(0o444)
+    (root / "rlink.svg").symlink_to(kept / "g.svg")
+    (root / "rmid.svg").symlink_to(kept / "g.svg")
+    (root / "rchain.svg").symlink_to("rmid.svg")
+    (root / "rolink.svg").symlink_to(kept / "ro.svg")
+    try:
+        for label, name, target, source, extra in (
+            ("辿れる先の symlink", "rlink.svg", "g.svg", bad, "見出し行が決まりと違う"),
+            ("辿れる先の symlink（鎖）", "rchain.svg", "g.svg", bad, "見出し行が決まりと違う"),
+            ("辿れる先の symlink（表が正しく、先が書けない）", "rolink.svg", "ro.svg", good, "書けない（"),
+        ):
+            link = root / name
+            code, output = generate(scripts, source, link)
+            named = f"{LEFT}{link}（リンクの先に前の出力が残る。先: {os.path.realpath(kept / target)}）"
+            if (code != 2 or named not in output or extra not in output
+                    or "前に作った出力を消した" in output or "Traceback" in output or not link.is_symlink()
+                    or (kept / target).read_text(encoding="utf-8") != "<svg>古い</svg>"):
+                problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
+    finally:
+        (kept / "ro.svg").chmod(0o644)
+    # 陽性対照: 表が正しく書けるなら、辿れる先の symlink は 0 で先に書く（リンクは残る）
+    code, output = generate(scripts, good, root / "rlink.svg")
+    if (code != 0 or not (root / "rlink.svg").is_symlink() or LEFT in output
+            or not (kept / "g.svg").read_text(encoding="utf-8").startswith("<?xml")):
+        problems.append(f"辿れる先の symlink（表が正しい）: 終了 {code}: {output[-300:]!r}")
 
     def injected(method: str, source: Path, name: str) -> subprocess.CompletedProcess:
         """出力先 `build/<name>` について、そのパスの `Path.<method>` だけを差し替えて
@@ -339,8 +416,9 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
     if proc.returncode != 2 or "想定外の例外で止まった（RuntimeError: boom" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"main の外へ逃げた例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
-    # 符号化できない出力先（NUL・単独のサロゲート）——その名前のファイルは在りえないので「無い」。1 のまま（#534）。
-    # CLI からは届かない（argv に NUL・単独のサロゲートは渡らない）ので、同じプロセスの中で sys.argv を差し替えて main に届かせる
+    # 符号化できない出力先（NUL・バイトに戻せない孤立サロゲート——U+DC80〜U+DCFF は除く。#591）——その名前のファイルは在りえないので
+    # 「無い」。1 のまま（#534）。CLI からは届かない（argv に NUL は渡らず、孤立サロゲートは U+DC80〜U+DCFF の形でしか渡らない）ので、
+    # 同じプロセスの中で sys.argv を差し替えて main に届かせる
     for label, name in (("NUL", "x\0.svg"), ("単独のサロゲート", "\ud800.svg")):
         inject = ("import runpy, sys\n"
                   f"sys.argv = [{script!r}, {str(bad)!r}, {str(root / name)!r}]\n"
@@ -364,6 +442,35 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr
                 or LEFT in proc.stderr or "Traceback" in proc.stderr):
             problems.append(f"符号化できない出力先に書く（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # 入力のパスに NUL・バイトに戻せない孤立サロゲート——読む側の ValueError を「読めない（入力のパスの名前が使えない: <型>: <理由>）」と
+    # 言って 2。「想定外の例外」にしない。前の出力は消す（#592。CLI からは届かないので main に届かせる）
+    for label, name, kind in (("NUL", "x\0.csv", "ValueError"), ("単独のサロゲート", "\ud800.csv", "UnicodeEncodeError")):
+        stale = root / "src-stale.svg"
+        stale.write_text("<svg>古い</svg>", encoding="utf-8")
+        inject = ("import runpy, sys\n"
+                  f"sys.argv = [{script!r}, {str(root / name)!r}, {str(stale)!r}]\n"
+                  f"runpy.run_path({script!r}, run_name='__main__')\n")
+        proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+        shown = str(root / name).encode("utf-8", "backslashreplace").decode("utf-8")
+        named = re.search(re.escape(shown) + rf": 読めない（入力のパスの名前が使えない: {kind}: [^）\n]+）。中身を検査していない", proc.stderr)
+        if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr or stale.exists()
+                or "前に作った出力を消した" not in proc.stderr or "Traceback" in proc.stderr):
+            problems.append(f"名前の使えない入力（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # 陽性対照: 名前の使える入力（U+DC80 も——バイトに戻せる。#591）で読む途中に ValueError が出たら、今までどおり「想定外の例外」。
+    # 名前のせいにしない（`Path.read_text` を差し替えて起こす。名前の検査を外す・厳密に符号化する変異を殺す）
+    for label, name in (("ASCII", "v.csv"), ("U+DC80", "\udc80.csv")):
+        inject = ("import pathlib, runpy, sys\n"
+                  "real = pathlib.Path.read_text\n"
+                  "def boom(self, *a, **k):\n"
+                  f"    if self.name == {name!r}:\n        raise ValueError('boom')\n"
+                  "    return real(self, *a, **k)\n"
+                  "pathlib.Path.read_text = boom\n"
+                  f"sys.argv = [{script!r}, {str(root / name)!r}, {str(root / 'build' / 'v.svg')!r}]\n"
+                  f"runpy.run_path({script!r}, run_name='__main__')\n")
+        proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+        if (proc.returncode != 2 or "想定外の例外で止まった（ValueError: boom）" not in proc.stderr
+                or "名前が使えない" in proc.stderr or "Traceback" in proc.stderr):
+            problems.append(f"名前の使える入力の ValueError（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)
     if proc.returncode != 2 or "usage:" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"-OO の引数なし: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
