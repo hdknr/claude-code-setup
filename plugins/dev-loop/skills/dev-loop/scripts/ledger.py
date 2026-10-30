@@ -167,6 +167,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   （戻すなら同じ呼び出しで `pr= branch= worktree= agent= base=` を渡す。手順は `../cruise/references/grouping.md`）。
 - **`show` は、まとめに入ったまま `merged` で `note` が `落ちた:` で始まる行を名指しする**（#665）——マージの後に代表へ `merged` を書いてから
   落ちた行を戻すまでの間で止まると、落ちた行は `merged` のまま `next` にも「進行中」にも出ず、直されないまま済んだことになる。
+- **名指しした行があるあいだは「すべてマージ済みか取り下げ」と出さない**（#665）——cruise はその行で終えるので、出すと直していない行を済んだと報告して終える。
 
 守らない:
 
@@ -568,7 +569,8 @@ def cmd_group(path, head, numbers):
         stale = [f"{k}={issue[k]}" for k in PLACE_KEYS if issue.get(k, "")]
         if stale:
             raise Refused(f"#{issue['number']} は前の周の在り処（{', '.join(stale)}）を持ったまま——実物で済んだことを確かめ、"
-                          f"`set {issue['number']} " + " ".join(f"{k}=" for k in PLACE_KEYS) + "` で消してからまとめる")
+                          f"`ledger.py set {path.name[len('cruise-'):-len('.json')]} {issue['number']} "
+                          + " ".join(f"{k}=" for k in PLACE_KEYS) + "` で消してからまとめる")
     stamp = now()
     for issue in issues:
         issue["group"] = str(head)
@@ -598,7 +600,7 @@ def cmd_lines(path, pairs, source):
         raise Refused(f"出所に印 `{DIST_MARK}` があるのに `マージ` の線を渡していない——印は `マージ` の線と一緒にだけ書く"
                       "（線を外すなら印も外す。cruise SKILL.md §2 の 1 の「印の扱い」）")
     data = load(path)
-    data["lines"] ={"values": values, "source": source, "updated": now()}
+    data["lines"] = {"values": values, "source": source, "updated": now()}
     save(path, data)
     print("線: " + (", ".join(f"{k} = {v}" for k, v in values.items()) or "なし（宣言と既定に従う）"))
 
@@ -662,7 +664,7 @@ def cmd_show(path):
         print("まとめ: " + "; ".join(
             f"#{h}（{find(data, int(h))['state']}）= " + ", ".join(
                 f"#{i['number']}" for i in data["issues"] if i.get("group") == h) for h in heads))
-    if data["issues"] and all(i["state"] in (DONE, "dropped") for i in data["issues"]):
+    if data["issues"] and all(i["state"] in (DONE, "dropped") for i in data["issues"]) and not stranded:
         print("すべてマージ済みか取り下げ")
 
 

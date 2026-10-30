@@ -476,8 +476,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     for key, (_, stale) in zip(mod.PLACE_KEYS, pairs5):
         run(mod, ["set", "gs", str(stale), f"{key}=old"], root)
     before = snapshot(gsf)
-    o["group 古い在り処"] = tuple((r[0], "前の周の在り処" in str(r[2])) for r in
-                                (run(mod, ["group", "gs", str(h), str(s)], root) for h, s in pairs5))
+    # 消し方の案内は、そのまま打てる形（台帳の名前つき）
+    o["group 古い在り処"] = tuple((r[0], "前の周の在り処" in str(r[2]), f"`ledger.py set gs {s} pr= " in str(r[2])) for s, r in
+                                ((s, run(mod, ["group", "gs", str(h), str(s)], root)) for h, s in pairs5))
     o["group 古い在り処の後も同じ"] = snapshot(gsf) == before
     run(mod, ["set", "gs", "1", "pr="], root)
     o["group 消したら通る"] = run(mod, ["group", "gs", "2", "1"], root)[0]
@@ -494,6 +495,8 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     back = ["group=", "state=todo", "pr=", "branch=", "worktree=", "agent=", "base="]
     r = str(run(mod, ["show", "go"], root)[1])
     o["落ちた行の名指し"] = next((l.split(": ", 1)[1] for l in r.splitlines() if l.startswith("落ちたのに")), None)
+    # 全行が merged でも、名指しした行があるあいだは cruise が終える行を出さない
+    o["名指し中の終わりの行"] = "すべてマージ済みか取り下げ" in r
     o["戻す順(a) 逆"] = run(mod, ["set", "go", "2", *back], root)[0]
     o["戻す順(a)"] = tuple(run(mod, ["set", "go", n, *back], root)[0] for n in ("3", "2"))
     r = str(run(mod, ["show", "go"], root)[1])
@@ -512,6 +515,21 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["戻す順(b)"] = (run(mod, ["set", "gu", "3", "group="], root)[0], run(mod, ["set", "gu", "2", "group="], root)[0],
                      run(mod, ["set", "gu", "1", *back], root)[0])
     o["戻した後の next(b)"] = run(mod, ["next", "gu"], root)[1].split()
+    # (c) まとめの PR を閉じた: 代表 1 → 2 → 3 を全部 todo に戻す（代表が依存する行は依存されている側から先に）
+    run(mod, ["init", "gk"], root)
+    for args in (["3"], ["2", "--deps", "3"], ["1", "--deps", "2"]):
+        run(mod, ["add", "gk", *args], root)
+    run(mod, ["group", "gk", "1", "2", "3"], root)
+    run(mod, ["set", "gk", "1", "state=pr", "pr=#9"], root)
+    o["ほどく順(c)"] = (run(mod, ["set", "gk", "2", *back], root)[0],
+                       tuple(run(mod, ["set", "gk", n, *back], root)[0] for n in ("3", "2", "1")))
+    # (d) 利用者が「まとめない」: 1 ← 2 ← 3（todo）を 3、2、1 の順に抜く
+    run(mod, ["init", "gd"], root)
+    for args in (["1"], ["2", "--deps", "1"], ["3", "--deps", "2"]):
+        run(mod, ["add", "gd", *args], root)
+    run(mod, ["group", "gd", "1", "2", "3"], root)
+    o["ほどく順(d)"] = (run(mod, ["set", "gd", "2", "group="], root)[0],
+                       tuple(run(mod, ["set", "gd", n, "group="], root)[0] for n in ("3", "2", "1")))
 
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
@@ -680,6 +698,8 @@ MUTATIONS = {
     # 守る（#665）: マージの後で止まった跡を名指しする
     "落ちたのに merged の行を名指ししない": [
         ("    if stranded:\n        print(", "    if False:\n        print(")],
+    "落ちた行があっても終わりの行を出す": [
+        ('for i in data["issues"]) and not stranded:\n', 'for i in data["issues"]):\n')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -853,8 +873,8 @@ def main() -> int:
             check(f"手で崩したまとめ（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
 
         print("\nまとめに入れる行・戻す順・止まった跡（L16・#665）")
-        check("前の周の在り処（pr・branch・worktree・agent・base のどれか 1 つ）を持つ行の group は 3 で、そう言う",
-              o["group 古い在り処"] == ((3, True),) * 5)
+        check("前の周の在り処（pr・branch・worktree・agent・base のどれか 1 つ）を持つ行の group は 3 で、そう言い、"
+              "消し方を台帳の名前つきで案内する", o["group 古い在り処"] == ((3, True, True),) * 5)
         check("拒んだ group のあとも台帳が 1 バイトも変わらない", o["group 古い在り処の後も同じ"])
         check("古い値を消せば group は通る", o["group 消したら通る"] == 0)
         check("set group= に空白だけは 3 で、「空白だけ」と言う（「番号でない」ではない）", o["set group=空白"] == (3, True))
@@ -862,6 +882,9 @@ def main() -> int:
               o["落ちた行の名指し"] == "#2, #3")
         check("戻す順 (a): 依存されている行（2）を先に戻すと輪で 3、依存している側（3）から先なら 0・0",
               o["戻す順(a) 逆"] == 3 and o["戻す順(a)"] == (0, 0))
+        check("名指しした行があるあいだは「すべてマージ済みか取り下げ」と出さない", o["名指し中の終わりの行"] is False)
+        check("ほどく順 (c)・(d): 2 が先なら輪で 3、書いた順（3、2、1）なら 0・0・0",
+              o["ほどく順(c)"] == (3, (0, 0, 0)) and o["ほどく順(d)"] == (3, (0, 0, 0)))
         check("戻した後は名指ししない・2 が着手できる", o["戻した後の名指し"] is False and o["戻した後の next"] == ["2"])
         check("戻す順 (b): 代表に依存する 4 を戻し、代表が依存する行は依存されている側（3）から抜く（2 が先なら 3）",
               o["戻す順(b) 4"] == 0 and o["戻す順(b) 逆"] == 3 and o["戻す順(b)"] == (0, 0, 0)
