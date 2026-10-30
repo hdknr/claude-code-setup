@@ -265,6 +265,29 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     r = run(mod, ["show", "ln"], root)
     o["lines の show"] = (r[0], "確かめた線（出所: s2・" in str(r[1]) and "マージ = 止まる" in str(r[1]))
     o["線の無い show"] = "確かめた線: 無い" in str(run(mod, ["show", "c"], root)[1])
+    # #507: 印「配布を見せて確かめた」は区切った形でだけ「あり」。1 つ目は #474 の台帳 `cruise-issue-474.json` の
+    # `lines.source` を 1 文字も変えずに写したもの（互換。言い換えた試料では互換を確かめられない——#497 の 1 パス目）
+    o["配布の確認"] = []
+    for src in ("利用者の確認（起動時・2026-10-27T09:07:27Z）＋利用者の確認（再開時・2026-10-28T07:24:46Z）＋利用者の確認（再開時・2026-10-28T23:56:17Z）: "
+                "配布を見せて確かめた——main へのマージがプラグインの新しい版を配り revert で戻らないことを見せ、この cruise で関門を通り CI が緑で "
+                "main と衝突しない PR は配布を起こすマージも不在でしてよいと確かめた（2026-10-28T23:56:17Z）",
+                "利用者の確認（起動時・t1、配布を見せて確かめた）＋（再開時・t2）",
+                # cruise §2 の 1 が書かせる正準の形（括弧の中の末尾）と、出所の先頭の印——先読みの `\Z`・前の `\A` を外す変異を殺す
+                "利用者の確認（起動時・2026-10-27T09:07:27Z、配布を見せて確かめた）",
+                "配布を見せて確かめた",
+                "利用者の確認（起動時・t1）・配布を見せて確かめた",
+                "利用者の確認（起動時・t1）、配布を見せて確かめた、とは言えない",
+                "配布を見せて確かめたとは言えない",
+                "利用者の確認（配布を見せて確かめた）とは言えない",
+                "利用者の確認（起動時・t1、配布を見せて確かめたか不明）",
+                # 前が区切りでない（後ろは区切り）——前の検査を外す変異を殺す
+                "利用者の確認（起動時・t1）誰も配布を見せて確かめた）",
+                "利用者の確認（起動時・t1）: 配布を見せて確かめたか不明"):
+        run(mod, ["lines", "ln", "マージ=関門を通ればマージ", "--source", src], root)
+        out = str(run(mod, ["show", "ln"], root)[1])
+        o["配布の確認"].append(next((l.split(": ", 1)[1] for l in out.splitlines() if l.startswith("配布の確認")), None))
+    run(mod, ["lines", "ln", "直す線=既定", "--source", "利用者の確認（起動時・t1、配布を見せて確かめた）"], root)
+    o["マージの無い配布の確認"] = "配布の確認" in str(run(mod, ["show", "ln"], root)[1])
     o["decisions"] = (run(mod, ["set", "ln", "1", "decisions=12, 13"], root)[0],
                       run(mod, ["set", "ln", "1", "decisions=x"], root)[0])
     try:
@@ -506,6 +529,9 @@ MUTATIONS = {
         ('    if not source.strip():\n        raise Refused("出所が空', '    if False:\n        raise Refused("出所が空'),
         ('    if "lines" in data and not data["lines"]["source"].strip():',
          '    if False:')],
+    # 守る（#507）: 配布の確認は区切った形の印だけ「あり」——部分一致に戻すと否定文の試料が「あり」になる
+    "配布の確認を部分一致で見る": [
+        ("    return DIST_MARK_RE.search(source.strip()) is not None", "    return DIST_MARK in source")],
     # 守る: origin も文字列だけ
     "origin の型を見ない": [
         ('TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")',
@@ -641,6 +667,9 @@ def main() -> int:
               and o["lines の値"]["values"] == {"マージ": "止まる"} and o["lines の値"]["source"] == "s2")
         check("show が確かめた線と出所を出す", o["lines の show"] == (0, True))
         check("線の無い台帳の show は「無い」と出す", o["線の無い show"])
+        check("配布の確認は区切った形の印だけあり（#474 の実際の出所はあり・否定文はなし。#507）",
+              o["配布の確認"] == ["あり", "あり", "あり", "あり", "あり", "なし", "なし", "なし", "なし", "なし", "なし"])
+        check("マージの線が無ければ配布の確認を出さない", o["マージの無い配布の確認"] is False)
         check("decisions は番号のカンマ区切りだけ（番号でなければ 3）",
               o["decisions"] == (0, 3) and o["decisions の値"] == "12,13")
         for name in ("lbad", "lval", "lsrc", "lshape", "ldec", "lorig", "uops", "usrc", "udup"):
