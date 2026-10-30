@@ -38,7 +38,8 @@
    #662 の N2）とディレクトリを指す symlink は消さずに 1。
    辿れる先の symlink の先を開いて（切り詰めて）から書けない（ファイルの大きさの上限 `RLIMIT_FSIZE` で書く途中に EFBIG）ときは、
    先に残る今回の書きかけを「書きかけの出力を消せない」とリンクと先のパスで名指しして 2——「前に作った出力」と言わない（#662 の CR2-1）。
-   先のパスは名指しする分岐でだけ解く——`os.path.realpath` を壊しても、ディレクトリを指す symlink は 1 のまま（#662 の CR10）。
+   先を開いたあとで OSError でない例外（想定外の例外・`ValueError`）が出ても同じく書きかけと名指しする（開いたファイルの `write` を差し替える。#662 の 1 パス目）。
+   先のパスは名指しする分岐でだけ解く——`os.path.realpath` を壊しても、ディレクトリを指す symlink・壊れた symlink・輪になった symlink は 1 のまま（#662 の CR10）。
    書く途中の想定外の例外（`Path.open` を差し替える）も入口に逃がさず、前の出力を消して 2。
    入口の捕捉は、書いたあとの標準出力の例外で見る（`sys.stdout` を差し替える）。
    消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
@@ -166,7 +167,9 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("長すぎるパスも無いと読む", "any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)", "True"),
     # #536: 名前の長さの境界——ちょうど NAME_MAX の名前は在りうる
     ("名前がちょうど NAME_MAX でも在りえないと読む", "part)) > NAME_MAX for part", "part)) >= NAME_MAX for part"),
-    ("壊れたリンクも消す", "                    return None  # 壊れたリンク", "                    mode = stat.S_IFREG  # 壊れたリンク"),
+    # 名前の長すぎる先の壊れたリンク（#662 の 1 パス目 CR1-3 で ENOENT・ELOOP は手前で返すようになった）
+    ("壊れたリンクも消す", "                    return None  # 壊れたリンク——", "                    mode = stat.S_IFREG  # 壊れたリンク——"),
+    ("壊れたリンク・輪も名指しする", "                    return None  # 壊れたリンク・輪", "                    mode = stat.S_IFREG  # 壊れたリンク・輪"),
     ("書く途中の想定外の例外を逃がす", "    except Exception as e:  # 書く途中の", "    except ImportError as e:  # 書く途中の"),
     # #535: 先を辿れない symlink は消さずに名指しする
     ("辿れない先のリンクを消す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
@@ -223,9 +226,15 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
      '        print(f"{out}: 書けない（{e.strerror}）", file=sys.stderr)\n        return stop(out, 2)\n'),
     ("開く前に開いたと言う", '        with out.open("wb") as f:\n            opened = True\n',
      '        opened = True\n        with out.open("wb") as f:\n'),
+    ("想定外の例外で開いたことを渡さない", '書く途中の想定外の例外で止まった（{type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2, opened)\n',
+     '書く途中の想定外の例外で止まった（{type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2)\n'),
+    ("ValueError で開いたことを渡さない", '出力先の名前が使えない: {type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2, opened)\n',
+     '出力先の名前が使えない: {type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2)\n'),
     # #662 の CR10: 先のパスは名指しする分岐でだけ解く
     ("名指ししないリンクでも先を解く", "            try:\n                mode = out.stat().st_mode\n",
      "            link_target(out)\n            try:\n                mode = out.stat().st_mode\n"),
+    ("壊れたリンクでも先を解く", "                if e.errno in ABSENT:\n                    return None  # 壊れたリンク・輪",
+     "                if False:\n                    return None  # 壊れたリンク・輪"),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
@@ -521,9 +530,35 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         if (proc.returncode != 2 or "想定外の例外で止まった（ValueError: boom）" not in proc.stderr
                 or "名前が使えない" in proc.stderr or "Traceback" in proc.stderr):
             problems.append(f"名前の使える入力の ValueError（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # 先を開いたあとで、OSError でない例外（想定外の例外・ValueError）が出ても、先に残るのは今回の書きかけ——
+    # 「書きかけの出力を消せない」と名指しして 2（#662 の 1 パス目 CR1-2）。開いたファイルの write を差し替え、10 バイト書いてから例外を出す
+    (kept / "x.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (root / "xlink.svg").symlink_to(kept / "x.svg")
+    for kind in ("RuntimeError", "ValueError"):
+        inject = ("import pathlib, runpy, sys\n"
+                  "real = pathlib.Path.open\n"
+                  "class Half:\n"
+                  "    def __init__(self, f):\n        self.f = f\n"
+                  "    def __enter__(self):\n        return self\n"
+                  "    def __exit__(self, *a):\n        self.f.close()\n"
+                  f"    def write(self, b):\n        self.f.write(b[:10])\n        raise {kind}('boom')\n"
+                  "def opened(self, *a, **k):\n"
+                  "    f = real(self, *a, **k)\n"
+                  "    return Half(f) if self.name == 'xlink.svg' else f\n"
+                  "pathlib.Path.open = opened\n"
+                  f"sys.argv = [{script!r}, {str(good)!r}, {str(root / 'xlink.svg')!r}]\n"
+                  f"runpy.run_path({script!r}, run_name='__main__')\n")
+        proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+        named = (f"書きかけの出力を消せない: {root / 'xlink.svg'}（リンクの先に今回の書きかけが残る。"
+                 f"先: {os.path.realpath(kept / 'x.svg')}）")
+        if (proc.returncode != 2 or named not in proc.stderr or LEFT in proc.stderr or "Traceback" in proc.stderr
+                or not (root / "xlink.svg").is_symlink() or not (kept / "x.svg").read_bytes().startswith(b"<?xml")):
+            problems.append(f"開いたあとの {kind}: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     # 先のパスは名指しする分岐でだけ解く（#662 の CR10）——`os.path.realpath` を壊しても、名指ししないディレクトリを指すリンクは
     # 1 のまま（解いていれば「消せない（RuntimeError: boom）」の 2 になる）。陽性対照: 名指しする辿れる先のリンクでは壊れが届く
-    for label, name, expect in (("ディレクトリを指すリンク", "dirlink.svg", 1), ("辿れる先のリンク（陽性対照）", "rlink.svg", 2)):
+    # 壊れたリンク・輪になったリンクも名指ししないので解かない（#662 の 1 パス目 CR1-3）
+    for label, name, expect in (("ディレクトリを指すリンク", "dirlink.svg", 1), ("壊れたリンク", "broken.svg", 1),
+                                ("輪になったリンク", "loopa.svg", 1), ("辿れる先のリンク（陽性対照）", "rlink.svg", 2)):
         inject = ("import os, runpy, sys\n"
                   "real = os.path.realpath\n"
                   "def boom(path, *a, **k):\n"
