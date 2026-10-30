@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.68.1 -->
-> **このスキルの版: 1.68.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.69.1 -->
+> **このスキルの版: 1.69.1**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -242,6 +242,7 @@ check-unattended-env.py --cruise             # --absent
      **防げるのは上の 3 の点検で事前に許可を足してもらうことだけである。**
    - **`本番反映` は広げない**——操作待ちは「利用者が打つ」を記録するだけで、cruise が代わりに打つ道ではない。
 6. **周を 1 つ閉じたら、`ledger.py show issue-<親>` を読み直してから次へ。**
+   **周の合間に親が自分で確認の Issue を立てたら、その場で台帳の `decisions` に足す**——書き方と足し方は下の「6. 終える」を正とする（#647）。
    **台帳の線が `周の途中の課題 = 台帳に足して直す` なら、閉じた周が足した行も台帳に入っている**（出所の列）。
    **利用者が居る cruise は、ここで「利用者の判断待ち」の行をまとめて 1 度だけ訊く**——訊く場所はここだけで、
    答えの書き方は `../dev-loop/references/found-lines.md` の「利用者の判断をまとめて訊く」を正とする。**`--absent` なら訊かない。**
@@ -278,9 +279,20 @@ check-unattended-env.py --cruise             # --absent
 **周の途中で足した行**（`show` の「周の途中で足した行のうち済んでいないもの」）**が残っていれば、出所ごとに渡す**——
 「なし」でなければ「済んだ」と報告しない（`../dev-loop/references/found-lines.md`）。
 **1 で名指しされた Issue（親 Issue にあって台帳に無い）が残っていれば、それも渡す**——台帳がすべて済んでも、親 Issue の一覧は済んでいない。
-**推奨で決めた確認の Issue（台帳の `decisions`）のうち開いているものを `gh issue view` で集めて渡す**——
-**開いたものが 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする
+**推奨で決めた確認の Issue を集めて渡す**——台帳の `decisions` の番号に加えて、**本文の先頭がこの cruise の印 `<!-- cruise-decision: #<親> -->` の開いた Issue も探し、
+`decisions` と突き合わせる**（#647。`decisions` は書き忘れうる——とくに親が自分で立てたもの）:
+
+```bash
+gh issue list --state open --search '"cruise-decision: #<親>" in:body' --limit 200 --json number,title,body --jq '.[] | select(.body | startswith("<!-- cruise-decision: #<親> -->")) | "\(.number) \(.title)"'
+```
+
+**ラベル `要確認` では絞らない**——ラベルを付ける決まりより前に立てた確認の Issue や、付け忘れたものに付いていない（ラベルができた後に立てた #649・#651・#652・#661 にも付いていない）。
+印は本文の先頭にあり、検索は印の語で絞り（`#<親>` で始まる別の番号は `startswith` が外す）、`--limit` が数えるのは当たった Issue だけである。
+**`decisions` の番号は 1 件ずつ `gh issue view <番号> --json state` で開いているかを確かめ、開いたものと、検索で見つかったものの両方を、1 つの一覧で渡す**——`decisions` に無かったものには「台帳に無かった」と添える。
+**一覧に 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする
 （`../dev-loop/references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
 **親が自分で確認の Issue（題の先頭が `要確認:`）を立てるときも、題・ラベル・本文は `../dev-loop/references/absent-lines.md` の「確認の Issue の書き方」を正とする**
-——子が立てたものと同じ形にそろえる（#557）。
+——子が立てたものと同じ形にそろえる（#557）。**立てたら、その場で、判断が出た周の行の `decisions` に番号を足す**
+（`ledger.py set issue-<親> <番号> decisions=<前の値>,<立てた番号>`。前の値が空なら `decisions=<立てた番号>`——`show` が空の欄に出す `-` は値ではない。#647）
+——**どの周の行にも当たらない判断は足す行が無いので、上の印の検索で拾う。**
 **親 Issue のチェックボックスは書き換えない**（`scripts/parent-issue.py` の「守らない」）。
