@@ -91,7 +91,12 @@ PR コメントで人間のレビューに回す。
 
 - 周の在り処: ブランチ `issue/557-confirmation-issue-form`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-557`・
   起点 `380db76`・base 参照 `origin/main` → `380db76ecd506a5d1370586781961d6afbaf729e`
+- origin/main（#621 の 1.65.0）を取り込んだ（merge `cf6c237`）。版の行の衝突は塊ごとに 1.66.0 側、生成ブロックは main 側を取って `skill-metrics.py` で書き直した。
+  取り込みで増えた scripts: `child-cycle.py`・`test-child-cycle.py`（足した）、`check-all.py`（変えた）。
+  **HEAD の系譜が動いたので base を当て直した**: `git merge-base origin/main HEAD` = `165f3f1116e763514232f36bc823354589c3e01e`（2 パス目からこれを渡す）
 - 割り目（手順 4）: 不在のため訊かず続けた
+- 1 パス目: Verifier 反証 4 件（直す 3・残課題 1）、/code-review 指摘 10 件（直す 8・残課題 2——CR1-2、CR1-3 の `decisions`）。指摘対応 `f4e6e6d`。差し戻し 1 回（手順 4 へ）
+- 割り目（手順 6・2 パス目の前）: 不在のため訊かず続けた。残り: 手順 5 の当て直し（Verifier 2 パス目）と /code-review 2 パス目の両方
 - 関門: 1 パス目に当てる（起点 `521b8c5`——1 パス目の関門に渡した時点の HEAD）
 - 歯止め: `check-all.py` 1 回目は計画ファイルの件数の行・生成ブロック（設計 §8.2）を直して再実行。`test-worktree-scripts.py`・`check-mutation-claims.py` は
   並行する周の負荷で時間切れ（rc=-15・300 秒で打ち切り）——単独・`--jobs 1` で回し直した
