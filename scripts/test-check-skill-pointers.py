@@ -320,15 +320,22 @@ SIBLING_SRC_PROMPT_BROKEN = SIBLING_SKILL.replace("7. 文面から指す節", "7
 # （`の` と `「` の間で折り返し、『』で入れ子にして）。**スキルのディレクトリから解決する変異（守る 25d）は、プラグイン直下の側の
 # 試料（`bare_plugin_broken`）だけでも殺せる**——プラグイン直下のファイルの「スキルのディレクトリ」はプラグインの根で、`references/` の
 # 隣のファイルはそこに無い（#555。以前ここは「スキルの `references/` の側が無いと殺せない」と書いていたが、スキルの側の試料を壊さない版の
-# テストでもその変異は赤だった）。**スキルの `references/` の側が要るのは、下の `t.md` の行のため**である。
+# テストでもその変異は赤だった）。**スキルの `references/` の側の試料は消さない**——スキルの `references/` から同じディレクトリの
+# ファイルを解決することを振る舞いで見ているのは `bare_skill_broken` だけで、書き手がスキルの側のときだけスキルのディレクトリから
+# 解決する変異はこちらでしか殺せない（#601 の 1 パス目の `/code-review`）。
 # **同じディレクトリに無いファイル名**（cruise の `` `resume.md` ``・dev-loop の `` `qa-csv.md` `` の形）も置く——照合しない（守らない）。
-# **スキルの `references/` から、同じディレクトリに無くスキルのディレクトリには在る名前（`t.md`）を指す行も置く**（#556 の N1）——
+# **スキルの `references/` から、同じディレクトリに無くスキルのディレクトリには在る名前（`t.md`）を指す試料を、別の木（`bare_near`）に置く**（#556 の N1）——
+# 上の木に混ぜると、`t.md` を照合してしまう変異（25d など）で `bare_skill_broken`・`bare_plugin_broken` が `t.md` の行のせいで 1 になり、
+# 壊した節で落ちたのかが見分けられなくなる（#601 の 1 パス目の Verifier）。
 # 同じディレクトリに無いときスキルのディレクトリに戻って解決する変異は、この行を照合して落ちる。`SKILL.md` から書いた `resume.md` は
 # スキルのディレクトリにも無いので、その変異でも照合されず区別できなかった（#541 の狭いパスの N1）。
-# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "same_dir.get(rel)  #", "new": "same_dir.get(rel) or (skill / rel)  #", "red": "python3 scripts/test-check-skill-pointers.py"}
+# **変異は `SKILL.md` を戻り先から外す**——外さないと、テストの変異の表の 25f（`SKILL.md` もファイル名だけの形で解決する）と重なって
+# `SKILL.md` が `skill / rel` に戻り、25f が生き残ってテストが赤になる。そのときは `t.md` の行を消しても赤のままで、この主張が行を留めない
+# （#601 の 1 パス目の `/code-review`）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "same_dir.get(rel)  #", "new": "same_dir.get(rel) or (None if rel == \"SKILL.md\" else skill / rel)  #", "red": "python3 scripts/test-check-skill-pointers.py"}
 BARE_SKILL = "# デモ\n\n再開は `resume.md` の「どこにも無い節」を見る（同じディレクトリに無いので照合しない）。\n"
-BARE_SRC_REF = ("# r\n\n区分は `s.md` の「スキルの隣の節」を正とする。\n"
-                "隣に無い `t.md` の「どこにも無い節」は照合しない（スキルのディレクトリに同じ名前があっても）。\n")
+BARE_SRC_REF = "# r\n\n区分は `s.md` の「スキルの隣の節」を正とする。\n"
+BARE_NEAR_REF = "# r\n\n隣に無い `t.md` の「どこにも無い節」は照合しない（スキルのディレクトリに同じ名前があっても）。\n"
 # **`references/` から `SKILL.md` へ戻る指し先**（#556 の N2。守る 25f）——ファイル名だけの形と同じく同じディレクトリから解決する変異では、
 # `references/` に `SKILL.md` が無いので照合されず、節が無くても 0 になる。**節が在る木（0）と無い木（1）を置く**——0 の木は、
 # 無い木の 1 が `SKILL.md` の節の照合から来ていることの対照。
@@ -403,13 +410,15 @@ OWNED_SRC_PROMPT_PATH_PLAIN = OWNED_SRC_PROMPT.replace("other の `references/ga
 # 変異は上と同じく `line_start` を書き方ごとに空にする（免除の行を書き換えると、当て先が 1 箇所あるかの検査が試料と関係なく落ちる）。
 # **書き方ごとに `references/` の形だけ免除を外す変異も当てる**（下の 3・4 本目）——書き方ごとに全部の形の免除を外す 1・2 本目は、
 # `OWNED_REFS_LINE` を空にしてもほかの形の試料で赤のままなので、この行を留めない。3・4 本目は `OWNED_REFS_LINE` を空にすると素通りする
+# （そのため `OWNED_REFS_PLAIN` は `OWNED_REFS_LINE` から作らず、行を別に書く——作ると、空にしたとき対照のほうが先に落ち、
+# 主張は「当てられなかった」になって行を留めない。#601 の 1 パス目の `/code-review`）
 # （#603 の追記。#600 の `/code-review` CR1-1）。
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if \"このリポジトリ\" in prose[prose.rfind(\"\\n\", 0, m.start()) + 1:m.start()] else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if \"のスキル\" in prose[prose.rfind(\"\\n\", 0, m.start()) + 1:m.start()] else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if m.group(1).startswith(\"references/\") and \"このリポジトリ\" in prose[prose.rfind(\"\\n\", 0, m.start()) + 1:m.start()] else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if m.group(1).startswith(\"references/\") and \"のスキル\" in prose[prose.rfind(\"\\n\", 0, m.start()) + 1:m.start()] else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
 OWNED_REFS_LINE = "区分は other の `references/r.md` の「other にしか無い節」を正とする。\n"
-OWNED_REFS_PLAIN = OWNED_SKILL + OWNED_REFS_LINE.replace("other の `", "`")
+OWNED_REFS_PLAIN = OWNED_SKILL + "区分は `references/r.md` の「other にしか無い節」を正とする。\n"
 OWNED_SKILL_NAMED = (OWNED_SKILL + OWNED_REFS_LINE).replace("other の `", "other のスキルの `")
 OWNED_SRC_REF_NAMED = OWNED_SRC_REF.replace("other の `", "other のスキルの `")
 OWNED_SKILL_REPO = (OWNED_SKILL + OWNED_REFS_LINE).replace("other の `", "このリポジトリの `")
@@ -543,7 +552,7 @@ MUTATIONS = {
     "ファイル名だけの指し先の大文字小文字を無視する": (
         "            target = same_dir.get(rel)",
         "            target = next((q for n, q in same_dir.items() if n.lower() == rel.lower()), None)"),
-    # 守る 25f: `SKILL.md` の指し先は、書いたファイルの場所に依らずスキルのディレクトリから解決すること（#556 の N2）
+    # 守る 25f: スキルの中のどのファイルから書いた `SKILL.md` の指し先も、スキルのディレクトリから解決すること（#556 の N2）
     "`SKILL.md` も書いたファイルと同じディレクトリから解決する": (
         '        if "/" not in rel and rel != "SKILL.md":',
         '        if "/" not in rel:'),
@@ -836,8 +845,7 @@ def main() -> int:
                       ref: str = BARE_PLUGIN_REF) -> Path:
             d = base / name
             assert_not_real_repo(d)
-            make_skill(d, body=BARE_SKILL, files={
-                "references/r.md": BARE_SRC_REF, "references/s.md": dst, "t.md": "# t\n"})
+            make_skill(d, body=BARE_SKILL, files={"references/r.md": BARE_SRC_REF, "references/s.md": dst})
             refs = d / "plugins" / "demo" / "references"
             refs.mkdir(parents=True, exist_ok=True)
             (refs / "a.md").write_text(ref, encoding="utf-8")
@@ -848,6 +856,9 @@ def main() -> int:
         bare_skill_broken = bare_tree("bare-skill-broken", dst=BARE_DST_REF_BROKEN)
         bare_plugin_broken = bare_tree("bare-plugin-broken", qa=BARE_PLUGIN_QA_BROKEN)
         bare_case = bare_tree("bare-case", ref=BARE_PLUGIN_REF_CASE)
+        bare_near = base / "bare-near"
+        assert_not_real_repo(bare_near)
+        make_skill(bare_near, body="# デモ\n", files={"references/r.md": BARE_NEAR_REF, "t.md": "# t\n"})
         print("\nディレクトリの付かないファイル名の移した先の名指し（#541）")
         check("同じディレクトリの節が在れば通す（折り返し・『』を越えて。同じディレクトリに無いファイル名は照合しない）",
               observe(mod, bare_ok)["rc"] == 0)
@@ -857,6 +868,8 @@ def main() -> int:
               observe(mod, bare_plugin_broken)["rc"] == 1)
         check("大文字小文字だけ違うファイル名は照合しない（文字どおりに比べる。OS に依らない）",
               observe(mod, bare_case)["rc"] == 0)
+        check("同じディレクトリに無いファイル名は、スキルのディレクトリに同じ名前があっても照合しない（#556 の N1）",
+              observe(mod, bare_near)["rc"] == 0)
 
         def owned_tree(name: str, *, skill: str = OWNED_SKILL, ref: str = OWNED_SRC_REF,
                        agent: str = OWNED_AGENT, prompt: str = OWNED_SRC_PROMPT) -> Path:
@@ -993,6 +1006,7 @@ def main() -> int:
                           or mutant.main([str(bare_skill_broken)]) != 1
                           or mutant.main([str(bare_plugin_broken)]) != 1
                           or mutant.main([str(bare_case)]) != 0
+                          or mutant.main([str(bare_near)]) != 0
                           or mutant.main([str(owned_ok)]) != 0
                           or mutant.main([str(owned_skill_plain)]) != 1
                           or mutant.main([str(owned_prompt_plain)]) != 1
