@@ -51,11 +51,12 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **`plugins/` に Markdown が 1 本も無ければ落とす**——何も見ていない検査を緑にしない。
 - **コードスパンは段落の中でだけ組む**——閉じないバッククォートが後ろの段落を飲み込んで、崩れを黙って隠さない
   （ファイル全体で組んだ最初の版は、#519 の前の `SKILL.md` で崩れ 23 個のうち 21 個を見落とした）。
-- **引用は深さで読む**——段落より深い引用（`>` が増える行）は段落を割り込む。浅い行・引用でない行は、
-  ブロックの始まりでなければ段落の続き（lazy continuation）として組む。引用が終わると、中で開いたフェンスと
-  コメントのブロックも閉じる。
+- **容れ物（引用・リストの項）は入れ子の順に読む**——行の頭から、開いている容れ物を外から順に当てる（引用は `>`、
+  リストの項は中身の桁までの字下げ）。段落より深い引用（`>` が増える行）は段落を割り込む。当たらない容れ物のある行は、
+  段落が開いていてブロックの始まりでなければ段落の続き（lazy continuation）として組む。容れ物が終わると、中で開いたフェンスと
+  コメントのブロックも閉じる。**リストの項の中の引用も同じ**——`- > a | b⏎  > --- | ---` は項の中の引用の表である（#624）。
 - **リストの項は中身の桁で読む**——項の中の行（中身の桁まで字下げした行）は項の中として読み、字下げの浅い行は
-  ブロックの始まり（項の印・区切り線・フェンス・コメント・見出し）なら項を閉じ、そうでなければ続きとして組む。
+  ブロックの始まり（項の印・引用・区切り線・フェンス・コメント・見出し）なら項を閉じ、そうでなければ続きとして組む。
   **段落を割り込める項は、空でない `-` `*` `+` と、空でない `1.`（`1)`）だけ**——段落の途中の `2.` から始まる行は続きである。
   項を閉じて現れた項の印は、番号や種類によらず次の項として区切る。項の印の後ろに空白が 5 つ以上あれば、中身は印の 1 つ後ろから始まり、
   残りはインデントしたコードとして読む（GitHub と同じ。#563）。
@@ -79,12 +80,18 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   `x⏎|---|---|⏎y | z⏎|---|---|`）。**段落の続き（lazy）の区切りの形の行は表を試さないので、開けなかったことにならない**——その行を
   見出しにして、容れ物の中の区切りの行が表を開く（`> q⏎|---|---|⏎> |---|---|`。#580。#562 の狭いパス NP-1）。
   **容れ物から 4 桁以上（タブを含めて）字下げした区切りの形の行も表を試さない**——表を開かず、開けなかったことにもならない（GitHub と同じ）。
-  タブの桁は行の頭から 4 桁ごとに数え、引用の印の直後のタブは印の後ろの空白 1 桁をそこから使う（`>⇥--- | ---` は 2 桁の字下げ）。
 - **表の行は `|` が無くても表の行として組む**——表は空行か、ブロックの始まり（見出し・引用・リストの項（番号も空の項も問わない）・フェンス・
   コメント・区切り線・インデントしたコード）か、容れ物が変わる（引用の深さが変わる・項の外へ出る）まで続く。GitHub と同じく、段落の続き
   （lazy continuation）にはならず、`===` の行や行だけのインライン HTML も表の行である（#562。#525 の狭いパスが示した穴）。
 - **エラーの抜粋は元の行から切り出す**——判定はコードスパンとコメントの中身を伏せた文字列で行うが、抜粋は同じ位置で
   ファイルの元の行（引用の `>` も含む）から切る。伏せ字（`x` の並び）を見せない（#564。#525 の `/code-review` 1 パス目 CR1-9）。
+- **`*` が 2 つか 3 つ並んだだけの行は、区切りに数えない**——段落の続きの行（4 桁以上字下げした `***`・`**` だけの行）の並びは
+  前後が空白なので開きにも閉じにもならず、GitHub は字のまま描いて、前後の太字の組み方を変えない
+  （`**a⏎⇥***⏎b**` は太字。数えると 2・3 行目を崩れと誤る。#624。#581 の狭いパス NP-3）。
+- **タブは桁で数える**——行の頭から 4 桁ごとの位置まで進む（CommonMark と同じ）。引用の印の直後のタブは、印の後ろの空白 1 桁を
+  そこから使う（`>⇥--- | ---` は 2 桁の字下げ）。ほかのタブは減らさない。容れ物の桁（リストの項の中身の桁・印の後ろの空白）・
+  インデントしたコード・区切り線・見出しの下線・表の区切りの行と表の終わり、どれも同じ数え方である
+  （`- a | b⏎⇥--- | ---` は項の中の表、`a | b⏎--- | ---⏎⇥foo` の 3 行目はインデントしたコード。#623・#624。#581 の狭いパス NP-2）。
 
 守らない:
 
@@ -95,7 +102,10 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **リンクの URL・自動リンク・HTML の属性の中の `**`**——段落の本文として数える。
 - **行頭の `<!--` で始まる行の、`-->` より後ろに書いた本文**——GitHub は行ごと HTML のブロックとして字のまま描くが、
   この検査は行ごと見ない（`**` が字のまま見えても落とさない）。
-- **タブの字下げ・リストの項の中の引用**——容れ物の桁は空白で数える近似である。
+- **引用・リストの項の中で閉じ忘れた `<!--` の後ろの本文**——GitHub は容れ物が終わっても生の `<!--` を閉じず、次の `-->` までの本文を
+  画面に描かない。この検査は容れ物の終わりでコメントのブロックも閉じたものとして読むので、**画面に出ない行の崩れを落とすことがある**
+  （`> <!--⏎> x⏎⏎X**「例」**Y` の 4 行目。#606。閉じ忘れそのものが誤りで、落ちれば気づける——要確認 #607 で今のままと決めた）。
+- **`*` が 2 つか 3 つ並んだだけの行の `**`**——字のまま描かれるが落とさない（守るの「区切りに数えない」）。
 - **表のセルをまたいで組んだ形**——表は 1 行を 1 段落として組む。セルごとには分けない。
 - **HTML のブロック（`<div>` など）で表を終わらせない**——コメントのほかの HTML のブロックを持たない。
 - **一般カテゴリ S の記号**（`→` `×` など ASCII 以外の記号）を句読点として扱わない——cmark-gfm と同じ。
@@ -233,34 +243,52 @@ def mask_inline(text: str) -> tuple[str, str]:
     return "".join(runs_out), "".join(marks_out)
 
 
-def quote_depth(line: str, limit: int | None = None) -> tuple[int, int]:
-    """行の頭の引用の印を最大 `limit` 個剥がし、`(深さ, 剥がした字数)` を返す。"""
-    depth, pos = 0, 0
-    while limit is None or depth < limit:
-        m = QUOTE_MARK.match(line, pos)
-        if not m:
-            break
-        depth, pos = depth + 1, m.end()
-    return depth, pos
-
-
 def indent_of(text: str) -> int:
     return len(text) - len(text.lstrip(" "))
 
 
-def width_at(line: str, start: int) -> int:
-    """`line[start:]` の頭の空白（タブを含む）が占める桁数。
+def expand_tabs(line: str) -> str:
+    """構造（容れ物・字下げ・ブロックの始まり）の判定に使う行。タブを、**行の頭から** 4 桁ごとの位置まで進む空白に開く。
 
-    タブの位置は**行の頭から** 4 桁ごとに数える（容れ物を剥がした後の文字列の頭からではない）。引用の印 `>` の
-    直後のタブは、印の後ろの任意の空白 1 桁をそこから使う（CommonMark と同じ）。
+    CommonMark と同じ数え方である。引用の印 `>` の直後のタブは、開いた空白の 1 つ目を `QUOTE_MARK` が
+    印の後ろの任意の空白として剥がす——「印の直後のタブは、印の後ろの空白 1 桁をそこから使う」と同じ結果になる
+    （`>⇥---` は 2 桁の字下げ）。**ほかのタブは 1 桁も減らさない**（`- a⏎  ⇥  ---` の区切りの形の行は 4 桁の字下げ。#624）。
     """
-    end = start
-    while end < len(line) and line[end] in " \t":
-        end += 1
-    width = len(line[:end].expandtabs(4)) - len(line[:start].expandtabs(4))
-    if 0 < start < len(line) and line[start - 1] == ">" and line[start] == "\t":
-        width -= 1
-    return width
+    if "\t" not in line:
+        return line
+    out = ""
+    for char in line:
+        out += " " * (4 - len(out) % 4) if char == "\t" else char
+    return out
+
+
+def source_index(line: str, column: int) -> int:
+    """`expand_tabs(line)` の桁 `column` が、元の行の何文字目に当たるか（タブの途中なら、そのタブの後ろ）。"""
+    col = 0
+    for index, char in enumerate(line):
+        if col >= column:
+            return index
+        col += 4 - col % 4 if char == "\t" else 1
+    return len(line)
+
+
+def match_containers(text: str, stack: list) -> tuple[int, int]:
+    """開いている容れ物を外から順に行の頭へ当て、`(当たった数, 本文の始まる桁)` を返す。
+
+    引用（`">"`）は印で当たり、リストの項（中身の始まる桁）はその桁までの字下げか空行で当たる（CommonMark と同じ）。
+    """
+    at = 0
+    for count, container in enumerate(stack):
+        if container == ">":
+            quote = QUOTE_MARK.match(text, at)
+            if not quote:
+                return count, at
+            at = quote.end()
+        elif text[at:].strip():
+            if at + indent_of(text[at:]) < container:
+                return count, at
+            at = container
+    return len(stack), at
 
 
 def cells(row: str) -> int:
@@ -292,21 +320,23 @@ def item_of(inner: str):
 def blocks(lines: list[str]):
     """段落ごとに `(先頭の行番号, [行, …])` を、本文でない行の免除の印の行番号と一緒に返す。
 
-    **1 行ずつ、文書の順に** 容れ物（引用の深さ・リストの項の中身の桁）と、開いているフェンス・HTML のコメントの
+    **1 行ずつ、文書の順に** 容れ物（引用とリストの項を、外から順に積んだもの）と、開いているフェンス・HTML のコメントの
     ブロック・表を持ちながら読む——別々の段で剥がすと、段の順番が CommonMark の読み方とずれる
     （1 パス目の指摘対応の版は、フェンスの中の `> ```` でフェンスを閉じ、コメントの中の ``` でフェンスを開いた）。
-    段落の行は、引用の印を同じ数の空白に置き換えて返す（`> **太字**` の `**` の前は行頭＝空白）。
+    構造の判定はタブを桁に開いた行で行う（`expand_tabs`）。段落の行は、容れ物の印（引用の `>`・リストの項の印）を
+    同じ数の空白に置き換えた元の行を返す（`> **太字**` の `**` の前は行頭＝空白。字の数は元の行と同じ）。
     """
     out: list[tuple[int, list[str]]] = []
     marks: list[int] = []
     para: list[str] = []
-    para_start = para_depth = 0
-    lists: list[int] = []  # 開いているリストの項の、中身の始まる桁（引用を剥がした後の桁）
-    fence = None  # (字, 長さ, 引用の深さ, リストの桁)
-    comment = None  # 引用の深さ
-    table = None  # 開いている表の容れ物 (引用の深さ, 開いているリストの項の数)
+    para_start = 0
+    stack: list = []  # 開いている容れ物（外から順）。引用は ">"、リストの項は中身の始まる桁（行の頭からの桁）
+    fence = None  # (字, 長さ)。開いている間、容れ物は変わらない
+    comment = False  # 開いている HTML のコメントのブロック
+    table = False  # 開いている表（容れ物が変われば終わる）
     last = ""  # 段落の最後の行の、容れ物を剥がした本文（表の見出しの行の候補）
     refused = False  # この段落で、区切りの行が表を開けなかったか（GitHub はその段落でもう表を開かない）
+    starts = (THEMATIC, FENCE_OPEN, COMMENT_BLOCK, HEADING)  # 段落の続き（lazy）を許さないブロックの始まり
 
     def flush():
         nonlocal para
@@ -315,96 +345,91 @@ def blocks(lines: list[str]):
         para = []
 
     for lineno, line in enumerate(lines, 1):
+        text = expand_tabs(line)
+        matched, at = match_containers(text, stack)
         if fence is not None:
-            char, length, depth, base = fence
-            got, pos = quote_depth(line, depth)
-            rest = line[pos:]
-            if got < depth or (rest.strip() and indent_of(rest) < base):
+            if matched < len(stack):
                 fence = None  # 容れ物が終わればフェンスも閉じる
             else:
-                if re.match(rf" {{0,3}}{re.escape(char)}{{{length},}}[ \t]*$", rest[base:] if len(rest) >= base else rest):
+                if re.match(rf" {{0,3}}{re.escape(fence[0])}{{{fence[1]},}}[ \t]*$", text[at:]):
                     fence = None
                 continue
-        if comment is not None:
-            got, pos = quote_depth(line, comment)
-            if got < comment:
-                comment = None
+        if comment:
+            if matched < len(stack):
+                comment = False  # 容れ物が終わればコメントのブロックも閉じる
             else:
                 if EXEMPT.search(line):
                     marks.append(lineno)
-                if "-->" in line[pos:]:
-                    comment = None
+                if "-->" in text[at:]:
+                    comment = False
                 continue
 
-        depth, pos = quote_depth(line)
-        content = line[pos:]
-        shown = " " * pos + content
-        if not content.strip():
+        if not text[at:].strip():
             flush()
-            table = None
+            table = False
+            del stack[matched:]  # 空行は、印の無い引用を閉じる（リストの項は空行では閉じない）
             continue
 
-        # 新しい引用（段落より深い）は段落を割り込む。浅い行は続き（lazy continuation）として下で扱う。
-        if para and depth > para_depth:
-            flush()
+        # 当たった容れ物の中で、新しい容れ物（引用・リストの項）を開く。段落の続きになりうる行（容れ物の一部が当たらず、
+        # 段落が開いている）では、項は段落を割り込まない——割り込みの規則が掛かるのは、段落と同じ容れ物の中の行だけ
+        maybe_lazy = bool(para) and matched < len(stack)
+        new: list = []
+        pos = at
+        while indent_of(text[pos:]) < 4:
+            quote = QUOTE_MARK.match(text, pos)
+            if quote:
+                new.append(">")
+                pos = quote.end()
+                continue
+            item = None if THEMATIC.match(text[pos:]) else item_of(text[pos:])
+            if item is None:
+                break
+            ordered, number, empty, offset = item
+            if para and not maybe_lazy and not new and (empty or (ordered and number != "1")):
+                break  # 空の項と `1.` 以外の番号の項は、段落を割り込めない
+            new.append(pos + offset)
+            pos += offset
+        inner = text[pos:]
+        start = source_index(line, pos)
+        shown = " " * start + line[start:]
 
-        indent = indent_of(content)
-        popped = False
-        stripped = content[indent:]
-        starts_block = any(r.match(stripped) for r in (THEMATIC, FENCE_OPEN, COMMENT_BLOCK, HEADING)) \
-            or item_of(stripped) is not None
-        while lists and indent < lists[-1]:
-            if para and not starts_block:
-                break  # 項の中の段落の続き（lazy continuation）。ブロックの始まりなら項を閉じる（別の種類のリストの項でも）
-            lists.pop()
-            popped = True
-        base = lists[-1] if lists and indent >= lists[-1] else 0
-        inner = content[base:] if indent >= base else content.lstrip(" ")
-        lazy = bool(lists) and indent < lists[-1]
+        if maybe_lazy and not new and not any(r.match(inner) for r in starts):
+            para.append(shown)  # 段落の続き（lazy continuation）。容れ物は閉じない
+            last = inner
+            continue
 
-        if table is not None:
+        if table:
             # 表は空行・ブロックの始まり・容れ物の変化で終わる。それ以外の行は `|` が無くても表の行（#562）
-            if (depth, len(lists)) != table or item_of(inner) is not None or indent_of(inner) >= 4 \
-                    or any(r.match(inner) for r in (THEMATIC, FENCE_OPEN, COMMENT_BLOCK, HEADING)):
-                table = None
-            else:
+            if matched == len(stack) and not new and indent_of(inner) < 4 and not any(r.match(inner) for r in starts):
                 out.append((lineno, [shown]))
                 continue
+            table = False
+        if matched < len(stack) or new:
+            flush()  # 容れ物が終わる・始まる行は段落を終わらせる（深くなる引用・項の印）
+            del stack[matched:]
+            stack.extend(new)
+        if not inner.strip():
+            continue  # 中身の無い項・引用の印だけの行
 
         if THEMATIC.match(inner):  # 区切り線（段落の直後の `---` は setext の下線——どちらも段落を終わらせる）
             flush()
             continue
-        if para and not lazy and width_at(line, pos + base) < 4 and SETEXT.match(inner.lstrip(" \t")):
-            # 字下げはタブを含めて桁で数える——容れ物の後ろのタブ（`>⇥---`）も 4 桁に届かなければ下線（#581）
+        if para and SETEXT.match(inner):
+            # 段落と同じ容れ物の中の行だけ（段落の続き（lazy）は上で終わっている）。字下げはタブを含めて桁で数える（#581）
             flush()
             continue
-
-        item = None if lazy else item_of(inner)
-        if item is not None:
-            ordered, number, empty, offset = item
-            if para and not popped and (empty or (ordered and number != "1")):
-                item = None  # 空の項と `1.` 以外の番号の項は、段落を割り込めない
-        if item is not None:
-            flush()
-            lists.append(base + offset)
-            inner = inner[offset:] if len(inner) >= offset else ""
-            if THEMATIC.match(inner):
-                continue
-            if not inner.strip():
-                continue
-
         fence_open = FENCE_OPEN.match(inner)
         if fence_open:
             flush()
             run = fence_open.group(1)
-            fence = (run[0], len(run), depth, lists[-1] if lists else 0)
+            fence = (run[0], len(run))
             continue
         if COMMENT_BLOCK.match(inner):
             flush()
             if EXEMPT.search(line):
                 marks.append(lineno)
             if "-->" not in inner[inner.index("<!--"):]:
-                comment = depth
+                comment = True
             continue
         if not para and indent_of(inner) >= 4:
             continue  # インデントしたコードブロック
@@ -412,21 +437,20 @@ def blocks(lines: list[str]):
             flush()
             out.append((lineno, [shown]))
             continue
-        if para and not lazy and depth == para_depth and width_at(line, pos + base) < 4 \
-                and TABLE_DELIM.match(inner):
+        if para and indent_of(inner) < 4 and TABLE_DELIM.match(inner):
             # `|` は要らない——`a⏎:--:` は 1 列の表（#581）。`|` もコロンも無い `---` は、上で setext の下線として先に終わっている
-            # 区切りの行（段落の続きでないもの）は、段落の最後の行を見出しの行にして表を開く（#562）。
+            # 区切りの行（段落と同じ容れ物の中の行）は、段落の最後の行を見出しの行にして表を開く（#562）。
             # 開けなければ、その段落ではもう開かない（GitHub と同じ）。段落の続き（lazy）と 4 桁以上字下げした
             # 区切りの形の行はここに来ない——表を試さないので、開けなかったことにならない（#580）
             if not refused and cells(last) == cells(inner):
                 head = para.pop()
                 flush()
                 out.append((lineno - 1, [head]))
-                table = (depth, len(lists))
+                table = True
                 continue
             refused = True
         if not para:
-            para_start, para_depth = lineno, depth
+            para_start = lineno
             refused = False
         para.append(shown)
         last = inner
@@ -477,7 +501,10 @@ def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
         offsets = [0]
         for line in block:
             offsets.append(offsets[-1] + len(line) + 1)
-        found = list(runs(joined))
+        rows = joined.split("\n")
+        # `*` の並びだけの行は区切りに数えない——前後が空白で開きにも閉じにもならず、組み方を変えない（#624。#581 の NP-3）
+        found = [(pos, length) for pos, length in runs(joined)
+                 if rows[next(r for r in range(len(block)) if offsets[r + 1] > pos)].strip() != "*" * length]
         for index, (pos, length) in enumerate(found):
             before = joined[pos - 1] if pos > 0 else None
             after = joined[pos + length] if pos + length < len(joined) else None
