@@ -26,6 +26,8 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - `scripts/test-check-feasibility-csv.py` — 試料・変異
 - `scripts/test-schedule-to-gantt.py` — 試料・変異
 - `scripts/test-init-mkdocs.py` — 試料・変異・写しの突き合わせ
+- `plugins/spec-loop/scripts/build-proposal.py` — `read_hand` で綴りを確かめる（1 パス目の CR1 の指摘対応で広げた）
+- `scripts/test-build-proposal.py` — 手書き部分の綴りの試料と変異（同上）
 - `.github/workflows/plugins.yml` — 区別しない FS（ext4 の casefold）の段で `test-init-mkdocs.py` も回す（区別しない FS でしか見分けられない変異があるため。実装の途中で広げた——**計画への記載は編集の後になった**（手順 4 の「手を動かす前に」を守れていない）。受入基準は I1 の経路 E3 の検証手段として足す）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（5 本）
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.44.0）
@@ -35,7 +37,7 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 触らない:
 
 - `plugins/spec-loop/scripts/merge-versions.py`——重ね合わせの綴りの判定（index の綴り。#569）は変えない。`fold` の正はここのまま（写しはテストが突き合わせる）
-- `build-proposal.py`・`check-signoff.py`——タグの時点を `git show <tag>:<path>` で読む（git の木のパスは綴りどおりにしか当たらない）ので、この形は起きない
+- `check-signoff.py`——タグの時点を `git show <tag>:<path>` で読む（git の木のパスは綴りどおりにしか当たらない）ので、この形は起きない。**`build-proposal.py` は表はタグから読むが、手書き部分は作業ツリーから読む**——1 パス目の CR1 で触る側へ移した
 - スキルの手順（案 (b)「スキルの手順で先に重ね合わせの検査を通す」）——採らない（下の「仕様の穴」）
 - スキル本体の LLM が手で開くファイル（散文の手順）——機械で縛れない
 
@@ -65,7 +67,7 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - **決めた値**: (a)。ただし `merge-versions.py` の `misnamed` は使わない——読む側が持つ綴りの確かめを足す（`check-qa-csv.py` の `misspelled`、フックはその写しに当たる自前の探し方）。
 - **推した理由**: (b) は MkDocs のフックに効かない（フックはスキルの外の `mkdocs build`／GitHub Pages で動く）・`feasibility/` は重ね合わせが見ない（`check-feasibility-csv.py`・`schedule-to-gantt.py` を覆えない）・手で CLI を叩いた経路を覆えない・散文の手順で機械の歯止めにならない。(a) は区別する FS と区別しない FS で同じ答え（どちらも 2 と名指し）を返す。`misnamed` を使わないのは、`check-qa-csv.py` とフックが単体で動く（`merge-versions.py` を読み込めない）ため。
 - **(a) の代償**: 作業ツリーにだけ古い綴り（コミットは `shared/`、手元のフォルダは `Shared/`）が残る形では、重ね合わせは index の綴りで読んで通るが、読む側は区別しない FS で止まる——ディスク上で 2 段に改名する（`versions.md` の「綴りの誤りの移行」の 3）。
-- 線と出所: `仕様の穴 = 推奨で決めて起票`（台帳の確かめた線）。確認の Issue は PR を作ってから立てる（重さに PR 番号を書くため）。
+- 線と出所: `仕様の穴 = 推奨で決めて起票`（台帳の確かめた線）。確認の Issue: #704。
 
 ## verify の受入基準
 
@@ -95,11 +97,13 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 | E6 `check-feasibility-csv.py` の CLI（2 つの表） | `main` で当てて 2（読めないものとして数える） |
 | E7 `schedule-to-gantt.py` の CLI | `main` で当てて 2（前の出力の扱いは他の 2 と同じ `stop(out, 2)`） |
 | E8 `merge-versions.py`・`build-proposal.py`・`check-signoff.py`（ライブラリの `check()`・`read_schedule` を使う側） | 触らない（I4）。`check()` に入れない |
+| E10 `build-proposal.py` の `read_hand`（手書き部分 `docs/v<n>/proposal/*.md`・`proposal/spec/*.md` を**作業ツリーから**読む） | **1 パス目の `/code-review`（CR1）が数え漏れを示した**——`read_hand` で `misspelled` を当てて 2（`Stop`）。手順 4 の「差し戻し」で範囲を広げた |
+| E11 一覧を読めない段（実行の権限だけのフォルダ）を通る CLI | **1 パス目の `/code-review`（CR3）が示した**——`misspelled` が止める |
 | E9 スキルの手順の LLM が手で開くファイル | 機械で縛れない（未証明ではなく範囲の外。PR に書く） |
 
 ### この環境では証明できないもの（未証明）
 
-- GitHub Pages（Linux）の上の `mkdocs build --strict` で落ちること——CI に MkDocs と Material の組が無い（`test-init-mkdocs.py` の docstring）。フックの警告が `mkdocs` のロガーに出ることまでをテストで見る。
+- **Linux（GitHub Pages）の上の** `mkdocs build --strict` で落ちること——CI に MkDocs と Material の組が無い。**ただし実物の `mkdocs build --strict` は測った**（1 パス目の `/code-review` の指摘 CR4 で分類を直した）: 著者がメインの作業ツリーの `.venv`（mkdocs・material）と雛形のフックで、区別しない APFS 上の `docs/v1/Shared/qa.csv` で「Aborted with 1 warnings in strict mode!」（終了 1）、綴りどおりの対照で終了 0。区別する APFS では `/code-review` が同じく終了 1 を測った（著者は測っていない）。残るのは「大文字小文字の区別以外の Linux の違い」だけ。**`-q` を付けると警告が出ず strict でも落ちない**（著者が測った。mkdocs の振る舞い）。
 
 ### 生成物
 
@@ -107,14 +111,15 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 
 ## 未解決の判断・確認待ち事項
 
-- 仕様の穴の確認の Issue（上）——PR を作ってから立てる。
+- 仕様の穴の確認の Issue: #704（要確認・PR #703 の重さで立てた）。
 
 ## 関門の進捗（再開点）
 
 - 実装: 済み（`cc648a2`・`cda8189`）。手順 4 の割り目: 不在のため訊かず続けた
 - 1 パス目の関門の起点（先に当てた関門に渡した時点の HEAD）: `cda8189`
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- PR: #703
+- Verifier 1 パス目: 通した——反証 1 件（R1。採否は下の表。直す 0 件）。verifier.md を 169 行読んだ（`wc -l` と一致）
+- `/code-review` 1 パス目: 通した——指摘 6 件（CR1〜CR6。直す 3・分類を直す 1・残課題 2）
 - 手順 5 の反証と差し戻し: まだ無い
 - 交絡を潰した手順:
     - **修正前に失敗を再現した**（陽性対照）: macOS（区別しない APFS）で、修正前のフックが `v2/Shared/qa.csv` の `Q-001` を描き `qa_numbers` が `[(1, set()), (2, {'Q-001'})]`、`check-qa-csv.py`・`qa-to-pptx.py` が綴り違いの表の中身を読んで列検査まで進んだ（終了 1）。修正後は描かずに警告・2 で名指し。
@@ -130,6 +135,18 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - **正規化だけ違う名前は止めない**——決まりの名前（`shared`・`qa.csv` など）は ASCII なので正規化では違いようがなく、止めると NFD で作られた利用者のフォルダで誤って止まる。
 - **書いた綴りそのものが決まりと違う（`Shared/qa.csv` と書いてディスクも `Shared/`）は止めない**——読む側が見るのは「書いた綴りとディスクの綴りが同じか」で、綴りが決まりどおりかは重ね合わせの検査の仕事。
 
+### 1 パス目の採否の表（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1（`/code-review`）`build-proposal.py` の `read_hand` が作業ツリーの `docs/v2/Proposal/` を区別しない FS でだけ読む | 示せる——コードを読んだ（`read_hand` は `directory.glob("*.md")`、呼び出しは `top / in_version(v, "proposal")`）＋ `/code-review` が両 APFS で実測 | I1（版ごとに読む側。E10 の数え漏れ） | 直す |
+| CR2（`/code-review`）`versions.md` の新しい文「`build-proposal.py` はタグの時点を git の木のパスで読むので、この形は起きない」が誤り | 示せる——`build-proposal.py` の docstring「手書き部分だけは作業ツリーから読む」 | I6（決まりの正に正しく書く） | 直す |
+| CR3（`/code-review`）一覧を読めない段で `misspelled` が `None` を返し、区別しない FS で綴り違いを読む | 示せる——`/code-review` の実測（`docs/v2` を 311、`Shared/` だけ置いて終了 0）。著者は試料で再現（`test-check-qa-csv.py` の v7。変異「一覧を読めない段を素通りする」が赤） | I1（FS で答えが違う） | 直す |
+| CR4（`/code-review`）未証明に分類した `mkdocs build --strict` は手元で測れる | 示せる——著者が測った（上の「未証明」） | 無し（分類の誠実さ。成果物でない） | 分類を直した（計画のみ） |
+| CR5（`/code-review`）`check-qa-csv.py` の `fold` の写しは要らない（`merge-versions.py` が `qa.fold` を読めばよい） | 示せない（保守の手間で、失敗ではない） | 無し——I3 は満たす | 残課題 |
+| CR6（`/code-review`）`test-check-qa-csv.py` に I2「綴りどおりを優先する」を殺す変異が無い | 示せない（試験の弱さで、振る舞いの失敗ではない。フック側は `SENSITIVE_ONLY` の変異で見ている） | 無し | 残課題 |
+| R1（Verifier）`check-spec-exit.py docs/v2/shared/qa.csv docs/v2/spec` が、`docs/v2/Shared/qa.csv`・`docs/v2/Spec/` を読んで 0 を返す | 示せる——Verifier の実測（macOS、終了 0「条件 1 を満たす」。同じパスの `check-qa-csv.py` は 2） | 無し——`check-spec-exit.py` は `versions.md` の「重ね合わせた全体を読むもの」で、スキル（spec-review・scaffold）も `build/merged/…` を渡す。重ねた出力の名前は `merge-versions.py` が綴りどおりに書くので、決まりどおりの使い方では綴り違いに届かない。I1 は「版ごとに読む側」 | 残課題（周の途中の課題の振り分けで `直す` 候補——手で版のパスを渡した経路） |
+
 ## 手順 8
 
-- この周の起票: 1 件（`仕様の穴 = 推奨で決めて起票` の線で立てる確認の Issue——版ごとに読む側の直し方を (a) で決めたこと。起票の承認は不在のため訊いていない）
+- この周の起票: 1 件（#704——`仕様の穴 = 推奨で決めて起票` の線で立てた確認の Issue——版ごとに読む側の直し方を (a) で決めたこと。起票の承認は不在のため訊いていない）

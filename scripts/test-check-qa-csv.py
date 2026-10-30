@@ -753,6 +753,7 @@ MERGE_VERSIONS = PLUGIN / "scripts" / "merge-versions.py"
 # `fold` の写しを突き合わせる試料（大文字小文字・全角・長い s・ß・トルコの İ・NFD の濁点・ギリシャの終わりのシグマ）
 FOLD_SAMPLES = ["shared", "Shared", "ＳＨＡＲＥＤ", "ſhared", "Straße", "STRASSE", "İ", "i̇", "\u304b\u3099", "\u304c", "ΣΑΣ", "σας"]
 NAMED = "大文字小文字だけ違う名前なので"
+UNLISTED = "一覧を読めない"
 NFD_DIR = "\u304b\u3099"  # NFD の「が」——書く側は NFC の「が」（U+304C）で渡す
 
 
@@ -775,6 +776,10 @@ def spelling_cases(root: Path) -> list[tuple[str, str, int | None, str | None, b
     both = root / "docs" / "v6"
     (both / "shared").mkdir(parents=True)
     (both / "shared" / "qa.csv").write_text(table, encoding="utf-8")
+    locked = root / "docs" / "v7"
+    (locked / "Shared").mkdir(parents=True)
+    (locked / "Shared" / "qa.csv").write_text(table, encoding="utf-8")
+    locked.chmod(0o311)  # 一覧は読めないが辿れる——区別しない FS では Shared/qa.csv を開けてしまう
     sensitive = not (both / "Shared").exists()
     if sensitive:
         (both / "Shared").mkdir()
@@ -788,6 +793,7 @@ def spelling_cases(root: Path) -> list[tuple[str, str, int | None, str | None, b
         ("正規化だけ違う段（NFD のフォルダを NFC で書く）では止めない", "docs/\u304c/shared/qa.csv", None, None, False),
         ("末尾 3 段より上の綴りは見ない", "outer/Docs8/v1/shared/qa.csv", None, None, False),
         ("区別する FS で綴りどおりと綴り違いが並ぶなら、綴りどおりを読む", "docs/v6/shared/qa.csv", 0, None, True),
+        ("一覧を読めない段は綴りを確かめられないので止める", "docs/v7/shared/qa.csv", 2, "docs/v7", False),
     ], sensitive
 
 
@@ -795,6 +801,13 @@ def spelling_mismatches(script: Path, root: Path) -> list[str]:
     """CLI に渡して、`spelling_cases` の期待と違ったものを返す。"""
     root.mkdir()
     cases, sensitive = spelling_cases(root)
+    try:
+        return spelling_run(script, root, cases, sensitive)
+    finally:
+        (root / "docs" / "v7").chmod(0o755)  # 片付けられるように
+
+
+def spelling_run(script: Path, root: Path, cases, sensitive: bool) -> list[str]:
     found = []
     for name, arg, code, named, only_sensitive in cases:
         if only_sensitive and not sensitive:
@@ -804,7 +817,8 @@ def spelling_mismatches(script: Path, root: Path) -> list[str]:
             found.append(f"{name}: 終了 {r.returncode}（期待 {code}）: {r.stderr[-200:]!r}")
         elif named is None and NAMED in r.stderr:
             found.append(f"{name}: 名指ししてはいけないのにした: {r.stderr[-200:]!r}")
-        elif named is not None and not (f"{named}: " in r.stderr and NAMED in r.stderr and "中身を検査していない" in r.stderr):
+        elif named is not None and not (f"{named}: " in r.stderr and (NAMED in r.stderr or UNLISTED in r.stderr)
+                                        and "中身を検査していない" in r.stderr):
             found.append(f"{name}: {named} を名指ししない: {r.stderr[-200:]!r}")
     return found
 
@@ -823,6 +837,7 @@ SPELLING_MUTATIONS = [
     ("正規化だけの違いでも止める",
      "if name in entries or any(unicodedata.normalize(\"NFC\", entry) == unicodedata.normalize(\"NFC\", name) for entry in entries):",
      "if name in entries:"),
+    ("一覧を読めない段を素通りする", "        except OSError as e:\n            # 一覧を読めない", "        except OSError as e:\n            return None\n            # 一覧を読めない"),
     ("綴りを大文字小文字で畳まない", '    return unicodedata.normalize("NFC", name).casefold()', '    return unicodedata.normalize("NFC", name)'),
 ]
 

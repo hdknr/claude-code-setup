@@ -117,9 +117,10 @@ def misspelled(path: Path) -> str | None:
     同じ文で止める——どちらでも同じ答えにする。**CLI の入口でだけ当てる**（`check` には入れない——`merge-versions.py` は
     index の綴りで組み立てたパスで `check` を呼ぶ。#569）。決まりの正は `references/versions.md` の「その版だけを読むもの」。
 
+    **一覧を読めない段（実行の権限だけのフォルダ）は、確かめられないので止める**——区別しない FS では開けてしまう。
     見ないもの: 書いた綴りのとおりに在る段（綴りが決まりどおりかは重ね合わせの検査の仕事）・正規化だけ違う段（決まりの名前は
     ASCII なので違いようがなく、止めると NFD で作られた利用者のフォルダで誤って止まる）・末尾 `SPELLED_DEPTH` 段より上・
-    一覧を読めない段と、綴りだけ違う名前も無い段（開けなければ読む側が「読めない」と言う）。
+    無い段と、綴りだけ違う名前も無い段（開けなければ読む側が「読めない」と言う）。
     """
     parts = path.parts
     for depth in range(max(len(parts) - SPELLED_DEPTH, 1 if path.anchor else 0), len(parts)):
@@ -129,8 +130,12 @@ def misspelled(path: Path) -> str | None:
         parent = Path(*parts[:depth]) if depth else Path(".")
         try:
             entries = os.listdir(parent)
-        except (OSError, ValueError):  # ValueError: 名前に NUL（CLI からは届かない）
+        except (FileNotFoundError, NotADirectoryError, ValueError):  # 無い段——開けないので読む側が「読めない」と言う（ValueError: 名前に NUL。CLI からは届かない）
             return None
+        except OSError as e:
+            # 一覧を読めない（実行の権限だけのフォルダ）——区別しない FS では開けてしまうので、綴りを確かめずに読まない
+            return (f"{parent}: 一覧を読めない（{e.strerror}）ので、{path} の綴りを確かめられず読まない"
+                    f"（区別しないファイルシステムでは綴りだけ違う名前を開けてしまう。直し方は {SPELLING_MIGRATION}）")
         if name in entries or any(unicodedata.normalize("NFC", entry) == unicodedata.normalize("NFC", name) for entry in entries):
             continue
         found = sorted(entry for entry in entries if fold(entry) == fold(name))
