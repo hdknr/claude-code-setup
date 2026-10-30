@@ -102,8 +102,9 @@ cruise に組み込む: 台帳にまとめ（group）を持ち、まとめる時
 - 1 パス目の指摘対応の差分: 0 行ではない（ledger.py・test-ledger.py・grouping.md・ledger.md）→ 2 パス目を回す
 - 2 つ目の割り目: 不在の周なので訊かない。残っているのは手順 5 の当て直しと `/code-review` 2 パス目の両方
 - 1 パス目の記録:1 パス目の起点（先に当てた関門に渡した時点の HEAD）: `df0b293ec82199508fb26e01a4521326c4fdf270`
-- 2 パス目: 未
-- 狭いパス: 未
+- 2 パス目: 済み（base `eef93311c540b522c2df260b88a2f86bff804277`）。Verifier（sonnet）反証 1 件（2V1）、`/code-review`（high）指摘 10 件（2CR1〜2CR10）。直す 9 件・残課題 2 件（2CR9・2CR10）
+- 2 パス目の指摘対応: 起点 `954a48eaf4e8ceb6fca4b0fd53b5c4406296577a`・終点 `7ea86e68d52174469195d7a50db39acd5bb0fb7e`。`test-ledger.py` 142 判定・変異 32/32
+- 狭いパス: 起動（`git diff 954a48e 7ea86e6`）
 - 交絡: 実験なし（台帳のテストは一時リポジトリで回す）
 - 割り目: 不在の周なので訊かない（absent-lines.md の「訊く場面」）
 
