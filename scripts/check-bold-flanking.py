@@ -22,6 +22,7 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 
 **句読点は ASCII の記号と Unicode の一般カテゴリ P**（cmark-gfm——GitHub の描画——の定義）。
 **空白は空白・タブ・改行と一般カテゴリ Zs**。行頭・行末は空白として扱う。
+**空行（段落を切る行）はこれより狭く、空白とタブだけの行**である（CommonMark と同じ。改行は読むときに `\n` にそろう）。
 
 ## 何を守り、何を守らないか
 
@@ -31,7 +32,8 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **閉じの `**` が閉じられない形を落とす**（`**「…」**Y`）。
 - **対にならない `**` を落とす**——段落の中の `**` が奇数なら、最後の 1 つは字のまま残る。
 - **段落をまたいで組まない**——空行・見出し（`#` と setext の `===` `---`）・リストの項・表の行で区切る（区切らないと、
-  前の段落の閉じ忘れが後ろの段落の組み方を全部ずらす）。
+  前の段落の閉じ忘れが後ろの段落の組み方を全部ずらす）。**空行は空白とタブだけの行**——U+3000・NBSP・`\v`・`\f` だけの行は
+  段落の行で、段落を切らない。中身がそれらの字だけの項は空の項ではなく、表の行の端のそれらの字はセルの中身である（GitHub と同じ。#667）。
 - **段落の中では行をまたいで組む**——このリポジトリの本文は、太字を行の途中で折り返している。
 - **`***`（太字の斜体）も太字の区切りとして数える**——数えないと、それより後ろの組み方が
   1 つずつずれる（`SKILL.md` の `***リポジトリで*…**` で実際にずれた）。
@@ -57,7 +59,8 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   コメントのブロックも閉じる。**リストの項の中の引用も同じ**——`- > a | b⏎  > --- | ---` は項の中の引用の表である（#624）。
 - **リストの項は中身の桁で読む**——項の中の行（中身の桁まで字下げした行）は項の中として読み、字下げの浅い行は
   ブロックの始まり（項の印・引用・区切り線・フェンス・コメント・見出し）なら項を閉じ、そうでなければ続きとして組む。
-  **段落を割り込める項は、空でない `-` `*` `+` と、空でない `1.`（`1)`）だけ**——段落の途中の `2.` から始まる行は続きである。
+  **段落を割り込める項は、空でない `-` `*` `+` と、空でない番号が 1 の項だけ**——番号は値で比べる（`1.` `01.` `001)` は割り込む。#667）。
+  段落の途中の `2.`・`00.` から始まる行は続きである。
   項を閉じて現れた項の印は、番号や種類によらず次の項として区切る。項の印の後ろに空白が 5 つ以上あれば、中身は印の 1 つ後ろから始まり、
   残りはインデントしたコードとして読む（GitHub と同じ。#563）。
 - **区切り線（`***` `---` `___`）と、行頭の `<!--` で始まる HTML のコメントのブロックは段落の本文として見ない**
@@ -119,6 +122,7 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 
 from __future__ import annotations
 
+import bisect
 import pathlib
 import re
 import string
@@ -157,6 +161,14 @@ def is_space(char: str | None) -> bool:
     if char is None:
         return True
     return char in " \t\n\r\f" or unicodedata.category(char) == "Zs"
+
+
+def is_blank(text: str) -> bool:
+    """空行か——空白とタブだけの行（CommonMark と同じ。CRLF は `read_text` が `\\n` にそろえるので、行に `\\r` は残らない）。
+
+    `str.strip()` で判定しない——U+3000・NBSP・`\\v`・`\\f` まで剥がして、段落の行を空行と読む（#667。#623 の /code-review 2 パス目 CR2-1）。
+    """
+    return not text.strip(" \t")
 
 
 def is_punct(char: str | None) -> bool:
@@ -287,7 +299,7 @@ def match_containers(text: str, stack: list) -> tuple[int, int]:
             if not quote:
                 return count, at
             at = quote.end()
-        elif text[at:].strip():
+        elif not is_blank(text[at:]):
             if indent_of(text[at:]) < container:
                 return count, at
             at += container
@@ -296,7 +308,7 @@ def match_containers(text: str, stack: list) -> tuple[int, int]:
 
 def cells(row: str) -> int:
     """表の行のセルの数。外側の `|` と、逃がした `\\|` は区切りに数えない。"""
-    text = row.strip()
+    text = row.strip(" \t")  # 端の U+3000 などはセルの中身（#667）
     parts = re.split(r"(?<!\\)\|", text)
     if text.startswith("|"):
         parts = parts[1:]
@@ -316,7 +328,7 @@ def header_cells(row: str, lazy: bool) -> int:
 
 
 def item_of(inner: str):
-    """リストの項なら `(順序つきか, 番号, 中身が空か, 中身の始まる桁)` を返す。"""
+    """リストの項なら `(順序つきか, 番号の値, 中身が空か, 中身の始まる桁)` を返す。番号は値で持つ（`01.` は 1。#667）。"""
     m = BULLET.match(inner) or ORDERED.match(inner)
     if not m:
         return None
@@ -325,7 +337,7 @@ def item_of(inner: str):
     gap = len(m.group(3) or "")
     marker_end = m.end(2) if not ordered else m.start(3) if m.group(3) is not None else len(inner)
     content = marker_end + (gap if 1 <= gap <= 4 else 1)
-    return ordered, (m.group(2) if ordered else ""), not body.strip(), content
+    return ordered, (int(m.group(2)) if ordered else 0), is_blank(body), content
 
 
 def blocks(lines: list[str]):
@@ -376,7 +388,7 @@ def blocks(lines: list[str]):
                     comment = False
                 continue
 
-        if not text[at:].strip():
+        if is_blank(text[at:]):
             flush()
             table = False
             del stack[matched:]  # 空行は、印の無い引用を閉じる（リストの項は空行では閉じない）
@@ -397,8 +409,8 @@ def blocks(lines: list[str]):
             if item is None:
                 break
             ordered, number, empty, offset = item
-            if para and not maybe_lazy and not new and (empty or (ordered and number != "1")):
-                break  # 空の項と `1.` 以外の番号の項は、段落を割り込めない
+            if para and not maybe_lazy and not new and (empty or (ordered and number != 1)):
+                break  # 空の項と、番号の値が 1 でない項は、段落を割り込めない（`01.` は割り込む。#667）
             new.append(offset)
             pos += offset
         inner = text[pos:]
@@ -420,7 +432,7 @@ def blocks(lines: list[str]):
             flush()  # 容れ物が終わる・始まる行は段落を終わらせる（深くなる引用・項の印）
             del stack[matched:]
             stack.extend(new)
-        if not inner.strip():
+        if is_blank(inner):
             continue  # 中身の無い項・引用の印だけの行
 
         if THEMATIC.match(inner):  # 区切り線（段落の直後の `---` は setext の下線——どちらも段落を終わらせる）
@@ -510,18 +522,20 @@ def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
         # 引用の印を同じ数の空白に置き換えただけなので長さが同じ——伏せ字の文字列と同じ位置で切れる。
         original = "\n".join(source[start - 1:start - 1 + len(block)])
         exempt.update(start + row for row, line in enumerate(marks.split("\n")) if EXEMPT.search(line))
-        offsets = [0]
+        offsets = [0]  # 各行の頭の位置（狭義の増加）。run の行は二分探索で 1 度だけ引く——run ごとに頭から探さない（#667。#623 の CR1-8）
         for line in block:
             offsets.append(offsets[-1] + len(line) + 1)
-        rows = joined.split("\n")
         # `*` の並びだけの行は区切りに数えない——前後が空白で開きにも閉じにもならず、組み方を変えない（#624。#581 の NP-3）。
         # 空白は `is_space` で数える——`str.strip()` は `\v` など CommonMark が空白に数えない字まで剥がす（#623 の /code-review 1 パス目）
-        found = [(pos, length) for pos, length in runs(joined)
-                 if "".join(c for c in rows[next(r for r in range(len(block)) if offsets[r + 1] > pos)] if not is_space(c)) != "*" * length]
-        for index, (pos, length) in enumerate(found):
+        bare = ["".join(c for c in row if not is_space(c)) for row in joined.split("\n")]
+        found = []
+        for pos, length in runs(joined):
+            row = bisect.bisect_right(offsets, pos) - 1
+            if bare[row] != "*" * length:
+                found.append((pos, length, row))
+        for index, (pos, length, row) in enumerate(found):
             before = joined[pos - 1] if pos > 0 else None
             after = joined[pos + length] if pos + length < len(joined) else None
-            row = next(r for r in range(len(block)) if offsets[r + 1] > pos)
             lineno = start + row
             fragment = original[max(0, pos - 6):pos + 8].replace("\n", "⏎")
             if index % 2 == 0:
