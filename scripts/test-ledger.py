@@ -33,6 +33,52 @@ SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" 
 
 failures: list[str] = []
 
+# #507: 印「配布を見せて確かめた」は区切った形でだけ「あり」。1 つ目は #474 の台帳 `cruise-issue-474.json` の
+# `lines.source` を 1 文字も変えずに写したもの（互換。言い換えた試料では互換を確かめられない——#497 の 1 パス目）。
+# (出所, 期待)。**照合の正規表現の分岐はどれも、外すとどれかの判定が変わる**（main の「照合の分岐」で 1 つずつ外して見る。#681）
+DIST_SAMPLES = (
+    ("利用者の確認（起動時・2026-10-27T09:07:27Z）＋利用者の確認（再開時・2026-10-28T07:24:46Z）＋利用者の確認（再開時・2026-10-28T23:56:17Z）: "
+     "配布を見せて確かめた——main へのマージがプラグインの新しい版を配り revert で戻らないことを見せ、この cruise で関門を通り CI が緑で "
+     "main と衝突しない PR は配布を起こすマージも不在でしてよいと確かめた（2026-10-28T23:56:17Z）", "あり"),
+    ("利用者の確認（起動時・t1、配布を見せて確かめた）＋（再開時・t2）", "あり"),
+    # cruise §2 の 1 が書かせる正準の形（括弧の中の末尾）と、出所の先頭の印——先読みの `\Z`・前の `\A` を外す変異を殺す
+    ("利用者の確認（起動時・2026-10-27T09:07:27Z、配布を見せて確かめた）", "あり"),
+    ("配布を見せて確かめた", "あり"),
+    ("利用者の確認（起動時・t1）・配布を見せて確かめた", "あり"),
+    # #681: 前の `＋`・前の `：`・`）` が 2 つ・`）` の後ろの `（`——どれも、その分岐だけが「あり」にする形
+    ("利用者の確認（起動時・t1）＋配布を見せて確かめた", "あり"),
+    ("利用者の確認（起動時・t1）：配布を見せて確かめた", "あり"),
+    ("利用者の確認（再開時（t2、配布を見せて確かめた））", "あり"),
+    ("利用者の確認（起動時・t1、配布を見せて確かめた）（再開時・t2）", "あり"),
+    ("利用者の確認（配布を見せて確かめた）", "あり"),
+    ("利用者の確認（起動時・t1）、配布を見せて確かめた、とは言えない", "なし"),
+    ("配布を見せて確かめたとは言えない", "なし"),
+    ("利用者の確認（配布を見せて確かめた）とは言えない", "なし"),
+    ("利用者の確認（起動時・t1、配布を見せて確かめたか不明）", "なし"),
+    # 前が区切りでない（後ろは区切り）——前の検査を外す変異を殺す
+    ("利用者の確認（起動時・t1）誰も配布を見せて確かめた）", "なし"),
+    ("利用者の確認（起動時・t1）: 配布を見せて確かめたか不明", "なし"),
+    # #681: `）` の後ろを `、` でつなぐ形は「なし」（つなぐのは `＋` と `（` だけ。cruise §2 の 1）
+    ("利用者の確認（起動時・t1、配布を見せて確かめた）、（再開時・t2）", "なし"),
+)
+# 照合の正規表現（`DIST_MARK_RE.pattern`）の分岐を 1 つずつ外す (探す文字列, 置き換え)。**どれを外しても DIST_SAMPLES の判定がどれか変わる**（#681）。
+# 本体の「守る」の 1 行（区切った形でだけ「あり」）の中身なので、MUTATIONS（「守る」と 1 対 1）には足さず、正規表現だけを差し替えて当てる
+REGEX_BRANCHES = (
+    (r"(?:\A|", "(?:"),                  # 前: 出所の先頭
+    ("[（、・＋]", "[、・＋]"),            # 前: （
+    ("[（、・＋]", "[（・＋]"),            # 前: 、
+    ("[（、・＋]", "[（、＋]"),            # 前: ・
+    ("[（、・＋]", "[（、・]"),            # 前: ＋
+    ("|: |", "|"),                       # 前: 「: 」
+    ("|：)", ")"),                       # 前: 「：」
+    ("）+", "）"),                       # 後ろ: ） が 2 つ以上
+    (r"(?=\Z|", "(?="),                  # 後ろ: ） の後ろが出所の終わり
+    ("[＋（]", "[（]"),                  # 後ろ: ） の後ろが ＋
+    ("[＋（]", "[＋]"),                  # 後ろ: ） の後ろが （
+    ("|——|", "|"),                       # 後ろ: ——
+    (r"——|\Z)", "——)"),                  # 後ろ: 出所の終わり
+)
+
 
 def load(script: Path = SCRIPT):
     spec = importlib.util.spec_from_file_location(f"ledger_{id(script)}_{script.stat().st_mtime_ns}", script)
@@ -265,28 +311,19 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     r = run(mod, ["show", "ln"], root)
     o["lines の show"] = (r[0], "確かめた線（出所: s2・" in str(r[1]) and "マージ = 止まる" in str(r[1]))
     o["線の無い show"] = "確かめた線: 無い" in str(run(mod, ["show", "c"], root)[1])
-    # #507: 印「配布を見せて確かめた」は区切った形でだけ「あり」。1 つ目は #474 の台帳 `cruise-issue-474.json` の
-    # `lines.source` を 1 文字も変えずに写したもの（互換。言い換えた試料では互換を確かめられない——#497 の 1 パス目）
+    # #507: 印は区切った形でだけ「あり」（試料は DIST_SAMPLES）
     o["配布の確認"] = []
-    for src in ("利用者の確認（起動時・2026-10-27T09:07:27Z）＋利用者の確認（再開時・2026-10-28T07:24:46Z）＋利用者の確認（再開時・2026-10-28T23:56:17Z）: "
-                "配布を見せて確かめた——main へのマージがプラグインの新しい版を配り revert で戻らないことを見せ、この cruise で関門を通り CI が緑で "
-                "main と衝突しない PR は配布を起こすマージも不在でしてよいと確かめた（2026-10-28T23:56:17Z）",
-                "利用者の確認（起動時・t1、配布を見せて確かめた）＋（再開時・t2）",
-                # cruise §2 の 1 が書かせる正準の形（括弧の中の末尾）と、出所の先頭の印——先読みの `\Z`・前の `\A` を外す変異を殺す
-                "利用者の確認（起動時・2026-10-27T09:07:27Z、配布を見せて確かめた）",
-                "配布を見せて確かめた",
-                "利用者の確認（起動時・t1）・配布を見せて確かめた",
-                "利用者の確認（起動時・t1）、配布を見せて確かめた、とは言えない",
-                "配布を見せて確かめたとは言えない",
-                "利用者の確認（配布を見せて確かめた）とは言えない",
-                "利用者の確認（起動時・t1、配布を見せて確かめたか不明）",
-                # 前が区切りでない（後ろは区切り）——前の検査を外す変異を殺す
-                "利用者の確認（起動時・t1）誰も配布を見せて確かめた）",
-                "利用者の確認（起動時・t1）: 配布を見せて確かめたか不明"):
-        run(mod, ["lines", "ln", "マージ=関門を通ればマージ", "--source", src], root)
+    # 試料の `lines` の終了コード（#681）——拒まれると `show` は前の試料の出所で答え、判定を取り違える
+    o["配布の確認の lines"] = []
+    for src, _ in DIST_SAMPLES:
+        o["配布の確認の lines"].append(run(mod, ["lines", "ln", "マージ=関門を通ればマージ", "--source", src], root)[0])
         out = str(run(mod, ["show", "ln"], root)[1])
         o["配布の確認"].append(next((l.split(": ", 1)[1] for l in out.splitlines() if l.startswith("配布の確認")), None))
-    run(mod, ["lines", "ln", "直す線=既定", "--source", "利用者の確認（起動時・t1、配布を見せて確かめた）"], root)
+    # #681: マージの線の無い出所の印は拒む（台帳は変えない）。印の無い出所なら通り、配布の確認の行は出ない
+    before = snapshot(lf)
+    o["マージの無い印"] = run(mod, ["lines", "ln", "直す線=既定", "--source", "利用者の確認（起動時・t1、配布を見せて確かめた）"], root)[0]
+    o["マージの無い印の後も同じ"] = snapshot(lf) == before
+    o["印の無い lines"] = run(mod, ["lines", "ln", "直す線=既定", "--source", "利用者の確認（起動時・t1）"], root)[0]
     o["マージの無い配布の確認"] = "配布の確認" in str(run(mod, ["show", "ln"], root)[1])
     o["decisions"] = (run(mod, ["set", "ln", "1", "decisions=12, 13"], root)[0],
                       run(mod, ["set", "ln", "1", "decisions=x"], root)[0])
@@ -429,6 +466,81 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     r = str(run(mod, ["show", "gr"], root)[1])
     o["まとめの show(着手できる)"] = "着手できる: #4, #6, #7（まとめ: #8）" in r
 
+    # L16（#665）: 前の周の在り処を持つ行のまとめ・空白だけの group=・戻す順・マージの後で止まった跡
+    run(mod, ["init", "gs"], root)
+    for n in range(1, 11):
+        run(mod, ["add", "gs", str(n)], root)
+    gsf = plans / "cruise-gs.json"
+    # 鍵ごとに 1 組——代表でない行（奇数）にだけ 1 つの鍵の古い値を置く（鍵を 1 つ落とす直し方も、代表しか見ない直し方も殺す）
+    pairs5 = ((2, 1), (4, 3), (6, 5), (8, 7), (10, 9))
+    for key, (_, stale) in zip(mod.PLACE_KEYS, pairs5):
+        run(mod, ["set", "gs", str(stale), f"{key}=old"], root)
+    before = snapshot(gsf)
+    # 消し方の案内は、そのまま打てる形（台帳の名前つき）
+    o["group 古い在り処"] = tuple((r[0], "前の周の在り処" in str(r[2]), f"`ledger.py set gs {s} pr= " in str(r[2])) for s, r in
+                                ((s, run(mod, ["group", "gs", str(h), str(s)], root)) for h, s in pairs5))
+    o["group 古い在り処の後も同じ"] = snapshot(gsf) == before
+    run(mod, ["set", "gs", "1", "pr="], root)
+    o["group 消したら通る"] = run(mod, ["group", "gs", "2", "1"], root)[0]
+    r = run(mod, ["set", "gs", "2", "group= "], root)
+    o["set group=空白"] = (r[0], "空白だけ" in str(r[2]))
+    # 戻す順（grouping.md の「マージの後」の 4）。(a) 1 ← 2 ← 3 で代表 1 が残り、2・3 が落ちた
+    run(mod, ["init", "go"], root)
+    for args in (["1"], ["2", "--deps", "1"], ["3", "--deps", "2"]):
+        run(mod, ["add", "go", *args], root)
+    run(mod, ["group", "go", "1", "2", "3"], root)
+    for n in ("2", "3"):
+        run(mod, ["set", "go", n, "note=落ちた: 別のファイル"], root)
+    run(mod, ["set", "go", "1", "state=merged", "pr=#7"], root)
+    back = ["group=", "state=todo", "pr=", "branch=", "worktree=", "agent=", "base="]
+    r = str(run(mod, ["show", "go"], root)[1])
+    o["落ちた行の名指し"] = next((l.split(": ", 1)[1] for l in r.splitlines() if l.startswith("落ちたのに")), None)
+    # 全行が merged でも、名指しした行があるあいだは cruise が終える行を出さない
+    o["名指し中の終わりの行"] = "すべてマージ済みか取り下げ" in r
+    o["戻す順(a) 逆"] = run(mod, ["set", "go", "2", *back], root)[0]
+    o["戻す順(a)"] = tuple(run(mod, ["set", "go", n, *back], root)[0] for n in ("3", "2"))
+    r = str(run(mod, ["show", "go"], root)[1])
+    o["戻した後の名指し"] = "落ちたのに" in r
+    o["戻した後の next"] = run(mod, ["next", "go"], root)[1].split()
+    # 戻した 2 をもう一度まとめてマージする——古い「落ちた:」で名指ししない（group が「前に落ちた:」に書き換える）
+    run(mod, ["add", "go", "4"], root)
+    run(mod, ["group", "go", "2", "4"], root)
+    run(mod, ["set", "go", "2", "state=merged", "pr=#11"], root)
+    r = str(run(mod, ["show", "go"], root)[1])
+    try:
+        note2 = next(i["note"] for i in json.loads((plans / "cruise-go.json").read_text(encoding="utf-8"))["issues"] if i["number"] == 2)
+    except (OSError, ValueError, KeyError, StopIteration):
+        note2 = None
+    o["入れ直した行"] = (note2, "落ちたのに" in r)
+    # (b) 代表 1 が落ちた。1 → 2 → 3（代表が依存する行は merged のまま抜く）、4 → 1（代表に依存する行も落ちる）
+    run(mod, ["init", "gu"], root)
+    for args in (["3"], ["2", "--deps", "3"], ["1", "--deps", "2"], ["4", "--deps", "1"]):
+        run(mod, ["add", "gu", *args], root)
+    run(mod, ["group", "gu", "1", "2", "3", "4"], root)
+    for n in ("1", "4"):
+        run(mod, ["set", "gu", n, "note=落ちた: 判断が要る"], root)
+    run(mod, ["set", "gu", "1", "state=merged", "pr=#8"], root)
+    o["戻す順(b) 4"] = run(mod, ["set", "gu", "4", *back], root)[0]
+    o["戻す順(b) 逆"] = run(mod, ["set", "gu", "2", "group="], root)[0]
+    o["戻す順(b)"] = (run(mod, ["set", "gu", "3", "group="], root)[0], run(mod, ["set", "gu", "2", "group="], root)[0],
+                     run(mod, ["set", "gu", "1", *back], root)[0])
+    o["戻した後の next(b)"] = run(mod, ["next", "gu"], root)[1].split()
+    # (c) まとめの PR を閉じた: 代表 1 → 2 → 3 を全部 todo に戻す（代表が依存する行は依存されている側から先に）
+    run(mod, ["init", "gk"], root)
+    for args in (["3"], ["2", "--deps", "3"], ["1", "--deps", "2"]):
+        run(mod, ["add", "gk", *args], root)
+    run(mod, ["group", "gk", "1", "2", "3"], root)
+    run(mod, ["set", "gk", "1", "state=pr", "pr=#9"], root)
+    o["ほどく順(c)"] = (run(mod, ["set", "gk", "2", *back], root)[0],
+                       tuple(run(mod, ["set", "gk", n, *back], root)[0] for n in ("3", "2", "1")))
+    # (d) 利用者が「まとめない」: 1 ← 2 ← 3（todo）を 3、2、1 の順に抜く
+    run(mod, ["init", "gd"], root)
+    for args in (["1"], ["2", "--deps", "1"], ["3", "--deps", "2"]):
+        run(mod, ["add", "gd", *args], root)
+    run(mod, ["group", "gd", "1", "2", "3"], root)
+    o["ほどく順(d)"] = (run(mod, ["set", "gd", "2", "group="], root)[0],
+                       tuple(run(mod, ["set", "gd", n, "group="], root)[0] for n in ("3", "2", "1")))
+
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
     outside = tmp / f"outside-{tag}"
@@ -532,6 +644,9 @@ MUTATIONS = {
     # 守る（#507）: 配布の確認は区切った形の印だけ「あり」——部分一致に戻すと否定文の試料が「あり」になる
     "配布の確認を部分一致で見る": [
         ("    return DIST_MARK_RE.search(source.strip()) is not None", "    return DIST_MARK in source")],
+    # 守る（#681）: 印は マージ の線と一緒にだけ書く
+    "マージの線の無い出所の印を書く": [
+        ('    if has_dist_mark(source) and "マージ" not in values:', "    if False:")],
     # 守る: origin も文字列だけ
     "origin の型を見ない": [
         ('TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")',
@@ -559,6 +674,9 @@ MUTATIONS = {
     "group が別のまとめの行を引き込む": [
         ('        if issue.get("group", ""):\n            raise Refused(f"#{issue[\'number\']} は既に',
          '        if False:\n            raise Refused(f"#{issue[\'number\']} は既に')],
+    # 守る（#665）: 前の周の在り処を持つ行はまとめない
+    "group が前の周の在り処を持つ行をまとめる": [
+        ("        if stale:\n            raise Refused", "        if False:\n            raise Refused")],
     "代表の抜けたまとめを通す": [
         ('        if head not in known or find(data, head).get("group") != str(head):', '        if False:')],
     "まとめの全行に書かない": [
@@ -571,6 +689,9 @@ MUTATIONS = {
         ('or (i.get("group", "") and group.get(d) == i["group"])', "or False")],
     "set group= に空でない値を通す": [
         ('        elif key == "group" and value.strip():', "        elif False:")],
+    # 守る（#665）: 空白だけの group= は空白だけと言う
+    "空白だけの group= を番号の誤りと言う": [
+        ('        elif key == "group" and value and not value.strip():', "        elif False:")],
     "抜ける前のまとめに伝える": [
         ('    issue.update(changes)\n    issue["updated"] = now()\n    # まとめ',
          '    _g = issue.get("group", "")\n    issue.update(changes)\n    issue["updated"] = now()\n    # まとめ'),
@@ -584,6 +705,14 @@ MUTATIONS = {
         ("    find_cycle(contracted)\n", "")],
     "代表を後ろにもう 1 度書いた group を通す": [
         ("    rows = [head, *numbers]\n", "    rows = [head] + [n for n in numbers if n != head]\n")],
+    # 守る（#665）: マージの後で止まった跡を名指しする
+    "落ちたのに merged の行を名指ししない": [
+        ("    if stranded:\n        print(", "    if False:\n        print(")],
+    "まとめに入れ直した行の「落ちた:」を残す": [
+        ('        if issue.get("note", "").startswith(DROPPED_NOTE):\n            issue["note"]',
+         '        if False:\n            issue["note"]')],
+    "落ちた行があっても終わりの行を出す": [
+        ('for i in data["issues"]) and not stranded:\n', 'for i in data["issues"]):\n')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -667,8 +796,21 @@ def main() -> int:
               and o["lines の値"]["values"] == {"マージ": "止まる"} and o["lines の値"]["source"] == "s2")
         check("show が確かめた線と出所を出す", o["lines の show"] == (0, True))
         check("線の無い台帳の show は「無い」と出す", o["線の無い show"])
+        check("配布の確認の試料の lines はどれも 0（拒まれて前の出所で答えていない。#681）",
+              o["配布の確認の lines"] == [0] * len(DIST_SAMPLES))
         check("配布の確認は区切った形の印だけあり（#474 の実際の出所はあり・否定文はなし。#507）",
-              o["配布の確認"] == ["あり", "あり", "あり", "あり", "あり", "なし", "なし", "なし", "なし", "なし", "なし"])
+              o["配布の確認"] == [e for _, e in DIST_SAMPLES])
+        pattern = mod.DIST_MARK_RE.pattern
+        for needle, replacement in REGEX_BRANCHES:
+            if pattern.count(needle) != 1:
+                check(f"照合の分岐を外す先がちょうど 1 つある: {needle!r}", False)
+                continue
+            rx = re.compile(pattern.replace(needle, replacement, 1))
+            got = ["あり" if rx.search(s.strip()) else "なし" for s, _ in DIST_SAMPLES]
+            check(f"照合の分岐を外すと試料のどれかの判定が変わる: {needle!r} → {replacement!r}（#681）",
+                  got != [e for _, e in DIST_SAMPLES])
+        check("マージの線の無い出所の印は 3（台帳は変えない）・印の無い出所なら通る（#681）",
+              (o["マージの無い印"], o["マージの無い印の後も同じ"], o["印の無い lines"]) == (3, True, 0))
         check("マージの線が無ければ配布の確認を出さない", o["マージの無い配布の確認"] is False)
         check("decisions は番号のカンマ区切りだけ（番号でなければ 3）",
               o["decisions"] == (0, 3) and o["decisions の値"] == "12,13")
@@ -742,6 +884,30 @@ def main() -> int:
               o["next(まとめが着手できる)"] == ["4", "6", "7 8"] and o["まとめの show(着手できる)"])
         for name in ("gnum", "gstrip", "ghead", "gstate"):
             check(f"手で崩したまとめ（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
+
+        print("\nまとめに入れる行・戻す順・止まった跡（L16・#665）")
+        check("前の周の在り処（pr・branch・worktree・agent・base のどれか 1 つ）を持つ行の group は 3 で、そう言い、"
+              "消し方を台帳の名前つきで案内する", o["group 古い在り処"] == ((3, True, True),) * 5)
+        check("拒んだ group のあとも台帳が 1 バイトも変わらない", o["group 古い在り処の後も同じ"])
+        check("古い値を消せば group は通る", o["group 消したら通る"] == 0)
+        check("set group= に空白だけは 3 で、「空白だけ」と言う（「番号でない」ではない）", o["set group=空白"] == (3, True))
+        check("show が、まとめの中で merged のまま note が「落ちた:」で始まる行だけを名指しする（代表は名指ししない）",
+              o["落ちた行の名指し"] == "#2, #3")
+        check("戻す順 (a): 依存されている行（2）を先に戻すと輪で 3、依存している側（3）から先なら 0・0",
+              o["戻す順(a) 逆"] == 3 and o["戻す順(a)"] == (0, 0))
+        check("名指しした行があるあいだは「すべてマージ済みか取り下げ」と出さない", o["名指し中の終わりの行"] is False)
+        check("戻した行をもう一度まとめると note は「前に落ちた:」になり、マージしても名指ししない",
+              o["入れ直した行"] == ("前に落ちた: 別のファイル", False))
+        check("ほどく順 (c)・(d): 2 が先なら輪で 3、書いた順（3、2、1）なら 0・0・0",
+              o["ほどく順(c)"] == (3, (0, 0, 0)) and o["ほどく順(d)"] == (3, (0, 0, 0)))
+        check("戻した後は名指ししない・2 が着手できる", o["戻した後の名指し"] is False and o["戻した後の next"] == ["2"])
+        check("戻す順 (b): 代表に依存する 4 を戻し、代表が依存する行は依存されている側（3）から抜く（2 が先なら 3）",
+              o["戻す順(b) 4"] == 0 and o["戻す順(b) 逆"] == 3 and o["戻す順(b)"] == (0, 0, 0)
+              and o["戻した後の next(b)"] == ["1"])
+        grouping = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "references" / "grouping.md").read_text(encoding="utf-8")
+        after = grouping.split("## マージの後")[1].split("\n## ")[0]
+        check("grouping.md「マージの後」が戻す順（依存している側から先に・依存されている側から先に抜く）を言う",
+              "依存している側から先に" in after and "依存されている側から先に" in after)
 
         print("\n名前（L8）・git の外（L9）")
         check("../x・a/b・.x・x/../../../escaped は 2",
