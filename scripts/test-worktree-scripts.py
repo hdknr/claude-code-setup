@@ -13,8 +13,10 @@
 **歯止めが無いと、テストがこのリポジトリに worktree を作ってしまう。**
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**壊したのに緑のままなら失格**とする。
-**「守る」の行数と変異の数が、スクリプトごとに 1 対 1 か**は、**テスト自身が数える**
+**「守る」の行数と変異の数が、スクリプトごとに等しいか**は、**テスト自身が数える**
 （2 本の合計では数えない——「守る」を別のスクリプトへ 1 行移しても合計は変わらない。#595）。
+**どの「守る」をどの変異が壊すかの対応は見ない**——数を見るだけなので、「守る」の行を互いに入れ替えても、
+変異を書き忘れて別の変異を 2 つ足しても、数が合えば緑である（#669 で、数の照合に留めると決めた）。
 
 **#148 で 2 つ目の主題が入った**——**周の base をどこから取るか**である。
 **`prepare-worktree.sh` の start-point**（変異で当てる）と、
@@ -29,6 +31,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -264,12 +267,14 @@ def _quoted_cd_example_runs(prepare: Path, base: Path) -> bool:
     1 文字ずつ「それだけを逃がさない」変異を殺す**——どれかを試料から外すと、その文字を逃がさない変異が素通りする
     （`QUOTE_MUTATIONS` が当てて確かめる）。**`$` だけを置いていたときは、`$` だけを逃がす二重引用符の変異が
     素通りした**（#576）。**`\\` は 2 つ並べる**——二重引用符の中の `\\` は、後ろが特別な文字でなければそのまま残るので、
-    1 つだけでは「`\\` を逃がさない」変異が素通りする。"""
-    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"its\" / \"$HOME x\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
-    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"it's\" / \"HOME x\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
-    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "'dq\"x'", "new": "'dqx'", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
-    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"b`q\"", "new": "\"bq\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
-    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"b\\\\\\\\s\"", "new": "\"bs\"", "red": "python3 -c \"import importlib.util as u, sys, tempfile; from pathlib import Path; s = u.spec_from_file_location('t', 'scripts/test-worktree-scripts.py'); m = u.module_from_spec(s); s.loader.exec_module(m); t = tempfile.TemporaryDirectory(); m.check_quote_mutations(Path(t.name)); sys.exit(1 if m.failures else 0)\""}
+    1 つだけでは「`\\` を逃がさない」変異が素通りする。
+    **各文字の主張の `red` は、その文字を逃がさない変異 1 件だけを当てる**（`--quote-mutant`。#668——`check_quote_mutations` を
+    丸ごと回すと 1 回約 21 秒かかり、`check-mutation-claims.py` を重くしていた）。"""
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"its\" / \"$HOME x\"", "red": "python3 scripts/test-worktree-scripts.py --quote-mutant '一重引用符で囲むだけで '\"'\"' を置き換えない'"}
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"it's\" / \"$HOME x\"", "new": "\"it's\" / \"HOME x\"", "red": "python3 scripts/test-worktree-scripts.py --quote-mutant '二重引用符で囲み $ を逃がさない'"}
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "'dq\"x'", "new": "'dqx'", "red": "python3 scripts/test-worktree-scripts.py --quote-mutant '二重引用符で囲み \" を逃がさない'"}
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"b`q\"", "new": "\"bq\"", "red": "python3 scripts/test-worktree-scripts.py --quote-mutant '二重引用符で囲み ` を逃がさない'"}
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "\"b\\\\\\\\s\"", "new": "\"bs\"", "red": "python3 scripts/test-worktree-scripts.py --quote-mutant '二重引用符で囲み \\ を逃がさない'"}
     repo = make_repo(base / "it's" / "$HOME x" / 'dq"x' / "b`q" / "b\\\\s" / "repo")
     res = run(prepare, repo, "46", "quoted")
     return res.returncode == 0 and cruise_exception_follows(
@@ -351,16 +356,63 @@ def cd_example_runs(line: str, wt: Path) -> bool:
     return res.returncode == 0 and res.stdout.strip() == str(wt.resolve())
 
 
-def stdout_head_unchanged(res, main: Path, number: str, slug: str) -> bool:
-    """作るとき（0）の標準出力の冒頭が、照合の前に出していたときと同じ 3 行か（#560）——
-    メインの作業ツリー・作ろうとしているもの・空行。**origin の有無・名指しの base・壊れた `origin/HEAD` の
-    どの経路でも見る**（`observe()`）——origin の無い木だけでは、取り直しと解決の経路で冒頭の前に
-    標準出力へ書く変更が見えない（#560 の周の `/code-review` 1 パス目 CR1-5）。"""
-    wt = main / ".claude" / "worktrees" / f"issue-{number}"
-    return res.returncode == 0 and res.stdout.splitlines()[:3] == [
-        f"メインの作業ツリー: {main.resolve()}",
-        f"作ろうとしているもの: {wt.resolve()}  [issue/{number}-{slug}]",
-        ""]
+def stdout_0(res, main: Path) -> list[str] | None:
+    """作るとき（0）の標準出力の**全体**を、試料の置き場所に依らない形にして返す（#560・#668）。0 以外なら `None`。
+    **冒頭の 3 行だけでなく、全部の行を見る**——冒頭だけを見ていたときは、経路ごとに違う後ろの行
+    （`start-point:` の取り直しの成否など）に、取り直しが成功した枝でだけ行を足す変異が素通りした
+    （#560 の周の `/code-review` 2 パス目 CR2-2）。**origin の有無・名指しの base・壊れた `origin/HEAD` の
+    どの経路でも取る**（`observe()`。origin の無い木だけでは、取り直しと解決の経路が見えない——同 1 パス目 CR1-5）。
+    **置き換えるのは、置き場所で変わるものだけ**——メインの作業ツリーの絶対パスを `<MAIN>`、`起点:` の短い SHA と件名を
+    `<SHA> <件名>`、`base:` の完全な SHA を `<SHA>`。**変異の観測は別の一時ディレクトリで走る**ので、置き換えないと
+    どの変異も「出力が違う」で殺せてしまい、何も示さない。**`base:` は 40 桁のときだけ置き換える**——短縮形は残って食い違う。"""
+    if res.returncode != 0:
+        return None
+    out = []
+    for line in res.stdout.replace(str(main.resolve()), "<MAIN>").splitlines():
+        line = re.sub(r"^(起点:\s+)[0-9a-f]+ .*$", r"\1<SHA> <件名>", line)
+        line = re.sub(r"^(base:\s+)[0-9a-f]{40}$", r"\1<SHA>", line)
+        out.append(line)
+    return out
+
+
+def expected_stdout_0(number: str, slug: str, start_point: str) -> list[str]:
+    """作るとき（0）の標準出力の全体の期待値（`stdout_0` の形）。**経路で変わるのは `start-point:` の行だけ**である。
+    冒頭の 3 行（メインの作業ツリー・作ろうとしているもの・空行）は、照合の前に出していたときと同じ（#560）。"""
+    wt = f"<MAIN>/.claude/worktrees/issue-{number}"
+    return [
+        "メインの作業ツリー: <MAIN>",
+        f"作ろうとしているもの: {wt}  [issue/{number}-{slug}]",
+        "",
+        "",
+        "=== 肯定的な確認 ===",
+        f"ブランチ: issue/{number}-{slug}",
+        "起点:     <SHA> <件名>",
+        f"start-point: {start_point}",
+        "base:     <SHA>",
+        "",
+        f"次にすること: EnterWorktree に path={wt} を渡して入る。",
+        "  **ただし cruise から周を委ねられたサブエージェントは EnterWorktree を呼ばない**——"
+        f"{wt} を cwd にして（cd '{wt}' && …）作業する"
+        "（dev-loop の SKILL.md 手順 4 と cruise の SKILL.md「4. 周を回す」が正）。",
+        "計画ファイルの「周の在り処」に、上のブランチ名・パス・起点・**base** を書くこと。",
+        "**base は関門にそのまま渡す SHA である**（SKILL.md 手順 4 が正）。",
+    ]
+
+
+# **作るとき（0）の標準出力を比べる経路**——(観測のキーの前置き, 経路の名前, 番号, 説明, `start-point:` の行の値)。
+# **origin の有無・名指しの base・壊れた `origin/HEAD` のどれも入れる**（#560 の周の `/code-review` 1 パス目 CR1-5）。
+# **取り直しが成功する経路（origin あり）を必ず入れる**——取り直しの成否で後ろの行が変わる（同 2 パス目 CR2-2）。
+STDOUT_0_PATHS = (
+    ("", "origin なし", "42", "sample", "HEAD  （解決できなかった）"),
+    ("進んだ origin（未取得）: ", "origin あり・未取得", "55", "ahead",
+     "origin/main  （refs/remotes/origin/HEAD / 取り直した）"),
+    ("進んだ origin（取得済み）: ", "origin あり・取得済み", "55", "ahead",
+     "origin/main  （refs/remotes/origin/HEAD / 取り直した）"),
+    ("まだ取れていない参照: ", "名指しの base", "56", "sibling",
+     "origin/sibling  （環境変数 DEV_LOOP_BASE_REF / 取り直した）"),
+    ("壊れた origin/HEAD: ", "壊れた origin/HEAD", "66", "dangling",
+     "HEAD  （origin/master を解決したが壊れていた（refs/remotes/origin/HEAD） / 取り直した）"),
+)
 
 
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
@@ -385,8 +437,9 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **案内の直後の行に、cruise の子の例外が出るか**（#502）。
         # **「出力のどこかに在る」では見ない**——離れた行に置くと、案内だけを読んだ子が呼ぶ。
         "cruise の子の例外が案内の直後にある": cruise_exception_follows(first.stdout, wt),
-        # **作るとき（0）の標準出力の冒頭は変えない**（#560）——出す行も順番も、照合の前に出していたときと同じ。
-        "0 の標準出力の冒頭": stdout_head_unchanged(first, repo, "42", "sample"),
+        # **作るとき（0）の標準出力は変えない**（#560）——出す行も順番も、照合の前に出していたときと同じ。
+        # **全体を取る**（#668。冒頭の 3 行だけでは、後ろの行に足す変異が素通りした）。
+        "0 の標準出力（全体）": stdout_0(first, repo),
         "2 回目は断る": again.returncode,
         # **3 で断るとき、標準出力には何も出さない**（#560）。**「作ろうとしているもの」が残ると、
         # 標準出力だけを読む側には断ったことが分からない**（#544 の `/code-review` 2 パス目 CR2-1）。
@@ -435,11 +488,15 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     nogit = base / "nogit"
     nogit.mkdir(parents=True, exist_ok=True)
     out["前提条件: git 無し"] = run(precond, nogit).returncode
-    # **入場の側も、見られなかったときに作らないことを見る。**
-    # **これが無いと「見られなくても作る」変異が殺せない**（観測が無いため）。
-    # **この主張は機械で当ててある**（#151）。
-    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "    out[\"入場: git 無しでも作らない\"] = not (nogit / \".claude\").exists()\n", "new": "", "red": "python3 scripts/test-worktree-scripts.py"}
+    # **入場の側も、見られなかったときに rc=5 で断ることを見る。**
+    # **この rc の観測が無いと「見られなくても作る」変異が殺せない**——その変異は root の守りを外すだけで、
+    # 背後の守り（既存の一覧）が 6 で断るので、下の「作らない」の観測は本体そのままと同じ真のまま残る。
+    # **以前ここは「作らない」の観測が要ると書いており、偽だった**（#668。消しても rc が 5 → 6 で殺せる）——
+    # テストを丸ごと回す `red` では、消した観測を `main()` が読む `KeyError` で赤になり、主張と無関係に確認されていた。
+    # **この主張は機械で当ててある**（#151）。**`red` は `observe()` だけを回す**（`--mutant`。`main()` の表明を読まない）。
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "    out[\"入場: git 無し\"] = run(prepare, nogit, \"88\", \"nogit\").returncode\n", "new": "", "red": "python3 scripts/test-worktree-scripts.py --mutant '見られなくても作る'"}
     out["入場: git 無し"] = run(prepare, nogit, "88", "nogit").returncode
+    # **作らないことも直接見る**——いまの変異は上の rc で殺せるが、作ったかどうかは rc とは別の約束である。
     out["入場: git 無しでも作らない"] = not (nogit / ".claude").exists()
 
     # **`rev-parse` は通るが、既存の一覧だけ取れない木。** exit 6 の守りを直接当てる。
@@ -465,7 +522,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         res = run(prepare, work, "55", "ahead")
         wt3 = work / ".claude" / "worktrees" / "issue-55"
         out[f"進んだ origin（{label}）: rc"] = res.returncode
-        out[f"進んだ origin（{label}）: 0 の標準出力の冒頭"] = stdout_head_unchanged(res, work, "55", "ahead")
+        out[f"進んだ origin（{label}）: 0 の標準出力（全体）"] = stdout_0(res, work)
         if wt3.is_dir():
             head = git(wt3, "rev-parse", "HEAD").stdout.strip()
             out[f"進んだ origin（{label}）: 切った先"] = (
@@ -490,7 +547,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
               env=dict(os.environ, DEV_LOOP_BASE_REF="origin/sibling"))
     wt56 = stale / ".claude" / "worktrees" / "issue-56"
     out["まだ取れていない参照: rc"] = sib.returncode
-    out["まだ取れていない参照: 0 の標準出力の冒頭"] = stdout_head_unchanged(sib, stale, "56", "sibling")
+    out["まだ取れていない参照: 0 の標準出力（全体）"] = stdout_0(sib, stale)
     out["まだ取れていない参照: 切った先"] = (
         "sibling" if wt56.is_dir()
         and git(wt56, "rev-parse", "HEAD").stdout.strip() == ahead["SIB"]
@@ -500,6 +557,8 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     bad = run(prepare, repo, "44", "badbase",
               env=dict(os.environ, DEV_LOOP_BASE_REF="refs/nope/nope"))
     out["名指しが解決しない: rc"] = bad.returncode
+    # **7 で断るときも、標準出力には何も出さない**（#668。3 だけを直したときは「作ろうとしているもの」が残っていた）。
+    out["7 の標準出力が空"] = bad.stdout == ""
     out["名指しが解決しなければ作らない"] = not (
         repo / ".claude" / "worktrees" / "issue-44").is_dir()
 
@@ -507,7 +566,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     dang = make_dangling_origin_head(base / "dangling")
     dres = run(prepare, dang, "66", "dangling")
     out["壊れた origin/HEAD: rc"] = dres.returncode
-    out["壊れた origin/HEAD: 0 の標準出力の冒頭"] = stdout_head_unchanged(dres, dang, "66", "dangling")
+    out["壊れた origin/HEAD: 0 の標準出力（全体）"] = stdout_0(dres, dang)
     out["壊れた origin/HEAD: 作れた"] = (
         dang / ".claude" / "worktrees" / "issue-66").is_dir()
     out["壊れた origin/HEAD: 黙らない"] = "壊れている" in (dres.stderr + dres.stdout)
@@ -539,7 +598,7 @@ QUOTE_NEEDLE = (find_quote_line(PREPARE.read_text(encoding="utf-8"))
                 or "<prepare-worktree.sh に PATH_Q= で始まる行が 1 本だけではない>")
 
 MUTATIONS = {
-    # **「守る」の行数と変異の数の 1 対 1 は、`main()` がスクリプトごとに数える**——各項目の第 1 要素で振り分ける
+    # **「守る」の行数と変異の数は、`main()` がスクリプトごとに数えて比べる**——各項目の第 1 要素で振り分ける
     # （2 本の合計では数えない。#595）。**見出しは並びの目印で、数えるときには使わない。**
     # --- prepare-worktree.sh の「守る」 ---
     # 守る 1: 先に見る（再開の周を新規として踏み潰さない）
@@ -574,11 +633,16 @@ MUTATIONS = {
         "indent_list() { sed '1s/^/    /'; }"),
     # 守る 20（prepare）: 3 で断るとき、標準出力には何も出さない（#560）
     # **3 で断る経路にだけ標準出力の行を足す**——0 の出力は変えない。**照合の前に足す形では 0 の冒頭も変わり、
-    # 観測「0 の標準出力の冒頭」だけで死ぬので、「3 の標準出力が空」が要ることを示さない**（#560 の `/code-review` 1 パス目 CR1-1）。
+    # 観測「0 の標準出力」だけで死ぬので、「3 の標準出力が空」が要ることを示さない**（#560 の `/code-review` 1 パス目 CR1-1）。
     "3 で断るときに作ろうとしているものを出す": (PREPARE,
         '  echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2\n  exit 3\n',
         '  echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2\n'
         '  echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"\n  exit 3\n'),
+    # 守る 21（prepare）: 名指しの base が解決しない（7）で断るときも、標準出力には何も出さない（#668）
+    # **7 で断る経路にだけ標準出力の行を足す**——0 の出力は変えない（守る 20 の変異と同じ形）。
+    "7 で断るときに作ろうとしているものを出す": (PREPARE,
+        '    exit 7\n',
+        '    echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"\n    exit 7\n'),
     # 守る 6（prepare）: 判定できなかったことを「当たらなかった」と答えない
     # **root の守りを壊すと、背後の守りが終了コード 6 で受け止める**ので観測が変わる。
     "見られなくても作る": (PREPARE,
@@ -651,8 +715,19 @@ MUTATIONS = {
         '  GIT_DIR=""; COMMON_DIR=""\nfi'),
 }
 
+# **守る 20 の後半（作るとき（0）の標準出力は変えない）を、取り直しが成功した経路でだけ壊す変異**（#668。#560 の周の
+# `/code-review` 2 パス目 CR2-2——0 の標準出力の冒頭 3 行だけを見ていたときに素通りした形）。
+# **`MUTATIONS` に入れない**——守る 20 には既に変異があり、「守る」の行数と変異の数の照合に数えない（`QUOTE_MUTATIONS` と同じ扱い）。
+# **当てる回は `observe()` を回す**（`main()` と `--mutant`）——観測の 0 の標準出力（全体）が、origin のある経路で食い違って殺す。
+STDOUT_MUTATIONS = {
+    "取り直しが成功した経路でだけ、後ろに標準出力の行を足す": (PREPARE,
+        'echo "base:     ${BASE_SHA}"\n',
+        'echo "base:     ${BASE_SHA}"\n'
+        'if [ "$FETCH_NOTE" = "取り直した" ]; then echo "取り直しに成功した"; fi\n'),
+}
+
 # **守る 17（cd の例をシェルに貼れる形で出す）を、引用の中身で壊す変異**（#543。#502 の狭いパスの N1 で素通りした 2 件と、#576）。
-# **`MUTATIONS` に入れない**——同じ守るを別の形で壊すもので、「守る」の行数と変異の数の 1 対 1 に数えない。
+# **`MUTATIONS` に入れない**——同じ守るを別の形で壊すもので、「守る」の行数と変異の数の照合に数えない。
 # **`observe()` も回さない**——当てるのは `_quoted_cd_example_runs` だけ（`observe()` の回数を増やさない。#449）。
 # **二重引用符の形は、特別な 4 文字（`$`・`"`・バッククォート・`\`）のうち 1 文字だけを逃がさない形を 1 つずつ置く**
 # ——4 つとも逃がす形は正しい（下の `QUOTE_CONTROLS`）ので、各変異が死ぬ理由は逃がさなかった 1 文字だけになり、
@@ -685,18 +760,22 @@ QUOTE_CONTROLS = {
 }
 
 
-def check_quote_mutations(base: Path) -> None:
+def check_quote_mutations(base: Path, only: list[str] | None = None) -> None:
     """`QUOTE_MUTATIONS` を当て、**引用の試料（`_quoted_cd_example_runs`）では赤・空白と日本語の試料では緑**になることを見る。
     **後者が陽性対照である**——空白の試料でも落ちるなら、その変異は引用の中身ではなく別のところで
     壊れており、引用の試料が要る理由を示さない。
     **`QUOTE_CONTROLS` は両方の試料で緑**になることを見る——正しい形まで落とす試料なら、変異が死んでも何も示さない。
-    **書き換えた行も行頭で見つかる**ことを併せて見る（#577）。"""
+    **書き換えた行も行頭で見つかる**ことを併せて見る（#577）。
+    **`only` を渡すと、`QUOTE_MUTATIONS` のその名前だけを当て、`QUOTE_CONTROLS` は回さない**（`--quote-mutant`。#668）
+    ——試料の 1 文字が要ることを示す主張は、その文字を逃がさない変異 1 件だけに関係する。"""
     source = PREPARE.read_text(encoding="utf-8")
     needle = find_quote_line(source)
     check("引用の変異を当てる先（PATH_Q= で始まる行）が 1 箇所ある", needle is not None)
     if needle is None:
         return
     for i, (name, replacement) in enumerate(QUOTE_MUTATIONS.items()):
+        if only is not None and name not in only:
+            continue
         d = base / f"quote-{i}"
         (d / "scripts").mkdir(parents=True)
         mutated = d / "scripts" / PREPARE.name
@@ -705,6 +784,8 @@ def check_quote_mutations(base: Path) -> None:
               _spaced_cd_example_runs(mutated, d / "spaced"))
         check(f"変異を殺せる（引用の試料）: {name}",
               not _quoted_cd_example_runs(mutated, d / "quoted"))
+    if only is not None:
+        return
     for i, (name, replacement) in enumerate(QUOTE_CONTROLS.items()):
         d = base / f"quote-control-{i}"
         (d / "scripts").mkdir(parents=True)
@@ -754,7 +835,7 @@ def promise_count_failures(bodies: dict[Path, str]) -> list[str]:
 
 
 def check_promise_counts() -> None:
-    """「守る」の行数と変異の数が、**スクリプトごとに** 1 対 1 か（#595）。
+    """「守る」の行数と変異の数が、**スクリプトごとに**等しいか（#595）。**どの「守る」をどの変異が壊すかの対応は見ない**（#669）。
     **2 本の合計では見ない**——合計だけを比べていたときは、「守る」を一方のスクリプトから他方へ 1 行移しても
     合計が変わらず緑のままだった（#545 の周で実証）。
     **その移す変異で赤になることを、ここで毎回当てて示す**——本物の 2 本の本文から、prepare の「守る」を 1 行
@@ -1305,7 +1386,103 @@ def demonstrate_base_rule(base: Path) -> None:
     check("V3 だから status --porcelain を併せて見る", "NEW.md" in untracked)
 
 
-def main() -> int:
+def check_mutant(name: str, correct: dict, base: Path) -> dict | None:
+    """`MUTATIONS`・`STDOUT_MUTATIONS` のその 1 件を当てた写しに `observe()` を回し、**観測が `correct` と違う（殺せる）か**を見る。
+    観測を返す（当て先が 1 箇所でない・例外のときは `None`）。"""
+    script, needle, replacement = {**MUTATIONS, **STDOUT_MUTATIONS}[name]
+    source = script.read_text(encoding="utf-8")
+    if source.count(needle) != 1:
+        check(f"変異を当てる先が 1 箇所ある: {name}", False)
+        return None
+    d = base / f"mut-{abs(hash(name))}"
+    (d / "scripts").mkdir(parents=True)
+    for original in (PREPARE, PRECOND):
+        body = original.read_text(encoding="utf-8")
+        if original == script:
+            body = body.replace(needle, replacement, 1)
+        (d / "scripts" / original.name).write_text(body, encoding="utf-8")
+    try:
+        mutated = observe(d / "scripts" / PREPARE.name,
+                          d / "scripts" / PRECOND.name, d / "tree")
+    except Exception as exc:
+        # **例外の型を名前に出す。** **黙って「殺せた」に丸めると、
+        # 観測キーの改名・足場の失敗まで緑になる**（`/code-review` の 2 パス目）。
+        check(f"変異を殺せる: {name}（例外 {type(exc).__name__}）", True)
+        return None
+    check(f"変異を殺せる: {name}", mutated != correct)
+    return mutated
+
+
+def parse_args(argv: list[str]) -> tuple[list[str], list[str]]:
+    """**狭く回す口**（#668。`test-check-all.py` の `--part`／`--mutant`（#494）と同じ形）。
+    `mutation-claim:` の `red` が、主張に関係する部分だけを回すために使う。
+
+        python3 scripts/test-worktree-scripts.py                         # 全部（check-all.py と CI はこれ）
+        python3 scripts/test-worktree-scripts.py --mutant <名前>          # 本体そのままと、`MUTATIONS`・`STDOUT_MUTATIONS` の
+                                                                         # その 1 件に `observe()` を回し、観測が違う（殺せる）か
+        python3 scripts/test-worktree-scripts.py --quote-mutant <名前>    # 本体そのままが引用の試料を通り（陽性対照）、
+                                                                         # `QUOTE_MUTATIONS` のその 1 件が空白の試料は通って引用の試料で落ちるか
+
+    **どちらも重ねて渡せる**（渡した全部を当てる）。**知らない名前は断る**（綴り間違いで「何も回さずに緑」にしない）。
+    **`--mutant` は `main()` の観測ごとの表明（`correct[...]` を読む行）を回さない**——観測の行を消す変異を主張に当てると、
+    その表明が `KeyError` で落ち、主張と無関係な理由で赤になる（#668。417 行の主張がそうだった）。
+    **代わりに陽性対照として、本体そのままの観測で「新規で作れる（rc=0）」と「2 回目は断る（rc=3）」を見る**——
+    足場が壊れて全部の観測が同じ形に落ちると、変異も「違わない」になり、主張が理由なく確認されうる。
+    **狭めた回は、全部を回す回の代わりにならない**——`check-all.py` と CI は引数なしで全部を回す。"""
+    mutants: list[str] = []
+    quotes: list[str] = []
+    it = iter(argv)
+    for arg in it:
+        if arg == "--mutant":
+            name = next(it, None)
+            if name not in MUTATIONS and name not in STDOUT_MUTATIONS:
+                raise SystemExit(f"--mutant に知らない名前: {name}")
+            mutants.append(name)
+        elif arg == "--quote-mutant":
+            name = next(it, None)
+            if name not in QUOTE_MUTATIONS:
+                raise SystemExit(f"--quote-mutant に知らない名前: {name}")
+            quotes.append(name)
+        else:
+            raise SystemExit(f"知らない引数: {arg}")
+    return mutants, quotes
+
+
+def run_narrow(mutants: list[str], quotes: list[str]) -> int:
+    """`--mutant`・`--quote-mutant` の回（`parse_args`）。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        if mutants:
+            correct = observe(PREPARE, PRECOND, base / "correct")
+            print("陽性対照（本体そのまま）")
+            check("本体そのままで新規に作れる（rc=0）", correct.get("新規で作れる") == 0)
+            check("本体そのままで 2 回目は断る（rc=3）", correct.get("2 回目は断る") == 3)
+            print("\n変異（壊したのに観測が同じなら失格）")
+            for name in mutants:
+                check_mutant(name, correct, base)
+        if quotes:
+            print("cd の例の引用を中身で壊す変異（陽性対照つき）")
+            check("陽性対照: 本体そのままは引用の試料を通る",
+                  _quoted_cd_example_runs(PREPARE, base / "quoted"))
+            check_quote_mutations(base / "quote-mut", only=quotes)
+    return report()
+
+
+def report() -> int:
+    print()
+    if failures:
+        print(f"FAILED: {len(failures)} 件")
+        for name in failures:
+            print(f"  - {name}")
+        return 1
+    print("worktree スクリプトのテスト: すべて合格")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    mutants, quotes = parse_args(sys.argv[1:] if argv is None else argv)
+    if mutants or quotes:
+        return run_narrow(mutants, quotes)
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         correct = observe(PREPARE, PRECOND, base / "correct")
@@ -1323,13 +1500,14 @@ def main() -> int:
               correct["3 の見出しの下に一覧がある（標準エラー）"])
         check("3 で断るとき、標準出力には何も出さない——「作ろうとしているもの」も出ない（#560）",
               correct["3 の標準出力が空"])
-        check("作るとき（0）の標準出力の冒頭は変わらない——メインの作業ツリー・作ろうとしているもの・空行（#560）",
-              correct["0 の標準出力の冒頭"])
-        check("origin あり・名指しの base・壊れた origin/HEAD の経路でも、0 の標準出力の冒頭は変わらない（#560）",
-              all(correct[k] for k in ("進んだ origin（未取得）: 0 の標準出力の冒頭",
-                                       "進んだ origin（取得済み）: 0 の標準出力の冒頭",
-                                       "まだ取れていない参照: 0 の標準出力の冒頭",
-                                       "壊れた origin/HEAD: 0 の標準出力の冒頭")))
+        check("名指しの base が解決しない（7）で断るときも、標準出力には何も出さない（#668）",
+              correct["7 の標準出力が空"])
+        # **作るとき（0）の標準出力は、全部の行を経路ごとの期待値と比べる**（#560・#668）——冒頭の 3 行
+        # （メインの作業ツリー・作ろうとしているもの・空行）は照合の前に出していたときと同じで、経路で変わるのは
+        # `start-point:` の行だけ。**冒頭だけを比べていたときは、後ろの行に足す変異が素通りした**（CR2-2）。
+        for key, label, number, slug, start_point in STDOUT_0_PATHS:
+            check(f"作るとき（0）の標準出力は全部の行が期待どおり——{label}（#560・#668）",
+                  correct[f"{key}0 の標準出力（全体）"] == expected_stdout_0(number, slug, start_point))
         check("3 の試料は一致が複数ある（worktree もブランチも 2 行以上。#558）",
               min(correct["3 の一覧の行数（worktree, ブランチ）"]) >= 2)
         check("3 で終わるとき、一覧のどの行にも同じ字下げが付く（#558）",
@@ -1388,28 +1566,10 @@ def main() -> int:
 
         print("\n変異テスト（壊したのに緑なら失格）")
         mutant_obs: dict[str, dict] = {}
-        for name, (script, needle, replacement) in MUTATIONS.items():
-            source = script.read_text(encoding="utf-8")
-            if source.count(needle) != 1:
-                check(f"変異を当てる先が 1 箇所ある: {name}", False)
-                continue
-            d = base / f"mut-{abs(hash(name))}"
-            (d / "scripts").mkdir(parents=True)
-            for original in (PREPARE, PRECOND):
-                body = original.read_text(encoding="utf-8")
-                if original == script:
-                    body = body.replace(needle, replacement, 1)
-                (d / "scripts" / original.name).write_text(body, encoding="utf-8")
-            try:
-                mutated = observe(d / "scripts" / PREPARE.name,
-                                  d / "scripts" / PRECOND.name, d / "tree")
-            except Exception as exc:
-                # **例外の型を名前に出す。** **黙って「殺せた」に丸めると、
-                # 観測キーの改名・足場の失敗まで緑になる**（`/code-review` の 2 パス目）。
-                check(f"変異を殺せる: {name}（例外 {type(exc).__name__}）", True)
-                continue
-            mutant_obs[name] = mutated
-            check(f"変異を殺せる: {name}", mutated != correct)
+        for name in {**MUTATIONS, **STDOUT_MUTATIONS}:
+            mutated = check_mutant(name, correct, base)
+            if mutated is not None:
+                mutant_obs[name] = mutated
 
         # **2 つの変異が互いに区別できるか**（`/code-review` の指摘 9）。
         # **docstring は「見分けるために 2 つ目のクローンを置いた」と主張していたのに、
@@ -1441,7 +1601,7 @@ def main() -> int:
         print("\n断る周でネットワークに出ないか")
         check_no_network_on_reject(base / "reject")
 
-        print("\n「守る」の行数と変異の数が、スクリプトごとに 1 対 1 か（手で数えない。#595）")
+        print("\n「守る」の行数と変異の数が、スクリプトごとに等しいか（手で数えない。#595）")
         check_promise_counts()
 
         print("\n選んだ base の形を、実際に当てて確かめる（#148。陽性対照つき）")
@@ -1455,14 +1615,7 @@ def main() -> int:
         else:
             check("実リポジトリを対象にすると落ちる", False)
 
-    print()
-    if failures:
-        print(f"FAILED: {len(failures)} 件")
-        for name in failures:
-            print(f"  - {name}")
-        return 1
-    print("worktree スクリプトのテスト: すべて合格")
-    return 0
+    return report()
 
 
 if __name__ == "__main__":
