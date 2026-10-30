@@ -811,10 +811,12 @@ def parse_args(argv: list[str]) -> tuple[set[str], set[str] | None]:
         python3 scripts/test-check-all.py                      # 全部（check-all.py と CI はこれ）
         python3 scripts/test-check-all.py --part registry      # 収録漏れと CI の走査だけ
         python3 scripts/test-check-all.py --part scan          # CI の yaml の判別（合成試料と SCAN_MUTANTS）だけ
+        python3 scripts/test-check-all.py --part contract      # 本体そのままの契約（base ありの契約を含む）だけ
+        python3 scripts/test-check-all.py --part mutants       # 本体そのままの契約と、`MUTANTS` の全部
         python3 scripts/test-check-all.py --mutant <名前>      # 本体そのままの契約と、`MUTANTS` のその 1 件を契約が捕まえるか
                                                                # （--mutant は重ねて渡せる。渡した全部を当てる）
 
-    **`--mutant` でも本体そのままの契約を回して、通ることを要求する**（陽性対照）——回さないと、負荷で待ち合わせが
+    **変異を当てる回（`--part mutants`・`--mutant`）は、いつも本体そのままの契約も回して、通ることを要求する**（陽性対照）——回さないと、負荷で待ち合わせが
     時間切れになったとき「契約が破れた＝捕まえた」と数え、主張の変異を当てた後も緑になる（#494 の 1 パス目の `/code-review`）。
 
     **狭めた回は、全部を回す回の代わりにならない**——`check-all.py` と CI は引数なしで全部を回す。
@@ -839,7 +841,7 @@ def parse_args(argv: list[str]) -> tuple[set[str], set[str] | None]:
     if mutants and "mutants" in parts:
         raise SystemExit("--part mutants（全部）と --mutant（一部）は一緒に渡せない")
     if mutants:
-        return parts | {"mutant-contract", "mutants"}, mutants
+        return parts | {"mutants"}, mutants
     return (parts or set(PARTS)), None
 
 
@@ -853,7 +855,8 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
 
-        if parts & {"contract", "mutant-contract"}:
+        # **変異を当てる回は、いつも本体そのままの契約も回す**（陽性対照。`--part mutants` でも `--mutant` でも）。
+        if parts & {"contract", "mutants"}:
             print("契約（本体そのまま——全部通らなければならない）:")
             target = build_fake(root / "real")
             for name, ok in contract(target, root / "real", "real"):
