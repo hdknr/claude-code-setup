@@ -72,6 +72,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import errno
 import importlib.util
 import io
 import os
@@ -253,17 +254,23 @@ def drop_internal(docs: Path) -> None:
     内部の表の決まりの違反で比較が作れなくなることもない（照合も内部の表を見ない）。
     **綴りどおりの名前だけを外す**（`merge-versions.py` の `exact`）——区別しないファイルシステムで `spec/QA-dev.csv`
     （重ね合わせではふつうのファイル）を内部の表として消すと、作業ツリーの差分と比較が食い違う（#276）。
-    **途中の名前（`spec/`）がシンボリックリンクなら外さない**（#512）——`exact` はリンクを辿るので、消すとリンクの先の
-    一時ディレクトリの外のファイルを消す。外さずに残せば、重ね合わせがリンクの置き場所を断る。
-    対象そのもの（`qa-dev.csv`）がリンクなら、消えるのは一時ディレクトリの中のリンクだけである。
+    **消す・書き換えるのは、置き場所（親のディレクトリ）を辿った先が一時ディレクトリの中にあるときだけ**（#512）——`exact` はリンクを辿るので、
+    途中の名前（版のディレクトリ `docs/v<n>` そのもの・`spec/`）がリンクだと、外の `qa-dev.csv` を消し、外の `removed.csv` を書き換える。
+    外さずに残せば、重ね合わせがリンクの置き場所を断る。対象そのもの（`qa-dev.csv`）がリンクなら、消えるのは一時ディレクトリの中のリンクだけである。
     """
     mv = diffs.merge_versions
+    top = Path(os.path.realpath(docs))
+
+    def inside(path: Path) -> bool:
+        place = Path(os.path.realpath(path.parent))
+        return place == top or top in place.parents
+
     for root in sorted(p for p in docs.iterdir() if mv.VERSION.fullmatch(p.name)):
         internal = mv.exact(root, mv.INTERNAL_QA_PATH)
-        if internal is not None and not any(parent.is_symlink() for parent in internal.parents if root in parent.parents):
+        if internal is not None and inside(internal):
             internal.unlink()
         removed = mv.exact(root, mv.REMOVED)
-        if removed is not None and removed.is_file() and not removed.is_symlink():
+        if removed is not None and inside(removed) and removed.is_file() and not removed.is_symlink():
             rows = list(csv.reader(io.StringIO(mv.read_text(removed), newline="")))
             kept = [r for r in rows if not (len(r) >= 2 and r[0] == mv.KIND_QA and qa.is_internal_number(r[1].strip()))]
             if len(kept) != len(rows):
@@ -653,7 +660,7 @@ def remove_owned(directory: Path) -> list[str]:
     消せなかった出力があれば印も残す（#440）——次の実行が、残った出力をこの道具のものと確かめて消せるように。
     **symlink は、先が在れば（辿れなくても）リンクも先も消さず、リンクと先のパスを消せなかったものとして返す**（#512。
     `schedule-to-gantt.py` の #626 と同じ）——リンクを消しても先の古い中身は残るので、「消した」と言えば古い中身を今のものと取り違える。
-    先のパスは鎖を解いた先（辿れないときは辿れたところまで）。壊れたリンク（先が無い）は消す——残る古い中身が無い。"""
+    先のパスは鎖を解いた先（辿れないときは辿れたところまで）。壊れたリンク（先が無い・輪になっている）は消す——残る古い中身が無い。"""
     names = owned_names(directory)
     if names is None:
         return []
@@ -666,11 +673,11 @@ def remove_owned(directory: Path) -> list[str]:
                 target = os.path.realpath(stale)  # 非 strict——辿れなくても例外を出さず、辿れたところまで解く
                 try:
                     stale.stat()
-                except (FileNotFoundError, NotADirectoryError):
-                    pass  # 壊れたリンク——消す
                 except OSError as e:
-                    left.append(f"{stale}（リンクの先を辿れない: {e.strerror}。先: {target}）")
-                    continue
+                    if e.errno not in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
+                        left.append(f"{stale}（リンクの先を辿れない: {e.strerror}。先: {target}）")
+                        continue
+                    # 壊れたリンク（先が無い・輪になっている——輪を壊れたものと読むのは `schedule-to-gantt.py` の `ABSENT` と同じ）——消す
                 else:
                     left.append(f"{stale}（リンクの先に前の出力が残る——リンクを消しても先は消えない。先: {target}）")
                     continue
@@ -854,7 +861,7 @@ def main(argv: list[str]) -> int:
         except OSError as e:  # git の起動（`run_git`）と手書き部分（`read_hand`）は先に捕まえる。残るのは一時ファイルの読み書き
             raise Stop(2, [f"{e.filename or '（パス不明）'}: 読み書きできない（{e.strerror}）。提案書の材料を読み終えていない"])
         if unreadable_manifest(out.parent):  # 読めない印は書き換えない・symlink の印の先に書かない（#512）。名指しは `leftover_lines` が言う
-            raise Stop(2, [f"{out.parent / MANIFEST}: 読めない印は書き換えない（中身を確かめて直すか、場所ごと消してから作り直す）"])
+            raise Stop(2, [f"{out.parent / MANIFEST}: 読めない印は書き換えない（印は手で直さない——印と、名指しされた出力が前にこの道具が作ったものかを人間に確かめてから消して作り直すか、別の --out を渡す）"])
         write_outputs(outputs, out.parent)
     except Stop as stop:
         for line in stop.lines + leftover_lines(out, stop.named):

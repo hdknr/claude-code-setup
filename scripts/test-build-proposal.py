@@ -983,14 +983,15 @@ def locked_problems(scripts: Path) -> list[str]:
     return problems
 
 # 一時ディレクトリの外・リンクの古い出力・読めない印（#512）。(名前, 壊す前, 壊した後)
-LINK_FIXTURES = 3 + 2 + 3 + 1  # link_problems の試料の数（drop_internal・古い出力・読めない印・same_entry）
+LINK_FIXTURES = 4 + 3 + 3 + 1  # link_problems の試料の数（drop_internal・古い出力・読めない印・same_entry）
 LINK_MUTATIONS: list[tuple[str, str, str]] = [
-    ("途中のリンクを辿って外の内部の表を消す",
-     "        if internal is not None and not any(parent.is_symlink() for parent in internal.parents if root in parent.parents):",
-     "        if internal is not None:"),
+    ("途中のリンクを辿って外の内部の表を消す", "        if internal is not None and inside(internal):", "        if internal is not None:"),
+    ("版のリンクを辿って外の removed.csv を書き換える", "        if removed is not None and inside(removed) and", "        if removed is not None and"),
+    ("置き場所を辿らずに見る", "        place = Path(os.path.realpath(path.parent))", "        place = path.parent.absolute()"),
     ("辿れる先のリンクを消して消したと言う", "                else:\n                    left.append(f\"{stale}（リンクの先に前の出力が残る",
      "                if False:\n                    left.append(f\"{stale}（リンクの先に前の出力が残る"),
-    ("壊れたリンクを残す", "                    pass  # 壊れたリンク——消す", "                    continue  # 壊れたリンク——消す"),
+    ("壊れたリンクを残す", "                    # 壊れたリンク（先が無い", "                    continue\n                    # 壊れたリンク（先が無い"),
+    ("輪になったリンクを辿れないと読む", "(errno.ENOENT, errno.ENOTDIR, errno.ELOOP)", "(errno.ENOENT, errno.ENOTDIR)"),
     ("読めない印でも書く", "    if unreadable_manifest(out.parent):", "    if False:"),
     ("UTF-8 で読めない印を印なしと読む", "    except (OSError, UnicodeDecodeError):\n        return None",
      "    except UnicodeDecodeError:\n        return []\n    except OSError:\n        return None"),
@@ -1006,8 +1007,9 @@ def link_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
 
     1. `drop_internal` を直接呼ぶ——`docs/v2/spec` がリンクなら先の `qa-dev.csv` を消さない（重ね合わせがリンクを断る）。
        `qa-dev.csv` そのものがリンクなら一時ディレクトリの中のリンクだけ消え、先は残る。**陽性対照はリンクの無い `spec/`**——外す。
+    1 の試料は、版のディレクトリ `docs/v2` そのものがリンクの形も持つ（外の `removed.csv` の `D-` の行を書き換えない）。
     2. CLI（照合が通る git のリポジトリ。0 になりうる経路）——印が名指しする `proposal.md` が通常のファイルを指すリンクなら、
-       リンクも先も消さず「リンクの先に前の出力が残る」と先のパスを名指しして 2、印を残す。**陽性対照は壊れたリンク**——消えて 0。
+       リンクも先も消さず「リンクの先に前の出力が残る」と先のパスを名指しして 2、印を残す。**陽性対照は壊れたリンクと輪になったリンク**——消えて 0。
     3. CLI（同じ）——印が UTF-8 で読めない・辿れない symlink・読める先を指す symlink なら、印を書き換えず・先に書かずに 2。
     4. `same_entry` を直接呼ぶ——親の違う同じ名前は同じ項目ではない（#512 の P2-6。CLI の経路は同じ親しか渡さない）。
     """
@@ -1020,13 +1022,24 @@ def link_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
     work.mkdir(parents=True)
     outside = work / "outside"
     outside.mkdir()
-    for shape in ("dir-link", "file-link", "plain"):
+    removed_text = "種類,対象,理由\nQ&A,D-001,内部\nQ&A,Q-001,共有\n"
+    for shape in ("root-link", "dir-link", "file-link", "plain"):
         docs = work / f"copy-{shape}" / "docs"
         (docs / "v1").mkdir(parents=True)
-        (docs / "v2").mkdir()
         far = outside / f"{shape}-qa-dev.csv"
         far.write_text("No\n", encoding="utf-8")
-        if shape == "dir-link":
+        if shape == "root-link":
+            # 版のディレクトリそのものがリンク（`copy_docs` は `docs/v<n>` のリンクもリンクのまま写す——#512 の 1 パス目 CR1）
+            (outside / shape / "spec").mkdir(parents=True)
+            far = outside / shape / "spec" / "qa-dev.csv"
+            far.write_text("No\n", encoding="utf-8")
+            (outside / shape / "removed.csv").write_text(removed_text, encoding="utf-8")
+            (docs / "v2").symlink_to(outside / shape)
+        else:
+            (docs / "v2").mkdir()
+        if shape == "root-link":
+            pass
+        elif shape == "dir-link":
             (outside / shape).mkdir()
             far = outside / shape / "qa-dev.csv"
             far.write_text("No\n", encoding="utf-8")
@@ -1047,7 +1060,9 @@ def link_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
             problems.append(f"drop_internal（{shape}）: 一時ディレクトリの外の {far.name} を消した")
         if shape == "dir-link" and not (docs / "v2" / "spec").is_symlink():
             problems.append("drop_internal（dir-link）: リンクの置き場所を残さない（重ね合わせに断らせられない）")
-        if shape != "dir-link" and os.path.lexists(docs / "v2" / "spec" / "qa-dev.csv"):
+        if shape == "root-link" and (outside / shape / "removed.csv").read_text(encoding="utf-8") != removed_text:
+            problems.append("drop_internal（root-link）: 一時ディレクトリの外の removed.csv を書き換えた")
+        if shape in ("file-link", "plain") and os.path.lexists(docs / "v2" / "spec" / "qa-dev.csv"):
             problems.append(f"drop_internal（{shape}）: 内部の表を外さない")
 
     def signed(name: str) -> tuple[Path, Path]:
@@ -1058,21 +1073,23 @@ def link_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
         return root, place
 
     # 2. リンクになった古い出力
-    for shape in ("live", "broken"):
+    for shape in ("live", "broken", "loop"):
         root, place = signed(f"stale-{shape}")
         far = work / f"stale-{shape}-far.md"
         if shape == "live":
             far.write_text(LEFT_TEXT, encoding="utf-8")
-        (place / "proposal.md").symlink_to(far)
-        (place / MANIFEST).write_text("# 印\nproposal.md\n", encoding="utf-8")
+        # 輪は `gantt.svg` に置く——`--out` の名前に置くと、消す前の `bad_out` が輪を「確かめられない」で止める（別の経路）
+        name = "gantt.svg" if shape == "loop" else "proposal.md"
+        (place / name).symlink_to(place / name if shape == "loop" else far)
+        (place / MANIFEST).write_text(f"# 印\n{name}\n", encoding="utf-8")
         code, output = generate(scripts, root, place / "proposal.md", env)
         if shape == "live":
             if (code != 2 or "リンクの先に前の出力が残る" not in output or f"先: {os.path.realpath(far)}" not in output
                     or "前に作った出力を消した" in output or not (place / "proposal.md").is_symlink()
                     or far.read_text(encoding="utf-8") != LEFT_TEXT or not (place / MANIFEST).exists()):
                 problems.append(f"辿れる先のリンクの古い出力: {code} {output[-400:]}")
-        elif code != 0 or (place / "proposal.md").is_symlink():
-            problems.append(f"壊れたリンクの古い出力（陽性対照）: {code} {output[-400:]}")
+        elif code != 0 or (place / name).is_symlink():
+            problems.append(f"壊れたリンクの古い出力（{shape}。陽性対照——輪も壊れたリンク）: {code} {output[-400:]}")
 
     # 3. 読めない印
     for shape in ("utf8", "dangling", "linked"):
