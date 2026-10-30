@@ -32,12 +32,17 @@
    書いている途中の想定外の例外でも書きかけを残さない。`-OO`（docstring が無い）で引数なしに呼んでも想定外の例外にならない（#286）。
 10. **作れなかったとき（0 以外。出力先が決まる前に止まった 2——argparse・`--out` 無しで根を求める途中の想定外の例外——は除く）、残った前の出力を名指しし、消さない**（#498）——印に無い出力の名前のファイル
    （大文字小文字・PPTX・図を含む）と読めない印。経路は 1・2・3・git を起動できない（既定の出力先を含む）・引数の誤り・想定外の例外・
-   上書きしない・前の出力を消せない（#440）・辿れない場所。**陽性対照は印つき**——消えて名指しされない。出力と関係の無い名前（`notes.md`）は名指ししない。
+   上書きしない・前の出力を消せない（#440）・辿れない場所・印が辿れない symlink。**陽性対照は印つき**——消えて名指しされない。出力と関係の無い名前（`notes.md`・
+   図の名前で始まるだけの `spec-figure-01.svg.bak`、`--out` が別の名前のときの `plan.md`）は名指ししない。**同じファイルは 1 度だけ名指しする**——「上書きしない」と
+   「今回の出力ではない」で重ねない（#551）。**作れたとき（0）も、印に無い出力の名前のファイルを名指しする**（#553。終了コードは 0 のまま）。
+11. **図が増えたとき**（#508）——印があれば 0 で両方の図を書く。印に無い `spec-figure-02.svg` があれば、図が増えない実行は 0 で名指しし、
+   図が増える実行は「上書きしない」の 2 で 1 度だけ名指しして消さない。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
 `HOME` と `GIT_CONFIG_GLOBAL` を差し替える。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
+名指しの変異（`LEFTOVER_MUTATIONS`）は、**名指しした試料だけ**を走らせて殺せることを見る（#550）——名札の外の試料が殺していても緑にしない。
 """
 from __future__ import annotations
 
@@ -976,15 +981,19 @@ def locked_problems(scripts: Path) -> list[str]:
 # 作れなかったときに残った前の出力の名指し（#498）。
 # 出力の名前のファイル（大文字小文字・PPTX・図を含む）と、出力と関係の無い名前の 1 つ（名指ししない）
 LEFT_NAMED = ["proposal.md", "gantt.svg", "spec.md", "Spec.pptx", "proposal.pptx", "spec-figure-01.svg"]
-# 出力と関係の無い名前（名指ししない）。`gantt.pptx` は一度も出力したことが無く、図は `spec-figure-<数字>.svg` だけ（#498 の 2 パス目 P2-4）
-LEFT_OTHERS = ["notes.md", "gantt.pptx", "spec-figure-notes.svg"]
+# 出力と関係の無い名前（名指ししない）。`gantt.pptx` は一度も出力したことが無く、図は `spec-figure-<数字>.svg` だけ（#498 の 2 パス目 P2-4）。
+# `spec-figure-01.svg.bak` は図の名前で始まるが図ではない——前方一致（`re.match`）で見る本体を判別する（#552 N1）
+LEFT_OTHERS = ["notes.md", "gantt.pptx", "spec-figure-notes.svg", "spec-figure-01.svg.bak"]
+# `--out <場所>/plan.md` の経路でだけ出力の名前になる（ほかの経路では出力の名前でない）——`--out` の名前を数えない本体を判別する（#552 N2）
+LEFT_PLAN = ["plan.md", "plan.pptx"]
 LEFT_TEXT = "前の出力\n"
 NOT_THIS = "今回の出力ではない"
 # (名前, 試料, 出力の形, git を起動できなくするか, 印なし・読めない印のときの終了コード, 印つきのときの終了コード)
-# 出力の形: "file" は `--out <場所>/proposal.md`、"Spec.html" は名前の衝突、"dir" は `--out <場所>`（ディレクトリ）、
+# 出力の形: "file" は `--out <場所>/proposal.md`、"plan" は `--out <場所>/plan.md`、"Spec.html" は名前の衝突、"dir" は `--out <場所>`（ディレクトリ）、
 # "default" は `--out` 無しで下位ディレクトリから。前の出力を置く場所はどれも `build/proposal/`
 LEFT_SCENARIOS: list[tuple[str, list[tuple[str, ...]], str, bool, int, int]] = [
     ("1 一致しない", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)], "file", False, 1, 1),
+    ("1 一致しない・別の --out の名前", BASE + [("t", R1), ("w", QA, QA_HEAD), ("c",), ("t", B1)], "plan", False, 1, 1),
     ("2 照合していない", BASE, "file", False, 2, 2),
     ("3 暫定が残る", next(case[1] for case in CASES if case[0] == "暫定の回答が残ると作らない"), "file", False, 3, 3),
     ("git を起動できない", SIGNED, "file", True, 2, 2),
@@ -993,26 +1002,52 @@ LEFT_SCENARIOS: list[tuple[str, list[tuple[str, ...]], str, bool, int, int]] = [
     ("引数の誤り（ディレクトリ）", SIGNED, "dir", False, 2, 2),
     ("想定外の例外", [("w", QA, QA_HEAD + QA_ROWS.replace("割引は？", "x" * 200_000))] + BASE[1:] + [("t", R1), ("t", B1)],
      "file", False, 2, 2),
-    # 作れる経路で、印に無いファイルを上書きしない 2。印つきなら消してから作る（0）
+    # 作れる経路で、印に無いファイルを上書きしない 2。印つきなら消してから作る（0）。
+    # 印の一部だけ（"partial"）なら、ぶつかるものは消してから作り、残ったものを 0 でも名指しする（#553）
     ("上書きしない", SIGNED, "file", False, 2, 0),
 ]
+# 印が一部だけを名指しする形（"partial"）で印に載せるもの——今回の出力（試料 SIGNED は図を作らない）とぶつかる名前だけ
+LEFT_PARTIAL = ["proposal.md", "gantt.svg", "spec.md"]
 
 
-def place_left(directory: Path, shape: str) -> None:
-    """前の出力を置く。shape: "hand"（印なし）・"unreadable"（読めない印）・"marked"（読める印が全部を名指しする）。"""
+def left_shapes(marked_code: int) -> tuple[str, ...]:
+    """経路ごとに走らせる前の出力の形。"partial" は作れる経路（印つきで 0）だけ——作れたときに残ったものの名指しを見る（#553）。"""
+    return ("hand", "unreadable", "marked") + (("partial",) if marked_code == 0 else ())
+
+
+def place_left(directory: Path, shape: str, named: list[str], others: list[str]) -> None:
+    """前の出力を置く。shape: "hand"（印なし）・"unreadable"（読めない印）・"marked"（読める印が全部を名指しする）・
+    "partial"（読める印が `LEFT_PARTIAL` だけを名指しする）。"""
     directory.mkdir(parents=True)
-    for name in LEFT_NAMED + LEFT_OTHERS:
+    for name in named + others:
         (directory / name).write_text(LEFT_TEXT, encoding="utf-8")
-    if shape in ("unreadable", "marked"):
-        (directory / MANIFEST).write_text("# 印\n" + "\n".join(LEFT_NAMED) + "\n", encoding="utf-8")
+    if shape in ("unreadable", "marked", "partial"):
+        listed = LEFT_PARTIAL if shape == "partial" else named
+        (directory / MANIFEST).write_text("# 印\n" + "\n".join(listed) + "\n", encoding="utf-8")
     if shape == "unreadable":
         (directory / MANIFEST).chmod(0)
 
 
-def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str | None = None) -> list[str]:
-    """作れなかったとき（0 以外。出力先が決まる前に止まった 2——argparse・`--out` 無しで根を求める途中の想定外の例外——は除く）、印に無い出力の名前のファイルと読めない印を名指しし、消さない（#498）。
+NAMING = (NOT_THIS, "前にこの道具が作った出力か確かめられない")
 
-    陽性対照は印つき——消えて名指しされない。`only` を渡せば、その名前の経路（と下の消せない・辿れない場所）だけを走らせる（変異用）。
+
+def named_lines(output: str, name: str) -> int:
+    """そのファイルを残ったものとして名指しした行の数——`<パス>/<name>: 今回の出力ではない…` と `…: 前にこの道具が作った出力か確かめられない…（上書きしない）`。
+    「前に作った出力を消した」「提案書を書いた」の行は数えない。"""
+    return sum(1 for line in output.splitlines()
+               if line.split(": ", 1)[0].endswith(f"/{name}") and line.split(": ", 1)[-1].startswith(NAMING))
+
+
+def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str | None = None) -> list[str]:
+    """出力の場所に残った前の出力の名指し（#498・#551・#553）。
+
+    作れなかったとき（0 以外。出力先が決まる前に止まった 2——argparse・`--out` 無しで根を求める途中の想定外の例外——は除く）、
+    印に無い出力の名前のファイルと読めない印を名指しし、消さない。**各ファイルを 1 度だけ名指しする**——「上書きしない」と言ったものを
+    「今回の出力ではない」で重ねない（#551）。**作れたとき（0）も、印に無い出力の名前のファイルを名指しする**（#553。印の一部だけの形）。
+    陽性対照は印つき——消えて名指しされない。
+
+    `only` を渡せば、その名前の試料**だけ**を走らせる（変異用）——`LEFT_SCENARIOS` の経路か、`LEFT_FIXED` の名前。
+    **変異の名札が、実際に殺す試料と食い違わないようにするため**（#550。以前は下の固定の試料がいつも走り、名札の外で殺していた）。
     **読めない印が読めてしまう環境（root）では判別しないので、問題として返す**——「当てられなかった」は緑ではない。
     """
     problems = []
@@ -1027,21 +1062,25 @@ def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str 
         pass
     finally:
         (probe / "x").chmod(0o644)
+    if only is not None and only not in left_names():
+        raise ValueError(f"名指しした試料が無い: {only}")  # 名札の綴りの誤りを「殺した」と読まない——問題の一覧で返すと真になる（#550 の 1 パス目 CR1）
     for index, (name, steps, kind, no_git_path, code, marked_code) in enumerate(LEFT_SCENARIOS):
         if only is not None and name != only:
             continue
-        for shape in ("hand", "unreadable", "marked"):
+        named = LEFT_NAMED + (LEFT_PLAN if kind == "plan" else [])
+        others = LEFT_OTHERS + ([] if kind == "plan" else LEFT_PLAN)
+        for shape in left_shapes(marked_code):
             root = work / f"left{index}-{shape}"
             build_repo(root, steps, env)
             place = root / "build" / "proposal"
-            place_left(place, shape)
+            place_left(place, shape, named, others)
             run_env = env
             if no_git_path:
                 empty = work / f"left{index}-{shape}-empty-path"
                 empty.mkdir()
                 run_env = {**env, "PATH": str(empty)}
-            args = {"file": ["--out", str(place / "proposal.md")], "Spec.html": ["--out", str(place / "Spec.html")],
-                    "dir": ["--out", str(place)], "default": []}[kind]
+            args = {"file": ["--out", str(place / "proposal.md")], "plan": ["--out", str(place / "plan.md")],
+                    "Spec.html": ["--out", str(place / "Spec.html")], "dir": ["--out", str(place)], "default": []}[kind]
             try:
                 proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", "." if kind == "default" else str(root),
                                        *args], capture_output=True, text=True, cwd=root / "docs" if kind == "default" else root,
@@ -1051,88 +1090,205 @@ def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str 
                     (place / MANIFEST).chmod(0o644)
             output = proc.stdout + proc.stderr
             label = f"{name}・{shape}"
-            expected = marked_code if shape == "marked" else code
+            expected = code if shape in ("hand", "unreadable") else marked_code
             if proc.returncode != expected or "Traceback" in output:
                 problems.append(f"{label}: 終了コードが {proc.returncode}（期待 {expected}）: {output[-300:]}")
-            for other in LEFT_OTHERS:
-                if f"/{other}: {NOT_THIS}" in output:
+            for other in others:
+                if named_lines(output, other):
                     problems.append(f"{label}: 出力の名前でない {other} を名指しする")
                 if (place / other).read_text(encoding="utf-8") != LEFT_TEXT:
                     problems.append(f"{label}: {other} が変わった")
             if shape == "marked":
                 if NOT_THIS in output:
                     problems.append(f"{label}: 印が名指しして消した出力を名指しする: {output[-300:]}")
-                if expected and any((place / n).exists() for n in LEFT_NAMED):
+                if expected and any((place / n).exists() for n in named):
                     problems.append(f"{label}: 印が名指しする前の出力が残る: {sorted(p.name for p in place.iterdir())}")
                 continue
-            missing = [n for n in LEFT_NAMED if f"/{n}: {NOT_THIS}" not in output]
+            # 印の一部だけ（作れた経路）: 印が名指ししたものは消えて今回の出力になり、印に無いものは残って 0 でも名指しされる（#553）
+            left = [n for n in named if n not in LEFT_PARTIAL] if shape == "partial" else named
+            if shape == "partial":
+                for n in LEFT_PARTIAL:
+                    if named_lines(output, n):
+                        problems.append(f"{label}: 今回の出力 {n} を名指しする: {output[-300:]}")
+                if "提案書を書いた" not in output:
+                    problems.append(f"{label}: 書いたと言わない: {output[-300:]}")
+                if NOT_THIS not in proc.stderr or NOT_THIS in proc.stdout:  # 0 の経路の名指しは標準エラーに出す（#553。2 パス目 P2-1）
+                    problems.append(f"{label}: 0 の経路の名指しが標準エラーに出ない: stdout={proc.stdout[-200:]}")
+            missing = [n for n in left if f"/{n}: {NOT_THIS}" not in output and f"/{n}: 前にこの道具が作った出力か確かめられない" not in output]
             if missing:
                 problems.append(f"{label}: 残った前の出力を名指ししない: {missing}: {output[-300:]}")
-            changed = [n for n in LEFT_NAMED if not (place / n).is_file() or (place / n).read_text(encoding="utf-8") != LEFT_TEXT]
+            twice = [n for n in left if named_lines(output, n) > 1]
+            if twice:  # 「上書きしない」と「今回の出力ではない」の 2 行で同じファイルを名指ししない（#551）
+                problems.append(f"{label}: 同じファイルを 2 度名指しする: {twice}: {output[-400:]}")
+            changed = [n for n in left if not (place / n).is_file() or (place / n).read_text(encoding="utf-8") != LEFT_TEXT]
             if changed:
                 problems.append(f"{label}: 名指ししたファイルが消えたか変わった: {changed}")
             if shape == "unreadable" and f"{MANIFEST}: 印を読めない" not in output:
                 problems.append(f"{label}: 読めない印を名指ししない: {output[-300:]}")
-            if "提案書は作っていない" not in output and "想定外の例外で止まった" not in output:
+            if shape != "partial" and "提案書は作っていない" not in output and "想定外の例外で止まった" not in output:
                 problems.append(f"{label}: 作っていないと言わない")
 
     # 前の出力を消せない（#440）: 消せなかった出力は「消せない」で名指しし、「今回の出力ではない」とは言わない。印に無いものは名指しする
-    locked = work / "locked"
-    locked.mkdir()
-    (locked / MANIFEST).write_text("# 印\nproposal.md\n", encoding="utf-8")
-    for n in ("proposal.md", "gantt.svg"):
-        (locked / n).write_text(LEFT_TEXT, encoding="utf-8")
-    locked.chmod(0o555)
-    try:
-        proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(work), "--out", str(locked / "proposal.md")],
-                              capture_output=True, text=True, cwd=work)
-    finally:
-        locked.chmod(0o755)
-    output = proc.stdout + proc.stderr
-    if (proc.returncode != 2 or f"消せない: {locked / 'proposal.md'}" not in output or f"/gantt.svg: {NOT_THIS}" not in output
-            or f"/proposal.md: {NOT_THIS}" in output):
-        problems.append(f"消せない場所: {proc.returncode} {output[-400:]}")
+    if only in (None, "消せない場所"):
+        locked = work / "locked"
+        locked.mkdir()
+        (locked / MANIFEST).write_text("# 印\nproposal.md\n", encoding="utf-8")
+        for n in ("proposal.md", "gantt.svg"):
+            (locked / n).write_text(LEFT_TEXT, encoding="utf-8")
+        locked.chmod(0o555)
+        try:
+            proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(work), "--out", str(locked / "proposal.md")],
+                                  capture_output=True, text=True, cwd=work)
+        finally:
+            locked.chmod(0o755)
+        output = proc.stdout + proc.stderr
+        if (proc.returncode != 2 or f"消せない: {locked / 'proposal.md'}" not in output or f"/gantt.svg: {NOT_THIS}" not in output
+                or f"/proposal.md: {NOT_THIS}" in output):
+            problems.append(f"消せない場所: {proc.returncode} {output[-400:]}")
 
-    # 印がディレクトリ（普通のファイルとして読めない印）: 「印に無い」ではなく「印を読めない」と名指しする（#498 の 2 パス目 P2-3）
-    odd = work / "odd"
-    odd.mkdir()
-    (odd / MANIFEST).mkdir()
-    (odd / "proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
-    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(work), "--out", str(odd / "proposal.md")],
-                          capture_output=True, text=True, cwd=work)
-    output = proc.stdout + proc.stderr
-    if (proc.returncode != 2 or f"{MANIFEST}: 印を読めない" not in output or "proposal.md: 今回の出力ではない（印が読めない" not in output
-            or (odd / "proposal.md").read_text(encoding="utf-8") != LEFT_TEXT):
-        problems.append(f"印がディレクトリ: {proc.returncode} {output[-400:]}")
+    # 印がディレクトリ・辿れない symlink（普通のファイルとして読めない印）: 「印に無い」ではなく「印を読めない」と名指しする
+    # （#498 の 2 パス目 P2-3。symlink は #552 N3——`stat` の OSError を「印なし」と読む本体を判別する）
+    for fixed, make in (("印がディレクトリ", lambda m: m.mkdir()), ("印が辿れない symlink", lambda m: m.symlink_to(work / "nowhere"))):
+        if only not in (None, fixed):
+            continue
+        odd = work / ("odd" if fixed == "印がディレクトリ" else "dangling")
+        odd.mkdir()
+        make(odd / MANIFEST)
+        (odd / "proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
+        proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(work), "--out", str(odd / "proposal.md")],
+                              capture_output=True, text=True, cwd=work)
+        output = proc.stdout + proc.stderr
+        if (proc.returncode != 2 or f"{MANIFEST}: 印を読めない" not in output or "proposal.md: 今回の出力ではない（印が読めない" not in output
+                or (odd / "proposal.md").read_text(encoding="utf-8") != LEFT_TEXT):
+            problems.append(f"{fixed}: {proc.returncode} {output[-400:]}")
+
+    # 綴りだけ違う項目とハードリンク（#551 の 1 パス目 CR2・CR3）: 手で置いた `Proposal.md` と、そのハードリンクの `spec.md`。
+    # 大文字小文字を区別しない FS では `proposal.md` が `Proposal.md` とぶつかり「上書きしない」——同じ項目を「今回の出力ではない」で重ねない。
+    # 区別する FS では `spec.md` がぶつかり、`Proposal.md` は別の項目として名指しされる。どちらでも 2 で、各項目を 1 度だけ名指しし、
+    # **ハードリンク（別の名前の項目）は、上書きしないと言ったファイルと同じ中身でも名指しする**
+    if only in (None, "綴りだけ違う項目とハードリンク"):
+        root = work / "spelled"
+        build_repo(root, SIGNED, env)
+        place = root / "build" / "proposal"
+        place.mkdir(parents=True)
+        (place / "Proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
+        os.link(place / "Proposal.md", place / "spec.md")
+        code, output = generate(scripts, root, place / "proposal.md", env)
+        counts = {"Proposal.md": named_lines(output, "Proposal.md") + named_lines(output, "proposal.md"),
+                  "spec.md": named_lines(output, "spec.md")}
+        if code != 2 or counts != {"Proposal.md": 1, "spec.md": 1} or (place / "Proposal.md").read_text(encoding="utf-8") != LEFT_TEXT:
+            problems.append(f"綴りだけ違う項目とハードリンク: {code} {counts} {output[-400:]}")
+        # 区別する FS でだけ: 綴りだけ違う 2 つのファイル（inode が違う）を両方置く——ぶつかる `proposal.md` は「上書きしない」で、
+        # `Proposal.md` は別の項目として「今回の出力ではない」で、それぞれ 1 度（2 パス目 P2-2。区別しない FS では 2 つを置けない）
+        both = work / "spelled-both"
+        both.mkdir()
+        (both / "proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
+        (both / "Proposal.md").write_text(LEFT_TEXT, encoding="utf-8")
+        if len(list(both.iterdir())) == 2:
+            code, output = generate(scripts, root, both / "proposal.md", env)
+            counts = {n: named_lines(output, n) for n in ("proposal.md", "Proposal.md")}
+            if code != 2 or counts != {"proposal.md": 1, "Proposal.md": 1}:
+                problems.append(f"綴りだけ違う 2 つのファイル: {code} {counts} {output[-400:]}")
 
     # 辿れない場所: 残っているかを確かめられないと言い、想定外の例外にしない
-    unreachable = work / "unreachable"
-    unreachable.mkdir()
-    unreachable.chmod(0)
-    try:
-        proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(work),
-                               "--out", str(unreachable / "sub" / "proposal.md")], capture_output=True, text=True, cwd=work)
-    finally:
-        unreachable.chmod(0o755)
-    output = proc.stdout + proc.stderr
-    if proc.returncode != 2 or "前の出力が残っているかを確かめられない" not in output or "想定外の例外" in output:
-        problems.append(f"辿れない場所: {proc.returncode} {output[-300:]}")
+    if only in (None, "辿れない場所"):
+        unreachable = work / "unreachable"
+        unreachable.mkdir()
+        unreachable.chmod(0)
+        try:
+            proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--repo", str(work),
+                                   "--out", str(unreachable / "sub" / "proposal.md")], capture_output=True, text=True, cwd=work)
+        finally:
+            unreachable.chmod(0o755)
+        output = proc.stdout + proc.stderr
+        if proc.returncode != 2 or "前の出力が残っているかを確かめられない" not in output or "想定外の例外" in output:
+            problems.append(f"辿れない場所: {proc.returncode} {output[-300:]}")
+
+    if only in (None, "図が増える"):
+        problems += figure_problems(scripts, work / "figures", env)
     return problems
+
+
+# 図の入った試料（#508）: v1 に図 1 つ（`spec/arch.drawio.svg`）、v2 で図を 1 つ足す（`spec/b.svg`）。v1 は `--version 1` で作る
+SVG_B = SVG.replace("構成", "追加の図")  # v1 の図と中身を変える——2 つ目の図が足した図かを判別する（#508 の 1 パス目 CR6）
+FIGURE_V2 = SIGNED_S + [("w", "docs/v2/spec/b.svg", SVG_B), ("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV),
+                        ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
+                        ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n図を足す。\n"), ("c",),
+                        ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")]
+STRAY = "spec-figure-02.svg"
+
+
+def figure_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
+    """図が増えたとき（#508。#441 の狭いパスが走らせていなかった形）。
+
+    1. 印があれば、図が増えても 0 で両方を書き、印に載る（前の実行が書いた印が、前の図を名指しして消す）。
+    2. 印に無い `spec-figure-02.svg`（0.25.0 までの出力・手で置いたもの）が在ると——図が増えない実行は 0 で、それを名指しする（#553）。
+       図が増える実行は「上書きしない」の 2 で、それを **1 度だけ**名指しし（#551）、消さない。
+    """
+    problems = []
+    root = work / "repo"
+    build_repo(root, FIGURE_V2, env)
+    place = root / "build" / "proposal"
+    out = place / "proposal.md"
+
+    def manifest() -> list[str]:
+        return (place / MANIFEST).read_text(encoding="utf-8").splitlines()[1:] if (place / MANIFEST).is_file() else []
+
+    def stray() -> str | None:  # 変異では在るはずのものが無いことがある——例外にせず問題として返す
+        return (place / STRAY).read_text(encoding="utf-8") if (place / STRAY).is_file() else None
+
+    code, output = generate(scripts, root, out, env, ["--version", "1"])
+    if code != 0 or (place / STRAY).exists() or "spec-figure-01.svg" not in manifest():
+        problems.append(f"図 1 つの v1 を作れない: {code} {manifest()} {output[-300:]}")
+    code, output = generate(scripts, root, out, env)
+    if code != 0 or [n for n in manifest() if n.startswith("spec-figure-")] != ["spec-figure-01.svg", STRAY] or NOT_THIS in output:
+        problems.append(f"印があるのに、図が増えた v2 を作れない: {code} {manifest()} {output[-300:]}")
+    if stray() != SVG_B or (place / "spec-figure-01.svg").read_text(encoding="utf-8") != SVG:
+        problems.append("v2 の 2 つ目の図が、足した図でない")
+    # 印に無い図を置く（v2 の印から外して残す——0.25.0 までの出力か手で置いたもの）
+    if not (place / MANIFEST).is_file():
+        return problems + ["v2 の印が無い"]
+    (place / MANIFEST).write_text("\n".join(n for n in (place / MANIFEST).read_text(encoding="utf-8").splitlines() if n != STRAY) + "\n",
+                                  encoding="utf-8")
+    (place / STRAY).write_text(LEFT_TEXT, encoding="utf-8")
+    code, output = generate(scripts, root, out, env, ["--version", "1"])
+    if code != 0 or named_lines(output, STRAY) != 1 or f"/{STRAY}: {NOT_THIS}" not in output or stray() != LEFT_TEXT:
+        problems.append(f"図が増えない実行で、印に無い図を 0 で名指ししない: {code} {output[-300:]}")
+    code, output = generate(scripts, root, out, env)
+    if (code != 2 or f"/{STRAY}: 前にこの道具が作った出力か確かめられない" not in output or named_lines(output, STRAY) != 1
+            or "提案書は作っていない" not in output):
+        problems.append(f"図が増えて印に無い図とぶつかるのに、上書きしないの 2 で 1 度だけ名指ししない: {code} {output[-400:]}")
+    if stray() != LEFT_TEXT:
+        problems.append("印に無い図を上書きした・消した")
+    return problems
+
+
+# いつも走っていた固定の試料の名前（`only` で選ぶ。#550）
+LEFT_FIXED = ["消せない場所", "印がディレクトリ", "印が辿れない symlink", "綴りだけ違う項目とハードリンク", "辿れない場所", "図が増える"]
+# 大文字小文字を区別する FS では判別できない変異（区別する FS では綴りだけ違う 2 つは別の項目で、ぶつからない）
+LEFTOVER_CASE_FOLD_ONLY = {"綴りだけ違う項目を別の項目と読む"}
+# 区別しない FS では判別できない変異（綴りだけ違う 2 つのファイルを置けない。2 パス目 P2-2）
+LEFTOVER_CASE_SENSITIVE_ONLY = {"綴りだけ違う別のファイルを同じ項目と読む"}
+
+
+def left_names() -> set[str]:
+    """`only` に渡せる名前——`LEFT_SCENARIOS` の経路と `LEFT_FIXED`。"""
+    return {s[0] for s in LEFT_SCENARIOS} | set(LEFT_FIXED)
 
 
 # 名指しの変異（#498）。(名前, 壊す前, 壊した後, 殺す経路の名前)
 LEFTOVER_MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("作れないときに名指ししない", "        for line in stop.lines + leftover_lines(out):", "        for line in stop.lines:", "1 一致しない"),
+    ("作れないときに名指ししない", "        for line in stop.lines + leftover_lines(out, stop.named):", "        for line in stop.lines:", "1 一致しない"),
     ("引数の誤りで名指ししない", "        for line in leftover_lines(out):  # 印に無い前の出力も", "        for line in []:  # 印に無い前の出力も",
      "引数の誤り（名前の衝突）"),
     ("消せないときに名指ししない", "left_lines(left) + ([problem] if problem else []) + leftover_lines(out):",
-     "left_lines(left) + ([problem] if problem else []):", "1 一致しない"),
+     "left_lines(left) + ([problem] if problem else []):", "消せない場所"),
     ("想定外の例外で名指ししない", "外側の 2 に渡す（#286・#498）\n        for line in leftover_lines(out):",
      "外側の 2 に渡す（#286・#498）\n        for line in []:", "想定外の例外"),
     ("読めない印を名指ししない", "        if owned is None:\n            lines.append(", "        if False:\n            lines.append(", "1 一致しない"),
     ("読めない印の場所の出力を名指ししない", "            if owned is None:\n                lines.append(",
      "            if owned is None:\n                continue\n                lines.append(", "1 一致しない"),
-    ("印に載る出力も名指しする", "            elif path.name not in owned:", "            else:", "1 一致しない"),
+    ("印に載る出力も名指しする", "            elif path.name not in owned:", "            else:", "消せない場所"),
     ("出力の名前でないものも名指しする", " or not output_named(path.name, out.name):", ":", "1 一致しない"),
     ("図の名前を見ない", ' or re.fullmatch(re.escape(FIGURE_PREFIX) + r"[0-9]+\\.svg", lower) is not None', "", "1 一致しない"),
     ("図の名前を接頭辞だけで見る", 're.fullmatch(re.escape(FIGURE_PREFIX) + r"[0-9]+\\.svg", lower) is not None',
@@ -1141,12 +1297,38 @@ LEFTOVER_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("PPTX を固定の名前すべてに付ける", '{str(Path(n).with_suffix(".pptx")) for n in proposals}',
      '{str(Path(n).with_suffix(".pptx")) for n in proposals | {GANTT_NAME}}', "1 一致しない"),
     ("ディレクトリの印を印なしと読む", "        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):\n            return None",
-     "        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):\n            return []", "1 一致しない"),
+     "        if not stat.S_ISREG((directory / MANIFEST).stat().st_mode):\n            return []", "印がディレクトリ"),
     ("大文字小文字を区別する", "    return lower in {n.lower() for n in names}", "    return name in names", "1 一致しない"),
     ("ディレクトリの出力先の中を見ない", "        directories.append(out)  # ディレクトリを渡したなら", "        pass  # ディレクトリを渡したなら",
      "引数の誤り（ディレクトリ）"),
     ("辿れない場所で例外を投げる", "        except OSError as e:\n            lines.append(f\"{directory}: 前の出力が残っているか",
-     "        except ValueError as e:\n            lines.append(f\"{directory}: 前の出力が残っているか", "1 一致しない"),
+     "        except ValueError as e:\n            lines.append(f\"{directory}: 前の出力が残っているか", "辿れない場所"),
+    # #551: 「上書きしない」と言ったファイルを「今回の出力ではない」で重ねて名指しする
+    ("上書きしないと言ったファイルも名指しする", "            if any(same_entry(path, other) for other in named):\n                continue\n", "",
+     "上書きしない"),
+    # #551 の 1 パス目 CR3・CR2: 項目ではなくファイル（inode）で見る・名前だけで見る
+    ("ハードリンクを同じ項目と読む", "    if a.name == b.name:\n        return True\n    if a.name.lower() != b.name.lower():\n        return False\n",
+     "    if a.name == b.name:\n        return True\n", "綴りだけ違う項目とハードリンク"),
+    ("綴りだけ違う別のファイルを同じ項目と読む", "    return (sa.st_dev, sa.st_ino) == (sb.st_dev, sb.st_ino)\n\n\ndef leftover_lines",
+     "    return True\n\n\ndef leftover_lines", "綴りだけ違う項目とハードリンク"),
+    # #553 の 2 パス目 P2-1: 0 の経路の名指しを標準出力に出す
+    ("0 の経路の名指しを標準出力に出す", "    for line in leftover_lines(out):\n        print(line, file=sys.stderr)\n    return 0",
+     "    for line in leftover_lines(out):\n        print(line)\n    return 0", "上書きしない"),
+    ("綴りだけ違う項目を別の項目と読む", "    if a.name.lower() != b.name.lower():\n        return False\n", "    if True:\n        return False\n",
+     "綴りだけ違う項目とハードリンク"),
+    ("上書きしないと言ったファイルを渡さない", "leftover_lines(out, stop.named):", "leftover_lines(out):", "上書きしない"),
+    # #553: 作れたとき（0）に、印に無い前の出力を名指ししない
+    ("作れたときに名指ししない", "    for line in leftover_lines(out):\n        print(line, file=sys.stderr)\n    return 0",
+     "    return 0", "上書きしない"),
+    # #552: 狭いパスの N1〜N3
+    ("図の名前を前方一致で見る", "re.fullmatch(re.escape(FIGURE_PREFIX)", "re.match(re.escape(FIGURE_PREFIX)", "1 一致しない"),
+    ("`--out` の名前を出力の名前に数えない", "proposals = {n for n in (out_name, Path(DEFAULT_OUT).name)",
+     "proposals = {n for n in (Path(DEFAULT_OUT).name,)", "1 一致しない・別の --out の名前"),
+    ("辿れない印を印なしと読む", "    except OSError:\n        return None\n    return owned_names(directory)",
+     "    except OSError:\n        return []\n    return owned_names(directory)", "印が辿れない symlink"),
+    # #508: 図を印に載せないと、図が増えた次の実行が前の図を消せずに「上書きしない」の 2 になる
+    ("図を印に載せない", "*sorted(p.name for p in outputs)]", "*sorted(p.name for p in outputs if not p.name.startswith(FIGURE_PREFIX))]",
+     "図が増える"),
 ]
 
 # #260 の名前（版を根にした名前）。素の `v1` と共存する試料を、承認のタグだけこの名前にして作ると、
@@ -1407,6 +1589,7 @@ def copy_scripts(dest: Path) -> Path:
 # 区別する FS では飛ばし、飛ばしたことを出力に書く（緑のふりをしない）。試料そのものはどの FS でも走らせる
 CASE_FOLD_ONLY = {"綴りの違う内部の表は重ね合わせが断る"}
 folded_skips: list[str] = []
+folded_left: list[str] = []  # LEFTOVER_MUTATIONS のうち、その FS では判別できないので飛ばしたもの
 
 
 def case_insensitive(tmp: Path) -> bool:
@@ -1541,6 +1724,12 @@ def main() -> int:
         problems = leftover_problems(SCRIPTS, tmp_path / "leftover", env)
         check("作れなかったときに残った前の出力の名指しが違う", not problems, "; ".join(problems))
         for index, (name, before, after, killer) in enumerate(LEFTOVER_MUTATIONS):
+            if killer not in left_names():  # 名札の綴りの誤りを「殺した」と数えない（#550 の 1 パス目 CR1）
+                check(f"変異の名札の試料が無い: {name}", False, killer)
+                continue
+            if (name in LEFTOVER_CASE_FOLD_ONLY and not fold_fs) or (name in LEFTOVER_CASE_SENSITIVE_ONLY and fold_fs):
+                folded_left.append(name)
+                continue
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
@@ -1555,9 +1744,9 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    if folded_skips:
-        print(f"飛ばした（大文字小文字を区別する FS では判別できない）: 変異 {'・'.join(folded_skips)}")
-    print(f"OK: 試料 {len(CASES) + 8 + len(LEFT_SCENARIOS) * 3 + 3} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS)} 件")
+    if folded_skips or folded_left:
+        print(f"飛ばした（その FS では判別できない——大文字小文字を区別する／しない）: 変異 {'・'.join(folded_skips + folded_left)}")
+    print(f"OK: 試料 {len(CASES) + 8 + sum(len(left_shapes(s[5])) for s in LEFT_SCENARIOS) + len(LEFT_FIXED)} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS) - len(folded_left)} 件")
     return 0
 
 
