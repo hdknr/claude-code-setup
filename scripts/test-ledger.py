@@ -283,6 +283,7 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                         ("udup", {"user_ops": {"commands": ["gh x", "gh x"], "source": "s", "updated": ""}}),
                         # まとめ（#641）: group が番号でない・代表が自分のまとめに入っていない・状態がそろっていない
                         ("gnum", {"issues": [{**entry(1, []), "group": "x"}]}),
+                        ("gstrip", {"issues": [{**entry(1, []), "group": "1"}, {**entry(2, []), "group": " 1"}]}),
                         ("ghead", {"issues": [{**entry(1, []), "group": "2"}, {**entry(2, []), "group": ""}]}),
                         ("gstate", {"issues": [{**entry(1, []), "group": "1"},
                                                {**entry(2, []), "state": "impl", "group": "1"}]}),
@@ -356,26 +357,39 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     before = snapshot(gf)
     # todo でない行（5・9）・別のまとめの行（3）・1 件だけ（代表を 2 度）・同じ番号 2 度
     o["group 拒む"] = tuple(run(mod, ["group", "gr", *a], root)[0]
-                           for a in (["5", "9"], ["4", "3"], ["4", "4"], ["4", "6", "6"]))
+                           for a in (["5", "9"], ["4", "3"], ["4", "4"], ["4", "6", "6"], ["4", "6", "4"]))
     o["group 拒んだ後も同じ"] = snapshot(gf) == before
     o["next(まとめ)"] = run(mod, ["next", "gr"], root)[1].splitlines()
     o["group 一部が依存待ち"] = run(mod, ["group", "gr", "7", "8"], root)[0]
     o["next(一部が依存待ちのまとめ)"] = run(mod, ["next", "gr"], root)[1].splitlines()
-    o["まとめの set"] = run(mod, ["set", "gr", "2", "state=impl", "branch=b"], root)[0]
-    run(mod, ["set", "gr", "3", "note=三だけ"], root)
+    o["まとめの set"] = run(mod, ["set", "gr", "2", "state=impl", "branch=b", "pr=#9", "worktree=/w", "agent=a", "base=s"],
+                           root)[0]
+    run(mod, ["set", "gr", "3", "note=三だけ", "title=三"], root)
     before = snapshot(gf)
     o["代表を抜く"] = run(mod, ["set", "gr", "2", "group="], root)[0]
     o["set group=非空"] = run(mod, ["set", "gr", "6", "group=7"], root)[0]
     o["代表を抜く・非空 の後も同じ"] = snapshot(gf) == before
-    o["1 件を抜く"] = run(mod, ["set", "gr", "3", "group=", "state=todo", "note=落ちた"], root)[0]
+    # 戻す形（grouping.md）: 抜けて、周の在り処を消す
+    o["1 件を抜く"] = run(mod, ["set", "gr", "3", "group=", "state=todo", "note=落ちた",
+                              "pr=", "branch=", "worktree=", "agent=", "base="], root)[0]
     try:
-        o["まとめの値"] = [(i["number"], i["state"], i.get("group"), i["branch"], i["note"])
+        o["まとめの値"] = [(i["number"], i["state"], i.get("group"), i["branch"], i["pr"], i["worktree"], i["agent"],
+                           i["base"], i["note"], i["title"])
                           for i in json.loads(gf.read_text(encoding="utf-8"))["issues"] if i["number"] in (2, 3, 6, 7, 8)]
     except (OSError, ValueError, KeyError):
         o["まとめの値"] = None
     r = str(run(mod, ["show", "gr"], root)[1])
     o["まとめの show"] = ("| まとめ |" in r, "まとめ: #2（impl）= #2; #7（todo）= #7, #8" in r,
                          "| #8 | todo | #1 |" in r and "| #7 |" in r)
+    # まとめを 1 つと数えた循環: 10 ← 11 ← 12 で 10 と 12 をまとめると、まとめ → 11 → まとめ
+    run(mod, ["init", "gc"], root)
+    for args in (["10"], ["11", "--deps", "10"], ["12", "--deps", "11"], ["13"], ["14", "--deps", "13"]):
+        run(mod, ["add", "gc", *args], root)
+    o["まとめの循環"] = run(mod, ["group", "gc", "10", "12"], root)[0]
+    run(mod, ["group", "gc", "13", "14"], root)
+    # まとめの行への set deps= で同じ形を作る（13 ← 11 は 11 → 10 で、まとめ 13・14 とは循環しない——対照）
+    o["まとめの循環(set)"] = (run(mod, ["set", "gc", "11", "deps=14"], root)[0],
+                            run(mod, ["set", "gc", "13", "deps=11"], root)[0])
     run(mod, ["set", "gr", "1", "state=merged"], root)
     o["next(まとめが着手できる)"] = run(mod, ["next", "gr"], root)[1].splitlines()
     r = str(run(mod, ["show", "gr"], root)[1])
@@ -525,6 +539,14 @@ MUTATIONS = {
          '    _g = issue.get("group", "")\n    issue.update(changes)\n    issue["updated"] = now()\n    # まとめ'),
         ('others = [i for i in data["issues"] if i is not issue and issue.get("group", "") and i.get("group", "") == issue["group"]]',
          'others = [i for i in data["issues"] if i is not issue and _g and i.get("group", "") == _g]')],
+    "group の空白を剥がして読む": [
+        ('            if not re.fullmatch(r"[1-9][0-9]*", issue["group"]):', '            if not issue["group"].strip().isdigit():'),
+        ('            members.setdefault(int(issue["group"]), []).append(issue)',
+         '            members.setdefault(int(issue["group"].strip()), []).append(issue)')],
+    "まとめを 1 つと数えた循環を見ない": [
+        ("    find_cycle(contracted)\n", "")],
+    "代表を後ろにもう 1 度書いた group を通す": [
+        ("    rows = [head, *numbers]\n", "    rows = [head] + [n for n in numbers if n != head]\n")],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -653,7 +675,8 @@ def main() -> int:
 
         print("\nまとめ（L15・#641）")
         check("group が作れる", o["group 作る"] == (0, "まとめ #2: #2, #3\n"))
-        check("todo でない行・別のまとめの行・1 件だけ・同じ番号 2 度の group は 3", o["group 拒む"] == (3, 3, 3, 3))
+        check("todo でない行・別のまとめの行・代表を 2 度・同じ番号 2 度・代表を後ろにもう 1 度の group は 3",
+              o["group 拒む"] == (3, 3, 3, 3, 3))
         check("拒んだ group のあとも台帳が 1 バイトも変わらない", o["group 拒んだ後も同じ"])
         check("next はまとめを 1 行（代表が先）で出し、中の依存（3 → 2）は済んだと読む",
               o["next(まとめ)"] == ["1", "2 3", "4", "6", "7"])
@@ -663,13 +686,18 @@ def main() -> int:
         check("代表を抜く（他の行が残る）・set group= に空でない値は 3（台帳は変えない）",
               (o["代表を抜く"], o["set group=非空"]) == (3, 3) and o["代表を抜く・非空 の後も同じ"])
         check("1 件を抜ける", o["1 件を抜く"] == 0)
-        check("周の在り処はまとめの全行に、note はその行だけ、抜けた行の state はその行だけ",
-              o["まとめの値"] == [(2, "impl", "2", "b", ""), (3, "todo", "", "b", "落ちた"),
-                                (6, "todo", "", "", ""), (7, "todo", "7", "", ""), (8, "todo", "7", "", "")])
+        check("周の在り処（state・branch・pr・worktree・agent・base）はまとめの全行に、note・title はその行だけ、"
+              "抜けた行に渡した値はその行だけ",
+              o["まとめの値"] == [(2, "impl", "2", "b", "#9", "/w", "a", "s", "", ""),
+                                (3, "todo", "", "", "", "", "", "", "落ちた", "三"),
+                                (6, "todo", "", "", "", "", "", "", "", ""), (7, "todo", "7", "", "", "", "", "", "", ""),
+                                (8, "todo", "7", "", "", "", "", "", "", "")])
+        check("まとめを 1 つと数えた循環は group で 3", o["まとめの循環"] == 3)
+        check("まとめの行への set deps= で作る循環は 3、循環しない set deps= は通る", o["まとめの循環(set)"] == (0, 3))
         check("show がまとめの列とまとめの行を出す", o["まとめの show"] == (True, True, True))
         check("依存がそろえばまとめが着手できる（next・show）",
               o["next(まとめが着手できる)"] == ["4", "6", "7 8"] and o["まとめの show(着手できる)"])
-        for name in ("gnum", "ghead", "gstate"):
+        for name in ("gnum", "gstrip", "ghead", "gstate"):
             check(f"手で崩したまとめ（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
 
         print("\n名前（L8）・git の外（L9）")

@@ -92,7 +92,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | --- | --- |
 | 0 | 通った（`next` で着手できるものが 0 件でも 0） |
 | 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形） |
-| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空・まとめに入れられない行（`todo` でない・別のまとめに入っている・1 件だけ・同じ番号を 2 度）・`set group=` に空でない値・他の行が残るまとめから代表を抜く・まとめの状態をそろえなくする操作） |
+| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（まとめを 1 つと数えた循環・在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空・まとめに入れられない行（`todo` でない・別のまとめに入っている・1 件だけ・同じ番号を 2 度）・`set group=` に空でない値・他の行が残るまとめから代表を抜く・まとめの状態をそろえなくする操作） |
 | 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
@@ -131,14 +131,20 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   ——前の確認の値が、確かめ直した後に黙って残らない。
 - **`group` は `todo` の行だけをまとめる**——進行中・止まった行を引き込むと、その行の worktree と PR を持ったまま別の周に入る。
 - **`group` は別のまとめに入った行を引き込まない**——1 つの行が 2 つの周に入る。
-- **代表は自分のまとめに入っている**——代表が抜けた（`set <代表> group=` で他の行が残る）・代表が台帳に無い・`group` が番号でない台帳を作らない
+- **代表は自分のまとめに入っている**——代表が抜けた（`set <代表> group=` で他の行が残る）・代表が台帳に無い台帳を作らない
   （手で直した台帳なら 4）。
+- **`group` は番号の文字列だけ**——空白を剥がさない（`" 1"` を通すと、検査は 1 つのまとめと読み、`next`・`set` は別のまとめと読む）。手で直した台帳なら 4。
+- **まとめを 1 つの節点と数えた循環を拒む**——行ごとには循環が無くても、まとめの外の行を経てまとめに戻る依存（10 ← 11 ← 12 で 10 と 12 をまとめる）は、
+  そのまとめを永遠に着手させない。`group` でも、まとめの行への `set deps=` でも拒む（手で直した台帳なら 4）。
+- **`group` は同じ番号を 2 度受け付けない**——代表を後ろにもう 1 度書いた形も。
 - **まとめの行は状態がそろう**——`set` の周の在り処（`state` ほか）はまとめの全行に書く。
 - **状態のそろわないまとめを持つ台帳は崩れている**——手で直した台帳なら 4 で、`next` に答えない。
 - **`next` はまとめを、全行が着手できるときだけ 1 行で出す**——1 行だけ着手できても出さない（残りを置いて周を始めない）。
 - **まとめの中の依存は済んだと読む**——読まないと、中に依存のあるまとめが永遠に出ない。
 - **`set group=` は抜けるだけ**——空でない値を拒む（まとめに入れるのは `group` で、件数と状態を確かめてから）。
 - **抜けた行に同じ呼び出しで渡した `state` などは、その行だけに効く**——抜ける前のまとめに伝えると、落ちた 1 件を戻すつもりで全行を戻す。
+  **抜けても、周の在り処（`pr` `branch` `worktree` `agent` `base`）は自分では消さない**——消すのは呼ぶ側
+  （戻すなら同じ呼び出しで `pr= branch= worktree= agent= base=` を渡す。手順は `../cruise/references/grouping.md`）。
 
 守らない:
 
@@ -339,7 +345,10 @@ def validate(data):
     members = {}
     for issue in data["issues"]:
         if issue.get("group", ""):
-            members.setdefault(parse_number(issue["group"], Refused), []).append(issue)
+            # 空白を剥がさない——" 1" を通すと、検査は 1 つのまとめと読み、`units`・`set` は別のまとめと読む
+            if not re.fullmatch(r"[1-9][0-9]*", issue["group"]):
+                raise Refused(f"#{issue['number']}: group が番号でない {issue['group']!r}")
+            members.setdefault(int(issue["group"]), []).append(issue)
     for head, rows in members.items():
         if head not in known or find(data, head).get("group") != str(head):
             raise Refused(f"まとめ #{head}: 代表が台帳に無いか、代表が自分のまとめに入っていない")
@@ -355,7 +364,18 @@ def validate(data):
             if dep not in known:
                 raise Refused(f"#{issue['number']}: 依存先 #{dep} が台帳に無い（先に add する）")
         graph[issue["number"]] = issue["deps"]
-    # 循環: 深さ優先で、いま辿っている途中の節点に戻ったら循環
+    find_cycle(graph)
+    # まとめを 1 つの節点と数えた循環（まとめの中の依存は数えない）——行ごとには循環が無くても、
+    # まとめの外の行を経てまとめに戻る依存があると、そのまとめは永遠に着手できない
+    node = {i["number"]: int(i["group"]) if i.get("group") else i["number"] for i in data["issues"]}
+    contracted = {n: set() for n in node.values()}
+    for issue in data["issues"]:
+        contracted[node[issue["number"]]].update(node[d] for d in issue["deps"] if node[d] != node[issue["number"]])
+    find_cycle(contracted)
+
+
+def find_cycle(graph):
+    """循環: 深さ優先で、いま辿っている途中の節点に戻ったら循環。"""
     visiting, done = set(), set()
 
     def visit(n, path):
@@ -496,8 +516,8 @@ def cmd_set(path, number, pairs):
 
 
 def cmd_group(path, head, numbers):
-    rows = [head] + [n for n in numbers if n != head]
-    if len(rows) != len(set(rows)) or len(numbers) != len(set(numbers)):
+    rows = [head, *numbers]
+    if len(rows) != len(set(rows)):  # 代表を後ろにもう 1 度書いた形も含めて
         raise Refused("同じ番号を 2 度渡した")
     if len(rows) < 2:
         raise Refused("まとめるのは 2 件以上（代表のほかに 1 件以上）")
