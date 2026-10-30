@@ -38,7 +38,8 @@ PR #660（#569 ほかのまとめの周）の狭いパスで見つかった 3 �
 - ブランチ: `issue/680-merge-versions-hardlink-untracked`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-680`
 - 起点: `785a093`（start-point `origin/main`）
-- base: `785a09307dbecfa7764754abee085517c55c2640`（`git merge-base origin/main HEAD`）
+- base: `e450e90efcf91ba23952d8ab14da4a38ee54ce0f`（`git merge-base origin/main HEAD`。main（#683・spec-loop 0.43.0）を取り込んで当て直した。切った時点は `785a09307dbecfa7764754abee085517c55c2640`）
+- 版: spec-loop 0.43.1（main の 0.43.0 より上。取り込みの衝突は 7 ファイルの版の行だけで、塊ごとに版の行だけであることを確かめて解いた）
 
 ## 線（出所）
 
@@ -85,16 +86,17 @@ PR #660（#569 ほかのまとめの周）の狭いパスで見つかった 3 �
 
 ## 関門の進捗（再開点）
 
-- 実装: 済み（コミット前）。手元で `test-merge-versions.py` を両 FS で緑——区別しない（macOS の既定）: 試料 103・変異 98、
+- 実装: 済み（`bef2a51`、取り込み `7fd87e4`）。手元で `test-merge-versions.py` を両 FS で緑——区別しない（macOS の既定）: 試料 103・変異 98、
   区別する（Case-sensitive APFS のディスクイメージを `TMPDIR` に）: 試料 96・変異 86。
   陽性対照: 直す前の `merge-versions.py`（`785a093`）に新しいテストを当てると、ハードリンクの試料が両 FS で赤（#676 の再現。区別する FS では 3 件とも）、
   `git に足す前のファイルも読む` は直す前も緑（#677 は守りの試料）。#678 の 5 試料は直す前の本体でも区別する FS で緑（コードを読んだ判断を実走で確かめた）。
   区別する FS で殺せない変異 3 本（`index に在る名前は寄せない`・`別の綴りで追跡するファイルも数える`・`2 段でも…`）は実測で決めて `FOLD_ONLY_MUTATIONS` へ。
   `spelled` の条件を足したら、既存の変異 `同じ項目かを見ない` が区別する FS で殺せなくなった（`git-alongside` は畳むと同じ名前が並ぶので新しい条件でも寄せない）
   ——区別する FS の試料 `足していない改名は index に寄せない` を足して、殺す試料をそちらに替えた
-- Verifier 1 パス目: 未
-- /code-review 1 パス目: 未
-- 1 パス目の指摘対応の起点: 未
+- 手元の歯止め: `check-all.py` は 56 本中 54 本緑。落ちた 2 本は `check-plan-counts.py`（件数の行が無かった——足した）と `check-mutation-claims.py`（`test-worktree-scripts.py:441` の主張が陽性対照の 300 秒で打ち切り。この周の差分の外で、並行する周の負荷の下。単独で回し直す）
+- Verifier 1 パス目: 起動（別ティア sonnet・`dev-loop:dev-loop-verifier`）
+- /code-review 1 パス目: 起動
+- 1 パス目の指摘対応の起点: 下のコミットの SHA（関門に渡した時点の HEAD。このコミットの直後に書き戻す）
 - 2 パス目: 未
 - 狭いパス: 未
 - 割り目（手順 4・6）: 不在のため訊かず続ける
