@@ -827,7 +827,8 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         observe(mod, only_na),
         # **これが無いと「対象の木が無くても通す」変異が殺せない。**
         observe(mod, missing),
-        # **これが無いと「退避先を畳まない」変異が殺せない**（#157）。
+        # **これが無いと「落ちたときに退避先を畳まない」（守る 14）と「中断を捕まえない」（守る 15）の変異が殺せない**（#157）。
+        # **守る 20 の「退避先を畳まない」は、これが無くても殺せる**（#494 の 1 パス目の `/code-review` が当てた）。
         # **後始末は出力を 1 バイトも変えない**ので、上の 3 つはどれも同じ観測を返す。
         # **`new` は *観測の形* まで保つ**——**`observe(mod, root)` への差し替えでは
         # 足りない。** あれが返すのは別の形なので、**下の `leak[…]` を読むところで落ち、
@@ -836,7 +837,7 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         # **一度これを `observe(mod, root)` で書き、`/code-review` が実測で反証した**
         # ——**すぐ上の `only_na` の項がまさにその形を警告しているのに、同じ差分の中で踏んだ。**
         # **だから、キーをそのまま持つ定数の辞書にする**——**形を変えずに、観測だけ殺す。**
-        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        {\"inside\": \"RuntimeError\", \"inside_left\": 0, \"dotgit\": \"RuntimeError\", \"dotgit_left\": 0, \"stopped\": \"KeyboardInterrupt\", \"stopped_left\": 0, \"unresolved\": \"OSError\", \"unresolved_left\": 0, \"normal\": (True, True)},", "red": "python3 scripts/test-check-mutation-claims.py --mutation 落ちたときに退避先を畳まない"}
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        {\"inside\": \"RuntimeError\", \"inside_left\": 0, \"dotgit\": \"RuntimeError\", \"dotgit_left\": 0, \"stopped\": \"KeyboardInterrupt\", \"stopped_left\": 0, \"unresolved\": \"OSError\", \"unresolved_left\": 0, \"normal\": (True, True)},", "red": "python3 scripts/test-check-mutation-claims.py --mutation 落ちたときに退避先を畳まない --mutation '中断を捕まえない（`Exception` に狭める）'"}
         observe_leak(mod, leak_root, leak_parent),
         # **これが無いと並列化の変異（#431）が殺せない**——**直列に戻しても、
         # 退避先を共有しても、ほかの観測は同じ判定を同じ順に返す。**
@@ -955,11 +956,12 @@ MUTATIONS = {
 }
 
 
-def parse_args(argv: list[str]) -> str | None:
+def parse_args(argv: list[str]) -> list[str] | None:
     """**狭く回す口**（#494）。`mutation-claim:` の `red` が、主張に関係する変異だけを当てるために使う。
 
         python3 scripts/test-check-mutation-claims.py                       # 全部（check-all.py と CI はこれ）
         python3 scripts/test-check-mutation-claims.py --mutation <名前>     # 変異の前の観測と、`MUTATIONS` のその 1 件だけ
+                                                                            # （--mutation は重ねて渡せる。渡した全部を当てる）
 
     **「この観測が無いと、変異 X が殺せない」という主張は、変異の前の観測と X の観測が違うかだけで決まる**ので、
     ほかの表明と 21 件の変異を回さなくてよい。**狭めた回は、全部を回す回の代わりにならない。**
@@ -967,9 +969,16 @@ def parse_args(argv: list[str]) -> str | None:
     """
     if not argv:
         return None
-    if len(argv) != 2 or argv[0] != "--mutation" or argv[1] not in MUTATIONS:
-        raise SystemExit(f"使い方: --mutation <MUTATIONS の名前>（受け取ったもの: {argv}）")
-    return argv[1]
+    usage = f"使い方: --mutation <MUTATIONS の名前> ...（受け取ったもの: {argv}）"
+    if len(argv) % 2:
+        raise SystemExit(usage)
+    names: list[str] = []
+    for flag, name in zip(argv[::2], argv[1::2]):
+        if flag != "--mutation" or name not in MUTATIONS:
+            raise SystemExit(usage)
+        if name not in names:
+            names.append(name)
+    return names
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -982,7 +991,7 @@ def main(argv: list[str] | None = None) -> int:
         escape.unlink(missing_ok=True)
 
 
-def run_all(escape: Path, only: str | None = None) -> int:
+def run_all(escape: Path, only: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "tree"
         root.mkdir()
@@ -1042,8 +1051,8 @@ def run_all(escape: Path, only: str | None = None) -> int:
                 check(f"変異を殺せる: {name}", changed)
 
         if only is not None:
-            print(f"\n変異テスト（`{only}` だけ——#494 の狭く回す口）")
-            kill([only])
+            print(f"\n変異テスト（{'・'.join(only)} だけ——#494 の狭く回す口）")
+            kill(only)
             return finish()
         got = verdicts(out)
 

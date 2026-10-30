@@ -805,19 +805,23 @@ SCAN_MUTANTS = {
 PARTS = ("registry", "contract", "scan", "mutants")
 
 
-def parse_args(argv: list[str]) -> tuple[set[str], str | None]:
+def parse_args(argv: list[str]) -> tuple[set[str], set[str] | None]:
     """**狭く回す口**（#494）。`mutation-claim:` の `red` が、主張に関係する部分だけを回すために使う。
 
         python3 scripts/test-check-all.py                      # 全部（check-all.py と CI はこれ）
         python3 scripts/test-check-all.py --part registry      # 収録漏れと CI の走査だけ
         python3 scripts/test-check-all.py --part scan          # CI の yaml の判別（合成試料と SCAN_MUTANTS）だけ
-        python3 scripts/test-check-all.py --mutant <名前>      # `MUTANTS` のうちその 1 件を契約が捕まえるかだけ
+        python3 scripts/test-check-all.py --mutant <名前>      # 本体そのままの契約と、`MUTANTS` のその 1 件を契約が捕まえるか
+                                                               # （--mutant は重ねて渡せる。渡した全部を当てる）
+
+    **`--mutant` でも本体そのままの契約を回して、通ることを要求する**（陽性対照）——回さないと、負荷で待ち合わせが
+    時間切れになったとき「契約が破れた＝捕まえた」と数え、主張の変異を当てた後も緑になる（#494 の 1 パス目の `/code-review`）。
 
     **狭めた回は、全部を回す回の代わりにならない**——`check-all.py` と CI は引数なしで全部を回す。
     **知らない部分・知らない変異の名前は断る**（綴り間違いで「何も回さずに緑」にしない）。
     """
     parts: set[str] = set()
-    mutant: str | None = None
+    mutants: set[str] = set()
     it = iter(argv)
     for arg in it:
         if arg == "--part":
@@ -829,10 +833,14 @@ def parse_args(argv: list[str]) -> tuple[set[str], str | None]:
             mutant = next(it, None)
             if mutant not in MUTANTS:
                 raise SystemExit(f"--mutant に知らない名前: {mutant}")
-            parts.add("mutants")
+            mutants.add(mutant)
         else:
             raise SystemExit(f"知らない引数: {arg}")
-    return (parts or set(PARTS)), mutant
+    if mutants and "mutants" in parts:
+        raise SystemExit("--part mutants（全部）と --mutant（一部）は一緒に渡せない")
+    if mutants:
+        return parts | {"mutant-contract", "mutants"}, mutants
+    return (parts or set(PARTS)), None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -845,7 +853,7 @@ def main(argv: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
 
-        if "contract" in parts:
+        if parts & {"contract", "mutant-contract"}:
             print("契約（本体そのまま——全部通らなければならない）:")
             target = build_fake(root / "real")
             for name, ok in contract(target, root / "real", "real"):
@@ -902,11 +910,11 @@ def run_scan(root: Path) -> None:
             print("       壊したのに契約が全部通った")
 
 
-def run_mutants(root: Path, only: str | None) -> None:
+def run_mutants(root: Path, only: set[str] | None) -> None:
     print("変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
     src = TARGET.read_text()
     for i, (name, (old, new)) in enumerate(MUTANTS.items()):
-        if only is not None and name != only:
+        if only is not None and name not in only:
             continue
         if src.count(old) != 1:
             check(f"変異 `{name}` の当て先が 1 箇所", False)
