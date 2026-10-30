@@ -80,11 +80,13 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   `x⏎|---|---|⏎y | z⏎|---|---|`）。**段落の続き（lazy）の区切りの形の行は表を試さないので、開けなかったことにならない**——その行を
   見出しにして、容れ物の中の区切りの行が表を開く（`> q⏎|---|---|⏎> |---|---|`。#580。#562 の狭いパス NP-1）。
   **容れ物から 4 桁以上（タブを含めて）字下げした区切りの形の行も表を試さない**——表を開かず、開けなかったことにもならない（GitHub と同じ）。
+  **段落の続き（lazy）の見出しの行は、頭の字下げのあとの `|` を外側の `|` に数えない**——頭に空のセルが 1 つ増える（GitHub と同じ。
+  `> q⏎  |---|⏎> |---|` は表にならず、`> q⏎  |a|b⏎> --- | --- | ---` は 3 列の表。#623）。
 - **表の行は `|` が無くても表の行として組む**——表は空行か、ブロックの始まり（見出し・引用・リストの項（番号も空の項も問わない）・フェンス・
   コメント・区切り線・インデントしたコード）か、容れ物が変わる（引用の深さが変わる・項の外へ出る）まで続く。GitHub と同じく、段落の続き
   （lazy continuation）にはならず、`===` の行や行だけのインライン HTML も表の行である（#562。#525 の狭いパスが示した穴）。
 - **エラーの抜粋は元の行から切り出す**——判定はコードスパンとコメントの中身を伏せた文字列で行うが、抜粋は同じ位置で
-  ファイルの元の行（引用の `>` も含む）から切る。伏せ字（`x` の並び）を見せない（#564。#525 の `/code-review` 1 パス目 CR1-9）。
+  ファイルの元の行（引用の `>` も含む。タブはタブのまま）から切る。伏せ字（`x` の並び）を見せない（#564。#525 の `/code-review` 1 パス目 CR1-9）。
 - **`*` が 2 つか 3 つ並んだだけの行は、区切りに数えない**——段落の続きの行（4 桁以上字下げした `***`・`**` だけの行）の並びは
   前後が空白なので開きにも閉じにもならず、GitHub は字のまま描いて、前後の太字の組み方を変えない
   （`**a⏎⇥***⏎b**` は太字。数えると 2・3 行目を崩れと誤る。#624。#581 の狭いパス NP-3）。
@@ -275,7 +277,8 @@ def source_index(line: str, column: int) -> int:
 def match_containers(text: str, stack: list) -> tuple[int, int]:
     """開いている容れ物を外から順に行の頭へ当て、`(当たった数, 本文の始まる桁)` を返す。
 
-    引用（`">"`）は印で当たり、リストの項（中身の始まる桁）はその桁までの字下げか空行で当たる（CommonMark と同じ）。
+    引用（`">"`）は印で当たり、リストの項は中身の桁までの字下げか空行で当たる（CommonMark と同じ）。リストの項の中身の桁は、
+    **外の容れ物の本文の始まりから数える**——行の頭からではない（`> - a⏎  > ===` の 2 行目は、`>` の位置がずれるので項に当たらない。#623 の Verifier 1 パス目）。
     """
     at = 0
     for count, container in enumerate(stack):
@@ -285,9 +288,9 @@ def match_containers(text: str, stack: list) -> tuple[int, int]:
                 return count, at
             at = quote.end()
         elif text[at:].strip():
-            if at + indent_of(text[at:]) < container:
+            if indent_of(text[at:]) < container:
                 return count, at
-            at = container
+            at += container
     return len(stack), at
 
 
@@ -302,6 +305,14 @@ def cells(row: str) -> int:
     if len(parts) > 1 and re.search(r"(?<!\\)\|$", text):
         parts = parts[:-1]
     return len(parts)
+
+
+def header_cells(row: str, lazy: bool) -> int:
+    """見出しの行の候補のセルの数。段落の続き（lazy）の行は頭の字下げを本文に残すので、字下げのあとの `|` は外側の `|` にならず、
+    頭に空のセルが 1 つ増える（GitHub と同じ。`> q⏎  |a|b⏎> --- | --- | ---` は 3 列の表、`> q⏎  |---|⏎> |---|` は表にならない。
+    #623 の Verifier 1 パス目 R2——main から食い違っていた）。"""
+    extra = lazy and row[:1] == " " and row.lstrip(" ").startswith("|")
+    return cells(row) + extra
 
 
 def item_of(inner: str):
@@ -330,11 +341,12 @@ def blocks(lines: list[str]):
     marks: list[int] = []
     para: list[str] = []
     para_start = 0
-    stack: list = []  # 開いている容れ物（外から順）。引用は ">"、リストの項は中身の始まる桁（行の頭からの桁）
+    stack: list = []  # 開いている容れ物（外から順）。引用は ">"、リストの項は中身の始まる桁（外の容れ物の本文の始まりから）
     fence = None  # (字, 長さ)。開いている間、容れ物は変わらない
     comment = False  # 開いている HTML のコメントのブロック
     table = False  # 開いている表（容れ物が変われば終わる）
     last = ""  # 段落の最後の行の、容れ物を剥がした本文（表の見出しの行の候補）
+    lazy_last = False  # 段落の最後の行が段落の続き（lazy）か
     refused = False  # この段落で、区切りの行が表を開けなかったか（GitHub はその段落でもう表を開かない）
     starts = (THEMATIC, FENCE_OPEN, COMMENT_BLOCK, HEADING)  # 段落の続き（lazy）を許さないブロックの始まり
 
@@ -387,7 +399,7 @@ def blocks(lines: list[str]):
             ordered, number, empty, offset = item
             if para and not maybe_lazy and not new and (empty or (ordered and number != "1")):
                 break  # 空の項と `1.` 以外の番号の項は、段落を割り込めない
-            new.append(pos + offset)
+            new.append(offset)
             pos += offset
         inner = text[pos:]
         start = source_index(line, pos)
@@ -395,7 +407,7 @@ def blocks(lines: list[str]):
 
         if maybe_lazy and not new and not any(r.match(inner) for r in starts):
             para.append(shown)  # 段落の続き（lazy continuation）。容れ物は閉じない
-            last = inner
+            last, lazy_last = inner, True
             continue
 
         if table:
@@ -442,7 +454,7 @@ def blocks(lines: list[str]):
             # 区切りの行（段落と同じ容れ物の中の行）は、段落の最後の行を見出しの行にして表を開く（#562）。
             # 開けなければ、その段落ではもう開かない（GitHub と同じ）。段落の続き（lazy）と 4 桁以上字下げした
             # 区切りの形の行はここに来ない——表を試さないので、開けなかったことにならない（#580）
-            if not refused and cells(last) == cells(inner):
+            if not refused and header_cells(last, lazy_last) == cells(inner):
                 head = para.pop()
                 flush()
                 out.append((lineno - 1, [head]))
@@ -453,7 +465,7 @@ def blocks(lines: list[str]):
             para_start = lineno
             refused = False
         para.append(shown)
-        last = inner
+        last, lazy_last = inner, False
     flush()
     return out, marks
 
@@ -502,9 +514,10 @@ def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
         for line in block:
             offsets.append(offsets[-1] + len(line) + 1)
         rows = joined.split("\n")
-        # `*` の並びだけの行は区切りに数えない——前後が空白で開きにも閉じにもならず、組み方を変えない（#624。#581 の NP-3）
+        # `*` の並びだけの行は区切りに数えない——前後が空白で開きにも閉じにもならず、組み方を変えない（#624。#581 の NP-3）。
+        # 空白は `is_space` で数える——`str.strip()` は `\v` など CommonMark が空白に数えない字まで剥がす（#623 の /code-review 1 パス目）
         found = [(pos, length) for pos, length in runs(joined)
-                 if rows[next(r for r in range(len(block)) if offsets[r + 1] > pos)].strip() != "*" * length]
+                 if "".join(c for c in rows[next(r for r in range(len(block)) if offsets[r + 1] > pos)] if not is_space(c)) != "*" * length]
         for index, (pos, length) in enumerate(found):
             before = joined[pos - 1] if pos > 0 else None
             after = joined[pos + length] if pos + length < len(joined) else None

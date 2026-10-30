@@ -292,6 +292,24 @@ SAMPLES = {
     # 守る 26: `*` の並びだけの行は区切りに数えない（GitHub は `**a`〜`b**` を 1 つの太字に組む。main は 2・3 行目を誤検出）。
     'stars-line-tab.md': '**a\n\t***\nb**\n',
     'stars-line-pair.md': '**a\n**\nb**\n',
+    # 1 パス目の関門（#623 の周）の指摘を守る試料。どれも GitHub の描画（gfm）と一致を確かめた。
+    # 守る 16: リストの項の中身の桁は外の容れ物の本文から数える——後の行の `>` の位置がずれると項に当たらず、段落の続きになる（Verifier R1。
+    # 1 パス目の版は行の頭からの桁で持って項に当て、`===` を下線・`--- | ---` を表と読んだ。main は一致）。引用の中の項の表は表（項に当たる）。
+    'quote-item-shifted-setext.md': '> - a **x\n  > ===\n  > y** z\n',
+    'quote-item-shifted-delim.md': '>- a | b\n>  --- | ---\n>  foo **x\n>  bar** y\n',
+    'table-item-in-quote.md': '> - a | b\n>   --- | ---\n>   foo **x\n>   bar** y\n',
+    # 守る 23: 段落の続き（lazy）の見出しの行の頭の字下げは空のセルを 1 つ足す（Verifier R2。字下げの無い形と非 lazy の形は表。
+    # main もタブの無い形を表と読んで誤検出していた）。
+    'table-lazy-header-indent.md': '> bar\n  |---|\n> |---|\n> foo **x\ny** z\n',
+    'table-lazy-header-indent-tab.md': '> \tbar\n  |---|\n> \t|---|\n> foo **x\ny** z\n',
+    'table-lazy-header-indent-3col.md': '> bar\n  |a|b\n> --- | --- | ---\n> foo **x\ny** z\n',
+    # 守る 26: `*` の並びだけの行の空白は CommonMark の空白（`is_space`）で数える——`\v` は空白ではない（/code-review CR1-5。GitHub は 2 行目で閉じ、`b**` が字のまま）。
+    'stars-line-vt.md': '**a\n\x0b**\nb**\n',
+    # 守る 16: 容れ物の中のフェンスは容れ物の本文の頭から閉じる（CR1-2）／タブで字下げした項の中のフェンス（守る 27）。
+    'quote-fence-closes.md': '> ~~~\n> x\n> ~~~\n> X**「例」**Y\n',
+    'item-fence-tab.md': '- ~~~\n\t**x\n\t~~~\n  X**「例」**Y\n',
+    # 守る 16: 印の無い空行は引用（と中の項）を閉じる——次の `>` の行は新しい引用で、4 つ字下げはインデントしたコード（CR1-7）。
+    'quote-blank-closes.md': '> - a\n\n>     X**「例」**Y\n',
     # エラーの抜粋（#564）——どの行も、抜粋の窓（`**` の前 6 字・後ろ 8 字）に伏せる範囲（コードスパン・コメントの中身）が入る。
     # frontmatter の後ろ・段落・引用（窓が行頭の `>` に届く）・コメント・リストの項・見出し・表の見出しの行と表の行・行をまたぐ段落。
     # 抜粋そのものは EXCERPTS で見る。
@@ -305,7 +323,9 @@ SAMPLES = {
         "| `th`X**「y」 | b |\n"
         "| --- | --- |\n"
         "| `td`X**「y」 | d |\n\n"
-        "`c1`\nX**「y」\n"),
+        "`c1`\nX**「y」\n\n"
+        ">\t`ab` X**「y」\n\n"
+        "- a\n\t`cd` X**「y」\n"),
     # 崩れていない形（誤検出しない）——句読点の両側・空白の外側・引用・表のセル・GitHub が句読点と見ない記号。
     "clean.md": (
         "# 見出しの **太字**\n\n"
@@ -452,7 +472,17 @@ EXPECTED = {
     'setext-tab-item.md': ((1, 3), ()),
     'stars-line-tab.md': ((), ()),
     'stars-line-pair.md': ((), ()),
-    "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19), ()),
+    'quote-item-shifted-setext.md': ((), ()),
+    'quote-item-shifted-delim.md': ((), ()),
+    'table-item-in-quote.md': ((3, 4), ()),
+    'table-lazy-header-indent.md': ((), ()),
+    'table-lazy-header-indent-tab.md': ((), ()),
+    'table-lazy-header-indent-3col.md': ((4, 5), ()),
+    'stars-line-vt.md': ((3,), ()),
+    'quote-fence-closes.md': ((4, 4), ()),
+    'item-fence-tab.md': ((4, 4), ()),
+    'quote-blank-closes.md': ((), ()),
+    "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19, 21, 24), ()),
     "clean.md": ((), ()),
 }
 
@@ -466,6 +496,9 @@ EXCERPTS = (
     (14, " `th`X**「y」 | "),
     (16, " `td`X**「y」 | "),
     (19, "`c1`⏎X**「y」"),
+    # タブを含む行（引用の印の直後・項の中）。抜粋はタブを開いた行からではなく元の行から切る（#623 の /code-review 1 パス目 CR1-3）
+    (21, "`ab` X**「y」"),
+    (24, "`cd` X**「y」"),
 )
 
 
@@ -515,8 +548,8 @@ MUTATIONS = {
         "        if matched < len(stack) or new:\n            flush()",
         "        if matched < len(stack) or new:\n            pass"),
     "行ごとに組む": (5,
-        "        para.append(shown)\n        last = inner\n    flush()",
-        "        para.append(shown)\n        flush()\n        last = inner\n    flush()"),
+        "        para.append(shown)\n        last, lazy_last = inner, False\n    flush()",
+        "        para.append(shown)\n        flush()\n        last, lazy_last = inner, False\n    flush()"),
     "三つの並びを数えない": (6,
         "        if j - i in (2, 3):",
         "        if j - i == 2:"),
@@ -581,7 +614,7 @@ MUTATIONS = {
         '            if para and not maybe_lazy and not new and (empty or (ordered and number != "1")):',
         '            if para and not new and (empty or (ordered and number != "1")):'),
     "項の中身の桁で読まない": (17,
-        "            at = container\n",
+        "            at += container\n",
         "            at += indent_of(text[at:])\n"),
     "区切り線を本文として見る": (18,
         "        if THEMATIC.match(inner):  #",
@@ -614,16 +647,16 @@ MUTATIONS = {
         "        if para and indent_of(inner) < 4 and TABLE_DELIM",
         "        if False and indent_of(inner) < 4 and TABLE_DELIM"),
     "見出しの行を段落の最初の行にする": (23,
-        "            if not refused and cells(last) == cells(inner):",
+        "            if not refused and header_cells(last, lazy_last) == cells(inner):",
         "            if not refused and cells(para[0]) == cells(inner):"),
     "表を開けなかった段落で、あとの区切りの行が表を開く": (23,
-        "            if not refused and cells(last) == cells(inner):",
-        "            if cells(last) == cells(inner):"),
+        "            if not refused and header_cells(last, lazy_last) == cells(inner):",
+        "            if header_cells(last, lazy_last) == cells(inner):"),
     # #580 の前の形——直前の行が区切りの形なら開けなかったとみなす近似。段落の続き（lazy）の行も数えて表を見逃し、
     # 開けなかった区切りの行が直前でなければ忘れて表を開く
     "前の行が区切りの形なら見出しの行にしない（#580 の前の形）": (23,
-        "            if not refused and cells(last) == cells(inner):",
-        '            if not (len(para) > 1 and "|" in last and TABLE_DELIM.match(last)) and cells(last) == cells(inner):'),
+        "            if not refused and header_cells(last, lazy_last) == cells(inner):",
+        '            if not (len(para) > 1 and "|" in last and TABLE_DELIM.match(last)) and header_cells(last, lazy_last) == cells(inner):'),
     "字下げした区切りの形の行でも表を試す": (23,
         "        if para and indent_of(inner) < 4 and TABLE_DELIM",
         "        if para and TABLE_DELIM"),
@@ -682,8 +715,8 @@ MUTATIONS = {
     "抜粋を引用の印を空白にした行から切る": (25,
         '        original = "\\n".join(source[start - 1:start - 1 + len(block)])',
         '        original = "\\n".join(block)'),
-    # #525 の狭いパスで素通りした変異（#563）。「区切りの行のあとで表を開かない」は #562 の表の試料が殺し、
-    # ほかは上の SAMPLES の #563 の段の試料が殺す。
+    # #525 の狭いパスで素通りした変異（#563）。「区切りの行のあとで表を開かない」は #562 の表の試料が、「引用の印の字下げに上限を置かない」は
+    # 容れ物を積む形にしてから quote-indent-cont（#623 の段）だけが殺し、ほかは上の SAMPLES の #563 の段の試料が殺す。
     "info にバッククォートがあってもフェンスを開く": (7,
         'FENCE_OPEN = re.compile(r" {0,3}(`{3,}(?=[^`]*$)|~{3,})")',
         'FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,})")'),
@@ -742,7 +775,7 @@ MUTATIONS = {
         "            quote = QUOTE_MARK.match(text, pos)\n",
         '            quote = None if any(c != ">" for c in stack[:matched] + new) else QUOTE_MARK.match(text, pos)\n'),
     "`*` の並びだけの行も区切りに数える（#581 の NP-3）": (26,
-        '                 if rows[next(r for r in range(len(block)) if offsets[r + 1] > pos)].strip() != "*" * length]',
+        '                 if "".join(c for c in rows[next(r for r in range(len(block)) if offsets[r + 1] > pos)] if not is_space(c)) != "*" * length]',
         "                 ]"),
     "段落の続きでも setext の下線にする（#581 の NP-1）": (4,
         "        if maybe_lazy and not new and not any(r.match(inner) for r in starts):",
@@ -750,6 +783,26 @@ MUTATIONS = {
     "setext の下線の字下げに上限を置かない（#581 の NP-1）": (4,
         'SETEXT = re.compile(r" {0,3}(?:=+|-+)[ \\t]*$")',
         'SETEXT = re.compile(r" *(?:=+|-+)[ \\t]*$")'),
+    # 1 パス目の関門（#623 の周）の指摘を守る変異。上の SAMPLES の同じ段の試料が殺す。
+    # Verifier R1 の形——項の中身の桁を、外の容れ物の本文からでなく行の頭から数えて持つ
+    "項の中身の桁を行の頭から数えて持つ（#623 の Verifier R1）": (16,
+        "            new.append(offset)\n",
+        "            new.append(pos + offset)\n"),
+    "段落の続きの見出しの行の字下げをセルに数えない（#623 の Verifier R2）": (23,
+        '    extra = lazy and row[:1] == " " and row.lstrip(" ").startswith("|")',
+        "    extra = False"),
+    "`*` の並びだけの行の空白を str.strip で剥がす（#623 の CR1-5）": (26,
+        "if not is_space(c)) != \"*\" * length]",
+        "if c.strip()) != \"*\" * length]"),
+    "容れ物の中のフェンスを行の頭から閉じる（#623 の CR1-2）": (16,
+        '{{{fence[1]},}}[ \\t]*$", text[at:]):',
+        '{{{fence[1]},}}[ \\t]*$", text):'),
+    "空行で印の無い引用を閉じない（#623 の CR1-7）": (16,
+        "            del stack[matched:]  # 空行は",
+        "            pass  # 空行は"),
+    "抜粋の行をタブを開いた行から作る（#623 の CR1-3）": (25,
+        '        shown = " " * start + line[start:]',
+        '        shown = " " * pos + text[pos:]'),
 }
 
 
