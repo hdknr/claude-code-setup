@@ -42,6 +42,18 @@ PRECOND = SKILL_SCRIPTS / "check-pr-preconditions.sh"
 
 failures: list[str] = []
 
+# **git の自動の保守（`maintenance.auto`・`gc.auto`）を、このテストと子の全部の git で止める**（#668）。
+# `commit`・`fetch` のあとに切り離して走る保守が雛形の `.git` に `maintenance.lock` を出し入れするので、
+# **直後に雛形を複製すると `shutil.copytree` が消えた lock を掴んで落ちる**——狭めた `red`（`--quote-mutant`）は
+# 雛形を作った直後に複製するので、CI で「当てられなかった」になった（PR #692。`test-check-version-bump.py` の #253 と同じ形）。
+# **環境変数で渡す**——雛形・bare・クローン・`prepare-worktree.sh` の中の git のどれにも効く。既にある `GIT_CONFIG_COUNT` には足す。
+_n = int(os.environ.get("GIT_CONFIG_COUNT", "0") or 0)
+for _k, _v in (("maintenance.auto", "false"), ("gc.auto", "0")):
+    os.environ[f"GIT_CONFIG_KEY_{_n}"] = _k
+    os.environ[f"GIT_CONFIG_VALUE_{_n}"] = _v
+    _n += 1
+os.environ["GIT_CONFIG_COUNT"] = str(_n)
+
 
 def assert_not_real_repo(root: Path) -> None:
     resolved = root.resolve()
