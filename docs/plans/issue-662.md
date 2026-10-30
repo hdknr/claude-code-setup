@@ -15,7 +15,7 @@ cruise #474（`--absent`）の子の周。#591 のまとめの周（PR #653）�
 - `scripts/test-schedule-to-gantt.py` — 輪のリンクの試料と `ELOOP` の変異（N2）・書きかけの試料と変異・CR8〜CR10 の試料と変異・docstring
 - `plugins/spec-loop/references/tree.md` — 移行の注（CR2-6）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（5 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.42.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.43.0）
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-662.md` — この計画
 
@@ -104,6 +104,7 @@ cruise #474（`--absent`）の子の周。#591 のまとめの周（PR #653）�
 - 1 パス目の指摘対応: CR1-2 開いたあとの想定外の例外・ValueError の試料と変異 2 つ／CR1-3 `e.errno in ABSENT` を先に見て realpath を解かない・試料に壊れたリンクと輪を足し変異 1 つ／CR1-4 docstring に「表が決まりに反するとき」／CR1-5 `tree.md` の対象を絞り、壊れた・ディレクトリ・輪のリンクは前と同じく 1（旧版で確かめた）
 - 1 パス目の指摘対応のコミット: `a406df3`。そのあと main を取り込み（merge）、版を 0.42.0 に上げた（`3f35572`）。`check-all.py`（取り込みの前・版の衝突を除いて）: 56 本中 55 本が緑——落ちたのは `check-version-bump.py`（main が 0.41.0 に上がり、こちらの 0.41.0 と並んだ。0.42.0 で解消し単独で「問題なし」）。`test-schedule-to-gantt.py`（python3.12）: 「OK: 試料 13 件・変異 60 件」
 - PR: #683（`eb6c4af` で作成）
+- 2 度目の取り込み（関門のあと）: main の #684（#512）・#674 で spec-loop が 0.42.0 に並んだので 0.43.0 に上げた。取り込みに衝突なし。#512 の `build-proposal.py` は `gantt.render` と `gantt.absent` を使う——この周は両方とも変えていない
 - Verifier 2 パス目（sonnet・base `3700585`）: **反証 0 件**。I1〜I7 一致（旧版と今の版で I3 を、realpath を壊して I6 を確かめた）。`check-all.py` は 56 本中 55 本が緑——`check-mutation-claims.py` の `test-worktree-scripts.py:441` が負荷下で 300 秒の打ち切り（当てられなかった。この周は触っていない）
 - `/code-review` 2 パス目（high・base `3700585`）: 指摘 9 件（下の 2 パス目の採否の表 CR2-1〜CR2-9）。直す 3 件・残課題 6 件
 - 2 パス目の指摘対応: CR2-2・CR2-3・CR2-6（文書と docstring だけ。コードの振る舞いは変えていない）。**狭いパスの起点 `a34bf65fe7d045ec530dde88df3ffab194047fe9`・終点 `497ceb9f8087ffb26451c8045eb063c1a4acf12d`**
