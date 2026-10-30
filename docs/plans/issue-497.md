@@ -26,8 +26,10 @@
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-497.md` — この計画
-- 1 パス目の指摘対応で広げた（採否の表の CR8・V-R3・CR2）: `plugins/dev-loop/skills/dev-loop/references/spec-gap.md`・`plugins/dev-loop/skills/dev-loop/references/found-lines.md`（I1 の経路の残り）、
-  `docs/plugins/dev-loop-cruise.md`（公開ページの「起動時に 1 度だけ」）、`docs/plugins/dev-loop-design.md`（`skill-metrics.py` の生成ブロック。手で書かない）
+- `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 1 パス目の指摘対応で広げた（採否の表の CR8。I1 の経路の残り）
+- `plugins/dev-loop/skills/dev-loop/references/found-lines.md` — 同上
+- `docs/plugins/dev-loop-cruise.md` — 1 パス目の指摘対応で広げた（V-R3・2 パス目の CR2-7。公開ページの書く時点と印の書き方）
+- `docs/plugins/dev-loop-design.md` — 1 パス目の指摘対応で広げた（CR2。`skill-metrics.py` の生成ブロック。手で書かない）
 
 触らない:
 
