@@ -329,7 +329,7 @@ SAMPLES = {
     'blank-item-closes.md': '- a\n\n\u3000\n\n    X**「例」**Y\n',
     # U+3000 の行は段落を始める——次の 4 つ字下げした行はインデントしたコードでなく続き（main は 3 行目を誤検出）
     'blank-ideographic-then-indent.md': '\u3000\n    **x\ny**\n',
-    # 対照: 空白とタブだけの行・CRLF の空行は段落を切る（GitHub は 2 つの段落で `**` が字のまま）
+    # 対照: 空白とタブだけの行・CRLF の空行は段落を切る（GitHub は段落を分け、`**` が字のまま）
     'blank-space-tab.md': '**a\n \t \nb**\n',
     'blank-crlf.md': '**a\r\n\r\nb**\r\n',
     # 中身が U+3000・NBSP だけの項は空の項でなく、段落を割り込む（GitHub は段落と項。main は見逃し）
