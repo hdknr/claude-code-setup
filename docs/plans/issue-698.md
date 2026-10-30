@@ -75,9 +75,11 @@ PR #697（#680 の周）の `/code-review` 2 パス目の残課題 2 件（CR2-4
 - 交絡を潰した手順: CR2-4 は直す前のテスト（`745bb1c`）と直した後のテストに同じ壊し方（`git-both` の書き出しを外す）を当て、前は traceback・後は名前つきの失敗（同じ FS・同じ本体）。
   CR2-5 は変異ごとに git の試料を全部当てた——区別する FS で、`spelled` の守りを片方ずつ外す 2 本は `git-alongside` を赤にしない（Issue の主張の再現）、2 つとも外すと 4 試料が赤、足した変異は `git-alongside` だけが赤。区別しない FS ではどの変異も git の試料を赤にしない（`git-alongside` はそこでは飛ばす）
 - 割り目（手順 4・6）: 不在のため訊かず続ける
-- Verifier 1 パス目: 未
-- /code-review 1 パス目: 未
-- 1 パス目の指摘対応の起点: 未
+- Verifier 1 パス目: 済み——反証 0 件（sonnet・`dev-loop:dev-loop-verifier`。テンプレート 170 行を読んだと報告、`wc -l` は 169——最後の行に改行が無い）。両 FS で 103/98・96/87、B1・B2 を実走で一致
+- /code-review 1 パス目: 済み——指摘 6 件（直す 1（CR1-1 と CR1-2 は同じ B4 の破れで 1 か所を直す）・残課題 4。下の採否の表）
+- 1 パス目の指摘対応の起点: `180e46b0719c459b82496bf1ee450f35e686d75b`（2 つの関門に渡した時点の HEAD。`180e46b` で全部コミット済み）
+- 1 パス目の指摘対応: docstring を直した範囲に合わせて狭めた（B4）。区別しない FS で 103/98 緑
+- 割り目（2 パス目の前）: 不在のため訊かず続けた
 - 2 パス目: 未
 - 狭いパス: 未
 - 反証と差し戻し: なし
@@ -90,5 +92,17 @@ PR #697（#680 の周）の `/code-review` 2 パス目の残課題 2 件（CR2-4
 | 準備の失敗に `OSError`・`CalledProcessError` も含めるか | 含める | Issue の `RuntimeError` と同じく準備の失敗で、どれも traceback で全体を止めていた（`git(...)` は `check=True`） |
 | CR2-5: 外すか、役を与えるか | 役を与える（変異を足す） | 外すと、区別する FS で「追跡していないが中身のある並ぶ綴り違い」を見る試料が無くなる。`git-stale`（`.DS_Store` だけ）と対になって「古い残りは捨て、中身があれば断る」を見分ける |
 | 足した変異は区別しない FS で走らない | そのまま | 殺す試料が区別する FS でしか作れない（既存の枠組みどおり `skipped(killer)` で飛ばし、当て先の数は両 FS で見る） |
+
+### 1 パス目の採否
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1: `run_case` の `git archive`（`check=True`）が準備の try の外で、git の失敗でまだ traceback。docstring の「git の呼び出しの失敗は数えて続ける」と食い違う | 示せる（レビューが `HEAD`→`NOPE` で traceback・要約 0 行を再現） | B4（docstring の主張） | 直す——docstring を `build`・`prepare_git` に狭め、後の段は traceback のままと書く |
+| CR1-2: docstring は準備全体と言うが、except は `build`・`prepare_git` だけ（出力先の用意・`copy_scripts`） | 示せる（コードの範囲と文面の食い違い。CR1-1 と同じ） | B4 | 直す（CR1-1 と同じ 1 か所） |
+| CR1-3: `StopIteration`・`UnicodeDecodeError` は捕まえる型に無い | 示せない（再現していない） | 無し | 残課題 |
+| CR1-4: `locked` の戻しが finally でなく、後段の例外で chmod 0 が残る | 示せない | 無し | 残課題 |
+| CR1-5: `CalledProcessError` の stderr が bytes の repr で出る | 示せる（B1 の対照で `b"..."`） | 無し（名前つきで失敗に数える点は満たす） | 残課題 |
+| CR1-6: 足した変異は守りを外す形でなく振る舞いを足す形で、`git-alongside` の役は紙の上。本当の分け目は `misnamed` の `has_content` | 示せない（判断。足した変異が `git-alongside` だけに殺されることは確かめた） | 無し | 残課題 |
+| V1 軽微: except の中の `chmod` が `OSError` を出すと traceback に戻る | 示せない | 無し | 残課題 |
 
 - この周の起票: 0 件（起票した Issue は無い）
