@@ -5,8 +5,8 @@ description: "提案書のループを 1 回分進める。利用者の要求確
 
 # proposal スキル
 
-<!-- skill-version: 0.41.0 -->
-> **このスキルの版: 0.41.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.42.0 -->
+> **このスキルの版: 0.42.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
