@@ -351,6 +351,18 @@ def cd_example_runs(line: str, wt: Path) -> bool:
     return res.returncode == 0 and res.stdout.strip() == str(wt.resolve())
 
 
+def stdout_head_unchanged(res, main: Path, number: str, slug: str) -> bool:
+    """作るとき（0）の標準出力の冒頭が、照合の前に出していたときと同じ 3 行か（#560）——
+    メインの作業ツリー・作ろうとしているもの・空行。**origin の有無・名指しの base・壊れた `origin/HEAD` の
+    どの経路でも見る**（`observe()`）——origin の無い木だけでは、取り直しと解決の経路で冒頭の前に
+    標準出力へ書く変更が見えない（#560 の周の `/code-review` 1 パス目 CR1-5）。"""
+    wt = main / ".claude" / "worktrees" / f"issue-{number}"
+    return res.returncode == 0 and res.stdout.splitlines()[:3] == [
+        f"メインの作業ツリー: {main.resolve()}",
+        f"作ろうとしているもの: {wt.resolve()}  [issue/{number}-{slug}]",
+        ""]
+
+
 def observe(prepare: Path, precond: Path, base: Path) -> dict:
     """両スクリプトの分岐をまとめて観測する。**1 回の観測で 1 つの偽リポジトリを使い切る。**"""
     repo = make_repo(base / "repo")
@@ -374,10 +386,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         # **「出力のどこかに在る」では見ない**——離れた行に置くと、案内だけを読んだ子が呼ぶ。
         "cruise の子の例外が案内の直後にある": cruise_exception_follows(first.stdout, wt),
         # **作るとき（0）の標準出力の冒頭は変えない**（#560）——出す行も順番も、照合の前に出していたときと同じ。
-        "0 の標準出力の冒頭": first.stdout.splitlines()[:3] == [
-            f"メインの作業ツリー: {repo.resolve()}",
-            f"作ろうとしているもの: {wt.resolve()}  [issue/42-sample]",
-            ""],
+        "0 の標準出力の冒頭": stdout_head_unchanged(first, repo, "42", "sample"),
         "2 回目は断る": again.returncode,
         # **3 で断るとき、標準出力には何も出さない**（#560）。**「作ろうとしているもの」が残ると、
         # 標準出力だけを読む側には断ったことが分からない**（#544 の `/code-review` 2 パス目 CR2-1）。
@@ -456,6 +465,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         res = run(prepare, work, "55", "ahead")
         wt3 = work / ".claude" / "worktrees" / "issue-55"
         out[f"進んだ origin（{label}）: rc"] = res.returncode
+        out[f"進んだ origin（{label}）: 0 の標準出力の冒頭"] = stdout_head_unchanged(res, work, "55", "ahead")
         if wt3.is_dir():
             head = git(wt3, "rev-parse", "HEAD").stdout.strip()
             out[f"進んだ origin（{label}）: 切った先"] = (
@@ -480,6 +490,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
               env=dict(os.environ, DEV_LOOP_BASE_REF="origin/sibling"))
     wt56 = stale / ".claude" / "worktrees" / "issue-56"
     out["まだ取れていない参照: rc"] = sib.returncode
+    out["まだ取れていない参照: 0 の標準出力の冒頭"] = stdout_head_unchanged(sib, stale, "56", "sibling")
     out["まだ取れていない参照: 切った先"] = (
         "sibling" if wt56.is_dir()
         and git(wt56, "rev-parse", "HEAD").stdout.strip() == ahead["SIB"]
@@ -496,6 +507,7 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     dang = make_dangling_origin_head(base / "dangling")
     dres = run(prepare, dang, "66", "dangling")
     out["壊れた origin/HEAD: rc"] = dres.returncode
+    out["壊れた origin/HEAD: 0 の標準出力の冒頭"] = stdout_head_unchanged(dres, dang, "66", "dangling")
     out["壊れた origin/HEAD: 作れた"] = (
         dang / ".claude" / "worktrees" / "issue-66").is_dir()
     out["壊れた origin/HEAD: 黙らない"] = "壊れている" in (dres.stderr + dres.stdout)
@@ -561,10 +573,12 @@ MUTATIONS = {
         "indent_list() { sed 's/^/    /'; }",
         "indent_list() { sed '1s/^/    /'; }"),
     # 守る 20（prepare）: 3 で断るとき、標準出力には何も出さない（#560）
-    # **照合の前に「作ろうとしているもの」を出していた元の形を作り直す。**
-    "3 で断る前に作ろうとしているものを出す": (PREPARE,
-        '# **先に見る。** 当たったら作らない。\n',
-        'echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"\n# **先に見る。** 当たったら作らない。\n'),
+    # **3 で断る経路にだけ標準出力の行を足す**——0 の出力は変えない。**照合の前に足す形では 0 の冒頭も変わり、
+    # 観測「0 の標準出力の冒頭」だけで死ぬので、「3 の標準出力が空」が要ることを示さない**（#560 の `/code-review` 1 パス目 CR1-1）。
+    "3 で断るときに作ろうとしているものを出す": (PREPARE,
+        '  echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2\n  exit 3\n',
+        '  echo "再開の周かもしれない。find-cycle.py で探し、references/resume.md に従うこと。" >&2\n'
+        '  echo "作ろうとしているもの: ${PATH_ABS}  [${BRANCH}]"\n  exit 3\n'),
     # 守る 6（prepare）: 判定できなかったことを「当たらなかった」と答えない
     # **root の守りを壊すと、背後の守りが終了コード 6 で受け止める**ので観測が変わる。
     "見られなくても作る": (PREPARE,
@@ -730,24 +744,36 @@ def _move_one_promise(bodies: dict[Path, str], src: Path, dst: Path) -> dict[Pat
     return moved
 
 
+def promise_count_failures(bodies: dict[Path, str]) -> list[str]:
+    """**出荷した判定**——「守る」の行数と変異の数が食い違うスクリプトを、`check()` の名前の形で返す（#595）。
+    **本物の本文にも、移した本文にも、この同じ関数を当てる**（`check_promise_counts`）——実証が自前の判定を持つと、
+    この関数を合計の比較に戻しても実証は緑のまま残る（#560 の周の `/code-review` 1 パス目 CR1-2）。"""
+    return [f"{script.name}: 「守る」{promises} 行に対して変異が {mutants} 件"
+            for script, (promises, mutants) in promise_count_pairs(bodies).items()
+            if promises != mutants]
+
+
 def check_promise_counts() -> None:
     """「守る」の行数と変異の数が、**スクリプトごとに** 1 対 1 か（#595）。
     **2 本の合計では見ない**——合計だけを比べていたときは、「守る」を一方のスクリプトから他方へ 1 行移しても
     合計が変わらず緑のままだった（#545 の周で実証）。
     **その移す変異で赤になることを、ここで毎回当てて示す**——本物の 2 本の本文から、prepare の「守る」を 1 行
     precond へ移した本文をメモリの上に作り、**合計は等しいまま（合計で数えると素通りする）**で、
-    **スクリプトごとの数え方は食い違いを見つける**ことを見る。"""
+    **出荷した判定（`promise_count_failures`）が食い違いを見つける**ことを見る。"""
     bodies = {s: s.read_text(encoding="utf-8") for s in (PREPARE, PRECOND)}
     pairs = promise_count_pairs(bodies)
+    real = promise_count_failures(bodies)
     for script, (promises, mutants) in pairs.items():
-        check(f"{script.name}: 「守る」{promises} 行に対して変異が {mutants} 件", promises == mutants)
+        name = f"{script.name}: 「守る」{promises} 行に対して変異が {mutants} 件"
+        check(name, name not in real)
     check("どの変異も 2 本のどちらかに当てる",
           sum(m for _, m in pairs.values()) == len(MUTATIONS))
-    moved = promise_count_pairs(_move_one_promise(bodies, PREPARE, PRECOND))
+    moved_bodies = _move_one_promise(bodies, PREPARE, PRECOND)
+    moved = promise_count_pairs(moved_bodies)
     check("「守る」を prepare から precond へ 1 行移すと、合計は等しいまま（合計で数えると素通りする）",
           sum(p for p, _ in moved.values()) == sum(m for _, m in moved.values()))
-    check("「守る」を prepare から precond へ 1 行移すと、スクリプトごとの数え方は食い違いを見つける",
-          any(p != m for p, m in moved.values()))
+    check("「守る」を prepare から precond へ 1 行移すと、出荷した判定は 2 本とも食い違いを見つける",
+          len(promise_count_failures(moved_bodies)) == 2)
 
 
 def counting_git_dir(base: Path, log: Path) -> Path:
@@ -1299,6 +1325,11 @@ def main() -> int:
               correct["3 の標準出力が空"])
         check("作るとき（0）の標準出力の冒頭は変わらない——メインの作業ツリー・作ろうとしているもの・空行（#560）",
               correct["0 の標準出力の冒頭"])
+        check("origin あり・名指しの base・壊れた origin/HEAD の経路でも、0 の標準出力の冒頭は変わらない（#560）",
+              all(correct[k] for k in ("進んだ origin（未取得）: 0 の標準出力の冒頭",
+                                       "進んだ origin（取得済み）: 0 の標準出力の冒頭",
+                                       "まだ取れていない参照: 0 の標準出力の冒頭",
+                                       "壊れた origin/HEAD: 0 の標準出力の冒頭")))
         check("3 の試料は一致が複数ある（worktree もブランチも 2 行以上。#558）",
               min(correct["3 の一覧の行数（worktree, ブランチ）"]) >= 2)
         check("3 で終わるとき、一覧のどの行にも同じ字下げが付く（#558）",
