@@ -169,12 +169,16 @@ def long_chain(out: Path, e: OSError) -> str | None:
     出力先のリンクの鎖でも、親のディレクトリのリンクの鎖でも。非 strict の realpath は上限を持たずに鎖を解き、輪なら輪の中のリンクを返す。
     解いた先が通常のファイルなら、長い鎖の先に前の出力が残る——消さずに、出力先と先のパスを名指しする行を返す（消そうにも、出力先からは辿れない）。
     輪（解いた先がまだリンク）・先が無い・先がディレクトリなら、この道具の出力ではないので None（名指ししない）。"""
-    target = link_target(out)
+    try:
+        target = link_target(out)
+    except Exception as e2:  # 解けない（深すぎる鎖で realpath の RecursionError など）——「想定外の例外」に化けさせず、消せなかったと名指しする
+        # （外側の `except OSError` から呼ぶときは、`remove_stale` の `except Exception` に守られていない。#689 の 1 パス目 CR1-1）
+        return f"前に作った出力を消せない: {out}（{type(e2).__name__}: {e2}）。今の表から作ったものではない"
     try:
         mode = target.lstat().st_mode
     except OSError as e2:
         if absent(target, e2):
-            return None  # 長い鎖の先が無い——壊れたリンク
+            return None  # 長い鎖の先が無い・解いた先が輪のディレクトリを通る（lstat が ELOOP）——壊れたリンク
         return f"前に作った出力を消せない: {out}（リンクの先を辿れない: {e2.strerror}。先: {target}）。今の表から作ったものではない"
     if not stat.S_ISREG(mode):
         return None  # 輪（解いた先がまだリンク）・ディレクトリ——この道具の出力ではない
@@ -203,7 +207,8 @@ def remove_stale(out: Path, partial: bool = False) -> str | None:
     先を辿れない（EACCES など）なら、先が前の出力かを確かめられないので同じく名指しする——
     辿れないディレクトリと同じ扱い（#535。リンクを消さないのは、消しても先の古い中身は残るから——先がディレクトリかも分からない）。
     先のパス（辿れたところまで鎖を解いたもの）も名指しする（#625）。
-    先がディレクトリ・辿れる先が無い（壊れたリンク・輪になったリンク）なら、この道具の出力ではないので消さずに名指しもしない。
+    先がディレクトリ・辿れる先が無い（壊れたリンク・輪になったリンク）なら、この道具の出力ではないので消さずに名指しもしない
+    ——ただし表が決まりに反する・書く前に止まったときに限る（先の無い壊れたリンクに書いて途中で失敗したら、上のとおり作った先を名指しする）。
     ELOOP は輪とは限らない——OS の上限より長い輪でない鎖の先に通常のファイルがあれば名指しする（`long_chain`。#689 の A2）。"""
     try:
         mode = out.lstat().st_mode

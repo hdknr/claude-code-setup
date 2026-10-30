@@ -35,7 +35,8 @@
    辿れる先の通常のファイルを指す symlink（鎖を経由しても。#626）も、リンクと先のパス（鎖を解いた先。辿れないときは辿れたところまで）を名指しして 2
    （表が正しくて書けないときも。先のパスの名指しは #625）。表が正しく書ける辿れる先の symlink は 0 で、先に書く（陽性対照）。
    壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）・輪になった symlink（a→b→a。
-   #662 の N2）とディレクトリを指す symlink は消さずに 1。
+   #662 の N2）とディレクトリを指す symlink は消さずに 1（表が決まりに反するとき。壊れた symlink に正しい表を書いて途中で失敗したときは下の A3）。
+   出力先の親が輪のディレクトリ（`loopa.svg/g.svg`）・輪のディレクトリを通る先を指す symlink も 1（#689 の 1 パス目 CR1-2）。
    OS の上限（Linux 40・macOS 32）より長い輪でない 41 本の鎖は、鎖の先が通常のファイルなら「リンクの鎖が長すぎる」とリンクと先のパスを
    名指しして 2（表が正しくて書けないときも。出力先の親のディレクトリが長い鎖のときも）。鎖の先がディレクトリ・無い・輪なら 1（#689 の A2）。
    辿れる先の symlink の先を開いて（切り詰めて）から書けない（ファイルの大きさの上限 `RLIMIT_FSIZE` で書く途中に EFBIG）ときは、
@@ -226,9 +227,12 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("NUL を書き換えない", 'return str(path).replace("\\0", "\\\\x00")', "return str(path)"),
     ("入力のパスを素のまま出す", 'print(f"{shown(source)}: 読めない', 'print(f"{source}: 読めない'),
     ("出力先のパスを素のまま出す", 'print(f"{shown(out)}: 書けない', 'print(f"{out}: 書けない'),
-    # #662 の N2（要確認 #652）の「ABSENT から ELOOP を外す」変異は外した（#689）——ELOOP を `absent` より先に `long_chain` で見るので、
-    # この道具の試料では殺せない（同等）。`ABSENT` の ELOOP は `build-proposal.py` が `gantt.absent` で輪を壊れたリンクと読むために残り、
-    # `test-build-proposal.py` の輪の試料が見る
+    # #662 の N2（要確認 #652）: 輪は辿れない先ではなく「無い」。#689 からは、出力先そのものの輪は `long_chain` が先に見るので、
+    # この変異を殺すのは親が輪のディレクトリの試料（`long_chain` の中の `absent` が ELOOP を「無い」と読む。#689 の 1 パス目 CR1-2）
+    ("輪になったリンクを辿れない先と読む", "ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP)",
+     "ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF)"),
+    # #689 の 1 パス目 CR1-1: 外側の `except OSError` から呼ぶ `long_chain` で鎖を解けなくても、入口に逃がさず名指しする
+    ("鎖を解けない例外を逃がす", "    except Exception as e2:  # 解けない", "    except ImportError as e2:  # 解けない"),
     # #689 の A2: ELOOP は輪とは限らない——OS の上限より長い輪でない鎖の先の前の出力を名指しする
     ("長い鎖を無いと読む", "                    return long_chain(out, e)  # 輪か", "                    return None  # 輪か"),
     ("親の長い鎖を無いと読む", "            return long_chain(out, e)\n        if absent", "            return None\n        if absent"),
@@ -421,6 +425,13 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         out = chain(name, end)
         code, output = generate(scripts, bad, out)
         if code != 1 or LEFT in output or "前に作った出力を消した" in output or not out.is_symlink():
+            problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
+    # 親が輪のディレクトリの出力先・輪のディレクトリを通る先を指すリンク——ELOOP で `long_chain` に来て、解いた先の `lstat` も ELOOP。
+    # `absent` が ELOOP を「無い」と読むので 1 で名指ししない（`ABSENT` から ELOOP を外すと 2 になる。#689 の 1 パス目 CR1-2）
+    (root / "vialoop.svg").symlink_to(Path("loopa.svg") / "g.svg")
+    for label, out in (("親が輪", root / "loopa.svg" / "g.svg"), ("輪のディレクトリを通るリンク", root / "vialoop.svg")):
+        code, output = generate(scripts, bad, out)
+        if code != 1 or LEFT in output or "前に作った出力を消した" in output or "Traceback" in output:
             problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
     # 先を辿れない symlink——先が前の出力かを確かめられない（先の古い中身は残り、先がディレクトリかも分からない）ので、
     # リンクを消さずに名指しして 2（#535。#499 の CR4 で「リンクを消して 1」にしていたのを改めた）。
@@ -663,8 +674,11 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     # 1 のまま（解いていれば「消せない（RuntimeError: boom）」の 2 になる）。陽性対照: 名指しする辿れる先のリンクでは壊れが届く
     # 先の無い壊れたリンクも名指ししないので解かない（#662 の 1 パス目 CR1-3）。輪になったリンク（ELOOP）は、OS の上限より長い鎖と
     # 見分けるために解く（#689 の A2）——壊れが届いて 2
+    # 親が長い鎖の出力先（外側の `except OSError` から `long_chain` を呼ぶ）でも、解けない例外は入口に逃がさず「消せない」と名指しして 2
+    # （#689 の 1 パス目 CR1-1。python3.12 では 1500 本の鎖で realpath が RecursionError を出す——その代わりに realpath を壊す）
     for label, name, expect in (("ディレクトリを指すリンク", "dirlink.svg", 1), ("壊れたリンク", "broken.svg", 1),
-                                ("輪になったリンク", "loopa.svg", 2), ("辿れる先のリンク（陽性対照）", "rlink.svg", 2)):
+                                ("輪になったリンク", "loopa.svg", 2), ("辿れる先のリンク（陽性対照）", "rlink.svg", 2),
+                                ("親が長い鎖", "pc40/g.svg", 2)):
         inject = ("import os, runpy, sys\n"
                   "real = os.path.realpath\n"
                   "def boom(path, *a, **k):\n"
