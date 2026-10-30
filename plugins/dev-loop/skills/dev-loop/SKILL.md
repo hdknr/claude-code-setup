@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.68.0 -->
-> **このスキルの版: 1.68.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.69.0 -->
+> **このスキルの版: 1.69.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1393,6 +1393,8 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   （手順 5 の BLOCKED の起票は、この周の受入基準に証明手段が無いという**この周自身の欠落**なので、
   この項の対象外——手順 8 のとおり起票する。**不在の線の `仕様の穴` で立てる確認の Issue も対象外**——関門の指摘ではなく、
   この周が決めずに残したものの起票だからである。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」を正とする。
+  **確認の Issue（推奨で決めた判断を利用者に確かめてもらう Issue）を立てるなら、利用者が居る周でも台帳の無い周でも、
+  題・ラベル・本文は `references/absent-lines.md` の「確認の Issue の書き方」を正とする**（#557・#645）。
   **cruise の台帳の確かめた線が `周の途中の課題 = 台帳に足して直す` なら、(c) はその線で満たす**——(a)・(b) は外れない。
   振り分けと台帳への足し方は `references/found-lines.md` を正とする。**その線で直す行は、触るファイルごとに 1 件の Issue にまとめて起票する**——
   「残課題を束ねた Issue は作らない」はそれを禁じない（#641。単位は `references/found-lines.md` の「台帳に足す」を正とする）。）
@@ -1778,6 +1780,7 @@ draft PR も同じ扱い）。禁じているのは**飛ばしたうえで「実
   ——宣言が無ければ止まる。**線を永続メモリに持たない**（PR を通らない。[#393](https://github.com/hdknr/claude-code-setup/issues/393)）。
   **線・既定・宣言の置き場所と書き方は `references/absent-lines.md` を正とする**（このスキルと同じ場所にある）。
   **利用者が居る周では読まなくてよい**——**ただし cruise の台帳に確かめた線がある周は、居ても読む**（同じファイルの「cruise で確かめた線」）。
+  **確認の Issue を立てる周も、居ても読む**（手順 6 の「新しい Issue を起票するのは」）。
 
 これらは Claude Code の汎用スキル。導入していない環境では、手動での待機・確認に読み替えてよい。
 

@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.68.0 -->
-> **このスキルの版: 1.68.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.69.0 -->
+> **このスキルの版: 1.69.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -281,6 +281,16 @@ check-unattended-env.py --cruise             # --absent
 **推奨で決めた確認の Issue（台帳の `decisions`）のうち開いているものを `gh issue view` で集めて渡す**——
 **開いたものが 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする
 （`../dev-loop/references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
+**続けて、`要確認` ラベルの開いた Issue のうち、本文の先頭がこの cruise の印 `<!-- cruise-decision: #<親> -->` のものも探し、`decisions` と突き合わせる**
+（#647。`decisions` は書き忘れうる——とくに親が自分で立てたもの）:
+
+```bash
+gh issue list --state open --label 要確認 --limit 200 --json number,title,body --jq '.[] | select(.body | startswith("<!-- cruise-decision: #<親> -->")) | "\(.number) \(.title)"'
+```
+
+**`decisions` に無かったものも、同じ一覧に入れて渡す**（「台帳に無かった」と添える）。**リポジトリに `要確認` ラベルが無ければ**、`--label 要確認` を外し、
+題の先頭が `要確認:` のものに絞る（ラベルは作らない——`../dev-loop/references/absent-lines.md` の「確認の Issue の書き方」）。
 **親が自分で確認の Issue（題の先頭が `要確認:`）を立てるときも、題・ラベル・本文は `../dev-loop/references/absent-lines.md` の「確認の Issue の書き方」を正とする**
-——子が立てたものと同じ形にそろえる（#557）。
+——子が立てたものと同じ形にそろえる（#557）。**立てたら、その判断が出た周の行の `decisions` に番号を足す**
+（`ledger.py set issue-<親> <番号> decisions=<前の値>,<立てた番号>`。#647）——**どの周の行にも当たらない判断は足す行が無いので、上のラベルの突き合わせで拾う。**
 **親 Issue のチェックボックスは書き換えない**（`scripts/parent-issue.py` の「守らない」）。
