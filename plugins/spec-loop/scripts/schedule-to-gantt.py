@@ -33,6 +33,7 @@ usage: python3 schedule-to-gantt.py <schedule.csv> <出力先.svg>
   壊れたリンク・輪になったリンク（a→b→a）とディレクトリを指すリンクは、この道具の出力ではないので消さずに名指しもしない（表が決まりに反するなら 1）。
   **OS の上限（Linux 40・macOS 32）より長い輪でない鎖**は、辿ると輪と同じ ELOOP になるが、鎖を解いた先が通常のファイルなら
   「リンクの鎖が長すぎる」とリンクと先のパスを名指しして 2（#689。出力先の親のディレクトリが長すぎる鎖のときも同じ）——鎖の先が輪・無い・ディレクトリなら名指ししない。
+  python3.12 では千段ほどの鎖は解けない（RecursionError）ので、先が前の出力かを確かめられないものとして「リンクの鎖を解けない」と名指しして 2。
   表が正しく書けるときは、リンクの先に書く（0）。**先を開いた（切り詰めた）あとで書けなかった**（容量が尽きたなど）ときは、
   先に残るのは前の出力ではなく今回の書きかけなので、「書きかけの出力を消せない」とリンクと先のパスを名指しして 2（#662。前の中身は失われている）。
   **先の無い壊れたリンクも、表が正しければ開いたときに先が作られる**——書く途中で失敗したら、作った先（今回の書きかけ）を同じく
@@ -160,28 +161,33 @@ def shown(path: Path) -> str:
 def link_target(link: Path) -> Path:
     """リンクの先のパス（鎖を解いた先）。非 strict の realpath は辿れなくても例外を出さず、辿れたところまで解く。
     先のパスを使う分岐でだけ呼ぶ（#662 の CR10）——名指しするときと、名前が長すぎる（ENAMETOOLONG）先の壊れたリンクの判定と、
-    輪か長すぎる鎖か（ELOOP）の判定（#689）。先の無い壊れたリンク・ディレクトリを指すリンクでは呼ばない。"""
+    ELOOP の出力先の判定（#689。`long_chain` は strict の realpath を自分で呼び、これは辿れない先の名指しにだけ使う）。
+    先の無い壊れたリンク・ディレクトリを指すリンクでは呼ばない。"""
     return Path(os.path.realpath(link))
 
 
 def long_chain(out: Path, e: OSError) -> str | None:
     """ELOOP の出力先を見分ける（#689）。ELOOP は輪（a→b→a）でも、OS の上限（Linux 40・macOS 32）より長い輪でない鎖でも出る——
-    出力先のリンクの鎖でも、親のディレクトリのリンクの鎖でも。非 strict の realpath は上限を持たずに鎖を解き、輪なら輪の中のリンクを返す。
+    出力先のリンクの鎖でも、親のディレクトリのリンクの鎖でも。strict の realpath は OS の上限を持たずに 1 段ずつ鎖を解き、
+    輪（輪のあとに `..` が続く形を含む）なら ELOOP、先が無ければ ENOENT の OSError を出す——非 strict は輪のあとの `..` を文字として当て、
+    関係の無いファイルに着くことがある（#689 の 2 パス目 CR2-2）。
     解いた先が通常のファイルなら、長い鎖の先に前の出力が残る——消さずに、出力先と先のパスを名指しする行を返す（消そうにも、出力先からは辿れない）。
-    輪（解いた先がまだリンク）・先が無い・先がディレクトリなら、この道具の出力ではないので None（名指ししない）。"""
+    輪・先が無い・先がディレクトリなら、この道具の出力ではないので None（名指ししない）。先を辿れない（EACCES など）なら、確かめられないので名指しする。
+    **python3.12 の realpath は再帰で鎖を解くので、千段ほどの鎖では RecursionError になる**（3.13 からは解ける）——先が前の出力かを
+    確かめられないので、確かめられないものとして名指しする（#499 の決まり。#689 の 2 パス目 CR2-1）。"""
     try:
-        target = link_target(out)
-    except Exception as e2:  # 解けない（深すぎる鎖で realpath の RecursionError など）——「想定外の例外」に化けさせず、消せなかったと名指しする
+        try:
+            target = Path(os.path.realpath(out, strict=True))
+        except OSError as e2:
+            if absent(Path(e2.filename) if isinstance(e2.filename, str) else out, e2):
+                return None  # 輪・先が無い（ELOOP・ENOENT）——壊れたリンク
+            return f"前に作った出力を消せない: {out}（リンクの先を辿れない: {e2.strerror}。先: {link_target(out)}）。今の表から作ったものではない"
+        mode = target.stat().st_mode
+    except Exception as e2:  # 解けない（python3.12 の深すぎる鎖の RecursionError など）——「想定外の例外」に化けさせず、確かめられないと名指しする
         # （外側の `except OSError` から呼ぶときは、`remove_stale` の `except Exception` に守られていない。#689 の 1 パス目 CR1-1）
-        return f"前に作った出力を消せない: {out}（{type(e2).__name__}: {e2}）。今の表から作ったものではない"
-    try:
-        mode = target.lstat().st_mode
-    except OSError as e2:
-        if absent(target, e2):
-            return None  # 長い鎖の先が無い・解いた先が輪のディレクトリを通る（lstat が ELOOP）——壊れたリンク
-        return f"前に作った出力を消せない: {out}（リンクの先を辿れない: {e2.strerror}。先: {target}）。今の表から作ったものではない"
+        return f"前に作った出力を消せない: {out}（リンクの鎖を解けない: {type(e2).__name__}: {e2}）。先が前の出力かを確かめられない"
     if not stat.S_ISREG(mode):
-        return None  # 輪（解いた先がまだリンク）・ディレクトリ——この道具の出力ではない
+        return None  # ディレクトリ——長い鎖の先でも、この道具の出力ではない
     return f"前に作った出力を消せない: {out}（リンクの鎖が長すぎる: {e.strerror}。先: {target}）。今の表から作ったものではない"
 
 

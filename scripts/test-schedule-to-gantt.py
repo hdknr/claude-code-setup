@@ -37,6 +37,7 @@
    壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）・輪になった symlink（a→b→a。
    #662 の N2）とディレクトリを指す symlink は消さずに 1（表が決まりに反するとき。壊れた symlink に正しい表を書いて途中で失敗したときは下の A3）。
    出力先の親が輪のディレクトリ（`loopa.svg/g.svg`）・輪のディレクトリを通る先を指す symlink も 1（#689 の 1 パス目 CR1-2）。
+   輪のあとに `..` が続く symlink・出力先（非 strict の realpath なら関係の無いファイルに着く形）も 1（#689 の 2 パス目 CR2-2）。
    OS の上限（Linux 40・macOS 32）より長い輪でない 41 本の鎖は、鎖の先が通常のファイルなら「リンクの鎖が長すぎる」とリンクと先のパスを
    名指しして 2（表が正しくて書けないときも。出力先の親のディレクトリが長い鎖のときも）。鎖の先がディレクトリ・無い・輪なら 1（#689 の A2）。
    辿れる先の symlink の先を開いて（切り詰めて）から書けない（ファイルの大きさの上限 `RLIMIT_FSIZE` で書く途中に EFBIG）ときは、
@@ -180,8 +181,8 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     # 壊れたリンク・輪の試料（1・名指しなし）で殺す
     ("壊れたリンクも名指しする", "                    return None  # 先の無い壊れたリンク",
      '                    return f"前に作った出力を消せない: {out}（壊れたリンク）"  # 先の無い壊れたリンク'),
-    ("輪も名指しする", "        return None  # 輪（解いた先がまだリンク）",
-     '        return f"前に作った出力を消せない: {out}（輪）"  # 輪（解いた先がまだリンク）'),
+    ("輪も名指しする", "                return None  # 輪・先が無い",
+     '                return f"前に作った出力を消せない: {out}（輪）"  # 輪・先が無い'),
     ("書く途中の想定外の例外を逃がす", "    except Exception as e:  # 書く途中の", "    except ImportError as e:  # 書く途中の"),
     # #535: 先を辿れない symlink は消さずに名指しする
     ("辿れない先のリンクを消す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
@@ -236,8 +237,10 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     # #689 の A2: ELOOP は輪とは限らない——OS の上限より長い輪でない鎖の先の前の出力を名指しする
     ("長い鎖を無いと読む", "                    return long_chain(out, e)  # 輪か", "                    return None  # 輪か"),
     ("親の長い鎖を無いと読む", "            return long_chain(out, e)\n        if absent", "            return None\n        if absent"),
-    ("長い鎖の先のファイルも名指ししない", "    if not stat.S_ISREG(mode):\n        return None  # 輪（",
-     "    if True:\n        return None  # 輪（"),
+    ("長い鎖の先のファイルも名指ししない", "    if not stat.S_ISREG(mode):\n        return None  # ディレクトリ——長い鎖",
+     "    if True:\n        return None  # ディレクトリ——長い鎖"),
+    # #689 の 2 パス目 CR2-2: 非 strict の realpath は輪のあとの `..` を文字として当て、関係の無いファイルに着く
+    ("鎖を strict で解かない", "os.path.realpath(out, strict=True)", "os.path.realpath(out)"),
     ("長い鎖の先のパスを名指ししない", "（リンクの鎖が長すぎる: {e.strerror}。先: {target}）", "（リンクの鎖が長すぎる: {e.strerror}）"),
     ("長い鎖を辿れない先と言う", "（リンクの鎖が長すぎる: {e.strerror}。", "（リンクの先を辿れない: {e.strerror}。"),
     # #689 の A1: リンクでない出力先も、開いたあとで消せなければ書きかけと名指しする
@@ -429,7 +432,13 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     # 親が輪のディレクトリの出力先・輪のディレクトリを通る先を指すリンク——ELOOP で `long_chain` に来て、解いた先の `lstat` も ELOOP。
     # `absent` が ELOOP を「無い」と読むので 1 で名指ししない（`ABSENT` から ELOOP を外すと 2 になる。#689 の 1 パス目 CR1-2）
     (root / "vialoop.svg").symlink_to(Path("loopa.svg") / "g.svg")
-    for label, out in (("親が輪", root / "loopa.svg" / "g.svg"), ("輪のディレクトリを通るリンク", root / "vialoop.svg")):
+    # 輪のあとに `..` が続く形——非 strict の realpath は `..` を文字として当て、関係の無い通常のファイル（others.svg・g.svg）に着く。
+    # 輪なので 1 で名指ししない（#689 の 2 パス目 CR2-2）
+    (root / "others.svg").write_text("<svg>他人の</svg>", encoding="utf-8")
+    (root / "selfdot.svg").symlink_to("selfdot.svg/../others.svg")
+    for label, out in (("親が輪", root / "loopa.svg" / "g.svg"), ("輪のディレクトリを通るリンク", root / "vialoop.svg"),
+                       ("輪のあとに .. が続くリンク", root / "selfdot.svg"),
+                       ("輪のあとに .. が続く出力先", Path(f"{root / 'loopa.svg'}/../longs/g.svg"))):
         code, output = generate(scripts, bad, out)
         if code != 1 or LEFT in output or "前に作った出力を消した" in output or "Traceback" in output:
             problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
@@ -688,7 +697,8 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
                   f"sys.argv = [{script!r}, {str(bad)!r}, {str(root / name)!r}]\n"
                   f"runpy.run_path({script!r}, run_name='__main__')\n")
         proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
-        reached = f"{LEFT}{root / name}（RuntimeError: boom）" in proc.stderr
+        # 輪・親の長い鎖は `long_chain` が「リンクの鎖を解けない: RuntimeError: boom」と名指しする（#689 の 2 パス目 CR2-1）
+        reached = f"{LEFT}{root / name}（" in proc.stderr and "RuntimeError: boom）" in proc.stderr
         if proc.returncode != expect or reached != (expect == 2) or "Traceback" in proc.stderr:
             problems.append(f"先を解く分岐（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)
