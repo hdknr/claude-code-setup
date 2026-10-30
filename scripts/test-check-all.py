@@ -15,6 +15,8 @@
 飛ばしたのに黙っている。**契約はその 3 つに対応させてある。**
 **並列にしてから（#430）は、壊れ方がもう 3 つ増えた**——並列にならない・`--jobs 1` でも
 並列になる・出力が宣言順でなくなる。**契約の 5) 〜 8) がそれに対応する。**
+**契約の 10) は #509**——並列で、打ち切られた子（シグナルで止まり、終了コードが負）を表示と集計の両方で
+失敗に数え、FAIL の行の数と「失敗 N」が一致することを見る。
 
 **変異は 2 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
 **このファイルの中の判別**（CI の yaml の読み方）に当てる。**後者は自分自身を壊す。**
@@ -182,6 +184,11 @@ def build_fake(root: Path) -> Path:
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
+    # **#509: 遅れて落ちる歯止めと、シグナルで止まる子。** 打ち切られた子（SIGKILL）は終了コードが負になる。
+    (scripts / "slow-bad.py").write_text(
+        "import sys, time; time.sleep(0.2); print('BOOM-SLOW'); sys.exit(1)\n")
+    (scripts / "killed.py").write_text(
+        "import os, signal; print('KILLED', flush=True); os.kill(os.getpid(), signal.SIGKILL)\n")
     # **互いの開始を待ち合わせる 2 本。** 同時に走らなければ、片方が時間切れで落ちる。
     for me, other in (("a", "b"), ("b", "a")):
         (scripts / f"par-{me}.py").write_text(BARRIER.format(me=me, other=other))
@@ -199,7 +206,7 @@ def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
         # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
         # **この主張は機械で当ててある**（#151）——後ろに回すと、この回帰テストが赤くなる。
-        # mutation-claim: {"file": "scripts/test-check-all.py", "old": "GUARDS.insert(1, (\"bad.py\"", "new": "GUARDS.append((\"bad.py\"", "red": "python3 scripts/test-check-all.py"}
+        # mutation-claim: {"file": "scripts/test-check-all.py", "old": "GUARDS.insert(1, (\"bad.py\"", "new": "GUARDS.append((\"bad.py\"", "red": "python3 scripts/test-check-all.py --mutant 最初の失敗で止める"}
         mod.GUARDS.insert(1, ("bad.py", [], False))
     if bad_test:
         mod.TESTS.append("bad-test.py")
@@ -406,6 +413,22 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     one, four = inner(nested_args("1")), inner(nested_args("4"))
     got.append(("--jobs 1 なら入れ子も --jobs 1", one == 1))
     got.append(("--jobs 4 なら入れ子は 1 以上 4 未満", four is not None and 1 <= four < 4))
+
+    # 10) 並列で、遅れて落ちる子とシグナルで止まった子（打ち切り）を、表示と集計の両方で失敗に数える（#509）。
+    #     **FAIL の行の数と「失敗 N」が一致する**ことを見る——表示と集計が別の経路で決まると、ここが割れる。
+    mod = load(target, f"{tag}_killed")
+    mod.SCRIPTS = root / "scripts"
+    mod.GUARDS = [("slow-bad.py", [], False), ("ok-c.py", [], False)]
+    mod.TESTS = ["killed.py", "ok-b.py"]
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "4"])
+    fail_lines = [l for l in out.splitlines() if l.startswith("  FAIL")]
+    got += [
+        ("打ち切られた子（SIGKILL）を失敗に数える", "  FAIL killed.py" in out),
+        ("遅れて落ちた子と打ち切られた子で rc=1", rc == 1),
+        ("FAIL の行の数と「失敗 N」が一致する（#509）",
+         len(fail_lines) == 2 and "（失敗 2 /" in out),
+        ("打ち切られた子も名指しする", "落ちたもの: slow-bad.py, killed.py" in out),
+    ]
     return got
 
 
@@ -561,7 +584,7 @@ def test_ci_runs_every_registered_script() -> None:
     **この主張は、実際に当てて確かめる**——`plugins.yml` の生きたステップを 1 つ
     コメントアウトすると、このテストが赤になる（**陽性対照は、変異の前に緑であることで取る**）:
 
-    mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/check-duplicate-counts.py", "new": "        # run: python3 scripts/check-duplicate-counts.py", "red": "python3 scripts/test-check-all.py"}
+    mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/check-duplicate-counts.py", "new": "        # run: python3 scripts/check-duplicate-counts.py", "red": "python3 scripts/test-check-all.py --part registry"}
     """
     workflows = REAL_REPO / ".github" / "workflows"
     # **ファイルの境界に改行を挟む。** **素の連結では、末尾に改行の無い yaml が
@@ -621,6 +644,10 @@ MUTANTS = {
     "回帰テストを宣言順に出さない": ("            for name, fut in test_runs:\n",
                                      "            for name, fut in reversed(test_runs):\n"),
     "--jobs 0 を通す": ("    if opts.jobs < 1:\n", "    if False:\n"),
+    # 以下は #509（打ち切られた子を集計で失敗に数える）
+    "シグナルで止まった子を通ったと数える": (
+        "    return proc.returncode == 0, (out + err)\n",
+        "    return proc.returncode <= 0, (out + err)\n"),
     # 以下は #460（入れ子の並列）
     "入れ子に --jobs を渡さない": ('                args = [*args, "--jobs", str(nested_jobs(opts.jobs))]\n',
                                    "                pass\n"),
@@ -696,12 +723,12 @@ jobs:
 # **この試料そのものについての主張も、機械で当てる**——
 # **コメントアウトされたステップを抜くと、「それと分かる形で拾う」契約が空振りする**
 # （#151 が言う「試料についての主張」。**書いた時点から一度も実行されない**のを避ける）:
-# mutation-claim: {"file": "scripts/test-check-all.py", "old": "      #   run: python3 scripts/check-dead.py\n", "new": "", "red": "python3 scripts/test-check-all.py"}
+# mutation-claim: {"file": "scripts/test-check-all.py", "old": "      #   run: python3 scripts/check-dead.py\n", "new": "", "red": "python3 scripts/test-check-all.py --part scan"}
 # **ラベルだけの行は、消しても緑になる**（`not in seen` が名前ごと消えて恒真になり、
 # `run:` の行に限らない 変異は別の行が殺す）。**`/code-review` の 2 パス目が数えて見つけた。**
 # **だから「消す」ではなく「`run:` に変える」で留める**——**消されたらマーカーの当て先が
 # 無くなり、`check-mutation-claims.py` が「当てられなかった」で赤にする**（緑ではない）:
-# mutation-claim: {"file": "scripts/test-check-all.py", "old": "      - name: scripts/check-label-only.py のラベルにだけ名前がある", "new": "        run: scripts/check-label-only.py のラベルにだけ名前がある", "red": "python3 scripts/test-check-all.py"}
+# mutation-claim: {"file": "scripts/test-check-all.py", "old": "      - name: scripts/check-label-only.py のラベルにだけ名前がある", "new": "        run: scripts/check-label-only.py のラベルにだけ名前がある", "red": "python3 scripts/test-check-all.py --part scan"}
 
 
 def scan_contract(scan) -> list[tuple[str, bool]]:
@@ -775,72 +802,122 @@ SCAN_MUTANTS = {
 }
 
 
-def main() -> int:
-    print("収録漏れ（実リポジトリを読むだけ）:")
-    test_registry_covers_every_script()
-    test_ci_runs_every_registered_script()
+PARTS = ("registry", "contract", "scan", "mutants")
+
+
+def parse_args(argv: list[str]) -> tuple[set[str], str | None]:
+    """**狭く回す口**（#494）。`mutation-claim:` の `red` が、主張に関係する部分だけを回すために使う。
+
+        python3 scripts/test-check-all.py                      # 全部（check-all.py と CI はこれ）
+        python3 scripts/test-check-all.py --part registry      # 収録漏れと CI の走査だけ
+        python3 scripts/test-check-all.py --part scan          # CI の yaml の判別（合成試料と SCAN_MUTANTS）だけ
+        python3 scripts/test-check-all.py --mutant <名前>      # `MUTANTS` のうちその 1 件を契約が捕まえるかだけ
+
+    **狭めた回は、全部を回す回の代わりにならない**——`check-all.py` と CI は引数なしで全部を回す。
+    **知らない部分・知らない変異の名前は断る**（綴り間違いで「何も回さずに緑」にしない）。
+    """
+    parts: set[str] = set()
+    mutant: str | None = None
+    it = iter(argv)
+    for arg in it:
+        if arg == "--part":
+            part = next(it, None)
+            if part not in PARTS:
+                raise SystemExit(f"--part は {PARTS} のどれか: {part}")
+            parts.add(part)
+        elif arg == "--mutant":
+            mutant = next(it, None)
+            if mutant not in MUTANTS:
+                raise SystemExit(f"--mutant に知らない名前: {mutant}")
+            parts.add("mutants")
+        else:
+            raise SystemExit(f"知らない引数: {arg}")
+    return (parts or set(PARTS)), mutant
+
+
+def main(argv: list[str] | None = None) -> int:
+    parts, only_mutant = parse_args(sys.argv[1:] if argv is None else argv)
+    if "registry" in parts:
+        print("収録漏れ（実リポジトリを読むだけ）:")
+        test_registry_covers_every_script()
+        test_ci_runs_every_registered_script()
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
 
-        print("契約（本体そのまま——全部通らなければならない）:")
-        target = build_fake(root / "real")
-        for name, ok in contract(target, root / "real", "real"):
-            check(name, ok)
-
-        repo = root / "withbase"
-        target = build_fake(repo)
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
-        subprocess.run(
-            ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
-             "commit", "-q", "--allow-empty", "-m", "init"], check=True)
-        for name, ok in contract_with_base(target, repo, "wb"):
-            check(name, ok)
-
-        print("判別（合成試料——全部通らなければならない）:")
-        for name, ok in scan_contract(scan_ci_runs):
-            check(name, ok)
-
-        print("判別の変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
-        # **切れていなければ、当て先は必ず 2 箇所になって全件落ちる。**
-        # **6 件の「当て先が 1 箇所」より、切れていないことを 1 行で言うほうが速い。**
-        check("当て先を数える範囲が、辞書の手前で切れている", CODE_ONLY != SELF_SRC)
-        for i, (name, (old, new)) in enumerate(SCAN_MUTANTS.items()):
-            if CODE_ONLY.count(old) != 1:
-                check(f"変異 `{name}` の当て先が 1 箇所", False)
-                continue
-            d = root / f"scan{i}"
-            assert_not_real_repo(d)
-            d.mkdir()
-            p = d / "scanned.py"
-            # **辞書より前に 1 箇所しか無いことを上で確かめてある**ので、
-            # **最初の 1 件だけ置き換えれば、当たるのは判別の本体である。**
-            p.write_text(SELF_SRC.replace(old, new, 1))
-            broken = [n for n, ok in scan_contract(load(p, f"scanned{i}").scan_ci_runs)
-                      if not ok]
-            check(f"変異 `{name}` を契約が捕まえる", bool(broken))
-            if not broken:
-                print("       壊したのに契約が全部通った")
-
-        print("変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
-        src = TARGET.read_text()
-        for i, (name, (old, new)) in enumerate(MUTANTS.items()):
-            if src.count(old) != 1:
-                check(f"変異 `{name}` の当て先が 1 箇所", False)
-                continue
-            d = root / f"mut{i}"
-            t = build_fake(d)
-            t.write_text(src.replace(old, new))
-            broken = [n for n, ok in contract(t, d, f"m{i}") if not ok]
-            check(f"変異 `{name}` を契約が捕まえる", bool(broken))
-            if not broken:
-                print("       壊したのに契約が全部通った")
+        if "contract" in parts:
+            print("契約（本体そのまま——全部通らなければならない）:")
+            target = build_fake(root / "real")
+            for name, ok in contract(target, root / "real", "real"):
+                check(name, ok)
+        if "contract" in parts:
+            run_contract_with_base(root)
+        if "scan" in parts:
+            run_scan(root)
+        if "mutants" in parts:
+            run_mutants(root, only_mutant)
 
     if failures:
         print(f"\n{len(failures)} 件失敗: {failures}")
         return 1
     print("\nすべて通った")
     return 0
+
+
+def run_contract_with_base(root: Path) -> None:
+    repo = root / "withbase"
+    target = build_fake(repo)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t",
+         "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+    for name, ok in contract_with_base(target, repo, "wb"):
+        check(name, ok)
+
+
+def run_scan(root: Path) -> None:
+    print("判別（合成試料——全部通らなければならない）:")
+    for name, ok in scan_contract(scan_ci_runs):
+        check(name, ok)
+
+    print("判別の変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
+    # **切れていなければ、当て先は必ず 2 箇所になって全件落ちる。**
+    # **6 件の「当て先が 1 箇所」より、切れていないことを 1 行で言うほうが速い。**
+    check("当て先を数える範囲が、辞書の手前で切れている", CODE_ONLY != SELF_SRC)
+    for i, (name, (old, new)) in enumerate(SCAN_MUTANTS.items()):
+        if CODE_ONLY.count(old) != 1:
+            check(f"変異 `{name}` の当て先が 1 箇所", False)
+            continue
+        d = root / f"scan{i}"
+        assert_not_real_repo(d)
+        d.mkdir()
+        p = d / "scanned.py"
+        # **辞書より前に 1 箇所しか無いことを上で確かめてある**ので、
+        # **最初の 1 件だけ置き換えれば、当たるのは判別の本体である。**
+        p.write_text(SELF_SRC.replace(old, new, 1))
+        broken = [n for n, ok in scan_contract(load(p, f"scanned{i}").scan_ci_runs)
+                  if not ok]
+        check(f"変異 `{name}` を契約が捕まえる", bool(broken))
+        if not broken:
+            print("       壊したのに契約が全部通った")
+
+
+def run_mutants(root: Path, only: str | None) -> None:
+    print("変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
+    src = TARGET.read_text()
+    for i, (name, (old, new)) in enumerate(MUTANTS.items()):
+        if only is not None and name != only:
+            continue
+        if src.count(old) != 1:
+            check(f"変異 `{name}` の当て先が 1 箇所", False)
+            continue
+        d = root / f"mut{i}"
+        t = build_fake(d)
+        t.write_text(src.replace(old, new))
+        broken = [n for n, ok in contract(t, d, f"m{i}") if not ok]
+        check(f"変異 `{name}` を契約が捕まえる", bool(broken))
+        if not broken:
+            print("       壊したのに契約が全部通った")
 
 
 if __name__ == "__main__":
