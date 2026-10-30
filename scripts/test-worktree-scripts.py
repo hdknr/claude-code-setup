@@ -164,6 +164,46 @@ def _build_ahead_clones(base: Path) -> dict:
             "bare": bare, "seed": seed}
 
 
+def _build_more_zero_paths(base: Path) -> dict:
+    """**作るとき（0）の標準出力の、残りの経路のクローン**を 2 つ作る（#668。1 パス目の `/code-review`）。
+
+    - `failing`: origin の URL を実在しない場所へ向けたクローン——**取り直しが失敗する**経路
+      （`start-point:` の行に「取り直せなかった」が出る）。
+    - `noheadref`: `refs/remotes/origin/HEAD` を消したクローン——**既定ブランチを推測する**経路。
+      **`remote.origin.followRemoteHEAD=never`** で、取り直しが `origin/HEAD` を作り直さないようにする（git 2.48 から既定で作り直す）。
+      **名指しの base にローカルのブランチ（`main`）を渡す経路**（取り直しを打たない）もこのクローンで走らせる。
+    """
+    bare = base / "origin.git"
+    bare.mkdir(parents=True)
+    assert_not_real_repo(bare)
+    git(bare, "init", "-q", "--bare", "-b", "main")
+    seed = base / "seed"
+    seed.mkdir(parents=True)
+    git(seed, "init", "-q", "-b", "main")
+    git(seed, "config", "user.email", "t@example.invalid")
+    git(seed, "config", "user.name", "t")
+    (seed / "README.md").write_text("A\n", encoding="utf-8")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-qm", "A")
+    git(seed, "remote", "add", "origin", str(bare))
+    git(seed, "push", "-q", "origin", "main")
+    out = {}
+    for label in ("failing", "noheadref"):
+        work = base / label
+        res = subprocess.run(["git", "clone", "-q", str(bare), str(work)],
+                             capture_output=True, text=True)
+        assert res.returncode == 0, f"clone に失敗した: {res.stderr}"
+        assert_not_real_repo(work)
+        git(work, "config", "user.email", "t@example.invalid")
+        git(work, "config", "user.name", "t")
+        out[label] = work
+    git(out["failing"], "remote", "set-url", "origin", str(base / "no-such-origin.git"))
+    git(out["noheadref"], "config", "remote.origin.followRemoteHEAD", "never")
+    git(out["noheadref"], "remote", "set-head", "origin", "-d")
+    assert git(out["noheadref"], "symbolic-ref", "-q", "refs/remotes/origin/HEAD").returncode != 0
+    return out
+
+
 def _build_dangling_origin_head(base: Path) -> Path:
     """**`refs/remotes/origin/HEAD` が実在しない参照を指しているクローン**を作る（#148）。
 
@@ -245,6 +285,10 @@ def make_repo(root: Path) -> Path:
 
 def make_ahead_clones(base: Path) -> dict:
     return _from_template("ahead", _build_ahead_clones, base)
+
+
+def make_more_zero_paths(base: Path) -> dict:
+    return _from_template("more0", _build_more_zero_paths, base)
 
 
 def make_dangling_origin_head(base: Path) -> Path:
@@ -412,6 +456,13 @@ STDOUT_0_PATHS = (
      "origin/sibling  （環境変数 DEV_LOOP_BASE_REF / 取り直した）"),
     ("壊れた origin/HEAD: ", "壊れた origin/HEAD", "66", "dangling",
      "HEAD  （origin/master を解決したが壊れていた（refs/remotes/origin/HEAD） / 取り直した）"),
+    # **取り直しの失敗・推測・ローカルのブランチの名指し**（#668 の 1 パス目の `/code-review`——この 3 経路に行を足す変異が素通りした）。
+    ("取り直しが失敗: ", "取り直しが失敗", "67", "failing",
+     "origin/main  （refs/remotes/origin/HEAD / **取り直せなかった。古いかもしれない。**）"),
+    ("既定ブランチを推測: ", "既定ブランチを推測", "68", "guessed",
+     "origin/main  （推測（refs/remotes/origin/HEAD が無い） / 取り直した）"),
+    ("ローカルのブランチを名指し: ", "ローカルのブランチを名指し", "69", "local",
+     "main  （環境変数 DEV_LOOP_BASE_REF）"),
 )
 
 
@@ -570,6 +621,16 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     out["壊れた origin/HEAD: 作れた"] = (
         dang / ".claude" / "worktrees" / "issue-66").is_dir()
     out["壊れた origin/HEAD: 黙らない"] = "壊れている" in (dres.stderr + dres.stdout)
+
+    # **取り直しの失敗・推測・ローカルのブランチの名指し**の 0 の標準出力（#668）。
+    more = make_more_zero_paths(base / "more0")
+    out["取り直しが失敗: 0 の標準出力（全体）"] = stdout_0(
+        run(prepare, more["failing"], "67", "failing"), more["failing"])
+    out["ローカルのブランチを名指し: 0 の標準出力（全体）"] = stdout_0(
+        run(prepare, more["noheadref"], "69", "local", env=dict(os.environ, DEV_LOOP_BASE_REF="main")),
+        more["noheadref"])
+    out["既定ブランチを推測: 0 の標準出力（全体）"] = stdout_0(
+        run(prepare, more["noheadref"], "68", "guessed"), more["noheadref"])
 
     # detached を作って見分けられるか
     if wt.is_dir():
@@ -1437,12 +1498,14 @@ def parse_args(argv: list[str]) -> tuple[list[str], list[str]]:
             name = next(it, None)
             if name not in MUTATIONS and name not in STDOUT_MUTATIONS:
                 raise SystemExit(f"--mutant に知らない名前: {name}")
-            mutants.append(name)
+            if name not in mutants:   # **重ねて同じ名前を渡しても 1 度だけ当てる**——2 度目は同じ一時ディレクトリを作ろうとして落ちていた（#668）
+                mutants.append(name)
         elif arg == "--quote-mutant":
             name = next(it, None)
             if name not in QUOTE_MUTATIONS:
                 raise SystemExit(f"--quote-mutant に知らない名前: {name}")
-            quotes.append(name)
+            if name not in quotes:
+                quotes.append(name)
         else:
             raise SystemExit(f"知らない引数: {arg}")
     return mutants, quotes
