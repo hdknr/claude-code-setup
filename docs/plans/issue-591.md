@@ -1,0 +1,120 @@
+# Issue #591（#592・#625・#626 と束ねた周）— schedule-to-gantt.py の文言・入力の NUL・symlink の名指し・NAME_MAX の反対側の境界
+
+`plugins/spec-loop/scripts/schedule-to-gantt.py` と `scripts/test-schedule-to-gantt.py`（と文書 `plugins/spec-loop/references/tree.md`・README）を触る
+4 件の Issue を、**1 周・1 PR** で扱う（利用者の決定・2026-10-30、親から伝達: 同じファイルを触る Issue は 1 周で扱う）。
+周の Issue は #591（worktree・ブランチの名前）。受入基準は 4 件のものを、Issue 番号を付けて下に並べる。
+
+**不在の周**である——出所は `/dev-loop:cruise 474 --absent` の再開（2026-10-30）。台帳 `issue-474` の確かめた線:
+`仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 台帳に足して直す`
+（出所: cruise の確かめた線（台帳 `issue-474`）。利用者の確認（起動時・2026-10-27T09:07:27Z）＋（再開時・2026-10-28T07:24:46Z）＋（再開時・2026-10-28T23:56:17Z、配布を見せて確かめた））。
+加えて利用者の直接の指示（2026-10-29、親から伝達）: 人の判断が要る項目（狭いパスの指摘を含む）は推奨で決め、`要確認` の Issue を立てる
+（題の先頭 `要確認:`、本文の先頭 `<!-- cruise-decision: #474 -->`、背景を書き、専門用語を避け、1 Issue 1 判断、具体的な帰結を書く）。
+マージは親がする（この周は手順 6 の PR・CI の確認・関門 2 パスと狭いパス・手順 8 の件数の行まで）。台帳は書かない（親が書く）。
+周の途中で見つかった課題は、ファイル／モジュールごとに 1 件の起票案（チェックリスト）にまとめて親に報告する（親が起票する）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-474`））。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/scripts/schedule-to-gantt.py` — #591 の記述・#592 の入力のパスの名前・#625 の先のパスの名指し・#626 の辿れる先のリンク
+- `scripts/test-schedule-to-gantt.py` — 4 件の試料・変異・docstring
+- `plugins/spec-loop/references/tree.md` — #625・#626 の振る舞い（「生成物の置き場所」）
+- `plugins/spec-loop/README.md` — 同上（単体で呼ぶスクリプトの節）
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（5 本）。feasibility の手順 4 の symlink の 1 文
+- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `docs/plans/issue-591.md` — この計画
+
+触らない:
+
+- `plugins/spec-loop/scripts/check-feasibility-csv.py` の `read_rows`（入力のパスの NUL を `Unreadable` にする直し方もあるが、#592 は schedule-to-gantt.py の文言の Issue。
+  `check-feasibility-csv.py` 単体と `build-proposal.py`（並行する #550 の周が触る）の振る舞いを変えるので、この周では広げない。下の「既知の限界」）
+- `build-proposal.py` の前の出力の扱い（symlink を含む。並行する #550 の周の範囲）
+
+### 同じことを述べている箇所の数
+
+- 「symlink の出力先の扱い（辿れない先・辿れる先）」: 本体の docstring（終了コード）1・`remove_stale` の docstring 1・テストの docstring 1・
+  `references/tree.md` 1・README 1・feasibility の `SKILL.md` 手順 4 1 = 6 箇所。分けない——docstring は単体で読める必要があり、
+  tree.md と README は利用者が最初に読む場所（#625 の受入基準が名指し）、SKILL.md はスキルが 2 で止まったときに何を直すかを言う場所。
+  tree.md・README・SKILL.md は細部を docstring に指す形にして、書くのは「消さずに名指しして 2」だけに留める。
+- 「ValueError になる名前（NUL・符号化できない孤立サロゲート）」: 本体のコメント 2（`remove_stale` の `except ValueError`・書く側の `except ValueError`）・
+  本体の docstring（終了コード）1・テストの docstring 1・テストのコメント 2 = 6 箇所。
+
+## 乗るデプロイ経路
+
+プラグイン `spec-loop` の中身（スクリプト・文書・SKILL.md の版）——main へのマージでプラグインの新しい版が配られ（カタログ・pull して張る経路）、
+サイト（`docs/plans/` を含む）が再ビルドされる。マージの可否は親（cruise）が決める。
+
+## 周の在り処
+
+- ブランチ: `issue/591-gantt-bundle`
+- worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-591`（`prepare-worktree.sh` で作った。cruise の子なので `EnterWorktree` は使わず、`cd <worktree> && …` で作業する）
+- 起点: `6972781`
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`、取り直した）→ `69727816d0aa1bb6a6c5541eccc7696e4f8df8c3`
+
+## verify の受入基準
+
+Issue 本文は検査対象であって要件ではない。受入基準はこの節の表だけである。
+
+### Issue ごとの受入基準（Issue の本文から写した）
+
+- **#591-1**: 3 箇所の記述（本体のコメント・終了コードの docstring の行・テストの docstring）が、ValueError になる範囲（surrogateescape で符号化できない孤立サロゲート——U+D800〜U+DC7F・U+DD00〜U+DFFF）と、OSError の分岐を通る U+DC80〜U+DCFF を区別して正しく書く
+- **#591-2**: 区別を守る試料（U+DC80 の名前が OSError の分岐を通ること）がテストにあり、変異で赤になる
+- **#592-1**: 入力のパスに NUL があるとき、読めない理由（名前が使えない・例外の種類・理由）を言う文言で 2 で終わる
+- **#592-2**: 試料と変異で守る（#582 の書く側の試料と同じ形）
+- **#625-1**: 2 つの文書（`references/tree.md`・README）が #535 の振る舞い（出力先のリンクの先を辿れないとき、消さずに名指しして 2）を書く
+- **#625-2**: 「消せない」の文言がリンクの先のパスも名指しし、試料で守る
+- **#625-3**（追記のチェックリスト 1）: NAME_MAX の反対側の境界（256 バイトの名前）の試料がある
+- **#625-4**（追記のチェックリスト 2）: `> NAME_MAX` を `> NAME_MAX + 1` にする変異を足し、テストが赤になる
+- **#626-1**: 辿れる先（通常のファイル）を指すリンクの出力先で、リンクを消さず、リンクと先のパスを名指しして 2 で終わる
+- **#626-2**: 試料と変異で守り、docstring と `references/tree.md` を揃える
+
+### 不変条件
+
+- **I1（#591）**: U+DC80〜U+DCFF の名前は `ValueError` にならず `OSError` の分岐（「書けない（<strerror>）」）を通る。記述（本体の 2 つのコメント・終了コードの行・テストの docstring とコメント）はそれと食い違わない——「単独のサロゲート」を無条件に ValueError と書かない。
+- **I2（#591）**: U+DC80 の名前の試料（書けないディレクトリの中。Linux でも macOS でも OSError になる形）が `「<出力先>: 書けない（」` で 2・「出力先の名前が使えない」を言わない。名前を厳密に符号化して ValueError にする変異で赤になる。
+- **I3（#592）**: 入力のパスに NUL（と符号化できない孤立サロゲート）があるとき、`<入力>: 読めない（入力のパスの名前が使えない: <例外の型>: <理由>）` で 2、「想定外の例外」と言わない。前の出力は消す（消せなければ名指し）。名前に問題の無い `ValueError` は今までどおり「想定外の例外」。
+- **I4（#625・#626）**: 出力先が symlink のとき、先が通常のファイル（辿れる）でも先を辿れなくても、**リンクも先も消さず**、`前に作った出力を消せない: <リンク>（…先のパス…）` と**リンクと先のパス（鎖を解いた先）を名指し**して 2。表が決まりに反する経路でも、表が正しくて書けない経路でも。壊れたリンク・ディレクトリを指すリンクは今までどおり消さずに 1（名指ししない）。表が正しく書ける辿れる先のリンクは 0 で、先に書く（リンクは残る）。
+- **I5（#625）**: 名前の 1 つがちょうど 256 バイトの出力先は「無い」（1、名指ししない）。`> NAME_MAX + 1` の変異で赤。既存の 255 バイト（在りうる・2）と 300 バイトの試料はそのまま。
+- **I6（#625・#626）**: `references/tree.md`・README が、symlink の出力先を消さずに名指しして 2 で止まること（辿れない先・辿れる先の両方）を書き、細部は docstring を指す。docstring（本体・テスト）と食い違わない。
+- **I7**: 既存の試料と変異は変わらず緑（`OK:` の行）。版は spec-loop の 3 種類（marketplace.json・plugin.json・SKILL.md 5 本 × 2 行）で揃い、main より上。`check-all.py` が緑。
+
+### 経路（不変条件を破りうる入口）
+
+本体の入口は CLI（`main`）だけ。その中で:
+
+- 入力のパス: CLI（argv。NUL は渡らない・U+DC80〜U+DCFF は渡る）／`main` を直接呼ぶ（NUL・U+D800 も届く）→ `check_schedule` → `read_rows` の `read_text`（OSError → Unreadable・ValueError → `main` の `except Exception`）
+- 出力先: 書く（`mkdir`・`write_bytes`）の OSError／ValueError／その他 → `stop` → `remove_stale`
+- `remove_stale` の分岐: 無い・通常のファイル・ディレクトリ・symlink（壊れた・ディレクトリを指す・辿れる先の通常のファイル・辿れない先・鎖）・ENAMETOOLONG（名前・パス）・ValueError・その他
+- 呼ばれる経路: 表が決まりに反する（1）・読めない（2）・想定外（2）・書けない（2）——どれも `stop` を通る
+- 文書: tree.md・README・feasibility の SKILL.md・docstring（本体・テスト）
+
+### この環境では証明できないもの（未証明）
+
+- Linux（CI）での U+DC80 の名前の振る舞い——ローカルは macOS（APFS は 0x80 のバイトを名前に持てず EILSEQ）。試料は書けないディレクトリに置くので、
+  どちらの OS でも OSError（EACCES か EILSEQ）になる形にした。**Linux で通ることは PR の CI（ubuntu）で見る**——未証明ではなく CI で証明する。
+
+### 生成物
+
+- `SKILL.md` の測定値（設計ドキュメント §8.2 の生成ブロック）は dev-loop の `SKILL.md` だけを測る——この周は dev-loop を触らないので該当なし。
+- drawio の書き出し: 該当なし。
+- **生成物なし**（この周の差分に対応する生成物は無い）。`check-all.py` が両方の鮮度検査を回す。
+
+## 未解決の判断・確認待ち事項
+
+- （#626 の振る舞いの変更は要確認 #629 で利用者が承認済み。新たな仕様の穴は、いまのところ無い）
+
+## 関門の進捗（再開点）
+
+- 実装: 未着手
+- Verifier 1 パス目: 未
+- `/code-review` 1 パス目: 未
+- 実験: なし（まだ）
+
+## 既知の限界・決着済みの論点
+
+| 論点 | 決着 | 理由 |
+| --- | --- | --- |
+| #592 を `check-feasibility-csv.py` の `read_rows` で直す（`Unreadable` にする） | 採らなかった | Issue は schedule-to-gantt.py の文言。`read_rows` を変えると `check-feasibility-csv.py` 単体と `build-proposal.py`（並行する #550 の周）の振る舞いが変わる。schedule-to-gantt.py の中で「名前が使えないときの ValueError」だけを見分ける |
+| #591 の試料を書けるディレクトリに置く | 採らなかった | Linux（ext4）は 0x80 のバイトを名前に持てるので書けてしまい（0）、OSError の分岐を通らない。書けないディレクトリなら両 OS で OSError |
