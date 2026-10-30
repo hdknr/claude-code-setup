@@ -274,4 +274,6 @@ check-unattended-env.py --cruise             # --absent
 **推奨で決めた確認の Issue（台帳の `decisions`）のうち開いているものを `gh issue view` で集めて渡す**——
 **開いたものが 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする
 （`../dev-loop/references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
+**親が自分で確認の Issue（題の先頭が `要確認:`）を立てるときも、題・ラベル・本文は `../dev-loop/references/absent-lines.md` の「確認の Issue の書き方」を正とする**
+——子が立てたものと同じ形にそろえる（#557）。
 **親 Issue のチェックボックスは書き換えない**（`scripts/parent-issue.py` の「守らない」）。
