@@ -35,6 +35,7 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 | **フックの外から、`docs` の属さないリポジトリを指す `GIT_INDEX_FILE` を渡す** | `GIT_INDEX_FILE` は読む（フックの一時の index がコミットされる綴りを持つため。相対なら `docs` が属するリポジトリの根から。#570）。別のリポジトリの index を指していれば、その名前で照合する |
 | **作業ツリーの中なのに `git rev-parse --is-inside-work-tree` が失敗する形**（dubious ownership・壊れた `gitdir:` を持つ `.git`） | 失敗の理由は読み分けず（git のメッセージは版と言語で変わる）外と読む——作業ツリーの綴りで読むので、区別しない FS で作業ツリーのフォルダの綴りがコミットと違えば、タグと答えが食い違いうる（#572） |
 | **git を走らせられない環境の `docs` の上の `.git`** | 中か外かを git で決められないので、上へ辿って `.git` が在れば 2（関係のない `.git` でも） |
+| **index に綴りの違う 2 つが在るフォルダの、追跡していないファイル** | 区別しない FS ではどちらの綴りのフォルダにも見えるので、両方の綴りで数えて 1（重ねた結果で綴りだけ違うパス）になる。タグには写らないので、タグを読む側には現れない |
 | **index に在る名前を作業ツリーで綴りだけ変えて、まだ `git add` していない** | 区別しない FS では git もそれを変更と見ない（`git status` が空）ので、index の綴りで読む。区別する FS では別の名前（`git status` に出る）なので作業ツリーの綴りで読む——同じコミットの答えは揃う |
 | **大文字小文字を区別しないファイルシステムでの版名 `V2`** | `v` の次が数字の名前だけを版と読むので、`V2/` は版でない名前として読まない |
 
@@ -53,6 +54,10 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
   **FS が index の綴りの名前と作業ツリーの名前を同じ項目として開くとき（`lstat` の dev・ino が同じ）**は index の綴りを名前とする。
   区別する FS では 2 つは別の項目なので、作業ツリーの綴りのまま。
   index に無い名前（`git add` 前）と、git の外（`git rev-parse --is-inside-work-tree` が `true` を返さない。#572）は作業ツリーの綴りで読む。
+- **追跡しているファイルは、自分の index のパスでだけ数える**（`owners`）——index に綴りの違う 2 つ（`Sub/a.md`・`sub/b.md`、`v2/…`・`V2/…`）が在り、
+  区別しない FS で 1 つのフォルダになっていても、別の綴りで追跡しているファイルを取り込まない。タグを読む `build-proposal.py` の
+  `copy_docs` はコミットの木からパスを作るので、それと揃う。**重ねた結果でフォルダの綴りだけが違うのも 1**（`collisions`。`copy_docs` と同じ判定）。
+  **区別しない FS に展開した `git archive` の書き出しは綴りを失う**ので、この形の比べ相手にはならない。
 - **git はリポジトリの場所を指す環境変数（`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR`）を外して呼ぶ**（`run_git`。#570）——
   フックの中ではこれらが相対パスで設定されていることがあり、引き継ぐと `docs` から見た別の場所を読む。**`GIT_INDEX_FILE` は外さない**
   ——部分コミットの一時の index はコミットされる綴りを持つ。相対なら、`docs` が属するリポジトリの根からのパスとして絶対パスにする。
@@ -103,6 +108,8 @@ STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]
 MARKER = ".merged-versions"
 # git を呼ぶ前に外す、リポジトリの場所を指す環境変数（`run_git`。#570）。`GIT_INDEX_FILE` は外さず絶対パスにする（`tracked`）
 GIT_LOCATION = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")
+# パスの指定（`:(top,icase)`）の読み方を変える環境変数も外す——文字どおりに読まれると index が黙って空になる（#570 の 2 パス目の指摘）
+GIT_PATHSPECS = ("GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")
 # v1 の `removed.csv` を拒否する文言（`check-signoff.py` も使う。写さない）
 V1_REMOVED = "v1 には置かない（消すものが無い）"
 
@@ -155,17 +162,18 @@ def run_git(cwd: Path, *args: str, index_file: str | None = None) -> subprocess.
 
     **リポジトリの場所を指す環境変数（`GIT_LOCATION`）は外して渡す**（#570）——git のフックの中ではこれらが相対パスで
     設定されていることがあり、`cwd` を `docs` にして引き継ぐと `docs` から見た別の場所を読む。外せば git は `docs` から自分の
-    リポジトリを見つける。`GIT_INDEX_FILE` も外し、`index_file`（`tracked` が絶対パスにしたもの）があればそれだけを渡す。
+    リポジトリを見つける。パスの指定の読み方を変える変数（`GIT_PATHSPECS`）も外す。`GIT_INDEX_FILE` も外し、`index_file`
+    （`tracked` が絶対パスにしたもの）があればそれだけを渡す。
     """
-    env = {key: value for key, value in os.environ.items() if key not in (*GIT_LOCATION, "GIT_INDEX_FILE")}
+    env = {key: value for key, value in os.environ.items() if key not in (*GIT_LOCATION, *GIT_PATHSPECS, "GIT_INDEX_FILE")}
     if index_file is not None:
         env["GIT_INDEX_FILE"] = index_file
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, env=env)
 
 
-def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
+def tracked(docs: Path) -> tuple[dict[tuple[str, ...], set[str]], set[str]] | None:
     """git の index にある、`docs` からの名前を段ごとに（`()` → `docs` の直下の綴り、`("v2",)` → 版の直下の綴り、
-    `("v2", "requirements")` → その中の綴り……）。`docs` が git の作業ツリーの外なら None。
+    `("v2", "requirements")` → その中の綴り……）と、`docs` からのパスの全部。`docs` が git の作業ツリーの外なら None。
 
     **外かどうかは `git rev-parse --is-inside-work-tree` で決める**（#572）——`true` を返さなければ（失敗も）外と読む。
     上へ辿って `.git` を探すと、`docs` の上にある関係のない・壊れた `.git` や、git が発見を止める境界（FS の境界・
@@ -199,7 +207,7 @@ def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
     top = Path(os.fsdecode(git("rev-parse", "--show-toplevel").rstrip(b"\n")))
     rel = start.parts[len(top.parts):]
     if len(start.parts) < len(top.parts) or [fold(p) for p in start.parts[:len(top.parts)]] != [fold(p) for p in top.parts]:
-        return {}
+        return {}, set()
     spec = [":(top,icase)" + "/".join(rel)] if rel else []
     # フックが設定した GIT_INDEX_FILE（部分コミットの一時の index など。コミットされる綴りを持つ）は読む。相対なら作業ツリーの根からの
     # パスとして絶対パスにする（#570）——フックは根で走り、git も根から解決するが、それに頼らず `docs` から呼んでも同じ index を指す
@@ -210,6 +218,7 @@ def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
         # git は無い index を空の index と読む——黙って作業ツリーの綴りに戻ると照合が外れる（#570 の 1 パス目の指摘）
         raise Unreadable(f"{docs}: GIT_INDEX_FILE が指す index（{index_file}）が無い——綴りを index と照合できない")
     found: dict[tuple[str, ...], set[str]] = {}
+    paths: set[str] = set()
     prefixes: dict[tuple[str, ...], bool] = {}
     for raw in git("ls-files", "-z", "--full-name", "--", *spec, index_file=index_file).split(b"\0"):
         if not raw:
@@ -224,6 +233,24 @@ def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
             continue
         for depth in range(len(rest)):  # どの段の名前も（版の名前・版の直下・その中のフォルダとファイル。#569）
             found.setdefault(rest[:depth], set()).add(rest[depth])
+        paths.add("/".join(rest))
+    return found, paths
+
+
+def owners(docs: Path, paths: set[str]) -> dict[tuple[int, int], set[str]]:
+    """作業ツリーのファイル（`lstat` の dev・ino）→ それを追跡している index のパス（`docs` から）。
+
+    区別しない FS では、綴りの違う 2 つのパス（`Sub/a.md`・`sub/a.md`、`v2/…`・`V2/…`）が同じファイルを開く。
+    **追跡しているファイルは、自分の index のパスでだけ数える**（`walk`）——タグを読む側（`build-proposal.py` の `copy_docs`）は
+    コミットの木からパスを作るので、別の綴りで追跡しているファイルを、辿っているフォルダの追跡していないファイルとして取り込まない（#569 の 2 パス目の指摘）。
+    """
+    found: dict[tuple[int, int], set[str]] = {}
+    for path in paths:
+        try:
+            st = os.lstat(docs / path)
+        except OSError:
+            continue  # 作業ツリーで消した・区別する FS で綴りを変えた——そのパスで開くファイルは無い
+        found.setdefault((st.st_dev, st.st_ino), set()).add(path)
     return found
 
 
@@ -236,25 +263,17 @@ def same_entry(a: Path, b: Path) -> bool:
     return (sa.st_dev, sa.st_ino) == (sb.st_dev, sb.st_ino)
 
 
-def spelled_groups(root: Path, index: set[str] | None) -> list[list[str]]:
-    """ディレクトリの中の項目ごとに、git が見る綴りの名前（並べたもの）。`index` はその段の index の名前。
-
-    index に綴りの違う 2 つ（`Sub`・`sub`）が在り、区別しない FS で 1 つの項目になっていれば、その項目の名前は 2 つになる。
-    """
-    entries = names(root)
-    if not index:
-        return [[name] for name in sorted(entries)]
-    groups = []
-    for name in sorted(entries):
-        # 自分自身も含む——index に綴りの違う 2 つが在り、区別しない FS で 1 つのフォルダになっていれば、両方の綴りが名前になる
-        same = sorted(m for m in index if fold(m) == fold(name) and same_entry(root / m, root / name))
-        groups.append(same or [name])
-    return groups
-
-
 def spelled(root: Path, index: set[str] | None) -> set[str]:
     """ディレクトリの中の名前を、git が見る綴りで（上の docstring の「綴りは `spelled` が決める」）。`index` はその段の index の名前。"""
-    return {name for group in spelled_groups(root, index) for name in group}
+    entries = names(root)
+    if not index:
+        return entries
+    result = set()
+    for name in entries:
+        # 自分自身も含む——index に綴りの違う 2 つが在り、区別しない FS で 1 つのフォルダになっていれば、両方の綴りが名前になる
+        same = {m for m in index if fold(m) == fold(name) and same_entry(root / m, root / name)}
+        result |= same or {name}
+    return result
 
 
 def has_content(directory: Path) -> bool:
@@ -314,7 +333,8 @@ def misnamed_structured(root: Path, files: dict[str, Path]) -> list[str]:
 
 
 def list_files(root: Path, entries: set[str], problems: list[str],
-               index: dict[tuple[str, ...], set[str]] | None = None) -> dict[str, Path]:
+               index: dict[tuple[str, ...], set[str]] | None = None,
+               owned: dict[tuple[int, int], set[str]] | None = None) -> dict[str, Path]:
     """版のディレクトリの、重ねる置き場所にあるファイル（`.` で始まる名前は読まない）。置き場所は綴りどおりの名前だけ。
     名前はどの段も `spelled` の綴り（`index` は `tracked` の全体。#569）。"""
     files: dict[str, Path] = {}
@@ -327,36 +347,38 @@ def list_files(root: Path, entries: set[str], problems: list[str],
             continue
         if not top.is_dir():
             continue
-        walk(root, top, files, problems, index, (root.name, area))
+        walk(root, top, files, problems, index, (root.name, area), owned)
     return files
 
 
 def walk(root: Path, directory: Path, files: dict[str, Path], problems: list[str],
          index: dict[tuple[str, ...], set[str]] | None = None, prefix: tuple[str, ...] = (),
-         skip: frozenset[str] = frozenset(), untracked: bool = True) -> None:
+         owned: dict[tuple[int, int], set[str]] | None = None) -> None:
     """読めないディレクトリを黙って飛ばさない（`Path.rglob` は飛ばす。`names` が `Unreadable` を投げる）。
-    `prefix` は `docs` からのこのディレクトリの名前（index の綴り）。
+    `prefix` は `docs` からのこのディレクトリの名前（index の綴り）。`owned` は `owners` の表——追跡しているファイルは、
+    自分の index のパス（`prefix` と名前）でだけ数える。"""
+    for name in sorted(spelled(directory, None if index is None else index.get(prefix, set()))):
+        if name.startswith("."):
+            continue
+        path = directory / name
+        if path.is_symlink():
+            problems.append(f"{path}: シンボリックリンクは置かない")
+        elif path.is_dir():
+            walk(root, path, files, problems, index, (*prefix, name), owned)
+        elif path.is_file():
+            if owned is not None and not claims(owned, path, "/".join((*prefix, name))):
+                continue  # 別の綴りの index のパスで追跡している（そちらの綴りで数える。#569 の 2 パス目の指摘）
+            files[path.relative_to(root).as_posix()] = path
 
-    **index に綴りの違う 2 つが在り、FS では 1 つのフォルダ**（`requirements/Sub/a.md`・`requirements/sub/b.md`）なら、
-    そのフォルダを綴りごとに辿り、**各綴りにはその綴りの index の子だけ**を割り当てる（`skip` は他の綴りの index の子）——
-    コミットに無いパス（`requirements/sub/a.md`）を作らない（#569 の 1 パス目の指摘）。どの綴りの index にも無い子（追跡していない）は、
-    最初の綴りにだけ割り当てる（`untracked`）。
-    """
-    level = None if index is None else index.get(prefix, set())
-    for group in spelled_groups(directory, level):
-        for name in group:
-            if name.startswith(".") or name in skip or (not untracked and name not in (level or set())):
-                continue
-            path = directory / name
-            if path.is_symlink():
-                problems.append(f"{path}: シンボリックリンクは置かない")
-            elif path.is_dir():
-                child = (*prefix, name)
-                others = frozenset().union(*(index.get((*prefix, m), set()) for m in group if m != name)) if index else frozenset()
-                walk(root, path, files, problems, index, child, others - index.get(child, set()) if index else frozenset(),
-                     name == group[0])
-            elif path.is_file():
-                files[path.relative_to(root).as_posix()] = path
+
+def claims(owned: dict[tuple[int, int], set[str]], path: Path, relative: str) -> bool:
+    """`path` のファイルを `relative`（`docs` からの index の綴り）として数えてよいか——追跡していないか、そのパスで追跡している。"""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return True
+    paths = owned.get((st.st_dev, st.st_ino))
+    return paths is None or relative in paths
 
 
 def read_qa(path: Path, problems: list[str]) -> list[dict[str, str]]:
@@ -459,11 +481,12 @@ class Whole:
         self.has_qa = False  # どれかの版に qa.csv があれば、行が 0 でも見出しだけ書く（出力を docs/ と同じ形に）
         self.has_internal = False  # 内部の表も同じ
 
-    def apply(self, number: int, root: Path, problems: list[str], index: dict[tuple[str, ...], set[str]] | None = None) -> None:
-        """`index` は `tracked` の全体（段ごとの index の名前）。`root.name` は index の綴りの版の名前（`find_versions`）。"""
+    def apply(self, number: int, root: Path, problems: list[str], index: dict[tuple[str, ...], set[str]] | None = None,
+              owned: dict[tuple[int, int], set[str]] | None = None) -> None:
+        """`index` は `tracked` の全体（段ごとの index の名前）、`owned` は `owners` の表。`root.name` は index の綴りの版の名前（`find_versions`）。"""
         entries = spelled(root, None if index is None else index.get((root.name,), set()))
         problems.extend(misnamed(root, entries))
-        files = list_files(root, entries, problems, index)
+        files = list_files(root, entries, problems, index, owned)
         problems.extend(misnamed_structured(root, files))
         removed_path = root / REMOVED
         removed = []
@@ -539,20 +562,25 @@ def fold(path: str) -> str:
 
 
 def collisions(paths: list[str]) -> list[str]:
-    """重ねた結果で書けない形——ファイルとディレクトリが同じパスになる・大文字小文字や正規化だけが違うパスが並ぶ。"""
+    """重ねた結果で書けない形——ファイルとディレクトリが同じパスになる・大文字小文字や正規化だけが違うパス（ファイルもフォルダも）が並ぶ。"""
     found = []
     by_fold: dict[str, str] = {}
     for path in sorted(paths):
         other = by_fold.setdefault(fold(path), path)
         if other != path:
             found.append(f"重ねた結果で {other} と {path} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    dirs: dict[str, str] = {}
     for path in sorted(paths):
         parts = path.split("/")
         for depth in range(1, len(parts)):
             parent = "/".join(parts[:depth])
             if fold(parent) in by_fold:
                 found.append(f"重ねた結果で {by_fold[fold(parent)]} がファイルとディレクトリの両方になる（{path}）")
-    return found
+            # フォルダの綴りだけが違うのも書けない形——タグを読む `build-proposal.py` の `copy_docs` と同じ判定（#569 の 2 パス目の指摘）
+            other = dirs.setdefault(fold(parent), parent)
+            if other != parent:
+                found.append(f"重ねた結果でディレクトリ {other} と {parent} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    return sorted(set(found), key=found.index)
 
 
 def put(dest: Path, content: bytes) -> None:
@@ -583,7 +611,8 @@ def merge(docs: Path, upto: int | None = None) -> tuple[list[str], list[tuple[in
     無い・読めない入力と、無い版の `upto` は `Unreadable` を投げる。
     """
     problems: list[str] = []
-    index = tracked(docs) if docs.is_dir() else None
+    found = tracked(docs) if docs.is_dir() else None
+    index, owned = (None, None) if found is None else (found[0], owners(docs, found[1]))
     versions = find_versions(docs, problems, None if index is None else index.get((), set()))
     if not problems and not versions:
         problems.append(f"{docs}: 版（v1 など）が 1 つも無い")
@@ -594,7 +623,7 @@ def merge(docs: Path, upto: int | None = None) -> tuple[list[str], list[tuple[in
     for number, root in versions[:upto]:
         if problems:
             break
-        whole.apply(number, root, problems, index)
+        whole.apply(number, root, problems, index, owned)
     if not problems:
         rendered = whole.render(problems)
         problems.extend(collisions(list(rendered)))
