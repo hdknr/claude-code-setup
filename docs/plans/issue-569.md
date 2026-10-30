@@ -58,7 +58,9 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - ブランチ: `issue/569-merge-versions-bundle`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-569`
 - 起点: `eef9331`（origin/main）
-- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）を解決した `eef93311c540b522c2df260b88a2f86bff804277`
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）を解決した `eef93311c540b522c2df260b88a2f86bff804277`（1 パス目まで）
+- 載せ替え: 1 パス目のあと origin/main（`51c1902`。#653 で spec-loop 0.39.0）を取り込んだ（merge `6741b74`。衝突なし——両側が 0.39.0 で版の行が黙って揃った）。
+  **式を当て直した base: `51c19026d70b3668e1e2e4dbeabbf1451eeb21e7`**（`git merge-base origin/main HEAD`。2 パス目に渡す）。版は 0.40.0 に上げ直した
 
 ## verify の受入基準
 
@@ -103,6 +105,8 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - **未証明**: 本物の FS の境界（マウントポイント）での #572-2——権限なしにマウントを作れない。`GIT_CEILING_DIRECTORIES` は git の発見を
   同じ形（「not a git repository」）で止める代わりで、PR コメントで人間のレビューに回す。dubious ownership も同じ（所有者の違うリポジトリを作れない）。
 - **D は PR の CI でしか確かめられない**——手元の docker（OrbStack のカーネル）は ext4 の casefold をマウントできなかった（実測）。
+  **PR #660 の CI（run 41008966646、`e86a8a7`）で確かめた**: casefold のステップで「この一時ディレクトリの FS: 大文字小文字を区別しない」
+  「OK: 試料 94 件・変異 90 件」（macOS と同じ数）。区別する FS のステップは「区別する」「試料 84 件・変異 78 件」。
 
 ### 生成物
 
@@ -127,7 +131,13 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
   赤にならない新しい試料（壊れた index で 2・git が無い 2 件・相対の `GIT_INDEX_FILE`・一時の index）は前のコードでも守られていた形で、変異が守る。
 - 割り目（手順 4）: 不在のため訊かず続けた。
 - PR #660（実装のコミット `e86a8a7`）。
-- 1 パス目: 起点（1 パス目の指摘対応の起点）`e86a8a7`。Verifier・`/code-review` に同時に渡した（結果は下に書く）。
+- 1 パス目: 起点（1 パス目の指摘対応の起点）`e86a8a7`。Verifier・`/code-review` に同時に渡した。
+  - `/code-review` 1 パス目: 指摘 10 件（直す 3・残課題 7。下の表）。
+  - Verifier 1 パス目（sonnet・`dev-loop:dev-loop-verifier`。読んだ行数 181 = `wc -l` と一致）: 反証 1 件（R1）・未確認 3 件（F の大半・D・外での変異の当て直し）。
+    **Verifier は頼まれていない `check-all.py` を走らせ、終わらないまま残した**（pid 78938・79009。`pkill` は権限で拒否、親の `TaskStop` も所有者が違うので不可——親に報告する）。
+    F は親の `check-all.py` で確かめた（下）。
+  - 指摘対応: CR1-2・CR1-3・CR1-6・R1 を直した（下の表）。実装中の取り込みで版を 0.40.0 に上げ直した。差分は 0 行でないので 2 パス目を回す。
+  - 割り目（手順 6）: 不在のため訊かず続けた。
 - 中断: 利用上限で 1 度止まり、親が再開（2026-10-30）。再開時に worktree の状態（未コミット 3 件）を確かめて続けた。
 - 実装中に変えた設計: #570 で `GIT_INDEX_FILE` を外す案は**やめた**——git は相対の `GIT_INDEX_FILE` を作業ツリーの根から解決する（実測。
   git 2.54。根の `idx` が壊れていれば `docs` から呼んでも失敗し、`docs/idx` が壊れていても根の `idx` を読んだ）ので、外すとフックの
@@ -154,9 +164,10 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 | CR1-4 | casefold の CI ステップが `test-build-proposal.py` の区別しない FS の試料を回さない | 示せない（CI で飛ばされることは見えるが、失敗ではない） | 無し（#571 は `merge-versions.py` の試料の Issue。#511-2 は手元で緑・赤を確かめた） | 残課題（周の途中の課題として親に提案） |
 | CR1-5 | `check-signoff.py`・`scaffold.py` の `find_versions` が index を渡さず、版の名前を作業ツリーの綴りで読む | 示せない（レビューは読んだだけ） | 無し（#569 は `merge-versions.py` の照合の Issue） | 残課題（周の途中の課題として親に提案） |
 | CR1-6 | `versions.md` の移行: ファイルの大文字小文字だけの改名は `git mv` 1 回で通る（2 段が要るのはフォルダ）・1 の文言は「置かない」で終わらない | 示せる（`i569-repro.sh`: file mv rc=0・dir mv rc=128・文言は「（…開けてしまう）」が続く） | #515-1 | 直す |
-| CR1-7 | `GIT_WORK_TREE`・`GIT_COMMON_DIR` を設定する試料・変異が無い | 示せない（実装は外している。試験が無いだけ） | 無し | 残課題（計画の「証明できる」の B はこの 2 つについてはコードを読んだ範囲と書き直す） |
+| CR1-7 | `GIT_WORK_TREE`・`GIT_COMMON_DIR` を設定する試料・変異が無い | 示せない（実装は外している。試験が無いだけ。Verifier は外のリポジトリで相対の `GIT_WORK_TREE=.` でも答えが変わらないことを実走した） | 無し | 残課題（B のうちこの 2 つは試験で守っていない） |
 | CR1-8 | `spelled` が段ごとに O(N×M) | 示せない | 無し | 残課題 |
 | CR1-9 | 同じ書き換えの変異 3 件が別々に走る | 示せない | 無し | 残課題 |
+| R1（Verifier） | `versions.md` の移行の節の「0.34.0」は誤り——#276（PR #517）が出たのは 0.38.0（`a2900a5^` は 0.37.1、`a2900a5` は 0.38.0） | 示せる（`git show a2900a5^:plugins/spec-loop/.claude-plugin/plugin.json` で 0.37.1、`a2900a5:` で 0.38.0。著者も実走） | 周-2・#515-1 | 直す（0.38.0。取り込みに合わせてこの周の側は 0.40.0） |
 | CR1-10 | `prepare_git` の 2 段の改名が `rename()` を使わず 4 箇所に残る | 示せない | 無し | 残課題 |
 
 ## 手順 8

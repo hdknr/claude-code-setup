@@ -206,6 +206,9 @@ def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
     index_file = os.environ.get("GIT_INDEX_FILE") or None
     if index_file is not None and not os.path.isabs(index_file):
         index_file = str(top / index_file)
+    if index_file is not None and not os.path.isfile(index_file):
+        # git は無い index を空の index と読む——黙って作業ツリーの綴りに戻ると照合が外れる（#570 の 1 パス目の指摘）
+        raise Unreadable(f"{docs}: GIT_INDEX_FILE が指す index（{index_file}）が無い——綴りを index と照合できない")
     found: dict[tuple[str, ...], set[str]] = {}
     prefixes: dict[tuple[str, ...], bool] = {}
     for raw in git("ls-files", "-z", "--full-name", "--", *spec, index_file=index_file).split(b"\0"):
@@ -233,17 +236,25 @@ def same_entry(a: Path, b: Path) -> bool:
     return (sa.st_dev, sa.st_ino) == (sb.st_dev, sb.st_ino)
 
 
-def spelled(root: Path, index: set[str] | None) -> set[str]:
-    """ディレクトリの中の名前を、git が見る綴りで（上の docstring の「綴りは `spelled` が決める」）。`index` はその段の index の名前。"""
+def spelled_groups(root: Path, index: set[str] | None) -> list[list[str]]:
+    """ディレクトリの中の項目ごとに、git が見る綴りの名前（並べたもの）。`index` はその段の index の名前。
+
+    index に綴りの違う 2 つ（`Sub`・`sub`）が在り、区別しない FS で 1 つの項目になっていれば、その項目の名前は 2 つになる。
+    """
     entries = names(root)
     if not index:
-        return entries
-    result = set()
-    for name in entries:
+        return [[name] for name in sorted(entries)]
+    groups = []
+    for name in sorted(entries):
         # 自分自身も含む——index に綴りの違う 2 つが在り、区別しない FS で 1 つのフォルダになっていれば、両方の綴りが名前になる
-        same = {m for m in index if fold(m) == fold(name) and same_entry(root / m, root / name)}
-        result |= same or {name}
-    return result
+        same = sorted(m for m in index if fold(m) == fold(name) and same_entry(root / m, root / name))
+        groups.append(same or [name])
+    return groups
+
+
+def spelled(root: Path, index: set[str] | None) -> set[str]:
+    """ディレクトリの中の名前を、git が見る綴りで（上の docstring の「綴りは `spelled` が決める」）。`index` はその段の index の名前。"""
+    return {name for group in spelled_groups(root, index) for name in group}
 
 
 def has_content(directory: Path) -> bool:
@@ -321,19 +332,31 @@ def list_files(root: Path, entries: set[str], problems: list[str],
 
 
 def walk(root: Path, directory: Path, files: dict[str, Path], problems: list[str],
-         index: dict[tuple[str, ...], set[str]] | None = None, prefix: tuple[str, ...] = ()) -> None:
+         index: dict[tuple[str, ...], set[str]] | None = None, prefix: tuple[str, ...] = (),
+         skip: frozenset[str] = frozenset(), untracked: bool = True) -> None:
     """読めないディレクトリを黙って飛ばさない（`Path.rglob` は飛ばす。`names` が `Unreadable` を投げる）。
-    `prefix` は `docs` からのこのディレクトリの名前（index の綴り）。"""
-    for name in sorted(spelled(directory, None if index is None else index.get(prefix, set()))):
-        if name.startswith("."):
-            continue
-        path = directory / name
-        if path.is_symlink():
-            problems.append(f"{path}: シンボリックリンクは置かない")
-        elif path.is_dir():
-            walk(root, path, files, problems, index, (*prefix, name))
-        elif path.is_file():
-            files[path.relative_to(root).as_posix()] = path
+    `prefix` は `docs` からのこのディレクトリの名前（index の綴り）。
+
+    **index に綴りの違う 2 つが在り、FS では 1 つのフォルダ**（`requirements/Sub/a.md`・`requirements/sub/b.md`）なら、
+    そのフォルダを綴りごとに辿り、**各綴りにはその綴りの index の子だけ**を割り当てる（`skip` は他の綴りの index の子）——
+    コミットに無いパス（`requirements/sub/a.md`）を作らない（#569 の 1 パス目の指摘）。どの綴りの index にも無い子（追跡していない）は、
+    最初の綴りにだけ割り当てる（`untracked`）。
+    """
+    level = None if index is None else index.get(prefix, set())
+    for group in spelled_groups(directory, level):
+        for name in group:
+            if name.startswith(".") or name in skip or (not untracked and name not in (level or set())):
+                continue
+            path = directory / name
+            if path.is_symlink():
+                problems.append(f"{path}: シンボリックリンクは置かない")
+            elif path.is_dir():
+                child = (*prefix, name)
+                others = frozenset().union(*(index.get((*prefix, m), set()) for m in group if m != name)) if index else frozenset()
+                walk(root, path, files, problems, index, child, others - index.get(child, set()) if index else frozenset(),
+                     name == group[0])
+            elif path.is_file():
+                files[path.relative_to(root).as_posix()] = path
 
 
 def read_qa(path: Path, problems: list[str]) -> list[dict[str, str]]:

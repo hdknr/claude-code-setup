@@ -215,24 +215,26 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py
   **浅い clone なら 2**（タグが見えないのを「凍結した版が無い」と読まない）。
 - **タグはスキルが付けない。** どの版をリリースしたかは人間が決める。
 
-## 綴りの誤りの移行（0.34.0・0.39.0）
+## 綴りの誤りの移行（0.38.0・0.40.0）
 
-**spec-loop 0.34.0 から、版の直下の置き場所・`removed.csv` の綴り違い（`Removed.csv`・`Shared/`）が、0.39.0 から、置き場所の中の
+**spec-loop 0.38.0 から、版の直下の置き場所・`removed.csv` の綴り違い（`Removed.csv`・`Shared/`）が、0.40.0 から、置き場所の中の
 構造ファイルの綴り違い（`shared/QA.csv`・`spec/QA-dev.csv`・`spec/Spec_IR.json`）が、決まりに反する（1）になった**（#276・#511）。
 それまで区別するファイルシステム（Linux）では黙って読まれず 0 で通り、区別しないファイルシステム（macOS の既定）では正しい綴りとして
 読まれていた正本リポジトリは、この版から 1 で止まる。次の順で直す:
 
 1. **見つける**——`merge-versions.py docs build/merged` を走らせる。1 なら、出力のうち
-   **`… と大文字小文字・Unicode の正規化だけ違う名前は置かない`** で終わる行が、綴りの違うパスと正しい綴りを名指しする。
+   **`… と大文字小文字・Unicode の正規化だけ違う名前は置かない`** を含む行（後ろに「（区別しないファイルシステムでだけ … として開けてしまう）」が続く）が、
+   綴りの違うパスと正しい綴りを名指しする。
 2. **コミットの綴りを直す**——git が見ている綴り（`git ls-files docs/v2` に出る名前）が誤りなら、`git mv` で改名してコミットする。
-   **区別しないファイルシステムでは、大文字小文字だけの改名を `git mv` 1 回では行えない**ので、別の名前を挟んで 2 段に分ける:
+   **区別しないファイルシステムでは、フォルダの大文字小文字だけの改名を `git mv` 1 回では行えない**（`Invalid argument` で失敗する）ので、
+   別の名前を挟んで 2 段に分ける:
 
    ```bash
    git mv docs/v2/Shared docs/v2/shared-tmp
    git mv docs/v2/shared-tmp docs/v2/shared
    ```
 
-   ファイルも同じ（`git mv docs/v2/shared/QA.csv docs/v2/shared/qa-tmp.csv` → `git mv docs/v2/shared/qa-tmp.csv docs/v2/shared/qa.csv`）。
+   ファイルは 1 回で改名できる（`git mv docs/v2/shared/QA.csv docs/v2/shared/qa.csv`。macOS の git 2.54 で確かめた）。
    **凍結した版（下の「凍結」）の綴りを直すと、`check-frozen.py` が 1 になる**——直すかどうか（直して `release-v<n>` を付け直すか）は人間が決める。
 3. **作業ツリーにだけ古い綴りが残る形**——コミットの綴りは正しいのに、手元のフォルダ名だけ古い綴りのまま（追跡しない `.DS_Store` が残った
    フォルダに git が書き込んだ）。`git status` は空のまま。**区別しないファイルシステムでは、重ね合わせは index の綴りで読むので 1 にならない**
