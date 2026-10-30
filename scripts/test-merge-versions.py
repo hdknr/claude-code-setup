@@ -340,7 +340,8 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("足していない改名は index に寄せない", {**V1, "v2/requirements/d.md": "D\n"}, "git-renamed-sensitive", [],
      lambda r: refused(r, "Requirements: requirements と大文字小文字")),
     # `.git` が在るのに git ls-files が失敗する（壊れた .git）——綴りを照合していないので 2
-    # index に綴りの違う 2 つ（shared/・Shared/）が在り、区別しない FS では 1 つのフォルダ——タグと同じく 1
+    # index に綴りの違う 2 つ（shared/・Shared/）が在り、区別しない FS では 1 つのフォルダ——タグと同じく 1。区別する FS では
+    # index から書き出した別のフォルダ Shared/ が並び、同じ綴り違いで 1（#678）
     ("index の綴り違いは同じフォルダでも断る", {**V1, "v2/shared/a.md": "A\n"}, "git-both", [],
      lambda r: refused(r, "Shared: shared と大文字小文字")),
     # removed.csv のファイルも同じ（1 パス目の Verifier の反証）——コミットが Removed.csv なら作業ツリーで removed.csv に改名しても 1、
@@ -385,7 +386,8 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: r.code == 2 and "GIT_INDEX_FILE が指す index" in r.output and r.tree is None),
     # index に深いフォルダの綴り違い 2 つ（Sub/a.md・sub/b.md）が在り、区別しない FS では 1 つのフォルダ——追跡しているファイルは
     # 自分の index のパスでだけ数え（コミットに無い sub/a.md・Sub/b.md を作らない）、フォルダの綴り違いとして 1。タグを読む
-    # build-proposal.py の copy_docs と同じ答え（区別しない FS に展開した git archive は綴りを失うので比べ相手にしない）。#569 の 1・2 パス目の指摘
+    # build-proposal.py の copy_docs と同じ答え（区別しない FS に展開した git archive は綴りを失うので比べ相手にしない）。#569 の 1・2 パス目の指摘。
+    # 区別する FS では index から書き出した 2 つのフォルダが並び、同じくフォルダの綴り違いで 1（#678。捨てる・寄せるを外す変異はそこでは答えを変えない）
     ("深い段の index の綴り違い 2 つはフォルダの綴り違い", {**V1, "v2/requirements/Sub/a.md": "A\n"}, "git-deep-both", [],
      lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub") and "requirements/Sub/b.md" not in r.output
      and "requirements/sub/a.md" not in r.output),
@@ -394,10 +396,12 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub") and "requirements/Sub/x/b.md" not in r.output
      and "requirements/sub/x/a.md" not in r.output),
     # 版の段の綴り違い（index に v2/requirements/a.md・V2/requirements/b.md）——V2 は版でない名前。v2 は自分の index の a.md だけで、
-    # b.md は v1 のまま（V2 の B2 を取り込まない。2 パス目の指摘）
+    # b.md は v1 のまま（V2 の B2 を取り込まない。2 パス目の指摘）。区別する FS では V2/ は別のフォルダで、版の名前でないので読まない
+    # （#678——この FS では、書き出しが効いたかは試料の答えに出ないので、準備の側で書き出したファイルが在ることを確かめる）
     ("別の綴りの版で追跡するファイルは取り込まない", {**V1, "v2/requirements/a.md": "A\n"}, "git-version-both", [],
      lambda r: made(r) and r.text("requirements/a.md") == "A\n" and "requirements/b.md" in r.tree and r.text("requirements/b.md") == "B1\n"),
-    # index にファイル名の綴り違い 2 つ（a.md・A.md）が在り、区別しない FS では 1 つのファイル——両方のパスで数えて 1（copy_docs と同じ）
+    # index にファイル名の綴り違い 2 つ（a.md・A.md）が在り、区別しない FS では 1 つのファイル——両方のパスで数えて 1（copy_docs と同じ）。
+    # 区別する FS では index から書き出した 2 つのファイルが並び、同じ綴り違いで 1（#678）
     ("index のファイル名の綴り違い 2 つは断る", {**V1, "v2/requirements/d.md": "D\n"}, "git-file-both", [],
      lambda r: refused(r, "requirements/D.md と requirements/d.md")),
     # 重ねた結果でフォルダの綴りだけが違う（v1 の sub/、v2 の Sub/）——ファイルのパスはぶつからなくても 1（2 パス目の指摘。どの FS でも）
@@ -869,6 +873,8 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
         git(root, "commit", "-q", "-m", "綴り違い")
         if not folds:  # 区別する FS では別の項目——git が書き出すとおりに index から書き出す（#678）
             git(root, "checkout", "--", f"docs/{added}")
+            if not (docs / added).is_file():  # 書き出しが効かなければ準備が落ちる（試料の答えには出ない形がある。#678）
+                raise RuntimeError(f"index から書き出せなかった: docs/{added}")
         elif written is not None:
             (docs / written).write_bytes(b"B2\n")
     elif prepare == "git-hardlink":  # 管理外の別の名前のハードリンク（#676）
@@ -893,6 +899,8 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
         git(root, "update-index", "--add", "--cacheinfo", f"100644,{sha},docs/v2/Shared/b.md")
         if not folds:  # 区別する FS では別のフォルダ Shared/——index から書き出す（#678）
             git(root, "checkout", "--", "docs/v2/Shared/b.md")
+            if not (v2 / "Shared" / "b.md").is_file():
+                raise RuntimeError("index から書き出せなかった: docs/v2/Shared/b.md")
     elif prepare == "git-renamed-sensitive" and not folds:
         rename(v2 / "requirements", "Requirements")
     elif prepare == "git-alongside" and not folds:
