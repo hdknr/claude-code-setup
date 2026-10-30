@@ -218,6 +218,17 @@ SAMPLES = {
     'table-delim-item-tab.md': '- a | b\n  \t--- | ---\n  foo **x\n  bar** y\n',
     'table-refused-quote-tab.md': '> x\n> \t---|---\n> y | z\n> ---|---\n> foo **x\n> bar** y\n',
     'table-refused-heading-next.md': 'x\n|---|---|\n# h\na | b\n--- | ---\nfoo **x\nbar** y\n',
+    # 守る 23: `|` の無い区切りの行も 1 列の表を開き、開けなければ「開けなかった」に数える（#581。#562 の狭いパス NP-2・NP-3）。
+    # どれも GitHub の描画（gfm）と判定が一致し、変更前の検査では pipeless の 4 本が崩れ無し・pipeless-refused が 5・6 行目で一致しないことを確かめた（#581 の周）。
+    # pipeless-then-pipe（Issue の 2 つ目の形）・lazy・indent-4 は変更前も一致する（表を試さない行と、`|--|` を表の行に読む形の回帰の試料）。
+    'table-pipeless-center.md': 'a\n:--:\nfoo **x\nbar** y\n',
+    'table-pipeless-right.md': 'a\n--:\nfoo **x\nbar** y\n',
+    'table-pipeless-left.md': 'a\n:-\nfoo **x\nbar** y\n',
+    'table-pipeless-indent-3.md': 'a\n   :--:\nfoo **x\nbar** y\n',
+    'table-pipeless-refused.md': 'a | b\n:---\nc | d\n--- | ---\nfoo **x\nbar** y\n',
+    'table-pipeless-then-pipe.md': 'a\n:--:\n|--|\nfoo **x\nbar** y\n',
+    'table-pipeless-lazy.md': '> a\n:--:\nfoo **x\nbar** y\n',
+    'table-pipeless-indent-4.md': 'a\n    :--:\nfoo **x\nbar** y\n',
     # #525 の狭いパスで素通りした変異を殺す試料（#563）。どれも GitHub の描画（gfm）と判定が一致することを確かめた（#563 の周）。
     # 守る 7: info にバッククォートを含む ``` はフェンスではない（段落。GitHub は 2 行目の `**` を字のまま描く）。
     'fence-info-backtick.md': '``` `a`\nX**「例」**Y\n',
@@ -355,6 +366,14 @@ EXPECTED = {
     'table-delim-item-tab.md': ((3, 4), ()),
     'table-refused-quote-tab.md': ((), ()),
     'table-refused-heading-next.md': ((6, 7), ()),
+    'table-pipeless-center.md': ((3, 4), ()),
+    'table-pipeless-right.md': ((3, 4), ()),
+    'table-pipeless-left.md': ((3, 4), ()),
+    'table-pipeless-indent-3.md': ((3, 4), ()),
+    'table-pipeless-refused.md': ((), ()),
+    'table-pipeless-then-pipe.md': ((4, 5), ()),
+    'table-pipeless-lazy.md': ((), ()),
+    'table-pipeless-indent-4.md': ((), ()),
     'fence-info-backtick.md': ((2, 2), ()),
     'thematic-underscore.md': ((1, 3), ()),
     'heading-indent.md': ((), ()),
@@ -558,6 +577,10 @@ MUTATIONS = {
     "引用の段落の続きの区切りの行で表を開く": (23,
         "        if para and not lazy and depth == para_depth and",
         "        if para and not lazy and"),
+    # #581 の前の形——区切りの行に `|` を要る。pipeless の 4 本（見逃しに戻る）と pipeless-refused（誤検出に戻る）が殺す
+    "区切りの行に | を要る（#581 の前の形）": (23,
+        "                and TABLE_DELIM.match(inner):",
+        '                and "|" in inner and TABLE_DELIM.match(inner):'),
     "セルの数を見ない": (23,
         "    return len(parts)",
         "    return 1"),
