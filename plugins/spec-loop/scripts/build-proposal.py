@@ -72,7 +72,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import errno
 import importlib.util
 import io
 import os
@@ -254,16 +253,20 @@ def drop_internal(docs: Path) -> None:
     内部の表の決まりの違反で比較が作れなくなることもない（照合も内部の表を見ない）。
     **綴りどおりの名前だけを外す**（`merge-versions.py` の `exact`）——区別しないファイルシステムで `spec/QA-dev.csv`
     （重ね合わせではふつうのファイル）を内部の表として消すと、作業ツリーの差分と比較が食い違う（#276）。
-    **消す・書き換えるのは、置き場所（親のディレクトリ）を辿った先が一時ディレクトリの中にあるときだけ**（#512）——`exact` はリンクを辿るので、
-    途中の名前（版のディレクトリ `docs/v<n>` そのもの・`spec/`）がリンクだと、外の `qa-dev.csv` を消し、外の `removed.csv` を書き換える。
+    **途中の名前（版のディレクトリ `docs/v<n>` そのもの・`spec/`）がリンクなら、消さず・書き換えない**（#512）——`exact` はリンクを辿るので、
+    外の `qa-dev.csv` を消し、外の `removed.csv` を書き換える（リンクの先が一時ディレクトリの中でも、その先は版の外である）。
     外さずに残せば、重ね合わせがリンクの置き場所を断る。対象そのもの（`qa-dev.csv`）がリンクなら、消えるのは一時ディレクトリの中のリンクだけである。
     """
     mv = diffs.merge_versions
-    top = Path(os.path.realpath(docs))
 
     def inside(path: Path) -> bool:
-        place = Path(os.path.realpath(path.parent))
-        return place == top or top in place.parents
+        """`docs` から置き場所（親のディレクトリ）までの途中にリンクが無いか（`docs` の下の名前だけを見る）。"""
+        place = path.parent
+        while place != docs:
+            if place.is_symlink():
+                return False
+            place = place.parent
+        return True
 
     for root in sorted(p for p in docs.iterdir() if mv.VERSION.fullmatch(p.name)):
         internal = mv.exact(root, mv.INTERNAL_QA_PATH)
@@ -660,7 +663,9 @@ def remove_owned(directory: Path) -> list[str]:
     消せなかった出力があれば印も残す（#440）——次の実行が、残った出力をこの道具のものと確かめて消せるように。
     **symlink は、先が在れば（辿れなくても）リンクも先も消さず、リンクと先のパスを消せなかったものとして返す**（#512。
     `schedule-to-gantt.py` の #626 と同じ）——リンクを消しても先の古い中身は残るので、「消した」と言えば古い中身を今のものと取り違える。
-    先のパスは鎖を解いた先（辿れないときは辿れたところまで）。壊れたリンク（先が無い・輪になっている）は消す——残る古い中身が無い。"""
+    先のパスは鎖を解いた先（辿れないときは辿れたところまで）。壊れたリンク（先が無い・輪・長すぎる名前——判定は `schedule-to-gantt.py` の `absent`）は消す
+    ——残る古い中身が無い。鎖が長すぎて辿れない（ELOOP）だけで先に実物があるものは消さない。**ディレクトリを指すリンクも消さずに名指しする**
+    （`schedule-to-gantt.py` は名指ししない——こちらは印が名指しする名前なので、黙って残すと次に同じ名前を書くときに「上書きしない」で止まる）。"""
     names = owned_names(directory)
     if names is None:
         return []
@@ -672,14 +677,20 @@ def remove_owned(directory: Path) -> list[str]:
             if stale.is_symlink():
                 target = os.path.realpath(stale)  # 非 strict——辿れなくても例外を出さず、辿れたところまで解く
                 try:
-                    stale.stat()
+                    mode = stale.stat().st_mode
                 except OSError as e:
-                    if e.errno not in (errno.ENOENT, errno.ENOTDIR, errno.ELOOP):
-                        left.append(f"{stale}（リンクの先を辿れない: {e.strerror}。先: {target}）")
+                    # 鎖が OS の上限より長いだけ（ELOOP）でも、鎖を解いた先に実物があれば古い中身が残る（#512 の 2 パス目 CR2-1）
+                    real = os.path.lexists(target) and not os.path.islink(target)
+                    if real or not gantt.absent(Path(target), e):
+                        reason = "リンクの鎖が長すぎる" if real else f"リンクの先を辿れない: {e.strerror}"
+                        left.append(f"{stale}（{reason}。先: {target}）")
                         continue
-                    # 壊れたリンク（先が無い・輪になっている——輪を壊れたものと読むのは `schedule-to-gantt.py` の `ABSENT` と同じ）——消す
+                    # 壊れたリンク（先が無い・輪・長すぎる名前——判定は `schedule-to-gantt.py` の `absent` を使う）——消す
                 else:
-                    left.append(f"{stale}（リンクの先に前の出力が残る——リンクを消しても先は消えない。先: {target}）")
+                    if stat.S_ISDIR(mode):
+                        left.append(f"{stale}（リンクの先がディレクトリ——この道具の出力ではないので消さない。先: {target}）")
+                    else:
+                        left.append(f"{stale}（リンクの先に前の出力が残る——リンクを消しても先は消えない。先: {target}）")
                     continue
             elif not stale.is_file():
                 continue
