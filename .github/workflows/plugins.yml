@@ -170,6 +170,20 @@ jobs:
       - name: spec-loop の版の重ね合わせのテスト（#261）
         run: python3 scripts/test-merge-versions.py
 
+      # 同じテストを、大文字小文字を区別しない FS（ext4 の casefold）の上でもう 1 度回す（#571）——区別しない FS でだけ
+      # 判別できる試料（git の index の綴りで読むもの）は、上の区別する FS では飛ばされる。印の環境変数があると、
+      # 一時ディレクトリが区別する FS ならテストが赤になる（用意に失敗して黙って緑にならない）
+      - name: spec-loop の版の重ね合わせのテスト（大文字小文字を区別しない FS。#571）
+        run: |
+          truncate -s 512M "$RUNNER_TEMP/casefold.img"
+          mkfs.ext4 -q -O casefold "$RUNNER_TEMP/casefold.img"
+          sudo mkdir -p /mnt/casefold
+          sudo mount -o loop "$RUNNER_TEMP/casefold.img" /mnt/casefold
+          sudo mkdir /mnt/casefold/tmp
+          sudo chattr +F /mnt/casefold/tmp
+          sudo chown "$(id -u):$(id -g)" /mnt/casefold/tmp
+          TMPDIR=/mnt/casefold/tmp MERGE_VERSIONS_TEST_REQUIRE_CASE_FOLD=1 python3 scripts/test-merge-versions.py
+
       # 本体は plugins/spec-loop/scripts/ にある（ある版が前の版から何を足し・変え・消したか）。
       - name: spec-loop の版の差分のテスト（#263）
         run: python3 scripts/test-diff-versions.py

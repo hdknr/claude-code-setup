@@ -16,8 +16,18 @@
    **版の直下の、置き場所・`removed.csv` と綴りだけ違う名前（`Removed.csv`・`Shared/`。#276）——中身は読まない**。
    **綴りは git が見る綴り**——コミットが正しい綴りで、作業ツリーに古い綴りのフォルダ（`.DS_Store` だけ）が残っていても 0、
    コミットが綴り違いなら作業ツリーのフォルダの綴りに依らず 1（本物の git リポジトリを一時ディレクトリに作って当てる）。
-   **`.git` が在るのに `git ls-files` が失敗したら 2**。区別しない FS でだけ・区別する FS でだけ判別できる試料と変異は、
-   走らせなかったことを出力に書く（緑のふりをしない）。
+   **置き場所より深いフォルダとファイルの名前も index の綴りで読み、`git archive` で書き出したものを重ねた答えと一致する**（#569）。
+   **置き場所の中の構造ファイルの綴り違い（`shared/QA.csv`・`spec/QA-dev.csv`・`spec/Spec_IR.json`）は 1**（#511）。
+   **作業ツリーの中なのに `git ls-files` が失敗したら（壊れた index）2**。**外かは `git rev-parse --is-inside-work-tree` で決める**
+   ——`docs` の上の壊れた・中身の無い `.git`、発見が止まる境界の向こうの `.git` は外と読んで 0。**本物の FS の境界は作れないので
+   `GIT_CEILING_DIRECTORIES` で代える**（どちらも git の発見を止める）。git が無いときは上に `.git` が在れば 2、無ければ 0（#572）。
+   **フックが相対で設定した `GIT_DIR` は外し、`GIT_INDEX_FILE` は根からのパスとして読む**（一時の index の綴りで読む。無い index を
+   指していれば 2。パスの指定の読み方を変える変数も外す。#570）。**追跡しているファイルは自分の index のパスでだけ数え、index に綴り違いの
+   2 つが在るフォルダ・ファイルは、タグを読む `build-proposal.py` の `copy_docs` と同じく 1**（区別しない FS に展開した `git archive` は綴りを失うので、
+   この形の比べ相手にしない）。**重ねた結果でフォルダの綴りだけが違うのも 1**（#569）。
+   区別しない FS でだけ・区別する FS でだけ判別できる試料と変異は、走らせなかったことを出力に書く（緑のふりをしない）。
+   **CI の Linux では区別しない FS（ext4 の casefold）を作って同じテストをもう 1 度回し、環境変数
+   `MERGE_VERSIONS_TEST_REQUIRE_CASE_FOLD=1` を渡す——一時ディレクトリが区別する FS なら赤にする**（用意に失敗して黙って緑にならない。#571）。
    **前に作った出力は消す。** **入力が無い・読めない（2）ときも消す。**
 4. **正本を消さない（2）**——印の無い空でない出力先・シンボリックリンクの出力先・`docs/` の中・`docs/` そのもの・
    `docs/` を含む場所には書かない。**中身は触らない。**
@@ -41,12 +51,14 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 from typing import Callable
@@ -127,9 +139,11 @@ def with_removed(*rows: str) -> dict[str, str]:
 
 class Result:
     def __init__(self, code: int, output: str, tree: dict[str, bytes] | None, preexisting: str | None = None,
-                 again: dict[str, bytes] | None = None, docs_intact: bool = True, leftover: list[str] | None = None):
+                 again: dict[str, bytes] | None = None, docs_intact: bool = True, leftover: list[str] | None = None,
+                 archive: tuple[int, dict[str, bytes] | None] | None = None):
         self.code, self.output, self.tree, self.preexisting, self.again = code, output, tree, preexisting, again
         self.docs_intact, self.leftover = docs_intact, leftover
+        self.archive = archive  # 同じコミットを git archive で書き出したものを重ねた (終了コード, 出力)。#569
 
     def text(self, path: str) -> str | None:
         return self.tree[path].decode("utf-8") if self.tree and path in self.tree else None
@@ -336,8 +350,70 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      "git-docs-upper", [], lambda r: refused(r, "Removed.csv: removed.csv と大文字小文字")),
     ("版のフォルダの古い綴りでも index の版として読む", {**V1, "v2/requirements/d.md": "D\n"}, "git-version-stale", [],
      lambda r: made(r) and "requirements/d.md" in r.tree),
-    ("git が失敗すれば判定しない", {**V1}, "git-broken", [],
+    # 作業ツリーの中なのに index を読めない（壊れた index）——綴りを照合していないので 2（#538 で承認された決めた値。#572）
+    ("git が失敗すれば判定しない", {**V1}, "git-index-corrupt", [],
      lambda r: r.code == 2 and "git ls-files が失敗した" in r.output and r.tree is None),
+    # 外かどうかは git rev-parse --is-inside-work-tree で決める（#572）——docs の上の関係のない .git（壊れた gitdir:・中身の無い
+    # ディレクトリ）と、git が発見を止める境界の向こうの .git（FS の境界の代わりに GIT_CEILING_DIRECTORIES）は外と読んで 0
+    ("上の壊れた .git は外と読む", {**V1}, "git-broken", [], lambda r: made(r) and "requirements/a.md" in r.tree),
+    ("上の中身の無い .git は外と読む", {**V1}, "git-empty-dotgit", [], lambda r: made(r) and "requirements/a.md" in r.tree),
+    ("発見が止まる境界の向こうの .git は外と読む", {**V1, "v2/requirements/d.md": "D\n"}, "git-ceiling", [],
+     lambda r: made(r) and "requirements/d.md" in r.tree),
+    # git を走らせられないときだけ上へ辿る——.git が在れば中か外か決められないので 2、無ければ外（#572）
+    ("git が無くて上に .git が在れば判定しない", {**V1}, "git-missing", [],
+     lambda r: r.code == 2 and "git を走らせられない" in r.output and r.tree is None),
+    ("git が無くても .git が無ければ外と読む", {**V1}, "no-git", [], lambda r: made(r) and "requirements/a.md" in r.tree),
+    # フックが相対で設定した GIT_INDEX_FILE・GIT_DIR（#570）。どちらも根から見れば正しく、docs から見ると GIT_INDEX_FILE は壊れたファイル、
+    # GIT_DIR は無い。GIT_INDEX_FILE は根からのパスとして読み（docs から読めば 2）、GIT_DIR は外す（引き継げば外と読んで綴り違いを通す）
+    ("フックの相対の GIT_INDEX_FILE は根から読む", {**V1, "v2/requirements/d.md": "D\n"}, "git-env-index", [],
+     lambda r: made(r) and "requirements/d.md" in r.tree),
+    # GIT_INDEX_FILE は外さない——部分コミットの一時の index（コミットは Requirements/、一時の index は requirements/ に改名済み）の
+    # 綴りで読む。外して .git/index を読むと、コミットされない Requirements/ で断る（区別しない FS）
+    ("フックの一時の index の綴りで読む", {**V1, "v2/Requirements/d.md": "D\n"}, "git-env-temp-index", [],
+     lambda r: made(r) and "requirements/d.md" in r.tree),
+    ("フックの相対の GIT_DIR を引き継がない", {**V1, "v2/Requirements/d.md": "D\n"}, "git-env-dir", [],
+     lambda r: refused(r, "Requirements: requirements と大文字小文字")),
+    # GIT_INDEX_FILE が無い index を指す——git は空の index と読むので、黙って作業ツリーの綴りに戻さず 2（#570 の 1 パス目の指摘）
+    ("無い GIT_INDEX_FILE は判定しない", {**V1}, "git-env-missing-index", [],
+     lambda r: r.code == 2 and "GIT_INDEX_FILE が指す index" in r.output and r.tree is None),
+    # index に深いフォルダの綴り違い 2 つ（Sub/a.md・sub/b.md）が在り、区別しない FS では 1 つのフォルダ——追跡しているファイルは
+    # 自分の index のパスでだけ数え（コミットに無い sub/a.md・Sub/b.md を作らない）、フォルダの綴り違いとして 1。タグを読む
+    # build-proposal.py の copy_docs と同じ答え（区別しない FS に展開した git archive は綴りを失うので比べ相手にしない）。#569 の 1・2 パス目の指摘
+    ("深い段の index の綴り違い 2 つはフォルダの綴り違い", {**V1, "v2/requirements/Sub/a.md": "A\n"}, "git-deep-both", [],
+     lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub") and "requirements/Sub/b.md" not in r.output
+     and "requirements/sub/a.md" not in r.output),
+    # 2 段にまたがる形（Sub/x/a.md・sub/x/b.md）も同じ（2 パス目の指摘）
+    ("2 段の index の綴り違いもフォルダの綴り違い", {**V1, "v2/requirements/Sub/x/a.md": "A\n"}, "git-deep-both-2", [],
+     lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub") and "requirements/Sub/x/b.md" not in r.output
+     and "requirements/sub/x/a.md" not in r.output),
+    # 版の段の綴り違い（index に v2/requirements/a.md・V2/requirements/b.md）——V2 は版でない名前。v2 は自分の index の a.md だけで、
+    # b.md は v1 のまま（V2 の B2 を取り込まない。2 パス目の指摘）
+    ("別の綴りの版で追跡するファイルは取り込まない", {**V1, "v2/requirements/a.md": "A\n"}, "git-version-both", [],
+     lambda r: made(r) and r.text("requirements/a.md") == "A\n" and "requirements/b.md" in r.tree and r.text("requirements/b.md") == "B1\n"),
+    # index にファイル名の綴り違い 2 つ（a.md・A.md）が在り、区別しない FS では 1 つのファイル——両方のパスで数えて 1（copy_docs と同じ）
+    ("index のファイル名の綴り違い 2 つは断る", {**V1, "v2/requirements/d.md": "D\n"}, "git-file-both", [],
+     lambda r: refused(r, "requirements/D.md と requirements/d.md")),
+    # 重ねた結果でフォルダの綴りだけが違う（v1 の sub/、v2 の Sub/）——ファイルのパスはぶつからなくても 1（2 パス目の指摘。どの FS でも）
+    ("フォルダの綴りだけ違うのも断る", {**V1, "v1/requirements/sub/y.md": "Y\n", "v2/requirements/Sub/x.md": "X\n"}, "none", [],
+     lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub")),
+    # GIT_LITERAL_PATHSPECS（パスの指定を文字どおりに読む）を引き継がない——引き継げば index が空になり、綴り違いを通す（2 パス目の指摘）
+    ("パスの指定を変える変数を引き継がない", {**V1, "v2/Requirements/d.md": "D\n"}, "git-env-literal", [],
+     lambda r: refused(r, "Requirements: requirements と大文字小文字")),
+    # 置き場所より深い段も index の綴りで読む（#569）——コミットは requirements/sub/d.md、作業ツリーは Sub/D.md（区別しない FS で
+    # git も変更と見ない）。作業ツリーで重ねても、git archive で書き出したもので重ねても同じ答え
+    ("深い段の綴りが作業ツリーで違っても index の綴りで読む", {**V1, "v2/requirements/sub/d.md": "D\n"}, "git-deep-stale", [],
+     lambda r: made(r) and "requirements/sub/d.md" in r.tree and r.archive == (0, r.tree)),
+    # 構造ファイルも同じ——コミットは shared/qa.csv、作業ツリーは QA.csv。index の綴りで Q&A 表として読む（書き出しと同じ）
+    ("構造ファイルの綴りが作業ツリーで違っても index の綴りで読む", {**V1, "v2/shared/qa.csv": QA_HEAD + Q3}, "git-structured-stale", [],
+     lambda r: made(r) and r.qa_numbers() == ["Q-001", "Q-002", "Q-003"] and r.archive == (0, r.tree)),
+    # 置き場所の中の構造ファイルの綴り違いは 1（#511）——重ねた出力を決まった名前で開く側が、区別しない FS でだけ Q&A 表として読むため。
+    # 中身（決まりに反する行）は読まない
+    ("置き場所の中の QA.csv は断る", {**V1, "v2/shared/QA.csv": QA_HEAD + BAD_QA}, "none", [],
+     lambda r: refused(r, "shared/QA.csv: shared/qa.csv と大文字小文字") and "保留" not in r.output),
+    ("置き場所の中の QA-dev.csv は断る", {**V1, "v2/spec/QA-dev.csv": QA_HEAD + D1}, "none", [],
+     lambda r: refused(r, "spec/QA-dev.csv: spec/qa-dev.csv と大文字小文字")),
+    ("置き場所の中の Spec_IR.json は断る", {**V1, "v2/spec/Spec_IR.json": js(SPEC2)}, "none", [],
+     lambda r: refused(r, "spec/Spec_IR.json: spec/spec_ir.json と大文字小文字")),
     ("途中で落ちても印は無い", MAIN, "crash", [],
      lambda r: r.code != 0 and r.leftover is not None and ".merged-versions" not in r.leftover),
     # 想定外の例外も 2（判定していない）で、トレースバックの 1 にしない。前の出力は読めない入力と同じに消す（#286）
@@ -369,7 +445,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("--upto を無視する", "for number, root in versions[:upto]:", "for number, root in versions:", "--upto 1 は v1 だけ"),
     ("v で始まる名前を全部版と読む", "if not VERSION_LIKE.match(name):", 'if not name.startswith("v"):',
      "版でない名前は読まない"),
-    ("ドットで始まる名前も読む", '        if path.name.startswith("."):\n', "        if False:\n",
+    ("ドットで始まる名前も読む", '        if name.startswith("."):\n', "        if False:\n",
      "ドットで始まる名前は読まない"),
     ("欠番を見ない", "if number != expected:", "if False:", "版の欠番"),
     ("版名の形を見ない", "        if not VERSION.fullmatch(name):\n            problems.append",
@@ -415,8 +491,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '        print("重ね合わせは作っていない", file=sys.stderr)\n        return 2', "読めないファイル"),
     ("読めないファイルを包まない", "                except OSError as e:\n", "                except KeyError as e:\n",
      "読めないファイル"),
-    ("読めないディレクトリを飛ばす", "        entries = sorted(directory.iterdir())\n    except OSError as e:\n",
-     "        entries = sorted(directory.iterdir())\n    except OSError as e:\n        return\n", "読めないディレクトリ"),
+    ("読めないディレクトリを飛ばす", "        return {entry.name for entry in directory.iterdir()}\n    except OSError as e:\n",
+     "        return {entry.name for entry in directory.iterdir()}\n    except OSError as e:\n        return set()\n", "読めないディレクトリ"),
     ("ファイルの形の版名を飛ばす", "        if not VERSION.fullmatch(name):\n            problems.append",
      "        if not VERSION.fullmatch(name):\n            continue\n            problems.append", "ファイルの形の版名"),
     ("版のシンボリックリンクを読む", "        if not entry.is_dir() or entry.is_symlink():\n", "        if not entry.is_dir():\n",
@@ -432,16 +508,56 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("綴りが同じでも断る", "if want is None or name == want:", "if want is None:", "全部の経路を重ねる"),
     ("中身の無い綴り違いも数える", "            continue  # 読む名前を持たない", "            pass  # 読む名前を持たない",
      "中身の無い綴り違いは数えない"),
-    ("index を見ない", "        entries = spelled(root, index)\n", "        entries = names(root)\n",
+    ("index を見ない", "        entries = spelled(root, None if index is None else index.get((root.name,), set()))\n",
+     "        entries = names(root)\n",
      "コミットが正しい綴りなら作業ツリーの古い綴りで断らない"),
-    ("git を呼ばない", "    index = tracked(docs) if docs.is_dir() else None\n", "    index = None\n",
+    ("git を呼ばない", "    found = tracked(docs) if docs.is_dir() else None\n", "    found = None\n",
      "コミットが綴り違いなら作業ツリーの綴りに依らず断る"),
     ("同じ項目かを見ない", " and same_entry(root / m, root / name)}", "}", "別の項目の綴り違いは index に寄せない"),
     ("index に在る名前は寄せない", "    for name in entries:\n        # 自分自身も含む",
      "    for name in entries:\n        if name in index:\n            result.add(name)\n            continue\n        # 自分自身も含む",
      "index の綴り違いは同じフォルダでも断る"),
-    ("版の直下のファイルを index から集めない", "        if len(rest) >= 2:", "        if len(rest) >= 3:",
+    ("版の直下のファイルを index から集めない", "        for depth in range(len(rest)):", "        for depth in range(min(len(rest), 1)):",
      "コミットの removed.csv は作業ツリーの綴りに依らず読む"),
+    # 置き場所より深い段（#569）——前の形（版の直下まで）に戻す・walk が index を引かない
+    ("深い段を index から集めない", "        for depth in range(len(rest)):", "        for depth in range(min(len(rest), 2)):",
+     "深い段の綴りが作業ツリーで違っても index の綴りで読む"),
+    ("深い段を index に寄せない", "    for name in sorted(spelled(directory, None if index is None else index.get(prefix, set()))):\n",
+     "    for name in sorted(names(directory)):\n", "構造ファイルの綴りが作業ツリーで違っても index の綴りで読む"),
+    ("深い段の接頭辞を伸ばさない", "            walk(root, path, files, problems, index, (*prefix, name), owned)\n",
+     "            walk(root, path, files, problems, index, prefix, owned)\n", "深い段の綴りが作業ツリーで違っても index の綴りで読む"),
+    # 追跡しているファイルは自分の index のパスでだけ数える・フォルダの綴り違い・パスの指定の変数（2 パス目の指摘）
+    ("別の綴りで追跡するファイルも数える", '            if owned is not None and not claims(owned, path, "/".join((*prefix, name))):\n',
+     "            if False:\n", "別の綴りの版で追跡するファイルは取り込まない"),
+    ("2 段でも別の綴りで追跡するファイルを数える", '            if owned is not None and not claims(owned, path, "/".join((*prefix, name))):\n',
+     "            if False:\n", "2 段の index の綴り違いもフォルダの綴り違い"),
+    ("フォルダの綴り違いを見ない", "            if other != parent:\n                found.append(f\"重ねた結果でディレクトリ",
+     "            if False:\n                found.append(f\"重ねた結果でディレクトリ", "フォルダの綴りだけ違うのも断る"),
+    ("パスの指定の変数を外さない", "*GIT_LOCATION, *GIT_PATHSPECS, ", "*GIT_LOCATION, ", "パスの指定を変える変数を引き継がない"),
+    ("無い GIT_INDEX_FILE を見ない", "    if index_file is not None and not os.path.isfile(index_file):\n", "    if False:\n",
+     "無い GIT_INDEX_FILE は判定しない"),
+    # 置き場所の中の構造ファイルの綴り違い（#511）
+    ("構造ファイルの綴り違いを見ない", "        problems.extend(misnamed_structured(root, files))\n", "",
+     "置き場所の中の QA.csv は断る"),
+    ("構造ファイルの綴りを畳まずに比べる", "        want = expected.get(fold(path))\n", "        want = expected.get(path)\n",
+     "置き場所の中の QA-dev.csv は断る"),
+    ("構造ファイルは綴りが同じでも断る", "        if want is not None and path != want:", "        if want is not None:",
+     "全部の経路を重ねる"),
+    # git の呼び方（#570・#572）
+    ("相対の GIT_INDEX_FILE を docs から読む", "        index_file = str(top / index_file)", "        index_file = str(start / index_file)",
+     "フックの相対の GIT_INDEX_FILE は根から読む"),
+    ("GIT_INDEX_FILE を渡さない", '        env["GIT_INDEX_FILE"] = index_file\n', "        pass\n", "フックの一時の index の綴りで読む"),
+    ("GIT_DIR を外さない", '("GIT_DIR", "GIT_WORK_TREE",', '("GIT_WORK_TREE",', "フックの相対の GIT_DIR を引き継がない"),
+    ("rev-parse の失敗を外と読まない", '    if inside.returncode != 0 or inside.stdout.strip() != b"true":\n',
+     '    if inside.stdout.strip() == b"false":\n', "上の壊れた .git は外と読む"),
+    ("中身の無い .git でも中と読む", '    if inside.returncode != 0 or inside.stdout.strip() != b"true":\n',
+     '    if inside.stdout.strip() == b"false":\n', "上の中身の無い .git は外と読む"),
+    ("境界の向こうでも中と読む", '    if inside.returncode != 0 or inside.stdout.strip() != b"true":\n',
+     '    if inside.stdout.strip() == b"false":\n', "発見が止まる境界の向こうの .git は外と読む"),
+    ("git が無いとき上の .git を見ない", '        if any((d / ".git").exists() for d in (start, *start.parents)):\n',
+     "        if False:\n", "git が無くて上に .git が在れば判定しない"),
+    ("git が無ければいつも判定しない", '        if any((d / ".git").exists() for d in (start, *start.parents)):\n',
+     "        if True:\n", "git が無くても .git が無ければ外と読む"),
     ("index をリポジトリの根からの綴りで引かない", '"ls-files", "-z", "--full-name", "--"', '"ls-files", "-z", "--"',
      "docs のフォルダの綴りが違っても index で断る"),
     ("docs の綴りを畳まずに index を引く", '":(top,icase)"', '":(top)"', "コミットの Docs/ を docs で読んでも index で断る"),
@@ -609,10 +725,11 @@ sys.exit(module.main(sys.argv[3:]))
 '''
 
 
-def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | None = None) -> tuple[int, str]:
+def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | None = None,
+          env: dict[str, str] | None = None) -> tuple[int, str]:
     head = ["-c", FAIL_DRIVER, str(scripts / TARGET), fail] if fail else ["-c", MAIN_DRIVER, str(scripts / TARGET)]
     proc = subprocess.run([sys.executable, "-I", *head, str(docs), str(out), *extra],
-                          capture_output=True, text=True, cwd=docs.parent)
+                          capture_output=True, text=True, cwd=docs.parent, env={**os.environ, **(env or {})})
     return proc.returncode, proc.stdout + proc.stderr
 
 
@@ -620,12 +737,21 @@ def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | No
 CASE_FOLD_ONLY = {"コミットが綴り違いなら作業ツリーの綴りに依らず断る", "index の綴り違いは同じフォルダでも断る",
                   "コミットの Removed.csv は作業ツリーの綴りに依らず断る", "コミットの removed.csv は作業ツリーの綴りに依らず読む",
                   "docs のフォルダの綴りが違っても index で断る", "コミットの Docs/ を docs で読んでも index で断る",
-                  "版のフォルダの古い綴りでも index の版として読む"}
+                  "版のフォルダの古い綴りでも index の版として読む", "フックの相対の GIT_DIR を引き継がない",
+                  "フックの一時の index の綴りで読む", "深い段の index の綴り違い 2 つはフォルダの綴り違い",
+                  "2 段の index の綴り違いもフォルダの綴り違い", "別の綴りの版で追跡するファイルは取り込まない",
+                  "index のファイル名の綴り違い 2 つは断る", "パスの指定を変える変数を引き継がない",
+                  "深い段の綴りが作業ツリーで違っても index の綴りで読む", "構造ファイルの綴りが作業ツリーで違っても index の綴りで読む"}
 # 試料はどの FS でも走るが、区別する FS では殺せない変異（作業ツリーの綴りのままでも、`.DS_Store` だけのフォルダは数えないので 0）
 FOLD_ONLY_MUTATIONS = {"index を見ない"}
 CASE_SENSITIVE_ONLY = {"別の項目の綴り違いは index に寄せない"}
 fs_skips: list[str] = []
 FOLDS: list[bool] = []
+# git archive の書き出しでも重ねて、作業ツリーの答えと比べる試料（#569）
+ARCHIVED = {"git-deep-stale", "git-structured-stale"}
+# この環境変数が 1 なら、一時ディレクトリが大文字小文字を区別しない FS でなければ赤にする——CI の Linux で区別しない FS
+# （ext4 の casefold）を用意して回すステップが、用意に失敗しても区別する FS で黙って緑にならないように（#571）
+REQUIRE_CASE_FOLD = "MERGE_VERSIONS_TEST_REQUIRE_CASE_FOLD"
 
 
 def case_insensitive(tmp: Path) -> bool:
@@ -642,10 +768,26 @@ def git(root: Path, *args: str) -> None:
                    check=True, capture_output=True)
 
 
+def rename(path: Path, name: str) -> None:
+    """綴りだけ変える（区別しない FS では 2 段に分けないと変わらない）。"""
+    path.rename(path.parent / "tmp-rename")
+    (path.parent / "tmp-rename").rename(path.parent / name)
+
+
+# index に足す綴りだけ違うパスと、区別しない FS で作業ツリーに書く場所（None なら書かない——同じファイルを開く）
+BOTH = {"git-deep-both": ("v2/requirements/sub/b.md", "v2/requirements/Sub/b.md"),
+        "git-deep-both-2": ("v2/requirements/sub/x/b.md", "v2/requirements/Sub/x/b.md"),
+        "git-version-both": ("V2/requirements/b.md", "v2/requirements/b.md"),
+        "git-file-both": ("v2/requirements/D.md", None)}
+
+
 def prepare_git(root: Path, docs: Path, prepare: str) -> None:
     """本物の git リポジトリに試料をコミットしてから、作業ツリーのフォルダの綴りを変える（#276）。"""
-    if prepare == "git-broken":
+    if prepare == "git-broken":  # docs の上の関係のない壊れた .git（#572）
         (root / ".git").write_text("gitdir: /nonexistent\n", encoding="utf-8")
+        return
+    if prepare == "git-empty-dotgit":  # docs の上の中身の無い .git（#572）
+        (root / ".git").mkdir()
         return
     if prepare == "git-docs-upper":  # コミットのフォルダは Docs（試料は docs で打つ）
         docs.rename(root / "tmp-rename")
@@ -676,9 +818,34 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
         name = next(p.name for p in v2.iterdir() if p.name.casefold() == "removed.csv")
         (v2 / name).rename(v2 / "tmp-rename")
         (v2 / "tmp-rename").rename(v2 / ("removed.csv" if name == "Removed.csv" else "Removed.csv"))
-    elif prepare == "git-renamed" and folds:
+    elif prepare == "git-env-temp-index" and folds:  # 一時の index でだけ Requirements/ → requirements/ に改名（部分コミット）
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_INDEX_FILE": str(root / "idx")}
+        shutil.copyfile(root / ".git" / "index", root / "idx")
+        rename(v2 / "Requirements", "requirements")
+        for args in (["rm", "-q", "--cached", "docs/v2/Requirements/d.md"], ["add", "docs/v2/requirements/d.md"]):
+            subprocess.run(["git", *args], cwd=root, env=env, check=True, capture_output=True)
+    elif prepare in ("git-renamed", "git-env-dir", "git-env-literal") and folds:
         (v2 / "Requirements").rename(v2 / "tmp-rename")
         (v2 / "tmp-rename").rename(v2 / "requirements")
+    elif prepare == "git-deep-stale" and folds:  # コミットは requirements/sub/d.md（#569）
+        rename(v2 / "requirements" / "sub" / "d.md", "D.md")
+        rename(v2 / "requirements" / "sub", "Sub")
+    elif prepare == "git-structured-stale" and folds:  # コミットは shared/qa.csv（#569）
+        rename(v2 / "shared" / "qa.csv", "QA.csv")
+    elif prepare in BOTH and folds:  # index に綴りだけ違うパスを足す。区別しない FS では既に在るフォルダ（ファイル）に書かれる
+        added, written = BOTH[prepare]
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+        sha = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=root, env=env, input=b"B2\n",
+                             check=True, capture_output=True).stdout.decode().strip()
+        git(root, "update-index", "--add", "--cacheinfo", f"100644,{sha},docs/{added}")
+        git(root, "commit", "-q", "-m", "綴り違い")
+        if written is not None:
+            (docs / written).write_bytes(b"B2\n")
+    elif prepare == "git-index-corrupt":  # 作業ツリーの中なのに index を読めない（#572）
+        (root / ".git" / "index").write_bytes(b"broken index\n")
+    elif prepare == "git-env-index":  # 根から見れば正しい index の写し、docs から見れば壊れたファイル（#570）
+        shutil.copyfile(root / ".git" / "index", root / "idx")
+        (docs / "idx").write_bytes(b"x")
     elif prepare == "git-both":
         blob = (v2 / "shared" / "a.md").read_bytes()
         env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
@@ -696,6 +863,10 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
     locked = build(docs, tree)
     if prepare.startswith("git-"):
         prepare_git(root, docs, prepare)
+    # git を呼ぶ環境（#570・#572）。GIT_CEILING_DIRECTORIES は FS の境界の代わり——どちらも git が上へ辿るのを止める
+    env = {"git-env-index": {"GIT_INDEX_FILE": "idx"}, "git-env-missing-index": {"GIT_INDEX_FILE": "nonexistent-idx"}, "git-env-temp-index": {"GIT_INDEX_FILE": "idx"}, "git-env-dir": {"GIT_DIR": ".git"}, "git-env-literal": {"GIT_LITERAL_PATHSPECS": "1"},
+           "git-ceiling": {"GIT_CEILING_DIRECTORIES": os.path.realpath(root)},
+           "git-missing": {"PATH": os.devnull}, "no-git": {"PATH": os.devnull}}.get(prepare)
     out = {"inside": docs / "merged", "docs": docs, "parent": root, "parent-loop": root,
            "out-loop": root / "loop" / "merged"}.get(prepare, root / "build" / "merged")
     preexisting = None
@@ -736,7 +907,7 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         finally:
             out.parent.chmod(0o755)
     else:
-        code, output = merge(scripts, docs, out, extra, fail)
+        code, output = merge(scripts, docs, out, extra, fail, env)
     leftover = (sorted(p.relative_to(out).as_posix() for p in out.rglob("*"))
                 if out.is_dir() and not out.is_symlink() else None)
     for path in locked:
@@ -751,7 +922,17 @@ def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[st
         merge(scripts, docs, second, extra)
         again = snapshot(second)
     tree_out = None if prepare in ("docs", "parent") else snapshot(out)
-    return Result(code, output, tree_out, preexisting, again, docs_intact, leftover)
+    archive = None
+    if prepare in ARCHIVED:  # 同じコミットを git archive で書き出して重ねる——タグから写す側の答え（#569）
+        exported = root.parent / f"{root.name}-archive"
+        exported.mkdir()
+        tar = subprocess.run(["git", "archive", "--format=tar", "HEAD", "docs"], cwd=root, check=True, capture_output=True,
+                             env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}).stdout
+        with tarfile.open(fileobj=io.BytesIO(tar)) as archive_file:
+            archive_file.extractall(exported, filter="data")
+        archive_code, _ = merge(scripts, exported / "docs", exported / "build" / "merged", extra)
+        archive = (archive_code, snapshot(exported / "build" / "merged"))
+    return Result(code, output, tree_out, preexisting, again, docs_intact, leftover, archive)
 
 
 def skipped(name: str) -> bool:
@@ -808,6 +989,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="merge-versions-test-") as tmp:
         tmp_path = Path(tmp)
         case_insensitive(tmp_path)
+        if os.environ.get(REQUIRE_CASE_FOLD) == "1" and not FOLDS[0]:
+            check(f"{REQUIRE_CASE_FOLD}=1 なのに一時ディレクトリ（{tmp_path}）が大文字小文字を区別する（区別しない FS の試料を走らせていない）", False)
         if shutil.which("git") is None:
             check("git が無いので git の試料を走らせられない（緑ではない）", False)
         scripts = copy_scripts(tmp_path / "scripts")
@@ -824,14 +1007,16 @@ def main() -> int:
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
+            # 壊す箇所の数は FS に依らず見る——片方の FS でしか走らない変異の当て先が消えても、もう片方の FS で気づく
+            # （PR #660 の 2 パス目で、区別しない FS で飛ばした変異の当て先が消えていたのを Linux の CI が見つけた）
+            count = source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
             if skipped(killer):
                 continue
             if name in FOLD_ONLY_MUTATIONS and not FOLDS[0]:
                 fs_skips.append(name)
-                continue
-            count = source.count(before)
-            if count != 1:
-                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
                 continue
             mutated = copy_scripts(tmp_path / f"mut{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
@@ -864,6 +1049,7 @@ def main() -> int:
     lone = [name for name in fs_skips if name in FOLD_ONLY_MUTATIONS]
     if lone:
         print(f"飛ばした（区別する FS では殺せない。#276）: 変異 {'・'.join(lone)}")
+    print(f"この一時ディレクトリの FS: 大文字小文字を{'区別しない' if FOLDS[0] else '区別する'}")
     print(f"OK: 試料 {len(CASES) - len(skip)} 件・変異 {sum(not skipped(m[3]) for m in MUTATIONS) - len(lone) + len(OO_MUTATIONS)} 件")
     return 0
 

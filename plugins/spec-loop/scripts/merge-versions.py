@@ -19,8 +19,8 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 - 0: 書いた
 - 1: 入力が決まりに反する（重ねた結果が書けない形になる・UTF-8 で書けない文字を含む、も含む）——**書かない。前に作った出力があれば消す**（問題は 1 件で止めず、
   最初に問題のあった版の中は全部出す。それより後の版は前の版の全体に依るので見ない）
-- 2: 引数の誤り・入力が無い／読めない・出力先に書けない・**`docs` が git の作業ツリーの中なのに git が無い・`git ls-files` が失敗した**
-  （版の直下の綴りを index と照合できない。#276）・想定外の例外（巨大なセルの `csv.Error`・深い入れ子の
+- 2: 引数の誤り・入力が無い／読めない・出力先に書けない・**`docs` が git の作業ツリーの中なのに git が失敗した・
+  git を走らせられないのに `docs` の上に `.git` が在る**（綴りを index と照合できない。#276・#572）・想定外の例外（巨大なセルの `csv.Error`・深い入れ子の
   `RecursionError` など。#286）——**書かない**（書いている途中なら書きかけを消す）。
   **入力が無い・読めないときは**（重ねている途中の想定外の例外を含む）、出力先が印の在るディレクトリなら前の出力を消す。
   **出力先そのものを断ったとき**（印の無い空でない場所・シンボリックリンク・`docs/` の中・`docs/` を含む場所）は**消さない**
@@ -31,24 +31,36 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 | --- | --- |
 | **新しいつもりで前の版の番号を書いた** | 同じ番号は「変更」の意味と決めている。意図は機械で分からない |
 | **重ね合わせた `spec_ir.json` の中身の決まり** | `spec-ir.md` の決まりは `scaffold.py` が全体に当てる |
-| **凍結した版が直されていないか** | `release-v<n>` のタグとの照合で、タグが要る（このスクリプトが git を使うのは、版の直下の綴りを index と照合するときだけ） |
-| **`GIT_DIR`・`GIT_INDEX_FILE` などで別の index を指した環境** | 上へ辿って見つけた `.git` と、git が実際に読む index が別になりうる。環境変数は見ない |
+| **凍結した版が直されていないか** | `release-v<n>` のタグとの照合で、タグが要る（このスクリプトが git を使うのは、名前の綴りを index と照合するときだけ） |
+| **フックの外から、`docs` の属さないリポジトリを指す `GIT_INDEX_FILE` を渡す** | `GIT_INDEX_FILE` は読む（フックの一時の index がコミットされる綴りを持つため。相対なら `docs` が属するリポジトリの根から。#570）。別のリポジトリの index を指していれば、その名前で照合する |
+| **作業ツリーの中なのに `git rev-parse --is-inside-work-tree` が失敗する形**（dubious ownership・壊れた `gitdir:` を持つ `.git`） | 失敗の理由は読み分けず（git のメッセージは版と言語で変わる）外と読む——作業ツリーの綴りで読むので、区別しない FS で作業ツリーのフォルダの綴りがコミットと違えば、タグと答えが食い違いうる（#572） |
+| **git を走らせられない環境の `docs` の上の `.git`** | 中か外かを git で決められないので、上へ辿って `.git` が在れば 2（関係のない `.git` でも） |
+| **index に綴りの違う 2 つが在るフォルダの、追跡していないファイル** | 区別しない FS ではどちらの綴りのフォルダにも見えるので、両方の綴りで数えて 1（重ねた結果で綴りだけ違うパス）になる。タグには写らないので、タグを読む側には現れない |
 | **index に在る名前を作業ツリーで綴りだけ変えて、まだ `git add` していない** | 区別しない FS では git もそれを変更と見ない（`git status` が空）ので、index の綴りで読む。区別する FS では別の名前（`git status` に出る）なので作業ツリーの綴りで読む——同じコミットの答えは揃う |
 | **大文字小文字を区別しないファイルシステムでの版名 `V2`** | `v` の次が数字の名前だけを版と読むので、`V2/` は版でない名前として読まない |
-| **置き場所の中のファイル名の綴り違い（`shared/QA.csv`）** | ここでは書かれた名前（`iterdir`）で読み、どのファイルシステムでも構造ファイルではない「ふつうのファイル」として重ねる。**ただし重ねた出力の `shared/QA.csv`・`spec/QA-dev.csv` は、決まった名前で開く側（`check-spec-exit.py`・`scaffold.py`）が区別しないファイルシステムでだけ Q&A 表として読む**——断っていない（#511。`spec/spec_ir.json` は `scaffold.py` が重ねた中身の名前で引くので、綴り違いはどの FS でも中間表現として読まない） |
 
-**版の直下は git が見る綴りで読む**（#276）——`removed.csv`・置き場所（`shared/` など）をパスを組み立てて開くと、
+**名前は git が見る綴りで読む**（#276・#569）——`removed.csv`・置き場所（`shared/` など）をパスを組み立てて開くと、
 大文字小文字を区別しないファイルシステムでだけ `Removed.csv`・`Shared/` が開けてしまい、タグから写して重ねる
-`build-proposal.py` や区別するファイルシステムと答えが食い違う。**綴りだけ違う名前（大文字小文字・Unicode の正規化）は
-決まりに反する（1）として名指しし、中身は読まない。**
+`build-proposal.py` や区別するファイルシステムと答えが食い違う。**版の直下の置き場所・`removed.csv` と、置き場所の中の構造ファイル
+（`shared/qa.csv`・`spec/qa-dev.csv`・`spec/spec_ir.json`）について、綴りだけ違う名前（大文字小文字・Unicode の正規化）は
+決まりに反する（1）として名指しし、中身は読まない**（構造ファイルは #511——重ねた出力を決まった名前で開く `check-spec-exit.py`・
+`scaffold.py` が、区別しない FS でだけ `shared/QA.csv` を Q&A 表として開くため）。
 
 - **綴りは `spelled` が決める。** 区別しない FS では、作業ツリーのフォルダの綴り（`iterdir`）がコミットの綴りと食い違いうる
   ——git は既に在るフォルダに書き込むので、古い `Requirements/` が（追跡しない `.DS_Store` などで）残っていると、
   `requirements/` のファイルもそこに書かれる。だから `docs` が git の作業ツリーの中なら `git ls-files` をリポジトリの根からの綴りで
-  1 回引き（`docs` のフォルダ自身の綴りがコミットと違っても引けるように）、**版のフォルダの名前（`docs` の直下）と版の直下の名前について**、
+  1 回引き（`docs` のフォルダ自身の綴りがコミットと違っても引けるように）、**どの段の名前についても**（版のフォルダ・版の直下・
+  置き場所より深いフォルダとファイル。#569）、
   **FS が index の綴りの名前と作業ツリーの名前を同じ項目として開くとき（`lstat` の dev・ino が同じ）**は index の綴りを名前とする。
-  区別する FS では 2 つは別の項目なので、作業ツリーの綴りのまま。**置き場所より深いフォルダの綴りは照合しない**（作業ツリーの綴りで読む）。
-  index に無い名前（`git add` 前）と、git の外（上へ辿って `.git` が無い）は作業ツリーの綴りで読む。
+  区別する FS では 2 つは別の項目なので、作業ツリーの綴りのまま。
+  index に無い名前（`git add` 前）と、git の外（`git rev-parse --is-inside-work-tree` が `true` を返さない。#572）は作業ツリーの綴りで読む。
+- **追跡しているファイルは、自分の index のパスでだけ数える**（`owners`）——index に綴りの違う 2 つ（`Sub/a.md`・`sub/b.md`、`v2/…`・`V2/…`）が在り、
+  区別しない FS で 1 つのフォルダになっていても、別の綴りで追跡しているファイルを取り込まない。タグを読む `build-proposal.py` の
+  `copy_docs` はコミットの木からパスを作るので、それと揃う。**重ねた結果でフォルダの綴りだけが違うのも 1**（`collisions`。`copy_docs` と同じ判定）。
+  **区別しない FS に展開した `git archive` の書き出しは綴りを失う**ので、この形の比べ相手にはならない。
+- **git はリポジトリの場所を指す環境変数（`GIT_DIR`・`GIT_WORK_TREE`・`GIT_COMMON_DIR`）を外して呼ぶ**（`run_git`。#570）——
+  フックの中ではこれらが相対パスで設定されていることがあり、引き継ぐと `docs` から見た別の場所を読む。**`GIT_INDEX_FILE` は外さない**
+  ——部分コミットの一時の index はコミットされる綴りを持つ。相対なら、`docs` が属するリポジトリの根からのパスとして絶対パスにする。
 - **綴りだけ違うディレクトリでも、読む名前（`.` で始まらない）のファイルを持たなければ数えない**（`has_content`）——
   `build-proposal.py` は `.` で始まる名前を写さないので、タグの側にもその名前は現れない。
 - 綴りどおりのパスが在るかを見る `exact` は、写した一時ディレクトリから内部の層を外す `build-proposal.py` が使う。
@@ -94,6 +106,10 @@ KIND_FILE, KIND_QA, KIND_FEATURE = "ファイル", "Q&A", "機能"
 KINDS = [KIND_FILE, KIND_QA, KIND_FEATURE]
 STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]
 MARKER = ".merged-versions"
+# git を呼ぶ前に外す、リポジトリの場所を指す環境変数（`run_git`。#570）。`GIT_INDEX_FILE` は外さず絶対パスにする（`tracked`）
+GIT_LOCATION = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")
+# パスの指定（`:(top,icase)`）の読み方を変える環境変数も外す——文字どおりに読まれると index が黙って空になる（#570 の 2 パス目の指摘）
+GIT_PATHSPECS = ("GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS")
 # v1 の `removed.csv` を拒否する文言（`check-signoff.py` も使う。写さない）
 V1_REMOVED = "v1 には置かない（消すものが無い）"
 
@@ -141,37 +157,72 @@ def names(directory: Path) -> set[str]:
         raise Unreadable(f"{directory}: 読めない（{e.strerror}）") from None
 
 
-def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
-    """git の index にある、`docs` からの名前（`()` → `docs` の直下の綴り、`("v2",)` → 版の直下の綴り）。
-    `docs` が git の作業ツリーの外なら None。
+def run_git(cwd: Path, *args: str, index_file: str | None = None) -> subprocess.CompletedProcess:
+    """`git` を走らせる唯一の口。走らせられなければ `OSError`。
 
-    外かどうかは上へ辿って `.git`（ディレクトリかファイル）を探して決める——git を呼んで失敗の理由を読み分けない。
-    `.git` が在るのに git が無い・失敗したら `Unreadable`（2。綴りを照合していない）。
+    **リポジトリの場所を指す環境変数（`GIT_LOCATION`）は外して渡す**（#570）——git のフックの中ではこれらが相対パスで
+    設定されていることがあり、`cwd` を `docs` にして引き継ぐと `docs` から見た別の場所を読む。外せば git は `docs` から自分の
+    リポジトリを見つける。パスの指定の読み方を変える変数（`GIT_PATHSPECS`）も外す。`GIT_INDEX_FILE` も外し、`index_file`
+    （`tracked` が絶対パスにしたもの）があればそれだけを渡す。
+    """
+    env = {key: value for key, value in os.environ.items() if key not in (*GIT_LOCATION, *GIT_PATHSPECS, "GIT_INDEX_FILE")}
+    if index_file is not None:
+        env["GIT_INDEX_FILE"] = index_file
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, env=env)
+
+
+def tracked(docs: Path) -> tuple[dict[tuple[str, ...], set[str]], set[str]] | None:
+    """git の index にある、`docs` からの名前を段ごとに（`()` → `docs` の直下の綴り、`("v2",)` → 版の直下の綴り、
+    `("v2", "requirements")` → その中の綴り……）と、`docs` からのパスの全部。`docs` が git の作業ツリーの外なら None。
+
+    **外かどうかは `git rev-parse --is-inside-work-tree` で決める**（#572）——`true` を返さなければ（失敗も）外と読む。
+    上へ辿って `.git` を探すと、`docs` の上にある関係のない・壊れた `.git` や、git が発見を止める境界（FS の境界・
+    `GIT_CEILING_DIRECTORIES`）の向こうの `.git` で、正しい入力が 2 になる。**git を走らせられないときだけ**上へ辿り、
+    `.git` が在れば `Unreadable`（2。中か外かを決められない）、無ければ外。
+    中なのに git が失敗したら `Unreadable`（2。綴りを照合していない）。
     **`docs` のフォルダ自身の綴りがコミットと違ってもよい**——index はリポジトリの根からの綴り（`--full-name`）で
     大文字小文字を畳んで引き（`:(icase)`）、FS が `docs` と同じ項目として開く接頭辞のものだけを使う。
     """
     start = docs.resolve()
-    if not any((d / ".git").exists() for d in (start, *start.parents)):
+    try:
+        inside = run_git(start, "rev-parse", "--is-inside-work-tree")
+    except OSError as e:
+        if any((d / ".git").exists() for d in (start, *start.parents)):
+            raise Unreadable(f"{docs}: git を走らせられない（{e.strerror}）のに上に .git が在る——作業ツリーの中か決められず、"
+                             "綴りを index と照合できない") from None
+        return None
+    if inside.returncode != 0 or inside.stdout.strip() != b"true":
         return None
 
-    def git(*args: str) -> bytes:
+    def git(*args: str, index_file: str | None = None) -> bytes:
         try:
-            proc = subprocess.run(["git", *args], cwd=start, capture_output=True)
+            proc = run_git(start, *args, index_file=index_file)
         except OSError as e:
-            raise Unreadable(f"{docs}: git の作業ツリーの中だが git を走らせられない（{e.strerror}）——版の直下の綴りを照合できない") from None
+            raise Unreadable(f"{docs}: git の作業ツリーの中だが git を走らせられない（{e.strerror}）——綴りを index と照合できない") from None
         if proc.returncode != 0:
             detail = proc.stderr.decode("utf-8", "replace").strip()
-            raise Unreadable(f"{docs}: git ls-files が失敗した（{detail}）——版の直下の綴りを照合できない")
+            raise Unreadable(f"{docs}: git の作業ツリーの中だが git {args[0]} が失敗した（{detail}）——綴りを index と照合できない")
         return proc.stdout
 
     top = Path(os.fsdecode(git("rev-parse", "--show-toplevel").rstrip(b"\n")))
     rel = start.parts[len(top.parts):]
     if len(start.parts) < len(top.parts) or [fold(p) for p in start.parts[:len(top.parts)]] != [fold(p) for p in top.parts]:
-        return {}
+        return {}, set()
     spec = [":(top,icase)" + "/".join(rel)] if rel else []
+    # フックが設定した GIT_INDEX_FILE（部分コミットの一時の index など。コミットされる綴りを持つ）は読む。相対なら作業ツリーの根からの
+    # パスとして絶対パスにする（#570）——フックは根で走り、git も根から解決するが、それに頼らず `docs` から呼んでも同じ index を指す
+    index_file = os.environ.get("GIT_INDEX_FILE") or None
+    if index_file is not None and not os.path.isabs(index_file):
+        index_file = str(top / index_file)
+    if index_file is not None and not os.path.isfile(index_file):
+        # git は無い index を空の index と読む——黙って作業ツリーの綴りに戻ると照合が外れる（#570 の 1 パス目の指摘）
+        raise Unreadable(f"{docs}: GIT_INDEX_FILE が指す index（{index_file}）が無い——綴りを index と照合できない")
     found: dict[tuple[str, ...], set[str]] = {}
+    paths: set[str] = set()
     prefixes: dict[tuple[str, ...], bool] = {}
-    for raw in git("ls-files", "-z", "--full-name", "--", *spec).split(b"\0"):
+    for raw in git("ls-files", "-z", "--full-name", "--", *spec, index_file=index_file).split(b"\0"):
+        if not raw:
+            continue
         parts = tuple(raw.decode("utf-8", "surrogateescape").split("/"))
         head, rest = parts[:len(rel)], parts[len(rel):]
         if not rest or [fold(p) for p in head] != [fold(p) for p in rel]:
@@ -180,9 +231,26 @@ def tracked(docs: Path) -> dict[tuple[str, ...], set[str]] | None:
             prefixes[head] = head == rel or same_entry(top.joinpath(*head), start)
         if not prefixes[head]:
             continue
-        found.setdefault((), set()).add(rest[0])
-        if len(rest) >= 2:  # 版の直下の名前（`v2/removed.csv` のような版の直下のファイルも）
-            found.setdefault((rest[0],), set()).add(rest[1])
+        for depth in range(len(rest)):  # どの段の名前も（版の名前・版の直下・その中のフォルダとファイル。#569）
+            found.setdefault(rest[:depth], set()).add(rest[depth])
+        paths.add("/".join(rest))
+    return found, paths
+
+
+def owners(docs: Path, paths: set[str]) -> dict[tuple[int, int], set[str]]:
+    """作業ツリーのファイル（`lstat` の dev・ino）→ それを追跡している index のパス（`docs` から）。
+
+    区別しない FS では、綴りの違う 2 つのパス（`Sub/a.md`・`sub/a.md`、`v2/…`・`V2/…`）が同じファイルを開く。
+    **追跡しているファイルは、自分の index のパスでだけ数える**（`walk`）——タグを読む側（`build-proposal.py` の `copy_docs`）は
+    コミットの木からパスを作るので、別の綴りで追跡しているファイルを、辿っているフォルダの追跡していないファイルとして取り込まない（#569 の 2 パス目の指摘）。
+    """
+    found: dict[tuple[int, int], set[str]] = {}
+    for path in paths:
+        try:
+            st = os.lstat(docs / path)
+        except OSError:
+            continue  # 作業ツリーで消した・区別する FS で綴りを変えた——そのパスで開くファイルは無い
+        found.setdefault((st.st_dev, st.st_ino), set()).add(path)
     return found
 
 
@@ -196,7 +264,7 @@ def same_entry(a: Path, b: Path) -> bool:
 
 
 def spelled(root: Path, index: set[str] | None) -> set[str]:
-    """版の直下の名前を、git が見る綴りで（上の docstring の「綴りは `spelled` が決める」）。"""
+    """ディレクトリの中の名前を、git が見る綴りで（上の docstring の「綴りは `spelled` が決める」）。`index` はその段の index の名前。"""
     entries = names(root)
     if not index:
         return entries
@@ -248,8 +316,27 @@ def misnamed(root: Path, entries: set[str]) -> list[str]:
     return found
 
 
-def list_files(root: Path, entries: set[str], problems: list[str]) -> dict[str, Path]:
-    """版のディレクトリの、重ねる置き場所にあるファイル（`.` で始まる名前は読まない）。置き場所は綴りどおりの名前だけ。"""
+def misnamed_structured(root: Path, files: dict[str, Path]) -> list[str]:
+    """置き場所の中で、構造ファイル（`shared/qa.csv` など）と大文字小文字・Unicode の正規化だけ違うパス（#511）。
+
+    重ねた出力を読む側（`check-spec-exit.py`・`scaffold.py`）は決まった名前でパスを組み立てるので、
+    区別しないファイルシステムでだけ `shared/QA.csv` を Q&A 表として開いてしまう。
+    """
+    expected = {fold(path): path for path in STRUCTURED}
+    found = []
+    for path in sorted(files):
+        want = expected.get(fold(path))
+        if want is not None and path != want:
+            found.append(f"{root / path}: {want} と大文字小文字・Unicode の正規化だけ違う名前は置かない"
+                         f"（区別しないファイルシステムでだけ {want} として開けてしまう）")
+    return found
+
+
+def list_files(root: Path, entries: set[str], problems: list[str],
+               index: dict[tuple[str, ...], set[str]] | None = None,
+               owned: dict[tuple[int, int], set[str]] | None = None) -> dict[str, Path]:
+    """版のディレクトリの、重ねる置き場所にあるファイル（`.` で始まる名前は読まない）。置き場所は綴りどおりの名前だけ。
+    名前はどの段も `spelled` の綴り（`index` は `tracked` の全体。#569）。"""
     files: dict[str, Path] = {}
     for area in AREAS:
         if area not in entries:
@@ -260,25 +347,38 @@ def list_files(root: Path, entries: set[str], problems: list[str]) -> dict[str, 
             continue
         if not top.is_dir():
             continue
-        walk(root, top, files, problems)
+        walk(root, top, files, problems, index, (root.name, area), owned)
     return files
 
 
-def walk(root: Path, directory: Path, files: dict[str, Path], problems: list[str]) -> None:
-    """読めないディレクトリを黙って飛ばさない（`Path.rglob` は飛ばす）。"""
-    try:
-        entries = sorted(directory.iterdir())
-    except OSError as e:
-        raise Unreadable(f"{directory}: 読めない（{e.strerror}）") from None
-    for path in entries:
-        if path.name.startswith("."):
+def walk(root: Path, directory: Path, files: dict[str, Path], problems: list[str],
+         index: dict[tuple[str, ...], set[str]] | None = None, prefix: tuple[str, ...] = (),
+         owned: dict[tuple[int, int], set[str]] | None = None) -> None:
+    """読めないディレクトリを黙って飛ばさない（`Path.rglob` は飛ばす。`names` が `Unreadable` を投げる）。
+    `prefix` は `docs` からのこのディレクトリの名前（index の綴り）。`owned` は `owners` の表——追跡しているファイルは、
+    自分の index のパス（`prefix` と名前）でだけ数える。"""
+    for name in sorted(spelled(directory, None if index is None else index.get(prefix, set()))):
+        if name.startswith("."):
             continue
+        path = directory / name
         if path.is_symlink():
             problems.append(f"{path}: シンボリックリンクは置かない")
         elif path.is_dir():
-            walk(root, path, files, problems)
+            walk(root, path, files, problems, index, (*prefix, name), owned)
         elif path.is_file():
+            if owned is not None and not claims(owned, path, "/".join((*prefix, name))):
+                continue  # 別の綴りの index のパスで追跡している（そちらの綴りで数える。#569 の 2 パス目の指摘）
             files[path.relative_to(root).as_posix()] = path
+
+
+def claims(owned: dict[tuple[int, int], set[str]], path: Path, relative: str) -> bool:
+    """`path` のファイルを `relative`（`docs` からの index の綴り）として数えてよいか——追跡していないか、そのパスで追跡している。"""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return True
+    paths = owned.get((st.st_dev, st.st_ino))
+    return paths is None or relative in paths
 
 
 def read_qa(path: Path, problems: list[str]) -> list[dict[str, str]]:
@@ -381,10 +481,13 @@ class Whole:
         self.has_qa = False  # どれかの版に qa.csv があれば、行が 0 でも見出しだけ書く（出力を docs/ と同じ形に）
         self.has_internal = False  # 内部の表も同じ
 
-    def apply(self, number: int, root: Path, problems: list[str], index: set[str] | None = None) -> None:
-        entries = spelled(root, index)
+    def apply(self, number: int, root: Path, problems: list[str], index: dict[tuple[str, ...], set[str]] | None = None,
+              owned: dict[tuple[int, int], set[str]] | None = None) -> None:
+        """`index` は `tracked` の全体（段ごとの index の名前）、`owned` は `owners` の表。`root.name` は index の綴りの版の名前（`find_versions`）。"""
+        entries = spelled(root, None if index is None else index.get((root.name,), set()))
         problems.extend(misnamed(root, entries))
-        files = list_files(root, entries, problems)
+        files = list_files(root, entries, problems, index, owned)
+        problems.extend(misnamed_structured(root, files))
         removed_path = root / REMOVED
         removed = []
         if REMOVED not in entries:
@@ -459,20 +562,25 @@ def fold(path: str) -> str:
 
 
 def collisions(paths: list[str]) -> list[str]:
-    """重ねた結果で書けない形——ファイルとディレクトリが同じパスになる・大文字小文字や正規化だけが違うパスが並ぶ。"""
+    """重ねた結果で書けない形——ファイルとディレクトリが同じパスになる・大文字小文字や正規化だけが違うパス（ファイルもフォルダも）が並ぶ。"""
     found = []
     by_fold: dict[str, str] = {}
     for path in sorted(paths):
         other = by_fold.setdefault(fold(path), path)
         if other != path:
             found.append(f"重ねた結果で {other} と {path} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    dirs: dict[str, str] = {}
     for path in sorted(paths):
         parts = path.split("/")
         for depth in range(1, len(parts)):
             parent = "/".join(parts[:depth])
             if fold(parent) in by_fold:
                 found.append(f"重ねた結果で {by_fold[fold(parent)]} がファイルとディレクトリの両方になる（{path}）")
-    return found
+            # フォルダの綴りだけが違うのも書けない形——タグを読む `build-proposal.py` の `copy_docs` と同じ判定（#569 の 2 パス目の指摘）
+            other = dirs.setdefault(fold(parent), parent)
+            if other != parent:
+                found.append(f"重ねた結果でディレクトリ {other} と {parent} が大文字小文字・Unicode の正規化だけ違う（同じ場所に書かれうる）")
+    return sorted(set(found), key=found.index)
 
 
 def put(dest: Path, content: bytes) -> None:
@@ -503,7 +611,8 @@ def merge(docs: Path, upto: int | None = None) -> tuple[list[str], list[tuple[in
     無い・読めない入力と、無い版の `upto` は `Unreadable` を投げる。
     """
     problems: list[str] = []
-    index = tracked(docs) if docs.is_dir() else None
+    found = tracked(docs) if docs.is_dir() else None
+    index, owned = (None, None) if found is None else (found[0], owners(docs, found[1]))
     versions = find_versions(docs, problems, None if index is None else index.get((), set()))
     if not problems and not versions:
         problems.append(f"{docs}: 版（v1 など）が 1 つも無い")
@@ -514,7 +623,7 @@ def merge(docs: Path, upto: int | None = None) -> tuple[list[str], list[tuple[in
     for number, root in versions[:upto]:
         if problems:
             break
-        whole.apply(number, root, problems, None if index is None else index.get((root.name,), set()))
+        whole.apply(number, root, problems, index, owned)
     if not problems:
         rendered = whole.render(problems)
         problems.extend(collisions(list(rendered)))
