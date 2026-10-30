@@ -24,7 +24,10 @@
    **フックが相対で設定した `GIT_DIR` は外し、`GIT_INDEX_FILE` は根からのパスとして読む**（一時の index の綴りで読む。無い index を
    指していれば 2。パスの指定の読み方を変える変数も外す。#570）。**追跡しているファイルは自分の index のパスでだけ数え、index に綴り違いの
    2 つが在るフォルダ・ファイルは、タグを読む `build-proposal.py` の `copy_docs` と同じく 1**（区別しない FS に展開した `git archive` は綴りを失うので、
-   この形の比べ相手にしない）。**重ねた結果でフォルダの綴りだけが違うのも 1**（#569）。
+   この形の比べ相手にしない）。**重ねた結果でフォルダの綴りだけが違うのも 1**（#569）。**index に綴り違いの 2 つが在る試料は、区別する FS でも
+   `git checkout` で index から作業ツリーに書き出して走らせる**（#678）。**捨てるのは綴りだけ違う同じ項目だけ**——追跡しているファイルの
+   ハードリンクを管理外の別の名前で置いても読み、区別する FS で別のフォルダ・綴りだけ違う名前に置いたハードリンクはふつうのコピーと同じく
+   綴り違いで 1（#676）。**git の作業ツリーの中でも、git に足す前のファイルは読む**（#677）。
    区別しない FS でだけ・区別する FS でだけ判別できる試料と変異は、走らせなかったことを出力に書く（緑のふりをしない）。
    **CI の Linux では区別しない FS（ext4 の casefold）を作って同じテストをもう 1 度回し、環境変数
    `MERGE_VERSIONS_TEST_REQUIRE_CASE_FOLD=1` を渡す——一時ディレクトリが区別する FS なら赤にする**（用意に失敗して黙って緑にならない。#571）。
@@ -332,8 +335,13 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     # 区別する FS でだけ作れる形: コミットは正しい綴り、追跡しない別のフォルダ Requirements/ に読むファイルがある——git にも別の名前で 1
     ("別の項目の綴り違いは index に寄せない", {**V1, "v2/requirements/d.md": "D\n"}, "git-alongside", [],
      lambda r: refused(r, "Requirements: requirements と大文字小文字")),
+    # 区別する FS でだけ作れる形: コミットは requirements/、作業ツリーで Requirements/ に改名して git add していない——index の名前の
+    # 項目は無いので（`lstat` が失敗する）、作業ツリーの綴りで読んで 1（git status にも別の名前で出る）。並ぶ綴り違いが無くても寄せない（#676）
+    ("足していない改名は index に寄せない", {**V1, "v2/requirements/d.md": "D\n"}, "git-renamed-sensitive", [],
+     lambda r: refused(r, "Requirements: requirements と大文字小文字")),
     # `.git` が在るのに git ls-files が失敗する（壊れた .git）——綴りを照合していないので 2
-    # index に綴りの違う 2 つ（shared/・Shared/）が在り、区別しない FS では 1 つのフォルダ——タグと同じく 1
+    # index に綴りの違う 2 つ（shared/・Shared/）が在り、区別しない FS では 1 つのフォルダ——タグと同じく 1。区別する FS では
+    # index から書き出した別のフォルダ Shared/ が並び、同じ綴り違いで 1（#678）
     ("index の綴り違いは同じフォルダでも断る", {**V1, "v2/shared/a.md": "A\n"}, "git-both", [],
      lambda r: refused(r, "Shared: shared と大文字小文字")),
     # removed.csv のファイルも同じ（1 パス目の Verifier の反証）——コミットが Removed.csv なら作業ツリーで removed.csv に改名しても 1、
@@ -378,7 +386,8 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: r.code == 2 and "GIT_INDEX_FILE が指す index" in r.output and r.tree is None),
     # index に深いフォルダの綴り違い 2 つ（Sub/a.md・sub/b.md）が在り、区別しない FS では 1 つのフォルダ——追跡しているファイルは
     # 自分の index のパスでだけ数え（コミットに無い sub/a.md・Sub/b.md を作らない）、フォルダの綴り違いとして 1。タグを読む
-    # build-proposal.py の copy_docs と同じ答え（区別しない FS に展開した git archive は綴りを失うので比べ相手にしない）。#569 の 1・2 パス目の指摘
+    # build-proposal.py の copy_docs と同じ答え（区別しない FS に展開した git archive は綴りを失うので比べ相手にしない）。#569 の 1・2 パス目の指摘。
+    # 区別する FS では index から書き出した 2 つのフォルダが並び、同じくフォルダの綴り違いで 1（#678。捨てる・寄せるを外す変異はそこでは答えを変えない）
     ("深い段の index の綴り違い 2 つはフォルダの綴り違い", {**V1, "v2/requirements/Sub/a.md": "A\n"}, "git-deep-both", [],
      lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub") and "requirements/Sub/b.md" not in r.output
      and "requirements/sub/a.md" not in r.output),
@@ -387,15 +396,29 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub") and "requirements/Sub/x/b.md" not in r.output
      and "requirements/sub/x/a.md" not in r.output),
     # 版の段の綴り違い（index に v2/requirements/a.md・V2/requirements/b.md）——V2 は版でない名前。v2 は自分の index の a.md だけで、
-    # b.md は v1 のまま（V2 の B2 を取り込まない。2 パス目の指摘）
+    # b.md は v1 のまま（V2 の B2 を取り込まない。2 パス目の指摘）。区別する FS では V2/ は別のフォルダで、版の名前でないので読まない
+    # （#678——この FS では、書き出しが効いたかは試料の答えに出ないので、準備の側で書き出したファイルが在ることを確かめる）
     ("別の綴りの版で追跡するファイルは取り込まない", {**V1, "v2/requirements/a.md": "A\n"}, "git-version-both", [],
      lambda r: made(r) and r.text("requirements/a.md") == "A\n" and "requirements/b.md" in r.tree and r.text("requirements/b.md") == "B1\n"),
-    # index にファイル名の綴り違い 2 つ（a.md・A.md）が在り、区別しない FS では 1 つのファイル——両方のパスで数えて 1（copy_docs と同じ）
+    # index にファイル名の綴り違い 2 つ（a.md・A.md）が在り、区別しない FS では 1 つのファイル——両方のパスで数えて 1（copy_docs と同じ）。
+    # 区別する FS では index から書き出した 2 つのファイルが並び、同じ綴り違いで 1（#678）
     ("index のファイル名の綴り違い 2 つは断る", {**V1, "v2/requirements/d.md": "D\n"}, "git-file-both", [],
      lambda r: refused(r, "requirements/D.md と requirements/d.md")),
     # 重ねた結果でフォルダの綴りだけが違う（v1 の sub/、v2 の Sub/）——ファイルのパスはぶつからなくても 1（2 パス目の指摘。どの FS でも）
     ("フォルダの綴りだけ違うのも断る", {**V1, "v1/requirements/sub/y.md": "Y\n", "v2/requirements/Sub/x.md": "X\n"}, "none", [],
      lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub")),
+    # 追跡しているファイルのハードリンクを、管理外の別の名前で置く（#676）——実体の番号は同じでも別の項目なので読む（どの FS でも）
+    ("管理外のハードリンクの別名も読む", {**V1, "v2/requirements/a.md": "A\n"}, "git-hardlink", [],
+     lambda r: made(r) and r.text("requirements/hl.md") == "A\n" and r.text("requirements/a.md") == "A\n"),
+    # 区別する FS でだけ作れる形（#676）: 別の綴りのフォルダ（sub/）・同じフォルダの綴りだけ違う名前（A.md）のハードリンクは、
+    # ふつうのコピーと同じく別の項目——重ねた結果の綴り違いで 1
+    ("別の綴りのフォルダのハードリンクは別の項目", {**V1, "v2/requirements/Sub/a.md": "A\n"}, "git-hardlink-dir", [],
+     lambda r: refused(r, "ディレクトリ requirements/Sub と requirements/sub")),
+    ("綴りだけ違う名前のハードリンクは別の項目", {**V1, "v2/requirements/a.md": "A\n"}, "git-hardlink-case", [],
+     lambda r: refused(r, "requirements/A.md と requirements/a.md")),
+    # git の作業ツリーの中でも、git に足す前（git add しない）のファイルは読む（#677。どの FS でも）
+    ("git に足す前のファイルも読む", {**V1, "v2/requirements/a.md": "A\n"}, "git-untracked", [],
+     lambda r: made(r) and r.text("requirements/new.md") == "N\n" and r.text("requirements/a.md") == "A\n"),
     # GIT_LITERAL_PATHSPECS（パスの指定を文字どおりに読む）を引き継がない——引き継げば index が空になり、綴り違いを通す（2 パス目の指摘）
     ("パスの指定を変える変数を引き継がない", {**V1, "v2/Requirements/d.md": "D\n"}, "git-env-literal", [],
      lambda r: refused(r, "Requirements: requirements と大文字小文字")),
@@ -513,7 +536,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "コミットが正しい綴りなら作業ツリーの古い綴りで断らない"),
     ("git を呼ばない", "    found = tracked(docs) if docs.is_dir() else None\n", "    found = None\n",
      "コミットが綴り違いなら作業ツリーの綴りに依らず断る"),
-    ("同じ項目かを見ない", " and same_entry(root / m, root / name)}", "}", "別の項目の綴り違いは index に寄せない"),
+    ("同じ項目かを見ない", " and same_entry(root / m, root / name)}", "}", "足していない改名は index に寄せない"),
     ("index に在る名前は寄せない", "    for name in entries:\n        # 自分自身も含む",
      "    for name in entries:\n        if name in index:\n            result.add(name)\n            continue\n        # 自分自身も含む",
      "index の綴り違いは同じフォルダでも断る"),
@@ -531,6 +554,20 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            if False:\n", "別の綴りの版で追跡するファイルは取り込まない"),
     ("2 段でも別の綴りで追跡するファイルを数える", '            if owned is not None and not claims(owned, path, "/".join((*prefix, name))):\n',
      "            if False:\n", "2 段の index の綴り違いもフォルダの綴り違い"),
+    # 捨てるのは綴りだけ違う同じ項目だけ（#676）・git に足す前のファイルは数える（#677）
+    ("ハードリンクの別名を捨てる",
+     "    return not any(fold(other) == fold(relative) and same_item(docs / other, path) for other in paths)\n",
+     "    return False\n", "管理外のハードリンクの別名も読む"),
+    ("綴りを比べずにハードリンクを捨てる", "    return not any(fold(other) == fold(relative) and same_item(",
+     "    return not any(same_item(", "管理外のハードリンクの別名も読む"),
+    ("親のフォルダが同じかを見ない", "    if not same_entry(a.parent, b.parent):\n        return False\n", "",
+     "別の綴りのフォルダのハードリンクは別の項目"),
+    ("並ぶ綴り違いの名前も index に寄せる", " and folded[fold(name)] == 1 and same_entry(", " and same_entry(",
+     "綴りだけ違う名前のハードリンクは別の項目"),
+    ("同じフォルダの綴り違いの数を見ない", "    return sum(fold(name) == fold(b.name) for name in listed) == 1\n",
+     "    return True\n", "綴りだけ違う名前のハードリンクは別の項目"),
+    ("git に足す前のファイルを捨てる", "        return True  # 追跡していない", "        return False  # 追跡していない",
+     "git に足す前のファイルも読む"),
     ("フォルダの綴り違いを見ない", "            if other != parent:\n                found.append(f\"重ねた結果でディレクトリ",
      "            if False:\n                found.append(f\"重ねた結果でディレクトリ", "フォルダの綴りだけ違うのも断る"),
     ("パスの指定の変数を外さない", "*GIT_LOCATION, *GIT_PATHSPECS, ", "*GIT_LOCATION, ", "パスの指定を変える変数を引き継がない"),
@@ -734,17 +771,19 @@ def merge(scripts: Path, docs: Path, out: Path, extra: list[str], fail: str | No
 
 
 # 区別しない FS でだけ・区別する FS でだけ作れる（判別できる）試料。もう片方の FS では試料を走らせず、殺す変異も当てない
-CASE_FOLD_ONLY = {"コミットが綴り違いなら作業ツリーの綴りに依らず断る", "index の綴り違いは同じフォルダでも断る",
+CASE_FOLD_ONLY = {"コミットが綴り違いなら作業ツリーの綴りに依らず断る",
                   "コミットの Removed.csv は作業ツリーの綴りに依らず断る", "コミットの removed.csv は作業ツリーの綴りに依らず読む",
                   "docs のフォルダの綴りが違っても index で断る", "コミットの Docs/ を docs で読んでも index で断る",
                   "版のフォルダの古い綴りでも index の版として読む", "フックの相対の GIT_DIR を引き継がない",
-                  "フックの一時の index の綴りで読む", "深い段の index の綴り違い 2 つはフォルダの綴り違い",
-                  "2 段の index の綴り違いもフォルダの綴り違い", "別の綴りの版で追跡するファイルは取り込まない",
-                  "index のファイル名の綴り違い 2 つは断る", "パスの指定を変える変数を引き継がない",
+                  "フックの一時の index の綴りで読む", "パスの指定を変える変数を引き継がない",
                   "深い段の綴りが作業ツリーで違っても index の綴りで読む", "構造ファイルの綴りが作業ツリーで違っても index の綴りで読む"}
-# 試料はどの FS でも走るが、区別する FS では殺せない変異（作業ツリーの綴りのままでも、`.DS_Store` だけのフォルダは数えないので 0）
-FOLD_ONLY_MUTATIONS = {"index を見ない"}
-CASE_SENSITIVE_ONLY = {"別の項目の綴り違いは index に寄せない"}
+# 試料はどの FS でも走るが、区別する FS では殺せない変異——`index を見ない` は、作業ツリーの綴りのままでも `.DS_Store` だけのフォルダは
+# 数えないので 0。残り 3 つは、index の綴り違いの試料（#678）では別の綴りの名前が別の項目なので、寄せる・捨てるを外しても答えが変わらない
+FOLD_ONLY_MUTATIONS = {"index を見ない", "index に在る名前は寄せない", "別の綴りで追跡するファイルも数える",
+                       "2 段でも別の綴りで追跡するファイルを数える"}
+CASE_SENSITIVE_ONLY = {"別の項目の綴り違いは index に寄せない", "足していない改名は index に寄せない",
+                       "別の綴りのフォルダのハードリンクは別の項目",
+                       "綴りだけ違う名前のハードリンクは別の項目"}
 fs_skips: list[str] = []
 FOLDS: list[bool] = []
 # git archive の書き出しでも重ねて、作業ツリーの答えと比べる試料（#569）
@@ -790,34 +829,28 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
         (root / ".git").mkdir()
         return
     if prepare == "git-docs-upper":  # コミットのフォルダは Docs（試料は docs で打つ）
-        docs.rename(root / "tmp-rename")
-        (root / "tmp-rename").rename(root / "Docs")
+        rename(docs, "Docs")
     git(root, "init", "-q")
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "試料")
     v2 = docs / "v2"
     folds = case_insensitive(root.parent)
     if prepare == "git-stale" and folds:
-        (v2 / "requirements").rename(v2 / "tmp-rename")
-        (v2 / "tmp-rename").rename(v2 / "Requirements")
+        rename(v2 / "requirements", "Requirements")
         (v2 / "Requirements" / ".DS_Store").write_text("x", encoding="utf-8")
     elif prepare == "git-stale":
         (v2 / "Requirements").mkdir()
         (v2 / "Requirements" / ".DS_Store").write_text("x", encoding="utf-8")
     elif prepare in ("git-docs-stale", "git-docs-upper") and folds:
         if prepare == "git-docs-stale":
-            docs.rename(root / "tmp-rename")
-            (root / "tmp-rename").rename(root / "Docs")
-        (docs / "v2" / "Removed.csv").rename(docs / "v2" / "tmp-rename")
-        (docs / "v2" / "tmp-rename").rename(docs / "v2" / "removed.csv")
+            rename(docs, "Docs")
+        rename(docs / "v2" / "Removed.csv", "removed.csv")
     elif prepare == "git-version-stale" and folds:
-        (docs / "v2").rename(docs / "tmp-rename")
-        (docs / "tmp-rename").rename(docs / "V2")
+        rename(docs / "v2", "V2")
         (docs / "V2" / ".DS_Store").write_text("x", encoding="utf-8")
     elif prepare == "git-renamed-file" and folds:
         name = next(p.name for p in v2.iterdir() if p.name.casefold() == "removed.csv")
-        (v2 / name).rename(v2 / "tmp-rename")
-        (v2 / "tmp-rename").rename(v2 / ("removed.csv" if name == "Removed.csv" else "Removed.csv"))
+        rename(v2 / name, "removed.csv" if name == "Removed.csv" else "Removed.csv")
     elif prepare == "git-env-temp-index" and folds:  # 一時の index でだけ Requirements/ → requirements/ に改名（部分コミット）
         env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_INDEX_FILE": str(root / "idx")}
         shutil.copyfile(root / ".git" / "index", root / "idx")
@@ -825,22 +858,34 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
         for args in (["rm", "-q", "--cached", "docs/v2/Requirements/d.md"], ["add", "docs/v2/requirements/d.md"]):
             subprocess.run(["git", *args], cwd=root, env=env, check=True, capture_output=True)
     elif prepare in ("git-renamed", "git-env-dir", "git-env-literal") and folds:
-        (v2 / "Requirements").rename(v2 / "tmp-rename")
-        (v2 / "tmp-rename").rename(v2 / "requirements")
+        rename(v2 / "Requirements", "requirements")
     elif prepare == "git-deep-stale" and folds:  # コミットは requirements/sub/d.md（#569）
         rename(v2 / "requirements" / "sub" / "d.md", "D.md")
         rename(v2 / "requirements" / "sub", "Sub")
     elif prepare == "git-structured-stale" and folds:  # コミットは shared/qa.csv（#569）
         rename(v2 / "shared" / "qa.csv", "QA.csv")
-    elif prepare in BOTH and folds:  # index に綴りだけ違うパスを足す。区別しない FS では既に在るフォルダ（ファイル）に書かれる
+    elif prepare in BOTH:  # index に綴りだけ違うパスを足す。区別しない FS では既に在るフォルダ（ファイル）に書かれる
         added, written = BOTH[prepare]
         env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
         sha = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=root, env=env, input=b"B2\n",
                              check=True, capture_output=True).stdout.decode().strip()
         git(root, "update-index", "--add", "--cacheinfo", f"100644,{sha},docs/{added}")
         git(root, "commit", "-q", "-m", "綴り違い")
-        if written is not None:
+        if not folds:  # 区別する FS では別の項目——git が書き出すとおりに index から書き出す（#678）
+            git(root, "checkout", "--", f"docs/{added}")
+            if not (docs / added).is_file():  # 書き出しが効かなければ準備が落ちる（試料の答えには出ない形がある。#678）
+                raise RuntimeError(f"index から書き出せなかった: docs/{added}")
+        elif written is not None:
             (docs / written).write_bytes(b"B2\n")
+    elif prepare == "git-hardlink":  # 管理外の別の名前のハードリンク（#676）
+        os.link(v2 / "requirements" / "a.md", v2 / "requirements" / "hl.md")
+    elif prepare == "git-untracked":  # git add しない（#677）
+        (v2 / "requirements" / "new.md").write_text("N\n", encoding="utf-8")
+    elif prepare == "git-hardlink-dir" and not folds:  # 区別する FS でだけ別のフォルダになる（#676）
+        (v2 / "requirements" / "sub").mkdir()
+        os.link(v2 / "requirements" / "Sub" / "a.md", v2 / "requirements" / "sub" / "a.md")
+    elif prepare == "git-hardlink-case" and not folds:  # 区別する FS でだけ並べられる（#676）
+        os.link(v2 / "requirements" / "a.md", v2 / "requirements" / "A.md")
     elif prepare == "git-index-corrupt":  # 作業ツリーの中なのに index を読めない（#572）
         (root / ".git" / "index").write_bytes(b"broken index\n")
     elif prepare == "git-env-index":  # 根から見れば正しい index の写し、docs から見れば壊れたファイル（#570）
@@ -852,6 +897,12 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
         sha = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=root, env=env, input=blob,
                              check=True, capture_output=True).stdout.decode().strip()
         git(root, "update-index", "--add", "--cacheinfo", f"100644,{sha},docs/v2/Shared/b.md")
+        if not folds:  # 区別する FS では別のフォルダ Shared/——index から書き出す（#678）
+            git(root, "checkout", "--", "docs/v2/Shared/b.md")
+            if not (v2 / "Shared" / "b.md").is_file():
+                raise RuntimeError("index から書き出せなかった: docs/v2/Shared/b.md")
+    elif prepare == "git-renamed-sensitive" and not folds:
+        rename(v2 / "requirements", "Requirements")
     elif prepare == "git-alongside" and not folds:
         (v2 / "Requirements").mkdir()
         (v2 / "Requirements" / "x.md").write_text("X\n", encoding="utf-8")

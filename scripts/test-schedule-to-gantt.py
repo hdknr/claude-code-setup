@@ -26,15 +26,21 @@
    名指しして 2——「書く途中の想定外の例外」にしない（#582。同じく `main` に届かせる）。
    **U+DC80〜U+DCFF の名前は `ValueError` にならない**（バイトに戻せる。CLI から届く）——書けないディレクトリの中の
    `\\udc80.svg` は `OSError` の「書けない（<理由>）」で 2 になり、「出力先の名前が使えない」とは言わない（#591）。
-   入力のパスに NUL・バイトに戻せない孤立サロゲートがあるときは、「読めない（入力のパスの名前が使えない: <型>: <理由>）」で 2——
-   「想定外の例外」にしない（#592。同じく `main` に届かせる）。前の出力は消す。
+   入力のパスに NUL・バイトに戻せない孤立サロゲートがあるときは、開く前に名前を確かめ、「読めない（入力のパスの名前が使えない:
+   NUL を含む／バイトに戻せない文字を含む: <理由>）」で 2——「想定外の例外」にしない（#592・#662 の CR8。同じく `main` に届かせる）。
+   前の出力は消す。入力と出力のパスの NUL は、標準エラーに素のバイトではなく `\\x00` と出る（#662 の CR9）。
    パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2——名前がちょうど NAME_MAX
    （255 バイト）の出力先も（境界。#536）。
    出力先が symlink なら、リンクも先も消さない: 先を辿れない symlink（先がファイルでもディレクトリでも。#535）も、
    辿れる先の通常のファイルを指す symlink（鎖を経由しても。#626）も、リンクと先のパス（鎖を解いた先。辿れないときは辿れたところまで）を名指しして 2
    （表が正しくて書けないときも。先のパスの名指しは #625）。表が正しく書ける辿れる先の symlink は 0 で、先に書く（陽性対照）。
-   壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）とディレクトリを指す symlink は消さずに 1。
-   書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
+   壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）・輪になった symlink（a→b→a。
+   #662 の N2）とディレクトリを指す symlink は消さずに 1。
+   辿れる先の symlink の先を開いて（切り詰めて）から書けない（ファイルの大きさの上限 `RLIMIT_FSIZE` で書く途中に EFBIG）ときは、
+   先に残る今回の書きかけを「書きかけの出力を消せない」とリンクと先のパスで名指しして 2——「前に作った出力」と言わない（#662 の CR2-1）。
+   先を開いたあとで OSError でない例外（想定外の例外・`ValueError`）が出ても同じく書きかけと名指しする（開いたファイルの `write` を差し替える。#662 の 1 パス目）。
+   先のパスは使う分岐（名指し・名前の長すぎる先の判定）でだけ解く——`os.path.realpath` を壊しても、ディレクトリを指す symlink・壊れた symlink・輪になった symlink は 1 のまま（#662 の CR10）。
+   書く途中の想定外の例外（`Path.open` を差し替える）も入口に逃がさず、前の出力を消して 2。
    入口の捕捉は、書いたあとの標準出力の例外で見る（`sys.stdout` を差し替える）。
    消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
 5. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
@@ -49,6 +55,7 @@ from __future__ import annotations
 
 import os
 import re
+import resource
 import shutil
 import subprocess
 import sys
@@ -160,7 +167,9 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("長すぎるパスも無いと読む", "any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)", "True"),
     # #536: 名前の長さの境界——ちょうど NAME_MAX の名前は在りうる
     ("名前がちょうど NAME_MAX でも在りえないと読む", "part)) > NAME_MAX for part", "part)) >= NAME_MAX for part"),
-    ("壊れたリンクも消す", "                    return None  # 壊れたリンク", "                    mode = stat.S_IFREG  # 壊れたリンク"),
+    # 名前の長すぎる先の壊れたリンク（#662 の 1 パス目 CR1-3 で ENOENT・ELOOP は手前で返すようになった）
+    ("壊れたリンクも消す", "                    return None  # 壊れたリンク——", "                    mode = stat.S_IFREG  # 壊れたリンク——"),
+    ("壊れたリンク・輪も名指しする", "                    return None  # 壊れたリンク・輪", "                    mode = stat.S_IFREG  # 壊れたリンク・輪"),
     ("書く途中の想定外の例外を逃がす", "    except Exception as e:  # 書く途中の", "    except ImportError as e:  # 書く途中の"),
     # #535: 先を辿れない symlink は消さずに名指しする
     ("辿れない先のリンクを消す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
@@ -168,7 +177,7 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("辿れない先のリンクを黙って残す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
      "                return None; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
     ("先の長すぎる名前を出力先の名前で見る", "if absent(target, e):", "if absent(out, e):"),
-    ("先の鎖を解かずに 1 段目だけ見る", "target = Path(os.path.realpath(out))", "target = out.parent / os.readlink(out)"),
+    ("先の鎖を解かずに 1 段目だけ見る", "    return Path(os.path.realpath(link))", "    return link.parent / os.readlink(link)"),
     # 名指しの先とは別に、壊れたリンクの判定（absent）だけが鎖を解かない形（chainlink.svg の試料が殺す。#591 の周の 2 パス目 CR2-2）
     ("壊れたリンクの判定だけ鎖を解かない", "if absent(target, e):", "if absent(out.parent / os.readlink(out), e):"),
     ("辿れないのがリンクの先だと言わない", "（リンクの先を辿れない: {e.strerror}。先: {target}）", "（{e.strerror}。先: {target}）"),
@@ -178,7 +187,7 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("辿れる先のリンクを消す", "            if stat.S_ISREG(mode):  # 辿れる先", "            if False:  # 辿れる先"),
     ("辿れる先のリンクを黙って残す", "                return f\"前に作った出力を消せない: {out}（リンクの先に前の出力が残る",
      "                return None; f\"前に作った出力を消せない: {out}（リンクの先に前の出力が残る"),
-    ("辿れる先のパスを名指ししない", "（リンクの先に前の出力が残る。先: {target}）", "（リンクの先に前の出力が残る）"),
+    ("辿れる先のパスを名指ししない", "（リンクの先に前の出力が残る。先: {link_target(out)}）", "（リンクの先に前の出力が残る）"),
     # #625: 名前の長さの反対側の境界——256 バイトの名前は在りえない
     ("名前が NAME_MAX + 1 でも在りうると読む", "part)) > NAME_MAX for part", "part)) > NAME_MAX + 1 for part"),
     ("消す途中の想定外の例外を名指ししない", "    except Exception as e:  # 想定外の例外でも、消せなかった",
@@ -190,16 +199,42 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("符号化できない出力先を書く途中の想定外の例外と読む", "    except ValueError as e:  # 出力先の名前が符号化できない",
      "    except ImportError as e:  # 出力先の名前が符号化できない"),
     ("符号化できない出力先の型と理由を書かない", "出力先の名前が使えない: {type(e).__name__}: {e}）", "出力先の名前が使えない: ）"),
-    ("符号化できない出力先を名指ししない", 'print(f"{out}: 書けない（出力先の名前が使えない', 'print(f"書けない（出力先の名前が使えない'),
+    ("符号化できない出力先を名指ししない", 'print(f"{shown(out)}: 書けない（出力先の名前が使えない', 'print(f"書けない（出力先の名前が使えない'),
     # #591: U+DC80〜U+DCFF はバイトに戻せる——厳密に符号化して ValueError にすると「出力先の名前が使えない」になる
-    ("U+DC80 の名前も符号化できないと読む", "        out.write_bytes(svg)\n", "        str(out).encode('utf-8')\n        out.write_bytes(svg)\n"),
-    # #592: 入力のパスの名前が使えない ValueError を「読めない」と言う分岐
-    ("入力の名前が使えないを想定外の例外と読む", "if isinstance(e, ValueError) and unusable_name(source):", "if False:"),
-    ("入力の ValueError をすべて名前のせいにする", "if isinstance(e, ValueError) and unusable_name(source):", "if isinstance(e, ValueError):"),
-    ("入力の名前の型と理由を書かない", "入力のパスの名前が使えない: {type(e).__name__}: {e}）", "入力のパスの名前が使えない: ）"),
-    ("入力の NUL を使える名前と読む", 'return b"\\0" in os.fsencode(path)', "return False"),
-    ("入力の孤立サロゲートを使える名前と読む", "    except UnicodeEncodeError:\n        return True", "    except UnicodeEncodeError:\n        return False"),
-    ("U+DC80 の入力の名前も使えないと読む", 'return b"\\0" in os.fsencode(path)', 'return b"\\0" in str(path).encode("utf-8")'),
+    ("U+DC80 の名前も符号化できないと読む", "        with out.open(\"wb\") as f:\n",
+     "        str(out).encode('utf-8')\n        with out.open(\"wb\") as f:\n"),
+    # #592・#662 の CR8: 入力のパスの名前が使えないときは、開く前に「読めない」と言う
+    ("入力の名前が使えないを確かめない", "    if problem:  # 入力のパスの名前が使えない", "    if False:  # 入力のパスの名前が使えない"),
+    ("入力の名前をすべて使えないと読む", 'return "NUL を含む" if b"\\0" in os.fsencode(path) else None', 'return "NUL を含む"'),
+    ("入力の名前の理由を書かない", "入力のパスの名前が使えない: {problem}）", "入力のパスの名前が使えない: ）"),
+    ("入力の NUL を使える名前と読む", 'return "NUL を含む" if b"\\0" in os.fsencode(path) else None', "return None"),
+    ("入力の孤立サロゲートを使える名前と読む", '    except UnicodeEncodeError as e:\n        return f"バイトに戻せない',
+     '    except UnicodeEncodeError as e:\n        return None; f"バイトに戻せない'),
+    ("U+DC80 の入力の名前も使えないと読む", 'b"\\0" in os.fsencode(path) else None', 'b"\\0" in str(path).encode("utf-8") else None'),
+    # #662 の CR9: パスの NUL を見える形で出す
+    ("NUL を書き換えない", 'return str(path).replace("\\0", "\\\\x00")', "return str(path)"),
+    ("入力のパスを素のまま出す", 'print(f"{shown(source)}: 読めない', 'print(f"{source}: 読めない'),
+    ("出力先のパスを素のまま出す", 'print(f"{shown(out)}: 書けない', 'print(f"{out}: 書けない'),
+    # #662 の N2（要確認 #652）: 輪になったリンクは辿れない先ではなく、壊れたリンクと同じく「無い」
+    ("輪になったリンクを辿れない先と読む", "ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP)",
+     "ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF)"),
+    # #662 の CR2-1: 先を切り詰めたあとで書けなければ、先に残るのは今回の書きかけ
+    ("書きかけを前の出力と名指しする", "            if stat.S_ISREG(mode) and partial:", "            if False:"),
+    ("書きかけを黙って残す", '                return f"書きかけの出力を消せない: {out}（',
+     '                return None; f"書きかけの出力を消せない: {out}（'),
+    ("書けないときに開いたことを渡さない", '        print(f"{out}: 書けない（{e.strerror}）", file=sys.stderr)\n        return stop(out, 2, opened)\n',
+     '        print(f"{out}: 書けない（{e.strerror}）", file=sys.stderr)\n        return stop(out, 2)\n'),
+    ("開く前に開いたと言う", '        with out.open("wb") as f:\n            opened = True\n',
+     '        opened = True\n        with out.open("wb") as f:\n'),
+    ("想定外の例外で開いたことを渡さない", '書く途中の想定外の例外で止まった（{type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2, opened)\n',
+     '書く途中の想定外の例外で止まった（{type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2)\n'),
+    ("ValueError で開いたことを渡さない", '出力先の名前が使えない: {type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2, opened)\n',
+     '出力先の名前が使えない: {type(e).__name__}: {e}）", file=sys.stderr)\n        return stop(out, 2)\n'),
+    # #662 の CR10: 先のパスは名指しする分岐でだけ解く
+    ("名指ししないリンクでも先を解く", "            try:\n                mode = out.stat().st_mode\n",
+     "            link_target(out)\n            try:\n                mode = out.stat().st_mode\n"),
+    ("壊れたリンクでも先を解く", "                if e.errno in ABSENT:\n                    return None  # 壊れたリンク・輪",
+     "                if False:\n                    return None  # 壊れたリンク・輪"),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
@@ -310,10 +345,15 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     (root / "longlink.svg").symlink_to("b" * 300)  # 先の名前が NAME_MAX を超える——在りえない先の壊れたリンク（#535 の CR1-1）
     (root / "mid.svg").symlink_to("b" * 300)
     (root / "chainlink.svg").symlink_to("mid.svg")  # 別のリンクを経由して在りえない先に着く（R2-1）
-    for name in ("broken.svg", "dirlink.svg", "longlink.svg", "chainlink.svg"):
+    # 輪になったリンク（a→b→a）——辿ると ELOOP。辿れない先ではなく、壊れたリンクと同じく「無い」（#662 の N2。要確認 #652）
+    (root / "loopa.svg").symlink_to("loopb.svg")
+    (root / "loopb.svg").symlink_to("loopa.svg")
+    for name in ("broken.svg", "dirlink.svg", "longlink.svg", "chainlink.svg", "loopa.svg"):
         code, output = generate(scripts, bad, root / name)
         if code != 1 or LEFT in output or "前に作った出力を消した" in output or not (root / name).is_symlink():
             problems.append(f"消さない symlink {name}: 終了 {code}: {output[-300:]!r}")
+    if not (root / "loopb.svg").is_symlink():
+        problems.append("輪になったリンクのもう片方が消えた")
     # 先を辿れない symlink——先が前の出力かを確かめられない（先の古い中身は残り、先がディレクトリかも分からない）ので、
     # リンクを消さずに名指しして 2（#535。#499 の CR4 で「リンクを消して 1」にしていたのを改めた）。
     # 先がファイル・ディレクトリ（表が決まりに反する経路）と、表が正しくて書けない経路で、2・リンクの名指し・リンクと先が残る・
@@ -379,6 +419,22 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     if (code != 0 or not (root / "rlink.svg").is_symlink() or LEFT in output
             or not (kept / "g.svg").read_text(encoding="utf-8").startswith("<?xml")):
         problems.append(f"辿れる先の symlink（表が正しい）: 終了 {code}: {output[-300:]!r}")
+    # 先を開いて（切り詰めて）から書けない——ファイルの大きさの上限（RLIMIT_FSIZE）を 300 バイトにして、書く途中で EFBIG にする
+    # （CPython は SIGXFSZ を無視するので OSError になる。図は 300 バイトより大きい）。先に残るのは今回の書きかけで、前の出力ではないので、
+    # 「書きかけの出力を消せない」とリンクと先のパスを名指しして 2——「前に作った出力」「今の表から作ったものではない」と言わない（#662 の CR2-1）。
+    # 開く前に書けない（先が書けない rolink.svg）ときは「前の出力が残る」のまま（上の試料）
+    (kept / "half.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (root / "hlink.svg").symlink_to(kept / "half.svg")
+    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), str(good), str(root / "hlink.svg")],
+                          capture_output=True, text=True, cwd=root, preexec_fn=_limit_file_size)
+    half = (kept / "half.svg").read_bytes()
+    named = (f"書きかけの出力を消せない: {root / 'hlink.svg'}（リンクの先に今回の書きかけが残る。"
+             f"先: {os.path.realpath(kept / 'half.svg')}）。完全な出力ではない")
+    # 先が今回の書きかけであること（XML の宣言で始まり、上限で切れている）も見る——上限が効かずに書けたなら、この試料は何も判別しない
+    if (proc.returncode != 2 or named not in proc.stderr or "書けない（" not in proc.stderr or LEFT in proc.stderr
+            or "今の表から作ったものではない" in proc.stderr or "Traceback" in proc.stderr
+            or not (root / "hlink.svg").is_symlink() or not half.startswith(b"<?xml") or len(half) > FILE_SIZE_LIMIT):
+        problems.append(f"書きかけを残したリンクの先: 終了 {proc.returncode}: 先 {len(half)} バイト: {proc.stderr[-300:]!r}")
 
     def injected(method: str, source: Path, name: str) -> subprocess.CompletedProcess:
         """出力先 `build/<name>` について、そのパスの `Path.<method>` だけを差し替えて
@@ -399,10 +455,10 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     if (proc.returncode != 2 or f"{LEFT}{root / 'build' / 'y.svg'}（RuntimeError: boom）" not in proc.stderr
             or "想定外の例外で止まった" in proc.stderr or "Traceback" in proc.stderr):
         problems.append(f"消す途中の想定外の例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
-    # 書く途中の想定外の例外も入口に逃がさず、前の出力を消して 2（P2-2）
+    # 書く途中の想定外の例外も入口に逃がさず、前の出力を消して 2（P2-2）。書く口は `Path.open`（#662 で `write_bytes` から変えた）
     (root / "build").mkdir(exist_ok=True)
     (root / "build" / "w.svg").write_text("<svg>古い</svg>", encoding="utf-8")
-    proc = injected("write_bytes", good, "w.svg")
+    proc = injected("open", good, "w.svg")
     if (proc.returncode != 2 or "書く途中の想定外の例外で止まった（RuntimeError: boom）" not in proc.stderr
             or "前に作った出力を消した" not in proc.stderr or (root / "build" / "w.svg").exists() or "Traceback" in proc.stderr):
         problems.append(f"書く途中の想定外の例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
@@ -428,7 +484,7 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
                 or "Traceback" in proc.stderr):
             problems.append(f"符号化できない出力先（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     # 表が正しく、出力先が符号化できない——書く途中の ValueError も「書けない」と名指しして 2。「想定外の例外」にしない（#582）。
-    # 親のディレクトリの名前に NUL があると mkdir で、名前の側なら write_bytes で起きる
+    # 親のディレクトリの名前に NUL があると mkdir で、名前の側なら open で起きる
     for label, name, kind in (("NUL", "x\0.svg", "ValueError"), ("単独のサロゲート", "\ud800.svg", "UnicodeEncodeError"),
                               ("親に NUL", "d\0/gantt.svg", "ValueError")):
         inject = ("import runpy, sys\n"
@@ -437,23 +493,26 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
         # 出力先と、例外の型と理由まで名指しする（落ちても緑にならないように。#582 の 1 パス目 CR1・2 パス目 CR2-1）。
         # 標準エラーは単独のサロゲートを backslashreplace で書くので、期待する出力先も同じ形にする
-        shown = str(root / name).encode("utf-8", "backslashreplace").decode("utf-8")
+        # NUL は素のバイトではなく `\x00` と出す（#662 の CR9）
+        shown = str(root / name).replace("\0", "\\x00").encode("utf-8", "backslashreplace").decode("utf-8")
         named = re.search(re.escape(shown) + rf": 書けない（出力先の名前が使えない: {kind}: [^）\n]+）", proc.stderr)
-        if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr
+        if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr or "\0" in proc.stderr
                 or LEFT in proc.stderr or "Traceback" in proc.stderr):
             problems.append(f"符号化できない出力先に書く（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
-    # 入力のパスに NUL・バイトに戻せない孤立サロゲート——読む側の ValueError を「読めない（入力のパスの名前が使えない: <型>: <理由>）」と
-    # 言って 2。「想定外の例外」にしない。前の出力は消す（#592。CLI からは届かないので main に届かせる）
-    for label, name, kind in (("NUL", "x\0.csv", "ValueError"), ("単独のサロゲート", "\ud800.csv", "UnicodeEncodeError")):
+    # 入力のパスに NUL・バイトに戻せない孤立サロゲート——開く前に名前を確かめ、「読めない（入力のパスの名前が使えない: <理由>）」と
+    # 言って 2。「想定外の例外」にしない。前の出力は消す（#592・#662 の CR8。CLI からは届かないので main に届かせる）。
+    # NUL は素のバイトではなく `\x00` と出す（#662 の CR9）
+    for label, name, kind in (("NUL", "x\0.csv", "NUL を含む"),
+                              ("単独のサロゲート", "\ud800.csv", "バイトに戻せない文字を含む: [^）\n]+")):
         stale = root / "src-stale.svg"
         stale.write_text("<svg>古い</svg>", encoding="utf-8")
         inject = ("import runpy, sys\n"
                   f"sys.argv = [{script!r}, {str(root / name)!r}, {str(stale)!r}]\n"
                   f"runpy.run_path({script!r}, run_name='__main__')\n")
         proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
-        shown = str(root / name).encode("utf-8", "backslashreplace").decode("utf-8")
-        named = re.search(re.escape(shown) + rf": 読めない（入力のパスの名前が使えない: {kind}: [^）\n]+）。中身を検査していない", proc.stderr)
-        if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr or stale.exists()
+        shown = str(root / name).replace("\0", "\\x00").encode("utf-8", "backslashreplace").decode("utf-8")
+        named = re.search(re.escape(shown) + rf": 読めない（入力のパスの名前が使えない: {kind}）。中身を検査していない", proc.stderr)
+        if (proc.returncode != 2 or not named or "想定外の例外" in proc.stderr or stale.exists() or "\0" in proc.stderr
                 or "前に作った出力を消した" not in proc.stderr or "Traceback" in proc.stderr):
             problems.append(f"名前の使えない入力（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     # 陽性対照: 名前の使える入力（U+DC80 も——バイトに戻せる。#591）で読む途中に ValueError が出たら、今までどおり「想定外の例外」。
@@ -471,10 +530,59 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         if (proc.returncode != 2 or "想定外の例外で止まった（ValueError: boom）" not in proc.stderr
                 or "名前が使えない" in proc.stderr or "Traceback" in proc.stderr):
             problems.append(f"名前の使える入力の ValueError（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # 先を開いたあとで、OSError でない例外（想定外の例外・ValueError）が出ても、先に残るのは今回の書きかけ——
+    # 「書きかけの出力を消せない」と名指しして 2（#662 の 1 パス目 CR1-2）。開いたファイルの write を差し替え、10 バイト書いてから例外を出す
+    (kept / "x.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (root / "xlink.svg").symlink_to(kept / "x.svg")
+    for kind in ("RuntimeError", "ValueError"):
+        inject = ("import pathlib, runpy, sys\n"
+                  "real = pathlib.Path.open\n"
+                  "class Half:\n"
+                  "    def __init__(self, f):\n        self.f = f\n"
+                  "    def __enter__(self):\n        return self\n"
+                  "    def __exit__(self, *a):\n        self.f.close()\n"
+                  f"    def write(self, b):\n        self.f.write(b[:10])\n        raise {kind}('boom')\n"
+                  "def opened(self, *a, **k):\n"
+                  "    f = real(self, *a, **k)\n"
+                  "    return Half(f) if self.name == 'xlink.svg' else f\n"
+                  "pathlib.Path.open = opened\n"
+                  f"sys.argv = [{script!r}, {str(good)!r}, {str(root / 'xlink.svg')!r}]\n"
+                  f"runpy.run_path({script!r}, run_name='__main__')\n")
+        proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+        named = (f"書きかけの出力を消せない: {root / 'xlink.svg'}（リンクの先に今回の書きかけが残る。"
+                 f"先: {os.path.realpath(kept / 'x.svg')}）")
+        if (proc.returncode != 2 or named not in proc.stderr or LEFT in proc.stderr or "Traceback" in proc.stderr
+                or not (root / "xlink.svg").is_symlink() or not (kept / "x.svg").read_bytes().startswith(b"<?xml")):
+            problems.append(f"開いたあとの {kind}: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # 先のパスは名指しする分岐でだけ解く（#662 の CR10）——`os.path.realpath` を壊しても、名指ししないディレクトリを指すリンクは
+    # 1 のまま（解いていれば「消せない（RuntimeError: boom）」の 2 になる）。陽性対照: 名指しする辿れる先のリンクでは壊れが届く
+    # 壊れたリンク・輪になったリンクも名指ししないので解かない（#662 の 1 パス目 CR1-3）
+    for label, name, expect in (("ディレクトリを指すリンク", "dirlink.svg", 1), ("壊れたリンク", "broken.svg", 1),
+                                ("輪になったリンク", "loopa.svg", 1), ("辿れる先のリンク（陽性対照）", "rlink.svg", 2)):
+        inject = ("import os, runpy, sys\n"
+                  "real = os.path.realpath\n"
+                  "def boom(path, *a, **k):\n"
+                  f"    if os.fspath(path).endswith({name!r}):\n        raise RuntimeError('boom')\n"
+                  "    return real(path, *a, **k)\n"
+                  "os.path.realpath = boom\n"
+                  f"sys.argv = [{script!r}, {str(bad)!r}, {str(root / name)!r}]\n"
+                  f"runpy.run_path({script!r}, run_name='__main__')\n")
+        proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+        reached = f"{LEFT}{root / name}（RuntimeError: boom）" in proc.stderr
+        if proc.returncode != expect or reached != (expect == 2) or "Traceback" in proc.stderr:
+            problems.append(f"先を解く分岐（{label}）: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     proc = subprocess.run([sys.executable, "-I", "-OO", str(scripts / TARGET)], capture_output=True, text=True, cwd=root)
     if proc.returncode != 2 or "usage:" not in proc.stderr or "Traceback" in proc.stderr:
         problems.append(f"-OO の引数なし: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     return problems
+
+
+FILE_SIZE_LIMIT = 300
+
+
+def _limit_file_size() -> None:
+    """子のファイルの大きさの上限を `FILE_SIZE_LIMIT` バイトにする（それを超える書き込みは EFBIG）。"""
+    resource.setrlimit(resource.RLIMIT_FSIZE, (FILE_SIZE_LIMIT, resource.RLIM_INFINITY))
 
 
 def _writable(directory: Path) -> bool:
