@@ -15,7 +15,7 @@ cruise #474（`--absent`）の子の周。#591 のまとめの周（PR #653）�
 - `scripts/test-schedule-to-gantt.py` — 輪のリンクの試料と `ELOOP` の変異（N2）・書きかけの試料と変異・CR8〜CR10 の試料と変異・docstring
 - `plugins/spec-loop/references/tree.md` — 移行の注（CR2-6）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（5 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.42.0）
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-662.md` — この計画
 
@@ -42,6 +42,7 @@ cruise #474（`--absent`）の子の周。#591 のまとめの周（PR #653）�
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-662`
 - 起点コミット: `0b9cd1c`（origin/main）
 - 切った元の参照: `origin/main`（`refs/remotes/origin/HEAD`）——base: `0b9cd1c723990cb714b3715813bfc0a19ece1130`
+- **main を取り込んだ（`3f35572` の前の merge。#660・#671 を含む。spec-loop が main で 0.41.0 になったので 0.42.0 に上げた）——式を当て直した base: `37005850c2a01b507fc08bfc3e5b88cc70bfce7a`（`git merge-base origin/main HEAD`）。2 パス目以降の関門にはこれを渡す**
 
 ## verify の受入基準
 
@@ -101,6 +102,7 @@ cruise #474（`--absent`）の子の周。#591 のまとめの周（PR #653）�
 - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件**。I1〜I7 一致（I6 はテスト経由）。ELOOP の変異を自分で当てて 2 に変わる（陽性対照）、旧版（`bf416d5^`）と今の版を同じ試料で走らせて I2・I3 を確かめた。`git status --porcelain` は前後で同じ。python3.12 で「OK: 試料 13 件・変異 56 件」（5 分 6 秒）
 - `/code-review` 1 パス目（high）: 指摘 7 件（下の採否の表 CR1-1〜CR1-7）。直す 4 件（CR1-2・CR1-3・CR1-4・CR1-5）・残課題 3 件。手順 4 への差し戻し: なし（Verifier の反証は 0 件）
 - 1 パス目の指摘対応: CR1-2 開いたあとの想定外の例外・ValueError の試料と変異 2 つ／CR1-3 `e.errno in ABSENT` を先に見て realpath を解かない・試料に壊れたリンクと輪を足し変異 1 つ／CR1-4 docstring に「表が決まりに反するとき」／CR1-5 `tree.md` の対象を絞り、壊れた・ディレクトリ・輪のリンクは前と同じく 1（旧版で確かめた）
+- 1 パス目の指摘対応のコミット: `a406df3`。そのあと main を取り込み（merge）、版を 0.42.0 に上げた（`3f35572`）。`check-all.py`（取り込みの前・版の衝突を除いて）: 56 本中 55 本が緑——落ちたのは `check-version-bump.py`（main が 0.41.0 に上がり、こちらの 0.41.0 と並んだ。0.42.0 で解消し単独で「問題なし」）。`test-schedule-to-gantt.py`（python3.12）: 「OK: 試料 13 件・変異 60 件」
 - 割り目（2 パス目の前）: 不在の周なので訊かない。続けて回す。残っているのは Verifier の当て直しと `/code-review` 2 パス目の両方
 - 交絡を潰した手順: A2 の実験——陽性対照（制限なしで 0・完全な SVG）を同じ試料で取った。書きかけが「今回の表から作ったもの」かは先頭のバイト（XML の宣言）と大きさ（300 = 制限）で見た。
 
