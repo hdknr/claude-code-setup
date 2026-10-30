@@ -355,6 +355,21 @@ OWNED_DST_REF = "# s\n"
 OWNED_SKILL_PLAIN = OWNED_SKILL.replace("other の `SKILL.md`", "`SKILL.md`")
 OWNED_PROMPT_PLAIN = OWNED_SKILL.replace("other の `prompts/p.md`", "`prompts/p.md`")
 OWNED_BARE_PLAIN = OWNED_SRC_REF.replace("other の `s.md`", "`s.md`")
+# **名指しの書き方も 3 つとも置く**——`<名前> の`（上）・`<名前> のスキルの`・`このリポジトリの`（#600。#573 の 1 パス目の
+# `/code-review` CR1-1——`other の` の試料だけでは、ほかの 2 つの書き方だけ免除を外す変異がどの検査も通った）。
+# **指し先の形と指した先は上と同じ**で、違うのは名指しの書き方だけ——その指し先が解決されて照合されることは上の `OWNED_*_PLAIN`
+# が見ている。**この試料が免除に届いていること**は、下の変異（その書き方だけ免除を外す）で 0 から 1 に変わることで見る。
+# **`references/x.md` の形も足す**——`other の` のその形は `PLUGIN_REF` が持つが、ほかの 2 つの書き方は持たず、
+# 書き方と `references/` の形の両方で免除を外す変異が素通りした（#600 の周で著者が当てた）。指した先 `references/r.md` は実在し、
+# X はそこの指し先の中にしか無い（指し先は照合の前に消す）。
+# 変異は上と同じく `line_start` を書き方ごとに空にする（免除の行を書き換えると、当て先が 1 箇所あるかの検査が試料と関係なく落ちる）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if \"このリポジトリ\" in prose[prose.rfind(\"\\n\", 0, m.start()) + 1:m.start()] else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if \"のスキル\" in prose[prose.rfind(\"\\n\", 0, m.start()) + 1:m.start()] else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+OWNED_REFS_LINE = "区分は other の `references/r.md` の「other にしか無い節」を正とする。\n"
+OWNED_SKILL_NAMED = (OWNED_SKILL + OWNED_REFS_LINE).replace("other の `", "other のスキルの `")
+OWNED_SRC_REF_NAMED = OWNED_SRC_REF.replace("other の `", "other のスキルの `")
+OWNED_SKILL_REPO = (OWNED_SKILL + OWNED_REFS_LINE).replace("other の `", "このリポジトリの `")
+OWNED_SRC_REF_REPO = OWNED_SRC_REF.replace("other の `", "このリポジトリの `")
 
 PLAIN = """# デモ
 
@@ -806,9 +821,15 @@ def main() -> int:
         owned_skill_plain = owned_tree("owned-skill-plain", skill=OWNED_SKILL_PLAIN)
         owned_prompt_plain = owned_tree("owned-prompt-plain", skill=OWNED_PROMPT_PLAIN)
         owned_bare_plain = owned_tree("owned-bare-plain", ref=OWNED_BARE_PLAIN)
+        owned_named = owned_tree("owned-named", skill=OWNED_SKILL_NAMED, ref=OWNED_SRC_REF_NAMED)
+        owned_repo = owned_tree("owned-repo", skill=OWNED_SKILL_REPO, ref=OWNED_SRC_REF_REPO)
         print("\n持ち主の名前による「X」の照合の免除の形（#573）")
         check("持ち主の名前が付いた `SKILL.md`・`prompts/x.md`・ファイル名だけの指し先は、X が自分の先に無くても照合しない",
               observe(mod, owned_ok)["rc"] == 0)
+        check("`<名前> のスキルの` の名指しでも、同じ 3 つの形と `references/x.md` の指し先は照合しない（#600）",
+              observe(mod, owned_named)["rc"] == 0)
+        check("`このリポジトリの` の名指しでも、同じ 3 つの形と `references/x.md` の指し先は照合しない（#600）",
+              observe(mod, owned_repo)["rc"] == 0)
         check("名指しを外した `SKILL.md` の指し先は照合して落とす（対照）", observe(mod, owned_skill_plain)["rc"] == 1)
         check("名指しを外した `prompts/x.md` の指し先は照合して落とす（対照）", observe(mod, owned_prompt_plain)["rc"] == 1)
         check("名指しを外したファイル名だけの指し先は照合して落とす（対照）", observe(mod, owned_bare_plain)["rc"] == 1)
@@ -890,6 +911,8 @@ def main() -> int:
                           or mutant.main([str(owned_skill_plain)]) != 1
                           or mutant.main([str(owned_prompt_plain)]) != 1
                           or mutant.main([str(owned_bare_plain)]) != 1
+                          or mutant.main([str(owned_named)]) != 0
+                          or mutant.main([str(owned_repo)]) != 0
                           or errors(mutant, outside_owned) != 1
                           or errors(mutant, outside_plain) != 1
                           or errors(mutant, outside_roundtrip) != 1

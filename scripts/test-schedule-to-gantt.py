@@ -23,7 +23,8 @@
    （argv に渡らない）ので、同じプロセスの中で `sys.argv` を差し替えて `main` に届かせる（#534）。
    表が正しくて出力先が符号化できない（名前・親のディレクトリの名前）ときは、書く途中の `ValueError` を「書けない」と
    名指しして 2——「書く途中の想定外の例外」にしない（#582。同じく `main` に届かせる）。
-   パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2。
+   パス全体が PATH_MAX を超えるだけの出力先（ファイルは在りうる）は「消せない」と名指しして 2——名前がちょうど NAME_MAX
+   （255 バイト）の出力先も（境界。#536）。
    先を辿れない symlink（先がファイルでもディレクトリでも）は、先が前の出力かを確かめられないので消さずに名指しして 2
    （表が正しくて書けないときも。#535）、壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）とディレクトリを指す symlink は消さずに 1。
    書く途中の想定外の例外（`Path.write_bytes` を差し替える）も入口に逃がさず、前の出力を消して 2。
@@ -150,6 +151,8 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("長すぎる名前を消せないと読む", "    return e.errno == errno.ENAMETOOLONG and any(", "    return False and any("),
     # 2 パス目の指摘対応（V2-1・V2-2・P2-1・P2-2・P2-4）
     ("長すぎるパスも無いと読む", "any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)", "True"),
+    # #536: 名前の長さの境界——ちょうど NAME_MAX の名前は在りうる
+    ("名前がちょうど NAME_MAX でも在りえないと読む", "part)) > NAME_MAX for part", "part)) >= NAME_MAX for part"),
     ("壊れたリンクも消す", "                    return None  # 壊れたリンク", "                    mode = stat.S_IFREG  # 壊れたリンク"),
     ("書く途中の想定外の例外を逃がす", "    except Exception as e:  # 書く途中の", "    except ImportError as e:  # 書く途中の"),
     # #535: 先を辿れない symlink は消さずに名指しする
@@ -233,20 +236,30 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     code, output = generate(scripts, bad, root / ("a" * 300 + ".svg"))
     if code != 1 or LEFT in output:
         problems.append(f"長すぎる名前の出力先: 終了 {code}: {output[-300:]!r}")
-    # パス全体が PATH_MAX（Linux 4096・macOS 1024）を超えるだけの出力先——ファイルは在りうるので名指しして 2（P2-1）
-    deep, fd = root, os.open(root, os.O_RDONLY)
-    try:
-        for _ in range(25):
-            os.mkdir("d" * 200, dir_fd=fd)
-            child = os.open("d" * 200, os.O_RDONLY, dir_fd=fd)
+    def deep_output(base: Path, name: str) -> Path:
+        """`base` の下に 200 バイトの名前のディレクトリを 25 段掘り（パス全体が PATH_MAX を超える）、`name` の前の出力を置く。
+        素のパスでは辿れないので、ディレクトリの記述子から相対に作る。"""
+        deep, fd = base, os.open(base, os.O_RDONLY)
+        try:
+            for _ in range(25):
+                os.mkdir("d" * 200, dir_fd=fd)
+                child = os.open("d" * 200, os.O_RDONLY, dir_fd=fd)
+                os.close(fd)
+                fd, deep = child, deep / ("d" * 200)
+            os.close(os.open(name, os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=fd))
+        finally:
             os.close(fd)
-            fd, deep = child, deep / ("d" * 200)
-        os.close(os.open("gantt.svg", os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=fd))
-    finally:
-        os.close(fd)
-    code, output = generate(scripts, bad, deep / "gantt.svg")
-    if code != 2 or f"{LEFT}{deep / 'gantt.svg'}（" not in output:
-        problems.append(f"長すぎるパスの前の出力: 終了 {code}: {output[-200:]!r}")
+        return deep / name
+
+    # パス全体が PATH_MAX（Linux 4096・macOS 1024）を超えるだけの出力先——ファイルは在りうるので名指しして 2（P2-1）。
+    # 名前がちょうど NAME_MAX（255 バイト）の出力先も在りうる——境界（`> NAME_MAX` を `>=` にすると 1 になる。#536）
+    edge = root / "edge"
+    edge.mkdir()
+    for label, out in (("長すぎるパスの前の出力", deep_output(root, "gantt.svg")),
+                       ("長すぎるパスの、名前がちょうど NAME_MAX の前の出力", deep_output(edge, "g" * 251 + ".svg"))):  # 255 バイト
+        code, output = generate(scripts, bad, out)
+        if code != 2 or f"{LEFT}{out}（" not in output:
+            problems.append(f"{label}: 終了 {code}: {output[-200:]!r}")
     # 親がファイルの出力先（ENOTDIR）——無いので 1 のまま（V2-1）
     (root / "afile").write_text("", encoding="utf-8")
     code, output = generate(scripts, bad, root / "afile" / "x.svg")
