@@ -43,9 +43,10 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **作れなかったとき（0 以外。出力先が決まる前に止まった 2——引数の解釈に失敗した `argparse` の 2 と、`--out` を渡さずに根を求める途中の想定外の例外——は除く）は、出力の場所に残った今回の出力ではないファイルを名指しする**（#498。消さない）——
   出力の名前（`--out` の名前・`proposal.md`・`gantt.svg`・`spec.md`・提案書と仕様書の PPTX・`spec-figure-<数字>.svg`。大文字小文字を区別しない）の
   ファイルのうち読める印に無いものと、読めない印（とその場所の出力の名前のファイル）。印が名指しするのに消せなかった出力は「消せない」で名指しする。
-  **上書きを断った 2 では、「上書きしない」と言ったファイルを「今回の出力ではない」で重ねて名指ししない**（#551。同じファイルかは `lstat` で見る）。
+  **上書きを断った 2 では、「上書きしない」と言ったファイルを「今回の出力ではない」で重ねて名指ししない**（#551。同じ項目か——同じ名前か、
+  大文字小文字だけ違い `lstat` が同じファイル——で見る。ハードリンクのような別の名前の項目は別に名指しする）。
   **作れたとき（0）も、印に無い出力の名前のファイルが残っていれば「今回の出力ではない」と標準エラーに名指しする**（#553。終了コードは 0 のまま。
-  0.25.0 の `proposal.pptx` を `--pptx` 無しで作ったとき・図が減ったときの `spec-figure-NN.svg` など）。**出力の名前でないファイル（手書きの `notes.md` など）は名指ししない。**
+  0.25.0 の `proposal.pptx` を `--pptx` 無しで作ったとき・手で置いた `spec-figure-NN.svg` など）。**出力の名前でないファイル（手書きの `notes.md` など）は名指ししない。**
 - **提案書は承認の記録を持たない。** 載せるのは生成元のタグとコミットだけで、「承認済み」とは書かない。
 - 同じ入力から同じバイトを作る（時刻を書かない）。標準ライブラリだけを使う（`git` は要る）。
 
@@ -683,12 +684,20 @@ def manifest_names(directory: Path) -> list[str] | None:
     return owned_names(directory)
 
 
-def same_file(a: Path, b: Path) -> bool:
-    """同じファイルか。symlink を辿らずに (st_dev, st_ino) で見る——大文字小文字だけ違う綴りで出会っても同じと分かる（#551）。"""
+def same_entry(a: Path, b: Path) -> bool:
+    """同じディレクトリの同じ項目か（#551）。名前が同じか、大文字小文字だけ違い同じファイル（区別しない FS の同じ項目）なら同じ。
+    **ファイルの同一性（inode）だけでは見ない**——ハードリンクは別の名前の別の項目で、それぞれ名指しする。
+    大文字小文字を区別する FS で綴りだけ違う 2 つのファイルは inode が違うので、別の項目として名指しする。"""
+    if os.path.normcase(os.path.abspath(a.parent)) != os.path.normcase(os.path.abspath(b.parent)):
+        return False
+    if a.name == b.name:
+        return True
+    if a.name.lower() != b.name.lower():
+        return False
     try:
-        sa, sb = a.lstat(), b.lstat()
+        sa, sb = a.lstat(), b.lstat()  # symlink を辿らない
     except OSError:
-        return a == b
+        return False
     return (sa.st_dev, sa.st_ino) == (sb.st_dev, sb.st_ino)
 
 
@@ -720,7 +729,7 @@ def leftover_lines(out: Path, named: tuple[Path, ...] = ()) -> list[str]:
                 regular = True  # 確かめられないものも名指しする（消さないので害が無い）
             if not regular or path.name == MANIFEST or not output_named(path.name, out.name):
                 continue
-            if any(same_file(path, other) for other in named):
+            if any(same_entry(path, other) for other in named):
                 continue
             if owned is None:
                 lines.append(f"{path}: 今回の出力ではない（印が読めない。消していない）")
