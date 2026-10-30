@@ -45,7 +45,7 @@ cruise に組み込む: 台帳にまとめ（group）を持ち、まとめる時
 - ブランチ: `issue/641-cruise-grouping`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-641`
 - 起点: `165f3f1`（start-point `origin/main`）
-- base: `17f2dd0b2bfa2371a877f6b904d95374f6507ed9`（`git merge-base origin/main HEAD`。1d8fe7b で origin/main を取り込んだので当て直した。切った時点は `165f3f1116e763514232f36bc823354589c3e01e`）
+- base: `eef93311c540b522c2df260b88a2f86bff804277`（`git merge-base origin/main HEAD`。2 度目の取り込み（#557 の 1.66.0）で当て直した。1 パス目に渡したのは `17f2dd0b2bfa2371a877f6b904d95374f6507ed9`、切った時点は `165f3f1116e763514232f36bc823354589c3e01e`）
 
 ## 線（出所）
 
@@ -98,7 +98,10 @@ cruise に組み込む: 台帳にまとめ（group）を持ち、まとめる時
 
 - 実装: 済み（efb52a7・テストの直し 5a… → 取り込み 1d8fe7b）。`test-ledger.py` は 135 判定・変異 29/29（「守る」29 行と 1 対 1）
 - 生きた台帳 `cruise-issue-474.json` の一時コピー（scratchpad の i641-live）で `show`・`next` が通り、`next` の出力は 1 行 1 番号のまま（I6）
-- 1 パス目: 起動。1 パス目の起点（先に当てた関門に渡した時点の HEAD）: `df0b293ec82199508fb26e01a4521326c4fdf270`
+- 1 パス目: 済み。Verifier（sonnet）反証 2 件（V1・V2。`test-ledger.py` は負荷で 600 秒内に終わらず未確認と報告——著者の実行で 141 判定・変異 32/32 を確かめた）、`/code-review`（high）指摘 10 件（CR1〜CR10）。採否の表のとおり 12 件すべて直す。指摘対応は 78d9201、そのあと origin/main を取り込み（#557・1.66.0。版の行だけ衝突、1.67.0 を残した）
+- 1 パス目の指摘対応の差分: 0 行ではない（ledger.py・test-ledger.py・grouping.md・ledger.md）→ 2 パス目を回す
+- 2 つ目の割り目: 不在の周なので訊かない。残っているのは手順 5 の当て直しと `/code-review` 2 パス目の両方
+- 1 パス目の記録:1 パス目の起点（先に当てた関門に渡した時点の HEAD）: `df0b293ec82199508fb26e01a4521326c4fdf270`
 - 2 パス目: 未
 - 狭いパス: 未
 - 交絡: 実験なし（台帳のテストは一時リポジトリで回す）
