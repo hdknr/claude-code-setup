@@ -21,10 +21,15 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - `plugins/spec-loop/scripts/schedule-to-gantt.py` — CLI の入口で当てる（版ごとの `feasibility/schedule.csv` を読む同じ形。Issue の列挙には無いが、`versions.md` の「その版だけを読むもの」にある——経路を入口一覧から数えた結果）
 - `plugins/spec-loop/references/versions.md` — 版ごとに読む側の決まり（名指しして止まる）・「綴りの誤りの移行」の 3（作業ツリーにだけ古い綴り）に読む側が止まることを書く・フックの取り込み
 - `plugins/spec-loop/references/tree.md` — フックを取り込む版の注（0.44.0）
-- `scripts/test-check-qa-csv.py`・`scripts/test-qa-to-pptx.py`・`scripts/test-check-feasibility-csv.py`・`scripts/test-schedule-to-gantt.py`・`scripts/test-init-mkdocs.py` — 試料・変異・写しの突き合わせ
+- `scripts/test-check-qa-csv.py` — 試料・変異・写しの突き合わせ
+- `scripts/test-qa-to-pptx.py` — 試料・変異
+- `scripts/test-check-feasibility-csv.py` — 試料・変異
+- `scripts/test-schedule-to-gantt.py` — 試料・変異
+- `scripts/test-init-mkdocs.py` — 試料・変異・写しの突き合わせ
 - `.github/workflows/plugins.yml` — 区別しない FS（ext4 の casefold）の段で `test-init-mkdocs.py` も回す（区別しない FS でしか見分けられない変異があるため。実装の途中で広げた——**計画への記載は編集の後になった**（手順 4 の「手を動かす前に」を守れていない）。受入基準は I1 の経路 E3 の検証手段として足す）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（5 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（0.44.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.44.0）
+- `.claude-plugin/marketplace.json` — 版（0.44.0）
 - `docs/plans/issue-514.md` — この計画
 
 触らない:
@@ -116,3 +121,7 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - **確かめるのはパスの末尾 3 段（版・置き場所・ファイル）だけ**——その上の利用者のフォルダの綴りは見ない（決まりの外）。
 - **正規化だけ違う名前は止めない**——決まりの名前（`shared`・`qa.csv` など）は ASCII なので正規化では違いようがなく、止めると NFD で作られた利用者のフォルダで誤って止まる。
 - **書いた綴りそのものが決まりと違う（`Shared/qa.csv` と書いてディスクも `Shared/`）は止めない**——読む側が見るのは「書いた綴りとディスクの綴りが同じか」で、綴りが決まりどおりかは重ね合わせの検査の仕事。
+
+## 手順 8
+
+- この周の起票: 1 件（`仕様の穴 = 推奨で決めて起票` の線で立てる確認の Issue——版ごとに読む側の直し方を (a) で決めたこと。起票の承認は不在のため訊いていない）

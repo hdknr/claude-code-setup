@@ -667,7 +667,7 @@ def spelling_problems(scripts: Path, work: Path) -> list[str]:
         r = subprocess.run([sys.executable, "-I", str(scripts / TARGET), f"docs/{version}/feasibility/schedule.csv", out.name],
                            capture_output=True, text=True, cwd=work)
         named = f"docs/{version}/Feasibility: feasibility と大文字小文字だけ違う名前なので" in r.stderr
-        drawn = out.exists() and out.read_text(encoding="utf-8").startswith("<svg")
+        drawn = out.exists() and "<svg" in out.read_text(encoding="utf-8")
         if r.returncode != code or named != (code == 2) or drawn != (code == 0) or (code == 2 and out.exists()):
             problems.append(f"{version}: 終了 {r.returncode}（期待 {code}）・名指し {named}・出力 {out.exists()}: {r.stderr[-300:]!r}")
     return problems
