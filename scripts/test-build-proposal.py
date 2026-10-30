@@ -988,8 +988,10 @@ LINK_MUTATIONS: list[tuple[str, str, str]] = [
     ("途中のリンクを辿って外の内部の表を消す", "        if internal is not None and inside(internal):", "        if internal is not None:"),
     ("版のリンクを辿って外の removed.csv を書き換える", "        if removed is not None and inside(removed) and", "        if removed is not None and"),
     ("版のディレクトリのリンクを見ない", "        while place != docs:", "        while place.parent != docs:"),
-    ("辿れる先のリンクを消して消したと言う", "                else:\n                    left.append(f\"{stale}（リンクの先に前の出力が残る",
-     "                if False:\n                    left.append(f\"{stale}（リンクの先に前の出力が残る"),
+    # ディレクトリでない先のリンクだけを、`continue` を飛ばして下の「消した」に落とす（2 パス目 CR2-4 で分岐が入ったので置換箇所を移した）
+    ("辿れる先のリンクを消して消したと言う",
+     "                        left.append(f\"{stale}（リンクの先に前の出力が残る——リンクを消しても先は消えない。先: {target}）\")\n                    continue",
+     "                        mode = None\n                    if mode is not None:\n                        continue"),
     ("壊れたリンクを残す", "                    # 壊れたリンク（先が無い", "                    continue\n                    # 壊れたリンク（先が無い"),
     ("壊れたリンクの判定を schedule-to-gantt.py と別にする", "                    if real or not gantt.absent(Path(target), e):",
      "                    if real or e.errno not in (2, 20):"),
