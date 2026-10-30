@@ -188,6 +188,25 @@ def _build_more_zero_paths(base: Path) -> dict:
     git(seed, "remote", "add", "origin", str(bare))
     git(seed, "push", "-q", "origin", "main")
     out = {}
+    # **origin に master しか無いクローン**（推測が origin/master に落ちる）と、**main も master も無いクローン**
+    # （origin はあるが何も解決できず HEAD から切る）を、別の bare から作る（#668 の 2 パス目の `/code-review` CR2-2）。
+    for label, branch in (("masteronly", "master"), ("trunkonly", "trunk")):
+        obare = base / f"{label}.git"
+        obare.mkdir(parents=True)
+        assert_not_real_repo(obare)
+        git(obare, "init", "-q", "--bare", "-b", branch)
+        git(seed, "push", "-q", str(obare), f"main:{branch}")
+        work = base / label
+        res = subprocess.run(["git", "clone", "-q", str(obare), str(work)],
+                             capture_output=True, text=True)
+        assert res.returncode == 0, f"clone に失敗した: {res.stderr}"
+        assert_not_real_repo(work)
+        git(work, "config", "user.email", "t@example.invalid")
+        git(work, "config", "user.name", "t")
+        git(work, "config", "remote.origin.followRemoteHEAD", "never")
+        git(work, "remote", "set-head", "origin", "-d")
+        assert git(work, "symbolic-ref", "-q", "refs/remotes/origin/HEAD").returncode != 0
+        out[label] = work
     for label in ("failing", "noheadref"):
         work = base / label
         res = subprocess.run(["git", "clone", "-q", str(bare), str(work)],
@@ -463,6 +482,11 @@ STDOUT_0_PATHS = (
      "origin/main  （推測（refs/remotes/origin/HEAD が無い） / 取り直した）"),
     ("ローカルのブランチを名指し: ", "ローカルのブランチを名指し", "69", "local",
      "main  （環境変数 DEV_LOOP_BASE_REF）"),
+    # **origin/master への推測と、origin はあるが何も解決できない経路**（#668 の 2 パス目の `/code-review` CR2-2）。
+    ("origin/master を推測: ", "origin/master を推測", "71", "master",
+     "origin/master  （推測（refs/remotes/origin/HEAD が無い） / 取り直した）"),
+    ("origin があっても解決できない: ", "origin があっても解決できない", "72", "trunk",
+     "HEAD  （解決できなかった / 取り直した）"),
 )
 
 
@@ -539,14 +563,17 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     nogit = base / "nogit"
     nogit.mkdir(parents=True, exist_ok=True)
     out["前提条件: git 無し"] = run(precond, nogit).returncode
+    res5 = run(prepare, nogit, "88", "nogit")
     # **入場の側も、見られなかったときに rc=5 で断ることを見る。**
     # **この rc の観測が無いと「見られなくても作る」変異が殺せない**——その変異は root の守りを外すだけで、
     # 背後の守り（既存の一覧）が 6 で断るので、下の「作らない」の観測は本体そのままと同じ真のまま残る。
     # **以前ここは「作らない」の観測が要ると書いており、偽だった**（#668。消しても rc が 5 → 6 で殺せる）——
     # テストを丸ごと回す `red` では、消した観測を `main()` が読む `KeyError` で赤になり、主張と無関係に確認されていた。
     # **この主張は機械で当ててある**（#151）。**`red` は `observe()` だけを回す**（`--mutant`。`main()` の表明を読まない）。
-    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "    out[\"入場: git 無し\"] = run(prepare, nogit, \"88\", \"nogit\").returncode\n", "new": "", "red": "python3 scripts/test-worktree-scripts.py --mutant '見られなくても作る'"}
-    out["入場: git 無し"] = run(prepare, nogit, "88", "nogit").returncode
+    # mutation-claim: {"file": "scripts/test-worktree-scripts.py", "old": "    out[\"入場: git 無し\"] = res5.returncode\n", "new": "", "red": "python3 scripts/test-worktree-scripts.py --mutant '見られなくても作る'"}
+    out["入場: git 無し"] = res5.returncode
+    # **5 で断るときも、標準出力は空**（#668 の 2 パス目の `/code-review` CR2-1）。
+    out["5 の標準出力が空"] = res5.stdout == ""
     # **作らないことも直接見る**——いまの変異は上の rc で殺せるが、作ったかどうかは rc とは別の約束である。
     out["入場: git 無しでも作らない"] = not (nogit / ".claude").exists()
 
@@ -556,6 +583,8 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
     listless = make_repo(base / "listless")
     res6 = run(prepare, listless, "99", "listless", env=env)
     out["入場: 既存を見られない rc"] = res6.returncode
+    # **6 で断るときも、標準出力は空**（#668 の 2 パス目の `/code-review` CR2-1）。
+    out["6 の標準出力が空"] = res6.stdout == ""
     out["入場: 既存を見られなければ作らない"] = not (
         listless / ".claude" / "worktrees" / "issue-99").exists()
 
@@ -631,6 +660,16 @@ def observe(prepare: Path, precond: Path, base: Path) -> dict:
         more["noheadref"])
     out["既定ブランチを推測: 0 の標準出力（全体）"] = stdout_0(
         run(prepare, more["noheadref"], "68", "guessed"), more["noheadref"])
+    out["origin/master を推測: 0 の標準出力（全体）"] = stdout_0(
+        run(prepare, more["masteronly"], "71", "master"), more["masteronly"])
+    out["origin があっても解決できない: 0 の標準出力（全体）"] = stdout_0(
+        run(prepare, more["trunkonly"], "72", "trunk"), more["trunkonly"])
+    # **取り直したあとで 7 で断るときも、標準出力は空**（#668 の 2 パス目の `/code-review` CR2-3——origin の無い木の 7 だけでは、
+    # 取り直しの経路の後ろで標準出力へ書く変更が見えない）。
+    bad_fetched = run(prepare, more["noheadref"], "70", "badbase",
+                      env=dict(os.environ, DEV_LOOP_BASE_REF="refs/nope/nope"))
+    out["7（取り直しの後）: rc"] = bad_fetched.returncode
+    out["7（取り直しの後）: 標準出力が空"] = bad_fetched.stdout == ""
 
     # detached を作って見分けられるか
     if wt.is_dir():
@@ -1565,6 +1604,10 @@ def main(argv: list[str] | None = None) -> int:
               correct["3 の標準出力が空"])
         check("名指しの base が解決しない（7）で断るときも、標準出力には何も出さない（#668）",
               correct["7 の標準出力が空"])
+        check("取り直したあとで 7 で断るときも、標準出力には何も出さない（#668）",
+              correct["7（取り直しの後）: rc"] == 7 and correct["7（取り直しの後）: 標準出力が空"])
+        check("root を解決できない（5）・既存を見られない（6）で断るときも、標準出力には何も出さない（#668）",
+              correct["5 の標準出力が空"] and correct["6 の標準出力が空"])
         # **作るとき（0）の標準出力は、全部の行を経路ごとの期待値と比べる**（#560・#668）——冒頭の 3 行
         # （メインの作業ツリー・作ろうとしているもの・空行）は照合の前に出していたときと同じで、経路で変わるのは
         # `start-point:` の行だけ。**冒頭だけを比べていたときは、後ろの行に足す変異が素通りした**（CR2-2）。
