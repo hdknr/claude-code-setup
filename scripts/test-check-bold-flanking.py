@@ -349,6 +349,14 @@ SAMPLES = {
     'table-row-ff-end.md': 'a **x\n|a|b|\x0c\n|-|-|\ny** z\n',
     'table-row-vt-lead.md': 'a **x\n\x0b|a|\n|-|\ny** z\n',
     'table-row-ideographic-end.md': 'a **x\n|a|\u3000\n|-|\ny** z\n',
+    # 2 パス目の関門（#667 の周）の指摘を守る試料。どれも GitHub の描画（gfm）と一致を確かめた。
+    # 守る 4: `\v`・`\f` だけの見出しの行は 1 つのセル——表を開く（GitHub は段落と 1 列の表。2 パス目の版は見逃し、main は一致）。
+    # `|\v` は表にならない（GitHub は 1 つの太字。1 パス目の版は (1, 4) の誤検出）
+    'table-header-vt.md': 'a **x\n\x0b\n|-|\ny** z\n',
+    'table-header-ff-spaced.md': 'a **x\n \x0c \n|-|\ny** z\n',
+    'table-header-pipe-vt.md': 'a **x\n|\x0b\n|-|\ny** z\n',
+    # 守る 4: 容れ物の印の直後の U+3000 も段落を始める——次の 4 つ字下げした行は続き（GitHub は引用の中の 1 つの太字。main は 3 行目を誤検出）
+    'quote-ideographic-then-indent.md': '> \u3000\n    **x\ny**\n',
     # 守る 17: 番号は ASCII の数字だけ——全角の `１.`・アラビア・インドの `١.` は項でない（GitHub は 1 つの太字。1 パス目の版は誤検出）
     'ordered-fullwidth-continues.md': 'a **x\n\uff11. y** z\n',
     'ordered-arabic-indic-continues.md': 'a **x\n\u0661. y** z\n',
@@ -555,6 +563,10 @@ EXPECTED = {
     'table-row-ff-end.md': ((1, 4), ()),
     'table-row-vt-lead.md': ((), ()),
     'table-row-ideographic-end.md': ((), ()),
+    'table-header-vt.md': ((1, 4), ()),
+    'table-header-ff-spaced.md': ((1, 4), ()),
+    'table-header-pipe-vt.md': ((), ()),
+    'quote-ideographic-then-indent.md': ((), ()),
     'ordered-fullwidth-continues.md': ((), ()),
     'ordered-arabic-indic-continues.md': ((), ()),
     'item-nested-setext-cont.md': ((), ()),
@@ -906,12 +918,20 @@ MUTATIONS = {
         "        if is_blank(inner):",
         "        if not inner.strip():"),
     "表の行の端を str.strip で剥がす（#667）": (4,
-        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f")',
+        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f") or row.strip(" \\t")',
         "    text = row.strip()"),
     # 1 パス目の版の形——行末の `\v`・`\f` を剥がさない（#667 の /code-review 1 パス目 CR1-1）
     "表の行末の \\v \\f を剥がさない（#667 の CR1-1）": (4,
-        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f")',
-        '    text = row.strip(" \\t")'),
+        '    text = row.lstrip(" \\t").rstrip(" \\t\\v\\f") or row.strip(" \\t")',
+        '    text = row.strip(" \\t") or row.strip(" \\t")'),
+    # 2 パス目の版の形——`\v`・`\f` だけの見出しの行を剥がしてセル 0 にする（#667 の 2 パス目 CR2-1）
+    "\\v \\f だけの見出しの行を剥がして空にする（#667 の CR2-1）": (4,
+        ' or row.strip(" \\t")\n',
+        '\n'),
+    # 容れ物の印の直後の中身だけ `str.strip` で空と読む（A1 の経路 (d)。#667 の 2 パス目 CR2-2）
+    "容れ物の印の直後の中身を str.strip で判定する（#667 の CR2-2）": (4,
+        "        if is_blank(inner):",
+        "        if is_blank(inner) or (bool(new) and not inner.strip()):"),
     # 番号に ASCII でない数字も当てる（#667 の CR1-2）——`１.` が値 1 として段落を割り込む
     "番号に ASCII でない数字も当てる（#667 の CR1-2）": (17,
         "([0-9]{1,9})[.)]",
