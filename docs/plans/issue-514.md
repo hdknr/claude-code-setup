@@ -56,7 +56,8 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - ブランチ: `issue/514-reader-spelling`
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-514`
 - 起点: `d8cfe0c`（origin/main）
-- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `d8cfe0c0a0e7b58b57367d3cbe55aa50714ca27e`
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `d8cfe0c0a0e7b58b57367d3cbe55aa50714ca27e`（1 パス目）
+- 載せ替え: 1 パス目の指摘対応のあと `git merge origin/main`（`fc40984`。#668 の `prepare-worktree.sh`・`test-worktree-scripts.py` だけ、衝突なし・増えた検査なし）。式を当て直した base: `15535b30b99a52a00412819f921fd4e92e09cf9a`（2 パス目から）
 
 ## 仕様の穴（不在の線で推奨により決めた）
 
@@ -120,7 +121,9 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - PR: #703
 - Verifier 1 パス目: 通した——反証 1 件（R1。採否は下の表。直す 0 件）。verifier.md を 169 行読んだ（`wc -l` と一致）
 - `/code-review` 1 パス目: 通した——指摘 6 件（CR1〜CR6。直す 3・分類を直す 1・残課題 2）
-- 手順 5 の反証と差し戻し: まだ無い
+- 1 パス目の指摘対応: `66765f0`（CR1・CR2・CR3）。差分は 0 行でない（`git diff cda8189 -- ':(top)' ':(top,exclude)docs/plans/issue-514.md'` で 5 ファイル）——2 パス目を回す。2 つ目の割り目: 不在のため訊かず続けた
+- 手順 5 の反証と差し戻し: Verifier 1 パス目の反証 1 件（R1。残課題）。差し戻し（手順 4 へ）は `/code-review` の CR1・CR3 で 1 回
+- 2 パス目の関門: Verifier・`/code-review` とも起動する（base `15535b3`）
 - 交絡を潰した手順:
     - **修正前に失敗を再現した**（陽性対照）: macOS（区別しない APFS）で、修正前のフックが `v2/Shared/qa.csv` の `Q-001` を描き `qa_numbers` が `[(1, set()), (2, {'Q-001'})]`、`check-qa-csv.py`・`qa-to-pptx.py` が綴り違いの表の中身を読んで列検査まで進んだ（終了 1）。修正後は描かずに警告・2 で名指し。
     - **両方の FS で同じテストを回した**: 既定の一時ディレクトリ（区別しない APFS）と、区別する APFS の sparse image を `TMPDIR` にした回で、5 本のテストがどちらも緑。片方の FS でしか見分けられない変異は、その FS で飛ばしたと出力が名指しする（区別しない側: `区別する FS で綴り違いのほうを読む`、区別する側: `番号をパスを組み立てて読む`）——どちらももう片方の FS の回で殺せた。
