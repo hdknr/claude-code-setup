@@ -328,11 +328,12 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      + [("i", "docs/v2/Shared/nfr.csv", "100644", "x\n"), ("c",),
                                            ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
      lambda r: not_made(1)(r) and "docs/v2/Shared: shared と大文字小文字" in r.output),
-    # 内部の層は綴りどおりの spec/qa-dev.csv だけを外す（#276）——spec/QA-dev.csv は重ね合わせではふつうのファイルで、作業ツリーの差分にも
-    # 「追加」で出る。**判別できるのは区別しない FS だけ**（区別する FS では綴りを見ずに外しても当たらない）——変異は CASE_FOLD_ONLY
-    ("綴りの違う内部の表はふつうのファイル", V2C[:-3] + [("i", "docs/v2/spec/QA-dev.csv", "100644", "x\n"), ("c",),
+    # 内部の層は綴りどおりの spec/qa-dev.csv だけを外す（#276）——spec/QA-dev.csv は写したまま重ね合わせに渡り、重ね合わせが
+    # 置き場所の中の構造ファイルの綴り違いとして断る（1。作業ツリーで重ねても同じ答え。#511）。**判別できるのは区別しない FS だけ**
+    # （区別する FS では綴りを見ずに外しても当たらない。区別しない FS で外すと重ね合わせが通って作ってしまう）——変異は CASE_FOLD_ONLY
+    ("綴りの違う内部の表は重ね合わせが断る", V2C[:-3] + [("i", "docs/v2/spec/QA-dev.csv", "100644", "x\n"), ("c",),
                                                 ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
-     lambda r: made(r) and "| spec/QA-dev.csv | 追加 | — |" in r.text and "| ファイル | 2 | 1 | 1 |" in r.text),
+     lambda r: not_made(1)(r) and "spec/QA-dev.csv: spec/qa-dev.csv と大文字小文字" in r.output),
     # 重ね合わせが読まないもの（版の外・版の中の重ねない置き場所）は写さない——そこで並んでも比較は作れる
     ("重ね合わせが読まないものは写さない", V2C[:-3] + [("i", "docs/notes/A.md", "100644", "X\n"), ("i", "docs/notes/a.md", "100644", "Y\n"),
                                               ("i", "docs/v2/proposal/N.md", "100644", "X\n"), ("i", "docs/v2/proposal/n.md", "100644", "Y\n"),
@@ -554,7 +555,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("綴りの違う removed.csv を写さない", "for name in [*mv.AREAS, mv.REMOVED]}", "for name in mv.AREAS}",
      "綴りの違う Removed.csv は比較で断る"),
     ("内部の表を綴りを見ずに外す", "        internal = mv.exact(root, mv.INTERNAL_QA_PATH)\n        if internal is not None:\n",
-     "        internal = root / mv.INTERNAL_QA_PATH\n        if os.path.lexists(internal):\n", "綴りの違う内部の表はふつうのファイル"),
+     "        internal = root / mv.INTERNAL_QA_PATH\n        if os.path.lexists(internal):\n", "綴りの違う内部の表は重ね合わせが断る"),
     ("重ね合わせが読まないものも写す", "        if not merged_reads(path):\n            continue\n", "",
      "重ね合わせが読まないものは写さない"),
     ("比較が作れなくても作る", "    if problems:\n        raise Stop(1, [f\"{tag}: ",
@@ -1404,7 +1405,7 @@ def copy_scripts(dest: Path) -> Path:
 
 # 大文字小文字を区別しない FS でだけ判別できる試料（区別する FS では旧い実装でも期待どおりになる）。名指しした変異は、
 # 区別する FS では飛ばし、飛ばしたことを出力に書く（緑のふりをしない）。試料そのものはどの FS でも走らせる
-CASE_FOLD_ONLY = {"綴りの違う内部の表はふつうのファイル"}
+CASE_FOLD_ONLY = {"綴りの違う内部の表は重ね合わせが断る"}
 folded_skips: list[str] = []
 
 
