@@ -45,9 +45,12 @@ V1-2: docstring の「守る」では 25f の行が 25d の直後（25e の前�
 - `docs/plans/issue-655.md` — この計画ファイル
 - （**`手順 N の「…」` を照合して実リポジトリの本文が落ちたら**）`plugins/` の指している側の本文——**明らかに誤っているときだけ**。直したらそのプラグインの版を main より上げる（dev-loop 1.69.0 超・spec-loop 0.43.1 超）
   ——**実際に落ちた 7 本**（下の「実リポジトリで落ちた指し先」）を直した:
-    - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 指し先の「…」5 本を、指した項の文言どおりに直す
-    - `plugins/dev-loop/skills/dev-loop/references/fix-line.md`・`references/spec-gap.md` — 同じく 1 本ずつ
-    - `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/dev-loop/skills/dev-loop/SKILL.md`・`plugins/dev-loop/skills/cruise/SKILL.md` — 版 1.69.0 → 1.69.1（記述の修正なので patch）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 指し先の「…」5 本を、指した項の文言どおりに直す。版の 2 行
+- `plugins/dev-loop/skills/dev-loop/references/fix-line.md` — 同じく 1 本
+- `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 同じく 1 本
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版 1.69.0 → 1.69.1（記述の修正なので patch）
+- `.claude-plugin/marketplace.json` — 同じ版
 
 触らない:
 
@@ -136,7 +139,7 @@ V1-2: docstring の「守る」では 25f の行が 25d の直後（25e の前�
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
-| V1-1 `手順 N の **「X」**` のように `の` と `「` の間に `**` が入る形は拾わない（実リポジトリに在る: `absent-lines.md` の `手順 6 の **「満たしていない受入基準」**` など） | 示せる（Verifier が実リポジトリで走査） | 無し（A7 の経路 (g) は改行の折り返しで、太字は挙げていない。`NO` を広げると `上の「X」`・`` `x.md` の「X」 `` の全部の形に効く——この周の範囲の外） | 残課題 |
+| V1-1 `手順 N の **「X」**` のように `の` と `「` の間に `**` が入る形は拾わない（実リポジトリに在る: `absent-lines.md` の `手順 6 の **「満たしていない受入基準」**` など） | 示せる（Verifier が実リポジトリで走査） | A7（同じ欠陥を `/code-review` が CR1-1 で挙げた） | **CR1-1 で直した**（`XREF` の形だけ。`上の「X」` の形（PROSE）は太字を跨がないまま——CR2-5） |
 | V1-2 `以上の手順 N` は書いたファイルの中で照合される | 示せる（Verifier がコピーで実走） | 無し（docstring の「守らない」に明記。落ちる側に倒れ、偽の緑にならない） | 残課題（記述済み） |
 | V1-3 `以上の手順` で照合が緩む経路は見つからなかった | 示せない（指摘ではない） | 無し | 記録のみ |
 | CR1-1 `手順 N の **「X」**`（`の` と `「` の間の太字）を拾わない。実リポジトリに在る（`SKILL.md` 2 本・`absent-lines.md` 1 本） | 示せる（レビュー役が複製で項を書き換え rc=0。`**` を外すと rc=1） | A7（`手順 N の「…」` の照合）・A8 | 直す——`XREF` の `NO` の後に `BOLD` を足す（守る 14d）。実リポジトリは 797 件で 0（4 本増） |
