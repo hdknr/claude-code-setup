@@ -101,8 +101,10 @@ main（`745bb1c`）の検査と GitHub の描画（`gh api -X POST /markdown -f 
   `/code-review`（high）指摘 6 件（下の表）。どちらも base `745bb1c` の 2 点の差分に当てた
 - **狭いパスの起点**（2 パス目の指摘対応を始める直前の HEAD）: `2d8f9af005faefc9540a255a57ea5aed54f28c0b`
 - **狭いパスの終点**（2 パス目の指摘対応の最後のコミット）: `939f3ff5ac11820b85f999d0eaae0d924f1f9084`（CR2-1・CR2-2・CR2-5 を直した）
-- 狭いパス: Verifier（sonnet）を `2d8f9af`..`939f3ff` に起動（結果待ち）
-- 狭いパス: Verifier（sonnet）を `2d8f9af`..`939f3ff` に起動（結果待ち）
+- 狭いパス: Verifier（`dev-loop:dev-loop-verifier`・sonnet。`git diff 2d8f9af 939f3ff` の 2 点。受入基準は絞らずに渡し、変異は Verifier が設計した）——**反証 0 件**。
+  自分で設計した変異 1 本（`or row.strip(" \t\f")`——`\v` だけの見出しの行を空に戻す）は `table-header-ff-spaced` が殺した。素通りした変異は無し。
+  git status は前後とも ` M docs/plans/issue-667.md` で同じ（Verifier はリポジトリを書いていない）。狭いパスの指摘が 0 件なので、人間に渡す採否も要確認の Issue も無い
+- 割り目は 2 つとも不在のため訊かず続けた
 - 交絡を潰した手順: GitHub の描画を対照に取る（崩れる形と崩れない形の両方を同じ観測点で見る）。変異の素通りは、試料を足す前のテストで陽性対照を取る
 
 ## 1 パス目の採否の表
@@ -138,6 +140,25 @@ main（`745bb1c`）の検査と GitHub の描画（`gh api -X POST /markdown -f 
 - `is_blank` は空白とタブだけを空行に数える。`\r` を扱わないのは、`main()` が `read_text`（改行を `\n` にそろえる）で読むから。A1・変更範囲の「`␍`」はこの事実の書き損じ（CR2-4）。
 - `scan` の重さは測定で示す。テストに時間の上限は入れない（`check-all.py` が並列に回すので、時間は他の検査の負荷で揺れる）。
 
+## 周の途中の課題（cruise の線 `周の途中の課題 = 台帳に足して直す`。振り分けは親が行う——この周は台帳を書かない）
+
+`references/found-lines.md` の対象の行（残課題）を写す。どれも `scripts/check-bold-flanking.py`（とそのテスト）の 1 モジュールなので、親には 1 件のチェックリストとして提案する。
+
+| 行 | 出所 | 実物で失敗を示せるか | 振り分けの提案 |
+| --- | --- | --- | --- |
+| 区切りの行の行末の `\v`・`\f` を区切りと読まない（GitHub は表） | #667 /code-review 1 パス目 CR1-4 | 示せる——`a **x⏎\|a\|⏎\|-\|\v⏎y** z` で GitHub は表、検査は崩れ無し（main から） | 直す |
+| U+3000・`\v` だけの行が表を終わらせない（GitHub と同じ改善）を守る試料が無い | #667 /code-review 2 パス目 CR2-3 | 示せる——変異 `if is_blank(text[at:]) or (table and not text[at:].strip()):` が素通り | 直す |
+| `ORDERED` の番号の上限 9 桁を守る試料が無い | #667 Verifier 2 パス目 V2-1 | 示せる——`{1,10}` の変異が素通り（`0000000001.` で挙動が変わる） | 直す |
+| `item-nested-setext-cont.md` のコメントの「3 段」は 2 段 | #667 /code-review 1 パス目 CR1-6 | 示せる（試料の形） | 直す |
+| CRLF の試料が `main()` の読み方を確かめていない | #667 /code-review 1 パス目 CR1-3 | 示せない | 外に出す |
+| `bare` を `**` の無い段落でも作る | #667 /code-review 1 パス目 CR1-7 | 示せない（遅さの実害を示していない） | 外に出す |
+
+## マージが起こす反映の照合（マージするのは親）
+
+- 読んだもの: この周の差分（`git diff 745bb1c` と未追跡）——`scripts/check-bold-flanking.py`・`scripts/test-check-bold-flanking.py`・`docs/plans/issue-667.md` の 3 本だけ。未追跡は無し。
+- カタログ（`.claude-plugin/marketplace.json`）・プラグインの hooks・MCP・`.claude/settings.json`・利用者が登録するスクリプト（`scripts/record-stop-failure.py`）・`.github/workflows/`・`CLAUDE.md` のどれも変えていない。
+  プラグインの中身も変えていない（版も据え置き）ので、マージは配布を起こさず、サイトにも出ない（`docs/plans/` は nav の外）。
+
 ## 起票
 
-- この周の起票: 0 件（着手時点。手順 8 で書き直す）
+- この周の起票: 0 件（仕様の穴は無く、要確認の Issue は立てていない。狭いパスの指摘も 0 件。関門の残課題は起票せず、上の表を親に提案した。起票の承認は不在のため訊いていない）
