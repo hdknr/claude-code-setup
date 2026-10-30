@@ -53,7 +53,8 @@
 
 **試料の木を書く（`build`）か、git の試料を用意する（`prepare_git`——git の呼び出し・index からの書き出し）ところで
 `RuntimeError`・`OSError`・`CalledProcessError` が上がれば**、**その試料・変異を失敗に数えて他を続ける**——traceback で全体を止めると、
-他の試料の結果が出ない（#698）。**それより後（出力先の用意・本体の実行・`git archive` の書き出し・変異の写し）の失敗は、いまも traceback で止まる。**
+他の試料の結果が出ない（#698）。**テスト自身のほかの段（出力先の用意・`git archive` の書き出し・変異の写しなど）で上がる例外は、
+いまも traceback で止まる。** 本体（`merge-versions.py`）が落ちるのは別で、子プロセスの終了コードと出力として判定に入る（テストは止まらない）。
 """
 from __future__ import annotations
 
