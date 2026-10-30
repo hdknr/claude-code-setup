@@ -297,7 +297,7 @@ def build(root: Path) -> tuple[dict[str, int], int]:
         # **必須のキーは全部あって、余計なキーが 1 つだけある形。**
         # **これが無いと「未知のキーを拒否する」変異が殺せない**
         # ——足りないキーの側で先に落ちてしまい、区別がつかない。
-        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": ", \"why\": \"余計なキー\"", "new": "", "red": "python3 scripts/test-check-mutation-claims.py"}
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": ", \"why\": \"余計なキー\"", "new": "", "red": "python3 scripts/test-check-mutation-claims.py --mutation 未知のキーを通す"}
         ("unknown", 'mutation-claim: {"file": "scripts/subject.py", "old": "# KEEP", '
                     f'"new": "# GONE", "red": "{RED}", "why": "余計なキー"}}'),
         # **行末に注記が続く形。** **これが無いと「行のどこに置いても拾う」変異が殺せない。**
@@ -823,11 +823,12 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         # **変異ループに入る前に `ValueError` で落ちる**——**赤くはなるが、
         # 主張（この木が無いと守る 5 が殺せない）を 1 度も実演しない空の「確認」**になる
         # （2 パス目の `/code-review` が実測で指摘した）。
-        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe(mod, only_na),", "new": "        observe(mod, root),", "red": "python3 scripts/test-check-mutation-claims.py"}
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe(mod, only_na),", "new": "        observe(mod, root),", "red": "python3 scripts/test-check-mutation-claims.py --mutation 当てられなかったを緑と数える"}
         observe(mod, only_na),
         # **これが無いと「対象の木が無くても通す」変異が殺せない。**
         observe(mod, missing),
-        # **これが無いと「退避先を畳まない」変異が殺せない**（#157）。
+        # **これが無いと「落ちたときに退避先を畳まない」（守る 14）と「中断を捕まえない」（守る 15）の変異が殺せない**（#157）。
+        # **守る 20 の「退避先を畳まない」は、これが無くても殺せる**（#494 の 1 パス目の `/code-review` が当てた）。
         # **後始末は出力を 1 バイトも変えない**ので、上の 3 つはどれも同じ観測を返す。
         # **`new` は *観測の形* まで保つ**——**`observe(mod, root)` への差し替えでは
         # 足りない。** あれが返すのは別の形なので、**下の `leak[…]` を読むところで落ち、
@@ -836,7 +837,7 @@ def snapshot(mod, root: Path, only_na: Path, missing: Path,
         # **一度これを `observe(mod, root)` で書き、`/code-review` が実測で反証した**
         # ——**すぐ上の `only_na` の項がまさにその形を警告しているのに、同じ差分の中で踏んだ。**
         # **だから、キーをそのまま持つ定数の辞書にする**——**形を変えずに、観測だけ殺す。**
-        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        {\"inside\": \"RuntimeError\", \"inside_left\": 0, \"dotgit\": \"RuntimeError\", \"dotgit_left\": 0, \"stopped\": \"KeyboardInterrupt\", \"stopped_left\": 0, \"unresolved\": \"OSError\", \"unresolved_left\": 0, \"normal\": (True, True)},", "red": "python3 scripts/test-check-mutation-claims.py"}
+        # mutation-claim: {"file": "scripts/test-check-mutation-claims.py", "old": "        observe_leak(mod, leak_root, leak_parent),", "new": "        {\"inside\": \"RuntimeError\", \"inside_left\": 0, \"dotgit\": \"RuntimeError\", \"dotgit_left\": 0, \"stopped\": \"KeyboardInterrupt\", \"stopped_left\": 0, \"unresolved\": \"OSError\", \"unresolved_left\": 0, \"normal\": (True, True)},", "red": "python3 scripts/test-check-mutation-claims.py --mutation 落ちたときに退避先を畳まない --mutation '中断を捕まえない（`Exception` に狭める）'"}
         observe_leak(mod, leak_root, leak_parent),
         # **これが無いと並列化の変異（#431）が殺せない**——**直列に戻しても、
         # 退避先を共有しても、ほかの観測は同じ判定を同じ順に返す。**
@@ -955,16 +956,42 @@ MUTATIONS = {
 }
 
 
-def main() -> int:
+def parse_args(argv: list[str]) -> list[str] | None:
+    """**狭く回す口**（#494）。`mutation-claim:` の `red` が、主張に関係する変異だけを当てるために使う。
+
+        python3 scripts/test-check-mutation-claims.py                       # 全部（check-all.py と CI はこれ）
+        python3 scripts/test-check-mutation-claims.py --mutation <名前>     # 変異の前の観測と、`MUTATIONS` のその 1 件だけ
+                                                                            # （--mutation は重ねて渡せる。渡した全部を当てる）
+
+    **「この観測が無いと、変異 X が殺せない」という主張は、変異の前の観測と X の観測が違うかだけで決まる**ので、
+    ほかの表明と 21 件の変異を回さなくてよい。**狭めた回は、全部を回す回の代わりにならない。**
+    **知らない名前は断る**（綴り間違いで「何も回さずに緑」にしない）。
+    """
+    if not argv:
+        return None
+    usage = f"使い方: --mutation <MUTATIONS の名前> ...（受け取ったもの: {argv}）"
+    if len(argv) % 2:
+        raise SystemExit(usage)
+    names: list[str] = []
+    for flag, name in zip(argv[::2], argv[1::2]):
+        if flag != "--mutation" or name not in MUTATIONS:
+            raise SystemExit(usage)
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def main(argv: list[str] | None = None) -> int:
+    only = parse_args(sys.argv[1:] if argv is None else argv)
     escape = escape_target()
     escape.write_text(ESCAPE_BODY, encoding="utf-8")
     try:
-        return run_all(escape)
+        return run_all(escape, only)
     finally:
         escape.unlink(missing_ok=True)
 
 
-def run_all(escape: Path) -> int:
+def run_all(escape: Path, only: list[str] | None = None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "tree"
         root.mkdir()
@@ -993,6 +1020,40 @@ def run_all(escape: Path) -> int:
         with watchdog("変異の前の本体の観測", escape, Path(tmp)):
             base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
         (rc, out), (rc_na, out_na), (rc_missing, _), leak, para, stopped, midstart = base
+        source = SCRIPT.read_text(encoding="utf-8")
+
+        def kill(names) -> None:
+            """`names` の変異を 1 件ずつ当て、変異の前の観測 `base` と違うことを要求する。"""
+            for name in names:
+                needle, replacement = MUTATIONS[name]
+                if source.count(needle) != 1:
+                    check(f"変異を当てる先が 1 箇所ある: {name}", False)
+                    continue
+                d = Path(tmp) / f"mut-{abs(hash(name))}"
+                d.mkdir()
+                broken = d / "check-mutation-claims.py"
+                broken.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+                (d / "markdown_fences.py").write_text(
+                    (REAL_REPO / "scripts" / "markdown_fences.py").read_text(encoding="utf-8"),
+                    encoding="utf-8")
+                try:
+                    bad = load(broken)
+                except Exception:
+                    check(f"変異を殺せる: {name}", True)
+                    continue
+                with watchdog(f"変異を殺せる: {name}", escape, Path(tmp)):
+                    changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent, par,
+                                       intr) != base
+                # **変異が的を書き換えたまま終わることがある**（復元は `judge` の中だけ）。
+                # **次の変異の観測を汚さないよう、毎回戻す。**
+                if escape.read_text(encoding="utf-8") != ESCAPE_BODY:
+                    escape.write_text(ESCAPE_BODY, encoding="utf-8")
+                check(f"変異を殺せる: {name}", changed)
+
+        if only is not None:
+            print(f"\n変異テスト（{'・'.join(only)} だけ——#494 の狭く回す口）")
+            kill(only)
+            return finish()
         got = verdicts(out)
 
         print("3 つの判定が出そろうか")
@@ -1167,31 +1228,7 @@ def run_all(escape: Path) -> int:
             check("`--jobs 0` は当てずに断る", False)
 
         print("\n変異テスト（壊したのに観測が変わらなければ失格）")
-        source = SCRIPT.read_text(encoding="utf-8")
-        for name, (needle, replacement) in MUTATIONS.items():
-            if source.count(needle) != 1:
-                check(f"変異を当てる先が 1 箇所ある: {name}", False)
-                continue
-            d = Path(tmp) / f"mut-{abs(hash(name))}"
-            d.mkdir()
-            broken = d / "check-mutation-claims.py"
-            broken.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
-            (d / "markdown_fences.py").write_text(
-                (REAL_REPO / "scripts" / "markdown_fences.py").read_text(encoding="utf-8"),
-                encoding="utf-8")
-            try:
-                bad = load(broken)
-            except Exception:
-                check(f"変異を殺せる: {name}", True)
-                continue
-            with watchdog(f"変異を殺せる: {name}", escape, Path(tmp)):
-                changed = snapshot(bad, root, only_na, missing, leak_root, leak_parent, par,
-                                   intr) != base
-            # **変異が的を書き換えたまま終わることがある**（復元は `judge` の中だけ）。
-            # **次の変異の観測を汚さないよう、毎回戻す。**
-            if escape.read_text(encoding="utf-8") != ESCAPE_BODY:
-                escape.write_text(ESCAPE_BODY, encoding="utf-8")
-            check(f"変異を殺せる: {name}", changed)
+        kill(MUTATIONS)
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
         body = source.split("守る:")[1].split("守らない:")[0]
@@ -1346,6 +1383,10 @@ def run_all(escape: Path) -> int:
         strays = list(iso.glob("mutation-claims-*"))
         check(f"変異 2 を当てた実行が退避先を残さない（{len(strays)} 件）", not strays)
 
+    return finish()
+
+
+def finish() -> int:
     if failures:
         print(f"\nFAILED: {len(failures)} 件")
         for f in failures:

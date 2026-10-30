@@ -205,10 +205,23 @@ def status_of(items, label_part):
     return [s for s, label, *_ in items if label_part in label]
 
 
-def suite(script: Path) -> list[str]:
-    """全シナリオ。失敗した名前を返す。"""
+class _Killed(Exception):
+    """変異を当てた本体で、最初の表明が落ちた（#494）。"""
+
+
+class _FirstFailure(list):
+    """**最初の失敗で止める受け皿**（#494）。変異で知りたいのは「どれか 1 つでも落ちるか」だけなので、
+    1 つ落ちたら残りのシナリオを回さない。**陽性対照（元の本体）には使わない**——そこでは落ちた表明を全部名指しする。"""
+
+    def append(self, name: str) -> None:
+        super().append(name)
+        raise _Killed(name)
+
+
+def suite(script: Path, first_failure: bool = False) -> list[str]:
+    """全シナリオ。失敗した名前を返す。`first_failure` なら最初の失敗で `_Killed` を投げて止める。"""
     mod = load(script)
-    bad: list[str] = []
+    bad: list[str] = _FirstFailure() if first_failure else []
 
     # 陽性の基準: 全部良い → 0、人が見るは 3 件出る
     with scenario(script) as env:
@@ -1077,7 +1090,11 @@ def main() -> int:
                 continue
             mutant = Path(tmp) / f"m{len(name)}_{abs(hash(name))}.py"
             mutant.write_text(src.replace(old, new), encoding="utf-8")
-            killed = bool(suite(mutant))
+            # **最初の失敗で止める**（#494）——赤かどうかは 1 つ目で決まる。**緑のままの変異は全シナリオを回し切る。**
+            try:
+                killed = bool(suite(mutant, first_failure=True))
+            except _Killed:
+                killed = True
             print(f"  {'ok  ' if killed else 'FAIL'} 変異「{name}」が{'赤になる' if killed else '緑のまま'}")
             if not killed:
                 failures.append(name)
