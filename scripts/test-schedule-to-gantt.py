@@ -169,6 +169,8 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
      "                return None; f\"前に作った出力を消せない: {out}（リンクの先を辿れない"),
     ("先の長すぎる名前を出力先の名前で見る", "if absent(target, e):", "if absent(out, e):"),
     ("先の鎖を解かずに 1 段目だけ見る", "target = Path(os.path.realpath(out))", "target = out.parent / os.readlink(out)"),
+    # 名指しの先とは別に、壊れたリンクの判定（absent）だけが鎖を解かない形（chainlink.svg の試料が殺す。#591 の周の 2 パス目 CR2-2）
+    ("壊れたリンクの判定だけ鎖を解かない", "if absent(target, e):", "if absent(out.parent / os.readlink(out), e):"),
     ("辿れないのがリンクの先だと言わない", "（リンクの先を辿れない: {e.strerror}。先: {target}）", "（{e.strerror}。先: {target}）"),
     # #625: 辿れない先のリンクは、先のパスも名指しする
     ("辿れない先のパスを名指ししない", "（リンクの先を辿れない: {e.strerror}。先: {target}）", "（リンクの先を辿れない: {e.strerror}）"),
@@ -320,10 +322,14 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
     shut.mkdir()
     (shut / "g.svg").write_text("<svg>古い</svg>", encoding="utf-8")
     (shut / "d.svg").mkdir()
+    (root / "far").mkdir()
+    (root / "far" / "real.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (shut / "c.svg").symlink_to(Path("..") / "far" / "real.svg")  # shut の中のリンク——辿れないので、名指しする先はここで止まる
     for label, name, target, source, extra in (
         ("辿れない先の symlink", "link.svg", "g.svg", bad, "見出し行が決まりと違う"),
         ("辿れない先がディレクトリの symlink", "dlink.svg", "d.svg", bad, "見出し行が決まりと違う"),
         ("辿れない先の symlink（表が正しい）", "glink.svg", "g.svg", good, "書けない（"),
+        ("辿れない先の symlink（先の中にまたリンク）", "clink.svg", "c.svg", bad, "見出し行が決まりと違う"),
     ):
         link = root / name
         link.symlink_to(shut / target)
@@ -332,9 +338,11 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
             code, output = generate(scripts, source, link)
         finally:
             shut.chmod(0o755)
-        # 先のパス（辿れたところまで鎖を解いたもの）も名指しする（#625）
+        # 先のパス（辿れたところまで鎖を解いたもの）も名指しする（#625）——shut の中のリンク（c.svg）は解かずにそこで止まる
+        # （期待値は shut を開けたあとに作るので、shut までを解き、名前は解かない）
+        stopped = Path(os.path.realpath(shut)) / target
         if (code != 2 or f"{LEFT}{link}（リンクの先を辿れない: " not in output or extra not in output
-                or f"。先: {os.path.realpath(shut / target)}）" not in output
+                or f"。先: {stopped}）" not in output
                 or "前に作った出力を消した" in output or "Traceback" in output
                 or not link.is_symlink() or not (shut / target).exists()):
             problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
