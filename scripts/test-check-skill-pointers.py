@@ -207,6 +207,38 @@ STEP_BROKEN = """# デモ
 詳しくは `SKILL.md` 手順 4 の「どこにも無い項」を見る。
 """
 
+# **ファイルの名前の無い `手順 N の「X」`**（#655。#646 の 2 パス目の `/code-review` CR2-5——dev-loop の `SKILL.md` の項の文言を書き換えても、
+# その項を `手順 6 の「…」` で指す 3 本が残ったまま緑だった）。書き手を `SKILL.md`・スキルの `references/`・`prompts/` に置き、どれも
+# スキルの `SKILL.md` の項を指す（`の` と `「` の間の折り返し・『』も越える）。**`上の手順 N` は書いたファイルの中の項を指す**——
+# `SKILL.md` に無い項にして、`SKILL.md` で照合すると落ちるようにする（守る 14c の変異を殺す）。**プラグイン直下の書き手**はどの `SKILL.md`
+# かが決まらないので照合しない（守らない）——無い項を指して 0 を見る。**ほかの持ち主の名指し**は免除する（名指しを外した対照は 1）。
+# 変異は免除の判定の文字列（`line_start`）をこの形のときだけ空にする（#600 の交絡を避ける）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if m.group(1) is None else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+# **`下の手順 N` も置く**（1 パス目の `/code-review` CR1-2——`上の手順 N` だけでは、`下` の側だけを壊す変異が素通りした）。
+# 変異は `rel` の行に当てる——正規表現の `[上下]の` に当てると、変異の表の 14b の当て先が変わって試料と関係なく赤になる（#600 の交絡）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n", "new": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n        if m.group(0)[0] == \"下\":\n            rel = \"SKILL.md\"\n", "red": "python3 scripts/test-check-skill-pointers.py"}
+# **`の` と `「` の間の太字の始まり（`手順 N の **「X」**`）も置く**（1 パス目の `/code-review` CR1-1）——通る形は `prompts/` に、
+# 壊れた形は別の木（`step_bare_bold_broken`）に置く。
+STEP_BARE_SKILL = """# デモ
+
+**手で「直す」項**
+
+詳しくは手順 2 の
+「手で『直す』項」を見る。
+"""
+STEP_BARE_REF = ("# r\n\n**ローカルの項**\n\n詳しくは手順 2 の「手で『直す』項」を見る。上の手順 1 の「ローカルの項」も見る。\n"
+                 "下の手順 4 の「下にある項」も見る。\n\n**下にある項**\n")
+STEP_BARE_PROMPT = "# p\n\n直し方は手順 2 の「手で『直す』項」を使う。閉じ方は手順 2 の **「手で『直す』項」** を見る。\n"
+STEP_BARE_PLUGIN_REF = "# a\n\n手順 2 の「どこにも無い項」は、プラグイン直下からは照合しない。\n"
+STEP_BARE_OWNED = "# o\n\n読み方は other の手順 3 の「other にしか無い項」を正とする。\n"
+# **1 本ずつ壊す**——`SKILL.md` の項（3 つの書き手が指す）／`上の手順 N` の項／指し先の中にしか無い X／名指しを外す。
+STEP_BARE_SKILL_BROKEN = STEP_BARE_SKILL.replace("**手で「直す」項**", "**手で「直した」項**")
+STEP_BARE_REF_LOCAL_BROKEN = STEP_BARE_REF.replace("**ローカルの項**", "**ローカルの節**")
+STEP_BARE_REF_DOWN_BROKEN = STEP_BARE_REF.replace("**下にある項**", "**下にある節**")
+STEP_BARE_SKILL_BOLD_BROKEN = STEP_BARE_SKILL + "\n閉じ方は手順 2 の **「どこにも無い項」** を見る。\n"
+STEP_BARE_SKILL_SELF = STEP_BARE_SKILL + "\n手順 9 の「自分の中にしか無い項」を見る。\n"
+STEP_BARE_OWNED_PLAIN = STEP_BARE_OWNED.replace("other の手順", "手順")
+
 # **X が、同じファイルの移した先の名指しの中にしか無い**——本文には無い。
 XREF_MASKED = """# デモ
 
@@ -294,8 +326,8 @@ SIBLING_STEP_BROKEN = SIBLING_SKILL.replace("5. 周を閉じる", "5. 周を畳�
 # **置かないと素通りするのは、名前のディレクトリに依る形（`<名前> の`・`<名前> のスキルの`）の名指しだけ `../` でも免除する変異である**
 # ——名前が名指しと読まれないので、`SIBLING_OWNED_BROKEN`・`SIBLING_OWNED_SKILL_BROKEN` は免除に届かないまま 1 で落ちる。
 # **だから同じ木で `<名前> の` が持ち主と読まれることを見る**（下の `SIBLING_OWNER_READ`）。
-# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1)\n", "new": "        rel = m.group(1)\n        _b = prose[line_start: m.start()]\n        if rel.startswith(\"../\") and owned_elsewhere(_b, plugin) and \"このリポジトリ\" not in _b and \"のスキル\" not in _b:\n            continue\n", "red": "python3 scripts/test-check-skill-pointers.py"}
-# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1)\n", "new": "        rel = m.group(1)\n        _b = prose[line_start: m.start()]\n        if rel.startswith(\"../\") and owned_elsewhere(_b, plugin) and \"のスキル\" in _b:\n            continue\n", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n", "new": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n        _b = prose[line_start: m.start()]\n        if rel.startswith(\"../\") and owned_elsewhere(_b, plugin) and \"このリポジトリ\" not in _b and \"のスキル\" not in _b:\n            continue\n", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n", "new": "        rel = m.group(1) or (path.name if m.group(0)[0] in \"上下\" else \"SKILL.md\")\n        _b = prose[line_start: m.start()]\n        if rel.startswith(\"../\") and owned_elsewhere(_b, plugin) and \"のスキル\" in _b:\n            continue\n", "red": "python3 scripts/test-check-skill-pointers.py"}
 SIBLING_OWNER = "other"
 SIBLING_OWNED_OK = SIBLING_XREF_OK + f"\n読み方は {SIBLING_OWNER} の `../sib/SKILL.md` の「5. 周を閉じる」を正とする。\n"
 SIBLING_OWNED_BROKEN = SIBLING_XREF_OK + f"\n読み方は {SIBLING_OWNER} の `../sib/SKILL.md` の「壊れた節」を正とする。\n"
@@ -333,12 +365,21 @@ SIBLING_SRC_PROMPT_BROKEN = SIBLING_SKILL.replace("7. 文面から指す節", "7
 # `SKILL.md` が `skill / rel` に戻り、25f が生き残ってテストが赤になる。そのときは `t.md` の行を消しても赤のままで、この主張が行を留めない
 # （#601 の 1 パス目の `/code-review`）。
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "same_dir.get(rel)  #", "new": "same_dir.get(rel) or (None if rel == \"SKILL.md\" else skill / rel)  #", "red": "python3 scripts/test-check-skill-pointers.py"}
+# **`bare_near` の木には、書き手を `prompts/*.md` とプラグイン直下の `references/*.md` にも置く**（#655。#601 の 2 パス目の `/code-review` CR2-3
+# ——書き手がスキルの `references/` だけで、N1 を書き手が `prompts/` のとき・プラグイン直下のときだけに当てる変異が素通りした）。
+# プラグイン直下の書き手の「スキルのディレクトリ」はプラグインの根なので、`t.md` をプラグインの根にも置く（戻り先に在れば照合して 1 になる）。
+# 変異は上と同じく `SKILL.md` を戻り先から外す（25f と重ならない）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "same_dir.get(rel)  #", "new": "same_dir.get(rel) or (skill / rel if path.parent.name == \"prompts\" and rel != \"SKILL.md\" else None)  #", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "same_dir.get(rel)  #", "new": "same_dir.get(rel) or (skill / rel if skill == plugin and rel != \"SKILL.md\" else None)  #", "red": "python3 scripts/test-check-skill-pointers.py"}
 BARE_SKILL = "# デモ\n\n再開は `resume.md` の「どこにも無い節」を見る（同じディレクトリに無いので照合しない）。\n"
 BARE_SRC_REF = "# r\n\n区分は `s.md` の「スキルの隣の節」を正とする。\n"
 BARE_NEAR_REF = "# r\n\n隣に無い `t.md` の「どこにも無い節」は照合しない（スキルのディレクトリに同じ名前があっても）。\n"
 # **`references/` から `SKILL.md` へ戻る指し先**（#556 の N2。守る 25f）——ファイル名だけの形と同じく同じディレクトリから解決する変異では、
 # `references/` に `SKILL.md` が無いので照合されず、節が無くても 0 になる。**節が在る木（0）と無い木（1）を置く**——0 の木は、
 # 無い木の 1 が `SKILL.md` の節の照合から来ていることの対照。
+# **書き手を `prompts/*.md` にも置く**（#655。#601 の 1 パス目の Verifier V1-3——書き手が `prompts/` のときだけ同じディレクトリから
+# 解決する変異は、#601 の対照 `owned_src_prompt_plain` だけが殺していた）。**書き手ごとに無い木を分ける**——1 つの木に混ぜると、片方の
+# 書き手だけに当てた変異でも、もう片方の行で 1 になり見分けられない。
 BACK_SKILL = "# デモ\n\n## 戻る節\n"
 BACK_REF = "# b\n\n本体は `SKILL.md` の「戻る節」を見る。\n"
 BARE_DST_REF = "# s\n\n## スキルの隣の節\n"
@@ -366,20 +407,34 @@ BARE_PLUGIN_REF_CASE = BARE_PLUGIN_REF + "\n大文字の `QA.md` の「どこに
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if \"/\" not in m.group(1) and m.group(1) != \"SKILL.md\" else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
 # **`` `SKILL.md` 手順 N の「X」 `` の形も置く**（#602。#573 の 1 パス目の `/code-review` CR1-3——`手順` を含む形だけ免除を外す変異が素通りした）。
 # mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "line_start = prose.rfind(\"\\n\", 0, m.start()) + 1", "new": "line_start = m.start() if \"手順\" in m.group(0) else prose.rfind(\"\\n\", 0, m.start()) + 1", "red": "python3 scripts/test-check-skill-pointers.py"}
+# **囲まれた指し先（パスの検査）の免除も、書き手が `SKILL.md` とスキルの `references/*.md` の木に置く**（#655。#601 の 1 パス目の
+# `/code-review` CR1-3——試料は書き手が `agents/`・`prompts/`・プラグイン直下の `references/` だけで、書き手が `SKILL.md`・スキルの
+# `references/` のときだけ免除を外す変異が素通りした）。**`prompts/…` の形で先が無い指し先も置く**（CR1-5——`OWNED_SKILL` の
+# `` `prompts/p.md` `` は先が在るので、`prompts/` の形だけ免除を外す変異が素通りした）。先はどれも自分のプラグインに無い。
+# 変異は `pointers_in` の免除の行に当てる——その行は変異の表の当て先ではない（`prose_pointers_in` の側は `line_start` に当てる）。
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "            if not owned_elsewhere(line[:m.start()], plugin):", "new": "            if path.name == \"SKILL.md\" or not owned_elsewhere(line[:m.start()], plugin):", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "            if not owned_elsewhere(line[:m.start()], plugin):", "new": "            if (path.parent.name == \"references\" and path.parent.parent != plugin) or not owned_elsewhere(line[:m.start()], plugin):", "red": "python3 scripts/test-check-skill-pointers.py"}
+# mutation-claim: {"file": "scripts/check-skill-pointers.py", "old": "            if not owned_elsewhere(line[:m.start()], plugin):", "new": "            if m.group(1).startswith(\"prompts/\") or not owned_elsewhere(line[:m.start()], plugin):", "red": "python3 scripts/test-check-skill-pointers.py"}
 OWNED_SKILL = """# デモ
 
 入り方は other の `SKILL.md` の「other にしか無い節」を正とする。
 文面は other の `prompts/p.md` の「other にしか無い節」を使う。
 閉じ方は other の `SKILL.md` 手順 5 の「other にしか無い節」を見る。
+規定は other の `references/gap.md` を正とする。
+手引きは other の `prompts/gap.md` を使う。
 """
 OWNED_PROMPT = "# p\n"
-OWNED_SRC_REF = "# r\n\n区分は other の `s.md` の「other にしか無い節」を正とする。\n"
+OWNED_SRC_REF = ("# r\n\n区分は other の `s.md` の「other にしか無い節」を正とする。\n"
+                 "規定は other の `references/gap.md` を正とする。\n")
 OWNED_DST_REF = "# s\n"
 # **対照は 1 本ずつ名指しを外す**——ほかの形は免除されたまま。`SKILL.md` の 2 行（素の形と `手順 N` の形）も 1 行ずつ外す。
 OWNED_SKILL_PLAIN = OWNED_SKILL.replace("other の `SKILL.md` の", "`SKILL.md` の")
 OWNED_STEP_PLAIN = OWNED_SKILL.replace("other の `SKILL.md` 手順", "`SKILL.md` 手順")
 OWNED_PROMPT_PLAIN = OWNED_SKILL.replace("other の `prompts/p.md`", "`prompts/p.md`")
 OWNED_BARE_PLAIN = OWNED_SRC_REF.replace("other の `s.md`", "`s.md`")
+OWNED_SKILL_PATH_PLAIN = OWNED_SKILL.replace("other の `references/gap.md`", "`references/gap.md`")
+OWNED_PROMPT_PATH_PLAIN = OWNED_SKILL.replace("other の `prompts/gap.md`", "`prompts/gap.md`")
+OWNED_SRC_REF_PATH_PLAIN = OWNED_SRC_REF.replace("other の `references/gap.md`", "`references/gap.md`")
 # **書き手のファイルも 2 つ足す**——プラグイン直下の `agents/*.md` とスキルの `prompts/*.md`（#601。#573 の 1 パス目の `/code-review` CR1-2
 # ——書き手が `SKILL.md`・スキルの `references/`・プラグイン直下の `references/` だけで、書き手が `agents/` のときだけ免除を外す変異が素通りした）。
 # **各書き手に、「X」の照合の免除と、囲まれた指し先（パスの検査）の免除の 2 行を置く**——免除は `prose_pointers_in` と `pointers_in` の
@@ -449,14 +504,14 @@ MUTATIONS = {
     "囲みを見ない": (
         'POINTER = re.compile(r"`((?:references|prompts|scripts)/[\\w./-]+)`")',
         'POINTER = re.compile(r"(?!x)x")'),
-    # 守る 3b: フェンスの中の起動行は見ること
-    "起動行を見ない": (
-        'INVOCATION = re.compile(r"(?:bash|sh|python3?)\\s+.*?((?:\\.\\./)*scripts/[\\w.-]+)")',
-        'INVOCATION = re.compile(r"(?!x)x")'),
     # 守る 3: フェンスの中を見ないこと（囲まれた相対パスについて）
     "フェンスを剥がさない": (
         "    stripped = strip_fences(raw)",
         "    stripped = raw"),
+    # 守る 3b: フェンスの中の起動行は見ること
+    "起動行を見ない": (
+        'INVOCATION = re.compile(r"(?:bash|sh|python3?)\\s+.*?((?:\\.\\./)*scripts/[\\w.-]+)")',
+        'INVOCATION = re.compile(r"(?!x)x")'),
     # 守る 4: スキルを固定しないこと
     "スキルを名前で固定する": (
         '    for plugin in sorted((root / "plugins").glob("*")):',
@@ -498,9 +553,23 @@ MUTATIONS = {
         "               normalize(m.group(2)) in body_without_pointers(",
         "               True or body_without_pointers("),
     # 守る 14: `手順 N` を挟んだ形も拾うこと
+    # （#655 で `XREF` にファイルの名前の無い選択肢を足したので、当て先は 1 つ目の選択肢の `手順 N` だけにした。
+    # 外すと `` `../sib/SKILL.md` 手順 5 の「X」 `` が名前の無い形として自分の `SKILL.md` で照合され、`sibling_ok` が落ちる）
     "手順 N を挟んだ形を拾わない": (
-        'r"\\s*(?:手順\\s*\\d+\\s*)?" + NO + QUOTED)',
-        'r"\\s*" + NO + QUOTED)'),
+        'r"\\s*(?:手順\\s*\\d+\\s*)?|',
+        'r"\\s*|'),
+    # 守る 14b: ファイルの名前の無い `手順 N の「X」` も拾い、X がスキルの `SKILL.md` にあること（#655）
+    "ファイルの名前の無い `手順 N` を拾わない": (
+        '|(?:[上下]の\\s*)?手順\\s*\\d+\\s*)" + NO',
+        ')" + NO'),
+    # 守る 14c: `上の手順 N の「X」`・`下の手順 N の「X」` は、書いたファイルの中を見ること（#655）
+    "`上の手順 N` も `SKILL.md` で照合する": (
+        'path.name if m.group(0)[0] in "上下" else "SKILL.md"',
+        '"SKILL.md"'),
+    # 守る 14d: `の` と `「` の間の太字の始まりも跨ぐこと（#655）
+    "`の` と `「` の間の太字を跨がない": (
+        " + NO + BOLD + QUOTED)",
+        " + NO + QUOTED)"),
     # 守る 15: 指し先そのものの文字列は数えないこと
     "指し先が自分を見つける": (
         '    return normalize(XREF.sub("", PROSE.sub("", text)))',
@@ -739,6 +808,42 @@ def main() -> int:
         xref_masked = prose_tree("xref-masked", XREF_MASKED, PROSE_RESUME)
         target_masked = prose_tree("target-masked", TARGET_MASKED, TARGET_MASKED_RESUME)
         check("`手順 N` を挟んだ形でも、無ければ落とす", observe(mod, step_broken)["rc"] == 1)
+        check("`` `SKILL.md` 手順 N の「X」 `` を、ファイルの名前の無い形として 2 度拾わない（エラー 1 つ。#655）",
+              errors(mod, step_broken) == 1)
+
+        def step_tree(name: str, *, skill: str = STEP_BARE_SKILL, ref: str = STEP_BARE_REF,
+                      owned: str = STEP_BARE_OWNED) -> Path:
+            d = base / name
+            assert_not_real_repo(d)
+            (d / "plugins" / "other").mkdir(parents=True, exist_ok=True)  # 名指しの名前をプラグインとして置く
+            make_skill(d, body=skill, files={
+                "references/r.md": ref, "references/o.md": owned, "prompts/p.md": STEP_BARE_PROMPT})
+            (d / "plugins" / "demo" / "references").mkdir(parents=True, exist_ok=True)
+            (d / "plugins" / "demo" / "references" / "a.md").write_text(STEP_BARE_PLUGIN_REF, encoding="utf-8")
+            return d
+
+        step_bare_ok = step_tree("step-bare-ok")
+        step_bare_broken = step_tree("step-bare-broken", skill=STEP_BARE_SKILL_BROKEN)
+        step_bare_local_broken = step_tree("step-bare-local-broken", ref=STEP_BARE_REF_LOCAL_BROKEN)
+        step_bare_down_broken = step_tree("step-bare-down-broken", ref=STEP_BARE_REF_DOWN_BROKEN)
+        step_bare_bold_broken = step_tree("step-bare-bold-broken", skill=STEP_BARE_SKILL_BOLD_BROKEN)
+        step_bare_self = step_tree("step-bare-self", skill=STEP_BARE_SKILL_SELF)
+        step_bare_owned_plain = step_tree("step-bare-owned-plain", owned=STEP_BARE_OWNED_PLAIN)
+        check("ファイルの名前の無い `手順 N の「X」` は、X が `SKILL.md` に在れば通す（書き手が `SKILL.md`・`references/`・`prompts/`。"
+              "`上の手順 N` は書いたファイル。プラグイン直下と名指しの付いた形は照合しない。#655）",
+              observe(mod, step_bare_ok)["rc"] == 0)
+        check("ファイルの名前の無い `手順 N の「X」` は、`SKILL.md` の項を書き換えたら落とす（#646 の CR2-5 の再現。#655）",
+              observe(mod, step_bare_broken)["rc"] == 1 and errors(mod, step_bare_broken) == 4)
+        check("`上の手順 N の「X」` は、書いたファイルの項を書き換えたら落とす（#655）",
+              observe(mod, step_bare_local_broken)["rc"] == 1)
+        check("`下の手順 N の「X」` も、書いたファイルの項を書き換えたら落とす（#655）",
+              observe(mod, step_bare_down_broken)["rc"] == 1)
+        check("`手順 N の **「X」**`（`の` と `「` の間の太字）も、X が無ければ落とす（#655）",
+              observe(mod, step_bare_bold_broken)["rc"] == 1)
+        check("ファイルの名前の無い `手順 N の「X」` の X が指し先の中にしか無ければ落とす（#655）",
+              observe(mod, step_bare_self)["rc"] == 1)
+        check("名指しを外したファイルの名前の無い `手順 N の「X」` は照合して落とす（対照。#655）",
+              observe(mod, step_bare_owned_plain)["rc"] == 1)
         check("X が同じファイルの移した先の名指しの中にしか無ければ落とす",
               observe(mod, xref_masked)["rc"] == 1)
         check("移した先が X を指し先の中にしか持っていなければ落とす",
@@ -858,7 +963,11 @@ def main() -> int:
         bare_case = bare_tree("bare-case", ref=BARE_PLUGIN_REF_CASE)
         bare_near = base / "bare-near"
         assert_not_real_repo(bare_near)
-        make_skill(bare_near, body="# デモ\n", files={"references/r.md": BARE_NEAR_REF, "t.md": "# t\n"})
+        make_skill(bare_near, body="# デモ\n", files={
+            "references/r.md": BARE_NEAR_REF, "prompts/q.md": BARE_NEAR_REF, "t.md": "# t\n"})
+        for rel, text in (("references/a.md", BARE_NEAR_REF), ("t.md", "# t\n")):  # プラグイン直下の書き手（#655）
+            (bare_near / "plugins" / "demo" / rel).parent.mkdir(parents=True, exist_ok=True)
+            (bare_near / "plugins" / "demo" / rel).write_text(text, encoding="utf-8")
         print("\nディレクトリの付かないファイル名の移した先の名指し（#541）")
         check("同じディレクトリの節が在れば通す（折り返し・『』を越えて。同じディレクトリに無いファイル名は照合しない）",
               observe(mod, bare_ok)["rc"] == 0)
@@ -868,7 +977,8 @@ def main() -> int:
               observe(mod, bare_plugin_broken)["rc"] == 1)
         check("大文字小文字だけ違うファイル名は照合しない（文字どおりに比べる。OS に依らない）",
               observe(mod, bare_case)["rc"] == 0)
-        check("同じディレクトリに無いファイル名は、スキルのディレクトリに同じ名前があっても照合しない（#556 の N1）",
+        check("同じディレクトリに無いファイル名は、スキルのディレクトリに同じ名前があっても照合しない"
+              "（#556 の N1。書き手がスキルの `references/`・`prompts/`・プラグイン直下の `references/` でも。#655）",
               observe(mod, bare_near)["rc"] == 0)
 
         def owned_tree(name: str, *, skill: str = OWNED_SKILL, ref: str = OWNED_SRC_REF,
@@ -896,21 +1006,31 @@ def main() -> int:
         owned_agent_path_plain = owned_tree("owned-agent-path-plain", agent=OWNED_AGENT_PATH_PLAIN)
         owned_src_prompt_plain = owned_tree("owned-src-prompt-plain", prompt=OWNED_SRC_PROMPT_PLAIN)
         owned_src_prompt_path_plain = owned_tree("owned-src-prompt-path-plain", prompt=OWNED_SRC_PROMPT_PATH_PLAIN)
+        owned_skill_path_plain = owned_tree("owned-skill-path-plain", skill=OWNED_SKILL_PATH_PLAIN)
+        owned_prompt_path_plain = owned_tree("owned-prompt-path-plain", skill=OWNED_PROMPT_PATH_PLAIN)
+        owned_src_ref_path_plain = owned_tree("owned-src-ref-path-plain", ref=OWNED_SRC_REF_PATH_PLAIN)
         owned_named = owned_tree("owned-named", skill=OWNED_SKILL_NAMED, ref=OWNED_SRC_REF_NAMED)
         owned_repo = owned_tree("owned-repo", skill=OWNED_SKILL_REPO, ref=OWNED_SRC_REF_REPO)
         print("\n持ち主の名前による「X」の照合の免除の形（#573）")
         check("持ち主の名前が付いた `SKILL.md`（`手順 N` の形を含む）・`prompts/x.md`・ファイル名だけの指し先は、"
-              "X が自分の先に無くても照合しない（書き手が `agents/*.md`・`prompts/*.md` でも。囲まれた指し先も解決しない）",
+              "X が自分の先に無くても照合しない（書き手が `agents/*.md`・`prompts/*.md` でも。囲まれた指し先も、"
+              "書き手が `SKILL.md`・スキルの `references/*.md` でも、`prompts/…` の形でも解決しない。#655）",
               observe(mod, owned_ok)["rc"] == 0)
-        check("`<名前> のスキルの` の名指しでも、同じ 3 つの形と `references/x.md` の指し先は照合しない（#600）",
+        check("`<名前> のスキルの` の名指しでも、同じ 3 つの形（`SKILL.md` は `手順 N` の形を含む）と `references/x.md` の指し先は照合しない（#600）",
               observe(mod, owned_named)["rc"] == 0)
-        check("`このリポジトリの` の名指しでも、同じ 3 つの形と `references/x.md` の指し先は照合しない（#600）",
+        check("`このリポジトリの` の名指しでも、同じ 3 つの形（`SKILL.md` は `手順 N` の形を含む）と `references/x.md` の指し先は照合しない（#600）",
               observe(mod, owned_repo)["rc"] == 0)
         check("名指しを外した `SKILL.md` の指し先は照合して落とす（対照）", observe(mod, owned_skill_plain)["rc"] == 1)
         check("名指しを外した `SKILL.md` 手順 N の指し先は照合して落とす（対照。#602）", observe(mod, owned_step_plain)["rc"] == 1)
         check("名指しを外した `prompts/x.md` の指し先は照合して落とす（対照）", observe(mod, owned_prompt_plain)["rc"] == 1)
         check("名指しを外したファイル名だけの指し先は照合して落とす（対照）", observe(mod, owned_bare_plain)["rc"] == 1)
         check("名指しを外した `references/x.md` の指し先は照合して落とす（対照。#603）", observe(mod, owned_refs_plain)["rc"] == 1)
+        check("`SKILL.md` から書いた、名指しを外した囲まれた指し先は解決して落とす（対照。#655）",
+              observe(mod, owned_skill_path_plain)["rc"] == 1)
+        check("名指しを外した `prompts/…` の囲まれた指し先は解決して落とす（対照。#655）",
+              observe(mod, owned_prompt_path_plain)["rc"] == 1)
+        check("スキルの `references/*.md` から書いた、名指しを外した囲まれた指し先は解決して落とす（対照。#655）",
+              observe(mod, owned_src_ref_path_plain)["rc"] == 1)
         check("`agents/*.md` から書いた、名指しを外した「X」の指し先は照合して落とす（対照。#601）",
               observe(mod, owned_agent_plain)["rc"] == 1)
         check("`agents/*.md` から書いた、名指しを外した囲まれた指し先は解決して落とす（対照。#601）",
@@ -920,18 +1040,21 @@ def main() -> int:
         check("スキルの `prompts/*.md` から書いた、名指しを外した囲まれた指し先は解決して落とす（対照。#601）",
               observe(mod, owned_src_prompt_path_plain)["rc"] == 1)
 
-        def back_tree(name: str, skill: str) -> Path:
+        def back_tree(name: str, skill: str, writers=("references/b.md",)) -> Path:
             d = base / name
             assert_not_real_repo(d)
-            make_skill(d, body=skill, files={"references/b.md": BACK_REF})
+            make_skill(d, body=skill, files={w: BACK_REF for w in writers})
             return d
 
-        back_ok = back_tree("back-ok", BACK_SKILL)
+        back_ok = back_tree("back-ok", BACK_SKILL, ("references/b.md", "prompts/c.md"))
         back_broken = back_tree("back-broken", "# デモ\n")
+        back_prompt_broken = back_tree("back-prompt-broken", "# デモ\n", ("prompts/c.md",))
         print("\n`references/` から `SKILL.md` へ戻る指し先（#556 の N2）")
-        check("スキルの `references/` から `SKILL.md` の節を指し、節が在れば通す", observe(mod, back_ok)["rc"] == 0)
+        check("スキルの `references/`・`prompts/` から `SKILL.md` の節を指し、節が在れば通す", observe(mod, back_ok)["rc"] == 0)
         check("スキルの `references/` から `SKILL.md` の節を指し、節が無ければ落とす（スキルのディレクトリから解決）",
               observe(mod, back_broken)["rc"] == 1)
+        check("スキルの `prompts/` から `SKILL.md` の節を指し、節が無ければ落とす（スキルのディレクトリから解決。#655）",
+              observe(mod, back_prompt_broken)["rc"] == 1)
 
         print("\nフェンスと散文")
         check("フェンスの中の指し先は見ない", observe(mod, fenced)["rc"] == 0)
@@ -975,6 +1098,14 @@ def main() -> int:
                           or mutant.main([str(prose_split)]) != 1
                           or mutant.main([str(xref_split)]) != 1
                           or mutant.main([str(step_broken)]) != 1
+                          or errors(mutant, step_broken) != 1
+                          or mutant.main([str(step_bare_ok)]) != 0
+                          or mutant.main([str(step_bare_broken)]) != 1
+                          or mutant.main([str(step_bare_local_broken)]) != 1
+                          or mutant.main([str(step_bare_self)]) != 1
+                          or mutant.main([str(step_bare_down_broken)]) != 1
+                          or mutant.main([str(step_bare_bold_broken)]) != 1
+                          or mutant.main([str(step_bare_owned_plain)]) != 1
                           or mutant.main([str(xref_masked)]) != 1
                           or mutant.main([str(target_masked)]) != 1
                           or mutant.main([str(plugin_ok)]) != 0
@@ -1019,8 +1150,12 @@ def main() -> int:
                           or mutant.main([str(owned_agent_path_plain)]) != 1
                           or mutant.main([str(owned_src_prompt_plain)]) != 1
                           or mutant.main([str(owned_src_prompt_path_plain)]) != 1
+                          or mutant.main([str(owned_skill_path_plain)]) != 1
+                          or mutant.main([str(owned_prompt_path_plain)]) != 1
+                          or mutant.main([str(owned_src_ref_path_plain)]) != 1
                           or mutant.main([str(back_ok)]) != 0
                           or mutant.main([str(back_broken)]) != 1
+                          or mutant.main([str(back_prompt_broken)]) != 1
                           or errors(mutant, outside_owned) != 1
                           or errors(mutant, outside_plain) != 1
                           or errors(mutant, outside_roundtrip) != 1
