@@ -502,6 +502,16 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     r = str(run(mod, ["show", "go"], root)[1])
     o["戻した後の名指し"] = "落ちたのに" in r
     o["戻した後の next"] = run(mod, ["next", "go"], root)[1].split()
+    # 戻した 2 をもう一度まとめてマージする——古い「落ちた:」で名指ししない（group が「前に落ちた:」に書き換える）
+    run(mod, ["add", "go", "4"], root)
+    run(mod, ["group", "go", "2", "4"], root)
+    run(mod, ["set", "go", "2", "state=merged", "pr=#11"], root)
+    r = str(run(mod, ["show", "go"], root)[1])
+    try:
+        note2 = next(i["note"] for i in json.loads((plans / "cruise-go.json").read_text(encoding="utf-8"))["issues"] if i["number"] == 2)
+    except (OSError, ValueError, KeyError, StopIteration):
+        note2 = None
+    o["入れ直した行"] = (note2, "落ちたのに" in r)
     # (b) 代表 1 が落ちた。1 → 2 → 3（代表が依存する行は merged のまま抜く）、4 → 1（代表に依存する行も落ちる）
     run(mod, ["init", "gu"], root)
     for args in (["3"], ["2", "--deps", "3"], ["1", "--deps", "2"], ["4", "--deps", "1"]):
@@ -698,6 +708,9 @@ MUTATIONS = {
     # 守る（#665）: マージの後で止まった跡を名指しする
     "落ちたのに merged の行を名指ししない": [
         ("    if stranded:\n        print(", "    if False:\n        print(")],
+    "まとめに入れ直した行の「落ちた:」を残す": [
+        ('        if issue.get("note", "").startswith(DROPPED_NOTE):\n            issue["note"]',
+         '        if False:\n            issue["note"]')],
     "落ちた行があっても終わりの行を出す": [
         ('for i in data["issues"]) and not stranded:\n', 'for i in data["issues"]):\n')],
     "書いてから検査する": [
@@ -883,6 +896,8 @@ def main() -> int:
         check("戻す順 (a): 依存されている行（2）を先に戻すと輪で 3、依存している側（3）から先なら 0・0",
               o["戻す順(a) 逆"] == 3 and o["戻す順(a)"] == (0, 0))
         check("名指しした行があるあいだは「すべてマージ済みか取り下げ」と出さない", o["名指し中の終わりの行"] is False)
+        check("戻した行をもう一度まとめると note は「前に落ちた:」になり、マージしても名指ししない",
+              o["入れ直した行"] == ("前に落ちた: 別のファイル", False))
         check("ほどく順 (c)・(d): 2 が先なら輪で 3、書いた順（3、2、1）なら 0・0・0",
               o["ほどく順(c)"] == (3, (0, 0, 0)) and o["ほどく順(d)"] == (3, (0, 0, 0)))
         check("戻した後は名指ししない・2 が着手できる", o["戻した後の名指し"] is False and o["戻した後の next"] == ["2"])

@@ -167,11 +167,13 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   （戻すなら同じ呼び出しで `pr= branch= worktree= agent= base=` を渡す。手順は `../cruise/references/grouping.md`）。
 - **`show` は、まとめに入ったまま `merged` で `note` が `落ちた:` で始まる行を名指しする**（#665）——マージの後に代表へ `merged` を書いてから
   落ちた行を戻すまでの間で止まると、落ちた行は `merged` のまま `next` にも「進行中」にも出ず、直されないまま済んだことになる。
+- **`group` は、入れる行の `note` の `落ちた:` を `前に落ちた:` に書き換える**（#665）——前のまとめで落ちて戻した行は `note` に理由を残す決まりなので、
+  そのまま新しいまとめに入れてマージすると、落ちていないのに名指しされ、cruise の終わりの行も出なくなる。理由の文は残す。
 - **名指しした行があるあいだは「すべてマージ済みか取り下げ」と出さない**（#665）——cruise はその行で終えるので、出すと直していない行を済んだと報告して終える。
 
 守らない:
 
-- **落ちた行の名指しが正しいか**——`note` の文字とまとめの欄だけで見る。戻した後に別のまとめに入れてマージした行に古い「落ちた:」が残っていれば名指しし、
+- **落ちた行の名指しが正しいか**——`note` の文字とまとめの欄だけで見る。`group` を通さずに `set … note=落ちた: …` を書いたままマージした行は名指しし、
   `note` を `落ちた:` で始めずに落とした行は名指ししない。実物（Issue が開いているか・まとめの PR の `Refs`）は再開する側が見る（`references/ledger.md`）。
 - **戻す順**——1 行ずつ抜けた後に輪になる順は拒む（3。台帳は変えない）が、輪にならない順を自分では選ばない（`../cruise/references/grouping.md` の「マージの後」）。
 
@@ -208,6 +210,8 @@ SHARED_KEYS = ("state", "pr", "branch", "worktree", "agent", "base")
 PLACE_KEYS = ("pr", "branch", "worktree", "agent", "base")
 # まとめの PR で落ちた行の note の書き出し（grouping.md の「まとめの周」）
 DROPPED_NOTE = "落ちた:"
+# まとめに入れ直した行の、前のまとめで落ちた理由（名指しの対象から外す）
+PREV_DROPPED_NOTE = "前に落ちた:"
 # 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md・fix-line.md・found-lines.md を正とする
 LINES = {
     "直す線": ("既定", "広げる"),
@@ -574,6 +578,9 @@ def cmd_group(path, head, numbers):
     stamp = now()
     for issue in issues:
         issue["group"] = str(head)
+        # 前のまとめで落ちて戻した行の「落ちた:」を残すと、このまとめがマージされたとき落ちた行と名指しされる（#665）
+        if issue.get("note", "").startswith(DROPPED_NOTE):
+            issue["note"] = PREV_DROPPED_NOTE + issue["note"][len(DROPPED_NOTE):]
         issue["updated"] = stamp
     save(path, data)
     print(f"まとめ #{head}: " + ", ".join(f"#{n}" for n in rows))
