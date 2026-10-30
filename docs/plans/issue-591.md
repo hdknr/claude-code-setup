@@ -155,6 +155,9 @@ Issue 本文は検査対象であって要件ではない。受入基準はこ�
 | CR2-5 `build-proposal.py` も symlink の出力先を消して「消した」と言う | 示せない（この周で走らせていない） | 無し（この周の範囲の外） | 残課題 |
 | CR2-6 振る舞いの変更（辿れる先のリンクで 1 → 2）の移行の手順が `references/` に無い（CLAUDE.md の 0.x の決まり） | 示せる（tree.md に移行の文が無い） | 無し | 残課題 |
 | CR2-7 U+DC80 の試料は Linux の標準エラーの符号化で未確認 | 示せない（CI 待ち） | 無し（未証明として申告済み。PR の CI で見る） | 残課題（CI で確かめる） |
+- origin/main を取り込んだ（`18c6705`。spec-loop は main で 0.38.2 のまま——0.39.0 で上）。取り込みで増えた検査: なし（`test-check-skill-pointers.py`・`test-worktree-scripts.py` の変更だけ）
+- `check-all.py`（取り込みの後）: 56 本中 55 本が緑。落ちたのは `check-mutation-claims.py` の 1 件——`scripts/test-worktree-scripts.py:417` の主張が負荷下で 300 秒で打ち切り（当てられなかった。`--jobs 1` の直列でも同じ。この周は触っていない）。ほかの 19 件は確認
+- PR #653: CI 緑（`check` 12m29s・`build`。ubuntu・python3.12——U+DC80 の試料も Linux で緑。未証明だったものは CI で証明した）。`mergeable: MERGEABLE`
 
 ### 狭いパスの指摘（採否は人間——推奨で決めて要確認を立てた）
 
