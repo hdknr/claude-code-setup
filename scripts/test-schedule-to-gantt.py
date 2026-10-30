@@ -36,10 +36,16 @@
    （表が正しくて書けないときも。先のパスの名指しは #625）。表が正しく書ける辿れる先の symlink は 0 で、先に書く（陽性対照）。
    壊れた symlink（鎖を解いた先のどこかの名前が NAME_MAX を超えるもの——別のリンクを経由しても——を含む）・輪になった symlink（a→b→a。
    #662 の N2）とディレクトリを指す symlink は消さずに 1。
+   OS の上限（Linux 40・macOS 32）より長い輪でない 41 本の鎖は、鎖の先が通常のファイルなら「リンクの鎖が長すぎる」とリンクと先のパスを
+   名指しして 2（表が正しくて書けないときも。出力先の親のディレクトリが長い鎖のときも）。鎖の先がディレクトリ・無い・輪なら 1（#689 の A2）。
    辿れる先の symlink の先を開いて（切り詰めて）から書けない（ファイルの大きさの上限 `RLIMIT_FSIZE` で書く途中に EFBIG）ときは、
    先に残る今回の書きかけを「書きかけの出力を消せない」とリンクと先のパスで名指しして 2——「前に作った出力」と言わない（#662 の CR2-1）。
+   先の無い壊れた symlink に正しい表を書いて同じく失敗したときも、開いたときに作られた先を書きかけと名指しして 2（#689 の A3）。
+   リンクでない普通のファイルでも、開いたあとで書けず、書けないディレクトリの中で消せもしないなら書きかけと名指しする——消す途中の
+   想定外の例外（`write` と `lstat` を差し替える）でも（#689 の A1）。
    先を開いたあとで OSError でない例外（想定外の例外・`ValueError`）が出ても同じく書きかけと名指しする（開いたファイルの `write` を差し替える。#662 の 1 パス目）。
-   先のパスは使う分岐（名指し・名前の長すぎる先の判定）でだけ解く——`os.path.realpath` を壊しても、ディレクトリを指す symlink・壊れた symlink・輪になった symlink は 1 のまま（#662 の CR10）。
+   先のパスは使う分岐（名指し・名前の長すぎる先の判定・輪か長い鎖かの判定）でだけ解く——`os.path.realpath` を壊しても、ディレクトリを指す
+   symlink・先の無い壊れた symlink は 1 のまま（#662 の CR10）。輪になった symlink は長い鎖と見分けるために解くので 2 になる（#689 の A2）。
    書く途中の想定外の例外（`Path.open` を差し替える）も入口に逃がさず、前の出力を消して 2。
    入口の捕捉は、書いたあとの標準出力の例外で見る（`sys.stdout` を差し替える）。
    消す途中の想定外の例外（`Path.lstat` を差し替える）も「消せない」と名指しし、「想定外の例外で止まった」にしない。
@@ -169,7 +175,12 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("名前がちょうど NAME_MAX でも在りえないと読む", "part)) > NAME_MAX for part", "part)) >= NAME_MAX for part"),
     # 名前の長すぎる先の壊れたリンク（#662 の 1 パス目 CR1-3 で ENOENT・ELOOP は手前で返すようになった）
     ("壊れたリンクも消す", "                    return None  # 壊れたリンク——", "                    mode = stat.S_IFREG  # 壊れたリンク——"),
-    ("壊れたリンク・輪も名指しする", "                    return None  # 壊れたリンク・輪", "                    mode = stat.S_IFREG  # 壊れたリンク・輪"),
+    # #689 の A4: 名指しを実際に起こす形にした（以前の `mode = stat.S_IFREG` は先を解いて None に戻り、「壊れたリンクでも先を解く」と同じ効き方だった）。
+    # 壊れたリンク・輪の試料（1・名指しなし）で殺す
+    ("壊れたリンクも名指しする", "                    return None  # 先の無い壊れたリンク",
+     '                    return f"前に作った出力を消せない: {out}（壊れたリンク）"  # 先の無い壊れたリンク'),
+    ("輪も名指しする", "        return None  # 輪（解いた先がまだリンク）",
+     '        return f"前に作った出力を消せない: {out}（輪）"  # 輪（解いた先がまだリンク）'),
     ("書く途中の想定外の例外を逃がす", "    except Exception as e:  # 書く途中の", "    except ImportError as e:  # 書く途中の"),
     # #535: 先を辿れない symlink は消さずに名指しする
     ("辿れない先のリンクを消す", "                return f\"前に作った出力を消せない: {out}（リンクの先を辿れない",
@@ -215,9 +226,22 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     ("NUL を書き換えない", 'return str(path).replace("\\0", "\\\\x00")', "return str(path)"),
     ("入力のパスを素のまま出す", 'print(f"{shown(source)}: 読めない', 'print(f"{source}: 読めない'),
     ("出力先のパスを素のまま出す", 'print(f"{shown(out)}: 書けない', 'print(f"{out}: 書けない'),
-    # #662 の N2（要確認 #652）: 輪になったリンクは辿れない先ではなく、壊れたリンクと同じく「無い」
-    ("輪になったリンクを辿れない先と読む", "ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP)",
-     "ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF)"),
+    # #662 の N2（要確認 #652）の「ABSENT から ELOOP を外す」変異は外した（#689）——ELOOP を `absent` より先に `long_chain` で見るので、
+    # この道具の試料では殺せない（同等）。`ABSENT` の ELOOP は `build-proposal.py` が `gantt.absent` で輪を壊れたリンクと読むために残り、
+    # `test-build-proposal.py` の輪の試料が見る
+    # #689 の A2: ELOOP は輪とは限らない——OS の上限より長い輪でない鎖の先の前の出力を名指しする
+    ("長い鎖を無いと読む", "                    return long_chain(out, e)  # 輪か", "                    return None  # 輪か"),
+    ("親の長い鎖を無いと読む", "            return long_chain(out, e)\n        if absent", "            return None\n        if absent"),
+    ("長い鎖の先のファイルも名指ししない", "    if not stat.S_ISREG(mode):\n        return None  # 輪（",
+     "    if True:\n        return None  # 輪（"),
+    ("長い鎖の先のパスを名指ししない", "（リンクの鎖が長すぎる: {e.strerror}。先: {target}）", "（リンクの鎖が長すぎる: {e.strerror}）"),
+    ("長い鎖を辿れない先と言う", "（リンクの鎖が長すぎる: {e.strerror}。", "（リンクの先を辿れない: {e.strerror}。"),
+    # #689 の A1: リンクでない出力先も、開いたあとで消せなければ書きかけと名指しする
+    ("普通のファイルの書きかけを前の出力と名指しする", '    if partial:\n        return f"書きかけの出力を消せない',
+     '    if False:\n        return f"書きかけの出力を消せない'),
+    ("消せない普通のファイルに開いたことを渡さない", "        return left(out, e.strerror, partial)", "        return left(out, e.strerror, False)"),
+    ("消す途中の想定外の例外に開いたことを渡さない", '        return left(out, f"{type(e).__name__}: {e}", partial)',
+     '        return left(out, f"{type(e).__name__}: {e}", False)'),
     # #662 の CR2-1: 先を切り詰めたあとで書けなければ、先に残るのは今回の書きかけ
     ("書きかけを前の出力と名指しする", "            if stat.S_ISREG(mode) and partial:", "            if False:"),
     ("書きかけを黙って残す", '                return f"書きかけの出力を消せない: {out}（',
@@ -233,8 +257,8 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
     # #662 の CR10: 先のパスは名指しする分岐でだけ解く
     ("名指ししないリンクでも先を解く", "            try:\n                mode = out.stat().st_mode\n",
      "            link_target(out)\n            try:\n                mode = out.stat().st_mode\n"),
-    ("壊れたリンクでも先を解く", "                if e.errno in ABSENT:\n                    return None  # 壊れたリンク・輪",
-     "                if False:\n                    return None  # 壊れたリンク・輪"),
+    ("壊れたリンクでも先を解く", "                if e.errno in ABSENT:\n                    return None  # 先の無い壊れたリンク",
+     "                if False:\n                    return None  # 先の無い壊れたリンク"),
     ("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else"),
 ]
 
@@ -259,6 +283,7 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         (directory / "gantt.svg").write_text("<svg>古い</svg>", encoding="utf-8")
     (locked / "ro.svg").write_text("<svg>古い</svg>", encoding="utf-8")
     (locked / "ro.svg").chmod(0o444)
+    (locked / "half.svg").write_text("<svg>古い</svg>", encoding="utf-8")  # 書ける普通のファイル——書きかけの試料（#689 の A1）
     locked.chmod(0o555)
     hidden.chmod(0o000)  # 辿れない——python3.14 の `is_file` は黙って False を返す
     try:
@@ -283,6 +308,18 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         code, output = generate(scripts, good, locked / "ro.svg")  # 書けず、書けなかった前の出力も消せない
         if code != 2 or "書けない（" not in output or not left_named(output, "ro.svg", locked):
             problems.append(f"書けない出力先の消せない前の出力: 終了 {code}: {output[-300:]!r}")
+        # 普通のファイル（リンクでない）を開いて（切り詰めて）から書けず（RLIMIT_FSIZE で書く途中に EFBIG）、書けないディレクトリの中で
+        # 消せもしない——残るのは今回の書きかけなので「書きかけの出力を消せない」と名指しして 2。「前に作った出力」「今の表から作ったものでは
+        # ない」と言わない（#689 の A1）。開く前に書けない ro.svg は「前に作った出力」のまま（上の試料）
+        proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), str(good), str(locked / "half.svg")],
+                              capture_output=True, text=True, cwd=root, preexec_fn=_limit_file_size)
+        half = (locked / "half.svg").read_bytes()
+        # 先頭（XML の宣言）と大きさで、残ったのが今回の書きかけだと見る——上限が効かずに書けたなら、この試料は何も判別しない
+        if (proc.returncode != 2 or f"書きかけの出力を消せない: {locked / 'half.svg'}（" not in proc.stderr
+                or "。今回の書きかけが残る）。完全な出力ではない" not in proc.stderr or "書けない（" not in proc.stderr
+                or LEFT in proc.stderr or "今の表から作ったものではない" in proc.stderr or "Traceback" in proc.stderr
+                or not half.startswith(b"<?xml") or len(half) > FILE_SIZE_LIMIT):
+            problems.append(f"消せない普通のファイルの書きかけ: 終了 {proc.returncode}: {len(half)} バイト: {proc.stderr[-300:]!r}")
         # U+DC80〜U+DCFF の名前はバイトに戻せる（CLI から届く）ので ValueError にならず、OSError の「書けない（<理由>）」で 2。
         # 「出力先の名前が使えない」と言わない（#591）。書けないディレクトリに置くのは、Linux（ext4）では 0x80 のバイトの名前に
         # 書けてしまうから——どちらの OS でも OSError（EACCES か EILSEQ）になる
@@ -354,6 +391,37 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
             problems.append(f"消さない symlink {name}: 終了 {code}: {output[-300:]!r}")
     if not (root / "loopb.svg").is_symlink():
         problems.append("輪になったリンクのもう片方が消えた")
+    # OS の上限（Linux 40・macOS 32）より長い輪でない鎖——辿ると輪と同じ ELOOP だが、鎖を解いた先が通常のファイルなら前の出力が残る。
+    # リンクも先も消さず、「リンクの鎖が長すぎる」とリンクと鎖の先のパスを名指しして 2（#689 の A2）。表が正しくて書けない（開くと ELOOP）経路も。
+    # 出力先の親のディレクトリが長すぎる鎖でも同じ（`lstat` が ELOOP）。鎖の先がディレクトリ・無い・輪なら名指しせずに 1
+    longs = root / "longs"
+    longs.mkdir()
+    (longs / "g.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    (longs / "d").mkdir()
+
+    def chain(name: str, end: str) -> Path:
+        """`root` に 41 本のリンクの鎖を作り、`end`（`root` からの相対）に着く先頭のリンクを返す。"""
+        prev = end
+        for i in range(41):
+            (root / f"{name}{i}").symlink_to(prev)
+            prev = f"{name}{i}"
+        return root / prev
+
+    far_file = os.path.realpath(longs / "g.svg")
+    for label, out, source, extra in (("長い鎖", chain("lc", "longs/g.svg"), bad, "見出し行が決まりと違う"),
+                                      ("長い鎖（表が正しい）", root / "lc40", good, "書けない（"),
+                                      ("親が長い鎖", chain("pc", "longs") / "g.svg", bad, "見出し行が決まりと違う")):
+        code, output = generate(scripts, source, out)
+        if (code != 2 or f"{LEFT}{out}（リンクの鎖が長すぎる: " not in output or f"。先: {far_file}）" not in output
+                or extra not in output or "前に作った出力を消した" in output or "Traceback" in output
+                or not (root / "lc40").is_symlink() or (longs / "g.svg").read_text(encoding="utf-8") != "<svg>古い</svg>"):
+            problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
+    for label, name, end in (("長い鎖の先がディレクトリ", "nd", "longs/d"), ("長い鎖の先が無い", "nn", "longs/none.svg"),
+                             ("長い鎖の先が輪", "nl", "loopa.svg")):
+        out = chain(name, end)
+        code, output = generate(scripts, bad, out)
+        if code != 1 or LEFT in output or "前に作った出力を消した" in output or not out.is_symlink():
+            problems.append(f"{label}: 終了 {code}: {output[-300:]!r}")
     # 先を辿れない symlink——先が前の出力かを確かめられない（先の古い中身は残り、先がディレクトリかも分からない）ので、
     # リンクを消さずに名指しして 2（#535。#499 の CR4 で「リンクを消して 1」にしていたのを改めた）。
     # 先がファイル・ディレクトリ（表が決まりに反する経路）と、表が正しくて書けない経路で、2・リンクの名指し・リンクと先が残る・
@@ -435,6 +503,20 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
             or "今の表から作ったものではない" in proc.stderr or "Traceback" in proc.stderr
             or not (root / "hlink.svg").is_symlink() or not half.startswith(b"<?xml") or len(half) > FILE_SIZE_LIMIT):
         problems.append(f"書きかけを残したリンクの先: 終了 {proc.returncode}: 先 {len(half)} バイト: {proc.stderr[-300:]!r}")
+    # 先の無い壊れたリンクに正しい表を書くと、開いたときに先が作られる——書く途中で失敗したら、作った先は今回の書きかけなので、
+    # 「書きかけの出力を消せない」とリンクと作った先のパスを名指しして 2。リンクも先も消さない（#689 の A3。表が決まりに反するときの
+    # 壊れたリンク（broken.svg）は名指ししないまま——上の試料）
+    (root / "dang.svg").symlink_to(root / "dangnone.svg")
+    proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), str(good), str(root / "dang.svg")],
+                          capture_output=True, text=True, cwd=root, preexec_fn=_limit_file_size)
+    made = root / "dangnone.svg"
+    made_bytes = made.read_bytes() if made.is_file() else b""
+    named = (f"書きかけの出力を消せない: {root / 'dang.svg'}（リンクの先に今回の書きかけが残る。"
+             f"先: {os.path.realpath(made)}）。完全な出力ではない")
+    if (proc.returncode != 2 or named not in proc.stderr or "書けない（" not in proc.stderr or LEFT in proc.stderr
+            or "Traceback" in proc.stderr or not (root / "dang.svg").is_symlink()
+            or not made_bytes.startswith(b"<?xml") or len(made_bytes) > FILE_SIZE_LIMIT):
+        problems.append(f"壊れたリンクの書きかけ: 終了 {proc.returncode}: 先 {len(made_bytes)} バイト: {proc.stderr[-300:]!r}")
 
     def injected(method: str, source: Path, name: str) -> subprocess.CompletedProcess:
         """出力先 `build/<name>` について、そのパスの `Path.<method>` だけを差し替えて
@@ -554,11 +636,35 @@ def entry_problems(scripts: Path, root: Path) -> list[str]:
         if (proc.returncode != 2 or named not in proc.stderr or LEFT in proc.stderr or "Traceback" in proc.stderr
                 or not (root / "xlink.svg").is_symlink() or not (kept / "x.svg").read_bytes().startswith(b"<?xml")):
             problems.append(f"開いたあとの {kind}: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
+    # 普通のファイルを開いたあとで書けず、消す途中に想定外の例外が出ても、残るのは今回の書きかけ——「書きかけの出力を消せない
+    # （RuntimeError: boom。今回の書きかけが残る）」と名指しして 2（#689 の A1。`write` と `lstat` を差し替える）
+    (root / "build" / "p.svg").write_text("<svg>古い</svg>", encoding="utf-8")
+    inject = ("import pathlib, runpy, sys\n"
+              "real_open, real_lstat = pathlib.Path.open, pathlib.Path.lstat\n"
+              "class Half:\n"
+              "    def __init__(self, f):\n        self.f = f\n"
+              "    def __enter__(self):\n        return self\n"
+              "    def __exit__(self, *a):\n        self.f.close()\n"
+              "    def write(self, b):\n        self.f.write(b[:10])\n        raise RuntimeError('boom')\n"
+              "def opened(self, *a, **k):\n"
+              "    f = real_open(self, *a, **k)\n"
+              "    return Half(f) if self.name == 'p.svg' else f\n"
+              "def lstat(self, *a, **k):\n"
+              "    if self.name == 'p.svg':\n        raise RuntimeError('boom')\n"
+              "    return real_lstat(self, *a, **k)\n"
+              "pathlib.Path.open, pathlib.Path.lstat = opened, lstat\n"
+              f"sys.argv = [{script!r}, {str(good)!r}, {str(root / 'build' / 'p.svg')!r}]\n"
+              f"runpy.run_path({script!r}, run_name='__main__')\n")
+    proc = subprocess.run([sys.executable, "-I", "-c", inject], capture_output=True, text=True, cwd=root)
+    named = f"書きかけの出力を消せない: {root / 'build' / 'p.svg'}（RuntimeError: boom。今回の書きかけが残る）。完全な出力ではない"
+    if proc.returncode != 2 or named not in proc.stderr or LEFT in proc.stderr or "Traceback" in proc.stderr:
+        problems.append(f"書きかけを消す途中の想定外の例外: 終了 {proc.returncode}: {proc.stderr[-300:]!r}")
     # 先のパスは名指しする分岐でだけ解く（#662 の CR10）——`os.path.realpath` を壊しても、名指ししないディレクトリを指すリンクは
     # 1 のまま（解いていれば「消せない（RuntimeError: boom）」の 2 になる）。陽性対照: 名指しする辿れる先のリンクでは壊れが届く
-    # 壊れたリンク・輪になったリンクも名指ししないので解かない（#662 の 1 パス目 CR1-3）
+    # 先の無い壊れたリンクも名指ししないので解かない（#662 の 1 パス目 CR1-3）。輪になったリンク（ELOOP）は、OS の上限より長い鎖と
+    # 見分けるために解く（#689 の A2）——壊れが届いて 2
     for label, name, expect in (("ディレクトリを指すリンク", "dirlink.svg", 1), ("壊れたリンク", "broken.svg", 1),
-                                ("輪になったリンク", "loopa.svg", 1), ("辿れる先のリンク（陽性対照）", "rlink.svg", 2)):
+                                ("輪になったリンク", "loopa.svg", 2), ("辿れる先のリンク（陽性対照）", "rlink.svg", 2)):
         inject = ("import os, runpy, sys\n"
                   "real = os.path.realpath\n"
                   "def boom(path, *a, **k):\n"
