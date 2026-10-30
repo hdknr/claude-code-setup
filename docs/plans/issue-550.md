@@ -28,7 +28,7 @@
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 手順 3 の名指しの記述（0 の経路・上書きの 2）。版の 2 行
 - `plugins/spec-loop/README.md` — 残ったファイルの名指し（0 の経路）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（proposal 以外の 4 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版 0.38.2 → **0.39.0**（0 の経路の名指しは能力の追加なので minor。0.x なので壊れる変更も minor。並行する #536 が上げていたら、それより上にする）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版 0.38.2 → **0.40.0**（取り込んだ main が #653 で 0.39.0 に上げたので、その上）（0 の経路の名指しは能力の追加なので minor。0.x なので壊れる変更も minor。並行する #536 が上げていたら、それより上にする）
 - `.claude-plugin/marketplace.json` — 同じ版
 - `docs/plans/issue-550.md` — この計画
 
@@ -77,6 +77,7 @@
 - base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）→ `165f3f1116e763514232f36bc823354589c3e01e`
 - 2 パス目の前に `origin/main` を取り込んだ（merge `7d717f5`。main 側は spec-loop の版を動かしていない——0.38.2 のまま）。式を当て直した base: `eef93311c540b522c2df260b88a2f86bff804277`（2 パス目以降の関門に渡す）
 - PR: #650
+- 狭いパスの後に、もう 1 度 `origin/main` を取り込んだ（#653 が spec-loop を 0.39.0 に上げた。衝突なし——両側が同じ 0.39.0 で、版の行は黙ってマージされた）。版を **0.40.0** に上げた。main との正味の差分はこの周の 12 ファイルだけ
 
 ## verify の受入基準
 
