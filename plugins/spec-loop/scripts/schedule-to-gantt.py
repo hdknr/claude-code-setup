@@ -16,7 +16,8 @@ usage: python3 schedule-to-gantt.py <schedule.csv> <出力先.svg>
 - 0: 書いた
 - 1: 表が決まりに反する・描く工程が 1 行も無い——**書かない。前に作った出力があれば消す**
   （古いガントチャートを今の表のものと取り違えないため）
-- 2: 引数の誤り・表が読めない（中身を検査していない。入力のパスの名前が使えない——NUL・符号化できない孤立サロゲート——ときを含む。#592）・
+- 2: 引数の誤り・表が読めない（中身を検査していない。入力のパスの名前が使えない——NUL・符号化できない孤立サロゲート——ときを含む。
+  名前は開く前に確かめ、理由を「NUL を含む」「バイトに戻せない文字を含む: <理由>」と書く。#592・#662。NUL は `\\x00` と出す）・
   書けない（出力先の名前が使えないときを含む）・想定外の例外（巨大なセルの `csv.Error` など。#286）
   ——同じく書かず、前の出力を消す（引数の誤りでは出力先が分からないので消さない）。
   **名前が使えない**のは、NUL を含む名前と、surrogateescape でバイトに戻せない孤立サロゲート（U+D800〜U+DC7F・U+DD00〜U+DFFF）を含む名前で、
@@ -27,8 +28,10 @@ usage: python3 schedule-to-gantt.py <schedule.csv> <出力先.svg>
   前の出力があるかどうかを確かめられないとき（辿れないディレクトリ・先を辿れない symlink）も、消せなかったものとして名指しする。
 - **出力先が symlink なら、リンクも先も消さない。** 先が通常のファイル（辿れる先。#626）でも、先を辿れなくても（#535）、
   リンクと先のパスを名指しして 2——先のパスは鎖を解いた先で、先を辿れないときは辿れたところまで解いたもの（その先にまだリンクがありうる）。リンクを消しても先の古い中身は残り、辿れない先はディレクトリかも分からない。
-  壊れたリンクとディレクトリを指すリンクは、この道具の出力ではないので消さずに名指しもしない（表が決まりに反するなら 1）。
-  表が正しく書けるときは、リンクの先に書く（0）。
+  壊れたリンク・輪になったリンク（a→b→a）とディレクトリを指すリンクは、この道具の出力ではないので消さずに名指しもしない（表が決まりに反するなら 1）。
+  表が正しく書けるときは、リンクの先に書く（0）。**先を開いた（切り詰めた）あとで書けなかった**（容量が尽きたなど）ときは、
+  先に残るのは前の出力ではなく今回の書きかけなので、「書きかけの出力を消せない」とリンクと先のパスを名指しして 2（#662。前の中身は失われている）。
+  **0.39.0 より前は、表が決まりに反する・描く工程が無いとき、辿れる先の通常のファイルを指すリンクを消して 1 だった**（表が正しくて書けないときは前も 2）——移行は `references/tree.md` の「生成物の置き場所」。
 
 **守らないもの**: 見た目（文字が枠からはみ出すか・読みやすいか）。ブラウザで開いて目で見る。
 """
@@ -133,41 +136,59 @@ def absent(out: Path, e: OSError) -> bool:
     return e.errno == errno.ENAMETOOLONG and any(len(os.fsencode(part)) > NAME_MAX for part in out.parts)
 
 
-def unusable_name(path: Path) -> bool:
-    """OS に渡せない名前か——NUL を含む・surrogateescape でバイトに戻せない孤立サロゲートを含む（どちらも開くと `ValueError`）。
+def name_problem(path: Path) -> str | None:
+    """OS に渡せない名前なら、その理由を返す——NUL を含む・surrogateescape でバイトに戻せない孤立サロゲートを含む（どちらも開くと `ValueError`）。
     U+DC80〜U+DCFF はバイトに戻せるので使える名前と読む（OS が拒めば `OSError`。#591）。"""
     try:
-        return b"\0" in os.fsencode(path)
-    except UnicodeEncodeError:
-        return True
+        return "NUL を含む" if b"\0" in os.fsencode(path) else None
+    except UnicodeEncodeError as e:
+        return f"バイトに戻せない文字を含む: {e}"
 
 
-def remove_stale(out: Path) -> str | None:
+def shown(path: Path) -> str:
+    """標準エラーに出すパス。NUL は素のバイトで出さず `\\x00` と書く（端末で名前が切れて見えないように。#662 の CR9）。
+    孤立サロゲートは標準エラーの backslashreplace が `\\udXXX` と書く。"""
+    return str(path).replace("\0", "\\x00")
+
+
+def link_target(link: Path) -> Path:
+    """リンクの先のパス（鎖を解いた先）。非 strict の realpath は辿れなくても例外を出さず、辿れたところまで解く。
+    先のパスを使う分岐でだけ呼ぶ（#662 の CR10）——名指しするときと、名前が長すぎる（ENAMETOOLONG）先の壊れたリンクの判定。
+    先の無い壊れたリンク・輪になったリンク・ディレクトリを指すリンクでは呼ばない。"""
+    return Path(os.path.realpath(link))
+
+
+def remove_stale(out: Path, partial: bool = False) -> str | None:
     """前に作った出力（通常のファイル）を消す。消せなかったら、名指しする行を返す（#499）。
 
     `Path.is_file` で確かめない——python3.14 は辿れないディレクトリでも黙って False を返し、残った出力を見逃す。
     symlink は `lstat` で見て、**リンクも先も消さない**:
     先が通常のファイル（辿れる先）なら、リンクを消しても先の古い中身は残る（`unlink` が消すのはリンク）ので、
     リンクと先のパスを名指しする（#626。#499 ではリンクを消して「消した」と言っていた）。
+    `partial` は、今回この出力先を開いた（先を切り詰めた）あとで書けなかったこと——そのとき先に残るのは前の出力ではなく
+    今回の書きかけなので、そう名指しする（#662 の CR2-1。前の中身は切り詰めで失われている）。
     先を辿れない（EACCES など）なら、先が前の出力かを確かめられないので同じく名指しする——
     辿れないディレクトリと同じ扱い（#535。リンクを消さないのは、消しても先の古い中身は残るから——先がディレクトリかも分からない）。
     先のパス（辿れたところまで鎖を解いたもの）も名指しする（#625）。
-    先がディレクトリ・辿れる先が無い（壊れたリンク）なら、この道具の出力ではないので消さずに名指しもしない。"""
+    先がディレクトリ・辿れる先が無い（壊れたリンク・輪になったリンク）なら、この道具の出力ではないので消さずに名指しもしない。"""
     try:
         mode = out.lstat().st_mode
         if stat.S_ISLNK(mode):
-            # 先のパス（鎖を解いた先）。非 strict の realpath は辿れなくても例外を出さず、辿れたところまで解く
-            target = Path(os.path.realpath(out))
             try:
                 mode = out.stat().st_mode
             except OSError as e:
+                if e.errno in ABSENT:
+                    return None  # 壊れたリンク・輪になったリンク——この道具の出力ではない（先を解かない。#662 の 1 パス目 CR1-3）
+                target = link_target(out)
                 # 長すぎる名前は、鎖を解いた先のパスで見る（途中のどこかの名前が NAME_MAX を超えるなら在りえない——壊れたリンク。
                 # 別のリンクを経由しても同じ。#535 の CR1-1・R2-1）
                 if absent(target, e):
                     return None  # 壊れたリンク——この道具の出力ではない
                 return f"前に作った出力を消せない: {out}（リンクの先を辿れない: {e.strerror}。先: {target}）。今の表から作ったものではない"
+            if stat.S_ISREG(mode) and partial:  # 今回切り詰めて書きかけた先——前の出力ではない（#662 の CR2-1）
+                return f"書きかけの出力を消せない: {out}（リンクの先に今回の書きかけが残る。先: {link_target(out)}）。完全な出力ではない"
             if stat.S_ISREG(mode):  # 辿れる先の通常のファイル——リンクを消しても先の古い中身は残る（#626）
-                return f"前に作った出力を消せない: {out}（リンクの先に前の出力が残る。先: {target}）。今の表から作ったものではない"
+                return f"前に作った出力を消せない: {out}（リンクの先に前の出力が残る。先: {link_target(out)}）。今の表から作ったものではない"
         if not stat.S_ISREG(mode):
             return None  # ディレクトリなど、この道具の出力でないものは消さない
         out.unlink()
@@ -183,9 +204,10 @@ def remove_stale(out: Path) -> str | None:
     return None
 
 
-def stop(out: Path, code: int) -> int:
-    """前の出力を消して終わる。消せなければ、どの経路でも 2 にして名指しする（1 の「表が決まりに反する」と取り違えない）。"""
-    left = remove_stale(out)
+def stop(out: Path, code: int, partial: bool = False) -> int:
+    """前の出力を消して終わる。消せなければ、どの経路でも 2 にして名指しする（1 の「表が決まりに反する」と取り違えない）。
+    `partial` は `remove_stale` を見る。"""
+    left = remove_stale(out, partial)
     if left:
         print(left, file=sys.stderr)
         return 2
@@ -198,6 +220,10 @@ def main(argv: list[str]) -> int:
               f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     source, out = Path(argv[0]), Path(argv[1])
+    problem = name_problem(source)
+    if problem:  # 入力のパスの名前が使えない——開く前に読めないと言う（#592・#662 の CR8。CLI からは届かない）
+        print(f"{shown(source)}: 読めない（入力のパスの名前が使えない: {problem}）。中身を検査していない", file=sys.stderr)
+        return stop(out, 2)
     try:
         problems, rows = feasibility.check_schedule(source)
         if not problems and rows:
@@ -206,10 +232,7 @@ def main(argv: list[str]) -> int:
         print(e, file=sys.stderr)
         return stop(out, 2)
     except Exception as e:  # 想定外の例外（巨大なセルの csv.Error など）でも、前の出力を残さない（#286）
-        if isinstance(e, ValueError) and unusable_name(source):  # 入力のパスの名前が使えない——読めない（#592。CLI からは届かない）
-            print(f"{source}: 読めない（入力のパスの名前が使えない: {type(e).__name__}: {e}）。中身を検査していない", file=sys.stderr)
-        else:
-            print(f"{source}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
+        print(f"{source}: 想定外の例外で止まった（{type(e).__name__}: {e}）。判定していない", file=sys.stderr)
         return stop(out, 2)
     if not problems and not rows:
         problems = [f"{source}: 描く工程が 1 行も無い"]
@@ -218,18 +241,21 @@ def main(argv: list[str]) -> int:
             print(line, file=sys.stderr)
         print("ガントチャートは作っていない", file=sys.stderr)
         return stop(out, 1)
+    opened = False  # 出力先を開いた——開いた時点で（リンクの先も）切り詰められている（#662 の CR2-1）
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(svg)
+        with out.open("wb") as f:
+            opened = True
+            f.write(svg)
     except OSError as e:  # 書きかけを今の表のものと取り違えないよう消す
         print(f"{out}: 書けない（{e.strerror}）", file=sys.stderr)
-        return stop(out, 2)
+        return stop(out, 2, opened)
     except ValueError as e:  # 出力先の名前が符号化できない（NUL・U+DC80〜U+DCFF のほかの孤立サロゲート。#591）——その名前には書けない（#582。CLI からは届かない）
-        print(f"{out}: 書けない（出力先の名前が使えない: {type(e).__name__}: {e}）", file=sys.stderr)
-        return stop(out, 2)
+        print(f"{shown(out)}: 書けない（出力先の名前が使えない: {type(e).__name__}: {e}）", file=sys.stderr)
+        return stop(out, 2, opened)
     except Exception as e:  # 書く途中の想定外の例外でも、前の出力を消すか名指しする（入口に逃がさない。#499 の 2 パス目）
         print(f"{out}: 書く途中の想定外の例外で止まった（{type(e).__name__}: {e}）", file=sys.stderr)
-        return stop(out, 2)
+        return stop(out, 2, opened)
     print(f"{out}: {len(rows)} 工程のガントチャートを書いた")
     return 0
 
