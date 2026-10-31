@@ -60,6 +60,10 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 例: `利用者の確認（起動時・2026-10-27T09:07:27Z、配布を見せて確かめた）` と、#474 の台帳に実際にある
 `…＋利用者の確認（再開時・2026-10-28T23:56:17Z）: 配布を見せて確かめた——main へのマージが…` はあり、
 `利用者の確認（起動時）、配布を見せて確かめた、とは言えない` はなし。
+**`）` の後ろにつなげるのは `＋` と `（` だけ**——`）、`・`）。`・`）——` などでつなぐと「なし」（#681）。
+**`lines` は、印のある出所を `マージ = 関門を通ればマージ` と一緒にしか書かない**（#681・#711）——線の無いまま、または `止まる` と一緒に印だけ残ると、
+あとで線を足す・値を変えたときに古い印が効く。**この決まりより前の台帳（出所に印があり `マージ = 関門を通ればマージ` が無い）も読む**——`show` がその形を名指しし、
+「配布の確認」を `あり` と出さない（確かめ直し方は cruise の `SKILL.md` §1）。
 
 **状態**（`set state=` に渡せるのはこれだけ）:
 
@@ -75,8 +79,9 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
 
 **鍵**（`set` に渡せるのはこれだけ）: `state` `title` `deps` `pr` `branch` `worktree` `agent` `base` `note` `decisions` `origin` `group`。
-`deps` はカンマ区切りの番号（空にすると依存なし）。`decisions` はその周が推奨で決めて起票した `要確認` Issue の番号
-（カンマ区切り。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
+`deps` はカンマ区切りの番号（空にすると依存なし）。`decisions` はその行の周で推奨で決めて起票した `要確認` Issue の番号
+（カンマ区切り。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）——**周の合間に cruise の親が自分で立てた確認の Issue も、
+判断が出た周の行に足す**（足し方は cruise の `SKILL.md` §6。#699）。
 `origin` は**周の途中で見つかって台帳に足した行の出所**（どの周のどの関門のどのパスの行か。#464）で、親 Issue から作った行は空。
 **空でない行が「cruise の途中で生まれた行」である**——足し方と、cruise を終えるときの扱いは `references/found-lines.md` を正とする。
 `group` は**まとめ**（#641）——その行が入ったまとめの**代表の番号**（文字列）で、まとめに入っていない行は空（欄が無い台帳もこれまでどおり読む）。
@@ -87,12 +92,17 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 `../cruise/references/grouping.md` を正とする（このスキルの base ディレクトリからの相対）。ここにあるのは台帳の上の振る舞いだけ:
 
 - **作るのは `group <名前> <代表> <番号>…` だけ**——代表を含めて 2 件以上（代表だけなら引数が違うので 2）の、`todo` でどのまとめにも入っていない行を束ね、各行の `group` に代表の番号を書く。
+  **前の周の在り処（`pr` `branch` `worktree` `agent` `base`）を持ったままの行は拒む**（#665）——消すのは呼ぶ側（実物で確かめてから `set`）。
 - **`set` の `state` `pr` `branch` `worktree` `agent` `base`（周の在り処）は、まとめの全行に書く**——`note` `title` `deps` `decisions` `origin` はその行だけ。
 - **抜けるのは `set <番号> group=`**（空だけを渡せる）。**同じ呼び出しの `state` などは、抜けた後のその行だけに効く**——落ちた行を戻す形
-  （まとめの PR のマージの後に `set <番号> group= state=todo pr= branch= worktree= agent= base=`。いつ戻すかは grouping.md の「マージの後」）。
-  **代表は、他の行が残るあいだは抜けられない。**
+  （まとめの PR のマージの後に `set <番号> group= state=todo pr= branch= worktree= agent= base=`。いつ・どの順で戻すかは grouping.md の「マージの後」——
+  抜けた後に輪になる順は拒む）。**代表は、他の行が残るあいだは抜けられない。**
+- **`show` は、まとめに入ったまま `merged` で `note` が `落ちた:` で始まる行を名指しする**——マージの後の手順（代表に `merged` を書く→落ちた行を戻す）の
+  途中で止まった跡である（#665）。戻すかは実物（Issue・PR）で確かめてから（`references/ledger.md` の「どう再開するか」）。
 - **`next` はまとめを 1 行で出す**——代表を先頭に、残りを台帳の順に空白で区切る。**全行が着手できるときだけ**出し、行を個別には出さない。
   **まとめの中の依存は済んだと読む**（一緒にマージされるので）。まとめの無い台帳の出力は 1 行 1 番号のまま。
+- **`next` は、名指しした行（まとめに入ったまま `merged` で `note` が `落ちた:`）を依存先として済んだと読まない**（#711）——落ちた行を戻す途中で止まっても、
+  先に戻した行や、まとめの外でその行に依存する行を出さない。
 
 ## 終了コード
 
@@ -100,7 +110,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | --- | --- |
 | 0 | 通った（`next` で着手できるものが 0 件でも 0） |
 | 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形・`group` に代表のほかの番号が無い） |
-| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（まとめを 1 つと数えた循環・在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空・まとめに入れられない行（`todo` でない・別のまとめに入っている・同じ番号を 2 度）・`set group=` に空でない値・他の行が残るまとめから代表を抜く・まとめの状態をそろえなくする操作） |
+| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（まとめを 1 つと数えた循環・在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空・まとめに入れられない行（`todo` でない・別のまとめに入っている・同じ番号を 2 度・前の周の在り処を持ったまま）・`set group=` に空でない値や空白だけの値・他の行が残るまとめから代表を抜く・まとめの状態をそろえなくする操作・`マージ = 関門を通ればマージ` の無い出所の印） |
 | 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない** |
 
 ## 何を守り、何を守らないか
@@ -139,8 +149,17 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   ——前の確認の値が、確かめ直した後に黙って残らない。
 - **`show` の「配布の確認」は、出所の印を区切った形でだけ「あり」と出す**——印を含む否定文（`…、配布を見せて確かめた、とは言えない`・
   `配布を見せて確かめたとは言えない`）を「あり」と読まない。配布を起こすマージは revert しても戻らないので、誤って通る側に倒さない。
+- **`lines` は、区切った印のある出所を `マージ = 関門を通ればマージ` と一緒にしか書かない**（#681・#711）——線の無いまま、または `マージ = 止まる` と一緒に
+  印が残ると、あとで `マージ` の線を足す・値を変えるとき、出所を写した親の書き直しで確かめ直していない印が効く（cruise `SKILL.md` §2 の 1 の「印の扱い」）。
+- **`lines` は、台帳が無ければ印の検査より先に 4 と答える**（#711）——3 と答えると、無い台帳を「印の書き方が違う」と取り違える。
+- **`show` は、出所に区切った印があるのに `マージ = 関門を通ればマージ` が無い台帳（線が無い・`止まる`。#711 より前に書けた形）を名指しし、
+  「配布の確認」を `あり` と出さない**（#711）——`マージ` の線が無ければ「配布の確認」の行が出ず、`止まる` なら `あり` と出て、
+  確かめ直すときに古い出所を写して `マージ=関門を通ればマージ` を渡すと、どちらの形も通って確かめていない印が効く（`lines` は確かめたかを見ない。
+  線を渡さずに写した形だけは拒む）。名指しは、写す前に親に気づかせるためである。
 - **`group` は `todo` の行だけをまとめる**——進行中・止まった行を引き込むと、その行の worktree と PR を持ったまま別の周に入る。
 - **`group` は別のまとめに入った行を引き込まない**——1 つの行が 2 つの周に入る。
+- **`group` は前の周の在り処（`pr` `branch` `worktree` `agent` `base`）を持ったままの行をまとめない**（#665）——まとめの行は状態と在り処がそろう前提なので、
+  代表に書かれない鍵の古い値が 1 行だけに残り、`show` が別の周の PR や worktree を出す。**消さずに拒む**——まだ在る worktree・PR を指すかは実物を見ないと分からない。
 - **代表は自分のまとめに入っている**——代表が抜けた（`set <代表> group=` で他の行が残る）・代表が台帳に無い台帳を作らない
   （手で直した台帳なら 4）。
 - **`group` は番号の文字列だけ**——空白を剥がさない（`" 1"` を通すと、検査は 1 つのまとめと読み、`next`・`set` は別のまとめと読む）。手で直した台帳なら 4。
@@ -152,11 +171,25 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`next` はまとめを、全行が着手できるときだけ 1 行で出す**——1 行だけ着手できても出さない（残りを置いて周を始めない）。
 - **まとめの中の依存は済んだと読む**——読まないと、中に依存のあるまとめが永遠に出ない。
 - **`set group=` は抜けるだけ**——空でない値を拒む（まとめに入れるのは `group` で、件数と状態を確かめてから）。
+- **`set group=` に空白だけの値を渡したら、空白だけと言って拒む**（#665）——剥がさずに通すと「group が番号でない」と言い、抜けるつもりの呼び手が原因を取り違える。
 - **抜けた行に同じ呼び出しで渡した `state` などは、その行だけに効く**——抜ける前のまとめに伝えると、落ちた 1 件を戻すつもりで全行を戻す。
   **抜けても、周の在り処（`pr` `branch` `worktree` `agent` `base`）は自分では消さない**——消すのは呼ぶ側
   （戻すなら同じ呼び出しで `pr= branch= worktree= agent= base=` を渡す。手順は `../cruise/references/grouping.md`）。
+- **`show` は、まとめに入ったまま `merged` で `note` が `落ちた:` で始まる行を名指しする**（#665）——マージの後に代表へ `merged` を書いてから
+  落ちた行を戻すまでの間で止まると、落ちた行は `merged` のまま `next` にも「進行中」にも出ず、直されないまま済んだことになる。
+- **`group` は、入れる行の `note` の `落ちた:` を `前に落ちた:` に書き換える**（#665）——前のまとめで落ちて戻した行は `note` に理由を残す決まりなので、
+  そのまま新しいまとめに入れてマージすると、落ちていないのに名指しされ、cruise の終わりの行も出なくなる。理由の文は残す。
+- **名指しした行があるあいだは「すべてマージ済みか取り下げ」と出さない**（#665）——cruise はその行で終えるので、出すと直していない行を済んだと報告して終える。
+- **名指しした行を `merged` のまままとめから抜かない**（#711）——`set <番号> group=` だけで抜くと名指しも `next` の止めも外れ、
+  直していない行に依存する周が始まる。抜くのは戻す形（同じ呼び出しで `state=todo` ほか）だけ。
+- **`next` は、名指しした行を依存先として済んだと読まない**（#711）——落ちた行を依存している側から先に戻すと、戻した行は依存先が `merged` のまま着手できると読まれ、
+  直していない行の上に周を始める（まとめの外でその行に依存する行も同じ）。
 
 守らない:
+
+- **落ちた行の名指しが正しいか**——`note` の文字とまとめの欄だけで見る（`next` が依存先として済んでいないと読む行も同じ）。`group` を通さずに `set … note=落ちた: …` を書いたままマージした行は名指しし、
+  `note` を `落ちた:` で始めずに落とした行は名指ししない。実物（Issue が開いているか・まとめの PR の `Refs`）は再開する側が見る（`references/ledger.md`）。
+- **戻す順**——1 行ずつ抜けた後に輪になる順は拒む（3。台帳は変えない）が、輪にならない順を自分では選ばない（`../cruise/references/grouping.md` の「マージの後」）。
 
 - **複数のセッションからの同時書き込み**——`os.replace` なので半端なファイルは残らないが、後勝ちで片方の更新が消えうる。
   台帳を書くのは親 1 体である（`references/ledger.md`）。
@@ -187,6 +220,12 @@ KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "
 TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")
 # まとめの全行に書く鍵（周の在り処）。ほかの鍵はその行だけ
 SHARED_KEYS = ("state", "pr", "branch", "worktree", "agent", "base")
+# 周の在り処（状態を除く）。まとめに入れる行は全部空であること（#665）
+PLACE_KEYS = ("pr", "branch", "worktree", "agent", "base")
+# まとめの PR で落ちた行の note の書き出し（grouping.md の「まとめの周」）
+DROPPED_NOTE = "落ちた:"
+# まとめに入れ直した行の、前のまとめで落ちた理由（名指しの対象から外す）
+PREV_DROPPED_NOTE = "前に落ちた:"
 # 線の項目と、宣言できる値（既定を含む）。意味は references/absent-lines.md・fix-line.md・found-lines.md を正とする
 LINES = {
     "直す線": ("既定", "広げる"),
@@ -199,6 +238,8 @@ LINES = {
 # 印は区切った形でだけ「あり」と読む（#507）——前が出所の先頭か「（」「、」「・」「＋」「: 」「：」、後ろが出所の終わりか「——」か、
 # 「）」（1 つ以上）とその後ろの出所の終わり・「＋」・「（」。「: 」と「——」は #474 の台帳に実際にある出所の形（互換）。部分一致にすると、印を含む否定文（「…確かめた、とは言えない」）でも通る
 DIST_MARK = "配布を見せて確かめた"
+# 印が効く `マージ` の線の値（#711）——`止まる` と一緒に受けると、あとで値を変えたとき確かめ直していない印が効く
+DIST_MERGE = "関門を通ればマージ"
 DIST_MARK_RE = re.compile(r"(?:\A|[（、・＋]|: |：)" + DIST_MARK + r"(?:）+(?=\Z|[＋（])|——|\Z)")
 ISSUE_FIELDS = {"number", "updated", *KEYS}
 DONE = "merged"
@@ -442,13 +483,21 @@ def find(data, number):
     raise Refused(f"#{number} は台帳に無い（先に add する）")
 
 
+def is_stranded(issue):
+    """取り残された行: まとめに入ったまま merged で、note が「落ちた:」で始まる（マージの後に戻していない。#665）。"""
+    return issue["state"] == DONE and bool(issue.get("group")) and issue.get("note", "").startswith(DROPPED_NOTE)
+
+
 def ready(data):
-    """着手できる Issue: 未着手で、依存がすべてマージ済み（まとめの中の依存は済んだと読む）。行ごとに見る。"""
+    """着手できる Issue: 未着手で、依存がすべてマージ済み（まとめの中の依存は済んだと読む）。行ごとに見る。
+    **取り残された行は、merged でも依存先として済んでいないと読む**（#711）——直されていない。"""
     state = {i["number"]: i["state"] for i in data["issues"]}
     group = {i["number"]: i.get("group", "") for i in data["issues"]}
+    stranded = {i["number"] for i in data["issues"] if is_stranded(i)}
     return [i for i in data["issues"]
             if i["state"] == "todo"
-            and all(state.get(d) == DONE or (i.get("group", "") and group.get(d) == i["group"]) for d in i["deps"])]
+            and all((state.get(d) == DONE and d not in stranded) or (i.get("group", "") and group.get(d) == i["group"])
+                    for d in i["deps"])]
 
 
 def units(data):
@@ -511,6 +560,8 @@ def cmd_set(path, number, pairs):
             raise Refused("origin を空にしない（空にすると、cruise を終えるときの「周の途中で足した行」から外れる）")
         elif key == "group" and value.strip():
             raise Refused("set group= に渡せるのは空だけ（抜ける）。まとめに入れるのは group で")
+        elif key == "group" and value and not value.strip():
+            raise Refused(f"set group= に空白だけの値 {value!r} を渡した——抜けるなら `group=` と空で渡す")
         else:
             changes[key] = value
     data = load(path)
@@ -518,6 +569,10 @@ def cmd_set(path, number, pairs):
     after = {**issue, **changes}
     if ("deps" in changes or "origin" in changes) and after.get("origin") and not after["deps"]:
         raise Refused(f"#{number} を出所があって依存の無い行にしない（元の周のマージより先に next に出る）")
+    if "group" in changes and is_stranded(issue) and after["state"] == DONE:
+        # merged のまま抜くと名指しも `next` の止めも外れ、直していない行に依存する周が始まる（#711）
+        raise Refused(f"#{number} は落ちたのにまとめの中で merged のまま——merged のまま抜かない。戻すなら同じ呼び出しで "
+                      "`state=todo pr= branch= worktree= agent= base=` も渡す（grouping.md の「マージの後」）")
     issue.update(changes)
     issue["updated"] = now()
     # まとめの全行に周の在り処を書く——抜けた行は、抜けた後の値（空）で見るので、その行だけに効く
@@ -543,9 +598,17 @@ def cmd_group(path, head, numbers):
             raise Refused(f"#{issue['number']} は todo でない（{issue['state']}）——進行中・止まった行はまとめない")
         if issue.get("group", ""):
             raise Refused(f"#{issue['number']} は既にまとめ #{issue['group']} に入っている")
+        stale = [f"{k}={issue[k]}" for k in PLACE_KEYS if issue.get(k, "")]
+        if stale:
+            raise Refused(f"#{issue['number']} は前の周の在り処（{', '.join(stale)}）を持ったまま——実物で済んだことを確かめ、"
+                          f"`ledger.py set {path.name[len('cruise-'):-len('.json')]} {issue['number']} "
+                          + " ".join(f"{k}=" for k in PLACE_KEYS) + "` で消してからまとめる")
     stamp = now()
     for issue in issues:
         issue["group"] = str(head)
+        # 前のまとめで落ちて戻した行の「落ちた:」を残すと、このまとめがマージされたとき落ちた行と名指しされる（#665）
+        if issue.get("note", "").startswith(DROPPED_NOTE):
+            issue["note"] = PREV_DROPPED_NOTE + issue["note"][len(DROPPED_NOTE):]
         issue["updated"] = stamp
     save(path, data)
     print(f"まとめ #{head}: " + ", ".join(f"#{n}" for n in rows))
@@ -568,7 +631,11 @@ def cmd_lines(path, pairs, source):
         values[key] = value
     if not source.strip():
         raise Refused("出所が空（--source に、誰がいつ確かめたかを書く）")
+    # 台帳を先に読む——無い台帳を「印の書き方が違う」（3）と言わない（#711）
     data = load(path)
+    if has_dist_mark(source) and values.get("マージ") != DIST_MERGE:
+        raise Refused(f"出所に印 `{DIST_MARK}` があるのに `マージ={DIST_MERGE}` を渡していない——印は `マージ={DIST_MERGE}` と一緒にだけ書く"
+                      "（線を外す・`止まる` にするなら印も外す。cruise SKILL.md §2 の 1 の「印の扱い」）")
     data["lines"] = {"values": values, "source": source, "updated": now()}
     save(path, data)
     print("線: " + (", ".join(f"{k} = {v}" for k, v in values.items()) or "なし（宣言と既定に従う）"))
@@ -591,9 +658,18 @@ def cmd_show(path):
         print("確かめた線（出所: {}・{}）: {}".format(
             lines["source"], lines["updated"],
             ", ".join(f"{k} = {v}" for k, v in lines["values"].items()) or "なし（宣言と既定に従う）"))
-        if "マージ" in lines["values"]:
+        merge = lines["values"].get("マージ")
+        marked = has_dist_mark(lines["source"])
+        if merge is not None:
+            # 印が効くのは `マージ = 関門を通ればマージ` と一緒のときだけ（#711）——`止まる` と一緒の古い印は「なし」
             print(f"配布の確認（マージの線の出所の印 `{DIST_MARK}`）: "
-                  + ("あり" if has_dist_mark(lines["source"]) else "なし"))
+                  + ("あり" if marked and merge == DIST_MERGE else "なし"))
+        if marked and merge != DIST_MERGE:
+            # #711 より前の台帳: 印が `マージ = 関門を通ればマージ` の無いまま残っている（線が無い・`止まる`）。
+            # 確かめ直さずに出所を写して線を足すと、確かめていない印が効く
+            print(f"効かない印（#711 より前の形）: 出所に `{DIST_MARK}` があるが `マージ={DIST_MERGE}` が無い"
+                  f"（いまは {'マージ = ' + merge if merge else 'マージの線なし'}）——確かめ直すなら、配布を見せて `マージ={DIST_MERGE}` と一緒に書くか、"
+                  "印を外して書く（出所を写さない。cruise SKILL.md §1）")
     else:
         print("確かめた線: 無い（宣言と既定に従う）")
     if data.get("user_ops", {}).get("commands"):
@@ -623,12 +699,16 @@ def cmd_show(path):
     if any(i.get("origin") for i in data["issues"]):
         print("周の途中で足した行のうち済んでいないもの: "
               + (", ".join(f"#{i['number']}({i['state']})" for i in found) or "なし"))
+    stranded = [i for i in data["issues"] if is_stranded(i)]
+    if stranded:
+        print("落ちたのにまとめの中で merged のまま（マージの後に戻していない。Issue と PR を実物で確かめてから戻す）: "
+              + ", ".join(f"#{i['number']}" for i in stranded))
     heads = sorted({i["group"] for i in data["issues"] if i.get("group")}, key=int)
     if heads:
         print("まとめ: " + "; ".join(
             f"#{h}（{find(data, int(h))['state']}）= " + ", ".join(
                 f"#{i['number']}" for i in data["issues"] if i.get("group") == h) for h in heads))
-    if data["issues"] and all(i["state"] in (DONE, "dropped") for i in data["issues"]):
+    if data["issues"] and all(i["state"] in (DONE, "dropped") for i in data["issues"]) and not stranded:
         print("すべてマージ済みか取り下げ")
 
 
