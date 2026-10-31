@@ -2,6 +2,7 @@
 """`check-unattended-env.py` の回帰テスト。
 
     python3 scripts/test-check-unattended-env.py
+    python3 scripts/test-check-unattended-env.py --jobs 1   # 変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
 
 **本体はプラグインの中にある**（`plugins/dev-loop/skills/dev-loop/scripts/`）——
 `test-find-cycle.py` と同じ形で、**`dev-loop` はどのリポジトリでも使えるスキル**なので。
@@ -13,6 +14,7 @@
 **変異テストを含む。** 本体の docstring の「守る」の各行に変異を 1 つ以上当て、
 **壊したのに緑のままなら失格**とする。**変異の前に、元の本体で全部緑であること（陽性対照）を見る。**
 """
+import argparse
 import builtins
 import concurrent.futures
 import contextlib
@@ -253,7 +255,7 @@ class _Killed(BaseException):
 
     **`Exception` の子にしない**（#687）——シナリオの途中に `except Exception` が 1 つでも入ると、そこで飲まれて
     「最初の失敗で止める」が止まらず、飲んだ先の振る舞いしだいでは落ちた表明が `bad` に残らない。受けるのは作業者の `_mutant_killed` の `except _Killed` だけである。
-    **いまのシナリオの経路に `except Exception` は無い**——だからこれは将来への備えで、`main` の冒頭の表明が `Exception` の子に戻すと赤にする。
+    **いまのシナリオの経路に `except Exception` は無い**——だからこれは将来への備えで、`main` の冒頭の表明が、親を `BaseException` のほかに替えると（`Exception`・`KeyboardInterrupt` の子など）赤にする（#749）。
     """
 
 
@@ -941,6 +943,24 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         check("到達: 操作待ちの行の PR は不在の間にマージされないので、版の取り合いに数えない",
               at(items, "到達 #2")[0] == mod.GOOD, bad)
         check("到達: マージ済みの PR は版の取り合いに数えない", at(items, "到達 #4")[0] == mod.GOOD, bad)
+        # 版の取り合いの数え方の残りの試料（#736・#738）: 閉じた PR・blocked の行の PR は数えない・空白で囲んだ PR の欄は番号として数える。
+        # 空白だけの PR の欄の進行中の行は PR がまだ無いと読む。blocked のコロンの無い「利用者の判断待ち…」は印にせず「止まっている」と出す
+        a, b, c = (f"plugins/{p}/.claude-plugin/plugin.json" for p in ("a", "b", "c"))
+        cruise_ledger(env, [row(1, "pr", pr="14"), row(2, "pr", pr="15"), row(3, "blocked", pr="16", note="BLOCKED: x"),
+                            row(4, "pr", pr="17"), row(5, "pr", pr=" 18 "), row(6, "pr", pr="19"), row(7, "impl", pr="   "),
+                            row(8, "blocked", note="利用者の判断待ちは解消した（承認）")])
+        fake_gh(env, {14: pr_json(state="CLOSED", files=(a,)), 15: pr_json(files=(a,)), 16: pr_json(files=(b,)),
+                      17: pr_json(files=(b,)), 18: pr_json(files=(c,)), 19: pr_json(files=(c,))})
+        items = run_reach(mod, env)
+        check("到達: 閉じた PR は版の取り合いに数えない（同じ版のファイルを上げる開いた PR は進む）",
+              at(items, "到達 #2")[0] == mod.GOOD, bad)
+        check("到達: blocked の行の PR は版の取り合いに数えない", at(items, "到達 #4")[0] == mod.GOOD, bad)
+        check("到達: 空白で囲んだ PR の欄も番号として版の取り合いに数える",
+              at(items, "到達 #6")[0] == mod.UNKNOWN and "#18・#19" in at(items, "到達 #6")[1], bad)
+        check("到達: 空白だけの PR の欄の進行中の行は、PR をまだ作っていないと読む",
+              at(items, "到達 #7")[0] == mod.GOOD and "続けて PR を作り" in at(items, "到達 #7")[1], bad)
+        check("到達: blocked のコロンの無い「利用者の判断待ち…」は印にせず「止まっている」と出す",
+              at(items, "到達 #8")[0] == mod.ACTION and at(items, "到達 #8")[1].startswith("止まっている: 利用者の判断待ち"), bad)
         # 判断待ちの印: まとめの代表にだけ書かれても全行で止まる・マージ済みなら進む・コロンの無い文は印にしない
         cruise_ledger(env, [row(1, "pr", pr="20", group="1", note="利用者の判断待ち: P1"), row(2, "pr", pr="20", group="1"),
                             row(3, "todo", deps=[2]), row(4, "pr", pr="21", note="利用者の判断待ち: P2"),
@@ -1446,6 +1466,22 @@ MUTATIONS = {
     "到達: 依存先の優先順を逆にする": (
         'KIND_ORDER = ("stop", "unknown", "user", "merge")',
         'KIND_ORDER = ("merge", "user", "unknown", "stop")'),
+    # 以下 5 つは #736（#490 の 2 パス目と最後の検証で素通りした変異）
+    "到達: blocked の分岐だけ判断待ちの印をコロン無しでも読む": (
+        "            mark = judged(issue)  # まとめなら代表の印も読む",
+        '            mark = next((r.get("note", "") for r in members(issue) if r.get("note", "").startswith("利用者の判断待ち")), "")  #'),
+    "到達: 閉じた PR も版の取り合いに数える": (
+        '        if isinstance(info, dict) and info.get("state") == "OPEN":\n',
+        '        if isinstance(info, dict) and info.get("state") != "MERGED":\n'),
+    "到達: 版の取り合いに blocked の行の PR も数える": (
+        '        if i["state"] in IN_PROGRESS and n and n not in infos:',
+        '        if i["state"] in (*IN_PROGRESS, "blocked") and n and n not in infos:'),
+    "到達: PR の欄の前後の空白を取らずに番号を読む": (
+        '        m = PR_NUMBER.fullmatch(issue.get("pr", "").strip())\n',
+        '        m = PR_NUMBER.fullmatch(issue.get("pr", ""))\n'),
+    "到達: 空白だけの PR の欄を番号でないと読む": (
+        '        if state in IN_PROGRESS and issue.get("pr", "").strip() and not n:\n',
+        '        if state in IN_PROGRESS and issue.get("pr", "") and not n:\n'),
     "到達: 閉じた・マージ済みの PR も版の取り合いに数える": (
         '        if isinstance(info, dict) and info.get("state") == "OPEN":\n',
         '        if isinstance(info, dict):\n'),
@@ -1458,7 +1494,9 @@ MUTATIONS = {
 }
 
 
-# 変異を同時に当てるプロセスの数（#494）。直列の 1 回は 405 秒（2026-10-31、負荷 3〜5 の 10 コアの macOS）だった。
+# 変異を同時に当てるプロセスの数の上限（#494）。直列の 1 回は 405 秒（2026-10-31、負荷 3〜5 の 10 コアの macOS）だった。
+# **`--jobs N` で絞る**（#749）——`check-all.py` が入れ子として親の半分を渡すので、`check-all.py --jobs 1` なら変異も 1 つずつ当てる。
+# 渡された値もこの上限で切る（入れ子の値が 4 を超えても、#494 で決めた重さを超えない）。
 MUTANT_JOBS = max(1, min(4, os.cpu_count() or 1))
 
 
@@ -1469,15 +1507,27 @@ def _mutant_killed(mutant: Path) -> bool:
         return bool(suite(mutant, first_failure=True))
     except _Killed:
         return True
+    except RecursionError:
+        # 依存を辿る変異（「まとめの中の依存も待つ」）は、まとめの行が自分のまとめの行に依存すると止まらずに辿る——
+        # 本体は依存の輪の守りを持たない（`ledger.load` が輪を拒むので、正しい本体では届かない。#736）。止まらないのは壊れた振る舞いなので赤に数える
+        return True
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="check-unattended-env.py の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS,
+                        help=f"変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS}。1 で 1 つずつ）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    jobs = min(opts.jobs, MUTANT_JOBS)
     # 起動場所のテストが本物の git を走らせる——GIT_DIR などが他のリポジトリを指す環境で、そちらを読まない
     for key in [k for k in os.environ if k.startswith("GIT_")]:
         del os.environ[key]
-    # **`_Killed` は `Exception` の子にしない**（#687）——いまの経路には飲む `except Exception` が無いので、戻しても他の表明は緑のまま。ここで見る
-    if issubclass(_Killed, Exception) or not issubclass(_Killed, BaseException):
-        print("  FAIL _Killed が Exception の子になっている（シナリオの except Exception に飲まれうる）")
+    # **`_Killed` は `BaseException` の直接の子にする**（#687・#749）——いまの経路には飲む `except Exception` が無いので、
+    # `Exception` の子に戻しても他の表明は緑のまま。`KeyboardInterrupt` などの子にしても同じなので、親そのものを見る
+    if _Killed.__bases__ != (BaseException,):
+        print(f"  FAIL _Killed の親が BaseException だけでない（{', '.join(b.__name__ for b in _Killed.__bases__)}）")
         failures.append("_Killed は BaseException の直接の子")
     print("陽性対照（元の本体）")
     bad = suite(SCRIPT)
@@ -1487,7 +1537,7 @@ def main() -> int:
     if not bad:
         print("  ok   全シナリオ")
 
-    print("変異テスト")
+    print(f"変異テスト（{jobs} 並列）")
     src = SCRIPT.read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory() as tmp:
         # 本体は同じ場所の ledger.py を読む（台帳の読み方を 2 箇所に置かない）——変異の隣にも置く
@@ -1505,7 +1555,7 @@ def main() -> int:
         # **変異は別々のプロセスで同時に当てる**（#494）——シナリオは `os.environ["PATH"]` を差し替えるので、スレッドでは混ざる。
         # 出力は変異の宣言順（終わった順ではない）。作業者は環境を親から受け継ぐ（`main` の冒頭で `GIT_*` を外した後）。
         with concurrent.futures.ProcessPoolExecutor(
-                max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
+                max_workers=jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
             verdicts = list(pool.map(_mutant_killed, mutants))
         for name, k in order:
             if k is None:

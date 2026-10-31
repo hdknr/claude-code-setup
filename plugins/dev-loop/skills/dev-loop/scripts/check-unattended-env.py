@@ -1056,11 +1056,12 @@ def reach_items(project, name, present, pr_view=None):
     memo = {}
 
     def outcome(number):
-        """(種類, 理由, 止まる元の番号)。"""
+        """(種類, 理由, 止まる元の番号)。
+
+        **依存の輪の守りを置かない**（#736）——台帳は上の `lg.load` が `validate` を通してから渡す。`validate` は行ごとの依存の輪と、
+        まとめを 1 つに数えた依存の輪（ここが辿る形——まとめの中の依存は数えない）の両方を拒むので、輪のある台帳（手で直したものも）はここに来ない。"""
         if number in memo:
             return memo[number]
-        # 辿っている途中で戻ってきたら輪——ledger.py は輪を拒むが、手で直した台帳で無限に辿らない
-        memo[number] = ("unknown", "依存が輪になっている（台帳を ledger.py show で確かめる）", number)
         issue = rows[number]
         if issue["state"] == "dropped":
             memo[number] = ("stop", "取り下げ", number)
