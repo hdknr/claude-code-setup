@@ -124,7 +124,8 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 反証と差し戻し: Verifier 0 件。`/code-review` 1 パス目の「直す」3 件を手順 4 に戻して直した
 - 交絡を潰した手順: SIGINT の観測は、同時の SIGINT が 1 つに重なって壊した本体でも 1 回に見えうる（陰性が実験の壊れでも出る）ので、
   時間をずらした観測（ずらし）を足し、main の本体で `['INT', 'INT', 'TERM']` が出ること（陽性対照）を確かめた。グループの観測も main の本体で 2 回を出した
-- 割り目: 不在のため訊かず続ける（`references/absent-lines.md` の「訊く場面」）
+- 割り目: 不在のため訊かず続けた（手順 4・手順 6 の 2 つとも）（`references/absent-lines.md` の「訊く場面」）
+- 歯止め: `check-all.py` を順番待ち越しに `eaaa54bd` の後の木で 57/57 緑。PR #757 の CI は `e2f2c40c` で緑（check・build。deploy は PR では飛ばし）
 
 ## 既知の限界・決着済みの論点
 
