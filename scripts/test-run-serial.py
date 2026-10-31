@@ -18,7 +18,9 @@ cruise はどのリポジトリでも使うので、対象リポジトリの `sc
 """
 from __future__ import annotations
 
+import ast
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -265,8 +267,10 @@ def observe_decl(script: Path, tmp: Path, tag: str) -> dict:
     return out
 
 
-# `slots_from` を直に当てる試料（#740・#741・#743・#745 の Issue に書いた形のまま）。期待値は正しい本体の値（judge が見る）。
-# 宣言の値が 8 なら「閉じない・始める」側（宣言はコードブロックの中で、1 のまま）、3 なら「閉じる・始めない」側（宣言は外で、3 と読む）。
+# `slots_from` を直に当てる試料（#740・#741・#743・#745・#739・#758 の Issue に書いた形のまま。見出しのコメントがどの Issue の形か）。
+# 期待値は正しい本体の値（judge が見る）。宣言の値が 8 なら「閉じない・始める」側（宣言はコードブロックの中で、1 のまま）、
+# 3 なら「閉じる・始めない」側（宣言は外で、3 と読む）。例外は「BOM が 2 つ」だけ——3 を書式に合わない行として読み、1 と言う。
+# 3 つの写し（run-serial・check-unattended-env・parent-issue）の突き合わせは `scripts/test-fence-copies.py` が持つ（ここは run-serial だけ）。
 PARSE_SAMPLES = {
     "字下げした ``` の後ろの例示": ("```\n    ```\n並行の検査: 8\n```", (1, None)),
     "~~~ の後ろの例示": ("```\n~~~\n並行の検査: 8\n```", (1, None)),
@@ -290,6 +294,11 @@ PARSE_SAMPLES = {
     "コメントで区切ったバッククォートの情報文字列": ("```a<!--`-->\n並行の検査: 3", (3, None)),
     "情報文字列の <!--": ("```<!--\n-->\n並行の検査: 8\n```", (1, None)),
     "情報文字列の <!-- で始めたコードブロックの後ろ": ("```<!--\n```\n並行の検査: 3", (3, None)),
+    # #758: \x0c で行を分けない・段落の途中のコメントの後ろの印・BOM は 1 つだけ外す
+    "後ろに \\x0c のある閉じ行": ("```\n```\x0c\n並行の検査: 8\n```", (1, None)),
+    "段落の途中のコメントの後ろの印": ("memo <!--\n```\n-->\n並行の検査: 8", (1, None)),
+    "BOM が 2 つ": ("\ufeff\ufeff並行の検査: 3",
+                   (1, f"`並行の検査` の行が書式に合わない（{chr(0xfeff) + '並行の検査: 3'!r}）——1 として扱う")),
 }
 
 
@@ -361,102 +370,128 @@ def observe_sigterm(script: Path, tmp: Path, tag: str) -> dict:
 
 
 MUTATIONS = {
-    # 守る 1: 枠の本数を超えて同時に走らせない
+    # 注釈 `# 守る N: <文言>` は、本体の docstring の「守る」の N 行目の書き出し（「- 」の後ろ）と同じ文言にする——
+    # main がこの並び・番号・文言を本体と突き合わせる（#758。番号を手で追うと違う行に着いた）
+    # 守る 1: 同じリポジトリでは、worktree をまたいで、枠の本数
     "枠を取らずに走らせる": (
         "                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)",
         "                pass"),
-    # 守る 2: 待っていることと走っているものを言う
+    # 守る 2: 待たされたら、待っていることと
     "待っていると言わない": (
         "            say(f\"待っている（同じリポジトリで同時に {slots} 本まで）。走っているもの: \"\n"
         "                + (\"; \".join(running) if running else \"（読めなかった）\"))",
         "            pass"),
-    # 守る 3: 終了コードをそのまま返す
+    # 守る 3: 走らせたコマンドの終了コードをそのまま返す
     "終了コードを捨てる": (
         "    return 128 - code if code < 0 else code",
         "    return 0"),
-    # 守る 4: 入れ子は待たずに走らせる
+    # 守る 4: 入れ子で呼ばれたら
     "入れ子でも枠を取る": (
         "    if os.environ.get(ENV) == str(lockdir):",
         "    if False:"),
-    # 守る 5: 枠を決められなければ走らせない
+    # 守る 5: 枠を決められなければ、コマンドを走らせずに 125 を返す
     "決められなくても走らせる": (
         "        say(\"枠を決められない（git の共通ディレクトリが決まらない）——走らせていない\")\n        return CANNOT",
         "        return run(command, dict(os.environ))"),
-    # 守る 6: 宣言が読めない値なら 1（言うだけでなく、実効の枠が 1）
+    # 守る 6: 宣言が 1 以上の整数（6 桁まで）でない
     "読めない値で 1 と言いつつ 3 本にする": (
         "        return 1, f\"`並行の検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——1 として扱う\"",
         "        return 3, f\"`並行の検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——1 として扱う\""),
-    # 守る 7: コードブロックと HTML コメントの中は数えない
+    # 守る 7: コードブロックと HTML コメントの中の行は宣言に数えない
     "コードブロックの中の行を数える": (
-        "        opened = None if comment else opens(line)",
+        "        opened = None if comment and not inline else opens(line)",
         "        opened = None"),
-    # 守る 8: ラッパーがシグナルを受けても、コマンドが終わるまで枠を離さない（SIGTERM・SIGHUP は渡す）
+    # 守る 8: コードブロックは、空白 4 つ以上で字下げした行では閉じない
+    "字下げした行でも閉じる": (
+        "    if len(line) - len(body) > 3:",
+        "    if False:"),
+    # 守る 9: コードブロックは、開いた印と別の文字
+    "別の文字の行でも閉じる": (
+        "    run = len(body) - len(body.lstrip(char))",
+        "    run = len(body) - len(body.lstrip(\"`~\"))"),
+    # 守る 10: 宣言の行末の HTML コメントは外して読む
+    "コメントの前のテキストを捨てる": (
+        "                    kept, comment, rest = kept + rest[:start], True, rest[start + 4:]",
+        "                    kept, comment, rest = \"\", True, rest[start + 4:]"),
+    # 守る 11: ラッパー自身が SIGTERM・SIGHUP・SIGINT を受けても
     "ラッパーがシグナルで先に終わる": (
         "    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP)}\n"
         "    previous[signal.SIGINT] = signal.signal(signal.SIGINT, hold)",
         "    previous = {}"),
-    # 守る 9: 字下げ 4 つ以上の行では閉じない（#740）
-    "字下げした行でも閉じる": (
-        "    if len(line) - len(body) > 3:",
-        "    if False:"),
-    # 守る 10: 別の文字の行では閉じない（#741）
-    "別の文字の行でも閉じる": (
-        "    run = len(body) - len(body.lstrip(char))",
-        "    run = len(body) - len(body.lstrip(\"`~\"))"),
-    # 守る 11: 行末の HTML コメントは外して読む（#741）
-    "コメントの前のテキストを捨てる": (
-        "                    kept, comment, rest = kept + rest[:start], True, rest[start + 4:]",
-        "                    kept, comment, rest = \"\", True, rest[start + 4:]"),
-    # 守る 12: SIGINT はコマンドに渡さない（#739）
+    # 守る 12: SIGINT はコマンドに渡さない
     "SIGINT もコマンドに渡す": (
         "    previous[signal.SIGINT] = signal.signal(signal.SIGINT, hold)",
         "    previous[signal.SIGINT] = signal.signal(signal.SIGINT, forward)"),
-    # 守る 13〜24: 閉じ行・開き行・行の分け方・BOM（#743・#745。試料は PARSE_SAMPLES）
+    # 守る 13: コードブロックは、空白 3 つまでで字下げした行で閉じる
     "空白 3 つの字下げの閉じ行で閉じない": (
         "    if len(line) - len(body) > 3:",
         "    if len(line) - len(body) > 2:"),
+    # 守る 14: コードブロックは、開いた印とちょうど同じ数の行で閉じる
     "同じ数の閉じ行で閉じない": (
         "    return run >= width and not body[run:].strip(\" \\t\")",
         "    return run > width and not body[run:].strip(\" \\t\")"),
+    # 守る 15: コードブロックは、後ろに空白とタブ以外の文字がある行
     "後ろに文字のある行でも閉じる": (
         "    return run >= width and not body[run:].strip(\" \\t\")",
         "    return run >= width"),
+    # 守る 16: コードブロックは、タブで字下げした行では閉じない
     "タブの字下げの行でも閉じる": (
         "    body = line.lstrip(\" \")",
         "    body = line.lstrip(\" \\t\")"),
+    # 守る 17: コードブロックは、後ろに空白とタブ以外の空白文字
     "後ろの全角の空白を許す": (
         "    return run >= width and not body[run:].strip(\" \\t\")",
         "    return run >= width and not body[run:].strip()"),
+    # 守る 18: 行は改行でだけ分ける
     "改行以外の区切りでも行を分ける": (
-        "    for line in NEWLINE.split(text.lstrip(\"\\ufeff\")):",
-        "    for line in text.lstrip(\"\\ufeff\").splitlines():"),
+        "    for line in NEWLINE.split(text.removeprefix(\"\\ufeff\")):",
+        "    for line in text.removeprefix(\"\\ufeff\").splitlines():"),
+    # 守る 19: `\x0c`（改ページ）の後ろも別の行と読まない
+    "\\x0c でも行を分ける": (
+        "NEWLINE = re.compile(r\"\\r\\n|\\r|\\n\")",
+        "NEWLINE = re.compile(r\"\\r\\n|\\r|\\n|\\x0c\")"),
+    # 守る 20: バッククォートの印の後ろにバッククォートがある行
     "バッククォートを含む情報文字列でも始める": (
         "    if mark[0] == \"`\" and \"`\" in line[opened.end():]:",
         "    if False:"),
+    # 守る 21: 空白 4 つ以上で字下げした印の行はコードブロックを始めない
     "空白 4 つの字下げでも始める": (
         "FENCE = re.compile(r\" {0,3}(`{3,}|~{3,})\")",
         "FENCE = re.compile(r\" {0,4}(`{3,}|~{3,})\")"),
+    # 守る 22: 行の途中の印はコードブロックを始めない
     "行の途中の印でも始める": (
         "    opened = FENCE.match(line)",
         "    opened = FENCE.search(line)"),
+    # 守る 23: `~~~` の印でもコードブロックを始める
     "~~~ で始めない": (
         "FENCE = re.compile(r\" {0,3}(`{3,}|~{3,})\")",
         "FENCE = re.compile(r\" {0,3}(`{3,})\")"),
+    # 守る 24: HTML コメントの中の印はコードブロックを始めない
     "コメントの中の印で始める": (
-        "        opened = None if comment else opens(line)",
+        "        opened = None if comment and not inline else opens(line)",
         "        opened = opens(line)"),
+    # 守る 25: 開き行は元の行で見る
     "開き行をコメントを外した残りで見る": (
         "        if kept.strip():\n            lines.append(kept)",
         "        if not comment and opens(kept):\n            fence = opens(kept)\n            continue\n"
         "        if kept.strip():\n            lines.append(kept)"),
+    # 守る 26: 情報文字列の `<!--` はコメントの始まりと読まない
     "情報文字列の <!-- をコメントと読む": (
-        "        opened = None if comment else opens(line)",
-        "        opened = None if comment or \"<!--\" in line else opens(line)"),
+        "        opened = None if comment and not inline else opens(line)",
+        "        opened = None if comment and not inline or \"<!--\" in line else opens(line)"),
+    # 守る 27: 行の途中で始まって閉じないコメントの後ろの行でも
+    "段落の中のコメントの後ろの印で始めない": (
+        "        opened = None if comment and not inline else opens(line)",
+        "        opened = None if comment else opens(line)"),
+    # 守る 28: 先頭の BOM を外して読む
     "BOM を外さない": (
-        "    for line in NEWLINE.split(text.lstrip(\"\\ufeff\")):",
+        "    for line in NEWLINE.split(text.removeprefix(\"\\ufeff\")):",
         "    for line in NEWLINE.split(text):"),
+    # 守る 29: 先頭の BOM は 1 つだけ外す
+    "続く BOM も外す": (
+        "    for line in NEWLINE.split(text.removeprefix(\"\\ufeff\")):",
+        "    for line in NEWLINE.split(text.lstrip(\"\\ufeff\")):"),
 }
-
 
 OBSERVERS = {
     "serial": observe_serial, "parallel": observe_parallel, "codes": observe_codes, "nested": observe_nested,
@@ -493,6 +528,9 @@ MUTATION_PROBE = {
     "開き行をコメントを外した残りで見る": ("parse",),
     "情報文字列の <!-- をコメントと読む": ("parse",),
     "BOM を外さない": ("parse",),
+    "\\x0c でも行を分ける": ("parse",),
+    "段落の中のコメントの後ろの印で始めない": ("parse",),
+    "続く BOM も外す": ("parse",),
 }
 
 
@@ -550,7 +588,7 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
             else:
                 ck(f"{label}: 何も言わない（宣言ではない）", not said)
     if "parse" in o:
-        head("\n`slots_from` を直に当てる（#740・#741・#743・#745 の形）")
+        head("\n`slots_from` を直に当てる（#740・#741・#743・#745・#739・#758 の形）")
         for label, got in o["parse"].items():
             ck(f"{label}: {PARSE_SAMPLES[label][1]}", got == PARSE_SAMPLES[label][1])
     if "sigterm" in o:
@@ -562,6 +600,22 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
         for label, got in o["sigint"].items():
             ck(f"{label}: コマンドが受けたのは SIGINT 1 回と、終わらせる SIGTERM（{got['log']}）", got["log"] == ["INT", "TERM"])
             ck(f"{label}: 0 で終わった", got["終了コード"] == 0)
+
+
+def annotations(test_source: str) -> list[tuple[str, int, str]]:
+    """MUTATIONS の注釈を (変異の名前, 守るの番号, 文言) で並べる。注釈の直後の `    "<名前>": (` の行を、その注釈の変異とする。"""
+    block = test_source.split("\nMUTATIONS = {\n", 1)[1].split("\n}\n", 1)[0]
+    found, pending = [], None
+    for line in block.splitlines():
+        m = re.match(r"    # 守る (\d+): (.+)$", line)
+        if m:
+            pending = (int(m.group(1)), m.group(2))
+            continue
+        m = re.match(r'    "(.+)": \($', line)
+        if m and pending:
+            found.append((ast.literal_eval(f'"{m.group(1)}"'), *pending))
+            pending = None
+    return found
 
 
 def main() -> int:
@@ -595,6 +649,14 @@ def main() -> int:
         promises = [line for line in body.splitlines() if line.startswith("- ")]
         check(f"本体の「守る」{len(promises)} 行に対して変異が {len(MUTATIONS)} 件",
               len(promises) == len(MUTATIONS))
+
+        print("\n変異の注釈（# 守る N: <文言>）が、本体の「守る」の N 行目と並び・番号・文言で合うか（#758）")
+        notes = annotations(Path(__file__).read_text(encoding="utf-8"))
+        check("注釈が変異ごとに 1 つ・変異と同じ順", [name for name, _, _ in notes] == list(MUTATIONS))
+        check("番号が 1 から順に並ぶ", [n for _, n, _ in notes] == list(range(1, len(notes) + 1)))
+        for name, n, words in notes:
+            check(f"守る {n}（{name}）の文言が本体の {n} 行目の書き出し",
+                  0 < n <= len(promises) and promises[n - 1][2:].startswith(words))
 
         print("\n実環境を対象にしない歯止め")
         try:

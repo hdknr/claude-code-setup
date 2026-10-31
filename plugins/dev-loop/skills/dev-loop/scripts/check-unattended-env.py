@@ -204,7 +204,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **知らない返り値を「良い」に混ぜない**——判定できない
 - **何も書かない**——設定ファイルにも、どこにも
 - **`--cruise` で、宣言した操作を点検から落とさない**——既定（か `--command`）に足す。フェンスの中の行は宣言にしない。
-  **種類の違うフェンスの記号では閉じない**。**宣言の形に届かなかった行を黙って読み飛ばさない**（要対処）
+  **種類の違うフェンスの記号では閉じない**。**宣言の形に届かなかった行を黙って読み飛ばさない**（要対処）。
+  **フェンスとコメントの読み方は、同じ `.claude/dev-loop.md` を読む cruise の `run-serial.py` と同じにする**（#759。`visible_lines` の docstring）
 - **`--cruise` で、止まりうる操作を「良い」と出した操作からも外さない**——settings の判定とは別の区分で全部出す
 - **`--cruise` で、worktree の中からの起動を「良い」にしない**——判定できなければ「判定できない」
 - **`--present` で、許可の項目を落とさない**——落とすのは不在に限る項目だけ
@@ -765,43 +766,65 @@ def exit_code(items):
 DECLARE = re.compile(r"^cruise の操作:(.*)$")
 # 宣言の形に届かなかった行（字下げ・箇条書き・引用・全角コロン）——黙って読み飛ばさずに要対処にする
 NEAR = re.compile(r"^\s*(?:(?:[-*+>]|\d+[.)])\s*)*cruise\s*の\s*操作")
-# フェンスは開いた記号と同じ種類・同じ長さ以上で、後ろに何も無い行でだけ閉じる（CommonMark）。
-# `` ` `` の印の後ろに `` ` `` があればインラインコードで、フェンスを開かない
-FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+# コードブロック（フェンス）とコメントの読み方は `../../cruise/scripts/run-serial.py` の `declared_lines` の写し（同じ `.claude/dev-loop.md` を読む）。
+# 3 つの写し（ここ・run-serial.py・parent-issue.py）は、リポジトリの `scripts/test-fence-copies.py` が同じ試料の表で突き合わせる（#759）
+NEWLINE = re.compile(r"\r\n|\r|\n")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+COMMENT_BLOCK = re.compile(r" {0,3}<!--")  # 行頭（空白 3 つまで）で始まるコメント。それ以外は段落の中のコメント
 
 
-def uncommented(line, in_comment):
-    """HTML コメント（`<!--` 〜 `-->`）を除いた行の残りと、行末でコメントの中にいるかを返す。
-    コメントの中の宣言は、無効にしたものとして読まない（複数行にまたがっても）。"""
-    out = ""
-    while True:
-        if in_comment:
-            close = line.find("-->")
-            if close < 0:
-                return out, True
-            line, in_comment = line[close + 3:], False
-        start = line.find("<!--")
-        if start < 0:
-            return out + line, False
-        out, line, in_comment = out + line[:start], line[start + 4:], True
+def closes(line, char, width):
+    """フェンスの閉じ行か（CommonMark）: 字下げは空白 3 つまで（タブは 4 桁に数えるので、タブの字下げでは閉じない）、
+    開いた印と同じ文字を同じ数以上、後ろには空白とタブだけ（全角の空白などは置けない）。"""
+    body = line.lstrip(" ")
+    if len(line) - len(body) > 3:
+        return False
+    run = len(body) - len(body.lstrip(char))
+    return run >= width and not body[run:].strip(" \t")
+
+
+def opens(line):
+    """フェンスの開き行か（CommonMark）。開くなら (印の文字, 数)。`` ` `` の印の後ろ（情報文字列）に `` ` `` があれば開かない（インラインコード）。"""
+    opened = FENCE.match(line)
+    if not opened:
+        return None
+    mark = opened.group(1)
+    if mark[0] == "`" and "`" in line[opened.end():]:
+        return None
+    return mark[0], len(mark)
 
 
 def visible_lines(text):
-    """フェンスの中と HTML コメントの中を除いた行（宣言として読む行）。`.claude/dev-loop.md` の宣言はどれもこれで読む。"""
-    fence, in_comment = None, False
-    for line in text.splitlines():
-        f = FENCE.match(line)
-        if fence is None:
-            line, in_comment = uncommented(line, in_comment)
-            f = FENCE.match(line)
-            if f and not (f.group(1)[0] == "`" and "`" in f.group(2)):
-                fence = f.group(1)
-                continue
-        if fence is not None:
-            if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():
+    """フェンスの中と HTML コメントの中を除いた行（宣言として読む行。コメントは外した残り）。`.claude/dev-loop.md` の宣言はどれもこれで読む。
+    行は改行（`\n`・`\r\n`・`\r`）でだけ分ける（`str.splitlines` は `\x0b`・`\x0c` などでも分ける）。開き行は元の行で見る
+    （コメントを外した残りで見ない）——開き行の後ろの `<!--` は情報文字列。行の途中で始まって閉じないコメント（段落の中）は、
+    開き行で終わる（CommonMark ではフェンスが段落を割り込む）。BOM は読む側（`read_dev_loop_md`）が 1 つ外す。"""
+    fence, comment, inline = None, False, False
+    for line in NEWLINE.split(text):
+        if fence:
+            if closes(line, *fence):
                 fence = None
             continue
-        yield line
+        opened = None if comment and not inline else opens(line)
+        if opened:
+            fence, comment = opened, False
+            continue
+        kept, rest = "", line
+        while rest:
+            if comment:
+                close = rest.find("-->")
+                if close < 0:
+                    rest = ""
+                else:
+                    comment, rest = False, rest[close + 3:]
+            else:
+                start = rest.find("<!--")
+                if start < 0:
+                    kept, rest = kept + rest, ""
+                else:
+                    kept, comment, rest = kept + rest[:start], True, rest[start + 4:]
+                    inline = not COMMENT_BLOCK.match(line)
+        yield kept
 
 
 def read_dev_loop_md(project):

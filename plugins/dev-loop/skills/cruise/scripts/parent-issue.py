@@ -31,7 +31,10 @@ r"""親 Issue の本文に並べた Issue と依存を取り出し、確かめ�
 
 - **チェックリストの行**（`-`・`*`・`+`・`1.`・`1)` のあとに `[ ]` か `[x]`）だけを読む。ほかの行は読まない。
   **コードフェンスの中（インデントされたものを含む）と HTML コメント（`<!-- … -->`）の中も読まない。**
-  フェンスは**開いたのと同じ文字で、同じ長さ以上の行**で閉じる（インデントは開きの幅＋3 まで。タブは 4 桁の区切りまで数える）。
+  フェンスは**開いたのと同じ文字で、同じ長さ以上の行**で閉じる（インデントは開きの幅＋3 まで。タブは 4 桁の区切りまで数える。インデントは空白とタブだけ。閉じの印の後ろには空白とタブしか置けない）。
+  行は改行（`\n`・`\r\n`・`\r`）でだけ分け、先頭の BOM は 1 つだけ外す。
+  **フェンスの読み方の写しが `run-serial.py` と dev-loop の `check-unattended-env.py` にあり、リポジトリの `scripts/test-fence-copies.py` が
+  同じ試料の表で突き合わせる**（#760。違えてあるのは `visible_lines` の docstring の 3 つ）。
   `` ` `` の印の後ろに `` ` `` がある行はフェンスではない（インラインコード）。フェンスの開きの行の `<!--` は情報文字列で、コメントではない。
   HTML コメントは GitHub の画面に合わせて、**行頭の `<!--` から `-->` を含む行まで**と、**1 行の中で閉じる `<!-- … -->`** を読まない。
   **インラインコードの中の `<!--` と、行の途中で同じ行に閉じない `<!--` はコメントではない**（画面にそのまま見える）。
@@ -79,6 +82,10 @@ cruise: 仕様の穴 = 推奨で決めて起票
   **閉じは開きと同じ文字・同じ長さ以上で見る**——違う印で閉じたと読むと、例を読み、本物を落とす。
 - **開きの幅＋3 より深い印では閉じない**——フェンスの中にインデントして貼った例の印で閉じたと読むと、例を読む。
 - **インデントのタブは 4 桁の区切りまで数える**——タブを 1 桁と数えると、タブで字下げした例の印で閉じたと読む。
+- **インデントは空白とタブだけで数える**——全角の空白などで字下げした行をフェンスの開き・閉じと読まない（#760）。
+- **閉じの印の後ろに空白とタブ以外の文字（全角の空白など）がある行では閉じない**——閉じたと読むと、例を読み、本物を落とす（#760）。
+- **行は改行でだけ分ける**——`\x0b`・`\x0c` などの後ろを別の行（閉じの印）と読まない（#760）。
+- **先頭の BOM を 1 つ外して読む**——1 行目のチェックリストの行を落とさない（#760）。
 - **`` ` `` の印の後ろに `` ` `` がある行をフェンスの開きと読まない**——インラインコードを開きと読むと、見える行を落とし、隠れた行を読む。
 - **閉じていないコードフェンスは拒む**——閉じ忘れの後ろの行を、黙って全部落とさない。
 - **HTML コメントの中のチェックリストは読まない**——Issue の画面に見えない行を、確かめさせずに回さない。
@@ -144,7 +151,8 @@ LINE_RE = re.compile(r"^\s*cruise:\s*(?P<key>[^=]*?)\s*=\s*(?P<value>.*?)\s*$")
 MENTION_RE = re.compile(r"cruise:", re.IGNORECASE)
 FORBIDDEN = "本番反映"
 REF_RE = re.compile(r"#[0-9]+")
-FENCE_RE = re.compile(r"^(?P<indent>\s*)(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
+FENCE_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
+NEWLINE = re.compile(r"\r\n|\r|\n")
 CODE_RE = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)")
 
 
@@ -197,11 +205,11 @@ def opens(line):
 
 
 def closes(line, fence, indent):
-    """`line` が `fence`（開いたフェンスの印）を閉じるか——同じ文字で、同じ長さ以上で、後ろに何も無く、
-    インデントが開きの幅＋3 まで（それより深い印はフェンスの中身）。"""
+    """`line` が `fence`（開いたフェンスの印）を閉じるか——同じ文字で、同じ長さ以上で、後ろに空白とタブしか無く
+    （全角の空白などがあれば閉じない）、インデントが開きの幅＋3 まで（それより深い印はフェンスの中身）。"""
     m = FENCE_RE.match(line)
     return bool(m) and m.group("fence")[0] == fence[0] and len(m.group("fence")) >= len(fence) \
-        and not m.group("info").strip() and width(m.group("indent")) <= indent + 3
+        and not m.group("info").strip(" \t") and width(m.group("indent")) <= indent + 3
 
 
 def lines_table(ledger_script):
@@ -215,11 +223,15 @@ def lines_table(ledger_script):
         raise Unknown(f"ledger.py の LINES を読めなかった: {exc}") from exc
 
 
-def parse(body, table):
-    """本文から ([{"number", "deps", "title"}]（未チェックだけ・依存先が先）, 読み飛ばした行, 線, 無視した行) を返す。"""
-    items, skipped, done, fence, in_comment = [], [], set(), None, False
-    lines, ignored = {}, []
-    for lineno, line in enumerate(body.splitlines(), 1):
+def visible_lines(body):
+    """本文のうち、コードフェンスと HTML コメントの外の行を (行番号, コメントを外した残り) で出す。先頭の BOM は 1 つだけ外す。
+    行は改行（`\n`・`\r\n`・`\r`）でだけ分ける（`str.splitlines` は `\x0b`・`\x0c` などでも分ける）。開きの行は元の行で見る。
+    閉じていないフェンス・行頭のコメントは、出し終えたあとで拒む（`Refused`）。
+    **フェンスの読み方は `run-serial.py`・dev-loop の `check-unattended-env.py` と同じ試料で突き合わせる**（リポジトリの
+    `scripts/test-fence-copies.py`。違うのは、開きの字下げを数えない（リストの中のフェンス）・閉じの深さを開きの幅から数える・
+    行の途中で同じ行に閉じない `<!--` を文字と読む、の 3 つ——チェックリストの行が段落を切るので）。"""
+    fence, in_comment = None, False
+    for lineno, line in enumerate(NEWLINE.split(body.removeprefix("\ufeff")), 1):
         if fence:
             if closes(line, fence, indent):
                 fence = None
@@ -232,6 +244,18 @@ def parse(body, table):
         line, in_comment = visible(line, in_comment)
         if in_comment and not was_in_comment:
             comment_line = lineno
+        yield lineno, line
+    if fence:
+        raise Refused(f"{fence_line} 行目のコードフェンス {fence} が閉じていない（後ろの行を読めない）")
+    if in_comment:
+        raise Refused(f"{comment_line} 行目の <!-- が閉じていない（後ろの行を読めない）")
+
+
+def parse(body, table):
+    """本文から ([{"number", "deps", "title"}]（未チェックだけ・依存先が先）, 読み飛ばした行, 線, 無視した行) を返す。"""
+    items, skipped, done = [], [], set()
+    lines, ignored = {}, []
+    for lineno, line in visible_lines(body):
         decl = LINE_RE.match(line)
         if decl:
             key, value = decl.group("key"), decl.group("value")
@@ -279,10 +303,6 @@ def parse(body, table):
             done.add(number)
             continue
         items.append({"number": number, "deps": deps, "title": " ".join(outside.split())})
-    if fence:
-        raise Refused(f"{fence_line} 行目のコードフェンス {fence} が閉じていない（後ろの行を読めない）")
-    if in_comment:
-        raise Refused(f"{comment_line} 行目の <!-- が閉じていない（後ろの行を読めない）")
     if not items:
         if done:
             raise Refused("未チェックの Issue が 0 件（すべて [x]——回すものが無い）")
