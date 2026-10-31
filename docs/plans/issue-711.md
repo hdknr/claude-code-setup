@@ -58,7 +58,7 @@
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-711`（`prepare-worktree.sh` で作った。cruise の子なので `EnterWorktree` は使わず、`cd <worktree> && …` で作業する）
 - 起点: `745bb1c`
 - base: 参照 `origin/main`（`refs/remotes/origin/HEAD`、取り直した）→ `745bb1c2f1e50b6d2bdba68327073c287b81ccd7`
-- PR: （未作成）
+- PR: #721
 
 ## verify の受入基準
 
@@ -121,6 +121,9 @@
 - 割り目（手順 4）: 不在の周なので訊かない（`absent-lines.md`「訊く場面」）。このまま続ける
 - 1 パス目: 起動（1 パス目の指摘対応の起点 `18bf534e115e9894f5be7c706e8d56d21bdc7ee0`——関門に渡した時点の HEAD）。Verifier（sonnet）・`/code-review`（high）。base は `745bb1c2f1e50b6d2bdba68327073c287b81ccd7`
   - Verifier（`dev-loop:dev-loop-verifier`・sonnet。193 行と報告・ツールは Read/Bash）: **反証 0 件**。I1・I2・I3・I9 を一時台帳で旧版と比べて判別（旧版は 13・12 を出す）。独立の変異は当てていない（I4・I5・I7・I8 はテストの試料の変異に依る）。J5 は 23 件（親が台帳に足した分で増えた）で取りこぼしなし。porcelain は前後同じ
+  - `/code-review`（high）: 指摘 6 件。採否は下の「1 パス目の採否」（直す 2・残課題 4）。指摘対応 `4e36e49e0cf2cae225e56fad29a9e4007aaabd44`（差分は 0 行でない→2 パス目あり）。check-all 56/56
+- 割り目（2 パス目の前）: 不在の周なので訊かない。このまま続ける。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 2 パス目: 起動（Verifier・`/code-review`。base は同じ `745bb1c…`。指摘対応の差分は `18bf534e..4e36e49e`）
 - 実験（K1）: 一時リポジトリに `cruise-issue-474.json` を写し、main（`745bb1c`）と新しい `ledger.py` で `show`（121 行）・`next`（10 行）を走らせて `cmp` で一致。実台帳は読んだだけ（写しと `cmp` で不変）。
   交絡: 実台帳には取り残しの行も「マージの線の無い印」も無い——つまり新しい分岐はこの台帳では走らない。互換として言えるのは「この台帳で出力が変わらない」までで、分岐そのものは `test-ledger.py` の試料（陽性: 変異で出力が変わる）で見る。
 - 実験（J5）: 開いた `要確認:` の Issue 20 件を `gh issue list` で取り、全件が本文の先頭に `<!-- cruise-decision: #474 -->` を持ち台帳の `decisions` に入っていた——取りこぼしは示せない（観測窓: 2026-10-31 時点の開いた Issue のみ。閉じたものは見ていない）
