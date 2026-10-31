@@ -64,6 +64,10 @@ DIST_SAMPLES = (
     ("利用者の確認（起動時・t1）配布を見せて確かめた", "なし"),
     ("利用者の確認（起動時・t1）。配布を見せて確かめた", "なし"),
     ("利用者の確認（起動時・t1、配布を見せて確かめた）。", "なし"),
+    # #711 の 2 パス目: `）` の後ろの空白・`——`、前の空白も区切りではない（docstring と cruise §2 の 1 が「なし」と言う形）
+    ("利用者の確認（起動時・t1、配布を見せて確かめた） 利用者の確認（再開時・t2）", "なし"),
+    ("利用者の確認（起動時・t1、配布を見せて確かめた）——（再開時・t2）", "なし"),
+    ("利用者の確認 配布を見せて確かめた", "なし"),
 )
 # 照合の正規表現（`DIST_MARK_RE.pattern`）の分岐を 1 つずつ外す (探す文字列, 置き換え)。**どれを外しても DIST_SAMPLES の判定がどれか変わる**（#681）。
 # 本体の「守る」の 1 行（区切った形でだけ「あり」）の中身なので、MUTATIONS（「守る」と 1 対 1）には足さず、正規表現だけを差し替えて当てる
@@ -89,6 +93,9 @@ REGEX_LOOSEN = (
     ("[（、・＋]", "[（、・＋。]"),          # 前に 。
     ("[＋（]", "[＋（、]"),                # ） の後ろに 、
     ("[＋（]", "[＋（。]"),                # ） の後ろに 。
+    ("[＋（]", "[＋（ ]"),                 # ） の後ろに空白
+    ("[＋（]", "[＋（—]"),                 # ） の後ろに —
+    ("[（、・＋]", "[（、・＋ ]"),          # 前に空白
 )
 
 
@@ -598,6 +605,11 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     run(mod, ["set", "gx", "1", "state=merged", "pr=#7"], root)
     r = str(run(mod, ["show", "gx"], root)[1])
     o["取り残しの next"] = (run(mod, ["next", "gx"], root)[1].split(), "着手できる: なし" in r)
+    # 取り残された行を merged のまま抜く形は拒む（台帳は変えない）——抜くと名指しも next の止めも外れる（#711 の 2 パス目）
+    before = snapshot(plans / "cruise-gx.json")
+    o["取り残しを merged のまま抜く"] = (run(mod, ["set", "gx", "3", "group="], root)[0],
+                                     run(mod, ["set", "gx", "3", "group=", "state=merged"], root)[0],
+                                     snapshot(plans / "cruise-gx.json") == before)
     run(mod, ["set", "gx", "3", *back], root)
     o["戻す途中の next"] = run(mod, ["next", "gx"], root)[1].split()
     run(mod, ["set", "gx", "2", *back], root)
@@ -808,6 +820,9 @@ MUTATIONS = {
     # 守る（#711）: 名指しした行を依存先として済んだと読まない
     "next が名指しした行を依存先として済んだと読む": [
         ("(state.get(d) == DONE and d not in stranded)", "(state.get(d) == DONE)")],
+    # 守る（#711）: 名指しした行を merged のまままとめから抜かない
+    "名指しした行を merged のまま抜ける": [
+        ('    if "group" in changes and is_stranded(issue) and after["state"] == DONE:', "    if False:")],
     "落ちた行があっても終わりの行を出す": [
         ('for i in data["issues"]) and not stranded:\n', 'for i in data["issues"]):\n')],
     "書いてから検査する": [
@@ -1081,6 +1096,8 @@ def main() -> int:
               and o["戻した後の next(b)"] == ["1"])
         print("\n取り残された行と依存・名指しの項（L17・#711）")
         check("取り残しのあいだ、まとめの外で依存する 5 も出さない（next・show）", o["取り残しの next"] == ([], True))
+        check("取り残された行を merged のまま抜く set group=（state=merged を添えても）は 3 で、台帳は変えない（#711）",
+              o["取り残しを merged のまま抜く"] == (3, 3, True))
         check("依存している側（3）を先に戻した途中でも、3 も 5 も出さない", o["戻す途中の next"] == [])
         check("戻し終えたら 2 が出る（陽性対照）", o["戻し終えた next"] == ["2"])
         check("まとめの PR 中に落ちた行（merged でない）は名指ししない", o["PR 中の落ちた行"] is False)
