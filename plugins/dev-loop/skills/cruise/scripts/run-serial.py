@@ -24,8 +24,9 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 
 - **宣言が無ければ 1**（安全側）。**ファイルが在るのに読めない（UTF-8 でない・権限）・値が 1 以上の整数（6 桁まで）でない・行が 2 本以上・`並行の検査` を含むのに上の形に合わない行
   （全角のコロン・字下げ・箇条書きの印など）があるなら 1 として扱い、そう言う。**
-- **コードブロック（` ``` `・`~~~` を 3 つ以上。字下げが空白 3 つまでの、同じ文字で同じ数以上の行で閉じる——CommonMark の規則）と HTML コメント（`<!-- … -->`。行の途中で始まっても）の中の行は宣言に数えない**——例示や外した行で枠が増えない。
-  先頭の BOM は読み飛ばす。
+- **コードブロック（` ``` `・`~~~` を 3 つ以上。CommonMark の規則——字下げが空白 3 つまでの、同じ文字で同じ数以上だけの行で閉じ、後ろには空白とタブしか置けない。
+  バッククォートの印の後ろにバッククォートがある行は始まりでない）と HTML コメント（`<!-- … -->`。行の途中で始まっても）の中の行は宣言に数えない**——例示や外した行で枠が増えない。
+  行は改行（`\n`・`\r\n`・`\r`）でだけ分ける。先頭の BOM は読み飛ばす。
 - 読むのは**メインの作業ツリー**の `.claude/dev-loop.md`（共通ディレクトリ `--git-common-dir` が `.git` ならその親）。
   **worktree の中の写しは読まない**——周ごとにブランチの写しが違うと、同じリポジトリで枠の数が食い違う。
   メインの作業ツリーが決まらない（`--separate-git-dir`・サブモジュール・bare）なら宣言は読まず 1。
@@ -60,7 +61,20 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - コードブロックは、空白 4 つ以上で字下げした行では閉じない（CommonMark の閉じ行でない）
 - コードブロックは、開いた印と別の文字（` ``` ` に対する `~~~`）の行では閉じない
 - 宣言の行末の HTML コメントは外して読む（`並行の検査: 3 <!-- メモ -->` は 3）
-- ラッパー自身が SIGTERM・SIGHUP・SIGINT を受けても、コマンドに渡して、コマンドが終わるまで枠を離さない
+- ラッパー自身が SIGTERM・SIGHUP・SIGINT を受けても、コマンドが終わるまで枠を離さない。SIGTERM・SIGHUP はコマンドに渡す
+- SIGINT はコマンドに渡さない——端末の Ctrl-C（プロセスグループ全体への SIGINT）で、コマンドに 2 度届かない（#739）
+- コードブロックは、空白 3 つまでで字下げした行で閉じる
+- コードブロックは、開いた印とちょうど同じ数の行で閉じる
+- コードブロックは、後ろに空白とタブ以外の文字がある行（` ``` x`）では閉じない
+- コードブロックは、タブで字下げした行では閉じない（タブは 4 桁に数える。#743）
+- コードブロックは、後ろに空白とタブ以外の空白文字（全角の空白など）がある行では閉じない（#743）
+- 行は改行でだけ分ける——`\x0b`・`\x0c` などの後ろを別の行（閉じ行）と読まない（#743）
+- バッククォートの印の後ろにバッククォートがある行（` ```a`b `）はコードブロックを始めない（#743）
+- 空白 4 つ以上で字下げした印の行はコードブロックを始めない
+- 行の途中の印はコードブロックを始めない
+- `~~~` の印でもコードブロックを始める
+- HTML コメントの中の印はコードブロックを始めない
+- 先頭の BOM を外して読む
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
@@ -70,6 +84,9 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 宣言を信頼するかは見ない（枠を増やすのは負荷を緩めるだけで、権限は広げない）
 - 宣言を変えた時点で走っているもの（減らす前の枠の番号を持つもの）は数えない
 - ラッパーが SIGKILL で殺されたら、枠は外れ、コマンドは走り続ける（捕まえられないシグナル）
+- ラッパーにだけ送った SIGINT（`kill -INT <ラッパーの pid>`）はコマンドに届かない——コマンドを止めるなら、ラッパーに SIGTERM を送るか、プロセスグループに SIGINT を送る
+- プロセスグループ全体に送った SIGTERM・SIGHUP は、コマンドに 2 度届く（直接と、ラッパーの転送）——ラッパーの pid だけに送られたときに止まらなくなるので、渡すのをやめない
+- コマンドを起こしてからシグナルの扱いを置くまでの間に届いたシグナルは、ラッパーを既定の動き（終わる）にする
 - 入れ子の印（環境変数）はコマンドの子孫すべてに渡る——コマンドが残したバックグラウンドのプロセスが後で順番待ちを呼ぶと、待たずに走る
 - 入れ子の印は 1 つのリポジトリしか持たない——別のリポジトリをはさんで同じリポジトリへ戻る入れ子（A → B → A）は、枠 1 なら固まる
 - 待つ側の順番（公平性）は決めない——枠が空いたときに先に見た側が取る
@@ -95,6 +112,7 @@ USAGE = 2
 NOT_FOUND = 127
 POLL = 0.5
 DECL = re.compile(r"^並行の検査:[ \t]*(.*?)[ \t]*$")
+NEWLINE = re.compile(r"\r\n|\r|\n")
 DIGITS = re.compile(r"[0-9]{1,6}")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 
@@ -119,22 +137,36 @@ def common_dir(cwd: Path) -> Path | None:
 
 
 def closes(line: str, char: str, width: int) -> bool:
-    """コードブロックの閉じ行か（CommonMark）: 字下げは空白 3 つまで、開いた印と同じ文字だけを同じ数以上（後ろの空白は可）。"""
-    indent = len(line) - len(line.lstrip(" "))
-    body = line.strip()
-    return indent <= 3 and len(body) >= width and set(body) == {char}
+    """コードブロックの閉じ行か（CommonMark）: 字下げは空白 3 つまで（タブは 4 桁に数えるので、タブの字下げでは閉じない）、
+    開いた印と同じ文字を同じ数以上、後ろには空白とタブだけ（全角の空白などは置けない）。"""
+    body = line.lstrip(" ")
+    if len(line) - len(body) > 3:
+        return False
+    run = len(body) - len(body.lstrip(char))
+    return run >= width and not body[run:].strip(" \t")
+
+
+def opens(kept: str) -> tuple[str, int] | None:
+    """コードブロックの開き行か（CommonMark）。開くなら (印の文字, 数)。バッククォートの印の後ろ（情報文字列）にバッククォートがあれば開かない。"""
+    opened = FENCE.match(kept)
+    if not opened:
+        return None
+    mark = opened.group(1)
+    if mark[0] == "`" and "`" in kept[opened.end():]:
+        return None
+    return mark[0], len(mark)
 
 
 def declared_lines(text: str) -> list[str]:
     """コードブロックと HTML コメントの外の行。先頭の BOM は外す。
 
-    コードブロックは、開いた印（` ``` `・`~~~` を 3 つ以上）と同じ文字で、同じ数以上だけの行で閉じる（CommonMark の規則）。
+    コードブロックは、開いた印（` ``` `・`~~~` を 3 つ以上）と同じ文字で、同じ数以上だけの行で閉じる（CommonMark の規則。`closes`・`opens`）。
+    行は改行（`\n`・`\r\n`・`\r`）でだけ分ける——`str.splitlines` は `\x0b`・`\x0c`・`\u2028` などでも分けるので使わない。
     HTML コメントは行のどこで始まっても、閉じるまで（行をまたいでも）外す。"""
     lines: list[str] = []
     fence: tuple[str, int] | None = None
     comment = False
-    for line in text.lstrip("\ufeff").splitlines():
-        stripped = line.strip()
+    for line in NEWLINE.split(text.lstrip("\ufeff")):
         if fence:
             char, width = fence
             if closes(line, char, width):
@@ -154,9 +186,9 @@ def declared_lines(text: str) -> list[str]:
                     kept, rest = kept + rest, ""
                 else:
                     kept, comment, rest = kept + rest[:start], True, rest[start + 4:]
-        opened = FENCE.match(kept)
+        opened = opens(kept)
         if opened and not comment:
-            fence = (opened.group(1)[0], len(opened.group(1)))
+            fence = opened
             continue
         if kept.strip():
             lines.append(kept)
@@ -253,7 +285,12 @@ def run(command: list[str], env: dict[str, str]) -> int:
         except ProcessLookupError:
             pass
 
-    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
+    def hold(_signum, _frame):
+        """SIGINT は渡さない——端末の Ctrl-C はプロセスグループ全体に届き、コマンドも直接受け取るので、渡すと 2 度になる（#739）。
+        受けても終わらずに待つ（枠を持ったまま）。"""
+
+    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP)}
+    previous[signal.SIGINT] = signal.signal(signal.SIGINT, hold)
     try:
         code = proc.wait()
     finally:
