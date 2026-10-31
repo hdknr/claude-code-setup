@@ -22,9 +22,9 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 並行の検査: 2
 ```
 
-- **宣言が無ければ 1**（安全側）。**値が 1 以上の整数でない・行が 2 本以上・`並行の検査` を含むのに上の形に合わない行
+- **宣言が無ければ 1**（安全側）。**ファイルが在るのに読めない（UTF-8 でない・権限）・値が 1 以上の整数（6 桁まで）でない・行が 2 本以上・`並行の検査` を含むのに上の形に合わない行
   （全角のコロン・字下げ・箇条書きの印など）があるなら 1 として扱い、そう言う。**
-- **コードブロック（` ``` `・`~~~`）と HTML コメント（`<!-- … -->`）の中の行は宣言に数えない**——例示や外した行で枠が増えない。
+- **コードブロック（` ``` `・`~~~` を 3 つ以上。同じ文字で同じ数以上の行で閉じる）と HTML コメント（`<!-- … -->`。行の途中で始まっても）の中の行は宣言に数えない**——例示や外した行で枠が増えない。
   先頭の BOM は読み飛ばす。
 - 読むのは**メインの作業ツリー**の `.claude/dev-loop.md`（共通ディレクトリ `--git-common-dir` が `.git` ならその親）。
   **worktree の中の写しは読まない**——周ごとにブランチの写しが違うと、同じリポジトリで枠の数が食い違う。
@@ -55,7 +55,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 走らせたコマンドの終了コードをそのまま返す（シグナルは 128 + 番号）
 - 入れ子で呼ばれたら（同じリポジトリの枠を持つ順番待ちの子孫）、待たずにそのまま走らせる
 - 枠を決められなければ、コマンドを走らせずに 125 を返す
-- 宣言が 1 以上の整数でない・2 行以上・`並行の検査` を含むのに書式に合わない行があるなら、1 として扱い、そう言う
+- 宣言が 1 以上の整数（6 桁まで）でない・2 行以上・`並行の検査` を含むのに書式に合わない行がある・宣言のファイルが在るのに読めないなら、1 として扱い、そう言う
 - コードブロックと HTML コメントの中の行は宣言に数えない
 - ラッパー自身が SIGTERM・SIGHUP・SIGINT を受けても、コマンドに渡して、コマンドが終わるまで枠を離さない
 
@@ -92,7 +92,8 @@ USAGE = 2
 NOT_FOUND = 127
 POLL = 0.5
 DECL = re.compile(r"^並行の検査:[ \t]*(.*?)[ \t]*$")
-DIGITS = re.compile(r"[0-9]+")
+DIGITS = re.compile(r"[0-9]{1,6}")
+FENCE = re.compile(r"(`{3,}|~{3,})")
 
 
 def say(message: str) -> None:
@@ -115,24 +116,40 @@ def common_dir(cwd: Path) -> Path | None:
 
 
 def declared_lines(text: str) -> list[str]:
-    """コードブロックと HTML コメントの外の行。先頭の BOM は外す。"""
-    lines, fence, comment = [], None, False
+    """コードブロックと HTML コメントの外の行。先頭の BOM は外す。
+
+    コードブロックは、開いた印（` ``` `・`~~~` を 3 つ以上）と同じ文字で、同じ数以上だけの行で閉じる（CommonMark の規則）。
+    HTML コメントは行のどこで始まっても、閉じるまで（行をまたいでも）外す。"""
+    lines: list[str] = []
+    fence: tuple[str, int] | None = None
+    comment = False
     for line in text.lstrip("\ufeff").splitlines():
         stripped = line.strip()
-        if comment:
-            comment = "-->" not in stripped
-            continue
         if fence:
-            if stripped.startswith(fence):
+            char, width = fence
+            if stripped and set(stripped) == {char} and len(stripped) >= width:
                 fence = None
             continue
-        if stripped.startswith(("```", "~~~")):
-            fence = stripped[:3]
+        kept, rest = "", line
+        while rest:
+            if comment:
+                end = rest.find("-->")
+                if end < 0:
+                    rest = ""
+                else:
+                    comment, rest = False, rest[end + 3:]
+            else:
+                start = rest.find("<!--")
+                if start < 0:
+                    kept, rest = kept + rest, ""
+                else:
+                    kept, comment, rest = kept + rest[:start], True, rest[start + 4:]
+        opened = FENCE.match(kept.strip())
+        if opened and not comment:
+            fence = (opened.group(1)[0], len(opened.group(1)))
             continue
-        if stripped.startswith("<!--"):
-            comment = "-->" not in stripped[4:]
-            continue
-        lines.append(line)
+        if kept.strip():
+            lines.append(kept)
     return lines
 
 
@@ -151,18 +168,22 @@ def slots_from(text: str | None) -> tuple[int, str | None]:
         return 1, f"`並行の検査:` の行が {len(values)} 本ある——1 として扱う"
     value = values[0]
     if not DIGITS.fullmatch(value) or int(value) < 1:
-        return 1, f"`並行の検査:` の値 {value!r} は 1 以上の整数でない——1 として扱う"
+        shown = value if len(value) <= 20 else value[:20] + "…"
+        return 1, f"`並行の検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——1 として扱う"
     return int(value), None
 
 
-def declaration(common: Path) -> str | None:
-    """メインの作業ツリーの `.claude/dev-loop.md`。読めなければ None。"""
+def declaration(common: Path) -> tuple[str | None, str | None]:
+    """メインの作業ツリーの `.claude/dev-loop.md`。(中身, 言うこと)。無ければ (None, None)、在るのに読めなければ言う。"""
     if common.name != ".git":
-        return None
+        return None, None
+    path = common.parent / ".claude" / "dev-loop.md"
     try:
-        return (common.parent / ".claude" / "dev-loop.md").read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
+        return path.read_text(encoding="utf-8"), None
+    except FileNotFoundError:
+        return None, None
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"`{path}` を読めない（{exc.__class__.__name__}）——宣言は 1 として扱う"
 
 
 def holders(lockdir: Path, slots: int) -> list[str]:
@@ -247,7 +268,10 @@ def main(argv: list[str]) -> int:
     if os.environ.get(ENV) == str(lockdir):
         return run(command, env)
 
-    slots, note = slots_from(declaration(common))
+    text, unreadable = declaration(common)
+    if unreadable:
+        say(unreadable)
+    slots, note = slots_from(text)
     if note:
         say(note)
     try:

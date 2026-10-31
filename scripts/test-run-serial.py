@@ -49,7 +49,7 @@ def git(root: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, check=False)
 
 
-def build_repo(root: Path, decl: str | None) -> Path:
+def build_repo(root: Path, decl: str | bytes | None) -> Path:
     """偽のリポジトリと worktree 1 本。宣言はメインの作業ツリーにだけ置く（worktree の写しとは違う値にする）。"""
     root.mkdir(parents=True)
     git(root, "init", "-q")
@@ -62,7 +62,11 @@ def build_repo(root: Path, decl: str | None) -> Path:
     git(root, "worktree", "add", "-q", str(wt), "-b", "wt")
     if decl is not None:
         (root / ".claude").mkdir()
-        (root / ".claude" / "dev-loop.md").write_text(decl, encoding="utf-8")
+        target = root / ".claude" / "dev-loop.md"
+        if isinstance(decl, bytes):
+            target.write_bytes(decl)
+        else:
+            target.write_text(decl, encoding="utf-8")
     # worktree の写しには逆の値を置く——本体がこちらを読めば、結果が変わる
     (wt / ".claude").mkdir()
     (wt / ".claude" / "dev-loop.md").write_text("並行の検査: 5\n", encoding="utf-8")
@@ -77,7 +81,8 @@ WORKER = r"""
 import sys, time, pathlib, signal
 d, name, wait_for = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 if len(sys.argv) > 5 and sys.argv[5] == "ignore-term":
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)   # ラッパーから渡された SIGTERM でも終わらない役
+    for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        signal.signal(s, signal.SIG_IGN)   # ラッパーから渡されたシグナルでも終わらない役
 (d / f"{name}.start").write_text(str(time.time()))
 end = time.time() + float(sys.argv[4])
 while not (d / wait_for).exists():
@@ -117,11 +122,11 @@ def finish(*procs: subprocess.Popen) -> list[int | None]:
     return codes
 
 
-def observe_serial(script: Path, tmp: Path, tag: str, decl: str | None = None, sigterm: bool = False) -> dict:
+def observe_serial(script: Path, tmp: Path, tag: str, decl: str | bytes | None = None, sig: int | None = None) -> dict:
     """枠 1 になるはずの宣言（既定は宣言なし）で、メインの作業ツリーと worktree から 1 本ずつ起こす。
 
-    `sigterm` なら、A が走り出したあと A の*ラッパー*に SIGTERM を送ってから B を起こす
-    （A のコマンドは SIGTERM を無視して走り続ける役）——ラッパーが枠を離せば B が先に始まる。"""
+    `sig` を渡すと、A が走り出したあと A の*ラッパー*にそのシグナルを送ってから B を起こす
+    （A のコマンドはシグナルを無視して走り続ける役）——ラッパーが枠を離せば B が先に始まる。"""
     root = tmp / f"{tag}-serial"
     wt = build_repo(root, decl)
     marks = tmp / f"{tag}-serial-marks"
@@ -130,11 +135,11 @@ def observe_serial(script: Path, tmp: Path, tag: str, decl: str | None = None, s
     worker.write_text(WORKER, encoding="utf-8")
     err_a, err_b = marks / "a.err", marks / "b.err"
     # A は go を待つ。B は A の後なら go を待たずに済むよう、自分の go として A.end を待つ
-    extra = ["ignore-term"] if sigterm else []
+    extra = ["ignore-term"] if sig else []
     a = launch(script, root, [sys.executable, str(worker), str(marks), "a", "go", "10", *extra], err_a)
     started = wait_until(lambda: (marks / "a.start").exists(), [a])
-    if sigterm:
-        a.send_signal(signal.SIGTERM)
+    if sig:
+        a.send_signal(sig)
         time.sleep(0.3)  # 変異では、この間にラッパーが終わって枠が外れる（緑のときは何も起きない）
     # B は worktree の*サブディレクトリ*から起こす——cwd が worktree の根でなくても同じ枠になること
     sub = wt / "sub"
@@ -227,6 +232,11 @@ DECLS = {
     # コードブロックと HTML コメントの中は宣言でない——枠は 1 のまま（言うことは無い）
     "コードブロックの中": ("例:\n```\n並行の検査: 2\n```\n", False),
     "HTML コメントの中": ("<!--\n並行の検査: 2\n-->\n", False),
+    "7 桁の値": ("並行の検査: 1234567\n", True),
+    "長いコードブロックの中": ("````md\n```\n並行の検査: 2\n```\n````\n", False),
+    "行の途中で始まる HTML コメントの中": ("メモ <!--\n並行の検査: 2\n-->\n", False),
+    # ファイルが在るのに読めない（UTF-8 でない）——黙って 1 にしない
+    "UTF-8 でない": ("並行の検査: 2\n".encode("utf-8") + b"\xff\xfe\n", True),
 }
 
 
@@ -239,8 +249,11 @@ def observe_decl(script: Path, tmp: Path, tag: str) -> dict:
 
 
 def observe_sigterm(script: Path, tmp: Path, tag: str) -> dict:
-    got = observe_serial(script, tmp, f"{tag}-term", sigterm=True)
-    return {"ラッパーに SIGTERM を送っても B は A が終わるまで始めなかった": got["B は A が終わるまで始めなかった"]}
+    out = {}
+    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        got = observe_serial(script, tmp, f"{tag}-sig{int(sig)}", sig=sig)
+        out[f"ラッパーに {sig.name} を送っても B は A が終わるまで始めなかった"] = got["B は A が終わるまで始めなかった"]
+    return out
 
 
 MUTATIONS = {
@@ -267,12 +280,12 @@ MUTATIONS = {
         "        return run(command, dict(os.environ))"),
     # 守る 6: 宣言が読めない値なら 1（言うだけでなく、実効の枠が 1）
     "読めない値で 1 と言いつつ 3 本にする": (
-        "        return 1, f\"`並行の検査:` の値 {value!r} は 1 以上の整数でない——1 として扱う\"",
-        "        return 3, f\"`並行の検査:` の値 {value!r} は 1 以上の整数でない——1 として扱う\""),
+        "        return 1, f\"`並行の検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——1 として扱う\"",
+        "        return 3, f\"`並行の検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——1 として扱う\""),
     # 守る 7: コードブロックと HTML コメントの中は数えない
     "コードブロックの中の行を数える": (
-        '        if stripped.startswith(("```", "~~~")):',
-        "        if False:"),
+        "        opened = FENCE.match(kept.strip())",
+        "        opened = None"),
     # 守る 8: ラッパーがシグナルを受けても、コマンドが終わるまで枠を離さない
     "ラッパーがシグナルで先に終わる": (
         "    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}",
