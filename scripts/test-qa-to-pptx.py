@@ -319,6 +319,28 @@ def unexpected_problems(directory: Path, base: Path) -> list[str]:
     return problems
 
 
+def spelling_problems(directory: Path, base: Path) -> list[str]:
+    """`docs/v2/shared/qa.csv` と書いてディスクが `docs/v2/Shared/qa.csv` なら、2 で名指しして作らない（#514）。
+    どちらの FS でも同じ答え。綴りどおりなら作る（陽性対照）。"""
+    work = base / f"spelling-{directory.name}"
+    assert_in_tmp(work)
+    for folder in (work / "docs" / "v2" / "Shared", work / "docs" / "v3" / "shared"):
+        folder.mkdir(parents=True)
+        write_csv(folder / "qa.csv", ROWS)
+    problems = []
+    for version, code in (("v2", 2), ("v3", 0)):
+        out = work / f"{version}.pptx"
+        r = subprocess.run([sys.executable, "-I", str(directory / SCRIPT.name), f"docs/{version}/shared/qa.csv", out.name],
+                           capture_output=True, text=True, cwd=work)
+        named = f"docs/{version}/Shared: shared と大文字小文字だけ違う名前なので" in r.stderr
+        if r.returncode != code or out.exists() != (code == 0) or named != (code == 2):
+            problems.append(f"{version}: 終了 {r.returncode}（期待 {code}）・出力 {out.exists()}・名指し {named}: {r.stderr[-300:]!r}")
+    return problems
+
+
+SPELLING_MUTATIONS = [("入口で綴りを見ない", "    problem = qa.misspelled(src)\n", "    problem = None\n")]
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
@@ -371,6 +393,19 @@ def main() -> int:
             shutil.copy(CHECKER, d / CHECKER.name)
             (d / SCRIPT.name).write_text(source.replace(needle, replacement, 1), encoding="utf-8")
             check(f"変異を殺せる: {name}", bool(unexpected_problems(d, base)))
+
+        print("\n書いたパスと大文字小文字だけ違う名前の表から作らない（#514）")
+        problems = spelling_problems(alone, base)
+        check(f"綴り違いは 2 で名指しして作らない・綴りどおりなら作る（{'; '.join(problems) or '問題なし'}）", not problems)
+        for n, (name, needle, replacement) in enumerate(SPELLING_MUTATIONS):
+            if source.count(needle) != 1:
+                check(f"変異を当てる先が 1 箇所ある: {name}（{source.count(needle)} 箇所）", False)
+                continue
+            d = base / f"spelling-mut-{n}"
+            d.mkdir()
+            shutil.copy(CHECKER, d / CHECKER.name)
+            (d / SCRIPT.name).write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+            check(f"変異を殺せる: {name}（綴り）", bool(spelling_problems(d, base)))
 
         print("\n変異テスト（壊したのに期待どおりなら失格）")
         source = SCRIPT.read_text(encoding="utf-8")

@@ -16,7 +16,9 @@ usage: python3 check-feasibility-csv.py <schedule.csv> <estimate.csv>
 
 - 0: 2 つとも決まりどおり
 - 1: 決まりに反する箇所がある（**全部を 1 行ずつ出す**。最初の 1 件で止めない）
-- 2: 中身を検査していない——引数の誤り・読めない・UTF-8 でない・空・想定外の例外（128KB を超えるセルの `csv.Error` など。#286）。
+- 2: 中身を検査していない——引数の誤り・読めない・UTF-8 でない・空・
+  **書いたパスと大文字小文字だけ違う名前を開く表**（`docs/v2/feasibility/schedule.csv` と書いてディスクが `Feasibility/`。
+  `check-qa-csv.py` の `misspelled`。#514）・想定外の例外（128KB を超えるセルの `csv.Error` など。#286）。
   **反する箇所が別のファイルに見つかっても 2 を優先する**（見ていないファイルを「決まりどおり」と言わない）
 
 **この検査が守らないもの**:
@@ -32,11 +34,25 @@ usage: python3 check-feasibility-csv.py <schedule.csv> <estimate.csv>
 from __future__ import annotations
 
 import csv
+import importlib.util
 import io
 import re
 import sys
 from datetime import date
 from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def _load(name: str, filename: str):
+    spec = importlib.util.spec_from_file_location(name, HERE / filename)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# 書いたパスの綴りの確かめ（`misspelled`。#514）——同じプラグインの `check-qa-csv.py` に 1 つだけ置く
+qa = _load("check_qa_csv", "check-qa-csv.py")
 
 SCHEDULE_COLUMNS = ["No", "工程", "開始", "終了", "前提"]
 ESTIMATE_COLUMNS = ["No", "区分", "項目", "金額", "根拠"]
@@ -185,6 +201,10 @@ def main(argv: list[str]) -> int:
         return 2
     problems, unreadable, counts = [], [], []
     for path, checker in ((Path(argv[0]), check_schedule), (Path(argv[1]), check_estimate)):
+        problem = qa.misspelled(path)
+        if problem:  # 区別しないファイルシステムでだけ開ける綴り違いの表を読まない（#514）
+            unreadable.append(f"{problem}。中身を検査していない")
+            continue
         try:
             found, rows = checker(path)
         except Unreadable as e:
