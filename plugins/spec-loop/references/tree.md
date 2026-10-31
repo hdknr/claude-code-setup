@@ -216,7 +216,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
   **spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり（#341）、`decision_table` の印を描くようになった（#369）**——
   同じ手順 4 の形でフックを取り込み、雛形の `docs/decision-table.md` を写す（在れば変えない）。それまで CSV へ直接張っていたリンクは
   `docs/decision-table.md` へ張り替える。
-  **spec-loop 0.44.0 で、フックは版の中の表（`shared/qa.csv`・`shared/decision_table.csv`）を書いた綴りで探し、綴りだけ違う名前
+  **spec-loop 0.45.0 で、フックは版の中の表（`shared/qa.csv`・`shared/decision_table.csv`）を書いた綴りで探し、綴りだけ違う名前
   （`Shared/qa.csv`）で届く表を警告して描かなくなった**（#514。区別しないファイルシステムでだけ描いていた）——同じ手順 4 の形でフックを取り込む。
   取り込んだあと警告が出たら、`versions.md` の「綴りの誤りの移行」で直す。
 - **表示用のページは `shared/` に置かない**（`docs/qa.md` のように版の外に置く）。`shared/` は 2 つのサインオフが比べる範囲

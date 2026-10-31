@@ -30,8 +30,8 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - `scripts/test-build-proposal.py` — 手書き部分の綴りの試料と変異（同上）
 - `.github/workflows/plugins.yml` — 区別しない FS（ext4 の casefold）の段で `test-init-mkdocs.py` も回す（区別しない FS でしか見分けられない変異があるため。実装の途中で広げた——**計画への記載は編集の後になった**（手順 4 の「手を動かす前に」を守れていない）。受入基準は I1 の経路 E3 の検証手段として足す）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（5 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.44.0）
-- `.claude-plugin/marketplace.json` — 版（0.44.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.45.0）
+- `.claude-plugin/marketplace.json` — 版（0.45.0）
 - `docs/plans/issue-514.md` — この計画
 
 触らない:
