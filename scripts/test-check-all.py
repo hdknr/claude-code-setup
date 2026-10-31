@@ -600,12 +600,21 @@ def full_runs(ci: str) -> set[str]:
     狭める口（#494）を CI のステップに書くと、`scan_ci_runs` は「走っている」と数えるが、走るのは一部だけである。
     **歯止め（`GUARDS`）には引数が要るものがある**（`skill-metrics.py --check`・base を渡す 3 本）ので、これは回帰テストにだけ掛ける。
     **守らないもの**: 引数の中身は見ない——**引数が 1 つでもあれば「狭めた」側に数える**（向きは偽陽性。黙って素通しはしない）。
+    **次の行へ折り返した値**（`run:` の行より深く字下げした継続行。YAML では同じ値の続き）は、引数が続くものとして「全部」に数えない
+    （#687 の 2 パス目の `/code-review`——継続行に `--part scan` を書くと、行だけを見ていた形は「全部」に数えた）。
+    **環境変数で狭める形**（`PART=scan python3 scripts/x.py`）と `|| true` は見ない。
     """
     full: set[str] = set()
-    for raw in ci.split("\n"):
+    lines = ci.split("\n")
+    for i, raw in enumerate(lines):
         alive, _ = split_comment(raw)
-        if "run:" in alive:
-            full |= set(FULL_RE.findall(alive.rstrip()))
+        if "run:" not in alive:
+            continue
+        indent = len(raw) - len(raw.lstrip())
+        nxt = next((l for l in lines[i + 1:] if l.strip()), "")
+        if len(nxt) - len(nxt.lstrip()) > indent and not nxt.lstrip().startswith("#"):
+            continue  # 次の行に値が続く——その行に引数がありうる
+        full |= set(FULL_RE.findall(alive.rstrip()))
     return full
 
 
@@ -792,6 +801,10 @@ jobs:
 
       - name: 引数なしで後ろにつなぐ（#687——全部を回している）
         run: python3 scripts/test-check-chained.py && echo done
+
+      - name: 次の行へ折り返して狭める（#687 の 2 パス目——YAML では同じ値の続き）
+        run: python3 scripts/test-check-folded.py
+          --part scan
 """
 # **この試料そのものについての主張も、機械で当てる**——
 # **コメントアウトされたステップを抜くと、「それと分かる形で拾う」契約が空振りする**
@@ -851,6 +864,7 @@ def scan_contract(scan, full_of) -> list[tuple[str, bool]]:
         ("狭める引数を付けた行は、走っているが全部を回している側に数えない",
          "test-check-narrowed.py" in live and "test-check-narrowed.py" not in full),
         ("コメントアウトされた行は全部を回している側に数えない", "check-dead.py" not in full),
+        ("次の行へ折り返した値は、全部を回している側に数えない", "test-check-folded.py" not in full),
     ]
 
 
@@ -882,6 +896,8 @@ SCAN_MUTANTS = {
     "コメントの中の引数なしも全部に数える": (
         "        alive, _ = split_comment(raw)\n",
         "        alive = raw\n"),
+    "折り返した値を見ない": (
+        "            continue  # 次の行に値が続く", "            pass  # 次の行に値が続く"),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
@@ -910,7 +926,7 @@ def parse_args(argv: list[str]) -> tuple[set[str], set[str] | None]:
     **知らない部分・知らない変異の名前は断る**（綴り間違いで「何も回さずに緑」にしない）——`argparse` の `choices` で断り、
     終了コードは 2（#687。手書きの読み取りだった頃は 1）。
     """
-    parser = argparse.ArgumentParser(allow_abbrev=False, prog="test-check-all.py", description="check-all.py の回帰テスト（引数なしで全部）")
+    parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False, prog="test-check-all.py", description="check-all.py の回帰テスト（引数なしで全部）")
     parser.add_argument("--part", action="append", choices=PARTS, default=[],
                         help="回す部分（重ねて渡せる）")
     parser.add_argument("--mutant", action="append", choices=list(MUTANTS), default=[],
