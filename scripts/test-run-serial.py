@@ -392,7 +392,8 @@ MUTATIONS = {
         "        opened = None"),
     # 守る 8: ラッパーがシグナルを受けても、コマンドが終わるまで枠を離さない（SIGTERM・SIGHUP は渡す）
     "ラッパーがシグナルで先に終わる": (
-        "    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP)}",
+        "    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP)}\n"
+        "    previous[signal.SIGINT] = signal.signal(signal.SIGINT, hold)",
         "    previous = {}"),
     # 守る 9: 字下げ 4 つ以上の行では閉じない（#740）
     "字下げした行でも閉じる": (
