@@ -24,7 +24,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 
 - **宣言が無ければ 1**（安全側）。**ファイルが在るのに読めない（UTF-8 でない・権限）・値が 1 以上の整数（6 桁まで）でない・行が 2 本以上・`並行の検査` を含むのに上の形に合わない行
   （全角のコロン・字下げ・箇条書きの印など）があるなら 1 として扱い、そう言う。**
-- **コードブロック（` ``` `・`~~~` を 3 つ以上。同じ文字で同じ数以上の行で閉じる）と HTML コメント（`<!-- … -->`。行の途中で始まっても）の中の行は宣言に数えない**——例示や外した行で枠が増えない。
+- **コードブロック（` ``` `・`~~~` を 3 つ以上。字下げが空白 3 つまでの、同じ文字で同じ数以上の行で閉じる——CommonMark の規則）と HTML コメント（`<!-- … -->`。行の途中で始まっても）の中の行は宣言に数えない**——例示や外した行で枠が増えない。
   先頭の BOM は読み飛ばす。
 - 読むのは**メインの作業ツリー**の `.claude/dev-loop.md`（共通ディレクトリ `--git-common-dir` が `.git` ならその親）。
   **worktree の中の写しは読まない**——周ごとにブランチの写しが違うと、同じリポジトリで枠の数が食い違う。
@@ -57,6 +57,9 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 枠を決められなければ、コマンドを走らせずに 125 を返す
 - 宣言が 1 以上の整数（6 桁まで）でない・2 行以上・`並行の検査` を含むのに書式に合わない行がある・宣言のファイルが在るのに読めないなら、1 として扱い、そう言う
 - コードブロックと HTML コメントの中の行は宣言に数えない
+- コードブロックは、空白 4 つ以上で字下げした行では閉じない（CommonMark の閉じ行でない）
+- コードブロックは、開いた印と別の文字（` ``` ` に対する `~~~`）の行では閉じない
+- 宣言の行末の HTML コメントは外して読む（`並行の検査: 3 <!-- メモ -->` は 3）
 - ラッパー自身が SIGTERM・SIGHUP・SIGINT を受けても、コマンドに渡して、コマンドが終わるまで枠を離さない
 
 守らない:
@@ -93,7 +96,7 @@ NOT_FOUND = 127
 POLL = 0.5
 DECL = re.compile(r"^並行の検査:[ \t]*(.*?)[ \t]*$")
 DIGITS = re.compile(r"[0-9]{1,6}")
-FENCE = re.compile(r"(`{3,}|~{3,})")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 
 
 def say(message: str) -> None:
@@ -115,6 +118,13 @@ def common_dir(cwd: Path) -> Path | None:
     return Path(out)
 
 
+def closes(line: str, char: str, width: int) -> bool:
+    """コードブロックの閉じ行か（CommonMark）: 字下げは空白 3 つまで、開いた印と同じ文字だけを同じ数以上（後ろの空白は可）。"""
+    indent = len(line) - len(line.lstrip(" "))
+    body = line.strip()
+    return indent <= 3 and len(body) >= width and set(body) == {char}
+
+
 def declared_lines(text: str) -> list[str]:
     """コードブロックと HTML コメントの外の行。先頭の BOM は外す。
 
@@ -127,7 +137,7 @@ def declared_lines(text: str) -> list[str]:
         stripped = line.strip()
         if fence:
             char, width = fence
-            if stripped and set(stripped) == {char} and len(stripped) >= width:
+            if closes(line, char, width):
                 fence = None
             continue
         kept, rest = "", line
@@ -144,7 +154,7 @@ def declared_lines(text: str) -> list[str]:
                     kept, rest = kept + rest, ""
                 else:
                     kept, comment, rest = kept + rest[:start], True, rest[start + 4:]
-        opened = FENCE.match(kept.strip())
+        opened = FENCE.match(kept)
         if opened and not comment:
             fence = (opened.group(1)[0], len(opened.group(1)))
             continue

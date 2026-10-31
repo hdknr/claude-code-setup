@@ -162,10 +162,22 @@ def observe_serial(script: Path, tmp: Path, tag: str, decl: str | bytes | None =
     }
 
 
+PARALLEL_DECLS = {
+    "宣言 2": "# 追補\n並行の検査: 2\n",
+    # 宣言の行末の HTML コメントは外して読む——2 本のまま（コメントの前を捨てれば 1 本になり、互いを待って時間切れ）
+    "行末に HTML コメントのある宣言 2": "並行の検査: 2 <!-- メモ -->\n",
+}
+
+
 def observe_parallel(script: Path, tmp: Path, tag: str) -> dict:
+    return {label: observe_parallel_one(script, tmp, f"{tag}-p{i}", decl)
+            for i, (label, decl) in enumerate(PARALLEL_DECLS.items())}
+
+
+def observe_parallel_one(script: Path, tmp: Path, tag: str, decl: str) -> dict:
     """宣言 `並行の検査: 2` で、2 本が互いの始まりを待つ——同時に走れなければ時間切れになる。"""
     root = tmp / f"{tag}-par"
-    wt = build_repo(root, "# 追補\n並行の検査: 2\n")
+    wt = build_repo(root, decl)
     marks = tmp / f"{tag}-par-marks"
     marks.mkdir()
     worker = tmp / f"{tag}-pworker.py"
@@ -236,6 +248,9 @@ DECLS = {
     "長いコードブロックの中": ("````md\n```\n並行の検査: 2\n```\n````\n", False),
     "行の途中で始まる HTML コメントの中": ("メモ <!--\n並行の検査: 2\n-->\n", False),
     # ファイルが在るのに読めない（UTF-8 でない）——黙って 1 にしない
+    # コードブロックの閉じ行は CommonMark のとおり（#740・#741）——字下げした行・別の文字の行では閉じない
+    "空白 4 つで字下げした閉じ行": ("```\n    ```\n並行の検査: 2\n```\n", False),
+    "別の文字の閉じ行": ("```\n~~~\n並行の検査: 2\n```\n", False),
     "UTF-8 でない": ("並行の検査: 2\n".encode("utf-8") + b"\xff\xfe\n", True),
 }
 
@@ -246,6 +261,22 @@ def observe_decl(script: Path, tmp: Path, tag: str) -> dict:
         got = observe_serial(script, tmp, f"{tag}-d{i}", decl=decl)
         out[label] = (got["B は A が終わるまで始めなかった"], got["1 として扱うと言った"], got["終了コード"])
     return out
+
+
+# `slots_from` を直に当てる試料（#740・#741 の Issue に書いた形のまま）。期待値は正しい本体の値（judge が見る）
+PARSE_SAMPLES = {
+    "字下げした ``` の後ろの例示": ("```\n    ```\n並行の検査: 8\n```", (1, None)),
+    "~~~ の後ろの例示": ("```\n~~~\n並行の検査: 8\n```", (1, None)),
+    "行末の HTML コメント": ("並行の検査: 3 <!-- メモ -->", (3, None)),
+}
+
+
+def observe_parse(script: Path, tmp: Path, tag: str) -> dict:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(f"rs_{tag}", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return {label: mod.slots_from(text) for label, (text, _) in PARSE_SAMPLES.items()}
 
 
 def observe_sigterm(script: Path, tmp: Path, tag: str) -> dict:
@@ -284,18 +315,30 @@ MUTATIONS = {
         "        return 3, f\"`並行の検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——1 として扱う\""),
     # 守る 7: コードブロックと HTML コメントの中は数えない
     "コードブロックの中の行を数える": (
-        "        opened = FENCE.match(kept.strip())",
+        "        opened = FENCE.match(kept)",
         "        opened = None"),
     # 守る 8: ラッパーがシグナルを受けても、コマンドが終わるまで枠を離さない
     "ラッパーがシグナルで先に終わる": (
         "    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}",
         "    previous = {}"),
+    # 守る 9: 字下げ 4 つ以上の行では閉じない（#740）
+    "字下げした行でも閉じる": (
+        "    return indent <= 3 and len(body) >= width and set(body) == {char}",
+        "    return len(body) >= width and set(body) == {char}"),
+    # 守る 10: 別の文字の行では閉じない（#741）
+    "別の文字の行でも閉じる": (
+        "    return indent <= 3 and len(body) >= width and set(body) == {char}",
+        "    return indent <= 3 and len(body) >= width and set(body) <= set(\"`~\")"),
+    # 守る 11: 行末の HTML コメントは外して読む（#741）
+    "コメントの前のテキストを捨てる": (
+        "                    kept, comment, rest = kept + rest[:start], True, rest[start + 4:]",
+        "                    kept, comment, rest = \"\", True, rest[start + 4:]"),
 }
 
 
 OBSERVERS = {
     "serial": observe_serial, "parallel": observe_parallel, "codes": observe_codes, "nested": observe_nested,
-    "cannot": observe_cannot, "decl": observe_decl, "sigterm": observe_sigterm,
+    "cannot": observe_cannot, "decl": observe_decl, "sigterm": observe_sigterm, "parse": observe_parse,
 }
 
 # 変異ごとに当てる観測（全部を当てると、待ちの上限で止まる観測が重なって数分かかる）。
@@ -309,6 +352,9 @@ MUTATION_PROBE = {
     "読めない値で 1 と言いつつ 3 本にする": ("decl",),
     "コードブロックの中の行を数える": ("decl",),
     "ラッパーがシグナルで先に終わる": ("sigterm",),
+    "字下げした行でも閉じる": ("parse", "decl"),
+    "別の文字の行でも閉じる": ("parse", "decl"),
+    "コメントの前のテキストを捨てる": ("parse", "parallel"),
 }
 
 
@@ -325,8 +371,9 @@ def judge(o: dict) -> None:
     check("B が走っているもの（A の pid）を名指しした", s["B が A を名指しした"])
     check("両方 0 で終わった", s["終了コード"] == [0, 0])
     print("\n宣言 `並行の検査: 2`（worktree の写しの 5 は読まない）")
-    check("2 本が同時に走った", o["parallel"]["2 本が同時に走った"])
-    check("両方 0 で終わった", o["parallel"]["終了コード"] == [0, 0])
+    for label, got in o["parallel"].items():
+        check(f"{label}: 2 本が同時に走った", got["2 本が同時に走った"])
+        check(f"{label}: 両方 0 で終わった", got["終了コード"] == [0, 0])
     c = o["codes"]
     print("\n終了コード")
     check("7 を返すコマンドで 7", c["7"] == 7)
@@ -350,6 +397,9 @@ def judge(o: dict) -> None:
             check(f"{label}: 1 として扱うと言う", said)
         else:
             check(f"{label}: 何も言わない（宣言ではない）", not said)
+    print("\n`slots_from` を直に当てる（#740・#741 の形）")
+    for label, got in o["parse"].items():
+        check(f"{label}: {PARSE_SAMPLES[label][1]}", got == PARSE_SAMPLES[label][1])
     print("\nラッパー自身へのシグナル")
     for name, ok in o["sigterm"].items():
         check(name, ok)
