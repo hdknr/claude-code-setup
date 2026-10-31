@@ -22,7 +22,10 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 並行の検査: 2
 ```
 
-- **宣言が無ければ 1**（安全側）。**値が 1 以上の整数でない・行が 2 本以上なら 1 として扱い、そう言う。**
+- **宣言が無ければ 1**（安全側）。**値が 1 以上の整数でない・行が 2 本以上・`並行の検査` を含むのに上の形に合わない行
+  （全角のコロン・字下げ・箇条書きの印など）があるなら 1 として扱い、そう言う。**
+- **コードブロック（` ``` `・`~~~`）と HTML コメント（`<!-- … -->`）の中の行は宣言に数えない**——例示や外した行で枠が増えない。
+  先頭の BOM は読み飛ばす。
 - 読むのは**メインの作業ツリー**の `.claude/dev-loop.md`（共通ディレクトリ `--git-common-dir` が `.git` ならその親）。
   **worktree の中の写しは読まない**——周ごとにブランチの写しが違うと、同じリポジトリで枠の数が食い違う。
   メインの作業ツリーが決まらない（`--separate-git-dir`・サブモジュール・bare）なら宣言は読まず 1。
@@ -52,7 +55,9 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 走らせたコマンドの終了コードをそのまま返す（シグナルは 128 + 番号）
 - 入れ子で呼ばれたら（同じリポジトリの枠を持つ順番待ちの子孫）、待たずにそのまま走らせる
 - 枠を決められなければ、コマンドを走らせずに 125 を返す
-- 宣言が 1 以上の整数でない・2 行以上なら、1 として扱い、そう言う
+- 宣言が 1 以上の整数でない・2 行以上・`並行の検査` を含むのに書式に合わない行があるなら、1 として扱い、そう言う
+- コードブロックと HTML コメントの中の行は宣言に数えない
+- ラッパー自身が SIGTERM・SIGHUP・SIGINT を受けても、コマンドに渡して、コマンドが終わるまで枠を離さない
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
@@ -61,6 +66,10 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - コマンドが残したバックグラウンドのプロセスは、コマンドが終わった後は枠を持たない（枠のファイルは子に継承しない）
 - 宣言を信頼するかは見ない（枠を増やすのは負荷を緩めるだけで、権限は広げない）
 - 宣言を変えた時点で走っているもの（減らす前の枠の番号を持つもの）は数えない
+- ラッパーが SIGKILL で殺されたら、枠は外れ、コマンドは走り続ける（捕まえられないシグナル）
+- 入れ子の印（環境変数）はコマンドの子孫すべてに渡る——コマンドが残したバックグラウンドのプロセスが後で順番待ちを呼ぶと、待たずに走る
+- 入れ子の印は 1 つのリポジトリしか持たない——別のリポジトリをはさんで同じリポジトリへ戻る入れ子（A → B → A）は、枠 1 なら固まる
+- 待つ側の順番（公平性）は決めない——枠が空いたときに先に見た側が取る
 
 標準ライブラリのみ。POSIX（`fcntl`）が要る——macOS と Linux。
 """
@@ -105,11 +114,37 @@ def common_dir(cwd: Path) -> Path | None:
     return Path(out)
 
 
+def declared_lines(text: str) -> list[str]:
+    """コードブロックと HTML コメントの外の行。先頭の BOM は外す。"""
+    lines, fence, comment = [], None, False
+    for line in text.lstrip("\ufeff").splitlines():
+        stripped = line.strip()
+        if comment:
+            comment = "-->" not in stripped
+            continue
+        if fence:
+            if stripped.startswith(fence):
+                fence = None
+            continue
+        if stripped.startswith(("```", "~~~")):
+            fence = stripped[:3]
+            continue
+        if stripped.startswith("<!--"):
+            comment = "-->" not in stripped[4:]
+            continue
+        lines.append(line)
+    return lines
+
+
 def slots_from(text: str | None) -> tuple[int, str | None]:
     """宣言から枠の本数を決める。(本数, 言うこと)。"""
     if text is None:
         return 1, None
-    values = [m.group(1) for line in text.splitlines() if (m := DECL.match(line))]
+    lines = declared_lines(text)
+    values = [m.group(1) for line in lines if (m := DECL.match(line))]
+    odd = [line for line in lines if "並行の検査" in line and not DECL.match(line)]
+    if odd:
+        return 1, f"`並行の検査` の行が書式に合わない（{odd[0].strip()!r}）——1 として扱う"
     if not values:
         return 1, None
     if len(values) > 1:
@@ -181,11 +216,18 @@ def run(command: list[str], env: dict[str, str]) -> int:
     except OSError as exc:
         say(f"コマンドを起動できない: {exc}")
         return NOT_FOUND
+    def forward(signum, _frame):
+        try:
+            proc.send_signal(signum)
+        except ProcessLookupError:
+            pass
+
+    previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)}
     try:
         code = proc.wait()
-    except KeyboardInterrupt:
-        proc.send_signal(signal.SIGINT)
-        code = proc.wait()
+    finally:
+        for s, handler in previous.items():
+            signal.signal(s, handler)
     return 128 - code if code < 0 else code
 
 
