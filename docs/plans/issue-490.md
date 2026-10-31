@@ -53,7 +53,8 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-490`（`prepare-worktree.sh` で作った。cruise の子なので `EnterWorktree` は使わず、`cd <worktree> && …` で作業する）
 - 起点: `4a8c7e8a`
 - base: 参照 `origin/main`（`refs/remotes/origin/HEAD`、取り直した）→ `4a8c7e8a2b8a605670d1116ed66fc72e5fffe5fb`
-- PR: （未）
+- PR: #734
+- main を取り込んだ（`cd1fd52a`、#703 のマージ）→ 式を当て直した base: `af86585d393803b0c7a1b00ee9e544e392aaf922`（2 パス目と狭いパスに渡す）
 
 ## verify の受入基準
 
@@ -115,7 +116,9 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 - Verifier 1 パス目: 済み——反証 2 件（R1・R2。どちらもテストの隙。下の採否の表）。起動した体は `dev-loop:dev-loop-verifier`（sonnet）
 - `/code-review` 1 パス目: 済み——指摘 10 件（CR1〜CR10。下の採否の表）
 - 1 パス目の指摘対応の起点: `bb6c7baa`——1 パス目の 2 つの関門に渡した時点の HEAD
-- 2 パス目: 未
+- 1 パス目の指摘対応: `83f8fd81`（差分あり——2 パス目を回す）
+- 2 パス目: 起動（2026-10-31）
+- 割り目（手順 6）: 不在のため訊かず続けた
 - 狭いパス: 未
 - 割り目（手順 4）: 不在のため訊かず続けた
 - 手順 5 の反証・差し戻し: 0 件（未）
@@ -170,4 +173,4 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 
 ## 手順 8（起票の件数）
 
-- この周の起票: 1 件（仕様の穴 G1 の確認の Issue。起票の承認は不在のため訊いていない——台帳の確かめた線 `仕様の穴 = 推奨で決めて起票` と利用者の直接の指示（2026-10-29）で立てる）
+- この周の起票: 1 件（#735——仕様の穴 G1 の確認の Issue。起票の承認は不在のため訊いていない——台帳の確かめた線 `仕様の穴 = 推奨で決めて起票` と利用者の直接の指示（2026-10-29）で立てる）
