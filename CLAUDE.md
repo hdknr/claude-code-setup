@@ -34,6 +34,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       - `skills/cruise/scripts/child-cycle.py` - 周を **`claude -p` の子プロセス**で回す起動口と、出力（stream-json）の要約（#491。**任意で、既定はサブエージェントのまま**。
         子は親から切り離して起き、記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く。回し方と確かめた範囲は `references/child-process.md`、
         守る／守らないは docstring を正とする。テストは `scripts/test-child-cycle.py`）
+      - `skills/cruise/scripts/run-serial.py` - cruise の周の**重い検査・アプリの起動を、同じリポジトリでは順番待ちにして走らせる**（#493。
+        本数は `.claude/dev-loop.md` の `並行の検査:`、無ければ 1。どのコマンドを通すか・単独で回す周・版とマージの順（#531）は `references/parallel.md`、
+        守る／守らないは docstring を正とする。テストは `scripts/test-run-serial.py`）
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
     - `skills/req-loop/` - 要求確定のループ（#216。1 周 = レビュー会 1 回。**回答待ちで止まる**）。
       **共有の `references/` と `scripts/` を `../../` で指す**ので、**素のスキルとしては張れない**
@@ -198,6 +201,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-child-cycle.py` - **周を `claude -p` の子プロセスで回す起動口と要約の回帰テスト**（#491。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/cruise/scripts/child-cycle.py`**（同じ形）。**偽の `claude` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**
     ——本物を起こさない。**本物の `claude` の出力の形は見ない**（試料の鍵は 2.1.312 の実測に合わせてある）
+  - `test-run-serial.py` - **重い検査・アプリの起動の順番待ちの回帰テスト**（#493。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/cruise/scripts/run-serial.py`**（同じ形）。テンポラリに偽のリポジトリと worktree を作り、
+    **時間ではなく、走らせたコマンドが書く印と待つ側の出力で**「同時に走らない」「待っていると言う」を決める
   - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
     **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**
@@ -517,6 +523,7 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 ### 並行する周は、同じ版に上げて衝突する
 
 **同じプラグインを触る周が並行していると、先にマージされた周が、こちらと同じ patch 版に上げている。**
+**cruise の周では、親は版を割り当てず、マージの直前に子が取り込みと上げ直しをする**——cruise の `references/parallel.md` の「版とマージの順」を正とする（#531）。
 #211 の周では**これが 2 回起きた**——こちらが上げた版に、main が #222（1.38.5）と
 #210（1.38.6）で先に到達した。2 回目は PR が `CONFLICTING` になり、
 **`gh pr checks` が `no checks reported` を返して CI が 1 本も走っていなかった**
