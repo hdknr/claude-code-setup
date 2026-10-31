@@ -31,7 +31,8 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 - 0: 作った（載せた質問の数を、回答待ち・未反映と暫定に分けて出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
-- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・想定外の例外（128KB を超えるセルの
+- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・
+  **書いたパスと大文字小文字だけ違う名前を開く表**（`docs/v2/shared/qa.csv` と書いてディスクが `Shared/`。`check-qa-csv.py` の `misspelled`。#514）・想定外の例外（128KB を超えるセルの
   `csv.Error` など。書いている途中でも一時ファイルを消すので既存の出力は残る。#286）（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
 
@@ -462,6 +463,10 @@ def main(argv: list[str]) -> int:
               f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
     src, out, title, subtitle = parsed
+    problem = qa.misspelled(src)
+    if problem:  # 区別しないファイルシステムでだけ開ける綴り違いの表から作らない（#514）
+        print(f"{problem}。PPTX を作らない", file=sys.stderr)
+        return 2
     # **出力先が入力の表そのものなら書かない**——置き換えで正本の表が PPTX になり、戻せない。
     if out.exists() and src.exists() and out.samefile(src):
         print(f"{out}: 入力の表と同じファイルなので書かない", file=sys.stderr)
