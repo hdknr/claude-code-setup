@@ -186,6 +186,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     対象リポジトリの `scripts/` に在ることを当てにできない）
   - `test-check-unattended-env.py` - **利用者が不在になる前の環境点検**の回帰テスト（#394。変異テストを含む）。
     **cruise の起動時の点検（`--cruise`・`--present`）も見る**——利用者が居る cruise でも回す（#466）。
+    **不在の間にどこまで進めるか（`--ledger`。#490）は、一時のリポジトリの台帳と偽の `gh` で当てる**——実際の台帳は読まない。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py`**（`test-find-cycle.py` と同じ形）。
     **本体は CI からは呼ばない**——入力が利用者の `~/.claude` にある。**項目と、何を守らないかは本体の docstring を正とする**
   - `test-launch-with-long-token.py` - **長期トークン（`claude setup-token`）で `claude` を起動する起動口**の回帰テスト（#584。変異テストを含む）。
