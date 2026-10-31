@@ -82,6 +82,7 @@
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import importlib.util
 import io
@@ -138,22 +139,30 @@ def run_main(mod, argv: list[str]) -> tuple[int, str]:
 
 # ------------------------------------------------------------- 偽の scripts/
 FLAGS = "flags"
-# **待ち合わせの時間切れ（秒）。** 並列を壊す変異では毎回ここまで待ち切るので、変異の数だけ
-# `test-check-all.py` が延びる（それを 5 回回す `check-mutation-claims.py` ごと）——2 秒から縮めた（#434）。
-# **縮めすぎると、変異の前の本体で相手の起動が遅れたときに偽の赤になる**（負荷の高い `check-all.py` の中・CI）。
-BARRIER_WAIT = 0.5
+# **待ち合わせの時間切れ（秒）は 2 つある**（#687）。
+# - `BARRIER_WAIT`——**作業者が複数のとき**。同時に走るはずなので、相手が来ないのは起動の遅れである。
+#   **長く取る**——0.5 秒だった頃、負荷 50 の `check-all.py` の中で、変異の前の本体の「--jobs 2 で同時に走る」が
+#   時間切れで落ちた（#494 の周）。**相手が来れば即座に抜けるので、通る回の所要時間には効かない。**
+# - `BARRIER_SERIAL_WAIT`——**作業者が 1 つのとき**（偽のプールが `SERIAL` の印を置く。`record_pools`）。
+#   同時に走らないはずなので、待つのは「印に反して相手が来るか」を見る間だけで、**毎回ここまで待ち切る**
+#   （本体の契約 6 と、直列に戻す変異のたび）。2 秒から縮めた値（#434）のまま。
+BARRIER_WAIT = 30.0
+BARRIER_SERIAL_WAIT = 0.5
+SERIAL = "serial"
+# 契約 10 の「遅れて落ちる歯止め」が、打ち切られる子の起動を待つ上限（秒）。通る回は印を見て即座に抜ける。
+KILLED_WAIT = 0.2
 BARRIER = """\
 import pathlib, sys, time
 d = pathlib.Path("{flags}")
 d.mkdir(exist_ok=True)
 (d / "{{me}}").touch()
-end = time.time() + {wait}
+end = time.time() + ({serial_wait} if (d / "{serial}").exists() else {wait})
 while not (d / "{{other}}").exists():
     if time.time() > end:
         print("相手が来ない——同時に走っていない")
         sys.exit(1)
     time.sleep(0.02)
-""".format(flags=FLAGS, wait=BARRIER_WAIT)
+""".format(flags=FLAGS, wait=BARRIER_WAIT, serial_wait=BARRIER_SERIAL_WAIT, serial=SERIAL)
 
 
 def clear_flags(root: Path) -> None:
@@ -185,10 +194,19 @@ def build_fake(root: Path) -> Path:
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
     # **#509: 遅れて落ちる歯止めと、シグナルで止まる子。** 打ち切られた子（SIGKILL）は終了コードが負になる。
+    # **「遅れて」は時間ではなく印で作る**（#687）——歯止めは、打ち切られる子が起動した印を見てから落ちる。
+    # 0.2 秒の眠りだった頃は、契約 10 を回すたびに（本体と変異の数だけ）0.2 秒ずつ足していた。
+    # 同時に起動しない（作業者が 1 つの）変異では印が来ないので、`KILLED_WAIT` で待ちを切ってから落ちる。
     (scripts / "slow-bad.py").write_text(
-        "import sys, time; time.sleep(0.2); print('BOOM-SLOW'); sys.exit(1)\n")
+        "import pathlib, sys, time\n"
+        f"end = time.time() + {KILLED_WAIT}\n"
+        f"while not pathlib.Path('{FLAGS}', 'killed').exists() and time.time() < end:\n"
+        "    time.sleep(0.005)\n"
+        "print('BOOM-SLOW'); sys.exit(1)\n")
     (scripts / "killed.py").write_text(
-        "import os, signal; print('KILLED', flush=True); os.kill(os.getpid(), signal.SIGKILL)\n")
+        "import os, pathlib, signal\n"
+        f"pathlib.Path('{FLAGS}').mkdir(exist_ok=True); pathlib.Path('{FLAGS}', 'killed').touch()\n"
+        "print('KILLED', flush=True); os.kill(os.getpid(), signal.SIGKILL)\n")
     # **互いの開始を待ち合わせる 2 本。** 同時に走らなければ、片方が時間切れで落ちる。
     for me, other in (("a", "b"), ("b", "a")):
         (scripts / f"par-{me}.py").write_text(BARRIER.format(me=me, other=other))
@@ -227,13 +245,22 @@ class RecordingPool(ThreadPoolExecutor):
 
 
 def record_pools(mod) -> list[RecordingPool]:
-    """本体が作るプールを `RecordingPool` に差し替え、作られたものを返すリストを渡す。"""
+    """本体が作るプールを `RecordingPool` に差し替え、作られたものを返すリストを渡す。
+
+    **作業者が 1 つのプールなら、待ち合わせの `SERIAL` の印を置く**（#687）——待ち合わせる子は、印があれば
+    `BARRIER_SERIAL_WAIT` だけ、無ければ `BARRIER_WAIT` だけ相手を待つ。印はプールを作った時点で置くので、
+    子の起動より前にある。**`clear_flags` の後で本体を走らせる**（前の回の印を持ち越さない）。"""
     pools: list[RecordingPool] = []
 
     class Pool(RecordingPool):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             pools.append(self)
+            if self.workers is not None and self.workers < 2:
+                flags = Path(mod.SCRIPTS).parent / FLAGS
+                assert_not_real_repo(flags)
+                flags.mkdir(exist_ok=True)
+                (flags / SERIAL).touch()
 
     mod.ThreadPoolExecutor = Pool
     return pools
@@ -346,6 +373,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
     mod.TESTS = []
+    record_pools(mod)  # 作業者が 1 つになる変異（直列に戻す）は、待ち合わせを短く切る（#687）
     clear_flags(root)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
     got.append(("--jobs 2 で同時に走る", rc == 0))
@@ -354,10 +382,12 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     #    **区間の重なりでは見ない**（#431）——**0.1 秒の区間は起動の遅れに負ける。**
     #    `test-check-all.py` を同時に 30 本 × 2 回走らせると、60 回中 7 回、2 本が同時に起動しても
     #    区間が重ならず、「--jobs を無視する」変異を取りこぼした（`check-all.py` の中でも 1 回踏んだ）。
-    #    **待ち合わせは相手を `BARRIER_WAIT` 秒待つ**（区間の 5 倍）ので、同時に起動していれば、遅れても出会う。
-    #    **ただし待ち合わせは「同時に走る」側を時間に依らずには示せない**——相手の起動が `BARRIER_WAIT` より
-    #    遅れると、同時に投げても時間切れで落ちる。30 本 × 3 回で 90 回中 2 回、「--jobs を無視する」変異を
+    #    **待ち合わせは相手を待つ**ので、同時に起動していれば、遅れても出会う。
+    #    **ただし待ち合わせは「同時に走る」側を時間に依らずには示せない**——相手の起動が待ちの上限より
+    #    遅れると、同時に投げても時間切れで落ちる。上限が 0.5 秒だった頃、30 本 × 3 回で 90 回中 2 回、「--jobs を無視する」変異を
     #    取りこぼした（#437）。**だから作業者の数も見る**——時間に依らない。
+    #    **いまは上限を作業者の数で分ける**（#687。`BARRIER` の上）——本体（作業者 1）は印を見て `BARRIER_SERIAL_WAIT` で切り、
+    #    「--jobs を無視する」変異（作業者 2 以上）は `BARRIER_WAIT` まで待つので、相手の起動の遅れでは取りこぼさない。
     mod = load(target, f"{tag}_ser")
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
@@ -377,6 +407,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         mod.SCRIPTS = root / "scripts"
         mod.GUARDS = [("par-a.py", [], False), ("par-b.py", [], False)]
         mod.TESTS = []
+        record_pools(mod)  # 既定を直列にする変異は、待ち合わせを短く切る（#687）
         clear_flags(root)
         rc, out = run_main(mod, ["--base", "no-such-ref-xyz"])
         got.append(("既定で同時に走る", rc == 0))
@@ -420,6 +451,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("slow-bad.py", [], False), ("ok-c.py", [], False)]
     mod.TESTS = ["killed.py", "ok-b.py"]
+    clear_flags(root)
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "4"])
     fail_lines = [l for l in out.splitlines() if l.startswith("  FAIL")]
     got += [
@@ -557,6 +589,26 @@ def scan_ci_runs(ci: str) -> tuple[set[str], set[str]]:
     return live, commented
 
 
+# **引数を付けずに呼んでいる**——名前の後ろが行末か、シェルのつなぎ（`&&`・`||`・`;`・`|`）だけ。
+FULL_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)(?=\s*(?:$|&&|\|\||;|\|))")
+
+
+def full_runs(ci: str) -> set[str]:
+    """CI の yaml の**生きている** `run:` の行で、**引数を付けずに**呼んでいるスクリプト名（#687）。
+
+    **回帰テストは引数なしで回さなければ全部を回したことにならない**——`test-check-all.py --part scan` のような
+    狭める口（#494）を CI のステップに書くと、`scan_ci_runs` は「走っている」と数えるが、走るのは一部だけである。
+    **歯止め（`GUARDS`）には引数が要るものがある**（`skill-metrics.py --check`・base を渡す 3 本）ので、これは回帰テストにだけ掛ける。
+    **守らないもの**: 引数の中身は見ない——**引数が 1 つでもあれば「狭めた」側に数える**（向きは偽陽性。黙って素通しはしない）。
+    """
+    full: set[str] = set()
+    for raw in ci.split("\n"):
+        alive, _ = split_comment(raw)
+        if "run:" in alive:
+            full |= set(FULL_RE.findall(alive.rstrip()))
+    return full
+
+
 def test_ci_runs_every_registered_script() -> None:
     """実リポジトリを読む。**`check-all.py` に在るのに CI の yaml に無い**なら落とす。
 
@@ -616,6 +668,15 @@ def test_ci_runs_every_registered_script() -> None:
     if disabled:
         print(f"       コメントアウトされている: {disabled}")
         print("       **`#` を外す。** 手元では緑でも、CI では 1 度も走らない。")
+    # **回帰テストは引数なしで回す**（#687）——狭める口を付けたステップは、テストの一部しか回さない。
+    # 実物の `plugins.yml` で当てる——狭める引数を足すと、このテストが赤になる:
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/test-check-duplicate-counts.py\n", "new": "        run: python3 scripts/test-check-duplicate-counts.py --only-scan\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    full = full_runs(ci)
+    narrowed = [n for n in sorted(mod.TESTS) if n in live and n not in full]
+    check("収録した回帰テストを CI が引数なしで回している（狭めていない）", not narrowed)
+    if narrowed:
+        print(f"       引数を付けて回している: {narrowed}")
+        print("       **引数を外す。** 狭めた回は、全部を回す回の代わりにならない。")
 
 
 # ------------------------------------------------------------------ 変異
@@ -648,6 +709,12 @@ MUTANTS = {
     "シグナルで止まった子を通ったと数える": (
         "    return proc.returncode == 0, (out + err)\n",
         "    return proc.returncode <= 0, (out + err)\n"),
+    # **FAIL の行が集計と別の経路で増える**（#509 の症状——FAIL の行と「失敗 N」が食い違う——の形）。
+    # **これを捕まえるのは契約 10 の「FAIL の行の数と『失敗 N』が一致する」だけ**である（#687。ほかの変異は
+    # どれも、その表明のほかに別の表明も破る——表明ごとに破れた変異を数えて確かめた）。
+    "落ちたものの出力の見出しを FAIL の行の形で出す": (
+        '        print(f"\\n----- {label} の出力 -----")\n',
+        '        print(f"  FAIL {label}")\n'),
     # 以下は #460（入れ子の並列）
     "入れ子に --jobs を渡さない": ('                args = [*args, "--jobs", str(nested_jobs(opts.jobs))]\n',
                                    "                pass\n"),
@@ -719,6 +786,12 @@ jobs:
       - name: ブロックで呼ぶ（**守らない**——`run:` を含む行だけを見る）
         run: |
           python3 scripts/check-in-block.py
+
+      - name: 狭める引数を付けて呼ぶ（#687——走っているが、全部ではない）
+        run: python3 scripts/test-check-narrowed.py --part scan
+
+      - name: 引数なしで後ろにつなぐ（#687——全部を回している）
+        run: python3 scripts/test-check-chained.py && echo done
 """
 # **この試料そのものについての主張も、機械で当てる**——
 # **コメントアウトされたステップを抜くと、「それと分かる形で拾う」契約が空振りする**
@@ -731,7 +804,7 @@ jobs:
 # mutation-claim: {"file": "scripts/test-check-all.py", "old": "      - name: scripts/check-label-only.py のラベルにだけ名前がある", "new": "        run: scripts/check-label-only.py のラベルにだけ名前がある", "red": "python3 scripts/test-check-all.py --part scan"}
 
 
-def scan_contract(scan) -> list[tuple[str, bool]]:
+def scan_contract(scan, full_of) -> list[tuple[str, bool]]:
     """**判別の契約。** 各行が `SAMPLE_CI` のどれかの経路に対応している。
 
     **陽性側も取る**——「拾わない」だけを並べると、**もともと空の集合**と区別がつかない
@@ -739,6 +812,7 @@ def scan_contract(scan) -> list[tuple[str, bool]]:
     """
     live, commented = scan(SAMPLE_CI)
     seen = live | commented
+    full = full_of(SAMPLE_CI)
     return [
         ("生きたステップを拾う（陽性対照）", "check-live.py" in live),
         ("コメントアウトされたステップを、生きている側に数えない",
@@ -771,6 +845,12 @@ def scan_contract(scan) -> list[tuple[str, bool]]:
         ("`if:` で止めたステップは、生きているものとして数える（守らない）",
          "check-killed-by-if.py" in live),
         ("`run: |` のブロック本文は拾わない（守らない）", "check-in-block.py" not in seen),
+        # #687: 引数の有無（陽性側も取る——引数なしの行を「全部」に数える）
+        ("引数なしの行は全部を回している側に数える（陽性対照）",
+         {"check-live.py", "test-check-chained.py"} <= full),
+        ("狭める引数を付けた行は、走っているが全部を回している側に数えない",
+         "test-check-narrowed.py" in live and "test-check-narrowed.py" not in full),
+        ("コメントアウトされた行は全部を回している側に数えない", "check-dead.py" not in full),
     ]
 
 
@@ -796,6 +876,12 @@ SCAN_MUTANTS = {
         "        return line[i:], line[:i]"),
     "`run:` の行に限らない": ('        if "run:" in code:', "        if True:"),
     "コメント側を集めない": ('        if "run:" in comment:', "        if False:"),
+    # #687: 引数を見ない（狭めたステップも全部を回していると数える）
+    "引数があっても全部を回していると数える": (
+        '(?=\\s*(?:$|&&|\\|\\||;|\\|))")', '")'),
+    "コメントの中の引数なしも全部に数える": (
+        "        alive, _ = split_comment(raw)\n",
+        "        alive = raw\n"),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
@@ -819,27 +905,20 @@ def parse_args(argv: list[str]) -> tuple[set[str], set[str] | None]:
     **変異を当てる回（`--part mutants`・`--mutant`）は、いつも本体そのままの契約も回して、通ることを要求する**（陽性対照）——回さないと、負荷で待ち合わせが
     時間切れになったとき「契約が破れた＝捕まえた」と数え、主張の変異を当てた後も緑になる（#494 の 1 パス目の `/code-review`）。
 
-    **狭めた回は、全部を回す回の代わりにならない**——`check-all.py` と CI は引数なしで全部を回す。
-    **知らない部分・知らない変異の名前は断る**（綴り間違いで「何も回さずに緑」にしない）。
+    **狭めた回は、全部を回す回の代わりにならない**——`check-all.py` と CI は引数なしで全部を回す
+    （CI のステップに引数を付けていないことは `test_ci_runs_every_registered_script` が見る。#687）。
+    **知らない部分・知らない変異の名前は断る**（綴り間違いで「何も回さずに緑」にしない）——`argparse` の `choices` で断り、
+    終了コードは 2（#687。手書きの読み取りだった頃は 1）。
     """
-    parts: set[str] = set()
-    mutants: set[str] = set()
-    it = iter(argv)
-    for arg in it:
-        if arg == "--part":
-            part = next(it, None)
-            if part not in PARTS:
-                raise SystemExit(f"--part は {PARTS} のどれか: {part}")
-            parts.add(part)
-        elif arg == "--mutant":
-            mutant = next(it, None)
-            if mutant not in MUTANTS:
-                raise SystemExit(f"--mutant に知らない名前: {mutant}")
-            mutants.add(mutant)
-        else:
-            raise SystemExit(f"知らない引数: {arg}")
+    parser = argparse.ArgumentParser(prog="test-check-all.py", description="check-all.py の回帰テスト（引数なしで全部）")
+    parser.add_argument("--part", action="append", choices=PARTS, default=[],
+                        help="回す部分（重ねて渡せる）")
+    parser.add_argument("--mutant", action="append", choices=list(MUTANTS), default=[],
+                        help="当てる MUTANTS の名前（重ねて渡せる。本体そのままの契約も回す）")
+    opts = parser.parse_args(argv)
+    parts, mutants = set(opts.part), set(opts.mutant)
     if mutants and "mutants" in parts:
-        raise SystemExit("--part mutants（全部）と --mutant（一部）は一緒に渡せない")
+        parser.error("--part mutants（全部）と --mutant（一部）は一緒に渡せない")
     if mutants:
         return parts | {"mutants"}, mutants
     return (parts or set(PARTS)), None
@@ -888,7 +967,7 @@ def run_contract_with_base(root: Path) -> None:
 
 def run_scan(root: Path) -> None:
     print("判別（合成試料——全部通らなければならない）:")
-    for name, ok in scan_contract(scan_ci_runs):
+    for name, ok in scan_contract(scan_ci_runs, full_runs):
         check(name, ok)
 
     print("判別の変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
@@ -906,7 +985,8 @@ def run_scan(root: Path) -> None:
         # **辞書より前に 1 箇所しか無いことを上で確かめてある**ので、
         # **最初の 1 件だけ置き換えれば、当たるのは判別の本体である。**
         p.write_text(SELF_SRC.replace(old, new, 1))
-        broken = [n for n, ok in scan_contract(load(p, f"scanned{i}").scan_ci_runs)
+        scanned = load(p, f"scanned{i}")
+        broken = [n for n, ok in scan_contract(scanned.scan_ci_runs, scanned.full_runs)
                   if not ok]
         check(f"変異 `{name}` を契約が捕まえる", bool(broken))
         if not broken:
