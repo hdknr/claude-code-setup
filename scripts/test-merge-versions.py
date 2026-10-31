@@ -50,6 +50,11 @@
 それを名指しした変異を飛ばし、**飛ばしたことを出力に書く**（緑のふりをしない）。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
+
+**試料の木を書く（`build`）か、git の試料を用意する（`prepare_git`——git の呼び出し・index からの書き出し）ところで
+`RuntimeError`・`OSError`・`CalledProcessError` が上がれば**、**その試料・変異を失敗に数えて他を続ける**——traceback で全体を止めると、
+他の試料の結果が出ない（#698）。**テスト自身のほかの段（出力先の用意・`git archive` の書き出し・変異の写しなど）で上がる例外は、
+いまも traceback で止まる。** 本体（`merge-versions.py`）が落ちるのは別で、子プロセスの終了コードと出力として判定に入る（テストは止まらない）。
 """
 from __future__ import annotations
 
@@ -332,7 +337,9 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     # コミットが綴り違い（#276 の CR2-2。区別しない FS では作業ツリーのフォルダを正しい綴りに改名しても git は変更と見ない）——1
     ("コミットが綴り違いなら作業ツリーの綴りに依らず断る", {**V1, "v2/Requirements/d.md": "D\n"}, "git-renamed", [],
      lambda r: refused(r, "Requirements: requirements と大文字小文字")),
-    # 区別する FS でだけ作れる形: コミットは正しい綴り、追跡しない別のフォルダ Requirements/ に読むファイルがある——git にも別の名前で 1
+    # 区別する FS でだけ作れる形: コミットは正しい綴り、追跡しない別のフォルダ Requirements/ に読むファイルがある——git にも別の名前で 1。
+    # `git-stale`（`.DS_Store` だけの古い綴り）と違い中身があるので、追跡していない側を古い残りとして捨てる変異を殺す（#698。
+    # `spelled` の 2 つの守り——並ぶ綴り違いは寄せない・同じ項目でなければ寄せない——はどちらも単独でこの形を守るので、片方を外す変異は殺せない）
     ("別の項目の綴り違いは index に寄せない", {**V1, "v2/requirements/d.md": "D\n"}, "git-alongside", [],
      lambda r: refused(r, "Requirements: requirements と大文字小文字")),
     # 区別する FS でだけ作れる形: コミットは requirements/、作業ツリーで Requirements/ に改名して git add していない——index の名前の
@@ -537,6 +544,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("git を呼ばない", "    found = tracked(docs) if docs.is_dir() else None\n", "    found = None\n",
      "コミットが綴り違いなら作業ツリーの綴りに依らず断る"),
     ("同じ項目かを見ない", " and same_entry(root / m, root / name)}", "}", "足していない改名は index に寄せない"),
+    # 並ぶ綴り違いのうち、追跡していない側を（`.DS_Store` だけの古い残りと同じく）捨てる——中身のあるフォルダを黙って落とす（#698）。
+    # 殺すのは区別する FS の `git-alongside` だけ（`spelled` の 2 つの守りはどちらもこの形を寄せないので、守りを外す変異では殺せない）
+    ("並ぶ追跡していない綴り違いを捨てる", "        entries = spelled(root, None if index is None else index.get((root.name,), set()))\n",
+     "        entries = spelled(root, None if index is None else index.get((root.name,), set()))\n"
+     "        tracked_here = set() if index is None else index.get((root.name,), set())\n"
+     "        entries = {n for n in entries if n in tracked_here or not any(fold(m) == fold(n) and m in entries for m in tracked_here)}\n",
+     "別の項目の綴り違いは index に寄せない"),
     ("index に在る名前は寄せない", "    for name in entries:\n        # 自分自身も含む",
      "    for name in entries:\n        if name in index:\n            result.add(name)\n            continue\n        # 自分自身も含む",
      "index の綴り違いは同じフォルダでも断る"),
@@ -908,12 +922,24 @@ def prepare_git(root: Path, docs: Path, prepare: str) -> None:
         (v2 / "Requirements" / "x.md").write_text("X\n", encoding="utf-8")
 
 
+class PrepareFailed(Exception):
+    """試料を用意できなかった（本体を走らせていない）。呼ぶ側が `check` に通し、他の試料・変異は続ける（#698）。"""
+
+
 def run_case(scripts: Path, root: Path, tree: dict, prepare: str, extra: list[str], twice: bool = False) -> Result:
     assert_in_tmp(root)
     docs = root / "docs"
-    locked = build(docs, tree)
-    if prepare.startswith("git-"):
-        prepare_git(root, docs, prepare)
+    locked: list[Path] = []
+    try:
+        locked = build(docs, tree)
+        if prepare.startswith("git-"):
+            prepare_git(root, docs, prepare)
+    except (RuntimeError, OSError, subprocess.CalledProcessError) as e:
+        for path in locked:  # 一時ディレクトリを消せるように戻す
+            path.chmod(0o755)
+        stderr = getattr(e, "stderr", None)
+        tail = f" {stderr[-300:]!r}" if stderr else ""
+        raise PrepareFailed(f"{type(e).__name__}: {e}{tail}") from e
     # git を呼ぶ環境（#570・#572）。GIT_CEILING_DIRECTORIES は FS の境界の代わり——どちらも git が上へ辿るのを止める
     env = {"git-env-index": {"GIT_INDEX_FILE": "idx"}, "git-env-missing-index": {"GIT_INDEX_FILE": "nonexistent-idx"}, "git-env-temp-index": {"GIT_INDEX_FILE": "idx"}, "git-env-dir": {"GIT_DIR": ".git"}, "git-env-literal": {"GIT_LITERAL_PATHSPECS": "1"},
            "git-ceiling": {"GIT_CEILING_DIRECTORIES": os.path.realpath(root)},
@@ -995,9 +1021,24 @@ def skipped(name: str) -> bool:
     return name in UNREADABLE_CASES and hasattr(os, "geteuid") and os.geteuid() == 0
 
 
+def attempt(label: str, *args, **kwargs) -> Result | None:
+    """`run_case` を走らせる。試料を用意できなければ `label` で失敗に数えて None（traceback で全体を止めない。#698）。"""
+    try:
+        return run_case(*args, **kwargs)
+    except PrepareFailed as e:
+        check(label, False, str(e))
+        return None
+
+
 def run_all(scripts: Path, work: Path) -> dict[str, Result]:
-    return {name: run_case(scripts, work / f"case{i}", tree, prepare, extra)
-            for i, (name, tree, prepare, extra, _) in enumerate(CASES) if not skipped(name)}
+    results = {}
+    for i, (name, tree, prepare, extra, _) in enumerate(CASES):
+        if skipped(name):
+            continue
+        result = attempt(f"試料を用意できなかった（判定していない）: {name}", scripts, work / f"case{i}", tree, prepare, extra)
+        if result is not None:
+            results[name] = result
+    return results
 
 
 def as_expected(name: str, result: Result) -> bool:
@@ -1050,11 +1091,15 @@ def main() -> int:
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result.code} {result.output[-400:]}")
 
         # 決定論: 2 回作ってバイトが一致し、陽性対照として入力を 1 字変えると変わる
-        twice = run_case(scripts, tmp_path / "twice", MAIN, "none", [], twice=True)
-        check("2 回作ってバイトが一致しない", made(twice) and twice.tree == twice.again)
-        shifted = run_case(scripts, tmp_path / "shifted", {**MAIN, "v2/requirements/c.md": "C3\n"}, "none", [])
-        check("入力を変えても出力が変わらない（何を渡しても同じものを出している）",
-              made(shifted) and shifted.tree != twice.tree)
+        twice = attempt("試料を用意できなかった（判定していない）: 2 回作る", scripts, tmp_path / "twice", MAIN, "none", [],
+                        twice=True)
+        shifted = attempt("試料を用意できなかった（判定していない）: 入力を変える", scripts, tmp_path / "shifted",
+                          {**MAIN, "v2/requirements/c.md": "C3\n"}, "none", [])
+        if twice is not None:
+            check("2 回作ってバイトが一致しない", made(twice) and twice.tree == twice.again)
+        if twice is not None and shifted is not None:
+            check("入力を変えても出力が変わらない（何を渡しても同じものを出している）",
+                  made(shifted) and shifted.tree != twice.tree)
 
         source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
@@ -1072,7 +1117,10 @@ def main() -> int:
             mutated = copy_scripts(tmp_path / f"mut{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             killer_case = next(case for case in CASES if case[0] == killer)
-            result = run_case(mutated, tmp_path / f"mutwork{index}", *killer_case[1:4])
+            result = attempt(f"変異を当てられなかった（試料を用意できなかった）: {name}", mutated, tmp_path / f"mutwork{index}",
+                             *killer_case[1:4])
+            if result is None:
+                continue
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, result), result.output[-300:])
 
         problems = oo_problems(scripts, tmp_path)
