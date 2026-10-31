@@ -920,8 +920,8 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         fake_gh(env, {10: pr_json(files=(manifest, "a.py")), 11: pr_json(files=(manifest,)),
                       12: pr_json(files=("plugins/y/.claude-plugin/plugin.json",)), 13: pr_json(files=("b.py",))})
         items = run_reach(mod, env)
-        check("到達: 同じ版のファイルを上げる PR 2 本は版の取り合いで止まる",
-              all(at(items, f"到達 #{n}")[0] == mod.ACTION and "#10・#11" in at(items, f"到達 #{n}")[1]
+        check("到達: 同じ版のファイルを上げる PR 2 本は版の取り合い（どれが先かは決まらないので判定できない）",
+              all(at(items, f"到達 #{n}")[0] == mod.UNKNOWN and "#10・#11" in at(items, f"到達 #{n}")[1]
                   for n in (1, 2)), bad)
         check("到達: まとめの行が同じ 1 本の PR を持っても取り合いにしない",
               at(items, "到達 #3")[0] == mod.GOOD and at(items, "到達 #4")[0] == mod.GOOD, bad)
@@ -931,8 +931,8 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
                       12: pr_json(state="MERGED", files=("plugins/z/.claude-plugin/plugin.json",)),
                       13: pr_json(files=("plugins/z/.claude-plugin/plugin.json",))})
         items = run_reach(mod, env)
-        check("到達: 操作待ちの行の開いた PR も版の取り合いに数える",
-              at(items, "到達 #2")[0] == mod.ACTION and "#10・#11" in at(items, "到達 #2")[1], bad)
+        check("到達: 操作待ちの行の PR は不在の間にマージされないので、版の取り合いに数えない",
+              at(items, "到達 #2")[0] == mod.GOOD, bad)
         check("到達: マージ済みの PR は版の取り合いに数えない", at(items, "到達 #4")[0] == mod.GOOD, bad)
         # 判断待ちの印: まとめの代表にだけ書かれても全行で止まる・マージ済みなら進む・コロンの無い文は印にしない
         cruise_ledger(env, [row(1, "pr", pr="20", group="1", note="利用者の判断待ち: P1"), row(2, "pr", pr="20", group="1"),
@@ -947,6 +947,18 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
               at(items, "到達 #4")[0] == mod.GOOD and at(items, "到達 #5")[0] == mod.GOOD, bad)
         check("到達: コロンの無い「利用者の判断待ち…」は印にしない", at(items, "到達 #6")[0] == mod.GOOD, bad)
         check("到達: 全角のコロンの印も読む", at(items, "到達 #7")[0] == mod.ACTION, bad)
+        # 衝突と判断待ちが重なれば両方を出す・blocked のまとめは代表の印を読む・番号でない PR の欄の進行中の行は判定できない
+        cruise_ledger(env, [row(1, "pr", pr="30", note="利用者の判断待ち: P1"), row(2, "pr", pr="31", note="利用者の判断待ち: P2"),
+                            row(3, "blocked", group="3", note="利用者の判断待ち: Q"), row(4, "blocked", group="3"),
+                            row(5, "impl", pr="https://github.com/o/r/pull/11")])
+        fake_gh(env, {30: pr_json(mergeable="CONFLICTING"), 31: pr_json(state="CLOSED")})
+        items = run_reach(mod, env)
+        check("到達: 衝突と判断待ちが重なれば両方を出す", "衝突" in at(items, "到達 #1")[1]
+              and "利用者の判断待ち" in at(items, "到達 #1")[1], bad)
+        check("到達: 閉じた PR と判断待ちが重なれば両方を出す", "閉じている" in at(items, "到達 #2")[1]
+              and "利用者の判断待ち" in at(items, "到達 #2")[1], bad)
+        check("到達: blocked のまとめの別の行も代表の判断待ちを出す", at(items, "到達 #4")[1].startswith("利用者の判断待ち"), bad)
+        check("到達: 番号でない PR の欄の進行中の行は判定できない", at(items, "到達 #5")[0] == mod.UNKNOWN, bad)
 
     # マージの線の判定（#490 の受入基準 1 の「マージの線」）
     with scenario(script) as env:
@@ -1338,8 +1350,8 @@ MUTATIONS = {
         "    if args.ledger is not None and not args.cruise:\n",
         "    if False:\n"),
     "到達: 衝突を止まる要因にしない": (
-        '            if info.get("mergeable") == "CONFLICTING":\n',
-        '            if False:\n'),
+        '        if isinstance(info, dict) and info.get("mergeable") == "CONFLICTING":\n',
+        '        if False:\n'),
     "到達: mergeable が UNKNOWN でも進むと読む": (
         '            if info.get("mergeable") != "MERGEABLE":\n',
         '            if False:\n'),
@@ -1347,11 +1359,11 @@ MUTATIONS = {
         '                return "unknown", f"PR #{n} の状態を読めなかった',
         '                return "merge", f"PR #{n} の状態を読めなかった'),
     "到達: 閉じた PR を止めない": (
-        '            if info.get("state") == "CLOSED":\n',
-        '            if False:\n'),
-    "到達: 判断待ちの印のある PR を進むと読む": (
-        '        if state in IN_PROGRESS and judged(issue):\n',
+        '        if isinstance(info, dict) and info.get("state") == "CLOSED":\n',
         '        if False:\n'),
+    "到達: 判断待ちの印のある PR を進むと読む": (
+        '        if wait:\n            return "stop", wait\n',
+        '        if False:\n            return "stop", wait\n'),
     "到達: 版の取り合いを見ない": (
         "for path, prs in manifests.items() if len(prs) > 1 for n in prs}",
         "for path, prs in manifests.items() if len(prs) > 99 for n in prs}"),
@@ -1403,9 +1415,21 @@ MUTATIONS = {
     "到達: 判断待ちの印をまとめの自分の行だけで見る": (
         'for r in members(issue) if r.get("note", "").startswith(JUDGE_MARKS)',
         'for r in [issue] if r.get("note", "").startswith(JUDGE_MARKS)'),
-    "到達: 版の取り合いに進行中の行の PR しか数えない": (
-        '        if i["state"] not in ("merged", "dropped") and n and n not in infos:\n',
-        '        if i["state"] in IN_PROGRESS and n and n not in infos:\n'),
+    "到達: 版の取り合いに操作待ちの行の PR も数える": (
+        '        if i["state"] in IN_PROGRESS and n and n not in infos:',
+        '        if i["state"] not in ("merged", "dropped") and n and n not in infos:'),
+    "到達: 版の取り合いを止まると言う": (
+        '                return "unknown", (f"PR {\'・\'.join(',
+        '                return "stop", (f"PR {\'・\'.join('),
+    "到達: 番号でない PR の欄の進行中の行を進むと読む": (
+        '        if state in IN_PROGRESS and issue.get("pr", "").strip() and not n:\n',
+        '        if False:\n'),
+    "到達: 判断待ちの印で衝突・閉じた PR を隠す": (
+        '        also = f"（ほかに: {wait}）" if wait else ""\n',
+        '        also = f"（ほかに: {wait}）" if wait else ""\n        if wait:\n            return "stop", wait\n'),
+    "到達: 衝突・閉じた PR に判断待ちを添えない": (
+        '        also = f"（ほかに: {wait}）" if wait else ""\n',
+        '        also = ""\n'),
     "到達: マージ済みの PR より判断待ちの印を先に見る": (
         '        if isinstance(info, dict) and info.get("state") == "MERGED":\n',
         '        if False:\n'),

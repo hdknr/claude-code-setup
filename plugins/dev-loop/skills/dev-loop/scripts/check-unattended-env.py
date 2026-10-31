@@ -83,9 +83,11 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   ほかは「止まっている」）、まとめの中で取り残された行（`ledger.py` の名指し）は止まる。進行中（`impl`・`gate`・`pr`）は
   `note` が `利用者の判断待ち:` で始まれば（まとめならどれか 1 行の `note` でも。`note` は代表にしか書かれないことがある）マージの前の判断待ちで止まる——
   ただし PR がマージ済みなら印より先にそちらを見る（判断が済んで利用者がマージした後の、古い台帳）。PR の番号があれば `gh pr view <番号> --json state,mergeable,files` で、
-  閉じていれば止まる、`CONFLICTING` なら衝突で止まる、`MERGEABLE` でなければ（`UNKNOWN` など）判定できない、
-  **同じ `.claude-plugin/plugin.json` を触る開いた PR が 2 本以上**なら版の取り合いで止まる（まとめの行が同じ 1 本の PR を持つのは数えない）、
-  マージ済みなら進む（台帳を直す）。PR は済んでいない行（`merged`・`dropped` でない）の全部で見る——版の取り合いには `await`・`blocked` の行の開いた PR も数える。
+  閉じていれば止まる、`CONFLICTING` なら衝突で止まる（判断待ちの印もあれば併せて出す）、`MERGEABLE` でなければ（`UNKNOWN` など）判定できない、
+  **進行中の行の開いた PR のうち、同じ `.claude-plugin/plugin.json` を触るものが 2 本以上**なら版の取り合いで判定できない
+  （どれか 1 本は先にマージされ、残りが止まるが、どれが先かは決まらない。まとめの行が同じ 1 本の PR を持つのは数えない。
+  `await`・`blocked` の行の PR は不在の間にマージされないので数えない）、PR の欄が番号でなければ判定できない、
+  マージ済みなら進む（台帳を直す）。
   そのほかはマージの線のとおり。`todo` は依存先を辿り（まとめの中の依存は済んだと読む。**まとめの行は、まとめの全行の外への依存で決まる**——`next` はまとめを全行が着手できるときだけ出す）、
   止まる依存先があれば「始まらない」と止まる元の番号を出す
 - **まとめ**（`到達できる範囲`。人が見る）——マージまで進む・利用者の承認を待つ・止まる・判定できないの番号の一覧
@@ -984,7 +986,7 @@ def reach_items(project, name, present, pr_view=None):
     infos = {}
     for i in data["issues"]:
         n = pr_number(i)
-        if i["state"] not in ("merged", "dropped") and n and n not in infos:
+        if i["state"] in IN_PROGRESS and n and n not in infos:  # await・blocked の PR は不在の間にマージされない
             infos[n] = pr_view(n)
     manifests = {}
     for n, info in infos.items():
@@ -1017,27 +1019,32 @@ def reach_items(project, name, present, pr_view=None):
         if state == "await":
             return "stop", f"利用者の操作待ち: {clip(note) or 'note が空'}"
         if state == "blocked":
-            return "stop", clip(note) if note.startswith(JUDGE_MARKS) else f"止まっている: {clip(note) or 'note が空'}"
+            mark = judged(issue)  # まとめなら代表の印も読む（note は代表にしか書かれないことがある）
+            return "stop", clip(mark) if mark else f"止まっている: {clip(note) or 'note が空'}"
         n = pr_number(issue)
+        if state in IN_PROGRESS and issue.get("pr", "").strip() and not n:
+            return "unknown", f"台帳の PR の欄 {issue['pr']!r} が番号でない——実物で確かめる"
         info = infos.get(n) if state in IN_PROGRESS and n else None
         if isinstance(info, dict) and info.get("state") == "MERGED":
             # 判断待ちの印より先に見る——判断が済んで利用者がマージしたのに、台帳がまだ古いことがある
             return "merge", f"PR #{n} はマージ済み（台帳は {state} のまま——親が台帳を直す）"
-        if state in IN_PROGRESS and judged(issue):
-            return "stop", f"マージの前に{clip(judged(issue))}"
+        wait = f"マージの前に{clip(judged(issue))}" if state in IN_PROGRESS and judged(issue) else ""
+        also = f"（ほかに: {wait}）" if wait else ""
+        if isinstance(info, dict) and info.get("state") == "CLOSED":
+            return "stop", f"PR #{n} は閉じている{also}"
+        if isinstance(info, dict) and info.get("mergeable") == "CONFLICTING":
+            return "stop", f"PR #{n} が main と衝突している（不在の周は直しに戻らない）{also}"
+        if wait:
+            return "stop", wait
         if state in IN_PROGRESS and n:
             if not isinstance(info, dict):
                 return "unknown", f"PR #{n} の状態を読めなかった（gh pr view が失敗した・形が違う）"
-            if info.get("state") == "CLOSED":
-                return "stop", f"PR #{n} は閉じている"
-            if info.get("mergeable") == "CONFLICTING":
-                return "stop", f"PR #{n} が main と衝突している（不在の周は直しに戻らない）"
             if info.get("mergeable") != "MERGEABLE":
                 return "unknown", f"PR #{n} の mergeable が {info.get('mergeable')!r}——数秒おいて回し直す"
             if n in contended:
                 path, prs = contended[n]
-                return "stop", (f"PR {'・'.join(f'#{p}' for p in prs)} が同じ版のファイル（{path}）を上げる——"
-                                "先に 1 本マージされると、残りは版を上げ直すまで止まる（不在の周は直しに戻らない）")
+                return "unknown", (f"PR {'・'.join(f'#{p}' for p in prs)} が同じ版のファイル（{path}）を上げる——"
+                                   "どれか 1 本が先にマージされると、残りは版を上げ直すまで止まる（どれが先かは決まらない。不在の周は直しに戻らない）")
             return merge_tail(f"PR #{n}: ")
         if state == "pr":
             return "unknown", "状態は pr だが台帳に PR の番号が無い——実物で確かめる"

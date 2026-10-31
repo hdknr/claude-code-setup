@@ -80,9 +80,10 @@ cruise: 直す線 = 既定
   cd <メインの作業ツリー> && git worktree list
   ```
   **拒まれたら戻れなかったものとして扱う。** **`cd` を落とした素の `git worktree list` で確かめない**——cwd が隔離された worktree なら、隔離中でも通る。
-  **測った範囲**（2026-10-31・Claude Code 2.1.316・macOS。使い捨てのリポジトリで `claude -p` のセッションに打たせた）: `claude -w` で起動から隔離したセッションと、
-  `EnterWorktree(name)` で入ったセッションでは、この形がガードに拒まれ（「changes directory to the shared checkout」。`git -C <メインの作業ツリー> worktree list` も
-  「redirects git to the shared checkout via -C」で拒まれた）、素の `git worktree list` は通った。**`EnterWorktree(name)` のあと `ExitWorktree`（`keep`）で戻ったセッションと、
+  **測った範囲**（2026-10-31・Claude Code 2.1.316・macOS。使い捨てのリポジトリで `claude -p` のセッションに打たせた）: `claude -w` で起動から隔離したセッションでは、
+  この形がガードに拒まれ（「changes directory to the shared checkout」。`git -C <メインの作業ツリー> worktree list` も
+  「redirects git to the shared checkout via -C」で拒まれた）、素の `git worktree list` は通った。`EnterWorktree(name)` で入ったセッションでも
+  この形は拒まれた（そこでは `git -C` の形と素の形を測っていない）。**`EnterWorktree(name)` のあと `ExitWorktree`（`keep`）で戻ったセッションと、
   隔離していないセッションでは、この形が通った。** **`EnterWorktree(path)` で入って `/clear` した隔離（#484 の形）では測っていない**——`/clear` は対話のセッションでしか打てない。
   #484 の後のセッションの拒否は同じガードの文言だった。
   **戻れなければ周を始めず**、下の 5 の「次の周を始めないと決めたら」のとおり止まる（利用者に要る操作は、メインの作業ツリーで
