@@ -94,7 +94,8 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 ### この環境では証明できないもの（未証明）
 
 - U1: 本物の `gh` の `mergeable`・`files` の値の形（偽の `gh` で当てる。実物の形は手で 1 度だけ見る——下の verify）。
-- U2: #504 の確かめが `EnterWorktree(path)`＋`/clear` の隔離・`ExitWorktree` の後でも同じに振る舞うこと（測ったのは `claude -w` で起動した隔離と、隔離していないセッション）。
+- U2: #504 の確かめが `EnterWorktree(path)`＋`/clear` の隔離（#484 の形）でも同じに振る舞うこと——`/clear` は対話のセッションでしか打てず、`claude -p` では作れない。
+  （1 パス目の `/code-review` の指摘で、`EnterWorktree(name)` とその後の `ExitWorktree` は測った——下の交絡の表の E1・E3。）
 
 ## 未解決の判断・確認待ち事項
 
@@ -111,8 +112,8 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 ## 関門の進捗（再開点）
 
 - 実装: `bb6c7baa`（このセッションで実装。委譲なし）
-- Verifier 1 パス目: 起動（2026-10-31。`dev-loop:dev-loop-verifier`・sonnet）
-- `/code-review` 1 パス目: 起動（2026-10-31）
+- Verifier 1 パス目: 済み——反証 2 件（R1・R2。どちらもテストの隙。下の採否の表）。起動した体は `dev-loop:dev-loop-verifier`（sonnet）
+- `/code-review` 1 パス目: 済み——指摘 10 件（CR1〜CR10。下の採否の表）
 - 1 パス目の指摘対応の起点: `bb6c7baa`——1 パス目の 2 つの関門に渡した時点の HEAD
 - 2 パス目: 未
 - 狭いパス: 未
@@ -130,6 +131,8 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 | P1 | `cd <リポジトリ> && git worktree list` | **拒まれた**——「changes directory to the shared checkout (…) before running git. Refusing to run it」 |
 | P2 | `git -C <リポジトリ> worktree list` | **拒まれた**——「redirects git to the shared checkout via -C」 |
 | P3 | `git worktree list`（cwd は隔離した worktree） | **通る**——素の形は隔離中でも拒まれないので、確かめにならない |
+| E1（`claude -p` で `EnterWorktree(name)` してから） | `cd <リポジトリ> && git worktree list` | **拒まれた**（同じ文言。トランスクリプトに `Refusing to run it` 2 件） |
+| E3（`EnterWorktree(name)` → `ExitWorktree(keep)` してから） | `cd <リポジトリ> && git worktree list` | **通る**——戻った後は確かめが「戻れた」と出る（E2 はコマンドを打ち間違えた回で数えない） |
 | N1（陰性側の対照: 隔離していない） | `cd <リポジトリ> && git worktree list`（`claude -p`、`-w` なし） | 通る——同じ形が、隔離していなければ通る |
 
 - 候補の交絡 1: 拒んだのがガードでなくモデルの作り話 → 子のトランスクリプトで `tool_result` がガードの文言（`This session is isolated in the worktree …`）であることを確かめた。
@@ -139,6 +142,23 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 - 観測窓: 各 probe 1 回ずつ、2.1.316 だけ。
 
 ## 既知の限界・決着済みの論点
+
+### 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V-R1 依存先が混ざるときの優先順（`KIND_ORDER`）をテストが見ていない | 示せる（逆にする変異が素通り） | A3（守り方の試料） | 直す——混ざった依存の試料と変異 |
+| V-R2 版の取り合いの `OPEN` の条件をテストが見ていない（マージ済みの PR を数える偽陽性） | 示せる（恒真にする変異が素通り） | A5・A7 | 直す——試料と変異 |
+| CR1 まとめの行を自分の依存だけで決め、まとめの別の行の依存が止まっても「着手できる」 | 示せる（試料で `良い`） | A3 | 直す——まとめの全行の外への依存で決める |
+| CR2 判断待ちの印がまとめの代表だけにあると、同じ PR の別の行が「進む」 | 示せる | A6 | 直す——まとめのどれかの行の印を見る |
+| CR3 版の取り合いに進行中の行の PR しか数えない（`await` の行の開いた PR） | 示せる | A5 | 直す——済んでいない行の PR を全部見る |
+| CR4 判断待ちの印をマージ済みの PR より先に見て、済んだ PR を止まると言う | 示せる | A6・A7 | 直す——マージ済みを先に |
+| CR5 公開ページが測っていない入り方まで「測ってある」と読める | 示せる（文面） | B2 | 直す |
+| CR6 §6 が点検の到達の止まりを渡す手順を持たない | 示せる（文面） | A1 | 直す——§6 に 1 文 |
+| CR7 U2 の `ExitWorktree` の後は測れる | 示せる（測った——E1・E3） | B2（分類） | 直す——測って U2 を狭めた |
+| CR8 `cd … &&` の複合コマンドは隔離の外で許可の確認を出しうる（`git -C` で足りる） | 示せない（測っていない） | 無し | 残課題 |
+| CR9 印をコロン無しで読み、「利用者の判断待ちは解消した」で止まる | 示せる | A7 | 直す——`利用者の判断待ち:`（全角も） |
+| CR10 docstring が ledger.py から使うものを狭く書く・`--help` が古い・ローダーの重複 | 示せる（文面）／重複は示せない | A9（記述）／無し | 文面は直す、ローダーの重複は残課題 |
 
 （関門の指摘の採否は、ここに 1 件 1 行で書く。）
 

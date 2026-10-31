@@ -80,10 +80,11 @@ cruise: 直す線 = 既定
   cd <メインの作業ツリー> && git worktree list
   ```
   **拒まれたら戻れなかったものとして扱う。** **`cd` を落とした素の `git worktree list` で確かめない**——cwd が隔離された worktree なら、隔離中でも通る。
-  **測った範囲**（2026-10-31・Claude Code 2.1.316・macOS。使い捨てのリポジトリで `claude -w` で起動から隔離したセッション）: この形と
-  `git -C <メインの作業ツリー> worktree list` はガードに拒まれ（「changes directory to the shared checkout」「redirects git to the shared checkout via -C」）、
-  素の `git worktree list` は通り、隔離していないセッションではこの形が通った。**`EnterWorktree(path)` で入って `/clear` した隔離（#484 の形）と、
-  `ExitWorktree` で戻った後では測っていない**——#484 の後のセッションの拒否は同じガードの文言だった。
+  **測った範囲**（2026-10-31・Claude Code 2.1.316・macOS。使い捨てのリポジトリで `claude -p` のセッションに打たせた）: `claude -w` で起動から隔離したセッションと、
+  `EnterWorktree(name)` で入ったセッションでは、この形がガードに拒まれ（「changes directory to the shared checkout」。`git -C <メインの作業ツリー> worktree list` も
+  「redirects git to the shared checkout via -C」で拒まれた）、素の `git worktree list` は通った。**`EnterWorktree(name)` のあと `ExitWorktree`（`keep`）で戻ったセッションと、
+  隔離していないセッションでは、この形が通った。** **`EnterWorktree(path)` で入って `/clear` した隔離（#484 の形）では測っていない**——`/clear` は対話のセッションでしか打てない。
+  #484 の後のセッションの拒否は同じガードの文言だった。
   **戻れなければ周を始めず**、下の 5 の「次の周を始めないと決めたら」のとおり止まる（利用者に要る操作は、メインの作業ツリーで
   新しいセッションを開き、同じ引数で起動し直すこと）。
   **`apply` が「本文の線が台帳の確かめた線と違う」と名指ししたら、利用者に見せる**——台帳の線は変わっていない。
@@ -305,6 +306,8 @@ check-unattended-env.py --cruise --ledger issue-<親>             # --absent
 **周の途中で足した行**（`show` の「周の途中で足した行のうち済んでいないもの」）**が残っていれば、出所ごとに渡す**——
 「なし」でなければ「済んだ」と報告しない（`../dev-loop/references/found-lines.md`）。
 **1 で名指しされた Issue（親 Issue にあって台帳に無い）が残っていれば、それも渡す**——台帳がすべて済んでも、親 Issue の一覧は済んでいない。
+**3 の点検の到達で止まる・判定できないと出た周が残っていれば、理由ごと渡す**（PR の衝突・版の取り合い・判断待ち・マージの線が効かない、など。#490）——
+台帳の状態が `pr` のままで、上のどの行にも出ないことがある。終える前に点検を回し直してから渡す（`--absent` の再開で訊かなかった結果も、ここで渡す）。
 **推奨で決めた確認の Issue を集めて渡す**——台帳の `decisions` の番号に加えて、**本文の先頭がこの cruise の印 `<!-- cruise-decision: #<親> -->` の開いた Issue も探し、
 `decisions` と突き合わせる**（#647。`decisions` は書き忘れうる——とくに親が自分で立てたもの）:
 

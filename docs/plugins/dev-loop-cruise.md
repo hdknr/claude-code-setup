@@ -250,7 +250,9 @@ cruise: 直す線 = 既定
   利用上限で何が起きるかを、実際の周ではまだ確かめていません。回し方と確かめた範囲は `../cruise/references/child-process.md` を正とします。
 - **前の版の親が worktree の中に残っていたら**、再開時の点検がそう言います。親は `ExitWorktree`（`keep`）を 1 度だけ試しますが、
   戻れた例は 1 件しか観測していません。戻れたかは `cd <メインの作業ツリー> && git worktree list` を打って確かめ、拒まれたら戻れなかったものとします
-  （隔離したセッションでこの形が拒まれることは測ってあります。`cd` の無い `git worktree list` は隔離中でも通るので確かめになりません。[#504](https://github.com/hdknr/claude-code-setup/issues/504)）。
+  （`claude -w` と `EnterWorktree(name)` で隔離したセッションではこの形が拒まれ、`ExitWorktree` で戻った後は通ることを測ってあります。
+  **#484 の形——`EnterWorktree(path)` で入って `/clear` した隔離——では測っていません。**
+  `cd` の無い `git worktree list` は隔離中でも通るので確かめになりません。[#504](https://github.com/hdknr/claude-code-setup/issues/504)）。
   戻れなければ、メインの作業ツリーで新しいセッションを開いて起動し直してください。
 
 ### 利用上限で止まったとき

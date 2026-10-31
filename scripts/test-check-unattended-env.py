@@ -926,6 +926,27 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         check("到達: まとめの行が同じ 1 本の PR を持っても取り合いにしない",
               at(items, "到達 #3")[0] == mod.GOOD and at(items, "到達 #4")[0] == mod.GOOD, bad)
         check("到達: 版のファイルを触らない PR は取り合わない", at(items, "到達 #5")[0] == mod.GOOD, bad)
+        cruise_ledger(env, [row(1, "await", pr="10"), row(2, "pr", pr="11"), row(3, "pr", pr="12"), row(4, "pr", pr="13")])
+        fake_gh(env, {10: pr_json(files=(manifest,)), 11: pr_json(files=(manifest,)),
+                      12: pr_json(state="MERGED", files=("plugins/z/.claude-plugin/plugin.json",)),
+                      13: pr_json(files=("plugins/z/.claude-plugin/plugin.json",))})
+        items = run_reach(mod, env)
+        check("到達: 操作待ちの行の開いた PR も版の取り合いに数える",
+              at(items, "到達 #2")[0] == mod.ACTION and "#10・#11" in at(items, "到達 #2")[1], bad)
+        check("到達: マージ済みの PR は版の取り合いに数えない", at(items, "到達 #4")[0] == mod.GOOD, bad)
+        # 判断待ちの印: まとめの代表にだけ書かれても全行で止まる・マージ済みなら進む・コロンの無い文は印にしない
+        cruise_ledger(env, [row(1, "pr", pr="20", group="1", note="利用者の判断待ち: P1"), row(2, "pr", pr="20", group="1"),
+                            row(3, "todo", deps=[2]), row(4, "pr", pr="21", note="利用者の判断待ち: P2"),
+                            row(5, "todo", deps=[4]), row(6, "pr", pr="22", note="利用者の判断待ちは解消した（承認）"),
+                            row(7, "pr", pr="23", note="利用者の判断待ち：全角")])
+        fake_gh(env, {20: pr_json(), 21: pr_json(state="MERGED"), 22: pr_json(), 23: pr_json()})
+        items = run_reach(mod, env)
+        check("到達: まとめの代表の判断待ちで、同じ PR の行も依存する周も止まる",
+              at(items, "到達 #2")[0] == mod.ACTION and at(items, "到達 #3")[0] == mod.ACTION, bad)
+        check("到達: 判断待ちの印があっても PR がマージ済みなら進む",
+              at(items, "到達 #4")[0] == mod.GOOD and at(items, "到達 #5")[0] == mod.GOOD, bad)
+        check("到達: コロンの無い「利用者の判断待ち…」は印にしない", at(items, "到達 #6")[0] == mod.GOOD, bad)
+        check("到達: 全角のコロンの印も読む", at(items, "到達 #7")[0] == mod.ACTION, bad)
 
     # マージの線の判定（#490 の受入基準 1 の「マージの線」）
     with scenario(script) as env:
@@ -979,7 +1000,9 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
                             row(5, "blocked", note="BLOCKED: 実機"), row(6, "dropped"), row(7, "todo", deps=[6]),
                             row(8, "merged", note="落ちた: 別のファイル", group="9"), row(9, "merged", group="9"),
                             row(10, "todo", deps=[8]), row(11, "todo", deps=[12], group="11"),
-                            row(12, "todo", group="11"), row(13, "todo", deps=[4, 1])])
+                            row(12, "todo", group="11"), row(13, "todo", deps=[4, 1]),
+                            row(14, "todo", deps=[9, 4]), row(21, "todo", group="21"),
+                            row(22, "todo", deps=[4], group="21")])
         items = run_reach(mod, env)
         check("到達: 利用者の操作待ちは止まる", at(items, "到達 #1")[0] == mod.ACTION
               and "利用者の操作待ち" in at(items, "到達 #1")[1], bad)
@@ -996,6 +1019,10 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         check("到達: まとめの中の依存は済んだと読む", at(items, "到達 #11")[0] == mod.GOOD, bad)
         check("到達: 依存先の 1 つが止まれば、ほかが進んでも始まらない",
               at(items, "到達 #13")[0] == mod.ACTION and "#4" in at(items, "到達 #13")[1], bad)
+        check("到達: マージ済みと止まる依存先が混ざれば、止まるほうで始まらない",
+              at(items, "到達 #14")[0] == mod.ACTION and "#4" in at(items, "到達 #14")[1], bad)
+        check("到達: まとめの行は、まとめの別の行の外への依存が止まれば始まらない",
+              at(items, "到達 #21")[0] == mod.ACTION and "#4" in at(items, "到達 #21")[1], bad)
         check("到達: 長い note は切って出す",
               len(at(items, "到達 #1")[1]) <= len("利用者の操作待ち: ") + mod.NOTE_WIDTH + 1, bad)
 
@@ -1323,13 +1350,13 @@ MUTATIONS = {
         '            if info.get("state") == "CLOSED":\n',
         '            if False:\n'),
     "到達: 判断待ちの印のある PR を進むと読む": (
-        '        if state in IN_PROGRESS and note.startswith(JUDGE_MARK):\n',
+        '        if state in IN_PROGRESS and judged(issue):\n',
         '        if False:\n'),
     "到達: 版の取り合いを見ない": (
         "for path, prs in manifests.items() if len(prs) > 1 for n in prs}",
         "for path, prs in manifests.items() if len(prs) > 99 for n in prs}"),
     "到達: 依存を辿らない": (
-        '            deps = [(d, outcome(d)) for d in issue["deps"]\n',
+        '            deps = [(d, outcome(d)) for d in dict.fromkeys(d for r in members(issue) for d in r["deps"])\n',
         '            deps = [(d, outcome(d)) for d in []\n'),
     "到達: まとめの中の依存も待つ": (
         '                    if not (issue.get("group") and rows[d].get("group") == issue["group"])]\n',
@@ -1370,6 +1397,27 @@ MUTATIONS = {
     "マージの線: 居る cruise を不在と同じに読む": (
         "    if present:\n        return \"user\"",
         "    if False:\n        return \"user\""),
+    "到達: まとめの行を自分の依存だけで決める": (
+        'for d in dict.fromkeys(d for r in members(issue) for d in r["deps"])',
+        'for d in dict.fromkeys(d for r in [issue] for d in r["deps"])'),
+    "到達: 判断待ちの印をまとめの自分の行だけで見る": (
+        'for r in members(issue) if r.get("note", "").startswith(JUDGE_MARKS)',
+        'for r in [issue] if r.get("note", "").startswith(JUDGE_MARKS)'),
+    "到達: 版の取り合いに進行中の行の PR しか数えない": (
+        '        if i["state"] not in ("merged", "dropped") and n and n not in infos:\n',
+        '        if i["state"] in IN_PROGRESS and n and n not in infos:\n'),
+    "到達: マージ済みの PR より判断待ちの印を先に見る": (
+        '        if isinstance(info, dict) and info.get("state") == "MERGED":\n',
+        '        if False:\n'),
+    "到達: 判断待ちの印をコロン無しでも読む": (
+        'JUDGE_MARKS = ("利用者の判断待ち:", "利用者の判断待ち：")',
+        'JUDGE_MARKS = ("利用者の判断待ち",)'),
+    "到達: 依存先の優先順を逆にする": (
+        'KIND_ORDER = ("stop", "unknown", "user", "merge")',
+        'KIND_ORDER = ("merge", "user", "unknown", "stop")'),
+    "到達: 閉じた・マージ済みの PR も版の取り合いに数える": (
+        '        if isinstance(info, dict) and info.get("state") == "OPEN":\n',
+        '        if isinstance(info, dict):\n'),
     "到達: note を切らない": (
         '    return text if len(text) <= width else text[:width] + "…"',
         "    return text"),

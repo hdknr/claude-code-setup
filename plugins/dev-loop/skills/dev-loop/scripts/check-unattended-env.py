@@ -79,12 +79,14 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   宣言がそれでないのにプラグインのカタログ（`.claude-plugin/marketplace.json`）があれば効かない（マージが配布を起こす）。
   `ドキュメントのみ` なら効く。宣言が無ければ「判定できない」（`CLAUDE.md` でしか決まらない）。
   **効くと出しても、照合（ワークフロー・`CLAUDE.md`・周の差分）は見ていない**——各周がマージの前に行う（`references/absent-lines.md`）
-- **周ごと**（`到達 #<番号>`）——`await` は止まる（`note`）、`blocked` は止まる（`note` が `利用者の判断待ち` で始まればそのまま、
+- **周ごと**（`到達 #<番号>`）——`await` は止まる（`note`）、`blocked` は止まる（`note` が `利用者の判断待ち:` で始まればそのまま、
   ほかは「止まっている」）、まとめの中で取り残された行（`ledger.py` の名指し）は止まる。進行中（`impl`・`gate`・`pr`）は
-  `note` が `利用者の判断待ち` で始まればマージの前の判断待ちで止まる。PR の番号があれば `gh pr view <番号> --json state,mergeable,files` で、
+  `note` が `利用者の判断待ち:` で始まれば（まとめならどれか 1 行の `note` でも。`note` は代表にしか書かれないことがある）マージの前の判断待ちで止まる——
+  ただし PR がマージ済みなら印より先にそちらを見る（判断が済んで利用者がマージした後の、古い台帳）。PR の番号があれば `gh pr view <番号> --json state,mergeable,files` で、
   閉じていれば止まる、`CONFLICTING` なら衝突で止まる、`MERGEABLE` でなければ（`UNKNOWN` など）判定できない、
   **同じ `.claude-plugin/plugin.json` を触る開いた PR が 2 本以上**なら版の取り合いで止まる（まとめの行が同じ 1 本の PR を持つのは数えない）、
-  マージ済みなら進む（台帳を直す）。そのほかはマージの線のとおり。`todo` は依存先を辿り（まとめの中の依存は済んだと読む）、
+  マージ済みなら進む（台帳を直す）。PR は済んでいない行（`merged`・`dropped` でない）の全部で見る——版の取り合いには `await`・`blocked` の行の開いた PR も数える。
+  そのほかはマージの線のとおり。`todo` は依存先を辿り（まとめの中の依存は済んだと読む。**まとめの行は、まとめの全行の外への依存で決まる**——`next` はまとめを全行が着手できるときだけ出す）、
   止まる依存先があれば「始まらない」と止まる元の番号を出す
 - **まとめ**（`到達できる範囲`。人が見る）——マージまで進む・利用者の承認を待つ・止まる・判定できないの番号の一覧
 
@@ -216,7 +218,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   フェンスの中の宣言・マージを利用者が打つ（`user_ops`）・配布の宣言で印が無い・カタログがあるのに配布の宣言が無いときに「効く」と言わない**。
   宣言もカタログも無ければ判定できない
 - **居る cruise（`--present`）で、マージの承認待ちを要対処にしない**——人が見る
-- **台帳を書かない**——`ledger.py` の `load` と `ledger_path` しか使わない。**`note` は切って出す**（同じ `note` が依存する周の数だけ並ぶ）
+- **台帳を書かない**——`ledger.py` から使うのは読む関数と定数だけ（`load`・`ledger_path`・`is_stranded`・`has_dist_mark`・`DIST_MERGE`・`DIST_MARK`）。
+  **これらの意味を `ledger.py` で変えると、ここの到達も変わる**。**`note` は切って出す**（同じ `note` が依存する周の数だけ並ぶ）
 
 守らない:
 
@@ -251,7 +254,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **iPhone からの操作が使用中になるか**——本体からは読み切れていない（利用者の実測。#407）。だから手順は両方から離れる形にしてある
 - **到達は見込みである**——関門・CI・利用上限・権限の拒否で止まる周は数えない（起動時には分からない）。
   **マージの線の照合**（ワークフロー・`CLAUDE.md`・周の差分）は見ない。**宣言が無くカタログも無いリポジトリで、マージが反映を起こすか**は見ない（判定できない）
-- **判断待ちは印 `利用者の判断待ち` で始まる `note` だけを読む**——印の無い自由文（「P1 はマージ前に人間が判断」）は読まない。
+- **判断待ちは印 `利用者の判断待ち:`（全角のコロンも）で始まる `note` だけを読む**——印の無い自由文（「P1 はマージ前に人間が判断」）は読まない。
   印を書くのは親（cruise `SKILL.md` §4 の 4）。**狭いパスの指摘があるのに印の無い PR は「進む」と出る**
 - **版の取り合いは `.claude-plugin/plugin.json` を触る PR だけを見る**——ほかの版のファイル・版を上げない衝突は見ない。
   `gh pr view` の `files` が多くのファイルを触る PR で全件を返すかは確かめていない
@@ -870,7 +873,7 @@ def parent_location(cwd=None):
 REACH = "到達"
 REACH_SUMMARY = "到達できる範囲"
 MERGE_LINE = "マージの線"
-JUDGE_MARK = "利用者の判断待ち"  # `note` の先頭の印。found-lines.md が blocked の行に書く印と同じ語（cruise SKILL.md §4 の 4）
+JUDGE_MARKS = ("利用者の判断待ち:", "利用者の判断待ち：")  # `note` の先頭の印。found-lines.md が blocked の行に書く印と同じ語（cruise SKILL.md §4 の 4）
 ABSENT_MERGE = re.compile(r"^不在の線:\s*マージ\s*=(.*)$")
 REFLECT = re.compile(r"^マージの反映:(.*)$")
 REFLECT_DOCS, REFLECT_DIST = "ドキュメントのみ", "ドキュメントとプラグインの配布"
@@ -981,7 +984,7 @@ def reach_items(project, name, present, pr_view=None):
     infos = {}
     for i in data["issues"]:
         n = pr_number(i)
-        if i["state"] in IN_PROGRESS and n and n not in infos:
+        if i["state"] not in ("merged", "dropped") and n and n not in infos:
             infos[n] = pr_view(n)
     manifests = {}
     for n, info in infos.items():
@@ -998,6 +1001,15 @@ def reach_items(project, name, present, pr_view=None):
                 "stop": ("stop", f"{prefix}PR で止まる（{MERGE_LINE}が効かない——上の「{MERGE_LINE}」）"),
                 "unknown": ("unknown", f"{prefix}PR から先は判定できない（{MERGE_LINE}——上の「{MERGE_LINE}」）")}[merge_kind]
 
+    def members(issue):
+        """まとめの全行（まとめに入っていなければ自分だけ）。まとめは 1 つの周・1 本の PR なので、判断待ちも依存も全行で見る。"""
+        g = issue.get("group", "")
+        return [r for r in data["issues"] if r.get("group", "") == g] if g else [issue]
+
+    def judged(issue):
+        """まとめの中で `利用者の判断待ち:` で始まる note（印は 1 行にだけ書かれうる——note はまとめの全行に書かれない）。"""
+        return next((r.get("note", "") for r in members(issue) if r.get("note", "").startswith(JUDGE_MARKS)), "")
+
     def own(issue):
         state, note = issue["state"], issue.get("note", "")
         if lg.is_stranded(issue):
@@ -1005,16 +1017,17 @@ def reach_items(project, name, present, pr_view=None):
         if state == "await":
             return "stop", f"利用者の操作待ち: {clip(note) or 'note が空'}"
         if state == "blocked":
-            return "stop", clip(note) if note.startswith(JUDGE_MARK) else f"止まっている: {clip(note) or 'note が空'}"
-        if state in IN_PROGRESS and note.startswith(JUDGE_MARK):
-            return "stop", f"マージの前に{clip(note)}"
+            return "stop", clip(note) if note.startswith(JUDGE_MARKS) else f"止まっている: {clip(note) or 'note が空'}"
         n = pr_number(issue)
+        info = infos.get(n) if state in IN_PROGRESS and n else None
+        if isinstance(info, dict) and info.get("state") == "MERGED":
+            # 判断待ちの印より先に見る——判断が済んで利用者がマージしたのに、台帳がまだ古いことがある
+            return "merge", f"PR #{n} はマージ済み（台帳は {state} のまま——親が台帳を直す）"
+        if state in IN_PROGRESS and judged(issue):
+            return "stop", f"マージの前に{clip(judged(issue))}"
         if state in IN_PROGRESS and n:
-            info = infos.get(n)
             if not isinstance(info, dict):
                 return "unknown", f"PR #{n} の状態を読めなかった（gh pr view が失敗した・形が違う）"
-            if info.get("state") == "MERGED":
-                return "merge", f"PR #{n} はマージ済み（台帳は {state} のまま——親が台帳を直す）"
             if info.get("state") == "CLOSED":
                 return "stop", f"PR #{n} は閉じている"
             if info.get("mergeable") == "CONFLICTING":
@@ -1038,6 +1051,8 @@ def reach_items(project, name, present, pr_view=None):
         """(種類, 理由, 止まる元の番号)。"""
         if number in memo:
             return memo[number]
+        # 辿っている途中で戻ってきたら輪——ledger.py は輪を拒むが、手で直した台帳で無限に辿らない
+        memo[number] = ("unknown", "依存が輪になっている（台帳を ledger.py show で確かめる）", number)
         issue = rows[number]
         if issue["state"] == "dropped":
             memo[number] = ("stop", "取り下げ", number)
@@ -1047,7 +1062,7 @@ def reach_items(project, name, present, pr_view=None):
             kind, why = own(issue)
             memo[number] = (kind, why, number)
         else:
-            deps = [(d, outcome(d)) for d in issue["deps"]
+            deps = [(d, outcome(d)) for d in dict.fromkeys(d for r in members(issue) for d in r["deps"])
                     if not (issue.get("group") and rows[d].get("group") == issue["group"])]
             worst = min((o[0] for _d, o in deps), key=KIND_ORDER.index, default="merge")
             if worst == "merge":
@@ -1142,7 +1157,7 @@ def main(argv=None):
     ap.add_argument("--flag-settings", default=None)
     ap.add_argument("--managed-settings", default=None)
     ap.add_argument("--cruise", action="store_true",
-                    help="cruise の起動時: 宣言した操作・止まりうる操作・親の起動場所を足す")
+                    help="cruise の起動時: 宣言した操作・止まりうる操作・親の起動場所・到達できる範囲（--ledger）を足す")
     ap.add_argument("--present", action="store_true",
                     help="利用者が居る: 不在に限る項目（自動継続・質問の待ち・通知・スリープ）を出さない")
     ap.add_argument("--ledger", default=None,
