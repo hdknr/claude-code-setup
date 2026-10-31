@@ -39,6 +39,8 @@
   **別のセッションの `check-all.py` と重なったときの取り合いは、ここでは絞れない**。打ち切りの原因は特定していない
   ——#449 の打ち切りは重なりを記録していない日の値で、#460 で届いた 1 回は別のセッションが `check-all.py` を走らせていた
   時間帯だが、重なっていたかは記録していない。
+  **回帰テストのうち変異を別々のプロセスで同時に当てるもの**（`test-check-unattended-env.py`・`test-ledger.py`。#494）にも
+  同じ値を `--jobs` で渡す（#748・#749）——テストの側は自分の上限（4）で切る。
 - **出力は宣言順**（終わった順ではない）。先頭が最も重いので、最初の行が出るまで待つ。
 - **Ctrl-C で、まだ起動していないものは起動せず、走っているものは止める**
   （親だけに SIGINT が届いた場合も——子を止めるのは親である）。**孫まで止める**——
@@ -93,9 +95,9 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-plan-scope.py", [], True),
 ]
 
-# 中で自分も `--jobs` で並列に回すもの（#460）。親の並列数から決めた `--jobs` を渡す——
-# 渡さないと入れ子の既定（CPU の数）で起き、親の作業者と同じ CPU を取り合う。
-NESTED = "check-mutation-claims.py"
+# 中で自分も `--jobs` で並列に回すもの（#460。回帰テストの 2 本は #748・#749）。親の並列数から決めた `--jobs` を渡す——
+# 渡さないと入れ子の既定（CPU の数・テストは 4）で起き、親の作業者と同じ CPU を取り合い、`--jobs 1` でも直列にならない。
+NESTED = ("check-mutation-claims.py", "test-check-unattended-env.py", "test-ledger.py")
 
 
 def nested_jobs(jobs: int) -> int:
@@ -260,11 +262,12 @@ def main() -> int:
                 guard_runs.append((label, None))
                 continue
             args = [*extra, opts.base] if needs_base else extra
-            if name == NESTED:
+            if name in NESTED:
                 args = [*args, "--jobs", str(nested_jobs(opts.jobs))]
             guard_runs.append((label, pool.submit(run, name, args)))
         test_runs = ([] if opts.guards_only
-                     else [(name, pool.submit(run, name, [])) for name in TESTS])
+                     else [(name, pool.submit(run, name, ["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []))
+                           for name in TESTS])
 
         print(f"=== 歯止め === （{opts.jobs} 並列）")
         for label, fut in guard_runs:

@@ -428,13 +428,13 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     # 9) 入れ子の並列を絞る（#460）——`check-mutation-claims.py` に、親より少ない `--jobs` を渡す。
     #    **実物の `GUARDS` のまま、起動の引数だけを記録する**（`run` を差し替えるので何も走らない）。
     #    **値そのものは見ない**——見るのは「渡すこと」「親が 1 なら 1」「親が 2 以上なら親より少ない」。
-    def nested_args(jobs: str) -> list[list[str]]:
+    #    **回帰テストのうち変異を同時に当てる 2 本にも渡す**（#748・#749）——実物の `TESTS` のまま、渡さないものには何も足さない。
+    def nested_args(jobs: str, script: str = "check-mutation-claims.py") -> list[list[str]]:
         mod = load(target, f"{tag}_nested{jobs}")
-        mod.TESTS = []
         calls: list[tuple[str, list[str]]] = []
         mod.run = lambda name, args: (calls.append((name, list(args))), (True, ""))[1]
         run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", jobs])
-        return [args for name, args in calls if name == "check-mutation-claims.py"]
+        return [args for name, args in calls if name == script]
 
     def inner(args: list[list[str]]) -> int | None:
         if len(args) != 1 or args[0][:-1] != ["--jobs"] or not args[0][-1].isdigit():
@@ -444,6 +444,12 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     one, four = inner(nested_args("1")), inner(nested_args("4"))
     got.append(("--jobs 1 なら入れ子も --jobs 1", one == 1))
     got.append(("--jobs 4 なら入れ子は 1 以上 4 未満", four is not None and 1 <= four < 4))
+    nested_tests = ("test-check-unattended-env.py", "test-ledger.py")
+    got.append(("--jobs 1 なら変異を同時に当てる回帰テストにも --jobs 1（#749）",
+                all(inner(nested_args("1", t)) == 1 for t in nested_tests)))
+    got.append(("--jobs 4 なら変異を同時に当てる回帰テストは 1 以上 4 未満（#749）",
+                all(1 <= (inner(nested_args("4", t)) or 0) < 4 for t in nested_tests)))
+    got.append(("--jobs を受けない回帰テストには何も渡さない（#749）", nested_args("1", "test-check-plugin-versions.py") == [[]]))
 
     # 10) 並列で、遅れて落ちる子とシグナルで止まった子（打ち切り）を、表示と集計の両方で失敗に数える（#509）。
     #     **FAIL の行の数と「失敗 N」が一致する**ことを見る——表示と集計が別の経路で決まると、ここが割れる。
@@ -727,6 +733,12 @@ MUTANTS = {
     # 以下は #460（入れ子の並列）
     "入れ子に --jobs を渡さない": ('                args = [*args, "--jobs", str(nested_jobs(opts.jobs))]\n',
                                    "                pass\n"),
+    "回帰テストの入れ子に --jobs を渡さない（#749）": (
+        '["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []',
+        '[]'),
+    "回帰テストの全部に --jobs を渡す（#749）": (
+        '["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []',
+        '["--jobs", str(nested_jobs(opts.jobs))]'),
     "入れ子に親と同じ並列数を渡す": ("    return max(1, jobs // 2)\n", "    return jobs\n"),
     "入れ子を 0 にしうる": ("    return max(1, jobs // 2)\n", "    return jobs // 2\n"),
     # **終わった順に出す**本体を写した変異（`as_completed`。#430 の 2 パス目）。`reversed()` だけでは、
