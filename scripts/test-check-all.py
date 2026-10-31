@@ -49,6 +49,11 @@
 - **閉じない引用符を信じない**（`run: "unterminated  # …`）。
   **信じると行末までが「値」になってコメントを飲み込む。**
   **信じない側に倒すと向きは偽陽性**（在るのに「無い」）——**倒れてよいのはこちら。**
+- **収録した回帰テストを、CI が引数なしで（全部を）回しているか**（#687。`full_runs`）——狭める口（`--part` など。#494）を
+  CI のステップに書くと、`run:` には在るので上の検査は「走っている」と数えるが、走るのは一部だけである。
+  **全部に数えないもの**: 引数が 1 つでもある行・次の行へ折り返した値（**空行を挟んでも**。#752）・
+  **`run:` から名前までのあいだに `名前=` の字句がある行**（環境変数で狭める形——`PART=scan python3 …`・`export PART=scan && …`。#750）。
+  **深い字下げのコメントの行は続きと読まない**（#753）。詳細は `full_runs` の docstring を正とする。
 
 守らない:
 
@@ -68,6 +73,14 @@
 - **`run: |` `run: >-` のブロック本文で呼ばれたスクリプトは拾わない**（`run:` を含む行だけを見るため）。
   **向きは偽陽性**（在るのに「無い」と言う）で、**黙って素通しする #155 の欠陥とは逆**。
   **該当は現在 0 件。**
+- **`full_runs`（引数なしで回しているか。#687）の守らないもの**——
+  **`|| true`**（落ちても通る形。「全部を回している」には数えるが、落ちたことは CI に出ない）、
+  **`run:` の行の外で置いた環境変数**（ステップ・ジョブの `env:`・前のステップが `$GITHUB_ENV` に書いた値。全部に数える——**黙って素通しする向き**）、
+  **`run:` の行の上でも `名前=` の字句を使わずに読み込む形**（`set -a && . ./env && …`・`--env-file`。同じく全部に数える）、
+  **引用した値**（`run: "python3 scripts/x.py"`。引数が無くても「狭めた」と誤って赤）、
+  **環境変数の判定の偽陽性**（狭めない変数・変数でない字句——`echo a=b && …`・`-X utf8=1`——でも「狭めた」と数える）、
+  **#754 で受け入れた 2 つの偽陽性**（`- run:` の次の行に深い字下げの `name:` を書く形・`&&` で終わる行。どちらも全部を回していても
+  「狭めた」と誤って赤にする——黙って素通しはしない）、**`run:` の行より浅い継続行**（PyYAML 6.0.3 では YAML として読めなかった）。
 - **`on:` を変えてワークフローを起動しなくする**——**`*.yml` を読むだけなので、
   そのファイルが実際に起動するかは見ていない**（実測で緑のまま）。
   **`on:` を消す・条件を狭める・`workflow_dispatch` だけにする、いずれも素通しする。**
@@ -604,6 +617,9 @@ def scan_ci_runs(ci: str) -> tuple[set[str], set[str]]:
 
 # **引数を付けずに呼んでいる**——名前の後ろが行末か、シェルのつなぎ（`&&`・`||`・`;`・`|`）だけ。
 FULL_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)(?=\s*(?:$|&&|\|\||;|\|))")
+# **環境変数を置いて狭める**——`run:` から名前までのあいだに `名前=` の字句がある（#750）。前置き（`PART=scan python3 …`・
+# `env PART=scan …`）も、前のコマンドで書き出す形（`export PART=scan && python3 …`）も当たる。
+ENV_RE = re.compile(r"(?:^|\s)[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def full_runs(ci: str) -> set[str]:
@@ -612,10 +628,21 @@ def full_runs(ci: str) -> set[str]:
     **回帰テストは引数なしで回さなければ全部を回したことにならない**——`test-check-all.py --part scan` のような
     狭める口（#494）を CI のステップに書くと、`scan_ci_runs` は「走っている」と数えるが、走るのは一部だけである。
     **歯止め（`GUARDS`）には引数が要るものがある**（`skill-metrics.py --check`・base を渡す 3 本）ので、これは回帰テストにだけ掛ける。
-    **守らないもの**: 引数の中身は見ない——**引数が 1 つでもあれば「狭めた」側に数える**（向きは偽陽性。黙って素通しはしない）。
-    **次の行へ折り返した値**（`run:` の行より深く字下げした継続行。YAML では同じ値の続き）は、引数が続くものとして「全部」に数えない
-    （#687 の 2 パス目の `/code-review`——継続行に `--part scan` を書くと、行だけを見ていた形は「全部」に数えた）。
-    **環境変数で狭める形**（`PART=scan python3 scripts/x.py`）と `|| true` は見ない。
+    **全部に数えないもの**（どれも「走っているが、全部ではない」側。向きは偽陽性——黙って素通しはしない）:
+
+    - **引数が 1 つでもある**——中身は見ない。
+    - **次の行へ折り返した値**（`run:` の行より深く字下げした継続行。YAML では同じ値の続き）——引数が続くものとして数える
+      （#687 の 2 パス目の `/code-review`——継続行に `--part scan` を書くと、行だけを見ていた形は「全部」に数えた）。
+      **空行を挟んでも続き**と読む（YAML でも続き。#752）。**深い字下げのコメントの行は続きと読まない**（YAML でもコメント。#753）。
+    - **`run:` から名前までのあいだに `名前=` の字句がある**——環境変数で狭める形（`PART=scan python3 scripts/x.py`・`env …`・
+      `export PART=scan && …`。#750）。**狭めない変数でも、変数でない字句（`echo a=b && …`・`-X utf8=1`）でも当たる。**
+
+    **守らないもの**: `|| true`（落ちても通る）は見ない。**`run:` の行の外で置いた環境変数**——ステップ・ジョブの `env:`・
+    前のステップが `$GITHUB_ENV` に書いた値——は見ない（`run:` の行だけを読むので、全部に数える。黙って素通しする向き）。
+    **`run:` の行の上でも、`名前=` の字句を使わずに読み込む形**（`set -a && . ./env && …`・`uv run --env-file .env …`）は見ない（全部に数える。同じ向き）。
+    **引用した値**（`run: "python3 scripts/x.py"`）は引数が無くても全部に数えない（名前の後ろが閉じ引用符で、`FULL_RE` が当たらない。誤って赤）。**深い字下げの次の行が値の続きでなく別の鍵**（`- run:` の次の行の `name:`）と
+    **`&&` で終わる行**（続きを次の行に書く）は、全部を回していても「全部」に数えない（誤って赤——#754 で受け入れた）。
+    **`run:` の行より浅い継続行**は見ない（PyYAML 6.0.3 では YAML として読めなかった。GitHub の読み方は確かめていない）。
     """
     full: set[str] = set()
     lines = ci.split("\n")
@@ -627,7 +654,11 @@ def full_runs(ci: str) -> set[str]:
         nxt = next((l for l in lines[i + 1:] if l.strip()), "")
         if len(nxt) - len(nxt.lstrip()) > indent and not nxt.lstrip().startswith("#"):
             continue  # 次の行に値が続く——その行に引数がありうる
-        full |= set(FULL_RE.findall(alive.rstrip()))
+        head = alive.index("run:") + len("run:")
+        for m in FULL_RE.finditer(alive.rstrip()):
+            if ENV_RE.search(alive[head:m.start()]):
+                continue  # 環境変数を置いて狭めている（#750）
+            full.add(m.group(1))
     return full
 
 
@@ -827,6 +858,27 @@ jobs:
       - name: 次の行へ折り返して狭める（#687 の 2 パス目——YAML では同じ値の続き）
         run: python3 scripts/test-check-folded.py
           --part scan
+
+      - name: 空行を挟んで折り返して狭める（#752——YAML では空行を挟んでも同じ値の続き）
+        run: python3 scripts/test-check-folded-blank.py
+
+          --part scan
+
+      - name: 次の行が深い字下げのコメント（#753——YAML ではコメントで、値の続きではない）
+        run: python3 scripts/test-check-deep-comment.py
+          # 注記
+
+      - name: 環境変数を前に置いて狭める（#750——走っているが、全部ではない）
+        run: PART=scan python3 scripts/test-check-env-prefixed.py
+
+      - name: 環境変数を書き出してからつなぐ（#750）
+        run: export PART=scan && python3 scripts/test-check-env-exported.py
+
+      - name: 小文字の変数で狭める（#750 の 2 パス目——変数名の大小で判定を変えない）
+        run: part=scan python3 scripts/test-check-env-lower.py
+
+      - name: 名前より後ろの変数（#750 の 2 パス目——そのスクリプトは狭めていない）
+        run: python3 scripts/test-check-env-after.py && export X=1
 """
 # **この試料そのものについての主張も、機械で当てる**——
 # **コメントアウトされたステップを抜くと、「それと分かる形で拾う」契約が空振りする**
@@ -887,6 +939,18 @@ def scan_contract(scan, full_of) -> list[tuple[str, bool]]:
          "test-check-narrowed.py" in live and "test-check-narrowed.py" not in full),
         ("コメントアウトされた行は全部を回している側に数えない", "check-dead.py" not in full),
         ("次の行へ折り返した値は、全部を回している側に数えない", "test-check-folded.py" not in full),
+        ("空行を挟んで折り返した値も、全部を回している側に数えない（#752）",
+         "test-check-folded-blank.py" in live and "test-check-folded-blank.py" not in full),
+        # 陽性側（#753）——深い字下げのコメントの行を続きと読むと、引数なしの行を「狭めた」と誤って赤にする
+        ("次の行が深い字下げのコメントなら、続きと読まずに全部に数える（#753）", "test-check-deep-comment.py" in full),
+        ("環境変数を前に置いた行は、走っているが全部を回している側に数えない（#750）",
+         "test-check-env-prefixed.py" in live and "test-check-env-prefixed.py" not in full),
+        ("環境変数を書き出してからつないだ行も、全部を回している側に数えない（#750）",
+         "test-check-env-exported.py" in live and "test-check-env-exported.py" not in full),
+        ("小文字の変数で狭めた行も、全部を回している側に数えない（#750）",
+         "test-check-env-lower.py" in live and "test-check-env-lower.py" not in full),
+        # 陽性側——判定の範囲は `run:` から名前まで。行全体で探すと、名前より後ろの変数で誤って赤にする
+        ("名前より後ろの変数は、その名前を全部に数える（#750）", "test-check-env-after.py" in full),
     ]
 
 
@@ -920,6 +984,18 @@ SCAN_MUTANTS = {
         "        alive = raw\n"),
     "折り返した値を見ない": (
         "            continue  # 次の行に値が続く", "            pass  # 次の行に値が続く"),
+    "すぐ次の行だけを見る（空行を挟んだ続きを見落とす。#752）": (
+        '        nxt = next((l for l in lines[i + 1:] if l.strip()), "")',
+        '        nxt = lines[i + 1] if i + 1 < len(lines) else ""'),
+    "深い字下げのコメントの行も続きと読む（#753）": (
+        ' and not nxt.lstrip().startswith("#"):', ':'),
+    "環境変数を置いた形も全部に数える（#750）": (
+        "            if ENV_RE.search(alive[head:m.start()]):", "            if False:"),
+    "環境変数を行全体で探す（#750 の 2 パス目）": (
+        "            if ENV_RE.search(alive[head:m.start()]):", "            if ENV_RE.search(alive):"),
+    "大文字の変数だけを見る（#750 の 2 パス目）": (
+        'ENV_RE = re.compile(r"(?:^|\\s)[A-Za-z_][A-Za-z0-9_]*=")',
+        'ENV_RE = re.compile(r"(?:^|\\s)[A-Z_][A-Z0-9_]*=")'),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
