@@ -76,6 +76,7 @@
 - **`full_runs`（引数なしで回しているか。#687）の守らないもの**——
   **`|| true`**（落ちても通る形。「全部を回している」には数えるが、落ちたことは CI に出ない）、
   **`run:` の行の外で置いた環境変数**（ステップ・ジョブの `env:`・前のステップが `$GITHUB_ENV` に書いた値。全部に数える——**黙って素通しする向き**）、
+  **`run:` の行の上でも `名前=` の字句を使わずに読み込む形**（`set -a && . ./env && …`・`--env-file`。同じく全部に数える）、
   **引用した値**（`run: "python3 scripts/x.py"`。引数が無くても「狭めた」と誤って赤）、
   **環境変数の判定の偽陽性**（狭めない変数・変数でない字句——`echo a=b && …`・`-X utf8=1`——でも「狭めた」と数える）、
   **#754 で受け入れた 2 つの偽陽性**（`- run:` の次の行に深い字下げの `name:` を書く形・`&&` で終わる行。どちらも全部を回していても
@@ -638,6 +639,7 @@ def full_runs(ci: str) -> set[str]:
 
     **守らないもの**: `|| true`（落ちても通る）は見ない。**`run:` の行の外で置いた環境変数**——ステップ・ジョブの `env:`・
     前のステップが `$GITHUB_ENV` に書いた値——は見ない（`run:` の行だけを読むので、全部に数える。黙って素通しする向き）。
+    **`run:` の行の上でも、`名前=` の字句を使わずに読み込む形**（`set -a && . ./env && …`・`uv run --env-file .env …`）は見ない（全部に数える。同じ向き）。
     **引用した値**（`run: "python3 scripts/x.py"`）は引数が無くても全部に数えない（名前の後ろが閉じ引用符で、`FULL_RE` が当たらない。誤って赤）。**深い字下げの次の行が値の続きでなく別の鍵**（`- run:` の次の行の `name:`）と
     **`&&` で終わる行**（続きを次の行に書く）は、全部を回していても「全部」に数えない（誤って赤——#754 で受け入れた）。
     **`run:` の行より浅い継続行**は見ない（PyYAML 6.0.3 では YAML として読めなかった。GitHub の読み方は確かめていない）。
@@ -871,6 +873,12 @@ jobs:
 
       - name: 環境変数を書き出してからつなぐ（#750）
         run: export PART=scan && python3 scripts/test-check-env-exported.py
+
+      - name: 小文字の変数で狭める（#750 の 2 パス目——変数名の大小で判定を変えない）
+        run: part=scan python3 scripts/test-check-env-lower.py
+
+      - name: 名前より後ろの変数（#750 の 2 パス目——そのスクリプトは狭めていない）
+        run: python3 scripts/test-check-env-after.py && export X=1
 """
 # **この試料そのものについての主張も、機械で当てる**——
 # **コメントアウトされたステップを抜くと、「それと分かる形で拾う」契約が空振りする**
@@ -939,6 +947,10 @@ def scan_contract(scan, full_of) -> list[tuple[str, bool]]:
          "test-check-env-prefixed.py" in live and "test-check-env-prefixed.py" not in full),
         ("環境変数を書き出してからつないだ行も、全部を回している側に数えない（#750）",
          "test-check-env-exported.py" in live and "test-check-env-exported.py" not in full),
+        ("小文字の変数で狭めた行も、全部を回している側に数えない（#750）",
+         "test-check-env-lower.py" in live and "test-check-env-lower.py" not in full),
+        # 陽性側——判定の範囲は `run:` から名前まで。行全体で探すと、名前より後ろの変数で誤って赤にする
+        ("名前より後ろの変数は、その名前を全部に数える（#750）", "test-check-env-after.py" in full),
     ]
 
 
@@ -979,6 +991,11 @@ SCAN_MUTANTS = {
         ' and not nxt.lstrip().startswith("#"):', ':'),
     "環境変数を置いた形も全部に数える（#750）": (
         "            if ENV_RE.search(alive[head:m.start()]):", "            if False:"),
+    "環境変数を行全体で探す（#750 の 2 パス目）": (
+        "            if ENV_RE.search(alive[head:m.start()]):", "            if ENV_RE.search(alive):"),
+    "大文字の変数だけを見る（#750 の 2 パス目）": (
+        'ENV_RE = re.compile(r"(?:^|\\s)[A-Za-z_][A-Za-z0-9_]*=")',
+        'ENV_RE = re.compile(r"(?:^|\\s)[A-Z_][A-Z0-9_]*=")'),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
