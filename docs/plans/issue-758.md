@@ -71,6 +71,7 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-758`
 - 起点: `3ba84080`（origin/main。`prepare-worktree.sh` の出力）
 - base: 参照 `origin/main` → `3ba84080b22af474d79f2b078a07b4a613a02db7`
+- 載せ替えの履歴: 1 パス目の指摘対応のあと（`9914a962`）に main（`39b4455b`。PR #764）を取り込んだ（衝突なし）。式を当て直した base: `39b4455ba1246020bbdf6fbe47114f8f9b8712fc`（2 パス目から）
 
 ## verify の受入基準
 
@@ -144,7 +145,8 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 1 パス目の起点（先に当てた関門に渡した時点の HEAD）: `c113bdf1e386eebcc49da43d404714dedd3dbd83`
 - 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）——反証 2 件（受入基準を破るものは 0。C1・B5 は順番待ちで回せず未確認と報告、著者の実行で緑）。
   `/code-review`（high）——指摘 9 件。採否は下の「1 パス目の採否」。直すは 4 件（CR1・CR2・CR7・CR8）、手順 4 への差し戻し 1 回（CR1 はこの周の変更が入れた退行）
-- 1 パス目の指摘対応: コミット後に起点からの差分を書く
+- 1 パス目の指摘対応: `c113bdf1` → `9914a962`（成果物 5 ファイル。0 行でないので 2 パス目を回す）。割り目は訊かない（不在の周）
+- 2 パス目: Verifier・`/code-review` 起動——結果待ち（base `39b4455b`。指摘対応の差分は `git diff c113bdf1 9914a962`）
 - 交絡: GitHub の描画（`gh api -X POST /markdown`、2026-11-01）で 3 つ確かめた——`memo <!--` の次の ` ``` ` はコードブロック（宣言は `<pre>` の中）・
   行頭の `<!--` の中の ` ``` ` はコードブロックでない（宣言は `<p>`）・`memo <!--` の次の宣言の行は隠れる。陽性対照は素の宣言の行（`<p>` で見える）。
   parent-issue の読み方: `memo <!--` の次のチェックリストの行は見える・リストの中で字下げしたフェンスの中のチェックリストは `<pre>`（理由 INDENT の根拠）。
