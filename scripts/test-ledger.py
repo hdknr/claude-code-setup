@@ -18,10 +18,13 @@
 **主張とテストを 1 対 1 にする。** 本体の docstring の「守る」の行数だけ変異を当てる
 （**テスト自身に数えさせる**）。終了コードも docstring の表と突き合わせる。
 """
+import concurrent.futures
 import contextlib
+import copy
 import importlib.util
 import io
 import json
+import multiprocessing
 import os
 import re
 import subprocess
@@ -168,13 +171,49 @@ def run(mod, argv, cwd):
     return (rc, out.getvalue(), err.getvalue())
 
 
-def scenario(mod, tmp: Path, tag: str) -> dict:
-    """全試料を 1 本のリポジトリで走らせ、観測を辞書で返す。**変異の前後で同じ関数を使う。**"""
+class _Diverged(BaseException):
+    """変異を当てた本体の観測が、正しい本体の観測と食い違った（#494）。
+
+    **`Exception` の子にしない**——`scenario` の中には `except Exception`（`run`）や `except (OSError, ValueError, …)` があり、
+    そこで飲まれると止まらない（#687 の `_Killed` と同じ理由）。"""
+
+
+class Observations(dict):
+    """`scenario` の観測。**正しい本体の観測 `ref` を渡すと、食い違った鍵を書いた時点で `_Diverged` を投げて止める**（#494）。
+
+    **早く止めても判定は変わらない**——判定は `got != o`（観測の辞書がどこか 1 つでも違う）で、食い違った鍵を書いた時点で
+    それは決まっている。**前提は 2 つ**: 同じ鍵を 2 度書かない・書いた値を後で変えない。**どちらも正しい本体の回で確かめる**
+    （`unchanged`。`main` が表明する）——崩れると、途中の値の食い違いを「殺せた」と数えうる。
+    2026-10-31 の測定で、`scenario` 1 回は 11.6 秒・51 件の変異が初めて食い違うのは中央値で 32% の時点だった。"""
+
+    def __init__(self, ref: dict | None = None):
+        super().__init__()
+        self._ref = ref
+        self._written: dict = {}
+        self.twice: list[str] = []
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.twice.append(key)
+        super().__setitem__(key, value)
+        self._written[key] = copy.deepcopy(value)
+        if self._ref is not None and (key not in self._ref or self._ref[key] != value):
+            raise _Diverged(key)
+
+    def unchanged(self) -> bool:
+        """同じ鍵を 2 度書いておらず、書いた値が後で変わっていないか。"""
+        return not self.twice and dict(self) == self._written
+
+
+def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
+    """全試料を 1 本のリポジトリで走らせ、観測を辞書で返す。**変異の前後で同じ関数を使う。**
+
+    `ref`（正しい本体の観測）を渡すと、食い違った時点で `_Diverged` を投げて止める（`Observations`）。"""
     root = tmp / f"repo-{tag}"
     assert_not_real_repo(root)
     wt = build_repo(root)
     ledger = root / ".claude" / "plans" / "cruise-c.json"
-    o = {}
+    o = Observations(ref)
 
     # L1: 場所は cwd に依らない。**root を伏せて記録する**——試料ごとに root の名前が違うので、
     # 伏せないと変異の前後の比較がパスの違いだけで「殺せた」になる（陽性対照が成り立たない）。
@@ -331,13 +370,16 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["lines の show"] = (r[0], "確かめた線（出所: s2・" in str(r[1]) and "マージ = 止まる" in str(r[1]))
     o["線の無い show"] = "確かめた線: 無い" in str(run(mod, ["show", "c"], root)[1])
     # #507: 印は区切った形でだけ「あり」（試料は DIST_SAMPLES）
-    o["配布の確認"] = []
+    # **観測は書いた後で変えない**（`Observations`。#494）——リストは手元で作り終えてから書く
+    dist = []
     # 試料の `lines` の終了コード（#681）——拒まれると `show` は前の試料の出所で答え、判定を取り違える
-    o["配布の確認の lines"] = []
+    dist_lines = []
     for src, _ in DIST_SAMPLES:
-        o["配布の確認の lines"].append(run(mod, ["lines", "ln", "マージ=関門を通ればマージ", "--source", src], root)[0])
+        dist_lines.append(run(mod, ["lines", "ln", "マージ=関門を通ればマージ", "--source", src], root)[0])
         out = str(run(mod, ["show", "ln"], root)[1])
-        o["配布の確認"].append(next((l.split(": ", 1)[1] for l in out.splitlines() if l.startswith("配布の確認")), None))
+        dist.append(next((l.split(": ", 1)[1] for l in out.splitlines() if l.startswith("配布の確認")), None))
+    o["配布の確認"] = dist
+    o["配布の確認の lines"] = dist_lines
     # #681: マージの線の無い出所の印は拒む（台帳は変えない）。印の無い出所なら通り、配布の確認の行は出ない
     before = snapshot(lf)
     o["マージの無い印"] = run(mod, ["lines", "ln", "直す線=既定", "--source", "利用者の確認（起動時・t1、配布を見せて確かめた）"], root)[0]
@@ -861,33 +903,62 @@ SAMPLE_MUTATIONS = {
 }
 
 
+# **変異は別々のプロセスで同時に当てる**（#494）——`scenario` 1 回の大半は本物の `git` の子プロセスを待つ時間で
+# （2026-10-31、直列の 1 回が実時間 456 秒・ユーザー CPU 144 秒）、`check-all.py` の 1 回の wall はこのテストが決めていた。
+# **スレッドにはしない**——`run` は `sys.stdout` を差し替え、本体は `os.environ` を読むので、同じプロセスの中では混ざる。
+# 作業者は環境（`isolate_env` が差し替えた `HOME`・git の設定）を親から受け継ぐ。**出力は変異の宣言順**（終わった順ではない）。
+MUTANT_JOBS = max(1, min(4, os.cpu_count() or 1))
+
+
+def _kill_one(job):
+    """作業者で 1 件の変異を当てる。`("当てられなかった", 例外の名前)` か `("殺せた" | "緑のまま", "")` を返す。"""
+    tmp, tag, mutated, ref = job
+    d = Path(tmp) / tag
+    d.mkdir()
+    broken = d / "ledger.py"
+    broken.write_text(mutated, encoding="utf-8")
+    # **読み込めない変異は「殺せた」ではなく「当てられなかった」**——構文の誤りでも下の例外で
+    # 殺せたと数えてしまい、主張を 1 度も当てずに緑になる（#390 の 2 パス目）
+    try:
+        mutant = load(broken)
+    except Exception as exc:
+        return ("当てられなかった", type(exc).__name__)
+    # **食い違った時点で止める**（`Observations`。#494）——判定は止めない場合の `got != ref` と同じ
+    try:
+        got = scenario(mutant, Path(tmp), f"{tag}-run", ref=ref)
+    except _Diverged:
+        return ("殺せた", "")
+    except Exception:
+        return ("殺せた", "")
+    return ("殺せた" if got != ref else "緑のまま", "")
+
+
 def kill_mutations(mutations, source, tmp, o, label):
-    """変異を 1 件ずつ当て、壊したのに観測が変わらなければ失格。"""
-    for name, pairs in mutations.items():
+    """変異を 1 件ずつ当て、壊したのに観測が変わらなければ失格。**結果は変異の宣言順に出す**（当てる先の無い変異も、その位置に）。"""
+    order, jobs = [], []  # order: (変異の名前, jobs の番号。当てる先が無ければ None)
+    for i, (name, pairs) in enumerate(mutations.items()):
         mutated = source
         missing = [n for n, _ in pairs if n not in mutated]
         if missing:
-            check(f"変異を当てる先がある: {name}", False)
+            order.append((name, None))
             continue
         for needle, replacement in pairs:
             mutated = mutated.replace(needle, replacement, 1)
-        d = tmp / f"mut-{abs(hash(name))}"
-        d.mkdir()
-        broken = d / "ledger.py"
-        broken.write_text(mutated, encoding="utf-8")
-        # **読み込めない変異は「殺せた」ではなく「当てられなかった」**——構文の誤りでも下の例外で
-        # 殺せたと数えてしまい、主張を 1 度も当てずに緑になる（#390 の 2 パス目）
-        try:
-            mutant = load(broken)
-        except Exception as exc:
-            check(f"変異を読み込める（当てられなかった）: {name}: {type(exc).__name__}", False)
+        # 名前の `hash` は作業者ごとに違うので使わない——宣言順の番号で分ける
+        order.append((name, len(jobs)))
+        jobs.append((str(tmp), f"mut-{label}-{i}", mutated, dict(o)))
+    with concurrent.futures.ProcessPoolExecutor(
+            max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
+        results = list(pool.map(_kill_one, jobs))
+    for name, k in order:
+        if k is None:
+            check(f"変異を当てる先がある: {name}", False)
             continue
-        try:
-            got = scenario(mutant, tmp, f"mut-{abs(hash(name))}")
-        except Exception:
-            check(f"{label}: {name}", True)
-            continue
-        check(f"{label}: {name}", got != o)
+        verdict, why = results[k]
+        if verdict == "当てられなかった":
+            check(f"変異を読み込める（当てられなかった）: {name}: {why}", False)
+        else:
+            check(f"{label}: {name}", verdict == "殺せた")
 
 
 def main() -> int:
@@ -896,6 +967,9 @@ def main() -> int:
         isolate_env(tmp / "home")
         mod = load()
         o = scenario(mod, tmp, "correct")
+
+        print("観測の前提（#494——変異の回を食い違った時点で止めてよいか）")
+        check("同じ鍵を 2 度書かず、書いた観測を後で変えない", o.unchanged())
 
         print("場所（L1）")
         paths = {o["path(main)"], o["path(sub)"], o["path(worktree)"], o["path(worktree/sub)"]}

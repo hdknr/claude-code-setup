@@ -34,6 +34,7 @@ dup-counts-ok: 変異
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import importlib.util
 import io
@@ -964,21 +965,17 @@ def parse_args(argv: list[str]) -> list[str] | None:
                                                                             # （--mutation は重ねて渡せる。渡した全部を当てる）
 
     **「この観測が無いと、変異 X が殺せない」という主張は、変異の前の観測と X の観測が違うかだけで決まる**ので、
-    ほかの表明と 21 件の変異を回さなくてよい。**狭めた回は、全部を回す回の代わりにならない。**
-    **知らない名前は断る**（綴り間違いで「何も回さずに緑」にしない）。
+    ほかの表明と残りの変異を回さなくてよい。**ただし変異の前の観測は 2 回取って揃うことを要求する**（`run_all`。#687）
+    ——狭めた回は観測の中身の表明を飛ばすので、揺れる観測を「殺した」と数えないための陽性対照である。
+    **狭めた回は、全部を回す回の代わりにならない。**
+    **知らない名前は断る**（綴り間違いで「何も回さずに緑」にしない）——`argparse` の `choices` で断り、終了コードは 2（#687）。
     """
-    if not argv:
-        return None
-    usage = f"使い方: --mutation <MUTATIONS の名前> ...（受け取ったもの: {argv}）"
-    if len(argv) % 2:
-        raise SystemExit(usage)
-    names: list[str] = []
-    for flag, name in zip(argv[::2], argv[1::2]):
-        if flag != "--mutation" or name not in MUTATIONS:
-            raise SystemExit(usage)
-        if name not in names:
-            names.append(name)
-    return names
+    parser = argparse.ArgumentParser(allow_abbrev=False, add_help=False, prog="test-check-mutation-claims.py",
+                                     description="check-mutation-claims.py の回帰テスト（引数なしで全部）")
+    parser.add_argument("--mutation", action="append", choices=list(MUTATIONS), default=[],
+                        help="当てる MUTATIONS の名前（重ねて渡せる）")
+    names = parser.parse_args(argv).mutation
+    return list(dict.fromkeys(names)) or None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1019,6 +1016,12 @@ def run_all(escape: Path, only: list[str] | None = None) -> int:
         mod = load()
         with watchdog("変異の前の本体の観測", escape, Path(tmp)):
             base = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
+        # **変異の前の観測を 2 回取り、揃うことを要求する**（#687）——変異は「観測が `base` と違う」で殺したと数えるので、
+        # 観測が時刻や順序で揺れると、何も殺していない変異を「殺した」と数える。`--mutation` で狭めた回は下の判定の表明
+        # （`base` の中身の確かめ）を飛ばすので、揺れを捕まえるのはこの 1 行だけになる。全部を回す回にも掛ける。
+        with watchdog("変異の前の本体の観測（2 回目）", escape, Path(tmp)):
+            again = snapshot(mod, root, only_na, missing, leak_root, leak_parent, par, intr)
+        check("変異の前の本体の観測が 2 回で揃う（揺れる観測で変異を殺したと数えない）", again == base)
         (rc, out), (rc_na, out_na), (rc_missing, _), leak, para, stopped, midstart = base
         source = SCRIPT.read_text(encoding="utf-8")
 
