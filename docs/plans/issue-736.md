@@ -38,7 +38,7 @@
 ### 同じことを述べている箇所の数
 
 - 「輪の守り」: `check-unattended-env.py` の `outcome` の 1 箇所（docstring の「守る」には無い）。
-- 「`--jobs 1` なら入れ子まで直列」: `check-all.py` の docstring（2 行）と `NESTED` のコメント、2 本のテストの `MUTANT_JOBS` のコメント = 4 箇所。原本は `check-all.py` の docstring。
+- 「`--jobs 1` なら入れ子まで直列」: `check-all.py` の docstring（2 行）と `NESTED` のコメント、2 本のテストの `MUTANT_JOBS` のコメントと冒頭の用法の行 = 6 箇所（1 パス目の `/code-review` CR1-8 で 4 から直した）。原本は `check-all.py` の docstring。
 - 「`_Killed` は `BaseException` の直接の子」: `_Killed` の docstring と `main` の表明 = 2 箇所。
 分けない——どれも同じ 2 本のテストと `check-all.py` の 1 つの仕組み。
 
@@ -91,6 +91,12 @@
   - 輪の守りを外したら、既存の変異「まとめの中の依存も待つ」が止まらずに辿って `RecursionError` で変異テスト全体を落とした——
     正しい本体では届かない（まとめの中の依存を数えないので）。変異の作業者が `RecursionError` を赤に数えるようにした（`_mutant_killed`）
 - 割り目（手順 4）: 不在の周なので訊かない（`absent-lines.md`「訊く場面」）。このまま続ける
+- PR: #755（作成時の先端 `1375315c`）
+- 1 パス目: 済み（1 パス目の指摘対応の起点 `1375315c`——関門に渡した時点の HEAD。コミット済み）。base は `7009fd1eadd5da6e5d38fe3e263dcd18cca13748`
+  - Verifier（`dev-loop:dev-loop-verifier`・sonnet。テンプレート 170 行・基準 43 行と報告）: **反証 0 件**。A2・A3 の 5 変異が赤、`test-check-all.py` 緑、`--jobs 0` を両テストが断る、生成物は最新。`test-ledger.py` の全体と `check-all.py --jobs 1` の実走は回していない（報告に明記）。porcelain は前後同じ
+  - `/code-review`（high）: 指摘 8 件。採否は下の「1 パス目の採否」（直す 1・残課題 6・計画の数え直し 1）。A1 は `validate` を外した `ledger.py` で `RecursionError` になる陽性対照つきで判別を確かめた。porcelain は前後同じ
+  - 指摘対応: CR1-1（`check-all.py` の docstring）。差分は 0 行でない → 2 パス目あり
+- 割り目（2 パス目の前）: 不在の周なので訊かない。このまま続ける。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 
 ## 交絡の扱い
 
@@ -106,6 +112,19 @@
 - #737: 版の取り合いは「判定できない」のまま（承認済み）——この周は変えない。
 - テストの `--jobs` は上限 4 で切る（入れ子の値が 4 を超えても #494 で決めた重さを超えない）。`--jobs 8` を手で渡しても 4。
 - `test-ledger.py` の `_Diverged` の docstring（#748 の 1 つ目）はこの周の外。
+
+## 1 パス目の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1 `check-all.py` の docstring「`--jobs 1` なら入れ子まで直列」は、`test-check-mutation-claims.py` が中で `check-mutation-claims.py` の `main` を既定の `--jobs`（CPU の数）で回すので偽のまま | 示せる——`test-check-mutation-claims.py` 441〜446 行の `observe` は `--jobs` を渡さず `mod.main([*args, root])`、513・596・655 行は `--jobs 2` を直書き | B2（docstring が事実になる） | 直す——docstring を、`--jobs` を受ける入れ子（`NESTED` の 3 本）と、並列の振る舞いそのものを試すので中で並列に回すテスト（`test-check-mutation-claims.py`・`test-check-all.py`）に分けて書く |
+| CR1-2 テスト側が受けた `--jobs` を使うかを回帰テストが見ない（`max_workers=jobs` を戻しても緑） | 示せる（変異が素通り——レビューの読み） | 無し（いまの振る舞いは `--jobs 1` で「1 並列」と出る。B2 の振る舞いは満たす） | 残課題 |
+| CR1-3 輪のある台帳が「読めなかった」になることを固定する試料が `test-check-unattended-env.py` に無い（`validate` を外すと `RecursionError`） | 示せる（`validate` を外した写しで `RecursionError`——レビューの実験） | 無し（A1 は守りを外して保証を書くこと。輪の台帳は今の `load` で拒まれる） | 残課題 |
+| CR1-4 入れ子を半分にする規則を 2 本のテストにも当てたので `--jobs 2〜7` で並列が 1〜3 に下がり、docstring の wall の実測値は変更前の値 | 示せない（wall を測っていない） | 無し | 残課題 |
+| CR1-5 2 本のテストで同じ仕組みを違う形（`global` とローカル）で書いた | 示せない（振る舞いの差は無い） | 無し | 残課題 |
+| CR1-6 `_mutant_killed` が `RecursionError` を無条件に赤と数える（将来ループにすればハング） | 示せない（将来の形） | 無し | 残課題 |
+| CR1-7 `test-check-all.py` の `nested_args` が `main` を 7 回回す | 示せない（時間を測っていない） | 無し | 残課題 |
+| CR1-8 計画の「同じことを述べている箇所の数」が 4 でなく 6 | —（計画ファイルは関門の検査の外） | 無し | 計画を直す（成果物ではない） |
 
 ## 手順 8
 
