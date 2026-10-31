@@ -14,10 +14,12 @@
 **壊したのに緑のままなら失格**とする。**変異の前に、元の本体で全部緑であること（陽性対照）を見る。**
 """
 import builtins
+import concurrent.futures
 import contextlib
 import importlib.util
 import io
 import json
+import multiprocessing
 import os
 import subprocess
 import tempfile
@@ -246,8 +248,13 @@ def status_of(items, label_part):
     return [s for s, label, *_ in items if label_part in label]
 
 
-class _Killed(Exception):
-    """変異を当てた本体で、最初の表明が落ちた（#494）。"""
+class _Killed(BaseException):
+    """変異を当てた本体で、最初の表明が落ちた（#494）。
+
+    **`Exception` の子にしない**（#687）——シナリオの途中に `except Exception` が 1 つでも入ると、そこで飲まれて
+    「最初の失敗で止める」が止まらず、飲んだ先の振る舞いしだいでは落ちた表明が `bad` に残らない。受けるのは作業者の `_mutant_killed` の `except _Killed` だけである。
+    **いまのシナリオの経路に `except Exception` は無い**——だからこれは将来への備えで、`main` の冒頭の表明が `Exception` の子に戻すと赤にする。
+    """
 
 
 class _FirstFailure(list):
@@ -1451,10 +1458,27 @@ MUTATIONS = {
 }
 
 
+# 変異を同時に当てるプロセスの数（#494）。直列の 1 回は 405 秒（2026-10-31、負荷 3〜5 の 10 コアの macOS）だった。
+MUTANT_JOBS = max(1, min(4, os.cpu_count() or 1))
+
+
+def _mutant_killed(mutant: Path) -> bool:
+    """作業者で 1 件の変異を当て、赤になったかを返す。**最初の失敗で止める**（#494）——赤かどうかは 1 つ目で決まる。
+    **緑のままの変異は全シナリオを回し切る。**"""
+    try:
+        return bool(suite(mutant, first_failure=True))
+    except _Killed:
+        return True
+
+
 def main() -> int:
     # 起動場所のテストが本物の git を走らせる——GIT_DIR などが他のリポジトリを指す環境で、そちらを読まない
     for key in [k for k in os.environ if k.startswith("GIT_")]:
         del os.environ[key]
+    # **`_Killed` は `Exception` の子にしない**（#687）——いまの経路には飲む `except Exception` が無いので、戻しても他の表明は緑のまま。ここで見る
+    if issubclass(_Killed, Exception) or not issubclass(_Killed, BaseException):
+        print("  FAIL _Killed が Exception の子になっている（シナリオの except Exception に飲まれうる）")
+        failures.append("_Killed は BaseException の直接の子")
     print("陽性対照（元の本体）")
     bad = suite(SCRIPT)
     for name in bad:
@@ -1468,18 +1492,27 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         # 本体は同じ場所の ledger.py を読む（台帳の読み方を 2 箇所に置かない）——変異の隣にも置く
         (Path(tmp) / "ledger.py").write_bytes((SCRIPT.parent / "ledger.py").read_bytes())
-        for name, (old, new) in MUTATIONS.items():
+        order, mutants = [], []  # order: (変異の名前, mutants の番号。置換元が 1 つでなければ None)——結果は宣言順に出す
+        for i, (name, (old, new)) in enumerate(MUTATIONS.items()):
             if src.count(old) != 1:
+                order.append((name, None))
+                continue
+            # 名前の `hash` はプロセスごとに違うので使わない——宣言順の番号で分ける
+            mutant = Path(tmp) / f"m{i}.py"
+            mutant.write_text(src.replace(old, new), encoding="utf-8")
+            order.append((name, len(mutants)))
+            mutants.append(mutant)
+        # **変異は別々のプロセスで同時に当てる**（#494）——シナリオは `os.environ["PATH"]` を差し替えるので、スレッドでは混ざる。
+        # 出力は変異の宣言順（終わった順ではない）。作業者は環境を親から受け継ぐ（`main` の冒頭で `GIT_*` を外した後）。
+        with concurrent.futures.ProcessPoolExecutor(
+                max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
+            verdicts = list(pool.map(_mutant_killed, mutants))
+        for name, k in order:
+            if k is None:
                 print(f"  FAIL 変異「{name}」の置換元が本体に 1 つだけ無い")
                 failures.append(name)
                 continue
-            mutant = Path(tmp) / f"m{len(name)}_{abs(hash(name))}.py"
-            mutant.write_text(src.replace(old, new), encoding="utf-8")
-            # **最初の失敗で止める**（#494）——赤かどうかは 1 つ目で決まる。**緑のままの変異は全シナリオを回し切る。**
-            try:
-                killed = bool(suite(mutant, first_failure=True))
-            except _Killed:
-                killed = True
+            killed = verdicts[k]
             print(f"  {'ok  ' if killed else 'FAIL'} 変異「{name}」が{'赤になる' if killed else '緑のまま'}")
             if not killed:
                 failures.append(name)
