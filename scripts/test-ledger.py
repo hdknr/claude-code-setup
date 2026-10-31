@@ -3,6 +3,7 @@
 
     python3 scripts/test-ledger.py
     python3 scripts/test-ledger.py --jobs 1   # 変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
+    python3 scripts/test-ledger.py --check-pool   # 受けた --jobs を変異のプールが使うかだけを見る（#762）
 
 **本体はプラグインの中にある**（`plugins/dev-loop/skills/dev-loop/scripts/`）。
 `test-find-cycle.py` と同じ形——**`dev-loop` はどのリポジトリでも使えるスキル**なので、
@@ -30,6 +31,7 @@ import multiprocessing
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -176,8 +178,15 @@ def run(mod, argv, cwd):
 class _Diverged(BaseException):
     """変異を当てた本体の観測が、正しい本体の観測と食い違った（#494）。
 
-    **`Exception` の子にしない**——`scenario` の中には `except Exception`（`run`）や `except (OSError, ValueError, …)` があり、
-    そこで飲まれると止まらない（#687 の `_Killed` と同じ理由）。"""
+    投げるのは `Observations.__setitem__`、つまり `scenario` の `o[...] = …` の書き込みである。受けるのは `_kill_one` の `except _Diverged` だけ。
+
+    **いまの経路に、これを飲む節は無い**（#748）——`run` の `except Exception` が囲むのは `mod.main` の呼び出しだけで、
+    `o[...]` への書き込みは `run` が返った後（`try` の外）にある。`scenario` の中で `o[...]` を囲む `except (OSError, ValueError, KeyError, …)` は、
+    列挙した型の子しか捕まえない——`Exception` の子にしても、それらの子でなければ飲まれない。
+
+    **それでも `Exception` の子にしない**——将来 `o[...]` の書き込みを `except Exception` で囲むと、そこで飲まれて止まらず、
+    その節が同じ鍵に書き直す値しだいでは食い違いが消える（`_kill_one` が「緑のまま」と数えうる）。`_Killed`（`test-check-unattended-env.py`）と同じ将来への備えで、
+    `main` の冒頭の表明が、親を `BaseException` のほかに替えると（`Exception`・`KeyboardInterrupt` の子など）赤にする。"""
 
 
 class Observations(dict):
@@ -911,7 +920,41 @@ SAMPLE_MUTATIONS = {
 # 作業者は環境（`isolate_env` が差し替えた `HOME`・git の設定）を親から受け継ぐ。**出力は変異の宣言順**（終わった順ではない）。
 # **`--jobs N` で絞る**（#748・#749）——`check-all.py` が入れ子として親の半分を渡すので、`check-all.py --jobs 1` なら変異も 1 つずつ当てる。
 # 渡された値もこの上限で切る（`main` が書き換える。入れ子の値が 4 を超えても、#494 で決めた重さを超えない）。
-MUTANT_JOBS = max(1, min(4, os.cpu_count() or 1))
+MUTANT_JOBS_MAX = max(1, min(4, os.cpu_count() or 1))
+MUTANT_JOBS = MUTANT_JOBS_MAX
+
+# **受けた `--jobs` をプールが使うかを、テスト自身が見る**（#762）——`main` の書き換えを消しても、プールが別の値を使っても、
+# `--jobs 1` の回の変異は 4 並列のまま走り、上限で切らなければ `--jobs 99` の回は 99 並列で走る——どちらも緑のまま（遅くなる・速くなるだけ）。
+# 前の 2 つは `--jobs 1` の回が、上限で切らない形は `--jobs 99` の回が判別する。
+# 見るのは**プールに渡した作業者の数**（設定）で、実際に起きた作業者の数ではない——後者は時間で変わる。
+# `kill_mutations` がプールを作るたびに、渡した数をここに残す。`--pool-size` はそれを出して終わり、`check_pool_size` が自分を
+# `--jobs` 付きで起こして突き合わせる（CI は引数なしで回すので、自分で付けないと判別しない）:
+# mutation-claim: {"file": "scripts/test-ledger.py", "old": "    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS_MAX)\n", "new": "", "red": "python3 scripts/test-ledger.py --check-pool"}
+# mutation-claim: {"file": "scripts/test-ledger.py", "old": "    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS_MAX)\n", "new": "    MUTANT_JOBS = opts.jobs\n", "red": "python3 scripts/test-ledger.py --check-pool"}
+# mutation-claim: {"file": "scripts/test-ledger.py", "old": "            max_workers=MUTANT_JOBS, mp_context", "new": "            max_workers=MUTANT_JOBS_MAX, mp_context", "red": "python3 scripts/test-ledger.py --check-pool"}
+pool_sizes: list[int] = []
+
+
+class _MutantPool(concurrent.futures.ProcessPoolExecutor):
+    """変異の作業者のプール。**渡された作業者の数を `pool_sizes` に残す**（#762）。"""
+
+    def __init__(self, max_workers, **kwargs):
+        pool_sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+def check_pool_size() -> None:
+    """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る（#762）。
+
+    `--jobs 1` は「受けた値を使う」（書き換えを消す・プールが別の値を使うと上限が出る）を、`--jobs 99` は「上限で切る」を判別する。
+    **上限が 1 の環境（1 コア）では `--jobs 1` の回が判別しない**（どちらも 1）。"""
+    for asked in (1, 99):
+        want = min(asked, MUTANT_JOBS_MAX)
+        proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
+                              capture_output=True, text=True, timeout=120)
+        got = proc.stdout.strip()
+        check(f"--jobs {asked} で変異のプールに渡す作業者は {want}（出力: {got or '空'}・終了コード {proc.returncode}）",
+              proc.returncode == 0 and got == str(want))
 
 
 def _kill_one(job):
@@ -951,7 +994,7 @@ def kill_mutations(mutations, source, tmp, o, label):
         # 名前の `hash` は作業者ごとに違うので使わない——宣言順の番号で分ける
         order.append((name, len(jobs)))
         jobs.append((str(tmp), f"mut-{label}-{i}", mutated, dict(o)))
-    with concurrent.futures.ProcessPoolExecutor(
+    with _MutantPool(
             max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
         results = list(pool.map(_kill_one, jobs))
     for name, k in order:
@@ -968,12 +1011,28 @@ def kill_mutations(mutations, source, tmp, o, label):
 def main() -> int:
     global MUTANT_JOBS
     parser = argparse.ArgumentParser(description="ledger.py の回帰テスト")
-    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS,
-                        help=f"変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS}。1 で 1 つずつ）")
+    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS_MAX,
+                        help=f"変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS_MAX}。1 で 1 つずつ）")
+    parser.add_argument("--pool-size", action="store_true",
+                        help="変異のプールに渡す作業者の数を出して終わる（試料の中で使う。#762）")
+    parser.add_argument("--check-pool", action="store_true",
+                        help="受けた --jobs をプールが使うかだけを見る（#762。全部の回でも見る）")
     opts = parser.parse_args()
     if opts.jobs < 1:
         parser.error(f"--jobs は 1 以上: {opts.jobs}")
-    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS)
+    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS_MAX)
+    if opts.pool_size:
+        # 変異を当てる経路そのもの（`kill_mutations`）でプールを作る——変異が 0 件なので作業者は起きない
+        kill_mutations({}, "", None, {}, "プールの大きさ")
+        print(pool_sizes[-1] if pool_sizes else "")
+        return 0
+
+    print("観測の止め方と変異の作業者の数（#748・#762）")
+    check("_Diverged は BaseException の直接の子（#748——将来 except Exception に飲まれない）",
+          _Diverged.__bases__ == (BaseException,))
+    check_pool_size()
+    if opts.check_pool:
+        return report()
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t).resolve()
         isolate_env(tmp / "home")
@@ -1231,6 +1290,10 @@ def main() -> int:
         else:
             check("実リポジトリを対象にすると落ちる", False)
 
+    return report()
+
+
+def report() -> int:
     print()
     if failures:
         print(f"FAILED: {len(failures)} 件")
