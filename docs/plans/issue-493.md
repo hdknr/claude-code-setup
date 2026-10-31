@@ -141,8 +141,11 @@ main へのマージで GitHub Pages の再ビルド（`docs/` の変更）と�
 
 - 周の在り処: ブランチ `issue/493-parallel-cycles`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-493`・
   起点 `4a8c7e8a`・base は参照 `origin/main` を解決した `4a8c7e8a2b8a605670d1116ed66fc72e5fffe5fb`。
+  **base の当て直し**: origin/main を取り込んだので式を当て直した——`git merge-base origin/main HEAD` = `af86585d393803b0c7a1b00ee9e544e392aaf922`（祖先であることを確かめた）。2 パス目からこの SHA を渡す。
 - 割り目（手順 4 の完了時）: 不在の周なので訊かない（`absent-lines.md` の「訊く場面」）。再開点はここに書く。
-- 関門: 1 パス目済み——Verifier 反証 2 件・`/code-review` 指摘 10 件（採否の表）。直す 6 行（V1・CR1 は同じ）を手順 4 に戻して直す。（1 パス目は Verifier `dev-loop:dev-loop-verifier`・model sonnet と `/code-review`）。1 パス目の指摘対応の起点: `702bca9e`（関門に渡した時点の HEAD）。
+- 関門: 1 パス目済み——Verifier 反証 2 件・`/code-review` 指摘 10 件（採否の表）。直す 6 行（V1・CR1 は同じ）を直した（`9e6a2143`）。その後 origin/main（#703、spec-loop だけ）を取り込んだ（`55555df3`。衝突なし・足された検査なし）。
+  1 パス目の PR 側の CI（`702bca9e`）: check pass・build pass。
+- 2 パス目: 判定の 2 本——`git diff 702bca9e -- ':(top)' ':(top,exclude)docs/plans/issue-493.md'` は空でない（指摘対応の差分あり）→ 2 パス目を回す。割り目（2 パス目の前）: 不在の周なので訊かない。残り: 手順 5 の当て直しと `/code-review` 2 パス目の両方。（1 パス目は Verifier `dev-loop:dev-loop-verifier`・model sonnet と `/code-review`）。1 パス目の指摘対応の起点: `702bca9e`（関門に渡した時点の HEAD）。
 - PR: #727（2026-10-31 作成）。
 - 交絡を潰した手順: `test-run-serial.py` は時間ではなく印のファイルと出力で判定する（負荷で結果が変わらない）。変異 6 本はそれぞれ狙った観測だけを変えることを確かめた（scratchpad の i493-why.py。殺した理由: 枠→B が先に始まる・待ちの言及、言わない→待ちの言及、終了コード→7・143、入れ子→時間切れ、決められない→125・走った印、0→時間切れ）。陽性側: 宣言 2 で 2 本が互いの始まりを待って同時に走ることを見た。実地: 自分の `check-all.py` を順番待ちで走らせている間に、別に起こした順番待ちが「待っている……pid 91874……check-all.py」を出した。
 
