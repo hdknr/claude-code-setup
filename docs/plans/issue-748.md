@@ -99,8 +99,8 @@ cruise（`/dev-loop:cruise 474 --absent`。2026-11-01 に再開）の子とし�
 
 - 実装: 済（`82dde0e0`）
 - 割り目（手順 4）: 不在の周なので訊かない（`references/absent-lines.md` の「訊く場面」）。続ける。
-- Verifier 1 パス目: 起動（`dev-loop:dev-loop-verifier`・sonnet）
-- `/code-review` 1 パス目: 起動（effort high。受入基準・経路・既知の限界を args で渡した）
+- Verifier 1 パス目: 済——反証 1 件（V1-R1。CR1-1 と同じ）と注 1 件。起動したのは `dev-loop:dev-loop-verifier`（報告にツールの制約どおり書き込みなし）
+- `/code-review` 1 パス目: 済——指摘 6 件（直す 3・残課題 3。下の採否の表）
 - 1 パス目の指摘対応の起点: `82dde0e00abb8c333755d3f4ece844eac3fa3db2`（1 パス目の関門に渡した時点の HEAD）
 - Verifier 2 パス目: 未
 - `/code-review` 2 パス目: 未
@@ -139,7 +139,16 @@ cruise（`/dev-loop:cruise 474 --absent`。2026-11-01 に再開）の子とし�
 
 ## 1 パス目の採否（直す線: 既定）
 
-（関門の後に書く）
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1: `test-check-unattended-env.py` の `--pool-size` は `run_mutants([], jobs)` を別の行で呼ぶので、`main` の本物の呼び出し `run_mutants(mutants, jobs)` を `MUTANT_JOBS` に替えても `--check-pool` が緑 | 示せる（レビューが写しで実走: rc=0） | C2 | 直す |
+| CR1-2: `full_runs` は `run:` の行の環境変数しか見ない——ステップ・ジョブの `env:`・前のステップの `$GITHUB_ENV` で狭める形は全部に数えるのに、docstring の「守らない」に無い | 示せる（`full_runs` に当てて `{'test-a.py'}`） | D2 | 直す（「守らない」に書く） |
+| CR1-3: C1 の陽性対照が `!= got` だけで、`RecursionError` を表明していない（無関係な理由で違っても通る） | 示せない（いまは両方とも `RecursionError`——「将来 ledger.py が…」） | 無し | 残課題 |
+| CR1-4: 引用した `run:` の値（`run: "python3 scripts/test-a.py"`）は引数なしでも全部に数えない（偽陽性）のに、docstring の偽陽性の一覧に無い | 示せる（`full_runs` に当てて `set()`） | D2 | 直す（「守らない」に書く） |
+| CR1-5: `test-ledger.py --check-pool` が「台帳のテスト: すべて合格」と出す（全部を回していないのに） | 示せる（実走） | 無し | 残課題 |
+| CR1-6: `_MutantPool`・`check_pool_size`・`report` が 2 本に写しで、既にずれている | 示せない（ずれは書き方の違いで、失敗ではない） | 無し | 残課題 |
+| V1-R1（Verifier 1 パス目）: CR1-1 と同じ——`main` の `run_mutants(mutants, jobs)` を `MUTANT_JOBS`・`opts.jobs` に替えても `--check-pool` が緑 | 示せる（Verifier が写しで実走） | C2 | 直す（CR1-1 と同じ修正） |
+| V1-注: `_Diverged` の docstring の「`o[...]` への書き込みは `run` が返った後（`try` の外）」は、狭い `try/except (…)` の中の書き込みもあるので表現が緩い（結論は正しい） | 示せない（誤りではない） | 無し | 残課題 |
 
 ## 手順 8
 

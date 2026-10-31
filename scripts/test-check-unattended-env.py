@@ -1536,15 +1536,18 @@ MUTATIONS = {
 # 変異を同時に当てるプロセスの数の上限（#494）。直列の 1 回は 405 秒（2026-10-31、負荷 3〜5 の 10 コアの macOS）だった。
 # **`--jobs N` で絞る**（#749）——`check-all.py` が入れ子として親の半分を渡すので、`check-all.py --jobs 1` なら変異も 1 つずつ当てる。
 # 渡された値もこの上限で切る（入れ子の値が 4 を超えても、#494 で決めた重さを超えない）。
-MUTANT_JOBS = max(1, min(4, os.cpu_count() or 1))
+MUTANT_JOBS_MAX = max(1, min(4, os.cpu_count() or 1))
+# 変異のプールに渡す作業者の数。`main` が受けた `--jobs` で書き換える（`test-ledger.py` と同じ形——呼び出しの引数にしない。
+# 引数にすると `--pool-size` の呼び出しと全部の回の呼び出しが別の行になり、後者の引数を替えても試料が見ない。#761 の 1 パス目）
+MUTANT_JOBS = MUTANT_JOBS_MAX
 
-# **受けた `--jobs` をプールが使うかを、テスト自身が見る**（#761）——`max_workers=jobs` を `MUTANT_JOBS` に戻しても、
+# **受けた `--jobs` をプールが使うかを、テスト自身が見る**（#761）——プールが上限（`MUTANT_JOBS_MAX`）を使っても、
 # `--jobs 1` の回の変異は 4 並列のまま走って緑になる（遅くなる・速くなるだけ）。見るのは**プールに渡した作業者の数**（設定）で、
 # 実際に起きた作業者の数ではない——後者は時間で変わる。`run_mutants` がプールを作るたびに、渡した数をここに残す。
 # `--pool-size` はそれを出して終わり、`check_pool_size` が自分を `--jobs` 付きで起こして突き合わせる（CI は引数なしで回すので、
 # 自分で付けないと判別しない。`test-ledger.py` と同じ形——#762）:
-# mutation-claim: {"file": "scripts/test-check-unattended-env.py", "old": "            max_workers=jobs, mp_context", "new": "            max_workers=MUTANT_JOBS, mp_context", "red": "python3 scripts/test-check-unattended-env.py --check-pool"}
-# mutation-claim: {"file": "scripts/test-check-unattended-env.py", "old": "    jobs = min(opts.jobs, MUTANT_JOBS)\n", "new": "    jobs = opts.jobs\n", "red": "python3 scripts/test-check-unattended-env.py --check-pool"}
+# mutation-claim: {"file": "scripts/test-check-unattended-env.py", "old": "            max_workers=MUTANT_JOBS, mp_context", "new": "            max_workers=MUTANT_JOBS_MAX, mp_context", "red": "python3 scripts/test-check-unattended-env.py --check-pool"}
+# mutation-claim: {"file": "scripts/test-check-unattended-env.py", "old": "    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS_MAX)\n", "new": "    MUTANT_JOBS = opts.jobs\n", "red": "python3 scripts/test-check-unattended-env.py --check-pool"}
 pool_sizes: list[int] = []
 
 
@@ -1556,13 +1559,13 @@ class _MutantPool(concurrent.futures.ProcessPoolExecutor):
         super().__init__(max_workers, **kwargs)
 
 
-def run_mutants(mutants: list[Path], jobs: int) -> list[bool]:
-    """変異を `jobs` 人の作業者で当て、赤になったかを宣言順に返す。**`--pool-size` もここを通る**——プールを作る経路を 2 つにしない。
+def run_mutants(mutants: list[Path]) -> list[bool]:
+    """変異を `MUTANT_JOBS` 人の作業者で当て、赤になったかを宣言順に返す。**`--pool-size` もここを通る**——プールを作る経路を 2 つにしない。
 
     **変異は別々のプロセスで同時に当てる**（#494）——シナリオは `os.environ["PATH"]` を差し替えるので、スレッドでは混ざる。
     出力は変異の宣言順（終わった順ではない）。作業者は環境を親から受け継ぐ（`main` の冒頭で `GIT_*` を外した後）。"""
     with _MutantPool(
-            max_workers=jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
+            max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
         return list(pool.map(_mutant_killed, mutants))
 
 
@@ -1571,7 +1574,7 @@ def check_pool_size() -> None:
 
     `--jobs 1` は「受けた値を使う」を、`--jobs 99` は「上限で切る」を判別する。**上限が 1 の環境（1 コア）では `--jobs 1` の回が判別しない**。"""
     for asked in (1, 99):
-        want = min(asked, MUTANT_JOBS)
+        want = min(asked, MUTANT_JOBS_MAX)
         proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
                               capture_output=True, text=True, timeout=120)
         got = proc.stdout.strip()
@@ -1595,9 +1598,10 @@ def _mutant_killed(mutant: Path) -> bool:
 
 
 def main() -> int:
+    global MUTANT_JOBS
     parser = argparse.ArgumentParser(description="check-unattended-env.py の回帰テスト")
-    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS,
-                        help=f"変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS}。1 で 1 つずつ）")
+    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS_MAX,
+                        help=f"変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS_MAX}。1 で 1 つずつ）")
     parser.add_argument("--pool-size", action="store_true",
                         help="変異のプールに渡す作業者の数を出して終わる（試料の中で使う。#761）")
     parser.add_argument("--check-pool", action="store_true",
@@ -1605,9 +1609,9 @@ def main() -> int:
     opts = parser.parse_args()
     if opts.jobs < 1:
         parser.error(f"--jobs は 1 以上: {opts.jobs}")
-    jobs = min(opts.jobs, MUTANT_JOBS)
+    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS_MAX)
     if opts.pool_size:
-        run_mutants([], jobs)  # 変異が 0 件なので作業者は起きない
+        run_mutants([])  # 変異が 0 件なので作業者は起きない
         print(pool_sizes[-1] if pool_sizes else "")
         return 0
     print("変異の作業者の数（#761——受けた --jobs をプールが使う）")
@@ -1630,7 +1634,7 @@ def main() -> int:
     if not bad:
         print("  ok   全シナリオ")
 
-    print(f"変異テスト（{jobs} 並列）")
+    print(f"変異テスト（{MUTANT_JOBS} 並列）")
     src = SCRIPT.read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory() as tmp:
         # 本体は同じ場所の ledger.py を読む（台帳の読み方を 2 箇所に置かない）——変異の隣にも置く
@@ -1645,7 +1649,7 @@ def main() -> int:
             mutant.write_text(src.replace(old, new), encoding="utf-8")
             order.append((name, len(mutants)))
             mutants.append(mutant)
-        verdicts = run_mutants(mutants, jobs)
+        verdicts = run_mutants(mutants)
         for name, k in order:
             if k is None:
                 print(f"  FAIL 変異「{name}」の置換元が本体に 1 つだけ無い")
