@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.72.0 -->
-> **このスキルの版: 1.72.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.73.0 -->
+> **このスキルの版: 1.73.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -226,7 +226,7 @@ check-unattended-env.py --cruise --ledger issue-<親>             # --absent
    ——まとめる時点・基準・まとめない行・まとめの周の回し方・マージの後は、そこを正とする。
    **走っている周が無いのに着手できる周を始めない（後回しにする）のは、単独で回す周（負荷・所要時間を測る周・わざと負荷を作る周）のためだけである**——
    単独の周は走っている周（台帳の `impl`・`gate`。マージの直前の取り込みを子に回すあいだも `impl` に戻して書く）が無いときに始め、走っているあいだは次の周を始めず、
-   台帳の `note` の先頭に `単独: <理由>` と残す（後で `note` を書き直すときも残す）。
+   台帳の `note` に `単独: <理由>` の項を残す（後で `note` を書き直すときも残す。`利用者の判断待ち:` の印を書くときは、その印を先頭に置き、`単独:` の項を後ろに残す）。
    条件と書き方は `references/parallel.md` の「単独で回す周」を正とする（#493）。
 2. **各 Issue を dev-loop の周として回す**——**周はサブエージェント（`Agent`）に回させ、親はメインの作業ツリーに留まる（#484）。**
    委譲文には次を書く:
@@ -270,7 +270,7 @@ check-unattended-env.py --cruise --ledger issue-<親>             # --absent
    当たるのは、**権限に拒否された**操作と、**台帳の `user_ops` にある**操作（打たない）。
    **`user_ops` の操作を中で打つスクリプトも呼ばない**——`gh pr merge` が `user_ops` にあれば、4 の `merge-pr.py` も呼ばずに操作待ちにする。
    `ledger.py set issue-<親> <番号> state=await note=<打ってほしいコマンドと、打った後に周がすること>` と書き
-   （**単独の周なら、`note` の先頭の `単独: <理由>; ` を残す**——`references/parallel.md` の「単独で回す周」）、
+   （**単独の周なら、`note` の `単独: <理由>` の項を残す**——`references/parallel.md` の「単独で回す周」）、
    **利用者に打ってほしいコマンドを渡してから**、`ledger.py next` が出す依存しない周へ進む。
    **操作待ちの周に依存する周は始めない**（`next` が出さない）。**打ったと言われたら実物で確かめてから**
    （`gh pr view`・`gh run list` など）、その周の続きを子に回させる（上の 2）——**報告を確かめの代わりにしない**（`../dev-loop/references/ledger.md`）。
