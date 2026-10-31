@@ -910,7 +910,7 @@ def parse_args(argv: list[str]) -> tuple[set[str], set[str] | None]:
     **知らない部分・知らない変異の名前は断る**（綴り間違いで「何も回さずに緑」にしない）——`argparse` の `choices` で断り、
     終了コードは 2（#687。手書きの読み取りだった頃は 1）。
     """
-    parser = argparse.ArgumentParser(prog="test-check-all.py", description="check-all.py の回帰テスト（引数なしで全部）")
+    parser = argparse.ArgumentParser(allow_abbrev=False, prog="test-check-all.py", description="check-all.py の回帰テスト（引数なしで全部）")
     parser.add_argument("--part", action="append", choices=PARTS, default=[],
                         help="回す部分（重ねて渡せる）")
     parser.add_argument("--mutant", action="append", choices=list(MUTANTS), default=[],

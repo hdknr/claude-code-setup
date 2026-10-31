@@ -934,23 +934,27 @@ def _kill_one(job):
 
 
 def kill_mutations(mutations, source, tmp, o, label):
-    """変異を 1 件ずつ当て、壊したのに観測が変わらなければ失格。"""
-    jobs, names = [], []
+    """変異を 1 件ずつ当て、壊したのに観測が変わらなければ失格。**結果は変異の宣言順に出す**（当てる先の無い変異も、その位置に）。"""
+    order, jobs = [], []  # order: (変異の名前, jobs の番号。当てる先が無ければ None)
     for i, (name, pairs) in enumerate(mutations.items()):
         mutated = source
         missing = [n for n, _ in pairs if n not in mutated]
         if missing:
-            check(f"変異を当てる先がある: {name}", False)
+            order.append((name, None))
             continue
         for needle, replacement in pairs:
             mutated = mutated.replace(needle, replacement, 1)
         # 名前の `hash` は作業者ごとに違うので使わない——宣言順の番号で分ける
+        order.append((name, len(jobs)))
         jobs.append((str(tmp), f"mut-{label}-{i}", mutated, dict(o)))
-        names.append(name)
     with concurrent.futures.ProcessPoolExecutor(
             max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
         results = list(pool.map(_kill_one, jobs))
-    for name, (verdict, why) in zip(names, results):
+    for name, k in order:
+        if k is None:
+            check(f"変異を当てる先がある: {name}", False)
+            continue
+        verdict, why = results[k]
         if verdict == "当てられなかった":
             check(f"変異を読み込める（当てられなかった）: {name}: {why}", False)
         else:

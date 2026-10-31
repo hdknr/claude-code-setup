@@ -970,7 +970,7 @@ def parse_args(argv: list[str]) -> list[str] | None:
     **狭めた回は、全部を回す回の代わりにならない。**
     **知らない名前は断る**（綴り間違いで「何も回さずに緑」にしない）——`argparse` の `choices` で断り、終了コードは 2（#687）。
     """
-    parser = argparse.ArgumentParser(prog="test-check-mutation-claims.py",
+    parser = argparse.ArgumentParser(allow_abbrev=False, prog="test-check-mutation-claims.py",
                                      description="check-mutation-claims.py の回帰テスト（引数なしで全部）")
     parser.add_argument("--mutation", action="append", choices=list(MUTATIONS), default=[],
                         help="当てる MUTATIONS の名前（重ねて渡せる）")
