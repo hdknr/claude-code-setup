@@ -285,6 +285,11 @@ PARSE_SAMPLES = {
     "~~~ の開き": ("~~~\n並行の検査: 8\n~~~", (1, None)),
     "コメントの中の開き": ("<!--\n```-->\n並行の検査: 3", (3, None)),
     "先頭の BOM": ("\ufeff並行の検査: 3", (3, None)),
+    # #739 の 1 パス目: 開き行は元の行で見る（コメントを外した残りで見ない）
+    "コメントの後ろの印": ("<!-- -->```\n並行の検査: 3", (3, None)),
+    "コメントで区切ったバッククォートの情報文字列": ("```a<!--`-->\n並行の検査: 3", (3, None)),
+    "情報文字列の <!--": ("```<!--\n-->\n並行の検査: 8\n```", (1, None)),
+    "情報文字列の <!-- で始めたコードブロックの後ろ": ("```<!--\n```\n並行の検査: 3", (3, None)),
 }
 
 
@@ -383,7 +388,7 @@ MUTATIONS = {
         "        return 3, f\"`並行の検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——1 として扱う\""),
     # 守る 7: コードブロックと HTML コメントの中は数えない
     "コードブロックの中の行を数える": (
-        "        opened = opens(kept)",
+        "        opened = None if comment else opens(line)",
         "        opened = None"),
     # 守る 8: ラッパーがシグナルを受けても、コマンドが終わるまで枠を離さない（SIGTERM・SIGHUP は渡す）
     "ラッパーがシグナルで先に終わる": (
@@ -425,20 +430,27 @@ MUTATIONS = {
         "    for line in NEWLINE.split(text.lstrip(\"\\ufeff\")):",
         "    for line in text.lstrip(\"\\ufeff\").splitlines():"),
     "バッククォートを含む情報文字列でも始める": (
-        "    if mark[0] == \"`\" and \"`\" in kept[opened.end():]:",
+        "    if mark[0] == \"`\" and \"`\" in line[opened.end():]:",
         "    if False:"),
     "空白 4 つの字下げでも始める": (
         "FENCE = re.compile(r\" {0,3}(`{3,}|~{3,})\")",
         "FENCE = re.compile(r\" {0,4}(`{3,}|~{3,})\")"),
     "行の途中の印でも始める": (
-        "    opened = FENCE.match(kept)",
-        "    opened = FENCE.search(kept)"),
+        "    opened = FENCE.match(line)",
+        "    opened = FENCE.search(line)"),
     "~~~ で始めない": (
         "FENCE = re.compile(r\" {0,3}(`{3,}|~{3,})\")",
         "FENCE = re.compile(r\" {0,3}(`{3,})\")"),
     "コメントの中の印で始める": (
-        "        opened = opens(kept)",
+        "        opened = None if comment else opens(line)",
         "        opened = opens(line)"),
+    "開き行をコメントを外した残りで見る": (
+        "        if kept.strip():\n            lines.append(kept)",
+        "        if not comment and opens(kept):\n            fence = opens(kept)\n            continue\n"
+        "        if kept.strip():\n            lines.append(kept)"),
+    "情報文字列の <!-- をコメントと読む": (
+        "        opened = None if comment else opens(line)",
+        "        opened = None if comment or \"<!--\" in line else opens(line)"),
     "BOM を外さない": (
         "    for line in NEWLINE.split(text.lstrip(\"\\ufeff\")):",
         "    for line in NEWLINE.split(text):"),
@@ -477,6 +489,8 @@ MUTATION_PROBE = {
     "行の途中の印でも始める": ("parse",),
     "~~~ で始めない": ("parse",),
     "コメントの中の印で始める": ("parse",),
+    "開き行をコメントを外した残りで見る": ("parse",),
+    "情報文字列の <!-- をコメントと読む": ("parse",),
     "BOM を外さない": ("parse",),
 }
 
@@ -570,8 +584,9 @@ def main() -> int:
             fell: list[str] = []
             try:
                 judge(observe_all(mutated, tmp, f"m{i}", only), fell, quiet=True)
-            except Exception as exc:  # 観測が止まったのは、テストが落ちたのと同じ（緑ではない）
-                fell.append(f"観測が例外で止まった（{exc.__class__.__name__}）")
+            except Exception as exc:  # 例外は判定の失敗ではない——見つけたと数えず、当てられなかったとして落とす（#745）
+                check(f"変異を当てられた: {name}（観測が例外で止まった: {exc.__class__.__name__}）", False)
+                continue
             check(f"変異を殺せる: {name}" + (f"（落ちた判定 {len(fell)} 件。最初: {fell[0]}）" if fell else ""), bool(fell))
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")

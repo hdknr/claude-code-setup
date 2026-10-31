@@ -74,6 +74,8 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 行の途中の印はコードブロックを始めない
 - `~~~` の印でもコードブロックを始める
 - HTML コメントの中の印はコードブロックを始めない
+- 開き行は元の行で見る——コメントの後ろの印（`<!-- -->```）・コメントで区切ったバッククォートの情報文字列（`` ```a<!--`--> ``）では始めない
+- 情報文字列の `<!--` はコメントの始まりと読まない（`` ```<!-- `` はコードブロックの始まり）
 - 先頭の BOM を外して読む
 
 守らない:
@@ -146,13 +148,13 @@ def closes(line: str, char: str, width: int) -> bool:
     return run >= width and not body[run:].strip(" \t")
 
 
-def opens(kept: str) -> tuple[str, int] | None:
+def opens(line: str) -> tuple[str, int] | None:
     """コードブロックの開き行か（CommonMark）。開くなら (印の文字, 数)。バッククォートの印の後ろ（情報文字列）にバッククォートがあれば開かない。"""
-    opened = FENCE.match(kept)
+    opened = FENCE.match(line)
     if not opened:
         return None
     mark = opened.group(1)
-    if mark[0] == "`" and "`" in kept[opened.end():]:
+    if mark[0] == "`" and "`" in line[opened.end():]:
         return None
     return mark[0], len(mark)
 
@@ -172,6 +174,12 @@ def declared_lines(text: str) -> list[str]:
             if closes(line, char, width):
                 fence = None
             continue
+        # 開き行は元の行で見る（コメントの外で始まった行だけ）——コメントを外した残りで見ると、`<!-- -->```` を行頭の印と読み、
+        # `` ```a<!--`--> `` の情報文字列のバッククォートを見落とす。開いた行はコメントを探さない——行の後ろの `<!--` は情報文字列
+        opened = None if comment else opens(line)
+        if opened:
+            fence = opened
+            continue
         kept, rest = "", line
         while rest:
             if comment:
@@ -186,10 +194,6 @@ def declared_lines(text: str) -> list[str]:
                     kept, rest = kept + rest, ""
                 else:
                     kept, comment, rest = kept + rest[:start], True, rest[start + 4:]
-        opened = opens(kept)
-        if opened and not comment:
-            fence = opened
-            continue
         if kept.strip():
             lines.append(kept)
     return lines
