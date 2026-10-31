@@ -12,7 +12,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 - **承認されたタグの時点の、その版の中身から作る**——`docs/v<n>/shared/qa.csv` は `signoff/v<n>/req-<k>`、
   `docs/v<n>/feasibility/schedule.csv`・`estimate.csv` は `signoff/v<n>/budget-<k>` の時点のものを `git show` で読む。
   作業ツリーで承認後に直した中身は提案書に入らない。**手書き部分（`docs/v<n>/proposal/*.md`）だけは作業ツリーから読む**
-  （承認の対象ではない。ファイル名の順に先頭へ並べる）。
+  （承認の対象ではない。ファイル名の順に先頭へ並べる）。**書いた綴りのとおりに探し、`docs/v<n>/Proposal/` のような綴りだけ違うフォルダは
+  名指しして 2**（`read_hand`。区別しない FS でだけ読めてしまうため。#514）。
   **v2 以降は、その版の差分の表に加えて、前の版との比較の節が載る**（変更の提案書）——比較は同梱の `diff-versions.py` の
   `compare` を、**`signoff/v<n>/req-<k>` の時点の `docs/`** に当てる（`git ls-tree`・`git cat-file` で一時ディレクトリに写す。
   `git archive` は `.gitattributes` で中身が変わるので使わない。写すのは重ね合わせが読むものだけで、
@@ -57,7 +58,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・手書き部分のフォルダの綴りが書いた綴りと大文字小文字だけ違う（#514）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
   印に無いファイルが出力の名前で在る・印が読めない（書き換えない。#512）・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440。
   印が名指しする出力が先の在る symlink のときを含む——#512）・
   想定外の例外（128KB を超えるセルの `csv.Error` など。#286。前の出力は作り始める前に消してあり、書いている途中なら書きかけを消す）——書いていない。
@@ -431,7 +432,13 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
 
 
 def read_hand(directory: Path) -> list[tuple[str, str]]:
-    """手書き部分（`directory` 直下の `*.md`、ファイル名の順）。作業ツリーから読む。"""
+    """手書き部分（`directory` 直下の `*.md`、ファイル名の順）。作業ツリーから読む。
+
+    **書いた綴りのとおりに探す**（`check-qa-csv.py` の `misspelled`。#514）——区別しない FS では `docs/v2/proposal` が
+    `docs/v2/Proposal` を開いてしまい、区別する FS と答えが食い違う。綴りだけ違う名前なら名指しして 2。"""
+    problem = qa.misspelled(directory)
+    if problem:
+        raise Stop(2, [f"{problem}。中身を検査していない"])
     hand = []
     for path in sorted(directory.glob("*.md")) if directory.is_dir() else []:
         try:

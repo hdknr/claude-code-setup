@@ -272,6 +272,31 @@ def copy_scripts(dest: Path) -> Path:
     return dest
 
 
+SPELLING_NAMED = "大文字小文字だけ違う名前なので"
+
+
+def spelling_problems(scripts: Path, work: Path) -> list[str]:
+    """書いたパス（`docs/v2/feasibility/…`）とディスク（`docs/v2/Feasibility/…`）の綴りが大文字小文字だけ違えば、2 で
+    ディスクの綴りを名指しし、読まない（#514）。どちらの FS でも同じ答え。綴りどおりなら 0（陽性対照）。"""
+    assert_in_tmp(work)
+    for folder in ("Feasibility", "feasibility"):
+        target = work / "docs" / ("v2" if folder == "Feasibility" else "v3") / folder
+        target.mkdir(parents=True)
+        (target / "schedule.csv").write_text(S_HEAD + S_GOOD, encoding="utf-8")
+        (target / "estimate.csv").write_text(E_HEAD + E_GOOD, encoding="utf-8")
+    found = []
+    for version, code in (("v2", 2), ("v3", 0)):
+        args = [f"docs/{version}/feasibility/schedule.csv", f"docs/{version}/feasibility/estimate.csv"]
+        r = subprocess.run([sys.executable, "-I", str(scripts / TARGET), *args], capture_output=True, text=True, cwd=work)
+        named = r.stderr.count(f"docs/{version}/Feasibility: feasibility と{SPELLING_NAMED}")
+        if r.returncode != code or (code == 2 and (named != 2 or "中身を検査していない" not in r.stderr)) or (code == 0 and SPELLING_NAMED in r.stderr):
+            found.append(f"{version}: 終了 {r.returncode}（期待 {code}）・名指し {named} 回: {r.stderr[-300:]!r}")
+    return found
+
+
+SPELLING_MUTATIONS = [("入口で綴りを見ない", "        problem = qa.misspelled(path)\n", "        problem = None\n")]
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="feasibility-csv-test-") as tmp:
         tmp_path = Path(tmp)
@@ -306,6 +331,16 @@ def main() -> int:
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
                   not as_expected(killer, mutated_results[killer]), mutated_results[killer][1][-300:])
 
+        problems = spelling_problems(scripts, tmp_path / "spelling")
+        check("綴りだけ違うフォルダの表を名指しして 2・綴りどおりなら 0（#514）", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(SPELLING_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"spelling-mut{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（綴り）", bool(spelling_problems(mutated, tmp_path / f"spelling-mutwork{index}")))
+
         problems = oo_problems(scripts, tmp_path)
         check("-OO の引数なしで使い方の誤り（2）にならない", not problems, "; ".join(problems))
         for index, (name, before, after) in enumerate(OO_MUTATIONS):
@@ -321,7 +356,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS) + len(SPELLING_MUTATIONS)} 件")
     return 0
 
 
