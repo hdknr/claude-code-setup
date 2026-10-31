@@ -338,7 +338,7 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["印の無い lines"] = run(mod, ["lines", "ln", "直す線=既定", "--source", "利用者の確認（起動時・t1）"], root)[0]
     r = str(run(mod, ["show", "ln"], root)[1])
     o["マージの無い配布の確認"] = "配布の確認" in r
-    o["印の無い台帳の古い印の行"] = "マージの線の無い印" in r
+    o["印の無い台帳の古い印の行"] = "効かない印" in r
     # #711: 印は `マージ=関門を通ればマージ` と一緒にだけ——`止まる` と一緒でも拒む（台帳は変えない）
     before = snapshot(lf)
     o["止まるの印"] = run(mod, ["lines", "ln", "マージ=止まる", "--source", "利用者の確認（起動時・t1、配布を見せて確かめた）"], root)[0]
@@ -355,8 +355,16 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
          "lines": {"values": {"直す線": "既定"}, "source": "利用者の確認（起動時・t1、配布を見せて確かめた）", "updated": ""}},
         ensure_ascii=False), encoding="utf-8")
     r = run(mod, ["show", "lpre"], root)
-    o["古い台帳の印"] = (r[0], "マージの線の無い印（#681 より前の形）" in str(r[1]), "配布の確認" in str(r[1]),
+    o["古い台帳の印"] = (r[0], "効かない印（#711 より前の形）" in str(r[1]), "配布の確認" in str(r[1]),
                        run(mod, ["next", "lpre"], root)[:2])
+    # #711 の 1 パス目: `マージ = 止まる` と印の台帳（#711 より前は書けた）——名指しし、「配布の確認」は なし
+    (root / ".claude" / "plans" / "cruise-lstop.json").write_text(json.dumps(
+        {"format": 1, "name": "lstop", "issues": [entry(1, [])],
+         "lines": {"values": {"マージ": "止まる"}, "source": "利用者の確認（起動時・t1、配布を見せて確かめた）", "updated": ""}},
+        ensure_ascii=False), encoding="utf-8")
+    r = str(run(mod, ["show", "lstop"], root)[1])
+    o["止まると印の台帳"] = ("効かない印（#711 より前の形）" in r,
+                          next((l.split(": ", 1)[1] for l in r.splitlines() if l.startswith("配布の確認")), None))
     o["decisions"] = (run(mod, ["set", "ln", "1", "decisions=12, 13"], root)[0],
                       run(mod, ["set", "ln", "1", "decisions=x"], root)[0])
     try:
@@ -730,9 +738,9 @@ MUTATIONS = {
     "無い台帳の印を 3 と言う": [
         ('    data = load(path)\n    if has_dist_mark(source)', '    if has_dist_mark(source)'),
         ('    data["lines"] = {"values": values', '    data = load(path)\n    data["lines"] = {"values": values')],
-    # 守る（#711）: マージの線の無い印（#681 より前の形）を名指しする
-    "マージの線の無い印を名指ししない": [
-        ('        elif has_dist_mark(lines["source"]):', '        elif False:')],
+    # 守る（#711）: マージ = 関門を通ればマージ の無い印（線が無い・止まる）を名指しする
+    "効かない印を名指ししない": [
+        ("        if marked and merge != DIST_MERGE:", "        if False:")],
     # 守る: origin も文字列だけ
     "origin の型を見ない": [
         ('TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")',
@@ -976,6 +984,8 @@ def main() -> int:
               (o["無い台帳の印"], o["無い台帳を作らない"]) == (4, True))
         check("#681 より前の台帳（マージの線が無く出所に印）は読め、show が名指しし、配布の確認の行は出さない（#711）",
               o["古い台帳の印"] == (0, True, False, (0, "1\n")))
+        check("マージ=止まる と印の台帳は show が名指しし、配布の確認は「なし」（#711 の 1 パス目）",
+              o["止まると印の台帳"] == (True, "なし"))
         check("decisions は番号のカンマ区切りだけ（番号でなければ 3）",
               o["decisions"] == (0, 3) and o["decisions の値"] == "12,13")
         for name in ("lbad", "lval", "lsrc", "lshape", "ldec", "lorig", "uops", "usrc", "udup"):
