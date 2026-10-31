@@ -33,8 +33,13 @@
    リンクにする版の表に無い番号はリンクにせず 1 度だけ警告し、警告は見た版の範囲を言う。読めない表があっても落ちず、他の版でリンクにする。
    空白つきの `No` はアンカーと合わないのでリンクにせず警告する。前後が英数字・`-`・`_` の `Q-` は番号でない。
    Q&A 表のページ（印を外せば掛かる）と、`qa.md` の無いサイトは変えない。
+   **版の中の表は書いた綴りで探す**（#514）——綴りだけ違う名前（`v2/Shared/qa.csv`・`v1/shared/QA.csv`・`Shared/decision_table.csv`）で
+   届く表は警告して描かず、その番号もリンクにしない。**試料はどちらのファイルシステムでも同じ答えを期待する**。
+   区別する FS でだけ作れる試料（綴りどおりと綴り違いが並ぶ——綴りどおりを描く）と、片方の FS でしか前の振る舞いと見分けられない変異
+   （`SENSITIVE_ONLY`・`FOLD_ONLY`）は、合わない FS では飛ばして数を出す。**CI では区別しない FS（ext4 の casefold）でももう 1 度回し、
+   `MKDOCS_TEST_REQUIRE_CASE_FOLD=1` で一時ディレクトリが区別する FS なら赤にする**（`test-merge-versions.py` と同じ形。#571）。
 3. **写しの突き合わせ**——フックの列名・状態・印は `check-qa-csv.py` の定数と同じ（フックは正本リポジトリへ写されて
-   単独で動くので import できず、写しを持つ）。
+   単独で動くので import できず、写しを持つ）。フックの `fold` は `merge-versions.py` の `fold` と同じ答えを返す（#514）。
 4. **重ね合わせに混ざらない**——雛形を写した正本で `merge-versions.py` が通り、出力に表示用のファイルが入らない。
 5. **決まりの原本（`references/tree.md`）の「ドキュメントのツール」の節が、写し方のコマンドを載せている。**
    本文の番号の書き方は `references/qa-csv.md` の「本文での番号」にあり、`tree.md` がそこを指している。
@@ -562,6 +567,108 @@ def hook_no_marker(plugin: Path, work: Path) -> bool:
     return out == text and not warnings
 
 
+# 綴り違いの試料（#514）。どちらの FS でも同じ答えを期待する
+REQUIRE_CASE_FOLD = "MKDOCS_TEST_REQUIRE_CASE_FOLD"
+FS: dict[str, bool] = {}
+SPELLING = "と大文字小文字・Unicode の正規化だけ違う名前なので読まない"
+
+
+def case_sensitive(work: Path) -> bool:
+    """一時ディレクトリが大文字小文字を区別するか（最初に測った値を覚える）。"""
+    if "sensitive" not in FS:
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "case-probe").write_text("x", encoding="utf-8")
+        FS["sensitive"] = not (work / "CASE-PROBE").exists()
+    return FS["sensitive"]
+
+
+def hook_misspelled_qa(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/Shared/qa.csv": QA_V2, "v3/shared/QA.csv": QA_V10})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    return (len(warnings) == 2 and "v2/Shared/qa.csv: shared/qa.csv " + SPELLING in warnings[0]
+            and "v3/shared/QA.csv: shared/qa.csv " + SPELLING in warnings[1]
+            and "versions.md の「綴りの誤りの移行」" in warnings[0]
+            and out.count("表示できない") == 2 and "## v1" in out and "## v2" not in out and "## v3" not in out
+            and "{#v2-q-003}" not in out and "{#v3-q-010}" not in out)
+
+
+def hook_misspelled_decision_table(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/decision_table.csv": "条件,結果\nA,B\n", "v2/Shared/decision_table.csv": "列,値\nx,y\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: decision_table -->", src="decision-table.md")
+    return (len(warnings) == 1 and "v2/Shared/decision_table.csv: shared/decision_table.csv " + SPELLING in warnings[0]
+            and "| 条件 | 結果 |" in out and "| 列 | 値 |" not in out and "## v2" not in out)
+
+
+def hook_links_misspelled(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/Shared/qa.csv": QA_V2, "qa.md": "<!-- spec-loop: qa -->\n"})
+    out, warnings = link(plugin, docs, "<p>Q-001 と Q-003</p>\n", "index.md")
+    return (out == f"<p>{a('Q-001', 'qa.html#v1-q-001')} と Q-003</p>\n"
+            and len(warnings) == 1 and "Q-003 は どの版の Q&A 表にも無い" in warnings[0])
+
+
+def hook_both_spellings(plugin: Path, work: Path) -> bool:
+    """区別する FS で綴りどおりと綴り違いが並ぶなら、綴りどおりを描き、綴り違いを警告する（区別しない FS では作れないので通す）。"""
+    if not case_sensitive(work):
+        return True
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v1/Shared/qa.csv": QA_V10})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    numbers = qa_numbers_of(plugin, docs)
+    return (len(warnings) == 1 and "v1/Shared/qa.csv" in warnings[0] and "{#v1-q-001}" in out and "{#v1-q-010}" not in out
+            and numbers == [(1, {"Q-001", "Q-002"})])
+
+
+def hook_unlisted(plugin: Path, work: Path) -> bool:
+    """一覧を読めない版のフォルダ（実行の権限だけ）を通して綴りどおりの表に届くなら、警告して描かない（2 パス目の P2-1）。
+    黙って描かないと、区別する FS でも綴りどおりの表が消える。CLI（`check-qa-csv.py` の `misspelled`）と同じく止める側。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/shared/qa.csv": QA_V2})
+    (docs / "v2").chmod(0o311)
+    try:
+        out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+    finally:
+        (docs / "v2").chmod(0o755)
+    return (len(warnings) == 1 and "v2: 一覧を読めないので、shared/qa.csv の綴りを確かめられず読まない" in warnings[0]
+            and "## v1" in out and "{#v2-q-003}" not in out)
+
+
+def hook_unreachable(plugin: Path, work: Path) -> bool:
+    """権限の無い版のフォルダ（0o000）の下は、綴りも在るかも確かめられないので、警告して描かない——例外で落ちない（#514 の狭いパスの F1）。
+    陽性対照: 直す前のフックは `Path.is_file` で、Python 3.12 では `PermissionError` で落ち、3.14 では黙って飛ばした——どちらもこの試料で赤。
+    Q&A 表のページと、本文の番号のリンク（`qa_numbers`）の両方を通す。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/shared/qa.csv": QA_V2, "qa.md": "<!-- spec-loop: qa -->\n"})
+    (docs / "v2").chmod(0)
+    try:
+        out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+        linked, link_warnings = link(plugin, docs, "<p>Q-001</p>\n", "index.md")
+    finally:
+        (docs / "v2").chmod(0o755)
+    return (len(warnings) == 1 and "v2: 一覧を読めないので、shared/qa.csv の綴りを確かめられず読まない" in warnings[0]
+            and "## v1" in out and "{#v2-q-003}" not in out
+            and linked == f"<p>{a('Q-001', 'qa.html#v1-q-001')}</p>\n")
+
+
+def hook_unlisted_decision_table(plugin: Path, work: Path) -> bool:
+    """決定表のページも、一覧を読めない版のフォルダ（0o311）を通る表は警告して描かない（#514 の狭いパスの M3）。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/decision_table.csv": "条件,結果\nA,B\n", "v2/shared/decision_table.csv": "列,値\nx,y\n"})
+    (docs / "v2").chmod(0o311)
+    try:
+        out, warnings = render(plugin, docs, "<!-- spec-loop: decision_table -->", src="decision-table.md")
+    finally:
+        (docs / "v2").chmod(0o755)
+    return (len(warnings) == 1 and "v2: 一覧を読めないので、shared/decision_table.csv の綴りを確かめられず読まない" in warnings[0]
+            and "| 条件 | 結果 |" in out and "| 列 | 値 |" not in out)
+
+
+def qa_numbers_of(plugin: Path, docs: Path):
+    return load_hook(plugin).qa_numbers(docs)
+
+
 def link_site(work: Path) -> Path:
     docs = work / "docs"
     write(docs, {"v1/shared/qa.csv": QA_V1, "v2/shared/qa.csv": QA_V2, "v3/requirements/a.md": "# a\n",
@@ -842,6 +949,13 @@ CASES = {
     "決定表が無ければそう書く": hook_decision_table_none,
     "読めない・見出しの無い決定表は警告": hook_decision_table_unreadable,
     "雛形の決定表のページは印を持ち、空の根に写る": init_decision_table_page,
+    "綴り違いの Q&A 表は警告して描かない": hook_misspelled_qa,
+    "綴り違いの決定表は警告して描かない": hook_misspelled_decision_table,
+    "綴り違いの表の番号はリンクにしない": hook_links_misspelled,
+    "一覧を読めない版のフォルダの表は警告して描かない": hook_unlisted,
+    "権限の無い版のフォルダは警告して描かず、例外で落ちない": hook_unreachable,
+    "一覧を読めない版のフォルダの決定表は警告して描かない": hook_unlisted_decision_table,
+    "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く": hook_both_spellings,
     "重ね合わせに表示用のファイルが混ざらない": merge_ignores_pages,
 }
 
@@ -932,8 +1046,8 @@ MUTATIONS: list[tuple] = [
     ("\\ をエスケープしない", HOOK, r'MARKDOWN_SPECIAL = re.compile(r"([\\`*_\[\]{}#|])")',
      r'MARKDOWN_SPECIAL = re.compile(r"([`*_\[\]{}#|])")', "& と \\ と \\r もエスケープする"),
     ("\\r を改行にしない", HOOK, '.replace("\\r", "\\n")', "", "& と \\ と \\r もエスケープする"),
-    ("qa.csv の無い版で止まる", HOOK, "        if not path.is_file():\n            continue\n",
-     "        if not path.is_file():\n            break\n", "qa.csv の無い版は飛ばして次の版を描く"),
+    ("qa.csv の無い版で止まる", HOOK, "        if path is None:\n            continue\n",
+     "        if path is None:\n            break\n", "qa.csv の無い版は飛ばして次の版を描く"),
     ("一時ファイルを残す", INIT, "        os.unlink(tmp)\n", "        pass\n", "空の根には雛形をすべて写す"),
     ("行き先へ直に書く", INIT, '        with os.fdopen(fd, "wb") as f:\n            f.write(data)\n',
      '        with os.fdopen(fd, "wb") as f, open(dest, "xb") as g:\n            g.write(data)\n            f.write(data)\n',
@@ -1060,7 +1174,39 @@ MUTATIONS: list[tuple] = [
      "描画した表のセルも置き換える"),
     ("qa.md が無くても掛ける", HOOK, " or qa is None:", ":",
      "qa.md が無ければ変えない"),
+    # 版の中の表を書いた綴りで探す（#514）
+    ("Q&A 表をパスを組み立てて開く", HOOK, "        path, wrong, unverified = lookup(root, SHARED, QA_TABLE)\n",
+     "        path, wrong, unverified = (root / SHARED / QA_TABLE if (root / SHARED / QA_TABLE).is_file() else None), [], []\n",
+     "綴り違いの Q&A 表は警告して描かない"),
+    ("番号をパスを組み立てて読む", HOOK, "        path, _, _ = lookup(root, SHARED, QA_TABLE)\n",
+     "        path = root / SHARED / QA_TABLE if (root / SHARED / QA_TABLE).is_file() else None\n",
+     "綴り違いの表の番号はリンクにしない"),
+    ("決定表をパスを組み立てて開く", HOOK, "        path, wrong, unverified = lookup(root, SHARED, DECISION_TABLE)\n",
+     "        path, wrong, unverified = (root / SHARED / DECISION_TABLE if (root / SHARED / DECISION_TABLE).is_file() else None), [], []\n",
+     "綴り違いの決定表は警告して描かない"),
+    ("綴り違いを警告しない", HOOK, "            for path in wrong]", "            for path in wrong if False]", "綴り違いの Q&A 表は警告して描かない"),
+    ("綴りが違っても綴りどおりと読む", HOOK, "(directory / entry, spelled and entry == part, ())", "(directory / entry, spelled, ())",
+     "綴り違いの Q&A 表は警告して描かない"),
+    ("フックの綴りを大文字小文字で畳まない", HOOK, '    return unicodedata.normalize("NFC", name).casefold()',
+     '    return unicodedata.normalize("NFC", name)', "綴り違いの Q&A 表は警告して描かない"),
+    ("一覧を読めないフォルダを黙って飛ばす", HOOK, "                if spelled and maybe_file(directory.joinpath(*parts[index:])):\n",
+     "                if False:\n", "一覧を読めない版のフォルダの表は警告して描かない"),
+    # #514 の狭いパスの F1・M3
+    # 直す前の形（陽性対照）——Python 3.12 では PermissionError で落ち、3.14 では黙って飛ばす。どちらでも試料が赤
+    ("届くかを Path.is_file で見る", HOOK, "                if spelled and maybe_file(directory.joinpath(*parts[index:])):\n",
+     "                if spelled and directory.joinpath(*parts[index:]).is_file():\n", "権限の無い版のフォルダは警告して描かず、例外で落ちない"),
+    ("確かめられない形を無いと読む", HOOK, "    except OSError:\n        return True\n", "    except OSError:\n        return False\n",
+     "権限の無い版のフォルダは警告して描かず、例外で落ちない"),
+    ("決定表で確かめられないフォルダを警告しない", HOOK,
+     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}", unverified)',
+     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}")', "一覧を読めない版のフォルダの決定表は警告して描かない"),
+    ("区別する FS で綴り違いのほうを読む", HOOK, "    return (next((path for path, spelled in files if spelled), None),",
+     "    return (next((path for path, spelled in files), None),", "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く"),
 ]
+# 片方の FS でしか前の振る舞いと見分けられない変異——区別する FS では、前の振る舞いも綴り違いを開けず黙って飛ばすので、
+# 番号を読む側の変異は見分けられない。綴りどおりと綴り違いが並ぶ試料は区別する FS でしか作れない
+FOLD_ONLY = {"番号をパスを組み立てて読む"}
+SENSITIVE_ONLY = {"区別する FS で綴り違いのほうを読む"}
 
 
 def check_copies() -> None:
@@ -1078,6 +1224,12 @@ def check_copies() -> None:
     check("雛形の docs/qa.md に qa の印が無い", "<!-- spec-loop: qa -->" in page)
     config = (PLUGIN / "templates" / "mkdocs" / "mkdocs.yml").read_text(encoding="utf-8")
     check("雛形の mkdocs.yml がフックを指していない", f"  - {HOOK.relative_to('templates/mkdocs').as_posix()}\n" in config)
+    spec = importlib.util.spec_from_file_location("merge_versions_fold", PLUGIN / "scripts" / "merge-versions.py")
+    merge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(merge)
+    samples = ["shared", "Shared", "ＳＨＡＲＥＤ", "ſhared", "Straße", "STRASSE", "İ", "i̇", "\u304b\u3099", "\u304c", "ΣΑΣ", "σας"]
+    wrong = [f"{x!r}: {hook.fold(x)!r} != {merge.fold(x)!r}" for x in samples if hook.fold(x) != merge.fold(x)]
+    check("フックの fold が merge-versions.py の fold と違う", not wrong, "; ".join(wrong))
     check("雛形の pyproject.toml が mkdocs を 2 未満に留めていない",
           '"mkdocs>=1.6,<2"' in (PLUGIN / "templates" / "mkdocs" / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -1137,10 +1289,18 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="init-mkdocs-test-") as tmp:
         tmp_path = Path(tmp)
         plugin = copy_plugin(tmp_path / "plugin")
+        sensitive = case_sensitive(tmp_path / "fs-probe")
+        print(f"一時ディレクトリの FS: {'大文字小文字を区別する' if sensitive else '区別しない'}（{tmp_path}）")
+        if os.environ.get(REQUIRE_CASE_FOLD) == "1" and sensitive:
+            check(f"{REQUIRE_CASE_FOLD}=1 なのに一時ディレクトリ（{tmp_path}）が大文字小文字を区別する（区別しない FS の試料を走らせていない）", False)
+        skipped = []
         for index, (name, case) in enumerate(CASES.items()):
             check(f"試料が期待どおりでない: {name}", case(plugin, tmp_path / f"case{index}"))
 
         for index, (name, target, *edits, killer) in enumerate(MUTATIONS):
+            if (name in FOLD_ONLY and sensitive) or (name in SENSITIVE_ONLY and not sensitive):
+                skipped.append(name)
+                continue
             pairs = edits[0] if len(edits) == 1 else [tuple(edits)]
             source = (PLUGIN / target).read_text(encoding="utf-8")
             counts = [source.count(before) for before, _ in pairs]
@@ -1165,7 +1325,8 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・写しと原本の照合")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) - len(skipped)} 件・写しと原本の照合"
+          + (f"（この FS では見分けられない変異 {len(skipped)} 件を飛ばした: {', '.join(skipped)}）" if skipped else ""))
     return 0
 
 

@@ -827,6 +827,39 @@ def ownership_problems(scripts: Path) -> list[str]:
             problems.append(f"辿れない出力先: {proc.returncode} {output[-300:]}")
     return problems
 
+# 手書き部分のフォルダの綴り（#514）。(名前, 壊す前, 壊した後)
+HAND_SPELLING_MUTATIONS: list[tuple[str, str, str]] = [
+    ("手書き部分の綴りを見ない", "    problem = qa.misspelled(directory)\n    if problem:\n        raise Stop(2,",
+     "    problem = None\n    if problem:\n        raise Stop(2,"),
+]
+
+
+def hand_spelling_problems(scripts: Path) -> list[str]:
+    """手書き部分（`docs/v2/proposal`）を、ディスクが `docs/v2/Proposal` なら読まずに名指しして 2（`read_hand` の `Stop`）。
+    綴りどおりなら読む（陽性対照）。どちらの FS でも同じ答え——区別しない FS では前は読み、区別する FS では前は「無い」（空）だった。"""
+    spec = importlib.util.spec_from_file_location(f"build_proposal_hand_{id(scripts)}", scripts / TARGET)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    problems = []
+    with tempfile.TemporaryDirectory(prefix="proposal-hand-") as tmp:
+        for version, folder in (("v2", "Proposal"), ("v3", "proposal")):
+            (Path(tmp) / "docs" / version / folder).mkdir(parents=True)
+            (Path(tmp) / "docs" / version / folder / "a.md").write_text(HAND_TEXT, encoding="utf-8")
+        try:
+            got = module.read_hand(Path(tmp) / "docs" / "v2" / "proposal")
+            problems.append(f"綴り違いのフォルダを読んだ・止まらない: {got!r}")
+        except module.Stop as e:
+            if e.code != 2 or "docs/v2/Proposal: proposal と大文字小文字だけ違う名前なので" not in "\n".join(e.lines):
+                problems.append(f"綴り違いのフォルダ: {e.code} {e.lines!r}")
+        try:
+            got = module.read_hand(Path(tmp) / "docs" / "v3" / "proposal")
+            if got != [("a.md", HAND_TEXT)]:
+                problems.append(f"綴りどおりのフォルダを読まない: {got!r}")
+        except module.Stop as e:
+            problems.append(f"綴りどおりのフォルダで止まった: {e.code} {e.lines!r}")
+    return problems
+
+
 # 前の出力を消せない場所で殺す変異（#440）。(名前, 壊す前, 壊した後)
 LOCKED_MUTATIONS: list[tuple[str, str, str]] = [
     ("消せない出力で traceback", "        except OSError as e:\n            left.append(f\"{stale}",
@@ -1877,6 +1910,17 @@ def main() -> int:
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（読めない印か辿れない出力先で殺せるはず）", bool(ownership_problems(mutated)))
 
+        problems = hand_spelling_problems(SCRIPTS)
+        check("手書き部分のフォルダの綴り違いを名指しして 2・綴りどおりなら読む（#514）", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(HAND_SPELLING_MUTATIONS):
+            count = source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"muthand{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}（手書き部分の綴りで殺せるはず）", bool(hand_spelling_problems(mutated)))
+
         problems = locked_problems(SCRIPTS)
         check("前の出力を消せない場所の扱いが違う", not problems, "; ".join(problems))
         for index, (name, before, after) in enumerate(LOCKED_MUTATIONS):
@@ -1924,7 +1968,7 @@ def main() -> int:
         return 1
     if folded_skips or folded_left:
         print(f"飛ばした（その FS では判別できない——大文字小文字を区別する／しない）: 変異 {'・'.join(folded_skips + folded_left)}")
-    print(f"OK: 試料 {len(CASES) + 8 + sum(len(left_shapes(s[5])) for s in LEFT_SCENARIOS) + len(LEFT_FIXED) + LINK_FIXTURES} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(LOCKED_MUTATIONS) + len(LINK_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS) - len(folded_left)} 件")
+    print(f"OK: 試料 {len(CASES) + 8 + sum(len(left_shapes(s[5])) for s in LEFT_SCENARIOS) + len(LEFT_FIXED) + LINK_FIXTURES} 件・変異 {len(MUTATIONS) - len(folded_skips) + len(NO_GIT_MUTATIONS) + len(PREVIOUS_MUTATIONS) + len(QA_MUTATIONS) + len(COMPOSE_MUTATIONS) + len(WRITE_MUTATIONS) + len(OWN_MUTATIONS) + len(HAND_SPELLING_MUTATIONS) + len(LOCKED_MUTATIONS) + len(LINK_MUTATIONS) + len(ENTRY_MUTATIONS) + len(LEFTOVER_MUTATIONS) - len(folded_left)} 件")
     return 0
 
 
