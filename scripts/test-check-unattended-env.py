@@ -1132,20 +1132,20 @@ MUTATIONS = {
         "        commands = tuple(commands) + tuple(c for c in declared if c not in commands)\n",
         "        commands = tuple(commands)\n"),
     "フェンスの中の行も宣言にする": (
-        "        if fence is not None:\n            if f and",
-        "        if False:\n            if f and"),
+        "        if fence:\n            if closes(line, *fence):",
+        "        if False:\n            if closes(line, *fence):"),
     "種類の違うフェンスの記号でも閉じる": (
-        "            if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():\n",
-        "            if f:\n"),
+        "    run = len(body) - len(body.lstrip(char))\n",
+        "    run = len(body) - len(body.lstrip(\"`~\"))\n"),
     "BOM を行頭に残す": (
         '.read_text(encoding="utf-8-sig")  # BOM を行頭に残さない',
         '.read_text(encoding="utf-8")'),
     "HTML コメントを除かない": (
-        "            line, in_comment = uncommented(line, in_comment)\n",
-        "            pass\n"),
+        "                    kept, comment, rest = kept + rest[:start], True, rest[start + 4:]\n",
+        "                    kept, rest = kept + rest, \"\"\n"),
     "` を含む情報文字列でもフェンスを開く": (
-        '            if f and not (f.group(1)[0] == "`" and "`" in f.group(2)):\n',
-        "            if f:\n"),
+        '    if mark[0] == "`" and "`" in line[opened.end():]:\n',
+        "    if False:\n"),
     "崩れた宣言の行を見ない": (
         "    if broken:\n",
         "    if False:\n"),

@@ -204,6 +204,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-run-serial.py` - **重い検査・アプリの起動の順番待ちの回帰テスト**（#493。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/cruise/scripts/run-serial.py`**（同じ形）。テンポラリに偽のリポジトリと worktree を作り、
     **時間ではなく、走らせたコマンドが書く印と待つ側の出力で**「同時に走らない」「待っていると言う」を決める
+  - `test-fence-copies.py` - **コードブロックと HTML コメントの読み方の写し 3 つ**（`run-serial.py`・`check-unattended-env.py`・`parent-issue.py`）を
+    **同じ試料の表で突き合わせる**（#758・#759・#760。写しを古い読み方に戻すと落ちる陽性対照つき）。**1 つにまとめず写しのままにした理由と、
+    parent-issue だけ違えてよい試料は docstring を正とする**
   - `test-merge-pr.py` - **PR のマージの手続きの回帰テスト**（#389。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`**（同じ理由）。
     **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**本物の `gh` の出力形は見ない**

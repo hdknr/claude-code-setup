@@ -89,6 +89,10 @@ cruise: 実機確認 = Refs でマージ
 -->
 """
 
+# フェンスの読み方（#760。run-serial.py と同じ形——3 つの写しの突き合わせは scripts/test-fence-copies.py）:
+# 1 行目の BOM の後ろの行を読む・\x0b の後ろで閉じない・後ろに全角の空白のある印で閉じない・全角の空白で字下げした印で開かない
+FENCE760 = "\ufeff- [ ] #30\n```\n```\x0b\n- [ ] #91\n```\n```\n```\u3000\n- [ ] #90\n```\n\u3000```\n- [ ] #31\n\u3000```\n"
+
 # 読む範囲（C3・C5）: 違う印で閉じないフェンス・インデントされたフェンス・長いフェンスの中の短い印・
 # 番号つきリスト・引用・HTML コメント・- で始まる題
 EXTRA = """```
@@ -246,6 +250,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                    str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("線（cruise: の行）:")[0].strip())
     o["読む範囲の apply"] = run(mod, ["apply", "53", "--body-file", body("extra2", EXTRA), "--digest", dig_extra],
                               root)[0]
+    # フェンスの読み方（#760）: 改行でだけ分ける・BOM を 1 つ外す・字下げは空白とタブだけ・閉じの後ろは空白とタブだけ
+    rc, out, _ = show("fence760", FENCE760)
+    o["フェンスの読み方"] = (rc, re.findall(r"^#(\d+)\t依存: ([^\t]*)\t(.*)$", str(out), re.M))
     try:
         data = json.loads((plans / "cruise-issue-53.json").read_text(encoding="utf-8"))
         o["読む範囲の台帳"] = [(i["number"], i["deps"], i["title"]) for i in data["issues"]]
@@ -357,6 +364,14 @@ MUTATIONS = {
         (' and width(m.group("indent")) <= indent + 3', "")],
     "タブを 1 桁と数える": [
         ("    return len(indent.expandtabs(4))", "    return len(indent)")],
+    "インデントに全角の空白も数える": [
+        ('FENCE_RE = re.compile(r"^(?P<indent>[ \\t]*)', 'FENCE_RE = re.compile(r"^(?P<indent>\\s*)')],
+    "閉じの後ろの全角の空白を許す": [
+        ('and not m.group("info").strip(" \\t") and', 'and not m.group("info").strip() and')],
+    "改行以外でも行を分ける": [
+        ('NEWLINE.split(body.removeprefix("\\ufeff"))', 'body.removeprefix("\\ufeff").splitlines()')],
+    "BOM を外さない": [
+        ('NEWLINE.split(body.removeprefix("\\ufeff"))', 'NEWLINE.split(body)')],
     "インラインコードの ``` を開きと読む": [
         ('    if not m or (m.group("fence")[0] == "`" and "`" in m.group("info")):', "    if not m:")],
     "閉じていないフェンスを通す": [
@@ -439,6 +454,9 @@ def main() -> int:
               rows == [("12", "-", ""), ("14", "-", "-wip"), ("15", "-", ""), ("16", "-", "`<!--` と `-->`"), ("17", "-", ""),
                        ("19", "-", "a <!-- b"), ("20", "-", ""), ("22", "-", ""), ("23", "-", ""), ("13", "#12", "")])
         check("引用の中の行は読み飛ばした行として出る", skipped_extra == "16 行目（引用の中）: > - [ ] #96")
+        rc, rows = o["フェンスの読み方"]
+        check("フェンスの読み方（#760）: BOM の後ろの行を読む・\\x0b と全角の空白の後ろの印で閉じない・全角の空白の字下げで開かない",
+              rc == 0 and rows == [("30", "-", ""), ("31", "-", "")])
         check("- で始まる題も台帳に入る（apply は 0）",
               o["読む範囲の apply"] == 0 and o["読む範囲の台帳"] == [(12, [], ""), (14, [], "-wip"), (15, [], ""), (16, [], "`<!--` と `-->`"), (17, [], ""),
                                           (19, [], "a <!-- b"), (20, [], ""), (22, [], ""), (23, [], ""), (13, [12], "")])
