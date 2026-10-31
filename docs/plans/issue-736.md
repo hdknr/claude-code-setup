@@ -101,7 +101,7 @@
   - 指摘対応: CR1-1（`check-all.py` の docstring）。差分は 0 行でない → 2 パス目あり
 - 割り目（2 パス目の前）: 不在の周なので訊かない。このまま続ける。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 - 2 パス目: 済み。Verifier（sonnet。170 行・43 行と報告）**反証 0 件**（CR1-1 の docstring の 3 主張を一致と判定。`test-ledger.py --jobs 1` は順番待ちで未実行と報告）。porcelain は前後同じ。`/code-review`（high）指摘 5 件。採否は下の「2 パス目の採否」（直す 2・残課題 3）
-- 狭いパス: 起点 `eb1d0b993727b947fcf2eccf9dce38de69f91ad0`（2 パス目の指摘対応を始める直前の HEAD）
+- 狭いパス: 起点 `eb1d0b993727b947fcf2eccf9dce38de69f91ad0`（2 パス目の指摘対応を始める直前の HEAD）・終点 `f0bc3dc7f7a22b48b7bdf55d212c5ca323b5476d`（指摘対応のコミット。起点は終点の祖先）。`test-check-all.py` 緑（新しい変異も赤）
 
 ## 交絡の扱い
 
