@@ -100,6 +100,8 @@
   - `/code-review`（high）: 指摘 8 件。採否は下の「1 パス目の採否」（直す 1・残課題 6・計画の数え直し 1）。A1 は `validate` を外した `ledger.py` で `RecursionError` になる陽性対照つきで判別を確かめた。porcelain は前後同じ
   - 指摘対応: CR1-1（`check-all.py` の docstring）。差分は 0 行でない → 2 パス目あり
 - 割り目（2 パス目の前）: 不在の周なので訊かない。このまま続ける。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 2 パス目: 済み。Verifier（sonnet。170 行・43 行と報告）**反証 0 件**（CR1-1 の docstring の 3 主張を一致と判定。`test-ledger.py --jobs 1` は順番待ちで未実行と報告）。porcelain は前後同じ。`/code-review`（high）指摘 5 件。採否は下の「2 パス目の採否」（直す 2・残課題 3）
+- 狭いパス: 起点 `eb1d0b993727b947fcf2eccf9dce38de69f91ad0`（2 パス目の指摘対応を始める直前の HEAD）
 
 ## 交絡の扱い
 
@@ -128,6 +130,16 @@
 | CR1-6 `_mutant_killed` が `RecursionError` を無条件に赤と数える（将来ループにすればハング） | 示せない（将来の形） | 無し | 残課題 |
 | CR1-7 `test-check-all.py` の `nested_args` が `main` を 7 回回す | 示せない（時間を測っていない） | 無し | 残課題 |
 | CR1-8 計画の「同じことを述べている箇所の数」が 4 でなく 6 | —（計画ファイルは関門の検査の外） | 無し | 計画を直す（成果物ではない） |
+
+## 2 パス目の採否
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1 CR1-1 で足した docstring も偽——`check-mutation-claims.py` が当てる主張の red のコマンド（`test-check-all.py --mutant …`・`test-check-mutation-claims.py --mutation …`）は中で `--jobs 2`・既定の並列で回り、`test-run-serial.py` も中で同時に起こす（列挙から漏れ） | 示せる——`test-check-all.py` 378 行の `--jobs 2`・`test-run-serial.py` 139・147 行の 2 本の `launch`（`Popen`） | B2（docstring が事実になる） | 直す——「子孫まで直列」とは書かず、`--jobs 1` が絞るのは `check-all.py` の作業者と `NESTED` の 3 本が自分で起こす並列だけ、と範囲で書く（主張を実際に効く範囲まで弱める） |
+| CR2-2 名前の一覧（`NESTED`）と各テストの argparse ではなく、環境変数で子孫まで渡すほうがよい | 示せない（設計の好み） | 無し | 残課題 |
+| CR2-3 「`--jobs` を受けないテストには何も渡さない」が 1 本（`test-check-plugin-versions.py`）しか見ず、他のテストに渡す変異が素通り | 示せる（`name == "test-check-all.py"` を足す変異——レビューの読み） | B2（`test-check-all.py` が「渡さないテストには何も足さない」を見る） | 直す——`TESTS` から `NESTED` を除いた全部を見る |
+| CR2-4 `outcome` は深さの上限なく再帰し、輪の無い長い鎖（約 1000 行）で `RecursionError` になる | 示せる（長い鎖の台帳——レビューの読み。守りを外す前からある） | 無し（A1 は輪について。消した守りも深さは見ていなかった） | 残課題 |
+| CR2-5 `check-all.py` の入れ子の `--jobs` を 2 か所で違う形で組み立てる | 示せない（振る舞いの差は無い） | 無し | 残課題 |
 
 ## 手順 8
 
