@@ -41,8 +41,10 @@
 - `scripts/check-all.py` — 新しいテストの登録
 - `.github/workflows/plugins.yml` — 新しいテストの CI のステップ
 - `CLAUDE.md` — 新しいテストの 1 行
-- `plugins/dev-loop/skills/cruise/SKILL.md`・`plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の行だけ
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の行だけ
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の行だけ
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直すときだけ）
 - `docs/plans/issue-758.md` — この計画ファイル
 
@@ -80,7 +82,7 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 | A2 | 写しの 1 つが古い読み方に戻ると、テストが落ちる（陽性対照） | 3 つの写しのどれか | `test-fence-copies.py` の `DRIFTS`（#759・#760 が名指しした形） |
 | A3 | parent-issue だけ違えるのは、docstring が挙げる理由の試料だけ | 表の parent-issue の列 | `test-fence-copies.py` が理由の語句を docstring と突き合わせる |
 | B1 | `\x0c` の後ろを別の行と読まない試料がある（#758） | run-serial の `NEWLINE` | `PARSE_SAMPLES`「後ろに \x0c のある閉じ行」と変異「\x0c でも行を分ける」 |
-| B2 | 先頭の BOM は 1 つだけ外す（#758） | run-serial の `declared_lines` | 「BOM が 2 つ」が 1 と言う・変異「続く BOM も外す」 |
+| B2 | 先頭の BOM は 1 つだけ外す（#758） | run-serial の `declared_lines` | BOM を重ねた試料が書式に合わない行として 1 と言う・変異「続く BOM も外す」 |
 | B3 | 段落の中で始まったコメントの後ろの開き行はコードブロックを始める（#758） | run-serial（と check-unattended-env）の開き行の判定 | 「段落の途中のコメントの後ろの印」が 1・変異。GitHub の描画で確かめる |
 | B4 | docstring がコードと合う（#758） | run-serial のモジュールと `declared_lines` の docstring | 読む |
 | B5 | 変異の注釈が守るの番号・文言と合う（#758） | `test-run-serial.py` の `MUTATIONS` | `annotations()` が番号・順・文言を本体と突き合わせる |
@@ -116,3 +118,7 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
   行頭の `<!--` の中の ` ``` ` はコードブロックでない（宣言は `<p>`）・`memo <!--` の次の宣言の行は隠れる。陽性対照は素の宣言の行（`<p>` で見える）。
   parent-issue の読み方: `memo <!--` の次のチェックリストの行は見える・リストの中で字下げしたフェンスの中のチェックリストは `<pre>`（理由 INDENT の根拠）。
   **`<!-- a --> b <!--` の次の行は GitHub では隠れる**——parent-issue は読む（周の途中で見つけた課題）。
+
+## 経験の還元（手順 8）
+
+- この周の起票: 0 件（PR を作った時点。確認の Issue と周の途中で見つけた課題を立てたら直す）
