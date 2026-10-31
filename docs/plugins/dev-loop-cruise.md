@@ -33,6 +33,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | まとめの周 | `../cruise/references/grouping.md`・`scripts/ledger.py`（`group`） | 周の途中で足した、同じファイルを触る行を 1 周・1 PR にまとめる（[#641](https://github.com/hdknr/claude-code-setup/issues/641)） |
 | 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
 | 子プロセスの周（任意） | `../cruise/scripts/child-cycle.py`・`../cruise/references/child-process.md` | 周を `claude -p` の子プロセスで回す起動口と要約。親の `/clear` の道連れにならない。**既定はサブエージェントのまま**（[#491](https://github.com/hdknr/claude-code-setup/issues/491)） |
+| 順番待ちと並行の周 | `../cruise/scripts/run-serial.py`・`../cruise/references/parallel.md` | 周の重い検査・アプリの起動を、同じリポジトリでは順番待ちにする（既定は 1 本ずつ）。単独で回す周と、版をマージの直前に上げ直す決まりも（[#493](https://github.com/hdknr/claude-code-setup/issues/493)・[#531](https://github.com/hdknr/claude-code-setup/issues/531)） |
 
 **スキルの base ディレクトリ**は、プラグインで入れていれば
 `~/.claude/plugins/cache/claude-code-setup/dev-loop/<版>/skills/dev-loop`、
@@ -84,6 +85,9 @@ cruise の操作: gh workflow run infra-apply.yml
   台帳の線の出所に印 `配布を見せて確かめた` を区切った形で書いて `ledger.py show` の「配布の確認」が `あり` になったものか、その周の利用者の直接の指示）**でしか効きません**——
   `.claude/dev-loop.md` の `不在の線: マージ` だけでは、配布を起こすマージはしません。
   `マージ` の線が効かないリポジトリでは、`--absent` の起動時の確認にそう出ます。
+- **`並行の検査: N` は、周が同じリポジトリで同時に走らせる重い検査・アプリの起動の本数**です（書かなければ 1——順番待ちで 1 本ずつ）。
+  検査が互いに干渉せず、ポート・データベースを奪い合わないと分かっているリポジトリだけ増やします。**利用者が居る cruise にも効きます。**
+  書式は [`run-serial.py` の docstring](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/scripts/run-serial.py) を正とします。
 - **`cruise の操作:` は、周で打つ操作のうち既定の点検（`git push`・`gh pr create`・`gh pr merge`・`gh pr comment`・`gh issue create`）に
   無いもの**を 1 行 1 コマンドで書きます（本番反映の口など）。起動時の点検がその許可を見ます。**利用者が居る cruise でも書いておきます。**
 - 値の一覧と、それぞれの線で何が起きるかは
@@ -203,6 +207,17 @@ cruise: 直す線 = 既定
 起動の手順の決まりは
 [`cruise` スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/SKILL.md)
 を正とします。
+
+### 周を並行に回すとき
+
+- **各周の重い検査・アプリの起動は、同じリポジトリでは順番待ちになります**（上の `並行の検査:`。既定は 1 本ずつ）。待たされた周は、待っていることと、いま走っているものを出力に出します。
+  周の数ではなく検査を絞るのは、検査を起こすのが周の実装役だけでなく、検証とレビューの体でもあるからです。
+- **負荷・所要時間を測る周と、わざと負荷を作る周は単独で回します。** 親は台帳の `note` に `単独: <理由>` の項を書くので、再開した親にも分かります。
+- **親は版を割り当てません。** 各周は PR で版を上げ、マージの直前に PR が main より古ければ、main を取り込んで main より上に上げ直してからマージします。
+  利用者の判断を待つ PR があっても、同じプラグインを触る他の周を先にマージできます。
+- 決まりは
+  [`references/parallel.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/references/parallel.md)
+  を正とします。
 
 ## 4. 依存先がマージ待ちのうちに始める（積んだ周）
 
