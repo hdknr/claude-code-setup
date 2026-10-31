@@ -95,8 +95,8 @@ cruise の操作: gh workflow run infra-apply.yml
 ## 2. 環境を点検する（起動時に 1 度） { #env-check }
 
 ```bash
-python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise            # 席を外すとき
-python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --present  # 居るとき
+python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --ledger issue-<親>            # 席を外すとき
+python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --present --ledger issue-<親>  # 居るとき
 ```
 
 **cruise は台帳を作ったあと、`--absent` に依らずこれを回して結果を見せます。** 利用者が居ても、権限の拒否や確認で
@@ -108,6 +108,12 @@ python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py -
   依存しない次の周へ進みます）／その周を cruise の外に出す。
 - **親の起動場所**——**cruise の親は、メインの作業ツリーから worktree に入らずに起動するのが既定です。**
   worktree の中から起動すると、別の worktree・別のリポジトリへの操作がガードに拒まれます。
+- **不在の間にどこまで進めるか**（[#490](https://github.com/hdknr/claude-code-setup/issues/490)）——台帳の済んでいない周ごとに、
+  マージまで進む見込みか・PR で止まるか・始まらないか（依存先と、止まる元）・止まっているかと、その理由を出します。
+  理由は、`マージ` の線がこのリポジトリで効かない・PR が main と衝突している・同じプラグインの版を上げる PR が 2 本ある・
+  マージの前に利用者の判断が要る（台帳の `note` が `利用者の判断待ち:` で始まる）・利用者の操作待ち、などです。
+  **見込みです**——関門・CI・利用上限で止まる周は数えず、`マージ` の線の照合（ワークフロー・`CLAUDE.md`・周の差分）は各周がマージの前に行います。
+  止まる周を片づけてから離れるかは利用者が決めます。
 - **席を外すとき**（`--present` なし）は、利用上限での自動継続・質問の待ち・通知・スリープも読みます。
 - **認証**——長期トークンで起動したか、対話ログイン（8 時間で切れる）かを出します。対話ログインなら、起動時に長期トークンで回すかを訊きます
   （[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)。**長期トークンでは Remote Control と通知が使えない見込みで、まだ測っていません**）。
@@ -243,7 +249,9 @@ cruise: 直す線 = 既定
   再開した親は、走っている子の周に 2 体目を起こしません。**既定はサブエージェントのままです**——関門が子の中で回りきるかと、
   利用上限で何が起きるかを、実際の周ではまだ確かめていません。回し方と確かめた範囲は `../cruise/references/child-process.md` を正とします。
 - **前の版の親が worktree の中に残っていたら**、再開時の点検がそう言います。親は `ExitWorktree`（`keep`）を 1 度だけ試しますが、
-  戻れた例は 1 件しか観測していません。戻れなければ、メインの作業ツリーで新しいセッションを開いて起動し直してください。
+  戻れた例は 1 件しか観測していません。戻れたかは `cd <メインの作業ツリー> && git worktree list` を打って確かめ、拒まれたら戻れなかったものとします
+  （隔離したセッションでこの形が拒まれることは測ってあります。`cd` の無い `git worktree list` は隔離中でも通るので確かめになりません。[#504](https://github.com/hdknr/claude-code-setup/issues/504)）。
+  戻れなければ、メインの作業ツリーで新しいセッションを開いて起動し直してください。
 
 ### 利用上限で止まったとき
 

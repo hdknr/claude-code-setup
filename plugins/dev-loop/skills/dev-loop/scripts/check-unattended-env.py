@@ -3,7 +3,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 
     python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py [--project <dir>]
         [--command '<コマンド>' ...] [--flag-settings <file>] [--managed-settings <file>]
-    python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise [--present] [...]
+    python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise [--present] [--ledger <名前>] [...]
     python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --push-result '<返り値>'
 
 **直さない。読むだけ**——何が足りないかと、どう直すかを出す。**利用者の設定を書き換える道具は、
@@ -46,7 +46,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 **cruise は `--absent` に依らず、台帳を作ったら 1 度これを回す**（cruise `SKILL.md` §3）——
 利用者が居る cruise でも、**権限の拒否・確認で周が止まり、利用者の操作を待つ**（#466 の実測）。
 
-- `--cruise` は 3 つを足す:
+- `--cruise` は 4 つを足す（4 つ目の到達できる範囲は下の「不在の間にどこまで進めるか」）:
     - **周で使う操作の宣言**——`--project` の `.claude/dev-loop.md` の `cruise の操作: <コマンド>` の行（1 行 1 コマンド。
       コードフェンスの中は読まない。フェンスは開いた記号と同じ種類・同じ長さ以上の行でだけ閉じる）を、点検するコマンド（既定か `--command`）に足す。**本番反映の口**
       （`gh workflow run …`・`aws ecs run-task …` など）は既定に無いので、ここで宣言させる。
@@ -58,9 +58,37 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
     - **親の起動場所**——cwd が worktree の中（`--git-dir` ≠ `--git-common-dir`）なら要対処。**cruise の親は
       メインの作業ツリーから、worktree に入らずに起動するのが既定**（#466）——隔離のガードが別の worktree・別のリポジトリへの
       操作を拒むので
+    - **到達できる範囲**——`--ledger` で渡した台帳の周ごとの到達と止まる要因。渡さなければ判定できない
 - `--present` は**利用者が居る cruise**——不在に限る項目（自動継続・質問の待ち・通知・スリープ・人が見る 3 つ）を出さない。
   **認証は出す**（cruise の起動時に長期トークンで回すかを訊くため。#584）——8 時間のトークンは要対処ではなく人が見る（居れば `/login` で戻れる）。
   許可の要対処の文言も「確認で周が止まる」にする（答える人は居るが、そこで止まる）
+
+## 不在の間にどこまで進めるか（`--cruise --ledger <名前>`。#490）
+
+    python3 check-unattended-env.py --cruise [--present] --ledger issue-<親>
+
+**cruise は起動時（新規・再開、`--absent` の有無に依らず）に台帳の名前を渡して回す**（cruise `SKILL.md` §3）。
+台帳（同じ場所の `ledger.py` で読む。書かない）の済んでいない周ごとに、**到達**——「マージまで進む見込み」「PR で止まる」
+「始まらない（依存先と、止まる元）」「止まっている」——と理由を出す。`--ledger` を渡さない `--cruise` は「判定できない」（見ていない）。
+
+- **マージの線**（1 行）——不在の間に `マージ` の線が効くか。**機械で決まる部分だけを見る**:
+  `--present` なら利用者が承認する（人が見る）。台帳の確かめた線の `マージ` → 無ければ `.claude/dev-loop.md` の
+  `不在の線: マージ = …`（1 本だけ）が `関門を通ればマージ` でなければ効かない。台帳の `user_ops` に `gh pr merge`・`merge-pr.py` を
+  含む操作があれば効かない（周はマージの手前で await）。`マージの反映:` の宣言（1 本だけ・フェンスとコメントの外）が
+  `ドキュメントとプラグインの配布` なら、線が台帳にあり `ledger.py` の配布の確認の印があるときだけ効く。
+  宣言がそれでないのにプラグインのカタログ（`.claude-plugin/marketplace.json`）があれば効かない（マージが配布を起こす）。
+  `ドキュメントのみ` なら効く。宣言が無ければ「判定できない」（`CLAUDE.md` でしか決まらない）。
+  **効くと出しても、照合（ワークフロー・`CLAUDE.md`・周の差分）は見ていない**——各周がマージの前に行う（`references/absent-lines.md`）
+- **周ごと**（`到達 #<番号>`）——`await` は止まる（`note`）、`blocked` は止まる（`note` が `利用者の判断待ち` で始まればそのまま、
+  ほかは「止まっている」）、まとめの中で取り残された行（`ledger.py` の名指し）は止まる。進行中（`impl`・`gate`・`pr`）は
+  `note` が `利用者の判断待ち` で始まればマージの前の判断待ちで止まる。PR の番号があれば `gh pr view <番号> --json state,mergeable,files` で、
+  閉じていれば止まる、`CONFLICTING` なら衝突で止まる、`MERGEABLE` でなければ（`UNKNOWN` など）判定できない、
+  **同じ `.claude-plugin/plugin.json` を触る開いた PR が 2 本以上**なら版の取り合いで止まる（まとめの行が同じ 1 本の PR を持つのは数えない）、
+  マージ済みなら進む（台帳を直す）。そのほかはマージの線のとおり。`todo` は依存先を辿り（まとめの中の依存は済んだと読む）、
+  止まる依存先があれば「始まらない」と止まる元の番号を出す
+- **まとめ**（`到達できる範囲`。人が見る）——マージまで進む・利用者の承認を待つ・止まる・判定できないの番号の一覧
+
+止まる周は要対処（終了コード 1）、判定できない周は判定できない（2）、居る cruise の承認待ちは人が見る。
 
 ## 通知の試験（`--push-result`）
 
@@ -178,6 +206,17 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **認証で、セッションの外の環境・変数が消される環境を「8 時間」とも「長期トークン」とも言わない**——判定できない
 - **認証で、長期トークンより先に使われうる認証があるのに「長期トークン」と言わない**——人が見る
 - **認証のトークンの値を出さない**——空かどうかしか見ない
+- **`--cruise` で台帳を渡さない・読めない（無い・名前の形が違う・壊れている）ときに、到達を通過と読まない**——判定できない。
+  `--ledger` は `--cruise` と一緒にだけ受ける（2）
+- **到達で、衝突・閉じた PR・判断待ちの印・`await`・`blocked`・取り下げ・取り残された行を「進む」にしない**——止まる。
+  **`gh` が失敗した・`mergeable` が `MERGEABLE` でない・PR の番号が読めないときも「進む」にしない**——判定できない
+- **到達で、止まる・判定できない依存先を辿る**——依存の依存が止まっても「始まらない」と言い、止まる元の番号を出す。
+  **まとめの中の依存は待たない**（`ledger.py` の `next` と同じ）
+- **マージの線を、線が無い・台帳の線が `止まる`（`.claude/dev-loop.md` より先に読む）・`不在の線:` や宣言が 2 本以上・
+  フェンスの中の宣言・マージを利用者が打つ（`user_ops`）・配布の宣言で印が無い・カタログがあるのに配布の宣言が無いときに「効く」と言わない**。
+  宣言もカタログも無ければ判定できない
+- **居る cruise（`--present`）で、マージの承認待ちを要対処にしない**——人が見る
+- **台帳を書かない**——`ledger.py` の `load` と `ledger_path` しか使わない。**`note` は切って出す**（同じ `note` が依存する周の数だけ並ぶ）
 
 守らない:
 
@@ -210,12 +249,21 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **セッションが worktree 隔離にあること**——見ているのは cwd だけ。メインの作業ツリーにいても、後で `EnterWorktree` すれば隔離される
 - **`.claude/dev-loop.md` の宣言の網羅**——宣言に無い操作は見えない
 - **iPhone からの操作が使用中になるか**——本体からは読み切れていない（利用者の実測。#407）。だから手順は両方から離れる形にしてある
+- **到達は見込みである**——関門・CI・利用上限・権限の拒否で止まる周は数えない（起動時には分からない）。
+  **マージの線の照合**（ワークフロー・`CLAUDE.md`・周の差分）は見ない。**宣言が無くカタログも無いリポジトリで、マージが反映を起こすか**は見ない（判定できない）
+- **判断待ちは印 `利用者の判断待ち` で始まる `note` だけを読む**——印の無い自由文（「P1 はマージ前に人間が判断」）は読まない。
+  印を書くのは親（cruise `SKILL.md` §4 の 4）。**狭いパスの指摘があるのに印の無い PR は「進む」と出る**
+- **版の取り合いは `.claude-plugin/plugin.json` を触る PR だけを見る**——ほかの版のファイル・版を上げない衝突は見ない。
+  `gh pr view` の `files` が多くのファイルを触る PR で全件を返すかは確かめていない
+- **積んだ周（stacked）**——到達に数えない（`ledger.py` の `next` と同じ）
+- **`gh pr view` の値の形**——偽の `gh` で当てている。本物の値の形は 2026-10-31 に cruise #474 の台帳の写しで 1 度見ただけ
 - **長期トークンが有効か（期限切れ・取り消し）・8 時間を超えて止まらないこと**——値を読まないので見えない（公開ページの測る表）
 - **対話ログインの保存先（キーチェーン・`~/.claude/.credentials.json`）**——読まない。長期トークンも API キーの類も無ければ、
   セッションは対話ログインで起動したと見なす（ほかの出所——OAuth のファイル記述子・クラウドの事業者——は見ない）
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -732,17 +780,9 @@ def uncommented(line, in_comment):
         out, line, in_comment = out + line[:start], line[start + 4:], True
 
 
-def declared_commands(project):
-    """`.claude/dev-loop.md` の `cruise の操作:` の行。(コマンドの一覧, 項目の一覧)。"""
-    path = Path(project) / ".claude" / "dev-loop.md"
-    label = "周で使う操作の宣言"
-    try:
-        text = path.read_text(encoding="utf-8-sig")  # BOM を行頭に残さない
-    except FileNotFoundError:
-        text = ""
-    except (OSError, UnicodeDecodeError) as exc:
-        return [], [(UNKNOWN, label, f"{path} を読めなかった（{exc}）——宣言した操作を点検できない", "")]
-    commands, empty, broken, fence, in_comment = [], 0, 0, None, False
+def visible_lines(text):
+    """フェンスの中と HTML コメントの中を除いた行（宣言として読む行）。`.claude/dev-loop.md` の宣言はどれもこれで読む。"""
+    fence, in_comment = None, False
     for line in text.splitlines():
         f = FENCE.match(line)
         if fence is None:
@@ -755,6 +795,27 @@ def declared_commands(project):
             if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():
                 fence = None
             continue
+        yield line
+
+
+def read_dev_loop_md(project):
+    """`.claude/dev-loop.md` の本文。無ければ空。読めなければ例外（OSError・UnicodeDecodeError）。"""
+    try:
+        return (Path(project) / ".claude" / "dev-loop.md").read_text(encoding="utf-8-sig")  # BOM を行頭に残さない
+    except FileNotFoundError:
+        return ""
+
+
+def declared_commands(project):
+    """`.claude/dev-loop.md` の `cruise の操作:` の行。(コマンドの一覧, 項目の一覧)。"""
+    path = Path(project) / ".claude" / "dev-loop.md"
+    label = "周で使う操作の宣言"
+    try:
+        text = read_dev_loop_md(project)
+    except (OSError, UnicodeDecodeError) as exc:
+        return [], [(UNKNOWN, label, f"{path} を読めなかった（{exc}）——宣言した操作を点検できない", "")]
+    commands, empty, broken = [], 0, 0
+    for line in visible_lines(text):
         m = DECLARE.match(line)
         if not m:
             broken += bool(NEAR.match(line))
@@ -805,8 +866,218 @@ def parent_location(cwd=None):
     return [(GOOD, label, "worktree の外（メインの作業ツリー）", "")]
 
 
+# ---- cruise の到達できる範囲（#490）----
+REACH = "到達"
+REACH_SUMMARY = "到達できる範囲"
+MERGE_LINE = "マージの線"
+JUDGE_MARK = "利用者の判断待ち"  # `note` の先頭の印。found-lines.md が blocked の行に書く印と同じ語（cruise SKILL.md §4 の 4）
+ABSENT_MERGE = re.compile(r"^不在の線:\s*マージ\s*=(.*)$")
+REFLECT = re.compile(r"^マージの反映:(.*)$")
+REFLECT_DOCS, REFLECT_DIST = "ドキュメントのみ", "ドキュメントとプラグインの配布"
+CATALOG = (".claude-plugin", "marketplace.json")
+MERGE_OPS = ("gh pr merge", "merge-pr.py")  # user_ops にあれば、マージは利用者が打つ（周は await で止まる）
+PLUGIN_MANIFEST = ".claude-plugin/plugin.json"
+PR_NUMBER = re.compile(r"#?([1-9][0-9]*)")
+IN_PROGRESS = ("impl", "gate", "pr")
+KIND_STATUS = {"merge": GOOD, "user": HUMAN, "stop": ACTION, "unknown": UNKNOWN}
+KIND_ORDER = ("stop", "unknown", "user", "merge")  # 依存先のうち、先に挙げる側
+NOTE_WIDTH = 80  # note を出すときの長さ（依存する周が多いと同じ note が並ぶ）
+
+
+def clip(text, width=NOTE_WIDTH):
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[:width] + "…"
+
+
+def ledger_module():
+    """同じ場所の `ledger.py`（台帳の読み方・場所・印の読み方を 2 箇所に置かない）。"""
+    spec = importlib.util.spec_from_file_location("cruise_ledger", Path(__file__).resolve().parent / "ledger.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def gh_pr(project, number):
+    """`gh pr view` の state・mergeable・files。読めなければ None。"""
+    try:
+        proc = subprocess.run(["gh", "pr", "view", str(number), "--json", "state,mergeable,files"],
+                              cwd=project, capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def merge_effect(project, data, present, lg):
+    """不在の間に `マージ` の線が効くか。(種類, 項目)。種類は merge・user・stop・unknown。
+    **機械で決まる部分だけを見る**——照合（ワークフロー・CLAUDE.md・周の差分）は各周がマージの前に行う。"""
+    if present:
+        return "user", (HUMAN, MERGE_LINE, "居る cruise——マージは利用者が承認する（`マージ` の線は不在の周だけに効く）", "")
+    try:
+        lines = list(visible_lines(read_dev_loop_md(project)))
+    except (OSError, UnicodeDecodeError) as exc:
+        return "unknown", (UNKNOWN, MERGE_LINE, f".claude/dev-loop.md を読めなかった（{exc}）——マージの線が効くかを決められない", "")
+    confirmed = data.get("lines", {})
+    values = confirmed.get("values", {})
+    if "マージ" in values:
+        line, origin = values["マージ"], "台帳の確かめた線"
+    else:
+        decl = [m.group(1).strip() for m in map(ABSENT_MERGE.match, lines) if m]
+        line, origin = (decl[0] if len(decl) == 1 else None), "`.claude/dev-loop.md` の `不在の線:`"
+    if line != lg.DIST_MERGE:
+        now = f"{origin} が `マージ = {line}`" if line else "台帳にも `.claude/dev-loop.md` にも 1 本だけの `マージ` の線が無い"
+        return "stop", (ACTION, MERGE_LINE, f"効かない——{now}。不在の周はマージせず PR で止まる",
+                        "マージまで進めるなら、離れる前に利用者が `マージ` の線を確かめる（cruise SKILL.md §1・§2）")
+    ops = [c for c in data.get("user_ops", {}).get("commands", []) if any(m in c for m in MERGE_OPS)]
+    if ops:
+        return "stop", (ACTION, MERGE_LINE, "効かない——マージは利用者が打つ操作（台帳の user_ops: "
+                        + ", ".join(f"`{c}`" for c in ops) + "）。周はマージの手前で await になる", "")
+    reflects = [m.group(1).strip() for m in map(REFLECT.match, lines) if m]
+    reflect = reflects[0] if len(reflects) == 1 and reflects[0] in (REFLECT_DOCS, REFLECT_DIST) else None
+    caveat = "照合（ワークフロー・CLAUDE.md・周の差分）は各周がマージの前に行う——ここでは見ていない"
+    if reflect == REFLECT_DIST:
+        if origin == "台帳の確かめた線" and lg.has_dist_mark(confirmed.get("source", "")):
+            return "merge", (GOOD, MERGE_LINE, f"効く（宣言 `{REFLECT_DIST}`・台帳の配布の確認あり）。{caveat}", "")
+        return "stop", (ACTION, MERGE_LINE, f"効かない——宣言は `{REFLECT_DIST}` だが、{origin} に配布の確認"
+                        f"（印 `{lg.DIST_MARK}`）が無い。配布を起こすマージは cruise ごとの確認でだけ効く",
+                        "離れる前に、配布を見せて確かめ直す（cruise SKILL.md §1・§2 の 1）")
+    try:
+        Path(project).joinpath(*CATALOG).stat()
+        catalog = True
+    except FileNotFoundError:
+        catalog = False
+    except OSError as exc:
+        return "unknown", (UNKNOWN, MERGE_LINE, f"プラグインのカタログの有無を確かめられない（{exc}）", "")
+    if catalog:
+        return "stop", (ACTION, MERGE_LINE, f"効かない——マージがプラグインのカタログ（{'/'.join(CATALOG)}）を配るのに、"
+                        f"`マージの反映:` の宣言が `{REFLECT_DIST}` でない（{'`' + reflect + '`' if reflect else '宣言なし'}）。"
+                        "マージは本番反映として扱われ、各周は PR で止まる", "")
+    if reflect == REFLECT_DOCS:
+        return "merge", (GOOD, MERGE_LINE, f"効く（宣言 `{REFLECT_DOCS}`）。{caveat}", "")
+    return "unknown", (UNKNOWN, MERGE_LINE, "`マージの反映:` の宣言が無い（か 2 本以上・知らない値）——マージが反映を起こすかは "
+                       "CLAUDE.md・deploy runbook で決まり、このスクリプトは読まない（判定できなければ効かない）", "")
+
+
+def reach_items(project, name, present, pr_view=None):
+    """台帳の済んでいない周ごとに、不在の間の到達（マージまで・PR で止まる・始まらない・止まっている）と理由。読むだけ。"""
+    try:
+        lg = ledger_module()
+        data = lg.load(lg.ledger_path(name, cwd=project))
+    except Exception as exc:  # ledger.py の Usage・Unknown と、読み込めなかった ledger.py——どれも「見ていない」
+        return [(UNKNOWN, REACH_SUMMARY, f"台帳 {name} を読めなかった（{exc}）——不在の間にどこまで進めるかを見ていない", "")]
+    pr_view = pr_view or (lambda n: gh_pr(project, n))
+    merge_kind, merge_item = merge_effect(project, data, present, lg)
+    rows = {i["number"]: i for i in data["issues"]}
+
+    def pr_number(issue):
+        m = PR_NUMBER.fullmatch(issue.get("pr", "").strip())
+        return int(m.group(1)) if m else None
+
+    infos = {}
+    for i in data["issues"]:
+        n = pr_number(i)
+        if i["state"] in IN_PROGRESS and n and n not in infos:
+            infos[n] = pr_view(n)
+    manifests = {}
+    for n, info in infos.items():
+        if isinstance(info, dict) and info.get("state") == "OPEN":
+            for f in info.get("files") or []:
+                path = f.get("path", "") if isinstance(f, dict) else ""
+                if path.endswith(PLUGIN_MANIFEST):
+                    manifests.setdefault(path, set()).add(n)
+    contended = {n: (path, sorted(prs)) for path, prs in manifests.items() if len(prs) > 1 for n in prs}
+
+    def merge_tail(prefix):
+        return {"merge": ("merge", f"{prefix}マージまで進む見込み（関門・CI が通れば）"),
+                "user": ("user", f"{prefix}PR で止まる（マージは利用者が承認する）"),
+                "stop": ("stop", f"{prefix}PR で止まる（{MERGE_LINE}が効かない——上の「{MERGE_LINE}」）"),
+                "unknown": ("unknown", f"{prefix}PR から先は判定できない（{MERGE_LINE}——上の「{MERGE_LINE}」）")}[merge_kind]
+
+    def own(issue):
+        state, note = issue["state"], issue.get("note", "")
+        if lg.is_stranded(issue):
+            return "stop", "落ちたのにまとめの中で merged のまま（戻すまで、依存する周は始まらない）"
+        if state == "await":
+            return "stop", f"利用者の操作待ち: {clip(note) or 'note が空'}"
+        if state == "blocked":
+            return "stop", clip(note) if note.startswith(JUDGE_MARK) else f"止まっている: {clip(note) or 'note が空'}"
+        if state in IN_PROGRESS and note.startswith(JUDGE_MARK):
+            return "stop", f"マージの前に{clip(note)}"
+        n = pr_number(issue)
+        if state in IN_PROGRESS and n:
+            info = infos.get(n)
+            if not isinstance(info, dict):
+                return "unknown", f"PR #{n} の状態を読めなかった（gh pr view が失敗した・形が違う）"
+            if info.get("state") == "MERGED":
+                return "merge", f"PR #{n} はマージ済み（台帳は {state} のまま——親が台帳を直す）"
+            if info.get("state") == "CLOSED":
+                return "stop", f"PR #{n} は閉じている"
+            if info.get("mergeable") == "CONFLICTING":
+                return "stop", f"PR #{n} が main と衝突している（不在の周は直しに戻らない）"
+            if info.get("mergeable") != "MERGEABLE":
+                return "unknown", f"PR #{n} の mergeable が {info.get('mergeable')!r}——数秒おいて回し直す"
+            if n in contended:
+                path, prs = contended[n]
+                return "stop", (f"PR {'・'.join(f'#{p}' for p in prs)} が同じ版のファイル（{path}）を上げる——"
+                                "先に 1 本マージされると、残りは版を上げ直すまで止まる（不在の周は直しに戻らない）")
+            return merge_tail(f"PR #{n}: ")
+        if state == "pr":
+            return "unknown", "状態は pr だが台帳に PR の番号が無い——実物で確かめる"
+        if state in IN_PROGRESS:
+            return merge_tail("続けて PR を作り、")
+        return None  # todo は依存で決まる
+
+    memo = {}
+
+    def outcome(number):
+        """(種類, 理由, 止まる元の番号)。"""
+        if number in memo:
+            return memo[number]
+        issue = rows[number]
+        if issue["state"] == "dropped":
+            memo[number] = ("stop", "取り下げ", number)
+        elif issue["state"] == "merged" and not lg.is_stranded(issue):
+            memo[number] = ("merge", "マージ済み", number)
+        elif issue["state"] != "todo":
+            kind, why = own(issue)
+            memo[number] = (kind, why, number)
+        else:
+            deps = [(d, outcome(d)) for d in issue["deps"]
+                    if not (issue.get("group") and rows[d].get("group") == issue["group"])]
+            worst = min((o[0] for _d, o in deps), key=KIND_ORDER.index, default="merge")
+            if worst == "merge":
+                start = "着手できる" if all(rows[d]["state"] == "merged" for d, _o in deps) else "依存のマージの後に着手"
+                kind, why = merge_tail(f"{start}——")
+                memo[number] = (kind, why, number)
+            else:
+                d, (_k, why, root) = next((d, o) for d, o in deps if o[0] == worst)
+                lead = {"stop": "始まらない", "unknown": "始まるか判定できない", "user": "依存先のマージを待つ"}[worst]
+                memo[number] = (worst, f"{lead}——依存先 #{d}（元: #{root} {why}）" if root != d
+                                else f"{lead}——依存先 #{d}: {why}", root)
+        return memo[number]
+
+    items = [merge_item]
+    groups = {k: [] for k in KIND_ORDER}
+    for i in data["issues"]:
+        if i["state"] == "dropped" or (i["state"] == "merged" and not lg.is_stranded(i)):
+            continue
+        kind, why, _root = outcome(i["number"])
+        groups[kind].append(i["number"])
+        items.append((KIND_STATUS[kind], f"{REACH} #{i['number']}", why, ""))
+    names = {"merge": "マージまで進む見込み", "user": "利用者の承認を待つ", "stop": "止まる", "unknown": "判定できない"}
+    items.append((HUMAN, REACH_SUMMARY, "; ".join(
+        f"{names[k]}: " + (", ".join(f"#{n}" for n in groups[k]) or "なし") for k in ("merge", "user", "stop", "unknown")),
+        "止まる周を不在の前に片づけるか（マージ・衝突の解消・判断）、止まったまま離れるかを利用者が決める"))
+    return items
+
+
 def gather(project, commands, flag_path, managed_path, home, platform, flag_note=None, env=None,
-           cruise=False, present=False, cwd=None):
+           cruise=False, present=False, cwd=None, ledger=None, pr_view=None):
     stack = layers(project, flag_path, managed_path, home, env, flag_note)
     items = []
     declared_items = []
@@ -822,6 +1093,9 @@ def gather(project, commands, flag_path, managed_path, home, platform, flag_note
     if cruise:
         items += stoppable_items(commands)
         items += parent_location(cwd)
+        items += (reach_items(project, ledger, present, pr_view) if ledger else
+                  [(UNKNOWN, REACH_SUMMARY, "台帳を渡していない——不在の間にどこまで進めるかを見ていない",
+                    "`--ledger issue-<親>` を付けて回し直す（cruise SKILL.md §3）")])
     if not present:
         items += check_auto_continue(stack)
         items += check_question_timeout(stack)
@@ -871,9 +1145,13 @@ def main(argv=None):
                     help="cruise の起動時: 宣言した操作・止まりうる操作・親の起動場所を足す")
     ap.add_argument("--present", action="store_true",
                     help="利用者が居る: 不在に限る項目（自動継続・質問の待ち・通知・スリープ）を出さない")
+    ap.add_argument("--ledger", default=None,
+                    help="cruise の台帳の名前（例: issue-474）: 済んでいない周ごとに、不在の間の到達と止まる要因を出す")
     ap.add_argument("--push-result", default=None,
                     help="PushNotification の返り値を判定する（設定は読まない）")
     args = ap.parse_args(argv)
+    if args.ledger is not None and not args.cruise:
+        ap.error("--ledger は --cruise と一緒にだけ使う")
 
     if args.push_result is not None:
         return report_push(check_push_result(args.push_result))
@@ -884,7 +1162,7 @@ def main(argv=None):
     managed = args.managed_settings or MANAGED_DEFAULTS.get(sys.platform)
     stack, items = gather(args.project or default_project(), tuple(args.command or DEFAULT_COMMANDS),
                           flag_path, managed, Path.home(), sys.platform, flag_note,
-                          cruise=args.cruise, present=args.present)
+                          cruise=args.cruise, present=args.present, ledger=args.ledger)
     return report(stack, items)
 
 

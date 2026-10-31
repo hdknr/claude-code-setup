@@ -193,6 +193,47 @@ def git(cwd: Path, *args):
                    cwd=cwd, check=True, capture_output=True)
 
 
+MARKED = "利用者の確認（再開時・2026-10-28T23:56:17Z、配布を見せて確かめた）"
+
+
+def row(number, state, deps=(), pr="", note="", group=""):
+    return {"number": number, "title": "", "deps": list(deps), "state": state, "pr": pr, "branch": "", "worktree": "",
+            "agent": "", "base": "", "note": note, "decisions": "", "origin": "", "group": group, "updated": "x"}
+
+
+def cruise_ledger(env, rows, merge="関門を通ればマージ", source="利用者の確認（起動時・2026-10-27T09:07:27Z）",
+                  user_ops=None, name="issue-1"):
+    """一時のリポジトリ（env.project）に台帳を書く。**実際の台帳は読まない・書かない。**"""
+    if not (env.project / ".git").exists():
+        git(env.project, "init", "-q")
+    data = {"format": 1, "name": name, "issues": rows}
+    if merge is not None:
+        data["lines"] = {"values": {"マージ": merge}, "source": source, "updated": "x"}
+    if user_ops:
+        data["user_ops"] = {"commands": list(user_ops), "source": "利用者の確認", "updated": "x"}
+    plans = env.project / ".claude" / "plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    assert_not_real_home(plans)
+    return env.write(plans / f"cruise-{name}.json", data)
+
+
+def fake_gh(env, prs):
+    """`gh pr view <番号> --json …` に、番号ごとの JSON（None なら失敗）で答える偽物。"""
+    cases = "".join(f"{n}) printf '%s' '{json.dumps(v)}' ;;\n" if v is not None else f"{n}) exit 1 ;;\n"
+                    for n, v in prs.items())
+    env.fake("gh", f'case "$3" in\n{cases}*) exit 1 ;;\nesac\n')
+
+
+def pr_json(state="OPEN", mergeable="MERGEABLE", files=()):
+    return {"state": state, "mergeable": mergeable, "files": [{"path": f} for f in files]}
+
+
+def run_reach(mod, env, present=False, name="issue-1"):
+    stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None,
+                              env=dict(SESSION_ENV), cruise=True, present=present, cwd=env.project, ledger=name)
+    return [it for it in items if it[1].startswith(("到達", "マージの線"))]
+
+
 def detail_of(items, label_part):
     return " / ".join(d for _s, label, d, _f in items if label_part in label)
 
@@ -634,11 +675,18 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
             # 読まないことは、OS への入口が呼ばれないことで見る——出力に出さずに読む変異は出力では見えない
             for key, argv in (("config_off", ["--push-result", "Push not sent — mobile push is disabled in /config."]),
                               ("empty", ["--push-result", ""]),
-                              ("full", [])):
+                              ("full", []),
+                              ("cruise_ledger", ["--cruise", "--present", "--ledger", "nosuch"])):
                 buf = io.StringIO()
                 with recording_reads() as reads, contextlib.redirect_stdout(buf):
                     code = mod.main(argv + paths)
                 runs[key] = (code, buf.getvalue(), list(reads))
+            # --ledger だけ（--cruise なし）は 2——HOME などを差し替えたまま回す（変異で全点検に落ちても実環境を読まない）
+            try:
+                with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                    runs["ledger_alone"] = ("返した", mod.main(["--ledger", "x"] + paths))
+            except SystemExit as exc:
+                runs["ledger_alone"] = ("止めた", exc.code)
             # 陽性対照のもう半分: 本体の run() から subprocess に届くこと（Linux の全点検はコマンドを走らせない）。
             # 走らせるのは偽の ps——本物のコマンドを起こすと、テストが実環境を読む
             with recording_reads() as reads:
@@ -657,6 +705,9 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
               # 見分けるのは、os.environ を読まなかったときの「セッションの外」が出ないこと
               "] 認証: " in runs["full"][1] and "セッションの外" not in runs["full"][1]
               and FAKE_TOKEN not in runs["full"][1], bad)
+        check("main: --ledger を到達の点検に渡す（台帳を名指しして読めなかったと言う）",
+              "台帳 nosuch を読めなかった" in runs["cruise_ledger"][1], bad)
+        check("main: --ledger は --cruise と一緒にだけ（2）", runs["ledger_alone"] == ("止めた", 2), bad)
         code, out, reads = runs["config_off"]
         check("--push-result は判定だけを出して 1 を返す", code == 1 and "設定の層" not in out
               and "[要対処] 通知の試験" in out, bad)
@@ -782,6 +833,192 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         check("起動場所: git の外は判定できない",
               status_of(run_cruise(mod, env, cwd=outside)[1], "親の起動場所") == [mod.UNKNOWN], bad)
 
+    # ---- 到達できる範囲（#490）----
+    def at(items, label):
+        """ラベルが一致する項目の (状態, 詳細)。無ければ (None, "")。"""
+        return next(((s, d) for s, lab, d, _f in items if lab == label), (None, ""))
+
+    # #474 の 2026-10-28 の再開を再構成した試料（#490 の受入基準 1）: 1〜4 がすべて出る
+    with scenario(script) as env:
+        env.all_good()
+        cruise_ledger(env, [row(440, "merged"), row(476, "merged"),
+                            row(375, "pr", pr="479"), row(376, "pr", pr="481"),
+                            row(465, "pr", pr="483", note="利用者の判断待ち: P1 はマージ前に人間が判断"),
+                            row(442, "pr", deps=[440], pr="485"), row(286, "pr", pr="#486"),
+                            row(276, "todo", deps=[286]), row(291, "todo", deps=[286]),
+                            row(441, "todo", deps=[440]), row(484, "todo"), row(489, "todo")])
+        (env.project / ".claude-plugin").mkdir()
+        env.write(env.project / ".claude-plugin" / "marketplace.json", {"plugins": []})
+        fake_gh(env, {479: pr_json(mergeable="CONFLICTING"), 481: pr_json(mergeable="CONFLICTING"),
+                      483: pr_json(mergeable="CONFLICTING"), 485: pr_json(), 486: pr_json()})
+        items = run_reach(mod, env)
+        merge = at(items, "マージの線")
+        check("到達(#474): 1 マージの線がこのリポジトリでは効かない（カタログがあり配布の宣言が無い）",
+              merge[0] == mod.ACTION and "marketplace.json" in merge[1], bad)
+        check("到達(#474): 1 マージ待ちの PR は PR で止まる",
+              all(at(items, f"到達 #{n}")[0] == mod.ACTION and "PR で止まる" in at(items, f"到達 #{n}")[1]
+                  for n in (442, 286)), bad)
+        check("到達(#474): 2 #286 のマージ待ちに依存する #276・#291 は始まらない",
+              all(at(items, f"到達 #{n}")[0] == mod.ACTION and "始まらない" in at(items, f"到達 #{n}")[1]
+                  and "#286" in at(items, f"到達 #{n}")[1] for n in (276, 291)), bad)
+        check("到達(#474): 2 着手できる周も PR で止まる（進むのは PR まで）",
+              all(at(items, f"到達 #{n}")[0] == mod.ACTION and "着手できる" in at(items, f"到達 #{n}")[1]
+                  and "PR で止まる" in at(items, f"到達 #{n}")[1] for n in (441, 484, 489)), bad)
+        check("到達(#474): 3 衝突している PR（#479・#481）を名指しする",
+              all(at(items, f"到達 #{n}")[0] == mod.ACTION and "衝突" in at(items, f"到達 #{n}")[1]
+                  for n in (375, 376)), bad)
+        check("到達(#474): 4 マージの前の判断待ち（#483）を名指しする",
+              at(items, "到達 #465")[0] == mod.ACTION and "利用者の判断待ち" in at(items, "到達 #465")[1], bad)
+        check("到達(#474): マージ済みの周は出さない", at(items, "到達 #440")[0] is None, bad)
+        check("到達(#474): まとめの行が止まる周を並べる",
+              "止まる: #375, #376, #465, #442, #286, #276, #291, #441, #484, #489" in at(items, "到達できる範囲")[1], bad)
+
+    # 偽陽性が無い（#490 の受入基準 2）: マージの線が効き、衝突・判断待ちが無ければ止まる要因を出さない
+    with scenario(script) as env:
+        env.all_good()
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        cruise_ledger(env, [row(1, "merged"), row(2, "pr", pr="10"), row(3, "todo", deps=[2]),
+                            row(4, "impl"), row(5, "todo", deps=[1]), row(6, "dropped"),
+                            row(7, "gate", pr="11", note="P1 を直した")])
+        fake_gh(env, {10: pr_json(files=("a.py",)), 11: pr_json(files=("b.py",))})
+        items = run_reach(mod, env)
+        check("到達: 止まる要因が無ければ要対処・判定できないを出さない",
+              not [s for s, *_ in items if s in (mod.ACTION, mod.UNKNOWN)], bad)
+        check("到達: マージの線は効く（照合は各周と添える）",
+              at(items, "マージの線")[0] == mod.GOOD and "照合" in at(items, "マージの線")[1], bad)
+        check("到達: 依存のマージの後に着手する周と、いま着手できる周を分ける",
+              "依存のマージの後に着手" in at(items, "到達 #3")[1] and "着手できる" in at(items, "到達 #5")[1], bad)
+        check("到達: 取り下げた周は出さない", at(items, "到達 #6")[0] is None, bad)
+
+    # PR の状態（#490 の受入基準 3）: UNKNOWN・gh の失敗は判定できない。閉じた PR は止まる
+    with scenario(script) as env:
+        env.all_good()
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        cruise_ledger(env, [row(1, "pr", pr="10"), row(2, "pr", pr="11"), row(3, "pr", pr="12"),
+                            row(4, "pr", pr="13"), row(5, "todo", deps=[1]), row(6, "pr", pr="PR いち"),
+                            row(7, "pr")])
+        fake_gh(env, {10: pr_json(mergeable="UNKNOWN"), 11: None, 12: pr_json(state="CLOSED"),
+                      13: pr_json(state="MERGED", mergeable="UNKNOWN")})
+        items = run_reach(mod, env)
+        check("到達: mergeable が UNKNOWN なら判定できない", at(items, "到達 #1")[0] == mod.UNKNOWN
+              and "UNKNOWN" in at(items, "到達 #1")[1], bad)
+        check("到達: gh が失敗したら判定できない", at(items, "到達 #2")[0] == mod.UNKNOWN, bad)
+        check("到達: 閉じた PR は止まる", at(items, "到達 #3")[0] == mod.ACTION, bad)
+        check("到達: マージ済みの PR は進む（台帳を直すと添える）", at(items, "到達 #4")[0] == mod.GOOD
+              and "台帳" in at(items, "到達 #4")[1], bad)
+        check("到達: 判定できない周に依存する周も判定できない", at(items, "到達 #5")[0] == mod.UNKNOWN, bad)
+        check("到達: 番号でない PR の欄・番号の無い pr の行は判定できない",
+              at(items, "到達 #6")[0] == mod.UNKNOWN and at(items, "到達 #7")[0] == mod.UNKNOWN, bad)
+
+    # 版の取り合い: 同じ plugin.json を上げる開いた PR が 2 本なら止まる。まとめの 1 本の PR は取り合わない
+    with scenario(script) as env:
+        env.all_good()
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        manifest = "plugins/x/.claude-plugin/plugin.json"
+        cruise_ledger(env, [row(1, "pr", pr="10"), row(2, "pr", pr="11"), row(3, "pr", pr="12", group="3"),
+                            row(4, "pr", pr="12", group="3"), row(5, "pr", pr="13")])
+        fake_gh(env, {10: pr_json(files=(manifest, "a.py")), 11: pr_json(files=(manifest,)),
+                      12: pr_json(files=("plugins/y/.claude-plugin/plugin.json",)), 13: pr_json(files=("b.py",))})
+        items = run_reach(mod, env)
+        check("到達: 同じ版のファイルを上げる PR 2 本は版の取り合いで止まる",
+              all(at(items, f"到達 #{n}")[0] == mod.ACTION and "#10・#11" in at(items, f"到達 #{n}")[1]
+                  for n in (1, 2)), bad)
+        check("到達: まとめの行が同じ 1 本の PR を持っても取り合いにしない",
+              at(items, "到達 #3")[0] == mod.GOOD and at(items, "到達 #4")[0] == mod.GOOD, bad)
+        check("到達: 版のファイルを触らない PR は取り合わない", at(items, "到達 #5")[0] == mod.GOOD, bad)
+
+    # マージの線の判定（#490 の受入基準 1 の「マージの線」）
+    with scenario(script) as env:
+        env.all_good()
+        rows = [row(1, "pr", pr="10")]
+        fake_gh(env, {10: pr_json()})
+        cases = []
+        dist = "マージの反映: ドキュメントとプラグインの配布\n"
+        for label, md, kwargs, want in (
+                ("配布の宣言で印あり", dist, {"source": MARKED}, mod.GOOD),
+                ("配布の宣言で印なし", dist, {}, mod.ACTION),
+                ("配布の宣言で、線が .claude/dev-loop.md にだけある", dist + "不在の線: マージ = 関門を通ればマージ\n",
+                 {"merge": None, "source": MARKED}, mod.ACTION),
+                ("台帳の線が止まる（.claude/dev-loop.md より先に読む）",
+                 "マージの反映: ドキュメントのみ\n不在の線: マージ = 関門を通ればマージ\n", {"merge": "止まる"}, mod.ACTION),
+                ("台帳に線が無く .claude/dev-loop.md に 1 本", "マージの反映: ドキュメントのみ\n不在の線: マージ = 関門を通ればマージ\n",
+                 {"merge": None}, mod.GOOD),
+                ("台帳に線が無く .claude/dev-loop.md に 2 本",
+                 "マージの反映: ドキュメントのみ\n不在の線: マージ = 関門を通ればマージ\n不在の線: マージ = 関門を通ればマージ\n",
+                 {"merge": None}, mod.ACTION),
+                ("宣言が無くカタログも無い", "", {}, mod.UNKNOWN),
+                ("宣言が 2 本", "マージの反映: ドキュメントのみ\nマージの反映: ドキュメントのみ\n", {}, mod.UNKNOWN),
+                ("フェンスの中の宣言は読まない", "```\nマージの反映: ドキュメントのみ\n```\n", {}, mod.UNKNOWN),
+                ("マージを利用者が打つ（user_ops）", "マージの反映: ドキュメントのみ\n",
+                 {"user_ops": ["python3 /x/merge-pr.py"]}, mod.ACTION)):
+            env.write(env.project / ".claude" / "dev-loop.md", md)
+            cruise_ledger(env, rows, **kwargs)
+            items = run_reach(mod, env)
+            cases.append((label, at(items, "マージの線")[0], want, at(items, "到達 #1")[0]))
+        for label, got, want, row_status in cases:
+            check(f"マージの線: {label}", got == want, bad)
+            check(f"マージの線: {label}——PR の周の到達も同じ向き",
+                  row_status == {mod.GOOD: mod.GOOD, mod.ACTION: mod.ACTION, mod.UNKNOWN: mod.UNKNOWN}[want], bad)
+        # 居る cruise: マージは利用者が承認する——要対処にせず、人が見る
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        cruise_ledger(env, rows + [row(2, "todo", deps=[1]), row(3, "todo", deps=[4], group="3"),
+                                   row(4, "todo", group="3")])
+        items = run_reach(mod, env, present=True)
+        check("居る cruise: まとめの中の依存は待たない（代表も着手できる）", at(items, "到達 #3")[1].startswith("着手できる"), bad)
+        check("居る cruise: マージの線は人が見る", at(items, "マージの線")[0] == mod.HUMAN, bad)
+        check("居る cruise: PR の周と依存する周は人が見る（承認を待つ）",
+              at(items, "到達 #1")[0] == mod.HUMAN and at(items, "到達 #2")[0] == mod.HUMAN
+              and "依存先のマージを待つ" in at(items, "到達 #2")[1], bad)
+
+    # 依存を辿る・止まっている周（#490 の 2・4）
+    with scenario(script) as env:
+        env.all_good()
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        cruise_ledger(env, [row(1, "await", note="gh workflow run x を打つ" + "。打った後に周が続ける" * 10), row(2, "todo", deps=[1]),
+                            row(3, "todo", deps=[2]), row(4, "blocked", note="利用者の判断待ち: 直すか"),
+                            row(5, "blocked", note="BLOCKED: 実機"), row(6, "dropped"), row(7, "todo", deps=[6]),
+                            row(8, "merged", note="落ちた: 別のファイル", group="9"), row(9, "merged", group="9"),
+                            row(10, "todo", deps=[8]), row(11, "todo", deps=[12], group="11"),
+                            row(12, "todo", group="11"), row(13, "todo", deps=[4, 1])])
+        items = run_reach(mod, env)
+        check("到達: 利用者の操作待ちは止まる", at(items, "到達 #1")[0] == mod.ACTION
+              and "利用者の操作待ち" in at(items, "到達 #1")[1], bad)
+        check("到達: 依存の依存が止まれば始まらず、止まる元を名指しする",
+              at(items, "到達 #3")[0] == mod.ACTION and "#2" in at(items, "到達 #3")[1]
+              and "元: #1" in at(items, "到達 #3")[1], bad)
+        check("到達: 利用者の判断待ち（blocked）は印のまま出す", at(items, "到達 #4")[1].startswith("利用者の判断待ち"), bad)
+        check("到達: ほかの blocked は止まっている", at(items, "到達 #5")[0] == mod.ACTION
+              and "止まっている" in at(items, "到達 #5")[1], bad)
+        check("到達: 取り下げに依存する周は始まらない", at(items, "到達 #7")[0] == mod.ACTION
+              and "取り下げ" in at(items, "到達 #7")[1], bad)
+        check("到達: 取り残された行を名指しし、依存する周は始まらない",
+              at(items, "到達 #8")[0] == mod.ACTION and at(items, "到達 #10")[0] == mod.ACTION, bad)
+        check("到達: まとめの中の依存は済んだと読む", at(items, "到達 #11")[0] == mod.GOOD, bad)
+        check("到達: 依存先の 1 つが止まれば、ほかが進んでも始まらない",
+              at(items, "到達 #13")[0] == mod.ACTION and "#4" in at(items, "到達 #13")[1], bad)
+        check("到達: 長い note は切って出す",
+              len(at(items, "到達 #1")[1]) <= len("利用者の操作待ち: ") + mod.NOTE_WIDTH + 1, bad)
+
+    # 台帳を渡していない・読めない・何も書かない
+    with scenario(script) as env:
+        env.all_good()
+        stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None,
+                                  env=dict(SESSION_ENV), cruise=True, present=True, cwd=env.project)
+        check("到達: 台帳を渡さなければ判定できない（通過と読まない）",
+              status_of(items, "到達できる範囲") == [mod.UNKNOWN], bad)
+        git(env.project, "init", "-q")
+        check("到達: 台帳が無ければ判定できない",
+              [s for s, *_ in run_reach(mod, env, name="nosuch")] == [mod.UNKNOWN], bad)
+        check("到達: 名前の形が違えば判定できない",
+              [s for s, *_ in run_reach(mod, env, name="../x")] == [mod.UNKNOWN], bad)
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        cruise_ledger(env, [row(1, "pr", pr="10"), row(2, "todo", deps=[1])])
+        fake_gh(env, {10: pr_json()})
+        before = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file() and ".git" not in p.parts}
+        run_reach(mod, env)
+        after = {p: p.read_bytes() for p in Path(env.home).parent.rglob("*") if p.is_file() and ".git" not in p.parts}
+        check("到達: 台帳もほかのファイルも書かない", before == after, bad)
+
     return bad
 
 
@@ -796,8 +1033,8 @@ MUTATIONS = {
         "            if f and f.group(1)[0] == fence[0] and len(f.group(1)) >= len(fence) and not f.group(2).strip():\n",
         "            if f:\n"),
     "BOM を行頭に残す": (
-        '        text = path.read_text(encoding="utf-8-sig")',
-        '        text = path.read_text(encoding="utf-8")'),
+        '.read_text(encoding="utf-8-sig")  # BOM を行頭に残さない',
+        '.read_text(encoding="utf-8")'),
     "HTML コメントを除かない": (
         "            line, in_comment = uncommented(line, in_comment)\n",
         "            pass\n"),
@@ -1062,6 +1299,80 @@ MUTATIONS = {
         "    items += check_auth(stack, os.environ if env is None else env, present)\n",
         "    items += check_auth(stack, {k: os.environ[k] for k in ('CLAUDECODE',) if k in os.environ}"
         " if env is None else env, present)\n"),
+    "到達: 台帳を渡さなくても人が見るにする": (
+        '        items += (reach_items(project, ledger, present, pr_view) if ledger else\n'
+        '                  [(UNKNOWN, REACH_SUMMARY,',
+        '        items += (reach_items(project, ledger, present, pr_view) if ledger else\n'
+        '                  [(HUMAN, REACH_SUMMARY,'),
+    "到達: main が --ledger を渡さない": (
+        "cruise=args.cruise, present=args.present, ledger=args.ledger)",
+        "cruise=args.cruise, present=args.present, ledger=None)"),
+    "到達: --ledger を --cruise なしでも受ける": (
+        "    if args.ledger is not None and not args.cruise:\n",
+        "    if False:\n"),
+    "到達: 衝突を止まる要因にしない": (
+        '            if info.get("mergeable") == "CONFLICTING":\n',
+        '            if False:\n'),
+    "到達: mergeable が UNKNOWN でも進むと読む": (
+        '            if info.get("mergeable") != "MERGEABLE":\n',
+        '            if False:\n'),
+    "到達: gh の失敗を進むと読む": (
+        '                return "unknown", f"PR #{n} の状態を読めなかった',
+        '                return "merge", f"PR #{n} の状態を読めなかった'),
+    "到達: 閉じた PR を止めない": (
+        '            if info.get("state") == "CLOSED":\n',
+        '            if False:\n'),
+    "到達: 判断待ちの印のある PR を進むと読む": (
+        '        if state in IN_PROGRESS and note.startswith(JUDGE_MARK):\n',
+        '        if False:\n'),
+    "到達: 版の取り合いを見ない": (
+        "for path, prs in manifests.items() if len(prs) > 1 for n in prs}",
+        "for path, prs in manifests.items() if len(prs) > 99 for n in prs}"),
+    "到達: 依存を辿らない": (
+        '            deps = [(d, outcome(d)) for d in issue["deps"]\n',
+        '            deps = [(d, outcome(d)) for d in []\n'),
+    "到達: まとめの中の依存も待つ": (
+        '                    if not (issue.get("group") and rows[d].get("group") == issue["group"])]\n',
+        '                    if True]\n'),
+    "到達: 取り残された行を済んだと読む": (
+        '        elif issue["state"] == "merged" and not lg.is_stranded(issue):\n',
+        '        elif issue["state"] == "merged":\n'),
+    "到達: 止まる元を名指ししない": (
+        'memo[number] = (worst, f"{lead}——依存先 #{d}（元: #{root} {why}）" if root != d',
+        'memo[number] = (worst, f"{lead}——依存先 #{d}（{why}）" if root != d'),
+    "マージの線: 台帳の線より宣言を先に読む": (
+        '    if "マージ" in values:\n',
+        '    if False:\n'),
+    "マージの線: 線が無くても効くと読む": (
+        "    if line != lg.DIST_MERGE:\n",
+        "    if False:\n"),
+    "マージの線: 配布の印を見ない": (
+        'if origin == "台帳の確かめた線" and lg.has_dist_mark(confirmed.get("source", "")):',
+        'if origin == "台帳の確かめた線":'),
+    "マージの線: カタログを見ない": (
+        "    if catalog:\n",
+        "    if False:\n"),
+    "マージの線: 宣言の無いリポジトリを効くと読む": (
+        '    return "unknown", (UNKNOWN, MERGE_LINE, "`マージの反映:` の宣言が無い',
+        '    return "merge", (GOOD, MERGE_LINE, "`マージの反映:` の宣言が無い'),
+    "マージの線: 宣言を 2 本でも読む": (
+        "reflects[0] if len(reflects) == 1 and reflects[0] in (REFLECT_DOCS, REFLECT_DIST) else None",
+        "reflects[0] if reflects and reflects[0] in (REFLECT_DOCS, REFLECT_DIST) else None"),
+    "マージの線: 不在の線を 2 本でも読む": (
+        "(decl[0] if len(decl) == 1 else None)",
+        "(decl[0] if decl else None)"),
+    "マージの線: フェンスの中の宣言も読む": (
+        "        lines = list(visible_lines(read_dev_loop_md(project)))\n",
+        "        lines = read_dev_loop_md(project).splitlines()\n"),
+    "マージの線: マージを利用者が打つ操作を見ない": (
+        "    if ops:\n",
+        "    if False:\n"),
+    "マージの線: 居る cruise を不在と同じに読む": (
+        "    if present:\n        return \"user\"",
+        "    if False:\n        return \"user\""),
+    "到達: note を切らない": (
+        '    return text if len(text) <= width else text[:width] + "…"',
+        "    return text"),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),
@@ -1083,6 +1394,8 @@ def main() -> int:
     print("変異テスト")
     src = SCRIPT.read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory() as tmp:
+        # 本体は同じ場所の ledger.py を読む（台帳の読み方を 2 箇所に置かない）——変異の隣にも置く
+        (Path(tmp) / "ledger.py").write_bytes((SCRIPT.parent / "ledger.py").read_bytes())
         for name, (old, new) in MUTATIONS.items():
             if src.count(old) != 1:
                 print(f"  FAIL 変異「{name}」の置換元が本体に 1 つだけ無い")
