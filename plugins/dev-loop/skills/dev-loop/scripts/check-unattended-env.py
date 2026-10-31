@@ -809,7 +809,7 @@ def visible_lines(text):
         if opened:
             fence, comment = opened, False
             continue
-        kept, rest = "", line
+        kept, rest, started = "", line, comment
         while rest:
             if comment:
                 close = rest.find("-->")
@@ -823,7 +823,7 @@ def visible_lines(text):
                     kept, rest = kept + rest, ""
                 else:
                     kept, comment, rest = kept + rest[:start], True, rest[start + 4:]
-                    inline = not COMMENT_BLOCK.match(line)
+                    inline = inline if started else not COMMENT_BLOCK.match(line)  # 開き直しは、行が始まったときのコメントの種類を継ぐ
         yield kept
 
 

@@ -298,6 +298,8 @@ PARSE_SAMPLES = {
     # dup-counts-ok: BOM （「1 つだけ外す」は外す数、試料の「2 つ」は置いた数で、別のものを数えている）
     "後ろに \\x0c のある閉じ行": ("```\n```\x0c\n並行の検査: 8\n```", (1, None)),
     "段落の途中のコメントの後ろの印": ("memo <!--\n```\n-->\n並行の検査: 8", (1, None)),
+    # #758 の周の /code-review 1 パス目: 行頭のコメントを閉じた行で開き直したコメントは行頭のコメントのまま（GitHub は後ろを隠す）
+    "行頭のコメントを閉じた行で開き直したコメント": ("<!--\n--> x <!--\n```\n```\n並行の検査: 8\n-->", (1, None)),
     "BOM が 2 つ": ("\ufeff\ufeff並行の検査: 3",
                    (1, f"`並行の検査` の行が書式に合わない（{chr(0xfeff) + '並行の検査: 3'!r}）——1 として扱う")),
 }
@@ -492,6 +494,10 @@ MUTATIONS = {
     "続く BOM も外す": (
         "    for line in NEWLINE.split(text.removeprefix(\"\\ufeff\")):",
         "    for line in NEWLINE.split(text.lstrip(\"\\ufeff\")):"),
+    # 守る 30: `-->` で閉じた行頭のコメントの残りで開き直したコメントは
+    "開き直したコメントの種類を行頭かだけで決める": (
+        "                    inline = inline if started else not COMMENT_BLOCK.match(line)",
+        "                    inline = not COMMENT_BLOCK.match(line)"),
 }
 
 OBSERVERS = {
@@ -532,6 +538,7 @@ MUTATION_PROBE = {
     "\\x0c でも行を分ける": ("parse",),
     "段落の中のコメントの後ろの印で始めない": ("parse",),
     "続く BOM も外す": ("parse",),
+    "開き直したコメントの種類を行頭かだけで決める": ("parse",),
 }
 
 

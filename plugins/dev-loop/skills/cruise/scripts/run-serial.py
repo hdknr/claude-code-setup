@@ -84,6 +84,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 行の途中で始まって閉じないコメントの後ろの行でも、印の行はコードブロックを始める（`memo <!--` の次の ` ``` `。#758）
 - 先頭の BOM を外して読む
 - 先頭の BOM は 1 つだけ外す——続く BOM は行に残り、書式に合わない行として 1 と言う（#758）
+- `-->` で閉じた行頭のコメントの残りで開き直したコメントは、行頭のコメントのまま読む——コードブロックの開き行で終わらない（`<!--` の次の `--> x <!--`。GitHub は後ろを隠す。#758）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
@@ -193,7 +194,7 @@ def declared_lines(text: str) -> list[str]:
         if opened:
             fence, comment = opened, False
             continue
-        kept, rest = "", line
+        kept, rest, started = "", line, comment
         while rest:
             if comment:
                 end = rest.find("-->")
@@ -207,7 +208,9 @@ def declared_lines(text: str) -> list[str]:
                     kept, rest = kept + rest, ""
                 else:
                     kept, comment, rest = kept + rest[:start], True, rest[start + 4:]
-                    inline = not COMMENT_BLOCK.match(line)
+                    # 行の途中で開き直したコメントは、その行が始まったときのコメントの種類を継ぐ（`-->` で閉じた行頭のコメントの残りは
+                    # まだ行頭のコメント——GitHub は `<!--\n--> x <!--` の後ろを隠す）。コメントの外で始まった行だけ、行頭かで決める
+                    inline = inline if started else not COMMENT_BLOCK.match(line)
         if kept.strip():
             lines.append(kept)
     return lines

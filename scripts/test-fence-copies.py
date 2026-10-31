@@ -18,7 +18,8 @@ r"""コードブロック（フェンス）と HTML コメントの読み方の�
 
 **1 つのモジュールにまとめず、写しのままここで突き合わせる。** 3 つはプラグインのキャッシュから単独で動く（cruise から dev-loop は
 `../` で指せるが、run-serial は重い検査すべての入口で、読み込みの失敗が全部の検査を止める）。parent-issue の読み方は、
-チェックリストの行が段落を切るので 3 か所で意図して違える（下の「parent-issue だけ違えてよい理由」）。
+チェックリストの行が段落を切るので意図して違える箇所があり、GitHub の描画と合わないまま後続の Issue に回した箇所もある
+（どちらも parent-issue の `visible_lines` の docstring が挙げる。表の parent-issue の列）。
 各写しの回帰テストは自分の本体の文字列を壊して当てる（変異テスト）ので、本体を動かすと 3 本の変異が全部付け替えになる。
 
 ## 何をするか
@@ -26,7 +27,7 @@ r"""コードブロック（フェンス）と HTML コメントの読み方の�
 試料ごとに、各写しの宣言の行（run-serial: `並行の検査: 3`、check-unattended-env: `cruise の操作: gh pr merge`、
 parent-issue: `- [ ] #12`）を `{D}` に入れてファイルに書き、**各写しの本物の読み口**で読んで、宣言の行が見えるかを期待値と比べる。
 **期待値は試料ごとに 1 つ**で、parent-issue だけ違えてよい試料は、表に parent-issue の値と理由を書く。理由は
-parent-issue の `visible_lines` の docstring が挙げる 3 つだけで、docstring に無い理由は落ちる。
+parent-issue の `visible_lines` の docstring が挙げるものだけで、docstring に無い理由は落ちる。
 
 **陽性対照**: 壊さない写しで全部の判定が緑であることを先に見る。続けて各写しを一時ディレクトリに写し、
 #758・#759・#760 が名指しした食い違い（写しが古いまま残った形）を 1 つずつ戻して、**その写しの判定が 1 つ以上落ちる**ことを見る。
@@ -67,6 +68,7 @@ DECL = {"run-serial": "並行の検査: 3", "check-unattended-env": "cruise の�
 INDENT = "開きの字下げを数えない"
 DEPTH = "閉じの深さを開きの幅から数える"
 INLINE = "行の途中で同じ行に閉じない `<!--` を文字と読む"
+CLOSING = "行頭のコメントを閉じる行の `-->` の後ろを読まない"
 
 # (試料, 宣言が見えるか, parent-issue だけ違えるなら (値, 理由))
 SAMPLES = {
@@ -114,6 +116,11 @@ SAMPLES = {
     # GitHub の描画では宣言の行もチェックリストの行も隠れる——parent-issue が読むのは parent-issue の不具合で、後続の Issue で直す
     # （#758 の周で見つけた。ここは今の写しの読み方を固定しているだけで、正しいと言っていない）
     "閉じたコメントの後ろで開き直したコメント": ("<!-- a --> b <!--\n{D}\n-->", False, (True, INLINE)),
+    # #758 の周の /code-review 1 パス目。GitHub の描画: 1 つ目は ` x ` だけで後ろを隠す・2 つ目は宣言が見える・3 つ目は宣言が <pre> の中
+    # （1 つ目・2 つ目の parent-issue の読み方は GitHub と合わない——後続の Issue で直す。ここは今の読み方を固定しているだけ）
+    "行頭のコメントを閉じた行で開き直したコメント": ("<!--\n--> x <!--\n```\n```\n{D}\n-->", False, (True, CLOSING)),
+    "行頭のコメントを閉じた行の後ろの宣言": ("<!--\nx -->{D}", True, (False, CLOSING)),
+    "段落の中のコメントを閉じた行で開き直したコメント": ("memo <!--\nfoo --> x <!--\n```\n{D}\n```", False, None),
     # BOM（読み口ごと。check-unattended-env は読む側で外す）
     "先頭の BOM": ("\ufeff{D}", True, None),
     "BOM が 2 つ": ("\ufeff\ufeff{D}", False, None),
@@ -134,14 +141,18 @@ DRIFTS = {
         "閉じ行の後ろの全角の空白を許す": (
             "    return run >= width and not body[run:].strip(\" \\t\")",
             "    return run >= width and not body[run:].strip()"),
+        "開き直したコメントの種類を行頭かだけで決める": (
+            "                    inline = inline if started else not COMMENT_BLOCK.match(line)",
+            "                    inline = not COMMENT_BLOCK.match(line)"),
     },
     "check-unattended-env": {
         "改行以外でも行を分ける": (
             "    for line in NEWLINE.split(text):",
             "    for line in text.splitlines():"),
-        "開き行をコメントを外した残りで見る": (
-            "        yield kept\n",
-            "        if not comment and opens(kept):\n            fence = opens(kept)\n            continue\n        yield kept\n"),
+        "開き行をコメントを外した残りで見る": [  # 旧い visible_lines と同じ: 元の行では見ず、コメントを外した残りだけで見る
+            ("        opened = None if comment and not inline else opens(line)", "        opened = None"),
+            ("        yield kept\n",
+             "        if not comment and opens(kept):\n            fence = opens(kept)\n            continue\n        yield kept\n")],
         "字下げをタブ・全角の空白でも数える": (
             "    body = line.lstrip(\" \")",
             "    body = line.lstrip()"),
@@ -151,6 +162,9 @@ DRIFTS = {
         "段落の中のコメントの後ろの印で始めない": (
             "        opened = None if comment and not inline else opens(line)",
             "        opened = None if comment else opens(line)"),
+        "開き直したコメントの種類を行頭かだけで決める": (
+            "inline = inline if started else not COMMENT_BLOCK.match(line)",
+            "inline = not COMMENT_BLOCK.match(line)"),
     },
     "parent-issue": {
         "改行以外でも行を分ける": (
@@ -165,6 +179,16 @@ DRIFTS = {
         "閉じ行の後ろの全角の空白を許す": (
             "and not m.group(\"info\").strip(\" \\t\") and",
             "and not m.group(\"info\").strip() and"),
+        # #760 が名指しした残りの 3 形（parent-issue は前から守っていたので「戻す」先は無いが、崩した形で落ちることを見る）
+        "タブを 1 桁と数える": (
+            "    return len(indent.expandtabs(4))",
+            "    return len(indent)"),
+        "バッククォートを含む情報文字列でも開く": (
+            "    if not m or (m.group(\"fence\")[0] == \"`\" and \"`\" in m.group(\"info\")):",
+            "    if not m:"),
+        "開き行をコメントを外した残りで見る": (
+            "        opened = None if in_comment else opens(line)",
+            "        opened = None if in_comment else opens(visible(line, in_comment)[0])"),
     },
 }
 
@@ -242,14 +266,19 @@ def main() -> int:
         print("\n陽性対照: 写しの 1 つを古い読み方に戻すと、その写しの判定が落ちる")
         for copy, drifts in DRIFTS.items():
             source = COPIES[copy].read_text(encoding="utf-8")
-            for i, (name, (needle, replacement)) in enumerate(drifts.items()):
-                if source.count(needle) != 1:
-                    check(f"{copy}: 戻す先が 1 か所ある: {name}（{source.count(needle)} か所）", False)
+            for i, (name, pairs) in enumerate(drifts.items()):
+                pairs = pairs if isinstance(pairs, list) else [pairs]
+                missing = [needle for needle, _ in pairs if source.count(needle) != 1]
+                if missing:
+                    check(f"{copy}: 戻す先がそれぞれ 1 か所ある: {name}", False)
                     continue
+                text = source
+                for needle, replacement in pairs:
+                    text = text.replace(needle, replacement, 1)
                 mdir = tmp / f"drift-{copy}-{i}"
                 mdir.mkdir()
                 mutated = mdir / COPIES[copy].name
-                mutated.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+                mutated.write_text(text, encoding="utf-8")
                 fell: list[str] = []
                 try:
                     judge(copy, load(f"{copy}_{i}", mutated), tmp, f"m-{copy}-{i}", fell, quiet=True)
