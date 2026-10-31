@@ -770,7 +770,7 @@ NEAR = re.compile(r"^\s*(?:(?:[-*+>]|\d+[.)])\s*)*cruise\s*の\s*操作")
 # 3 つの写し（ここ・run-serial.py・parent-issue.py）は、リポジトリの `scripts/test-fence-copies.py` が同じ試料の表で突き合わせる（#759）
 NEWLINE = re.compile(r"\r\n|\r|\n")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
-COMMENT_BLOCK = re.compile(r" {0,3}<!--")  # 行頭（空白 3 つまで）で始まるコメント。それ以外は段落の中のコメント
+COMMENT_BLOCK = re.compile(r"(?: {0,3}(?:[-*+]|[0-9]{1,9}[.)])[ \t]+| {0,3}>[ \t]?)* {0,3}<!--")  # 行頭（空白 3 つまで・リストや引用の印の直後）で始まるコメント。それ以外は段落の中のコメント（#758）
 
 
 def closes(line, char, width):
@@ -797,8 +797,8 @@ def opens(line):
 def visible_lines(text):
     """フェンスの中と HTML コメントの中を除いた行（宣言として読む行。コメントは外した残り）。`.claude/dev-loop.md` の宣言はどれもこれで読む。
     行は改行（`\n`・`\r\n`・`\r`）でだけ分ける（`str.splitlines` は `\x0b`・`\x0c` などでも分ける）。開き行は元の行で見る
-    （コメントを外した残りで見ない）——開き行の後ろの `<!--` は情報文字列。行の途中で始まって閉じないコメント（段落の中）は、
-    開き行で終わる（CommonMark ではフェンスが段落を割り込む）。BOM は読む側（`read_dev_loop_md`）が 1 つ外す。"""
+    （コメントを外した残りで見ない）——開き行の後ろの `<!--` は情報文字列。段落の中で始まって閉じないコメントは、開き行で終わる
+    （CommonMark ではフェンスが段落を割り込む。段落の中かの決め方は run-serial.py の `declared_lines` と同じ）。BOM は読む側（`read_dev_loop_md`）が 1 つ外す。"""
     fence, comment, inline = None, False, False
     for line in NEWLINE.split(text):
         if fence:

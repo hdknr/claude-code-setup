@@ -300,6 +300,8 @@ PARSE_SAMPLES = {
     "段落の途中のコメントの後ろの印": ("memo <!--\n```\n-->\n並行の検査: 8", (1, None)),
     # #758 の周の /code-review 1 パス目: 行頭のコメントを閉じた行で開き直したコメントは行頭のコメントのまま（GitHub は後ろを隠す）
     "行頭のコメントを閉じた行で開き直したコメント": ("<!--\n--> x <!--\n```\n```\n並行の検査: 8\n-->", (1, None)),
+    # #758 の周の /code-review 2 パス目: リストや引用の印の直後のコメントは行頭のコメント（GitHub は後ろを隠す）
+    "リストの印の直後のコメント": ("- <!--\n```\n```\n並行の検査: 8\n-->", (1, None)),
     "BOM が 2 つ": ("\ufeff\ufeff並行の検査: 3",
                    (1, f"`並行の検査` の行が書式に合わない（{chr(0xfeff) + '並行の検査: 3'!r}）——1 として扱う")),
 }
@@ -482,7 +484,7 @@ MUTATIONS = {
     "情報文字列の <!-- をコメントと読む": (
         "        opened = None if comment and not inline else opens(line)",
         "        opened = None if comment and not inline or \"<!--\" in line else opens(line)"),
-    # 守る 27: 行の途中で始まって閉じないコメントの後ろの行でも
+    # 守る 27: 段落の中で始まって閉じないコメントの後ろの行でも
     "段落の中のコメントの後ろの印で始めない": (
         "        opened = None if comment and not inline else opens(line)",
         "        opened = None if comment else opens(line)"),
@@ -498,6 +500,10 @@ MUTATIONS = {
     "開き直したコメントの種類を行頭かだけで決める": (
         "                    inline = inline if started else not COMMENT_BLOCK.match(line)",
         "                    inline = not COMMENT_BLOCK.match(line)"),
+    # 守る 31: リストや引用の印の直後で始まるコメント
+    "リストや引用の印の後ろのコメントを段落の中と読む": (
+        "COMMENT_BLOCK = re.compile(r\"(?: {0,3}(?:[-*+]|[0-9]{1,9}[.)])[ \\t]+| {0,3}>[ \\t]?)* {0,3}<!--\")",
+        "COMMENT_BLOCK = re.compile(r\" {0,3}<!--\")"),
 }
 
 OBSERVERS = {
@@ -539,6 +545,7 @@ MUTATION_PROBE = {
     "段落の中のコメントの後ろの印で始めない": ("parse",),
     "続く BOM も外す": ("parse",),
     "開き直したコメントの種類を行頭かだけで決める": ("parse",),
+    "リストや引用の印の後ろのコメントを段落の中と読む": ("parse",),
 }
 
 

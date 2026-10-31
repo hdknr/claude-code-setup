@@ -121,6 +121,13 @@ SAMPLES = {
     "行頭のコメントを閉じた行で開き直したコメント": ("<!--\n--> x <!--\n```\n```\n{D}\n-->", False, (True, CLOSING)),
     "行頭のコメントを閉じた行の後ろの宣言": ("<!--\nx -->{D}", True, (False, CLOSING)),
     "段落の中のコメントを閉じた行で開き直したコメント": ("memo <!--\nfoo --> x <!--\n```\n{D}\n```", False, None),
+    # #758 の周の /code-review 2 パス目。GitHub の描画: 1・2 つ目は宣言が見える（コードブロックが段落の中のコメントを終わらせる）、
+    # 3〜5 つ目は後ろを隠す（行頭のコメント・リストや引用の印の直後のコメント）。parent-issue の 3〜5 つ目は GitHub と合わない——後続の Issue
+    "段落の中のコメントの後ろの閉じたコードブロック": ("memo <!--\n```\n```\n{D}", True, None),
+    "段落の中のコメントを閉じた行で開き直し、閉じたコードブロック": ("memo <!--\nfoo --> x <!--\n```\n```\n{D}", True, None),
+    "閉じたコメントの後ろで開き直したコメントの中のコードブロック": ("<!-- a --> b <!--\n```\n```\n{D}\n-->", False, (True, INLINE)),
+    "リストの印の直後のコメント": ("- <!--\n```\n```\n{D}\n-->", False, (True, INLINE)),
+    "引用の印の直後のコメント": ("> <!--\n```\n```\n{D}\n-->", False, (True, INLINE)),
     # BOM（読み口ごと。check-unattended-env は読む側で外す）
     "先頭の BOM": ("\ufeff{D}", True, None),
     "BOM が 2 つ": ("\ufeff\ufeff{D}", False, None),
@@ -144,12 +151,15 @@ DRIFTS = {
         "開き直したコメントの種類を行頭かだけで決める": (
             "                    inline = inline if started else not COMMENT_BLOCK.match(line)",
             "                    inline = not COMMENT_BLOCK.match(line)"),
+        "リストや引用の印の後ろのコメントを段落の中と読む": (
+            "COMMENT_BLOCK = re.compile(r\"(?: {0,3}(?:[-*+]|[0-9]{1,9}[.)])[ \\t]+| {0,3}>[ \\t]?)* {0,3}<!--\")",
+            "COMMENT_BLOCK = re.compile(r\" {0,3}<!--\")"),
     },
     "check-unattended-env": {
         "改行以外でも行を分ける": (
             "    for line in NEWLINE.split(text):",
             "    for line in text.splitlines():"),
-        "開き行をコメントを外した残りで見る": [  # 旧い visible_lines と同じ: 元の行では見ず、コメントを外した残りだけで見る
+        "開き行をコメントを外した残りで見る": [  # 旧い visible_lines に寄せた形: 元の行では見ず、コメントを外した残りで見る（旧い字下げ `\s*` と、コメントの中で終わる行の扱いは戻していない）
             ("        opened = None if comment and not inline else opens(line)", "        opened = None"),
             ("        yield kept\n",
              "        if not comment and opens(kept):\n            fence = opens(kept)\n            continue\n        yield kept\n")],
@@ -165,6 +175,9 @@ DRIFTS = {
         "開き直したコメントの種類を行頭かだけで決める": (
             "inline = inline if started else not COMMENT_BLOCK.match(line)",
             "inline = not COMMENT_BLOCK.match(line)"),
+        "リストや引用の印の後ろのコメントを段落の中と読む": (
+            "COMMENT_BLOCK = re.compile(r\"(?: {0,3}(?:[-*+]|[0-9]{1,9}[.)])[ \\t]+| {0,3}>[ \\t]?)* {0,3}<!--\")",
+            "COMMENT_BLOCK = re.compile(r\" {0,3}<!--\")"),
     },
     "parent-issue": {
         "改行以外でも行を分ける": (
