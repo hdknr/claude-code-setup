@@ -23,7 +23,10 @@
 - `scripts/check-all.py` — #749 の 2（`NESTED` を回帰テストの 2 本にも広げ、`--jobs` を渡す。docstring）
 - `scripts/test-check-all.py` — #749 の 2（契約 9 に回帰テストの入れ子を足す・変異 2 つ）
 - `scripts/test-ledger.py` — #748 の 2 つ目の項（`MUTANT_JOBS` が `--jobs` に従う）——**`check-all.py` の入れ子の仕組みが 2 本で共有なので、ここで直す**（親の指示: 仕組みが共有なら直す）。#748 の 1 つ目（`_Diverged` の docstring）は触らない → PR は `Refs #748`
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/dev-loop/skills/dev-loop/SKILL.md`・`plugins/dev-loop/skills/cruise/SKILL.md` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行
 - `docs/plugins/dev-loop-design.md` — `skill-metrics.py` の生成ブロック（変わるなら。手で書かない）
 - `docs/plans/issue-736.md` — この計画
 
