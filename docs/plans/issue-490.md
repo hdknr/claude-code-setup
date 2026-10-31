@@ -110,10 +110,10 @@ cruise の起動・再開の点検（cruise `SKILL.md` §1・§3、`check-unatte
 
 ## 関門の進捗（再開点）
 
-- 実装: 未
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
-- 1 パス目の指摘対応の起点: 未
+- 実装: `bb6c7baa`（このセッションで実装。委譲なし）
+- Verifier 1 パス目: 起動（2026-10-31。`dev-loop:dev-loop-verifier`・sonnet）
+- `/code-review` 1 パス目: 起動（2026-10-31）
+- 1 パス目の指摘対応の起点: `bb6c7baa`——1 パス目の 2 つの関門に渡した時点の HEAD
 - 2 パス目: 未
 - 狭いパス: 未
 - 割り目（手順 4）: 不在のため訊かず続けた
