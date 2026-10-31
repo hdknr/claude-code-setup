@@ -2,6 +2,7 @@
 """`ledger.py`（複数 Issue の台帳）の回帰テスト。
 
     python3 scripts/test-ledger.py
+    python3 scripts/test-ledger.py --jobs 1   # 変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
 
 **本体はプラグインの中にある**（`plugins/dev-loop/skills/dev-loop/scripts/`）。
 `test-find-cycle.py` と同じ形——**`dev-loop` はどのリポジトリでも使えるスキル**なので、
@@ -18,6 +19,7 @@
 **主張とテストを 1 対 1 にする。** 本体の docstring の「守る」の行数だけ変異を当てる
 （**テスト自身に数えさせる**）。終了コードも docstring の表と突き合わせる。
 """
+import argparse
 import concurrent.futures
 import contextlib
 import copy
@@ -907,6 +909,8 @@ SAMPLE_MUTATIONS = {
 # （2026-10-31、直列の 1 回が実時間 456 秒・ユーザー CPU 144 秒）、`check-all.py` の 1 回の wall はこのテストが決めていた。
 # **スレッドにはしない**——`run` は `sys.stdout` を差し替え、本体は `os.environ` を読むので、同じプロセスの中では混ざる。
 # 作業者は環境（`isolate_env` が差し替えた `HOME`・git の設定）を親から受け継ぐ。**出力は変異の宣言順**（終わった順ではない）。
+# **`--jobs N` で絞る**（#748・#749）——`check-all.py` が入れ子として親の半分を渡すので、`check-all.py --jobs 1` なら変異も 1 つずつ当てる。
+# 渡された値もこの上限で切る（`main` が書き換える。入れ子の値が 4 を超えても、#494 で決めた重さを超えない）。
 MUTANT_JOBS = max(1, min(4, os.cpu_count() or 1))
 
 
@@ -962,6 +966,14 @@ def kill_mutations(mutations, source, tmp, o, label):
 
 
 def main() -> int:
+    global MUTANT_JOBS
+    parser = argparse.ArgumentParser(description="ledger.py の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS,
+                        help=f"変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS}。1 で 1 つずつ）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS)
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t).resolve()
         isolate_env(tmp / "home")

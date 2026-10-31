@@ -32,13 +32,20 @@
 - **起動は宣言順。** いちばん重い `check-mutation-claims.py` を `GUARDS` の先頭に置いてある
   ——並列のとき、律速になる 1 本が最後に起動されないように。
 - **入れ子は親の半分**（#460）。`check-mutation-claims.py` は自分も `--jobs`（既定は CPU の数）で並列に当てるので、
-  ここからは `--jobs` を親の半分（少なくとも 1）にして起こす——`--jobs 1` なら入れ子まで直列になる。
+  ここからは `--jobs` を親の半分（少なくとも 1）にして起こす——`--jobs 1` なら入れ子にも `--jobs 1` を渡す。
   2026-10-27、10 コアの macOS で、他の `check-all.py` が重ならない回の wall と、入れ子の中で最も長かった `red`:
   既定のまま（10）は 217〜262 秒・90〜99 秒、半分（5）は 237・252 秒・77〜79 秒、`1` は 368〜388 秒・約 64 秒。
   **`1` は打ち切りまでの余裕が最も大きいが wall が 6 割延びる**ので、半分にした。
   **別のセッションの `check-all.py` と重なったときの取り合いは、ここでは絞れない**。打ち切りの原因は特定していない
   ——#449 の打ち切りは重なりを記録していない日の値で、#460 で届いた 1 回は別のセッションが `check-all.py` を走らせていた
   時間帯だが、重なっていたかは記録していない。
+  **回帰テストのうち変異を別々のプロセスで同時に当てるもの**（`test-check-unattended-env.py`・`test-ledger.py`。#494）にも
+  同じ値を `--jobs` で渡す（#748・#749）——テストの側は自分の上限（4）で切る。
+  **`--jobs 1` は「子孫まで直列」ではない**（#749 の 2 パス目）。絞れるのは `check-all.py` の作業者と、`--jobs` を渡す
+  `NESTED` の 3 本が**自分で**起こす並列（`check-mutation-claims.py` の主張の作業者・2 本のテストの変異の作業者）だけである。
+  その先——`check-mutation-claims.py` が当てる主張の red のコマンドが起こすテスト——と、並列の振る舞いそのものを試すテスト
+  （`test-check-all.py`・`test-check-mutation-claims.py`・`test-run-serial.py` など。`--jobs 2` の直書き・既定の `--jobs`・
+  同時に起こす子プロセス）の中は、`--jobs 1` でも並列に回る。
 - **出力は宣言順**（終わった順ではない）。先頭が最も重いので、最初の行が出るまで待つ。
 - **Ctrl-C で、まだ起動していないものは起動せず、走っているものは止める**
   （親だけに SIGINT が届いた場合も——子を止めるのは親である）。**孫まで止める**——
@@ -93,9 +100,9 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-plan-scope.py", [], True),
 ]
 
-# 中で自分も `--jobs` で並列に回すもの（#460）。親の並列数から決めた `--jobs` を渡す——
-# 渡さないと入れ子の既定（CPU の数）で起き、親の作業者と同じ CPU を取り合う。
-NESTED = "check-mutation-claims.py"
+# 中で自分も `--jobs` で並列に回すもの（#460。回帰テストの 2 本は #748・#749）。親の並列数から決めた `--jobs` を渡す——
+# 渡さないと入れ子の既定（CPU の数・テストは 4）で起き、親の作業者と同じ CPU を取り合い、`--jobs 1` でも直列にならない。
+NESTED = ("check-mutation-claims.py", "test-check-unattended-env.py", "test-ledger.py")
 
 
 def nested_jobs(jobs: int) -> int:
@@ -260,11 +267,12 @@ def main() -> int:
                 guard_runs.append((label, None))
                 continue
             args = [*extra, opts.base] if needs_base else extra
-            if name == NESTED:
+            if name in NESTED:
                 args = [*args, "--jobs", str(nested_jobs(opts.jobs))]
             guard_runs.append((label, pool.submit(run, name, args)))
         test_runs = ([] if opts.guards_only
-                     else [(name, pool.submit(run, name, [])) for name in TESTS])
+                     else [(name, pool.submit(run, name, ["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []))
+                           for name in TESTS])
 
         print(f"=== 歯止め === （{opts.jobs} 並列）")
         for label, fut in guard_runs:
