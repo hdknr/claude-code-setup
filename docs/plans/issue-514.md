@@ -20,7 +20,7 @@ cruise #474（`--absent`、2026-10-31 に再開）の子の周。#276 の `/code
 - `plugins/spec-loop/scripts/check-feasibility-csv.py` — CLI の入口で当てる（`check-qa-csv.py` を読み込む）
 - `plugins/spec-loop/scripts/schedule-to-gantt.py` — CLI の入口で当てる（版ごとの `feasibility/schedule.csv` を読む同じ形。Issue の列挙には無いが、`versions.md` の「その版だけを読むもの」にある——経路を入口一覧から数えた結果）
 - `plugins/spec-loop/references/versions.md` — 版ごとに読む側の決まり（名指しして止まる）・「綴りの誤りの移行」の 3（作業ツリーにだけ古い綴り）に読む側が止まることを書く・フックの取り込み
-- `plugins/spec-loop/references/tree.md` — フックを取り込む版の注（0.44.0）
+- `plugins/spec-loop/references/tree.md` — フックを取り込む版の注（0.45.0）
 - `scripts/test-check-qa-csv.py` — 試料・変異・写しの突き合わせ
 - `scripts/test-qa-to-pptx.py` — 試料・変異
 - `scripts/test-check-feasibility-csv.py` — 試料・変異

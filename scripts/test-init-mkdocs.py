@@ -635,6 +635,36 @@ def hook_unlisted(plugin: Path, work: Path) -> bool:
             and "## v1" in out and "{#v2-q-003}" not in out)
 
 
+def hook_unreachable(plugin: Path, work: Path) -> bool:
+    """権限の無い版のフォルダ（0o000）の下は、綴りも在るかも確かめられないので、警告して描かない——例外で落ちない（#514 の狭いパスの F1）。
+    陽性対照: 直す前のフックは `Path.is_file` で、Python 3.12 では `PermissionError` で落ち、3.14 では黙って飛ばした——どちらもこの試料で赤。
+    Q&A 表のページと、本文の番号のリンク（`qa_numbers`）の両方を通す。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/shared/qa.csv": QA_V2, "qa.md": "<!-- spec-loop: qa -->\n"})
+    (docs / "v2").chmod(0)
+    try:
+        out, warnings = render(plugin, docs, "<!-- spec-loop: qa -->")
+        linked, link_warnings = link(plugin, docs, "<p>Q-001</p>\n", "index.md")
+    finally:
+        (docs / "v2").chmod(0o755)
+    return (len(warnings) == 1 and "v2: 一覧を読めないので、shared/qa.csv の綴りを確かめられず読まない" in warnings[0]
+            and "## v1" in out and "{#v2-q-003}" not in out
+            and linked == f"<p>{a('Q-001', 'qa.html#v1-q-001')}</p>\n")
+
+
+def hook_unlisted_decision_table(plugin: Path, work: Path) -> bool:
+    """決定表のページも、一覧を読めない版のフォルダ（0o311）を通る表は警告して描かない（#514 の狭いパスの M3）。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/decision_table.csv": "条件,結果\nA,B\n", "v2/shared/decision_table.csv": "列,値\nx,y\n"})
+    (docs / "v2").chmod(0o311)
+    try:
+        out, warnings = render(plugin, docs, "<!-- spec-loop: decision_table -->", src="decision-table.md")
+    finally:
+        (docs / "v2").chmod(0o755)
+    return (len(warnings) == 1 and "v2: 一覧を読めないので、shared/decision_table.csv の綴りを確かめられず読まない" in warnings[0]
+            and "| 条件 | 結果 |" in out and "| 列 | 値 |" not in out)
+
+
 def qa_numbers_of(plugin: Path, docs: Path):
     return load_hook(plugin).qa_numbers(docs)
 
@@ -923,6 +953,8 @@ CASES = {
     "綴り違いの決定表は警告して描かない": hook_misspelled_decision_table,
     "綴り違いの表の番号はリンクにしない": hook_links_misspelled,
     "一覧を読めない版のフォルダの表は警告して描かない": hook_unlisted,
+    "権限の無い版のフォルダは警告して描かず、例外で落ちない": hook_unreachable,
+    "一覧を読めない版のフォルダの決定表は警告して描かない": hook_unlisted_decision_table,
     "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く": hook_both_spellings,
     "重ね合わせに表示用のファイルが混ざらない": merge_ignores_pages,
 }
@@ -1157,8 +1189,17 @@ MUTATIONS: list[tuple] = [
      "綴り違いの Q&A 表は警告して描かない"),
     ("フックの綴りを大文字小文字で畳まない", HOOK, '    return unicodedata.normalize("NFC", name).casefold()',
      '    return unicodedata.normalize("NFC", name)', "綴り違いの Q&A 表は警告して描かない"),
-    ("一覧を読めないフォルダを黙って飛ばす", HOOK, "                if spelled and directory.joinpath(*parts[index:]).is_file():\n",
+    ("一覧を読めないフォルダを黙って飛ばす", HOOK, "                if spelled and maybe_file(directory.joinpath(*parts[index:])):\n",
      "                if False:\n", "一覧を読めない版のフォルダの表は警告して描かない"),
+    # #514 の狭いパスの F1・M3
+    # 直す前の形（陽性対照）——Python 3.12 では PermissionError で落ち、3.14 では黙って飛ばす。どちらでも試料が赤
+    ("届くかを Path.is_file で見る", HOOK, "                if spelled and maybe_file(directory.joinpath(*parts[index:])):\n",
+     "                if spelled and directory.joinpath(*parts[index:]).is_file():\n", "権限の無い版のフォルダは警告して描かず、例外で落ちない"),
+    ("確かめられない形を無いと読む", HOOK, "    except OSError:\n        return True\n", "    except OSError:\n        return False\n",
+     "権限の無い版のフォルダは警告して描かず、例外で落ちない"),
+    ("決定表で確かめられないフォルダを警告しない", HOOK,
+     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}", unverified)',
+     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}")', "一覧を読めない版のフォルダの決定表は警告して描かない"),
     ("区別する FS で綴り違いのほうを読む", HOOK, "    return (next((path for path, spelled in files if spelled), None),",
      "    return (next((path for path, spelled in files), None),", "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く"),
 ]

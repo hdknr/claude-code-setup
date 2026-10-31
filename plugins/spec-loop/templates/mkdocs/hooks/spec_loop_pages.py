@@ -65,6 +65,7 @@ import html
 import logging
 import os
 import re
+import stat
 import unicodedata
 from pathlib import Path
 
@@ -154,7 +155,7 @@ def lookup(root: Path, *parts: str) -> tuple[Path | None, list[Path], list[Path]
             try:
                 entries = sorted(os.listdir(directory))
             except OSError:
-                if spelled and directory.joinpath(*parts[index:]).is_file():
+                if spelled and maybe_file(directory.joinpath(*parts[index:])):
                     unverified.append(directory)
                 continue
             step += [(directory / entry, spelled and entry == part, ()) for entry in entries if fold(entry) == fold(part)]
@@ -162,6 +163,20 @@ def lookup(root: Path, *parts: str) -> tuple[Path | None, list[Path], list[Path]
     files = [(path, spelled) for path, spelled, _ in found if path.is_file()]
     return (next((path for path, spelled in files if spelled), None), [path for path, spelled in files if not spelled],
             unverified)
+
+
+def maybe_file(path: Path) -> bool:
+    """書いた綴りのパスで表に届くかもしれないか。届く・確かめられない（権限の無いフォルダの下。EACCES）なら True、無いなら False。
+
+    `Path.is_file` は使わない——Python 3.12 は権限の無いフォルダの下で `PermissionError` を投げ（`mkdocs build` が落ちる）、
+    3.14 は False を返す（黙って飛ばす）ので、版で答えが違う（#514 の狭いパスの F1）。どちらの版でも確かめられないものは警告する。
+    """
+    try:
+        return stat.S_ISREG(os.stat(path).st_mode)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError:
+        return True
 
 
 def misspelled_problems(docs_dir: Path, wrong: list[Path], want: str, unverified: list[Path] = ()) -> list[str]:
