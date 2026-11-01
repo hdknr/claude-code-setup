@@ -162,9 +162,15 @@ def build_repo(root: Path, steps: Steps, env: dict[str, str]) -> list[str]:
     return extra
 
 
-def run_all(scripts: Path, work: Path, env: dict[str, str]) -> dict[str, tuple[int, str]]:
+def run_all(scripts: Path, work: Path, env: dict[str, str], only: str | None = None) -> dict[str, tuple[int, str]]:
+    """試料を全部回し、名前 → (終了コード, 出力)。
+    `only` を渡せば、その名前の試料**だけ**を回す（変異の回。#494）——判定に使うのはその試料の結果だけで、他の試料は試料ごとに別の場所で
+    別のプロセスとして回るので結果に効かない。場所の名前（`case<番号>`）は全部を回す形と同じ。
+    """
     results = {}
     for index, (name, steps, _, _) in enumerate(CASES):
+        if only is not None and name != only:
+            continue
         root = work / f"case{index}"
         args = build_repo(root, steps, env) or ["--repo", str(root)]
         proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), *args],
@@ -269,7 +275,7 @@ def main() -> int:
                 continue
             mutated = copy_scripts(tmp_path / f"mut{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            mutated_results = run_all(mutated, tmp_path / f"mutwork{index}", env)
+            mutated_results = run_all(mutated, tmp_path / f"mutwork{index}", env, only=killer)
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
                   not as_expected(killer, mutated_results[killer]), mutated_results[killer][1][-300:])
 
