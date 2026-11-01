@@ -146,6 +146,14 @@ class Result:
         self.spec, self.names, self.again_spec = spec, names, again_spec
         self.pptx, self.again_pptx = pptx or {}, again_pptx or {}
 
+    # 2 回目の生成を省いた回（`run_case(..., again=False)`。変異の回だけ）では、読んだ時点で `_AgainSkipped` を投げる
+    again_run = True
+
+    def __getattribute__(self, name):
+        if name in ("again", "again_spec", "again_pptx") and not object.__getattribute__(self, "again_run"):
+            raise _AgainSkipped(name)
+        return object.__getattribute__(self, name)
+
 
 def made(r: Result) -> bool:
     return r.code == 0 and r.text is not None and r.svg and r.spec is not None
@@ -1041,7 +1049,7 @@ LINK_MUTATIONS: list[tuple[str, str, str]] = [
 ]
 
 
-def link_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
+def link_problems(scripts: Path, work: Path, env: dict[str, str], stop: bool = False) -> list[str]:
     """一時ディレクトリの外を消さない・リンクの古い出力を消さずに名指し・読めない印を書き換えない（#512）。
 
     1. `drop_internal` を直接呼ぶ——`docs/v2/spec` がリンクなら先の `qa-dev.csv` を消さない（重ね合わせがリンクを断る）。
@@ -1059,7 +1067,7 @@ def link_problems(scripts: Path, work: Path, env: dict[str, str]) -> list[str]:
     spec = importlib.util.spec_from_file_location("build_proposal_link", scripts / TARGET)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    problems = []
+    problems = Problems(stop)  # stop=True（変異の回）は最初の問題で止める
     work.mkdir(parents=True)
     outside = work / "outside"
     outside.mkdir()
@@ -1238,7 +1246,7 @@ def named_lines(output: str, name: str) -> int:
                if line.split(": ", 1)[0].endswith(f"/{name}") and line.split(": ", 1)[-1].startswith(NAMING))
 
 
-def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str | None = None) -> list[str]:
+def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str | None = None, stop: bool = False) -> list[str]:
     """出力の場所に残った前の出力の名指し（#498・#551・#553）。
 
     作れなかったとき（0 以外。出力先が決まる前に止まった 2——argparse・`--out` 無しで根を求める途中の想定外の例外——は除く）、
@@ -1250,7 +1258,7 @@ def leftover_problems(scripts: Path, work: Path, env: dict[str, str], only: str 
     **変異の名札が、実際に殺す試料と食い違わないようにするため**（#550。以前は下の固定の試料がいつも走り、名札の外で殺していた）。
     **読めない印が読めてしまう環境（root）では判別しないので、問題として返す**——「当てられなかった」は緑ではない。
     """
-    problems = []
+    problems = Problems(stop)  # stop=True（変異の回）は最初の問題で止める
     probe = work / "probe"
     probe.mkdir(parents=True)
     (probe / "x").write_text("x", encoding="utf-8")
@@ -1549,6 +1557,74 @@ def assert_in_tmp(path: Path) -> None:
     assert REAL_REPO not in resolved.parents and resolved != REAL_REPO, f"実リポジトリの中を触ろうとした: {path}"
 
 
+class _Found(BaseException):
+    """変異の回で、最初の問題を見つけた（#494）。投げるのは `Problems` の足す操作、受けるのは `found` だけ。
+
+    **`Exception` の子にしない**——将来、問題を足す行を `except Exception` で囲むと、そこで飲まれて止まらない
+    （`test-ledger.py` の `_Diverged` と同じ将来への備え）。`main` の冒頭が親を表明する。"""
+
+
+class Problems(list):
+    """問題の一覧。**`stop=True`（変異の回だけ）なら、最初の 1 件を足した時点で `_Found` を投げて止める**（#494）。
+
+    **早く止めても判定は変わらない**——変異の回の判定は `bool(問題の一覧)`（1 件でもあれば殺せた）で、1 件目を足した時点で決まっている。
+    正しい本体の回（`stop=False`）は全部を回し、全部の問題を出す。"""
+
+    def __init__(self, stop: bool = False):
+        super().__init__()
+        self.stop = stop
+
+    def append(self, item) -> None:
+        super().append(item)
+        if self.stop:
+            raise _Found(item)
+
+    def extend(self, items) -> None:
+        items = list(items)
+        super().extend(items)
+        if self.stop and items:
+            raise _Found(items[0])
+
+    def __iadd__(self, items):
+        self.extend(items)
+        return self
+
+
+def found(problems_of: Callable[..., list[str]], *args) -> bool:
+    """変異の回: `problems_of(*args, stop=True)` が問題を 1 件でも見つけたか。**止めない回の `bool(problems_of(*args))` と同じ値。**"""
+    try:
+        return bool(problems_of(*args, stop=True))
+    except _Found:
+        return True
+
+
+def found_controls() -> bool:
+    """`found` の対照（#494）: 問題が無ければ偽、`append`・`extend`・`+=` のどの足し方でも 1 件あれば真。"""
+    def none(stop=False):
+        return Problems(stop)
+
+    def by_append(stop=False):
+        p = Problems(stop)
+        p.append("x")
+        return p
+
+    def by_extend(stop=False):
+        p = Problems(stop)
+        p.extend(["x"])
+        return p
+
+    def by_iadd(stop=False):
+        p = Problems(stop)
+        p += ["x"]
+        return p
+    return not found(none) and found(by_append) and found(by_extend) and found(by_iadd)
+
+
+class _AgainSkipped(BaseException):
+    """2 回目の生成を省いた変異の回で、判定が 2 回目の結果（`again`・`again_spec`・`again_pptx`）を読んだ（#494）。
+    受けるのは `judge_mutant` だけで、その試料を 2 回目の生成つきで回し直す。`Exception` の子にしないのは `_Found` と同じ理由。"""
+
+
 def sandbox_env(home: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(home / "gitconfig"), GIT_CONFIG_NOSYSTEM="1",
@@ -1562,8 +1638,37 @@ def run_git(repo: Path, env: dict[str, str], *args: str) -> None:
                    check=True, capture_output=True, env=env)
 
 
+# 試料のリポジトリの写しの置き場（#494）。`main` が一時ディレクトリの中に決める。None なら写しを使わず毎回作る
+TEMPLATES: Path | None = None
+_templates: dict[tuple, Path] = {}
+
+
 def build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) -> None:
+    """`steps` のとおりにリポジトリを作る。**同じ `steps` で 2 度目からは、1 度目に作り終えた直後の写しを複製する**（#494）。
+
+    1 度目は今までどおりその場で作り（失敗も今までどおり `CalledProcessError` で返る）、作り終えた直後に写しを取る。
+    写しは `.git` ごとのバイトの複製なので、本体が読むもの（コミットとタグの中身・作業ツリーのファイル・権限・symlink）は同じ。
+    本体は git を索引や作業ツリーと突き合わせて読まない（`show`・`ls-tree`・`cat-file`・コミット間の `diff`・`rev-parse`・`tag --list`）ので、索引の stat 情報の違いは効かない。
+    2026-11-01 の測定で、`build_repo` は 296 回・48 秒（git の子 3,769 本）で、変異の回は正しい本体の回と同じ `steps` を作り直していた。
+    権限を変える手順（`chmod`——読めないファイルは写せない）を含む `steps` は写しを使わない。写しを取れなければ（`OSError`）その `steps` は毎回作る。"""
     assert_in_tmp(root)
+    key = (tuple(tuple(step) for step in steps), tuple(sorted(env.items())))
+    cacheable = TEMPLATES is not None and not any(step[0] == "chmod" for step in steps)
+    if cacheable and key in _templates:
+        shutil.copytree(_templates[key], root, symlinks=True)
+        return
+    _build_repo(root, steps, env)
+    if cacheable:
+        template = TEMPLATES / str(len(_templates))
+        try:
+            shutil.copytree(root, template, symlinks=True)
+        except OSError:
+            shutil.rmtree(template, ignore_errors=True)
+            return
+        _templates[key] = template
+
+
+def _build_repo(root: Path, steps: list[tuple[str, ...]], env: dict[str, str]) -> None:
     root.mkdir(parents=True)
     run_git(root, env, "init", "-q", "-b", "main")
     for step in steps:
@@ -1598,9 +1703,10 @@ def generate(scripts: Path, root: Path, out: Path | str, env: dict[str, str], ex
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def run_case(scripts: Path, root: Path, steps, stale: bool | str, env: dict[str, str]) -> Result:
+def run_case(scripts: Path, root: Path, steps, stale: bool | str, env: dict[str, str], again: bool = True) -> Result:
     """`stale`: True なら本体が作ったのと同じ形の前の出力（印つき）を、"hand" なら手で置いたファイル（印なし）を、
-    "evil" なら同じ場所の外を名指しする印を置いてから生成する。"""
+    "evil" なら同じ場所の外を名指しする印を置いてから生成する。
+    `again=False`（変異の回だけ。`judge_mutant`）なら 2 回目の生成を省き、結果の `again` などを読むと `_AgainSkipped` を投げる。"""
     try:
         build_repo(root, steps, env)
     except subprocess.CalledProcessError as e:  # 1 つの試料が作れなくても、実行全体は落とさない
@@ -1625,6 +1731,10 @@ def run_case(scripts: Path, root: Path, steps, stale: bool | str, env: dict[str,
     svg = (out.parent / "gantt.svg").is_file()
     spec = (out.parent / "spec.md").read_text(encoding="utf-8", errors="replace") if (out.parent / "spec.md").is_file() else None
     names = frozenset(p.name for p in out.parent.iterdir()) - {"proposal.md", "gantt.svg", "spec.md", MANIFEST} if out.parent.is_dir() else frozenset()
+    if not again:
+        r = Result(code, output, text, svg, None, spec, names, read_pptx(out.parent), None, None, out.parent)
+        r.again_run = False
+        return r
     again_out = root / "build" / "again" / "proposal.md"
     generate(scripts, root, again_out, env, extra)
     again = again_out.read_text(encoding="utf-8", errors="replace") if again_out.is_file() else None
@@ -1779,6 +1889,22 @@ def as_expected(name: str, result: Result) -> bool:
     return next(case for case in CASES if case[0] == name)[3](result)
 
 
+def judge_mutant(scripts: Path, root: Path, killer: str, env: dict[str, str]) -> tuple[bool, Result]:
+    """変異の回: 名指しした試料を回し、(期待どおりか, 結果) を返す。**まず 2 回目の生成を省いて回し**（#494）、判定が 2 回目の結果を
+    読んだら（`_AgainSkipped`）、別の場所で 2 回目の生成つきで回し直して判定する——**省くかどうかは判定が読んだかで決まり、人が選ばない。**
+
+    2 回目の生成（`build/again/`）を読むのは「同じ入力から同じバイト」を見る判定だけで、残りの判定には結果に効かない。
+    **省いた回は、手順が 1 つ減る**——2 回目の生成が `build/proposal/` を変える変異（出力の場所の外を書く・消す）なら、`files` が
+    全部を回す形と違いうる。違えば殺せる向きにも生き残る向きにもなりうるが、生き残ればこのテストが赤で名指しする（黙って弱くならない）。"""
+    _, steps, stale, judge = next(case for case in CASES if case[0] == killer)
+    result = run_case(scripts, root, steps, stale, env, again=False)
+    try:
+        return judge(result), result
+    except _AgainSkipped:
+        result = run_case(scripts, root.with_name(root.name + "-again"), steps, stale, env)
+        return judge(result), result
+
+
 def copy_scripts(dest: Path) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -1799,6 +1925,8 @@ def case_insensitive(tmp: Path) -> bool:
 
 
 def main() -> int:
+    check("_Found・_AgainSkipped は BaseException の直接の子（将来 except Exception に飲まれない）",
+          _Found.__bases__ == (BaseException,) and _AgainSkipped.__bases__ == (BaseException,))
     if shutil.which("git") is None:
         print("git が無いので走らせていない（緑ではない）", file=sys.stderr)
         return 2
@@ -1807,9 +1935,18 @@ def main() -> int:
         home = tmp_path / "home"
         home.mkdir()
         env = sandbox_env(home)
+        global TEMPLATES
+        TEMPLATES = tmp_path / "templates"
         scripts = copy_scripts(tmp_path / "scripts")
         for name, result in run_all(scripts, tmp_path / "work", env).items():
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result.code} {result.output[-300:]}")
+        # 2 回目の生成を省く形の対照（#494）: 正しい本体で、変異の回と同じ呼び方（judge_mutant）でも期待どおり——
+        # 2 回目の結果を読む試料（回し直しの経路）と読まない試料（省いたままの経路）の両方
+        for control in ("同じ入力から同じバイト", CASES[0][0]):
+            ok, result = judge_mutant(scripts, tmp_path / f"judge-control-{CASES.index(next(c for c in CASES if c[0] == control))}", control, env)
+            check(f"judge_mutant: 正しい本体の試料が期待どおりでない（{control}）", ok, result.output[-300:])
+            check(f"judge_mutant: 2 回目の生成を{'回し直す' if control == '同じ入力から同じバイト' else '省く'}はずの経路を通らない（{control}）",
+                  result.again_run == (control == "同じ入力から同じバイト"))
         for index, name in enumerate(COEXIST):
             steps = next(case[1] for case in CASES if case[0] == name)
             problem = old_names_collide(tmp_path / f"old{index}", steps, env)
@@ -1851,9 +1988,8 @@ def main() -> int:
                 continue
             mutated = copy_scripts(tmp_path / f"mut{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            killer_case = next(case for case in CASES if case[0] == killer)
-            result = run_case(mutated, tmp_path / f"mutwork{index}", killer_case[1], killer_case[2], env)
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, result), result.output[-300:])
+            ok, result = judge_mutant(mutated, tmp_path / f"mutwork{index}", killer, env)
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, result.output[-300:])
         qa_source = (SCRIPTS / QA_TARGET).read_text(encoding="utf-8")
         for index, (name, before, after, killer) in enumerate(QA_MUTATIONS):
             count = qa_source.count(before)
@@ -1862,9 +1998,8 @@ def main() -> int:
                 continue
             mutated = copy_scripts(tmp_path / f"mutqa{index}")
             (mutated / QA_TARGET).write_text(qa_source.replace(before, after), encoding="utf-8")
-            killer_case = next(case for case in CASES if case[0] == killer)
-            result = run_case(mutated, tmp_path / f"mutqawork{index}", killer_case[1], killer_case[2], env)
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, result), result.output[-300:])
+            ok, result = judge_mutant(mutated, tmp_path / f"mutqawork{index}", killer, env)
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, result.output[-300:])
 
         problems = compose_problems(SCRIPTS)
         check("compose が暫定・確定・未決定を分けない", not problems, "; ".join(problems))
@@ -1934,6 +2069,9 @@ def main() -> int:
 
         problems = link_problems(SCRIPTS, tmp_path / "link", env)
         check("一時ディレクトリの外・リンクの古い出力・読めない印の扱いが違う", not problems, "; ".join(problems))
+        # 止める形の陰性対照（#494）: 正しい本体では、変異の回と同じ呼び方（found）でも「見つけた」にならない
+        check("found: 正しい本体のリンクの試料で問題を見つける（止める形が何でも殺す）",
+              found_controls() and not found(link_problems, SCRIPTS, tmp_path / "link-found", env))
         for index, (name, before, after) in enumerate(LINK_MUTATIONS):
             count = source.count(before)
             if count != 1:
@@ -1941,7 +2079,7 @@ def main() -> int:
                 continue
             mutated = copy_scripts(tmp_path / f"mutlink{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            check(f"変異が生き残った: {name}（#512 の試料で殺せるはず）", bool(link_problems(mutated, tmp_path / f"mutlinkwork{index}", env)))
+            check(f"変異が生き残った: {name}（#512 の試料で殺せるはず）", found(link_problems, mutated, tmp_path / f"mutlinkwork{index}", env))
 
         problems = leftover_problems(SCRIPTS, tmp_path / "leftover", env)
         check("作れなかったときに残った前の出力の名指しが違う", not problems, "; ".join(problems))
@@ -1959,7 +2097,7 @@ def main() -> int:
             mutated = copy_scripts(tmp_path / f"mutleft{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
-                  bool(leftover_problems(mutated, tmp_path / f"mutleftwork{index}", env, killer)))
+                  found(leftover_problems, mutated, tmp_path / f"mutleftwork{index}", env, killer))
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")

@@ -18,6 +18,7 @@
 （**テスト自身に数えさせる**）、終了コードも docstring の表と突き合わせる。
 """
 import contextlib
+import copy
 import importlib.util
 import io
 import json
@@ -209,15 +210,53 @@ def ledger(cwd, *args):
     return proc.returncode, proc.stdout.split()
 
 
-def scenario(mod, tmp: Path, tag: str) -> dict:
-    """全試料を 1 本のリポジトリで走らせ、観測を辞書で返す。**変異の前後で同じ関数を使う。**"""
+class _Diverged(BaseException):
+    """変異を当てた本体の観測が、正しい本体の観測と食い違った（#494）。投げるのは `Observations.__setitem__`
+    （`scenario` の `o[...] = …`）、受けるのは変異の回の `except _Diverged` だけ。
+
+    **`Exception` の子にしない**——将来 `o[...]` の書き込みを `except Exception` で囲むと、そこで飲まれて止まらない
+    （`test-ledger.py` の `_Diverged` と同じ将来への備え）。`main` の冒頭が親を表明する。"""
+
+
+class Observations(dict):
+    """`scenario` の観測。**正しい本体の観測 `ref` を渡すと、食い違った鍵を書いた時点で `_Diverged` を投げて止める**（#494。
+    `test-ledger.py` の `Observations` と同じ形）。
+
+    **早く止めても判定は変わらない**——判定は `got != o`（観測の辞書がどこか 1 つでも違う）で、食い違った鍵を書いた時点で
+    それは決まっている。**前提は 2 つ**: 同じ鍵を 2 度書かない・書いた値を後で変えない。**どちらも正しい本体の回で確かめる**
+    （`unchanged`。`main` が表明する）——崩れると、途中の値の食い違いを「殺せた」と数えうる。
+    2026-11-01 の測定で、`scenario` 1 回は約 2.8 秒で、変異 35 件の回が直列の 1 回 131 秒の大半を占めていた。"""
+
+    def __init__(self, ref: dict | None = None):
+        super().__init__()
+        self._ref = ref
+        self._written: dict = {}
+        self.twice: list[str] = []
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.twice.append(key)
+        super().__setitem__(key, value)
+        self._written[key] = copy.deepcopy(value)
+        if self._ref is not None and (key not in self._ref or self._ref[key] != value):
+            raise _Diverged(key)
+
+    def unchanged(self) -> bool:
+        """同じ鍵を 2 度書いておらず、書いた値が後で変わっていないか。"""
+        return not self.twice and dict(self) == self._written
+
+
+def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
+    """全試料を 1 本のリポジトリで走らせ、観測を辞書で返す。**変異の前後で同じ関数を使う。**
+
+    `ref`（正しい本体の観測）を渡すと、食い違った時点で `_Diverged` を投げて止める（`Observations`）。"""
     home = tmp / "home"
     root = tmp / f"repo-{tag}"
     assert_not_real_repo(root)
     root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
     plans = root / ".claude" / "plans"
-    o = {}
+    o = Observations(ref)
 
     def body(name, text):
         p = tmp / f"{tag}-{name}.md"
@@ -428,6 +467,16 @@ def main() -> int:
         isolate_env(tmp / "home")
         mod = load()
         o = scenario(mod, tmp, "correct")
+        check("_Diverged は BaseException の直接の子（将来 except Exception に飲まれない）", _Diverged.__bases__ == (BaseException,))
+        # 早く止める形の前提（`Observations`）——崩れると、途中の値の食い違いを「殺せた」と数えうる
+        check("同じ鍵を 2 度書かず、書いた観測を後で変えない", o.unchanged())
+        # 早く止める形の陰性対照: 正しい本体を別の名前で、変異の回と同じ呼び方（ref=）で回すと、食い違わずに最後まで走り同じ観測になる
+        try:
+            again = scenario(mod, tmp, "control", ref=dict(o))
+        except _Diverged as exc:
+            check(f"正しい本体を ref つきで回すと食い違う（鍵 {exc}）——止める形が何でも殺す", False)
+        else:
+            check("正しい本体を ref つきで回すと、食い違わずに同じ観測になる", again == o)
 
         print("取り出し（C1・C2・C5）")
         rc, out = o["show"]
@@ -535,8 +584,12 @@ def main() -> int:
             except Exception as exc:
                 check(f"変異を読み込める（当てられなかった）: {name}: {type(exc).__name__}", False)
                 continue
+            # **食い違った時点で止める**（`Observations`。#494）——判定は止めない場合の `got != o` と同じ
             try:
-                got = scenario(mutant, tmp, f"mut-{abs(hash(name))}")
+                got = scenario(mutant, tmp, f"mut-{abs(hash(name))}", ref=dict(o))
+            except _Diverged:
+                check(f"変異を殺せる: {name}", True)
+                continue
             except Exception:
                 check(f"変異を殺せる: {name}", True)
                 continue
