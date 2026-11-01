@@ -224,6 +224,7 @@
 - 実装のコミット: `bd9e0ee7`。止める形の対照（正しい本体で `found`・`judge_mutant`・`ref=` が「殺せた」にならない）を足したコミット: 下の「関門 1 パス目」の起点。
   対照を足した木の直列: `test-parent-issue.py` 38 秒・`test-schedule-to-gantt.py` 110 秒・`test-build-proposal.py` 172 秒（負荷 4.6〜6.2）——前後の比較（A2）は対照の前の `bd9e0ee7` で測った。
 - PR: #776。
+- 関門 1 パス目: 起点（1 パス目の関門に渡した時点の HEAD）`a2865fc735c9a4216965603e49341dddc8206a10`。Verifier（`dev-loop:dev-loop-verifier`・sonnet）と `/code-review`（high）に渡した。結果は未着。
 
 ## 手順 8
 
