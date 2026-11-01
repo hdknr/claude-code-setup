@@ -273,13 +273,14 @@ ENTRY_MUTATIONS: list[tuple[str, str, str]] = [
 LEFT = "前に作った出力を消せない: "
 
 
-def entry_problems(scripts: Path, root: Path) -> list[str]:
+def entry_problems(scripts: Path, root: Path, stop: bool = False) -> list[str]:
     """CASES の外のもの。#286: 書けない出力先は 2 で「書けない」と言う・`-OO` の引数なしは使い方の誤りで 2・
     `main` の外へ逃げた例外を入口が 2 にする。#499: 前の出力を消せない場所では、どの経路でも 2 で残った出力を名指しする
-    （想定外の例外に化けない）。陽性対照として、出力先がディレクトリなら消さずに 1。"""
+    （想定外の例外に化けない）。陽性対照として、出力先がディレクトリなら消さずに 1。
+    `stop=True`（変異の回）は最初の問題で止める（`Problems`）。"""
     assert_in_tmp(root)
     root.mkdir(parents=True)
-    problems = []
+    problems = Problems(stop)
     big, good, bad = root / "big.csv", root / "good.csv", root / "bad.csv"
     big.write_text(HEAD + "T-001," + "x" * 200_000 + ",2026-11-02,2026-11-03,\n", encoding="utf-8")
     good.write_text(HEAD + GOOD, encoding="utf-8")
@@ -732,6 +733,70 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         failures.append(f"{name}{': ' + detail if detail else ''}")
 
 
+class _Found(BaseException):
+    """変異の回で、最初の問題を見つけた（#494）。投げるのは `Problems` の足す操作、受けるのは `found` だけ。
+
+    **`Exception` の子にしない**——将来、問題を足す行を `except Exception` で囲むと、そこで飲まれて止まらない
+    （`test-ledger.py` の `_Diverged` と同じ将来への備え）。`main` の冒頭が親を表明する。"""
+
+
+class Problems(list):
+    """問題の一覧。**`stop=True`（変異の回だけ）なら、最初の 1 件を足した時点で `_Found` を投げて止める**（#494）。
+
+    **早く止めても判定は変わらない**——変異の回の判定は `bool(問題の一覧)`（1 件でもあれば殺せた）で、1 件目を足した時点で決まっている。
+    正しい本体の回（`stop=False`）は全部を回し、全部の問題を出す。2026-11-01 の測定で、`entry_problems` 1 回は約 3 秒・変異 59 件で
+    直列の 1 回 191 秒のうち 179 秒を占めていた。"""
+
+    def __init__(self, stop: bool = False):
+        super().__init__()
+        self.stop = stop
+
+    def append(self, item) -> None:
+        super().append(item)
+        if self.stop:
+            raise _Found(item)
+
+    def extend(self, items) -> None:
+        items = list(items)
+        super().extend(items)
+        if self.stop and items:
+            raise _Found(items[0])
+
+    def __iadd__(self, items):
+        self.extend(items)
+        return self
+
+
+def found(problems_of: Callable[..., list[str]], *args) -> bool:
+    """変異の回: `problems_of(*args, stop=True)` が問題を 1 件でも見つけたか。**止めない回の `bool(problems_of(*args))` と同じ値。**"""
+    try:
+        return bool(problems_of(*args, stop=True))
+    except _Found:
+        return True
+
+
+def found_controls() -> bool:
+    """`found` の対照（#494）: 問題が無ければ偽、`append`・`extend`・`+=` のどの足し方でも 1 件あれば真。"""
+    def none(stop=False):
+        return Problems(stop)
+
+    def by_append(stop=False):
+        p = Problems(stop)
+        p.append("x")
+        return p
+
+    def by_extend(stop=False):
+        p = Problems(stop)
+        p.extend(["x"])
+        return p
+
+    def by_iadd(stop=False):
+        p = Problems(stop)
+        p += ["x"]
+        return p
+    return not found(none) and found(by_append) and found(by_extend) and found(by_iadd)
+
+
 def assert_in_tmp(path: Path) -> None:
     resolved = path.resolve()
     assert REAL_REPO not in resolved.parents and resolved != REAL_REPO, f"実リポジトリの中を触ろうとした: {path}"
@@ -807,6 +872,7 @@ SPELLING_MUTATIONS = [("入口で綴りを見ない", "    problem = feasibility
 
 
 def main() -> int:
+    check("_Found は BaseException の直接の子（将来 except Exception に飲まれない）", _Found.__bases__ == (BaseException,))
     with tempfile.TemporaryDirectory(prefix="gantt-test-") as tmp:
         tmp_path = Path(tmp)
         scripts = copy_scripts(tmp_path / "scripts")
@@ -827,9 +893,12 @@ def main() -> int:
                 continue
             mutated = copy_scripts(tmp_path / f"mut{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            mutated_results = run_all(mutated, tmp_path / f"mutwork{index}")
-            check(f"変異が生き残った: {name}（{killer} で殺せるはず）",
-                  not as_expected(killer, mutated_results[killer]), mutated_results[killer].output[-300:])
+            # **名指しした試料だけを回す**（#494）——判定に使うのはその試料の結果だけで、他の試料は試料ごとに別の場所で
+            # 別のプロセスとして回るので結果に効かない。場所の名前（`case<番号>`）も全部を回す形と同じにする
+            i = next(i for i, case in enumerate(CASES) if case[0] == killer)
+            _, content, stale, twice, _ = CASES[i]
+            result = run_case(mutated, tmp_path / f"mutwork{index}" / f"case{i}", content, stale, twice)
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, result), result.output[-300:])
 
         problems = spelling_problems(scripts, tmp_path / "spelling")
         check("綴りだけ違うフォルダの表は 2 で名指しし、描かず、前の出力を消す・綴りどおりなら描く（#514）", not problems, "; ".join(problems))
@@ -843,13 +912,16 @@ def main() -> int:
 
         problems = entry_problems(scripts, tmp_path / "entry")
         check("消せない前の出力・書けない出力先・-OO の引数なし・逃げた例外で期待どおりでない", not problems, "; ".join(problems))
+        # 止める形の陰性対照（#494）: 正しい本体では、変異の回と同じ呼び方（found）でも「見つけた」にならない
+        check("found: 正しい本体の入口の試料で問題を見つける（止める形が何でも殺す）",
+              found_controls() and not found(entry_problems, scripts, tmp_path / "entry-found"))
         for index, (name, before, after) in enumerate(ENTRY_MUTATIONS):
             if source.count(before) != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
                 continue
             mutated = copy_scripts(tmp_path / f"entry-mut{index}")
             (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
-            check(f"変異が生き残った: {name}", bool(entry_problems(mutated, tmp_path / f"entry-mutwork{index}")))
+            check(f"変異が生き残った: {name}", found(entry_problems, mutated, tmp_path / f"entry-mutwork{index}"))
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
