@@ -221,7 +221,8 @@
 - 周の在り処: ブランチ `issue/494-check-all-light-2`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-494`・
   起点コミット `7a6addf1`・base `7a6addf1ae7c88690aa852c5cf76675f8f259011`（参照 `origin/main`。`prepare-worktree.sh` の出力）
 - 割り目（手順 4 の完了時）: 不在の周なので訊かない。このまま続ける。
-- 実装のコミット: `bd9e0ee7`。
+- 実装のコミット: `bd9e0ee7`。止める形の対照（正しい本体で `found`・`judge_mutant`・`ref=` が「殺せた」にならない）を足したコミット: 下の「関門 1 パス目」の起点。
+  対照を足した木の直列: `test-parent-issue.py` 38 秒・`test-schedule-to-gantt.py` 110 秒・`test-build-proposal.py` 172 秒（負荷 4.6〜6.2）——前後の比較（A2）は対照の前の `bd9e0ee7` で測った。
 - PR: #776。
 
 ## 手順 8

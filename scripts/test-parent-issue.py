@@ -470,6 +470,13 @@ def main() -> int:
         check("_Diverged は BaseException の直接の子（将来 except Exception に飲まれない）", _Diverged.__bases__ == (BaseException,))
         # 早く止める形の前提（`Observations`）——崩れると、途中の値の食い違いを「殺せた」と数えうる
         check("同じ鍵を 2 度書かず、書いた観測を後で変えない", o.unchanged())
+        # 早く止める形の陰性対照: 正しい本体を別の名前で、変異の回と同じ呼び方（ref=）で回すと、食い違わずに最後まで走り同じ観測になる
+        try:
+            again = scenario(mod, tmp, "control", ref=dict(o))
+        except _Diverged as exc:
+            check(f"正しい本体を ref つきで回すと食い違う（鍵 {exc}）——止める形が何でも殺す", False)
+        else:
+            check("正しい本体を ref つきで回すと、食い違わずに同じ観測になる", again == o)
 
         print("取り出し（C1・C2・C5）")
         rc, out = o["show"]

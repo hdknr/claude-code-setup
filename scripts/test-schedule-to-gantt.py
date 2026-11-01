@@ -775,6 +775,28 @@ def found(problems_of: Callable[..., list[str]], *args) -> bool:
         return True
 
 
+def found_controls() -> bool:
+    """`found` の対照（#494）: 問題が無ければ偽、`append`・`extend`・`+=` のどの足し方でも 1 件あれば真。"""
+    def none(stop=False):
+        return Problems(stop)
+
+    def by_append(stop=False):
+        p = Problems(stop)
+        p.append("x")
+        return p
+
+    def by_extend(stop=False):
+        p = Problems(stop)
+        p.extend(["x"])
+        return p
+
+    def by_iadd(stop=False):
+        p = Problems(stop)
+        p += ["x"]
+        return p
+    return not found(none) and found(by_append) and found(by_extend) and found(by_iadd)
+
+
 def assert_in_tmp(path: Path) -> None:
     resolved = path.resolve()
     assert REAL_REPO not in resolved.parents and resolved != REAL_REPO, f"実リポジトリの中を触ろうとした: {path}"
@@ -890,6 +912,9 @@ def main() -> int:
 
         problems = entry_problems(scripts, tmp_path / "entry")
         check("消せない前の出力・書けない出力先・-OO の引数なし・逃げた例外で期待どおりでない", not problems, "; ".join(problems))
+        # 止める形の陰性対照（#494）: 正しい本体では、変異の回と同じ呼び方（found）でも「見つけた」にならない
+        check("found: 正しい本体の入口の試料で問題を見つける（止める形が何でも殺す）",
+              found_controls() and not found(entry_problems, scripts, tmp_path / "entry-found"))
         for index, (name, before, after) in enumerate(ENTRY_MUTATIONS):
             if source.count(before) != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")

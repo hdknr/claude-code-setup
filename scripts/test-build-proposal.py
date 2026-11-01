@@ -1598,6 +1598,28 @@ def found(problems_of: Callable[..., list[str]], *args) -> bool:
         return True
 
 
+def found_controls() -> bool:
+    """`found` の対照（#494）: 問題が無ければ偽、`append`・`extend`・`+=` のどの足し方でも 1 件あれば真。"""
+    def none(stop=False):
+        return Problems(stop)
+
+    def by_append(stop=False):
+        p = Problems(stop)
+        p.append("x")
+        return p
+
+    def by_extend(stop=False):
+        p = Problems(stop)
+        p.extend(["x"])
+        return p
+
+    def by_iadd(stop=False):
+        p = Problems(stop)
+        p += ["x"]
+        return p
+    return not found(none) and found(by_append) and found(by_extend) and found(by_iadd)
+
+
 class _AgainSkipped(BaseException):
     """2 回目の生成を省いた変異の回で、判定が 2 回目の結果（`again`・`again_spec`・`again_pptx`）を読んだ（#494）。
     受けるのは `judge_mutant` だけで、その試料を 2 回目の生成つきで回し直す。`Exception` の子にしないのは `_Found` と同じ理由。"""
@@ -1918,6 +1940,13 @@ def main() -> int:
         scripts = copy_scripts(tmp_path / "scripts")
         for name, result in run_all(scripts, tmp_path / "work", env).items():
             check(f"試料が期待どおりでない: {name}", as_expected(name, result), f"exit={result.code} {result.output[-300:]}")
+        # 2 回目の生成を省く形の対照（#494）: 正しい本体で、変異の回と同じ呼び方（judge_mutant）でも期待どおり——
+        # 2 回目の結果を読む試料（回し直しの経路）と読まない試料（省いたままの経路）の両方
+        for control in ("同じ入力から同じバイト", CASES[0][0]):
+            ok, result = judge_mutant(scripts, tmp_path / f"judge-control-{CASES.index(next(c for c in CASES if c[0] == control))}", control, env)
+            check(f"judge_mutant: 正しい本体の試料が期待どおりでない（{control}）", ok, result.output[-300:])
+            check(f"judge_mutant: 2 回目の生成を{'回し直す' if control == '同じ入力から同じバイト' else '省く'}はずの経路を通らない（{control}）",
+                  result.again_run == (control == "同じ入力から同じバイト"))
         for index, name in enumerate(COEXIST):
             steps = next(case[1] for case in CASES if case[0] == name)
             problem = old_names_collide(tmp_path / f"old{index}", steps, env)
@@ -2040,6 +2069,9 @@ def main() -> int:
 
         problems = link_problems(SCRIPTS, tmp_path / "link", env)
         check("一時ディレクトリの外・リンクの古い出力・読めない印の扱いが違う", not problems, "; ".join(problems))
+        # 止める形の陰性対照（#494）: 正しい本体では、変異の回と同じ呼び方（found）でも「見つけた」にならない
+        check("found: 正しい本体のリンクの試料で問題を見つける（止める形が何でも殺す）",
+              found_controls() and not found(link_problems, SCRIPTS, tmp_path / "link-found", env))
         for index, (name, before, after) in enumerate(LINK_MUTATIONS):
             count = source.count(before)
             if count != 1:
