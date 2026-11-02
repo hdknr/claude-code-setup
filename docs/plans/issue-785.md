@@ -81,13 +81,19 @@ main へのマージでプラグインの配布（dev-loop 1.75.2）。公開サ
 - 観測（直した後）: 2026-11-02 18:30、同じ形（$0.011）で main と worktree を同じ回で——main は False、worktree は True・起動時の行・`auth` は
   `{passed: True, from: launcher}`・値は出力・記録に出ていない（False）。対照: このセッション（対話ログイン）で worktree は False・「起動した claude の環境にも無い」の行。
 - 交絡: 「起動口の claude の環境にトークンが無かったから子に無い」を、同じ回の `launcher_auth_names` が名前を返したことで潰した（陽性対照）。
-  「probe の報告を haiku が作った」を、probe が自分で書いた `probe.log`（実物）を読んで潰した。
+  「probe の報告を haiku が作った」を、probe が自分で書いた `probe.log`（実物）を読んで潰した（各回の直後に読んだ。ファイルは次の回が上書きし、
+  残っているのは対話ログインの対照の回だけ——長期トークンの 2 回は `pre.json`・`post.json` の `result` に claude -p が写したものが残る）。
 - 割り目（手順 4）: 不在の周なので訊かない（`references/absent-lines.md` の「訊く場面」）。
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- 1 パス目の関門に渡した起点（HEAD）: `a83ff6e3`（PR #786）
+- Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 起動済み・報告待ち
+- `/code-review` 1 パス目（high・受入基準を args で渡した）: 起動済み・報告待ち
 
 ## 既知の限界・決着済みの論点
 
 - 子より先に使われる認証（`ANTHROPIC_AUTH_TOKEN`・`ANTHROPIC_API_KEY`・`apiKeyHelper`）が起動した claude の環境にだけあっても子へは渡さない——渡すのは
   `CLAUDE_CODE_OAUTH_TOKEN` だけ（Issue の範囲。起動口 `launch-with-long-token.sh` はそれらがあると起動しない）。docstring の「守らない」に書いた。
 - 値は `ps eww` の出力を空白で割って読む——空白を含む値は読めない（トークンは空白を含まない）。点検と同じ読み方の限界。
+
+## 起票
+
+- この周の起票: 0 件（関門の報告を受けて手順 8 で振り分け直す）
