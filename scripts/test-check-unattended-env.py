@@ -123,6 +123,10 @@ esac
 *"ww -o command= -p 900") printf '/Users/x/.local/bin/claude --session-id t\\n' ;;
 *"-p 900") printf '  400 /Users/x/.local/bin/claude --session-id t\\n' ;;
 *"-p 950") printf '  900 /bin/zsh -c x\\n' ;;
+*"eww -o command= -p 970") printf '/Users/x/.local/bin/claude -p inner PATH=/bin HOME=/h\\n' ;;
+*"ww -o command= -p 970") printf '/Users/x/.local/bin/claude -p inner\\n' ;;
+*"-p 970") printf '  900 /Users/x/.local/bin/claude -p inner\\n' ;;
+*"-p 975") printf '  970 /bin/zsh -c x\\n' ;;
 *"eww -o command= -p 910") printf '/Users/x/.local/bin/claude --session-id n PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN= OTHER=1\\n' ;;
 *"ww -o command= -p 910") printf '/Users/x/.local/bin/claude --session-id n\\n' ;;
 *"-p 910") printf '  400 /Users/x/.local/bin/claude --session-id n\\n' ;;
@@ -404,6 +408,9 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         code, items, _ = run(mod, env, environ=login, ancestor=via(910))
         check("認証（祖先）: 祖先にも無ければ（空の値は数えない）8 時間で要対処",
               status_of(items, "認証") == [mod.ACTION] and "8 時間" in detail_of(items, "認証") and code == 1, bad)
+        _, items, _ = run(mod, env, environ=login, ancestor=via(975))
+        check("認証（祖先）: 最寄りの claude で止まり、外側の claude の長期トークンを拾わない",
+              status_of(items, "認証") == [mod.ACTION], bad)
         _, items, _ = run(mod, env, environ=login, ancestor=via(940))
         check("認証（祖先）: 引数に書かれた CLAUDE_CODE_OAUTH_TOKEN= を環境と読まない",
               status_of(items, "認証") == [mod.ACTION], bad)
@@ -1519,6 +1526,10 @@ MUTATIONS = {
     "認証: 見えない環境を空とする": (
         "    if not any(w.startswith(ENV_SEEN) for w in words):\n",
         "    if False:\n"),
+    "認証: 外側の claude の環境を見る": (
+        "    cpid, argv, why = nearest_claude(pid)\n    if why:\n        return None, why\n    if cpid is None:\n        return None, \"祖先に",
+        "    cpid, argv, why = nearest_claude(pid)\n    while cpid and not why:\n        outer = nearest_claude(int(run(['ps', '-o', 'ppid=', '-p', str(cpid)])[1].split()[0]))\n"
+        "        if outer[0] is None:\n            break\n        cpid, argv, why = outer\n    if why:\n        return None, why\n    if cpid is None:\n        return None, \"祖先に"),
     "認証: 引数を環境と読む": (
         "    words = full[len(bare):].split()\n",
         "    words = full.split()\n"),
