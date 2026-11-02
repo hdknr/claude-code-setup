@@ -27,10 +27,11 @@ Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を Bash の環境
 - `.claude-plugin/marketplace.json` — 版
 - `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行（`dev-loop`・`cruise`）
 - `docs/plans/issue-785.md` — この計画ファイル
+- `docs/usage/cruise-long-lived-token.md` — 「読むのは起動口だけ」に child-cycle.py の例外を書く（2 パス目の `/code-review` CR2-1 で広げた。手を動かす前にここへ足した。
+  理由: この周が「読む」ものを 1 つ増やしたので、公開ページの記述が偽になった。受入基準 A8 を足す）
 
 触らない:
 
-- `docs/usage/cruise-long-lived-token.md` — 子が継ぐとは書いていない（親の認証と点検の話）。食い違いは無い
 - `launch-with-long-token.sh`・点検の判定（`check_auth`）の振る舞い
 - 子より先に使われる認証（`ANTHROPIC_API_KEY` など）を起動した claude の環境から子へ渡すこと（docstring の「守らない」に書く）
 
@@ -59,6 +60,7 @@ main へのマージでプラグインの配布（dev-loop 1.75.2）。公開サ
 | A4 | Bash の環境にトークンがあれば、それを継ぎ、祖先の値で上書きしない | 祖先を先に見る | 試料 #41・変異 |
 | A5 | `child-process.md` の「認証」が実際の振る舞いと合う | 「継ぐ」「測っていない」の記述 | 読んで突き合わせる・`check-skill-pointers.py` |
 | A6 | 既存の歯止め・点検（`check-unattended-env.py` の認証）を割らない | `launcher_auth_names` の切り出し・変異の文字列 | `check-all.py`（順番待ち越し）が緑・PR の CI が緑 |
+| A8 | 公開ページ `cruise-long-lived-token.md` の「トークンを読むもの」が実際と合う（2 パス目で広げた） | 警告の「読むのは起動口だけ」・部品の表 | 読んで突き合わせる・`check-site-links.py` |
 | A7 | 版を 3 箇所で上げる | `marketplace.json`・`plugin.json`・`SKILL.md` の 2 行 | `check-plugin-versions.py`・`check-version-bump.py origin/main` |
 
 **この環境では証明できないもの（未証明）**: 子がそのトークンで実際に認証して 8 時間を超えて 401 で止まらないこと——子を偽の `claude` にしたので、
@@ -90,8 +92,10 @@ main へのマージでプラグインの配布（dev-loop 1.75.2）。公開サ
 - `/code-review` 1 パス目（high・受入基準を args で渡した）: 指摘 8 件（CR1〜CR8。blocker 0）。PR の CI は `5fee1f07` で緑
 - 1 パス目の指摘対応: 直す 5 件（CR2・CR3・CR4・CR5・CR8）＋計画ファイルの書き直し（V1）。差分は 0 行でないので 2 パス目を回す
 - 割り目（2 パス目の前）: 不在の周なので訊かない
-- 2 パス目の関門に渡した HEAD・狭いパスの起点（2 パス目の指摘対応を始める直前）: `4be6bf03`
-- Verifier 2 パス目（sonnet）・`/code-review` 2 パス目（high・受入基準を args で渡した）: 起動済み・報告待ち
+- 2 パス目の関門に渡した HEAD: `4be6bf03`
+- Verifier 2 パス目（sonnet）: 反証 0 件（所見 2: ps の手順の 0 の読み方・dict に他の認証の値も載る）
+- `/code-review` 2 パス目（high・受入基準を args で渡した）: 指摘 4 件（CR2-1〜CR2-4。新しいコードの欠陥 0）。`check-all.py` は時間切れで途中まで（32 本緑）
+- 2 パス目の指摘対応: 直す 3 件（CR2-1・CR2-2・V2-1）。狭いパスの起点（指摘対応を始める直前の HEAD）: `d0f085d8`
 
 ## 既知の限界・決着済みの論点
 
@@ -112,6 +116,17 @@ main へのマージでプラグインの配布（dev-loop 1.75.2）。公開サ
 | CR6: Bash の環境の値が空白だけで祖先にも無いと、子は空白の値を継ぐのに「渡していない」と言う | 示せる（試料の上で） | 無し（子は Bash の環境を継ぐ——言っていることは事実。空白だけの値は実際の利用でまず起きない） | 残課題 |
 | CR7: 起動口（キーチェーン）経由で子を起こす設計の代案 | 示せない（設計の比較） | 無し | 残課題 |
 | CR8: `child-process.md` の「起動口」が 2 つのものを指す | 示せる（54 行） | A5 | 直す |
+
+### 採否の表（2 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1: 公開ページの「読むのは起動口だけ」が、child-cycle.py も読むようになって偽 | 示せる（`cruise-long-lived-token.md` 14 行） | A8（広げた）——この周が持ち込んだ後退・利用者に見える誤り | 直す（例外を 1 段落） |
+| CR2-2: docstring が「対話ログインで回る」を観測したと書くが、観測は偽の子の環境に無いことまで | 示せる（`child-cycle.py` 30 行） | A5（`child-process.md` が指す docstring） | 直す（「子の環境に長期トークンが無い」に弱め、本物の子は測っていないと書く） |
+| V2-1: `ps eww … grep -c` の 0 は「無い」と「見えない」の両方 | 示せる（`X=1 /bin/sleep` で `PATH=` が 0。本物の claude（pid 13906）では `PATH=` 1・トークン 1） | A1（確かめる手段） | 直す（`PATH=` も数えてから 0 を読む） |
+| CR2-3: `launcher_auth_env` は他の認証の値も返す。子に OAuth だけを渡すことを試料が押さえていない | 示せない（いまのコードは `LONG_TOKEN` だけを使う。将来の書き換えの話） | 無し | 残課題 |
+| CR2-4: `load_unattended` と `load_ledger` の重複 | 示せない（不具合でない） | 無し | 残課題 |
+| V2-2: dict に他の認証の値もメモリ上は載る | 示せない（出力・記録に出ない） | 無し | 残課題（CR2-3 と同じ） |
 
 ## 起票
 

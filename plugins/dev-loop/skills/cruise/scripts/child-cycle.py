@@ -27,8 +27,8 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 不在の周では止められたことに気づく人もいない。
 **認証**: 子の環境は親の Bash の環境を写して作る。**Bash の環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、親のセッションを起動した `claude`
 （最寄りの祖先）の環境から読み、空でなければ子の環境に置く**（#785）——Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を
-Bash の環境から外すので、写すだけでは長期トークン（`launch-with-long-token.sh`）で起動した親の子が対話ログインで回る
-（2026-11-02 に実プロセスで観測。`references/child-process.md` の「認証」）。
+Bash の環境から外すので、写すだけでは長期トークン（`launch-with-long-token.sh`）で起動した親の子の環境に長期トークンが無い
+（2026-11-02 に実プロセスで観測——子は偽の `claude` で、そのとき本物の子がどう認証するかは測っていない。`references/child-process.md` の「認証」）。
 **読み方は dev-loop の `../../dev-loop/scripts/check-unattended-env.py` の `launcher_auth_env` を読み込む**（写しを作らない）。
 どこから渡したか（Bash の環境・起動した claude の環境・渡していない）は起動時に 1 行で出し、記録の `.json` には名前と真偽と出所だけを残す。
 親の `/clear`・終了は、切り離した子を道連れにしない（**子のプロセスの寿命の話で、子が周を終えられるかは別**——
