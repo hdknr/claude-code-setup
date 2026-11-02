@@ -1490,7 +1490,7 @@ MUTATIONS = {
         'LAUNCHER = Path(__file__).resolve().parent / "launch-with-long-token.sh"',
         'LAUNCHER = Path(__file__).resolve().parent / "launch-long-token.sh"'),
     "認証: 使えない機能を添えない": (
-        '"長期トークンでは claude.ai のコネクタ・Remote Control・Claude in Chrome が使えない（エラーは出ず黙って無い）"',
+        '"長期トークンでは claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome が使えない（エラーは出ず黙って無い）"',
         '"長期トークン"'),
     "認証: 居る cruise で認証を出さない": (
         "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",

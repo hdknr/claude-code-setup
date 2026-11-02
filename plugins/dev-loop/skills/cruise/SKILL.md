@@ -202,7 +202,7 @@ check-unattended-env.py --cruise --ledger issue-<親>             # --absent
 
    **トークンの値を会話に通さない。**——`claude setup-token` を Bash で走らせない・`!` で打たせない・値を貼らせない。
    入れるのは利用者が別の端末で打つ `--store-token` だけである（`--store-token` はセッションの中では止まる）。
-   **長期トークンで起動していれば訊かない**——点検が添える「使えない機能」（claude.ai のコネクタ・Remote Control・Claude in Chrome。通知は判定できていない）を見せる。
+   **長期トークンで起動していれば訊かない**——点検が添える「使えない機能」（claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome。通知は判定できていない）を見せる。
    **ほかの認証（API キーの類）がある・判定できないと出たら、見せるだけで訊かない。**
    **認証は点検の「認証」の行で決め、Bash の `env` で決めない**——Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を Bash の環境から外す
    （点検は起動した `claude` のプロセスの環境を見る。`check-unattended-env.py` の docstring を正とする）。

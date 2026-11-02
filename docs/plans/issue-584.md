@@ -88,13 +88,31 @@ drawio の書き出しは無し。
 - 周の在り処: ブランチ `issue/584-measured-features`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-584-docs`・
   起点 `660abf15`（start-point `origin/main`）・base `origin/main` → `660abf154dc8b5636c79026752d3cfe44d1d68fd`（`git merge-base origin/main HEAD`）
 - 割り目（手順 4）: 利用者は居るが、cruise の親から委ねられたサブエージェントなので `AskUserQuestion` は出さず、このまま続ける（親の指示どおり周を回しきる）。
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- 1 パス目の指摘対応の起点: `e9717e80`（1 パス目の関門に渡した時点の HEAD）
+- Verifier 1 パス目: 通した（sonnet・`dev-loop:dev-loop-verifier`）——反証 0 件（軽微 2・未確認 2。うち Remote Control の条件は CR1-4 と同じ）
+- `/code-review` 1 パス目: 通した（high）——指摘 8 件。直す 4 件・残課題 4 件（下の採否の表）。手順 4 への差し戻しなし
+- Remote Control の起動の argv は親に訊いて得た（`--remote-control <名前>` だけを付けた対話の起動・既定の Opus 5.5・信頼済みのメインの作業ツリー・30 秒。ファイルには残っていない）
 - 交絡: 実験なし（この周は測らない。親の実測を読んで書く）
 
 ## 既知の限界・決着済みの論点
 
 - 実測は haiku・`-p`・30 秒の疑似端末だけ。通知と対話のセッションの中の `/remote-control` は測っていない——公開ページの「確かめていないこと」に残す（決着: 残す。理由: 親の指示で測り直さない）。
 - 「エラーは出ず、黙って無い」は起動時の観測（`--remote-control` の 30 秒・`init` の一覧）についてだけ言う。
+- Remote Control の起動の argv はファイルに残っていない——親の記録による、と公開ページに書いた（決着: 測り直さない。親の指示）。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1 claude.ai から届くスキル（`anthropic-skills:*`）が長期トークンで無いのに挙げていない | 示せる——`init.long.jsonl` の `skills` 37 個、`init.oauth.jsonl` 46 個、差は `anthropic-skills:*` の 9 個（著者が python で数えた） | 1 | 直す |
+| CR1-2 対話ログインで「長期トークンに切り替えるか」を訊くとき、使えない機能を見せない | 示せる（点検の 8 時間の行の直し方に `token_fix` が無い） | 無し（受入基準は公開ページと古い見込み） | 残課題 |
+| CR1-3 テストが「Remote Control」の有無しか見ず、古い見込みの文に戻しても緑 | 示せる（レビューが scratchpad の写しで当てた） | 無し（4 は判定と変異の赤。宣言した変異は赤） | 残課題 |
+| CR1-4 Remote Control の行の条件（Opus 5.5・メインの作業ツリー・argv が残っていない）が書いた条件と違う | 示せる——`rc2.long.txt` の見出し `Opus 5.5 · Claude API`・cwd、親の回答 | 1 | 直す（条件を分けて書き、argv は親の記録による、と書く） |
+| CR1-5 サブエージェントの行「子が決めた文字列」は誤り（親が指定した） | 示せる——`agent.long.jsonl` の `Agent` の prompt「Reply with the exact text SUBAGENT_OK_42」 | 1 | 直す（`agentId` と子のトークン数で子の起動を示す） |
+| CR1-6 点検の Remote Control の項が、長期トークンのセッションでも `/remote-control` を打てと言う | 示せる（コードの分岐） | 無し | 残課題 |
+| CR1-7 「公開ページの測る表」の指し先が古い（起動口の冒頭・点検の docstring の 1 項） | 示せる（ページの節は「機能の表」「測り方」） | 無し（見込みの主張ではなく指し先の名前） | 残課題 |
+| CR1-8 「MCP を除く 29 個」は init/agent の組だけ（review2/push/chrome の組は 31 個） | 示せる——著者が組ごとに数えた（29・29・31・31・31、両側同じ） | 1 | 直す（「組どうしで同じ。29 個か 31 個」） |
+| V1 Remote Control の行のモデルが Opus であることを書いていない | CR1-4 と同じ | 1 | 直す（CR1-4 と一緒に） |
+| V2 `--remote-control` を付けたかがファイルから確かめられない | 示せる（argv は残っていない） | 1 | 直す（親の記録による、と書く。CR1-4） |
 
 - この周の起票: 0 件（未定。手順 8 で決める）

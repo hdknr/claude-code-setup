@@ -8,7 +8,7 @@
 この 8 時間の期限を避けられる見込みです。**ただし、長期トークンで起動した cruise が 8 時間を超えて止まらないことは、まだ確かめていません**
 （下の「確かめていないこと」）。
 
-**長期トークンでは、claude.ai のコネクタ・Remote Control・Claude in Chrome が使えません**（Claude Code 2.1.316 で測りました。
+**長期トークンでは、claude.ai のコネクタ・claude.ai から届くスキル（`anthropic-skills:*`）・Remote Control・Claude in Chrome が使えません**（Claude Code 2.1.316 で測りました。
 **エラーは出ず、黙って無い・繋がらない**形です）。サブエージェントと `/code-review` は動きました。通知が届くかは判定できていません
 （下の「機能の表」）。
 
@@ -99,22 +99,25 @@ bash <base>/scripts/launch-with-long-token.sh --account work "/dev-loop:cruise <
 ### 機能の表
 
 **長期トークンで起動した `claude` と、同じ端末の対話ログイン（Claude Team）の `claude` を、同じ引数で起こして比べました**
-（Claude Code 2.1.316・`-p … --model haiku --permission-mode dontAsk`・一時のリポジトリに 1 行の差分。Remote Control だけは疑似端末で 30 秒起こした画面）。
+（Claude Code 2.1.316・`-p … --model haiku --permission-mode dontAsk`・一時のリポジトリに 1 行の差分）。
+**Remote Control の行だけは条件が違います**——`-p` ではなく対話の起動で、`--remote-control <名前>` だけを付け（`--model` も `--permission-mode` も付けず、モデルは既定の Opus 5.5）、
+信頼済みのリポジトリで疑似端末に 30 秒起こした画面を見ました。起動の引数はファイルに残っておらず、測った側の記録によります。
 結果は [#584 のコメント](https://github.com/hdknr/claude-code-setup/issues/584#issuecomment-6575918006) です。
 
 | 機能 | 長期トークン | 対照（対話ログイン） | 判定 |
 | --- | --- | --- | --- |
-| サブエージェント（`Agent`） | 子が決めた文字列を返した | 同じ | **動く** |
+| サブエージェント（`Agent`） | 親が指定した文字列を子が返した（子の `agentId` と、子が使ったトークン数が記録に残る） | 同じ | **動く** |
 | `/code-review` | 小さな差分の誤り（`a + b` → `a - b`）を正しく指摘した | 同じ | **動く** |
 | claude.ai のコネクタ（`/mcp`） | 起動時の MCP サーバーに claude.ai のサーバーが 0 件・`mcp__claude_ai_*` の道具が 0 件 | 6 件（Claude Docs は接続済み）・道具 8 件 | **使えない**（エラーは出ず、黙って無い） |
+| claude.ai から届くスキル（`anthropic-skills:*`） | 起動時のスキルが 37 個で、`anthropic-skills:*` が 0 個 | 46 個（`anthropic-skills:docs`・`docx`・`pdf`・`pptx`・`xlsx` など 9 個が多い） | **使えない**（エラーは出ず、黙って無い） |
 | Remote Control（`--remote-control`） | 30 秒起こして Remote Control の表示が出ない。見出しの認証は `Claude API` | `/rc connecting…` → `/remote-control is active` | **使えない**（エラーは出ず、黙って繋がらない） |
 | Claude in Chrome（`--chrome`） | 道具 0 件・`claude-in-chrome` のサーバーなし | 道具 22 件・接続済み | **使えない** |
 | 通知（`PushNotification`） | 「Not sent — this terminal is active …」で送らない | 同じ文で送らない | **判定できない**——対照も送らないので、`-p` の起動では測れない |
 
-道具の一覧（MCP を除く 29 個）と `code-review` のスラッシュコマンドは、両方で同じでした。
+同じ引数で起こした組どうしでは、MCP を除く道具の一覧は両方で同じでした（組によって 29 個か 31 個）。`code-review` のスラッシュコマンドも両方にありました。
 
 **Remote Control が繋がらないので、不在のあいだに iPhone から様子を見ることはできません。** 通知が iPhone に届く経路も無い見込みです
-（通知そのものは測れていません——上の 2）。**cruise の周が claude.ai のコネクタ（Claude Docs など）や Claude in Chrome を使うなら、
+（通知そのものは測れていません——上の 2）。**cruise の周が claude.ai のコネクタ（Claude Docs など）・claude.ai から届くスキル・Claude in Chrome を使うなら、
 長期トークンでは黙って無いので、その周は進められません。** 長期トークンで回すかは、8 時間で止まることと、これらが使えないことを比べて決めてください。
 
 ### 測り方（利用者が行う）

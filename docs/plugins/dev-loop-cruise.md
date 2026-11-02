@@ -120,7 +120,7 @@ python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py -
   止まる周を片づけてから離れるかは利用者が決めます。
 - **席を外すとき**（`--present` なし）は、利用上限での自動継続・質問の待ち・通知・スリープも読みます。
 - **認証**——長期トークンで起動したか、対話ログイン（8 時間で切れる）かを出します。対話ログインなら、起動時に長期トークンで回すかを訊きます
-  （[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)。**長期トークンでは claude.ai のコネクタ・Remote Control・Claude in Chrome が使えません**——2.1.316 で測り、エラーは出ず黙って無い形でした。通知は判定できていません）。
+  （[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)。**長期トークンでは claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome が使えません**——2.1.316 で測り、エラーは出ず黙って無い形でした。通知は判定できていません）。
 
 足りないものと直し方を出します。**直すのは利用者です**（スクリプトは書き換えません）。
 
