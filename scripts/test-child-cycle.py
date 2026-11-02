@@ -7,10 +7,14 @@
 **`dev-loop` はどのリポジトリでも使えるプラグイン**なので、本体は対象リポジトリの `scripts/` に在ることを当てにできない。
 
 **このテストは実環境を触らず、本物の `claude` を起こさない。** 毎回テンポラリに本物の git リポジトリと worktree を作り、
-`PATH` の先頭に置いた偽の `claude`（受けた引数・cwd・セッション・標準入力・環境の `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` を記録し、
-試料の stream-json を出す）で当てる
+`PATH` の先頭に置いた偽の `claude`（受けた引数・cwd・セッション・標準入力・環境の `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` と、
+環境の `CLAUDE_CODE_OAUTH_TOKEN` が試料のどの値か（**値は書かない**）を記録し、試料の stream-json を出す）で当てる
 （`assert_not_real_repo` が対象の場所を担保する）。**本物の `claude` の出力の形は見ない**——試料の鍵は
 2.1.312 の実測（`references/child-process.md` の「確かめた範囲」）に合わせてある。
+
+**起動した `claude`（祖先）の環境は、`PATH` の先頭に置いた偽の `ps` が答える**（#785）——このテストのプロセスの親（`os.getppid()`）を
+問われたときだけ、試料の形（`FAKE_PS_MODE`）で答える。**環境つきの `ps`（`eww`）でほかの pid を問われたら失敗を返し、本物には渡さない**
+——本物の祖先の `claude`（このテストを走らせたセッション）の環境・本物のトークンには届かない。ほかの問い（走っているかの確かめ）は本物の `ps` に渡す。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**壊したのに緑のままなら失格**とする。
 **陽性対照**: 壊さない本体で全試料が緑であること。本体の docstring の「守る」の行数だけ変異を当て
@@ -33,21 +37,50 @@ from pathlib import Path
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "child-cycle.py"
 LEDGER = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "ledger.py"
+UNATTENDED = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "check-unattended-env.py"
 NAME = "issue-50"
 BRIEF = "あなたは cruise の子である。\n台帳を書かない。\n終わったら親が -p /dev-loop:dev-loop 5 を起こす。\n"  # 別の番号を含む（P1-R8）
 
 failures: list[str] = []
+LAUNCHER_TOKEN = "fake-launcher-token-785"  # 偽の ps が「起動した claude の環境」に置く値（本物ではない）
+BASH_TOKEN = "fake-bash-token-785"  # 試料が Bash の環境に置く値
 
 FAKE_CLAUDE = """#!/usr/bin/env python3
 import json, os, sys, time
-with open(os.path.join(os.environ["FAKE_HOME"], "claude-rec-%d.json" % os.getpid()), "w") as f:
+token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+kind = {None: None, "%s": "launcher", "%s": "bash"}.get(token, "other")  # 値は書かない
+with open(os.path.join(os.environ["FAKE_HOME"], "claude-rec-%%d.json" %% os.getpid()), "w") as f:
     json.dump({"argv": sys.argv[1:], "cwd": os.getcwd(), "sid": os.getsid(0), "stdin": sys.stdin.read(),
-               "bg": os.environ.get("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS")}, f)
+               "bg": os.environ.get("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"), "token": kind}, f)
 src = os.environ.get("FAKE_CLAUDE_OUTPUT")
 if src:
     sys.stdout.write(open(src).read())
     sys.stdout.flush()
 time.sleep(float(os.environ.get("FAKE_CLAUDE_SLEEP", "0")))
+""" % (LAUNCHER_TOKEN, BASH_TOKEN)
+
+# 偽の ps（#785）。このテストのプロセスの親を、FAKE_PS_MODE の形の claude（または claude でないもの）にする
+FAKE_PS = """#!/bin/sh
+P={ppid}
+case "$*" in
+  *"-o ppid=,command= -p $P")
+    case "$FAKE_PS_MODE" in
+      unreadable) exit 1 ;;
+      noclaude) printf '    1 /bin/zsh -c x\\n' ;;
+      spare) printf '    1 /Users/x/.local/bin/claude --bg-spare\\n' ;;
+      *) printf '    1 /Users/x/.local/bin/claude --session-id pp\\n' ;;
+    esac
+    exit 0 ;;
+  *"eww -o command= -p $P")
+    case "$FAKE_PS_MODE" in
+      token) printf '/Users/x/.local/bin/claude --session-id pp PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={token}\\n' ;;
+      *) printf '/Users/x/.local/bin/claude --session-id pp PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN=\\n' ;;
+    esac
+    exit 0 ;;
+  *"ww -o command= -p $P") printf '/Users/x/.local/bin/claude --session-id pp\\n'; exit 0 ;;
+  *eww*) exit 1 ;;
+esac
+exec {real} "$@"
 """
 
 INIT = {"type": "system", "subtype": "init", "permissionMode": "auto", "session_id": "s-1",
@@ -105,6 +138,12 @@ MUTATIONS = {
     "委譲先の発言を最後の文にする": [(' and not event.get("parent_tool_use_id")', "")],
     "途中の init の版を出さない": [("    if later != dev_loop:", "    if False:")],
     "上限が近いだけでも拒否と読む": [('(None, "allowed", "allowed_warning")', '(None,)')],
+    "起動した claude の環境の値を子に置かない": [("        env[LONG_TOKEN] = token\n", "        pass\n")],
+    "Bash の環境にあっても起動した claude の環境の値で上書きする": [
+        ('    if str(env.get(LONG_TOKEN) or "").strip():\n        return None, "bash"', '    if False:\n        return None, "bash"')],
+    "Bash の環境だけを継ぐことを言わない": [("    print(token_line)\n", "")],
+    "消す設定でも起動した claude の環境から渡す": [("        if mod.env_scrubbed(env):\n", "        if False:\n")],
+    "長期トークンの値を出力に出す": [("起動した claude の環境の値を子に渡した（値は出さない）\"", "起動した claude の環境の値を子に渡した（{value}）\"")],
     "要約の行を切り詰めない": [('return text if len(text) <= limit else text[: limit - 1] + "…"', "return text")],
 }
 
@@ -114,6 +153,7 @@ def load(script: Path = SCRIPT):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.LEDGER = LEDGER  # 変異の写しはテンポラリにあるので、台帳の場所の決め方は本物を読ませる
+    mod.UNATTENDED = UNATTENDED  # 起動した claude の環境の読み方も同じ（#785）
     return mod
 
 
@@ -137,12 +177,21 @@ def isolate_env(home: Path) -> None:
     for key in [k for k in os.environ if k.startswith("GIT_")]:
         del os.environ[key]
     os.environ.pop("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", None)  # 「親の環境に無い」場合を試料が自分で作る
+    # 認証（#785）: Bash の環境の長期トークン・消去の設定は試料が自分で作る（CI は GITHUB_ACTIONS を置く）
+    for key in ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "GITHUB_ACTIONS"):
+        os.environ.pop(key, None)
+    real_ps = shutil.which("ps")
+    assert real_ps, "ps が無い"
     home.mkdir()
     (home / "gitconfig").write_text("[user]\n\temail = t@example.invalid\n\tname = t\n", encoding="utf-8")
     (home / "bin").mkdir()
     fake = home / "bin" / "claude"
     fake.write_text(FAKE_CLAUDE, encoding="utf-8")
     fake.chmod(0o755)
+    ps = home / "bin" / "ps"
+    ps.write_text(FAKE_PS.format(ppid=os.getppid(), token=LAUNCHER_TOKEN, real=real_ps), encoding="utf-8")
+    ps.chmod(0o755)
+    os.environ["FAKE_PS_MODE"] = "none"  # 既定は対話ログインの親（起動した claude の環境にトークンが無い）
     # **本物の claude が在る PATH の項を外す**——偽物を実行できなくした試料で、後ろの本物に落ちないように
     # （一度、偽物の実行権を外した試料が本物の claude を起こした）
     rest = [p for p in os.environ["PATH"].split(os.pathsep) if p and not os.access(os.path.join(p, "claude"), os.X_OK)]
@@ -309,6 +358,44 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                                     if rec54 and wait_for(rec54.exists) and wait_for(lambda: rec54.stat().st_size > 0) else "記録なし")
         wait_for(lambda: run(mod, ["status", NAME, "54"], main)[0] != 1)
 
+        # 認証（#785）: 子の環境の CLAUDE_CODE_OAUTH_TOKEN の出所。偽の ps が起動した claude の環境を答える
+        os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
+        os.environ["FAKE_CLAUDE_SLEEP"] = "0"
+        for number, mode, extra in ((40, "token", {}), (41, "token", {"CLAUDE_CODE_OAUTH_TOKEN": BASH_TOKEN}),
+                                    (42, "none", {}), (43, "unreadable", {}), (44, "noclaude", {}),
+                                    (45, "token", {"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"}),
+                                    (46, "token", {"CLAUDE_CODE_OAUTH_TOKEN": " "}),
+                                    (47, "spare", {}), (48, "raises", {})):
+            os.environ["FAKE_PS_MODE"] = mode
+            os.environ.update(extra)
+            saved_unattended = mod.UNATTENDED
+            if mode == "raises":  # 読み方が想定外の例外を出す（例外の文に値が入っていても出さない）
+                raising = tmp / f"raising-{tag}.py"
+                raising.write_text("def env_scrubbed(env):\n    return False\n\n\n"
+                                   f"def launcher_auth_env(pid=None):\n    raise RuntimeError('CLAUDE_CODE_OAUTH_TOKEN={LAUNCHER_TOKEN}')\n",
+                                   encoding="utf-8")
+                mod.UNATTENDED = raising
+            try:
+                rc, out, err = run(mod, ["launch", NAME, str(number), "--brief", str(brief), "--permission-mode", "auto"], main)
+            finally:
+                mod.UNATTENDED = saved_unattended
+                os.environ["FAKE_PS_MODE"] = "none"
+                for key in extra:
+                    os.environ.pop(key, None)
+            m = re.search(r"pid (\d+)", str(out))
+            if m:
+                started.append(int(m.group(1)))
+            rec_n = home / f"claude-rec-{m.group(1)}.json" if m else None
+            kind = (json.loads(rec_n.read_text(encoding="utf-8")).get("token")
+                    if rec_n and wait_for(rec_n.exists) and wait_for(lambda: rec_n.stat().st_size > 0) else "記録なし")
+            agent = re.search(r"^台帳の agent: claude-p:(.+)$", str(out), re.M)
+            meta_auth = json.loads(Path(agent.group(1)).read_text(encoding="utf-8")).get("auth") if agent else None
+            wait_for(lambda: run(mod, ["status", NAME, str(number)], main)[0] != 1)
+            texts = [str(out), str(err)] + [p.read_text(encoding="utf-8", errors="replace")
+                                            for p in children.glob(f"{number}-*") if p.is_file()]
+            o[f"認証 #{number}"] = (rc, kind, [l for l in str(out).splitlines() if l.startswith("認証")], meta_auth,
+                                  any(t in x for x in texts for t in (LAUNCHER_TOKEN, BASH_TOKEN)))
+
         # 拒む
         os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
         bad = main / ".claude" / "plans" / "brief-bad.md"
@@ -388,6 +475,39 @@ def main() -> int:
         check("記録の .json に子へ渡した上限を残す", o["記録の env"] == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"})
         check("記録は台帳の隣（.claude/plans/cruise-<名前>-children/）に在り、その場所を出す", o["記録の場所"])
         check("worktree の中には書かない", o["worktree に書かない"] == [".git", "sub"])
+
+        print("\n認証（#785）: 子の環境の CLAUDE_CODE_OAUTH_TOKEN")
+        def auth(n):
+            return o[f"認証 #{n}"]
+        launched = lambda n: auth(n)[0] == 0 and len(auth(n)[2]) == 1
+        check("Bash の環境に無く、起動した claude の環境にあれば、子はその値を受ける",
+              launched(40) and auth(40)[1] == "launcher" and "起動した claude の環境の値を子に渡した" in auth(40)[2][0]
+              and auth(40)[3] == {"name": "CLAUDE_CODE_OAUTH_TOKEN", "passed": True, "from": "launcher"})
+        check("Bash の環境にあれば、それを継ぎ、起動した claude の環境の値で上書きしない",
+              launched(41) and auth(41)[1] == "bash" and "Bash の環境の CLAUDE_CODE_OAUTH_TOKEN を継ぐ" in auth(41)[2][0]
+              and auth(41)[3] == {"name": "CLAUDE_CODE_OAUTH_TOKEN", "passed": True, "from": "bash"})
+        check("起動した claude の環境にも無ければ（対話ログイン）、子は受けず、そう言う",
+              launched(42) and auth(42)[1] is None and "起動した claude の環境にも" in auth(42)[2][0]
+              and "Bash の環境だけを継ぐ" in auth(42)[2][0]
+              and auth(42)[3] == {"name": "CLAUDE_CODE_OAUTH_TOKEN", "passed": False, "from": None})
+        check("起動した claude の環境を読めなければ、子は受けず、読めなかったと言う",
+              launched(43) and auth(43)[1] is None and "読めなかった" in auth(43)[2][0] and "Bash の環境だけを継ぐ" in auth(43)[2][0])
+        check("祖先に claude が無ければ、子は受けず、そう言う",
+              launched(44) and auth(44)[1] is None and "祖先に claude のプロセスが見つからなかった" in auth(44)[2][0])
+        check("子の環境から認証の変数を消す設定なら、起動した claude の環境から渡さない",
+              launched(45) and auth(45)[1] is None and "消す設定" in auth(45)[2][0])
+        check("Bash の環境の値が空白だけなら無いものとし、起動した claude の環境の値を渡す",
+              launched(46) and auth(46)[1] == "launcher"
+              and auth(46)[3] == {"name": "CLAUDE_CODE_OAUTH_TOKEN", "passed": True, "from": "launcher"})
+        check("最寄りの claude が spare なら、子は受けず、読めなかったと言う",
+              launched(47) and auth(47)[1] is None and "spare" in auth(47)[2][0])
+        check("読み方が想定外の例外を出したら、子は受けず、型の名前だけを言う",
+              launched(48) and auth(48)[1] is None and "RuntimeError" in auth(48)[2][0])
+        not_passed = {"name": "CLAUDE_CODE_OAUTH_TOKEN", "passed": False, "from": None}
+        check("渡さなかった形の記録は passed=False・from=None（読めない・祖先に無い・消す設定・spare・例外）",
+              all(auth(n)[3] == not_passed for n in (43, 44, 45, 47, 48)))
+        check("長期トークンの値を出力・標準エラー・記録に出さない（どの形でも。例外の文に値があっても）",
+              not any(auth(n)[4] for n in range(40, 49)))
 
         print("\n走っている間（L2・S1）")
         check("status は 1", o["status(走っている)"] == 1)
