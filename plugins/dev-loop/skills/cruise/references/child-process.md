@@ -60,12 +60,12 @@
 
 **子の環境は親の Bash の環境を写して作る**——ただし **Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を Bash の環境から外す**ので、
 写すだけでは、長期トークンで起動した親（`launch-with-long-token.sh`）の子が長期トークンを継がない。
-**2026-11-02 に実プロセスで観測した**（#785。値は出さず、変数の名前の有無だけを見た）: 起動口で起動した `claude -p`（haiku・小さな 1 回）の Bash から
-直す前の起動口で子（偽の `claude`）を起こすと、**起動した `claude` の環境には `CLAUDE_CODE_OAUTH_TOKEN` が在るのに、Bash の環境にも子の環境にも無かった。**
+**2026-11-02 に実プロセスで観測した**（#785。値は出さず、変数の名前の有無だけを見た）: `launch-with-long-token.sh` で起動した `claude -p`（haiku・小さな 1 回）の Bash から
+直す前の `child-cycle.py launch` で子（偽の `claude`）を起こすと、**起動した `claude` の環境には `CLAUDE_CODE_OAUTH_TOKEN` が在るのに、Bash の環境にも子の環境にも無かった。**
 
 **だから起動口は、Bash の環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、親のセッションを起動した `claude`（最寄りの祖先）の環境から読み、
 空でなければ子の環境に置く**——読み方は `../dev-loop/scripts/check-unattended-env.py` の点検の「認証」と同じ（`launcher_auth_env`）。
-直した起動口で同じ観測をして、子の環境に在ることを確かめた（#785）。
+直した `child-cycle.py` で同じ観測をして、子の環境に在ることを確かめた（#785。どちらの回も、記録として残っているのは `claude -p` が probe の出力を写した結果である）。
 
 - **Bash の環境にあれば、それを継ぐ**（祖先は見ない）。
 - **祖先を読めない・祖先に `claude` が無い・そこにも無い（対話ログインの親）なら、子は Bash の環境だけを継ぐ**——いままでと同じで、起動時の出力の「認証:」の行がそう言う。

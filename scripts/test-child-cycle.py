@@ -67,6 +67,7 @@ case "$*" in
     case "$FAKE_PS_MODE" in
       unreadable) exit 1 ;;
       noclaude) printf '    1 /bin/zsh -c x\\n' ;;
+      spare) printf '    1 /Users/x/.local/bin/claude --bg-spare\\n' ;;
       *) printf '    1 /Users/x/.local/bin/claude --session-id pp\\n' ;;
     esac
     exit 0 ;;
@@ -363,12 +364,21 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         for number, mode, extra in ((40, "token", {}), (41, "token", {"CLAUDE_CODE_OAUTH_TOKEN": BASH_TOKEN}),
                                     (42, "none", {}), (43, "unreadable", {}), (44, "noclaude", {}),
                                     (45, "token", {"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"}),
-                                    (46, "token", {"CLAUDE_CODE_OAUTH_TOKEN": " "})):
+                                    (46, "token", {"CLAUDE_CODE_OAUTH_TOKEN": " "}),
+                                    (47, "spare", {}), (48, "raises", {})):
             os.environ["FAKE_PS_MODE"] = mode
             os.environ.update(extra)
+            saved_unattended = mod.UNATTENDED
+            if mode == "raises":  # 読み方が想定外の例外を出す（例外の文に値が入っていても出さない）
+                raising = tmp / f"raising-{tag}.py"
+                raising.write_text("def env_scrubbed(env):\n    return False\n\n\n"
+                                   f"def launcher_auth_env(pid=None):\n    raise RuntimeError('CLAUDE_CODE_OAUTH_TOKEN={LAUNCHER_TOKEN}')\n",
+                                   encoding="utf-8")
+                mod.UNATTENDED = raising
             try:
                 rc, out, err = run(mod, ["launch", NAME, str(number), "--brief", str(brief), "--permission-mode", "auto"], main)
             finally:
+                mod.UNATTENDED = saved_unattended
                 os.environ["FAKE_PS_MODE"] = "none"
                 for key in extra:
                     os.environ.pop(key, None)
@@ -487,9 +497,17 @@ def main() -> int:
         check("子の環境から認証の変数を消す設定なら、起動した claude の環境から渡さない",
               launched(45) and auth(45)[1] is None and "消す設定" in auth(45)[2][0])
         check("Bash の環境の値が空白だけなら無いものとし、起動した claude の環境の値を渡す",
-              launched(46) and auth(46)[1] == "launcher")
-        check("長期トークンの値を出力・標準エラー・記録に出さない（どの形でも）",
-              not any(auth(n)[4] for n in range(40, 47)))
+              launched(46) and auth(46)[1] == "launcher"
+              and auth(46)[3] == {"name": "CLAUDE_CODE_OAUTH_TOKEN", "passed": True, "from": "launcher"})
+        check("最寄りの claude が spare なら、子は受けず、読めなかったと言う",
+              launched(47) and auth(47)[1] is None and "spare" in auth(47)[2][0])
+        check("読み方が想定外の例外を出したら、子は受けず、型の名前だけを言う",
+              launched(48) and auth(48)[1] is None and "RuntimeError" in auth(48)[2][0])
+        not_passed = {"name": "CLAUDE_CODE_OAUTH_TOKEN", "passed": False, "from": None}
+        check("渡さなかった形の記録は passed=False・from=None（読めない・祖先に無い・消す設定・spare・例外）",
+              all(auth(n)[3] == not_passed for n in (43, 44, 45, 47, 48)))
+        check("長期トークンの値を出力・標準エラー・記録に出さない（どの形でも。例外の文に値があっても）",
+              not any(auth(n)[4] for n in range(40, 49)))
 
         print("\n走っている間（L2・S1）")
         check("status は 1", o["status(走っている)"] == 1)
