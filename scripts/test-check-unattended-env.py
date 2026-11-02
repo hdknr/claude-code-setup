@@ -1537,8 +1537,8 @@ MUTATIONS = {
         "or not full.startswith(bare):\n",
         ":\n"),
     "認証: 起動した claude の環境の空の値を数える": (
-        "if n in AUTH_NAMES and v), None",
-        "if n in AUTH_NAMES), None"),
+        "if n in AUTH_NAMES and v}, None",
+        "if n in AUTH_NAMES}, None"),
     "認証: 起動した claude の環境の先に使われる認証を見ない": (
         "    ahead = [name for name in AHEAD_OF_TOKEN if name in names]\n",
         "    ahead = []\n"),
