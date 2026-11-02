@@ -25,13 +25,15 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 質問の待ち | settings の `askUserQuestionTimeout`（**managed・flag・user の層だけ**） | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
 | 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true` | 未設定・`false` |
 | スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が system の idle sleep を防いでいる（`-i`・`-d`・`-s` か、アサーションのフラグ無し） | どちらも無い |
-| 認証（#584。`--present` でも出す） | このスクリプトの環境変数（**Claude Code の Bash から回せば、セッションの環境を継いでいる**）と settings の `apiKeyHelper` | `CLAUDE_CODE_OAUTH_TOKEN` が空でない（長期トークン） | どれも無い——対話ログインの OAuth（8 時間で切れる。`--present` では人が見る）。直し方に起動口 `launch-with-long-token.sh` の絶対パス |
+| 認証（#584。`--present` でも出す） | このスクリプトの環境変数と settings の `apiKeyHelper`。**環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、最寄りの祖先の `claude`（セッションを起動したプロセス）の環境**（`ps eww`。変数の名前と空かどうかだけ）——**Claude Code 2.1.316 は起動時のトークンを Bash の環境から外す**（下の「実測した前提」の認証の項） | `CLAUDE_CODE_OAUTH_TOKEN` が空でない——自分の環境か、起動した `claude` の環境（長期トークン） | どちらにも無い——対話ログインの OAuth（8 時間で切れる。`--present` では人が見る）。直し方に起動口 `launch-with-long-token.sh` の絶対パス |
 
 認証の項目は、ほかに 2 つの判定を持つ（値は出力に出さない。見るのは空かどうかだけ）:
 
-- **人が見る**——`ANTHROPIC_AUTH_TOKEN`・`ANTHROPIC_API_KEY` が空でない、か `apiKeyHelper` がある。長期トークン・対話ログインより先に使われうるので、どれで認証しているかは `/status` で見る
+- **人が見る**——`ANTHROPIC_AUTH_TOKEN`・`ANTHROPIC_API_KEY` が空でない、か `apiKeyHelper` がある。長期トークン・対話ログインより先に使われうるので、どれで認証しているかは `/status` で見る。
+  自分の環境に長期トークンが無く起動した `claude` の環境を見たときは、その環境の `ANTHROPIC_AUTH_TOKEN`・`ANTHROPIC_API_KEY` も同じ順で先に見る
 - **判定できない**——`CLAUDECODE` が `1` でない（Claude Code のセッションの外で回した。セッションの起動のしかたは外から見えない）か、
-  サブプロセスの環境から認証の変数が消される（`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` が真、または `GITHUB_ACTIONS` が真で前者が偽でない）
+  サブプロセスの環境から認証の変数が消される（`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` が真、または `GITHUB_ACTIONS` が真で前者が偽でない）か、
+  自分の環境に長期トークンが無く、起動した `claude` の環境を読めない（`ps` の失敗・祖先に `claude` が無い・最寄りの `claude` が spare・環境が見えない）
 
 **人が見る**（手元のファイルからは判定できないので、毎回出す。終了コードには効かない）:
 
@@ -176,11 +178,16 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - 「No mobile registered」は `/config` の表示（`has_active_channel === false`）で、`PushNotification` の返り値ではない
 - `claude remote-control`（`claude rc`）は「spawned sessions」を起こす待ち受け（`--help`）
 
-認証（#584。**2.1.312 の本体の文字列で読んだ。実走の陽性対照は取っていない**——長期トークンが手元に無い）:
+認証（#584。**2.1.312 の本体の文字列で読んだ。実走の陽性対照は取っていない**——長期トークンが手元に無い。**Bash の環境から外す件だけは 2.1.316 の実走**）:
 
 - 認証のトークンの出所は `ANTHROPIC_AUTH_TOKEN` → `CLAUDE_CODE_OAUTH_TOKEN` → OAuth のファイル記述子 → `apiKeyHelper` → … →
   保存した claude.ai のログイン（対話ログイン）の順に選ぶ。API キー（`ANTHROPIC_API_KEY`・`apiKeyHelper`）があれば OAuth のトークンは使わない
 - Bash などの子の環境から認証の変数を消すのは、`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` が真か、`GITHUB_ACTIONS` が真で前者が偽でないときだけ
+  ——**と 2.1.312 の文字列では読んだが、2.1.316 の実走では違った**: 起動口で起動したセッション（`/status` は `Auth token: CLAUDE_CODE_OAUTH_TOKEN`、
+  `ps eww` で見た `claude` のプロセスの環境に `CLAUDE_CODE_OAUTH_TOKEN` が在る）の Bash の環境に `CLAUDE_CODE_OAUTH_TOKEN` が無かった
+  （利用者の観測。2026-11-02、macOS。[#584](https://github.com/hdknr/claude-code-setup/issues/584#issuecomment-6572028982)）。
+  環境に `CLAUDE_CODE_OAUTH_TOKEN` を持つ `claude` のプロセス（2026-11-02 に手元で動いていたもの）でも、その子のうち `CLAUDECODE=1` を持つものの環境には `CLAUDE_CODE_OAUTH_TOKEN` が無く、持たないものには在った（#584 の続きの周で `ps eww` で名前だけ見た）。
+  **だから自分の環境に無ければ、起動した `claude` の環境を見る**（どの版から外すようになったか・何を外すかは本体で確かめていない）
 - 「env-var and setup-token sessions default to user:inference only」・「Remote Control requires a full-scope login token.
   Long-lived tokens (from `claude setup-token` or CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only」——
   **長期トークンでは Remote Control が使えない見込み**で、上の `PushNotification` は Remote Control が要る。**どちらも実測していない**
@@ -212,6 +219,13 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **認証で、セッションの外の環境・変数が消される環境を「8 時間」とも「長期トークン」とも言わない**——判定できない
 - **認証で、長期トークンより先に使われうる認証があるのに「長期トークン」と言わない**——人が見る
 - **認証のトークンの値を出さない**——空かどうかしか見ない
+- **認証で、この Bash の環境に長期トークンが無いことだけで「8 時間」と言わない**——起動した `claude`（最寄りの祖先）の環境の変数の名前を見る。
+  そこに長期トークンより先に使われうる認証があれば人が見る
+- **認証で、起動した `claude` の環境を読めない（`ps` の失敗・祖先に `claude` が無い・spare・環境が見えない）ときに「8 時間」と言わない**——判定できない。
+  **`PATH=`・`HOME=` のどちらも見えない環境は「見えない」であって、空ではない**
+- **起動した `claude` の環境の値と環境の文字列を出さない**——関数の外へ出すのは変数の名前だけ（失敗の理由の文にも入れない）。
+  **引数に書かれた `NAME=…` を環境と読まない**——`ps eww` の出力から `ps ww` の出力（引数まで）を前から外して切り出す
+- **flag の層と認証は、同じ最寄りの祖先の `claude` を見る**——外側の `claude` は、このセッションのものではない
 - **`--cruise` で台帳を渡さない・読めない（無い・名前の形が違う・壊れている）ときに、到達を通過と読まない**——判定できない。
   `--ledger` は `--cruise` と一緒にだけ受ける（2）
 - **到達で、衝突・閉じた PR・判断待ちの印・`await`・`blocked`・取り下げ・取り残された行を「進む」にしない**——止まる。
@@ -251,6 +265,11 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   `--flag-settings` で渡す
 - **macOS 以外のスリープ**——判定できないと出す
 - **2.1.310 以外の版でキー名が同じであること**——`PushNotification` の返り値の文字列も同じ
+- **起動した `claude` の環境は、起動したときのもの**——`ps eww` が見せるのはプロセスの起動時の環境で、本体が起動後に選び直した認証は見えない。
+  **自分の環境に長期トークンがあれば、起動した `claude` の環境は見ない**（そこにだけ在る API キーの類は見えない）。
+  **値に空白を含む変数**——空白で区切るので、値の中の `NAME=…` を変数と読みうる。**`ps eww` で環境を出さない OS**——判定できないと出す。
+  **最寄りの `claude` が、このセッションを起動したプロセスであること**——cmux などで `claude` の間に別のプロセスが入っても辿るが、
+  `claude` という名前の別のプログラムを挟んだ形は見分けない。**2.1.316 以外の版で Bash の環境から外すか**——確かめていない（外さなければ自分の環境で決まる）
 - **iPhone に届いたこと**——`Mobile push requested` から先は見えない
 - **分類器・ガードが実際にどの操作を止めるか**——試さない（副作用の無い試し方は別の Issue）。止まりうるとして全部並べるだけ
 - **セッションが worktree 隔離にあること**——見ているのは cwd だけ。メインの作業ツリーにいても、後で `EnterWorktree` すれば隔離される
@@ -339,31 +358,43 @@ def is_claude(argv0):
     return p.name == "claude" or (p.parent.name == "versions" and re.fullmatch(r"\d+(\.\d+)+", p.name) is not None)
 
 
-def find_flag_settings(pid=None):
-    """祖先の `claude … --settings <file>` を探す。(パス or None, 失敗の理由 or None)。"""
+def nearest_claude(pid=None):
+    """最寄りの祖先の `claude` のプロセス。(pid, argv, 失敗の理由)。見つからなければ (None, None, None)。
+    flag の層（`--settings`）と認証（起動した環境）が、同じ 1 つのプロセスを見る。"""
     pid = pid or os.getppid()
     seen = set()
+    found = None
     while pid and pid > 1 and pid not in seen:
         seen.add(pid)
         ok, out = run(["ps", "-o", "ppid=,command=", "-p", str(pid)])
         if not ok or not out.strip():
-            return None, f"ps が pid {pid} を読めなかった"
+            return None, None, f"ps が pid {pid} を読めなかった"
         ppid, _, command = out.strip().partition(" ")
         argv = command.split()
         if argv and is_claude(argv[0]):
-            # 最寄りの claude で止める——外側の claude の --settings は、このセッションのものではない
-            if "--bg-spare" in argv:
-                return None, f"最寄りの claude（pid {pid}）は spare から引き継いだセッションで、--settings は argv に無い"
-            for i, arg in enumerate(argv):
-                if arg == "--settings" and i + 1 < len(argv):
-                    return argv[i + 1], None
-                if arg.startswith("--settings="):
-                    return arg[len("--settings="):], None
-            return None, None
+            found = (pid, argv)
+            break  # 最寄りの claude で止める——外側の claude は、このセッションのものではない
         try:
             pid = int(ppid)
         except ValueError:
-            return None, f"ps の出力を読めなかった: {out.strip()[:80]}"
+            return None, None, f"ps の出力を読めなかった: {out.strip()[:80]}"
+    return (*found, None) if found else (None, None, None)
+
+
+def find_flag_settings(pid=None):
+    """祖先の `claude … --settings <file>` を探す。(パス or None, 失敗の理由 or None)。"""
+    pid, argv, why = nearest_claude(pid)
+    if why:
+        return None, why
+    if argv is None:
+        return None, None
+    if "--bg-spare" in argv:
+        return None, f"最寄りの claude（pid {pid}）は spare から引き継いだセッションで、--settings は argv に無い"
+    for i, arg in enumerate(argv):
+        if arg == "--settings" and i + 1 < len(argv):
+            return argv[i + 1], None
+        if arg.startswith("--settings="):
+            return arg[len("--settings="):], None
     return None, None
 
 
@@ -679,9 +710,37 @@ def env_scrubbed(env):
     return truthy(scrub) or (truthy(env.get("GITHUB_ACTIONS")) and not off)
 
 
-def check_auth(stack, env, present=False):
+AUTH_NAMES = AHEAD_OF_TOKEN + ("CLAUDE_CODE_OAUTH_TOKEN",)
+ENV_SEEN = ("PATH=", "HOME=")  # 環境が見えている印——見えなければ「無い」と読まない
+
+
+def launcher_auth_names(pid=None):
+    """最寄りの祖先の `claude`（このセッションを起動したプロセス）の環境で、値が空でない認証の変数の名前（#584）。
+    (frozenset or None, 失敗の理由 or None)。**値は返さない**——環境の文字列はこの関数の外へ出さない（理由の文にも入れない）。
+    環境は `ps eww` の出力から、引数だけの `ps ww` の出力を前から外して切り出す——引数に書かれた `NAME=…` を環境と読まない。"""
+    cpid, argv, why = nearest_claude(pid)
+    if why:
+        return None, why
+    if cpid is None:
+        return None, "祖先に claude のプロセスが見つからなかった"
+    if "--bg-spare" in argv:
+        return None, f"最寄りの claude（pid {cpid}）は spare から引き継いだセッションで、起動した環境とは限らない"
+    ok_bare, bare = run(["ps", "ww", "-o", "command=", "-p", str(cpid)])
+    ok_full, full = run(["ps", "eww", "-o", "command=", "-p", str(cpid)])
+    bare, full = bare.rstrip("\n"), full.rstrip("\n")
+    if not (ok_bare and ok_full) or not bare.strip() or not full.startswith(bare):
+        return None, f"ps が claude（pid {cpid}）の環境を読めなかった"
+    words = full[len(bare):].split()
+    if not any(w.startswith(ENV_SEEN) for w in words):
+        return None, f"claude（pid {cpid}）の環境が見えなかった（ほかの利用者のプロセス・OS の制限など）"
+    return frozenset(n for n, _, v in (w.partition("=") for w in words) if n in AUTH_NAMES and v), None
+
+
+def check_auth(stack, env, present=False, ancestor=None):
     """認証の方式（#584）。**値は出さない**——空かどうかだけを見る。
-    居る（`present`）なら、8 時間のトークンは要対処ではなく人が見る——居れば `/login` で戻れる。"""
+    居る（`present`）なら、8 時間のトークンは要対処ではなく人が見る——居れば `/login` で戻れる。
+    自分の環境に長期トークンが無ければ、起動した claude の環境（`ancestor`。既定は `launcher_auth_names`）を見る
+    ——Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を Bash の環境から外す（docstring）。"""
     label = "認証"
     if env.get("CLAUDECODE") != "1":
         return [(UNKNOWN, label, "Claude Code のセッションの外で回している——セッションがどの認証で起動したかは、その中でしか見えない",
@@ -698,12 +757,27 @@ def check_auth(stack, env, present=False):
     if ahead:
         return [(HUMAN, label, ", ".join(ahead) + " がある——長期トークン・対話ログインより先に使われうる",
                  f"どれで認証しているかを /status で見る。長期トークンで回すなら、外して起動口で起動し直す: bash {LAUNCHER}")]
+    token_fix = ("長期トークンは推論だけに絞られ、Remote Control とそれにつながる通知は使えない見込み"
+                 f"（本体の文字列。実測していない。測る表: {TOKEN_PAGE}）")
     if str(env.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip():
         return [(GOOD, label, "長期トークン（CLAUDE_CODE_OAUTH_TOKEN）で起動している——対話ログインの 8 時間のトークンではない",
-                 "長期トークンは推論だけに絞られ、Remote Control とそれにつながる通知は使えない見込み"
-                 f"（本体の文字列。実測していない。測る表: {TOKEN_PAGE}）")]
+                 token_fix)]
+    names, why = (ancestor or launcher_auth_names)()
+    if why is not None:
+        return [(UNKNOWN, label, "この Bash の環境に CLAUDE_CODE_OAUTH_TOKEN が無く、起動した claude の環境も読めなかった"
+                 f"（{why}）——Claude Code は起動時のトークンを Bash の環境から外すので、Bash の環境だけでは決めない",
+                 "/status の認証の行で見る")]
+    names = names or frozenset()
+    ahead = [name for name in AHEAD_OF_TOKEN if name in names]
+    if ahead:
+        return [(HUMAN, label, ", ".join(ahead) + " が起動した claude の環境にある——長期トークン・対話ログインより先に使われうる",
+                 f"どれで認証しているかを /status で見る。長期トークンで回すなら、外して起動口で起動し直す: bash {LAUNCHER}")]
+    if "CLAUDE_CODE_OAUTH_TOKEN" in names:
+        return [(GOOD, label, "長期トークン（起動した claude の環境の CLAUDE_CODE_OAUTH_TOKEN）で起動している"
+                 "——対話ログインの 8 時間のトークンではない（この Bash の環境には渡っていない）", token_fix)]
     return [(HUMAN if present else ACTION, label,
-             "対話ログインの OAuth で起動している——アクセストークンは 8 時間で切れ、更新に失敗すると 401 で止まる",
+             "対話ログインの OAuth で起動している（起動した claude の環境にも CLAUDE_CODE_OAUTH_TOKEN が無い）"
+             "——アクセストークンは 8 時間で切れ、更新に失敗すると 401 で止まる",
              f"長期トークンで回すなら: 別の端末で bash {LAUNCHER} --store-token（入れる・入れ替える）→"
              f" このセッションを終えて bash {LAUNCHER} で起動し直す（入れ方: {TOKEN_PAGE}）")]
 
@@ -1124,7 +1198,7 @@ def reach_items(project, name, present, pr_view=None):
 
 
 def gather(project, commands, flag_path, managed_path, home, platform, flag_note=None, env=None,
-           cruise=False, present=False, cwd=None, ledger=None, pr_view=None):
+           cruise=False, present=False, cwd=None, ledger=None, pr_view=None, ancestor=None):
     stack = layers(project, flag_path, managed_path, home, env, flag_note)
     items = []
     declared_items = []
@@ -1149,7 +1223,7 @@ def gather(project, commands, flag_path, managed_path, home, platform, flag_note
         items += check_notifications(home, env)
         items += check_sleep(platform)
         items += human_items(stack)
-    items += check_auth(stack, os.environ if env is None else env, present)
+    items += check_auth(stack, os.environ if env is None else env, present, ancestor)
     return stack, items
 
 
