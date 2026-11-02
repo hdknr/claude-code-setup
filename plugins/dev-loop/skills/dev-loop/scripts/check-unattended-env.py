@@ -178,7 +178,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - 「No mobile registered」は `/config` の表示（`has_active_channel === false`）で、`PushNotification` の返り値ではない
 - `claude remote-control`（`claude rc`）は「spawned sessions」を起こす待ち受け（`--help`）
 
-認証（#584。**2.1.312 の本体の文字列で読んだ。実走の陽性対照は取っていない**——長期トークンが手元に無い。**Bash の環境から外す件だけは 2.1.316 の実走**）:
+認証（#584。**2.1.312 の本体の文字列で読んだ。Bash の環境から外す件と、長期トークンで使えない機能は 2.1.316 の実走**。
+起動口で起動したセッションの中で「認証」が良いと出ることも 2.1.316 で見た——
+[#584](https://github.com/hdknr/claude-code-setup/issues/584#issuecomment-6573400732)）:
 
 - 認証のトークンの出所は `ANTHROPIC_AUTH_TOKEN` → `CLAUDE_CODE_OAUTH_TOKEN` → OAuth のファイル記述子 → `apiKeyHelper` → … →
   保存した claude.ai のログイン（対話ログイン）の順に選ぶ。API キー（`ANTHROPIC_API_KEY`・`apiKeyHelper`）があれば OAuth のトークンは使わない
@@ -190,7 +192,10 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **だから自分の環境に無ければ、起動した `claude` の環境を見る**（どの版から外すようになったか・何を外すかは本体で確かめていない）
 - 「env-var and setup-token sessions default to user:inference only」・「Remote Control requires a full-scope login token.
   Long-lived tokens (from `claude setup-token` or CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only」——
-  **長期トークンでは Remote Control が使えない見込み**で、上の `PushNotification` は Remote Control が要る。**どちらも実測していない**
+  と本体の文字列で読み、**2.1.316 で実測した**（2026-11-02。長期トークンと対話ログインの `claude` を同じ引数で起こして比べた。
+  [#584](https://github.com/hdknr/claude-code-setup/issues/584#issuecomment-6575918006)）: **claude.ai のコネクタ・Remote Control・
+  Claude in Chrome は使えない**（エラーは出ず、黙って無い・繋がらない）。サブエージェントと `/code-review` は動く。
+  上の `PushNotification` は `-p` では対照も送らないので**判定できていない**。表は公開ページを正とする（`TOKEN_PAGE`）
 
 ## 何を守り、何を守らないか
 
@@ -766,8 +771,8 @@ def check_auth(stack, env, present=False, ancestor=None):
     if ahead:
         return [(HUMAN, label, ", ".join(ahead) + " がある——長期トークン・対話ログインより先に使われうる",
                  f"どれで認証しているかを /status で見る。長期トークンで回すなら、外して起動口で起動し直す: bash {LAUNCHER}")]
-    token_fix = ("長期トークンは推論だけに絞られ、Remote Control とそれにつながる通知は使えない見込み"
-                 f"（本体の文字列。実測していない。測る表: {TOKEN_PAGE}）")
+    token_fix = ("長期トークンでは claude.ai のコネクタ・Remote Control・Claude in Chrome が使えない（エラーは出ず黙って無い）"
+                 f"——2.1.316 で実測。通知は判定できていない（表: {TOKEN_PAGE}）")
     if str(env.get("CLAUDE_CODE_OAUTH_TOKEN") or "").strip():
         return [(GOOD, label, "長期トークン（CLAUDE_CODE_OAUTH_TOKEN）で起動している——対話ログインの 8 時間のトークンではない",
                  token_fix)]
