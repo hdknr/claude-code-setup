@@ -7,7 +7,8 @@
 **`dev-loop` はどのリポジトリでも使えるプラグイン**なので、本体は対象リポジトリの `scripts/` に在ることを当てにできない。
 
 **このテストは実環境を触らず、本物の `claude` を起こさない。** 毎回テンポラリに本物の git リポジトリと worktree を作り、
-`PATH` の先頭に置いた偽の `claude`（受けた引数・cwd・セッション・標準入力を記録し、試料の stream-json を出す）で当てる
+`PATH` の先頭に置いた偽の `claude`（受けた引数・cwd・セッション・標準入力・環境の `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` を記録し、
+試料の stream-json を出す）で当てる
 （`assert_not_real_repo` が対象の場所を担保する）。**本物の `claude` の出力の形は見ない**——試料の鍵は
 2.1.312 の実測（`references/child-process.md` の「確かめた範囲」）に合わせてある。
 
@@ -40,7 +41,8 @@ failures: list[str] = []
 FAKE_CLAUDE = """#!/usr/bin/env python3
 import json, os, sys, time
 with open(os.path.join(os.environ["FAKE_HOME"], "claude-rec-%d.json" % os.getpid()), "w") as f:
-    json.dump({"argv": sys.argv[1:], "cwd": os.getcwd(), "sid": os.getsid(0), "stdin": sys.stdin.read()}, f)
+    json.dump({"argv": sys.argv[1:], "cwd": os.getcwd(), "sid": os.getsid(0), "stdin": sys.stdin.read(),
+               "bg": os.environ.get("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS")}, f)
 src = os.environ.get("FAKE_CLAUDE_OUTPUT")
 if src:
     sys.stdout.write(open(src).read())
@@ -85,6 +87,7 @@ FIXTURES = {
 MUTATIONS = {
     "子を切り離さない": [("start_new_session=True", "start_new_session=False")],
     "子の標準入力を閉じない": [("stdin=subprocess.DEVNULL, ", "")],
+    "子の環境に上限 0 を置かない": [(", env=env)", ")")],
     "cwd をメインの作業ツリーにしない": [("cwd=main_tree, stdin", "cwd=None, stdin")],
     "許可モードを既定に任せる": [('launch.add_argument("--permission-mode", required=True)',
                          'launch.add_argument("--permission-mode", default="auto")')],
@@ -133,6 +136,7 @@ def isolate_env(home: Path) -> None:
     """`GIT_*` を外し、`HOME` と git の設定を差し替え、偽の `claude` を `PATH` の先頭に置く——本物の `claude` には届かない。"""
     for key in [k for k in os.environ if k.startswith("GIT_")]:
         del os.environ[key]
+    os.environ.pop("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", None)  # 「親の環境に無い」場合を試料が自分で作る
     home.mkdir()
     (home / "gitconfig").write_text("[user]\n\temail = t@example.invalid\n\tname = t\n", encoding="utf-8")
     (home / "bin").mkdir()
@@ -234,12 +238,16 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         saved = os.dup(0)
         os.dup2(r, 0)
         os.close(r)
+        # 親の環境に別の上限を置く——子では 0 に上書きされるはず（#491。下の #51 は親の環境に無い場合）
+        os.environ["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "600000"
         try:
             rc, out, err = run(mod, ["launch", NAME, "50", "--brief", str(brief), "--permission-mode", "auto",
                                      "--model", "haiku", "--allowed-tools", "Bash(git status)", "Agent"], sub)
         finally:
+            os.environ.pop("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", None)
             os.dup2(saved, 0)
             os.close(saved)
+        o["上書きしたと出す"] = "上書きした: 親の環境の CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS='600000'" in str(out)
         o["launch の戻りが速い"] = time.time() - t0 < 5
         m = re.search(r"pid (\d+)", str(out))
         pid = int(m.group(1)) if m else None
@@ -253,8 +261,10 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         o["cwd"] = rec.get("cwd")
         o["別のセッション"] = rec.get("sid") is not None and rec.get("sid") != os.getsid(0)
         o["標準入力は空"] = rec.get("stdin")
+        o["上限(親に別の値)"] = rec.get("bg")
         agent = re.search(r"^台帳の agent: claude-p:(.+)$", str(out), re.M)
         o["記録の場所"] = (Path(agent.group(1)).parent == children and Path(agent.group(1)).exists()) if agent else False
+        o["記録の env"] = json.loads(Path(agent.group(1)).read_text(encoding="utf-8")).get("env") if agent else None
         o["worktree に書かない"] = sorted(p.name for p in sub.parent.iterdir())
         # 走っている間
         o["status(走っている)"] = run(mod, ["status", NAME, "50"], main)[0]
@@ -273,12 +283,31 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         write_stream(stream, FIXTURES["済んだ（result が 3 つ）"])
         os.environ["FAKE_CLAUDE_OUTPUT"] = str(stream)
         os.environ["FAKE_CLAUDE_SLEEP"] = "0"
+        assert "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS" not in os.environ
         rc, out, _ = run(mod, ["launch", NAME, "51", "--brief", str(brief), "--permission-mode", "dontAsk"], main)
         m = re.search(r"pid (\d+)", str(out))
         if m:
             started.append(int(m.group(1)))
+        o["#51 で上書きしたと出さない"] = "上書きした" not in str(out)
+        rec51 = home / f"claude-rec-{m.group(1)}.json" if m else None
+        o["上限(親に無い)"] = (json.loads(rec51.read_text(encoding="utf-8")).get("bg")
+                           if rec51 and wait_for(rec51.exists) and wait_for(lambda: rec51.stat().st_size > 0) else "記録なし")
         wait_for(lambda: run(mod, ["status", NAME, "51"], main)[0] != 1)
         o["端から端"] = run(mod, ["status", NAME, "51"], main)[:2]
+        # 親の環境が既に "0"——上書きではないので出さない（経路 (c)。#491 の 1 パス目 V1・CR3）
+        os.environ["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+        try:
+            rc, out, _ = run(mod, ["launch", NAME, "54", "--brief", str(brief), "--permission-mode", "auto"], main)
+        finally:
+            os.environ.pop("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", None)
+        m = re.search(r"pid (\d+)", str(out))
+        if m:
+            started.append(int(m.group(1)))
+        rec54 = home / f"claude-rec-{m.group(1)}.json" if m else None
+        o["親が 0 なら上書きしたと出さない"] = (rc, "上書きした" not in str(out),
+                                    json.loads(rec54.read_text(encoding="utf-8")).get("bg")
+                                    if rec54 and wait_for(rec54.exists) and wait_for(lambda: rec54.stat().st_size > 0) else "記録なし")
+        wait_for(lambda: run(mod, ["status", NAME, "54"], main)[0] != 1)
 
         # 拒む
         os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
@@ -351,6 +380,12 @@ def main() -> int:
         check("worktree のサブディレクトリから呼んでも、子の cwd はメインの作業ツリー", o["cwd"] == str(main_tree))
         check("子は新しいセッション（親から切り離す）", o["別のセッション"])
         check("子の標準入力は閉じている（空）", o["標準入力は空"] == "")
+        check("親の環境に別の上限があっても、子の CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS は 0（上書きしたと出す）",
+              o["上限(親に別の値)"] == "0" and o["上書きしたと出す"])
+        check("親の環境に無くても、子の CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS は 0（上書きしたとは出さない）",
+              o["上限(親に無い)"] == "0" and o["#51 で上書きしたと出さない"])
+        check("親の環境が既に 0 なら、子は 0 で、上書きしたとは出さない", o["親が 0 なら上書きしたと出さない"] == (0, True, "0"))
+        check("記録の .json に子へ渡した上限を残す", o["記録の env"] == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"})
         check("記録は台帳の隣（.claude/plans/cruise-<名前>-children/）に在り、その場所を出す", o["記録の場所"])
         check("worktree の中には書かない", o["worktree に書かない"] == [".git", "sub"])
 
