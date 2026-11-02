@@ -752,6 +752,21 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     run(mod, ["set", "ss", "1", "state=merged"], root)
     run(mod, ["set", "ss", "2", "note=落ちた: 別のファイル"], root)
     o["status: 落ちた行"] = status("ss")
+    # PR の判断待ち（cruise §4-4 の印）は進行中に数えず、人待ち（3）。まとめならどれか 1 行の note でよい
+    st_ledger("sj", [(1, "merged", [], None), (2, "pr", [], None)])
+    run(mod, ["set", "sj", "2", "note=利用者の判断待ち: マージしてよいか"], root)
+    r = str(run(mod, ["show", "sj"], root)[1])
+    o["status: PR の判断待ち"] = (status("sj"), [l for l in r.splitlines() if l.startswith(("進行中", "利用者の判断待ち"))])
+    st_ledger("sg", [(1, "todo", [], None), (2, "todo", [], None)])
+    run(mod, ["group", "sg", "1", "2"], root)
+    run(mod, ["set", "sg", "1", "state=pr"], root)
+    run(mod, ["set", "sg", "1", "note=利用者の判断待ち: マージしてよいか"], root)
+    o["status: まとめの PR の判断待ち"] = status("sg")
+    # 一覧の行がまとめの仲間（足した行）の着手を待つなら 0（まとめは全行が着手できるときだけ始まる）
+    st_ledger("sm", [(1, "merged", [], None), (2, "todo", [1], None), (4, "todo", [1], "#1 1 パス目"),
+                     (3, "todo", [4], "#1 1 パス目")])
+    run(mod, ["group", "sm", "2", "3"], root)
+    o["status: まとめの仲間が待つ"] = status("sm")
     # 空の台帳は 5、無い・壊れた台帳は 4
     run(mod, ["init", "se"], root)
     o["status: 空"] = status("se")[0]
@@ -945,8 +960,8 @@ MUTATIONS = {
         ('for i in data["issues"]) and not stranded:\n', 'for i in data["issues"]):\n')],
     # 守る（#632）: show の進行中は impl・gate・pr だけ
     "show の進行中に blocked・await を混ぜる": [
-        ('    going = [i for i in data["issues"] if i["state"] in GOING]\n',
-         '    going = [i for i in data["issues"] if i["state"] in GOING + ("blocked", "await")]\n')],
+        ('    going = [i for i in data["issues"] if i["state"] in GOING and i["number"] not in judge_rows]\n',
+         '    going = [i for i in data["issues"] if i["state"] in GOING + ("blocked", "await") and i["number"] not in judge_rows]\n')],
     # 守る（#632）: status は進行中・落ちた行があれば 0
     "status が進行中を見ない": [
         ("    if started or stranded:\n", "    if stranded:\n")],
@@ -994,6 +1009,17 @@ SAMPLE_MUTATIONS = {
         ('    listed = [i for i in data["issues"] if not i.get("origin")]\n', '    listed = list(data["issues"])\n')],
     "status が一覧の行の依存を辿らない（#632）": [
         ('        stack.extend(by[n]["deps"])\n', "")],
+    "status が判断待ちの印を見ない（#632）": [
+        ('    started = [i for i in data["issues"] if i["state"] in GOING and i["number"] not in judge_rows]\n',
+         '    started = [i for i in data["issues"] if i["state"] in GOING]\n')],
+    "show が判断待ちの印を見ない（#632）": [
+        ('    going = [i for i in data["issues"] if i["state"] in GOING and i["number"] not in judge_rows]\n',
+         '    going = [i for i in data["issues"] if i["state"] in GOING]\n')],
+    "判断待ちの印をまとめの仲間に広げない（#632）": [
+        ('(i.get("note", "").startswith(JUDGE_NOTE) or (i.get("group") and i["group"] in marked))',
+         'i.get("note", "").startswith(JUDGE_NOTE)')],
+    "status がまとめの仲間を辿らない（#632）": [
+        ('        stack.extend(i["number"] for i in data["issues"] if by[n].get("group") and i.get("group") == by[n]["group"])\n', "")],
     "status が待ちの列に merged を混ぜる（#632）": [
         ('if by[n]["state"] not in (DONE, "dropped")]', 'if by[n]["state"] != "dropped"]')],
 }
@@ -1266,7 +1292,7 @@ def main() -> int:
         check("merged ×3＋blocked ×2 で show の進行中が「なし」（Issue の受入基準 1）",
               o["status: show 進行中"] == ["進行中（実物で確かめてから続ける）: なし"])
         check("show が blocked を利用者の判断待ちの行に note つきで出す",
-              o["status: show 判断待ち"] == ["利用者の判断待ち（止まっている）: #4（利用者の判断待ち: 選んでほしい）, "
+              o["status: show 判断待ち"] == ["利用者の判断待ち（止まっている・PR の判断待ち）: #4（利用者の判断待ち: 選んでほしい）, "
                                           "#5（利用者の判断待ち: 選んでほしい）"])
         check("merged ×3＋blocked ×2 で status が 3（Issue の受入基準 1）",
               o["status: 人待ちだけ"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #4(blocked), #5(blocked)"))
@@ -1288,6 +1314,13 @@ def main() -> int:
               o["status: 一覧の行が待つ足した行"] == (0, "進められる（着手できる: #3）"))
         check("落ちたのに merged の行があれば 0",
               o["status: 落ちた行"] == (0, "進められる（落ちたのにまとめの中で merged: #2(merged)）"))
+        check("PR の判断待ちは進行中に出ず、判断待ちの行に出て、status は 3",
+              o["status: PR の判断待ち"] == ((3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(pr)"),
+                                          ["進行中（実物で確かめてから続ける）: なし",
+                                           "利用者の判断待ち（止まっている・PR の判断待ち）: #2（利用者の判断待ち: マージしてよいか）"]))
+        check("まとめはどれか 1 行の判断待ちの印で全行が人待ち（3）",
+              o["status: まとめの PR の判断待ち"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #1(pr), #2(pr)"))
+        check("一覧の行がまとめの仲間の依存を待つなら 0", o["status: まとめの仲間が待つ"] == (0, "進められる（着手できる: #4）"))
         check("空の台帳は 5", o["status: 空"] == 5)
         check("無い・壊れた・崩れた台帳は 4", o["status: 無い・壊れた"] == (4, 4, 4))
 
