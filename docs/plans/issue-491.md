@@ -121,7 +121,14 @@
 
 - 手順 4: 実装済み（`7e9fabaf`）。割り目は不在の周なので訊かない（`references/absent-lines.md` の「訊く場面」）。選択: このまま続ける（訊いていない）。
 - 1 パス目の指摘対応の起点（1 パス目の関門に渡した時点の HEAD）: `7e9fabaf55960892ae54c6997cf9012a4a36b2f6`
-- 関門: Verifier 1 パス目（`dev-loop:dev-loop-verifier`・`sonnet`）を起動。`/code-review` 1 パス目を起動。
+- Verifier 1 パス目（`dev-loop:dev-loop-verifier`・`sonnet`。起動した体は報告で verifier.md 169 行を読んだと言った）: **反証 0 件**・指摘 2 件（V1・V2）。
+  `run-serial.py` 越しのテストが順番待ち（親の `check-all.py`）で 10 分走らず、直に走らせた（申告あり。偽の `claude` とテンポラリだけ）。
+- `/code-review` 1 パス目（high。受入基準は `prompts/review-handoff.md` を埋めて `SendMessage` で渡した）: **指摘 9 件**（CR1〜CR9）。テストは順番待ちで走らせられず、読解で判定。
+- 採否: 下の「1 パス目の採否」——直す 3 件（V1・CR3／CR2／CR4）、残課題 7 件。
+- 1 パス目の指摘対応: `3eebe7a1e161764427ddbad4f3c5609e1caa29bd`（成果物の差分 3 ファイル・+20/-4。0 行ではない → 2 パス目を回す）。
+  陽性対照: 変異 `previous != "0"` を外した写しで、新しい (c) の照合だけが FAIL（`load` の既定引数を差し替えて当てた）。
+- 2 つ目の割り目: 不在の周なので訊かない。選択: このまま続ける。残る関門: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
+- 関門: 2 パス目を起動。
 
 ## 既知の限界・決着済みの論点
 
