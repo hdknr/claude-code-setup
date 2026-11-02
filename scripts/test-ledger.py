@@ -488,8 +488,8 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     o["await の set"] = run(mod, ["set", "uo", "1", "state=await", "note=利用者が打つ: gh workflow run x"], root)[0]
     o["next(依存が操作待ち)"] = run(mod, ["next", "uo"], root)[1].split()
     r = str(run(mod, ["show", "uo"], root)[1])
-    o["await の show"] = ("利用者の操作待ち: #1（利用者が打つ: gh workflow run x）" in r, "#1(await)" in r,
-                          "利用者が打つ操作" not in r)
+    o["await の show"] = ("利用者の操作待ち: #1（利用者が打つ: gh workflow run x）" in r,
+                          "進行中（実物で確かめてから続ける）: なし" in r, "利用者が打つ操作" not in r)
     o["user-ops 通る"] = run(mod, ["user-ops", "uo", "gh workflow run x", "aws ecs run-task", "--source", "s1"], root)[0]
     o["user-ops の show"] = "利用者が打つ操作（出所: s1・" in str(run(mod, ["show", "uo"], root)[1])
     before = snapshot(uf)
@@ -693,6 +693,94 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     except (OSError, ValueError, KeyError):
         o["入れ直した行(代表でない・途中)"] = None
 
+    # L16（#632）: `show` の「進行中」は impl・gate・pr だけ。`status` の終了コード（docstring の「`status` が見るもの」）
+    def status(name):
+        r = run(mod, ["status", name], root)
+        return (r[0], str(r[1]).strip())
+
+    def st_ledger(name, rows):
+        """rows: (番号, 状態, 依存, 出所) の並び。add と set で作る（手で書かない）。"""
+        run(mod, ["init", name], root)
+        for n, _, deps, origin in rows:
+            run(mod, ["add", name, str(n), "--deps", ",".join(map(str, deps)),
+                      *(["--origin", origin] if origin else [])], root)
+        for n, state, _, _ in rows:
+            if state != "todo":
+                run(mod, ["set", name, str(n), f"state={state}", *(["note=利用者の判断待ち: 選んでほしい"] if state == "blocked" else [])], root)
+
+    # Issue の受入基準 1: merged ×3 ＋ blocked ×2（spin-dd/tfs-stocks#2427 の形）
+    st_ledger("st", [(1, "merged", [], None), (2, "merged", [], None), (3, "merged", [], None),
+                     (4, "blocked", [], None), (5, "blocked", [], None)])
+    r = str(run(mod, ["show", "st"], root)[1])
+    o["status: show 進行中"] = [l for l in r.splitlines() if l.startswith("進行中")]
+    o["status: show 判断待ち"] = [l for l in r.splitlines() if l.startswith("利用者の判断待ち")]
+    o["status: 人待ちだけ"] = status("st")
+    # Issue の受入基準 2: impl が 1 本でもあれば 0（gate・pr も）
+    for state in ("impl", "gate", "pr"):
+        run(mod, ["set", "st", "3", f"state={state}"], root)
+        o[f"status: {state}"] = status("st")[0]
+    o["status: show 進行中(pr)"] = "進行中（実物で確かめてから続ける）: #3(pr)" in str(run(mod, ["show", "st"], root)[1])
+    # 着手できる行があれば 0
+    run(mod, ["set", "st", "3", "state=merged"], root)
+    run(mod, ["add", "st", "6", "--deps", "1"], root)
+    o["status: 着手できる"] = status("st")
+    # 依存待ちが blocked・await・dropped にしか依存しない（6 は blocked の 4 を待つ）なら 3
+    run(mod, ["set", "st", "6", "deps=4"], root)
+    run(mod, ["add", "st", "7", "--deps", "1,5"], root)  # merged の依存先（#1）は待ちの列に出さない
+    run(mod, ["set", "st", "5", "state=await"], root)
+    run(mod, ["add", "st", "8"], root)
+    run(mod, ["set", "st", "8", "state=dropped"], root)
+    run(mod, ["add", "st", "9", "--deps", "8"], root)
+    o["status: 依存待ちだけ"] = status("st")
+    # 親 Issue の一覧の行がすべて merged か dropped なら 5（周の途中で足した todo の行が残っていても）
+    st_ledger("sd", [(1, "merged", [], None), (2, "dropped", [], None), (3, "todo", [1], "#1 1 パス目")])
+    o["status: 済んだ(足した行が残る)"] = status("sd")
+    run(mod, ["set", "sd", "3", "state=merged"], root)
+    o["status: 済んだ"] = status("sd")
+    # 周の途中で足した行が進行中なら、一覧の行が済んでいても 0
+    run(mod, ["set", "sd", "3", "state=impl"], root)
+    o["status: 足した行が進行中"] = status("sd")[0]
+    # 周の途中で足した行だけが着手できても 0 と言わない（一覧の行は blocked だけ）
+    st_ledger("so", [(1, "merged", [], None), (2, "blocked", [], None), (3, "todo", [1], "#1 1 パス目")])
+    o["status: 足した行だけ着手できる"] = status("so")
+    # 一覧の行が依存を辿って待つ足した行なら、着手できると数える
+    run(mod, ["add", "so", "4", "--deps", "3"], root)
+    o["status: 一覧の行が待つ足した行"] = status("so")
+    # 落ちたのにまとめの中で merged の行があれば、一覧の行が済んでいても 0
+    st_ledger("ss", [(1, "todo", [], None), (2, "todo", [], None)])
+    run(mod, ["group", "ss", "1", "2"], root)
+    run(mod, ["set", "ss", "1", "state=merged"], root)
+    run(mod, ["set", "ss", "2", "note=落ちた: 別のファイル"], root)
+    o["status: 落ちた行"] = status("ss")
+    # PR の判断待ち（cruise §4-4 の印）は進行中に数えず、人待ち（3）。まとめならどれか 1 行の note でよい
+    st_ledger("sj", [(1, "merged", [], None), (2, "pr", [], None)])
+    run(mod, ["set", "sj", "2", "note=利用者の判断待ち: マージしてよいか"], root)
+    r = str(run(mod, ["show", "sj"], root)[1])
+    o["status: PR の判断待ち"] = (status("sj"), [l for l in r.splitlines() if l.startswith(("進行中", "利用者の判断待ち"))])
+    st_ledger("sg", [(1, "todo", [], None), (2, "todo", [], None)])
+    run(mod, ["group", "sg", "1", "2"], root)
+    run(mod, ["set", "sg", "1", "state=pr"], root)
+    run(mod, ["set", "sg", "1", "note=利用者の判断待ち: マージしてよいか"], root)
+    o["status: まとめの PR の判断待ち"] = status("sg")
+    # 一覧の行がまとめの仲間（足した行）の着手を待つなら 0（まとめは全行が着手できるときだけ始まる）
+    st_ledger("sm", [(1, "merged", [], None), (2, "todo", [1], None), (4, "todo", [1], "#1 1 パス目"),
+                     (3, "todo", [4], "#1 1 パス目")])
+    run(mod, ["group", "sm", "2", "3"], root)
+    o["status: まとめの仲間が待つ"] = status("sm")
+    # 全角のコロンの印も判断待ち（check-unattended-env.py と同じ）
+    st_ledger("sw", [(1, "merged", [], None), (2, "pr", [], None)])
+    run(mod, ["set", "sw", "2", "note=利用者の判断待ち：全角"], root)
+    o["status: 全角の印"] = status("sw")[0]
+    # 取り下げた行の先（足した行）は辿らない: 一覧の #3 は取り下げた #2 を待つだけ
+    st_ledger("sx", [(1, "merged", [], None), (9, "todo", [1], "#1 1 パス目"), (2, "todo", [9], None), (3, "todo", [2], None)])
+    run(mod, ["set", "sx", "2", "state=dropped"], root)
+    o["status: 取り下げの先"] = status("sx")
+    # 空の台帳は 5、無い・壊れた台帳は 4
+    run(mod, ["init", "se"], root)
+    o["status: 空"] = status("se")[0]
+    o["status: 無い・壊れた"] = (run(mod, ["status", "nope"], root)[0], run(mod, ["status", "b"], root)[0],
+                              run(mod, ["status", "cyc"], root)[0])
+
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
     outside = tmp / f"outside-{tag}"
@@ -878,6 +966,17 @@ MUTATIONS = {
         ('    if "group" in changes and is_stranded(issue) and after["state"] == DONE:', "    if False:")],
     "落ちた行があっても終わりの行を出す": [
         ('for i in data["issues"]) and not stranded:\n', 'for i in data["issues"]):\n')],
+    # 守る（#632）: show の進行中は impl・gate・pr だけ
+    "show の進行中に blocked・await を混ぜる": [
+        ('    going = [i for i in data["issues"] if i["state"] in GOING and i["number"] not in judge_rows]\n',
+         '    going = [i for i in data["issues"] if i["state"] in GOING + ("blocked", "await") and i["number"] not in judge_rows]\n')],
+    # 守る（#632）: status は進行中・落ちた行があれば 0
+    "status が進行中を見ない": [
+        ("    if started or stranded:\n", "    if stranded:\n")],
+    # 守る（#632）: status は足した行だけが着手できても 0 と言わない
+    "status が足した行だけの着手でも 0": [
+        ('    can = [u for u in units(data) if any(r["number"] in need for r in u)]',
+         '    can = units(data)')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -911,6 +1010,30 @@ SAMPLE_MUTATIONS = {
     "書き換えを部分一致で見る（N1）": [
         ('        if issue.get("note", "").startswith(DROPPED_NOTE):\n            issue["note"]',
          '        if DROPPED_NOTE in issue.get("note", ""):\n            issue["note"]')],
+    # #632: status の判定の中身を 1 項ずつ外す（「守る」の 2・3 行目と、docstring の「`status` が見るもの」）
+    "status が落ちた行を見ない（#632）": [
+        ("    if started or stranded:\n", "    if started:\n")],
+    "status の済んだを全行で見る（#632）": [
+        ('    listed = [i for i in data["issues"] if not i.get("origin")]\n', '    listed = list(data["issues"])\n')],
+    "status が一覧の行の依存を辿らない（#632）": [
+        ('        stack.extend(by[n]["deps"])\n', "")],
+    "status が判断待ちの印を見ない（#632）": [
+        ('    started = [i for i in data["issues"] if i["state"] in GOING and i["number"] not in judge_rows]\n',
+         '    started = [i for i in data["issues"] if i["state"] in GOING]\n')],
+    "show が判断待ちの印を見ない（#632）": [
+        ('    going = [i for i in data["issues"] if i["state"] in GOING and i["number"] not in judge_rows]\n',
+         '    going = [i for i in data["issues"] if i["state"] in GOING]\n')],
+    "判断待ちの印をまとめの仲間に広げない（#632）": [
+        ('(i.get("note", "").startswith(JUDGE_NOTE) or (i.get("group") and i["group"] in marked))',
+         'i.get("note", "").startswith(JUDGE_NOTE)')],
+    "status がまとめの仲間を辿らない（#632）": [
+        ('        stack.extend(i["number"] for i in data["issues"] if by[n].get("group") and i.get("group") == by[n]["group"])\n', "")],
+    "判断待ちの印を半角だけで読む（#632 の 2 パス目）": [
+        ('JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")', 'JUDGE_NOTE = ("利用者の判断待ち:",)')],
+    "status が済んだ・取り下げた行の先を辿る（#632 の 2 パス目）": [
+        ('        if by[n]["state"] in (DONE, "dropped"):\n            continue  # 済んだ', '        if False:\n            continue  # 済んだ')],
+    "status が待ちの列に merged を混ぜる（#632）": [
+        ('if by[n]["state"] not in (DONE, "dropped")]', 'if by[n]["state"] != "dropped"]')],
 }
 
 
@@ -1177,10 +1300,49 @@ def main() -> int:
         check("足した行がすべて merged か dropped なら「なし」", o["origin の show(済み)"])
         check("足した行の無い台帳の show は、その行を出さない", o["origin の無い show"])
 
+        print("\nshow の進行中と status（L16・#632）")
+        check("merged ×3＋blocked ×2 で show の進行中が「なし」（Issue の受入基準 1）",
+              o["status: show 進行中"] == ["進行中（実物で確かめてから続ける）: なし"])
+        check("show が blocked を利用者の判断待ちの行に note つきで出す",
+              o["status: show 判断待ち"] == ["利用者の判断待ち（止まっている・PR の判断待ち）: #4(blocked)（利用者の判断待ち: 選んでほしい）, "
+                                          "#5(blocked)（利用者の判断待ち: 選んでほしい）"])
+        check("merged ×3＋blocked ×2 で status が 3（Issue の受入基準 1）",
+              o["status: 人待ちだけ"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #4(blocked), #5(blocked)"))
+        check("impl・gate・pr が 1 本でもあれば status が 0（Issue の受入基準 2）",
+              (o["status: impl"], o["status: gate"], o["status: pr"]) == (0, 0, 0))
+        check("show の進行中に pr が出る", o["status: show 進行中(pr)"])
+        check("着手できる行があれば 0 と、その番号", o["status: 着手できる"] == (0, "進められる（着手できる: #6）"))
+        check("残りが blocked・await と、それらか dropped に依存する行だけなら 3",
+              o["status: 依存待ちだけ"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: "
+                                        "#4(blocked), #5(await), #6(todo), #7(todo), #9(todo)"))
+        check("一覧の行がすべて merged か dropped なら 5（足した行が残れば名指し）",
+              o["status: 済んだ(足した行が残る)"] == (5, "親 Issue の一覧の行はすべてマージ済みか取り下げ"
+                                                 "（周の途中で足した行のうち済んでいないもの: #3(todo)）")
+              and o["status: 済んだ"] == (5, "親 Issue の一覧の行はすべてマージ済みか取り下げ"))
+        check("足した行が進行中なら 0", o["status: 足した行が進行中"] == 0)
+        check("足した行だけが着手できても 0 と言わない（3）",
+              o["status: 足した行だけ着手できる"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(blocked)"))
+        check("一覧の行が依存で待つ足した行は着手できると数える（0）",
+              o["status: 一覧の行が待つ足した行"] == (0, "進められる（着手できる: #3）"))
+        check("落ちたのに merged の行があれば 0",
+              o["status: 落ちた行"] == (0, "進められる（落ちたのにまとめの中で merged: #2(merged)）"))
+        check("PR の判断待ちは進行中に出ず、判断待ちの行に出て、status は 3",
+              o["status: PR の判断待ち"] == ((3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(pr)"),
+                                          ["進行中（実物で確かめてから続ける）: なし",
+                                           "利用者の判断待ち（止まっている・PR の判断待ち）: #2(pr)（利用者の判断待ち: マージしてよいか）"]))
+        check("まとめはどれか 1 行の判断待ちの印で全行が人待ち（3）",
+              o["status: まとめの PR の判断待ち"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #1(pr), #2(pr)"))
+        check("一覧の行がまとめの仲間の依存を待つなら 0", o["status: まとめの仲間が待つ"] == (0, "進められる（着手できる: #4）"))
+        check("全角のコロンの印も判断待ち（3）", o["status: 全角の印"] == 3)
+        check("取り下げた行の先の足した行は辿らない（3）",
+              o["status: 取り下げの先"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #3(todo)"))
+        check("空の台帳は 5", o["status: 空"] == 5)
+        check("無い・壊れた・崩れた台帳は 4", o["status: 無い・壊れた"] == (4, 4, 4))
+
         print("\n利用者の操作待ちと利用者が打つ操作（L14・#466）")
         check("await を書ける", o["await の set"] == 0)
         check("await に依存する #2 は next に出ず、依存しない #3 は出る", o["next(依存が操作待ち)"] == ["3"])
-        check("show が操作待ちを note つきで出し、進行中にも数え、user_ops の無い台帳では出さない",
+        check("show が操作待ちを note つきで出し、進行中には数えず（#632）、user_ops の無い台帳では出さない",
               o["await の show"] == (True, True, True))
         check("user-ops は通り、show が出所つきで出す", o["user-ops 通る"] == 0 and o["user-ops の show"])
         check("user-ops の空の出所・空のコマンド・同じコマンド 2 度は 3", o["user-ops 拒む"] == (3, 3, 3))
@@ -1265,7 +1427,7 @@ def main() -> int:
         source = SCRIPT.read_text(encoding="utf-8")
         table = source.split("## 終了コード")[1].split("## ")[0]
         documented = {int(m) for m in re.findall(r"^\| (\d+) \|", table, re.M)}
-        defined = {mod.EXIT_OK, mod.EXIT_USAGE, mod.EXIT_REJECTED, mod.EXIT_UNKNOWN}
+        defined = {mod.EXIT_OK, mod.EXIT_USAGE, mod.EXIT_REJECTED, mod.EXIT_UNKNOWN, mod.EXIT_WAITING, mod.EXIT_DONE}
         check(f"表 {sorted(documented)} と定数 {sorted(defined)}", documented == defined)
         states = re.findall(r"^\| `([a-z]+)` \|", source.split("**状態**")[1].split("**鍵**")[0], re.M)
         check(f"状態の表 {states} と STATES", tuple(states) == mod.STATES)
