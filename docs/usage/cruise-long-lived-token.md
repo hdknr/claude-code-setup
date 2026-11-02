@@ -9,7 +9,7 @@
 （下の「確かめていないこと」）。
 
 **長期トークンでは、claude.ai のコネクタ・claude.ai から届くスキル（`anthropic-skills:*`）・Remote Control・Claude in Chrome が使えません**（Claude Code 2.1.316 で測りました。
-**エラーは出ず、黙って無い・繋がらない**形です）。サブエージェントと `/code-review` は動きました。通知が届くかは判定できていません
+**エラーは出ず、黙って無い・繋がらない**形です）。サブエージェントと `/code-review`（`low`）は動きました。通知が届くかは判定できていません
 （下の「機能の表」）。
 
 !!! warning "トークンを置かない場所"
@@ -89,8 +89,9 @@ bash <base>/scripts/launch-with-long-token.sh --account work "/dev-loop:cruise <
 
 1. **長期トークンで起動した cruise が、起動から 8 時間を超えても 401 で止まらないこと**——まだです
 2. **cruise で使う機能が、長期トークンで動くか**——測りました。結果は下の「機能の表」です。
-   **測っていないのは次の 3 つです**: 対話のセッションの中で、端末が使われていないときの通知・対話のセッションの中で `/remote-control` を打ったときの表示
-   （起動時の `--remote-control` だけを見ました）・haiku 以外のモデル（Opus など）でのサブエージェントと `/code-review`
+   **測っていないのは次の 4 つです**: 対話のセッションの中で、端末が使われていないときの通知・対話のセッションの中で `/remote-control` を打ったときの表示
+   （起動時の `--remote-control` だけを見ました）・haiku 以外のモデル（Opus など）でのサブエージェントと、`low` 以外の effort（cruise の関門が使う `high` など）の `/code-review`・
+   対話ログインの側にだけ読み込まれた組み込みのプラグイン `cc-plugin-sec-default` が無いことで、何が変わるか（下の「機能の表」の後）
 3. **点検が、長期トークンで起動したセッションの中で「良い」と出ること**——確かめました。起動口で起動したセッションの中から
    `check-unattended-env.py --cruise --present` を回し、「認証」が `[良い]`（起動した `claude` の環境の `CLAUDE_CODE_OAUTH_TOKEN`）と出ました
    （[#584 のコメント](https://github.com/hdknr/claude-code-setup/issues/584#issuecomment-6573400732)）。
@@ -103,26 +104,30 @@ bash <base>/scripts/launch-with-long-token.sh --account work "/dev-loop:cruise <
 **Remote Control の行だけは条件が違います**——`-p` ではなく対話の起動で、`--remote-control <名前>` だけを付け（`--model` も `--permission-mode` も付けず、モデルは既定の Opus 5.5）、
 信頼済みのリポジトリで疑似端末に 30 秒起こした画面を見ました。起動の引数はファイルに残っておらず、測った側の記録によります。
 結果は [#584 のコメント](https://github.com/hdknr/claude-code-setup/issues/584#issuecomment-6575918006) です。
+**ただしこのページのほうを正とします**——コメントの前書きの「同じ引数（`-p … haiku`）」は Remote Control の行に当たらず、
+コメントには claude.ai から届くスキルの行と組み込みのプラグインの差が無く、道具の数も 1 つの組の値です（このページは生の出力から数え直しました）。
 
 | 機能 | 長期トークン | 対照（対話ログイン） | 判定 |
 | --- | --- | --- | --- |
 | サブエージェント（`Agent`） | 親が指定した文字列を子が返した（子の `agentId` と、子が使ったトークン数が記録に残る） | 同じ | **動く** |
-| `/code-review` | 小さな差分の誤り（`a + b` → `a - b`）を正しく指摘した | 同じ | **動く** |
+| `/code-review`（`low`） | 小さな差分の誤り（`a + b` → `a - b`）を正しく指摘した | 同じ | **動く**（`low` だけ測った） |
 | claude.ai のコネクタ（`/mcp`） | 起動時の MCP サーバーに claude.ai のサーバーが 0 件・`mcp__claude_ai_*` の道具が 0 件 | 6 件（Claude Docs は接続済み）・道具 8 件 | **使えない**（エラーは出ず、黙って無い） |
-| claude.ai から届くスキル（`anthropic-skills:*`） | 起動時のスキルが 37 個で、`anthropic-skills:*` が 0 個 | 46 個（`anthropic-skills:docs`・`docx`・`pdf`・`pptx`・`xlsx` など 9 個が多い） | **使えない**（エラーは出ず、黙って無い） |
+| claude.ai から届くスキル（`anthropic-skills:*`） | 起動時のスキルが 37 個で、`anthropic-skills:*` が 0 個 | 46 個（`anthropic-skills:docs`・`docx`・`pdf`・`pptx`・`xlsx` などの 9 個が多い。`--chrome` の組では 47 個で、`claude-in-chrome` のスキルも長期トークンの側に無い） | **使えない**（エラーは出ず、黙って無い） |
 | Remote Control（`--remote-control`） | 30 秒起こして Remote Control の表示が出ない。見出しの認証は `Claude API` | `/rc connecting…` → `/remote-control is active` | **使えない**（エラーは出ず、黙って繋がらない） |
 | Claude in Chrome（`--chrome`） | 道具 0 件・`claude-in-chrome` のサーバーなし | 道具 22 件・接続済み | **使えない** |
 | 通知（`PushNotification`） | 「Not sent — this terminal is active …」で送らない | 同じ文で送らない | **判定できない**——対照も送らないので、`-p` の起動では測れない |
 
 同じ引数で起こした組どうしでは、MCP を除く道具の一覧は両方で同じでした（組によって 29 個か 31 個）。`code-review` のスラッシュコマンドも両方にありました。
+**読み込まれたプラグインは 1 つ違いました**——`-p` のどの組でも、組み込みのプラグイン `cc-plugin-sec-default` が対話ログインの側にだけあり、長期トークンの側にはありませんでした
+（9 個と 10 個。ほかは同じ）。これが無いことで何が変わるかは確かめていません（上の「確かめていないこと」の 2）。
 
-**Remote Control が繋がらないので、不在のあいだに iPhone から様子を見ることはできません。** 通知が iPhone に届く経路も無い見込みです
-（通知そのものは測れていません——上の 2）。**cruise の周が claude.ai のコネクタ（Claude Docs など）・claude.ai から届くスキル・Claude in Chrome を使うなら、
+**Remote Control が繋がらないので、不在のあいだに iPhone から様子を見ることはできません。** 通知が iPhone に届くかは判定できていません
+（`-p` では対照も送らないので測れず、対話のセッションの中ではまだ測っていません——上の 2）。**cruise の周が claude.ai のコネクタ（Claude Docs など）・claude.ai から届くスキル・Claude in Chrome を使うなら、
 長期トークンでは黙って無いので、その周は進められません。** 長期トークンで回すかは、8 時間で止まることと、これらが使えないことを比べて決めてください。
 
 ### 測り方（利用者が行う）
 
-残っているのは上の「確かめていないこと」の 1 と、2 の測っていない 3 つです。
+残っているのは上の「確かめていないこと」の 1 と、2 の測っていない 4 つです（3 は確かめました）。
 
 ```bash
 # 1 と 2 のとおり入れて、新しい端末で起動する
@@ -132,9 +137,9 @@ bash <base>/scripts/launch-with-long-token.sh
 起動したセッションで:
 
 - `/status`——認証の行が `CLAUDE_CODE_OAUTH_TOKEN` から来ているか
-- `python3 <base>/scripts/check-unattended-env.py --cruise`——「認証」が `[良い]` か（上の 3）
-- 測っていない 3 つ（上の 2）——対話のセッションの中で `/remote-control` を打ったときの表示・端末を離れているときの iPhone への通知の試し
-  （[リモートコントロールの設定手順](advanced-remote-control.md)）・Opus などのモデルでサブエージェントに 1 つ読ませる／小さな差分に `/code-review`
+- 測っていない 4 つ（上の 2）——対話のセッションの中で `/remote-control` を打ったときの表示・端末を離れているときの iPhone への通知の試し
+  （[リモートコントロールの設定手順](advanced-remote-control.md)）・Opus などのモデルでサブエージェントに 1 つ読ませる／小さな差分に `/code-review high`・
+  `cc-plugin-sec-default` の有無で何が変わるか
 
 8 時間を超えて止まらないか（上の 1）は、起動口で cruise を起動した時刻を控え、9 時間ほど後に、その間の記録に 401 が無いかを見ます:
 

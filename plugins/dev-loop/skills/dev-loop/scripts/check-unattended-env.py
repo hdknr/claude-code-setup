@@ -194,7 +194,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   Long-lived tokens (from `claude setup-token` or CLAUDE_CODE_OAUTH_TOKEN) are limited to inference-only」——
   と本体の文字列で読み、**2.1.316 で実測した**（2026-11-02。長期トークンと対話ログインの `claude` を同じ引数で起こして比べた——
   Remote Control だけは条件が違う。条件は公開ページ。[#584](https://github.com/hdknr/claude-code-setup/issues/584#issuecomment-6575918006)）:
-  **claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome は使えない**（エラーは出ず、黙って無い・繋がらない）。サブエージェントと `/code-review` は動く。
+  **claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome は使えない**（エラーは出ず、黙って無い・繋がらない）。サブエージェントと `/code-review`（`low` だけ測った）は動く。
   上の `PushNotification` は `-p` では対照も送らないので**判定できていない**。表は公開ページを正とする（`TOKEN_PAGE`）
 
 ## 何を守り、何を守らないか
