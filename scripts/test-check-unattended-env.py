@@ -113,42 +113,43 @@ esac
         parent = ""
         if self.parent_env is not None:
             ppid = os.getppid()
-            parent = (f"*\"eww -o command= -p {ppid}\"*) printf '/Users/x/.local/bin/claude --session-id pp {self.parent_env}\\n' ;;\n"
-                      f"*\"ww -o command= -p {ppid}\"*) printf '/Users/x/.local/bin/claude --session-id pp\\n' ;;\n"
-                      f"*\"-p {ppid}\"*) printf '    1 /Users/x/.local/bin/claude --session-id pp\\n' ;;\n")
-        # 認証（#584）: 起動した claude の環境。eww（環境つき）の形を、引数だけの ww の形・祖先を辿る形より先に置く
+            parent = (f"*\"eww -o command= -p {ppid}\") printf '/Users/x/.local/bin/claude --session-id pp {self.parent_env}\\n' ;;\n"
+                      f"*\"ww -o command= -p {ppid}\") printf '/Users/x/.local/bin/claude --session-id pp\\n' ;;\n"
+                      f"*\"-p {ppid}\") printf '    1 /Users/x/.local/bin/claude --session-id pp\\n' ;;\n")
+        # 認証（#584）: 起動した claude の環境。eww（環境つき）の形を、引数だけの ww の形・祖先を辿る形より先に置く。
+        # pid は末尾で照合する（`-p 910"`）——前方一致だと、本物の親の pid（`os.getppid()`。例: 91012）が試料の pid に当たる
         self.fake("ps", f"""case "$*" in
-{parent}*"eww -o command= -p 900"*) printf '/Users/x/.local/bin/claude --session-id t PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
-*"ww -o command= -p 900"*) printf '/Users/x/.local/bin/claude --session-id t\\n' ;;
-*"-p 900"*) printf '  400 /Users/x/.local/bin/claude --session-id t\\n' ;;
-*"-p 950"*) printf '  900 /bin/zsh -c x\\n' ;;
-*"eww -o command= -p 910"*) printf '/Users/x/.local/bin/claude --session-id n PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN= OTHER=1\\n' ;;
-*"ww -o command= -p 910"*) printf '/Users/x/.local/bin/claude --session-id n\\n' ;;
-*"-p 910"*) printf '  400 /Users/x/.local/bin/claude --session-id n\\n' ;;
-*"eww -o command= -p 911"*) printf '/Users/x/.local/bin/claude --session-id k PATH=/bin HOME=/h ANTHROPIC_API_KEY=fake-key-584 CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
-*"ww -o command= -p 911"*) printf '/Users/x/.local/bin/claude --session-id k\\n' ;;
-*"-p 911"*) printf '  400 /Users/x/.local/bin/claude --session-id k\\n' ;;
-*"eww -o command= -p 920"*) printf '/Users/x/.local/bin/claude --session-id h\\n' ;;
-*"ww -o command= -p 920"*) printf '/Users/x/.local/bin/claude --session-id h\\n' ;;
-*"-p 920"*) printf '  400 /Users/x/.local/bin/claude --session-id h\\n' ;;
-*"eww -o command= -p 930"*) printf '/p/claude x PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
-*"ww -o command= -p 930"*) printf '/o/claude x\\n' ;;
-*"eww -o command= -p 960"*) printf '/Users/x/.local/bin/claude f PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n'; exit 1 ;;
-*"ww -o command= -p 960"*) printf '/Users/x/.local/bin/claude f\\n' ;;
-*"-p 960"*) printf '  400 /Users/x/.local/bin/claude f\\n' ;;
-*"-p 930"*) printf '  400 /Users/x/.local/bin/claude --session-id e\\n' ;;
-*"eww -o command= -p 940"*) printf '/Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg PATH=/bin HOME=/h\\n' ;;
-*"ww -o command= -p 940"*) printf '/Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg\\n' ;;
-*"-p 940"*) printf '  400 /Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg\\n' ;;
-*"eww -o command= -p 810"*) printf 'claude bg-spare --bg-spare /tmp/claim.sock PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
-*"ww -o command= -p 810"*) printf 'claude bg-spare --bg-spare /tmp/claim.sock\\n' ;;
+{parent}*"eww -o command= -p 900") printf '/Users/x/.local/bin/claude --session-id t PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 900") printf '/Users/x/.local/bin/claude --session-id t\\n' ;;
+*"-p 900") printf '  400 /Users/x/.local/bin/claude --session-id t\\n' ;;
+*"-p 950") printf '  900 /bin/zsh -c x\\n' ;;
+*"eww -o command= -p 910") printf '/Users/x/.local/bin/claude --session-id n PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN= OTHER=1\\n' ;;
+*"ww -o command= -p 910") printf '/Users/x/.local/bin/claude --session-id n\\n' ;;
+*"-p 910") printf '  400 /Users/x/.local/bin/claude --session-id n\\n' ;;
+*"eww -o command= -p 911") printf '/Users/x/.local/bin/claude --session-id k PATH=/bin HOME=/h ANTHROPIC_API_KEY=fake-key-584 CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 911") printf '/Users/x/.local/bin/claude --session-id k\\n' ;;
+*"-p 911") printf '  400 /Users/x/.local/bin/claude --session-id k\\n' ;;
+*"eww -o command= -p 920") printf '/Users/x/.local/bin/claude --session-id h\\n' ;;
+*"ww -o command= -p 920") printf '/Users/x/.local/bin/claude --session-id h\\n' ;;
+*"-p 920") printf '  400 /Users/x/.local/bin/claude --session-id h\\n' ;;
+*"eww -o command= -p 930") printf '/p/claude x PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 930") printf '/o/claude x\\n' ;;
+*"eww -o command= -p 960") printf '/Users/x/.local/bin/claude f PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n'; exit 1 ;;
+*"ww -o command= -p 960") printf '/Users/x/.local/bin/claude f\\n' ;;
+*"-p 960") printf '  400 /Users/x/.local/bin/claude f\\n' ;;
+*"-p 930") printf '  400 /Users/x/.local/bin/claude --session-id e\\n' ;;
+*"eww -o command= -p 940") printf '/Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg PATH=/bin HOME=/h\\n' ;;
+*"ww -o command= -p 940") printf '/Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg\\n' ;;
+*"-p 940") printf '  400 /Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg\\n' ;;
+*"eww -o command= -p 810") printf 'claude bg-spare --bg-spare /tmp/claim.sock PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 810") printf 'claude bg-spare --bg-spare /tmp/claim.sock\\n' ;;
 *-axo*) printf '{text}\\n' ;;
-*"-p 500"*) printf '  400 /Users/x/.local/bin/claude --session-id s --settings /tmp/flag.json\\n' ;;
-*"-p 400"*) printf '    1 /sbin/launchd\\n' ;;
-*"-p 600"*) printf '    1 /opt/claude --settings=/tmp/eq.json -p\\n' ;;
-*"-p 700"*) printf '  500 /Users/x/.local/bin/claude --session-id inner\\n' ;;
-*"-p 800"*) printf '  400 /Users/x/.local/share/claude/versions/2.1.310 --session-id v --settings /tmp/v.json\\n' ;;
-*"-p 810"*) printf '  400 claude bg-spare --bg-spare /tmp/claim.sock\\n' ;;
+*"-p 500") printf '  400 /Users/x/.local/bin/claude --session-id s --settings /tmp/flag.json\\n' ;;
+*"-p 400") printf '    1 /sbin/launchd\\n' ;;
+*"-p 600") printf '    1 /opt/claude --settings=/tmp/eq.json -p\\n' ;;
+*"-p 700") printf '  500 /Users/x/.local/bin/claude --session-id inner\\n' ;;
+*"-p 800") printf '  400 /Users/x/.local/share/claude/versions/2.1.310 --session-id v --settings /tmp/v.json\\n' ;;
+*"-p 810") printf '  400 claude bg-spare --bg-spare /tmp/claim.sock\\n' ;;
 *) exit 1 ;;
 esac
 """)
