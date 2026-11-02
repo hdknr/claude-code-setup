@@ -25,11 +25,18 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 **親の環境に別の値があっても 0 で上書きし、上書きしたことを出す**——親の環境はその端末で起こすもの全部に効く値で、この子のために置いたとは限らない。
 上限で止められた体は報告を返さない——#778 の子は自分で `SendMessage` でその体を再開して報告を回収したが、子がいつもそうするとは限らず、
 不在の周では止められたことに気づく人もいない。
+**認証**: 子の環境は親の Bash の環境を写して作る。**Bash の環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、親のセッションを起動した `claude`
+（最寄りの祖先）の環境から読み、空でなければ子の環境に置く**（#785）——Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を
+Bash の環境から外すので、写すだけでは長期トークン（`launch-with-long-token.sh`）で起動した親の子が対話ログインで回る
+（2026-11-02 に実プロセスで観測。`references/child-process.md` の「認証」）。
+**読み方は dev-loop の `../../dev-loop/scripts/check-unattended-env.py` の `launcher_auth_env` を読み込む**（写しを作らない）。
+どこから渡したか（Bash の環境・起動した claude の環境・渡していない）は起動時に 1 行で出し、記録の `.json` には名前と真偽と出所だけを残す。
 親の `/clear`・終了は、切り離した子を道連れにしない（**子のプロセスの寿命の話で、子が周を終えられるかは別**——
 `references/child-process.md` の「確かめた範囲」）。
 
 記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く——`<番号>-<UTC の時刻>.jsonl`（標準出力 = stream-json）、
-`.err`（標準エラー）、`.json`（pid・引数・パス・起動時刻・子に渡した `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`——**渡した値で、子が受けた値ではない**）。**周の worktree の中には書かない**（周を畳むと消える）。
+`.err`（標準エラー）、`.json`（pid・引数・パス・起動時刻・子に渡した `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`——**渡した値で、子が受けた値ではない**——と、
+`auth`: 子の環境に `CLAUDE_CODE_OAUTH_TOKEN` を置いたか（`name`・`passed`・`from`。**値は書かない**））。**周の worktree の中には書かない**（周を畳むと消える）。
 標準出力の最後の行に、台帳の `agent` に書く値（`claude-p:<記録の .json のパス>`）を出す——**台帳を書くのは親である**（このスクリプトは台帳を書かない）。
 
 ## status
@@ -58,6 +65,11 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 - **子を親から切り離す**——新しいセッションで起こし、終わるのを待たずに戻る。
 - **子の標準入力を閉じる**——親の標準入力を子に継がせない（端末なら子が親の入力を読み、待ちうる）。
 - **子の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——親の環境に無くても、別の値があっても 0 にする（別の値は上書きしたと出す）。
+- **Bash の環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、起動した `claude` の環境の値を子に置く。**
+- **Bash の環境にあれば、それを継がせて祖先を見ない**——起動した `claude` の環境の値で上書きしない。
+- **起動した `claude` の環境を読めない・祖先に `claude` が無い・そこにも無いなら、子は Bash の環境だけを継ぐ**——そのことを起動時に 1 行で言う（対話ログインの親の振る舞いは変えない）。
+- **子の環境から認証の変数を消す設定（`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`・`GITHUB_ACTIONS`。判定は `check-unattended-env.py` の `env_scrubbed`）なら、起動した `claude` の環境から渡さない**——消すと決めた値を読み戻さない。
+- **長期トークンの値を、出力・標準エラー・引数・記録の `.json`・例外の文に出さない**——渡したかは名前と真偽と出所だけで残す。
 - **cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも、子はメインの作業ツリーで起きる。
 - **許可モードを名指しさせる**——渡さなければ 2。既定に任せると、同じ settings でも子のモードが分かれた（実測）。
 - **`bypassPermissions` を拒む**——cruise は権限を広げない（`../../dev-loop/references/absent-lines.md` の「広げても外れないもの」）。
@@ -83,6 +95,11 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 - **stream-json の形の変化**——鍵の名前は 2.1.312 の実測に合わせている。版が変わって鍵が消えたら、その行は「無し」と出る。
 - **0 が「上限なしに待つ」ことと、それで関門が回りきること**——0 の意味は子の標準エラーの文言にあるだけで、0 を渡した子が背景の体を
   殺さずに待つことはまだ測っていない（`references/child-process.md` の「確かめた範囲」）。**待ち続けた体が終わらなければ、子も終わらない。**
+- **起動した `claude` の環境のトークンが有効か・子がそれで認証するか**——子の環境に置くまでである。子より先に使われる認証
+  （`ANTHROPIC_AUTH_TOKEN`・`ANTHROPIC_API_KEY`・`apiKeyHelper`）が子の側にあれば、そちらが使われうる。**起動した `claude` の環境にだけ
+  そうした認証があっても、子には渡さない**（渡すのは `CLAUDE_CODE_OAUTH_TOKEN` だけ）。
+- **祖先を辿る読み方の限界**——`check-unattended-env.py` の `nearest_claude`・`launcher_auth_env` の docstring と同じ（spare から引き継いだセッション・
+  ほかの利用者のプロセス・空白を含む値は読めないか、読めないと答える）。**Claude Code が版を変えて Bash の環境に戻したら、Bash の環境のほうを継ぐ。**
 - **settings の `env` がこの値を変えるか**——子の Claude Code が settings（利用者・プロジェクト）の `env` を自分の環境に重ねるなら、
   そこに置いた値が勝ちうる。測っていない。
 - **子が台帳を書かないこと**——委譲文で頼むだけである（`prompts/child-cycle.md`）。
@@ -116,6 +133,9 @@ MAX_TEXT = 300
 # 子が最後のターンの後に背景の体を待つ上限（ミリ秒）。0 は「上限なし」——子の標準エラーの文言による（#491・#778 の子で観測）
 BG_WAIT_CEILING = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 LEDGER = Path(__file__).resolve().parent.parent.parent / "dev-loop" / "scripts" / "ledger.py"
+# 起動した claude の環境の読み方（#785）。写しを作らずに読み込む
+UNATTENDED = Path(__file__).resolve().parent.parent.parent / "dev-loop" / "scripts" / "check-unattended-env.py"
+LONG_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
 
 
 class Usage(Exception):
@@ -135,6 +155,35 @@ def load_ledger(path=None):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
+
+
+def load_unattended(path=None):
+    spec = importlib.util.spec_from_file_location("cruise_child_unattended", path or UNATTENDED)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def long_token(env, unattended=None):
+    """子の環境に置く長期トークン（#785）。(値 or None, 出所 or None, 起動時に出す 1 行)。
+    **値は 1 つ目にだけ置く**——出所と行には入れない。出所は "bash"（Bash の環境にある。継がせるだけ）・"launcher"（起動した claude の環境から読んだ）・None。"""
+    if str(env.get(LONG_TOKEN) or "").strip():
+        return None, "bash", f"認証: 子は Bash の環境の {LONG_TOKEN} を継ぐ"
+    keep = "——子は Bash の環境だけを継ぐ"
+    try:
+        mod = unattended or load_unattended()
+        if mod.env_scrubbed(env):
+            return None, None, (f"認証: Bash の環境に {LONG_TOKEN} が無く、子の環境から認証の変数を消す設定"
+                                f"（CLAUDE_CODE_SUBPROCESS_ENV_SCRUB／GITHUB_ACTIONS）なので、起動した claude の環境からは渡さない{keep}")
+        found, why = mod.launcher_auth_env()
+    except Exception as exc:  # 読み方を読み込めない・想定外の失敗——値は持っていないので、型の名前だけを言う
+        return None, None, f"認証: Bash の環境に {LONG_TOKEN} が無く、起動した claude の環境を読めなかった（{type(exc).__name__}）{keep}"
+    if why is not None:
+        return None, None, f"認証: Bash の環境に {LONG_TOKEN} が無く、起動した claude の環境も読めなかった（{why}）{keep}"
+    value = (found or {}).get(LONG_TOKEN)
+    if not str(value or "").strip():
+        return None, None, f"認証: 起動した claude の環境にも {LONG_TOKEN} が無い（対話ログインなど）{keep}"
+    return value, "launcher", f"認証: Bash の環境に {LONG_TOKEN} が無いので、起動した claude の環境の値を子に渡した（値は出さない）"
 
 
 def children_dir(name, cwd=None, ledger=None):
@@ -235,6 +284,9 @@ def cmd_launch(args, cwd=None):
     env = dict(os.environ)
     previous = env.get(BG_WAIT_CEILING)
     env[BG_WAIT_CEILING] = "0"
+    token, token_from, token_line = long_token(env)
+    if token is not None:
+        env[LONG_TOKEN] = token
     try:
         directory.mkdir(parents=True, exist_ok=True)
         with open(out, "wb") as out_f, open(err, "wb") as err_f:
@@ -247,7 +299,8 @@ def cmd_launch(args, cwd=None):
     shown = [c if c != brief else f"<委譲文: {brief_path.resolve()}>" for c in command]
     meta = {"format": 1, "name": args.name, "number": number, "pid": proc.pid, "cwd": str(main_tree),
             "command": shown, "brief": str(brief_path.resolve()), "out": str(out), "err": str(err),
-            "started": stamp, "env": {BG_WAIT_CEILING: env[BG_WAIT_CEILING]}}
+            "started": stamp, "env": {BG_WAIT_CEILING: env[BG_WAIT_CEILING]},
+            "auth": {"name": LONG_TOKEN, "passed": token_from is not None, "from": token_from}}
     try:
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     except OSError as exc:
@@ -255,6 +308,7 @@ def cmd_launch(args, cwd=None):
     print(f"起こした: #{number}（pid {proc.pid}・cwd {main_tree}）")
     if previous is not None and previous != "0":
         print(f"上書きした: 親の環境の {BG_WAIT_CEILING}={previous!r} を、子では 0 にした（背景の体を上限で止めさせない）")
+    print(token_line)
     print(f"出力: {out}")
     print(f"標準エラー: {err}")
     print(f"台帳の agent: claude-p:{meta_path}")

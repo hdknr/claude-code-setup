@@ -716,7 +716,15 @@ ENV_SEEN = ("PATH=", "HOME=")  # 環境が見えている印——見えなけ�
 
 def launcher_auth_names(pid=None):
     """最寄りの祖先の `claude`（このセッションを起動したプロセス）の環境で、値が空でない認証の変数の名前（#584）。
-    (frozenset or None, 失敗の理由 or None)。**値は返さない**——環境の文字列はこの関数の外へ出さない（理由の文にも入れない）。
+    (frozenset or None, 失敗の理由 or None)。**値は返さない**——読み方は `launcher_auth_env` にあり、ここは名前だけを返す。"""
+    found, why = launcher_auth_env(pid)
+    return (None if found is None else frozenset(found)), why
+
+
+def launcher_auth_env(pid=None):
+    """最寄りの祖先の `claude` の環境の、値が空でない認証の変数（`AUTH_NAMES` だけ）。(dict or None, 失敗の理由 or None)。
+    **値を返すのは、子に渡すため**（cruise の `child-cycle.py`。#785）——呼ぶ側は値を出力・記録・例外に入れない。
+    失敗の理由の文には環境の文字列を入れない。
     環境は `ps eww` の出力から、引数だけの `ps ww` の出力を前から外して切り出す——引数に書かれた `NAME=…` を環境と読まない。"""
     cpid, argv, why = nearest_claude(pid)
     if why:
@@ -733,7 +741,7 @@ def launcher_auth_names(pid=None):
     words = full[len(bare):].split()
     if not any(w.startswith(ENV_SEEN) for w in words):
         return None, f"claude（pid {cpid}）の環境が見えなかった（ほかの利用者のプロセス・OS の制限など）"
-    return frozenset(n for n, _, v in (w.partition("=") for w in words) if n in AUTH_NAMES and v), None
+    return {n: v for n, _, v in (w.partition("=") for w in words) if n in AUTH_NAMES and v}, None
 
 
 def check_auth(stack, env, present=False, ancestor=None):
