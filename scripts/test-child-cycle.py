@@ -294,6 +294,20 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                            if rec51 and wait_for(rec51.exists) and wait_for(lambda: rec51.stat().st_size > 0) else "記録なし")
         wait_for(lambda: run(mod, ["status", NAME, "51"], main)[0] != 1)
         o["端から端"] = run(mod, ["status", NAME, "51"], main)[:2]
+        # 親の環境が既に "0"——上書きではないので出さない（経路 (c)。#491 の 1 パス目 V1・CR3）
+        os.environ["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+        try:
+            rc, out, _ = run(mod, ["launch", NAME, "54", "--brief", str(brief), "--permission-mode", "auto"], main)
+        finally:
+            os.environ.pop("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", None)
+        m = re.search(r"pid (\d+)", str(out))
+        if m:
+            started.append(int(m.group(1)))
+        rec54 = home / f"claude-rec-{m.group(1)}.json" if m else None
+        o["親が 0 なら上書きしたと出さない"] = (rc, "上書きした" not in str(out),
+                                    json.loads(rec54.read_text(encoding="utf-8")).get("bg")
+                                    if rec54 and wait_for(rec54.exists) and wait_for(lambda: rec54.stat().st_size > 0) else "記録なし")
+        wait_for(lambda: run(mod, ["status", NAME, "54"], main)[0] != 1)
 
         # 拒む
         os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
@@ -370,6 +384,7 @@ def main() -> int:
               o["上限(親に別の値)"] == "0" and o["上書きしたと出す"])
         check("親の環境に無くても、子の CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS は 0（上書きしたとは出さない）",
               o["上限(親に無い)"] == "0" and o["#51 で上書きしたと出さない"])
+        check("親の環境が既に 0 なら、子は 0 で、上書きしたとは出さない", o["親が 0 なら上書きしたと出さない"] == (0, True, "0"))
         check("記録の .json に子へ渡した上限を残す", o["記録の env"] == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"})
         check("記録は台帳の隣（.claude/plans/cruise-<名前>-children/）に在り、その場所を出す", o["記録の場所"])
         check("worktree の中には書かない", o["worktree に書かない"] == [".git", "sub"])

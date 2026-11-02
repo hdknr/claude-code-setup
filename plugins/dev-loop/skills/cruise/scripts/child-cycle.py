@@ -28,7 +28,7 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 `references/child-process.md` の「確かめた範囲」）。
 
 記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く——`<番号>-<UTC の時刻>.jsonl`（標準出力 = stream-json）、
-`.err`（標準エラー）、`.json`（pid・引数・パス・起動時刻）。**周の worktree の中には書かない**（周を畳むと消える）。
+`.err`（標準エラー）、`.json`（pid・引数・パス・起動時刻・子に渡した `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`——**渡した値で、子が受けた値ではない**）。**周の worktree の中には書かない**（周を畳むと消える）。
 標準出力の最後の行に、台帳の `agent` に書く値（`claude-p:<記録の .json のパス>`）を出す——**台帳を書くのは親である**（このスクリプトは台帳を書かない）。
 
 ## status
