@@ -19,6 +19,11 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
         [--allowedTools <道具> …]
 
 を**親から切り離して**起こし（新しいセッション・標準入力は閉じる）、**終わるのを待たずに**戻る。
+子の環境には **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`** を置く——`-p` は最後のターンの後も背景の体（背景で起こした Verifier など）を待つが、
+待ちに上限があり、上限を過ぎると体を止める（2026-11-02、#778 の子で 2 パス目の Verifier が 10 分で止められ、`subagent_stats.killed` の
+`system` が 1 になった。標準エラーが `Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.` と言った）。
+**親の環境に別の値があっても 0 で上書きし、上書きしたことを出す**——親の環境はその端末で起こすもの全部に効く値で、この子のために置いたとは限らない。
+上限で止められた関門は、不在の周では誰も拾い直せない。
 親の `/clear`・終了は、切り離した子を道連れにしない（**子のプロセスの寿命の話で、子が周を終えられるかは別**——
 `references/child-process.md` の「確かめた範囲」）。
 
@@ -51,6 +56,7 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 
 - **子を親から切り離す**——新しいセッションで起こし、終わるのを待たずに戻る。
 - **子の標準入力を閉じる**——親の標準入力を子に継がせない（端末なら子が親の入力を読み、待ちうる）。
+- **子の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——親の環境に無くても、別の値があっても 0 にする（別の値は上書きしたと出す）。
 - **cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも、子はメインの作業ツリーで起きる。
 - **許可モードを名指しさせる**——渡さなければ 2。既定に任せると、同じ settings でも子のモードが分かれた（実測）。
 - **`bypassPermissions` を拒む**——cruise は権限を広げない（`../../dev-loop/references/absent-lines.md` の「広げても外れないもの」）。
@@ -74,6 +80,10 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
   （確かめた範囲は `references/child-process.md`）。
 - **pid のコマンドが別の `claude` か**——同じ pid で、同じ Issue の `/dev-loop:dev-loop <番号>` を持つ別の `claude` が走っていれば「走っている」と読む。
 - **stream-json の形の変化**——鍵の名前は 2.1.312 の実測に合わせている。版が変わって鍵が消えたら、その行は「無し」と出る。
+- **0 が「上限なしに待つ」ことと、それで関門が回りきること**——0 の意味は子の標準エラーの文言にあるだけで、0 を渡した子が背景の体を
+  殺さずに待つことはまだ測っていない（`references/child-process.md` の「確かめた範囲」）。**待ち続けた体が終わらなければ、子も終わらない。**
+- **settings の `env` がこの値を変えるか**——子の Claude Code が settings（利用者・プロジェクト）の `env` を自分の環境に重ねるなら、
+  そこに置いた値が勝ちうる。測っていない。
 - **子が台帳を書かないこと**——委譲文で頼むだけである（`prompts/child-cycle.md`）。
 - **記録のディレクトリの後片付け**——消さない。
 - **子を起こした後に記録を書けなかったとき**——子は走り続け、記録が無いので `status` も 2 体目の歯止めも見えない（pid は 4 の理由に出す）。
@@ -102,6 +112,8 @@ EXIT_UNKNOWN = 4
 PERMISSION_MODES = ("acceptEdits", "auto", "bypassPermissions", "default", "manual", "dontAsk", "plan")
 REFUSED_MODES = ("bypassPermissions",)
 MAX_TEXT = 300
+# 子が最後のターンの後に背景の体を待つ上限（ミリ秒）。0 は「上限なし」——子の標準エラーの文言による（#491・#778 の子で観測）
+BG_WAIT_CEILING = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 LEDGER = Path(__file__).resolve().parent.parent.parent / "dev-loop" / "scripts" / "ledger.py"
 
 
@@ -219,11 +231,14 @@ def cmd_launch(args, cwd=None):
         command += ["--max-budget-usd", args.max_budget_usd]
     if args.allowed_tools:
         command += ["--allowedTools", *args.allowed_tools]  # 可変長なので最後に置く
+    env = dict(os.environ)
+    previous = env.get(BG_WAIT_CEILING)
+    env[BG_WAIT_CEILING] = "0"
     try:
         directory.mkdir(parents=True, exist_ok=True)
         with open(out, "wb") as out_f, open(err, "wb") as err_f:
             proc = subprocess.Popen(command, cwd=main_tree, stdin=subprocess.DEVNULL, stdout=out_f, stderr=err_f,
-                                    start_new_session=True)
+                                    start_new_session=True, env=env)
     except OSError as exc:
         for leftover in (out, err):
             leftover.unlink(missing_ok=True)
@@ -231,12 +246,14 @@ def cmd_launch(args, cwd=None):
     shown = [c if c != brief else f"<委譲文: {brief_path.resolve()}>" for c in command]
     meta = {"format": 1, "name": args.name, "number": number, "pid": proc.pid, "cwd": str(main_tree),
             "command": shown, "brief": str(brief_path.resolve()), "out": str(out), "err": str(err),
-            "started": stamp}
+            "started": stamp, "env": {BG_WAIT_CEILING: env[BG_WAIT_CEILING]}}
     try:
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     except OSError as exc:
         raise Unknown(f"子（pid {proc.pid}）は起きたが、記録を書けない: {exc}") from exc
     print(f"起こした: #{number}（pid {proc.pid}・cwd {main_tree}）")
+    if previous is not None and previous != "0":
+        print(f"上書きした: 親の環境の {BG_WAIT_CEILING}={previous!r} を、子では 0 にした（背景の体を上限で止めさせない）")
     print(f"出力: {out}")
     print(f"標準エラー: {err}")
     print(f"台帳の agent: claude-p:{meta_path}")
