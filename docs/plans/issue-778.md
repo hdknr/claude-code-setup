@@ -79,7 +79,12 @@ main へのマージでプラグインの配布（spec-loop 0.45.1）。公開�
 - 割り目（手順 4）: 不在の周なので訊かない。このまま続ける。
 - 1 パス目: **Verifier 反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。指示文 169 行を読ませ、報告は 170 行——末尾の改行の数え方の差）。**`/code-review`（high）指摘 4 件**——**ただし 1 パス目の `/code-review` には `prompts/review-handoff.md` を渡せていない**（`Skill` の引数に対象と base だけを渡したら、フォークした実行が引数だけで完了して戻った。受入基準を渡していない素の差分レビューである。PR コメントに申告する。2 パス目には貼って渡す）。差し戻し 1 件（手順 4 へ: `test-check-signoff.py`）。
 - 割り目（手順 6・2 パス目の前）: 不在の周なので訊かない。このまま続ける。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
-- 2 パス目: 対象は 1 パス目の指摘対応 `d5c3b3c1..3e2aa22d`（`scripts/test-check-signoff.py` と計画ファイル）。base は変えない（`9e9be07f`）。2 パス目の指摘対応の起点（狭いパスの起点）: `3e2aa22d`1 パス目の指摘対応の起点: `d5c3b3c1`（実装のコミット。関門に渡した時点の HEAD）
+- 2 パス目: 対象は 1 パス目の指摘対応 `d5c3b3c1..3e2aa22d`（`scripts/test-check-signoff.py` と計画ファイル）。base は変えない（`9e9be07f`）。2 パス目の指摘対応の起点（狭いパスの起点）: `3e2aa22d`
+- 2 パス目の結果: **`/code-review`（high。`prompts/review-handoff.md` を引数に貼って渡した）指摘 4 件**（2-R1〜2-R4）・**Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件**（軽い指摘 1 件＝2-R5。報告が届かず止まっていたので再開して回収した。C4 の 9 本は順番待ちで自分では完走できず、`check-all` 58/58 と PR の CI を未確認の引用として報告）。
+- 2 パス目の指摘対応: 終点 `cd861efe`（計画ファイルだけ。`git diff 3e2aa22d cd861efe -- ':(top)' ':(top,exclude)docs/plans/issue-778.md'` は空）。scratchpad の `same_text.py` も直した（リポジトリの外）。
+- **狭いパス: 該当なし**（2 パス目で直した行は計画ファイルと scratchpad の道具だけで、成果物の差分が 0 行）。
+- 歯止め: `python3 scripts/check-all.py`（順番待ち越し）**58/58 本・失敗 0**（2-R1 を直した後）。1 回目は `test-check-signoff.py`・`check-plan-counts.py` が FAIL のまま時間切れで止まった。
+- PR #780: `gh pr checks 780` **check pass・build pass・deploy skipping**（`cd861efe`）。1 パス目の指摘対応の起点: `d5c3b3c1`（実装のコミット。関門に渡した時点の HEAD）
 - 交絡を潰した手順: 陽性対照（直す前の版で 77 件）。`same_text.py` は直す前と後の描画の両方を同じ道具で取り、`<…>` 以外が同じことを見る
   （増えた数 77 が直す前の消えた数 77 と一致——別の場所の `<n>` で消えた分が打ち消されて数えられていないことの確かめ）。
 
@@ -95,6 +100,7 @@ main へのマージでプラグインの配布（spec-loop 0.45.1）。公開�
 | 2-R1 計画ファイルに件数の行（`- この周の起票: N 件`）が無く `check-plan-counts.py` が赤 | 示せる——`python3 scripts/check-plan-counts.py` が `件数の行…が無い` で 1 | C4 | 直す（下の「手順 8」に件数の行を置いた。計画ファイルだけの修正） |
 | 2-R2 この差分で `check-all.py` が最後まで回った記録が無い（1 回目は時間切れで止まり、2 回目は順番待ち） | 示せる（`/tmp/i778/checkall-1.txt` に集計行が無い） | C4 | 直す（2-R1 を直してから回し直し、集計行を下の再開点に書く） |
 | 2-R3 `same_text.py` は HEAD と比べるので、コミット後は 0 本を比べて `差 0` を出す。base と比べると版の行で `SKILL.md` 5 本が違う | 示せる（`差 0` を 0 本で出す） | 無し（C2 自体は成り立つ——1 パス目の Verifier と 2 パス目の `/code-review` がそれぞれ base 固定・版の行を揃えて確かめた） | 直す（scratchpad の道具だけ。比べる相手を引数で取り、比べた本数を出し、版の行を揃える。リポジトリの差分は無い） |
+| 2-R5（Verifier 2 パス目・軽い指摘）C4 の経路の記述が狭い——参照の文面を `v<n>` つきで字句どおりに読むテストは `test-check-frozen`・`test-check-qa-csv`・`test-init-mkdocs`・`test-scaffold` にもある | 示せない（どれもコードスパンの中の `v<n>` を読み、この周はそこを変えていない。`test-check-frozen`・`test-diff-versions` は Verifier が、全部は `check-all` 58/58 が緑） | 無し | 残課題（計画の記述。経路は C4 の表に既に名指ししてある） |
 | 2-R4 `render_check.py` は原文からコメントを除いて数えるので、コードスパンの中のコメントや実体参照で描画の数が増えると、本当に消えた分を打ち消して数え損ねうる | 示せない（いまの 22 本でそうなる形は無い——打ち消しうる語は非 ASCII かコメント全体で、`v<n>` 類と重ならない） | 無し | 残課題（試料の穴・実際の利用でまず起きない形。PR コメントに記録） |
 
 ## 手順 8（経験の還元・起票）
