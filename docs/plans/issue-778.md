@@ -85,6 +85,8 @@ main へのマージでプラグインの配布（spec-loop 0.45.1）。公開�
 - **狭いパス: 該当なし**（2 パス目で直した行は計画ファイルと scratchpad の道具だけで、成果物の差分が 0 行）。
 - 歯止め: `python3 scripts/check-all.py`（順番待ち越し）**58/58 本・失敗 0**（2-R1 を直した後）。1 回目は `test-check-signoff.py`・`check-plan-counts.py` が FAIL のまま時間切れで止まった。
 - PR #780: `gh pr checks 780` **check pass・build pass・deploy skipping**（`cd861efe`）。1 パス目の指摘対応の起点: `d5c3b3c1`（実装のコミット。関門に渡した時点の HEAD）
+- マージの直前の取り込みと上げ直し（2026-11-02。cruise の `references/parallel.md` の「版とマージの順」）: `origin/main`（`d0c81323`）を取り込んだ（merge `9328ebf5`。衝突なし・取り込みで増えた検査なし）。
+  spec-loop は main の先端 0.45.0 から patch で 0.45.1（PR の版のまま。3 箇所が揃っている）、dev-loop は main のまま 1.74.0。`check-all.py`（順番待ち越し）**58/58 本・失敗 0**。関門はやり直さない。
 - 交絡を潰した手順: 陽性対照（直す前の版で 77 件）。`same_text.py` は直す前と後の描画の両方を同じ道具で取り、`<…>` 以外が同じことを見る
   （増えた数 77 が直す前の消えた数 77 と一致——別の場所の `<n>` で消えた分が打ち消されて数えられていないことの確かめ）。
 
