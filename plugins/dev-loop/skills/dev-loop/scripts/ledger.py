@@ -9,6 +9,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
     python3 <…>/ledger.py user-ops <名前> [コマンド …] --source 出所
     python3 <…>/ledger.py show <名前>
     python3 <…>/ledger.py next <名前>
+    python3 <…>/ledger.py status <名前>
     python3 <…>/ledger.py path <名前>
 
 **いつ使い、いつ書き換え、どう再開するかは `references/ledger.md` を正とする**
@@ -108,15 +109,36 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 
 | コード | 意味 |
 | --- | --- |
-| 0 | 通った（`next` で着手できるものが 0 件でも 0） |
+| 0 | 通った（`next` で着手できるものが 0 件でも 0）。**`status` では、親が進められる周がある** |
 | 2 | 引数が違う（名前の形・番号の形・`鍵=値` の形・`group` に代表のほかの番号が無い） |
-| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（まとめを 1 つと数えた循環・在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空・まとめに入れられない行（`todo` でない・別のまとめに入っている・同じ番号を 2 度・前の周の在り処を持ったまま）・`set group=` に空でない値や空白だけの値・他の行が残るまとめから代表を抜く・まとめの状態をそろえなくする操作・`マージ = 関門を通ればマージ` の無い出所の印） |
-| 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない** |
+| 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（まとめを 1 つと数えた循環・在る台帳への `init`・台帳に無い Issue・2 度目の `add`・決まった一覧に無い状態や鍵・依存の誤り・`decisions` が番号でない・`LINES` に無い線の項目や値・同じ項目を 2 度・出所が空・出所のある行の依存が空・まとめに入れられない行（`todo` でない・別のまとめに入っている・同じ番号を 2 度・前の周の在り処を持ったまま）・`set group=` に空でない値や空白だけの値・他の行が残るまとめから代表を抜く・まとめの状態をそろえなくする操作・`マージ = 関門を通ればマージ` の無い出所の印）。**`status` では、人を待つ周だけが残っている**（`status` は台帳を変えないので拒む場面が無い） |
+| 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**（循環・無い依存先・同じ番号が 2 つ）・台帳を書けなかった）。**「着手できるものなし」とは答えていない**（`status` でも「済んだ」「人待ち」とは答えていない） |
+| 5 | `status` だけ: 親 Issue の一覧の行がすべてマージ済みか取り下げ |
+
+### `status` が見るもの（#632）
+
+**cruise の `SKILL.md` §6 の「終える」条件を、外から終了コードで判定するための口である**——条件の原本は §6 で、ここはその実装。
+判定は上から順に:
+
+1. **進行中の行（`impl`・`gate`・`pr`。出所に依らない）か、落ちたのにまとめの中で `merged` の行があれば 0**——§6 は始めた行を閉じてから、
+   名指しの行を戻してから判定する。
+2. **親 Issue の一覧の行（`origin` が空の行）がすべて `merged` か `dropped` なら 5**——周の途中で足した行が残っていても終える（§6。#774）。
+3. **親 Issue の一覧の行の周か、その依存を辿った先の周が着手できれば 0**——`next` と同じまとまり（まとめは全行が着手できるときだけ）。
+   **周の途中で足した行だけが着手できても 0 と言わない**（§6 はそれを始めずに終える）。
+4. **それ以外は 3**——残りは `blocked`・`await` と、それら（か `dropped`）に依存する周だけ。
+
+1 行目に判定と、その理由になった番号を出す。**台帳の値だけで決める**——実物（PR・worktree）は見ない（下の「守らない」）。
 
 ## 何を守り、何を守らないか
 
 守る:
 
+- **`show` の「進行中」は、親が続けられる行（`impl`・`gate`・`pr`）だけを出し、`blocked` は「利用者の判断待ち（止まっている）」の行に `note` つきで出す**（#632）——
+  人を待つ行を「進行中」に混ぜると、人を待つ行だけ残った台帳を、外側のループが「進行中あり」と読んで周を回さない起動を繰り返す（spin-dd/tfs-stocks#2427）。
+- **`status` は、進行中の行か落ちたのに `merged` の行があれば、親 Issue の一覧の行の状態に依らず 0 を返す**（#632）——§6 は始めた行を閉じてから判定する。
+  「済んだ」（5）・「人待ち」（3）と答えると、外側のループが閉じていない周を置いて終える。
+- **`status` は、周の途中で足した行（`origin` のある行）だけが着手できても 0 と言わない**（#632）——§6 はそれを始めずに終えるので、0 と答えると
+  外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存を辿って待っている行なら着手できると数える。
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
 - **`--separate-git-dir` のリポジトリ（先の名前が `.git` でないもの）とサブモジュールと bare リポジトリの worktree でも、
   作業ツリーの外に書かない**——worktree の中からメインの作業ツリーを決められなければ 4。
@@ -250,6 +272,11 @@ EXIT_OK = 0
 EXIT_USAGE = 2
 EXIT_REJECTED = 3
 EXIT_UNKNOWN = 4
+# `status` だけの値（#632）。3 は EXIT_REJECTED と同じ値——`status` は台帳を変えないので拒む場面が無く、重ならない
+EXIT_WAITING = 3
+EXIT_DONE = 5
+# 親が続けられる行（`show` の「進行中」・`status` の 1）
+GOING = ("impl", "gate", "pr")
 
 
 class Refused(Exception):
@@ -684,7 +711,7 @@ def cmd_show(path):
                  *(i.get(k, "") or "-" for k in ("pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin")),
                  f"#{i['group']}" if i.get("group") else "-", i.get("updated", "")]
         print("| " + " | ".join(str(c) for c in cells) + " |")
-    going = [i for i in data["issues"] if i["state"] in ("impl", "gate", "pr", "blocked", "await")]
+    going = [i for i in data["issues"] if i["state"] in GOING]
     can = units(data)
     started = {r["number"] for u in can for r in u}
     waiting = [i for i in data["issues"] if i["state"] == "todo" and i["number"] not in started]
@@ -693,6 +720,9 @@ def cmd_show(path):
     print("着手できる: " + (", ".join(f"#{u[0]['number']}" + (
         "（まとめ: " + ", ".join(f"#{r['number']}" for r in u[1:]) + "）" if len(u) > 1 else "") for u in can) or "なし"))
     print("依存待ち: " + (", ".join(f"#{i['number']}" for i in waiting) or "なし"))
+    blocked = [i for i in data["issues"] if i["state"] == "blocked"]
+    print("利用者の判断待ち（止まっている）: "
+          + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in blocked) or "なし"))
     awaiting = [i for i in data["issues"] if i["state"] == "await"]
     print("利用者の操作待ち: " + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in awaiting) or "なし"))
     found = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
@@ -718,10 +748,48 @@ def cmd_next(path):
         print(" ".join(str(i["number"]) for i in unit))
 
 
+def judge(data):
+    """(終了コード, 1 行の説明)。判定の順は docstring の「`status` が見るもの」を正とする（#632）。"""
+    def nums(rows):
+        return ", ".join(f"#{i['number']}({i['state']})" for i in rows)
+
+    started = [i for i in data["issues"] if i["state"] in GOING]
+    stranded = [i for i in data["issues"] if is_stranded(i)]
+    if started or stranded:
+        why = "; ".join(x for x in (started and "進行中: " + nums(started),
+                                    stranded and "落ちたのにまとめの中で merged: " + nums(stranded)) if x)
+        return EXIT_OK, f"進められる（{why}）"
+    listed = [i for i in data["issues"] if not i.get("origin")]
+    if all(i["state"] in (DONE, "dropped") for i in listed):
+        rest = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
+        return EXIT_DONE, "親 Issue の一覧の行はすべてマージ済みか取り下げ" + (
+            f"（周の途中で足した行のうち済んでいないもの: {nums(rest)}）" if rest else "")
+    # 親 Issue の一覧の済んでいない行と、その依存を辿った先
+    by = {i["number"]: i for i in data["issues"]}
+    need, stack = set(), [i["number"] for i in listed if i["state"] not in (DONE, "dropped")]
+    while stack:
+        n = stack.pop()
+        if n in need or n not in by:
+            continue
+        need.add(n)
+        stack.extend(by[n]["deps"])
+    can = [u for u in units(data) if any(r["number"] in need for r in u)]
+    if can:
+        return EXIT_OK, "進められる（着手できる: " + ", ".join(f"#{u[0]['number']}" for u in can) + "）"
+    left = [by[n] for n in sorted(need) if by[n]["state"] not in (DONE, "dropped")]
+    return EXIT_WAITING, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: " + nums(left)
+
+
+def cmd_status(path):
+    code, line = judge(load(path))
+    print(line)
+    return code
+
+
 def build_parser():
     p = argparse.ArgumentParser(description="複数 Issue の台帳（依存グラフと状態）")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "show", "next", "path"):
+    for name in ("init", "show", "next", "status", "path"):
         sub.add_parser(name).add_argument("name")
     a = sub.add_parser("add")
     a.add_argument("name")
@@ -771,6 +839,8 @@ def main(argv=None, cwd=None):
             cmd_show(path)
         elif args.cmd == "next":
             cmd_next(path)
+        elif args.cmd == "status":
+            return cmd_status(path)
         elif args.cmd == "path":
             print(path)
     except Usage as exc:
