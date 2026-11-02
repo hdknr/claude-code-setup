@@ -119,8 +119,9 @@
 
 ## 関門の進捗（再開点）
 
-- 手順 4: 実装済み（未コミット→コミット予定）。割り目は不在の周なので訊かない（`references/absent-lines.md` の「訊く場面」）。
-- 関門: 未着手。
+- 手順 4: 実装済み（`7e9fabaf`）。割り目は不在の周なので訊かない（`references/absent-lines.md` の「訊く場面」）。選択: このまま続ける（訊いていない）。
+- 1 パス目の指摘対応の起点（1 パス目の関門に渡した時点の HEAD）: `7e9fabaf55960892ae54c6997cf9012a4a36b2f6`
+- 関門: Verifier 1 パス目（`dev-loop:dev-loop-verifier`・`sonnet`）を起動。`/code-review` 1 パス目を起動。
 
 ## 既知の限界・決着済みの論点
 
