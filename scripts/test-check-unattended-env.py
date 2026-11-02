@@ -67,6 +67,7 @@ class Env:
             d.mkdir(parents=True, exist_ok=True)
         assert_not_real_home(self.home)
         self.sleep(0)
+        self.parent_env = None
         self.processes(["/usr/bin/caffeinate -i -t 300"])
 
     def write(self, path: Path, data) -> Path:
@@ -100,9 +101,47 @@ batt) printf "Now drawing from 'AC Power'\\n" ;;
 esac
 """)
 
+    def claude_parent(self, env_words):
+        """このプロセスの親（`os.getppid()`）を、環境に `env_words` を持つ偽の `claude` にする。
+        本番の経路（`main` → `launcher_auth_names()`）を、本物のプロセスを読まずに当てる（#584）。"""
+        self.parent_env = env_words
+        self.processes(self.lines)
+
     def processes(self, lines):
+        self.lines = lines
         text = "\\n".join(lines)
+        parent = ""
+        if self.parent_env is not None:
+            ppid = os.getppid()
+            parent = (f"*\"eww -o command= -p {ppid}\"*) printf '/Users/x/.local/bin/claude --session-id pp {self.parent_env}\\n' ;;\n"
+                      f"*\"ww -o command= -p {ppid}\"*) printf '/Users/x/.local/bin/claude --session-id pp\\n' ;;\n"
+                      f"*\"-p {ppid}\"*) printf '    1 /Users/x/.local/bin/claude --session-id pp\\n' ;;\n")
+        # 認証（#584）: 起動した claude の環境。eww（環境つき）の形を、引数だけの ww の形・祖先を辿る形より先に置く
         self.fake("ps", f"""case "$*" in
+{parent}*"eww -o command= -p 900"*) printf '/Users/x/.local/bin/claude --session-id t PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 900"*) printf '/Users/x/.local/bin/claude --session-id t\\n' ;;
+*"-p 900"*) printf '  400 /Users/x/.local/bin/claude --session-id t\\n' ;;
+*"-p 950"*) printf '  900 /bin/zsh -c x\\n' ;;
+*"eww -o command= -p 910"*) printf '/Users/x/.local/bin/claude --session-id n PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN= OTHER=1\\n' ;;
+*"ww -o command= -p 910"*) printf '/Users/x/.local/bin/claude --session-id n\\n' ;;
+*"-p 910"*) printf '  400 /Users/x/.local/bin/claude --session-id n\\n' ;;
+*"eww -o command= -p 911"*) printf '/Users/x/.local/bin/claude --session-id k PATH=/bin HOME=/h ANTHROPIC_API_KEY=fake-key-584 CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 911"*) printf '/Users/x/.local/bin/claude --session-id k\\n' ;;
+*"-p 911"*) printf '  400 /Users/x/.local/bin/claude --session-id k\\n' ;;
+*"eww -o command= -p 920"*) printf '/Users/x/.local/bin/claude --session-id h\\n' ;;
+*"ww -o command= -p 920"*) printf '/Users/x/.local/bin/claude --session-id h\\n' ;;
+*"-p 920"*) printf '  400 /Users/x/.local/bin/claude --session-id h\\n' ;;
+*"eww -o command= -p 930"*) printf '/p/claude x PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 930"*) printf '/o/claude x\\n' ;;
+*"eww -o command= -p 960"*) printf '/Users/x/.local/bin/claude f PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n'; exit 1 ;;
+*"ww -o command= -p 960"*) printf '/Users/x/.local/bin/claude f\\n' ;;
+*"-p 960"*) printf '  400 /Users/x/.local/bin/claude f\\n' ;;
+*"-p 930"*) printf '  400 /Users/x/.local/bin/claude --session-id e\\n' ;;
+*"eww -o command= -p 940"*) printf '/Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg PATH=/bin HOME=/h\\n' ;;
+*"ww -o command= -p 940"*) printf '/Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg\\n' ;;
+*"-p 940"*) printf '  400 /Users/x/.local/bin/claude -p CLAUDE_CODE_OAUTH_TOKEN=arg\\n' ;;
+*"eww -o command= -p 810"*) printf 'claude bg-spare --bg-spare /tmp/claim.sock PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}\\n' ;;
+*"ww -o command= -p 810"*) printf 'claude bg-spare --bg-spare /tmp/claim.sock\\n' ;;
 *-axo*) printf '{text}\\n' ;;
 *"-p 500"*) printf '  400 /Users/x/.local/bin/claude --session-id s --settings /tmp/flag.json\\n' ;;
 *"-p 400"*) printf '    1 /sbin/launchd\\n' ;;
@@ -176,19 +215,24 @@ def scenario(mod_path: Path):
             os.environ["PATH"] = old
 
 
-def run(mod, env, flag=None, managed=None, platform="darwin", environ=None, flag_note=None):
+def no_ancestor_token():
+    """起動した claude の環境に認証の変数が無い（#584）。既定でこれを渡す——本物の祖先のプロセスを読まない。"""
+    return frozenset(), None
+
+
+def run(mod, env, flag=None, managed=None, platform="darwin", environ=None, flag_note=None, ancestor=no_ancestor_token):
     # environ は既定で空——実環境の CLAUDE_CONFIG_DIR を読むと、実 HOME の外の利用者の設定を読む
     stack, items = mod.gather(env.project, COMMANDS, flag, managed, env.home, platform, flag_note,
-                              env=environ if environ is not None else dict(SESSION_ENV))
+                              env=environ if environ is not None else dict(SESSION_ENV), ancestor=ancestor)
     buf = io.StringIO()
     code = mod.report(stack, items, out=buf)
     return code, items, buf.getvalue()
 
 
-def run_cruise(mod, env, present=True, cwd=None, environ=None):
+def run_cruise(mod, env, present=True, cwd=None, environ=None, ancestor=no_ancestor_token):
     stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None,
                               env=environ if environ is not None else dict(SESSION_ENV),
-                              cruise=True, present=present, cwd=cwd)
+                              cruise=True, present=present, cwd=cwd, ancestor=ancestor)
     buf = io.StringIO()
     code = mod.report(stack, items, out=buf)
     return code, items, buf.getvalue()
@@ -335,6 +379,47 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         _, items, _ = run_cruise(mod, env, present=True)
         check("認証: 居る cruise でも長期トークンは良い", status_of(items, "認証") == [mod.GOOD], bad)
 
+    # 認証（#584 の続き）: この Bash の環境に長期トークンが無くても、起動した claude（最寄りの祖先）の環境を見る。
+    # 祖先は偽の ps で答える——本物のプロセス・本物のトークンには届かない
+    with scenario(script) as env:
+        env.all_good()
+        login = {"CLAUDECODE": "1"}  # Claude Code 2.1.316 の Bash の環境: CLAUDE_CODE_OAUTH_TOKEN が外されている
+
+        def via(pid):
+            return lambda: mod.launcher_auth_names(pid)
+
+        names, why = mod.launcher_auth_names(950)
+        check("認証（祖先）: 親の zsh を越えて最寄りの claude の環境の名前を返す",
+              names == frozenset({"CLAUDE_CODE_OAUTH_TOKEN"}) and why is None, bad)
+        check("認証（祖先）: 返すのは名前だけで値を含まない",
+              all(FAKE_TOKEN not in n for n in (names or ())), bad)
+        code, items, out = run(mod, env, environ=login, ancestor=via(950))
+        check("認証（祖先）: Bash の環境に無くても祖先の claude にあれば長期トークン",
+              status_of(items, "認証") == [mod.GOOD] and "起動した claude の環境" in detail_of(items, "認証")
+              and "Remote Control" in fix_of(items, "認証") and code == 0, bad)
+        check("認証（祖先）: 祖先の環境のトークンの値を出さない", FAKE_TOKEN not in out, bad)
+        _, items, _ = run_cruise(mod, env, present=True, environ=login, ancestor=via(950))
+        check("認証（祖先）: 居る cruise でも祖先の長期トークンは良い", status_of(items, "認証") == [mod.GOOD], bad)
+        code, items, _ = run(mod, env, environ=login, ancestor=via(910))
+        check("認証（祖先）: 祖先にも無ければ（空の値は数えない）8 時間で要対処",
+              status_of(items, "認証") == [mod.ACTION] and "8 時間" in detail_of(items, "認証") and code == 1, bad)
+        _, items, _ = run(mod, env, environ=login, ancestor=via(940))
+        check("認証（祖先）: 引数に書かれた CLAUDE_CODE_OAUTH_TOKEN= を環境と読まない",
+              status_of(items, "認証") == [mod.ACTION], bad)
+        _, items, out = run(mod, env, environ=login, ancestor=via(911))
+        check("認証（祖先）: 祖先に先に使われうる認証があれば人が見る",
+              status_of(items, "認証") == [mod.HUMAN] and "ANTHROPIC_API_KEY" in detail_of(items, "認証"), bad)
+        check("認証（祖先）: 祖先の API キーの値を出さない", "fake-key-584" not in out and FAKE_TOKEN not in out, bad)
+        for pid, name in ((999, "ps が読めない"), (400, "祖先に claude が無い"), (810, "最寄りの claude が spare"),
+                          (920, "環境が見えない"), (930, "引数と環境を切り分けられない"),
+                          (960, "環境を出す ps が失敗した")):
+            code, items, out = run(mod, env, environ=login, ancestor=via(pid))
+            check(f"認証（祖先）: {name}なら判定できない（8 時間と言わない）",
+                  status_of(items, "認証") == [mod.UNKNOWN] and "8 時間" not in detail_of(items, "認証") and code == 2, bad)
+            check(f"認証（祖先）: {name}ときも値を出さない", FAKE_TOKEN not in out, bad)
+        _, items, _ = run(mod, env, environ={**login, "CLAUDE_CODE_OAUTH_TOKEN": FAKE_TOKEN}, ancestor=via(999))
+        check("認証（祖先）: 自分の環境に長期トークンがあれば祖先を見ない", status_of(items, "認証") == [mod.GOOD], bad)
+
     # 認証の本番の経路（env を渡さない main → os.environ）を、flag・managed を読める形で最後の分岐まで当てる（#584 の CR2-3）
     with scenario(script) as env:
         env.all_good()
@@ -345,9 +430,14 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         saved = {k: os.environ.get(k) for k in auth_keys}
         outs = {}
         try:
-            for name, extra in (("token", {}), ("apikey", {"ANTHROPIC_API_KEY": "fake-key-584"}),
-                                ("scrub", {"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"}),
-                                ("login", {"CLAUDE_CODE_OAUTH_TOKEN": ""})):
+            for name, extra, parent in (("token", {}, None), ("apikey", {"ANTHROPIC_API_KEY": "fake-key-584"}, None),
+                                        ("scrub", {"CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"}, None),
+                                        ("login", {"CLAUDE_CODE_OAUTH_TOKEN": ""}, "PATH=/bin HOME=/h"),
+                                        # 2.1.316 の形: Bash の環境には無く、起動した claude（偽の親）の環境にある（#584）
+                                        ("parent", {"CLAUDE_CODE_OAUTH_TOKEN": ""},
+                                         f"PATH=/bin HOME=/h CLAUDE_CODE_OAUTH_TOKEN={FAKE_TOKEN}"),
+                                        ("noparent", {"CLAUDE_CODE_OAUTH_TOKEN": ""}, None)):
+                env.claude_parent(parent)
                 for k in auth_keys:
                     os.environ.pop(k, None)
                 os.environ.update({"HOME": str(env.home), **SESSION_ENV, **extra})
@@ -367,6 +457,9 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
               and "fake-key-584" not in outs["apikey"], bad)
         check("認証（main）: 消去が真なら判定できない", "[判定できない] 認証" in outs["scrub"], bad)
         check("認証（main）: トークンが無ければ要対処", "[要対処] 認証" in outs["login"], bad)
+        check("認証（main）: Bash の環境に無くても、起動した claude（親）の環境にあれば良い",
+              "[良い] 認証" in outs["parent"] and FAKE_TOKEN not in outs["parent"], bad)
+        check("認証（main）: 親の環境を読めなければ判定できない", "[判定できない] 認証" in outs["noparent"], bad)
 
     # 守る: 読めなかったものを良いに混ぜない
     with scenario(script) as env:
@@ -1206,8 +1299,8 @@ MUTATIONS = {
         'return p.name == "claude" or (',
         'return p.name == "claude" and ('),
     "spare を見ない": (
-        '            if "--bg-spare" in argv:\n',
-        "            if False:\n"),
+        '    if "--bg-spare" in argv:\n        return None, f"最寄りの claude（pid {pid}）',
+        '    if False:\n        return None, f"最寄りの claude（pid {pid}）'),
     "-m・-u もスリープ防止と数える": (
         "                and prevents_idle_sleep(argv)):",
         "                and True):"),
@@ -1224,11 +1317,11 @@ MUTATIONS = {
         'Unreadable(path, "ファイルが無い") if data is None else data',
         "data"),
     "--settings= を拾わない": (
-        '                if arg.startswith("--settings="):',
-        '                if False:'),
+        '        if arg.startswith("--settings="):',
+        '        if False:'),
     "最寄りの claude で止まらない": (
-        "                    return arg[len(\"--settings=\"):], None\n            return None, None\n",
-        "                    return arg[len(\"--settings=\"):], None\n"),
+        "            break  # 最寄りの claude で止める",
+        "            pass  # 最寄りの claude で止める"),
     "managed-settings.d を読まない": (
         "        for dropin in managed_dropins(managed_path):",
         "        for dropin in []:"),
@@ -1350,8 +1443,8 @@ MUTATIONS = {
         '(truthy(env.get("GITHUB_ACTIONS")) and not off)',
         'truthy(env.get("GITHUB_ACTIONS"))'),
     "認証: 先に使われる認証を見ない": (
-        "    if ahead:\n",
-        "    if False:\n"),
+        "    if ahead:\n        return [(HUMAN, label, \", \".join(ahead) + \" がある",
+        "    if False:\n        return [(HUMAN, label, \", \".join(ahead) + \" がある"),
     "認証: API キーを見ない": (
         'AHEAD_OF_TOKEN = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY")',
         'AHEAD_OF_TOKEN = ("ANTHROPIC_AUTH_TOKEN",)'),
@@ -1392,18 +1485,54 @@ MUTATIONS = {
         '"長期トークンは推論だけに絞られ、Remote Control とそれにつながる通知は使えない見込み"',
         '"長期トークン"'),
     "認証: 居る cruise で認証を出さない": (
-        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
-        "    items += [] if present else check_auth(stack, os.environ if env is None else env, present)\n"),
+        "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",
+        "    items += [] if present else check_auth(stack, os.environ if env is None else env, present, ancestor)\n"),
     "認証: 認証を出さない": (
-        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
+        "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",
         "\n"),
     "認証: 本番の経路で os.environ を読まない": (
-        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
-        "    items += check_auth(stack, {} if env is None else env, present)\n"),
+        "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",
+        "    items += check_auth(stack, {} if env is None else env, present, ancestor)\n"),
     "認証: 本番の経路で CLAUDECODE しか読まない": (
-        "    items += check_auth(stack, os.environ if env is None else env, present)\n",
+        "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",
         "    items += check_auth(stack, {k: os.environ[k] for k in ('CLAUDECODE',) if k in os.environ}"
-        " if env is None else env, present)\n"),
+        " if env is None else env, present, ancestor)\n"),
+    "認証: Bash の環境に無ければ起動した claude の環境を見ない": (
+        "    names, why = (ancestor or launcher_auth_names)()\n",
+        "    names, why = frozenset(), None\n"),
+    "認証: 本番の経路で起動した claude の環境を見ない": (
+        "    names, why = (ancestor or launcher_auth_names)()\n",
+        "    names, why = (ancestor or (lambda: (frozenset(), None)))()\n"),
+    "認証: 起動した claude の環境を読めなければ 8 時間とする": (
+        "    if why is not None:\n        return [(UNKNOWN, label, \"この Bash の環境に",
+        "    if False:\n        return [(UNKNOWN, label, \"この Bash の環境に"),
+    "認証: 祖先に claude が無ければ 8 時間とする": (
+        '        return None, "祖先に claude のプロセスが見つからなかった"',
+        "        return frozenset(), None"),
+    "認証: spare の環境を起動した環境とする": (
+        '    if "--bg-spare" in argv:\n        return None, f"最寄りの claude（pid {cpid}）は spare',
+        '    if False:\n        return None, f"最寄りの claude（pid {cpid}）は spare'),
+    "認証: ps の失敗を飛ばす": (
+        "    if not (ok_bare and ok_full) or not bare.strip() or not full.startswith(bare):\n",
+        "    if not bare.strip() or not full.startswith(bare):\n"),
+    "認証: 見えない環境を空とする": (
+        "    if not any(w.startswith(ENV_SEEN) for w in words):\n",
+        "    if False:\n"),
+    "認証: 引数を環境と読む": (
+        "    words = full[len(bare):].split()\n",
+        "    words = full.split()\n"),
+    "認証: 引数と環境を切り分けられなくても読む": (
+        "or not full.startswith(bare):\n",
+        ":\n"),
+    "認証: 起動した claude の環境の空の値を数える": (
+        "if n in AUTH_NAMES and v), None",
+        "if n in AUTH_NAMES), None"),
+    "認証: 起動した claude の環境の先に使われる認証を見ない": (
+        "    ahead = [name for name in AHEAD_OF_TOKEN if name in names]\n",
+        "    ahead = []\n"),
+    "認証: 起動した claude の環境を読めなかった理由に環境の文字列を入れる": (
+        '        return None, f"ps が claude（pid {cpid}）の環境を読めなかった"',
+        '        return None, f"ps が claude（pid {cpid}）の環境を読めなかった: {full}"'),
     "到達: 台帳を渡さなくても人が見るにする": (
         '        items += (reach_items(project, ledger, present, pr_view) if ledger else\n'
         '                  [(UNKNOWN, REACH_SUMMARY,',
