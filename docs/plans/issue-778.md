@@ -24,6 +24,7 @@ spec-loop の Markdown で、コードスパンの外に書いた `v<n>`・`v<n-
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-778.md` — この計画ファイル
+- `scripts/test-check-signoff.py` — `signoff-tags.md` の「比べる場所は v1〜`v<n>` の」を字句どおりに読む正規表現と変異の文字列を、新しい表記に合わせる（1 パス目の `/code-review` の指摘で広げた。手を動かす前にここへ足した。理由: 参照の文面を読む回帰テストが表記の変更で落ちる）
 
 触らない:
 
@@ -54,7 +55,7 @@ main へのマージでプラグインの配布（spec-loop 0.45.1）。公開�
 | C1 | spec-loop の Markdown を GitHub の描画に通して、原文の山括弧の置き場所が消えている箇所が 0 | 本文の散文・表のセル・太字の中・箇条書き・frontmatter の description（`/markdown` は frontmatter を本文として描く） | `render_check.py` が 0 件（直した後）。**陽性対照**: 直す前（base `9e9be07f`）で 77 件（10 ファイル） |
 | C2 | 直し方はコードスパンか実体参照で、意味を変えない | コードスパンで囲んだことで太字が開け閉めできなくなる・表のセルが割れる・語の一部だけ囲んで読みが変わる | `same_text.py` で、`<…>` を除いた描画の文字が直す前と同じ、`<…>` は増えた（77）だけ。`scripts/check-bold-flanking.py` が緑 |
 | C3 | spec-loop の版を 3 箇所で上げる | `marketplace.json`・`plugin.json`・各 `SKILL.md` の 2 行 | `scripts/check-plugin-versions.py`・`check-version-bump.py origin/main` が緑 |
-| C4 | 他の歯止めを割らない | `handoff-issue.md` の写しを突き合わせる `test-scaffold.py`、description の共変の `check-description-sync.py` など | `python3 scripts/check-all.py`（順番待ち越し）が緑、PR の CI が緑 |
+| C4 | 他の歯止めを割らない | `handoff-issue.md` の写しを突き合わせる `test-scaffold.py`、description の共変の `check-description-sync.py`、**参照の文面を字句どおりに読むテスト**（`test-check-signoff.py`・`test-check-frozen.py`・`test-check-qa-csv.py`・`test-init-mkdocs.py`——1 パス目で広げた経路。`grep -n 'v<n' scripts/*.py` で数え直し、コードの外の `v<n>` を読むのは `test-check-signoff.py` の 2 か所だけ）など | `python3 scripts/check-all.py`（順番待ち越し）が緑、PR の CI が緑 |
 
 必須要件の掛け算: 受入基準を Verifier・`/code-review` の両方に、1 パス目・2 パス目の両方で渡す（4 つの受け渡し。2 パス目が「該当なし」なら初回の 2 つ）。
 
@@ -76,7 +77,7 @@ main へのマージでプラグインの配布（spec-loop 0.45.1）。公開�
 - 周の在り処: ブランチ `issue/778-spec-loop-angle-placeholders`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-778`・
   起点 `9e9be07f`（origin/main。`prepare-worktree.sh` の出力）・base: 参照 `origin/main` → `9e9be07f734c5323a6054330d3c122b910484f31`
 - 割り目（手順 4）: 不在の周なので訊かない。このまま続ける。
-- 1 パス目: 未着手
+- 1 パス目: **Verifier 反証 0 件**（`dev-loop:dev-loop-verifier`・sonnet。指示文 169 行を読ませ、報告は 170 行——末尾の改行の数え方の差）。**`/code-review`（high）指摘 4 件**——**ただし 1 パス目の `/code-review` には `prompts/review-handoff.md` を渡せていない**（`Skill` の引数に対象と base だけを渡したら、フォークした実行が引数だけで完了して戻った。受入基準を渡していない素の差分レビューである。PR コメントに申告する。2 パス目には貼って渡す）。差し戻し 1 件（手順 4 へ: `test-check-signoff.py`）。1 パス目の指摘対応の起点: `d5c3b3c1`（実装のコミット。関門に渡した時点の HEAD）
 - 交絡を潰した手順: 陽性対照（直す前の版で 77 件）。`same_text.py` は直す前と後の描画の両方を同じ道具で取り、`<…>` 以外が同じことを見る
   （増えた数 77 が直す前の消えた数 77 と一致——別の場所の `<n>` で消えた分が打ち消されて数えられていないことの確かめ）。
 
@@ -84,4 +85,8 @@ main へのマージでプラグインの配布（spec-loop 0.45.1）。公開�
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
-| （まだ無い） | | | |
+| 1-R1 `signoff-tags.md` の表記を変えたので `test-check-signoff.py` が落ちる（753 行の正規表現・770 行の変異） | 示せる——`python3 scripts/test-check-signoff.py` が 2 件失敗（直す前）・`check-all.py` でも FAIL | C4 | 直す（`scripts/test-check-signoff.py` を新しい表記に合わせた。直した後 `OK: 試料 75 件・変異 68 件`） |
+| 1-R2 実装のコミットを `check-all.py` が緑になる前に関門に渡した | 示せる（1-R1 と同じ失敗） | C4（1-R1 と同じ原因） | 直す（1-R1 を直し、`check-all.py` を回し直す。周の記録の指摘でもある） |
+| 1-R3 変更範囲に `test-check-signoff.py` が無い | 示せる（直すには範囲の外のファイルが要る） | C4 | 直す（変更範囲に足した） |
+| 1-R4 `v1〜`v<n>`` で範囲の後ろの端だけコードスパン（`qa-csv.md`・`signoff-tags.md`・`tree.md`） | 示せない（描画は正しく `v1〜v<n>` と読める。字句を読む道具が壊れる実物は 1-R1 で、直した） | 無し | 残課題（言い回し。PR コメントに記録） |
+

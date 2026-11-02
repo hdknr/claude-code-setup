@@ -750,7 +750,7 @@ def reference_mismatches(source: str, markdown: str) -> list[str]:
     word = re.search(r"`<k>` は (.+?)で、", markdown)
     if NUMBER_WORDS.get(word.group(1) if word else "") != constant(source, "NUMBER"):
         problems.append(f"番号の決まり {word and word.group(1)!r} ≠ 本体 {constant(source, 'NUMBER')!r}")
-    place = re.search(r"比べる場所は v1〜v<n> の ((?:`[^`]+`・?)+) と `([^`]+)`（v1 のものも）", markdown)
+    place = re.search(r"比べる場所は v1〜`v<n>` の ((?:`[^`]+`・?)+) と `([^`]+)`（v1 のものも）", markdown)
     dirs = re.search(r"^SCOPE_DIRS = \((.+)\)$", source, flags=re.MULTILINE)
     actual = (tuple(constant(source, part) if not part.startswith('"') else part.strip('"')
                     for part in dirs.group(1).split(", ")) if dirs else None, constant(source, "REMOVED"))
@@ -767,7 +767,7 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("予算のタグの種類", "| `signoff/v<n>/budget-<k>` |", "| `signoff/v<n>/approval-<k>` |"),
     ("予算のタグの根", "| `signoff/v<n>/budget-<k>` |", "| `approval/v<n>/budget-<k>` |"),
     ("番号の決まり", "`<k>` は 1 から始まる整数で、", "`<k>` は 0 から始まる整数で、"),
-    ("比べる場所（shared）", "比べる場所は v1〜v<n> の `shared/`・", "比べる場所は v1〜v<n> の `common/`・"),
+    ("比べる場所（shared）", "比べる場所は v1〜`v<n>` の `shared/`・", "比べる場所は v1〜`v<n>` の `common/`・"),
     ("比べる場所（spec）", "`requirements/`・`spec/` と `removed.csv`（v1 のものも）", "`requirements/` と `removed.csv`（v1 のものも）"),
     ("比べる場所（removed.csv）", "と `removed.csv`（v1 のものも）", "と `deleted.csv`（v1 のものも）"),
     ("比べない内部の Q&A 表", "（`spec/qa-dev.csv`。番号 `D-`）", "（`spec/qa-internal.csv`。番号 `D-`）"),
