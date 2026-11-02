@@ -767,6 +767,14 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
                      (3, "todo", [4], "#1 1 パス目")])
     run(mod, ["group", "sm", "2", "3"], root)
     o["status: まとめの仲間が待つ"] = status("sm")
+    # 全角のコロンの印も判断待ち（check-unattended-env.py と同じ）
+    st_ledger("sw", [(1, "merged", [], None), (2, "pr", [], None)])
+    run(mod, ["set", "sw", "2", "note=利用者の判断待ち：全角"], root)
+    o["status: 全角の印"] = status("sw")[0]
+    # 取り下げた行の先（足した行）は辿らない: 一覧の #3 は取り下げた #2 を待つだけ
+    st_ledger("sx", [(1, "merged", [], None), (9, "todo", [1], "#1 1 パス目"), (2, "todo", [9], None), (3, "todo", [2], None)])
+    run(mod, ["set", "sx", "2", "state=dropped"], root)
+    o["status: 取り下げの先"] = status("sx")
     # 空の台帳は 5、無い・壊れた台帳は 4
     run(mod, ["init", "se"], root)
     o["status: 空"] = status("se")[0]
@@ -1020,6 +1028,10 @@ SAMPLE_MUTATIONS = {
          'i.get("note", "").startswith(JUDGE_NOTE)')],
     "status がまとめの仲間を辿らない（#632）": [
         ('        stack.extend(i["number"] for i in data["issues"] if by[n].get("group") and i.get("group") == by[n]["group"])\n', "")],
+    "判断待ちの印を半角だけで読む（#632 の 2 パス目）": [
+        ('JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")', 'JUDGE_NOTE = ("利用者の判断待ち:",)')],
+    "status が済んだ・取り下げた行の先を辿る（#632 の 2 パス目）": [
+        ('        if by[n]["state"] in (DONE, "dropped"):\n            continue  # 済んだ', '        if False:\n            continue  # 済んだ')],
     "status が待ちの列に merged を混ぜる（#632）": [
         ('if by[n]["state"] not in (DONE, "dropped")]', 'if by[n]["state"] != "dropped"]')],
 }
@@ -1292,8 +1304,8 @@ def main() -> int:
         check("merged ×3＋blocked ×2 で show の進行中が「なし」（Issue の受入基準 1）",
               o["status: show 進行中"] == ["進行中（実物で確かめてから続ける）: なし"])
         check("show が blocked を利用者の判断待ちの行に note つきで出す",
-              o["status: show 判断待ち"] == ["利用者の判断待ち（止まっている・PR の判断待ち）: #4（利用者の判断待ち: 選んでほしい）, "
-                                          "#5（利用者の判断待ち: 選んでほしい）"])
+              o["status: show 判断待ち"] == ["利用者の判断待ち（止まっている・PR の判断待ち）: #4(blocked)（利用者の判断待ち: 選んでほしい）, "
+                                          "#5(blocked)（利用者の判断待ち: 選んでほしい）"])
         check("merged ×3＋blocked ×2 で status が 3（Issue の受入基準 1）",
               o["status: 人待ちだけ"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #4(blocked), #5(blocked)"))
         check("impl・gate・pr が 1 本でもあれば status が 0（Issue の受入基準 2）",
@@ -1317,10 +1329,13 @@ def main() -> int:
         check("PR の判断待ちは進行中に出ず、判断待ちの行に出て、status は 3",
               o["status: PR の判断待ち"] == ((3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(pr)"),
                                           ["進行中（実物で確かめてから続ける）: なし",
-                                           "利用者の判断待ち（止まっている・PR の判断待ち）: #2（利用者の判断待ち: マージしてよいか）"]))
+                                           "利用者の判断待ち（止まっている・PR の判断待ち）: #2(pr)（利用者の判断待ち: マージしてよいか）"]))
         check("まとめはどれか 1 行の判断待ちの印で全行が人待ち（3）",
               o["status: まとめの PR の判断待ち"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #1(pr), #2(pr)"))
         check("一覧の行がまとめの仲間の依存を待つなら 0", o["status: まとめの仲間が待つ"] == (0, "進められる（着手できる: #4）"))
+        check("全角のコロンの印も判断待ち（3）", o["status: 全角の印"] == 3)
+        check("取り下げた行の先の足した行は辿らない（3）",
+              o["status: 取り下げの先"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #3(todo)"))
         check("空の台帳は 5", o["status: 空"] == 5)
         check("無い・壊れた・崩れた台帳は 4", o["status: 無い・壊れた"] == (4, 4, 4))
 

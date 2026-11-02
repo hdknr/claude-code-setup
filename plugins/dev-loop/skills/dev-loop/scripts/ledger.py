@@ -133,14 +133,14 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 
 守る:
 
-- **`show` の「進行中」は、親が続けられる行（`impl`・`gate`・`pr`）だけを出し、`blocked` と、`note` が `利用者の判断待ち:` で始まる進行中の行（まとめならどれか 1 行の `note` でよい。cruise §4-4）は
-  「利用者の判断待ち」の行に `note` つきで出す**（#632）——
+- **`show` の「進行中」は、親が続けられる行（`impl`・`gate`・`pr`）だけを出し、`blocked` と、`note` が `利用者の判断待ち:` で始まる進行中の行（全角の `：` も。まとめならどれか 1 行の `note` でよい。cruise §4-4）は
+  「利用者の判断待ち」の行に状態と `note` つきで出す**（#632）——
   人を待つ行を「進行中」に混ぜると、人を待つ行だけ残った台帳を、外側のループが「進行中あり」と読んで周を回さない起動を繰り返す（spin-dd/tfs-stocks#2427）。
 - **`status` は、進行中の行（判断待ちの印のある行を除く）か落ちたのに `merged` の行があれば、親 Issue の一覧の行の状態に依らず 0 を返す**（#632）——§6 は始めた行を閉じてから判定する。
   判断待ちの印のある行で 0 と答えると、人を待つ PR だけが残った台帳で外側のループが回すもの無しの起動を繰り返す（#2427 と同じ形）。
   「済んだ」（5）・「人待ち」（3）と答えると、外側のループが閉じていない周を置いて終える。
 - **`status` は、周の途中で足した行（`origin` のある行）だけが着手できても 0 と言わない**（#632）——§6 はそれを始めずに終えるので、0 と答えると
-  外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える。
+  外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える——`merged`・`dropped` の行の先は辿らない。
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
 - **`--separate-git-dir` のリポジトリ（先の名前が `.git` でないもの）とサブモジュールと bare リポジトリの worktree でも、
   作業ツリーの外に書かない**——worktree の中からメインの作業ツリーを決められなければ 4。
@@ -279,8 +279,9 @@ EXIT_WAITING = 3
 EXIT_DONE = 5
 # 親が続けられる行（`show` の「進行中」・`status` の 1）
 GOING = ("impl", "gate", "pr")
-# 進行中のまま利用者の判断を待つ行の note の書き出し（cruise SKILL.md §4-4。check-unattended-env.py も同じ印で読む）
-JUDGE_NOTE = "利用者の判断待ち:"
+# 進行中のまま利用者の判断を待つ行の note の書き出し（cruise SKILL.md §4-4）。全角のコロンも印と読む——
+# check-unattended-env.py の JUDGE_MARKS と同じ 2 つ
+JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")
 
 
 class Refused(Exception):
@@ -734,7 +735,7 @@ def cmd_show(path):
     print("依存待ち: " + (", ".join(f"#{i['number']}" for i in waiting) or "なし"))
     blocked = [i for i in data["issues"] if i["state"] == "blocked" or i["number"] in judge_rows]
     print("利用者の判断待ち（止まっている・PR の判断待ち）: "
-          + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in blocked) or "なし"))
+          + (", ".join(f"#{i['number']}({i['state']})（{i.get('note') or 'note が空'}）" for i in blocked) or "なし"))
     awaiting = [i for i in data["issues"] if i["state"] == "await"]
     print("利用者の操作待ち: " + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in awaiting) or "なし"))
     found = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
@@ -785,6 +786,8 @@ def judge(data):
         if n in need or n not in by:
             continue
         need.add(n)
+        if by[n]["state"] in (DONE, "dropped"):
+            continue  # 済んだ・取り下げた行の先は、一覧の行を待たせていない
         stack.extend(by[n]["deps"])
         # まとめは全行が着手できるときだけ始まる——仲間が待つ行も辿る
         stack.extend(i["number"] for i in data["issues"] if by[n].get("group") and i.get("group") == by[n]["group"])
