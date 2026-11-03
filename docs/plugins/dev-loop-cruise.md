@@ -287,21 +287,32 @@ cruise を対話のセッションではなく、外側のループ（シェル�
 - **続けるかは `ledger.py status` の終了コードで決めます**（[#632](https://github.com/hdknr/claude-code-setup/issues/632)）——0 なら進められる周がある、
   3 なら人を待つ周だけ、5 なら親 Issue の一覧の行がすべて済んだ、4 なら判定できなかった（済んだとは答えていません）。文面（`show`）で決めないでください。
   判定の順は `ledger.py` の docstring を正とします。
-- **0 でも、1 回の起動で台帳が 1 バイトも変わらなければ止めます。** マージの線が無く親がマージせずに止まった PR の行などは、
-  `status` が 0 のまま残り、起動し直しても進みません。`claude` が 0 以外で終わったときも止めます（ログインの期限切れなどで、
-  何も進めずにすぐ終わる起動を繰り返さないため）。
+- **0 でも、1 回の起動で台帳の中身（更新時刻 `updated` を除く）が変わらなければ止めます。** マージの線が無く親がマージせずに止まった PR の行などは、
+  `status` が 0 のまま残り、起動し直しても進みません（親が同じ `note` を書き直すと更新時刻だけが変わるので、ファイルのままでは比べません）。
+  `claude` が 0 以外で終わったときも止めます（ログインの期限切れなどで、何も進めずにすぐ終わる起動を繰り返さないため）。
 
 ```bash
 cd <メインの作業ツリー>
 ledger=<dev-loop の base ディレクトリ>/scripts/ledger.py
+digest() {  # 台帳から更新時刻を除いた中身の要約（台帳が無ければ空の要約）
+  python3 - "$(python3 "$ledger" path issue-50)" 2>/dev/null <<'PY' | cksum
+import json, sys
+def strip(o):
+    if isinstance(o, dict):
+        return {k: strip(v) for k, v in o.items() if k != "updated"}
+    if isinstance(o, list):
+        return [strip(v) for v in o]
+    return o
+print(json.dumps(strip(json.load(open(sys.argv[1]))), sort_keys=True))
+PY
+}
 for i in $(seq 1 20); do      # 回す回数の上限
-  before=$(cksum < "$(python3 "$ledger" path issue-50)" 2>/dev/null)
+  before=$(digest)
   CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/dev-loop:cruise 50 --absent" || { echo "claude が失敗した"; break; }
   python3 "$ledger" status issue-50
   rc=$?
   [ "$rc" -eq 0 ] || { echo "status: $rc"; break; }    # 3・4・5 は止まる。ほかの値も止まる
-  after=$(cksum < "$(python3 "$ledger" path issue-50)" 2>/dev/null)
-  [ "$before" != "$after" ] || { echo "台帳が変わらなかった"; break; }
+  [ "$before" != "$(digest)" ] || { echo "台帳が変わらなかった"; break; }
 done
 ```
 
