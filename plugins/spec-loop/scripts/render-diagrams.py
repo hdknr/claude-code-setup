@@ -40,7 +40,7 @@ draw.io の CLI は次の順に探す:
 | `docs/` の下の `.drawio` を全部、隣の同じ名前の `.svg` に書き出す | **書き出すのは各 `.drawio` の 1 ページ目だけ**（draw.io の CLI の既定）。複数ページの図の 2 ページ目から先は書き出さない |
 | 失敗したファイルの前の `.svg` を変えず、書きかけを残さない | **印だけ手で書き換えて書き出さない形は見えない**（印はソースの指紋を書き出しの中に持つだけ。このリポジトリの `check-diagram-freshness.py` と同じ原理的な限界） |
 | `--check` は draw.io を起動せず、何も書かない | **確かめたのは macOS の draw.io だけ**（Linux・Windows の CLI は確かめていない。`DRAWIO` で差し替えて、書き出しを目で確かめる） |
-| 書くのは `.drawio` の隣の `.svg` と、同じ場所の一時ファイル（成否に依らず消す）だけ | **見た目の品質**（利用者・決裁者に見せられる図か）。ブラウザで開いて目で見る |
+| 書くのは `.drawio` の隣の `.svg` と、同じ場所の一時ファイル（成否に依らず消す）だけ。CLI は自分のプロセスグループで起こし、終わったら（時間切れでも）グループごと止める——前置き（`xvfb-run`）の孫が後から書かない。拡張子の大文字小文字は区別しない（`build-proposal.py` と同じ） | **見た目の品質**（利用者・決裁者に見せられる図か）。ブラウザで開いて目で見る |
 | 印はソースのバイトだけで決まる | `X.svg` が symlink のときの扱い（`os.replace` はリンクを置き換える）・`docs/` の外の図・symlink のディレクトリの中（辿らない） |
 """
 
@@ -52,6 +52,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -108,7 +109,7 @@ def find_sources(docs: Path) -> list[Path]:
     found: list[Path] = []
     for dirpath, _dirnames, filenames in os.walk(docs):
         for name in filenames:
-            if name.endswith(".drawio"):
+            if name.lower().endswith(".drawio"):
                 found.append(Path(dirpath) / name)
     return sorted(found, key=lambda p: str(p))
 
@@ -147,6 +148,14 @@ def drawio_command() -> tuple[list[str] | None, str]:
     return None, f"draw.io の CLI が見つからない（{shown}PATH の drawio。DRAWIO で指定する）"
 
 
+def kill_group(proc: subprocess.Popen[str]) -> None:
+    """CLI のプロセスグループに残ったもの（前置きの孫など）を止める。もう無ければ何もしない。"""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def rel(path: Path, root: Path) -> str:
     try:
         return str(path.relative_to(root))
@@ -170,12 +179,21 @@ def export_one(source: Path, command: list[str], timeout: float, root: Path) -> 
         tmp.unlink()
         cmd = [*command, "--export", "--format", "svg", "--output", str(tmp), str(source)]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return f"draw.io の CLI が時間切れになった（{timeout:g} 秒）"
+            # **自分のプロセスグループで起こし、終わったらグループごと止める**——`DRAWIO="xvfb-run -a drawio"` のような前置きの
+            # 孫が時間切れのあとも生き残ると、一時ファイルを消したあとに書きかけを置く
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
+                                    start_new_session=True)
         except OSError as e:
             return f"draw.io の CLI を起動できない（{e.strerror}）"
-        detail = (proc.stdout + proc.stderr).strip()
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_group(proc)
+            proc.communicate()
+            return f"draw.io の CLI が時間切れになった（{timeout:g} 秒）"
+        finally:
+            kill_group(proc)
+        detail = (stdout + stderr).strip()
         tail = f"\n    {detail[-400:]}" if detail else ""
         if proc.returncode != 0:
             return f"draw.io の CLI が 0 以外で終わった（rc={proc.returncode}）{tail}"
@@ -220,8 +238,9 @@ def check(docs: Path, root: Path, sources: list[Path]) -> int:
             problems.append(f"{rel(out, root)}: 印が無い（render-diagrams.py で書き出していない）")
         elif got != source_digest(data):
             problems.append(f"{rel(out, root)}: 古い（ソース {rel(source, root)} を直したあと書き出していない）")
+    exported = {output_of(source) for source in sources}
     for svg in find_svgs(docs):
-        if svg.with_suffix(".drawio").exists():
+        if svg in exported:
             continue
         try:
             got = marked_digest(svg.read_bytes())

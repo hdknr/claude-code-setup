@@ -40,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Callable
@@ -90,6 +91,12 @@ if behaviour == "not_xml":
     write("not an svg at all"); sys.exit(0)
 if behaviour == "wrong_root":
     write('<html xmlns="http://www.w3.org/1999/xhtml"/>'); sys.exit(0)
+if behaviour == "orphan":
+    # 前置き（`xvfb-run`）の孫の形: 出力を受けた孫が、親の時間切れのあとで書く（標準出力は閉じて、待たせない）
+    import subprocess
+    subprocess.Popen([sys.executable, "-c", "import sys, time; time.sleep(7); open(sys.argv[1], 'w').write('late')", out],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(5); write(GOOD); sys.exit(0)
 if behaviour == "hang":
     time.sleep(5); write(GOOD); sys.exit(0)
 raise SystemExit("unknown behaviour: " + behaviour)
@@ -420,6 +427,35 @@ def case_check_fresh(script: Path, tmp: Path) -> list[str]:
     return p
 
 
+def case_orphan(script: Path, tmp: Path) -> list[str]:
+    """A3・A10: 時間切れのあと、CLI の孫が一時ファイルの場所に書かない（プロセスグループごと止める）。"""
+    root = make_repo(tmp, {"docs/v1/a.drawio": "<mxfile/>\n", "docs/v1/a.svg": PREVIOUS})
+    started = time.time()
+    r = run(script, root, behaviour="orphan", timeout="1")
+    p = [] if r.code == 1 else [f"終了コードが 1 でない: {r.code}"]
+    time.sleep(max(0.0, 9 - (time.time() - started)))
+    after = snapshot(root)
+    late = [k for k in after if Path(k).name.startswith(".") and k.endswith(".svg")]
+    if late:
+        p.append(f"時間切れのあとで孫が書いた: {late}")
+    if after.get("docs/v1/a.svg") != PREVIOUS:
+        p.append("前の svg が変わった")
+    return p
+
+
+def case_upper_suffix(script: Path, tmp: Path) -> list[str]:
+    """A1・A6: 拡張子の大文字小文字を区別しない（`build-proposal.py` と同じ）。"""
+    root = make_repo(tmp, {"docs/v1/spec/Arch.DRAWIO": "<mxfile/>\n"})
+    r = run(script, root)
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-200:]}"]
+    if "docs/v1/spec/Arch.svg" not in r.after:
+        p.append("Arch.DRAWIO を書き出さない")
+    c = run(script, root, "--check")
+    if c.code != 0:
+        p.append(f"--check が 0 でない: {c.code} {c.stderr[-200:]}")
+    return p
+
+
 def check_case(files: dict[str, bytes | str], expect: list[str]) -> Callable[[Path, Path], list[str]]:
     def case(script: Path, tmp: Path) -> list[str]:
         """A4: `--check` は名指しして 1。CLI を起動せず、何も書かない。"""
@@ -460,6 +496,8 @@ CASES: dict[str, Callable[[Path, Path], list[str]]] = {
     "XML でない": failing("not_xml", "XML として読めない"),
     "根が svg でない": failing("wrong_root", "根の要素が svg でない"),
     "時間切れ": failing("hang", "時間切れ", timeout="1"),
+    "時間切れのあとで孫が書かない": case_orphan,
+    "大文字の拡張子": case_upper_suffix,
     "1 件の失敗で止まらない": case_partial_failure,
     ".drawio が 0 件": case_no_sources,
     "docs が無い": case_no_docs,
@@ -494,7 +532,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ソースが無いを見ない", "        if got is not None:\n            problems.append", "        if False:\n            problems.append",
      "--check: ソースが無い"),
     ("前の印を消さない", '    body = MARK_RE.sub(b"", svg)', "    body = svg", "前の印を置き換える"),
-    ("入れ子を見ない", '            if name.endswith(".drawio"):', '            if name.endswith(".drawio") and Path(dirpath) == docs:',
+    ("入れ子を見ない", '            if name.lower().endswith(".drawio"):', '            if name.lower().endswith(".drawio") and Path(dirpath) == docs:',
      "書き出す"),
     ("指紋を書き出しから取る", "f.write(mark(svg, source_digest(data)))", "f.write(mark(svg, source_digest(svg)))", "書き出す"),
     ("印を XML 宣言の前に置く", "    if decl:\n", "    if False:\n", "書き出す"),
@@ -503,6 +541,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("DRAWIO の無いパスを通す", '            return None, f"DRAWIO の CLI が見つからない', '            return command, f"DRAWIO の CLI が見つからない',
      "DRAWIO が無いパス"),
     ("DRAWIO が空を名指ししない", '            return None, "DRAWIO が空"', '            command = ["true"]', "DRAWIO が空"),
+    ("プロセスグループを止めない", "        os.killpg(proc.pid, signal.SIGKILL)", "        pass", "時間切れのあとで孫が書かない"),
+    ("拡張子の大文字小文字を区別する", '            if name.lower().endswith(".drawio"):', '            if name.endswith(".drawio"):', "大文字の拡張子"),
     ("1 件の失敗で止まる", "            failed.append(rel(source, root))", "            failed.append(rel(source, root)); break",
      "1 件の失敗で止まらない"),
 ]
