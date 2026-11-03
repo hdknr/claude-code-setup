@@ -203,7 +203,7 @@ cruise: 直す線 = 既定
    各周は通常の dev-loop と同じで、Verifier と `/code-review` を 2 パスで打ち切るのもオートクルーズでも同じです。
    **台帳は周を束ねる道具で、周を軽くする道具ではありません。**
    周の途中の割り目（dev-loop の手順 4・6 で「ここで割るか」を訊く場面）は、`--absent` を付けなくても訊きません——
-   周はサブエージェントが回し、利用者の `/clear` が割るのは親の文脈だからです（[#461](https://github.com/hdknr/claude-code-setup/issues/461)）。
+   周は子（サブエージェントか、任意の子プロセス）が回し、利用者の `/clear` が割るのは親の文脈だからです（[#461](https://github.com/hdknr/claude-code-setup/issues/461)）。
 3. **`--absent` を付けると、途中の問い（直す線・起票の承認）を訊かずに進みます。**
    進めてよい範囲は確かめた線と「1. 対象リポジトリに宣言を書く」の宣言だけで決まり、`--absent` は範囲を広げません。
    マージは `マージ` の線を宣言していれば行い、無ければ PR を出したところで止まって、依存していない別の Issue へ進みます。
@@ -247,7 +247,7 @@ cruise: 直す線 = 既定
 Claude Code が文脈を要約（compact）したら、親は次の操作の前にスキル本文・台帳・進行中の周の実物を読み直してから続けます。
 読み直すものと、親が止めてよい条件は cruise の [`SKILL.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/SKILL.md) §5 を正とします。
 周と周の間で `/clear` して起動し直すのも同じ手です（自動の compact を切っているなら、こちらで割ってください）。
-ただし `/clear` は利用者が打つ操作なので、**割ると、打って起動し直すまで cruise は止まります**。親は周の合間に `/clear` を案内して止まらず、compact で続けます
+ただし `/clear` は利用者が打つ操作なので、**割ると、打って起動し直すまで cruise は止まります**。親は、続けられるのに周の合間で `/clear` を案内して止まることはせず、compact で続けます（割るかは利用者が決めます）
 （[#461](https://github.com/hdknr/claude-code-setup/issues/461)。タイマーは同じセッションにプロンプトを注入するだけで、文脈は軽くなりません）。
 台帳の中身は `ledger.py show issue-<親>` でも見られます。
 
