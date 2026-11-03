@@ -77,6 +77,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 
 import argparse
 import os
+import re
 import signal
 import shlex
 import shutil
@@ -90,7 +91,7 @@ BG_CEILING = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 APPEND = (
     "この起動は cruise の外側のループ（outer-loop.py）が起こした非対話の起動で、利用者は応答しない（#791）。"
     "権限の判定（自動モードの分類器・許可リスト・ガード）に操作を拒まれたら、cruise の SKILL.md の「4. 周を回す」の 5 のとおり、"
-    "その周を `ledger.py set … state=await note=<打ってほしいコマンド>` にして依存しない次の周へ進む——「止まった」と書いてターンを終えない。"
+    "その周を `state=await` にして（`note` の書き方もその 5 に従う）依存しない次の周へ進む——「止まった」と書いてターンを終えない。"
     "進められる周が無いなら、台帳を書き換えずにターンを終える——確かめた回数・時刻・「変わらず」を `note` に書かない（同じ「4. 周を回す」の 6）。"
 )
 TITLE = "cruise の外側のループが止まりました"
@@ -220,7 +221,8 @@ def main(argv=None):
         args.claude_cmd = shlex.split(args.claude)
     except ValueError:
         args.claude_cmd = []
-    if (not args.parent.isdigit() or int(args.parent) <= 0 or args.max_launches < 1 or args.max_stalls < 1
+    # ASCII の数字だけ——`str.isdigit()` は `²` も真にし、`int()` が読めずに例外で終わる
+    if (not re.fullmatch(r"[1-9][0-9]*", args.parent) or args.max_launches < 1 or args.max_stalls < 1
             or not args.claude_cmd):
         print("引数が違う: 親は正の番号、上限は 1 以上、--claude は語に分けられるコマンド", file=sys.stderr)
         return EXIT_USAGE

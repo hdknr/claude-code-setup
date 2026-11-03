@@ -300,6 +300,7 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     # S12: 引数が違う → 2。通知しない
     go("S12 引数", 61, ["--max-stalls", "0"])
     o["S12 番号でない"] = run(mod, ["abc"], root)[0]
+    o["S12 ASCII でない数字"] = run(mod, ["²"], root)[0]
     o["S12 語に分けられない --claude"] = run(mod, ["50", "--claude", "a'b"], root)[0]
     return o
 
@@ -337,6 +338,7 @@ def main() -> int:
         check("S13 SIGTERM は 130 で通知する", a("S13 SIGTERM")[0][0] == 130 and "SIGTERM" in a("S13 SIGTERM")[0][1] and a("S13 SIGTERM")[2] == 1)
         check("S14 ループの中の例外は 4 で通知する", a("S14 例外")[0][0] == 4 and a("S14 例外")[2] == 1)
         check("シグナルの扱いを終わったら戻す", a("SIGTERM の扱いを戻した"))
+        check("S12 ASCII でない数字（²）は 2", a("S12 ASCII でない数字") == 2)
         check("S12 語に分けられない --claude は 2", a("S12 語に分けられない --claude") == 2)
         check("止まった行に親と理由が出る", a("S2 note だけ")[0][1].startswith("外側のループ: 止まった（issue-51: 前進なしが続けて 2 回"))
         body = notes(Path(os.environ["FAKE_HOME"]))
