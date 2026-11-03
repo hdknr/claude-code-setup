@@ -498,7 +498,13 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     o["世代の next"] = run(mod, ["next", "gen"], root)[:2]
     r = run(mod, ["show", "gen"], root)
     o["世代の show"] = (r[0], "周の途中で足した行のうち済んでいないもの: #3(blocked・世代 2), #4(blocked・世代 3)" in str(r[1]),
-                        "利用者の判断待ち（止まっている・PR の判断待ち）: #3(blocked)（利用者の判断待ち: 後続の後続（世代 2: #1 → #2 → #3）" in str(r[1]))
+                        "利用者の判断待ち（止まっている・PR の判断待ち）: #3(blocked)（後続の後続（世代 2: #1 → #2 → #3）——利用者の判断待ち:" in str(r[1]))
+    # 利用者が直すと答えて todo に戻し、周を始めた（impl）世代 2 の行は、進行中として status 0（判断待ちと読まない）
+    run(mod, ["add", "gen", "9", "--deps", "3"], root)
+    run(mod, ["set", "gen", "3", "state=todo"], root)
+    run(mod, ["set", "gen", "3", "state=impl"], root)
+    r = run(mod, ["status", "gen"], root)
+    o["世代 2 を戻した status"] = (r[0], str(r[1]).splitlines()[:1])
     # 辿れない出所（# が無い・台帳に無い番号・自分を指す）は世代 1、互いを指す 2 行（手で直した台帳）でも止まる
     run(mod, ["init", "gcyc"], root)
     run(mod, ["add", "gcyc", "1"], root)
@@ -1356,11 +1362,13 @@ def main() -> int:
               o["世代 2 の add"][0] == 0 and "blocked（利用者の判断待ち）で足した" in str(o["世代 2 の add"][1]))
         check("世代 3 の add も 0", o["世代 3 の add"] == 0)
         st = o["世代の状態"] or []
-        check("世代 0・1 は todo、世代 2・3 は blocked で note が「利用者の判断待ち: 後続の後続（世代 N: 辿った番号）」",
+        check("世代 0・1 は todo、世代 2・3 は blocked で note が「後続の後続（世代 N: 辿った番号）——利用者の判断待ち:」",
               [(n, s) for n, s, _ in st] == [(1, "todo"), (2, "todo"), (3, "blocked"), (4, "blocked")]
               and st[0][2] == "" and st[1][2] == ""
-              and st[2][2].startswith("利用者の判断待ち: 後続の後続（世代 2: #1 → #2 → #3）")
-              and st[3][2].startswith("利用者の判断待ち: 後続の後続（世代 3: #1 → #2 → #3 → #4）"))
+              and st[2][2].startswith("後続の後続（世代 2: #1 → #2 → #3）——利用者の判断待ち:")
+              and st[3][2].startswith("後続の後続（世代 3: #1 → #2 → #3 → #4）——利用者の判断待ち:"))
+        check("直すと答えて戻した世代 2 の行が impl なら、status は 0（判断待ちと読まない）",
+              o["世代 2 を戻した status"][0] == 0)
         check("世代 2 の行は、元の周がマージされても next に出ない（合成の台帳で main の本体は #3 を出す）",
               o["世代の next"] == (0, ""))
         check("show が足した行の世代を出し、世代 2 の行を利用者の判断待ちに出す", o["世代の show"] == (0, True, True))
