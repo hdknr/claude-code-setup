@@ -1225,10 +1225,220 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
             check(f"到達: 輪の陽性対照——validate を外した ledger.py では {name} が 1 項目にならない",
                   reach_or_error(unguarded_mod, name) != got, bad)
 
+    noninteractive_scenarios(mod, bad)
+    since_last_scenarios(mod, script, bad)
     return bad
 
 
+def noninteractive_scenarios(mod, bad):
+    """非対話の起動（#635）: 通知の 2 項目を人が見る 1 行にする。対話・変数なし・ほかの値は今までどおり。"""
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        env.global_config({})  # 通知の 2 つとも未設定——対話なら要対処
+        for entry in ("sdk-cli", "sdk-ts", "sdk-py"):
+            code, items, out = run(mod, env, environ={**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": entry})
+            check(f"非対話（{entry}）: 通知は人が見る 1 行", status_of(items, "通知") == [mod.HUMAN], bad)
+            check(f"非対話（{entry}）: 通知で終了コードが上がらない", code == 0, bad)
+            check(f"非対話（{entry}）: 非対話であることと値を言う",
+                  entry in detail_of(items, "通知") and "agentPushNotifEnabled: 未設定" in detail_of(items, "通知")
+                  and "inputNeededNotifEnabled: 未設定" in detail_of(items, "通知"), bad)
+        env.global_config({"agentPushNotifEnabled": False, "inputNeededNotifEnabled": "yes"})
+        code, items, _ = run(mod, env, environ={**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        check("非対話: false・真偽値でない値も人が見るで、値を添える",
+              status_of(items, "通知") == [mod.HUMAN] and code == 0
+              and "agentPushNotifEnabled: false" in detail_of(items, "通知") and '"yes"' in detail_of(items, "通知"), bad)
+        env.global_config("{ 壊れた")
+        code, items, _ = run(mod, env, environ={**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        check("非対話: 読めないグローバル設定も人が見る（決め手にならない）で、読めなかったと言う",
+              status_of(items, "通知") == [mod.HUMAN] and code == 0 and "読めなかった" in detail_of(items, "通知"), bad)
+        code, items, _ = run(mod, env, environ={**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "cli"})
+        check("対話（cli）: 読めないグローバル設定は今までどおり判定できない", mod.UNKNOWN in status_of(items, "通知") and code == 2, bad)
+        env.global_config({})
+        for environ, name in (({**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "cli"}, "cli"), (dict(SESSION_ENV), "変数なし"),
+                              ({**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "claude-vscode"}, "claude-vscode")):
+            code, items, _ = run(mod, env, environ=environ)
+            check(f"対話（{name}）: 未設定の通知は今までどおり 2 項目の要対処",
+                  status_of(items, "通知") == [mod.ACTION, mod.ACTION] and code == 1, bad)
+        code, items, _ = run_cruise(mod, env, present=True, environ={**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        check("非対話: --present は今までどおり通知を出さない", status_of(items, "通知") == [], bad)
+
+
+def since_last_scenarios(mod, script, bad):
+    """`--since-last`（#635）: 前回の記録と同じ項目を 1 行に縮め、台帳の隣にだけ書く。"""
+    def cycle(env, environ=None):
+        stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None,
+                                  env=environ if environ is not None else dict(SESSION_ENV), cruise=True, present=False,
+                                  cwd=env.project, ledger="issue-1", pr_view=lambda n: pr_json())
+        plain = io.StringIO()
+        plain_code = mod.report(stack, items, out=plain)
+        try:
+            previous, notes = mod.since_last(env.project, "issue-1", stack, items)
+        except OSError as exc:  # 書けなかったことを例外で投げた——振る舞いの誤り
+            return None, None, f"例外: {exc}", items
+        buf = io.StringIO()
+        code = mod.report(stack, items, out=buf, previous=previous, notes=notes)
+        return code, plain_code, buf.getvalue(), items
+
+    def files(root):
+        return sorted(str(p.relative_to(root)) for p in root.rglob("*") if ".git" not in p.parts)
+
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        env.global_config({})  # 要対処の項目を作る（終了コードを縮めた出力から決めないかを見る）
+        ledger = cruise_ledger(env, [row(1, "todo")])
+        record = ledger.with_name("cruise-issue-1-env-check.json")
+        before = ledger.read_bytes()
+        stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None, env=dict(SESSION_ENV),
+                                  cruise=True, present=False, cwd=env.project, ledger="issue-1")
+        listed = files(env.project)
+        mod.report(stack, items, out=io.StringIO())
+        check("--since-last 無し: どこにも書かない", files(env.project) == listed and not record.exists(), bad)
+
+        code, plain_code, out, _ = cycle(env)
+        check("--since-last 初回: 全文を出し、前回の記録が無いと言う",
+              "前回の記録が無い" in out and "[前回と同じ]" not in out and "[要対処] 通知（agentPushNotifEnabled）" in out, bad)
+        check("--since-last 初回: 台帳の隣に記録を書く", record.exists(), bad)
+        check("--since-last: 台帳を書かない", ledger.read_bytes() == before, bad)
+        check("--since-last: 書くのは記録の 1 ファイルだけ",
+              files(env.project) == sorted(listed + [str(record.relative_to(env.project))]), bad)
+
+        code, plain_code, out, items = cycle(env)
+        check("--since-last 2 回目: 同じ項目を 1 行に縮める",
+              f"[前回と同じ] {len(items)} 項目" in out and "[要対処] 通知（agentPushNotifEnabled）" not in out
+              and "[人が見る] モバイルの登録" not in out, bad)
+        check("--since-last 2 回目: 区分ごとの数を出す", f"{mod.ACTION} 2" in out, bad)
+        check("--since-last 2 回目: 設定の層も 1 行", "設定の層: 前回と同じ" in out and "設定の層（低 → 高）" not in out, bad)
+        check("--since-last: 終了コードは縮めない出力と同じ", code == plain_code == 1, bad)
+
+        env.global_config({"agentPushNotifEnabled": True})  # 1 項目だけ変わり、1 項目が良いに変わる
+        code, plain_code, out, items = cycle(env)
+        check("--since-last: 変わった項目は全文で出す",
+              "[良い] 通知（agentPushNotifEnabled）" in out and "[要対処] 通知（inputNeededNotifEnabled）" not in out
+              and f"[前回と同じ] {len(items) - 1} 項目" in out, bad)
+
+        env.local({})  # 設定の層の一覧だけが変わる（local が「無い」→「在る」）
+        code, plain_code, out, _ = cycle(env)
+        check("--since-last: 設定の層の一覧が変われば全文", "設定の層（低 → 高）" in out and "設定の層: 前回と同じ" not in out, bad)
+
+        env.global_config({})  # 前回は良い、今回は要対処——中身と区分が変われば縮めない
+        code, plain_code, out, _ = cycle(env, environ={**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        check("--since-last: 前回あって今回は名前ごと無い項目を出す",
+              "[前回から消えた] 2 項目: 通知（agentPushNotifEnabled）・通知（inputNeededNotifEnabled）" in out
+              and "[人が見る] 通知: 非対話の起動" in out, bad)
+
+        record.write_text("{ 壊れた", encoding="utf-8")
+        code, plain_code, out, _ = cycle(env)
+        check("--since-last: 読めない記録では縮めず、読めなかったと言う",
+              "前回の記録を読めなかった" in out and "[前回と同じ]" not in out and code == plain_code, bad)
+        code, plain_code, out, items = cycle(env)
+        data = json.loads(record.read_text(encoding="utf-8"))
+        data["format"] = 99
+        record.write_text(json.dumps(data), encoding="utf-8")
+        code, plain_code, out, _ = cycle(env)
+        check("--since-last: 形の違う記録では縮めない", "形が違う" in out and "[前回と同じ]" not in out, bad)
+
+        plans = record.parent
+        plans.chmod(0o500)  # 一時ファイルも置き換えも書けない
+        try:
+            code, plain_code, out, _ = cycle(env)
+        finally:
+            plans.chmod(0o700)
+        check("--since-last: 書けなければそう言い、終了コードは変えない",
+              "今回の結果を記録できなかった" in out and code == plain_code, bad)
+
+    check("指紋: pid の数字だけの違いは同じ", mod.item_key(("a", "b", "最寄りの claude（pid 123）", "")) ==
+          mod.item_key(("a", "b", "最寄りの claude（pid 456）", "")), bad)
+    check("指紋: 直し方が変われば違う", mod.item_key(("a", "b", "c", "x")) != mod.item_key(("a", "b", "c", "y")), bad)
+
+    # 本番の経路（main）——gather を差し替え、実 HOME を読まない
+    with scenario(SCRIPT) as env:
+        ledger = cruise_ledger(env, [row(1, "todo")])
+        record = ledger.with_name("cruise-issue-1-env-check.json")
+        main_mod = load(script)
+        main_mod.gather = lambda *a, **k: ([], [(main_mod.ACTION, "x", "y", "")])
+        sink = io.StringIO()
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(io.StringIO()):
+            code = main_mod.main(["--cruise", "--ledger", "issue-1", "--project", str(env.project), "--flag-settings", "/x"])
+        check("main: --since-last 無しは記録を書かない", code == 1 and not record.exists(), bad)
+        with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(io.StringIO()):
+            code = main_mod.main(["--cruise", "--ledger", "issue-1", "--project", str(env.project), "--flag-settings", "/x",
+                                  "--since-last"])
+        check("main: --since-last は記録を書き、終了コードは同じ", code == 1 and record.exists(), bad)
+
+        def refused():
+            main_mod.gather = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("gather に届いた"))
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    main_mod.main(["--cruise", "--since-last", "--project", str(env.project), "--flag-settings", "/x"])
+            except SystemExit as exc:
+                return exc.code
+            except RuntimeError:
+                return "届いた"
+            return None
+        check("main: --ledger の無い --since-last は使い方の誤り（2）で、点検に進まない", refused() == 2, bad)
+
+    # 記録の場所: worktree の中から回しても、メインの作業ツリーの台帳の隣
+    with scenario(SCRIPT) as env:
+        cruise_ledger(env, [row(1, "todo")])
+        git(env.project, "commit", "-q", "--allow-empty", "-m", "x")
+        tree = env.project.parent / "wt"
+        git(env.project, "worktree", "add", "-q", str(tree))
+        check("記録の場所: worktree からでもメインの作業ツリー",
+              mod.record_path(tree, "issue-1") == (env.project / ".claude" / "plans" / "cruise-issue-1-env-check.json").resolve()
+              or mod.record_path(tree, "issue-1") == env.project / ".claude" / "plans" / "cruise-issue-1-env-check.json", bad)
+
+
 MUTATIONS = {
+    # 非対話の起動（#635）
+    "非対話の起動でも通知を要対処にする": (
+        "    entry = non_interactive(env)\n    if entry:\n",
+        "    entry = non_interactive(env)\n    if False:\n"),
+    "対話（cli）も非対話と読む": (
+        'NON_INTERACTIVE = ("sdk-cli", "sdk-ts", "sdk-py")',
+        'NON_INTERACTIVE = ("sdk-cli", "sdk-ts", "sdk-py", "cli")'),
+    "非対話の見分けで sdk-ts を落とす": (
+        'NON_INTERACTIVE = ("sdk-cli", "sdk-ts", "sdk-py")',
+        'NON_INTERACTIVE = ("sdk-cli", "sdk-py")'),
+    "非対話で読めない設定を判定できないにする": (
+        '        return [(HUMAN, "通知", f"非対話',
+        '        return [(UNKNOWN if isinstance(data, Unreadable) else HUMAN, "通知", f"非対話'),
+    "非対話で設定の値を添えない": (
+        "通知の設定は人を呼ぶ経路の決め手にならない（{shown}）",
+        "通知の設定は人を呼ぶ経路の決め手にならない"),
+    # --since-last（#635）
+    "縮めた項目を終了コードに数えない": (
+        "    code = exit_code(items)\n    print(file=out)\n",
+        "    code = exit_code(shown)\n    print(file=out)\n"),
+    "中身が変わっても名前が同じなら縮める": (
+        '    return fingerprint("\\0".join(item))\n',
+        "    return fingerprint(item[1])\n"),
+    "pid の数字も指紋に入れる": (
+        'PID.sub("pid N", text)',
+        "text"),
+    "形の違う記録でも縮める": (
+        'data.get("format") == RECORD_FORMAT\n',
+        "True\n"),
+    "読めない記録を黙って前回なしにする": (
+        '        return None, f"{path} を読めなかった: {exc}"\n',
+        "        return None, None\n"),
+    "書けないと例外で落ちる": (
+        '    except OSError as exc:\n        return f"{path} に書けなかった: {exc}"\n',
+        '    except ZeroDivisionError as exc:\n        return f"{path} に書けなかった: {exc}"\n'),
+    "記録を台帳に書く": (
+        '.with_name(f"cruise-{name}-env-check.json")',
+        ""),
+    "--since-last 無しでも記録する": (
+        "    if args.since_last:\n        previous, notes = since_last(",
+        "    if args.ledger:\n        previous, notes = since_last("),
+    "--ledger の無い --since-last を受ける": (
+        "    if args.since_last and args.ledger is None:\n",
+        "    if False:\n"),
+    "前回から消えた項目を出さない": (
+        "        if gone:\n",
+        "        if False:\n"),
+    "設定の層を前回と比べずに縮める": (
+        '    if previous is not None and fingerprint("\\n".join(stack_lines(stack))) == previous["stack"]:\n',
+        "    if previous is not None:\n"),
     "宣言した操作を点検に足さない": (
         "        commands = tuple(commands) + tuple(c for c in declared if c not in commands)\n",
         "        commands = tuple(commands)\n"),

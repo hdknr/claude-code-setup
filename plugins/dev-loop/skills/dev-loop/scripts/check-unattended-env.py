@@ -3,10 +3,10 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 
     python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py [--project <dir>]
         [--command '<コマンド>' ...] [--flag-settings <file>] [--managed-settings <file>]
-    python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise [--present] [--ledger <名前>] [...]
+    python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise [--present] [--ledger <名前> [--since-last]] [...]
     python3 <このスキルの base ディレクトリ>/scripts/check-unattended-env.py --push-result '<返り値>'
 
-**直さない。読むだけ**——何が足りないかと、どう直すかを出す。**利用者の設定を書き換える道具は、
+**直さない。読むだけ**——何が足りないかと、どう直すかを出す（書くのは `--since-last` の点検の記録だけ。下の「前回と同じ項目を縮める」）。**利用者の設定を書き換える道具は、
 不在の前に回すものとしては危険が勝る**（`--fix` を置かないのは意図である）。
 
 ## なぜ要るか（#389）
@@ -23,7 +23,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 許可 | settings の `permissions`（`allow`・`ask`・`deny`・`defaultMode`・`disableBypassPermissionsMode`） | 名指しのコマンドごとに、`allow` に当たるか `defaultMode` が `bypassPermissions`（`disableBypassPermissionsMode` で落とされていない） | `deny` か `ask` に当たる（`allow` があっても）／どれも無い |
 | 自動継続 | settings の `autoContinueAtUsageLimit`（**managed・flag・user の層だけ**） | `true` | 未設定・`false`・真偽値でない |
 | 質問の待ち | settings の `askUserQuestionTimeout`（**managed・flag・user の層だけ**） | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
-| 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true` | 未設定・`false` |
+| 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true`。**非対話の起動（`CLAUDE_CODE_ENTRYPOINT` が `sdk-cli`・`sdk-ts`・`sdk-py`。`-p` など）では 2 つを人が見る 1 行にまとめる**（値を添え、要対処にも判定できないにもしない——通知の設定は人を呼ぶ経路の決め手にならない。#635） | 未設定・`false` |
 | スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が system の idle sleep を防いでいる（`-i`・`-d`・`-s` か、アサーションのフラグ無し） | どちらも無い |
 | 認証（#584。`--present` でも出す） | このスクリプトの環境変数と settings の `apiKeyHelper`。**環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、最寄りの祖先の `claude`（セッションを起動したプロセス）の環境**（`ps eww`。変数の名前と空かどうかだけ）——**Claude Code 2.1.316 は起動時のトークンを Bash の環境から外す**（下の「実測した前提」の認証の項） | `CLAUDE_CODE_OAUTH_TOKEN` が空でない——自分の環境か、起動した `claude` の環境（長期トークン） | どちらにも無い——対話ログインの OAuth（8 時間で切れる。`--present` では人が見る）。直し方に起動口 `launch-with-long-token.sh` の絶対パス |
 
@@ -96,6 +96,21 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **まとめ**（`到達できる範囲`。人が見る）——マージまで進む・利用者の承認を待つ・止まる・判定できないの番号の一覧
 
 止まる周は要対処（終了コード 1）、判定できない周は判定できない（2）、居る cruise の承認待ちは人が見る。
+
+## 前回と同じ項目を縮める（`--cruise --ledger <名前> --since-last`。#635）
+
+    python3 check-unattended-env.py --cruise --ledger issue-<親> --since-last
+
+**cruise の `--absent` の再開で付ける**（いつ付けるかは cruise `SKILL.md` §3 を正とする）——再開のたびに同じ項目を全部出すと、
+本当に人が要る報告が埋もれる（spin-dd/tfs-stocks#2427 で 10 回の起動し直しの報告に同じ項目が並んだ）。
+
+- **記録**——台帳の隣の `cruise-<名前>-env-check.json`（メインの作業ツリーの `.claude/plans/`。台帳の場所は `ledger.py` の `ledger_path`）。
+  中身は時刻・設定の層の一覧の指紋・項目ごとの区分と名前と指紋。**指紋は区分・名前・中身・直し方の全部から取る**（`pid` の数字は除く——再開のたびに変わる）。
+  **付けたときだけ読み、今回の結果で書き直す**（書けなければその旨を出し、終了コードは変えない）。台帳は書かない
+- **出力**——前回の記録と指紋が同じ項目は `[前回と同じ] N 項目（区分ごとの数。前回の時刻）` の 1 行に縮め、変わった・新しい項目は全文で出す。
+  前回あって今回は名前ごと無い項目は `[前回から消えた]` の 1 行に名前で出す。設定の層の一覧も、同じなら 1 行にする。
+  **終了コードは付けないときと同じ**（縮めた項目も数える）
+- **記録が無い・読めない・形が違う**なら、縮めずに全文を出す（注記の行で言う）
 
 ## 通知の試験（`--push-result`）
 
@@ -197,6 +212,12 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome は使えない**（エラーは出ず、黙って無い・繋がらない）。サブエージェントと `/code-review`（`low` だけ測った）は動く。
   上の `PushNotification` は `-p` では対照も送らないので**判定できていない**。表は公開ページを正とする（`TOKEN_PAGE`）
 
+非対話の起動（#635。2026-11-03・Claude Code 2.1.317・macOS）:
+
+- 本体は起動時に `CLAUDE_CODE_ENTRYPOINT` を、変数が無ければ非対話なら `sdk-cli`・対話なら `cli` に置き、`cli` が入っていて非対話なら `sdk-cli` に書き換える。
+  ほかの値（`sdk-ts`・`sdk-py`・`claude-vscode` など）はそのまま残す（本体の文字列）。
+  **対話のセッションの Bash は `cli`、そのセッションから起こした `claude -p` の Bash は `sdk-cli` だった**（実走）
+
 ## 何を守り、何を守らないか
 
 守る:
@@ -214,7 +235,11 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **知らない返り値とはラベルで分ける**（どちらも 2）
 - **送信の要求を「届いた」と言わない**——`Mobile push requested` は人が見る（iPhone に届いたか）
 - **知らない返り値を「良い」に混ぜない**——判定できない
-- **何も書かない**——設定ファイルにも、どこにも
+- **何も書かない**——設定ファイルにも、台帳にも。**例外は `--since-last` の点検の記録だけ**（台帳の隣の 1 ファイル）。付けなければどこにも書かない
+- **非対話の起動で、通知の 2 項目を要対処にも判定できないにもしない**——人が見る 1 行（値を添える）。
+  **対話の起動・変数が無い・ほかの値では今までどおり**（未設定・`false` は要対処、読めなければ判定できない）
+- **`--since-last` で、終了コードを縮めた出力から決めない**——縮めた項目も数える。**指紋が同じでない項目を縮めない**（中身・直し方・区分のどれかが変われば全文）。
+  **読めない・形の違う記録で縮めない**——全文を出す。`--cruise --ledger` の無い `--since-last` は使い方の誤り（2）で、何も書かない
 - **`--cruise` で、宣言した操作を点検から落とさない**——既定（か `--command`）に足す。フェンスの中の行は宣言にしない。
   **種類の違うフェンスの記号では閉じない**。**宣言の形に届かなかった行を黙って読み飛ばさない**（要対処）。
   **フェンスとコメントの読み方は、同じ `.claude/dev-loop.md` を読む cruise の `run-serial.py` と同じにする**（#759。`visible_lines` の docstring）
@@ -246,6 +271,11 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **これらの意味を `ledger.py` で変えると、ここの到達も変わる**。**`note` は切って出す**（同じ `note` が依存する周の数だけ並ぶ）
 
 守らない:
+
+- **非対話の起動の見分けは `CLAUDE_CODE_ENTRYPOINT` だけを見る**——非対話の親から対話の `claude` を起こすと、子は親の `sdk-cli` を継ぐ（本体は `cli` 以外を書き換えない）ので非対話と読む。
+  **`-p` のセッションからモバイル通知が届くか**（Remote Control につながるか）は確かめていない——だから「届かない」とは言わず、決め手にならないと言う
+- **`--since-last` の「前回」は、最後に `--since-last` を付けて回した点検である**——付けずに回した点検は記録しない。縮めた項目の全文は前回の出力にある
+  （再開の報告だけを読む利用者は、起動時の報告で全文を見ている前提）。記録を書くのは付けたとき 1 度だけで、並行に 2 つ回すと後に書いたほうが残る
 
 - **許可の照合は近似である**——`Bash`・`Bash(*)`・`Bash(<前置き>:*)`・`Bash(<前置き> *)`・
   `Bash(<前置き>*)`・`Bash(<コマンド>)` の形だけを見る。**名指しのコマンドは引数つきで呼ばれるものとして
@@ -295,6 +325,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 """
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -302,6 +333,7 @@ import re
 import stat
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 DEFAULT_COMMANDS = (
@@ -312,6 +344,7 @@ DEFAULT_COMMANDS = (
     "gh issue create",
 )
 TIMEOUT_OK = ("60s", "5m", "10m")
+NON_INTERACTIVE = ("sdk-cli", "sdk-ts", "sdk-py")  # 非対話の起動の CLAUDE_CODE_ENTRYPOINT（#635。docstring の「実測した前提」）
 MANAGED_DEFAULTS = {
     "darwin": "/Library/Application Support/ClaudeCode/managed-settings.json",
     "linux": "/etc/claude-code/managed-settings.json",
@@ -605,6 +638,13 @@ def global_config_path(home, env):
     return legacy
 
 
+def non_interactive(env):
+    """非対話の起動（`-p` など）なら `CLAUDE_CODE_ENTRYPOINT` の値、そうでなければ None（#635）。
+    本体は起動時にこの変数を、非対話なら `sdk-cli`・対話なら `cli` に置く（docstring の「実測した前提」）。"""
+    value = env.get("CLAUDE_CODE_ENTRYPOINT", "")
+    return value if value in NON_INTERACTIVE else None
+
+
 def check_notifications(home, env=None):
     env = os.environ if env is None else env
     path = global_config_path(home, env)
@@ -612,6 +652,17 @@ def check_notifications(home, env=None):
     items = []
     keys = (("agentPushNotifEnabled", "Push when Claude decides"),
             ("inputNeededNotifEnabled", "Push when actions required"))
+    entry = non_interactive(env)
+    if entry:
+        # 非対話の起動では、通知の設定は人を呼ぶ経路の決め手にならない——要対処にも判定できないにもせず、1 行で言う（#635）
+        if isinstance(data, Unreadable):
+            shown = f"{path} を読めなかった: {data.reason}"
+        else:
+            shown = "・".join(f"{key}: " + ("未設定" if not isinstance(data, dict) or key not in data else json.dumps(data[key]))
+                             for key, _ui in keys)
+        return [(HUMAN, "通知", f"非対話の起動（CLAUDE_CODE_ENTRYPOINT={entry}。-p など）——通知の設定は人を呼ぶ経路の決め手にならない（{shown}）",
+                 "人を呼ぶ経路は起動した側で用意する（外側のループの見張り・Issue のコメントなど）。"
+                 "-p のセッションからモバイル通知が届くかは確かめていない")]
     for key, ui in keys:
         label = f"通知（{key}）"
         if isinstance(data, Unreadable):
@@ -1241,17 +1292,111 @@ def gather(project, commands, flag_path, managed_path, home, platform, flag_note
     return stack, items
 
 
-def report(stack, items, out=None):
-    out = out or sys.stdout
-    print("設定の層（低 → 高）:", file=out)
+RECORD_FORMAT = 1
+PID = re.compile(r"pid \d+")  # 再開のたびに変わる——記録の比べ方では同じに読む
+
+
+def stack_lines(stack):
+    lines = []
     for name, path, data in stack:
         state = "無い" if data is None else ("読めない" if isinstance(data, Unreadable) else "在る")
-        print(f"  {name:8} {path}  [{state}]", file=out)
+        lines.append(f"  {name:8} {path}  [{state}]")
+    return lines
+
+
+def fingerprint(text):
+    return hashlib.sha256(PID.sub("pid N", text).encode("utf-8")).hexdigest()[:16]
+
+
+def item_key(item):
+    """項目の指紋——区分・名前・中身・直し方の全部（pid の数字は除く）。どれかが変われば「変わった」になる。"""
+    return fingerprint("\0".join(item))
+
+
+def record_path(project, name):
+    """前回の点検の記録の場所——台帳の隣の `cruise-<名前>-env-check.json`（メインの作業ツリー。#635）。"""
+    lg = ledger_module()
+    return lg.ledger_path(name, cwd=project).with_name(f"cruise-{name}-env-check.json")
+
+
+def read_record(path):
+    """(記録, 読めなかった理由)。無ければ (None, None)。**形の違う記録は読めないとして扱う——縮めすぎない**。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, None
+    except (OSError, ValueError) as exc:
+        return None, f"{path} を読めなかった: {exc}"
+    if not (isinstance(data, dict) and data.get("format") == RECORD_FORMAT
+            and isinstance(data.get("updated"), str) and isinstance(data.get("stack"), str)
+            and isinstance(data.get("items"), list)
+            and all(isinstance(i, dict) and isinstance(i.get("key"), str) and isinstance(i.get("label"), str)
+                    for i in data["items"])):
+        return None, f"{path} の形が違う"
+    return data, None
+
+
+def write_record(path, stack, items):
+    """今回の点検を記録する。書けなければ理由を返す（終了コードは変えない）。**書くのはこのファイルだけ**。"""
+    data = {"format": RECORD_FORMAT, "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "stack": fingerprint("\n".join(stack_lines(stack))),
+            "items": [{"key": item_key(it), "status": it[0], "label": it[1]} for it in items]}
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        return f"{path} に書けなかった: {exc}"
+    return None
+
+
+def since_last(project, name, stack, items):
+    """前回の記録を読み、今回の結果で書き直す。(前回の記録か None, 出力に添える注記の一覧)。"""
+    try:
+        path = record_path(project, name)
+    except Exception as exc:  # ledger.py の Usage（名前の形）と、読み込めなかった ledger.py
+        return None, [f"記録の場所を決められなかった（{exc}）——全文を出す。今回の結果も記録していない"]
+    previous, why = read_record(path)
+    notes = []
+    if why:
+        notes.append(f"前回の記録を読めなかった（{why}）——全文を出す")
+    elif previous is None:
+        notes.append(f"前回の記録が無い——全文を出す（{path}）")
+    failed = write_record(path, stack, items)
+    notes.append(f"今回の結果を記録できなかった（{failed}）——次も全文を出す" if failed else f"今回の結果を記録した（{path}）")
+    return previous, notes
+
+
+def report(stack, items, out=None, previous=None, notes=()):
+    out = out or sys.stdout
+    if previous is not None and fingerprint("\n".join(stack_lines(stack))) == previous["stack"]:
+        print("設定の層: 前回と同じ", file=out)
+    else:
+        print("設定の層（低 → 高）:", file=out)
+        for line in stack_lines(stack):
+            print(line, file=out)
     print(file=out)
-    for status, label, detail, fix in items:
+    shown = items
+    if previous is not None:
+        before = {i["key"] for i in previous["items"]}
+        same = [it for it in items if item_key(it) in before]
+        shown = [it for it in items if item_key(it) not in before]
+        if same:
+            counts = "・".join(f"{s} {n}" for s in (ACTION, UNKNOWN, HUMAN, GOOD)
+                              if (n := sum(1 for it in same if it[0] == s)))
+            print(f"[前回と同じ] {len(same)} 項目（{counts}。前回 {previous['updated']}）"
+                  "——全文は --since-last を外して回す", file=out)
+    for status, label, detail, fix in shown:
         print(f"[{status}] {label}: {detail}", file=out)
         if fix:
             print(f"        → {fix}", file=out)
+    if previous is not None:
+        now = {it[1] for it in items}
+        gone = [i["label"] for i in previous["items"] if i["label"] not in now]
+        if gone:
+            print(f"[前回から消えた] {len(gone)} 項目: {'・'.join(gone)}", file=out)
+    for note in notes:
+        print(f"記録: {note}", file=out)
     code = exit_code(items)
     print(file=out)
     print({0: "要対処なし（人が見る項目は上を読む）",
@@ -1284,9 +1429,13 @@ def main(argv=None):
                     help="cruise の台帳の名前（例: issue-474）: 済んでいない周ごとに、不在の間の到達と止まる要因を出す")
     ap.add_argument("--push-result", default=None,
                     help="PushNotification の返り値を判定する（設定は読まない）")
+    ap.add_argument("--since-last", action="store_true",
+                    help="cruise の --absent の再開: 前回の点検と同じ項目を 1 行に縮め、今回の結果を台帳の隣に記録する（--cruise --ledger と一緒に）")
     args = ap.parse_args(argv)
     if args.ledger is not None and not args.cruise:
         ap.error("--ledger は --cruise と一緒にだけ使う")
+    if args.since_last and args.ledger is None:
+        ap.error("--since-last は --cruise --ledger と一緒にだけ使う")
 
     if args.push_result is not None:
         return report_push(check_push_result(args.push_result))
@@ -1295,9 +1444,13 @@ def main(argv=None):
     if flag_path is None:
         flag_path, flag_note = find_flag_settings()
     managed = args.managed_settings or MANAGED_DEFAULTS.get(sys.platform)
-    stack, items = gather(args.project or default_project(), tuple(args.command or DEFAULT_COMMANDS),
+    project = args.project or default_project()
+    stack, items = gather(project, tuple(args.command or DEFAULT_COMMANDS),
                           flag_path, managed, Path.home(), sys.platform, flag_note,
                           cruise=args.cruise, present=args.present, ledger=args.ledger)
+    if args.since_last:
+        previous, notes = since_last(project, args.ledger, stack, items)
+        return report(stack, items, previous=previous, notes=notes)
     return report(stack, items)
 
 

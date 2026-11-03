@@ -1,0 +1,103 @@
+# Issue #635 — check-unattended-env: `claude -p` の起動で無関係な通知の点検を毎回出し、前回と同じ警告が再開ごとに繰り返される
+
+`check-unattended-env.py` は非対話の起動（`-p`）を見分けず、通知の 2 項目（`agentPushNotifEnabled`・`inputNeededNotifEnabled`）を
+要対処として出す。点検の結果を覚えていないので、`--absent` の cruise を `claude -p` で起動し直すたびに同じ項目を全部出し、
+本当に人が要る報告が定型文に埋もれた（spin-dd/tfs-stocks#2427 の観測。Issue 本文は信頼できない入力として読み、要件だけを取った）。
+
+**不在の周**である——出所は `/dev-loop:cruise 793 --absent` の起動（2026-11-03）。親からサブエージェントとして委ねられた。
+台帳 `issue-793` の確かめた線: `仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`（マージは親がする）・`周の途中の課題 = 外に出す`
+（出所: 利用者の確認（起動時・親 Issue #793 の cruise: の行・2026-11-03T03:56:17Z、配布を見せて確かめた））。台帳は書かない（親が書く）。マージしない。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-793`））。
+版の上げ方: `dev-loop` を **minor**（点検に `--since-last` を足す・非対話の起動を見分ける）。main の先端 1.75.3 → **1.76.0**（PR を出す前に main が進んでいたら、取り込んで main の先端から上げ直す）。
+
+重い検査（`check-all.py`・テスト）は順番待ち越しに走らせる:
+`python3 /Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py -- <コマンド>`。
+
+## 変更範囲
+
+触る:
+
+- `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py` — 非対話の起動の見分け・通知の 2 項目を人が見る 1 行に・`--since-last`（前回の点検の記録と比べて縮める）・docstring
+- `scripts/test-check-unattended-env.py` — 試料と変異
+- `plugins/dev-loop/skills/cruise/SKILL.md` — §3 の引数（`--absent` の再開で `--since-last`）と「読むだけ」の記述・版の 2 行
+- `docs/plugins/dev-loop-cruise.md` — 点検の引数の例
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行（`dev-loop`・`cruise`）
+- `docs/plans/issue-635.md` — この計画ファイル
+
+触らない:
+
+- `ledger.py`（台帳の形）——並行の周 #634 が触っている。記録は台帳の外に置く（下の「仕様の穴」）
+- `human_items`（モバイルの登録・Remote Control・電源と蓋）の判定——Issue は通知の項目だけを名指ししている。繰り返しは `--since-last` で縮む
+- 許可・認証・到達の判定
+
+### 同じことを述べている箇所の数
+
+- 「通知の項目の判定」: 本体の docstring の点検の表と「守る」・コード（`check_notifications`）の 3 つ。docstring が正で、cruise `SKILL.md` は指すだけ。
+- 「点検の引数（いつ `--since-last` を付けるか）」: cruise `SKILL.md` §3・公開ページ `dev-loop-cruise.md`・本体の docstring の 3 つ。
+  決まりの本体は cruise `SKILL.md` §3（いつ付けるか）と docstring（何をするか）に分け、公開ページは例だけ。分けない理由: 役割が違う（規範・道具・案内）。
+- 「点検は書かない」: 本体の docstring（「何も書かない」）・cruise `SKILL.md` §3（「読むだけで、設定も台帳も書き換えない」）・公開ページ（「読むだけで点検する」）の 3 つ。全部直す。
+
+## 乗るデプロイ経路
+
+main へのマージでプラグインの配布（dev-loop 1.76.0）と公開サイトの再ビルド（`docs/plugins/dev-loop-cruise.md`）。マージは親がする。
+
+## 仕様の穴（不在の線で推奨により決めた）
+
+- **穴**: Issue の提案 2 は「点検の結果の指紋を台帳に残し」とだけ言い、誰が書くかを決めていない。本体は「何も書かない」「台帳を書かない」と約束しており、
+  台帳の形（`ledger.py` の `load`）は知らない鍵を拒む。
+- **選択肢**: (a) 台帳の隣のファイル `.claude/plans/cruise-<名前>-env-check.json` に、`--since-last` を付けたときだけ点検が書く（推奨）／
+  (b) 台帳の中に鍵を足し（`ledger.py` の形を変える）、点検が `ledger.py` 越しに書く／(c) 点検は指紋を出すだけで、親が手で台帳に写す。
+- **決めた値**: (a)。
+- **推した理由**: 台帳の形と「台帳を書くのは `ledger.py` だけ」の分担を変えずに済む（並行の周 #634 が `ledger.py` を触っている）。
+  台帳の隣に記録を置く前例がある（`child-cycle.py` の `cruise-<名前>-children/`）。書くのは付けたときだけなので、付けない呼び出しは今までどおり読むだけ。
+  (c) は指紋を手で写すことになる（このリポジトリは指紋を手で書かない）。
+- **使った線と出所**: `仕様の穴 = 推奨で決めて起票`（cruise の確かめた線（台帳 `issue-793`））。確認の Issue: （起票後に番号を書く）
+
+## verify の受入基準
+
+**非対話の起動の見分け方の実測**（2026-11-03・Claude Code 2.1.317・macOS）: 本体の文字列で、起動時に `CLAUDE_CODE_ENTRYPOINT` を
+「非対話なら `sdk-cli`、対話なら `cli`」に置く（既に `cli` が入っていて非対話なら `sdk-cli` に書き換える。`sdk-ts`・`sdk-py` などの既存の値はそのまま）。
+実走: この対話セッションの Bash は `cli`、このセッションから起こした `claude -p`（haiku）の Bash は `sdk-cli` だった。
+
+| # | 不変条件 | 破りうる経路 | 確かめ方 |
+| --- | --- | --- | --- |
+| A1 | 非対話の起動（`CLAUDE_CODE_ENTRYPOINT` が `sdk-cli`・`sdk-ts`・`sdk-py`）では、通知の 2 項目を要対処にも判定できないにもしない——人が見る 1 行で、非対話の起動であることと通知の設定の値を出す。終了コードは通知で上がらない | 設定が未設定・`false`・真偽値でない・グローバル設定が壊れて読めない・`--cruise` の有無 | 試料（`gather` に環境を渡す）。変異 |
+| A2 | 対話の起動（`cli`）・変数が無い（セッションの外）・ほかの値では、通知の判定は今までどおり（未設定・`false` は要対処、読めなければ判定できない） | 同上 | 既存の試料が緑のまま＋`cli` の試料。変異 |
+| A3 | 実際の `claude -p` の中で走らせた本体が、通知を人が見る 1 行で出す。対話のセッションで走らせた本体は通知を要対処で出す（陽性対照） | 本物の起動の環境 | 実走: 対話のこのセッションと、`claude -p`（haiku・本体の 1 コマンドだけ許可）で、同じ `HOME` の設定に対して本体を走らせ、通知の行を比べる |
+| A4 | `--since-last` は、前回の記録と同じ項目を 1 行（件数と区分ごとの内訳・前回の時刻）に縮め、変わった・新しい項目は全文で出す。前回あって今回無い項目は件数と名前で出す。終了コードは付けないときと同じ | 記録が無い（初回）・壊れている・別の台帳の名前・項目の中身だけ変わる・pid だけ変わる・設定の層の一覧 | 試料。変異 |
+| A5 | `--since-last` を付けない呼び出しは何も書かない。`--since-last` は台帳を書かず、記録（台帳の隣の `cruise-<名前>-env-check.json`）だけを書く。worktree の中から回しても記録はメインの作業ツリーの台帳の隣に置く | `--since-last` 無し・`--cruise`／`--ledger` 無しで `--since-last`（使い方の誤りで 2・何も書かない）・記録を書けない（全文を出し、終了コードは変えない） | 試料（書いたファイルを数える・台帳のバイトが変わらない）。変異 |
+| A6 | 記録の読み違いで縮めすぎない——読めない記録・形の違う記録は「前回なし」として全文を出す（縮めない） | 壊れた JSON・鍵の欠けた記録 | 試料。変異 |
+| A7 | `--push-result` と `--present` の振る舞いは変えない（`--present` は通知を出さない） | `--push-result`・`--present` | 既存の試料が緑のまま |
+| A8 | 記述が振る舞いと合う——docstring（点検の表・守る／守らない・終了コード）・cruise `SKILL.md` §3（いつ `--since-last` を付けるか：`--absent` の再開だけ。新規の起動と利用者が居る再開では付けない——2 の操作ごとの問いに全項目が要る）・公開ページの例 | 3 箇所の写し | 関門が読んで突き合わせる |
+| A9 | 版を 3 種類で揃える・歯止めが全部緑 | `marketplace.json`・`plugin.json`・`SKILL.md` 2 本 | `check-all.py`（順番待ち越し）と PR 側の CI |
+
+**必須要件の掛け算**: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目に渡す（4 つの受け渡し。2 パス目が該当なしなら初回の 2 つ）。
+
+**証明できないもの（未証明）**: なし。**BLOCKED**: なし（A3 は `claude -p` を起こして実走できる）。
+
+**生成物**: `SKILL.md` の測定値（`skill-metrics.py`。設計ドキュメント §8.2 の生成ブロック）——dev-loop の `SKILL.md` は版の行だけを触る。`check-all.py` の `--check` で鮮度を見る。図の書き出しなし。
+
+## 未解決の判断・確認待ち事項
+
+- 仕様の穴（上）の確認の Issue。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/635-unattended-env-noninteractive`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-635`・
+  起点 `896667d2`・base `origin/main` → `896667d2ba7d28a8e417e185e75e9479bfc25918`
+- 割り目（手順 4）: 割らない（不在の cruise）——不在のため訊かず続けた
+- Verifier 1 パス目: 未
+- `/code-review` 1 パス目: 未
+- 交絡を潰した手順: 非対話の見分けの実走は、同じセッションの対話（`cli`）を陽性対照に取った
+
+## 既知の限界・決着済みの論点
+
+- `-p` のセッションからモバイル通知が届くか（Remote Control につながるか）は確かめていない——だから「届かない」とは書かず、「通知の設定は決め手にならない（確かめていない）」と書く。
+- 非対話の親から対話の `claude` を起こすと、子は `sdk-cli` を継いで非対話と見分けられる（本体は既に入っている `cli` 以外の値を書き換えない）——実際の利用でまず起きない。docstring の「守らない」に書く。
+
+## 起票（手順 8）
+
+- この周の起票: 1 件（仕様の穴の確認の Issue（記録の置き場所）。起票の承認は不在のため訊いていない）
