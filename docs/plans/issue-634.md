@@ -27,6 +27,7 @@
 - `.claude-plugin/marketplace.json` — 版
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す場合だけ）
+- `docs/plugins/dev-loop-cruise.md` — 公開ページの「どう再開するか」と「6. 戻ってきたら見るもの」に実機確認待ちの行（2 パス目の P2-4 で広げた）
 - `docs/plans/issue-634.md` — この計画
 
 触らない:
@@ -80,7 +81,8 @@
 - 1 パス目の指摘対応: `fc0016ec`..`HEAD`（CR1・CR2・CR3・CR5・CR6）。差分 0 行ではない——2 パス目を回す（残り: Verifier の当て直し・`/code-review` 2 パス目）
 - Verifier 2 パス目: 通した——反証 0 件（`test-check-unattended-env.py` も実行して緑）
 - `/code-review` 2 パス目: 通した——指摘 10 件（直す 5・残課題 5。下の 2 パス目の採否の表）
-- 狭いパスの起点: `1dcfd5e4`（2 パス目の指摘対応を始める直前の HEAD）・終点: 未
+- 狭いパスの起点: `1dcfd5e4`（2 パス目の指摘対応を始める直前の HEAD）・終点: `96ae08bb`（指摘対応の最後のコミット）
+- 狭いパス（Verifier）: 未
 - 1 パス目の指摘対応の起点: `f8f30320`（1 パス目の関門に渡した時点の HEAD）
 - 交絡を潰した手順: 実験なし（合成の台帳で本体を走らせるテストだけ）
 
