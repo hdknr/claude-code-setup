@@ -65,7 +65,7 @@ main へのマージでプラグインの配布（dev-loop 1.77.0）と公開サ
 | A4 | 起動の総数の上限（既定 20）で止まる | 前進が続く台帳 | 同上 |
 | A5 | `claude` が 0 以外で終わった・起こせなかったら止まる | 終了コード・実行ファイルが無い | 同上 |
 | A6 | 引数を読めた後の止まるすべての経路で、理由を出力して通知する（`osascript` が在れば）。終了コードは docstring の表と定数が一致する | 済んだ・人待ち・判定できない・前進なし・上限・`claude` の失敗・中断 | 同上（偽の `osascript` が受けた本文を記録） |
-| A7 | `claude` はメインの作業ツリーを cwd に、`-p "/dev-loop:cruise <親>[ --absent]"`・`--append-system-prompt <追記>` と利用者の追加の引数で起こし、環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く（利用者が置いた値は上書きしない） | worktree の中から走らせる・`--absent` の有無・追加の引数 | 同上（偽の `claude` が引数・cwd・環境を記録） |
+| A7 | `claude` はメインの作業ツリーを cwd に、`-p "/dev-loop:cruise <親>[ --absent]"`・`--append-system-prompt <追記>` と利用者の追加の引数で起こし、環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く（利用者が別の値を置いていても 0 で上書きし、上書きしたと出す——`child-cycle.py` と同じ。**1 パス目の CR2 で、当初の「上書きしない」の書き方が実装・docstring と逆だったので直した**） | worktree の中から走らせる・`--absent` の有無・追加の引数 | 同上（偽の `claude` が引数・cwd・環境を記録） |
 | A8 | 親の規範: §4 の 5 に「無人の起動で拒まれても `await` にし、『止まった』と書いてターンを終えない」、§4 の 6 に「進めずに確かめただけのことを台帳に書かない」がある。`outer-loop.py` の追記の文が同じことを言い、`SKILL.md` を指す | §4・§6・追記の文 | 読んで突き合わせる |
 | A9 | 指し先が実在する・新しいテストが CI と `check-all.py` に登録されている・CLAUDE.md の一覧にある | リンク・登録漏れ | `check-site-links.py`・`check-skill-pointers.py`・`test-check-all.py`（`check-all.py` が回す） |
 | A10 | 版を 3 箇所で上げる | `marketplace.json`・`plugin.json`・両 `SKILL.md` の 2 行 | `check-plugin-versions.py`・`check-version-bump.py origin/main` |
@@ -96,6 +96,28 @@ main へのマージでプラグインの配布（dev-loop 1.77.0）と公開サ
 
 - 前進の判定は台帳の値（`progress`）だけで、実物（PR・worktree）は見ない——`ledger.py` の「守らない」と同じ。
 - 既定の「前進なし 2 回」は、1 回の起動が周を最後まで進めない（関門の途中で compact した、など）のを 1 度だけ許すため。#815 の例は 1 回で止める——どちらも空回りを有限に抑える。
+
+### 採否の表（1 パス目）
+
+Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 2 件、`/code-review`（high）指摘 10 件。
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V-R1 `check-plan-scope.py` が 2 ファイルを範囲の外と言う | 示せる（`check-all.py` の 1 回目で同じ出力） | A11 | 直す——触るの行を 1 行 1 パターンに（`77e0f7b5` の前のコミットで済） |
+| V-R2 `--claude "a'b"` で `shlex` が例外、通知なし・表に無い 1 | 示せる（Verifier が実走） | A6 | 直す——`main` で語に分け、分けられなければ 2 |
+| V-A8 §4 の 6 が指す「6. 終える」に「台帳を書き換えずに終える」が無い | 示せる（節を読む） | A8 | 直す——指し先を外し、その場で言い切る |
+| CR1 Python 3.11 以前は `50 --absent -- …` を argparse が拒む | 示せる（`/usr/bin/python3` 3.9.6・3.11 で 2） | A7 | 直す——`--` で自分で分ける（3.9.6 で通ることを確かめた） |
+| CR2 A7 の「上書きしない」と実装・テストの「上書きする」が逆 | 示せる | A7 | 直す——計画の書き方の誤り。実装（docstring・`child-cycle.py` と同じ上書き）に合わせて A7 の文を直した。**基準の文を直したので、マージ前に人が確かめる** |
+| CR3 `--` の後ろで `bypassPermissions` を渡せる（`child-cycle.py` は拒む） | 示せる | 無し | 残課題 |
+| CR4 SIGTERM・SIGHUP・予期しない例外で通知しない | 示せる（`kill`） | A6（すべての経路） | 直す——SIGTERM・SIGHUP を 130、例外を 4 にして通知する |
+| CR5 #815 の手書きの例（`updated` だけを除く）と同じページに並ぶ | 示せない（#815 は未マージ） | 無し | 残課題——マージ前に人の判断 |
+| CR6 Ctrl-C で `subprocess.run` が claude を約 0.25 秒で kill する | 示せない（実害の観測なし） | 無し | 残課題 |
+| CR7 台帳が無いと 4——最初の起動は対話でと書いていない | 示せる | 無し | 残課題 |
+| CR8 docstring の `../../dev-loop/…` を「base からの相対」と書いた | 示せる（その場所に無い） | A9 | 直す——`../dev-loop/…` に |
+| CR9 子プロセスの周が走っているあいだの起動を前進なしと数える | 示せない | 無し | 残課題 |
+| CR10 止まる条件を公開ページ・SKILL.md に写している | 示せない（いまは一致） | 無し | 残課題 |
+
+- 著者の事故: CR1 の確かめで `PATH=/bin:/usr/bin` の `/usr/bin/python3` で `outer-loop.py` を走らせ、本物の `osascript` で通知を 1 件出した（台帳が無く 4 で止まった。`claude` は起こしていない）。
 
 ## 経験の還元
 

@@ -12,7 +12,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 
 ## 1 回の起動
 
-台帳 `issue-<親>`（`../../dev-loop/scripts/ledger.py`。このスキルの base ディレクトリからの相対）について、
+台帳 `issue-<親>`（`../dev-loop/scripts/ledger.py`。このスキルの base ディレクトリからの相対）について、
 
 1. `ledger.py status issue-<親>` を走らせる。**0（親が進められる周がある）のときだけ続ける**——3（人を待つ周だけ）・5（親 Issue の一覧の行が
    すべて済んだ）・4（判定できなかった）・表に無い値では起こさずに止まる。判定の順は `ledger.py` の docstring の「`status` が見るもの」を正とする。
@@ -39,13 +39,13 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 | コード | 意味 |
 | --- | --- |
 | 0 | 済んだ——`status` が 5（親 Issue の一覧の行がすべてマージ済みか取り下げ） |
-| 2 | 引数が違う（親の番号の形・上限が 1 未満）。**通知しない**（引数を読む前に止まる） |
+| 2 | 引数が違う（親の番号の形・上限が 1 未満・`--claude` を語に分けられない）。**通知しない**（引数を読む前に止まる） |
 | 3 | 人を待つ周だけ——`status` が 3。台帳の `show` の「利用者の判断待ち」「利用者の操作待ち」を見る |
-| 4 | 判定できなかった——`status` が 4 か表に無い値・`progress` が 0 以外・`ledger.py` を起こせない。**「済んだ」とも「人待ち」とも答えていない** |
+| 4 | 判定できなかった——`status` が 4 か表に無い値・`progress` が 0 以外・`ledger.py` を起こせない・ループの中の予期しない例外。**「済んだ」とも「人待ち」とも答えていない** |
 | 6 | 前進なし——`progress` の変わらない起動が続けて `--max-stalls` 回 |
 | 7 | 起動の上限——`--max-launches` 回起こした後も `status` が 0 |
 | 8 | `claude` が 0 以外で終わった・起こせなかった |
-| 130 | 中断された（Ctrl-C） |
+| 130 | 中断された（Ctrl-C・SIGTERM・SIGHUP） |
 
 ## 何を守り、何を守らないか
 
@@ -58,7 +58,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **前進があったら、前進なしの数を 0 に戻す**——続けてでない前進なしで止めない。
 - **起動の総数が `--max-launches` に達したら、起こさずに止まる。**
 - **`claude` が 0 以外で終わった・起こせなかったら止まる。**
-- **引数を読めた後の止まるすべての経路で通知する**——済んだ・人待ち・判定できない・前進なし・上限・`claude` の失敗・中断。
+- **引数を読めた後の止まるすべての経路で通知する**——済んだ・人待ち・判定できない・前進なし・上限・`claude` の失敗・中断（Ctrl-C・SIGTERM・SIGHUP）・ループの中の予期しない例外。
 - **`claude` の cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも同じ（cruise の親はメインの作業ツリーで起動する。#466）。
 - **`claude` の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——利用者の環境に無くても、別の値があっても（上書きしたと出す）。
 - **`--append-system-prompt` で追記（`APPEND`）を渡す**——非対話の起動の決まり（拒まれたら `await`・進めないなら台帳を書かない）。
@@ -71,12 +71,13 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **通知が見えること**——`osascript` が 0 で終わったかも見ない。`osascript` の無い環境（macOS 以外）では通知を出さない（理由は標準出力に出る）。
 - **1 回の起動の長さ**——`claude` を待つだけで、時間で打ち切らない。
 - **`claude` の版・許可モード・モデル・認証**——足す引数（`--` の後ろ）と `--claude` で利用者が決める（cruise `SKILL.md` §3 の点検）。
-  長期トークンの起動口（`../../dev-loop/scripts/launch-with-long-token.sh`）に `-p` を渡す形は確かめていない。
-- **同じ台帳を回すループ・対話の cruise が他に走っていないか**——台帳を書くのは親 1 体である（`../../dev-loop/references/ledger.md`）。
+  長期トークンの起動口（`../dev-loop/scripts/launch-with-long-token.sh`）に `-p` を渡す形は確かめていない。
+- **同じ台帳を回すループ・対話の cruise が他に走っていないか**——台帳を書くのは親 1 体である（`../dev-loop/references/ledger.md`）。
 """
 
 import argparse
 import os
+import signal
 import shlex
 import shutil
 import subprocess
@@ -136,7 +137,7 @@ def notify(body):
 
 def launch(args, main_tree):
     prompt = f"/dev-loop:cruise {args.parent}" + (" --absent" if args.absent else "")
-    cmd = [*shlex.split(args.claude), "-p", prompt, "--append-system-prompt", APPEND, *args.extra]
+    cmd = [*args.claude_cmd, "-p", prompt, "--append-system-prompt", APPEND, *args.extra]
     env = dict(os.environ)
     if env.get(BG_CEILING) not in (None, "0"):
         print(f"{BG_CEILING}={env[BG_CEILING]} を 0 で上書きした")
@@ -194,23 +195,48 @@ def build_parser():
     p.add_argument("--max-launches", type=int, default=20, help="起動の総数の上限（既定 20）")
     p.add_argument("--max-stalls", type=int, default=2, help="前進なしが続けてこの回数で止まる（既定 2）")
     p.add_argument("--claude", default="claude", help="claude を起こすコマンド（既定 claude）")
-    p.add_argument("extra", nargs="*", help="-- の後ろ: claude に足す引数")
     return p
 
 
+class Interrupted(Exception):
+    """SIGTERM・SIGHUP を受けた。"""
+
+
+def _on_signal(signum, _frame):
+    raise Interrupted(signal.Signals(signum).name)
+
+
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # `--` の後ろは claude に足す引数。argparse に任せない——Python 3.11 以前は、位置引数の後に選択肢があると `--` の後ろを拒む
+    extra = argv[argv.index("--") + 1:] if "--" in argv else []
+    head = argv[:argv.index("--")] if "--" in argv else argv
     try:
-        args = build_parser().parse_args(argv)
+        args = build_parser().parse_args(head)
     except SystemExit as exc:
         return EXIT_USAGE if exc.code else 0
-    if not args.parent.isdigit() or int(args.parent) <= 0 or args.max_launches < 1 or args.max_stalls < 1:
-        print("引数が違う: 親は正の番号、上限は 1 以上", file=sys.stderr)
+    args.extra = extra
+    try:
+        args.claude_cmd = shlex.split(args.claude)
+    except ValueError:
+        args.claude_cmd = []
+    if (not args.parent.isdigit() or int(args.parent) <= 0 or args.max_launches < 1 or args.max_stalls < 1
+            or not args.claude_cmd):
+        print("引数が違う: 親は正の番号、上限は 1 以上、--claude は語に分けられるコマンド", file=sys.stderr)
         return EXIT_USAGE
     args.parent = str(int(args.parent))
+    saved = {s: signal.signal(s, _on_signal) for s in (signal.SIGTERM, signal.SIGHUP)}
     try:
         code, reason = run_loop(args)
     except KeyboardInterrupt:
         code, reason = EXIT_INTERRUPTED, "中断された"
+    except Interrupted as exc:
+        code, reason = EXIT_INTERRUPTED, f"中断された（{exc}）"
+    except Exception as exc:  # noqa: BLE001 — どの経路でも通知する（守る）
+        code, reason = EXIT_UNKNOWN, f"判定できなかった（予期しない例外: {type(exc).__name__}: {exc}）"
+    finally:
+        for s, h in saved.items():
+            signal.signal(s, h)
     line = f"外側のループ: 止まった（issue-{args.parent}: {reason}）"
     print(line, flush=True)
     notify(line)

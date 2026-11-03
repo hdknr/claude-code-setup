@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -273,9 +274,33 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     finally:
         mod.launch = real_launch
 
+    # S13: SIGTERM → 130 と通知
+    make(62, [(1, "todo")])
+
+    def term(*_):
+        os.kill(os.getpid(), signal.SIGTERM)
+    mod.launch = term
+    try:
+        go("S13 SIGTERM", 62, [])
+    finally:
+        mod.launch = real_launch
+
+    # S14: ループの中の予期しない例外 → 4 と通知
+    make(63, [(1, "todo")])
+
+    def boom(*_):
+        raise RuntimeError("試料")
+    mod.launch = boom
+    try:
+        go("S14 例外", 63, [])
+    finally:
+        mod.launch = real_launch
+    o["SIGTERM の扱いを戻した"] = signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+
     # S12: 引数が違う → 2。通知しない
     go("S12 引数", 61, ["--max-stalls", "0"])
     o["S12 番号でない"] = run(mod, ["abc"], root)[0]
+    o["S12 語に分けられない --claude"] = run(mod, ["50", "--claude", "a'b"], root)[0]
     return o
 
 
@@ -309,6 +334,10 @@ def main() -> int:
               a("S10 壊れる")[0][0] == 4 and "progress を読めない" in a("S10 壊れる")[0][1] and a("S10 壊れる")[1:] == (1, 1))
         check("S11 中断は 130 で通知する", a("S11 中断")[0][0] == 130 and a("S11 中断")[2] == 1)
         check("S12 引数が違えば 2 で通知しない", a("S12 引数")[0][0] == 2 and a("S12 引数")[1:] == (0, 0) and a("S12 番号でない") == 2)
+        check("S13 SIGTERM は 130 で通知する", a("S13 SIGTERM")[0][0] == 130 and "SIGTERM" in a("S13 SIGTERM")[0][1] and a("S13 SIGTERM")[2] == 1)
+        check("S14 ループの中の例外は 4 で通知する", a("S14 例外")[0][0] == 4 and a("S14 例外")[2] == 1)
+        check("シグナルの扱いを終わったら戻す", a("SIGTERM の扱いを戻した"))
+        check("S12 語に分けられない --claude は 2", a("S12 語に分けられない --claude") == 2)
         check("止まった行に親と理由が出る", a("S2 note だけ")[0][1].startswith("外側のループ: 止まった（issue-51: 前進なしが続けて 2 回"))
         body = notes(Path(os.environ["FAKE_HOME"]))
         check("通知の本文は argv で渡す（スクリプトに埋め込まない）",
