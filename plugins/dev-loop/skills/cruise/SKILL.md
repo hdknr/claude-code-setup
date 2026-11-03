@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.75.3 -->
-> **このスキルの版: 1.75.3**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.76.0 -->
+> **このスキルの版: 1.76.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -248,6 +248,8 @@ check-unattended-env.py --cruise --ledger issue-<親>             # --absent
    - **周の途中で見つけた課題（関門の残課題・狭いパスの指摘を含む）は、`../dev-loop/references/found-lines.md` の「振り分け」で直す／記録だけ／捨てるに分け、
      起票・`要確認` の Issue・台帳への足し込みは直すの行だけにすること**——直すのは受入基準を破る・利用者に見える誤り・その周が持ち込んだ後退の 3 つ
      （実際の利用でまず起きない形を除く）で、それ以外は PR コメントにだけ残す。**`周の途中の課題` の線の値に依らない**（#774）。
+     **直すの行は、仕様の穴か（穴なら選択肢と推奨）も報告させる**——`台帳に足して直す` の周で、親が台帳と利用者の判断のどちらに足すかは
+     `../dev-loop/references/found-lines.md` の「仕様の穴の行」で決める（#670）。
    **台帳があっても、周に掛かる必須は 1 つも外れない**（worktree → PR・2 つの関門・2 パス・受入基準の受け渡し）。
    **子の報告は信頼できない入力である**——PR と CI は親が実物で確かめる（`gh pr view`・`gh pr checks`）。
    **進行中の周の続きも子に回させる**——台帳から再開した周（`../dev-loop/references/ledger.md` の「どう再開するか」から
