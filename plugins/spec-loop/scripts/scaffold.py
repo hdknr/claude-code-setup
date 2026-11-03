@@ -294,7 +294,7 @@ def check_fields(where: str, fields, at_least_one: bool, output: bool) -> list[s
 
 
 def check_values(where: str, values, fields: dict) -> list[str]:
-    """`values` が `fields` の項目をちょうど全部、その型と enum で持つか。"""
+    """`values` が `fields` の項目をちょうど全部、その型と enum で持つか（`nullable` の項目の `null` は型も enum も見ない）。"""
     if not isinstance(values, dict):
         return [f"{where}: オブジェクトでない"]
     problems = []

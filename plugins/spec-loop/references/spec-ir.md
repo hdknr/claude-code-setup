@@ -135,8 +135,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 | --- | --- |
 | `id` | 機能の `id` に `-C` と数字（`F-001-C1`）。全機能で重複させない |
 | `title` | 何を確かめるか（空にしない・1 行で） |
-| `input` | 入力。**`operation.input` の項目をちょうど全部**、その型（と `enum`）で |
-| `expected` | 正常時に返すもの。**`operation.output` の項目をちょうど全部**、その型（と `enum`）で |
+| `input` | 入力。**`operation.input` の項目をちょうど全部**、その型（と `enum`）で（`nullable` の項目は `null` でもよい。上の「null を許す項目」） |
+| `expected` | 正常時に返すもの。**`operation.output` の項目をちょうど全部**、その型（と `enum`）で（`nullable` の項目は `null` でもよい） |
 | `error` | 失敗するケースなら、`expected` の代わりに `operation.errors` のどれか |
 | `qa` | このケースの根拠にした Q&A の `No` の配列（省いてよい）。機能の `qa` と同じ決まり |
 | `ref` | このケースの元になった、仕様の中の行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。省いてよい）。**仕様が番号を振っていれば書く**——生成と `--check` が、機能の `source` の原文にその番号が在るかを確かめる（#465。値が一致するかまでは見ない） |
@@ -145,7 +145,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 
 実装は、`input` を受け取って、正常なら `expected` と等しいオブジェクトを、失敗なら
 `{"error": "<エラーの名前>"}` を返す。**Red テストはこの等しさと、各項目の型を見る**
-（`True == 1 == 1.0` なので、等しさだけでは `boolean` に `1` を返す実装が通る。`number` は整数でも小数でもよい）。
+（`True == 1 == 1.0` なので、等しさだけでは `boolean` に `1` を返す実装が通る。`number` は整数でも小数でもよい。`nullable` の項目が `null` のときは型を見ない）。
 
 ## 書き起こすときの決まり
 

@@ -73,7 +73,10 @@ main へのマージでプラグインの配布（spec-loop 0.46.0）。公開�
 - 周の在り処: ブランチ `issue/487-spec-ir-nullable`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-487`・
   起点 `412ca8f7`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `412ca8f78ff7177110e8250dcce4ebcbcf0d624a`
 - 割り目（手順 4 の完了時）: 不在のため訊かず続けた（割らない（不在の cruise））
-- 関門: まだ当てていない
+- 関門: 1 パス目を通した——Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件（指摘 1 件・N8 の版と N9 は未確認と報告）／`/code-review`（high）指摘 9 件。
+  **1 パス目の指摘対応の起点**: `6e8cfb33`（関門に渡した時点の HEAD）。直すとした 2 件（R4・R7）を直した——2 パス目を回す
+- 歯止め: 1 回目の `check-all.py`（順番待ち越し）は `check-plan-counts.py` だけ落ちた（計画ファイルに件数の行が無かった——足した）。他の 57 本は緑
+- 割り目（2 パス目の前）: 不在のため訊かず続けた（割らない（不在の cruise））
 - 反証と差し戻し: なし
 - 交絡を潰した手順: N5 の A/B（scratchpad の `ab487/ab.py`）——base（412ca8f7）の `plugins/spec-loop/scripts` と今の版で、nullable を書かない 4 つの試料
   （基準・impl_module・パスの変数・v2 の変更）の `scaffold/` と Issue の本文がバイト一致（違うファイル 0）。**陽性対照**: nullable を書いた試料では
@@ -91,3 +94,21 @@ main へのマージでプラグインの配布（spec-loop 0.46.0）。公開�
 | enum を持つ項目の `nullable` | 許す。`null` は enum に書かない（enum の値は型に合うものだけ）。OpenAPI の enum には `null` を足す | JSON Schema では enum が null を拒むので、`type` に `"null"` を足すだけでは null が通らない |
 | Red テストの生成の形 | `nullable` の出力を持つ機能だけ、`NULLABLE` の集合と、`None` を型の検査から外す行を足す | `nullable` を書かない機能の Red テストを 1 バイトも変えない（N5）——`type_fits` を書き換えると既存の `scaffold/` が `--check` で古くなる |
 | 仕様の穴か | 穴ではない | Issue が書き方を例で示し、実装に委ねている。上の決着は利用者に見える結果（null を書ける・書けない）を変えず、書き方の細部だけ |
+
+### 1 パス目の採否
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| R1 | GET・DELETE の入力の `nullable` が、必須の query パラメータの `type: [<型>, "null"]` になり、query string では null を送れない（Verifier と /code-review の両方） | 示せる——GET の入力に nullable を書いた試料が 0 で、OpenAPI が `in: query, required: true, type: ["boolean","null"]`（Verifier の実走） | 無し（N4 は表し方を決めているだけで、query を断るとは言っていない） | 残課題 |
+| R2 | `case_changed` が、期待が `None` の項目の型の変更（nullable の integer → nullable の string）を `変更` に数える（Red テストは None の型を見ないので前の版の実装は緑） | 示せない（読んだだけ。型を変える v2 の試料は走らせていない） | 無し（N7 は nullable を足す・外すだけの違い。型を変えるのは今までどおり変化） | 残課題 |
+| R3 | `BASE_SHA256` が Issue の本文・v2 の出力を固定していない（N5 の主張より狭い） | 示せない（N5 そのものは A/B で成り立つ——/code-review が 199 試料で同じ結果） | 無し（N5 は A/B で確かめた。テストの範囲の狭さ＝試料の穴） | 残課題 |
+| R4 | `spec-ir.md` の「テストケース」の表と Red テストの段落が、null の例外を書いていない（原本の中で食い違う） | 示せる——`spec-ir.md` の `input`・`expected` の行が「その型（と `enum`）で」のまま | N8 | 直す |
+| R5 | `BASE_SHA256` は今の生成物のバイトを固定するので、意図して生成を変える後の周がこの試料で落ちる | 示せない（将来の変更） | 無し | 残課題 |
+| R6 | パスの変数の nullable の拒否が `path_rules=False`（前の版の比べる相手）で効かない | 示せない（nullable を持つ前の版はこの周より前に作れない——前の `scaffold.py` は `nullable` を断る） | 無し | 残課題 |
+| R7 | `check_values` の docstring が null の例外を書いていない | 示せる——docstring が「その型と enum で持つか」のまま | N8（scaffold.py の写し） | 直す |
+| R8 | enum に `null` を並べたときの文言が `nullable` を案内しない | 示せる（「enum の値が型 string でない」とだけ出る。Verifier の実走） | 無し | 残課題 |
+| R9 | `types.py` の `<型> \| None` は実行時に注釈を解決すると Python 3.10 以上が要る | 示せない（3.9 で走らせていない） | 無し（Issue が `str \| None` を名指し） | 残課題 |
+
+## 手順 8
+
+- この周の起票: 0 件（起票の承認は不在のため訊いていない）
