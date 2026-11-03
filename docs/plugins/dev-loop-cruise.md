@@ -248,7 +248,7 @@ Claude Code が文脈を要約（compact）したら、親は次の操作の前�
 読み直すものと、親が止めてよい条件は cruise の [`SKILL.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/SKILL.md) §5 を正とします。
 周と周の間で `/clear` して起動し直すのも同じ手です（自動の compact を切っているなら、こちらで割ってください）。
 ただし `/clear` は利用者が打つ操作なので、**割ると、打って起動し直すまで cruise は止まります**。親は周の合間に `/clear` を案内して止まらず、compact で続けます
-（[#461](https://github.com/hdknr/claude-code-setup/issues/461)。タイマーは同じセッションに戻るだけで、文脈は軽くなりません）。
+（[#461](https://github.com/hdknr/claude-code-setup/issues/461)。タイマーは同じセッションにプロンプトを注入するだけで、文脈は軽くなりません）。
 台帳の中身は `ledger.py show issue-<親>` でも見られます。
 
 - **終了コード 4（判定できなかった）なら再開しません。** 台帳が読めないことを「全部済んだ」と読まないためです。
