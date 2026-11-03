@@ -21,7 +21,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 機能の `id` で比べ（同梱の `diff-versions.py` の `compare_maps`）、**追加・変更・削除**の機能ごとに本文を 1 件作る。
 **変わっていない機能の本文は作らない**（前の版の Issue がある）。v1 だけなら全部が追加。
 ケースの変化は**Red テストが実行する中身**（入力・期待・`operation.id`・期待にある項目の出力の型・`impl_module`）で決める——
-題だけの違い・`integer` を `number` に広げただけの違いは変化に数えない（前の版の実装は落ちない）。
+題だけの違い・`integer` を `number` に広げただけの違い・項目の `nullable` を足した・外しただけの違いは変化に数えない（前の版の実装は落ちない）。
 **`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
 **前の版の時点で `反映済み` でない Q&A（`確認中`・`暫定反映`。共有・内部とも）が残れば、中間表現が指しているかに依らず、
 後の版で確定しても止め**、v<n-1> を scaffold できていないことを名指しする（#335・#358。手当ては
@@ -167,6 +167,8 @@ KEPT_GREEN = "周の前に緑だった Red テストが、周の後も緑のま�
 GENERATED = "spec-loop scaffold が生成（手で直さない。spec_ir.json を直して作り直す）"
 
 PY_TYPES = {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}
+# 項目に null を許す印（`"nullable": true`。`references/spec-ir.md` の「項目」の写し）
+NULLABLE = "nullable"
 
 
 class Unjudged(Exception):
@@ -238,6 +240,11 @@ def keys_problem(where: str, obj, required: set[str], optional: set[str] = froze
     return problems
 
 
+def nullable(field) -> bool:
+    """項目が null を許すか（`"nullable": true`）。書いていない項目は今までどおり null を拒む。"""
+    return isinstance(field, dict) and field.get(NULLABLE) is True
+
+
 def value_fits(kind: str, value) -> bool:
     if kind == "string":
         return isinstance(value, str)
@@ -264,13 +271,16 @@ def check_fields(where: str, fields, at_least_one: bool, output: bool) -> list[s
             problems.append(f"{at}: 項目名の形に反する（英小文字で始まり英小文字・数字・_、Python の予約語でない）")
         if output and name == RESERVED_OUTPUT:
             problems.append(f"{at}: 正常時の出力に `{RESERVED_OUTPUT}` は使えない（失敗の形と見分けられない）")
-        found = keys_problem(at, field, {"type"}, {"enum"})
+        found = keys_problem(at, field, {"type"}, {"enum", NULLABLE})
         if found:
             problems += found
             continue
         if field["type"] not in TYPES:
             problems.append(f"{at}: 型 `{field['type']}` は決まりに無い（{' / '.join(TYPES)}）")
             continue
+        # `false` は省くのと同じ意味になる——同じ意味の書き方を 2 つ作ると、機能の指紋が違う値になる
+        if NULLABLE in field and field[NULLABLE] is not True:
+            problems.append(f"{at}: `{NULLABLE}` は true だけを書く（null を許さないなら省く）")
         if "enum" in field:
             enum = field["enum"]
             if not isinstance(enum, list) or not enum:
@@ -284,7 +294,7 @@ def check_fields(where: str, fields, at_least_one: bool, output: bool) -> list[s
 
 
 def check_values(where: str, values, fields: dict) -> list[str]:
-    """`values` が `fields` の項目をちょうど全部、その型と enum で持つか。"""
+    """`values` が `fields` の項目をちょうど全部、その型と enum で持つか（`nullable` の項目の `null` は型も enum も見ない）。"""
     if not isinstance(values, dict):
         return [f"{where}: オブジェクトでない"]
     problems = []
@@ -296,6 +306,8 @@ def check_values(where: str, values, fields: dict) -> list[str]:
         field, value = fields[name], values[name]
         if not isinstance(field, dict) or field.get("type") not in TYPES:
             continue  # 項目の定義の誤りは別に出ている
+        if value is None and nullable(field):
+            continue  # null は enum に書かない（enum の値は型に合うものだけ）
         if not value_fits(field["type"], value):
             problems.append(f"{where}.{name}: 型 {field['type']} でない（{json.dumps(value, ensure_ascii=False)}）")
         elif isinstance(field.get("enum"), list) and value not in field["enum"]:
@@ -385,6 +397,8 @@ def check_path_vars(where: str, path: str, fields: dict, templates: dict[str, st
             problems.append(f"{where}: パスの変数 {{{name}}} が operation.input の項目に無い")
         if names.count(name) > 1:
             problems.append(f"{where}: パスの変数 {{{name}}} が重複している")
+        if name in fields and nullable(fields[name]):
+            problems.append(f"{where}: パスの変数 {{{name}}} は {NULLABLE} にできない（パスの値は null にならない）")
     # OpenAPI では変数の名前だけが違うパスは同じパスなので、並べると無効になる（メソッドが違っても）
     template = PATH_VAR.sub("{}", path)
     if templates.setdefault(template, path) != path:
@@ -648,6 +662,11 @@ def schema_of(field: dict) -> dict:
     out = {"type": field["type"]}
     if "enum" in field:
         out["enum"] = field["enum"]
+    if nullable(field):
+        # JSON Schema の enum は null を拒むので、`type` に足すだけでなく enum にも足す
+        out["type"] = [field["type"], "null"]
+        if "enum" in field:
+            out["enum"] = field["enum"] + [None]
     return out
 
 
@@ -705,8 +724,10 @@ def openapi(ir: dict) -> str:
 
 def py_type(field: dict) -> str:
     if "enum" in field:
-        return "Literal[" + ", ".join(repr(v) for v in field["enum"]) + "]"
-    return PY_TYPES[field["type"]]
+        name = "Literal[" + ", ".join(repr(v) for v in field["enum"]) + "]"
+    else:
+        name = PY_TYPES[field["type"]]
+    return name + " | None" if nullable(field) else name
 
 
 def typed_dict(name: str, fields: dict) -> list[str]:
@@ -756,6 +777,8 @@ def output_types(op: dict) -> dict:
 
 def red_test(feature: dict, impl_module: str) -> str:
     op = feature["operation"]
+    # null を許す出力の項目。無い機能の Red テストは、`nullable` を足す前と 1 バイトも変えない（既存の `scaffold/` を古くしない）
+    allow_null = sorted(name for name, field in op["output"].items() if nullable(field))
     lines = [
         f"# {GENERATED}",
         f"# {feature['id']}: {feature['title']} の Red テスト",
@@ -769,6 +792,7 @@ def red_test(feature: dict, impl_module: str) -> str:
         f"IMPL_MODULE = {impl_module!r}",
         f"OPERATION = {op['id']!r}",
         f"OUTPUT_TYPES = {literal(output_types(op))}",
+        *([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null else []),
         "",
         "",
         "def type_fits(kind, value):",
@@ -805,6 +829,7 @@ def red_test(feature: dict, impl_module: str) -> str:
         "        actual = self.call(given)",
         "        self.assertEqual(actual, expected)",
         "        for name, value in actual.items():",
+        *(["            if value is None and name in NULLABLE:", "                continue"] if allow_null else []),
         "            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",
         "                            f\"{name}: 型が {OUTPUT_TYPES[name]} でない（{value!r}）\")",
     ]
