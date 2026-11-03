@@ -1214,7 +1214,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         if feature.get(CALLED_BY):
             titles = {f["id"]: f["title"] for f in features_of(loaded.ir)}
             lines.append("- 呼ぶ機能: " + "・".join(f"`{c}` {cell(titles[c])}" for c in feature[CALLED_BY])
-                         + "（この機能を呼ぶ入口の機能。呼ぶ側の振る舞いは、その機能の Red テストが見る）")
+                         + "（この機能を呼ぶ入口の機能。この Issue は呼ぶ側の配線を含まない）")
     lines += ["", SECTIONS[1], ""]
     if change.kind == REMOVE:
         lines += [
