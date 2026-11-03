@@ -73,8 +73,8 @@ main へのマージでプラグインの配布（dev-loop 1.76.0）と公開サ
 - **周の在り処**: ブランチ `issue/633-cruise-foreground-child`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-633`・
   起点 `896667d2`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `896667d2ba7d28a8e417e185e75e9479bfc25918`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
-- 関門: 未着手
-- 交絡を潰した手順: （A4 の実験で書く）
+- 関門: 1 パス目（Verifier・`/code-review`）を起動。1 パス目の指摘対応の起点 `2b16c637`（関門に渡す時点の HEAD）
+- 交絡を潰した手順: A4 は公開ページのコードブロックを文字列のまま抜き出して走らせた（写しではない）。陽性対照は S1（todo が残る→0 が続き、上限 20 回まで回る）、陰性は S2〜S4（5・4・3 で 1 回で止まる）。偽の `claude` が受けた `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` は 0 だった。台帳は本物の `ledger.py` で作った。観測窓: 4 つの台帳の状態だけ（`pr`・`blocked`・判断待ちの印は回していない——`status` の判定そのものは `test-ledger.py` が見る）
 
 ## 既知の限界・決着済みの論点
 
