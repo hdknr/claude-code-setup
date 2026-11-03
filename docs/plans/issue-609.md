@@ -76,9 +76,10 @@ main へのマージでプラグインの配布（spec-loop 0.47.0）。公開�
 - 周の在り処: ブランチ `issue/609-scaffold-called-by`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-609`・
   起点 `896667d2`・base の参照 `origin/main`・base の SHA `896667d2ba7d28a8e417e185e75e9479bfc25918`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
-- 交絡を潰した手順: （実験の記録をここに書く）
+- 1 パス目の指摘対応の起点（1 パス目の関門に渡した時点の HEAD）: `c44d0933`
+- Verifier 1 パス目: 起動（結果待ち）
+- `/code-review` 1 パス目: 起動（結果待ち）
+- 交絡を潰した手順: base（896667d2）と新しい `scaffold.py` で基準の試料の生成物と本文 7 ファイルを sha256 で比べて一致（C5）。陽性対照として `called_by` を書いた試料では F-001 の本文が違うことを見た。`test-scaffold.py` の初回で 1 件だけ失敗——「v2 で呼ぶ機能も変える」の対照の文言 `変わっていない` が、本文を作らない行の要約（「変わっていない機能の本文は作らない」）にも当たっていた（試料の対照の誤り。対照を `呼ぶ機能（` に絞った）
 
 ## 既知の限界・決着済みの論点
 
