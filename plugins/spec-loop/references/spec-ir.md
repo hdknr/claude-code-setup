@@ -127,7 +127,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 - **パスの変数（上の「パスの変数」）には書かない**——パスの値は `null` にならない。
 - ケースの `input`・`expected` では、その項目に `null` を書ける。
 - 生成物では、OpenAPI の schema の `type` が `["<型>", "null"]` になり（`enum` があれば `enum` の最後に `null` を足す）、
-  `types.py` の型は `<型> | None` になる。Red テストは、その出力の項目が `None` のときだけ型を見ない（`None` 以外の値の型は今までどおり見る）。
+  `types.py` の型は `null` を許さないときの型の後ろに ` | None` を足したもの（`str | None`。`enum` があれば `Literal['a', 'b'] | None`）になる。Red テストは、その出力の項目が `None` のときだけ型を見ない（`None` 以外の値の型は今までどおり見る）。
 
 ## テストケース（`cases` の要素）
 
