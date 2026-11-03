@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.75.2 -->
-> **このスキルの版: 1.75.2**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.75.3 -->
+> **このスキルの版: 1.75.3**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -197,12 +197,12 @@ check-unattended-env.py --cruise --ledger issue-<親>             # --absent
       セッションの中のコマンドからは変えられない）。**利用者に次の 2 つを渡し、周を始めずに止まる**（台帳は作ってあるので、起動し直すと 1 の再開から続く）:
       別の端末で `bash <このスキルの base ディレクトリ>/../dev-loop/scripts/launch-with-long-token.sh --store-token`（キーチェーンに入れる・入れ替える）→
       このセッションを終え、`bash <同じ>/launch-with-long-token.sh "/dev-loop:cruise <親> [--absent]"` で起動し直す。
-      パスは点検の直し方の行に絶対パスで出る。**入れ方と、長期トークンで使えない見込みの機能は `../dev-loop/scripts/launch-with-long-token.sh` の冒頭と公開ページを正とする。**
+      パスは点検の直し方の行に絶対パスで出る。**入れ方は `../dev-loop/scripts/launch-with-long-token.sh` の冒頭と公開ページを、長期トークンで使えない機能（2.1.316 で実測）は公開ページの「機能の表」を正とする。**
     - **このまま回す**——起動から 8 時間ほどで 401 で止まりうると添えて続ける。**答えが返らなければこちら。**
 
    **トークンの値を会話に通さない。**——`claude setup-token` を Bash で走らせない・`!` で打たせない・値を貼らせない。
    入れるのは利用者が別の端末で打つ `--store-token` だけである（`--store-token` はセッションの中では止まる）。
-   **長期トークンで起動していれば訊かない**——点検が添える「使えない見込みの機能」（Remote Control とそれにつながる通知）を見せる。
+   **長期トークンで起動していれば訊かない**——点検が添える「使えない機能」（claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome。通知は判定できていない）を見せる。
    **ほかの認証（API キーの類）がある・判定できないと出たら、見せるだけで訊かない。**
    **認証は点検の「認証」の行で決め、Bash の `env` で決めない**——Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を Bash の環境から外す
    （点検は起動した `claude` のプロセスの環境を見る。`check-unattended-env.py` の docstring を正とする）。

@@ -337,7 +337,7 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         env.all_good()
         code, items, out = run(mod, env)
         check("認証: 長期トークンは良い", status_of(items, "認証") == [mod.GOOD], bad)
-        check("認証: 長期トークンでは使えない見込みの機能と測る表を添える",
+        check("認証: 長期トークンでは使えない機能と表を添える",
               "Remote Control" in fix_of(items, "認証") and mod.TOKEN_PAGE in fix_of(items, "認証"), bad)
         check("認証: トークンの値を出さない", FAKE_TOKEN not in out, bad)
         code, items, out = run(mod, env, environ={"CLAUDECODE": "1"})
@@ -1489,8 +1489,8 @@ MUTATIONS = {
     "認証: 起動口の名前を違えるz": (
         'LAUNCHER = Path(__file__).resolve().parent / "launch-with-long-token.sh"',
         'LAUNCHER = Path(__file__).resolve().parent / "launch-long-token.sh"'),
-    "認証: 使えない見込みの機能を添えない": (
-        '"長期トークンは推論だけに絞られ、Remote Control とそれにつながる通知は使えない見込み"',
+    "認証: 使えない機能を添えない": (
+        '"長期トークンでは claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome が使えない（エラーは出ず黙って無い）"',
         '"長期トークン"'),
     "認証: 居る cruise で認証を出さない": (
         "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",

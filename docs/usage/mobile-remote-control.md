@@ -176,6 +176,7 @@ claude
 |------|------|
 | `Remote Control requires a claude.ai subscription` | API キーでログインしています。`ANTHROPIC_API_KEY` を unset し、`claude auth login` で claude.ai を選択 |
 | `Remote Control requires a full-scope login token` | `setup-token` 等の長期トークンは不可。`claude auth login` でフルスコープのログインをやり直す |
+| 長期トークン（`CLAUDE_CODE_OAUTH_TOKEN`）で起動するときに `--remote-control` を付けても、繋がらない（起動から 30 秒、上の行のエラー文も Remote Control の表示も出ない） | 長期トークンでは Remote Control を使えません（Claude Code 2.1.316 で、起動時の `--remote-control` だけ実測。セッションの中で `/remote-control` を打ったときに上の行の文が出るかは確かめていません。[cruise を長期トークンで起動する](cruise-long-lived-token.md) の「機能の表」）。使うなら対話ログインで起動する |
 | `Remote Control is not yet enabled for your account` | `CLAUDE_CODE_USE_BEDROCK` / `_VERTEX` など第三者プロバイダー設定があると使えません。unset して再試行 |
 | `Remote Control is disabled by your organization's policy` | Team/Enterprise の管理者が未有効化、または API キー認証。`/status` で状態を確認 |
 | セッションが見つからない | PC 側で `claude` が動き続けているか、同じアカウントでログインしているかを確認 |
