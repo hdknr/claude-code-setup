@@ -75,10 +75,28 @@ main へのマージで GitHub Pages（`docs.yml`）に公開される（`docs/`
 - 周の在り処: ブランチ `issue/608-spec-loop-docs-page`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-608`・
   起点 `412ca8f7`（origin/main。`prepare-worktree.sh` の出力）・base: 参照 `origin/main` → `412ca8f78ff7177110e8250dcce4ebcbcf0d624a`
 - 割り目（手順 4）: 割らない（不在の cruise）。このまま続ける。
+- 1 パス目の指摘対応の起点: `235ca510`（実装のコミット。1 パス目の関門に渡した時点の HEAD）
+- 1 パス目: **Verifier（`dev-loop:dev-loop-verifier`・sonnet。指示文 157 行——生成した文面は 156 行で、末尾の改行の数え方の差）反証 0 件**（ただし検証中に著者が指摘対応を作業ツリーに入れたので、前半は `235ca510`、後半は直した後の版を読んだ。`check-all.py` は順番待ちで回していない）。**`/code-review`（high。委譲文を `Skill` の引数に貼って渡した）指摘 8 件**（1-R1〜1-R8。すべて直す）。差し戻し 1 回（手順 4 へ）。
+- 歯止め（実装のコミット `235ca510` に）: `check-all.py`（順番待ち越し）58/58 本・失敗 1（`check-plan-counts.py`——件数の行が無い。1-R9 として直した）。
+- 割り目（手順 6・2 パス目の前）: 割らない（不在の cruise）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
 
 ## 既知の限界・決着済みの論点
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
 | （論点）流れの順序は `req-loop` → `spec-review` → `feasibility` → `proposal` → `scaffold` と書くが、`scaffold` が入力で確かめるのは仕様レビューを抜けたこと（条件 1 と直近の `spec-review` の報告）で、提案書の承認は確かめない | — | — | 採った: ページにそう書く（`scaffold` の `SKILL.md` 手順 1。サインオフの言及は「付けない」の 1 行だけ） |
+| 1-R1 「差し戻された質問は、どこから来ても `req-loop` のレビュー会で答えてもらう」は内部の表（`qa-dev.csv`）の行に当たらない | 示せる——`qa-csv.md`「層」・`req-loop/SKILL.md:102`（共有の表だけ読む） | C3 | 直す（共有と内部を分けて書いた） |
+| 1-R2 dev-loop の仕様の穴の回答を「必ず `req-loop` で受け直す」と書いている | 示せる——`spec-gap.md:144`（内部の行は `spec-review` が反映） | C3 | 直す |
+| 1-R3 内部の Q&A 表の書く／読むが足りない（dev-loop が書く、`spec-review`・`scaffold` が読む） | 示せる——`qa-csv.md:104`（抜ける条件 1 は両方の表）・`spec-gap.md:112` | C3 | 直す |
+| 1-R4 `spec/`・要求・中間表現を読む側に `proposal`（仕様書）・`feasibility` が無い | 示せる——`tree.md`「仕様書」・`feasibility/SKILL.md` 手順 2 | C3 | 直す |
+| 1-R5 撤去の本文は sha256 を持たない | 示せる——`handoff-issue.md:77` | C3 | 直す |
+| 1-R6 赤・緑の期待が追加・変更だけで、撤去・ほかの機能の「周の前に緑なら後も緑」と「もう緑」の例外が無い | 示せる——`handoff-issue.md:68・76` | C2・C3 | 直す |
+| 1-R7 `index.md` の scaffold 節の「中間表現が暫定の回答を指していれば止める」が古い（指していなくても止める） | 示せる——`scaffold/SKILL.md:99`・`scaffold.py` の docstring | C3・C5 | 直す（この周が触った節で、新しいページから指される） |
+| 1-R8 「v1（足した機能だけ）」は docstring の「v1・追加だけ」を狭めている | 示せる——`scaffold.py` docstring の「実装が無い」の段 | C3 | 直す（実装が無いときの判定として書き直した） |
+| 1-R9（歯止め）計画ファイルに件数の行が無く `check-plan-counts.py` が落ちる | 示せる——`check-all.py` の出力 | C7 | 直す（手順 8 の節に件数の行を置いた） |
+| 1-V1（Verifier の留意点）`--red-check` の要点を足したことで `scaffold.py` との二重管理が増えた | 示せない（いまの記述は docstring と一致。食い違いの実物は無い） | 無し | 残課題（PR コメントに記録） |
 | （論点）`plugins/spec-loop/README.md` から新しいページへのリンクを足さない | — | — | 採った: プラグインを触ると版を上げる周になり、Issue の「やること」に無い |
+
+## 手順 8（経験の還元・起票）
+
+- この周の起票: 0 件（不在の cruise。周の途中の課題は「外に出す」の線で、振り分けで直すとした行は周の中で直した。残課題は PR コメントに記録するだけ）
