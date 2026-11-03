@@ -77,6 +77,9 @@
 - Verifier 1 パス目: 通した——反証 0 件（`dev-loop:dev-loop-verifier`・sonnet。軽微な所見 1 件・`test-check-unattended-env.py` は順番待ちで未実行と申告）
 - `/code-review` 1 パス目: 通した——指摘 6 件（直す 5・残課題 1。下の採否の表）。差し戻し: 手順 4 へ 1 回（指摘対応）
 - 2 つ目の割り目: 割らない（不在の cruise）——不在のため訊かず続けた
+- 1 パス目の指摘対応: `fc0016ec`..`HEAD`（CR1・CR2・CR3・CR5・CR6）。差分 0 行ではない——2 パス目を回す（残り: Verifier の当て直し・`/code-review` 2 パス目）
+- Verifier 2 パス目: 未
+- `/code-review` 2 パス目: 未
 - 1 パス目の指摘対応の起点: `f8f30320`（1 パス目の関門に渡した時点の HEAD）
 - 交絡を潰した手順: 実験なし（合成の台帳で本体を走らせるテストだけ）
 

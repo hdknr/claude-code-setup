@@ -1392,7 +1392,7 @@ def main() -> int:
         check("確かめて merged にしたら確認待ちが消え、終わりの行と 5 が出る（#634 の対照）",
               o["merged_unverified: 確かめた後"] == (False, True, 5))
         check("まとめの中で merged_unverified の落ちた行は名指しし、確認待ちに出さず、依存する行を出さず、抜けない（#634）",
-              o["merged_unverified: 取り残し"] == ("#2", [], [], 3))
+              o["merged_unverified: 取り残し"] == ("#2", ["利用者の確認待ち（実機確認。Refs でマージし Issue は開いたまま）: #1（note が空）"], [], 3))
         check("一覧の merged_unverified の行の先は辿らない（#634）",
               o["merged_unverified: 辿らない"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(merged_unverified)"))
         check("空の台帳は 5", o["status: 空"] == 5)
