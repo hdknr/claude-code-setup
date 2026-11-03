@@ -27,10 +27,12 @@ cruise を外から繰り返し起こすループでも起こりうる。外側�
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §4 の 5（無人の起動で拒まれても `await`）・§4 の 6（進めずに確かめただけのことを台帳に書かない）・§6（外側のループは同梱のものを使う）・版の 2 行
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
 - `docs/plugins/dev-loop-cruise.md` — 部品の一覧の行と、§5 の外側のループの節
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — 新しいテストの登録
+- `scripts/check-all.py` — 新しいテストの登録
+- `.github/workflows/plugins.yml` — 同上（CI のステップ）
 - `docs/plugins/dev-loop-design.md` — 生成ブロック（`skill-metrics.py` が `references/ledger.md` の行数で書き直す。手で書かない）
 - `CLAUDE.md` — 新しいスクリプトとテストの行
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-791.md` — この計画
 
 触らない:
