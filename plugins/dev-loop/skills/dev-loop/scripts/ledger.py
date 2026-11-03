@@ -166,6 +166,13 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   **依存が*元の周*かどうかは見ない**——番号の意味を知らない。
 - **`set` で、出所を持ち依存が空の行を作らない**——同じ理由。出所を持つ行の `deps=` で依存を消すのも、
   依存の空の行に `origin=` で出所を後付けするのも拒む（同じ呼び出しで両方を渡したら、渡した後の値で見る）。
+- **`add --origin` は、出所を辿った世代が 2 以上の行（後続の後続）を `blocked` で足し、`note` を
+  `利用者の判断待ち: 後続の後続（世代 N: #a → #b → #c）…` にする**（#630。終了コードは 0）——`todo` で足すと `next` に出て周として回り、
+  砦の穴を直す後続が収束せずに連鎖する（spin-dd/tfs-stocks#2427 で 5 世代）。**世代**は、親 Issue の一覧から作った行（出所が空）が 0、
+  出所の最初の `#<番号>`（`references/found-lines.md` の出所の書式 `#<元の周> <関門> <パス>` の元の周）が台帳に在ればその行の世代 + 1、
+  辿れなければ 1。なぜ止めるか・利用者に何を訊くかは `references/found-lines.md` の「後続の後続」を正とする。
+- **世代を辿るのは循環で止まる**——自分や互いを指す出所（手で直した台帳・`set origin=`）でも、`add`・`show` は答えを返す。
+- **`show` は「周の途中で足した行のうち済んでいないもの」に各行の世代を出す**（#630）——親が次の課題を足す前に、どの行が後続の後続かを見分けられる。
 - **`user_ops` も出所の無い値を書かない**——`--source` が空・空のコマンド・同じコマンドを 2 度は拒む。置き換えで、渡さなければ空になる。
   手で直した台帳で形が違えば 4。`user_ops` を持たない台帳はこれまでどおり読む。
 - **`await` の行は `next` に出さず、それに依存する行も出さない**——操作が済むまで、依存する周は始めない。
@@ -213,6 +220,10 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 
 - **落ちた行の名指しが正しいか**——`note` の文字とまとめの欄だけで見る（`next` が依存先として済んでいないと読む行も同じ）。`group` を通さずに `set … note=落ちた: …` を書いたままマージした行は名指しし、
   `note` を `落ちた:` で始めずに落とした行は名指ししない。実物（Issue が開いているか・まとめの PR の `Refs`）は再開する側が見る（`references/ledger.md`）。
+- **`add` の後の出所と状態の書き換え**（#630）——`set origin=` で世代 2 以上にした行と、世代 2 以上の行を `set state=todo` に戻した行
+  （利用者が直すと答えたときの正しい操作）はそのまま回る。世代で `blocked` にするのは `add` の時点だけである。
+- **書式を外した出所**（#630）——最初の `#<番号>` を元の周と読むので、`#` の無い出所は辿れずに世代 1 と数え、
+  元の周より前に別の番号を書いた出所はその番号の行を辿る。
 - **戻す順**——1 行ずつ抜けた後に輪になる順は拒む（3。台帳は変えない）が、輪にならない順を自分では選ばない（`../cruise/references/grouping.md` の「マージの後」）。
 
 - **複数のセッションからの同時書き込み**——`os.replace` なので半端なファイルは残らないが、後勝ちで片方の更新が消えうる。
@@ -282,6 +293,10 @@ GOING = ("impl", "gate", "pr")
 # 進行中のまま利用者の判断を待つ行の note の書き出し（cruise SKILL.md §4-4）。全角のコロンも印と読む——
 # check-unattended-env.py の JUDGE_MARKS と同じ 2 つ
 JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")
+# 出所の元の周（references/found-lines.md の出所の書式 `#<元の周> <関門> <パス>` の最初の番号。#630）
+ORIGIN_RE = re.compile(r"#(\d+)")
+# 足すと周として回さず、利用者の判断待ちにする世代（後続の後続。references/found-lines.md の「後続の後続」。#630）
+GENERATION_LIMIT = 2
 
 
 class Refused(Exception):
@@ -527,6 +542,25 @@ def judging(data):
             and (i.get("note", "").startswith(JUDGE_NOTE) or (i.get("group") and i["group"] in marked))}
 
 
+def generation(data, issue):
+    """周の途中で足した行の世代と、辿った番号の並び（#630）。親 Issue の一覧から作った行（出所が空）は 0。
+    出所の最初の `#<番号>` が台帳に在ればその行の世代 + 1、辿れなければ 1。**循環は訪れた行で止める**（手で直した台帳・`set origin=`）。"""
+    by_number = {i["number"]: i for i in data["issues"]}
+    chain, seen, row = [issue["number"]], {issue["number"]}, issue
+    # 段の数を台帳の行の数で切る——循環の検査（seen）が外れても止まる
+    while row.get("origin") and len(chain) <= len(by_number):
+        m = ORIGIN_RE.search(row["origin"])
+        parent = by_number.get(int(m.group(1))) if m else None
+        if parent is None or parent["number"] in seen:
+            break
+        chain.insert(0, parent["number"])
+        seen.add(parent["number"])
+        row = parent
+    # 先頭が一覧の行（出所が空）なら辿った段の数、辿れずに止まった（出所のある行で終わった）なら 1 段を足す
+    depth = len(chain) - 1 + (1 if by_number[chain[0]].get("origin") else 0)
+    return depth, chain
+
+
 def ready(data):
     """着手できる Issue: 未着手で、依存がすべてマージ済み（まとめの中の依存は済んだと読む）。行ごとに見る。
     **取り残された行は、merged でも依存先として済んでいないと読む**（#711）——直されていない。"""
@@ -577,9 +611,18 @@ def cmd_add(path, number, deps, title, origin=None):
     entry = {"number": number, "title": title or "", "deps": deps, "state": "todo",
              **{k: "" for k in TEXT_KEYS if k != "title"}, "origin": origin or "", "updated": now()}
     data["issues"].append(entry)
+    depth, chain = generation(data, entry) if origin else (0, [number])
+    if depth >= GENERATION_LIMIT:
+        # 後続の後続は回さずに利用者の判断待ちにする（references/found-lines.md の「後続の後続」。#630）
+        route = " → ".join(f"#{n}" for n in chain)
+        entry["state"] = "blocked"
+        entry["note"] = (f"{JUDGE_NOTE[0]} 後続の後続（世代 {depth}: {route}）——続けて直すか、"
+                         "範囲を狭める・打ち切るか（references/found-lines.md の「後続の後続」）")
     save(path, data)
     print(f"#{number} を足した（依存: {', '.join(f'#{d}' for d in deps) or 'なし'}"
-          + (f"・出所: {origin}" if origin else "") + "）")
+          + (f"・出所: {origin}・世代 {depth}" if origin else "") + "）")
+    if depth >= GENERATION_LIMIT:
+        print(f"世代 {depth}（{route}）——後続の後続なので blocked（利用者の判断待ち）で足した。回すかは利用者が決める")
 
 
 def cmd_set(path, number, pairs):
@@ -741,7 +784,7 @@ def cmd_show(path):
     found = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
     if any(i.get("origin") for i in data["issues"]):
         print("周の途中で足した行のうち済んでいないもの: "
-              + (", ".join(f"#{i['number']}({i['state']})" for i in found) or "なし"))
+              + (", ".join(f"#{i['number']}({i['state']}・世代 {generation(data, i)[0]})" for i in found) or "なし"))
     stranded = [i for i in data["issues"] if is_stranded(i)]
     if stranded:
         print("落ちたのにまとめの中で merged のまま（マージの後に戻していない。Issue と PR を実物で確かめてから戻す）: "
