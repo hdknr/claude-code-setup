@@ -69,10 +69,11 @@ main へのマージでプラグインの配布（spec-loop 0.47.0）。公開�
 
 ## 未解決の判断・確認待ち
 
-- 仕様の穴 1・2（下）は推奨で決めて確認の Issue を立てる（不在の線）。
+- 仕様の穴 1・2（下）は推奨で決めて確認の Issue を立てた——穴 1 は #797、穴 2 は #798（不在の線）。
 
 ## 関門の進捗（再開点）
 
+- PR: #796
 - 周の在り処: ブランチ `issue/609-scaffold-called-by`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-609`・
   起点 `896667d2`・base の参照 `origin/main`・base の SHA `896667d2ba7d28a8e417e185e75e9479bfc25918`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
@@ -142,4 +143,4 @@ Verifier 1 パス目（sonnet・`dev-loop:dev-loop-verifier`）: 反証 0 件。
   CR1 は仕様の穴 2 の確認の Issue に選択肢として載せる。
 - Issue の案 3（cruise の起動時の確認）はこの周で入れていない。PR コメントに残す。
 
-- この周の起票: 2 件（仕様の穴 1・2 の確認の Issue。不在の線 `仕様の穴 = 推奨で決めて起票`）
+- この周の起票: 2 件（仕様の穴 1・2 の確認の Issue #797・#798。不在の線 `仕様の穴 = 推奨で決めて起票`）
