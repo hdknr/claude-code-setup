@@ -89,7 +89,10 @@ main へのマージでプラグインの配布（dev-loop 1.77.0）と公開サ
   起点 `5235146c`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `5235146c49b8fae6d38ef2f2ddd82031ebd2e767`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
 - 関門 1 パス目: 起動（Verifier: sonnet・`dev-loop:dev-loop-verifier`／`/code-review` high）。1 パス目の指摘対応の起点 `41cbbad1`（関門に渡す時点の HEAD）。`test-outer-loop.py`（順番待ち越し）35 ok・FAIL 0・変異 12/12
-- 交絡を潰した手順: 未
+- 関門 1 パス目の結果: Verifier 反証 2 件・`/code-review` 指摘 10 件。直す 7 件（採否の表）。差し戻し 1 回（手順 4 へ）。1 パス目の指摘対応の差分は 0 行でない（`git diff 41cbbad1` に成果物の変更あり）→ 2 パス目を回す
+- 割り目（2 パス目の前）: 割らない（不在の cruise）。残っているもの: 手順 5 の当て直しと `/code-review` 2 パス目の両方
+- 関門 2 パス目: 起動（同じ base `5235146c`。主に見る差分は `41cbbad1..HEAD`）
+- 交絡を潰した手順: `test-outer-loop.py` の陽性対照（S2 で台帳のファイルは変わったのに progress は同じ）・変異 12/12。順番待ちのテストの前の `git stash` 事故は、テストが待ちのあいだに戻した
 - 事故の記録: 2026-11-03 に著者が worktree で誤って素の `git stash -q` を走らせ、未コミットの変更を退避した。直後に `git stash pop stash@{0}`（`WIP on issue/791-cruise-outer-loop` であることを確かめて）で戻した。そのとき順番待ちのテストはまだ始まっておらず（run-serial のログが「待っている」）、結果には効いていない
 
 ## 既知の限界・決着済みの論点
