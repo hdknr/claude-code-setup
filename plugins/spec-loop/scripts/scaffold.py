@@ -30,6 +30,11 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 凍結を見るのはこのときだけで、`git` を起動できない・浅い clone なら判定しない（2）。**タグがあるだけでは凍結と読まない**
 ——`check-frozen.py` がタグの後に直されたと言えば止め（1）、判定できなければ 2。前の版に中間表現が無くても Q&A の状態は見る。
 
+**呼ばれる機能（`called_by`。#609）**: 機能が他の機能から呼ばれる判定の関数なら、中間表現の `called_by` に呼ぶ機能を書く。
+**呼ぶ機能が重ね合わせた全体の中間表現に無ければ 1**（形の誤り・自分自身・循環も 1）。v2 以降で `called_by` を持つ機能が追加・変更され、
+**呼ぶ機能がどれも追加・変更されていなければ、止めずに名指しで知らせる**（0）。Issue の本文の `## 仕様` には呼ぶ機能の id と題を書く。
+**`called_by` を書かない機能は入口と読む**——書き起こす側が関数を入口と偽れば通る（決まりの正は `references/spec-ir.md` の「呼ばれる機能」）。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -169,6 +174,8 @@ GENERATED = "spec-loop scaffold が生成（手で直さない。spec_ir.json �
 PY_TYPES = {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}
 # 項目に null を許す印（`"nullable": true`。`references/spec-ir.md` の「項目」の写し）
 NULLABLE = "nullable"
+# 機能を呼ぶ機能の id の配列（任意。`references/spec-ir.md` の「呼ばれる機能」。#609）
+CALLED_BY = "called_by"
 
 
 class Unjudged(Exception):
@@ -431,7 +438,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
-        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"})
+        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"}, {CALLED_BY})
         if found:
             problems += found
             if not isinstance(feature, dict):
@@ -532,6 +539,58 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
                 problems += check_qa_refs(f"{at}.qa", case["qa"], answered)
             if "ref" in case:
                 problems += check_ref(f"{at}.ref", case["ref"], feature.get("source"), whole)
+    return problems + check_called_by(features)
+
+
+def check_called_by(features: list) -> list[str]:
+    """呼ばれる機能の `called_by`（#609。`references/spec-ir.md` の「呼ばれる機能」）。
+
+    **呼ぶ機能は、重ね合わせた全体の中間表現に在る機能でなければならない**——関数だけを書き起こして、それを呼ぶ入口
+    （API・画面・バッチ）がどの機能にも無いまま Issue にする形を止める。呼ぶ関係は循環しない（循環すると、どの機能も入口にならない）。
+    **書き起こす側が関数を入口と偽れば（`called_by` を書かなければ）通る**——欄は任意で、機械は申告の整合だけを見る。
+    """
+    problems, graph = [], {}
+    ids = {f.get("id") for f in features if isinstance(f, dict)}
+    for index, feature in enumerate(features):
+        if not isinstance(feature, dict) or CALLED_BY not in feature:
+            continue
+        fid = feature.get("id")
+        where = f"{fid if isinstance(fid, str) and FEATURE_ID.fullmatch(fid) else f'features[{index}]'}.{CALLED_BY}"
+        callers = feature[CALLED_BY]
+        if not isinstance(callers, list) or not callers:
+            problems.append(f"{where}: 呼ぶ機能の id の 1 つ以上の配列でない")
+            continue
+        good = []
+        for caller in callers:
+            if not isinstance(caller, str) or not FEATURE_ID.fullmatch(caller):
+                problems.append(f"{where}: id の形に反する（F- に 3 桁以上の数字）: {caller!r}")
+            elif caller == fid:
+                problems.append(f"{where}: 自分自身 {caller} を呼ぶ機能に挙げている")
+            elif caller not in ids:
+                problems.append(f"{where}: 呼ぶ機能 {caller} が中間表現に無い——呼ぶ入口（API・画面・バッチ）も機能として"
+                                "書き起こす。仕様が呼ぶ側を書いていなければ、仕様が確定していない（spec-review に戻す）")
+            else:
+                good.append(caller)
+        if len(set(map(str, callers))) != len(callers):
+            problems.append(f"{where}: 重複している")
+        if isinstance(fid, str):
+            graph[fid] = good
+    # 呼ぶ関係の循環——辿った先に、呼ばれない機能（入口）が無い
+    state: dict[str, int] = {}  # 1: 辿っている途中・2: 済んだ
+
+    def visit(node: str) -> str | None:
+        state[node] = 1
+        for nxt in graph.get(node, []):
+            if state.get(nxt) == 1:
+                return nxt
+            if nxt not in state and (found := visit(nxt)):
+                return found
+        state[node] = 2
+        return None
+
+    for node in sorted(graph):
+        if node not in state and (looped := visit(node)):
+            problems.append(f"{looped}.{CALLED_BY}: 呼ぶ関係が循環している（辿った先に、呼ばれない入口の機能が無い）")
     return problems
 
 
@@ -1009,7 +1068,24 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
         # 実装のモジュールが変わると、機能が同じでも Red テストは全部、前の版の実装を探せずに失敗する
         moved = {c.feature["id"] for c in changes}
         changes += [Change(MODIFY, f, old[key]) for key, f in now.items() if key in old and key not in moved]
-    return 0, [], sorted(changes, key=lambda c: c.feature["id"]), before
+    return 0, callers_unchanged(changes, number), sorted(changes, key=lambda c: c.feature["id"]), before
+
+
+def callers_unchanged(changes: list[Change], number: int) -> list[str]:
+    """呼ばれる機能だけが変わり、呼ぶ機能がどれも変わっていない——止めずに知らせる行（#609）。
+
+    関数の中だけの直しはありうるので止めない。**呼ぶ入口の振る舞いも変わるのに、仕様がその入口の変化を書いていない**
+    （v2 の差分に呼ぶ側が無い）なら、呼ぶ側の課題がどの Issue にも載らない——だから名指しする。
+    """
+    changed = {c.feature["id"] for c in changes if c.kind in (ADD, MODIFY)}
+    lines = []
+    for change in sorted(changes, key=lambda c: c.feature["id"]):
+        callers = change.feature.get(CALLED_BY) or []
+        if change.kind in (ADD, MODIFY) and callers and not changed & set(callers):
+            lines.append(f"{change.feature['id']} は v{number} で {change.kind} だが、呼ぶ機能（{'・'.join(callers)}）は"
+                         f" v{number} で変わっていない——呼ぶ入口の振る舞いも変わるなら、仕様にその入口の変化を書き、"
+                         "中間表現でも変える（変わらないなら、このままでよい）")
+    return lines
 
 
 # 前の版の型で通った値は、広げた型にも合う（`type_fits`）——広げただけでは前の版の実装は落ちない
@@ -1135,6 +1211,10 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         old_op = change.before["operation"] if change.kind == MODIFY else None
         if old_op and (old_op["method"], old_op["path"], old_op["id"]) != (op["method"], op["path"], op["id"]):
             lines.append(f"- {previous} の API: `{old_op['method']} {old_op['path']}`（`operationId`: `{old_op['id']}`）")
+        if feature.get(CALLED_BY):
+            titles = {f["id"]: f["title"] for f in features_of(loaded.ir)}
+            lines.append("- 呼ぶ機能: " + "・".join(f"`{c}` {cell(titles[c])}" for c in feature[CALLED_BY])
+                         + "（この機能を呼ぶ入口の機能。呼ぶ側の振る舞いは、その機能の Red テストが見る）")
     lines += ["", SECTIONS[1], ""]
     if change.kind == REMOVE:
         lines += [
@@ -1528,7 +1608,7 @@ def run(repo: Path, args, writing: bool) -> int:
     if code:
         return fail(repo, writing, code, lines)
     for line in lines:
-        # 止めずに知らせること（凍結した前の版を信じなかった。#357）
+        # 止めずに知らせること（凍結した前の版を信じなかった。#357・呼ぶ機能が変わっていない。#609）
         print(line)
     if args.red_check:
         problems = stale(repo / OUT_DIR, contract)

@@ -1,0 +1,97 @@
+# Issue #609 — spec-loop: scaffold が判定関数だけを Issue にし、呼ぶ側（API・画面への配線）の課題が v2 で丸ごと落ちた
+
+中間表現（`spec_ir.json`）の機能が「他の機能から呼ばれる判定の関数」であることを書ける欄（`called_by`）を足し、
+`scaffold.py` が**呼ぶ機能が中間表現に在ること**を確かめる。版上げで呼ばれる機能だけが変わり、呼ぶ機能が変わっていなければ知らせる。
+scaffold の `SKILL.md` の書き起こしの手順に、呼ぶ側を機能として書き起こすこと（仕様に無ければ仕様の穴として spec-review に戻すこと）を足す。
+
+**不在の周**である——出所は `/dev-loop:cruise 793 --absent` の起動（2026-11-03）。親からサブエージェントとして委ねられた。
+台帳 `issue-793` の確かめた線: `仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`（マージは親がする）・`周の途中の課題 = 外に出す`
+（出所: 利用者の確認（起動時・親 Issue #793 の cruise: の行・2026-11-03T03:56:17Z、配布を見せて確かめた））。台帳は書かない（親が書く）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-793`））。
+版の上げ方: `spec-loop` を **minor**（能力の追加——中間表現に書ける欄が増える）。main の先端 0.46.0 → **0.47.0**（PR を出す前・マージの直前に main が進んでいたら、その先端の版から minor で上げ直す）。
+
+重い検査（`check-all.py`・テスト）は順番待ち越しに走らせる（cruise の `references/parallel.md`）:
+`python3 /Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py -- <コマンド>`。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/scripts/scaffold.py` — `called_by` の検査・版上げの知らせ・Issue の本文の「呼ぶ機能」の行・docstring
+- `plugins/spec-loop/references/spec-ir.md` — 機能の表に `called_by`、「呼ばれる機能（#609）」の節
+- `plugins/spec-loop/references/handoff-issue.md` — `## 仕様` の節に「呼ぶ機能」の行
+- `plugins/spec-loop/skills/scaffold/SKILL.md` — 手順 2（書き起こし）・手順 3（知らせの扱い）と版の 2 行
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `scripts/test-scaffold.py` — 試料・変異
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `docs/plans/issue-609.md` — この計画ファイル
+
+触らない:
+
+- cruise の起動時の確認（Issue の案 3「親のチェックリストの関数を呼ぶ入口があるか」）——dev-loop プラグインの側。scaffold の側で呼ぶ機能を中間表現に必ず在らせれば、
+  呼ぶ機能も Issue になり親のチェックリストに載る。足すかは利用者の判断（PR コメントと報告に残す）
+- spec-review の抜ける条件（`references/spec-exit.md`）——呼ぶ側を仕様が書いていなければ、scaffold の手順 2 が spec-review に戻す
+- dev-loop の `spec-fingerprint.py`（指紋の式は変えない。`called_by` は機能のオブジェクトの一部として今の式でそのまま指紋に入る）
+- dev-loop の `references/spec-gap.md`（印と節は変えない。`## 仕様` の節の中に行を足すだけ）
+- `references/versions.md`（版の重ね方・比べ方は変えない。知らせは `spec-ir.md` を正とする）
+- `plugin.json`・`marketplace.json`・frontmatter の description（能力の要約は変わらない）
+
+### 同じことを述べている箇所の数
+
+「呼ばれる機能」の決まり: `spec-ir.md`（原本）・`scaffold.py` の検査と docstring（写し）・`handoff-issue.md` の `## 仕様` の行・scaffold `SKILL.md` 手順 2・3。計 4 箇所。
+分けない理由: 原本と検査を同じ周で揃えないと、書ける欄が検査で落ちる（決まりに無いキー）か、書いてあるのに検査されない。
+
+## 乗るデプロイ経路
+
+main へのマージでプラグインの配布（spec-loop 0.47.0）。公開サイトは `docs/` の計画ファイルだけ。マージは親がする（手順 7 はしない）。
+
+## verify の受入基準
+
+| # | 不変条件 | 破りうる経路 | 確かめ方 |
+| --- | --- | --- | --- |
+| C1 | 機能に `called_by`（呼ぶ機能の id の配列）を書ける。書かない中間表現は今と同じに通る | `check_ir` の機能のキー | 試料: `called_by` を持つ中間表現が 0、持たない基準の試料が今までどおり 0 |
+| C2 | `called_by` の各 id は、重ね合わせた全体の中間表現に在る機能でなければならない——無ければ 1 で止まる（呼ぶ機能が中間表現に無い = #609 の形） | `check_ir`（v1・v2 の全体。v2 で呼ぶ機能を消した場合を含む） | 試料: 在らない id・v2 の removed.csv で呼ぶ機能を消した全体が 1 |
+| C3 | `called_by` の形の誤り（空の配列・配列でない・id の形に反する・重複・自分自身・呼ぶ関係の循環）は 1 で止まる | `check_ir` | 試料ごとに 1 |
+| C4 | 版上げ（v2 以降・前の版を信じた比較）で、`called_by` を持つ機能が追加・変更され、呼ぶ機能がどれも追加・変更されていなければ、止めずに（0）その機能と呼ぶ機能を名指しして知らせる。呼ぶ機能も変わっていれば知らせない | `classify` の後（`--dry-run`・生成・`--red-check` のどれでも） | 試料: v2 で呼ばれる機能だけ変える → 0 で知らせが出る／呼ぶ機能も変える → 知らせが出ない（陰性対照） |
+| C5 | Issue の本文の `## 仕様` に、`called_by` を持つ機能（追加・変更）なら呼ぶ機能の id と題を書く。持たない機能の本文は今と 1 バイトも変わらない | `issue_body` | 試料で本文に行があること・基準の試料の本文と生成物が base の `scaffold.py` と同じバイト |
+| C6 | 原本（`spec-ir.md`）と写し（`scaffold.py` の docstring・`handoff-issue.md`・scaffold `SKILL.md`）が同じことを言い、版を 3 箇所で上げる | 記述・`check-plugin-versions.py` | 読んで突き合わせる・`check-all.py` が緑 |
+| C7 | 他の歯止めを割らない | `check-all.py` の全部・PR の CI | `run-serial.py -- python3 scripts/check-all.py` が緑、`gh pr checks` が緑 |
+
+**この環境で証明できないもの**: 「中間表現を書く LLM が、判定の関数に `called_by` を書く」こと——欄は任意なので、書き起こす側が関数を入口と偽れば検査は通る。
+これは scaffold の `SKILL.md` 手順 2 の指示で受け、機械では見ない（下の仕様の穴 1）。人間のレビューに回す。
+
+**生成物**: このリポジトリに鮮度を見る生成物の該当なし（図・`skill-metrics.py` の生成ブロックは触らない——`SKILL.md` は版の 2 行と scaffold の手順の文で、`skill-metrics.py` が測るのは dev-loop の `SKILL.md`）。
+`scaffold.py` 自身が生成するものの「既存の出力が変わらない」は C5 で見る。
+
+必須要件の掛け算: 受入基準を Verifier・`/code-review` の両方に、1 パス目・2 パス目の両方で渡す（4 つの受け渡し。2 パス目が「該当なし」なら初回の 2 つ）。
+
+## 未解決の判断・確認待ち
+
+- 仕様の穴 1・2（下）は推奨で決めて確認の Issue を立てる（不在の線）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/609-scaffold-called-by`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-609`・
+  起点 `896667d2`・base の参照 `origin/main`・base の SHA `896667d2ba7d28a8e417e185e75e9479bfc25918`
+- 割り目（手順 4 の完了時）: 割らない（不在の cruise）
+- Verifier 1 パス目: 未
+- `/code-review` 1 パス目: 未
+- 交絡を潰した手順: （実験の記録をここに書く）
+
+## 既知の限界・決着済みの論点
+
+### 仕様の穴（不在の線 `仕様の穴 = 推奨で決めて起票` で推奨により決めた）
+
+1. **呼ばれる機能の印を任意の欄にするか、全機能に入口の種類を必須で書かせるか。** 選択肢: A 任意の `called_by`（推奨）／B 全機能に `entry`（api・screen・batch・function）を必須／
+   C 仕様の原文から機械で推定。決めた値: A。理由: B は凍結した前の版の中間表現（欄を持たない）を全部止め、移行が要る。どちらも書き起こす LLM の申告で、
+   偽れば通るのは同じ——書き起こしの指示（SKILL 手順 2）で受ける点で差が無い。C は原文の言い回しに依り、決まりにできない。
+2. **版上げで呼ぶ機能が変わっていないとき、止めるか知らせるか。** 選択肢: A 止めずに名指しで知らせる（推奨）／B 止める。決めた値: A。理由: 関数の中だけの直し（入口の
+   振る舞いの仕様が変わらない）は正当にありうるので、止めると仕様に無い変化を足させることになる（「仕様に書いていないことを足さない」に反する）。
+   知らせは scaffold の手順 3 で利用者に示す。
+
+### その他
+
+- `called_by` を v2 で足すだけ（ケースは同じ）でも、その機能は変更（`modify`）になる——機能の比較は機能のオブジェクト全体で、題だけの違いと同じ扱い。
+  本文のケースは全部 `回帰` になる。指紋も変わる（機能のオブジェクトの一部なので）。
