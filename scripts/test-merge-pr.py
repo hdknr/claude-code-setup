@@ -57,6 +57,8 @@ if args[:2] == ["pr", "view"]:
         print(json.dumps({"commits": scn.get("commits", [{"oid": "c" * 40}])}))
     else:
         print(json.dumps(nxt("view", scn["view"])))
+        if "late_ledger" in scn and counts["view"] >= 2:  # CI を待つ間に、親が台帳の行を判断待ちにする
+            open(scn["late_ledger"][0], "w", encoding="utf-8").write(scn["late_ledger"][1])
 elif args[:2] == ["pr", "merge"]:
     rc = scn.get("merge_rc", 0)
     if rc:
@@ -149,7 +151,7 @@ def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False, 
 
 def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after=None, issues=None,
              merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5",
-             merge_drop=False, default=None, **gh) -> dict:
+             merge_drop=False, default=None, number="42", late_ledger=None, **gh) -> dict:
     root = base / name
     main, wt, sha = make_repo(root, lock=lock)
     if prepare:
@@ -165,6 +167,8 @@ def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after
         scn["default"] = default
     if merge_drop:
         scn["merge_drop"] = str(wt / "late.txt")
+    if late_ledger:
+        scn["late_ledger"] = [str(main / ".claude" / "plans" / "cruise-issue-9.json"), late_ledger]
     bin_dir = root / "bin"
     bin_dir.mkdir()
     (bin_dir / "gh").write_text(FAKE_GH, encoding="utf-8")
@@ -174,7 +178,7 @@ def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after
     log = root / "gh.log"
     env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                FAKE_GH_SCENARIO=str(scn_path), FAKE_GH_LOG=str(log))
-    res = subprocess.run([sys.executable, str(script), "42", "--interval", "0.05",
+    res = subprocess.run([sys.executable, str(script), number, "--interval", "0.05",
                           "--timeout", timeout, "--settle", "0.5"],
                          cwd=str(wt if cwd_in_wt else main), env=env, capture_output=True, text=True)
     calls = [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
@@ -240,6 +244,20 @@ def ledger(*rows, raw=None):
         text = raw if raw is not None else json.dumps({"format": 1, "name": "issue-9", "issues": issues})
         (plans / "cruise-issue-9.json").write_text(text, encoding="utf-8")
     return prepare
+
+
+def locked(prepare):
+    """台帳を置いたあと、`.claude/plans` を読めなくする（後片付けは TemporaryDirectory が権限を戻して消す）。"""
+    def run_(main, wt):
+        prepare(main, wt)
+        (main / ".claude" / "plans").chmod(0)
+    return run_
+
+
+def ledger_text(*rows):
+    return json.dumps({"format": 1, "name": "issue-9", "issues": [
+        {"number": n, "state": st, "deps": [], "pr": pr_, "note": note, "updated": "2026-11-04T00:00:00Z"}
+        for n, st, pr_, note in rows]})
 
 
 JUDGE = "利用者の判断待ち: 狭いパスの指摘 N1・N2 の採否"
@@ -399,6 +417,15 @@ CASES = {
         dict(make_view=lambda s: [pr(s)], prepare=ledger((7, "pr", "42", DECIDED), (8, "pr", "41", JUDGE))), 0, True, False),
     "台帳で判断待ちなのが別の PR の行だけならマージする": (
         dict(make_view=lambda s: [pr(s)], prepare=ledger((8, "blocked", "41", JUDGE), (9, "todo", "", ""))), 0, True, False),
+    "引数の先頭に 0 があっても台帳の行に当たる（042 は 42）": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger((7, "blocked", "42", JUDGE)), number="042"), 12, False, True),
+    "CI を待つ間に判断待ちにした行の PR もマージしない（マージの直前に読む）": (
+        dict(make_view=running_then, prepare=ledger((7, "pr", "42", "")),
+             late_ledger=ledger_text((7, "pr", "42", JUDGE))), 12, False, True),
+    "OPEN でなければ、台帳が判断待ちでも 2（何もしていない）": (
+        dict(make_view=lambda s: [pr(s, state="MERGED")], prepare=ledger((7, "blocked", "42", JUDGE))), 2, False, True),
+    "台帳の場所が読めなければマージしない（判定できなかった）": (
+        dict(make_view=lambda s: [pr(s)], prepare=locked(ledger((8, "todo", "", "")))), 7, False, True, "台帳"),
     "台帳が読めなければマージしない（判定できなかった）": (
         dict(make_view=lambda s: [pr(s)], prepare=ledger(raw="{")), 7, False, True, "台帳"),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
@@ -465,7 +492,7 @@ MUTATIONS = {
     # 守る 18: 台帳で利用者の判断を待っている行の PR をマージしない（#631）
     "台帳の判断待ちを見ない": ('if holds:', 'if False:'),
     # 守る 19: この PR を持たない行の判断待ちでは止めない
-    "この PR を持たない行も見る": ('if issue.get("pr", "").strip().lstrip("#") != number:', 'if False:'),
+    "この PR を持たない行も見る": ('if not (pr_.isascii() and pr_.isdigit() and int(pr_) == int(number)):', 'if False:'),
     # 守る 20: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
     # 守る 21: 判定できなかったことを時間切れと答えない
@@ -501,7 +528,9 @@ KILLS = {
     "台帳の判断待ちを見ない": ["台帳の行が判断待ちの PR はマージしない（#631）",
                          "台帳の行が blocked の PR はマージしない（番号は #42 の形）",
                          "別の行に利用者の判断があっても、判断待ちの行の PR はマージしない（#2427 の形）",
-                         "まとめの行のどれかが判断待ちなら、まとめの PR はマージしない"],
+                         "まとめの行のどれかが判断待ちなら、まとめの PR はマージしない",
+                         "引数の先頭に 0 があっても台帳の行に当たる（042 は 42）",
+                         "CI を待つ間に判断待ちにした行の PR もマージしない（マージの直前に読む）"],
     "この PR を持たない行も見る": ["自分の行に利用者の判断があればマージする（別の行は判断待ち）",
                            "台帳で判断待ちなのが別の PR の行だけならマージする"],
     "Issue が閉じたかを見ない": ["Issue が閉じなければ 9"],

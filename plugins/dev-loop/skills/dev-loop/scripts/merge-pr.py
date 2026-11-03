@@ -58,10 +58,12 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **`MERGED` を確かめるまで worktree を残す**——撤去はその後に置く（点検はマージの前に済ませる）。
   `gh pr merge` が 0 で終わっても `MERGED` とは限らない（マージキューに入っただけのことがある）。
 - **cruise の台帳で利用者の判断を待っている行の PR をマージしない**（#631）——メインの作業ツリーの `.claude/plans/cruise-*.json` を全部読み、
-  その PR を `pr` に持つ行が `blocked` か、`note` が `利用者の判断待ち:` で始まるなら（`ledger.py` の判断待ちの印）、何も待たずに 12 で止める。
+  その PR を `pr` に持つ行が `blocked` か、`note` が `利用者の判断待ち:` で始まるなら（`ledger.py` の判断待ちの印）、12 で止める。
+  **読むのは `gh pr merge` の直前**——CI を待つ間に親がその行を判断待ちにしても止まり、OPEN でない・draft の PR は今までどおり 2 になる。
+  `.claude/plans` が在るのに読めなければ 7（判定できなかった）。
   **判断は行に閉じる**——利用者がその行について判断したら、親がその行の `note` を書き換えて（`利用者の判断（<日時>）: <判断>`）から呼ぶ
   （cruise の `SKILL.md` §4 の 4）。#2427 では、利用者が 1 行に下した判断を親が前例にして、狭いパスの指摘が残る別の行の PR をマージした。
-- **この PR を持たない行の判断待ちでは止めない**——見るのは `pr` がこの PR の番号（`42`・`#42`）の行だけである。
+- **この PR を持たない行の判断待ちでは止めない**——見るのは `pr` がこの PR の番号（`42`・`#42`。数で比べる——引数 `042` も 42）の行だけである。
 - **閉じるはずの Issue が閉じたかを確かめる**——`closingIssuesReferences` の各 Issue が `CLOSED` になるまで待つ。
 - **判定できなかったことを、通った・時間切れ・閉じないと答えない**——`gh` や `git` が失敗した・
   出力の形が読めないなら、**マージの前でも後でも** 7 で止める。
@@ -118,6 +120,8 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **`await`（利用者の操作待ち）の行は見ない**——操作待ちの周では、親が `merge-pr.py` を呼ばない（cruise の `SKILL.md` §4 の 5）。
 - **読めない台帳が 1 つでもあると、その台帳に無い PR も 7 で止まる**——読めない台帳にその PR があるかを決められないので、通過と読まない。
 - **台帳は呼んだ cwd のリポジトリのメインの作業ツリーの `.claude/plans/` だけを見る**——`ledger.py` が台帳を置く場所である。
+  **メインの作業ツリーを決められないリポジトリ**（bare リポジトリの worktree など）は**台帳なし**と読む——`ledger.py` もそこには台帳を置けない。
+- **`pr` を `PR #42`・URL の形で書いた行には当たらない**——cruise の台帳は番号の形で書く。
 - **最後に読んでから `gh pr merge` までの間の付け替えは見ない**——`--match-head-commit` は head しか固定しない。
 """
 from __future__ import annotations
@@ -497,10 +501,18 @@ def ledger_holds(number: str) -> list[str]:
         raise Undetermined(f"台帳を読む ledger.py を読み込めない（{path}）: {e}") from e
     holds = []
     try:
-        plans = mod.main_worktree() / ".claude" / "plans"
-        for ledger in sorted(plans.glob("cruise-*.json")):
+        try:
+            main = mod.main_worktree()
+        except mod.Unknown:
+            return []  # メインの作業ツリーが無い形には、ledger.py も台帳を置けない
+        plans = main / ".claude" / "plans"
+        if not plans.exists():
+            return []
+        names = sorted(n for n in os.listdir(plans) if n.startswith("cruise-") and n.endswith(".json"))
+        for ledger in (plans / n for n in names):
             for issue in mod.load(ledger)["issues"]:
-                if issue.get("pr", "").strip().lstrip("#") != number:
+                pr_ = issue.get("pr", "").strip().lstrip("#")
+                if not (pr_.isascii() and pr_.isdigit() and int(pr_) == int(number)):
                     continue
                 note = issue.get("note", "")
                 if issue["state"] in HOLD_STATES or note.startswith(mod.JUDGE_NOTE):
@@ -546,13 +558,6 @@ def main(argv: list[str]) -> int:
     done = []  # 判定できなかったときに、どこまで済んだかを言う
     problems = []  # 同じく、済んでいないことを言う
     try:
-        holds = ledger_holds(a.number)
-        if holds:
-            for h in holds:
-                print(f"**cruise の台帳が、この PR について利用者の判断を待っている**: {h}", file=sys.stderr)
-            print("マージしない。判断はその行の利用者が決める——別の行の判断を前例にしない"
-                  "（references/absent-lines.md の「マージ = 関門を通ればマージ」）。", file=sys.stderr)
-            return 12
         rc, pr = wait_until_ready(a.number, default_branch(), a.interval, a.timeout)
         if rc:
             return rc
@@ -576,6 +581,13 @@ def main(argv: list[str]) -> int:
         else:
             print(f"ブランチ {branch} を持つ worktree は無い。")
 
+        holds = ledger_holds(a.number)  # マージの直前に読む——待つ間に判断待ちにした行も止める
+        if holds:
+            for h in holds:
+                print(f"**cruise の台帳が、この PR について利用者の判断を待っている**: {h}", file=sys.stderr)
+            print("マージしない。判断はその行の利用者が決める——別の行の判断を前例にしない"
+                  "（references/absent-lines.md の「マージ = 関門を通ればマージ」）。", file=sys.stderr)
+            return 12
         res = run(["gh", "pr", "merge", a.number, "--squash", "--match-head-commit", head_sha])
         if res.returncode != 0:
             print(f"マージに失敗した（rc={res.returncode}）: {res.stderr.strip()}", file=sys.stderr)

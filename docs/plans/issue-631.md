@@ -35,6 +35,7 @@ Issue 本文（外部入力）から読んだ要件: 利用者が 1 行につい
 - `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py` — 台帳の判断待ちで止める（12）・docstring の守る／終了コード／守らない
 - `scripts/test-merge-pr.py` — 試料と変異（守るの行と 1 対 1）
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 「`マージ = 関門を通ればマージ`」に、判断は行に閉じる・前例を根拠にしない・`merge-pr.py` の 12
+- `plugins/dev-loop/skills/cruise/references/parallel.md` — 「版とマージの順」に、判断待ちの行はマージの直前の取り込みに来ないこと（1 パス目の CR1 で広げた）
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §4 の 4 に、利用者が判断した行の `note` の書き換え方と `merge-pr.py` の 12・版
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
@@ -84,7 +85,7 @@ Issue 本文（外部入力）から読んだ要件: 利用者が 1 行につい
 
 - 周の在り処: ブランチ `issue/631-row-judgment-merge-gate`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-631`・起点 `63872f51`・base `origin/main` → `63872f5167ac87b9c7280b308c1f57e28ab5ca5d`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 1 パス目: まだ
+- 1 パス目: 関門に渡した（1 パス目の指摘対応の起点 `06e0473a6392b5248dba8488d934006c1bd3242a`）。check-all: 58/58 緑（順番待ち越し）。Verifier（sonnet・`dev-loop:dev-loop-verifier`、テンプレート 169 行を読んだと報告）: 反証 0 件（観察 1 件: `pr` が `PR #42`・URL の形だと当たらない——cruise の規範は番号の形）。`/code-review`（high）: 指摘 9 件（下の表）。直す 7 件・残課題 2 件。手順 4 への差し戻しなし（指摘対応として直した）
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
@@ -93,6 +94,20 @@ Issue 本文（外部入力）から読んだ要件: 利用者が 1 行につい
 - `note` を書き換えれば 12 を通る——採った（書き換えてよいのは利用者がその行について判断したときだけ、と規範に書く。機械は利用者の答えを見られない）。
 - 線（`LINES`）に狭いパスの扱いを足さない——採った（触らない。行ごとに利用者が決める）。
 - 読めない台帳が 1 つでもあれば、関係の無い PR も 7 で止まる——採った（判定できないことを通過と読まない。守らないに書く）。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1 マージの直前の取り込み（`state=impl note=…`）・操作待ちが `note` を置き換え、判断待ちの印が消えて 12 を通る | 示せる——レビューの試料 P4（印の消えた `note` で rc=0・マージ 1） | A1（`ledger.py set` の経路） | 直す（判断待ちの行は取り込みに回さず、`note` を書き直すときも印を先頭に残すと cruise §4 の 4・`parallel.md` に書いた） |
+| CR2 台帳を CI の待ちの前に 1 度しか見ず、待つ間に判断待ちにした行がマージされる | 示せる——P2（待ちの途中で `blocked` にして rc=0・マージ 1） | A1 | 直す（台帳を `gh pr merge` の直前に読む） |
+| CR3 `.claude/plans` が読めないと glob が黙って空を返し、マージする | 示せる——P3（chmod 000 で rc=0・マージ 1） | A3 | 直す（在るなら `os.listdir` で読み、読めなければ 7） |
+| CR4 引数 `042` が文字列比較で行に当たらない | 示せる——P1（rc=0・マージ 1） | A1（番号の書き方） | 直す（両側を数で比べる） |
+| CR5 cruise §4 の 4 の書き方が found-lines の「利用者の判断をまとめて訊く」（`todo`/`dropped`）と食い違う。`blocked なら state=pr` が PR の無い行にも掛かる | 示せる（文面） | A4 | 直す（PR を持つ行のマージの判断に限り、PR の無い行は found-lines のとおりと書いた） |
+| CR6 bare リポジトリの worktree など、メインの作業ツリーが無いと台帳の無いリポジトリでも 7 | 示せる——scratchpad の bare リポジトリの worktree で `ledger_holds` が Undetermined | A3・A5 | 直す（`ledger.py` が台帳を置けない形なので、台帳なしと読む。守らないに書く） |
+| CR7 判断待ちの述語が `ledger.py` の `judging()` と別に書かれている | 示せない（いま食い違って落ちる入力は無い） | 無し | 残課題 |
+| CR8 台帳の検査が OPEN/draft より先で、MERGED の PR が 2 でなく 12 | 示せる——P5（MERGED で rc=12） | A5（既存の終了コード） | 直す（CR2 と同じく `gh pr merge` の直前に移した——OPEN/draft の判定が先に来る） |
+| CR9 `ledger.py` の読み込みで他の例外が出ると rc=1 | 示せない（壊れた `ledger.py` を作る入力はふつう無い） | 無し | 残課題 |
 
 ## 手順 8
 
