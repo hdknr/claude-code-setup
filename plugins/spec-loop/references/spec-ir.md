@@ -104,8 +104,9 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 
 ### 項目
 
-`{"<項目名>": {"type": "<型>", "enum": [...]}}` の形。項目名は英小文字で始まり、英小文字・数字・`_` だけで、Python の予約語は使わない。
+`{"<項目名>": {"type": "<型>", "enum": [...], "nullable": true}}` の形。項目名は英小文字で始まり、英小文字・数字・`_` だけで、Python の予約語は使わない。
 `enum` は省いてよく、書くなら 1 つ以上の値を、その型で、重複させずに並べる。
+`nullable` も省いてよく、書くなら `true` だけ（下の「null を許す項目」）。
 
 | 型 | 値 |
 | --- | --- |
@@ -114,7 +115,19 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 | `number` | 数（整数でもよい。`true`・`false`・`NaN`・`Infinity` は数に数えない） |
 | `boolean` | `true`・`false` |
 
-**入れ子のオブジェクト・配列・null は、いまは持たない。** 要るなら、この決まりを先に広げる。
+**入れ子のオブジェクト・配列は、いまは持たない。** 要るなら、この決まりを先に広げる。
+
+### null を許す項目（#487）
+
+**`"nullable": true` を書いた項目だけが、その型の値か `null` を持てる**——入力にも出力にも書ける（「ラベル無し」を `null` で返す、など）。
+**書かない項目は `null` を拒む**（`nullable` を足す前と同じ。生成物も変わらない）。
+
+- **`true` だけを書く。** `false` は書かない——null を許さないなら省く（同じ意味の書き方を 2 つ作ると、機能の指紋が違う値になる。`handoff-issue.md`）。
+- **`enum` と一緒に書いてよい。** `null` は `enum` に並べない——`enum` の値はその型のものだけで、`null` は `nullable` が許す。
+- **パスの変数（上の「パスの変数」）には書かない**——パスの値は `null` にならない。
+- ケースの `input`・`expected` では、その項目に `null` を書ける。
+- 生成物では、OpenAPI の schema の `type` が `["<型>", "null"]` になり（`enum` があれば `enum` の最後に `null` を足す）、
+  `types.py` の型は `null` を許さないときの型の後ろに ` | None` を足したもの（`str | None`。`enum` があれば `Literal['a', 'b'] | None`）になる。Red テストは、その出力の項目が `None` のときだけ型を見ない（`None` 以外の値の型は今までどおり見る）。
 
 ## テストケース（`cases` の要素）
 
@@ -122,8 +135,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 | --- | --- |
 | `id` | 機能の `id` に `-C` と数字（`F-001-C1`）。全機能で重複させない |
 | `title` | 何を確かめるか（空にしない・1 行で） |
-| `input` | 入力。**`operation.input` の項目をちょうど全部**、その型（と `enum`）で |
-| `expected` | 正常時に返すもの。**`operation.output` の項目をちょうど全部**、その型（と `enum`）で |
+| `input` | 入力。**`operation.input` の項目をちょうど全部**、その型（と `enum`）で（`nullable` の項目は `null` でもよい。上の「null を許す項目」） |
+| `expected` | 正常時に返すもの。**`operation.output` の項目をちょうど全部**、その型（と `enum`）で（`nullable` の項目は `null` でもよい） |
 | `error` | 失敗するケースなら、`expected` の代わりに `operation.errors` のどれか |
 | `qa` | このケースの根拠にした Q&A の `No` の配列（省いてよい）。機能の `qa` と同じ決まり |
 | `ref` | このケースの元になった、仕様の中の行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。省いてよい）。**仕様が番号を振っていれば書く**——生成と `--check` が、機能の `source` の原文にその番号が在るかを確かめる（#465。値が一致するかまでは見ない） |
@@ -132,7 +145,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 
 実装は、`input` を受け取って、正常なら `expected` と等しいオブジェクトを、失敗なら
 `{"error": "<エラーの名前>"}` を返す。**Red テストはこの等しさと、各項目の型を見る**
-（`True == 1 == 1.0` なので、等しさだけでは `boolean` に `1` を返す実装が通る。`number` は整数でも小数でもよい）。
+（`True == 1 == 1.0` なので、等しさだけでは `boolean` に `1` を返す実装が通る。`number` は整数でも小数でもよい。`nullable` の項目が `null` のときは型を見ない）。
 
 ## 書き起こすときの決まり
 
