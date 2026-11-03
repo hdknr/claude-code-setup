@@ -300,10 +300,12 @@ check-unattended-env.py --cruise --ledger issue-<親>             # --absent
 - **cruise の子と親は、GitHub に書く本文の先頭に印を置く**——`<!-- dev-loop: 子 #<周の Issue> -->`（まとめの周は代表の番号）か `<!-- dev-loop: 親 #<親 Issue> -->`。
   **書く本文**は、Issue と PR のコメント（`gh issue comment`・`gh pr comment`）・PR の本文（`gh pr create`・`gh pr edit`）・起票の本文（`gh issue create`）である。
   **起票の本文が `<!-- cruise-found: #<親> -->` か `<!-- cruise-decision: #<親> -->` で始まるなら、それが印を兼ねる**——下の 6 の検索が本文の先頭を見るので、その前に別の印を置かない。
-- **閉じるときは、印で始まるコメントを添える**——`gh issue close <番号> --comment "<!-- dev-loop: 親 #<親> --> <理由>"`。コメントを添えずに閉じない。
+- **閉じるときは、閉じの印 `<!-- dev-loop-close: <役> #<番号> -->` で始まるコメントを添える**——`gh issue close <番号> --comment "<!-- dev-loop-close: 親 #<親> --> <理由>"`。コメントを添えずに閉じない。
+  **閉じの印はふつうの印と分ける**——下の 6 は閉じの直前のコメントが閉じの印で始まるかを見るので、ふつうの印（`PR は #<番号>` などのコメント）のあとに利用者がコメント無しで閉じても、利用者の閉じと数えられる。
 - **関門（Verifier・`/code-review`）は GitHub に書かない**——委譲文（`../dev-loop/prompts/verifier.md`・`../dev-loop/prompts/review-handoff.md`）が書き込みと投稿を禁じているまま。
 - **確認の Issue（台帳の `decisions`・本文の先頭が `<!-- cruise-decision: #<親> -->` の Issue）を閉じるのは利用者だけである**——子・親・関門は閉じない。
-  **PR の本文・コミットメッセージの `Fixes`／`Closes` で確認の Issue を指さない**——マージで閉じる。指すなら `Refs`。
+  **PR の本文・コミットメッセージで、GitHub の閉じるキーワード（`Fixes`・`Closes`・`Resolves` とその活用形）で確認の Issue を指さない**——マージで閉じる。指すなら `Refs`。
+  **判断の中身が変わっても閉じない**——変わったことと新しい確認の Issue の番号を、印で始まるコメントに書いて残す（閉じるのは利用者。`../dev-loop/references/absent-lines.md` の「1 件に 1 つの判断」）。
   **確認の Issue へのコメント（`PR は #<番号>` など）は書いてよい**——先頭に印を置く。
 - **守らないもの**——印は、決まりを守った体の書き込みを利用者の操作から分けるだけである。**印を付けずに書いた・閉じた体の操作は、利用者の操作と見分けられない**（同じ資格情報）。
   **cruise の外のセッションが利用者の指示で閉じたものも、印が無ければ利用者が閉じたと数える**——利用者の指示なので、それで正しい。
@@ -364,10 +366,10 @@ gh issue list --state open --search '"cruise-decision: #<親>" in:body' --limit 
 （親が走らせる cwd は対象リポジトリなので、`{owner}`・`{repo}` は `gh` が埋める）:
 
 ```bash
-gh api graphql -F owner='{owner}' -F repo='{repo}' -F n=<番号> -f query='query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){issue(number:$n){state timelineItems(last:20,itemTypes:[ISSUE_COMMENT,CLOSED_EVENT,REOPENED_EVENT]){nodes{__typename ... on IssueComment{body} ... on ClosedEvent{closer{__typename}}}}}}}' --jq '.data.repository.issue as $i | $i.timelineItems.nodes as $t | ([$t | to_entries[] | select(.value.__typename == "ClosedEvent") | .key] | last) as $k | if $i.state == "OPEN" then "開いている" elif $k == null or ($k == 0 and ($t | length) == 20) then "判定できない（閉じの直前が直近 20 件の外）" elif $t[$k].closer != null then "利用者の承認ではない（PR かコミットで閉じた）" elif $k > 0 and $t[$k - 1].__typename == "IssueComment" and ($t[$k - 1].body | startswith("<!-- dev-loop: ")) then "利用者の承認ではない（印のあるコメントを添えて閉じた）" else "利用者が閉じた" end'
+gh api graphql -F owner='{owner}' -F repo='{repo}' -F n=<番号> -f query='query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){issue(number:$n){state timelineItems(last:20,itemTypes:[ISSUE_COMMENT,CLOSED_EVENT,REOPENED_EVENT]){nodes{__typename ... on IssueComment{body} ... on ClosedEvent{closer{__typename}}}}}}}' --jq '.data.repository.issue as $i | $i.timelineItems.nodes as $t | ([$t | to_entries[] | select(.value.__typename == "ClosedEvent") | .key] | last) as $k | if $i.state == "OPEN" then "開いている" elif $k == null or ($k == 0 and ($t | length) == 20) then "判定できない（閉じの直前が直近 20 件の外）" elif $t[$k].closer != null then "利用者の承認ではない（PR かコミットで閉じた）" elif $k > 0 and $t[$k - 1].__typename == "IssueComment" and ($t[$k - 1].body | startswith("<!-- dev-loop-close: ")) then "利用者の承認ではない（閉じの印のあるコメントを添えて閉じた）" else "利用者が閉じた" end'
 ```
 
-最後の閉じが PR・コミットによるもの（`Fixes` のマージなど）か、閉じの直前の項目（コメント・閉じ・開き直しのうち）が印 `<!-- dev-loop: ` で始まるコメントなら、利用者の承認ではない（印は上の「GitHub に書くものの印」）。
+最後の閉じが PR・コミットによるもの（`Fixes` のマージなど）か、閉じの直前の項目（コメント・閉じ・開き直しのうち）が閉じの印 `<!-- dev-loop-close: ` で始まるコメントなら、利用者の承認ではない（印は上の「GitHub に書くものの印」）。
 **「利用者が閉じた」だけを承認と数える**——印の無い閉じは利用者の操作と見分けられないので、承認として扱う（同じ節の「守らないもの」）。
 **`decisions` の「開いている」「利用者の承認ではない」「判定できない」と、検索で見つかった開いたもの・承認ではない・判定できないものを、1 つの一覧で渡す**——
 `decisions` に無かったものには「台帳に無かった」、承認ではない閉じ・判定できない閉じには分けた理由を添える（利用者が閉じたのなら、利用者がそう確かめれば済む）。
