@@ -272,6 +272,36 @@ cruise: 直す線 = 既定
   `cd` の無い `git worktree list` は隔離中でも通るので確かめになりません。[#504](https://github.com/hdknr/claude-code-setup/issues/504)）。
   戻れなければ、メインの作業ツリーで新しいセッションを開いて起動し直してください。
 
+### `claude -p` で外から回すとき { #print-mode }
+
+cruise を対話のセッションではなく、外側のループ（シェルのスクリプトなど）から `claude -p "/dev-loop:cruise <親> --absent"` で起動し直して回すときの注意です
+（[#633](https://github.com/hdknr/claude-code-setup/issues/633)）。
+
+- **`-p` は、ターンが閉じた後の背景のタスクを上限の時間しか待たず、過ぎると止めます。** spin-dd/tfs-stocks#2427 では、周の子を背景で起こして
+  「待ちます」と書いてターンを閉じた親の子が、10 分で関門の途中で止められ、次の起動が周をやり直しました。標準エラーには
+  `Background tasks still running 10m after the last turn (…); stopping them. Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.` と出ます。
+  親は周の子を前景で呼ぶ決まりですが（スキル本文の「4. 周を回す」の 2）、並行に始めてよい周を 2 本以上回すときは背景で起こします。
+  **外側のループは `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置いて起動してください。**
+  0 で止めずに待つことは、上の標準エラーの文言によるだけで、測っていません。
+- **タイマー（`CronCreate`）は要りません**——起動し直すのは外側のループです。`-p` のプロセスが終わった後にタイマーが発火するかは確かめていません。
+- **続けるかは `ledger.py status` の終了コードで決めます**（[#632](https://github.com/hdknr/claude-code-setup/issues/632)）——0 なら進められる周がある、
+  3 なら人を待つ周だけ、5 なら親 Issue の一覧の行がすべて済んだ、4 なら判定できなかった（済んだとは答えていません）。文面（`show`）で決めないでください。
+  判定の順は `ledger.py` の docstring を正とします。
+
+```bash
+cd <メインの作業ツリー>
+for i in $(seq 1 20); do      # 回す回数の上限
+  CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "/dev-loop:cruise 50 --absent"
+  python3 <dev-loop の base ディレクトリ>/scripts/ledger.py status issue-50
+  rc=$?
+  [ "$rc" -eq 0 ] || break    # 3・4・5 は止まる。ほかの値も止まる
+done
+echo "status: $rc"
+```
+
+`<dev-loop の base ディレクトリ>` は、入っている版のスキルのディレクトリです（`~/.claude/plugins/cache/claude-code-setup/dev-loop/<版>/skills/dev-loop`）。
+許可モード・モデルなどの引数は、上の「2. 環境を点検する」で決めたものを足してください。
+
 ### 利用上限で止まったとき
 
 **`autoContinueAtUsageLimit: true` だけで続くとは、記録からは言えません。** 下の表のとおり、待ちを張らなかった停止（理由は記録に残りません）と、
