@@ -81,7 +81,10 @@
 - 周の在り処: ブランチ `issue/630-ledger-generation-limit`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-630`・
   起点 `63872f51`・base `origin/main` = `63872f5167ac87b9c7280b308c1f57e28ab5ca5d`
 - 割り目（手順 4）: 割らない（不在の cruise）
-- 実験: 合成の台帳で main と新しい本体を比べる（陽性対照: main の本体で赤）
+- 実験: 合成の台帳で main と新しい本体を比べる（陽性対照: main の本体で `next` が `3` を出す・新しい本体は空。scratchpad の一時リポジトリで実走）
+- check-all（run-serial 越し）: 1 回目 58 本中 57 緑・`check-plan-counts.py` だけ赤（件数の行が無かった）→ 行を足して単体で緑
+- 1 パス目の指摘対応の起点: `89031e8c978030bb40c5df94dbbe8535d952b90e`
+- 1 パス目: Verifier（sonnet）・/code-review を起動
 
 ## 既知の限界・決着済みの論点
 
