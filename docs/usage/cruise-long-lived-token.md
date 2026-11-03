@@ -90,7 +90,7 @@ bash <base>/scripts/launch-with-long-token.sh --account work "/dev-loop:cruise <
 1. **長期トークンで起動した cruise が、起動から 8 時間を超えても 401 で止まらないこと**——まだです
 2. **cruise で使う機能が、長期トークンで動くか**——測りました。結果は下の「機能の表」です。
    **測っていないのは次の 4 つです**: 対話のセッションの中で、端末が使われていないときの通知・対話のセッションの中で `/remote-control` を打ったときの表示
-   （起動時の `--remote-control` だけを見ました）・haiku 以外のモデル（Opus など）でのサブエージェントと、`low` 以外の effort（cruise の関門が使う `high` など）の `/code-review`・
+   （起動時の `--remote-control` だけを見ました）・haiku 以外のモデル（Opus など）でのサブエージェントと、`low` 以外の effort（`high` など）の `/code-review`・
    対話ログインの側にだけ読み込まれた組み込みのプラグイン `cc-plugin-sec-default` が無いことで、何が変わるか（下の「機能の表」の後）
 3. **点検が、長期トークンで起動したセッションの中で「良い」と出ること**——確かめました。起動口で起動したセッションの中から
    `check-unattended-env.py --cruise --present` を回し、「認証」が `[良い]`（起動した `claude` の環境の `CLAUDE_CODE_OAUTH_TOKEN`）と出ました
@@ -138,7 +138,7 @@ bash <base>/scripts/launch-with-long-token.sh
 
 - `/status`——認証の行が `CLAUDE_CODE_OAUTH_TOKEN` から来ているか
 - 測っていない 4 つ（上の 2）——対話のセッションの中で `/remote-control` を打ったときの表示・端末を離れているときの iPhone への通知の試し
-  （[リモートコントロールの設定手順](advanced-remote-control.md)）・Opus などのモデルでサブエージェントに 1 つ読ませる／小さな差分に `/code-review high`・
+  （[リモートコントロールの設定手順](advanced-remote-control.md)）・Opus などのモデルでサブエージェントに 1 つ読ませる／小さな差分に `low` 以外の effort（`high` など）で `/code-review`・
   `cc-plugin-sec-default` の有無で何が変わるか
 
 8 時間を超えて止まらないか（上の 1）は、起動口で cruise を起動した時刻を控え、9 時間ほど後に、その間の記録に 401 が無いかを見ます:
