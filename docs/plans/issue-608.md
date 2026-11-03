@@ -85,6 +85,8 @@ main へのマージで GitHub Pages（`docs.yml`）に公開される（`docs/`
 - 2 パス目の結果: **Verifier（`dev-loop:dev-loop-verifier`・sonnet。指示文 173 行）反証 0 件**（`mkdocs build --strict` 緑・個別の検査 6 本緑）。**`/code-review`（high。委譲文を `Skill` の引数に貼って渡した）指摘 10 件**（2-R1〜2-R10）。直す 9 件・残課題 1 件。
 - 2 パス目の指摘対応: 起点 `3159a26d` → 終点 `a5a36ead`。
 - 狭いパス: **Verifier（`dev-loop:dev-loop-verifier`・sonnet。指示文 194 行——生成した文面は 193 行）反証 1 件**（N-1。直さず人間に渡す）。著者の変異: なし。Verifier の変異（原本を走らせて主張と比べる試料）1 本が赤、素通り 0 本。
+- 歯止め: `check-all.py`（順番待ち越し）——`3159a26d` で 58/58 本・失敗 0、`c933bea2`（2 パス目の指摘対応の後）で 58/58 本・失敗 0。
+- PR #794: `gh pr checks 794` **check pass・build pass・deploy skipping**（`785aee01`）。mergeable: MERGEABLE。マージは親がする。
 
 ## 既知の限界・決着済みの論点
 
