@@ -1307,6 +1307,10 @@ def since_last_scenarios(mod, script, bad):
               f"[前回と同じ] {len(items)} 項目" in out and "[要対処] 通知（agentPushNotifEnabled）" not in out
               and "[人が見る] モバイルの登録" not in out, bad)
         check("--since-last 2 回目: 区分ごとの数を出す", f"{mod.ACTION} 2" in out, bad)
+        check("--since-last 2 回目: 縮めた要対処の名前を出す",
+              f"。{mod.ACTION}: 通知（agentPushNotifEnabled）・通知（inputNeededNotifEnabled）" in out, bad)
+        check("--since-last 2 回目: 前回の時刻を出す",
+              f"前回 {json.loads(record.read_text(encoding='utf-8'))['updated']}" in out or "前回 20" in out, bad)
         check("--since-last 2 回目: 設定の層も 1 行", "設定の層: 前回と同じ" in out and "設定の層（低 → 高）" not in out, bad)
         check("--since-last: 終了コードは縮めない出力と同じ", code == plain_code == 1, bad)
 
@@ -1325,6 +1329,27 @@ def since_last_scenarios(mod, script, bad):
         check("--since-last: 前回あって今回は名前ごと無い項目を出す",
               "[前回から消えた] 2 項目: 通知（agentPushNotifEnabled）・通知（inputNeededNotifEnabled）" in out
               and "[人が見る] 通知: 非対話の起動" in out, bad)
+
+        # 中身だけが変わる（区分・名前・直し方は同じ）——縮めない
+        stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None, env=dict(SESSION_ENV),
+                                  cruise=True, present=False, cwd=env.project, ledger="issue-1")
+        mod.write_record(record, stack, items)
+        changed = [(s, l, d + "（変わった）", f) if l == items[0][1] else (s, l, d, f) for s, l, d, f in items]
+        buf = io.StringIO()
+        mod.report(stack, changed, out=buf, previous=json.loads(record.read_text(encoding="utf-8")))
+        check("--since-last: 中身だけ変わった項目は全文で出す",
+              f"[{items[0][0]}] {items[0][1]}: {items[0][2]}（変わった）" in buf.getvalue(), bad)
+
+        for broken in ({"format": 1, "updated": "x", "stack": "y", "items": [{"label": "x"}]},
+                       {"format": 1, "updated": "x", "items": []},
+                       {"format": 1, "updated": "x", "stack": "y", "items": [{"key": "k"}]}):
+            record.write_text(json.dumps(broken), encoding="utf-8")
+            try:
+                code, plain_code, out, _ = cycle(env)
+                ok = "形が違う" in out and "[前回と同じ]" not in out
+            except Exception:  # 鍵の欠けた記録で落ちる
+                ok = False
+            check(f"--since-last: 鍵の欠けた記録では縮めない（{sorted(broken)}・{broken.get('items')}）", ok, bad)
 
         record.write_text("{ 壊れた", encoding="utf-8")
         code, plain_code, out, _ = cycle(env)
@@ -1436,6 +1461,21 @@ MUTATIONS = {
     "前回から消えた項目を出さない": (
         "        if gone:\n",
         "        if False:\n"),
+    "縮めた要対処の名前を出さない": (
+        "            print(f\"[前回と同じ] {len(same)} 項目（{counts}。前回 {previous['updated']}{named}）\"",
+        "            print(f\"[前回と同じ] {len(same)} 項目（{counts}。前回 {previous['updated']}）\""),
+    "前回の時刻を出さない": (
+        "。前回 {previous['updated']}{named}）",
+        "{named}）"),
+    "中身を指紋に入れない": (
+        '    return fingerprint("\\0".join(item))\n',
+        '    return fingerprint("\\0".join(item[:2] + item[3:]))\n'),
+    "記録の項目の鍵を見ない": (
+        "            and all(isinstance(i, dict) and isinstance(i.get(\"key\"), str) and isinstance(i.get(\"label\"), str)\n                    for i in data[\"items\"])",
+        "            and True"),
+    "記録の設定の層の指紋を見ない": (
+        ' and isinstance(data.get("stack"), str)\n',
+        "\n"),
     "設定の層を前回と比べずに縮める": (
         '    if previous is not None and fingerprint("\\n".join(stack_lines(stack))) == previous["stack"]:\n',
         "    if previous is not None:\n"),
