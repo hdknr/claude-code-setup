@@ -154,7 +154,7 @@ main へのマージでプラグインの配布（dev-loop 1.76.0）と公開サ
 
 ### 歯止め（2 パス目の指摘対応の後）
 
-- `check-all.py` を順番待ちの外で直に（順番待ちが 2 時間近く回ってこなかった。負荷の平均 30〜56）: 58 本中 `check-mutation-claims.py` だけ落ちた——`scripts/test-worktree-scripts.py:585` の主張が「当てられなかった」（この周が触っていないファイル）。負荷による偽の失敗の疑いとして、順番待ちを通して 1 度回し直す（結果は下）。PR 側の CI でも見る
+- `check-all.py` を順番待ちの外で直に（順番待ちが 2 時間近く回ってこなかった。負荷の平均 30〜56）: 58 本中 `check-mutation-claims.py` だけ落ちた——`scripts/test-worktree-scripts.py:585` の主張が「当てられなかった」（この周が触っていないファイル）。順番待ちを通した回し直しは枠が回らず打ち切った。PR 側の CI（a38bf92b）の check（check-mutation-claims.py を含む）は pass——負荷による偽の失敗と読む
 
 ## 起票（手順 8）
 
