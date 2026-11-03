@@ -23,7 +23,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 許可 | settings の `permissions`（`allow`・`ask`・`deny`・`defaultMode`・`disableBypassPermissionsMode`） | 名指しのコマンドごとに、`allow` に当たるか `defaultMode` が `bypassPermissions`（`disableBypassPermissionsMode` で落とされていない） | `deny` か `ask` に当たる（`allow` があっても）／どれも無い |
 | 自動継続 | settings の `autoContinueAtUsageLimit`（**managed・flag・user の層だけ**） | `true` | 未設定・`false`・真偽値でない |
 | 質問の待ち | settings の `askUserQuestionTimeout`（**managed・flag・user の層だけ**） | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
-| 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true`。**非対話の起動（`CLAUDE_CODE_ENTRYPOINT` が `sdk-cli`・`sdk-ts`・`sdk-py`。`-p` など）では 2 つを人が見る 1 行にまとめる**（値を添え、要対処にも判定できないにもしない——通知の設定は人を呼ぶ経路の決め手にならない。#635） | 未設定・`false` |
+| 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true` | 未設定・`false`。**ただし非対話の起動（`CLAUDE_CODE_ENTRYPOINT` が `sdk-cli`・`sdk-ts`・`sdk-py`。`-p` など）では、どの値でも 2 つを「人が見る」の 1 行にまとめる**（値を添え、要対処にも判定できないにもしない——通知の設定は人を呼ぶ経路の決め手にならない。#635） |
 | スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が system の idle sleep を防いでいる（`-i`・`-d`・`-s` か、アサーションのフラグ無し） | どちらも無い |
 | 認証（#584。`--present` でも出す） | このスクリプトの環境変数と settings の `apiKeyHelper`。**環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、最寄りの祖先の `claude`（セッションを起動したプロセス）の環境**（`ps eww`。変数の名前と空かどうかだけ）——**Claude Code 2.1.316 は起動時のトークンを Bash の環境から外す**（下の「実測した前提」の認証の項） | `CLAUDE_CODE_OAUTH_TOKEN` が空でない——自分の環境か、起動した `claude` の環境（長期トークン） | どちらにも無い——対話ログインの OAuth（8 時間で切れる。`--present` では人が見る）。直し方に起動口 `launch-with-long-token.sh` の絶対パス |
 
@@ -104,7 +104,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 **cruise の `--absent` の再開で付ける**（いつ付けるかは cruise `SKILL.md` §3 を正とする）——再開のたびに同じ項目を全部出すと、
 本当に人が要る報告が埋もれる（spin-dd/tfs-stocks#2427 で 10 回の起動し直しの報告に同じ項目が並んだ）。
 
-- **記録**——台帳の隣の `cruise-<名前>-env-check.json`（メインの作業ツリーの `.claude/plans/`。台帳の場所は `ledger.py` の `ledger_path`）。
+- **記録**——台帳の隣の `cruise-<名前>.env-check`（メインの作業ツリーの `.claude/plans/`。**拡張子を `.json` にしない**——台帳の場所は `cruise-<名前>.json` なので、`-env-check.json` だと台帳 `<名前>-env-check` と同じ場所になり、その台帳を上書きする（#635 の 2 パス目）。台帳の場所は `ledger.py` の `ledger_path`）。
   中身は時刻・設定の層の一覧の指紋・項目ごとの区分と名前と指紋。**指紋は区分・名前・中身・直し方の全部から取る**（`pid` の数字は除く——再開のたびに変わる）。
   **付けたときだけ読み、今回の結果で書き直す**（書けなければその旨を出し、終了コードは変えない）。台帳は書かない
 - **出力**——前回の記録と指紋が同じ項目は `[前回と同じ] N 項目（区分ごとの数。前回の時刻。要対処・判定できないの項目の名前）` の 1 行に縮め、変わった・新しい項目は全文で出す。
@@ -1314,9 +1314,10 @@ def item_key(item):
 
 
 def record_path(project, name):
-    """前回の点検の記録の場所——台帳の隣の `cruise-<名前>-env-check.json`（メインの作業ツリー。#635）。"""
+    """前回の点検の記録の場所——台帳の隣の `cruise-<名前>.env-check`（メインの作業ツリー。#635）。
+    **`.json` で終えない**——台帳の場所（`cruise-<名前>.json`）とは拡張子で分かれ、どの台帳の名前とも重ならない。"""
     lg = ledger_module()
-    return lg.ledger_path(name, cwd=project).with_name(f"cruise-{name}-env-check.json")
+    return lg.ledger_path(name, cwd=project).with_name(f"cruise-{name}.env-check")
 
 
 def read_record(path):

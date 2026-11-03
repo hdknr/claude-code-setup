@@ -1286,7 +1286,7 @@ def since_last_scenarios(mod, script, bad):
         env.all_good()
         env.global_config({})  # 要対処の項目を作る（終了コードを縮めた出力から決めないかを見る）
         ledger = cruise_ledger(env, [row(1, "todo")])
-        record = ledger.with_name("cruise-issue-1-env-check.json")
+        record = ledger.with_name("cruise-issue-1.env-check")
         before = ledger.read_bytes()
         stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None, env=dict(SESSION_ENV),
                                   cruise=True, present=False, cwd=env.project, ledger="issue-1")
@@ -1302,6 +1302,8 @@ def since_last_scenarios(mod, script, bad):
         check("--since-last: 書くのは記録の 1 ファイルだけ",
               files(env.project) == sorted(listed + [str(record.relative_to(env.project))]), bad)
 
+        first_updated = json.loads(record.read_text(encoding="utf-8"))["updated"]
+        record.write_text(record.read_text(encoding="utf-8").replace(first_updated, "2000-01-01T00:00:00Z"), encoding="utf-8")
         code, plain_code, out, items = cycle(env)
         check("--since-last 2 回目: 同じ項目を 1 行に縮める",
               f"[前回と同じ] {len(items)} 項目" in out and "[要対処] 通知（agentPushNotifEnabled）" not in out
@@ -1310,7 +1312,7 @@ def since_last_scenarios(mod, script, bad):
         check("--since-last 2 回目: 縮めた要対処の名前を出す",
               f"。{mod.ACTION}: 通知（agentPushNotifEnabled）・通知（inputNeededNotifEnabled）" in out, bad)
         check("--since-last 2 回目: 前回の時刻を出す",
-              f"前回 {json.loads(record.read_text(encoding='utf-8'))['updated']}" in out or "前回 20" in out, bad)
+              "。前回 2000-01-01T00:00:00Z" in out, bad)
         check("--since-last 2 回目: 設定の層も 1 行", "設定の層: 前回と同じ" in out and "設定の層（低 → 高）" not in out, bad)
         check("--since-last: 終了コードは縮めない出力と同じ", code == plain_code == 1, bad)
 
@@ -1351,6 +1353,32 @@ def since_last_scenarios(mod, script, bad):
                 ok = False
             check(f"--since-last: 鍵の欠けた記録では縮めない（{sorted(broken)}・{broken.get('items')}）", ok, bad)
 
+        # 縮めた判定できないの名前・消えた項目は名前で選ぶ（#635 の 2 パス目）
+        prev = {"format": 1, "updated": "2000-01-01T00:00:00Z", "stack": mod.fingerprint("\n".join(mod.stack_lines(stack))),
+                "items": [{"key": mod.item_key(it), "status": it[0], "label": it[1]} for it in items]
+                + [{"key": "gone", "status": mod.HUMAN, "label": "消えた項目"}]}
+        extra = [(mod.UNKNOWN, "判定の項目", "読めなかった", "")]
+        prev["items"].append({"key": mod.item_key(extra[0]), "status": mod.UNKNOWN, "label": "判定の項目"})
+        changed = [(s, l, d + "（変わった）", f) if l == items[0][1] else (s, l, d, f) for s, l, d, f in items] + extra
+        buf = io.StringIO()
+        mod.report(stack, changed, out=buf, previous=prev)
+        text = buf.getvalue()
+        same_line = next((ln for ln in text.splitlines() if ln.startswith("[前回と同じ]")), "")
+        check("--since-last: 縮めた判定できないの名前を出す",
+              f"。{mod.UNKNOWN}: " in same_line and "判定の項目" in same_line.split(f"。{mod.UNKNOWN}: ", 1)[-1], bad)
+        check("--since-last: 消えた項目は名前で選ぶ（中身だけ変わった項目は消えたに出さない）",
+              "[前回から消えた] 1 項目: 消えた項目" in text, bad)
+
+        for broken in ({"format": 1, "stack": "y", "items": []}, {"format": 1, "updated": "x", "stack": "y"},
+                       {"format": 1, "updated": 5, "stack": "y", "items": []}):
+            record.write_text(json.dumps(broken), encoding="utf-8")
+            try:
+                code, plain_code, out, _ = cycle(env)
+                ok = "形が違う" in out
+            except Exception:
+                ok = False
+            check(f"--since-last: updated・items の欠けた記録では縮めない（{sorted(broken)}）", ok, bad)
+
         record.write_text("{ 壊れた", encoding="utf-8")
         code, plain_code, out, _ = cycle(env)
         check("--since-last: 読めない記録では縮めず、読めなかったと言う",
@@ -1378,7 +1406,7 @@ def since_last_scenarios(mod, script, bad):
     # 本番の経路（main）——gather を差し替え、実 HOME を読まない
     with scenario(SCRIPT) as env:
         ledger = cruise_ledger(env, [row(1, "todo")])
-        record = ledger.with_name("cruise-issue-1-env-check.json")
+        record = ledger.with_name("cruise-issue-1.env-check")
         main_mod = load(script)
         main_mod.gather = lambda *a, **k: ([], [(main_mod.ACTION, "x", "y", "")])
         sink = io.StringIO()
@@ -1402,6 +1430,16 @@ def since_last_scenarios(mod, script, bad):
             return None
         check("main: --ledger の無い --since-last は使い方の誤り（2）で、点検に進まない", refused() == 2, bad)
 
+    # 記録の場所が別の台帳と重ならない（台帳 issue-1-env-check を上書きしない。#635 の 2 パス目）
+    with scenario(SCRIPT) as env:
+        cruise_ledger(env, [row(1, "todo")])
+        other = cruise_ledger(env, [row(2, "todo")], name="issue-1-env-check")
+        kept = other.read_bytes()
+        stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None, env=dict(SESSION_ENV),
+                                  cruise=True, present=False, cwd=env.project, ledger="issue-1")
+        mod.since_last(env.project, "issue-1", stack, items)
+        check("記録の場所: 別の台帳（<名前>-env-check）を上書きしない", other.read_bytes() == kept, bad)
+
     # 記録の場所: worktree の中から回しても、メインの作業ツリーの台帳の隣
     with scenario(SCRIPT) as env:
         cruise_ledger(env, [row(1, "todo")])
@@ -1409,8 +1447,8 @@ def since_last_scenarios(mod, script, bad):
         tree = env.project.parent / "wt"
         git(env.project, "worktree", "add", "-q", str(tree))
         check("記録の場所: worktree からでもメインの作業ツリー",
-              mod.record_path(tree, "issue-1") == (env.project / ".claude" / "plans" / "cruise-issue-1-env-check.json").resolve()
-              or mod.record_path(tree, "issue-1") == env.project / ".claude" / "plans" / "cruise-issue-1-env-check.json", bad)
+              mod.record_path(tree, "issue-1") == (env.project / ".claude" / "plans" / "cruise-issue-1.env-check").resolve()
+              or mod.record_path(tree, "issue-1") == env.project / ".claude" / "plans" / "cruise-issue-1.env-check", bad)
 
 
 MUTATIONS = {
@@ -1450,7 +1488,7 @@ MUTATIONS = {
         '    except OSError as exc:\n        return f"{path} に書けなかった: {exc}"\n',
         '    except ZeroDivisionError as exc:\n        return f"{path} に書けなかった: {exc}"\n'),
     "記録を台帳に書く": (
-        '.with_name(f"cruise-{name}-env-check.json")',
+        '.with_name(f"cruise-{name}.env-check")',
         ""),
     "--since-last 無しでも記録する": (
         "    if args.since_last:\n        previous, notes = since_last(",
@@ -1476,6 +1514,24 @@ MUTATIONS = {
     "記録の設定の層の指紋を見ない": (
         ' and isinstance(data.get("stack"), str)\n',
         "\n"),
+    "記録の名前を台帳と同じ拡張子にする": (
+        '.with_name(f"cruise-{name}.env-check")',
+        '.with_name(f"cruise-{name}-env-check.json")'),
+    "縮めた判定できないの名前を出さない": (
+        "                            for s in (ACTION, UNKNOWN) if any(it[0] == s for it in same))",
+        "                            for s in (ACTION,) if any(it[0] == s for it in same))"),
+    "前回の時刻の代わりに今の時刻を出す": (
+        "。前回 {previous['updated']}{named}）",
+        "。前回 {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}{named}）"),
+    "記録の updated の型を見ない": (
+        '            and isinstance(data.get("updated"), str)',
+        "            and True"),
+    "記録の items が list かを見ない": (
+        '            and isinstance(data.get("items"), list)\n',
+        "\n"),
+    "消えた項目を指紋で選ぶ": (
+        '        gone = [i["label"] for i in previous["items"] if i["label"] not in now]',
+        '        gone = [i["label"] for i in previous["items"] if i["key"] not in {item_key(x) for x in items}]'),
     "設定の層を前回と比べずに縮める": (
         '    if previous is not None and fingerprint("\\n".join(stack_lines(stack))) == previous["stack"]:\n',
         "    if previous is not None:\n"),

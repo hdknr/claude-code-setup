@@ -104,8 +104,8 @@ python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py -
 python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --ledger issue-<親> --since-last  # 席を外したあとの再開
 ```
 
-**席を外したあとの再開では `--since-last` を付けます**——前回の点検と同じ項目を 1 行（件数）に縮め、変わった項目だけを全文で出します。
-前回の結果は台帳の隣の `cruise-issue-<親>-env-check.json` に残ります（[#635](https://github.com/hdknr/claude-code-setup/issues/635)）。
+**席を外したあとの再開では `--since-last` を付けます**——前回の点検と同じ項目を 1 行（区分ごとの件数・前回の時刻・要対処と判定できないの項目の名前）に縮め、変わった項目だけを全文で出します。
+前回の結果は台帳の隣の `cruise-issue-<親>.env-check` に残ります（[#635](https://github.com/hdknr/claude-code-setup/issues/635)）。
 `claude -p` で起動した cruise では、通知の設定の 2 項目は「人が見る」の 1 行になります——人を呼ぶ経路は起動した側で用意します。
 
 **cruise は台帳を作ったあと、`--absent` に依らずこれを回して結果を見せます。** 利用者が居ても、権限の拒否や確認で
