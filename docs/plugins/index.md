@@ -583,6 +583,8 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 確定した仕様を dev-loop の入力（Issue）に変える引き渡しを扱うプラグインです。
 設計の背景は記事 [spec-loop プラグインの構成案](https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/)
 にあります。
+5 本のスキルの流れ・正本リポジトリのデータ・Red テストと `--red-check`・dev-loop への引き渡しは
+[spec-loop の流れと Red テスト](spec-loop.md) にまとめています。
 
 !!! note "スキルとデータの決まり"
     スキルは、要求確定のループ **`req-loop`**・仕様レビューのループ **`spec-review`**・
@@ -751,12 +753,9 @@ OpenAPI・型・**Red テスト**（実装が無いと失敗するテスト）�
   未決定の印が残っていれば何も作りません。暫定の回答で反映した Q&A はこの条件では止めません）。中間表現が指す Q&A と仕様のファイルが実在することも見ます。
   **中間表現が暫定の回答の Q&A を指していれば止めます**——利用者が確かめる前の回答を Issue にしないため。
 - **Issue の本文から、受入基準（ケースごとの Red テスト）・Q&A の回答・仕様の原文を辿れます。**
-  本文は中間表現の中のその機能の指紋と Red テストの sha256 を持ち、dev-loop は手元のファイルが Issue の時点と同じかを
-  確かめられます（指紋は機能単位なので、関係の無い機能を直しても登録済みの Issue は不一致になりません）。
+  Red テストが何で、`--red-check` が何を見るかは [spec-loop の流れと Red テスト](spec-loop.md#red-test)、
+  本文が何で Issue の時点を固定し、開発中に見つかった仕様の穴をどう差し戻すかは同じページの[「dev-loop への引き渡し」](spec-loop.md#handoff)にあります。
 - **登録の前に利用者に確かめます。** Issue の登録で止まり、以降は dev-loop が受け持ちます。
-- **開発中に仕様の穴が見つかったら、dev-loop は実装で決めず、Q&A 表に起票して要求側に差し戻します**
-  （規定は dev-loop の
-  [`references/spec-gap.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/spec-gap.md)）。
 
 中間表現と Issue の本文の形は
 [プラグインの `references/spec-ir.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-ir.md)・
