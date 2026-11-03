@@ -10,7 +10,7 @@ cruise `SKILL.md` §4 の 2 は周をサブエージェントに回させると�
 （出所: 利用者の確認（起動時・親 Issue #793 の cruise: の行・2026-11-03T03:56:17Z、配布を見せて確かめた））。台帳は書かない（親が書く）。マージしない。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-793`））。
-版の上げ方: `dev-loop` を **minor**（手順の追加）。main の先端 1.75.3 → **1.76.0**（マージの直前に main が進んでいたら、親が子に取り込みと上げ直しを回す）。
+版の上げ方: `dev-loop` を **minor**（手順の追加）。main の先端 1.75.3 → 1.76.0。PR の後に main が 1.76.0（#814）に進んだので取り込んで **1.77.0**（マージの直前に main が進んでいたら、親が子に取り込みと上げ直しを回す）。
 
 重い検査（`check-all.py`・テスト）は順番待ち越しに走らせる:
 `python3 /Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py -- <コマンド>`。
