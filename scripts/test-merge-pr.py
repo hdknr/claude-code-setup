@@ -25,6 +25,7 @@ from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "merge-pr.py"
+LEDGER = SCRIPT.parent / "ledger.py"  # merge-pr.py が台帳を読むのに読み込む（#631）。変異の隣にも写す
 
 failures: list[str] = []
 
@@ -229,6 +230,22 @@ def started(at):
             {"__typename": "StatusContext", "context": "ci/legacy", "state": "SUCCESS", "startedAt": at}]
 
 
+def ledger(*rows, raw=None):
+    """メインの作業ツリーに cruise の台帳を置く試料（#631）。rows は (番号, 状態, pr, note[, group])。"""
+    def prepare(main, wt):
+        plans = main / ".claude" / "plans"
+        plans.mkdir(parents=True)
+        issues = [{"number": n, "state": st, "deps": [], "pr": pr_, "note": note, "group": (g[0] if g else ""),
+                   "updated": "2026-11-04T00:00:00Z"} for n, st, pr_, note, *g in rows]
+        text = raw if raw is not None else json.dumps({"format": 1, "name": "issue-9", "issues": issues})
+        (plans / "cruise-issue-9.json").write_text(text, encoding="utf-8")
+    return prepare
+
+
+JUDGE = "利用者の判断待ち: 狭いパスの指摘 N1・N2 の採否"
+DECIDED = "利用者の判断（2026-10-29）: V4 はそのままマージしてフォローアップ"
+
+
 def running_then(sha):
     running = [{"__typename": "CheckRun", "name": "check", "status": "IN_PROGRESS", "conclusion": None}]
     return [pr(sha, checks=running), pr(sha)]
@@ -367,6 +384,23 @@ CASES = {
         dict(make_view=lambda s: [pr(s, base="master")], default="master"), 0, True, False),
     "既定ブランチが読めなければマージしない": (dict(make_view=lambda s: [pr(s)], default="FAIL"), 7, False, True),
     "baseRefName が無ければ判定できなかった": (dict(make_view=without("baseRefName")), 7, False, True),
+    # #631: 台帳の判断待ちの行の PR はマージしない（判断は行に閉じる）
+    "台帳の行が判断待ちの PR はマージしない（#631）": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger((7, "pr", "42", JUDGE))), 12, False, True, "利用者の判断を待っている"),
+    "台帳の行が blocked の PR はマージしない（番号は #42 の形）": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger((7, "blocked", "#42", "狭いパスの指摘が残る"))), 12, False, True),
+    "別の行に利用者の判断があっても、判断待ちの行の PR はマージしない（#2427 の形）": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger((5, "pr", "41", DECIDED), (7, "blocked", "42", JUDGE))),
+        12, False, True, "#7（blocked）"),
+    "まとめの行のどれかが判断待ちなら、まとめの PR はマージしない": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger((7, "pr", "42", "", "7"), (9, "pr", "42", JUDGE, "7"))),
+        12, False, True, "#9"),
+    "自分の行に利用者の判断があればマージする（別の行は判断待ち）": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger((7, "pr", "42", DECIDED), (8, "pr", "41", JUDGE))), 0, True, False),
+    "台帳で判断待ちなのが別の PR の行だけならマージする": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger((8, "blocked", "41", JUDGE), (9, "todo", "", ""))), 0, True, False),
+    "台帳が読めなければマージしない（判定できなかった）": (
+        dict(make_view=lambda s: [pr(s)], prepare=ledger(raw="{")), 7, False, True, "台帳"),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
     "draft なら何もしない": (dict(make_view=lambda s: [pr(s, draft=True)]), 2, False, True),
     "gh が失敗したら判定できなかった": (dict(make_view=lambda s: [pr(s)], fail_all=True), 7, False, True),
@@ -428,11 +462,15 @@ MUTATIONS = {
     "撤去をマージの前に置く": (
         '        res = run(["gh", "pr", "merge"',
         '        remove_worktree(wt) if wt and not wt["main"] else None\n        res = run(["gh", "pr", "merge"'),
-    # 守る 18: 閉じるはずの Issue を確かめる
+    # 守る 18: 台帳で利用者の判断を待っている行の PR をマージしない（#631）
+    "台帳の判断待ちを見ない": ('if holds:', 'if False:'),
+    # 守る 19: この PR を持たない行の判断待ちでは止めない
+    "この PR を持たない行も見る": ('if issue.get("pr", "").strip().lstrip("#") != number:', 'if False:'),
+    # 守る 20: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
-    # 守る 19: 判定できなかったことを時間切れと答えない
+    # 守る 21: 判定できなかったことを時間切れと答えない
     "判定できなかったを時間切れと答える": ('        return 7\n', '        return 5\n'),
-    # 守る 20: 7 でも済んでいないことを出す
+    # 守る 22: 7 でも済んでいないことを出す
     "7 で済んでいないことを出さない": ('        for pr_ in problems:\n            print(f"  済んでいないこと',
                                  '        for pr_ in []:\n            print(f"  済んでいないこと'),
 }
@@ -460,6 +498,12 @@ KILLS = {
     "unlock しない": ["UNKNOWN の後に MERGEABLE（ロック済み worktree）"],
     "撤去をマージの前に置く": ["マージが失敗したら worktree を残す",
                        "merge が 0 でも MERGED にならなければ 8・worktree を残す"],
+    "台帳の判断待ちを見ない": ["台帳の行が判断待ちの PR はマージしない（#631）",
+                         "台帳の行が blocked の PR はマージしない（番号は #42 の形）",
+                         "別の行に利用者の判断があっても、判断待ちの行の PR はマージしない（#2427 の形）",
+                         "まとめの行のどれかが判断待ちなら、まとめの PR はマージしない"],
+    "この PR を持たない行も見る": ["自分の行に利用者の判断があればマージする（別の行は判断待ち）",
+                           "台帳で判断待ちなのが別の PR の行だけならマージする"],
     "Issue が閉じたかを見ない": ["Issue が閉じなければ 9"],
     "判定できなかったを時間切れと答える": ["gh が失敗したら判定できなかった",
                             "マージの後に gh が失敗したら判定できなかった（worktree を残す）"],
@@ -508,6 +552,7 @@ def main() -> int:
                 mutant = base / f"mutant{i}" / "merge-pr.py"
                 mutant.parent.mkdir(parents=True)
                 mutant.write_text(source.replace(old, new, 1), encoding="utf-8")
+                (mutant.parent / "ledger.py").write_text(LEDGER.read_text(encoding="utf-8"), encoding="utf-8")
                 targets = KILLS[mname]
                 if not targets:
                     r = run_case(base / f"mutant{i}", "case", mutant, make_view=lambda s: [pr(s)])
