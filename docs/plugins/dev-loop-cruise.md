@@ -33,6 +33,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | まとめの周 | `../cruise/references/grouping.md`・`scripts/ledger.py`（`group`） | 周の途中で足した、同じファイルを触る行を 1 周・1 PR にまとめる（[#641](https://github.com/hdknr/claude-code-setup/issues/641)） |
 | 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
 | 子プロセスの周（任意） | `../cruise/scripts/child-cycle.py`・`../cruise/references/child-process.md` | 周を `claude -p` の子プロセスで回す起動口と要約。親の `/clear` の道連れにならない。**既定はサブエージェントのまま**（[#491](https://github.com/hdknr/claude-code-setup/issues/491)） |
+| 外側のループ（任意） | `../cruise/scripts/outer-loop.py`・`scripts/ledger.py`（`status`・`progress`） | cruise を `claude -p` で起動し直して回すループ。進められる周があり、起動のたびに周が進んでいるあいだだけ起こし直す（[#791](https://github.com/hdknr/claude-code-setup/issues/791)） |
 | 順番待ちと並行の周 | `../cruise/scripts/run-serial.py`・`../cruise/references/parallel.md` | 周の重い検査・アプリの起動を、同じリポジトリでは順番待ちにする（既定は 1 本ずつ）。単独で回す周と、版をマージの直前に上げ直す決まりも（[#493](https://github.com/hdknr/claude-code-setup/issues/493)・[#531](https://github.com/hdknr/claude-code-setup/issues/531)） |
 
 **スキルの base ディレクトリ**は、プラグインで入れていれば
@@ -308,6 +309,31 @@ Claude Code が終わって消えた待ちがあります。一方で、張っ�
   数えた日（2026-10-27）の手元の user の settings に `autoContinueAtUsageLimit` はありませんでしたが、
   それぞれの停止の時点の値は分かりません。数え方と、数えないものはスクリプトの docstring を正とします
 - 上限を狙って起こす手段が無いので、**user の層に `true` を明示したうえで自動継続した例は、まだ取れていません**（#454）
+
+### 外から繰り返し起動するとき（外側のループ） { #outer-loop }
+
+cruise を対話のセッションではなく、外側のループから `claude -p "/dev-loop:cruise <親> --absent"` で起動し直して回すなら、
+**ループを手で書かずに同梱の `outer-loop.py` を使ってください**（[#791](https://github.com/hdknr/claude-code-setup/issues/791)）。
+手で書いたループが前進を台帳のファイルのハッシュで見ると、親が `note` を書き直すだけの起動でも更新時刻（`updated`）が変わって「前進あり」になり、
+「前進なしで止める」が効きません——spec-loop の自動運転では、止まったことを見落としたループが `claude -p` を約 1,900 回起こし直しました（[#790](https://github.com/hdknr/claude-code-setup/issues/790)）。
+
+```bash
+cd <メインの作業ツリー>
+python3 <スキルの base ディレクトリ>/../cruise/scripts/outer-loop.py 50 --absent -- --permission-mode auto
+```
+
+- **起動の前に毎回 `ledger.py status issue-<親>` を見て、0（進められる周がある）のときだけ起こします。** 3（人を待つ周だけ）・5（親 Issue の一覧の行がすべて済んだ）・
+  4（判定できなかった）では起こさずに止まります。
+- **1 回の起動で周が進んだかは `ledger.py progress issue-<親>`**（行ごとの番号・状態・PR・まとめ。更新時刻と `note` を含みません）**を前後で比べます。**
+  変わらない起動が続けて 2 回（`--max-stalls`）で止まります。
+- **起動の総数の上限**（`--max-launches`。既定 20）と、**`claude` が 0 以外で終わったとき**も止まります。
+- **止まると理由を出力の最後の行に出し、macOS なら通知します**（`osascript`。通知が見えるかは macOS の通知の設定によります）。終了コードで理由を分けます。
+- 起こす `claude` には、非対話の起動の決まり（権限に拒まれたら周を利用者の操作待ちにして次へ進む・進められる周が無いなら台帳を書き換えずに終える）を
+  `--append-system-prompt` で渡し、`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置きます（`-p` がターンの後の背景のタスクを 10 分で止めないように。[#633](https://github.com/hdknr/claude-code-setup/issues/633)）。
+  **親がその決まりに実際に従うかは、本物の `claude -p` で確かめていません。**
+- 許可モード・モデルなどは `--` の後ろに足します（上の「2. 環境を点検する」で決めたもの）。`claude` 以外のコマンドで起こすなら `--claude` で名指しします。
+
+止まる条件・終了コード・守らないものはスクリプトの docstring を正とします。
 
 ## 6. 戻ってきたら見るもの
 

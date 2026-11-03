@@ -10,6 +10,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
     python3 <…>/ledger.py show <名前>
     python3 <…>/ledger.py next <名前>
     python3 <…>/ledger.py status <名前>
+    python3 <…>/ledger.py progress <名前>
     python3 <…>/ledger.py path <名前>
 
 **いつ使い、いつ書き換え、どう再開するかは `references/ledger.md` を正とする**
@@ -129,6 +130,14 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 
 1 行目に判定と、その理由になった番号を出す。**台帳の値だけで決める**——実物（PR・worktree）は見ない（下の「守らない」）。
 
+### `progress` が出すもの（#791）
+
+**外側のループが「1 回の起動で周が進んだか」を比べるための要約である**——行ごとに 1 行、番号の順に
+`#<番号> state=<状態> pr=<PR> group=<まとめ>`（空は `-`）。**出すのは `PROGRESS_KEYS` の欄だけ**で、`updated`・`note`・`agent`・`decisions` などと
+`lines`・`user_ops` は出さない——親が「確かめたが変わらず」と `note` を書き直すだけの起動でも `set` は `updated` を書き換えるので、
+ファイルのまま比べると前進に見える（#790 の空回りと同じ形）。行が増えた・減ったことは出力に出る。台帳は変えない。
+外側のループの止め方は cruise の `../cruise/scripts/outer-loop.py` の docstring を正とする（このスキルの base ディレクトリからの相対）。
+
 ## 何を守り、何を守らないか
 
 守る:
@@ -139,6 +148,8 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`status` は、進行中の行（判断待ちの印のある行を除く）か落ちたのに `merged` の行があれば、親 Issue の一覧の行の状態に依らず 0 を返す**（#632）——§6 は始めた行を閉じてから判定する。
   判断待ちの印のある行で 0 と答えると、人を待つ PR だけが残った台帳で外側のループが回すもの無しの起動を繰り返す（#2427 と同じ形）。
   「済んだ」（5）・「人待ち」（3）と答えると、外側のループが閉じていない周を置いて終える。
+- **`progress` は行の番号と `PROGRESS_KEYS`（`state`・`pr`・`group`）だけを出す**（#791）——`updated`・`note` を混ぜると、親が同じ `note` を書き直すだけの起動を
+  外側のループが前進と読み、「前進なしで止める」が効かない（#790 と同じ形）。
 - **`status` は、周の途中で足した行（`origin` のある行）だけが着手できても 0 と言わない**（#632）——§6 はそれを始めずに終えるので、0 と答えると
   外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える——`merged`・`dropped` の行の先は辿らない。
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
@@ -282,6 +293,8 @@ GOING = ("impl", "gate", "pr")
 # 進行中のまま利用者の判断を待つ行の note の書き出し（cruise SKILL.md §4-4）。全角のコロンも印と読む——
 # check-unattended-env.py の JUDGE_MARKS と同じ 2 つ
 JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")
+# `progress` が出す欄（#791）。前進と読む値だけ——`updated`・`note` ほかは出さない（docstring の「`progress` が出すもの」）
+PROGRESS_KEYS = ("state", "pr", "group")
 
 
 class Refused(Exception):
@@ -804,10 +817,16 @@ def cmd_status(path):
     return code
 
 
+def cmd_progress(path):
+    data = load(path)
+    for issue in sorted(data["issues"], key=lambda i: i["number"]):
+        print(f"#{issue['number']} " + " ".join(f"{k}={issue.get(k, '') or '-'}" for k in PROGRESS_KEYS))
+
+
 def build_parser():
     p = argparse.ArgumentParser(description="複数 Issue の台帳（依存グラフと状態）")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("init", "show", "next", "status", "path"):
+    for name in ("init", "show", "next", "status", "progress", "path"):
         sub.add_parser(name).add_argument("name")
     a = sub.add_parser("add")
     a.add_argument("name")
@@ -859,6 +878,8 @@ def main(argv=None, cwd=None):
             cmd_next(path)
         elif args.cmd == "status":
             return cmd_status(path)
+        elif args.cmd == "progress":
+            cmd_progress(path)
         elif args.cmd == "path":
             print(path)
     except Usage as exc:
