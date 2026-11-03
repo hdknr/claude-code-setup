@@ -985,6 +985,17 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         check("到達(#474): まとめの行が止まる周を並べる",
               "止まる: #375, #376, #465, #442, #286, #276, #291, #441, #484, #489" in at(items, "到達できる範囲")[1], bad)
 
+    # #634: 実機確認待ち（merged_unverified）は到達に出さず、依存先として済んだと読む
+    with scenario(script) as env:
+        env.all_good()
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        cruise_ledger(env, [row(1, "merged_unverified", note="実機確認待ち（Refs）"), row(2, "todo", deps=[1])])
+        fake_gh(env, {})
+        items = run_reach(mod, env)
+        check("到達: 実機確認待ちの行は出さない", at(items, "到達 #1")[0] is None, bad)
+        check("到達: 実機確認待ちに依存する周は着手できる",
+              at(items, "到達 #2")[0] == mod.GOOD and "着手できる" in at(items, "到達 #2")[1], bad)
+
     # 偽陽性が無い（#490 の受入基準 2）: マージの線が効き、衝突・判断待ちが無ければ止まる要因を出さない
     with scenario(script) as env:
         env.all_good()
@@ -1581,8 +1592,8 @@ MUTATIONS = {
         '                    if not (issue.get("group") and rows[d].get("group") == issue["group"])]\n',
         '                    if True]\n'),
     "到達: 取り残された行を済んだと読む": (
-        '        elif issue["state"] == "merged" and not lg.is_stranded(issue):\n',
-        '        elif issue["state"] == "merged":\n'),
+        '        elif issue["state"] in lg.MERGED and not lg.is_stranded(issue):\n',
+        '        elif issue["state"] in lg.MERGED:\n'),
     "到達: 止まる元を名指ししない": (
         'memo[number] = (worst, f"{lead}——依存先 #{d}（元: #{root} {why}）" if root != d',
         'memo[number] = (worst, f"{lead}——依存先 #{d}（{why}）" if root != d'),
