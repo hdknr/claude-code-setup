@@ -117,10 +117,13 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **付け替えの後に回る型（`edited`）の検査だけで緑になっていても止まる**——どの base と比べた検査かは見ない。
 - **台帳の `note` を書き換えれば 12 を通る**——利用者がその行について判断したかは見られない（書き換えてよいときは
   `references/absent-lines.md` の「`マージ = 関門を通ればマージ`」を正とする）。**台帳の外にだけ書いた判断待ち**（PR コメント・計画ファイル）も見ない。
-- **`await`（利用者の操作待ち）の行は見ない**——操作待ちの周では、親が `merge-pr.py` を呼ばない（cruise の `SKILL.md` §4 の 5）。
+- **`await`（利用者の操作待ち）の状態だけでは止めない**——操作待ちの周では、親が `merge-pr.py` を呼ばない（cruise の `SKILL.md` §4 の 5）。
+  **`note` が判断待ちの印で始まれば、状態に依らず止める**（`ledger.py` の `judging()` は進行中の行だけを数えるので、`await` の行では食い違う）。
 - **読めない台帳が 1 つでもあると、その台帳に無い PR も 7 で止まる**——読めない台帳にその PR があるかを決められないので、通過と読まない。
 - **台帳は呼んだ cwd のリポジトリのメインの作業ツリーの `.claude/plans/` だけを見る**——`ledger.py` が台帳を置く場所である。
-  **メインの作業ツリーを決められないリポジトリ**（bare リポジトリの worktree など）は**台帳なし**と読む——`ledger.py` もそこには台帳を置けない。
+  **bare リポジトリ（の worktree）は台帳なし**と読む——メインの作業ツリーが無く、`ledger.py` もそこには台帳を置けない。
+  **ほかの理由でメインの作業ツリーを決められないとき**（`--separate-git-dir` のリポジトリの worktree・git が使えない）は 7——台帳が在るかを決められない。
+- **隣に `ledger.py` が無い置き方では、台帳の無いリポジトリでも 7 で止まる**——プラグインは 2 つを同じ場所に置く。
 - **`pr` を `PR #42`・URL の形で書いた行には当たらない**——cruise の台帳は番号の形で書く。
 - **最後に読んでから `gh pr merge` までの間の付け替えは見ない**——`--match-head-commit` は head しか固定しない。
 """
@@ -503,10 +506,12 @@ def ledger_holds(number: str) -> list[str]:
     try:
         try:
             main = mod.main_worktree()
-        except mod.Unknown:
-            return []  # メインの作業ツリーが無い形には、ledger.py も台帳を置けない
+        except mod.Unknown as e:
+            if str(e).startswith("bare リポジトリ"):
+                return []  # bare にはメインの作業ツリーが無く、ledger.py も台帳を置けない
+            raise
         plans = main / ".claude" / "plans"
-        if not plans.exists():
+        if not mod.exists(plans):  # Path.exists は 3.14 で権限の誤りを「無い」と答える（ledger.py の exists）
             return []
         names = sorted(n for n in os.listdir(plans) if n.startswith("cruise-") and n.endswith(".json"))
         for ledger in (plans / n for n in names):

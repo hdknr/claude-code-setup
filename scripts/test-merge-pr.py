@@ -181,6 +181,8 @@ def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after
     res = subprocess.run([sys.executable, str(script), number, "--interval", "0.05",
                           "--timeout", timeout, "--settle", "0.5"],
                          cwd=str(wt if cwd_in_wt else main), env=env, capture_output=True, text=True)
+    if prepare and hasattr(prepare, "after"):
+        prepare.after(main)
     calls = [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
     merges = [c for c in calls if c[:2] == ["pr", "merge"]]
     return {"rc": res.returncode, "out": res.stdout + res.stderr, "calls": calls, "merges": merges,
@@ -251,6 +253,17 @@ def locked(prepare):
     def run_(main, wt):
         prepare(main, wt)
         (main / ".claude" / "plans").chmod(0)
+    return run_
+
+
+def locked_claude(prepare):
+    """`.claude` ごと読めなくする——Python 3.14 の Path.exists は、これを「無い」と答える（#631 の 2 パス目）。"""
+    def run_(main, wt):
+        # worktree は .claude の下にあるので、先に撤去する（読めない worktree の点検で先に止まらないように）
+        git(main, "worktree", "remove", str(wt))
+        prepare(main, wt)
+        (main / ".claude").chmod(0)
+    run_.after = lambda main: (main / ".claude").chmod(0o755)  # 走らせた後に戻す（worktree はこの下にある）
     return run_
 
 
@@ -426,6 +439,9 @@ CASES = {
         dict(make_view=lambda s: [pr(s, state="MERGED")], prepare=ledger((7, "blocked", "42", JUDGE))), 2, False, True),
     "台帳の場所が読めなければマージしない（判定できなかった）": (
         dict(make_view=lambda s: [pr(s)], prepare=locked(ledger((8, "todo", "", "")))), 7, False, True, "台帳"),
+    "`.claude` が読めなければマージしない（判定できなかった）": (
+        dict(make_view=lambda s: [pr(s)], prepare=locked_claude(ledger((7, "blocked", "42", JUDGE))), lock=False),
+        7, False, False, "台帳"),
     "台帳が読めなければマージしない（判定できなかった）": (
         dict(make_view=lambda s: [pr(s)], prepare=ledger(raw="{")), 7, False, True, "台帳"),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
