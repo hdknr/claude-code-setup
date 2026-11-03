@@ -76,6 +76,8 @@ main へのマージでプラグインの配布（dev-loop 1.76.0）と公開サ
 - 関門 1 パス目: Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 0 件（弱い点 2）。`/code-review`（high）指摘 9 件。1 パス目の指摘対応の起点 `2b16c637`（関門に渡す時点の HEAD）。
   差し戻し: 直す 3 件（下の表）。`check-all.py`（順番待ち越し）: 58 本中 `check-plan-counts.py` だけ落ちた（件数の行が無い）→ 行を足した
 - 関門 2 パス目: Verifier（sonnet）反証 0 件。`/code-review`（high）指摘 8 件。狭いパスの起点 `d2a32cbc`（2 パス目の指摘対応を始める直前の HEAD。間の `8c64fe25` は計画ファイルだけ）・終点 `624ceccc`
+- 狭いパス: Verifier（sonnet）反証 0 件・素通りした変異 0 件（R2-1 を `updated` の書き直しの試料で独立に当てた。3・4・5 の分岐と `claude` の失敗は狭いパスでは実走していない）
+- `check-all.py`（順番待ち越し）: 2 回目は 58 本中 `check-mutation-claims.py` が「当てられなかった 1」（`test-worktree-scripts.py:585`。この周は触っていない）——走っている途中で作業ツリーを編集してコミットしていた（交絡）。編集を止めて回した 3 回目（`624ceccc` の後の計画ファイルだけのコミットの上）は 58/58 緑
 - 割り目（2 パス目の前）: 割らない（不在の cruise）。残っているもの: 手順 5 の当て直しと `/code-review` 2 パス目の両方
 - 交絡を潰した手順: A4 は公開ページのコードブロックを文字列のまま抜き出して走らせた（写しではない）。陽性対照は S1（todo が残る→0 が続き、上限 20 回まで回る）、陰性は S2〜S4（5・4・3 で 1 回で止まる）。偽の `claude` が受けた `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` は 0 だった。台帳は本物の `ledger.py` で作った。観測窓: 4 つの台帳の状態だけ（`pr`・`blocked`・判断待ちの印は回していない——`status` の判定そのものは `test-ledger.py` が見る）
 
