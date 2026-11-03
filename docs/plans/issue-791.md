@@ -86,7 +86,7 @@ main へのマージでプラグインの配布（dev-loop 1.77.0）と公開サ
 - **周の在り処**: ブランチ `issue/791-cruise-outer-loop`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-791`・
   起点 `5235146c`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `5235146c49b8fae6d38ef2f2ddd82031ebd2e767`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
-- 関門 1 パス目: 未
+- 関門 1 パス目: 起動（Verifier: sonnet・`dev-loop:dev-loop-verifier`／`/code-review` high）。1 パス目の指摘対応の起点 `41cbbad1`（関門に渡す時点の HEAD）。`test-outer-loop.py`（順番待ち越し）35 ok・FAIL 0・変異 12/12
 - 交絡を潰した手順: 未
 - 事故の記録: 2026-11-03 に著者が worktree で誤って素の `git stash -q` を走らせ、未コミットの変更を退避した。直後に `git stash pop stash@{0}`（`WIP on issue/791-cruise-outer-loop` であることを確かめて）で戻した。そのとき順番待ちのテストはまだ始まっておらず（run-serial のログが「待っている」）、結果には効いていない
 
