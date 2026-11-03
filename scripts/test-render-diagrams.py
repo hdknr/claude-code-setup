@@ -37,6 +37,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -97,6 +98,8 @@ if behaviour == "orphan":
     subprocess.Popen([sys.executable, "-c", "import sys, time; time.sleep(7); open(sys.argv[1], 'w').write('late')", out],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(5); write(GOOD); sys.exit(0)
+if behaviour == "slow":
+    time.sleep(3); write(GOOD); sys.exit(0)
 if behaviour == "hang":
     time.sleep(5); write(GOOD); sys.exit(0)
 raise SystemExit("unknown behaviour: " + behaviour)
@@ -157,7 +160,7 @@ def fake_exe(root: Path, name: str) -> Path:
 
 def run(script: Path, root: Path, *args: str, behaviour: str = "success", drawio: str | None = "fake",
         default: str | None = None, path_dirs: list[Path] | None = None, timeout: str = "60",
-        target: Path | None = None) -> Run:
+        target: Path | None = None, hup_after: float | None = None, pre: str | None = None) -> Run:
     """偽の正本リポジトリで本体を走らせる。
 
     drawio: "fake" なら偽の CLI を指す。None なら `DRAWIO` を外す。ほかは文字列のまま渡す。
@@ -184,8 +187,22 @@ def run(script: Path, root: Path, *args: str, behaviour: str = "success", drawio
     target = root if target is None else target
     assert REAL_REPO not in target.resolve().parents and target.resolve() != REAL_REPO, "このリポジトリを対象にしている"
     before = snapshot(root)
-    proc = subprocess.run([sys.executable, "-I", str(script), str(target), *args], cwd=root,
-                          capture_output=True, text=True, env=env, timeout=120)
+    argv = [sys.executable, "-I", str(script), str(target), *args]
+    if pre is not None:
+        # 本体を走らせる前に環境を変える（例: `del os.killpg` でプロセスグループの無い OS を作る）
+        argv = [sys.executable, "-I", "-c",
+                f"import os, sys, runpy; {pre}; sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')",
+                str(script), str(target), *args]
+    if hup_after is None:
+        proc = subprocess.run(argv, cwd=root, capture_output=True, text=True, env=env, timeout=120)
+    else:
+        # 端末を閉じたときの形: 本体のプロセスグループに SIGHUP を送る
+        child = subprocess.Popen(argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+                                 start_new_session=True)
+        time.sleep(hup_after)
+        os.killpg(child.pid, signal.SIGHUP)
+        out, err = child.communicate(timeout=120)
+        proc = subprocess.CompletedProcess(argv, child.returncode, out, err)
     log = []
     if log_path.is_file():
         log = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -443,6 +460,34 @@ def case_orphan(script: Path, tmp: Path) -> list[str]:
     return p
 
 
+def case_hangup(script: Path, tmp: Path) -> list[str]:
+    """A3・A10: 書き出しの途中で本体が SIGHUP（端末を閉じた）で止められても、CLI が後から一時ファイルを置かない。"""
+    root = make_repo(tmp, {"docs/v1/a.drawio": "<mxfile/>\n", "docs/v1/a.svg": PREVIOUS})
+    started = time.time()
+    r = run(script, root, behaviour="slow", hup_after=1.5)
+    p = []
+    if r.code == 0:
+        p.append("SIGHUP で止めたのに 0 で終わった（試料が働いていない）")
+    time.sleep(max(0.0, 6 - (time.time() - started)))
+    after = snapshot(root)
+    late = [k for k in after if Path(k).name.startswith(".") and k.endswith(".svg")]
+    if late:
+        p.append(f"止められたあとで CLI が書いた: {late}")
+    if after.get("docs/v1/a.svg") != PREVIOUS:
+        p.append("前の svg が変わった")
+    return p
+
+
+def case_no_killpg(script: Path, tmp: Path) -> list[str]:
+    """A1: プロセスグループの無い OS（`os.killpg` が無い。Windows）でも書き出せる。"""
+    root = make_repo(tmp, {"docs/a.drawio": "<mxfile/>\n"})
+    r = run(script, root, pre="del os.killpg")
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-200:]}"]
+    if "docs/a.svg" not in r.after:
+        p.append("書き出さない")
+    return p
+
+
 def case_upper_suffix(script: Path, tmp: Path) -> list[str]:
     """A1・A6: 拡張子の大文字小文字を区別しない（`build-proposal.py` と同じ）。"""
     root = make_repo(tmp, {"docs/v1/spec/Arch.DRAWIO": "<mxfile/>\n"})
@@ -475,6 +520,15 @@ def check_case(files: dict[str, bytes | str], expect: list[str]) -> Callable[[Pa
     return case
 
 
+def check_case_absent(files: dict[str, bytes | str], absent: str) -> Callable[[Path, Path], list[str]]:
+    def case(script: Path, tmp: Path) -> list[str]:
+        """A4: `--check` が {absent!r} と言わない（ファイルシステムが大文字小文字を区別するかに依らない部分だけを見る）。"""
+        root = make_repo(tmp, files)
+        r = run(script, root, "--check")
+        return [f"{absent!r} と言った: {r.stderr[-300:]}"] if absent in r.stderr else []
+    return case
+
+
 def marked(source: str, body: bytes = b'<svg xmlns="http://www.w3.org/2000/svg"/>\n') -> bytes:
     return b"<!-- spec-loop-diagram-source: sha256=" + sha(source.encode("utf-8")).encode() + b" -->\n" + body
 
@@ -498,6 +552,10 @@ CASES: dict[str, Callable[[Path, Path], list[str]]] = {
     "時間切れ": failing("hang", "時間切れ", timeout="1"),
     "時間切れのあとで孫が書かない": case_orphan,
     "大文字の拡張子": case_upper_suffix,
+    "SIGHUP で止められても CLI が後から書かない": case_hangup,
+    "killpg の無い OS": case_no_killpg,
+    "--check: 大文字小文字だけ違う書き出しはソースが無いと言わない": check_case_absent(
+        {"docs/Arch.drawio": "<mxfile/>\n", "docs/ARCH.svg": marked("<mxfile/>\n")}, "ソースが無い"),
     "1 件の失敗で止まらない": case_partial_failure,
     ".drawio が 0 件": case_no_sources,
     "docs が無い": case_no_docs,
@@ -543,6 +601,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("DRAWIO が空を名指ししない", '            return None, "DRAWIO が空"', '            command = ["true"]', "DRAWIO が空"),
     ("プロセスグループを止めない", "        os.killpg(proc.pid, signal.SIGKILL)", "        pass", "時間切れのあとで孫が書かない"),
     ("拡張子の大文字小文字を区別する", '            if name.lower().endswith(".drawio"):', '            if name.endswith(".drawio"):', "大文字の拡張子"),
+    ("SIGHUP を受けない", '    for name in ("SIGTERM", "SIGHUP"):', '    for name in ():', "SIGHUP で止められても CLI が後から書かない"),
+    ("killpg の無い OS を見ない", '        if hasattr(os, "killpg"):', "        if True:", "killpg の無い OS"),
+    ("孤立の判定で大文字小文字を区別する", "        if str(svg).lower() in exported:", "        if str(svg) in exported:",
+     "--check: 大文字小文字だけ違う書き出しはソースが無いと言わない"),
     ("1 件の失敗で止まる", "            failed.append(rel(source, root))", "            failed.append(rel(source, root)); break",
      "1 件の失敗で止まらない"),
 ]

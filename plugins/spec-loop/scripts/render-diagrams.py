@@ -40,7 +40,7 @@ draw.io の CLI は次の順に探す:
 | `docs/` の下の `.drawio` を全部、隣の同じ名前の `.svg` に書き出す | **書き出すのは各 `.drawio` の 1 ページ目だけ**（draw.io の CLI の既定）。複数ページの図の 2 ページ目から先は書き出さない |
 | 失敗したファイルの前の `.svg` を変えず、書きかけを残さない | **印だけ手で書き換えて書き出さない形は見えない**（印はソースの指紋を書き出しの中に持つだけ。このリポジトリの `check-diagram-freshness.py` と同じ原理的な限界） |
 | `--check` は draw.io を起動せず、何も書かない | **確かめたのは macOS の draw.io だけ**（Linux・Windows の CLI は確かめていない。`DRAWIO` で差し替えて、書き出しを目で確かめる） |
-| 書くのは `.drawio` の隣の `.svg` と、同じ場所の一時ファイル（成否に依らず消す）だけ。CLI は自分のプロセスグループで起こし、終わったら（時間切れでも）グループごと止める——前置き（`xvfb-run`）の孫が後から書かない。拡張子の大文字小文字は区別しない（`build-proposal.py` と同じ） | **見た目の品質**（利用者・決裁者に見せられる図か）。ブラウザで開いて目で見る |
+| 書くのは `.drawio` の隣の `.svg` と、同じ場所の一時ファイル（成否に依らず消す）だけ。CLI は自分のプロセスグループで起こし、終わったら（時間切れでも、このスクリプトが SIGTERM・SIGHUP で止められても）グループごと止める——前置き（`xvfb-run`）の孫が後から書かない（SIGKILL で止められたときは後始末できない）。拡張子の大文字小文字は区別しない（`build-proposal.py` と同じ） | **見た目の品質**（利用者・決裁者に見せられる図か）。ブラウザで開いて目で見る |
 | 印はソースのバイトだけで決まる | `X.svg` が symlink のときの扱い（`os.replace` はリンクを置き換える）・`docs/` の外の図・symlink のディレクトリの中（辿らない） |
 """
 
@@ -151,7 +151,10 @@ def drawio_command() -> tuple[list[str] | None, str]:
 def kill_group(proc: subprocess.Popen[str]) -> None:
     """CLI のプロセスグループに残ったもの（前置きの孫など）を止める。もう無ければ何もしない。"""
     try:
-        os.killpg(proc.pid, signal.SIGKILL)
+        if hasattr(os, "killpg"):
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:  # プロセスグループの無い OS（Windows）では CLI だけを止める
+            proc.kill()
     except (ProcessLookupError, PermissionError):
         pass
 
@@ -238,9 +241,10 @@ def check(docs: Path, root: Path, sources: list[Path]) -> int:
             problems.append(f"{rel(out, root)}: 印が無い（render-diagrams.py で書き出していない）")
         elif got != source_digest(data):
             problems.append(f"{rel(out, root)}: 古い（ソース {rel(source, root)} を直したあと書き出していない）")
-    exported = {output_of(source) for source in sources}
+    # 大文字小文字だけ違う名前も、ソースの書き出しとして数える（区別しないファイルシステムでは同じファイル）
+    exported = {str(output_of(source)).lower() for source in sources}
     for svg in find_svgs(docs):
-        if svg in exported:
+        if str(svg).lower() in exported:
             continue
         try:
             got = marked_digest(svg.read_bytes())
@@ -255,6 +259,14 @@ def check(docs: Path, root: Path, sources: list[Path]) -> int:
         return 1
     print(f"{len(sources)} 件の書き出しは今のソースのもの")
     return 0
+
+
+def stop_on_signal(signum: int, _frame: object) -> None:
+    """SIGTERM・SIGHUP で止められたら、例外にして後始末（CLI のグループを止め、一時ファイルを消す）を走らせる。
+
+    CLI は自分のプロセスグループにいるので、端末を閉じたときの SIGHUP やグループへの SIGTERM は CLI に届かない。
+    後始末を走らせずに止まると、生き残った CLI が後から一時ファイルを置く。"""
+    raise SystemExit(128 + signum)
 
 
 def main(argv: list[str]) -> int:
@@ -310,6 +322,9 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    for name in ("SIGTERM", "SIGHUP"):
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), stop_on_signal)
     try:
         sys.exit(main(sys.argv[1:]))
     except Exception as e:  # 想定外の例外も 2（トレースバックの 1 に化けさせない）
