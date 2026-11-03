@@ -24,13 +24,12 @@ flowchart LR
     FE -->|予算の合意のタグ（人間）| PR
     SR -->|抜けた仕様| SC["scaffold<br/>dev-loop への引き渡し"]
     SC -->|Issue 1 機能 = 1 件| DL["dev-loop"]
-    DL -.->|仕様の穴を起票元「開発」で起票| RL
+    DL -.->|仕様の穴（利用者に見える）を共有の表に起票| RL
+    DL -.->|仕様の穴（内部の値だけ）を内部の表に起票| SR
 ```
 
-実線は次に渡すもの、点線は **Q&A 表への起票による差し戻し**です。利用者に見える結果が選択肢で変わる質問は共有の Q&A 表に起票し、どこから来ても `req-loop` のレビュー会で利用者に答えてもらいます。
-費用・運用・内部の値だけが変わる選択は内部の Q&A 表に記録し、利用者には見せず開発者が決めます（費用は予算責任者へ。線は
-[`spec-scope.md` の「振り分けの区分」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-scope.md)・
-[`qa-csv.md` の「層」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/qa-csv.md)を正とします）。
+実線は次に渡すもの、点線は **Q&A 表への起票による差し戻し**です。共有の Q&A 表の質問は `req-loop` のレビュー会で利用者に答えてもらい、
+内部の Q&A 表の行は開発者が決めて `spec-review` が仕様に反映します（2 つの層の説明は [プラグイン一覧の `req-loop` の節](index.md#spec-loop)）。
 
 | スキル | 何を読んで何を書くか | 何を待って止まるか | 次に渡すもの |
 | --- | --- | --- | --- |
@@ -38,7 +37,7 @@ flowchart LR
 | `spec-review` | 要求から開発者向けの仕様を書き下し、3 つの判定役にレビューさせて指摘を振り分ける | 抜ける条件の判定を報告して止まる。**利用者の判断が要る指摘は起票して回答待ち** | 抜けた仕様（`scaffold` の入力） |
 | `feasibility` | 要求から規模を数え、見積りとスケジュール・ガントチャートを作り、費用付きの質問を起票する | **予算責任者の合意待ち**（費用付きの質問は回答待ち） | 見積りとスケジュール。合意したら予算責任者が予算の合意のタグを付ける |
 | `proposal` | 2 つのサインオフのタグが同じ中身を見ていたかを照合し、一致したときだけ提案書と仕様書を作る | **決裁者の承認待ち**（照合が通らなければ、どちらの承認を取り直すかを示して止まる） | 提案書 |
-| `scaffold` | 仕様を中間表現に書き起こし、スクリプトで OpenAPI・型・Red テスト・Issue の本文を作る | **Issue の登録の前に利用者に確かめ**、登録で止まる | Issue（以降は dev-loop） |
+| `scaffold` | 仕様を中間表現に書き起こし、スクリプトで OpenAPI・型・Red テスト・Issue の本文を作る | **Issue の登録の前に利用者に確かめ**、登録で止まる（commit の決まりが無ければ、その前に変更したファイルを示して止まり、push されるまで登録しない） | Issue（以降は dev-loop） |
 
 - **タグはどのスキルも付けません。** 要求確定・予算の合意・リリース（凍結）のタグは人間が付けます
   （命名と照合は [`signoff-tags.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/signoff-tags.md)、
@@ -50,14 +49,16 @@ flowchart LR
 ## 正本リポジトリのデータ { #data }
 
 spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（正本）** に置き、版ごとのディレクトリ `docs/v<n>/` で持ちます
-（v2 以降は前の版からの差分だけ。スクリプトが重ね合わせて全体を作ります）。
+（版の要点は [プラグイン一覧の「正本リポジトリの版と凍結」](index.md#spec-loop-versions)）。
 どこに何を置くかは [`tree.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/tree.md)、
 版の決まりは [`versions.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/versions.md) を正とします。
 
+表は**主な**書き手と読み手で、全部ではありません（全部は各スキルの `SKILL.md` と dev-loop の `spec-gap.md`）。
+
 | データ | 書く | 読む | 決まりの原本 |
 | --- | --- | --- | --- |
-| 共有の Q&A 表（`shared/qa.csv`） | 起票: `req-loop`・`spec-review`・`feasibility`・dev-loop（仕様の穴）。回答: 利用者 | `req-loop`（資料）・`spec-review`・`proposal`（暫定の回答の照合）・`scaffold`（関門と Issue の本文） | [`qa-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/qa-csv.md) |
-| 内部の Q&A 表（`spec/qa-dev.csv`） | `spec-review`・`feasibility`・dev-loop（仕様の穴）。開発者が決めて記録する | `spec-review`・`scaffold`（抜ける条件 1 は共有と内部の両方の表を見る）・`feasibility`（費用の行を見積りに拾う） | 同上の「層」 |
+| 共有の Q&A 表（`shared/qa.csv`） | 起票: `req-loop`・`spec-review`・`feasibility`・dev-loop（仕様の穴）。回答: 利用者。反映先と状態: 反映したスキル | `req-loop`（資料）・`spec-review`・`feasibility`・`proposal`（暫定の回答の照合）・`scaffold`（関門と Issue の本文）・dev-loop（回答の正） | [`qa-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/qa-csv.md) |
+| 内部の Q&A 表（`spec/qa-dev.csv`） | `spec-review`・`feasibility`・dev-loop（仕様の穴）。開発者が決めて記録する | `spec-review`・`scaffold`（抜ける条件 1 は共有と内部の両方の表を見る）・`feasibility`（費用の行を見積りに拾う）・dev-loop（回答の正） | 同上の「層」 |
 | 要求と決定表（`requirements/`・`shared/decision_table.csv`） | `req-loop`（回答の反映） | `spec-review`（書き下す元）・`feasibility`（規模を数える）・`proposal`（提案書と仕様書） | `tree.md` |
 | 仕様（`spec/`） | `spec-review` | `scaffold`（中間表現に書き起こす）・`feasibility`（数え方を確かめる）・`proposal`（仕様書） | [`spec-exit.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-exit.md)・[`spec-scope.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-scope.md) |
 | スケジュールと見積り（`feasibility/schedule.csv`・`estimate.csv`） | `feasibility` | `proposal` | [`feasibility-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/feasibility-csv.md) |
@@ -88,11 +89,12 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
 `scaffold.py --red-check` は、置いてある `scaffold/` が今の中間表現から作るものと同じ（新しい）ことを確かめてから、
 Red テストを正本リポジトリの根で走らせ、**いまの実装に対して Red テストが期待どおりの赤・緑になっているか**を見ます。
 
-- **実装が無いとき**: 期待が全部失敗のとき（v1 か、足した機能だけの版）に限って判定でき、全部が失敗するのが期待どおりです。
-  それ以外の版で実装が無ければ、回帰を判定していないと言って止まります。
+- **実装が無いとき**: 回帰のケース（変えていない機能のケース）が無ければ判定でき（v1 はこれにあたります）、足した・変えたケースが失敗するのが期待どおりです。
+  回帰のケースがあれば、それを判定していないとして 2 で終わります——`scaffold` スキルはそこで止まらず、Red の状態を確かめていないと示して進みます
+  （正本と開発のリポジトリが別の場合。扱いは `scaffold` の `SKILL.md` の手順 4）。
 - **v2 以降**: Red テストは「実装が前の版の状態にある」ことを前提にしません。そこで**前の版の全体からも Red テストを作り、同じ実装に当てます**。
   変えていないケース（回帰）は緑であること、足した・変えたケースは作業中の版で失敗し前の版で緑か前の版に無い（まだこの版を実装していない）か、
-  前の版の実装がもう満たしている（「もう緑」と名指しして知らせる）ことを見ます。
+  前の版の実装がもう満たしている（「もう緑」と名指しして知らせる）ことなどを見ます（どちらの版でも「未実装」で落ちるなど、ほかの形は docstring）。
 - **`--in-progress`**: この版の Issue を登録して実装が始まったあとの**作り直し**で使います。作業中の版の期待をもう満たしたケースを実装済みとして数え、止めません。
 
 **判定の本体（ケースごとの判定の表・終了コード・何を守らないか）は
@@ -105,7 +107,7 @@ Red テストを正本リポジトリの根で走らせ、**いまの実装に�
 2 つのプラグインの境界は、**`scaffold` が登録する Issue と、そこから指すファイル**（中間表現・Red テスト）です。
 dev-loop は Issue 1 件を読むだけで周を始められるよう、本文から受入基準・Red テスト・Q&A の回答・仕様の原文を辿れます。
 
-- **1 機能の変化 = Issue 1 件**です。v2 以降は前の版と比べて変わった機能（追加・変更・削除）だけを Issue にします。
+- **1 機能の変化 = Issue 1 件**です。v2 以降は前の版と比べて変わった機能（追加・変更・削除）だけを Issue にします（凍結した前の版の時点が崩れていたときの例外は `handoff-issue.md`）。
 - **本文は先頭の印で spec-loop から来たと分かります。** dev-loop はこの印を見て、spec-loop から来た Issue の読み方に切り替えます。
 - **追加・変更の本文は、中間表現の中のその機能の指紋と、Red テストのファイルの sha256 を持ちます。** dev-loop は実装に入る前に、手元のファイルが Issue の時点と同じかを確かめ、
   違えば差し戻します。撤去の本文は sha256 を持たず（消したファイルなので）、指紋は前の版の全体で確かめます。指紋は機能単位なので、関係の無い機能を直しても登録済みの Issue は不一致になりません。
