@@ -78,7 +78,10 @@ cruise を利用者が居る形で 1 周回す必要があり、この周（不�
   起点 `5235146c`・base `origin/main`（refs/remotes/origin/HEAD）→ `5235146c49b8fae6d38ef2f2ddd82031ebd2e767`
 - 手順 4 の割り目: 割らない（不在の cruise）
 - 実験なし（文面の変更だけ）
-- 1 パス目: 関門に渡した時点の HEAD（指摘対応の起点）= `1c5bab9f`。Verifier（sonnet）と `/code-review` を起動（結果は下に書く）
+- 1 パス目: 関門に渡した時点の HEAD（指摘対応の起点）= `1c5bab9f`。通した——Verifier（sonnet）反証 2 件、`/code-review`（high）指摘 8 件。採否は下の表（直す 8 件・残課題 2 件）。手順 4 への差し戻しあり（指摘対応 `73bfc4c3`）
+- 1 パス目の指摘対応の差分: `git diff 1c5bab9f -- ':(top)' ':(top,exclude)docs/plans/issue-461.md'` は 6 ファイル（0 行ではない）→ 2 パス目を回す
+- 2 つ目の割り目: 割らない（不在の cruise）
+- 2 パス目: Verifier（sonnet）と `/code-review` を起動（結果は下に書く）。2 パス目の指摘対応の起点（狭いパスの起点）= 2 パス目の関門に渡す時点の HEAD
 
 ## 既知の限界・決着済みの論点
 
