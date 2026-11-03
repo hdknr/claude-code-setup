@@ -75,7 +75,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `gate` | 関門（Verifier・`/code-review`）を回している |
 | `pr` | PR を出し、マージを待っている |
 | `merged` | マージ済み（**依存先として「済んだ」と読むのは、これと `merged_unverified` だけ**） |
-| `merged_unverified` | マージ済みだが、実機確認が残っている（#634）——`実機確認 = Refs でマージ` の線で `Refs` でマージし、Issue は開いたまま。確かめる受入基準と確かめ方は `note` に。**依存先としては「済んだ」と読む**が、`show` は「利用者の確認待ち（実機確認）」に出し、cruise は「済んだ」と報告しない（`status` は 5 と言わない） |
+| `merged_unverified` | マージ済みだが、実機確認が残っている（#634）——`実機確認 = Refs でマージ` の線で `Refs` でマージし、Issue は開いたまま。確かめる受入基準と確かめ方は `note` に。**依存先としては「済んだ」と読む**が、`show` は「利用者の確認待ち（実機確認）」に出し、cruise は「済んだ」と報告しない（親 Issue の一覧の行なら `status` は 5 と言わない。周の途中で足した行は 5 の括弧に出る——§6 が渡す） |
 | `blocked` | 止まっている（人間の判断待ち・BLOCKED） |
 | `await` | 利用者の操作待ち（#466）——止まりうる操作（権限の拒否・`user_ops`）を利用者が打つのを待つ。打つコマンドは `note` に。**依存先としては「済んでいない」と読む** |
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
@@ -124,7 +124,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 1. **進行中の行（`impl`・`gate`・`pr`。出所に依らない。`note` が `利用者の判断待ち:` で始まる行——まとめならどれか 1 行——を除く）か、落ちたのにまとめの中で `merged` の行があれば 0**——§6 は始めた行を閉じてから、
    名指しの行を戻してから判定する。
 2. **親 Issue の一覧の行（`origin` が空の行）がすべて `merged` か `dropped` なら 5**——周の途中で足した行が残っていても終える（§6。#774）。
-   **`merged_unverified` の行が 1 つでもあれば 5 と言わない**（#634）——実機確認が残っている。
+   **一覧の行に `merged_unverified` が 1 つでもあれば 5 と言わない**（#634）——実機確認が残っている（周の途中で足した行の `merged_unverified` は、足した行の残りと同じく 5 の括弧に出る）。
 3. **親 Issue の一覧の行の周か、その依存とまとめの仲間を辿った先の周が着手できれば 0**——`next` と同じまとまり（まとめは全行が着手できるときだけ）。
    **周の途中で足した行だけが着手できても 0 と言わない**（§6 はそれを始めずに終える）。
 4. **それ以外は 3**——残りは `blocked`・`await`・`merged_unverified`・判断待ちの印のある進行中の行と、それら（か `dropped`）に依存する周だけ
@@ -145,7 +145,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`status` は、周の途中で足した行（`origin` のある行）だけが着手できても 0 と言わない**（#632）——§6 はそれを始めずに終えるので、0 と答えると
   外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える——`merged`・`merged_unverified`・`dropped` の行の先は辿らない。
 - **`next` は `merged_unverified` を依存先として済んだと読む**（#634）——`absent-lines.md` の `実機確認 = Refs でマージ` は「依存する Issue は進めてよい」と決めている。
-- **`show` は `merged_unverified` の行を「利用者の確認待ち（実機確認）」に `note` つきで出す**（#634）——`merged` に潰すと、実機確認待ちが `note` の文章にしか残らず、
+- **`show` は `merged_unverified` の行を「利用者の確認待ち（実機確認）」に `note` つきで出す**（#634。取り残された行は除く——それは名指しの行に出る）——`merged` に潰すと、実機確認待ちが `note` の文章にしか残らず、
   どの集計にも出ない（spin-dd/tfs-stocks#2427 の #2432）。
 - **`merged_unverified` の行があるあいだは「すべてマージ済みか取り下げ」と出さない**（#634）——cruise はその行で「済んだ」と報告して終える。
 - **`status` は、親 Issue の一覧の行に `merged_unverified` があれば 5 と言わない**（#634）——外側のループが実機確認の残る cruise を「済んだ」と読む。
@@ -750,7 +750,8 @@ def cmd_show(path):
           + (", ".join(f"#{i['number']}({i['state']})（{i.get('note') or 'note が空'}）" for i in blocked) or "なし"))
     awaiting = [i for i in data["issues"] if i["state"] == "await"]
     print("利用者の操作待ち: " + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in awaiting) or "なし"))
-    unverified = [i for i in data["issues"] if i["state"] == UNVERIFIED]
+    # 取り残された行（落ちた行）は直していないので確認待ちに混ぜない——名指しの行に出る（#634 の 1 パス目）
+    unverified = [i for i in data["issues"] if i["state"] == UNVERIFIED and not is_stranded(i)]
     if unverified:
         print("利用者の確認待ち（実機確認。Refs でマージし Issue は開いたまま）: "
               + ", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in unverified))

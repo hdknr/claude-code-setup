@@ -98,6 +98,8 @@ python3 ledger.py group issue-<親> <代表> <番号> [<番号> …]
    `gh issue close <番号> --comment "PR #<PR> で直した（まとめ #<代表>）"`（利用者の指示「課題がマージされたら、元課題は閉じてよい」）。
    **`Refs` に変えた（落ちた）Issue は閉じない**——直していない。
 3. **台帳はまず代表に書く**——`ledger.py set issue-<親> <代表> state=merged pr=#<PR>`（周の在り処はまとめの全行に書く。落ちた行も一度 `merged` になる）。
+   **`実機確認 = Refs でマージ` の線で、まとめの Issue を `Refs` で指してマージした（実機確認が残る）なら、`state=merged` ではなく `state=merged_unverified`**
+   （`../dev-loop/references/absent-lines.md` の「`実機確認 = Refs でマージ`」の 5。#634）——落ちた行の扱い（4）は同じ。
    **3 を書いてから 4 を終えるまでの間で止まったら**（利用上限・セッションの終わり）、落ちた行は `merged` のまま残る——
    再開した親は `ledger.py show` の「落ちたのにまとめの中で merged のまま」を見て、4 の続きから戻す（`../dev-loop/references/ledger.md` の「どう再開するか」。#665）。
 4. **続けて、落ちた行だけを戻す**——代表でない行から先に、1 行ずつ

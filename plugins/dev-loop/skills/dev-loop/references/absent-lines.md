@@ -306,7 +306,7 @@ PR #539（作れなかったときに古い出力の名前を出す）をマー�
    （`マージ` の既定）。
 5. **マージしたら、台帳は `merged` ではなく `merged_unverified` にし、`note` に「実機確認待ち（Refs）」と、確かめる受入基準を書く**（#634）。
    依存する Issue は進めてよい——**`merged_unverified` は依存先としては済んだと読まれる**が、`ledger.py show` は「利用者の確認待ち（実機確認）」に出し、
-   cruise は「済んだ」と報告しない（`ledger.py status` も 5 と言わない）。**`merged` に潰さない**——実機確認待ちが `note` の文章にしか残らず、
+   cruise は「済んだ」と報告しない（親 Issue の一覧の行なら `ledger.py status` も 5 と言わない）。**`merged` に潰さない**——実機確認待ちが `note` の文章にしか残らず、
    `show` のどの集計にも、cruise を終えるときに渡すものにも出なくなる（spin-dd/tfs-stocks#2427）。
    **`merged` にするのは、利用者が実機で確かめて元の Issue を閉じたのを実物で見てから**（`gh issue view <番号> --json state`。`references/ledger.md` の「どう再開するか」の 2）。
 

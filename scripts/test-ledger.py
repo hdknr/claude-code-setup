@@ -788,6 +788,20 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     run(mod, ["set", "su", "2", "state=merged"], root)
     r = str(run(mod, ["show", "su"], root)[1])
     o["merged_unverified: 確かめた後"] = ("利用者の確認待ち" in r, "すべてマージ済みか取り下げ" in r, status("su")[0])
+    # #634 の 1 パス目（CR1・CR5）: まとめの PR を Refs でマージして代表を merged_unverified にした——落ちた #2 は取り残しとして名指しし、確認待ちに出さず、
+    # 依存する #3 を出さず、merged_unverified のまま抜けない
+    st_ledger("sv", [(1, "todo", [], None), (2, "todo", [], None), (3, "todo", [2], None)])
+    run(mod, ["group", "sv", "1", "2"], root)
+    run(mod, ["set", "sv", "2", "note=落ちた: 別のファイル"], root)
+    run(mod, ["set", "sv", "1", "state=merged_unverified"], root)
+    r = str(run(mod, ["show", "sv"], root)[1])
+    o["merged_unverified: 取り残し"] = (next((l.split(": ", 1)[1] for l in r.splitlines() if l.startswith("落ちたのに")), None),
+                                     [l for l in r.splitlines() if l.startswith("利用者の確認待ち")],
+                                     run(mod, ["next", "sv"], root)[1].split(), run(mod, ["set", "sv", "2", "group="], root)[0])
+    # CR6: 一覧の merged_unverified の行の先（足した todo の行）は辿らない
+    st_ledger("sy", [(1, "merged", [], None), (9, "todo", [1], "#1 1 パス目"), (2, "todo", [9], None)])
+    run(mod, ["set", "sy", "2", "state=merged_unverified"], root)
+    o["merged_unverified: 辿らない"] = status("sy")
     # 空の台帳は 5、無い・壊れた台帳は 4
     run(mod, ["init", "se"], root)
     o["status: 空"] = status("se")[0]
@@ -1056,6 +1070,15 @@ SAMPLE_MUTATIONS = {
         ('JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")', 'JUDGE_NOTE = ("利用者の判断待ち:",)')],
     "status が済んだ・取り下げた行の先を辿る（#632 の 2 パス目）": [
         ('        if by[n]["state"] in (*MERGED, "dropped"):\n            continue  # 済んだ', '        if False:\n            continue  # 済んだ')],
+    # #634 の 1 パス目: merged_unverified の中身を 1 項ずつ戻す
+    "取り残しを merged だけで見る（#634 CR1）": [
+        ('    return issue["state"] in MERGED and bool(issue.get("group")) and', '    return issue["state"] == DONE and bool(issue.get("group")) and')],
+    "merged_unverified のまま抜ける（#634 CR1）": [
+        ('    if "group" in changes and is_stranded(issue) and after["state"] in MERGED:', '    if "group" in changes and is_stranded(issue) and after["state"] == DONE:')],
+    "確認待ちに取り残しの行を混ぜる（#634 CR5）": [
+        ('if i["state"] == UNVERIFIED and not is_stranded(i)]', 'if i["state"] == UNVERIFIED]')],
+    "status が merged_unverified の行の先を辿る（#634 CR6）": [
+        ('        if by[n]["state"] in (*MERGED, "dropped"):\n            continue  # 済んだ', '        if by[n]["state"] in (DONE, "dropped"):\n            continue  # 済んだ')],
     "status が待ちの列に merged を混ぜる（#632）": [
         ('if by[n]["state"] not in (DONE, "dropped")]', 'if by[n]["state"] != "dropped"]')],
 }
@@ -1368,6 +1391,10 @@ def main() -> int:
               o["merged_unverified: status"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(merged_unverified)"))
         check("確かめて merged にしたら確認待ちが消え、終わりの行と 5 が出る（#634 の対照）",
               o["merged_unverified: 確かめた後"] == (False, True, 5))
+        check("まとめの中で merged_unverified の落ちた行は名指しし、確認待ちに出さず、依存する行を出さず、抜けない（#634）",
+              o["merged_unverified: 取り残し"] == ("#2", [], [], 3))
+        check("一覧の merged_unverified の行の先は辿らない（#634）",
+              o["merged_unverified: 辿らない"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(merged_unverified)"))
         check("空の台帳は 5", o["status: 空"] == 5)
         check("無い・壊れた・崩れた台帳は 4", o["status: 無い・壊れた"] == (4, 4, 4))
 

@@ -21,6 +21,7 @@
 - `scripts/test-check-unattended-env.py` — `merged_unverified` の到達の試料と、既存の変異の当て先
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 「`実機確認 = Refs でマージ`」の 5（台帳を `merged_unverified` にする・`merged` にする条件）
 - `plugins/dev-loop/skills/dev-loop/references/ledger.md` — 「どう再開するか」の 2・5（実機確認待ちの扱いと渡し方）
+- `plugins/dev-loop/skills/cruise/references/grouping.md` — 「マージの後」の 3（`Refs` でマージしたまとめは `merged_unverified`。1 パス目の CR3 で広げた）
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §6 の終える条件と渡すもの（と版の 2 行）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
 - `.claude-plugin/marketplace.json` — 版
@@ -73,12 +74,25 @@
 - 周の在り処: ブランチ `issue/634-ledger-merged-unverified`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-634`・
   起点 `412ca8f7`・base は `origin/main` の merge-base `412ca8f78ff7177110e8250dcce4ebcbcf0d624a`
 - 手順 4 の割り目: 割らない（不在の cruise）——不在のため訊かず続けた
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- Verifier 1 パス目: 通した——反証 0 件（`dev-loop:dev-loop-verifier`・sonnet。軽微な所見 1 件・`test-check-unattended-env.py` は順番待ちで未実行と申告）
+- `/code-review` 1 パス目: 通した——指摘 6 件（直す 5・残課題 1。下の採否の表）。差し戻し: 手順 4 へ 1 回（指摘対応）
+- 2 つ目の割り目: 割らない（不在の cruise）——不在のため訊かず続けた
 - 1 パス目の指摘対応の起点: `f8f30320`（1 パス目の関門に渡した時点の HEAD）
 - 交絡を潰した手順: 実験なし（合成の台帳で本体を走らせるテストだけ）
 
 ## 既知の限界・決着済みの論点
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1: U5（まとめの中の `merged_unverified`＋`落ちた:`）の試料・変異が無く、`is_stranded`・`set` の検査を `== DONE` に戻しても全体が緑 | 示せる（code-review が台帳の外で変異を当て、`scenario()` が参照と一致） | U5・U8 | 直す——試料を足し、`SAMPLE_MUTATIONS` に 2 件 |
+| CR2: 状態の表と absent-lines の 5 が「`merged_unverified` があれば 5 と言わない」と無条件に言うが、出所のある（周の途中で足した）行なら 5 | 示せる（`--origin` の行を `merged_unverified` にして `status` が 5） | U2・U7（記述の事実） | 直す——「親 Issue の一覧の行なら」に絞った記述に |
+| CR3: `grouping.md` の「マージの後」の 3 が無条件に `state=merged` を書かせ、`Refs` でマージしたまとめは潰れる | 示せる（文面） | U7 | 直す——`実機確認 = Refs でマージ` のまとめは `merged_unverified` |
+| CR4: `stacked.md` の載せ替え待ちの手順が「`merged` にする前」に結び付き、`merged_unverified` の時期が決まらない | 示せない（Refs × 積んだ周の実例が無い） | 無し | 残課題（PR コメント） |
+| CR5: 「利用者の確認待ち」に取り残された行（落ちた行）も出る | 示せる（まとめの代表を `merged_unverified` にすると落ちた #2 も出る） | U1 | 直す——取り残しの行を除く |
+| CR6: `status` の辿りを `(DONE, "dropped")` に戻す変異が素通り | 示せる（code-review の変異） | U2・U8 | 直す——一覧の `merged_unverified` の行が足した `todo` の行に依存する試料と `SAMPLE_MUTATIONS` 1 件 |
+| V1（Verifier 軽微）: 取り残しの名指しの文面が「merged のまま」で `merged_unverified` にも同じ | 示せない（挙動は正しい・表記） | 無し | 残課題 |
 
 - `merged_unverified` から `merged` への書き換えは台帳の値だけで決まり、`ledger.py` は Issue が閉じたかを見ない（「守らない」の「台帳と実物が一致しているか」と同じ）。確かめるのは再開する親（ledger.md の 2）。
 - `show` の「周の途中で足した行のうち済んでいないもの」は `merged_unverified` の足した行も出す（実機確認が残る＝済んでいない。cruise §6 の渡し方と一致）。
