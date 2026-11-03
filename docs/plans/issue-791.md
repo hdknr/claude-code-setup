@@ -91,7 +91,10 @@ main へのマージでプラグインの配布（dev-loop 1.77.0）と公開サ
 - 関門 1 パス目: 起動（Verifier: sonnet・`dev-loop:dev-loop-verifier`／`/code-review` high）。1 パス目の指摘対応の起点 `41cbbad1`（関門に渡す時点の HEAD）。`test-outer-loop.py`（順番待ち越し）35 ok・FAIL 0・変異 12/12
 - 関門 1 パス目の結果: Verifier 反証 2 件・`/code-review` 指摘 10 件。直す 7 件（採否の表）。差し戻し 1 回（手順 4 へ）。1 パス目の指摘対応の差分は 0 行でない（`git diff 41cbbad1` に成果物の変更あり）→ 2 パス目を回す
 - 割り目（2 パス目の前）: 割らない（不在の cruise）。残っているもの: 手順 5 の当て直しと `/code-review` 2 パス目の両方
-- 関門 2 パス目: Verifier 反証 1 件・`/code-review` 指摘 10 件。直す 2 件。狭いパスの起点 `6072ab7e`・終点 `9ead931f`。狭いパス: 起動
+- 関門 2 パス目: Verifier 反証 1 件・`/code-review` 指摘 10 件。直す 2 件。狭いパスの起点 `6072ab7e`・終点 `9ead931f`
+- 狭いパス: Verifier（sonnet）反証 1 件（低・受入基準は破らない: 先頭が 0 の番号 `050` を旧版は 50 と読み、新版は 2 で止める。採否は人が決める）。素通りした変異 1 件（`APPEND` の文面をテストが内容まで見ていない——文を書き換えても赤にならない）。`²` は旧版で例外・新版で 2（陽性対照つき）
+- 取り込み: main（#816、dev-loop 1.77.0）を取り込み、版を 1.78.0 に上げ直した。生成ブロックは main 側を取って `skill-metrics.py` で書き直した
+- `check-all.py`（順番待ち越し・取り込みの後）: 59/59 緑。PR #817 の CI: check・build が pass（deploy は skipping）
 - 交絡を潰した手順: `test-outer-loop.py` の陽性対照（S2 で台帳のファイルは変わったのに progress は同じ）・変異 12/12。順番待ちのテストの前の `git stash` 事故は、テストが待ちのあいだに戻した
 - 事故の記録: 2026-11-03 に著者が worktree で誤って素の `git stash -q` を走らせ、未コミットの変更を退避した。直後に `git stash pop stash@{0}`（`WIP on issue/791-cruise-outer-loop` であることを確かめて）で戻した。そのとき順番待ちのテストはまだ始まっておらず（run-serial のログが「待っている」）、結果には効いていない
 
