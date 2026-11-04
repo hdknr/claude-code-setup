@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# 正本リポジトリ（在庫管理の小さな業務システム）を作る。v1 はリリース済み（release-v1）で、v1 の見積りがある。
-# 作業中の版 v2 は売上帳票の機能を足し（追加）、在庫照会の期間を 30 日から 90 日に変える（変更）。受注登録は変えない。
+# 正本リポジトリ（在庫管理の小さな業務システム）を作る。v1 はリリース済み（release-v1）。
+# 作業中の版 v2 は売上帳票の機能を足し（追加）、在庫照会の期間を 30 日から 90 日に変え（変更）、入荷予定の照会を撤去する（削除。
+# removed.csv）。受注登録は変えない。**削除は、版を重ね合わせた全体（build/merged/）には現れない**——差分（diff-versions.py）にだけ出る
+# （docs/plans/issue-274.md の「2 周目」）。
+# **v1 には見積り（feasibility/）が無い**——v1 は spec-loop に移す前に作ってリリースし、要求・仕様だけを移した形。
+# 前の版の見積りが無くても、v2 の見積りは v2 の差分の分だけである（1 周目の試料には v1 の見積りがあり、差分モードが入る前の版も差分だけを見積もった）。
+# 運用費（月額）は稼働している機能の数で決まる（試料の CLAUDE.md）——v2 の見積りに書くのは、この版で増える分（売上帳票の 1 機能分）である。
 # 要求・Q&A・仕様は済んでいる。見積り（feasibility/）はまだ v2 に無い
 # ——feasibility が数える番である。
 # **作業場所（eval の一時ワークスペース）の中だけを触る。**
@@ -46,12 +51,13 @@ cat > CLAUDE.md <<'EOF'
 - ツリーは spec-loop の references/tree.md のとおり（docs/v1 はリリース済み、作業中の版は docs/v2）。
 - ドキュメントのツール: 使わない（MkDocs は入れない。ファイルを直接編集する）。
 - レビュー会のスライド: spec-loop 同梱のスクリプトで作る。出力先は既定のとおり。
-- 規模の数え方: 要求のファイル 1 つ（= 機能 1 つ）を 10 人日と数える。単価は 1 人日 50000 円。
+- 規模の数え方: 要求のファイル 1 つ（= 機能 1 つ）を、作るのは 10 人日、直すのは 5 人日、撤去するのは 2 人日と数える。単価は 1 人日 50000 円。
+- 運用費（月額）: 稼働している機能 1 つにつき月 10000 円（サーバと保守）。
 - 形式検査の道具: 入れていない。照合先（既存システムのコード・規約の文書）: 無い。
 - commit・push はしない（変更したファイルを示して止まる）。
 EOF
 
-mkdir -p docs/v1/shared docs/v1/requirements docs/v1/spec docs/v1/feasibility docs/v1/proposal
+mkdir -p docs/v1/shared docs/v1/requirements docs/v1/spec docs/v1/proposal
 {
   qa_header
   qa_row Q-001 要求確定 在庫を照会できる期間はどれだけですか？ "A: 30 日 / B: 1 年" A 照会の多くは直近の確認のため "A（業務部が回答）" requirements/stock.md 反映済み ""
@@ -59,25 +65,27 @@ mkdir -p docs/v1/shared docs/v1/requirements docs/v1/spec docs/v1/feasibility do
 } > docs/v1/shared/qa.csv
 printf '# 受注登録\n\n- 担当者が受注を登録する。\n- 受注を取り消せるのは管理者のみ（Q-002）。\n' > docs/v1/requirements/order.md
 printf '# 在庫照会\n\n- 担当者が商品ごとの在庫数を照会する。\n- 照会できる期間は過去 30 日（Q-001）。\n' > docs/v1/requirements/stock.md
+printf '# 入荷予定の照会\n\n- 担当者が仕入先ごとの入荷予定日を照会する。\n' > docs/v1/requirements/arrival.md
 printf '# 受注登録の仕様\n\n- 取り消しは管理者の権限を持つ利用者だけが行える。それ以外は拒否する。\n' > docs/v1/spec/order.md
 printf '# 在庫照会の仕様\n\n- 照会の期間は過去 30 日。30 日より前の日付を指定したら拒否する。\n' > docs/v1/spec/stock.md
-printf 'No,区分,項目,金額,根拠\nE-001,開発費,受注登録,500000,requirements/order.md（10 人日）\nE-002,開発費,在庫照会,500000,requirements/stock.md（10 人日）\n' > docs/v1/feasibility/estimate.csv
-printf 'No,工程,開始,終了,前提\nT-001,受注登録,2026-04-01,2026-04-14,\nT-002,在庫照会,2026-04-15,2026-04-28,T-001\n' > docs/v1/feasibility/schedule.csv
+printf '# 入荷予定の照会の仕様\n\n- 仕入先を指定しなければ全仕入先の入荷予定を日付の順に返す。\n' > docs/v1/spec/arrival.md
 printf '# 背景と目的\n\n紙の台帳で管理している受注と在庫を、担当者が画面で扱えるようにする。\n' > docs/v1/proposal/01-background.md
 git add -A
 git commit -q -m 'v1'
 git tag release-v1
 
-# 作業中の版 v2: 売上帳票を足し、在庫照会の期間を変える（要求・Q&A・仕様は済み）
+# 作業中の版 v2: 売上帳票を足し、在庫照会の期間を変え、入荷予定の照会を撤去する（要求・Q&A・仕様は済み）
 mkdir -p docs/v2/shared docs/v2/requirements docs/v2/spec
 printf '# 売上帳票\n\n- 管理者が月次の売上帳票を CSV で出力する（Q-003）。\n' > docs/v2/requirements/report.md
 printf '# 在庫照会\n\n- 担当者が商品ごとの在庫数を照会する。\n- 照会できる期間は過去 90 日（Q-004）。\n' > docs/v2/requirements/stock.md
 printf '# 在庫照会の仕様\n\n- 照会の期間は過去 90 日。90 日より前の日付を指定したら拒否する。\n' > docs/v2/spec/stock.md
 printf '# 売上帳票の仕様\n\n- 管理者だけが出力できる。それ以外は拒否する。\n- 対象の月に売上が無ければ、見出しだけの CSV を返す。\n' > docs/v2/spec/report.md
+printf '種類,対象,理由\nファイル,requirements/arrival.md,入荷予定は仕入先の画面で見るようになり使われていないため（Q-005）\nファイル,spec/arrival.md,同上（Q-005）\n' > docs/v2/removed.csv
 {
   qa_header
   qa_row Q-003 要求確定 売上帳票はどの形式で出力しますか？ "A: CSV / B: PDF" A 表計算で集計し直すため "A（業務部が 2026-11-01 に回答）" requirements/report.md 反映済み ""
   qa_row Q-004 要求確定 在庫を照会できる期間を延ばしますか？ "A: 30 日のまま / B: 90 日に延ばす" B "季節の比較に 3 か月分が要るため" "B（業務部が 2026-11-01 に回答）" requirements/stock.md 反映済み ""
+  qa_row Q-005 要求確定 入荷予定の照会を残しますか？ "A: 残す / B: 撤去する" B "仕入先の画面で見るようになり使われていないため" "B（業務部が 2026-11-01 に回答）" removed.csv 反映済み ""
 } > docs/v2/shared/qa.csv
 git add -A
-git commit -q -m 'v2: 売上帳票と在庫照会の期間（要求・仕様）'
+git commit -q -m 'v2: 売上帳票・在庫照会の期間・入荷予定の撤去（要求・仕様）'
