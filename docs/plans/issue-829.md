@@ -7,7 +7,7 @@
 **台帳（`.claude/plans/cruise-issue-793.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-793`））。
-版の上げ方: `dev-loop` を **minor**（線の項目を足す——能力の追加）。PR を出す直前の main の先端から minor を 1 つ上げる（着手時の main は 1.84.0。#800 が 1.85.0 にしたので、取り込んで 1.86.0。さらに #634・#803 で 1.87.0 になったので、取り込んで 1.88.0）。
+版の上げ方: `dev-loop` を **minor**（線の項目を足す——能力の追加）。PR を出す直前の main の先端から minor を 1 つ上げる（着手時の main は 1.84.0。#800 が 1.85.0 にしたので、取り込んで 1.86.0。さらに #634・#803 で 1.87.0 になったので、取り込んで 1.88.0。PR の後に #818 で 1.88.0 になったので、取り込んで 1.89.0）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py` 越しに走らせる。
 
 Issue 本文（外部入力）から読んだ要件: #793 の不在の cruise で、`仕様の穴 = 推奨で決めて起票` を確かめていても、マージの前の判断
@@ -134,6 +134,7 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
   2 パス目の指摘対応の起点（狭いパスの起点）: `92bab4967d260100085564bee049fdaf554202da`（指摘対応に入る前の HEAD）・終点 `15d8527e473d0af2a18d43a887527300b5838bd0`（指摘対応の最後のコミット）。狭いパス: Verifier（sonnet）反証 0 件（狭いパスの指摘 0 件）。素通りした変異 2 件（読解による。CR2-1 の「線の値に依らず」を戻す・CR2-7 の「この 1 回で満たす」を消す——文面なので構造の検査では捕まらない。陽性対照なし）
 - 取り込み: origin/main（`6a3220fb`。#800 が dev-loop を 1.85.0 にした・#794）を merge。cruise `SKILL.md` §4 の 2 と `child-cycle.md` の 9/10 が衝突し、塊ごとに両側を残した。設計 §8.2 の生成ブロックは main 側を取って `skill-metrics.py` で書き直した。版は 1.86.0。取り込みで増えた検査なし（`scripts/` の差分なし）
 - 取り込み 2 回目: origin/main（`396ce773`。#634 が `ledger.py` に状態 `merged_unverified`、#803 が found-lines に「仕様の穴の行」）を merge。版の行・cruise `SKILL.md` §6・`found-lines.md` の「`要確認` の Issue」の括弧が衝突し、塊ごとに main 側を取り、この周の 1 文をその後ろに残した。版は 1.88.0。取り込みで変わった検査: `ledger.py`・`check-unattended-env.py` とそのテスト（追加なし）
+- 取り込み 3 回目（PR #833 の後に CONFLICTING。親の指示で）: origin/main（`f10e8170`。#818・#830）を merge。衝突は設計 §8.2 の生成ブロックだけ（main 側を取って書き直した）。版の行は両側 1.88.0 で黙って合わさったので 1.89.0 に上げた。取り込みの後は利用者の決定（#831）のとおり `check-plugin-versions.py` と `skill-metrics.py --check` だけ回し、PR 側の CI で確かめる
 - 利用者の指示（2026-11-04、親から受けた）: check-all は `--jobs 2` で回す（run-serial 越しのまま）。関門の委譲文にも書く
 - 交絡: 実験なし
 
