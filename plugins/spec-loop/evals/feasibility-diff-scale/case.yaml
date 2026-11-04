@@ -4,20 +4,22 @@ name: feasibility-diff-scale
 # （SKILL.md 手順 2 の「数えるのは作業中の版の差分の規模」「差分の外の規模を数えに入れない」と、
 # 手順 3 の「前の版の見積りを写して足し込まない」）。
 #
-# 3 本の grader: 見積りを v2 に書いた・差分の機能（売上帳票）がある・前の版の機能（受注登録・在庫照会）が無い。
-# **見ていないもの**: 追加・変更・削除を分けて数えたか（この試料の差分は追加だけ）・金額が正しいか。
+# 3 本の grader: 見積りを v2 に書いた・追加した機能（売上帳票）がある・変えていない機能（受注登録）が無い。
+# **見ていないもの**: 変えた機能（在庫照会）を見積もったか・追加と変更を分けて書いたか・削除（この試料に無い）・金額が正しいか。
+# 変えた機能を見積もったかは grader にしない——見積りの表に行が無くても、金額を決めずに費用付きの質問にするのは
+# SKILL.md どおりである（現行の版はそうした。docs/plans/issue-274.md）。
 # 見るのは手順 3 で書いた見積りで、手順 6 の検証役（Agent）の判定は見ない。
 # **`allowed_tools` に `Agent` を書いていないが、それで `Agent` は止まらない**（2.1.318 の feasibility の実行で検証役が起きた）。
 #
 # 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
 description: >-
-  作業中の版 v2 は売上帳票の機能を足すだけ。feasibility は docs/v2/feasibility/estimate.csv に、
-  売上帳票の分だけを見積もり、v1 の機能（受注登録・在庫照会）を数えに入れない。
+  作業中の版 v2 は売上帳票の機能を足し、在庫照会の期間を変える。feasibility は docs/v2/feasibility/estimate.csv に、
+  その 2 つの分だけを見積もり（変更を 0 円と見なさない）、変えていない v1 の機能（受注登録）を数えに入れない。
 tags: [spec-loop, diff-mode, feasibility]
 plugins: ["../.."]
 runs: 1
 expected_outcome: >-
-  docs/v2/feasibility/estimate.csv ができていて、売上帳票の行があり、受注登録・在庫照会の行は無い。
+  docs/v2/feasibility/estimate.csv ができていて、売上帳票の行があり、変えていない受注登録の行は無い。
 execution:
   prompt: "/spec-loop:feasibility"
   max_turns: 40
@@ -35,9 +37,9 @@ graders:
     target: {source: file, path: docs/v2/feasibility/estimate.csv}
     pattern: '帳票'
     match: contains
-  # 前の版で作り終えた機能を数えに入れていない
+  # 変えていない機能（受注登録）を数えに入れていない
   - name: v2-estimate-diff-only
     type: regex
     target: {source: file, path: docs/v2/feasibility/estimate.csv}
-    pattern: '受注登録|在庫照会'
+    pattern: '受注登録'
     match: not_contains

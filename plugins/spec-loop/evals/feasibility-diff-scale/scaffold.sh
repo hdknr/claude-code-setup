@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 正本リポジトリ（在庫管理の小さな業務システム）を作る。v1 はリリース済み（release-v1）で、v1 の見積りがある。
-# 作業中の版 v2 は売上帳票の機能を足すだけで、要求・Q&A・仕様は済んでいる。見積り（feasibility/）はまだ v2 に無い
+# 作業中の版 v2 は売上帳票の機能を足し（追加）、在庫照会の期間を 30 日から 90 日に変える（変更）。受注登録は変えない。
+# 要求・Q&A・仕様は済んでいる。見積り（feasibility/）はまだ v2 に無い
 # ——feasibility が数える番である。
 # **作業場所（eval の一時ワークスペース）の中だけを触る。**
 #
@@ -67,13 +68,16 @@ git add -A
 git commit -q -m 'v1'
 git tag release-v1
 
-# 作業中の版 v2: 売上帳票を足す（要求・Q&A・仕様は済み）
+# 作業中の版 v2: 売上帳票を足し、在庫照会の期間を変える（要求・Q&A・仕様は済み）
 mkdir -p docs/v2/shared docs/v2/requirements docs/v2/spec
 printf '# 売上帳票\n\n- 管理者が月次の売上帳票を CSV で出力する（Q-003）。\n' > docs/v2/requirements/report.md
+printf '# 在庫照会\n\n- 担当者が商品ごとの在庫数を照会する。\n- 照会できる期間は過去 90 日（Q-004）。\n' > docs/v2/requirements/stock.md
+printf '# 在庫照会の仕様\n\n- 照会の期間は過去 90 日。90 日より前の日付を指定したら拒否する。\n' > docs/v2/spec/stock.md
 printf '# 売上帳票の仕様\n\n- 管理者だけが出力できる。それ以外は拒否する。\n- 対象の月に売上が無ければ、見出しだけの CSV を返す。\n' > docs/v2/spec/report.md
 {
   qa_header
   qa_row Q-003 要求確定 売上帳票はどの形式で出力しますか？ "A: CSV / B: PDF" A 表計算で集計し直すため "A（業務部が 2026-11-01 に回答）" requirements/report.md 反映済み ""
+  qa_row Q-004 要求確定 在庫を照会できる期間を延ばしますか？ "A: 30 日のまま / B: 90 日に延ばす" B "季節の比較に 3 か月分が要るため" "B（業務部が 2026-11-01 に回答）" requirements/stock.md 反映済み ""
 } > docs/v2/shared/qa.csv
 git add -A
-git commit -q -m 'v2: 売上帳票（要求・仕様）'
+git commit -q -m 'v2: 売上帳票と在庫照会の期間（要求・仕様）'
