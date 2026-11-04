@@ -17,7 +17,8 @@ Issue 本文（外部入力）から読んだ要件: tfs-stocks の cruise #2314
 
 ## この周で測ったこと（Claude Code 2.1.318・このセッション）
 
-- 前面の `until grep -q … ; do sleep 1; done` の待ちは走った。`sleep 45` だけのコマンドは「until の形で待て」と拒まれた。
+- 前面の `until grep -q … ; do sleep 1; done` の待ちは走った（失敗する背景のコマンドで `exit=3` を読んだ。陽性対照）。`sleep 45` だけのコマンドは「until の形で待て」と拒まれた。
+- **区切らない前面の `until` の待ち（`timeout` 600000）は、180 秒で道具が背景に移した**（「完了したら通知する」と返った）。→ 待ちを 150 秒で区切る形に直した（`parallel.md`）。区切った待ちで `check-all.py` の終わりを読めた。
 - サブエージェント（この周の体）から `Agent` を呼ぶと、`run_in_background` を渡さなくても背景で起きた（前景を選べない）。
 - 背景のサブエージェント（haiku）に、背景の `sleep 90` を起こして「通知を待つ」と書いてターンを終えさせた: 約 11 秒で
   「自分の背景の作業を待っている（the result may be interim）」の通知が来て、`sleep` が終わった約 2 秒後に同じ子が通知を受けて再開し、hand-back した。
@@ -105,7 +106,7 @@ main へのマージで GitHub Pages の再ビルド（公開ページ）とプ�
 - 周の在り処: ブランチ `issue/792-cruise-wait-stall`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-792`・
   起点 `9f5f05e5`・base `origin/main` = `9f5f05e5dad5b05176daa13b5c2b3eba45c49fea`
 - 割り目（手順 4）: 割らない（不在の cruise）
-- 関門: 未着手
+- 関門: 1 パス目に入る。1 パス目の起点（関門に渡す時点の HEAD）: 下の行に書く
 - 交絡: 上の「この周で測ったこと」——前面の `until` は陽性（実際に待って抜けた）。体の通知の観測は 1 回だけで、届かない場合の否定には使わない。
 
 ## 既知の限界・決着済みの論点

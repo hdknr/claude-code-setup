@@ -50,11 +50,13 @@ tfs-stocks の cruise #2314 の周 #2581（dev-loop 1.66.0）では、周の子�
 
   ```bash
   python3 <run-serial.py の絶対パス> -- <コマンド> > "$OUT" 2>&1; echo "exit=$?" >> "$OUT"   # run_in_background で起こす
-  until grep -q '^exit=' "$OUT"; do sleep 15; done; tail -5 "$OUT"                          # 前面で待つ（Bash の timeout は 600000 まで）
+  end=$(( $(date +%s) + 150 )); until grep -q '^exit=' "$OUT" || [ "$(date +%s)" -ge "$end" ]; do sleep 15; done; tail -5 "$OUT"   # 前面で待つ
   ```
 
-  **前面の待ちが道具の時間切れで切れたら、同じ待ちをもう一度走らせる**——ターンは終えない。
-  （Claude Code 2.1.318 で、前面の `until … sleep` の待ちは走り、`sleep` だけのコマンドは「until の形で待て」と拒まれた。）
+  **待ちは 1 回 150 秒で区切り、`exit=` の行が無ければ同じ待ちをもう一度走らせる**——ターンは終えない。
+  **区切らない待ちは、道具が背景に移す**——Claude Code 2.1.318 で、`timeout` を 600000 にした前面の `until` の待ちが、180 秒で背景に移され
+  「完了したら通知する」と返った（それを待てば、この節が避けたい形に戻る）。同じ版で、区切った前面の `until … sleep` の待ちは走り、
+  `sleep` だけのコマンドは「until の形で待て」と拒まれた。
 - **通知が来ても来なくても、結果は出力ファイルで読む**——終了コードは `exit=` の行で決め、通知の文面で決めない。
 - **周の中で起こした体（実装役・Verifier・`/code-review` の分岐した実行）の報告は、通知（hand-back）でしか届かない**——
   Claude Code 2.1.318 では、サブエージェントの中から `Agent` を呼ぶと前景を選べず、背景で起きた。体の報告を待つあいだはターンを終えてよいが、
