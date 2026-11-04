@@ -135,6 +135,7 @@ TESTS: list[str] = [
     "test-parent-issue.py",
     "test-child-cycle.py",
     "test-run-serial.py",
+    "test-outer-loop.py",
     "test-fence-copies.py",
     "test-check-duplicate-counts.py",
     "test-check-bold-flanking.py",

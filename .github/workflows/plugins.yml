@@ -112,6 +112,9 @@ jobs:
       - name: 重い検査・アプリの起動の順番待ちのテスト（#493）
         run: python3 scripts/test-run-serial.py
 
+      - name: cruise の外側のループのテスト（#791）
+        run: python3 scripts/test-outer-loop.py
+
       - name: コードブロックとコメントの読み方の写し 3 つの突き合わせ（#758・#759・#760）
         run: python3 scripts/test-fence-copies.py
 
