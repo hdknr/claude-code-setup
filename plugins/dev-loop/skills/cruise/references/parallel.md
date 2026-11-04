@@ -52,13 +52,15 @@ tfs-stocks の cruise #2314 の周 #2581（dev-loop 1.66.0）では、周の子�
 
   ```bash
   # 起こす（run_in_background）
-  OUT=<scratchpad の絶対パス>/<名前>-<時刻>.txt; echo $$ > "$OUT.pid"; python3 <run-serial.py の絶対パス> -- <コマンド> > "$OUT" 2>&1; echo "__CRUISE_DONE__ exit=$?" >> "$OUT"
+  cd <worktree の絶対パス> && OUT=<scratchpad の絶対パス>/<名前>-<時刻>.txt; echo $$ > "$OUT.pid"; python3 <run-serial.py の絶対パス> -- <コマンド> > "$OUT" 2>&1; echo "__CRUISE_DONE__ exit=$?" >> "$OUT"
   # 前面で待つ（1 回 100 秒で区切る）
-  OUT=<同じ絶対パス>; end=$(( $(date +%s) + 100 )); until grep -q '^__CRUISE_DONE__ exit=' "$OUT" || ! kill -0 "$(cat "$OUT.pid")" 2>/dev/null || [ "$(date +%s)" -ge "$end" ]; do sleep 10; done; tail -5 "$OUT"
+  OUT=<同じ絶対パス>; end=$(( $(date +%s) + 100 )); until grep -q '^__CRUISE_DONE__ exit=' "$OUT" 2>/dev/null || { [ -f "$OUT.pid" ] && ! kill -0 "$(cat "$OUT.pid")" 2>/dev/null; } || [ "$(date +%s)" -ge "$end" ]; do sleep 10; done; if grep -q '^__CRUISE_DONE__ exit=' "$OUT" 2>/dev/null; then echo "待ち: 終わった"; elif [ -f "$OUT.pid" ] && ! kill -0 "$(cat "$OUT.pid")" 2>/dev/null; then echo "待ち: 印が無いままシェルが居ない"; else echo "待ち: 区切りの時間"; fi; tail -5 "$OUT" 2>/dev/null
   ```
 
-  - **印の行が出たら終わり**——終了コードはその行で読む。**印の行が無いまま起こしたシェルが居なくなったら、走りきらなかった**——緑と読まず、
-    失敗として扱う（止められた・落ちた。出力の残りを読んで理由を書く）。**どちらでもなく区切りの時間で抜けたら、同じ待ちをもう一度走らせる**——ターンは終えない。
+  - **どの条件で抜けたかは、待ちの出力の `待ち:` の行で読む。** **`待ち: 終わった`**——終了コードは印の行で読む。**`待ち: 印が無いままシェルが居ない`**——走りきらなかった。緑と読まず、
+    失敗として扱う（止められた・落ちた。出力の残りを読んで理由を書く）。**`待ち: 区切りの時間`**——同じ待ちをもう一度走らせる。ターンは終えない
+    （起こす側がまだ pid のファイルを書いていないときも、ここに入る）。
+  - **`run-serial.py` を通さない背景のコマンド**（上の「通さないもの」）**は、`python3 <run-serial.py の絶対パス> --` を外して同じ形で起こす。**
   - **区切るのは、道具が長い前面のコマンドを背景に移すから**——Claude Code 2.1.318 で、`timeout` を 600000 にした前面の `until` の待ちが 180 秒で、
     `timeout` を渡さない待ちは既定の 120 秒で、背景に移されて「完了したら通知する」と返った（それを待てば、この節が避けたい形に戻る）。
     100 秒なら `timeout` を渡さなくても既定に収まる。同じ版で、区切った前面の `until … sleep` の待ちは走り、`sleep` だけのコマンドは「until の形で待て」と拒まれた。
