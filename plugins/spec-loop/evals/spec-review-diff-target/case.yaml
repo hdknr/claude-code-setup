@@ -36,7 +36,7 @@ graders:
     target: {source: file, path: docs/v2/spec/stock.md}
     pattern: '90 ?日'
     match: contains
-  # 作業中の版で変えていない要求（受注登録）の仕様を、作業中の版に書き写していない
+  # 作業中の版で変えていない要求（受注登録）の仕様を、作業中の版に置いていない（写しでも書き直しでも）
   # （SKILL.md 手順 2 の「足した・変えた要求の分だけを、作業中の版の spec/ に書く」）。
   # 前の版のファイルと同じパスに置くと、重ね合わせで前の版を置き換える意味になる（versions.md）。
   - name: v2-spec-no-unchanged-feature

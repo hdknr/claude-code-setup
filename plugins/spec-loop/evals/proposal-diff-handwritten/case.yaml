@@ -8,8 +8,8 @@ name: proposal-diff-handwritten
 # **judge の既定は haiku**——判定の揺れは測っていない。
 #
 # **このケースはまだ判別を測れていない（BLOCKED）。** 手順 1 の照合（check-signoff.py）が git を使うが、
-# macOS の eval のサンドボックスでは /usr/bin/git（xcrun の shim）が、キャッシュの書き込みと実体の読み取りを拒まれて失敗し、
-# 照合の前で止まる。git が動く環境で回すまで、grader は陽性対照でしか当たっていない（実測は docs/plans/issue-274.md を正とする）。
+# git が xcrun 越しにしか無いホスト（実測したホスト）では、eval のサンドボックスの中で /usr/bin/git（xcrun の shim）が
+# キャッシュの書き込みと実体の読み取りを拒まれて失敗し、照合（手順 1）で止まる。git が動く環境で回すまで、grader は陽性対照でしか当たっていない（実測は docs/plans/issue-274.md を正とする）。
 #
 # 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
 description: >-

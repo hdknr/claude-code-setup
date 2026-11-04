@@ -30,7 +30,7 @@ Issue 本文（外部入力）から読んだ要件: spec-loop の 4 スキル�
   （`v<n>/req-signoff-<k>`）。現行の形の試料をそのまま当てると、0.7.0 の検査（`check-qa-csv.py`・`check-signoff.py`）で止まり、
   **振る舞いと関係なく赤になる**（CLAUDE.md の「物の有無」と同じ形の交絡）。そこで scaffold の先頭に `FORMAT=current` の 1 行を置き、
   **古い版に当てる複製の中でだけ `FORMAT=0.7` に差し替える**。中身（要求・回答・見積り）は同じで、変わるのは列と名前だけ。
-  **それぞれの形がそれぞれの版の検査を通る**ことは、手元で確かめた（下の「試料の確かめ」）。**形を取り違えると通らない**——現行の形は 0.7.0 の検査で、0.7 の形は現行の検査で 1 になる（1 パス目の `/code-review` が当てた）。
+  **それぞれの形がそれぞれの版の検査を通る**ことは、手元で確かめた（下の「試料の確かめ」）。**形を取り違えると通らない**——`check-qa-csv.py` は 1、`check-signoff.py`（タグの名前）は 2 で終わる（1・2 パス目の `/code-review` が当てた）。
 - **grader が見るのは書く場所・数える範囲・手書き部分の中身で、判定役・検証役（`Agent`）の判定は見ない。** `allowed_tools` に `Agent` を書かなかったが、
   **それで `Agent` は止まらなかった**（下の「Eval の回し方」）——修正前の版の spec-review は判定役を 2 回ずつ起こし（$2.8・$2.6）、現行の版は手順 3 の確かめで止まった（$0.9）。
   **腕の間で揃っているのは引数までで、各腕がした仕事の量は違う。**
@@ -113,40 +113,42 @@ B × D——費用の上限の中で B が足りなければ、そこまでの�
 | ケース | grader | 現行 | 修正前 | 対照（期待） | 数えるか |
 | --- | --- | --- | --- | --- | --- |
 | req-loop-diff-reflect | v1-requirement-untouched | 緑 | 緑 | 赤（赤） | 数えない——修正前も緑 |
-| req-loop-diff-reflect | v2-requirement-reflected | 緑 | 緑 | 赤（赤） | 数えない——修正前も緑 |
-| spec-review-diff-target | v1-spec-untouched | 緑・緑 | 緑・緑 | 赤（赤） | 数えない——修正前も緑 |
-| spec-review-diff-target | v2-spec-written | 緑・緑 | 緑・緑 | 赤（赤）・赤（赤） | 数えない——修正前も緑 |
-| spec-review-diff-target | **v2-spec-no-unchanged-feature** | **緑・緑** | **赤・赤** | **赤（赤）** | **数える（1 本）** |
-| feasibility-diff-scale | v2-estimate-written | 緑 | 緑 | 緑（緑） | 数えない——修正前も緑 |
-| feasibility-diff-scale | v2-estimate-has-diff | 緑 | 緑 | 緑（緑） | 数えない——修正前も緑 |
+| req-loop-diff-reflect | v2-requirement-reflected | 緑 | 緑 | 赤（赤。ファイルが無い赤だけ） | 数えない——修正前も緑 |
+| spec-review-diff-target | v1-spec-untouched | 緑（r4）・緑（r6） | 緑（r5）・緑（r6） | 赤（赤） | 数えない——修正前も緑 |
+| spec-review-diff-target | v2-spec-written | 緑（r4）・緑（r6） | 緑（r5）・緑（r6） | 赤（赤）・赤（赤）。どちらもファイルが無い赤だけ | 数えない——修正前も緑 |
+| spec-review-diff-target | **v2-spec-no-unchanged-feature** | **緑（r6）**。r4 の trace でも order.md を書いていない | **赤（r6）**。r5 の trace でも order.md を書いた | **赤（赤）** | **数える（1 本）** |
+| feasibility-diff-scale | v2-estimate-written | 緑 | 緑 | 緑（緑）・r8 で赤（赤） | 数えない——修正前も緑 |
+| feasibility-diff-scale | v2-estimate-has-diff | 緑 | 緑 | 緑（緑）・r8 で赤（赤。ファイルが無い赤だけ） | 数えない——修正前も緑 |
 | feasibility-diff-scale | v2-estimate-diff-only | 緑 | 緑 | 赤（赤） | 数えない——修正前も緑 |
-| proposal-diff-handwritten | draft-written | 赤（測定不成立） | 回していない | 緑（緑） | 数えない——BLOCKED |
+| proposal-diff-handwritten | draft-written | 赤（測定不成立） | 回していない | 緑（緑）・r8 で赤（赤） | 数えない——BLOCKED |
 | proposal-diff-handwritten | draft-has-no-change-list | 赤（測定不成立） | 回していない | 赤（赤。judge 3 票とも FAIL） | 数えない——BLOCKED |
 
-**数えた grader は 1 本**（spec-review の `v2-spec-no-unchanged-feature`）。
+**数えた grader は 1 本**（spec-review の `v2-spec-no-unchanged-feature`）。**grader として回したのは各腕 1 回（r6）**で、もう 1 回は grader を足す前の実行（r4・r5）の trace で同じファイルを書いた・書かなかったことを読んだもの。
 
 - **spec-review の `v2-spec-no-unchanged-feature`**: 修正前の版は 2 回とも、v2 で変えていない受注登録の仕様を
-  `docs/v2/spec/order.md` に書き写した（前の版の同じパスを置き換える意味になる）。現行の版は 2 回とも
+  `docs/v2/spec/order.md` に書いた（前の版の同じパスを置き換える意味になる）。**写しではなく、v1 の 1 行の仕様を表つきの仕様（1,705 字・2,331 字）に書き直したもの**である。現行の版は 2 回とも
   `stock.md`（変えた要求）と `report.md`（足した要求）だけを書いた。**赤の理由は振る舞いである**——修正前の版にも Write があり、
   同じ試料・同じ形（`FORMAT=0.7`）で、書いたファイルが違う。**ただし、どの変更がこの差を作ったかは切り分けていない**——修正前の版は trace（`e-ZGOyYa`）で「v1 の order.md はチェックリストを満たしていないので、同じパスで書き直して置き換える」と理由を書いており、
-  試料の v1 の仕様が 1 行だけであることが引き金になっている。`694fe954` と現行の版の間には、これらのスキルと `references/` を触るコミットが約 100 ある。
+  試料の v1 の仕様が 1 行だけであることが引き金になっている。`git log --oneline 694fe954..9f5f05e5 -- plugins/spec-loop/skills plugins/spec-loop/references` は 121 件。
   差分モードの「足した・変えた要求の分だけを書く」が差を作った候補だが、`3e932a36`（差分モードを入れたコミット）と `694fe954` を比べる回し方はしていない。
-  **言えるのは「修正前の版は、変えていない機能の仕様を作業中の版に書き写し、現行の版は書き写さなかった（各 2 回）」まで。**
+  **言えるのは「修正前の版は、変えていない機能の仕様を作業中の版に書き直して置き、現行の版は置かなかった」まで。** 前の版の仕様が薄いときに書き直すことが誤りかどうかも、この試料では決まらない（v1 の仕様が仕様レビューを抜けた形なら起きないかもしれない）。
   **この grader は最初の修正前の実行（`r5`）の trace を見てから足した**ので、足したあとに**現行・修正前・対照を回し直して**（`r6`）確かめた——数えるのは回し直しの結果である。
 - **修正前の版も緑だった grader は、物の有無で緑になったのではなく、修正前の版も同じ振る舞いをした**: req-loop は v2 に写して直した
   （0.7.0 の `references/versions.md` にも「v2 には足した・変えた要件のファイルだけ」がある）。feasibility も v2 の差分だけを見積もった。
   **1 回ずつなので、「判別しない」とは言えず「この 1 回では判別を示せなかった」**である。
 - **feasibility は試料を 1 度直した**——最初の試料（v2 は追加だけ）で両方の版が緑だったので、v2 に変更（在庫照会の期間）を足し、
-  「変えた機能を見積もった」grader（`v2-estimate-counts-change`）を足して回した（`r7`）。**現行の版がその grader で赤**になったが、
-  trace では金額を決めずに内部の Q&A（`D-F-002`: 値だけの変更の数え方）に起票しており、**SKILL.md どおりの振る舞い**だった
-  （試料の `CLAUDE.md` に変更の数え方を書いていなかった）。**grader の誤りなので外した**。修正前の版はその回、変更を 1 行で見積もった。
+  「変えた機能を見積もった」grader（`v2-estimate-counts-change`）を足して回した（`r7`）。**現行の版がその grader で赤**になった。
+  trace（`e-ggZvZG`）では、手順 3 で変更の行（`E-002 在庫照会の照会期間の変更（変更）`）を書いたあと、**検証役（`Agent`）の指摘を受けて行を外し**、
+  2 回目の検証のあとで値だけの変更の数え方を内部の Q&A（`D-F-002`）に起票した（試料の `CLAUDE.md` に変更の数え方を書いていなかった）。
+  **赤は差分モードの振る舞いの差ではなく、検証役の判断で動いた**ので外した。修正前の版はその回、変更を 1 行で見積もった。
+  **feasibility の grader はどれも、検証役の指摘で書き直したあとの見積りを見ている**（両方の腕で検証役が起きた）。
 - **proposal は BLOCKED**（下の「BLOCKED」）。
 - **git はどのケースでも、どの腕でも動いていない**（req-loop・spec-review・feasibility の trace にも `Failed to locate 'git'` が出る）。
   `release-v1` のタグは子から見えず、凍結は試料の `CLAUDE.md` の「docs/v1 はリリース済み」の文で伝わった。**腕の間では同じ条件**だが、
   **試料の `CLAUDE.md` がこの手がかりを両方の腕に直接渡しているので、req-loop・feasibility が判別しなかったのは試料の作りのせいかもしれない**（確かめていない。PR コメントの残課題）。
 - **陽性対照**: 8 本（最初の 4 ケース分・spec-review の書き写し・feasibility の直した試料・何もしない対照 2 本）とも、期待した grader が期待どおりに赤・緑になった。
   **何もしない対照**（`r8`。1 パス目の `/code-review` の指摘で足した）で、`v2-estimate-written`・`draft-written`（`file_exists`）が赤になることを見た。
-  **`v2-estimate-has-diff` の赤はファイルが無いことによる赤だけ**で、在るファイルの中に「帳票」が無いときの赤は対照で見ていない。
+  **`v2-estimate-has-diff`・`v2-requirement-reflected`・`v2-spec-written` の赤はファイルが無いことによる赤だけ**で、在るファイルの中に pattern が無いときの赤は対照で見ていない。
   missing のファイルに当てた regex の grader は「赤（`does not exist`）」になる（緑に倒れない）ことも対照で見た。
 
 ### BLOCKED
@@ -154,8 +156,9 @@ B × D——費用の上限の中で B が足りなければ、そこまでの�
 - **何が無いか: 道具（eval のサンドボックスの中で動く `git`）。** proposal の手順 1 の `check-signoff.py` は `git` を使うが、
   `PATH` の `git` は `/usr/bin/git`（xcrun の shim）だけで、サンドボックスの中では xcrun のキャッシュの書き込み（`/var/folders/...`）が拒否され、
   実体（`/Applications/Xcode.app/...`・`/Library/Developer/CommandLineTools/...` の `git`）も読めない（`Operation not permitted`。現行の版の trace `e-DDpWCR`）ので
-  `Failed to locate 'git'` で失敗する（現行の版の trace）。現行の版は照合の前で止まり、下書きを書かなかった——**SKILL.md どおり**で、grader の赤は振る舞いの赤ではない。
-  `git` を入れる・サンドボックスの設定を変えるのは環境を変える操作なので、この周ではしていない。
+  `Failed to locate 'git'` で失敗する。`check-signoff.py` は 2 で終わり、現行の版は手順 1（照合）で止まって下書きを書かなかった——**SKILL.md どおり**で、grader の赤は振る舞いの赤ではない。
+  **このホストの結果である**（`/opt/homebrew/bin/git`・`/usr/local/bin/git` が無く、git は xcrun 越しだけ）。`git` を入れる・サンドボックスの設定を変えるのは環境を変える操作なので、この周ではしていない。
+  **scaffold（サンドボックスの外で走る）で作業場所に git を置く経路は試していない**——通るかは分かっていない（2 パス目の `/code-review` の指摘。PR コメントの残課題）。
 - **次善として回したもの**: proposal の陽性対照（grader が赤・緑になれること）と、手元での試料の確かめ（`check-signoff.py` が両方の形で 0）。
 - **証明できなかった受入基準**: B（proposal の grader の判別）。A のうち proposal のケースが「振る舞いを判別する」こと。
 
