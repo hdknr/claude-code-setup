@@ -57,6 +57,13 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **ロックされた worktree も撤去できる**——unlock してから `git worktree remove`（**`--force` は使わない**）。
 - **`MERGED` を確かめるまで worktree を残す**——撤去はその後に置く（点検はマージの前に済ませる）。
   `gh pr merge` が 0 で終わっても `MERGED` とは限らない（マージキューに入っただけのことがある）。
+- **cruise の台帳で利用者の判断を待っている行の PR をマージしない**（#631）——メインの作業ツリーの `.claude/plans/cruise-*.json` を全部読み、
+  その PR を `pr` に持つ行が `blocked` か、`note` が `利用者の判断待ち:` で始まるなら（`ledger.py` の判断待ちの印）、12 で止める。
+  **読むのは `gh pr merge` の直前**——CI を待つ間に親がその行を判断待ちにしても止まり、OPEN でない・draft の PR は今までどおり 2 になる。
+  `.claude/plans` が在るのに読めなければ 7（判定できなかった）。
+  **判断は行に閉じる**——利用者がその行について判断したら、親がその行の `note` を書き換えて（`利用者の判断（<日時>）: <判断>`）から呼ぶ
+  （cruise の `SKILL.md` §4 の 4）。#2427 では、利用者が 1 行に下した判断を親が前例にして、狭いパスの指摘が残る別の行の PR をマージした。
+- **この PR を持たない行の判断待ちでは止めない**——見るのは `pr` がこの PR の番号（`42`・`#42`。数で比べる——引数 `042` も 42）の行だけである。
 - **閉じるはずの Issue が閉じたかを確かめる**——`closingIssuesReferences` の各 Issue が `CLOSED` になるまで待つ。
 - **判定できなかったことを、通った・時間切れ・閉じないと答えない**——`gh` や `git` が失敗した・
   出力の形が読めないなら、**マージの前でも後でも** 7 で止める。
@@ -80,6 +87,8 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **10**: 積んだ周を載せ替えていない——base が下のブランチのまま・base は付け替わったが head に下の元のコミットがある
   （マージしていない。`references/stacked.md` の「下の周がマージされたら」）
 - **11**: head が最後の base の付け替えより前に届いている——検査は前の base と比べた結果（マージしていない。新しいコミットを push する）
+- **12**: cruise の台帳で、この PR を持つ行が利用者の判断を待っている（`blocked`・`note` が `利用者の判断待ち:`）——マージしていない。
+  台帳が読めない・形が違うときは 7（判定できなかった）
 
 ## 何を守らないか
 
@@ -106,11 +115,22 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
   push したコミットは止まる（**新しいコミットを** push すれば通る——同じコミットを push し直しても、timeline にも
   `committedDate` にも何も残らないので 11 のまま。#426 の 2 パス目）。**未来の日付を付けたコミットは素通りする。** 同じ秒は付け替えの前と読む。
 - **付け替えの後に回る型（`edited`）の検査だけで緑になっていても止まる**——どの base と比べた検査かは見ない。
+- **台帳の `note` を書き換えれば 12 を通る**——利用者がその行について判断したかは見られない（書き換えてよいときは
+  `references/absent-lines.md` の「`マージ = 関門を通ればマージ`」を正とする）。**台帳の外にだけ書いた判断待ち**（PR コメント・計画ファイル）も見ない。
+- **`await`（利用者の操作待ち）の状態だけでは止めない**——操作待ちの周では、親が `merge-pr.py` を呼ばない（cruise の `SKILL.md` §4 の 5）。
+  **`note` が判断待ちの印で始まれば、状態に依らず止める**（`ledger.py` の `judging()` は進行中の行だけを数えるので、`await` の行では食い違う）。
+- **読めない台帳が 1 つでもあると、その台帳に無い PR も 7 で止まる**——読めない台帳にその PR があるかを決められないので、通過と読まない。
+- **台帳は呼んだ cwd のリポジトリのメインの作業ツリーの `.claude/plans/` だけを見る**——`ledger.py` が台帳を置く場所である。
+  **bare リポジトリ（の worktree）は台帳なし**と読む——メインの作業ツリーが無く、`ledger.py` もそこには台帳を置けない。
+  **ほかの理由でメインの作業ツリーを決められないとき**（`--separate-git-dir` のリポジトリの worktree・git が使えない）は 7——台帳が在るかを決められない。
+- **隣に `ledger.py` が無い置き方では、台帳の無いリポジトリでも 7 で止まる**——プラグインは 2 つを同じ場所に置く。
+- **`pr` を `PR #42`・URL の形で書いた行には当たらない**——cruise の台帳は番号の形で書く。
 - **最後に読んでから `gh pr merge` までの間の付け替えは見ない**——`--match-head-commit` は head しか固定しない。
 """
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -126,6 +146,7 @@ STATUS_PENDING = {"PENDING", "EXPECTED"}
 MERGED_LOOKBACK = 30  # GraphQL の上限: commits 込みで 50 件は「505,050 nodes」で断られた（#427）
 BASE_CHANGES = ("base_ref_changed", "automatic_base_change_succeeded")
 FORCE_PUSHED = "head_ref_force_pushed"
+HOLD_STATES = ("blocked",)  # 台帳の行のうち、利用者の判断を待っている状態（#631）。判断待ちの印は ledger.py の JUDGE_NOTE
 
 
 class Undetermined(Exception):
@@ -469,6 +490,45 @@ def wait_for(fn, interval: float, timeout: float) -> bool:
         time.sleep(interval)
 
 
+def ledger_holds(number: str) -> list[str]:
+    """cruise の台帳で、この PR を持つ行が利用者の判断を待っているなら、行ごとの理由（#631）。
+
+    台帳は同じ場所の `ledger.py` で読む——場所（メインの作業ツリー）・形・判断待ちの印の写しを作らない。
+    """
+    path = Path(__file__).resolve().parent / "ledger.py"
+    try:
+        spec = importlib.util.spec_from_file_location("dev_loop_ledger", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    except (OSError, ImportError, SyntaxError, AttributeError) as e:
+        raise Undetermined(f"台帳を読む ledger.py を読み込めない（{path}）: {e}") from e
+    holds = []
+    try:
+        try:
+            main = mod.main_worktree()
+        except mod.Unknown as e:
+            if str(e).startswith("bare リポジトリ"):
+                return []  # bare にはメインの作業ツリーが無く、ledger.py も台帳を置けない
+            raise
+        plans = main / ".claude" / "plans"
+        if not mod.exists(plans):  # Path.exists は 3.14 で権限の誤りを「無い」と答える（ledger.py の exists）
+            return []
+        names = sorted(n for n in os.listdir(plans) if n.startswith("cruise-") and n.endswith(".json"))
+        for ledger in (plans / n for n in names):
+            for issue in mod.load(ledger)["issues"]:
+                pr_ = issue.get("pr", "").strip().lstrip("#")
+                if not (pr_.isascii() and pr_.isdigit() and int(pr_) == int(number)):
+                    continue
+                note = issue.get("note", "")
+                if issue["state"] in HOLD_STATES or note.startswith(mod.JUDGE_NOTE):
+                    holds.append(f"{ledger.name} の #{issue['number']}（{issue['state']}）: {note or '（note なし）'}")
+    except mod.Unknown as e:
+        raise Undetermined(f"cruise の台帳を読めない: {e}") from e
+    except OSError as e:
+        raise Undetermined(f"cruise の台帳の場所を読めない: {e}") from e
+    return holds
+
+
 def closing_refs(pr: dict) -> list[str]:
     """閉じるはずの Issue。形が読めなければ、マージの前に `Undetermined`。"""
     closing = pr.get("closingIssuesReferences")
@@ -526,6 +586,13 @@ def main(argv: list[str]) -> int:
         else:
             print(f"ブランチ {branch} を持つ worktree は無い。")
 
+        holds = ledger_holds(a.number)  # マージの直前に読む——待つ間に判断待ちにした行も止める
+        if holds:
+            for h in holds:
+                print(f"**cruise の台帳が、この PR について利用者の判断を待っている**: {h}", file=sys.stderr)
+            print("マージしない。判断はその行の利用者が決める——別の行の判断を前例にしない"
+                  "（references/absent-lines.md の「マージ = 関門を通ればマージ」）。", file=sys.stderr)
+            return 12
         res = run(["gh", "pr", "merge", a.number, "--squash", "--match-head-commit", head_sha])
         if res.returncode != 0:
             print(f"マージに失敗した（rc={res.returncode}）: {res.stderr.strip()}", file=sys.stderr)
