@@ -739,14 +739,18 @@ python3 scripts/run-dev-loop-evals.py --summarize <aggregate-result.json>   # �
 ——**何もしないことは「作らない」と同じに見える。** **通ったら trace を見る**（`--keep-temp`）。
 
 **macOS で git が Xcode（xcrun の shim）越しにしか無いと、サンドボックスの中で `git` が動かないことがある**（#274・#832）。
-サンドボックスの中のシェルは `/usr/bin/git`（shim）を選び、xcrun はキャッシュ（`/var/folders/...`）を書けず、Xcode の実体も読めずに
-`Failed to locate 'git'` になる——**git を使うスキル（proposal の照合など）は、そこで止まる**。**手当ては Homebrew の git を `PATH` に入れること**
-（`brew install git`。**利用者の環境を変える操作なので、利用者に確かめてから**）。入れた後も**シェルが選ぶのは shim のまま**で
-（`type -a git` に `/opt/homebrew/bin/git` が出なかった。理由は確かめていない）、**xcrun が `PATH` から Homebrew の git を見つけて起こす**
-（サンドボックスの中で `xcrun --find git` が `/opt/homebrew/bin/git`、`git --version` が Homebrew の版を返した。2026-11-04）。
-**xcrun の警告（`couldn't create cache file`）は毎回 stderr に出るが、終了コードは 0 である。**
-**回す前に、git だけを走らせるケースで陽性対照を取る**——プラグインをリポジトリの外に複製し、`git --version` と `git tag` の出力をファイルに書かせて
-regex で見る（1 回 $0.2 前後）。**同じホストでも動くかは時期で違った**（#183 の周（2026-10）では警告つきで動いた）ので、**前に動いたことを当てにしない**。
+#274 の周（2026-11-04）では、サンドボックスの中で xcrun がキャッシュ（`/var/folders/...`）を書けず、Xcode の実体も読めずに
+`Failed to locate 'git'` になり、**git を使うスキル（proposal の照合など）はそこで止まった**。
+**同じホストで Homebrew の git（`brew install git`。`/opt/homebrew/bin` は `PATH` に入っていた）を入れた後は動いた**——
+**利用者の環境を変える操作なので、入れるなら利用者に確かめてから。** 入れた後に観測したのは次の 3 つまでで、**仕組みは推定である**
+（`/opt/homebrew/bin` を `PATH` から外した対照は取っていない）:
+シェルが選ぶのは shim のまま（`which -a git`・`type -a git` は `/usr/bin/git` だけ。理由は確かめていない）、
+サンドボックスの中の `xcrun --find git` は `/opt/homebrew/bin/git`、shim 越しの `git --version` は Homebrew の版（Xcode の版ではない）。
+**`couldn't create cache file` の行は git を呼ぶたびに出るが、終了コードは 0 だった**（出力は 1 つのファイルにまとめて見たので、どちらの流れに出たかは見ていない）。
+**回す前に、git だけを走らせるケースで陽性対照を取る**——プラグインをリポジトリの外に複製し、**素の `git`** で `git --version` と `git tag` の出力をファイルに書かせ、
+**タグ名**を regex で見る（版の文字列だけでは、どの git が動いたかも、素の `git` が動いたかも決まらない。1 回 $0.2 前後）。
+**サンドボックスの中で git が動くかは、ホストの設定で変わり、同じ周の中でも揺れた**（#181 は切れた `/usr/local/bin/git` のリンクで 3 回のうち 2 回動かず、
+#181・#183 では xcrun の行が出ても動いた回がある）ので、**前に動いたことを当てにしない**。
 
 ### トークン使用量を測る
 
