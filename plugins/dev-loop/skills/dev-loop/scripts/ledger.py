@@ -7,6 +7,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
     python3 <…>/ledger.py group <名前> <代表> <番号> [<番号> …]
     python3 <…>/ledger.py lines <名前> 項目=値 [項目=値 …] --source 出所
     python3 <…>/ledger.py user-ops <名前> [コマンド …] --source 出所
+    python3 <…>/ledger.py timer <名前> 張った|張らない [--detail 中身] --source 出所
     python3 <…>/ledger.py show <名前>
     python3 <…>/ledger.py next <名前>
     python3 <…>/ledger.py status <名前>
@@ -40,8 +41,14 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
    "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "origin": "", "group": "", "updated": "<UTC>"}
 ],
  "lines": {"values": {"仕様の穴": "推奨で決めて起票"}, "source": "<出所>", "updated": "<UTC>"},
- "user_ops": {"commands": ["gh workflow run infra-apply.yml"], "source": "<出所>", "updated": "<UTC>"}}
+ "user_ops": {"commands": ["gh workflow run infra-apply.yml"], "source": "<出所>", "updated": "<UTC>"},
+ "timer": {"answer": "張った", "detail": "30 分おき・ジョブ <ID>・張った <UTC>・失効 <UTC>", "source": "<出所>", "updated": "<UTC>"}}
 ```
+
+`timer` は**再開タイマーを張るかへの利用者の答え**（#472）で、無くてもよい。cruise の起動時に訊き（cruise の `SKILL.md` §3）、
+`張った` なら中身（間隔・ジョブ ID・張った時刻・失効）を `detail` に、`張らない` なら `detail` は空で残す。
+**タイマーの実物ではない**——タイマーは張ったセッションの中にしか無く、セッションが終われば消えるが、この記録は残る。
+**在るかは `CronList` で見る**（読み方は `references/ledger.md` の「どう再開するか」）。`lines` と同じく置き換えで、出所の無い値を書かない。
 
 `user_ops` は**利用者が自分で打つと決めた操作**（#466）で、無くてもよい。cruise の起動時の点検で
 **止まりうる操作**（`check-unattended-env.py`）を見せ、利用者が「その操作だけ自分で打つ」を選んだものを置く。
@@ -52,7 +59,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 **項目と値は `LINES` だけ**——意味は `references/absent-lines.md` の「線と既定」と `references/fix-line.md`
 （`直す線`）と `references/found-lines.md`（`周の途中の課題`。#464）を正とし、
 `scripts/test-ledger.py` が `LINES` を `absent-lines.md` の表と、`直す線` は `SKILL.md` 手順 3 と、`周の途中の課題` は
-`found-lines.md` と突き合わせる（`fix-line.md` は見ていない）。**`本番反映` は項目に無い**（広げられない）。
+`found-lines.md` と突き合わせる（`fix-line.md` は見ていない）。`マージ前の判断`（#829）は `absent-lines.md` の表にあり、意味は同じファイルの同名の節。**`本番反映` は項目に無い**（広げられない）。
 **どこから来た値を `lines` に書いてよいか（出所）は `references/absent-lines.md` の「線を広げられるのは利用者だけ」を正とする**
 ——このスクリプトは出所を確かめない（`--source` に書かれた文字列を残すだけ）。
 
@@ -75,7 +82,8 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `impl` | 実装中（worktree がある） |
 | `gate` | 関門（Verifier・`/code-review`）を回している |
 | `pr` | PR を出し、マージを待っている |
-| `merged` | マージ済み（**依存先として「済んだ」と読むのはこれだけ**） |
+| `merged` | マージ済み（**依存先として「済んだ」と読むのは、これと `merged_unverified` だけ**） |
+| `merged_unverified` | マージ済みだが、実機確認が残っている（#634）——`実機確認 = Refs でマージ` の線で `Refs` でマージし、Issue は開いたまま。確かめる受入基準と確かめ方は `note` に。**依存先としては「済んだ」と読む**が、`show` は「利用者の確認待ち（実機確認）」に出し、cruise は「済んだ」と報告しない（親 Issue の一覧の行なら `status` は 5 と言わない。周の途中で足した行は 5 の括弧に出る——§6 が渡す） |
 | `blocked` | 止まっている（人間の判断待ち・BLOCKED） |
 | `await` | 利用者の操作待ち（#466）——止まりうる操作（権限の拒否・`user_ops`）を利用者が打つのを待つ。打つコマンドは `note` に。**依存先としては「済んでいない」と読む** |
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
@@ -124,9 +132,11 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 1. **進行中の行（`impl`・`gate`・`pr`。出所に依らない。`note` が `利用者の判断待ち:` で始まる行——まとめならどれか 1 行——を除く）か、落ちたのにまとめの中で `merged` の行があれば 0**——§6 は始めた行を閉じてから、
    名指しの行を戻してから判定する。
 2. **親 Issue の一覧の行（`origin` が空の行）がすべて `merged` か `dropped` なら 5**——周の途中で足した行が残っていても終える（§6。#774）。
+   **一覧の行に `merged_unverified` が 1 つでもあれば 5 と言わない**（#634）——実機確認が残っている（周の途中で足した行の `merged_unverified` は、足した行の残りと同じく 5 の括弧に出る）。
 3. **親 Issue の一覧の行の周か、その依存とまとめの仲間を辿った先の周が着手できれば 0**——`next` と同じまとまり（まとめは全行が着手できるときだけ）。
    **周の途中で足した行だけが着手できても 0 と言わない**（§6 はそれを始めずに終える）。
-4. **それ以外は 3**——残りは `blocked`・`await`・判断待ちの印のある進行中の行と、それら（か `dropped`）に依存する周だけ。
+4. **それ以外は 3**——残りは `blocked`・`await`・`merged_unverified`・判断待ちの印のある進行中の行と、それら（か `dropped`）に依存する周だけ
+   （`merged_unverified` に依存する周は着手できるので、3 で残るのは `merged_unverified` の行そのものだけ）。
 
 1 行目に判定と、その理由になった番号を出す。**台帳の値だけで決める**——実物（PR・worktree）は見ない（下の「守らない」）。
 
@@ -151,7 +161,12 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **`progress` は行の番号と `PROGRESS_KEYS`（`state`・`pr`・`group`）だけを出す**（#791）——`updated`・`note` を混ぜると、親が同じ `note` を書き直すだけの起動を
   外側のループが前進と読み、「前進なしで止める」が効かない（#790 と同じ形）。
 - **`status` は、周の途中で足した行（`origin` のある行）だけが着手できても 0 と言わない**（#632）——§6 はそれを始めずに終えるので、0 と答えると
-  外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える——`merged`・`dropped` の行の先は辿らない。
+  外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える——`merged`・`merged_unverified`・`dropped` の行の先は辿らない。
+- **`next` は `merged_unverified` を依存先として済んだと読む**（#634）——`absent-lines.md` の `実機確認 = Refs でマージ` は「依存する Issue は進めてよい」と決めている。
+- **`show` は `merged_unverified` の行を「利用者の確認待ち（実機確認）」に `note` つきで出す**（#634。取り残された行は除く——それは名指しの行に出る）——`merged` に潰すと、実機確認待ちが `note` の文章にしか残らず、
+  どの集計にも出ない（spin-dd/tfs-stocks#2427 の #2432）。
+- **`merged_unverified` の行があるあいだは「すべてマージ済みか取り下げ」と出さない**（#634）——cruise はその行で「済んだ」と報告して終える。
+- **`status` は、親 Issue の一覧の行に `merged_unverified` があれば 5 と言わない**（#634）——外側のループが実機確認の残る cruise を「済んだ」と読む。
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
 - **`--separate-git-dir` のリポジトリ（先の名前が `.git` でないもの）とサブモジュールと bare リポジトリの worktree でも、
   作業ツリーの外に書かない**——worktree の中からメインの作業ツリーを決められなければ 4。
@@ -177,6 +192,16 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   **依存が*元の周*かどうかは見ない**——番号の意味を知らない。
 - **`set` で、出所を持ち依存が空の行を作らない**——同じ理由。出所を持つ行の `deps=` で依存を消すのも、
   依存の空の行に `origin=` で出所を後付けするのも拒む（同じ呼び出しで両方を渡したら、渡した後の値で見る）。
+- **`add --origin` は、出所を辿った世代が 2 以上の行（後続の後続）を `blocked` で足し、`note` を
+  `後続の後続（世代 N: #a → #b → #c）——利用者の判断待ち: …` にする**（#630。終了コードは 0）——`todo` で足すと `next` に出て周として回り、
+  砦の穴を直す後続が収束せずに連鎖する（spin-dd/tfs-stocks#2427 で 5 世代）。**世代**は、親 Issue の一覧から作った行（出所が空）が 0、
+  出所の最初の `#<番号>`（`references/found-lines.md` の出所の書式 `#<元の周> <関門> <パス>` の元の周）が台帳に在ればその行の世代 + 1、
+  辿れなければ 1。なぜ止めるか・利用者に何を訊くかは `references/found-lines.md` の「後続の後続」を正とする。
+  **`note` の先頭に判断待ちの印（`利用者の判断待ち:`）を置かない**——利用者が直すと答えて `set state=todo` で戻した行が `impl` になると、
+  進行中の判断待ちと読まれ、`status` が走っている周を人待ち（3）か済んだ（5）と答える。
+- **世代を辿るのは循環で止まる**——自分や互いを指す出所（手で直した台帳・`set origin=`）でも、`add`・`show` は答えを返す。
+- **`show` は「周の途中で足した行のうち済んでいないもの」に各行の世代を出す**（#630）——親が次の課題を足す前に、どの行が後続の後続かを見分けられる。
+- **`timer` も出所の無い値を書かない**——`--source` が空・答えが `張った`／`張らない` でない・中身（`--detail`）の無い `張った` は拒む。手で崩した台帳なら 4。
 - **`user_ops` も出所の無い値を書かない**——`--source` が空・空のコマンド・同じコマンドを 2 度は拒む。置き換えで、渡さなければ空になる。
   手で直した台帳で形が違えば 4。`user_ops` を持たない台帳はこれまでどおり読む。
 - **`await` の行は `next` に出さず、それに依存する行も出さない**——操作が済むまで、依存する周は始めない。
@@ -210,7 +235,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **抜けた行に同じ呼び出しで渡した `state` などは、その行だけに効く**——抜ける前のまとめに伝えると、落ちた 1 件を戻すつもりで全行を戻す。
   **抜けても、周の在り処（`pr` `branch` `worktree` `agent` `base`）は自分では消さない**——消すのは呼ぶ側
   （戻すなら同じ呼び出しで `pr= branch= worktree= agent= base=` を渡す。手順は `../cruise/references/grouping.md`）。
-- **`show` は、まとめに入ったまま `merged` で `note` が `落ちた:` で始まる行を名指しする**（#665）——マージの後に代表へ `merged` を書いてから
+- **`show` は、まとめに入ったまま `merged`（か `merged_unverified`）で `note` が `落ちた:` で始まる行を名指しする**（#665・#634）——マージの後に代表へ `merged` を書いてから
   落ちた行を戻すまでの間で止まると、落ちた行は `merged` のまま `next` にも「進行中」にも出ず、直されないまま済んだことになる。
 - **`group` は、入れる行の `note` の `落ちた:` を `前に落ちた:` に書き換える**（#665）——前のまとめで落ちて戻した行は `note` に理由を残す決まりなので、
   そのまま新しいまとめに入れてマージすると、落ちていないのに名指しされ、cruise の終わりの行も出なくなる。理由の文は残す。
@@ -224,6 +249,11 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 
 - **落ちた行の名指しが正しいか**——`note` の文字とまとめの欄だけで見る（`next` が依存先として済んでいないと読む行も同じ）。`group` を通さずに `set … note=落ちた: …` を書いたままマージした行は名指しし、
   `note` を `落ちた:` で始めずに落とした行は名指ししない。実物（Issue が開いているか・まとめの PR の `Refs`）は再開する側が見る（`references/ledger.md`）。
+- **`add` の後の出所と状態の書き換え**（#630）——`set origin=` で世代 2 以上にした行と、世代 2 以上の行を `set state=todo` に戻した行
+  （利用者が直すと答えたときの正しい操作）はそのまま回る。世代で `blocked` にするのは `add` の時点だけである。
+  `note` を `利用者の判断待ち:` で始まる値に書き直した行は、進行中になると判断待ちと読まれる（cruise §4-4 の印のとおり）。
+- **書式を外した出所**（#630）——最初の `#<番号>` を元の周と読むので、`#` の無い出所は辿れずに世代 1 と数え、
+  元の周より前に別の番号を書いた出所はその番号の行を辿る。
 - **戻す順**——1 行ずつ抜けた後に輪になる順は拒む（3。台帳は変えない）が、輪にならない順を自分では選ばない（`../cruise/references/grouping.md` の「マージの後」）。
 
 - **複数のセッションからの同時書き込み**——`os.replace` なので半端なファイルは残らないが、後勝ちで片方の更新が消えうる。
@@ -250,7 +280,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "await", "dropped")
+STATES = ("todo", "impl", "gate", "pr", "merged", "merged_unverified", "blocked", "await", "dropped")
 KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")
 TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")
 # まとめの全行に書く鍵（周の在り処）。ほかの鍵はその行だけ
@@ -268,6 +298,7 @@ LINES = {
     "実機確認": ("止まる", "Refs でマージ"),
     "マージ": ("止まる", "関門を通ればマージ"),
     "周の途中の課題": ("外に出す", "台帳に足して直す"),
+    "マージ前の判断": ("止まる", "推奨で決めて起票"),
 }
 # 線の出所の印（#489）。効き方は references/absent-lines.md の「`ドキュメントとプラグインの配布`」を正とする。
 # 印は区切った形でだけ「あり」と読む（#507）——前が出所の先頭か「（」「、」「・」「＋」「: 」「：」、後ろが出所の終わりか「——」か、
@@ -278,6 +309,12 @@ DIST_MERGE = "関門を通ればマージ"
 DIST_MARK_RE = re.compile(r"(?:\A|[（、・＋]|: |：)" + DIST_MARK + r"(?:）+(?=\Z|[＋（])|——|\Z)")
 ISSUE_FIELDS = {"number", "updated", *KEYS}
 DONE = "merged"
+# マージ済みだが実機確認が残る（#634。`実機確認 = Refs でマージ`）。依存先としては済んだと読むが、cruise の「済んだ」には数えない
+UNVERIFIED = "merged_unverified"
+# 依存先として「済んだ」と読む状態
+MERGED = (DONE, UNVERIFIED)
+# 再開タイマーを張るかへの利用者の答え（#472。cruise SKILL.md §3）
+TIMER_ANSWERS = ("張った", "張らない")
 NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
 FORMAT = 1
 
@@ -295,6 +332,10 @@ GOING = ("impl", "gate", "pr")
 JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")
 # `progress` が出す欄（#791）。前進と読む値だけ——`updated`・`note` ほかは出さない（docstring の「`progress` が出すもの」）
 PROGRESS_KEYS = ("state", "pr", "group")
+# 出所の元の周（references/found-lines.md の出所の書式 `#<元の周> <関門> <パス>` の最初の番号。#630）
+ORIGIN_RE = re.compile(r"#(\d+)")
+# 足すと周として回さず、利用者の判断待ちにする世代（後続の後続。references/found-lines.md の「後続の後続」。#630）
+GENERATION_LIMIT = 2
 
 
 class Refused(Exception):
@@ -375,6 +416,15 @@ def check_user_ops(commands, source):
         raise Refused("同じコマンドを 2 度渡した")
 
 
+def check_timer(answer, detail, source):
+    if not source.strip():
+        raise Refused("出所が空（--source に、誰がいつ答えたかを書く）")
+    if answer not in TIMER_ANSWERS:
+        raise Refused(f"再開タイマーの答えは {' か '.join(TIMER_ANSWERS)} だけ: {answer!r}")
+    if answer == "張った" and not detail.strip():
+        raise Refused("張ったなら --detail に中身（間隔・ジョブ ID・張った時刻・失効）を書く")
+
+
 def exists(path):
     """**`Path.exists()`／`is_file()` を使わない**——Python 3.13 以前は権限・名前の長さの誤りを例外で返し、
     3.14 は False を返す（権限の無いことを「無い」と言う）。無いときだけ False、他は判定できなかった。"""
@@ -395,7 +445,7 @@ def load(path):
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise Unknown(f"台帳を読めない: {path}: {exc}") from exc
     # `format` は int の 1 だけ——`true == 1`・`1.0 == 1` が通るので型も見る
-    if (not isinstance(data, dict) or not {"format", "name", "issues"} <= set(data) <= {"format", "name", "issues", "lines", "user_ops"}
+    if (not isinstance(data, dict) or not {"format", "name", "issues"} <= set(data) <= {"format", "name", "issues", "lines", "user_ops", "timer"}
             or type(data["format"]) is not int or data["format"] != FORMAT
             or data["name"] != path.name[len("cruise-"):-len(".json")] or not isinstance(data["issues"], list)):
         raise Unknown(f"台帳の形が違う: {path}")
@@ -417,6 +467,11 @@ def load(path):
                 or not isinstance(ops["commands"], list) or not all(isinstance(c, str) for c in ops["commands"])
                 or not all(isinstance(ops[k], str) for k in ("source", "updated"))):
             raise Unknown(f"台帳の利用者が打つ操作の形が違う: {path}: {ops!r}")
+    if "timer" in data:
+        timer = data["timer"]
+        if (not isinstance(timer, dict) or set(timer) != {"answer", "detail", "source", "updated"}
+                or not all(isinstance(timer[k], str) for k in ("answer", "detail", "source", "updated"))):
+            raise Unknown(f"台帳の再開タイマーの形が違う: {path}: {timer!r}")
     # **ファイルの上で既に崩れている台帳は、拒んだ（3）ではなく判定できなかった（4）**——
     # 引数が悪いのではないので、3 と答えると原因を取り違える。`next` に答えさせてもいけない
     try:
@@ -439,6 +494,8 @@ def validate(data):
         raise Refused("線の出所が空")
     if "user_ops" in data:
         check_user_ops(data["user_ops"]["commands"], data["user_ops"]["source"])
+    if "timer" in data:
+        check_timer(data["timer"]["answer"], data["timer"]["detail"], data["timer"]["source"])
     for issue in data["issues"]:
         parse_deps(issue.get("decisions", ""), Refused)
     numbers = [i["number"] for i in data["issues"]]
@@ -529,8 +586,8 @@ def find(data, number):
 
 
 def is_stranded(issue):
-    """取り残された行: まとめに入ったまま merged で、note が「落ちた:」で始まる（マージの後に戻していない。#665）。"""
-    return issue["state"] == DONE and bool(issue.get("group")) and issue.get("note", "").startswith(DROPPED_NOTE)
+    """取り残された行: まとめに入ったまま merged（か merged_unverified）で、note が「落ちた:」で始まる（マージの後に戻していない。#665）。"""
+    return issue["state"] in MERGED and bool(issue.get("group")) and issue.get("note", "").startswith(DROPPED_NOTE)
 
 
 def judging(data):
@@ -540,15 +597,34 @@ def judging(data):
             and (i.get("note", "").startswith(JUDGE_NOTE) or (i.get("group") and i["group"] in marked))}
 
 
+def generation(data, issue):
+    """周の途中で足した行の世代と、辿った番号の並び（#630）。親 Issue の一覧から作った行（出所が空）は 0。
+    出所の最初の `#<番号>` が台帳に在ればその行の世代 + 1、辿れなければ 1。**循環は訪れた行で止める**（手で直した台帳・`set origin=`）。"""
+    by_number = {i["number"]: i for i in data["issues"]}
+    chain, seen, row = [issue["number"]], {issue["number"]}, issue
+    # 段の数を台帳の行の数で切る——循環の検査（seen）が外れても止まる
+    while row.get("origin") and len(chain) <= len(by_number):
+        m = ORIGIN_RE.search(row["origin"])
+        parent = by_number.get(int(m.group(1))) if m else None
+        if parent is None or parent["number"] in seen:
+            break
+        chain.insert(0, parent["number"])
+        seen.add(parent["number"])
+        row = parent
+    # 先頭が一覧の行（出所が空）なら辿った段の数、辿れずに止まった（出所のある行で終わった）なら 1 段を足す
+    depth = len(chain) - 1 + (1 if by_number[chain[0]].get("origin") else 0)
+    return depth, chain
+
+
 def ready(data):
-    """着手できる Issue: 未着手で、依存がすべてマージ済み（まとめの中の依存は済んだと読む）。行ごとに見る。
+    """着手できる Issue: 未着手で、依存がすべてマージ済み（merged_unverified も。まとめの中の依存は済んだと読む）。行ごとに見る。
     **取り残された行は、merged でも依存先として済んでいないと読む**（#711）——直されていない。"""
     state = {i["number"]: i["state"] for i in data["issues"]}
     group = {i["number"]: i.get("group", "") for i in data["issues"]}
     stranded = {i["number"] for i in data["issues"] if is_stranded(i)}
     return [i for i in data["issues"]
             if i["state"] == "todo"
-            and all((state.get(d) == DONE and d not in stranded) or (i.get("group", "") and group.get(d) == i["group"])
+            and all((state.get(d) in MERGED and d not in stranded) or (i.get("group", "") and group.get(d) == i["group"])
                     for d in i["deps"])]
 
 
@@ -590,9 +666,20 @@ def cmd_add(path, number, deps, title, origin=None):
     entry = {"number": number, "title": title or "", "deps": deps, "state": "todo",
              **{k: "" for k in TEXT_KEYS if k != "title"}, "origin": origin or "", "updated": now()}
     data["issues"].append(entry)
+    depth, chain = generation(data, entry) if origin else (0, [number])
+    if depth >= GENERATION_LIMIT:
+        # 後続の後続は回さずに利用者の判断待ちにする（references/found-lines.md の「後続の後続」。#630）
+        route = " → ".join(f"#{n}" for n in chain)
+        entry["state"] = "blocked"
+        # 先頭に判断待ちの印（JUDGE_NOTE）を置かない——利用者が直すと答えて todo に戻した行が impl になったとき、
+        # judging() が判断待ちと読み、status が走っている周を人待ちと答える
+        entry["note"] = (f"後続の後続（世代 {depth}: {route}）——利用者の判断待ち: 続けて直すか、"
+                         "範囲を狭める・打ち切るか（references/found-lines.md の「後続の後続」）")
     save(path, data)
     print(f"#{number} を足した（依存: {', '.join(f'#{d}' for d in deps) or 'なし'}"
-          + (f"・出所: {origin}" if origin else "") + "）")
+          + (f"・出所: {origin}・世代 {depth}" if origin else "") + "）")
+    if depth >= GENERATION_LIMIT:
+        print(f"世代 {depth}（{route}）——後続の後続なので blocked（利用者の判断待ち）で足した。回すかは利用者が決める")
 
 
 def cmd_set(path, number, pairs):
@@ -621,7 +708,7 @@ def cmd_set(path, number, pairs):
     after = {**issue, **changes}
     if ("deps" in changes or "origin" in changes) and after.get("origin") and not after["deps"]:
         raise Refused(f"#{number} を出所があって依存の無い行にしない（元の周のマージより先に next に出る）")
-    if "group" in changes and is_stranded(issue) and after["state"] == DONE:
+    if "group" in changes and is_stranded(issue) and after["state"] in MERGED:
         # merged のまま抜くと名指しも `next` の止めも外れ、直していない行に依存する周が始まる（#711）
         raise Refused(f"#{number} は落ちたのにまとめの中で merged のまま——merged のまま抜かない。戻すなら同じ呼び出しで "
                       "`state=todo pr= branch= worktree= agent= base=` も渡す（grouping.md の「マージの後」）")
@@ -702,6 +789,15 @@ def cmd_user_ops(path, commands, source):
     print("利用者が打つ操作: " + (", ".join(commands) or "なし"))
 
 
+def cmd_timer(path, answer, detail, source):
+    answer, detail = answer.strip(), detail.strip()
+    check_timer(answer, detail, source)
+    data = load(path)
+    data["timer"] = {"answer": answer, "detail": detail, "source": source, "updated": now()}
+    save(path, data)
+    print("再開タイマー: " + answer + (f"（{detail}）" if detail else ""))
+
+
 def cmd_show(path):
     data = load(path)
     print(f"台帳: {path}")
@@ -727,6 +823,10 @@ def cmd_show(path):
     if data.get("user_ops", {}).get("commands"):
         ops = data["user_ops"]
         print("利用者が打つ操作（出所: {}・{}）: {}".format(ops["source"], ops["updated"], ", ".join(ops["commands"])))
+    if "timer" in data:
+        timer = data["timer"]
+        print("再開タイマー（利用者の答え。出所: {}・{}）: {}{}——実物ではない。在るかは CronList で見る".format(
+            timer["source"], timer["updated"], timer["answer"], f"（{timer['detail']}）" if timer["detail"] else ""))
     print()
     print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 出所 | まとめ | 更新 |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
@@ -751,10 +851,15 @@ def cmd_show(path):
           + (", ".join(f"#{i['number']}({i['state']})（{i.get('note') or 'note が空'}）" for i in blocked) or "なし"))
     awaiting = [i for i in data["issues"] if i["state"] == "await"]
     print("利用者の操作待ち: " + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in awaiting) or "なし"))
+    # 取り残された行（落ちた行）は直していないので確認待ちに混ぜない——名指しの行に出る（#634 の 1 パス目）
+    unverified = [i for i in data["issues"] if i["state"] == UNVERIFIED and not is_stranded(i)]
+    if unverified:
+        print("利用者の確認待ち（実機確認。Refs でマージし Issue は開いたまま）: "
+              + ", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in unverified))
     found = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
     if any(i.get("origin") for i in data["issues"]):
         print("周の途中で足した行のうち済んでいないもの: "
-              + (", ".join(f"#{i['number']}({i['state']})" for i in found) or "なし"))
+              + (", ".join(f"#{i['number']}({i['state']}・世代 {generation(data, i)[0]})" for i in found) or "なし"))
     stranded = [i for i in data["issues"] if is_stranded(i)]
     if stranded:
         print("落ちたのにまとめの中で merged のまま（マージの後に戻していない。Issue と PR を実物で確かめてから戻す）: "
@@ -799,7 +904,7 @@ def judge(data):
         if n in need or n not in by:
             continue
         need.add(n)
-        if by[n]["state"] in (DONE, "dropped"):
+        if by[n]["state"] in (*MERGED, "dropped"):
             continue  # 済んだ・取り下げた行の先は、一覧の行を待たせていない
         stack.extend(by[n]["deps"])
         # まとめは全行が着手できるときだけ始まる——仲間が待つ行も辿る
@@ -850,6 +955,11 @@ def build_parser():
     uo.add_argument("name")
     uo.add_argument("commands", nargs="*")
     uo.add_argument("--source", required=True)
+    tm = sub.add_parser("timer")
+    tm.add_argument("name")
+    tm.add_argument("answer")
+    tm.add_argument("--detail", default="")
+    tm.add_argument("--source", required=True)
     return p
 
 
@@ -872,6 +982,8 @@ def main(argv=None, cwd=None):
             cmd_lines(path, args.pairs, args.source)
         elif args.cmd == "user-ops":
             cmd_user_ops(path, args.commands, args.source)
+        elif args.cmd == "timer":
+            cmd_timer(path, args.answer, args.detail, args.source)
         elif args.cmd == "show":
             cmd_show(path)
         elif args.cmd == "next":

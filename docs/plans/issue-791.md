@@ -153,3 +153,6 @@ Verifier（sonnet）反証 1 件、`/code-review`（high）指摘 10 件。狭�
 - 直した: R2-1（後退。SIG_IGN のシグナルにはハンドラを置かない——#820 と同じ形）・R2-2（中断でまず SIGTERM、`GRACE` 秒で SIGKILL）・先頭 0 の番号（後退。`057` を 57 と読む）。試料 S15〜S17・S12 と変異 3 件
 - 記録だけ: CR2（計画の文の訂正）・`APPEND` の文面の試料の穴
 - 直す（取り込みのとき）: CR5——#815 の手書きの例を `outer-loop.py` の案内に置き換える
+- 取り込み（2026-11-04）: main `8496db5f`（dev-loop 1.89.0）を取り込み、版を **1.90.0** に。衝突は版の行（3 種類）・生成ブロック（main 側を取って `skill-metrics.py` で書き直し）・`references/ledger.md`（両側の行を残す）・`ledger.py`（`PROGRESS_KEYS` と main の `ORIGIN_RE`・`GENERATION_LIMIT` を両方残す）
+- CR5 を直した: 公開ページ `#print-mode` の手書きのループ（#815）を外し、`ledger.py progress` で比べることと同梱の `outer-loop.py`（`#outer-loop`）を指す行にした
+- 直した差分（`6d4e1e2d`）の関門: Verifier（sonnet）・`/code-review`（high）各 1 回。`/code-review` の桁の多すぎる番号（後退）を `bbe99cc5` で直した（関門は当て直していない）。ほかは記録だけ（PR コメント）

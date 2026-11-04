@@ -62,6 +62,7 @@ nav:
     - プラグイン一覧: plugins/index.md
     - dev-loop の設計（ループ志向開発）: plugins/dev-loop-design.md
     - dev-loop のオートクルーズ（複数 Issue を不在のまま回す）: plugins/dev-loop-cruise.md
+    - spec-loop の流れと Red テスト（要求から dev-loop の Issue まで）: plugins/spec-loop.md
   - ツール解説:
     - Docker をやさしく理解する: tools/docker.md
     - GitHub をやさしく理解する: tools/github/index.md

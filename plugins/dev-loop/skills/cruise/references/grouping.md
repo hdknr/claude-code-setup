@@ -95,9 +95,14 @@ python3 ledger.py group issue-<親> <代表> <番号> [<番号> …]
    **`merge-pr.py` が「Issue が閉じない」で 0 以外を返しても、マージ自体が済んだか（`gh pr view <PR> --json state` が `MERGED`）を先に見る**——
    済んでいれば下の 2 へ進む。済んでいなければマージしていないので、ここで止まる。
 2. **`Fixes` に並べた Issue が全部閉じたかを `gh issue view <番号> --json state` で確かめ、閉じなかったものは PR を名指しして閉じる**——
-   `gh issue close <番号> --comment "PR #<PR> で直した（まとめ #<代表>）"`（利用者の指示「課題がマージされたら、元課題は閉じてよい」）。
+   `gh issue close <番号> --comment "<!-- dev-loop-close: 親 #<親> --> PR #<PR> で直した（まとめ #<代表>）"`（利用者の指示「課題がマージされたら、元課題は閉じてよい」。印は cruise `SKILL.md` の「GitHub に書くものの印」）。
    **`Refs` に変えた（落ちた）Issue は閉じない**——直していない。
 3. **台帳はまず代表に書く**——`ledger.py set issue-<親> <代表> state=merged pr=#<PR>`（周の在り処はまとめの全行に書く。落ちた行も一度 `merged` になる）。
+   **`実機確認 = Refs でマージ` の線で、まとめの Issue のどれか 1 つでも実機確認のために `Refs` で指してマージした（実機確認が残る）なら、`state=merged` ではなく `state=merged_unverified`**
+   （`../dev-loop/references/absent-lines.md` の「`実機確認 = Refs でマージ`」の 5。#634）——`Fixes` で閉じた行も一緒に `merged_unverified` になる（状態はまとめの全行でそろう）ので、
+   **`merged` にするのは残った全行の Issue が閉じてから**（`../dev-loop/references/ledger.md` の「どう再開するか」の 2）。
+   **実機確認の `note` は実機確認が残る行にだけ書き、落ちた行の `note` は書き換えない**——`落ちた:` が消えると、取り残しの名指しから外れ、直していない行が依存先として済んだと読まれる。
+   落ちた行の扱い（4）は同じ。
    **3 を書いてから 4 を終えるまでの間で止まったら**（利用上限・セッションの終わり）、落ちた行は `merged` のまま残る——
    再開した親は `ledger.py show` の「落ちたのにまとめの中で merged のまま」を見て、4 の続きから戻す（`../dev-loop/references/ledger.md` の「どう再開するか」。#665）。
 4. **続けて、落ちた行だけを戻す**——代表でない行から先に、1 行ずつ

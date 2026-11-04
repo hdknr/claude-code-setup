@@ -52,6 +52,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **手で提案書を書かない**。**決裁者の承認待ちで止まる**）。素のスキルとして張れないのは同上
     - `skills/scaffold/` - dev-loop への引き渡し（#219。**中間表現 `spec_ir.json` を書くのがスキル、
       そこから先の生成はスクリプト**。**Issue の登録で止まり、登録の前に利用者に確かめる**）。素のスキルとして張れないのは同上
+    - `evals/` - **差分モード（#263）の振る舞いの Eval**（`claude plugin eval`。#274。4 スキルに 1 ケースずつ。**CI からは呼ばない**——
+      `claude` を起こして課金する。陽性対照・差分モードが入る前の版への当て方と、判別の実測は `docs/plans/issue-274.md` を正とする）
     - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
     - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件・
@@ -75,6 +77,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `scripts/test-check-feasibility-csv.py`）
     - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
       作れなければ**前の出力を消す**——**消せなければ 2 で止まり、残った出力を名指しする**（#499）。テストは `scripts/test-schedule-to-gantt.py`）
+    - `scripts/render-diagrams.py` - 正本リポジトリの `docs/` の下の drawio を隣の SVG に書き出し、**ソースの指紋を書き出しに書き込む**
+      （#268。`--check` は draw.io を起動せずに鮮度を見る——draw.io は同じソースから同じバイトを作らないので、バイトでなくソースの指紋で比べる。
+      図の決まりは `references/tree.md` の「図」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-render-diagrams.py`）
     - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
       2 つの承認が見た中身（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` を除く）と `removed.csv`。#375）が一致するかの照合（#262。**どちらかの時点に比べる中身が
       無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。**要求確定のタグの時点に `暫定反映` の Q&A が
@@ -258,6 +263,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと
     タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）
+  - `test-render-diagrams.py` - spec-loop の図の書き出し（#268）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**偽の draw.io の CLI を `DRAWIO` で差し、既定のパスは `SPEC_LOOP_DRAWIO_DEFAULT` で、
+    `PATH` は一時ディレクトリだけに差し替える**——本物の draw.io には届かない。書き出しの見た目は見ない
   - `test-merge-versions.py` - spec-loop の段 5a（#261）の回帰テスト（変異テストを含む）。
     **本体の定数が `references/versions.md` と一致することも見る**
   - `test-diff-versions.py` - spec-loop の段 5c（#263）の版の差分の回帰テスト（変異テストを含む）。
