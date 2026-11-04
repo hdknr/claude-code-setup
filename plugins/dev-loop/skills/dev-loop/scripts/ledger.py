@@ -81,7 +81,8 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 | `impl` | 実装中（worktree がある） |
 | `gate` | 関門（Verifier・`/code-review`）を回している |
 | `pr` | PR を出し、マージを待っている |
-| `merged` | マージ済み（**依存先として「済んだ」と読むのはこれだけ**） |
+| `merged` | マージ済み（**依存先として「済んだ」と読むのは、これと `merged_unverified` だけ**） |
+| `merged_unverified` | マージ済みだが、実機確認が残っている（#634）——`実機確認 = Refs でマージ` の線で `Refs` でマージし、Issue は開いたまま。確かめる受入基準と確かめ方は `note` に。**依存先としては「済んだ」と読む**が、`show` は「利用者の確認待ち（実機確認）」に出し、cruise は「済んだ」と報告しない（親 Issue の一覧の行なら `status` は 5 と言わない。周の途中で足した行は 5 の括弧に出る——§6 が渡す） |
 | `blocked` | 止まっている（人間の判断待ち・BLOCKED） |
 | `await` | 利用者の操作待ち（#466）——止まりうる操作（権限の拒否・`user_ops`）を利用者が打つのを待つ。打つコマンドは `note` に。**依存先としては「済んでいない」と読む** |
 | `dropped` | 取り下げ（依存先としては「済んでいない」と読む） |
@@ -130,9 +131,11 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 1. **進行中の行（`impl`・`gate`・`pr`。出所に依らない。`note` が `利用者の判断待ち:` で始まる行——まとめならどれか 1 行——を除く）か、落ちたのにまとめの中で `merged` の行があれば 0**——§6 は始めた行を閉じてから、
    名指しの行を戻してから判定する。
 2. **親 Issue の一覧の行（`origin` が空の行）がすべて `merged` か `dropped` なら 5**——周の途中で足した行が残っていても終える（§6。#774）。
+   **一覧の行に `merged_unverified` が 1 つでもあれば 5 と言わない**（#634）——実機確認が残っている（周の途中で足した行の `merged_unverified` は、足した行の残りと同じく 5 の括弧に出る）。
 3. **親 Issue の一覧の行の周か、その依存とまとめの仲間を辿った先の周が着手できれば 0**——`next` と同じまとまり（まとめは全行が着手できるときだけ）。
    **周の途中で足した行だけが着手できても 0 と言わない**（§6 はそれを始めずに終える）。
-4. **それ以外は 3**——残りは `blocked`・`await`・判断待ちの印のある進行中の行と、それら（か `dropped`）に依存する周だけ。
+4. **それ以外は 3**——残りは `blocked`・`await`・`merged_unverified`・判断待ちの印のある進行中の行と、それら（か `dropped`）に依存する周だけ
+   （`merged_unverified` に依存する周は着手できるので、3 で残るのは `merged_unverified` の行そのものだけ）。
 
 1 行目に判定と、その理由になった番号を出す。**台帳の値だけで決める**——実物（PR・worktree）は見ない（下の「守らない」）。
 
@@ -147,7 +150,12 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   判断待ちの印のある行で 0 と答えると、人を待つ PR だけが残った台帳で外側のループが回すもの無しの起動を繰り返す（#2427 と同じ形）。
   「済んだ」（5）・「人待ち」（3）と答えると、外側のループが閉じていない周を置いて終える。
 - **`status` は、周の途中で足した行（`origin` のある行）だけが着手できても 0 と言わない**（#632）——§6 はそれを始めずに終えるので、0 と答えると
-  外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える——`merged`・`dropped` の行の先は辿らない。
+  外側のループが回すもの無しの起動を繰り返す。親 Issue の一覧の行が依存（とまとめの仲間）を辿って待っている行なら着手できると数える——`merged`・`merged_unverified`・`dropped` の行の先は辿らない。
+- **`next` は `merged_unverified` を依存先として済んだと読む**（#634）——`absent-lines.md` の `実機確認 = Refs でマージ` は「依存する Issue は進めてよい」と決めている。
+- **`show` は `merged_unverified` の行を「利用者の確認待ち（実機確認）」に `note` つきで出す**（#634。取り残された行は除く——それは名指しの行に出る）——`merged` に潰すと、実機確認待ちが `note` の文章にしか残らず、
+  どの集計にも出ない（spin-dd/tfs-stocks#2427 の #2432）。
+- **`merged_unverified` の行があるあいだは「すべてマージ済みか取り下げ」と出さない**（#634）——cruise はその行で「済んだ」と報告して終える。
+- **`status` は、親 Issue の一覧の行に `merged_unverified` があれば 5 と言わない**（#634）——外側のループが実機確認の残る cruise を「済んだ」と読む。
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
 - **`--separate-git-dir` のリポジトリ（先の名前が `.git` でないもの）とサブモジュールと bare リポジトリの worktree でも、
   作業ツリーの外に書かない**——worktree の中からメインの作業ツリーを決められなければ 4。
@@ -207,7 +215,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
 - **抜けた行に同じ呼び出しで渡した `state` などは、その行だけに効く**——抜ける前のまとめに伝えると、落ちた 1 件を戻すつもりで全行を戻す。
   **抜けても、周の在り処（`pr` `branch` `worktree` `agent` `base`）は自分では消さない**——消すのは呼ぶ側
   （戻すなら同じ呼び出しで `pr= branch= worktree= agent= base=` を渡す。手順は `../cruise/references/grouping.md`）。
-- **`show` は、まとめに入ったまま `merged` で `note` が `落ちた:` で始まる行を名指しする**（#665）——マージの後に代表へ `merged` を書いてから
+- **`show` は、まとめに入ったまま `merged`（か `merged_unverified`）で `note` が `落ちた:` で始まる行を名指しする**（#665・#634）——マージの後に代表へ `merged` を書いてから
   落ちた行を戻すまでの間で止まると、落ちた行は `merged` のまま `next` にも「進行中」にも出ず、直されないまま済んだことになる。
 - **`group` は、入れる行の `note` の `落ちた:` を `前に落ちた:` に書き換える**（#665）——前のまとめで落ちて戻した行は `note` に理由を残す決まりなので、
   そのまま新しいまとめに入れてマージすると、落ちていないのに名指しされ、cruise の終わりの行も出なくなる。理由の文は残す。
@@ -247,7 +255,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-STATES = ("todo", "impl", "gate", "pr", "merged", "blocked", "await", "dropped")
+STATES = ("todo", "impl", "gate", "pr", "merged", "merged_unverified", "blocked", "await", "dropped")
 KEYS = ("state", "title", "deps", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")
 TEXT_KEYS = ("title", "pr", "branch", "worktree", "agent", "base", "note", "decisions", "origin", "group")
 # まとめの全行に書く鍵（周の在り処）。ほかの鍵はその行だけ
@@ -276,6 +284,10 @@ DIST_MERGE = "関門を通ればマージ"
 DIST_MARK_RE = re.compile(r"(?:\A|[（、・＋]|: |：)" + DIST_MARK + r"(?:）+(?=\Z|[＋（])|——|\Z)")
 ISSUE_FIELDS = {"number", "updated", *KEYS}
 DONE = "merged"
+# マージ済みだが実機確認が残る（#634。`実機確認 = Refs でマージ`）。依存先としては済んだと読むが、cruise の「済んだ」には数えない
+UNVERIFIED = "merged_unverified"
+# 依存先として「済んだ」と読む状態
+MERGED = (DONE, UNVERIFIED)
 # 再開タイマーを張るかへの利用者の答え（#472。cruise SKILL.md §3）
 TIMER_ANSWERS = ("張った", "張らない")
 NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
@@ -543,8 +555,8 @@ def find(data, number):
 
 
 def is_stranded(issue):
-    """取り残された行: まとめに入ったまま merged で、note が「落ちた:」で始まる（マージの後に戻していない。#665）。"""
-    return issue["state"] == DONE and bool(issue.get("group")) and issue.get("note", "").startswith(DROPPED_NOTE)
+    """取り残された行: まとめに入ったまま merged（か merged_unverified）で、note が「落ちた:」で始まる（マージの後に戻していない。#665）。"""
+    return issue["state"] in MERGED and bool(issue.get("group")) and issue.get("note", "").startswith(DROPPED_NOTE)
 
 
 def judging(data):
@@ -555,14 +567,14 @@ def judging(data):
 
 
 def ready(data):
-    """着手できる Issue: 未着手で、依存がすべてマージ済み（まとめの中の依存は済んだと読む）。行ごとに見る。
+    """着手できる Issue: 未着手で、依存がすべてマージ済み（merged_unverified も。まとめの中の依存は済んだと読む）。行ごとに見る。
     **取り残された行は、merged でも依存先として済んでいないと読む**（#711）——直されていない。"""
     state = {i["number"]: i["state"] for i in data["issues"]}
     group = {i["number"]: i.get("group", "") for i in data["issues"]}
     stranded = {i["number"] for i in data["issues"] if is_stranded(i)}
     return [i for i in data["issues"]
             if i["state"] == "todo"
-            and all((state.get(d) == DONE and d not in stranded) or (i.get("group", "") and group.get(d) == i["group"])
+            and all((state.get(d) in MERGED and d not in stranded) or (i.get("group", "") and group.get(d) == i["group"])
                     for d in i["deps"])]
 
 
@@ -635,7 +647,7 @@ def cmd_set(path, number, pairs):
     after = {**issue, **changes}
     if ("deps" in changes or "origin" in changes) and after.get("origin") and not after["deps"]:
         raise Refused(f"#{number} を出所があって依存の無い行にしない（元の周のマージより先に next に出る）")
-    if "group" in changes and is_stranded(issue) and after["state"] == DONE:
+    if "group" in changes and is_stranded(issue) and after["state"] in MERGED:
         # merged のまま抜くと名指しも `next` の止めも外れ、直していない行に依存する周が始まる（#711）
         raise Refused(f"#{number} は落ちたのにまとめの中で merged のまま——merged のまま抜かない。戻すなら同じ呼び出しで "
                       "`state=todo pr= branch= worktree= agent= base=` も渡す（grouping.md の「マージの後」）")
@@ -778,6 +790,11 @@ def cmd_show(path):
           + (", ".join(f"#{i['number']}({i['state']})（{i.get('note') or 'note が空'}）" for i in blocked) or "なし"))
     awaiting = [i for i in data["issues"] if i["state"] == "await"]
     print("利用者の操作待ち: " + (", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in awaiting) or "なし"))
+    # 取り残された行（落ちた行）は直していないので確認待ちに混ぜない——名指しの行に出る（#634 の 1 パス目）
+    unverified = [i for i in data["issues"] if i["state"] == UNVERIFIED and not is_stranded(i)]
+    if unverified:
+        print("利用者の確認待ち（実機確認。Refs でマージし Issue は開いたまま）: "
+              + ", ".join(f"#{i['number']}（{i.get('note') or 'note が空'}）" for i in unverified))
     found = [i for i in data["issues"] if i.get("origin") and i["state"] not in (DONE, "dropped")]
     if any(i.get("origin") for i in data["issues"]):
         print("周の途中で足した行のうち済んでいないもの: "
@@ -826,7 +843,7 @@ def judge(data):
         if n in need or n not in by:
             continue
         need.add(n)
-        if by[n]["state"] in (DONE, "dropped"):
+        if by[n]["state"] in (*MERGED, "dropped"):
             continue  # 済んだ・取り下げた行の先は、一覧の行を待たせていない
         stack.extend(by[n]["deps"])
         # まとめは全行が着手できるときだけ始まる——仲間が待つ行も辿る

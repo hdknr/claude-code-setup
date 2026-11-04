@@ -796,6 +796,33 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     st_ledger("sx", [(1, "merged", [], None), (9, "todo", [1], "#1 1 パス目"), (2, "todo", [9], None), (3, "todo", [2], None)])
     run(mod, ["set", "sx", "2", "state=dropped"], root)
     o["status: 取り下げの先"] = status("sx")
+    # #634: 実機確認待ち（merged_unverified）——依存先としては済んだ、show は確認待ちに出し、終わりの行と status の 5 は出さない
+    st_ledger("su", [(1, "merged", [], None), (2, "merged_unverified", [], None), (3, "todo", [2], None)])
+    run(mod, ["set", "su", "2", "note=実機確認待ち（Refs）: 画面で確かめる"], root)
+    o["merged_unverified: next"] = run(mod, ["next", "su"], root)[1].split()
+    o["merged_unverified: status(着手できる)"] = status("su")
+    run(mod, ["set", "su", "3", "state=merged"], root)
+    r = str(run(mod, ["show", "su"], root)[1])
+    o["merged_unverified: show"] = ([l for l in r.splitlines() if l.startswith("利用者の確認待ち")], "すべてマージ済みか取り下げ" in r)
+    o["merged_unverified: status"] = status("su")
+    # 対照: 確かめて merged にしたら、終わりの行も 5 も出る
+    run(mod, ["set", "su", "2", "state=merged"], root)
+    r = str(run(mod, ["show", "su"], root)[1])
+    o["merged_unverified: 確かめた後"] = ("利用者の確認待ち" in r, "すべてマージ済みか取り下げ" in r, status("su")[0])
+    # #634 の 1 パス目（CR1・CR5）: まとめの PR を Refs でマージして代表を merged_unverified にした——落ちた #2 は取り残しとして名指しし、確認待ちに出さず、
+    # 依存する #3 を出さず、merged_unverified のまま抜けない
+    st_ledger("sv", [(1, "todo", [], None), (2, "todo", [], None), (3, "todo", [2], None)])
+    run(mod, ["group", "sv", "1", "2"], root)
+    run(mod, ["set", "sv", "2", "note=落ちた: 別のファイル"], root)
+    run(mod, ["set", "sv", "1", "state=merged_unverified"], root)
+    r = str(run(mod, ["show", "sv"], root)[1])
+    o["merged_unverified: 取り残し"] = (next((l.split(": ", 1)[1] for l in r.splitlines() if l.startswith("落ちたのに")), None),
+                                     [l for l in r.splitlines() if l.startswith("利用者の確認待ち")],
+                                     run(mod, ["next", "sv"], root)[1].split(), run(mod, ["set", "sv", "2", "group="], root)[0])
+    # CR6: 一覧の merged_unverified の行の先（足した todo の行）は辿らない
+    st_ledger("sy", [(1, "merged", [], None), (9, "todo", [1], "#1 1 パス目"), (2, "todo", [9], None)])
+    run(mod, ["set", "sy", "2", "state=merged_unverified"], root)
+    o["merged_unverified: 辿らない"] = status("sy")
     # 空の台帳は 5、無い・壊れた台帳は 4
     run(mod, ["init", "se"], root)
     o["status: 空"] = status("se")[0]
@@ -878,7 +905,7 @@ MUTATIONS = {
         ("    for n in graph:\n        visit(n, [])", "    pass")],
     # 守る: next は依存がすべてマージ済みのものだけ
     "依存が未着手でなければ済んだと読む": [
-        ('all((state.get(d) == DONE and d not in stranded) or (i.get', 'all((state.get(d) != "todo" and d not in stranded) or (i.get')],
+        ('all((state.get(d) in MERGED and d not in stranded) or (i.get', 'all((state.get(d) != "todo" and d not in stranded) or (i.get')],
     # 守る: 読めない台帳を空と読まない
     "無い台帳を空と読む": [
         ('        raise Unknown(f"台帳が無い: {path}")',
@@ -938,7 +965,7 @@ MUTATIONS = {
         ('        raise Refused("出所が空（--source に、誰がいつ答えたかを書く）")',
          '        pass')],
     "await に依存する行を next に出す": [
-        ('all((state.get(d) == DONE and d not in stranded) or (i.get', 'all((state.get(d) in (DONE, "await") and d not in stranded) or (i.get')],
+        ('all((state.get(d) in MERGED and d not in stranded) or (i.get', 'all((state.get(d) in (*MERGED, "await") and d not in stranded) or (i.get')],
     # 守る（#641）: まとめ
     "group が todo でない行をまとめる": [
         ('        if issue["state"] != "todo":\n            raise Refused(f"#{issue[\'number\']} は todo でない',
@@ -985,10 +1012,10 @@ MUTATIONS = {
          '        if False:\n            issue["note"]')],
     # 守る（#711）: 名指しした行を依存先として済んだと読まない
     "next が名指しした行を依存先として済んだと読む": [
-        ("(state.get(d) == DONE and d not in stranded)", "(state.get(d) == DONE)")],
+        ("(state.get(d) in MERGED and d not in stranded)", "(state.get(d) in MERGED)")],
     # 守る（#711）: 名指しした行を merged のまままとめから抜かない
     "名指しした行を merged のまま抜ける": [
-        ('    if "group" in changes and is_stranded(issue) and after["state"] == DONE:', "    if False:")],
+        ('    if "group" in changes and is_stranded(issue) and after["state"] in MERGED:', "    if False:")],
     "落ちた行があっても終わりの行を出す": [
         ('for i in data["issues"]) and not stranded:\n', 'for i in data["issues"]):\n')],
     # 守る（#632）: show の進行中は impl・gate・pr だけ
@@ -1002,6 +1029,17 @@ MUTATIONS = {
     "status が足した行だけの着手でも 0": [
         ('    can = [u for u in units(data) if any(r["number"] in need for r in u)]',
          '    can = units(data)')],
+    # 守る（#634）: merged_unverified
+    "next が merged_unverified を依存先として済んだと読まない": [
+        ("MERGED = (DONE, UNVERIFIED)\n", "MERGED = (DONE,)\n")],
+    "show が実機確認待ちの行を出さない": [
+        ("    if unverified:\n        print(", "    if False:\n        print(")],
+    "merged_unverified があっても終わりの行を出す": [
+        ('    if data["issues"] and all(i["state"] in (DONE, "dropped") for i in data["issues"])',
+         '    if data["issues"] and all(i["state"] in (*MERGED, "dropped") for i in data["issues"])')],
+    "status が merged_unverified の一覧の行で 5 と言う": [
+        ('    if all(i["state"] in (DONE, "dropped") for i in listed):',
+         '    if all(i["state"] in (*MERGED, "dropped") for i in listed):')],
     "書いてから検査する": [
         ("def save(path, data):\n    validate(data)\n", "def save(path, data):\n"),
         ("        os.replace(tmp, path)\n", "        os.replace(tmp, path)\n        validate(data)\n")],
@@ -1024,9 +1062,9 @@ SAMPLE_MUTATIONS = {
          'stale = [f"{k}={issue[k]}" for k in PLACE_KEYS if issue.get(k, "") and issue["number"] != head]')],
     # CR6: 取り残しの条件の項を 1 つずつ外す（show の名指しと next の両方に効く）
     "取り残しの state の項を外す（CR6）": [
-        ('    return issue["state"] == DONE and bool(issue.get("group")) and', '    return bool(issue.get("group")) and')],
+        ('    return issue["state"] in MERGED and bool(issue.get("group")) and', '    return bool(issue.get("group")) and')],
     "取り残しの group の項を外す（CR6）": [
-        ('    return issue["state"] == DONE and bool(issue.get("group")) and', '    return issue["state"] == DONE and')],
+        ('    return issue["state"] in MERGED and bool(issue.get("group")) and', '    return issue["state"] in MERGED and')],
     "取り残しの「落ちた:」を部分一致で見る（CR6）": [
         ('bool(issue.get("group")) and issue.get("note", "").startswith(DROPPED_NOTE)',
          'bool(issue.get("group")) and DROPPED_NOTE in issue.get("note", "")')],
@@ -1064,7 +1102,16 @@ SAMPLE_MUTATIONS = {
     "判断待ちの印を半角だけで読む（#632 の 2 パス目）": [
         ('JUDGE_NOTE = ("利用者の判断待ち:", "利用者の判断待ち：")', 'JUDGE_NOTE = ("利用者の判断待ち:",)')],
     "status が済んだ・取り下げた行の先を辿る（#632 の 2 パス目）": [
-        ('        if by[n]["state"] in (DONE, "dropped"):\n            continue  # 済んだ', '        if False:\n            continue  # 済んだ')],
+        ('        if by[n]["state"] in (*MERGED, "dropped"):\n            continue  # 済んだ', '        if False:\n            continue  # 済んだ')],
+    # #634 の 1 パス目: merged_unverified の中身を 1 項ずつ戻す
+    "取り残しを merged だけで見る（#634 CR1）": [
+        ('    return issue["state"] in MERGED and bool(issue.get("group")) and', '    return issue["state"] == DONE and bool(issue.get("group")) and')],
+    "merged_unverified のまま抜ける（#634 CR1）": [
+        ('    if "group" in changes and is_stranded(issue) and after["state"] in MERGED:', '    if "group" in changes and is_stranded(issue) and after["state"] == DONE:')],
+    "確認待ちに取り残しの行を混ぜる（#634 CR5）": [
+        ('if i["state"] == UNVERIFIED and not is_stranded(i)]', 'if i["state"] == UNVERIFIED]')],
+    "status が merged_unverified の行の先を辿る（#634 CR6）": [
+        ('        if by[n]["state"] in (*MERGED, "dropped"):\n            continue  # 済んだ', '        if by[n]["state"] in (DONE, "dropped"):\n            continue  # 済んだ')],
     "status が待ちの列に merged を混ぜる（#632）": [
         ('if by[n]["state"] not in (DONE, "dropped")]', 'if by[n]["state"] != "dropped"]')],
 }
@@ -1374,6 +1421,18 @@ def main() -> int:
         check("全角のコロンの印も判断待ち（3）", o["status: 全角の印"] == 3)
         check("取り下げた行の先の足した行は辿らない（3）",
               o["status: 取り下げの先"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #3(todo)"))
+        check("merged_unverified に依存する行は着手できる（#634）",
+              o["merged_unverified: next"] == ["3"] and o["merged_unverified: status(着手できる)"] == (0, "進められる（着手できる: #3）"))
+        check("show が merged_unverified を確認待ちに note つきで出し、終わりの行を出さない（#634）",
+              o["merged_unverified: show"] == (["利用者の確認待ち（実機確認。Refs でマージし Issue は開いたまま）: #2（実機確認待ち（Refs）: 画面で確かめる）"], False))
+        check("一覧の行に merged_unverified があれば status は 5 でなく 3（#634）",
+              o["merged_unverified: status"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(merged_unverified)"))
+        check("確かめて merged にしたら確認待ちが消え、終わりの行と 5 が出る（#634 の対照）",
+              o["merged_unverified: 確かめた後"] == (False, True, 5))
+        check("まとめの中で merged_unverified の落ちた行は名指しし、確認待ちに出さず、依存する行を出さず、抜けない（#634）",
+              o["merged_unverified: 取り残し"] == ("#2", ["利用者の確認待ち（実機確認。Refs でマージし Issue は開いたまま）: #1（note が空）"], [], 3))
+        check("一覧の merged_unverified の行の先は辿らない（#634）",
+              o["merged_unverified: 辿らない"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(merged_unverified)"))
         check("空の台帳は 5", o["status: 空"] == 5)
         check("無い・壊れた・崩れた台帳は 4", o["status: 無い・壊れた"] == (4, 4, 4))
 
@@ -1474,7 +1533,7 @@ def main() -> int:
         documented = {int(m) for m in re.findall(r"^\| (\d+) \|", table, re.M)}
         defined = {mod.EXIT_OK, mod.EXIT_USAGE, mod.EXIT_REJECTED, mod.EXIT_UNKNOWN, mod.EXIT_WAITING, mod.EXIT_DONE}
         check(f"表 {sorted(documented)} と定数 {sorted(defined)}", documented == defined)
-        states = re.findall(r"^\| `([a-z]+)` \|", source.split("**状態**")[1].split("**鍵**")[0], re.M)
+        states = re.findall(r"^\| `([a-z_]+)` \|", source.split("**状態**")[1].split("**鍵**")[0], re.M)
         check(f"状態の表 {states} と STATES", tuple(states) == mod.STATES)
 
         print("\n変異テスト（壊したのに緑なら失格。L11）")
