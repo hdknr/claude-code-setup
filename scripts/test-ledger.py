@@ -1425,6 +1425,11 @@ def main() -> int:
         check("周の途中の課題は found-lines.md の 2 値（既定が外に出す）",
               mod.LINES["周の途中の課題"] == ("外に出す", "台帳に足して直す")
               and "`周の途中の課題 = 外に出す`（既定）" in found and "`周の途中の課題 = 台帳に足して直す`" in found)
+        check("マージ前の判断は absent-lines.md の表の 2 値（既定が止まる）で、その節がある（#829）",
+              mod.LINES["マージ前の判断"] == ("止まる", "推奨で決めて起票")
+              and rows.get("マージ前の判断") == ("止まる", "推奨で決めて起票")
+              and "## `マージ前の判断 = 推奨で決めて起票`" in (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references"
+                                                         / "absent-lines.md").read_text(encoding="utf-8"))
 
         print("\n周の途中で足した行の出所（L13・#464）")
         check("add --origin が出所を残す", o["origin の add"][0] == 0 and "出所: #1 狭いパス" in str(o["origin の add"][1]))
