@@ -36,6 +36,8 @@ fire-and-forget——hook の出力と終了コードは無視される」（本
 - 通知が失敗しても（`osascript` が無い・失敗する・引数にできない値）記録は残り、0 で終わる
 - 上限らしい `error`（`LIMIT`）なら、通知に「『継続』と打たずにリセットまで待つ」（#456）を添える
 - 上限らしくない `error` には「待て」を添えない（認証の失敗などに待っても直らない）
+- 認証の失敗の `error`（`AUTH`）なら、通知に「`/login` で入り直す」（`LOGIN`）を添え、題で「ログインが切れた」と言う（#473）
+- 認証の失敗でない `error` には「`/login`」を添えない
 
 守らない:
 
@@ -47,6 +49,11 @@ fire-and-forget——hook の出力と終了コードは無視される」（本
 - **書けないとき（`HOME` が書き込めない等）に知らせること**——fire-and-forget なので伝える先が無い。0 で終わる
 - **通知が実際に見えること**——`osascript` が 0 で終わったかまで。macOS の通知の設定で出ないことがある。
   `osascript` の無い環境（macOS 以外）では通知を出さない
+- **認証の失敗が `AUTH` の値だけで来ること**——本体 2.1.318 の文字列では、OAuth のセッションの期限切れ・401／403 を
+  `authentication_failed` に対応づけ、本体自身もこの値に「login required — run /login」を出す。**期限切れそのものでの発火は確かめていない**
+  （狙って起こせない。確かめたのは無効なトークン・無効な API キーで同じ値が来るところまで）。
+  `oauth_org_not_allowed`・`account_on_hold` は `/login` で直る値ではないので `AUTH` に入れない。
+  クラウドの事業者（Bedrock など）の資格情報の失敗も同じ値で来る——そのときの `/login` は当たらない（題を「かもしれません」にしてある）
 - **`cwd_hash` から `cwd` を戻せないこと**——塩を入れていないので、既知のパスなら辞書で戻せる。ファイルは手元にしか無い
 """
 
@@ -65,6 +72,8 @@ DETAILS = 200
 SHORT = 100
 LIMIT = ("rate_limit", "billing_error")
 WAIT = "止まっても「継続」と打たずに、リセットまで待ってください（#456 の陽性対照のため）"
+AUTH = ("authentication_failed",)
+LOGIN = "/login で入り直してください（待っても直りません）"
 
 
 def now() -> str:
@@ -110,8 +119,13 @@ def notify(row: dict) -> None:
         return
     error = row.get("error") or "入力を読めなかった"
     limit = error in LIMIT
-    title = "Claude Code が止まりました（利用上限かもしれません）" if limit else "Claude Code が止まりました"
-    body = f"{error}。{WAIT}" if limit else error
+    auth = error in AUTH
+    if limit:
+        title, body = "Claude Code が止まりました（利用上限かもしれません）", f"{error}。{WAIT}"
+    elif auth:
+        title, body = "Claude Code が止まりました（ログインが切れたかもしれません）", f"{error}。{LOGIN}"
+    else:
+        title, body = "Claude Code が止まりました", error
     # 値は argv で渡す（AppleScript の文字列に埋め込まない）
     script = ("on run argv\n"
               "display notification (item 1 of argv) with title (item 2 of argv)\n"

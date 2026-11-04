@@ -27,6 +27,7 @@ REAL_HOME = Path(os.path.expanduser("~"))
 SECRET_MSG = "SECRET-ASSISTANT-MESSAGE"
 SECRET_CWD = "/work/secret-project"
 WAIT = "「継続」と打たずに"
+LOGIN = "/login"
 
 GOOD = json.dumps({
     "hook_event_name": "StopFailure", "session_id": "s1", "cwd": SECRET_CWD,
@@ -45,6 +46,7 @@ CASES = [
     ("empty", b"", "fake"),
     ("non-utf8", b"\xff\xfe{", "fake"),
     ("billing", json.dumps({"hook_event_name": "StopFailure", "error": "billing_error"}).encode(), "fake"),
+    ("overloaded", json.dumps({"hook_event_name": "StopFailure", "error": "overloaded"}).encode(), "fake"),
     # 対にならないサロゲート——json.loads は通すが UTF-8 では書けない
     ("surrogate", b'{"error": "\\ud800x", "session_id": "\\udc00"}', "fake"),
     # cwd のサロゲート——ハッシュを取るときに符号化するので、ここで落ちると上限の記録ごと失う
@@ -75,8 +77,11 @@ MUTATIONS = {
     "追記せずに上書きする": ('path.open("a"', 'path.open("w"'),
     "書けない文字で記録を落とす": ("ensure_ascii=True", "ensure_ascii=False"),
     "通知の失敗を握らない": ("except Exception:  # noqa: BLE001 — 通知の", "except OSError:  # 通知の"),
-    "待てと添えない": ('f"{error}。{WAIT}" if limit', "error if limit"),
-    "上限でなくても待てと添える": ("if limit else error", 'if limit else f"{error}。{WAIT}"'),
+    "待てと添えない": ('f"{error}。{WAIT}"', "error"),
+    "上限でなくても待てと添える": ("limit = error in LIMIT", "limit = True"),
+    "認証の失敗に /login を添えない": ('f"{error}。{LOGIN}"', "error"),
+    "認証の失敗でなくても /login を添える": ('"Claude Code が止まりました", error',
+                                            '"Claude Code が止まりました", f"{error}。{LOGIN}"'),
 }
 
 failures: list[str] = []
@@ -201,6 +206,16 @@ def main() -> int:
         check("上限らしくない error には「継続と打たずに」を添えない",
               len(auth) == 4 and "authentication_failed" in auth[2] and WAIT not in auth[2])
         check("利用上限なら題に「利用上限」", "利用上限" in osa[3])
+        check("認証の失敗（authentication_failed）なら本文に /login、題に「ログインが切れた」（#473）",
+              len(auth) == 4 and LOGIN in auth[2] and "ログインが切れた" in auth[3])
+        over = obs["overloaded"]["osa"]
+        check("上限でも認証でもない error には「継続と打たずに」も /login も添えない",
+              len(over) == 4 and over[2] == "overloaded" and WAIT not in over[2] and LOGIN not in over[2]
+              and "ログイン" not in over[3] and "利用上限" not in over[3])
+        check("上限の通知に /login を添えない",
+              LOGIN not in osa[2] and LOGIN not in billing[2] and "ログイン" not in osa[3])
+        nj = obs["not-json"]["osa"]
+        check("読めない入力の通知に /login を添えない", len(nj) == 4 and LOGIN not in nj[2] and "ログイン" not in nj[3])
         check("利用上限でなければ題に「利用上限」と書かない",
               len(obs["auth"]["osa"]) == 4 and "利用上限" not in obs["auth"]["osa"][3])
         check("読めない入力でも通知する", len(obs["not-json"]["osa"]) == 4)
