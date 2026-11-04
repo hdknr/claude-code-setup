@@ -1325,17 +1325,17 @@ Eotel 側で同じ範囲を覆う 5 本
 | 守ること | 28 | 1 |
 | 複数の Issue を回すとき | 7 | 1 |
 
-**このほかに、起点に載らないファイルが 12 本・2229 行**（`（必須）` 124 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 4088 行・`（必須）` 301 個）。
+**このほかに、起点に載らないファイルが 12 本・2273 行**（`（必須）` 130 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 4132 行・`（必須）` 307 個）。
 
 | 起点に載らないファイル | 行 | `（必須）` |
 | --- | --- | --- |
-| references/absent-lines.md | 544 | 32 |
+| references/absent-lines.md | 585 | 38 |
 | references/fix-line.md | 67 | 8 |
 | references/found-lines.md | 244 | 5 |
 | references/guard-rejections.md | 115 | 16 |
 | references/ledger.md | 163 | 7 |
 | references/resume.md | 344 | 34 |
-| references/spec-gap.md | 154 | 11 |
+| references/spec-gap.md | 157 | 11 |
 | references/stacked.md | 152 | 9 |
 | references/untrusted-input.md | 50 | 2 |
 | prompts/implementer.md | 96 | — |

@@ -59,6 +59,13 @@ cruise: 仕様の穴 = 推奨で決めて起票
 - `apply` は台帳を作ったあと、線を `ledger.py lines` で残す（出所は「利用者の確認」と親 Issue の番号と指紋）。
   **本文の線は、`show` の出力を利用者が確かめた後でしか台帳に入らない**——出所は本文ではなく確認である。
 
+### spec-loop から来た子 Issue（#470）
+
+`show` は、台帳に入れる（未チェックの）子 Issue の本文を 1 件ずつ `gh issue view <番号> --json body -q .body` で取り（`--body-file` でも取る）、
+**1 行目**（先頭の BOM を 1 つ外し、前後の空白を除いたもの）が `<!-- spec-loop-handoff: v` で始まる子を、spec-loop から来た Issue として名指しする。
+`仕様の穴` の線は、値が `推奨で決めて起票（spec-loop の Issue を含む）` のときだけそれらに効く（dev-loop の `references/absent-lines.md`）——
+`show` は本文の線の値で、効く・効かないのどちらかを添える。**名指しは見せるためだけのもので、指紋にも台帳にも入れない。**
+
 ## 終了コード
 
 | コード | 意味 |
@@ -112,6 +119,9 @@ cruise: 仕様の穴 = 推奨で決めて起票
 - **`apply` は確かめた線を台帳に残す**——各周が台帳から読む。
 - **台帳が既に在れば、本文の線が台帳の確かめた線と違うことも名指しする**——台帳は変えない（確かめ直すのは利用者）。
 - **チェックリストの行が 1 本も無いことと、全部チェック済みのことを分けて言う**——前者は親 Issue でない Issue（1 件なら `/dev-loop:dev-loop`）。
+- **`show` は、本文の 1 行目が spec-loop の印の子 Issue を名指しし、`仕様の穴` の線が効くかを本文の線の値で分けて添える**——起動時の確認で、
+  線が効かないまま穴に当たれば止まる子を、利用者が確かめる前に見せる（#470）。
+- **子 Issue の本文を取れなければ、その子を「判定できなかった」と名指しして続ける**——黙って「spec-loop から来ていない」に数えない。`show` は止めない。
 
 守らない:
 
@@ -122,6 +132,8 @@ cruise: 仕様の穴 = 推奨で決めて起票
 - **本物の `gh` の出力の形**——テストは `--body-file` と偽の `gh` で当てる。
 - **本文から消した線**——台帳の確かめた線と比べるのは、本文にある項目だけ（消した項目は名指ししない）。
 - **線が `.claude/dev-loop.md` の宣言とどう重なるか**——読み順は dev-loop の `references/absent-lines.md` が決める。
+  本文に `仕様の穴` の線が無いとき、spec-loop から来た子に効くかは「本文の線が無い」として言い、宣言の値は読まない。
+- **子 Issue の本文の 2 行目より後の印・`[x]` の子**——印は 1 行目だけを見る。済んだ子は回さないので取らない。
 """
 
 import argparse
@@ -139,6 +151,10 @@ EXIT_REJECTED = 3
 EXIT_UNKNOWN = 4
 
 LEDGER = Path(__file__).resolve().parents[2] / "dev-loop" / "scripts" / "ledger.py"
+# spec-loop の scaffold が作った Issue の本文の 1 行目の印（dev-loop の references/spec-gap.md）と、それにも効く `仕様の穴` の値（#470）
+HANDOFF = "<!-- spec-loop-handoff: v"
+SPEC_GAP_KEY = "仕様の穴"
+SPEC_GAP_ALL = "推奨で決めて起票（spec-loop の Issue を含む）"
 # show が「書いていない」項目に添える説明（項目ごとに違うものだけ名指しし、残りは None の文）
 UNWRITTEN = {
     None: "台帳に残さない。各周の読み方は absent-lines.md の「cruise で確かめた線」",
@@ -370,7 +386,42 @@ def ledger(ledger_script, cwd, *args):
     return proc
 
 
-def cmd_show(items, skipped, lines, ignored, table):
+def child_origin(number, cwd):
+    """子 Issue の本文の 1 行目が spec-loop の印か。取れなければ理由の文字列を返す（黙って False にしない）。"""
+    try:
+        proc = subprocess.run(["gh", "issue", "view", str(number), "--json", "body", "-q", ".body"],
+                              cwd=cwd, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        return f"gh を起動できなかった: {exc}"
+    if proc.returncode != 0:
+        return proc.stderr.strip() or f"gh issue view #{number} が {proc.returncode} で終わった"
+    first = NEWLINE.split(proc.stdout.removeprefix("\ufeff"), maxsplit=1)[0].strip()
+    return first.startswith(HANDOFF)
+
+
+def show_origins(items, lines, cwd):
+    """spec-loop から来た子 Issue を名指しし、`仕様の穴` の線が効くかを本文の線の値で添える。"""
+    found, unknown = [], []
+    for i in items:
+        got = child_origin(i["number"], cwd)
+        if got is True:
+            found.append(f"#{i['number']}")
+        elif got is not False:
+            unknown.append(f"#{i['number']}（{got}）")
+    print("spec-loop から来た Issue（本文の 1 行目が <!-- spec-loop-handoff: v）:")
+    if not found:
+        print("  無い")
+    elif lines.get(SPEC_GAP_KEY) == SPEC_GAP_ALL:
+        print(f"  {', '.join(found)}——{SPEC_GAP_KEY} の線が効く"
+              "（周の中で実装に当たった穴だけ。Red テストと食い違う穴・既にした回答を変える穴・内部の表に載る判断・"
+              "指紋の不一致・周の途中の課題の穴では止まる）")
+    else:
+        print(f"  {', '.join(found)}——{SPEC_GAP_KEY} の線は効かない（値が {SPEC_GAP_ALL} でなければ、穴に当たれば止まる）")
+    for line in unknown:
+        print(f"  判定できなかった: {line}")
+
+
+def cmd_show(items, skipped, lines, ignored, table, cwd=None):
     for i in items:
         deps = ", ".join(f"#{d}" for d in i["deps"]) or "-"
         print(f"#{i['number']}\t依存: {deps}\t{i['title']}")
@@ -383,6 +434,7 @@ def cmd_show(items, skipped, lines, ignored, table):
         print(f"  {key} = {lines[key]}" if key in lines else f"  {key}: 書いていない（{UNWRITTEN.get(key, UNWRITTEN[None])}）")
     for line in ignored:
         print(f"  無視した行: {line}")
+    show_origins(items, lines, cwd)
     print(f"指紋: {digest(items, lines)}")
 
 
@@ -453,7 +505,7 @@ def main(argv=None, cwd=None, ledger_script=LEDGER):
         table = lines_table(ledger_script)
         items, skipped, lines, ignored = parse(read_body(args.parent, args.body_file, cwd), table)
         if args.cmd == "show":
-            cmd_show(items, skipped, lines, ignored, table)
+            cmd_show(items, skipped, lines, ignored, table, cwd)
         else:
             cmd_apply(items, lines, args.parent, args.digest, ledger_script, cwd)
     except Refused as exc:
