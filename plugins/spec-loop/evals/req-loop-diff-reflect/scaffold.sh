@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# 正本リポジトリ（在庫管理の小さな業務システム）を作る。v1 はリリース済み（release-v1）、作業中の版は v2。
-# v2 の Q&A 表に、v1 の要求（在庫照会の期間 30 日）を 90 日に変える回答が来ていて、まだ反映していない。
+# 正本リポジトリ（在庫管理の小さな業務システム）を作る。作業中の版は v2。**v1 はリリースしていない**（release-v1 のタグも、
+# CLAUDE.md の「リリース済み」の文も置かない——凍結していない前の版のファイルを直すかを見るため。1 周目の試料は両方を置いており、
+# 差分モードが入る前の版（0.7.0）も「凍結しているから」で写した。docs/plans/issue-274.md の「2 周目」）。
+# v2 の Q&A 表に、v1 の質問 Q-001（在庫照会の期間 30 日）を同じ番号で問い直し、90 日に変える回答が来ていて、まだ反映していない。
+# v2 で足した要求（売上帳票）には未定（締め日）が 1 つある。v1 の変えていない要求（受注登録）にも未定（並び順）が 1 つ残っている。
+# v1 の Q&A は Q-001〜Q-004 で、v2 の表には Q-001 しか無い——「表の中の最大の次」と「全部の版を通した最大の次」で番号が分かれる。
 # **作業場所（eval の一時ワークスペース）の中だけを触る。**
 #
 # FORMAT は Q&A 表の列の形を選ぶ。リポジトリの中では current（現行の列）のまま置く。
@@ -41,7 +45,7 @@ git config user.email eval@example.invalid
 cat > CLAUDE.md <<'EOF'
 # 在庫管理システムの正本リポジトリ
 
-- ツリーは spec-loop の references/tree.md のとおり（docs/v1 はリリース済み、作業中の版は docs/v2）。
+- ツリーは spec-loop の references/tree.md のとおり（作業中の版は docs/v2）。
 - ドキュメントのツール: 使わない（MkDocs は入れない。ファイルを直接編集する）。
 - レビュー会のスライド: spec-loop 同梱のスクリプトで作る。出力先は既定のとおり。
 - 規模の数え方: 要求のファイル 1 つ（= 機能 1 つ）を 10 人日と数える。単価は 1 人日 50000 円。
@@ -49,29 +53,27 @@ cat > CLAUDE.md <<'EOF'
 - commit・push はしない（変更したファイルを示して止まる）。
 EOF
 
-mkdir -p docs/v1/shared docs/v1/requirements docs/v1/spec docs/v1/feasibility docs/v1/proposal
+mkdir -p docs/v1/shared docs/v1/requirements docs/v1/spec
 {
   qa_header
   qa_row Q-001 要求確定 在庫を照会できる期間はどれだけですか？ "A: 30 日 / B: 1 年" A 照会の多くは直近の確認のため "A（業務部が回答）" requirements/stock.md 反映済み ""
   qa_row Q-002 要求確定 受注を取り消せるのは誰ですか？ "A: 担当者 / B: 管理者のみ" B 誤った取り消しを防ぐため "B（業務部が回答）" requirements/order.md 反映済み ""
+  qa_row Q-003 要求確定 在庫を数える単位は何ですか？ "A: 個 / B: ケース" A 店頭での引き当てが個単位のため "A（業務部が回答）" requirements/stock.md 反映済み ""
+  qa_row Q-004 要求確定 "1 日に登録できる受注に上限を設けますか？" "A: 1 日 100 件まで / B: 上限なし" B 繁忙期に止めないため "B（業務部が回答）" requirements/order.md 反映済み ""
 } > docs/v1/shared/qa.csv
-printf '# 受注登録\n\n- 担当者が受注を登録する。\n- 受注を取り消せるのは管理者のみ（Q-002）。\n' > docs/v1/requirements/order.md
-printf '# 在庫照会\n\n- 担当者が商品ごとの在庫数を照会する。\n- 照会できる期間は過去 30 日（Q-001）。\n' > docs/v1/requirements/stock.md
+printf '# 受注登録\n\n- 担当者が受注を登録する。\n- 受注を取り消せるのは管理者のみ（Q-002）。\n- 1 日に登録できる受注に上限は設けない（Q-004）。\n- 受注一覧の並び順: 未定。\n' > docs/v1/requirements/order.md
+printf '# 在庫照会\n\n- 担当者が商品ごとの在庫数を照会する。在庫は個の単位で数える（Q-003）。\n- 照会できる期間は過去 30 日（Q-001）。\n' > docs/v1/requirements/stock.md
 printf '# 受注登録の仕様\n\n- 取り消しは管理者の権限を持つ利用者だけが行える。それ以外は拒否する。\n' > docs/v1/spec/order.md
 printf '# 在庫照会の仕様\n\n- 照会の期間は過去 30 日。30 日より前の日付を指定したら拒否する。\n' > docs/v1/spec/stock.md
-printf 'No,区分,項目,金額,根拠\nE-001,開発費,受注登録,500000,requirements/order.md（10 人日）\nE-002,開発費,在庫照会,500000,requirements/stock.md（10 人日）\n' > docs/v1/feasibility/estimate.csv
-printf 'No,工程,開始,終了,前提\nT-001,受注登録,2026-04-01,2026-04-14,\nT-002,在庫照会,2026-04-15,2026-04-28,T-001\n' > docs/v1/feasibility/schedule.csv
-printf '# 背景と目的\n\n紙の台帳で管理している受注と在庫を、担当者が画面で扱えるようにする。\n' > docs/v1/proposal/01-background.md
 git add -A
 git commit -q -m 'v1'
-git tag release-v1
 
-# 作業中の版 v2: 売上帳票を足す要求と、v1 の在庫照会の期間を変える回答（未反映）
+# 作業中の版 v2: 売上帳票を足す要求（締め日が未定）と、v1 の Q-001 を問い直した回答（未反映）
 mkdir -p docs/v2/shared docs/v2/requirements
-printf '# 売上帳票\n\n- 管理者が月次の売上帳票を CSV で出力する。\n' > docs/v2/requirements/report.md
+printf '# 売上帳票\n\n- 管理者が月次の売上帳票を CSV で出力する。\n- 締め日: 未定（月末締めか 20 日締めかを業務部に確かめる）。\n' > docs/v2/requirements/report.md
 {
   qa_header
-  qa_row Q-003 要求確定 在庫を照会できる期間を延ばしますか？ "A: 30 日のまま / B: 90 日に延ばす" B "季節の比較に 3 か月分が要るため" "B（業務部が 2026-11-01 に回答）" — 確認中 ""
+  qa_row Q-001 要求確定 "在庫を照会できる期間を 30 日から延ばしますか？（v1 で 30 日と決めたが、季節の比較の要望が出たため問い直す）" "A: 30 日のまま / B: 90 日に延ばす" B "季節の比較に 3 か月分が要るため" "B（業務部が 2026-11-01 に回答）" — 確認中 ""
 } > docs/v2/shared/qa.csv
 git add -A
-git commit -q -m 'v2: 売上帳票と在庫照会の期間の質問'
+git commit -q -m 'v2: 売上帳票と在庫照会の期間の問い直し'

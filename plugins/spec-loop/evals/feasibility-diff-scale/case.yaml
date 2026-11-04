@@ -1,24 +1,30 @@
 schema_version: "1.1"
 name: feasibility-diff-scale
 # 差分モード（#263）の feasibility が、v2 の見積りを**この版の差分の分だけ**で書くかを見る
-# （SKILL.md 手順 2 の「数えるのは作業中の版の差分の規模」「差分の外の規模を数えに入れない」と、
-# 手順 3 の「前の版の見積りを写して足し込まない」）。
+# （SKILL.md 手順 2 の「数えるのは作業中の版の差分の規模」「追加・変更・削除を分けて数える」「変更と削除を 0 円と見なさない」
+# 「差分の外の規模を数えに入れない」と、手順 3 の「前の版の見積りを写して足し込まない」）。
 #
-# 3 本の grader: 見積りを v2 に書いた・追加した機能（売上帳票）がある・変えていない機能（受注登録）が無い。
-# **見ていないもの**: 変えた機能（在庫照会）を見積もったか・追加と変更を分けて書いたか・削除（この試料に無い）・金額が正しいか。
-# 変えた機能を見積もったかは grader にしない——検証役（Agent）の指摘で行が外れることがある（docs/plans/issue-274.md）。
-# **grader が見るのは実行の終わりの見積り**で、手順 6 の検証役の指摘で書き直したあとのものである。
-# **`allowed_tools` に `Agent` を書いていないが、それで `Agent` は止まらない**（2.1.318 の feasibility の実行で検証役が起きた）。
+# 試料の v2 は追加（売上帳票）・変更（在庫照会の期間）・削除（入荷予定の照会。removed.csv）を 1 つずつ持つ。
+# **削除は、版を重ね合わせた全体（build/merged/）には現れない**——差分の一覧（diff-versions.py）にだけ出る。
+# 運用費（月額）は稼働している機能の数で決まる（試料の CLAUDE.md の数え方）——v2 に書くのは**この版で増える分**（手順 3）で、
+# 稼働する機能の全部（3 機能分の月 30000 円）ではない。
+# 7 本の grader: 見積りを v2 に書いた・追加（売上帳票）がある・変更（在庫照会）がある・削除（入荷予定）がある・変えていない機能（受注登録）が無い・
+# 運用費の行がある・運用費の行に全体の額（月 20000 円・30000 円）が無い。
+# **見ていないもの**: 開発費の金額・追加と変更と削除を分けて書いたか・運用費が減る分を報告で名指ししたか・スケジュール。
+# **検証役（Agent）は起こさない**——回すときに `--disallow-tools Agent` を渡す（1 周目は検証役の指摘で変更の行が外れた。docs/plans/issue-274.md）。
+# grader が見るのは手順 3 で書いた見積りで、検証役を通っていない。
 #
 # 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
 description: >-
-  作業中の版 v2 は売上帳票の機能を足し、在庫照会の期間を変える。feasibility は docs/v2/feasibility/estimate.csv に、
-  その 2 つの分だけを見積もり（変更を 0 円と見なさない）、変えていない v1 の機能（受注登録）を数えに入れない。
+  作業中の版 v2 は売上帳票の機能を足し、在庫照会の期間を変え、入荷予定の照会を撤去する。feasibility は
+  docs/v2/feasibility/estimate.csv に、その 3 つの分だけを見積もり（変更と削除を 0 円と見なさない）、
+  変えていない v1 の機能（受注登録）を数えに入れない。運用費（月額）はこの版で増える分だけを書く。
 tags: [spec-loop, diff-mode, feasibility]
 plugins: ["../.."]
 runs: 1
 expected_outcome: >-
-  docs/v2/feasibility/estimate.csv ができていて、売上帳票の行があり、変えていない受注登録の行は無い。
+  docs/v2/feasibility/estimate.csv ができていて、売上帳票・在庫照会・入荷予定（撤去）の行があり、変えていない受注登録の行は無い。
+  運用費（月額）の行は、稼働する機能の全部の額（月 20000 円・30000 円）ではない。
 execution:
   prompt: "/spec-loop:feasibility"
   max_turns: 40
@@ -36,9 +42,33 @@ graders:
     target: {source: file, path: docs/v2/feasibility/estimate.csv}
     pattern: '帳票'
     match: contains
+  # 変えた機能（在庫照会）を見積もった
+  - name: v2-estimate-counts-change
+    type: regex
+    target: {source: file, path: docs/v2/feasibility/estimate.csv}
+    pattern: '在庫照会'
+    match: contains
+  # 消した機能（入荷予定の照会）の撤去を見積もった——重ね合わせた全体には無く、差分にだけ出る
+  - name: v2-estimate-counts-removal
+    type: regex
+    target: {source: file, path: docs/v2/feasibility/estimate.csv}
+    pattern: '入荷予定'
+    match: contains
   # 変えていない機能（受注登録）を数えに入れていない
   - name: v2-estimate-diff-only
     type: regex
     target: {source: file, path: docs/v2/feasibility/estimate.csv}
     pattern: '受注登録'
+    match: not_contains
+  # 運用費（月額）の行を書いた（次の grader の前提）
+  - name: v2-opex-written
+    type: regex
+    target: {source: file, path: docs/v2/feasibility/estimate.csv}
+    pattern: '運用費'
+    match: contains
+  # 運用費は、この版で増える分だけ——稼働する機能の全部（2 機能・3 機能分）の額を書いていない（区分・項目・金額の 3 列の並び）
+  - name: v2-opex-diff-only
+    type: regex
+    target: {source: file, path: docs/v2/feasibility/estimate.csv}
+    pattern: '運用費[^,\n]*,[^,\n]*,"?[23]0,?000"?,'
     match: not_contains
