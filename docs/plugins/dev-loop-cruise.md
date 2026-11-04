@@ -26,7 +26,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 台帳 | `scripts/ledger.py`・`references/ledger.md` | Issue の依存と状態をファイルに持つ。再開の入口 |
 | 実装役の委譲文 | `prompts/implementer.md` | 実装役（`Agent`）に渡す文面のテンプレート |
 | 積んだ周（stacked） | `references/stacked.md` | 未マージの下の周の上で、上の周を先に始める |
-| マージ | `scripts/merge-pr.py` | CI 待ち → squash → worktree の撤去 → Issue が閉じたかの確認 |
+| マージ | `scripts/merge-pr.py` | CI 待ち → squash → worktree の撤去 → Issue が閉じたかの確認。台帳でその PR の行が利用者の判断を待っていればマージしない（#631） |
 | 不在の線 | `references/absent-lines.md` | 利用者がいないとき、止まる代わりに進んでよい範囲 |
 | 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども |
 | 直す線 | `references/fix-line.md` | 関門の指摘をどこまで周の中で直すか |
