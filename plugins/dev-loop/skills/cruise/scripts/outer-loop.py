@@ -45,7 +45,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 | 6 | 前進なし——`progress` の変わらない起動が続けて `--max-stalls` 回 |
 | 7 | 起動の上限——`--max-launches` 回起こした後も `status` が 0 |
 | 8 | `claude` が 0 以外で終わった・起こせなかった |
-| 130 | 中断された（Ctrl-C・SIGTERM・SIGHUP） |
+| 130 | 中断された（Ctrl-C・SIGTERM・SIGHUP。起動時に無視させられていたシグナルは除く） |
 
 ## 何を守り、何を守らないか
 
@@ -63,6 +63,10 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **`claude` の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——利用者の環境に無くても、別の値があっても（上書きしたと出す）。
 - **`--append-system-prompt` で追記（`APPEND`）を渡す**——非対話の起動の決まり（拒まれたら `await`・進めないなら台帳を書かない）。
 - **`--absent` は渡されたときだけ `/dev-loop:cruise` に付ける**——席を外すかは利用者が決める（cruise `SKILL.md` §3）。
+- **起動時に無視させられていた SIGTERM・SIGHUP（`nohup` の SIGHUP など。SIG_IGN）にはハンドラを置かない**——無視したまま回り続ける
+  （`spec-loop` の `render-diagrams.py` と同じ。#820）。
+- **中断されたら、`claude` にまず SIGTERM を送って `GRACE` 秒（既定 10）終わるのを待つ**——いきなり SIGKILL にしない（後始末の機会を残す）。
+- **`GRACE` 秒で終わらなければ SIGKILL で止める**——`claude` を残したまま終わらない。
 
 守らない:
 
@@ -87,6 +91,7 @@ from pathlib import Path
 
 LEDGER = Path(__file__).resolve().parent.parent.parent / "dev-loop" / "scripts" / "ledger.py"
 BG_CEILING = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+GRACE = 10  # 中断のとき claude の後始末を待つ秒数（過ぎたら SIGKILL）
 # 非対話の起動の決まり（#791）。原本は cruise の SKILL.md §4 の 5・6——ここはそれを指す 2 文だけ
 APPEND = (
     "この起動は cruise の外側のループ（outer-loop.py）が起こした非対話の起動で、利用者は応答しない（#791）。"
@@ -144,11 +149,30 @@ def launch(args, main_tree):
         print(f"{BG_CEILING}={env[BG_CEILING]} を 0 で上書きした")
     env[BG_CEILING] = "0"
     print(f"起こす: {shlex.join(cmd[:3])} …（cwd: {main_tree}）", flush=True)
+    proc = None
     try:
-        return subprocess.run(cmd, cwd=main_tree, stdin=subprocess.DEVNULL, env=env).returncode
+        proc = subprocess.Popen(cmd, cwd=main_tree, stdin=subprocess.DEVNULL, env=env)
+        return proc.wait()
     except OSError as exc:
         print(f"claude を起こせない: {exc}", file=sys.stderr)
         return None
+    except BaseException:  # 中断（Ctrl-C・SIGTERM・SIGHUP）——`subprocess.run` のようにいきなり SIGKILL にしない
+        if proc is not None:
+            stop_child(proc)
+        raise
+
+
+def stop_child(proc):
+    """claude に SIGTERM を送り、`GRACE` 秒待っても終わらなければ SIGKILL。"""
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+    try:
+        proc.wait(timeout=GRACE)
+    except BaseException:  # 時間切れ・待つあいだの 2 度目の中断——claude を残して終わらない
+        proc.kill()
+        proc.wait()
 
 
 def run_loop(args):
@@ -221,13 +245,15 @@ def main(argv=None):
         args.claude_cmd = shlex.split(args.claude)
     except ValueError:
         args.claude_cmd = []
-    # ASCII の数字だけ——`str.isdigit()` は `²` も真にし、`int()` が読めずに例外で終わる
-    if (not re.fullmatch(r"[1-9][0-9]*", args.parent) or args.max_launches < 1 or args.max_stalls < 1
+    # ASCII の数字だけ——`str.isdigit()` は `²` も真にし、`int()` が読めずに例外で終わる。先頭の 0 は読み飛ばす（`050` は 50）
+    if (not re.fullmatch(r"[0-9]+", args.parent) or int(args.parent) < 1 or args.max_launches < 1 or args.max_stalls < 1
             or not args.claude_cmd):
         print("引数が違う: 親は正の番号、上限は 1 以上、--claude は語に分けられるコマンド", file=sys.stderr)
         return EXIT_USAGE
     args.parent = str(int(args.parent))
-    saved = {s: signal.signal(s, _on_signal) for s in (signal.SIGTERM, signal.SIGHUP)}
+    # **起動時に無視させられていたら（`nohup` の SIGHUP など。SIG_IGN）置かない**——上書きすると、無視させて起動した側の意図を破って止まる（#820 と同じ）
+    saved = {s: signal.signal(s, _on_signal) for s in (signal.SIGTERM, signal.SIGHUP)
+             if signal.getsignal(s) != signal.SIG_IGN}
     try:
         code, reason = run_loop(args)
     except KeyboardInterrupt:

@@ -36,7 +36,7 @@ failures: list[str] = []
 
 # 偽の claude: 起動を記録し、筋書き（FAKE_PLAN の親ごとの起動の並び。尽きたら最後の要素を繰り返す）どおりに台帳を書き換える
 FAKE_CLAUDE = r"""#!/usr/bin/env python3
-import json, os, re, subprocess, sys
+import json, os, re, signal, subprocess, sys, time
 home = os.environ["FAKE_HOME"]
 parent = re.match(r"/dev-loop:cruise (\d+)", sys.argv[2]).group(1)
 log = os.path.join(home, "claude-%s.jsonl" % parent)
@@ -52,6 +52,16 @@ if step.get("corrupt"):
     out = subprocess.run([os.environ["FAKE_PY"], os.environ["FAKE_LEDGER"], "path", "issue-" + parent],
                          check=True, capture_output=True, text=True).stdout.strip()
     open(out, "w").write("{壊れた")
+if step.get("hang"):  # SIGTERM を受けたら印を書いて終わる（後始末の代わり）。ignore_term なら無視する
+    def on_term(*_):
+        open(os.path.join(home, "term-%s" % parent), "w").close()
+        sys.exit(143)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN if step.get("ignore_term") else on_term)
+if step.get("kill_parent"):  # 外側のループ（このテストのプロセス）にシグナルを送る
+    os.kill(os.getppid(), getattr(signal, step["kill_parent"]))
+if step.get("hang"):
+    time.sleep(step.get("sleep", 30))
+    open(os.path.join(home, "survived-%s" % parent), "w").close()  # SIGKILL されていれば書かれない
 sys.exit(step.get("rc", 0))
 """
 
@@ -78,6 +88,9 @@ MUTATIONS = {
     "上限 0 を置かない": [('    env[BG_CEILING] = "0"\n', "    pass\n")],
     "追記を渡さない": [('"--append-system-prompt", APPEND, ', "")],
     "--absent を常に付ける": [('(" --absent" if args.absent else "")', '" --absent"')],
+    "無視させられたシグナルにもハンドラを置く": [("\n             if signal.getsignal(s) != signal.SIG_IGN}", "}")],
+    "中断でいきなり SIGKILL": [("        proc.terminate()\n", "        proc.kill()\n")],
+    "時間切れでも SIGKILL しない": [("        proc.kill()\n        proc.wait()\n", "        proc.wait()\n")],
 }
 
 
@@ -172,7 +185,7 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     (wt / "sub").mkdir()
     (root / ".claude" / "plans").mkdir(parents=True, exist_ok=True)
     # 親ごとの記録を、試料ごとのリポジトリで分ける
-    for f in list(home.glob("claude-*.jsonl")) + list(home.glob("notify.jsonl")):
+    for f in [*home.glob("claude-*.jsonl"), *home.glob("notify.jsonl"), *home.glob("term-*"), *home.glob("survived-*")]:
         f.unlink()
 
     def make(parent, rows):
@@ -297,10 +310,38 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         mod.launch = real_launch
     o["SIGTERM の扱いを戻した"] = signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
 
+    # S15: nohup の形——SIGHUP を無視させて起動し、起動中に SIGHUP が届く → 無視したまま回り、済む（0）。#820 と同じ（R2-1）
+    make(64, [(1, "todo")])
+    plan["64"] = [dict(merge(64, 1), kill_parent="SIGHUP")]
+    saved_hup = signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    try:
+        go("S15 SIGHUP を無視させて起動", 64, [])
+        o["S15 SIGHUP は無視のまま"] = signal.getsignal(signal.SIGHUP) == signal.SIG_IGN
+    finally:
+        signal.signal(signal.SIGHUP, saved_hup)
+
+    # S16: claude の実行中に SIGTERM → claude にまず SIGTERM を送り、後始末（印）を待つ（R2-2）
+    make(65, [(1, "todo")])
+    plan["65"] = [{"hang": True, "kill_parent": "SIGTERM"}]
+    go("S16 中断で claude に SIGTERM", 65, [])
+    o["S16 claude が SIGTERM を受けた"] = (home / "term-65").exists()
+
+    # S17: claude が SIGTERM を無視する → GRACE 秒で SIGKILL（3 秒眠った後の印が書かれない）
+    make(66, [(1, "todo")])
+    plan["66"] = [{"hang": True, "ignore_term": True, "kill_parent": "SIGTERM", "sleep": 3}]
+    saved_grace, mod.GRACE = mod.GRACE, 0.5
+    try:
+        go("S17 SIGTERM を無視する claude", 66, [])
+    finally:
+        mod.GRACE = saved_grace
+    o["S17 claude は残らない"] = not (home / "survived-66").exists()
+
     # S12: 引数が違う → 2。通知しない
     go("S12 引数", 61, ["--max-stalls", "0"])
     o["S12 番号でない"] = run(mod, ["abc"], root)[0]
     o["S12 ASCII でない数字"] = run(mod, ["²"], root)[0]
+    o["S12 0 は番号でない"] = run(mod, ["00"], root)[0]
+    o["S12 先頭 0 の番号"] = run(mod, ["057"], root)  # 台帳 issue-57 は済んでいる（S9）→ 起こさずに 0
     o["S12 語に分けられない --claude"] = run(mod, ["50", "--claude", "a'b"], root)[0]
     return o
 
@@ -340,6 +381,17 @@ def main() -> int:
         check("シグナルの扱いを終わったら戻す", a("SIGTERM の扱いを戻した"))
         check("S12 ASCII でない数字（²）は 2", a("S12 ASCII でない数字") == 2)
         check("S12 語に分けられない --claude は 2", a("S12 語に分けられない --claude") == 2)
+        check("S12 0 は 2", a("S12 0 は番号でない") == 2)
+        check("S12 先頭 0 の 057 は 57 と読む（狭いパスの後退を戻す）",
+              a("S12 先頭 0 の番号")[0] == 0 and "issue-57:" in a("S12 先頭 0 の番号")[1])
+        check("S15 SIGHUP を無視させて起動すれば、届いても回り続けて 0（起動 1）",
+              a("S15 SIGHUP を無視させて起動")[0][0] == 0 and a("S15 SIGHUP を無視させて起動")[1:] == (1, 1))
+        check("S15 終わった後も SIGHUP は無視のまま", a("S15 SIGHUP は無視のまま"))
+        check("S16 claude の実行中の SIGTERM は 130 で通知する", a("S16 中断で claude に SIGTERM")[0][0] == 130
+              and "SIGTERM" in a("S16 中断で claude に SIGTERM")[0][1] and a("S16 中断で claude に SIGTERM")[1:] == (1, 1))
+        check("S16 claude にまず SIGTERM を送り、後始末を待つ", a("S16 claude が SIGTERM を受けた"))
+        check("S17 SIGTERM を無視する claude は GRACE 秒で SIGKILL（130）",
+              a("S17 SIGTERM を無視する claude")[0][0] == 130 and a("S17 claude は残らない"))
         check("止まった行に親と理由が出る", a("S2 note だけ")[0][1].startswith("外側のループ: 止まった（issue-51: 前進なしが続けて 2 回"))
         body = notes(Path(os.environ["FAKE_HOME"]))
         check("通知の本文は argv で渡す（スクリプトに埋め込まない）",
