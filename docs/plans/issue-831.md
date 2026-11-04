@@ -100,7 +100,7 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 - 周の在り処: ブランチ `issue/831-cruise-merge-ci-only`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-831`・起点 `8496db5f`・base `origin/main` = `8496db5f414b54636589c030ab9e1344d71f037c`
 - base の当て直し: main（#791・#470）を取り込んだ `77cafaa7` の後、式を当て直して base = `origin/main` = `ab1a71da3dbee7534d8470920c22d16d0249506f`（2 パス目の関門に渡す）
 - 割り目（手順 4）: 割らない（不在の cruise）
-- 2 パス目: Verifier 反証 0 件・/code-review 指摘 10 件（直す 5・残課題 5。採否は下の 2 パス目の表）。2 パス目の指摘対応の起点: `77cafaa7`（直したらコミットして終点を書き、その差分だけに狭いパス）
+- 2 パス目: Verifier 反証 0 件・/code-review 指摘 10 件（直す 5・残課題 5。採否は下の 2 パス目の表）。2 パス目の指摘対応の起点: `fa6237a9`（採否を書いた計画ファイルのコミット）（直したらコミットして終点を書き、その差分だけに狭いパス）
 - 割り目（手順 6・2 パス目の前）: 割らない（不在の cruise）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方
 - 関門: Verifier 1 パス目 反証 0 件（記録だけ 2 件）・/code-review 1 パス目 指摘 10 件（直す 3・取り込み 1・残課題 6）。1 パス目の指摘対応の起点: `de6cd3ca`（Verifier と /code-review の 1 パス目に渡す時点の HEAD）。ローカルの check-all（`--jobs 2`）は 59 本中 1 本落ち（check-skill-pointers——直して単独で緑）
 - 交絡: 実験なし
