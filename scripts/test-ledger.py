@@ -478,12 +478,53 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
         o["origin の値"] = None
     r = str(run(mod, ["show", "fo"], root)[1])
     o["origin の show"] = ("| 出所 |" in r, "| #1 狭いパス |" in r,
-                           "周の途中で足した行のうち済んでいないもの: #2(todo)" in r)
+                           "周の途中で足した行のうち済んでいないもの: #2(todo・世代 1)" in r)
     run(mod, ["set", "fo", "1", "state=merged"], root)
     run(mod, ["set", "fo", "2", "state=dropped"], root)
     r = str(run(mod, ["show", "fo"], root)[1])
     o["origin の show(済み)"] = "周の途中で足した行のうち済んでいないもの: なし" in r
     o["origin の無い show"] = "周の途中で足した行" not in str(run(mod, ["show", "ln"], root)[1])
+
+    # L13b（#630）: 周の途中で足した行の世代。#1（一覧）→ #2（世代 1）→ #3（世代 2）→ #4（世代 3）。
+    # #3 の出所は元の周の後ろに別の番号を書いた形——最初の番号で辿ることを見る
+    # **main の本体（#630 の前）は #3・#4 を todo で足し、#1・#2 をマージした後の next に #3 を出す**（陽性対照の赤）
+    run(mod, ["init", "gen"], root)
+    run(mod, ["add", "gen", "1"], root)
+    o["世代 1 の add"] = run(mod, ["add", "gen", "2", "--deps", "1", "--origin", "#1 狭いパス"], root)[:2]
+    o["世代 2 の add"] = run(mod, ["add", "gen", "3", "--deps", "2", "--origin", "#2 /code-review 1 パス目（#1 の指摘の続き）"], root)[:2]
+    o["世代 3 の add"] = run(mod, ["add", "gen", "4", "--deps", "3", "--origin", "#3 狭いパス"], root)[0]
+    try:
+        o["世代の状態"] = [(i["number"], i["state"], i["note"]) for i in json.loads(
+            (plans / "cruise-gen.json").read_text(encoding="utf-8"))["issues"]]
+    except (OSError, ValueError, KeyError):
+        o["世代の状態"] = None
+    run(mod, ["set", "gen", "1", "state=merged"], root)
+    run(mod, ["set", "gen", "2", "state=merged"], root)
+    o["世代の next"] = run(mod, ["next", "gen"], root)[:2]
+    r = run(mod, ["show", "gen"], root)
+    o["世代の show"] = (r[0], "周の途中で足した行のうち済んでいないもの: #3(blocked・世代 2), #4(blocked・世代 3)" in str(r[1]),
+                        "利用者の判断待ち（止まっている・PR の判断待ち）: #3(blocked)（後続の後続（世代 2: #1 → #2 → #3）——利用者の判断待ち:" in str(r[1]))
+    # 利用者が直すと答えて todo に戻し、周を始めた（impl）世代 2 の行は、進行中として status 0（判断待ちと読まない）
+    run(mod, ["add", "gen", "9", "--deps", "3"], root)
+    run(mod, ["set", "gen", "3", "state=todo"], root)
+    run(mod, ["set", "gen", "3", "state=impl"], root)
+    r = run(mod, ["status", "gen"], root)
+    o["世代 2 を戻した status"] = (r[0], str(r[1]).splitlines()[:1])
+    # 辿れない出所（# が無い・台帳に無い番号・自分を指す）は世代 1、互いを指す 2 行（手で直した台帳）でも止まる
+    run(mod, ["init", "gcyc"], root)
+    run(mod, ["add", "gcyc", "1"], root)
+    o["辿れない出所の add"] = [run(mod, ["add", "gcyc", str(n), "--deps", "1", "--origin", org], root)[0]
+                              for n, org in ((2, "手で書いた出所"), (3, "#99 狭いパス"), (5, "#5 狭いパス"))]
+    try:
+        data = json.loads((plans / "cruise-gcyc.json").read_text(encoding="utf-8"))
+        data["issues"] += [{**entry(6, [1]), "origin": "#7 狭いパス"}, {**entry(7, [1]), "origin": "#6 狭いパス"}]
+        (plans / "cruise-gcyc.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except (OSError, ValueError, KeyError):
+        pass
+    r = run(mod, ["show", "gcyc"], root)
+    o["辿れない出所の show"] = (r[0], re.search(r"周の途中で足した行のうち済んでいないもの: (.*)", str(r[1])).group(1)
+                               if r[0] == 0 and "周の途中で足した行のうち" in str(r[1]) else None)
+    o["循環の先の add"] = run(mod, ["add", "gcyc", "8", "--deps", "1", "--origin", "#6 狭いパス"], root)[0]
 
     # L14（#466）: 利用者の操作待ちと、利用者が打つ操作
     run(mod, ["init", "uo"], root)
@@ -951,6 +992,16 @@ MUTATIONS = {
         ("    if origin is not None and not origin.strip():", "    if False:")],
     "set の空の origin を通す": [
         ('        elif key == "origin" and not value.strip():', '        elif False:')],
+    # 守る: 世代 2 以上の add は blocked（#630）
+    "世代 2 以上も todo で足す": [
+        ("GENERATION_LIMIT = 2", "GENERATION_LIMIT = 99")],
+    # 守る: 世代を辿るのは循環で止まる（#630）
+    "世代を辿るのが循環で止まらない": [
+        ('        if parent is None or parent["number"] in seen:', '        if parent is None:')],
+    # 守る: show は足した行の世代を出す（#630）
+    "show が世代を出さない": [
+        ("""f"#{i['number']}({i['state']}・世代 {generation(data, i)[0]})" for i in found""",
+         """f"#{i['number']}({i['state']})" for i in found""")],
     # 守る: 出所を持つ行は元の周に依存する
     "add の依存の無い origin を通す": [
         ("    if origin is not None and not deps:", "    if False:")],
@@ -1048,6 +1099,12 @@ MUTATIONS = {
 # 「守る」の行の**中身**を 1 項ずつ外す・緩める変異（#711）。**試料が足りているか**を見る——MUTATIONS（「守る」と 1 対 1）には数えない。
 # どれも、#665 の周の関門が「この変異が素通りする」と示したもの（キーの括弧が出所）
 SAMPLE_MUTATIONS = {
+    # #630: 辿れない出所を世代 0 と数える（一覧の行と取り違える）
+    "辿れない出所を世代 0 と数える（#630）": [
+        ('    depth = len(chain) - 1 + (1 if by_number[chain[0]].get("origin") else 0)', '    depth = len(chain) - 1')],
+    # #630: 出所の最後の番号を元の周と読む
+    "出所の番号を最後の #N で読む（#630）": [
+        ('        m = ORIGIN_RE.search(row["origin"])', '        m = ([*ORIGIN_RE.finditer(row["origin"])] or [None])[-1]')],
     # #472: timer の「守る」の項を 1 つずつ外す
     "timer の答えを見ない（#472）": [
         ("    if answer not in TIMER_ANSWERS:\n", "    if False:\n")],
@@ -1368,6 +1425,11 @@ def main() -> int:
         check("周の途中の課題は found-lines.md の 2 値（既定が外に出す）",
               mod.LINES["周の途中の課題"] == ("外に出す", "台帳に足して直す")
               and "`周の途中の課題 = 外に出す`（既定）" in found and "`周の途中の課題 = 台帳に足して直す`" in found)
+        check("マージ前の判断は absent-lines.md の表の 2 値（既定が止まる）で、その節がある（#829）",
+              mod.LINES["マージ前の判断"] == ("止まる", "推奨で決めて起票")
+              and rows.get("マージ前の判断") == ("止まる", "推奨で決めて起票")
+              and "## `マージ前の判断 = 推奨で決めて起票`" in (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references"
+                                                         / "absent-lines.md").read_text(encoding="utf-8"))
 
         print("\n周の途中で足した行の出所（L13・#464）")
         check("add --origin が出所を残す", o["origin の add"][0] == 0 and "出所: #1 狭いパス" in str(o["origin の add"][1]))
@@ -1379,6 +1441,26 @@ def main() -> int:
         check("show が出所の列と、済んでいない足した行を出す", o["origin の show"] == (True, True, True))
         check("足した行がすべて merged か dropped なら「なし」", o["origin の show(済み)"])
         check("足した行の無い台帳の show は、その行を出さない", o["origin の無い show"])
+        print("\n周の途中で足した行の世代（#630）")
+        check("世代 1 の add は todo のまま（出力に世代 1）", o["世代 1 の add"][0] == 0 and "世代 1" in str(o["世代 1 の add"][1]))
+        check("世代 2 の add は 0 で、blocked（利用者の判断待ち）で足したと言う",
+              o["世代 2 の add"][0] == 0 and "blocked（利用者の判断待ち）で足した" in str(o["世代 2 の add"][1]))
+        check("世代 3 の add も 0", o["世代 3 の add"] == 0)
+        st = o["世代の状態"] or []
+        check("世代 0・1 は todo、世代 2・3 は blocked で note が「後続の後続（世代 N: 辿った番号）——利用者の判断待ち:」",
+              [(n, s) for n, s, _ in st] == [(1, "todo"), (2, "todo"), (3, "blocked"), (4, "blocked")]
+              and st[0][2] == "" and st[1][2] == ""
+              and st[2][2].startswith("後続の後続（世代 2: #1 → #2 → #3）——利用者の判断待ち:")
+              and st[3][2].startswith("後続の後続（世代 3: #1 → #2 → #3 → #4）——利用者の判断待ち:"))
+        check("直すと答えて戻した世代 2 の行が impl なら、status は 0（判断待ちと読まない）",
+              o["世代 2 を戻した status"][0] == 0)
+        check("世代 2 の行は、元の周がマージされても next に出ない（合成の台帳で main の本体は #3 を出す）",
+              o["世代の next"] == (0, ""))
+        check("show が足した行の世代を出し、世代 2 の行を利用者の判断待ちに出す", o["世代の show"] == (0, True, True))
+        check("辿れない出所（# が無い・台帳に無い番号・自分を指す）は 0 で足す", o["辿れない出所の add"] == [0, 0, 0])
+        check("辿れない出所は世代 1・互いを指す 2 行（手で直した台帳）でも show は止まって答える",
+              o["辿れない出所の show"] == (0, "#2(todo・世代 1), #3(todo・世代 1), #5(todo・世代 1), #6(todo・世代 2), #7(todo・世代 2)"))
+        check("循環した行を出所にした add も 0 で答える", o["循環の先の add"] == 0)
 
         print("\nshow の進行中と status（L16・#632）")
         check("merged ×3＋blocked ×2 で show の進行中が「なし」（Issue の受入基準 1）",

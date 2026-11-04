@@ -1,22 +1,29 @@
 schema_version: "1.1"
 name: req-loop-diff-reflect
-# 差分モード（#263）の req-loop が、回答を反映して前の版の要求を変えるとき、
-# **前の版のファイルを直さず、作業中の版の同じパスに写して直す**かを見る（SKILL.md の「差分モード」）。
+# 差分モード（#263）の req-loop を、作業中の版 v2 で 1 回分回す。見る振る舞いは 3 つ（SKILL.md の「差分モード」と手順 3）:
 #
-# 2 本の grader は同じ振る舞いを両側から見る——前の版のファイルが元のままか（1 本目）、作業中の版に写して直したか（2 本目）。
-# **反映そのものをしなかった実行**（回答を読めないとして止まった・利用者に訊いて止まった）は、1 本目が緑・2 本目が赤になる。
-# 2 本目の赤は「前の版を直した」とは限らない——どちらだったかは trace を読む。
+# 1. 回答を反映して前の版の要求を変えるとき、**前の版のファイルを直さず、作業中の版の同じパスに写して直す**
+#    ——**前の版がリリース（凍結）していなくても**。試料の v1 はリリースしていない（scaffold.sh の冒頭）。
+# 2. 新しく起票する行の番号を、**全部の版を通した番号と重ねない**（v2 の表にあるのは Q-001 だけで、v1 に Q-002〜Q-004 がある）。
+# 3. **探すのは作業中の版で足した・変えたところ**——v1 の変えていない要求に残る未定（受注一覧の並び順）を起票しない。
 #
-# 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
-# **ここに件数や合否を書かない**（測り直すたびに古くなる）。
+# 番号の grader（question-number-unique）は v1 の印の無い番号（Q-002〜Q-004）との重なりしか見ない。**現行の版は新しい行に `Q-R-` の印を付けて振るので、
+# 現行の版の番号の誤り（`Q-R-` の番号の重なり）はこの grader では赤にならない**（v1 に `Q-R-` の行が無い）。また not_contains なので、**起票しなかった実行も緑になる**——
+# 起票したかは question-raised が見る。v1 の未定の grader（no-question-on-unchanged）も同じで、起票しなかった実行は緑になる。
+# **見ていないもの**: 反映した Q&A の行の状態・反映先・スライド・起票した行の選択肢と推奨の中身。
+#
+# 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md の「2 周目の結果」を正とする
+# （同じファイルの「1 周目の記録」はこの試料より前の試料の実測）。
 description: >-
-  作業中の版 v2 の Q&A に、リリース済みの v1 の要求（在庫照会の期間 30 日）を 90 日に変える回答が来ている。
-  req-loop はそれを反映するとき、docs/v1 のファイルを直さず、docs/v2 の同じパスに写して直す。
+  作業中の版 v2 の Q&A に、v1 の質問 Q-001（在庫照会の期間 30 日）を問い直して 90 日に変える回答が来ている（v1 はリリースしていない）。
+  v2 で足した売上帳票には締め日の未定がある。req-loop は v1 のファイルを直さずに v2 の同じパスに写して直し、
+  締め日を v1 の番号と重ならない番号で起票し、v1 の変えていない要求の未定（並び順）は起票しない。
 tags: [spec-loop, diff-mode, req-loop]
 plugins: ["../.."]
 runs: 1
 expected_outcome: >-
-  docs/v1/requirements/stock.md は「過去 30 日」のまま。docs/v2/requirements/stock.md ができていて、90 日を反映している。
+  docs/v1 の要求・仕様・Q&A は元のまま。docs/v2/requirements/stock.md ができていて 90 日を反映している。
+  docs/v2/shared/qa.csv に締め日の質問があり、その番号は Q-002〜Q-004 ではない。並び順の質問は無い。
 execution:
   prompt: "/spec-loop:req-loop"
   max_turns: 40
@@ -26,15 +33,45 @@ execution:
 context:
   scaffold_script: scaffold.sh
 graders:
-  # 前の版（リリース済み・凍結）のファイルが元の文のまま
+  # 1. 前の版のファイルが元のまま（要求と仕様）
   - name: v1-requirement-untouched
     type: regex
     target: {source: file, path: docs/v1/requirements/stock.md}
     pattern: '照会できる期間は過去 30 日'
     match: contains
-  # 作業中の版の同じパスに写して、回答（90 日）を反映した
+  - name: v1-spec-untouched
+    type: regex
+    target: {source: file, path: docs/v1/spec/stock.md}
+    pattern: '照会の期間は過去 30 日'
+    match: contains
+  # 1. 作業中の版の同じパスに写して、回答（90 日）を反映した
   - name: v2-requirement-reflected
     type: regex
     target: {source: file, path: docs/v2/requirements/stock.md}
     pattern: '90 ?日'
     match: contains
+  # 2 と 3 の前提——作業中の版の表に締め日の質問を起票した
+  - name: question-raised
+    type: regex
+    target: {source: file, path: docs/v2/shared/qa.csv}
+    pattern: '締め'
+    match: contains
+  # 2. 起票した行の番号が v1 の番号（Q-002〜Q-004）と重ならない（行の頭の番号。引用符で囲った番号も見る）
+  - name: question-number-unique
+    type: regex
+    target: {source: file, path: docs/v2/shared/qa.csv}
+    pattern: '(^|\n)"?Q-00[234]"?,'
+    match: not_contains
+  # 3. v1 の変えていない要求の未定（受注一覧の並び順）を起票していない。
+  # 言い回しは揺れる（「並び順」「どの順に並べますか」）ので、機能の名前（受注一覧）と並べ方の語の両方を見る
+  - name: no-question-on-unchanged
+    type: regex
+    target: {source: file, path: docs/v2/shared/qa.csv}
+    pattern: '受注一覧|並[びべ]'
+    match: not_contains
+  # 前の版の表に起票していない
+  - name: v1-qa-untouched
+    type: regex
+    target: {source: file, path: docs/v1/shared/qa.csv}
+    pattern: '締め'
+    match: not_contains
