@@ -563,7 +563,7 @@ python3 scripts/test-check-plugin-versions.py       # 版チェックの歯止�
 5. **PR を出した後のマージ直前の取り込みなら、ローカルの `check-all.py` は回さない**（#831。衝突の有無・中身に依らない）——
    `python3 scripts/check-plugin-versions.py` と `python3 scripts/skill-metrics.py --check` の 2 本だけ回して push し、
    `gh pr checks <n>` で **PR 側の CI が全部通る**のを見る。落ちたら直して push し、もう 1 度 CI を待つ（直しの中身に応じて、そこでローカルの `check-all.py` を回すのはよい）。
-   **マージの直前に、PR の先端が main の先端を含むことを `git merge-base --is-ancestor origin/main <PR の先端>` で確かめ、含まなければ取り込み直す**（`mergeable` は先端が main より古いだけなら `MERGEABLE` のまま）。
+   **マージの直前に、PR の先端が main の先端を含むことを、`git fetch` してから `git merge-base --is-ancestor origin/main <PR の先端>` で確かめ、含まなければ取り込み直す**（`mergeable` は先端が main より古いだけなら `MERGEABLE` のまま）。
    **理由と、省かないものは下の「歯止めは毎回全部回す」を正とする。** PR を出す前の取り込みなら、`check-all.py` を回してから push して PR を作る
 
 **取り込んだ main が足した歯止めは、その時点からこの周にも掛かる**——版の衝突が無い取り込みでも同じである。

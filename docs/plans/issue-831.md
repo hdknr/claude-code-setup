@@ -150,4 +150,4 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 | 振り分け |
 | --- | --- | --- | --- | --- |
-| N1: CLAUDE.md 手順 5 に足した `git merge-base --is-ancestor origin/main <PR の先端>` の前に `git fetch` が無く、手元の `origin/main` が古いと「含む」と出る（`parallel.md` は fetch してからと書く） | 文面で示せる（再現は fetch を禁じたので取っていない） | I6 に触れうる | 人間が決める | 記録だけ——後退ではない（この周の前は cruise の外の周に先端の確かめが 1 つも無く、fetch を落としても前と同じ状態に戻るだけ）。直すなら `git fetch` を前に 1 語足す |
+| N1: CLAUDE.md 手順 5 に足した `git merge-base --is-ancestor origin/main <PR の先端>` の前に `git fetch` が無く、手元の `origin/main` が古いと「含む」と出る（`parallel.md` は fetch してからと書く） | 文面で示せる（再現は fetch を禁じたので取っていない） | I6 に触れうる | 人間が決める——親が直すと決めた（2026-11-04。手順の誤りが利用者に見える） | 直した——`git fetch` してから、と足した（main `ee51b368` を取り込んだ `41f43853` の後のコミット）。この直しの差分だけに別ティアの Verifier を 1 回当てた |
