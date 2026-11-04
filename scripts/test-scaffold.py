@@ -176,6 +176,81 @@ def can_cancel(shipped):
     return {"ok": not shipped}
 '''
 
+# ---- null を許す項目（#487）。入力・出力の両方に、enum の有る・無い項目を置く
+NULLABLE_FEATURE = {
+    "id": "F-003", "title": "ラベルを付ける", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+        "id": "label_of", "method": "POST", "path": "/orders/label",
+        "input": {"note": {"type": "string", "nullable": True},
+                  "kind": {"type": "string", "enum": ["a", "b"], "nullable": True}},
+        "output": {"label": {"type": "string", "nullable": True}, "score": {"type": "integer", "nullable": True},
+                   "count": {"type": "integer"}},
+    },
+    "cases": [
+        {"id": "F-003-C1", "title": "メモがあればラベルを付ける", "input": {"note": "x", "kind": "a"},
+         "expected": {"label": "x", "score": 1, "count": 1}},
+        {"id": "F-003-C2", "title": "メモが無ければラベル無し", "input": {"note": None, "kind": None},
+         "expected": {"label": None, "score": None, "count": 0}},
+    ],
+}
+NULLABLE_IMPL = GOOD_IMPL + '''
+
+def label_of(note, kind):
+    if note is None:
+        return {"label": None, "score": None, "count": 0}
+    return {"label": note, "score": 1, "count": 1}
+'''
+# null を許す整数の項目に真偽値を返す（`True == 1`）——null を許すことが、null でない値の型の検査まで外してはならない
+NULLABLE_BOOL_IMPL = NULLABLE_IMPL.replace('"score": 1, "count": 1', '"score": True, "count": 1')
+assert NULLABLE_BOOL_IMPL != NULLABLE_IMPL
+# `nullable` を書かない基準の試料の生成物の sha256——#487 の前（412ca8f7）の `scaffold.py` が作ったもの。
+# **null を許す書き方を足しても、書かない中間表現の生成物は 1 バイトも変えない**（既存の `scaffold/` を `--check` で古くしない）
+BASE_SHA256 = {
+    "scaffold/openapi.json": "bb382f3f88b73d433944f378b8151d8dfe27b18667cc03bfb40cb4635d2361d9",
+    "scaffold/types.py": "0f2cde40b5bf6caa43177aee714f6bfafd0cf713cc9299e4b32457701fad268b",
+    "scaffold/tests/test_f_001.py": "7b06b1bbf8f884ddd69c5e4959a31f5fc72983c93dc82c2e828a7bb29ceadb01",
+    "scaffold/tests/test_f_002.py": "973acaf11ca2cd5880570b4ece56b275b2f5e6576656fe2ca2ec2556ba3aedf8",
+}
+
+
+def with_nullable(ir: dict) -> None:
+    ir["features"].append(copy.deepcopy(NULLABLE_FEATURE))
+
+
+def f3(ir: dict) -> dict:
+    return ir["features"][2]
+
+
+def unchanged_without_nullable(repo: Path) -> str | None:
+    for rel, digest in BASE_SHA256.items():
+        actual = hashlib.sha256((repo / rel).read_bytes()).hexdigest()
+        if actual != digest:
+            return f"{rel} が #487 の前の生成物と違う（{actual}）"
+    return None
+
+
+def nullable_shape(repo: Path) -> str | None:
+    doc = json.loads((repo / "scaffold" / "openapi.json").read_text(encoding="utf-8"))
+    schemas = doc["components"]["schemas"]
+    expected = {
+        "LabelOfInput": {"note": {"type": ["string", "null"]}, "kind": {"type": ["string", "null"], "enum": ["a", "b", None]}},
+        "LabelOfOutput": {"label": {"type": ["string", "null"]}, "score": {"type": ["integer", "null"]},
+                          "count": {"type": "integer"}},
+    }
+    for name, fields in expected.items():
+        if schemas[name]["properties"] != fields:
+            return f"OpenAPI の {name} が違う: {schemas[name]['properties']}"
+    types = (repo / "scaffold" / "types.py").read_text(encoding="utf-8")
+    for needle in ("    note: str | None", "    kind: Literal['a', 'b'] | None", "    label: str | None",
+                   "    score: int | None", "    count: int\n"):
+        if needle not in types:
+            return f"types.py に {needle!r} が無い"
+    # null を許す項目を持たない機能の Red テストには、null の扱いを足さない（基準の試料と同じバイト）
+    if "NULLABLE" in (repo / "scaffold" / "tests" / "test_f_001.py").read_text(encoding="utf-8"):
+        return "null を許す項目を持たない機能の Red テストに NULLABLE がある"
+    test = (repo / "scaffold" / "tests" / "test_f_003.py").read_text(encoding="utf-8")
+    return None if "NULLABLE = ('label', 'score')" in test else "Red テストが null を許す項目を名指ししていない"
+
 
 def edit(fn: Callable[[dict], None]) -> Callable[[dict], dict]:
     def apply(ir: dict) -> dict:
@@ -183,6 +258,31 @@ def edit(fn: Callable[[dict], None]) -> Callable[[dict], dict]:
         fn(ir)
         return ir
     return apply
+
+
+# ---- 呼ばれる機能（#609）。試料では F-001（割引の判定）を F-002 が呼ぶことにする
+def called(callers) -> Callable[[dict], dict]:
+    return edit(lambda ir: ir["features"][0].update(called_by=callers))
+
+
+CALLED = called(["F-002"])
+# v2 で呼ばれる機能だけ変える（呼ぶ F-002 は変えない）／呼ぶ機能も変える
+V2_CALLED = {**copy.deepcopy(IR["features"][0]), "called_by": ["F-002"]}
+V2_CALLED["cases"][0]["expected"] = {"discount": 300}
+V2_CALLER = copy.deepcopy(IR["features"][1])
+V2_CALLER["cases"][0]["title"] = "発送前なら取り消せる（割引を見直した後も）"
+CALLERS_NOTICE = "F-001 は v2 で modify だが、呼ぶ機能（F-002）は v2 で変わっていない"
+
+
+def callers_in_issue(repo: Path) -> str | None:
+    body = (repo / "build" / "scaffold" / "issues" / "F-001.md").read_text(encoding="utf-8")
+    if "- 呼ぶ機能: `F-002` 注文を取り消せるか（" not in body:
+        return "呼ばれる機能の本文に呼ぶ機能の行が無い"
+    if body.index("- 呼ぶ機能:") > body.index("\n## 受入基準\n"):
+        return "呼ぶ機能の行が ## 仕様 の節に無い"
+    # 呼ばれない機能（入口）の本文には行を足さない
+    other = (repo / "build" / "scaffold" / "issues" / "F-002.md").read_text(encoding="utf-8")
+    return "呼ばれない機能の本文に呼ぶ機能の行がある" if "呼ぶ機能" in other else None
 
 
 def f1(ir: dict) -> dict:
@@ -441,6 +541,9 @@ def typed_dict_fields(types: str) -> dict[str, dict[str, dict]]:
     for block in re.findall(r"^class (\w+)\(TypedDict\):\n((?:    .+\n)+)", types, flags=re.MULTILINE):
         fields[block[0]] = {}
         for field, note in re.findall(r"^    (\w+): (.+)$", block[1], flags=re.MULTILINE):
+            # `<型> | None` は null を許す項目（#487）——OpenAPI では `type` に `"null"` を足し、enum にも null を足す
+            allow_null = note.endswith(" | None")
+            note = note.removesuffix(" | None")
             if note.startswith("Literal[") and note.endswith("]"):
                 values = ast.literal_eval("[" + note[len("Literal["):-1] + "]")
                 kinds = {PY_SCHEMA_TYPES[type(value).__name__] for value in values}
@@ -453,15 +556,22 @@ def typed_dict_fields(types: str) -> dict[str, dict[str, dict]]:
                 fields[block[0]][field] = {"types": kinds, "enum": values}
             else:
                 fields[block[0]][field] = {"types": {PY_SCHEMA_TYPES.get(note, note)}}
+            if allow_null:
+                fields[block[0]][field]["nullable"] = True
     return fields
 
 
 def schema_matches(schema: dict, expected: dict) -> bool:
     """OpenAPI の項目の schema が、`types.py` の注釈から戻した候補に合うか。"""
-    if schema.get("type") not in expected["types"]:
+    kind, enum = schema.get("type"), expected.get("enum")
+    if expected.get("nullable"):
+        if not isinstance(kind, list) or len(kind) != 2 or kind[1] != "null":
+            return False
+        kind, enum = kind[0], None if enum is None else enum + [None]
+    if not isinstance(kind, str) or kind not in expected["types"]:
         return False
-    if "enum" in expected:
-        return set(schema) == {"type", "enum"} and schema["enum"] == expected["enum"]
+    if enum is not None:
+        return set(schema) == {"type", "enum"} and schema["enum"] == enum
     return set(schema) == {"type"}
 
 
@@ -666,6 +776,9 @@ V2_OUTPUT_ADDED["cases"][0]["expected"] = {"discount": 300, "rate": 3}
 # v2 で割引の型を number に広げただけ（期待は同じ）——前の版の実装はどのケースも緑のまま
 V2_WIDENED = copy.deepcopy(IR["features"][0])
 V2_WIDENED["operation"]["output"]["discount"] = {"type": "number"}
+# v2 で割引の出力に null を許しただけ（期待は同じ）——前の版の実装はどのケースも緑のまま（#487）
+V2_NULLABLE = copy.deepcopy(IR["features"][0])
+V2_NULLABLE["operation"]["output"]["discount"]["nullable"] = True
 QA_V2 = "Q-004,要求確定,返品は何日まで？,A: 7 日 / B: 14 日,A,理由,A（業務部が回答）,spec/return.md,反映済み,\n"
 RETURN_SPEC = "# 返品\n\n7 日以内。\n"
 
@@ -1226,6 +1339,27 @@ CASES: list[Case] = [
     Case("出力が無い", 1, "項目が 1 つも無い", ir=edit(lambda ir: f1(ir)["operation"].update(output={}))),
     Case("出力に error", 1, "正常時の出力に `error` は使えない",
          ir=edit(lambda ir: f1(ir)["operation"]["output"].update({"error": {"type": "string"}}))),
+    # ---- null を許す項目（#487）
+    Case("null を許す項目を書かない生成物は変わらない", 0, post=unchanged_without_nullable),
+    Case("null を許す項目", 0, "作った", ir=edit(with_nullable), post=nullable_shape),
+    Case("null を許す項目の Red テストが失敗する", 0, ir=edit(with_nullable), post=expect_red(5)),
+    Case("null を返す正しい実装で緑", 0, ir=edit(with_nullable), impl=NULLABLE_IMPL, post=expect_green),
+    Case("null を許す整数の項目に真偽値を返す実装で失敗する", 0, ir=edit(with_nullable), impl=NULLABLE_BOOL_IMPL,
+         post=expect_red(1)),
+    Case("nullable が false", 1, "`nullable` は true だけを書く",
+         ir=edit(lambda ir: (with_nullable(ir), f3(ir)["operation"]["output"]["label"].update(nullable=False)))),
+    Case("nullable が文字列", 1, "`nullable` は true だけを書く",
+         ir=edit(lambda ir: (with_nullable(ir), f3(ir)["operation"]["output"]["label"].update(nullable="yes")))),
+    Case("null を許さない出力に null を期待する", 1, "expected.count: 型 integer でない（null）",
+         ir=edit(lambda ir: (with_nullable(ir), f3(ir)["cases"][1]["expected"].update(count=None)))),
+    Case("null を許さない enum の入力に null を書く", 1, "input.rank: 型 string でない（null）",
+         ir=edit(lambda ir: f1(ir)["cases"][0]["input"].update(rank=None))),
+    Case("null を許す enum の入力に enum に無い値", 1, "input.kind: enum に無い値（\"c\"）",
+         ir=edit(lambda ir: (with_nullable(ir), f3(ir)["cases"][0]["input"].update(kind="c")))),
+    Case("null を許す項目に型の違う値", 1, "expected.label: 型 string でない（1）",
+         ir=edit(lambda ir: (with_nullable(ir), f3(ir)["cases"][0]["expected"].update(label=1)))),
+    Case("パスの変数を nullable にする", 1, "パスの変数 {note} は nullable にできない",
+         ir=edit(lambda ir: (with_nullable(ir), f3(ir)["operation"].update(path="/orders/label/{note}")))),
     Case("enum の型", 1, "enum の値が型 string でない", ir=edit(lambda ir: f1(ir)["operation"]["input"]["rank"].update(enum=["silver", 1]))),
     Case("enum の重複", 1, "enum の値が重複している", ir=edit(lambda ir: f1(ir)["operation"]["input"]["rank"].update(enum=["gold", "gold"]))),
     Case("enum の 1 と 1.0", 1, "enum の値が重複している",
@@ -1294,6 +1428,20 @@ CASES: list[Case] = [
     # ---- 追加・変更・削除に分ける（段 5d）
     Case("v2 でケースを足し・消し・題を変える", 0, "modify 1", extra=v2([V2_CASES]), post=v2_cases),
     Case("v2 で機能を変えない", 0, "Issue の本文 0 件", extra=v2([]), post=v2_nothing_changed),
+    # #609: 呼ばれる機能（called_by）
+    Case("呼ばれる機能", 0, "作った", ir=CALLED, post=callers_in_issue, absent="呼ぶ機能（"),
+    Case("呼ぶ機能が中間表現に無い", 1, "F-001.called_by: 呼ぶ機能 F-009 が中間表現に無い", ir=called(["F-009"])),
+    Case("呼ぶ機能が空の配列", 1, "F-001.called_by: 呼ぶ機能の id の 1 つ以上の配列でない", ir=called([])),
+    Case("呼ぶ機能が配列でない", 1, "F-001.called_by: 呼ぶ機能の id の 1 つ以上の配列でない", ir=called("F-002")),
+    Case("呼ぶ機能の id の形", 1, "F-001.called_by: id の形に反する", ir=called(["F-2"])),
+    Case("呼ぶ機能が自分自身", 1, "F-001.called_by: 自分自身 F-001", ir=called(["F-001"])),
+    Case("呼ぶ機能の重複", 1, "F-001.called_by: 重複している", ir=called(["F-002", "F-002"])),
+    Case("呼ぶ関係の循環", 1, "呼ぶ関係が循環している",
+         ir=edit(lambda ir: (f1(ir).update(called_by=["F-002"]), ir["features"][1].update(called_by=["F-001"])))),
+    Case("v2 で呼ばれる機能だけ変える", 0, CALLERS_NOTICE, ir=CALLED, extra=v2([V2_CALLED])),
+    Case("v2 で呼ぶ機能も変える", 0, "modify 2", ir=CALLED, extra=v2([V2_CALLED, V2_CALLER]), absent="呼ぶ機能（"),
+    Case("v2 で呼ぶ機能を消す", 1, "F-001.called_by: 呼ぶ機能 F-002 が中間表現に無い", ir=CALLED,
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n")),
     Case("v3 を足しても本文の指紋が合う", 0, generate_first=True, extra=v2([V2_CHANGED]), pre=add_v3,
          args=("--check", "--upto", "2"), post=sha_reproducible_after_v3),
     Case("関係の無い機能を直しても指紋は変わらない", 0, "modify 2", generate_first=True, extra=v2([V2_CHANGED]),
@@ -1434,6 +1582,9 @@ CASES: list[Case] = [
          generate_first=True, extra=v2([V2_OUTPUT_ADDED]), impl=GOOD_IMPL),
     Case("Red の状態: v2 で型を広げる", 0, "失敗 0 件（追加・変更）・緑 3 件（回帰）", args=("--red-check",),
          generate_first=True, extra=v2([V2_WIDENED]), impl=GOOD_IMPL),
+    # null を許すようにしただけ（期待は同じ）——前の版の実装はどのケースも緑のまま（#487）
+    Case("Red の状態: v2 で出力に null を許す", 0, "失敗 0 件（追加・変更）・緑 3 件（回帰）", args=("--red-check",),
+         generate_first=True, extra=v2([V2_NULLABLE]), impl=GOOD_IMPL),
     Case("v2 で impl_module だけ変える", 0, "modify 2", extra=v2([], top={"impl_module": "app_impl"})),
     Case("Red の状態: v2 で impl_module だけ変える", 0, "失敗 3 件", args=("--red-check",), generate_first=True,
          extra=v2([], top={"impl_module": "app_impl"}), impl=GOOD_IMPL),
@@ -1511,6 +1662,23 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #609: 呼ばれる機能
+    ("呼ぶ機能の検査を呼ばない", "    return problems + check_called_by(features)", "    return problems", "呼ぶ機能が中間表現に無い"),
+    ("呼ぶ機能の実在を見ない", "            elif caller not in ids:", "            elif False:", "呼ぶ機能が中間表現に無い"),
+    ("呼ぶ機能の空の配列を許す", "if not isinstance(callers, list) or not callers:", "if not isinstance(callers, list):",
+     "呼ぶ機能が空の配列"),
+    ("呼ぶ機能の id の形を見ない", "            if not isinstance(caller, str) or not FEATURE_ID.fullmatch(caller):",
+     "            if not isinstance(caller, str):", "呼ぶ機能の id の形"),
+    ("呼ぶ機能に自分自身を許す", "            elif caller == fid:", "            elif False:", "呼ぶ機能が自分自身"),
+    ("呼ぶ機能の重複を許す", "        if len(set(map(str, callers))) != len(callers):", "        if False:", "呼ぶ機能の重複"),
+    ("呼ぶ関係の循環を見ない", "            if state.get(nxt) == 1:\n                return nxt",
+     "            if False:\n                return nxt", "呼ぶ関係の循環"),
+    ("呼ぶ機能が変わっていなくても知らせない",
+     "        if change.kind in (ADD, MODIFY) and callers and not changed & set(callers):", "        if False:",
+     "v2 で呼ばれる機能だけ変える"),
+    ("呼ぶ機能が変わっても知らせる", " and callers and not changed & set(callers):", " and callers:", "v2 で呼ぶ機能も変える"),
+    ("本文に呼ぶ機能を書かない", "        if feature.get(CALLED_BY):\n            titles", "        if False:\n            titles",
+     "呼ばれる機能"),
     ("ケースの ref を見ない", '            if "ref" in case:\n                problems += check_ref',
      '            if False:\n                problems += check_ref', "ケースの ref が仕様に無い"),
     ("ref の部分一致を許す", 'pattern = re.compile(rf"(?<![A-Za-z0-9_\\-Ａ-Ｚａ-ｚ０-９]){sub}{re.escape(ref)}(?![A-Za-z0-9_\\-Ａ-Ｚａ-ｚ０-９]|[./:][0-9])")',
@@ -1586,6 +1754,27 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("未実装で fail しない", '"            self.fail(f\\"未実装: {IMPL_MODULE}.{OPERATION} が無い\\")",', '"            pass",',
      "関数の無い実装でも失敗する"),
     ("期待を比べない", '"        self.assertEqual(actual, expected)",', '"        self.assertIsNotNone(actual)",', "誤った実装で失敗する"),
+    ("nullable に true 以外を許す", "if NULLABLE in field and field[NULLABLE] is not True:",
+     "if NULLABLE in field and field[NULLABLE] is None:", "nullable が false"),
+    ("null を許す項目にも null を拒む", "        if value is None and nullable(field):\n            continue",
+     "        if False:\n            continue", "null を許す項目"),
+    ("null を許さない項目にも null を許す", "        if value is None and nullable(field):\n            continue",
+     "        if value is None:\n            continue", "null を許さない出力に null を期待する"),
+    ("null を許す項目の型を見ない", "        if value is None and nullable(field):\n            continue",
+     "        if nullable(field):\n            continue", "null を許す項目に型の違う値"),
+    ("パスの変数の nullable を見ない", "        if name in fields and nullable(fields[name]):", "        if False:",
+     "パスの変数を nullable にする"),
+    ("OpenAPI の型に null を足さない", '        out["type"] = [field["type"], "null"]', "        pass", "null を許す項目"),
+    ("OpenAPI の enum に null を足さない", '            out["enum"] = field["enum"] + [None]', "            pass",
+     "null を許す項目"),
+    ("型に None を足さない", 'return name + " | None" if nullable(field) else name', "return name", "null を許す項目"),
+    ("Red テストが null を型の検査から外さない",
+     '*(["            if value is None and name in NULLABLE:", "                continue"] if allow_null else []),', "",
+     "null を返す正しい実装で緑"),
+    ("Red テストが null を許す項目の型を見ない", '"            if value is None and name in NULLABLE:"',
+     '"            if name in NULLABLE:"', "null を許す整数の項目に真偽値を返す実装で失敗する"),
+    ("null を許す項目の無い機能にも NULLABLE を書く", '*([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null else []),',
+     'f"NULLABLE = {tuple(allow_null)!r}",', "null を許す項目を書かない生成物は変わらない"),
     ("型を見ない", '"            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",', '"            self.assertTrue(True,",',
      "型の違う実装で失敗する"),
     ("中間表現の実装のモジュールを読まない",
@@ -1642,7 +1831,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '        op = feature["operation"]\n        base = pascal(op["id"])\n        schemas[f"{base}Input"]',
      '        op = dict(feature["operation"], input={k: v for k, v in feature["operation"]["input"].items()'
      ' if k != "amount"})\n        base = pascal(op["id"])\n        schemas[f"{base}Input"]', "OpenAPI と型"),
-    ("OpenAPI の schema から enum を落とす", '        out["enum"] = field["enum"]', "        pass", "パスの変数"),
+    ("OpenAPI の schema から enum を落とす", '        out["enum"] = field["enum"]\n    if nullable(field):',
+     "        pass\n    if nullable(field):", "パスの変数"),
     ("深い入れ子を読めないと言わない", "    except RecursionError:\n        # 版の", "    except ZeroDivisionError:\n        # 版の",
      "深い入れ子"),
     ("ケースの id を int() で並べる", '    digits = case["id"].rsplit("C", 1)[1].lstrip("0")\n    return len(digits), digits',
