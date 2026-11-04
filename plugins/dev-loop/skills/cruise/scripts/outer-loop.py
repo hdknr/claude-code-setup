@@ -39,7 +39,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 | コード | 意味 |
 | --- | --- |
 | 0 | 済んだ——`status` が 5（親 Issue の一覧の行がすべてマージ済みか取り下げ） |
-| 2 | 引数が違う（親の番号の形・上限が 1 未満・`--claude` を語に分けられない）。**通知しない**（引数を読む前に止まる） |
+| 2 | 引数が違う（親の番号の形——先頭の 0 を外した桁数が `int()` の上限を超えるものを含む・上限が 1 未満・`--claude` を語に分けられない）。**通知しない**（引数を読む前に止まる） |
 | 3 | 人を待つ周だけ——`status` が 3。台帳の `show` の「利用者の判断待ち」「利用者の操作待ち」を見る |
 | 4 | 判定できなかった——`status` が 4 か表に無い値・`progress` が 0 以外・`ledger.py` を起こせない・ループの中の予期しない例外。**「済んだ」とも「人待ち」とも答えていない** |
 | 6 | 前進なし——`progress` の変わらない起動が続けて `--max-stalls` 回 |
@@ -62,6 +62,8 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **`claude` の cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも同じ（cruise の親はメインの作業ツリーで起動する。#466）。
 - **`claude` の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——利用者の環境に無くても、別の値があっても（上書きしたと出す）。
 - **`--append-system-prompt` で追記（`APPEND`）を渡す**——非対話の起動の決まり（拒まれたら `await`・進めないなら台帳を書かない）。
+- **親の番号は先頭の 0 を外して読み、桁数で狭めない**——19 桁以上も受ける（`int()` の上限の桁数まで）。
+- **0 を外した桁数が `int()` の上限を超える番号は 2 で拒む**——例外（1）で終わらせない。
 - **`--absent` は渡されたときだけ `/dev-loop:cruise` に付ける**——席を外すかは利用者が決める（cruise `SKILL.md` §3）。
 - **起動時に無視させられていた SIGTERM・SIGHUP（`nohup` の SIGHUP など。SIG_IGN）にはハンドラを置かない**——無視したまま回り続ける
   （`spec-loop` の `render-diagrams.py` と同じ。#820）。
@@ -246,12 +248,14 @@ def main(argv=None):
     except ValueError:
         args.claude_cmd = []
     # ASCII の数字だけ——`str.isdigit()` は `²` も真にし、`int()` が読めずに例外で終わる。先頭の 0 は読み飛ばす（`050` は 50）。
-    # `int()` に通さない——桁の多すぎる文字列は `int()` が例外にする（Python 3.11 以降の上限）
-    number = re.fullmatch(r"0*([1-9][0-9]{0,17})", args.parent)
-    if not number or args.max_launches < 1 or args.max_stalls < 1 or not args.claude_cmd:
+    # 0 を外した残りの桁数が `int()` の上限（Python 3.11 以降の `sys.get_int_max_str_digits()`。0 は上限なし）を超えるものだけ拒む
+    number = re.fullmatch(r"0*([1-9][0-9]*)", args.parent)
+    limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+    if (not number or (limit and len(number.group(1)) > limit) or args.max_launches < 1 or args.max_stalls < 1
+            or not args.claude_cmd):
         print("引数が違う: 親は正の番号、上限は 1 以上、--claude は語に分けられるコマンド", file=sys.stderr)
         return EXIT_USAGE
-    args.parent = number.group(1)
+    args.parent = str(int(number.group(1)))
     # **起動時に無視させられていたら（`nohup` の SIGHUP など。SIG_IGN）置かない**——上書きすると、無視させて起動した側の意図を破って止まる（#820 と同じ）
     saved = {s: signal.signal(s, _on_signal) for s in (signal.SIGTERM, signal.SIGHUP)
              if signal.getsignal(s) != signal.SIG_IGN}

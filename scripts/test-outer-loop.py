@@ -87,6 +87,8 @@ MUTATIONS = {
     "cwd をメインの作業ツリーにしない": [("cwd=main_tree, stdin", "cwd=None, stdin")],
     "上限 0 を置かない": [('    env[BG_CEILING] = "0"\n', "    pass\n")],
     "追記を渡さない": [('"--append-system-prompt", APPEND, ', "")],
+    "番号を 18 桁までに狭める": [(r'r"0*([1-9][0-9]*)"', r'r"0*([1-9][0-9]{0,17})"')],
+    "int() の上限を超える番号を拒まない": [("(limit and len(number.group(1)) > limit)", "False")],
     "--absent を常に付ける": [('(" --absent" if args.absent else "")', '" --absent"')],
     "無視させられたシグナルにもハンドラを置く": [("\n             if signal.getsignal(s) != signal.SIG_IGN}", "}")],
     "中断でいきなり SIGKILL": [("        proc.terminate()\n", "        proc.kill()\n")],
@@ -343,6 +345,12 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["S12 0 は番号でない"] = run(mod, ["00"], root)[0]
     o["S12 0 の多すぎる番号"] = run(mod, ["0" * 5000 + "57"], root)[0]  # int() に通せば例外になる長さ
     o["S12 桁の多すぎる番号"] = run(mod, ["1" + "0" * 5000], root)[0]
+    # 18/19 桁の境目と int() の上限の境目。台帳が無いので、番号の検査を通れば 4、拒めば 2
+    limit = sys.get_int_max_str_digits()
+    o["S12 18 桁"] = run(mod, ["1" * 18], root)[0]
+    o["S12 19 桁"] = run(mod, ["1" * 19], root)[0]
+    o["S12 上限ちょうどの桁数"] = run(mod, ["0" * 30 + "1" * limit], root)[0]
+    o["S12 上限を 1 超える桁数"] = run(mod, ["1" * (limit + 1)], root)[0]
     o["S12 先頭 0 の番号"] = run(mod, ["057"], root)  # 台帳 issue-57 は済んでいる（S9）→ 起こさずに 0
     o["S12 語に分けられない --claude"] = run(mod, ["50", "--claude", "a'b"], root)[0]
     return o
@@ -386,6 +394,9 @@ def main() -> int:
         check("S12 0 は 2", a("S12 0 は番号でない") == 2)
         check("S12 0 を 5000 個前に置いた 57 も例外でなく 57 と読む（0）", a("S12 0 の多すぎる番号") == 0)
         check("S12 桁の多すぎる番号は例外でなく 2", a("S12 桁の多すぎる番号") == 2)
+        check("S12 18 桁・19 桁の番号は検査を通る（台帳が無いので 4）", a("S12 18 桁") == 4 and a("S12 19 桁") == 4)
+        check("S12 int() の上限ちょうどの桁数は通り（4）、1 桁超えると 2",
+              a("S12 上限ちょうどの桁数") == 4 and a("S12 上限を 1 超える桁数") == 2)
         check("S12 先頭 0 の 057 は 57 と読む（狭いパスの後退を戻す）",
               a("S12 先頭 0 の番号")[0] == 0 and "issue-57:" in a("S12 先頭 0 の番号")[1])
         check("S15 SIGHUP を無視させて起動すれば、届いても回り続けて 0（起動 1）",
