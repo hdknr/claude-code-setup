@@ -90,7 +90,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   （どれか 1 本は先にマージされ、残りはマージの直前に main を取り込んで版を上げ直す——版の行のほかに衝突すれば止まるが、どれが先かは決まらない。
   上げ直しは cruise の `references/parallel.md` の「版とマージの順」（#531）。まとめの行が同じ 1 本の PR を持つのは数えない。
   `await`・`blocked` の行の PR は不在の間にマージされないので数えない）、PR の欄が番号でなければ判定できない、
-  マージ済みなら進む（台帳を直す）。
+  マージ済みなら進む（台帳を直す）。**`merged_unverified`（実機確認待ち。#634）は `merged` と同じに、到達に出さず依存先として済んだと読む**——不在の間に進むものではない。
   そのほかはマージの線のとおり。`todo` は依存先を辿り（まとめの中の依存は済んだと読む。**まとめの行は、まとめの全行の外への依存で決まる**——`next` はまとめを全行が着手できるときだけ出す）、
   止まる依存先があれば「始まらない」と止まる元の番号を出す
 - **まとめ**（`到達できる範囲`。人が見る）——マージまで進む・利用者の承認を待つ・止まる・判定できないの番号の一覧
@@ -1227,8 +1227,8 @@ def reach_items(project, name, present, pr_view=None):
         issue = rows[number]
         if issue["state"] == "dropped":
             memo[number] = ("stop", "取り下げ", number)
-        elif issue["state"] == "merged" and not lg.is_stranded(issue):
-            memo[number] = ("merge", "マージ済み", number)
+        elif issue["state"] in lg.MERGED and not lg.is_stranded(issue):
+            memo[number] = ("merge", "マージ済み", number)  # merged_unverified も依存先としては済んだ（#634）
         elif issue["state"] != "todo":
             kind, why = own(issue)
             memo[number] = (kind, why, number)
@@ -1237,7 +1237,7 @@ def reach_items(project, name, present, pr_view=None):
                     if not (issue.get("group") and rows[d].get("group") == issue["group"])]
             worst = min((o[0] for _d, o in deps), key=KIND_ORDER.index, default="merge")
             if worst == "merge":
-                start = "着手できる" if all(rows[d]["state"] == "merged" for d, _o in deps) else "依存のマージの後に着手"
+                start = "着手できる" if all(rows[d]["state"] in lg.MERGED for d, _o in deps) else "依存のマージの後に着手"
                 kind, why = merge_tail(f"{start}——")
                 memo[number] = (kind, why, number)
             else:
@@ -1250,7 +1250,7 @@ def reach_items(project, name, present, pr_view=None):
     items = [merge_item]
     groups = {k: [] for k in KIND_ORDER}
     for i in data["issues"]:
-        if i["state"] == "dropped" or (i["state"] == "merged" and not lg.is_stranded(i)):
+        if i["state"] == "dropped" or (i["state"] in lg.MERGED and not lg.is_stranded(i)):
             continue
         kind, why, _root = outcome(i["number"])
         groups[kind].append(i["number"])
