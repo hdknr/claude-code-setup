@@ -87,7 +87,7 @@ cruise を回していたなら、同じ時刻に落ちた子の体（実装役�
 （[dev-loop の台帳の再開](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/ledger.md)）。
 不在のあいだに 8 時間で切れないようにするには、[長期トークンで cruise を起動します](cruise-long-lived-token.md)。
 
-**ほかの値（`overloaded` など）には、この hook は案内を添えません**（記録だけです）。
+**ほかの値（`overloaded` など）には、この hook は通知を出しますが、待つ・`/login` の案内は添えません。**
 
 **利用上限らしい値（`rate_limit`・`billing_error`）なら:**
 
