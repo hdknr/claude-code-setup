@@ -113,6 +113,8 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
 - 1 パス目: 起点（1 パス目の指摘対応の起点。関門に渡した時点の HEAD）`6f6deb526f518e0dcdaa4a92a981358979c843e5`。Verifier（sonnet、`dev-loop:dev-loop-verifier`）: 反証 0 件（check-all 58/58 緑・skill-metrics 緑）。`/code-review`（high）: 指摘 9 件。直す 6 件（CR1〜CR6）・残課題 3 件（CR7〜CR9）。手順 4 への差し戻し: あり（CR1〜CR6 の修正）
 - 割り目（2 パス目の前）: 割らない（不在の cruise）。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 2 パス目: Verifier（sonnet）反証 1 件（V2-1）・`/code-review`（high）指摘 10 件。直す 3 件（CR2-2・CR2-4・CR2-9）・残課題 7 件・捨てる 1 件。
+  2 パス目の指摘対応の起点（狭いパスの起点）: `1b00a29e`（指摘対応に入る前の HEAD）
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
