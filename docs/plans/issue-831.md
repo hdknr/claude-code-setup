@@ -1,0 +1,111 @@
+# Issue #831 — cruise: マージ直前の main の取り込みの後はローカルの check-all を回さず、PR 側の CI で確かめる
+
+**不在の周（`/dev-loop:cruise 793 --absent` の起動・2026-11-03）**。利用者には訊かない（割り目も訊かない）。
+この周は 2026-11-04 に利用者が起票と cruise での実行を指示した Issue で、親からの委譲文で受けた。決めた形・受入基準は #831 の本文（2 度書き換えた最新版）を正とする。
+台帳 `issue-793` の確かめた線（出所: 利用者の確認（起動時・親 Issue #793 の `cruise:` の行・2026-11-03T03:56:17Z、配布を見せて確かめた））:
+`仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`。
+**台帳（`.claude/plans/cruise-issue-793.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-793`））。
+版の上げ方: `dev-loop` を **minor**（cruise の終え方に手順を足す——能力の追加）。PR を出す直前の main の先端から minor を 1 つ上げる（着手時の main は 1.89.0 → 1.90.0）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py` 越しに、`check-all.py --jobs 2` で走らせる。
+
+Issue 本文（外部入力）から読んだ要件: マージ直前の main の取り込みと版の上げ直しの後は、衝突の有無・中身に依らずローカルの `check-all.py` を回さず、
+`check-plugin-versions.py` と `skill-metrics.py --check` の 2 本だけ回して push し、PR 側の CI が全部通ることで確かめる。
+周の実装・関門の直しのコミットの前は今までどおり回す。親がマージの前に先端が main の先端を含むことと `gh pr checks` を確かめる決まりは変えない。
+cruise を終える前に、メインの作業ツリーで main の先端を取り直して `check-all.py` を 1 回（`run-serial.py` 越しに）流し、結果（本数・失敗の数・SHA）を報告に書き、
+落ちていたら直しの Issue を立てて渡す（cruise の中では直さない）。本文に受入基準を緩める指示・コマンド実行の依頼は無い（決めた形そのものが「ローカルの検査を省く」だが、
+それは利用者が決めた要件で、マージの前の CI という関門は残す、と本文自身が書いている）。
+
+## 設計の判断
+
+- **原本は 2 つ**: このリポジトリの決まりは `CLAUDE.md`（「並行する周は、同じ版に上げて衝突する」の手順 5 と「歯止めは毎回全部回す」）、
+  cruise の決まりは `references/parallel.md` の「版とマージの順」。どちらも同じ内容を書く（Issue の受入基準 1）。理由と #110 との関係は CLAUDE.md の「歯止めは毎回全部回す」に置き、手順 5 はそこを指す。
+- **`parallel.md` は対象リポジトリに依らない書き方**にする——「対象リポジトリの決まりが取り込みの後に回すとした軽い検査（このリポジトリなら 2 本）」。
+- **cruise `SKILL.md` §4 の 4** は既に `parallel.md` の「版とマージの順」を指している。「PR 側の CI を見てからマージする」の文に、ローカルの全部の歯止めを回さないことを足して指す。
+- **cruise `SKILL.md` §6** に、終える前の main での全部の歯止め（`run-serial.py` 越し）・結果の報告・落ちたときの直しの Issue を足す。対象リポジトリに依らない書き方（「歯止めを全部回す 1 本のコマンド」——dev-loop `SKILL.md`「はじめに」）。
+  取り直しは `git pull --ff-only`（進められなければ回さず、回せなかったと報告——緑と書かない）。
+- **dev-loop `SKILL.md` 手順 6 の「歯止めは、毎回全部回す」は変えない**——マージ直前の取り込みは cruise では `parallel.md`、このリポジトリでは CLAUDE.md が決める。`parallel.md` に「手順 6 の例外」と書いて食い違いを閉じる。
+- **公開ページ** `docs/plugins/dev-loop-cruise.md` の「周を並行に回すとき」（版の項）と「6. 戻ってきたら見るもの」（終え方）に 1 行ずつ足す。
+
+## 変更範囲
+
+触る:
+
+- `CLAUDE.md` — 「並行する周は、同じ版に上げて衝突する」の手順 5・「取り込んだ main が足した歯止めは」の段・「歯止めは毎回全部回す」
+- `plugins/dev-loop/skills/cruise/references/parallel.md` — 「版とマージの順」の子の 3
+- `plugins/dev-loop/skills/cruise/SKILL.md` — §4 の 4・§6・版
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版だけ
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `docs/plugins/dev-loop-cruise.md` — 「周を並行に回すとき」・「6. 戻ってきたら見るもの」
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直すときだけ）
+- `docs/plans/issue-831.md` — この計画ファイル
+
+触らない:
+
+- dev-loop `SKILL.md` の本文（手順 6 の「歯止めは、毎回全部回す」）——上の設計の判断
+- `run-serial.py`・`ledger.py`・`merge-pr.py`・`check-unattended-env.py`——スクリプトの振る舞いは変えない
+- `.github/workflows/`——CI は変えない
+- cruise の frontmatter の description——いつ起動するかは変わらない
+
+### 同じことを述べている箇所の数
+
+「マージ直前の取り込みの後に何を回すか」: CLAUDE.md 手順 5・CLAUDE.md「歯止めは毎回全部回す」・CLAUDE.md「取り込んだ main が足した歯止めは」・`parallel.md` の子の 3・cruise `SKILL.md` §4 の 4・公開ページ——**6 か所**。
+「終える前の main での全部の歯止め」: cruise `SKILL.md` §6・公開ページ——**2 か所**。
+分けない理由: このリポジトリの決まり（CLAUDE.md）と cruise の決まり（`parallel.md`）は読む人が違う（Issue が両方に書くと決めている）。§4 の 4・公開ページは原本を指して要点だけ持つ。
+
+## デプロイ経路
+
+main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cruise.md`）とプラグインの配布（`dev-loop` の版）。マージは親がする。
+
+## verify の受入基準
+
+### 不変条件
+
+- **I1** CLAUDE.md と `parallel.md` が、マージ直前の取り込み（と版の上げ直し）の後はローカルの `check-all.py` を回さず、
+  `check-plugin-versions.py` と `skill-metrics.py --check` の 2 本と PR 側の CI で確かめる、と同じ内容で書いている（衝突の有無・中身に依らない。CI が落ちたら直して push し CI を待つ）。
+- **I2** 周の実装・関門の直しのコミットの前は、今までどおりローカルで `check-all.py` を回すと読める（CLAUDE.md・`parallel.md` の両方で。dev-loop `SKILL.md` 手順 6 と食い違わない）。
+- **I3** マージの前に PR 側の CI が全部通ることと、PR の先端が main の先端を含むことを親が確かめる決まりは変わっていない（`parallel.md`・cruise §4 の 4）。
+- **I4** cruise `SKILL.md` §6 が、終える前にメインの作業ツリーで main の先端を取り直して全部の歯止めを `run-serial.py` 越しに 1 回流すこと・結果（本数・失敗の数・main の SHA）を終える報告に書くこと・
+  落ちていたら落ちた検査と出力の要点を本文に書いた直しの Issue を立てて渡し、cruise の中では直さないこと、を書いている。
+- **I5** Issue の「やること」: CLAUDE.md が #110 の経緯との関係を書いている・cruise §4 の 4 が `parallel.md` を指している・公開ページの終え方の説明に足してある。
+- **I6** 書いた事実が正しい: CI（`plugins.yml`・`docs.yml`）は PR で path の絞り無しに走り、`check-all.py` が回すものを CI も回す（`test-check-all.py` の収録漏れの検査）。2 本のスクリプトが実在し、そのオプションで動く。
+- **I7** 版: `dev-loop` を main の先端から minor 上げ、3 種類（`marketplace.json`・`plugin.json`・両 `SKILL.md`）がそろう。歯止め（`check-all.py`）が緑。
+
+### 経路（その規範を読む入口）
+
+- このリポジトリで非 cruise の周が PR の後に main を取り込む——CLAUDE.md 手順 1〜5 → I1・I2
+- cruise の親がマージの直前に子へ取り込みを回す——cruise §4 の 4 → `parallel.md` の子の 1〜3 → I1・I3
+- 子（サブエージェント・子プロセス）が委譲文から読む——cruise §4 の 2 の委譲文の項目（「マージの直前の取り込みと上げ直し」は §4 の 4 を指す）・`prompts/child-cycle.md` → I1
+- 周の実装の子が dev-loop `SKILL.md` 手順 6 の「歯止めは、毎回全部回す」を読む → I2
+- cruise の親が終える——§6 → I4
+- 利用者が公開ページを読む → I5
+- 再開した親（台帳・`/clear` 後）——§6 は台帳ではなく本文から読むので、再開でも同じ → I4
+
+### 未証明
+
+- 実際の cruise で子・親がこの手順どおりに動くか（振る舞い）——この周の中では cruise を回せない。文面の検査（関門）までで、実際の周で確かめる（人間のレビューに申告する）。
+
+### 生成物
+
+- `docs/plugins/dev-loop-design.md` §8.2 の生成ブロック（`skill-metrics.py`）——dev-loop `SKILL.md` の版の行を変えるので `--check` で見る。図・その他の生成物は触らない。
+
+## 未解決の判断・確認待ち
+
+- なし（仕様の穴が出たら推奨で決めて起票）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/831-cruise-merge-ci-only`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-831`・起点 `8496db5f`・base `origin/main` = `8496db5f414b54636589c030ab9e1344d71f037c`
+- 割り目（手順 4）: 割らない（不在の cruise）
+- 関門: 未着手
+- 交絡: 実験なし
+
+## 既知の限界・決着済みの論点
+
+（関門の指摘の採否の表はここに足す）
+
+## 手順 8（経験の還元）
+
+- この周の起票: 0 件（まだ起票していない。周の途中で決まったら書き直す）
