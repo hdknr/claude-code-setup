@@ -245,12 +245,13 @@ def main(argv=None):
         args.claude_cmd = shlex.split(args.claude)
     except ValueError:
         args.claude_cmd = []
-    # ASCII の数字だけ——`str.isdigit()` は `²` も真にし、`int()` が読めずに例外で終わる。先頭の 0 は読み飛ばす（`050` は 50）
-    if (not re.fullmatch(r"[0-9]+", args.parent) or int(args.parent) < 1 or args.max_launches < 1 or args.max_stalls < 1
-            or not args.claude_cmd):
+    # ASCII の数字だけ——`str.isdigit()` は `²` も真にし、`int()` が読めずに例外で終わる。先頭の 0 は読み飛ばす（`050` は 50）。
+    # `int()` に通さない——桁の多すぎる文字列は `int()` が例外にする（Python 3.11 以降の上限）
+    number = re.fullmatch(r"0*([1-9][0-9]{0,17})", args.parent)
+    if not number or args.max_launches < 1 or args.max_stalls < 1 or not args.claude_cmd:
         print("引数が違う: 親は正の番号、上限は 1 以上、--claude は語に分けられるコマンド", file=sys.stderr)
         return EXIT_USAGE
-    args.parent = str(int(args.parent))
+    args.parent = number.group(1)
     # **起動時に無視させられていたら（`nohup` の SIGHUP など。SIG_IGN）置かない**——上書きすると、無視させて起動した側の意図を破って止まる（#820 と同じ）
     saved = {s: signal.signal(s, _on_signal) for s in (signal.SIGTERM, signal.SIGHUP)
              if signal.getsignal(s) != signal.SIG_IGN}

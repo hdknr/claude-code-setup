@@ -341,6 +341,8 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     o["S12 番号でない"] = run(mod, ["abc"], root)[0]
     o["S12 ASCII でない数字"] = run(mod, ["²"], root)[0]
     o["S12 0 は番号でない"] = run(mod, ["00"], root)[0]
+    o["S12 0 の多すぎる番号"] = run(mod, ["0" * 5000 + "57"], root)[0]  # int() に通せば例外になる長さ
+    o["S12 桁の多すぎる番号"] = run(mod, ["1" + "0" * 5000], root)[0]
     o["S12 先頭 0 の番号"] = run(mod, ["057"], root)  # 台帳 issue-57 は済んでいる（S9）→ 起こさずに 0
     o["S12 語に分けられない --claude"] = run(mod, ["50", "--claude", "a'b"], root)[0]
     return o
@@ -382,6 +384,8 @@ def main() -> int:
         check("S12 ASCII でない数字（²）は 2", a("S12 ASCII でない数字") == 2)
         check("S12 語に分けられない --claude は 2", a("S12 語に分けられない --claude") == 2)
         check("S12 0 は 2", a("S12 0 は番号でない") == 2)
+        check("S12 0 を 5000 個前に置いた 57 も例外でなく 57 と読む（0）", a("S12 0 の多すぎる番号") == 0)
+        check("S12 桁の多すぎる番号は例外でなく 2", a("S12 桁の多すぎる番号") == 2)
         check("S12 先頭 0 の 057 は 57 と読む（狭いパスの後退を戻す）",
               a("S12 先頭 0 の番号")[0] == 0 and "issue-57:" in a("S12 先頭 0 の番号")[1])
         check("S15 SIGHUP を無視させて起動すれば、届いても回り続けて 0（起動 1）",
