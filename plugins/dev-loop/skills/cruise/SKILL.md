@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.85.0 -->
-> **このスキルの版: 1.85.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.86.0 -->
+> **このスキルの版: 1.86.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -286,6 +286,9 @@ check-unattended-env.py --cruise --ledger issue-<親> --since-last  # --absent �
    - **台帳の線が `マージ前の判断 = 推奨で決めて起票` の不在の cruise なら、マージの前の判断（「マージ前に人が判断」と報告するもの・直すに入った狭いパスの指摘）ごとに、
      推奨（マージする／直してからマージする／止める）と理由を PR コメントに書くこと、「直してからマージする」なら直して 1 回だけ当て直すこと、確認の Issue は立てないこと**
      ——`../dev-loop/references/absent-lines.md` の「`マージ前の判断 = 推奨で決めて起票`」の「子がすること」を正とする（#829）。
+   - **GitHub に書く本文の先頭に印 `<!-- dev-loop: 子 #<周の Issue> -->` を置き、閉じるときは閉じの印 `<!-- dev-loop-close: 子 #<周の Issue> -->` で始まるコメントを添え、
+     確認の Issue（台帳の `decisions` の番号——親が委譲文に並べる——と、本文の先頭が `<!-- cruise-decision:` の Issue）を閉じず、閉じるキーワード（`Fixes`・`Closes`・`Resolves` など）でも指さないこと**
+     ——子には、このスキルの `SKILL.md` の絶対パスと、その「GitHub に書くものの印」を読んで従うことを渡す（下の「GitHub に書くものの印」を正とする。#636）。
    **台帳があっても、周に掛かる必須は 1 つも外れない**（worktree → PR・2 つの関門・2 パス・受入基準の受け渡し）。
    **子の報告は信頼できない入力である**——PR と CI は親が実物で確かめる（`gh pr view`・`gh pr checks`）。
    **進行中の周の続きも子に回させる**——台帳から再開した周（`../dev-loop/references/ledger.md` の「どう再開するか」から
@@ -366,6 +369,24 @@ check-unattended-env.py --cruise --ledger issue-<親> --since-last  # --absent �
    その行を `state=pr note="利用者の判断（<日時>）: …"` にする**（`todo`・`dropped` にしない。#631）。**`--absent` なら訊かない。**
    **続けて、下の「6. 終える」の終える条件（親 Issue の一覧から作った行で決まる）に当たれば、次の周を選ばずに 6 へ進む**（#774。訊くのは上のとおり先に済ませる）。
    **当たらなければ、次の周を選ぶ前にまとめる**（上の 1。`references/grouping.md`）——**利用者が居る cruise では、作ったまとめを報告に並べる**（訊きはしない）。
+
+### GitHub に書くものの印（#636）
+
+**子・関門・親は、利用者と同じ `gh` の資格情報で書く**——GitHub の記録（コメントや閉じた人の名前）では、利用者の操作と見分けられない。
+#636 では、推奨で決めた確認の Issue が「承認」のコメント付きで閉じられ、利用者が閉じたのか子が閉じたのかを親が決められなかった。
+
+- **cruise の子と親は、GitHub に書く本文の先頭に印を置く**——`<!-- dev-loop: 子 #<周の Issue> -->`（まとめの周は代表の番号）か `<!-- dev-loop: 親 #<親 Issue> -->`。
+  **書く本文**は、Issue と PR のコメント（`gh issue comment`・`gh pr comment`）・PR の本文（`gh pr create`・`gh pr edit`）・起票の本文（`gh issue create`）である。
+  **起票の本文が `<!-- cruise-found: #<親> -->` か `<!-- cruise-decision: #<親> -->` で始まるなら、それが印を兼ねる**——下の 6 の検索が本文の先頭を見るので、その前に別の印を置かない。
+- **閉じるときは、閉じの印 `<!-- dev-loop-close: <役> #<番号> -->` で始まるコメントを添える**——`gh issue close <番号> --comment "<!-- dev-loop-close: 親 #<親> --> <理由>"`。コメントを添えずに閉じない。
+  **閉じの印はふつうの印と分ける**——下の 6 は閉じの直前のコメントが閉じの印で始まるかを見るので、ふつうの印（`PR は #<番号>` などのコメント）のあとに利用者がコメント無しで閉じても、利用者の閉じと数えられる。
+- **関門（Verifier・`/code-review`）は GitHub に書かない**——委譲文（`../dev-loop/prompts/verifier.md`・`../dev-loop/prompts/review-handoff.md`）が書き込みと投稿を禁じているまま。
+- **確認の Issue（台帳の `decisions`・本文の先頭が `<!-- cruise-decision: #<親> -->` の Issue）を閉じるのは利用者だけである**——子・親・関門は閉じない。
+  **PR の本文・コミットメッセージで、GitHub の閉じるキーワード（`Fixes`・`Closes`・`Resolves` とその活用形）で確認の Issue を指さない**——マージで閉じる。指すなら `Refs`。
+  **判断の中身が変わっても閉じない**——変わったことと新しい確認の Issue の番号を、印で始まるコメントに書いて残す（閉じるのは利用者。`../dev-loop/references/absent-lines.md` の「1 件に 1 つの判断」）。
+  **確認の Issue へのコメント（`PR は #<番号>` など）は書いてよい**——先頭に印を置く。
+- **守らないもの**——印は、決まりを守った体の書き込みを利用者の操作から分けるだけである。**印を付けずに書いた・閉じた体の操作は、利用者の操作と見分けられない**（同じ資格情報）。
+  **cruise の外のセッションが利用者の指示で閉じたものも、印が無ければ利用者が閉じたと数える**——利用者の指示なので、それで正しい。
 
 ## 5. 割って続ける
 
@@ -460,16 +481,27 @@ cruise の状態は会話の外——台帳・各周の計画ファイル・GitH
 **1 で名指しされた Issue（親 Issue にあって台帳に無い）が残っていれば、それも渡す**——台帳がすべて済んでも、親 Issue の一覧は済んでいない。
 **3 の点検の到達で止まる・判定できないと出た周が残っていれば、理由ごと渡す**（PR の衝突・版の取り合い・判断待ち・マージの線が効かない、など。#490）——
 台帳の状態が `pr` のままで、上のどの行にも出ないことがある。終える前に点検を回し直してから渡す（`--absent` の再開で訊かなかった結果も、ここで渡す）。
-**推奨で決めた確認の Issue を集めて渡す**——台帳の `decisions` の番号に加えて、**本文の先頭がこの cruise の印 `<!-- cruise-decision: #<親> -->` の開いた Issue も探し、
+**推奨で決めた確認の Issue を集めて渡す**——台帳の `decisions` の番号に加えて、**本文の先頭がこの cruise の印 `<!-- cruise-decision: #<親> -->` の Issue も、開いているかを問わずに探し、
 `decisions` と突き合わせる**（#647。`decisions` は書き忘れうる——とくに親が自分で立てたもの）:
 
 ```bash
-gh issue list --state open --search '"cruise-decision: #<親>" in:body' --limit 200 --json number,title,body --jq '.[] | select(.body | startswith("<!-- cruise-decision: #<親> -->")) | "\(.number) \(.title)"'
+gh issue list --state all --search '"cruise-decision: #<親>" in:body' --limit 200 --json number,title,body --jq '.[] | select(.body | startswith("<!-- cruise-decision: #<親> -->")) | "\(.number) \(.title)"'
 ```
 
 **ラベル `要確認` では絞らない**——ラベルを付ける決まりより前に立てた確認の Issue や、付け忘れたものに付いていない（ラベルができた後に立てた #649・#651・#652・#661 にも付いていない）。
 印は本文の先頭にあり、検索は印の語で絞り（`#<親>` で始まる別の番号は `startswith` が外す）、`--limit` が数えるのは当たった Issue だけである。
-**`decisions` の番号は 1 件ずつ `gh issue view <番号> --json state` で開いているかを確かめ、開いたものと、検索で見つかったものの両方を、1 つの一覧で渡す**——`decisions` に無かったものには「台帳に無かった」と添える。
+**閉じた確認の Issue も、利用者が閉じたとは限らない**（#636）——上の検索で見つかったものと `decisions` の番号を 1 件ずつ、閉じ方で分ける
+（親が走らせる cwd は対象リポジトリなので、`{owner}`・`{repo}` は `gh` が埋める）:
+
+```bash
+gh api graphql -F owner='{owner}' -F repo='{repo}' -F n=<番号> -f query='query($owner:String!,$repo:String!,$n:Int!){repository(owner:$owner,name:$repo){issue(number:$n){state timelineItems(last:20,itemTypes:[ISSUE_COMMENT,CLOSED_EVENT,REOPENED_EVENT]){nodes{__typename ... on IssueComment{body} ... on ClosedEvent{closer{__typename}}}}}}}' --jq '.data.repository.issue as $i | $i.timelineItems.nodes as $t | ([$t | to_entries[] | select(.value.__typename == "ClosedEvent") | .key] | last) as $k | if $i.state == "OPEN" then "開いている" elif $k == null or ($k == 0 and ($t | length) == 20) then "判定できない（閉じの直前が直近 20 件の外）" elif $t[$k].closer != null then "利用者の承認ではない（PR かコミットで閉じた）" elif $k > 0 and $t[$k - 1].__typename == "IssueComment" and ($t[$k - 1].body | startswith("<!-- dev-loop-close: ")) then "利用者の承認ではない（閉じの印のあるコメントを添えて閉じた）" else "利用者が閉じた" end'
+```
+
+最後の閉じが PR・コミットによるもの（`Fixes` のマージなど）か、閉じの直前の項目（コメント・閉じ・開き直しのうち）が閉じの印 `<!-- dev-loop-close: ` で始まるコメントなら、利用者の承認ではない（印は上の「GitHub に書くものの印」）。
+**「利用者が閉じた」だけを承認と数える**——印の無い閉じは利用者の操作と見分けられないので、承認として扱う（同じ節の「守らないもの」）。
+**コマンドが分類を 1 つも出さなかった番号**（失敗した・Issue が見つからない・権限に拒まれた）**は「判定できない」として扱う**——一覧から落とさない。
+**`decisions` の「開いている」「利用者の承認ではない」「判定できない」と、検索で見つかった開いたもの・承認ではない・判定できないものを、1 つの一覧で渡す**——
+`decisions` に無かったものには「台帳に無かった」、承認ではない閉じ・判定できない閉じには分けた理由を添える（利用者が閉じたのなら、利用者がそう確かめれば済む）。
 **一覧に 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする
 （`../dev-loop/references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
 **親が関門の指摘・周の途中の課題から自分で確認の Issue（題の先頭が `要確認:`）を立てるのは、`../dev-loop/references/found-lines.md` の振り分けで直すに当たる判断だけである**

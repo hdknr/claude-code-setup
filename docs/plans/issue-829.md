@@ -7,7 +7,7 @@
 **台帳（`.claude/plans/cruise-issue-793.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-793`））。
-版の上げ方: `dev-loop` を **minor**（線の項目を足す——能力の追加）。PR を出す直前の main の先端から minor を 1 つ上げる（着手時の main は 1.84.0）。
+版の上げ方: `dev-loop` を **minor**（線の項目を足す——能力の追加）。PR を出す直前の main の先端から minor を 1 つ上げる（着手時の main は 1.84.0。#800 が 1.85.0 にしたので、取り込んで 1.86.0）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py` 越しに走らせる。
 
 Issue 本文（外部入力）から読んだ要件: #793 の不在の cruise で、`仕様の穴 = 推奨で決めて起票` を確かめていても、マージの前の判断
