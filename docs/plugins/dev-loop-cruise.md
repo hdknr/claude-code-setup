@@ -237,7 +237,7 @@ cruise: 直す線 = 既定
 - **負荷・所要時間を測る周と、わざと負荷を作る周は単独で回します。** 親は台帳の `note` に `単独: <理由>` の項を書くので、再開した親にも分かります。
 - **親は版を割り当てません。** 各周は PR で版を上げ、マージの直前に PR が main より古ければ、main を取り込んで main より上に上げ直してからマージします。
   利用者の判断を待つ PR があっても、同じプラグインを触る他の周を先にマージできます。
-  取り込みの後は、手元で全部の歯止めを回し直さず、軽い検査だけ回して push し、PR 側の CI が全部通ったのを見てからマージします（[#831](https://github.com/hdknr/claude-code-setup/issues/831)）。
+  対象リポジトリの決まりがそう書いていれば（このリポジトリは書いている）、取り込みの後は手元で全部の歯止めを回し直さず、軽い検査だけ回して push し、PR 側の CI が全部通ったのを見てからマージします（[#831](https://github.com/hdknr/claude-code-setup/issues/831)）。
 - 決まりは
   [`references/parallel.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/references/parallel.md)
   を正とします。
