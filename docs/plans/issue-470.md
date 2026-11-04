@@ -112,9 +112,28 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 周の在り処: ブランチ `issue/470-spec-gap-line-spec-loop`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-470`・
   起点 `396ce773`・base `origin/main`（`refs/remotes/origin/HEAD`）= `396ce7736b88a735c8ca17c1b5ba3b5270ba2f3c`
 - 割り目（手順 4 の完了時）: 割らない（cruise の周）
+- 1 パス目: 起点（関門に渡した時点の HEAD）`fa36178d`。Verifier（sonnet、`dev-loop:dev-loop-verifier`）: 反証 0 件（I8 は check-all を順番待ちで回せず一部のみ）。
+  `/code-review`（high）: 指摘 9 件。直す 4 件（CR1・CR2・CR4・CR5）・残課題 5 件（CR3・CR6〜CR9）。手順 4 への差し戻し: あり
+- 取り込み: origin/main（`f10e8170`。#630・#274）を merge `7e9581b0`（found-lines の衝突を CR4 の形で解いた・dev-loop を 1.89.0 に上げ直した）。
+  取り込みで増えた検査: なし（`ledger.py`・`test-ledger.py` の変更のみ）。**周の base を当て直した**: `git merge-base origin/main HEAD` = `f10e8170b2559e6e60ad5caa5a28fbdd2c1f378f`（2 パス目からこれを渡す）
+- 割り目（2 パス目の前）: 割らない（cruise の周）。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
 
 - `show` は子 Issue の本文を 1 件ずつ `gh` で取る——子が多いと遅い。取れなければ名指しして続ける（起動を止めない）。
 - 新しい値は `.claude/dev-loop.md` の `不在の線:` でも宣言できる（線と既定の表の値は両方の出所で効く——今の決まりのまま）。
+
+### 採否の表（1 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1 main が既に dev-loop 1.88.0（#818）で版が衝突し、found-lines の行が衝突する | 示せる（`git show origin/main:plugins/dev-loop/.claude-plugin/plugin.json` が 1.88.0） | I8 | 直す（取り込み・1.89.0・#630 の世代の上限を残して解いた） |
+| CR2 spec-loop の穴の節が「1〜4 に加えて」で、3 の「後で利用者がすること」と書き方の 8（承認なら閉じる・別の値なら実装の Issue）と食い違う | 示せる（両方の文面） | I4 | 直す（「置き換える」にし、3 と 8 から指した） |
+| CR3 scaffold が作る Issue の本文・spec-loop の README・公開ページが「実装で決めない」のまま | 示せない（本文は信頼できない入力で、手順は dev-loop の `spec-gap.md` を指す。周は本文ではなくスキルに従う） | 無し | 残課題（spec-loop を触らない範囲） |
+| CR4 周の途中の課題の穴を新しい値で台帳に足すと、要求側の作り直しと二重に実装される | 示せる（found-lines の行と absent-lines の G4 の文面） | I2・I4 | 直す（found-lines の spec-loop の行はどちらの値でも利用者の判断に戻し、absent-lines に効く範囲を書いた） |
+| CR5 再開時の `show` は本文の線で効くかを言うが、各周は台帳の線を読む | 示せる（cruise §1 が再開でも `show` を走らせる） | I6・I7 | 直す（cruise §2 に、本文の値で言うこと・再開では台帳の値で言い直して見せることを書いた） |
+| CR6 `child_origin` に時間切れが無い・複数行の stderr | 示せない（実物の hang・複数行の失敗を再現していない） | 無し | 残課題 |
+| CR7 子ごとに `gh` を 1 本ずつ起こし、テストが重くなる | 示せない（増えた時間を測っていない） | 無し | 残課題 |
+| CR8 値の分岐・BOM の外しに変異が無い | 示せない（C14 の期待値が両方を見ている——`elif True` と BOM を外さない形は C14 で食い違う） | 無し | 残課題 |
+| CR9 `SPEC_GAP_ALL` が `LINES` の値の写し | 示せない（いまは一致。テストが同じ文字列で apply を通す） | 無し | 残課題 |
