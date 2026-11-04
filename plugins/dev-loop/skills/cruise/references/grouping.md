@@ -95,7 +95,7 @@ python3 ledger.py group issue-<親> <代表> <番号> [<番号> …]
    **`merge-pr.py` が「Issue が閉じない」で 0 以外を返しても、マージ自体が済んだか（`gh pr view <PR> --json state` が `MERGED`）を先に見る**——
    済んでいれば下の 2 へ進む。済んでいなければマージしていないので、ここで止まる。
 2. **`Fixes` に並べた Issue が全部閉じたかを `gh issue view <番号> --json state` で確かめ、閉じなかったものは PR を名指しして閉じる**——
-   `gh issue close <番号> --comment "PR #<PR> で直した（まとめ #<代表>）"`（利用者の指示「課題がマージされたら、元課題は閉じてよい」）。
+   `gh issue close <番号> --comment "<!-- dev-loop-close: 親 #<親> --> PR #<PR> で直した（まとめ #<代表>）"`（利用者の指示「課題がマージされたら、元課題は閉じてよい」。印は cruise `SKILL.md` の「GitHub に書くものの印」）。
    **`Refs` に変えた（落ちた）Issue は閉じない**——直していない。
 3. **台帳はまず代表に書く**——`ledger.py set issue-<親> <代表> state=merged pr=#<PR>`（周の在り処はまとめの全行に書く。落ちた行も一度 `merged` になる）。
    **`実機確認 = Refs でマージ` の線で、まとめの Issue のどれか 1 つでも実機確認のために `Refs` で指してマージした（実機確認が残る）なら、`state=merged` ではなく `state=merged_unverified`**
