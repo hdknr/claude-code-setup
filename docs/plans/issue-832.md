@@ -42,6 +42,7 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は公開サ�
 
 **未証明**: 「判別できない」は各腕 2 回の結果——率ではない（振る舞いの揺れで修正前の版が一覧を書く回があるかは、この回数では言えない）。
 `type -a git` に `/opt/homebrew/bin/git` が出ない理由は確かめていない（記述は観測にとどめる）。
+**proposal のケースが「一覧は書かない」の行を外した回帰を捕まえるか**は確かめていない——0.7.0 は「変更の提案書」の行も持たないので、この比較は守る行を切り分けていない（/code-review 2 パス目。回すなら「一覧は書かない」だけを外した版。#274 の受入基準 B の続き）。
 **BLOCKED**: 無し。
 
 生成物: **該当なし**——Eval の結果は scratchpad（`results/` は `.gitignore`）。図・`SKILL.md` の測定値の生成ブロックに触れない（`SKILL.md` は版の 2 行だけ。`skill-metrics.py --check` は check-all に入っている）。
@@ -54,9 +55,10 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は公開サ�
   - r1（$0.17）: `git --version` → **`git version 2.56.0`**、`git tag` → `release-v1`、`git log` も通った。grader 2 本とも緑。
   - r2（$0.13）: 仕組みを見るため 1 行を差し替えた——`type -a git` → **`/usr/bin/git` だけ**、`ls -la /opt/homebrew/bin/git` は見える、`/opt/homebrew/bin/git --version` → 2.56.0、
     `/usr/bin/git --version` → **2.56.0**（xcrun の警告つき）、`xcrun --find git` → **`/opt/homebrew/bin/git`**。
-  - **読み**: サンドボックスの中のシェルは `/usr/bin/git`（xcrun の shim）を選ぶが、xcrun が Xcode の実体を読めず、`PATH` から Homebrew の git を見つけて起こしている。
-    動いているのは Homebrew の git（2.56.0。Xcode の git は 2.54.0、CommandLineTools は 2.39.5——ホストで確かめた）。
-    `couldn't create cache file .../xcrun_db-*` の警告は毎回 stderr に出るが、終了コードは 0。
+  - **読み**: サンドボックスの中のシェルは `/usr/bin/git`（xcrun の shim）を選び、shim 越しに動いているのは Homebrew の git（2.56.0。Xcode の git は 2.54.0、
+    CommandLineTools は 2.39.5——ホストで確かめた）。**xcrun が `PATH` から見つけて起こすというのは推定**（`/opt/homebrew/bin` を `PATH` から外した対照は無い）。
+    `couldn't create cache file .../xcrun_db-*` の行は shim 越し（素の `git`・`xcrun`）の呼び出しのたびに出て、`/opt/homebrew/bin/git` を直に呼んだ行では出なかった。終了コードは 0。
+    出力は `2>&1` でまとめたので、どちらの流れに出たかは見ていない。
   - **交絡**: 「git を入れる前は動かなかった」の陰性側は #274 の trace（`Failed to locate 'git'`）で、同じホスト・同じ claude の版。入れた後の陽性側は上の 2 回。
     r1 の grader は素の `git` の出力（版の文字列・タグ名）だけを見るので、素の `git` が動かずに緑になる形は無い。
     **r2 の `git-version-ran` は `/opt/homebrew/bin/git --version` を直に呼ぶ行でも緑になる**（判別するのは `git-tag-read` だけ。版の文字列は Xcode の 2.54.0 にも当たる）——r2 は仕組みを見るための観測で、陽性対照は r1 である（/code-review 1 パス目 R5）。
@@ -77,6 +79,59 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は公開サ�
   **このケースが捕まえる誤り（一覧を手で書く）を、差分モードの入る前の版も起こさない**——grader は差分モードの有無を判別しない。
 - 対照: grader の陽性対照は #274（r2・r8）で済んでいる（`draft-written` の赤・`draft-has-no-change-list` の赤）。この周では回していない。
 
+### 陽性対照のケース（r1 の形。リポジトリには置かない——プラグインを外に複製して `evals/git-probe/` に置く）
+
+`case.yaml`:
+
+```yaml
+schema_version: "1.1"
+name: git-probe
+description: >-
+  陽性対照（#832）。サンドボックスの中で git が動くかを見るだけ。
+tags: [probe]
+plugins: ["../.."]
+runs: 1
+expected_outcome: >-
+  git-out.txt に git のバージョンとタグの一覧が書かれる。
+execution:
+  prompt: "Bash で次の 1 行をそのまま 1 回だけ実行し、ほかには何もせずに止まれ: { echo PATH=$PATH; which -a git; git --version; git tag; git log --oneline -1; } > git-out.txt 2>&1; cat git-out.txt"
+  max_turns: 4
+  timeout_seconds: 300
+  allowed_tools: [Bash]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: git-version-ran
+    type: regex
+    target: {source: file, path: git-out.txt}
+    pattern: 'git version 2\.'
+    match: contains
+  - name: git-tag-read
+    type: regex
+    target: {source: file, path: git-out.txt}
+    pattern: 'release-v1'
+    match: contains
+```
+
+`scaffold.sh`（`chmod +x`。断る判定は spec-loop の evals の scaffold と同じ）:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [ -n "$(ls -A)" ] || { [ -n "$top" ] && [ "$top" != "$HOME" ]; }; then
+  echo "scaffold.sh: eval のワークスペースではない: $PWD — 断る" >&2
+  exit 1
+fi
+git init -q -b main .
+git config user.name eval
+git config user.email eval@example.invalid
+echo probe > README.md
+git add -A
+git commit -q -m v1
+git tag release-v1
+```
+
 ## 費用（`aggregate-result.json` の `costUsd`。API 換算）
 
 | 実行 | 中身 | 費用 |
@@ -92,6 +147,8 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は公開サ�
   起点 `053b77c3`・base `origin/main` → `053b77c30e68f12fcaf4182dba53e2ae7aab0750`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
 - 1 パス目: Verifier（`dev-loop:dev-loop-verifier`／sonnet）反証 2 件（軽微。C の記述が観測より強い）・`/code-review`（high）指摘 8 件。1 パス目の起点（先に当てた関門に渡した時点の HEAD）: `9bdbb032`
+- 2 パス目: Verifier（sonnet）反証 0 件・所見 2 件／`/code-review`（high）指摘 8 件（下の採否の表）。2 パス目の指摘対応の起点: `3ca2fb6a`
+- 割り目（2 パス目の前）: 割らない（不在の cruise）
 - check-all（1 回目、`--jobs 2`・順番待ち越し。`9bdbb032` の上、途中で作業ツリーを直した）: 59 本中 1 本赤——`check-plan-counts.py`（件数の行が無い）。件数の行を足した
 - 交絡を潰した手順: 上の「陽性対照（A）」の交絡
 
@@ -102,7 +159,7 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は公開サ�
 | 判別できる試料を探す | 採らなかった | 親の決定（推奨）。#274 の受入基準 B の続きで、この周の範囲の外 |
 | proposal のケースを外す | 採らなかった | 親の決定。判別しないことを注記に書いて残す |
 | `type -a git` に Homebrew の git が出ない理由を突き止める | 採らなかった | 環境をこれ以上変えない。記述は観測にとどめる |
-| #183（2026-10）では xcrun の警告つきで git が動いた記録がある（`docs/plans/issue-183.md`） | 記述に残す | 同じホストでも xcrun 越しに動くかは時期で違った。どの git が動いたか・原因は確かめていない |
+| #181 の後半・#183（2026-10）では xcrun の行が出ても git が動いた記録がある | 記述に残す（2 パス目で書き直し） | #181 の周の途中（10-04）に人が Homebrew の git を入れた後の回（`docs/plans/issue-181.md`）。#183 はその 2 日後で、Homebrew の git が在ったかは確かめていない |
 
 ### 採否の表（1 パス目）
 
@@ -116,6 +173,21 @@ main へのマージで GitHub Pages の再ビルド（`CLAUDE.md` は公開サ�
 | R7: r5 修正前の証拠の書き方が弱い | 示せる（`EXIT=0`） | 無し（計画の記録） | 直した（計画の記録。関門の対象外） |
 | R3: ほかの 3 ケースの注記は git が動かない環境での #274 の実測を指したまま | 示せる（#274 の計画） | 無し | 残課題 |
 | R8: `docs/plans/issue-274.md` の proposal が BLOCKED のまま・前向きの指し先が無い | 示せる | 無し | 残課題（#274 の周の記録は触らない——変更範囲） |
+
+### 採否の表（2 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R2-1: 0.7.0 は「変更の提案書」と「一覧は書かない」の両方を持たない（#263 で同時に入った）——比較は守る行を切り分けていない | 示せる（`git show 694fe954:…/proposal/SKILL.md` に「変更の提案書」0 件、`3e932a36` が両方を足す） | B（赤・緑の理由の記録） | 直す（case.yaml の注記と計画の未証明） |
+| R2-2: CLAUDE.md の「同じ周の中でも揺れた」は誤った帰属——記録の上では Homebrew の git の有無で分かれる | 示せる（`docs/plans/issue-181.md` の 10-04 の `brew install git`・#274） | C | 直す |
+| R2-3: 計画の #183 の行が「時期で違った」のまま | 示せる | 無し（計画の記録） | 直した（計画） |
+| R2-4: 計画の「読み」が仕組みを断定・stderr と書く | 示せる | 無し（計画の記録） | 直した（計画） |
+| R2-5: 「git を呼ぶたびに出る」は広すぎる（直に呼んだ Homebrew の git では出ない） | 示せる（r2 の trace） | C | 直す |
+| R2-6: `scripts/run-dev-loop-evals.py` が xcrun の行を雑音として消し、`Failed to locate` を疑わない | 示せない（この周の実行は git が動いた。git が無いホストでの要約の誤読は起こしていない） | 無し | 残課題 |
+| R2-7: 陽性対照のケースが scratchpad にしか無く、手順を再現できない | 示せる（CLAUDE.md の手順にケースの指し先が無い） | C（手順を書く） | 直す（計画に全文、CLAUDE.md から指す） |
+| R2-8: 対照は Bash の素の `git` を見るだけで、スクリプトの git の経路は別かもしれない | 示せない（4 回とも `check-signoff.py` は 0） | 無し | 残課題（既定の線。一度 CLAUDE.md に 1 文足したが外した） |
+| V2 所見 1: #181 の後半は Homebrew の git が在った回 | 示せる | C | R2-2 と同じ修正 |
+| V2 所見 2: 「`/opt/homebrew/bin` は `PATH` に入っていた」が #274 当時のことに読める | 示せない（読み方の指摘） | 無し | 残課題 |
 
 ## 経験の還元（手順 8）
 
