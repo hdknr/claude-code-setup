@@ -111,6 +111,7 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 - 周の在り処: ブランチ `issue/821-narrow-pass-triage`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-821`・
   起点 `c16e3a43`・base `origin/main`（`refs/remotes/origin/HEAD`）= `c16e3a432b13eaca62516d0259e7c8266bd3a1c5`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
+- 1 パス目: 起点（1 パス目の指摘対応の起点。関門に渡した時点の HEAD）`6f6deb526f518e0dcdaa4a92a981358979c843e5`。Verifier（sonnet）と `/code-review` を起動
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
