@@ -125,6 +125,7 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 - 周の在り処: ブランチ `issue/829-cruise-merge-judgment-line`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-829`・
   起点 `b7ffe15b`・base `origin/main`（`refs/remotes/origin/HEAD`）= `b7ffe15b28d26c14da861742a4eabc0bd84cac6d`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
+- 1 パス目: 起点（1 パス目の指摘対応の起点。関門に渡した時点の HEAD）`9e267cc130f221e470cadde14ced73764479d1d6`。Verifier・`/code-review` を当てている
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
