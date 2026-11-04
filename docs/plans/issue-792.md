@@ -106,7 +106,7 @@ main へのマージで GitHub Pages の再ビルド（公開ページ）とプ�
 - 周の在り処: ブランチ `issue/792-cruise-wait-stall`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-792`・
   起点 `9f5f05e5`・base `origin/main` = `9f5f05e5dad5b05176daa13b5c2b3eba45c49fea`
 - 割り目（手順 4）: 割らない（不在の cruise）
-- 関門: 1 パス目に入る。1 パス目の起点（関門に渡す時点の HEAD）: 下の行に書く
+- 関門: 1 パス目に入る。1 パス目の起点（関門に渡す時点の HEAD）: `f6fe5ef524a837b7c2ede78ac76ef56ea64385fb`
 - 交絡: 上の「この周で測ったこと」——前面の `until` は陽性（実際に待って抜けた）。体の通知の観測は 1 回だけで、届かない場合の否定には使わない。
 
 ## 既知の限界・決着済みの論点
