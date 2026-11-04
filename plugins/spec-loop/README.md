@@ -24,6 +24,7 @@
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
+| `scripts/render-diagrams.py` | 正本リポジトリの `docs/` の下の drawio を隣の SVG に書き出し、ソースの指紋を書き込む。`--check` で書き出しが今のソースのものかを確かめる（標準ライブラリと draw.io の CLI。図の決まりは `references/tree.md` の「図」を正とする） |
 | `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、2 つの承認が見た中身（`shared/`・`requirements/`・`spec/`・`removed.csv`）が一致するかの照合（標準ライブラリと `git`） |
 | `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で PPTX も）を作る（標準ライブラリと `git`） |
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
@@ -168,6 +169,19 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs [-
 印が名指しする出力が先の在る symlink なら、リンクも先も消さずに先のパスも名指しして 2 で止まり、印が読めない（symlink を含む）なら印を書き換えずに 2 で止まります（#512）。
 作れたとき（0）も、印に無い出力の名前のファイルが残っていれば「今回の出力ではない」と名指しします（終了コードは 0 のまま）。
 何を守り何を守らないか（終了コードを含む）は、各スクリプトの docstring を正とします。
+
+## 図を書き出す
+
+正本リポジトリの文書の図は、アスキーアートでも Mermaid でも描かず、drawio で描いて SVG に書き出します
+（置き場所・形式・描かないものは `references/tree.md` の「図」を正とします）:
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/render-diagrams.py [<正本リポジトリの根>] [--check]
+```
+
+`docs/` の下の `.drawio` を全部、隣の同じ名前の `.svg` に書き出し、ソースの指紋を書き出しに書き込みます。
+`--check` は draw.io を起動せず、書き出しが無い・古い・ソースが無いものを名指しします（CI でも回せます）。
+draw.io の CLI は `DRAWIO` で差し替えられます。何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
 ## 前提
 
