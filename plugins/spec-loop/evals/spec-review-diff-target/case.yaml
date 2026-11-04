@@ -1,0 +1,45 @@
+schema_version: "1.1"
+name: spec-review-diff-target
+# 差分モード（#263）の spec-review が、作業中の版で変えた要求の仕様を書くとき、
+# **前の版の仕様のファイルを直さず、作業中の版の同じパスに書く**かを見る（SKILL.md の「差分モード」の「書く場所も作業中の版だけ」）。
+#
+# 見るのは手順 2（Planner）の書く場所だけで、手順 3 の判定役の判定と、抜けたと報告しないことは見ない。
+# **`allowed_tools` に `Agent` を書いていないが、それで `Agent` は止まらない**（2.1.318 の feasibility の実行で検証役が起きた）。
+# **判定役に差分の外の古い指摘を挙げさせないこと（「参照」の受け取り方）は見ていない。**
+#
+# 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
+description: >-
+  作業中の版 v2 で、リリース済みの v1 の要求（在庫照会の期間）を 90 日に変えてある（要求は v2 に写して反映済み）。
+  spec-review が仕様を書き下すとき、docs/v1/spec のファイルを直さず、docs/v2/spec の同じパスに書く。
+tags: [spec-loop, diff-mode, spec-review]
+plugins: ["../.."]
+runs: 1
+expected_outcome: >-
+  docs/v1/spec/stock.md は「過去 30 日」のまま。docs/v2/spec/stock.md ができていて、90 日を書いている。
+execution:
+  prompt: "/spec-loop:spec-review"
+  max_turns: 40
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  # 前の版（リリース済み・凍結）の仕様が元の文のまま
+  - name: v1-spec-untouched
+    type: regex
+    target: {source: file, path: docs/v1/spec/stock.md}
+    pattern: '照会の期間は過去 30 日'
+    match: contains
+  # 作業中の版の同じパスに、変えた要求（90 日）の仕様を書いた
+  - name: v2-spec-written
+    type: regex
+    target: {source: file, path: docs/v2/spec/stock.md}
+    pattern: '90 ?日'
+    match: contains
+  # 作業中の版で変えていない要求（受注登録）の仕様を、作業中の版に置いていない（写しでも書き直しでも）
+  # （SKILL.md 手順 2 の「足した・変えた要求の分だけを、作業中の版の spec/ に書く」）。
+  # 前の版のファイルと同じパスに置くと、重ね合わせで前の版を置き換える意味になる（versions.md）。
+  - name: v2-spec-no-unchanged-feature
+    type: file_exists
+    path: docs/v2/spec/order.md
+    exists: false

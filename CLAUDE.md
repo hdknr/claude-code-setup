@@ -49,6 +49,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **手で提案書を書かない**。**決裁者の承認待ちで止まる**）。素のスキルとして張れないのは同上
     - `skills/scaffold/` - dev-loop への引き渡し（#219。**中間表現 `spec_ir.json` を書くのがスキル、
       そこから先の生成はスクリプト**。**Issue の登録で止まり、登録の前に利用者に確かめる**）。素のスキルとして張れないのは同上
+    - `evals/` - **差分モード（#263）の振る舞いの Eval**（`claude plugin eval`。#274。4 スキルに 1 ケースずつ。**CI からは呼ばない**——
+      `claude` を起こして課金する。陽性対照・差分モードが入る前の版への当て方と、判別の実測は `docs/plans/issue-274.md` を正とする）
     - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
     - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件・

@@ -1,0 +1,40 @@
+schema_version: "1.1"
+name: req-loop-diff-reflect
+# 差分モード（#263）の req-loop が、回答を反映して前の版の要求を変えるとき、
+# **前の版のファイルを直さず、作業中の版の同じパスに写して直す**かを見る（SKILL.md の「差分モード」）。
+#
+# 2 本の grader は同じ振る舞いを両側から見る——前の版のファイルが元のままか（1 本目）、作業中の版に写して直したか（2 本目）。
+# **反映そのものをしなかった実行**（回答を読めないとして止まった・利用者に訊いて止まった）は、1 本目が緑・2 本目が赤になる。
+# 2 本目の赤は「前の版を直した」とは限らない——どちらだったかは trace を読む。
+#
+# 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
+# **ここに件数や合否を書かない**（測り直すたびに古くなる）。
+description: >-
+  作業中の版 v2 の Q&A に、リリース済みの v1 の要求（在庫照会の期間 30 日）を 90 日に変える回答が来ている。
+  req-loop はそれを反映するとき、docs/v1 のファイルを直さず、docs/v2 の同じパスに写して直す。
+tags: [spec-loop, diff-mode, req-loop]
+plugins: ["../.."]
+runs: 1
+expected_outcome: >-
+  docs/v1/requirements/stock.md は「過去 30 日」のまま。docs/v2/requirements/stock.md ができていて、90 日を反映している。
+execution:
+  prompt: "/spec-loop:req-loop"
+  max_turns: 40
+  timeout_seconds: 1200
+  # Agent はここに書かない（req-loop は判定役を起こさない）。書かなくても Agent は止まらない（2.1.318 で実測）
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  # 前の版（リリース済み・凍結）のファイルが元の文のまま
+  - name: v1-requirement-untouched
+    type: regex
+    target: {source: file, path: docs/v1/requirements/stock.md}
+    pattern: '照会できる期間は過去 30 日'
+    match: contains
+  # 作業中の版の同じパスに写して、回答（90 日）を反映した
+  - name: v2-requirement-reflected
+    type: regex
+    target: {source: file, path: docs/v2/requirements/stock.md}
+    pattern: '90 ?日'
+    match: contains
