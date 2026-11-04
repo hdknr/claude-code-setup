@@ -43,6 +43,7 @@ Issue 本文（外部入力）から読んだ要件: #793 の不在の cruise �
 
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 表の行・新しい節・「`マージ = 関門を通ればマージ`」の #631 の段落（原本）
 - `plugins/dev-loop/skills/dev-loop/references/found-lines.md` — 「狭いパスの指摘」と「変えないもの」の指し先
+- `plugins/dev-loop/skills/dev-loop/references/fix-line.md` — 「広げても変わらないもの」の狭いパスの例外の指し先（2 パス目の CR2-2 の指摘対応で広げた。受入基準は I2・I5 の子に届く経路に fix-line.md を足す）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 6 の狭いパスの例外の指し先・起票の括弧・版
 - `plugins/dev-loop/skills/dev-loop/scripts/ledger.py` — `LINES` に項目を足す・docstring
 - `plugins/dev-loop/skills/cruise/scripts/parent-issue.py` — `UNWRITTEN` の説明と docstring
@@ -98,6 +99,7 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 | cruise の親（起動時の確認） | cruise §2 の 1 | 効く周・出所を添える |
 | cruise の親（マージ） | cruise §4 の 4・`absent-lines.md` | 値で書き分け・止めるものを残す・印を付けない |
 | 周を回す子（サブエージェント） | cruise §4 の 2 の委譲文・dev-loop 手順 6・`found-lines.md`・`absent-lines.md` | 推奨と理由を書く・直すときの当て直し |
+| 周を回す子（直す線が `広げる`） | `fix-line.md` の「広げても変わらないもの」 | 例外の指し先（CR2-2 で足した） |
 | 周を回す子（`claude -p`） | `prompts/child-cycle.md` の 9 | 同じ項目 |
 | `merge-pr.py` | 台帳の印だけ | 変えない |
 | `check-unattended-env.py` の到達の見込み | 印だけ | 変えない（推奨で進む行は印が無いので「進む」と出る——実際と一致） |
@@ -129,7 +131,8 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 - check-all（1 パス目の前、run-serial 越し）: 59 本のうち `check-plan-counts.py` だけ落ちた（件数の行が無い）→ 件数の行を足した
 - 割り目（2 パス目の前）: 割らない（不在の cruise）。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 - 2 パス目: Verifier（sonnet）反証 0 件（test-ledger・test-merge-pr は順番待ちで走らせず）・`/code-review`（high）指摘 8 件。直す 7 件（CR2-1〜CR2-3・CR2-5〜CR2-8）・残課題 1 件（CR2-4）。
-  2 パス目の指摘対応の起点（狭いパスの起点）: `92bab4967d260100085564bee049fdaf554202da`（指摘対応に入る前の HEAD）・終点 `15d8527e473d0af2a18d43a887527300b5838bd0`（指摘対応の最後のコミット）。狭いパス: 当てている
+  2 パス目の指摘対応の起点（狭いパスの起点）: `92bab4967d260100085564bee049fdaf554202da`（指摘対応に入る前の HEAD）・終点 `15d8527e473d0af2a18d43a887527300b5838bd0`（指摘対応の最後のコミット）。狭いパス: Verifier（sonnet）反証 0 件（狭いパスの指摘 0 件）。素通りした変異 2 件（読解による。CR2-1 の「線の値に依らず」を戻す・CR2-7 の「この 1 回で満たす」を消す——文面なので構造の検査では捕まらない。陽性対照なし）
+- 取り込み: origin/main（`6a3220fb`。#800 が dev-loop を 1.85.0 にした・#794）を merge。cruise `SKILL.md` §4 の 2 と `child-cycle.md` の 9/10 が衝突し、塊ごとに両側を残した。設計 §8.2 の生成ブロックは main 側を取って `skill-metrics.py` で書き直した。版は 1.86.0。取り込みで増えた検査なし（`scripts/` の差分なし）
 - 利用者の指示（2026-11-04、親から受けた）: check-all は `--jobs 2` で回す（run-serial 越しのまま）。関門の委譲文にも書く
 - 交絡: 実験なし
 
