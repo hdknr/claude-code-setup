@@ -260,6 +260,31 @@ def edit(fn: Callable[[dict], None]) -> Callable[[dict], dict]:
     return apply
 
 
+# ---- 呼ばれる機能（#609）。試料では F-001（割引の判定）を F-002 が呼ぶことにする
+def called(callers) -> Callable[[dict], dict]:
+    return edit(lambda ir: ir["features"][0].update(called_by=callers))
+
+
+CALLED = called(["F-002"])
+# v2 で呼ばれる機能だけ変える（呼ぶ F-002 は変えない）／呼ぶ機能も変える
+V2_CALLED = {**copy.deepcopy(IR["features"][0]), "called_by": ["F-002"]}
+V2_CALLED["cases"][0]["expected"] = {"discount": 300}
+V2_CALLER = copy.deepcopy(IR["features"][1])
+V2_CALLER["cases"][0]["title"] = "発送前なら取り消せる（割引を見直した後も）"
+CALLERS_NOTICE = "F-001 は v2 で modify だが、呼ぶ機能（F-002）は v2 で変わっていない"
+
+
+def callers_in_issue(repo: Path) -> str | None:
+    body = (repo / "build" / "scaffold" / "issues" / "F-001.md").read_text(encoding="utf-8")
+    if "- 呼ぶ機能: `F-002` 注文を取り消せるか（" not in body:
+        return "呼ばれる機能の本文に呼ぶ機能の行が無い"
+    if body.index("- 呼ぶ機能:") > body.index("\n## 受入基準\n"):
+        return "呼ぶ機能の行が ## 仕様 の節に無い"
+    # 呼ばれない機能（入口）の本文には行を足さない
+    other = (repo / "build" / "scaffold" / "issues" / "F-002.md").read_text(encoding="utf-8")
+    return "呼ばれない機能の本文に呼ぶ機能の行がある" if "呼ぶ機能" in other else None
+
+
 def f1(ir: dict) -> dict:
     return ir["features"][0]
 
@@ -1403,6 +1428,20 @@ CASES: list[Case] = [
     # ---- 追加・変更・削除に分ける（段 5d）
     Case("v2 でケースを足し・消し・題を変える", 0, "modify 1", extra=v2([V2_CASES]), post=v2_cases),
     Case("v2 で機能を変えない", 0, "Issue の本文 0 件", extra=v2([]), post=v2_nothing_changed),
+    # #609: 呼ばれる機能（called_by）
+    Case("呼ばれる機能", 0, "作った", ir=CALLED, post=callers_in_issue, absent="呼ぶ機能（"),
+    Case("呼ぶ機能が中間表現に無い", 1, "F-001.called_by: 呼ぶ機能 F-009 が中間表現に無い", ir=called(["F-009"])),
+    Case("呼ぶ機能が空の配列", 1, "F-001.called_by: 呼ぶ機能の id の 1 つ以上の配列でない", ir=called([])),
+    Case("呼ぶ機能が配列でない", 1, "F-001.called_by: 呼ぶ機能の id の 1 つ以上の配列でない", ir=called("F-002")),
+    Case("呼ぶ機能の id の形", 1, "F-001.called_by: id の形に反する", ir=called(["F-2"])),
+    Case("呼ぶ機能が自分自身", 1, "F-001.called_by: 自分自身 F-001", ir=called(["F-001"])),
+    Case("呼ぶ機能の重複", 1, "F-001.called_by: 重複している", ir=called(["F-002", "F-002"])),
+    Case("呼ぶ関係の循環", 1, "呼ぶ関係が循環している",
+         ir=edit(lambda ir: (f1(ir).update(called_by=["F-002"]), ir["features"][1].update(called_by=["F-001"])))),
+    Case("v2 で呼ばれる機能だけ変える", 0, CALLERS_NOTICE, ir=CALLED, extra=v2([V2_CALLED])),
+    Case("v2 で呼ぶ機能も変える", 0, "modify 2", ir=CALLED, extra=v2([V2_CALLED, V2_CALLER]), absent="呼ぶ機能（"),
+    Case("v2 で呼ぶ機能を消す", 1, "F-001.called_by: 呼ぶ機能 F-002 が中間表現に無い", ir=CALLED,
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n")),
     Case("v3 を足しても本文の指紋が合う", 0, generate_first=True, extra=v2([V2_CHANGED]), pre=add_v3,
          args=("--check", "--upto", "2"), post=sha_reproducible_after_v3),
     Case("関係の無い機能を直しても指紋は変わらない", 0, "modify 2", generate_first=True, extra=v2([V2_CHANGED]),
@@ -1623,6 +1662,23 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #609: 呼ばれる機能
+    ("呼ぶ機能の検査を呼ばない", "    return problems + check_called_by(features)", "    return problems", "呼ぶ機能が中間表現に無い"),
+    ("呼ぶ機能の実在を見ない", "            elif caller not in ids:", "            elif False:", "呼ぶ機能が中間表現に無い"),
+    ("呼ぶ機能の空の配列を許す", "if not isinstance(callers, list) or not callers:", "if not isinstance(callers, list):",
+     "呼ぶ機能が空の配列"),
+    ("呼ぶ機能の id の形を見ない", "            if not isinstance(caller, str) or not FEATURE_ID.fullmatch(caller):",
+     "            if not isinstance(caller, str):", "呼ぶ機能の id の形"),
+    ("呼ぶ機能に自分自身を許す", "            elif caller == fid:", "            elif False:", "呼ぶ機能が自分自身"),
+    ("呼ぶ機能の重複を許す", "        if len(set(map(str, callers))) != len(callers):", "        if False:", "呼ぶ機能の重複"),
+    ("呼ぶ関係の循環を見ない", "            if state.get(nxt) == 1:\n                return nxt",
+     "            if False:\n                return nxt", "呼ぶ関係の循環"),
+    ("呼ぶ機能が変わっていなくても知らせない",
+     "        if change.kind in (ADD, MODIFY) and callers and not changed & set(callers):", "        if False:",
+     "v2 で呼ばれる機能だけ変える"),
+    ("呼ぶ機能が変わっても知らせる", " and callers and not changed & set(callers):", " and callers:", "v2 で呼ぶ機能も変える"),
+    ("本文に呼ぶ機能を書かない", "        if feature.get(CALLED_BY):\n            titles", "        if False:\n            titles",
+     "呼ばれる機能"),
     ("ケースの ref を見ない", '            if "ref" in case:\n                problems += check_ref',
      '            if False:\n                problems += check_ref', "ケースの ref が仕様に無い"),
     ("ref の部分一致を許す", 'pattern = re.compile(rf"(?<![A-Za-z0-9_\\-Ａ-Ｚａ-ｚ０-９]){sub}{re.escape(ref)}(?![A-Za-z0-9_\\-Ａ-Ｚａ-ｚ０-９]|[./:][0-9])")',
