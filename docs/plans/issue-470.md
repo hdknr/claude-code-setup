@@ -119,6 +119,10 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 割り目（2 パス目の前）: 割らない（cruise の周）。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 - 2 パス目: Verifier（sonnet）: 報告待ち。`/code-review`（high）: 指摘 7 件。直す 5 件（R2-1・R2-2・R2-3・R2-4・R2-6）・残課題 2 件（R2-5・R2-7）。
   2 パス目の指摘対応の起点（狭いパスの起点）: `786d9f8032168a3627b7d3fcb7c06300b108bf06`。終点: `dc5864dc4753316f1dab1c6e9a6a96c549864f84`
+- 2 パス目の Verifier（sonnet）: 反証 0 件（run-serial の順番待ちでテストは回せず読解と `show` の単発の実行。関門の途中で著者が指摘対応をコミットしたので、読んだのは HEAD `786d9f80`）。
+- 狭いパス（`786d9f80`→`dc5864dc`）: Verifier（sonnet）反証 0 件。変異は順番待ちで当てられなかった（静的な検査だけ緑）——狭いパスの指摘 0 件。
+- 取り込み 2 回目: origin/main（`8496db5f`。#829 の `マージ前の判断` の線）を merge。cruise `SKILL.md`・`absent-lines.md`・公開ページの衝突を両方残して解き、dev-loop を 1.90.0 に上げ直した。
+  取り込みで増えた検査: なし（`parent-issue.py`・`ledger.py`・`test-ledger.py`・`test-parent-issue.py` の変更）。取り込み前の check-all（HEAD `0abf4435`）: 59 本中 58 緑、`check-version-bump.py` だけ赤（main が同じ 1.89.0 に上がったため）
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
