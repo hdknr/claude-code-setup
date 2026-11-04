@@ -410,7 +410,8 @@ def show_origins(items, lines, cwd):
         print("  無い")
     elif lines.get(SPEC_GAP_KEY) == SPEC_GAP_ALL:
         print(f"  {', '.join(found)}——{SPEC_GAP_KEY} の線が効く"
-              "（Red テストと食い違う穴・既にした回答を変える穴・内部の表に載る判断では止まる）")
+              "（周の中で実装に当たった穴だけ。Red テストと食い違う穴・既にした回答を変える穴・内部の表に載る判断・"
+              "指紋の不一致・周の途中の課題の穴では止まる）")
     else:
         print(f"  {', '.join(found)}——{SPEC_GAP_KEY} の線は効かない（値が {SPEC_GAP_ALL} でなければ、穴に当たれば止まる）")
     for line in unknown:
