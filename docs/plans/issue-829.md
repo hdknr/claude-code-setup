@@ -128,6 +128,8 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cr
 - 1 パス目: 起点（1 パス目の指摘対応の起点。関門に渡した時点の HEAD）`9e267cc130f221e470cadde14ced73764479d1d6`。Verifier（sonnet、`dev-loop:dev-loop-verifier`）: 反証 0 件（テストは順番待ちで当てられず未確認——著者の check-all で見る）。`/code-review`（high）: 指摘 9 件。直す 4 件（CR1・CR2・CR4・CR5）・残課題 5 件。手順 4 への差し戻し: あり
 - check-all（1 パス目の前、run-serial 越し）: 59 本のうち `check-plan-counts.py` だけ落ちた（件数の行が無い）→ 件数の行を足した
 - 割り目（2 パス目の前）: 割らない（不在の cruise）。残り: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 2 パス目: Verifier（sonnet）反証 0 件（test-ledger・test-merge-pr は順番待ちで走らせず）・`/code-review`（high）指摘 8 件。直す 7 件（CR2-1〜CR2-3・CR2-5〜CR2-8）・残課題 1 件（CR2-4）。
+  2 パス目の指摘対応の起点（狭いパスの起点）: `92bab4967d260100085564bee049fdaf554202da`（指摘対応に入る前の HEAD）
 - 利用者の指示（2026-11-04、親から受けた）: check-all は `--jobs 2` で回す（run-serial 越しのまま）。関門の委譲文にも書く
 - 交絡: 実験なし
 
