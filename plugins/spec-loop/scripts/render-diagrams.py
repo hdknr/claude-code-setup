@@ -40,7 +40,7 @@ draw.io の CLI は次の順に探す:
 | `docs/` の下の `.drawio` を全部、隣の同じ名前の `.svg` に書き出す | **書き出すのは各 `.drawio` の 1 ページ目だけ**（draw.io の CLI の既定）。複数ページの図の 2 ページ目から先は書き出さない |
 | 失敗したファイルの前の `.svg` を変えず、書きかけを残さない | **印だけ手で書き換えて書き出さない形は見えない**（印はソースの指紋を書き出しの中に持つだけ。このリポジトリの `check-diagram-freshness.py` と同じ原理的な限界） |
 | `--check` は draw.io を起動せず、何も書かない | **確かめたのは macOS の draw.io だけ**（Linux・Windows の CLI は確かめていない。`DRAWIO` で差し替えて、書き出しを目で確かめる） |
-| 書くのは `.drawio` の隣の `.svg` と、同じ場所の一時ファイル（成否に依らず消す）だけ。CLI は自分のプロセスグループで起こし、終わったら（時間切れでも、このスクリプトが SIGTERM・SIGHUP で止められても）グループごと止める——前置き（`xvfb-run`）の孫が後から書かない（SIGKILL で止められたときは後始末できない）。拡張子の大文字小文字は区別しない（`build-proposal.py` と同じ） | **見た目の品質**（利用者・決裁者に見せられる図か）。ブラウザで開いて目で見る |
+| 書くのは `.drawio` の隣の `.svg` と、同じ場所の一時ファイル（成否に依らず消す）だけ。CLI は自分のプロセスグループで起こし、終わったら（時間切れでも、このスクリプトが SIGTERM・SIGHUP で止められても）グループごと止める——前置き（`xvfb-run`）の孫が後から書かない（SIGKILL で止められたときは後始末できない）。**起動時に無視させられていたシグナル（`nohup` の SIGHUP）は無視したまま**——止まらずに最後まで書き出す。拡張子の大文字小文字は区別しない（`build-proposal.py` と同じ） | **見た目の品質**（利用者・決裁者に見せられる図か）。ブラウザで開いて目で見る |
 | 印はソースのバイトだけで決まる | `X.svg` が symlink のときの扱い（`os.replace` はリンクを置き換える）・`docs/` の外の図・symlink のディレクトリの中（辿らない） |
 """
 
@@ -265,7 +265,8 @@ def stop_on_signal(signum: int, _frame: object) -> None:
     """SIGTERM・SIGHUP で止められたら、例外にして後始末（CLI のグループを止め、一時ファイルを消す）を走らせる。
 
     CLI は自分のプロセスグループにいるので、端末を閉じたときの SIGHUP やグループへの SIGTERM は CLI に届かない。
-    後始末を走らせずに止まると、生き残った CLI が後から一時ファイルを置く。"""
+    後始末を走らせずに止まると、生き残った CLI が後から一時ファイルを置く。
+    起動時に無視させられていたシグナル（`nohup` の SIGHUP）には登録しない（#820）。"""
     raise SystemExit(128 + signum)
 
 
@@ -323,7 +324,9 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     for name in ("SIGTERM", "SIGHUP"):
-        if hasattr(signal, name):
+        # **起動時に無視させられていたら（`nohup` の SIGHUP など。SIG_IGN）登録しない**——上書きすると、無視させて起動した側の
+        # 意図を破って止まる（#820）。無視したままなら止まらないので、後始末も要らない
+        if hasattr(signal, name) and signal.getsignal(getattr(signal, name)) != signal.SIG_IGN:
             signal.signal(getattr(signal, name), stop_on_signal)
     try:
         sys.exit(main(sys.argv[1:]))
