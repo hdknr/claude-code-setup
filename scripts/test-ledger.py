@@ -870,6 +870,39 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     o["status: 無い・壊れた"] = (run(mod, ["status", "nope"], root)[0], run(mod, ["status", "b"], root)[0],
                               run(mod, ["status", "cyc"], root)[0])
 
+    # L17（#791）: `progress` は番号・state・pr・group だけ。note・updated ほかの書き換えでは変わらず、遷移と行の追加では変わる
+    def progress(name):
+        r = run(mod, ["progress", name], root)
+        return (r[0], str(r[1]))
+
+    st_ledger("pg", [(1, "merged", [], None), (2, "impl", [], None), (3, "todo", [2], None)])
+    run(mod, ["set", "pg", "1", "pr=#11"], root)
+    # `updated` を古い時刻に置き直す——`updated` は秒の単位なので、同じ秒の `set` では書き換えが見えない（sleep で待たない）
+    pg = plans / "cruise-pg.json"
+    data = json.loads(pg.read_text(encoding="utf-8"))
+    for row in data["issues"]:
+        row["updated"] = "2000-01-01T00:00:00Z"
+    pg.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    snap = snapshot(pg)
+    before = progress("pg")
+    o["progress: 出力"] = before
+    o["progress: 台帳を変えない"] = snapshot(pg) == snap
+    run(mod, ["set", "pg", "2", "note=確かめたが変わらず", "agent=a1", "decisions=", "title=題", "branch=b", "worktree=w", "base=x"], root)
+    run(mod, ["set", "pg", "2", "note=確かめたが変わらず"], root)
+    run(mod, ["lines", "pg", "直す線=既定", "--source", "利用者の確認"], root)
+    run(mod, ["user-ops", "pg", "gh pr merge", "--source", "利用者の確認"], root)
+    o["progress: note などだけの書き換え"] = (progress("pg") == before,
+                                       snapshot(pg) != snap)  # ファイルは変わっている（陽性対照）
+    run(mod, ["set", "pg", "2", "state=pr"], root)
+    o["progress: state の遷移"] = progress("pg") != before
+    after_state = progress("pg")
+    run(mod, ["set", "pg", "2", "pr=#12"], root)
+    o["progress: pr を書く"] = progress("pg") != after_state
+    after_pr = progress("pg")
+    run(mod, ["add", "pg", "4", "--deps", "2", "--origin", "#2 1 パス目"], root)
+    o["progress: 行の追加"] = progress("pg") != after_pr
+    o["progress: 無い・壊れた"] = (run(mod, ["progress", "nope"], root)[0], run(mod, ["progress", "b"], root)[0])
+
     # L9: git の外。**無い台帳の `show` では判別しない**——台帳が無いことでも 4 になる。
     # 場所の解決そのものを当てる `path` と `init` を使い、何も書いていないことも見る
     outside = tmp / f"outside-{tag}"
@@ -1076,6 +1109,9 @@ MUTATIONS = {
     # 守る（#632）: status は進行中・落ちた行があれば 0
     "status が進行中を見ない": [
         ("    if started or stranded:\n", "    if stranded:\n")],
+    # 守る（#791）: progress は番号と PROGRESS_KEYS だけを出す
+    "progress が updated と note も出す": [
+        ('PROGRESS_KEYS = ("state", "pr", "group")', 'PROGRESS_KEYS = ("state", "pr", "group", "note", "updated")')],
     # 守る（#632）: status は足した行だけが着手できても 0 と言わない
     "status が足した行だけの着手でも 0": [
         ('    can = [u for u in units(data) if any(r["number"] in need for r in u)]',
@@ -1514,6 +1550,16 @@ def main() -> int:
               o["merged_unverified: 辿らない"] == (3, "人を待つ周だけ（cruise の SKILL.md §6 で終える）: #2(merged_unverified)"))
         check("空の台帳は 5", o["status: 空"] == 5)
         check("無い・壊れた・崩れた台帳は 4", o["status: 無い・壊れた"] == (4, 4, 4))
+
+        print("\n前進の要約（L17・#791）")
+        check("progress は番号の順に state・pr・group だけを出す",
+              o["progress: 出力"] == (0, "#1 state=merged pr=#11 group=-\n#2 state=impl pr=- group=-\n#3 state=todo pr=- group=-\n"))
+        check("progress は台帳を変えない", o["progress: 台帳を変えない"])
+        check("note・updated・agent・lines・user_ops だけの書き換えでは変わらない（ファイルは変わっている）",
+              o["progress: note などだけの書き換え"] == (True, True))
+        check("state の遷移・pr・行の追加では変わる",
+              o["progress: state の遷移"] and o["progress: pr を書く"] and o["progress: 行の追加"])
+        check("無い・壊れた台帳は 4", o["progress: 無い・壊れた"] == (4, 4))
 
         print("\n利用者の操作待ちと利用者が打つ操作（L14・#466）")
         check("await を書ける", o["await の set"] == 0)
