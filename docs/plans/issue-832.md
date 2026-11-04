@@ -147,7 +147,8 @@ git tag release-v1
   起点 `053b77c3`・base `origin/main` → `053b77c30e68f12fcaf4182dba53e2ae7aab0750`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
 - 1 パス目: Verifier（`dev-loop:dev-loop-verifier`／sonnet）反証 2 件（軽微。C の記述が観測より強い）・`/code-review`（high）指摘 8 件。1 パス目の起点（先に当てた関門に渡した時点の HEAD）: `9bdbb032`
-- 2 パス目: Verifier（sonnet）反証 0 件・所見 2 件／`/code-review`（high）指摘 8 件（下の採否の表）。2 パス目の指摘対応の起点: `3ca2fb6a`
+- 2 パス目: Verifier（sonnet）反証 0 件・所見 2 件／`/code-review`（high）指摘 8 件（下の採否の表）。2 パス目の指摘対応の起点: `3ca2fb6a`・終点: `edc611b6`（狭いパスは `git diff 3ca2fb6a edc611b6`）
+- 狭いパス: Verifier（sonnet）に当てる
 - 割り目（2 パス目の前）: 割らない（不在の cruise）
 - check-all（1 回目、`--jobs 2`・順番待ち越し。`9bdbb032` の上、途中で作業ツリーを直した）: 59 本中 1 本赤——`check-plan-counts.py`（件数の行が無い）。件数の行を足した
 - 交絡を潰した手順: 上の「陽性対照（A）」の交絡
