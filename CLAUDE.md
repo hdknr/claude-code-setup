@@ -50,7 +50,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/scaffold/` - dev-loop への引き渡し（#219。**中間表現 `spec_ir.json` を書くのがスキル、
       そこから先の生成はスクリプト**。**Issue の登録で止まり、登録の前に利用者に確かめる**）。素のスキルとして張れないのは同上
     - `evals/` - **差分モード（#263）の振る舞いの Eval**（`claude plugin eval`。#274。4 スキルに 1 ケースずつ。**CI からは呼ばない**——
-      `claude` を起こして課金する。陽性対照・差分モードが入る前の版への当て方と、判別の実測は `docs/plans/issue-274.md` を正とする）
+      `claude` を起こして課金する。陽性対照・差分モードが入る前の版への当て方と、判別の実測は `docs/plans/issue-274.md` を正とする。
+      proposal の判別の実測（git が動く形で回した結果）は `docs/plans/issue-832.md`）
     - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
     - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件・
@@ -731,11 +732,21 @@ python3 scripts/run-dev-loop-evals.py --summarize <aggregate-result.json>   # �
 リポジトリの中**では断る（eval のワークスペースは一時 `HOME` のリポジトリの下の空のディレクトリ）。
 **どのリポジトリにも属さない空のディレクトリでは走る**——試すならそこで。
 
-**サンドボックスの中の `git` は、ホストの `PATH` の先頭で決まる。** #181 の周では
+**サンドボックスの中の `git` は、ホストの `PATH` に左右される**（先頭のものが選ばれるとは限らない——下の段落）。#181 の周では
 `/usr/local/bin/git` が切れたリンクで、**子の `git` が `can't exec` で失敗した**
 （修正前の版を当てた回の trace で確認）。**現行の版はその設定でも 4/4（当時の grader 4 本）だった**が、
 その回の trace は消えており、**正しく再開したのか、探せずに止まったのかは確かめていない**
 ——**何もしないことは「作らない」と同じに見える。** **通ったら trace を見る**（`--keep-temp`）。
+
+**macOS で git が Xcode（xcrun の shim）越しにしか無いと、サンドボックスの中で `git` が動かないことがある**（#274・#832）。
+サンドボックスの中のシェルは `/usr/bin/git`（shim）を選び、xcrun はキャッシュ（`/var/folders/...`）を書けず、Xcode の実体も読めずに
+`Failed to locate 'git'` になる——**git を使うスキル（proposal の照合など）は、そこで止まる**。**手当ては Homebrew の git を `PATH` に入れること**
+（`brew install git`。**利用者の環境を変える操作なので、利用者に確かめてから**）。入れた後も**シェルが選ぶのは shim のまま**で
+（`type -a git` に `/opt/homebrew/bin/git` が出なかった。理由は確かめていない）、**xcrun が `PATH` から Homebrew の git を見つけて起こす**
+（サンドボックスの中で `xcrun --find git` が `/opt/homebrew/bin/git`、`git --version` が Homebrew の版を返した。2026-11-04）。
+**xcrun の警告（`couldn't create cache file`）は毎回 stderr に出るが、終了コードは 0 である。**
+**回す前に、git だけを走らせるケースで陽性対照を取る**——プラグインをリポジトリの外に複製し、`git --version` と `git tag` の出力をファイルに書かせて
+regex で見る（1 回 $0.2 前後）。**同じホストでも動くかは時期で違った**（#183 の周（2026-10）では警告つきで動いた）ので、**前に動いたことを当てにしない**。
 
 ### トークン使用量を測る
 
