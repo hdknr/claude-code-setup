@@ -7,6 +7,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
     python3 <…>/ledger.py group <名前> <代表> <番号> [<番号> …]
     python3 <…>/ledger.py lines <名前> 項目=値 [項目=値 …] --source 出所
     python3 <…>/ledger.py user-ops <名前> [コマンド …] --source 出所
+    python3 <…>/ledger.py timer <名前> 張った|張らない [--detail 中身] --source 出所
     python3 <…>/ledger.py show <名前>
     python3 <…>/ledger.py next <名前>
     python3 <…>/ledger.py status <名前>
@@ -39,8 +40,14 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
    "pr": "", "branch": "", "worktree": "", "agent": "", "base": "", "note": "", "decisions": "", "origin": "", "group": "", "updated": "<UTC>"}
 ],
  "lines": {"values": {"仕様の穴": "推奨で決めて起票"}, "source": "<出所>", "updated": "<UTC>"},
- "user_ops": {"commands": ["gh workflow run infra-apply.yml"], "source": "<出所>", "updated": "<UTC>"}}
+ "user_ops": {"commands": ["gh workflow run infra-apply.yml"], "source": "<出所>", "updated": "<UTC>"},
+ "timer": {"answer": "張った", "detail": "30 分おき・ジョブ <ID>・張った <UTC>・失効 <UTC>", "source": "<出所>", "updated": "<UTC>"}}
 ```
+
+`timer` は**再開タイマーを張るかへの利用者の答え**（#472）で、無くてもよい。cruise の起動時に訊き（cruise の `SKILL.md` §3）、
+`張った` なら中身（間隔・ジョブ ID・張った時刻・失効）を `detail` に、`張らない` なら `detail` は空で残す。
+**タイマーの実物ではない**——タイマーは張ったセッションの中にしか無く、セッションが終われば消えるが、この記録は残る。
+**在るかは `CronList` で見る**（読み方は `references/ledger.md` の「どう再開するか」）。`lines` と同じく置き換えで、出所の無い値を書かない。
 
 `user_ops` は**利用者が自分で打つと決めた操作**（#466）で、無くてもよい。cruise の起動時の点検で
 **止まりうる操作**（`check-unattended-env.py`）を見せ、利用者が「その操作だけ自分で打つ」を選んだものを置く。
@@ -166,6 +173,7 @@ r"""複数 Issue を回すときの台帳（依存グラフと状態）を、フ
   **依存が*元の周*かどうかは見ない**——番号の意味を知らない。
 - **`set` で、出所を持ち依存が空の行を作らない**——同じ理由。出所を持つ行の `deps=` で依存を消すのも、
   依存の空の行に `origin=` で出所を後付けするのも拒む（同じ呼び出しで両方を渡したら、渡した後の値で見る）。
+- **`timer` も出所の無い値を書かない**——`--source` が空・答えが `張った`／`張らない` でない・中身（`--detail`）の無い `張った` は拒む。手で崩した台帳なら 4。
 - **`user_ops` も出所の無い値を書かない**——`--source` が空・空のコマンド・同じコマンドを 2 度は拒む。置き換えで、渡さなければ空になる。
   手で直した台帳で形が違えば 4。`user_ops` を持たない台帳はこれまでどおり読む。
 - **`await` の行は `next` に出さず、それに依存する行も出さない**——操作が済むまで、依存する周は始めない。
@@ -267,6 +275,8 @@ DIST_MERGE = "関門を通ればマージ"
 DIST_MARK_RE = re.compile(r"(?:\A|[（、・＋]|: |：)" + DIST_MARK + r"(?:）+(?=\Z|[＋（])|——|\Z)")
 ISSUE_FIELDS = {"number", "updated", *KEYS}
 DONE = "merged"
+# 再開タイマーを張るかへの利用者の答え（#472。cruise SKILL.md §3）
+TIMER_ANSWERS = ("張った", "張らない")
 NAME_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
 FORMAT = 1
 
@@ -362,6 +372,15 @@ def check_user_ops(commands, source):
         raise Refused("同じコマンドを 2 度渡した")
 
 
+def check_timer(answer, detail, source):
+    if not source.strip():
+        raise Refused("出所が空（--source に、誰がいつ答えたかを書く）")
+    if answer not in TIMER_ANSWERS:
+        raise Refused(f"再開タイマーの答えは {' か '.join(TIMER_ANSWERS)} だけ: {answer!r}")
+    if answer == "張った" and not detail.strip():
+        raise Refused("張ったなら --detail に中身（間隔・ジョブ ID・張った時刻・失効）を書く")
+
+
 def exists(path):
     """**`Path.exists()`／`is_file()` を使わない**——Python 3.13 以前は権限・名前の長さの誤りを例外で返し、
     3.14 は False を返す（権限の無いことを「無い」と言う）。無いときだけ False、他は判定できなかった。"""
@@ -382,7 +401,7 @@ def load(path):
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise Unknown(f"台帳を読めない: {path}: {exc}") from exc
     # `format` は int の 1 だけ——`true == 1`・`1.0 == 1` が通るので型も見る
-    if (not isinstance(data, dict) or not {"format", "name", "issues"} <= set(data) <= {"format", "name", "issues", "lines", "user_ops"}
+    if (not isinstance(data, dict) or not {"format", "name", "issues"} <= set(data) <= {"format", "name", "issues", "lines", "user_ops", "timer"}
             or type(data["format"]) is not int or data["format"] != FORMAT
             or data["name"] != path.name[len("cruise-"):-len(".json")] or not isinstance(data["issues"], list)):
         raise Unknown(f"台帳の形が違う: {path}")
@@ -404,6 +423,11 @@ def load(path):
                 or not isinstance(ops["commands"], list) or not all(isinstance(c, str) for c in ops["commands"])
                 or not all(isinstance(ops[k], str) for k in ("source", "updated"))):
             raise Unknown(f"台帳の利用者が打つ操作の形が違う: {path}: {ops!r}")
+    if "timer" in data:
+        timer = data["timer"]
+        if (not isinstance(timer, dict) or set(timer) != {"answer", "detail", "source", "updated"}
+                or not all(isinstance(timer[k], str) for k in ("answer", "detail", "source", "updated"))):
+            raise Unknown(f"台帳の再開タイマーの形が違う: {path}: {timer!r}")
     # **ファイルの上で既に崩れている台帳は、拒んだ（3）ではなく判定できなかった（4）**——
     # 引数が悪いのではないので、3 と答えると原因を取り違える。`next` に答えさせてもいけない
     try:
@@ -426,6 +450,8 @@ def validate(data):
         raise Refused("線の出所が空")
     if "user_ops" in data:
         check_user_ops(data["user_ops"]["commands"], data["user_ops"]["source"])
+    if "timer" in data:
+        check_timer(data["timer"]["answer"], data["timer"]["detail"], data["timer"]["source"])
     for issue in data["issues"]:
         parse_deps(issue.get("decisions", ""), Refused)
     numbers = [i["number"] for i in data["issues"]]
@@ -689,6 +715,15 @@ def cmd_user_ops(path, commands, source):
     print("利用者が打つ操作: " + (", ".join(commands) or "なし"))
 
 
+def cmd_timer(path, answer, detail, source):
+    answer, detail = answer.strip(), detail.strip()
+    check_timer(answer, detail, source)
+    data = load(path)
+    data["timer"] = {"answer": answer, "detail": detail, "source": source, "updated": now()}
+    save(path, data)
+    print("再開タイマー: " + answer + (f"（{detail}）" if detail else ""))
+
+
 def cmd_show(path):
     data = load(path)
     print(f"台帳: {path}")
@@ -714,6 +749,10 @@ def cmd_show(path):
     if data.get("user_ops", {}).get("commands"):
         ops = data["user_ops"]
         print("利用者が打つ操作（出所: {}・{}）: {}".format(ops["source"], ops["updated"], ", ".join(ops["commands"])))
+    if "timer" in data:
+        timer = data["timer"]
+        print("再開タイマー（利用者の答え。出所: {}・{}）: {}{}——実物ではない。在るかは CronList で見る".format(
+            timer["source"], timer["updated"], timer["answer"], f"（{timer['detail']}）" if timer["detail"] else ""))
     print()
     print("| # | 状態 | 依存 | PR | ブランチ | worktree | 実装役 | 関門の起点 | メモ | 要確認 | 出所 | まとめ | 更新 |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
@@ -831,6 +870,11 @@ def build_parser():
     uo.add_argument("name")
     uo.add_argument("commands", nargs="*")
     uo.add_argument("--source", required=True)
+    tm = sub.add_parser("timer")
+    tm.add_argument("name")
+    tm.add_argument("answer")
+    tm.add_argument("--detail", default="")
+    tm.add_argument("--source", required=True)
     return p
 
 
@@ -853,6 +897,8 @@ def main(argv=None, cwd=None):
             cmd_lines(path, args.pairs, args.source)
         elif args.cmd == "user-ops":
             cmd_user_ops(path, args.commands, args.source)
+        elif args.cmd == "timer":
+            cmd_timer(path, args.answer, args.detail, args.source)
         elif args.cmd == "show":
             cmd_show(path)
         elif args.cmd == "next":
