@@ -158,7 +158,7 @@ tfs-stocks の cruise（台帳 5 件）では、狭いパスの指摘・テス�
 
 - **利用者が居る cruise**——台帳の `blocked` のうち `note` が「利用者の判断待ち」の行を、**1 度の `AskUserQuestion` にまとめて訊く**。
   答えで直すことになれば `state=todo`（`note` に答えと日時）、直さないなら `state=dropped`（`note` に理由）にし、
-  **起票した Issue を閉じる**（`gh issue close <番号> --reason "not planned" --comment "<利用者の答えと日時>"`）——
+  **起票した Issue を閉じる**（`gh issue close <番号> --reason "not planned" --comment "<!-- dev-loop-close: 親 #<親> --> <利用者の答えと日時>"`。印は cruise の `../cruise/SKILL.md` の「GitHub に書くものの印」）——
   台帳で取り下げても、Issue が開いたままなら cruise が生んだ宿題が外に残る。
   **答えが返らなければ `blocked` のまま**次の周へ進む——依存していない周は止めない。
 - **`--absent` の cruise**——訊かない（`references/absent-lines.md` の「訊く場面」）。`blocked` のまま、cruise を終えるときに渡す（cruise の `SKILL.md` §6）。
