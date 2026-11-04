@@ -1356,7 +1356,9 @@ def main() -> int:
         check("線と decisions と origin を持たない台帳はこれまでどおり読む", o["線の形 lold"] == (0, "1\n"))
         absent = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "absent-lines.md"
                   ).read_text(encoding="utf-8").split("## 線と既定")[1].split("\n## ")[0]
-        rows = {k: (d, v) for k, d, v in re.findall(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \|", absent, re.M)}
+        # 宣言できる値は「・」で並べた複数でもよい（`仕様の穴` は 2 つ。#470）。値の欄がコードでない行（`本番反映`）は数えない
+        rows = {k: (d, *re.findall(r"`([^`]+)`", v))
+                for k, d, v in re.findall(r"^\| `([^`]+)` \| `([^`]+)` \| (`[^`]+`(?:・`[^`]+`)*) \|", absent, re.M)}
         skill = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "SKILL.md").read_text(encoding="utf-8")
         check(f"LINES が absent-lines.md の「線と既定」の表 {rows} と一致する（直す線・周の途中の課題を除く）",
               {k: v for k, v in mod.LINES.items() if k not in ("直す線", "周の途中の課題")} == rows)

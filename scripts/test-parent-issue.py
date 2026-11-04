@@ -181,17 +181,26 @@ def isolate_env(home: Path) -> None:
     (home / "bin").mkdir()
     os.environ.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(home / "gitconfig"), GIT_CONFIG_NOSYSTEM="1",
                       PATH=f"{home / 'bin'}{os.pathsep}{os.environ['PATH']}")
+    # show は子 Issue の本文も gh で取る（#470）——`--body-file` の試料でも、最初から偽の gh を置いておく
+    (home / "gh-bodies").mkdir()
+    fake_gh(home, "")
 
 
 def fake_gh(home: Path, body: str | None) -> None:
-    """偽の `gh`。`body` が None なら失敗し、そうでなければ受けた引数を記録して本文を出す。"""
+    """偽の `gh`。`body` が None なら失敗し、そうでなければ受けた引数を 1 行ずつ足して記録し、本文を出す。
+
+    `gh issue view <番号>` の番号ごとに、`gh-bodies/<番号>` があればそれを出し、`gh-bodies/<番号>.fail` があれば失敗する
+    （子 Issue の本文。#470）。どちらも無ければ `body` を出す。"""
     gh = home / "bin" / "gh"
     (home / "gh-args").unlink(missing_ok=True)
     if body is None:
         gh.write_text("#!/bin/sh\necho 'gh: 偽の失敗' >&2\nexit 1\n", encoding="utf-8")
     else:
         (home / "gh-body").write_text(body, encoding="utf-8")
-        gh.write_text(f'#!/bin/sh\necho "$@" > "{home}/gh-args"\ncat "{home}/gh-body"\n', encoding="utf-8")
+        d = home / "gh-bodies"
+        gh.write_text(f'#!/bin/sh\necho "$@" >> "{home}/gh-args"\n'
+                      f'if [ -f "{d}/$3.fail" ]; then echo "gh: #$3 を取れなかった" >&2; exit 1; fi\n'
+                      f'if [ -f "{d}/$3" ]; then cat "{d}/$3"; else cat "{home}/gh-body"; fi\n', encoding="utf-8")
     gh.chmod(0o755)
 
 
@@ -340,7 +349,7 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     # C13（#458）: 線。show に出る・指紋に入る・apply で台帳に残る・本番反映は無視・形の違う行は読み飛ばす
     lined = BASIC + LINED
     rc, out, dig_l = show("lined", lined)
-    o["線の show"] = (rc, [l.strip() for l in str(out).split("線（cruise: の行）:\n")[-1].split("指紋:")[0].splitlines()
+    o["線の show"] = (rc, [l.strip() for l in str(out).split("線（cruise: の行）:\n")[-1].split("spec-loop から来た Issue")[0].splitlines()
                           if l.strip()],
                     str(out).split("読み飛ばした行（#番号 で始まらない）:\n")[-1].split("線（cruise: の行）:")[0].strip())
     o["線は指紋に入る"] = dig_l != dig
@@ -366,6 +375,31 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
     # チェックリストが無い・全部済み は別の言葉
     o["空の言い分け"] = (run(mod, ["show", "55", "--body-file", body("none", REJECTED["チェックリストの行が無い"])], root)[2],
                        run(mod, ["show", "55", "--body-file", body("alldone", REJECTED["未チェックが 0 件"])], root)[2])
+
+    # C14（#470）: spec-loop から来た子 Issue を名指しし、仕様の穴の線が効くかを本文の線の値で分ける。
+    # 1 行目の印だけを見る（BOM は外す・2 行目の印は数えない）・取れない子は判定できなかったと名指しして続ける・指紋は変えない
+    bodies = home / "gh-bodies"
+    (bodies / "12").write_text("<!-- spec-loop-handoff: v3 -->\n# 機能\n", encoding="utf-8")
+    (bodies / "13").write_text("\ufeff  <!-- spec-loop-handoff: v1 -->\r\n本文\n", encoding="utf-8")
+    (bodies / "14").write_text("本文\n<!-- spec-loop-handoff: v3 -->\n", encoding="utf-8")
+    (bodies / "15.fail").write_text("", encoding="utf-8")
+
+    def origins(text):
+        rc, out, d = show("origin", text)
+        sect = str(out).split("spec-loop から来た Issue（本文の 1 行目が <!-- spec-loop-handoff: v）:\n")
+        return rc, [l.strip() for l in sect[-1].split("指紋:")[0].splitlines() if l.strip()] if len(sect) == 2 else None, d
+
+    o["子の印（線なし）"] = origins(BASIC)[:2]
+    o["子の印（推奨で決めて起票）"] = origins(BASIC + "cruise: 仕様の穴 = 推奨で決めて起票\n")[:2]
+    rc, got, d_all = origins(BASIC + "cruise: 仕様の穴 = 推奨で決めて起票（spec-loop の Issue を含む）\n")
+    o["子の印（spec-loop を含む）"] = (rc, got)
+    o["spec-loop を含む値の apply"] = run(mod, ["apply", "56", "--body-file",
+                                           body("all2", BASIC + "cruise: 仕様の穴 = 推奨で決めて起票（spec-loop の Issue を含む）\n"),
+                                           "--digest", d_all], root)[0]
+    o["子の印は指紋に入らない"] = origins(BASIC)[2] == dig
+    for f in ("12", "13", "14", "15.fail"):
+        (bodies / f).unlink()
+    o["子の印（無い）"] = origins(BASIC)[:2]
 
     # C10: gh の失敗は 4。gh が通れば同じ本文から同じ指紋（陽性対照）
     fake_gh(home, None)
@@ -458,6 +492,10 @@ MUTATIONS = {
         ("        if differ:\n", "        if False:\n")],
     "チェックリストが無いことを全部済んだと言う": [
         ("        if done:\n", "        if True:\n")],
+    "spec-loop から来た子を名指ししない": [
+        ("    return first.startswith(HANDOFF)", "    return False")],
+    "取れない子を黙って spec-loop から来ていないと数える": [
+        ("        return proc.stderr.strip() or f\"gh issue view #{number} が {proc.returncode} で終わった\"", "        return False")],
 }
 
 
@@ -550,6 +588,20 @@ def main() -> int:
         none, alldone = o["空の言い分け"]
         check("チェックリストが無いことと、全部済んだことを別の言葉で言う",
               "1 本も無い" in none and "/dev-loop:dev-loop" in none and "すべて [x]" in alldone)
+
+        print("\nspec-loop から来た子 Issue（C14・#470）")
+        tag_no = "#12, #13——仕様の穴 の線は効かない（値が 推奨で決めて起票（spec-loop の Issue を含む） でなければ、穴に当たれば止まる）"
+        failed = "判定できなかった: #15（gh: #15 を取れなかった）"
+        check("1 行目の印の子（BOM・前後の空白・CRLF でも）を名指しし、2 行目の印の子は数えない・取れない子は判定できなかったと名指しする（線なしは効かない）",
+              o["子の印（線なし）"] == (0, [tag_no, failed]))
+        check("仕様の穴 = 推奨で決めて起票 でも効かない（今までどおり）",
+              o["子の印（推奨で決めて起票）"] == (0, [tag_no, failed]))
+        check("推奨で決めて起票（spec-loop の Issue を含む） なら効く、と止まる穴を添えて言う",
+              o["子の印（spec-loop を含む）"] == (0, [
+                  "#12, #13——仕様の穴 の線が効く（Red テストと食い違う穴・既にした回答を変える穴・内部の表に載る判断では止まる）", failed]))
+        check("その値の線は apply で台帳に残せる（LINES にある）", o["spec-loop を含む値の apply"] == 0)
+        check("子の印は指紋に入らない（子の本文が変わっても同じ指紋）", o["子の印は指紋に入らない"])
+        check("spec-loop から来た子が無ければ「無い」と言う（陽性対照の空）", o["子の印（無い）"] == (0, ["無い"]))
 
         print("\n判定できない（C10）・引数")
         check("gh の失敗は 4", o["gh の失敗"] == 4)

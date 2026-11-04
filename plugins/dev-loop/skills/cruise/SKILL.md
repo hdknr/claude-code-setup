@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.87.0 -->
-> **このスキルの版: 1.87.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.88.0 -->
+> **このスキルの版: 1.88.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -120,6 +120,10 @@ python3 <このスキルの base ディレクトリ>/scripts/parent-issue.py sho
    （`直す線` は下で 1 度だけ訊く。居る周の `仕様の穴` は各手順のとおり訊く。
    **`周の途中の課題` は違う**——`.claude/dev-loop.md` の行は効かず、下で 1 度だけ訊き、答えが無ければ既定の `外に出す`）。
    **`--absent` が無ければ、`実機確認`・`マージ` の線は効かない**ことも添える（`../dev-loop/references/absent-lines.md` の「cruise で確かめた線」）。
+   **出力の「spec-loop から来た Issue」も見せる**——一覧のうち spec-loop から来た Issue と、`仕様の穴` の線がそれに効くか（値が `推奨で決めて起票（spec-loop の Issue を含む）` のときだけ効く）を
+   `show` が名指しする。**効かない Issue があれば、その周は穴に当たると止まる**と添える——利用者が「推奨で進む」と思ったまま離れないためである（#470）。
+   本文に `仕様の穴` の線が無ければ、`show` は「効かない」と出す——不在の周で `.claude/dev-loop.md` にその値の宣言があれば効くので、そう添える。
+   **「判定できなかった」と出た Issue は、spec-loop から来たかが分からない**——そのまま見せる。
    **`--absent` の起動で `マージ = 関門を通ればマージ` を確かめる（親 Issue の線か `.claude/dev-loop.md` の宣言にある）なら、
    このリポジトリでマージが反映を起こすかを、確かめる前に判定して添える**——`マージの反映:` の宣言が照合を通るなら起こさない。
    **宣言はあるが照合を通らないなら起こす。** 宣言が無ければ `CLAUDE.md` ／ deploy runbook で判定する（判定できなければ起こすものとする）。
