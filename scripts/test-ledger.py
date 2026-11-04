@@ -441,6 +441,11 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
                         ("uops", {"user_ops": {"commands": "gh x", "source": "s", "updated": ""}}),
                         ("usrc", {"user_ops": {"commands": ["gh x"], "source": " ", "updated": ""}}),
                         ("udup", {"user_ops": {"commands": ["gh x", "gh x"], "source": "s", "updated": ""}}),
+                        # 再開タイマー（#472）: 形が違う・出所が空・決まった答えでない・中身の無い 張った
+                        ("tshape", {"timer": {"answer": "張らない", "source": "s", "updated": ""}}),
+                        ("tsrc", {"timer": {"answer": "張らない", "detail": "", "source": " ", "updated": ""}}),
+                        ("tans", {"timer": {"answer": "張る", "detail": "x", "source": "s", "updated": ""}}),
+                        ("tdet", {"timer": {"answer": "張った", "detail": " ", "source": "s", "updated": ""}}),
                         # まとめ（#641）: group が番号でない・代表が自分のまとめに入っていない・状態がそろっていない
                         ("gnum", {"issues": [{**entry(1, []), "group": "x"}]}),
                         ("gstrip", {"issues": [{**entry(1, []), "group": "1"}, {**entry(2, []), "group": " 1"}]}),
@@ -504,6 +509,22 @@ def scenario(mod, tmp: Path, tag: str, ref: dict | None = None) -> Observations:
         o["user-ops の値"] = None
     run(mod, ["set", "uo", "1", "state=merged"], root)
     o["next(操作が済んだ)"] = run(mod, ["next", "uo"], root)[1].split()
+
+    # L16（#472）: 再開タイマーを張るかへの利用者の答え
+    o["timer の無い show"] = "再開タイマー" not in str(run(mod, ["show", "uo"], root)[1])
+    before = snapshot(uf)
+    o["timer 拒む"] = tuple(run(mod, ["timer", "uo", *args], root)[0] for args in (
+        ["張った", "--detail", "30 分おき", "--source", " "], ["張る", "--detail", "x", "--source", "s"],
+        ["張った", "--source", "s"], ["張った", "--detail", " ", "--source", "s"]))
+    o["timer 拒んだ後も同じ"] = snapshot(uf) == before
+    o["timer 通る"] = run(mod, ["timer", "uo", "張った", "--detail", "30 分おき・ジョブ j1", "--source", "t1"], root)[0]
+    o["timer の show"] = "再開タイマー（利用者の答え。出所: t1・" in (r := str(run(mod, ["show", "uo"], root)[1])) and "張った（30 分おき・ジョブ j1）" in r
+    o["timer 置き換え"] = run(mod, ["timer", "uo", "張らない", "--source", "t2"], root)[0]
+    try:
+        o["timer の値"] = {k: v for k, v in json.loads(uf.read_text(encoding="utf-8"))["timer"].items() if k != "updated"}
+    except (OSError, ValueError, KeyError):
+        o["timer の値"] = None
+    o["timer の後も next"] = run(mod, ["next", "uo"], root)[:2]
 
     # L15（#641）: まとめ。2・3 は中に依存（3 → 2）のあるまとめ、7・8 は 8 だけが着手できない（8 → 1）まとめ
     run(mod, ["init", "gr"], root)
@@ -912,6 +933,10 @@ MUTATIONS = {
     "user_ops の出所を見ない": [
         ('        raise Refused("出所が空（--source に、誰がいつ決めたかを書く）")',
          '        pass')],
+    # 守る（#472）: timer も出所の無い値を書かない
+    "timer の出所を見ない": [
+        ('        raise Refused("出所が空（--source に、誰がいつ答えたかを書く）")',
+         '        pass')],
     "await に依存する行を next に出す": [
         ('all((state.get(d) == DONE and d not in stranded) or (i.get', 'all((state.get(d) in (DONE, "await") and d not in stranded) or (i.get')],
     # 守る（#641）: まとめ
@@ -985,6 +1010,14 @@ MUTATIONS = {
 # 「守る」の行の**中身**を 1 項ずつ外す・緩める変異（#711）。**試料が足りているか**を見る——MUTATIONS（「守る」と 1 対 1）には数えない。
 # どれも、#665 の周の関門が「この変異が素通りする」と示したもの（キーの括弧が出所）
 SAMPLE_MUTATIONS = {
+    # #472: timer の「守る」の項を 1 つずつ外す
+    "timer の答えを見ない（#472）": [
+        ("    if answer not in TIMER_ANSWERS:\n", "    if False:\n")],
+    "timer の 張った の中身を見ない（#472）": [
+        ('    if answer == "張った" and not detail.strip():', "    if False:")],
+    "timer の 張った の中身を剥がさずに見る（#472）": [
+        ('    if answer == "張った" and not detail.strip():', '    if answer == "張った" and not detail:'),
+        ('    answer, detail = answer.strip(), detail.strip()\n', '    answer = answer.strip()\n')],
     # CR5: 古い在り処の検査を代表に掛けない
     "代表の古い在り処を見ない（CR5）": [
         ('stale = [f"{k}={issue[k]}" for k in PLACE_KEYS if issue.get(k, "")]',
@@ -1271,8 +1304,8 @@ def main() -> int:
               o["止まると印の台帳"] == (True, "なし"))
         check("decisions は番号のカンマ区切りだけ（番号でなければ 3）",
               o["decisions"] == (0, 3) and o["decisions の値"] == "12,13")
-        for name in ("lbad", "lval", "lsrc", "lshape", "ldec", "lorig", "uops", "usrc", "udup"):
-            check(f"手で崩した線・decisions・origin・user_ops（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
+        for name in ("lbad", "lval", "lsrc", "lshape", "ldec", "lorig", "uops", "usrc", "udup", "tshape", "tsrc", "tans", "tdet"):
+            check(f"手で崩した線・decisions・origin・user_ops・timer（{name}）は 4（next は答えない）", o[f"線の形 {name}"] == (4, ""))
         check("線と decisions と origin を持たない台帳はこれまでどおり読む", o["線の形 lold"] == (0, "1\n"))
         absent = (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "absent-lines.md"
                   ).read_text(encoding="utf-8").split("## 線と既定")[1].split("\n## ")[0]
@@ -1347,6 +1380,13 @@ def main() -> int:
         check("user-ops は通り、show が出所つきで出す", o["user-ops 通る"] == 0 and o["user-ops の show"])
         check("user-ops の空の出所・空のコマンド・同じコマンド 2 度は 3", o["user-ops 拒む"] == (3, 3, 3))
         check("拒んだ user-ops のあとも台帳が 1 バイトも変わらない", o["user-ops 拒んだ後も同じ"])
+        check("timer の無い台帳の show は再開タイマーを出さない（#472）", o["timer の無い show"])
+        check("timer の空の出所・決まった答えでない・中身の無い 張った（無い・空白だけ）は 3", o["timer 拒む"] == (3, 3, 3, 3))
+        check("拒んだ timer のあとも台帳が 1 バイトも変わらない", o["timer 拒んだ後も同じ"])
+        check("timer は通り、show が出所と中身つきで出す", o["timer 通る"] == 0 and o["timer の show"])
+        check("timer は置き換え・張らないは中身が空でよい・出所を残す",
+              o["timer 置き換え"] == 0 and o["timer の値"] == {"answer": "張らない", "detail": "", "source": "t2"})
+        check("timer を書いた台帳も next が答える", o["timer の後も next"][0] == 0)
         check("user-ops は置き換え（渡さなければ空）・出所を残す",
               o["user-ops 置き換え"] == 0 and o["user-ops の値"] == {"commands": [], "source": "s2"})
         check("操作待ちが merged になれば依存する #2 が出る", o["next(操作が済んだ)"] == ["2", "3"])
