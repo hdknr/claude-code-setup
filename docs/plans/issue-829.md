@@ -73,7 +73,7 @@ cruise `SKILL.md`（§4 の 4・§5）・dev-loop `SKILL.md` 手順 6・公開�
 
 main へのマージで GitHub Pages の再ビルド（`docs/plugins/dev-loop-cruise.md`）とプラグインの配布（`dev-loop` の版）。マージは親がする。
 
-## 受入基準
+## verify の受入基準
 
 ### 不変条件
 
