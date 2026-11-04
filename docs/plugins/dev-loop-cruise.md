@@ -26,9 +26,9 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 台帳 | `scripts/ledger.py`・`references/ledger.md` | Issue の依存と状態をファイルに持つ。再開の入口 |
 | 実装役の委譲文 | `prompts/implementer.md` | 実装役（`Agent`）に渡す文面のテンプレート |
 | 積んだ周（stacked） | `references/stacked.md` | 未マージの下の周の上で、上の周を先に始める |
-| マージ | `scripts/merge-pr.py` | CI 待ち → squash → worktree の撤去 → Issue が閉じたかの確認 |
+| マージ | `scripts/merge-pr.py` | CI 待ち → squash → worktree の撤去 → Issue が閉じたかの確認。台帳でその PR の行が利用者の判断を待っていればマージしない（#631） |
 | 不在の線 | `references/absent-lines.md` | 利用者がいないとき、止まる代わりに進んでよい範囲 |
-| 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども |
+| 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども（席を外したあとの再開の `--since-last` だけは、前回の結果を台帳の隣に残す） |
 | 直す線 | `references/fix-line.md` | 関門の指摘をどこまで周の中で直すか |
 | まとめの周 | `../cruise/references/grouping.md`・`scripts/ledger.py`（`group`） | 周の途中で足した、同じファイルを触る行を 1 周・1 PR にまとめる（[#641](https://github.com/hdknr/claude-code-setup/issues/641)） |
 | 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
@@ -101,7 +101,12 @@ cruise の操作: gh workflow run infra-apply.yml
 ```bash
 python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --ledger issue-<親>            # 席を外すとき
 python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --present --ledger issue-<親>  # 居るとき
+python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --ledger issue-<親> --since-last  # 席を外したあとの再開
 ```
+
+**席を外したあとの再開では `--since-last` を付けます**——前回の点検と同じ項目を 1 行（区分ごとの件数・前回の時刻・要対処と判定できないの項目の名前）に縮め、変わった項目だけを全文で出します。
+前回の結果は台帳の隣の `cruise-issue-<親>.env-check` に残ります（[#635](https://github.com/hdknr/claude-code-setup/issues/635)）。
+`claude -p` で起動した cruise では、通知の設定の 2 項目は「人が見る」の 1 行になります——人を呼ぶ経路は起動した側で用意します。
 
 **cruise は台帳を作ったあと、`--absent` に依らずこれを回して結果を見せます。** 利用者が居ても、権限の拒否や確認で
 周が止まり、操作を待つことになるためです（[#466](https://github.com/hdknr/claude-code-setup/issues/466)）。
@@ -174,7 +179,9 @@ cruise: 直す線 = 既定
   （依存は元の周。台帳の「出所」の列に、どの周のどの関門の行かが残ります）。それ以外（テストの試料の穴・まれな書き方・文言・性能の推測）は PR コメントにだけ残ります。
   この振り分けは `外に出す` の周でも同じで、起票の候補と `要確認:` の Issue も、当たる行だけに絞られます（[#774](https://github.com/hdknr/claude-code-setup/issues/774)）。
   利用者の判断が要る行は止めておき、居るときは周の合間にまとめて訊かれます。`--absent` なら訊かずに、終えるときに渡されます。
-  元の周のマージの判断（狭いパスの指摘は人が決める、など）は変わりません——Issue にしなかった狭いパスの指摘があっても、マージは人の判断を待ちます。振り分けの決まりは
+  狭いパスの指摘も同じ線で振り分けられ、各周は指摘ごとに振り分けと理由を PR コメントに書きます。`マージ = 関門を通ればマージ` の周で、狭いパスの指摘を理由にマージを止めるのは、
+  受入基準を破る・利用者に見える誤り・その周が持ち込んだ後退に当たる指摘（後退は振り分けに依らず止まります）・振り分けと理由が PR コメントに無い指摘と、周が「マージ前に人が判断」と報告したものだけです。
+  親はマージの前にその PR コメントを読み直し、記録だけ・捨てるの理由が上の 3 つに当たりうる・迷うなら止めます（CI が緑でない・満たしていない受入基準があるなど、ほかの止まる条件はそのままです）。試料の穴・テストの無い分岐・文言の曖昧さだけ（従うと誤った操作になる記述は除く）なら、指摘を PR コメントに残したままマージされます（[#821](https://github.com/hdknr/claude-code-setup/issues/821)）。振り分けの決まりは
   [`references/found-lines.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/found-lines.md)
   を正とします。
   **直す行は触るファイルごとに 1 件の Issue（チェックリスト）で起票され、同じファイルを触る足した行は、次の周を選ぶ前に 1 周・1 PR にまとめられます**
@@ -203,7 +210,9 @@ cruise: 直す線 = 既定
    台帳は `<メインの作業ツリー>/.claude/plans/cruise-issue-<親>.json` に置かれます。
    各周は通常の dev-loop と同じで、Verifier と `/code-review` を 2 パスで打ち切るのもオートクルーズでも同じです。
    **台帳は周を束ねる道具で、周を軽くする道具ではありません。**
-3. **`--absent` を付けると、途中の問い（直す線・割り目・起票の承認）を訊かずに進みます。**
+   周の途中の割り目（dev-loop の手順 4・6 で「ここで割るか」を訊く場面）は、`--absent` を付けなくても訊きません——
+   周は子（サブエージェントか、任意の子プロセス）が回し、利用者の `/clear` が割るのは親の文脈だからです（[#461](https://github.com/hdknr/claude-code-setup/issues/461)）。
+3. **`--absent` を付けると、途中の問い（直す線・起票の承認）を訊かずに進みます。**
    進めてよい範囲は確かめた線と「1. 対象リポジトリに宣言を書く」の宣言だけで決まり、`--absent` は範囲を広げません。
    マージは `マージ` の線を宣言していれば行い、無ければ PR を出したところで止まって、依存していない別の Issue へ進みます。
 
@@ -242,7 +251,12 @@ cruise: 直す線 = 既定
 /dev-loop:cruise 50 --absent   # 前と同じ引数で
 ```
 
-周を重ねると親セッションの文脈が積み上がるので、周と周の間で `/clear` して起動し直すのも同じ手です。
+周を重ねると親セッションの文脈が積み上がりますが、**文脈が長くなったことは止める理由になりません**（[#583](https://github.com/hdknr/claude-code-setup/issues/583)）。
+Claude Code が文脈を要約（compact）したら、親は次の操作の前にスキル本文・台帳・進行中の周の実物を読み直してから続けます。
+読み直すものと、親が止めてよい条件は cruise の [`SKILL.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/SKILL.md) §5 を正とします。
+周と周の間で `/clear` して起動し直すのも同じ手です（自動の compact を切っているなら、こちらで割ってください）。
+ただし `/clear` は利用者が打つ操作なので、**割ると、打って起動し直すまで cruise は止まります**。親は、続けられるのに周の合間で `/clear` を案内して止まることはせず、compact で続けます（割るかは利用者が決めます）
+（[#461](https://github.com/hdknr/claude-code-setup/issues/461)。タイマーは同じセッションにプロンプトを注入するだけで、文脈は軽くなりません）。
 台帳の中身は `ledger.py show issue-<親>` でも見られます。
 
 - **終了コード 4（判定できなかった）なら再開しません。** 台帳が読めないことを「全部済んだ」と読まないためです。
@@ -269,7 +283,10 @@ cruise: 直す線 = 既定
 
 - **親は周の worktree に入りません**（#484）。各周はサブエージェントが worktree の絶対パスで回し、親はメインの作業ツリーに留まります。
   #484 では、周の worktree に入った親が `/clear` してもその worktree に隔離されたままになり、次の周を始められなくなりました。
-- **着手できる周が残っているのに親が次の周を始めないと決めたら**（文脈の残りが少ない、など）、親はこの cruise を再開するタイマーを止め、
+- **会話の中で決めた、進めてよい範囲を広げる方針は、台帳に残りません。** 線の項目（`仕様の穴` など）に当たるなら、親 Issue の `cruise:` の行に書き、
+  起動し直したときに確かめてください（席を外したままの再開では、台帳の線は書き換わりません）。
+  「#N はマージしないで」「#M は回さないで」のような止める指示は、親がその場で台帳のその行に書くので、compact の後も残ります。
+- **着手できる周が残っているのに親が次の周を始めないと決めたら**、親はこの cruise を再開するタイマーを止め、
   `/clear` してメインの作業ツリーから起動し直すよう通知して止まります。タイマーは `/clear` できないので、放っておくと同じ判断を繰り返すだけになります
   （#484 では 23 回・約 11.5 時間、周が 0 本でした）。タイマーを使い続けるなら、起動し直すときに張り直してください。
 - **周を `claude -p` の子プロセスで回すこともできます（任意。[#491](https://github.com/hdknr/claude-code-setup/issues/491)）。**
