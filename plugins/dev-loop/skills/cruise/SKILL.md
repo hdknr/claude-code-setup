@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.78.0 -->
-> **このスキルの版: 1.78.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.79.0 -->
+> **このスキルの版: 1.79.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -169,9 +169,12 @@ python3 <このスキルの base ディレクトリ>/scripts/parent-issue.py sho
 ```bash
 check-unattended-env.py --cruise --present --ledger issue-<親>   # 居る cruise
 check-unattended-env.py --cruise --ledger issue-<親>             # --absent
+check-unattended-env.py --cruise --ledger issue-<親> --since-last  # --absent の再開（訊かない再開）
 ```
 
-**読むだけで、設定も台帳も書き換えない。** 何を見るか（周で使う操作の宣言 `cruise の操作:`・止まりうる操作・親の起動場所・
+**`--since-last` は `--absent` の再開（下の 2・3 で訊かない再開）だけに付ける**——前回の点検と同じ項目を 1 行に縮め、変わった項目だけを全文で出す
+（再開のたびに同じ項目を全部出すと、人が要る報告が埋もれる。#635）。**新規の起動と利用者が居る再開では付けない**——下の 2 は止まりうる操作を全部並べて訊く。
+**読むだけで、設定も台帳も書き換えない**（`--since-last` だけは台帳の隣に点検の記録 `cruise-<名前>.env-check` を書く）。何を見るか（周で使う操作の宣言 `cruise の操作:`・止まりうる操作・親の起動場所・
 **不在の間にどこまで進めるか**（`マージ` の線が効くか・周ごとの到達と止まる要因——衝突・版の取り合い・判断待ち・操作待ち・依存の止まり。#490））は
 **そのスクリプトの docstring を正とする**。**`--ledger` を落とさない**——落とすと到達は「判定できない」になる。
 

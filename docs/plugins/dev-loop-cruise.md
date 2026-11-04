@@ -28,7 +28,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 積んだ周（stacked） | `references/stacked.md` | 未マージの下の周の上で、上の周を先に始める |
 | マージ | `scripts/merge-pr.py` | CI 待ち → squash → worktree の撤去 → Issue が閉じたかの確認。台帳でその PR の行が利用者の判断を待っていればマージしない（#631） |
 | 不在の線 | `references/absent-lines.md` | 利用者がいないとき、止まる代わりに進んでよい範囲 |
-| 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども |
+| 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども（席を外したあとの再開の `--since-last` だけは、前回の結果を台帳の隣に残す） |
 | 直す線 | `references/fix-line.md` | 関門の指摘をどこまで周の中で直すか |
 | まとめの周 | `../cruise/references/grouping.md`・`scripts/ledger.py`（`group`） | 周の途中で足した、同じファイルを触る行を 1 周・1 PR にまとめる（[#641](https://github.com/hdknr/claude-code-setup/issues/641)） |
 | 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
@@ -101,7 +101,12 @@ cruise の操作: gh workflow run infra-apply.yml
 ```bash
 python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --ledger issue-<親>            # 席を外すとき
 python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --present --ledger issue-<親>  # 居るとき
+python3 <スキルの base ディレクトリ>/scripts/check-unattended-env.py --cruise --ledger issue-<親> --since-last  # 席を外したあとの再開
 ```
+
+**席を外したあとの再開では `--since-last` を付けます**——前回の点検と同じ項目を 1 行（区分ごとの件数・前回の時刻・要対処と判定できないの項目の名前）に縮め、変わった項目だけを全文で出します。
+前回の結果は台帳の隣の `cruise-issue-<親>.env-check` に残ります（[#635](https://github.com/hdknr/claude-code-setup/issues/635)）。
+`claude -p` で起動した cruise では、通知の設定の 2 項目は「人が見る」の 1 行になります——人を呼ぶ経路は起動した側で用意します。
 
 **cruise は台帳を作ったあと、`--absent` に依らずこれを回して結果を見せます。** 利用者が居ても、権限の拒否や確認で
 周が止まり、操作を待つことになるためです（[#466](https://github.com/hdknr/claude-code-setup/issues/466)）。
