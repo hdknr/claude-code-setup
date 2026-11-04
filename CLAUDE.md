@@ -53,7 +53,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/scaffold/` - dev-loop への引き渡し（#219。**中間表現 `spec_ir.json` を書くのがスキル、
       そこから先の生成はスクリプト**。**Issue の登録で止まり、登録の前に利用者に確かめる**）。素のスキルとして張れないのは同上
     - `evals/` - **差分モード（#263）の振る舞いの Eval**（`claude plugin eval`。#274。4 スキルに 1 ケースずつ。**CI からは呼ばない**——
-      `claude` を起こして課金する。陽性対照・差分モードが入る前の版への当て方と、判別の実測は `docs/plans/issue-274.md` を正とする）
+      `claude` を起こして課金する。陽性対照・差分モードが入る前の版への当て方と、判別の実測は `docs/plans/issue-274.md` を正とする。
+      proposal の判別の実測（git が動く形で回した結果）は `docs/plans/issue-832.md`）
     - `agents/` - 仕様の判定役 3 体（red-team / domain-checker / formal-checker）と見積りの検証役（estimate-checker）。
       **書き込みツールを持たず `model` を書かない**——`check-plugin-versions.py` が全プラグインの `agents/` で見る
     - `references/` - **データの決まりの原本**（ツリー・Q&A 表・スケジュールと見積りの表・サインオフのタグ・仕様レビューを抜ける条件・
@@ -737,11 +738,28 @@ python3 scripts/run-dev-loop-evals.py --summarize <aggregate-result.json>   # �
 リポジトリの中**では断る（eval のワークスペースは一時 `HOME` のリポジトリの下の空のディレクトリ）。
 **どのリポジトリにも属さない空のディレクトリでは走る**——試すならそこで。
 
-**サンドボックスの中の `git` は、ホストの `PATH` の先頭で決まる。** #181 の周では
+**サンドボックスの中の `git` は、ホストの設定（`PATH` と、そこに在る git）に左右される**（`PATH` の先頭のものが選ばれるとは限らない——下の段落）。#181 の周では
 `/usr/local/bin/git` が切れたリンクで、**子の `git` が `can't exec` で失敗した**
-（修正前の版を当てた回の trace で確認）。**現行の版はその設定でも 4/4（当時の grader 4 本）だった**が、
+（修正前の版を当てた回の trace で確認）。**現行の版はその設定でも 4/4（当時の grader 4 本。C3）だった**が、
 その回の trace は消えており、**正しく再開したのか、探せずに止まったのかは確かめていない**
 ——**何もしないことは「作らない」と同じに見える。** **通ったら trace を見る**（`--keep-temp`）。
+人が Homebrew の git を入れた後（2026-10-04）の回し直し（C4）も 4/4 で、こちらは trace で git が動き、既存の worktree から再開したことを確かめた（`docs/plans/issue-181.md`）。
+
+**macOS で git が Xcode（xcrun の shim）越しにしか無いと、サンドボックスの中で `git` が動かないことがある**（#274・#832）。
+#274 の周（2026-11-04）では、サンドボックスの中で xcrun がキャッシュ（`/var/folders/...`）を書けず、Xcode の実体も読めずに
+`Failed to locate 'git'` になり、**git を使うスキル（proposal の照合など）はそこで止まった**。
+**同じホストで Homebrew の git（`brew install git`。`/opt/homebrew/bin` は `PATH` に入っていた）を入れた後は動いた**——
+**利用者の環境を変える操作なので、入れるなら利用者に確かめてから。** 入れた後に観測したのは次の 3 つまでで、**仕組みは推定である**
+（`/opt/homebrew/bin` を `PATH` から外した対照は取っていない）:
+シェルが選ぶのは shim のまま（`which -a git`・`type -a git` は `/usr/bin/git` だけ。理由は確かめていない）、
+サンドボックスの中の `xcrun --find git` は `/opt/homebrew/bin/git`、shim 越しの `git --version` は Homebrew の版（Xcode の版ではない）。
+**shim 越し（素の `git`・`xcrun`）で呼ぶたびに `couldn't create cache file` の行が出るが、終了コードは 0 だった**（`/opt/homebrew/bin/git` を直に呼んだ行では出なかった。出力は 1 つのファイルにまとめて見たので、どちらの流れに出たかは見ていない）。
+**回す前に、git だけを走らせるケースで陽性対照を取る**——プラグインをリポジトリの外に複製し、**素の `git`** で `git --version` と `git tag` の出力をファイルに書かせ、
+**タグ名**を regex で見る（版の文字列だけでは、どの git が動いたかも、素の `git` が動いたかも決まらない。1 回 $0.2 前後。ケースの全文は `docs/plans/issue-832.md` の「陽性対照のケース」——scaffold の断る判定ごと写す）。
+**記録の上では、動かなかった回は Homebrew の git が無かったとき、動いた回は在ったとき（か、在ったはずの時期）である**——
+#181 は切れた `/usr/local/bin/git` のリンクで動かず、周の途中（2026-10-04）に人が `brew install git` を入れた後の回は xcrun の行が出ても動き、
+#183（その翌日の 2026-10-05。在ったかは確かめていない）も動き、#274（`/opt/homebrew/bin/git` が無かった）は動かなかった。
+**Homebrew の git はいつの間にか無くなっていることがある**（10-04 から 11-04 の間に無くなった。経緯は記録に無い）ので、**前に動いたことを当てにせず、回す前に対照を取る**。
 
 ### トークン使用量を測る
 
