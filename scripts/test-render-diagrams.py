@@ -203,10 +203,12 @@ def run(script: Path, root: Path, *args: str, behaviour: str = "success", drawio
         proc = subprocess.run(argv, cwd=root, capture_output=True, text=True, env=env, timeout=120)
     else:
         # 端末を閉じたときの形: 本体のプロセスグループに SIGHUP を送る
-        def ignore() -> None:
-            signal.signal(hup_signal, signal.SIG_IGN)
+        # **無視させない試料も既定（SIG_DFL）に戻してから起こす**——テストを `nohup` の下で回すと SIGHUP の SIG_IGN が引き継がれ、
+        # 本体が登録しなくなって「止まって後始末する」試料が偽の赤になる（#820）
+        def disposition() -> None:
+            signal.signal(hup_signal, signal.SIG_IGN if ignored else signal.SIG_DFL)
         child = subprocess.Popen(argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
-                                 start_new_session=True, preexec_fn=ignore if ignored else None)
+                                 start_new_session=True, preexec_fn=disposition)
         time.sleep(hup_after)
         os.killpg(child.pid, hup_signal)
         out, err = child.communicate(timeout=120)
