@@ -14,7 +14,8 @@ name: feasibility-diff-scale
 # **検証役（Agent）は起こさない**——回すときに `--disallow-tools Agent` を渡す（1 周目は検証役の指摘で変更の行が外れた。docs/plans/issue-274.md）。
 # grader が見るのは手順 3 で書いた見積りで、検証役を通っていない。
 #
-# 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
+# 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md の「2 周目の結果」を正とする
+# （同じファイルの「1 周目の記録」はこの試料より前の試料の実測）。
 description: >-
   作業中の版 v2 は売上帳票の機能を足し、在庫照会の期間を変え、入荷予定の照会を撤去する。feasibility は
   docs/v2/feasibility/estimate.csv に、その 3 つの分だけを見積もり（変更と削除を 0 円と見なさない）、
