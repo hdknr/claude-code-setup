@@ -7,7 +7,7 @@
 **台帳（`.claude/plans/cruise-issue-793.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-793`））。
-版の上げ方: `dev-loop` を **minor**（cruise の終え方に手順を足す——能力の追加）。PR を出す直前の main の先端から minor を 1 つ上げる（着手時の main は 1.89.0 → 1.90.0）。
+版の上げ方: `dev-loop` を **minor**（cruise の終え方に手順を足す——能力の追加）。PR を出す直前の main の先端から minor を 1 つ上げる（着手時の main は 1.89.0 → 1.90.0。PR の前に main（#791 ほかで 1.91.0）を取り込んで 1.92.0）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py` 越しに、`check-all.py --jobs 2` で走らせる。
 
 Issue 本文（外部入力）から読んだ要件: マージ直前の main の取り込みと版の上げ直しの後は、衝突の有無・中身に依らずローカルの `check-all.py` を回さず、
