@@ -1,0 +1,45 @@
+schema_version: "1.1"
+name: proposal-diff-handwritten
+# 差分モード（#263）の proposal が、v2 の手書き部分の下書きに**前の版から何を足し・変え・消したかの一覧を書かない**かを見る
+# （SKILL.md 手順 2 の「v2 以降は変更の提案書」——一覧は手順 3 のスクリプトが生成する）。
+#
+# **下書きの置き場所はプロンプトで 1 つに決めている**——grader がファイルの名前を知らないと中身を読めないので。
+# 一覧を書いたかは字面で決まらない（「売上帳票を足す」は理由の文にも出る）ので、llm の grader で見る。
+# **judge の既定は haiku**——判定の揺れは測っていない。
+#
+# **このケースはまだ判別を測れていない（BLOCKED）。** 手順 1 の照合（check-signoff.py）が git を使うが、
+# macOS の eval のサンドボックスでは /usr/bin/git（CommandLineTools を呼ぶ shim）が読めずに失敗し、
+# 現行の版は照合の前で正しく止まった（2.1.318 で実測）。git が動く環境で回すまで、grader は陽性対照でしか当たっていない。
+#
+# 判別の実測（現行の版・差分モードが入る前の版・陽性対照の結果と、赤になった理由）は docs/plans/issue-274.md を正とする。
+description: >-
+  作業中の版 v2 は売上帳票を足す。2 つの承認のタグはそろっていて、手書き部分が無い。
+  proposal は docs/v2/proposal/ に変更の提案書の下書き（なぜ変えるか・案・リスク）を書き、
+  追加・変更・削除の一覧は書かない。
+tags: [spec-loop, diff-mode, proposal]
+plugins: ["../.."]
+runs: 1
+expected_outcome: >-
+  docs/v2/proposal/01-draft.md ができていて、前の版との差の一覧（追加・変更・削除の列挙や表）を含まない。
+execution:
+  prompt: "/spec-loop:proposal 手書き部分の下書きを書くなら、docs/v2/proposal/01-draft.md の 1 ファイルにまとめること。"
+  max_turns: 40
+  timeout_seconds: 1200
+  allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
+context:
+  scaffold_script: scaffold.sh
+graders:
+  - name: draft-written
+    type: file_exists
+    path: docs/v2/proposal/01-draft.md
+    exists: true
+  - name: draft-has-no-change-list
+    type: llm
+    focus: {source: file, path: docs/v2/proposal/01-draft.md}
+    criteria: >-
+      PASS only if all of these hold: (1) the document exists and is a proposal draft;
+      (2) it does NOT contain an enumerated list or table of what was added, changed or removed
+      relative to the previous version (for example a section like "変更点", "追加・変更・削除",
+      "前の版からの変更" listing items such as features, Q&A numbers or files).
+      Explaining in prose why the new feature (売上帳票) is needed is allowed and does not count as a list.
+      FAIL if such a list or table of differences is present, or if the file is missing or empty.
