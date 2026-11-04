@@ -167,6 +167,8 @@ B × D——費用の上限の中で B が足りなければ、そこまでの�
 - 周の在り処: ブランチ `issue/274-spec-loop-diff-mode-evals`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-274`・
   起点 `9f5f05e5`・base 参照 `origin/main` → `9f5f05e5dad5b05176daa13b5c2b3eba45c49fea`
 - 割り目（手順 4 の完了時）: 割らない（不在の cruise）
+- 1 パス目の起点（先に当てた関門に渡した時点の HEAD）: `27d64b500ef3f232bc5e5db9329315c97690225c`
+- 実験（Eval）の交絡: 腕の間で引数を揃えた（`Agent` の扱いを含む）・データの形を `FORMAT` で揃えた・陽性対照で grader が赤になれることを見た・後から足した grader は回し直した
 
 ## 既知の限界・決着済みの論点
 
