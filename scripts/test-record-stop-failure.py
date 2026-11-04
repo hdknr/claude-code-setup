@@ -80,6 +80,7 @@ MUTATIONS = {
     "待てと添えない": ('f"{error}。{WAIT}"', "error"),
     "上限でなくても待てと添える": ("limit = error in LIMIT", "limit = True"),
     "認証の失敗に /login を添えない": ('f"{error}。{LOGIN}"', "error"),
+    "認証の失敗の題で「ログインが切れた」と言わない": ('"Claude Code が止まりました（ログインが切れたかもしれません）"', '"Claude Code が止まりました"'),
     "認証の失敗でなくても /login を添える": ('"Claude Code が止まりました", error',
                                             '"Claude Code が止まりました", f"{error}。{LOGIN}"'),
 }
@@ -206,8 +207,8 @@ def main() -> int:
         check("上限らしくない error には「継続と打たずに」を添えない",
               len(auth) == 4 and "authentication_failed" in auth[2] and WAIT not in auth[2])
         check("利用上限なら題に「利用上限」", "利用上限" in osa[3])
-        check("認証の失敗（authentication_failed）なら本文に /login、題に「ログインが切れた」（#473）",
-              len(auth) == 4 and LOGIN in auth[2] and "ログインが切れた" in auth[3])
+        check("認証の失敗（authentication_failed）なら本文に /login（#473）", len(auth) == 4 and LOGIN in auth[2])
+        check("認証の失敗なら題に「ログインが切れた」（#473）", len(auth) == 4 and "ログインが切れた" in auth[3])
         over = obs["overloaded"]["osa"]
         check("上限でも認証でもない error には「継続と打たずに」も /login も添えない",
               len(over) == 4 and over[2] == "overloaded" and WAIT not in over[2] and LOGIN not in over[2]

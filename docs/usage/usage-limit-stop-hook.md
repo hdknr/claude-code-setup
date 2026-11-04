@@ -16,8 +16,8 @@ hook の本体は [`scripts/record-stop-failure.py`](https://github.com/hdknr/cl
 - `~/.claude/usage-limit-stops.jsonl` に 1 行追記します
 - macOS なら通知を出します。上限らしい `error`（`rate_limit`・`billing_error`）のときだけ、
   「止まっても『継続』と打たずにリセットまで待ってください」と添えます
-- 認証の失敗（`authentication_failed`。OAuth のアクセストークンの期限切れ・401）のときは、
-  「`/login` で入り直してください（待っても直りません）」と添えます（[#473](https://github.com/hdknr/claude-code-setup/issues/473)）
+- 認証の失敗（`authentication_failed`。対話ログインのトークンの更新の失敗・401 のほか、無効な API キーでも出ます）のときは、
+  「`/login` で入り直してください（API キーで認証しているならキーを直す。待っても直りません）」と添えます（[#473](https://github.com/hdknr/claude-code-setup/issues/473)）
 
 **何を書き、何を書かないか（案件の中身は書きません）と、何を守らないかは、スクリプトの docstring を正とします。**
 
@@ -80,11 +80,14 @@ Claude Code 2.1.311 の本体の文字列から読みました）。**hook の�
 
 **記録の `error` で分けます。**
 
-**`authentication_failed`（認証の失敗）なら、待っても戻りません**——利用上限と違ってセッションの全リクエストが失敗するので、
-自動継続も cruise の再開タイマーも効きません。`/login` で入り直します（離れているなら Remote Control から打てます）。
+**`authentication_failed`（認証の失敗）なら、待っても戻りません**——利用上限はリセットの時刻が来れば戻りますが、認証の失敗は時間がたっても戻らないので、
+自動継続も cruise の再開タイマーも効きません。`/login` で入り直します（API キーで認証しているなら、キーを直します）。
+#473 では、離れていた利用者が Remote Control から `/login` を打って戻りました——**トークンの更新に失敗したあとも Remote Control がつながったままかは確かめていません**。
 cruise を回していたなら、同じ時刻に落ちた子の体（実装役・関門・`/code-review`）を入り直した後にやり直します
 （[dev-loop の台帳の再開](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/ledger.md)）。
 不在のあいだに 8 時間で切れないようにするには、[長期トークンで cruise を起動します](cruise-long-lived-token.md)。
+
+**ほかの値（`overloaded` など）には、この hook は案内を添えません**（記録だけです）。
 
 **利用上限らしい値（`rate_limit`・`billing_error`）なら:**
 
