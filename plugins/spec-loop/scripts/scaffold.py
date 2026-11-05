@@ -562,8 +562,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     return problems + check_called_by(features)
 
 
-# 表の区切りの行（`| --- | :-: |`・先頭の `|` の無い `--- | ---`）
-TABLE_SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?")
+# 表の区切りの行（`| --- | :-: |`・先頭の `|` の無い `--- | ---`）。**`|` を 1 つ以上含む**——単独の `---`（水平線）は区切りと読まない
+TABLE_SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?|\|\s*:?-+:?\s*\|")
 
 
 def scope_rows(text: str) -> list[tuple[str, tuple[str, str] | None]] | None:

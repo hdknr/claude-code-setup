@@ -1289,6 +1289,9 @@ CASES: list[Case] = [
     # 先頭の | の無い表も表と読む——見出しの 2 行は挙げられず、行には見出しの 2 行が付く（#851 の /code-review 1 パス目）
     Case("作らないもの: 先頭の | の無い表", 0, "作った", ir=out_of_scope(["外貨 | 円だけ"]),
          spec={"order.md": SPEC, "scope.md": PIPELESS_SCOPE_MD}, post=pipeless_copied),
+    # 単独の `---`（水平線）は表の区切りではない——前の `|` を含む行を表の見出しと読まない（#851 の /code-review 2 パス目）
+    Case("作らないもの: 水平線の前の | を含む行", 0, "作った", ir=out_of_scope(["- 外貨（円|ドル）は受けない"]),
+         spec={"order.md": SPEC, "scope.md": "# 範囲\n\n## 範囲の外\n\n- 外貨（円|ドル）は受けない\n---\n- 別の行\n"}),
     Case("作らないもの: 先頭の | の無い表の見出しを挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '場面 | 原則'",
          ir=out_of_scope(["場面 | 原則"]), spec={"order.md": SPEC, "scope.md": PIPELESS_SCOPE_MD}),
     Case("作らないもの: 見出しの行を挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '### 補足'",
@@ -1807,6 +1810,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("区切りの行を見ず、表の見出しを行に数える",
      '        if "|" in line and "-" in following and TABLE_SEPARATOR.fullmatch(following):', "        if False:",
      "作らないもの: 表の見出しの行を挙げる"),
+    ("単独の --- を区切りと読む", "(\\|\\s*:?-+:?\\s*)+\\|?|", "(\\|\\s*:?-+:?\\s*)*\\|?|", "作らないもの: 水平線の前の | を含む行"),
     ("区切りの行を表の行に数える", "            header = (line, following)\n            index += 2",
      "            header = (line, following)\n            index += 1", "作らないもの: 表の区切りの行を挙げる"),
     ("先頭の | の無い区切りを区切りと読まない", 'TABLE_SEPARATOR = re.compile(r"\\|?\\s*:?-+', 'TABLE_SEPARATOR = re.compile(r"\\|\\s*:?-+',
