@@ -101,7 +101,9 @@ main へのマージ → GitHub Pages の再ビルドとプラグインの配布
 
 - 周の在り処: ブランチ `issue/876-scaffold-bundle-parent`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-876`・
   起点 `768fb9a7`・base（`origin/main` の merge-base）`768fb9a7c9d4d7b79741737952a8fdc6dfbafbd4`
-- 割り目: 不在の周・cruise の子なので訊かずに続ける
+- 実装のコミット `0d080beb`。`check-all.py`（run-serial 越し）65/65 緑
+- 1 パス目の関門に渡した時点の HEAD（0 行判定の起点）: `0d080beb`
+- 割り目: 不在の周・cruise の子なので訊かずに続ける（手順 4 の割り目: このまま続ける）
 - 交絡: 実験なし（テストの試料のみ）
 
 ## 既知の限界・決着済みの論点
