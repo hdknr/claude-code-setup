@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.62.0 -->
-> **このスキルの版: 0.62.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.63.0 -->
+> **このスキルの版: 0.63.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -173,6 +173,9 @@ python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py -
 開発する側が同じコマンドで作る）。
 正本リポジトリの `CLAUDE.md` の決まりに従う。決まりが無ければ、変更したファイルの一覧を示して止まり、
 commit と push を利用者に任せる（**push されるまで登録しない**）。
+**本文の基準コミットは、4 で生成した時点の HEAD である**（`../../references/handoff-issue.md` の「基準コミット」。#874）——この commit の前の時点で、
+仕様を書いた人が見ていた既存のシステムを表す。**4 の後に、その HEAD までの履歴を書き換えない**（squash・rebase）——開発する側で基準コミットが辿れなくなり、
+dev-loop の点検が日時での近似に落ちる。生成の出力が「基準コミットを記録していない」と言ったら、その理由を 7 で示す。
 
 ### 6. 登録する
 
