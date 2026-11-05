@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.52.0 -->
-> **このスキルの版: 0.52.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.53.0 -->
+> **このスキルの版: 0.53.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -175,6 +175,13 @@ python3 <このスキルの base ディレクトリ>/../../scripts/diff-versions
 
 **3 体を、バックグラウンドで同時に起動する**（互いにデータを渡さないので並列にしてよい）。
 `subagent_type` と `model` は上の「守ること」のとおり。
+
+**ただし `claude -p`（非対話）で動いているときは、判定役を前景（同期）で 1 体ずつ呼ぶ**（#847）——
+`claude -p` で起動されたセッションは、ターンを閉じた後の背景の体を上限の時間（環境変数 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`）しか待たず、過ぎると止める。
+背景で起こした判定役は、報告を返す前にターンが閉じると判定の途中で止められ、報告が欠ける（欠けた報告は「指摘なし」ではない——上の「守ること」）。
+**前景なら、判定役が報告を返すまでターンが閉じない。** dev-loop の cruise が周の子を前景で呼ぶのと同じ理由である
+（dev-loop プラグインの cruise スキルの `SKILL.md`「4. 周を回す」の 2。#633）。
+**2 回目のレビューと狭いパス（手順 5）の判定役も同じ**である。**対話のセッションでは、上のとおり 3 体を同時に起動する。**
 
 **各体に、次を毎回まるごと渡す**:
 
