@@ -225,7 +225,7 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
     o["--command を足す"] = check_with({"allow": ["Bash(python3:*)"]})  # 下で --command つきと比べる
     rc, out, _ = call(["check", "3", "--flag-settings", str(flag), "--managed-settings", str(managed), "--command", "gh workflow run"])
     o["--command つき"] = (rc, items_of(out))
-    o["check は台帳を書かない"] = snapshot(ledger) != before  # 線を書き直したので変わっている（陽性対照）
+    o["線の書き直しで台帳は変わる（陽性対照）"] = snapshot(ledger) != before  # 線を書き直したので変わっている（陽性対照）
     before = snapshot(ledger)
     for c in ("lines", "ops"):
         call([c, "3"])
@@ -294,13 +294,15 @@ def main() -> int:
               and not any(lab.startswith("許可: `g") for _, lab in o["しない で python3 だけ allow"][1]))
         check("--command で足した操作も点検する", o["--command つき"][0] == 1
               and ("要対処", "許可: `gh workflow run`") in o["--command つき"][1] and o["--command を足す"][0] == 0)
-        check("lines・ops・check は台帳を書かない（線を書き直した台帳は変わる——陽性対照）", o["読むだけ"] and o["check は台帳を書かない"])
+        check("lines・ops・check は台帳を書かない（線を書き直した台帳は変わる——陽性対照）", o["読むだけ"] and o["線の書き直しで台帳は変わる（陽性対照）"])
         check("壊れた台帳: lines・ops・check とも 4", o["壊れた台帳"] == (4, 4, 4))
 
         print("\n写しは dev-loop の check-unattended-env.py と同じ")
         mine, theirs = function_sources(SCRIPT), function_sources(ORIGINAL)
         for name in COPIED:
             check(f"{name} が両方に在って同じ", name in mine and mine.get(name) == theirs.get(name))
+        listed = re.findall(r"`([A-Za-z_]+)`", SCRIPT.read_text(encoding="utf-8").split("## 写し")[1].split("は、dev-loop の")[0])
+        check(f"docstring の「写し」の一覧 {listed} と COPIED が同じ", tuple(listed) == COPIED)
         altered = dict(mine, rule_matches=mine["rule_matches"].replace('":*"', '":**"'))
         check("陽性対照: 1 か所変えた写しは「違う」と出る", altered["rule_matches"] != theirs["rule_matches"])
         original = load_module(ORIGINAL, "cue")
