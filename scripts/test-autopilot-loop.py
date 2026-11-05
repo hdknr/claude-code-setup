@@ -121,7 +121,14 @@ MUTATIONS = {
     "前進で前進なしの数を戻さない": [("        else:\n            stalls = 0\n", "        else:\n            pass\n")],
     "起動の上限で止めない": [("        if launches >= args.max_launches:\n", "        if False:\n")],
     "同じ状態の上限で止めない": [("        if seen.get(before, 0) >= args.max_same_state:\n", "        if False:\n")],
-    "claude の失敗で止めない": [("        if rc != 0:\n", "        if rc is None:\n")],
+    "claude の失敗で止めない": [("        if not limited and rc != 0:", "        if not limited and rc is None:")],
+    "桁の多い整数で例外": [("    try:\n        value = float(value)\n    except OverflowError:  # 桁の多すぎる整数——例外にせず遠い時刻として読む\n        return math.inf\n",
+                          "    value = float(value)\n")],
+    "quotaLimits が辞書でないと例外": [('epoch(quota.get("resetsAt")) if isinstance(quota, dict) else None', 'epoch(quota.get("resetsAt"))')],
+    "前の上限の時刻を引き継ぐ": [('        reset = epoch(last_event.get("resetsAt"))  #',
+                               '        reset = epoch(last_event.get("resetsAt")) or reset  #')],
+    "progress を読んでから失敗で止める": [
+        ("        if not limited and rc != 0:  # progress を読む前に", "        after = progress(args.version)\n        if after is None:\n            return EXIT_UNKNOWN, \"x\"\n        if not limited and rc != 0:  # progress を読む前に")],
     "上限を claude の失敗と読む": [("        if limited:\n", "        if False:\n")],
     "解除の時刻に余白を足さない": [("                wait = max(0.0, reset - time.time()) + LIMIT_MARGIN\n",
                                  "                wait = max(0.0, reset - time.time())\n")],
@@ -135,7 +142,7 @@ MUTATIONS = {
                                     "            stalls += 1\n            if after != before:\n                stalls = 0\n            if reset is not None:\n")],
     "上限の起動で前進なしの数を戻さない": [("            if after != before:\n                stalls = 0\n            if reset is not None:\n",
                                          "            if reset is not None:\n")],
-    "quotaLimits を読まない": [('                at = (event.get("quotaLimits") or {}).get("resetsAt")\n', "                at = None\n")],
+    "quotaLimits を読まない": [('                at = epoch(quota.get("resetsAt")) if isinstance(quota, dict) else None\n', "                at = None\n")],
     "limit reached だけで上限と読む": [('r"usage limit reached|hit your limit", re.IGNORECASE', 'r"usage limit reached|limit reached|hit your limit", re.IGNORECASE')],
     "時刻を usage の後ろだけで読む": [('r"(?:usage limit reached|hit your limit)\\|(\\d{10})\\b"', 'r"usage limit reached\\|(\\d{10})\\b"')],
     "走りきった起動でも上限と読む": [("    if rc == 0 and isinstance(last_result, dict)", "    if False and isinstance(last_result, dict)")],
@@ -516,6 +523,27 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     plan["38"] = [{"rc": 1, "stdout": [ev("system", subtype="api_retry", error="rate_limit")]}]
     go("A38 再試行の印だけ", 38, [])
 
+    # A39: resetsAt が float に収まらない整数 → 例外にせず 10
+    make(39)
+    plan["39"] = [{"rc": 1, "stdout": [rejected().replace('}}', ', "resetsAt": ' + "9" * 400 + '}}')]}, {"ledger": [done(39)]}]
+    go("A39 桁の多い整数", 39, [])
+
+    # A40: quotaLimits が辞書でない → 例外にせず時刻の読めない上限（--limit-wait 秒）
+    make(40)
+    plan["40"] = [{"rc": 1, "stdout": ['{"type": "assistant", "error": "rate_limit", "quotaLimits": [1, 2]}']}, {"ledger": [done(40)]}]
+    go("A40 quotaLimits が辞書でない", 40, ["--limit-wait", "41"])
+
+    # A41: 前の行の別の上限の時刻（quotaLimits）→ 最後の rate_limit_event が時刻なしで上限 → 前の時刻を引き継がず --limit-wait 秒
+    make(41)
+    plan["41"] = [{"rc": 1, "reset_in": 5000, "stdout": ['{"type": "assistant", "error": "rate_limit", "quotaLimits": {"resetsAt": RESET}}',
+                                                         rejected()]}, {"ledger": [done(41)]}]
+    go("A41 前の時刻を引き継がない", 41, ["--limit-wait", "42"])
+
+    # A42: claude が台帳を壊して 1 で終わる（上限の印なし）→ progress より先に 8
+    make(42)
+    plan["42"] = [{"corrupt": True, "rc": 1}]
+    go("A42 壊して失敗", 42, [])
+
     # A30: 引数が違う → 2。通知しない
     go("A30 引数", 30, ["--max-same-state", "0"])
     limit = sys.get_int_max_str_digits()
@@ -598,6 +626,10 @@ def main() -> int:
         w37 = a("A37 hit your limit の時刻 待ち")
         check("A37 `hit your limit|<epoch>` の時刻＋60 秒待って 0", res("A37 hit your limit の時刻") == 0 and len(w37) == 1 and 750 <= w37[0] <= 761)
         check("A38 assistant でない error=rate_limit だけなら上限でなく 8", res("A38 再試行の印だけ") == 8 and a("A38 再試行の印だけ 待ち") == [])
+        check("A39 float に収まらない整数の resetsAt は例外にせず 10", res("A39 桁の多い整数") == 10 and a("A39 桁の多い整数 待ち") == [])
+        check("A40 辞書でない quotaLimits は例外にせず --limit-wait 秒待って 0", res("A40 quotaLimits が辞書でない") == 0 and a("A40 quotaLimits が辞書でない 待ち") == [41])
+        check("A41 最後の rate_limit_event に時刻が無ければ前の時刻を引き継がず --limit-wait 秒", res("A41 前の時刻を引き継がない") == 0 and a("A41 前の時刻を引き継がない 待ち") == [42])
+        check("A42 台帳を壊して 1 で終われば progress より先に 8", res("A42 壊して失敗") == 8 and a("A42 壊して失敗")[1:] == (1, 1))
         check("A30 引数が違えば 2 で通知しない", res("A30 引数") == 2 and a("A30 引数")[1:] == (0, 0)
               and all(a(f"A30 {k}") == 2 for k in ("先頭 0", "0", "番号でない", "ASCII でない", "桁が多すぎる", "負の待ち",
                                                    "空の文", "語に分けられない --claude", "上限 0")))

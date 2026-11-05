@@ -57,7 +57,8 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 **「limit reached」だけの文（`spending limit reached` など）は上限と読まない。** **JSON の中のアシスタントの文は読まない**——文が #790 のことを語っただけで上限と読まない。
 
 **`claude` が 0 で終わり、最後の `result` が `is_error` でなければ、上の印があっても上限と読まない**——最後まで走りきった起動で、途中の再試行の印で待たない。
-解除の時刻に使うのは有限の数だけで、真偽値・無限・NaN は読めないものとして扱う。**ミリ秒のように桁の多い値は、そのまま秒として読み、待ちが長すぎるので 10 で止まる**（単位は測っていない）。
+解除の時刻に使うのは数だけで、真偽値・NaN は読めないものとして扱う。**ミリ秒のように桁の多い値・無限・float に収まらない整数は、遠い時刻として読み、待ちが長すぎるので 10 で止まる**（単位は測っていない）。
+**`rate_limit_event` で上限と決まったときは、解除の時刻もその event の `resetsAt` だけから読む**（無ければ読めない）——前の行の別の上限の時刻を引き継がない。
 
 ## 終了コード
 
@@ -98,6 +99,10 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 - **`|<10 桁>` は、どちらの文言の後ろでも解除の時刻に読む。**
 - **`claude` が 0 で終わり、最後の `result` が成功なら上限と読まない**——途中の再試行の印（`api_retry` など）で待たない。
 - **解除の時刻が時刻として表せない値（ミリ秒など）でも、例外にせず 10 で止まる。**
+- **解除の時刻が float に収まらない整数でも、例外にせず 10 で止まる。**
+- **`quotaLimits` が辞書でなくても例外にせず、時刻の読めない上限と読む。**
+- **`rate_limit_event` で上限と決まったら、解除の時刻はその event からだけ読む**——前の行の別の上限の時刻を引き継がない。
+- **上限と読めない失敗は、`progress` を読む前に 8 で止まる**——台帳が読めなくても `claude` の失敗の理由を隠さない。
 - **`allowed_warning` の `rate_limit_event` と、JSON の中のアシスタントの文の「usage limit」を上限と読まない。**
 - **`rate_limit_event` は最後の 1 つで決める**——途中で拒まれて後で `allowed` に戻った起動を上限と読まない。
 - **引数を読めた後の止まるすべての経路で通知する**——済んだ・止まった・判定できない・前進なし・起動の上限・同じ状態の上限・`claude` の失敗・解除が遠い・
@@ -207,8 +212,14 @@ def pause(seconds):
 
 
 def epoch(value):
-    """解除の時刻（UNIX 秒）として使える数か。真偽値・無限・NaN は使えない。"""
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    """解除の時刻（UNIX 秒）を float で。読めなければ None（数でない・真偽値・NaN）。無限と float に収まらない整数は無限（遠い時刻）。"""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        value = float(value)
+    except OverflowError:  # 桁の多すぎる整数——例外にせず遠い時刻として読む
+        return math.inf
+    return None if math.isnan(value) else value
 
 
 def shown(reset):
@@ -254,14 +265,13 @@ def read_limit(paths, rc):
                         reset = int(m.group(1))
             elif kind == "assistant" and event.get("error") == "rate_limit":
                 limited = True
-                at = (event.get("quotaLimits") or {}).get("resetsAt")
-                if epoch(at):
+                quota = event.get("quotaLimits")
+                at = epoch(quota.get("resetsAt")) if isinstance(quota, dict) else None
+                if at is not None:
                     reset = at
     if isinstance(last_event, dict) and last_event.get("status") not in OK_LIMIT_STATUSES:
         limited = True
-        at = last_event.get("resetsAt")
-        if epoch(at):
-            reset = at
+        reset = epoch(last_event.get("resetsAt"))  # 上限を決めた event の時刻だけ——前の別の上限の時刻を引き継がない
     if rc == 0 and isinstance(last_result, dict) and not last_result.get("is_error"):
         return False, None  # 最後まで走りきった起動——途中の再試行の印で待たない
     return limited, reset
@@ -338,6 +348,8 @@ def run_loop(args):
         launches += 1
         rc, files = launch(args, main_tree, logs, launches)
         limited, reset = read_limit(files, rc) if rc is not None else (False, None)
+        if not limited and rc != 0:  # progress を読む前に——台帳が読めなくても失敗の理由を隠さない
+            return EXIT_CLAUDE, f"claude が失敗した（{rc if rc is not None else '起こせない'}・{launches} 回目の起動）"
         after = progress(args.version)
         if after is None:
             return EXIT_UNKNOWN, "判定できなかった（progress を読めない）"
@@ -351,12 +363,10 @@ def run_loop(args):
                 wait = args.limit_wait
                 why = "解除の時刻を読めない"
             if wait > args.max_limit_wait:
-                return EXIT_LIMIT_FAR, f"使用量の上限の解除が遠い（{why}・待ち {int(wait)} 秒 > {args.max_limit_wait} 秒・{launches} 回目の起動）"
+                return EXIT_LIMIT_FAR, f"使用量の上限の解除が遠い（{why}・待ち {wait:.0f} 秒 > {args.max_limit_wait} 秒・{launches} 回目の起動）"
             print(f"使用量の上限（{why}）——{int(wait)} 秒待つ", flush=True)
             pause(wait)
             continue
-        if rc != 0:
-            return EXIT_CLAUDE, f"claude が失敗した（{rc if rc is not None else '起こせない'}・{launches} 回目の起動）"
         seen[before] = seen.get(before, 0) + 1
         if after == before:
             stalls += 1
