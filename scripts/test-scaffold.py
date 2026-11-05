@@ -29,6 +29,9 @@
    `branches` が決まりに反する・原文が `source` に無い・呼ばれる関数に書いたなら作らない）・
    **仕様の基準コミット**（#874。追加・変更・撤去のどの本文も `## 仕様` に `- 基準コミット: ` の行を 1 本持ち、git のリポジトリなら値が正本の HEAD と
    そのコミットの日時。git の作業ツリーでない・コミットが無い・git を起動できないなら止めずに「記録していない（理由）」を書き、出力でも知らせる）・
+   **まとめた本文**（#876。`--bundle` で名指しした機能が 1 件の本文になり、部分が機能 1 件の本文から 1 行目を外したものとバイトで一致し、
+   名指ししない機能の本文・課題一覧（案）は `--bundle` を付けない生成と同じ。本文を作らない機能・変化の揃わない機能・1 件・重複・依存の循環・
+   `--check` との組み合わせは 2）・**依存の連鎖**（`issues.json` の `depends`。呼ぶ機能が呼ばれる機能に依存し、組の中は数えない）・
    **本文の指紋と sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
    が書いた実物に、**dev-loop の `scripts/spec-fingerprint.py` を実際に当てた出力**と比べる——2 つのプラグインに
    置いた指紋の式の写しが揃っていることも、これで見る）。**指紋は機能単位**——関係の無い機能を直しても変わらない
@@ -300,6 +303,87 @@ def callers_in_issue(repo: Path) -> str | None:
     # 呼ばれない機能（入口）の本文には行を足さない
     other = (repo / "build" / "scaffold" / "issues" / "F-002.md").read_text(encoding="utf-8")
     return "呼ばれない機能の本文に呼ぶ機能の行がある" if "呼ぶ機能" in other else None
+
+
+# ---- まとめた本文と依存の連鎖（#876）。3 機能の試料（F-003 は null を許す機能）
+THREE = edit(with_nullable)
+# F-002 が F-001 を、F-003 が F-002 を呼ぶ連鎖——{F-001, F-003} をまとめると依存が循環する
+CHAIN = edit(lambda ir: (with_nullable(ir), f1(ir).update(called_by=["F-002"]),
+                         ir["features"][1].update(called_by=["F-003"])))
+BUNDLE_MARK = "<!-- spec-loop-bundle: {} -->"
+
+
+def default_bodies(repo: Path, *extra: str) -> dict[str, str]:
+    """同じ正本で `--bundle` を付けずに生成し直した本文（{ファイル名: 中身}）。生成は `repo` に書く。"""
+    proc = subprocess.run([sys.executable, "-I", str(repo.parent / "scripts" / TARGET), "--repo", str(repo), *extra],
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return {p.name: p.read_text(encoding="utf-8") for p in sorted((repo / ISSUES).iterdir())}
+
+
+def bundle_parts(body: str) -> list[str]:
+    """まとめた本文の部分（区切りの `---` の行の後ろ）。"""
+    return body.split("\n\n---\n\n")[1:]
+
+
+def bundled(repo: Path) -> str | None:
+    """`--bundle F-001,F-002` で 3 機能のうち 2 つをまとめた。"""
+    files = sorted(p.name for p in (repo / ISSUES).iterdir())
+    if files != ["F-003.md", "bundle-F-001-F-002.md", "issues.json", "proposals.md"]:
+        return f"本文のファイルが違う: {files}"
+    body = (repo / ISSUES / "bundle-F-001-F-002.md").read_text(encoding="utf-8")
+    lines = body.splitlines()
+    if lines[:2] != ["<!-- spec-loop-handoff: v3 -->", BUNDLE_MARK.format("F-001・F-002")]:
+        return f"まとめた本文の先頭 2 行が印でない: {lines[:2]}"
+    if "- [ ] `F-001` 割引額を計算する\n- [ ] `F-002` 注文を取り消せるか\n" not in body:
+        return "まとめた本文に機能のチェックリストが無い"
+    index = json.loads((repo / ISSUES / "issues.json").read_text(encoding="utf-8"))
+    expected = [{"features": ["F-001", "F-002"], "title": "F-001・F-002: 割引額を計算する／注文を取り消せるか", "change": "add",
+                 "body": "bundle-F-001-F-002.md",
+                 "red": ["TestF001.test_f_001_c1", "TestF001.test_f_001_c2", "TestF002.test_f_002_c1"]},
+                {"feature": "F-003", "title": "F-003: ラベルを付ける", "change": "add", "body": "F-003.md",
+                 "red": ["TestF003.test_f_003_c1", "TestF003.test_f_003_c2"]}]
+    if index != expected:
+        return f"issues.json が違う: {index}"
+    # 部分は、機能 1 件の本文から 1 行目を外したものとバイトで一致する（指紋・sha256 が残る）——本文の後ろが、
+    # 区切りの行と部分をこの順に並べたものとちょうど同じ
+    single = default_bodies(repo)
+    parts = [single[f"{fid}.md"].split("\n", 1)[1] for fid in ("F-001", "F-002")]
+    tail = "".join(f"\n---\n\n{part}" for part in parts)
+    if not body.endswith(tail) or not body[: -len(tail)].endswith("- [ ] `F-002` 注文を取り消せるか\n"):
+        return "まとめた本文の部分が、機能 1 件の本文から 1 行目を外したものを区切りの行で並べたものと違う"
+    if [p.split("\n", 1)[0] for p in bundle_parts(body)] != ["<!-- spec-loop-feature: F-001 -->", "<!-- spec-loop-feature: F-002 -->"]:
+        return "部分の先頭が機能の印でない"
+    merge_with_script(repo)
+    for fid, part in zip(("F-001", "F-002"), parts):
+        problem = fingerprint_matches(repo, part, fid, "build/merged")
+        if problem:
+            return problem
+    return None
+
+
+def bundle_keeps_others(repo: Path) -> str | None:
+    """まとめた後も、まとめていない機能の本文・課題一覧（案）は既定と同じバイト。"""
+    kept = {name: (repo / ISSUES / name).read_text(encoding="utf-8") for name in ("F-003.md", "proposals.md")}
+    single = default_bodies(repo)
+    for name, text in kept.items():
+        if single[name] != text:
+            return f"{name} が --bundle を付けない生成と違う"
+    return None
+
+
+def depends_written(repo: Path) -> str | None:
+    """F-002 が F-001 を呼ぶ（CALLED）——F-002 の項目だけが `depends` を持つ。"""
+    index = json.loads((repo / ISSUES / "issues.json").read_text(encoding="utf-8"))
+    found = {i.get("feature"): i.get("depends") for i in index}
+    return None if found == {"F-001": None, "F-002": ["F-001"]} else f"issues.json の依存が違う: {index}"
+
+
+def bundle_depends(repo: Path) -> str | None:
+    """連鎖 F-003 → F-002 → F-001 で {F-002, F-003} をまとめた——まとめた項目が F-001 に依存し、組の中の依存は数えない。"""
+    index = json.loads((repo / ISSUES / "issues.json").read_text(encoding="utf-8"))
+    found = [(i.get("feature") or i.get("features"), i.get("depends")) for i in index]
+    return None if found == [("F-001", None), (["F-002", "F-003"], ["F-001"])] else f"issues.json の依存が違う: {found}"
 
 
 def f1(ir: dict) -> dict:
@@ -2082,6 +2166,27 @@ CASES: list[Case] = [
     Case("呼ぶ機能の重複", 1, "F-001.called_by: 重複している", ir=called(["F-002", "F-002"])),
     Case("呼ぶ関係の循環", 1, "呼ぶ関係が循環している",
          ir=edit(lambda ir: (f1(ir).update(called_by=["F-002"]), ir["features"][1].update(called_by=["F-001"])))),
+    # #876: まとめた本文（--bundle）と依存の連鎖（depends）
+    Case("まとめた本文", 0, "--bundle で 2 件の機能を 1 件の本文にまとめ、登録する本文は 2 件", ir=THREE,
+         args=("--bundle", "F-002,F-001"), post=bundled),
+    Case("まとめても他の本文は既定と同じ", 0, "作った", ir=THREE, args=("--bundle", "F-001,F-002"), post=bundle_keeps_others),
+    Case("まとめる --dry-run は書かない", 0, "登録する本文は 2 件", ir=THREE, args=("--dry-run", "--bundle", "F-001,F-002"),
+         pre=plant_old_issues, post=old_issues_kept),
+    Case("依存の連鎖", 0, "作った", ir=CALLED, post=depends_written, absent="--bundle で"),
+    Case("まとめた組の依存", 0, "作った", ir=CHAIN, args=("--bundle", "F-002,F-003"), post=bundle_depends),
+    Case("まとめると依存が循環する", 2, "--bundle でまとめると依存が循環する", ir=CHAIN, args=("--bundle", "F-001,F-003"),
+         pre=plant_old_issues, post=nothing_written_issues),
+    Case("まとめる機能が 1 件", 2, "まとめるには機能を 2 件以上並べる", args=("--bundle", "F-001")),
+    Case("まとめる機能の id の形", 2, "機能の id（F- に 3 桁以上の数字）をカンマで区切って並べる", args=("--bundle", "F-001, F-002")),
+    Case("まとめる機能の重複", 2, "同じ機能を 2 度並べている", ir=THREE, args=("--bundle", "F-001,F-002", "--bundle", "F-002,F-003")),
+    Case("まとめる機能が無い", 2, "F-009 はこの版で本文を作る機能でない", args=("--bundle", "F-001,F-009"),
+         pre=plant_old_issues, post=nothing_written_issues),
+    Case("まとめる機能が変わっていない", 2, "F-002 はこの版で本文を作る機能でない", extra=v2([V2_CHANGED]),
+         args=("--bundle", "F-001,F-002")),
+    Case("まとめる機能の変化が揃わない", 2, "変化が揃わない（F-001 は modify・F-003 は add）",
+         extra=v2([V2_CHANGED, V2_RETURN]), args=("--bundle", "F-001,F-003")),
+    Case("まとめるのは --check と一緒に使えない", 2, "--bundle は書く生成か --dry-run と一緒にだけ使う",
+         args=("--check", "--bundle", "F-001,F-002")),
     Case("v2 で呼ばれる機能だけ変える", 0, CALLERS_NOTICE, ir=CALLED, extra=v2([V2_CALLED])),
     Case("v2 で呼ぶ機能も変える", 0, "modify 2", ir=CALLED, extra=v2([V2_CALLED, V2_CALLER]), absent="呼ぶ機能（"),
     Case("v2 で呼ぶ機能を消す", 1, "F-001.called_by: 呼ぶ機能 F-002 が中間表現に無い", ir=CALLED,
@@ -2323,6 +2428,20 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #876: まとめた本文（--bundle）と依存の連鎖（depends）
+    ("まとめない", "        if len(group) == 1:\n", "        if True:\n", "まとめた本文"),
+    ("部分に 1 行目の印を残す", "{bodies[fid].split(chr(10), 1)[1]}", "{bodies[fid]}", "まとめた本文"),
+    ("依存を書かない", '        if depends:\n            entry["depends"] = depends', '        if False:\n            entry["depends"] = depends',
+     "依存の連鎖"),
+    ("依存の向きを逆にする", 'found[at].add(change.feature["id"])', "found[index].add(caller)", "依存の連鎖"),
+    ("組の中の依存も数える", "if at is not None and at != index and", "if at is not None and", "まとめた組の依存"),
+    ("まとめた組の循環を見ない", "    order = cycle_in(groups, dependencies(groups))", "    order = []", "まとめると依存が循環する"),
+    ("変化の揃いを見ない", "        elif len({by_id[i].kind for i in ids}) != 1:", "        elif False:", "まとめる機能の変化が揃わない"),
+    ("本文を作らない機能もまとめる", "absent = [i for i in ids if i not in by_id]", "absent = []", "まとめる機能が無い"),
+    ("1 件のまとめを受け付ける", "        if len(ids) < 2:", "        if False:", "まとめる機能が 1 件"),
+    ("まとめる機能の重複を見ない", "        if len(set(ids)) != len(ids) or seen & set(ids):", "        if False:", "まとめる機能の重複"),
+    ("--check でもまとめ方を受け付ける", "    if args.bundle and (args.check or args.red_check):", "    if False:",
+     "まとめるのは --check と一緒に使えない"),
     # #874: 仕様の基準コミット
     ("基準コミットの行を本文に書かない", '        f"- 変化: {kind_text}",\n        base_line,\n', '        f"- 変化: {kind_text}",\n',
      "基準コミット: 変更と撤去の本文"),
@@ -3047,6 +3166,14 @@ def main() -> int:
                   current is not None and current in skill)
         check("dev-loop の references/spec-gap.md に変化の印が無い",
               change_marker is not None and change_marker.split("{}")[0] in gap)
+        # まとめた本文の印（#876）——2 つのプラグインの境界の写し。原本は handoff-issue.md の「まとめた本文」
+        bundle_marker = constant(source, "BUNDLE_MARKER")
+        shown = bundle_marker.format("<機能の id>・<機能の id>") if isinstance(bundle_marker, str) else None
+        check("BUNDLE_MARKER が本体とこのテストの写しで違う", bundle_marker == BUNDLE_MARK, f"{bundle_marker!r}")
+        for label, doc in (("handoff-issue.md", handoff), ("dev-loop の references/spec-gap.md", gap)):
+            check(f"{label} にまとめた本文の印 {shown!r} が無い", shown is not None and f"`{shown}`" in doc)
+        check("まとめた本文の印を言い換えても照合が不一致にならない",
+              shown is not None and f"`{shown}`" not in gap.replace("spec-loop-bundle", "spec-loop-group"))
         # 陽性対照: 印を上げたら、`SKILL.md` に残った古い印では当たらない
         check("印の版を変えても SKILL.md の照合が不一致にならない",
               marker is not None and marker.replace("v3", "v4") not in skill)

@@ -15,6 +15,8 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 - **spec-loop から渡した Issue**（本文の先頭が `<!-- spec-loop-handoff: v`）——受入基準の表の `Q&A` の列と `## Q&A の回答` の No が、
   その Issue が根拠にした Q&A である。`## 仕様` の `- 仮回答: ` の行と表の `（暫定）` が仮回答の印（`--provisional` で作った本文だけ。
   形の正は `references/handoff-issue.md` の「仮回答の印」で、印の定数は `scaffold.py` のものを読む——写さない）。
+  **まとめた本文**（2 行目が `<!-- spec-loop-bundle: … -->`。#876）は、機能の印の行で機能ごとの部分に分け、部分ごとに同じく読む
+  （部分は機能 1 件の本文と同じ節を持つ。`references/handoff-issue.md` の「まとめた本文」）。
 - **確認の Issue**（dev-loop が推奨で決めて進めた判断を、利用者に確かめてもらう Issue）——本文に印 `<!-- cruise-decision: #<親> -->` があるか、
   題が `要確認: ` で始まるもの。本文の行頭の `決めた値: ` と `影響する Issue: ` の 2 行（形の正は dev-loop の
   `references/absent-lines.md` の「確認の Issue の書き方」。下の定数はその写しで、`scripts/test-rebuild-scope.py` が突き合わせる）。
@@ -45,6 +47,7 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 | **入力が全部の Issue を含むか** | `--limit` を超えた Issue・取った後に登録した Issue は見えない。取り方の 1 行の `--limit` を Issue の数より大きくする |
 | **確認の Issue の 2 行が、本文の推奨・選んでほしいことと同じか** | 書いた側が揃える（`absent-lines.md`）。ここは行を読むだけ |
 | **機能の `qa` とケースの `qa` の両方が指す No で、機能全体が作り直しになるか** | 本文の `## Q&A の回答` は両方を合わせて持つので見分けられない。ケースが指していればケースを挙げる——Issue は挙がるので、範囲を広げるかは読む人が本文で決める |
+| **まとめた本文の部分が、機能 1 件の本文と同じ形か** | 部分の頭の機能の印の行で分けるだけ。同じ Issue の部分は、作り直す範囲の行に部分ごとに（機能の id を添えて）出る |
 | **本文を手で直した Issue** | 本文は手で直さない決まり（`handoff-issue.md`）。直されていれば、読めた分だけを引く |
 """
 
@@ -80,6 +83,9 @@ AFFECTS_LIST = re.compile(r"#[1-9][0-9]*(?:, #[1-9][0-9]*)*")
 
 HANDOFF_PREFIX = scaffold.HANDOFF_MARKER.split(": v", 1)[0] + ": v"  # 前の形（v2・v1）も読む
 FEATURE = re.compile(re.escape(scaffold.FEATURE_MARKER).replace(r"\{\}", r"(F-[0-9]+)"))
+# まとめた本文の印（2 行目）と、部分の頭の機能の印の行——印の定数は `scaffold.py` のものを読む（写さない）
+BUNDLE = re.compile(re.escape(scaffold.BUNDLE_MARKER).replace(r"\{\}", r"F-[0-9]+(?:・F-[0-9]+)+"))
+FEATURE_LINE = re.compile("^" + FEATURE.pattern + "$", re.M)
 REMOVAL = re.compile(re.escape(scaffold.CHANGE_MARKER).replace(r"\{\}", scaffold.REMOVE, 1).replace(r"\{\}", r"[^ >]*", 1))
 ROW = re.compile(r"^\| `([^`]+)` \|.*\| ([^|]*) \|$")
 QA_ROW = re.compile(r"^\| ([QD]-[^ |]+) \|")
@@ -108,11 +114,23 @@ def is_number(text: str) -> bool:
     return bool(qa.NUMBER.fullmatch(text) or qa.is_internal_number(text))
 
 
-class Handoff:
-    """spec-loop から渡した Issue 1 件の、Q&A への依存。"""
+def parts(body: str) -> list[str]:
+    """機能ごとの部分。まとめた本文（#876。2 行目が `scaffold.BUNDLE_MARKER` の印）なら機能の印の行ごとに分け、そうでなければ本文 1 つ。
 
-    def __init__(self, issue: dict) -> None:
-        body = issue["body"]
+    部分は機能 1 件の本文から 1 行目を外したもので、同じ節を持つ（`references/handoff-issue.md` の「まとめた本文」）。
+    """
+    lines = body.splitlines()
+    if len(lines) < 2 or not BUNDLE.fullmatch(lines[1]):
+        return [body]
+    starts = [m.start() for m in FEATURE_LINE.finditer(body)]
+    return [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])] or [body]
+
+
+class Handoff:
+    """spec-loop から渡した Issue の、機能 1 件分（まとめた本文なら部分 1 つ）の Q&A への依存。"""
+
+    def __init__(self, issue: dict, body: str | None = None) -> None:
+        body = issue["body"] if body is None else body
         found = FEATURE.search(body)
         self.issue = issue
         self.feature = found.group(1) if found else "?"
@@ -267,7 +285,8 @@ def main(argv: list[str]) -> int:
         print(f"{exc}。判定していない", file=sys.stderr)
         return 2
     # 撤去の Issue は作り直す範囲に数えない——作るものが無い（2 パス目の指摘）
-    handoffs = [Handoff(i) for i in issues if i["body"].startswith(HANDOFF_PREFIX) and not REMOVAL.search(i["body"])]
+    handoffs = [Handoff(i, part) for i in issues if i["body"].startswith(HANDOFF_PREFIX) and not REMOVAL.search(i["body"])
+                for part in parts(i["body"])]
     decisions = [Decision(i) for i in issues if is_decision(i)]
     if not keys:
         for line in ledger(handoffs, decisions):

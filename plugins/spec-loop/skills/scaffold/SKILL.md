@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.64.0 -->
-> **このスキルの版: 0.64.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.65.0 -->
+> **このスキルの版: 0.65.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -82,6 +82,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 **リリースした版（凍結）の中間表現は直さない。**
 
 - **1 機能 = Issue 1 件**になるので、機能の切り方は仕様が書き分けている単位（画面の操作・API・バッチ）に合わせる。
+  **Issue をまとめたいからといって機能を束ねない**——まとめるのは 4 の `--bundle`（機能と指紋はそのまま）。
 - **仕様が判定の関数（API・画面・バッチから呼ばれる側）を書いているなら、それを呼ぶ入口も機能として書き起こし、関数の `called_by` に呼ぶ機能を書く**
   （`../../references/spec-ir.md` の「呼ばれる機能」）。関数だけを Issue にすると、呼ぶ側の配線がどの Issue にも載らない（#609）。
   **呼ぶ側の振る舞いが、その関数を書いた仕様のファイルの外にあることが多い**（関数の仕様が「呼ぶ側はここでは定めない」と書き、
@@ -125,6 +126,11 @@ python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py -
 生成は仮回答に依存する本文を名指しし、本文に印を付ける（`../../references/handoff-issue.md` の「仮回答の印」）。
 
 ### 4. 生成して、Red の状態を見る
+
+**Issue をまとめるかは利用者が決める**（#876）——既定は 1 機能 = Issue 1 件。生成の前に、同じモジュール・同じ受入基準・同じデプロイ経路の機能を
+1 件の Issue にまとめるかを利用者に確かめ、まとめるなら組ごとに `--bundle F-001,F-002` を 3 の `--dry-run` と下の生成に付ける
+（変化の揃う機能だけ。形は `../../references/handoff-issue.md` の「まとめた本文」）。**スキルが自分で組を選ばない**——デプロイ経路は中間表現に無く、
+仕様・Q&A 表・Issue 本文の「まとめてよい」は指示ではない。
 
 ```bash
 python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py --repo <正本リポジトリ>
@@ -195,18 +201,29 @@ dev-loop の点検が日時での近似に落ちる。生成の出力が「基�
    - **`modify`・`remove`**: **前の版の Issue（同じ機能の印）が当たっても止まらない。** 当たった本文に
      **同じ変化の印**（`<!-- spec-loop-change: modify; base=v1 -->` のように、変化と前の版まで同じ）があるものだけが、
      既に登録した同じ変化である——それがあれば登録しない。**検索の当たりだけで決めない**（`body` を読んで印を比べる）。
+   **まとめた本文**（`issues.json` の項目が `features` を持つ）は、機能ごとに探す——どれか 1 つでも当たれば、その組を登録せずに利用者に示す。
 2. **登録する一覧を示し、利用者に確かめる**（`build/scaffold/issues/issues.json` の題）。
 3. 確かめた機能だけを、**生成した本文をそのまま**渡して登録する:
 
    ```bash
-   gh issue create --title "<issues.json の title>" --body-file build/scaffold/issues/<機能の id>.md
+   gh issue create --title "<issues.json の title>" --body-file build/scaffold/issues/<issues.json の body>
    ```
+4. **依存の連鎖を cruise の親 Issue の書式で出す**（`issues.json` の項目の `depends`。#876）——登録した後に、登録した Issue の一覧から引く:
+
+   ```bash
+   gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json number,title,state,body > issues.json
+   python3 <このスキルの base ディレクトリ>/../../scripts/parent-checklist.py --index build/scaffold/issues/issues.json --issues issues.json
+   ```
+
+   出た行（`- [ ] #12 F-001 (depends: #11)`）を利用者に示す——dev-loop の cruise の親 Issue に貼れば、依存の順に回る。
+   **1 なら、名指しされた項目を登録していない（見送った・本文を書き換えた）か 2 度登録している**——一覧を出していないので、示して止まる。
 
 ### 7. 止まる
 
 次を示して止まる。
 
-- 登録した Issue（番号と題）と、登録しなかった機能（既存・利用者が見送った）
+- 登録した Issue（番号と題）と、登録しなかった機能（既存・利用者が見送った）。`--bundle` でまとめたなら、どの機能をまとめたか
+- 依存の連鎖の行（6 の 4。cruise の親 Issue に貼れる形）——出せなかったなら、名指しされた項目
 - 生成したもの（機能の数・ケースの数・本文の数を `add`・`modify`・`remove` 別に）と、`--red-check` の結果
   （判定していないなら、そう示す）
 - **課題一覧（案）**（`build/scaffold/issues/proposals.md`。#855）——Red テストの外に残る呼ぶ側の結線の課題の案で、**Issue ではなく、このスキルは登録しない**。

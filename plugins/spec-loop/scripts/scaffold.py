@@ -2,11 +2,13 @@
 """確定した仕様の中間表現（`spec_ir.json`）から、dev-loop に渡すものを作る。
 
 usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional]
+                           [--bundle F-001,F-002]...
 
 作るもの（置き場所の正は `references/tree.md`）:
 
 - `scaffold/openapi.json`・`scaffold/types.py`・`scaffold/tests/test_<機能>.py`（Red テスト）・`scaffold/perf/perf_<機能>.py`（性能テスト。`nfr` を持つ機能だけ）——**commit する契約**
-- `build/scaffold/issues/<機能の id>.md` と `issues.json`——**Issue の本文**（登録はスクリプトの外。`gh` を呼ばない）
+- `build/scaffold/issues/<機能の id>.md` と `issues.json`——**Issue の本文**（登録はスクリプトの外。`gh` を呼ばない）。`--bundle` でまとめた機能は
+  `bundle-<機能の id>-<機能の id>.md` の 1 件（下の「まとめた本文」）
 - `build/scaffold/issues/proposals.md`——**課題一覧（案）**（#855。Issue の本文ではない。登録しない——下の「呼ぶ側の分岐」）
 
 **形の正は `references/spec-ir.md`（中間表現）と `references/handoff-issue.md`（Issue の本文）である**
@@ -70,6 +72,15 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 旗は全部のモード（`--check`・`--dry-run`・`--red-check`）で受け付ける。作り直す範囲は、登録した本文から同梱の `rebuild-scope.py` で引く
 （決まりの正は `references/handoff-issue.md` の「仮回答の印」）。
 
+**まとめた本文（`--bundle`。#876）**: 既定は **1 機能の変化 = Issue 1 件**。`--bundle F-001,F-002`（繰り返せる）で名指しした機能を 1 件の本文にまとめる——
+1 行目は同じ handoff の印、2 行目にまとめた印、機能のチェックリストに続けて、**機能 1 件の本文から 1 行目を外した部分**を `---` の行で区切って並べる
+（部分ごとに印・節・指紋・sha256 が残る）。`issues.json` の項目は `feature` の代わりに `features` を持つ。**名指しした機能が、この版で本文を作る機能でない・
+変化（追加・変更・撤去）が揃わない・1 件だけ・重複・まとめると依存が循環するなら 2**（引数の誤り）。同じモジュール・同じデプロイ経路かは見ない——
+中間表現に無く、選ぶのは scaffold を回す人（決まりの正は `references/handoff-issue.md` の「まとめた本文」）。
+**依存の連鎖**: `issues.json` の項目は、依存があるときだけ `depends`（依存先の機能の id）を持つ——呼ぶ機能（`called_by` に挙がった入口）の Issue は、
+呼ばれる機能の Issue に依存する。番号は登録の後にしか無いので、cruise の親 Issue の書式（`- [ ] #N (depends: #M)`）で出すのは同梱の
+`parent-checklist.py`（登録した Issue の一覧から引く）。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -105,6 +116,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
   **実装が無い**（どのテストも「未実装」で落ちる）なら、期待が全部失敗のとき（v1・追加だけ）は判定でき、
   そうでなければ**回帰を判定していない**（2）。テストを書き換えない・何も書かない。
 - `--provisional`: 上の「仮回答」。利用者がそう決めたときだけ付ける。
+- `--bundle F-001,F-002`: 上の「まとめた本文」。書く生成と `--dry-run` でだけ使える（`--check`・`--red-check` は本文を作らない）。
 - `--in-progress`: `--red-check` と一緒にだけ使う。**作り直しの経路**（この版の Issue を登録し、実装が始まっている）で、
   追加・変更のケースが作業中の版の期待をもう満たしていても止めない。
 
@@ -114,7 +126,8 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 - 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現（前の版のものを含む）が決まりに
   反する（全部を 1 行ずつ出す）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
-- 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto` を含む）・`docs/` が無い／版が 1 つも無い／
+- 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
+  まとめ方の誤り（上の「まとめた本文」）・`--check`・`--red-check` との組み合わせを含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
   予期しない失敗（書き込みの失敗・128KB を超えるセルの `csv.Error` を含む）。書く生成では前の Issue の本文は消す。
@@ -140,6 +153,8 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 | **タグを取らずに履歴だけ全部取った clone で、前の版が凍結しているか**（`--no-tags`） | 浅くないので、タグが無いことと見分けられない（`check-frozen.py` と同じ）。凍結していないと読み、崩れた前の版で止まる |
 | **基準コミットが、仕様を書いた人の見ていた既存のシステムと同じか** | 書くのは生成した時点の HEAD。作業ツリーの commit していない変更は入らず、仕様を書いてから生成までに入ったコミットとも見分けない |
 | **基準コミットから後の変化が仕様の前提を崩したか** | 本文に時点を残すだけ。点検は dev-loop の周の頭（dev-loop の `references/spec-gap.md`） |
+| **`--bundle` でまとめた機能が、同じモジュール・同じ受入基準・同じデプロイ経路か** | 中間表現はデプロイ経路を持たず、`impl_module` は全体で 1 つ。機械が見るのは変化が揃うことだけで、選ぶのは scaffold を回す人 |
+| **撤去の順（呼ぶ側を変えてから撤去する）** | `depends` は今の版の `called_by` から作る。撤去の機能は前の版の `called_by` しか持たないので、依存に出さない |
 | **もう緑の追加・変更が、中間表現の書き起こしの誤りか** | 前の版の実装がもう満たすケースは名指しで知らせるだけ（0）。Red テストがその変化を判別しないのが誤りかは意味の問題で、`scaffold` スキルの手順 4 で利用者に示す |
 """
 
@@ -223,6 +238,11 @@ BASE_UNRECORDED = "記録していない"
 # （`scripts/test-scaffold.py`・`scripts/test-rebuild-scope.py` が突き合わせる）
 PROVISIONAL_LINE = "- 仮回答: "
 PROVISIONAL_CELL = "（暫定）"
+# まとめた本文（#876。`references/handoff-issue.md` の「まとめた本文」の写し）——2 行目の印・ファイル名・部分の区切り。
+# dev-loop の `spec-gap.md` も印をそのまま持つ（`scripts/test-scaffold.py` が突き合わせる）
+BUNDLE_MARKER = "<!-- spec-loop-bundle: {} -->"
+BUNDLE_FILE = "bundle-{}.md"
+BUNDLE_RULE = "---"
 # コミットの名前（SHA-1 の 40 桁か SHA-256 の 64 桁）
 COMMIT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
@@ -1918,18 +1938,164 @@ def render_contract(loaded: Loaded) -> dict[str, str]:
     return contract
 
 
-def render_issues(changes: list[Change], loaded: Loaded, contract: dict[str, str], before: Before,
-                  base: str) -> dict[str, str]:
-    """{Issue の本文のファイル名: 中身} を返す。本文は変わった機能だけ。`base` は基準コミットの行（`base_commit`）。"""
-    impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
-    issues, index = {}, []
+def parse_bundles(values: list[str]) -> tuple[list[list[str]], str | None]:
+    """`--bundle` の値（`F-001,F-002`）を機能の id の組に分ける（#876）。形の誤りなら ([], 理由)。組の中は id の順に並べる。"""
+    bundles: list[list[str]] = []
+    seen: set[str] = set()
+    for value in values:
+        ids = value.split(",")
+        if not all(FEATURE_ID.fullmatch(i) for i in ids):
+            return [], f"--bundle {value!r}: 機能の id（F- に 3 桁以上の数字）をカンマで区切って並べる（空白を入れない）"
+        if len(ids) < 2:
+            return [], f"--bundle {value!r}: まとめるには機能を 2 件以上並べる"
+        if len(set(ids)) != len(ids) or seen & set(ids):
+            return [], f"--bundle {value!r}: 同じ機能を 2 度並べている（1 つの機能は 1 つの組にだけ入れる）"
+        seen |= set(ids)
+        bundles.append(sorted(ids))
+    return sorted(bundles), None
+
+
+def group_changes(changes: list[Change], bundles: list[list[str]]) -> tuple[list[list[Change]], list[str]]:
+    """変化を Issue 1 件ずつの組に分ける（#876）。**`--bundle` が無ければ 1 機能 = 1 件**（既定）。
+
+    まとめてよいのは、この版で本文を作る機能で、変化（追加・変更・撤去）が揃うものだけ——受入基準の形が変化で決まるので。
+    同じモジュール・同じデプロイ経路かは中間表現から決められず、選ぶのは scaffold を回す人である（見ない）。
+    まとめた結果の依存（`dependencies`）が循環すれば使えない——cruise の親 Issue が拒む。(組, 問題) を返す。
+    """
+    by_id = {c.feature["id"]: c for c in changes}
+    problems = []
+    for ids in bundles:
+        absent = [i for i in ids if i not in by_id]
+        if absent:
+            problems.append(f"--bundle {','.join(ids)}: {'・'.join(absent)} はこの版で本文を作る機能でない（中間表現に無いか、"
+                            "前の版から変わっていない）")
+        elif len({by_id[i].kind for i in ids}) != 1:
+            kinds = "・".join(f"{i} は {by_id[i].kind}" for i in ids)
+            problems.append(f"--bundle {','.join(ids)}: 変化が揃わない（{kinds}）——受入基準の形が違うのでまとめない")
+    if problems:
+        return [], problems
+    bundled = {i: ids for ids in bundles for i in ids}
+    groups, done = [], set()
     for change in changes:
         fid = change.feature["id"]
+        if fid not in done:
+            ids = bundled.get(fid, [fid])
+            groups.append([by_id[i] for i in ids])
+            done |= set(ids)
+    order = cycle_in(groups, dependencies(groups))
+    if order:
+        problems.append(f"--bundle でまとめると依存が循環する（{' → '.join(order)}）——呼ぶ機能と呼ばれる機能を、別々の組に"
+                        "互い違いに入れている。組み方を変える")
+    return groups, problems
+
+
+def dependencies(groups: list[list[Change]]) -> list[list[str]]:
+    """組ごとの依存先の機能の id（#876）——**呼ぶ機能（入口）の組は、呼ばれる機能（関数）の組に依存する**（`called_by`）。
+
+    同じ組の中の依存と、撤去の機能（前の版の `called_by` しか持たない）は数えない。この版で本文を作らない機能への依存も数えない
+    （その機能は前の版の Issue で作ってある）。
+    """
+    owner = {c.feature["id"]: index for index, group in enumerate(groups) for c in group}
+    found: list[set[str]] = [set() for _ in groups]
+    for index, group in enumerate(groups):
+        for change in group:
+            if change.kind == REMOVE:
+                continue
+            for caller in change.feature.get(CALLED_BY, []):
+                at = owner.get(caller)
+                if at is not None and at != index and groups[at][0].kind != REMOVE:
+                    found[at].add(change.feature["id"])
+    return [sorted(ids) for ids in found]
+
+
+def cycle_in(groups: list[list[Change]], depends: list[list[str]]) -> list[str]:
+    """組の依存の循環を、組の頭の機能の id の並びで返す（無ければ空）。"""
+    owner = {c.feature["id"]: index for index, group in enumerate(groups) for c in group}
+    edges = [sorted({owner[fid] for fid in ids}) for ids in depends]
+    state: dict[int, int] = {}
+    path: list[int] = []
+
+    def visit(node: int) -> list[int]:
+        state[node] = 1
+        path.append(node)
+        for nxt in edges[node]:
+            if state.get(nxt) == 1:
+                return path[path.index(nxt):] + [nxt]
+            if nxt not in state and (loop := visit(nxt)):
+                return loop
+        state[node] = 2
+        path.pop()
+        return []
+
+    for node in range(len(groups)):
+        if node not in state and (loop := visit(node)):
+            return ["・".join(c.feature["id"] for c in groups[i]) for i in loop]
+    return []
+
+
+def bundle_title(group: list[Change], number: int) -> str:
+    title = "・".join(c.feature["id"] for c in group) + ": " + "／".join(c.feature["title"] for c in group)
+    if group[0].kind == MODIFY:
+        return f"{title}（v{number} で変更）"
+    if group[0].kind == REMOVE:
+        return f"{title}（v{number} で撤去）"
+    return title
+
+
+def bundle_body(group: list[Change], bodies: dict[str, str]) -> str:
+    """まとめた本文（#876。`references/handoff-issue.md` の「まとめた本文」）。
+
+    **部分は機能 1 件の本文から 1 行目（handoff の印）を外したもの**——印・節・機能の指紋・Red テストの sha256 がそのまま残るので、
+    読む側（dev-loop の `spec-gap.md`・`rebuild-scope.py`）は部分ごとに機能 1 件の読み方を当てる。
+    """
+    ids = [c.feature["id"] for c in group]
+    head = [
+        HANDOFF_MARKER,
+        BUNDLE_MARKER.format("・".join(ids)),
+        "",
+        "この Issue は spec-loop の `scaffold` が、確定した仕様から生成した。**本文を手で直さない。**",
+        f"scaffold を回した人が、{len(ids)} 件の機能（変化はどれも `{group[0].kind}`）を 1 件にまとめた（`scaffold.py --bundle`）。"
+        f"下に機能ごとの部分が `{BUNDLE_RULE}` の行で区切って並び、どの部分も機能 1 件の本文から 1 行目の印を外したもの——"
+        "部分ごとに印・節・機能の指紋・Red テストの sha256 を持つ。**部分ごとに読み、確かめる。受入基準は、全部の部分の受入基準を合わせたものである。**",
+        "",
+    ] + [f"- [ ] `{c.feature['id']}` {cell(c.feature['title'])}" for c in group]
+    return "\n".join(head) + "\n" + "".join(f"\n{BUNDLE_RULE}\n\n{bodies[fid].split(chr(10), 1)[1]}" for fid in ids)
+
+
+def feature_bodies(changes: list[Change], loaded: Loaded, contract: dict[str, str], before: Before, base: str) -> dict[str, str]:
+    """{機能の id: 機能 1 件の本文}。`base` は基準コミットの行（`base_commit`）。"""
+    return {c.feature["id"]: issue_body(c, loaded, contract, before, base) for c in changes}
+
+
+def render_issues(changes: list[Change], groups: list[list[Change]], bodies: dict[str, str], loaded: Loaded,
+                  contract: dict[str, str], before: Before) -> dict[str, str]:
+    """{Issue の本文のファイル名: 中身} を返す。本文は変わった機能だけで、`groups` の組 1 つが Issue 1 件（既定は 1 機能 = 1 件）。
+
+    `issues.json` の項目は、まとめた組なら `feature` の代わりに `features` を持ち、依存があるときだけ `depends` を持つ（#876）。
+    """
+    impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
+    issues, index = {}, []
+
+    def red(change: Change) -> list[str]:
         rows, _ = case_changes(change, impl_now, before.impl_module)
-        issues[f"{fid}.md"] = issue_body(change, loaded, contract, before, base)
-        index.append({"feature": fid, "title": issue_title(change, loaded.number), "change": change.kind,
-                      "body": f"{fid}.md",
-                      "red": [] if change.kind == REMOVE else [test_name(change.feature, c) for c in red_cases(rows)]})
+        return [] if change.kind == REMOVE else [test_name(change.feature, c) for c in red_cases(rows)]
+
+    for group, depends in zip(groups, dependencies(groups)):
+        if len(group) == 1:
+            change = group[0]
+            fid = change.feature["id"]
+            issues[f"{fid}.md"] = bodies[fid]
+            entry = {"feature": fid, "title": issue_title(change, loaded.number), "change": change.kind,
+                     "body": f"{fid}.md", "red": red(change)}
+        else:
+            ids = [c.feature["id"] for c in group]
+            name = BUNDLE_FILE.format("-".join(ids))
+            issues[name] = bundle_body(group, bodies)
+            entry = {"features": ids, "title": bundle_title(group, loaded.number), "change": group[0].kind,
+                     "body": name, "red": [test for c in group for test in red(c)]}
+        if depends:
+            entry["depends"] = depends
+        index.append(entry)
     issues["issues.json"] = json.dumps(index, ensure_ascii=False, indent=2) + "\n"
     issues[PROPOSALS] = proposals(changes, loaded, contract)
     return issues
@@ -2150,10 +2316,19 @@ def main(argv: list[str]) -> int:
     mode.add_argument("--red-check", action="store_true")
     parser.add_argument("--in-progress", action="store_true")
     parser.add_argument("--provisional", action="store_true")
+    parser.add_argument("--bundle", action="append", default=[])
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
+    if args.bundle and (args.check or args.red_check):
+        # 本文を作らないモードでは、まとめ方を見る相手が無い——受け付けると、何も確かめていないのに通ったと読める
+        print("--bundle は書く生成か --dry-run と一緒にだけ使う（--check・--red-check は Issue の本文を作らない）", file=sys.stderr)
+        return 2
+    args.bundle, problem = parse_bundles(args.bundle)
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
     repo = Path(args.repo)
     writing = not (args.check or args.dry_run or args.red_check)
     if args.upto is not None:
@@ -2235,9 +2410,14 @@ def run(repo: Path, args, writing: bool) -> int:
             print(f"{OUT_DIR}/ が古い（{len(problems)} 件）。作り直してから Red の状態を見る", file=sys.stderr)
             return 1
         return red_check(repo, loaded, changes, before, args.in_progress)
+    groups, problems = group_changes(changes, args.bundle)
+    if problems:
+        # 引数の誤り（2）——まとめ方は中間表現ではなく引数が決める（#876）
+        return fail(repo, writing, 2, problems + ["--bundle のまとめ方が使えない。生成しない（判定していない）"])
     base, unrecorded = base_commit(repo)
-    issues = render_issues(changes, loaded, contract, before, base)
-    marked = sorted(c.feature["id"] for c in changes if PROVISIONAL_LINE in issues[f"{c.feature['id']}.md"])
+    bodies = feature_bodies(changes, loaded, contract, before, base)
+    issues = render_issues(changes, groups, bodies, loaded, contract, before)
+    marked = sorted(fid for fid, body in bodies.items() if PROVISIONAL_LINE in body)
     if marked:
         # 止めない（#875）——`--provisional` で通した仮回答に依存する本文を名指しする
         print(f"仮回答（{qa.PROVISIONAL}）に依存する本文 {len(marked)} 件（{'・'.join(marked)}）——本文の `## 仕様` の"
@@ -2250,6 +2430,11 @@ def run(repo: Path, args, writing: bool) -> int:
     summary = (f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）。"
                f"v{loaded.number - 1} から変わっていない機能の本文は作らない" if loaded.number > 1 and before.trusted else
                f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）")
+    if len(groups) != len(changes):
+        # 件数は機能の変化で数える（既定と同じ）。まとめたなら、Issue にする本文の数を足して言う（#876）
+        merged_groups = [g for g in groups if len(g) > 1]
+        summary += (f"。--bundle で {sum(len(g) for g in merged_groups)} 件の機能を {len(merged_groups)} 件の本文にまとめ、"
+                    f"登録する本文は {len(groups)} 件")
     if args.dry_run:
         print(f"作れる（{summary}）。何も書いていない")
         return 0
