@@ -122,6 +122,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       メインの作業ツリーの `.claude/plans/spec-autopilot-v<版>.json` に読み書きする（#848。`status` は止まった・済んだを終了コードで返し、
       `progress` は進捗の欄だけを出す——時刻や理由の書き換えを前進と読まない（#790）。**メインの作業ツリーの決め方は dev-loop の `ledger.py` の写し**で、
       テストが突き合わせる。書式と守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-ledger.py`）
+    - `skills/autopilot/` - autopilot の**入口**（#849。`/spec-loop:autopilot <版> [--lines]`）。1 回の起動で台帳の次の 1 単位（仕様レビューの周の 1 段か feasibility の 1 回）だけを進める。
+      **`AskUserQuestion` は台帳が無いときの起動時の確認でだけ使い**、各起動は線に従う。**`stopped`・`done` なら何もせず台帳も書き換えない**。素のスキルとして張れないのは同上
+    - `scripts/autopilot-check.py` - autopilot の**線の検査**（項目と値の一覧はここが正）と、線から決まる周で使う操作の**権限の点検**（#849）。
+      **設定の層と許可の判定は dev-loop の `check-unattended-env.py` の写し**で、テストが突き合わせる。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-check.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -281,6 +285,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-check-signoff.py` と同じく**一時ディレクトリに本物の git リポジトリとタグを作って**当てる
   - `test-autopilot-ledger.py` - spec-loop の autopilot の台帳（#848）の回帰テスト（変異テストを含む）。
     **一時ディレクトリに本物の git リポジトリと worktree を作って**当て、本体の時刻を差し替える。**`main_worktree` の写しを dev-loop の `ledger.py` と突き合わせる**
+  - `test-autopilot-check.py` - spec-loop の autopilot の線と権限の点検（#849）の回帰テスト（変異テストを含む）。
+    **`HOME` をテンポラリにし `CLAUDE_CONFIG_DIR` を外し、flag と managed の層をテンポラリのファイルで渡す**——実機の設定を読まない。**許可の判定の写しを dev-loop の `check-unattended-env.py` と突き合わせる**
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
     **生成した Red テストを実際に `unittest` で走らせ、実装が無ければケースの数だけ失敗し、
     正しい実装で緑になる（陽性対照）**ことを見る。**dev-loop の `references/spec-gap.md` の印と節の写しも突き合わせる**
