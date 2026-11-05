@@ -6,6 +6,7 @@
 
 **スキルは `req-loop`（要求確定）・`spec-review`（仕様レビュー）・`feasibility`（実現性とコスト）・
 `proposal`（提案書）・`scaffold`（dev-loop への引き渡し）の 5 本です**（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+**それらを利用者の不在のあいだに 1 単位ずつ回す入口 `autopilot` も持ちます**（下の「`autopilot` — 不在のあいだに回す入口」）。
 
 設計の背景（なぜ dev-loop と分けるか・なぜ 1 つのプラグインにまとめるか）は記事を参照:
 <https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/>
@@ -36,12 +37,15 @@
 | `scripts/diff-versions.py` | ある版が前の版から何を足し・変え・消したかを、前の版の時点の全体と比べて出す（標準ライブラリのみ） |
 | `scripts/check-frozen.py` | リリースした版（`release-v<n>` のタグ）の `docs/v<n>/` が直されていないかの確かめ（標準ライブラリと `git`） |
 | `templates/mkdocs/` | 正本リポジトリを MkDocs で閲覧するための雛形（設定・Q&A 表を CSV から描くフック・表示用のページ） |
+| `scripts/autopilot-ledger.py` | autopilot の台帳（版ごとの `.claude/plans/spec-autopilot-v<版>.json`）の読み書き（標準ライブラリと `git`） |
+| `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検（標準ライブラリと `git`） |
 | `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
 | `skills/feasibility/` | 実現性・コストのループを 1 回分進めるスキル（見積りを書く側） |
 | `skills/proposal/` | 関門を照合して提案書を作るスキル |
 | `skills/scaffold/` | 確定した仕様を Red テストと Issue に変え、dev-loop に渡すスキル |
+| `skills/autopilot/` | 仕様レビューと実現性・コストのループを、利用者の不在のあいだに 1 単位ずつ進める入口 |
 | `agents/` | 仕様を批判する 3 つの判定役（`red-team`・`domain-checker`・`formal-checker`）と見積りの検証役（`estimate-checker`）。**書き込みツールを持たない** |
 
 **データの決まりは `references/` だけに書きます。** このファイルも、スキルも、公開ページも、
@@ -123,6 +127,16 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正
 この版をもう実装し始めた作り直しの経路では `--in-progress` を付けます。
 実装を置くモジュールは、中間表現の `impl_module` に書きます（`references/spec-ir.md`）。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
+
+## `autopilot` — 不在のあいだに回す入口
+
+`/spec-loop:autopilot <版>` で呼びます。**1 回の起動で、台帳の次の 1 単位**（仕様レビューの周の 1 段か、実現性とコストの 1 回）**だけを進めて終えます**——
+`claude -p` で同じ引数を起動し直す外側のループ（[#850](https://github.com/hdknr/claude-code-setup/issues/850)）を前提にします。
+台帳が無い起動では、上限に達したときに続けてよい周の番号・`判断が要る` の質問を推奨で暫定に採るか・commit とマージをどこまでするか・止まる地点を利用者に確かめて台帳に残し、
+周で使う操作の権限を点検して示します（単位は進めません）。各起動は線に従って訊かず、線に無い判断では台帳を `stopped` にして止まります。
+**サインオフのタグ・scaffold・Issue の登録はしません。**
+
+手順と守ることは [`skills/autopilot/SKILL.md`](skills/autopilot/SKILL.md) を、台帳の形と線の一覧は `scripts/autopilot-ledger.py`・`scripts/autopilot-check.py` の docstring を正とします。
 
 ## Q&A 表を検査する
 

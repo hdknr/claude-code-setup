@@ -122,6 +122,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       メインの作業ツリーの `.claude/plans/spec-autopilot-v<版>.json` に読み書きする（#848。`status` は止まった・済んだを終了コードで返し、
       `progress` は進捗の欄だけを出す——時刻や理由の書き換えを前進と読まない（#790）。**メインの作業ツリーの決め方は dev-loop の `ledger.py` の写し**で、
       テストが突き合わせる。書式と守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-ledger.py`）
+    - `skills/autopilot/` - autopilot の**入口**（#849。`/spec-loop:autopilot <版> [--lines]`）。1 回の起動で台帳の次の 1 単位（仕様レビューの周の 1 段か feasibility の 1 回）だけを進める。
+      **`AskUserQuestion` は台帳が無いときの起動時の確認でだけ使い**、各起動は線に従う。**`stopped`・`done` なら何もせず台帳も書き換えない**。素のスキルとして張れないのは同上
+    - `scripts/autopilot-check.py` - autopilot の**線の検査**（項目と値の一覧はここが正）と、線から決まる周で使う操作の**権限の点検**（#849）。
+      **設定の層と許可の判定は dev-loop の `check-unattended-env.py` の写し**で、テストが突き合わせる。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-check.py`）
     - `scripts/autopilot-loop.py` - autopilot を `claude -p` で**外から繰り返し起動するループ**（#850）。台帳の `status` が `running` のときだけ起こし、
       `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗で止まって通知する。
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
@@ -285,6 +289,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-check-signoff.py` と同じく**一時ディレクトリに本物の git リポジトリとタグを作って**当てる
   - `test-autopilot-ledger.py` - spec-loop の autopilot の台帳（#848）の回帰テスト（変異テストを含む）。
     **一時ディレクトリに本物の git リポジトリと worktree を作って**当て、本体の時刻を差し替える。**`main_worktree` の写しを dev-loop の `ledger.py` と突き合わせる**
+  - `test-autopilot-check.py` - spec-loop の autopilot の線と権限の点検（#849）の回帰テスト（変異テストを含む）。
+    **`HOME` をテンポラリにし `CLAUDE_CONFIG_DIR` を外し、flag と managed の層をテンポラリのファイルで渡す**——実機の設定を読まない。**許可の判定の写しを dev-loop の `check-unattended-env.py` と突き合わせる**
   - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する）。
     **偽の `claude`・`osascript`・`security`・`uname` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**。台帳は本物の `autopilot-ledger.py` で作り、
     長期トークンは本物の起動口（`launch-with-long-token.sh`）を偽の `security` で回す。上限の待ちは眠らずに秒数を記録する
