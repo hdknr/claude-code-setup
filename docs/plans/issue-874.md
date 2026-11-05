@@ -83,7 +83,9 @@ main へのマージで GitHub Pages の再ビルド（`docs/`）とプラグイ
 
 - 周の在り処: ブランチ `issue/874-spec-base-commit`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-874`・起点 `ef60f789`・base `origin/main` → `ef60f789a5e96a1bc309af613b07ada001d8f368`
 - 割り目（手順 4 の完了時）: 割らない（cruise の周。訊かない）
-- 交絡: （未）
+- 1 パス目の指摘対応の起点: `618d9985914b553fc49c3b409f45af2fea7a2177`（1 パス目の関門に渡した時点の HEAD）
+- 1 パス目: Verifier（sonnet・dev-loop:dev-loop-verifier）・`/code-review` を起動（結果は下の採否の表）
+- 交絡: 実験は test-scaffold.py の試料と変異（陽性対照: 変異ごとに壊す箇所が 1 回現れることを先に見る。基準コミットの試料は git でない・コミットが無い・git が無いの 3 形で、記録した側と記録しない側の両方を見る）
 
 ## 既知の限界・決着済みの論点
 
