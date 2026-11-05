@@ -57,14 +57,30 @@ main へのマージでプラグインの配布（spec-loop の版）。公開�
 - 周の在り処: ブランチ `issue/847-spec-loop-foreground-checkers`、worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-847`、
   起点 `f447c55b`、base は `origin/main`（refs/remotes/origin/HEAD）を解決した `f447c55b581218144cbeef1ff62954ec533c7d51`
 - 割り目（手順 4）: 割らない（cruise の周）——このまま続ける
-- Verifier 1 パス目: 未
-- /code-review 1 パス目: 未
+- 1 パス目の指摘対応の起点: `25d8383d`（1 パス目の関門に渡した時点の HEAD）
+- Verifier 1 パス目: 通した（sonnet・`dev-loop:dev-loop-verifier`）。反証 0 件（確認 2 件——R1・R2 と同じ論点）
+- /code-review 1 パス目: 通した（high）。指摘 6 件、直す 2 件（R4・R5）・残課題 4 件。手順 4 への差し戻しなし
+- 割り目（2 パス目の前）: 割らない（cruise の周）——このまま続ける
+- Verifier 2 パス目: 未
+- /code-review 2 パス目: 未
+- 歯止め: `check-all.py`（run-serial 越し）1 回目 59/60（`check-plan-counts.py` が件数の行なしで落ちた——行を足した）、2 回目 60/60 緑
 - 交絡: 実験なし
 
 ## 既知の限界・決着済みの論点
 
 - **起動の形（`-p` かどうか）を確かめる手順は決めない**——#633（cruise `SKILL.md` §4 の 2）と同じ。Issue は「`claude -p` で動いているときは」と条件だけを求めている。
   決めるなら別の周（振り分け: 記録だけ——受入基準を破らず、利用者に見える誤りでも後退でもない）。
+
+### 関門の指摘の採否（1 パス目）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| R1 | （CR・Verifier 確認 1）`-p` で「1 体ずつ」と直列を指定。理由は直列を要求せず、#633 は直列にしていない | 示せない（遅くなるのは推定。報告は欠けない） | 無し | 残課題 |
+| R2 | （CR・Verifier 確認 2 の近縁）`-p` かを判別できないと決まりが効かない。モードに依らない「全部の報告が返るまでターンを閉じない」なら両方で効く | 示せない（`-p` の実走をしていない） | 無し（C は対話の起動を変えないことを求める） | 残課題（既知の限界の決着の理由を補う） |
+| R3 | 前景を選べない環境（サブエージェントの中の `Agent` など）での代わりが無い | 示せない（spec-review を体の中から回した実物は無い） | 無し | 残課題 |
+| R4 | 理由が「ターンが閉じると止められる」と読め、実測（上限まで待ってから止める。`child-process.md` の 20 秒の背景の体は待たれた）より強い | 示せる——`plugins/dev-loop/skills/cruise/references/child-process.md:106`（「10m after the last turn」）と本文の旧文言 | A（理由が事実と違う） | 直す（spec-review・feasibility とも「上限の時間を過ぎて走っていると止められる」に） |
+| R5 | spec-review で、報告を返さなかった判定役の再実行（「守ること」）に決まりが掛かると書いていない（feasibility は書いている） | 示せる——`spec-review/SKILL.md:42`（再実行）と新しい段落が 2 回目・狭いパスだけを名指し | A（2 回目・狭いパス以外の起動に掛からない） | 直す（再実行を名指し） |
+| R6 | 理由の文が cruise と spec-loop 2 本の 3 か所に写しで在る。spec-loop の `references/` に 1 つ置いて指すべき | 示せない（いまは食い違っていない） | 無し | 残課題 |
 
 ## 起票（手順 8）
 
