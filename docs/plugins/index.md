@@ -18,7 +18,7 @@
 | [`cmux`](#cmux) | `/cmux:cmux` | スキル | cmux ウィンドウで GitHub Issue/PR を操作 |
 | [`orca`](#orca) | `/orca:orca` | スキル | Orca の内蔵ブラウザで GitHub Issue/PR を操作 |
 | [`dev-loop`](#dev-loop) | `/dev-loop:dev-loop`<br>`/dev-loop:cruise` | スキル | 1 Issue = 1 周のループ志向開発と、依存のある複数 Issue を親 Issue の一覧から回す入口（オートクルーズ） |
-| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review`<br>`/spec-loop:feasibility`<br>`/spec-loop:proposal`<br>`/spec-loop:scaffold` | スキル | dev-loop の手前にある要求側のループ（要求確定・仕様レビュー・実現性とコスト・提案書）と、dev-loop への引き渡し |
+| [`spec-loop`](#spec-loop) | `/spec-loop:req-loop`<br>`/spec-loop:spec-review`<br>`/spec-loop:feasibility`<br>`/spec-loop:proposal`<br>`/spec-loop:scaffold`<br>`/spec-loop:autopilot` | スキル | dev-loop の手前にある要求側のループ（要求確定・仕様レビュー・実現性とコスト・提案書）と、dev-loop への引き渡し |
 
 !!! warning "呼び出しは `プラグイン名:名前`"
     プラグインが提供するスキル**とコマンド**は、名前の衝突を防ぐため
@@ -590,6 +590,8 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
     スキルは、要求確定のループ **`req-loop`**・仕様レビューのループ **`spec-review`**・
     実現性とコストのループ **`feasibility`**・提案書のループ **`proposal`** と、
     dev-loop への引き渡し **`scaffold`** の 5 本です（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
+    ほかに、仕様レビューと実現性・コストのループを利用者の不在のあいだに 1 単位ずつ回す入口 **`autopilot`** があります
+    （[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/autopilot/SKILL.md)。#849）。
     どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・スケジュールと見積りの列・
     サインオフのタグの命名・バージョンアップの版の重ね合わせ）と、それを検査するスクリプトも入っています
     （版の構成と、旧い構成からの移し方は下の[「正本リポジトリの版と凍結」](#spec-loop-versions)）。
