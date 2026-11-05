@@ -28,6 +28,7 @@
 - `.claude-plugin/marketplace.json` — 版
 - `scripts/test-scaffold.py` — `--provisional` の試料・印・写しの突き合わせ・変異
 - `scripts/test-rebuild-scope.py` — 台帳のスクリプトの回帰テスト（新規。変異を含む）
+- `scripts/test-check-qa-csv.py` — 読む側が `is_provisional` を呼ぶ数（`scaffold.py` は 1 → 4。`--provisional` の判別も `is_provisional` を通す——実装中に `check-all.py` が落として広げた）
 - `scripts/check-all.py` — 新しいテストの収録
 - `.github/workflows/plugins.yml` — 新しいテストのステップ
 - `CLAUDE.md` — プロジェクト構成に新しいスクリプトとテストの行

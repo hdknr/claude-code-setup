@@ -409,7 +409,6 @@ def check_values(where: str, values, fields: dict) -> list[str]:
 
 def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]], provisional: bool = False) -> list[str]:
     """`provisional`（`--provisional`。#875）なら `暫定反映` の行も指してよい——本文に仮回答の印を付けて渡す。"""
-    allowed = (qa.DONE, qa.PROVISIONAL) if provisional else (qa.DONE,)
     if not isinstance(refs, list):
         return [f"{where}: 配列でない"]
     problems = []
@@ -420,8 +419,9 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]], provisi
             problems.append(f"{where}: Q&A の No の形に反する（{no!r}）")
         elif no not in answered:
             problems.append(f"{where}: {no} は Q&A 表に無い")
-        elif (state := answered[no]["状態"].strip()) not in allowed:
-            problems.append(f"{where}: {no} は状態が {state}（{'・'.join(allowed)} でない）")
+        elif (state := answered[no]["状態"].strip()) != qa.DONE and not (provisional and qa.is_provisional(answered[no])):
+            problems.append(f"{where}: {no} は状態が {state}（{qa.DONE}"
+                            + (f"・{qa.PROVISIONAL}" if provisional else "") + " でない）")
     if len(set(map(str, refs))) != len(refs):
         problems.append(f"{where}: Q&A の No が重複している")
     return problems
@@ -1349,12 +1349,12 @@ BROKEN_REMEDY = "references/versions.md の「前の版の時点が崩れてい�
 def unsettled_qa(rendered: dict[str, bytes], provisional: bool = False) -> list[tuple[str, str]]:
     """重ねた全体の Q&A（共有・内部）のうち、状態が `反映済み` でない行の (No, 状態)。
     `provisional`（`--provisional`。#875）なら `暫定反映` の行は数えない——前の版も同じ旗で作れている。"""
-    settled = (qa.DONE, qa.PROVISIONAL) if provisional else (qa.DONE,)
     found = []
     for path in (QA_PATH, INTERNAL_QA_PATH):
         if path in rendered:
             rows = parse_answered(rendered[path].decode("utf-8-sig"))
-            found += [(no, row["状態"].strip()) for no, row in rows.items() if row["状態"].strip() not in settled]
+            found += [(no, row["状態"].strip()) for no, row in rows.items()
+                      if row["状態"].strip() != qa.DONE and not (provisional and qa.is_provisional(row))]
     return found
 
 
