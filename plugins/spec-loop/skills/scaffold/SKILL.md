@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.56.0 -->
-> **このスキルの版: 0.56.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.57.0 -->
+> **このスキルの版: 0.57.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -94,6 +94,9 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 - **範囲の文書（`spec/scope.md`）の「範囲の外」の行のうち、その機能を作る人が作らずにおくべき場面があれば、機能の `out_of_scope` にその行を原文のまま並べる**
   （`../../references/spec-ir.md` の「作らないもの」）——Issue の本文の `## 作らないもの` に写り、dev-loop に「何を作らないか」が届く（#851）。
   **要約・言い換えをしない**（スクリプトが原文のまま在るかを確かめる）。関わる行が無い機能には書かない。
+- **性能の要求の表（`shared/nfr.csv`）の性能の行のうち、その機能に効くもの（仕様がその機能の性質として書いた行）があれば、機能の `nfr` にその行の `No` を並べる**
+  （`../../references/spec-ir.md` の「性能の要求」）——Issue の本文の性能予算に数字が写り、性能テストが作られる（#852）。**効く行が無い機能には書かない**
+  （性能予算は「要求なし」。`../../references/nfr.md` の「既定の原則 — 要求の無い機能は最適化しない」）。表に無い数字を足さない。
 - **既にあるなら、仕様と食い違うところだけを直す。** 機能の `id` とケースの `id` を振り直さない——
   登録済みの Issue と Red テストの名前がずれる。
 
