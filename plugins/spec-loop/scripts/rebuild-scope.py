@@ -85,7 +85,7 @@ HANDOFF_PREFIX = scaffold.HANDOFF_MARKER.split(": v", 1)[0] + ": v"  # 前の形
 FEATURE = re.compile(re.escape(scaffold.FEATURE_MARKER).replace(r"\{\}", r"(F-[0-9]+)"))
 # まとめた本文の印（2 行目）と、部分の頭の機能の印の行——印の定数は `scaffold.py` のものを読む（写さない）
 BUNDLE = re.compile(re.escape(scaffold.BUNDLE_MARKER).replace(r"\{\}", r"F-[0-9]+(?:・F-[0-9]+)+"))
-FEATURE_LINE = re.compile("^" + FEATURE.pattern + "$", re.M)
+FEATURE_LINE = re.compile("^" + FEATURE.pattern + r"\r?$", re.M)
 REMOVAL = re.compile(re.escape(scaffold.CHANGE_MARKER).replace(r"\{\}", scaffold.REMOVE, 1).replace(r"\{\}", r"[^ >]*", 1))
 ROW = re.compile(r"^\| `([^`]+)` \|.*\| ([^|]*) \|$")
 QA_ROW = re.compile(r"^\| ([QD]-[^ |]+) \|")
@@ -119,7 +119,7 @@ def parts(body: str) -> list[str]:
 
     部分は機能 1 件の本文から 1 行目を外したもので、同じ節を持つ（`references/handoff-issue.md` の「まとめた本文」）。
     """
-    lines = body.splitlines()
+    lines = body.splitlines()  # 改行が `\r\n` でも分ける（GitHub が改行を `\r\n` にして返しうる）
     if len(lines) < 2 or not BUNDLE.fullmatch(lines[1]):
         return [body]
     starts = [m.start() for m in FEATURE_LINE.finditer(body)]

@@ -20,6 +20,7 @@
   入力に無い影響する Issue・本文に無い No は名指しして 1（引けたものは出す）
 - 撤去の Issue（変化の印 `remove`）は作り直す範囲に数えない。空の台帳の行は「決まりの形でない」と言う
 - まとめた本文（2 行目が `<!-- spec-loop-bundle: … -->`。#876）は機能の印の行で部分に分け、部分ごとに引く（本物の `scaffold.py --bundle` で作る）
+- まとめた本文の改行が `\r\n` でも部分に分ける
 - 入力の形が違えば 2（どの Issue が違うかを言う）
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
@@ -105,9 +106,9 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
 
 class Case:
     def __init__(self, name: str, args: tuple[str, ...], code: int, has: tuple[str, ...] = (), lacks: tuple[str, ...] = (),
-                 data=None, bundle: bool = False):
+                 data=None, bundle: str = ""):
         self.name, self.args, self.code, self.has, self.lacks, self.data = name, args, code, has, lacks, data
-        self.bundle = bundle  # まとめた本文の Issue だけの入力に当てる（#876）
+        self.bundle = bundle  # まとめた本文の Issue だけの入力（`bundle`・改行を CRLF にした `crlf`）に当てる（#876）
 
 
 CASES = [
@@ -138,7 +139,9 @@ CASES = [
     Case("まとめた本文の部分ごとに引く", ("Q-001",), 0,
          ("Q-001（仮回答——本文に印がある）: 作り直す範囲 2 件",
           "#30 F-001・F-002: 割引額を計算する／注文を取り消せるか [OPEN]（F-001）——受入基準 `F-001-C1`",
-          "#30 F-001・F-002: 割引額を計算する／注文を取り消せるか [OPEN]（F-002）——ケースに無い（機能全体）"), bundle=True),
+          "#30 F-001・F-002: 割引額を計算する／注文を取り消せるか [OPEN]（F-002）——ケースに無い（機能全体）"), bundle="bundle"),
+    Case("改行が CRLF のまとめた本文", ("Q-001",), 0,
+         ("作り直す範囲 2 件", "（F-001）——受入基準 `F-001-C1`", "（F-002）——ケースに無い（機能全体）"), bundle="crlf"),
     Case("No でも番号でもない引数", ("foo",), 2, ("'foo': Q&A の No",)),
     Case("JSON でない", (), 2, ("読めない",), data="{"),
     Case("配列でない", (), 2, ("Issue の配列でない",), data="{}"),
@@ -174,6 +177,7 @@ MUTATIONS = [
      "handoffs = [Handoff(i, part) for i in [] if False and", "暫定の Q-001"),
     ("まとめた本文を部分に分けない", "    return [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])] or [body]",
      "    return [body]", "まとめた本文の部分ごとに引く"),
+    ("CRLF の部分の頭を見ない", 'FEATURE.pattern + r"\\r?$"', 'FEATURE.pattern + r"$"', "改行が CRLF のまとめた本文"),
 ]
 
 failures: list[str] = []
@@ -206,7 +210,7 @@ def make_bodies(work: Path, scripts: Path) -> dict[str, str]:
 
 
 def run_case(scripts: Path, data: Path, case: Case) -> str | None:
-    target = data.parent / "bundle.json" if case.bundle else data
+    target = data.parent / f"{case.bundle}.json" if case.bundle else data
     if case.data is not None:
         target = data.parent / f"bad-{abs(hash(case.name))}.json"
         target.write_text(case.data, encoding="utf-8")
@@ -242,6 +246,9 @@ def main() -> int:
         (work / "bundle.json").write_text(json.dumps([{"number": 30, "title": "F-001・F-002: 割引額を計算する／注文を取り消せるか",
                                                         "state": "OPEN", "body": bodies["bundle"]}], ensure_ascii=False),
                                           encoding="utf-8")
+        (work / "crlf.json").write_text(json.dumps([{"number": 31, "title": "まとめた本文（CRLF）", "state": "OPEN",
+                                                      "body": bodies["bundle"].replace("\n", "\r\n")}], ensure_ascii=False),
+                                        encoding="utf-8")
 
         print("正しい本体")
         for case in CASES:

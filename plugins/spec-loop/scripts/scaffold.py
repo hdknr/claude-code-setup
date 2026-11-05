@@ -2325,10 +2325,6 @@ def main(argv: list[str]) -> int:
         # 本文を作らないモードでは、まとめ方を見る相手が無い——受け付けると、何も確かめていないのに通ったと読める
         print("--bundle は書く生成か --dry-run と一緒にだけ使う（--check・--red-check は Issue の本文を作らない）", file=sys.stderr)
         return 2
-    args.bundle, problem = parse_bundles(args.bundle)
-    if problem:
-        print(problem, file=sys.stderr)
-        return 2
     repo = Path(args.repo)
     writing = not (args.check or args.dry_run or args.red_check)
     if args.upto is not None:
@@ -2347,6 +2343,10 @@ def main(argv: list[str]) -> int:
     if not repo.is_dir():
         print(f"{repo}: ディレクトリが無い。判定していない", file=sys.stderr)
         return 2
+    args.bundle, problem = parse_bundles(args.bundle)
+    if problem:
+        # 書く生成なら前の本文を消す（2 の決まり）——まとめ方の誤りで止まっても、古い本文を登録させない
+        return fail(repo, writing, 2, [problem])
     try:
         return run(repo, args, writing)
     except Exception as exc:  # 予期しない失敗も「作らなかった」(1) と区別し、古い Issue の本文を残さない
