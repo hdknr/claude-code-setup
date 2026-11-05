@@ -101,7 +101,7 @@ r"""spec-loop の autopilot（#789）の台帳を、ファイルに持って読�
 - **`lines` は置き換えで、渡さなかった項目は消える**——前の確認の値が、確かめ直した後に黙って残らない。
 - **拒んだ操作では台帳を変えない**——全体を検査してから一時ファイルに書き、`os.replace` で置き換える。
 - **`status`・`progress`・`show` は台帳を書き換えない**——入口が「`stopped` なら何もせず台帳も書き換えずに終える」（#790）を、読むだけで壊さない。
-- **読めない台帳（無い・壊れた JSON・桁が `int()` の上限を超える整数・深すぎる入れ子）を `running` と読まない**——4 で止まり、例外（1）で終えない。
+- **読めない台帳（無い・壊れた JSON・桁が `int()` の上限を超える整数・深すぎる入れ子・UTF-8 で表せない文字）を `running` と読まない**——4 で止まり、例外（1）で終えない。
 - **形の違う台帳（知らない欄・欄が足りない・型の違い・ファイル名と違う `version`・`format` が int の 1 でない）は 4**——真偽値の `cycle` も。
 - **ファイルの上で中身の崩れた台帳（一覧に無い値・`status` の整合を崩す組み合わせ）は 4 で、「拒んだ」（3）とは言わない**——`status` が 3 と答えると
   崩れた台帳を「止まった」と読む。
@@ -294,7 +294,14 @@ def load(path, version):
                 or not isinstance(lines["values"], dict)
                 or not all(isinstance(k, str) and isinstance(v, str) for k, v in lines["values"].items())
                 or not all(isinstance(lines[k], str) for k in ("source", "updated"))):
-            raise Unknown(f"台帳の線の形が違う: {path}: {lines!r}")
+            # 値を repr で出さない——深い入れ子の repr は Python 3.14 で RecursionError になる
+            raise Unknown(f"台帳の線の形が違う: {path}")
+    # `save` が書けない文字（JSON の `\ud800` のような対になっていないサロゲート）を持つ台帳は読めないと読む——
+    # 読めば `status`・`show` の出力で例外（1）になり、`set` は書けずに 4 になる（読めるのに進められない）
+    try:
+        json.dumps(data, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise Unknown(f"台帳に UTF-8 で表せない文字がある: {path}") from exc
     # **ファイルの上で既に崩れている台帳は、拒んだ（3）ではなく判定できなかった（4）**——
     # `status` の 3 は「止まった」なので、3 と答えると崩れた台帳を止まったと読む
     try:

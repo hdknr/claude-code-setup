@@ -243,9 +243,13 @@ def scenario(mod, base: Path, tag: str) -> dict:
     o["手で直した台帳"] = hand
     big = "9" * 5000  # `int()` の上限（既定 4300 桁）を超える
     for name, text in (("桁の多すぎる整数", json.dumps({**good, "cycle": 1}).replace('"cycle": 1', '"cycle": ' + big)),
-                       ("深すぎる入れ子", "[" * 100000 + "]" * 100000)):
+                       # 線の中に置く——トップレベルの配列は 3.14 では「形が違う」で先に止まり、入れ子を読む段に届かない（2 パス目の /code-review）
+                       ("深すぎる入れ子", json.dumps({**good, "lines": 0}).replace('"lines": 0', '"lines": ' + "[" * 100000 + "]" * 100000)),
+                       # JSON のエスケープで書いた対になっていないサロゲート（読む側。2 パス目の Verifier）
+                       ("サロゲート", json.dumps({**good, "phase": "spec-review", "status": "stopped", "reason": "R\ud800", "next": "n"})),
+                       ("サロゲート（running）", json.dumps({**good, "phase": "spec-review", "status": "running", "triage": "a\ud800"}))):
         ledger.write_text(text, encoding="utf-8")
-        o["読めない台帳: " + name] = (rc(["status", "3"]), rc(["progress", "3"]))
+        o["読めない台帳: " + name] = (rc(["status", "3"]), rc(["progress", "3"]), rc(["show", "3"]))
     ledger.write_text(json.dumps(good, ensure_ascii=False), encoding="utf-8")
     b = snapshot(ledger)
     o["桁の多すぎる引数"] = (rc(["status", big]), rc(["init", "4", "--cycle", big]), rc(["set", "3", "cycle=" + big]), snapshot(ledger) == b)
@@ -316,8 +320,8 @@ def main() -> int:
         check("固定の正しい台帳は読める（陽性対照）", o["固定の正しい台帳"] == 5)
         check("手で直した台帳（形の違い 7・崩れ 4）は status も progress も 4", o["手で直した台帳"] == [(4, 4)] * 11)
         check("壊れた JSON は 4（running と読まない）", o["壊れた JSON"] == (4, 4, 4))
-        check("桁の多すぎる整数・深すぎる入れ子の台帳は 4（例外の 1 で終えない）",
-              o["読めない台帳: 桁の多すぎる整数"] == (4, 4) and o["読めない台帳: 深すぎる入れ子"] == (4, 4))
+        check("桁の多すぎる整数・深すぎる入れ子・サロゲートの台帳は status・progress・show とも 4（例外の 1 で終えない）",
+              all(o["読めない台帳: " + n] == (4, 4, 4) for n in ("桁の多すぎる整数", "深すぎる入れ子", "サロゲート", "サロゲート（running）")))
         check("桁の多すぎる版・--cycle は 2、set の cycle は 3 で台帳を変えない", o["桁の多すぎる引数"] == (2, 2, 3, True))
         check("UTF-8 で書けない文字は 4 で、台帳も一時ファイルも残さない",
               o["書けない文字"] == (4, 4, True, ["spec-autopilot-v3.json"]))
