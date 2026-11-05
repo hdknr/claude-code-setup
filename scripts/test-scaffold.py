@@ -546,6 +546,23 @@ def proposals_none(repo: Path) -> str | None:
     return None if "案は無い——v2 で追加・変更した入口の機能が無い。" in text else f"案が無いことの文言が無い: {text[-200:]}"
 
 
+ALL_NONE_SPEC = SPEC + "\n" + "\n".join(f"- {name}: 該当なし" for name in ALL_BRANCHES) + "\n"
+
+
+def proposals_all_none(repo: Path) -> str | None:
+    """F-001 は 8 分岐を 1 つずつ該当なし——未決定事項は無く、雛形は「決める」と言わない。"""
+    found = proposal_sections(repo)
+    if isinstance(found, str):
+        return found
+    text = found["F-001"][1]
+    for needle in ("### 未決定事項\n\n無い（呼ぶ側の分岐は、どれも仕様が決めている）。",
+                   "### 受入基準の雛形\n\n見せるものが決まった分岐は無い——どの分岐も該当なし。",
+                   "- 量が重なる: - 量が重なる: 該当なし"):
+        if needle not in text:
+            return f"どの分岐も該当なしの案に {needle!r} が無い:\n{text[:600]}"
+    return "上の未決定事項を先に決める と書いている" if "上の未決定事項を先に決める" in text else None
+
+
 def proposals_modified(repo: Path) -> str | None:
     """v2 で branches だけ足した F-001——変更（modify）の案が 1 つ。"""
     found = proposal_sections(repo)
@@ -1855,6 +1872,11 @@ CASES: list[Case] = [
     Case("課題一覧（案）: 呼ばれる関数には案を作らない", 0, "（案 1 件・未決定事項 8 件）", ir=CALLED, post=proposals_entry_only),
     Case("課題一覧（案）: v2 で機能を消すだけなら案は無い", 0, "（案 0 件・未決定事項 0 件）",
          extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=proposals_none),
+    # impl_module だけ変えると全部の機能が変更（modify）になるが、結線の課題は変わっていない（1 パス目の /code-review）
+    Case("課題一覧（案）: v2 で impl_module だけ変えても案は無い", 0, "（案 0 件・未決定事項 0 件）",
+         extra=v2([], top={"impl_module": "app_impl"}), post=proposals_none),
+    Case("課題一覧（案）: どの分岐も該当なし", 0, "（案 2 件・未決定事項 8 件）", spec={"order.md": ALL_NONE_SPEC},
+         ir=branches({name: {"none": f"- {name}: 該当なし"} for name in ALL_BRANCHES}), post=proposals_all_none),
     Case("課題一覧（案）: v2 で branches だけ足す", 0, "modify 1", spec=BRANCH_SPECS,
          extra=v2([{**copy.deepcopy(IR["features"][0]), "branches": {"入力が欠ける": {"shows": BRANCH_LINES[0]}}}]),
          post=proposals_modified),
@@ -2210,7 +2232,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # #855: 呼ぶ側の分岐と課題一覧（案）
     ("課題一覧（案）を作らない", "    issues[PROPOSALS] = proposals(changes, loaded, contract)\n", "",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
-    ("呼ばれる関数にも案を作る", " and not c.feature.get(CALLED_BY)]", "]", "課題一覧（案）: 呼ばれる関数には案を作らない"),
+    ("呼ばれる関数にも案を作る", " and not c.feature.get(CALLED_BY)\n", "\n", "課題一覧（案）: 呼ばれる関数には案を作らない"),
+    ("機能が同じ変更にも案を作る", "\n            and not (c.kind == MODIFY and c.before == c.feature)]", "]",
+     "課題一覧（案）: v2 で impl_module だけ変えても案は無い"),
+    ("該当なしだけでも未決定事項を先に決めると書く", 'if missing else "——どの分岐も該当なし。"', 'if True else "——どの分岐も該当なし。"',
+     "課題一覧（案）: どの分岐も該当なし"),
     ("撤去にも案を作る", "if c.kind in (ADD, MODIFY) and not", "if c.kind in (ADD, MODIFY, REMOVE) and not",
      "課題一覧（案）: v2 で機能を消すだけなら案は無い"),
     ("未決定事項を出さない", "        if missing:\n", "        if False:\n", "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),

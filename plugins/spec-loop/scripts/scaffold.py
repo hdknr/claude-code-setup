@@ -1694,8 +1694,14 @@ def budget(feature: dict, loaded: Loaded, contract: dict[str, str]) -> list[str]
 
 
 def proposal_changes(changes: list[Change]) -> list[Change]:
-    """課題一覧（案）に載せる変化——追加・変更した入口の機能（`called_by` を持たない機能）。呼ばれる関数・撤去は載せない。"""
-    return [c for c in changes if c.kind in (ADD, MODIFY) and not c.feature.get(CALLED_BY)]
+    """課題一覧（案）に載せる変化——追加・変更した入口の機能（`called_by` を持たない機能）。呼ばれる関数・撤去は載せない。
+
+    **`impl_module` を変えただけで変更になった機能（機能のオブジェクトは前の版と同じ）も載せない**——Issue の本文は作るが
+    （Red テストが前の版の実装を探せない）、結線の課題は変わっていない。凍結した前の版を信じずに全部を追加にしたときは、
+    変わったかを決められないので全部に載せる（本文と同じ。#357）。
+    """
+    return [c for c in changes if c.kind in (ADD, MODIFY) and not c.feature.get(CALLED_BY)
+            and not (c.kind == MODIFY and c.before == c.feature)]
 
 
 def undecided(feature: dict) -> list[str]:
@@ -1749,7 +1755,7 @@ def proposals(changes: list[Change], loaded: Loaded, contract: dict[str, str]) -
             absent = [(name, branches[name][NONE]) for name in BRANCHES if NONE in branches.get(name, {})]
             lines += [f"- [ ] {name}: {text}" for name, text in shown]
             if not shown:
-                lines.append("見せるものが決まった分岐は無い（上の未決定事項を先に決める）。")
+                lines.append("見せるものが決まった分岐は無い" + ("（上の未決定事項を先に決める）。" if missing else "——どの分岐も該当なし。"))
             if absent:
                 lines += ["", "該当なしの分岐（仕様の原文）:", ""] + [f"- {name}: {text}" for name, text in absent]
         lines += [
