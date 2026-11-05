@@ -118,6 +118,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       テストは `scripts/test-init-mkdocs.py`）
     - `scripts/check-frozen.py` - リリースした版（`release-v<n>`）の `docs/v<n>/` が直されていないかの確かめ
       （#262。**正本リポジトリの CI で使う**。タグの時点に版が無ければ 2。テストは `scripts/test-check-frozen.py`）
+    - `scripts/autopilot-ledger.py` - autopilot（#789）の**台帳**（phase・周・段・commit と、状態を表す 1 欄 `status`）を
+      メインの作業ツリーの `.claude/plans/spec-autopilot-v<版>.json` に読み書きする（#848。`status` は止まった・済んだを終了コードで返し、
+      `progress` は進捗の欄だけを出す——時刻や理由の書き換えを前進と読まない（#790）。**メインの作業ツリーの決め方は dev-loop の `ledger.py` の写し**で、
+      テストが突き合わせる。書式と守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-ledger.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -275,6 +279,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `mkdocs build` は走らせない**（CI に MkDocs と Material の組が無い）
   - `test-check-frozen.py` - spec-loop の凍結の確かめ（#262）の回帰テスト（変異テストを含む）。
     `test-check-signoff.py` と同じく**一時ディレクトリに本物の git リポジトリとタグを作って**当てる
+  - `test-autopilot-ledger.py` - spec-loop の autopilot の台帳（#848）の回帰テスト（変異テストを含む）。
+    **一時ディレクトリに本物の git リポジトリと worktree を作って**当て、本体の時刻を差し替える。**`main_worktree` の写しを dev-loop の `ledger.py` と突き合わせる**
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
     **生成した Red テストを実際に `unittest` で走らせ、実装が無ければケースの数だけ失敗し、
     正しい実装で緑になる（陽性対照）**ことを見る。**dev-loop の `references/spec-gap.md` の印と節の写しも突き合わせる**
