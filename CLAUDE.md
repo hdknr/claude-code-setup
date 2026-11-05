@@ -122,6 +122,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       メインの作業ツリーの `.claude/plans/spec-autopilot-v<版>.json` に読み書きする（#848。`status` は止まった・済んだを終了コードで返し、
       `progress` は進捗の欄だけを出す——時刻や理由の書き換えを前進と読まない（#790）。**メインの作業ツリーの決め方は dev-loop の `ledger.py` の写し**で、
       テストが突き合わせる。書式と守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-ledger.py`）
+    - `scripts/autopilot-loop.py` - autopilot を `claude -p` で**外から繰り返し起動するループ**（#850）。台帳の `status` が `running` のときだけ起こし、
+      `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗で止まって通知する。
+      **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
+      **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -281,6 +285,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-check-signoff.py` と同じく**一時ディレクトリに本物の git リポジトリとタグを作って**当てる
   - `test-autopilot-ledger.py` - spec-loop の autopilot の台帳（#848）の回帰テスト（変異テストを含む）。
     **一時ディレクトリに本物の git リポジトリと worktree を作って**当て、本体の時刻を差し替える。**`main_worktree` の写しを dev-loop の `ledger.py` と突き合わせる**
+  - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する）。
+    **偽の `claude`・`osascript`・`security`・`uname` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**。台帳は本物の `autopilot-ledger.py` で作り、
+    長期トークンは本物の起動口（`launch-with-long-token.sh`）を偽の `security` で回す。上限の待ちは眠らずに秒数を記録する
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
     **生成した Red テストを実際に `unittest` で走らせ、実装が無ければケースの数だけ失敗し、
     正しい実装で緑になる（陽性対照）**ことを見る。**dev-loop の `references/spec-gap.md` の印と節の写しも突き合わせる**
