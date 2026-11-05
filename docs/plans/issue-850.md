@@ -6,7 +6,7 @@
 **台帳（`.claude/plans/cruise-issue-856.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-856`））。
-版の上げ方: `spec-loop` を **minor**（外側のループのスクリプトを足す——能力の追加。0.x なので壊れる変更も minor）。着手時の main は 0.53.0 → 0.54.0。
+版の上げ方: `spec-loop` を **minor**（外側のループのスクリプトを足す——能力の追加。0.x なので壊れる変更も minor）。着手時の main は 0.53.0 → 0.54.0。1 パス目の後の取り込みで main 0.57.0 → 0.58.0。
 マージの直前に main が進んでいれば、cruise の `references/parallel.md` の「版とマージの順」のとおり main の先端の版から minor を 1 つ上げ直す。
 重い検査は `/Users/hdknr/Projects/hdknr/claude-code-setup/plugins/dev-loop/skills/cruise/scripts/run-serial.py` 越しに走らせる（並行の周が他にある）。
 本物の `claude` は起こさない——テストは偽の `claude` と偽の通知（`osascript`）で回す（`scripts/test-outer-loop.py` の形）。
@@ -117,14 +117,30 @@ main へのマージでプラグインの配布（`spec-loop` の版）。公開
   起点 `f98333e2`・base `origin/main` → `f98333e2091bd394f72f9f3d741cb6742324b729`
 - 割り目（手順 4）: 割らない（cruise の周）
 - 関門: 1 パス目の指摘対応の起点 `1dc47b56`（1 パス目の関門に渡した時点の HEAD）。PR #862
-  - 1 パス目 Verifier（sonnet・`dev-loop:dev-loop-verifier`）: 起動済み（報告待ち）
-  - 1 パス目 `/code-review`（high）: 起動済み（報告待ち）
+  - 1 パス目 Verifier（sonnet・`dev-loop:dev-loop-verifier`。起動したのはその agent）: 反証 1 件（R1。C1-3 と同じ根——直す）。差し戻しなし（指摘対応で直した）
+  - 1 パス目 `/code-review`（high）: 指摘 9 件（C1-1〜6・C1-9 を直す）
+  - 1 パス目の指摘対応の差分: 0 行でない → 2 パス目を回す。割り目（手順 6）: 割らない（cruise の周）
+  - main の取り込み（`origin/main` は spec-loop 0.57.0——#847・#851 などがマージ済み）: 衝突は版の行だけ。0.57.0 から minor で 0.58.0
 - 交絡を潰した手順: 実験なし
 
 ## 既知の限界・決着済みの論点
 
 - #789・#790 を `Fixes` で閉じるか: 親 Issue #856 は「#789・#790 は #850 の PR で閉じる」と書くが、#789 の範囲（入口・判定役を前景で呼ぶ）と #790 のチェックリスト
   （`stopped` なら何もしない指示・権限の事前点検・マージを人間に残す形）は #849・#847 の範囲で、この周の着手時点でどちらもマージされていない——この PR では `Refs` にする（報告で親に渡す）。
+
+### 1 パス目の指摘の採否
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| C1-1 spec-loop の版が main の先端（0.55.0。取り込み時 0.57.0）より下 | 示せる（`git show origin/main:…plugin.json`） | I11 | 直す（main を取り込み 0.58.0） |
+| C1-2 トランスクリプトの形（`error: rate_limit`）の `quotaLimits.resetsAt` を読まず `--limit-wait` で待つ | 示せる（`read_limit` に試料を読ませて `(True, None)`） | I5（読める解除の時刻まで待つ） | 直す |
+| C1-3／R1 `resetsAt` がミリ秒だと `fromtimestamp` が `ValueError`、10 でなく 4 | 示せる（実行。`year must be in 1..9999`） | I5（遠ければ 10） | 直す（表示を例外にしない・有限の数だけ読む） |
+| C1-4 上限の枝の「前進で前進なしを戻す」と「上限を前進なしに数えない」の変異が素通り | 示せる（`--observe` で 83 の観測が一致） | I5・I2（テストで確かめている、の主張） | 直す（試料 A31・A32 と変異 2 件。「守る」を分けた） |
+| C1-5 「limit reached」だけの文（`spending limit reached`）を上限と読む | 示せる（実行で `(True, None)`） | I4（上限と読めない失敗は 8） | 直す（文言を `usage limit reached`・`hit your limit` に絞る） |
+| C1-6 0 で終わった起動でも、再試行の印（`error: rate_limit`）で上限と読む | 示せる（作った試料で `True`） | I5（上限の印があれば待つ——走りきった起動は上限ではない） | 直す（0 で終わり最後の `result` が成功なら上限と読まない。`error` は assistant の行だけ） |
+| C1-7 台帳が無い版でも出力の置き場のディレクトリを作る | 示せる | 無し | 残課題 |
+| C1-8 出力のファイルを開けないと 8（docstring の「置き場を作れない → 4」と別の道） | 示せる（権限を変えれば） | 無し（表の 4 は mkdir の失敗を指す。止まって通知はする） | 残課題 |
+| C1-9 `|<epoch>` を `limit reached|` の後ろでしか読まない（docstring は両方の文言） | 示せる | I5 | 直す（C1-5 と同じ正規表現） |
 
 ## 手順 8
 
