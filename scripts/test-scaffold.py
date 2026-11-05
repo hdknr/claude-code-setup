@@ -19,6 +19,10 @@
    **作らないもの**（#851。中間表現の `out_of_scope` に挙げた範囲の外の行が原文のまま・表の見出しつき・範囲の文書の順で写り、
    「次の版の候補」を含む行は別の小見出しに分かれ、挙げていない行は写らない。行の無い機能でも節と「無い」の文言と性能予算の「要求なし」が出る。
    `out_of_scope` が範囲の文書の「範囲の外」の節に原文のまま無い・形が決まりに反するなら作らない）・
+   **性能の要求**（#852。中間表現の `nfr` が指す `shared/nfr.csv` の行の数字が性能予算に写り、性能テスト `scaffold/perf/perf_<機能>.py` が作られ、
+   本文がその sha256 と回し方を持つ。性能テストは実装が無ければ「未実装」で失敗し、上限を超える遅い実装で失敗し、速い実装で緑（陽性対照）。
+   `nfr` の無い機能は「要求なし」で性能テストを作らない。`nfr` を外せば性能テストを消し、`--check` が残りを古いと言う。
+   `nfr` や指した行が決まりに反するなら作らない。性能でない行を指さなければ止めない）・
    **本文の指紋と sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
    が書いた実物に、**dev-loop の `scripts/spec-fingerprint.py` を実際に当てた出力**と比べる——2 つのプラグインに
    置いた指紋の式の写しが揃っていることも、これで見る）。**指紋は機能単位**——関係の無い機能を直しても変わらない
@@ -43,6 +47,9 @@
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、
 穴が無くても緑になるので）。
+**`FOLDING_ONLY` の変異は、一時ディレクトリが大文字小文字を区別しない（実際に作って確かめる。OS の名前で決めない）ときだけ当てる**
+——区別するファイルシステム（Linux の CI）では試料がその変異を判別しないので（#852）。当てなかった変異は「変異を当てなかった」と
+名前を出し、最後の行の変異の件数に数えず、別に数を出す（当てなかったものを緑と数えない）。
 """
 from __future__ import annotations
 
@@ -65,6 +72,7 @@ SCRIPTS = PLUGIN / "scripts"
 TARGET = "scaffold.py"
 SPEC_IR_REF = PLUGIN / "references" / "spec-ir.md"
 HANDOFF_REF = PLUGIN / "references" / "handoff-issue.md"
+NFR_REF = PLUGIN / "references" / "nfr.md"
 TREE_REF = PLUGIN / "references" / "tree.md"
 VERSIONS_REF = PLUGIN / "references" / "versions.md"
 SCAFFOLD_SKILL = PLUGIN / "skills" / "scaffold" / "SKILL.md"
@@ -403,6 +411,116 @@ def not_built_copied(repo: Path) -> str | None:
     return None
 
 
+# ---- 性能の要求（#852）。`shared/nfr.csv` の性能の行を、中間表現の nfr で機能に結びつける
+NFR_HEADER = "No,対象,指標,上限,単位,条件,根拠\n"
+NFR_ROWS = ("N-001,割引の計算,p95,300,ms,ピーク 50 req/s,2025 年末のピークが 42 req/s",
+            "N-002,取り消しの判定,p50,1,ms,負荷を問わない,画面の待ちを 1 ms に収める業務の締め切り",
+            # 性能でない行（指標・単位が性能の形でない）——指さなければ止めない
+            "N-003,注文の受付,稼働率,99.9,%,月,契約")
+NFR_CSV = NFR_HEADER + "\n".join(NFR_ROWS) + "\n"
+NFR_FILE = str(V1 / "shared" / "nfr.csv")
+PERF_FILE = "scaffold/perf/perf_f_001.py"
+# 1 回の呼び出しが 5 ms を下回らない実装（上限 1 ms の p50 を必ず超える）。値は正しい
+SLOW_IMPL = "import time\n" + GOOD_IMPL.replace('    if amount < 0:\n', '    time.sleep(0.005)\n    if amount < 0:\n', 1)
+assert SLOW_IMPL.count("time.sleep") == 1
+
+
+def nfr(f001, f002=None) -> Callable[[dict], dict]:
+    def apply(ir: dict) -> None:
+        f1(ir)["nfr"] = f001
+        if f002 is not None:
+            ir["features"][1]["nfr"] = f002
+    return edit(apply)
+
+
+def with_nfr(text: str = NFR_CSV) -> dict[str, str]:
+    return {NFR_FILE: text}
+
+
+def perf_run(repo: Path, impl: str | None) -> tuple[int, str]:
+    target = repo / "spec_impl.py"
+    if impl is None:
+        target.unlink(missing_ok=True)
+    else:
+        target.write_text(impl, encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-E", "-s", "-B", "-m", "unittest", "discover", "-s", "scaffold/perf", "-p", "perf_f_001.py"],
+                          capture_output=True, text=True, cwd=repo)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def budget_section(body: str) -> str:
+    return not_built_section(body).split("### 性能予算\n\n", 1)[-1]
+
+
+def budget_copied(repo: Path) -> str | None:
+    found = bodies(repo)
+    perf = repo / PERF_FILE
+    if not perf.is_file():
+        return f"{PERF_FILE} が無い（nfr を持つ機能の性能テスト）"
+    others = sorted(p.name for p in (repo / "scaffold" / "perf").iterdir() if p.name != perf.name)
+    if others:
+        return f"nfr を持たない機能の性能テストがある: {others}"
+    sha = hashlib.sha256(perf.read_bytes()).hexdigest()
+    want = "\n".join([
+        "この機能の性能の要求（`build/merged/shared/nfr.csv` の行から写した）:", "",
+        "| No | 対象 | 指標 | 上限 | 条件 | 根拠 |", "| --- | --- | --- | --- | --- | --- |",
+        "| N-001 | 割引の計算 | p95 | 300 ms | ピーク 50 req/s | 2025 年末のピークが 42 req/s |", "",
+        "**予算の中なら、速さのための最適化をしない。** 最適化は、性能テストか計測で予算を超えたと示せたときだけ。", "",
+        f"- 性能テスト: `{PERF_FILE}`（sha256: `{sha}`）——実装をケースの入力で 1 回ずつ 200 回呼び、1 回の時間から指標を出して上限と比べる",
+        "- 回し方（正本リポジトリの根で）:", "", "```bash", "python3 -m unittest discover -s scaffold/perf -p perf_f_001.py", "```", "",
+        "- **性能テストは `条件` の負荷（同時の呼び出し）を再現しない**——緑でも、負荷の下で上限を守る証明にはならない。"
+        "負荷の下で守るかは、負荷試験・本番の計測で確かめる。",
+        "- **性能テストは受入基準（上の Red テストの表）ではない**——最適化してよいかを決める計測の道具である。"])
+    got = budget_section(found["F-001"])
+    if got != want:
+        return f"F-001 の性能予算が違う:\n{got}\n---- 期待:\n{want}"
+    # nfr を持たない機能は「要求なし」のまま
+    if budget_section(found["F-002"]) != NO_BUDGET:
+        return f"F-002 の性能予算が「要求なし」でない: {budget_section(found['F-002'])}"
+    # 性能テストは Red テストの表（受入基準）に入らない
+    for fid, body in found.items():
+        if "perf_" in body.split("\n## 作らないもの\n", 1)[0]:
+            return f"{fid} の本文の受入基準・Red テストの節に性能テストがある"
+    # 実装が無ければ失敗（エラーではない）、正しい実装なら緑（陽性対照）
+    code, out = perf_run(repo, None)
+    if code == 0 or "FAILED (failures=1)" not in out or "未実装: " not in out:
+        return f"実装の無い性能テストが「未実装」で失敗しない: {out[-300:]}"
+    code, out = perf_run(repo, GOOD_IMPL)
+    return None if code == 0 and "OK" in out else f"速い実装で性能テストが緑にならない: {out[-300:]}"
+
+
+def budget_compared(repo: Path) -> str | None:
+    """上限 1 ms の p50 を、1 回 5 ms の実装は超え（失敗）、速い実装は超えない（陽性対照）。"""
+    code, out = perf_run(repo, SLOW_IMPL)
+    if code == 0 or "p50 が " not in out or "上限 1 ms を超えた（N-002）" not in out:
+        return f"遅い実装で性能テストが上限を超えたと言わない: {out[-300:]}"
+    code, out = perf_run(repo, GOOD_IMPL)
+    return None if code == 0 else f"速い実装で性能テストが緑にならない: {out[-300:]}"
+
+
+def drop_nfr(repo: Path) -> None:
+    path = repo / IR_FILE
+    ir = json.loads(path.read_text(encoding="utf-8"))
+    for feature in ir["features"]:
+        feature.pop("nfr", None)
+    path.write_text(json.dumps(ir, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def perf_removed(repo: Path) -> str | None:
+    if (repo / PERF_FILE).exists():
+        return f"nfr を外した機能の性能テスト {PERF_FILE} が残っている"
+    return None if NO_BUDGET in bodies(repo)["F-001"] else "nfr を外した機能の性能予算が「要求なし」でない"
+
+
+def nfr_added_in_v2(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのは nfr を足した機能だけのはず: {list(found)}"
+    problem = body_has(found["F-001"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-001-C1` | 回帰 |",
+                                        "| N-001 | 割引の計算 | p95 | 300 ms |"), "nfr を足した変更")
+    return problem or (None if (repo / PERF_FILE).is_file() else f"v2 で nfr を足した機能の {PERF_FILE} が無い")
+
+
 class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
@@ -449,6 +567,9 @@ def files_written(repo: Path) -> str | None:
             return f"{rel} が無い"
     if (repo / "build" / "merged").exists():
         return "build/merged/ を書いた（重ね合わせはメモリ上で行う）"
+    # nfr を持たない中間表現からは、性能テストを作らない（#852）
+    if (repo / "scaffold" / "perf").exists():
+        return "nfr を持たない中間表現で scaffold/perf/ を書いた"
     return None
 
 
@@ -1310,6 +1431,51 @@ CASES: list[Case] = [
          ir=out_of_scope([SCOPE_ROWS[0] + "\n" + SCOPE_ROWS[2]]), spec=SCOPE_SPEC),
     Case("作らないもの: 前後に空白", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
          ir=out_of_scope([" " + SCOPE_ROWS[0]]), spec=SCOPE_SPEC),
+    # #852: 性能の要求。行があれば性能テストと予算、無ければ「要求なし」（基準の試料の本文は body_traceable が見る）
+    Case("性能の要求: 行があれば性能テストと予算", 0, "作った", ir=nfr(["N-001"]), extra=with_nfr(), post=budget_copied),
+    Case("性能の要求: 性能テストが上限と比べる", 0, "作った", ir=nfr(["N-002"]), extra=with_nfr(), post=budget_compared),
+    Case("性能の要求: nfr を外すと性能テストを消す", 0, "作った", ir=nfr(["N-001"]), extra=with_nfr(), generate_first=True,
+         pre=drop_nfr, post=perf_removed),
+    Case("性能の要求: nfr を外した --check", 1, "scaffold/perf/perf_f_001.py: 性能の要求（nfr）を指す機能に無い性能テストが残っている",
+         args=("--check",), ir=nfr(["N-001"]), extra=with_nfr(), generate_first=True, pre=drop_nfr),
+    Case("性能の要求: 性能テストを手で直した --check", 1, "perf_f_001.py: 今の入力から作るものと違う", args=("--check",),
+         ir=nfr(["N-001"]), extra=with_nfr(), generate_first=True,
+         pre=lambda repo: (repo / PERF_FILE).write_text((repo / PERF_FILE).read_text(encoding="utf-8").replace("300", "3000"),
+                                                        encoding="utf-8")),
+    Case("性能の要求: v2 で nfr を足す", 0, "作った", extra={**with_nfr(), **v2([{**copy.deepcopy(IR["features"][0]), "nfr": ["N-001"]}])},
+         post=nfr_added_in_v2),
+    Case("性能の要求: 表が無い", 1, "F-001.nfr: 性能の要求の表 build/merged/shared/nfr.csv が無い", ir=nfr(["N-001"]),
+         pre=plant_old_issues, post=nothing_written),
+    Case("性能の要求: 行が無い", 1, "F-001.nfr: 性能の要求の表 build/merged/shared/nfr.csv に N-009 の行が無い",
+         ir=nfr(["N-009"]), extra=with_nfr()),
+    Case("性能の要求: 同じ No が 2 行", 1, "に N-001 の行が 2 行ある", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV + NFR_ROWS[0] + "\n")),
+    Case("性能の要求: 見出しが違う", 1, "の見出しの行が No,対象,指標,上限,単位,条件,根拠 でない", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace("根拠", "理由", 1))),
+    Case("性能の要求: 性能でない行を指す", 1, "F-001.nfr: N-003: 指標が p50・p95・p99・最大 のどれでもない: '稼働率'",
+         ir=nfr(["N-003"]), extra=with_nfr()),
+    Case("性能の要求: 上限が 0", 1, "F-001.nfr: N-001: 上限が正の数の形でない（整数部は先頭に 0 を付けない 9 桁まで・小数部は 6 桁まで）: '0'", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace(",p95,300,", ",p95,0,", 1))),
+    Case("性能の要求: 上限の先頭に 0", 1, "F-001.nfr: N-001: 上限が正の数の形でない（整数部は先頭に 0 を付けない 9 桁まで・小数部は 6 桁まで）: '0300'", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace(",p95,300,", ",p95,0300,", 1))),
+    Case("性能の要求: 上限の桁が多い", 1, "上限が正の数の形でない（整数部は先頭に 0 を付けない 9 桁まで・小数部は 6 桁まで）: '1234567890'",
+         ir=nfr(["N-001"]), extra=with_nfr(NFR_CSV.replace(",p95,300,", ",p95,1234567890,", 1))),
+    Case("性能の要求: 表の名前の綴りが違う", 1, "F-001.nfr: 性能の要求の表 build/merged/shared/nfr.csv が無い", ir=nfr(["N-001"]),
+         extra={str(V1 / "shared" / "NFR.csv"): NFR_CSV}),
+    Case("性能の要求: 上限が数でない", 1, "F-001.nfr: N-001: 上限が正の数の形でない（整数部は先頭に 0 を付けない 9 桁まで・小数部は 6 桁まで）: '300ms'", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace(",p95,300,", ",p95,300ms,", 1))),
+    Case("性能の要求: 単位が ms でない", 1, "F-001.nfr: N-001: 単位が ms でない: '秒'", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace(",300,ms,", ",300,秒,", 1))),
+    Case("性能の要求: 根拠が空", 1, "F-001.nfr: N-001: 根拠 が空か、1 行でない", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace(",2025 年末のピークが 42 req/s", ",", 1))),
+    Case("性能の要求: 条件が空", 1, "F-001.nfr: N-001: 条件 が空か、1 行でない", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace(",ピーク 50 req/s,", ",,", 1))),
+    Case("性能の要求: 列が多い", 1, "F-001.nfr: N-001: 列の数が見出しと違う（8 列）", ir=nfr(["N-001"]),
+         extra=with_nfr(NFR_CSV.replace("42 req/s", "42 req/s,余り", 1))),
+    Case("性能の要求: 空の配列", 1, "F-001.nfr: 性能の要求の行の No の 1 つ以上の配列でない", ir=nfr([]), extra=with_nfr()),
+    Case("性能の要求: 配列でない", 1, "F-001.nfr: 性能の要求の行の No の 1 つ以上の配列でない", ir=nfr("N-001"), extra=with_nfr()),
+    Case("性能の要求: No の形", 1, "F-001.nfr: No の形に反する（N- に 3 桁以上の数字）: 'N-1'", ir=nfr(["N-1"]), extra=with_nfr()),
+    Case("性能の要求: 重複", 1, "F-001.nfr: 重複している", ir=nfr(["N-001", "N-001"]), extra=with_nfr()),
     Case("作らないもの: 文字列でない", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
          ir=out_of_scope([1]), spec=SCOPE_SPEC),
     Case("OpenAPI と型", 0, post=openapi_shape),
@@ -1787,8 +1953,37 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #852: 性能の要求
+    ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
+     "性能の要求: 行があれば性能テストと予算"),
+    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR})", "{CALLED_BY, OUT_OF_SCOPE})",
+     "性能の要求: 行があれば性能テストと予算"),
+    ("性能テストを作らない", "        if rows:\n            contract[f\"{PERF_DIR}/", "        if False:\n            contract[f\"{PERF_DIR}/",
+     "性能の要求: 行があれば性能テストと予算"),
+    ("性能テストが実装の無いことを失敗にしない", '        MISSING_FAIL,\n        "        took = []",',
+     '        "            return [0.0]",\n        "        took = []",', "性能の要求: 行があれば性能テストと予算"),
+    ("性能テストが実装を呼ばない", '"            function(**given)",', '"            pass",', "性能の要求: 性能テストが上限と比べる"),
+    ("性能テストが指標を 0 で出す", '"    return ordered[rank - 1]",', '"    return 0.0",',
+     "性能の要求: 性能テストが上限と比べる"),
+    ("nfr の検査を呼ばない", "        if NFR in feature:\n            problems += check_nfr", "        if False:\n            problems += check_nfr",
+     "性能の要求: 行が無い"),
+    ("表の見出しを見ない", "    if header != list(NFR_COLUMNS):", "    if False:", "性能の要求: 見出しが違う"),
+    ("行の数を見ない", "        if len(rows) != 1:", "        if not rows:", "性能の要求: 同じ No が 2 行"),
+    ("指標を見ない", '    if row.get("指標") not in METRICS:', "    if False:", "性能の要求: 性能でない行を指す"),
+    ("上限が 0 を許す", "or float(limit) <= 0:", "or float(limit) < 0:", "性能の要求: 上限が 0"),
+    ("上限の先頭の 0 を許す", 'LIMIT = re.compile(r"(0|[1-9]', 'LIMIT = re.compile(r"([0-9]', "性能の要求: 上限の先頭に 0"),
+    ("上限の桁を数えない", "[1-9][0-9]{0,8})", "[1-9][0-9]*)", "性能の要求: 上限の桁が多い"),
+    ("表の名前の綴りを見ない", " or path.name not in {child.name for child in path.parent.iterdir()}:", ":",
+     "性能の要求: 表の名前の綴りが違う"),
+    ("上限の形を見ない", "    if not LIMIT.fullmatch(limit) or float(limit) <= 0:", "    if False:", "性能の要求: 上限が数でない"),
+    ("単位を見ない", '    if row.get("単位") != NFR_UNIT:', "    if False:", "性能の要求: 単位が ms でない"),
+    ("根拠を見ない", '    for name in ("対象", "条件", "根拠"):', '    for name in ("対象", "条件"):', "性能の要求: 根拠が空"),
+    ("列の数を見ない", "    if width != len(NFR_COLUMNS):", "    if False:", "性能の要求: 列が多い"),
+    ("No の形を見ない", "for no in refs if not isinstance(no, str) or not NFR_ID.fullmatch(no)]", "for no in refs if False]",
+     "性能の要求: No の形"),
+    ("残った性能テストを数えない", '(PERF_DIR, "perf_*.py")', '(PERF_DIR, "none_*.py")', "性能の要求: nfr を外した --check"),
     # #851: 作らないもの
-    ("作らないものの節を書かない", '    lines += ["", SECTIONS[4], ""] + not_built(change, loaded)', "    lines += []",
+    ("作らないものの節を書かない", '    lines += ["", SECTIONS[4], ""] + not_built(change, loaded, contract)', "    lines += []",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("次の版の候補も範囲の外に入れる", "[r for r in chosen if NEXT_VERSION not in r[0]]", "chosen",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
@@ -1802,7 +1997,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("表でない行を空の行で区切らない", "            if index and (header is None or header != group[index - 1][1]):",
      "            if index and header is not None and header != group[index - 1][1]:", "作らないもの: 範囲の外の行と次の版の候補を写す"),
-    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE})", "{CALLED_BY})",
+    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR})", "{CALLED_BY, NFR})",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("out_of_scope の検査を呼ばない", "        if OUT_OF_SCOPE in feature:\n            problems += check_out_of_scope",
      "        if False:\n            problems += check_out_of_scope", "作らないもの: 節に無い行"),
@@ -1830,7 +2025,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("行の無い小見出しに無いと書かない",
      '            lines.append(f"この機能に関わるとして写した{what}は無い（無いことは、ほかのものを作ってよいという意味ではない）。")',
      "            pass", "本文から辿れる"),
-    ("性能予算を書かない", '    lines += ["", NOT_BUILT[2], "", NO_PERFORMANCE_BUDGET]', "    lines += []", "本文から辿れる"),
+    ("性能予算を書かない", '    lines += ["", NOT_BUILT[2], ""] + budget(change.feature, loaded, contract)', "    lines += []", "本文から辿れる"),
     ("撤去の本文に作らないものの 1 行を書かない", '        return ["撤去の Issue なので、作るものは無い',
      '        return [] and ["撤去の Issue なので、作るものは無い', "v2 で機能を消す"),
     # #609: 呼ばれる機能
@@ -1921,8 +2116,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("出力の error を許す", "        if output and name == RESERVED_OUTPUT:", "        if False:", "出力に error"),
     ("改行を許す", 'and not any(unicodedata.category(c) == "Cc" for c in value))', ")", "改行を含む題"),
     ("全角の数字を許す", 'FEATURE_ID = re.compile(r"F-[0-9]{3,}")', 'FEATURE_ID = re.compile(r"F-\\d{3,}")', "全角の数字の id"),
-    ("未実装をエラーにする", '"            return None",', '"            raise",', "Red テストが失敗する"),
-    ("未実装で fail しない", '"            self.fail(f\\"未実装: {IMPL_MODULE}.{OPERATION} が無い\\")",', '"            pass",',
+    ("未実装をエラーにする", '    "            return None",', '    "            raise",', "Red テストが失敗する"),
+    ("未実装で fail しない", 'MISSING_FAIL = "            self.fail(f\\"未実装: {IMPL_MODULE}.{OPERATION} が無い\\")"', 'MISSING_FAIL = "            pass"',
      "関数の無い実装でも失敗する"),
     ("期待を比べない", '"        self.assertEqual(actual, expected)",', '"        self.assertIsNotNone(actual)",', "誤った実装で失敗する"),
     ("nullable に true 以外を許す", "if NULLABLE in field and field[NULLABLE] is not True:",
@@ -2249,6 +2444,20 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
     return True, ""
 
 
+# 大文字小文字を区別しないファイルシステムでだけ当てる変異（名前 → 理由）。区別するファイルシステムでは、綴りの違う
+# `NFR.csv` は本体の検査が無くても開けないので、試料がその変異を判別しない（#852 の狭いパスの N1）
+FOLDING_ONLY = {"表の名前の綴りを見ない": "綴りの違う表の名前を開けるのは大文字小文字を区別しないファイルシステムだけで、区別するなら本体の検査が無くても「表が無い」になる"}
+skipped: list[str] = []
+
+
+def case_folding(where: Path) -> bool:
+    """`where` の下のファイルシステムが大文字小文字を区別しないか（OS の名前ではなく、実際に作って確かめる）。"""
+    probe = where / "case-probe"
+    probe.mkdir()
+    (probe / "nfr.csv").write_text("", encoding="utf-8")
+    return (probe / "NFR.csv").exists()
+
+
 def table_cells(markdown: str, heading: str) -> list[str]:
     section = markdown.split(heading, 1)[1].split("\n#", 1)[0]
     return re.findall(r"^\| `([^`]+)` \|", section, flags=re.MULTILINE)
@@ -2333,8 +2542,23 @@ def main() -> int:
         sections = table_cells(handoff, "## 節")
         check("SECTIONS が references/handoff-issue.md の節の表と違う", list(constant(source, "SECTIONS") or ()) == sections,
               f"{constant(source, 'SECTIONS')} vs {sections}")
+        # 性能の要求の表の列と指標（#852）。原本は references/nfr.md
+        nfr_ref = NFR_REF.read_text(encoding="utf-8")
+        columns, metrics = table_cells(nfr_ref, "## 列"), table_cells(nfr_ref, "### 指標")
+        check("NFR_COLUMNS が references/nfr.md の列の表と違う", list(constant(source, "NFR_COLUMNS") or ()) == columns,
+              f"{constant(source, 'NFR_COLUMNS')} vs {columns}")
+        check("METRICS が references/nfr.md の指標の表と違う", list(constant(source, "METRICS") or ()) == metrics,
+              f"{constant(source, 'METRICS')} vs {metrics}")
+        check("references/nfr.md から列・指標を読めない（読み方が壊れている）", len(columns) == 7 and len(metrics) >= 2,
+              f"{columns} {metrics}")
+        check("NFR_UNIT が references/nfr.md の列の表と違う",
+              f"| `単位` | 性能の行なら `{constant(source, 'NFR_UNIT')}` |" in nfr_ref)
+        check("既定の原則（NO_PERFORMANCE_BUDGET）が references/nfr.md の原則と違う",
+              "最適化は、計測で予算を超えたと示せたときだけ" in nfr_ref
+              and "最適化は、計測で予算を超えたと示せたときだけ" in NO_BUDGET)
         for rel in (constant(source, "IR_PATH"), constant(source, "QA_PATH"), constant(source, "ISSUES_DIR"),
-                    f"{constant(source, 'OUT_DIR')}/openapi.json"):
+                    constant(source, "NFR_PATH"), f"{constant(source, 'OUT_DIR')}/openapi.json",
+                    f"{constant(source, 'PERF_DIR')}/perf_<機能>.py"):
             check(f"置き場所 {rel} が references/tree.md に無い", rel is not None and rel.rsplit("/", 1)[-1] in tree)
         # 2 つのプラグインの境界の写し
         skill = DEV_LOOP_SKILL.read_text(encoding="utf-8")
@@ -2411,10 +2635,18 @@ def main() -> int:
             (mutated / CHECKER).write_text(checker.replace(before, after), encoding="utf-8")
             ok, detail = run_case(mutated, tmp_path / f"checker-mutwork{index}", by_name[killer])
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+        folds = case_folding(tmp_path)
+        unknown = sorted(set(FOLDING_ONLY) - {name for name, *_ in MUTATIONS})
+        check("FOLDING_ONLY に MUTATIONS に無い変異の名前がある", not unknown, f"{unknown}")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            if name in FOLDING_ONLY and not folds:
+                # 当てていない——緑には数えず、当てなかったことを出す（数は最後の行にも出る）
+                skipped.append(name)
+                print(f"変異を当てなかった: {name}（{FOLDING_ONLY[name]}。この一時ディレクトリは大文字小文字を区別する）")
                 continue
             mutated = copy_scripts(tmp_path / f"mut{index}", source.replace(before, after))
             ok, detail = run_case(mutated, tmp_path / f"mutwork{index}", by_name[killer])
@@ -2443,7 +2675,8 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS) - len(skipped)} 件"
+          + (f"（ほかに当てなかった変異 {len(skipped)} 件: {'・'.join(skipped)}）" if skipped else ""))
     return 0
 
 

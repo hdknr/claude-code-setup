@@ -29,6 +29,7 @@
 | `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で PPTX も）を作る（標準ライブラリと `git`） |
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
 | `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |
+| `references/nfr.md` | 性能の要求の表（`shared/nfr.csv`）の列・性能を仕様に書く手順・要求の無い機能は最適化しない既定の原則・性能テスト |
 | `scripts/scaffold.py` | 中間表現から OpenAPI・型・Red テスト・Issue の本文を作る。関門（仕様レビューを抜ける条件 1）を自分で通す（標準ライブラリのみ） |
 | `references/versions.md` | 版のディレクトリ（`docs/v<n>/`）と、差分の重ね合わせ・削除（`removed.csv`）・凍結・前の構成からの移し方の決まり |
 | `scripts/merge-versions.py` | 版ごとの差分を重ねて、ある版の時点の全体を作る（標準ライブラリのみ） |
