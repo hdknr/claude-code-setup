@@ -335,8 +335,11 @@ def bundled(repo: Path) -> str | None:
     lines = body.splitlines()
     if lines[:2] != ["<!-- spec-loop-handoff: v3 -->", BUNDLE_MARK.format("F-001・F-002")]:
         return f"まとめた本文の先頭 2 行が印でない: {lines[:2]}"
-    if "- [ ] `F-001` 割引額を計算する\n- [ ] `F-002` 注文を取り消せるか\n" not in body:
-        return "まとめた本文に機能のチェックリストが無い"
+    if "- `F-001` 割引額を計算する\n- `F-002` 注文を取り消せるか\n" not in body:
+        return "まとめた本文に機能の一覧が無い"
+    # 機能の一覧をタスクリストにしない——Issue の画面でチェックすると本文が書き換わり、parent-checklist.py の本文の一致が外れる
+    if re.search(r"^\s*[-*+] \[[ xX]\]", body, flags=re.M):
+        return "まとめた本文にタスクリストの行がある（チェックすると本文が変わる）"
     index = json.loads((repo / ISSUES / "issues.json").read_text(encoding="utf-8"))
     expected = [{"features": ["F-001", "F-002"], "title": "F-001・F-002: 割引額を計算する／注文を取り消せるか", "change": "add",
                  "body": "bundle-F-001-F-002.md",
@@ -350,7 +353,7 @@ def bundled(repo: Path) -> str | None:
     single = default_bodies(repo)
     parts = [single[f"{fid}.md"].split("\n", 1)[1] for fid in ("F-001", "F-002")]
     tail = "".join(f"\n---\n\n{part}" for part in parts)
-    if not body.endswith(tail) or not body[: -len(tail)].endswith("- [ ] `F-002` 注文を取り消せるか\n"):
+    if not body.endswith(tail) or not body[: -len(tail)].endswith("- `F-002` 注文を取り消せるか\n"):
         return "まとめた本文の部分が、機能 1 件の本文から 1 行目を外したものを区切りの行で並べたものと違う"
     if [p.split("\n", 1)[0] for p in bundle_parts(body)] != ["<!-- spec-loop-feature: F-001 -->", "<!-- spec-loop-feature: F-002 -->"]:
         return "部分の先頭が機能の印でない"
@@ -2433,6 +2436,7 @@ CASES: list[Case] = [
 MUTATIONS: list[tuple[str, str, str, str]] = [
     # #876: まとめた本文（--bundle）と依存の連鎖（depends）
     ("まとめない", "        if len(group) == 1:\n", "        if True:\n", "まとめた本文"),
+    ("機能の一覧をタスクリストにする", 'f"- `{c.feature[\'id\']}` {cell(', 'f"- [ ] `{c.feature[\'id\']}` {cell(', "まとめた本文"),
     ("部分に 1 行目の印を残す", "{bodies[fid].split(chr(10), 1)[1]}", "{bodies[fid]}", "まとめた本文"),
     ("依存を書かない", '        if depends:\n            entry["depends"] = depends', '        if False:\n            entry["depends"] = depends',
      "依存の連鎖"),

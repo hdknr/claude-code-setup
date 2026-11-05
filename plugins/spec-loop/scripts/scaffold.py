@@ -73,7 +73,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 （決まりの正は `references/handoff-issue.md` の「仮回答の印」）。
 
 **まとめた本文（`--bundle`。#876）**: 既定は **1 機能の変化 = Issue 1 件**。`--bundle F-001,F-002`（繰り返せる）で名指しした機能を 1 件の本文にまとめる——
-1 行目は同じ handoff の印、2 行目にまとめた印、機能のチェックリストに続けて、**機能 1 件の本文から 1 行目を外した部分**を `---` の行で区切って並べる
+1 行目は同じ handoff の印、2 行目にまとめた印、機能の一覧（素の箇条書き。タスクリストにしない）に続けて、**機能 1 件の本文から 1 行目を外した部分**を `---` の行で区切って並べる
 （部分ごとに印・節・指紋・sha256 が残る）。`issues.json` の項目は `feature` の代わりに `features` を持つ。**名指しした機能が、この版で本文を作る機能でない・
 変化（追加・変更・撤去）が揃わない・1 件だけ・重複・まとめると依存が循環するなら 2**（引数の誤り）。同じモジュール・同じデプロイ経路かは見ない——
 中間表現に無く、選ぶのは scaffold を回す人（決まりの正は `references/handoff-issue.md` の「まとめた本文」）。
@@ -2058,7 +2058,9 @@ def bundle_body(group: list[Change], bodies: dict[str, str]) -> str:
         f"下に機能ごとの部分が `{BUNDLE_RULE}` の行で区切って並び、どの部分も機能 1 件の本文から 1 行目の印を外したもの——"
         "部分ごとに印・節・機能の指紋・Red テストの sha256 を持つ。**部分ごとに読み、確かめる。受入基準は、全部の部分の受入基準を合わせたものである。**",
         "",
-    ] + [f"- [ ] `{c.feature['id']}` {cell(c.feature['title'])}" for c in group]
+    ] + [f"- `{c.feature['id']}` {cell(c.feature['title'])}" for c in group]
+    # 機能の一覧は素の箇条書き——タスクリスト（`- [ ]`）にすると、Issue の画面で 1 クリックで本文が書き換わり、
+    # 本文の一致で Issue を探す `parent-checklist.py` が見つけられなくなる（#876 の 2 パス目の指摘）
     return "\n".join(head) + "\n" + "".join(f"\n{BUNDLE_RULE}\n\n{bodies[fid].split(chr(10), 1)[1]}" for fid in ids)
 
 
