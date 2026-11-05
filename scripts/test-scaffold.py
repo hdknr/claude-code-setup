@@ -1212,6 +1212,58 @@ def body_has(body: str, needles: tuple[str, ...], what: str) -> str | None:
     return None
 
 
+# 仮回答の印（#875。`references/handoff-issue.md` の「仮回答の印」の写し——下の突き合わせが本体の定数と原本を見る）
+PROVISIONAL_LINE = "- 仮回答: "
+PROVISIONAL_CELL = "（暫定）"
+
+
+def unmarked(body: str, what: str) -> str | None:
+    """依存しない本文は印を持たない（行もセルも）。"""
+    if PROVISIONAL_LINE in body or PROVISIONAL_CELL in body:
+        return f"{what}の本文に、依存していない仮回答の印がある"
+    return None
+
+
+def provisional_marked(repo: Path) -> str | None:
+    """Q-001（暫定反映）は F-001 の機能とケース C1 が指し、Q-002（反映済み）はケース C2 が指す。F-002 は Q&A を指さない。"""
+    found = bodies(repo)
+    one = found.get("F-001", "")
+    lines = [line for line in one.splitlines() if line.startswith(PROVISIONAL_LINE)]
+    if len(lines) != 1 or not lines[0].startswith(f"{PROVISIONAL_LINE}Q-001（状態 `暫定反映`"):
+        return f"F-001 の本文の仮回答の行が 1 本で Q-001 だけを挙げていない: {lines}"
+    if lines and "Q-002" in lines[0]:
+        return "確定の Q-002 を仮回答の行に挙げた"
+    spec = one.split("## 仕様", 1)[1].split("## 受入基準", 1)[0]
+    if lines[0] not in spec:
+        return "仮回答の行が ## 仕様 の節に無い"
+    rows = {cid: row for row, cid in re.findall(r"^(\| `(F-001-C[0-9])` .*)$", one, flags=re.MULTILINE)}
+    if not rows.get("F-001-C1", "").endswith("| Q-001（暫定） |"):
+        return f"暫定の Q-001 を根拠にするケースに印が無い: {rows.get('F-001-C1')!r}"
+    if not rows.get("F-001-C2", "").endswith("| Q-002 |"):
+        return f"確定の Q-002 を根拠にするケースに印が付いた: {rows.get('F-001-C2')!r}"
+    return unmarked(found.get("F-002", ""), "依存しない F-002 ")
+
+
+def provisional_feature_only(repo: Path) -> str | None:
+    """暫定の Q-001 を機能の qa だけが指す（どのケースも指さない）——行は付き、表のセルには付かない。"""
+    one = bodies(repo).get("F-001", "")
+    if f"{PROVISIONAL_LINE}Q-001（" not in one:
+        return "機能の qa だけが指す暫定の No を、仮回答の行に挙げていない"
+    return "ケースが指さないのに表に印を付けた" if PROVISIONAL_CELL in one else None
+
+
+def provisional_resolved(repo: Path) -> str | None:
+    """v1 で暫定だった Q-001 を v2 で確定した——v2 の変更の本文は印を持たない。"""
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのは変えた機能だけのはず: {list(found)}"
+    return unmarked(found["F-001"], "確定した後の変更の")
+
+
+def provisional_cited_by_feature_only(ir: dict) -> None:
+    ir["features"][0]["cases"][0].pop("qa")
+
+
 def sections_in_order(body: str) -> bool:
     positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 作らないもの", "## 仕様の穴を見つけたら")]
     return -1 not in positions and positions == sorted(positions)
@@ -1719,6 +1771,23 @@ CASES: list[Case] = [
     # 中間表現が指さない暫定の行でも止める——仕様には反映されているので、指さない機能にも効いている（#325 の 2 パス目）
     Case("暫定反映の Q&A を指さない", 1, "Q-004: 状態が 暫定反映", qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED),
     Case("文言だけ暫定の反映済みは止めない", 0, qa=HEADER + QA_WORDED + QA_DONE2),
+    # #875: 利用者が仮回答のまま渡すと決めたとき（--provisional）だけ通し、依存する本文と受入基準に印を付ける
+    Case("--provisional で暫定反映を指す", 0, "仮回答（暫定反映）に依存する本文 1 件（F-001）", args=("--provisional",),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, post=provisional_marked),
+    Case("--provisional で暫定反映を機能だけが指す", 0, args=("--provisional",), qa=HEADER + QA_PROVISIONAL + QA_DONE2,
+         ir=edit(provisional_cited_by_feature_only), post=provisional_feature_only),
+    Case("--provisional でも指していない暫定反映は止める", 1,
+         "Q-004: 状態が 暫定反映（利用者の確認待ち）なのに、中間表現のどの機能・ケースの qa からも指していない",
+         args=("--provisional",), qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED, pre=plant_old_issues,
+         post=nothing_written),
+    Case("--provisional --dry-run でも指していない暫定反映は止める", 1, "指していない 暫定反映 の行が 1 件残る",
+         args=("--provisional", "--dry-run"), qa=HEADER + QA_PROVISIONAL + QA_DONE2 + QA_PROVISIONAL_UNCITED),
+    Case("--provisional --dry-run", 0, "作れる", args=("--provisional", "--dry-run"), qa=HEADER + QA_PROVISIONAL + QA_DONE2,
+         post=nothing_written),
+    Case("--provisional でも確認中は止める", 1, "Q-003", args=("--provisional",),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2 + QA_OPEN, post=nothing_written),
+    Case("--provisional の印は依存しない本文を変えない", 0, args=("--provisional",), post=lambda repo: (
+        unmarked(bodies(repo).get("F-001", ""), "暫定反映の無い F-001 ") or unmarked(bodies(repo).get("F-002", ""), "F-002 "))),
     Case("内部の Q&A を指す", 0, ir=edit(cite_internal), spec={"order.md": SPEC, "qa-dev.csv": HEADER + QA_INTERNAL_DONE},
          post=internal_in_issue),
     Case("内部の Q&A が反映済みでない（関門が止める）", 1, "qa-dev.csv: D-001: 状態が 確認中", ir=edit(cite_internal),
@@ -2041,6 +2110,23 @@ CASES: list[Case] = [
          "（`--check --upto 1` が 0 にならない）。v2 の差分を測る土台が無い——references/versions.md の「前の版の時点が崩れていたら」",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), pre=plant_old_issues,
          post=nothing_written_issues),
+    # #875: 前の版を --provisional で作っていれば、前の版の暫定反映は崩れではない
+    Case("--provisional で前の版の暫定反映を確定する", 0, args=("--provisional",),
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), post=provisional_resolved),
+    # 1 パス目の指摘: 前の版で指されない暫定の行は、旗があっても前の版を作れていない（#335 の形を戻さない）
+    Case("--provisional でも前の版の指されない暫定反映は崩れ", 1, "v1 の時点の Q-004: 状態が 暫定反映",
+         args=("--provisional",), qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED,
+         extra=v2([V2_CHANGED], qa=HEADER + QA_PROVISIONAL_UNCITED.replace("暫定反映", "反映済み")), post=nothing_written_issues),
+    # 1 パス目の指摘: 撤去の本文には仮回答の印を付けない
+    Case("--provisional の撤去の本文に印を付けない", 0, args=("--provisional",), qa=HEADER + QA_PROVISIONAL + QA_DONE2,
+         ir=edit(lambda ir: ir["features"][1].__setitem__("qa", ["Q-001"])),
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n"),
+         post=lambda repo: unmarked(bodies(repo).get("F-002", "（撤去の本文が無い）" + PROVISIONAL_LINE), "撤去の")),
+    # 2 パス目の指摘: 残るのが前の版の中間表現が指す暫定の行だけなら、旗を付けて作る道があると言う
+    Case("前の版を --provisional で作ったときの案内", 1, "v1 を --provisional で作ったなら、利用者のその指示のもとで --provisional を付けて作る",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    Case("前の版を作れていないときは旗の案内を出さない", 1, "v1 の scaffold は作れていない", absent="--provisional を付けて作る",
+         qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED, extra=v2([V2_CHANGED])),
     Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の Q-001: 状態が 暫定反映（反映済み でない）",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
     # 前の版の時点を作るときも止まる（今の版と同じ関門）
@@ -2258,6 +2344,34 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "基準コミット: コミットが無い"),
     ("記録していないことを出力で知らせない", "    if unrecorded:\n", "    if False:\n", "基準コミット: git の作業ツリーでない"),
     # #852: 性能の要求
+    # #875: 仮回答（--provisional）
+    ("仮回答の行を書かない", "    if held:\n        lines.append(f\"{PROVISIONAL_LINE}\"", "    if False:\n        lines.append(f\"{PROVISIONAL_LINE}\"",
+     "--provisional で暫定反映を指す"),
+    ("受入基準の表に暫定の印を付けない", '"・".join(no + (PROVISIONAL_CELL if no in held else "") for no',
+     '"・".join(no for no', "--provisional で暫定反映を指す"),
+    ("確定の No にも暫定の印を付ける", '(PROVISIONAL_CELL if no in held else "")', "PROVISIONAL_CELL",
+     "--provisional で暫定反映を指す"),
+    ("機能の qa を仮回答の行に数えない", '    refs = set(feature["qa"]) | {no for _, case in rows',
+     '    refs = set() | {no for _, case in rows', "--provisional で暫定反映を機能だけが指す"),
+    ("--provisional でも指していない暫定の行を見ない", "            if uncited:", "            if False:",
+     "--provisional でも指していない暫定反映は止める"),
+    ("--provisional を読まない", "load(repo, args.upto, args.provisional)", "load(repo, args.upto, False)",
+     "--provisional で暫定反映を指す"),
+    ("--provisional でも暫定の行を qa から指せない", "!= qa.DONE and not (provisional and qa.is_provisional(answered[no])):",
+     "!= qa.DONE:", "--provisional で暫定反映を指す"),
+    ("前の版の判定に --provisional を当てない", "    unsettled = unsettled_qa(rendered, loaded.provisional)\n",
+     "    unsettled = unsettled_qa(rendered)\n", "--provisional で前の版の暫定反映を確定する"),
+    ("前の版の中間表現に --provisional を当てない", "read_whole(rendered, gate=False, provisional=loaded.provisional)",
+     "read_whole(rendered, gate=False)", "--provisional で前の版の暫定反映を確定する"),
+    ("前の版の指されない暫定の行を見ない", "qa.is_provisional(row) and no in cited)", "qa.is_provisional(row))",
+     "--provisional でも前の版の指されない暫定反映は崩れ"),
+    ("撤去の本文にも印を付ける", "    held = [] if change.kind == REMOVE else sorted(", "    held = [] if False else sorted(",
+     "--provisional の撤去の本文に印を付けない"),
+    ("前の版を旗で作ったときの案内を出さない", "            if not loaded.provisional and not unsettled_qa(rendered, provisional=True):",
+     "            if False:", "前の版を --provisional で作ったときの案内"),
+    ("前の版の暫定の行が残れば必ず旗の案内を出す", "            if not loaded.provisional and not unsettled_qa(rendered, provisional=True):",
+     "            if not loaded.provisional:", "前の版を作れていないときは旗の案内を出さない"),
+    ("仮回答の本文を出力で名指ししない", "    if marked:\n", "    if False:\n", "--provisional で暫定反映を指す"),
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
     ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY})",
@@ -2437,7 +2551,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if not versions.find_versions(docs, probe):", "版の名前だけが決まりに反する"),
     ("決まりに無いキーを見ない", "    for key in sorted(obj.keys() - required - optional):", "    for key in []:", "決まりに無いキー"),
     ("Q&A の実在を見ない", "        elif no not in answered:", "        elif False:", "Q&A が表に無い"),
-    ("暫定の行を見ない", "            if held:", "            if False:", "暫定反映の Q&A を指さない"),
+    ("暫定の行を見ない", "            if held and not provisional:", "            if False:", "暫定反映の Q&A を指さない"),
     ("内部の表を読まない", "        for path in (QA_PATH, INTERNAL_QA_PATH):", "        for path in (QA_PATH,):", "内部の Q&A を指す"),
     ("D- の番号を指せない", "(qa.NUMBER.fullmatch(no) or qa.is_internal_number(no))", "qa.NUMBER.fullmatch(no)",
      "内部の Q&A を指す"),
@@ -2618,16 +2732,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("撤去の前の版の全体を作業中の版で作る", 'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number - 1}"',
      'old_command = f"merge-versions.py {DOCS} {old_dir} --upto {number}"', "v2 で機能を消す"),
     # 検査だけ飛ばし、中間表現は返す形にする——`if code:` を潰すと None を読んで落ち、意味ではなく例外で殺される
-    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered, path_rules=gate)\n",
-     "        problems = check_ir(ir, whole, answered, path_rules=gate) if gate else []\n", "前の版の中間表現が決まりに反する"),
-    ("前の版にもパスの変数の決まりを当てる", "check_ir(ir, whole, answered, path_rules=gate)",
-     "check_ir(ir, whole, answered, path_rules=True)", "前の版だけパスの変数が入力に無い"),
-    ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate)",
-     "check_ir(ir, whole, answered, path_rules=False)", "前の版のパスの変数を直さない"),
+    ("前の版の中間表現を検査しない", "        problems = check_ir(ir, whole, answered, path_rules=gate, provisional=provisional)\n",
+     "        problems = check_ir(ir, whole, answered, path_rules=gate, provisional=provisional) if gate else []\n",
+     "前の版の中間表現が決まりに反する"),
+    ("前の版にもパスの変数の決まりを当てる", "check_ir(ir, whole, answered, path_rules=gate,",
+     "check_ir(ir, whole, answered, path_rules=True,", "前の版だけパスの変数が入力に無い"),
+    ("今の版にもパスの変数の決まりを当てない", "check_ir(ir, whole, answered, path_rules=gate,",
+     "check_ir(ir, whole, answered, path_rules=False,", "前の版のパスの変数を直さない"),
     # #361: 前の版の Q&A の状態を直接見る（#358）・名指し（#335）・凍結した前の版（#357）
-    ("前の版の Q&A の状態を見ない", "    unsettled = unsettled_qa(rendered)\n", "    unsettled = []\n",
+    ("前の版の Q&A の状態を見ない", "    unsettled = unsettled_qa(rendered, loaded.provisional)\n", "    unsettled = []\n",
      "前の版に指していない暫定反映の行がある"),
-    ("前の版の暫定反映だけを見る", 'if row["状態"].strip() != qa.DONE]', 'if row["状態"].strip() == qa.PROVISIONAL]',
+    ("前の版の暫定反映だけを見る", "if row[\"状態\"].strip() != qa.DONE and not (provisional and qa.is_provisional(row) and no in cited)]",
+     'if row["状態"].strip() == qa.PROVISIONAL]',
      "前の版に指していない確認中の行がある"),
     ("前の版の内部の表を見ない", "    for path in (QA_PATH, INTERNAL_QA_PATH):\n        if path in rendered:",
      "    for path in (QA_PATH,):\n        if path in rendered:", "前の版の内部の表に確認中の行がある"),
@@ -2673,7 +2789,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("impl_module の変化を見ない", "    if before.impl_module != loaded.ir.get(", "    if False and before.impl_module != loaded.ir.get(",
      "v2 で impl_module だけ変える"),
     ("--upto で書くのを断らない", "        if not (args.check or args.dry_run):\n", "        if False:\n", "--upto で書く"),
-    ("--upto を渡さない", "load(repo, args.upto)", "load(repo)", "前の版の時点の --check"),
+    ("--upto を渡さない", "load(repo, args.upto, args.provisional)", "load(repo, None, args.provisional)", "前の版の時点の --check"),
     ("回帰の失敗を見ない", '            if got != "pass":\n                problems.append(f"{name}: {CASE_KEPT}',
      '            if False:\n                problems.append(f"{name}: {CASE_KEPT}', "Red の状態: 回帰が壊れた実装"),
     # ---- 実装の状態（#294）
@@ -2965,6 +3081,15 @@ def main() -> int:
         # 陽性対照: 片方の文言を言い換えると当たらない
         check("基準コミットの文言を言い換えても照合が不一致にならない",
               isinstance(base_none, str) and f"{base_head}{base_none}（<理由>）" not in gap.replace(base_none, "記していない"))
+        # 仮回答の印（#875）——2 つのプラグインの境界の写し。原本は handoff-issue.md の「仮回答の印」
+        mark_line, mark_cell = constant(source, "PROVISIONAL_LINE"), constant(source, "PROVISIONAL_CELL")
+        check("PROVISIONAL_LINE・PROVISIONAL_CELL が本体とこのテストの写しで違う",
+              (mark_line, mark_cell) == (PROVISIONAL_LINE, PROVISIONAL_CELL), f"{mark_line!r} {mark_cell!r}")
+        for label, doc in (("handoff-issue.md", handoff), ("dev-loop の references/spec-gap.md", gap)):
+            for text in (f"{PROVISIONAL_LINE}<No>", f"`{PROVISIONAL_CELL}`"):
+                check(f"{label} に仮回答の印の形 {text!r} が無い", text in doc)
+        check("仮回答の印を言い換えても照合が不一致にならない",
+              f"`{PROVISIONAL_CELL}`" not in gap.replace(PROVISIONAL_CELL, "（仮）"))
         # 突き合わせ自体の陽性対照
         broken = handoff.replace("| `## Red テスト` |", "| `## 赤のテスト` |")
         check("handoff-issue.md の写しを崩しても不一致にならない", table_cells(broken, "## 節") != sections)
