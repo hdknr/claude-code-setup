@@ -7,6 +7,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 - `scaffold/openapi.json`・`scaffold/types.py`・`scaffold/tests/test_<機能>.py`（Red テスト）・`scaffold/perf/perf_<機能>.py`（性能テスト。`nfr` を持つ機能だけ）——**commit する契約**
 - `build/scaffold/issues/<機能の id>.md` と `issues.json`——**Issue の本文**（登録はスクリプトの外。`gh` を呼ばない）
+- `build/scaffold/issues/proposals.md`——**課題一覧（案）**（#855。Issue の本文ではない。登録しない——下の「呼ぶ側の分岐」）
 
 **形の正は `references/spec-ir.md`（中間表現）と `references/handoff-issue.md`（Issue の本文）である**
 （このプラグインの中にある）。下の定数（メソッド・型・番号の形・印・節）はその写しで、
@@ -46,6 +47,14 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 `nfr` を持つ機能だけ、性能テスト `scaffold/perf/perf_<機能>.py`（契約。実装をケースの入力で 1 回ずつ呼び、1 回の時間から指標を出して上限と比べる）を作り、
 本文の `### 性能予算` に行の数字と性能テストを書く。持たない機能の性能予算は「要求なし」（既定の原則）。**性能テストは負荷を再現しない**ので、
 Red テストの表（受入基準）にも `--red-check` にも入れない（決まりの正は `references/nfr.md` と `references/spec-ir.md` の「性能の要求」）。
+
+**呼ぶ側の分岐（`branches`。#855）と課題一覧（案）**: 中間表現の機能の `branches` に、仕様チェックリストの「呼ぶ側の分岐」の 8 分岐ごとの
+見せるもの（`shows`）か該当なし（`none`）を、**機能の `source` の原文の 1 行**で書く（行ごと該当なしは `none` だけ）。**原文が `source` に無い・
+分岐の名前でない・形が決まりに反する・呼ばれる関数（`called_by` を持つ機能）に書いたなら 1**——その行がその分岐を決めているかは書き起こす側の判断。
+書く生成は `build/scaffold/issues/proposals.md`（課題一覧（案））も作る——v<n> で追加・変更した入口の機能ごとに 1 案で、
+**未決定事項**（`branches` に無い分岐）・**受入基準の雛形**（見せるものの原文のチェックボックス）・**作らないもの**（本文の `## 作らないもの` と同じ中身）を付ける。
+**未決定事項があっても止めない**（案は登録しないので。件数を出す）。案を登録するか・未決定事項を spec-review に戻すかは `scaffold` スキルの手順 7
+（決まりの正は `references/spec-ir.md` の「呼ぶ側の分岐」）。
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
@@ -199,6 +208,14 @@ CALLED_BY = "called_by"
 OUT_OF_SCOPE = "out_of_scope"
 # 機能に効く性能の要求の行の `No` の配列（任意。`references/spec-ir.md` の「性能の要求」。#852）
 NFR = "nfr"
+# 呼ぶ側の分岐の書き起こし（任意。`references/spec-ir.md` の「呼ぶ側の分岐」。#855）——分岐の名前 → 見せるもの（`shows`）か
+# 該当なし（`none`）。行ごと該当なしは `none` だけ。分岐の名前は `references/spec-ir.md` の分岐の表の写し
+BRANCHES_KEY = "branches"
+SHOWS = "shows"
+NONE = "none"
+BRANCHES = ("入力が欠ける", "入力が遅れる", "入力の順が崩れる", "呼ぶ処理が失敗する", "呼ぶ処理がやり直される", "呼ぶ処理が再起動する", "量が上限を超える", "量が重なる")
+# 課題一覧（案）——Issue の本文と同じ場所に置く（`references/tree.md` の「生成物の置き場所」。#855）
+PROPOSALS = "proposals.md"
 # 性能の要求の表（重ねた全体の中の場所）と、その列・指標・単位（`references/nfr.md` の写し）
 NFR_PATH = "shared/nfr.csv"
 NFR_COLUMNS = ("No", "対象", "指標", "上限", "単位", "条件", "根拠")
@@ -476,7 +493,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
-        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"}, {CALLED_BY, OUT_OF_SCOPE, NFR})
+        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"},
+                             {CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})
         if found:
             problems += found
             if not isinstance(feature, dict):
@@ -500,6 +518,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             problems += check_out_of_scope(f"{where}.{OUT_OF_SCOPE}", feature[OUT_OF_SCOPE], whole)
         if NFR in feature:
             problems += check_nfr(f"{where}.{NFR}", feature[NFR], whole)
+        if BRANCHES_KEY in feature:
+            problems += check_branches(f"{where}.{BRANCHES_KEY}", feature, whole)
 
         op = feature.get("operation")
         fields_in, fields_out, errors = {}, {}, []
@@ -709,6 +729,67 @@ def check_nfr(where: str, refs, whole: Path) -> list[str]:
             continue
         problems += [f"{where}: {no}: {problem}" for problem in nfr_row_problems(*rows[0])]
     return problems
+
+
+def source_lines(sources, whole: Path) -> set[str] | None:
+    """機能の `source` の原文の行（前後の空白を落とした）。`source` が配列でなければ None（`check_source` が言う）。
+
+    読むのは `check_ref` と同じく、重ね合わせた全体の `spec/` の中の相対パスだけ——外のファイルを読まない。読めない原文は飛ばす。
+    """
+    if not isinstance(sources, list):
+        return None
+    lines: set[str] = set()
+    spec_root = (whole / SPEC_DIR).resolve()
+    for rel in sources:
+        if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel:
+            continue
+        path = (whole / rel).resolve()
+        if not path.is_relative_to(spec_root):  # spec/ の外は読まない
+            continue
+        try:
+            if path.is_file():
+                lines |= {line.strip() for line in path.read_bytes().decode("utf-8-sig").splitlines()}
+        except (OSError, UnicodeDecodeError, ValueError):
+            continue  # 読めない原文は source の検査と未決定の印の関門が言う
+    return lines
+
+
+def check_branches(where: str, feature: dict, whole: Path) -> list[str]:
+    """呼ぶ側の分岐（#855。`references/spec-ir.md` の「呼ぶ側の分岐」）。
+
+    分岐の名前（`BRANCHES`）→ `{"shows": 見せるもの}` か `{"none": 該当なしの理由}`。行ごと該当なしは `{"none": …}` だけ。
+    **値は仕様の原文の 1 行**——機能の `source` のどれかに、前後の空白を落として一致する行が在ること**だけ**を見る
+    （その行がその分岐を決めているかは書き起こす側の判断）。**呼ばれる関数（`called_by` を持つ機能）には書かない**——分岐は呼ぶ入口に書く。
+    """
+    branches = feature[BRANCHES_KEY]
+    if CALLED_BY in feature:
+        return [f"{where}: 呼ばれる関数（{CALLED_BY} を持つ機能）には書かない——呼ぶ側の分岐は、呼ぶ入口の機能に書く"]
+    if not isinstance(branches, dict) or not branches:
+        return [f"{where}: 分岐の名前から {{\"{SHOWS}\": 原文}} か {{\"{NONE}\": 原文}} への 1 つ以上のオブジェクトでない"]
+    problems, texts = [], []
+    if NONE in branches:
+        if len(branches) != 1:
+            return [f"{where}: 行ごとの該当なし（{NONE}）と分岐を一緒に書いている"]
+        texts.append((f"{where}.{NONE}", branches[NONE]))
+    else:
+        for name, value in branches.items():
+            if name not in BRANCHES:
+                problems.append(f"{where}: 分岐の名前でない（{' / '.join(BRANCHES)}）: {name!r}")
+            elif not isinstance(value, dict) or len(value) != 1 or next(iter(value)) not in (SHOWS, NONE):
+                problems.append(f"{where}.{name}: {{\"{SHOWS}\": 原文}} か {{\"{NONE}\": 原文}} のどちらか 1 つでない")
+            else:
+                key = next(iter(value))
+                texts.append((f"{where}.{name}.{key}", value[key]))
+    good = []
+    for at, text in texts:
+        if not isinstance(text, str) or not one_line(text) or text != text.strip():
+            problems.append(f"{at}: 前後に空白の無い 1 行の文字列でない")
+        else:
+            good.append((at, text))
+    lines = source_lines(feature.get("source"), whole)
+    if lines is None:
+        return problems
+    return problems + [f"{at}: 仕様の原文（source）に、この行が原文のまま無い: {text!r}" for at, text in good if text not in lines]
 
 
 def check_called_by(features: list) -> list[str]:
@@ -1612,6 +1693,79 @@ def budget(feature: dict, loaded: Loaded, contract: dict[str, str]) -> list[str]
     return lines
 
 
+def proposal_changes(changes: list[Change]) -> list[Change]:
+    """課題一覧（案）に載せる変化——追加・変更した入口の機能（`called_by` を持たない機能）。呼ばれる関数・撤去は載せない。"""
+    return [c for c in changes if c.kind in (ADD, MODIFY) and not c.feature.get(CALLED_BY)]
+
+
+def undecided(feature: dict) -> list[str]:
+    """呼ぶ側の分岐のうち、中間表現の `branches` に書き起こしていないもの（行ごと該当なしなら無い）。"""
+    branches = feature.get(BRANCHES_KEY) or {}
+    return [] if NONE in branches else [name for name in BRANCHES if name not in branches]
+
+
+def proposals(changes: list[Change], loaded: Loaded, contract: dict[str, str]) -> str:
+    """課題一覧（案）（#855。`references/spec-ir.md` の「呼ぶ側の分岐」）。案は登録しない——登録は利用者が決める。
+
+    案ごとに、未決定事項（呼ぶ側の分岐のうち `branches` に無いもの）・受入基準の雛形（見せるものが決まった分岐の原文）・
+    作らないもの（元の機能の本文の `## 作らないもの` と同じ中身を、小見出しを 1 段下げて）を付ける。
+    """
+    entries = proposal_changes(changes)
+    lines = [
+        "# 課題一覧（案）",
+        "",
+        "scaffold が Issue にする機能（Red テストつき）の、**Red テストの外に残る呼ぶ側の結線**の課題の案。"
+        f"v{loaded.number} で追加・変更した入口の機能（`{CALLED_BY}` を持たない機能）ごとに 1 案を置き、"
+        "呼ぶ側の分岐（spec-loop の `references/spec-exit.md` の仕様チェックリストの行）を中間表現の"
+        f" `{BRANCHES_KEY}` から写す。",
+        "",
+        "**scaffold はこの案を登録しない**——登録するかは利用者が決める。"
+        "**未決定事項のある案は、登録の前に `/spec-loop:spec-review` に戻す**（決まっていないことを実装で決めさせない）。",
+    ]
+    if not entries:
+        lines += ["", f"案は無い——v{loaded.number} で追加・変更した入口の機能が無い。"]
+    for change in entries:
+        feature = change.feature
+        branches = feature.get(BRANCHES_KEY) or {}
+        fid = feature["id"]
+        lines += [
+            "", f"## {fid}: {feature['title']} の結線", "",
+            f"- 元の機能: `{fid}`（Issue の本文 `{fid}.md`・変化 `{change.kind}`）——その Red テストは関数の振る舞いを確かめる。"
+            "この案は Red テストの外に残る呼ぶ側の結線を受け持つ",
+            "- 仕様の原文: " + "・".join(f"`{merged(s)}`" for s in feature["source"]),
+            "", "### 未決定事項", "",
+        ]
+        missing = undecided(feature)
+        if missing:
+            lines += [f"- {name}: 中間表現の `{BRANCHES_KEY}` に書き起こしていない——仕様が決めていれば書き起こし、"
+                      "決めていなければ `/spec-loop:spec-review` に戻す" for name in missing]
+        else:
+            lines.append("無い（呼ぶ側の分岐は、どれも仕様が決めている）。")
+        lines += ["", "### 受入基準の雛形", ""]
+        if NONE in branches:
+            lines.append(f"呼ぶ側の分岐は行ごと該当なし（仕様の原文: {branches[NONE]}）——結線で見せるものは無い。")
+        else:
+            shown = [(name, branches[name][SHOWS]) for name in BRANCHES if SHOWS in branches.get(name, {})]
+            absent = [(name, branches[name][NONE]) for name in BRANCHES if NONE in branches.get(name, {})]
+            lines += [f"- [ ] {name}: {text}" for name, text in shown]
+            if not shown:
+                lines.append("見せるものが決まった分岐は無い（上の未決定事項を先に決める）。")
+            if absent:
+                lines += ["", "該当なしの分岐（仕様の原文）:", ""] + [f"- {name}: {text}" for name, text in absent]
+        lines += [
+            "",
+            f"- [ ] {KEPT_GREEN}（元の機能 `{fid}` の Red テストを含む）",
+            "",
+            "上の分岐に Red テストは無い——見せるものの確かめ方（結合テスト・実機確認）は、この案を登録した Issue の周が決める。",
+            "",
+            "### 作らないもの",
+            "",
+        ]
+        # 元の機能の本文の `## 作らないもの` と同じ中身。小見出し（`### 範囲の外` など）を 1 段下げる
+        lines += [f"#{line}" if line in NOT_BUILT else line for line in not_built(change, loaded, contract)]
+    return "\n".join(lines) + "\n"
+
+
 def render_contract(loaded: Loaded) -> dict[str, str]:
     """{`scaffold/` からの相対パス: 中身} を返す。契約は全体から作る（変わっていない機能も）。
 
@@ -1640,6 +1794,7 @@ def render_issues(changes: list[Change], loaded: Loaded, contract: dict[str, str
                       "body": f"{fid}.md",
                       "red": [] if change.kind == REMOVE else [test_name(change.feature, c) for c in red_cases(rows)]})
     issues["issues.json"] = json.dumps(index, ensure_ascii=False, indent=2) + "\n"
+    issues[PROPOSALS] = proposals(changes, loaded, contract)
     return issues
 
 
@@ -1952,6 +2107,10 @@ def run(repo: Path, args, writing: bool) -> int:
         return 0
     write(repo, contract, issues)
     print(f"作った: {OUT_DIR}/ と {ISSUES_DIR}/（{summary}）")
+    entries = proposal_changes(changes)
+    print(f"課題一覧（案）: {ISSUES_DIR}/{PROPOSALS}（案 {len(entries)} 件・未決定事項 "
+          f"{sum(len(undecided(c.feature)) for c in entries)} 件）——scaffold は案を登録しない。"
+          "未決定事項のある案は、登録の前に spec-review に戻す")
     print("**条件 2〜5 は判定していない**——spec-review が「抜けた」と報告したことを確かめてから登録する")
     return 0
 

@@ -23,6 +23,10 @@
    本文がその sha256 と回し方を持つ。性能テストは実装が無ければ「未実装」で失敗し、上限を超える遅い実装で失敗し、速い実装で緑（陽性対照）。
    `nfr` の無い機能は「要求なし」で性能テストを作らない。`nfr` を外せば性能テストを消し、`--check` が残りを古いと言う。
    `nfr` や指した行が決まりに反するなら作らない。性能でない行を指さなければ止めない）・
+   **課題一覧（案）**（#855。`build/scaffold/issues/proposals.md` に、追加・変更した入口の機能ごとに 1 案——呼ばれる関数・撤去には作らない。
+   各案に、未決定事項〔中間表現の `branches` に無い呼ぶ側の分岐〕・受入基準の雛形〔見せるものの原文のチェックボックスと該当なしの分岐〕・
+   作らないもの〔本文の `## 作らないもの` と同じ中身〕が出る。`branches` を書かなければ 8 分岐が全部未決定。
+   `branches` が決まりに反する・原文が `source` に無い・呼ばれる関数に書いたなら作らない）・
    **本文の指紋と sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
    が書いた実物に、**dev-loop の `scripts/spec-fingerprint.py` を実際に当てた出力**と比べる——2 つのプラグインに
    置いた指紋の式の写しが揃っていることも、これで見る）。**指紋は機能単位**——関係の無い機能を直しても変わらない
@@ -409,6 +413,148 @@ def not_built_copied(repo: Path) -> str | None:
             if stray in body:
                 return f"{fid} の本文に挙げていない行 {stray!r} がある"
     return None
+
+
+# ---- 呼ぶ側の分岐と課題一覧（案）（#855）。仕様の原文の行を、中間表現の branches で分岐に結びつける
+BRANCH_LINES = ("- 入力が欠ける: 「データ欠落」と表示する",
+                "- 入力が遅れる: 「取得中」と表示する",
+                "| 呼ぶ処理が失敗する | 「再計算待ち」と表示し、担当に通知する |",
+                "- 入力の順が崩れる: 該当なし（1 回の要求で全部そろって届く）",
+                "呼ぶ側の分岐: 該当なし（純粋な計算で、外と結ばない）")
+BRANCH_SPEC = SPEC + "\n## 呼ぶ側の分岐\n\n" + "\n".join(BRANCH_LINES[:2]) + "\n\n| 分岐 | 見せるもの |\n| --- | --- |\n" \
+    + "  " + BRANCH_LINES[2] + "  \n\n" + BRANCH_LINES[3] + "\n\n" + BRANCH_LINES[4] + "\n"
+BRANCH_SPECS = {"order.md": BRANCH_SPEC, "scope.md": SCOPE_MD}
+# 未決定事項と受入基準の雛形を見分けるため、F-001 は分岐の一部だけ（見せるもの 3・該当なし 1。並びを分岐の表と変える）、
+# F-002 は行ごと該当なし。F-001 は範囲の外の行も持つ（案の作らないもの）
+F001_BRANCHES = {"呼ぶ処理が失敗する": {"shows": BRANCH_LINES[2]}, "入力の順が崩れる": {"none": BRANCH_LINES[3]},
+                 "入力が遅れる": {"shows": BRANCH_LINES[1]}, "入力が欠ける": {"shows": BRANCH_LINES[0]}}
+ALL_BRANCHES = ("入力が欠ける", "入力が遅れる", "入力の順が崩れる", "呼ぶ処理が失敗する", "呼ぶ処理がやり直される",
+                "呼ぶ処理が再起動する", "量が上限を超える", "量が重なる")
+
+
+def branches(f001=None, f002=None, scope=None) -> Callable[[dict], dict]:
+    def apply(ir: dict) -> None:
+        if f001 is not None:
+            f1(ir)["branches"] = f001
+        if f002 is not None:
+            ir["features"][1]["branches"] = f002
+        if scope is not None:
+            f1(ir)["out_of_scope"] = scope
+    return edit(apply)
+
+
+BRANCHES_IR = branches(F001_BRANCHES, {"none": BRANCH_LINES[4]}, [SCOPE_ROWS[0], SCOPE_ROWS[1]])
+PROPOSALS_FILE = Path("build") / "scaffold" / "issues" / "proposals.md"
+UNDECIDED = "- {}: 中間表現の `branches` に書き起こしていない——仕様が決めていれば書き起こし、決めていなければ `/spec-loop:spec-review` に戻す"
+KEEP_GREEN = "- [ ] 周の前に緑だった Red テストが、周の後も緑のままであること（元の機能 `{}` の Red テストを含む）"
+NO_RED = "上の分岐に Red テストは無い——見せるものの確かめ方（結合テスト・実機確認）は、この案を登録した Issue の周が決める。"
+NOT_BUILT_HEAD = "受入基準に結びつかないものを作らない。下に挙げたものは、この機能では作らない。"
+
+
+def proposal_sections(repo: Path) -> dict[str, str] | str:
+    """{機能の id: 案の本文（見出しの次の行から、次の案の見出しの前まで）}。ファイルが無ければ理由の文字列。"""
+    path = repo / PROPOSALS_FILE
+    if not path.is_file():
+        return f"{PROPOSALS_FILE} が無い"
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("# 課題一覧（案）\n\n"):
+        return f"課題一覧（案）の見出しで始まらない: {text[:80]!r}"
+    if "**scaffold はこの案を登録しない**" not in text or "**未決定事項のある案は、登録の前に `/spec-loop:spec-review` に戻す**" not in text:
+        return "課題一覧（案）の冒頭に、登録しないこと・未決定事項を spec-review に戻すことが無い"
+    found = {}
+    for chunk in text.split("\n## ")[1:]:
+        head, _, rest = chunk.partition("\n")
+        found[head.split(":", 1)[0]] = (head, rest)
+    return found
+
+
+def proposal_text(fid: str, title: str, change: str, undecided: list[str], template: list[str], not_built: list[str]) -> str:
+    return "\n".join([
+        "", f"- 元の機能: `{fid}`（Issue の本文 `{fid}.md`・変化 `{change}`）——その Red テストは関数の振る舞いを確かめる。"
+        "この案は Red テストの外に残る呼ぶ側の結線を受け持つ",
+        "- 仕様の原文: `build/merged/spec/order.md`",
+        "", "### 未決定事項", "", *undecided,
+        "", "### 受入基準の雛形", "", *template,
+        "", KEEP_GREEN.format(fid), "", NO_RED, "", "### 作らないもの", "", *not_built]) + "\n"
+
+
+def proposals_written(repo: Path) -> str | None:
+    found = proposal_sections(repo)
+    if isinstance(found, str):
+        return found
+    if list(found) != ["F-001", "F-002"]:
+        return f"案は入口の機能ごとに 1 つのはず: {list(found)}"
+    budget = ["#### 性能予算", "", NO_BUDGET]
+    expected = {
+        "F-001": ("F-001: 割引額を計算する の結線", proposal_text(
+            "F-001", "割引額を計算する", "add",
+            [UNDECIDED.format(name) for name in ALL_BRANCHES[4:]],
+            [f"- [ ] 入力が欠ける: {BRANCH_LINES[0]}", f"- [ ] 入力が遅れる: {BRANCH_LINES[1]}",
+             f"- [ ] 呼ぶ処理が失敗する: {BRANCH_LINES[2]}", "", "該当なしの分岐（仕様の原文）:", "",
+             f"- 入力の順が崩れる: {BRANCH_LINES[3]}"],
+            [NOT_BUILT_HEAD, "", "#### 範囲の外", "", SCOPE_HEADER, SCOPE_ROWS[0], "", COPIED,
+             "", "#### 次の版の候補", "", SCOPE_HEADER, SCOPE_ROWS[1], "", COPIED, "", *budget])),
+        "F-002": ("F-002: 注文を取り消せるか の結線", proposal_text(
+            "F-002", "注文を取り消せるか", "add",
+            ["無い（呼ぶ側の分岐は、どれも仕様が決めている）。"],
+            [f"呼ぶ側の分岐は行ごと該当なし（仕様の原文: {BRANCH_LINES[4]}）——結線で見せるものは無い。"],
+            [NOT_BUILT_HEAD, "", "#### 範囲の外", "", NOT_BUILT_NONE.format("範囲の外の行"),
+             "", "#### 次の版の候補", "", NOT_BUILT_NONE.format("次の版の候補"), "", *budget])),
+    }
+    for fid, want in expected.items():
+        if found[fid] != want:
+            return f"{fid} の案が違う:\n{found[fid][0]}\n{found[fid][1]}\n---- 期待:\n{want[0]}\n{want[1]}"
+    # 案の作らないものは、元の機能の本文の `## 作らないもの` と同じ中身（小見出しだけ 1 段下げる）
+    body = not_built_section(bodies(repo)["F-001"])
+    section = found["F-001"][1].split("### 作らないもの\n\n", 1)[1].rstrip("\n")
+    if section != body.replace("\n### ", "\n#### "):
+        return f"案の作らないものが本文の作らないものと違う:\n{section}\n---- 本文:\n{body}"
+    return None
+
+
+def proposals_unwritten(repo: Path) -> str | None:
+    """branches を書いていない中間表現——どの入口の機能も 8 分岐が全部未決定。"""
+    found = proposal_sections(repo)
+    if isinstance(found, str):
+        return found
+    for fid in ("F-001", "F-002"):
+        if fid not in found:
+            return f"{fid} の案が無い: {list(found)}"
+        part = found[fid][1].split("\n### 未決定事項\n\n", 1)[1].split("\n\n### 受入基準の雛形\n", 1)[0]
+        if part.split("\n") != [UNDECIDED.format(name) for name in ALL_BRANCHES]:
+            return f"{fid} の未決定事項が 8 分岐でない:\n{part}"
+        if "見せるものが決まった分岐は無い（上の未決定事項を先に決める）。" not in found[fid][1]:
+            return f"{fid} の受入基準の雛形に、決まった分岐が無いことの文言が無い"
+    return None
+
+
+def proposals_entry_only(repo: Path) -> str | None:
+    """F-001 は F-002 から呼ばれる関数——案は呼ぶ入口の F-002 だけ。"""
+    found = proposal_sections(repo)
+    if isinstance(found, str):
+        return found
+    return None if list(found) == ["F-002"] else f"案は呼ぶ入口の機能だけのはず: {list(found)}"
+
+
+def proposals_none(repo: Path) -> str | None:
+    found = proposal_sections(repo)
+    if isinstance(found, str):
+        return found
+    if found:
+        return f"案は無いはず: {list(found)}"
+    text = (repo / PROPOSALS_FILE).read_text(encoding="utf-8")
+    return None if "案は無い——v2 で追加・変更した入口の機能が無い。" in text else f"案が無いことの文言が無い: {text[-200:]}"
+
+
+def proposals_modified(repo: Path) -> str | None:
+    """v2 で branches だけ足した F-001——変更（modify）の案が 1 つ。"""
+    found = proposal_sections(repo)
+    if isinstance(found, str):
+        return found
+    if list(found) != ["F-001"]:
+        return f"案は変えた機能だけのはず: {list(found)}"
+    return None if "・変化 `modify`）" in found["F-001"][1] and f"- [ ] 入力が欠ける: {BRANCH_LINES[0]}" in found["F-001"][1] \
+        else f"変更の案が違う: {found['F-001'][1][:300]}"
 
 
 # ---- 性能の要求（#852）。`shared/nfr.csv` の性能の行を、中間表現の nfr で機能に結びつける
@@ -1702,6 +1848,45 @@ CASES: list[Case] = [
     # #851: out_of_scope を足すだけでも機能は変更になる（ケースは全部 回帰）。本文の作らないものに写る
     Case("v2 で作らないものだけ足す", 0, "modify 1", spec=SCOPE_SPEC,
          extra=v2([{**copy.deepcopy(IR["features"][0]), "out_of_scope": [SCOPE_ROWS[0]]}]), post=not_built_added_in_v2),
+    # #855: 課題一覧（案）。案は入口の機能ごと・未決定事項・受入基準の雛形・作らないもの
+    Case("課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの", 0, "課題一覧（案）: build/scaffold/issues/proposals.md（案 2 件・未決定事項 4 件）",
+         ir=BRANCHES_IR, spec=BRANCH_SPECS, post=proposals_written),
+    Case("課題一覧（案）: branches を書いていなければ全部の分岐が未決定", 0, "（案 2 件・未決定事項 16 件）", post=proposals_unwritten),
+    Case("課題一覧（案）: 呼ばれる関数には案を作らない", 0, "（案 1 件・未決定事項 8 件）", ir=CALLED, post=proposals_entry_only),
+    Case("課題一覧（案）: v2 で機能を消すだけなら案は無い", 0, "（案 0 件・未決定事項 0 件）",
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=proposals_none),
+    Case("課題一覧（案）: v2 で branches だけ足す", 0, "modify 1", spec=BRANCH_SPECS,
+         extra=v2([{**copy.deepcopy(IR["features"][0]), "branches": {"入力が欠ける": {"shows": BRANCH_LINES[0]}}}]),
+         post=proposals_modified),
+    Case("呼ぶ側の分岐: 呼ばれる関数に書く", 1, "F-001.branches: 呼ばれる関数（called_by を持つ機能）には書かない",
+         ir=edit(lambda ir: (f1(ir).update(called_by=["F-002"], branches={"none": BRANCH_LINES[4]}))), spec=BRANCH_SPECS,
+         pre=plant_old_issues, post=nothing_written_issues),
+    Case("呼ぶ側の分岐: オブジェクトでない", 1, "F-001.branches: 分岐の名前から", ir=branches([BRANCH_LINES[0]]),
+         spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 空", 1, "F-001.branches: 分岐の名前から", ir=branches({}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 分岐の名前でない", 1, "F-001.branches: 分岐の名前でない（入力が欠ける / ", ir=branches({"通信が切れる": {"shows": BRANCH_LINES[0]}}),
+         spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: shows と none を両方書く", 1, "F-001.branches.入力が欠ける: {\"shows\": 原文} か {\"none\": 原文} のどちらか 1 つでない",
+         ir=branches({"入力が欠ける": {"shows": BRANCH_LINES[0], "none": BRANCH_LINES[3]}}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 値の鍵が違う", 1, "F-001.branches.入力が欠ける: {\"shows\": 原文} か {\"none\": 原文} のどちらか 1 つでない",
+         ir=branches({"入力が欠ける": {"show": BRANCH_LINES[0]}}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 行ごとの該当なしと分岐を混ぜる", 1, "F-001.branches: 行ごとの該当なし（none）と分岐を一緒に書いている",
+         ir=branches({"none": BRANCH_LINES[4], "入力が欠ける": {"shows": BRANCH_LINES[0]}}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 原文に無い行", 1, "F-001.branches.入力が遅れる.shows: 仕様の原文（source）に、この行が原文のまま無い: '- 入力が遅れる: 「待機中」と表示する'",
+         ir=branches({"入力が遅れる": {"shows": "- 入力が遅れる: 「待機中」と表示する"}}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 行ごとの該当なしが原文に無い", 1, "F-001.branches.none: 仕様の原文（source）に、この行が原文のまま無い",
+         ir=branches({"none": "該当なし"}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 複数行", 1, "F-001.branches.入力が欠ける.shows: 前後に空白の無い 1 行の文字列でない",
+         ir=branches({"入力が欠ける": {"shows": BRANCH_LINES[0] + "\n" + BRANCH_LINES[1]}}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 前後に空白", 1, "F-001.branches.入力が欠ける.shows: 前後に空白の無い 1 行の文字列でない",
+         ir=branches({"入力が欠ける": {"shows": " " + BRANCH_LINES[0]}}), spec=BRANCH_SPECS),
+    Case("呼ぶ側の分岐: 文字列でない", 1, "F-001.branches.none: 前後に空白の無い 1 行の文字列でない",
+         ir=branches({"none": 1}), spec=BRANCH_SPECS),
+    # 原文の行は前後の空白を落として比べる（表の行の前後の空白・別の source のファイルの行）
+    Case("呼ぶ側の分岐: 別の source の原文", 0, "（案 2 件・未決定事項 15 件）",
+         ir=edit(lambda ir: f1(ir).update(source=["spec/order.md", "spec/wire.md"],
+                                         branches={"量が重なる": {"shows": "二重送信は 1 件に寄せて「受け付けた」と表示する"}})),
+         spec={"order.md": SPEC, "wire.md": "# 結線\n\n二重送信は 1 件に寄せて「受け付けた」と表示する\n"}),
     Case("v2 で機能を足す", 0, "作った", extra=v2([V2_RETURN]), post=v2_added),
     Case("v2 の Q&A が確認中", 1, "build/merged/shared/qa.csv: Q-003: 状態が 確認中",
          extra=v2([V2_RETURN], qa=HEADER + QA_V2 + QA_OPEN), pre=plant_old_issues, post=nothing_written),
@@ -1956,7 +2141,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # #852: 性能の要求
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
-    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR})", "{CALLED_BY, OUT_OF_SCOPE})",
+    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY})",
      "性能の要求: 行があれば性能テストと予算"),
     ("性能テストを作らない", "        if rows:\n            contract[f\"{PERF_DIR}/", "        if False:\n            contract[f\"{PERF_DIR}/",
      "性能の要求: 行があれば性能テストと予算"),
@@ -1997,7 +2182,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("表でない行を空の行で区切らない", "            if index and (header is None or header != group[index - 1][1]):",
      "            if index and header is not None and header != group[index - 1][1]:", "作らないもの: 範囲の外の行と次の版の候補を写す"),
-    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR})", "{CALLED_BY, NFR})",
+    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})", "{CALLED_BY, NFR, BRANCHES_KEY})",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("out_of_scope の検査を呼ばない", "        if OUT_OF_SCOPE in feature:\n            problems += check_out_of_scope",
      "        if False:\n            problems += check_out_of_scope", "作らないもの: 節に無い行"),
@@ -2022,6 +2207,54 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("out_of_scope の複数行を許す", " or not one_line(row) or row != row.strip() for row in picked", " or row != row.strip() for row in picked",
      "作らないもの: 複数行"),
     ("out_of_scope の前後の空白を許す", " or row != row.strip() for row in picked", " for row in picked", "作らないもの: 前後に空白"),
+    # #855: 呼ぶ側の分岐と課題一覧（案）
+    ("課題一覧（案）を作らない", "    issues[PROPOSALS] = proposals(changes, loaded, contract)\n", "",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("呼ばれる関数にも案を作る", " and not c.feature.get(CALLED_BY)]", "]", "課題一覧（案）: 呼ばれる関数には案を作らない"),
+    ("撤去にも案を作る", "if c.kind in (ADD, MODIFY) and not", "if c.kind in (ADD, MODIFY, REMOVE) and not",
+     "課題一覧（案）: v2 で機能を消すだけなら案は無い"),
+    ("未決定事項を出さない", "        if missing:\n", "        if False:\n", "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("書き起こした分岐も未決定に数える", "[name for name in BRANCHES if name not in branches]", "list(BRANCHES)",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("行ごとの該当なしでも未決定に数える", "    return [] if NONE in branches else [", "    return [] if False else [",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("受入基準の雛形に見せるものを写さない", '            lines += [f"- [ ] {name}: {text}" for name, text in shown]\n', "",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("該当なしの分岐を雛形に並べない", "            if absent:\n", "            if False:\n",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("決まった分岐が無いことを書かない", "            if not shown:\n", "            if False:\n",
+     "課題一覧（案）: branches を書いていなければ全部の分岐が未決定"),
+    ("案に作らないものを付けない", "        lines += [f\"#{line}\" if line in NOT_BUILT else line for line in not_built(change, loaded, contract)]\n", "",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("案の作らないものの小見出しを下げない", 'lines += [f"#{line}" if line in NOT_BUILT else line', "lines += [line",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("案が無いことを書かない", "    if not entries:\n", "    if False:\n", "課題一覧（案）: v2 で機能を消すだけなら案は無い"),
+    ("案の件数を出さない", "（案 {len(entries)} 件", "（案 {len(changes)} 件", "課題一覧（案）: 呼ばれる関数には案を作らない"),
+    ("branches を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})", "{CALLED_BY, OUT_OF_SCOPE, NFR})",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("branches の検査を呼ばない", "        if BRANCHES_KEY in feature:\n            problems += check_branches",
+     "        if False:\n            problems += check_branches", "呼ぶ側の分岐: 原文に無い行"),
+    ("呼ばれる関数に書いても通す", "    if CALLED_BY in feature:\n        return [f\"{where}: 呼ばれる関数", "    if False:\n        return [f\"{where}: 呼ばれる関数",
+     "呼ぶ側の分岐: 呼ばれる関数に書く"),
+    ("branches の空を許す", "    if not isinstance(branches, dict) or not branches:", "    if not isinstance(branches, dict):",
+     "呼ぶ側の分岐: 空"),
+    ("branches の配列を許す", "    if not isinstance(branches, dict) or not branches:", "    if not branches:",
+     "呼ぶ側の分岐: オブジェクトでない"),
+    ("行ごとの該当なしと分岐の混在を許す", "        if len(branches) != 1:\n", "        if False:\n",
+     "呼ぶ側の分岐: 行ごとの該当なしと分岐を混ぜる"),
+    ("分岐の名前を見ない", "            if name not in BRANCHES:\n", "            if False:\n", "呼ぶ側の分岐: 分岐の名前でない"),
+    ("値の鍵を 2 つ許す", "or len(value) != 1 or next(iter(value))", "or next(iter(value))", "呼ぶ側の分岐: shows と none を両方書く"),
+    ("値の鍵の名前を見ない", " or next(iter(value)) not in (SHOWS, NONE):", ":", "呼ぶ側の分岐: 値の鍵が違う"),
+    ("原文の 1 行を見ない", "        if not isinstance(text, str) or not one_line(text) or text != text.strip():",
+     "        if not isinstance(text, str) or text != text.strip():", "呼ぶ側の分岐: 複数行"),
+    ("原文の前後の空白を許す", " or not one_line(text) or text != text.strip():", " or not one_line(text):", "呼ぶ側の分岐: 前後に空白"),
+    ("原文が在ることを見ない（分岐）", "for at, text in good if text not in lines]", "for at, text in good if False]",
+     "呼ぶ側の分岐: 原文に無い行"),
+    ("原文の行の前後の空白を落とさない", "lines |= {line.strip() for line in", "lines |= {line for line in",
+     "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
+    ("source の 1 つ目しか読まない", "            continue  # 読めない原文は source の検査と未決定の印の関門が言う\n    return lines",
+     "            continue  # 読めない原文は source の検査と未決定の印の関門が言う\n        break\n    return lines",
+     "呼ぶ側の分岐: 別の source の原文"),
     ("行の無い小見出しに無いと書かない",
      '            lines.append(f"この機能に関わるとして写した{what}は無い（無いことは、ほかのものを作ってよいという意味ではない）。")',
      "            pass", "本文から辿れる"),
@@ -2526,6 +2759,12 @@ def main() -> int:
               f"{constant(source, 'TYPES')} vs {types}")
         check("references からメソッド・型を読めない（読み方が壊れている）", len(methods) >= 3 and len(types) >= 3,
               f"{methods} {types}")
+        # 呼ぶ側の分岐の名前（#855）——中間表現の原本は spec-ir.md の表
+        branch_names = table_cells(ir_ref, "### 分岐の名前")
+        check("BRANCHES が references/spec-ir.md の分岐の名前の表と違う", list(constant(source, "BRANCHES") or ()) == branch_names
+              and len(branch_names) == 8, f"{constant(source, 'BRANCHES')} vs {branch_names}")
+        check("試料の ALL_BRANCHES が references/spec-ir.md の分岐の名前の表と違う", list(ALL_BRANCHES) == branch_names,
+              f"{ALL_BRANCHES} vs {branch_names}")
         markers = table_cells(handoff, "## 印")
         marker = constant(source, "HANDOFF_MARKER")
         feature_marker = constant(source, "FEATURE_MARKER")
