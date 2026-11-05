@@ -22,7 +22,7 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 引き方:
 
 - **引数なし**: 台帳の一覧——仮回答の印を持つ Q&A ごとに、依存する Issue とケース。続けて確認の Issue ごとに、決めた値と影響する Issue。
-- **`<Q&A の No>`**（`Q-R-002`・`D-S-001`）: その No を根拠にした spec-loop の Issue（閉じたものも）と、その受入基準のうちその No を根拠にする
+- **`<Q&A の No>`**（`Q-R-002`・`D-S-001`）: その No を根拠にした spec-loop の Issue（閉じたものも。**撤去の Issue は数えない**——作るものが無い）と、その受入基準のうちその No を根拠にする
   ケース——**ケースに無ければ「機能全体」**（機能の `qa` だけが指している）。どれかの本文が仮回答の印を付けていれば、そう言う。
 - **`#<番号>`**: 確認の Issue なら、決めた値と影響する Issue（題と状態を添える）。
 
@@ -80,6 +80,7 @@ AFFECTS_LIST = re.compile(r"#[1-9][0-9]*(?:, #[1-9][0-9]*)*")
 
 HANDOFF_PREFIX = scaffold.HANDOFF_MARKER.split(": v", 1)[0] + ": v"  # 前の形（v2・v1）も読む
 FEATURE = re.compile(re.escape(scaffold.FEATURE_MARKER).replace(r"\{\}", r"(F-[0-9]+)"))
+REMOVAL = re.compile(re.escape(scaffold.CHANGE_MARKER).replace(r"\{\}", scaffold.REMOVE, 1).replace(r"\{\}", r"[^ >]*", 1))
 ROW = re.compile(r"^\| `([^`]+)` \|.*\| ([^|]*) \|$")
 QA_ROW = re.compile(r"^\| ([QD]-[^ |]+) \|")
 
@@ -144,11 +145,13 @@ class Decision:
         self.issue = issue
         self.value: str | None = None
         self.affects: list[int] | None = None
-        self.malformed = ""  # `影響する Issue: ` の行が決まりの形でない（その行の中身）
+        self.malformed: str | None = None  # 台帳の行が決まりの形でない（その行の中身。空の行も形に反する）
         for line in issue["body"].splitlines():
-            if line.startswith(DECIDED) and self.value is None:
-                self.value = line[len(DECIDED):].strip() or None
-            elif line.startswith(AFFECTS) and self.affects is None and not self.malformed:
+            if line.startswith(DECIDED) and self.value is None and self.malformed is None:
+                self.value = line[len(DECIDED):].strip()
+                if not self.value:
+                    self.value, self.malformed = None, line  # 空の行は「無い」ではなく形に反する（2 パス目の指摘）
+            elif line.startswith(AFFECTS) and self.affects is None and self.malformed is None:
                 rest = line[len(AFFECTS):].strip()
                 # 番号だけを `, ` で並べる（説明を添えない）か `なし`——説明の中の番号を影響する Issue に数えない（1 パス目の指摘）
                 if rest == NONE:
@@ -156,7 +159,7 @@ class Decision:
                 elif AFFECTS_LIST.fullmatch(rest):
                     self.affects = [int(n) for n in re.findall(r"#([0-9]+)", rest)]
                 else:
-                    self.malformed = rest
+                    self.malformed = line
 
 
 def is_decision(issue: dict) -> bool:
@@ -203,8 +206,9 @@ def by_issue(number: int, issues: dict[int, dict]) -> tuple[bool, list[str]]:
         return False, [f"#{number}: 確認の Issue でない（印 <!-- cruise-decision: #<親> --> も、題の {DECISION_TITLE!r} も無い）"]
     d = Decision(issue)
     out = [label(issue)]
-    if d.malformed:
-        return False, out + [f"  {AFFECTS}の行が決まりの形でない（{d.malformed!r}）——`#<番号>, #<番号>` か `{NONE}` だけを書く"]
+    if d.malformed is not None:
+        return False, out + [f"  台帳の行が決まりの形でない（{d.malformed!r}）——`{DECIDED}<値>` と、`{AFFECTS}` には"
+                             f" `#<番号>, #<番号>` か `{NONE}` だけを書く"]
     if d.value is None or d.affects is None:
         missing = "・".join(t.strip() for t, v in ((DECIDED, d.value), (AFFECTS, d.affects)) if v is None)
         return False, out + [f"  台帳の行（{missing}）が無い——この決まりより前の書き方。本文の ## 出所 を人が読む"]
@@ -230,8 +234,8 @@ def ledger(handoffs: list[Handoff], decisions: list[Decision]) -> list[str]:
     opened = sum(1 for d in decisions if (d.issue.get("state") or "").upper() == "OPEN")
     out.append(f"推奨で決めた事項（確認の Issue）: {len(decisions)} 件（開いているもの {opened} 件）")
     for d in sorted(decisions, key=lambda d: d.issue["number"]):
-        if d.malformed:
-            out.append(f"  {label(d.issue)}——{AFFECTS}の行が決まりの形でない")
+        if d.malformed is not None:
+            out.append(f"  {label(d.issue)}——台帳の行が決まりの形でない")
         elif d.value is None or d.affects is None:
             out.append(f"  {label(d.issue)}——台帳の行が無い（前の書き方）")
         else:
@@ -262,7 +266,8 @@ def main(argv: list[str]) -> int:
     except Bad as exc:
         print(f"{exc}。判定していない", file=sys.stderr)
         return 2
-    handoffs = [Handoff(i) for i in issues if i["body"].startswith(HANDOFF_PREFIX)]
+    # 撤去の Issue は作り直す範囲に数えない——作るものが無い（2 パス目の指摘）
+    handoffs = [Handoff(i) for i in issues if i["body"].startswith(HANDOFF_PREFIX) and not REMOVAL.search(i["body"])]
     decisions = [Decision(i) for i in issues if is_decision(i)]
     if not keys:
         for line in ledger(handoffs, decisions):

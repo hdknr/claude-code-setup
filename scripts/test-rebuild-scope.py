@@ -18,6 +18,7 @@
 - 確認の Issue を、印 `<!-- cruise-decision: #<親> -->` でも題の `要確認: ` でも見分け、`決めた値: `・`影響する Issue: ` を読む
 - 台帳の 2 行が無い確認の Issue・形に反する `影響する Issue: ` の行（説明の中の番号を数えない）・確認の Issue でない番号・入力に無い番号・
   入力に無い影響する Issue・本文に無い No は名指しして 1（引けたものは出す）
+- 撤去の Issue（変化の印 `remove`）は作り直す範囲に数えない。空の台帳の行は「決まりの形でない」と言う
 - 入力の形が違えば 2（どの Issue が違うかを言う）
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
@@ -81,6 +82,11 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
     t23, b23 = decision(False, "要確認: 印の無い確認の Issue", "決めた値: B\n影響する Issue: なし\n")
     t24, b24 = decision(True, "要確認: 説明つきの行", "決めた値: C\n影響する Issue: #11（#12 の後続）\n")
     t25, b25 = decision(True, "要確認: 入力に無い Issue を指す", "決めた値: D\n影響する Issue: #11, #99\n")
+    t27, b27 = decision(True, "要確認: 空の決めた値", "決めた値: \n影響する Issue: #11\n")
+    t28, b28 = decision(True, "要確認: 空の影響する Issue", "決めた値: E\n影響する Issue: \n")
+    # 撤去の Issue（変化の印 remove）——Q-001 を根拠にしていても作り直す範囲に数えない
+    removal = bodies["F-002"].replace("<!-- spec-loop-change: add; base=none -->", "<!-- spec-loop-change: remove; base=v1 -->")
+    assert removal != bodies["F-002"]
     return [
         {"number": 11, "title": "F-001: 割引額を計算する", "state": "OPEN", "body": bodies["F-001"]},
         {"number": 12, "title": "F-002: 注文を取り消せるか", "state": "CLOSED", "body": bodies["F-002"]},
@@ -90,6 +96,9 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
         {"number": 23, "title": t23, "state": "CLOSED", "body": b23},
         {"number": 24, "title": t24, "state": "OPEN", "body": b24},
         {"number": 25, "title": t25, "state": "OPEN", "body": b25},
+        {"number": 26, "title": "F-002: 注文を取り消せるか（v2 で撤去）", "state": "OPEN", "body": removal},
+        {"number": 27, "title": t27, "state": "OPEN", "body": b27},
+        {"number": 28, "title": t28, "state": "OPEN", "body": b28},
     ]
 
 
@@ -110,15 +119,17 @@ CASES = [
                                      "  影響する Issue: 2 件（作り直す範囲）", "  - #11 F-001: 割引額を計算する [OPEN]", "  - #12 F-002: 注文を取り消せるか [CLOSED]")),
     Case("印の無い確認の Issue（題で見分ける）", ("23",), 0, ("決めた値: B", "影響する Issue: なし")),
     Case("台帳の行が無い確認の Issue", ("#21",), 1, ("台帳の行（決めた値:・影響する Issue:）が無い",)),
-    Case("影響する Issue に説明を添えた行", ("#24",), 1, ("影響する Issue: の行が決まりの形でない（'#11（#12 の後続）'）",),
+    Case("影響する Issue に説明を添えた行", ("#24",), 1, ("台帳の行が決まりの形でない（'影響する Issue: #11（#12 の後続）'）",),
          ("#12 F-002",)),
     Case("影響する Issue が入力に無い", ("#25",), 1, ("#99（入力に無い", "#11 F-001")),
+    Case("空の決めた値の行", ("#27",), 1, ("台帳の行が決まりの形でない（'決めた値: '）",), ("前の書き方",)),
+    Case("空の影響する Issue の行", ("#28",), 1, ("台帳の行が決まりの形でない（'影響する Issue: '）",), ("前の書き方",)),
     Case("確認の Issue でない", ("#22",), 1, ("#22: 確認の Issue でない",)),
     Case("入力に無い番号", ("#99",), 1, ("#99: 入力に無い",)),
     Case("本文に無い No", ("Q-S-009",), 1, ("Q-S-009: 根拠にした spec-loop の Issue が無い",)),
     Case("引けるものと引けないもの", ("Q-001", "#22"), 1, ("作り直す範囲 2 件", "確認の Issue でない")),
     Case("一覧", (), 0, ("仮回答（本文に仮回答の印がある Q&A）: 1 件", "  Q-001: #11（F-001）、#12（F-002）",
-                        "推奨で決めた事項（確認の Issue）: 5 件（開いているもの 4 件）", "#24 要確認: 説明つきの行 [OPEN]——影響する Issue: の行が決まりの形でない",
+                        "推奨で決めた事項（確認の Issue）: 7 件（開いているもの 6 件）", "#24 要確認: 説明つきの行 [OPEN]——台帳の行が決まりの形でない",
                         "#20 要確認: 返品の受付期間を 7 日にした [OPEN]——決めた値: 7 日／影響する Issue: #11、#12",
                         "#21 返品の受付期間（前の書き方） [OPEN]——台帳の行が無い", "#23 要確認: 印の無い確認の Issue [CLOSED]——決めた値: B"),
          ("Q-002: #",)),
@@ -143,14 +154,18 @@ MUTATIONS = [
      "確認の Issue"),
     ("台帳の行が無いのを引けたと言う", "    if d.value is None or d.affects is None:\n        missing",
      "    if False:\n        missing", "台帳の行が無い確認の Issue"),
+    ("空の決めた値の行を無いと読む", "                if not self.value:\n", "                if False:\n", "空の決めた値の行"),
+    ("空の影響する Issue の行を無いと読む", "                    self.malformed = line\n", "                    self.malformed = rest or None\n",
+     "空の影響する Issue の行"),
+    ("撤去の Issue も作り直す範囲に数える", ' and not REMOVAL.search(i["body"])]', "]", "暫定の Q-001"),
     ("説明の中の番号も影響する Issue に数える", "                elif AFFECTS_LIST.fullmatch(rest):", "                elif True:",
      "影響する Issue に説明を添えた行"),
     ("入力に無い影響する Issue でも 0", "    return not absent, out", "    return True, out", "影響する Issue が入力に無い"),
     ("引けない番号でも 0", "        code = code or (0 if ok else 1)", "        code = 0", "確認の Issue でない"),
     ("入力の Issue の形を見ない", "        if not (isinstance(issue, dict)", "        if False and not (isinstance(issue, dict)",
      "本文が文字列でない"),
-    ("spec-loop の Issue を見分けない", 'handoffs = [Handoff(i) for i in issues if i["body"].startswith(HANDOFF_PREFIX)]',
-     "handoffs = []", "暫定の Q-001"),
+    ("spec-loop の Issue を見分けない", 'handoffs = [Handoff(i) for i in issues if i["body"].startswith(HANDOFF_PREFIX) and',
+     "handoffs = [Handoff(i) for i in [] if False and", "暫定の Q-001"),
 ]
 
 failures: list[str] = []

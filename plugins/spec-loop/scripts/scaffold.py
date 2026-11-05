@@ -66,7 +66,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **利用者が仮回答のまま開発へ渡すと決めたときだけ**、`--provisional` を付けて通す——中間表現の `qa`（機能・ケース）が `暫定反映` の行を
 指してよくなり、依存する本文の `## 仕様` に `- 仮回答: ` の行（依存する暫定の No）を、受入基準の表の Q&A の列で暫定の No に `（暫定）` を付ける
 （依存しない本文は変わらない）。**どの機能・ケースの `qa` からも指されない `暫定反映` の行が残れば、旗があっても止める（1）**——
-その仮回答がどの Issue に効くかを本文に書けない。前の版の時点の判定でも `暫定反映` を崩れに数えない（前の版を同じ旗で作れている）。
+その仮回答がどの Issue に効くかを本文に書けない。前の版の時点の判定でも、前の版の中間表現が指す `暫定反映` を崩れに数えない（前の版は同じ旗で作れる状態にある（実際に作ったかは見ない——旗の無い周でも、前の版を作ったかは見ていない））。
 旗は全部のモード（`--check`・`--dry-run`・`--red-check`）で受け付ける。作り直す範囲は、登録した本文から同梱の `rebuild-scope.py` で引く
 （決まりの正は `references/handoff-issue.md` の「仮回答の印」）。
 
@@ -1348,7 +1348,7 @@ BROKEN_REMEDY = "references/versions.md の「前の版の時点が崩れてい�
 
 def unsettled_qa(rendered: dict[str, bytes], provisional: bool = False) -> list[tuple[str, str]]:
     """重ねた全体の Q&A（共有・内部）のうち、状態が `反映済み` でない行の (No, 状態)。
-    `provisional`（`--provisional`。#875）なら、**その版の中間表現が指す** `暫定反映` の行は数えない——その版は同じ旗で作れている。
+    `provisional`（`--provisional`。#875）なら、**その版の中間表現が指す** `暫定反映` の行は数えない——前の版は同じ旗で作れる状態にある（実際に作ったかは見ない——旗の無い周でも、前の版を作ったかは見ていない）。
     **指されない `暫定反映` の行は数える**——旗があってもその版は作れていない（`read_whole` が止める。1 パス目の指摘）。"""
     cited = cited_loosely(rendered.get(IR_PATH)) if provisional else set()
     found = []
@@ -1485,6 +1485,10 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
             out.append(f"v{number - 1} の時点では {qa.DONE} でない Q&A が残り、v{number - 1} の scaffold は作れていない"
                        f"（`--check --upto {number - 1}` が 0 にならない）。v{number} の差分を測る土台が無い"
                        f"——{BROKEN_REMEDY}")
+            if not loaded.provisional and not unsettled_qa(rendered, provisional=True):
+                # 残るのが前の版の中間表現が指す暫定の行だけ——前の版を `--provisional` で作ったなら旗で通る（#875 の 2 パス目）
+                out.append(f"残るのは v{number - 1} の中間表現が指す {qa.PROVISIONAL} の行だけ——v{number - 1} を --provisional で"
+                           "作ったなら、利用者のその指示のもとで --provisional を付けて作る（付けるのは利用者の指示があるときだけ）")
             out.append(f"前の版（v{number - 1}）の時点が崩れているので、機能を追加・変更・削除に分けない。生成しない")
             return 1, out, [], Before()
         # 凍結した版は直せない——v<n-1> の時点を信じず、全部を追加にする（変わらない機能の Issue も渡る。#357）

@@ -2122,6 +2122,11 @@ CASES: list[Case] = [
          ir=edit(lambda ir: ir["features"][1].__setitem__("qa", ["Q-001"])),
          extra=v2([], removed="機能,F-002,取り消しはやめる\n"),
          post=lambda repo: unmarked(bodies(repo).get("F-002", "（撤去の本文が無い）" + PROVISIONAL_LINE), "撤去の")),
+    # 2 パス目の指摘: 残るのが前の版の中間表現が指す暫定の行だけなら、旗を付けて作る道があると言う
+    Case("前の版を --provisional で作ったときの案内", 1, "v1 を --provisional で作ったなら、利用者のその指示のもとで --provisional を付けて作る",
+         qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
+    Case("前の版を作れていないときは旗の案内を出さない", 1, "v1 の scaffold は作れていない", absent="--provisional を付けて作る",
+         qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED, extra=v2([V2_CHANGED])),
     Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の Q-001: 状態が 暫定反映（反映済み でない）",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
     # 前の版の時点を作るときも止まる（今の版と同じ関門）
@@ -2362,6 +2367,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "--provisional でも前の版の指されない暫定反映は崩れ"),
     ("撤去の本文にも印を付ける", "    held = [] if change.kind == REMOVE else sorted(", "    held = [] if False else sorted(",
      "--provisional の撤去の本文に印を付けない"),
+    ("前の版を旗で作ったときの案内を出さない", "            if not loaded.provisional and not unsettled_qa(rendered, provisional=True):",
+     "            if False:", "前の版を --provisional で作ったときの案内"),
+    ("前の版の暫定の行が残れば必ず旗の案内を出す", "            if not loaded.provisional and not unsettled_qa(rendered, provisional=True):",
+     "            if not loaded.provisional:", "前の版を作れていないときは旗の案内を出さない"),
     ("仮回答の本文を出力で名指ししない", "    if marked:\n", "    if False:\n", "--provisional で暫定反映を指す"),
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
