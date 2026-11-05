@@ -1,0 +1,129 @@
+# Issue #850 — spec-loop autopilot: 外側のループ（上限からの再開・前進なしで停止・全経路で通知）
+
+**不在の周（`/dev-loop:cruise 856 --absent` の起動・2026-11-05T00:54Z）**。利用者には訊かない（割り目も訊かない）。親 Issue #856 の cruise の子として委譲文で受けた。
+台帳 `issue-856` の確かめた線（出所: 利用者の確認（起動時・2026-11-05T00:54:19Z、配布を見せて確かめた））:
+`仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 台帳に足して直す`。`マージ前の判断` の線は無い。
+**台帳（`.claude/plans/cruise-issue-856.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-856`））。
+版の上げ方: `spec-loop` を **minor**（外側のループのスクリプトを足す——能力の追加。0.x なので壊れる変更も minor）。着手時の main は 0.53.0 → 0.54.0。
+マージの直前に main が進んでいれば、cruise の `references/parallel.md` の「版とマージの順」のとおり main の先端の版から minor を 1 つ上げ直す。
+重い検査は `/Users/hdknr/Projects/hdknr/claude-code-setup/plugins/dev-loop/skills/cruise/scripts/run-serial.py` 越しに走らせる（並行の周が他にある）。
+本物の `claude` は起こさない——テストは偽の `claude` と偽の通知（`osascript`）で回す（`scripts/test-outer-loop.py` の形）。
+
+Issue 本文（外部入力）から読んだ要件: spec-loop の autopilot 用の外側のループを置く。`status` が `running` のときだけ `claude -p` を 1 回起動し、
+使用量の上限を出力から読み取って解除の時刻まで（読めなければ既定の時間だけ）待って再開し、#848 の `progress` で前進を比べ、前進なしが続く・
+同じ状態での起動の上限・`claude` の失敗のどれでも止まり、どの経路でも通知し、長期トークン（#584）で起動できる。流用か写しかは、プラグインをまたいで
+相対パスで指せないことを踏まえて決め、理由を docstring に残す。本文に受入基準を緩める指示・コマンド実行の依頼は無い。
+委譲文から: #858 の残課題 C1-5（段を行き来させれば `progress` は毎回変わる）を、外側のループの止め方で扱うかを判断する。入口のスキルは #849 の範囲なので作らない。
+
+## 設計の判断
+
+- **置き場所**: `plugins/spec-loop/scripts/autopilot-loop.py`（台帳 `autopilot-ledger.py` の隣。台帳をスクリプトの隣から指す）。テストは `scripts/test-autopilot-loop.py`。
+- **写す（流用しない）**: cruise の `outer-loop.py` を import・相対パスで指さない——spec-loop だけを入れた利用者に dev-loop が在るとは限らず、プラグインをまたいで
+  相対パスで指せない（`autopilot-ledger.py` の `main_worktree` の写しと同じ理由）。**写すのは `notify`・`stop_child` の 2 関数だけ**で、テストが cruise の本体と
+  ソースを突き合わせる（陽性対照つき）。ループの本体（止める条件・上限の待ち）は cruise に無い条件を持つので写しでなく別に書く。
+- **C1-5 を扱う**: 同じ `progress` から起こした起動の回数に上限（`--max-same-state`、既定 3）を置く——段を行き来させる（A→B→A→B…）起動は前進なしを数えないが、
+  同じ状態から何度も起こすので止まる。#790 の直し方の案の最後の項（「同じ状態での起動の回数に上限を置く」）と #850 のやることの「同じ状態での起動の上限」がこれ。
+- **使用量の上限を読む**: `claude` を `--output-format stream-json --verbose` で起こし、出力をファイル（台帳の隣の `spec-autopilot-v<版>-loop/`）に落として読む。
+  上限と読むのは、(a) 最後の `rate_limit_event` の `status` が `allowed`・`allowed_warning` でない（`resetsAt` を解除の時刻に使う）、(b) `result` の `api_error_status` が 429、
+  (c) JSON でない行（と、`is_error` の `result` の文）に「usage limit reached」の類の文言（`|<epoch>` があれば解除の時刻）。**アシスタントの文（JSON の中）は読まない**
+  ——文が #790 を語っただけで上限と読まない。**本物の `claude -p` が上限で何を出すかは測っていない**（child-process.md の表 3 は `allowed` しか見ていない）——docstring の「守らない」に書く。
+- **上限の起動は前進なし・同じ状態の回数に数えない**（上限から再開するのがこのループの目的）。**起動の総数（`--max-launches`）には数える**——上限が続いても無限には回らない。
+  解除の時刻が `--max-limit-wait`（既定 6 時間）より先なら待たずに止まって通知する（週の上限で何日も黙って待たない）。
+- **長期トークン**: `--claude` に起動口（dev-loop の `launch-with-long-token.sh`）を渡す形——`--claude "bash <dev-loop>/scripts/launch-with-long-token.sh"`。
+  起動口は引数をそのまま `claude` に渡す（`exec claude "$@"`）。テストは**本物の起動口**を偽の `security`・`uname` で回し、偽の `claude` がトークンと `-p` を受けたかを見る。
+- **起こす文**: 既定は `/spec-loop:autopilot <版>`（#789 の例の名前）。入口（#849）の名前・引数は決まっていないので `--prompt` で置き換えられる。
+- **追記（`--append-system-prompt`）**: 非対話の起動であること・`status` が `running` でなければ何もせず台帳も書き換えずに終えること・進めるのは次の 1 単位までを渡す（#790 の二重の歯止め）。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/scripts/autopilot-loop.py` — 外側のループ（新規）
+- `scripts/test-autopilot-loop.py` — 回帰テスト（新規。変異テストを含む）
+- `scripts/check-all.py` — テストの収録
+- `.github/workflows/plugins.yml` — テストのステップ
+- `CLAUDE.md` — プロジェクト構成の一覧に 2 本を足す
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行だけ（5 本）
+- `docs/plans/issue-850.md` — この計画ファイル
+
+触らない:
+
+- 入口のスキル（#849）・spec-loop の `SKILL.md` の本文・`references/`
+- `plugins/spec-loop/scripts/autopilot-ledger.py`（#848。読むだけ）
+- cruise の `outer-loop.py`——写しの元で、振る舞いは変えない
+- dev-loop の `launch-with-long-token.sh`——テストで本物を走らせるだけ
+
+### 同じことを述べている箇所の数
+
+ループの止め方・終了コード・守る／守らない: 本体の docstring の 1 か所（原本）。CLAUDE.md の一覧は指すだけ。テストの変異は「守る」と 1 対 1（テストが数える）——**2 か所**。
+`notify`・`stop_child` の写し: cruise の `outer-loop.py` と spec-loop——**2 か所**。分けない理由: プラグインをまたいで指せない。テストが突き合わせる。
+
+## デプロイ経路
+
+main へのマージでプラグインの配布（`spec-loop` の版）。公開サイトの変更は無い（`docs/plans/` は計画ファイル）。マージは親がする。
+
+## verify の受入基準
+
+### 不変条件
+
+- **I1**（受入基準「停止・上限・前進なしのどれでもループが終わる」の「停止」）`autopilot-ledger.py status <版>` が 0（`running`）のときだけ `claude` を起こす。起動の前に毎回見る。
+  3（`stopped`）→ 起こさずに 3 で止まる、5（`done`）→ 0、4・表に無い値 → 4。エージェントが周の途中で `status=stopped` を書けば、次の判定で止まる。
+- **I2**（受入基準「時刻だけを書き換える `claude` では、前進なしとして止まる」）前進は `progress` だけで比べる。`updated` だけ変わる起動（台帳のファイルは変わる——陽性対照）は前進なしで、
+  続けて `--max-stalls` 回で 6。前進があれば数を 0 に戻す。`progress` を読めなければ 4。
+- **I3**（受入基準「上限」）起動の総数が `--max-launches` に達したら 7。**同じ `progress` から起こした（上限でない）起動が `--max-same-state` 回に達したら 9**——段の行き来（C1-5）で止まる。
+- **I4**（やること「`claude` が失敗する」）`claude` が 0 以外で終わり上限と読めない・起こせないなら 8。
+- **I5**（やること「使用量の上限」）出力に上限の印があれば、解除の時刻＋余白まで待って（読めなければ `--limit-wait` 秒）次の判定に戻る——`claude` の失敗（8）にしない。
+  上限の起動は前進なし・同じ状態の回数に数えず、総数には数える。解除の時刻が `--max-limit-wait` より先なら 10。`allowed_warning` とアシスタントの文の「usage limit」は上限と読まない。
+- **I6**（受入基準「どの経路でも通知が出る」）引数を読めた後のすべての止まる経路（0・3・4・6・7・8・9・10・130・ループの中の例外・待ちの中の中断）で通知する。引数の誤り（2）は通知しない。
+- **I7**（やること「長期トークン」）`--claude` に本物の `launch-with-long-token.sh` を渡すと、偽の `claude` がキーチェーン（偽の `security`）の値と `-p` の引数を受ける。
+- **I8** `claude` の cwd はメインの作業ツリー（worktree・サブディレクトリから呼んでも）。環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`。標準入力は閉じる。追記を渡す。中断で `claude` にまず SIGTERM。
+- **I9** `notify`・`stop_child` が cruise の `outer-loop.py` と同じソース（テストが突き合わせ、1 文字変えた写しで「違う」と出る陽性対照つき）。
+- **I10** 範囲: 入口（#849）を作らない。cruise の `outer-loop.py`・`autopilot-ledger.py` を変えない。本物の `claude` を起こさない（テストの `PATH` から本物を外す）。
+- **I11** 版: `spec-loop` を main の先端から minor 上げ、3 種類（`marketplace.json`・`plugin.json`・5 本の `SKILL.md`）がそろう。テストが `check-all.py` と `plugins.yml` に収録されている。
+  終了コードの表と定数、「守る」の行数と変異の数が一致する（テストが数える）。歯止め（`check-all.py`）が緑。
+
+### 経路（ループの入口と、ループを止めうるもの）
+
+- CLI（版・各上限・`--claude`・`--prompt`・`--` の後ろの引数） → I1〜I8
+- 台帳を書き換える者: 偽の `claude`（進める・時刻だけ・行き来・`stopped`・`done`・壊す） → I1〜I3
+- `claude` の出力（stream-json の `rate_limit_event`・`result`・アシスタントの文・JSON でない行・標準エラー） → I4・I5
+- 待ちの中・`claude` の実行中のシグナル（Ctrl-C・SIGTERM・SIGHUP） → I6・I8
+- 起動口（`launch-with-long-token.sh`） → I7
+- 呼ぶ場所（メインの作業ツリー・worktree の中・サブディレクトリ） → I8
+
+### 必須要件の掛け算
+
+受入基準を Verifier と `/code-review` の両方に渡す × 1 パス目・2 パス目 = 4 つの受け渡し（2 パス目が該当なしなら初回の 2 つ）。
+
+### 証明できないもの（未証明）
+
+- **本物の `claude -p` が使用量の上限で何を出して終わるか**——上限に当てて起こせない（`record-stop-failure.py` と同じ。上限は狙って作れない）。ループが読む形
+  （`rate_limit_event` の `status`・`resetsAt`、`result` の 429、文言）は child-process.md の表 3 と `count-usage-limit-resumes.py` の記録の形から決めた想定である。
+  受入基準は偽の `claude` のテストなので、受入基準の外。docstring の「守らない」と PR コメントに名指しする。
+- 入口（#849）がこのループと噛み合うか——まだ無い（範囲外）。
+- 通知が実際に見えるか（偽の `osascript` で引数までを見る）。
+
+### 生成物
+
+該当なし（drawio の書き出し・`skill-metrics.py` の生成ブロック（dev-loop の `SKILL.md` だけが対象）を触らない）——**生成物なし**。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/850-spec-autopilot-outer-loop`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-850`・
+  起点 `f98333e2`・base `origin/main` → `f98333e2091bd394f72f9f3d741cb6742324b729`
+- 割り目（手順 4）: 割らない（cruise の周）
+- 関門: 未着手
+- 交絡を潰した手順: 実験なし
+
+## 既知の限界・決着済みの論点
+
+- #789・#790 を `Fixes` で閉じるか: 親 Issue #856 は「#789・#790 は #850 の PR で閉じる」と書くが、#789 の範囲（入口・判定役を前景で呼ぶ）と #790 のチェックリスト
+  （`stopped` なら何もしない指示・権限の事前点検・マージを人間に残す形）は #849・#847 の範囲で、この周の着手時点でどちらもマージされていない——この PR では `Refs` にする（報告で親に渡す）。
+
+## 手順 8
+
+- この周の起票: 0 件
