@@ -99,6 +99,7 @@ spec-review が仕様を書く（`SKILL.md` 手順 2）・判定役（Domain Che
 - 周の在り処: ブランチ `issue/852-nfr-performance-budget`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-852`・
   起点 `c4a7cb8d`・base `origin/main`（`refs/remotes/origin/HEAD`）→ `c4a7cb8d84b9d14e73e908014920461b7c8bce0a`
 - 割り目（手順 4 の完了時）: 割らない（cruise の周）
+- 1 パス目: 起点（先に当てた関門に渡した時点の HEAD）`dada24d98e6d33eb9b4616352248a0996b04090f`。Verifier（`dev-loop:dev-loop-verifier`／sonnet）と `/code-review`（high）を起動（結果は下に書く）
 - 交絡を潰した手順: （実装後に書く）
 
 ## 既知の限界・決着済みの論点
