@@ -108,7 +108,9 @@
 
 `/spec-loop:scaffold` で呼びます。仕様レビューを抜けた仕様を中間表現（`spec_ir.json`）に書き起こし、
 同梱のスクリプトで OpenAPI・型・**Red テスト**（実装が無いと失敗するテスト）と **Issue の本文**を作って、
-**1 機能 = Issue 1 件**で登録します（登録の前に利用者に確かめます）。**Issue の登録で止まり、以降は dev-loop が受け持ちます。**
+**1 機能 = Issue 1 件**で登録します（登録の前に利用者に確かめます。同じモジュール・同じ受入基準・同じデプロイ経路の機能は、
+`--bundle` で選んで 1 件にまとめられます）。依存の連鎖（呼ぶ機能が呼ばれる機能に依存する）は、登録した後に `parent-checklist.py` が
+dev-loop の cruise の親 Issue の書式で出します。**Issue の登録で止まり、以降は dev-loop が受け持ちます。**
 v2 以降は前の版と比べて機能を**追加・変更・削除**に分け、**変わった機能だけ**を Issue にします——変更の Issue は
 回帰（変わらないケースも緑であること）を、削除の Issue は撤去を受入基準に持ちます（形は `references/handoff-issue.md`）。
 dev-loop は Issue の本文の印で spec-loop から来たことを知り、開発中に見つけた仕様の穴を
@@ -117,7 +119,8 @@ Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `ref
 手順と守ることは [`skills/scaffold/SKILL.md`](skills/scaffold/SKILL.md) を正とします。
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional]
+python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional] [--bundle F-001,F-002]...
+python3 <spec-loop の base ディレクトリ>/scripts/parent-checklist.py --index build/scaffold/issues/issues.json --issues <gh issue list の出力>
 ```
 
 `--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。

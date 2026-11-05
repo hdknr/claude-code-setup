@@ -107,6 +107,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行を、
       `gh issue list --json` の出力から読む。**`gh` は呼ばない**。印の定数は `scaffold.py` から読み、確認の Issue の 2 行の頭は dev-loop の `absent-lines.md` の写しで、テストが突き合わせる。
       守る／守らないは docstring を正とする。テストは `scripts/test-rebuild-scope.py`）
+    - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
+      （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に依存する。**項目の Issue は本文が生成した本文と同じもの**で、
+      `gh issue list --json` の出力から引く。**`gh` は呼ばない**。守る／守らないは docstring を正とする。テストは `scripts/test-parent-checklist.py`）
     - `scripts/merge-versions.py` - バージョンアップの版（`docs/v<n>/`。v2 以降は差分だけ）を重ねて、ある版の時点の全体を作る
       （#261。決まりは `references/versions.md`。**印 `.merged-versions` の無い出力先は消さない**。
       `scaffold.py` と `check-signoff.py` もここの関数で重ね・版を見つける——写しを作らない。
@@ -285,6 +288,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `PATH` は一時ディレクトリだけに差し替える**——本物の draw.io には届かない。書き出しの見た目は見ない
   - `test-rebuild-scope.py` - spec-loop の作り直す範囲を引くスクリプト（#875）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**spec-loop の Issue の本文は本物の `scaffold.py --provisional` で作り**、`gh issue list` と同じ鍵の JSON に包んで渡す——本物の GitHub には届かない
+  - `test-parent-checklist.py` - spec-loop の親 Issue の一覧を出すスクリプト（#876）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**索引と本文は本物の `scaffold.py` で作り、出した行を本物の dev-loop の `parent-issue.py show` に通す**
+    （子 Issue の本文を取る `gh` は `PATH` の先頭に置いた偽物）——本物の GitHub には届かない
   - `test-merge-versions.py` - spec-loop の段 5a（#261）の回帰テスト（変異テストを含む）。
     **本体の定数が `references/versions.md` と一致することも見る**
   - `test-diff-versions.py` - spec-loop の段 5c（#263）の版の差分の回帰テスト（変異テストを含む）。
