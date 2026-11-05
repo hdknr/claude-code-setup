@@ -1,0 +1,110 @@
+# Issue #851 — Issue の本文に「作らないもの」の節を足し、scaffold.py が生成する
+
+不在の周（`/dev-loop:cruise 856 --absent` の起動・2026-11-05T00:54Z）。利用者には訊かない（割り目も訊かず「割らない（cruise の周）」）。
+
+- 直す線: **既定**（出所: cruise の確かめた線——利用者の確認（起動時・2026-11-05T00:54:19Z、配布を見せて確かめた）。台帳 `issue-856`）
+- 仕様の穴: **推奨で決めて起票**（出所: 同上）
+- マージ: **関門を通ればマージ**（出所: 同上。マージは親がする）。`マージ前の判断` の線は無い
+- 周の途中の課題: **台帳に足して直す**（出所: 同上。振り分けは `references/found-lines.md`）
+- 版の上げ方: **minor・spec-loop**（0.52.0 → 0.53.0。Issue の本文に節を足し、中間表現に任意のキーを足す）と
+  **minor・dev-loop**（1.92.0 → 1.93.0。`references/spec-gap.md` が新しい節の読み方を持つ）。マージの直前に main が進んでいれば、main の先端の版から同じ上げ方で 1 つ上げ直す
+- 性能予算に数字を写すのは #852 の範囲。この周では「要求なし → 最適化しない」の既定だけを入れる
+
+## 変更範囲
+
+触る:
+- `plugins/spec-loop/scripts/scaffold.py` — `## 作らないもの` の節を生成し、中間表現の `out_of_scope` を検査する
+- `plugins/spec-loop/references/handoff-issue.md` — 節の表に `## 作らないもの` を足し、中身を定義する（原本）
+- `plugins/spec-loop/references/spec-ir.md` — 機能の任意のキー `out_of_scope` を定義する
+- `plugins/spec-loop/skills/scaffold/SKILL.md` — 手順 2 で `out_of_scope` を書き起こす
+- `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 節の表の写しに `## 作らないもの` を足す
+- `scripts/test-scaffold.py` — 節の写しと順・範囲の外の行と次の版の候補・行の無い機能・`out_of_scope` の検査（変異テストを含む）
+- `docs/plugins/spec-loop.md` — 「dev-loop への引き渡し」に節の 1 行
+- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
+- `docs/plans/issue-851.md` — この計画
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す。`spec-gap.md` の行数が変わる。手で書かない）
+
+触らない:
+- `plugins/spec-loop/scripts/build-proposal.py`（範囲の外の節を読む関数 `out_of_scope` を scaffold から読み込むだけで、変えない）
+- `plugins/dev-loop/skills/dev-loop/scripts/spec-fingerprint.py`（指紋の式は変えない——`out_of_scope` も機能のオブジェクトに入るので指紋に入る）
+- 本文の形の版の印（`<!-- spec-loop-handoff: v3 -->`）——上げない（下の「決着済みの論点」）
+- `nfr.csv` を読むこと・性能テスト・Domain Checker の観点（#852）、可逆性の線（#836 の C）
+
+複製の数（同じことを述べている箇所）: 節の一覧は 5 箇所（`handoff-issue.md` の表〔原本〕・`scaffold.py` の `SECTIONS`・`spec-gap.md` の表・`test-scaffold.py` の節の順の 2 箇所）、
+`out_of_scope` の決まりは 3 箇所（`spec-ir.md`〔原本〕・`scaffold.py` の docstring と検査・scaffold の `SKILL.md` の手順 2）、公開ページ 1 箇所。
+**分けない理由**: 節の一覧の写しは `test-scaffold.py` が突き合わせる（3 つの表と定数）——1 周で揃えないと CI が赤になる。`out_of_scope` は書き起こす側（SKILL.md）と検査（scaffold.py）が同じ周で入らないと、片方だけでは使えない。
+
+## デプロイ経路
+
+main へのマージで GitHub Pages の再ビルド（`docs/plugins/spec-loop.md`）とプラグインの配布（spec-loop・dev-loop の版）。マージは親がする。
+
+## 設計（この周で決めたこと）
+
+- **節の位置**: `## Q&A の回答` と `## 仕様の穴を見つけたら` の間（6 節。変化に依らず 6 つとも）。
+- **中身は 3 つの小見出し**: `### 範囲の外`・`### 次の版の候補`・`### 性能予算`。
+- **どの行が「その機能に関わる」か**: 中間表現の機能に任意のキー `out_of_scope`（範囲の文書の「範囲の外」の節の行の原文の配列）を書き、
+  `scaffold.py` が**その行が節に原文のまま在るか**を確かめてから写す（**仕様の穴として推奨で決めた**——下の「仕様の穴」）。
+- **次の版の候補**: 選んだ行のうち、文言「次の版の候補」を含む行（`spec-scope.md` の「範囲の外」の行の決まり——「次の版の候補」と添えてよい——に従う）。それ以外は `### 範囲の外`。
+- **行の写し方**: 原文のまま（前後の空白だけ落とす）。表の行なら、その表の見出しの 2 行（見出しと区切り）を前に付ける。範囲の文書での並びの順。
+- **範囲の外の行が無い機能**: `### 範囲の外` に「この機能に関わるとして写した範囲の外の行は無い。」と、無いことは何でも作ってよいという意味ではない旨を書く。`### 次の版の候補` も同じ形。
+- **性能予算**: どの機能でも「要求なし——速さのための最適化をしない。最適化は、計測で予算を超えたと示せたときだけ」（数字は #852）。
+- **撤去の本文**: 節は持つが、小見出しを置かず「撤去の Issue なので作るものは無い——消した機能の代わりを作らない」の 1 行。
+- **範囲の文書を読む関数は `build-proposal.py` の `out_of_scope` を読み込む**（写しを作らない）。
+
+### 仕様の穴（推奨で決めた）
+
+| 穴 | 選択肢 | 決めた値 | 推した理由 | 確認の Issue |
+| --- | --- | --- | --- | --- |
+| 範囲の文書の「範囲の外」の行のうち、どれが「その機能に関わる」かの決め方（#851 は書いていない。範囲の文書の行は機能の id を持たない——id は scaffold が中間表現で振る） | A: 中間表現の機能に `out_of_scope`（行の原文の配列）を書き、スクリプトが原文のまま在るかを確かめる／B: 範囲の文書の行に機能の id を書かせ、スクリプトが id で拾う／C: 範囲の外の行を全部、全機能の本文に写す | **A** | 関わるかは判断で、判断は中間表現に書く（`spec-ir.md`「書き起こすのは判断、そこから先は答えが一意に決まる」）。B は spec-review が範囲の文書を書く時点で機能の id がまだ無い。C は機能ごとに選ばないので「その機能に関わる」にならず、行が増えると本文が膨らむ | （PR を作った後に立てる） |
+
+## 受入基準（不変条件 × 経路）
+
+経路の入口: `scaffold.py` の書く生成（v1・v2 の追加・変更・撤去）・`--dry-run`・`--check`（契約だけ）・前の版の中間表現の検査（`classify`）・dev-loop が本文を読む（`spec-gap.md`）・利用者が中間表現を書く（scaffold の `SKILL.md`）。
+
+| # | 不変条件 | 破りうる経路 | 確かめ方 |
+| --- | --- | --- | --- |
+| A | `out_of_scope` に挙げた範囲の外の行が、追加・変更の本文の `## 作らないもの` に原文のまま写る（表の行は見出しの 2 行つき）。挙げていない行は写らない | 写さない・要約する・挙げていない行も写す・表の見出しを落とす・ほかの機能の本文に写る | `test-scaffold.py` の試料（表の行・箇条書きの行・関係の無い行）と変異 |
+| B | 「次の版の候補」を含む行は `### 次の版の候補` に、含まない行は `### 範囲の外` に分かれる | 分けない・逆に入れる | 同上 |
+| C | 範囲の外の行が無い機能（`out_of_scope` が無い・範囲の文書が無い）でも節があり、決めた文言で「無い」と書く。性能予算は「要求なし」 | 節を落とす・空の小見出しにする | 同上（基準の試料の本文） |
+| D | `out_of_scope` が決まりに反すれば生成しない（1）——配列でない・空・文字列でない・複数行・重複・範囲の文書が無い・節が無い・節に原文のまま無い行・表の見出しや区切りの行 | 検査を素通りして本文に存在しない行を書く | 試料と変異 |
+| E | 節の一覧が、`handoff-issue.md`（原本）・`scaffold.py` の `SECTIONS`・`spec-gap.md` の表で同じ順に揃い、本文がその順で節を持つ（追加・変更・撤去） | 写しのずれ・本文の順 | `test-scaffold.py` の突き合わせ（既存）と節の順の検査 |
+| F | `out_of_scope` を持たない中間表現の生成物（`scaffold/`）は 1 バイトも変わらない | 契約に節の影響が出る | `test-scaffold.py` の `BASE_SHA256`（既存） |
+| G | 版が 3 種類で揃い、main の先端から minor を 1 つ上げた値（spec-loop・dev-loop） | 揃え漏れ | `check-plugin-versions.py`・`check-version-bump.py` |
+| H | 文書（`handoff-issue.md`・`spec-ir.md`・scaffold `SKILL.md`・`spec-gap.md`・公開ページ）の記述が実装の振る舞いと一致する | 書いたことと生成が違う | 関門が本文と生成物を突き合わせる |
+
+掛け算: 受入基準を Verifier と `/code-review` の両方に、1・2 パス目とも渡す（2 パス目が該当なしなら初回の 2 つ）。
+
+**未証明**: dev-loop の周が実際に `## 作らないもの` を根拠に盛りすぎを指摘するか（振る舞い。Eval は回さない——この周の受入基準ではない）。
+**BLOCKED**: 無し。
+
+生成物: **該当あり**——`SKILL.md` の測定値（設計 §8.2 の生成ブロック。`skill-metrics.py --check`、check-all に入っている）。`references/spec-gap.md` の行数が変わる（157 → 158）ので `skill-metrics.py` で書き直した（変更範囲に足した）。鮮度は `--check` で見る。
+`scaffold/` の契約は試料の中だけ（このリポジトリに commit した `scaffold/` は無い）。図は触らない。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/851-out-of-scope-section`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-851`・
+  起点 `f447c55b`・base `origin/main`（`refs/remotes/origin/HEAD`）→ `f447c55b581218144cbeef1ff62954ec533c7d51`
+- 割り目（手順 4 の完了時）: 割らない（cruise の周）
+- 1 パス目: 未着手
+- 2 パス目: 未着手
+- 狭いパス: 未着手
+- 割り目（2 パス目の前）: 未着手
+- 交絡を潰した手順: 実験なし
+- check-all（1 回目、順番待ち越し）: 60 本中 3 本赤——`check-plan-counts.py`（件数の行が無い）・`skill-metrics.py --check`（`spec-gap.md` の行数）・`test-scaffold.py`（変異「作らないものの節を書かない」で試料の post が IndexError——節が無いときの読み方を直した）。直したあと 2 本は直に、`test-scaffold.py` は順番待ち越しに回して緑（試料 249 件・変異 198 件）
+
+## 既知の限界・決着済みの論点
+
+| 論点 | 決着 | 理由 |
+| --- | --- | --- |
+| 本文の形の版の印を v4 に上げる | 採らなかった | 節を 1 つ足すだけで、dev-loop が照合に使う印・指紋・sha256 は変わらない。上げると dev-loop の `SKILL.md`・`absent-lines.md`・`spec-gap.md` の印の写しも全部動く。v3 の本文で節を持たないもの（この版より前に作ったもの）があることは `handoff-issue.md`・`spec-gap.md` に書く |
+| 性能予算に nfr の数字を写す | 採らなかった | #852 の範囲（Issue の指示） |
+| 撤去の本文に前の版の範囲の外の行を写す | 採らなかった | 撤去の周は作るものが無い。1 行で済ませる |
+| 範囲の外の節の読み方を scaffold.py に写す | 採らなかった | `build-proposal.py` の `out_of_scope` を読み込む（写しを 2 つにしない） |
+| `out_of_scope` を足す・変えるだけで機能が `変更` になる | 受け入れる | 機能のオブジェクトが変わるので指紋も変わる（`called_by` と同じ扱い。ケースは全部 `回帰`）。`spec-ir.md` に書く |
+
+## 経験の還元（手順 8）
+
+（周の終わりに書く）
+
+- この周の起票: 1 件（仕様の穴を推奨で決めた確認の Issue。番号は PR を作った後に書く）
