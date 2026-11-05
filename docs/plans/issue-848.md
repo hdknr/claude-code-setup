@@ -104,7 +104,11 @@ main へのマージでプラグインの配布（`spec-loop` の版）。公開
 - 周の在り処: ブランチ `issue/848-spec-autopilot-ledger`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-848`・
   起点 `f447c55b`・base `origin/main` → `f447c55b581218144cbeef1ff62954ec533c7d51`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: 1 パス目（Verifier・`/code-review`）を起動。1 パス目の指摘対応の起点 `1ff8ade3`（1 パス目の関門に渡した時点の HEAD）
+- 関門: 1 パス目の指摘対応の起点 `1ff8ade3`（1 パス目の関門に渡した時点の HEAD）
+  - 1 パス目 Verifier（sonnet・`dev-loop:dev-loop-verifier`）: 反証 4 件（I1〜I8 の直接の破れなし。V1-2 を直す）。差し戻しなし（指摘対応で直した）
+  - 1 パス目 `/code-review`（high）: 指摘 10 件（C1-1〜3 を直す）
+  - 1 パス目の指摘対応の差分: 0 行でない（`0579ea48`）→ 2 パス目を回す。割り目（手順 6）: 割らない（cruise の周）
+  - 2 パス目: Verifier の当て直しと `/code-review` の 2 パス目の両方が残る。2 パス目の指摘対応の起点（狭いパスの起点）`0579ea48`
 - 交絡を潰した手順: 実験なし
 
 ## 既知の限界・決着済みの論点
