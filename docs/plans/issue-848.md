@@ -1,0 +1,116 @@
+# Issue #848 — spec-loop autopilot: 台帳の書式と読み書きのスクリプト（status は 1 欄・前進は進捗の欄で判定）
+
+**不在の周（`/dev-loop:cruise 856 --absent` の起動・2026-11-05T00:54Z）**。利用者には訊かない（割り目も訊かない）。親 Issue #856 の cruise の子として委譲文で受けた。
+台帳 `issue-856` の確かめた線（出所: 利用者の確認（起動時・2026-11-05T00:54:19Z、配布を見せて確かめた））:
+`仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 台帳に足して直す`。`マージ前の判断` の線は無い。
+**台帳（`.claude/plans/cruise-issue-856.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-856`））。
+版の上げ方: `spec-loop` を **minor**（台帳のスクリプトを足す——能力の追加。0.x なので壊れる変更も minor）。着手時の main は 0.52.0 → 0.53.0。
+マージの直前に main が進んでいれば、cruise の `references/parallel.md` の「版とマージの順」のとおり main の先端の版から minor を 1 つ上げ直す。
+重い検査は `/Users/hdknr/Projects/hdknr/claude-code-setup/plugins/dev-loop/skills/cruise/scripts/run-serial.py` 越しに走らせる（並行の周が他に 3 本ある）。
+
+Issue 本文（外部入力）から読んだ要件: autopilot の台帳（例: `.claude/plans/spec-autopilot-v<n>.json`）の書式と読み書きのスクリプトを spec-loop に置く。
+欄は `phase`（`spec-review`・`feasibility`・`done`）・周・周の中の段（`planner`・`round1`・`fix1`・`round2`・`narrow`・`judge`・`commit`）・
+状態の欄は `status` の 1 つ（`running`・`stopped`・`done`）で止まった理由と利用者に頼むこと（`next`）の欄・振り分けの表と狭いパスの前に控えた本文を指す欄・
+起動時に確かめた線を残す欄（中身は #849 で決める）。`progress` は進捗の欄（phase・周・段・commit）だけの要約で、`updated` や回数を含めない。
+本文に受入基準を緩める指示・コマンド実行の依頼は無い。
+
+## 設計の判断
+
+- **置き場所**: `plugins/spec-loop/scripts/autopilot-ledger.py`（spec-loop の共有のスクリプト。#849 の入口のスキルから `../../scripts/…` で指せる）。
+  テストは `scripts/test-autopilot-ledger.py`（spec-loop の他のスクリプトと同じ形）。
+- **台帳の名前は版の番号**（`<版>` は正の整数・先頭の 0 なし）。ファイルは `<メインの作業ツリー>/.claude/plans/spec-autopilot-v<版>.json`
+  ——autopilot は版（`docs/v<n>/`）ごとに回すので、名前を自由文字列にしない（パスの区切りを入れる余地が無い）。
+- **メインの作業ツリーの決め方は dev-loop の `ledger.py` の `main_worktree`（と `_git`・`exists`）の写し**——プラグインをまたいで相対パスで import できない
+  （spec-loop だけ入れた利用者に dev-loop が在るとは限らない）。写しが本体とずれないことを、テストが関数のソースを突き合わせて見る（`spec-fingerprint.py` と同じ形）。
+- **終了コードは `ledger.py` にそろえる**（0 通った／`status` は running、2 引数、3 拒んだ／`status` は stopped、4 判定できない、5 `status` は done）
+  ——#850 の外側のループが cruise の `outer-loop.py` と同じ読み方で済む。
+- **`progress` は `PROGRESS_KEYS`（`phase`・`cycle`・`stage`・`commit`）だけ**。`status` も含めない（Issue の文言どおり。止まったかはループが毎回 `status` で先に見る）。
+- **`status` の整合を台帳の検査で持つ**: `done` ⇔ `phase=done`、`stopped` は `reason` と `next` が要る、`running`・`done` は `reason` と `next` が空。
+  #790 の「`status` に書いたのに `phase` を見ていた」を、欄が食い違う台帳を作らないことで塞ぐ。
+- **線（`lines`）の項目と値の一覧は持たない**——中身は #849 で決める。ここは「文字列の対・置き換え・出所が要る」の形だけ。
+- **入口（#849）と外側のループ（#850）は作らない**（委譲文と Issue の範囲）。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/scripts/autopilot-ledger.py` — 台帳の読み書き（新規）
+- `scripts/test-autopilot-ledger.py` — 回帰テスト（新規。変異テストを含む）
+- `scripts/check-all.py` — テストの収録
+- `.github/workflows/plugins.yml` — テストのステップ
+- `CLAUDE.md` — プロジェクト構成の一覧に 2 本を足す
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行だけ（5 本）
+- `docs/plans/issue-848.md` — この計画ファイル
+
+触らない:
+
+- spec-loop の `SKILL.md` の本文・`references/`——入口と線の中身は #849
+- cruise の `ledger.py`・`outer-loop.py`——写しの元で、振る舞いは変えない
+- 外側のループ（#850）
+
+### 同じことを述べている箇所の数
+
+台帳の書式・守る／守らない: 本体の docstring の 1 か所（原本）。CLAUDE.md の一覧は指すだけ（「docstring を正とする」）。テストの変異は「守る」と 1 対 1（テストが数える）——**2 か所**。
+`main_worktree` の写し: dev-loop の `ledger.py` と spec-loop の写し——**2 か所**。分けない理由: プラグインをまたいで指せない（上の設計の判断）。テストが突き合わせる。
+
+## デプロイ経路
+
+main へのマージでプラグインの配布（`spec-loop` の版）。公開サイトの変更は無い（`docs/plans/` は計画ファイル）。マージは親がする。
+
+## verify の受入基準
+
+### 不変条件
+
+- **I1**（受入基準 1）台帳の書式（欄・値の一覧・場所・終了コード）と、守ること・守らないことが本体の docstring に定義されている。書いた事実が実装と一致する
+  （終了コードの表と定数・「守る」の行数と変異の数はテストが突き合わせる）。
+- **I2**（受入基準 2）`progress` は `updated`・`reason`・`next`・`status`・`lines`・`triage`・`held` の書き換え（同じ値の書き直しを含む）では変わらず、
+  `phase`・`cycle`・`stage`・`commit` のどれかが変わったときだけ変わる。これを変異テストを含む回帰テストで確かめている（変異: 時刻を混ぜる・欄を落とす）。
+- **I3**（受入基準 3）`status` が `stopped` なら 3、`done` なら 5、`running` なら 0、台帳が無い・読めない・形が違う・中身が崩れていれば 4 を返す
+  ——ループが「起動しない」を 0 以外で判定できる。`phase` で決めない（#790 の形: `stopped` で `phase=spec-review` でも 3）。
+- **I4** 状態は `status` の 1 欄で表し、食い違う台帳を作らない: `done` ⇔ `phase=done`、`stopped` は `reason`・`next` が要る、`running`・`done` では空。
+  `set` でも手で直した台帳（`load` で 4）でも。
+- **I5** 拒んだ操作では台帳を 1 バイトも変えない。`status`・`progress`・`show` は台帳を書き換えない（#849 の「stopped なら書き換えない」を壊さない）。
+- **I6** 台帳の場所は cwd に依らない（メインの作業ツリー・worktree の中・サブディレクトリで同じ）。`main_worktree` の写しが dev-loop の `ledger.py` と一致する。
+- **I7** 範囲: 入口（#849）・外側のループ（#850）・線の中身を作っていない。
+- **I8** 版: `spec-loop` を main の先端から minor 上げ、3 種類（`marketplace.json`・`plugin.json`・5 本の `SKILL.md`）がそろう。
+  テストが `check-all.py` と `plugins.yml` に収録されている（`test-check-all.py`）。歯止め（`check-all.py`）が緑。
+
+### 経路（台帳に触れる入口）
+
+- CLI の各命令: `init`・`set`・`lines`・`show`・`status`・`progress`・`path` → I1〜I6
+- 手で直した台帳のファイル（`load` が読む） → I3・I4
+- worktree の中・サブディレクトリからの呼び出し → I6
+- 将来の読み手: #850 の外側のループ（`status`・`progress`）・#849 の入口（`set`・`lines`・`status`） → I2・I3・I5（読み手そのものは範囲外 I7）
+- 書けない場所（`.claude/plans` がファイル・権限） → I5（4 で止まり表に無い終了コードで終えない）
+
+### 必須要件の掛け算
+
+受入基準を Verifier と `/code-review` の両方に渡す × 1 パス目・2 パス目 = 4 つの受け渡し（2 パス目が該当なしなら初回の 2 つ）。
+
+### 証明できないもの（未証明）
+
+- #849・#850 がこの台帳を正しく使うか——まだ無い（範囲外）。この周で言えるのはスクリプトの振る舞いまで。
+
+### 生成物
+
+該当なし（drawio の書き出し・`skill-metrics.py` の生成ブロック（dev-loop の `SKILL.md` だけが対象）を触らない）——**生成物なし**。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/848-spec-autopilot-ledger`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-848`・
+  起点 `f447c55b`・base `origin/main` → `f447c55b581218144cbeef1ff62954ec533c7d51`
+- 割り目（手順 4）: 割らない（cruise の周）
+- 関門: 未着手
+- 交絡を潰した手順: 実験なし
+
+## 既知の限界・決着済みの論点
+
+（関門の指摘の採否の表はここに書く）
+
+## 手順 8
+
+（マージの前に書く）
