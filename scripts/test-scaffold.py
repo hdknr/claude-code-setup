@@ -16,6 +16,9 @@
    **ケースの数だけ失敗（エラーではない）**になること。モジュールはあるが関数が無い・誤った値を返す実装でも同じ。
    **陽性対照: 正しい実装を置くと緑になる**（別の理由で落ちているのではないことを見る）。
 3. **Issue の本文から辿れる**——印・節の順・ケースごとの Red テストの名前・Q&A の回答・
+   **作らないもの**（#851。中間表現の `out_of_scope` に挙げた範囲の外の行が原文のまま・表の見出しつき・範囲の文書の順で写り、
+   「次の版の候補」を含む行は別の小見出しに分かれ、挙げていない行は写らない。行の無い機能でも節と「無い」の文言と性能予算の「要求なし」が出る。
+   `out_of_scope` が範囲の文書の「範囲の外」の節に原文のまま無い・形が決まりに反するなら作らない）・
    **本文の指紋と sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
    が書いた実物に、**dev-loop の `scripts/spec-fingerprint.py` を実際に当てた出力**と比べる——2 つのプラグインに
    置いた指紋の式の写しが揃っていることも、これで見る）。**指紋は機能単位**——関係の無い機能を直しても変わらない
@@ -323,6 +326,83 @@ def internal_in_issue(repo: Path) -> str | None:
     return "共有の Q&A しか指さない Issue が内部の表を写した元に挙げている" if "qa-dev.csv" in shared else None
 
 
+# ---- 作らないもの（#851）。範囲の文書の「範囲の外」の節の行を、中間表現の out_of_scope で機能に結びつける
+SCOPE_ROWS = ("| ディスクがいっぱい | 失敗を見せる | 既定の線 |",
+              "| 外貨での割引 | 円だけで受ける | Q-001。次の版の候補 |",
+              "| 取り消しの通知が届かない | 記録を残す | 既定の線 |",
+              "- 割引の端数を利用者ごとに変える（原則: 一律に切り捨て。既定の線）",
+              "- 取り消しの理由を選ばせる（次の版の候補）")
+SCOPE_HEADER = "| 場面 | 原則 | 根拠 |\n| --- | --- | --- |"
+SCOPE_MD = ("# 範囲\n\n## 線\n\n既定の線\n\n## 範囲の外\n\n" + SCOPE_HEADER + "\n" + "\n".join(SCOPE_ROWS[:3])
+            + "\n\n" + SCOPE_ROWS[3] + "\n\n### 補足\n\n" + SCOPE_ROWS[4]
+            + "\n\n## 付録\n\n" + SCOPE_HEADER + "\n| 付録の行 | 原則 | 根拠 |\n")
+SCOPE_SPEC = {"order.md": SPEC, "scope.md": SCOPE_MD}
+NOT_BUILT_NONE = "この機能に関わるとして写した{}は無い（無いことは、ほかのものを作ってよいという意味ではない）。"
+NO_BUDGET = ("要求なし——この Issue は性能の要求（数字のある予算）を渡していない。"
+             "速さのための最適化（キャッシュ・並列化・索引の追加など）をしない。最適化は、計測で予算を超えたと示せたときだけ。")
+COPIED = "（範囲の文書 `build/merged/spec/scope.md` の「範囲の外」の節から、原文のまま写した。）"
+
+
+def out_of_scope(f001, f002=None) -> Callable[[dict], dict]:
+    def apply(ir: dict) -> None:
+        f1(ir)["out_of_scope"] = f001
+        if f002 is not None:
+            ir["features"][1]["out_of_scope"] = f002
+    return edit(apply)
+
+
+# F-001 は並びを範囲の文書と変えて挙げる（本文は範囲の文書の順）。F-002 は小見出しの下の箇条書きの候補だけ
+OUT_OF_SCOPE_IR = out_of_scope([SCOPE_ROWS[3], SCOPE_ROWS[1], SCOPE_ROWS[0]], [SCOPE_ROWS[4]])
+
+
+def not_built_section(body: str) -> str:
+    if "\n## 作らないもの\n\n" not in body:
+        return "（作らないものの節が無い）"
+    return body.split("\n## 作らないもの\n\n", 1)[1].split("\n\n## 仕様の穴を見つけたら\n", 1)[0]
+
+
+PIPELESS_SCOPE_MD = "# 範囲\n\n## 範囲の外\n\n場面 | 原則\n--- | ---\n外貨 | 円だけ\n"
+
+
+def pipeless_copied(repo: Path) -> str | None:
+    section = not_built_section(bodies(repo)["F-001"])
+    return None if "### 範囲の外\n\n場面 | 原則\n--- | ---\n外貨 | 円だけ\n\n" + COPIED in section else f"先頭の | の無い表の行に見出しが付かない: {section}"
+
+
+def not_built_added_in_v2(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのは out_of_scope を足した機能だけのはず: {list(found)}"
+    problem = body_has(found["F-001"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-001-C1` | 回帰 |",
+                                        "| `F-001-C2` | 回帰 |"), "out_of_scope を足した変更")
+    if problem:
+        return problem
+    section = not_built_section(found["F-001"])
+    return None if f"{SCOPE_HEADER}\n{SCOPE_ROWS[0]}\n\n{COPIED}" in section else f"v2 の本文の作らないものに行が無い: {section}"
+
+
+def not_built_copied(repo: Path) -> str | None:
+    found = bodies(repo)
+    head = "受入基準に結びつかないものを作らない。下に挙げたものは、この機能では作らない。"
+    budget = f"### 性能予算\n\n{NO_BUDGET}"
+    expected = {
+        "F-001": "\n\n".join([head, "### 範囲の外", f"{SCOPE_HEADER}\n{SCOPE_ROWS[0]}", SCOPE_ROWS[3], COPIED,
+                              "### 次の版の候補", f"{SCOPE_HEADER}\n{SCOPE_ROWS[1]}", COPIED, budget]),
+        "F-002": "\n\n".join([head, "### 範囲の外", NOT_BUILT_NONE.format("範囲の外の行"),
+                              "### 次の版の候補", SCOPE_ROWS[4], COPIED, budget]),
+    }
+    for fid, want in expected.items():
+        got = not_built_section(found[fid])
+        if got != want:
+            return f"{fid} の作らないものの節が違う:\n{got}\n---- 期待:\n{want}"
+    # 挙げていない行（範囲の外の節の行・節の外の行）は、どの本文にも写らない
+    for fid, body in found.items():
+        for stray in (SCOPE_ROWS[2], "付録の行"):
+            if stray in body:
+                return f"{fid} の本文に挙げていない行 {stray!r} がある"
+    return None
+
+
 class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
@@ -446,7 +526,7 @@ def body_traceable(repo: Path) -> str | None:
     if lines[:3] != ["<!-- spec-loop-handoff: v3 -->", "<!-- spec-loop-feature: F-001 -->",
                      "<!-- spec-loop-change: add; base=none -->"]:
         return f"先頭 3 行が印でない: {lines[:3]}"
-    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 仕様の穴を見つけたら")]
+    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 作らないもの", "## 仕様の穴を見つけたら")]
     if -1 in positions or positions != sorted(positions):
         return f"節が揃っていないか順が違う: {positions}"
     for needle in ("TestF001.test_f_001_c1", "TestF001.test_f_001_c2", "`F-001-C1`", "`F-001-C2`",
@@ -456,7 +536,10 @@ def body_traceable(repo: Path) -> str | None:
                    "`calc_discount`", "`build/merged/spec/order.md`", "起票元 `開発`", "references/spec-gap.md",
                    "`merge-versions.py docs build/merged --upto 1`", "`docs/v<n>/shared/qa.csv`",
                    "| ケース | 変化 | 確かめること | Red テスト | Q&A |", "| `F-001-C1` | 追加 |", "変化: 追加（v1 の機能）",
-                   "実装が無い状態では、ケースの数だけ失敗する。"):
+                   "実装が無い状態では、ケースの数だけ失敗する。",
+                   # 範囲の外の行の無い機能でも、作らないものの節は 3 つの小見出しと「無い」を書く（#851）
+                   NOT_BUILT_NONE.format("範囲の外の行"), NOT_BUILT_NONE.format("次の版の候補"),
+                   "### 性能予算\n\n" + NO_BUDGET):
         if needle not in body:
             return f"本文に {needle!r} が無い"
     # 本文の指紋と sha256 と、指しているファイルの実物——中間表現は `merge-versions.py` が書く全体に、dev-loop の照合を当てる
@@ -844,7 +927,7 @@ def body_has(body: str, needles: tuple[str, ...], what: str) -> str | None:
 
 
 def sections_in_order(body: str) -> bool:
-    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 仕様の穴を見つけたら")]
+    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 作らないもの", "## 仕様の穴を見つけたら")]
     return -1 not in positions and positions == sorted(positions)
 
 
@@ -918,7 +1001,9 @@ def v2_removed(repo: Path) -> str | None:
         return f"読めない中間表現で、dev-loop のスクリプトが 2 を返さない（exit={code}）"
     return body_has(body, ("理由: 取り消しはやめる", "撤去する API: `GET /orders/cancelable`", "| `F-002-C1` | 削除 |",
                            "—（`scaffold/tests/test_f_002.py` ごと消した）", "モジュール `spec_impl` の関数 `can_cancel`",
-                           "python3 -m unittest discover -s scaffold/tests\n", "この機能が根拠にした Q&A は無い"), "撤去")
+                           "python3 -m unittest discover -s scaffold/tests\n", "この機能が根拠にした Q&A は無い",
+                           "## 作らないもの\n\n撤去の Issue なので、作るものは無い——消した機能の代わりを作らない。\n\n## 仕様の穴を見つけたら"),
+                    "撤去")
 
 
 def outcomes(repo: Path) -> dict[str, str]:
@@ -1190,6 +1275,43 @@ CASES: list[Case] = [
     Case("正しい実装で緑", 0, impl=GOOD_IMPL, post=expect_green),
     Case("型の違う実装で失敗する", 0, impl=WRONG_TYPE_IMPL, post=expect_red(2)),
     Case("本文から辿れる", 0, post=body_traceable),
+    # #851: 作らないもの
+    Case("作らないもの: 範囲の外の行と次の版の候補を写す", 0, "作った", ir=OUT_OF_SCOPE_IR, spec=SCOPE_SPEC, post=not_built_copied),
+    Case("作らないもの: 節に無い行", 1, "F-001.out_of_scope: 範囲の文書の「範囲の外」の節に、この行が原文のまま無い",
+         ir=out_of_scope([SCOPE_ROWS[0], "| ディスクがいっぱい | 失敗を見せない | 既定の線 |"]), spec=SCOPE_SPEC,
+         pre=plant_old_issues, post=nothing_written),
+    Case("作らないもの: 節の外の行", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '| 付録の行 | 原則 | 根拠 |'",
+         ir=out_of_scope(["| 付録の行 | 原則 | 根拠 |"]), spec=SCOPE_SPEC),
+    Case("作らないもの: 表の見出しの行を挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '| 場面 | 原則 | 根拠 |'",
+         ir=out_of_scope(["| 場面 | 原則 | 根拠 |"]), spec=SCOPE_SPEC),
+    Case("作らないもの: 表の区切りの行を挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '| --- | --- | --- |'",
+         ir=out_of_scope(["| --- | --- | --- |"]), spec=SCOPE_SPEC),
+    # 先頭の | の無い表も表と読む——見出しの 2 行は挙げられず、行には見出しの 2 行が付く（#851 の /code-review 1 パス目）
+    Case("作らないもの: 先頭の | の無い表", 0, "作った", ir=out_of_scope(["外貨 | 円だけ"]),
+         spec={"order.md": SPEC, "scope.md": PIPELESS_SCOPE_MD}, post=pipeless_copied),
+    # 単独の `---`（水平線）は表の区切りではない——前の `|` を含む行を表の見出しと読まない（#851 の /code-review 2 パス目）
+    Case("作らないもの: 水平線の前の | を含む行", 0, "作った", ir=out_of_scope(["- 外貨（円|ドル）は受けない"]),
+         spec={"order.md": SPEC, "scope.md": "# 範囲\n\n## 範囲の外\n\n- 外貨（円|ドル）は受けない\n---\n- 別の行\n"}),
+    Case("作らないもの: 先頭の | の無い表の見出しを挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '場面 | 原則'",
+         ir=out_of_scope(["場面 | 原則"]), spec={"order.md": SPEC, "scope.md": PIPELESS_SCOPE_MD}),
+    Case("作らないもの: 見出しの行を挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '### 補足'",
+         ir=out_of_scope(["### 補足"]), spec=SCOPE_SPEC),
+    Case("作らないもの: 範囲の文書が無い", 1, "F-001.out_of_scope: 範囲の文書 build/merged/spec/scope.md が無い",
+         ir=out_of_scope([SCOPE_ROWS[0]])),
+    Case("作らないもの: 範囲の外の節が無い", 1, "見出しに「範囲の外」を含む節が無い", ir=out_of_scope([SCOPE_ROWS[0]]),
+         spec={"order.md": SPEC, "scope.md": "# 範囲\n\n## 線\n\n既定の線\n"}),
+    Case("作らないもの: 空の配列", 1, "F-001.out_of_scope: 範囲の外の行の原文の 1 つ以上の配列でない", ir=out_of_scope([]),
+         spec=SCOPE_SPEC),
+    Case("作らないもの: 配列でない", 1, "F-001.out_of_scope: 範囲の外の行の原文の 1 つ以上の配列でない",
+         ir=out_of_scope(SCOPE_ROWS[0]), spec=SCOPE_SPEC),
+    Case("作らないもの: 重複", 1, "F-001.out_of_scope: 重複している", ir=out_of_scope([SCOPE_ROWS[0], SCOPE_ROWS[0]]),
+         spec=SCOPE_SPEC),
+    Case("作らないもの: 複数行", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=out_of_scope([SCOPE_ROWS[0] + "\n" + SCOPE_ROWS[2]]), spec=SCOPE_SPEC),
+    Case("作らないもの: 前後に空白", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=out_of_scope([" " + SCOPE_ROWS[0]]), spec=SCOPE_SPEC),
+    Case("作らないもの: 文字列でない", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=out_of_scope([1]), spec=SCOPE_SPEC),
     Case("OpenAPI と型", 0, post=openapi_shape),
     Case("決定論的", 0, post=deterministic),
     Case("生成直後の --check", 0, "新しい", args=("--check",), generate_first=True),
@@ -1411,6 +1533,9 @@ CASES: list[Case] = [
     # ---- 版（重ね合わせた全体から作る）
     Case("v2 で機能を変える", 0, "作った", extra=v2([V2_CHANGED]), post=v2_changed),
     Case("v2 で機能を消す", 0, "作った", extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=v2_removed),
+    # #851: out_of_scope を足すだけでも機能は変更になる（ケースは全部 回帰）。本文の作らないものに写る
+    Case("v2 で作らないものだけ足す", 0, "modify 1", spec=SCOPE_SPEC,
+         extra=v2([{**copy.deepcopy(IR["features"][0]), "out_of_scope": [SCOPE_ROWS[0]]}]), post=not_built_added_in_v2),
     Case("v2 で機能を足す", 0, "作った", extra=v2([V2_RETURN]), post=v2_added),
     Case("v2 の Q&A が確認中", 1, "build/merged/shared/qa.csv: Q-003: 状態が 確認中",
          extra=v2([V2_RETURN], qa=HEADER + QA_V2 + QA_OPEN), pre=plant_old_issues, post=nothing_written),
@@ -1662,6 +1787,52 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #851: 作らないもの
+    ("作らないものの節を書かない", '    lines += ["", SECTIONS[4], ""] + not_built(change, loaded)', "    lines += []",
+     "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("次の版の候補も範囲の外に入れる", "[r for r in chosen if NEXT_VERSION not in r[0]]", "chosen",
+     "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("次の版の候補を分けない", "[r for r in chosen if NEXT_VERSION in r[0]]", "[]",
+     "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("挙げていない行も写す", "        if text in picked and text not in seen:", "        if text not in seen:",
+     "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("表の見出しを付けない", "                lines += list(header)", "                pass",
+     "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("範囲の文書の順に並べない", "    for text, header in rows:", "    for text, header in sorted(rows):",
+     "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("表でない行を空の行で区切らない", "            if index and (header is None or header != group[index - 1][1]):",
+     "            if index and header is not None and header != group[index - 1][1]:", "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE})", "{CALLED_BY})",
+     "作らないもの: 範囲の外の行と次の版の候補を写す"),
+    ("out_of_scope の検査を呼ばない", "        if OUT_OF_SCOPE in feature:\n            problems += check_out_of_scope",
+     "        if False:\n            problems += check_out_of_scope", "作らないもの: 節に無い行"),
+    ("原文が在ることを見ない", "for row in picked if row not in present]", "for row in picked if False]", "作らないもの: 節に無い行"),
+    ("区切りの行を見ず、表の見出しを行に数える",
+     '        if "|" in line and "-" in following and TABLE_SEPARATOR.fullmatch(following):', "        if False:",
+     "作らないもの: 表の見出しの行を挙げる"),
+    ("単独の --- を区切りと読む", "(\\|\\s*:?-+:?\\s*)+\\|?|", "(\\|\\s*:?-+:?\\s*)*\\|?|", "作らないもの: 水平線の前の | を含む行"),
+    ("区切りの行を表の行に数える", "            header = (line, following)\n            index += 2",
+     "            header = (line, following)\n            index += 1", "作らないもの: 表の区切りの行を挙げる"),
+    ("先頭の | の無い区切りを区切りと読まない", 'TABLE_SEPARATOR = re.compile(r"\\|?\\s*:?-+', 'TABLE_SEPARATOR = re.compile(r"\\|\\s*:?-+',
+     "作らないもの: 先頭の | の無い表"),
+    ("見出しの行を行に数える", "        if line and not proposal.heading_level(line):", "        if line:",
+     "作らないもの: 見出しの行を挙げる"),
+    ("範囲の文書が無いと言わない", '    if not path.is_file():\n        return [f"{where}: 範囲の文書',
+     '    if False:\n        return [f"{where}: 範囲の文書', "作らないもの: 範囲の文書が無い"),
+    ("範囲の外の節が無いと言わない", '    if rows is None:\n        return [f"{where}: 範囲の文書',
+     '    if False:\n        return [f"{where}: 範囲の文書', "作らないもの: 範囲の外の節が無い"),
+    ("out_of_scope の空の配列を許す", "    if not isinstance(picked, list) or not picked:", "    if not isinstance(picked, list):",
+     "作らないもの: 空の配列"),
+    ("out_of_scope の重複を許す", "    if len(set(map(str, picked))) != len(picked):", "    if False:", "作らないもの: 重複"),
+    ("out_of_scope の複数行を許す", " or not one_line(row) or row != row.strip() for row in picked", " or row != row.strip() for row in picked",
+     "作らないもの: 複数行"),
+    ("out_of_scope の前後の空白を許す", " or row != row.strip() for row in picked", " for row in picked", "作らないもの: 前後に空白"),
+    ("行の無い小見出しに無いと書かない",
+     '            lines.append(f"この機能に関わるとして写した{what}は無い（無いことは、ほかのものを作ってよいという意味ではない）。")',
+     "            pass", "本文から辿れる"),
+    ("性能予算を書かない", '    lines += ["", NOT_BUILT[2], "", NO_PERFORMANCE_BUDGET]', "    lines += []", "本文から辿れる"),
+    ("撤去の本文に作らないものの 1 行を書かない", '        return ["撤去の Issue なので、作るものは無い',
+     '        return [] and ["撤去の Issue なので、作るものは無い', "v2 で機能を消す"),
     # #609: 呼ばれる機能
     ("呼ぶ機能の検査を呼ばない", "    return problems + check_called_by(features)", "    return problems", "呼ぶ機能が中間表現に無い"),
     ("呼ぶ機能の実在を見ない", "            elif caller not in ids:", "            elif False:", "呼ぶ機能が中間表現に無い"),

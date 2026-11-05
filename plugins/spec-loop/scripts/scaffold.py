@@ -35,6 +35,12 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 **呼ぶ機能がどれも追加・変更されていなければ、止めずに名指しで知らせる**（0）。Issue の本文の `## 仕様` には呼ぶ機能の id と題を書く。
 **`called_by` を書かない機能は入口と読む**——書き起こす側が関数を入口と偽れば通る（決まりの正は `references/spec-ir.md` の「呼ばれる機能」）。
 
+**作らないもの（`out_of_scope`。#851）**: 本文の `## 作らないもの` に、中間表現の機能の `out_of_scope` に挙げた範囲の外の行を、
+範囲の文書（`spec/scope.md`）の「範囲の外」の節から**原文のまま**写す（表の行なら表の見出しの 2 行を付ける）。「次の版の候補」を含む行は
+`### 次の版の候補` に分ける。**挙げた行が節に原文のまま無い（範囲の文書・節が無い・表の見出しや区切りの行を挙げた）なら 1**——
+どの行がその機能に関わるかは書き起こす側の判断で、機械は原文が在ることだけを見る。性能予算は「要求なし」の既定だけを書く
+（決まりの正は `references/handoff-issue.md` の「作らないもの」と `references/spec-ir.md` の「作らないもの」）。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -158,7 +164,14 @@ FEATURE_MARKER = "<!-- spec-loop-feature: {} -->"
 CHANGE_MARKER = "<!-- spec-loop-change: {}; base={} -->"
 ADD, MODIFY, REMOVE = "add", "modify", "remove"
 NO_BASE = "none"
-SECTIONS = ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 仕様の穴を見つけたら")
+SECTIONS = ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 作らないもの", "## 仕様の穴を見つけたら")
+# `## 作らないもの` の小見出し（#851）
+NOT_BUILT = ("### 範囲の外", "### 次の版の候補", "### 性能予算")
+# 範囲の外の行のうち、次の版で受け持つ候補の印（`references/spec-scope.md` の「範囲の文書」の写し）
+NEXT_VERSION = "次の版の候補"
+# 性能の要求を渡していない機能の既定（数字のある予算はまだ写さない）
+NO_PERFORMANCE_BUDGET = ("要求なし——この Issue は性能の要求（数字のある予算）を渡していない。"
+                         "速さのための最適化（キャッシュ・並列化・索引の追加など）をしない。最適化は、計測で予算を超えたと示せたときだけ。")
 # ケースの変化（受入基準の表の `変化` の列）
 CASE_ADDED, CASE_CHANGED, CASE_KEPT, CASE_REMOVED = "追加", "変更", "回帰", "削除"
 # Red テストが「実装が無い」で落ちたときの文言の頭（生成する Red テストの `self.fail` と同じ）
@@ -176,6 +189,8 @@ PY_TYPES = {"string": "str", "integer": "int", "number": "float", "boolean": "bo
 NULLABLE = "nullable"
 # 機能を呼ぶ機能の id の配列（任意。`references/spec-ir.md` の「呼ばれる機能」。#609）
 CALLED_BY = "called_by"
+# 機能に関わる範囲の外の行の原文の配列（任意。`references/spec-ir.md` の「作らないもの」。#851）
+OUT_OF_SCOPE = "out_of_scope"
 
 
 class Unjudged(Exception):
@@ -194,6 +209,9 @@ qa = spec_exit.pptx.qa
 versions = _load("merge_versions", "merge-versions.py")
 # 内部の層の Q&A 表の、重ねた全体の中の場所（`merge-versions.py` のもの。写さない——#353）
 INTERNAL_QA_PATH = versions.INTERNAL_QA_PATH
+# 範囲の文書の置き場所と「範囲の外」の節の読み方は `build-proposal.py` のもの（写さない——#851）
+proposal = _load("build_proposal", "build-proposal.py")
+SCOPE_PATH = proposal.SCOPE_PATH
 # 比べ方は `diff-versions.py` のもの（`compare_maps` は純粋な関数。重ねるのはこのスクリプトの `versions`）
 diffs = _load("diff_versions", "diff-versions.py")
 # リリースのタグの命名は `check-frozen.py` のもの（`releases`。写さない）
@@ -438,7 +456,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
-        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"}, {CALLED_BY})
+        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"}, {CALLED_BY, OUT_OF_SCOPE})
         if found:
             problems += found
             if not isinstance(feature, dict):
@@ -458,6 +476,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             problems += check_source(f"{where}.source", feature["source"], whole)
         if "qa" in feature:
             problems += check_qa_refs(f"{where}.qa", feature["qa"], answered)
+        if OUT_OF_SCOPE in feature:
+            problems += check_out_of_scope(f"{where}.{OUT_OF_SCOPE}", feature[OUT_OF_SCOPE], whole)
 
         op = feature.get("operation")
         fields_in, fields_out, errors = {}, {}, []
@@ -542,6 +562,70 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     return problems + check_called_by(features)
 
 
+# 表の区切りの行（`| --- | :-: |`・先頭の `|` の無い `--- | ---`）。**`|` を 1 つ以上含む**——単独の `---`（水平線）は区切りと読まない
+TABLE_SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?|\|\s*:?-+:?\s*\|")
+
+
+def scope_rows(text: str) -> list[tuple[str, tuple[str, str] | None]] | None:
+    """範囲の文書の「範囲の外」の節の行と、その行が表の行なら表の見出しの 2 行（見出しと区切り）。節が無ければ None。
+
+    行は前後の空白を落とした原文で、範囲の文書での並びの順。**空の行・見出しの行・表の見出しと区切りの行は行に数えない**。
+    **表は、`|` を含む行の次の行が区切りの行（`| --- |`・`--- | ---`）であるところから始まり**、`|` を含む空でない行が続くあいだ続く
+    （先頭の `|` の無い表も表と読む。区切りの行の無い `|` の行の並びは表ではなく、ふつうの行）。
+    """
+    body = proposal.out_of_scope(text)
+    if body is None:
+        return None
+    lines = [line.strip() for line in body]
+    rows: list[tuple[str, tuple[str, str] | None]] = []
+    header: tuple[str, str] | None = None  # 続いている表の見出しの 2 行
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if header is not None and line and "|" in line:
+            rows.append((line, header))
+            index += 1
+            continue
+        header = None
+        following = lines[index + 1] if index + 1 < len(lines) else ""
+        if "|" in line and "-" in following and TABLE_SEPARATOR.fullmatch(following):
+            header = (line, following)
+            index += 2
+            continue
+        if line and not proposal.heading_level(line):
+            rows.append((line, None))
+        index += 1
+    return rows
+
+
+def check_out_of_scope(where: str, picked, whole: Path) -> list[str]:
+    """機能の `out_of_scope`（#851。`references/spec-ir.md` の「作らないもの」）。
+
+    **挙げた行が、範囲の文書の「範囲の外」の節に原文のまま在ること**だけを見る——その機能に関わるかは書き起こす側の判断。
+    """
+    if not isinstance(picked, list) or not picked:
+        return [f"{where}: 範囲の外の行の原文の 1 つ以上の配列でない"]
+    problems = []
+    if any(not isinstance(row, str) or not one_line(row) or row != row.strip() for row in picked):
+        problems.append(f"{where}: 前後に空白の無い 1 行の文字列でない行がある")
+    if len(set(map(str, picked))) != len(picked):
+        problems.append(f"{where}: 重複している")
+    if problems:
+        return problems
+    path = whole / SCOPE_PATH
+    if not path.is_file():
+        return [f"{where}: 範囲の文書 {merged(SCOPE_PATH)} が無い"]
+    try:
+        rows = scope_rows(path.read_bytes().decode("utf-8-sig"))
+    except UnicodeDecodeError:
+        return [f"{where}: 範囲の文書 {merged(SCOPE_PATH)} を UTF-8 として読めない"]
+    if rows is None:
+        return [f"{where}: 範囲の文書 {merged(SCOPE_PATH)} に見出しに「{proposal.OUT_OF_SCOPE}」を含む節が無い"]
+    present = {text for text, _ in rows}
+    return [f"{where}: 範囲の文書の「{proposal.OUT_OF_SCOPE}」の節に、この行が原文のまま無い"
+            f"（表の見出し・区切りの行は挙げない）: {row!r}" for row in picked if row not in present]
+
+
 def check_called_by(features: list) -> list[str]:
     """呼ばれる機能の `called_by`（#609。`references/spec-ir.md` の「呼ばれる機能」）。
 
@@ -617,8 +701,9 @@ def parse_answered(text: str) -> dict[str, dict[str, str]]:
 class Loaded:
     """重ね合わせた全体から読んだもの。"""
 
-    def __init__(self, ir: dict, raw: bytes, answered: dict, number: int, docs: Path) -> None:
+    def __init__(self, ir: dict, raw: bytes, answered: dict, number: int, docs: Path, scope: bytes | None = None) -> None:
         self.ir = ir
+        self.scope = scope  # 範囲の文書（`spec/scope.md`）のバイト。無ければ None
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
         self.answered = answered  # Q&A の行（No → 行）
         self.number = number  # 重ねた最後の版の番号
@@ -658,7 +743,7 @@ def load(repo: Path, upto: int | None = None) -> tuple[int, list[str], Loaded | 
     if code:
         return code, lines, None
     number = upto if upto is not None else len(found)
-    return 0, [], Loaded(ir, rendered[IR_PATH], answered, number, docs)
+    return 0, [], Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH))
 
 
 def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], dict | None, dict]:
@@ -1280,9 +1365,10 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         lines += qa_rows(refs, before.answered, f"{previous} の時点の {tables} ")
     else:
         lines += qa_rows(refs, loaded.answered, f"生成した時点の {tables} ")
+    lines += ["", SECTIONS[4], ""] + not_built(change, loaded)
     lines += [
         "",
-        SECTIONS[4],
+        SECTIONS[5],
         "",
         f"**実装で決めない。** 作業中の版の Q&A 表（`{DOCS}/v<n>/{QA_PATH}`）に起票元 `開発` で起票して、要求側に差し戻す。",
         "手順は dev-loop の `references/spec-gap.md` にある。",
@@ -1296,6 +1382,38 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
                      "この Issue は手元の仕様と別の時点のもの**——")
     lines.append("実装に入らず、同じく差し戻す。")
     return "\n".join(lines) + "\n"
+
+
+def not_built(change: Change, loaded: Loaded) -> list[str]:
+    """`## 作らないもの` の節の中身（#851。`references/handoff-issue.md` の「作らないもの」）。"""
+    if change.kind == REMOVE:
+        return ["撤去の Issue なので、作るものは無い——消した機能の代わりを作らない。"]
+    picked = set(change.feature.get(OUT_OF_SCOPE, []))
+    # 検査（`check_out_of_scope`）を通った後なので、挙げた行は節に在り、文書は読める
+    rows = scope_rows(loaded.scope.decode("utf-8-sig")) if picked else []
+    chosen, seen = [], set()
+    for text, header in rows:
+        if text in picked and text not in seen:
+            seen.add(text)
+            chosen.append((text, header))
+    lines = ["受入基準に結びつかないものを作らない。下に挙げたものは、この機能では作らない。"]
+    groups = ((NOT_BUILT[0], [r for r in chosen if NEXT_VERSION not in r[0]], "範囲の外の行"),
+              (NOT_BUILT[1], [r for r in chosen if NEXT_VERSION in r[0]], NEXT_VERSION))
+    for heading, group, what in groups:
+        lines += ["", heading, ""]
+        if not group:
+            lines.append(f"この機能に関わるとして写した{what}は無い（無いことは、ほかのものを作ってよいという意味ではない）。")
+            continue
+        for index, (text, header) in enumerate(group):
+            # 表の行は同じ表の行と続けて並べ、表が変わる・表でない行は空の行で区切る（表でない行どうしが 1 段落に繋がらないように）
+            if index and (header is None or header != group[index - 1][1]):
+                lines.append("")
+            if header is not None and (index == 0 or header != group[index - 1][1]):
+                lines += list(header)
+            lines.append(text)
+        lines += ["", f"（範囲の文書 `{merged(SCOPE_PATH)}` の「{proposal.OUT_OF_SCOPE}」の節から、原文のまま写した。）"]
+    lines += ["", NOT_BUILT[2], "", NO_PERFORMANCE_BUDGET]
+    return lines
 
 
 def render_contract(ir: dict) -> dict[str, str]:
