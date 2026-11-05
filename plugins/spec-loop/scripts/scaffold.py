@@ -51,7 +51,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **呼ぶ側の分岐（`branches`。#855）と課題一覧（案）**: 中間表現の機能の `branches` に、仕様チェックリストの「呼ぶ側の分岐」の 8 分岐ごとの
 見せるもの（`shows`）か該当なし（`none`）を、**機能の `source` の原文の 1 行**で書く（行ごと該当なしは `none` だけ）。**原文が `source` に無い・
 分岐の名前でない・形が決まりに反する・呼ばれる関数（`called_by` を持つ機能）に書いたなら 1**——その行がその分岐を決めているかは書き起こす側の判断。
-書く生成は `build/scaffold/issues/proposals.md`（課題一覧（案））も作る——v<n> で追加・変更した入口の機能ごとに 1 案で、
+書く生成は `build/scaffold/issues/proposals.md`（課題一覧（案））も作る——v<n> で追加・変更した入口の機能（`impl_module` を変えただけのものを除く）ごとに 1 案で、
 **未決定事項**（`branches` に無い分岐）・**受入基準の雛形**（見せるものの原文のチェックボックス）・**作らないもの**（本文の `## 作らないもの` と同じ中身）を付ける。
 **未決定事項があっても止めない**（案は登録しないので。件数を出す）。案を登録するか・未決定事項を spec-review に戻すかは `scaffold` スキルの手順 7
 （決まりの正は `references/spec-ir.md` の「呼ぶ側の分岐」）。
@@ -1721,7 +1721,7 @@ def proposals(changes: list[Change], loaded: Loaded, contract: dict[str, str]) -
         "# 課題一覧（案）",
         "",
         "scaffold が Issue にする機能（Red テストつき）の、**Red テストの外に残る呼ぶ側の結線**の課題の案。"
-        f"v{loaded.number} で追加・変更した入口の機能（`{CALLED_BY}` を持たない機能）ごとに 1 案を置き、"
+        f"v{loaded.number} で追加・変更した入口の機能（`{CALLED_BY}` を持たない機能。`impl_module` を変えただけで変更になった機能を除く）ごとに 1 案を置き、"
         "呼ぶ側の分岐（spec-loop の `references/spec-exit.md` の仕様チェックリストの行）を中間表現の"
         f" `{BRANCHES_KEY}` から写す。",
         "",
@@ -1729,7 +1729,7 @@ def proposals(changes: list[Change], loaded: Loaded, contract: dict[str, str]) -
         "**未決定事項のある案は、登録の前に `/spec-loop:spec-review` に戻す**（決まっていないことを実装で決めさせない）。",
     ]
     if not entries:
-        lines += ["", f"案は無い——v{loaded.number} で追加・変更した入口の機能が無い。"]
+        lines += ["", f"案は無い——v{loaded.number} で追加・変更した入口の機能（`impl_module` を変えただけのものを除く）が無い。"]
     for change in entries:
         feature = change.feature
         branches = feature.get(BRANCHES_KEY) or {}

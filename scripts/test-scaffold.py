@@ -543,7 +543,7 @@ def proposals_none(repo: Path) -> str | None:
     if found:
         return f"案は無いはず: {list(found)}"
     text = (repo / PROPOSALS_FILE).read_text(encoding="utf-8")
-    return None if "案は無い——v2 で追加・変更した入口の機能が無い。" in text else f"案が無いことの文言が無い: {text[-200:]}"
+    return None if "案は無い——v2 で追加・変更した入口の機能（`impl_module` を変えただけのものを除く）が無い。" in text else f"案が無いことの文言が無い: {text[-200:]}"
 
 
 ALL_NONE_SPEC = SPEC + "\n" + "\n".join(f"- {name}: 該当なし" for name in ALL_BRANCHES) + "\n"
