@@ -12,7 +12,7 @@ docs/v<n>/
 ├── shared/                  # 利用者と予算責任者の両方に見せてよいもの
 │   ├── qa.csv               # Q&A 表（列は qa-csv.md）
 │   ├── decision_table.csv   # 決定表
-│   └── nfr.csv              # 非機能要求の回答
+│   └── nfr.csv              # 非機能要求の回答（列は nfr.md）
 ├── requirements/            # 利用者向け：業務ルール・画面・業務フロー
 ├── spec/                    # 開発者向け：守るべき性質とそれを確かめるテスト（spec-review が書き下す）
 │   ├── scope.md             # 範囲の文書：受け持つ範囲・受け持たない範囲（形は spec-scope.md）
@@ -28,7 +28,8 @@ docs/v<n>/
 scaffold/                    # dev-loop に渡す契約（scaffold が生成し、commit する。下の「scaffold の出力」）
 ├── openapi.json
 ├── types.py
-└── tests/test_<機能>.py     # Red テスト
+├── tests/test_<機能>.py     # Red テスト
+└── perf/perf_<機能>.py      # 性能テスト（性能の要求 nfr を指す機能だけ。nfr.md）
 build/merged/                # 版を重ね合わせた全体（生成物。commit しない。versions.md）
 spec-review/v<n>.csv         # 仕様レビューの実行の記録（版ごと。commit する。docs/ の外——列と理由は spec-exit.md の「実行の上限と記録」）
 docs/index.md                # 表紙（下の「ドキュメントのツール」。版の外）
@@ -202,10 +203,11 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | `scaffold/openapi.json` | OpenAPI 3.1（JSON） |
 | `scaffold/types.py` | 入出力の型（Python の `TypedDict`） |
 | `scaffold/tests/test_<機能>.py` | Red テスト（Python の `unittest`。実装が無ければ失敗する） |
+| `scaffold/perf/perf_<機能>.py` | 性能テスト（Python の `unittest`。中間表現の `nfr` を持つ機能だけ。実装が無ければ失敗し、1 回ずつ呼んだ時間を上限と比べる。受入基準ではない——`nfr.md`） |
 
 **正本と開発のリポジトリが別なら**、`scaffold/` を開発のリポジトリへどう写すかは正本リポジトリの `CLAUDE.md` に
 書いてもらう。**Issue の本文が指紋を持つのは、中間表現（重ね合わせた全体の `build/merged/spec/spec_ir.json`）の中のその機能と
-Red テスト（sha256）だけ**——`openapi.json`・`types.py` は指紋を持たず、中間表現は `scaffold/` の外にあり、commit もしない。
+Red テストと性能テスト（sha256）だけ**——`openapi.json`・`types.py` は指紋を持たず、中間表現は `scaffold/` の外にあり、commit もしない。
 dev-loop は本文の指紋と sha256 を手元の中間表現と Red テストに当てるので、**開発のリポジトリにも正本の版を写して
 重ね合わせるか、どこで当てるかを決めて書く**。
 
