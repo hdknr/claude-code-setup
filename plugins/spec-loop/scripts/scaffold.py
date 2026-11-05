@@ -205,8 +205,9 @@ NFR_COLUMNS = ("No", "対象", "指標", "上限", "単位", "条件", "根拠")
 NFR_ID = re.compile(r"N-[0-9]{3,}")
 METRICS = ("p50", "p95", "p99", "最大")
 NFR_UNIT = "ms"
-# 上限（正の数。生成する性能テストにそのまま Python の数として書くので、この形だけを許す——先頭の 0 の付いた整数部 `0300` は Python の数にならない）
-LIMIT = re.compile(r"(0|[1-9][0-9]*)(\.[0-9]+)?")
+# 上限（正の数。生成する性能テストにそのまま Python の数として書くので、この形だけを許す——先頭の 0 の付いた整数部 `0300` は Python の数にならず、
+# 4300 桁を超える整数は Python が読まない。整数部は 9 桁・小数部は 6 桁まで）
+LIMIT = re.compile(r"(0|[1-9][0-9]{0,8})(\.[0-9]{1,6})?")
 # 性能テストの置き場所（`scaffold/` の中）と、1 回のテストで実装を呼ぶ回数
 PERF_DIR = "perf"
 PERF_CALLS = 200
@@ -674,7 +675,7 @@ def nfr_row_problems(row: dict[str, str], width: int) -> list[str]:
         problems.append(f"指標が {'・'.join(METRICS)} のどれでもない: {row.get('指標')!r}")
     limit = row.get("上限", "")
     if not LIMIT.fullmatch(limit) or float(limit) <= 0:
-        problems.append(f"上限が正の数でない: {limit!r}")
+        problems.append(f"上限が正の数の形でない（整数部は先頭に 0 を付けない 9 桁まで・小数部は 6 桁まで）: {limit!r}")
     if row.get("単位") != NFR_UNIT:
         problems.append(f"単位が {NFR_UNIT} でない: {row.get('単位')!r}")
     return problems
@@ -691,7 +692,8 @@ def check_nfr(where: str, refs, whole: Path) -> list[str]:
     if problems:
         return problems
     path = whole / NFR_PATH
-    if not path.is_file():
+    # 綴りどおりの名前で在ること——大文字小文字を区別しないファイルシステムでは `NFR.csv` も開けるが、生成は重ねた結果を綴りどおりに引く
+    if not path.is_file() or path.name not in {child.name for child in path.parent.iterdir()}:
         return [f"{where}: 性能の要求の表 {merged(NFR_PATH)} が無い"]
     try:
         header, found = nfr_rows(path.read_bytes().decode("utf-8-sig"))
