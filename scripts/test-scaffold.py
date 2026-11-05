@@ -27,6 +27,8 @@
    各案に、未決定事項〔中間表現の `branches` に無い呼ぶ側の分岐〕・受入基準の雛形〔見せるものの原文のチェックボックスと該当なしの分岐〕・
    作らないもの〔本文の `## 作らないもの` と同じ中身〕が出る。`branches` を書かなければ 8 分岐が全部未決定。
    `branches` が決まりに反する・原文が `source` に無い・呼ばれる関数に書いたなら作らない）・
+   **仕様の基準コミット**（#874。追加・変更・撤去のどの本文も `## 仕様` に `- 基準コミット: ` の行を 1 本持ち、git のリポジトリなら値が正本の HEAD と
+   そのコミットの日時。git の作業ツリーでない・コミットが無い・git を起動できないなら止めずに「記録していない（理由）」を書き、出力でも知らせる）・
    **本文の指紋と sha256 が、指しているファイルの実物と一致する**こと（中間表現は `merge-versions.py docs build/merged`
    が書いた実物に、**dev-loop の `scripts/spec-fingerprint.py` を実際に当てた出力**と比べる——2 つのプラグインに
    置いた指紋の式の写しが揃っていることも、これで見る）。**指紋は機能単位**——関係の無い機能を直しても変わらない
@@ -39,7 +41,7 @@
    **入口ごとに、パラメータとボディを合わせると `<Base>Input` がちょうど復元できる**（#318）——名前・schema・必須の
    どれかが落ちても、`<Base>Input` が入力の一部しか持たなくても赤。`<Base>Input` の項目と schema は `types.py` の
    同名の型と突き合わせる（OpenAPI の中で一緒に落ちる・変わるのを見るため）。exit 0 の全試料に当てる。
-6. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節）。**dev-loop の
+6. **本体の定数が `references/` の表と一致する**（メソッド・型・Issue の印と節・基準コミットの行の形——dev-loop の `spec-gap.md` も同じ形を持つ）。**dev-loop の
    `references/spec-gap.md` も同じ印と節を持ち、dev-loop の `SKILL.md` も同じ印を持つ**（2 つのプラグインの境界の写し）。
 6'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、古い Issue の本文を残さない**。`-OO`（docstring が無い）で
    引数なしに呼んでもトレースバックにならない。判定（`run`）の外——引数の解釈——で上がった想定外の例外も入口が 2 にする
@@ -1551,6 +1553,60 @@ def remedy(repo: Path) -> None:
     subprocess.run(scaffold, capture_output=True, text=True)
     shutil.move(str(aside), str(repo / V2))  # 4. 戻す
 
+# ---- 仕様の基準コミット（#874）。本文の `## 仕様` に、生成した時点の HEAD とその日時か、記録していないことを書く
+BASE_LINE = "- 基準コミット: "
+
+
+def spec_section(body: str) -> str:
+    return body.split("\n## 仕様\n", 1)[-1].split("\n## 受入基準\n", 1)[0] if "\n## 仕様\n" in body else ""
+
+
+def base_lines(body: str) -> list[str]:
+    return [line for line in body.splitlines() if line.startswith(BASE_LINE)]
+
+
+def base_recorded(kinds: tuple[str, ...]) -> Callable[[Path], str | None]:
+    """どの本文も、`## 仕様` の中に基準コミットの行を 1 本だけ持ち、値が正本の HEAD とそのコミットの日時である。
+    `kinds` は本文の変化の印にそろっているべき変化（試料が追加・変更・撤去を覆っていることを見る）。"""
+    def post(repo: Path) -> str | None:
+        found = bodies(repo)
+        changes = sorted({m for body in found.values() for m in re.findall(r"<!-- spec-loop-change: (\w+);", body)})
+        if changes != sorted(kinds):
+            return f"試料の本文の変化が {sorted(kinds)} でない（試料が判別しない）: {changes}"
+        head = subprocess.run(["git", "-C", str(repo), "log", "-1", "--format=%H%n%cI", "HEAD"], capture_output=True,
+                              text=True, env=GIT_ENV).stdout.split("\n")
+        if len(head) < 2 or not re.fullmatch(r"[0-9a-f]{40}", head[0]) or not head[1]:
+            return f"試料の HEAD を読めない: {head}"
+        want = f"{BASE_LINE}`{head[0]}`（コミットの日時 {head[1]}。"
+        for fid, body in found.items():
+            lines = base_lines(body)
+            if len(lines) != 1 or not lines[0].startswith(want):
+                return f"{fid} の本文の基準コミットの行が HEAD とその日時でない: {lines}（期待 {want!r}）"
+            if lines[0] not in spec_section(body).splitlines():
+                return f"{fid} の本文の基準コミットの行が `## 仕様` の中に無い"
+        return None
+    return post
+
+
+def base_unrecorded(reason: str) -> Callable[[Path], str | None]:
+    """どの本文も、`## 仕様` の中に「記録していない（理由）」の行を 1 本だけ持つ。"""
+    def post(repo: Path) -> str | None:
+        found = bodies(repo)
+        if not found:
+            return "本文を作っていない"
+        want = f"{BASE_LINE}記録していない（{reason}"
+        for fid, body in found.items():
+            lines = base_lines(body)
+            if len(lines) != 1 or not lines[0].startswith(want) or lines[0] not in spec_section(body).splitlines():
+                return f"{fid} の本文に `## 仕様` の中の {want!r} の行が 1 本だけ無い: {lines}"
+        return None
+    return post
+
+
+def git_init_only(repo: Path) -> None:
+    git_in(repo, "init", "-q")
+
+
 CASES: list[Case] = [
     Case("作る", 0, "作った", post=files_written),
     Case("Red テストが失敗する", 0, post=expect_red(3)),
@@ -1862,6 +1918,27 @@ CASES: list[Case] = [
     # ---- 版（重ね合わせた全体から作る）
     Case("v2 で機能を変える", 0, "作った", extra=v2([V2_CHANGED]), post=v2_changed),
     Case("v2 で機能を消す", 0, "作った", extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=v2_removed),
+    # #874: 仕様の基準コミット。git のリポジトリなら HEAD とその日時を、追加・変更・撤去のどの本文にも書く
+    Case("基準コミット: 追加の本文", 0, "作った", pre=release(None), post=base_recorded(("add",)),
+         absent="基準コミットを記録していない"),
+    Case("基準コミット: 変更と撤去の本文", 0, "作った", pre=release(None),
+         extra=v2([V2_CHANGED], removed="機能,F-002,取り消しはやめる\n"), post=base_recorded(("modify", "remove")),
+         absent="基準コミットを記録していない"),
+    # 記録できなくても止めない——本文に「記録していない（理由）」と書き、出力でも知らせる
+    Case("基準コミット: git の作業ツリーでない", 0, "基準コミットを記録していない（正本リポジトリが git の作業ツリーでない",
+         post=base_unrecorded("正本リポジトリが git の作業ツリーでない）")),
+    # 根でなければ外側のリポジトリの HEAD を書かない（`released` と同じ。#874 の 1 パス目）
+    Case("基準コミット: git の作業ツリーの根でない", 0, "基準コミットを記録していない（正本リポジトリが git の作業ツリーの根でない",
+         pre=release(None, top=".."), post=base_unrecorded("正本リポジトリが git の作業ツリーの根でない）")),
+    # 環境変数 GIT_DIR が別の場所を指していても、正本の HEAD を書く（フックの中。#874 の 1 パス目）
+    Case("基準コミット: GIT_DIR が別を指す", 0, "作った", pre=release(None), env={"GIT_DIR": "/nonexistent-874/.git"},
+         post=base_recorded(("add",)), absent="基準コミットを記録していない"),
+    # 記録した行も決定論（同じ HEAD から同じバイト）
+    Case("決定論的（基準コミットを記録する）", 0, pre=release(None), post=deterministic),
+    Case("基準コミット: コミットが無い", 0, "基準コミットを記録していない（正本リポジトリの HEAD のコミットを読めない",
+         pre=git_init_only, post=base_unrecorded("正本リポジトリの HEAD のコミットを読めない（コミットが無い）")),
+    Case("基準コミット: git を起動できない", 0, "基準コミットを記録していない（git を起動できない",
+         env={"PATH": ""}, post=base_unrecorded("git を起動できない")),
     # #851: out_of_scope を足すだけでも機能は変更になる（ケースは全部 回帰）。本文の作らないものに写る
     Case("v2 で作らないものだけ足す", 0, "modify 1", spec=SCOPE_SPEC,
          extra=v2([{**copy.deepcopy(IR["features"][0]), "out_of_scope": [SCOPE_ROWS[0]]}]), post=not_built_added_in_v2),
@@ -2160,6 +2237,26 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #874: 仕様の基準コミット
+    ("基準コミットの行を本文に書かない", '        f"- 変化: {kind_text}",\n        base_line,\n', '        f"- 変化: {kind_text}",\n',
+     "基準コミット: 変更と撤去の本文"),
+    ("基準コミットにコミットでなく木の名前を書く", '"--format=%H%n%cI", "HEAD"', '"--format=%T%n%cI", "HEAD"',
+     "基準コミット: 追加の本文"),
+    ("基準コミットに日時を書かない", 'f"{BASE_COMMIT}`{found[0]}`（コミットの日時 {found[1]}。', 'f"{BASE_COMMIT}`{found[0]}`（',
+     "基準コミット: 追加の本文"),
+    ("git を起動できなければ止める", "    except OSError as exc:\n        reason = f\"git を起動できない",
+     "    except ValueError as exc:\n        reason = f\"git を起動できない", "基準コミット: git を起動できない"),
+    ("コミットの無いリポジトリで HEAD を信じる", "if len(found) >= 2 and COMMIT_ID.fullmatch(found[0]) and found[1]:", "if True:",
+     "基準コミット: コミットが無い"),
+    ("git の作業ツリーでないことを見ない", "        if code != 0 or inside.strip() != \"true\":\n            reason = \"正本リポジトリが git の作業ツリーでない\"",
+     "        if False:\n            reason = \"正本リポジトリが git の作業ツリーでない\"", "基準コミット: git の作業ツリーでない"),
+    ("根でない正本で外側の HEAD を書く", "        elif cdup.strip():", "        elif False:",
+     "基準コミット: git の作業ツリーの根でない"),
+    ("GIT_DIR を外さずに git を呼ぶ", "proc = versions.run_git(repo, *args)",
+     "proc = subprocess.run([\"git\", \"-C\", str(repo), *args], capture_output=True)", "基準コミット: GIT_DIR が別を指す"),
+    ("記録していない理由を書かない", 'f"{BASE_COMMIT}{BASE_UNRECORDED}（{reason}）——', 'f"{BASE_COMMIT}{BASE_UNRECORDED}——',
+     "基準コミット: コミットが無い"),
+    ("記録していないことを出力で知らせない", "    if unrecorded:\n", "    if False:\n", "基準コミット: git の作業ツリーでない"),
     # #852: 性能の要求
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
@@ -2857,6 +2954,17 @@ def main() -> int:
         check("見出しを改名しても BROKEN_REMEDY の照合が不一致にならない（照合が壊れている）",
               remedy_heading is not None
               and f"\n### {remedy_heading.group(1)}\n" not in versions_ref.replace(remedy_heading.group(1), "前の版を直す"))
+        # 仕様の基準コミットの行の頭と「記録していない」の文言（#874）——2 つのプラグインの境界の写し
+        base_head, base_none = constant(source, "BASE_COMMIT"), constant(source, "BASE_UNRECORDED")
+        check("BASE_COMMIT・BASE_UNRECORDED を本体から読めない", base_head == BASE_LINE and isinstance(base_none, str)
+              and len(base_none) > 2, f"{base_head!r} {base_none!r}")
+        for label, doc in (("handoff-issue.md", handoff), ("dev-loop の references/spec-gap.md", gap)):
+            for text in (f"{base_head}`<コミットの名前>`（コミットの日時 <日時>。", f"{base_head}{base_none}（<理由>）"):
+                check(f"{label} に基準コミットの行の形 {text!r} が無い", isinstance(base_head, str) and isinstance(base_none, str)
+                      and text in doc)
+        # 陽性対照: 片方の文言を言い換えると当たらない
+        check("基準コミットの文言を言い換えても照合が不一致にならない",
+              isinstance(base_none, str) and f"{base_head}{base_none}（<理由>）" not in gap.replace(base_none, "記していない"))
         # 突き合わせ自体の陽性対照
         broken = handoff.replace("| `## Red テスト` |", "| `## 赤のテスト` |")
         check("handoff-issue.md の写しを崩しても不一致にならない", table_cells(broken, "## 節") != sections)

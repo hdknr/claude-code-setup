@@ -56,6 +56,12 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **未決定事項があっても止めない**（案は登録しないので。件数を出す）。案を登録するか・未決定事項を spec-review に戻すかは `scaffold` スキルの手順 7
 （決まりの正は `references/spec-ir.md` の「呼ぶ側の分岐」）。
 
+**仕様の基準コミット（#874）**: 本文の `## 仕様` に、正本リポジトリで本文を生成した時点の HEAD とそのコミットの日時を
+`- 基準コミット: ` の行で書く——dev-loop が周の頭で、その後の変化が仕様の前提（既存のシステム）を崩していないかを点検する
+（dev-loop の `references/spec-gap.md`）。**git の作業ツリーの根でない・コミットが無い・git を起動できないなら止めずに**
+`記録していない（理由）` と書き、出力でも知らせる（0）。生成の時刻は書かない（同じ HEAD から同じバイト）
+（決まりの正は `references/handoff-issue.md` の「基準コミット」）。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -121,6 +127,8 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 | **変わった API（メソッド・パス）を Red テストが捕まえるか** | Red テストは関数を呼ぶ。メソッド・パスだけの変更は本文に前の版の API を書くが、ケースの変化には数えない |
 | **`--red-check` が回した実装が、開発のリポジトリの実装か** | 走らせるのは正本リポジトリの根で読み込める実装。開発のリポジトリが別なら、そこで回すかは `CLAUDE.md` が決める |
 | **タグを取らずに履歴だけ全部取った clone で、前の版が凍結しているか**（`--no-tags`） | 浅くないので、タグが無いことと見分けられない（`check-frozen.py` と同じ）。凍結していないと読み、崩れた前の版で止まる |
+| **基準コミットが、仕様を書いた人の見ていた既存のシステムと同じか** | 書くのは生成した時点の HEAD。作業ツリーの commit していない変更は入らず、仕様を書いてから生成までに入ったコミットとも見分けない |
+| **基準コミットから後の変化が仕様の前提を崩したか** | 本文に時点を残すだけ。点検は dev-loop の周の頭（dev-loop の `references/spec-gap.md`） |
 | **もう緑の追加・変更が、中間表現の書き起こしの誤りか** | 前の版の実装がもう満たすケースは名指しで知らせるだけ（0）。Red テストがその変化を判別しないのが誤りかは意味の問題で、`scaffold` スキルの手順 4 で利用者に示す |
 """
 
@@ -195,6 +203,12 @@ MISSING = "未実装: "
 # この 2 つをそのまま持つ（`scripts/test-scaffold.py` が突き合わせる）。本文は `KEPT_GREEN` を持つ
 PREMISE = "Red テストと受入基準は、実装が前の版の状態にあることを前提にしない"
 KEPT_GREEN = "周の前に緑だった Red テストが、周の後も緑のままであること"
+# 仕様の基準コミット（#874。`references/handoff-issue.md` の「基準コミット」の写し）——本文の `## 仕様` の行の頭と、
+# 記録できなかったときの文言。dev-loop の `spec-gap.md` もこの 2 つをそのまま持つ（`scripts/test-scaffold.py` が突き合わせる）
+BASE_COMMIT = "- 基準コミット: "
+BASE_UNRECORDED = "記録していない"
+# コミットの名前（SHA-1 の 40 桁か SHA-256 の 64 桁）
+COMMIT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 # 生成したファイルの印。**これを持つファイルだけを、消してよい・古いと言ってよい生成物に数える**
 GENERATED = "spec-loop scaffold が生成（手で直さない。spec_ir.json を直して作り直す）"
@@ -1337,6 +1351,46 @@ def released(repo: Path, number: int) -> tuple[str | None, list[str]]:
     return tag, (lines[:-1] if code else [])
 
 
+def base_commit(repo: Path) -> tuple[str, str | None]:
+    """(本文の `## 仕様` に書く基準コミットの行, 記録できなかった理由。記録したなら None)（#874）。
+
+    **基準コミットは、正本リポジトリで本文を生成した時点の HEAD** とそのコミットの日時（`%cI`）である——
+    仕様を書いた人が見ていた既存のシステムの時点を表す（仕様そのものの時点は、機能の指紋と Red テストの sha256 が表す。
+    生成 → commit → 登録の順なので、生成の時点の仕様はふつう未コミットである）。**生成の時刻は書かない**（同じ HEAD から
+    同じバイト）。**git の作業ツリーの根でない・コミットが無い・git を起動できないなら止めない**——`記録していない（理由）` と書く。
+
+    - **git は `merge-versions.py` の `run_git` で呼ぶ**——リポジトリの場所を指す環境変数（`GIT_DIR` など）を外す（フックの中で
+      引き継ぐと別のリポジトリの HEAD を書く。#874 の 1 パス目）。
+    - **根でなければ記録しない**（`released` と同じ）——根が別なら、その HEAD は外側のリポジトリのもので、dev-loop の点検が
+      除くパス（根の `docs/`・`scaffold/`）も正本のものでない。
+    - **理由は決まった文言だけ**（git の出力を写さない）——本文は公開のリポジトリに登録されうる。
+    - **署名の表示（`log.showSignature`）を切って読む**——利用者の設定で出力の頭に署名の検証が混ざると、コミットが読めない。
+    """
+    def git(*args: str) -> tuple[int, str]:
+        proc = versions.run_git(repo, *args)
+        return proc.returncode, proc.stdout.decode("utf-8", "replace")
+
+    try:
+        # 根かどうかは git に訊く（`--show-cdup` が空なら根）——パスを比べると、大文字小文字を区別しない FS で綴りの違う
+        # `--repo` を根でないと読む（#874 の 2 パス目）
+        code, where = git("rev-parse", "--is-inside-work-tree", "--show-cdup")
+        inside, _, cdup = where.partition("\n")
+        if code != 0 or inside.strip() != "true":
+            reason = "正本リポジトリが git の作業ツリーでない"
+        elif cdup.strip():
+            reason = "正本リポジトリが git の作業ツリーの根でない"
+        else:
+            code, head = git("-c", "log.showSignature=false", "log", "-1", "--format=%H%n%cI", "HEAD")
+            found = head.split("\n") if code == 0 else []
+            if len(found) >= 2 and COMMIT_ID.fullmatch(found[0]) and found[1]:
+                return (f"{BASE_COMMIT}`{found[0]}`（コミットの日時 {found[1]}。正本リポジトリで本文を生成した時点の HEAD"
+                        "——dev-loop は周の頭で、この後の変化が仕様の前提を崩していないかを点検する）"), None
+            reason = "正本リポジトリの HEAD のコミットを読めない（コミットが無い）"
+    except OSError as exc:
+        reason = f"git を起動できない（{exc.strerror}）"
+    return f"{BASE_COMMIT}{BASE_UNRECORDED}（{reason}）——この Issue からは、仕様を書いた後の変化を辿れない", reason
+
+
 def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
     """(終了コード, 出力する行, 変化, 前の版) を返す。v<n> の全体と v<n-1> の全体を機能の `id` で比べる。
 
@@ -1489,7 +1543,7 @@ def issue_title(change: Change, number: int) -> str:
     return title
 
 
-def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before: Before) -> str:
+def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before: Before, base_line: str) -> str:
     feature, number = change.feature, loaded.number
     impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
     impl = before.impl_module if change.kind == REMOVE else impl_now
@@ -1518,6 +1572,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         "",
         f"- 機能: `{feature['id']}` {feature['title']}",
         f"- 変化: {kind_text}",
+        base_line,
     ]
     if change.kind == REMOVE:
         lines += [
@@ -1788,14 +1843,15 @@ def render_contract(loaded: Loaded) -> dict[str, str]:
     return contract
 
 
-def render_issues(changes: list[Change], loaded: Loaded, contract: dict[str, str], before: Before) -> dict[str, str]:
-    """{Issue の本文のファイル名: 中身} を返す。本文は変わった機能だけ。"""
+def render_issues(changes: list[Change], loaded: Loaded, contract: dict[str, str], before: Before,
+                  base: str) -> dict[str, str]:
+    """{Issue の本文のファイル名: 中身} を返す。本文は変わった機能だけ。`base` は基準コミットの行（`base_commit`）。"""
     impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
     issues, index = {}, []
     for change in changes:
         fid = change.feature["id"]
         rows, _ = case_changes(change, impl_now, before.impl_module)
-        issues[f"{fid}.md"] = issue_body(change, loaded, contract, before)
+        issues[f"{fid}.md"] = issue_body(change, loaded, contract, before, base)
         index.append({"feature": fid, "title": issue_title(change, loaded.number), "change": change.kind,
                       "body": f"{fid}.md",
                       "red": [] if change.kind == REMOVE else [test_name(change.feature, c) for c in red_cases(rows)]})
@@ -2103,7 +2159,11 @@ def run(repo: Path, args, writing: bool) -> int:
             print(f"{OUT_DIR}/ が古い（{len(problems)} 件）。作り直してから Red の状態を見る", file=sys.stderr)
             return 1
         return red_check(repo, loaded, changes, before, args.in_progress)
-    issues = render_issues(changes, loaded, contract, before)
+    base, unrecorded = base_commit(repo)
+    issues = render_issues(changes, loaded, contract, before, base)
+    if unrecorded:
+        # 止めない（#874）——本文の `## 仕様` に「記録していない」と書き、ここでも知らせる
+        print(f"基準コミットを{BASE_UNRECORDED}（{unrecorded}）——本文の `## 仕様` にそう書く")
     counted = "・".join(f"{kind} {sum(1 for c in changes if c.kind == kind)}" for kind in (ADD, MODIFY, REMOVE))
     summary = (f"機能 {features} 件・ケース {cases} 件。Issue の本文 {len(changes)} 件（{counted}）。"
                f"v{loaded.number - 1} から変わっていない機能の本文は作らない" if loaded.number > 1 and before.trusted else
