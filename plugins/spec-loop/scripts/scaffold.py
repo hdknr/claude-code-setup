@@ -1371,10 +1371,13 @@ def base_commit(repo: Path) -> tuple[str, str | None]:
         return proc.returncode, proc.stdout.decode("utf-8", "replace")
 
     try:
-        code, top = git("rev-parse", "--show-toplevel")
-        if code != 0:
+        # 根かどうかは git に訊く（`--show-cdup` が空なら根）——パスを比べると、大文字小文字を区別しない FS で綴りの違う
+        # `--repo` を根でないと読む（#874 の 2 パス目）
+        code, where = git("rev-parse", "--is-inside-work-tree", "--show-cdup")
+        inside, _, cdup = where.partition("\n")
+        if code != 0 or inside.strip() != "true":
             reason = "正本リポジトリが git の作業ツリーでない"
-        elif Path(top.strip()).resolve() != repo.resolve():
+        elif cdup.strip():
             reason = "正本リポジトリが git の作業ツリーの根でない"
         else:
             code, head = git("-c", "log.showSignature=false", "log", "-1", "--format=%H%n%cI", "HEAD")
