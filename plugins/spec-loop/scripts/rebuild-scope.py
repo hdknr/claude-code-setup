@@ -30,7 +30,8 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 
 - 0: 引けた（引数なしなら一覧を出した）
 - 1: 引けない番号がある——その No を根拠にした spec-loop の Issue が無い・その番号の Issue が入力に無い・確認の Issue でない・
-  確認の Issue に台帳の 2 行が無い（この決まりより前の書き方。`## 出所` を人が読む）。引けたものは出力し、引けないものを名指しする
+  確認の Issue に台帳の 2 行が無い（この決まりより前の書き方。`## 出所` を人が読む）・`影響する Issue: ` の行が決まりの形でない・
+  影響する Issue が入力に無い（範囲を引ききれていない）。引けたものは出力し、引けないものを名指しする
 - 2: 判定していない——引数の誤り・入力が読めない（JSON でない・`number`・`title`・`body` の形が違う）
 
 対象リポジトリで単体で動くよう、**標準ライブラリだけ**を使う（同じ `scripts/` の `scaffold.py` を読み込む）。
@@ -43,6 +44,7 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 | **中間表現が指し漏らした機能を挙げるか** | 本文に No が無ければ引けない。指しているかは書き起こしの判断（`scaffold.py` の docstring） |
 | **入力が全部の Issue を含むか** | `--limit` を超えた Issue・取った後に登録した Issue は見えない。取り方の 1 行の `--limit` を Issue の数より大きくする |
 | **確認の Issue の 2 行が、本文の推奨・選んでほしいことと同じか** | 書いた側が揃える（`absent-lines.md`）。ここは行を読むだけ |
+| **機能の `qa` とケースの `qa` の両方が指す No で、機能全体が作り直しになるか** | 本文の `## Q&A の回答` は両方を合わせて持つので見分けられない。ケースが指していればケースを挙げる——Issue は挙がるので、範囲を広げるかは読む人が本文で決める |
 | **本文を手で直した Issue** | 本文は手で直さない決まり（`handoff-issue.md`）。直されていれば、読めた分だけを引く |
 """
 
@@ -73,6 +75,8 @@ DECIDED = "決めた値: "
 AFFECTS = "影響する Issue: "
 DECISION_MARKER = re.compile(r"<!-- cruise-decision: #[0-9]+ -->")
 DECISION_TITLE = "要確認: "
+NONE = "なし"
+AFFECTS_LIST = re.compile(r"#[1-9][0-9]*(?:, #[1-9][0-9]*)*")
 
 HANDOFF_PREFIX = scaffold.HANDOFF_MARKER.split(": v", 1)[0] + ": v"  # 前の形（v2・v1）も読む
 FEATURE = re.compile(re.escape(scaffold.FEATURE_MARKER).replace(r"\{\}", r"(F-[0-9]+)"))
@@ -140,12 +144,19 @@ class Decision:
         self.issue = issue
         self.value: str | None = None
         self.affects: list[int] | None = None
+        self.malformed = ""  # `影響する Issue: ` の行が決まりの形でない（その行の中身）
         for line in issue["body"].splitlines():
             if line.startswith(DECIDED) and self.value is None:
                 self.value = line[len(DECIDED):].strip() or None
-            elif line.startswith(AFFECTS) and self.affects is None:
-                rest = line[len(AFFECTS):]
-                self.affects = [int(n) for n in re.findall(r"#([0-9]+)", rest)]
+            elif line.startswith(AFFECTS) and self.affects is None and not self.malformed:
+                rest = line[len(AFFECTS):].strip()
+                # 番号だけを `, ` で並べる（説明を添えない）か `なし`——説明の中の番号を影響する Issue に数えない（1 パス目の指摘）
+                if rest == NONE:
+                    self.affects = []
+                elif AFFECTS_LIST.fullmatch(rest):
+                    self.affects = [int(n) for n in re.findall(r"#([0-9]+)", rest)]
+                else:
+                    self.malformed = rest
 
 
 def is_decision(issue: dict) -> bool:
@@ -192,15 +203,19 @@ def by_issue(number: int, issues: dict[int, dict]) -> tuple[bool, list[str]]:
         return False, [f"#{number}: 確認の Issue でない（印 <!-- cruise-decision: #<親> --> も、題の {DECISION_TITLE!r} も無い）"]
     d = Decision(issue)
     out = [label(issue)]
+    if d.malformed:
+        return False, out + [f"  {AFFECTS}の行が決まりの形でない（{d.malformed!r}）——`#<番号>, #<番号>` か `{NONE}` だけを書く"]
     if d.value is None or d.affects is None:
         missing = "・".join(t.strip() for t, v in ((DECIDED, d.value), (AFFECTS, d.affects)) if v is None)
         return False, out + [f"  台帳の行（{missing}）が無い——この決まりより前の書き方。本文の ## 出所 を人が読む"]
     out.append(f"  {DECIDED}{d.value}")
     out.append(f"  {AFFECTS}" + ("なし" if not d.affects else f"{len(d.affects)} 件（作り直す範囲）"))
+    absent = [n for n in d.affects if n not in issues]
     for n in d.affects:
         target = issues.get(n)
-        out.append(f"  - {label(target) if target else f'#{n}（入力に無い）'}")
-    return True, out
+        out.append(f"  - {label(target) if target else f'#{n}（入力に無い——取り方の --limit・--state all を確かめる）'}")
+    # 影響する Issue が入力に無ければ、範囲を引ききれていない（1 パス目の指摘）
+    return not absent, out
 
 
 def ledger(handoffs: list[Handoff], decisions: list[Decision]) -> list[str]:
@@ -215,7 +230,9 @@ def ledger(handoffs: list[Handoff], decisions: list[Decision]) -> list[str]:
     opened = sum(1 for d in decisions if (d.issue.get("state") or "").upper() == "OPEN")
     out.append(f"推奨で決めた事項（確認の Issue）: {len(decisions)} 件（開いているもの {opened} 件）")
     for d in sorted(decisions, key=lambda d: d.issue["number"]):
-        if d.value is None or d.affects is None:
+        if d.malformed:
+            out.append(f"  {label(d.issue)}——{AFFECTS}の行が決まりの形でない")
+        elif d.value is None or d.affects is None:
             out.append(f"  {label(d.issue)}——台帳の行が無い（前の書き方）")
         else:
             affects = "、".join(f"#{n}" for n in d.affects) or "なし"

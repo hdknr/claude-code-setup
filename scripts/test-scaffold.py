@@ -2113,6 +2113,15 @@ CASES: list[Case] = [
     # #875: 前の版を --provisional で作っていれば、前の版の暫定反映は崩れではない
     Case("--provisional で前の版の暫定反映を確定する", 0, args=("--provisional",),
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE), post=provisional_resolved),
+    # 1 パス目の指摘: 前の版で指されない暫定の行は、旗があっても前の版を作れていない（#335 の形を戻さない）
+    Case("--provisional でも前の版の指されない暫定反映は崩れ", 1, "v1 の時点の Q-004: 状態が 暫定反映",
+         args=("--provisional",), qa=HEADER + QA_DONE + QA_DONE2 + QA_PROVISIONAL_UNCITED,
+         extra=v2([V2_CHANGED], qa=HEADER + QA_PROVISIONAL_UNCITED.replace("暫定反映", "反映済み")), post=nothing_written_issues),
+    # 1 パス目の指摘: 撤去の本文には仮回答の印を付けない
+    Case("--provisional の撤去の本文に印を付けない", 0, args=("--provisional",), qa=HEADER + QA_PROVISIONAL + QA_DONE2,
+         ir=edit(lambda ir: ir["features"][1].__setitem__("qa", ["Q-001"])),
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n"),
+         post=lambda repo: unmarked(bodies(repo).get("F-002", "（撤去の本文が無い）" + PROVISIONAL_LINE), "撤去の")),
     Case("前の版で暫定だった Q&A（どの状態か）", 1, "v1 の時点の Q-001: 状態が 暫定反映（反映済み でない）",
          qa=HEADER + QA_PROVISIONAL + QA_DONE2, extra=v2([V2_CHANGED], qa=HEADER + QA_DONE)),
     # 前の版の時点を作るときも止まる（今の版と同じ関門）
@@ -2349,6 +2358,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    unsettled = unsettled_qa(rendered)\n", "--provisional で前の版の暫定反映を確定する"),
     ("前の版の中間表現に --provisional を当てない", "read_whole(rendered, gate=False, provisional=loaded.provisional)",
      "read_whole(rendered, gate=False)", "--provisional で前の版の暫定反映を確定する"),
+    ("前の版の指されない暫定の行を見ない", "qa.is_provisional(row) and no in cited)", "qa.is_provisional(row))",
+     "--provisional でも前の版の指されない暫定反映は崩れ"),
+    ("撤去の本文にも印を付ける", "    held = [] if change.kind == REMOVE else sorted(", "    held = [] if False else sorted(",
+     "--provisional の撤去の本文に印を付けない"),
     ("仮回答の本文を出力で名指ししない", "    if marked:\n", "    if False:\n", "--provisional で暫定反映を指す"),
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
@@ -2720,7 +2733,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # #361: 前の版の Q&A の状態を直接見る（#358）・名指し（#335）・凍結した前の版（#357）
     ("前の版の Q&A の状態を見ない", "    unsettled = unsettled_qa(rendered, loaded.provisional)\n", "    unsettled = []\n",
      "前の版に指していない暫定反映の行がある"),
-    ("前の版の暫定反映だけを見る", "if row[\"状態\"].strip() != qa.DONE and not (provisional and qa.is_provisional(row))]",
+    ("前の版の暫定反映だけを見る", "if row[\"状態\"].strip() != qa.DONE and not (provisional and qa.is_provisional(row) and no in cited)]",
      'if row["状態"].strip() == qa.PROVISIONAL]',
      "前の版に指していない確認中の行がある"),
     ("前の版の内部の表を見ない", "    for path in (QA_PATH, INTERNAL_QA_PATH):\n        if path in rendered:",

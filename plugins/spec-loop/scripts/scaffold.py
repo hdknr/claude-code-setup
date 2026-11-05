@@ -1348,13 +1348,32 @@ BROKEN_REMEDY = "references/versions.md の「前の版の時点が崩れてい�
 
 def unsettled_qa(rendered: dict[str, bytes], provisional: bool = False) -> list[tuple[str, str]]:
     """重ねた全体の Q&A（共有・内部）のうち、状態が `反映済み` でない行の (No, 状態)。
-    `provisional`（`--provisional`。#875）なら `暫定反映` の行は数えない——前の版も同じ旗で作れている。"""
+    `provisional`（`--provisional`。#875）なら、**その版の中間表現が指す** `暫定反映` の行は数えない——その版は同じ旗で作れている。
+    **指されない `暫定反映` の行は数える**——旗があってもその版は作れていない（`read_whole` が止める。1 パス目の指摘）。"""
+    cited = cited_loosely(rendered.get(IR_PATH)) if provisional else set()
     found = []
     for path in (QA_PATH, INTERNAL_QA_PATH):
         if path in rendered:
             rows = parse_answered(rendered[path].decode("utf-8-sig"))
             found += [(no, row["状態"].strip()) for no, row in rows.items()
-                      if row["状態"].strip() != qa.DONE and not (provisional and qa.is_provisional(row))]
+                      if row["状態"].strip() != qa.DONE and not (provisional and qa.is_provisional(row) and no in cited)]
+    return found
+
+
+def cited_loosely(raw: bytes | None) -> set[str]:
+    """前の版の中間表現が `qa` で指す No（検査の前に読むので、形が崩れていれば読めた分だけ。読めなければ空）。"""
+    try:
+        ir = json.loads(raw.decode("utf-8")) if raw is not None else {}
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return set()
+    found = set()
+    for feature in ir.get("features", []) if isinstance(ir, dict) and isinstance(ir.get("features"), list) else []:
+        if not isinstance(feature, dict):
+            continue
+        cases = feature.get("cases") if isinstance(feature.get("cases"), list) else []
+        for refs in [feature.get("qa")] + [c.get("qa") for c in cases if isinstance(c, dict)]:
+            if isinstance(refs, list):
+                found |= {no for no in refs if isinstance(no, str)}
     return found
 
 
@@ -1645,10 +1664,11 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
             titles = {f["id"]: f["title"] for f in features_of(loaded.ir)}
             lines.append("- 呼ぶ機能: " + "・".join(f"`{c}` {cell(titles[c])}" for c in feature[CALLED_BY])
                          + "（この機能を呼ぶ入口の機能。この Issue は呼ぶ側の配線を含まない）")
-    answered = before.answered if change.kind == REMOVE else loaded.answered
     refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}
-    # 仮回答の印（#875）——`--provisional` で通した `暫定反映` の行に依存する本文だけ。依存しなければ 1 バイトも変わらない
-    held = sorted((no for no in refs if qa.is_provisional(answered[no])), key=qa.number_order)
+    # 仮回答の印（#875）——`--provisional` で通した `暫定反映` の行に依存する本文だけ。依存しなければ 1 バイトも変わらない。
+    # **撤去の本文には付けない**——作るものが無く、前の版の時点の状態で印を付けると、生成した時点で確定した行にも付く（1 パス目の指摘）
+    held = [] if change.kind == REMOVE else sorted((no for no in refs if qa.is_provisional(loaded.answered[no])),
+                                                   key=qa.number_order)
     if held:
         lines.append(f"{PROVISIONAL_LINE}" + "・".join(held) + f"（状態 `{qa.PROVISIONAL}`——利用者がまだ確かめていない回答で作った。"
                      "回答が変わったら、この Issue と、下の受入基準のうちその No を根拠にするケース"
