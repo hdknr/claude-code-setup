@@ -6,7 +6,7 @@
 **台帳（`.claude/plans/cruise-issue-856.json`）は書かない**（書くのは親）。**手順 7 のマージはしない**（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-856`））。
-版の上げ方: `spec-loop` を **minor**（入口のスキルと点検のスクリプトを足す——能力の追加）。着手時の main は 0.53.0 → 0.54.0。取り込み（main 0.55.0）の後は 0.56.0、2 度目の取り込み（main 0.56.0。#851）の後は 0.57.0。
+版の上げ方: `spec-loop` を **minor**（入口のスキルと点検のスクリプトを足す——能力の追加）。着手時の main は 0.53.0 → 0.54.0。取り込み（main 0.55.0）の後は 0.56.0、2 度目の取り込み（main 0.56.0。#851）の後は 0.57.0。3 度目の取り込み（main 0.57.0。#854）の後は 0.58.0。
 マージの直前に main が進んでいれば、cruise の `references/parallel.md` の「版とマージの順」のとおり main の先端の版から minor を 1 つ上げ直す。
 重い検査は `/Users/hdknr/Projects/hdknr/claude-code-setup/plugins/dev-loop/skills/cruise/scripts/run-serial.py` 越しに走らせる（並行の周が他にある。#850 も別の子で回っている）。
 
