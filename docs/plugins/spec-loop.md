@@ -112,6 +112,11 @@ dev-loop は Issue 1 件を読むだけで周を始められるよう、本文�
   性能予算には、性能の要求の表（`shared/nfr.csv`）の行のうち中間表現の `nfr` が指す行の数字と性能テストを、行が無ければ「要求なし——速さのための最適化をしない」と書きます。
   どの行が関わるかは中間表現（`out_of_scope`・`nfr`）に書き起こし、スクリプトは行が在ることを確かめます。性能テストは負荷を再現しないので、受入基準ではなく、最適化してよいかを決める計測の道具です
   （列と手順は [`nfr.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/nfr.md)）。
+- **Issue の外に、課題一覧（案）も出します**（`build/scaffold/issues/proposals.md`）。Red テストは関数の入力と出力しか確かめないので、
+  入口の機能を呼ぶ側の結線（入力が遅れる・呼ぶ処理がやり直される、など）は Red テストの外に残ります。追加・変更した入口の機能（`impl_module` を変えただけのものを除く）ごとに 1 案を置き、
+  **未決定事項**（中間表現の `branches` に書き起こしていない呼ぶ側の分岐）・**受入基準の雛形**（見せるものの仕様の原文）・**作らないもの**を付けます。
+  `scaffold` は案を登録しません——未決定事項のある案は、登録の前に `spec-review` に戻します
+  （決まりは [`spec-ir.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-ir.md) の「呼ぶ側の分岐」）。
 - **本文は先頭の印で spec-loop から来たと分かります。** dev-loop はこの印を見て、spec-loop から来た Issue の読み方に切り替えます。
 - **追加・変更の本文は、中間表現の中のその機能の指紋と、Red テストのファイルの sha256 を持ちます。** dev-loop は実装に入る前に、手元のファイルが Issue の時点と同じかを確かめ、
   違えば差し戻します。撤去の本文は sha256 を持たず（消したファイルなので）、指紋は前の版の全体で確かめます。指紋は機能単位なので、関係の無い機能を直しても登録済みの Issue は不一致になりません。
