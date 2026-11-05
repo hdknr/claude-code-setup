@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """確定した仕様の中間表現（`spec_ir.json`）から、dev-loop に渡すものを作る。
 
-usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]]
+usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional]
 
 作るもの（置き場所の正は `references/tree.md`）:
 
@@ -62,6 +62,14 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 `記録していない（理由）` と書き、出力でも知らせる（0）。生成の時刻は書かない（同じ HEAD から同じバイト）
 （決まりの正は `references/handoff-issue.md` の「基準コミット」）。
 
+**仮回答（`--provisional`。#875）**: 既定では Q&A 表に `暫定反映` の行が 1 つでも残れば止める（#325。下の守らないものの表）。
+**利用者が仮回答のまま開発へ渡すと決めたときだけ**、`--provisional` を付けて通す——中間表現の `qa`（機能・ケース）が `暫定反映` の行を
+指してよくなり、依存する本文の `## 仕様` に `- 仮回答: ` の行（依存する暫定の No）を、受入基準の表の Q&A の列で暫定の No に `（暫定）` を付ける
+（依存しない本文は変わらない）。**どの機能・ケースの `qa` からも指されない `暫定反映` の行が残れば、旗があっても止める（1）**——
+その仮回答がどの Issue に効くかを本文に書けない。前の版の時点の判定でも `暫定反映` を崩れに数えない（前の版を同じ旗で作れている）。
+旗は全部のモード（`--check`・`--dry-run`・`--red-check`）で受け付ける。作り直す範囲は、登録した本文から同梱の `rebuild-scope.py` で引く
+（決まりの正は `references/handoff-issue.md` の「仮回答の印」）。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -96,6 +104,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
       **飛ばされた**テストはどちらの版でも 1——前の版の側なら、作業中の版のテストが緑でも「前の版の状態を判定できない」と言う
   **実装が無い**（どのテストも「未実装」で落ちる）なら、期待が全部失敗のとき（v1・追加だけ）は判定でき、
   そうでなければ**回帰を判定していない**（2）。テストを書き換えない・何も書かない。
+- `--provisional`: 上の「仮回答」。利用者がそう決めたときだけ付ける。
 - `--in-progress`: `--red-check` と一緒にだけ使う。**作り直しの経路**（この版の Issue を登録し、実装が始まっている）で、
   追加・変更のケースが作業中の版の期待をもう満たしていても止めない。
 
@@ -120,7 +129,9 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 
 | 守らないもの | なぜ |
 | --- | --- |
-| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が `反映済み`・ケースの `ref` の番号が原文に在ること。#465）までを見る。`暫定反映` の行が表に残れば、指していなくても止める |
+| **中間表現が仕様と意味で一致するか** | 書き起こしは判断（`scaffold` の仕事）。出所（`source` の実在・Q&A が `反映済み`・ケースの `ref` の番号が原文に在ること。#465）までを見る。`暫定反映` の行が表に残れば、指していなくても止める（`--provisional` のときは、どこからも指されない行だけ止める） |
+| **`--provisional` で、暫定の行に依存する機能・ケースを中間表現が漏れなく指しているか** | 指しているかは書き起こしの判断。機械が止めるのは、どこからも指されない暫定の行だけ。指し漏らした機能の本文には印が付かない |
+| **登録済みの本文の仮回答の印が、いまの Q&A 表の状態と同じか** | 本文は生成した時点の写し。利用者が確かめた後も印は残る——いまの状態の正は Q&A 表（dev-loop の `spec-gap.md`） |
 | **Red テストが仕様のケースを漏れなく持つか** | 中間表現に書いたケースだけが生成される。漏れは書き起こしの側で見る |
 | **Python 以外の言語の型・テスト** | OpenAPI から対象リポジトリの道具で作る |
 | **Issue を登録したか・登録した本文が同じか** | 登録はスクリプトの外（`gh issue create --body-file` に、生成した本文をそのまま渡す） |
@@ -207,6 +218,11 @@ KEPT_GREEN = "周の前に緑だった Red テストが、周の後も緑のま�
 # 記録できなかったときの文言。dev-loop の `spec-gap.md` もこの 2 つをそのまま持つ（`scripts/test-scaffold.py` が突き合わせる）
 BASE_COMMIT = "- 基準コミット: "
 BASE_UNRECORDED = "記録していない"
+# 仮回答の印（#875。`references/handoff-issue.md` の「仮回答の印」の写し）——本文の `## 仕様` の行の頭と、受入基準の表の
+# Q&A の列で `暫定反映` の No に付ける印。`rebuild-scope.py` と dev-loop の `spec-gap.md` もこの 2 つをそのまま持つ
+# （`scripts/test-scaffold.py`・`scripts/test-rebuild-scope.py` が突き合わせる）
+PROVISIONAL_LINE = "- 仮回答: "
+PROVISIONAL_CELL = "（暫定）"
 # コミットの名前（SHA-1 の 40 桁か SHA-256 の 64 桁）
 COMMIT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
@@ -391,7 +407,9 @@ def check_values(where: str, values, fields: dict) -> list[str]:
     return problems
 
 
-def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list[str]:
+def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]], provisional: bool = False) -> list[str]:
+    """`provisional`（`--provisional`。#875）なら `暫定反映` の行も指してよい——本文に仮回答の印を付けて渡す。"""
+    allowed = (qa.DONE, qa.PROVISIONAL) if provisional else (qa.DONE,)
     if not isinstance(refs, list):
         return [f"{where}: 配列でない"]
     problems = []
@@ -402,8 +420,8 @@ def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]]) -> list
             problems.append(f"{where}: Q&A の No の形に反する（{no!r}）")
         elif no not in answered:
             problems.append(f"{where}: {no} は Q&A 表に無い")
-        elif (state := answered[no]["状態"].strip()) != qa.DONE:
-            problems.append(f"{where}: {no} は状態が {state}（{qa.DONE} でない）")
+        elif (state := answered[no]["状態"].strip()) not in allowed:
+            problems.append(f"{where}: {no} は状態が {state}（{'・'.join(allowed)} でない）")
     if len(set(map(str, refs))) != len(refs):
         problems.append(f"{where}: Q&A の No が重複している")
     return problems
@@ -482,8 +500,10 @@ def check_path_vars(where: str, path: str, fields: dict, templates: dict[str, st
     return problems
 
 
-def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: bool = True) -> list[str]:
-    """`path_rules` が偽なら、パスの変数の決まり（#289）を当てない——前の版の中間表現だけ（#319。`classify`）。"""
+def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: bool = True,
+             provisional: bool = False) -> list[str]:
+    """`path_rules` が偽なら、パスの変数の決まり（#289）を当てない——前の版の中間表現だけ（#319。`classify`）。
+    `provisional`（`--provisional`。#875）なら、`qa` が `暫定反映` の行を指してよい。"""
     problems = surrogates(ir)
     if problems:
         return problems + ["孤立したサロゲートを含む中間表現は、ほかの規則を見ない"]
@@ -527,7 +547,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
         if "source" in feature:
             problems += check_source(f"{where}.source", feature["source"], whole)
         if "qa" in feature:
-            problems += check_qa_refs(f"{where}.qa", feature["qa"], answered)
+            problems += check_qa_refs(f"{where}.qa", feature["qa"], answered, provisional)
         if OUT_OF_SCOPE in feature:
             problems += check_out_of_scope(f"{where}.{OUT_OF_SCOPE}", feature[OUT_OF_SCOPE], whole)
         if NFR in feature:
@@ -612,7 +632,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             elif case["error"] not in errors:
                 problems.append(f"{at}.error: operation.errors に無い: {case['error']!r}")
             if "qa" in case:
-                problems += check_qa_refs(f"{at}.qa", case["qa"], answered)
+                problems += check_qa_refs(f"{at}.qa", case["qa"], answered, provisional)
             if "ref" in case:
                 problems += check_ref(f"{at}.ref", case["ref"], feature.get("source"), whole)
     return problems + check_called_by(features)
@@ -884,6 +904,7 @@ class Loaded:
     def __init__(self, ir: dict, raw: bytes, answered: dict, number: int, docs: Path, scope: bytes | None = None,
                  nfr: bytes | None = None) -> None:
         self.ir = ir
+        self.provisional = False  # `--provisional`（#875）——前の版の時点の判定にも同じ旗を当てる（`classify`）
         self.scope = scope  # 範囲の文書（`spec/scope.md`）のバイト。無ければ None
         self.nfr = nfr  # 性能の要求の表（`shared/nfr.csv`）のバイト。無ければ None
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
@@ -892,12 +913,12 @@ class Loaded:
         self.docs = docs
 
 
-def load(repo: Path, upto: int | None = None) -> tuple[int, list[str], Loaded | None]:
+def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tuple[int, list[str], Loaded | None]:
     """(終了コード, 出力する行, 読んだもの) を返す。
 
     `docs/` の版を**メモリ上で**重ね合わせ（`merge-versions.py` の `merge`。同じバイト）、一時ディレクトリに書いて、
     関門・中間表現の検査をそこに当てる。**`build/merged/` には書かない**——`--check`・`--dry-run` は何も書かない。
-    `upto` を渡せば v<upto> までを重ねる（無い版なら判定しない）。
+    `upto` を渡せば v<upto> までを重ねる（無い版なら判定しない）。`provisional` は `--provisional`（`read_whole`。#875）。
     """
     docs = repo / DOCS
     if not docs.is_dir():
@@ -921,14 +942,16 @@ def load(repo: Path, upto: int | None = None) -> tuple[int, list[str], Loaded | 
         return 1, problems + ["版の重ね合わせが決まりに反する（references/versions.md）。生成しない"], None
     if IR_PATH not in rendered:
         raise Unjudged(f"重ね合わせた全体に {IR_PATH} が無い（どの版にも中間表現が無い）。判定していない")
-    code, lines, ir, answered = read_whole(rendered, gate=True)
+    code, lines, ir, answered = read_whole(rendered, gate=True, provisional=provisional)
     if code:
         return code, lines, None
     number = upto if upto is not None else len(found)
-    return 0, [], Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
+    loaded = Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
+    loaded.provisional = provisional
+    return 0, [], loaded
 
 
-def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], dict | None, dict]:
+def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False) -> tuple[int, list[str], dict | None, dict]:
     """重ね合わせた全体を一時ディレクトリに置き、(終了コード, 出力する行, 中間表現, Q&A の行) を返す。
 
     `gate` なら関門（条件 1）も当てる——前の版の全体には当てない。**前の版がその時点で関門を通ったとは限らない**が、
@@ -937,6 +960,10 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
     未決定の印は、印の決まりが版をまたいで変わりうるので前の版には当てない。
     パスの変数の決まりも前の版には当てない（#319）——#289 より前の scaffold が通した版は、凍結していれば直せず、
     前の版の中間表現からは OpenAPI を作らない（ケースの比較・前の版の Red テスト・Issue の本文の前の版を指す行にしか使わない）。
+
+    **`provisional`（`--provisional`。#875）なら、`暫定反映` の行が残っても止めず、中間表現から指してよい**——
+    ただし `gate` のとき、**どの機能・ケースの `qa` からも指されない `暫定反映` の行が残れば止める**（1）。
+    指していなければ、その仮回答がどの Issue に効くかを本文に書けない（止めていた理由そのもの。#325）。
     """
     with tempfile.TemporaryDirectory() as tmp:
         whole = Path(tmp)
@@ -964,14 +991,28 @@ def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], 
             # 暫定の回答は利用者が確かめていない。scaffold の経路はサインオフの照合を通らないので、
             # 中間表現が指すかどうかに依らず、残っていれば止める——指さない機能の仕様にも反映されている（抜ける条件 1 とは別の定義。#325）
             held = [no for no, row in answered.items() if qa.is_provisional(row)]
-            if held:
+            if held and not provisional:
                 return 1, shown([f"{no}: 状態が {qa.PROVISIONAL}（利用者の確認待ち）" for no in held]) + [
                     f"{merged(QA_PATH)} に {qa.PROVISIONAL} の行が {len(held)} 件残る。"
                     "利用者に確かめてもらうまで生成しない（/spec-loop:req-loop）"], None, {}
-        problems = check_ir(ir, whole, answered, path_rules=gate)
+        problems = check_ir(ir, whole, answered, path_rules=gate, provisional=provisional)
+        if gate and provisional and not problems:
+            cited = cited_qa(ir)
+            uncited = [no for no in held if no not in cited]
+            if uncited:
+                return 1, shown([f"{no}: 状態が {qa.PROVISIONAL}（利用者の確認待ち）なのに、中間表現のどの機能・ケースの qa からも"
+                                 "指していない" for no in uncited]) + [
+                    f"--provisional でも、指していない {qa.PROVISIONAL} の行が {len(uncited)} 件残る——その仮回答がどの Issue に"
+                    "効くかを本文に書けない。効く機能・ケースの qa から指すか、利用者に確かめてもらう（/spec-loop:req-loop）。"
+                    "生成しない"], None, {}
     if problems:
         return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, {}
     return 0, [], ir, answered
+
+
+def cited_qa(ir: dict) -> set[str]:
+    """中間表現の機能とケースの `qa` が指す No の全部（検査を通った後に呼ぶ）。"""
+    return {no for f in features_of(ir) for no in f["qa"] + [n for c in f["cases"] for n in c.get("qa", [])]}
 
 
 # ---------------------------------------------------------------- 生成する
@@ -1305,13 +1346,15 @@ class Before:
 BROKEN_REMEDY = "references/versions.md の「前の版の時点が崩れていたら」"
 
 
-def unsettled_qa(rendered: dict[str, bytes]) -> list[tuple[str, str]]:
-    """重ねた全体の Q&A（共有・内部）のうち、状態が `反映済み` でない行の (No, 状態)。"""
+def unsettled_qa(rendered: dict[str, bytes], provisional: bool = False) -> list[tuple[str, str]]:
+    """重ねた全体の Q&A（共有・内部）のうち、状態が `反映済み` でない行の (No, 状態)。
+    `provisional`（`--provisional`。#875）なら `暫定反映` の行は数えない——前の版も同じ旗で作れている。"""
+    settled = (qa.DONE, qa.PROVISIONAL) if provisional else (qa.DONE,)
     found = []
     for path in (QA_PATH, INTERNAL_QA_PATH):
         if path in rendered:
             rows = parse_answered(rendered[path].decode("utf-8-sig"))
-            found += [(no, row["状態"].strip()) for no, row in rows.items() if row["状態"].strip() != qa.DONE]
+            found += [(no, row["状態"].strip()) for no, row in rows.items() if row["状態"].strip() not in settled]
     return found
 
 
@@ -1412,7 +1455,7 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
     reasons = diffs.removal_reasons(found[number - 1][1])
     # 前の版の時点が崩れている——`反映済み` でない Q&A が残れば、v<n-1> の scaffold は作れていない（確認中は条件 1、
     # 暫定反映は held で止まる）。中間表現が指しているかに依らず、前の版に中間表現が無くても、状態を直接見る（#335・#358）
-    unsettled = unsettled_qa(rendered)
+    unsettled = unsettled_qa(rendered, loaded.provisional)
     if unsettled:
         out = [f"v{number - 1} の時点の {no}: 状態が {state}（{qa.DONE} でない）" for no, state in unsettled]
         tag, edited = released(loaded.docs.parent, number - 1)
@@ -1436,7 +1479,7 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
         return 0, out, [Change(ADD, f) for _, f in sorted(now.items())], distrusted
     before_ir, before = {"features": []}, Before()
     if IR_PATH in rendered:
-        code, lines, before_ir, answered = read_whole(rendered, gate=False)
+        code, lines, before_ir, answered = read_whole(rendered, gate=False, provisional=loaded.provisional)
         if code:
             out = [f"v{number - 1} の時点の {line}" for line in lines[:-1]]
             out.append(f"前の版（v{number - 1}）の中間表現が決まりに反するので、機能を追加・変更・削除に分けない。生成しない")
@@ -1602,6 +1645,14 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
             titles = {f["id"]: f["title"] for f in features_of(loaded.ir)}
             lines.append("- 呼ぶ機能: " + "・".join(f"`{c}` {cell(titles[c])}" for c in feature[CALLED_BY])
                          + "（この機能を呼ぶ入口の機能。この Issue は呼ぶ側の配線を含まない）")
+    answered = before.answered if change.kind == REMOVE else loaded.answered
+    refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}
+    # 仮回答の印（#875）——`--provisional` で通した `暫定反映` の行に依存する本文だけ。依存しなければ 1 バイトも変わらない
+    held = sorted((no for no in refs if qa.is_provisional(answered[no])), key=qa.number_order)
+    if held:
+        lines.append(f"{PROVISIONAL_LINE}" + "・".join(held) + f"（状態 `{qa.PROVISIONAL}`——利用者がまだ確かめていない回答で作った。"
+                     "回答が変わったら、この Issue と、下の受入基準のうちその No を根拠にするケース"
+                     "（ケースに無ければ機能全体）を作り直す。いまの状態の正は Q&A 表）")
     lines += ["", SECTIONS[1], ""]
     if change.kind == REMOVE:
         lines += [
@@ -1624,7 +1675,8 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     for status, case in rows:
         test = f"—（`{tfile}` ごと消した）" if change.kind == REMOVE else f"`{test_name(feature, case)}`"
         lines.append(f"| `{case['id']}` | {status} | {cell(case['title'])} | {test} | "
-                     + ("・".join(case.get("qa", [])) or "—") + " |")
+                     + ("・".join(no + (PROVISIONAL_CELL if no in held else "") for no in case.get("qa", [])) or "—")
+                     + " |")
     if gone:
         lines += ["", f"{CASE_REMOVED}したケース（Red テストから外した。その振る舞いはもう求めない）: "
                   + "・".join(f"`{c['id']}` {cell(c['title'])}" for c in gone)]
@@ -1659,7 +1711,6 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
                       f"`{CASE_KEPT}` のケース（{len(rows) - len(red)} 件）は緑である。ほかの機能を含む回帰は",
                       f"`python3 -m unittest discover -s {OUT_DIR}/tests` で見る。"]
     lines += ["", SECTIONS[3], ""]
-    refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}
     # 内部の層の行（`D-`）を指していれば、写した元に内部の表も挙げる（#339）
     tables = "・".join(f"`{merged(path)}`" for path in
                        (QA_PATH, *([INTERNAL_QA_PATH] if any(qa.is_internal_number(no) for no in refs) else [])))
@@ -2074,6 +2125,7 @@ def main(argv: list[str]) -> int:
     mode.add_argument("--dry-run", action="store_true")
     mode.add_argument("--red-check", action="store_true")
     parser.add_argument("--in-progress", action="store_true")
+    parser.add_argument("--provisional", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -2123,7 +2175,7 @@ def fail(repo: Path, writing: bool, code: int, lines: list[str]) -> int:
 
 def run(repo: Path, args, writing: bool) -> int:
     try:
-        code, lines, loaded = load(repo, args.upto)
+        code, lines, loaded = load(repo, args.upto, args.provisional)
     except Unjudged as exc:
         code, lines = 2, [str(exc)]
     if code:
@@ -2161,6 +2213,12 @@ def run(repo: Path, args, writing: bool) -> int:
         return red_check(repo, loaded, changes, before, args.in_progress)
     base, unrecorded = base_commit(repo)
     issues = render_issues(changes, loaded, contract, before, base)
+    marked = sorted(c.feature["id"] for c in changes if PROVISIONAL_LINE in issues[f"{c.feature['id']}.md"])
+    if marked:
+        # 止めない（#875）——`--provisional` で通した仮回答に依存する本文を名指しする
+        print(f"仮回答（{qa.PROVISIONAL}）に依存する本文 {len(marked)} 件（{'・'.join(marked)}）——本文の `## 仕様` の"
+              f" `{PROVISIONAL_LINE.strip()}` の行と、受入基準の表の `{PROVISIONAL_CELL}` で印を付けた。"
+              "利用者が確かめたら rebuild-scope.py で作り直す範囲を引く")
     if unrecorded:
         # 止めない（#874）——本文の `## 仕様` に「記録していない」と書き、ここでも知らせる
         print(f"基準コミットを{BASE_UNRECORDED}（{unrecorded}）——本文の `## 仕様` にそう書く")

@@ -152,6 +152,7 @@ TESTS: list[str] = [
     "test-check-signoff.py",
     "test-build-proposal.py",
     "test-scaffold.py",
+    "test-rebuild-scope.py",
     "test-merge-versions.py",
     "test-diff-versions.py",
     "test-check-frozen.py",

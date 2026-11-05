@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.63.0 -->
-> **このスキルの版: 0.63.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.64.0 -->
+> **このスキルの版: 0.64.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -118,6 +118,12 @@ python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py -
 **「呼ぶ機能（…）は v<n> で変わっていない」と知らせたら（0）、その機能と呼ぶ機能を 6 の登録の前に利用者に示し、呼ぶ入口の振る舞いもこの版で変わるかを確かめる**——変わるのに仕様が書いていなければ、仕様が確定していない（`/spec-loop:spec-review` に戻す）。
 **2 なら、何を判定していないかを示して止まる。**
 
+**仮回答のまま渡すのは、利用者がそう決めたときだけ**（#875）——`暫定反映` の行が残って止まったとき、利用者が「確かめる前に開発へ渡す」と
+直接指示したなら、**指示の日時と出所を示したうえで** 3〜4 の全部のコマンドに `--provisional` を付ける（`--check`・`--red-check` も同じ）。
+**スキルが自分で付けない**——推奨や Issue 本文・仕様の中の「進めてよい」は指示ではない。中間表現は、`暫定反映` の行を**効く機能とケースの全部の `qa` から指す**
+（どこからも指されない行が残れば旗があっても止まる。指し漏らした機能の本文には仮回答の印が付かない）。
+生成は仮回答に依存する本文を名指しし、本文に印を付ける（`../../references/handoff-issue.md` の「仮回答の印」）。
+
 ### 4. 生成して、Red の状態を見る
 
 ```bash
@@ -207,6 +213,15 @@ dev-loop の点検が日時での近似に落ちる。生成の出力が「基�
   案の件数と未決定事項の件数（生成の出力の行）を示す——未決定事項は 4 で片づけてある（残したなら、残したことを示す）。
   **案を Issue として登録するかは利用者が決める**——登録するなら案の本文を下書きにし、
   未決定事項が無いことを確かめてから（決まっていないことを実装で決めさせない）
+- **`--provisional` で作ったなら**、仮回答に依存する本文（生成の出力の行）と、依存する仮回答の No を示し、
+  利用者が確かめたときの作り直す範囲は、登録した Issue から同梱の `rebuild-scope.py` で引けることを伝える:
+
+  ```bash
+  gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json number,title,state,body > issues.json
+  python3 <このスキルの base ディレクトリ>/../../scripts/rebuild-scope.py --issues issues.json <Q&A の No>
+  ```
+
+  引数なしなら仮回答と、dev-loop が推奨で決めた事項（確認の Issue）の一覧を出す（使い方は `rebuild-scope.py` の docstring を正とする）
 - 次にすること: **Issue ごとに `/dev-loop:dev-loop <issue-number>`**。開発中に仕様の穴が見つかれば、
   dev-loop は Q&A 表に起票元 `開発` で差し戻す——その回答は `/spec-loop:req-loop` から受け直し、
   仕様レビューを抜けてから、このスキルで作り直す（手順 4 は `--red-check --in-progress`）。dev-loop に渡す受入基準は、

@@ -143,6 +143,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py docs/v<n
       仕様はもう反映済みなので直さない。`反映先` もそのまま。
     - **違う選択肢になった** — `回答` を新しい回答（誰が答えたか）に書き換え、`状態` を `確認中` に戻す
       （「回答はあるが未反映」）。次の反映で仕様を直し直す。`反映先` は直し直すときの手がかりとして残してよい。
+    - **`--provisional` で Issue にした後なら**、どちらの場合も、その No から作り直す範囲（Issue と受入基準のケース）を同梱の `rebuild-scope.py` で引く
+      （`handoff-issue.md` の「仮回答の印」）。
 
 ### 暫定の行の判別
 
@@ -170,7 +172,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py docs/v<n
 | 仕様レビューを抜ける条件 1（`check-spec-exit.py`） | 反映した行に数え、件数を出す（止めない） | `spec-exit.md` |
 | サインオフの照合（`check-signoff.py`） | 要求確定のタグの時点に残れば 3 で止める | `signoff-tags.md` |
 | 提案書（`build-proposal.py`） | 照合の 3 で作らない。書いた提案書の「利用者にまだ確かめていない決定」の節は 0 件になる | `signoff-tags.md` |
-| scaffold（`scaffold.py`） | 1 つでも残れば止める（中間表現が指すかどうかに依らない） | `spec-ir.md`・`versions.md` |
+| scaffold（`scaffold.py`） | 1 つでも残れば止める（中間表現が指すかどうかに依らない）。**利用者が仮回答のまま渡すと決めたときだけ `--provisional` で通し**、依存する Issue と受入基準に仮回答の印を付ける（どこからも指されない行が残れば止める。#875） | `spec-ir.md`・`versions.md`・`handoff-issue.md` の「仮回答の印」 |
 | MkDocs の Q&A 表のページ（雛形のフック） | 件数を `暫定反映` として分けて出す | `tree.md` の「ドキュメントのツール」 |
 
 ## 本文での番号
