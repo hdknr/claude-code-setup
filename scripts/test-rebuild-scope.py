@@ -19,6 +19,8 @@
 - 台帳の 2 行が無い確認の Issue・形に反する `影響する Issue: ` の行（説明の中の番号を数えない）・確認の Issue でない番号・入力に無い番号・
   入力に無い影響する Issue・本文に無い No は名指しして 1（引けたものは出す）
 - 撤去の Issue（変化の印 `remove`）は作り直す範囲に数えない。空の台帳の行は「決まりの形でない」と言う
+- まとめた本文（2 行目が `<!-- spec-loop-bundle: … -->`。#876）は機能の印の行で部分に分け、部分ごとに引く（本物の `scaffold.py --bundle` で作る）
+- まとめた本文の改行が `\r\n` でも部分に分ける
 - 入力の形が違えば 2（どの Issue が違うかを言う）
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
@@ -104,8 +106,9 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
 
 class Case:
     def __init__(self, name: str, args: tuple[str, ...], code: int, has: tuple[str, ...] = (), lacks: tuple[str, ...] = (),
-                 data=None):
+                 data=None, bundle: str = ""):
         self.name, self.args, self.code, self.has, self.lacks, self.data = name, args, code, has, lacks, data
+        self.bundle = bundle  # まとめた本文の Issue だけの入力（`bundle`・改行を CRLF にした `crlf`）に当てる（#876）
 
 
 CASES = [
@@ -133,6 +136,12 @@ CASES = [
                         "#20 要確認: 返品の受付期間を 7 日にした [OPEN]——決めた値: 7 日／影響する Issue: #11、#12",
                         "#21 返品の受付期間（前の書き方） [OPEN]——台帳の行が無い", "#23 要確認: 印の無い確認の Issue [CLOSED]——決めた値: B"),
          ("Q-002: #",)),
+    Case("まとめた本文の部分ごとに引く", ("Q-001",), 0,
+         ("Q-001（仮回答——本文に印がある）: 作り直す範囲 2 件",
+          "#30 F-001・F-002: 割引額を計算する／注文を取り消せるか [OPEN]（F-001）——受入基準 `F-001-C1`",
+          "#30 F-001・F-002: 割引額を計算する／注文を取り消せるか [OPEN]（F-002）——ケースに無い（機能全体）"), bundle="bundle"),
+    Case("改行が CRLF のまとめた本文", ("Q-001",), 0,
+         ("作り直す範囲 2 件", "（F-001）——受入基準 `F-001-C1`", "（F-002）——ケースに無い（機能全体）"), bundle="crlf"),
     Case("No でも番号でもない引数", ("foo",), 2, ("'foo': Q&A の No",)),
     Case("JSON でない", (), 2, ("読めない",), data="{"),
     Case("配列でない", (), 2, ("Issue の配列でない",), data="{}"),
@@ -157,15 +166,18 @@ MUTATIONS = [
     ("空の決めた値の行を無いと読む", "                if not self.value:\n", "                if False:\n", "空の決めた値の行"),
     ("空の影響する Issue の行を無いと読む", "                    self.malformed = line\n", "                    self.malformed = rest or None\n",
      "空の影響する Issue の行"),
-    ("撤去の Issue も作り直す範囲に数える", ' and not REMOVAL.search(i["body"])]', "]", "暫定の Q-001"),
+    ("撤去の Issue も作り直す範囲に数える", ' and not REMOVAL.search(i["body"])\n', "\n", "暫定の Q-001"),
     ("説明の中の番号も影響する Issue に数える", "                elif AFFECTS_LIST.fullmatch(rest):", "                elif True:",
      "影響する Issue に説明を添えた行"),
     ("入力に無い影響する Issue でも 0", "    return not absent, out", "    return True, out", "影響する Issue が入力に無い"),
     ("引けない番号でも 0", "        code = code or (0 if ok else 1)", "        code = 0", "確認の Issue でない"),
     ("入力の Issue の形を見ない", "        if not (isinstance(issue, dict)", "        if False and not (isinstance(issue, dict)",
      "本文が文字列でない"),
-    ("spec-loop の Issue を見分けない", 'handoffs = [Handoff(i) for i in issues if i["body"].startswith(HANDOFF_PREFIX) and',
-     "handoffs = [Handoff(i) for i in [] if False and", "暫定の Q-001"),
+    ("spec-loop の Issue を見分けない", 'handoffs = [Handoff(i, part) for i in issues if i["body"].startswith(HANDOFF_PREFIX) and',
+     "handoffs = [Handoff(i, part) for i in [] if False and", "暫定の Q-001"),
+    ("まとめた本文を部分に分けない", "    return [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])] or [body]",
+     "    return [body]", "まとめた本文の部分ごとに引く"),
+    ("CRLF の部分の頭を見ない", 'FEATURE.pattern + r"\\r?$"', 'FEATURE.pattern + r"$"', "改行が CRLF のまとめた本文"),
 ]
 
 failures: list[str] = []
@@ -177,7 +189,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 def make_bodies(work: Path, scripts: Path) -> dict[str, str]:
-    """本物の `scaffold.py --provisional` で本文を作る。"""
+    """本物の `scaffold.py --provisional` で本文を作る。`bundle` の鍵に、F-001 と F-002 をまとめた本文（`--bundle`。#876）も入れる。"""
     repo = work / "repo"
     base = repo / "docs" / "v1"
     (base / "shared").mkdir(parents=True)
@@ -189,11 +201,16 @@ def make_bodies(work: Path, scripts: Path) -> dict[str, str]:
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     issues = repo / "build" / "scaffold" / "issues"
-    return {p.stem: p.read_text(encoding="utf-8") for p in sorted(issues.glob("F-*.md"))}
+    found = {p.stem: p.read_text(encoding="utf-8") for p in sorted(issues.glob("F-*.md"))}
+    proc = subprocess.run([sys.executable, "-I", str(scripts / "scaffold.py"), "--repo", str(repo), "--provisional",
+                           "--bundle", "F-001,F-002"], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    found["bundle"] = (issues / "bundle-F-001-F-002.md").read_text(encoding="utf-8")
+    return found
 
 
 def run_case(scripts: Path, data: Path, case: Case) -> str | None:
-    target = data
+    target = data.parent / f"{case.bundle}.json" if case.bundle else data
     if case.data is not None:
         target = data.parent / f"bad-{abs(hash(case.name))}.json"
         target.write_text(case.data, encoding="utf-8")
@@ -223,9 +240,15 @@ def main() -> int:
         scripts = work / "scripts"
         shutil.copytree(SCRIPTS, scripts, ignore=shutil.ignore_patterns("__pycache__"))
         bodies = make_bodies(work, scripts)
-        check("scaffold が F-001・F-002 の本文を作った", sorted(bodies) == ["F-001", "F-002"], f"{sorted(bodies)}")
+        check("scaffold が F-001・F-002 の本文を作った", sorted(bodies) == ["F-001", "F-002", "bundle"], f"{sorted(bodies)}")
         data = work / "issues.json"
         data.write_text(json.dumps(issues_json(bodies), ensure_ascii=False), encoding="utf-8")
+        (work / "bundle.json").write_text(json.dumps([{"number": 30, "title": "F-001・F-002: 割引額を計算する／注文を取り消せるか",
+                                                        "state": "OPEN", "body": bodies["bundle"]}], ensure_ascii=False),
+                                          encoding="utf-8")
+        (work / "crlf.json").write_text(json.dumps([{"number": 31, "title": "まとめた本文（CRLF）", "state": "OPEN",
+                                                      "body": bodies["bundle"].replace("\n", "\r\n")}], ensure_ascii=False),
+                                        encoding="utf-8")
 
         print("正しい本体")
         for case in CASES:

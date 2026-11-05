@@ -204,6 +204,11 @@ jobs:
       - name: spec-loop の作り直す範囲を引くスクリプトのテスト（#875）
         run: python3 scripts/test-rebuild-scope.py
 
+      # 本体は plugins/spec-loop/scripts/parent-checklist.py（登録した Issue から依存の連鎖を cruise の親 Issue の書式で出す。
+      # 索引と本文は本物の scaffold.py で作り、出した行を本物の parent-issue.py show に通す）。
+      - name: spec-loop の親 Issue の一覧を出すスクリプトのテスト（#876）
+        run: python3 scripts/test-parent-checklist.py
+
       # 本体は plugins/spec-loop/scripts/ にある（ある版が前の版から何を足し・変え・消したか）。
       - name: spec-loop の版の差分のテスト（#263）
         run: python3 scripts/test-diff-versions.py
