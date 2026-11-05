@@ -50,10 +50,14 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
 
 - `type` が `rate_limit_event` の**最後の 1 つ**の `rate_limit_info.status` が `allowed`・`allowed_warning`・無し以外なら上限。`resetsAt`（UNIX 秒）が数なら解除の時刻。
 - `type` が `result` で `api_error_status` が 429 なら上限。`is_error` が真なら、その `result` の文も下の文言で読む。
-- `error` が `rate_limit` の行（トランスクリプトの記録の形）なら上限。
+- `type` が `assistant` で `error` が `rate_limit` の行（トランスクリプトの記録の形）なら上限。`quotaLimits.resetsAt` が数なら解除の時刻。
+  **ほかの `type` の `error` は見ない**（`api_retry` のような途中の再試行の印）。
 
-JSON として読めない行は、文言 `usage limit reached`・`limit reached`・`hit your limit`（大文字小文字を区別しない）で上限と読み、`|<10 桁の数>` が続けば解除の時刻とする。
-**JSON の中のアシスタントの文は読まない**——文が #790 のことを語っただけで上限と読まない。
+JSON として読めない行は、文言 `usage limit reached`・`hit your limit`（大文字小文字を区別しない）で上限と読み、どちらの後ろでも `|<10 桁の数>` が続けば解除の時刻とする。
+**「limit reached」だけの文（`spending limit reached` など）は上限と読まない。** **JSON の中のアシスタントの文は読まない**——文が #790 のことを語っただけで上限と読まない。
+
+**`claude` が 0 で終わり、最後の `result` が `is_error` でなければ、上の印があっても上限と読まない**——最後まで走りきった起動で、途中の再試行の印で待たない。
+解除の時刻に使うのは有限の数だけで、真偽値・無限・NaN は読めないものとして扱う。**ミリ秒のように桁の多い値は、そのまま秒として読み、待ちが長すぎるので 10 で止まる**（単位は測っていない）。
 
 ## 終了コード
 
@@ -86,7 +90,14 @@ JSON として読めない行は、文言 `usage limit reached`・`limit reached
 - **解除の時刻が読めれば、その時刻に `LIMIT_MARGIN` 秒を足した時刻まで待つ。**
 - **解除の時刻が読めなければ `--limit-wait` 秒待つ。**
 - **待つ時間が `--max-limit-wait` 秒を超えるなら、待たずに止まる（10）。**
-- **上限で終わった起動は、前進なしにも同じ状態の回数にも数えない。**
+- **上限で終わった起動は、前進なしに数えない。**
+- **上限で終わった起動は、同じ状態の回数に数えない。**
+- **上限で終わった起動でも、前進があれば前進なしの数を 0 に戻す。**
+- **トランスクリプトの形（`error` が `rate_limit` のアシスタントの行）では `quotaLimits.resetsAt` を解除の時刻に読む。**
+- **JSON でない行は `usage limit reached`・`hit your limit` だけを上限と読む**——「limit reached」だけの文（`spending limit reached` など）を上限と読まない。
+- **`|<10 桁>` は、どちらの文言の後ろでも解除の時刻に読む。**
+- **`claude` が 0 で終わり、最後の `result` が成功なら上限と読まない**——途中の再試行の印（`api_retry` など）で待たない。
+- **解除の時刻が時刻として表せない値（ミリ秒など）でも、例外にせず 10 で止まる。**
 - **`allowed_warning` の `rate_limit_event` と、JSON の中のアシスタントの文の「usage limit」を上限と読まない。**
 - **`rate_limit_event` は最後の 1 つで決める**——途中で拒まれて後で `allowed` に戻った起動を上限と読まない。
 - **引数を読めた後の止まるすべての経路で通知する**——済んだ・止まった・判定できない・前進なし・起動の上限・同じ状態の上限・`claude` の失敗・解除が遠い・
@@ -121,6 +132,7 @@ JSON として読めない行は、文言 `usage limit reached`・`limit reached
 import argparse
 import datetime
 import json
+import math
 import os
 import re
 import signal
@@ -144,8 +156,8 @@ APPEND = (
 )
 TITLE = "spec-loop の autopilot の外側のループが止まりました"
 OK_LIMIT_STATUSES = (None, "allowed", "allowed_warning")
-LIMIT_TEXT = re.compile(r"usage limit reached|limit reached|hit your limit", re.IGNORECASE)
-LIMIT_EPOCH = re.compile(r"limit reached\|(\d{10})\b", re.IGNORECASE)
+LIMIT_TEXT = re.compile(r"usage limit reached|hit your limit", re.IGNORECASE)
+LIMIT_EPOCH = re.compile(r"(?:usage limit reached|hit your limit)\|(\d{10})\b", re.IGNORECASE)
 
 EXIT_DONE = 0
 EXIT_USAGE = 2
@@ -194,9 +206,22 @@ def pause(seconds):
     time.sleep(seconds)
 
 
-def read_limit(paths):
+def epoch(value):
+    """解除の時刻（UNIX 秒）として使える数か。真偽値・無限・NaN は使えない。"""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def shown(reset):
+    """解除の時刻の表示。表せない値（ミリ秒で桁が多い、など）でも例外にしない。"""
+    try:
+        return f"解除 {datetime.datetime.fromtimestamp(reset, datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
+    except (ValueError, OverflowError, OSError):
+        return f"解除 {reset}（時刻として表せない）"
+
+
+def read_limit(paths, rc):
     """(上限か, 解除の時刻（UNIX 秒）か None)。出力のファイルを読む。"""
-    limited, reset, last_event = False, None, None
+    limited, reset, last_event, last_result = False, None, None, None
     for path in paths:
         try:
             lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
@@ -218,6 +243,7 @@ def read_limit(paths):
             if kind == "rate_limit_event":
                 last_event = event.get("rate_limit_info") or {}
             elif kind == "result":
+                last_result = event
                 if event.get("api_error_status") == 429:
                     limited = True
                 text = event.get("result")
@@ -226,13 +252,18 @@ def read_limit(paths):
                     m = LIMIT_EPOCH.search(text)
                     if m:
                         reset = int(m.group(1))
-            if event.get("error") == "rate_limit":
+            elif kind == "assistant" and event.get("error") == "rate_limit":
                 limited = True
+                at = (event.get("quotaLimits") or {}).get("resetsAt")
+                if epoch(at):
+                    reset = at
     if isinstance(last_event, dict) and last_event.get("status") not in OK_LIMIT_STATUSES:
         limited = True
         at = last_event.get("resetsAt")
-        if isinstance(at, (int, float)) and not isinstance(at, bool):
+        if epoch(at):
             reset = at
+    if rc == 0 and isinstance(last_result, dict) and not last_result.get("is_error"):
+        return False, None  # 最後まで走りきった起動——途中の再試行の印で待たない
     return limited, reset
 
 
@@ -306,7 +337,7 @@ def run_loop(args):
             return EXIT_SAME_STATE, f"同じ状態（{before.strip()}）から {seen[before]} 回起こした（{launches} 回起動）"
         launches += 1
         rc, files = launch(args, main_tree, logs, launches)
-        limited, reset = read_limit(files) if rc is not None else (False, None)
+        limited, reset = read_limit(files, rc) if rc is not None else (False, None)
         after = progress(args.version)
         if after is None:
             return EXIT_UNKNOWN, "判定できなかった（progress を読めない）"
@@ -315,7 +346,7 @@ def run_loop(args):
                 stalls = 0
             if reset is not None:
                 wait = max(0.0, reset - time.time()) + LIMIT_MARGIN
-                why = f"解除 {datetime.datetime.fromtimestamp(reset, datetime.timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
+                why = shown(reset)
             else:
                 wait = args.limit_wait
                 why = "解除の時刻を読めない"

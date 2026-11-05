@@ -131,6 +131,16 @@ MUTATIONS = {
         ("        rc, files = launch(args, main_tree, logs, launches)\n",
          "        rc, files = launch(args, main_tree, logs, launches)\n        seen[before] = seen.get(before, 0) + 1\n"),
         ("        seen[before] = seen.get(before, 0) + 1\n        if after == before:\n", "        if after == before:\n")],
+    "上限の起動を前進なしに数える": [("            if after != before:\n                stalls = 0\n            if reset is not None:\n",
+                                    "            stalls += 1\n            if after != before:\n                stalls = 0\n            if reset is not None:\n")],
+    "上限の起動で前進なしの数を戻さない": [("            if after != before:\n                stalls = 0\n            if reset is not None:\n",
+                                         "            if reset is not None:\n")],
+    "quotaLimits を読まない": [('                at = (event.get("quotaLimits") or {}).get("resetsAt")\n', "                at = None\n")],
+    "limit reached だけで上限と読む": [('r"usage limit reached|hit your limit", re.IGNORECASE', 'r"usage limit reached|limit reached|hit your limit", re.IGNORECASE')],
+    "時刻を usage の後ろだけで読む": [('r"(?:usage limit reached|hit your limit)\\|(\\d{10})\\b"', 'r"usage limit reached\\|(\\d{10})\\b"')],
+    "走りきった起動でも上限と読む": [("    if rc == 0 and isinstance(last_result, dict)", "    if False and isinstance(last_result, dict)")],
+    "表せない時刻で例外": [("                why = shown(reset)\n",
+                          '                why = f"解除 {datetime.datetime.fromtimestamp(reset, datetime.timezone.utc)}"\n')],
     "allowed_warning を上限と読む": [('OK_LIMIT_STATUSES = (None, "allowed", "allowed_warning")', 'OK_LIMIT_STATUSES = (None, "allowed")')],
     "最初の rate_limit_event で決める": [
         ('                last_event = event.get("rate_limit_info") or {}\n',
@@ -461,6 +471,51 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     plan["29"] = [{"corrupt": True}]
     go("A29 壊れる", 29, [])
 
+    # A31: 上限の起動は前進なしに数えない（上限 → 時刻だけ → 済む。前進なし 2 回で止まる設定でも 0）
+    lim = {"rc": 1, "stdout": ["usage limit reached"]}
+    make(31)
+    plan["31"] = [lim, {"ledger": [stage(31, "planner")]}, {"ledger": [done(31)]}]
+    go("A31 上限は前進なしに数えない", 31, ["--max-stalls", "2", "--limit-wait", "0"])
+
+    # A32: 上限の起動でも前進があれば前進なしの数を戻す（時刻だけ → 上限と前進 → 時刻だけ → 済む）
+    make(32)
+    plan["32"] = [{"ledger": [stage(32, "planner")]}, dict(lim, ledger=[stage(32, "round1")]), {"ledger": [stage(32, "round1")]},
+                  {"ledger": [done(32)]}]
+    go("A32 上限の前進で戻す", 32, ["--max-stalls", "2", "--limit-wait", "0"])
+
+    # A33: トランスクリプトの形（assistant の error=rate_limit）の quotaLimits.resetsAt を読む
+    make(33)
+    plan["33"] = [{"rc": 1, "reset_in": 300, "stdout": ['{"type": "assistant", "error": "rate_limit", "quotaLimits": {"resetsAt": RESET}}']},
+                  {"ledger": [done(33)]}]
+    go("A33 quotaLimits", 33, ["--limit-wait", "5"])
+
+    # A34: resetsAt がミリ秒（時刻として表せない）→ 例外にせず 10
+    make(34)
+    plan["34"] = [{"rc": 1, "stdout": [rejected(resetsAt=1793865132000)]}, {"ledger": [done(34)]}]
+    go("A34 ミリ秒", 34, [])
+
+    # A35: 「spending limit reached」は使用量の上限ではない → 8
+    make(35)
+    plan["35"] = [{"rc": 1, "stderr": ["Error: spending limit reached for this session"]}]
+    go("A35 spending limit", 35, [])
+
+    # A36: 0 で終わり最後の result が成功 → 途中で拒まれた印・再試行の印があっても上限と読まない（待たずに済む）
+    make(36)
+    plan["36"] = [{"ledger": [done(36)], "stdout": [rejected(resetsAt=1),
+                                                     ev("system", subtype="api_retry", error="rate_limit"),
+                                                     ev("result", subtype="success", is_error=False, result="ok")]}]
+    go("A36 走りきった起動", 36, [])
+
+    # A37: `hit your limit|<epoch>` の時刻を読む
+    make(37)
+    plan["37"] = [{"rc": 1, "reset_in": 700, "stdout": ["You've hit your limit|RESET"]}, {"ledger": [done(37)]}]
+    go("A37 hit your limit の時刻", 37, ["--limit-wait", "5"])
+
+    # A38: assistant でない error=rate_limit（再試行の印）だけで 1 で終わる → 上限でなく 8
+    make(38)
+    plan["38"] = [{"rc": 1, "stdout": [ev("system", subtype="api_retry", error="rate_limit")]}]
+    go("A38 再試行の印だけ", 38, [])
+
     # A30: 引数が違う → 2。通知しない
     go("A30 引数", 30, ["--max-same-state", "0"])
     limit = sys.get_int_max_str_digits()
@@ -533,6 +588,16 @@ def main() -> int:
               res("A27 長期トークン") == 0 and a("A27 受けたもの") == [(TOKEN, ["-p", "/spec-loop:autopilot 27"])])
         check("A28 --prompt で起こす文を置き換える", res("A28 起こす文") == 0 and a("A28 文") == ["/spec-loop:autopilot 28 --absent"])
         check("A29 起動の後に progress を読めなければ 4", res("A29 壊れる") == 4 and "progress を読めない" in a("A29 壊れる")[0][1])
+        check("A31 上限の起動は前進なしに数えず 0（起動 3）", res("A31 上限は前進なしに数えない") == 0 and a("A31 上限は前進なしに数えない")[1:] == (3, 1))
+        check("A32 上限の起動でも前進があれば前進なしの数を戻し 0（起動 4）", res("A32 上限の前進で戻す") == 0 and a("A32 上限の前進で戻す")[1:] == (4, 1))
+        w33 = a("A33 quotaLimits 待ち")
+        check("A33 トランスクリプトの形の quotaLimits.resetsAt＋60 秒待って 0", res("A33 quotaLimits") == 0 and len(w33) == 1 and 350 <= w33[0] <= 361)
+        check("A34 ミリ秒の resetsAt は例外にせず 10", res("A34 ミリ秒") == 10 and a("A34 ミリ秒 待ち") == [])
+        check("A35 「spending limit reached」は上限でなく 8", res("A35 spending limit") == 8 and a("A35 spending limit 待ち") == [])
+        check("A36 0 で終わり最後の result が成功なら上限と読まず、待たずに 0", res("A36 走りきった起動") == 0 and a("A36 走りきった起動 待ち") == [])
+        w37 = a("A37 hit your limit の時刻 待ち")
+        check("A37 `hit your limit|<epoch>` の時刻＋60 秒待って 0", res("A37 hit your limit の時刻") == 0 and len(w37) == 1 and 750 <= w37[0] <= 761)
+        check("A38 assistant でない error=rate_limit だけなら上限でなく 8", res("A38 再試行の印だけ") == 8 and a("A38 再試行の印だけ 待ち") == [])
         check("A30 引数が違えば 2 で通知しない", res("A30 引数") == 2 and a("A30 引数")[1:] == (0, 0)
               and all(a(f"A30 {k}") == 2 for k in ("先頭 0", "0", "番号でない", "ASCII でない", "桁が多すぎる", "負の待ち",
                                                    "空の文", "語に分けられない --claude", "上限 0")))
@@ -617,7 +682,8 @@ def main() -> int:
 def normalize(o: dict):
     """比べる形にする——時刻に依る値（待ちの秒数・解除の時刻）を、本体の約束に照らした印に置き換え、JSON の往復でそろえる。"""
     out = dict(o)
-    for key, lo, hi in (("A12 上限（resetsAt） 待ち", 1050, 1061), ("A15 上限（文言の時刻） 待ち", 550, 561)):
+    for key, lo, hi in (("A12 上限（resetsAt） 待ち", 1050, 1061), ("A15 上限（文言の時刻） 待ち", 550, 561),
+                        ("A33 quotaLimits 待ち", 350, 361), ("A37 hit your limit の時刻 待ち", 750, 761)):
         out[key] = [lo <= w <= hi for w in o.get(key, [])]
     text = json.dumps(out, ensure_ascii=False, sort_keys=True, default=str)
     text = re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", "<時刻>", text)
