@@ -216,6 +216,10 @@ jobs:
       - name: spec-loop の autopilot の線と権限の点検のテスト（#849）
         run: python3 scripts/test-autopilot-check.py
 
+      # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
+      - name: spec-loop の autopilot の外側のループのテスト（#850）
+        run: python3 scripts/test-autopilot-loop.py
+
       # 本体は plugins/spec-loop/scripts/init-mkdocs.py と templates/mkdocs/（正本リポジトリへ写す雛形）。
       - name: spec-loop の MkDocs の雛形のテスト（#266）
         run: python3 scripts/test-init-mkdocs.py
