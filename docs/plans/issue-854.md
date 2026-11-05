@@ -105,6 +105,7 @@ main へのマージで、GitHub Pages の再ビルド（この周は `docs/` �
 - 周の在り処: ブランチ `issue/854-measured-value-definition`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-854`・
   起点 `7526c338`・base（`git merge-base origin/main HEAD`。参照 `origin/main`）`7526c338fae9f8cda2f34e36dfece17b86b1fbf9`
 - 割り目（手順 4）: 割らない（cruise の周）
+- PR: #867
 - 1 パス目の指摘対応の起点（1 パス目の関門に渡した時点の HEAD）: `c2270233`
 - 1 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件（軽微な所見 2）／`/code-review`（high）指摘 8 件 → 直す 5（C1・C2・C3・C4・C6＋V1）・残課題 4。差し戻し: 1 パス目の指摘対応（手順 4 へ）
 - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方
