@@ -104,7 +104,7 @@ main へのマージでプラグインの配布（`spec-loop` の版）。公開
 - 周の在り処: ブランチ `issue/848-spec-autopilot-ledger`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-848`・
   起点 `f447c55b`・base `origin/main` → `f447c55b581218144cbeef1ff62954ec533c7d51`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: 未着手
+- 関門: 1 パス目（Verifier・`/code-review`）を起動。1 パス目の指摘対応の起点 `1ff8ade3`（1 パス目の関門に渡した時点の HEAD）
 - 交絡を潰した手順: 実験なし
 
 ## 既知の限界・決着済みの論点
@@ -113,4 +113,4 @@ main へのマージでプラグインの配布（`spec-loop` の版）。公開
 
 ## 手順 8
 
-（マージの前に書く）
+- この周の起票: 0 件（直すに振り分けた周の途中の課題が無い）
