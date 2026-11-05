@@ -1925,8 +1925,16 @@ CASES: list[Case] = [
          extra=v2([V2_CHANGED], removed="機能,F-002,取り消しはやめる\n"), post=base_recorded(("modify", "remove")),
          absent="基準コミットを記録していない"),
     # 記録できなくても止めない——本文に「記録していない（理由）」と書き、出力でも知らせる
-    Case("基準コミット: git の作業ツリーでない", 0, "基準コミットを記録していない（正本リポジトリを git の作業ツリーと読めない",
-         post=base_unrecorded("正本リポジトリを git の作業ツリーと読めない")),
+    Case("基準コミット: git の作業ツリーでない", 0, "基準コミットを記録していない（正本リポジトリが git の作業ツリーでない",
+         post=base_unrecorded("正本リポジトリが git の作業ツリーでない）")),
+    # 根でなければ外側のリポジトリの HEAD を書かない（`released` と同じ。#874 の 1 パス目）
+    Case("基準コミット: git の作業ツリーの根でない", 0, "基準コミットを記録していない（正本リポジトリが git の作業ツリーの根でない",
+         pre=release(None, top=".."), post=base_unrecorded("正本リポジトリが git の作業ツリーの根でない）")),
+    # 環境変数 GIT_DIR が別の場所を指していても、正本の HEAD を書く（フックの中。#874 の 1 パス目）
+    Case("基準コミット: GIT_DIR が別を指す", 0, "作った", pre=release(None), env={"GIT_DIR": "/nonexistent-874/.git"},
+         post=base_recorded(("add",)), absent="基準コミットを記録していない"),
+    # 記録した行も決定論（同じ HEAD から同じバイト）
+    Case("決定論的（基準コミットを記録する）", 0, pre=release(None), post=deterministic),
     Case("基準コミット: コミットが無い", 0, "基準コミットを記録していない（正本リポジトリの HEAD のコミットを読めない",
          pre=git_init_only, post=base_unrecorded("正本リポジトリの HEAD のコミットを読めない（コミットが無い）")),
     Case("基準コミット: git を起動できない", 0, "基準コミットを記録していない（git を起動できない",
@@ -2240,8 +2248,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    except ValueError as exc:\n        reason = f\"git を起動できない", "基準コミット: git を起動できない"),
     ("コミットの無いリポジトリで HEAD を信じる", "if len(found) >= 2 and COMMIT_ID.fullmatch(found[0]) and found[1]:", "if True:",
      "基準コミット: コミットが無い"),
-    ("git の作業ツリーでないことを見ない", 'if inside.returncode != 0 or inside.stdout.strip() != "true":', "if False:",
-     "基準コミット: git の作業ツリーでない"),
+    ("git の作業ツリーでないことを見ない", "        if code != 0:\n            reason = \"正本リポジトリが git の作業ツリーでない\"",
+     "        if False:\n            reason = \"正本リポジトリが git の作業ツリーでない\"", "基準コミット: git の作業ツリーでない"),
+    ("根でない正本で外側の HEAD を書く", "elif Path(top.strip()).resolve() != repo.resolve():", "elif False:",
+     "基準コミット: git の作業ツリーの根でない"),
+    ("GIT_DIR を外さずに git を呼ぶ", "proc = versions.run_git(repo, *args)",
+     "proc = subprocess.run([\"git\", \"-C\", str(repo), *args], capture_output=True)", "基準コミット: GIT_DIR が別を指す"),
+    ("記録していない理由を書かない", 'f"{BASE_COMMIT}{BASE_UNRECORDED}（{reason}）——', 'f"{BASE_COMMIT}{BASE_UNRECORDED}——',
+     "基準コミット: コミットが無い"),
     ("記録していないことを出力で知らせない", "    if unrecorded:\n", "    if False:\n", "基準コミット: git の作業ツリーでない"),
     # #852: 性能の要求
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",

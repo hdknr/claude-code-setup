@@ -58,7 +58,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 
 **仕様の基準コミット（#874）**: 本文の `## 仕様` に、正本リポジトリで本文を生成した時点の HEAD とそのコミットの日時を
 `- 基準コミット: ` の行で書く——dev-loop が周の頭で、その後の変化が仕様の前提（既存のシステム）を崩していないかを点検する
-（dev-loop の `references/spec-gap.md`）。**git の作業ツリーでない・コミットが無い・git を起動できないなら止めずに**
+（dev-loop の `references/spec-gap.md`）。**git の作業ツリーの根でない・コミットが無い・git を起動できないなら止めずに**
 `記録していない（理由）` と書き、出力でも知らせる（0）。生成の時刻は書かない（同じ HEAD から同じバイト）
 （決まりの正は `references/handoff-issue.md` の「基準コミット」）。
 
@@ -1357,19 +1357,28 @@ def base_commit(repo: Path) -> tuple[str, str | None]:
     **基準コミットは、正本リポジトリで本文を生成した時点の HEAD** とそのコミットの日時（`%cI`）である——
     仕様を書いた人が見ていた既存のシステムの時点を表す（仕様そのものの時点は、機能の指紋と Red テストの sha256 が表す。
     生成 → commit → 登録の順なので、生成の時点の仕様はふつう未コミットである）。**生成の時刻は書かない**（同じ HEAD から
-    同じバイト）。**git の作業ツリーでない・コミットが無い・git を起動できないなら止めない**——`記録していない（理由）` と書く。
+    同じバイト）。**git の作業ツリーの根でない・コミットが無い・git を起動できないなら止めない**——`記録していない（理由）` と書く。
+
+    - **git は `merge-versions.py` の `run_git` で呼ぶ**——リポジトリの場所を指す環境変数（`GIT_DIR` など）を外す（フックの中で
+      引き継ぐと別のリポジトリの HEAD を書く。#874 の 1 パス目）。
+    - **根でなければ記録しない**（`released` と同じ）——根が別なら、その HEAD は外側のリポジトリのもので、dev-loop の点検が
+      除くパス（根の `docs/`・`scaffold/`）も正本のものでない。
+    - **理由は決まった文言だけ**（git の出力を写さない）——本文は公開のリポジトリに登録されうる。
+    - **署名の表示（`log.showSignature`）を切って読む**——利用者の設定で出力の頭に署名の検証が混ざると、コミットが読めない。
     """
-    def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+    def git(*args: str) -> tuple[int, str]:
+        proc = versions.run_git(repo, *args)
+        return proc.returncode, proc.stdout.decode("utf-8", "replace")
 
     try:
-        inside = git("rev-parse", "--is-inside-work-tree")
-        if inside.returncode != 0 or inside.stdout.strip() != "true":
-            said = inside.stderr.strip().splitlines()
-            reason = "正本リポジトリを git の作業ツリーと読めない" + (f"（git: {said[0]}）" if said else "")
+        code, top = git("rev-parse", "--show-toplevel")
+        if code != 0:
+            reason = "正本リポジトリが git の作業ツリーでない"
+        elif Path(top.strip()).resolve() != repo.resolve():
+            reason = "正本リポジトリが git の作業ツリーの根でない"
         else:
-            head = git("log", "-1", "--format=%H%n%cI", "HEAD")
-            found = head.stdout.split("\n") if head.returncode == 0 else []
+            code, head = git("-c", "log.showSignature=false", "log", "-1", "--format=%H%n%cI", "HEAD")
+            found = head.split("\n") if code == 0 else []
             if len(found) >= 2 and COMMIT_ID.fullmatch(found[0]) and found[1]:
                 return (f"{BASE_COMMIT}`{found[0]}`（コミットの日時 {found[1]}。正本リポジトリで本文を生成した時点の HEAD"
                         "——dev-loop は周の頭で、この後の変化が仕様の前提を崩していないかを点検する）"), None
