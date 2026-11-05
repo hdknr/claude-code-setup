@@ -89,10 +89,15 @@ main へのマージで GitHub Pages の再ビルド（`docs/`）とプラグイ
 
 - 周の在り処: ブランチ `issue/855-scaffold-proposals`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-855`・起点 `83b9ec86`・base 参照 `origin/main` → `83b9ec86b381fb3b240c614f120f97e804428336`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: まだ
+- 関門: 1 パス目に入る（Verifier・/code-review）。1 パス目の指摘対応の起点: `d7e51dd230ab9cd1e8f92fa89f92762f4a964efd`
 - 反証と差し戻し: まだ
-- 交絡: まだ
+- 交絡: 実験なし（テストの試料と変異だけ）
+- ローカルの歯止め: `check-all.py`（run-serial 越し）61 本のうち 60 本 OK、`check-plan-counts.py` だけ件数の行が無くて落ちた→件数の行を足して単独で緑（`d7e51dd` の後）。`test-scaffold.py` 単独: 試料 295 件・変異 248 件 OK
 
 ## 既知の限界・決着済みの論点
 
 （関門の前）
+
+## 手順 8（経験の還元）
+
+- この周の起票: 2 件（#870——#402 の中・低優先の項目と作り直しの量の記録を移した Issue〔#856 の「並べ方」の指示〕・#871——仕様の穴を推奨で決めた確認の Issue）
