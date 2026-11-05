@@ -116,7 +116,9 @@ main へのマージでプラグインの配布（`spec-loop` の版）と公開
 - 周の在り処: ブランチ `issue/849-spec-autopilot-entry`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-849`・
   起点 `f98333e2`・base `origin/main` → `f98333e2091bd394f72f9f3d741cb6742324b729`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: 未着手
+- 関門: 1 パス目の指摘対応の起点 `09914f63`（1 パス目の関門に渡した時点の HEAD）
+  - 1 パス目 Verifier（sonnet・`dev-loop:dev-loop-verifier`）: 起動
+  - 1 パス目 `/code-review`（high）: 起動
 - 交絡を潰した手順: 実験なし
 
 ## 既知の限界・決着済みの論点
