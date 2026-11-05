@@ -135,3 +135,4 @@ dev-loop は同じ式の写し（dev-loop のスキルの `scripts/spec-fingerpr
 
 生成した本文の出力先は `tree.md` の「生成物の置き場所」。`issues.json` は機能ごとに `feature`・`title`・`change`
 （上の変化の値）・`body`・`red`（前の版の実装の上で失敗しうる Red テスト）を持つ。
+同じ場所の `proposals.md` は課題一覧（案）で、Issue の本文ではない——案ごとの作らないものはこの形の `## 作らないもの` と同じ中身を写す（`spec-ir.md` の「呼ぶ側の分岐」）。
