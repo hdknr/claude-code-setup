@@ -123,6 +123,10 @@ dev-loop は Issue 1 件を読むだけで周を始められるよう、本文�
 - **本文は仕様の基準コミット（正本リポジトリで本文を生成した時点の HEAD とその日時）も持ちます。** 指紋と sha256 は仕様の時点を固定しますが、
   仕様が前提にした既存のシステムの時点は固定しません。dev-loop は周の頭で、基準コミットから後の変化が仕様の前提を崩していないかを点検し、
   崩していれば仕様の穴として差し戻します（書き方は [`handoff-issue.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/handoff-issue.md) の「基準コミット」）。
+- **利用者が仮回答（`暫定反映`）のまま開発へ渡すと決めたときだけ、`scaffold.py --provisional` で作ります。** 既定では仮回答が 1 行でも残れば作りません。
+  旗を付けると、仮回答に依存する本文の `## 仕様` に `- 仮回答: ` の行を、受入基準の表で仮回答を根拠にするケースに `（暫定）` を付けます。
+  利用者が確かめて回答が変わったら、作り直す範囲（Issue と受入基準のケース）を `rebuild-scope.py` が登録した Issue から引きます。dev-loop が推奨で決めた事項（確認の Issue）も同じ入力から引けます
+  （書き方は [`handoff-issue.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/handoff-issue.md) の「仮回答の印」）。
 - **開発中に仕様の穴が見つかったら、dev-loop は実装で決めず、作業中の版の Q&A 表に起票元 `開発` で起票して要求側に差し戻します。**
   利用者に見える結果が変わる穴は共有の表に、そうでなければ内部の表に起票します。回答は共有の行なら `req-loop`、内部の行なら `spec-review` が仕様に反映し、
   仕様レビューを抜けてから `scaffold` で作り直します（`--red-check --in-progress`）。

@@ -117,7 +117,7 @@ Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `ref
 手順と守ることは [`skills/scaffold/SKILL.md`](skills/scaffold/SKILL.md) を正とします。
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]]
+python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional]
 ```
 
 `--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。

@@ -322,7 +322,7 @@ PROVISIONAL_MUTATIONS = [
 #   比較の中の差し込み（`== f"{qa.PROVISIONAL}"`）はメッセージではないので除かない
 # 守らないもの: 呼ぶ箇所を残したまま、新しい経路で部品を使わずに暫定を決める形（`.startswith("暫定")` を足す）。
 # 呼ぶ数は、読む箇所を足したら直す（数が違うと赤になり、どのファイルかを言う）
-READERS = {"build-proposal.py": 3, "qa-to-pptx.py": 4, "check-spec-exit.py": 1, "scaffold.py": 1, "check-signoff.py": 1}
+READERS = {"build-proposal.py": 3, "qa-to-pptx.py": 4, "check-spec-exit.py": 1, "scaffold.py": 4, "check-signoff.py": 1}
 JUDGE_NAMES = {"PROVISIONAL", "INTERNAL_FORBIDDEN", "STATES"}
 JUDGE_TEXTS = {"暫定反映", *JUDGE_NAMES}
 HOOK_JUDGE = '    return row["状態"].strip() == QA_PROVISIONAL\n'
