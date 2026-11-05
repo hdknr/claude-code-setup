@@ -47,6 +47,9 @@
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、
 穴が無くても緑になるので）。
+**`FOLDING_ONLY` の変異は、一時ディレクトリが大文字小文字を区別しない（実際に作って確かめる。OS の名前で決めない）ときだけ当てる**
+——区別するファイルシステム（Linux の CI）では試料がその変異を判別しないので（#852）。当てなかった変異は「変異を当てなかった」と
+名前を出し、最後の行の変異の件数に数えず、別に数を出す（当てなかったものを緑と数えない）。
 """
 from __future__ import annotations
 
@@ -2441,6 +2444,20 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
     return True, ""
 
 
+# 大文字小文字を区別しないファイルシステムでだけ当てる変異（名前 → 理由）。区別するファイルシステムでは、綴りの違う
+# `NFR.csv` は本体の検査が無くても開けないので、試料がその変異を判別しない（#852 の狭いパスの N1）
+FOLDING_ONLY = {"表の名前の綴りを見ない": "綴りの違う表の名前を開けるのは大文字小文字を区別しないファイルシステムだけで、区別するなら本体の検査が無くても「表が無い」になる"}
+skipped: list[str] = []
+
+
+def case_folding(where: Path) -> bool:
+    """`where` の下のファイルシステムが大文字小文字を区別しないか（OS の名前ではなく、実際に作って確かめる）。"""
+    probe = where / "case-probe"
+    probe.mkdir()
+    (probe / "nfr.csv").write_text("", encoding="utf-8")
+    return (probe / "NFR.csv").exists()
+
+
 def table_cells(markdown: str, heading: str) -> list[str]:
     section = markdown.split(heading, 1)[1].split("\n#", 1)[0]
     return re.findall(r"^\| `([^`]+)` \|", section, flags=re.MULTILINE)
@@ -2618,10 +2635,18 @@ def main() -> int:
             (mutated / CHECKER).write_text(checker.replace(before, after), encoding="utf-8")
             ok, detail = run_case(mutated, tmp_path / f"checker-mutwork{index}", by_name[killer])
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+        folds = case_folding(tmp_path)
+        unknown = sorted(set(FOLDING_ONLY) - {name for name, *_ in MUTATIONS})
+        check("FOLDING_ONLY に MUTATIONS に無い変異の名前がある", not unknown, f"{unknown}")
         for index, (name, before, after, killer) in enumerate(MUTATIONS):
             count = source.count(before)
             if count != 1:
                 check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            if name in FOLDING_ONLY and not folds:
+                # 当てていない——緑には数えず、当てなかったことを出す（数は最後の行にも出る）
+                skipped.append(name)
+                print(f"変異を当てなかった: {name}（{FOLDING_ONLY[name]}。この一時ディレクトリは大文字小文字を区別する）")
                 continue
             mutated = copy_scripts(tmp_path / f"mut{index}", source.replace(before, after))
             ok, detail = run_case(mutated, tmp_path / f"mutwork{index}", by_name[killer])
@@ -2650,7 +2675,8 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS) - len(skipped)} 件"
+          + (f"（ほかに当てなかった変異 {len(skipped)} 件: {'・'.join(skipped)}）" if skipped else ""))
     return 0
 
 
