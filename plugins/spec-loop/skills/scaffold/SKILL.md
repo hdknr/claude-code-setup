@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.55.0 -->
-> **このスキルの版: 0.55.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.57.0 -->
+> **このスキルの版: 0.57.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -91,6 +91,9 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
   `qa` に決定の根拠にした Q&A の No を書く。
 - **仕様が決定表の行やテストケースに番号を振っていれば、各ケースの `ref` にその番号を書く**（`R-F10` など）——
   生成と `--check` が、その番号が `source` の原文に在るかを確かめる（書き起こしの誤り・仕様の後からの修正とのずれを拾う。#465）。
+- **範囲の文書（`spec/scope.md`）の「範囲の外」の行のうち、その機能を作る人が作らずにおくべき場面があれば、機能の `out_of_scope` にその行を原文のまま並べる**
+  （`../../references/spec-ir.md` の「作らないもの」）——Issue の本文の `## 作らないもの` に写り、dev-loop に「何を作らないか」が届く（#851）。
+  **要約・言い換えをしない**（スクリプトが原文のまま在るかを確かめる）。関わる行が無い機能には書かない。
 - **既にあるなら、仕様と食い違うところだけを直す。** 機能の `id` とケースの `id` を振り直さない——
   登録済みの Issue と Red テストの名前がずれる。
 
