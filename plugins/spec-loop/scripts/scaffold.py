@@ -5,7 +5,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 作るもの（置き場所の正は `references/tree.md`）:
 
-- `scaffold/openapi.json`・`scaffold/types.py`・`scaffold/tests/test_<機能>.py`（Red テスト）——**commit する契約**
+- `scaffold/openapi.json`・`scaffold/types.py`・`scaffold/tests/test_<機能>.py`（Red テスト）・`scaffold/perf/perf_<機能>.py`（性能テスト。`nfr` を持つ機能だけ）——**commit する契約**
 - `build/scaffold/issues/<機能の id>.md` と `issues.json`——**Issue の本文**（登録はスクリプトの外。`gh` を呼ばない）
 
 **形の正は `references/spec-ir.md`（中間表現）と `references/handoff-issue.md`（Issue の本文）である**
@@ -38,8 +38,14 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 **作らないもの（`out_of_scope`。#851）**: 本文の `## 作らないもの` に、中間表現の機能の `out_of_scope` に挙げた範囲の外の行を、
 範囲の文書（`spec/scope.md`）の「範囲の外」の節から**原文のまま**写す（表の行なら表の見出しの 2 行を付ける）。「次の版の候補」を含む行は
 `### 次の版の候補` に分ける。**挙げた行が節に原文のまま無い（範囲の文書・節が無い・表の見出しや区切りの行を挙げた）なら 1**——
-どの行がその機能に関わるかは書き起こす側の判断で、機械は原文が在ることだけを見る。性能予算は「要求なし」の既定だけを書く
+どの行がその機能に関わるかは書き起こす側の判断で、機械は原文が在ることだけを見る
 （決まりの正は `references/handoff-issue.md` の「作らないもの」と `references/spec-ir.md` の「作らないもの」）。
+
+**性能の要求（`nfr`。#852）**: 中間表現の機能の `nfr` に、重ね合わせた全体の `shared/nfr.csv` の性能の行の `No` を書く。
+**指した行が無い・2 行ある・性能の行の形（列・指標・上限・単位 `ms`・条件・根拠。`references/nfr.md`）に反するなら 1**——指していない行は見ない。
+`nfr` を持つ機能だけ、性能テスト `scaffold/perf/perf_<機能>.py`（契約。実装をケースの入力で 1 回ずつ呼び、1 回の時間から指標を出して上限と比べる）を作り、
+本文の `### 性能予算` に行の数字と性能テストを書く。持たない機能の性能予算は「要求なし」（既定の原則）。**性能テストは負荷を再現しない**ので、
+Red テストの表（受入基準）にも `--red-check` にも入れない（決まりの正は `references/nfr.md` と `references/spec-ir.md` の「性能の要求」）。
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
@@ -52,7 +58,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 `--check` は検査する相手（置いてある Red テスト）からそれを読むしかなくなる。
 
 - `--check`: 書かずに、置いてある `scaffold/` が今の入力から作るものと同じかを確かめる（鮮度）。
-  **消した機能の Red テストが残っていても古いと言う**（生成の印のあるファイルだけを数える）。
+  **消した機能の Red テスト・`nfr` を外した機能の性能テストが残っていても古いと言う**（生成の印のあるファイルだけを数える）。
   **バイトで比べる**（改行の違いも古いと言う——Issue の本文の sha256 はバイトの指紋なので）。
 - `--dry-run`: 関門と中間表現の検査（前の版との分け方を含む）だけをして、何も書かず何も消さない。
 - `--upto <n>`: v<n> までを重ねた全体に当てる（`--check`・`--dry-run` でだけ使える）。**差分の周を始める前に、前の版の
@@ -169,7 +175,7 @@ SECTIONS = ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回�
 NOT_BUILT = ("### 範囲の外", "### 次の版の候補", "### 性能予算")
 # 範囲の外の行のうち、次の版で受け持つ候補の印（`references/spec-scope.md` の「範囲の文書」の写し）
 NEXT_VERSION = "次の版の候補"
-# 性能の要求を渡していない機能の既定（数字のある予算はまだ写さない）
+# 性能の要求を渡していない機能の既定（`references/nfr.md` の「既定の原則」）
 NO_PERFORMANCE_BUDGET = ("要求なし——この Issue は性能の要求（数字のある予算）を渡していない。"
                          "速さのための最適化（キャッシュ・並列化・索引の追加など）をしない。最適化は、計測で予算を超えたと示せたときだけ。")
 # ケースの変化（受入基準の表の `変化` の列）
@@ -191,6 +197,20 @@ NULLABLE = "nullable"
 CALLED_BY = "called_by"
 # 機能に関わる範囲の外の行の原文の配列（任意。`references/spec-ir.md` の「作らないもの」。#851）
 OUT_OF_SCOPE = "out_of_scope"
+# 機能に効く性能の要求の行の `No` の配列（任意。`references/spec-ir.md` の「性能の要求」。#852）
+NFR = "nfr"
+# 性能の要求の表（重ねた全体の中の場所）と、その列・指標・単位（`references/nfr.md` の写し）
+NFR_PATH = "shared/nfr.csv"
+NFR_COLUMNS = ("No", "対象", "指標", "上限", "単位", "条件", "根拠")
+NFR_ID = re.compile(r"N-[0-9]{3,}")
+METRICS = ("p50", "p95", "p99", "最大")
+NFR_UNIT = "ms"
+# 上限（正の数。生成する性能テストにそのまま Python の数として書くので、この形だけを許す——先頭の 0 の付いた整数部 `0300` は Python の数にならず、
+# 4300 桁を超える整数は Python が読まない。整数部は 9 桁・小数部は 6 桁まで）
+LIMIT = re.compile(r"(0|[1-9][0-9]{0,8})(\.[0-9]{1,6})?")
+# 性能テストの置き場所（`scaffold/` の中）と、1 回のテストで実装を呼ぶ回数
+PERF_DIR = "perf"
+PERF_CALLS = 200
 
 
 class Unjudged(Exception):
@@ -456,7 +476,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
-        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"}, {CALLED_BY, OUT_OF_SCOPE})
+        found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"}, {CALLED_BY, OUT_OF_SCOPE, NFR})
         if found:
             problems += found
             if not isinstance(feature, dict):
@@ -478,6 +498,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             problems += check_qa_refs(f"{where}.qa", feature["qa"], answered)
         if OUT_OF_SCOPE in feature:
             problems += check_out_of_scope(f"{where}.{OUT_OF_SCOPE}", feature[OUT_OF_SCOPE], whole)
+        if NFR in feature:
+            problems += check_nfr(f"{where}.{NFR}", feature[NFR], whole)
 
         op = feature.get("operation")
         fields_in, fields_out, errors = {}, {}, []
@@ -626,6 +648,69 @@ def check_out_of_scope(where: str, picked, whole: Path) -> list[str]:
             f"（表の見出し・区切りの行は挙げない）: {row!r}" for row in picked if row not in present]
 
 
+def nfr_rows(text: str) -> tuple[list[str] | None, dict[str, list[tuple[dict[str, str], int]]]]:
+    """性能の要求の表の (見出しの列, {No: [(行, セルの数), …]})。表が空なら見出しは None。空の行は数えない。"""
+    table = list(csv.reader(io.StringIO(text)))
+    if not table:
+        return None, {}
+    header = [cell.strip() for cell in table[0]]
+    found: dict[str, list[tuple[dict[str, str], int]]] = {}
+    for cells in table[1:]:
+        if not any(cell.strip() for cell in cells):
+            continue
+        row = {name: (cells[i].strip() if i < len(cells) else "") for i, name in enumerate(header)}
+        found.setdefault(row.get("No", ""), []).append((row, len(cells)))
+    return header, found
+
+
+def nfr_row_problems(row: dict[str, str], width: int) -> list[str]:
+    """性能の行の形（`references/nfr.md` の「列」と「指標」）。"""
+    problems = []
+    if width != len(NFR_COLUMNS):
+        problems.append(f"列の数が見出しと違う（{width} 列）")
+    for name in ("対象", "条件", "根拠"):
+        if not one_line(row.get(name, "")):
+            problems.append(f"{name} が空か、1 行でない")
+    if row.get("指標") not in METRICS:
+        problems.append(f"指標が {'・'.join(METRICS)} のどれでもない: {row.get('指標')!r}")
+    limit = row.get("上限", "")
+    if not LIMIT.fullmatch(limit) or float(limit) <= 0:
+        problems.append(f"上限が正の数の形でない（整数部は先頭に 0 を付けない 9 桁まで・小数部は 6 桁まで）: {limit!r}")
+    if row.get("単位") != NFR_UNIT:
+        problems.append(f"単位が {NFR_UNIT} でない: {row.get('単位')!r}")
+    return problems
+
+
+def check_nfr(where: str, refs, whole: Path) -> list[str]:
+    """機能の `nfr`（#852。`references/spec-ir.md` の「性能の要求」）。**指した行だけ**を見る。"""
+    if not isinstance(refs, list) or not refs:
+        return [f"{where}: 性能の要求の行の No の 1 つ以上の配列でない"]
+    problems = [f"{where}: No の形に反する（N- に 3 桁以上の数字）: {no!r}"
+                for no in refs if not isinstance(no, str) or not NFR_ID.fullmatch(no)]
+    if len(set(map(str, refs))) != len(refs):
+        problems.append(f"{where}: 重複している")
+    if problems:
+        return problems
+    path = whole / NFR_PATH
+    # 綴りどおりの名前で在ること——大文字小文字を区別しないファイルシステムでは `NFR.csv` も開けるが、生成は重ねた結果を綴りどおりに引く
+    if not path.is_file() or path.name not in {child.name for child in path.parent.iterdir()}:
+        return [f"{where}: 性能の要求の表 {merged(NFR_PATH)} が無い"]
+    try:
+        header, found = nfr_rows(path.read_bytes().decode("utf-8-sig"))
+    except UnicodeDecodeError:
+        return [f"{where}: 性能の要求の表 {merged(NFR_PATH)} を UTF-8 として読めない"]
+    if header != list(NFR_COLUMNS):
+        return [f"{where}: 性能の要求の表 {merged(NFR_PATH)} の見出しの行が {','.join(NFR_COLUMNS)} でない"]
+    for no in refs:
+        rows = found.get(no, [])
+        if len(rows) != 1:
+            problems.append(f"{where}: 性能の要求の表 {merged(NFR_PATH)} に {no} の行が"
+                            + ("無い" if not rows else f" {len(rows)} 行ある"))
+            continue
+        problems += [f"{where}: {no}: {problem}" for problem in nfr_row_problems(*rows[0])]
+    return problems
+
+
 def check_called_by(features: list) -> list[str]:
     """呼ばれる機能の `called_by`（#609。`references/spec-ir.md` の「呼ばれる機能」）。
 
@@ -701,9 +786,11 @@ def parse_answered(text: str) -> dict[str, dict[str, str]]:
 class Loaded:
     """重ね合わせた全体から読んだもの。"""
 
-    def __init__(self, ir: dict, raw: bytes, answered: dict, number: int, docs: Path, scope: bytes | None = None) -> None:
+    def __init__(self, ir: dict, raw: bytes, answered: dict, number: int, docs: Path, scope: bytes | None = None,
+                 nfr: bytes | None = None) -> None:
         self.ir = ir
         self.scope = scope  # 範囲の文書（`spec/scope.md`）のバイト。無ければ None
+        self.nfr = nfr  # 性能の要求の表（`shared/nfr.csv`）のバイト。無ければ None
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
         self.answered = answered  # Q&A の行（No → 行）
         self.number = number  # 重ねた最後の版の番号
@@ -743,7 +830,7 @@ def load(repo: Path, upto: int | None = None) -> tuple[int, list[str], Loaded | 
     if code:
         return code, lines, None
     number = upto if upto is not None else len(found)
-    return 0, [], Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH))
+    return 0, [], Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
 
 
 def read_whole(rendered: dict[str, bytes], gate: bool) -> tuple[int, list[str], dict | None, dict]:
@@ -919,6 +1006,20 @@ def output_types(op: dict) -> dict:
     return types
 
 
+# 生成するテスト（Red テストと性能テスト）が実装を探す関数と、無いときの失敗（`MISSING` で始まる）——2 つのテストで同じ
+IMPLEMENTATION = (
+    "def implementation():",
+    "    try:",
+    "        module = importlib.import_module(IMPL_MODULE)",
+    "    except ModuleNotFoundError as exc:",
+    "        if exc.name is not None and (exc.name == IMPL_MODULE or IMPL_MODULE.startswith(exc.name + \".\")):",
+    "            return None",
+    "        raise",
+    "    return getattr(module, OPERATION, None)",
+)
+MISSING_FAIL = "            self.fail(f\"未実装: {IMPL_MODULE}.{OPERATION} が無い\")"
+
+
 def red_test(feature: dict, impl_module: str) -> str:
     op = feature["operation"]
     # null を許す出力の項目。無い機能の Red テストは、`nullable` を足す前と 1 バイトも変えない（既存の `scaffold/` を古くしない）
@@ -952,21 +1053,14 @@ def red_test(feature: dict, impl_module: str) -> str:
         "    return False",
         "",
         "",
-        "def implementation():",
-        "    try:",
-        "        module = importlib.import_module(IMPL_MODULE)",
-        "    except ModuleNotFoundError as exc:",
-        "        if exc.name is not None and (exc.name == IMPL_MODULE or IMPL_MODULE.startswith(exc.name + \".\")):",
-        "            return None",
-        "        raise",
-        "    return getattr(module, OPERATION, None)",
+        *IMPLEMENTATION,
         "",
         "",
         f"class {test_class(feature)}(unittest.TestCase):",
         "    def call(self, given):",
         "        function = implementation()",
         "        if function is None:",
-        "            self.fail(f\"未実装: {IMPL_MODULE}.{OPERATION} が無い\")",
+        MISSING_FAIL,
         "        return function(**given)",
         "",
         "    def check(self, given, expected):",
@@ -985,6 +1079,78 @@ def red_test(feature: dict, impl_module: str) -> str:
             f"    # {case['id']}: {case['title']}" + (f"（{refs}）" if refs else ""),
             f"    def {test_method(case)}(self):",
             f"        self.check({literal(case['input'])}, {literal(expected)})",
+        ]
+    lines += ["", "", "if __name__ == \"__main__\":", "    unittest.main()"]
+    return "\n".join(lines) + "\n"
+
+
+def perf_file(feature: dict) -> str:
+    return f"perf_{feature['id'].lower().replace('-', '_')}.py"
+
+
+def performance(loaded: "Loaded", feature: dict) -> list[dict[str, str]]:
+    """機能の `nfr` が指す性能の行（指した順）。検査（`check_nfr`）を通った後なので、行は 1 つずつ在る。"""
+    if not feature.get(NFR):
+        return []
+    _, found = nfr_rows(loaded.nfr.decode("utf-8-sig"))
+    return [found[no][0][0] for no in feature[NFR]]
+
+
+def perf_test(feature: dict, rows: list[dict[str, str]], impl_module: str) -> str:
+    """性能テスト（`references/nfr.md` の「Issue と性能テストに写す」）。**負荷は再現しない**——1 回ずつ呼んで時間を測る。"""
+    op = feature["operation"]
+    inputs = [case["input"] for case in sorted(feature["cases"], key=case_order)]
+    lines = [
+        f"# {GENERATED}",
+        f"# {feature['id']}: {feature['title']} の性能テスト（{merged(NFR_PATH)} の " + "・".join(feature[NFR]) + "）",
+        f"# 実装 `{impl_module}` の `{op['id']}(**input)` を、ケースの入力で 1 回ずつ {PERF_CALLS} 回呼び、1 回の時間（{NFR_UNIT}）から指標を出して上限と比べる。",
+        "# 条件の負荷（同時の呼び出し）は再現しない——緑でも、負荷の下で上限を守る証明にはならない。受入基準（Red テスト）ではない。",
+        "from __future__ import annotations",
+        "",
+        "import importlib",
+        "import math",
+        "import time",
+        "import unittest",
+        "",
+        f"IMPL_MODULE = {impl_module!r}",
+        f"OPERATION = {op['id']!r}",
+        "INPUTS = [" + ", ".join(literal(given) for given in inputs) + "]",
+        f"CALLS = {PERF_CALLS}",
+        "",
+        "",
+        *IMPLEMENTATION,
+        "",
+        "",
+        "def indicator(metric, took):",
+        "    # 1 回の時間の並びから指標を出す。p50・p95・p99 は小さいほうから数えた順位（nearest-rank）",
+        "    ordered = sorted(took)",
+        "    if metric == \"最大\":",
+        "        return ordered[-1]",
+        "    rank = math.ceil(int(metric[1:]) * len(ordered) / 100)",
+        "    return ordered[rank - 1]",
+        "",
+        "",
+        f"class {'Perf' + feature['id'].replace('-', '')}(unittest.TestCase):",
+        "    def took(self):",
+        "        function = implementation()",
+        "        if function is None:",
+        MISSING_FAIL,
+        "        took = []",
+        "        for index in range(CALLS):",
+        "            given = INPUTS[index % len(INPUTS)]",
+        "            start = time.perf_counter()",
+        "            function(**given)",
+        "            took.append((time.perf_counter() - start) * 1000)",
+        "        return took",
+    ]
+    for row in rows:
+        no, metric, limit = row["No"], row["指標"], row["上限"]
+        lines += [
+            "",
+            f"    # {no}: {row['対象']}（{row['条件']}。根拠: {row['根拠']}）",
+            f"    def test_{no.lower().replace('-', '_')}(self):",
+            f"        value = indicator({metric!r}, self.took())",
+            f"        self.assertLessEqual(value, {limit}, f\"{metric} が {{value:.3f}} {NFR_UNIT} で、上限 {limit} {NFR_UNIT} を超えた（{no}）\")",
         ]
     lines += ["", "", "if __name__ == \"__main__\":", "    unittest.main()"]
     return "\n".join(lines) + "\n"
@@ -1365,7 +1531,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         lines += qa_rows(refs, before.answered, f"{previous} の時点の {tables} ")
     else:
         lines += qa_rows(refs, loaded.answered, f"生成した時点の {tables} ")
-    lines += ["", SECTIONS[4], ""] + not_built(change, loaded)
+    lines += ["", SECTIONS[4], ""] + not_built(change, loaded, contract)
     lines += [
         "",
         SECTIONS[5],
@@ -1384,7 +1550,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     return "\n".join(lines) + "\n"
 
 
-def not_built(change: Change, loaded: Loaded) -> list[str]:
+def not_built(change: Change, loaded: Loaded, contract: dict[str, str]) -> list[str]:
     """`## 作らないもの` の節の中身（#851。`references/handoff-issue.md` の「作らないもの」）。"""
     if change.kind == REMOVE:
         return ["撤去の Issue なので、作るものは無い——消した機能の代わりを作らない。"]
@@ -1412,16 +1578,53 @@ def not_built(change: Change, loaded: Loaded) -> list[str]:
                 lines += list(header)
             lines.append(text)
         lines += ["", f"（範囲の文書 `{merged(SCOPE_PATH)}` の「{proposal.OUT_OF_SCOPE}」の節から、原文のまま写した。）"]
-    lines += ["", NOT_BUILT[2], "", NO_PERFORMANCE_BUDGET]
+    lines += ["", NOT_BUILT[2], ""] + budget(change.feature, loaded, contract)
     return lines
 
 
-def render_contract(ir: dict) -> dict[str, str]:
-    """{`scaffold/` からの相対パス: 中身} を返す。契約は全体から作る（変わっていない機能も）。"""
+def budget(feature: dict, loaded: Loaded, contract: dict[str, str]) -> list[str]:
+    """`### 性能予算` の中身（#852。`references/nfr.md` の「Issue と性能テストに写す」）。`nfr` が無ければ既定の原則。"""
+    rows = performance(loaded, feature)
+    if not rows:
+        return [NO_PERFORMANCE_BUDGET]
+    pfile = f"{OUT_DIR}/{PERF_DIR}/{perf_file(feature)}"
+    lines = [f"この機能の性能の要求（`{merged(NFR_PATH)}` の行から写した）:", "",
+             "| No | 対象 | 指標 | 上限 | 条件 | 根拠 |", "| --- | --- | --- | --- | --- | --- |"]
+    for row in rows:
+        lines.append(f"| {row['No']} | {cell(row['対象'])} | {row['指標']} | {row['上限']} {NFR_UNIT} | "
+                     f"{cell(row['条件'])} | {cell(row['根拠'])} |")
+    lines += [
+        "",
+        "**予算の中なら、速さのための最適化をしない。** 最適化は、性能テストか計測で予算を超えたと示せたときだけ。",
+        "",
+        f"- 性能テスト: `{pfile}`（sha256: `{sha256(contract[f'{PERF_DIR}/{perf_file(feature)}'])}`）"
+        f"——実装をケースの入力で 1 回ずつ {PERF_CALLS} 回呼び、1 回の時間から指標を出して上限と比べる",
+        "- 回し方（正本リポジトリの根で）:",
+        "",
+        "```bash",
+        f"python3 -m unittest discover -s {OUT_DIR}/{PERF_DIR} -p {perf_file(feature)}",
+        "```",
+        "",
+        "- **性能テストは `条件` の負荷（同時の呼び出し）を再現しない**——緑でも、負荷の下で上限を守る証明にはならない。"
+        "負荷の下で守るかは、負荷試験・本番の計測で確かめる。",
+        "- **性能テストは受入基準（上の Red テストの表）ではない**——最適化してよいかを決める計測の道具である。",
+    ]
+    return lines
+
+
+def render_contract(loaded: Loaded) -> dict[str, str]:
+    """{`scaffold/` からの相対パス: 中身} を返す。契約は全体から作る（変わっていない機能も）。
+
+    性能テストは `nfr` を持つ機能だけ（#852）——持たない中間表現の契約は、`nfr` を足す前と 1 バイトも変わらない。
+    """
+    ir = loaded.ir
     impl_module = ir.get("impl_module", DEFAULT_IMPL_MODULE)
     contract = {"openapi.json": openapi(ir), "types.py": types_py(ir)}
     for feature in features_of(ir):
         contract[f"tests/{test_file(feature)}"] = red_test(feature, impl_module)
+        rows = performance(loaded, feature)
+        if rows:
+            contract[f"{PERF_DIR}/{perf_file(feature)}"] = perf_test(feature, rows, impl_module)
     return contract
 
 
@@ -1584,17 +1787,19 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before,
 # ---------------------------------------------------------------- 書く・比べる
 
 def generated_tests(out: Path) -> set[str]:
-    """`scaffold/tests/` にある、生成の印を持つ Red テスト（`tests/<名前>`）。"""
+    """`scaffold/tests/` の Red テストと `scaffold/perf/` の性能テストのうち、生成の印を持つもの（`tests/<名前>`・`perf/<名前>`）。"""
     found = set()
-    tests = out / "tests"
-    if tests.is_dir():
-        for path in tests.glob("test_*.py"):
+    for folder, pattern in (("tests", "test_*.py"), (PERF_DIR, "perf_*.py")):
+        tests = out / folder
+        if not tests.is_dir():
+            continue
+        for path in tests.glob(pattern):
             try:
                 head = path.read_text(encoding="utf-8").split("\n", 1)[0]
             except (OSError, UnicodeDecodeError):
                 continue
             if GENERATED in head:
-                found.add(f"tests/{path.name}")
+                found.add(f"{folder}/{path.name}")
     return found
 
 
@@ -1611,7 +1816,8 @@ def stale(out: Path, contract: dict[str, str]) -> list[str]:
         if current != text.encode("utf-8"):
             problems.append(f"{OUT_DIR}/{rel}: 今の入力から作るものと違う（古い・手で直した）")
     for rel in sorted(generated_tests(out) - contract.keys()):
-        problems.append(f"{OUT_DIR}/{rel}: 中間表現に無い機能の Red テストが残っている")
+        problems.append(f"{OUT_DIR}/{rel}: " + ("性能の要求（nfr）を指す機能に無い性能テストが残っている" if rel.startswith(f"{PERF_DIR}/")
+                                               else "中間表現に無い機能の Red テストが残っている"))
     return problems
 
 
@@ -1706,7 +1912,7 @@ def run(repo: Path, args, writing: bool) -> int:
     if code:
         return fail(repo, writing, code, lines)
 
-    contract = render_contract(loaded.ir)
+    contract = render_contract(loaded)
     features = len(loaded.ir["features"])
     cases = sum(len(f["cases"]) for f in loaded.ir["features"])
     if args.check:
