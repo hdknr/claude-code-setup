@@ -5,8 +5,8 @@ description: "spec-loop を利用者の不在のあいだに回す入口。1 回
 
 # autopilot スキル
 
-<!-- skill-version: 0.58.0 -->
-> **このスキルの版: 0.58.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.59.0 -->
+> **このスキルの版: 0.59.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
