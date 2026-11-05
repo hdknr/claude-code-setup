@@ -105,6 +105,9 @@ main へのマージ → GitHub Pages の再ビルドとプラグインの配布
   起点 `768fb9a7`・base（`origin/main` の merge-base）`768fb9a7c9d4d7b79741737952a8fdc6dfbafbd4`
 - 実装のコミット `0d080beb`。`check-all.py`（run-serial 越し）65/65 緑
 - 1 パス目の関門に渡した時点の HEAD（0 行判定の起点）: `0d080beb`
+- 1 パス目: Verifier 反証 1 件・`/code-review` 指摘 10 件（重なり 1）。直す 2 件・残課題 9 件（下の表）。指摘対応 `a2d3009f`（0 行ではない——2 パス目を回す）
+- 2 パス目: Verifier と `/code-review` に当てている（差分の base は同じ `768fb9a7`。2 パス目の指摘対応の起点 = `a2d3009f` 以降の HEAD）
+- 割り目（2 パス目の前）: 不在の周・cruise の子なので訊かずに続ける
 - 割り目: 不在の周・cruise の子なので訊かずに続ける（手順 4 の割り目: このまま続ける）
 - 交絡: 実験なし（テストの試料のみ）
 
