@@ -69,7 +69,7 @@ r"""spec-loop の autopilot（#789）の台帳を、ファイルに持って読�
 | コード | 意味 |
 | --- | --- |
 | 0 | 通った。**`status` では `running`（ループは起動してよい）** |
-| 2 | 引数が違う（版の形・`鍵=値` の形・`init` の `--cycle` の形） |
+| 2 | 引数が違う（版の形・`鍵=値` の形・`init` の `--cycle` の形。桁が `int()` の上限を超える番号を含む） |
 | 3 | 操作を拒んだ——**台帳は 1 バイトも変えていない**（在る台帳への `init`・決まった一覧に無い鍵や値・`cycle`・`commit`・`triage`・`held` の形・`status` の整合を崩す書き込み・`lines` の出所や項目の誤り）。**`status` では `stopped`（ループは起動しない）** |
 | 4 | 判定できなかった（git の外・メインの作業ツリーを決められない・台帳が無い・JSON が読めない・形が違う・**中身が崩れている**・台帳を書けなかった）。**`status` でも「動いている」「止まった」「済んだ」とは答えていない** |
 | 5 | `status` だけ: `done`（ループは起動しない） |
@@ -87,7 +87,7 @@ r"""spec-loop の autopilot（#789）の台帳を、ファイルに持って読�
 守る:
 
 - **台帳の場所は cwd に依らない**——メインの作業ツリーでも、worktree の中やそのサブディレクトリでも、同じ絶対パスを指す。
-- **版の名前は正の整数だけ**（先頭の 0・符号・区切り・空白を 2 で拒む）——`.claude/plans/` の外に書かず、`3` と `03` を別の台帳にしない。
+- **版の名前は正の整数だけ**（先頭の 0・符号・区切り・空白と、桁が `int()` の上限を超える値を 2 で拒む）——`.claude/plans/` の外に書かず、`3` と `03` を別の台帳にしない。
 - **在る台帳を `init` で上書きしない。**
 - **決まった一覧に無い鍵を `set` で拒む**——`version`・`updated` も書けない。
 - **決まった一覧に無い `phase`・`stage`・`status` の値を拒む**——綴りを誤った値を書くと、読み手の判定から黙って外れる。
@@ -101,14 +101,14 @@ r"""spec-loop の autopilot（#789）の台帳を、ファイルに持って読�
 - **`lines` は置き換えで、渡さなかった項目は消える**——前の確認の値が、確かめ直した後に黙って残らない。
 - **拒んだ操作では台帳を変えない**——全体を検査してから一時ファイルに書き、`os.replace` で置き換える。
 - **`status`・`progress`・`show` は台帳を書き換えない**——入口が「`stopped` なら何もせず台帳も書き換えずに終える」（#790）を、読むだけで壊さない。
-- **読めない台帳（無い・壊れた JSON）を `running` と読まない**——4 で止まる。
+- **読めない台帳（無い・壊れた JSON・桁が `int()` の上限を超える整数・深すぎる入れ子）を `running` と読まない**——4 で止まり、例外（1）で終えない。
 - **形の違う台帳（知らない欄・欄が足りない・型の違い・ファイル名と違う `version`・`format` が int の 1 でない）は 4**——真偽値の `cycle` も。
 - **ファイルの上で中身の崩れた台帳（一覧に無い値・`status` の整合を崩す組み合わせ）は 4 で、「拒んだ」（3）とは言わない**——`status` が 3 と答えると
   崩れた台帳を「止まった」と読む。
 - **`status` は `status` の欄だけで終了コードを決める**——`running` は 0、`stopped` は 3、`done` は 5。`phase` を見ない（#790 は `phase` を見て止まった台帳を見落とした）。
 - **`progress` は `PROGRESS_KEYS` だけを出す**——`updated`・`status`・`reason`・`next`・`triage`・`held`・`lines` の書き換えでは変わらない。
 - **`progress` は `phase`・`cycle`・`stage`・`commit` のどれかが変われば変わる**——段だけ・コミットだけ進んだ起動も前進と読める。
-- **書けなかったときに、表に無い終了コードで終えない**——書けない・`.claude/plans` がファイルなら 4。
+- **書けなかったときに、表に無い終了コードで終えない**——書けない・`.claude/plans` がファイル・UTF-8 で書けない文字（対になっていないサロゲート）なら 4。
 
 守らない:
 
@@ -217,7 +217,10 @@ def exists(path):
 def parse_version(text):
     if not VERSION_RE.fullmatch(text):
         raise Usage(f"版の番号が違う: {text!r}（正の整数。先頭に 0 を付けない）")
-    return int(text)
+    try:
+        return int(text)
+    except ValueError as exc:  # 桁が `int()` の上限（既定 4300）を超える
+        raise Usage(f"版の番号の桁が多すぎる（{len(text)} 桁）") from exc
 
 
 def ledger_path(version, cwd=None):
@@ -275,7 +278,8 @@ def load(path, version):
         raise Unknown(f"台帳が無い: {path}")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    # `ValueError` は壊れた JSON（`JSONDecodeError`）と `int()` の上限を超える桁の整数、`RecursionError` は深すぎる入れ子（Python 3.12）
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise Unknown(f"台帳を読めない: {path}: {exc}") from exc
     # `format` は int の 1 だけ——`true == 1`・`1.0 == 1` が通るので型も見る
     if (not isinstance(data, dict) or not FIELDS <= set(data) <= FIELDS | {"lines"}
@@ -312,7 +316,7 @@ def save(path, data):
             json.dump(data, f, ensure_ascii=False, indent=2)
             f.write("\n")
         os.replace(tmp, path)
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:  # UnicodeError: 対になっていないサロゲート（UTF-8 で書けない引数）
         Path(tmp).unlink(missing_ok=True)
         raise Unknown(f"台帳を書けなかった（台帳は変えていない）: {path}: {exc}") from exc
     except BaseException:
@@ -345,7 +349,10 @@ def cmd_set(path, version, pairs):
         if key == "cycle":
             if not re.fullmatch(r"[1-9][0-9]*", value):
                 raise Refused(f"cycle は 1 以上の整数だけ: {value!r}")
-            data[key] = int(value)
+            try:
+                data[key] = int(value)
+            except ValueError as exc:  # 桁が `int()` の上限を超える
+                raise Refused(f"cycle の桁が多すぎる（{len(value)} 桁）") from exc
         else:
             data[key] = value
     data["updated"] = now()
@@ -435,7 +442,11 @@ def main(argv=None, cwd=None):
         if args.cmd == "init":
             if not re.fullmatch(r"[1-9][0-9]*", args.cycle):
                 raise Usage(f"--cycle は 1 以上の整数だけ: {args.cycle!r}")
-            cmd_init(path, version, args.phase, int(args.cycle), args.stage)
+            try:
+                cycle = int(args.cycle)
+            except ValueError as exc:  # 桁が `int()` の上限を超える
+                raise Usage(f"--cycle の桁が多すぎる（{len(args.cycle)} 桁）") from exc
+            cmd_init(path, version, args.phase, cycle, args.stage)
         elif args.cmd == "set":
             cmd_set(path, version, args.pairs)
         elif args.cmd == "lines":

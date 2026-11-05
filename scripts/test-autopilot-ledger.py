@@ -241,6 +241,16 @@ def scenario(mod, base: Path, tag: str) -> dict:
         ledger.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
         hand.append((rc(["status", "3"]), rc(["progress", "3"])))
     o["手で直した台帳"] = hand
+    big = "9" * 5000  # `int()` の上限（既定 4300 桁）を超える
+    for name, text in (("桁の多すぎる整数", json.dumps({**good, "cycle": 1}).replace('"cycle": 1', '"cycle": ' + big)),
+                       ("深すぎる入れ子", "[" * 100000 + "]" * 100000)):
+        ledger.write_text(text, encoding="utf-8")
+        o["読めない台帳: " + name] = (rc(["status", "3"]), rc(["progress", "3"]))
+    ledger.write_text(json.dumps(good, ensure_ascii=False), encoding="utf-8")
+    b = snapshot(ledger)
+    o["桁の多すぎる引数"] = (rc(["status", big]), rc(["init", "4", "--cycle", big]), rc(["set", "3", "cycle=" + big]), snapshot(ledger) == b)
+    o["書けない文字"] = (rc(["lines", "3", "a=\udcff", "--source", "s"]), rc(["set", "3", "phase=spec-review", "status=stopped", "reason=\udcff", "next=n"]),
+                       snapshot(ledger) == b, sorted(p.name for p in ledger.parent.iterdir()))
     ledger.write_text("{壊れた", encoding="utf-8")
     o["壊れた JSON"] = (rc(["status", "3"]), rc(["progress", "3"]), rc(["set", "3", "stage=round1"]))
     o["無い台帳"] = (rc(["status", "9"]), rc(["progress", "9"]), rc(["set", "9", "stage=round1"]), rc(["lines", "9", "--source", "s"]))
@@ -306,6 +316,11 @@ def main() -> int:
         check("固定の正しい台帳は読める（陽性対照）", o["固定の正しい台帳"] == 5)
         check("手で直した台帳（形の違い 7・崩れ 4）は status も progress も 4", o["手で直した台帳"] == [(4, 4)] * 11)
         check("壊れた JSON は 4（running と読まない）", o["壊れた JSON"] == (4, 4, 4))
+        check("桁の多すぎる整数・深すぎる入れ子の台帳は 4（例外の 1 で終えない）",
+              o["読めない台帳: 桁の多すぎる整数"] == (4, 4) and o["読めない台帳: 深すぎる入れ子"] == (4, 4))
+        check("桁の多すぎる版・--cycle は 2、set の cycle は 3 で台帳を変えない", o["桁の多すぎる引数"] == (2, 2, 3, True))
+        check("UTF-8 で書けない文字は 4 で、台帳も一時ファイルも残さない",
+              o["書けない文字"] == (4, 4, True, ["spec-autopilot-v3.json"]))
         check("無い台帳は 4", o["無い台帳"] == (4, 4, 4, 4))
         check("`.claude/plans` がファイルなら 4", o["plans がファイル"] == 4)
         check("`.claude/plans` に書けなければ 4（root で回すと書けてしまうので見られない）",
