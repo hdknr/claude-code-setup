@@ -5,8 +5,8 @@ description: "実現性・コストのループを 1 回分進める。要求・
 
 # feasibility スキル
 
-<!-- skill-version: 0.54.0 -->
-> **このスキルの版: 0.54.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.58.0 -->
+> **このスキルの版: 0.58.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -182,7 +182,12 @@ python3 <このスキルの base ディレクトリ>/../../scripts/schedule-to-g
 
 ### 6. 見積りを検証させる
 
-検証役（`spec-loop:estimate-checker`）を 1 体、別のティアで起動する。**次を毎回まるごと渡す**:
+検証役（`spec-loop:estimate-checker`）を 1 体、別のティアで起動する。
+**`claude -p`（非対話）で動いているときは、検証役を前景（同期）で呼ぶ**（#847。再実行と 2 回目の検証も同じ）——
+`claude -p` で起動されたセッションは、ターンを閉じた後の背景の体を上限の時間（環境変数 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`）しか待たず、過ぎると止める。
+背景で起こした検証役は、報告を返す前にターンが閉じ、その後も上限の時間を過ぎて走っていると、検証の途中で止められて報告が欠ける。**前景なら、検証役が報告を返すまでターンが閉じない**
+（dev-loop プラグインの cruise スキルの `SKILL.md`「4. 周を回す」の 2 と同じ理由。#633）。
+**次を毎回まるごと渡す**:
 
 - 見積り・スケジュール・規模の数え方の文書・要求・仕様・Q&A 表のパス
 - v2 以降なら、**差分の一覧**（手順 2 の `diff-versions.py` の出力）と重ね合わせた全体のパス、
