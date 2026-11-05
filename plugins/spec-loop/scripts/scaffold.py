@@ -562,27 +562,39 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     return problems + check_called_by(features)
 
 
+# 表の区切りの行（`| --- | :-: |`・先頭の `|` の無い `--- | ---`）
+TABLE_SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?")
+
+
 def scope_rows(text: str) -> list[tuple[str, tuple[str, str] | None]] | None:
     """範囲の文書の「範囲の外」の節の行と、その行が表の行なら表の見出しの 2 行（見出しと区切り）。節が無ければ None。
 
-    行は前後の空白を落とした原文で、範囲の文書での並びの順。**空の行・見出しの行・表の見出しと区切りの行は行に数えない**
-    （表は `|` で始まる行の続き。その先頭の 2 行が見出しと区切り）。
+    行は前後の空白を落とした原文で、範囲の文書での並びの順。**空の行・見出しの行・表の見出しと区切りの行は行に数えない**。
+    **表は、`|` を含む行の次の行が区切りの行（`| --- |`・`--- | ---`）であるところから始まり**、`|` を含む空でない行が続くあいだ続く
+    （先頭の `|` の無い表も表と読む。区切りの行の無い `|` の行の並びは表ではなく、ふつうの行）。
     """
     body = proposal.out_of_scope(text)
     if body is None:
         return None
+    lines = [line.strip() for line in body]
     rows: list[tuple[str, tuple[str, str] | None]] = []
-    table: list[str] = []  # 続いている表の行
-    for line in body:
-        text_line = line.strip()
-        if text_line.startswith("|"):
-            table.append(text_line)
-            if len(table) > 2:
-                rows.append((text_line, (table[0], table[1])))
+    header: tuple[str, str] | None = None  # 続いている表の見出しの 2 行
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if header is not None and line and "|" in line:
+            rows.append((line, header))
+            index += 1
             continue
-        table = []
-        if text_line and not proposal.heading_level(text_line):
-            rows.append((text_line, None))
+        header = None
+        following = lines[index + 1] if index + 1 < len(lines) else ""
+        if "|" in line and "-" in following and TABLE_SEPARATOR.fullmatch(following):
+            header = (line, following)
+            index += 2
+            continue
+        if line and not proposal.heading_level(line):
+            rows.append((line, None))
+        index += 1
     return rows
 
 

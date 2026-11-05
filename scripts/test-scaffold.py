@@ -361,6 +361,14 @@ def not_built_section(body: str) -> str:
     return body.split("\n## 作らないもの\n\n", 1)[1].split("\n\n## 仕様の穴を見つけたら\n", 1)[0]
 
 
+PIPELESS_SCOPE_MD = "# 範囲\n\n## 範囲の外\n\n場面 | 原則\n--- | ---\n外貨 | 円だけ\n"
+
+
+def pipeless_copied(repo: Path) -> str | None:
+    section = not_built_section(bodies(repo)["F-001"])
+    return None if "### 範囲の外\n\n場面 | 原則\n--- | ---\n外貨 | 円だけ\n\n" + COPIED in section else f"先頭の | の無い表の行に見出しが付かない: {section}"
+
+
 def not_built_added_in_v2(repo: Path) -> str | None:
     found = bodies(repo)
     if list(found) != ["F-001"]:
@@ -1276,6 +1284,13 @@ CASES: list[Case] = [
          ir=out_of_scope(["| 付録の行 | 原則 | 根拠 |"]), spec=SCOPE_SPEC),
     Case("作らないもの: 表の見出しの行を挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '| 場面 | 原則 | 根拠 |'",
          ir=out_of_scope(["| 場面 | 原則 | 根拠 |"]), spec=SCOPE_SPEC),
+    Case("作らないもの: 表の区切りの行を挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '| --- | --- | --- |'",
+         ir=out_of_scope(["| --- | --- | --- |"]), spec=SCOPE_SPEC),
+    # 先頭の | の無い表も表と読む——見出しの 2 行は挙げられず、行には見出しの 2 行が付く（#851 の /code-review 1 パス目）
+    Case("作らないもの: 先頭の | の無い表", 0, "作った", ir=out_of_scope(["外貨 | 円だけ"]),
+         spec={"order.md": SPEC, "scope.md": PIPELESS_SCOPE_MD}, post=pipeless_copied),
+    Case("作らないもの: 先頭の | の無い表の見出しを挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '場面 | 原則'",
+         ir=out_of_scope(["場面 | 原則"]), spec={"order.md": SPEC, "scope.md": PIPELESS_SCOPE_MD}),
     Case("作らないもの: 見出しの行を挙げる", 1, "この行が原文のまま無い（表の見出し・区切りの行は挙げない）: '### 補足'",
          ir=out_of_scope(["### 補足"]), spec=SCOPE_SPEC),
     Case("作らないもの: 範囲の文書が無い", 1, "F-001.out_of_scope: 範囲の文書 build/merged/spec/scope.md が無い",
@@ -1789,8 +1804,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("out_of_scope の検査を呼ばない", "        if OUT_OF_SCOPE in feature:\n            problems += check_out_of_scope",
      "        if False:\n            problems += check_out_of_scope", "作らないもの: 節に無い行"),
     ("原文が在ることを見ない", "for row in picked if row not in present]", "for row in picked if False]", "作らないもの: 節に無い行"),
-    ("表の見出しの行を行に数える", "            if len(table) > 2:", "            if len(table) > 0:", "作らないもの: 表の見出しの行を挙げる"),
-    ("見出しの行を行に数える", "        if text_line and not proposal.heading_level(text_line):", "        if text_line:",
+    ("区切りの行を見ず、表の見出しを行に数える",
+     '        if "|" in line and "-" in following and TABLE_SEPARATOR.fullmatch(following):', "        if False:",
+     "作らないもの: 表の見出しの行を挙げる"),
+    ("区切りの行を表の行に数える", "            header = (line, following)\n            index += 2",
+     "            header = (line, following)\n            index += 1", "作らないもの: 表の区切りの行を挙げる"),
+    ("先頭の | の無い区切りを区切りと読まない", 'TABLE_SEPARATOR = re.compile(r"\\|?\\s*:?-+', 'TABLE_SEPARATOR = re.compile(r"\\|\\s*:?-+',
+     "作らないもの: 先頭の | の無い表"),
+    ("見出しの行を行に数える", "        if line and not proposal.heading_level(line):", "        if line:",
      "作らないもの: 見出しの行を挙げる"),
     ("範囲の文書が無いと言わない", '    if not path.is_file():\n        return [f"{where}: 範囲の文書',
      '    if False:\n        return [f"{where}: 範囲の文書', "作らないもの: 範囲の文書が無い"),

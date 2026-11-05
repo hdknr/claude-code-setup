@@ -20,8 +20,11 @@
 - `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 節の表の写しに `## 作らないもの` を足す
 - `scripts/test-scaffold.py` — 節の写しと順・範囲の外の行と次の版の候補・行の無い機能・`out_of_scope` の検査（変異テストを含む）
 - `docs/plugins/spec-loop.md` — 「dev-loop への引き渡し」に節の 1 行
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
-- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plans/issue-851.md` — この計画
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す。`spec-gap.md` の行数が変わる。手で書かない）
 
@@ -86,10 +89,11 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/spec-loop.m
 - 周の在り処: ブランチ `issue/851-out-of-scope-section`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-851`・
   起点 `f447c55b`・base `origin/main`（`refs/remotes/origin/HEAD`）→ `f447c55b581218144cbeef1ff62954ec533c7d51`
 - 割り目（手順 4 の完了時）: 割らない（cruise の周）
-- 1 パス目: 未着手
+- 1 パス目: 起点（先に当てた関門に渡した時点の HEAD）`18a7e220cf2d52545757e80189c656a098c6f3d5`。Verifier（`dev-loop:dev-loop-verifier`／sonnet）反証 0 件・弱い指摘 3 件（`test-scaffold.py` は順番待ちで 12 分超えて未完——未確認）／`/code-review`（high）指摘 10 件（下の採否の表）
+- 1 パス目の指摘対応: check-all（順番待ち越し）で `test-scaffold.py` だけ赤（変異の文字列が古い）→ 直して順番待ち越しに `test-scaffold.py` 緑（試料 252 件・変異 200 件）。ほかの 59 本は緑
+- 割り目（2 パス目の前）: 割らない（cruise の周）
 - 2 パス目: 未着手
 - 狭いパス: 未着手
-- 割り目（2 パス目の前）: 未着手
 - 交絡を潰した手順: 実験なし
 - check-all（1 回目、順番待ち越し）: 60 本中 3 本赤——`check-plan-counts.py`（件数の行が無い）・`skill-metrics.py --check`（`spec-gap.md` の行数）・`test-scaffold.py`（変異「作らないものの節を書かない」で試料の post が IndexError——節が無いときの読み方を直した）。直したあと 2 本は直に、`test-scaffold.py` は順番待ち越しに回して緑（試料 249 件・変異 198 件）
 
@@ -102,6 +106,24 @@ main へのマージで GitHub Pages の再ビルド（`docs/plugins/spec-loop.m
 | 撤去の本文に前の版の範囲の外の行を写す | 採らなかった | 撤去の周は作るものが無い。1 行で済ませる |
 | 範囲の外の節の読み方を scaffold.py に写す | 採らなかった | `build-proposal.py` の `out_of_scope` を読み込む（写しを 2 つにしない） |
 | `out_of_scope` を足す・変えるだけで機能が `変更` になる | 受け入れる | 機能のオブジェクトが変わるので指紋も変わる（`called_by` と同じ扱い。ケースは全部 `回帰`）。`spec-ir.md` に書く |
+
+### 採否の表（1 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1: 計画の `触る:` の 1 行に複数のパターン——`check-plan-scope.py` が 1 で落ちる | 示せる（`check-plan-scope.py f447c55b` が 1） | 無し（計画の記録。CI は赤） | 直した（計画。関門の対象外） |
+| CR2: `spec-gap.md` が作らないものを `触らない:` に写せと言うが、`触らない:` は「Issue に無い機能」の欄で `found-lines.md` の振り分けに載る | 示せる（`found-lines.md` 54 行・`SKILL.md` 709 行） | H | 直す（`触らない:` に写さず、別の節として写すと書いた） |
+| CR3: 節の見つけ方が「見出しに『範囲の外』を含む最初の節」で、題・別の見出し・コードブロックで別の節を拾う | 示せる（試料を作れば） | 無し（文書の決まり「見出しに『範囲の外』を含む節」どおりの振る舞い。`build-proposal.py` と同じ読み方） | 残課題 |
+| CR4: 区切りの行を見ずに先頭の 2 行を見出しにする。先頭の `|` の無い表の見出しと区切りを行として挙げられる | 示せる（code-review の probe） | D（表の見出し・区切りの行を拒む） | 直す（区切りの行で表を見分ける。試料 3 件・変異 3 件） |
+| CR5: 変異「表の見出しの行を行に数える」は IndexError で死ぬ（名の振る舞いを再現しない）。「範囲の文書が無い／節が無いと言わない」も 2 で死ぬ | 示せる | 無し（試料の質） | 見出しの変異は CR4 で作り直した（振る舞いで死ぬ）。後の 2 つは残課題——検査を外すと描く側が落ちるのが検査で防ぐもの（1 でなく 2）そのもので、黙って通す形は作れない |
+| CR6: 「次の版の候補にしない」も部分一致で候補に入る | 示せる（試料を作れば） | 無し（B の定義どおり） | 残課題 |
+| CR7: `build-proposal.py` を丸ごと読み込む結合 | 示せない | 無し | 残課題 |
+| CR8: `NEXT_VERSION` の写しを `spec-scope.md` と突き合わせるテストが無い | 示せない（いまはずれていない） | 無し | 残課題 |
+| CR9: `spec-gap.md` の「6 つの節」が v1・v2 の本文に当てはまらない | 示せる（文面） | H | 直す（節の数の行と形の表に書いた） |
+| CR10: 範囲の文書を機能・変化ごとに読み直す | 示せない（失敗ではない） | 無し | 残課題 |
+| V 弱 1: 別の節を拾ったときの文言が原因を言わない | 示せない（1 で止まる） | 無し | 残課題 |
+| V 弱 2: 同じ文字列の行が 2 つの表に在ると先の見出しだけが付く | 示せる（試料を作れば） | 無し | 残課題 |
+| V 弱 3: 入れ子の箇条書きの字下げが落ちる | 示せる | 無し（「前後の空白だけ落とす」と書いてある） | 残課題 |
 
 ## 経験の還元（手順 8）
 
