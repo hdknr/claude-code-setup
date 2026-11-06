@@ -135,7 +135,7 @@ Issue が「この周で決める」とした 2 つと、それに伴う判断�
 ## 関門の進捗（再開点）
 
 - 割り目（手順 4）: **割らない（cruise の周）**
-- 1 パス目: 未着手
+- 1 パス目: 関門に渡す（起点 = 1 パス目の関門に渡した時点の HEAD `89f68cb`。`check-all.py` 67/67 緑（run-serial 越し）を確かめてから）。Verifier（`dev-loop:dev-loop-verifier`・sonnet）と `/code-review`（high）を並べて当てる。結果は未着
 
 ## 既知の限界・決着済みの論点
 
