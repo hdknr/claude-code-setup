@@ -115,6 +115,9 @@ jobs:
       - name: cruise の外側のループのテスト（#791）
         run: python3 scripts/test-outer-loop.py
 
+      - name: cruise の周の worktree とブランチの片付けのテスト（#823）
+        run: python3 scripts/test-cleanup-cycle.py
+
       - name: コードブロックとコメントの読み方の写し 3 つの突き合わせ（#758・#759・#760）
         run: python3 scripts/test-fence-copies.py
 
