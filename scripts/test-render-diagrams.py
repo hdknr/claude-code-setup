@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`render-diagrams.py`（正本リポジトリの drawio → SVG と、その鮮度の確かめ）の回帰テスト。
+"""`render-diagrams.py`（正本リポジトリの drawio・BPMN → SVG と、その鮮度の確かめ）の回帰テスト。
 
     python3 scripts/test-render-diagrams.py
 
@@ -18,6 +18,12 @@
    `.svg`（ガントチャートなど）は見ない。`docs/` が無ければ 2、`.drawio` が 0 件なら 0。**CLI を起動せず、何も書かない。**
 5. **印はソースのバイトだけで決まる**（A5）——書き出しのたびにバイトの変わる偽の CLI で 2 回書き出しても `--check` は 0。
 6. **書くのは隣の `.svg` だけ**（A10）——実行の前後でツリー（`docs/` の外を含む）を比べ、一時ファイルが残らないことを見る。
+8. **BPMN**（#901）——`.bpmn` を drawio と混ぜてパスの順に、隣の `.svg` に同じ印で書き出す（描画口の引数は `<ソース> <一時ファイル>`）。
+   描画口は `BPMN_RENDER` か既定の `node render-bpmn.mjs --deps <依存> --chrome <Chrome>`（`PATH` の偽の `node` で引数の形を見る）。
+   Node・依存（`SPEC_LOOP_BPMN_DEPS`）・Chrome（`CHROME_PATH`・`SPEC_LOOP_CHROME_DEFAULT`）・描画口が無ければ、無いものを全部名指しして
+   2——**drawio の CLI が在っても、どちらの種類も 1 件も書かない**。`.bpmn` だけなら draw.io の CLI が無くても書く。失敗・時間切れ
+   （`BPMN_TIMEOUT`）は drawio と同じ扱い。`--check` は `.bpmn` の書き出しも見る。同じ `X.svg` になるソース（`X.drawio` と `X.bpmn`）は、
+   どちらのモードでも何も書かずに 2。大文字の拡張子の `.SVG` もソースの無い書き出しとして見る（#904 の残課題 P2-5）。
 7. **起動時に無視させられていたシグナルは無視したまま**（#820）——`nohup` と同じ形（起動の前に SIGHUP・SIGTERM を SIG_IGN にし、
    exec に引き継がせる）で起こしてグループに送っても、止まらずに書き出して 0 で終わる。無視させていなければ、今のとおり止まって
    後始末する（SIGHUP の試料）。
@@ -28,7 +34,9 @@
 **このテストは実環境を触らない。** 本体を一時ディレクトリに写して、一時ディレクトリの偽の正本リポジトリだけを対象にする
 （このリポジトリの `docs/` を対象にしないことはアサートで担保する）。**本物の draw.io にも届かない**——`DRAWIO` は偽の CLI を指し、
 `DRAWIO` を外す試料でも既定のパスを `SPEC_LOOP_DRAWIO_DEFAULT` で偽か無いパスに差し替え、`PATH` は一時ディレクトリだけにする
-（どれもアサートで担保する）。
+（どれもアサートで担保する）。**本物の Chrome・Node にも届かない**——`BPMN_RENDER` は偽の描画口を指し、外す試料でも
+Chrome の既定のパスを `SPEC_LOOP_CHROME_DEFAULT` で偽か無いパスに差し替え、`node` は `PATH`（一時ディレクトリだけ）の偽物しか無い
+（どれもアサートで担保する）。**同梱の `render-bpmn.mjs` そのものは走らせない**——既定の描画口の試料が起こすのは偽の `node` である。
 
 標準ライブラリのみ。
 """
@@ -53,19 +61,27 @@ REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 TARGET = "render-diagrams.py"
 REAL_DRAWIO = "/Applications/draw.io.app/Contents/MacOS/draw.io"
+REAL_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+BPMN_SCRIPT = "render-bpmn.mjs"
+DEPS_FILES = ("node_modules/bpmn-js/dist/bpmn-viewer.production.min.js", "node_modules/bpmn-js/dist/assets/diagram-js.css",
+              "node_modules/bpmn-js/dist/assets/bpmn-js.css", "node_modules/puppeteer-core/package.json")
 
 MARK = re.compile(rb"<!-- spec-loop-diagram-source: sha256=([0-9a-f]{64}) -->")
 DECL = b'<?xml version="1.0" encoding="UTF-8"?>'
 
-# 偽の draw.io の CLI。`--output <パス>` を拾い、FAKE_BEHAVIOUR に応じて振る舞う。呼ばれた引数を FAKE_LOG に 1 行ずつ残す
+# 偽の draw.io の CLI と BPMN の描画口（偽の `node` を兼ねる）。draw.io の形なら `--output <パス>` と最後のソースを、
+# BPMN の描画口の形（`<ソース> <出力>`）なら最後の 2 つを拾い、FAKE_BEHAVIOUR に応じて振る舞う。呼ばれた引数を FAKE_LOG に 1 行ずつ残す
 FAKE_CLI = r'''
 import json, os, sys, time, uuid
 args = sys.argv[1:]
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps(args) + "\n")
 behaviour = os.environ.get("FAKE_BEHAVIOUR", "success")
-out = args[args.index("--output") + 1]
-src = args[-1]
+if "--output" in args:
+    out = args[args.index("--output") + 1]
+    src = args[-1]
+else:
+    src, out = args[-2], args[-1]
 GOOD = '<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>\n'
 def write(text):
     with open(out, "w", encoding="utf-8") as f:
@@ -164,22 +180,39 @@ def fake_exe(root: Path, name: str) -> Path:
 def run(script: Path, root: Path, *args: str, behaviour: str = "success", drawio: str | None = "fake",
         default: str | None = None, path_dirs: list[Path] | None = None, timeout: str = "60",
         target: Path | None = None, hup_after: float | None = None, pre: str | None = None,
-        hup_signal: int = signal.SIGHUP, ignored: bool = False) -> Run:
+        hup_signal: int = signal.SIGHUP, ignored: bool = False, bpmn: str | None = "fake",
+        deps: str | None = None, chrome: str | None = None, chrome_default: str | None = None,
+        bpmn_timeout: str = "60") -> Run:
     """偽の正本リポジトリで本体を走らせる。
 
     drawio: "fake" なら偽の CLI を指す。None なら `DRAWIO` を外す。ほかは文字列のまま渡す。
     default: `SPEC_LOOP_DRAWIO_DEFAULT`。None なら一時ディレクトリの無いパス（本物の既定のパスを見させない）。
+    bpmn: `BPMN_RENDER`。"fake" なら偽の描画口を指す。None なら外す。ほかは文字列のまま渡す。
+    deps・chrome: `SPEC_LOOP_BPMN_DEPS`・`CHROME_PATH`（None なら外す）。
+    chrome_default: `SPEC_LOOP_CHROME_DEFAULT`。None なら一時ディレクトリの無いパス（本物の Chrome を見させない）。
     hup_after: 起こしてからこの秒数のあとで、本体のプロセスグループに `hup_signal` を送る。
     ignored: 本体を起こす前に `hup_signal` を SIG_IGN にする（`nohup` と同じ形——exec に引き継がれる）。
     """
     fake = root / "_tools" / "fake-drawio.py"
     fake.write_text(FAKE_CLI, encoding="utf-8")
     log_path = root / "_tools" / "fake.log"
-    env = {k: v for k, v in os.environ.items() if k not in ("DRAWIO", "SPEC_LOOP_DRAWIO_DEFAULT", "DRAWIO_TIMEOUT")}
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("DRAWIO", "SPEC_LOOP_DRAWIO_DEFAULT", "DRAWIO_TIMEOUT", "BPMN_RENDER", "SPEC_LOOP_BPMN_DEPS", "CHROME_PATH",
+                        "SPEC_LOOP_CHROME_DEFAULT", "BPMN_TIMEOUT")}
     if drawio == "fake":
         env["DRAWIO"] = f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}"
     elif drawio is not None:
         env["DRAWIO"] = drawio
+    if bpmn == "fake":
+        env["BPMN_RENDER"] = f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}"
+    elif bpmn is not None:
+        env["BPMN_RENDER"] = bpmn
+    if deps is not None:
+        env["SPEC_LOOP_BPMN_DEPS"] = deps
+    if chrome is not None:
+        env["CHROME_PATH"] = chrome
+    env["SPEC_LOOP_CHROME_DEFAULT"] = str(root / "_tools" / "no-such-chrome") if chrome_default is None else chrome_default
+    env["BPMN_TIMEOUT"] = bpmn_timeout
     env["SPEC_LOOP_DRAWIO_DEFAULT"] = str(root / "_tools" / "no-such-drawio") if default is None else default
     env["PATH"] = os.pathsep.join(str(p) for p in (path_dirs or [root / "_tools" / "bin"]))
     env["FAKE_BEHAVIOUR"] = behaviour
@@ -190,6 +223,12 @@ def run(script: Path, root: Path, *args: str, behaviour: str = "success", drawio
     on_path = shutil.which("drawio", path=env["PATH"])
     assert on_path is None or root.resolve() in Path(on_path).resolve().parents, f"PATH の drawio が一時ディレクトリの外: {on_path}"
     assert "DRAWIO" not in env or REAL_DRAWIO not in env["DRAWIO"], "DRAWIO が本物の draw.io を指している"
+    # 本物の Chrome・Node に届かないこと
+    assert env["SPEC_LOOP_CHROME_DEFAULT"] != REAL_CHROME and env.get("CHROME_PATH") != REAL_CHROME, "本物の Chrome を指している"
+    node = shutil.which("node", path=env["PATH"])
+    assert node is None or root.resolve() in Path(node).resolve().parents, f"PATH の node が一時ディレクトリの外: {node}"
+    render = shlex.split(env.get("BPMN_RENDER", "")) or ["x"]
+    assert Path(render[0]).name != "node" or root.resolve() in Path(render[0]).resolve().parents, "BPMN_RENDER が本物の node を指している"
     target = root if target is None else target
     assert REAL_REPO not in target.resolve().parents and target.resolve() != REAL_REPO, "このリポジトリを対象にしている"
     before = snapshot(root)
@@ -557,6 +596,275 @@ def check_case_absent(files: dict[str, bytes | str], absent: str) -> Callable[[P
     return case
 
 
+# --- BPMN（#901） ---------------------------------------------------------------
+
+BPMN = '<?xml version="1.0" encoding="UTF-8"?>\n<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"/>\n'
+MIXED = {
+    "docs/a.drawio": "<mxfile>a</mxfile>\n",
+    "docs/v1/requirements/flows/受注.bpmn": BPMN,
+    "docs/v1/requirements/flows/z 出荷.bpmn": BPMN.replace("definitions", "definitions id=\"z\""),
+    "docs/v1/spec/b.drawio": "<mxfile>b</mxfile>\n",
+}
+MIXED_OUTS = {k.rsplit(".", 1)[0] + ".svg" for k in MIXED}
+
+
+def deps_dir(root: Path, skip: tuple[str, ...] = ()) -> Path:
+    """`SPEC_LOOP_BPMN_DEPS` の偽物（中身は空のファイル。在るかだけを見られる）。"""
+    deps = root / "_tools" / "deps"
+    for name in DEPS_FILES:
+        if name not in skip:
+            (deps / name).parent.mkdir(parents=True, exist_ok=True)
+            (deps / name).write_text("", encoding="utf-8")
+    return deps
+
+
+def case_bpmn_export(script: Path, tmp: Path) -> list[str]:
+    """#901: `.bpmn` を drawio と混ぜてパスの順に、隣の `.svg` に同じ印で書き出す。描画口の引数は `<ソース> <一時ファイル>`。"""
+    root = make_repo(tmp, MIXED)
+    r = run(script, root)
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-300:]}"]
+    for out in sorted(MIXED_OUTS):
+        data = r.after.get(out)
+        if data is None:
+            p.append(f"{out} が無い")
+            continue
+        src = next(k for k in MIXED if k.rsplit(".", 1)[0] + ".svg" == out)
+        if MARK.findall(data) != [sha(MIXED[src].encode("utf-8")).encode("ascii")]:
+            p.append(f"{out}: 印がソースの指紋 1 つでない")
+    p += only_svgs_changed(r, MIXED_OUTS)
+    p += [f"一時ファイルが残った: {x}" for x in leftovers(r)]
+    bpmn_calls = [a for a in r.log if "--output" not in a]
+    if len(bpmn_calls) != 2:
+        p.append(f"BPMN の描画口の呼び出しが {len(bpmn_calls)} 回: {r.log}")
+    for args in bpmn_calls:
+        if len(args) != 2 or not args[0].endswith(".bpmn"):
+            p.append(f"BPMN の描画口の引数の形が違う: {args}")
+            continue
+        src, out = Path(args[0]), Path(args[1])
+        if out.parent != src.parent or not out.name.endswith(".svg") or out.exists():
+            p.append(f"一時ファイルの置き場所・名前が違う: {args}")
+    order = [str(Path(a[0] if "--output" not in a else a[-1]).relative_to(root)) for a in r.log]
+    if order != sorted(MIXED):
+        p.append(f"パスの順に書き出していない: {order}")
+    c = run(script, root, "--check")
+    if c.code != 0:
+        p.append(f"書き出したあとの --check が 0 でない: {c.code} {c.stderr[-300:]}")
+    return p
+
+
+def case_bpmn_only(script: Path, tmp: Path) -> list[str]:
+    """#901: `.bpmn` だけなら draw.io の CLI が無くても書き出す（大文字の拡張子も）。"""
+    root = make_repo(tmp, {"docs/v1/requirements/flows/Flow.BPMN": BPMN})
+    r = run(script, root, drawio=" ")
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-300:]}"]
+    if "docs/v1/requirements/flows/Flow.svg" not in r.after:
+        p.append("Flow.BPMN を書き出さない")
+    return p
+
+
+def default_bpmn(script: Path, tmp: Path, use_chrome_path: bool, relative: bool = False) -> list[str]:
+    root = make_repo(tmp, {"docs/v1/requirements/flows/受注.bpmn": BPMN})
+    node = fake_exe(root, "bin/node")
+    chrome = fake_exe(root, "chrome")
+    deps = deps_dir(root)
+    # relative: 依存と Chrome を cwd（偽の正本リポジトリの根）からの相対パスで渡す——描画口には絶対パスで届くこと（CR-1）
+    given_deps = str(deps.relative_to(root)) if relative else str(deps)
+    given_chrome = str(chrome.relative_to(root)) if relative else str(chrome)
+    if use_chrome_path:
+        r = run(script, root, bpmn=None, deps=given_deps, chrome=given_chrome, chrome_default="", path_dirs=[node.parent])
+    else:
+        r = run(script, root, bpmn=None, deps=given_deps, chrome_default=str(chrome), path_dirs=[node.parent])
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-300:]}"]
+    if "docs/v1/requirements/flows/受注.svg" not in r.after:
+        p.append("既定の描画口で書き出していない")
+    if len(r.log) != 1:
+        return p + [f"偽の node の呼び出しが {len(r.log)} 回"]
+    args = r.log[0]
+    expect = [str((script.parent / BPMN_SCRIPT).resolve()), "--deps", str(deps.resolve()), "--chrome", str(chrome.resolve())]
+    # 絶対パスで渡っていること（相対のまま `resolve()` で一致させない）と、指す先が同じこと（`/var` と `/private/var` は同じ）
+    got = [str(Path(a).resolve()) if Path(a).is_absolute() else a for a in args[:5]]
+    if got != expect or len(args) != 7 or Path(args[5]).name != "受注.bpmn":
+        p.append(f"既定の描画口の引数の形が違う: {args}（期待 {expect} <ソース> <一時ファイル>）")
+    return p
+
+
+def case_bpmn_default(script: Path, tmp: Path) -> list[str]:
+    """#901: `BPMN_RENDER` が無ければ `node render-bpmn.mjs --deps <依存> --chrome <既定のパスの Chrome> <ソース> <一時ファイル>`。"""
+    return default_bpmn(script, tmp, use_chrome_path=False)
+
+
+def case_bpmn_chrome_path(script: Path, tmp: Path) -> list[str]:
+    """#901: `CHROME_PATH` の Chrome を使う（既定のパスが無くても）。"""
+    return default_bpmn(script, tmp, use_chrome_path=True)
+
+
+def case_bpmn_relative(script: Path, tmp: Path) -> list[str]:
+    """#901（CR-1）: 相対パスの `SPEC_LOOP_BPMN_DEPS`・`CHROME_PATH` は、絶対パスにして描画口に渡す。"""
+    return default_bpmn(script, tmp, use_chrome_path=True, relative=True)
+
+
+def case_bpmn_timeout_ignored(script: Path, tmp: Path) -> list[str]:
+    """#901（CR-4）: `.bpmn` が無ければ `BPMN_TIMEOUT` を見ない——drawio だけのリポジトリは今までどおり書き出す。"""
+    root = make_repo(tmp, {"docs/a.drawio": "<mxfile/>\n"})
+    r = run(script, root, bpmn_timeout="0")
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-200:]}"]
+    if "docs/a.svg" not in r.after:
+        p.append("書き出さない")
+    return p
+
+
+def bpmn_missing(reasons: list[str], setup: Callable[[Path, Path], dict], files: dict[str, bytes | str] | None = None
+                 ) -> Callable[[Path, Path], list[str]]:
+    def case(script: Path, tmp: Path) -> list[str]:
+        """#901: BPMN の描画口に要るものが無ければ、無いものを全部名指しし、どちらの種類も何も書かずに 2。"""
+        root = make_repo(tmp, files if files is not None else {**MIXED, "docs/a.svg": PREVIOUS})
+        kwargs = setup(script, root)
+        r = run(kwargs.pop("_script", script), root, **kwargs)
+        p = []
+        if r.code != 2:
+            p.append(f"終了コードが 2 でない: {r.code} {r.stderr[-300:]}")
+        if r.after != r.before:
+            p.append("何か書いた")
+        if r.log:
+            p.append(f"描画系を呼んだ: {r.log}")
+        if "書き出していない" not in r.stderr:
+            p.append(f"「書き出していない」と言わない: {r.stderr[-300:]}")
+        for reason in reasons:
+            if reason not in r.stderr:
+                p.append(f"理由 {reason!r} を言わない: {r.stderr[-400:]}")
+        for src in (files if files is not None else MIXED):
+            if src.lower().endswith((".drawio", ".bpmn")) and src not in r.stderr:
+                p.append(f"{src} を名指ししない")
+        return p
+    return case
+
+
+def no_tools(script: Path, root: Path) -> dict:
+    return {"bpmn": None}
+
+
+def deps_lacking(script: Path, root: Path) -> dict:
+    node = fake_exe(root, "bin/node")
+    return {"bpmn": None, "deps": str(deps_dir(root, skip=(DEPS_FILES[0], DEPS_FILES[3]))),
+            "chrome_default": str(fake_exe(root, "chrome")), "path_dirs": [node.parent]}
+
+
+def chrome_path_missing(script: Path, root: Path) -> dict:
+    node = fake_exe(root, "bin/node")
+    return {"bpmn": None, "deps": str(deps_dir(root)), "chrome": str(root / "_tools" / "no-chrome"),
+            "chrome_default": str(fake_exe(root, "chrome")), "path_dirs": [node.parent]}
+
+
+def script_missing(script: Path, root: Path) -> dict:
+    # 描画口の無い写しを別の場所に作る（試料の間で共有する写しからは消さない）
+    alone = root.parent / "alone"
+    alone.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(script, alone / TARGET)
+    node = fake_exe(root, "bin/node")
+    return {"_script": alone / TARGET, "bpmn": None, "deps": str(deps_dir(root)), "chrome_default": str(fake_exe(root, "chrome")), "path_dirs": [node.parent]}
+
+
+def bpmn_failing(behaviour: str, message: str, bpmn_timeout: str = "60") -> Callable[[Path, Path], list[str]]:
+    def case(script: Path, tmp: Path) -> list[str]:
+        """#901: BPMN の描画口が失敗したら前の `.svg` を変えず、書きかけを残さず、名指しして 1。"""
+        root = make_repo(tmp, {"docs/v1/requirements/flows/a.bpmn": BPMN, "docs/v1/requirements/flows/a.svg": PREVIOUS})
+        r = run(script, root, behaviour=behaviour, bpmn_timeout=bpmn_timeout)
+        p = [] if r.code == 1 else [f"終了コードが 1 でない: {r.code} {r.stderr[-200:]}"]
+        if r.after.get("docs/v1/requirements/flows/a.svg") != PREVIOUS:
+            p.append("前の svg が変わった")
+        p += [f"一時ファイルが残った: {x}" for x in leftovers(r)]
+        if "docs/v1/requirements/flows/a.bpmn" not in r.stderr or message not in r.stderr:
+            p.append(f"名指し・理由 {message!r} が無い: {r.stderr[-300:]}")
+        return p
+    return case
+
+
+def case_bpmn_timeout_value(script: Path, tmp: Path) -> list[str]:
+    """#901: `BPMN_TIMEOUT` が正の数でなければ 2（何も書かない）。"""
+    root = make_repo(tmp, {"docs/v1/requirements/flows/a.bpmn": BPMN})
+    r = run(script, root, bpmn_timeout="0")
+    p = [] if r.code == 2 else [f"終了コードが 2 でない: {r.code}"]
+    if r.after != r.before or r.log:
+        p.append("何かした")
+    if "BPMN_TIMEOUT" not in r.stderr:
+        p.append(f"BPMN_TIMEOUT を名指ししない: {r.stderr[-200:]}")
+    return p
+
+
+def case_clash(script: Path, tmp: Path) -> list[str]:
+    """#901: 同じ `X.svg` になるソース（`X.drawio` と `X.BPMN`）は、書き出しでも `--check` でも何も書かずに名指しして 2。"""
+    files = {"docs/v1/flow.drawio": "<mxfile/>\n", "docs/v1/flow.BPMN": BPMN, "docs/v1/other.drawio": "<mxfile>o</mxfile>\n"}
+    p = []
+    for args in ((), ("--check",)):
+        root = make_repo(tmp / ("check" if args else "write"), files)
+        r = run(script, root, *args)
+        if r.code != 2:
+            p.append(f"{args}: 終了コードが 2 でない: {r.code}")
+        if r.after != r.before or r.log:
+            p.append(f"{args}: 何かした")
+        if "docs/v1/flow.drawio" not in r.stderr or "docs/v1/flow.BPMN" not in r.stderr:
+            p.append(f"{args}: 2 つのソースを名指ししない: {r.stderr[-300:]}")
+    return p
+
+
+def case_clash_by_case(script: Path, tmp: Path) -> list[str]:
+    """#901（P2-1）: 名前が大文字小文字だけ違う drawio と BPMN（`Flow.drawio` と `flow.bpmn`）も、どちらのモードでも何も書かずに 2
+    （大文字小文字を区別しないファイルシステムでは同じ `.svg` になり、片方の書き出しが黙って消える）。"""
+    files = {"docs/v1/Flow.drawio": "<mxfile/>\n", "docs/v1/flow.bpmn": BPMN}
+    p = []
+    for args in ((), ("--check",)):
+        root = make_repo(tmp / ("check" if args else "write"), files)
+        r = run(script, root, *args)
+        if r.code != 2 or r.after != r.before or r.log:
+            p.append(f"{args}: 何も書かずに 2 で止まらない: {r.code} {r.stderr[-300:]}")
+        if "docs/v1/Flow.drawio" not in r.stderr or "docs/v1/flow.bpmn" not in r.stderr:
+            p.append(f"{args}: 2 つのソースを名指ししない: {r.stderr[-300:]}")
+    return p
+
+
+def case_sensitive_fs(base: Path) -> bool:
+    """`base` のファイルシステムが大文字小文字を区別するか（`a` を作って `A` が見えないか）。"""
+    probe = base / "case-probe-a"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_text("", encoding="utf-8")
+    try:
+        return not (base / "CASE-PROBE-A").exists()
+    finally:
+        probe.unlink()
+
+
+def case_drawio_only_by_case(script: Path, tmp: Path) -> list[str]:
+    """#901（CR-3）: drawio だけの、大文字小文字だけ違う `X.drawio` と `x.drawio`・別のディレクトリ（`A/` と `a/`）は止めない——
+    大文字小文字を区別するファイルシステムでは別の書き出しで、#268 からの振る舞いのまま書ける。
+    **区別しないファイルシステム（macOS の既定）では 2 つのファイルを置けないので、この試料は何も見ない**——変異も、区別する
+    ファイルシステムでだけ当てる（`MUTATIONS` の下）。"""
+    if not case_sensitive_fs(tmp):
+        return []
+    files = {"docs/X.drawio": "<mxfile>X</mxfile>\n", "docs/x.drawio": "<mxfile>x</mxfile>\n",
+             "docs/A/f.drawio": "<mxfile>A</mxfile>\n", "docs/a/f.bpmn": BPMN}
+    root = make_repo(tmp, files)
+    r = run(script, root)
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-300:]}"]
+    for out in ("docs/X.svg", "docs/x.svg", "docs/A/f.svg", "docs/a/f.svg"):
+        if out not in r.after:
+            p.append(f"{out} を書き出さない")
+    return p
+
+
+def case_drawio_timeout_value(script: Path, tmp: Path) -> list[str]:
+    """#901（P2-3・P2-4）: `DRAWIO_TIMEOUT` は今までどおり常に確かめる——ソースが 0 件でも `.bpmn` だけでも、正の数でなければ 2。"""
+    p = []
+    for label, files in (("0 件", {"docs/index.md": "x\n"}), (".bpmn だけ", {"docs/a.bpmn": BPMN}),
+                         (".drawio", {"docs/a.drawio": "<mxfile/>\n"})):
+        root = make_repo(tmp / label.replace(" ", "_").replace(".", ""), files)
+        r = run(script, root, timeout="0")
+        if r.code != 2 or "DRAWIO_TIMEOUT" not in r.stderr:
+            p.append(f"{label}: 2 で DRAWIO_TIMEOUT を名指ししない: {r.code} {r.stderr[-200:]}")
+        if r.after != r.before or r.log:
+            p.append(f"{label}: 何かした")
+    return p
+
+
 def marked(source: str, body: bytes = b'<svg xmlns="http://www.w3.org/2000/svg"/>\n') -> bytes:
     return b"<!-- spec-loop-diagram-source: sha256=" + sha(source.encode("utf-8")).encode() + b" -->\n" + body
 
@@ -598,6 +906,42 @@ CASES: dict[str, Callable[[Path, Path], list[str]]] = {
     "--check: ソースが無い": check_case({"docs/v1/spec/gone.svg": marked("<mxfile/>\n")}, ["docs/v1/spec/gone.svg: ソースが無い"]),
     "--check: 印の無いソースの無い svg は見ない": check_case({"docs/gantt.svg": PREVIOUS}, []),
     "--check: .drawio が 0 件": check_case({"docs/index.md": "x\n"}, []),
+    "BPMN を書き出す": case_bpmn_export,
+    "BPMN だけなら draw.io が無くても書く": case_bpmn_only,
+    "BPMN の既定の描画口": case_bpmn_default,
+    "BPMN の CHROME_PATH": case_bpmn_chrome_path,
+    "BPMN: Node・依存・Chrome がどれも無い": bpmn_missing(
+        ["Node が見つからない", "SPEC_LOOP_BPMN_DEPS", "Chrome が見つからない"], no_tools),
+    "BPMN: 依存のファイルが足りない": bpmn_missing([DEPS_FILES[0], DEPS_FILES[3]], deps_lacking),
+    "BPMN: CHROME_PATH が無いパス": bpmn_missing(["CHROME_PATH の Chrome が見つからない"], chrome_path_missing),
+    "BPMN: 描画口のスクリプトが無い": bpmn_missing(["BPMN の描画口が無い"], script_missing),
+    "BPMN: BPMN_RENDER が空": bpmn_missing(["BPMN_RENDER が空"], lambda s, r: {"bpmn": " "}),
+    "BPMN: BPMN_RENDER が無いパス": bpmn_missing(["BPMN_RENDER の描画口が見つからない"],
+                                               lambda s, r: {"bpmn": str(r / "_tools" / "no-such-render")}),
+    "BPMN: draw.io も無ければ両方を名指しする": bpmn_missing(["draw.io の CLI が見つからない", "Node が見つからない"],
+                                                   lambda s, r: {"bpmn": None, "drawio": None}),
+    "BPMN: 0 以外で終わる": bpmn_failing("nonzero", "BPMN の描画口が 0 以外で終わった（rc=3）"),
+    "BPMN: XML でない": bpmn_failing("not_xml", "XML として読めない"),
+    "BPMN: 時間切れ": bpmn_failing("hang", "BPMN の描画口が時間切れ", bpmn_timeout="1"),
+    "BPMN_TIMEOUT が正の数でない": case_bpmn_timeout_value,
+    "同じ書き出しになるソース": case_clash,
+    "大文字小文字だけ違う drawio と BPMN も止める": case_clash_by_case,
+    "drawio だけの大文字小文字だけ違う名前は止めない": case_drawio_only_by_case,
+    "DRAWIO_TIMEOUT は常に確かめる": case_drawio_timeout_value,
+    "BPMN: 相対パスの依存と Chrome": case_bpmn_relative,
+    "drawio だけなら BPMN_TIMEOUT を見ない": case_bpmn_timeout_ignored,
+    "--check: BPMN が新しい": check_case({"docs/v1/requirements/flows/a.bpmn": BPMN,
+                                         "docs/v1/requirements/flows/a.svg": marked(BPMN)}, []),
+    "--check: BPMN の書き出しが無い": check_case({"docs/v1/requirements/flows/a.bpmn": BPMN},
+                                              ["docs/v1/requirements/flows/a.bpmn: 書き出しが無い"]),
+    "--check: BPMN の書き出しが古い": check_case({"docs/v1/requirements/flows/a.bpmn": BPMN,
+                                              "docs/v1/requirements/flows/a.svg": marked(BPMN + "<!-- old -->\n")},
+                                             ["docs/v1/requirements/flows/a.svg: 古い"]),
+    "--check: BPMN の書き出しの印が無い": check_case({"docs/v1/requirements/flows/a.bpmn": BPMN,
+                                                "docs/v1/requirements/flows/a.svg": PREVIOUS},
+                                               ["docs/v1/requirements/flows/a.svg: 印が無い"]),
+    "--check: 大文字の拡張子の svg もソースが無いと言う": check_case({"docs/v1/spec/gone.SVG": marked("<mxfile/>\n")},
+                                                         ["docs/v1/spec/gone.SVG: ソースが無い"]),
 }
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
@@ -607,8 +951,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '            print(f"  {rel(source, root)}", file=sys.stderr)\n        return 0\n', "どこにも無い"),
     ("失敗のとき前の svg を消す", "    tmp: Path | None = None\n", "    out.unlink(missing_ok=True)\n    tmp: Path | None = None\n",
      "0 以外で終わる"),
-    ("失敗のとき書きかけを置く", '            return f"draw.io の CLI が 0 以外で終わった',
-     '            tmp.is_file() and os.replace(tmp, out); return f"draw.io の CLI が 0 以外で終わった', "書きかけで落ちる"),
+    ("失敗のとき書きかけを置く", '            return f"{label}が 0 以外で終わった',
+     '            tmp.is_file() and os.replace(tmp, out); return f"{label}が 0 以外で終わった', "書きかけで落ちる"),
     ("--check で書く", "    if args.check:\n", "    if False:\n", "--check: 書き出しが無い"),
     ("終了コードを見ない", "        if proc.returncode != 0:", "        if False:", "SVG を書いてから 0 以外で終わる"),
     ("在るかを見ない", "        if not tmp.is_file():", "        if False:", "何も書かない"),
@@ -620,7 +964,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ソースが無いを見ない", "        if got is not None:\n            problems.append", "        if False:\n            problems.append",
      "--check: ソースが無い"),
     ("前の印を消さない", '    body = MARK_RE.sub(b"", svg)', "    body = svg", "前の印を置き換える"),
-    ("入れ子を見ない", '            if name.lower().endswith(".drawio"):', '            if name.lower().endswith(".drawio") and Path(dirpath) == docs:',
+    ("入れ子を見ない", '            if name.lower().endswith(SUFFIXES):', '            if name.lower().endswith(SUFFIXES) and Path(dirpath) == docs:',
      "書き出す"),
     ("指紋を書き出しから取る", "f.write(mark(svg, source_digest(data)))", "f.write(mark(svg, source_digest(svg)))", "書き出す"),
     ("印を XML 宣言の前に置く", "    if decl:\n", "    if False:\n", "書き出す"),
@@ -630,7 +974,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "DRAWIO が無いパス"),
     ("DRAWIO が空を名指ししない", '            return None, "DRAWIO が空"', '            command = ["true"]', "DRAWIO が空"),
     ("プロセスグループを止めない", "        os.killpg(proc.pid, signal.SIGKILL)", "        pass", "時間切れのあとで孫が書かない"),
-    ("拡張子の大文字小文字を区別する", '            if name.lower().endswith(".drawio"):', '            if name.endswith(".drawio"):', "大文字の拡張子"),
+    ("拡張子の大文字小文字を区別する", '            if name.lower().endswith(SUFFIXES):', '            if name.endswith(SUFFIXES):', "大文字の拡張子"),
     ("SIGHUP を受けない", '    for name in ("SIGTERM", "SIGHUP"):', '    for name in ():', "SIGHUP で止められても CLI が後から書かない"),
     # #820 の後退そのもの: 起動時の SIG_IGN を見ずに、無条件に登録する
     ("無視させられた SIGHUP にも登録する", ") != signal.SIG_IGN:", ") != signal.SIG_IGN or True:",
@@ -642,13 +986,61 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "--check: 大文字小文字だけ違う書き出しはソースが無いと言わない"),
     ("1 件の失敗で止まる", "            failed.append(rel(source, root))", "            failed.append(rel(source, root)); break",
      "1 件の失敗で止まらない"),
+    # BPMN（#901）
+    ("BPMN を見ない", 'SUFFIXES = (".drawio", ".bpmn")', 'SUFFIXES = (".drawio",)', "BPMN を書き出す"),
+    ("BPMN に draw.io の引数を渡す", "        if is_bpmn(source):\n            cmd = [*command, str(source), str(tmp)]",
+     "        if False:\n            cmd = [*command, str(source), str(tmp)]", "BPMN を書き出す"),
+    ("BPMN の描画系が無くても drawio を書く", "        reasons += missing", "        pass", "BPMN: Node・依存・Chrome がどれも無い"),
+    ("draw.io が在れば BPMN の描画系を探さない", "    if any(is_bpmn(source) for source in sources):\n        bpmn, missing",
+     "    if command is None and any(is_bpmn(source) for source in sources):\n        bpmn, missing", "BPMN: Node・依存・Chrome がどれも無い"),
+    ("Node を見ない", "    if node is None:", "    if False:", "BPMN: Node・依存・Chrome がどれも無い"),
+    ("依存のファイルを見ない", "            if not os.path.isfile(os.path.join(deps, name)):", "            if False:",
+     "BPMN: 依存のファイルが足りない"),
+    ("無いものを 1 つしか言わない", "    if reasons:\n        return None, reasons", "    if reasons:\n        return None, reasons[:1]",
+     "BPMN: Node・依存・Chrome がどれも無い"),
+    ("Chrome の既定のパスを見ない", "        if not (chrome and os.path.isfile(chrome) and os.access(chrome, os.X_OK)):",
+     "        if not chrome:", "BPMN: Node・依存・Chrome がどれも無い"),
+    ("CHROME_PATH を見ない", '    chrome = os.environ.get("CHROME_PATH")', "    chrome = None", "BPMN の CHROME_PATH"),
+    ("CHROME_PATH の無いパスを通す", "        if not (os.path.isfile(chrome) and os.access(chrome, os.X_OK)):", "        if False:",
+     "BPMN: CHROME_PATH が無いパス"),
+    ("描画口のスクリプトを見ない", "    if not script.is_file():", "    if False:", "BPMN: 描画口のスクリプトが無い"),
+    ("既定の描画口に依存を渡さない", '"--deps", deps, ', "", "BPMN の既定の描画口"),
+    ("BPMN_RENDER の無いパスを通す", "        if not executable(command[0]):", "        if False:", "BPMN: BPMN_RENDER が無いパス"),
+    ("BPMN_RENDER が空を通す", '            return None, ["BPMN_RENDER が空"]', '            command = ["true"]', "BPMN: BPMN_RENDER が空"),
+    ("BPMN の時間切れに draw.io の値を使う", 'timeouts["BPMN_TIMEOUT"], root)', 'timeouts["DRAWIO_TIMEOUT"], root)', "BPMN: 時間切れ"),
+    ("時間切れの値を確かめない", "            if not timeouts[name] > 0:", "            if False:", "BPMN_TIMEOUT が正の数でない"),
+    ("同じ書き出しを見ない", "    if clashes:", "    if False:", "同じ書き出しになるソース"),
+    ("同じ書き出しの判定で大文字小文字を区別する", "source.stem.lower()), []).append(source)", "source.stem), []).append(source)",
+     "大文字小文字だけ違う drawio と BPMN も止める"),
+    ("DRAWIO_TIMEOUT を確かめない", '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, True)', '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, False)',
+     "DRAWIO_TIMEOUT は常に確かめる"),
+    ("DRAWIO_TIMEOUT を .drawio があるときだけ確かめる", '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, True)',
+     '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, any(not is_bpmn(source) for source in sources))', "DRAWIO_TIMEOUT は常に確かめる"),
+    ("依存を絶対パスにしない", "        deps = os.path.abspath(deps)", "        deps = deps", "BPMN: 相対パスの依存と Chrome"),
+    ("Chrome を絶対パスにしない", '"--chrome", os.path.abspath(chrome)]', '"--chrome", str(chrome)]', "BPMN: 相対パスの依存と Chrome"),
+    ("無い種類の時間切れも確かめる", "        if not present:\n            continue", "        if False:\n            continue",
+     "drawio だけなら BPMN_TIMEOUT を見ない"),
+    # #904 の残課題 P2-5
+    ("svg の拡張子の大文字小文字を区別する", '            if name.lower().endswith(".svg"):', '            if name.endswith(".svg"):',
+     "--check: 大文字の拡張子の svg もソースが無いと言う"),
+]
+
+
+# 大文字小文字を区別するファイルシステムでだけ殺せる変異（試料が `X.drawio` と `x.drawio` を並べて置く）
+CASE_SENSITIVE_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("drawio どうしの組も止める", "if len({is_bpmn(source) for source in group}) > 1]", "if len(group) > 1]",
+     "drawio だけの大文字小文字だけ違う名前は止めない"),
+    ("同じ書き出しの判定でディレクトリの大文字小文字を区別しない", "by_name.setdefault((str(source.parent), ",
+     "by_name.setdefault((str(source.parent).lower(), ", "drawio だけの大文字小文字だけ違う名前は止めない"),
 ]
 
 
 def copy_script(dest: Path, source: str | None = None) -> Path:
+    """本体と、同じ場所に置く BPMN の描画口（既定の描画口の試料が引数の形を見る。走らせはしない）を写す。"""
     dest.mkdir(parents=True, exist_ok=True)
     path = dest / TARGET
     path.write_text(source if source is not None else (SCRIPTS / TARGET).read_text(encoding="utf-8"), encoding="utf-8")
+    shutil.copyfile(SCRIPTS / BPMN_SCRIPT, dest / BPMN_SCRIPT)
     return path
 
 
@@ -665,7 +1057,14 @@ def main() -> int:
             if problems:
                 failures.append(f"試料が期待どおりでない: {name}: " + "; ".join(problems)[:600])
         names = list(CASES)
-        for index, (name, before, after, killer) in enumerate(MUTATIONS):
+        mutations = list(MUTATIONS)
+        sensitive = case_sensitive_fs(tmp_path)
+        if sensitive:
+            mutations += CASE_SENSITIVE_MUTATIONS
+        else:
+            print(f"注: このファイルシステムは大文字小文字を区別しないので、変異 {len(CASE_SENSITIVE_MUTATIONS)} 件を当てない"
+                  "（区別するファイルシステム——Linux の CI——で当てる）")
+        for index, (name, before, after, killer) in enumerate(mutations):
             if killer not in CASES:
                 failures.append(f"変異の試料が無い: {name}（{killer}）")
                 continue
@@ -684,7 +1083,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + (len(CASE_SENSITIVE_MUTATIONS) if sensitive else 0)} 件")
     return 0
 
 

@@ -81,9 +81,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `scripts/test-check-feasibility-csv.py`）
     - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
       作れなければ**前の出力を消す**——**消せなければ 2 で止まり、残った出力を名指しする**（#499）。テストは `scripts/test-schedule-to-gantt.py`）
-    - `scripts/render-diagrams.py` - 正本リポジトリの `docs/` の下の drawio を隣の SVG に書き出し、**ソースの指紋を書き出しに書き込む**
+    - `scripts/render-diagrams.py` - 正本リポジトリの `docs/` の下の drawio と BPMN を隣の SVG に書き出し、**ソースの指紋を書き出しに書き込む**
       （#268。`--check` は draw.io を起動せずに鮮度を見る——draw.io は同じソースから同じバイトを作らないので、バイトでなくソースの指紋で比べる。
-      図の決まりは `references/tree.md` の「図」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-render-diagrams.py`）
+      図の決まりは `references/tree.md` の「図」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-render-diagrams.py`。
+      **BPMN は同梱の `render-bpmn.mjs`（bpmn-js を headless の Chrome で動かす）を呼ぶ**——#901。テストは偽の描画口を差し、`render-bpmn.mjs` そのものは走らせない）
     - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
       2 つの承認が見た中身（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` を除く）と `removed.csv`。#375）が一致するかの照合（#262。**どちらかの時点に比べる中身が
       無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。**要求確定のタグの時点に `暫定反映` の Q&A が
@@ -295,9 +296,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと
     タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）
-  - `test-render-diagrams.py` - spec-loop の図の書き出し（#268）の回帰テスト（変異テストを含む）。
-    **本体は `plugins/spec-loop/scripts/` にある**。**偽の draw.io の CLI を `DRAWIO` で差し、既定のパスは `SPEC_LOOP_DRAWIO_DEFAULT` で、
-    `PATH` は一時ディレクトリだけに差し替える**——本物の draw.io には届かない。書き出しの見た目は見ない
+  - `test-render-diagrams.py` - spec-loop の図の書き出し（#268・BPMN は #901）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**偽の draw.io の CLI を `DRAWIO` で、偽の BPMN の描画口を `BPMN_RENDER` で差し、既定のパスは
+    `SPEC_LOOP_DRAWIO_DEFAULT`・`SPEC_LOOP_CHROME_DEFAULT` で、`PATH` は一時ディレクトリだけに差し替える**——本物の draw.io・Chrome・Node には届かない。書き出しの見た目は見ない
   - `test-rebuild-scope.py` - spec-loop の作り直す範囲を引くスクリプト（#875）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**spec-loop の Issue の本文は本物の `scaffold.py --provisional` で作り**、`gh issue list` と同じ鍵の JSON に包んで渡す——本物の GitHub には届かない
   - `test-rework-metrics.py` - spec-loop の作り直しの量を数えるスクリプト（#886）の回帰テスト（変異テストを含む）。

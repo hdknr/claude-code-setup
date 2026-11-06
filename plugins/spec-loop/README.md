@@ -25,7 +25,8 @@
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
-| `scripts/render-diagrams.py` | 正本リポジトリの `docs/` の下の drawio を隣の SVG に書き出し、ソースの指紋を書き込む。`--check` で書き出しが今のソースのものかを確かめる（標準ライブラリと draw.io の CLI。図の決まりは `references/tree.md` の「図」を正とする） |
+| `scripts/render-diagrams.py` | 正本リポジトリの `docs/` の下の drawio と BPMN を隣の SVG に書き出し、ソースの指紋を書き込む。`--check` で書き出しが今のソースのものかを確かめる（標準ライブラリと draw.io の CLI。BPMN は下の `render-bpmn.mjs`。図の決まりは `references/tree.md` の「図」を正とする） |
+| `scripts/render-bpmn.mjs` | `render-diagrams.py` が呼ぶ BPMN の描画口。bpmn-js を headless の Chrome で動かし、BPMN 1 枚を SVG に書き出す（Node・bpmn-js・puppeteer-core・Chrome） |
 | `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、2 つの承認が見た中身（`shared/`・`requirements/`・`spec/`・`removed.csv`）が一致するかの照合（標準ライブラリと `git`） |
 | `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で PPTX も）を作る（標準ライブラリと `git`） |
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
@@ -190,16 +191,17 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs [-
 
 ## 図を書き出す
 
-正本リポジトリの文書の図は、アスキーアートでも Mermaid でも描きません。業務フロー（スイムレーン）は BPMN で描き、それ以外の図は drawio で描いて SVG に書き出します
-（どちらで描くかの線・置き場所・形式・描かないもの、BPMN の書き出しをまだ同梱していないあいだの扱いは `references/tree.md` の「図」を正とします）。drawio の図は次で書き出します:
+正本リポジトリの文書の図は、アスキーアートでも Mermaid でも描きません。業務フロー（スイムレーン）は BPMN で、それ以外の図は drawio で描き、どちらも SVG に書き出します
+（どちらで描くかの線・置き場所・形式・描かないもの・BPMN の書き出しに要るものは `references/tree.md` の「図」を正とします）。次で書き出します:
 
 ```bash
 python3 <spec-loop の base ディレクトリ>/scripts/render-diagrams.py [<正本リポジトリの根>] [--check]
 ```
 
-`docs/` の下の `.drawio` を全部、隣の同じ名前の `.svg` に書き出し、ソースの指紋を書き出しに書き込みます。
-`--check` は draw.io を起動せず、書き出しが無い・古い・ソースが無いものを名指しします（CI でも回せます）。
-draw.io の CLI は `DRAWIO` で差し替えられます。何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
+`docs/` の下の `.drawio` と `.bpmn` を全部、隣の同じ名前の `.svg` に書き出し、ソースの指紋を書き出しに書き込みます。
+`--check` は描画系（draw.io・Node・Chrome）を起動せず、書き出しが無い・古い・ソースが無いものを名指しします（CI でも回せます）。
+draw.io の CLI は `DRAWIO` で差し替えられます。BPMN は同梱の `render-bpmn.mjs` が bpmn-js を headless の Chrome で動かして描き、
+Node・bpmn-js と puppeteer-core（`SPEC_LOOP_BPMN_DEPS`）・Chrome（`CHROME_PATH`）が要ります——無ければ何も書かずに名指しして止まります。何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
 ## 前提
 
