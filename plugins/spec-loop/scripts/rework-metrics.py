@@ -62,7 +62,7 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 - 1: 数えきれないものがある（数えたものは出し、数えきれないものを標準エラーに名指しする）——ラベルが読めず回答が変わったかを見分けられない No・
   読めない Q&A 表（見出しが決まりの形でない・CSV として読めない）のあるコミット（そのコミットではその表を前の時点のまま読む）・
   結果の行が決まりの形でない確認の Issue・変えた確認の Issue のうち台帳の行（`決めた値: `・`影響する Issue: `）が無い／形に反するもの・
-  頭 `作り直しの元:` で始まり、後ろが空白 1 つと Q&A の No か `#<番号>` でない行（空白が無い・2 つ・全角・後ろが空）・印の元が変わったと数えた件に無い Issue・PR（合計に入れていない）・Q&A 表を変えたコミットが 1 本も無い（`--spec-repo` が正本リポジトリでないかもしれない）
+  頭 `作り直しの元:`（全角のコロン `作り直しの元：` も）で始まり、後ろが空白 1 つと Q&A の No か `#<番号>` でない行（空白が無い・2 つ・全角・後ろが空・コロンが全角）・印の元が変わったと数えた件に無い Issue・PR（合計に入れていない）・Q&A 表を変えたコミットが 1 本も無い（`--spec-repo` が正本リポジトリでないかもしれない）
 - 2: 数えていない——引数の誤り・入力が読めない（JSON でない・Issue／PR の形が違う・確認の Issue を数えるのに `comments` の鍵が無い・PR に `additions`・`deletions` が無い）・
   `--spec-repo` が git のリポジトリでない・`--ref` が解決できない・`git` が失敗した
 
@@ -121,6 +121,8 @@ OLD_COLUMNS = [c for c in qa.COLUMNS if c not in ("推奨", "推奨の理由")]
 ORIGIN_LINE = re.compile("^" + re.escape(rebuild.ORIGIN) + r"(\S.*?)\s*$")
 # 頭（`作り直しの元:`）で始まる行は、形が崩れていても拾って名指しする——空白が無い・2 つ・全角・後ろが空の行を黙って落とさない（2 パス目の指摘）
 ORIGIN_HEAD = rebuild.ORIGIN.rstrip()
+# 全角のコロンで書いた頭（`作り直しの元：`）も、形に反する印として拾って名指しする（利用者の判断 2026-11-06。狭いパスの N-2）
+ORIGIN_HEADS = (ORIGIN_HEAD, ORIGIN_HEAD[:-1] + "：")
 PR_STATES_MERGED = "MERGED"
 
 
@@ -258,7 +260,7 @@ def origins(body: str) -> tuple[list[str], list[str]]:
     """本文の作り直しの元の印の元（`Q-R-002`・`#881`）と、形に反する印の行。"""
     found, bad = [], []
     for line in body.splitlines():
-        if not line.startswith(ORIGIN_HEAD):
+        if not line.startswith(ORIGIN_HEADS):
             continue
         m = ORIGIN_LINE.match(line)
         key = m.group(1) if m else ""
