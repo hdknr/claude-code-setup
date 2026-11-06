@@ -144,7 +144,8 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - `holders` は枠のディレクトリが無ければ作らない（#898）
 - `holders` は枠のファイルに書かない（#898）
 - 枠のファイルに残った記録のうち、pid が居ないもの（走り終えたもの）は持ち主として出さない（#898）
-- 待ち手は、自分の出力と同じファイルに出す持ち主の出力の最終更新を「分からない」と言う——自分の書き込みで新しく見えるので、そのファイルで疑いを決めない（#898 の 1 パス目）
+- 待ち手は、出力のファイルの 1 つでも自分の標準エラーと同じ持ち主の出力の最終更新を「分からない」と言う——自分の書き込みで新しく見えるので、疑いを決めない（#898 の 1・2 パス目）
+- 待ち手が自分と同じと見るのは標準エラー（待っているあいだに書くのはそこだけ）のファイルだけ——標準出力だけが同じ持ち主は、ふつうに出力の最終更新で疑う（#898 の 2 パス目）
 - 持ち主の行に改行などの制御文字を出さない——コマンド・場所の制御文字は `\n` のように書き換え、1 持ち主 1 行にする（#898 の 1 パス目）
 
 守らない:
@@ -172,7 +173,7 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - 出力の最終更新が分かるのは、ラッパーの標準出力・標準エラーが通常のファイルのときだけ——パイプ・端末・`/dev/null` へ出すものは分からない。
   コマンドが中で別のファイルに書き直すもの（`bash -c 'x > f'`）は、そのファイルでなくラッパーの出力を見る。パスを取れない（`F_GETPATH` も `/proc` も無い）環境でも分からない
 - `止まっている疑い` は出力の時刻だけで決める——出力をため込む（バッファする）コマンドは走っていても疑いと出ることがあり、出力を出し続けながら進まないもの（同じ行を繰り返す）は疑わない
-- 持ち主の出力のファイルに別のプロセスが書くと（同じファイルに足す別の待ち手など）、出力が進んで見える——外すのは見ている待ち手自身の出力のファイルだけで、`holders` の口は何も外さない
+- 持ち主の出力のファイルに別のプロセスが書くと（同じファイルに足す別の待ち手など）、出力が進んで見える——外すのは見ている待ち手自身の標準エラーのファイルだけで、`holders` の口は何も外さない
 - 古い版（1.100.0 まで）の run-serial が持つ枠は、出力のファイルを記録しないので、出力の最終更新は分からない（経過は出す）
 - 経過は記録の始めた時刻（秒まで）から数える——時計を合わせ直すとずれる
 - 居なくなった pid は `kill -0` で見る——pid が再利用された記録・ゾンビの記録は持ち主として出る
@@ -352,14 +353,14 @@ def last_output(info: dict, now: float, mine: frozenset = frozenset()) -> tuple[
     """持ち主の出力の最終更新。(時刻, 言うこと)。分からなければ時刻は None。
 
     記録の `outputs`（持ち主の標準出力・標準エラーのうち通常のファイル）を `stat` し、同じファイル（`st_dev`・`st_ino`）の `st_mtime` の新しいほう。
-    `mine`（見ている側の出力のファイルの (`st_dev`, `st_ino`)）と同じファイルは見ない——見ている側の書き込みで更新されるので、持ち主が止まっていても新しく見える。"""
+    `mine`（見ている側が書くファイルの (`st_dev`, `st_ino`)）と同じファイルが 1 つでもあれば「分からない」——見ている側の書き込みで更新されるので、
+    持ち主が止まっていても新しく見える。残りのファイルだけで決めると、そちらにだけ出さない持ち主（進みを標準エラーにだけ出す）を止まっていると読む。"""
     outputs = info.get("outputs")
     if not isinstance(outputs, list):
         return None, "出力の最終更新は分からない（記録に出力のファイルが無い——古い版の run-serial）"
     if not outputs:
         return None, "出力の最終更新は分からない（出力がファイルでない——パイプ・端末など）"
-    outputs = [out for out in outputs if not (isinstance(out, dict) and (out.get("dev"), out.get("ino")) in mine)]
-    if not outputs:
+    if any(isinstance(out, dict) and (out.get("dev"), out.get("ino")) in mine for out in outputs):
         return None, "出力の最終更新は分からない（待っている自分と同じ出力のファイル——自分の書き込みで更新される）"
     times, paths = [], []
     for out in outputs:
@@ -437,7 +438,7 @@ def show_holders() -> int:
 def acquire(lockdir: Path, slots: int, parent: int) -> int | None:
     """枠を 1 つ取って fd を返す。取れるまで待つ。待っているあいだに起動したときの親（`parent`）が居なくなったら、取らずに None。"""
     waited = reported = None
-    mine = frozenset((out["dev"], out["ino"]) for out in output_files())
+    mine = waiter_files()
     while True:
         if os.getppid() != parent:
             say(f"呼び出し元（pid {parent}）が居なくなった——枠を取らずに終わる（走らせていない）")
@@ -477,10 +478,10 @@ def fd_path(fd: int) -> str | None:
         return None
 
 
-def output_files() -> list[dict]:
-    """自分の標準出力・標準エラー（コマンドが継ぐ）のうち、通常のファイルのもの。パス・`st_dev`・`st_ino`。"""
+def output_files(fds: tuple[int, ...] = (1, 2)) -> list[dict]:
+    """自分の `fds`（既定は標準出力・標準エラー——コマンドが継ぐ）のうち、通常のファイルのもの。パス・`st_dev`・`st_ino`。"""
     found: list[dict] = []
-    for fd in (1, 2):
+    for fd in fds:
         try:
             st = os.fstat(fd)
         except OSError:
@@ -495,6 +496,11 @@ def output_files() -> list[dict]:
         if same is not None and (same.st_dev, same.st_ino) == (st.st_dev, st.st_ino):
             found.append({"path": path, "dev": st.st_dev, "ino": st.st_ino})
     return found
+
+
+def waiter_files() -> frozenset:
+    """待ち手が待っているあいだに書くファイルの (`st_dev`, `st_ino`)——標準エラー（`say`）だけ。標準出力には書かない。"""
+    return frozenset((out["dev"], out["ino"]) for out in output_files((2,)))
 
 
 def record(fd: int, command: list[str]) -> None:

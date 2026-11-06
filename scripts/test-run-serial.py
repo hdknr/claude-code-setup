@@ -23,6 +23,7 @@ cruise はどのリポジトリでも使うので、対象リポジトリの `sc
 from __future__ import annotations
 
 import ast
+import json
 import os
 import re
 import signal
@@ -745,9 +746,11 @@ def observe_shared(script: Path, tmp: Path, tag: str) -> dict:
     worker = tmp / f"{tag}-shared-worker.py"
     worker.write_text(WORKER, encoding="utf-8")
     out = marks / "x.out"
-    with open(out, "w") as fx:
+    # X の標準出力は x.stdout（最初の 1 行の後は止まる）、標準エラーは x.out（W と共有）——1 つでも共有なら「分からない」のはず。
+    # 共有でないほう（x.stdout）だけで決めると、止まっていると読む（#898 の 2 パス目の D1）
+    with open(marks / "x.stdout", "w") as fo, open(out, "w") as fx:
         x = subprocess.Popen([sys.executable, str(script), "--", sys.executable, "-c", SHARED_HOLDER, str(marks)],
-                             cwd=root, stdout=fx, stderr=fx)
+                             cwd=root, stdout=fo, stderr=fx)
     started = wait_until(lambda: (marks / "x.start").exists(), [x])
     with open(out, "a") as fw:
         w = subprocess.Popen([sys.executable, str(launcher), str(script), HOLDER_STALL, HOLDER_REPORT,
@@ -760,12 +763,27 @@ def observe_shared(script: Path, tmp: Path, tag: str) -> dict:
     (marks / "go").write_text("")
     codes = finish(x, w)
     key = f"pid {x.pid}"
+    # 待ち手が自分と同じと見るファイル（`waiter_files`）: 標準出力は a、標準エラーは b のプロセスで読む（#898 の 2 パス目の D3）
+    probe = ("import importlib.util, json, os, sys\n"
+             f"spec = importlib.util.spec_from_file_location('rs_probe', {str(script)!r})\n"
+             "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+             f"open({str(marks / 'mine.json')!r}, 'w').write(json.dumps(sorted(m.waiter_files())))\n")
+    with open(marks / "a.txt", "w") as fa, open(marks / "b.txt", "w") as fb:
+        subprocess.run([sys.executable, "-c", probe], stdout=fa, stderr=fb, timeout=LIMIT, check=False)
+    try:
+        mine = {tuple(pair) for pair in json.loads((marks / "mine.json").read_text())}
+    except (OSError, ValueError):
+        mine = None
+    ident = lambda name: (os.stat(marks / name).st_dev, os.stat(marks / name).st_ino)
     return {
         "X が走った": started,
         "W の塊の数": len(blocks),
         "W の最後の塊の X の行": blocks[-1].get(key, "") if blocks else "",
         "holders の X の行": by_pid(h.stdout).get(key, ""),
         "終了コード": codes,
+        "待ち手が自分と見るファイル": mine,
+        "標準出力のファイル": ident("a.txt"),
+        "標準エラーのファイル": ident("b.txt"),
     }
 
 
@@ -980,11 +998,15 @@ MUTATIONS = {
     "居なくなった pid も出す": (
         "        if type(pid) is not int or pid <= 0 or not alive(pid):",
         "        if type(pid) is not int or pid <= 0:"),
-    # 守る 52: 待ち手は、自分の出力と同じファイルに出す持ち主の
+    # 守る 52: 待ち手は、出力のファイルの 1 つでも自分の標準エラーと同じ持ち主の
     "自分と同じ出力のファイルも見る": (
-        "    outputs = [out for out in outputs if not (isinstance(out, dict) and (out.get(\"dev\"), out.get(\"ino\")) in mine)]",
-        "    pass"),
-    # 守る 53: 持ち主の行に改行などの制御文字を出さない
+        "    if any(isinstance(out, dict) and (out.get(\"dev\"), out.get(\"ino\")) in mine for out in outputs):",
+        "    if False:"),
+    # 守る 53: 待ち手が自分と同じと見るのは標準エラー
+    "待ち手の標準出力も自分と見る": (
+        "    return frozenset((out[\"dev\"], out[\"ino\"]) for out in output_files((2,)))",
+        "    return frozenset((out[\"dev\"], out[\"ino\"]) for out in output_files())"),
+    # 守る 54: 持ち主の行に改行などの制御文字を出さない
     "制御文字を書き換えない": (
         "    line = flat(\"・\".join(parts))",
         "    line = \"・\".join(parts)"),
@@ -1053,6 +1075,7 @@ MUTATION_PROBE = {
     "holders が枠のファイルに書く": ("holders",),
     "居なくなった pid も出す": ("holders",),
     "自分と同じ出力のファイルも見る": ("shared",),
+    "待ち手の標準出力も自分と見る": ("shared",),
     "制御文字を書き換えない": ("shared",),
 }
 
@@ -1207,6 +1230,9 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
             ck(f"{label}: 改行のあるコマンドの X が 1 行（改行を \\n に書き換え、同じ行に経過）",
                "\\n" in got and re.search(r"・経過 [0-9]+ (?:秒|分)", got) is not None)
         ck("X と W が 0 で終わった", x["終了コード"] == [0, 0])
+        mine = x["待ち手が自分と見るファイル"]
+        ck(f"待ち手が自分と見るのは標準エラーのファイルで、標準出力のファイルは見ない（{mine}）",
+           mine is not None and tuple(x["標準エラーのファイル"]) in mine and tuple(x["標準出力のファイル"]) not in mine)
 
 
 def annotations(test_source: str) -> list[tuple[str, int, str]]:
