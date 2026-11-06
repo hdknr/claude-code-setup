@@ -18,7 +18,8 @@ spin-dd/tfs-stocks で cruise を回した後、メインの作業ツリーに V
 
 PR（台帳のその行の `pr`）を `gh pr view --json state,headRefName,headRefOid,commits` で読み、**PR のコミット**（`commits` と `headRefOid`）を集める。
 
-- **worktree**: `<メインの作業ツリー>/.claude/worktrees/` の下にあり、ブランチが PR の head のブランチか、HEAD が PR のコミットの 1 つ。
+- **worktree**: `<メインの作業ツリー>/.claude/worktrees/` の下にあり、ブランチが PR の head のブランチか、HEAD が PR のコミットの 1 つで、
+  detached か `worktree-<木の名前>` のブランチを開いている（隔離木の形）。
 - **ローカルブランチ**: PR の head のブランチ・消した worktree のブランチ・消した worktree の名前に `worktree-` を付けたもの
   （隔離木 `agent-<id>` のブランチ `worktree-agent-<id>`）・先端が PR のコミットの `worktree-agent-*`。
 
@@ -36,6 +37,10 @@ PR（台帳のその行の `pr`）を `gh pr view --json state,headRefName,headR
 - **未コミットの変更（未追跡を含む。`status.showUntrackedFiles` に依らない）がある worktree は消さず、未コミットだと名指しする**——親が台帳と終える報告に載せる。
 - **HEAD が PR のコミットでも既定ブランチに含まれるのでもない worktree を消さない**——push していないコミットにいる。
 - **ロックされた worktree も消せる**——unlock してから `git worktree remove`（**`--force` は使わない**）。未コミットの木は unlock する前に残す。
+- **積んだ周の木を消さない**——HEAD が PR のコミットでも、PR の head とも `worktree-<木の名前>` とも違う名前のブランチを開いた木は、その PR の head から切った周の木でありうる。
+- **既定ブランチとメインの作業ツリーのブランチを消さない**——fork から出した PR の head が `main` でも、手元の `main` は候補にしない。
+- **ディレクトリの無い木の記録が prune の後も残ったら、消したと答えない**——ロックされた記録は unlock してから prune し、残れば「残した」に数える。
+- **タグと同じ名前のブランチも、ブランチの名前で読む**——`refname:short` は `heads/<名前>` を返して候補に当たらず、黙って残る。
 - **ブランチは、先端が PR のコミットか既定ブランチに含まれるものだけ消す**——判定に `git branch --merged` を使わない（squash では出ない）。
 - **消すブランチは上の式の候補だけ**——先端が main にいるだけの `worktree-agent-*` は、どの周のものか決められないので残す。
 - **木を消した後、ブランチを消す前に `git worktree prune` する**——ディレクトリだけ消えた木の記録が残ると、そのブランチを git が消させない。
@@ -59,7 +64,7 @@ PR（台帳のその行の `pr`）を `gh pr view --json state,headRefName,headR
   先端が main にいるだけの `worktree-agent-*` も残る。**残った本数は出力の「この周のものと決められない」が言う。**
 - **周の体が作った木の一覧を持たない**——台帳にも記録しない。別の周の PR の版を開いた木（レビューで他の PR を見た隔離木）は、その周の片付けで消える。
 - **同じ PR のコミットを開いている、別のセッションの木も消す**——未コミットの変更が無ければ。動いている体の木かは見ない（ロックも外す）。
-- **`gh pr view` の `commits` は GitHub の上限（250 件）まで**——それより多いコミットの PR は、古いコミットにいる木を決められない。
+- **`gh pr view` の `commits` は gh が返す範囲まで**——上限は確かめていない（gh 2.92.0 のクエリは `commits(first: 100)`。ページングするかは見ていない）。それより多いコミットの PR は、古いコミットにいる木を決められない。
 - **ignore されたファイルは見ない**——`git worktree remove` は ignore されたファイルを持つ木を消す（`.env` など）。`merge-pr.py` と同じ。
 - **既定ブランチは手元の追跡参照で見る**——取り直さないので、古ければ「含まれる」と言えずに残す側に倒れる。
 - **`remotes` は最後に取った時点の追跡参照を数える**——`fetch --prune` していなければ、消えたブランチも数える。
@@ -160,7 +165,10 @@ def safe(sha: str, oids: set[str], ref: str | None) -> bool:
 
 
 def ours(wt: dict, head_ref: str, oids: set[str]) -> bool:
-    return wt["branch"] == head_ref or wt["head"] in oids
+    # HEAD で決めるのは detached の木と隔離木のブランチ（worktree-<名前>）だけ——別の名前のブランチを開いた木は、
+    # PR のコミットにいても積んだ周（その PR の head から切った周）の木でありうる（#823 の /code-review 1 パス目）
+    own_branch = wt["branch"] in ("", "worktree-" + Path(wt["path"]).name)
+    return wt["branch"] == head_ref or (own_branch and wt["head"] in oids)
 
 
 def under(path: str, root: Path) -> bool:
@@ -169,6 +177,7 @@ def under(path: str, root: Path) -> bool:
 
 def cmd_cycle(number: str) -> int:
     done: list[str] = []
+    kept: list[str] = []
     try:
         if not in_main_worktree():
             print("メインの作業ツリーの外から呼ばれた——何も消していない（メインの作業ツリーから呼ぶ）")
@@ -187,7 +196,6 @@ def cmd_cycle(number: str) -> int:
         all_wts = worktrees()
         main_path = Path(all_wts[0]["path"])
         root = main_path / ".claude" / "worktrees"
-        kept: list[str] = []
         untouched = 0
         removed: list[dict] = []
         pruned: list[str] = []
@@ -199,7 +207,11 @@ def cmd_cycle(number: str) -> int:
                 print(f"  触っていない: worktree {wt['path']}（.claude/worktrees の外）")
                 continue
             if wt["prunable"] or not Path(wt["path"]).is_dir():
-                removed.append(wt)  # ディレクトリが無い——下の prune が記録を消す
+                # ディレクトリが無い——下の prune が記録を消す。prune はロックされた記録を飛ばすので、先に外す
+                if wt["locked"] and run(["git", "worktree", "unlock", wt["path"]]).returncode != 0:
+                    kept.append(f"worktree の記録 {wt['path']}（ディレクトリが無いが、unlock に失敗した）")
+                    continue
+                removed.append(wt)
                 pruned.append(wt["path"])
                 continue
             dirty = git(["status", "--porcelain", "--untracked-files=all"], cwd=wt["path"]).splitlines()
@@ -222,13 +234,19 @@ def cmd_cycle(number: str) -> int:
             done.append(f"worktree {wt['path']}")
             print(f"  消した: worktree {wt['path']}")
         git(["worktree", "prune"])
+        left = {w["path"] for w in worktrees()}
         for path in pruned:
+            if path in left:
+                kept.append(f"worktree の記録 {path}（ディレクトリが無いが、prune の後も記録が残った）")
+                continue
             done.append(f"worktree の記録 {path}")
             print(f"  消した: worktree の記録 {path}（ディレクトリが無かった。prune）")
         candidates = {head_ref} | {w["branch"] for w in removed if w["branch"]} | \
                      {"worktree-" + Path(w["path"]).name for w in removed}
+        # 既定ブランチとメインの作業ツリーのブランチは候補にしない（fork の PR の head が main のとき。#823 の Verifier 1 パス目）
+        protected = {ref.split("/", 3)[-1] if ref else "", all_wts[0]["branch"]} - {""}
         heads = {}
-        for line in git(["for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads/"]).splitlines():
+        for line in git(["for-each-ref", "--format=%(refname:lstrip=2) %(objectname)", "refs/heads/"]).splitlines():
             name, _, sha = line.partition(" ")
             heads[name] = sha
         for name, sha in heads.items():
@@ -237,6 +255,8 @@ def cmd_cycle(number: str) -> int:
         untouched_branches = 0
         for name in sorted(heads):
             sha = heads[name]
+            if name in protected:
+                continue
             if name not in candidates:
                 if name.startswith("worktree-agent-"):
                     untouched_branches += 1
@@ -263,15 +283,17 @@ def cmd_cycle(number: str) -> int:
         print(f"判定できなかった: {e}")
         for d in done:
             print(f"  それまでに消した: {d}")
+        for k in kept:
+            print(f"  残した: {k}")
         return 7
 
 
 def cmd_remotes() -> int:
     try:
         ref = default_ref()
-        default = ref.rsplit("/", 1)[-1] if ref else ""
-        names = [n for n in git(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/"]).splitlines()
-                 if n and n not in ("origin", "origin/HEAD")]
+        default = ref.split("/", 3)[-1] if ref else ""
+        names = [n for n in git(["for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes/origin/"]).splitlines()
+                 if n and n != "HEAD"]
         prs = gh_json(["pr", "list", "--state", "all", "--limit", str(PR_LIMIT), "--json", "headRefName,state"])
         try:
             by_head: dict[str, set[str]] = {}
@@ -283,8 +305,7 @@ def cmd_remotes() -> int:
         print(f"判定できなかった: {e}")
         return 7
     counts = {s: 0 for s in STATE_ORDER} | {"PR なし": 0}
-    for n in names:
-        branch = n[len("origin/"):]
+    for branch in names:
         if branch == default:
             continue
         states = by_head.get(branch, set())

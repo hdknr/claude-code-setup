@@ -127,7 +127,8 @@ def state_of(r: dict) -> dict:
         if line.startswith("worktree "):
             p = Path(line[len("worktree "):]).resolve()
             wts.add(str(p.relative_to(r["root"].resolve())))
-    branches = set(git(main, "for-each-ref", "--format=%(refname:short)", "refs/heads/").split())
+    # refname:short は同じ名前のタグがあると heads/<名前> を返す——観測の側が本体と同じ読み違いをしないよう lstrip で読む
+    branches = set(git(main, "for-each-ref", "--format=%(refname:lstrip=2)", "refs/heads/").split())
     remote = git(r["root"], "--git-dir", str(r["origin"]), "for-each-ref", "--format=%(refname) %(objectname)")
     tracking = git(main, "for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/")
     return {"wts": wts, "branches": branches, "remote": remote + tracking}
@@ -198,6 +199,24 @@ def dir_gone(r):
     shutil.rmtree(r["main"] / WT / "issue-1")
 
 
+def locked_gone(r):
+    shutil.rmtree(r["main"] / WT / "agent-aaa")  # agent-aaa はロックされている
+
+
+def stacked(r):
+    # PR 1 の head に積んで始めた周 3（コミットはまだ無い）——HEAD は PR 1 のコミットにいる
+    git(r["main"], "worktree", "add", "-q", str(r["main"] / WT / "issue-3"), "-b", "issue/3-c", "issue/1-a")
+
+
+def tag_alike(r):
+    git(r["main"], "tag", "issue/1-a", "refs/heads/issue/1-a")
+
+
+def fork_main(r):
+    git(r["main"], "checkout", "-q", "-b", "other")  # メインの作業ツリーが main を開いていない
+    return {"prs": {"1": pr_view("main", r["c1"])}}  # fork から出した PR の head が main
+
+
 def not_merged(r):
     return {"prs": {"1": pr_view("issue/1-a", r["c1"], state="OPEN")}}
 
@@ -231,6 +250,14 @@ CASES = {
         "ブランチ issue/1-a"),
     "ディレクトリを手で消した作業木も、記録とブランチを消す": (
         dict(prepare=dir_gone), 0, set(), CYCLE1_WTS, OTHERS, CYCLE1_BRANCHES, "prune"),
+    "ロックされたまま手でディレクトリを消した隔離木も、記録とブランチを消す": (
+        dict(prepare=locked_gone), 0, set(), CYCLE1_WTS, OTHERS, CYCLE1_BRANCHES, "prune"),
+    "積んだ周（PR の head から切った別のブランチ）の木とブランチは消さない": (
+        dict(prepare=stacked), 0, {f"{MWT}/issue-3"}, CYCLE1_WTS, OTHERS | {"issue/3-c"}, CYCLE1_BRANCHES),
+    "同じ名前のタグがあっても、ブランチを消す": (
+        dict(prepare=tag_alike), 0, set(), CYCLE1_WTS, OTHERS, CYCLE1_BRANCHES),
+    "fork の PR の head が main でも、手元の main を消さない": (
+        dict(scn=fork_main), 0, {f"{MWT}/issue-1"}, {f"{MWT}/agent-aaa"}, {"main", "issue/1-a"}, set()),
     "MERGED でなければ何も消さない": (
         dict(scn=not_merged), 3, ALL_WTS, set(), CYCLE1_BRANCHES | OTHERS, set(), "OPEN"),
     "メインの作業ツリーの外から呼んだら何も消さない": (
@@ -265,7 +292,7 @@ MUTATIONS = {
     # 守る 2: メインの作業ツリーの外から呼ばれたら何も消さない
     "呼んだ場所を見ない": ("if not in_main_worktree():", "if False:"),
     # 守る 3: この周のものと決められない木を消さない
-    "どの木も周のものと読む": ('return wt["branch"] == head_ref or wt["head"] in oids', "return True"),
+    "どの木も周のものと読む": ('return wt["branch"] == head_ref or (own_branch and wt["head"] in oids)', "return True"),
     # 守る 4: .claude/worktrees の外の木を消さない
     "場所を見ない": ("return Path(path).resolve().is_relative_to(root.resolve())", "return True"),
     # 守る 5: 未コミットの変更がある木は消さず、名指しする
@@ -281,15 +308,24 @@ MUTATIONS = {
     # 守る 10: ブランチを消す前に prune する
     "prune しない": ('        git(["worktree", "prune"])\n', "        pass\n"),
     # 守る 11: リモートのブランチに触らない
-    "リモートのブランチを消す": ('res = run(["git", "branch", "-D", name])',
-                         'res = run(["git", "push", "-q", "origin", "--delete", name])'),
+    "リモートのブランチも消す": ('res = run(["git", "branch", "-D", name])',
+                         'run(["git", "push", "-q", "origin", "--delete", name]); res = run(["git", "branch", "-D", name])'),
     # 守る 12: 判定できなかったことを片付けたと答えない
-    "判定できなかったを片付けたと答える": ('            print(f"  それまでに消した: {d}")\n        return 7',
-                              '            print(f"  それまでに消した: {d}")\n        return 0'),
+    "判定できなかったを片付けたと答える": ('            print(f"  残した: {k}")\n        return 7',
+                              '            print(f"  残した: {k}")\n        return 0'),
     # 守る 13: remotes は PR の無いブランチを「PR なし」に数える
     "PR の無いブランチを CLOSED に数える": ('if s in states), "PR なし")', 'if s in states), "CLOSED")'),
     # 守る 14: remotes は OPEN → MERGED → CLOSED の順で 1 つに数える
     "状態の順を逆にする": ('STATE_ORDER = ("OPEN", "MERGED", "CLOSED")', 'STATE_ORDER = ("CLOSED", "MERGED", "OPEN")'),
+    # 守る 15: 積んだ周の木を消さない
+    "開いているブランチの名前を見ない": ('own_branch = wt["branch"] in ("", "worktree-" + Path(wt["path"]).name)', "own_branch = True"),
+    # 守る 16: 既定ブランチとメインの作業ツリーのブランチを消さない
+    "既定ブランチを守らない": ("if name in protected:", "if False:"),
+    # 守る 17: ディレクトリの無いロックされた記録は unlock してから prune する
+    "prune の前に unlock しない": ('if wt["locked"] and run(["git", "worktree", "unlock", wt["path"]]).returncode != 0:',
+                               "if False:"),
+    # 守る 18: タグと同じ名前のブランチも名前で読む
+    "refname:short で読む": ('"--format=%(refname:lstrip=2) %(objectname)"', '"--format=%(refname:short) %(objectname)"'),
 }
 
 REMOTES = "remotes: 本数と PR の状態ごとの内訳（OPEN → MERGED → CLOSED・PR なし・既定ブランチは数えない）"
@@ -306,10 +342,14 @@ KILLS = {
     "ブランチの先端を見ない": ["木を消した後のブランチに PR に無いコミットがあれば、ブランチを残す"],
     "どのブランチも候補にする": [ONE],
     "prune しない": ["ディレクトリを手で消した作業木も、記録とブランチを消す"],
-    "リモートのブランチを消す": [ONE],
+    "リモートのブランチも消す": [ONE],
     "判定できなかったを片付けたと答える": ["gh が失敗したら判定できなかった（何も消さない）"],
     "PR の無いブランチを CLOSED に数える": [REMOTES],
     "状態の順を逆にする": [REMOTES],
+    "開いているブランチの名前を見ない": ["積んだ周（PR の head から切った別のブランチ）の木とブランチは消さない"],
+    "既定ブランチを守らない": ["fork の PR の head が main でも、手元の main を消さない"],
+    "prune の前に unlock しない": ["ロックされたまま手でディレクトリを消した隔離木も、記録とブランチを消す"],
+    "refname:short で読む": ["同じ名前のタグがあっても、ブランチを消す"],
 }
 
 
