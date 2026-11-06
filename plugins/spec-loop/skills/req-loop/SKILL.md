@@ -5,8 +5,8 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 
 # req-loop スキル
 
-<!-- skill-version: 0.68.0 -->
-> **このスキルの版: 0.68.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.69.0 -->
+> **このスキルの版: 0.69.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -46,8 +46,8 @@ description: "要求確定のループを 1 周（= レビュー会 1 回分）�
 - **1 回の実行で、回答待ちを越えて先へ進まない。** 資料を作ったら止まる。
   レビュー会の前に回答を催促したり、回答を待たずに反映へ進んだりしない。
 - **サインオフのタグを付けない**（`../../references/signoff-tags.md`）。承認は人間の判断である。
-- **図をアスキーアートでも Mermaid でも描かない。** drawio で描き、同梱の `render-diagrams.py` で SVG に書き出す。
-  置き場所・形式・確かめ方は `../../references/tree.md` の「図」を正とする。
+- **図をアスキーアートでも Mermaid でも描かない。** 業務フロー（スイムレーン）は BPMN で描き、それ以外の図は drawio で描いて同梱の `render-diagrams.py` で SVG に書き出す。
+  どちらで描くかの線・置き場所・形式・確かめ方（BPMN の書き出しをまだ同梱していないあいだの扱いを含む）は `../../references/tree.md` の「図」を正とする。
 - **commit と push は、対象リポジトリの `CLAUDE.md` の決まりに従う。** 決まりが無ければ、
   変更したファイルの一覧を示して止まり、commit するかどうかを利用者に任せる。
 
