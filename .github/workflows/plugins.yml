@@ -207,6 +207,10 @@ jobs:
       - name: spec-loop の作り直す範囲を引くスクリプトのテスト（#875）
         run: python3 scripts/test-rebuild-scope.py
 
+      # 本体は plugins/spec-loop/scripts/rework-metrics.py（仮回答・確認の Issue の変化と作り直しの量を数える。Q&A 表の履歴は一時の git リポジトリで作る）。
+      - name: spec-loop の作り直しの量を数えるスクリプトのテスト（#886）
+        run: python3 scripts/test-rework-metrics.py
+
       # 本体は plugins/spec-loop/scripts/parent-checklist.py（登録した Issue から依存の連鎖を cruise の親 Issue の書式で出す。
       # 索引と本文は本物の scaffold.py で作り、出した行を本物の parent-issue.py show に通す）。
       - name: spec-loop の親 Issue の一覧を出すスクリプトのテスト（#876）
