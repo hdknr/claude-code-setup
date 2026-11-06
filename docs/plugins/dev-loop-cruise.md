@@ -34,6 +34,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
 | 子プロセスの周（任意） | `../cruise/scripts/child-cycle.py`・`../cruise/references/child-process.md` | 周を `claude -p` の子プロセスで回す起動口と要約。親の `/clear` の道連れにならない。**既定はサブエージェントのまま**（[#491](https://github.com/hdknr/claude-code-setup/issues/491)） |
 | 外側のループ（任意） | `../cruise/scripts/outer-loop.py`・`scripts/ledger.py`（`status`・`progress`） | cruise を `claude -p` で起動し直して回すループ。進められる周があり、起動のたびに周が進んでいるあいだだけ起こし直す（[#791](https://github.com/hdknr/claude-code-setup/issues/791)） |
+| 周の片付け | `../cruise/scripts/cleanup-cycle.py` | 周のマージの後に、その PR から決まる worktree（周の作業木と Verifier・`/code-review` の隔離木）とローカルブランチだけを消す。未コミットの変更がある木は残して台帳のメモに載せる。リモートのブランチ・PR には触らず、終えるときに本数と PR の状態ごとの内訳を数える（[#823](https://github.com/hdknr/claude-code-setup/issues/823)） |
 | 順番待ちと並行の周 | `../cruise/scripts/run-serial.py`・`../cruise/references/parallel.md` | 周の重い検査・アプリの起動を、同じリポジトリでは順番待ちにする（既定は 1 本ずつ）。単独で回す周と、版をマージの直前に上げ直す決まりも（[#493](https://github.com/hdknr/claude-code-setup/issues/493)・[#531](https://github.com/hdknr/claude-code-setup/issues/531)） |
 
 **スキルの base ディレクトリ**は、プラグインで入れていれば
@@ -410,6 +411,9 @@ python3 <スキルの base ディレクトリ>/../cruise/scripts/outer-loop.py 5
 - **各 PR のコメント**——関門の残課題、名指しの未証明、訊かずに進めた箇所が書かれています。
   `マージ` の線でマージした PR も、戻ってから PR コメントで確かめる前提です。
   Issue にしなかった指摘は「記録だけ（起票しない。#774）」の見出しに並びます——実際に問題が起きたら、そのときに起票します。
+- **片付けで残した worktree**——cruise は周をマージするたびに、その周の worktree とローカルブランチを消します。未コミットの変更がある木などは消さずに、
+  台帳のメモ（`片付けで残した:`）と終える報告に載ります。消すか（変更を捨てるか）は利用者が決めます。
+  終える報告には、残っているリモートのブランチの本数と、その PR の状態（OPEN・MERGED・CLOSED・PR なし）ごとの内訳も載ります——リモートのブランチは消しません（[#823](https://github.com/hdknr/claude-code-setup/issues/823)）。
 - **cruise が終わるのは、親 Issue の一覧にある課題が済んだときです**——周の途中で足した課題が残っていれば、回さずに一覧で渡されます。
 - **終える前の main の歯止め**——cruise は終える前に、続けてマージした結果の main の先端で全部の歯止め（このリポジトリなら `check-all.py`）を 1 回流し、
   本数・失敗の数・流した main の SHA を終える報告に書きます。PR ごとの CI がそれぞれ通っても、続けてマージした結果で初めて壊れることがあるからです。
