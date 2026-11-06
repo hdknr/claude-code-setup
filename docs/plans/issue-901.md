@@ -106,7 +106,7 @@ Issue が「この周で決める」とした 2 つと、それに伴う判断�
 
 必須要件の掛け算: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目に渡す（4 つの受け渡し。2 パス目が該当なしなら 2 つ）。
 
-**証明できるもの**: I1〜I4・I6〜I9（テスト・`check-all.py`・実際の書き出しで）。I5 は手元で 1 回の実走（下の「実機確認」）。
+**証明できるもの**: I1〜I4・I6〜I9（テスト・`check-all.py`・実際の書き出しで）。I5 のうち「Camunda Modeler の書く形（collaboration・participant・laneSet・BPMNDI の座標）の BPMN 1 枚を本物の描画で書き出せた」は手元で 1 回の実走（下の「実機確認」）。**I5 のうち「Camunda Modeler で開ける」は下の未証明**（基準は緩めない——人間のレビューに回す）。
 
 **この環境では証明できないもの（未証明）**:
 - `render-bpmn.mjs` の **Linux・Windows の Chrome**、bpmn-js・puppeteer-core の **ほかの版**での動き（確かめたのは macOS の Chrome と bpmn-js 18.6.2・puppeteer-core 24.10.0 だけ）
@@ -129,17 +129,36 @@ Issue が「この周で決める」とした 2 つと、それに伴う判断�
 - 書き出しの先頭: XML 宣言の直後に `<!-- spec-loop-diagram-source: sha256=9eadd8be… -->`——`shasum -a 256` のソースの指紋と一致
 - 書き出しを Chrome で開いて撮った画像を目で見た——participant「受注」の中にレーン「顧客」「営業」、各レーンにタスクと開始・終了、矢印が描かれている
 - `SPEC_LOOP_BPMN_DEPS` を外すと 2（「bpmn-js と puppeteer-core の場所が無い」と `受注.bpmn` を名指し、何も書かない）
-- 時間切れ（`BPMN_TIMEOUT` 0.4〜0.55 秒で 6 回）のあと、headless の Chrome のプロセスは残らなかった（`pgrep -f headless` で 2 秒後に 0——ほかのアプリの 1 件を除く）。
-  **puppeteer の一時のプロファイル（`$TMPDIR/puppeteer_dev_chrome_profile-*`）は 5 つ残った**——docstring の「守らないもの」に書いた
+- 時間切れ（`BPMN_TIMEOUT` 0.4〜0.55 秒で 6 回）のあと、headless の Chrome のプロセスは見えなかった（`pgrep -f headless` で 2 秒後に 0——ほかのアプリの 1 件を除く）。
+  **著者のこの測り方には陽性対照が無い**（描画中に同じ `pgrep` が Chrome に当たることを見ていない）——1 パス目の `/code-review` が陽性対照つきで測り直し、
+  描画口の起動 0.16 秒後に Chrome が見え、グループを SIGKILL して 2 秒後に消えたことを示した（消えたのは pipe が閉じたため。Chrome は別のプロセスグループ）。
+  **puppeteer の一時のプロファイル（`$TMPDIR/puppeteer_dev_chrome_profile-*`）は残った**（著者は前後の数の差で 5、`/code-review` は時刻で 6 と数えた——前後の差は、ほかの描画が消したものと相殺しうる）——docstring の「守らないもの」に書いた
 
 ## 関門の進捗（再開点）
 
 - 割り目（手順 4）: **割らない（cruise の周）**
-- 1 パス目: 関門に渡す（起点 = 1 パス目の関門に渡した時点の HEAD `89f68cb`。`check-all.py` 67/67 緑（run-serial 越し）を確かめてから）。Verifier（`dev-loop:dev-loop-verifier`・sonnet）と `/code-review`（high）を並べて当てる。結果は未着
+- 1 パス目: 起点 `89f68cb`（1 パス目の関門に渡した時点の HEAD）。
+  - Verifier（`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件**（報告は `SubagentHandback` が届かず、`SendMessage` で取り直した。本物の描画・読み込みの警告で失敗する形・同じ書き出しで 2・`--check` の名指しを自分で走らせて一致）
+  - `/code-review`（high）: **指摘 10 件**（CR-1〜CR-10）。直す 4 件（CR-1・CR-3・CR-4・CR-5）・計画ファイルの記録の直し 2 件（CR-6・CR-7）・残課題 4 件。採否は下の表
+  - 手順 4 への差し戻し: なし（Verifier の反証 0）。指摘対応は 1 パス目の起点からの差分として 2 パス目に当てる
+- 交絡を潰した手順: 実機確認の「Chrome のプロセスが残らない」に陽性対照が無かった（CR-6）——`/code-review` が陽性対照つきで測り直して主張が成り立つことを示した（描画口の起動 0.16 秒後に Chrome が見え、グループを SIGKILL して 2 秒後に消えた。Chrome は puppeteer が別のプロセスグループで起こすので、消えたのは pipe が閉じたため）
 
 ## 既知の限界・決着済みの論点
 
-（関門の採否の表はここに足す）
+### 1 パス目の採否
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR-1 `SPEC_LOOP_BPMN_DEPS` が相対パスだと事前の確かめを通り、各 `.bpmn` が `createRequire` で失敗する | 示せる——`SPEC_LOOP_BPMN_DEPS=deps python3 render-diagrams.py repo` → 「puppeteer-core を読み込めない（… absolute path string. Received 'deps/package.json'）」rc=1 | I1・I3 | 直す（`bpmn_command` で絶対パスにして渡す。Chrome も同じ） |
+| CR-2 混在で draw.io だけが無い経路の試料が無い（`if reasons and bpmn is None:` の変異が生き残る） | 示せる（変異が全試料を通る）——ただしコードは正しい | 無し（I4 の「変異テストを含む」は満たす。この経路のコードは正しい） | 残課題 |
+| CR-3 同じ書き出しの判定がパス全体を小文字にするので、大文字小文字を区別するファイルシステムで別のディレクトリ・drawio だけの `X.drawio` と `x.drawio` を止める | 示せる——大文字小文字を区別する APFS の一時のボリュームで `docs/A/x.drawio`・`docs/a/x.drawio`・`docs/X.drawio`・`docs/x.drawio` に `--check` → この PR は 2（「同じ書き出し」）、main の版は 1（書き出しが無いと名指し） | I7 | 直す（同じディレクトリで名前が大文字小文字まで一致するものだけを止める。大文字小文字だけ違う名前は止めず、docstring の「守らないもの」に書く） |
+| CR-4 `BPMN_TIMEOUT` が不正だと drawio だけのリポジトリも止まる（逆も） | 示せる——`.drawio` だけで `BPMN_TIMEOUT=0` → 「BPMN_TIMEOUT が正の数でない」2。main は `BPMN_TIMEOUT` を見ない | I7 | 直す（その種類のソースがあるときだけ確かめる） |
+| CR-5 docstring の「守るもの」の行が、BPMN でも「書くのは隣の `.svg` と一時ファイルだけ」「グループごと止める」と読める（Chrome は別のプロセスグループで `$TMPDIR` にプロファイルを書く） | 示せる——描画のたびに `$TMPDIR/puppeteer_dev_chrome_profile-*` ができる（時間切れで残った数を数えた）。`@puppeteer/browsers` の `launch.js` の `detached ??= process.platform !== 'win32'` | I9 | 直す（docstring の行を drawio と BPMN で書き分ける） |
+| CR-6 計画ファイルの「Chrome のプロセスは残らなかった」に陽性対照が無い・残ったプロファイルの数が違う（5 と 6） | 示せる（記録に陽性対照が無い） | 無し（計画ファイルは成果物でない。主張そのものは `/code-review` の陽性対照つきの測り直しで成り立つ） | 計画ファイルの記録を直す（上の「交絡を潰した手順」と「実機確認」） |
+| CR-7 I5 を「証明できるもの」に数えつつ、「Camunda Modeler で開ける」を未証明にしていて食い違う | 示せる（計画ファイルの 2 箇所） | 無し（計画ファイルの書き方） | 計画ファイルの記録を直す（I5 のうち測ったものと未証明を分けて書く。基準は緩めない） |
+| CR-8 `CHROME_PATH` の実行ビットの確かめを外す変異が生き残る | 示せる（変異が全試料を通る）——コードは正しい | 無し | 残課題 |
+| CR-9 `.bpmn` ごとに Node と Chrome を起こすので、図の数に比例して遅い | 示せない（30 枚の実測は無い。1 枚 0.9 秒） | 無し | 残課題 |
+| CR-10 `executable()` と `drawio_command` の判定が重複している | 示せない（振る舞いの差は無い） | 無し | 残課題 |
 
 - **`render-bpmn.mjs` は回帰テストで走らない**——CI に Node・Chrome・bpmn-js が無く、テストは本物に届かない形を受入基準（I4）が求める。描画口の引数の形は偽の `node` で見る。決着: 採った（docstring の「守らないもの」）
 - **Chrome の一時のプロファイルが時間切れで残る**——描画口を SIGKILL で止めるため。決着: 採らない（drawio と同じグループごとの停止を保つ。記録だけ）

@@ -662,23 +662,28 @@ def case_bpmn_only(script: Path, tmp: Path) -> list[str]:
     return p
 
 
-def default_bpmn(script: Path, tmp: Path, use_chrome_path: bool) -> list[str]:
+def default_bpmn(script: Path, tmp: Path, use_chrome_path: bool, relative: bool = False) -> list[str]:
     root = make_repo(tmp, {"docs/v1/requirements/flows/受注.bpmn": BPMN})
     node = fake_exe(root, "bin/node")
     chrome = fake_exe(root, "chrome")
     deps = deps_dir(root)
+    # relative: 依存と Chrome を cwd（偽の正本リポジトリの根）からの相対パスで渡す——描画口には絶対パスで届くこと（CR-1）
+    given_deps = str(deps.relative_to(root)) if relative else str(deps)
+    given_chrome = str(chrome.relative_to(root)) if relative else str(chrome)
     if use_chrome_path:
-        r = run(script, root, bpmn=None, deps=str(deps), chrome=str(chrome), chrome_default="", path_dirs=[node.parent])
+        r = run(script, root, bpmn=None, deps=given_deps, chrome=given_chrome, chrome_default="", path_dirs=[node.parent])
     else:
-        r = run(script, root, bpmn=None, deps=str(deps), chrome_default=str(chrome), path_dirs=[node.parent])
+        r = run(script, root, bpmn=None, deps=given_deps, chrome_default=str(chrome), path_dirs=[node.parent])
     p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-300:]}"]
     if "docs/v1/requirements/flows/受注.svg" not in r.after:
         p.append("既定の描画口で書き出していない")
     if len(r.log) != 1:
         return p + [f"偽の node の呼び出しが {len(r.log)} 回"]
     args = r.log[0]
-    expect = [str((script.parent / BPMN_SCRIPT).resolve()), "--deps", str(deps), "--chrome", str(chrome)]
-    if args[:5] != expect or len(args) != 7 or Path(args[5]).name != "受注.bpmn":
+    expect = [str((script.parent / BPMN_SCRIPT).resolve()), "--deps", str(deps.resolve()), "--chrome", str(chrome.resolve())]
+    # 絶対パスで渡っていること（相対のまま `resolve()` で一致させない）と、指す先が同じこと（`/var` と `/private/var` は同じ）
+    got = [str(Path(a).resolve()) if Path(a).is_absolute() else a for a in args[:5]]
+    if got != expect or len(args) != 7 or Path(args[5]).name != "受注.bpmn":
         p.append(f"既定の描画口の引数の形が違う: {args}（期待 {expect} <ソース> <一時ファイル>）")
     return p
 
@@ -691,6 +696,21 @@ def case_bpmn_default(script: Path, tmp: Path) -> list[str]:
 def case_bpmn_chrome_path(script: Path, tmp: Path) -> list[str]:
     """#901: `CHROME_PATH` の Chrome を使う（既定のパスが無くても）。"""
     return default_bpmn(script, tmp, use_chrome_path=True)
+
+
+def case_bpmn_relative(script: Path, tmp: Path) -> list[str]:
+    """#901（CR-1）: 相対パスの `SPEC_LOOP_BPMN_DEPS`・`CHROME_PATH` は、絶対パスにして描画口に渡す。"""
+    return default_bpmn(script, tmp, use_chrome_path=True, relative=True)
+
+
+def case_bpmn_timeout_ignored(script: Path, tmp: Path) -> list[str]:
+    """#901（CR-4）: `.bpmn` が無ければ `BPMN_TIMEOUT` を見ない——drawio だけのリポジトリは今までどおり書き出す。"""
+    root = make_repo(tmp, {"docs/a.drawio": "<mxfile/>\n"})
+    r = run(script, root, bpmn_timeout="0")
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-200:]}"]
+    if "docs/a.svg" not in r.after:
+        p.append("書き出さない")
+    return p
 
 
 def bpmn_missing(reasons: list[str], setup: Callable[[Path, Path], dict], files: dict[str, bytes | str] | None = None
@@ -772,8 +792,8 @@ def case_bpmn_timeout_value(script: Path, tmp: Path) -> list[str]:
 
 
 def case_clash(script: Path, tmp: Path) -> list[str]:
-    """#901: 同じ `X.svg` になるソース（`X.drawio` と `x.BPMN`）は、書き出しでも `--check` でも何も書かずに名指しして 2。"""
-    files = {"docs/v1/flow.drawio": "<mxfile/>\n", "docs/v1/FLOW.bpmn": BPMN, "docs/v1/other.drawio": "<mxfile>o</mxfile>\n"}
+    """#901: 同じ `X.svg` になるソース（`X.drawio` と `X.BPMN`）は、書き出しでも `--check` でも何も書かずに名指しして 2。"""
+    files = {"docs/v1/flow.drawio": "<mxfile/>\n", "docs/v1/flow.BPMN": BPMN, "docs/v1/other.drawio": "<mxfile>o</mxfile>\n"}
     p = []
     for args in ((), ("--check",)):
         root = make_repo(tmp / ("check" if args else "write"), files)
@@ -782,8 +802,21 @@ def case_clash(script: Path, tmp: Path) -> list[str]:
             p.append(f"{args}: 終了コードが 2 でない: {r.code}")
         if r.after != r.before or r.log:
             p.append(f"{args}: 何かした")
-        if "docs/v1/flow.drawio" not in r.stderr or "docs/v1/FLOW.bpmn" not in r.stderr:
+        if "docs/v1/flow.drawio" not in r.stderr or "docs/v1/flow.BPMN" not in r.stderr:
             p.append(f"{args}: 2 つのソースを名指ししない: {r.stderr[-300:]}")
+    return p
+
+
+def case_no_clash_by_case(script: Path, tmp: Path) -> list[str]:
+    """#901（CR-3）: 名前が大文字小文字だけ違うソース（`Flow.drawio` と `flow.bpmn`）は、同じ書き出しとして止めない
+    （大文字小文字を区別するファイルシステムでは別の書き出し。区別しないほうの扱いは docstring の「守らないもの」）。"""
+    files = {"docs/v1/Flow.drawio": "<mxfile/>\n", "docs/v1/flow.bpmn": BPMN}
+    p = []
+    for args in ((), ("--check",)):
+        root = make_repo(tmp / ("check" if args else "write"), files)
+        r = run(script, root, *args)
+        if "同じ書き出し" in r.stderr or r.code == 2:
+            p.append(f"{args}: 同じ書き出しとして止めた: {r.code} {r.stderr[-300:]}")
     return p
 
 
@@ -847,6 +880,9 @@ CASES: dict[str, Callable[[Path, Path], list[str]]] = {
     "BPMN: 時間切れ": bpmn_failing("hang", "BPMN の描画口が時間切れ", bpmn_timeout="1"),
     "BPMN_TIMEOUT が正の数でない": case_bpmn_timeout_value,
     "同じ書き出しになるソース": case_clash,
+    "大文字小文字だけ違う名前は同じ書き出しとして止めない": case_no_clash_by_case,
+    "BPMN: 相対パスの依存と Chrome": case_bpmn_relative,
+    "drawio だけなら BPMN_TIMEOUT を見ない": case_bpmn_timeout_ignored,
     "--check: BPMN が新しい": check_case({"docs/v1/requirements/flows/a.bpmn": BPMN,
                                          "docs/v1/requirements/flows/a.svg": marked(BPMN)}, []),
     "--check: BPMN の書き出しが無い": check_case({"docs/v1/requirements/flows/a.bpmn": BPMN},
@@ -927,8 +963,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("BPMN の時間切れに draw.io の値を使う", 'timeouts["BPMN_TIMEOUT"], root)', 'timeouts["DRAWIO_TIMEOUT"], root)', "BPMN: 時間切れ"),
     ("時間切れの値を確かめない", "            if not timeouts[name] > 0:", "            if False:", "BPMN_TIMEOUT が正の数でない"),
     ("同じ書き出しを見ない", "    if clashes:", "    if False:", "同じ書き出しになるソース"),
-    ("同じ書き出しの判定で大文字小文字を区別する", "by_output.setdefault(str(output_of(source)).lower(), [])",
-     "by_output.setdefault(str(output_of(source)), [])", "同じ書き出しになるソース"),
+    ("同じ書き出しの判定で大文字小文字を区別しない", "by_output.setdefault(str(output_of(source)), [])",
+     "by_output.setdefault(str(output_of(source)).lower(), [])", "大文字小文字だけ違う名前は同じ書き出しとして止めない"),
+    ("依存を絶対パスにしない", "        deps = os.path.abspath(deps)", "        deps = deps", "BPMN: 相対パスの依存と Chrome"),
+    ("Chrome を絶対パスにしない", '"--chrome", os.path.abspath(chrome)]', '"--chrome", str(chrome)]', "BPMN: 相対パスの依存と Chrome"),
+    ("無い種類の時間切れも確かめる", "        if not present:\n            continue", "        if False:\n            continue",
+     "drawio だけなら BPMN_TIMEOUT を見ない"),
     # #904 の残課題 P2-5
     ("svg の拡張子の大文字小文字を区別する", '            if name.lower().endswith(".svg"):', '            if name.endswith(".svg"):',
      "--check: 大文字の拡張子の svg もソースが無いと言う"),
