@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.97.0 -->
-> **このスキルの版: 1.97.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.98.0 -->
+> **このスキルの版: 1.98.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -248,6 +248,8 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 **本文の先頭が `<!-- spec-loop-handoff: v3 -->`・`<!-- spec-loop-handoff: v2 -->`・`<!-- spec-loop-handoff: v1 -->` のどれかなら、spec-loop が確定した仕様から生成した Issue である。
 `references/spec-gap.md` を読んでから手順 2 へ進む（必須）**——受入基準（Red テスト）の写し方と、
 指すファイルが Issue の時点と同じかの確かめ方はそこを正とする。**そうでない周では読まなくてよい。**
+**本文に行頭が `作り直しの元: ` の行があれば、回答が変わって作り直す周である——PR の本文にその行を写す（必須）**
+（どこから来た Issue でも。形と写し方は `references/spec-gap.md` の「作り直しの周」を正とする。#885）。
 
 ### 2. 文脈収集
 

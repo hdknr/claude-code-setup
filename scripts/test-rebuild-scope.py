@@ -25,12 +25,16 @@
 - 確認の Issue の閉じのコメントの結果の行を読み、推奨のまま・変えた・結果なしを `#N` と一覧に出す（最後の結果の行を採る。本文の中・装飾つき・文の途中の行は読まない。#884）
 - 形に反する結果の行は名指しして 1。`comments` の鍵が無い入力は「読んでいない」と言う（「結果なし」と言わない）。`comments` の形が違えば 2
 - `--changed` は結果が `変えた` の確認の Issue だけを出し、結果を読めない・閉じたのに結果の行が無い確認の Issue と、台帳の行が無い／形に反する／影響する Issue が入力に無い変えた確認の Issue を名指しして 1。No・番号と一緒なら 2
+- `--draft` は先頭の行に作り直しの元の印（`作り直しの元: <No>`・`作り直しの元: #<番号>`）を付けた下書きを出す——No なら引いた Issue とケース（撤去の Issue は数えない・まとめた本文は部分ごと）、確認の Issue なら推奨で決めた値・新しい値（無ければ「まだ無い」）・影響する Issue（無ければ「なし」）。値は箇条書きにし、行頭を台帳の行・結果の行の頭にしない（#885）
+- `--draft` は範囲が空の No・推奨のまま確かめた確認の Issue・`#N` の引きが 1 になる確認の Issue では下書きを出さずに 1。No・番号・`--changed` と一緒なら 2
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
 **壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、穴が無くても緑になるので）。
 
 **写しの突き合わせ**: 確認の Issue の 2 行の頭（本体の `DECIDED`・`AFFECTS`）と、閉じるときの結果の 1 行（`RESULT`・`KEPT`・`CHANGED`）が
-dev-loop の `references/absent-lines.md` の「確認の Issue の書き方」に在ること（陽性対照つき）。仮回答の印は本体が `scaffold.py` の定数を読む（写さない）。
+dev-loop の `references/absent-lines.md` の「確認の Issue の書き方」に在ること（陽性対照つき）。作り直しの元の印の頭（`ORIGIN`）が、原本の spec-loop の
+`references/handoff-issue.md` の「作り直しの元の印」と、写しの dev-loop の `references/spec-gap.md` の「作り直しの周」に 2 つの形で在り、
+`absent-lines.md` と dev-loop の `SKILL.md` が同じ頭で指していること（陽性対照つき。#885）。仮回答の印は本体が `scaffold.py` の定数を読む（写さない）。
 """
 from __future__ import annotations
 
@@ -46,7 +50,11 @@ from pathlib import Path
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 TARGET = "rebuild-scope.py"
-ABSENT_LINES = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "absent-lines.md"
+DEV_LOOP = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop"
+ABSENT_LINES = DEV_LOOP / "references" / "absent-lines.md"
+SPEC_GAP = DEV_LOOP / "references" / "spec-gap.md"
+DEV_LOOP_SKILL = DEV_LOOP / "SKILL.md"
+HANDOFF = REAL_REPO / "plugins" / "spec-loop" / "references" / "handoff-issue.md"
 
 HEADER = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
 QA = (HEADER
@@ -131,8 +139,9 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
 
 class Case:
     def __init__(self, name: str, args: tuple[str, ...], code: int, has: tuple[str, ...] = (), lacks: tuple[str, ...] = (),
-                 data=None, bundle: str = ""):
+                 data=None, bundle: str = "", starts: str = ""):
         self.name, self.args, self.code, self.has, self.lacks, self.data = name, args, code, has, lacks, data
+        self.starts = starts  # 標準出力がこれで始まる（下書きの先頭の行。#885）
         self.bundle = bundle  # まとめた本文の Issue だけの入力（`bundle`・改行を CRLF にした `crlf`）に当てる（#876）
 
 
@@ -189,6 +198,30 @@ CASES = [
           "#30 F-001・F-002: 割引額を計算する／注文を取り消せるか [OPEN]（F-002）——ケースに無い（機能全体）"), bundle="bundle"),
     Case("改行が CRLF のまとめた本文", ("Q-001",), 0,
          ("作り直す範囲 2 件", "（F-001）——受入基準 `F-001-C1`", "（F-002）——ケースに無い（機能全体）"), bundle="crlf"),
+    # 作り直しの Issue の下書き（#885）
+    Case("下書き（No）", ("--draft", "Q-001"), 0,
+         ("## 作り直す範囲", "- #11 F-001: 割引額を計算する [OPEN]（F-001）——受入基準 `F-001-C1`",
+          "- #12 F-002: 注文を取り消せるか [CLOSED]（F-002）——ケースに無い（機能全体）"), ("#26", "#22", "`F-001-C2`"),
+         starts="作り直しの元: Q-001\n"),
+    Case("下書き（変えた確認の Issue）", ("--draft", "#29"), 0,
+         ("- 推奨で決めた値: A", "- 新しい値: 14 日", "## 作り直す範囲", "- #11 F-001: 割引額を計算する [OPEN]"),
+         ("\n決めた値: ", "\n影響する Issue: ", "\n確認の結果: "), starts="作り直しの元: #29\n"),
+    Case("下書き（結果がまだ無い確認の Issue）", ("--draft", "20"), 0,
+         ("- 推奨で決めた値: 7 日", "- 新しい値: まだ無い（結果なし", "- #11 F-001", "- #12 F-002"), ("\n決めた値: ", "\n影響する Issue: ", "\n確認の結果: "),
+         starts="作り直しの元: #20\n"),
+    Case("下書き（影響する Issue が無い）", ("--draft", "#37"), 0, ("- 新しい値: L", "- なし（確認の Issue の影響する Issue が無い）"),
+         starts="作り直しの元: #37\n", bundle="draft"),
+    Case("下書き（まとめた本文）", ("--draft", "Q-001"), 0, ("（F-001）——受入基準 `F-001-C1`", "（F-002）——ケースに無い（機能全体）"),
+         starts="作り直しの元: Q-001\n", bundle="bundle"),
+    Case("下書き（推奨のまま）", ("--draft", "#23"), 1, ("推奨のまま——作り直すものが無い",), ("作り直しの元",)),
+    Case("下書き（影響する Issue が入力に無い）", ("--draft", "#25"), 1, ("#99（入力に無い", "下書きを出さない"), ("作り直しの元",)),
+    Case("下書き（台帳の行が無い）", ("--draft", "#21"), 1, ("台帳の行（決めた値:・影響する Issue:）が無い", "下書きを出さない"), ("作り直しの元",)),
+    Case("下書き（結果の行が形に反する）", ("--draft", "#32"), 1, ("結果の行が決まりの形でない", "下書きを出さない"), ("作り直しの元",)),
+    Case("下書き（確認の Issue でない）", ("--draft", "#22"), 1, ("#22: 確認の Issue でない",), ("作り直しの元",)),
+    Case("下書き（本文に無い No）", ("--draft", "Q-S-009"), 1, ("下書きを出さない",), ("作り直しの元",)),
+    Case("--draft と No", ("--draft", "#29", "Q-001"), 2, ("一緒には渡せない",), ("作り直しの元",)),
+    Case("--draft と --changed", ("--draft", "#29", "--changed"), 2, ("一緒には渡せない",), ("作り直しの元",)),
+    Case("--draft の値が No でも番号でもない", ("--draft", "foo"), 2, ("'foo': Q&A の No",)),
     Case("No でも番号でもない引数", ("foo",), 2, ("'foo': Q&A の No",)),
     Case("JSON でない", (), 2, ("読めない",), data="{"),
     Case("配列でない", (), 2, ("Issue の配列でない",), data="{}"),
@@ -257,6 +290,22 @@ MUTATIONS = [
     ("--changed で影響する Issue の入力を見ない", "        elif d.changed() and (absent := ", "        elif False and (absent := ",
      "変えた確認の範囲を引ききれない"),
     ("--changed と番号を一緒に受ける", "    if args.changed and args.keys:", "    if False:", "--changed と番号"),
+    ("No の下書きの先頭に印を付けない", '    out = [f"{ORIGIN}{no}", "",', '    out = ["", "",', "下書き（No）"),
+    ("確認の Issue の下書きの先頭に印を付けない", '    out = [f"{ORIGIN}#{number}", "",', '    out = ["", "",', "下書き（変えた確認の Issue）"),
+    ("下書きにケースを出さない", '        out.append(f"- {label(h.issue)}（{h.feature}）——{where(h, no)}")', '        out.append(f"- {label(h.issue)}（{h.feature}）")',
+     "下書き（No）"),
+    ("範囲が空の No でも下書きを出す", "    if not hits:\n        return False, [f\"{no}: 根拠にした spec-loop の Issue が無い——作り直す範囲が空",
+     "    if False:\n        return False, [f\"{no}: 根拠にした spec-loop の Issue が無い——作り直す範囲が空", "下書き（本文に無い No）"),
+    ("推奨のままでも下書きを出す", "    if d.result == KEPT:\n", "    if False:\n", "下書き（推奨のまま）"),
+    ("引けない確認の Issue でも下書きを出す", "    if not ok:\n        return False, lines + [", "    if False:\n        return False, lines + [",
+     "下書き（影響する Issue が入力に無い）"),
+    ("新しい値を出さない", "    new = d.result[len(CHANGED):] if d.changed() else", '    new = "" if d.changed() else', "下書き（変えた確認の Issue）"),
+    ("結果がまだ無いと言わない", 'else f"まだ無い（{d.outcome()}）"', 'else ""', "下書き（結果がまだ無い確認の Issue）"),
+    ("影響する Issue を並べない", '    out += [f"- {label(issues[n])}" for n in d.affects] or', "    out += [] or", "下書き（変えた確認の Issue）"),
+    ("影響する Issue が無いと言わない", '["- なし（確認の Issue の影響する Issue が無い）"]', "[]", "下書き（影響する Issue が無い）"),
+    ("下書きの値を台帳の行の頭で書く", 'f"- 推奨で決めた値: {d.value}"', 'f"{DECIDED}{d.value}"', "下書き（変えた確認の Issue）"),
+    ("--draft と No を一緒に受ける", "    if args.draft is not None and (args.keys or args.changed):", "    if False:", "--draft と No"),
+    ("--draft と --changed を一緒に受ける", "(args.keys or args.changed)", "(args.keys)", "--draft と --changed"),
 ]
 
 failures: list[str] = []
@@ -296,6 +345,8 @@ def run_case(scripts: Path, data: Path, case: Case) -> str | None:
     proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), "--issues", str(target), *case.args],
                           capture_output=True, text=True)
     out = proc.stdout + proc.stderr
+    if case.starts and not proc.stdout.startswith(case.starts):
+        return f"標準出力が {case.starts!r} で始まらない: {proc.stdout[:200]!r}"
     if proc.returncode != case.code:
         return f"exit={proc.returncode}（期待 {case.code}）{out[-500:]}"
     for needle in case.has:
@@ -335,6 +386,10 @@ def main() -> int:
             t, b = decision(True, title, lines)
             broken.append({"number": number, "title": t, "state": "CLOSED", "body": b, "comments": changed_comment})
         (work / "broken.json").write_text(json.dumps(broken, ensure_ascii=False), encoding="utf-8")
+        t37, b37 = decision(True, "要確認: 影響する Issue が無いまま変えた", "決めた値: K\n影響する Issue: なし\n")
+        (work / "draft.json").write_text(json.dumps([{"number": 37, "title": t37, "state": "CLOSED", "body": b37,
+                                                       "comments": [{"body": "確認の結果: 変えた: L"}]}], ensure_ascii=False),
+                                         encoding="utf-8")
         (work / "crlf.json").write_text(json.dumps([{"number": 31, "title": "まとめた本文（CRLF）", "state": "OPEN",
                                                       "body": bodies["bundle"].replace("\n", "\r\n")}], ensure_ascii=False),
                                         encoding="utf-8")
@@ -364,6 +419,29 @@ def main() -> int:
                   isinstance(old, str) and old in closing and not copies_in(closing.replace(old, new)))
         check("陽性対照: 言い換えると当たらない",
               f"**`{decided}" not in doc.replace(decided or "?", "決定した値: ").split("## 確認の Issue の書き方", 1)[1])
+
+        # 作り直しの元の印（#885）: 原本（handoff-issue.md）と写し（spec-gap.md）に 2 つの形、absent-lines.md と dev-loop の SKILL.md は頭で指す
+        origin = constant(source, "ORIGIN")
+
+        def section_of(text: str, heading: str) -> str:
+            return text.split(heading + "\n", 1)[1].split("\n## ", 1)[0] if heading + "\n" in text else ""
+
+        def forms_in(text: str) -> bool:
+            return isinstance(origin, str) and f"**`{origin}<Q&A の No>`**" in text and f"**`{origin}#<確認の Issue の番号>`**" in text
+
+        handoff = section_of(HANDOFF.read_text(encoding="utf-8"), "## 作り直しの元の印")
+        gap = section_of(SPEC_GAP.read_text(encoding="utf-8"), "## 作り直しの周")
+        check("ORIGIN が handoff-issue.md の作り直しの元の印（原本）に 2 つの形で無い", forms_in(handoff), f"{origin!r}")
+        check("ORIGIN が spec-gap.md の作り直しの周（写し）に 2 つの形で無い", forms_in(gap), f"{origin!r}")
+        check("absent-lines.md が作り直しの元の印の頭で指していない", isinstance(origin, str) and f"`{origin}#<この確認の Issue>`" in doc
+              and "`references/spec-gap.md` の「作り直しの周」" in doc, f"{origin!r}")
+        skill = DEV_LOOP_SKILL.read_text(encoding="utf-8")
+        check("dev-loop の SKILL.md が作り直しの元の印の頭で指していない", isinstance(origin, str) and f"行頭が `{origin}` の行" in skill
+              and "`references/spec-gap.md` の「作り直しの周」" in skill, f"{origin!r}")
+        # 陽性対照: 原本・写しの側を言い換えると、突き合わせが落ちる
+        for name, text in (("handoff-issue.md", handoff), ("spec-gap.md", gap)):
+            check(f"陽性対照: {name} の作り直しの元の印を言い換えると突き合わせが落ちる",
+                  isinstance(origin, str) and origin in text and not forms_in(text.replace(origin, "作り直し元: ")))
 
         print("変異テスト")
         by_name = {case.name: case for case in CASES}
