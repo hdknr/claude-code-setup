@@ -212,8 +212,15 @@ def tag_alike(r):
     git(r["main"], "tag", "issue/1-a", "refs/heads/issue/1-a")
 
 
+def broken_gitfile(r):
+    # ディレクトリはあるのに git が木と読めない（.git を消した）・中に未追跡のファイル
+    (r["main"] / WT / "agent-aaa" / ".git").unlink()
+    (r["main"] / WT / "agent-aaa" / "notes.txt").write_text("x\n", encoding="utf-8")
+
+
 def fork_main(r):
     git(r["main"], "checkout", "-q", "-b", "other")  # メインの作業ツリーが main を開いていない
+    git(r["main"], "worktree", "add", "-q", str(r["main"] / WT / "onmain"), "main")  # 手元の main を開いた木
     return {"prs": {"1": pr_view("main", r["c1"])}}  # fork から出した PR の head が main
 
 
@@ -257,7 +264,10 @@ CASES = {
     "同じ名前のタグがあっても、ブランチを消す": (
         dict(prepare=tag_alike), 0, set(), CYCLE1_WTS, OTHERS, CYCLE1_BRANCHES),
     "fork の PR の head が main でも、手元の main を消さない": (
-        dict(scn=fork_main), 0, {f"{MWT}/issue-1"}, {f"{MWT}/agent-aaa"}, {"main", "issue/1-a"}, set()),
+        dict(scn=fork_main), 0, {f"{MWT}/issue-1", f"{MWT}/onmain"}, {f"{MWT}/agent-aaa"}, {"main", "issue/1-a"}, set()),
+    "ディレクトリが在るのに git が木と読めない木は、記録を prune せずに残す": (
+        dict(prepare=broken_gitfile), 4, {f"{MWT}/agent-aaa"}, {f"{MWT}/issue-1"}, set(), {"issue/1-a"},
+        "git が木と読めない"),
     "MERGED でなければ何も消さない": (
         dict(scn=not_merged), 3, ALL_WTS, set(), CYCLE1_BRANCHES | OTHERS, set(), "OPEN"),
     "メインの作業ツリーの外から呼んだら何も消さない": (
@@ -324,6 +334,10 @@ MUTATIONS = {
     # 守る 17: ディレクトリの無いロックされた記録は unlock してから prune する
     "prune の前に unlock しない": ('if wt["locked"] and run(["git", "worktree", "unlock", wt["path"]]).returncode != 0:',
                                "if False:"),
+    # 守る 19: 既定ブランチとメインの作業ツリーのブランチを開いた木を消さない
+    "既定ブランチを開いた木を守らない": ('if wt["branch"] in protected:  #', "if False:  #"),
+    # 守る 20: ディレクトリが在るのに git が木と読めない木を消さない
+    "壊れた木の記録を prune する": ('if wt["prunable"] or not is_own_tree(wt["path"]):  #', "if False:  #"),
     # 守る 18: タグと同じ名前のブランチも名前で読む
     "refname:short で読む": ('"--format=%(refname:lstrip=2) %(objectname)"', '"--format=%(refname:short) %(objectname)"'),
 }
@@ -350,6 +364,8 @@ KILLS = {
     "既定ブランチを守らない": ["fork の PR の head が main でも、手元の main を消さない"],
     "prune の前に unlock しない": ["ロックされたまま手でディレクトリを消した隔離木も、記録とブランチを消す"],
     "refname:short で読む": ["同じ名前のタグがあっても、ブランチを消す"],
+    "既定ブランチを開いた木を守らない": ["fork の PR の head が main でも、手元の main を消さない"],
+    "壊れた木の記録を prune する": ["ディレクトリが在るのに git が木と読めない木は、記録を prune せずに残す"],
 }
 
 

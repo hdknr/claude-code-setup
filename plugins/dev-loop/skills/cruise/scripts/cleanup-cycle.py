@@ -39,6 +39,8 @@ PR（台帳のその行の `pr`）を `gh pr view --json state,headRefName,headR
 - **ロックされた worktree も消せる**——unlock してから `git worktree remove`（**`--force` は使わない**）。未コミットの木は unlock する前に残す。
 - **積んだ周の木を消さない**——HEAD が PR のコミットでも、PR の head とも `worktree-<木の名前>` とも違う名前のブランチを開いた木は、その PR の head から切った周の木でありうる。
 - **既定ブランチとメインの作業ツリーのブランチを消さない**——fork から出した PR の head が `main` でも、手元の `main` は候補にしない。
+- **既定ブランチとメインの作業ツリーのブランチを開いた木を消さない**——同じ形で、`.claude/worktrees/` の下で手元の `main` を開いた木も候補にしない。
+- **ディレクトリが在るのに git が木と読めない（prunable の）木を消さない**——中の未コミットを確かめられないので、記録を prune せずに残したに数える。
 - **ディレクトリの無い木の記録が prune の後も残ったら、消したと答えない**——ロックされた記録は unlock してから prune し、残れば「残した」に数える。
 - **タグと同じ名前のブランチも、ブランチの名前で読む**——`refname:short` は `heads/<名前>` を返して候補に当たらず、黙って残る。
 - **ブランチは、先端が PR のコミットか既定ブランチに含まれるものだけ消す**——判定に `git branch --merged` を使わない（squash では出ない）。
@@ -62,6 +64,9 @@ PR（台帳のその行の `pr`）を `gh pr view --json state,headRefName,headR
 
 - **この周のものかを、PR のコミットだけで決める**——PR のコミットにいない隔離木（main の先端で作られ、そのまま使われた木）は、この周のものでも残る。
   先端が main にいるだけの `worktree-agent-*` も残る。**残った本数は出力の「この周のものと決められない」が言う。**
+- **積んだ周の隔離木（detached か `worktree-<名前>` のブランチで、この PR と同じコミットにいるもの）は、この周のものと読んで消す**——
+  この PR の head から切って、まだ自分のコミットを持たない周の Verifier の木は、この周の木と見分けられない（台帳に木を記録しないため。確認の Issue #891）。
+  積んだ周の作業木（`issue/*` などの別の名前のブランチ）は消さない。
 - **周の体が作った木の一覧を持たない**——台帳にも記録しない。別の周の PR の版を開いた木（レビューで他の PR を見た隔離木）は、その周の片付けで消える。
 - **同じ PR のコミットを開いている、別のセッションの木も消す**——未コミットの変更が無ければ。動いている体の木かは見ない（ロックも外す）。
 - **`gh pr view` の `commits` は gh が返す範囲まで**——上限は確かめていない（gh 2.92.0 のクエリは `commits(first: 100)`。ページングするかは見ていない）。それより多いコミットの PR は、古いコミットにいる木を決められない。
@@ -164,11 +169,19 @@ def safe(sha: str, oids: set[str], ref: str | None) -> bool:
     return sha in oids or contained(sha, ref)
 
 
-def ours(wt: dict, head_ref: str, oids: set[str]) -> bool:
+def ours(wt: dict, head_ref: str, oids: set[str], protected: set[str]) -> bool:
+    if wt["branch"] in protected:  # 既定ブランチ・メインの作業ツリーのブランチを開いた木は、どの周のものでもない
+        return False
     # HEAD で決めるのは detached の木と隔離木のブランチ（worktree-<名前>）だけ——別の名前のブランチを開いた木は、
     # PR のコミットにいても積んだ周（その PR の head から切った周）の木でありうる（#823 の /code-review 1 パス目）
     own_branch = wt["branch"] in ("", "worktree-" + Path(wt["path"]).name)
     return wt["branch"] == head_ref or (own_branch and wt["head"] in oids)
+
+
+def is_own_tree(path: str) -> bool:
+    """その木の中で git がその木自身を作業ツリーと読むか。`.git` が消えた木の中の git は、外側のメインの作業ツリーを読む。"""
+    res = run(["git", "rev-parse", "--show-toplevel"], cwd=path)
+    return res.returncode == 0 and Path(res.stdout.strip()).resolve() == Path(path).resolve()
 
 
 def under(path: str, root: Path) -> bool:
@@ -196,23 +209,28 @@ def cmd_cycle(number: str) -> int:
         all_wts = worktrees()
         main_path = Path(all_wts[0]["path"])
         root = main_path / ".claude" / "worktrees"
+        # 既定ブランチとメインの作業ツリーのブランチは、木でもブランチでも候補にしない（fork の PR の head が main のとき。#823 の Verifier 1・2 パス目）
+        protected = {ref.split("/", 3)[-1] if ref else "", all_wts[0]["branch"]} - {""}
         untouched = 0
         removed: list[dict] = []
         pruned: list[str] = []
         for wt in all_wts[1:]:
-            if not ours(wt, head_ref, oids):
+            if not ours(wt, head_ref, oids, protected):
                 untouched += 1
                 continue
             if not under(wt["path"], root):
                 print(f"  触っていない: worktree {wt['path']}（.claude/worktrees の外）")
                 continue
-            if wt["prunable"] or not Path(wt["path"]).is_dir():
+            if not Path(wt["path"]).exists():
                 # ディレクトリが無い——下の prune が記録を消す。prune はロックされた記録を飛ばすので、先に外す
                 if wt["locked"] and run(["git", "worktree", "unlock", wt["path"]]).returncode != 0:
                     kept.append(f"worktree の記録 {wt['path']}（ディレクトリが無いが、unlock に失敗した）")
                     continue
                 removed.append(wt)
                 pruned.append(wt["path"])
+                continue
+            if wt["prunable"] or not is_own_tree(wt["path"]):  # ディレクトリはあるのに git が木と読めない（.git が壊れた・消えた）
+                kept.append(f"worktree {wt['path']}（ディレクトリはあるが git が木と読めない——中を確かめられない）")
                 continue
             dirty = git(["status", "--porcelain", "--untracked-files=all"], cwd=wt["path"]).splitlines()
             if dirty:
@@ -243,8 +261,6 @@ def cmd_cycle(number: str) -> int:
             print(f"  消した: worktree の記録 {path}（ディレクトリが無かった。prune）")
         candidates = {head_ref} | {w["branch"] for w in removed if w["branch"]} | \
                      {"worktree-" + Path(w["path"]).name for w in removed}
-        # 既定ブランチとメインの作業ツリーのブランチは候補にしない（fork の PR の head が main のとき。#823 の Verifier 1 パス目）
-        protected = {ref.split("/", 3)[-1] if ref else "", all_wts[0]["branch"]} - {""}
         heads = {}
         for line in git(["for-each-ref", "--format=%(refname:lstrip=2) %(objectname)", "refs/heads/"]).splitlines():
             name, _, sha = line.partition(" ")
