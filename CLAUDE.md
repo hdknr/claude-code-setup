@@ -107,7 +107,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
       テストは `scripts/test-scaffold.py`）
     - `scripts/rebuild-scope.py` - **仮回答と推奨で決めた事項の台帳**から、利用者が確かめたときに作り直す範囲（Issue と受入基準のケース）を引く
-      （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行を、
+      （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行と閉じのコメントの `確認の結果: ` の行（#884）を、
       `gh issue list --json` の出力から読む。**`gh` は呼ばない**。印の定数は `scaffold.py` から読み、確認の Issue の 2 行の頭は dev-loop の `absent-lines.md` の写しで、テストが突き合わせる。
       守る／守らないは docstring を正とする。テストは `scripts/test-rebuild-scope.py`）
     - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
