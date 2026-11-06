@@ -37,6 +37,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       - `skills/cruise/scripts/run-serial.py` - cruise の周の**重い検査・アプリの起動を、同じリポジトリでは順番待ちにして走らせる**（#493。
         本数は `.claude/dev-loop.md` の `並行の検査:`、無ければ 1。どのコマンドを通すか・単独で回す周・版とマージの順（#531）は `references/parallel.md`、
         守る／守らないは docstring を正とする。テストは `scripts/test-run-serial.py`）
+      - `skills/cruise/scripts/cleanup-cycle.py` - cruise の周のマージの後に、**その PR から決まる worktree とローカルブランチだけを片付ける**（#823）。
+        **未コミットの変更がある木は消さずに名指しし**（親が台帳の `note` に `片付けで残した:` で残す）、**リモートのブランチ・PR には触らない**（`remotes` で数えるだけ）。
+        守る／守らないは docstring を正とする。テストは `scripts/test-cleanup-cycle.py`）
       - `skills/cruise/scripts/outer-loop.py` - cruise を `claude -p` で**外から繰り返し起動するループ**（#791。**任意**）。`ledger.py status` が 0 のときだけ起こし、
         1 回の起動で台帳が進んだかを `ledger.py progress`（`updated`・`note` を含まない要約）で比べ、前進なしが続く・起動の上限・`claude` の失敗で止まって通知する。
         守る／守らないは docstring を正とする。テストは `scripts/test-outer-loop.py`）
@@ -241,6 +244,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-outer-loop.py` - **cruise の外側のループの回帰テスト**（#791。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/cruise/scripts/outer-loop.py`**（同じ形）。台帳は**本物の `ledger.py`** で作り、**偽の `claude`（筋書きどおりに台帳を書き換える）と
     偽の `osascript` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**
+  - `test-cleanup-cycle.py` - **cruise の周の片付けの回帰テスト**（#823。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/cruise/scripts/cleanup-cycle.py`**（同じ形）。一時ディレクトリに **bare の `origin` と本物の worktree** を作り、
+    **偽の `gh` を `PATH` の先頭に置く**——本物の GitHub には届かない。**隔離木はハーネスの実物ではなく、`git worktree add` で同じ名前の形に作った試料**
   - `test-fence-copies.py` - **コードブロックと HTML コメントの読み方の写し 3 つ**（`run-serial.py`・`check-unattended-env.py`・`parent-issue.py`）を
     **同じ試料の表で突き合わせる**（#758・#759・#760。写しを古い読み方に戻すと落ちる陽性対照つき）。**1 つにまとめず写しのままにした理由と、
     parent-issue だけ違えてよい試料は docstring を正とする**
