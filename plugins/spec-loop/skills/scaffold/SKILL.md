@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.65.0 -->
-> **このスキルの版: 0.65.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.66.0 -->
+> **このスキルの版: 0.66.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -237,11 +237,11 @@ dev-loop の点検が日時での近似に落ちる。生成の出力が「基�
   利用者が確かめたときの作り直す範囲は、登録した Issue から同梱の `rebuild-scope.py` で引けることを伝える:
 
   ```bash
-  gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json number,title,state,body > issues.json
+  gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json number,title,state,body,comments > issues.json
   python3 <このスキルの base ディレクトリ>/../../scripts/rebuild-scope.py --issues issues.json <Q&A の No>
   ```
 
-  引数なしなら仮回答と、dev-loop が推奨で決めた事項（確認の Issue）の一覧を出す（使い方は `rebuild-scope.py` の docstring を正とする）
+  引数なしなら仮回答と、dev-loop が推奨で決めた事項（確認の Issue。閉じたときの結果——推奨のまま・変えた——つき）の一覧を出し、`--changed` なら値を変えた確認の Issue だけを出す（使い方は `rebuild-scope.py` の docstring を正とする）
 - 次にすること: **Issue ごとに `/dev-loop:dev-loop <issue-number>`**。開発中に仕様の穴が見つかれば、
   dev-loop は Q&A 表に起票元 `開発` で差し戻す——その回答は `/spec-loop:req-loop` から受け直し、
   仕様レビューを抜けてから、このスキルで作り直す（手順 4 は `--red-check --in-progress`）。dev-loop に渡す受入基準は、

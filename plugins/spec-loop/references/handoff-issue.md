@@ -168,7 +168,7 @@ dev-loop は同じ式の写し（dev-loop のスキルの `scripts/spec-fingerpr
 **中間表現が指し漏らした機能には印が付かない**（指しているかは書き起こしの判断。`scaffold.py` の docstring の守らないもの）。
 
 **作り直す範囲は、登録した本文から引く**——印と受入基準の表と `## Q&A の回答` の No がそのまま台帳である（新しいファイルを持たない）。
-同梱の `rebuild-scope.py` が、`gh issue list` の出力から Q&A の No → 作り直す Issue とケースを引く（dev-loop が推奨で決めた事項の確認の Issue も同じ入力から引く。
+同梱の `rebuild-scope.py` が、`gh issue list` の出力から Q&A の No → 作り直す Issue とケースを引く（dev-loop が推奨で決めた事項の確認の Issue と、閉じたときの結果——推奨のまま・変えた——も同じ入力から引く。
 使い方と守らないものは `rebuild-scope.py` の docstring を正とする）。**本文は生成した時点の写しで、利用者が確かめた後も印は残る**——いまの状態の正は Q&A 表である。
 
 ## まとめた本文

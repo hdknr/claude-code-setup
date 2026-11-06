@@ -6,7 +6,7 @@
 **本体はプラグインの中にある**（`plugins/spec-loop/scripts/`）。`test-check-qa-csv.py` と同じ形。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書き、本物の GitHub には届かない（本体は `gh` を呼ばない。
-入力の JSON は `gh issue list --json number,title,state,body` と同じ鍵の試料で、本物の出力の形は見ない）。
+入力の JSON は `gh issue list --json number,title,state,body,comments` と同じ鍵の試料で、本物の出力の形は見ない）。
 
 **spec-loop の Issue の本文は、本物の `scaffold.py --provisional` で作る**——手で書いた本文に当てると、生成の形が変わっても緑のままになる。
 **プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる**（正本リポジトリで単体で動くこと）。
@@ -22,12 +22,15 @@
 - まとめた本文（2 行目が `<!-- spec-loop-bundle: … -->`。#876）は機能の印の行で部分に分け、部分ごとに引く（本物の `scaffold.py --bundle` で作る）
 - まとめた本文の改行が `\r\n` でも部分に分ける
 - 入力の形が違えば 2（どの Issue が違うかを言う）
+- 確認の Issue の閉じのコメントの結果の行を読み、推奨のまま・変えた・結果なしを `#N` と一覧に出す（最後の結果の行を採る。本文の中・装飾つき・文の途中の行は読まない。#884）
+- 形に反する結果の行は名指しして 1。`comments` の鍵が無い入力は「読んでいない」と言う（「結果なし」と言わない）。`comments` の形が違えば 2
+- `--changed` は結果が `変えた` の確認の Issue だけを出し、結果を読めない・閉じたのに結果の行が無い確認の Issue と、台帳の行が無い／形に反する／影響する Issue が入力に無い変えた確認の Issue を名指しして 1。No・番号と一緒なら 2
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
 **壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、穴が無くても緑になるので）。
 
-**写しの突き合わせ**: 確認の Issue の 2 行の頭（本体の `DECIDED`・`AFFECTS`）が dev-loop の `references/absent-lines.md` の
-「確認の Issue の書き方」に在ること（陽性対照つき）。仮回答の印は本体が `scaffold.py` の定数を読む（写さない）。
+**写しの突き合わせ**: 確認の Issue の 2 行の頭（本体の `DECIDED`・`AFFECTS`）と、閉じるときの結果の 1 行（`RESULT`・`KEPT`・`CHANGED`）が
+dev-loop の `references/absent-lines.md` の「確認の Issue の書き方」に在ること（陽性対照つき）。仮回答の印は本体が `scaffold.py` の定数を読む（写さない）。
 """
 from __future__ import annotations
 
@@ -86,10 +89,17 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
     t25, b25 = decision(True, "要確認: 入力に無い Issue を指す", "決めた値: D\n影響する Issue: #11, #99\n")
     t27, b27 = decision(True, "要確認: 空の決めた値", "決めた値: \n影響する Issue: #11\n")
     t28, b28 = decision(True, "要確認: 空の影響する Issue", "決めた値: E\n影響する Issue: \n")
+    # 閉じのコメントの結果の行（#884）
+    t29, b29 = decision(True, "要確認: 開き直して変えた", "決めた値: A\n影響する Issue: #11\n")
+    t32, b32 = decision(True, "要確認: 形に反する結果", "決めた値: F\n影響する Issue: なし\n")
+    t33, b33 = decision(True, "要確認: 本文と装飾の結果", "決めた値: G\n影響する Issue: なし\n確認の結果: 変えた: 本文の中\n")
+    t34, b34 = decision(True, "要確認: 前の取り方", "決めた値: H\n影響する Issue: なし\n")
+    t35, b35 = decision(True, "要確認: 頭の後ろに空白が無い", "決めた値: I\n影響する Issue: なし\n")
+    t36, b36 = decision(True, "要確認: 写す前の値のまま", "決めた値: J\n影響する Issue: なし\n")
     # 撤去の Issue（変化の印 remove）——Q-001 を根拠にしていても作り直す範囲に数えない
     removal = bodies["F-002"].replace("<!-- spec-loop-change: add; base=none -->", "<!-- spec-loop-change: remove; base=v1 -->")
     assert removal != bodies["F-002"]
-    return [
+    found = [
         {"number": 11, "title": "F-001: 割引額を計算する", "state": "OPEN", "body": bodies["F-001"]},
         {"number": 12, "title": "F-002: 注文を取り消せるか", "state": "CLOSED", "body": bodies["F-002"]},
         {"number": 20, "title": t20, "state": "OPEN", "body": b20},
@@ -101,7 +111,22 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
         {"number": 26, "title": "F-002: 注文を取り消せるか（v2 で撤去）", "state": "OPEN", "body": removal},
         {"number": 27, "title": t27, "state": "OPEN", "body": b27},
         {"number": 28, "title": t28, "state": "OPEN", "body": b28},
+        {"number": 29, "title": t29, "state": "CLOSED", "body": b29,
+         "comments": [{"body": "<!-- dev-loop: 子 #1 --> PR は #5"}, {"body": "承認します\n確認の結果: 推奨のまま"},
+                      {"body": "開き直す"}, {"body": "やはり変える\r\n確認の結果: 変えた: 14 日\r\n"}]},
+        {"number": 32, "title": t32, "state": "CLOSED", "body": b32, "comments": [{"body": "確認の結果: 変えた: "}]},
+        {"number": 33, "title": t33, "state": "CLOSED", "body": b33,
+         "comments": [{"body": "**確認の結果: 変えた: 装飾**"}, {"body": "閉じます。確認の結果: 変えた: 文の途中"}]},
+        {"number": 34, "title": t34, "state": "OPEN", "body": b34, "no_comments": True},
+        {"number": 35, "title": t35, "state": "CLOSED", "body": b35,
+         "comments": [{"body": "確認の結果: 推奨のまま"}, {"body": "確認の結果:変えた: K"}]},
+        {"number": 36, "title": t36, "state": "CLOSED", "body": b36, "comments": [{"body": "確認の結果: 変えた: <新しい値>"}]},
     ]
+    for issue in found:  # `comments` の鍵は #34（前の取り方）だけ持たない
+        if not issue.pop("no_comments", False):
+            issue.setdefault("comments", [])
+    found[[i["number"] for i in found].index(23)]["comments"] = [{"body": "承認します。\n\n確認の結果: 推奨のまま"}]
+    return found
 
 
 class Case:
@@ -120,7 +145,26 @@ CASES = [
          ("仮回答", "`F-001-C1`")),
     Case("確認の Issue", ("#20",), 0, ("#20 要確認: 返品の受付期間を 7 日にした [OPEN]", "  決めた値: 7 日",
                                      "  影響する Issue: 2 件（作り直す範囲）", "  - #11 F-001: 割引額を計算する [OPEN]", "  - #12 F-002: 注文を取り消せるか [CLOSED]")),
-    Case("印の無い確認の Issue（題で見分ける）", ("23",), 0, ("決めた値: B", "影響する Issue: なし")),
+    Case("印の無い確認の Issue（題で見分ける）", ("23",), 0, ("決めた値: B", "影響する Issue: なし", "  確認の結果: 推奨のまま")),
+    Case("確認の結果がまだ無い", ("#20",), 0, ("  確認の結果: 結果なし",)),
+    Case("開き直して変えた（最後の結果の行を採る）", ("#29",), 0, ("  確認の結果: 変えた: 14 日",), ("推奨のまま",)),
+    Case("結果の行が形に反する", ("#32",), 1, ("結果の行が決まりの形でない（'確認の結果: 変えた: '）",)),
+    Case("頭の後ろに空白が無い結果の行", ("#35",), 1, ("結果の行が決まりの形でない（'確認の結果:変えた: K'）",), ("推奨のまま",)),
+    Case("写す前の値のままの結果の行", ("#36",), 1, ("結果の行が決まりの形でない（'確認の結果: 変えた: <新しい値>'）",)),
+    Case("本文と装飾の結果の行は読まない", ("#33",), 0, ("  確認の結果: 結果なし",), ("本文の中", "変えた: 装飾", "文の途中")),
+    Case("comments の無い入力", ("#34",), 0, ("  確認の結果: 読んでいない",), ("結果なし",)),
+    Case("変わった確認だけ", ("--changed",), 1,
+         ("変わった確認（確認の結果: 変えた）: 1 件",
+          "#29 要確認: 開き直して変えた [CLOSED]——決めた値: A／影響する Issue: #11／確認の結果: 変えた: 14 日",
+          "引けない——#32 要確認: 形に反する結果", "引けない——#34 要確認: 前の取り方",
+          "引けない——#33 要確認: 本文と装飾の結果 [CLOSED]: 閉じたが 確認の結果: の行が無い"), ("#23 要確認", "#20 要確認", "#21 ")),
+    Case("変えた確認の範囲を引ききれない", ("--changed",), 1,
+         ("変わった確認（確認の結果: 変えた）: 3 件", "引けない——#40 要確認: 入力に無い Issue [CLOSED]: 影響する Issue #99 が入力に無い",
+          "引けない——#41 要確認: 説明つき [CLOSED]: 台帳の行が決まりの形でない（作り直す範囲を引けない）",
+          "引けない——#45 要確認: 台帳の行が無い [CLOSED]: 台帳の行が無い（前の書き方）（作り直す範囲を引けない）"), bundle="broken"),
+    Case("変わった確認だけ（読めるものだけの入力）", ("--changed",), 0, ("変わった確認（確認の結果: 変えた）: 1 件", "#29 要確認"),
+         ("引けない",), bundle="decided"),
+    Case("--changed と番号", ("--changed", "#20"), 2, ("一緒には渡せない",)),
     Case("台帳の行が無い確認の Issue", ("#21",), 1, ("台帳の行（決めた値:・影響する Issue:）が無い",)),
     Case("影響する Issue に説明を添えた行", ("#24",), 1, ("台帳の行が決まりの形でない（'影響する Issue: #11（#12 の後続）'）",),
          ("#12 F-002",)),
@@ -132,7 +176,10 @@ CASES = [
     Case("本文に無い No", ("Q-S-009",), 1, ("Q-S-009: 根拠にした spec-loop の Issue が無い",)),
     Case("引けるものと引けないもの", ("Q-001", "#22"), 1, ("作り直す範囲 2 件", "確認の Issue でない")),
     Case("一覧", (), 0, ("仮回答（本文に仮回答の印がある Q&A）: 1 件", "  Q-001: #11（F-001）、#12（F-002）",
-                        "推奨で決めた事項（確認の Issue）: 7 件（開いているもの 6 件）", "#24 要確認: 説明つきの行 [OPEN]——台帳の行が決まりの形でない",
+                        "推奨で決めた事項（確認の Issue）: 13 件（開いているもの 7 件・変えたもの 1 件）",
+                        "#24 要確認: 説明つきの行 [OPEN]——台帳の行が決まりの形でない",
+                        "#23 要確認: 印の無い確認の Issue [CLOSED]——決めた値: B／影響する Issue: なし／確認の結果: 推奨のまま",
+                        "#34 要確認: 前の取り方 [OPEN]——決めた値: H／影響する Issue: なし／確認の結果: 読んでいない",
                         "#20 要確認: 返品の受付期間を 7 日にした [OPEN]——決めた値: 7 日／影響する Issue: #11、#12",
                         "#21 返品の受付期間（前の書き方） [OPEN]——台帳の行が無い", "#23 要確認: 印の無い確認の Issue [CLOSED]——決めた値: B"),
          ("Q-002: #",)),
@@ -146,6 +193,8 @@ CASES = [
     Case("JSON でない", (), 2, ("読めない",), data="{"),
     Case("配列でない", (), 2, ("Issue の配列でない",), data="{}"),
     Case("本文が文字列でない", (), 2, ("0 番目が Issue の形でない",), data=json.dumps([{"number": 1, "title": "t", "body": 1}])),
+    Case("comments の形が違う", (), 2, ("0 番目の comments が",),
+         data=json.dumps([{"number": 1, "title": "t", "body": "b", "comments": [{"body": 1}]}])),
 ]
 
 # (名前, 壊す箇所, 置き換え, 落ちるはずの試料)
@@ -169,7 +218,8 @@ MUTATIONS = [
     ("撤去の Issue も作り直す範囲に数える", ' and not REMOVAL.search(i["body"])\n', "\n", "暫定の Q-001"),
     ("説明の中の番号も影響する Issue に数える", "                elif AFFECTS_LIST.fullmatch(rest):", "                elif True:",
      "影響する Issue に説明を添えた行"),
-    ("入力に無い影響する Issue でも 0", "    return not absent, out", "    return True, out", "影響する Issue が入力に無い"),
+    ("入力に無い影響する Issue でも 0", "    return not absent and d.result_malformed is None, out",
+     "    return d.result_malformed is None, out", "影響する Issue が入力に無い"),
     ("引けない番号でも 0", "        code = code or (0 if ok else 1)", "        code = 0", "確認の Issue でない"),
     ("入力の Issue の形を見ない", "        if not (isinstance(issue, dict)", "        if False and not (isinstance(issue, dict)",
      "本文が文字列でない"),
@@ -178,6 +228,35 @@ MUTATIONS = [
     ("まとめた本文を部分に分けない", "    return [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])] or [body]",
      "    return [body]", "まとめた本文の部分ごとに引く"),
     ("CRLF の部分の頭を見ない", 'FEATURE.pattern + r"\\r?$"', 'FEATURE.pattern + r"$"', "改行が CRLF のまとめた本文"),
+    ("結果の行を読まない", "                if not line.startswith(RESULT.rstrip()):", "                if True:",
+     "印の無い確認の Issue（題で見分ける）"),
+    ("最初の結果の行を採る", "self.result, self.result_malformed = rest, None", "self.result, self.result_malformed = self.result or rest, None",
+     "開き直して変えた（最後の結果の行を採る）"),
+    ("形に反する結果の行を採る", "self.result, self.result_malformed = None, line", "self.result, self.result_malformed = rest, None",
+     "結果の行が形に反する"),
+    ("結果の行が形に反しても 0", "    return not absent and d.result_malformed is None, out", "    return not absent, out",
+     "結果の行が形に反する"),
+    ("本文の結果の行も読む", "        for comment in comments or []:", '        for comment in (comments or []) + [{"body": issue["body"]}]:',
+     "本文と装飾の結果の行は読まない"),
+    ("comments の鍵が無いのを結果なしと読む", "self.comments_read = comments is not None", "self.comments_read = True",
+     "comments の無い入力"),
+    ("番号の引きに結果を出さない", 'out = [label(issue), f"  {RESULT}{d.outcome()}"]', "out = [label(issue)]",
+     "印の無い確認の Issue（題で見分ける）"),
+    ("一覧に結果を出さない", '——{entry(d)}／{RESULT}{d.outcome()}")', '——{entry(d)}")', "一覧"),
+    ("comments の形を見ない", "        if not (isinstance(comments, list)", "        if False and not (isinstance(comments, list)",
+     "comments の形が違う"),
+    ("--changed が変えた以外も出す", "hits = [d for d in ordered if d.changed()]", "hits = [d for d in ordered if True]",
+     "変わった確認だけ"),
+    ("--changed で読めないものを黙る", "    return not bad, out, bad", "    return True, out, []", "変わった確認だけ"),
+    ("頭の後ろに空白が無い行を読まない", "if not line.startswith(RESULT.rstrip()):", "if not line.startswith(RESULT):",
+     "頭の後ろに空白が無い結果の行"),
+    ("写す前の値のままの行を採る", 'and not (value.startswith("<") and value.endswith(">"))', "", "写す前の値のままの結果の行"),
+    ("--changed で閉じて結果なしを黙る", "        elif closed and d.result is None:", "        elif False:", "変わった確認だけ"),
+    ("--changed で変えた確認の台帳を見ない", "        elif d.changed() and (d.malformed is not None", "        elif False and (d.malformed is not None",
+     "変えた確認の範囲を引ききれない"),
+    ("--changed で影響する Issue の入力を見ない", "        elif d.changed() and (absent := ", "        elif False and (absent := ",
+     "変えた確認の範囲を引ききれない"),
+    ("--changed と番号を一緒に受ける", "    if args.changed and args.keys:", "    if False:", "--changed と番号"),
 ]
 
 failures: list[str] = []
@@ -246,6 +325,16 @@ def main() -> int:
         (work / "bundle.json").write_text(json.dumps([{"number": 30, "title": "F-001・F-002: 割引額を計算する／注文を取り消せるか",
                                                         "state": "OPEN", "body": bodies["bundle"]}], ensure_ascii=False),
                                           encoding="utf-8")
+        decided = [i for i in issues_json(bodies) if i["number"] in (11, 23, 29)]
+        (work / "decided.json").write_text(json.dumps(decided, ensure_ascii=False), encoding="utf-8")
+        changed_comment = [{"body": "確認の結果: 変えた: Z"}]
+        broken = [{"number": 11, "title": "F-001", "state": "OPEN", "body": "x", "comments": []}]
+        for number, title, lines in ((40, "要確認: 入力に無い Issue", "決めた値: A\n影響する Issue: #11, #99\n"),
+                                     (41, "要確認: 説明つき", "決めた値: B\n影響する Issue: #11（説明）\n"),
+                                     (45, "要確認: 台帳の行が無い", "")):
+            t, b = decision(True, title, lines)
+            broken.append({"number": number, "title": t, "state": "CLOSED", "body": b, "comments": changed_comment})
+        (work / "broken.json").write_text(json.dumps(broken, ensure_ascii=False), encoding="utf-8")
         (work / "crlf.json").write_text(json.dumps([{"number": 31, "title": "まとめた本文（CRLF）", "state": "OPEN",
                                                       "body": bodies["bundle"].replace("\n", "\r\n")}], ensure_ascii=False),
                                         encoding="utf-8")
@@ -262,6 +351,17 @@ def main() -> int:
         for name, value in (("DECIDED", decided), ("AFFECTS", affects)):
             check(f"{name} が absent-lines.md の確認の Issue の書き方に無い",
                   isinstance(value, str) and f"**`{value}" in doc.split("## 確認の Issue の書き方", 1)[1], f"{value!r}")
+        result, kept, changed = constant(source, "RESULT"), constant(source, "KEPT"), constant(source, "CHANGED")
+        closing = doc.split("### 閉じるときの結果の 1 行", 1)[-1].split("\n### ", 1)[0] if "### 閉じるときの結果の 1 行" in doc else ""
+
+        def copies_in(text: str) -> bool:
+            return None not in (result, kept, changed) and f"**`{result}{kept}`**" in text and f"**`{result}{changed}<" in text
+
+        check("RESULT・KEPT・CHANGED が absent-lines.md の閉じるときの結果の 1 行に無い", copies_in(closing), f"{(result, kept, changed)!r}")
+        # 陽性対照: 原本の側を言い換えると、突き合わせが落ちる（頭・推奨のまま・変えたのそれぞれ）
+        for old, new in ((result, "確認結果: "), (f"{result}{kept}", f"{result}了承"), (f"{result}{changed}", f"{result}変更: ")):
+            check(f"陽性対照: 原本の {old!r} を言い換えると突き合わせが落ちる",
+                  isinstance(old, str) and old in closing and not copies_in(closing.replace(old, new)))
         check("陽性対照: 言い換えると当たらない",
               f"**`{decided}" not in doc.replace(decided or "?", "決定した値: ").split("## 確認の Issue の書き方", 1)[1])
 
