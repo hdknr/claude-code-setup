@@ -1296,6 +1296,17 @@ def notification_layer_scenarios(mod, bad):
         _, items, _ = run(mod, env, flag=flag, managed=managed)
         check("通知: managed-settings.d の true が managed の false に勝つ", status_of(items, agent) == [mod.GOOD], bad)
     with scenario(SCRIPT) as env:
+        # project・local は user より上（本体の ri の並び）——user だけを入れ替えた順では落ちる
+        env.user({**base, **off})
+        env.project_settings(on)
+        _, items, _ = run(mod, env)
+        check("通知: project の true が user の false に勝つ", status_of(items, agent) == [mod.GOOD], bad)
+        env.user({**base, **on})
+        env.project_settings({})
+        env.local(off)
+        _, items, _ = run(mod, env)
+        check("通知: local の false が user の true に勝つ", status_of(items, agent) == [mod.ACTION], bad)
+    with scenario(SCRIPT) as env:
         # 値を見つける前に読めない層を通ったら判定できない
         env.user({**base, **on})
         _, items, _ = run(mod, env, flag=env.project / "no-such-flag.json")
@@ -1550,6 +1561,10 @@ MUTATIONS = {
     "通知を settings の層から読まない（グローバル設定だけ）": (
         "    value, layer = effective(stack, key)\n    if layer is not None:\n        return value, layer\n",
         "\n"),
+    "通知で user を project・local より上に置く": (
+        "    value, layer = effective(stack, key)\n",
+        "    value, layer = effective([x for x in stack if x[0] in ('project', 'local')] + [x for x in stack if x[0] == 'user']\n"
+        "                             + [x for x in stack if x[0] not in ('user', 'project', 'local')], key)\n"),
     "通知を自動継続と同じ層（policy・flag・user）だけから読む": (
         "    value, layer = effective(stack, key)\n",
         "    value, layer = effective(stack, key, SESSION_LAYERS)\n"),

@@ -213,9 +213,12 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 
 通知の 2 キーの読み方（#822。2026-11-06・Claude Code 2.1.318・macOS。**本体の文字列で読んだだけで、`/config` を切り替えて確かめる実走はしていない**）:
 
-- 2 キーを読むのは `gi(key, 既定)`: 有効な settings の層を**上から**（policy → flag → local → project → user）見て、最初に値のある層の値を返す
+- `agentPushNotifEnabled` を読むのは `gi(key, 既定)`: 有効な settings の層を**上から**（policy → flag → local → project → user）見て、最初に値のある層の値を返す
   （project は user と同じファイルなら飛ばす——`Gm()`）。**どの層にも無ければ**グローバル設定の値を、型が正しく既定（`h0`）と違うときだけ返す
   （`legacyGlobalConfig`）。それも無ければ既定——`PushNotification` は `gi("agentPushNotifEnabled",!1)` なので**どこにも無ければオフ**
+- `inputNeededNotifEnabled` は `gi()` では読まない（`gi("inputNeededNotifEnabled"` の呼び出しは無い）。読むのは `N()` の
+  「重ねた settings（`gt()`）の値 ?? グローバル設定の値（型が正しいときだけ。`h0` とは比べない）」と `/config` の表示——層の順は上と同じ。
+  **この通知を送るかはサーバの設定（`code_requires_action.enable_push`）で決まり**、手元の値は `/config` で切り替えたとき（と hydrate）にサーバへ送る
 - `/config` の切り替えは user の settings に書く（`Vn("userSettings", …)`）。表示は「settings ?? グローバル設定 ?? 既定」に `??!1`
 - サーバの通知の設定（`/api/claude_code/notification/preferences`）は、settings にもグローバル設定にも値が無いときだけ user の settings に写す
 - 2.1.310 で読んだ「2 キーはグローバル設定にある」は、この版では古い（グローバル設定は settings の層に無いときの落とし先）
@@ -244,7 +247,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **送信の要求を「届いた」と言わない**——`Mobile push requested` は人が見る（iPhone に届いたか）
 - **知らない返り値を「良い」に混ぜない**——判定できない
 - **何も書かない**——設定ファイルにも、台帳にも。**例外は `--since-last` の点検の記録だけ**（台帳の隣の 1 ファイル）。付けなければどこにも書かない
-- **通知の 2 キーを、本体の `gi()` と同じ順に読む**（#822）——managed（`.d` を含む）・flag・local・project・user の層を上から、
+- **通知の 2 キーを、本体と同じ順に読む**（#822。`agentPushNotifEnabled` は `gi()`、`inputNeededNotifEnabled` は `N()`）——managed（`.d` を含む）・flag・local・project・user の層を上から、
   どの層にも無いときだけグローバル設定。**settings の層に値があれば、グローバル設定の値も読めなさも判定に使わない**。
   **どこにも無いことを「良い」にしない**——本体の既定はオフ（要対処）
 - **非対話の起動で、通知の 2 項目を要対処にも判定できないにもしない**——人が見る 1 行（値を添える）。
@@ -307,7 +310,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **通知の 2 キーの読み方が本体の実行時の挙動と同じこと**（#822）——2.1.318 の本体の文字列で読んだだけで、`/config` を切り替えて点検と
   `PushNotification` の結果を比べる実走はしていない。**`--setting-sources` で絞った層**（本体は絞った層を読まない）・**project が user と同じファイル**のときの飛ばし方
   （同じ中身なので値は変わらず、出所の名前だけが違う）・**グローバル設定の値が本体の既定（`h0`）と同じとき**の落とし方（本体は既定と同じ値を返さずに呼ぶ側の既定へ落とす。`h0` の値は確かめていない）・
-  **サーバの通知の設定**（settings に写す前の値）は見ない
+  **サーバの通知の設定**（settings に写す前の値）は見ない。**`inputNeededNotifEnabled` の「良い」は手元の値が `true` であることだけを言う**——
+  送るかを決めるサーバの値は見えず、settings を手で書き換えた値はサーバへ送られていないことがある
 - **macOS の managed preferences（plist）**——読まない
 - **`caffeinate <コマンド>` の形**——コマンドが終われば防止も終わるが、`-t` の無い形として数える
 - **`ask` の規則と `bypassPermissions` の組**——`bypassPermissions` でも `ask` は要対処にしている（確認が出るかは確かめていない。安全側）
@@ -665,7 +669,7 @@ NOTIF_KEYS = (("agentPushNotifEnabled", "Push when Claude decides"),
 
 
 def notification_value(stack, home, env, key):
-    """本体の gi() の写し（2.1.318。docstring の「実測した前提」）: settings の層を上から見て最初の値、
+    """本体の gi()・N() の写し（2.1.318。docstring の「実測した前提」）: settings の層を上から見て最初の値、
     どの層にも無ければグローバル設定の値。(値, 出所) を返す——値は `Unreadable` のことがあり、
     どこにも無ければ (None, None)。**settings の層に値があれば、グローバル設定は読まない。**"""
     value, layer = effective(stack, key)
