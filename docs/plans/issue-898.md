@@ -92,6 +92,10 @@ main へのマージでプラグインの配布（dev-loop 1.101.0）。公開�
 - 周の在り処: ブランチ `issue/898-run-serial-holder-age`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-898`・
   起点 `d81bc57`・base（`git merge-base origin/main HEAD`）`d81bc578ec7d9be1c87b6032d7e7cfaed81eddda`（start-point `origin/main`）
 - 割り目（手順 4）: 割らない（cruise の周）
+- PR: #907
+- 実装の歯止め: `check-all.py` 67/67・失敗 0（`c127360` の 1 つ前の `cd06d91` 以降の木。順番待ち越し、861 秒）
+- 1 パス目の指摘対応の起点: `c127360`（関門に渡した時点の HEAD。このコミット（計画ファイルの更新）は計画ファイルだけ）
+- 関門 1 パス目: （結果を書く）
 - 交絡を潰した手順: 止まっている疑いの観測は、止まる持ち主 S と進む持ち主 T と分からない持ち主 U を**同じ時に同じ枠に**置き、同じ待ち手の同じ塊の行で比べる
   （S だけに出て T・U に出ないことを 1 つの塊で見る——閾値を短くした本体が「全部に出す」「誰にも出さない」のどちらでも落ちる。変異 46・47・45）。
   `holders` の口が枠を取らないことは、枠を全部ふさいだ状態で走らせて見る（空いていれば取っても待たないので判別しない）
