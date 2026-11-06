@@ -406,12 +406,18 @@ def alive(pid: int) -> bool:
 
 # 期限切れで止められる孫: `bash -c "<これ>; :"` の下で走る（`; :` があるので bash は exec せず、これは run-serial の孫になる）。
 # pid を <d>/gc.pid に、始まりの印を <d>/a.start に書き、GC_LIMIT 秒走ったら <d>/a.timeout を書いて終わる（止められなかった印）。
-# 第 3 引数が ignore-term なら SIGTERM を無視する（SIGKILL でしか止まらない役）。
+# 第 3 引数が ignore-term なら SIGTERM を無視する（SIGKILL でしか止まらない役）。late-child なら SIGTERM を受けたときに子（`sleep`）を起こし、
+# その pid を <d>/late.pid に書いて走り続ける（猶予のあいだに生まれた子孫の役。#897 の 2 パス目）。
 GRANDCHILD = r"""
-import os, sys, time, pathlib, signal
+import os, sys, time, pathlib, signal, subprocess
 d = pathlib.Path(sys.argv[1])
 if len(sys.argv) > 2 and sys.argv[2] == "ignore-term":
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
+if len(sys.argv) > 2 and sys.argv[2] == "late-child":
+    def on_term(_s, _f):
+        child = subprocess.Popen(["sleep", "30"])
+        (d / "late.pid").write_text(str(child.pid))
+    signal.signal(signal.SIGTERM, on_term)
 (d / "gc.pid").write_text(str(os.getpid()))
 (d / "a.start").write_text("")
 end = time.time() + 20
@@ -436,18 +442,22 @@ def observe_timeout(script: Path, tmp: Path, tag: str, mode: str = "plain") -> d
     worker = tmp / f"{tag}-to-{mode}-worker.py"
     worker.write_text(WORKER, encoding="utf-8")
     err_a, err_b = marks / "a.err", marks / "b.err"
-    inner = f"{sys.executable} {gc} {marks} {'ignore-term' if mode == 'kill' else 'x'}; :"
+    inner = f"{sys.executable} {gc} {marks} {({'kill': 'ignore-term', 'late': 'late-child'}).get(mode, 'x')}; :"
     a = launch(script, root, ["bash", "-c", inner], err_a, opts=("--timeout", TIMEOUT_SECONDS))
     started = wait_until(lambda: (marks / "gc.pid").exists() and (marks / "gc.pid").read_text().strip(), [a])
     gc_pid = int((marks / "gc.pid").read_text()) if started else None
     b = launch(script, wt, [sys.executable, str(worker), str(marks), "b", "a.start", "10"], err_b)
     code_a, code_b = finish(a, b)
     gone = gc_pid is not None and wait_until(lambda: not alive(gc_pid), limit=5)
-    if gc_pid is not None and alive(gc_pid):
-        try:
-            os.kill(gc_pid, signal.SIGKILL)   # 変異で残った孫を片付ける（観測には使わない）
-        except ProcessLookupError:
-            pass
+    late_text = (marks / "late.pid").read_text().strip() if (marks / "late.pid").exists() else ""
+    late_pid = int(late_text) if late_text.isdigit() else None
+    late_gone = late_pid is not None and wait_until(lambda: not alive(late_pid), limit=5)
+    for pid in (gc_pid, late_pid):
+        if pid is not None and alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)   # 変異で残った孫・その子を片付ける（観測には使わない）
+            except ProcessLookupError:
+                pass
     text_a, text_b = err_a.read_text(encoding="utf-8"), err_b.read_text(encoding="utf-8")
     return {
         "孫が走った": started,
@@ -458,11 +468,16 @@ def observe_timeout(script: Path, tmp: Path, tag: str, mode: str = "plain") -> d
         "B が待っていると言った": "待っている" in text_b,
         "B が走りきった": (marks / "b.end").exists() and code_b == 0,
         "SIGKILL と言った": "SIGKILL" in text_a,
+        "猶予のあいだに生まれた子が止まった": late_gone,
     }
 
 
 def observe_timeout_kill(script: Path, tmp: Path, tag: str) -> dict:
     return observe_timeout(script, tmp, tag, mode="kill")
+
+
+def observe_timeout_late(script: Path, tmp: Path, tag: str) -> dict:
+    return observe_timeout(script, tmp, tag, mode="late")
 
 
 # 呼び出し元の役: run-serial を子として起こし（コマンドは B）、その pid を書き、待っていると言うのを見てから終わる——run-serial は親を失う
@@ -739,13 +754,17 @@ MUTATIONS = {
     "入れ子では期限を掛けない": (
         "        return run(command, env, timeout)\n\n    text",
         "        return run(command, env, None)\n\n    text"),
+    # 守る 41: 期限切れの猶予のあいだに子孫が起こした子も
+    "猶予の後に数え直さない": (
+        "    targets += [pid for pid in (descendants(*living) if living else []) or [] if pid not in targets]",
+        "    pass"),
 }
 
 OBSERVERS = {
     "serial": observe_serial, "parallel": observe_parallel, "codes": observe_codes, "nested": observe_nested,
     "cannot": observe_cannot, "decl": observe_decl, "sigterm": observe_sigterm, "parse": observe_parse,
     "sigint": observe_sigint, "timeout": observe_timeout, "timeout-kill": observe_timeout_kill, "orphan": observe_orphan,
-    "deadline": observe_deadline,
+    "deadline": observe_deadline, "timeout-late": observe_timeout_late,
 }
 
 # 変異ごとに当てる観測（全部を当てると、待ちの上限で止まる観測が重なって数分かかる）。
@@ -791,6 +810,7 @@ MUTATION_PROBE = {
     "期限の値を確かめない": ("codes",),
     "既定の期限を掛けない": ("deadline",),
     "入れ子では期限を掛けない": ("deadline",),
+    "猶予の後に数え直さない": ("timeout-late",),
 }
 
 
@@ -866,7 +886,8 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
             ck(f"{label}: コマンドが受けたのは SIGINT 1 回と、終わらせる SIGTERM（{got['log']}）", got["log"] == ["INT", "TERM"])
             ck(f"{label}: 0 で終わった", got["終了コード"] == 0)
     for key, title in (("timeout", "期限（`--timeout 3`）を過ぎたコマンドの孫（`bash -c` の下）が走り続ける（#897）"),
-                       ("timeout-kill", "同じ形で、孫が SIGTERM を無視する（#897）")):
+                       ("timeout-kill", "同じ形で、孫が SIGTERM を無視する（#897）"),
+                       ("timeout-late", "同じ形で、孫が SIGTERM を受けて子を起こし、走り続ける（#897 の 2 パス目）")):
         if key in o:
             t = o[key]
             head(f"\n{title}")
@@ -876,7 +897,9 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
             ck("孫が止まった（自分の上限まで走っていない）", t["孫が止まった"])
             ck("B が待っていると言った", t["B が待っていると言った"])
             ck("B が枠を取って走りきった", t["B が走りきった"])
-            if key == "timeout-kill":
+            if key == "timeout-late":
+                ck("猶予のあいだに孫が起こした子も止まった", t["猶予のあいだに生まれた子が止まった"])
+            if key in ("timeout-kill", "timeout-late"):
                 ck("SIGKILL で止めたと言った", t["SIGKILL と言った"])
             else:
                 ck("SIGTERM で終わったので SIGKILL とは言わない", not t["SIGKILL と言った"])

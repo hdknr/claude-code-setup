@@ -43,7 +43,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 
 **枠を取ってからコマンドが走ってよいのは `--timeout <秒>`（1 以上の整数。7 桁まで）まで。渡さなければ既定の `DEFAULT_TIMEOUT`（3600 秒）。**
 待っている時間は数えない。期限を過ぎたら、コマンドとその子孫（`bash -c` の下のプロセスなど。`ps` で親子をたどる）に SIGTERM を送り、
-`GRACE`（10 秒）待っても残るものに SIGKILL を送ってから、枠を返して **124** で終わる——`run-serial: 期限切れ` で始まる行が言う。
+`GRACE`（10 秒）待っても残るもの（猶予のあいだに生まれた子孫を数え直して足す）に SIGKILL を送ってから、枠を返して **124** で終わる——`run-serial: 期限切れ` で始まる行が言う。
 **期限切れは緑ではない**（コマンドは走りきっていない）。
 
 - **#839**: トンネル越しの写しが切れた接続を待ったまま枠を約 45 分握り、並行の他の周の重いテストと当の周の関門が全部待ちになった。
@@ -116,13 +116,15 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - `--timeout` の値が 1 以上の整数（7 桁まで）でない・`--` の前に知らない引数があるなら、走らせずに 2 を返す（#897）
 - `--timeout` を渡さなければ、既定（`DEFAULT_TIMEOUT`。上の「期限」の値）の期限を掛ける（#897）
 - 入れ子で呼ばれても（枠を取らずに走らせるときも）、同じ期限を掛ける（#897）
+- 期限切れの猶予のあいだに子孫が起こした子も、猶予の後にまだ生きている子孫からたどって止める——コマンドが先に終わっていても（#897 の 2 パス目）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
 - 順番待ちを通さずに走ったもの（周の言語モデルの体そのもの・これを通さない検査）は数えない
 - 走っている側が固まったら、待つ側は走っている側の期限まで待つ（待つ側自身の待ち時間に上限は無い——前に並ぶ全部の期限の和まで待ちうる）
 - 期限は枠を取ってから数える——待っている時間は数えない
-- 期限切れで止める子孫は、期限を過ぎた時点（と猶予の後）に `ps` で親子をたどれたものだけ——自分で親を離れた（デーモン化した）プロセス・
+- 期限切れで止める子孫は、期限を過ぎた時点に `ps` で親子をたどれたものと、猶予の後にまだ生きているもの（コマンドと先に数えた子孫）から
+  たどれたものだけ——自分で親を離れた（デーモン化した）プロセス・親が先に終わって init に移った後に生まれた子・
   別のユーザーのプロセスは止めない。`ps` が使えなければコマンドだけを止め、そう言う
 - 期限切れで止めた子孫が使っていたもの（一時ファイル・ポート・リモートの接続）は片付けない
 - 呼び出し元を見るのは待っているあいだだけ——枠を取った後に呼び出し元が居なくなっても、コマンドは期限まで走る
@@ -337,8 +339,8 @@ def record(fd: int, command: list[str]) -> None:
     os.write(fd, json.dumps(info, ensure_ascii=False).encode("utf-8"))
 
 
-def descendants(root: int) -> list[int] | None:
-    """`root` の子孫の pid（`ps` の親子をたどる）。`ps` が使えなければ None。"""
+def descendants(*roots: int) -> list[int] | None:
+    """`roots` の子孫の pid（`ps` の親子をたどる）。`ps` が使えなければ None。"""
     try:
         proc = subprocess.run(["ps", "-A", "-o", "pid=", "-o", "ppid="], capture_output=True, text=True, check=False)
     except OSError:
@@ -350,7 +352,7 @@ def descendants(root: int) -> list[int] | None:
         parts = line.split()
         if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
             children.setdefault(int(parts[1]), []).append(int(parts[0]))
-    found, stack = [], [root]
+    found, stack = [], list(roots)
     while stack:
         for child in children.get(stack.pop(), []):
             if child not in found:
@@ -392,8 +394,9 @@ def stop(proc: subprocess.Popen) -> None:
         if proc.poll() is not None and not any(alive(pid) for pid in tree):
             break
         time.sleep(0.05)
-    if proc.poll() is None:
-        targets += [pid for pid in descendants(proc.pid) or [] if pid not in targets]
+    # 猶予のあいだに生まれた子孫も数え直す——コマンドが先に終わっていても、まだ生きている子孫（SIGTERM で子を起こす孫など）からたどる
+    living = [pid for pid in targets if (pid == proc.pid and proc.poll() is None) or (pid != proc.pid and alive(pid))]
+    targets += [pid for pid in (descendants(*living) if living else []) or [] if pid not in targets]
     left = [pid for pid in targets if (pid == proc.pid and proc.poll() is None) or (pid != proc.pid and alive(pid))]
     if left:
         say(f"SIGTERM の後 {GRACE:.0f} 秒で終わらなかった pid {', '.join(map(str, left))} を SIGKILL で止める")
