@@ -39,7 +39,9 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
   下の定数 `ORIGIN` はその写し。dev-loop の `spec-gap.md` の「作り直しの周」も写しを持ち、`scripts/test-rebuild-scope.py` が 3 つを突き合わせる）で、
   その後ろに作り直す範囲を並べる——No なら上の No の引きと同じ Issue とケース、確認の Issue なら推奨で決めた値・新しい値（結果の行がまだ無ければそう書く）・影響する Issue。
   **下書きの中の値は箇条書きにし、行頭を台帳の 2 行・結果の行の頭にしない**（下書きから立てた Issue を確認の Issue と読み違えないため）。
-  **引けなければ下書きを出さない**——範囲が空の No・推奨のまま確かめた確認の Issue（作り直すものが無い）と、上の `#<番号>` の引きが 1 になる確認の Issue。
+  **引けなければ下書きを出さない**——範囲が空の No・推奨のまま確かめた確認の Issue（作り直すものが無い）・推奨のままかを読めない確認の Issue
+  （入力に `comments` が無い・閉じたのに結果の行が無い。開いていて結果の行がまだ無いものは下書きを出す）と、上の `#<番号>` の引きが 1 になる確認の Issue。
+  `--draft` は 1 回だけ渡す（2 回なら 2）。
 
 終了コード:
 
@@ -376,6 +378,11 @@ def draft_issue(number: int, issues: dict[int, dict]) -> tuple[bool, list[str]]:
     d = Decision(issues[number])
     if d.result == KEPT:
         return False, [f"{label(d.issue)}: {RESULT}{KEPT}——作り直すものが無いので下書きを出さない"]
+    # 推奨のままかを読めない確認の Issue は、作り直すかを決められない（1 パス目の指摘。`--changed` と同じ扱い）
+    if not d.comments_read:
+        return False, [f"{label(d.issue)}: {RESULT}{d.outcome()}——推奨のままかを読めないので下書きを出さない"]
+    if (d.issue.get("state") or "").upper() == "CLOSED" and d.result is None:
+        return False, [f"{label(d.issue)}: 閉じたが {RESULT}の行が無い——変えたかを読めないので下書きを出さない"]
     new = d.result[len(CHANGED):] if d.changed() else f"まだ無い（{d.outcome()}）"
     out = [f"{ORIGIN}#{number}", "",
            f"確認の Issue #{number} で推奨で決めた値を別の値に変えるので、下の Issue を作り直す。範囲は rebuild-scope.py が確認の Issue の"
@@ -389,14 +396,17 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--issues", required=True)
     parser.add_argument("--changed", action="store_true")
-    parser.add_argument("--draft")
+    parser.add_argument("--draft", action="append")  # 2 回渡したら黙って後を採らず 2（1 パス目の指摘）
     parser.add_argument("keys", nargs="*")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
     keys = []
-    for key in args.keys + ([args.draft] if args.draft is not None else []):
+    if args.draft is not None and len(args.draft) > 1:
+        print("--draft は 1 回だけ渡す（下書きは元 1 つごと）。判定していない", file=sys.stderr)
+        return 2
+    for key in args.keys + (args.draft or []):
         if is_number(key):
             keys.append(key)
         elif re.fullmatch(r"#?[1-9][0-9]*", key):
