@@ -31,8 +31,9 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   「残っていない」ことを示すために出す。
 - **仕様書（`spec.md`）も同じ実行で作る**（#371）——材料は `signoff/v<n>/req-<k>` の時点の v1〜v<n> を重ねた全体
   （前の版との比較と同じ写しから。**v1 でも重ね合わせの決まりを通す**）と、作業中の版の `proposal/spec/*.md`（手書き。任意）。
-  `spec/`・`requirements/` の `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio` は載せていないと書く（draw.io は起動しない）。
-  載せるものと置き場所の正は `references/tree.md` の「仕様書」。
+  `spec/`・`requirements/` の `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio`・`.bpmn` は載せていないと書く（描画系は起動しない）。
+  **書き出しが今のソースと合わない図**（ソース `X.drawio`・`X.bpmn` の隣の `X.svg` に `render-diagrams.py` の印が無いか、印の指紋がソースと違う。判定は
+  `render-diagrams.py` の関数を読み込む）**も載せ、仕様書にそう名指しする**（#902。終了コードは変えない）。載せるものと置き場所の正は `references/tree.md` の「仕様書」。
 - **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
 - **始める前に、前に作った出力を消し、全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
@@ -99,6 +100,8 @@ feasibility = _load("check_feasibility_csv", "check-feasibility-csv.py")
 gantt = _load("schedule_to_gantt", "schedule-to-gantt.py")
 diffs = _load("diff_versions", "diff-versions.py")
 pptx = _load("qa_to_pptx", "qa-to-pptx.py")
+# 図の書き出しの印と指紋（#902）。判定の式を 2 箇所に置かない
+diagrams = _load("render_diagrams", "render-diagrams.py")
 
 # 版のディレクトリ（`docs/v<n>/`）からのパス
 QA_PATH = "shared/qa.csv"
@@ -481,14 +484,32 @@ def out_of_scope(text: str) -> list[str] | None:
     return None
 
 
-def figures_of(whole) -> tuple[list[str], list[str]]:
-    """(載せる図——`.svg`、書き出しが無いので載せない `.drawio`)。どちらもパスの順。図は `spec/`・`requirements/` の中だけ。"""
+def figures_of(whole) -> tuple[list[str], list[str], list[str]]:
+    """(載せる図——`.svg`、書き出しが無いので載せないソース——`.drawio`・`.bpmn`、
+    載せるが書き出しが今のソースと合わない図——「`<書き出し>`（理由）」)。どれもパスの順。図は `spec/`・`requirements/` の中だけ。
+
+    鮮度は `render-diagrams.py` と同じ判定——ソース `X.drawio`・`X.bpmn` の書き出し `X.svg`（大文字小文字を区別しない）の印が無いか、
+    印の指紋がソースのバイトの sha256 と違う。`X.drawio.svg`・`X.bpmn.svg` は `render-diagrams.py` の書き出しではないので鮮度を見ない。"""
     paths = sorted(p for p in whole.files if p.startswith(FIGURE_DIRS))
     svgs = [p for p in paths if p.lower().endswith(".svg")]
-    exported = {p.lower() for p in svgs}
-    missing = [p for p in paths if p.lower().endswith(".drawio")
-               and f"{p}.svg".lower() not in exported and f"{p[:-len('.drawio')]}.svg".lower() not in exported]
-    return svgs, missing
+    by_lower = {p.lower(): p for p in svgs}
+    missing: list[str] = []
+    stale: list[str] = []
+    for p in paths:
+        suffix = next((s for s in diagrams.SUFFIXES if p.lower().endswith(s)), None)
+        if suffix is None:
+            continue
+        out = by_lower.get(f"{p[:-len(suffix)]}.svg".lower())
+        if out is None:
+            if f"{p}.svg".lower() not in by_lower:
+                missing.append(p)
+            continue
+        got = diagrams.marked_digest(whole.files[out])
+        if got is None:
+            stale.append(f"`{out}`（印が無い——`render-diagrams.py` で書き出していない）")
+        elif got != diagrams.source_digest(whole.files[p]):
+            stale.append(f"`{out}`（古い——ソース `{p}` を直したあと書き出していない）")
+    return svgs, missing, stale
 
 
 def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, diff,
@@ -520,7 +541,7 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
     shared_rows = list(whole.qa.values())
     provisional = sum(1 for r in shared_rows if qa.is_provisional(r))
     decided = sum(1 for r in shared_rows if r["状態"].strip() == qa.DONE)
-    svgs, missing = figures_of(whole)
+    svgs, missing, stale = figures_of(whole)
     out += ["## 規模", ""]
     out += table(["もの", "数"], [
         ["要求のファイル（`requirements/`）", str(sum(1 for p in files if p.startswith("requirements/")))],
@@ -529,7 +550,7 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
         ["Q&A（共有。v1 から重ねた全体）",
          f"{len(shared_rows)}（決定 {decided}・暫定 {provisional}・未決定 {len(shared_rows) - decided - provisional}）"],
         ["機能（中間表現）", str(len(whole.features)) if whole.spec is not None else "—（中間表現が無い）"],
-        ["図", f"{len(svgs)}（書き出しが無いので載せていない図 {len(missing)}）"],
+        ["図", f"{len(svgs)}（書き出しが無いので載せていない図 {len(missing)}・書き出しが今のソースと合わない図 {len(stale)}）"],
     ])
     out.append("")
 
@@ -543,6 +564,9 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
         out += ["（図はありません）", ""]
     if missing:
         out += ["書き出し（`.svg`）が無いので載せていない図:", ""] + [f"- `{path}`" for path in missing] + [""]
+    if stale:
+        out += ["書き出しが今のソースと合わない図（上に載せた。`render-diagrams.py --check` で確かめ、書き出し直して承認を取り直す）:", ""]
+        out += [f"- {line}" for line in stale] + [""]
 
     out += ["## 機能の一覧", ""]
     if whole.features:
