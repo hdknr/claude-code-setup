@@ -21,8 +21,8 @@
 - 読めない Q&A 表のあるコミットでは、その表を前の時点のまま読み、名指しして 1
 - 確認の Issue を数え、推奨のまま・変えた・結果なし（形に反する結果の行は名指しして 1）に分ける。`comments` の鍵が無い入力は 2
 - 変わった 1 件ごとに、引いた範囲（No なら Issue・ケース・機能全体の数、確認の Issue なら影響する Issue の数。台帳の行が無ければ名指しして 1）と、
-  作り直しの元の印を行頭に持つ Issue（確認の Issue 自体は数えない）・PR と、マージした PR の差分の行数を出す（装飾つき・行頭でない印は数えない。後ろの形が違う印は名指しして 1）
-- 合計は Issue・PR ごとに 1 回数え（元を 2 つ持つ本文を二重に数えない）、印の元が変わったと数えた件に無い Issue・PR は名指しして 1
+  作り直しの元の印を行頭に持つ Issue（確認の Issue 自体は数えない）・PR と、マージした PR の差分の行数を出す（装飾つき・行頭でない印は数えない。後ろの形が違う・空白の崩れた印は名指しして 1）
+- 合計は Issue・PR ごとに 1 回数え（元を 2 つ持つ本文を二重に数えない）、印の元が変わったと数えた件に無い Issue・PR は名指しして 1（ほかの元で合計に入れたものは名指ししない）
 - No の行には、scaffold が作り直した本文と PR は印を持たない（#885 の限界）と添える
 - `--summary` は数と日付だけを出す（題・No・番号・コミットの SHA を出さない）
 - Q&A 表を変えたコミットが 1 本も無いリポジトリは名指しして 1（黙って 0 件と出さない）
@@ -181,6 +181,7 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
          "body": "**作り直しの元: #20**\n説明 作り直しの元: #20\n - 作り直しの元: Q-001\n", "comments": []},
         {"number": 35, "title": "同じで確定した No の印", "state": "OPEN", "body": "作り直しの元: Q-R-001\n", "comments": []},
         {"number": 33, "title": "形に反する印", "state": "OPEN", "body": "作り直しの元: 割引の件\n", "comments": []},
+        {"number": 36, "title": "空白の崩れた印", "state": "OPEN", "body": "作り直しの元:Q-001\n作り直しの元:  #20\n", "comments": []},
         decision("要確認: 印の文字列を本文に持つ", "決めた値: F\n影響する Issue: なし\n作り直しの元: #20\n", ["確認の結果: 推奨のまま"], number=34),
     ]
 
@@ -191,6 +192,7 @@ PRS = [
     {"number": 51, "title": "14 日にする（2）", "state": "OPEN", "body": "作り直しの元: #20\n", "additions": 5, "deletions": 5},
     {"number": 52, "title": "Q-001 の範囲", "state": "MERGED", "body": "作り直しの元: Q-001\n", "additions": 3, "deletions": 1},
     {"number": 54, "title": "元を 2 つ持つ PR", "state": "MERGED", "body": "作り直しの元: Q-001\n作り直しの元: #20\n", "additions": 7, "deletions": 0},
+    {"number": 56, "title": "変わった元と同じ元を持つ PR", "state": "MERGED", "body": "作り直しの元: Q-001\n作り直しの元: Q-R-001\n", "additions": 1, "deletions": 0},
     {"number": 55, "title": "推奨のままの確認の印", "state": "MERGED", "body": "作り直しの元: #21\n", "additions": 50, "deletions": 0},
     {"number": 53, "title": "印の無い PR", "state": "MERGED", "body": "Fixes #11\n", "additions": 100, "deletions": 0},
 ]
@@ -198,8 +200,9 @@ PRS = [
 
 class Case:
     def __init__(self, name: str, code: int, has: tuple[str, ...] = (), lacks: tuple[str, ...] = (), *, issues: str = "issues",
-                 prs: str = "prs", ref: str = "", repo: str = "repo", extra: tuple[str, ...] = ()):
+                 prs: str = "prs", ref: str = "", repo: str = "repo", extra: tuple[str, ...] = (), quiet: tuple[str, ...] = ()):
         self.name, self.code, self.has, self.lacks = name, code, has, lacks
+        self.quiet = quiet  # 標準エラー（名指し）に出ないもの
         self.issues, self.prs, self.ref, self.repo, self.extra = issues, prs, ref, repo, extra
 
 
@@ -214,7 +217,7 @@ CASES = [
         "数えきれない——Q-R-003: 回答の選択肢のラベルが読めず",
         "- 確認の Issue: 6 件（推奨のまま 2 件・変えた 2 件・結果なし 1 件・結果の行が形に反する 1 件）",
         "数えきれない——#23 要確認: 形に反する結果",
-        "- Q&A Q-001（Q&A の回答が変わった）: 引いた範囲 Issue 2 件・ケース 1 件（機能全体 1 件）／作り直しの元の印: Issue 1 件・PR 2 件（マージ 2 件）・差分 11 行——scaffold が作り直した",
+        "- Q&A Q-001（Q&A の回答が変わった）: 引いた範囲 Issue 2 件・ケース 1 件（機能全体 1 件）／作り直しの元の印: Issue 1 件・PR 3 件（マージ 3 件）・差分 12 行——scaffold が作り直した",
         "- Q&A Q-R-002（Q&A の回答が変わった）: 引いた範囲 Issue 0 件・ケース 0 件／作り直しの元の印: Issue 0 件・PR 0 件（マージ 0 件）・差分 0 行",
         "- 確認の Issue #20（確認の Issue で値を変えた）: 引いた範囲 Issue 2 件／作り直しの元の印: Issue 1 件・PR 3 件（マージ 2 件）・差分 19 行",
         "- 確認の Issue #24（確認の Issue で値を変えた）: 引いた範囲 引けない",
@@ -222,10 +225,12 @@ CASES = [
         "数えきれない——#33 形に反する印: 作り直しの元の印の後ろが Q&A の No でも #<番号> でもない",
         "  - Issue #30 作り直し: Q-001 [OPEN]", "  - Issue #31 実装: 14 日にする [CLOSED]",
         "  - PR #50 14 日にする [MERGED] +10 −2", "  - PR #51 14 日にする（2） [OPEN] +5 −5",
-        "- 合計: 変わった 6 件・作り直しの元の印の Issue 2 件・PR 4 件・差分 23 行（マージした PR。",
+        "- 合計: 変わった 6 件・作り直しの元の印の Issue 2 件・PR 5 件・差分 24 行（マージした PR。",
+        "数えきれない——#36 空白の崩れた印: 作り直しの元の印の後ろが Q&A の No でも #<番号> でもない（'作り直しの元:Q-001'）",
+        "数えきれない——#36 空白の崩れた印: 作り直しの元の印の後ろが Q&A の No でも #<番号> でもない（'作り直しの元:  #20'）",
         "数えきれない——#35 同じで確定した No の印: 作り直しの元 Q-R-001 は変わったと数えた件に無い",
         "数えきれない——PR #55 推奨のままの確認の印: 作り直しの元 #21 は変わったと数えた件に無い",
-    ), ("Issue #32", "Issue #34", "PR #53", "Q-R-005", "Q-S-001", "D-S-001", "Q&A Q-R-001（")),
+    ), ("Issue #32", "Issue #34", "PR #53", "Q-R-005", "Q-S-001", "D-S-001", "Q&A Q-R-001（"), quiet=("PR #56 変わった元と同じ元を持つ PR: 作り直しの元 Q-R-001", "#32 装飾と文の途中")),
     Case("まだ確かめていない時点（--ref）", 0, (
         "Q&A 表を変えたコミット 1 本", "- 仮回答（どこかの時点で `暫定反映` だった Q&A）: 9 件",
         "- 確かめた: 0 件", "まだ `暫定反映`: 9 件", "- 合計: 変わった 0 件"), ("数えきれない——Q-R",), issues="clean", prs="noprs", ref="early"),
@@ -270,7 +275,7 @@ MUTATIONS = [
     ("確認の Issue の範囲を数えない", 'scope = f"Issue {len(d.affects)} 件"', 'scope = "Issue 0 件"', "全部"),
     ("台帳の行が無い変えた確認の Issue を名指ししない", '            bad.append(f"{rebuild.label(d.issue)}: 変えたが', '            (f"{rebuild.label(d.issue)}: 変えたが', "全部"),
     ("確認の Issue 自体も作り直しの Issue に数える", "        if rebuild.is_decision(issue):\n            continue", "        if False:\n            continue", "全部"),
-    ("行頭でない印も数える", 'ORIGIN_LINE = re.compile("^" + re.escape(rebuild.ORIGIN)', 'ORIGIN_LINE = re.compile(r".*?" + re.escape(rebuild.ORIGIN)', "全部"),
+    ("行頭でない印も読む", "        if not line.startswith(ORIGIN_HEAD):", "        if ORIGIN_HEAD not in line:", "全部"),
     ("マージしていない PR の行数も足す", 'lines = sum(p["additions"] + p["deletions"] for p in rework if p["state"].upper() == PR_STATES_MERGED)',
      'lines = sum(p["additions"] + p["deletions"] for p in rework)', "全部"),
     ("形に反する印を名指ししない", "            bad.append(line.strip())", "            pass", "全部"),
@@ -288,6 +293,8 @@ MUTATIONS = [
      'counted_prs.update((p["number"] * 1000 + len(counted_prs), p) for p in rework)', "全部"),
     ("印の元が数えた件に無い Issue を黙る", "    for key in sorted(set(marked) - keys):", "    for key in []:", "全部"),
     ("印の元が数えた件に無い PR を黙る", "    for key in sorted(set(marked_prs) - keys):", "    for key in []:", "全部"),
+    ("ほかの元で合計に入れた PR も名指しする", "for p in marked_prs[key] if p[\"number\"] not in counted_prs]", "for p in marked_prs[key]]", "全部"),
+    ("崩れた印を黙って落とす", "        if not line.startswith(ORIGIN_HEAD):", "        if not ORIGIN_LINE.match(line):", "全部"),
     ("数えきれなくても 0", "    return 1 if bad else 0", "    return 0", "全部"),
 ]
 
@@ -311,6 +318,9 @@ def run_case(scripts: Path, work: Path, env: dict[str, str], case: Case) -> str 
     for needle in case.has:
         if needle not in out:
             return f"出力に {needle!r} が無い: {out[-1500:]}"
+    for needle in case.quiet:
+        if needle in proc.stderr:
+            return f"標準エラーに {needle!r} がある: {proc.stderr[-800:]}"
     for needle in case.lacks:  # 出さないものは標準出力（貼る側）で見る——名指しは標準エラーに出てよい
         if needle in proc.stdout:
             return f"出力に {needle!r} がある: {out[-800:]}"

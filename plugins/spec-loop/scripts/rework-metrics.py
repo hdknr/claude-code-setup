@@ -62,7 +62,7 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 - 1: 数えきれないものがある（数えたものは出し、数えきれないものを標準エラーに名指しする）——ラベルが読めず回答が変わったかを見分けられない No・
   読めない Q&A 表（見出しが決まりの形でない・CSV として読めない）のあるコミット（そのコミットではその表を前の時点のまま読む）・
   結果の行が決まりの形でない確認の Issue・変えた確認の Issue のうち台帳の行（`決めた値: `・`影響する Issue: `）が無い／形に反するもの・
-  作り直しの元の印の後ろが Q&A の No でも `#<番号>` でもない行・印の元が変わったと数えた件に無い Issue・PR（合計に入れていない）・Q&A 表を変えたコミットが 1 本も無い（`--spec-repo` が正本リポジトリでないかもしれない）
+  頭 `作り直しの元:` で始まり、後ろが空白 1 つと Q&A の No か `#<番号>` でない行（空白が無い・2 つ・全角・後ろが空）・印の元が変わったと数えた件に無い Issue・PR（合計に入れていない）・Q&A 表を変えたコミットが 1 本も無い（`--spec-repo` が正本リポジトリでないかもしれない）
 - 2: 数えていない——引数の誤り・入力が読めない（JSON でない・Issue／PR の形が違う・確認の Issue を数えるのに `comments` の鍵が無い・PR に `additions`・`deletions` が無い）・
   `--spec-repo` が git のリポジトリでない・`--ref` が解決できない・`git` が失敗した
 
@@ -78,6 +78,8 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 | **first-parent の外の履歴** | マージしたブランチの途中のコミットは読まない——マージのコミットで一度に変わったと読む。ブランチの途中で `暫定反映` に戻して確かめ直した出来事は 1 つに見える |
 | **`removed.csv` で消した Q&A の行** | 重ね合わせの削除は読まない——前の版の行が効いたまま残る（消えたとは数えない） |
 | **Q&A 表のファイルの綴り** | git の木のパスを決まりの綴り（`docs/v<n>/shared/qa.csv`・`docs/v<n>/spec/qa-dev.csv`）で探す。綴りだけ違うパスは読まない |
+| **`暫定反映` のまま選択肢を替えた作り直し** | 確かめたのは `暫定反映` でなくなったときだけを見る——`A` を暫定で採っていたのを `B` を暫定で採るに替え、のちに `B` で確定したら「同じ選択肢で確定」と数える（暫定のあいだの作り直しは数えない） |
+| **#404（spec-loop 0.25.0）より前の決まりの仮回答** | 仮回答は `状態` が `暫定反映` の行だけ。前の決まり（`反映済み` で `回答` に「暫定で採用」）の時期の仮回答とその確定・変更は数えない（`references/tree.md` の「暫定の行を状態へ移す」の前の形） |
 | **回答のラベルが選択肢の列にあるか** | 先頭の英大文字 1 字（後ろが `（`・`(`・空白・行末のときだけ。`B: 変更` は読めない）を読むだけ。選択肢の列と突き合わせない（決まりどおりかは `check-qa-csv.py` が見る） |
 | **入力が全部の Issue・PR を含むか** | `--limit` を超えた分・取った後に足した分は見えない（`rebuild-scope.py` と同じ） |
 | **確認の Issue の結果の行を誰が書いたか** | `rebuild-scope.py` の `Decision` の守らないものと同じ（行を読むだけ） |
@@ -117,6 +119,8 @@ LABEL = re.compile(rf"({qa.OPTION_LABEL})(?:（|\(|\s|$)")
 OLD_COLUMNS = [c for c in qa.COLUMNS if c not in ("推奨", "推奨の理由")]
 # 作り直しの元の印の行（行頭から・装飾なし・1 行に 1 つ）
 ORIGIN_LINE = re.compile("^" + re.escape(rebuild.ORIGIN) + r"(\S.*?)\s*$")
+# 頭（`作り直しの元:`）で始まる行は、形が崩れていても拾って名指しする——空白が無い・2 つ・全角・後ろが空の行を黙って落とさない（2 パス目の指摘）
+ORIGIN_HEAD = rebuild.ORIGIN.rstrip()
 PR_STATES_MERGED = "MERGED"
 
 
@@ -254,11 +258,11 @@ def origins(body: str) -> tuple[list[str], list[str]]:
     """本文の作り直しの元の印の元（`Q-R-002`・`#881`）と、形に反する印の行。"""
     found, bad = [], []
     for line in body.splitlines():
-        m = ORIGIN_LINE.match(line)
-        if not m:
+        if not line.startswith(ORIGIN_HEAD):
             continue
-        key = m.group(1)
-        if rebuild.is_number(key) or re.fullmatch(r"#[1-9][0-9]*", key):
+        m = ORIGIN_LINE.match(line)
+        key = m.group(1) if m else ""
+        if m and (rebuild.is_number(key) or re.fullmatch(r"#[1-9][0-9]*", key)):
             found.append(key)
         else:
             bad.append(line.strip())
@@ -392,11 +396,14 @@ def main(argv: list[str]) -> int:
     out.append(f"- 合計: 変わった {len(items)} 件・作り直しの元の印の Issue {len(counted_issues)} 件・PR {len(counted_prs)} 件・差分 {total_lines} 行（マージした PR。"
                "元を 2 つ持つ Issue・PR は 1 回だけ数える）")
     # 印の元が、変わったと数えた件に無い Issue・PR——黙って合計から落とさない（1 パス目の指摘）
+    # 名指しするのは合計に 1 度も入らなかったものだけ——ほかの元で合計に入れた Issue・PR は名指ししない（2 パス目の指摘）
     keys = {key for key, _, _ in items}
     for key in sorted(set(marked) - keys):
-        bad += [f"#{i['number']} {i['title']}: 作り直しの元 {key} は変わったと数えた件に無い——合計に入れていない" for i in marked[key]]
+        bad += [f"#{i['number']} {i['title']}: 作り直しの元 {key} は変わったと数えた件に無い——合計に入れていない"
+                for i in marked[key] if i["number"] not in counted_issues]
     for key in sorted(set(marked_prs) - keys):
-        bad += [f"PR #{p['number']} {p['title']}: 作り直しの元 {key} は変わったと数えた件に無い——合計に入れていない" for p in marked_prs[key]]
+        bad += [f"PR #{p['number']} {p['title']}: 作り直しの元 {key} は変わったと数えた件に無い——合計に入れていない"
+                for p in marked_prs[key] if p["number"] not in counted_prs]
 
     for line in out:
         print(line)
