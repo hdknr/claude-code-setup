@@ -9,6 +9,7 @@
 - 直す線: **既定**（出所: cruise #887 の台帳の確かめた線）
 - 版の上げ方: **minor（`dev-loop`）**——cruise に新しい手順とスクリプトを足す。マージの直前に上げ直すなら、main の先端の版から minor で 1 つ上げる
   （`plugins/dev-loop/skills/cruise/references/parallel.md` の「版とマージの順」）。
+- 版の実績: 1.96.0 → 1.97.0 で出し、main（#884・#822。1.97.1）を取り込んで 1.98.0、マージの直前に main（#885。1.98.0）を取り込んで **1.99.0**（main の先端から minor）。
 - 並行する周: #884（PR #888・`.claude/worktrees/issue-884`・`issue/884-confirm-result-line`）。その worktree・ブランチには触らない。
   #884 も `plugins/dev-loop/skills/cruise/SKILL.md` と dev-loop の版を変える——取り込みで衝突しうる。
 
