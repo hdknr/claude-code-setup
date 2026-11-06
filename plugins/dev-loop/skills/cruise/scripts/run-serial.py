@@ -144,6 +144,8 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - `holders` は枠のディレクトリが無ければ作らない（#898）
 - `holders` は枠のファイルに書かない（#898）
 - 枠のファイルに残った記録のうち、pid が居ないもの（走り終えたもの）は持ち主として出さない（#898）
+- 待ち手は、自分の出力と同じファイルに出す持ち主の出力の最終更新を「分からない」と言う——自分の書き込みで新しく見えるので、そのファイルで疑いを決めない（#898 の 1 パス目）
+- 持ち主の行に改行などの制御文字を出さない——コマンド・場所の制御文字は `\n` のように書き換え、1 持ち主 1 行にする（#898 の 1 パス目）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
@@ -170,6 +172,7 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - 出力の最終更新が分かるのは、ラッパーの標準出力・標準エラーが通常のファイルのときだけ——パイプ・端末・`/dev/null` へ出すものは分からない。
   コマンドが中で別のファイルに書き直すもの（`bash -c 'x > f'`）は、そのファイルでなくラッパーの出力を見る。パスを取れない（`F_GETPATH` も `/proc` も無い）環境でも分からない
 - `止まっている疑い` は出力の時刻だけで決める——出力をため込む（バッファする）コマンドは走っていても疑いと出ることがあり、出力を出し続けながら進まないもの（同じ行を繰り返す）は疑わない
+- 持ち主の出力のファイルに別のプロセスが書くと（同じファイルに足す別の待ち手など）、出力が進んで見える——外すのは見ている待ち手自身の出力のファイルだけで、`holders` の口は何も外さない
 - 古い版（1.100.0 まで）の run-serial が持つ枠は、出力のファイルを記録しないので、出力の最終更新は分からない（経過は出す）
 - 経過は記録の始めた時刻（秒まで）から数える——時計を合わせ直すとずれる
 - 居なくなった pid は `kill -0` で見る——pid が再利用された記録・ゾンビの記録は持ち主として出る
@@ -340,15 +343,24 @@ def span(seconds: float) -> str:
     return f"{whole // 60} 分 {whole % 60} 秒" if whole >= 60 else f"{whole} 秒"
 
 
-def last_output(info: dict, now: float) -> tuple[float | None, str]:
+def flat(text: str) -> str:
+    """改行などの制御文字を `\\n` のように書き換える——コマンドや場所に改行があっても、持ち主は 1 行のまま。"""
+    return "".join(ch if ch.isprintable() else ch.encode("unicode_escape").decode("ascii") for ch in text)
+
+
+def last_output(info: dict, now: float, mine: frozenset = frozenset()) -> tuple[float | None, str]:
     """持ち主の出力の最終更新。(時刻, 言うこと)。分からなければ時刻は None。
 
-    記録の `outputs`（持ち主の標準出力・標準エラーのうち通常のファイル）を `stat` し、同じファイル（`st_dev`・`st_ino`）の `st_mtime` の新しいほう。"""
+    記録の `outputs`（持ち主の標準出力・標準エラーのうち通常のファイル）を `stat` し、同じファイル（`st_dev`・`st_ino`）の `st_mtime` の新しいほう。
+    `mine`（見ている側の出力のファイルの (`st_dev`, `st_ino`)）と同じファイルは見ない——見ている側の書き込みで更新されるので、持ち主が止まっていても新しく見える。"""
     outputs = info.get("outputs")
     if not isinstance(outputs, list):
         return None, "出力の最終更新は分からない（記録に出力のファイルが無い——古い版の run-serial）"
     if not outputs:
         return None, "出力の最終更新は分からない（出力がファイルでない——パイプ・端末など）"
+    outputs = [out for out in outputs if not (isinstance(out, dict) and (out.get("dev"), out.get("ino")) in mine)]
+    if not outputs:
+        return None, "出力の最終更新は分からない（待っている自分と同じ出力のファイル——自分の書き込みで更新される）"
     times, paths = [], []
     for out in outputs:
         try:
@@ -364,7 +376,7 @@ def last_output(info: dict, now: float) -> tuple[float | None, str]:
     return newest, f"出力の最終更新 {span(now - newest)} 前（{', '.join(paths)}）"
 
 
-def describe(info: dict, now: float) -> str:
+def describe(info: dict, now: float, mine: frozenset = frozenset()) -> str:
     """持ち主 1 つを 1 行で: pid・場所・コマンド・経過・出力の最終更新。出力が `STALL` 秒以上増えていなければ「止まっている疑い」。"""
     parts = [f"pid {info.get('pid')}", str(info.get("cwd")), str(info.get("command"))]
     started = info.get("started")
@@ -374,9 +386,9 @@ def describe(info: dict, now: float) -> str:
         parts.append(f"経過は分からない（始めた時刻 {started!r} が読めない）")
     else:
         parts.append(f"経過 {span(now - begun)}（{started} から）")
-    updated, said = last_output(info, now)
+    updated, said = last_output(info, now, mine)
     parts.append(said)
-    line = "・".join(parts)
+    line = flat("・".join(parts))
     if updated is not None and now - updated >= STALL:
         line += f"——止まっている疑い（出力が {span(STALL)} 以上増えていない）"
     return line
@@ -392,8 +404,9 @@ def slot_files(lockdir: Path) -> list[Path]:
     return [path for _, path in sorted(found)]
 
 
-def holders(lockdir: Path) -> list[str]:
-    """いま走っているもの（枠の持ち主）を 1 つ 1 行で。記録の pid が居ないもの（走り終えて記録だけ残ったもの）は出さない。読むだけで、何も書かない。"""
+def holders(lockdir: Path, mine: frozenset = frozenset()) -> list[str]:
+    """いま走っているもの（枠の持ち主）を 1 つ 1 行で。記録の pid が居ないもの（走り終えて記録だけ残ったもの）は出さない。読むだけで、何も書かない。
+    `mine` は見ている側の出力のファイル（`last_output`）。"""
     now = time.time()
     found = []
     for path in slot_files(lockdir):
@@ -406,7 +419,7 @@ def holders(lockdir: Path) -> list[str]:
         pid = info.get("pid")
         if type(pid) is not int or pid <= 0 or not alive(pid):
             continue
-        found.append(describe(info, now))
+        found.append(describe(info, now, mine))
     return found
 
 
@@ -424,6 +437,7 @@ def show_holders() -> int:
 def acquire(lockdir: Path, slots: int, parent: int) -> int | None:
     """枠を 1 つ取って fd を返す。取れるまで待つ。待っているあいだに起動したときの親（`parent`）が居なくなったら、取らずに None。"""
     waited = reported = None
+    mine = frozenset((out["dev"], out["ino"]) for out in output_files())
     while True:
         if os.getppid() != parent:
             say(f"呼び出し元（pid {parent}）が居なくなった——枠を取らずに終わる（走らせていない）")
@@ -445,7 +459,7 @@ def acquire(lockdir: Path, slots: int, parent: int) -> int | None:
             else:
                 head = f"まだ待っている（{span(now - waited)}）。走っているもの:"
             reported = now
-            running = holders(lockdir)
+            running = holders(lockdir, mine)
             say(head + ("" if running else " （読めなかった）"))
             for line in running:
                 say(f"  {line}")
