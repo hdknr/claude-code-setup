@@ -141,6 +141,9 @@ Issue が「この周で決める」とした 2 つと、それに伴う判断�
   - Verifier（`dev-loop:dev-loop-verifier`・sonnet）: **反証 0 件**（報告は `SubagentHandback` が届かず、`SendMessage` で取り直した。本物の描画・読み込みの警告で失敗する形・同じ書き出しで 2・`--check` の名指しを自分で走らせて一致）
   - `/code-review`（high）: **指摘 10 件**（CR-1〜CR-10）。直す 4 件（CR-1・CR-3・CR-4・CR-5）・計画ファイルの記録の直し 2 件（CR-6・CR-7）・残課題 4 件。採否は下の表
   - 手順 4 への差し戻し: なし（Verifier の反証 0）。指摘対応は 1 パス目の起点からの差分として 2 パス目に当てる
+- 1 パス目の指摘対応: `8daed19`（CR-1・CR-3・CR-4・CR-5）。`git diff 89f68cb -- ':(top)' ':(top,exclude)docs/plans/issue-901.md'` は空でない（成果物の差分あり）→ 2 パス目を回す。`check-all.py` 67/67 緑（run-serial 越し）
+- 割り目（手順 6・2 パス目の前）: **割らない（cruise の周）**
+- 2 パス目: Verifier（sonnet）と `/code-review`（high）に、base `a3c83c3…` のまま受入基準をまるごと渡す。重点は指摘対応 `89f68cb..8daed19`。結果は未着
 - 交絡を潰した手順: 実機確認の「Chrome のプロセスが残らない」に陽性対照が無かった（CR-6）——`/code-review` が陽性対照つきで測り直して主張が成り立つことを示した（描画口の起動 0.16 秒後に Chrome が見え、グループを SIGKILL して 2 秒後に消えた。Chrome は puppeteer が別のプロセスグループで起こすので、消えたのは pipe が閉じたため）
 
 ## 既知の限界・決着済みの論点
