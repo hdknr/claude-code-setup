@@ -32,6 +32,7 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 - **`#<番号>`**: 確認の Issue なら、確認の結果（推奨のまま・変えた・結果なし）と、決めた値と影響する Issue（題と状態を添える）。
   引数なしの一覧も、確認の Issue ごとに確認の結果を出す。
 - **`--changed`**（No・番号と一緒には渡せない）: 確認の結果が `変えた` の確認の Issue だけ——決めた値・新しい値・影響する Issue（作り直す範囲）。
+  **閉じたのに結果の行が無い確認の Issue**（この決まりより前に閉じた・添え忘れ）は変えたかを読めないので名指しする。
 
 終了コード:
 
@@ -39,7 +40,8 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 - 1: 引けない番号がある——その No を根拠にした spec-loop の Issue が無い・その番号の Issue が入力に無い・確認の Issue でない・
   確認の Issue に台帳の 2 行が無い（この決まりより前の書き方。`## 出所` を人が読む）・`影響する Issue: ` の行が決まりの形でない・
   影響する Issue が入力に無い（範囲を引ききれていない）・確認の結果の行が決まりの形でない。`--changed` では、入力に `comments` の鍵が無い
-  確認の Issue（結果を読んでいない）と、結果の行が決まりの形でない確認の Issue があれば 1。引けたものは出力し、引けないものを名指しする
+  確認の Issue（結果を読んでいない）・結果の行が決まりの形でない確認の Issue・閉じたのに結果の行が無い確認の Issue・変えた確認の Issue のうち
+  台帳の行が無い／形に反する／影響する Issue が入力に無いものがあれば 1。引けたものは出力し、引けないものを名指しする
 - 2: 判定していない——引数の誤り・入力が読めない（JSON でない・`number`・`title`・`body` の形が違う・`comments` が本文を持つコメントの配列でない）
 
 **`comments` の鍵は任意**——無い入力（この決まりより前の取り方）でも台帳は引け、確認の結果は「読んでいない」と出る（「結果なし」とは言わない）。
@@ -230,7 +232,7 @@ def read_issues(path: Path) -> list[dict]:
     except (OSError, UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise Bad(f"{path}: 読めない（{exc.__class__.__name__}: {exc}）")
     if not isinstance(data, list):
-        raise Bad(f"{path}: Issue の配列でない（gh issue list --json number,title,state,body の出力を渡す）")
+        raise Bad(f"{path}: Issue の配列でない（gh issue list --json number,title,state,body,comments の出力を渡す）")
     for index, issue in enumerate(data):
         if not (isinstance(issue, dict) and type(issue.get("number")) is int and isinstance(issue.get("title"), str)
                 and isinstance(issue.get("body"), str) and isinstance(issue.get("state", ""), str)):
@@ -309,14 +311,28 @@ def entry(d: Decision) -> str:
     return f"{DECIDED}{d.value}／{AFFECTS}" + ("、".join(f"#{n}" for n in d.affects) or "なし")
 
 
-def changed(decisions: list[Decision]) -> tuple[bool, list[str], list[str]]:
-    """確認の結果が `変えた` の確認の Issue だけ。読めない確認の Issue は名指しする（引けたか, 出力, 名指し）。"""
-    hits = sorted((d for d in decisions if d.changed()), key=lambda d: d.issue["number"])
+def changed(decisions: list[Decision], issues: dict[int, dict]) -> tuple[bool, list[str], list[str]]:
+    """確認の結果が `変えた` の確認の Issue だけ。引ききれない確認の Issue は名指しする（引けたか, 出力, 名指し）。
+
+    名指しするのは、結果を読んでいない・結果の行が形に反する・閉じたのに結果の行が無い（変えたかもしれない）確認の Issue と、
+    変えた確認の Issue のうち台帳の行が無い・形に反する・影響する Issue が入力に無いもの（作り直す範囲を引ききれていない。1 パス目の指摘）。
+    """
+    ordered = sorted(decisions, key=lambda d: d.issue["number"])
+    hits = [d for d in ordered if d.changed()]
     out = [f"変わった確認（{RESULT}{CHANGED.rstrip(': ')}）: {len(hits)} 件"]
     for d in hits:
         out.append(f"  {label(d.issue)}——{entry(d)}／{RESULT}{d.result}")
-    bad = [f"{label(d.issue)}: {RESULT}{d.outcome()}" for d in sorted(decisions, key=lambda d: d.issue["number"])
-           if not d.comments_read or d.result_malformed is not None]
+    bad = []
+    for d in ordered:
+        closed = (d.issue.get("state") or "").upper() == "CLOSED"
+        if not d.comments_read or d.result_malformed is not None:
+            bad.append(f"{label(d.issue)}: {RESULT}{d.outcome()}")
+        elif closed and d.result is None:
+            bad.append(f"{label(d.issue)}: 閉じたが {RESULT}の行が無い（変えたかを読めない）")
+        elif d.changed() and (d.malformed is not None or d.value is None or d.affects is None):
+            bad.append(f"{label(d.issue)}: {entry(d)}（作り直す範囲を引けない）")
+        elif d.changed() and (absent := [n for n in d.affects if n not in issues]):
+            bad.append(f"{label(d.issue)}: 影響する Issue " + "・".join(f"#{n}" for n in absent) + " が入力に無い（取り方の --limit・--state all を確かめる）")
     return not bad, out, bad
 
 
@@ -351,7 +367,7 @@ def main(argv: list[str]) -> int:
                 for part in parts(i["body"])]
     decisions = [Decision(i) for i in issues if is_decision(i)]
     if args.changed:
-        ok, out, bad = changed(decisions)
+        ok, out, bad = changed(decisions, {i["number"]: i for i in issues})
         for line in out:
             print(line)
         for line in bad:

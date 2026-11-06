@@ -24,7 +24,7 @@
 - 入力の形が違えば 2（どの Issue が違うかを言う）
 - 確認の Issue の閉じのコメントの結果の行を読み、推奨のまま・変えた・結果なしを `#N` と一覧に出す（最後の結果の行を採る。本文の中・装飾つき・文の途中の行は読まない。#884）
 - 形に反する結果の行は名指しして 1。`comments` の鍵が無い入力は「読んでいない」と言う（「結果なし」と言わない）。`comments` の形が違えば 2
-- `--changed` は結果が `変えた` の確認の Issue だけを出し、結果を読めない確認の Issue を名指しして 1。No・番号と一緒なら 2
+- `--changed` は結果が `変えた` の確認の Issue だけを出し、結果を読めない・閉じたのに結果の行が無い確認の Issue と、台帳の行が無い／形に反する／影響する Issue が入力に無い変えた確認の Issue を名指しして 1。No・番号と一緒なら 2
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
 **壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、穴が無くても緑になるので）。
@@ -149,7 +149,12 @@ CASES = [
     Case("変わった確認だけ", ("--changed",), 1,
          ("変わった確認（確認の結果: 変えた）: 1 件",
           "#29 要確認: 開き直して変えた [CLOSED]——決めた値: A／影響する Issue: #11／確認の結果: 変えた: 14 日",
-          "引けない——#32 要確認: 形に反する結果", "引けない——#34 要確認: 前の取り方"), ("#23 要確認", "#20 要確認", "#33 要確認")),
+          "引けない——#32 要確認: 形に反する結果", "引けない——#34 要確認: 前の取り方",
+          "引けない——#33 要確認: 本文と装飾の結果 [CLOSED]: 閉じたが 確認の結果: の行が無い"), ("#23 要確認", "#20 要確認", "#21 ")),
+    Case("変えた確認の範囲を引ききれない", ("--changed",), 1,
+         ("変わった確認（確認の結果: 変えた）: 3 件", "引けない——#40 要確認: 入力に無い Issue [CLOSED]: 影響する Issue #99 が入力に無い",
+          "引けない——#41 要確認: 説明つき [CLOSED]: 台帳の行が決まりの形でない（作り直す範囲を引けない）",
+          "引けない——#45 要確認: 台帳の行が無い [CLOSED]: 台帳の行が無い（前の書き方）（作り直す範囲を引けない）"), bundle="broken"),
     Case("変わった確認だけ（読めるものだけの入力）", ("--changed",), 0, ("変わった確認（確認の結果: 変えた）: 1 件", "#29 要確認"),
          ("引けない",), bundle="decided"),
     Case("--changed と番号", ("--changed", "#20"), 2, ("一緒には渡せない",)),
@@ -233,9 +238,14 @@ MUTATIONS = [
     ("一覧に結果を出さない", '——{entry(d)}／{RESULT}{d.outcome()}")', '——{entry(d)}")', "一覧"),
     ("comments の形を見ない", "        if not (isinstance(comments, list)", "        if False and not (isinstance(comments, list)",
      "comments の形が違う"),
-    ("--changed が変えた以外も出す", "hits = sorted((d for d in decisions if d.changed())", "hits = sorted((d for d in decisions if True)",
+    ("--changed が変えた以外も出す", "hits = [d for d in ordered if d.changed()]", "hits = [d for d in ordered if True]",
      "変わった確認だけ"),
     ("--changed で読めないものを黙る", "    return not bad, out, bad", "    return True, out, []", "変わった確認だけ"),
+    ("--changed で閉じて結果なしを黙る", "        elif closed and d.result is None:", "        elif False:", "変わった確認だけ"),
+    ("--changed で変えた確認の台帳を見ない", "        elif d.changed() and (d.malformed is not None", "        elif False and (d.malformed is not None",
+     "変えた確認の範囲を引ききれない"),
+    ("--changed で影響する Issue の入力を見ない", "        elif d.changed() and (absent := ", "        elif False and (absent := ",
+     "変えた確認の範囲を引ききれない"),
     ("--changed と番号を一緒に受ける", "    if args.changed and args.keys:", "    if False:", "--changed と番号"),
 ]
 
@@ -307,6 +317,14 @@ def main() -> int:
                                           encoding="utf-8")
         decided = [i for i in issues_json(bodies) if i["number"] in (11, 23, 29)]
         (work / "decided.json").write_text(json.dumps(decided, ensure_ascii=False), encoding="utf-8")
+        changed_comment = [{"body": "確認の結果: 変えた: Z"}]
+        broken = [{"number": 11, "title": "F-001", "state": "OPEN", "body": "x", "comments": []}]
+        for number, title, lines in ((40, "要確認: 入力に無い Issue", "決めた値: A\n影響する Issue: #11, #99\n"),
+                                     (41, "要確認: 説明つき", "決めた値: B\n影響する Issue: #11（説明）\n"),
+                                     (45, "要確認: 台帳の行が無い", "")):
+            t, b = decision(True, title, lines)
+            broken.append({"number": number, "title": t, "state": "CLOSED", "body": b, "comments": changed_comment})
+        (work / "broken.json").write_text(json.dumps(broken, ensure_ascii=False), encoding="utf-8")
         (work / "crlf.json").write_text(json.dumps([{"number": 31, "title": "まとめた本文（CRLF）", "state": "OPEN",
                                                       "body": bodies["bundle"].replace("\n", "\r\n")}], ensure_ascii=False),
                                         encoding="utf-8")
@@ -324,12 +342,16 @@ def main() -> int:
             check(f"{name} が absent-lines.md の確認の Issue の書き方に無い",
                   isinstance(value, str) and f"**`{value}" in doc.split("## 確認の Issue の書き方", 1)[1], f"{value!r}")
         result, kept, changed = constant(source, "RESULT"), constant(source, "KEPT"), constant(source, "CHANGED")
-        closing = doc.split("### 閉じるときの結果の 1 行", 1)[-1] if "### 閉じるときの結果の 1 行" in doc else ""
-        for name, value in (("RESULT と KEPT", f"**`{result}{kept}`**"), ("RESULT と CHANGED", f"**`{result}{changed}<")):
-            check(f"{name} が absent-lines.md の閉じるときの結果の 1 行に無い", None not in (result, kept, changed) and value in closing,
-                  f"{value!r}")
-        check("陽性対照: 結果の行の頭を言い換えると当たらない",
-              f"**`{result}{kept}`**" not in closing.replace(result or "?", "確認結果: "))
+        closing = doc.split("### 閉じるときの結果の 1 行", 1)[-1].split("\n### ", 1)[0] if "### 閉じるときの結果の 1 行" in doc else ""
+
+        def copies_in(text: str) -> bool:
+            return None not in (result, kept, changed) and f"**`{result}{kept}`**" in text and f"**`{result}{changed}<" in text
+
+        check("RESULT・KEPT・CHANGED が absent-lines.md の閉じるときの結果の 1 行に無い", copies_in(closing), f"{(result, kept, changed)!r}")
+        # 陽性対照: 原本の側を言い換えると、突き合わせが落ちる（頭・推奨のまま・変えたのそれぞれ）
+        for old, new in ((result, "確認結果: "), (f"{result}{kept}", f"{result}了承"), (f"{result}{changed}", f"{result}変更: ")):
+            check(f"陽性対照: 原本の {old!r} を言い換えると突き合わせが落ちる",
+                  isinstance(old, str) and old in closing and not copies_in(closing.replace(old, new)))
         check("陽性対照: 言い換えると当たらない",
               f"**`{decided}" not in doc.replace(decided or "?", "決定した値: ").split("## 確認の Issue の書き方", 1)[1])
 
