@@ -94,6 +94,8 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
     t32, b32 = decision(True, "要確認: 形に反する結果", "決めた値: F\n影響する Issue: なし\n")
     t33, b33 = decision(True, "要確認: 本文と装飾の結果", "決めた値: G\n影響する Issue: なし\n確認の結果: 変えた: 本文の中\n")
     t34, b34 = decision(True, "要確認: 前の取り方", "決めた値: H\n影響する Issue: なし\n")
+    t35, b35 = decision(True, "要確認: 頭の後ろに空白が無い", "決めた値: I\n影響する Issue: なし\n")
+    t36, b36 = decision(True, "要確認: 写す前の値のまま", "決めた値: J\n影響する Issue: なし\n")
     # 撤去の Issue（変化の印 remove）——Q-001 を根拠にしていても作り直す範囲に数えない
     removal = bodies["F-002"].replace("<!-- spec-loop-change: add; base=none -->", "<!-- spec-loop-change: remove; base=v1 -->")
     assert removal != bodies["F-002"]
@@ -116,6 +118,9 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
         {"number": 33, "title": t33, "state": "CLOSED", "body": b33,
          "comments": [{"body": "**確認の結果: 変えた: 装飾**"}, {"body": "閉じます。確認の結果: 変えた: 文の途中"}]},
         {"number": 34, "title": t34, "state": "OPEN", "body": b34, "no_comments": True},
+        {"number": 35, "title": t35, "state": "CLOSED", "body": b35,
+         "comments": [{"body": "確認の結果: 推奨のまま"}, {"body": "確認の結果:変えた: K"}]},
+        {"number": 36, "title": t36, "state": "CLOSED", "body": b36, "comments": [{"body": "確認の結果: 変えた: <新しい値>"}]},
     ]
     for issue in found:  # `comments` の鍵は #34（前の取り方）だけ持たない
         if not issue.pop("no_comments", False):
@@ -144,6 +149,8 @@ CASES = [
     Case("確認の結果がまだ無い", ("#20",), 0, ("  確認の結果: 結果なし",)),
     Case("開き直して変えた（最後の結果の行を採る）", ("#29",), 0, ("  確認の結果: 変えた: 14 日",), ("推奨のまま",)),
     Case("結果の行が形に反する", ("#32",), 1, ("結果の行が決まりの形でない（'確認の結果: 変えた: '）",)),
+    Case("頭の後ろに空白が無い結果の行", ("#35",), 1, ("結果の行が決まりの形でない（'確認の結果:変えた: K'）",), ("推奨のまま",)),
+    Case("写す前の値のままの結果の行", ("#36",), 1, ("結果の行が決まりの形でない（'確認の結果: 変えた: <新しい値>'）",)),
     Case("本文と装飾の結果の行は読まない", ("#33",), 0, ("  確認の結果: 結果なし",), ("本文の中", "変えた: 装飾", "文の途中")),
     Case("comments の無い入力", ("#34",), 0, ("  確認の結果: 読んでいない",), ("結果なし",)),
     Case("変わった確認だけ", ("--changed",), 1,
@@ -169,7 +176,7 @@ CASES = [
     Case("本文に無い No", ("Q-S-009",), 1, ("Q-S-009: 根拠にした spec-loop の Issue が無い",)),
     Case("引けるものと引けないもの", ("Q-001", "#22"), 1, ("作り直す範囲 2 件", "確認の Issue でない")),
     Case("一覧", (), 0, ("仮回答（本文に仮回答の印がある Q&A）: 1 件", "  Q-001: #11（F-001）、#12（F-002）",
-                        "推奨で決めた事項（確認の Issue）: 11 件（開いているもの 7 件・変えたもの 1 件）",
+                        "推奨で決めた事項（確認の Issue）: 13 件（開いているもの 7 件・変えたもの 1 件）",
                         "#24 要確認: 説明つきの行 [OPEN]——台帳の行が決まりの形でない",
                         "#23 要確認: 印の無い確認の Issue [CLOSED]——決めた値: B／影響する Issue: なし／確認の結果: 推奨のまま",
                         "#34 要確認: 前の取り方 [OPEN]——決めた値: H／影響する Issue: なし／確認の結果: 読んでいない",
@@ -221,7 +228,7 @@ MUTATIONS = [
     ("まとめた本文を部分に分けない", "    return [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])] or [body]",
      "    return [body]", "まとめた本文の部分ごとに引く"),
     ("CRLF の部分の頭を見ない", 'FEATURE.pattern + r"\\r?$"', 'FEATURE.pattern + r"$"', "改行が CRLF のまとめた本文"),
-    ("結果の行を読まない", "                if not line.startswith(RESULT):\n", "                if True:\n",
+    ("結果の行を読まない", "                if not line.startswith(RESULT.rstrip()):", "                if True:",
      "印の無い確認の Issue（題で見分ける）"),
     ("最初の結果の行を採る", "self.result, self.result_malformed = rest, None", "self.result, self.result_malformed = self.result or rest, None",
      "開き直して変えた（最後の結果の行を採る）"),
@@ -241,6 +248,9 @@ MUTATIONS = [
     ("--changed が変えた以外も出す", "hits = [d for d in ordered if d.changed()]", "hits = [d for d in ordered if True]",
      "変わった確認だけ"),
     ("--changed で読めないものを黙る", "    return not bad, out, bad", "    return True, out, []", "変わった確認だけ"),
+    ("頭の後ろに空白が無い行を読まない", "if not line.startswith(RESULT.rstrip()):", "if not line.startswith(RESULT):",
+     "頭の後ろに空白が無い結果の行"),
+    ("写す前の値のままの行を採る", 'and not (value.startswith("<") and value.endswith(">"))', "", "写す前の値のままの結果の行"),
     ("--changed で閉じて結果なしを黙る", "        elif closed and d.result is None:", "        elif False:", "変わった確認だけ"),
     ("--changed で変えた確認の台帳を見ない", "        elif d.changed() and (d.malformed is not None", "        elif False and (d.malformed is not None",
      "変えた確認の範囲を引ききれない"),

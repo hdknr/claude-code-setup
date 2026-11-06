@@ -202,10 +202,12 @@ class Decision:
         self.comments_read = comments is not None  # 鍵が無ければ読んでいない（「結果なし」と言わない）
         for comment in comments or []:
             for line in comment["body"].splitlines():
-                if not line.startswith(RESULT):
+                if not line.startswith(RESULT.rstrip()):  # 頭の後ろの空白が無い行（`確認の結果:変えた: X`）も、形に反する行として拾う（2 パス目の指摘）
                     continue
-                rest = line[len(RESULT):].strip()
-                if rest == KEPT or rest.startswith(CHANGED):  # 空の `変えた: ` は strip で `変えた:` になり、形に反する
+                rest = line[len(RESULT):].strip() if line.startswith(RESULT) else ""
+                value = rest[len(CHANGED):]
+                # 空の `変えた: ` は strip で `変えた:` になり、形に反する。写す前の `<新しい値>` のままの行も形に反する（2 パス目の指摘）
+                if rest == KEPT or (rest.startswith(CHANGED) and not (value.startswith("<") and value.endswith(">"))):
                     self.result, self.result_malformed = rest, None
                 else:
                     self.result, self.result_malformed = None, line
