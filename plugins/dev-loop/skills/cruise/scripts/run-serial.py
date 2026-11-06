@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""重い検査・アプリの起動を、同じリポジトリでは決めた本数ずつ順番待ちにして走らせる（#493）。
 
-    python3 <このスキルの base ディレクトリ>/scripts/run-serial.py -- <コマンド> [引数 …]
+    python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]
 
 **いつ通すか（cruise の周が、どのコマンドをこれ越しに走らせるか）は `references/parallel.md` を正とする**
 （このスキルと同じ場所にある）。ここにあるのは枠の数え方と、このスクリプトが守るものである。
@@ -39,15 +39,34 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 枠のファイルは共通ディレクトリの下の `dev-loop-serial/slot-<k>.lock`（`k` は 0 から `N-1`）。**枠は `fcntl.flock` の排他で、
   持ったプロセスが終われば（異常終了でも）外れる。** 持っている間はファイルに pid・場所・コマンド・始めた時刻を書き、待つ側がそれを出す。
 
+## 期限（#897）
+
+**枠を取ってからコマンドが走ってよいのは `--timeout <秒>`（1 以上の整数。7 桁まで）まで。渡さなければ既定の `DEFAULT_TIMEOUT`（3600 秒）。**
+待っている時間は数えない。期限を過ぎたら、コマンドとその子孫（`bash -c` の下のプロセスなど。`ps` で親子をたどる）に SIGTERM を送り、
+`GRACE`（10 秒）待っても残るもの（猶予のあいだに生まれた子孫を数え直して足す）に SIGKILL を送ってから、枠を返して **124** で終わる——`run-serial: 期限切れ` で始まる行が言う。
+**期限切れは緑ではない**（コマンドは走りきっていない）。
+
+- **#839**: トンネル越しの写しが切れた接続を待ったまま枠を約 45 分握り、並行の他の周の重いテストと当の周の関門が全部待ちになった。
+- **既定の 3600 秒は、このリポジトリの `check-all.py`（全部の歯止め）を順番待ちの中で回した実測（#897 の計画ファイル）に余裕を持たせた値**である
+  ——cruise は終える前に main の先端でこれを流す（cruise の `SKILL.md` §6）ので、既定で切ってはならない。
+  **アプリを開いたまま確かめるなど、もっと長く走るものは `--timeout` で延ばす。**
+
+## 呼び出し元が居なくなった待ち手（#897）
+
+**枠を待っているあいだに、起動したときの親（`os.getppid()`）が変わったら、枠を取らずに終わる（125。走らせていない）。**
+#839 では、呼び出した `Bash` の上限で親のシェルが先に終わった待ち手が、PPID=1 の孤児として待ち続けた——枠が空いて走っても、結果を読む者がいない。
+**見るのは待っているあいだだけ**——枠を取った後に親が居なくなったコマンドは、期限まで走る。
+
 ## 終了コード
 
 | 値 | 意味 |
 | --- | --- |
 | コマンドの終了コード | 走らせた。シグナルで終わったら 128 + シグナルの番号、コマンドが見つからなければ 127 |
-| 125 | **走らせていない**——枠を決められなかった（git が使えない・リポジトリの外・枠のファイルを開けない） |
-| 2 | 走らせていない——`--` の後ろにコマンドが無い |
+| 124 | **期限切れ**——走らせたが、期限を過ぎたので止めた（上の「期限」） |
+| 125 | **走らせていない**——枠を決められなかった（git が使えない・リポジトリの外・枠のファイルを開けない）か、待っているあいだに呼び出し元が居なくなった |
+| 2 | 走らせていない——`--` の後ろにコマンドが無い・`--timeout` の値が 1 以上の整数（7 桁まで）でない・`--` の前に知らない引数がある |
 
-**125 と 2 は、コマンドがその値を返したときとは出力で見分ける**（`run-serial:` で始まる行が理由を言う）。
+**124・125・2 は、コマンドがその値を返したときとは出力で見分ける**（`run-serial:` で始まる行が理由を言う）。
 
 ## 入れ子
 
@@ -88,11 +107,29 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 先頭の BOM は 1 つだけ外す——続く BOM は行に残り、書式に合わない行として 1 と言う（#758）
 - `-->` で閉じた行頭のコメントの残りで開き直したコメントは、行頭のコメントのまま読む——コードブロックの開き行で終わらない（`<!--` の次の `--> x <!--`。GitHub は後ろを隠す。#758）
 - リストや引用の印の直後で始まるコメント（`- <!--`・`> <!--`）は行頭のコメントとして読む——コードブロックの開き行で終わらない（GitHub は後ろを隠す。#758）
+- 期限（`--timeout`、無ければ既定）を過ぎたコマンドを止めて、枠を返す——待っていた別の呼び出しが走り出す（#897）
+- 期限切れは 124 を返す——止めたコマンドの終了コード（シグナルの 128 + 番号）を返さない（#897）
+- 期限切れは `run-serial: 期限切れ` で始まる行で言う（#897）
+- 期限切れで止めるとき、コマンドの子孫（`bash -c` の下のプロセス）まで止める（#897）
+- 期限切れで SIGTERM を受けても終わらないものは、猶予（`GRACE`）の後に SIGKILL で止める（#897）
+- 待っているあいだに呼び出し元（起動したときの親）が居なくなったら、枠を取らずに 125 で終わり、そう言う（#897）
+- `--timeout` の値が 1 以上の整数（7 桁まで）でない・`--` の前に知らない引数があるなら、走らせずに 2 を返す（#897）
+- `--timeout` を渡さなければ、既定（`DEFAULT_TIMEOUT`。上の「期限」の値）の期限を掛ける（#897）
+- 入れ子で呼ばれても（枠を取らずに走らせるときも）、同じ期限を掛ける（#897）
+- 期限切れの猶予のあいだに子孫が起こした子も、猶予の後にまだ生きている子孫からたどって止める——コマンドが先に終わっていても（#897 の 2 パス目）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
 - 順番待ちを通さずに走ったもの（周の言語モデルの体そのもの・これを通さない検査）は数えない
-- 走っている側が固まったら、待つ側はいつまでも待つ（時間切れは無い）
+- 走っている側が固まったら、待つ側は走っている側の期限まで待つ（待つ側自身の待ち時間に上限は無い——前に並ぶ全部の期限の和まで待ちうる）
+- 期限は枠を取ってから数える——待っている時間は数えない
+- 期限切れで止める子孫は、期限を過ぎた時点に `ps` で親子をたどれたものと、猶予の後にまだ生きているもの（コマンドと先に数えた子孫）から
+  たどれたものだけ——自分で親を離れた（デーモン化した）プロセス・親が先に終わって init に移った後に生まれた子・
+  別のユーザーのプロセスは止めない。`ps` が使えなければコマンドだけを止め、そう言う
+- 期限切れで止めた子孫が使っていたもの（一時ファイル・ポート・リモートの接続）は片付けない
+- 呼び出し元を見るのは待っているあいだだけ——枠を取った後に呼び出し元が居なくなっても、コマンドは期限まで走る
+- 呼び出し元は「起動したときの親の pid（`os.getppid()`）が変わったか」で見る——起動したときから親が 1 のもの（親が居なくなっても 1 のまま）は見分けない。
+  親が生きたまま結果を読まなくなった（親のシェルが出力を捨てた）ものも見分けない
 - コマンドが残したバックグラウンドのプロセスは、コマンドが終わった後は枠を持たない（枠のファイルは子に継承しない）
 - 宣言を信頼するかは見ない（枠を増やすのは負荷を緩めるだけで、権限は広げない）
 - 宣言を変えた時点で走っているもの（減らす前の枠の番号を持つもの）は数えない
@@ -125,6 +162,10 @@ ENV = "DEV_LOOP_SERIAL_HELD"
 CANNOT = 125
 USAGE = 2
 NOT_FOUND = 127
+TIMED_OUT = 124
+DEFAULT_TIMEOUT = 3600
+GRACE = 10.0
+TIMEOUT_VALUE = re.compile(r"[0-9]{1,7}")
 POLL = 0.5
 DECL = re.compile(r"^並行の検査:[ \t]*(.*?)[ \t]*$")
 NEWLINE = re.compile(r"\r\n|\r|\n")
@@ -265,10 +306,13 @@ def holders(lockdir: Path, slots: int) -> list[str]:
     return found
 
 
-def acquire(lockdir: Path, slots: int) -> int:
-    """枠を 1 つ取って fd を返す。取れるまで待つ。"""
+def acquire(lockdir: Path, slots: int, parent: int) -> int | None:
+    """枠を 1 つ取って fd を返す。取れるまで待つ。待っているあいだに起動したときの親（`parent`）が居なくなったら、取らずに None。"""
     waited = None
     while True:
+        if os.getppid() != parent:
+            say(f"呼び出し元（pid {parent}）が居なくなった——枠を取らずに終わる（走らせていない）")
+            return None
         for k in range(slots):
             fd = os.open(lockdir / f"slot-{k}.lock", os.O_RDWR | os.O_CREAT, 0o644)
             try:
@@ -295,7 +339,72 @@ def record(fd: int, command: list[str]) -> None:
     os.write(fd, json.dumps(info, ensure_ascii=False).encode("utf-8"))
 
 
-def run(command: list[str], env: dict[str, str]) -> int:
+def descendants(*roots: int) -> list[int] | None:
+    """`roots` の子孫の pid（`ps` の親子をたどる）。`ps` が使えなければ None。"""
+    try:
+        proc = subprocess.run(["ps", "-A", "-o", "pid=", "-o", "ppid="], capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    children: dict[int, list[int]] = {}
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            children.setdefault(int(parts[1]), []).append(int(parts[0]))
+    found, stack = [], list(roots)
+    while stack:
+        for child in children.get(stack.pop(), []):
+            if child not in found:
+                found.append(child)
+                stack.append(child)
+    return found
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def signal_all(pids: list[int], signum: int) -> None:
+    for pid in pids:
+        try:
+            os.kill(pid, signum)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def stop(proc: subprocess.Popen) -> None:
+    """期限切れのコマンドとその子孫を止める。SIGTERM を送り、`GRACE` 秒待って残るものに SIGKILL を送る。
+
+    子孫は先に数えておく——コマンドが先に終わると、子孫は親を離れて（init に移って）たどれなくなる。"""
+    tree = descendants(proc.pid)
+    if tree is None:
+        say("子孫を数えられない（`ps` が使えない）——コマンドだけを止める")
+        tree = []
+    targets = [proc.pid, *tree]
+    signal_all(targets, signal.SIGTERM)
+    end = time.monotonic() + GRACE
+    while time.monotonic() < end:
+        if proc.poll() is not None and not any(alive(pid) for pid in tree):
+            break
+        time.sleep(0.05)
+    # 猶予のあいだに生まれた子孫も数え直す——コマンドが先に終わっていても、まだ生きている子孫（SIGTERM で子を起こす孫など）からたどる
+    living = [pid for pid in targets if (pid == proc.pid and proc.poll() is None) or (pid != proc.pid and alive(pid))]
+    targets += [pid for pid in (descendants(*living) if living else []) or [] if pid not in targets]
+    left = [pid for pid in targets if (pid == proc.pid and proc.poll() is None) or (pid != proc.pid and alive(pid))]
+    if left:
+        say(f"SIGTERM の後 {GRACE:.0f} 秒で終わらなかった pid {', '.join(map(str, left))} を SIGKILL で止める")
+        signal_all(left, signal.SIGKILL)
+    proc.wait()
+
+
+def run(command: list[str], env: dict[str, str], timeout: int) -> int:
     try:
         proc = subprocess.Popen(command, env=env)
     except FileNotFoundError:
@@ -317,18 +426,51 @@ def run(command: list[str], env: dict[str, str]) -> int:
     previous = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP)}
     previous[signal.SIGINT] = signal.signal(signal.SIGINT, hold)
     try:
-        code = proc.wait()
+        try:
+            code = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            say(f"期限切れ（{timeout} 秒を過ぎた）——コマンドとその子孫を止めて、枠を返す。走りきっていない")
+            stop(proc)
+            return TIMED_OUT
     finally:
         for s, handler in previous.items():
             signal.signal(s, handler)
     return 128 - code if code < 0 else code
 
 
-def main(argv: list[str]) -> int:
+def options(argv: list[str]) -> tuple[list[str], int] | None:
+    """(コマンド, 期限の秒数)。使い方に合わなければ言って None。"""
+    usage = "使い方: run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]"
     if "--" not in argv or not argv[argv.index("--") + 1:]:
-        say("使い方: run-serial.py -- <コマンド> [引数 …]")
+        say(usage)
+        return None
+    head, command = argv[:argv.index("--")], argv[argv.index("--") + 1:]
+    timeout = DEFAULT_TIMEOUT
+    while head:
+        arg = head.pop(0)
+        if arg == "--timeout" and head:
+            value = head.pop(0)
+        elif arg.startswith("--timeout="):
+            value = arg.split("=", 1)[1]
+        elif arg == "--timeout":
+            say(f"`--timeout` に値が無い——{usage}")
+            return None
+        else:
+            say(f"知らない引数 {arg!r}——{usage}")
+            return None
+        if not TIMEOUT_VALUE.fullmatch(value) or int(value) < 1:
+            say(f"`--timeout` の値 {value!r} は 1 以上の整数（7 桁まで）でない——走らせていない")
+            return None
+        timeout = int(value)
+    return command, timeout
+
+
+def main(argv: list[str]) -> int:
+    parent = os.getppid()
+    parsed = options(argv)
+    if parsed is None:
         return USAGE
-    command = argv[argv.index("--") + 1:]
+    command, timeout = parsed
 
     common = common_dir(Path.cwd())
     if common is None:
@@ -338,7 +480,7 @@ def main(argv: list[str]) -> int:
 
     env = dict(os.environ)
     if os.environ.get(ENV) == str(lockdir):
-        return run(command, env)
+        return run(command, env, timeout)
 
     text, unreadable = declaration(common)
     if unreadable:
@@ -348,14 +490,16 @@ def main(argv: list[str]) -> int:
         say(note)
     try:
         lockdir.mkdir(exist_ok=True)
-        fd = acquire(lockdir, slots)
+        fd = acquire(lockdir, slots, parent)
+        if fd is None:
+            return CANNOT
         record(fd, command)
     except OSError as exc:
         say(f"枠を決められない（{exc}）——走らせていない")
         return CANNOT
     env[ENV] = str(lockdir)
     try:
-        return run(command, env)
+        return run(command, env, timeout)
     finally:
         os.close(fd)
 
