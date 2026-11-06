@@ -108,6 +108,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `gh issue list --json` の出力から読む。**`gh` は呼ばない**。印の定数は `scaffold.py` から読み、確認の Issue の 2 行の頭は dev-loop の `absent-lines.md` の写しで、テストが突き合わせる。
       **`--draft` で、作り直しの元の印（`作り直しの元: <No か #番号>`。原本は `references/handoff-issue.md`、写しは dev-loop の `spec-gap.md`）を先頭の行に付けた作り直しの Issue の下書きを出す**（#885）。
       守る／守らないは docstring を正とする。テストは `scripts/test-rebuild-scope.py`）
+    - `scripts/rework-metrics.py` - 仮回答と推奨で決めた事項のうち**どれだけ変わり、変わったものでどれだけ作り直したか**を数える
+      （#886。仮回答と確かめたときに回答が変わった数は**正本リポジトリの Q&A 表の git の履歴**から——**回答の選択肢のラベルで比べ、列全体の変化では見ない**。
+      確認の Issue の内訳と作り直しの元の印で結んだ Issue・PR・差分の行数は `gh issue list`・`gh pr list` の JSON から。**`gh` は呼ばず、`git` は読むだけ**。
+      確認の Issue と印の読み方は `rebuild-scope.py` を読み込む——写さない。実案件で数えて #870 に貼る手順と守らないもの（#885 の限界を含む）は docstring を正とする。
+      テストは `scripts/test-rework-metrics.py`）
     - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
       （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に依存する。**項目の Issue は本文が生成した本文と同じもの**で、
       `gh issue list --json` の出力から引く。**`gh` は呼ばない**。守る／守らないは docstring を正とする。テストは `scripts/test-parent-checklist.py`）
@@ -289,6 +294,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `PATH` は一時ディレクトリだけに差し替える**——本物の draw.io には届かない。書き出しの見た目は見ない
   - `test-rebuild-scope.py` - spec-loop の作り直す範囲を引くスクリプト（#875）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**spec-loop の Issue の本文は本物の `scaffold.py --provisional` で作り**、`gh issue list` と同じ鍵の JSON に包んで渡す——本物の GitHub には届かない
+  - `test-rework-metrics.py` - spec-loop の作り直しの量を数えるスクリプト（#886）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**Q&A 表の履歴は一時ディレクトリに本物の git リポジトリで作り**（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）、
+    Issue の本文は `test-rebuild-scope.py` の試料のまま本物の `scaffold.py --provisional` で作る——本物の GitHub には届かない
   - `test-parent-checklist.py` - spec-loop の親 Issue の一覧を出すスクリプト（#876）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**索引と本文は本物の `scaffold.py` で作り、出した行を本物の dev-loop の `parent-issue.py show` に通す**
     （子 Issue の本文を取る `gh` は `PATH` の先頭に置いた偽物）——本物の GitHub には届かない
