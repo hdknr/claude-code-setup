@@ -737,8 +737,9 @@ MUTATIONS = {
         "                pass"),
     # 守る 2: 待たされたら、待っていることと
     "待っていると言わない": (
-        "            say(f\"待っている（同じリポジトリで同時に {slots} 本まで）。走っているもの: \"\n"
-        "                + (\"; \".join(running) if running else \"（読めなかった）\"))",
+        "            say(head + (\"\" if running else \" （読めなかった）\"))\n"
+        "            for line in running:\n"
+        "                say(f\"  {line}\")",
         "            pass"),
     # 守る 3: 走らせたコマンドの終了コードをそのまま返す
     "終了コードを捨てる": (
