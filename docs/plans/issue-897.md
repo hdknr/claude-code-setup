@@ -104,8 +104,9 @@ main へのマージでプラグインの配布（dev-loop 1.100.0）。公開�
 - 関門 2 パス目（HEAD `ba7ba98e72acb5ffdc91bf06a6841efa033ac081` を渡した）: **Verifier（sonnet）反証 0 件**（V1・C1／V2・C2 が直ったことを自分の変異でも確認。`test-run-serial.py` 全部合格。`git status --porcelain` 前後とも空）／
   **`/code-review`（high）指摘 6 件**（うち 1 件は C5 を走らせて示した。`git status --porcelain` 前後とも空）。採否は下の「2 パス目の採否」——直す 1 件、残課題 5 件。
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `ba7ba98e72acb5ffdc91bf06a6841efa033ac081`
-- 狭いパスの終点: （指摘対応をコミットしたら書く）
-- 狭いパス: 未着手
+- 2 パス目の指摘対応（R1）: 守る 41・`timeout-late` の観測と変異 1 件・`stop()` の数え直し・docstring。著者の再現（scratchpad の `c5/repro.sh`）は修正後に残らない。`check-all.py` 67/67・失敗 0（867 秒。順番待ち越し）
+- 狭いパスの終点（指摘対応の最後のコミット）: `6e70a03854c845e73720c6605132647067ad61c9`
+- 狭いパス: 起動（Verifier・sonnet。差分は `git diff ba7ba98 6e70a03` の 2 点）
 - 交絡を潰した手順: （下に追記する）
 
 ## 既知の限界・決着済みの論点
