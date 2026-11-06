@@ -3,6 +3,7 @@
 
 usage: python3 rebuild-scope.py --issues <Issue の一覧の JSON> [<Q&A の No> | #<Issue の番号>]...
        python3 rebuild-scope.py --issues <Issue の一覧の JSON> --changed
+       python3 rebuild-scope.py --issues <Issue の一覧の JSON> --draft <Q&A の No | #<確認の Issue の番号>>
 
 **台帳は、登録した Issue の本文そのものである**（新しいファイルを持たない）。入力は開発のリポジトリ（Issue を登録した先）の
 Issue の一覧で、決まった 1 行で取る（**このスクリプトは `gh` を呼ばない**）:
@@ -33,6 +34,14 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
   引数なしの一覧も、確認の Issue ごとに確認の結果を出す。
 - **`--changed`**（No・番号と一緒には渡せない）: 確認の結果が `変えた` の確認の Issue だけ——決めた値・新しい値・影響する Issue（作り直す範囲）。
   **閉じたのに結果の行が無い確認の Issue**（この決まりより前に閉じた・添え忘れ）は変えたかを読めないので名指しする。
+- **`--draft <No か #番号>`**（No・番号の引数・`--changed` とは一緒に渡せない。元は 1 つ）: 作り直しの Issue の本文の下書き（#885）——
+  **先頭の行が作り直しの元の印**（`作り直しの元: Q-R-002`・`作り直しの元: #881`。形の正は `references/handoff-issue.md` の「作り直しの元の印」で、
+  下の定数 `ORIGIN` はその写し。dev-loop の `spec-gap.md` の「作り直しの周」も写しを持ち、`scripts/test-rebuild-scope.py` が 3 つを突き合わせる）で、
+  その後ろに作り直す範囲を並べる（No の下書きは範囲の記録で、作り直しは要求側の `req-loop` → `spec-review` → `scaffold` が受け持つ。確認の Issue の下書きは実装の Issue の本文の元で、立てる人が受入基準を足す）——No なら上の No の引きと同じ Issue とケース、確認の Issue なら推奨で決めた値・新しい値（結果の行がまだ無ければそう書く）・影響する Issue。
+  **下書きの中の値は箇条書きにし、行頭を台帳の 2 行・結果の行の頭にしない**（下書きから立てた Issue を確認の Issue と読み違えないため）。
+  **引けなければ下書きを出さない**——範囲が空の No・推奨のまま確かめた確認の Issue（作り直すものが無い）・推奨のままかを読めない確認の Issue
+  （入力に `comments` が無い・開いている（`state` が `OPEN`）と読めないのに結果の行が無い。開いていて結果の行がまだ無いものは下書きを出す）と、上の `#<番号>` の引きが 1 になる確認の Issue。
+  `--draft` は 1 回だけ渡す（2 回なら 2）。
 
 終了コード:
 
@@ -41,7 +50,8 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
   確認の Issue に台帳の 2 行が無い（この決まりより前の書き方。`## 出所` を人が読む）・`影響する Issue: ` の行が決まりの形でない・
   影響する Issue が入力に無い（範囲を引ききれていない）・確認の結果の行が決まりの形でない。`--changed` では、入力に `comments` の鍵が無い
   確認の Issue（結果を読んでいない）・結果の行が決まりの形でない確認の Issue・閉じたのに結果の行が無い確認の Issue・変えた確認の Issue のうち
-  台帳の行が無い／形に反する／影響する Issue が入力に無いものがあれば 1。引けたものは出力し、引けないものを名指しする
+  台帳の行が無い／形に反する／影響する Issue が入力に無いものがあれば 1。`--draft` では、上の「引けなければ下書きを出さない」に当たれば 1（下書きは出さない）。
+  引けたものは出力し、引けないものを名指しする
 - 2: 判定していない——引数の誤り・入力が読めない（JSON でない・`number`・`title`・`body` の形が違う・`comments` が本文を持つコメントの配列でない）
 
 **`comments` の鍵は任意**——無い入力（この決まりより前の取り方）でも台帳は引け、確認の結果は「読んでいない」と出る（「結果なし」とは言わない）。
@@ -97,6 +107,8 @@ AFFECTS_LIST = re.compile(r"#[1-9][0-9]*(?:, #[1-9][0-9]*)*")
 RESULT = "確認の結果: "
 KEPT = "推奨のまま"
 CHANGED = "変えた: "
+# 作り直しの元の印の頭（`references/handoff-issue.md` の「作り直しの元の印」の写し。dev-loop の `spec-gap.md` の「作り直しの周」も写しを持つ。#885）
+ORIGIN = "作り直しの元: "
 
 HANDOFF_PREFIX = scaffold.HANDOFF_MARKER.split(": v", 1)[0] + ": v"  # 前の形（v2・v1）も読む
 FEATURE = re.compile(re.escape(scaffold.FEATURE_MARKER).replace(r"\{\}", r"(F-[0-9]+)"))
@@ -250,6 +262,12 @@ def label(issue: dict) -> str:
     return f"#{issue['number']} {issue['title']} [{state}]"
 
 
+def where(h: Handoff, no: str) -> str:
+    """その No を根拠にするケース。ケースに無ければ機能全体。"""
+    cases = h.cases.get(no)
+    return "受入基準 " + "・".join(f"`{c}`" for c in cases) if cases else "ケースに無い（機能全体）"
+
+
 def by_qa(no: str, handoffs: list[Handoff]) -> tuple[bool, list[str]]:
     hits = [h for h in handoffs if no in h.refs]
     if not hits:
@@ -257,9 +275,7 @@ def by_qa(no: str, handoffs: list[Handoff]) -> tuple[bool, list[str]]:
     held = any(no in h.held for h in hits)
     out = [f"{no}{'（仮回答——本文に印がある）' if held else ''}: 作り直す範囲 {len(hits)} 件"]
     for h in sorted(hits, key=lambda h: h.issue["number"]):
-        cases = h.cases.get(no)
-        where = "受入基準 " + "・".join(f"`{c}`" for c in cases) if cases else "ケースに無い（機能全体）"
-        out.append(f"  - {label(h.issue)}（{h.feature}）——{where}")
+        out.append(f"  - {label(h.issue)}（{h.feature}）——{where(h, no)}")
     return True, out
 
 
@@ -338,17 +354,60 @@ def changed(decisions: list[Decision], issues: dict[int, dict]) -> tuple[bool, l
     return not bad, out, bad
 
 
+def draft_qa(no: str, handoffs: list[Handoff]) -> tuple[bool, list[str]]:
+    """Q&A の No を元にした作り直しの Issue の本文の下書き（#885）。引けなければ（False, 名指し）。"""
+    hits = sorted((h for h in handoffs if no in h.refs), key=lambda h: h.issue["number"])
+    if not hits:
+        return False, [f"{no}: 根拠にした spec-loop の Issue が無い——作り直す範囲が空なので下書きを出さない"]
+    out = [f"{ORIGIN}{no}", "",
+           f"Q&A の {no} の回答が変わったので、下の Issue とケースを作り直す。範囲は rebuild-scope.py が登録した Issue の本文から引いた"
+           "（いまの回答の正は Q&A 表）。作り直しの周は、上の 1 行を PR の本文に写す。", "", "## 作り直す範囲", ""]
+    for h in hits:
+        out.append(f"- {label(h.issue)}（{h.feature}）——{where(h, no)}")
+    return True, out
+
+
+def draft_issue(number: int, issues: dict[int, dict]) -> tuple[bool, list[str]]:
+    """確認の Issue を元にした作り直しの Issue の本文の下書き（#885）。引けなければ（False, 名指し）。
+
+    下書きの中の値は箇条書きにし、行頭を台帳の 2 行・結果の行の頭にしない——下書きから立てた Issue を確認の Issue と読み違えないため。
+    """
+    ok, lines = by_issue(number, issues)
+    if not ok:
+        return False, lines + ["  ——引ききれないので下書きを出さない"]
+    d = Decision(issues[number])
+    if d.result == KEPT:
+        return False, [f"{label(d.issue)}: {RESULT}{KEPT}——作り直すものが無いので下書きを出さない"]
+    # 推奨のままかを読めない確認の Issue は、作り直すかを決められない（1 パス目の指摘。`--changed` と同じ扱い）
+    if not d.comments_read:
+        return False, [f"{label(d.issue)}: {RESULT}{d.outcome()}——推奨のままかを読めないので下書きを出さない"]
+    # 結果の行がまだ無くて下書きを出すのは、開いていると読めるときだけ——閉じた・状態が入力に無いなら変えたかを読めない（2 パス目の指摘）
+    if (d.issue.get("state") or "").upper() != "OPEN" and d.result is None:
+        return False, [f"{label(d.issue)}: 開いていると読めないのに {RESULT}の行が無い——変えたかを読めないので下書きを出さない"]
+    new = d.result[len(CHANGED):] if d.changed() else f"まだ無い（{d.outcome()}）"
+    out = [f"{ORIGIN}#{number}", "",
+           f"確認の Issue #{number} で推奨で決めた値を別の値に変えるので、下の Issue を作り直す。範囲は rebuild-scope.py が確認の Issue の"
+           " `影響する Issue` から引いた。作り直しの周は、上の 1 行を PR の本文に写す。", "",
+           f"- 推奨で決めた値: {d.value}", f"- 新しい値: {new}", "", "## 作り直す範囲", ""]
+    out += [f"- {label(issues[n])}" for n in d.affects] or ["- なし（確認の Issue の影響する Issue が無い）"]
+    return True, out
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--issues", required=True)
     parser.add_argument("--changed", action="store_true")
+    parser.add_argument("--draft", action="append")  # 2 回渡したら黙って後を採らず 2（1 パス目の指摘）
     parser.add_argument("keys", nargs="*")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         return 0 if exc.code == 0 else 2
     keys = []
-    for key in args.keys:
+    if args.draft is not None and len(args.draft) > 1:
+        print("--draft は 1 回だけ渡す（下書きは元 1 つごと）。判定していない", file=sys.stderr)
+        return 2
+    for key in args.keys + (args.draft or []):
         if is_number(key):
             keys.append(key)
         elif re.fullmatch(r"#?[1-9][0-9]*", key):
@@ -359,6 +418,9 @@ def main(argv: list[str]) -> int:
     if args.changed and args.keys:
         print("--changed は Q&A の No・Issue の番号と一緒には渡せない。判定していない", file=sys.stderr)
         return 2
+    if args.draft is not None and (args.keys or args.changed):
+        print("--draft は Q&A の No・Issue の番号・--changed と一緒には渡せない（下書きは元 1 つごと）。判定していない", file=sys.stderr)
+        return 2
     try:
         issues = read_issues(Path(args.issues))
     except Bad as exc:
@@ -368,6 +430,12 @@ def main(argv: list[str]) -> int:
     handoffs = [Handoff(i, part) for i in issues if i["body"].startswith(HANDOFF_PREFIX) and not REMOVAL.search(i["body"])
                 for part in parts(i["body"])]
     decisions = [Decision(i) for i in issues if is_decision(i)]
+    if args.draft is not None:
+        key = keys[0]
+        ok, lines = draft_qa(key, handoffs) if isinstance(key, str) else draft_issue(key, {i["number"]: i for i in issues})
+        for line in lines:
+            print(line, file=sys.stdout if ok else sys.stderr)
+        return 0 if ok else 1
     if args.changed:
         ok, out, bad = changed(decisions, {i["number"]: i for i in issues})
         for line in out:

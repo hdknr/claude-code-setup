@@ -106,6 +106,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/rebuild-scope.py` - **仮回答と推奨で決めた事項の台帳**から、利用者が確かめたときに作り直す範囲（Issue と受入基準のケース）を引く
       （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行と閉じのコメントの `確認の結果: ` の行（#884）を、
       `gh issue list --json` の出力から読む。**`gh` は呼ばない**。印の定数は `scaffold.py` から読み、確認の Issue の 2 行の頭は dev-loop の `absent-lines.md` の写しで、テストが突き合わせる。
+      **`--draft` で、作り直しの元の印（`作り直しの元: <No か #番号>`。原本は `references/handoff-issue.md`、写しは dev-loop の `spec-gap.md`）を先頭の行に付けた作り直しの Issue の下書きを出す**（#885）。
       守る／守らないは docstring を正とする。テストは `scripts/test-rebuild-scope.py`）
     - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
       （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に依存する。**項目の Issue は本文が生成した本文と同じもの**で、
