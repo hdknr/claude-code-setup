@@ -807,16 +807,61 @@ def case_clash(script: Path, tmp: Path) -> list[str]:
     return p
 
 
-def case_no_clash_by_case(script: Path, tmp: Path) -> list[str]:
-    """#901（CR-3）: 名前が大文字小文字だけ違うソース（`Flow.drawio` と `flow.bpmn`）は、同じ書き出しとして止めない
-    （大文字小文字を区別するファイルシステムでは別の書き出し。区別しないほうの扱いは docstring の「守らないもの」）。"""
+def case_clash_by_case(script: Path, tmp: Path) -> list[str]:
+    """#901（P2-1）: 名前が大文字小文字だけ違う drawio と BPMN（`Flow.drawio` と `flow.bpmn`）も、どちらのモードでも何も書かずに 2
+    （大文字小文字を区別しないファイルシステムでは同じ `.svg` になり、片方の書き出しが黙って消える）。"""
     files = {"docs/v1/Flow.drawio": "<mxfile/>\n", "docs/v1/flow.bpmn": BPMN}
     p = []
     for args in ((), ("--check",)):
         root = make_repo(tmp / ("check" if args else "write"), files)
         r = run(script, root, *args)
-        if "同じ書き出し" in r.stderr or r.code == 2:
-            p.append(f"{args}: 同じ書き出しとして止めた: {r.code} {r.stderr[-300:]}")
+        if r.code != 2 or r.after != r.before or r.log:
+            p.append(f"{args}: 何も書かずに 2 で止まらない: {r.code} {r.stderr[-300:]}")
+        if "docs/v1/Flow.drawio" not in r.stderr or "docs/v1/flow.bpmn" not in r.stderr:
+            p.append(f"{args}: 2 つのソースを名指ししない: {r.stderr[-300:]}")
+    return p
+
+
+def case_sensitive_fs(base: Path) -> bool:
+    """`base` のファイルシステムが大文字小文字を区別するか（`a` を作って `A` が見えないか）。"""
+    probe = base / "case-probe-a"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_text("", encoding="utf-8")
+    try:
+        return not (base / "CASE-PROBE-A").exists()
+    finally:
+        probe.unlink()
+
+
+def case_drawio_only_by_case(script: Path, tmp: Path) -> list[str]:
+    """#901（CR-3）: drawio だけの、大文字小文字だけ違う `X.drawio` と `x.drawio`・別のディレクトリ（`A/` と `a/`）は止めない——
+    大文字小文字を区別するファイルシステムでは別の書き出しで、#268 からの振る舞いのまま書ける。
+    **区別しないファイルシステム（macOS の既定）では 2 つのファイルを置けないので、この試料は何も見ない**——変異も、区別する
+    ファイルシステムでだけ当てる（`MUTATIONS` の下）。"""
+    if not case_sensitive_fs(tmp):
+        return []
+    files = {"docs/X.drawio": "<mxfile>X</mxfile>\n", "docs/x.drawio": "<mxfile>x</mxfile>\n",
+             "docs/A/f.drawio": "<mxfile>A</mxfile>\n", "docs/a/f.bpmn": BPMN}
+    root = make_repo(tmp, files)
+    r = run(script, root)
+    p = [] if r.code == 0 else [f"終了コード {r.code}: {r.stderr[-300:]}"]
+    for out in ("docs/X.svg", "docs/x.svg", "docs/A/f.svg", "docs/a/f.svg"):
+        if out not in r.after:
+            p.append(f"{out} を書き出さない")
+    return p
+
+
+def case_drawio_timeout_value(script: Path, tmp: Path) -> list[str]:
+    """#901（P2-3・P2-4）: `DRAWIO_TIMEOUT` は今までどおり常に確かめる——ソースが 0 件でも `.bpmn` だけでも、正の数でなければ 2。"""
+    p = []
+    for label, files in (("0 件", {"docs/index.md": "x\n"}), (".bpmn だけ", {"docs/a.bpmn": BPMN}),
+                         (".drawio", {"docs/a.drawio": "<mxfile/>\n"})):
+        root = make_repo(tmp / label.replace(" ", "_").replace(".", ""), files)
+        r = run(script, root, timeout="0")
+        if r.code != 2 or "DRAWIO_TIMEOUT" not in r.stderr:
+            p.append(f"{label}: 2 で DRAWIO_TIMEOUT を名指ししない: {r.code} {r.stderr[-200:]}")
+        if r.after != r.before or r.log:
+            p.append(f"{label}: 何かした")
     return p
 
 
@@ -880,7 +925,9 @@ CASES: dict[str, Callable[[Path, Path], list[str]]] = {
     "BPMN: 時間切れ": bpmn_failing("hang", "BPMN の描画口が時間切れ", bpmn_timeout="1"),
     "BPMN_TIMEOUT が正の数でない": case_bpmn_timeout_value,
     "同じ書き出しになるソース": case_clash,
-    "大文字小文字だけ違う名前は同じ書き出しとして止めない": case_no_clash_by_case,
+    "大文字小文字だけ違う drawio と BPMN も止める": case_clash_by_case,
+    "drawio だけの大文字小文字だけ違う名前は止めない": case_drawio_only_by_case,
+    "DRAWIO_TIMEOUT は常に確かめる": case_drawio_timeout_value,
     "BPMN: 相対パスの依存と Chrome": case_bpmn_relative,
     "drawio だけなら BPMN_TIMEOUT を見ない": case_bpmn_timeout_ignored,
     "--check: BPMN が新しい": check_case({"docs/v1/requirements/flows/a.bpmn": BPMN,
@@ -963,8 +1010,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("BPMN の時間切れに draw.io の値を使う", 'timeouts["BPMN_TIMEOUT"], root)', 'timeouts["DRAWIO_TIMEOUT"], root)', "BPMN: 時間切れ"),
     ("時間切れの値を確かめない", "            if not timeouts[name] > 0:", "            if False:", "BPMN_TIMEOUT が正の数でない"),
     ("同じ書き出しを見ない", "    if clashes:", "    if False:", "同じ書き出しになるソース"),
-    ("同じ書き出しの判定で大文字小文字を区別しない", "by_output.setdefault(str(output_of(source)), [])",
-     "by_output.setdefault(str(output_of(source)).lower(), [])", "大文字小文字だけ違う名前は同じ書き出しとして止めない"),
+    ("同じ書き出しの判定で大文字小文字を区別する", "source.stem.lower()), []).append(source)", "source.stem), []).append(source)",
+     "大文字小文字だけ違う drawio と BPMN も止める"),
+    ("DRAWIO_TIMEOUT を確かめない", '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, True)', '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, False)',
+     "DRAWIO_TIMEOUT は常に確かめる"),
+    ("DRAWIO_TIMEOUT を .drawio があるときだけ確かめる", '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, True)',
+     '("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, any(not is_bpmn(source) for source in sources))', "DRAWIO_TIMEOUT は常に確かめる"),
     ("依存を絶対パスにしない", "        deps = os.path.abspath(deps)", "        deps = deps", "BPMN: 相対パスの依存と Chrome"),
     ("Chrome を絶対パスにしない", '"--chrome", os.path.abspath(chrome)]', '"--chrome", str(chrome)]', "BPMN: 相対パスの依存と Chrome"),
     ("無い種類の時間切れも確かめる", "        if not present:\n            continue", "        if False:\n            continue",
@@ -972,6 +1023,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # #904 の残課題 P2-5
     ("svg の拡張子の大文字小文字を区別する", '            if name.lower().endswith(".svg"):', '            if name.endswith(".svg"):',
      "--check: 大文字の拡張子の svg もソースが無いと言う"),
+]
+
+
+# 大文字小文字を区別するファイルシステムでだけ殺せる変異（試料が `X.drawio` と `x.drawio` を並べて置く）
+CASE_SENSITIVE_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("drawio どうしの組も止める", "if len({is_bpmn(source) for source in group}) > 1]", "if len(group) > 1]",
+     "drawio だけの大文字小文字だけ違う名前は止めない"),
+    ("同じ書き出しの判定でディレクトリの大文字小文字を区別しない", "by_name.setdefault((str(source.parent), ",
+     "by_name.setdefault((str(source.parent).lower(), ", "drawio だけの大文字小文字だけ違う名前は止めない"),
 ]
 
 
@@ -997,7 +1057,14 @@ def main() -> int:
             if problems:
                 failures.append(f"試料が期待どおりでない: {name}: " + "; ".join(problems)[:600])
         names = list(CASES)
-        for index, (name, before, after, killer) in enumerate(MUTATIONS):
+        mutations = list(MUTATIONS)
+        sensitive = case_sensitive_fs(tmp_path)
+        if sensitive:
+            mutations += CASE_SENSITIVE_MUTATIONS
+        else:
+            print(f"注: このファイルシステムは大文字小文字を区別しないので、変異 {len(CASE_SENSITIVE_MUTATIONS)} 件を当てない"
+                  "（区別するファイルシステム——Linux の CI——で当てる）")
+        for index, (name, before, after, killer) in enumerate(mutations):
             if killer not in CASES:
                 failures.append(f"変異の試料が無い: {name}（{killer}）")
                 continue
@@ -1016,7 +1083,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + (len(CASE_SENSITIVE_MUTATIONS) if sensitive else 0)} 件")
     return 0
 
 

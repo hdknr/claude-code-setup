@@ -8,8 +8,8 @@ usage: python3 render-diagrams.py [<正本リポジトリの根>] [--check]
 - **対象は `<根>/docs/` の下を再帰した `*.drawio` と `*.bpmn`**（入れ子を含む。2 つを混ぜてパスの順に処理する）。根の既定は cwd。
 - **各ソース `X.drawio`・`X.bpmn` を、同じディレクトリの `X.svg` に書き出す。** 書き出しには、ソースのバイトの sha256 を印として書き込む:
   `<!-- spec-loop-diagram-source: sha256=<64 桁> -->`（XML 宣言があればその直後、無ければ先頭。前の印は置き換える。drawio と BPMN で同じ印）。
-- **同じ `X.svg` になるソースが 2 つ以上ある**（同じディレクトリの、拡張子の前の名前が大文字小文字まで一致する `X.drawio` と `X.bpmn`）なら、
-  書き出しでも `--check` でも、何も書かずに名指しして 2。
+- **同じ `X.svg` になりうる drawio と BPMN の組がある**（同じディレクトリの、拡張子の前の名前が大文字小文字を区別せずに一致する `X.drawio` と `x.bpmn`）なら、
+  書き出しでも `--check` でも、何も書かずに名指しして 2（大文字小文字を区別するファイルシステムでは別の書き出しになる組も止める）。
 - **`--check` は描画系（draw.io・Node・Chrome）を起動せず、何も書かない。** 各ソースについて `X.svg` が無い・印が無い・印の指紋が今のソースと違う
   ものと、`docs/` の下で印を持つ `.svg` のうち同じ名前のソース（`.drawio`・`.bpmn`）が無いもの（ソースが無い）を名指しする。
 - **印はソースのバイトだけで決まる。** draw.io は同じソースからでもバイトの一致する書き出しを作らない（このリポジトリの
@@ -46,7 +46,7 @@ BPMN の描画口（`<描画口> <X.bpmn> <一時ファイル>` の形で呼び�
   ソースの無い印つきの `.svg` も無い
 - 1: 書き出しに失敗したファイルがある——**そのファイルの前の `X.svg` は変えず、一時ファイルは消し、名指しして残りのファイルを続ける**。
   `--check` では、古い・無い・印が無い書き出しか、ソースの無い印つきの `.svg` がある（全部を 1 行ずつ名指しする）
-- 2: 引数の誤り・`<根>/docs/` が無い・`DRAWIO_TIMEOUT`・`BPMN_TIMEOUT` が正の数でない（それぞれ `.drawio`・`.bpmn` があるときだけ見る）・同じ `X.svg` になるソースがある・
+- 2: 引数の誤り・`<根>/docs/` が無い・`DRAWIO_TIMEOUT` が正の数でない・`.bpmn` があって `BPMN_TIMEOUT` が正の数でない・同じ `X.svg` になりうる drawio と BPMN の組がある・
   **要る描画系が見つからない**——`.drawio` があって draw.io の CLI が無い（`DRAWIO` が空・指したものが無いを含む）か、
   `.bpmn` があって BPMN の描画口に要るもの（上の 4 つ。`BPMN_RENDER` が空・指したものが無いを含む）が無い。
   見つからないときは**どちらの種類も 1 件も書かず**、標準エラーに無いものと「書き出していない」と書き出していない全部のソースを名指しする。
@@ -59,7 +59,7 @@ BPMN の描画口（`<描画口> <X.bpmn> <一時ファイル>` の形で呼び�
 | `--check` は描画系を起動せず、何も書かない | **確かめたのは macOS の draw.io だけ**（Linux・Windows の CLI は確かめていない。`DRAWIO` で差し替えて、書き出しを目で確かめる） |
 | 描画系が足りないときは 1 件も書かない（drawio だけ・BPMN だけが書ける場合も書かない） | **`render-bpmn.mjs` は回帰テストで走らない**（テストは偽の描画口を差す。本物の Node・Chrome に届かないため）。確かめたのは macOS の Chrome と bpmn-js 18.6.2・puppeteer-core 24.10.0 で 1 枚を手で書き出したことだけ（#901 の計画ファイル） |
 | BPMN の読み込みの警告が 1 つでもあれば、その `.bpmn` は失敗として書き出さない（描けなかった要素を落とした図を置かない） | **BPMN の描画口が起こす Chrome はグループの外**——puppeteer は Chrome を別のプロセスグループで起こすので、グループごとの停止は Chrome に届かない。描画口は Chrome と pipe でつなぎ、描画口が止められて pipe が閉じたら Chrome が終わることに任せる（時間切れでは描画口のグループを SIGKILL で止める）。**Chrome の一時のプロファイル（`$TMPDIR/puppeteer_dev_chrome_profile-*`）は、描画口が止められると残る** |
-| 同じディレクトリで名前が大文字小文字まで一致する `X.drawio` と `X.bpmn` を止める | **大文字小文字だけ違う `X.drawio` と `x.bpmn`**——大文字小文字を区別しないファイルシステム（macOS の既定）では同じ `.svg` に書き出され、後のほうが残る（止めない。区別するファイルシステムでは別の書き出しなので） |
+| 同じディレクトリで名前が大文字小文字を区別せずに一致する `X.drawio` と `x.bpmn` を止める（片方の書き出しが黙って消えない） | **drawio どうし・BPMN どうしの組**（`X.drawio` と `x.drawio`・`X.drawio` と `X.DRAWIO`）——大文字小文字を区別しないファイルシステムでは同じ `.svg` になりうるが止めない（#268 からの振る舞い）。**`--check` のソースの無い `.svg` の判定はパス全体の大文字小文字を区別しない**ので、区別するファイルシステムでは、大文字小文字だけ違う別のソースの書き出しが、ソースの消えた `.svg` を隠しうる |
 | 書くのはソースの隣の `.svg` と、同じ場所の一時ファイル（成否に依らず消す）だけ（BPMN の描画口が起こす Chrome が `$TMPDIR` に書く一時のプロファイルは除く——右の列）。描画系（draw.io の CLI・BPMN の描画口）は自分のプロセスグループで起こし、終わったら（時間切れでも、このスクリプトが SIGTERM・SIGHUP で止められても）グループごと止める——前置き（`xvfb-run`）の孫が後から書かない（SIGKILL で止められたときは後始末できない）。**起動時に無視させられていたシグナル（`nohup` の SIGHUP）は無視したまま**——止まらずに最後まで書き出す。拡張子の大文字小文字は区別しない（`build-proposal.py` と同じ） | **見た目の品質**（利用者・決裁者に見せられる図か）。ブラウザで開いて目で見る |
 | 印はソースのバイトだけで決まる | `X.svg` が symlink のときの扱い（`os.replace` はリンクを置き換える）・`docs/` の外の図・symlink のディレクトリの中（辿らない）・**BPMN の PNG**（書き出すのは SVG だけ） |
 """
@@ -365,13 +365,14 @@ def main(argv: list[str]) -> int:
         return 2
     sources = find_sources(docs)
 
-    # **同じ書き出しになるソースは、どちらのモードでも先に止める**——片方の書き出しが、もう片方の書き出しを黙って上書きする
-    # **大文字小文字は区別したまま比べる**——区別するファイルシステムでは、大文字小文字だけ違う名前・ディレクトリは別の書き出しで、
-    # drawio だけのリポジトリは今までどおり書ける（区別しないファイルシステムでの `X.drawio` と `x.bpmn` は docstring の「守らないもの」）
-    by_output: dict[str, list[Path]] = {}
+    # **同じ書き出しになりうる drawio と BPMN の組は、どちらのモードでも先に止める**——片方の書き出しが、もう片方の書き出しを黙って上書きする。
+    # 同じディレクトリ（パスはそのまま比べる）で、拡張子の前の名前を**大文字小文字を区別せずに**比べる——区別しないファイルシステム
+    # （macOS の既定）では `Flow.drawio` と `flow.bpmn` が同じ `.svg` になる。区別するファイルシステムでは別の書き出しだが、止める側に倒す。
+    # **drawio だけの組（`X.drawio` と `x.drawio`）は止めない**——区別するファイルシステムでは別の書き出しで、今までどおり書ける
+    by_name: dict[tuple[str, str], list[Path]] = {}
     for source in sources:
-        by_output.setdefault(str(output_of(source)), []).append(source)
-    clashes = [group for group in by_output.values() if len(group) > 1]
+        by_name.setdefault((str(source.parent), source.stem.lower()), []).append(source)
+    clashes = [group for group in by_name.values() if len({is_bpmn(source) for source in group}) > 1]
     if clashes:
         for group in clashes:
             names = "・".join(rel(source, root) for source in group)
@@ -382,9 +383,10 @@ def main(argv: list[str]) -> int:
     if args.check:
         return check(docs, root, sources)
 
-    # **その種類のソースがあるときだけ確かめる**——drawio だけのリポジトリは `BPMN_TIMEOUT` に左右されない（逆も）
+    # **`DRAWIO_TIMEOUT` は今までどおり常に確かめ、`BPMN_TIMEOUT` は `.bpmn` があるときだけ確かめる**——drawio だけのリポジトリは
+    # `BPMN_TIMEOUT` に左右されない
     timeouts: dict[str, float] = {}
-    for name, fallback, present in (("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, any(not is_bpmn(source) for source in sources)),
+    for name, fallback, present in (("DRAWIO_TIMEOUT", TIMEOUT_DEFAULT, True),
                                     ("BPMN_TIMEOUT", BPMN_TIMEOUT_DEFAULT, any(is_bpmn(source) for source in sources))):
         if not present:
             continue
