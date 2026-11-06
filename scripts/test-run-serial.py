@@ -14,6 +14,7 @@ cruise はどのリポジトリでも使うので、対象リポジトリの `sc
 **例外は期限（#897）の観測**——期限（`--timeout 3`）そのものは時間だが、判定は印（終了コード・`期限切れ` の行・孫が居るか・B の印）で決める。
 **呼び出し元が居なくなった待ち手（#897）**は、中間のプロセスが run-serial を起こして先に終わる形で作る（親を失った run-serial はこのテストの子でないので、
 居なくなったかを `kill -0` で見る）。終了コード 125 は、本体を読み込んで `os.getppid` を差し替えた `main` で見る。
+**既定の期限と入れ子の期限**は、本体を読み込んで `run` を差し替えた `main` が渡す期限で見る（3600 秒を待たない。#897 の 1 パス目）。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、壊したのに判定（`check`）が 1 つも落ちなければ失格とする——
 **観測の値が正しい本体と違うだけでは「見つけた」に数えない**（#745。値が違っても判定が通るなら、そのテストは壊れたコードで緑になる）。
@@ -532,6 +533,46 @@ def observe_orphan(script: Path, tmp: Path, tag: str) -> dict:
     }
 
 
+def observe_deadline(script: Path, tmp: Path, tag: str) -> dict:
+    """`main` が `run` に渡す期限（#897）。本体を読み込み、`run` を差し替えて受け取った期限を記録する——期限の秒数だけ待たずに、
+    既定の経路（`--timeout` なし）と入れ子の経路（枠を取らずに走らせる）の期限を見る。既定の値は docstring の「期限」の節から読む。"""
+    import contextlib
+    import importlib.util
+    import io
+    root = tmp / f"{tag}-deadline"
+    build_repo(root, None)
+    spec = importlib.util.spec_from_file_location(f"rs_deadline_{tag}", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    documented = re.search(r"既定の `DEFAULT_TIMEOUT`（([0-9]+) 秒）", mod.__doc__ or "")
+    got: list = []
+    mod.run = lambda command, env, timeout: got.append(timeout) or 0
+    lockdir = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root,
+                             capture_output=True, text=True, check=False).stdout.strip() + "/dev-loop-serial"
+    here, saved = os.getcwd(), os.environ.pop(mod.ENV, None)
+    out = {}
+    try:
+        os.chdir(root)
+        with contextlib.redirect_stderr(io.StringIO()):
+            for label, argv, nested in (("既定", ["--", "true"], False), ("--timeout 7", ["--timeout", "7", "--", "true"], False),
+                                        ("入れ子・既定", ["--", "true"], True), ("入れ子・--timeout 5", ["--timeout", "5", "--", "true"], True)):
+                if nested:
+                    os.environ[mod.ENV] = lockdir
+                else:
+                    os.environ.pop(mod.ENV, None)
+                got.clear()
+                code = mod.main(argv)
+                out[label] = (code, list(got))
+    finally:
+        os.chdir(here)
+        os.environ.pop(mod.ENV, None)
+        if saved is not None:
+            os.environ[mod.ENV] = saved
+    out["docstring の既定"] = int(documented.group(1)) if documented else None
+    out["DEFAULT_TIMEOUT"] = getattr(mod, "DEFAULT_TIMEOUT", None)
+    return out
+
+
 MUTATIONS = {
     # 注釈 `# 守る N: <文言>` は、本体の docstring の「守る」の N 行目の書き出し（「- 」の後ろ）と同じ文言にする——
     # main がこの並び・番号・文言を本体と突き合わせる（#758。番号を手で追うと違う行に着いた）
@@ -690,12 +731,21 @@ MUTATIONS = {
     "期限の値を確かめない": (
         "        if not TIMEOUT_VALUE.fullmatch(value) or int(value) < 1:",
         "        if False:"),
+    # 守る 39: `--timeout` を渡さなければ、既定
+    "既定の期限を掛けない": (
+        "    timeout = DEFAULT_TIMEOUT\n    while head:",
+        "    timeout = None\n    while head:"),
+    # 守る 40: 入れ子で呼ばれても
+    "入れ子では期限を掛けない": (
+        "        return run(command, env, timeout)\n\n    text",
+        "        return run(command, env, None)\n\n    text"),
 }
 
 OBSERVERS = {
     "serial": observe_serial, "parallel": observe_parallel, "codes": observe_codes, "nested": observe_nested,
     "cannot": observe_cannot, "decl": observe_decl, "sigterm": observe_sigterm, "parse": observe_parse,
     "sigint": observe_sigint, "timeout": observe_timeout, "timeout-kill": observe_timeout_kill, "orphan": observe_orphan,
+    "deadline": observe_deadline,
 }
 
 # 変異ごとに当てる観測（全部を当てると、待ちの上限で止まる観測が重なって数分かかる）。
@@ -739,6 +789,8 @@ MUTATION_PROBE = {
     "SIGKILL に上げない": ("timeout-kill",),
     "呼び出し元を見ない": ("orphan",),
     "期限の値を確かめない": ("codes",),
+    "既定の期限を掛けない": ("deadline",),
+    "入れ子では期限を掛けない": ("deadline",),
 }
 
 
@@ -828,6 +880,15 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
                 ck("SIGKILL で止めたと言った", t["SIGKILL と言った"])
             else:
                 ck("SIGTERM で終わったので SIGKILL とは言わない", not t["SIGKILL と言った"])
+    if "deadline" in o:
+        d = o["deadline"]
+        default = d["docstring の既定"]
+        head(f"\n`main` が `run` に渡す期限（#897。docstring の既定 {default} 秒）")
+        ck("docstring の「期限」の節に既定の秒数がある", default is not None)
+        ck(f"DEFAULT_TIMEOUT が docstring の既定と同じ（{d['DEFAULT_TIMEOUT']}）", d["DEFAULT_TIMEOUT"] == default)
+        for label, want in (("既定", default), ("--timeout 7", 7), ("入れ子・既定", default), ("入れ子・--timeout 5", 5)):
+            code, got = d[label]
+            ck(f"{label}: 期限 {want} で走らせた（{got}・{code}）", code == 0 and got == [want])
     if "orphan" in o:
         r = o["orphan"]
         head("\n呼び出し元が居なくなった待ち手（#897）")
