@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.96.0 -->
-> **このスキルの版: 1.96.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.97.0 -->
+> **このスキルの版: 1.97.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -530,6 +530,9 @@ gh api graphql -F owner='{owner}' -F repo='{repo}' -F n=<番号> -f query='query
 `decisions` に無かったものには「台帳に無かった」、承認ではない閉じ・判定できない閉じには分けた理由を添える（利用者が閉じたのなら、利用者がそう確かめれば済む）。
 **一覧に 1 件でもあれば「済んだ」と報告しない。** 承認（閉じる）と修正（実装の Issue を親 Issue に足す）は利用者がする
 （`../dev-loop/references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）。
+**渡す一覧には、閉じるときに結果の 1 行（`確認の結果: 推奨のまま` か `確認の結果: 変えた: <新しい値>`）を閉じのコメントに書くことを添える**
+——承認で閉じても別の値で閉じても残す。**利用者の指示で代わりに閉じるセッションも、同じ 1 行をコメントに添える。**
+**親は確認の Issue を閉じないまま**（上の「GitHub に書くものの印」）。形と置き場所は `../dev-loop/references/absent-lines.md` の「閉じるときの結果の 1 行」を正とする（#884）。
 **spec-loop から来た Issue の穴の確認の Issue は違う**——承認でも別の値でも、本文の Q&A の行を正本の Q&A 表に足して `req-loop` に載せてから閉じる、と添えて渡す
 （実装の Issue は親 Issue に足さない。`../dev-loop/references/absent-lines.md` の「spec-loop から来た Issue の穴」。#470）。
 **親が関門の指摘・周の途中の課題から自分で確認の Issue（題の先頭が `要確認:`）を立てるのは、`../dev-loop/references/found-lines.md` の振り分けで直すに当たる判断だけである**
