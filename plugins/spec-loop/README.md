@@ -190,8 +190,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs [-
 
 ## 図を書き出す
 
-正本リポジトリの文書の図は、アスキーアートでも Mermaid でも描かず、drawio で描いて SVG に書き出します
-（置き場所・形式・描かないものは `references/tree.md` の「図」を正とします）:
+正本リポジトリの文書の図は、アスキーアートでも Mermaid でも描きません。業務フロー（スイムレーン）は BPMN で描き、それ以外の図は drawio で描いて SVG に書き出します
+（どちらで描くかの線・置き場所・形式・描かないもの、BPMN の書き出しをまだ同梱していないあいだの扱いは `references/tree.md` の「図」を正とします）。drawio の図は次で書き出します:
 
 ```bash
 python3 <spec-loop の base ディレクトリ>/scripts/render-diagrams.py [<正本リポジトリの根>] [--check]
