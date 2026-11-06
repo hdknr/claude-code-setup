@@ -91,9 +91,10 @@ Issue が「どう見分けるかを決めて docstring に書く」と委ねて
 ## 関門の進捗（再開点）
 
 - 割り目（手順 4 の完了時）: 不在のため訊かず続けた
-- Verifier 1 パス目: 未
+- check-all.py（順番待ち越し）: 66/66 緑（実装のコミット e8dd8eb0 の前）。`test-rework-metrics.py` は python3.12 でも緑（順番待ちの外で 1 回）
+- Verifier 1 パス目: 起動（sonnet・dev-loop:dev-loop-verifier）
 - /code-review 1 パス目: 未
-- 1 パス目の指摘対応の起点: 未
+- 1 パス目の指摘対応の起点: `e8dd8eb0`（1 パス目の関門に渡した時点の HEAD）
 - 2 パス目: 未
 - 狭いパス: 未
 - 反証と差し戻し: なし（まだ関門に渡していない）
