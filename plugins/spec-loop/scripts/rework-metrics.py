@@ -40,7 +40,8 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
    gh issue comment 870 --repo hdknr/claude-code-setup --body-file rework-summary.md
    ```
 
-   貼る前に中身を読む——`--summary` が出すのは数と、数えた時点（`--ref` を解決したコミットの日付）だけである。案件の名前は添える人が決める。
+   貼る前に中身を読む——`--summary` が標準出力に出すのは数と、数えた時点（`--ref` を解決したコミットの日付）だけである（コミットの SHA も出さない）。
+   **数えきれないものの名指し（No・Issue の題）は `--summary` でも標準エラーに出る**——上のようにリダイレクトするのは標準出力だけにする。案件の名前は添える人が決める。
 
 ## 回答が変わった（Q&A 表の履歴の読み方）
 
@@ -61,7 +62,7 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 - 1: 数えきれないものがある（数えたものは出し、数えきれないものを標準エラーに名指しする）——ラベルが読めず回答が変わったかを見分けられない No・
   読めない Q&A 表（見出しが決まりの形でない・CSV として読めない）のあるコミット（そのコミットではその表を前の時点のまま読む）・
   結果の行が決まりの形でない確認の Issue・変えた確認の Issue のうち台帳の行（`決めた値: `・`影響する Issue: `）が無い／形に反するもの・
-  作り直しの元の印の後ろが Q&A の No でも `#<番号>` でもない行・Q&A 表を変えたコミットが 1 本も無い（`--spec-repo` が正本リポジトリでないかもしれない）
+  作り直しの元の印の後ろが Q&A の No でも `#<番号>` でもない行・印の元が変わったと数えた件に無い Issue・PR（合計に入れていない）・Q&A 表を変えたコミットが 1 本も無い（`--spec-repo` が正本リポジトリでないかもしれない）
 - 2: 数えていない——引数の誤り・入力が読めない（JSON でない・Issue／PR の形が違う・確認の Issue を数えるのに `comments` の鍵が無い・PR に `additions`・`deletions` が無い）・
   `--spec-repo` が git のリポジトリでない・`--ref` が解決できない・`git` が失敗した
 
@@ -77,7 +78,7 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 | **first-parent の外の履歴** | マージしたブランチの途中のコミットは読まない——マージのコミットで一度に変わったと読む。ブランチの途中で `暫定反映` に戻して確かめ直した出来事は 1 つに見える |
 | **`removed.csv` で消した Q&A の行** | 重ね合わせの削除は読まない——前の版の行が効いたまま残る（消えたとは数えない） |
 | **Q&A 表のファイルの綴り** | git の木のパスを決まりの綴り（`docs/v<n>/shared/qa.csv`・`docs/v<n>/spec/qa-dev.csv`）で探す。綴りだけ違うパスは読まない |
-| **回答のラベルが選択肢の列にあるか** | 先頭の英大文字 1 字を読むだけ。選択肢の列と突き合わせない（決まりどおりかは `check-qa-csv.py` が見る） |
+| **回答のラベルが選択肢の列にあるか** | 先頭の英大文字 1 字（後ろが `（`・`(`・空白・行末のときだけ。`B: 変更` は読めない）を読むだけ。選択肢の列と突き合わせない（決まりどおりかは `check-qa-csv.py` が見る） |
 | **入力が全部の Issue・PR を含むか** | `--limit` を超えた分・取った後に足した分は見えない（`rebuild-scope.py` と同じ） |
 | **確認の Issue の結果の行を誰が書いたか** | `rebuild-scope.py` の `Decision` の守らないものと同じ（行を読むだけ） |
 | **`--summary` が案件の情報を漏らさないこと** | 出すのは数と日付だけだが、貼る前に人が読む |
@@ -112,6 +113,8 @@ qa = rebuild.qa
 TABLE = re.compile(r"docs/v([1-9][0-9]*)/(?:shared/qa\.csv|spec/qa-dev\.csv)")
 # `回答` の先頭の選択肢のラベル（`A（業務部が回答）`・`B`）。`check-qa-csv.py` の `OPTION_LABEL` を読む
 LABEL = re.compile(rf"({qa.OPTION_LABEL})(?:（|\(|\s|$)")
+# 前の形（spec-loop 0.17.0 まで）の Q&A 表の見出し——推奨の 2 列が無い（`references/tree.md` の「Q&A 表を移す」）
+OLD_COLUMNS = [c for c in qa.COLUMNS if c not in ("推奨", "推奨の理由")]
 # 作り直しの元の印の行（行頭から・装飾なし・1 行に 1 つ）
 ORIGIN_LINE = re.compile("^" + re.escape(rebuild.ORIGIN) + r"(\S.*?)\s*$")
 PR_STATES_MERGED = "MERGED"
@@ -139,15 +142,17 @@ def parse_table(text: str) -> dict[str, dict[str, str]] | None:
         rows = list(csv.reader(io.StringIO(text.lstrip("﻿"))))
     except csv.Error:
         return None
-    if not rows or rows[0] != qa.COLUMNS:
+    # 前の形（spec-loop 0.17.0 まで）の見出しは推奨の 2 列が無いだけで、列の名前で読める（1 パス目の指摘——読めないと名指しすると古い履歴を持つ正本は毎回 1 になる）
+    if not rows or rows[0] not in (qa.COLUMNS, OLD_COLUMNS):
         return None
+    header = rows[0]
     out = {}
     for cells in rows[1:]:
         if not any(c.strip() for c in cells):
             continue
-        if len(cells) != len(qa.COLUMNS):
+        if len(cells) != len(header):
             return None
-        row = dict(zip(qa.COLUMNS, cells))
+        row = dict(zip(header, cells))
         out[row["No"].strip()] = row
     return out
 
@@ -296,10 +301,11 @@ def main(argv: list[str]) -> int:
     kinds = {no: history.outcome(no) for no in nos}
     count = {k: sum(1 for v in kinds.values() if v == k) for k in ("変わった", "同じ", "見分けられない", "消えた", "まだ暫定反映")}
     confirmed = count["変わった"] + count["同じ"] + count["見分けられない"]
-    out.append(f"## 仮回答（Q&A 表の履歴: {history.tip[:7]} {history.tip_date} まで・Q&A 表を変えたコミット {len(history.commits)} 本）")
+    out.append(f"## 仮回答（Q&A 表の履歴: {'' if args.summary else history.tip[:7] + ' '}{history.tip_date} まで・Q&A 表を変えたコミット {len(history.commits)} 本）")
     out.append(f"- 仮回答（どこかの時点で `暫定反映` だった Q&A）: {len(nos)} 件")
     out.append(f"- 確かめた: {confirmed} 件（回答が変わった {count['変わった']} 件・同じ選択肢で確定 {count['同じ']} 件・見分けられない {count['見分けられない']} 件）")
-    out.append(f"- 確かめずに行が消えた: {count['消えた']} 件・まだ `暫定反映`: {count['まだ暫定反映']} 件")
+    out.append(f"- 確かめずに行が消えた: {count['消えた']} 件・まだ `暫定反映`: {count['まだ暫定反映']} 件"
+               f"（いまの時点で `暫定反映` の Q&A は {len(history.still)} 件——確かめた後に暫定へ戻したものを含む）")
     if not args.summary:
         for no in nos:
             out.append(f"  - {no}: {kinds[no]}")
@@ -361,13 +367,16 @@ def main(argv: list[str]) -> int:
 
     out.append("")
     out.append("## 作り直しの量（変わった 1 件ごと）")
-    total_issues = total_prs = total_lines = 0
+    counted_issues: dict[int, dict] = {}
+    counted_prs: dict[int, dict] = {}
     for key, why, scope in items:
         rebuilt = marked.get(key, [])
         rework = marked_prs.get(key, [])
         lines = sum(p["additions"] + p["deletions"] for p in rework if p["state"].upper() == PR_STATES_MERGED)
         merged = sum(1 for p in rework if p["state"].upper() == PR_STATES_MERGED)
-        total_issues, total_prs, total_lines = total_issues + len(rebuilt), total_prs + len(rework), total_lines + lines
+        # 合計は Issue・PR ごとに 1 回——1 つの本文が元を 2 行並べても（`handoff-issue.md`）二重に数えない（1 パス目の指摘）
+        counted_issues.update((i["number"], i) for i in rebuilt)
+        counted_prs.update((p["number"], p) for p in rework)
         name = "Q&A" if not key.startswith("#") else "確認の Issue"
         head = f"{name} {key}" if not args.summary else name
         note = ("——scaffold が作り直した spec-loop の Issue とその PR は印を持たない（#885 の限界）ので、Issue は下書きから立てた範囲の記録だけ"
@@ -379,7 +388,15 @@ def main(argv: list[str]) -> int:
                 out.append(f"  - Issue {rebuild.label(issue)}")
             for pr in rework:
                 out.append(f"  - PR #{pr['number']} {pr['title']} [{pr['state']}] +{pr['additions']} −{pr['deletions']}")
-    out.append(f"- 合計: 変わった {len(items)} 件・作り直しの元の印の Issue {total_issues} 件・PR {total_prs} 件・差分 {total_lines} 行（マージした PR）")
+    total_lines = sum(p["additions"] + p["deletions"] for p in counted_prs.values() if p["state"].upper() == PR_STATES_MERGED)
+    out.append(f"- 合計: 変わった {len(items)} 件・作り直しの元の印の Issue {len(counted_issues)} 件・PR {len(counted_prs)} 件・差分 {total_lines} 行（マージした PR。"
+               "元を 2 つ持つ Issue・PR は 1 回だけ数える）")
+    # 印の元が、変わったと数えた件に無い Issue・PR——黙って合計から落とさない（1 パス目の指摘）
+    keys = {key for key, _, _ in items}
+    for key in sorted(set(marked) - keys):
+        bad += [f"#{i['number']} {i['title']}: 作り直しの元 {key} は変わったと数えた件に無い——合計に入れていない" for i in marked[key]]
+    for key in sorted(set(marked_prs) - keys):
+        bad += [f"PR #{p['number']} {p['title']}: 作り直しの元 {key} は変わったと数えた件に無い——合計に入れていない" for p in marked_prs[key]]
 
     for line in out:
         print(line)

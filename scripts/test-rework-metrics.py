@@ -15,14 +15,16 @@
 
 - Q&A 表を変えた first-parent のコミットだけを古い順に読み、`暫定反映` だった No を仮回答に数える（マージしたブランチの途中のコミットは読まない）
 - `暫定反映` でなくなったときに、`回答` の先頭の選択肢のラベルが直前の `暫定反映` の行と違えば「変わった」、同じなら「同じ選択肢で確定」（回答の文言の書き換えは変化に数えない）
-- ラベルが読めない回答は「見分けられない」と名指しして 1。行が無くなったら「消えた」、最後まで `暫定反映` なら「まだ」
+- ラベルが読めない回答は「見分けられない」と名指しして 1。行が無くなったら「消えた」、最後まで `暫定反映` なら「まだ」。いまの時点で `暫定反映` の数は、確かめた後に戻したものも数える
+- 前の形の見出し（推奨の 2 列が無い）の表は読める表として読む
 - 同じ No は版の大きいほうの行が効く（v2 で置いた行で確かめたら確かめたと読む）。2 度確かめた No は 1 度でも変われば「変わった」
 - 読めない Q&A 表のあるコミットでは、その表を前の時点のまま読み、名指しして 1
 - 確認の Issue を数え、推奨のまま・変えた・結果なし（形に反する結果の行は名指しして 1）に分ける。`comments` の鍵が無い入力は 2
 - 変わった 1 件ごとに、引いた範囲（No なら Issue・ケース・機能全体の数、確認の Issue なら影響する Issue の数。台帳の行が無ければ名指しして 1）と、
   作り直しの元の印を行頭に持つ Issue（確認の Issue 自体は数えない）・PR と、マージした PR の差分の行数を出す（装飾つき・行頭でない印は数えない。後ろの形が違う印は名指しして 1）
+- 合計は Issue・PR ごとに 1 回数え（元を 2 つ持つ本文を二重に数えない）、印の元が変わったと数えた件に無い Issue・PR は名指しして 1
 - No の行には、scaffold が作り直した本文と PR は印を持たない（#885 の限界）と添える
-- `--summary` は数だけを出す（題・No・番号を出さない）
+- `--summary` は数と日付だけを出す（題・No・番号・コミットの SHA を出さない）
 - Q&A 表を変えたコミットが 1 本も無いリポジトリは名指しして 1（黙って 0 件と出さない）
 - 入力の形が違えば 2（PR に `additions`・`deletions` が無い・git のリポジトリでない・`--ref` が解決できない）
 
@@ -74,6 +76,7 @@ BASE_ROWS = {
     "Q-R-007": row("Q-R-007", PROV, "暫定反映"),
     "Q-R-008": row("Q-R-008", PROV, "暫定反映"),
     "Q-R-009": row("Q-R-009", PROV, "暫定反映"),
+    "Q-R-011": row("Q-R-011", PROV, "暫定反映"),
     "Q-S-001": row("Q-S-001", "A（業務部が回答）", "反映済み"),
 }
 
@@ -105,7 +108,9 @@ def build_history(repo: Path, env: dict[str, str]) -> None:
     repo.mkdir(parents=True)
     git("init", "-q", "-b", "main")
     rows = dict(BASE_ROWS)
-    write({V1: table(rows), DEV: HEADER + row("D-S-001", "B（開発 山田 2026-10-22）", "反映済み")})
+    # 内部の表は前の形（推奨の 2 列が無い見出し）——読める表として読む
+    old = "No,起票元,質問,選択肢,回答,反映先,状態,費用への影響\nD-S-001,仕様レビュー（Red Team）,q,A: 一 / B: 二,B（開発 山田 2026-10-22）,x,反映済み,\n"
+    write({V1: table(rows), DEV: old})
     commit("c1: 起票と暫定の反映", 1)
     write({"README.md": "Q&A 表を触らないコミット\n"})
     commit("c2: Q&A 表を触らない", 2)
@@ -116,6 +121,7 @@ def build_history(repo: Path, env: dict[str, str]) -> None:
         "Q-R-002": row("Q-R-002", "B（業務部が回答）", "確認中"),        # 変わった
         "Q-R-003": row("Q-R-003", "業務部と相談して決めた", "反映済み"),  # ラベルが読めない
         "Q-R-008": row("Q-R-008", "B（業務部が回答）", "確認中"),        # 1 度目は変わった
+        "Q-R-011": row("Q-R-011", "A（業務部が確認）", "反映済み"),      # 同じで確定し、あとで暫定に戻す
     })
     write({V1: table(rows)})
     commit("c3: 確かめた", 3)
@@ -127,8 +133,9 @@ def build_history(repo: Path, env: dict[str, str]) -> None:
     write({V1: table(rows)})
     commit("c5: 消えた・暫定に戻した", 5)
     rows["Q-R-008"] = row("Q-R-008", "B（業務部が確認）", "反映済み")     # 2 度目は同じ——1 度でも変われば変わった
+    rows["Q-R-011"] = row("Q-R-011", "B（暫定で採用。業務部 2026-10-26 の指示）", "暫定反映")
     write({V1: table(rows)})
-    commit("c6: 2 度目に確かめた", 6)
+    commit("c6: 2 度目に確かめた・暫定に戻した", 6)
     # マージしたブランチの途中で Q-R-009 を確かめてから暫定に戻した——first-parent ではマージで何も変わらない
     git("checkout", "-q", "-b", "side")
     side = dict(rows, **{"Q-R-009": row("Q-R-009", "B（業務部が回答）", "反映済み")})
@@ -172,6 +179,7 @@ def issues_json(bodies: dict[str, str]) -> list[dict]:
         {"number": 31, "title": "実装: 14 日にする", "state": "CLOSED", "body": "作り直しの元: #20\r\n\r\n受入基準\r\n", "comments": []},
         {"number": 32, "title": "装飾と文の途中", "state": "OPEN",
          "body": "**作り直しの元: #20**\n説明 作り直しの元: #20\n - 作り直しの元: Q-001\n", "comments": []},
+        {"number": 35, "title": "同じで確定した No の印", "state": "OPEN", "body": "作り直しの元: Q-R-001\n", "comments": []},
         {"number": 33, "title": "形に反する印", "state": "OPEN", "body": "作り直しの元: 割引の件\n", "comments": []},
         decision("要確認: 印の文字列を本文に持つ", "決めた値: F\n影響する Issue: なし\n作り直しの元: #20\n", ["確認の結果: 推奨のまま"], number=34),
     ]
@@ -182,6 +190,8 @@ PRS = [
      "additions": 10, "deletions": 2},
     {"number": 51, "title": "14 日にする（2）", "state": "OPEN", "body": "作り直しの元: #20\n", "additions": 5, "deletions": 5},
     {"number": 52, "title": "Q-001 の範囲", "state": "MERGED", "body": "作り直しの元: Q-001\n", "additions": 3, "deletions": 1},
+    {"number": 54, "title": "元を 2 つ持つ PR", "state": "MERGED", "body": "作り直しの元: Q-001\n作り直しの元: #20\n", "additions": 7, "deletions": 0},
+    {"number": 55, "title": "推奨のままの確認の印", "state": "MERGED", "body": "作り直しの元: #21\n", "additions": 50, "deletions": 0},
     {"number": 53, "title": "印の無い PR", "state": "MERGED", "body": "Fixes #11\n", "additions": 100, "deletions": 0},
 ]
 
@@ -196,29 +206,31 @@ class Case:
 CASES = [
     Case("全部", 1, (
         "Q&A 表を変えたコミット 7 本",
-        "- 仮回答（どこかの時点で `暫定反映` だった Q&A）: 10 件",
-        "- 確かめた: 6 件（回答が変わった 4 件・同じ選択肢で確定 1 件・見分けられない 1 件）",
-        "- 確かめずに行が消えた: 1 件・まだ `暫定反映`: 3 件", "  - Q-R-010: まだ暫定反映",
+        "- 仮回答（どこかの時点で `暫定反映` だった Q&A）: 11 件",
+        "- 確かめた: 7 件（回答が変わった 4 件・同じ選択肢で確定 2 件・見分けられない 1 件）",
+        "- 確かめずに行が消えた: 1 件・まだ `暫定反映`: 3 件（いまの時点で `暫定反映` の Q&A は 4 件", "  - Q-R-010: まだ暫定反映", "  - Q-R-011: 同じ",
         "  - Q-001: 変わった", "  - Q-R-001: 同じ", "  - Q-R-002: 変わった", "  - Q-R-003: 見分けられない", "  - Q-R-004: 変わった",
         "  - Q-R-006: 消えた", "    - 暫定反映 'A（暫定で採用。業務部 2026-10-21 の指示）' → 行が無い（", "  - Q-R-007: まだ暫定反映", "  - Q-R-008: 変わった", "  - Q-R-009: まだ暫定反映",
         "数えきれない——Q-R-003: 回答の選択肢のラベルが読めず",
         "- 確認の Issue: 6 件（推奨のまま 2 件・変えた 2 件・結果なし 1 件・結果の行が形に反する 1 件）",
         "数えきれない——#23 要確認: 形に反する結果",
-        "- Q&A Q-001（Q&A の回答が変わった）: 引いた範囲 Issue 2 件・ケース 1 件（機能全体 1 件）／作り直しの元の印: Issue 1 件・PR 1 件（マージ 1 件）・差分 4 行——scaffold が作り直した",
+        "- Q&A Q-001（Q&A の回答が変わった）: 引いた範囲 Issue 2 件・ケース 1 件（機能全体 1 件）／作り直しの元の印: Issue 1 件・PR 2 件（マージ 2 件）・差分 11 行——scaffold が作り直した",
         "- Q&A Q-R-002（Q&A の回答が変わった）: 引いた範囲 Issue 0 件・ケース 0 件／作り直しの元の印: Issue 0 件・PR 0 件（マージ 0 件）・差分 0 行",
-        "- 確認の Issue #20（確認の Issue で値を変えた）: 引いた範囲 Issue 2 件／作り直しの元の印: Issue 1 件・PR 2 件（マージ 1 件）・差分 12 行",
+        "- 確認の Issue #20（確認の Issue で値を変えた）: 引いた範囲 Issue 2 件／作り直しの元の印: Issue 1 件・PR 3 件（マージ 2 件）・差分 19 行",
         "- 確認の Issue #24（確認の Issue で値を変えた）: 引いた範囲 引けない",
         "数えきれない——#24 要確認: 台帳の行が無いまま変えた [CLOSED]: 変えたが 台帳の行が無い（前の書き方）",
         "数えきれない——#33 形に反する印: 作り直しの元の印の後ろが Q&A の No でも #<番号> でもない",
         "  - Issue #30 作り直し: Q-001 [OPEN]", "  - Issue #31 実装: 14 日にする [CLOSED]",
         "  - PR #50 14 日にする [MERGED] +10 −2", "  - PR #51 14 日にする（2） [OPEN] +5 −5",
-        "- 合計: 変わった 6 件・作り直しの元の印の Issue 2 件・PR 3 件・差分 16 行（マージした PR）",
+        "- 合計: 変わった 6 件・作り直しの元の印の Issue 2 件・PR 4 件・差分 23 行（マージした PR。",
+        "数えきれない——#35 同じで確定した No の印: 作り直しの元 Q-R-001 は変わったと数えた件に無い",
+        "数えきれない——PR #55 推奨のままの確認の印: 作り直しの元 #21 は変わったと数えた件に無い",
     ), ("Issue #32", "Issue #34", "PR #53", "Q-R-005", "Q-S-001", "D-S-001", "Q&A Q-R-001（")),
     Case("まだ確かめていない時点（--ref）", 0, (
-        "Q&A 表を変えたコミット 1 本", "- 仮回答（どこかの時点で `暫定反映` だった Q&A）: 8 件",
-        "- 確かめた: 0 件", "まだ `暫定反映`: 8 件", "- 合計: 変わった 0 件"), ("数えきれない——Q-R",), issues="clean", ref="early"),
+        "Q&A 表を変えたコミット 1 本", "- 仮回答（どこかの時点で `暫定反映` だった Q&A）: 9 件",
+        "- 確かめた: 0 件", "まだ `暫定反映`: 9 件", "- 合計: 変わった 0 件"), ("数えきれない——Q-R",), issues="clean", prs="noprs", ref="early"),
     Case("読めない表", 1, ("2026-10-11 docs/v2/shared/qa.csv: 読めない Q&A 表", "docs/v2/shared/qa.csv: 読めない Q&A 表", "まだ `暫定反映`: 3 件", "  - Q-R-004: 変わった", "  - Q-R-010: まだ暫定反映"), ref="broken"),
-    Case("--summary", 1, ("- 仮回答（どこかの時点で `暫定反映` だった Q&A）: 10 件", "- 確認の Issue: 6 件",
+    Case("--summary", 1, ("## 仮回答（Q&A 表の履歴: 2026-10-10 まで", "- 仮回答（どこかの時点で `暫定反映` だった Q&A）: 11 件", "- 確認の Issue: 6 件",
                           "- Q&A（Q&A の回答が変わった）: 引いた範囲 Issue 2 件", "- 合計: 変わった 6 件"),
          ("割引額", "要確認: ", "  - Q-001", "Q&A Q-001", "#20（", "PR #50"), extra=("--summary",)),
     Case("comments の無い確認の Issue", 2, ("comments の鍵が無い", "数えていない"), issues="nocomments"),
@@ -248,7 +260,7 @@ MUTATIONS = [
     ("最後まで暫定反映を数えない", '"まだ暫定反映" if no in self.still else "消えた"', '"消えた"', "全部"),
     ("読めない表を空と読む", "                    parsed = tables.get(path, {})", "                    parsed = {}", "読めない表"),
     ("読めない表を名指ししない", "    bad: list[str] = list(history.unreadable)", "    bad: list[str] = []", "読めない表"),
-    ("見出しを見ない", "    if not rows or rows[0] != qa.COLUMNS:", "    if not rows:", "読めない表"),
+    ("見出しを見ない", "    if not rows or rows[0] not in (qa.COLUMNS, OLD_COLUMNS):", "    if not rows:", "読めない表"),
     ("結果なしを数えない", "none = [d for d in decisions if d.result is None and d.result_malformed is None]", "none = []", "全部"),
     ("推奨のままを数えない", "kept = [d for d in decisions if d.result == rebuild.KEPT]", "kept = []", "全部"),
     ("形に反する結果を名指ししない", '        bad.append(f"{rebuild.label(d.issue)}: {rebuild.RESULT}{d.outcome()}")', "        pass", "全部"),
@@ -269,6 +281,13 @@ MUTATIONS = [
     ("PR の形を見ない", "and type(pr.get(\"additions\")) is int and type(pr.get(\"deletions\")) is int):", "):", "PR に行数が無い"),
     ("git でないディレクトリでも続ける", '            raise Bad(f"{repo}: git のリポジトリでない', '            return\n            raise Bad(f"{repo}: git のリポジトリでない', "git のリポジトリでない"),
     ("Q&A 表の無いリポジトリを黙る", "    if not history.commits:", "    if False:", "Q&A 表の無いリポジトリ"),
+    ("前の形の見出しを読めないと読む", "rows[0] not in (qa.COLUMNS, OLD_COLUMNS)", "rows[0] != qa.COLUMNS", "まだ確かめていない時点（--ref）"),
+    ("いまの暫定反映を数えない", "{len(history.still)} 件——", "{count['まだ暫定反映']} 件——", "全部"),
+    ("--summary でも SHA を出す", "{'' if args.summary else history.tip[:7] + ' '}", "{history.tip[:7] + ' '}", "--summary"),
+    ("元を 2 つ持つ PR を二重に数える", 'counted_prs.update((p["number"], p) for p in rework)',
+     'counted_prs.update((p["number"] * 1000 + len(counted_prs), p) for p in rework)', "全部"),
+    ("印の元が数えた件に無い Issue を黙る", "    for key in sorted(set(marked) - keys):", "    for key in []:", "全部"),
+    ("印の元が数えた件に無い PR を黙る", "    for key in sorted(set(marked_prs) - keys):", "    for key in []:", "全部"),
     ("数えきれなくても 0", "    return 1 if bad else 0", "    return 0", "全部"),
 ]
 
@@ -327,6 +346,7 @@ def main() -> int:
         (work / "nolines.json").write_text(json.dumps([{k: v for k, v in PRS[0].items() if k != "additions"}], ensure_ascii=False),
                                            encoding="utf-8")
         (work / "object.json").write_text("{}", encoding="utf-8")
+        (work / "noprs.json").write_text("[]", encoding="utf-8")
 
         print("正しい本体")
         for case in CASES:
