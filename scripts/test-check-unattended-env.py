@@ -1316,6 +1316,11 @@ def notification_layer_scenarios(mod, bad):
         _, items, _ = run(mod, env)
         check("通知: 壊れた user の settings を通ったら、グローバル設定の true でも判定できない",
               status_of(items, agent) == [mod.UNKNOWN], bad)
+        env.local(on)
+        _, items, _ = run(mod, env)
+        check("通知: 読めない層が値のある層より下なら判定に使わない（local の true は良い）",
+              status_of(items, agent) == [mod.GOOD], bad)
+        env.local({})
         # 厳密に
         env.user({**base, "agentPushNotifEnabled": "true", "inputNeededNotifEnabled": 1})
         _, items, _ = run(mod, env)
@@ -1565,6 +1570,10 @@ MUTATIONS = {
         "    value, layer = effective(stack, key)\n",
         "    value, layer = effective([x for x in stack if x[0] in ('project', 'local')] + [x for x in stack if x[0] == 'user']\n"
         "                             + [x for x in stack if x[0] not in ('user', 'project', 'local')], key)\n"),
+    "通知で読めない層がどこかにあれば判定できないにする": (
+        "    value, layer = effective(stack, key)\n",
+        "    for _n, _p, _d in stack:\n        if isinstance(_d, Unreadable):\n            return _d, _n\n"
+        "    value, layer = effective(stack, key)\n"),
     "通知を自動継続と同じ層（policy・flag・user）だけから読む": (
         "    value, layer = effective(stack, key)\n",
         "    value, layer = effective(stack, key, SESSION_LAYERS)\n"),
