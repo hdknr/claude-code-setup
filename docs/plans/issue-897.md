@@ -63,7 +63,9 @@ main へのマージでプラグインの配布（dev-loop 1.100.0）。公開�
   **この回の結果（失敗 1: `test-run-serial.py`）は判定に使わない**——走っているあいだに著者がこの worktree の `run-serial.py` と
   `test-run-serial.py` を書き換えており（守る 38 行に対して変異 31 件の途中の状態を読んだ）、使うのは所要時間だけ。
   所要時間も、書き換えの途中の `test-run-serial.py` の分だけずれうる（`check-all.py` は検査ごとの所要時間を出さないので、どれが全体を決めたかは確かめていない。
-  走っている途中に `ps` で見た最後の長い検査は `test-ledger.py`（13 分 41 秒の時点で走っていた））。この周の終わりの `check-all.py` でもう 1 度測る。
+  走っている途中に `ps` で見た最後の長い検査は `test-ledger.py`（13 分 41 秒の時点で走っていた））。
+- **2 回目**（実装のコミット `1374e82` の木。順番待ちで待たずに枠を取った。負荷の平均は終わった時点で 10〜25）: **860 秒（約 14.3 分）**、67/67 本・失敗 0。
+  既定の 3600 秒はその約 4.2 倍。
 
 ## verify の受入基準
 
@@ -91,7 +93,9 @@ main へのマージでプラグインの配布（dev-loop 1.100.0）。公開�
 - 周の在り処: ブランチ `issue/897-run-serial-timeout`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-897`・
   起点 `6f51485`・base（`git merge-base origin/main HEAD`）`6f51485ac3f374e3263927b4773beb88b9265fdf`（start-point `origin/main`）
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: 未着手
+- 実装の歯止め: `check-all.py` 67/67・失敗 0（`1374e82`。順番待ち越し）。`test-run-serial.py` 単独で 197 判定・失敗 0（枠を取った後 約 222 秒）
+- 1 パス目の指摘対応の起点: このコミット（計画ファイルの更新）の SHA——関門に渡した時点の HEAD。PR コメントにも書く
+- 関門: 1 パス目を起動（Verifier・`/code-review`）
 - 交絡を潰した手順: （下に追記する）
 
 ## 既知の限界・決着済みの論点
