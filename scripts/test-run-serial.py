@@ -588,6 +588,187 @@ def observe_deadline(script: Path, tmp: Path, tag: str) -> dict:
     return out
 
 
+# 持ち主の役（#898）: 1 行出して <名前>.start を書き、go が現れるまで待つ。`tick` なら待つあいだ出力を出し続ける（出力が進む持ち主）、
+# `quiet` なら最初の 1 行の後は何も出さない（出力が止まった持ち主）。
+TICKER = r"""
+import sys, time, pathlib
+d, name, mode = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+print(f"{name} を始めた", flush=True)
+(d / f"{name}.start").write_text("")
+end = time.time() + 60
+while not (d / "go").exists() and time.time() < end:
+    if mode == "tick":
+        print("進んでいる", flush=True)
+    time.sleep(0.1)
+"""
+
+# 本体を読み込み、`STALL`・`REPORT` を差し替えて `main` を呼ぶ起動口——600 秒・60 秒を待たずに、止まっている疑いと出し直しを見る（#898）
+LAUNCHER = r"""
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("rs_launched", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+mod.STALL, mod.REPORT = float(sys.argv[2]), float(sys.argv[3])
+sys.exit(mod.main(sys.argv[4:]))
+"""
+HOLDER_STALL = "3"
+HOLDER_REPORT = "1"
+
+
+def lockdir_state(lockdir: Path) -> dict | None:
+    """枠のディレクトリの中身（名前 → 中身・`st_mtime_ns`）。ディレクトリが無ければ None。"""
+    if not lockdir.exists():
+        return None
+    return {f.name: (f.read_bytes(), f.stat().st_mtime_ns) for f in sorted(lockdir.iterdir())}
+
+
+def report_blocks(text: str) -> list[dict[str, str]]:
+    """待ち手の出力を、持ち主を出した塊（`走っているもの:` の行から次のそれまで）ごとに {"pid N": 行} にする。"""
+    blocks: list[dict[str, str]] = []
+    for line in text.splitlines():
+        if "走っているもの:" in line:
+            blocks.append({})
+        elif blocks and (m := re.match(r"run-serial:   (pid [0-9]+)・", line)):
+            blocks[-1][m.group(1)] = line
+    return blocks
+
+
+def by_pid(text: str) -> dict[str, str]:
+    """`holders` の口の出力を {"pid N": 行} にする。"""
+    return {m.group(1): line for line in text.splitlines() if (m := re.match(r"(pid [0-9]+)・", line))}
+
+
+def observe_holders(script: Path, tmp: Path, tag: str) -> dict:
+    """枠 3 を、出力が止まった持ち主 S・出力が進む持ち主 T・出力がファイルでない持ち主 U でふさぎ、待ち手 W と `holders` の口が出すものを読む（#898）。
+
+    `STALL` は 3 秒・`REPORT` は 1 秒に差し替える（`LAUNCHER`）。判定は出力の行で決め、W は S に疑いが出た塊を見る。"""
+    import importlib.util
+    root = tmp / f"{tag}-holders"
+    wt = build_repo(root, "並行の検査: 3\n")
+    marks = tmp / f"{tag}-holders-marks"
+    marks.mkdir()
+    ticker = tmp / f"{tag}-ticker.py"
+    ticker.write_text(TICKER, encoding="utf-8")
+    launcher = tmp / f"{tag}-launcher.py"
+    launcher.write_text(LAUNCHER, encoding="utf-8")
+    worker = tmp / f"{tag}-holders-worker.py"
+    worker.write_text(WORKER, encoding="utf-8")
+    lockdir = Path(subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root,
+                                  capture_output=True, text=True, check=False).stdout.strip()) / "dev-loop-serial"
+    held = {}
+    for name, mode, to_file in (("s", "quiet", True), ("t", "tick", True), ("u", "quiet", False)):
+        out = open(marks / f"{name}.out", "w") if to_file else subprocess.DEVNULL
+        err = open(marks / f"{name}.err", "w") if to_file else subprocess.DEVNULL
+        held[name] = subprocess.Popen([sys.executable, str(script), "--", sys.executable, str(ticker), str(marks), name, mode],
+                                      cwd=root, stdout=out, stderr=err)
+    all_started = wait_until(lambda: all((marks / f"{n}.start").exists() for n in held), list(held.values()))
+    pid = {n: f"pid {p.pid}" for n, p in held.items()}
+    w_err = marks / "w.err"
+    w = subprocess.Popen([sys.executable, str(launcher), str(script), HOLDER_STALL, HOLDER_REPORT,
+                          "--", sys.executable, str(worker), str(marks), "w", "w.go-never", "1"],
+                         cwd=wt, stdout=subprocess.DEVNULL, stderr=open(w_err, "w"))
+
+    def flagged_block() -> dict[str, str] | None:
+        for block in report_blocks(w_err.read_text(encoding="utf-8")):
+            if "止まっている疑い" in block.get(pid["s"], ""):
+                return block
+        return None
+
+    wait_until(lambda: flagged_block() is not None, [w], limit=20)
+    block = flagged_block() or {}
+    w_text = w_err.read_text(encoding="utf-8")
+    before = lockdir_state(lockdir)
+    try:
+        h = subprocess.run([sys.executable, str(launcher), str(script), HOLDER_STALL, HOLDER_REPORT, "holders"], cwd=wt,
+                           capture_output=True, text=True, timeout=10)
+        h_code, h_out = h.returncode, h.stdout
+    except subprocess.TimeoutExpired:
+        h_code, h_out = None, ""
+    after = lockdir_state(lockdir)
+    w_ran_early = (marks / "w.start").exists()
+    (marks / "go").write_text("")
+    codes = finish(*held.values(), w)
+    # 走り終えた後: 枠のファイルには記録が残るが、pid は居ない
+    done = subprocess.run([sys.executable, str(script), "holders"], cwd=root, capture_output=True, text=True, timeout=LIMIT)
+    # 枠のディレクトリがまだ無いリポジトリ
+    fresh = tmp / f"{tag}-holders-fresh"
+    build_repo(fresh, None)
+    fresh_dir = Path(subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=fresh,
+                                    capture_output=True, text=True, check=False).stdout.strip()) / "dev-loop-serial"
+    f = subprocess.run([sys.executable, str(script), "holders"], cwd=fresh, capture_output=True, text=True, timeout=LIMIT)
+    extra = subprocess.run([sys.executable, str(script), "holders", "x"], cwd=fresh, capture_output=True, text=True, timeout=LIMIT)
+
+    spec = importlib.util.spec_from_file_location(f"rs_holders_{tag}", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    doc = mod.__doc__ or ""
+    stall_doc = re.search(r"`STALL`（([0-9]+) 秒）", doc)
+    report_doc = re.search(r"`REPORT`（([0-9]+) 秒）", doc)
+    hp = by_pid(h_out)
+    s_out = str((marks / "s.out").resolve())
+    return {
+        "S・T・U が走った": all_started,
+        "W の出力": w_text,
+        "W が出し直した（持ち主を出した塊の数）": len(report_blocks(w_text)),
+        "W: S に疑いが出た塊": block,
+        "holders の終了コード": h_code,
+        "holders の出力": hp,
+        "holders の前後で枠のディレクトリが同じ": before is not None and before == after,
+        "W は持ち主が居るあいだ走らなかった": not w_ran_early,
+        "pid": pid,
+        "S の出力のパス": s_out,
+        "終了コード": codes,
+        "走り終えた後の holders": (done.returncode, done.stdout.strip()),
+        "枠のディレクトリが無いときの holders": (f.returncode, f.stdout.strip(), fresh_dir.exists()),
+        "holders に引数": (extra.returncode, extra.stderr),
+        "docstring の STALL": int(stall_doc.group(1)) if stall_doc else None,
+        "docstring の REPORT": int(report_doc.group(1)) if report_doc else None,
+        "STALL": getattr(mod, "STALL", None),
+        "REPORT": getattr(mod, "REPORT", None),
+    }
+
+
+# 改行を含むコマンドの持ち主（#898 の 1 パス目）: `python3 -c` の中身が複数行。1 行出して x.start を書き、go を待つ
+SHARED_HOLDER = "import sys, time, pathlib\nd = pathlib.Path(sys.argv[1])\nprint('x', flush=True)\n(d / 'x.start').write_text('')\nend = time.time() + 60\nwhile not (d / 'go').exists() and time.time() < end:\n    time.sleep(0.1)\n"
+
+
+def observe_shared(script: Path, tmp: Path, tag: str) -> dict:
+    """枠 1 を持ち主 X（コマンドに改行がある・出力は x.out）がふさぎ、待ち手 W の標準エラーも同じ x.out に足す（#898 の 1 パス目）。
+
+    W は自分の書き込みで x.out を新しくするので、X の出力の最終更新を「分からない」と言うはず。X の行は改行を書き換えて 1 行のはず。"""
+    root = tmp / f"{tag}-shared"
+    wt = build_repo(root, None)
+    marks = tmp / f"{tag}-shared-marks"
+    marks.mkdir()
+    launcher = tmp / f"{tag}-shared-launcher.py"
+    launcher.write_text(LAUNCHER, encoding="utf-8")
+    worker = tmp / f"{tag}-shared-worker.py"
+    worker.write_text(WORKER, encoding="utf-8")
+    out = marks / "x.out"
+    with open(out, "w") as fx:
+        x = subprocess.Popen([sys.executable, str(script), "--", sys.executable, "-c", SHARED_HOLDER, str(marks)],
+                             cwd=root, stdout=fx, stderr=fx)
+    started = wait_until(lambda: (marks / "x.start").exists(), [x])
+    with open(out, "a") as fw:
+        w = subprocess.Popen([sys.executable, str(launcher), str(script), HOLDER_STALL, HOLDER_REPORT,
+                              "--", sys.executable, str(worker), str(marks), "w", "w.go-never", "1"],
+                             cwd=wt, stdout=subprocess.DEVNULL, stderr=fw)
+    # STALL（3 秒）を過ぎるまで W に出し直させる——塊が 5 つ（4 秒以上）出るのを待つ
+    wait_until(lambda: len(report_blocks(out.read_text(encoding="utf-8"))) >= 5, [w], limit=20)
+    blocks = report_blocks(out.read_text(encoding="utf-8"))
+    h = subprocess.run([sys.executable, str(script), "holders"], cwd=root, capture_output=True, text=True, timeout=LIMIT)
+    (marks / "go").write_text("")
+    codes = finish(x, w)
+    key = f"pid {x.pid}"
+    return {
+        "X が走った": started,
+        "W の塊の数": len(blocks),
+        "W の最後の塊の X の行": blocks[-1].get(key, "") if blocks else "",
+        "holders の X の行": by_pid(h.stdout).get(key, ""),
+        "終了コード": codes,
+    }
+
+
 MUTATIONS = {
     # 注釈 `# 守る N: <文言>` は、本体の docstring の「守る」の N 行目の書き出し（「- 」の後ろ）と同じ文言にする——
     # main がこの並び・番号・文言を本体と突き合わせる（#758。番号を手で追うと違う行に着いた）
@@ -597,8 +778,9 @@ MUTATIONS = {
         "                pass"),
     # 守る 2: 待たされたら、待っていることと
     "待っていると言わない": (
-        "            say(f\"待っている（同じリポジトリで同時に {slots} 本まで）。走っているもの: \"\n"
-        "                + (\"; \".join(running) if running else \"（読めなかった）\"))",
+        "            say(head + (\"\" if running else \" （読めなかった）\"))\n"
+        "            for line in running:\n"
+        "                say(f\"  {line}\")",
         "            pass"),
     # 守る 3: 走らせたコマンドの終了コードをそのまま返す
     "終了コードを捨てる": (
@@ -758,13 +940,62 @@ MUTATIONS = {
     "猶予の後に数え直さない": (
         "    targets += [pid for pid in (descendants(*living) if living else []) or [] if pid not in targets]",
         "    pass"),
+    # 守る 42: 待たされているあいだ、`REPORT` 秒ごとに持ち主を出し直す
+    "持ち主を出し直さない": (
+        "        if waited is None or now - reported >= REPORT:",
+        "        if waited is None:"),
+    # 守る 43: 持ち主ごとに、枠を取ってからの経過時間を出す
+    "経過を出さない": (
+        "        parts.append(f\"経過 {span(now - begun)}（{started} から）\")",
+        "        pass"),
+    # 守る 44: 持ち主ごとに、出力の最終更新
+    "出力のファイルを記録しない": (
+        "\"outputs\": output_files()}",
+        "\"outputs\": []}"),
+    # 守る 45: 出力が `STALL` 秒以上増えていない持ち主に
+    "止まっている疑いを出さない": (
+        "    if updated is not None and now - updated >= STALL:",
+        "    if False:"),
+    # 守る 46: 出力が `STALL` 秒の内に増えた持ち主には
+    "出力が進んでいても疑う": (
+        "    if updated is not None and now - updated >= STALL:",
+        "    if updated is not None and now - updated >= 0:"),
+    # 守る 47: 出力の最終更新が分からない持ち主（出力がファイルでない）には
+    "分からない持ち主も疑う": (
+        "    if updated is not None and now - updated >= STALL:",
+        "    if updated is None or now - updated >= STALL:"),
+    # 守る 48: `holders` は持ち主を 1 回だけ出して 0 で終わる
+    "holders が枠を取る": (
+        "    running = holders(common / \"dev-loop-serial\")\n    print(",
+        "    acquire(common / \"dev-loop-serial\", 1, os.getppid())\n    running = holders(common / \"dev-loop-serial\")\n    print("),
+    # 守る 49: `holders` は枠のディレクトリが無ければ作らない
+    "holders が枠のディレクトリを作る": (
+        "    running = holders(common / \"dev-loop-serial\")\n    print(",
+        "    (common / \"dev-loop-serial\").mkdir(exist_ok=True)\n    running = holders(common / \"dev-loop-serial\")\n    print("),
+    # 守る 50: `holders` は枠のファイルに書かない
+    "holders が枠のファイルに書く": (
+        "            info = json.loads(path.read_text(encoding=\"utf-8\") or \"{}\")\n        except (OSError, ValueError):\n            continue\n        if not isinstance(info, dict) or not info:\n            continue\n        pid",
+        "            path.touch()\n            info = json.loads(path.read_text(encoding=\"utf-8\") or \"{}\")\n        except (OSError, ValueError):\n            continue\n        if not isinstance(info, dict) or not info:\n            continue\n        pid"),
+    # 守る 51: 枠のファイルに残った記録のうち、pid が居ないもの
+    "居なくなった pid も出す": (
+        "        if type(pid) is not int or pid <= 0 or not alive(pid):",
+        "        if type(pid) is not int or pid <= 0:"),
+    # 守る 52: 待ち手は、自分の出力と同じファイルに出す持ち主の
+    "自分と同じ出力のファイルも見る": (
+        "    outputs = [out for out in outputs if not (isinstance(out, dict) and (out.get(\"dev\"), out.get(\"ino\")) in mine)]",
+        "    pass"),
+    # 守る 53: 持ち主の行に改行などの制御文字を出さない
+    "制御文字を書き換えない": (
+        "    line = flat(\"・\".join(parts))",
+        "    line = \"・\".join(parts)"),
 }
 
 OBSERVERS = {
     "serial": observe_serial, "parallel": observe_parallel, "codes": observe_codes, "nested": observe_nested,
     "cannot": observe_cannot, "decl": observe_decl, "sigterm": observe_sigterm, "parse": observe_parse,
     "sigint": observe_sigint, "timeout": observe_timeout, "timeout-kill": observe_timeout_kill, "orphan": observe_orphan,
-    "deadline": observe_deadline, "timeout-late": observe_timeout_late,
+    "deadline": observe_deadline, "timeout-late": observe_timeout_late, "holders": observe_holders,
+    "shared": observe_shared,
 }
 
 # 変異ごとに当てる観測（全部を当てると、待ちの上限で止まる観測が重なって数分かかる）。
@@ -811,6 +1042,18 @@ MUTATION_PROBE = {
     "既定の期限を掛けない": ("deadline",),
     "入れ子では期限を掛けない": ("deadline",),
     "猶予の後に数え直さない": ("timeout-late",),
+    "持ち主を出し直さない": ("holders",),
+    "経過を出さない": ("holders",),
+    "出力のファイルを記録しない": ("holders",),
+    "止まっている疑いを出さない": ("holders",),
+    "出力が進んでいても疑う": ("holders",),
+    "分からない持ち主も疑う": ("holders",),
+    "holders が枠を取る": ("holders",),
+    "holders が枠のディレクトリを作る": ("holders",),
+    "holders が枠のファイルに書く": ("holders",),
+    "居なくなった pid も出す": ("holders",),
+    "自分と同じ出力のファイルも見る": ("shared",),
+    "制御文字を書き換えない": ("shared",),
 }
 
 
@@ -921,6 +1164,49 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
         ck("親が変わった main は 125", r["main は 125"])
         ck("親が変わった main はコマンドを走らせていない", r["main は走らせていない"])
         ck("親が変わった main は呼び出し元が居ないと言う", r["main は呼び出し元が居ないと言った"])
+    if "holders" in o:
+        h = o["holders"]
+        pid = h["pid"]
+        head(f"\n持ち主の表示（#898。STALL {HOLDER_STALL} 秒・REPORT {HOLDER_REPORT} 秒に差し替え）: 出力が止まった S・進む T・ファイルでない U")
+        ck("docstring の「持ち主の表示」に STALL と REPORT の秒数がある", h["docstring の STALL"] is not None and h["docstring の REPORT"] is not None)
+        ck(f"STALL が docstring と同じ（{h['STALL']}・{h['docstring の STALL']}）", h["STALL"] == h["docstring の STALL"])
+        ck(f"REPORT が docstring と同じ（{h['REPORT']}・{h['docstring の REPORT']}）", h["REPORT"] == h["docstring の REPORT"])
+        ck("S・T・U が走った", h["S・T・U が走った"])
+        ck(f"W が持ち主を出し直した（塊 {h['W が出し直した（持ち主を出した塊の数）']} 個）", h["W が出し直した（持ち主を出した塊の数）"] >= 2)
+        ck("W: 待っていると言った", "待っている" in h["W の出力"])
+        for label, lines in (("W", h["W: S に疑いが出た塊"]), ("holders", h["holders の出力"])):
+            s_line, t_line, u_line = (lines.get(pid[n], "") for n in "stu")
+            ck(f"{label}: S・T・U を 1 行ずつ出した", all((s_line, t_line, u_line)))
+            ck(f"{label}: 各行にコマンドと経過を出した",
+               all("ticker.py" in x and re.search(r"・経過 [0-9]+ (?:秒|分)", x) for x in (s_line, t_line, u_line)))
+            ck(f"{label}: S・T の行に出力の最終更新を出した（S は出力のファイルを名指し）",
+               all(re.search(r"・出力の最終更新 [0-9]+ (?:秒|分).* 前（", x) for x in (s_line, t_line)) and h["S の出力のパス"] in s_line)
+            ck(f"{label}: 出力が止まった S に止まっている疑い", "止まっている疑い" in s_line)
+            ck(f"{label}: 出力が進む T には疑いを出さない", bool(t_line) and "止まっている疑い" not in t_line)
+            ck(f"{label}: 出力がファイルでない U は分からないと言い、疑いを出さない",
+               "出力の最終更新は分からない（出力がファイルでない" in u_line and "止まっている疑い" not in u_line)
+        ck(f"holders: 待たずに 0 で終わった（{h['holders の終了コード']}）", h["holders の終了コード"] == 0)
+        ck("holders: 前後で枠のディレクトリの中身（名前・中身・更新時刻）が同じ", h["holders の前後で枠のディレクトリが同じ"])
+        ck("W は持ち主が居るあいだ走らず、全部 0 で終わった", h["W は持ち主が居るあいだ走らなかった"] and h["終了コード"] == [0, 0, 0, 0])
+        code, out = h["走り終えた後の holders"]
+        ck(f"走り終えた後の holders: 記録が残っていても居ない pid は出さない（{code}・{out!r}）", code == 0 and out == "走っているものは無い")
+        code, out, made = h["枠のディレクトリが無いときの holders"]
+        ck(f"枠のディレクトリが無いときの holders: 0 で終わり、作らない（{code}・{out!r}・作った {made}）",
+           code == 0 and out == "走っているものは無い" and not made)
+        code, err = h["holders に引数"]
+        ck(f"holders に引数を足すと 2 を返し、理由を言う（{code}）", code == 2 and "holders" in err)
+    if "shared" in o:
+        x = o["shared"]
+        head("\n待ち手と同じ出力のファイルに出す持ち主・コマンドに改行がある持ち主（#898 の 1 パス目）")
+        ck("X が走った", x["X が走った"])
+        ck(f"W が STALL を過ぎるまで出し直した（塊 {x['W の塊の数']} 個）", x["W の塊の数"] >= 5)
+        line = x["W の最後の塊の X の行"]
+        ck("W: X の出力の最終更新を、自分と同じファイルなので分からないと言う（疑いを出さない）",
+           "出力の最終更新は分からない（待っている自分と同じ出力のファイル" in line and "止まっている疑い" not in line)
+        for label, got in (("W", line), ("holders", x["holders の X の行"])):
+            ck(f"{label}: 改行のあるコマンドの X が 1 行（改行を \\n に書き換え、同じ行に経過）",
+               "\\n" in got and re.search(r"・経過 [0-9]+ (?:秒|分)", got) is not None)
+        ck("X と W が 0 で終わった", x["終了コード"] == [0, 0])
 
 
 def annotations(test_source: str) -> list[tuple[str, int, str]]:
