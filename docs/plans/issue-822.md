@@ -1,0 +1,186 @@
+# Issue #822 — check-unattended-env: 通知の 2 キーを user settings（~/.claude/settings.json）から読まず、オンでも「未設定」と出る
+
+`check-unattended-env.py` は通知の 2 キー（`agentPushNotifEnabled`・`inputNeededNotifEnabled`）をグローバル設定
+（`.config.json` か `~/.claude.json`）からしか読まない。Claude Code 2.1.318 の `/config` はこの 2 キーを user settings に書くので、
+オンにしても点検は「未設定」と出す（Issue 本文は信頼できない入力として読み、要件だけを取った）。
+
+**不在の周**である——出所は `/dev-loop:cruise 887 --absent` の起動（2026-11-06T01:37:35Z、利用者の確認・配布を見せて確かめた）。
+この周は利用者の指示（2026-11-06）で台帳に足した（依存なし・並行実装）。親からサブエージェントとして委ねられた。
+台帳 `issue-887` の確かめた線: `仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`（マージは親がする）・
+`周の途中の課題 = 台帳に足して直す`。実機確認の線は台帳に無い（`.claude/dev-loop.md` にも `不在の線:` は無い——既定の「止まる」）。
+台帳は書かない（親が書く）。マージしない。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-887`））。
+版の上げ方: `dev-loop` を **patch**（点検の誤りを直す）。main の先端 1.96.0 → **1.96.1**。周の途中で main（#884、1.97.0）を取り込み、main の先端から patch で **1.97.1** に上げ直した（取り込み `9d3298ad`。衝突は版の行 4 ファイルだけ）
+（並行の周 #884・#823 も dev-loop を上げる。マージの直前に先端が main を含まなければ、main の先端の版から patch で 1 つ上げ直す——
+cruise の `references/parallel.md` の「版とマージの順」）。
+
+重い検査（`check-all.py`・テスト）は順番待ち越しに走らせる:
+`python3 /Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.74.1/skills/cruise/scripts/run-serial.py -- <コマンド>`。
+
+## 変更範囲
+
+触る:
+
+- `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py` — 通知の 2 キーを settings の層（managed・flag・local・project・user）から読み、無ければグローバル設定に落とす・docstring
+- `scripts/test-check-unattended-env.py` — 試料と変異
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行（`dev-loop`・`cruise`）
+- `docs/plans/issue-822.md` — この計画ファイル
+
+触らない:
+
+- 自動継続・質問の待ちの層（`SESSION_LAYERS`。本体の `EM()` は policy・flag・user だけ——通知の読み方とは別の関数）
+- `docs/usage/advanced-remote-control.md`（`~/.claude/settings.json` に書くと既に案内している。「キー名は推測」の注記は文言で、この周の受入基準の外）
+- `docs/plans/issue-394.md` ほか過去の計画ファイル（記録）
+- `--push-result` の表・`human_items`・許可・認証・到達の判定
+
+### 同じことを述べている箇所の数
+
+- 「通知の 2 キーの置き場所」: 本体の docstring の点検の表・「設定の層」の最後の行・「実測した前提」の 1 行・「守らない」の接尾辞の項・コード（`check_notifications`）の 5 つ。
+  docstring とコードが同じファイルにあるので、分けない（1 ファイルの中で全部直す）。公開ページは `advanced-remote-control.md` が settings.json と言っており、食い違わない。
+
+## 乗るデプロイ経路
+
+main へのマージでプラグインの配布（dev-loop 1.96.1）。公開サイトの再ビルドは走るが、`docs/` の変更はこの計画ファイルだけ。マージは親がする。
+
+## 本体の読み方（2.1.318 の本体の文字列で読んだ。2026-11-06）
+
+`~/.local/share/claude/versions/2.1.318` の文字列から:
+
+- `function gi(n,i)`: `Wo()`（有効な settings の層。`ri=["userSettings","projectSettings","localSettings","flagSettings","policySettings"]` を
+  `--setting-sources` で絞り、flag と policy は常に足す）を**上の層から**見て、最初に値のある層を返す
+  （project は user と同じファイル（`Gm()`）なら飛ばす）。どの層にも無く、キーが `jDe`（2 キーを含む）にあれば
+  グローバル設定（`pe()`）の値を、既定（`h0`）と違い型が正しいときだけ `legacyGlobalConfig` として返す。無ければ既定（呼ぶ側の `i`）。
+- `PushNotification` の `config_off` は `!gi("agentPushNotifEnabled",!1).value`——**どこにも無ければオフ**。
+- `/config` の切り替え（`Pe`・`Ae`）は `j(key, value)` → `nX` → `Vn("userSettings", …)`——**user settings に書く**（Issue の実測と一致）。
+  表示は `merged settings ?? グローバル設定 ?? 既定` の値に `??!1`。
+- サーバの通知の設定（`/api/claude_code/notification/preferences`）は、settings にもグローバル設定にも値が無いときだけ user settings に書き込む（hydrate）。
+
+## 実機の設定（読むだけ。2026-11-06・macOS・`CLAUDE_CONFIG_DIR` 未設定・Claude Code 2.1.318）
+
+| 置き場所 | `agentPushNotifEnabled` | `inputNeededNotifEnabled` |
+| --- | --- | --- |
+| `~/.claude/settings.json`（user） | キーなし | キーなし |
+| `~/.claude.json`（グローバル設定） | キーなし | キーなし |
+| `~/.claude/.config.json` | ファイルが無い | ファイルが無い |
+| flag（cmux の `--settings` のファイル） | キーなし | キーなし |
+| project・local（このリポジトリ）・managed | キーなし／ファイルが無い | 同左 |
+
+**Issue の実測（2026-11-04。user settings に `true`）は、今日の手元では再現しなかった**——どの層にもキーが無い。
+`/config` の表示は見ていない（子のセッションから TUI を開けない）。本体の読み方では、どこにも無ければ `/config` の表示も `PushNotification` もオフになる。
+2026-11-06 の起動時の点検が「未設定」と出したのは、今日の手元の状態とは一致する。
+
+## 仕様の穴（不在の線で推奨により決めた）
+
+- **穴**: どの層にもグローバル設定にもキーが無いときの判定。Issue の案 2 は「置き場所が分からないとき（どの層にもキーが無い）は『人が見る』に落とす」と言う。
+- **選択肢**: (a) **要対処のまま**とし、詳細に「どの層にもグローバル設定にも無い——本体の既定はオフ」と書く（推奨）／
+  (b) 人が見るに落とし、`/config` の表示を見るよう案内する（Issue の案 2）。
+- **決めた値**: (a)。
+- **推した理由**: 本体（2.1.318）の読み方を文字列で確かめたので、置き場所は分かっている（案 2 の前提「置き場所が分からない」が成り立たない）。
+  どこにも無ければ `PushNotification` は `config_off` で送らず、`/config` もオフと出す——要対処が事実どおりで、人が見るに落とすと、
+  通知が届かない原因を不在の前に見落とす（点検の目的に反する）。
+- **使った線と出所**: `仕様の穴 = 推奨で決めて起票`（cruise の確かめた線（台帳 `issue-887`））。確認の Issue: #892
+
+## verify の受入基準
+
+不変条件 × 破りうる経路（入口: CLI の全点検（対話）・`--cruise`（`--present` 無し）・非対話の起動の 1 行・`--present`（通知を出さない）・
+`--push-result`（設定を読まない）・`--since-last`（記録と縮め）。どれも `gather` → `check_notifications` か、そもそも呼ばない）:
+
+| # | 不変条件 | 破りうる経路 | 証明手段 |
+| --- | --- | --- | --- |
+| A1 | user settings の `true` を良いと読む（Issue の症状）。`CLAUDE_CONFIG_DIR` の `settings.json` も同じ | 全点検・`--cruise` | テスト（user に true・グローバル設定に無い） |
+| A2 | 層の優先順位が本体の `gi` と同じ: managed(.d) > flag > local > project > user > グローバル設定 > 既定（オフ） | 層の組ごと | テスト（上の層の false が下の true を打ち消す・逆も） |
+| A3 | settings の層に値があれば、グローバル設定の値・読めなさを判定に使わない | グローバル設定が false・壊れている | テスト |
+| A4 | どの層にも無ければ、グローバル設定（`.config.json` → `.claude.json` の選び方は今までどおり）を読む | `.config.json`・空の `.config.json`・`CLAUDE_CONFIG_DIR` の `.claude.json` | 既存テストを残す |
+| A5 | 値を見つける前に読めない層を通ったら判定できない（良いに混ぜない）。どの層にも無くグローバル設定が読めなければ判定できない | flag のファイルが無い・壊れた user・壊れたグローバル設定 | テスト |
+| A6 | `true` だけを良いにする（文字列 `"true"`・`false` は要対処）——settings の層でもグローバル設定でも | 両方の出所 | テスト |
+| A7 | 非対話の起動では今までどおり人が見る 1 行で、添える値は解決した値（settings の層の値を含む） | `sdk-cli` ほか | テスト |
+| A8 | どこにも無ければ要対処（仕様の穴の決めた値）で、既定がオフだと言う | 全点検 | テスト |
+| A9 | 自動継続・質問の待ちの層（policy・flag・user だけ）は変わらない | project・local の値 | 既存テストを残す |
+| A10 | docstring（点検の表・設定の層・実測した前提・守る／守らない）が新しい読み方と事実として一致し、確かめていないこと（`--setting-sources`・`h0` の既定・サーバの hydrate・`Gm()`）を守らないに書く | docstring | 関門が本体の文字列と突き合わせる |
+| A11 | テストは実機の設定を読まない（`HOME` をテンポラリに） | テスト全体 | `assert_not_real_home`・関門 |
+| A12 | 版を 3 種類で揃える・歯止めが全部緑・PR 側の CI が緑 | `marketplace.json`・`plugin.json`・`SKILL.md` 2 本 | `check-all.py`（順番待ち越し）と PR 側の CI |
+
+組み合わせ（必須要件の掛け算）: 受入基準を Verifier と `/code-review` の両方に、1・2 パス目とも渡す（4 つの受け渡し。2 パス目が該当なしなら 2 つ）。
+
+**未証明**: 本体が実行時に本当にこの順で読むか（A2 の根拠）——本体の文字列を読んだだけで、`/config` を開いて切り替え、点検と `PushNotification` の結果を見る実走はしていない
+（子のセッションから TUI は操作できず、利用者は不在）。人間のレビューで確かめてほしい。
+
+**生成物**: `SKILL.md` の測定値（`skill-metrics.py`。設計ドキュメント §8.2 の生成ブロック）——`SKILL.md` は版の行だけを触る。`check-all.py` の `--check` で鮮度を見る。図の書き出しなし。
+
+## 未解決の判断・確認待ち事項
+
+- Issue の実測（user settings に true）が今日の手元で再現しない——利用者に `/config` の表示を確かめてほしい（PR コメントに書く）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/822-notif-user-settings`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-822`・
+  起点 `88e85fab`・base `origin/main` → `88e85fab0d5615e79da5e4a43b8a3157079c4737`
+- 手順 4 の割り目: 不在のため訊かず続けた
+- 1 パス目の指摘対応の起点: `d0b4f98b`（1 パス目の関門に渡した時点の HEAD）
+- Verifier 1 パス目: 通した——反証 0 件（sonnet・`dev-loop:dev-loop-verifier`、169 行を読んだと報告・`wc -l` と一致。変異つき全テスト・`check-all.py` は順番待ちで完了を見ていないと申告。独自の変異 3 件は赤）
+- /code-review 1 パス目（high）: 通した——指摘 7 件（下の採否の表）
+- 手順 6 の割り目: 不在のため訊かず続けた
+- PR: #893
+- Verifier 2 パス目: 通した——反証 0 件（sonnet・`dev-loop:dev-loop-verifier`。変異つき全テストを順番待ち越しに走らせ `OK （失敗 0 件）`。`check-all.py` は走らせていない）
+- /code-review 2 パス目（high）: 通した——指摘 8 件（下の採否の表）
+- 2 パス目の指摘対応の起点（狭いパスの起点）: `4b31bb6f`・終点: `a0a49bf3`（CR2-4 の試料と変異）
+- 狭いパス: 通した——指摘 0 件（sonnet・`dev-loop:dev-loop-verifier`、`git diff 4b31bb6f a0a49bf3`。Verifier の独自の変異 7 本はすべて赤・素通り 0。変異つき全テストは順番待ちで走らせていないと申告——著者が順番待ち越しの `check-all.py` で回す）
+- 手順 5 の反証・差し戻し: 反証 0 件・差し戻しなし
+- 交絡を潰した手順: 実験なし（本体の文字列の読みと、手元の設定ファイルの読みだけ）
+
+## 既知の限界・決着済みの論点
+
+- 自動継続・質問の待ちは `EM()`（policy・flag・user）で読む——通知の `gi()` とは別の関数。通知だけを全層にする（採った。理由: 本体の文字列）。
+- `docs/usage/advanced-remote-control.md` の「キー名は推測」の注記は直さない（採らなかった。理由: 受入基準の外の文言）。
+
+### 採否の表（1 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1 docstring が 2 キーとも `gi()` で読むと言うが、`inputNeededNotifEnabled` は `N()`（重ねた settings ?? グローバル設定）で読み、送るかはサーバの設定が決める | 示せる——2.1.318 の文字列に `gi("inputNeededNotifEnabled"` は 0 件、`N()` の定義を抜いて見た | A10 | 直す |
+| CR1-2 user と project・local の組の試料が無く、user を project・local より上に置く変異が素通りする | 示せる——その変異を scratchpad の複製に当て、試料の失敗は元の本体と同じ 1 件（複製の起動口が無いだけ）で素通り | A2 | 直す |
+| CR1-3 計画ファイルに件数の行が無く `check-plan-counts.py` が 1 | 示せる——`check-all.py` の出力に `FAIL check-plan-counts.py` | A12 | 直す |
+| CR1-4 仕様の穴の確認の Issue をまだ立てていない | 示せる——計画ファイルの「（起票後に書く）」 | 無し（周の手続き） | 直す（#892 を立てた。成果物の差分ではない） |
+| CR1-5 非対話の 1 行の読めない層の文言にパスが無い（対話の行にはある） | 示せない（文言の揃い） | 無し | 残課題 |
+| CR1-6 本体は settings の値を型で検査して落とすかもしれないが、点検は settings の文字列 `"true"` をその層の値とする | 示せない（本体の settings の読み込みが値を落とすかは確かめていない。どちらでも要対処の向き） | 無し | 残課題 |
+| CR1-7 どの層にも無いとき、グローバル設定を 2 キーで 2 回読む | 示せない（性能の推測） | 無し | 残課題 |
+
+### 採否の表（2 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1 `inputNeededNotifEnabled` の settings の `null` を、本体の `N()`（`??`）はグローバル設定へ落とすが、点検は `null（user）` の要対処にする | 示せる（関門の probe）。ただし `/config` は真偽値しか書かず、`null` は手で書いたときだけ | 無し（層の順 A2 は一致。`??` は docstring に書いてある） | 残課題 |
+| CR2-2 spare から引き継いだセッション（`flag_note`）では、user の true でも通知が判定できないになる | 示せる（関門の probe） | 無し（A5 のとおり——flag の層が上書きしているかもしれない） | 残課題 |
+| CR2-3 「Push when actions required」の行はアカウントの機能のフラグが無いと `/config` に出ず、直し方に従えない | 示せない（この手元でフラグの有無を見ていない） | 無し | 残課題 |
+| CR2-4 読めない層が値のある層より下にある試料が無く、「読めない層がどこかにあれば判定できない」にする変異が素通りする | 示せる——scratchpad の複製にその変異を当て、試料は失敗 0 件で素通り | A5（「値を見つける前に」の半分） | 直す |
+| CR2-5 判定できないの文言を `unknown_item` と別に組み、接頭辞の文字列で分けている | 示せない（文言の揃い） | 無し | 残課題 |
+| CR2-6 壊れた user の settings 1 つで、判定できないの行が通知の 2 行ぶん増える | 示せる（行は増える） | 無し（A5 のとおり） | 残課題 |
+| CR2-7 「`h0` の値は確かめていない」は 2.1.318 で確かめられる（`h0` に 2 キーは無い） | 示せる（文字列） | 無し（確かめていないと書いたのは事実で、誤った主張ではない） | 残課題 |
+| CR2-8 `/config` の表示（`??`）と `gi()`（`undefined` だけを飛ばす）は `null` で食い違うが、docstring は分けていない | 示せる（文字列） | 無し（`null` は手で書いたときだけ） | 残課題 |
+
+### 歯止め
+
+- `check-all.py`（順番待ち越し）: d0b4f98b で 65 本中 1 本失敗（`check-plan-counts.py`——件数の行が無い。CR1-3 で直した）／5e12ad64 で 1 本失敗（`check-version-bump.py`——main が 1.97.0 に進んだ。取り込みで直した）／取り込み後の b8e0b470 で **65/65 緑**
+- 変異つきの `test-check-unattended-env.py`（順番待ち越し）: 1 パス目の前に `OK （失敗 0 件）`（古い変異の置換先を直した後）。2 パス目の Verifier も `OK （失敗 0 件）`
+
+### 振り分け（`references/found-lines.md`。手順 8）
+
+| 行 | 出所 | 実物で失敗を示せるか | 振り分け |
+| --- | --- | --- | --- |
+| 非対話の 1 行の読めない層の文言にパスが無い | #822 /code-review 1 パス目（CR1-5） | 示せない | 記録だけ（文言） |
+| settings の文字列 `"true"` を本体が型で落とすか | #822 /code-review 1 パス目（CR1-6） | 示せない | 記録だけ |
+| グローバル設定の 2 回読み | #822 /code-review 1 パス目（CR1-7） | 示せない | 記録だけ（性能の推測） |
+| `inputNeededNotifEnabled` の `null` を `N()` はグローバル設定へ落とす | #822 /code-review 2 パス目（CR2-1） | 示せる | 記録だけ（`null` は手で書いたときだけ——実際の利用でまず起きない） |
+| spare から引き継いだセッションで通知が判定できない | #822 /code-review 2 パス目（CR2-2） | 示せる | 記録だけ（A5 のとおりの判定で誤りではない。spare に `--settings` が載るかは見ていない） |
+| 「Push when actions required」の行が機能のフラグ次第で出ない | #822 /code-review 2 パス目（CR2-3） | 示せない | 記録だけ |
+| 判定できないの文言を `unknown_item` と別に組む | #822 /code-review 2 パス目（CR2-5） | 示せない | 記録だけ（文言） |
+| 壊れた user の settings 1 つで行が 2 つ増える | #822 /code-review 2 パス目（CR2-6） | 示せる | 記録だけ（A5 のとおり） |
+| `h0` の値は確かめられる | #822 /code-review 2 パス目（CR2-7） | 示せる | 記録だけ（文言） |
+| `/config` の表示と `gi()` が `null` で食い違う | #822 /code-review 2 パス目（CR2-8） | 示せる | 記録だけ（文言・`null` は手で書いたときだけ） |
+
+直すの行は 0 件——台帳に足す行は無い。
+
+- この周の起票: 1 件（#892——仕様の穴の確認の Issue（どこにも無いときの出し方）。起票の承認は不在のため訊いていない）
