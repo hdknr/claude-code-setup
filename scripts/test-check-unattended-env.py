@@ -618,6 +618,8 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         check("通知の文字列 \"true\" は良いにしない",
               status_of(items, "inputNeededNotifEnabled") == [mod.ACTION], bad)
 
+    notification_layer_scenarios(mod, bad)
+
     # 値の検査は厳密に
     with scenario(script) as env:
         env.all_good()
@@ -1241,6 +1243,103 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
     return bad
 
 
+def notification_layer_scenarios(mod, bad):
+    """通知の 2 キーを settings の層から読み、無いときだけグローバル設定に落とす（#822。本体 2.1.318 の gi() の順）。"""
+    base = {"permissions": {"allow": ["Bash(git push:*)", "Bash(gh pr merge *)"]},
+            "autoContinueAtUsageLimit": True, "askUserQuestionTimeout": "10m"}
+    on = {"agentPushNotifEnabled": True, "inputNeededNotifEnabled": True}
+    off = {"agentPushNotifEnabled": False, "inputNeededNotifEnabled": False}
+    agent = "agentPushNotifEnabled"
+    with scenario(SCRIPT) as env:
+        # Issue の症状: /config が user の settings に true を書き、グローバル設定にはキーが無い
+        env.user({**base, **on})
+        env.global_config({})
+        code, items, _ = run(mod, env)
+        check("通知: user の settings の true を良いと読む",
+              status_of(items, "通知（") == [mod.GOOD, mod.GOOD] and "（user）" in detail_of(items, agent), bad)
+        # settings の層に値があれば、グローバル設定は判定に使わない
+        env.global_config(off)
+        _, items, _ = run(mod, env)
+        check("通知: user の true がグローバル設定の false に勝つ", status_of(items, agent) == [mod.GOOD], bad)
+        env.global_config("{ 壊れた")
+        _, items, _ = run(mod, env)
+        check("通知: user に値があれば、壊れたグローバル設定で判定できないにしない", status_of(items, agent) == [mod.GOOD], bad)
+        env.user({**base, **off})
+        env.global_config(on)
+        _, items, _ = run(mod, env)
+        check("通知: user の false がグローバル設定の true に勝つ（要対処）", status_of(items, agent) == [mod.ACTION], bad)
+        # どの層にも無ければグローバル設定に落とす
+        env.user(base)
+        _, items, _ = run(mod, env)
+        check("通知: settings に無ければグローバル設定の true を読む",
+              status_of(items, agent) == [mod.GOOD] and "グローバル設定" in detail_of(items, agent), bad)
+        # どこにも無ければ要対処で、既定がオフだと言う
+        env.global_config({})
+        code, items, _ = run(mod, env)
+        check("通知: どこにも無ければ要対処で、既定はオフと言う",
+              status_of(items, "通知（") == [mod.ACTION, mod.ACTION] and "既定はオフ" in detail_of(items, agent) and code == 1, bad)
+        # 層の順（本体の gi() は project・local も読む——自動継続の EM() とは違う）
+        env.project_settings(on)
+        _, items, _ = run(mod, env)
+        check("通知: project の settings の true を読む", status_of(items, agent) == [mod.GOOD], bad)
+        env.local(off)
+        _, items, _ = run(mod, env)
+        check("通知: local の false が project の true に勝つ", status_of(items, agent) == [mod.ACTION], bad)
+        flag = env.write(env.project / "flag.json", on)
+        _, items, _ = run(mod, env, flag=flag)
+        check("通知: flag の true が local の false に勝つ", status_of(items, agent) == [mod.GOOD], bad)
+        managed = env.write(env.project / "managed.json", off)
+        _, items, _ = run(mod, env, flag=flag, managed=managed)
+        check("通知: managed の false が flag の true に勝つ", status_of(items, agent) == [mod.ACTION], bad)
+        (env.project / "managed-settings.d").mkdir()
+        env.write(env.project / "managed-settings.d" / "10.json", on)
+        _, items, _ = run(mod, env, flag=flag, managed=managed)
+        check("通知: managed-settings.d の true が managed の false に勝つ", status_of(items, agent) == [mod.GOOD], bad)
+    with scenario(SCRIPT) as env:
+        # project・local は user より上（本体の ri の並び）——user だけを入れ替えた順では落ちる
+        env.user({**base, **off})
+        env.project_settings(on)
+        _, items, _ = run(mod, env)
+        check("通知: project の true が user の false に勝つ", status_of(items, agent) == [mod.GOOD], bad)
+        env.user({**base, **on})
+        env.project_settings({})
+        env.local(off)
+        _, items, _ = run(mod, env)
+        check("通知: local の false が user の true に勝つ", status_of(items, agent) == [mod.ACTION], bad)
+    with scenario(SCRIPT) as env:
+        # 値を見つける前に読めない層を通ったら判定できない
+        env.user({**base, **on})
+        _, items, _ = run(mod, env, flag=env.project / "no-such-flag.json")
+        check("通知: 読めない flag の層を通ったら、user の true でも判定できない", status_of(items, agent) == [mod.UNKNOWN], bad)
+        env.user("{ 壊れた")
+        env.global_config(on)
+        _, items, _ = run(mod, env)
+        check("通知: 壊れた user の settings を通ったら、グローバル設定の true でも判定できない",
+              status_of(items, agent) == [mod.UNKNOWN], bad)
+        env.local(on)
+        _, items, _ = run(mod, env)
+        check("通知: 読めない層が値のある層より下なら判定に使わない（local の true は良い）",
+              status_of(items, agent) == [mod.GOOD], bad)
+        env.local({})
+        # 厳密に
+        env.user({**base, "agentPushNotifEnabled": "true", "inputNeededNotifEnabled": 1})
+        _, items, _ = run(mod, env)
+        check("通知: settings の文字列 \"true\"・1 は良いにしない", status_of(items, "通知（") == [mod.ACTION, mod.ACTION], bad)
+        # CLAUDE_CONFIG_DIR の settings.json も user の層
+        alt = env.home.parent / "alt"
+        alt.mkdir()
+        assert_not_real_home(alt)
+        env.write(alt / "settings.json", {**base, **on})
+        _, items, _ = run(mod, env, environ={**SESSION_ENV, "CLAUDE_CONFIG_DIR": str(alt)})
+        check("通知: CLAUDE_CONFIG_DIR の settings.json の true を読む", status_of(items, "通知（") == [mod.GOOD, mod.GOOD], bad)
+        # 非対話の起動でも、添える値は settings の層から解決した値
+        env.user({**base, **on})
+        env.global_config({})
+        code, items, _ = run(mod, env, environ={**SESSION_ENV, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        check("通知: 非対話でも settings の層の値を添える",
+              status_of(items, "通知") == [mod.HUMAN] and "agentPushNotifEnabled: true（user）" in detail_of(items, "通知"), bad)
+
+
 def noninteractive_scenarios(mod, bad):
     """非対話の起動（#635）: 通知の 2 項目を人が見る 1 行にする。対話・変数なし・ほかの値は今までどおり。"""
     with scenario(SCRIPT) as env:
@@ -1463,6 +1562,35 @@ def since_last_scenarios(mod, script, bad):
 
 
 MUTATIONS = {
+    # 通知の 2 キーの層（#822）
+    "通知を settings の層から読まない（グローバル設定だけ）": (
+        "    value, layer = effective(stack, key)\n    if layer is not None:\n        return value, layer\n",
+        "\n"),
+    "通知で user を project・local より上に置く": (
+        "    value, layer = effective(stack, key)\n",
+        "    value, layer = effective([x for x in stack if x[0] in ('project', 'local')] + [x for x in stack if x[0] == 'user']\n"
+        "                             + [x for x in stack if x[0] not in ('user', 'project', 'local')], key)\n"),
+    "通知で読めない層がどこかにあれば判定できないにする": (
+        "    value, layer = effective(stack, key)\n",
+        "    for _n, _p, _d in stack:\n        if isinstance(_d, Unreadable):\n            return _d, _n\n"
+        "    value, layer = effective(stack, key)\n"),
+    "通知を自動継続と同じ層（policy・flag・user）だけから読む": (
+        "    value, layer = effective(stack, key)\n",
+        "    value, layer = effective(stack, key, SESSION_LAYERS)\n"),
+    "通知で読めない層を飛ばしてグローバル設定に落とす": (
+        "    if layer is not None:\n        return value, layer\n",
+        "    if layer is not None and not isinstance(value, Unreadable):\n        return value, layer\n"),
+    "settings に値があっても壊れたグローバル設定を判定に使う": (
+        "    value, layer = effective(stack, key)\n",
+        "    if isinstance(read_json(global_config_path(home, env)), Unreadable):\n"
+        "        return read_json(global_config_path(home, env)), \"グローバル設定\"\n"
+        "    value, layer = effective(stack, key)\n"),
+    "どこにも無い通知を良いにする": (
+        "        elif value is True:\n",
+        "        elif value is True or source is None:\n"),
+    "非対話で解決した値の出所を添えない": (
+        'f"{json.dumps(value)}（{source}）")\n                         for key',
+        'json.dumps(value))\n                         for key'),
     # 非対話の起動（#635）
     "非対話の起動でも通知を要対処にする": (
         "    entry = non_interactive(env)\n    if entry:\n",
@@ -1475,7 +1603,7 @@ MUTATIONS = {
         'NON_INTERACTIVE = ("sdk-cli", "sdk-py")'),
     "非対話で読めない設定を判定できないにする": (
         '        return [(HUMAN, "通知", f"非対話',
-        '        return [(UNKNOWN if isinstance(data, Unreadable) else HUMAN, "通知", f"非対話'),
+        '        return [(UNKNOWN if any(isinstance(v, Unreadable) for _k, _u, v, _s in found) else HUMAN, "通知", f"非対話'),
     "非対話で設定の値を添えない": (
         "通知の設定は人を呼ぶ経路の決め手にならない（{shown}）",
         "通知の設定は人を呼ぶ経路の決め手にならない"),
@@ -1667,8 +1795,8 @@ MUTATIONS = {
         "        stack.append((\"managed\", Path(managed_path), read_json(managed_path)))\n"
         "        managed_path = None\n    if flag_path:\n"),
     "通知を truthy で見る": (
-        "data.get(key) is True",
-        "data.get(key)"),
+        "        elif value is True:\n",
+        "        elif value:\n"),
     "まとめた caffeinate -it を数えない": (
         'r"-[dimsutw]*[tw][dimsutw]*\\d*"',
         'r"-[tw]"'),
@@ -1711,7 +1839,7 @@ MUTATIONS = {
         "    if args.push_result:\n"),
     "--push-result で通知の設定を読むが出さない": (
         "        return report_push(check_push_result(args.push_result))\n",
-        "        check_notifications(Path.home())\n"
+        "        check_notifications([], Path.home())\n"
         "        return report_push(check_push_result(args.push_result))\n"),
     "--push-result でスリープを見るが出さない": (
         "        return report_push(check_push_result(args.push_result))\n",
