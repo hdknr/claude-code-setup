@@ -96,6 +96,7 @@ Issue が範囲と例を与えているので、仕様の穴ではなく Issue �
 - 狭いパス: 通した（sonnet・dev-loop:dev-loop-verifier・`git diff 0ecf09da a2a0648e`）——反証 0 件。変異は当てていない（散文の括弧の削除で、検査の掛かる値が動かない——Verifier の判断）。陽性対照: 印の無い `.svg` と `.drawio` で rc=1、印つき `.svg` と `.bpmn` で rc=1。報告は通知で届かず、体の transcript から読んだ
 - 狭いパスの指摘: 0 件（人間が決める行なし）
 - check-all.py（順番待ち越し）: 終点 `a2a0648e` で 67/67 緑
+- PR: #904
 - 交絡を潰した手順: `figures_of` に `.bpmn`・`.svg` の無い `.drawio`（陽性対照）・`.svg` のある `.drawio` を置いた試料で走らせ、`.drawio` は「載せていない」に出て `.bpmn` はどちらにも出ないことを見た。
   `render-diagrams.py --check` は `.bpmn` だけの `docs/` で「0 件」・0、`.svg` の無い `.drawio` を足すと名指しして 1（陽性対照）——`.bpmn` を見ないことを確かめた
 
