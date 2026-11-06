@@ -9,7 +9,7 @@
 台帳は書かない（親が書く）。マージしない。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-903`））。
-版の上げ方: `dev-loop` を **minor**（`--timeout` の引数と期限・呼び出し元の点検を足す）。main の先端 1.99.0 → **1.100.0**
+版の上げ方: `dev-loop` を **minor**（`--timeout` の引数と期限・呼び出し元の点検を足す）。main の先端 1.99.0 → **1.100.0**。マージの直前に main（`a3c83c3`、#904・spec-loop 0.69.0）を取り込んだ（`983c1e3`。衝突なし。main の dev-loop は 1.99.0 のままなので 1.100.0 のまま。取り込みの後は `check-plugin-versions.py` と `skill-metrics.py --check` の 2 本だけ回した——CLAUDE.md の「並行する周は」の 5）
 （並行の周 #900 は spec-loop を上げる——別のプラグイン。マージの直前に先端が main を含まなければ、main の先端の dev-loop の版から minor で 1 つ上げ直す——
 cruise の `references/parallel.md` の「版とマージの順」）。
 
