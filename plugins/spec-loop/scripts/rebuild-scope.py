@@ -37,10 +37,10 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 - **`--draft <No か #番号>`**（No・番号の引数・`--changed` とは一緒に渡せない。元は 1 つ）: 作り直しの Issue の本文の下書き（#885）——
   **先頭の行が作り直しの元の印**（`作り直しの元: Q-R-002`・`作り直しの元: #881`。形の正は `references/handoff-issue.md` の「作り直しの元の印」で、
   下の定数 `ORIGIN` はその写し。dev-loop の `spec-gap.md` の「作り直しの周」も写しを持ち、`scripts/test-rebuild-scope.py` が 3 つを突き合わせる）で、
-  その後ろに作り直す範囲を並べる——No なら上の No の引きと同じ Issue とケース、確認の Issue なら推奨で決めた値・新しい値（結果の行がまだ無ければそう書く）・影響する Issue。
+  その後ろに作り直す範囲を並べる（No の下書きは範囲の記録で、作り直しは要求側の `req-loop` → `spec-review` → `scaffold` が受け持つ。確認の Issue の下書きは実装の Issue の本文の元で、立てる人が受入基準を足す）——No なら上の No の引きと同じ Issue とケース、確認の Issue なら推奨で決めた値・新しい値（結果の行がまだ無ければそう書く）・影響する Issue。
   **下書きの中の値は箇条書きにし、行頭を台帳の 2 行・結果の行の頭にしない**（下書きから立てた Issue を確認の Issue と読み違えないため）。
   **引けなければ下書きを出さない**——範囲が空の No・推奨のまま確かめた確認の Issue（作り直すものが無い）・推奨のままかを読めない確認の Issue
-  （入力に `comments` が無い・閉じたのに結果の行が無い。開いていて結果の行がまだ無いものは下書きを出す）と、上の `#<番号>` の引きが 1 になる確認の Issue。
+  （入力に `comments` が無い・開いている（`state` が `OPEN`）と読めないのに結果の行が無い。開いていて結果の行がまだ無いものは下書きを出す）と、上の `#<番号>` の引きが 1 になる確認の Issue。
   `--draft` は 1 回だけ渡す（2 回なら 2）。
 
 終了コード:
@@ -381,8 +381,9 @@ def draft_issue(number: int, issues: dict[int, dict]) -> tuple[bool, list[str]]:
     # 推奨のままかを読めない確認の Issue は、作り直すかを決められない（1 パス目の指摘。`--changed` と同じ扱い）
     if not d.comments_read:
         return False, [f"{label(d.issue)}: {RESULT}{d.outcome()}——推奨のままかを読めないので下書きを出さない"]
-    if (d.issue.get("state") or "").upper() == "CLOSED" and d.result is None:
-        return False, [f"{label(d.issue)}: 閉じたが {RESULT}の行が無い——変えたかを読めないので下書きを出さない"]
+    # 結果の行がまだ無くて下書きを出すのは、開いていると読めるときだけ——閉じた・状態が入力に無いなら変えたかを読めない（2 パス目の指摘）
+    if (d.issue.get("state") or "").upper() != "OPEN" and d.result is None:
+        return False, [f"{label(d.issue)}: 開いていると読めないのに {RESULT}の行が無い——変えたかを読めないので下書きを出さない"]
     new = d.result[len(CHANGED):] if d.changed() else f"まだ無い（{d.outcome()}）"
     out = [f"{ORIGIN}#{number}", "",
            f"確認の Issue #{number} で推奨で決めた値を別の値に変えるので、下の Issue を作り直す。範囲は rebuild-scope.py が確認の Issue の"

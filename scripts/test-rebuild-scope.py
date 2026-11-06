@@ -26,7 +26,7 @@
 - 形に反する結果の行は名指しして 1。`comments` の鍵が無い入力は「読んでいない」と言う（「結果なし」と言わない）。`comments` の形が違えば 2
 - `--changed` は結果が `変えた` の確認の Issue だけを出し、結果を読めない・閉じたのに結果の行が無い確認の Issue と、台帳の行が無い／形に反する／影響する Issue が入力に無い変えた確認の Issue を名指しして 1。No・番号と一緒なら 2
 - `--draft` は先頭の行に作り直しの元の印（`作り直しの元: <No>`・`作り直しの元: #<番号>`）を付けた下書きを出す——No なら引いた Issue とケース（撤去の Issue は数えない・まとめた本文は部分ごと）、確認の Issue なら推奨で決めた値・新しい値（無ければ「まだ無い」）・影響する Issue（無ければ「なし」）。値は箇条書きにし、行頭を台帳の行・結果の行の頭にしない（#885）
-- `--draft` は範囲が空の No・推奨のまま確かめた確認の Issue・推奨のままかを読めない確認の Issue（`comments` が無い・閉じたのに結果の行が無い）・`#N` の引きが 1 になる確認の Issue では下書きを出さずに 1。No・番号・`--changed` と一緒・2 回渡したら 2
+- `--draft` は範囲が空の No・推奨のまま確かめた確認の Issue・推奨のままかを読めない確認の Issue（`comments` が無い・開いていると読めないのに結果の行が無い——閉じた・`state` が無い）・`#N` の引きが 1 になる確認の Issue では下書きを出さずに 1。No・番号・`--changed` と一緒・2 回渡したら 2
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
 **壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、穴が無くても緑になるので）。
@@ -224,7 +224,9 @@ CASES = [
     Case("--draft の値が No でも番号でもない", ("--draft", "foo"), 2, ("'foo': Q&A の No",)),
     Case("--draft を 2 回", ("--draft", "#29", "--draft", "#20"), 2, ("1 回だけ渡す",), ("作り直しの元",)),
     Case("下書き（comments の無い入力）", ("--draft", "#34"), 1, ("推奨のままかを読めないので下書きを出さない",), ("作り直しの元",)),
-    Case("下書き（閉じたが結果の行が無い）", ("--draft", "#33"), 1, ("閉じたが 確認の結果: の行が無い——変えたかを読めない",), ("作り直しの元",)),
+    Case("下書き（閉じたが結果の行が無い）", ("--draft", "#33"), 1, ("開いていると読めないのに 確認の結果: の行が無い",), ("作り直しの元",)),
+    Case("下書き（状態が入力に無く結果の行が無い）", ("--draft", "#38"), 1, ("[状態不明]: 開いていると読めないのに",), ("作り直しの元",),
+         bundle="draft"),
     Case("No でも番号でもない引数", ("foo",), 2, ("'foo': Q&A の No",)),
     Case("JSON でない", (), 2, ("読めない",), data="{"),
     Case("配列でない", (), 2, ("Issue の配列でない",), data="{}"),
@@ -312,8 +314,10 @@ MUTATIONS = [
     ("--draft を 2 回でも受ける", "    if args.draft is not None and len(args.draft) > 1:", "    if False:", "--draft を 2 回"),
     ("comments が無くても下書きを出す", "    if not d.comments_read:\n        return False, [f\"{label(d.issue)}: {RESULT}{d.outcome()}——推奨",
      "    if False:\n        return False, [f\"{label(d.issue)}: {RESULT}{d.outcome()}——推奨", "下書き（comments の無い入力）"),
-    ("閉じて結果なしでも下書きを出す", '    if (d.issue.get("state") or "").upper() == "CLOSED" and d.result is None:', "    if False:",
+    ("閉じて結果なしでも下書きを出す", '    if (d.issue.get("state") or "").upper() != "OPEN" and d.result is None:', "    if False:",
      "下書き（閉じたが結果の行が無い）"),
+    ("状態が無いのを開いていると読む", '(d.issue.get("state") or "").upper() != "OPEN"', '(d.issue.get("state") or "OPEN").upper() != "OPEN"',
+     "下書き（状態が入力に無く結果の行が無い）"),
 ]
 
 failures: list[str] = []
@@ -395,8 +399,10 @@ def main() -> int:
             broken.append({"number": number, "title": t, "state": "CLOSED", "body": b, "comments": changed_comment})
         (work / "broken.json").write_text(json.dumps(broken, ensure_ascii=False), encoding="utf-8")
         t37, b37 = decision(True, "要確認: 影響する Issue が無いまま変えた", "決めた値: K\n影響する Issue: なし\n")
+        t38, b38 = decision(True, "要確認: 状態の無い入力", "決めた値: M\n影響する Issue: なし\n")
         (work / "draft.json").write_text(json.dumps([{"number": 37, "title": t37, "state": "CLOSED", "body": b37,
-                                                       "comments": [{"body": "確認の結果: 変えた: L"}]}], ensure_ascii=False),
+                                                       "comments": [{"body": "確認の結果: 変えた: L"}]},
+                                                      {"number": 38, "title": t38, "body": b38, "comments": []}], ensure_ascii=False),
                                          encoding="utf-8")
         (work / "crlf.json").write_text(json.dumps([{"number": 31, "title": "まとめた本文（CRLF）", "state": "OPEN",
                                                       "body": bodies["bundle"].replace("\n", "\r\n")}], ensure_ascii=False),

@@ -183,7 +183,10 @@ dev-loop は同じ式の写し（dev-loop のスキルの `scripts/spec-fingerpr
 **行頭から書き、装飾（太字・箇条書きの印）を付けない。1 行に 1 つ**——元が 2 つ以上なら行を並べる。
 **置くのは下書きから立てた作り直しの Issue の本文の先頭の行である。この形の本文（1 行目が `<!-- spec-loop-handoff: v… -->`）には足さない**——
 本文は手で直さない決まりで、先頭に足すと dev-loop と `rebuild-scope.py` が spec-loop から来た本文と読まなくなる（1 行目を見るので）。
-作り直した版の `scaffold` が作る本文も印を持たない——作り直す範囲と元の回答は、下書きから立てた Issue が持つ。
+**この版で印が載るのは、下書きから立てた Issue とその周の PR だけである**——作り直した版の `scaffold` が作る本文と、それを回す周の PR は印を持たない
+（作り直す範囲と元の回答は、下書きから立てた Issue が持つ。作り直した本文に元を載せる手段はまだ無い）。
+**Q&A の No の下書きから立てた Issue は範囲の記録で、それ自体を dev-loop の周にしない**——作り直しは要求側（`req-loop` → `spec-review` → `scaffold`）が受け持ち、
+作り直した本文の周の受入基準はその Red テストである。**確認の Issue の下書きは、立てる実装の Issue の本文の元**で、立てる人が受入基準を足す（dev-loop の `absent-lines.md`）。
 **下書きは同梱の `rebuild-scope.py --draft <No か #番号>` が出す**——上の範囲（作り直す Issue とケース）を印の後ろに並べる。使い方は `rebuild-scope.py` の docstring を正とする。
 **PR に写すのは dev-loop の周である**（`spec-gap.md` の「作り直しの周」）。
 
