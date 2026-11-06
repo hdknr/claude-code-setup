@@ -23,7 +23,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 許可 | settings の `permissions`（`allow`・`ask`・`deny`・`defaultMode`・`disableBypassPermissionsMode`） | 名指しのコマンドごとに、`allow` に当たるか `defaultMode` が `bypassPermissions`（`disableBypassPermissionsMode` で落とされていない） | `deny` か `ask` に当たる（`allow` があっても）／どれも無い |
 | 自動継続 | settings の `autoContinueAtUsageLimit`（**managed・flag・user の層だけ**） | `true` | 未設定・`false`・真偽値でない |
 | 質問の待ち | settings の `askUserQuestionTimeout`（**managed・flag・user の層だけ**） | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
-| 通知 | グローバル設定（下の「設定の層」）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」） | `true` | 未設定・`false`。**ただし非対話の起動（`CLAUDE_CODE_ENTRYPOINT` が `sdk-cli`・`sdk-ts`・`sdk-py`。`-p` など）では、どの値でも 2 つを「人が見る」の 1 行にまとめる**（値を添え、要対処にも判定できないにもしない——通知の設定は人を呼ぶ経路の決め手にならない。#635） |
+| 通知 | settings の全部の層（managed・flag・local・project・user）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」）。**どの層にも無いときだけ**グローバル設定（下の「設定の層」）の値（#822） | `true` | 未設定（どこにも無い——本体の既定はオフ）・`false`。**ただし非対話の起動（`CLAUDE_CODE_ENTRYPOINT` が `sdk-cli`・`sdk-ts`・`sdk-py`。`-p` など）では、どの値でも 2 つを「人が見る」の 1 行にまとめる**（値を添え、要対処にも判定できないにもしない——通知の設定は人を呼ぶ経路の決め手にならない。#635） |
 | スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が system の idle sleep を防いでいる（`-i`・`-d`・`-s` か、アサーションのフラグ無し） | どちらも無い |
 | 認証（#584。`--present` でも出す） | このスクリプトの環境変数と settings の `apiKeyHelper`。**環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、最寄りの祖先の `claude`（セッションを起動したプロセス）の環境**（`ps eww`。変数の名前と空かどうかだけ）——**Claude Code 2.1.316 は起動時のトークンを Bash の環境から外す**（下の「実測した前提」の認証の項） | `CLAUDE_CODE_OAUTH_TOKEN` が空でない——自分の環境か、起動した `claude` の環境（長期トークン） | どちらにも無い——対話ログインの OAuth（8 時間で切れる。`--present` では人が見る）。直し方に起動口 `launch-with-long-token.sh` の絶対パス |
 
@@ -154,7 +154,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - managed: `--managed-settings` で渡す。既定は macOS の
   `/Library/Application Support/ClaudeCode/managed-settings.json`、Linux の `/etc/claude-code/managed-settings.json`。
   **同じ場所の `managed-settings.d/*.json` を名前順に、その上に重ねる**
-- グローバル設定（通知）: `<設定のディレクトリ>/.config.json` が在って空でなければそれ、
+- グローバル設定（通知の 2 キーが**どの settings の層にも無いとき**だけ読む。#822）: `<設定のディレクトリ>/.config.json` が在って空でなければそれ、
   無ければ `$CLAUDE_CONFIG_DIR/.claude.json`（置いていなければ `~/.claude.json`）
 
 ## 終了コード
@@ -175,8 +175,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - `askUserQuestionTimeout` は settings の `60s` `5m` `10m` `never` で、既定は `never`
 - `autoContinueAtUsageLimit`・`askUserQuestionTimeout` は `["policySettings","flagSettings","userSettings"]` の
   層だけから読む（`EM()`）
-- `agentPushNotifEnabled`・`inputNeededNotifEnabled` はグローバル設定にある。グローバル設定の場所は
-  `<設定のディレクトリ>/.config.json` が在って空でなければそれ、無ければ `.claude<接尾辞>.json`（`y_()`）
+- グローバル設定の場所は `<設定のディレクトリ>/.config.json` が在って空でなければそれ、無ければ `.claude<接尾辞>.json`（`y_()`）
 - managed（policySettings）の `allowManagedPermissionRulesOnly` が `true` なら、managed 以外の規則は無視される
 - `managed-settings.d` を読む（`managed-settings.d read failed:` の文言がある）
 - managed の `permissions.disableBypassPermissionsMode` は「a session that requests it anyway is downgraded」
@@ -212,6 +211,15 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome は使えない**（エラーは出ず、黙って無い・繋がらない）。サブエージェントと `/code-review`（`low` だけ測った）は動く。
   上の `PushNotification` は `-p` では対照も送らないので**判定できていない**。表は公開ページを正とする（`TOKEN_PAGE`）
 
+通知の 2 キーの読み方（#822。2026-11-06・Claude Code 2.1.318・macOS。**本体の文字列で読んだだけで、`/config` を切り替えて確かめる実走はしていない**）:
+
+- 2 キーを読むのは `gi(key, 既定)`: 有効な settings の層を**上から**（policy → flag → local → project → user）見て、最初に値のある層の値を返す
+  （project は user と同じファイルなら飛ばす——`Gm()`）。**どの層にも無ければ**グローバル設定の値を、型が正しく既定（`h0`）と違うときだけ返す
+  （`legacyGlobalConfig`）。それも無ければ既定——`PushNotification` は `gi("agentPushNotifEnabled",!1)` なので**どこにも無ければオフ**
+- `/config` の切り替えは user の settings に書く（`Vn("userSettings", …)`）。表示は「settings ?? グローバル設定 ?? 既定」に `??!1`
+- サーバの通知の設定（`/api/claude_code/notification/preferences`）は、settings にもグローバル設定にも値が無いときだけ user の settings に写す
+- 2.1.310 で読んだ「2 キーはグローバル設定にある」は、この版では古い（グローバル設定は settings の層に無いときの落とし先）
+
 非対話の起動（#635。2026-11-03・Claude Code 2.1.317・macOS）:
 
 - 本体は起動時に `CLAUDE_CODE_ENTRYPOINT` を、変数が無ければ非対話なら `sdk-cli`・対話なら `cli` に置き、`cli` が入っていて非対話なら `sdk-cli` に書き換える。
@@ -236,6 +244,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **送信の要求を「届いた」と言わない**——`Mobile push requested` は人が見る（iPhone に届いたか）
 - **知らない返り値を「良い」に混ぜない**——判定できない
 - **何も書かない**——設定ファイルにも、台帳にも。**例外は `--since-last` の点検の記録だけ**（台帳の隣の 1 ファイル）。付けなければどこにも書かない
+- **通知の 2 キーを、本体の `gi()` と同じ順に読む**（#822）——managed（`.d` を含む）・flag・local・project・user の層を上から、
+  どの層にも無いときだけグローバル設定。**settings の層に値があれば、グローバル設定の値も読めなさも判定に使わない**。
+  **どこにも無いことを「良い」にしない**——本体の既定はオフ（要対処）
 - **非対話の起動で、通知の 2 項目を要対処にも判定できないにもしない**——人が見る 1 行（値を添える）。
   **対話の起動・変数が無い・ほかの値では今までどおり**（未設定・`false` は要対処、読めなければ判定できない）
 - **`--since-last` で、終了コードを縮めた出力から決めない**——縮めた項目も数える。**縮めた要対処・判定できないの名前を落とさない**（cruise は終えるときに名指しして渡す）。**指紋が同じでない項目を縮めない**（中身・直し方・区分のどれかが変われば全文）。
@@ -293,6 +304,10 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   `scripts/count-usage-limit-resumes.py` で数えた。件数は少ない）——待ちを張らなかった停止があり（理由は記録に残らない）、
   Claude Code が終わると待ちは消える。
   タイマーを保険に張るかは利用者が決める（`docs/plugins/dev-loop-cruise.md` の §5）
+- **通知の 2 キーの読み方が本体の実行時の挙動と同じこと**（#822）——2.1.318 の本体の文字列で読んだだけで、`/config` を切り替えて点検と
+  `PushNotification` の結果を比べる実走はしていない。**`--setting-sources` で絞った層**（本体は絞った層を読まない）・**project が user と同じファイル**のときの飛ばし方
+  （同じ中身なので値は変わらず、出所の名前だけが違う）・**グローバル設定の値が本体の既定（`h0`）と同じとき**の落とし方（本体は既定と同じ値を返さずに呼ぶ側の既定へ落とす。`h0` の値は確かめていない）・
+  **サーバの通知の設定**（settings に写す前の値）は見ない
 - **macOS の managed preferences（plist）**——読まない
 - **`caffeinate <コマンド>` の形**——コマンドが終われば防止も終わるが、`-t` の無い形として数える
 - **`ask` の規則と `bypassPermissions` の組**——`bypassPermissions` でも `ask` は要対処にしている（確認が出るかは確かめていない。安全側）
@@ -645,33 +660,52 @@ def non_interactive(env):
     return value if value in NON_INTERACTIVE else None
 
 
-def check_notifications(home, env=None):
-    env = os.environ if env is None else env
+NOTIF_KEYS = (("agentPushNotifEnabled", "Push when Claude decides"),
+              ("inputNeededNotifEnabled", "Push when actions required"))
+
+
+def notification_value(stack, home, env, key):
+    """本体の gi() の写し（2.1.318。docstring の「実測した前提」）: settings の層を上から見て最初の値、
+    どの層にも無ければグローバル設定の値。(値, 出所) を返す——値は `Unreadable` のことがあり、
+    どこにも無ければ (None, None)。**settings の層に値があれば、グローバル設定は読まない。**"""
+    value, layer = effective(stack, key)
+    if layer is not None:
+        return value, layer
     path = global_config_path(home, env)
     data = read_json(path)
-    items = []
-    keys = (("agentPushNotifEnabled", "Push when Claude decides"),
-            ("inputNeededNotifEnabled", "Push when actions required"))
+    if isinstance(data, Unreadable):
+        return data, f"グローバル設定 {path}"
+    if isinstance(data, dict) and key in data:
+        return data[key], f"グローバル設定 {path}"
+    return None, None
+
+
+def check_notifications(stack, home, env=None):
+    env = os.environ if env is None else env
+    found = [(key, ui, *notification_value(stack, home, env, key)) for key, ui in NOTIF_KEYS]
     entry = non_interactive(env)
     if entry:
         # 非対話の起動では、通知の設定は人を呼ぶ経路の決め手にならない——要対処にも判定できないにもせず、1 行で言う（#635）
-        if isinstance(data, Unreadable):
-            shown = f"{path} を読めなかった: {data.reason}"
-        else:
-            shown = "・".join(f"{key}: " + ("未設定" if not isinstance(data, dict) or key not in data else json.dumps(data[key]))
-                             for key, _ui in keys)
+        shown = "・".join(f"{key}: " + ("未設定" if source is None else
+                                       f"{source} を読めなかった: {value.reason}" if isinstance(value, Unreadable) else
+                                       f"{json.dumps(value)}（{source}）")
+                         for key, _ui, value, source in found)
         return [(HUMAN, "通知", f"非対話の起動（CLAUDE_CODE_ENTRYPOINT={entry}。-p など）——通知の設定は人を呼ぶ経路の決め手にならない（{shown}）",
                  "人を呼ぶ経路は起動した側で用意する（外側のループの見張り・Issue のコメントなど）。"
                  "-p のセッションからモバイル通知が届くかは確かめていない")]
-    for key, ui in keys:
+    items = []
+    for key, ui, value, source in found:
         label = f"通知（{key}）"
-        if isinstance(data, Unreadable):
-            items.append((UNKNOWN, label, f"{path} を読めなかった: {data.reason}", ""))
-        elif isinstance(data, dict) and data.get(key) is True:
-            items.append((GOOD, label, "true", ""))
+        if isinstance(value, Unreadable):
+            # settings の層なら、その層が値を上書きしているかもしれない。グローバル設定なら、値がそこにあるかもしれない
+            where = source if source.startswith("グローバル設定") else f"{source} の層 {value.path}"
+            items.append((UNKNOWN, label, f"{where} を読めなかった（{value.reason}）", ""))
+        elif value is True:
+            items.append((GOOD, label, f"true（{source}）", ""))
         else:
-            shown = "未設定" if not isinstance(data, dict) or key not in data else json.dumps(data[key])
-            items.append((ACTION, label, shown, f"/config の「{ui}」をオンにする"))
+            shown = ("未設定（settings の層にもグローバル設定にも無い——本体の既定はオフ）" if source is None
+                     else f"{json.dumps(value)}（{source}）")
+            items.append((ACTION, label, shown, f"/config の「{ui}」をオンにする（user の settings に書かれる）"))
     return items
 
 
@@ -1285,7 +1319,7 @@ def gather(project, commands, flag_path, managed_path, home, platform, flag_note
     if not present:
         items += check_auto_continue(stack)
         items += check_question_timeout(stack)
-        items += check_notifications(home, env)
+        items += check_notifications(stack, home, env)
         items += check_sleep(platform)
         items += human_items(stack)
     items += check_auth(stack, os.environ if env is None else env, present, ancestor)
