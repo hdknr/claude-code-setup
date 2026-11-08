@@ -29,7 +29,10 @@
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-899.md` — この計画ファイル
-- `scripts/test-parallel-stop.py`・`scripts/check-all.py`（収録）・`.github/workflows/plugins.yml`（CI のステップ）・`CLAUDE.md`（scripts の一覧） — **D5 の直しで広げた**（利用者の判断 2026-11-08T07:47Z、親の委譲文で受けた）: parallel.md の止める段の照合を厳しくし、その照合を抜き出して走らせる試料と変異
+- `scripts/check-all.py` — 収録（D5 の直しで広げた）
+- `.github/workflows/plugins.yml` — CI のステップ（D5 の直しで広げた）
+- `CLAUDE.md` — scripts の一覧（D5 の直しで広げた）
+- `scripts/test-parallel-stop.py` — **D5 の直しで広げた**（利用者の判断 2026-11-08T07:47Z、親の委譲文で受けた）: parallel.md の止める段の照合を厳しくし、その照合を抜き出して走らせる試料と変異
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`ledger.md` の行数が変わるので `skill-metrics.py` で作り直す。手で書かない）
 
 触らない:
@@ -111,6 +114,8 @@ main へのマージでプラグインの配布（dev-loop 1.102.0）。公開�
   自設計の変異 3 件（D1 の直しを戻す・「何もしない」の文を外す・D6 の直しを戻す）は文面を台帳の `note` の並びとして追った机上の追跡で、どれも直した文面が防ぐ（走らせてはいない）。素通り 0 件。`git status --porcelain` 前後とも空。報告は transcript から読んだ
 - 最後の歯止め: `check-all.py` 67/67・失敗 0（`a867f6c`。順番待ち越し、待ち 1123 秒）。PR 側の CI（`a867f6c`）: build pass・check pass・deploy skipping
 - **D5 の直し（マージの前の利用者の判断、2026-11-08T07:47Z。出所: 利用者の判断を親が委譲文で伝えた）**: 狭いパスの起点 `fab2691`（main を取り込んだ後の先端）・終点 `d15ccf1`。止める前の照合を、部分一致から 4 つ（枠の記録に pid がある・`ps` のコマンド欄が `run-serial.py` の起動そのもの・`--` の後ろと cwd が記録と同じ・起こした時刻が記録の `started` より後でない）に厳しくし、`scripts/test-parallel-stop.py`（ケース 8 件・変異 5 件。部分一致に戻すと「3 ファイル名が test-run-serial.py」が赤）を足した。D4 とほかの記録だけの指摘は直さない（親が別 Issue に起こす）
+- D5 の狭いパス（Verifier・sonnet、`git diff fab2691 d15ccf1`）: **受入基準を壊す反証 0 件・軽微な反証 2 件・素通りの変異 3 件**（どれも記録だけ。PR コメントに 1 件ずつ）。著者のテストはケース 8・変異 5 とも合格。`git status --porcelain` 前後とも空。報告は transcript から読んだ
+- D5 の後の歯止め: `check-all.py` 68 本のうち `check-plan-scope.py` だけ失敗（計画ファイルの `触る:` を 1 行 1 パターンに割っていなかった）→ 割って直した
 - 実物で見た子孫の残り: 3 回目の `check-all.py`（途中で木を変えたので止めた）のラッパーを、止める段の bash の 1 行で止めたら、子孫 10 のうち 7 がラッパーの後に残り、SIGTERM で片付いた——C2 の直し（子孫も止める）が要ることの実物
 - 交絡を潰した手順: 受入基準 4 の実機確認（一時のリポジトリ・worktree の run-serial）は、同じ形で 3 つを並べて比べた——素の `bash -c 'sleep; echo'`（SIGTERM で 143・枠が返る・子孫の `sleep` が残る）、
   子孫も止める形（残らない）、`trap "" TERM` のコマンド（SIGTERM を受け流し、子孫も無視を継いで残る——期限に任せる分岐）。「run-serial でない」の判定は、別の `sleep` の pid で陽性側（止めずに 1 で終わる）を見た
