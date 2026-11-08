@@ -100,6 +100,8 @@ main へのマージでプラグインの配布（dev-loop 1.102.0）。公開�
 - 関門 1 パス目: **Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 3 件**（受入基準 4 は一時のリポジトリで実走して一致。`git status --porcelain` 前後とも空。報告は `SubagentHandback` が届かず transcript から読んだ）／
   **`/code-review`（high）指摘 10 件＋軽微 1 件**（C1・C2・C7 は走らせて示した。`git status --porcelain` 前後とも空。報告は transcript から読んだ）。
   採否は下の表——直す 10 件（表の 8 行）、残課題 4 件。手順 4 への差し戻し: Verifier の V1・V2 を直す（下の表）
+- 1 パス目の指摘対応: `52eb696`。差分は 0 行でない（`git diff b1bb668 -- ':(top)' ':(top,exclude)docs/plans/issue-899.md'` が 5 ファイル）——2 パス目を回す
+- 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 - 交絡を潰した手順: 受入基準 4 の実機確認（一時のリポジトリ・worktree の run-serial）は、同じ形で 3 つを並べて比べた——素の `bash -c 'sleep; echo'`（SIGTERM で 143・枠が返る・子孫の `sleep` が残る）、
   子孫も止める形（残らない）、`trap "" TERM` のコマンド（SIGTERM を受け流し、子孫も無視を継いで残る——期限に任せる分岐）。「run-serial でない」の判定は、別の `sleep` の pid で陽性側（止めずに 1 で終わる）を見た
 
