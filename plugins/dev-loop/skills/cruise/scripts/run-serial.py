@@ -2,6 +2,7 @@
 r"""重い検査・アプリの起動を、同じリポジトリでは決めた本数ずつ順番待ちにして走らせる（#493）。
 
     python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]
+    python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holders     # 持ち主を出すだけ（#898）
 
 **いつ通すか（cruise の周が、どのコマンドをこれ越しに走らせるか）は `references/parallel.md` を正とする**
 （このスキルと同じ場所にある）。ここにあるのは枠の数え方と、このスクリプトが守るものである。
@@ -57,6 +58,22 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 #839 では、呼び出した `Bash` の上限で親のシェルが先に終わった待ち手が、PPID=1 の孤児として待ち続けた——枠が空いて走っても、結果を読む者がいない。
 **見るのは待っているあいだだけ**——枠を取った後に親が居なくなったコマンドは、期限まで走る。
 
+## 持ち主の表示（#898）
+
+**待たされたら、走っているもの（枠の持ち主）を 1 つ 1 行で出し、待っているあいだ `REPORT`（60 秒）ごとに出し直す。** 1 行に出すのは
+pid・場所・コマンド・**経過**（枠を取ってから。始めた時刻も）・**出力の最終更新**で、出力が `STALL`（600 秒）以上増えていない持ち主は
+行末に `止まっている疑い` と出す。**疑いを出すだけで、止めない——止めるのは期限だけ（上の「期限」）。**
+
+- **#839**: 写しが切れた接続を待ったまま枠を握っていたことに、待っている側も cruise の親も 1 回の見張りぶん気づけなかった（見ていたのはコミットの時刻とファイルの更新だけ）。
+- **出力の最終更新**は、枠を取ったラッパーの標準出力・標準エラー（コマンドが継ぐ）が**通常のファイル**なら、そのパス（macOS は `F_GETPATH`、Linux は `/proc/self/fd`）と
+  `st_dev`・`st_ino` を枠のファイルの記録に足しておき、見る側がそのファイルの `st_mtime`（2 つあれば新しいほう）を読む。
+  cruise の形（`… > "$OUT" 2>&1`。`references/parallel.md`）はファイルなので当たる。**パイプ・端末・`/dev/null` は「分からない」と言い、疑いを出さない。**
+- **`STALL` の 600 秒は、このリポジトリの `check-all.py` を順番待ち越しに回したときの出力の間隔の実測（#898 の計画ファイル）に余裕を持たせた値**である
+  ——ふつうの重い検査が疑いと出ないように。
+- **`holders` の口**: `run-serial.py holders` は、持ち主を標準出力に 1 回だけ出して 0 で終わる（無ければ `走っているものは無い`）。cruise の親の見張りが同じものを読むための口で、
+  **枠を取らず（`flock` も掛けない）、何も書き換えない**（枠のディレクトリが無ければ作らない）。引数を足すと 2。
+- 見るのは枠のディレクトリの `slot-<k>.lock` の全部（宣言の本数に依らない）。記録の pid が居ないもの（走り終えて記録だけ残ったもの）は出さない。
+
 ## 終了コード
 
 | 値 | 意味 |
@@ -64,7 +81,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 | コマンドの終了コード | 走らせた。シグナルで終わったら 128 + シグナルの番号、コマンドが見つからなければ 127 |
 | 124 | **期限切れ**——走らせたが、期限を過ぎたので止めた（上の「期限」） |
 | 125 | **走らせていない**——枠を決められなかった（git が使えない・リポジトリの外・枠のファイルを開けない）か、待っているあいだに呼び出し元が居なくなった |
-| 2 | 走らせていない——`--` の後ろにコマンドが無い・`--timeout` の値が 1 以上の整数（7 桁まで）でない・`--` の前に知らない引数がある |
+| 2 | 走らせていない——`--` の後ろにコマンドが無い・`--timeout` の値が 1 以上の整数（7 桁まで）でない・`--` の前に知らない引数がある・`holders` の後ろに引数がある |
 
 **124・125・2 は、コマンドがその値を返したときとは出力で見分ける**（`run-serial:` で始まる行が理由を言う）。
 
@@ -117,6 +134,19 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - `--timeout` を渡さなければ、既定（`DEFAULT_TIMEOUT`。上の「期限」の値）の期限を掛ける（#897）
 - 入れ子で呼ばれても（枠を取らずに走らせるときも）、同じ期限を掛ける（#897）
 - 期限切れの猶予のあいだに子孫が起こした子も、猶予の後にまだ生きている子孫からたどって止める——コマンドが先に終わっていても（#897 の 2 パス目）
+- 待たされているあいだ、`REPORT` 秒ごとに持ち主を出し直す（#898）
+- 持ち主ごとに、枠を取ってからの経過時間を出す（#898）
+- 持ち主ごとに、出力の最終更新（標準出力・標準エラーが通常のファイルなら、その `st_mtime`）を出す（#898）
+- 出力が `STALL` 秒以上増えていない持ち主に `止まっている疑い` と出す（#898）
+- 出力が `STALL` 秒の内に増えた持ち主には `止まっている疑い` と出さない（#898）
+- 出力の最終更新が分からない持ち主（出力がファイルでない）には `止まっている疑い` と出さない（#898）
+- `holders` は持ち主を 1 回だけ出して 0 で終わる——枠を取らない（枠が全部ふさがっていても待たない）（#898）
+- `holders` は枠のディレクトリが無ければ作らない（#898）
+- `holders` は枠のファイルに書かない（#898）
+- 枠のファイルに残った記録のうち、pid が居ないもの（走り終えたもの）は持ち主として出さない（#898）
+- 待ち手は、出力のファイルの 1 つでも自分の標準エラーと同じ持ち主の出力の最終更新を「分からない」と言う——自分の書き込みで新しく見えるので、疑いを決めない（#898 の 1・2 パス目）
+- 待ち手が自分と同じと見るのは標準エラー（待っているあいだに書くのはそこだけ）のファイルだけ——標準出力だけが同じ持ち主は、ふつうに出力の最終更新で疑う（#898 の 2 パス目）
+- 持ち主の行に改行などの制御文字を出さない——コマンド・場所の制御文字は `\n` のように書き換え、1 持ち主 1 行にする（#898 の 1 パス目）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
@@ -140,6 +170,14 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 入れ子の印（環境変数）はコマンドの子孫すべてに渡る——コマンドが残したバックグラウンドのプロセスが後で順番待ちを呼ぶと、待たずに走る
 - 入れ子の印は 1 つのリポジトリしか持たない——別のリポジトリをはさんで同じリポジトリへ戻る入れ子（A → B → A）は、枠 1 なら固まる
 - 待つ側の順番（公平性）は決めない——枠が空いたときに先に見た側が取る
+- 出力の最終更新が分かるのは、ラッパーの標準出力・標準エラーが通常のファイルのときだけ——パイプ・端末・`/dev/null` へ出すものは分からない。
+  コマンドが中で別のファイルに書き直すもの（`bash -c 'x > f'`）は、そのファイルでなくラッパーの出力を見る。パスを取れない（`F_GETPATH` も `/proc` も無い）環境でも分からない
+- `止まっている疑い` は出力の時刻だけで決める——出力をため込む（バッファする）コマンドは走っていても疑いと出ることがあり、出力を出し続けながら進まないもの（同じ行を繰り返す）は疑わない
+- 持ち主の出力のファイルに別のプロセスが書くと（同じファイルに足す別の待ち手など）、出力が進んで見える——外すのは見ている待ち手自身の標準エラーのファイルだけで、`holders` の口は何も外さない
+- 古い版（1.100.0 まで）の run-serial が持つ枠は、出力のファイルを記録しないので、出力の最終更新は分からない（経過は出す）
+- 経過は記録の始めた時刻（秒まで）から数える——時計を合わせ直すとずれる
+- 居なくなった pid は `kill -0` で見る——pid が再利用された記録・ゾンビの記録は持ち主として出る
+- `holders` が読むあいだに持ち主が替わると、古い記録か新しい記録のどちらかを出す（書きかけで読めなければ出さない）
 - CommonMark の全部は写さない——段落を切るほかの行（空行・見出し・リスト）は、行の途中で始まったコメントを終わらせない（コメントのまま外す。宣言は増えない側）。
   行頭のコメントは `-->` を含む行で閉じるまで続く（その行の後ろで開き直した `<!--` も、閉じるまでコメント）。`<!-->`・`<!--->` は閉じたコメントと読まない
 
@@ -153,9 +191,11 @@ import json
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 ENV = "DEV_LOOP_SERIAL_HELD"
@@ -167,6 +207,10 @@ DEFAULT_TIMEOUT = 3600
 GRACE = 10.0
 TIMEOUT_VALUE = re.compile(r"[0-9]{1,7}")
 POLL = 0.5
+REPORT = 60.0
+STALL = 600
+HOLDERS = "holders"
+SLOT = re.compile(r"slot-([0-9]+)\.lock")
 DECL = re.compile(r"^並行の検査:[ \t]*(.*?)[ \t]*$")
 NEWLINE = re.compile(r"\r\n|\r|\n")
 DIGITS = re.compile(r"[0-9]{1,6}")
@@ -294,21 +338,107 @@ def declaration(common: Path) -> tuple[str | None, str | None]:
         return None, f"`{path}` を読めない（{exc.__class__.__name__}）——宣言は 1 として扱う"
 
 
-def holders(lockdir: Path, slots: int) -> list[str]:
-    found = []
-    for k in range(slots):
+def span(seconds: float) -> str:
+    """秒数を「N 分 M 秒」で言う。"""
+    whole = max(0, int(seconds))
+    return f"{whole // 60} 分 {whole % 60} 秒" if whole >= 60 else f"{whole} 秒"
+
+
+def flat(text: str) -> str:
+    """改行などの制御文字を `\\n` のように書き換える——コマンドや場所に改行があっても、持ち主は 1 行のまま。"""
+    return "".join(ch if ch.isprintable() else ch.encode("unicode_escape").decode("ascii") for ch in text)
+
+
+def last_output(info: dict, now: float, mine: frozenset = frozenset()) -> tuple[float | None, str]:
+    """持ち主の出力の最終更新。(時刻, 言うこと)。分からなければ時刻は None。
+
+    記録の `outputs`（持ち主の標準出力・標準エラーのうち通常のファイル）を `stat` し、同じファイル（`st_dev`・`st_ino`）の `st_mtime` の新しいほう。
+    `mine`（見ている側が書くファイルの (`st_dev`, `st_ino`)）と同じファイルが 1 つでもあれば「分からない」——見ている側の書き込みで更新されるので、
+    持ち主が止まっていても新しく見える。残りのファイルだけで決めると、そちらにだけ出さない持ち主（進みを標準エラーにだけ出す）を止まっていると読む。"""
+    outputs = info.get("outputs")
+    if not isinstance(outputs, list):
+        return None, "出力の最終更新は分からない（記録に出力のファイルが無い——古い版の run-serial）"
+    if not outputs:
+        return None, "出力の最終更新は分からない（出力がファイルでない——パイプ・端末など）"
+    if any(isinstance(out, dict) and (out.get("dev"), out.get("ino")) in mine for out in outputs):
+        return None, "出力の最終更新は分からない（待っている自分と同じ出力のファイル——自分の書き込みで更新される）"
+    times, paths = [], []
+    for out in outputs:
         try:
-            info = json.loads((lockdir / f"slot-{k}.lock").read_text(encoding="utf-8") or "{}")
+            st = os.stat(out["path"])
+        except (OSError, KeyError, TypeError, ValueError):
+            continue
+        if (st.st_dev, st.st_ino) == (out.get("dev"), out.get("ino")):
+            times.append(st.st_mtime)
+            paths.append(str(out["path"]))
+    if not times:
+        return None, "出力の最終更新は分からない（出力のファイルが消えた・置き換わった）"
+    newest = max(times)
+    return newest, f"出力の最終更新 {span(now - newest)} 前（{', '.join(paths)}）"
+
+
+def describe(info: dict, now: float, mine: frozenset = frozenset()) -> str:
+    """持ち主 1 つを 1 行で: pid・場所・コマンド・経過・出力の最終更新。出力が `STALL` 秒以上増えていなければ「止まっている疑い」。"""
+    parts = [f"pid {info.get('pid')}", str(info.get("cwd")), str(info.get("command"))]
+    started = info.get("started")
+    try:
+        begun = datetime.strptime(started, "%Y-%m-%dT%H:%M:%S%z").timestamp()
+    except (TypeError, ValueError):
+        parts.append(f"経過は分からない（始めた時刻 {started!r} が読めない）")
+    else:
+        parts.append(f"経過 {span(now - begun)}（{started} から）")
+    updated, said = last_output(info, now, mine)
+    parts.append(said)
+    line = flat("・".join(parts))
+    if updated is not None and now - updated >= STALL:
+        line += f"——止まっている疑い（出力が {span(STALL)} 以上増えていない）"
+    return line
+
+
+def slot_files(lockdir: Path) -> list[Path]:
+    """枠のディレクトリの `slot-<k>.lock` を k の順に（宣言の本数に依らない——減らす前の枠で走っているものも見える）。"""
+    try:
+        names = os.listdir(lockdir)
+    except OSError:
+        return []
+    found = [(int(m.group(1)), lockdir / name) for name in names if (m := SLOT.fullmatch(name))]
+    return [path for _, path in sorted(found)]
+
+
+def holders(lockdir: Path, mine: frozenset = frozenset()) -> list[str]:
+    """いま走っているもの（枠の持ち主）を 1 つ 1 行で。記録の pid が居ないもの（走り終えて記録だけ残ったもの）は出さない。読むだけで、何も書かない。
+    `mine` は見ている側の出力のファイル（`last_output`）。"""
+    now = time.time()
+    found = []
+    for path in slot_files(lockdir):
+        try:
+            info = json.loads(path.read_text(encoding="utf-8") or "{}")
         except (OSError, ValueError):
             continue
-        if isinstance(info, dict) and info:
-            found.append(f"pid {info.get('pid')}・{info.get('cwd')}・{info.get('command')}（{info.get('started')} から）")
+        if not isinstance(info, dict) or not info:
+            continue
+        pid = info.get("pid")
+        if type(pid) is not int or pid <= 0 or not alive(pid):
+            continue
+        found.append(describe(info, now, mine))
     return found
+
+
+def show_holders() -> int:
+    """`holders` の口: 持ち主を標準出力に 1 回だけ出して終わる。枠を取らず、枠のディレクトリを作らない。"""
+    common = common_dir(Path.cwd())
+    if common is None:
+        say("枠を決められない（git の共通ディレクトリが決まらない）")
+        return CANNOT
+    running = holders(common / "dev-loop-serial")
+    print("\n".join(running) if running else "走っているものは無い", flush=True)
+    return 0
 
 
 def acquire(lockdir: Path, slots: int, parent: int) -> int | None:
     """枠を 1 つ取って fd を返す。取れるまで待つ。待っているあいだに起動したときの親（`parent`）が居なくなったら、取らずに None。"""
-    waited = None
+    waited = reported = None
+    mine = waiter_files()
     while True:
         if os.getppid() != parent:
             say(f"呼び出し元（pid {parent}）が居なくなった——枠を取らずに終わる（走らせていない）")
@@ -323,17 +453,59 @@ def acquire(lockdir: Path, slots: int, parent: int) -> int | None:
             if waited is not None:
                 say(f"{time.monotonic() - waited:.1f} 秒待って枠を取った")
             return fd
-        if waited is None:
-            waited = time.monotonic()
-            running = holders(lockdir, slots)
-            say(f"待っている（同じリポジトリで同時に {slots} 本まで）。走っているもの: "
-                + ("; ".join(running) if running else "（読めなかった）"))
+        now = time.monotonic()
+        if waited is None or now - reported >= REPORT:
+            if waited is None:
+                waited, head = now, f"待っている（同じリポジトリで同時に {slots} 本まで）。走っているもの:"
+            else:
+                head = f"まだ待っている（{span(now - waited)}）。走っているもの:"
+            reported = now
+            running = holders(lockdir, mine)
+            say(head + ("" if running else " （読めなかった）"))
+            for line in running:
+                say(f"  {line}")
         time.sleep(POLL)
+
+
+def fd_path(fd: int) -> str | None:
+    """開いているファイルのパス（macOS は `F_GETPATH`、Linux は `/proc/self/fd`）。取れなければ None。"""
+    getpath = getattr(fcntl, "F_GETPATH", None)
+    try:
+        if getpath is not None:
+            return os.fsdecode(fcntl.fcntl(fd, getpath, bytes(1024)).split(b"\0", 1)[0]) or None
+        return os.readlink(f"/proc/self/fd/{fd}")
+    except OSError:
+        return None
+
+
+def output_files(fds: tuple[int, ...] = (1, 2)) -> list[dict]:
+    """自分の `fds`（既定は標準出力・標準エラー——コマンドが継ぐ）のうち、通常のファイルのもの。パス・`st_dev`・`st_ino`。"""
+    found: list[dict] = []
+    for fd in fds:
+        try:
+            st = os.fstat(fd)
+        except OSError:
+            continue
+        if not stat.S_ISREG(st.st_mode) or any((o["dev"], o["ino"]) == (st.st_dev, st.st_ino) for o in found):
+            continue
+        path = fd_path(fd)
+        try:
+            same = os.stat(path) if path else None
+        except OSError:
+            same = None
+        if same is not None and (same.st_dev, same.st_ino) == (st.st_dev, st.st_ino):
+            found.append({"path": path, "dev": st.st_dev, "ino": st.st_ino})
+    return found
+
+
+def waiter_files() -> frozenset:
+    """待ち手が待っているあいだに書くファイルの (`st_dev`, `st_ino`)——標準エラー（`say`）だけ。標準出力には書かない。"""
+    return frozenset((out["dev"], out["ino"]) for out in output_files((2,)))
 
 
 def record(fd: int, command: list[str]) -> None:
     info = {"pid": os.getpid(), "cwd": os.getcwd(), "command": " ".join(command),
-            "started": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+            "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "outputs": output_files()}
     os.ftruncate(fd, 0)
     os.lseek(fd, 0, os.SEEK_SET)
     os.write(fd, json.dumps(info, ensure_ascii=False).encode("utf-8"))
@@ -440,7 +612,7 @@ def run(command: list[str], env: dict[str, str], timeout: int) -> int:
 
 def options(argv: list[str]) -> tuple[list[str], int] | None:
     """(コマンド, 期限の秒数)。使い方に合わなければ言って None。"""
-    usage = "使い方: run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]"
+    usage = "使い方: run-serial.py [--timeout <秒>] -- <コマンド> [引数 …]（持ち主を出すだけなら run-serial.py holders）"
     if "--" not in argv or not argv[argv.index("--") + 1:]:
         say(usage)
         return None
@@ -467,6 +639,11 @@ def options(argv: list[str]) -> tuple[list[str], int] | None:
 
 def main(argv: list[str]) -> int:
     parent = os.getppid()
+    if argv[:1] == [HOLDERS]:
+        if argv[1:]:
+            say(f"`{HOLDERS}` は引数を取らない（{argv[1]!r}）——使い方: run-serial.py holders")
+            return USAGE
+        return show_holders()
     parsed = options(argv)
     if parsed is None:
         return USAGE
