@@ -126,15 +126,66 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
    進んでいると返事のあった項なら、その日時から `STALL` たつまで何もせず、たってもまだ同じ pid に疑いが出ていれば、その項を外してここから知らせ直す（一度「進んでいる」と返した処理が後で止まることがある）。
    - **宛てられない周**（`agent` が `claude-p:` で始まる子プロセス・宛てられる ID でない）は知らせられない——`note` に `枠の確認: <日時> に pid <pid> の疑いを見た（知らせられない）` と書き、3 へ進む。
 3. **止める**——**`枠の確認:` の日時から `STALL`（run-serial の docstring の値）たっても子の返事が無く、`holders` に同じ pid が行末の `止まっている疑い` のまま出ていれば**、止める。
-   止める前に 2 つを見る——**その pid がいまも run-serial のラッパーであること**（`ps -p <pid> -o command=` に `run-serial.py` が出る。記録だけ残った pid が別のプロセスに使い回されていることがある——
-   run-serial の docstring の「守らない」。出なければ止めず、利用者に `holders` の行を渡す）と、**コマンドの子孫の pid**（ラッパーから `pgrep -P` を子へ順にたどる）。
-   そのうえでラッパーに `kill -TERM <pid>` を送る（ラッパーは SIGTERM をコマンドに渡し、コマンドが終わってから枠を返す——docstring の「守る」）。
+   止める前に、**その pid がいまも、記録を書いたラッパーであること**を確かめる（D5）——記録だけ残った pid が別のプロセスに使い回されていることがあり
+   （run-serial の docstring の「守らない」）、`run-serial.py` の部分一致では `test-run-serial.py`・別の周のラッパー・`holders` の呼び出しにも当たる。照合するのは次の 4 つで、**全部が合うときだけ止める**:
+   - **枠の記録にその pid がある**——枠のディレクトリ（`<git の共通ディレクトリ>/dev-loop-serial/slot-<k>.lock`）の記録の `pid`
+   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] -- <コマンド>` で起こした形
+   - **`--` の後ろが、記録の `command` とちょうど同じ**、**プロセスの cwd が記録の `cwd` と同じ**（macOS は `lsof`、Linux は `/proc/<pid>/cwd`）
+   - **プロセスを起こした時刻が、記録の `started`（枠を取った時刻）より後でない**——後なら、記録の後に pid を使い回したプロセスである
+
+   合わなければ止めず、利用者に `holders` の行と、照合が出した理由を渡す。合えば、**コマンドの子孫の pid**（ラッパーから `pgrep -P` を子へ順にたどる）を数えてから、
+   ラッパーに `kill -TERM <pid>` を送る（ラッパーは SIGTERM をコマンドに渡し、コマンドが終わってから枠を返す——docstring の「守る」）。
    **SIGTERM が止めるのはコマンドだけで、コマンドの子孫は残りうる**（`bash -c '<写す処理>; …'` の下の処理など。ラッパーが終わると親の pid が 1 に移り、たどれなくなる）——
    数秒おいて、先に見た子孫のうちまだ居るものにも `kill -TERM` を送る（残った処理と、それが握る接続を片付ける）。
-   次の形で、数えた子孫と止めたあとに残ったものが出る（`bash` で走らせる——`zsh` は引用の無い変数を語に割らない）:
+   次の形で、照合の結果・数えた子孫・止めたあとに残ったものが出る（**メインの作業ツリーで**、1 行目の `<pid>` を `holders` の行の pid に置き換えて走らせる。
+   照合と止め方は `scripts/test-parallel-stop.py` がこのブロックを抜き出して走らせる——直したらテストも当てる）:
 
    ```bash
-   bash -c 'P=$1; ps -p "$P" -o command= | grep -q run-serial.py || { echo "run-serial でない"; exit 1; }; d() { for c in $(pgrep -P "$1"); do echo "$c"; d "$c"; done; }; DESC=$(d "$P"); echo "子孫: $(echo $DESC)"; kill -TERM "$P"; sleep 2; for c in $DESC; do kill -0 "$c" 2>/dev/null && { echo "残った: $c $(ps -p "$c" -o command=)"; kill -TERM "$c"; }; done; true' _ <pid>
+   P=<pid>
+   python3 - "$P" <<'PY' && bash -c 'P=$1; d() { for c in $(pgrep -P "$1"); do echo "$c"; d "$c"; done; }; DESC=$(d "$P"); echo "子孫: $(echo $DESC)"; kill -TERM "$P"; sleep 2; for c in $DESC; do kill -0 "$c" 2>/dev/null && { echo "残った: $c $(ps -p "$c" -o command=)"; kill -TERM "$c"; }; done; true' _ "$P"
+   import json, os, re, subprocess, sys, time
+   pid = int(sys.argv[1])
+   common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
+   lockdir = os.path.join(common, "dev-loop-serial")
+   rec = None
+   for name in sorted(os.listdir(lockdir)) if os.path.isdir(lockdir) else []:
+       if re.fullmatch(r"slot-[0-9]+\.lock", name):
+           try:
+               info = json.load(open(os.path.join(lockdir, name), encoding="utf-8"))
+           except (OSError, ValueError):
+               continue
+           if isinstance(info, dict) and info.get("pid") == pid:
+               rec = info
+   def ps(field):
+       return subprocess.run(["ps", "-p", str(pid), "-o", field + "="], capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"}).stdout.strip()
+   def cwd():
+       try:
+           return os.readlink(f"/proc/{pid}/cwd")
+       except OSError:
+           out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
+           return next((line[1:] for line in out.splitlines() if line.startswith("n")), None)
+   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout [0-9]+)? -- (.*)", ps("command"))
+   why = None
+   if rec is None:
+       why = "枠の記録にこの pid が無い"
+   elif m is None:
+       why = "run-serial の起動でない（ps のコマンド欄: " + ps("command") + "）"
+   elif m.group(1) != rec.get("command"):
+       why = "記録のコマンドと違う"
+   elif cwd() != rec.get("cwd"):
+       why = "記録の場所と違う"
+   else:
+       try:
+           begun = time.mktime(time.strptime(ps("lstart"), "%a %b %d %H:%M:%S %Y"))
+           taken = time.mktime(time.strptime(rec["started"][:19], "%Y-%m-%dT%H:%M:%S"))
+       except (KeyError, TypeError, ValueError):
+           why = "起こした時刻か記録の時刻が読めない"
+       else:
+           if begun > taken + 1:
+               why = "記録の後に起きたプロセス（pid の使い回し）"
+   print("照合: " + (why or "合った——止める"))
+   sys.exit(1 if why else 0)
+   PY
    ```
 
    止めたら、もう一度 `holders` を見る。**その pid が消えていれば**、子に（宛てられれば）止めたことを知らせ、`note` の `枠の確認:` の項を
