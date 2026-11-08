@@ -33,7 +33,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   （前の版との比較と同じ写しから。**v1 でも重ね合わせの決まりを通す**）と、作業中の版の `proposal/spec/*.md`（手書き。任意）。
   `spec/`・`requirements/` の `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio`・`.bpmn` は載せていないと書く（描画系は起動しない）。
   **書き出しが今のソースと合わない図**（ソース `X.drawio`・`X.bpmn` の隣の `X.svg` に `render-diagrams.py` の印が無いか、印の指紋がソースと違う。判定は
-  `render-diagrams.py` の関数を読み込む）**も載せ、仕様書にそう名指しする**（#902。終了コードは変えない）。載せるものと置き場所の正は `references/tree.md` の「仕様書」。
+  `render-diagrams.py` の関数を読み込む。改行の変換で作業ツリーが CRLF でも合うと見る）**も載せ、仕様書にそう名指しする**（#902。終了コードは変えない）。
+  `X.drawio.svg` は `X.drawio` の書き出しと数えるが、`X.bpmn.svg` は `X.bpmn` の書き出しと数えない（図としては載る）。載せるものと置き場所の正は `references/tree.md` の「仕様書」。
 - **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
 - **始める前に、前に作った出力を消し、全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
@@ -488,8 +489,12 @@ def figures_of(whole) -> tuple[list[str], list[str], list[str]]:
     """(載せる図——`.svg`、書き出しが無いので載せないソース——`.drawio`・`.bpmn`、
     載せるが書き出しが今のソースと合わない図——「`<書き出し>`（理由）」)。どれもパスの順。図は `spec/`・`requirements/` の中だけ。
 
-    鮮度は `render-diagrams.py` と同じ判定——ソース `X.drawio`・`X.bpmn` の書き出し `X.svg`（大文字小文字を区別しない）の印が無いか、
-    印の指紋がソースのバイトの sha256 と違う。`X.drawio.svg`・`X.bpmn.svg` は `render-diagrams.py` の書き出しではないので鮮度を見ない。"""
+    鮮度は `render-diagrams.py` の印で見る——ソース `X.drawio`・`X.bpmn` の書き出し `X.svg`（大文字小文字を区別しない）の印が無いか、
+    印の指紋がソースのバイトの sha256 と違う。**ソースのバイトは承認のタグの blob で、`render-diagrams.py` は作業ツリーのバイトで印を書く**ので、
+    改行の変換（`core.autocrlf`・`.gitattributes` の `eol`）で作業ツリーが CRLF になっても合うよう、LF と CRLF の両方の形の指紋を許す。
+    `X.drawio.svg` は drawio の書き出し（編集できる SVG）と数えるが `render-diagrams.py` の書き出しではないので鮮度を見ない。
+    `X.bpmn.svg` は BPMN の書き出しと数えない（BPMN にその形は無い。図としては他の `.svg` と同じく載る）。
+    ソースの消えた印つきの `.svg`（`render-diagrams.py --check` の「ソースが無い」）は見ない。"""
     paths = sorted(p for p in whole.files if p.startswith(FIGURE_DIRS))
     svgs = [p for p in paths if p.lower().endswith(".svg")]
     by_lower = {p.lower(): p for p in svgs}
@@ -501,15 +506,21 @@ def figures_of(whole) -> tuple[list[str], list[str], list[str]]:
             continue
         out = by_lower.get(f"{p[:-len(suffix)]}.svg".lower())
         if out is None:
-            if f"{p}.svg".lower() not in by_lower:
+            if suffix != ".drawio" or f"{p}.svg".lower() not in by_lower:
                 missing.append(p)
             continue
         got = diagrams.marked_digest(whole.files[out])
         if got is None:
             stale.append(f"`{out}`（印が無い——`render-diagrams.py` で書き出していない）")
-        elif got != diagrams.source_digest(whole.files[p]):
+        elif got not in eol_digests(whole.files[p]):
             stale.append(f"`{out}`（古い——ソース `{p}` を直したあと書き出していない）")
     return svgs, missing, stale
+
+
+def eol_digests(data: bytes) -> set[str]:
+    """ソースの指紋（`render-diagrams.py` の式）を、改行を LF にした形と CRLF にした形の両方で。"""
+    lf = data.replace(b"\r\n", b"\n")
+    return {diagrams.source_digest(form) for form in (data, lf, lf.replace(b"\n", b"\r\n"))}
 
 
 def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, diff,

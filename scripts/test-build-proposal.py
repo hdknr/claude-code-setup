@@ -40,8 +40,9 @@
 12. **一時ディレクトリの外を消さない・リンクの古い出力を消さない・読めない印を書き換えない**（#512）——`drop_internal` は途中のリンク
    （`docs/v2/spec`）を辿って外の `qa-dev.csv` を消さない。印が名指しする出力が先の在る symlink なら、リンクも先も消さずに先のパスを名指しして 2
    （辿れない先も同じ。壊れたリンクは消す）。印が読めない（UTF-8 で読めない・symlink）なら書き換えず・先に書かずに 2。`same_entry` は親の違う名前を同じ項目と読まない。
-13. **業務フロー（BPMN）の書き出しを仕様書に載せる**（#902）——書き出しの無い `.bpmn` を「載せていない」と名指しし、`X.bpmn.svg` も書き出しと数える。
-   書き出しが今のソースと合わない図（`render-diagrams.py` の印が無い・指紋が違う。drawio も同じ）は載せたうえで名指しし、合う図は名指ししない。
+13. **業務フロー（BPMN）の書き出しを仕様書に載せる**（#902）——書き出しの無い `.bpmn` を「載せていない」と名指しし、`X.bpmn.svg` は書き出しと数えない（`X.drawio.svg` は数える）。
+   書き出しが今のソースと合わない図（`render-diagrams.py` の印が無い・指紋が違う。drawio も同じ）は載せたうえで名指しし、合う図は名指ししない
+   （作業ツリーが CRLF で書いた印も合うと見る）。
    試料の印は `render-diagrams.py` の `mark` で付ける——書き出しの側が書く印を本体が読めることを見る。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
@@ -134,6 +135,7 @@ _RD = _render_diagrams()
 BPMN_SRC = '<?xml version="1.0" encoding="UTF-8"?>\n<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"/>\n'
 BPMN_SRC_NEW = BPMN_SRC.replace("/>", "><bpmn:process id=\"p\"/></bpmn:definitions>")
 DRAWIO_SRC = "<mxfile><diagram>画面</diagram></mxfile>\n"
+DRAWIO_SRC_NEW = DRAWIO_SRC.replace("画面", "画面 2")
 
 
 def marked(svg: str, source: str) -> str:
@@ -146,8 +148,12 @@ BPMN_STEPS = [
     ("w", FLOWS + "出荷.bpmn", BPMN_SRC),                                                         # 書き出しが無い——載せていないと名指し
     ("w", FLOWS + "返品.bpmn", BPMN_SRC_NEW), ("w", FLOWS + "返品.svg", marked(SVG, BPMN_SRC)),   # ソースを直したあと書き出していない——古い
     ("w", FLOWS + "Order.BPMN", BPMN_SRC), ("w", FLOWS + "Order.svg", SVG),                       # 印が無い（名前と拡張子の大文字小文字が違う）
-    ("w", FLOWS + "問合せ.bpmn", BPMN_SRC), ("w", FLOWS + "問合せ.bpmn.svg", SVG),               # `X.bpmn.svg` も書き出しと数える（鮮度は見ない）
+    ("w", FLOWS + "問合せ.bpmn", BPMN_SRC), ("w", FLOWS + "問合せ.bpmn.svg", SVG),               # `X.bpmn.svg` は BPMN の書き出しと数えない（図としては載る）
+    # 作業ツリーが CRLF（`core.autocrlf`）で書き出した印——blob は LF。合う図と見る（1 パス目 CR-3）
+    ("w", FLOWS + "請求.bpmn", BPMN_SRC), ("w", FLOWS + "請求.svg", marked(SVG, BPMN_SRC.replace("\n", "\r\n"))),
     ("w", "docs/v1/spec/画面.drawio", DRAWIO_SRC), ("w", "docs/v1/spec/画面.svg", marked(SVG, DRAWIO_SRC)),  # drawio の今の書き出し
+    ("w", "docs/v1/spec/構成.drawio", DRAWIO_SRC_NEW), ("w", "docs/v1/spec/構成.svg", marked(SVG, DRAWIO_SRC)),  # drawio の古い書き出し（1 パス目 V-1）
+    ("w", "docs/v1/spec/配置.drawio", DRAWIO_SRC), ("w", "docs/v1/spec/配置.drawio.svg", SVG),  # `X.drawio.svg` は drawio の書き出しと数える（鮮度は見ない）
 ]
 SIGNED_BPMN = BASE[:-1] + SPEC_STEPS + BPMN_STEPS + [("c",), ("t", R1), ("t", B1)]
 FIG_MISSING = "書き出し（`.svg`）が無いので載せていない図:"
@@ -167,13 +173,16 @@ def between(text: str | None, start: str, stop: str) -> str:
 def bpmn_figures(r) -> bool:
     missing = between(r.spec, FIG_MISSING, FIG_STALE)
     stale = between(r.spec, FIG_STALE, "## ")
-    return (made(r) and "| 図 | 6（書き出しが無いので載せていない図 2・書き出しが今のソースと合わない図 2） |" in r.spec
-            and "![requirements/flows/受注.svg](spec-figure-02.svg)" in r.spec and "spec-figure-06.svg" in r.names
+    return (made(r) and "| 図 | 9（書き出しが無いので載せていない図 3・書き出しが今のソースと合わない図 3） |" in r.spec
+            and "![requirements/flows/受注.svg](spec-figure-02.svg)" in r.spec and "spec-figure-09.svg" in r.names
+            and "![requirements/flows/問合せ.bpmn.svg](spec-figure-03.svg)" in r.spec
             and "- `requirements/flows/出荷.bpmn`" in missing and "- `requirements/flow.drawio`" in missing
-            and "問合せ" not in missing and "受注" not in missing and "Order" not in missing
+            and "- `requirements/flows/問合せ.bpmn`" in missing
+            and "受注" not in missing and "Order" not in missing and "配置" not in missing and "請求" not in missing
+            and "- `spec/構成.svg`（古い——ソース `spec/構成.drawio` を直したあと" in stale
             and "- `requirements/flows/返品.svg`（古い——ソース `requirements/flows/返品.bpmn` を直したあと" in stale
             and "- `requirements/flows/Order.svg`（印が無い" in stale
-            and "受注" not in stale and "問合せ" not in stale and "画面" not in stale)
+            and "受注" not in stale and "問合せ" not in stale and "画面" not in stale and "請求" not in stale and "配置" not in stale)
 # 回答に「暫定で採用」と書いて反映済みにした行（#366 の実データの形）と、確認中のまま「暫定で採用」と書いた行。
 # 暫定は `状態` だけで決まる（#404）——前者は確定の行、後者は未決定の質問
 PROVISIONAL_QA = (QA_HEAD + QA_ROWS.replace("A（業務部が回答）", "A（推奨案を暫定で採用。開発側の指示）")
@@ -665,10 +674,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ソースの拡張子の大文字小文字を区別する", "if p.lower().endswith(s)), None)", "if p.endswith(s)), None)", "仕様書に BPMN の書き出しを載せる"),
     ("書き出しの名前の大文字小文字を区別する", 'by_lower.get(f"{p[:-len(suffix)]}.svg".lower())', 'by_lower.get(f"{p[:-len(suffix)]}.svg")',
      "仕様書に BPMN の書き出しを載せる"),
-    ("X.bpmn.svg を書き出しと数えない", '            if f"{p}.svg".lower() not in by_lower:\n', "            if True:\n", "仕様書に BPMN の書き出しを載せる"),
+    ("X.drawio.svg を書き出しと数えない", '            if suffix != ".drawio" or f"{p}.svg".lower() not in by_lower:\n', "            if True:\n",
+     "仕様書に BPMN の書き出しを載せる"),
+    ("X.bpmn.svg も BPMN の書き出しと数える", 'if suffix != ".drawio" or f"{p}.svg"', 'if f"{p}.svg"', "仕様書に BPMN の書き出しを載せる"),
+    ("鮮度を BPMN だけで見る", "        got = diagrams.marked_digest(whole.files[out])\n",
+     "        if suffix == \".drawio\":\n            continue\n        got = diagrams.marked_digest(whole.files[out])\n", "仕様書に BPMN の書き出しを載せる"),
+    ("改行の変換を許さない", "        elif got not in eol_digests(whole.files[p]):", "        elif got != diagrams.source_digest(whole.files[p]):",
+     "仕様書に BPMN の書き出しを載せる"),
+    ("CRLF の形を許さない", "for form in (data, lf, lf.replace(b\"\\n\", b\"\\r\\n\"))", "for form in (data, lf)", "仕様書に BPMN の書き出しを載せる"),
     ("印の無い書き出しを言わない", "        if got is None:\n            stale", "        if False:\n            stale", "仕様書に BPMN の書き出しを載せる"),
-    ("古い書き出しを言わない", "        elif got != diagrams.source_digest(whole.files[p]):", "        elif False:", "仕様書に BPMN の書き出しを載せる"),
-    ("書き出しの中身で指紋を比べる", "diagrams.source_digest(whole.files[p])", "diagrams.source_digest(whole.files[out])",
+    ("古い書き出しを言わない", "        elif got not in eol_digests(whole.files[p]):", "        elif False:", "仕様書に BPMN の書き出しを載せる"),
+    ("書き出しの中身で指紋を比べる", "eol_digests(whole.files[p])", "eol_digests(whole.files[out])",
      "仕様書に BPMN の書き出しを載せる"),
     ("合わない図を書かない", "    if stale:\n", "    if False:\n", "仕様書に BPMN の書き出しを載せる"),
     ("合わない図を数えない", "書き出しが今のソースと合わない図 {len(stale)}", "書き出しが今のソースと合わない図 0", "仕様書に BPMN の書き出しを載せる"),

@@ -120,6 +120,7 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
   文書からは `flows/<名前>.svg` を指す。書き出しは drawio の図と同じ `render-diagrams.py`（上の「書き出しと確かめ方」のコマンド）が、
   `.drawio` と一緒に書き出し、同じ印（ソースの指紋）を書き込む。`--check` も同じく、`.bpmn` の書き出しが無い・古い・印が無いことを名指しする。
   **書き出しを手で作らない**——Camunda Modeler やほかの道具で書き出した `.svg` も置かない（印が無いので `--check` が「印が無い」で落ちる）。
+  `<名前>.bpmn.svg` は書き出しと数えない（drawio の `<名前>.drawio.svg` と違い、BPMN にその形は無い——仕様書は `.bpmn` を「載せていない」と名指しする）。
 - **書き出しに要るもの**: 描画は bpmn-js（Camunda Modeler と同じ描画部品）を headless の Chrome で動かす（同梱の `render-bpmn.mjs`）。
   要るのは Node（`PATH` の `node`）・bpmn-js と puppeteer-core（**正本リポジトリの外の**ディレクトリで `npm install bpmn-js puppeteer-core` を走らせ、
   そのディレクトリを環境変数 `SPEC_LOOP_BPMN_DEPS` で渡す）・Chrome（`CHROME_PATH`。macOS は既定の場所を見る）。
