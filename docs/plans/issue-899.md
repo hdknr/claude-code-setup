@@ -28,6 +28,7 @@
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-899.md` — この計画ファイル
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`ledger.md` の行数が変わるので `skill-metrics.py` で作り直す。手で書かない）
 
 触らない:
 
@@ -85,7 +86,7 @@ main へのマージでプラグインの配布（dev-loop 1.102.0）。公開�
   手順が使う道具の振る舞い（`holders` の出力・SIGTERM で枠が返る）は不変条件 4 で確かめる。
 - ssh の `ServerAliveInterval` の例が切れた接続を落とすこと——例として挙げるだけで、走らせていない（文面にそう書く）。
 
-**生成物**: 該当なし（drawio の書き出し・`SKILL.md` の測定値の生成ブロック（cruise の `SKILL.md` は対象外——`skill-metrics.py --check` は `check-all.py` が回す）は触らない）。
+**生成物**: 設計ドキュメント §8.2 の生成ブロック——`ledger.md` の行数が変わるので該当する。`python3 scripts/skill-metrics.py` で作り直し、`--check` が緑であることを受入基準 5 に含める（`check-all.py` が回す）。drawio の書き出しは触らない。
 
 ## 関門の進捗（再開点）
 
@@ -101,4 +102,4 @@ main へのマージでプラグインの配布（dev-loop 1.102.0）。公開�
 
 ## 経験の還元（手順 8）
 
-（周の終わりに書く）
+- この周の起票: 1 件（仕様の穴の確認の Issue。番号は「決めたこと」）
