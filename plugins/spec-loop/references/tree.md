@@ -106,7 +106,8 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
   python3 <spec-loop の base ディレクトリ>/scripts/render-diagrams.py [<正本リポジトリの根>] --check  # 確かめる
   ```
 
-- **仕様書に載るのは `spec/`・`requirements/` の図**（下の「仕様書」）。`.svg` の無い `.drawio` は「載せていない」と書かれるので、
+- **仕様書に載るのは `spec/`・`requirements/` の図**（下の「仕様書」）。`.svg` の無い `.drawio` は「載せていない」と書かれ、
+  書き出しが今のソースと合わない（印が無い・ソースを直したあと書き出していない）図は載ったうえで「今のソースと合わない」と書かれるので、
   **ソースを足したら書き出して、`.drawio` と `.svg` を一緒に commit してから 2 つの承認（サインオフのタグ）を取る**——仕様書は承認したタグの時点の中身から作る
   （`signoff-tags.md`）ので、タグの後に書き出した `.svg` は載らない。タグの後に足せば 2 つの承認が見た中身が変わり、承認の取り直しになる。
 
@@ -119,6 +120,7 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
   文書からは `flows/<名前>.svg` を指す。書き出しは drawio の図と同じ `render-diagrams.py`（上の「書き出しと確かめ方」のコマンド）が、
   `.drawio` と一緒に書き出し、同じ印（ソースの指紋）を書き込む。`--check` も同じく、`.bpmn` の書き出しが無い・古い・印が無いことを名指しする。
   **書き出しを手で作らない**——Camunda Modeler やほかの道具で書き出した `.svg` も置かない（印が無いので `--check` が「印が無い」で落ちる）。
+  `<名前>.bpmn.svg` は書き出しと数えない（drawio の `<名前>.drawio.svg` と違い、BPMN にその形は無い——仕様書は `.bpmn` を「載せていない」と名指しし、隣に `.bpmn` のある `<名前>.bpmn.svg` は図としても載せない）。
 - **書き出しに要るもの**: 描画は bpmn-js（Camunda Modeler と同じ描画部品）を headless の Chrome で動かす（同梱の `render-bpmn.mjs`）。
   要るのは Node（`PATH` の `node`）・bpmn-js と puppeteer-core（**正本リポジトリの外の**ディレクトリで `npm install bpmn-js puppeteer-core` を走らせ、
   そのディレクトリを環境変数 `SPEC_LOOP_BPMN_DEPS` で渡す）・Chrome（`CHROME_PATH`。macOS は既定の場所を見る）。
@@ -126,8 +128,8 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
   描画口の差し替え（`BPMN_RENDER`）・時間切れ・確かめた版は、スクリプトの docstring を正とする。
 - **仕様書に載るのは、書き出した `.svg`**——仕様書の生成は `requirements/` の `.svg` を図として載せるので、`flows/` の書き出しも載る。
   drawio の図と同じく、**`.bpmn` と `.svg` を一緒に commit してから 2 つの承認（サインオフのタグ）を取る**。
-  **書き出しの無い `.bpmn` は、まだ「載せていない図」として名指しされない**（`build-proposal.py` は `.bpmn` を要求のファイルとして数え、ファイルの一覧に出すだけ。
-  名指しは #902 で入れる）——書き出しを忘れると、黙って図から落ちる。`render-diagrams.py --check` が「書き出しが無い」と言うので、承認の前に回す。
+  **書き出しの無い `.bpmn` は「載せていない図」として、書き出しが今のソースと合わない `.bpmn` の図は「今のソースと合わない図」として仕様書に名指しされる**
+  （drawio の図と同じ。#902）——承認のタグの後では書き出しを直せないので、`render-diagrams.py --check` を承認の前に回す。
 - **同じディレクトリに、同じ名前の `.drawio` と `.bpmn` を置かない**（大文字小文字だけ違う名前も）——書き出しが同じ `<名前>.svg` になる（大文字小文字を区別しないファイルシステムでは大文字小文字だけ違う名前も）ので、`render-diagrams.py` は何も書かずに止まる。
 
 ## 生成物の置き場所
@@ -207,7 +209,7 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | 節 | 材料 |
 | --- | --- |
 | 規模 | 要求・仕様のファイルの数・決定表の行・共有の Q&A（決定・暫定・未決定）・中間表現の機能・図の数 |
-| 構成の図 | `spec/`・`requirements/` の `.svg` のファイル（`.drawio.svg` を含む）。`.svg` の無い `.drawio` は**載せていないと書く** |
+| 構成の図 | `spec/`・`requirements/` の `.svg` のファイル（`.drawio.svg` を含む。業務フローの BPMN の書き出しも。隣に `.bpmn` のある `.bpmn.svg` は除く）。`.svg` の無い `.drawio`・`.bpmn` は**載せていないと書く**。書き出しが今のソースと合わない図（`render-diagrams.py` の印が無い・指紋が違う）は**載せて、合わないと書く**（#902） |
 | 機能の一覧 | 中間表現（`spec/spec_ir.json`）の `features`。scaffold の前は無いと書く |
 | 決定表 | `shared/decision_table.csv`（1 行目を見出しとして、そのまま表にする） |
 | 範囲の外 | 範囲の文書（`spec/scope.md`。`spec-scope.md`）の、見出しに「範囲の外」を含む節の本文 |
