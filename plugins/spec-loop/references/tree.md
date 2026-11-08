@@ -120,7 +120,7 @@ hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック�
   文書からは `flows/<名前>.svg` を指す。書き出しは drawio の図と同じ `render-diagrams.py`（上の「書き出しと確かめ方」のコマンド）が、
   `.drawio` と一緒に書き出し、同じ印（ソースの指紋）を書き込む。`--check` も同じく、`.bpmn` の書き出しが無い・古い・印が無いことを名指しする。
   **書き出しを手で作らない**——Camunda Modeler やほかの道具で書き出した `.svg` も置かない（印が無いので `--check` が「印が無い」で落ちる）。
-  `<名前>.bpmn.svg` は書き出しと数えない（drawio の `<名前>.drawio.svg` と違い、BPMN にその形は無い——仕様書は `.bpmn` を「載せていない」と名指しする）。
+  `<名前>.bpmn.svg` は書き出しと数えない（drawio の `<名前>.drawio.svg` と違い、BPMN にその形は無い——仕様書は `.bpmn` を「載せていない」と名指しし、隣に `.bpmn` のある `<名前>.bpmn.svg` は図としても載せない）。
 - **書き出しに要るもの**: 描画は bpmn-js（Camunda Modeler と同じ描画部品）を headless の Chrome で動かす（同梱の `render-bpmn.mjs`）。
   要るのは Node（`PATH` の `node`）・bpmn-js と puppeteer-core（**正本リポジトリの外の**ディレクトリで `npm install bpmn-js puppeteer-core` を走らせ、
   そのディレクトリを環境変数 `SPEC_LOOP_BPMN_DEPS` で渡す）・Chrome（`CHROME_PATH`。macOS は既定の場所を見る）。
@@ -209,7 +209,7 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | 節 | 材料 |
 | --- | --- |
 | 規模 | 要求・仕様のファイルの数・決定表の行・共有の Q&A（決定・暫定・未決定）・中間表現の機能・図の数 |
-| 構成の図 | `spec/`・`requirements/` の `.svg` のファイル（`.drawio.svg` を含む。業務フローの BPMN の書き出しも）。`.svg` の無い `.drawio`・`.bpmn` は**載せていないと書く**。書き出しが今のソースと合わない図（`render-diagrams.py` の印が無い・指紋が違う）は**載せて、合わないと書く**（#902） |
+| 構成の図 | `spec/`・`requirements/` の `.svg` のファイル（`.drawio.svg` を含む。業務フローの BPMN の書き出しも。隣に `.bpmn` のある `.bpmn.svg` は除く）。`.svg` の無い `.drawio`・`.bpmn` は**載せていないと書く**。書き出しが今のソースと合わない図（`render-diagrams.py` の印が無い・指紋が違う）は**載せて、合わないと書く**（#902） |
 | 機能の一覧 | 中間表現（`spec/spec_ir.json`）の `features`。scaffold の前は無いと書く |
 | 決定表 | `shared/decision_table.csv`（1 行目を見出しとして、そのまま表にする） |
 | 範囲の外 | 範囲の文書（`spec/scope.md`。`spec-scope.md`）の、見出しに「範囲の外」を含む節の本文 |

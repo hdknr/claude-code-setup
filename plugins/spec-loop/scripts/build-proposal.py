@@ -34,7 +34,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   `spec/`・`requirements/` の `.svg` の図は同じ場所に `spec-figure-NN.svg` として写して載せ、`.svg` の無い `.drawio`・`.bpmn` は載せていないと書く（描画系は起動しない）。
   **書き出しが今のソースと合わない図**（ソース `X.drawio`・`X.bpmn` の隣の `X.svg` に `render-diagrams.py` の印が無いか、印の指紋がソースと違う。判定は
   `render-diagrams.py` の関数を読み込む。改行の変換で作業ツリーが CRLF でも合うと見る）**も載せ、仕様書にそう名指しする**（#902。終了コードは変えない）。
-  `X.drawio.svg` は `X.drawio` の書き出しと数えるが、`X.bpmn.svg` は `X.bpmn` の書き出しと数えない（図としては載る）。載せるものと置き場所の正は `references/tree.md` の「仕様書」。
+  `X.drawio.svg` は `X.drawio` の書き出しと数えるが、`X.bpmn.svg` は `X.bpmn` の書き出しと数えず、隣に `X.bpmn` があれば図としても載せない。載せるものと置き場所の正は `references/tree.md` の「仕様書」。
 - **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
 - **始める前に、前に作った出力を消し、全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
@@ -493,10 +493,12 @@ def figures_of(whole) -> tuple[list[str], list[str], list[str]]:
     印の指紋がソースのバイトの sha256 と違う。**ソースのバイトは承認のタグの blob で、`render-diagrams.py` は作業ツリーのバイトで印を書く**ので、
     改行の変換（`core.autocrlf`・`.gitattributes` の `eol`）で作業ツリーが CRLF になっても合うよう、LF と CRLF の両方の形の指紋を許す。
     `X.drawio.svg` は drawio の書き出し（編集できる SVG）と数えるが `render-diagrams.py` の書き出しではないので鮮度を見ない。
-    `X.bpmn.svg` は BPMN の書き出しと数えない（BPMN にその形は無い。図としては他の `.svg` と同じく載る）。
+    `X.bpmn.svg` は BPMN の書き出しと数えず、隣に `X.bpmn` があれば図としても載せない（BPMN にその形は無い——手で作った書き出しなので、
+    `X.bpmn` を「載せていない」と名指しするだけにし、載せつつ載せていないと言う矛盾を作らない。`X.bpmn` の無い `X.bpmn.svg` はふつうの図として載る）。
     ソースの消えた印つきの `.svg`（`render-diagrams.py --check` の「ソースが無い」）は見ない。"""
     paths = sorted(p for p in whole.files if p.startswith(FIGURE_DIRS))
-    svgs = [p for p in paths if p.lower().endswith(".svg")]
+    bpmn_sources = {p.lower() for p in paths if p.lower().endswith(".bpmn")}
+    svgs = [p for p in paths if p.lower().endswith(".svg") and not (p.lower().endswith(".bpmn.svg") and p[:-4].lower() in bpmn_sources)]
     by_lower = {p.lower(): p for p in svgs}
     missing: list[str] = []
     stale: list[str] = []
@@ -506,7 +508,8 @@ def figures_of(whole) -> tuple[list[str], list[str], list[str]]:
             continue
         out = by_lower.get(f"{p[:-len(suffix)]}.svg".lower())
         if out is None:
-            if suffix != ".drawio" or f"{p}.svg".lower() not in by_lower:
+            # 隣にソースのある `X.bpmn.svg` は `svgs` に無いので、ここで数えるのは `X.drawio.svg` だけ
+            if f"{p}.svg".lower() not in by_lower:
                 missing.append(p)
             continue
         got = diagrams.marked_digest(whole.files[out])
@@ -576,7 +579,7 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
     if missing:
         out += ["書き出し（`.svg`）が無いので載せていない図:", ""] + [f"- `{path}`" for path in missing] + [""]
     if stale:
-        out += ["書き出しが今のソースと合わない図（上に載せた。`render-diagrams.py --check` で確かめ、書き出し直して承認を取り直す）:", ""]
+        out += ["書き出しが今のソースと合わない図（仕様書（`spec.md`）の図には載せている。`render-diagrams.py --check` で確かめ、書き出し直して承認を取り直す）:", ""]
         out += [f"- {line}" for line in stale] + [""]
 
     out += ["## 機能の一覧", ""]

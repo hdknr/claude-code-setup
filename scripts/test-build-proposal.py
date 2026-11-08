@@ -40,7 +40,8 @@
 12. **一時ディレクトリの外を消さない・リンクの古い出力を消さない・読めない印を書き換えない**（#512）——`drop_internal` は途中のリンク
    （`docs/v2/spec`）を辿って外の `qa-dev.csv` を消さない。印が名指しする出力が先の在る symlink なら、リンクも先も消さずに先のパスを名指しして 2
    （辿れない先も同じ。壊れたリンクは消す）。印が読めない（UTF-8 で読めない・symlink）なら書き換えず・先に書かずに 2。`same_entry` は親の違う名前を同じ項目と読まない。
-13. **業務フロー（BPMN）の書き出しを仕様書に載せる**（#902）——書き出しの無い `.bpmn` を「載せていない」と名指しし、`X.bpmn.svg` は書き出しと数えない（`X.drawio.svg` は数える）。
+13. **業務フロー（BPMN）の書き出しを仕様書に載せる**（#902）——書き出しの無い `.bpmn` を「載せていない」と名指しし、`X.bpmn.svg` は書き出しと数えず、隣に `X.bpmn` があれば図としても載せない（`X.drawio.svg` は数える）。
+   合わない図の見出しは PPTX（図を載せない）でも偽にならない。
    書き出しが今のソースと合わない図（`render-diagrams.py` の印が無い・指紋が違う。drawio も同じ）は載せたうえで名指しし、合う図は名指ししない
    （作業ツリーが CRLF で書いた印も合うと見る）。
    試料の印は `render-diagrams.py` の `mark` で付ける——書き出しの側が書く印を本体が読めることを見る。
@@ -148,7 +149,9 @@ BPMN_STEPS = [
     ("w", FLOWS + "出荷.bpmn", BPMN_SRC),                                                         # 書き出しが無い——載せていないと名指し
     ("w", FLOWS + "返品.bpmn", BPMN_SRC_NEW), ("w", FLOWS + "返品.svg", marked(SVG, BPMN_SRC)),   # ソースを直したあと書き出していない——古い
     ("w", FLOWS + "Order.BPMN", BPMN_SRC), ("w", FLOWS + "Order.svg", SVG),                       # 印が無い（名前と拡張子の大文字小文字が違う）
-    ("w", FLOWS + "問合せ.bpmn", BPMN_SRC), ("w", FLOWS + "問合せ.bpmn.svg", SVG),               # `X.bpmn.svg` は BPMN の書き出しと数えない（図としては載る）
+    # `X.bpmn.svg` は BPMN の書き出しと数えず、隣に `X.bpmn` があれば図としても載せない——「載せていない」とだけ出す（利用者の判断で P2-2 を直した）
+    ("w", FLOWS + "問合せ.bpmn", BPMN_SRC), ("w", FLOWS + "問合せ.bpmn.svg", SVG),
+    ("w", FLOWS + "凡例.bpmn.svg", SVG),                                                          # 隣に `.bpmn` の無い `X.bpmn.svg` はふつうの図
     # 作業ツリーが CRLF（`core.autocrlf`）で書き出した印——blob は LF。合う図と見る（1 パス目 CR-3）
     ("w", FLOWS + "請求.bpmn", BPMN_SRC), ("w", FLOWS + "請求.svg", marked(SVG, BPMN_SRC.replace("\n", "\r\n"))),
     ("w", "docs/v1/spec/画面.drawio", DRAWIO_SRC), ("w", "docs/v1/spec/画面.svg", marked(SVG, DRAWIO_SRC)),  # drawio の今の書き出し
@@ -174,8 +177,9 @@ def bpmn_figures(r) -> bool:
     missing = between(r.spec, FIG_MISSING, FIG_STALE)
     stale = between(r.spec, FIG_STALE, "## ")
     return (made(r) and "| 図 | 9（書き出しが無いので載せていない図 3・書き出しが今のソースと合わない図 3） |" in r.spec
-            and "![requirements/flows/受注.svg](spec-figure-02.svg)" in r.spec and "spec-figure-09.svg" in r.names
-            and "![requirements/flows/問合せ.bpmn.svg](spec-figure-03.svg)" in r.spec
+            and "![requirements/flows/受注.svg](spec-figure-03.svg)" in r.spec and "spec-figure-09.svg" in r.names
+            and "![requirements/flows/凡例.bpmn.svg](spec-figure-02.svg)" in r.spec
+            and "![requirements/flows/問合せ.bpmn.svg]" not in r.spec and "spec-figure-10.svg" not in r.names
             and "- `requirements/flows/出荷.bpmn`" in missing and "- `requirements/flow.drawio`" in missing
             and "- `requirements/flows/問合せ.bpmn`" in missing
             and "受注" not in missing and "Order" not in missing and "配置" not in missing and "請求" not in missing
@@ -494,6 +498,11 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      and "—（中間表現が無い）" in r.spec and "| spec/a.md |" in r.spec and not r.pptx),
     # 業務フロー（BPMN）の書き出しを載せ、書き出しの無い `.bpmn` と、今のソースと合わない書き出しを名指しする（#902）
     ("仕様書に BPMN の書き出しを載せる", SIGNED_BPMN, False, bpmn_figures),
+    # 合わない図の見出しは、図を載せない PPTX でも偽にならない（利用者の判断で P2-7 を直した）
+    ("合わない図の見出しは PPTX でも偽にならない", SIGNED_BPMN + [("arg", "--pptx")], False,
+     lambda r: made(r) and "spec.pptx" in (r.pptx or {}) and "の図には載せている" in pptx_text(r.pptx["spec.pptx"])
+     and "返品.svg" in pptx_text(r.pptx["spec.pptx"]) and "上に載せた" not in pptx_text(r.pptx["spec.pptx"])
+     and FIGURE_NOTE in pptx_text(r.pptx["spec.pptx"])),
     # `Spec.html` は PPTX が `Spec.pptx`——仕様書の PPTX と大文字小文字だけ違う（区別しない FS では同じファイル）
     ("出力の名前が仕様書の PPTX と重なると作らない", SIGNED + [("out", "Spec.html"), ("arg", "--pptx")], False,
      collided),
@@ -674,9 +683,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ソースの拡張子の大文字小文字を区別する", "if p.lower().endswith(s)), None)", "if p.endswith(s)), None)", "仕様書に BPMN の書き出しを載せる"),
     ("書き出しの名前の大文字小文字を区別する", 'by_lower.get(f"{p[:-len(suffix)]}.svg".lower())', 'by_lower.get(f"{p[:-len(suffix)]}.svg")',
      "仕様書に BPMN の書き出しを載せる"),
-    ("X.drawio.svg を書き出しと数えない", '            if suffix != ".drawio" or f"{p}.svg".lower() not in by_lower:\n', "            if True:\n",
+    ("X.drawio.svg を書き出しと数えない", '            if f"{p}.svg".lower() not in by_lower:\n', "            if True:\n",
      "仕様書に BPMN の書き出しを載せる"),
-    ("X.bpmn.svg も BPMN の書き出しと数える", 'if suffix != ".drawio" or f"{p}.svg"', 'if f"{p}.svg"', "仕様書に BPMN の書き出しを載せる"),
     ("鮮度を BPMN だけで見る", "        got = diagrams.marked_digest(whole.files[out])\n",
      "        if suffix == \".drawio\":\n            continue\n        got = diagrams.marked_digest(whole.files[out])\n", "仕様書に BPMN の書き出しを載せる"),
     ("改行の変換を許さない", "        elif got not in eol_digests(whole.files[p]):", "        elif got != diagrams.source_digest(whole.files[p]):",
@@ -687,9 +695,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("書き出しの中身で指紋を比べる", "eol_digests(whole.files[p])", "eol_digests(whole.files[out])",
      "仕様書に BPMN の書き出しを載せる"),
     ("合わない図を書かない", "    if stale:\n", "    if False:\n", "仕様書に BPMN の書き出しを載せる"),
+    ("合わない図の見出しが PPTX で偽になる", "（仕様書（`spec.md`）の図には載せている。", "（上に載せた。", "合わない図の見出しは PPTX でも偽にならない"),
+    ("隣に .bpmn のある .bpmn.svg も載せる", ' and not (p.lower().endswith(".bpmn.svg") and p[:-4].lower() in bpmn_sources)]', "]",
+     "仕様書に BPMN の書き出しを載せる"),
+    (".bpmn.svg を全部載せない", " and p[:-4].lower() in bpmn_sources)]", ")]", "仕様書に BPMN の書き出しを載せる"),
     ("合わない図を数えない", "書き出しが今のソースと合わない図 {len(stale)}", "書き出しが今のソースと合わない図 0", "仕様書に BPMN の書き出しを載せる"),
-    ("合わない図は載せない", "    svgs = [p for p in paths if p.lower().endswith(\".svg\")]\n",
-     "    svgs = [p for p in paths if p.lower().endswith(\".svg\")]\n    svgs = [p for p in svgs if diagrams.marked_digest(whole.files[p]) is not None or p.endswith('drawio.svg') or p.endswith('bpmn.svg')]\n",
+    ("合わない図は載せない", "    by_lower = {p.lower(): p for p in svgs}\n",
+     "    by_lower = {p.lower(): p for p in svgs}\n    svgs = [p for p in svgs if diagrams.marked_digest(whole.files[p]) is not None or p.endswith('drawio.svg') or p.endswith('bpmn.svg')]\n",
      "仕様書に BPMN の書き出しを載せる"),
     ("範囲の外を載せない", '        out += body + [""]\n', '        out += [""]\n', "仕様書を作る"),
     ("範囲の外の節の終わりを見ない", "                if 0 < heading_level(rest) <= level:\n", "                if False:\n", "仕様書を作る"),
