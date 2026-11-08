@@ -242,6 +242,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-run-serial.py` - **重い検査・アプリの起動の順番待ちの回帰テスト**（#493。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/cruise/scripts/run-serial.py`**（同じ形）。テンポラリに偽のリポジトリと worktree を作り、
     **時間ではなく、走らせたコマンドが書く印と待つ側の出力で**「同時に走らない」「待っていると言う」を決める
+  - `test-parallel-stop.py` - **cruise の親が止まっている枠の持ち主を止める手順の照合の回帰テスト**（#899。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/cruise/references/parallel.md` の「止まっている枠の持ち主」の bash ブロック**——写しを作らず毎回抜き出して流す（`test-tab-match.py` と同じ形）。
+    一時の git リポジトリで、本物の run-serial の持ち主と、手で書いた枠の記録の偽の持ち主に当てる。**何を守らないかは docstring を正とする**
   - `test-outer-loop.py` - **cruise の外側のループの回帰テスト**（#791。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/cruise/scripts/outer-loop.py`**（同じ形）。台帳は**本物の `ledger.py`** で作り、**偽の `claude`（筋書きどおりに台帳を書き換える）と
     偽の `osascript` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**

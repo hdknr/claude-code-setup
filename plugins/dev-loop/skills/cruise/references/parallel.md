@@ -25,7 +25,16 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py [--ti
 
 - **通すもの**: 対象リポジトリの「歯止めを全部回す 1 本のコマンド」（dev-loop の `SKILL.md`「はじめに」）・テストの実行・ビルド・
   実機確認のアプリの起動（開発サーバ・コンテナ・データベースを使うもの）。**通さないもの**: `git`・`gh`・ファイルを読むだけのコマンド・
-  dev-loop の終了コードで分岐するスクリプト（`find-cycle.py` など。手順 6 のとおり素の 1 行で呼ぶ）。
+  dev-loop の終了コードで分岐するスクリプト（`find-cycle.py` など。手順 6 のとおり素の 1 行で呼ぶ）・
+  **ネットワークを待つことが主の処理**（下の項）。
+- **ネットワークを待つことが主の処理は通さない（#899）**——本番のデータの写し・トンネル越しの読み・外部 API の取得。CPU とポートを奪い合わないので、枠に入れても負荷は減らず、
+  接続が切れて止まると枠を握ったまま他の周の検査と関門を待たせる（#839 では、切れた接続を待つ写しが枠を約 45 分握り、関門がテストを 1 本も走らせずに報告した）。
+  **枠の外で、期限つきで走らせ、終わりを前面で待つ**——期限は処理自身の設定（接続や問い合わせの時間切れ）で持たせ、無ければ止める時刻を決めて、過ぎたら止めて失敗として扱う。
+  長くて背景で起こすなら、下の「通知だけを頼りに待たない」の形で待つ（`run-serial.py` を外して起こす）。
+  **テスト・ビルドの中で外部に繋ぐものは、テストの実行・ビルドとして通す**——通さないのは、ネットワークを待つことが主の処理だけである。
+  - **トンネル越しの処理は、切れたら止まらずに失敗で終わる形にする**（#839 の改善案 6）——期限だけでは、期限までは切れた接続を待ったまま止まる。
+    長い処理の前と途中で接続の生死を確かめ（一定の間隔で軽い問い合わせを打つ、など）、切れたらその場で失敗で終わる。
+    ssh のトンネルなら `ServerAliveInterval`・`ServerAliveCountMax` が応答の無い接続を落とす設定である（例として挙げる——この決まりを足した周では走らせて確かめていない）。
 - **パスは、このスキルの base ディレクトリを絶対パスにして渡す**——周の体の cwd は worktree なので、`scripts/run-serial.py` のままでは解決しない。
 - **周の中で検査を走らせる体すべてに渡す**——実装役・Verifier（1・2 パス目と狭いパス）・`/code-review`（委譲文に足す）。
   **関門の体は周の実装役とは別に検査を起こすので、渡さないと周の数を絞っても重なる。**
@@ -87,6 +96,112 @@ tfs-stocks の cruise #2314 の周 #2581（dev-loop 1.66.0）では、周の子�
 本物の失敗と読む前に、順番待ちを通して 1 度だけ回し直す。** 回し直しても落ちれば本物の失敗として扱う。
 **両方の結果を計画ファイル（関門の体なら報告）に書く**——回し直しで緑になった失敗を黙って消さない。
 順番待ちを通して落ちた失敗は、回し直さずに本物として扱う（負荷の言い訳にしない）。
+
+### 止まっている枠の持ち主（#899）
+
+**cruise の親は、周の前進を見るたびに、枠の持ち主も見る。** 見るのは、終わりの報告でない子・背景で起こした子の報告を、ターンを閉じずに待つあいだ（cruise の `SKILL.md` §4 の 2）・compact の後に進行中の周を確かめるとき（§5 の compact の後の 3）・
+`/clear` の後やタイマーで入って進行中の周を確かめるとき（`../dev-loop/references/ledger.md` の「どう再開するか」の 2。子プロセスの周も——`references/child-process.md`）である。
+#839 では親の見張りがコミットの時刻とファイルの更新しか見ておらず、枠を握って止まった処理に 1 回の見張りぶん気づけなかった——**順番待ちの周は worktree に何も書かない**ので、
+コミットとファイルを見ても、枠を握って止まった周と順番を待っている周の見分けがつかない。
+
+```bash
+python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holders
+```
+
+**メインの作業ツリーで、素の 1 行で呼ぶ**（出力は持ち主 1 つ 1 行で短い。枠を取らず、何も書き換えない）。行の形・`止まっている疑い` の決め方（出力が `STALL` 秒以上増えていない）・
+終了コードは `scripts/run-serial.py` の docstring の「持ち主の表示」を正とする。
+
+1. **名指す**——**行末が `——止まっている疑い（…）` の行**が、止まっている持ち主である（行の途中の語では決めない——コマンドや場所に同じ語があることがある）。
+   行の場所（run-serial を呼んだ cwd）を台帳の `worktree` と突き合わせ、その worktree か、その下のディレクトリなら、その周の持ち主である。
+   - **台帳のどの周の worktree にも当たらない持ち主**（利用者が自分で走らせたもの・別の cruise・メインの作業ツリーや worktree の外の写しから呼んだもの）は、**親は知らせも止めもしない**——利用者が居るならその場で、
+     `--absent` なら終える報告（§6）で、`holders` の行をそのまま渡す。
+   - 疑いの無い行・`走っているものは無い` なら、何もしない。
+   - **疑いが出ない持ち主がある**——出力の最終更新が分からない持ち主（古い版（1.100.0 まで）の run-serial が取った枠・出力がファイルでないもの）には、止まっていても疑いが出ない
+     （run-serial の docstring の「守らない」）。この手順はそれを名指さない——そうした枠は run-serial の期限だけが返す。周の体に新しい版の run-serial を渡すと、見張りが効く。
+2. **知らせる**——その周の子（台帳の `agent`。`SendMessage` で宛てられる子の ID）に、`holders` の行をそのまま送り、
+   「自分（と自分の起こした体）が起こしたものなら出力を見て、止まっているなら止めて失敗として扱い、進んでいるならその理由を 1 行で返せ」と添える。
+   **知らせたことを、その場で台帳の `note` に残す**——`ledger.py set issue-<親> <番号> note="<前の note>; 枠の確認: <日時> に <名前> へ pid <pid> を知らせた"`
+   （前の項——`単独:` など——を残す。`note` は置き換えなので）。**会話の記録では決めない**——compact で要約に落ちる。
+   **`note` に同じ pid の `枠の確認:` の項があれば、知らせ直さない**——知らせた項・知らせられない項（下）なら次の 3 へ。SIGTERM を送って消えなかった項（3）なら、何もしない（期限に任せている）。
+   進んでいると返事のあった項なら、その日時から `STALL` たつまで何もせず、たってもまだ同じ pid に疑いが出ていれば、その項を外してここから知らせ直す（一度「進んでいる」と返した処理が後で止まることがある）。
+   - **宛てられない周**（`agent` が `claude-p:` で始まる子プロセス・宛てられる ID でない）は知らせられない——`note` に `枠の確認: <日時> に pid <pid> の疑いを見た（知らせられない）` と書き、3 へ進む。
+3. **止める**——**`枠の確認:` の日時から `STALL`（run-serial の docstring の値）たっても子の返事が無く、`holders` に同じ pid が行末の `止まっている疑い` のまま出ていれば**、止める。
+   止める前に、**その pid がいまも、記録を書いたラッパーであること**を確かめる（D5）——記録だけ残った pid が別のプロセスに使い回されていることがあり
+   （run-serial の docstring の「守らない」）、`run-serial.py` の部分一致では `test-run-serial.py`・別の周のラッパー・`holders` の呼び出しにも当たる。照合するのは次の 4 つで、**全部が合うときだけ止める**:
+   - **枠の記録にその pid がある**——枠のディレクトリ（`<git の共通ディレクトリ>/dev-loop-serial/slot-<k>.lock`）の記録の `pid`
+   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] -- <コマンド>` で起こした形
+   - **`--` の後ろが、記録の `command` とちょうど同じ**、**プロセスの cwd が記録の `cwd` と同じ**（macOS は `lsof`、Linux は `/proc/<pid>/cwd`）
+   - **プロセスを起こした時刻が、記録の `started`（枠を取った時刻）より後でない**——後なら、記録の後に pid を使い回したプロセスである
+
+   合わなければ止めず、利用者に `holders` の行と、照合が出した理由を渡す。合えば、**コマンドの子孫の pid**（ラッパーから `pgrep -P` を子へ順にたどる）を数えてから、
+   ラッパーに `kill -TERM <pid>` を送る（ラッパーは SIGTERM をコマンドに渡し、コマンドが終わってから枠を返す——docstring の「守る」）。
+   **SIGTERM が止めるのはコマンドだけで、コマンドの子孫は残りうる**（`bash -c '<写す処理>; …'` の下の処理など。ラッパーが終わると親の pid が 1 に移り、たどれなくなる）——
+   数秒おいて、先に見た子孫のうちまだ居るものにも `kill -TERM` を送る（残った処理と、それが握る接続を片付ける）。
+   次の形で、照合の結果・数えた子孫・止めたあとに残ったものが出る（**メインの作業ツリーで**、1 行目の `<pid>` を `holders` の行の pid に置き換えて走らせる。
+   照合と止め方は、hdknr/claude-code-setup の回帰テスト `test-parallel-stop.py`（リポジトリの根の scripts の下）がこのブロックを抜き出して走らせる——直したらテストも当てる）:
+
+   ```bash
+   P=<pid>
+   python3 - "$P" <<'PY' && bash -c 'P=$1; d() { for c in $(pgrep -P "$1"); do echo "$c"; d "$c"; done; }; DESC=$(d "$P"); echo "子孫: $(echo $DESC)"; kill -TERM "$P"; sleep 2; for c in $DESC; do kill -0 "$c" 2>/dev/null && { echo "残った: $c $(ps -p "$c" -o command=)"; kill -TERM "$c"; }; done; true' _ "$P"
+   import json, os, re, subprocess, sys, time
+   pid = int(sys.argv[1])
+   common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
+   lockdir = os.path.join(common, "dev-loop-serial")
+   rec = None
+   for name in sorted(os.listdir(lockdir)) if os.path.isdir(lockdir) else []:
+       if re.fullmatch(r"slot-[0-9]+\.lock", name):
+           try:
+               info = json.load(open(os.path.join(lockdir, name), encoding="utf-8"))
+           except (OSError, ValueError):
+               continue
+           if isinstance(info, dict) and info.get("pid") == pid:
+               rec = info
+   def ps(field):
+       return subprocess.run(["ps", "-p", str(pid), "-o", field + "="], capture_output=True, text=True, env={**os.environ, "LC_ALL": "C"}).stdout.strip()
+   def cwd():
+       try:
+           return os.readlink(f"/proc/{pid}/cwd")
+       except OSError:
+           out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
+           return next((line[1:] for line in out.splitlines() if line.startswith("n")), None)
+   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout [0-9]+)? -- (.*)", ps("command"))
+   why = None
+   if rec is None:
+       why = "枠の記録にこの pid が無い"
+   elif m is None:
+       why = "run-serial の起動でない（ps のコマンド欄: " + ps("command") + "）"
+   elif m.group(1) != rec.get("command"):
+       why = "記録のコマンドと違う"
+   elif cwd() != rec.get("cwd"):
+       why = "記録の場所と違う"
+   else:
+       try:
+           begun = time.mktime(time.strptime(ps("lstart"), "%a %b %d %H:%M:%S %Y"))
+           taken = time.mktime(time.strptime(rec["started"][:19], "%Y-%m-%dT%H:%M:%S"))
+       except (KeyError, TypeError, ValueError):
+           why = "起こした時刻か記録の時刻が読めない"
+       else:
+           if begun > taken + 1:
+               why = "記録の後に起きたプロセス（pid の使い回し）"
+   print("照合: " + (why or "合った——止める"))
+   sys.exit(1 if why else 0)
+   PY
+   ```
+
+   止めたら、もう一度 `holders` を見る。**その pid が消えていれば**、子に（宛てられれば）止めたことを知らせ、`note` の `枠の確認:` の項を
+   `枠の持ち主を止めた: <日時> pid <pid>（<コマンド>）` に置き換える。
+   **まだ居れば**（SIGTERM を受け流すコマンド）、送り直さず、`kill -KILL` も送らず、項を `枠の確認: <日時> pid <pid> に SIGTERM を送った（消えない——期限に任せる）` に置き換えて
+   （`枠の確認:` で始めるので、次の見張りは 2 の照合で知らせ直さない）、
+   利用者に（`--absent` なら終える報告で）`holders` の行を渡す——run-serial の期限（`--timeout`。無ければ既定）が子孫ごと止める。
+   - **`kill -KILL` をラッパーに送らない**——ラッパーを SIGKILL で殺すと枠は外れるが、コマンドは走り続ける（docstring の「守らない」）。
+   - **返事か前進があれば止めない**——疑いが消えた・持ち主が替わった（同じ pid が出ない）なら、`枠の確認:` の項を外す。
+     返事が「進んでいる」（出力をため込むコマンドなど。docstring の「守らない」）なら止めず、項を `枠の確認: <日時> pid <pid> は進んでいる（<名前> の返事）` に置き換える（2 の最後の項）。
+   - **親が止めたことは、子に届くとは限らない**（宛てられない周・送ったあとに子が読む前）——子の側の読み方は下の 4。
+4. **周の子と、周の中の体** は、親から `holders` の行を知らされたら、その pid・場所・コマンドが自分（と自分の起こした体）の起こしたものかを見る。自分のものなら出力のファイルを読み、
+   止まっているなら 3 と同じ形で止めて（子孫も）、その検査・処理の結果を失敗として扱い（緑と読まない）、親に 1 行で返す。進んでいるなら、その理由を 1 行で返す。自分のものでなければ、そう返す。
+   **知らされていなくても、run-serial 越しの検査がシグナルで終わった（終了コード 143 など 128 + シグナルの番号）なら、親が止めたかもしれない**——失敗として扱い、
+   残った子孫が無いかを見る（`ps` でコマンドを探す）。**親から止めたと知らされた検査は、終了コードに依らず失敗として扱う**（SIGTERM を受け流したコマンドは 0 で終わることがある）。
+   **ネットワークを待つ処理なら、走らせ直すときは枠の外で**（上の「通さないもの」）。
 
 ## 単独で回す周（#493 のコメント）
 
