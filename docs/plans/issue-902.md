@@ -121,6 +121,8 @@
   - `/code-review`（high）: **指摘 8 件**（P2-1〜P2-8）。直す 0 件・残課題 8 件（採否は下の「2 パス目の採否」）
 - 狭いパス: **該当なし**（2 パス目で直した行が 0 件）
 - PR: #910（`Fixes #902`・`Fixes #896`・`Refs #903`）。デプロイ経路はマージによる配布——マージは親
+- PR 側の CI（`b7ffcc3`）: build pass・check pass（28m13s）・deploy skipping。`MERGEABLE`、先端は main の先端を含む。マージ（手順 7）は親
+- 終わりの報告: 親（team-lead）に `SendMessage` で返す
 - 実験: なし
 
 ## 既知の限界・決着済みの論点
