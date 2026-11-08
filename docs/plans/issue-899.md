@@ -22,7 +22,8 @@
 
 - `plugins/dev-loop/skills/cruise/references/parallel.md` — 「通さないもの」にネットワーク待ちの処理（と、トンネルの生死の書き添え）・新しい節「止まっている枠の持ち主」（原本）
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §4 の 2 の委譲文の項（通さないもの・知らされたら返す）・§4 の 2 の親の待ち（枠の持ち主も見る）・§5 の compact の後の 3（同）・版の 2 行
-- `plugins/dev-loop/skills/cruise/prompts/child-cycle.md` — 子プロセスの周の委譲文の雛形の 8（通さないもの・知らされたら返す）
+- `plugins/dev-loop/skills/cruise/prompts/child-cycle.md` — 子プロセスの周の委譲文の雛形の 8（通さないもの・シグナルで終わった検査の読み方）
+- `plugins/dev-loop/skills/cruise/references/child-process.md` — 「親が `/clear` した後・タイマーで起動し直した後」の待つ項（枠の持ち主も見る）。**1 パス目の指摘対応で広げた**（`/code-review` の C3——子プロセスの周を見張る場面が無かった）
 - `plugins/dev-loop/skills/dev-loop/references/ledger.md` — 「どう再開するか」の 2 のタイマーの親の前進の見方（枠の持ち主も見る）
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
@@ -93,12 +94,36 @@ main へのマージでプラグインの配布（dev-loop 1.102.0）。公開�
 - 周の在り処: ブランチ `issue/899-run-serial-network-and-holder-watch`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-899`・
   起点 `5353ed1`・base（`git merge-base origin/main HEAD`）`5353ed1f7b782893cb6197b8d0f9e6a88ee4f549`（start-point `origin/main`）
 - 割り目（手順 4）: 割らない（cruise の周）
-- 交絡を潰した手順: （実機確認の後に書く）
+- 実装の歯止め: `check-all.py` 67/67・失敗 0（`615194f` ＋計画ファイル＝`b1bb668` の木。順番待ち越し、約 15 分）。1 回目（`ebb4339`）は途中で木を変えたので止めた（自分の枠のラッパーに SIGTERM——枠が返り 2 回目が走り出した）
+- PR: #914。確認の Issue: #915
+- 1 パス目の指摘対応の起点: `b1bb668`（関門に渡した時点の HEAD）
+- 関門 1 パス目: **Verifier（sonnet・`dev-loop:dev-loop-verifier`）反証 3 件**（受入基準 4 は一時のリポジトリで実走して一致。`git status --porcelain` 前後とも空。報告は `SubagentHandback` が届かず transcript から読んだ）／
+  **`/code-review`（high）指摘 10 件＋軽微 1 件**（C1・C2・C7 は走らせて示した。`git status --porcelain` 前後とも空。報告は transcript から読んだ）。
+  採否は下の表——直す 10 件（表の 8 行）、残課題 4 件。手順 4 への差し戻し: Verifier の V1・V2 を直す（下の表）
+- 交絡を潰した手順: 受入基準 4 の実機確認（一時のリポジトリ・worktree の run-serial）は、同じ形で 3 つを並べて比べた——素の `bash -c 'sleep; echo'`（SIGTERM で 143・枠が返る・子孫の `sleep` が残る）、
+  子孫も止める形（残らない）、`trap "" TERM` のコマンド（SIGTERM を受け流し、子孫も無視を継いで残る——期限に任せる分岐）。「run-serial でない」の判定は、別の `sleep` の pid で陽性側（止めずに 1 で終わる）を見た
 
 ## 既知の限界・決着済みの論点
 
 - run-serial 本体は変えない（上の「触らない」）。
 - 見張りの置き場所の解釈（上の「決めたこと」）。
+
+### 1 パス目の採否（Verifier: sonnet 反証 3 件／`/code-review` high 10 件＋軽微 1 件）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1・V2・C7 | SIGTERM を受け流すコマンドだと pid が消えず、止める段に分岐が無い（送り直し続ける・「止めた」と書きうる） | 示せる——Verifier と `/code-review` が `trap "" TERM` で走らせ、`holders` に同じ pid が残った。著者も走らせた | 3・4 | 直す——消えなければ送り直さず、`枠の持ち主に SIGTERM を送った: …（消えない——期限に任せる）` にして利用者に渡す |
+| V3 | 台帳の `worktree` が symlink 経由だと、`holders` の実体のパスと当たらないおそれ | 示せない（この環境に symlink が無い） | 無し | 残課題（記録だけ: まれな形） |
+| C1 | 記録だけ残った pid が使い回されると、無関係なプロセスに SIGTERM を送る | 示せる——`/code-review` が無関係な `sleep` の pid を記録に入れ、`holders` が疑いつきで出した | 3・4 | 直す——止める前に `ps -p <pid> -o command=` が `run-serial.py` を含むかを見る |
+| C2 | ラッパーを止めた後は子孫の親が 1 に移り、子の側でたどれない——「子が片付ける」が成り立たない | 示せる——`/code-review` と著者が走らせ、`sleep` が PPID 1 で残った | 4 | 直す——止める前に子孫を数え、ラッパーの後に残ったものにも SIGTERM（著者が走らせて残らないことを見た） |
+| C3 | 子プロセスの周（`claude-p:`）を待つ場面（`child-process.md`）で枠の持ち主を見ない——宛てられない周の分岐に届かない | 示せる（文面: `child-process.md` の「`status` が 1 なら待つ」に見張りが無い） | 3（経路: 子プロセス） | 直す——`child-process.md` の待つ項から指す（範囲を広げた） |
+| C4 | `ledger.md` の差し込みが #472 の項（`--timer` で、タイマーより後に更新された行）の中で、ほかの起動・前のセッションの行で見ない | 示せる（文面: 差し込んだ位置） | 3（経路: タイマー以外の起動） | 直す——2 の冒頭（どの起動でも）へ移す |
+| C5 | 「進んでいる」の項が残ると、後で本当に止まっても知らせも止めもしない | 示せる（文面: 2 の最後の項と 3 の「進んでいる」の項） | 3（経路: 疑いが出続ける） | 直す——その項の日時から `STALL` たってもまだ疑いがあれば、項を外して知らせ直す |
+| C6 | 起動時の権限の点検（`check-unattended-env.py`）が、親の `kill`・`holders` を見ない | 示せない（権限の確認で止まる形を走らせていない） | 無し | 残課題（記録だけ: 点検の範囲。直すならスクリプトとテスト） |
+| C8 | 子プロセスの周の雛形が「知らされたら返す」と書くが、親はその周に知らせられない | 示せる（文面: `child-cycle.md` の 8 と parallel.md の 2 の「宛てられない周」） | 2 | 直す——雛形は「run-serial 越しの検査がシグナルで終わったら、親が止めたかもしれない——失敗として扱い、子孫を見る」にする |
+| C9 | 古い版（1.100.0 まで）の run-serial の枠は疑いが出ず、見張りが黙って何もしない | 示せる——`/code-review` がこの cruise の周（キャッシュ 1.99.0 の run-serial）の持ち主で、出力の最終更新が「分からない」と出た | 3（経路: 名指せない持ち主を黙って通す） | 直す——名指せない持ち主があること（期限だけが返す）を 1 の項に書く |
+| C10 | メインの作業ツリーや worktree の外の写しから呼んだ持ち主は、この cruise のものでも「当たらない」側に入る | 示せない（走らせていない） | 無し | 残課題（記録だけ: まれな形。当たらない側は利用者に渡すので黙っては通らない——1 の項に例として足した） |
+| C11 | `ledger.md` で、差し込んだ 2 行のせいで直後の「その子」が何を指すか読みにくい | 示せる（文面） | 無し（6 の後退の手前の読みにくさ） | 残課題 → C4 の直しで差し込みを移したので解消 |
 
 ## 経験の還元（手順 8）
 
