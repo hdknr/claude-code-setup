@@ -10,6 +10,8 @@
 1. **決まりどおりに重なる**——ファイル・`qa.csv` の行・機能・トップレベルのキーの追加と置き換え、3 種類の削除、
    3 つ以上の版、`--upto`。**置き換えは前の版の順の位置に入る**（末尾に回さない）。
 2. **重ねないもの**——`feasibility/`・`proposal/`・`.` で始まる名前・版でない名前（`videos/`・`index.md`）。
+   **形式検査のモデル（`spec/formal/`）は重ねる**（#908。後の版の同じパスが置き換える）。判別の関数 `is_formal` の真理値と、
+   置き場所が `references/tree.md` の「形式検査のモデル」と一致することは原本の照合で見る。
 3. **決まりに反する入力からは作らない（1）**——版の欠番・形に合わない版名（ファイルでも）・シンボリックリンク
    （版・置き場所・ファイル・`removed.csv`）・`qa.csv` の決まり違反・機能の `id` の重複と欠落・`removed.csv` の誤り・
    重ねた結果のファイルとディレクトリの衝突・大文字小文字や Unicode の正規化だけが違うパス・UTF-8 で書けない文字・
@@ -205,6 +207,10 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: made(r) and r.qa_numbers() == ["Q-002", "Q-003"]),
     ("機能を消す", with_removed("機能,F-001,機能を外した\n"), "none", [],
      lambda r: made(r) and r.feature_ids() == ["F-002", "F-003"]),
+    # 形式検査のモデル（spec/formal/）はファイルとして重ねる——次の版の Formal Checker が前の版のモデルを全体から読む（#908）
+    ("形式検査のモデルも重ねる", {**MAIN, "v1/spec/formal/order/Order.tla": "M1\n", "v1/spec/formal/stock/Stock.tla": "S1\n",
+                              "v2/spec/formal/order/Order.tla": "M2\n"}, "none", [],
+     lambda r: made(r) and r.text("spec/formal/order/Order.tla") == "M2\n" and r.text("spec/formal/stock/Stock.tla") == "S1\n"),
     ("3 つ目の版を順に重ねる", {**MAIN, "v3/requirements/a.md": "A3\n", "v3/requirements/b.md": "B3\n"}, "none", [],
      lambda r: made(r) and r.text("requirements/a.md") == "A3\n" and r.text("requirements/b.md") == "B3\n"),
     ("--upto 1 は v1 だけ", MAIN, "none", ["--upto", "1"],
@@ -1074,6 +1080,13 @@ def check_reference() -> None:
           "（" + "・".join(f"`{a}/`" for a in module.AREAS) + "）" in text)
     check("出力先の印が versions.md と違う", f"（`{module.MARKER}`）" in text)
     check("removed.csv の名前が versions.md と違う", f"### 削除（`{module.REMOVED}`）" in text)
+    # 形式検査のモデルの判別（#908）。照合・差分・仕様書・未決定の印の 4 本が読む 1 箇所なので、ここで真理値を当てる
+    tree = (REFERENCE.parent / "tree.md").read_text(encoding="utf-8")
+    check("形式検査のモデルの置き場所が tree.md と違う", f"## 形式検査のモデル（`{module.FORMAL_DIR}`。" in tree)
+    for path, expected in (("spec/formal/order/Order.tla", True), ("spec/formal/order/README.md", True),
+                           ("spec/formalx.md", False), ("spec/Formal/order/Order.tla", False),
+                           ("requirements/formal/x.md", False), ("spec/order.md", False)):
+        check(f"is_formal({path!r}) が {expected} でない", module.is_formal(path) is expected)
 
 
 def main() -> int:

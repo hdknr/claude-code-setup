@@ -9,6 +9,9 @@ usage: python3 check-spec-exit.py <qa.csv> <仕様のディレクトリ>
 あれば）。内部の表の行も、反映していなければ条件 1 を止める（資料には載らないが、開発者が決めた記録が要る。#339）。
 **内部の表は未決定の印を探すファイルから外す**——表として検査するもので、質問の文に印の語が入りうる。
 仕様のファイルの数にも数えない（内部の表だけがあっても、仕様は書いていない）。
+**形式検査のモデル（仕様のディレクトリの中の `formal/`）も見ない**——Formal Checker が仕様から書き起こした写しで、
+spec-review はその記録に置いた前提（未決定のことを含む）を書き残す。未決定は Q&A 表と仕様の本文で決まる
+（判別は `merge-versions.py` の `FORMAL_DIR`。`references/tree.md` の「形式検査のモデル」。#908）。仕様のファイルの数にも数えない。
 **条件 2〜5 はこのスクリプトでは判定しない**——判定役の報告で決まる（`spec-review` の本文）。
 **0 で終わっても「抜けた」ではない。** 出力もそう言う。
 
@@ -46,6 +49,7 @@ usage: python3 check-spec-exit.py <qa.csv> <仕様のディレクトリ>
 | **図（`FIGURE_SUFFIXES`）の中の印** | 図を置くことがあるので落とさない。**見なかったファイルは件数と名前を出す**。図以外の読めないファイルは 2 にする |
 | **印を使わずに書いた未決定**（「あとで決める」「検討中」） | 言い回しは列挙しきれない。判定役（Red Team）が条件 2・3 で見る |
 | **ドット始まりのファイル・ディレクトリの中** | `.git` などを見ないため |
+| **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
 """
 
 from __future__ import annotations
@@ -75,6 +79,9 @@ def _load(name: str, filename: str):
 
 
 pptx = _load("qa_to_pptx", "qa-to-pptx.py")
+versions = _load("merge_versions", "merge-versions.py")
+# 仕様のディレクトリ（`spec/`）からの、形式検査のモデルの置き場所の名前（`merge-versions.py` のものを使い、写さない。#908）
+FORMAL_NAME = versions.FORMAL_DIR.removeprefix("spec/").rstrip("/")
 
 
 def marker_pattern() -> re.Pattern[str]:
@@ -116,6 +123,8 @@ def spec_files(root: Path) -> list[Path]:
             continue
         if path == root / pptx.qa.INTERNAL_NAME:
             continue  # 内部の Q&A 表。印ではなく表として見る（check の中）
+        if path.relative_to(root).parts[0] == FORMAL_NAME:
+            continue  # 形式検査のモデル。仕様から書き起こした写し（#908）
         files.append(path)
     return files
 

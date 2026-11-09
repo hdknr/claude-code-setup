@@ -10,6 +10,8 @@
 1. **条件 1 を満たさない形を、理由つきで落とす**（仕様に反映した状態でない行・未決定の印・列検査を通らない表）。
    **暫定反映の行は止めない**（資料に載る行とは別の定義。#325）。
 2. **満たす形を通す**（陽性対照。`未定義` や `mastodon` のような印でない語で落ちないこと）。
+   **形式検査のモデル（仕様のディレクトリの中の `formal/`）の中の印は見ない**（#908。接頭辞だけ同じ `formalx.md` の印は見る。
+   モデルだけでは仕様のファイルが 1 つも無いのと同じ）。
 3. **判定できない形を 0 にしない**（仕様のディレクトリが無い・空・Q&A 表が読めない・読めた仕様がどれも中身が空。
    **中身のあるファイルが横にあれば、空のファイルでは止めない**——#291）。
 4. **0 で終わっても「抜けた」とは言わない**——出力に「条件 2〜5 は判定していない」が出る。
@@ -74,8 +76,16 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("未定", HEADER, {"order.md": "割引: 未定\n"}, 1, "未決定の印 未定"),
     ("未定義と未定が同じ行", HEADER, {"order.md": "未定義の値は未定\n"}, 1, "未決定の印 未定"),
     ("要確認", HEADER, {"order.md": "端数（要確認）\n"}, 1, "未決定の印 要確認"),
-    ("入れ子のファイル", HEADER, {"order.md": CLEAN_SPEC, "formal/rules.py": "# TODO 下限\n"}, 1,
+    ("入れ子のファイル", HEADER, {"order.md": CLEAN_SPEC, "rules/rules.py": "# TODO 下限\n"}, 1,
      "rules.py:1: 未決定の印 TODO"),
+    # 形式検査のモデル（formal/）は仕様から書き起こした写し——記録の「置いた前提」に未決定のことを書いてよい（#908）
+    ("形式検査のモデルの中の印は見ない", HEADER, {"order.md": CLEAN_SPEC, "formal/order/README.md": "置いた前提: 端数は未定\n",
+                                           "formal/order/Order.tla": "\\* TODO 下限\n"}, 0, "条件 1 を満たす"),
+    # 陽性対照: 接頭辞だけ同じ formalx.md は仕様のファイル
+    ("formal と接頭辞だけ同じファイルの印は見る", HEADER, {"order.md": CLEAN_SPEC, "formalx.md": "下限は TBD\n"}, 1,
+     "formalx.md:1: 未決定の印 TBD"),
+    # 形式検査のモデルだけでは仕様を書いたことにならない
+    ("形式検査のモデルだけ", HEADER, {"formal/order/Order.tla": "---- MODULE Order ----\n"}, 2, "ファイルが 1 つも無い"),
     ("印が無い行の後ろに印", HEADER, {"order.md": CLEAN_SPEC, "flow.md": "a\nb\nc TBD\n"}, 1, "flow.md:3"),
     ("読めないファイルは件数を出して通す", HEADER, {"order.md": CLEAN_SPEC, "fig.png": b"\x89PNG\xff\xfe"}, 0,
      "見なかったファイル（読めない・UTF-8 でない）: 1 件"),
@@ -130,6 +140,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "内部の表の反映済みは通す（文の印は数えない）"),
     ("どこの qa-dev.csv も外す", "        if path == root / pptx.qa.INTERNAL_NAME:", "        if path.name == pptx.qa.INTERNAL_NAME:",
      "入れ子の qa-dev.csv は仕様のファイル"),
+    ("形式検査のモデルを印の走査に入れる", "        if path.relative_to(root).parts[0] == FORMAL_NAME:", "        if False:",
+     "形式検査のモデルの中の印は見ない"),
+    ("接頭辞で形式検査のモデルを外す", "        if path.relative_to(root).parts[0] == FORMAL_NAME:",
+     "        if path.relative_to(root).parts[0].startswith(FORMAL_NAME):", "formal と接頭辞だけ同じファイルの印は見る"),
     ("内部の読めない表を 2 にしない", "    if internal_code == 2:", "    if False:", "内部の表が読めない"),
     ("暫定反映を反映した状態に数えない", "not in pptx.qa.REFLECTED", "!= pptx.qa.DONE", "暫定反映は止めない"),
     ("資料に載る行で数える", "not in pptx.qa.REFLECTED", "not in ()", "暫定反映は止めない"),
