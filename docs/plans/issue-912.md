@@ -33,10 +33,12 @@
 - `docs/plugins/index.md` — spec-loop の節の検査器の記述（TLC は既定で必須・呼び方は `CLAUDE.md`）
 - `scripts/test-check-tlc.py` — 新規（変異テストを含む）
 - `scripts/test-autopilot-check.py` — TLC の項目の試料・変異、`check-tlc.py` の実在
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — 新しいテストの登録
+- `scripts/check-all.py` — 新しいテストの登録
+- `.github/workflows/plugins.yml` — 同上（CI のステップ）
 - `CLAUDE.md` — `check-tlc.py` と `test-check-tlc.py` の項
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（6 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-912.md` — この計画
 
 触らない:
@@ -78,7 +80,7 @@ README だけは受入基準 1・2 が「README を読めば分かる」こと�
 | 2 | README を読めば、業務フローの形式検査をしない案件が `CLAUDE.md` に何を書けば外れるかが分かる（同 2） | 同上（外す宣言の行を写して `--autopilot` が 0） |
 | 3 | 宣言の無い正本・TLC が無い環境で、autopilot が単位を 1 つも進める前に TLC が無いことを示す（同 3）。陽性対照: 呼び方が通る環境では止まらない | §2: `autopilot-check.py check` が TLC を要対処（1）。§3: `check-tlc.py --autopilot` が 1 で、スキルが `stopped` にする手順を持つ。呼び方が通る試料では TLC の項目は良い・`check-tlc.py` は 0 |
 | 4 | 宣言の有る正本では、TLC が無くても autopilot の起動時の点検は TLC で止まらない（同 4） | `check` の TLC の項目が要対処でない（人が見る）・`check-tlc.py --autopilot` が 0 で呼び方を走らせない |
-| 5 | `tla2tools.jar` だけを置き `CLAUDE.md` に呼び方を書いた環境で、spec-review の確かめが TLC を在ると判定する（`command -v tlc` では見つからない形）（同 5） | `PATH` に `tlc` が無い試料で `check-tlc.py <正本>` が 0。**本物の TLC での確かめは BLOCKED**（下の「未証明・BLOCKED」） |
+| 5 | `tla2tools.jar` だけを置き `CLAUDE.md` に呼び方を書いた環境で、spec-review の確かめが TLC を在ると判定する（`command -v tlc` では見つからない形）（同 5） | `PATH` に `tlc` が無い試料で `check-tlc.py <正本>` が 0——偽の TLC（回帰テスト）と、**本物の TLC 2.19 の jar を `java -cp` で呼ぶ呼び方**（下の「未証明・BLOCKED」） |
 | 6 | spec-review の確かめと Formal Checker が同じ呼び方（`CLAUDE.md` の `TLC の呼び方:`）を使い、TLC を `command -v` で探さない。Alloy は今のまま | spec-review の手順 3 と `formal-checker.md` を読む |
 | 7 | 写し（README・spec-review・Formal Checker・autopilot・公開ページ・`autopilot-check.py` の docstring）が原本（`check-tlc.py` の docstring）と食い違わない | `git grep -n 'TLC' -- plugins docs ':!docs/plans'` で全部を並べて読む |
 | 8 | autopilot の点検の一覧に `check-tlc.py` が入る（各起動が呼ぶスクリプトの許可を点検する） | `autopilot-check.py ops` の出力 |
@@ -88,10 +90,13 @@ README だけは受入基準 1・2 が「README を読めば分かる」こと�
 
 ### 未証明・BLOCKED
 
-- **BLOCKED（権限）: 本物の TLC（`tla2tools.jar`）で `check-tlc.py` が 0 になること。** 周の中で公式の `tla2tools.jar`（v1.7.4）を scratchpad に取ったが、
-  それを `java -cp` で走らせる操作が自動モードの分類器に拒まれた（「外から取ったコード」）。次善として偽の TLC（同じ 2 つの文字列を出すスクリプト）で当てた。
-  判定に使う文字列（`Model checking completed. No error has been found.`・`Invariant … is violated`）が本物の TLC の出力と合うかは確かめていない。
-  利用者が確かめるコマンドは PR コメントに書く。
+- **未証明・BLOCKED なし。** 受入基準 5 は本物の TLC で確かめた: この環境には利用者が入れた TLC（`~/.local/share/formal-tools/tla2tools.jar`。TLC 2.19・v1.7.4）がある。
+  一時ディレクトリの正本の `CLAUDE.md` に `TLC の呼び方: java -cp /Users/hdknr/.local/share/formal-tools/tla2tools.jar tlc2.TLC` を書き、`PATH=/usr/bin:/bin`
+  （`command -v tlc` が 1）で `check-tlc.py` が 0。正本には `CLAUDE.md` だけが残った（`states/` は一時ディレクトリ）。陰性: jar の場所を違えた呼び方で 1（`ClassNotFoundException`）。
+- **途中で見つけて直したこと（実装の誤り）**: 最初のモデルは算術の `-` を使っていて、`EXTENDS Naturals` が無いので本物の TLC が意味解析で落とした（終了コード 150）。
+  偽の TLC はモデルの中身を読まないので、回帰テストでは見えなかった。モデルを `BOOLEAN` と `~` だけの形に直し、本物の TLC で通る（終了コード 0・`No error has been found`）・
+  違反する（終了コード 12・`Error: Invariant Inv is violated.`）ことを確かめた。
+- 周の途中で公式の `tla2tools.jar` を scratchpad に取って走らせようとした操作は、自動モードの分類器に拒まれた（外から取ったコード）。取ったファイルは消した。上の確かめは利用者が入れた jar で行った。
 
 ### 生成物
 
@@ -102,7 +107,8 @@ README だけは受入基準 1・2 が「README を読めば分かる」こと�
 - 割り目（手順 4・手順 6）: 割らない（cruise の周）
 - Verifier 1 パス目: 未
 - `/code-review` 1 パス目: 未
-- 交絡を潰した手順: 偽の TLC の試料で、陽性対照（通る呼び方で 0）と陰性（何にでも「エラーなし」の呼び方・通らない呼び方で 1）を並べる
+- 交絡を潰した手順: 偽の TLC の試料で、陽性対照（通る呼び方で 0）と陰性（何にでも「エラーなし」の呼び方・通らない呼び方で 1）を並べた。偽の TLC はモデルを読まないので、モデルが本物の TLC で通るかは本物の TLC 2.19 で当てた（上の「未証明・BLOCKED」）
+- 1 パス目の関門の起点（先に当てた関門に渡した時点の HEAD）: 実装のコミット `528fd31` の後にモデルを直したので、直しをコミットした SHA を起点にする（下に書く）
 
 ## 既知の限界・決着済みの論点
 

@@ -68,8 +68,9 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 守らない:
 
 - **HTML コメント（`<!-- -->`）の中の行も読む**——コメントで消した宣言を消えたと読まない。
-- **本物の TLC の出力の形**——判定に使う 2 つの文字列（`No error has been found`・`is violated`）は TLC の出力に合わせたが、
-  テストは偽の TLC で当てている（#912 の周では、本物の `tla2tools.jar` を走らせる権限が無かった）。
+- **TLC の版による出力の違い**——判定に使う 2 つの文字列（`No error has been found`・`is violated`）と 2 つのモデルは、
+  TLC 2.19（`tla2tools.jar` v1.7.4）で確かめた（#912 の周。モデルが通り、違反するモデルで `Error: Invariant Inv is violated.` と終了コード 12）。
+  ほかの版は確かめていない。**回帰テストは偽の TLC で当てる**ので、モデルの中身（TLC が意味解析で落とす書き方）はテストでは見えない。
 - **呼び方が、Formal Checker が書く大きいモデルを検査できるか**（メモリ・時間・モジュール）——小さいモデル 2 つを検査できることだけを見る。
 - **呼び方の安全**——正本の `CLAUDE.md` に書いた文字列をそのまま `sh` で走らせる（正本の `CLAUDE.md` は利用者が書くもので、Formal Checker も同じ文字列を走らせる）。
 - **子孫のプロセスが自分で別のプロセスグループに移ったとき**——時間切れで止めるのはプロセスグループまで。
@@ -89,8 +90,9 @@ OPT_OUT_KEY = "業務フローの形式検査:"
 OPT_OUT_VALUE = "しない"
 PROBE_TIMEOUT = 120
 
-GOOD_MODEL = ("Probe", "---- MODULE Probe ----\nVARIABLE x\nInit == x = 0\nNext == x' = 1 - x\nInv == x \\in {0, 1}\n====\n")
-BROKEN_MODEL = ("Broken", "---- MODULE Broken ----\nVARIABLE x\nInit == x = 0\nNext == x' = 1 - x\nInv == x = 0\n====\n")
+# 標準モジュール（Naturals など）を EXTENDS しない形にする——算術の `-` は Naturals が無いと意味解析で落ちる（本物の TLC 2.19 で確かめた）
+GOOD_MODEL = ("Probe", "---- MODULE Probe ----\nVARIABLE x\nInit == x = FALSE\nNext == x' = ~x\nInv == x \\in BOOLEAN\n====\n")
+BROKEN_MODEL = ("Broken", "---- MODULE Broken ----\nVARIABLE x\nInit == x = FALSE\nNext == x' = ~x\nInv == x = FALSE\n====\n")
 MODEL_CFG = "INIT Init\nNEXT Next\nINVARIANT Inv\n"
 GOOD_MARK = "No error has been found"
 BROKEN_MARK = "is violated"
