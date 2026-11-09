@@ -41,7 +41,7 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 **`command -v` では探さない**——呼び方の行が無ければ、`PATH` に `tlc` が在っても「無い」（1）。探し方を呼び方の 1 つに揃えるためである。
 
 - **`--autopilot` なし**（spec-review の手順 3。業務フローを対象に選んだときに呼ぶ）: 外す宣言が有っても呼び方を確かめる（宣言が古いと出す）。
-- **`--autopilot`**（autopilot の各起動）: 外す宣言が有れば確かめずに 0（呼び方を走らせない）。無ければ確かめる。
+- **`--autopilot`**（autopilot が Formal Checker を起こす段の始め）: 外す宣言が有れば確かめずに 0（呼び方を走らせない）。無ければ確かめる。
 
 ## 終了コード
 
@@ -233,7 +233,7 @@ def judge(root, autopilot=False):
 def main(argv=None):
     p = argparse.ArgumentParser(description="TLC が正本の CLAUDE.md の呼び方で使えるかを確かめる（読むだけ）")
     p.add_argument("root", type=Path, help="正本リポジトリの根（CLAUDE.md の在る場所）")
-    p.add_argument("--autopilot", action="store_true", help="外す宣言が有れば確かめない（autopilot の各起動）")
+    p.add_argument("--autopilot", action="store_true", help="外す宣言が有れば確かめない（autopilot が Formal Checker を起こす段の始め）")
     try:
         args = p.parse_args(argv)
     except SystemExit as exc:

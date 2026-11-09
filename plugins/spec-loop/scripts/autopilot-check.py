@@ -441,7 +441,7 @@ def tlc_item(project):
         return (GOOD, label, detail, "")
     if code == tlc.EXIT_MISSING:
         return (ACTION, label, detail, "Java と tla2tools.jar を用意し、正本の CLAUDE.md に「TLC の呼び方: <コマンド>」を書く"
-                "（業務フローを形式検査しない案件なら「業務フローの形式検査: しない」）。用意するまで各起動は単位を進めずに止まる")
+                "（業務フローを形式検査しない案件なら「業務フローの形式検査: しない」）。用意するまで autopilot は Formal Checker を起こす段の始めで止まる")
     return (UNKNOWN, label, detail, "")
 
 

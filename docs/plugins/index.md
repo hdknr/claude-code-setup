@@ -669,7 +669,7 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
 - **TLC は既定で必須の前提です**（#912）。Java と `tla2tools.jar` を置き、正本リポジトリの `CLAUDE.md` に
   `TLC の呼び方: <コマンド>` の行を書きます——仕様レビューの確かめも Formal Checker もこの呼び方だけを使い、`command -v` では探しません。
   業務フローを一度も形式検査しない案件は `業務フローの形式検査: しない` と書けば外せます。`autopilot` は起動時の確認で点検し、
-  TLC が無ければ単位を 1 つも進めずに止まります（書き方は
+  Formal Checker を起こす段の始めでも確かめて、TLC が無ければそこで止まります（`commit` の段と feasibility では止まりません。書き方は
   [プラグインの README の「前提」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/README.md#前提)）。
 
 #### 3 つの判定役 { #spec-loop-judges }

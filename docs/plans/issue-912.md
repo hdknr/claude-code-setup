@@ -160,6 +160,19 @@ Verifier 2 巡目（`dev-loop:dev-loop-verifier`・sonnet。読んだ委譲文 2
 | CR2-6: HTML コメントの中の閉じないフェンスが、後ろの宣言を隠す | 示せる | 無し | 残課題 |
 | CR2-8: 試料「4 つのフェンスの中の 3 つのフェンスの中」は長さの規則を判別しない（内側に info string がある）——長さは別の試料が押さえる | 示せる | 無し | 残課題 |
 
+### 利用者の判断で CR2 を直す（2026-11-09T06:29:18Z。親の委譲文で受けた）
+
+- 出所: 利用者の判断（2026-11-09T06:29:18Z）「PR #921 は CR2 を直してからマージする」——cruise #916 の親が委譲文で渡した。1 パス目の採否の表の CR2（残課題）を、この判断で直すに改めた
+- 直したこと: autopilot の §3 の `check-tlc.py --autopilot` を、Formal Checker を起こす段（`round1`・`round2`・`narrow`——spec-review の手順 3・手順 5 の 2 回目・狭いパス）の始めだけにした。
+  `planner`・`fix1`・`judge`・`commit` の段と feasibility では確かめない（`commit` の段で止まって周の変更が作業ツリーに残る経路を無くす）。§2 の起動時の点検はそのまま。
+  写し（README・公開ページ・`spec-exit.md` の移行・`check-tlc.py`・`autopilot-check.py` の docstring と文言・リポジトリの `CLAUDE.md`）をそろえた。
+  止まるときの `reason` は「TLC の前提を確かめられない（<出力>）」にし、`next` は出力が示すものを直すとした（段落を書き直したので、4（判定できない）の案内も同じ文に含めた——CR5 の文言に重なる）
+- 受入基準 3 の読み替え: 「単位を 1 つも進める前に TLC が無いことを示す」は §2 の起動時の点検（`check` の要対処）が示す。§3 で止まるのは Formal Checker を起こす段の始め（利用者の判断）
+- 本文で確かめられる形: `scripts/test-check-tlc.py` が、§3 の段落の確かめる段（`段が …`）が表で判定役を起こす段（手順 3・5）と同じで `commit` を含まないこと、
+  「`commit` の段と feasibility では確かめない」と書くことを見る（陽性対照: 段に `commit` を足す・`narrow` を落とす・その文を消すと、それぞれ落ちることを手元で確かめた）
+- main の取り込み: `5892379`（#920。dev-loop の版だけ）を `38971cb` で取り込んだ。main の spec-loop は 0.72.3 のままなので 0.73.0 のまま。取り込みの後は `check-plugin-versions.py`・`skill-metrics.py --check` だけを回した（どちらも 0）
+- 狭いパスの差分: `c8e0710` から直しのコミットまで、取り込み分（`38971cb`）を除く
+
 ## 手順 8
 
 ### 振り分け（`references/found-lines.md`。直すに当たる行は無い）

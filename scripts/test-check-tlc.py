@@ -269,7 +269,16 @@ def main() -> int:
         spec_review = (PLUGIN / "skills" / "spec-review" / "SKILL.md").read_text(encoding="utf-8")
         check("spec-review が check-tlc.py で確かめる", "scripts/check-tlc.py" in spec_review)
         autopilot = (PLUGIN / "skills" / "autopilot" / "SKILL.md").read_text(encoding="utf-8")
-        check("autopilot の各起動が check-tlc.py --autopilot で確かめる", re.search(r"check-tlc\.py <[^>]+> --autopilot", autopilot) is not None)
+        check("autopilot が check-tlc.py --autopilot で確かめる", re.search(r"check-tlc\.py <[^>]+> --autopilot", autopilot) is not None)
+        # 確かめる段は Formal Checker を起こす 3 段だけで、commit の段では止めない（#912 の利用者の判断。周の変更を作業ツリーに残さない）
+        para = autopilot.split("**TLC の前提は、Formal Checker を起こす段の始めにだけ確かめる**")[1].split("\n\n**")[0] \
+            if "**TLC の前提は、Formal Checker を起こす段の始めにだけ確かめる**" in autopilot else ""
+        table = autopilot.split("### 仕様レビューの周")[1].split("### ")[0]
+        judge_stages = {m for m in re.findall(r"^\| `([a-z0-9]+)` \| 手順 [35]", table, re.M)}
+        named = set(re.findall(r"段が ((?:`[a-z0-9]+`・?)+)", para)[0].replace("`", "").split("・")) if re.search(r"段が `", para) else set()
+        check(f"確かめる段 {sorted(named)} が、表で判定役を起こす段（手順 3・5）{sorted(judge_stages)} と同じ",
+              bool(named) and named == judge_stages and "commit" not in named)
+        check("commit の段と feasibility では確かめないと書く", "`commit` の段と feasibility では確かめない" in para)
         formal = (PLUGIN / "agents" / "formal-checker.md").read_text(encoding="utf-8")
         check("Formal Checker が呼び方の行を名指しする", f"`{mod.CALL_KEY}`" in formal)
 

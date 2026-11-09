@@ -299,9 +299,9 @@ Red テスト（`scaffold.py` が仕様のテストケースから作る）は�
 0.73.0 から、TLC を `command -v` で探さなくなり、autopilot が TLC の前提を確かめて止まるようになった（壊れる変更）。正本ごとに次のどれか 1 つを行う:
 
 1. **`PATH` の `tlc`（包みのスクリプトなど）で TLC を使っていた正本**——正本の `CLAUDE.md` に `TLC の呼び方: tlc`（か、その絶対パス）を書く。
-   呼び方は `sh` に渡すので、`PATH` の `tlc` がそのまま通る。書かないと spec-review は業務フローを選んだ回に TLC が無いとして、判定役を起動せずに訊く（autopilot の各起動は止まる）。
+   呼び方は `sh` に渡すので、`PATH` の `tlc` がそのまま通る。書かないと spec-review は業務フローを選んだ回に TLC が無いとして、判定役を起動せずに訊く（autopilot は Formal Checker を起こす段の始めで止まる）。
 2. **jar を `java -cp` で使っていて、呼び方を `CLAUDE.md` に自由な書き方で書いていた正本**——`TLC の呼び方: java -cp <jar の場所> tlc2.TLC` の 1 行に書き直す。
-3. **TLC を入れておらず、業務フローを形式検査しない正本で autopilot を回す**——`業務フローの形式検査: しない` を書く。書かないと autopilot の各起動が単位を進めずに止まる。
+3. **TLC を入れておらず、業務フローを形式検査しない正本で autopilot を回す**——`業務フローの形式検査: しない` を書く。書かないと autopilot が Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めで止まる。
 
 書いたら `python3 <spec-loop の根>/scripts/check-tlc.py <正本の根>`（3 なら `--autopilot` を付ける）が 0 になることを確かめる。
 

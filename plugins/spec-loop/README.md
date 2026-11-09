@@ -211,7 +211,7 @@ Node・bpmn-js と puppeteer-core（`SPEC_LOOP_BPMN_DEPS`）・Chrome（`CHROME_
 - **TLC（TLA+ のモデル検査器）が既定で必須です**（#912）。`spec-review` は、並行・リトライ・取り消しを含む業務フローを形式検査の対象に選ぶと
   TLC で検査します。TLC が無いと判定役を 1 体も起動せず、用意してから呼び直すか、用意せずに進める（業務フローは判定できず、その回は抜けません）かを訊きます。
   どの版で業務フローが対象になるかは周を回すまで決まらないので、**`spec-review` を回す前に用意してください。**
-  `autopilot` は起動時の確認で TLC を点検し、各起動は TLC が無ければ単位を 1 つも進めずに止まります。
+  `autopilot` は起動時の確認で TLC を点検し、Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めでも確かめて、TLC が無ければそこで止まります（`commit` の段と feasibility では止まりません）。
 
 ### TLC の用意
 
@@ -233,7 +233,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-tlc.py <正本リ�
 ### 業務フローを形式検査しない案件
 
 業務フローを一度も形式検査しない案件（例: 料金の計算ルールだけを直す案件）は、正本リポジトリの根の `CLAUDE.md` に次の 1 行を書くと、TLC を必須から外せます。
-`autopilot` の点検と各起動は TLC を確かめなくなります:
+`autopilot` の点検と各段は TLC を確かめなくなります:
 
 ```text
 業務フローの形式検査: しない

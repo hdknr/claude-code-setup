@@ -145,7 +145,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **設定の層と許可の判定は dev-loop の `check-unattended-env.py` の写し**で、テストが突き合わせる。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-check.py`）
     - `scripts/check-tlc.py` - **TLC が正本の `CLAUDE.md` に書いた呼び方で使えるか**を、小さいモデル 2 つ（通るもの・わざと違反するもの）を検査させて確かめる（#912。
       **TLC は既定で必須の前提**で、書く行（`TLC の呼び方:`・外す宣言 `業務フローの形式検査: しない`）の原本はここの docstring。**`command -v` では探さない**。
-      spec-review の手順 3 が呼び、autopilot は起動時の点検（`autopilot-check.py check` が読み込む）と各起動（`--autopilot`）で使う。テストは `scripts/test-check-tlc.py`）
+      spec-review の手順 3 が呼び、autopilot は起動時の点検（`autopilot-check.py check` が読み込む）と Formal Checker を起こす段の始め（`--autopilot`。`commit` の段と feasibility では確かめない）で使う。テストは `scripts/test-check-tlc.py`）
     - `scripts/autopilot-loop.py` - autopilot を `claude -p` で**外から繰り返し起動するループ**（#850）。台帳の `status` が `running` のときだけ起こし、
       `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗で止まって通知する。
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
