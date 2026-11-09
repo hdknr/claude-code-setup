@@ -21,7 +21,9 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 | `TLC の呼び方: <コマンド>` | TLC を起動するコマンド。**後ろにモデルのファイル（`<名前>.tla`。設定は同じ名前の `.cfg`）を足し、モデルのディレクトリで `sh` に渡す**。例: `TLC の呼び方: java -cp /opt/tla/tla2tools.jar tlc2.TLC` |
 | `業務フローの形式検査: しない` | 業務フローを一度も形式検査しない案件が、TLC を必須から外す宣言。値は `しない` だけ |
 
-- **コードフェンス（` ``` `・`~~~`）の中の行は読まない**——例として書いた行を宣言と読まない。
+- **コードフェンス（` ``` `・`~~~`）の中の行は読まない**——例として書いた行を宣言と読まない。フェンスの開け閉めは CommonMark のとおり
+  （同じ文字の 3 つ以上で開き、同じ文字で、開きと同じか長い、info string の無い行で閉じる。4 つのバッククォートの中の 3 つは閉じない）。
+- **先頭の BOM は外して読む。**
 - **同じ行を 2 行以上書かない・外す宣言の値は `しない` だけ・呼び方を空にしない**——どれも「判定できない」（4）。
 - **外す宣言が古くなっても（後の版で業務フローを対象に選んだ）守らせる仕組みは無い**——spec-review が対象を選んだときに
   このスクリプトを（`--autopilot` なしで）呼び、TLC が無ければ今のとおり止まる。
@@ -57,6 +59,8 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 - **違反するモデルで違反を出さない呼び方を 0 にしない**——何にでも「エラーなし」と言う呼び方は 1（陽性対照）。
 - **`command -v` で探さない**——呼び方の行が無ければ、`PATH` に `tlc` が在っても 1。
 - **コードフェンスの中の行を宣言と読まない。**
+- **フェンスを閉じるのは、同じ文字で開きと同じか長い、info string の無い行だけ**——4 つのバッククォートの中の 3 つや、` ```bash ` の行で閉じない。
+- **先頭の BOM を外して読む**——BOM つきで保存した `CLAUDE.md` の 1 行目の宣言を落とさない。
 - **同じ宣言が 2 行以上なら 4**——どれを使うかを決めない。
 - **外す宣言の値が `しない` でなければ 4**——近い値（`無し`・`しない（v2 から）`）で外さない。
 - **`--autopilot` で外す宣言が有れば、呼び方を走らせずに 0。**
@@ -79,12 +83,15 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 
 import argparse
 import os
+import re
 import signal
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+# CommonMark のコードフェンス: 字下げ 3 つまで・同じ文字（` か ~）が 3 つ以上・後ろは info string
+FENCE_RE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 CALL_KEY = "TLC の呼び方:"
 OPT_OUT_KEY = "業務フローの形式検査:"
 OPT_OUT_VALUE = "しない"
@@ -116,17 +123,19 @@ def read_declarations(root):
         return None, False, f"{path} が無い"
     except (OSError, ValueError) as e:
         raise Unknown(f"{path} を読めない: {e}")
+    text = text.removeprefix("\ufeff")
     calls, opt_outs = [], []
-    fence = None
+    fence = None  # 開いているフェンスの (文字, 長さ)
     for line in text.splitlines():
-        head = line.lstrip(" ")
-        if len(line) - len(head) <= 3 and head[:3] in ("```", "~~~"):
-            if fence is None:
-                fence = head[:3]
-            elif head[:3] == fence:
+        m = FENCE_RE.fullmatch(line)
+        if fence is None:
+            # バッククォートのフェンスの info string にバッククォートは置けない（CommonMark）
+            if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+                fence = (m.group(1)[0], len(m.group(1)))
+                continue
+        else:
+            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
                 fence = None
-            continue
-        if fence is not None:
             continue
         if line.startswith(CALL_KEY):
             calls.append(line[len(CALL_KEY):].strip())

@@ -38,7 +38,9 @@ MUTATIONS = {
     "command -v で探す": [("    if call is None:\n        return EXIT_MISSING,",
                          "    if call is None and shutil.which(\"tlc\"):\n        call = \"tlc\"\n    if call is None:\n        return EXIT_MISSING,"),
                         ("import argparse\n", "import argparse\nimport shutil\n")],
-    "フェンスの中の行を読む": [("        if fence is not None:\n            continue\n", "")],
+    "フェンスの中の行を読む": [("                fence = None\n            continue\n", "                fence = None\n")],
+    "フェンスを長さ・info string を見ずに閉じる": [("len(m.group(1)) >= fence[1] and not m.group(2).strip()", "True")],
+    "BOM を外さない": [('    text = text.removeprefix("\\ufeff")\n', "")],
     "同じ宣言が 2 行でも先頭を使う": [("    if len(calls) > 1:\n", "    if False:\n")],
     "外す宣言の値を見ない": [("    if opt_outs and opt_outs[0] != OPT_OUT_VALUE:\n", "    if False:\n")],
     "--autopilot で外しても呼び方を走らせる": [("    if opt_out and autopilot:\n", "    if opt_out and autopilot and (call is None or probe(call)[0]):\n")],
@@ -173,6 +175,10 @@ def scenario(mod, base: Path, tag: str) -> dict:
     o["フェンスの中だけ"] = case("例:\n\n```text\n" + call_line("good") + "```\n")
     o["チルダのフェンスの中だけ"] = case("~~~\n" + call_line("good") + "~~~\n")
     o["フェンスを閉じた後の行"] = case("```\n例\n```\n" + call_line("good"))
+    o["4 つのフェンスの中の 3 つのフェンスの中"] = case("````markdown\n```text\n" + call_line("good") + "```\n````\n")
+    o["info string の行では閉じない"] = case("```\n```bash\n" + call_line("good") + "```\n")
+    o["長いフェンスを閉じた後の行"] = case("````\n```\n````\n" + call_line("good"))
+    o["BOM つきの 1 行目"] = case("\ufeff" + call_line("good"))
     o["行頭でない（字下げ）"] = case("  " + call_line("good"))
     o["呼び方が 2 行"] = case(call_line("good") + call_line("broken"))
     o["外す宣言が 2 行"] = case("業務フローの形式検査: しない\n業務フローの形式検査: しない\n", "--autopilot")
@@ -219,7 +225,10 @@ def main() -> int:
         check("何にでもエラーなしと言う呼び方: 1（陽性対照）", o["何にでもエラーなし"] == missing)
         check("印は出すが終了コードが 0 でない: 1", o["印は出すが終了コードが 0 でない"] == missing)
         check("フェンスの中の行は読まない: 1", o["フェンスの中だけ"] == missing and o["チルダのフェンスの中だけ"] == missing)
-        check("フェンスを閉じた後の行は読む: 0（陽性対照）", o["フェンスを閉じた後の行"] == ok)
+        check("フェンスを閉じた後の行は読む: 0（陽性対照）", o["フェンスを閉じた後の行"] == ok and o["長いフェンスを閉じた後の行"] == ok)
+        check("4 つのフェンスの中の 3 つのフェンスの中は読まない: 1", o["4 つのフェンスの中の 3 つのフェンスの中"] == missing)
+        check("info string の行ではフェンスを閉じない: 1", o["info string の行では閉じない"] == missing)
+        check("BOM つきの 1 行目の宣言を読む: 0", o["BOM つきの 1 行目"] == ok)
         check("行頭でない行は読まない: 1", o["行頭でない（字下げ）"] == missing)
         check("呼び方が 2 行: 4", o["呼び方が 2 行"] == unknown)
         check("外す宣言が 2 行: 4", o["外す宣言が 2 行"] == unknown)
