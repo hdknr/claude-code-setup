@@ -43,10 +43,17 @@
 - `plugins/spec-loop/scripts/diff-versions.py` — 版の差分に `spec/formal/` を出さない
 - `plugins/spec-loop/scripts/build-proposal.py` — 仕様書の規模と「仕様と要求のファイル」に `spec/formal/` を入れない
 - `plugins/spec-loop/scripts/check-spec-exit.py` — 未決定の印の走査で `formal/` を見ない
-- `plugins/spec-loop/references/signoff-tags.md`・`references/versions.md`・`references/spec-exit.md` — 上の 4 本の写し（比べる場所・版の差分・未決定の印）
-- `scripts/test-check-signoff.py`・`scripts/test-diff-versions.py`・`scripts/test-build-proposal.py`・`scripts/test-check-spec-exit.py`・`scripts/test-merge-versions.py` — 試料と変異
+- `plugins/spec-loop/references/signoff-tags.md` — `check-signoff.py` の写し（比べる場所）
+- `plugins/spec-loop/references/versions.md` — `diff-versions.py` の写し（版の差分）
+- `plugins/spec-loop/references/spec-exit.md` — `check-spec-exit.py` の写し（未決定の印）
+- `scripts/test-check-signoff.py` — 試料と変異
+- `scripts/test-diff-versions.py` — 試料と変異
+- `scripts/test-build-proposal.py` — 試料と変異
+- `scripts/test-check-spec-exit.py` — 試料と変異
+- `scripts/test-merge-versions.py` — 試料と原本の照合
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（6 本）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-908.md` — この計画
 - `CLAUDE.md` — `check-signoff.py` の項の比べる中身の写し（`formal/` を除く）
 
@@ -152,6 +159,10 @@ spec-review そのものを正本で回すのではなく、**Formal Checker の
 - 交絡を潰した手順: 実走では、判定役が保存したモデルを本当に読んだかを、報告の言葉ではなく `diff -u`・`cmp` の結果（保存版と同じバイト・同じ 12 distinct states）と、
   1 回目に無かったファイル名（2 回目 `StockAllocResubmit`・3 回目 `StockAllocCancelSplit`）で見た。陽性対照: 1 回目（保存したモデル無し）の報告は `無かった` を返した。
   テストは各スクリプトの試料に陽性対照（`spec/formalx.md`——接頭辞だけ同じ別のファイルは今までどおり数える）を置き、除外を外す・接頭辞で外す変異で赤になることを見た
+
+## 手順 8
+
+- この周の起票: 2 件（確認の Issue 1 件（仕様の穴。不在の線で推奨により決めた）と、親 Issue #916 の指示で後半を切り出した #923）
 
 ## 既知の限界・決着済みの論点
 
