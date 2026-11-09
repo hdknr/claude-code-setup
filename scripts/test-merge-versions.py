@@ -211,17 +211,12 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("形式検査のモデルも重ねる", {**MAIN, "v1/spec/formal/order/Order.tla": "M1\n", "v1/spec/formal/stock/Stock.tla": "S1\n",
                               "v2/spec/formal/order/Order.tla": "M2\n"}, "none", [],
      lambda r: made(r) and r.text("spec/formal/order/Order.tla") == "M2\n" and r.text("spec/formal/stock/Stock.tla") == "S1\n"),
-    # 前の版の同じ対象のうち今回写さなかったファイルは、作業中の版の removed.csv で消す（spec-review の手順 3。#908 の CR1）——消さなければ混ざる
+    # 前の版の同じ対象のうち後の版で写さなかったファイルは、重ね合わせた全体に残る——だから次の回は記録（README.md）の
+    # 「モデルのファイル」の一覧だけを使う（spec-review の手順 3。#908 の 2 パス目の P2-3）
     ("前の版のモデルの残りは混ざる", {**MAIN, "v1/spec/formal/stock/Stock.tla": "M1\n", "v1/spec/formal/stock/MC.cfg": "C1\n",
                                 "v2/spec/formal/stock/Stock.tla": "M2\n", "v2/spec/formal/stock/MC2.cfg": "C2\n"}, "none", [],
      lambda r: made(r) and sorted(p for p in r.tree if p.startswith("spec/formal/")) == [
          "spec/formal/stock/MC.cfg", "spec/formal/stock/MC2.cfg", "spec/formal/stock/Stock.tla"]),
-    ("前の版のモデルの残りを removed.csv で消す", {**with_removed("ファイル,requirements/b.md,要件から外した\n",
-                                                         "ファイル,spec/formal/stock/MC.cfg,モデルを組み直した\n"),
-                                           "v1/spec/formal/stock/Stock.tla": "M1\n", "v1/spec/formal/stock/MC.cfg": "C1\n",
-                                           "v2/spec/formal/stock/Stock.tla": "M2\n", "v2/spec/formal/stock/MC2.cfg": "C2\n"}, "none", [],
-     lambda r: made(r) and sorted(p for p in r.tree if p.startswith("spec/formal/")) == [
-         "spec/formal/stock/MC2.cfg", "spec/formal/stock/Stock.tla"] and r.text("spec/formal/stock/Stock.tla") == "M2\n"),
     ("3 つ目の版を順に重ねる", {**MAIN, "v3/requirements/a.md": "A3\n", "v3/requirements/b.md": "B3\n"}, "none", [],
      lambda r: made(r) and r.text("requirements/a.md") == "A3\n" and r.text("requirements/b.md") == "B3\n"),
     ("--upto 1 は v1 だけ", MAIN, "none", ["--upto", "1"],
