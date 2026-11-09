@@ -5,8 +5,8 @@ description: "spec-loop を利用者の不在のあいだに回す入口。1 回
 
 # autopilot スキル
 
-<!-- skill-version: 0.72.3 -->
-> **このスキルの版: 0.72.3**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.73.0 -->
+> **このスキルの版: 0.73.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -105,6 +105,10 @@ python3 <このスキルの base ディレクトリ>/../../scripts/autopilot-che
 
 - **点検が読む flag の層は、この確認のセッションのもの**（祖先の `claude` の `--settings`）である。外側のループが `claude -p` を別の `--settings` で起動するなら、そのファイルを `--flag-settings <file>` で渡して点検する。`--permission-mode`・`--allowedTools` で起動するなら、それは点検に映らないと利用者に伝える。
 - **点検するのは settings の `Bash` の規則だけである**——仕様・Q&A 表・`triage`・`held` の書き込み（`Write`・`Edit`）と判定役の起動（`Agent`）の許可は見ない。出力の「人が見る」にそう出るので、利用者に確かめてもらう（`defaultMode` が `acceptEdits` か `bypassPermissions` か、など）。
+- **点検には TLC の前提の項目（`TLC（業務フローの形式検査）`）も入る**（#912）——TLC は既定で必須である（`../../README.md` の「前提」）。
+  正本の `CLAUDE.md` に `業務フローの形式検査: しない` の宣言が無く、`TLC の呼び方:` の行が無いか通らなければ要対処になる。
+  **要対処なら、用意のしかた（Java と `tla2tools.jar` を置き、`TLC の呼び方:` の行を書く。業務フローを形式検査しない案件なら外す宣言）を利用者に示す**——
+  用意するまで、各起動は Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めで止まる（下の 3）。宣言が有れば確かめず、人が見る項目に出る。書き方は `../../scripts/check-tlc.py` の docstring を正とする。
 
 1. **結果を利用者に見せる。** 要対処（`deny`・`ask` に当たる・`allow` に無い）と判定できない項目を名指しする。
 2. **止まりうる操作**（自動モードの分類器と worktree 隔離のガードは settings に現れない。出力の「人が見る」）**を、操作ごとに `AskUserQuestion` で選んでもらう**:
@@ -121,6 +125,19 @@ python3 <このスキルの base ディレクトリ>/../../scripts/autopilot-che
 **最初に線を検査する**——`autopilot-check.py lines <版>` が 0 でなければ単位に入らず、`autopilot-ledger.py set <版> status=stopped reason="線がそろっていない（<出力>）" next="/spec-loop:autopilot <版> --lines を対話で起動して線を確かめ直す"` で止まる。
 
 **`autopilot-ledger.py show <版>` で `phase`・周・段を読み、次の表の 1 行だけを行う。** 行の「済んだら」の値を `set` で書いて終える（`stage` の値・周の番号・`commit` は台帳の docstring の形）。
+
+**TLC の前提は、Formal Checker を起こす段の始めにだけ確かめる**（#912）——`phase` が `spec-review` で、段が `round1`・`round2`・`narrow`
+（spec-review の手順 3・手順 5 の 2 回目・狭いパス。判定役を起こす段はこの 3 つだけである）のとき、その段のことを始める前に:
+
+```bash
+python3 <このスキルの base ディレクトリ>/../../scripts/check-tlc.py <正本の根> --autopilot
+```
+
+`<正本の根>` は台帳の在るメインの作業ツリーである。0（呼び方が通った・`業務フローの形式検査: しない` の宣言が有る）なら段を進める。
+0 でなければ段に入らず、`autopilot-ledger.py set <版> status=stopped reason="TLC の前提を確かめられない（<出力>）" next="出力が示すものを直す——TLC が無いなら Java と tla2tools.jar を用意して正本の CLAUDE.md に「TLC の呼び方: <コマンド>」を書き、業務フローを形式検査しない案件なら「業務フローの形式検査: しない」を書く——そのあと status=running に戻す"` で止まる（段は進めない。戻した次の起動は同じ段から始まる）。
+**`planner`・`fix1`・`judge`・`commit` の段と feasibility では確かめない**——TLC を使わない段である。**とくに `commit` の段は、TLC で止まらない**——
+ここで止まると周の変更が作業ツリーに残る（下の「周の終わり」の「止まったまま周の変更を作業ツリーに残さない」）ので、確かめる段に入れていない。
+起動時の確認（上の 2）の点検は、段に依らずそのまま行う。
 
 ### 仕様レビューの周（`phase` が `spec-review`）
 
@@ -216,4 +233,4 @@ python3 <このスキルの base ディレクトリ>/../../scripts/autopilot-led
 - **判定役が中で走らせる `Bash`**（Formal Checker の検査器・`python3 -c` など）——点検の一覧に無い。拒まれれば判定できなかったになり、その周は抜けない。
 - **分類器・ガードが実際にどの操作を止めるか**——起動時の点検は settings だけを照合し、止まりうる操作を並べるだけである（`../../scripts/autopilot-check.py` の docstring の「守らない」）。
 - **周ごとにブランチを積んで、マージ待ちのまま次の周を進めること**（#790 の案の片方）——`PR で止まる` は止まる。
-- **起動の間に設定・正本の `CLAUDE.md` が変わること**——点検は起動時の 1 回。変わったら `--lines` で確かめ直す。
+- **起動の間に設定・正本の `CLAUDE.md` が変わること**——権限の点検は起動時の 1 回。変わったら `--lines` で確かめ直す（TLC の前提だけは Formal Checker を起こす段の始めで確かめ直す——上の 3）。

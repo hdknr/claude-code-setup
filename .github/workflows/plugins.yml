@@ -235,6 +235,10 @@ jobs:
       - name: spec-loop の autopilot の線と権限の点検のテスト（#849）
         run: python3 scripts/test-autopilot-check.py
 
+      # 本体は plugins/spec-loop/scripts/check-tlc.py（TLC の前提の確かめ。偽の TLC と一時ディレクトリの正本で当て、本物の TLC は走らせない）。
+      - name: spec-loop の TLC の前提の確かめのテスト（#912）
+        run: python3 scripts/test-check-tlc.py
+
       # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
       - name: spec-loop の autopilot の外側のループのテスト（#850）
         run: python3 scripts/test-autopilot-loop.py

@@ -15,6 +15,8 @@
 
 **写しの突き合わせ**: 本体の docstring の「写し」に挙げた関数と定数が、dev-loop の `check-unattended-env.py` と同じであること（陽性対照として、
 1 文字変えた写しで「違う」と出ること）。線の値がスキル（`skills/autopilot/SKILL.md`）に書かれていること。点検するスクリプトの名前が実在すること。
+
+**TLC の前提の項目（#912）**: 正本の `CLAUDE.md` をテンポラリの試料に書き、TLC は偽物（絶対パスのスクリプト）で当てる——本物の TLC は走らせない。
 """
 import ast
 import contextlib
@@ -33,6 +35,7 @@ REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 SCRIPT = SCRIPTS / "autopilot-check.py"
 LEDGER = SCRIPTS / "autopilot-ledger.py"
+TLC = SCRIPTS / "check-tlc.py"
 SKILL = REAL_REPO / "plugins" / "spec-loop" / "skills" / "autopilot" / "SKILL.md"
 ORIGINAL = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "check-unattended-env.py"
 COPIED = ("Unreadable", "read_json", "run", "is_claude", "nearest_claude", "find_flag_settings", "config_dir",
@@ -68,12 +71,15 @@ MUTATIONS = {
     "読めない層があっても良いと言う": [("        elif broken:\n", "        elif False:\n")],
     "止まりうる操作を要対処のときだけ出す": [("    items.append(stoppable_item(commands))\n",
                                   "    if exit_code(items):\n        items.append(stoppable_item(commands))\n")],
+    "TLC が無くても要対処にしない": [("        return (ACTION, label, detail,", "        return (GOOD, label, detail,")],
+    "外す宣言でも TLC を確かめる": [("tlc.judge(project, autopilot=True)", "tlc.judge(project, autopilot=False)")],
     "判定できないを要対処より先に返す": [("    if any(item[0] == ACTION for item in items):\n        return EXIT_ACTION\n"
                                 "    if any(item[0] == UNKNOWN for item in items):\n        return EXIT_UNKNOWN\n",
                                 "    if any(item[0] == UNKNOWN for item in items):\n        return EXIT_UNKNOWN\n"
                                 "    if any(item[0] == ACTION for item in items):\n        return EXIT_ACTION\n")],
 }
 
+TLC_LABEL = "TLC（業務フローの形式検査）"
 GOOD_LINES = {"上限": "周 5 まで続ける", "判断が要る": "推奨を暫定で採る", "commit": "マージまで", "止まる地点": "feasibility の後"}
 ALLOW_ALL = ["Bash(python3:*)", "Bash(git switch:*)", "Bash(git pull:*)", "Bash(git add:*)", "Bash(git commit:*)",
              "Bash(git push:*)", "Bash(gh pr create:*)", "Bash(gh pr merge:*)"]
@@ -153,6 +159,14 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
     managed = base / tag / "managed" / "managed-settings.json"  # 無い（未設定）
     settings = root / ".claude" / "settings.json"
     local = root / ".claude" / "settings.local.json"
+    # 正本の CLAUDE.md（#912）。許可の試料では TLC を外す宣言を置き、TLC の項目を「人が見る」にしておく
+    claude_md = root / "CLAUDE.md"
+    claude_md.write_text("業務フローの形式検査: しない\n", encoding="utf-8")
+    fake_tlc = base / tag / "fake-tlc"
+    fake_tlc.write_text("#!/bin/sh\nfor a in \"$@\"; do f=\"$a\"; done\ncase \"$f\" in\n"
+                        "  Probe.tla) echo 'Model checking completed. No error has been found.'; exit 0;;\n"
+                        "  Broken.tla) echo 'Error: Invariant Inv is violated.'; exit 12;;\nesac\nexit 1\n", encoding="utf-8")
+    fake_tlc.chmod(0o755)
 
     def call(argv):
         return run(mod, argv, root)
@@ -232,6 +246,18 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
     check_with({"allow": ALLOW_ALL})
     o["読むだけ"] = snapshot(ledger) == before
 
+    # TLC の前提（#912）。許可は全部 allow にして、TLC の項目だけを動かす
+    for name, text in (("宣言なし・呼び方なし", "# 正本\n"),
+                       ("宣言なし・通る呼び方", f"TLC の呼び方: {fake_tlc}\n"),
+                       ("宣言なし・通らない呼び方", "TLC の呼び方: false\n"),
+                       ("宣言あり・呼び方なし", "業務フローの形式検査: しない\n"),
+                       ("同じ宣言が 2 行", "業務フローの形式検査: しない\n業務フローの形式検査: しない\n")):
+        claude_md.write_text(text, encoding="utf-8")
+        o["TLC: " + name] = check_with({"allow": ALLOW_ALL})
+    claude_md.unlink()
+    o["TLC: CLAUDE.md が無い"] = check_with({"allow": ALLOW_ALL})
+    claude_md.write_text("業務フローの形式検査: しない\n", encoding="utf-8")
+
     # 壊れた台帳
     ledger.write_text("{壊れた", encoding="utf-8")
     o["壊れた台帳"] = tuple(call([c, "3"])[0] for c in ("lines", "ops", "check"))
@@ -277,8 +303,9 @@ def main() -> int:
               pr == ["git switch", "git pull", "git add", "git commit", "git push", "gh pr create"])
         n_ops = len(sr + fe + pr) + 1
         allowed = o["全部 allow"]
-        check("全部 allow: 0、全操作が良い、止まりうる操作が人が見る",
-              allowed[0] == 0 and [s for s, _ in allowed[1]] == ["良い"] * n_ops + ["人が見る"] and allowed[1][-1][1] == "止まりうる操作")
+        check("全部 allow（TLC を外す宣言あり）: 0、全操作が良い、TLC と止まりうる操作が人が見る",
+              allowed[0] == 0 and [s for s, _ in allowed[1]] == ["良い"] * n_ops + ["人が見る", "人が見る"]
+              and allowed[1][-2][1] == TLC_LABEL and allowed[1][-1][1] == "止まりうる操作")
         merge = o["merge を deny（allow もある）"]
         check("deny は allow より強い: 1、gh pr merge が要対処", merge[0] == 1 and ("要対処", "許可: `gh pr merge`") in merge[1])
         push = o["push を ask（allow もある）"]
@@ -296,6 +323,15 @@ def main() -> int:
               and ("要対処", "許可: `gh workflow run`") in o["--command つき"][1] and o["--command を足す"][0] == 0)
         check("lines・ops・check は台帳を書かない（線を書き直した台帳は変わる——陽性対照）", o["読むだけ"] and o["線の書き直しで台帳は変わる（陽性対照）"])
         check("壊れた台帳: lines・ops・check とも 4", o["壊れた台帳"] == (4, 4, 4))
+        def tlc_status(key):
+            rc, items = o["TLC: " + key]
+            return rc, [st for st, lab in items if lab == TLC_LABEL]
+        check("TLC: 宣言なし・呼び方なし は 1 で要対処（単位を進める前に示す）", tlc_status("宣言なし・呼び方なし") == (1, ["要対処"]))
+        check("TLC: CLAUDE.md が無い は 1 で要対処", tlc_status("CLAUDE.md が無い") == (1, ["要対処"]))
+        check("TLC: 宣言なし・通らない呼び方 は 1 で要対処", tlc_status("宣言なし・通らない呼び方") == (1, ["要対処"]))
+        check("TLC: 宣言なし・通る呼び方 は 0 で良い（陽性対照）", tlc_status("宣言なし・通る呼び方") == (0, ["良い"]))
+        check("TLC: 宣言あり・呼び方なし は 0 で人が見る（要対処にしない）", tlc_status("宣言あり・呼び方なし") == (0, ["人が見る"]))
+        check("TLC: 同じ宣言が 2 行 は 4 で判定できない", tlc_status("同じ宣言が 2 行") == (4, ["判定できない"]))
 
         print("\n写しは dev-loop の check-unattended-env.py と同じ")
         mine, theirs = function_sources(SCRIPT), function_sources(ORIGINAL)
@@ -339,6 +375,7 @@ def main() -> int:
             broken = d / "scripts" / "autopilot-check.py"
             broken.write_text(mutated, encoding="utf-8")
             shutil.copy(LEDGER, d / "scripts" / "autopilot-ledger.py")
+            shutil.copy(TLC, d / "scripts" / "check-tlc.py")
             # **読み込めない変異は「殺せた」ではなく「当てられなかった」**
             try:
                 mutant = load_module(broken, "mut")
