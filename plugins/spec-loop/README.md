@@ -40,6 +40,7 @@
 | `templates/mkdocs/` | 正本リポジトリを MkDocs で閲覧するための雛形（設定・Q&A 表を CSV から描くフック・表示用のページ） |
 | `scripts/autopilot-ledger.py` | autopilot の台帳（版ごとの `.claude/plans/spec-autopilot-v<版>.json`）の読み書き（標準ライブラリと `git`） |
 | `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検（標準ライブラリと `git`） |
+| `scripts/check-tlc.py` | TLC が正本リポジトリの `CLAUDE.md` に書いた呼び方で使えるかの確かめ（標準ライブラリと、書いた呼び方の TLC。下の「前提」） |
 | `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
@@ -207,3 +208,36 @@ Node・bpmn-js と puppeteer-core（`SPEC_LOOP_BPMN_DEPS`）・Chrome（`CHROME_
 
 - Python 3.10 以上（標準ライブラリだけを使います）
 - 正本リポジトリが git で管理されていること（サインオフをタグで記録するため）
+- **TLC（TLA+ のモデル検査器）が既定で必須です**（#912）。`spec-review` は、並行・リトライ・取り消しを含む業務フローを形式検査の対象に選ぶと
+  TLC で検査し、TLC が無いと判定役を 1 体も起動せずに止まります。どの版で業務フローが対象になるかは周を回すまで決まらないので、**`spec-review` を回す前に用意してください。**
+  `autopilot` は起動時の確認で TLC を点検し、各起動は TLC が無ければ単位を 1 つも進めずに止まります。
+
+### TLC の用意
+
+1. **Java と、TLA+ の `tla2tools.jar` を置きます**（スキルは入れません）。
+2. **正本リポジトリの根の `CLAUDE.md` に、呼び方を行頭から 1 行で書きます**——後ろにモデルのファイル（`<名前>.tla`）を足して、モデルのディレクトリで走らせる形です:
+
+```text
+TLC の呼び方: java -cp /opt/tla/tla2tools.jar tlc2.TLC
+```
+
+`spec-review` の確かめ・`autopilot` の点検・Formal Checker は、どれもこの呼び方だけを使います——**`command -v` では探しません**
+（jar で入れた TLC は `command -v` では見つからないため）。確かめは `scripts/check-tlc.py` で、呼び方に小さいモデルを 2 つ
+（通るものと、わざと違反するもの）検査させて決めます:
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/check-tlc.py <正本リポジトリの根>
+```
+
+### 業務フローを形式検査しない案件
+
+業務フローを一度も形式検査しない案件（例: 料金の計算ルールだけを直す案件）は、正本リポジトリの根の `CLAUDE.md` に次の 1 行を書くと、TLC を必須から外せます。
+`autopilot` の点検と各起動は TLC を確かめなくなります:
+
+```text
+業務フローの形式検査: しない
+```
+
+宣言が古くなっても（後の版で業務フローを対象に選んだ）、`spec-review` が対象を選んだときに TLC を確かめ、無ければ今のとおり止まります。
+書き方の細部（コードフェンスの中の行は読まない・同じ行を 2 行書かない・値は `しない` だけ）と終了コードは、`scripts/check-tlc.py` の docstring を正とします。
+Alloy（権限・ロールの検査器）は必須にしていません——権限・ロールを対象に選んだときに `spec-review` が確かめます。

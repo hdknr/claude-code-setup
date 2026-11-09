@@ -38,6 +38,10 @@ r"""spec-loop の autopilot（#789）の入口（#849）が使う判定——台
 - **git と PR**——`commit` の値で `COMMIT_OPS` から（`しない` なら無し）
 - `--command` で渡したもの（繰り返し可）
 
+`check` は、これらに加えて **TLC の前提**（#912）を 1 項目として点検する——`check-tlc.py` を読み込み、`--project` の `CLAUDE.md` の宣言で決める
+（宣言の書き方と確かめ方は `check-tlc.py` の docstring を正とする）。外す宣言（`業務フローの形式検査: しない`）が無く、呼び方が無いか通らなければ要対処、
+通れば良い、外す宣言が有れば確かめずに人が見る項目にする。
+
 `check` は、これらの許可を settings で判定し（下の「写し」）、**止まりうる操作**（人が見る）を毎回足す——自動モードの分類器と worktree 隔離のガードは
 settings に現れないので、「良い」と出た操作も止まりうる。設定の層（user・project・local・flag・managed）の読み方は dev-loop の
 `check-unattended-env.py` の docstring の「設定の層」を正とする。`--project` の既定はメインの作業ツリー（`autopilot-ledger.py` の `main_worktree`）。
@@ -82,6 +86,8 @@ spec-loop だけを入れた利用者に dev-loop が在るとは限らず、プ
 - **読めない設定の層があれば、許可を「良い」と言わない**——判定できない（4）。
 - **止まりうる操作を、要対処が無くても毎回出す**——点検した操作を全部並べる。
 - **要対処があれば 1 で終える**——判定できないが一緒にあっても 1。
+- **外す宣言の無い正本で TLC が無ければ、TLC の項目を要対処にする**（`check-tlc.py` の 1）——単位を進める前に利用者に見せる。
+- **外す宣言の有る正本では、TLC の項目を要対処にしない**——TLC を確かめず、人が見る項目にする。
 
 守らない:
 
@@ -114,7 +120,7 @@ LINES = {
 LIMIT_RE = re.compile(r"周 ([1-9][0-9]{0,3}) まで続ける")
 
 # 線に依らず各起動が呼ぶスクリプト（spec-review の周と入口）。`止まる地点 = feasibility の後` なら FEASIBILITY_SCRIPTS も
-SPEC_REVIEW_SCRIPTS = ("autopilot-ledger.py", "autopilot-check.py", "check-qa-csv.py", "merge-versions.py",
+SPEC_REVIEW_SCRIPTS = ("autopilot-ledger.py", "autopilot-check.py", "check-tlc.py", "check-qa-csv.py", "merge-versions.py",
                        "diff-versions.py", "check-spec-exit.py", "render-diagrams.py")
 FEASIBILITY_SCRIPTS = ("check-feasibility-csv.py", "schedule-to-gantt.py")
 PR_OPS = ("git switch", "git pull", "git add", "git commit", "git push", "gh pr create")
@@ -137,6 +143,14 @@ EXIT_UNKNOWN = 4
 def ledger_module():
     """同じプラグインの `autopilot-ledger.py`（写さずに読む）。"""
     spec = importlib.util.spec_from_file_location("spec_loop_autopilot_ledger", HERE / "autopilot-ledger.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def tlc_module():
+    """同じプラグインの `check-tlc.py`（写さずに読む。#912）。"""
+    spec = importlib.util.spec_from_file_location("spec_loop_check_tlc", HERE / "check-tlc.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -415,6 +429,22 @@ def stoppable_item(commands):
             " ／ (c) このまま回し、拒まれたらその段で止まる（`stopped`）")
 
 
+def tlc_item(project):
+    """TLC の前提の項目（#912）。判定は `check-tlc.py` の `judge`（`--autopilot` と同じ——外す宣言が有れば確かめない）。"""
+    tlc = tlc_module()
+    code, lines, skipped = tlc.judge(project, autopilot=True)
+    detail = " ".join(lines)
+    label = "TLC（業務フローの形式検査）"
+    if skipped:
+        return (HUMAN, label, detail, "後の版で業務フローを対象に選ぶと、spec-review がそこで止まる——そのときは TLC を用意して宣言を外す")
+    if code == tlc.EXIT_OK:
+        return (GOOD, label, detail, "")
+    if code == tlc.EXIT_MISSING:
+        return (ACTION, label, detail, "Java と tla2tools.jar を用意し、正本の CLAUDE.md に「TLC の呼び方: <コマンド>」を書く"
+                "（業務フローを形式検査しない案件なら「業務フローの形式検査: しない」）。用意するまで各起動は単位を進めずに止まる")
+    return (UNKNOWN, label, detail, "")
+
+
 def exit_code(items):
     if any(item[0] == ACTION for item in items):
         return EXIT_ACTION
@@ -451,6 +481,7 @@ def cmd_check(args, values, project):
     items = [(UNKNOWN, f"設定（{name}）", f"{path} を読めなかった: {data.reason}", "")
              for name, path, data in stack if isinstance(data, Unreadable)]
     items += check_permissions(stack, commands)
+    items.append(tlc_item(project))
     items.append(stoppable_item(commands))
     return report(stack, items)
 
