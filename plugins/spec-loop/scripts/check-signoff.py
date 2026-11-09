@@ -144,13 +144,12 @@ def compare_scope(version: int) -> list[str]:
     内部の Q&A 表と形式検査のモデルのディレクトリを除く。v2 以降の `removed.csv` は行で比べる（`removed_scope_rows`）。"""
     paths = [f"{DOCS}/v{i}/{d}" for i in range(1, version + 1) for d in SCOPE_DIRS]
     paths.append(f"{DOCS}/v1/{REMOVED}")
-    # 形式検査のモデル（#908）。末尾の `/` を外して、ディレクトリの名前で外す（`spec/formalx.md` のような同じ接頭辞の別のファイルは外れない）
-    paths += [f":(exclude){DOCS}/v{i}/{FORMAL}" for i in range(1, version + 1)]
+    # 形式検査のモデル（#908）。`is_formal` と同じく、末尾の `/` までを付けたディレクトリの形で外す——`spec/formal` という名前のファイルと、
+    # `spec/formalx.md` のような同じ接頭辞の別のファイルは外れない
+    paths += [f":(exclude){DOCS}/v{i}/{versions.FORMAL_DIR}" for i in range(1, version + 1)]
     return paths + [f":(exclude){DOCS}/v{i}/{INTERNAL_QA}" for i in range(1, version + 1)]
 
 
-# 形式検査のモデルの置き場所（`merge-versions.py` のものを使い、写さない。#908）
-FORMAL = versions.FORMAL_DIR.rstrip("/")
 # `removed.csv` の種類（`references/versions.md` の「削除」。`merge-versions.py` のものを使い、写さない）
 REMOVED_QA = versions.KIND_QA
 REMOVED_FILE = versions.KIND_FILE

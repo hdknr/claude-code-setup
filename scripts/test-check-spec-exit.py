@@ -84,6 +84,8 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     # 陽性対照: 接頭辞だけ同じ formalx.md は仕様のファイル
     ("formal と接頭辞だけ同じファイルの印は見る", HEADER, {"order.md": CLEAN_SPEC, "formalx.md": "下限は TBD\n"}, 1,
      "formalx.md:1: 未決定の印 TBD"),
+    ("formal という名前のファイルの印は見る", HEADER, {"order.md": CLEAN_SPEC, "formal": "下限は TBD\n"}, 1,
+     "formal:1: 未決定の印 TBD"),
     # 形式検査のモデルだけでは仕様を書いたことにならない
     ("形式検査のモデルだけ", HEADER, {"formal/order/Order.tla": "---- MODULE Order ----\n"}, 2, "ファイルが 1 つも無い"),
     ("印が無い行の後ろに印", HEADER, {"order.md": CLEAN_SPEC, "flow.md": "a\nb\nc TBD\n"}, 1, "flow.md:3"),
@@ -140,10 +142,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "内部の表の反映済みは通す（文の印は数えない）"),
     ("どこの qa-dev.csv も外す", "        if path == root / pptx.qa.INTERNAL_NAME:", "        if path.name == pptx.qa.INTERNAL_NAME:",
      "入れ子の qa-dev.csv は仕様のファイル"),
-    ("形式検査のモデルを印の走査に入れる", "        if path.relative_to(root).parts[0] == FORMAL_NAME:", "        if False:",
+    ("形式検査のモデルを印の走査に入れる", '        if versions.is_formal("spec/" + path.relative_to(root).as_posix()):', "        if False:",
      "形式検査のモデルの中の印は見ない"),
-    ("接頭辞で形式検査のモデルを外す", "        if path.relative_to(root).parts[0] == FORMAL_NAME:",
-     "        if path.relative_to(root).parts[0].startswith(FORMAL_NAME):", "formal と接頭辞だけ同じファイルの印は見る"),
+    ("接頭辞で形式検査のモデルを外す", '        if versions.is_formal("spec/" + path.relative_to(root).as_posix()):',
+     '        if path.relative_to(root).parts[0].startswith("formal"):', "formal と接頭辞だけ同じファイルの印は見る"),
+    # 最初の段の名前だけで外すと、`formal` という名前のファイル（ディレクトリでない）も外れる（#908 の 1 パス目の CR5）
+    ("最初の段の名前で外す", '        if versions.is_formal("spec/" + path.relative_to(root).as_posix()):',
+     '        if path.relative_to(root).parts[0] == "formal":', "formal という名前のファイルの印は見る"),
     ("内部の読めない表を 2 にしない", "    if internal_code == 2:", "    if False:", "内部の表が読めない"),
     ("暫定反映を反映した状態に数えない", "not in pptx.qa.REFLECTED", "!= pptx.qa.DONE", "暫定反映は止めない"),
     ("資料に載る行で数える", "not in pptx.qa.REFLECTED", "not in ()", "暫定反映は止めない"),
