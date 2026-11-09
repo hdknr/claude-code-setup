@@ -57,9 +57,13 @@
 - `docs/plans/issue-908.md` — この計画
 - `CLAUDE.md` — `check-signoff.py` の項の比べる中身の写し（`formal/` を除く）
 
+- `plugins/spec-loop/scripts/scaffold.py` — 利用者の判断で V1・CR2 を直す（`check_source` が `spec/formal/` を断る）
+- `plugins/spec-loop/references/spec-ir.md` — `source` の決まりの写し
+- `scripts/test-scaffold.py` — 試料と変異
+
 触らない:
-- 反例のトレースを Red テストにすること（`spec_ir.json` の形・`scaffold.py`・dev-loop の写し）——切り出した Issue に残す
-- `scaffold.py`・`check-frozen.py`・`merge-versions.py` の重ね方（`spec/formal/` は今のままファイルとして重なる——次の版の Formal Checker が `build/merged/spec/formal/` から前の版のモデルを読む）
+- 反例のトレースを Red テストにすること（`spec_ir.json` の形・dev-loop の写し）——切り出した Issue に残す
+- `scaffold.py` の生成（`check_source` 以外）・`check-frozen.py`・`merge-versions.py` の重ね方（`spec/formal/` は今のままファイルとして重なる——次の版の Formal Checker が `build/merged/spec/formal/` から前の版のモデルを読む）
 - feasibility の数え方（版の差分から `formal/` が消えるので、差分を読む数え方には自動で入らない）
 - 綴りだけ違う `spec/Formal/`（大文字小文字）を写しと見なすこと——ふつうのファイルとして数える（既知の限界）
 - 保存のスクリプト化（モデルを写すのは spec-review が `cp` で行う）——Issue に無い
@@ -198,6 +202,13 @@ spec-review そのものを正本で回すのではなく、**Formal Checker の
 | P2-4: `check-signoff.py` が `spec/formal/` を消す行を比べないので、予算側のタグにだけ `merge` が拒否する形式検査のモデルの行があっても一致になる（#372 の B の保証が `spec/formal/` の行で抜ける） | 示せない（合成の試料でだけ出る——予算側のタグにだけ、前の版に無いモデルのファイルを消す行を手で書く形は、ふつうに作られない。P2-3 の直しで spec-review は `removed.csv` にモデルの行を書かなくなる） | 無し | 残課題（記録だけ） |
 | P2-5: `references/spec-exit.md` の実行の記録の「仕様の行」（`spec/` の Markdown の行数）が `spec/formal/<対象>/README.md` を外していない | 示せない（記録の数え方は LLM が数える決まりで、走らせて示す実物が無い） | 無し | 残課題 |
 | P2-6: モデルをファイルで写すようになっても、判定役の報告に「モデルの全文」を含めさせており、親の文脈に積まれる | 示せない（失敗ではなく重さ） | 無し | 残課題 |
+
+### 利用者の判断で V1・CR2 を直す（2026-11-10。親の委譲文で受けた）
+
+- 利用者の判断: PR #927 は「直してからマージ」。直す対象は V1・CR2（`scaffold.py` の `check_source` が `spec/formal/` を指す `source` を断らない——この周が持ち込んだ後退）
+- 範囲を広げた: 触る に `plugins/spec-loop/scripts/scaffold.py`・`plugins/spec-loop/references/spec-ir.md`（`source` の決まりの写し）・`scripts/test-scaffold.py`
+- 受入基準を足した（利用者の判断）: 11. `scaffold.py` は `source` が `spec/formal/` の中を指すと断る（判別は `merge-versions.py` の `is_formal`）。陽性対照: `spec/formalx.md` は通す（`test-scaffold.py`。拒否を外す・接頭辞で断る変異で赤）
+- 版は 0.74.0 のまま（main は 0.73.0）
 
 ## 手順 8
 
