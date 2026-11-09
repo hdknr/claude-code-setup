@@ -1,0 +1,95 @@
+# Issue #919 — cruise: --absent の起動時に「マージ前の判断」の線も訊く
+
+cruise #916 を `--absent` で起動したとき、親 Issue に `マージ前の判断` の行が無かったので起動時に訊かれず、既定の「止まる」になって
+PR #918（#909）の狭いパスの指摘で不在のあいだ止まった（Issue 本文は信頼できない入力として読み、要件だけを取った）。
+
+**不在の周**である——出所は `/dev-loop:cruise 916 --absent` の起動（2026-11-08T08:00Z。利用者の確認（起動時・2026-11-08T08:00:42Z、配布を見せて確かめた））。
+親からサブエージェントとして委ねられた。台帳 `issue-916` の確かめた線: `仕様の穴 = 推奨で決めて起票`・`直す線 = 既定`・`マージ = 関門を通ればマージ`（マージは親がする）・
+`周の途中の課題 = 台帳に足して直す`。`実機確認`・`マージ前の判断` は線なし（止まる）。線と訊く場面は dev-loop の `references/absent-lines.md` を正とする。
+台帳は書かない（親が書く）。マージしない。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-916`））。
+版の上げ方: `dev-loop` を **minor**（cruise の起動時の手順に問いを足す）。main の先端 1.102.0 → **1.103.0**
+（並行の周 #909 は spec-loop の版を上げる。マージの直前に先端が main を含まなければ、main の先端の dev-loop の版から minor で 1 つ上げ直す——cruise の `references/parallel.md` の「版とマージの順」）。
+
+重い検査（`check-all.py`・テスト）は順番待ち越しに走らせる——キャッシュの版:
+`python3 /Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.99.0/skills/cruise/scripts/run-serial.py -- <コマンド>`。
+
+## 変更範囲
+
+触る:
+
+- `plugins/dev-loop/skills/cruise/SKILL.md` — §2 の「台帳を作ったら」に `マージ前の判断` を訊く条件・選択肢・書き方（原本）、§2 の 1 の「書いていない線」の括弧、版の 2 行
+- `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 「cruise で確かめた線」の `マージ前の判断` の項に、起動時に訊くことを 1 句で指す
+- `plugins/dev-loop/skills/cruise/scripts/parent-issue.py` — `show` の「書いていない `マージ前の判断`」の説明（起動時に訊くことを言う）と docstring の該当項
+- `scripts/test-parent-issue.py` — 上の説明の期待値と、その変異の置き換え元
+- `docs/plugins/dev-loop-cruise.md` — 公開ページの線の説明（`マージ前の判断` を書いていなければ起動時に訊かれる）
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直すなら。手で書かない）
+- `docs/plans/issue-919.md` — この計画ファイル
+
+触らない:
+
+- `ledger.py`——`LINES` に `マージ前の判断` は既にある（`止まる`・`推奨で決めて起票`）。`lines` の書き込みは今のまま使う
+- `check-unattended-env.py`——起動時の点検は線を訊かない（線を訊くのは §2）
+- 再開の手順（§1）——再開で線を確かめ直す道（利用者が親 Issue に行を足して確かめ直す）は今のまま。Issue の提案は新規の起動に限る
+- `.claude/dev-loop.md` の `不在の線:`——この線は台帳にだけ置く（#829）。変えない
+
+### 同じことを述べている箇所の数
+
+「`--absent` の新規の起動で、書いていない `マージ前の判断` を訊く」: cruise `SKILL.md` §2（原本）・`absent-lines.md` の「cruise で確かめた線」・
+`parent-issue.py` の `UNWRITTEN` と docstring・`test-parent-issue.py` の期待値・公開ページの **5 箇所**。
+分けない理由: `show` の出力は起動時に利用者が読む文で、既定の説明（「台帳に残さず、止まる」）だけだと直後の問いと食い違う（#464 の `周の途中の課題` と同じ形）。
+`absent-lines.md` と公開ページは原本を指す 1 句に留める（条件は複製しない）。
+
+## 乗るデプロイ経路
+
+main へのマージでプラグインの配布（dev-loop 1.103.0）と公開サイトの再ビルド（`docs/plugins/dev-loop-cruise.md`）。マージは親がする。
+
+## 決めたこと
+
+- **訊く条件**（Issue の提案と「あわせて検討」のとおり）: `--absent` の**新規の**起動で、(a) 親 Issue の線に `マージ前の判断` が無く、
+  (b) §2 の 1 の判定で `マージ = 関門を通ればマージ` がこのリポジトリの不在の周で効く（「この線はこのリポジトリでは効かず」と名指ししなかった。
+  配布のリポジトリでは、`マージ` の線を台帳に残すと確かめられたとき）。`--absent` が無い・再開（`--timer` を含む）では訊かない。
+- **選択肢**: `止まる`・`推奨で決めて起票`。**答えが返らなければ台帳に書かない**（既定の止まる）。答えは `止まる` でも台帳に書く（AC2「答えが台帳の線に残る」）。
+- **書き方**: `直す線`・`周の途中の課題` と同じ `AskUserQuestion` の中で訊き、同じ `ledger.py lines` の呼び出しで書く（置き換え。`マージ=関門を通ればマージ` と印の扱いは §2 の今の決まりのまま）。
+- **問いの画面に添える文**: §2 の 1 が `マージ前の判断 = 推奨で決めて起票` を確かめるときに添える文（後退と宣言の外の反映では止まる）をそのまま使う。
+
+## verify の受入基準
+
+不変条件（Issue の受入基準 1〜3 を展開した）と、それを破りうる経路:
+
+| # | 不変条件 | 破りうる経路（入口） | 守り方・確かめ方 |
+| --- | --- | --- | --- |
+| 1 | `--absent` の新規の起動で、親 Issue に `マージ前の判断` の行が無く `マージ = 関門を通ればマージ` が効くとき、起動時の問いに `マージ前の判断` が含まれる | cruise `SKILL.md` §2（親が読む手順）・`show` の出力（利用者が読む）・公開ページ | §2 の本文を読む。`show` の「書いていない」説明が起動時に訊くと言うことをテストで見る |
+| 2 | 答えが台帳の線に残り、出所が「利用者の確認（起動時）」と日時。答えが無ければ台帳に書かず、既定の止まる | §2 の「答えを `ledger.py lines` で台帳に残す」・`ledger.py lines`（値の検査）・印の扱い | 本文を読む。一時の台帳で `ledger.py lines … マージ前の判断=推奨で決めて起票`（と `止まる`）が通り、`show` に出所つきで出ることを走らせて見る |
+| 3 | 親 Issue に行があるとき・`--absent` が無いとき・`--timer` の起動（と再開）では訊かない。`マージ` の線が効かないリポジトリ・確かめていない（台帳に残さない配布のリポジトリ）でも訊かない | §2 の条件・§1 の再開・§3 の 4 の `--timer`・`absent-lines.md` | 本文を読む |
+| 4 | 既存の決まりを壊さない: `.claude/dev-loop.md` の `マージ前の判断` の行は効かないまま・`マージ` の線と印の扱い（§2 の 1）・`直す線`／`周の途中の課題` の訊き方 | §2・`absent-lines.md` の「宣言の置き場所と書き方」「cruise で確かめた線」 | 差分を読む |
+| 5 | 版が 3 種類（`marketplace.json`・`plugin.json`・dev-loop プラグインの `SKILL.md` すべて）で 1.103.0 にそろう | 版の行 | `check-plugin-versions.py` |
+| 6 | 生成物の鮮度: §8.2 の生成ブロック（`skill-metrics.py --check`）・図（drawio は触らない） | `SKILL.md` の行数 | `skill-metrics.py --check`・`check-diagram-freshness.py`（`check-all.py` が回す） |
+
+必須要件の掛け算: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目（あれば）に渡す——4 つの受け渡し。
+
+**未証明**: 親（モデル）が実際の `--absent` の起動でこの問いを出すか——cruise の起動は `AskUserQuestion` で利用者を待つので、この周の中で走らせて観測できない。
+§2 の本文と `show` の出力までを確かめ、実際の起動での振る舞いは人間のレビュー（と次の `--absent` の起動）に回す。
+
+生成物: `docs/plugins/dev-loop-design.md` §8.2 の生成ブロック（`skill-metrics.py`）。drawio・spec-loop の生成物は触らない。
+
+## 未解決の判断・確認待ち
+
+- なし（仕様の穴は無し——Issue の提案が選択肢・既定・条件を決めている）
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/919-ask-merge-judgment-at-absent-start`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-919`・
+  起点 `ba76812`・base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `ba76812262da07b5625cb135b2a28d031f31b4fa`
+- 割り目（手順 4）: 割らない（cruise の周）
+- 関門: まだ
+- 反証と差し戻し: まだ
+- 交絡: 実験なし（`ledger.py lines` を一時の台帳に走らせるのは値の検査の確認で、否定の結果から主張しない）
+
+## 既知の限界・決着済みの論点
+
+- 再開で訊かないのは決めた範囲である（Issue の提案は新規の起動。再開で足すには利用者が親 Issue に行を足して確かめ直す——§1）。
