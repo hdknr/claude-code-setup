@@ -209,6 +209,14 @@ spec-review そのものを正本で回すのではなく、**Formal Checker の
 - 範囲を広げた: 触る に `plugins/spec-loop/scripts/scaffold.py`・`plugins/spec-loop/references/spec-ir.md`（`source` の決まりの写し）・`scripts/test-scaffold.py`
 - 受入基準を足した（利用者の判断）: 11. `scaffold.py` は `source` が `spec/formal/` の中を指すと断る（判別は `merge-versions.py` の `is_formal`）。陽性対照: `spec/formalx.md` は通す（`test-scaffold.py`。拒否を外す・接頭辞で断る変異で赤）
 - 版は 0.74.0 のまま（main は 0.73.0）
+- 直しのコミット: `38b3c9e`。狭いパスの起点 `5ab62d3`・終点 `38b3c9e`（起点の子孫）。`test-scaffold.py` OK（試料 332・変異 289）
+- 狭いパス（2026-11-10・`dev-loop:dev-loop-verifier`・sonnet。読んだ委譲文 170 行。報告は親に届かず、トランスクリプトから読んだ）: **反証 1 件**（N1）。`git status` は開始・終了とも空。
+  委譲先は自分の変異を当てていない（著者の変異 2 本の効きも確かめていない）。断る経路（`./`・`..`・`//`・シンボリックリンク）と通す経路（`spec/formal.md`）は一致
+- 狭いパスの指摘（採否は人間が決める）:
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 振り分け |
+| --- | --- | --- | --- |
+| N1: 大文字小文字を区別しない FS（macOS の既定）で、実ディレクトリが `spec/formal/` のとき `source` に `spec/Formal/o/a.md` と書くと、`check_source` は断らず（綴りどおりに `is_formal` で見る）、`check-spec-exit.py` は実名 `formal` で走査から外すので、未決定の印が素通りする | 示せる（合成の試料。委譲先が `check_source` に当てて `[]`） | 11 の趣旨（出所を断る）に当たるが、綴りを変えた `source` に限る | 記録だけ（迷った）——中間表現の `source` に、実ディレクトリと大文字小文字だけ違う綴りを書く形は scaffold がふつうに作らない。**後退を示すか**: main（`check-spec-exit.py` が `formal/` も走査する）と比べるとこの入力で後退の形になる（合成の入力でだけ）。直す前（`5ab62d3`）は綴りに依らず `spec/formal/` の出所を断っていなかったので、この直しの後退ではない |
 
 ## 手順 8
 
