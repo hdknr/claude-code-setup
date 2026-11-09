@@ -40,6 +40,7 @@ MUTATIONS = {
                         ("import argparse\n", "import argparse\nimport shutil\n")],
     "フェンスの中の行を読む": [("                fence = None\n            continue\n", "                fence = None\n")],
     "フェンスを長さ・info string を見ずに閉じる": [("len(m.group(1)) >= fence[1] and not m.group(2).strip()", "True")],
+    "全角のコロンを読まない": [('    for k in (key, key[:-1] + "："):\n', "    for k in (key,):\n")],
     "BOM を外さない": [('    text = text.removeprefix("\\ufeff")\n', "")],
     "同じ宣言が 2 行でも先頭を使う": [("    if len(calls) > 1:\n", "    if False:\n")],
     "外す宣言の値を見ない": [("    if opt_outs and opt_outs[0] != OPT_OUT_VALUE:\n", "    if False:\n")],
@@ -179,6 +180,8 @@ def scenario(mod, base: Path, tag: str) -> dict:
     o["info string の行では閉じない"] = case("```\n```bash\n" + call_line("good") + "```\n")
     o["長いフェンスを閉じた後の行"] = case("````\n```\n````\n" + call_line("good"))
     o["BOM つきの 1 行目"] = case("\ufeff" + call_line("good"))
+    o["全角のコロンの呼び方"] = case(call_line("good").replace("TLC の呼び方:", "TLC の呼び方："))
+    o["全角のコロンの外す宣言だけ（--autopilot）"] = case("業務フローの形式検査：しない\n", "--autopilot")
     o["行頭でない（字下げ）"] = case("  " + call_line("good"))
     o["呼び方が 2 行"] = case(call_line("good") + call_line("broken"))
     o["外す宣言が 2 行"] = case("業務フローの形式検査: しない\n業務フローの形式検査: しない\n", "--autopilot")
@@ -229,6 +232,8 @@ def main() -> int:
         check("4 つのフェンスの中の 3 つのフェンスの中は読まない: 1", o["4 つのフェンスの中の 3 つのフェンスの中"] == missing)
         check("info string の行ではフェンスを閉じない: 1", o["info string の行では閉じない"] == missing)
         check("BOM つきの 1 行目の宣言を読む: 0", o["BOM つきの 1 行目"] == ok)
+        check("全角のコロンの行も読む: 呼び方は 0・外す宣言は --autopilot で 0",
+              o["全角のコロンの呼び方"] == ok and o["全角のコロンの外す宣言だけ（--autopilot）"] == ok)
         check("行頭でない行は読まない: 1", o["行頭でない（字下げ）"] == missing)
         check("呼び方が 2 行: 4", o["呼び方が 2 行"] == unknown)
         check("外す宣言が 2 行: 4", o["外す宣言が 2 行"] == unknown)

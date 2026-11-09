@@ -7,7 +7,8 @@ r"""TLC（TLA+ のモデル検査器）が、正本リポジトリの `CLAUDE.md
 
 ## なぜ在るのか（#912）
 
-業務フロー（並行・リトライ・取り消し）を形式検査の対象に選んだのに TLC が無いと、spec-review は判定役を 1 体も起動せずに止まる。
+業務フロー（並行・リトライ・取り消し）を形式検査の対象に選んだのに TLC が無いと、spec-review は判定役を 1 体も起動せず、
+用意してから呼び直すか、用意せずに進める（業務フローは判定できなかったになり、その回は抜けない）かを訊く。
 TLC はふつう `tla2tools.jar` で入れるので `command -v` では見つからず（#368 の残課題 CR4）、入っているのに「無い」として止まりえた。
 **TLC は spec-loop の既定で必須の前提**であり（README の「前提」）、**呼び方は正本の `CLAUDE.md` に書く**。
 spec-review の確かめ（手順 3）と autopilot の起動時の点検はこのスクリプトで確かめ、Formal Checker は同じ呼び方を使う。
@@ -24,9 +25,10 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 - **コードフェンス（` ``` `・`~~~`）の中の行は読まない**——例として書いた行を宣言と読まない。フェンスの開け閉めは CommonMark のとおり
   （同じ文字の 3 つ以上で開き、同じ文字で、開きと同じか長い、info string の無い行で閉じる。4 つのバッククォートの中の 3 つは閉じない）。
 - **先頭の BOM は外して読む。**
+- **コロンは半角（`:`）でも全角（`：`）でもよい**——日本語の入力で全角になりやすい。
 - **同じ行を 2 行以上書かない・外す宣言の値は `しない` だけ・呼び方を空にしない**——どれも「判定できない」（4）。
 - **外す宣言が古くなっても（後の版で業務フローを対象に選んだ）守らせる仕組みは無い**——spec-review が対象を選んだときに
-  このスクリプトを（`--autopilot` なしで）呼び、TLC が無ければ今のとおり止まる。
+  このスクリプトを（`--autopilot` なしで）呼び、TLC が無ければ今のとおり判定役を起動せずに訊く。
 
 ## 確かめ方
 
@@ -61,6 +63,7 @@ spec-review の確かめ（手順 3）と autopilot の起動時の点検はこ�
 - **コードフェンスの中の行を宣言と読まない。**
 - **フェンスを閉じるのは、同じ文字で開きと同じか長い、info string の無い行だけ**——4 つのバッククォートの中の 3 つや、` ```bash ` の行で閉じない。
 - **先頭の BOM を外して読む**——BOM つきで保存した `CLAUDE.md` の 1 行目の宣言を落とさない。
+- **全角のコロンの行も読む**——`TLC の呼び方：`・`業務フローの形式検査：` を「行が無い」と読まない。
 - **同じ宣言が 2 行以上なら 4**——どれを使うかを決めない。
 - **外す宣言の値が `しない` でなければ 4**——近い値（`無し`・`しない（v2 から）`）で外さない。
 - **`--autopilot` で外す宣言が有れば、呼び方を走らせずに 0。**
@@ -137,10 +140,11 @@ def read_declarations(root):
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
                 fence = None
             continue
-        if line.startswith(CALL_KEY):
-            calls.append(line[len(CALL_KEY):].strip())
-        elif line.startswith(OPT_OUT_KEY):
-            opt_outs.append(line[len(OPT_OUT_KEY):].strip())
+        call, opt_out = after_key(line, CALL_KEY), after_key(line, OPT_OUT_KEY)
+        if call is not None:
+            calls.append(call.strip())
+        elif opt_out is not None:
+            opt_outs.append(opt_out.strip())
     if len(calls) > 1:
         raise Unknown(f"`{CALL_KEY}` の行が {len(calls)} 行ある（どれを使うか決めない）")
     if len(opt_outs) > 1:
@@ -151,6 +155,14 @@ def read_declarations(root):
         raise Unknown(f"`{CALL_KEY}` の呼び方が空")
     note = "" if calls else f"{path} に `{CALL_KEY}` の行が無い"
     return (calls[0] if calls else None), bool(opt_outs), note
+
+
+def after_key(line, key):
+    """行頭が `key`（コロンは半角か全角）なら、その後ろ。違えば None。"""
+    for k in (key, key[:-1] + "："):
+        if line.startswith(k):
+            return line[len(k):]
+    return None
 
 
 def run_model(call, workdir, name, timeout):
