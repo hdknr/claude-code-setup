@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+# 同じ PR に push し直したら、古い run（全ジョブ分のランナー）を止める（#932）。
+# PR は `refs/pull/<番号>/merge` ごとの組なので、別の PR の run は止めない。
+# main への push は commit（SHA）ごとの組にして、止めも待たせもしない——ref で組むと、
+# 続けてマージしたとき待っている run が後の run に置き換えられ、その commit の検査が走らない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # 1 本のジョブで全ステップを直列に回すと約 32 分かかった（#929）。実測の重さでジョブに分けて並行に走らせる。
 # **matrix にしない**——`run:` の行からスクリプト名が消えると、test-check-all.py の収録漏れの検査が CI のステップを見つけられない。
 # 各ジョブは同じ形で取る（fetch-depth: 0）——どのステップがどのジョブに移っても、見える履歴が分割前と同じになるように。
@@ -205,7 +213,7 @@ jobs:
         run: python3 scripts/test-outer-loop.py
 
   # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分、作り直しの範囲と量、
-  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
+  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と Alloy の確かめと、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
   # （下の spec-loop-generate のテストと、autopilot の外側のループ以外）
   spec-loop:
     runs-on: ubuntu-latest
@@ -278,6 +286,10 @@ jobs:
       # 本体は plugins/spec-loop/scripts/check-tlc.py（TLC の前提の確かめ。偽の TLC と一時ディレクトリの正本で当て、本物の TLC は走らせない）。
       - name: spec-loop の TLC の前提の確かめのテスト（#912）
         run: python3 scripts/test-check-tlc.py
+
+      # 本体は plugins/spec-loop/scripts/check-alloy.py（Alloy の確かめ。偽の Alloy と一時ディレクトリの正本で当て、本物の Alloy は走らせない）。
+      - name: spec-loop の Alloy の確かめのテスト（#922）
+        run: python3 scripts/test-check-alloy.py
 
       # 本体は plugins/spec-loop/scripts/init-mkdocs.py と templates/mkdocs/（正本リポジトリへ写す雛形）。
       - name: spec-loop の MkDocs の雛形のテスト（#266）
