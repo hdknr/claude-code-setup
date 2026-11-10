@@ -132,8 +132,8 @@ jobs:
       - name: check-all.py のテスト
         run: python3 scripts/test-check-all.py
 
-  # dev-loop の周の道具（worktree・周の探索・不在の点検・長期トークン・台帳・マージ）と、cruise の道具（親 Issue・子プロセス・片付け・
-  # コードブロックの読み方の写し）と、orca・cmux のタブ一致規則のテスト
+  # dev-loop の周の道具（worktree・周の探索・不在の点検・長期トークン・台帳・マージ）と、cruise の道具（親 Issue・子プロセス・片付け）と、
+  # コードブロックの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせと、orca・cmux のタブ一致規則のテスト
   dev-loop:
     runs-on: ubuntu-latest
     steps:
@@ -204,8 +204,9 @@ jobs:
       - name: cruise の外側のループのテスト（#791）
         run: python3 scripts/test-outer-loop.py
 
-  # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分（casefold の FS を含む）、
-  # 作り直しの範囲と量、親 Issue の一覧、autopilot の台帳と点検、TLC の前提（表の検査と下のジョブの生成、autopilot の外側のループ以外）
+  # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分、作り直しの範囲と量、
+  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
+  # （下の spec-loop-generate のテストと、autopilot の外側のループ以外）
   spec-loop:
     runs-on: ubuntu-latest
     steps:
@@ -282,7 +283,7 @@ jobs:
       - name: spec-loop の MkDocs の雛形のテスト（#266）
         run: python3 scripts/test-init-mkdocs.py
 
-  # spec-loop のテストのうち、表の検査（Q&A 表・仕様レビューを抜ける条件・スケジュールと見積りの表）と、
+  # spec-loop のテストのうち、表の検査（Q&A 表・スケジュールと見積りの表）と仕様レビューを抜ける条件の判定と、
   # ガントチャート・図の書き出し・Red テストと Issue の本文の生成（ジョブの名前より広い）
   spec-loop-generate:
     runs-on: ubuntu-latest
