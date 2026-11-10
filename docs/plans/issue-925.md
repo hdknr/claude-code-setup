@@ -85,8 +85,10 @@
   報告は SubagentHandback で返したが親に届かず、親が Verifier のトランスクリプトから読んだ
 - `/code-review` 1 パス目: 通した——指摘 9 件（採否の表 R1〜R9。直す 6・残課題 3）
 - 手順 5 への差し戻し: なし（Verifier の反証 0 件）。`/code-review` の直す 6 件は 1 パス目の指摘対応として直す
-- 1 パス目の指摘対応: 済み（コミットは下の「2 パス目」の行）。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**
+- 1 パス目の指摘対応: 済み（`f29b7b8`。成果物の差分 `git diff 06d550f -- ':(top)' ':(top,exclude)docs/plans/issue-925.md'` は `spec-loop-autopilot.md` の 11 行＋/11 行−で 0 行ではない）。歯止め: `check-all.py` 70/70 緑・`mkdocs build --strict`（Python 3.14）警告 0・終了 0。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**
 - 割り目（2 パス目の前）: 割らない（cruise の周）
+- Verifier 2 パス目: 通した——反証 0 件・未確認 0 件（報告は SubagentHandback が届かず、親がトランスクリプトから読んだ。所見 1 件: 部品の表の入口の行が `stopped` で `--lines` を付ける例外を省く——2・5 節が補っているので反証ではないと Verifier 自身が判定）
+- `/code-review` 2 パス目: 起動（結果待ち）
 
 ## 既知の限界・決着済みの論点
 
