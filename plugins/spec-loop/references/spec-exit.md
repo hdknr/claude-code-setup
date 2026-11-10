@@ -294,7 +294,7 @@ Red テスト（`scaffold.py` が仕様のテストケースから作る）は�
 業務フローの検査器の TLC は、spec-loop を使う正本で**既定で必須**である——どの版で業務フローが対象になるかは周を回すまで決まらない。
 **正本の `CLAUDE.md` に `TLC の呼び方: <コマンド>` の行を書き、spec-review の確かめ・autopilot の点検・Formal Checker はこの呼び方だけを使う**（`command -v` では探さない）。
 業務フローを一度も形式検査しない正本は `業務フローの形式検査: しない` で外せる。**行の書き方・確かめ方・終了コードは `scripts/check-tlc.py` の docstring を正とする**
-（用意のしかたは `README.md` の「前提」）。Alloy（権限・ロール）は必須にしていない。
+（用意のしかたは `README.md` の「前提」）。Alloy（権限・ロール）は必須にしていない——下の「Alloy は呼び方の行だけで使う」。
 
 #### 0.73.0 より前から使っている正本の移行（1 度だけ）
 
@@ -306,6 +306,21 @@ Red テスト（`scaffold.py` が仕様のテストケースから作る）は�
 3. **TLC を入れておらず、業務フローを形式検査しない正本で autopilot を回す**——`業務フローの形式検査: しない` を書く。書かないと autopilot が Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めで止まる。
 
 書いたら `python3 <spec-loop の根>/scripts/check-tlc.py <正本の根>`（3 なら `--autopilot` を付ける）が 0 になることを確かめる。
+
+### Alloy は呼び方の行だけで使う（#922）
+
+権限・ロールの検査器の Alloy は必須の前提ではない——権限・ロールを形式検査の対象に選んだ回に、spec-review が確かめる。
+**正本の `CLAUDE.md` に `Alloy の呼び方: <コマンド> exec` の行を書き、spec-review の確かめと Formal Checker はこの呼び方だけを使う**（`command -v` では探さない）。
+**引数なし・`gui` の形では呼ばない**——Alloy 6 の jar はどちらでも画面（GUI）を開き、検査が止まる（#922 では確かめで約 2 分止まった）。
+**行の書き方・確かめ方・終了コードは `scripts/check-alloy.py` の docstring を正とする**（用意のしかたは `README.md` の「前提」）。
+
+#### 0.75.0 より前から使っている正本の移行（1 度だけ）
+
+0.75.0 から、Alloy を `command -v` で探さなくなった（壊れる変更）。権限・ロールを形式検査する正本は、正本の `CLAUDE.md` に `Alloy の呼び方:` の行を
+`exec` まで含めて書く（`PATH` の `alloy` が jar を起動するラッパーなら `Alloy の呼び方: alloy exec`、jar を直に使うなら `Alloy の呼び方: java -jar <jar の場所> exec`）。
+書かないと spec-review は権限・ロールを選んだ回に Alloy が無いとして、判定役を起動せずに訊く。
+**前から `CLAUDE.md` に Alloy の呼び方を自由な書き方で書いていた正本も、この 1 行に書き直す**（1 つのコマンドの形で。ラッパーの本文の `exec java -jar … "$@"` を写さない）。
+書いたら `python3 <spec-loop の根>/scripts/check-alloy.py <正本の根>` が 0 になることを確かめる。
 
 ## 指摘の重さ
 

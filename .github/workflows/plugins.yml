@@ -213,7 +213,7 @@ jobs:
         run: python3 scripts/test-outer-loop.py
 
   # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分、作り直しの範囲と量、
-  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
+  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と Alloy の確かめと、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
   # （下の spec-loop-generate のテストと、autopilot の外側のループ以外）
   spec-loop:
     runs-on: ubuntu-latest
@@ -286,6 +286,10 @@ jobs:
       # 本体は plugins/spec-loop/scripts/check-tlc.py（TLC の前提の確かめ。偽の TLC と一時ディレクトリの正本で当て、本物の TLC は走らせない）。
       - name: spec-loop の TLC の前提の確かめのテスト（#912）
         run: python3 scripts/test-check-tlc.py
+
+      # 本体は plugins/spec-loop/scripts/check-alloy.py（Alloy の確かめ。偽の Alloy と一時ディレクトリの正本で当て、本物の Alloy は走らせない）。
+      - name: spec-loop の Alloy の確かめのテスト（#922）
+        run: python3 scripts/test-check-alloy.py
 
       # 本体は plugins/spec-loop/scripts/init-mkdocs.py と templates/mkdocs/（正本リポジトリへ写す雛形）。
       - name: spec-loop の MkDocs の雛形のテスト（#266）
