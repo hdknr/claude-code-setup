@@ -9,7 +9,20 @@ on:
 permissions:
   contents: read
 
+# 同じ PR に push し直したら、古い run（全ジョブ分のランナー）を止める（#932）。
+# PR は `refs/pull/<番号>/merge` ごとの組なので、別の PR の run は止めない。
+# main への push は commit（SHA）ごとの組にして、止めも待たせもしない——ref で組むと、
+# 続けてマージしたとき待っている run が後の run に置き換えられ、その commit の検査が走らない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# 1 本のジョブで全ステップを直列に回すと約 32 分かかった（#929）。実測の重さでジョブに分けて並行に走らせる。
+# **matrix にしない**——`run:` の行からスクリプト名が消えると、test-check-all.py の収録漏れの検査が CI のステップを見つけられない。
+# 各ジョブは同じ形で取る（fetch-depth: 0）——どのステップがどのジョブに移っても、見える履歴が分割前と同じになるように。
 jobs:
+  # カタログ・版・規約の歯止めとそのテスト、変異の主張の当て（check-mutation-claims）、check-all.py のテスト、
+  # 本体を CI から呼ばない道具のテスト（link-skills.sh・トランスクリプトの集計・利用上限の停止を記録する hook・dev-loop の Eval の実行と要約）
   check:
     runs-on: ubuntu-latest
     steps:
@@ -88,45 +101,6 @@ jobs:
       - name: check-bold-flanking.py のテスト
         run: python3 scripts/test-check-bold-flanking.py
 
-      - name: worktree スクリプトのテスト（#136 段 3）
-        run: python3 scripts/test-worktree-scripts.py
-
-      - name: 周の探索のテスト（#136 段 1）
-        run: python3 scripts/test-find-cycle.py
-
-      # 本体は CI から呼ばない（入力が利用者の ~/.claude にある）。テストだけ回す。
-      - name: 不在の前の環境点検のテスト（#394）
-        run: python3 scripts/test-check-unattended-env.py
-      - name: 長期トークンの起動口のテスト（#584）
-        run: python3 scripts/test-launch-with-long-token.py
-
-      - name: 複数 Issue の台帳のテスト（#390）
-        run: python3 scripts/test-ledger.py
-
-      - name: 親 Issue の一覧から台帳を作るテスト（#446）
-        run: python3 scripts/test-parent-issue.py
-
-      - name: 周を claude -p の子プロセスで回す起動口と要約のテスト（#491）
-        run: python3 scripts/test-child-cycle.py
-
-      - name: 重い検査・アプリの起動の順番待ちのテスト（#493）
-        run: python3 scripts/test-run-serial.py
-
-      - name: 止まっている枠の持ち主を止める手順の照合のテスト（#899）
-        run: python3 scripts/test-parallel-stop.py
-
-      - name: cruise の外側のループのテスト（#791）
-        run: python3 scripts/test-outer-loop.py
-
-      - name: cruise の周の worktree とブランチの片付けのテスト（#823）
-        run: python3 scripts/test-cleanup-cycle.py
-
-      - name: コードブロックとコメントの読み方の写し 3 つの突き合わせ（#758・#759・#760）
-        run: python3 scripts/test-fence-copies.py
-
-      - name: PR のマージの手続きのテスト（#389）
-        run: python3 scripts/test-merge-pr.py
-
       - name: ガード拒否の収集のテスト（#122）
         run: python3 scripts/test-collect-guard-rejections.py
 
@@ -152,38 +126,112 @@ jobs:
       - name: check-plan-counts.py のテスト
         run: python3 scripts/test-check-plan-counts.py
 
-      # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリで使う）。
-      - name: spec-loop の Q&A 表の検査のテスト（#215）
-        run: python3 scripts/test-check-qa-csv.py
+      # 散文で書かれた「この変異で赤になる」を機械で当てる（#151）。
+      # 他の歯止めを子プロセスで回すが、CI ではジョブを分けるほど重くない（分割前の run 42612174778 で 25 秒、
+      # 分割後の run 42732175841・42736693734・42742968130・42743663412 で 19〜32 秒）。
+      - name: 散文の変異主張を当てる（#151）
+        run: python3 scripts/check-mutation-claims.py
+
+      - name: check-mutation-claims.py のテスト
+        run: python3 scripts/test-check-mutation-claims.py
+
+      # 歯止めを 1 本ずつ選ばせないための入口（#117）。本体は CI から呼ばないが、
+      # 「収録漏れ＝黙って 1 本落とす」を見るのはこのテストだけなので、テストは回す。
+      - name: check-all.py のテスト
+        run: python3 scripts/test-check-all.py
+
+  # dev-loop の周の道具（worktree・周の探索・不在の点検・長期トークン・台帳・マージ）と、cruise の道具（親 Issue・子プロセス・片付け）と、
+  # コードブロックとコメントの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせと、orca・cmux のタブ一致規則のテスト
+  dev-loop:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: worktree スクリプトのテスト（#136 段 3）
+        run: python3 scripts/test-worktree-scripts.py
+
+      - name: 周の探索のテスト（#136 段 1）
+        run: python3 scripts/test-find-cycle.py
+
+      # 本体は CI から呼ばない（入力が利用者の ~/.claude にある）。テストだけ回す。
+      - name: 不在の前の環境点検のテスト（#394）
+        run: python3 scripts/test-check-unattended-env.py
+
+      - name: 長期トークンの起動口のテスト（#584）
+        run: python3 scripts/test-launch-with-long-token.py
+
+      - name: 複数 Issue の台帳のテスト（#390）
+        run: python3 scripts/test-ledger.py
+
+      - name: 親 Issue の一覧から台帳を作るテスト（#446）
+        run: python3 scripts/test-parent-issue.py
+
+      - name: 周を claude -p の子プロセスで回す起動口と要約のテスト（#491）
+        run: python3 scripts/test-child-cycle.py
+
+      - name: cruise の周の worktree とブランチの片付けのテスト（#823）
+        run: python3 scripts/test-cleanup-cycle.py
+
+      - name: コードブロックとコメントの読み方の写し 3 つの突き合わせ（#758・#759・#760）
+        run: python3 scripts/test-fence-copies.py
+
+      - name: PR のマージの手続きのテスト（#389）
+        run: python3 scripts/test-merge-pr.py
+
+      # 本体は plugins/orca・plugins/cmux の SKILL.md の共通手順ブロック（写しを作らず抜き出して流す）。
+      - name: orca・cmux のタブ一致規則のテスト（#202）
+        run: python3 scripts/test-tab-match.py
+
+  # cruise の順番待ちのテスト（1 本で重い）
+  cruise-run-serial:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 重い検査・アプリの起動の順番待ちのテスト（#493）
+        run: python3 scripts/test-run-serial.py
+
+  # cruise の外側のループと枠の持ち主を止める手順のテスト
+  cruise-loops:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 止まっている枠の持ち主を止める手順の照合のテスト（#899）
+        run: python3 scripts/test-parallel-stop.py
+
+      - name: cruise の外側のループのテスト（#791）
+        run: python3 scripts/test-outer-loop.py
+
+  # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分、作り直しの範囲と量、
+  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と Alloy の確かめと、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
+  # （下の spec-loop-generate のテストと、autopilot の外側のループ以外）
+  spec-loop:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # 本体は plugins/spec-loop/scripts/ にある（req-loop が使う）。
       - name: spec-loop の PPTX 生成のテスト（#216）
         run: python3 scripts/test-qa-to-pptx.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（spec-review が使う）。
-      - name: spec-loop の仕様レビューを抜ける条件の検査のテスト（#217）
-        run: python3 scripts/test-check-spec-exit.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（feasibility・proposal が使う）。
-      - name: spec-loop のスケジュールと見積りの表の検査のテスト（#218）
-        run: python3 scripts/test-check-feasibility-csv.py
-
-      - name: spec-loop のガントチャート生成のテスト（#218）
-        run: python3 scripts/test-schedule-to-gantt.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
-      - name: spec-loop の図の書き出しのテスト（#268）
-        run: python3 scripts/test-render-diagrams.py
 
       - name: spec-loop のサインオフのタグの照合のテスト（#218）
         run: python3 scripts/test-check-signoff.py
 
       - name: spec-loop の提案書の生成のテスト（#218）
         run: python3 scripts/test-build-proposal.py
-
-      # 本体は plugins/spec-loop/scripts/ にある（scaffold が使う）。
-      - name: spec-loop の Red テストと Issue の本文の生成のテスト（#219）
-        run: python3 scripts/test-scaffold.py
 
       # 本体は plugins/spec-loop/scripts/ にある（バージョンアップの差分を重ねる）。
       - name: spec-loop の版の重ね合わせのテスト（#261）
@@ -239,27 +287,56 @@ jobs:
       - name: spec-loop の TLC の前提の確かめのテスト（#912）
         run: python3 scripts/test-check-tlc.py
 
-      # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
-      - name: spec-loop の autopilot の外側のループのテスト（#850）
-        run: python3 scripts/test-autopilot-loop.py
+      # 本体は plugins/spec-loop/scripts/check-alloy.py（Alloy の確かめ。偽の Alloy と一時ディレクトリの正本で当て、本物の Alloy は走らせない）。
+      - name: spec-loop の Alloy の確かめのテスト（#922）
+        run: python3 scripts/test-check-alloy.py
 
       # 本体は plugins/spec-loop/scripts/init-mkdocs.py と templates/mkdocs/（正本リポジトリへ写す雛形）。
       - name: spec-loop の MkDocs の雛形のテスト（#266）
         run: python3 scripts/test-init-mkdocs.py
 
-      # 本体は plugins/orca・plugins/cmux の SKILL.md の共通手順ブロック（写しを作らず抜き出して流す）。
-      - name: orca・cmux のタブ一致規則のテスト（#202）
-        run: python3 scripts/test-tab-match.py
+  # spec-loop のテストのうち、表の検査（Q&A 表・スケジュールと見積りの表）と仕様レビューを抜ける条件の判定と、
+  # ガントチャート・図の書き出し・Red テストと Issue の本文の生成（ジョブの名前より広い）
+  spec-loop-generate:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      # 散文で書かれた「この変異で赤になる」を機械で当てる（#151）。
-      # 他の歯止めを子プロセスで回すので、1 本だけ重い。
-      - name: 散文の変異主張を当てる（#151）
-        run: python3 scripts/check-mutation-claims.py
+      # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリで使う）。
+      - name: spec-loop の Q&A 表の検査のテスト（#215）
+        run: python3 scripts/test-check-qa-csv.py
 
-      - name: check-mutation-claims.py のテスト
-        run: python3 scripts/test-check-mutation-claims.py
+      # 本体は plugins/spec-loop/scripts/ にある（spec-review が使う）。
+      - name: spec-loop の仕様レビューを抜ける条件の検査のテスト（#217）
+        run: python3 scripts/test-check-spec-exit.py
 
-      # 歯止めを 1 本ずつ選ばせないための入口（#117）。本体は CI から呼ばないが、
-      # 「収録漏れ＝黙って 1 本落とす」を見るのはこのテストだけなので、テストは回す。
-      - name: check-all.py のテスト
-        run: python3 scripts/test-check-all.py
+      # 本体は plugins/spec-loop/scripts/ にある（feasibility・proposal が使う）。
+      - name: spec-loop のスケジュールと見積りの表の検査のテスト（#218）
+        run: python3 scripts/test-check-feasibility-csv.py
+
+      - name: spec-loop のガントチャート生成のテスト（#218）
+        run: python3 scripts/test-schedule-to-gantt.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
+      - name: spec-loop の図の書き出しのテスト（#268）
+        run: python3 scripts/test-render-diagrams.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（scaffold が使う）。
+      - name: spec-loop の Red テストと Issue の本文の生成のテスト（#219）
+        run: python3 scripts/test-scaffold.py
+
+  # spec-loop の autopilot の外側のループのテスト（1 本で重い）
+  spec-loop-autopilot-loop:
+    runs-on: ubuntu-latest
+    steps:
+      # 全履歴を取る（冒頭のコメント）
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # 本体は plugins/spec-loop/scripts/autopilot-loop.py（autopilot の外側のループ。偽の claude・osascript・security で当て、本物の claude を起こさない）。
+      - name: spec-loop の autopilot の外側のループのテスト（#850）
+        run: python3 scripts/test-autopilot-loop.py

@@ -146,6 +146,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-tlc.py` - **TLC が正本の `CLAUDE.md` に書いた呼び方で使えるか**を、小さいモデル 2 つ（通るもの・わざと違反するもの）を検査させて確かめる（#912。
       **TLC は既定で必須の前提**で、書く行（`TLC の呼び方:`・外す宣言 `業務フローの形式検査: しない`）の原本はここの docstring。**`command -v` では探さない**。
       spec-review の手順 3 が呼び、autopilot は起動時の点検（`autopilot-check.py check` が読み込む）と Formal Checker を起こす段の始め（`--autopilot`。`commit` の段と feasibility では確かめない）で使う。テストは `scripts/test-check-tlc.py`）
+    - `scripts/check-alloy.py` - **Alloy が正本の `CLAUDE.md` に書いた呼び方（`Alloy の呼び方:`。`exec` まで含めた形）で使えるか**を、小さいモデル 2 つ（到達でき反例の出ないもの・わざと反例の出るもの）を CLI で検査させて確かめる（#922。
+      **Alloy は必須ではなく、spec-review の手順 3 が権限・ロールを対象に選んだときに呼ぶ**。**引数なし・`gui` の形は GUI を開くので、`exec` の無い・`gui` の在る呼び方は走らせずに 4**。
+      **`command -v` では探さない**。宣言の読み方は `check-tlc.py` の `scan_declarations` を読み込む（写さない）。守る／守らないは docstring を正とする。テストは `scripts/test-check-alloy.py`）
     - `scripts/autopilot-loop.py` - autopilot を `claude -p` で**外から繰り返し起動するループ**（#850）。台帳の `status` が `running` のときだけ起こし、
       `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗で止まって通知する。
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
@@ -327,6 +330,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **`HOME` をテンポラリにし `CLAUDE_CONFIG_DIR` を外し、flag と managed の層をテンポラリのファイルで渡す**——実機の設定を読まない。**許可の判定の写しを dev-loop の `check-unattended-env.py` と突き合わせる**
   - `test-check-tlc.py` - spec-loop の TLC の前提の確かめ（#912）の回帰テスト（変異テストを含む）。
     **偽の TLC（本物の出力に合わせた 2 つの文字列を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `tlc` を置く**——本物の TLC は走らせない（出力の形は見ない）
+  - `test-check-alloy.py` - spec-loop の Alloy の確かめ（#922）の回帰テスト（変異テストを含む）。
+    **偽の Alloy（Alloy 6.2.0 の `exec` の結果の行の形を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `alloy` を置く**——本物の Alloy は走らせない（出力の形は見ない）。
+    **引数なし・`gui` の形は偽物でも走らせない**（走ったら印を書く偽物で見る）
   - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する）。
     **偽の `claude`・`osascript`・`security`・`uname` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**。台帳は本物の `autopilot-ledger.py` で作り、
     長期トークンは本物の起動口（`launch-with-long-token.sh`）を偽の `security` で回す。上限の待ちは眠らずに秒数を記録する
@@ -687,7 +693,7 @@ PR 側を見る**——**ローカルの緑を根拠に「緑」と報告しな�
 - **#110 の型の代償を、この取り込みに限って受け入れる。** #110 では、回さなかった検査が PR 側の CI で初めて落ち、PR が赤になって CI の 1 往復を払った（マージの前に CI が止めたので、配布はされていない）。この取り込みの後に起きうるのも同じ形で、それを承知で速さを取る。
   **配布を防いでいるのは、マージの前の PR 側の CI である**——CI（`plugins.yml`・`docs.yml`）は PR の先端（取り込んだ後の形）で同じ検査を回し
   （`check-all.py` に収録した検査が CI にもあることは `test-check-all.py` が見る）、マージの前に先端が main の先端を含むことと `gh pr checks` が全部通ったことを確かめる
-  （上の 5。cruise では親が `parallel.md` のとおり）ので、CI が見たものがそのままマージされる。取り込みの後のローカルの `check-all.py` が担っていたのは、落ちたときに CI の 1 往復（約 13 分）を省く速さだけで、
+  （上の 5。cruise では親が `parallel.md` のとおり）ので、CI が見たものがそのままマージされる。取り込みの後のローカルの `check-all.py` が担っていたのは、落ちたときに CI の 1 往復（約 6 分。#929 で `plugins.yml` をジョブに分けた後の run 42732175841・42736693734・42742968130・42743663412 で 5 分 44 秒〜6 分 56 秒）を省く速さだけで、
   並行する周では順番待ち（`run-serial.py`）の損のほうが大きい（#793 の cruise では main が進むたびに取り込み直しが続き、PR #801 は 3 回だった）。
 - **省くのはこの取り込みだけである。** 周の実装・関門の直しのコミットの前は、今までどおりローカルで `check-all.py` を回す。
   PR 側の CI が落ちて直したときも、直しの中身に応じて回してよい。
