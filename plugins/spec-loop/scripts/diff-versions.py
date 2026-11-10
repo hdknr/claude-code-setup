@@ -12,6 +12,8 @@ usage: python3 diff-versions.py <docs ディレクトリ> [--version <n>]
   層は番号で決める（`check-qa-csv.py` の `is_internal_number`）。利用者に見せてよいのは `Q&A` の節だけ（#344）。
   **追加**は v<n> にだけある、**変更**は両方にあって中身が違う、**削除**は v<n-1> にだけある。
 - **同じ中身を置き直しただけのものは変更に数えない**（比較なので）。**v1 は前の版が無いので、全部が追加。**
+- **形式検査のモデル（`spec/formal/` の中のファイル）は出さない**——仕様から書き起こした写しで、保存するたびに文字列が変わる
+  （`references/tree.md` の「形式検査のモデル」。#908）。重ね合わせには入るので、前の版のモデルは全体（`build/merged/spec/formal/`）から読める。
 - 削除には `docs/v<n>/removed.csv` の `理由` を添える。
 - 何も書かない。同じ入力から同じ出力（並びは全体の並び・パスの順）。標準ライブラリだけを使う。
 
@@ -102,6 +104,12 @@ def qa_layers(whole) -> tuple[dict, dict]:
     return {no: row for no, row in rows.items() if no not in internal}, internal
 
 
+def compared_files(whole) -> dict:
+    """比べるファイル（パスの順）。形式検査のモデル（`spec/formal/`）は仕様から書き起こした写しなので比べない
+    （判別は `merge-versions.py` の `is_formal`。`references/tree.md` の「形式検査のモデル」。#908）。"""
+    return {path: data for path, data in sorted(whole.files.items()) if not merge_versions.is_formal(path)}
+
+
 def removal_reasons(root: Path) -> dict[tuple[str, str], str]:
     """`removed.csv` の (種類, 対象) → 理由。決まりの検査は `merge` が済ませている。"""
     path = root / merge_versions.REMOVED
@@ -136,8 +144,7 @@ def compare(docs: Path, version: int | None = None) -> tuple[list[str], Diff | N
     diff.changes[merge_versions.KIND_QA] = compare_maps(before_shared, now_shared)
     diff.changes[KIND_QA_INTERNAL] = compare_maps(before_internal, now_internal)
     diff.changes[merge_versions.KIND_FEATURE] = compare_maps(before.features, now.features)
-    diff.changes[merge_versions.KIND_FILE] = compare_maps(dict(sorted(before.files.items())),
-                                                          dict(sorted(now.files.items())))
+    diff.changes[merge_versions.KIND_FILE] = compare_maps(compared_files(before), compared_files(now))
     reasons = removal_reasons(versions[number - 1][1])
     for kind in KINDS:
         for change in diff.changes[kind]:

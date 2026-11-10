@@ -13,7 +13,7 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 - タグを指定しなければ、**`<k>` を数として比べて最大のもの**を使う（`-10` は `-9` より新しい）。
   **命名に合わないタグ（`signoff/v2/req-3-fix`・`signoff/v2/req-03`・旧い `v2/req-signoff-3` と `req-signoff-v3`）は数えない。**
   **指定したタグが別の版のものなら照合しない（2）**——別の版の承認を組にしない。
-- **比べる場所は v1〜v<n> の `shared/`・`requirements/`・`spec/`（内部の Q&A 表 `spec/qa-dev.csv` を除く）と
+- **比べる場所は v1〜v<n> の `shared/`・`requirements/`・`spec/`（内部の Q&A 表 `spec/qa-dev.csv` と形式検査のモデル `spec/formal/` を除く）と
   `removed.csv`（v1 のものも）**——2 つの承認が見た中身（#375）。利用者は要求と仕様を承認し、予算責任者は
   `requirements/`・`spec/` から数えた見積りに合意するので、そこが違えば別の中身を見ていたことになる（#367）。
   v<n> の時点の中身は前の版と、行を消す `removed.csv` にも依る。**v1 の `removed.csv` は在ること自体を比べる**
@@ -21,7 +21,9 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   **`removed.csv` は内部の層の Q&A の行（`D-`）を除いて全部比べる**——`feasibility/` などのファイルの行は
   重ね合わせ（`merge`）が拒否するので、予算側だけにあっても一致と言わない（#372 の B）。
   **外すのは `feasibility/`・`proposal/`（予算の合意と決裁の側が書く）と内部の層**（`spec/qa-dev.csv`・`D-` の行。
-  開発者が決めて記録するもので、2 つのタグの間に feasibility が費用の行を書く。#339）。
+  開発者が決めて記録するもので、2 つのタグの間に feasibility が費用の行を書く。#339）と、**形式検査のモデル**（`spec/formal/` と、
+  `removed.csv` でそこのファイルを消した行。仕様から書き起こした写しで、保存するたびに文字列が変わる。判別は `merge-versions.py` の `is_formal`。
+  `references/tree.md` の「形式検査のモデル」。#908）。
 - **`.` で始まる名前（`.gitkeep`・`.DS_Store`）は数えない**——重ね合わせ（`merge-versions.py`）が読まないので、
   承認が見た範囲に入らない。
 - **どちらかの時点で `shared/`（と `removed.csv`）にファイルが 1 つも無ければ、一致とは言わない（2）**——
@@ -61,7 +63,8 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 | --- | --- |
 | **タグを付け直していないか** | 付け直した後の状態しか見えない。`references/signoff-tags.md` の「付け直さない」は運用で守る |
 | **誰がタグを付けたか** | 署名を検査しない。タグを付けられる人を絞るのはリポジトリの権限 |
-| **比べる範囲の外**（`feasibility/`・`proposal/`・`spec/qa-dev.csv`） | 予算の合意・決裁の側と開発者の内部が書くもの。2 つの承認の間で変わってよい |
+| **比べる範囲の外**（`feasibility/`・`proposal/`・`spec/qa-dev.csv`・`spec/formal/`） | 予算の合意・決裁の側と開発者の内部が書くもの、仕様から書き起こした写し。2 つの承認の間で変わってよい |
+| **綴りだけ違う `spec/Formal/`** | 形式検査のモデルと見なさず、ふつうの仕様のファイルとして比べる（`is_formal` は綴りどおりの名前だけを見る） |
 | **タグの時点の版の並びが決まりに反するか** | 照合するのは比べる場所の中身だけ。版の並びは作業ツリーで `merge-versions.py` が見る |
 """
 
@@ -86,7 +89,7 @@ NUMBER = r"([1-9][0-9]*)"
 DOCS = "docs"
 SHARED = "shared/"
 REMOVED = "removed.csv"
-# 2 つの承認が見た中身（版のディレクトリからのパス。#375）。内部の Q&A 表は外す（#339）
+# 2 つの承認が見た中身（版のディレクトリからのパス。#375）。内部の Q&A 表（#339）と形式検査のモデル（#908）は外す
 SCOPE_DIRS = (SHARED, "requirements/", "spec/")
 INTERNAL_QA = "spec/qa-dev.csv"
 
@@ -138,9 +141,12 @@ def removed_scope(version: int) -> list[str]:
 
 def compare_scope(version: int) -> list[str]:
     """`git diff` で比べる場所（pathspec）。版 1〜n の `shared/`・`requirements/`・`spec/` と v1 の `removed.csv`、
-    内部の Q&A 表を除く。v2 以降の `removed.csv` は行で比べる（`removed_scope_rows`）。"""
+    内部の Q&A 表と形式検査のモデルのディレクトリを除く。v2 以降の `removed.csv` は行で比べる（`removed_scope_rows`）。"""
     paths = [f"{DOCS}/v{i}/{d}" for i in range(1, version + 1) for d in SCOPE_DIRS]
     paths.append(f"{DOCS}/v1/{REMOVED}")
+    # 形式検査のモデル（#908）。`is_formal` と同じく、末尾の `/` までを付けたディレクトリの形で外す——`spec/formal` という名前のファイルと、
+    # `spec/formalx.md` のような同じ接頭辞の別のファイルは外れない
+    paths += [f":(exclude){DOCS}/v{i}/{versions.FORMAL_DIR}" for i in range(1, version + 1)]
     return paths + [f":(exclude){DOCS}/v{i}/{INTERNAL_QA}" for i in range(1, version + 1)]
 
 
@@ -191,7 +197,7 @@ def refused(tag: str, problems: list[str]) -> str:
 
 
 def removed_scope_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple[str, str]]:
-    """`removed.csv` の行のうち比べる行（種類・対象）——内部の層の Q&A の行を除いた全部。
+    """`removed.csv` の行のうち比べる行（種類・対象）——内部の層の Q&A の行と、形式検査のモデルのファイルの行を除いた全部。
 
     理由の列は比べない——消したものが同じなら、2 つの承認が見た中身は同じなので。
     無いことと、比べる行が無いことは同じ（どちらも何も消さない）。
@@ -201,6 +207,9 @@ def removed_scope_rows(parsed: list[tuple[int, str, str]] | None) -> list[tuple[
     rows = []
     for _, kind, target in parsed or []:
         # 内部の層の Q&A（`D-`。`spec/qa-dev.csv`）を消した行は比べない——開発者が決めるものでサインオフが割れないように（#339）
+        # 形式検査のモデル（`spec/formal/`）を消した行も比べない——比べる場所の外の写しなので（#908）
+        if kind == REMOVED_FILE and versions.is_formal(target):
+            continue
         if not (kind == REMOVED_QA and qa.is_internal_number(target)):
             rows.append((kind, target))
     return sorted(rows)
@@ -393,7 +402,7 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
                        "今の予算の合意のタグとは一致しなくなる（references/signoff-tags.md）")
 
     pair = f"{info['req']}（{info['req_commit'][:7]}）と {info['budget']}（{info['budget_commit'][:7]}）"
-    where = f"v1〜v{version} の {'・'.join(SCOPE_DIRS)}（{INTERNAL_QA} を除く）と {REMOVED}"
+    where = f"v1〜v{version} の {'・'.join(SCOPE_DIRS)}（{INTERNAL_QA}・{versions.FORMAL_DIR} を除く）と {REMOVED}"
     diff = git(repo, "diff", "--name-status", info["req_commit"], info["budget_commit"], "--", *compare_scope(version))
     if diff.returncode != 0:
         return 2, [f"{where} を比べられない: {diff.stderr.strip()}。照合していない"], {}

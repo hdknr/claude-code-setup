@@ -463,6 +463,9 @@ def check_source(where: str, sources, whole: Path) -> list[str]:
         elif any(part.startswith(".") for part in path.relative_to(spec_root).parts):
             # `check-spec-exit.py` は `.` で始まる場所を走査しない——そこを指すと未決定の印が関門を素通りする
             problems.append(f"{where}: {rel} は `.` で始まる場所にある（関門が未決定の印を見ない）")
+        elif versions.is_formal(path.relative_to(whole.resolve()).as_posix()):
+            # 形式検査のモデル（`spec/formal/`）も `check-spec-exit.py` は走査しない——仕様から書き起こした写しで、原文ではない（#908）
+            problems.append(f"{where}: {rel} は形式検査のモデル（{versions.FORMAL_DIR}）の中にある（仕様の原文でなく、関門が未決定の印を見ない）")
         elif rel == IR_PATH or path == (whole / IR_PATH).resolve():
             problems.append(f"{where}: {rel} は中間表現そのもの（仕様の原文を指す）")
         elif not path.is_file():
