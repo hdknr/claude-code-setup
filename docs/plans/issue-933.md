@@ -92,7 +92,11 @@
       `skill-metrics.py --check`・`check-diagram-freshness.py`・`check-duplicate-counts.py`・`check-plan-counts.py` は緑（Verifier が走らせた）。報告はトランスクリプトの `SubagentHandback` から読んだ
     - `/code-review`（high）2 パス目: **指摘 7 件・正しさのバグ 0 件**（下の採否の表）。報告はトランスクリプトの最後の応答から読んだ
     - PR #938 の CI（run 42755677055・HEAD `899d0c0`）: 7 ジョブと docs.yml の build が緑
-  - 2 パス目の指摘対応: 「直す」の 1 行（P2-5）を直した
+  - 2 パス目の指摘対応: 「直す」の 1 行（P2-5）を直した。狭いパスの起点 `899d0c0`・終点 `4b28521`（`git diff 899d0c0 4b28521`）
+  - 狭いパス: 通した。Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 0 件**。変異は当てていない（変更がコメント 1 行で、機械が読む対象が無い——Verifier の判断）ので、素通りした変異も無い。
+    `skill-metrics.py --check`・`check-diagram-freshness.py`・`check-duplicate-counts.py`・`check-plan-counts.py`・`check-plugin-versions.py` は緑（Verifier が走らせた）。狭いパスの指摘: 0 件
+  - 著者の `check-all.py`（2 回目。run-serial 越し、342 秒待って枠を取った）: **69/69 緑**。枠を取った時点の木は `899d0c0`＋計画の未コミットの追記で、走っている途中に P2-5 の 1 行（コメント）を直した——
+    その 1 行を含む先端は PR 側の CI で見る
 - 交絡を潰した手順: 実験なし（所要時間は `gh run view` の値を読んで並べるだけ）
 
 ## 既知の限界・決着済みの論点
@@ -128,5 +132,22 @@
 | P2-5 | `dev-loop` の見出しの「コードブロックの読み方の写し」がステップ名（「コードブロックとコメントの読み方の写し」）より狭い（CR3 の直しで入れた文） | 示せる（`plugins.yml` 136 行と 170 行のステップ名） | 1 | 直す（「コードブロックとコメントの読み方の写し」） |
 | P2-6 | `check` の見出しが `test-check-mutation-claims.py`（ジョブで最も重い 50〜56 秒）を名指ししない | 示せない（「歯止めとそのテスト」が覆っている） | 無し | 残課題 |
 | P2-7 | `dev-loop` の見出しの「worktree」が `check-pr-preconditions.sh` のテストを言わない | 示せない（ステップ名「worktree スクリプトのテスト」と同じ語で、2 本とも worktree スクリプト） | 無し | 残課題 |
+
+### 振り分け（`references/found-lines.md`。手順 8）
+
+| 行 | 出所 | 実物で失敗を示せるか | 振り分け |
+| --- | --- | --- | --- |
+| CR2 受入基準 4 の「`check-plan-counts.py` が緑」の指し先 | #933 `/code-review` 1 パス目 | 示せない | 記録だけ（計画の文言） |
+| CR5 「約 6 分」は待ちの無い run の値 | #933 `/code-review` 1 パス目 | 示せない | 記録だけ（性能の推測） |
+| CR6 `#` の行を除く比較は `run: \|` の中を見落とす | #933 `/code-review` 1 パス目 | 示せない（この差分では成り立たない） | 捨てる |
+| CR9 dev-loop のテストが 2 つの見出しに分かれる | #933 `/code-review` 1 パス目 | 示せない | 記録だけ（文言） |
+| P2-1 `CLAUDE.md` の論証を当て直していない | #933 `/code-review` 2 パス目 | 示せない（結論は弱まらない） | 記録だけ（文言） |
+| P2-2 `issue-929.md` の表の `spec-exit` の分類 | #933 `/code-review` 2 パス目 | 示せる（39 行） | 記録だけ（過去の計画の表の文言。スキル・スクリプトの利用者が受け取る結果ではない） |
+| P2-3 `cruise-loops` に重さの印が無い | #933 `/code-review` 2 パス目 | 示せない | 記録だけ（文言） |
+| P2-4 「ジョブの名前より広い」が片側だけ | #933 `/code-review` 2 パス目 | 示せない | 記録だけ（文言） |
+| P2-6 `check` の見出しが `test-check-mutation-claims` を名指ししない | #933 `/code-review` 2 パス目 | 示せない | 記録だけ（文言） |
+| P2-7 `dev-loop` の見出しの「worktree」が PR 前提条件を言わない | #933 `/code-review` 2 パス目 | 示せない | 記録だけ（文言） |
+
+直すの行: 0 件（台帳に足す行・`要確認` の Issue は無い）。狭いパスの指摘: 0 件。マージ前に人が判断するもの: 無し。
 
 - この周の起票: 0 件（起票の承認は不在のため訊いていない。仕様の穴の確認の Issue・台帳に足した Issue も無い）
