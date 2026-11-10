@@ -75,8 +75,13 @@
 ## 関門の進捗（再開点）
 
 - 割り目（手順 4）: 割らない（cruise の周）
-- 1 パス目: Verifier（`dev-loop:dev-loop-verifier`、sonnet）と `/code-review`（high）に受入基準 1〜6・既知の限界を渡す。起点 `e2407ac7`（1 パス目の関門に渡した時点の HEAD）
-- 実験: 実物の 3 つの yml に `trigger_reasons` を当てた——`docs.yml`・`plugins.yml` は空、`release.yml` は `pull_request`・`push` で起動しない（収録したスクリプトを回していないので赤にならない）。陽性対照は `mutation-claim`（`plugins.yml` の `pull_request:` を外す・`paths:` を足す）で関門に当てさせる
+- 1 パス目: Verifier（`dev-loop:dev-loop-verifier`、sonnet）と `/code-review`（high）に受入基準 1〜6・既知の限界を渡した。起点 `e2407ac7`（1 パス目の関門に渡した時点の HEAD）
+  - Verifier: 反証 0 件（軽微 1 件——タブで字下げした子が緑になり、docstring の「偽の赤」と食い違う）。mutation-claim 51 件を退避して当て全部赤。`git status --porcelain` の差は親の計画のコミット（`ee94eded`）だけ
+  - `/code-review`: 指摘 8 件——採否は下の表。差し戻し: あり（手順 4 で直した。`6cd5a64c`）
+- 1 パス目の指摘対応: `6cd5a64c`（`git diff e2407ac7` は計画を除いて `scripts/test-check-all.py` 1 ファイル +91/−21——0 行ではないので 2 パス目を回す）
+- 割り目（手順 6）: 割らない（cruise の周）。残っているのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 2 パス目の指摘対応の起点（狭いパス用）: `6cd5a64c` ではなく、2 パス目の関門に渡す時点の HEAD（計画のコミットの後）を下に書く
+- 実験: 実物の 3 つの yml に `trigger_reasons` を当てた——`docs.yml`・`plugins.yml` は空、`release.yml` は `pull_request`・`push` で起動しない（収録したスクリプトを回していないので赤にならない）。陽性対照は `mutation-claim`（`plugins.yml` の `pull_request:` を外す・`paths:` を足す）で、両関門が退避した複製で赤を確かめた
 
 ## 既知の限界・決着済みの論点
 
@@ -85,6 +90,20 @@
 | `on:` の値（`paths:` の glob・`types:` の中身・`branches:` の glob）は読まず、鍵があれば赤 | 採った | 上の「決めた範囲」。外す向きは偽の赤だけ |
 | `push` も要る側にする | 採った | Issue の受入基準 1 の「PR（と main への push）」 |
 | 起動しない理由はファイル単位で出す（ジョブ単位の `if:` の理由とは別の検査の行） | 採った | 直し方が別（`on:` を直す） |
+
+### 1 パス目の指摘の採否（Verifier 1 件・`/code-review` 8 件）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 | 振り分け（found-lines） |
+| --- | --- | --- | --- | --- |
+| V1: タブで字下げした子（`\tbranches: [dev]`）が緑。docstring は「タブで始まる行」を偽の赤に分類 | 示せる（Verifier の probe・自分で再現） | 4（docstring が実装と食い違う） | 直す（タブで字下げした行はファイルのどこでも赤） | 直す（この周の後退ではないが、この周が書いた誤り）。仕様の穴ではない |
+| CR1: `branches:` の `!` の除外（`[main, '!main']`）が緑 | 示せる（レビューの probe。`--part registry` が rc=0） | 1・4（「偽の赤だけ」が偽） | 直す（`!` で始まる項があれば赤） | 直す。仕様の穴ではない（決めた範囲は「外れる向きは偽の赤だけ」） |
+| CR2: 重なるイベント・値と子が両方・列とマッピングの混在・重なる `branches:` を起動すると読む | 示せる（`trigger_reasons` が空を返す。GitHub がどう扱うかは確かめていない） | 4（「偽の赤だけ」） | 直す（どれも赤） | 直す |
+| CR3: モジュールの docstring の「黙って素通しする向き」が不完全で、重なりの読み方も誤り | 示せる（docstring と実装） | 4 | 直す（docstring を直した。残るのは `concurrency:` だけ） | 直す |
+| CR4: イベントの下の浅い行を黙って飛ばす | 示せる（probe） | 4 | 直す（赤） | 直す |
+| CR5: 列の項の下の行・フロー列の `{x: 1}` を起動すると読む | 示せる（probe） | 4 | 直す（赤） | 直す |
+| CR6: 直し方の案内が (k) の形でも「`on:` を直せ」だけ。名前はコメントの中からも拾う | 示せる（出力の文言） | 無し | 直す（直す線は既定だが、利用者に見える誤りでこの周が足した文言——案内に「行を起動するワークフローに移す」を足し、名前は無条件の `run:` から拾う） | 直す（利用者に見える誤り） |
+| CR7: `trigger_reasons` が `gate_records` の行の読み方を写している | 示せない（設計の提案） | 無し | 残課題 | 捨てる |
+| CR8: `gated_runs`・`trigger_reasons` を 2 度計算する | 示せない（遅さの実測なし） | 無し | 残課題 | 捨てる |
 
 ## 手順 8（起票と学び）
 
