@@ -41,6 +41,7 @@ MUTATIONS = {
     "exec の無い・gui の在る呼び方を走らせる": [("        if call is not None:\n            check_form(call)\n", "        pass\n")],
     "クォートの中の gui を見ない": [('    if any("gui" in word.split() for word in words):\n', '    if "gui" in words:\n')],
     "シェルの組み立てを見ない": [("    if special:\n", "    if False:\n")],
+    "先頭の語の = を見ない": [('    if words and "=" in words[0]:\n', "    if False:\n")],
     "先頭の許可の一覧を見ない": [("    if not (head == HEAD_JAVA or HEAD_ALLOY in head.lower()):\n", "    if False:\n")],
     "通るモデルの終了コードを見ない": [("        if rc != 0:\n", "        if False:\n")],
     "到達できることを見ない": [('GOOD_EXPECT = {("run", "someA"): "SAT", ', "GOOD_EXPECT = {")],
@@ -204,6 +205,8 @@ def scenario(mod, base: Path, tag: str) -> dict:
     o["別のシェルで始まる（tcsh -c）"] = case(f"Alloy の呼び方: tcsh -c {tools['marker']} exec\n")
     o["環境変数の代入で始まる"] = case(f"Alloy の呼び方: FOO=1 exec {tools['marker']}\n")
     o["! で始まる"] = case(f"Alloy の呼び方: ! exec {tools['marker']}\n")
+    o["名前に alloy を含む代入で始まる"] = case(f"Alloy の呼び方: ALLOY=1 exec {tools['marker']}\n")
+    o["値に alloy を含む代入で始まる"] = case(f"Alloy の呼び方: X=alloy exec {tools['marker']}\n")
     o["通らない呼び方"] = case(call_line("broken"))
     o["何にでも反例なし"] = case(call_line("never-ce"))
     o["何にでも反例あり"] = case(call_line("always-ce"))
@@ -264,6 +267,8 @@ def main() -> int:
               o["組み込みの exec で始まる（ラッパーの本文の形）"] == unknown and o["シェルで始まる（sh -c）"] == unknown)
         check("空白を含むパスをクォートで囲んだ呼び方: 0 で走らせる（陽性対照）", o["空白を含むパスをクォートで囲む"] == (0, True, True))
         check("先頭が java の呼び方（-D の = を含む）: 0 で走らせる（陽性対照）", o["先頭が java"] == (0, True, True))
+        check("名前・値に alloy を含む環境変数の代入で始まる（ALLOY=1・X=alloy）: 4 で走らせない",
+              o["名前に alloy を含む代入で始まる"] == unknown and o["値に alloy を含む代入で始まる"] == unknown)
         check("ブレースの展開（{gui,}）: 4 で走らせない", o["ブレースの展開"] == unknown)
         check("先頭が trap・tcsh -c・環境変数の代入・!: 4 で走らせない",
               all(o[k] == unknown for k in ("組み込みの trap で始まる", "別のシェルで始まる（tcsh -c）", "環境変数の代入で始まる", "! で始まる")))

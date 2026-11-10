@@ -64,6 +64,7 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 - **呼び方に語 `exec` が無いか語 `gui` が在れば、走らせずに 4**——引数なし・`gui` の形を確かめのために起こさない。
 - **クォートで 1 語にした中の `gui` も見る**——`sh -c '… gui'` のように、`gui` を語の中に隠した形を素通りさせない。
 - **シェルの組み立てを含む呼び方は、走らせずに 4**——`<alloy> exec || <alloy>`・`<alloy> # exec`・`<alloy>; : exec`・`<alloy> {gui,} exec` は、語 `exec` が在っても `sh` がサブコマンドの無い形か `gui` を起こす。
+- **先頭の語に `=` があれば、走らせずに 4**——`ALLOY=1 exec <alloy>`・`X=alloy exec <alloy>` のように名前に `alloy` を含む環境変数の代入を、許可の一覧のラッパーと読まない（#922 の狭いパスの F1）。
 - **先頭が `java` でも、名前に `alloy` を含むコマンドでもない呼び方は、走らせずに 4**（許可の一覧）——`exec <alloy>`（ラッパーの本文を写した形）・`trap <alloy> EXIT exec`・`sh -c '<alloy>' exec`・`tcsh -c <alloy> exec`・`FOO=1 exec <alloy>`・`! exec <alloy>` は、語 `exec` が Alloy のサブコマンドにならない。
 - **通るモデルの終了コードを見る**——0 でなければ 1。
 - **通るモデルで到達できない呼び方を 0 にしない**——`run someA` が `SAT` でなければ 1。
@@ -177,6 +178,8 @@ def check_form(call):
         words = shlex.split(call)
     except ValueError as e:
         raise Unknown(f"呼び方 `{call}` を語に割れない: {e}")
+    if words and "=" in words[0]:
+        raise Unknown(f"呼び方 `{call}` の先頭 `{words[0]}` に `=` がある——環境変数の代入を先に置くと、名前に `alloy` を含んでも後ろの語 `exec` が Alloy のサブコマンドにならないので走らせない")
     head = Path(words[0]).name if words else ""
     if not (head == HEAD_JAVA or HEAD_ALLOY in head.lower()):
         raise Unknown(f"呼び方 `{call}` の先頭 `{words[0] if words else ''}` が `java` でも、名前に `alloy` を含むコマンドでもない"
