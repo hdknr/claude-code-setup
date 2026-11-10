@@ -5,6 +5,7 @@ spec-loop は、dev-loop の**手前にある要求側のループ**です。5 �
 このページは、その**流れと部品の場所**、とくに公開ページから辿りにくかった **Red テストと `--red-check`**、
 仕様レビューの **[形式検査（Z3・TLC・Alloy）](#formal)** を案内します。
 スキルごとの説明とインストールは [プラグイン一覧の「spec-loop」](index.md#spec-loop) にあります。
+仕様レビューと実現性・コストを利用者の不在のあいだに 1 単位ずつ回す入口 `autopilot` の回し方は [spec-loop の autopilot](spec-loop-autopilot.md) にあります。
 
 !!! warning "規範はプラグインの中にあります"
     このページは**部品の場所と流れの案内**です。決まり（データの列・判定の表・終了コード・何を守り何を守らないか）は
@@ -46,6 +47,8 @@ flowchart LR
 - **`scaffold` が入力で確かめるのは、仕様レビューを抜けたことです**（抜ける条件 1 をスクリプトで、条件 2〜5 は直近の `spec-review` の報告を利用者に確かめる）。
   提案書の承認は確かめません——表の順は、ふつうに進めたときの順です。
 - 各スキルの止まり方の詳細は [プラグイン一覧の「spec-loop」](index.md#spec-loop) の各節、手順は各スキルの `SKILL.md` を正とします。
+- **`spec-review` と `feasibility` は、利用者が居ないあいだに `autopilot` で 1 単位ずつ回せます**——訊く場面を起動時に確かめた線で置き換え、線に無い判断では止まります。
+  タグ・`scaffold`・Issue の登録はしません（[spec-loop の autopilot](spec-loop-autopilot.md)）。
 
 ## 正本リポジトリのデータ { #data }
 
