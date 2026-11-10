@@ -129,6 +129,11 @@
 | CR10 | 「守らないもの」のリンク文言「形式検査」と指し先 `#formal-vs-red` が食い違う | 示せる——リンクの文言と見出し | 6 | 直す（CR4・V4c の書き直しで文言を「Red テストとの違い」にした） |
 | `index.md` を直すか | 食い違いが無ければ直さない | Issue の範囲は `spec-loop.md`。index.md は点検だけ |
 
+## 経験の還元（手順 8）
+
+- 学び（観測した事実）: cruise の子が起こした関門（`dev-loop:dev-loop-verifier`・`/code-review` の fork）の報告は、この周では 1 度も子に届かなかった。1 パス目の 2 つは親に届いた。2 パス目と狭いパスの Verifier は、`SubagentHandback` が「the agent that spawned you is no longer running」で失敗した。子は transcript（`subagents/agent-<id>.jsonl`）の最後から読んだ。焼き戻すかは親が決める（この周では Skill を直さない）。
+- 振り分けで直すに入った課題: なし（狭いパスの N-1・N-2 は、この PR の中でマージ前に人が判断する）
+
 ## 起票
 
 - この周の起票: 0 件（手順 8 の振り分けで直すに入った課題なし。不在の周なので訊いていない）
