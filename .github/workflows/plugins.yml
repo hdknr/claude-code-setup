@@ -9,6 +9,14 @@ on:
 permissions:
   contents: read
 
+# 同じ PR に push し直したら、古い run（全ジョブ分のランナー）を止める（#932）。
+# PR は `refs/pull/<番号>/merge` ごとの組なので、別の PR の run は止めない。
+# main への push は commit（SHA）ごとの組にして、止めも待たせもしない——ref で組むと、
+# 続けてマージしたとき待っている run が後の run に置き換えられ、その commit の検査が走らない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # 1 本のジョブで全ステップを直列に回すと約 32 分かかった（#929）。実測の重さでジョブに分けて並行に走らせる。
 # **matrix にしない**——`run:` の行からスクリプト名が消えると、test-check-all.py の収録漏れの検査が CI のステップを見つけられない。
 # 各ジョブは同じ形で取る（fetch-depth: 0）——どのステップがどのジョブに移っても、見える履歴が分割前と同じになるように。
