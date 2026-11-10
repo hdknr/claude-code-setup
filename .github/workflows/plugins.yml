@@ -133,7 +133,7 @@ jobs:
         run: python3 scripts/test-check-all.py
 
   # dev-loop の周の道具（worktree・周の探索・不在の点検・長期トークン・台帳・マージ）と、cruise の道具（親 Issue・子プロセス・片付け）と、
-  # コードブロックの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせと、orca・cmux のタブ一致規則のテスト
+  # コードブロックとコメントの読み方の写し 3 つ（cruise の run-serial・parent-issue と dev-loop の不在の点検）の突き合わせと、orca・cmux のタブ一致規則のテスト
   dev-loop:
     runs-on: ubuntu-latest
     steps:
