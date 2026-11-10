@@ -127,7 +127,26 @@ def read_declarations(root):
     except (OSError, ValueError) as e:
         raise Unknown(f"{path} を読めない: {e}")
     text = text.removeprefix("\ufeff")
-    calls, opt_outs = [], []
+    found = scan_declarations(text, (CALL_KEY, OPT_OUT_KEY))
+    calls, opt_outs = found[CALL_KEY], found[OPT_OUT_KEY]
+    if len(calls) > 1:
+        raise Unknown(f"`{CALL_KEY}` の行が {len(calls)} 行ある（どれを使うか決めない）")
+    if len(opt_outs) > 1:
+        raise Unknown(f"`{OPT_OUT_KEY}` の行が {len(opt_outs)} 行ある")
+    if opt_outs and opt_outs[0] != OPT_OUT_VALUE:
+        raise Unknown(f"`{OPT_OUT_KEY}` の値が `{OPT_OUT_VALUE}` でない: {opt_outs[0]!r}")
+    if calls and not calls[0]:
+        raise Unknown(f"`{CALL_KEY}` の呼び方が空")
+    note = "" if calls else f"{path} に `{CALL_KEY}` の行が無い"
+    return (calls[0] if calls else None), bool(opt_outs), note
+
+
+def scan_declarations(text, keys):
+    """コードフェンスの外で、行頭が `keys` のどれか（コロンは半角か全角）の行の後ろ。{鍵: [値（前後の空白を外す）…]}。
+
+    `check-alloy.py` もこれで読む（写さない。#922）。
+    """
+    found = {key: [] for key in keys}
     fence = None  # 開いているフェンスの (文字, 長さ)
     for line in text.splitlines():
         m = FENCE_RE.fullmatch(line)
@@ -140,21 +159,12 @@ def read_declarations(root):
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] and not m.group(2).strip():
                 fence = None
             continue
-        call, opt_out = after_key(line, CALL_KEY), after_key(line, OPT_OUT_KEY)
-        if call is not None:
-            calls.append(call.strip())
-        elif opt_out is not None:
-            opt_outs.append(opt_out.strip())
-    if len(calls) > 1:
-        raise Unknown(f"`{CALL_KEY}` の行が {len(calls)} 行ある（どれを使うか決めない）")
-    if len(opt_outs) > 1:
-        raise Unknown(f"`{OPT_OUT_KEY}` の行が {len(opt_outs)} 行ある")
-    if opt_outs and opt_outs[0] != OPT_OUT_VALUE:
-        raise Unknown(f"`{OPT_OUT_KEY}` の値が `{OPT_OUT_VALUE}` でない: {opt_outs[0]!r}")
-    if calls and not calls[0]:
-        raise Unknown(f"`{CALL_KEY}` の呼び方が空")
-    note = "" if calls else f"{path} に `{CALL_KEY}` の行が無い"
-    return (calls[0] if calls else None), bool(opt_outs), note
+        for key in keys:
+            value = after_key(line, key)
+            if value is not None:
+                found[key].append(value.strip())
+                break
+    return found
 
 
 def after_key(line, key):
