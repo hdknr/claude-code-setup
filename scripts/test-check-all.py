@@ -103,7 +103,8 @@
 - **`on:` の値の中身**（#946）——**鍵の有無と `branches:` の値だけを見る**ので、**GitHub が実際に起動するかは見ていない。**
   外れる向きは**偽の赤**: `types:` に `synchronize` を含めた・`paths:` が全部に当たる・`branches:` を glob（`'**'`）で書いた、などの
   起動する形も赤にする。**フロー形式のマッピング**（`on: {…}`・`push: {branches: [main]}`）・**読めない行**・**タブで字下げした行**・**YAML のアンカー**・
-  **重なる鍵**（`on:`・イベント・`branches:`）・**値と子が両方ある `on:`**・**列とマッピングが混ざる `on:`**・**`branches:` の `!` の除外**も
+  **重なる鍵**（`on:`・イベント・`branches:`）・**値と子が両方ある `on:`**・**列とマッピングが混ざる `on:`**・**`branches:` の `!` の除外**・
+  **`branches:` の下の、値が空の `branches:` の後ろに 1 つの字下げで並ぶ `- <スカラー>` でない行**（継続行・項より深い行など）も
   読まずに赤で、`pull_request_target`・`workflow_call` などほかのイベントは起動に数えない（これも偽の赤の向き）。
   **黙って素通しする向きに残るもの**: **ワークフロー単位の `concurrency:`（`cancel-in-progress`）で run を止める形**。
 - **`*.yaml`（拡張子違い）は読まない。**
@@ -868,6 +869,9 @@ def event_filter_reasons(ev: str, sub: list[tuple[int, str]]) -> set[str]:
     **値まで読むのは `branches:` だけ**で、`main` を文字どおり含まなければ赤。**ほかの鍵は値を読まずに、あれば赤**
     （`paths:`・`paths-ignore:`・`branches-ignore:`・`types:`・`tags:` など）。`branches:` の項は、フロー形式の列・
     より深い `- `・`branches:` と同じ字下げの `- `（コンパクトな列）のどれでも読む。
+    **`branches:` の下で受け取るのは、値が空の `branches:` の後ろに 1 つの字下げで並ぶ `- <スカラー>` の項だけ**（#946 の 2 パス目）——
+    値のある `branches:` の下の行（`branches: main` の継続行は YAML では `main dev` という 1 つの値になる）・項より深い行
+    （`- dev` の下の `- main` は `dev - main` になる）・字下げの揃わない項・`- x: y` や `- [a]` の項は読まずに赤。
     """
     out: set[str] = set()
     level = sub[0][0] if sub else None
@@ -875,12 +879,14 @@ def event_filter_reasons(ev: str, sub: list[tuple[int, str]]) -> set[str]:
     branches: list[str] = []
     has_branches = False
     seen: list[str] = []
+    inline = ""
+    item_level: int | None = None
     for ind, c in sub:
         item = SEQ_RE.match(c) is not None
         if level is not None and ind < level:
             out.add(f"`{ev}` の下の字下げを読めない")
             key = None
-        elif ind == level and not (key == "branches" and item):
+        elif ind == level and not (key == "branches" and item and not inline):
             key = key_of(c)
             if key in seen:
                 out.add(f"`{ev}` の `{key}:` が重なる")
@@ -890,11 +896,19 @@ def event_filter_reasons(ev: str, sub: list[tuple[int, str]]) -> set[str]:
                 out.add(f"`{ev}` の下の行を読めない（`{c}`）")
             elif key == "branches":
                 has_branches = True
-                branches += seq_items(inline_value(c))
+                inline = inline_value(c)
+                item_level = None
+                branches += seq_items(inline)
             else:
                 out.add(f"`{ev}` の `{key}:` で狭めている")
-        elif key == "branches" and item:
-            branches.append(scalar(c[1:]))
+        elif key == "branches":
+            name = c[1:].strip() if item else ""
+            if (inline or not item or (item_level is not None and ind != item_level)
+                    or not name or name[:1] in "[{" or ": " in name or name.endswith(":")):
+                out.add(f"`{ev}` の `branches:` の下の行を読めない（`{c}`）")
+            else:
+                item_level = ind
+                branches.append(scalar(name))
     if has_branches and "main" not in branches:
         out.add(f"`{ev}` の `branches:` に `main` が無い")
     if any(b.startswith("!") for b in branches):
@@ -912,7 +926,8 @@ def trigger_reasons(text: str) -> set[str]:
     子は、ブロックのマッピング（鍵がイベント）とブロックの列（`- push`）を読む。イベントの値は空・`null`・`~`・`{}` だけを
     「狭めていない」と読み、ほかの値（`{branches: [main]}` など）は読まずに赤。**読めない形はどれも赤**——読めない行・
     子より浅い行（`on:` の下でもイベントの下でも）・列の項の下の行・フロー列の `{…}`・`[…]` の項・タブで字下げした行（ファイルのどこでも）・
-    2 つ目の `on:`・重なるイベント・イベントの下で重なる鍵（`branches:` を 2 つ）・値と子が両方ある `on:`・列とマッピングが混ざる `on:`。
+    2 つ目の `on:`・重なるイベント・イベントの下で重なる鍵（`branches:` を 2 つ）・値と子が両方ある `on:`・列とマッピングが混ざる `on:`・
+    `branches:` の下の、項として読めない行（`event_filter_reasons` の docstring）。
     `branches:` に `!` で始まる項（除外）があれば、`main` を含んでいても赤（後ろの `!` が `main` を外しうる——値の照合はしない）。
     コメントは `split_comment` で切ってから読む。
 
@@ -1505,6 +1520,12 @@ SAMPLE_ON = {
     "seq-deeper": "on:\n  - pull_request\n  - push\n      paths: [x]\n",
     "event-shallow": "on:\n  pull_request:\n      branches: [main]\n    paths: [docs]\n  push:\n",
     "flow-odd-item": "on: [pull_request, push, {x: 1}]\n",
+    # #946 の 2 パス目（/code-review・Verifier）——`branches:` の下の YAML どおりでない読み方
+    "branches-cont": "on:\n  pull_request:\n    branches: main\n      dev\n  push:\n",
+    "branches-value-item": "on:\n  pull_request:\n  push:\n    branches: dev\n      - main\n",
+    "branches-item-deeper": "on:\n  pull_request:\n  push:\n    branches:\n      - dev\n        - main\n",
+    "branches-item-map": "on:\n  pull_request:\n  push:\n    branches:\n      - main\n      - paths: [x]\n",
+    "branches-flow-item": "on:\n  pull_request:\n  push:\n    branches: [dev]\n    - main\n",
 }
 # `untriggered_runs`——起動するファイルでは狭め・位置は条件つき、起動しないファイルにだけ全部を回す行と無条件の行を置く。
 ON_FILES = [
@@ -1576,6 +1597,12 @@ def scan_contract(scan, full_of, gate_of, both_of, on_of, idle_of) -> list[tuple
          and on["seq-deeper"] == {"`on:` の列の項の下の行を読めない（`paths: [x]`）"}
          and on["event-shallow"] == {"`pull_request` の下の字下げを読めない"}
          and on["flow-odd-item"] == {"`on:` の項を読めない（`{x: 1}`）"}),
+        ("`branches:` の下の継続行・値の後ろの項・項より深い行・マッピングの項は赤（黙って `main` と読まない）",
+         on["branches-cont"] == {"`pull_request` の `branches:` の下の行を読めない（`dev`）"}
+         and on["branches-value-item"] == {"`push` の `branches:` の下の行を読めない（`- main`）", "`push` の `branches:` に `main` が無い"}
+         and on["branches-item-deeper"] == {"`push` の `branches:` の下の行を読めない（`- main`）", "`push` の `branches:` に `main` が無い"}
+         and on["branches-item-map"] == {"`push` の `branches:` の下の行を読めない（`- paths: [x]`）"}
+         and "`push` の `branches:` に `main` が無い" in on["branches-flow-item"] and len(on["branches-flow-item"]) == 2),
         ("起動しないファイルにだけある無条件の行を数える（起動するファイルでは条件つき）",
          "on-idle-only.py" in idle_ok and "on-both.py" not in idle_ok and "test-on-split.py" not in idle_ok),
         ("起動しないファイルにだけ全部を回す行を置き、起動するファイルでは狭める形を数える",
@@ -1807,11 +1834,18 @@ SCAN_MUTANTS = {
         '    if has_branches and not any("main" in b for b in branches):'),
     "引用符を外さない": ("        return t[1:-1]\n    return t", "        return t\n    return t"),
     "コンパクトな列を `branches:` の項と読まない": (
-        '        elif ind == level and not (key == "branches" and item):', '        elif ind == level:'),
+        '        elif ind == level and not (key == "branches" and item and not inline):', '        elif ind == level:'),
     "深い `- ` を `branches:` の項と読まない": (
-        '        elif key == "branches" and item:\n            branches.append',
-        '        elif False:\n            branches.append'),
-    "`branches:` のフロー列を読まない": ("                branches += seq_items(inline_value(c))", "                pass"),
+        "                item_level = ind\n                branches.append(scalar(name))",
+        "                item_level = ind"),
+    "`branches:` の下の読めない行を飛ばす（#946 の 2 パス目）": (
+        '                out.add(f"`{ev}` の `branches:` の下の行を読めない（`{c}`）")', '                pass'),
+    "値のある `branches:` の下の行も項と読む": (
+        "            if (inline or not item or (item_level", "            if (not item or (item_level"),
+    "項の字下げの揃いを見ない": (" or (item_level is not None and ind != item_level)", ""),
+    "マッピング・列の項も `branches:` の項と読む": (
+        ' or name[:1] in "[{" or ": " in name or name.endswith(":")):', "):"),
+    "`branches:` のフロー列を読まない": ("                branches += seq_items(inline)", "                pass"),
     "イベントの下の読めない行を飛ばす": (
         '                out.add(f"`{ev}` の下の行を読めない（`{c}`）")', '                pass'),
     "字下げ 0 でない `on:` も読む": ('if ind == 0 and key_of(c) == "on"]', 'if key_of(c) == "on"]'),
@@ -1838,7 +1872,8 @@ SCAN_MUTANTS = {
     "2 つ目の `on:` を見ない": ('    if len(starts) > 1:', '    if False:'),
     "値と子が両方でも見ない": ('    if value and body:', '    if False:'),
     "列とマッピングが混ざっても見ない": ('    if len(kinds) > 1:', '    if False:'),
-    "列の項の下の行を飛ばす": ('        elif cur == "- ":', '        elif False:'),
+    "列の項の下の行を飛ばす": (
+        '            reasons.add(f"`on:` の列の項の下の行を読めない（`{c}`）")', '            pass'),
     "イベントの下の浅い行を飛ばす": ('        if level is not None and ind < level:', '        if False:'),
     "フロー列の読めない項を見ない": ('        if name[:1] in "{[":', '        if False:'),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
