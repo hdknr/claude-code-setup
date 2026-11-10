@@ -17,7 +17,7 @@ spec-loop 全体の流れは [spec-loop の流れと Red テスト](spec-loop.md
 
 | 部品 | 置き場所（spec-loop の根から） | 役割 |
 | --- | --- | --- |
-| 入口 | `skills/autopilot/SKILL.md` | `/spec-loop:autopilot <版> [--lines]`。台帳が無ければ線を確かめて権限を点検し、在って `status` が `running` なら次の 1 単位だけを進める（`stopped`・`done` なら何もせずに終える） |
+| 入口 | `skills/autopilot/SKILL.md` | `/spec-loop:autopilot <版> [--lines]`。台帳が無ければ線を確かめて権限を点検し、在って `status` が `running` なら次の 1 単位だけを進める（`stopped`・`done` なら単位を進めずに終える） |
 | 台帳 | `scripts/autopilot-ledger.py` | 版ごとの台帳（`phase`・周・段と、状態の欄 `status`）の読み書き。外側のループが見る `status`・`progress` もここ |
 | 線と権限の点検 | `scripts/autopilot-check.py` | 線の検査（**線の項目と値の一覧はここが正**）と、線から決まる周で使う操作が非対話の権限で通るかの点検 |
 | 外側のループ | `scripts/autopilot-loop.py` | `claude -p` を繰り返し起動し、止まったら理由を出して通知する |
@@ -40,7 +40,7 @@ spec-loop 全体の流れは [spec-loop の流れと Red テスト](spec-loop.md
 
 ## 2. 起動時の確認（線と権限）
 
-**台帳が無いときの起動と、`--lines` を付けた起動では、単位を進めずに、線を確かめて権限を点検します。** 利用者が居る対話のセッションで起動します
+**台帳が無いときの起動と、`--lines` を付けた起動（`done` の台帳を除く）では、単位を進めずに、線を確かめて権限を点検します。** 利用者が居る対話のセッションで起動します
 （`claude -p` では答えが返らないので、台帳を作らずに止まります）。
 
 ```
@@ -49,7 +49,8 @@ spec-loop 全体の流れは [spec-loop の流れと Red テスト](spec-loop.md
 ```
 
 - **線は、利用者が居れば訊く場面**（上限に達したときに続けるか・判定役が判断を求めたときに推奨で暫定に採るか・commit とマージをどこまでするか・どこで止まるか、など）**を、起動時の答えで置き換えるものです。**
-  **項目と値の一覧は `autopilot-check.py` の docstring の「線」を、値ごとに各起動がすることは入口のスキル本文の「2. 起動時の確認」を正とします。**
+  **線に無い判断に当たった起動は、訊かずに台帳を `stopped` にして止まります。**
+  **項目と値の一覧は `autopilot-check.py` の docstring の「線」を、値ごとに各起動がすることは入口のスキル本文の「2. 起動時の確認」を、止まる場面は「3. 1 単位を進める」を正とします。**
   確かめた線は、出所（利用者の確認と日時）と一緒に台帳に残ります。
 - **線を書いたら、周で使う操作の許可を点検します**（`autopilot-check.py check <版>`。[#790](https://github.com/hdknr/claude-code-setup/issues/790) では、マージが自動モードの権限で拒まれて止まり、起動前にそれを知る手段がありませんでした）。
   点検する操作は線で決まります（spec-loop のスクリプト・git と PR の操作のどれを点検するかは、線の値で変わります。一覧は `autopilot-check.py` の docstring の「点検する操作」）。
@@ -98,7 +99,7 @@ dev-loop の cruise の外側のループ（[オートクルーズの「外か�
 - **TLC**（[#912](https://github.com/hdknr/claude-code-setup/issues/912)）——TLC は既定で必須の前提です。Java と `tla2tools.jar` を置き、正本リポジトリの `CLAUDE.md` に
   `TLC の呼び方: <コマンド>` の行を書きます。業務フローを一度も形式検査しない案件は `業務フローの形式検査: しない` と書けば点検から外せます
   （宣言しても、`spec-review` が業務フローを対象に選んだ回は TLC を確かめ、無ければその回で止まります——[spec-loop の流れの「形式検査」](spec-loop.md#formal) の表）。
-  起動時の点検で確かめ、**各起動は Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めでも確かめて、使えなければその段に入らずに止まります**
+  起動時の点検で確かめ、**各起動は（外す宣言が無ければ）Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めでも確かめて、使えなければその段に入らずに止まります**
   （`commit` の段と feasibility では確かめません）。書き方は
   [プラグインの README の「前提」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/README.md#前提)と `check-tlc.py` の docstring を、
   形式検査の道具の位置づけは [spec-loop の流れの「形式検査」](spec-loop.md#formal) を見てください。
