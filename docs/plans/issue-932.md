@@ -81,10 +81,10 @@ Issue は「`docs.yml` にも同じ形を当てるかは別に決める」と書
 
 ## 関門の進捗（再開点）
 
-- 周の在り処: ブランチ `issue/932-plugins-ci-concurrency`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-932`・
+- 周の在り処: PR #935・ブランチ `issue/932-plugins-ci-concurrency`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-932`・
   起点 `5bd739f`・base は参照 `origin/main`（`refs/remotes/origin/HEAD`）を解決した `5bd739f6a3db4071a849782d14dbab3f0d8ea175`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: まだ当てていない
+- 関門: 1 パス目の指摘対応の起点 `0f0b77211bd71ba79240f9aaad7f873b6561ba2d`（Verifier 1 パス目に渡した時点の HEAD）。Verifier 1 パス目: 起動（報告待ち）
 - 反証と差し戻し: まだ無い
 - 交絡を潰した手順: まだ無い（A1 の実験で書く）
 
