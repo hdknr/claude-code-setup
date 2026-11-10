@@ -11,6 +11,7 @@
 - 版の上げ方: **minor・spec-loop だけ**（main の先端 spec-loop 0.74.0 → 0.75.0。scaffold がトレースのケースから Red テストを作る——能力の追加。
   トレースのケースを持たない中間表現の生成物は 1 バイトも変わらない）。dev-loop は触らない（下の「dev-loop の写し」）。
   マージの直前に main が進んでいれば、main の先端の版から同じ上げ方で 1 つ上げ直す（cruise の `parallel.md` の「版とマージの順」。並行する周 #922 も spec-loop を上げる）
+- 版の上げ直し（2026-11-10。親の指示）: main（`2cb883a`。#922 で spec-loop 0.75.0）を取り込み、同じ上げ方（minor）で **0.76.0** に上げ直した
 - PR は `Fixes #923`・`Refs #916`・`Refs #908`（確認の Issue #928 は閉じるキーワードで指さない）
 - 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.103.0/skills/cruise/scripts/run-serial.py` 越し
 
