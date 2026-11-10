@@ -2,7 +2,8 @@
 
 spec-loop は、dev-loop の**手前にある要求側のループ**です。5 本のスキルが正本リポジトリのデータを読み書きしながら、
 利用者の回答・予算責任者の合意・決裁者の承認を待って止まり、最後に**確定した仕様を Red テストと Issue に変えて** dev-loop に渡します。
-このページは、その**流れと部品の場所**、とくに公開ページから辿りにくかった **Red テストと `--red-check`** を案内します。
+このページは、その**流れと部品の場所**、とくに公開ページから辿りにくかった **Red テストと `--red-check`**、
+仕様レビューの **[形式検査（Z3・TLC・Alloy）](#formal)** を案内します。
 スキルごとの説明とインストールは [プラグイン一覧の「spec-loop」](index.md#spec-loop) にあります。
 
 !!! warning "規範はプラグインの中にあります"
@@ -34,7 +35,7 @@ flowchart LR
 | スキル | 何を読んで何を書くか | 何を待って止まるか | 次に渡すもの |
 | --- | --- | --- | --- |
 | `req-loop` | Q&A 表の回答を要求・決定表に反映し、未決定事項を質問として起票して、レビュー会の PPTX を作る | **利用者の回答待ち** | 回答を反映した要求。暫定の回答が残らなければ、利用者が要求確定のタグを付けられる |
-| `spec-review` | 要求から開発者向けの仕様を書き下し、3 つの判定役にレビューさせて指摘を振り分ける | 抜ける条件の判定を報告して止まる。**利用者の判断が要る指摘は起票して回答待ち** | 抜けた仕様（`scaffold` の入力） |
+| `spec-review` | 要求から開発者向けの仕様を書き下し、3 つの判定役にレビューさせて指摘を振り分ける（判定役の 1 つが[形式検査](#formal)をする） | 抜ける条件の判定を報告して止まる。**利用者の判断が要る指摘は起票して回答待ち** | 抜けた仕様（`scaffold` の入力） |
 | `feasibility` | 要求から規模を数え、見積りとスケジュール・ガントチャートを作り、費用付きの質問を起票する | **予算責任者の合意待ち**（費用付きの質問は回答待ち） | 見積りとスケジュール。合意したら予算責任者が予算の合意のタグを付ける |
 | `proposal` | 2 つのサインオフのタグが同じ中身を見ていたかを照合し、一致したときだけ提案書と仕様書を作る | **決裁者の承認待ち**（照合が通らなければ、どちらの承認を取り直すかを示して止まる） | 提案書 |
 | `scaffold` | 仕様を中間表現に書き起こし、スクリプトで OpenAPI・型・Red テスト・Issue の本文を作る | **Issue の登録の前に利用者に確かめ**、登録で止まる（commit の決まりが無ければ、その前に変更したファイルを示して止まり、push されるまで登録しない） | Issue（以降は dev-loop） |
@@ -62,9 +63,87 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
 | 要求と決定表（`requirements/`・`shared/decision_table.csv`） | `req-loop`（回答の反映） | `spec-review`（書き下す元）・`feasibility`（規模を数える）・`proposal`（提案書と仕様書） | `tree.md` |
 | 仕様（`spec/`） | `spec-review` | `scaffold`（中間表現に書き起こす）・`feasibility`（数え方を確かめる）・`proposal`（仕様書） | [`spec-exit.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-exit.md)・[`spec-scope.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-scope.md) |
 | スケジュールと見積り（`feasibility/schedule.csv`・`estimate.csv`） | `feasibility` | `proposal` | [`feasibility-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/feasibility-csv.md) |
+| 形式検査のモデル（`spec/formal/<対象>/`） | `spec-review`（Formal Checker が走らせたモデルを写す） | `spec-review`（次の回に Formal Checker へ渡す。版の重ね合わせで次の版にも渡る）。**上の「仕様」の行の `proposal` の仕様書には入らない** | `tree.md` の「形式検査のモデル」（下の「[モデルの置き場所と次の回](#formal-models)」） |
 | サインオフのタグ | 人間（利用者・予算責任者） | `proposal`（照合） | `signoff-tags.md` |
 | 中間表現（`spec/spec_ir.json`） | `scaffold`（スキルが書き起こす） | `scaffold.py`・`proposal`（仕様書の機能の一覧）・dev-loop（機能の指紋） | [`spec-ir.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-ir.md) |
 | 契約（`scaffold/` の OpenAPI・型・Red テスト） | `scaffold.py`（生成。commit する） | dev-loop（Red テストを回す） | `tree.md` の「scaffold の出力」 |
+
+## 形式検査 { #formal }
+
+`spec-review` の判定役のうち **Formal Checker** は、仕様の一部を**形式化して検査器に掛け**、抜け・矛盾・反例を探させます。
+仕様レビューを抜ける**条件 4**（形式検査の対象ごとに、検査器が範囲の中で反例を出さず、空振りでない。対象が無ければ「対象なし」と書く）を判定する役です
+（3 つの判定役の一覧は [プラグイン一覧の「3 つの判定役」](index.md#spec-loop-judges)）。
+対象と選び方の原本は [`spec-exit.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-exit.md) の「形式検査の対象」、
+Formal Checker の手順（道具の使い方・報告の形）の原本は [`formal-checker.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/agents/formal-checker.md) です。
+
+### 道具 { #formal-tools }
+
+対象ごとの道具は次のとおりです（`spec-review` が正本リポジトリの `CLAUDE.md` から拾って Formal Checker に渡します）。**画面・文言・使い勝手と、順番どおりに進むだけのフローは対象にしません。**
+
+| 対象 | 道具 | 何を形式化し、何を見つけるか | 必須か | 道具が無いとき |
+| --- | --- | --- | --- | --- |
+| 決定表・計算ルール | **Z3**（SMT ソルバー） | 決定表の行と計算ルールを条件式にして、どのルールにも当たらない入力（抜け）と、2 つのルールが違う結果を返す入力（矛盾）を探す | 必須ではない。正本リポジトリの `CLAUDE.md` に指定が無ければ、Formal Checker が手元にあるかを確かめて使う（入れはしない） | **Python 標準ライブラリの総当たりで代用する**（各入力を境界値と代表値に分けて組み合わせる） |
+| 並行・リトライ・取り消しを含む業務フロー | **TLC**（TLA+ のモデル検査器） | 業務フローを状態と遷移として書き、通信断や同時操作でデータが食い違ったまま残る実行順を探す | **既定で必須の前提**（#912）。正本の `CLAUDE.md` の `TLC の呼び方:` の行だけを使い、`command -v` では探さない。業務フローを一度も形式検査しない正本は `業務フローの形式検査: しない` で `autopilot` の点検から外せる（宣言しても、`spec-review` が業務フローを対象に選んだ回は TLC を確かめ、無ければそこで止まる——`autopilot` もその回は止まる） | **代用しない**（実行順を手で区切ると、区切り方が結果を決める）。`spec-review` は判定役を起動せずに、用意してから呼び直すか、用意せずに進める（業務フローは判定できず、その回は抜けない）かを訊く（狭いパスの直しで増えた対象の検査器が無いときは、訊かずにその対象を「判定できなかった」とする。場面ごとの扱いは `spec-review` の `SKILL.md` 手順 3・5）。`autopilot` は（外す宣言が無ければ）Formal Checker を起こす段の始めで止まる |
+| 権限・ロール | **Alloy** | ロール・権限・データの関係を書き、見えてはいけないデータが見えてしまう組み合わせを探す | 必須ではない——権限・ロールを対象に選んだ回だけ要る（#922）。正本の `CLAUDE.md` の `Alloy の呼び方:` の行（`exec` まで含めた形）だけを使い、`command -v` では探さない。**引数なし・`gui` の形では呼ばない**（Alloy 6 の jar はどちらでも画面を開き、検査がそこで止まる） | **代用しない**。`spec-review` は判定役を起動せずに訊く（TLC と同じく、狭いパスの直しで増えた対象の検査器が無いときは訊かない）。`autopilot` は起動時の点検では見ず、権限・ロールを対象に選んだ回に確かめて、無ければ止まる。Formal Checker は呼び方を渡されなければ「検査できなかった」と報告する |
+
+道具そのものの位置づけ:
+
+- **Z3** は SMT ソルバーです——論理式に整数・実数などの理論を加えた制約を満たす値があるかを決め、あれば例を返します（[Z3](https://github.com/Z3Prover/z3)）。
+- **TLA+** は状態と遷移で並行システムを書く仕様の言語で、**TLC** はそのモデル検査器です——有限の構成で到達しうる状態をたどり、不変条件を破る実行順を反例として返します（[TLA+](https://lamport.azurewebsites.net/tla/tla.html)）。
+- **Alloy** は関係論理で構造を書く言語と分析器です——与えた範囲（要素の数の上限）の中で、性質を破る例を探します（[Alloy](https://alloytools.org/)）。
+
+呼び方の行の書き方・確かめ方・終了コードは [`check-tlc.py`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/scripts/check-tlc.py) と
+[`check-alloy.py`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/scripts/check-alloy.py) の docstring、
+用意のしかた（Java と jar の置き方）は [プラグインの README の「前提」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/README.md#前提) を正とします。
+前から使っている正本の移行（0.73.0 の TLC・0.75.0 の Alloy）は `spec-exit.md` の各節にあります。
+
+### 対象の選び方 { #formal-scope }
+
+表の対象があっても、毎回検査するのではありません。**作業中の版の改修の性質で選び、検査の深さを改修の大きさに釣り合わせます**
+（既存の書き手に排他を足すだけの改修をどう扱うかを含む。#373・#909）。
+どれを対象にするかは `spec-review`（仕様を書く側）が理由と一緒に Formal Checker に渡します。
+
+**線と例は `spec-exit.md` の「改修の性質で選ぶ」を正とします**（ここに表を写していません）。
+
+### 「反例なし」を空振りにしない { #formal-vacuity }
+
+- **判定は検査器の出力で決めます。** Formal Checker の「問題ありません」は判定にしません。
+- **「反例なし」と言えるのは、次の 2 つを示したときだけです**——正常な状態に到達できること（モデルが何も許さない形になっていない）と、
+  わざと壊したモデルで反例が出ること（陽性対照）。どちらも無ければ、反例が出ないのは検査が空振りしただけかもしれません。
+- **検査できなかった対象は、抜ける条件を満たしません**——判定できなかったものを「満たす」に寄せません。
+- 形式化のために置いた前提（端数処理・割引の適用順など）は形式化した側の解釈なので、利用者の判断が要るなら Q&A 表で確かめます。
+
+### モデルの置き場所と次の回 { #formal-models }
+
+Formal Checker はリポジトリの外でモデルを組んで走らせ、**`spec-review` が検査器の走った対象のモデルと設定をそのまま**作業中の版の
+`docs/v<n>/spec/formal/<対象>/` に写し、記録の `README.md`（結果・陽性対照・置いた前提・前回のモデルをどう使ったか など）を書きます（#908）。
+走らせていない（判定できなかった）対象のモデルは残しません。
+
+- **次の回（次の周・次の版）は保存したモデルから始めます。** 仕様が変わっていなければ直さずに走らせ、前回と同じモデルで「反例なし」が続くことが回帰の確かめになります。
+  前回の「置いた前提」は引き継ぐものではなく、確かめ直す対象です。
+- **`spec/formal/` は仕様から書き起こした写しです。** 版の重ね合わせには入り（次の版に前の版のモデルが渡る）、
+  **2 つのサインオフの照合・版の差分・仕様書（規模・図・ファイルの一覧）・抜ける条件 1 の未決定の印と条件 2 の定義の突き合わせには入りません**——モデルは保存するたびに文字列が変わり、承認する人が読むのは仕様の本文だからです。
+
+**置き方・記録の項目・どこに入れないかは [`tree.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/tree.md) の「形式検査のモデル」、
+写す手順は [`spec-review` の `SKILL.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/spec-review/SKILL.md) の手順 3 の「モデルを残す」を正とします。**
+
+### Red テストとの違い { #formal-vs-red }
+
+| | Red テスト（[下](#red-test)） | 形式検査 |
+| --- | --- | --- |
+| いつ・誰が | `scaffold` が中間表現から生成し、実装に当てる（dev-loop の受入基準・[`--red-check`](#red-check)） | `spec-review` の中で Formal Checker が検査器に掛ける |
+| 何を見るか | 仕様のテストケース——関数の入力と出力のケースと、反例のトレースを再現するケース（下） | 仕様の水準の性質——決めた範囲・構成の中で、抜け・矛盾・性質を破る実行順や組み合わせを探す |
+| 何に当てるか | 実装 | 仕様から書き起こしたモデル（実装には当てない） |
+
+**2 つは反例のトレースでつながります**（#923）。Formal Checker が範囲の中の反例を出して仕様を直したら、`spec-review` はその反例の実行順
+（呼び出し・モデルの行為の名前で書いた段の順・初めの状態・結果）を仕様のテストケースとして書き、`scaffold` がそれを**トレースのケース**に書き起こします。
+そこから作る Red テストは、実装に `checkpoint`（段の前で呼ぶ口）と `reset_state` を求め、呼び出しを同時に走らせて**反例と同じ順を実装の口で強制し**、
+同じ誤りが起きないことを確かめます——仕様を直した後の回帰になります。ただし順を強制できないとき（呼び出しが排他を待って段に来ない）は強制をやめて全部を走らせ、
+負荷や口の約束を破る実装では競合を見逃すことがあります（`spec-ir.md` の「トレースのケース」の「守らないこと」）。
+
+**Red テストが実装で確かめる実行順は、仕様に書いたトレースの順だけです**——形式検査が「反例なし」とした性質を、実装が全部の順で守ることは確かめません
+（下の「[守らないもの](#limits)」）。ケースの形・実装に求める口・Red テストが確かめることと守らないことは
+[`spec-ir.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-ir.md) の「トレースのケース」を正とします。
 
 ## Red テスト { #red-test }
 
@@ -76,6 +155,7 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
 - **どんな形か**: Python の `unittest` です。中間表現の `impl_module`（省けば `spec_impl`）を読み込み、入口（`operation.id`）の名前の関数を
   ケースの入力で呼んで、返したものが期待（正常なら `expected`、失敗するケースなら `{"error": …}`）と等しいことと、出力の各項目の型を見ます。
   **モジュールか関数が無ければ `未実装:` で失敗します**——これが「実装が無いと失敗する（赤）」の正体です。
+- **反例のトレースのケース**（#923）は形が違います——`input`・`expected`・`error` の代わりに、同時に走らせる呼び出し・段の順・結果の期待（呼び出しの結果か、後の状態）を持ち、実装の口で順を強制します（上の「[Red テストとの違い](#formal-vs-red)」）。
 - **何が赤・緑の期待か**: 足した・変えたケースは、この版を実装する前は**赤**です（前の版の実装がもう満たすケースは緑でありえます）。
   追加の Issue の受入基準は**表の Red テストがすべて緑になること**、変更の Issue はそれに加えて変えていないケース（回帰）も緑であることです。
   変更と撤去の Issue では、**ほかの機能の Red テストは「周の前に緑だったものが、周の後も緑のまま」であること**を求めます——
@@ -117,7 +197,7 @@ dev-loop は Issue 1 件を読むだけで周を始められるよう、本文�
   性能予算には、性能の要求の表（`shared/nfr.csv`）の行のうち中間表現の `nfr` が指す行の数字と性能テストを、行が無ければ「要求なし——速さのための最適化をしない」と書きます。
   どの行が関わるかは中間表現（`out_of_scope`・`nfr`）に書き起こし、スクリプトは行が在ることを確かめます。性能テストは負荷を再現しないので、受入基準ではなく、最適化してよいかを決める計測の道具です
   （列と手順は [`nfr.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/nfr.md)）。
-- **Issue の外に、課題一覧（案）も出します**（`build/scaffold/issues/proposals.md`）。Red テストは関数の入力と出力しか確かめないので、
+- **Issue の外に、課題一覧（案）も出します**（`build/scaffold/issues/proposals.md`）。Red テストは入口の関数を呼んだ結果しか確かめないので（トレースのケースも入口を呼ぶ）、
   入口の機能を呼ぶ側の結線（入力が遅れる・呼ぶ処理がやり直される、など）は Red テストの外に残ります。追加・変更した入口の機能（`impl_module` を変えただけのものを除く）ごとに 1 案を置き、
   **未決定事項**（中間表現の `branches` に書き起こしていない呼ぶ側の分岐）・**受入基準の雛形**（見せるものの仕様の原文）・**作らないもの**を付けます。
   `scaffold` は案を登録しません——未決定事項のある案は、登録の前に `spec-review` に戻します
@@ -152,6 +232,12 @@ dev-loop の側の読み方・確かめ方・差し戻し方は dev-loop の
 
 全部は [`scaffold.py` の docstring](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/scripts/scaffold.py) の「この生成が守らないもの」、
 ほかのスクリプトはそれぞれの docstring を正とします。
+
+形式検査（スクリプトではなく判定役と検査器が行う）についても 1 つあります:
+
+- **形式検査の「反例なし」は、実装がその性質を守ることを言いません。** 検査器が見るのは仕様から書き起こしたモデルです。
+  実装に当たるのは Red テストで、実行順を確かめるのは仕様に書いた反例のトレースの順だけです——その順も、強制をやめたときや負荷のもとでは見逃すことがあります
+  （トレースのケースの守らないことは `spec-ir.md` の「トレースのケース」。上の「[Red テストとの違い](#formal-vs-red)」）。
 
 ## 設計の経緯 { #history }
 
