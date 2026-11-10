@@ -61,8 +61,9 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **トレースのケース（`trace`。#923）**: ケースに `input`・`expected`・`error` の代わりに `trace` を書くと、形式検査の反例の実行順
 （`calls` の呼び出しと `steps` の段の並び）を実装の口で強制して再現する Red テストを、その機能の Red テストのファイルに足す。
 実装に求める口は、呼び出しのキーワード引数 `checkpoint`（段の前で呼ぶ）と、モジュールの `reset_state()`（`CHECKPOINT`・`RESET`）。
-**来ない段（排他で待っている・別の段・終わった）に当たったら順の強制をやめて全部を走らせる**——正しい実装はどの順でも正しいので緑、
-競合する実装は順を最後まで進められて反例と同じ誤りになり赤。**負荷で 1 段の時間（`TRACE_STEP_WAIT`）より遅れると競合する実装を見逃しうる**（正しい実装を赤にはしない）。
+**1 段の時間（`TRACE_STEP_WAIT`）のうちに段に来ない（排他で待っている）呼び出しに当たったら順の強制をやめて全部を走らせる**——正しい実装はどの順でも正しいので緑、
+競合する実装は順を最後まで進められて反例と同じ誤りになり赤。**段に来ずに終わった・違う段に来た呼び出しは失敗**（口の約束を守っていない——一部の段だけに呼ぶ・名前を違える競合する実装を素通りさせない）。
+**負荷で 1 段の時間より遅れると競合する実装を見逃しうる。排他を待つ時間に上限を持つ実装は、テストが段で止めている間に待ちを打ち切って失敗しうる**（決まりの正は spec-ir.md）。
 **`formal` の `spec/formal/<対象>/README.md` が無い・入口が中間表現に無い・値が型に反する・段の呼び出しが `calls` に無い・確かめるもの（`outcomes`・`after`）が無い・
 口と同じ名前の入口や入力の項目があるなら 1。** トレースのケースを持たない機能の Red テストと本文は、足す前と 1 バイトも変わらない
 （決まりの正は `references/spec-ir.md` の「トレースのケース」）。
@@ -1352,6 +1353,11 @@ def traced_operations(feature: dict) -> list[str]:
     return sorted({name for case in feature["cases"] if is_trace(case) for name in trace_operations(case)})
 
 
+def concurrent_operations(feature: dict) -> list[str]:
+    """トレースのケースが同時に走らせる（`calls` の）入口の名前——口（`checkpoint`）を受け取る関数。`setup`・`after` だけの入口は含まない。"""
+    return sorted({call["operation"] for case in feature["cases"] if is_trace(case) for call in case[TRACE]["calls"].values()})
+
+
 def trace_types(feature: dict, ops: dict[str, dict]) -> dict[str, dict]:
     """{入口の名前: 出力の型}——トレースのケースが呼ぶ入口の全部。Red テストが値と一緒に型を見るのに使う。"""
     return {name: output_types(ops[name]) for name in traced_operations(feature)}
@@ -1389,6 +1395,7 @@ TRACE_RUNTIME = (
     "        self.called = set()",
     "        self.done = set()",
     "        self.followed = 0",
+    "        self.strayed = None",
     "",
     "    def checkpoint(self, who):",
     "        def checkpoint(name):",
@@ -1422,6 +1429,9 @@ TRACE_RUNTIME = (
     "        with self.cond:",
     "            for who, name in self.steps:",
     "                came = self.wait_for(lambda: who in self.at or who in self.done)",
+    "                if came and self.at.get(who) != name:",
+    "                    # 段に来ずに終わった・別の段に来た——段の前で checkpoint を呼んでいない（排他を待つのは came が偽）",
+    "                    self.strayed = (who, name, self.at.get(who))",
     "                if not came or self.at.get(who) != name:",
     "                    break",
     "                self.go.add(who)",
@@ -1491,6 +1501,11 @@ def trace_methods() -> list[str]:
         "        if silent:",
         f"            self.fail(f\"{CHECKPOINT} を呼ばない呼び出しがある: {{', '.join(silent)}}——トレースの順に止められない"
         f"（段の前で {CHECKPOINT}(<段の名前>) を呼ぶ。{{followed}}）\")",
+        "        if schedule.strayed:",
+        "            who, name, other = schedule.strayed",
+        "            came = \"終わった\" if other is None else f\"段 {other} に来た\"",
+        f"            self.fail(f\"{{who}}: 段 {{name}} の前で {CHECKPOINT} を呼ばずに{{came}}——トレースの段は全部、トレースの順に、"
+        f"その段の前で {CHECKPOINT}(<段の名前>) を呼ぶ（結果で書かない分岐でも呼ぶ。{{followed}}）\")",
         "        if \"outcomes\" in trace:",
         "            left = list(trace[\"outcomes\"])",
         "            for who, call in trace[\"calls\"].items():",
@@ -1883,6 +1898,11 @@ def classify(loaded: Loaded) -> tuple[int, list[str], list[Change], Before]:
         # 実装のモジュールが変わると、機能が同じでも Red テストは全部、前の版の実装を探せずに失敗する
         moved = {c.feature["id"] for c in changes}
         changes += [Change(MODIFY, f, old[key]) for key, f in now.items() if key in old and key not in moved]
+    # トレースのケース（#923）はほかの機能の入口も呼ぶ——その出力の型が変われば、機能のオブジェクトが同じでも Red テストが変わる
+    ops_before, ops_now = operations(before_ir), operations(loaded.ir)
+    moved = {c.feature["id"] for c in changes}
+    changes += [Change(MODIFY, f, old[key]) for key, f in now.items()
+                if key in old and key not in moved and f == old[key] and trace_moved(f, ops_before, ops_now)]
     return 0, callers_unchanged(changes, number), sorted(changes, key=lambda c: c.feature["id"]), before
 
 
@@ -1917,10 +1937,15 @@ def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
 
 
 def trace_shape(case: dict, ops: dict[str, dict]) -> tuple:
-    """トレースのケースの Red テストが見る、呼ぶ入口の出力の型と null を許す項目（#923）。"""
-    names = trace_operations(case)
+    """トレースのケースの Red テストが見る、呼ぶ入口の出力の型と null を許す項目（#923）。前の版に無い入口は None。"""
     return tuple((name, literal(output_types(ops[name])),
-                  tuple(sorted(n for n, field in ops[name]["output"].items() if nullable(field)))) for name in names)
+                  tuple(sorted(n for n, field in ops[name]["output"].items() if nullable(field))))
+                 if name in ops else (name, None) for name in trace_operations(case))
+
+
+def trace_moved(feature: dict, ops_before: dict[str, dict], ops_now: dict[str, dict]) -> bool:
+    """機能のトレースのケースが呼ぶ入口の出力の型が、前の版から変わったか——機能が同じでも Red テストが変わる（#923）。"""
+    return any(trace_shape(case, ops_before) != trace_shape(case, ops_now) for case in feature["cases"] if is_trace(case))
 
 
 def case_changed(before: dict, old: dict, impl_before: str, feature: dict, case: dict, impl_now: str,
@@ -2101,10 +2126,10 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
             f"- 実装を置く場所: モジュール `{impl}` の関数 `{op['id']}(**input) -> dict`"
             "（失敗は `{\"error\": \"<名前>\"}` を返す）",
             *([f"- トレースのケース（形式検査の反例の実行順を再現する。spec-loop の `references/spec-ir.md` の「トレースのケース」）があるので、"
-               f"実装はモジュール `{impl}` に状態を空に戻す関数 `{RESET}()` を持ち、トレースが呼ぶ関数（"
-               + "・".join(f"`{name}`" for name in traced_operations(feature))
-               + f"）はキーワード引数 `{CHECKPOINT}`（既定は何もしない）を受け取って、トレースの段の前で `{CHECKPOINT}(\"<段の名前>\")` を呼ぶ"
-               "（各呼び出しで 1 回以上。呼ばなければ失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),
+               f"実装はモジュール `{impl}` に状態を空に戻す関数 `{RESET}()` を持ち、トレースが同時に走らせる関数（"
+               + "・".join(f"`{name}`" for name in concurrent_operations(feature))
+               + f"）はキーワード引数 `{CHECKPOINT}`（既定は何もしない）を受け取って、トレースの段の全部について、その段の前で `{CHECKPOINT}(\"<段の名前>\")` を呼ぶ"
+               "（結果で書かない分岐でも呼ぶ。段を飛ばす・違う名前で呼ぶと失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),
             "- 回し方（正本リポジトリの根で）:",
             "",
             "```bash",

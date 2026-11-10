@@ -874,6 +874,9 @@ LOCKED_IMPL = GOOD_IMPL + STOCK_STATE + RACY_RESERVE.replace(
 SILENT_IMPL = RACY_IMPL.replace('    checkpoint("read")\n', "").replace('    checkpoint("write")\n', "")
 # 口の引数を受け取らない実装
 NO_KEYWORD_IMPL = SILENT_IMPL.replace("def reserve(item, qty, checkpoint=lambda name: None):", "def reserve(item, qty):")
+# 一部の段にだけ口を呼ぶ競合する実装（書く段の前で呼ばない）・段の名前を違える競合する実装——どちらも順を強制できないので失敗にする
+PARTIAL_IMPL = RACY_IMPL.replace('    checkpoint("write")\n', "")
+RENAMED_STEPS_IMPL = RACY_IMPL.replace('checkpoint("read")', 'checkpoint("load")').replace('checkpoint("write")', 'checkpoint("store")')
 # 状態を空に戻す関数の無い実装
 NO_RESET_IMPL = LOCKED_IMPL.replace("def reset_state():\n    _stock.clear()\n", "")
 TRACE_TEST = "scaffold/tests/test_f_003.py"
@@ -910,7 +913,7 @@ def trace_written(repo: Path) -> str | None:
             return f"トレースのケースを持たない {rel} が #923 の前の生成物と違う"
     body = bodies(repo)["F-003"]
     return body_has(body, ("| `F-003-C2` | 追加 | 同じ品を同時に引き当てても売り越さない | `TestF003.test_f_003_c2` |",
-                           "状態を空に戻す関数 `reset_state()`", "トレースが呼ぶ関数（`get_stock`・`reserve`・`set_stock`）",
+                           "状態を空に戻す関数 `reset_state()`", "トレースが同時に走らせる関数（`reserve`）",
                            "`checkpoint(\"<段の名前>\")` を呼ぶ"), "トレースのケースを持つ機能")
 
 
@@ -931,6 +934,15 @@ def trace_v2(case: str, status: str) -> Callable[[Path], str | None]:
             return f"本文を作るのは変えた機能だけのはず: {list(found)}"
         return body_has(found["F-003"], (f"| `{case}` | {status} |",), "v2 の変更")
     return post
+
+
+def trace_called_moved(repo: Path) -> str | None:
+    """v2 でトレースが呼ぶほかの機能の入口（F-005）の出力の型だけを変えた——F-003 は機能が同じでも Red テストが変わるので変更の本文を作る。"""
+    found = bodies(repo)
+    if list(found) != ["F-003", "F-005"]:
+        return f"本文を作るのは F-003（トレースが呼ぶ入口が変わった）と F-005 のはず: {list(found)}"
+    return body_has(found["F-003"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-003-C1` | 回帰 |", "| `F-003-C2` | 変更 |"),
+                    "トレースが呼ぶ入口が変わった機能")
 
 
 def v2_trace(fn: Callable[[dict], None]) -> dict[str, str]:
@@ -1944,6 +1956,14 @@ CASES: list[Case] = [
          ir=traced(lambda ir: ir["features"][2].update(nfr=["N-001"])), extra={**TRACE_FORMAL, **with_nfr()}, post=trace_perf),
     Case("トレース: v2 でトレースを変えたら変更", 0, "作った", ir=traced(),
          extra=v2_trace(lambda f: f["cases"][1]["trace"]["steps"].reverse()), post=trace_v2("F-003-C2", "変更")),
+    Case("トレース: 一部の段にだけ口を呼ぶ実装で失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=PARTIAL_IMPL,
+         post=expect_trace_red("段 write の前で checkpoint を呼ばずに終わった")),
+    Case("トレース: 段の名前を違える実装で失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=RENAMED_STEPS_IMPL,
+         post=expect_trace_red("段 read の前で checkpoint を呼ばずに終わった")),
+    Case("トレース: v2 で呼ぶ入口の型だけ変えたら変更", 0, "作った", ir=traced(),
+         extra={**TRACE_FORMAL, **v2([dict(copy.deepcopy(STOCK_FEATURES[2]), operation=dict(
+             copy.deepcopy(STOCK_FEATURES[2]["operation"]), output={"stock": {"type": "number"}}))])},
+         post=trace_called_moved),
     Case("トレース: v2 でほかのケースだけ変えたら回帰", 0, "作った", ir=traced(),
          extra=v2_trace(lambda f: f["cases"][0]["input"].update(qty=-1)), post=trace_v2("F-003-C2", "回帰")),
     Case("トレース: 形式検査の記録が無い", 1, "F-003-C2.trace.formal: spec/formal/stock-reserve/README.md が無い", ir=traced(),
@@ -2702,8 +2722,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "トレース: v2 でトレースを変えたら変更"),
     ("性能テストにトレースのケースを入れる", '    inputs = [case["input"] for case in plain_cases(feature)]',
      '    inputs = [case.get("input") for case in sorted(feature["cases"], key=case_order)]', "トレース: 性能テストに入れない"),
-    ("本文に口の行を書かない", '"（各呼び出しで 1 回以上。呼ばなければ失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),',
-     '"（各呼び出しで 1 回以上。呼ばなければ失敗）"] if False else []),', "トレース: 作る"),
+    ("本文に口の行を書かない", '"（結果で書かない分岐でも呼ぶ。段を飛ばす・違う名前で呼ぶと失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),',
+     '"（結果で書かない分岐でも呼ぶ。段を飛ばす・違う名前で呼ぶと失敗）"] if False else []),', "トレース: 作る"),
+    ("段を飛ばした呼び出しを通す", '        "        if schedule.strayed:",', '        "        if False:",', "トレース: 一部の段にだけ口を呼ぶ実装で失敗"),
+    ("段に来ずに終わった呼び出しを記録しない", '    "                    self.strayed = (who, name, self.at.get(who))",',
+     '    "                    pass",', "トレース: 段の名前を違える実装で失敗"),
+    ("トレースが呼ぶ入口の型の変化を見ない", "                if key in old and key not in moved and f == old[key] and trace_moved(f, ops_before, ops_now)]",
+     "                if False]", "トレース: v2 で呼ぶ入口の型だけ変えたら変更"),
+    ("本文の口の行に setup・after だけの入口も挙げる", '               + "・".join(f"`{name}`" for name in concurrent_operations(feature))',
+     '               + "・".join(f"`{name}`" for name in traced_operations(feature))', "トレース: 作る"),
     ("トレースの無い機能にも順の強制を足す", '    traced = any(is_trace(case) for case in feature["cases"])',
      "    traced = True", "トレース: 作る"),
     # #876: まとめた本文（--bundle）と依存の連鎖（depends）
