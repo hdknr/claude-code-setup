@@ -10,7 +10,7 @@
 - 実機確認・マージ前の判断: 台帳に線なし（止まる）
 - 版の上げ方: **minor・spec-loop だけ**（main の先端 spec-loop 0.74.0 → 0.75.0。Alloy の確かめのスクリプトを足す——能力の追加。Alloy を `command -v` で探さなくなる壊れる変更を含むので、0.x の決まりどおり minor で上げ、移行を `references/spec-exit.md` に書く）。dev-loop は触らない。
   マージの直前に main が進んでいれば、main の先端の版から同じ上げ方で 1 つ上げ直す（cruise の `parallel.md` の「版とマージの順」）
-- PR は `Fixes #922`・`Refs #916`
+- PR: #937（`Fixes #922`・`Refs #916`）。関門の結果・満たしていない受入基準・振り分けは PR のコメントに書いた
 - 並行する周: #923（spec-loop の版を上げる——版の行が取り合いになりうる。マージの直前の取り込みと上げ直しは親の指示で行う）
 - 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.103.0/skills/cruise/scripts/run-serial.py` 越し
 - 台帳の決まった判断（確認の Issue）: #928（#908 の周）。閉じない
