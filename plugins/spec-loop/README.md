@@ -41,6 +41,7 @@
 | `scripts/autopilot-ledger.py` | autopilot の台帳（版ごとの `.claude/plans/spec-autopilot-v<版>.json`）の読み書き（標準ライブラリと `git`） |
 | `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検（標準ライブラリと `git`） |
 | `scripts/check-tlc.py` | TLC が正本リポジトリの `CLAUDE.md` に書いた呼び方で使えるかの確かめ（標準ライブラリと、書いた呼び方の TLC。下の「前提」） |
+| `scripts/check-alloy.py` | Alloy が正本リポジトリの `CLAUDE.md` に書いた呼び方（`exec`）で使えるかの確かめ（標準ライブラリと、書いた呼び方の Alloy。下の「前提」の「Alloy の用意」） |
 | `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
@@ -241,5 +242,28 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-tlc.py <正本リ�
 
 宣言が古くなっても（後の版で業務フローを対象に選んだ）、`spec-review` が対象を選んだときに TLC を確かめ、無ければ今のとおり判定役を起動せずに訊きます。
 書き方の細部（コードフェンスの中の行は読まない・同じ行を 2 行書かない・値は `しない` だけ）と終了コードは、`scripts/check-tlc.py` の docstring を正とします。
-Alloy（権限・ロールの検査器）は必須にしていません——権限・ロールを対象に選んだときに `spec-review` が確かめます。
+Alloy（権限・ロールの検査器）は必須にしていません——権限・ロールを対象に選んだときに `spec-review` が確かめます（下の「Alloy の用意」）。
 **0.73.0 より前から使っている正本の移行**（`PATH` の `tlc` を使っていた・TLC を入れていない）は、`references/spec-exit.md` の「0.73.0 より前から使っている正本の移行（1 度だけ）」を正とします。
+
+### Alloy の用意
+
+権限・ロールを形式検査の対象に選ぶ正本で要ります（#922）。
+
+1. **Java と、Alloy 6 の jar（`alloy.jar`。[AlloyTools](https://alloytools.org/) の配布物）を置きます**（スキルは入れません）。
+2. **正本リポジトリの根の `CLAUDE.md` に、呼び方を行頭から 1 行で、サブコマンド `exec` まで含めて書きます**——後ろにモデルのファイル（`<名前>.als`）を足して、モデルのディレクトリで走らせる形です:
+
+```text
+Alloy の呼び方: java -jar /opt/alloy/alloy.jar exec
+```
+
+**引数なし・`gui` の形（`java -jar alloy.jar` だけ・`alloy gui`）は書かないでください**——Alloy 6 の jar はどちらでも画面（GUI）を開き、`spec-review` の確かめや Formal Checker がそこで止まります。
+`exec` が無いか `gui` が在る呼び方は、確かめが走らせずに「判定できない」と返します。jar を起動するラッパー（`alloy` など）を `PATH` に置いているなら `Alloy の呼び方: alloy exec` でも構いません。
+`spec-review` の確かめと Formal Checker は、どちらもこの呼び方だけを使います——**`command -v` では探しません**。確かめは `scripts/check-alloy.py` で、呼び方に小さいモデルを 2 つ
+（到達でき反例の出ないものと、わざと反例の出るもの）CLI で検査させて決めます:
+
+```bash
+python3 <spec-loop の base ディレクトリ>/scripts/check-alloy.py <正本リポジトリの根>
+```
+
+書き方の細部と終了コードは `scripts/check-alloy.py` の docstring を正とします。
+**0.75.0 より前から使っている正本の移行**（`PATH` の `alloy` を使っていた・Alloy の呼び方を自由な書き方で書いていた）は、`references/spec-exit.md` の「0.75.0 より前から使っている正本の移行（1 度だけ）」を正とします。

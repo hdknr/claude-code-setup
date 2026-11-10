@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.74.0 -->
-> **このスキルの版: 0.74.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.75.0 -->
+> **このスキルの版: 0.75.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -71,7 +71,7 @@ description: "仕様レビューのループを 1 回分進める。確定した
 | --- | --- |
 | 正本のツリー・仕様の置き場所 | `../../references/tree.md` のとおり |
 | ドキュメントのツール（MkDocs など） | 仕様のファイルを直接編集する |
-| **形式検査の道具**（Z3・TLC・Alloy などの場所と呼び方。**TLC は `TLC の呼び方:` の行**——書き方は `../../scripts/check-tlc.py` の docstring を正とする） | 判定役（Formal Checker）が手元にあるものを確かめて使う。縮退のしかたは `../../agents/formal-checker.md`。**TLC は既定で必須の前提で（`../../README.md` の「前提」）、行が無ければ TLC が無いのと同じ**（`command -v` では探さない）。**要るものが手元にあるかは、判定役を起動する前に確かめる**（手順 3） |
+| **形式検査の道具**（Z3・TLC・Alloy などの場所と呼び方。**TLC は `TLC の呼び方:` の行、Alloy は `Alloy の呼び方:` の行**——書き方は `../../scripts/check-tlc.py`・`../../scripts/check-alloy.py` の docstring を正とする） | 判定役（Formal Checker）が手元にあるものを確かめて使う。縮退のしかたは `../../agents/formal-checker.md`。**TLC は既定で必須の前提で（`../../README.md` の「前提」）、行が無ければ TLC が無いのと同じ**（`command -v` では探さない。Alloy も同じ——必須ではないが、行が無ければ Alloy が無いのと同じ）。**要るものが手元にあるかは、判定役を起動する前に確かめる**（手順 3） |
 | **Domain Checker の照合先**（既存システムのコード・規約の文書） | 照合先なしで渡す（判定役は「照合先が無いので見ていない」と報告する）。**書いてあるなら、読めるかを判定役を起動する前に確かめる**（手順 3） |
 | **範囲の線の上書き**（既定の線から変えたところ・歯止めの N） | 範囲の文書（`spec/scope.md`）を読む。それも無ければ `../../references/spec-scope.md` の既定 |
 | **実行の上限の N・規模の目安の比** | `../../references/spec-exit.md` の「実行の上限と記録」の既定（N=3・比は置かない）。**範囲の文書からは読まない**——変えてよいのは `CLAUDE.md` だけ |
@@ -164,14 +164,16 @@ python3 <このスキルの base ディレクトリ>/../../scripts/diff-versions
    **TLC は `python3 <このスキルの base ディレクトリ>/../../scripts/check-tlc.py <正本の根>` で確かめ、0 なら在る**（1・4 は足りない。出力を足りないものとして示す）——
    正本の `CLAUDE.md` の `TLC の呼び方:` の行の呼び方に小さいモデルを検査させる。**`command -v` では探さない**（Formal Checker も同じ呼び方だけを使う）。
    **`業務フローの形式検査: しない` と宣言した正本でも、業務フローを選んだなら確かめる**（宣言が古い。スクリプトがそう出す）。
-   Alloy は、正本の `CLAUDE.md` に呼び方があればその呼び方で版かヘルプを出し、無ければ `command -v` で探す（Formal Checker が自分で探すのと同じ形）。
+   **Alloy は `python3 <このスキルの base ディレクトリ>/../../scripts/check-alloy.py <正本の根>` で確かめ、0 なら在る**（1・4 は足りない。出力を足りないものとして示す）——
+   正本の `CLAUDE.md` の `Alloy の呼び方:` の行（`exec` まで含めた形）に小さいモデルを CLI で検査させる。**`command -v` では探さない。
+   Alloy を引数なし・`gui` の形で呼ばない**（Alloy 6 の jar はどちらでも画面（GUI）を開き、確かめが止まる。#922）——版やヘルプを出させて確かめる形も取らない。
    **決定表・計算ルールだけなら止めない**——Z3 が無くても Formal Checker が標準ライブラリの総当たりで代用する（`../../agents/formal-checker.md`）。
 
 **入れない・clone しない**——環境を変える操作は利用者がする。足りなければ**判定役を 1 体も起動せず**（Red Team も——1 体だけでは
 抜ける条件を判定できず、2 回目と狭いパスの決まりも 3 体を前提にしている）、足りないもの・それで判定できなくなる条件
 （TLC・Alloy が無ければ条件 4、照合先が読めなければ Domain Checker と Formal Checker の照合と、形式検査の対象の選び方——業務フローが前からあるか）・用意のしかた
 （TLC は Java と TLA+ の `tla2tools.jar` を置き、正本の `CLAUDE.md` に `TLC の呼び方: <コマンド>` の行を書いてもらう——`check-tlc.py` の出力と `../../README.md` の「前提」。
-Alloy は Alloy の jar を置き、場所と呼び方を正本の `CLAUDE.md` に書いてもらう。
+Alloy は Java と Alloy の jar を置き、正本の `CLAUDE.md` に `Alloy の呼び方: <コマンド> exec` の行を書いてもらう——`check-alloy.py` の出力と `../../README.md` の「前提」。
 照合先は `CLAUDE.md` に書いたパスへの clone か、書いた文書を置くこと）を示して、
 `AskUserQuestion` で `用意してから呼び直す`（推奨）／`用意せずに進める` を訊く:
 
@@ -205,7 +207,7 @@ Alloy は Alloy の jar を置き、場所と呼び方を正本の `CLAUDE.md` �
   仕様を減らせる指摘（重複・手段の記述・要求に無い決まり）を、足す指摘より先に挙げよ」**（`../../references/spec-exit.md` の「指摘の重さ」「仕様の規模」）
 - **「リポジトリの追跡対象ファイルを変更するな。副作用のある操作（commit・push・投稿・送信・パッケージの導入）をするな。
   コマンドを実行できなかったら、その旨を明記せよ」**
-- 役ごとに: Domain Checker には照合先と性能の要求の表（重ね合わせた全体の `shared/nfr.csv`。無ければ「無い」と。根拠の無い桁上げを見る）、Formal Checker には形式検査の道具（「はじめに」で拾ったもの。TLC は `TLC の呼び方:` の行の呼び方）と、
+- 役ごとに: Domain Checker には照合先と性能の要求の表（重ね合わせた全体の `shared/nfr.csv`。無ければ「無い」と。根拠の無い桁上げを見る）、Formal Checker には形式検査の道具（「はじめに」で拾ったもの。TLC は `TLC の呼び方:` の行の呼び方、Alloy は `Alloy の呼び方:` の行の呼び方）と、
   **このスキルが選んだ形式検査の対象と選んだ理由、外した対象と外した理由**（`../../references/spec-exit.md` の「改修の性質で選ぶ」。
   業務フローがシステムに前からあるかは要求と照合先から決める）と、**Domain Checker と同じ照合先**と、
   **保存したモデル**——渡す対象ごとに、重ね合わせた全体の `spec/formal/<対象>/`（v1 では `docs/v1/spec/formal/<対象>/`）のパス（無ければ「無い」）と、
