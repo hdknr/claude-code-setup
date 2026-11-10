@@ -670,9 +670,18 @@ def full_runs(ci: str) -> set[str]:
 
 
 # **鍵の行**——行の頭の `名前:` の後ろが空か空白（`run: x` も `steps:` も当たる。`- name: x` は `-` で始まるので当たらない）。
-KEY_RE = re.compile(r"([^\s:#'\"-][^\s:]*):(?:\s|$)")
+# **引用符で囲んだ鍵も鍵である**（`"if": false` は YAML で `if` の鍵——読まないと無条件と数える偽の緑。#931 の 1 パス目）。
+KEY_RE = re.compile(r"""(?:"([^"]*)"|'([^']*)'|([^\s:#'"-][^\s:]*)):(?:\s|$)""")
 # **ジョブを走らなくする、ジョブ単位の鍵**（#931）——値に依らない。
 GATE_KEYS = ("if", "needs")
+
+
+def key_of(text: str) -> str | None:
+    """行の頭の鍵の名前（引用符は外す）。鍵の行でなければ `None`。"""
+    m = KEY_RE.match(text)
+    if not m:
+        return None
+    return next(g for g in m.groups() if g is not None)
 
 
 def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
@@ -711,9 +720,9 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
         if not code.strip():
             continue
         indent = len(code) - len(code.lstrip(" "))
-        head = KEY_RE.match(code.strip())
+        head = key_of(code.strip())
         if indent == 0:
-            in_jobs = bool(head) and head.group(1) == "jobs"
+            in_jobs = head == "jobs"
             job_indent = key_indent = None
             job = key = None
         elif in_jobs:
@@ -723,7 +732,8 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
                 in_jobs = False  # 見出しの段より浅い——ここから先はジョブの外
                 job = key = None
             elif indent == job_indent:
-                job = f"{len(keys)}:{head.group(1) if head else code.strip()}"
+                # **ファイルを繋いでも、同じ名前のジョブを別のジョブとして数える**（連番を付ける）
+                job = f"{len(keys)}:{head if head is not None else code.strip()}"
                 keys[job] = []
                 key_indent = None
                 key = None
@@ -731,7 +741,7 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
                 if key_indent is None:
                     key_indent = indent
                 if indent <= key_indent:
-                    key = head.group(1) if (head and indent == key_indent) else None
+                    key = head if (head is not None and indent == key_indent) else None
                     if key is not None:
                         keys[job].append(key)
         names = set(NAME_RE.findall(code)) if "run:" in code else set()
@@ -1073,6 +1083,33 @@ jobs:
   shallow:
     steps:
       - run: python3 scripts/job-shallow.py
+name: four
+jobs:
+  twin:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-twin-gated.py
+  flat:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-flat.py
+  deeper:
+      "if": false
+      runs-on: ubuntu-latest
+      steps:
+        - run: python3 scripts/job-deeper.py
+  "quoted":
+    runs-on: ubuntu-latest
+    'needs': [flat]
+    steps:
+      - run: python3 scripts/job-quoted-needs.py
+name: five
+jobs:
+  twin:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-twin-plain.py
 """
 
 
@@ -1091,7 +1128,7 @@ def scan_contract(scan, full_of, gate_of) -> list[tuple[str, bool]]:
         # #931: ジョブの位置（陽性側も取る——無条件の位置を「無条件」に数える）
         ("無条件のジョブの `steps:` の下を無条件に数える（陽性対照）",
          {"job-plain.py", "job-step-if.py", "job-before-deep.py", "job-after-keyrun.py",
-          "job-second-file.py", "job-wide.py"} <= ok),
+          "job-second-file.py", "job-wide.py", "job-flat.py", "job-twin-plain.py"} <= ok),
         ("ステップ単位の `if:` は見ない（守らない）", "job-step-if.py" in ok),
         ("ジョブの `if:` の下を条件つきに数える", "job-if.py" in gated and "ジョブの `if:`" in why["job-if.py"]),
         ("`steps:` の後ろの `needs:` も効かせる", "job-needs-after.py" in gated
@@ -1103,6 +1140,14 @@ def scan_contract(scan, full_of, gate_of) -> list[tuple[str, bool]]:
         ("`jobs:` の外の `run:` を条件つきに数える",
          {"job-under-on.py", "job-toplevel.py"} <= gated and "ジョブの外" in why["job-toplevel.py"]),
         ("見出しの段より浅い行から先をジョブの外に数える", "ジョブの外" in why.get("job-shallow.py", set())),
+        # #931 の 1 パス目（V1・V4）
+        ("引用符つきの鍵（`\"if\":`・`\'needs\':`）も鍵と読む",
+         "ジョブの `if:`" in why.get("job-deeper.py", set())
+         and "ジョブの `needs:`" in why.get("job-quoted-needs.py", set())),
+        ("前のジョブより深い段の鍵も、そのジョブの鍵と読む（ジョブごとに鍵の段を決め直す）",
+         "ジョブの `if:`" in why.get("job-deeper.py", set()) and "job-deeper.py" not in ok),
+        ("別のファイルの同じ名前のジョブを、別のジョブとして数える",
+         "ジョブの `if:`" in why.get("job-twin-gated.py", set()) and "job-twin-plain.py" not in why),
         ("試料の名前を全部どちらかに分ける（落とさない）",
          len(ok | set(why)) == len(set(NAME_RE.findall(SAMPLE_JOBS)))),
     ] + [
@@ -1210,11 +1255,19 @@ SCAN_MUTANTS = {
         '            if k != "steps":', '            if False:'),
     "鍵の重なりを見ない": ("            if dup:", "            if False:"),
     "最上位の鍵で区切らない": (
-        '            in_jobs = bool(head) and head.group(1) == "jobs"',
-        '            in_jobs = in_jobs or (bool(head) and head.group(1) == "jobs")'),
+        '            in_jobs = head == "jobs"',
+        '            in_jobs = in_jobs or head == "jobs"'),
     "見出しの段より浅い行で区切らない": (
         "                in_jobs = False  # 見出しの段より浅い", "                pass  # 見出しの段より浅い"),
     "鍵の段より深い行も鍵と読む": ("                if indent <= key_indent:", "                if True:"),
+    # #931 の 1 パス目（V1・V4）
+    "引用符つきの鍵を読まない": (
+        '''KEY_RE = re.compile(r"""(?:"([^"]*)"|\'([^\']*)\'|([^\\s:#\'"-][^\\s:]*)):(?:\\s|$)""")''',
+        '''KEY_RE = re.compile(r"""([^\\s:#\'"-][^\\s:]*):(?:\\s|$)""")'''),
+    "ジョブの識別子に連番を付けない": (
+        '                job = f"{len(keys)}:{head if', '                job = f"{head if'),
+    "ジョブごとに鍵の段を戻さない": (
+        "                keys[job] = []\n                key_indent = None\n", "                keys[job] = []\n"),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
