@@ -17,7 +17,7 @@ spec-loop 全体の流れは [spec-loop の流れと Red テスト](spec-loop.md
 
 | 部品 | 置き場所（spec-loop の根から） | 役割 |
 | --- | --- | --- |
-| 入口 | `skills/autopilot/SKILL.md` | `/spec-loop:autopilot <版> [--lines]`。台帳が無ければ線を確かめて権限を点検し、在れば次の 1 単位だけを進める |
+| 入口 | `skills/autopilot/SKILL.md` | `/spec-loop:autopilot <版> [--lines]`。台帳が無ければ線を確かめて権限を点検し、在って `status` が `running` なら次の 1 単位だけを進める（`stopped`・`done` なら何もせずに終える） |
 | 台帳 | `scripts/autopilot-ledger.py` | 版ごとの台帳（`phase`・周・段と、状態の欄 `status`）の読み書き。外側のループが見る `status`・`progress` もここ |
 | 線と権限の点検 | `scripts/autopilot-check.py` | 線の検査（**線の項目と値の一覧はここが正**）と、線から決まる周で使う操作が非対話の権限で通るかの点検 |
 | 外側のループ | `scripts/autopilot-loop.py` | `claude -p` を繰り返し起動し、止まったら理由を出して通知する |
@@ -48,12 +48,11 @@ spec-loop 全体の流れは [spec-loop の流れと Red テスト](spec-loop.md
 /spec-loop:autopilot <版> --lines    # 線を確かめ直す（プラグインを更新したとき・設定や正本の CLAUDE.md を変えたときも）
 ```
 
-- **線は 4 項目です**——`上限`（spec-review の上限に達したときに続けてよい周の番号）・`判断が要る`（判定役が出した `判断が要る` の質問を、推奨で暫定に採るか止まるか）・
-  `commit`（commit・PR・マージをどこまでするか）・`止まる地点`（仕様レビューを抜けたら終えるか、feasibility の後まで回すか）。
+- **線は、利用者が居れば訊く場面**（上限に達したときに続けるか・判定役が判断を求めたときに推奨で暫定に採るか・commit とマージをどこまでするか・どこで止まるか、など）**を、起動時の答えで置き換えるものです。**
   **項目と値の一覧は `autopilot-check.py` の docstring の「線」を、値ごとに各起動がすることは入口のスキル本文の「2. 起動時の確認」を正とします。**
   確かめた線は、出所（利用者の確認と日時）と一緒に台帳に残ります。
 - **線を書いたら、周で使う操作の許可を点検します**（`autopilot-check.py check <版>`。[#790](https://github.com/hdknr/claude-code-setup/issues/790) では、マージが自動モードの権限で拒まれて止まり、起動前にそれを知る手段がありませんでした）。
-  点検する操作は線で決まります（spec-loop のスクリプトは線に依らず、`commit` の値に応じて git と PR の操作）。
+  点検する操作は線で決まります（spec-loop のスクリプト・git と PR の操作のどれを点検するかは、線の値で変わります。一覧は `autopilot-check.py` の docstring の「点検する操作」）。
   **止まりうる操作**（自動モードの分類器・worktree 隔離のガードは settings に現れません）は、操作ごとに「許可を足す／`commit` の線を下げる／このまま回して、拒まれたらその段で止まる」から選びます。
   **点検は読むだけで、settings を書き換えません**——許可を足すのは利用者です。
 - **点検には TLC の前提も入ります**（下の「4. 前提」）。
@@ -81,24 +80,24 @@ python3 <spec-loop の根>/scripts/autopilot-loop.py <版> \
 - **起動の前に毎回 `autopilot-ledger.py status <版>` を見て、`running`（終了コード 0）のときだけ `claude -p` を起こします。**
   `stopped`・`done`・判定できない台帳では起こさずに止まります。
 - **1 回の起動で前進したかは `autopilot-ledger.py progress <版>`**（`phase`・周・段・`commit` だけの 1 行。時刻と止まった理由を含みません）**を前後で比べます。**
-- **止まるのは**——`stopped`・`done`・台帳を判定できない・前進なしが続いた（`--max-stalls`）・起動の総数の上限（`--max-launches`）・
-  同じ状態からの起動の上限（`--max-same-state`。段を行き来するだけの空回り）・`claude` が 0 以外で終わった・使用量の上限の解除が遠すぎる（`--max-limit-wait`）とき。
+- **止まるのは**——`stopped`・`done`・台帳を判定できない・前進なしが続いた・起動の総数の上限・
+  同じ状態からの起動の上限（段を行き来するだけの空回り）・`claude` が 0 以外で終わった・使用量の上限の解除が遠すぎるとき。
   止まると、理由を出力の最後の行に出し、macOS なら通知します（`osascript`）。終了コードで理由を分けます。
-- **使用量の上限に当たったら、`claude` の失敗にせず、解除の時刻まで待ってから起こし直します**（時刻が読めなければ `--limit-wait` 秒）。
-  上限で終わった起動は、前進なし・同じ状態の回数には数えません（起動の総数には数えます）。
+- **使用量の上限に当たったら、`claude` の失敗にせず、解除の時刻まで待ってから起こし直します。**
 - 起こす `claude` には、非対話の起動の決まり（`status` が `running` でなければ何もせずに終える・進めるのは次の 1 単位まで）を `--append-system-prompt` で渡し、
   `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置きます（cruise の外側のループと同じ。[#633](https://github.com/hdknr/claude-code-setup/issues/633)）。
 - 許可モード・モデルなどは `--` の後ろに足します。**`--permission-mode`・`--allowedTools` で起動するなら、起動時の点検には映りません**——
   別の `--settings` で起動するなら、そのファイルを点検に `--flag-settings` で渡します（上の「2. 起動時の確認」）。
 
-**止まる条件・既定の回数・終了コード・使用量の上限の読み方は、`autopilot-loop.py` の docstring を正とします。**
+**止まる条件ごとのオプション・既定の回数・終了コード・使用量の上限の読み方と数え方は、`autopilot-loop.py` の docstring を正とします。**
 dev-loop の cruise の外側のループ（[オートクルーズの「外から繰り返し起動するとき」](dev-loop-cruise.md#outer-loop)）と同じ形ですが、
 同じ状態からの起動の上限と使用量の上限の待ちは autopilot のループだけが持ちます。
 
 ## 4. 前提
 
 - **TLC**（[#912](https://github.com/hdknr/claude-code-setup/issues/912)）——TLC は既定で必須の前提です。Java と `tla2tools.jar` を置き、正本リポジトリの `CLAUDE.md` に
-  `TLC の呼び方: <コマンド>` の行を書きます。業務フローを一度も形式検査しない案件は `業務フローの形式検査: しない` と書けば外せます。
+  `TLC の呼び方: <コマンド>` の行を書きます。業務フローを一度も形式検査しない案件は `業務フローの形式検査: しない` と書けば点検から外せます
+  （宣言しても、`spec-review` が業務フローを対象に選んだ回は TLC を確かめ、無ければその回で止まります——[spec-loop の流れの「形式検査」](spec-loop.md#formal) の表）。
   起動時の点検で確かめ、**各起動は Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めでも確かめて、使えなければその段に入らずに止まります**
   （`commit` の段と feasibility では確かめません）。書き方は
   [プラグインの README の「前提」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/README.md#前提)と `check-tlc.py` の docstring を、
@@ -117,7 +116,8 @@ dev-loop の cruise の外側のループ（[オートクルーズの「外か�
   全体は `autopilot-ledger.py show <版>` です。外側のループの止まった理由は、ループの出力の最後の行と通知にあります。
 - **再開は利用者がします**——`next` に書かれたこと（レビュー会で回答をもらう・PR をマージする・許可を足す・TLC を用意する、など）を済ませたら、
   `autopilot-ledger.py set <版> status=running reason= next=` で戻し、外側のループを起動し直します。**autopilot は自分で `stopped` を戻しません。**
-- **線を変えるなら**、対話のセッションで `/spec-loop:autopilot <版> --lines` を起動します（線を書き直して点検し直します。`status` は戻しません）。
+- **線を変えるなら**、対話のセッションで `/spec-loop:autopilot <版> --lines` を起動します（線を書き直して点検し直します。`status` は戻しません。
+  `done` の台帳では何もしません——台帳の状態ごとの振る舞いは入口のスキル本文の「1. 台帳を見る」）。
 - **ログ**——外側のループは起動ごとの標準出力と標準エラーを、台帳の隣の `.claude/plans/spec-autopilot-v<版>-loop/` に残します（消しません。起動ごとに増えます）。
 - **周の記録**——振り分けの表（`triage`）と狭いパスの前に控えた本文（`held`）は `.claude/plans/spec-autopilot-v<版>-c<周>-…` に、PR は `commit` の線に応じて作られます。
   各起動の報告には、済ませた単位・線で決めたこと（上限で続けた・暫定で採った Q&A の行・作った PR）・止まった理由が出ます。
