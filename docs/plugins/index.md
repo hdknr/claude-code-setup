@@ -592,6 +592,7 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
     dev-loop への引き渡し **`scaffold`** の 5 本です（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
     ほかに、仕様レビューと実現性・コストのループを利用者の不在のあいだに 1 単位ずつ回す入口 **`autopilot`** があります
     （[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/autopilot/SKILL.md)。#849）。
+    起動の前の確認・外側のループ・前提・止まったあとの見方は [spec-loop の autopilot](spec-loop-autopilot.md) にまとめています。
     どのスキルも共有する**データの決まり**（正本リポジトリのツリー・Q&A 表の列・スケジュールと見積りの列・
     サインオフのタグの命名・バージョンアップの版の重ね合わせ）と、それを検査するスクリプトも入っています
     （版の構成と、旧い構成からの移し方は下の[「正本リポジトリの版と凍結」](#spec-loop-versions)）。
