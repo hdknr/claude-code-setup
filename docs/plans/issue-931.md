@@ -84,7 +84,9 @@
   - Verifier（`dev-loop:dev-loop-verifier`・sonnet）2 パス目: **反証 3 件**（下の 2 パス目の採否の表 VA〜VC）。`check-all.py` 69/69・4 つの `mutation-claim` と陽性対照を確かめた。報告は再び親に通知が届かず、トランスクリプトから読んだ
   - `/code-review`（high）2 パス目: **指摘 9 件**（下の表 R1〜R9）
   - 2 パス目の指摘対応の起点（狭いパスの起点）: `2db1b1d`（指摘対応を始める直前の HEAD）
-  - 2 パス目の指摘対応の終点: 未
+  - 2 パス目の指摘対応の終点: `673cd2e`（VA——`KEY_RE` がコロンの前の空白を許す、VB——試料 `spaced`・`gap`・`odd`・`compact`・`x-jobs`・コメントアウトしたステップ・ラベルだけの名前と `SCAN_MUTANTS` 8 件、R6——docstring の守らないを実装に合わせる。壊した判別が例外で落ちたら契約が破れたと数える）。
+    `check-all.py`（run-serial 越し）69/69 緑。`--part scan` の変異 34 件すべて捕まる
+  - 狭いパス: 報告待ち（`git diff 2db1b1d 673cd2e` の `scripts/test-check-all.py` に当てる）
 - 交絡を潰した手順: 実験なし（変異と試料の当ては `check-mutation-claims.py`・`--part scan` が陽性対照つきで回す）
 
 ## 既知の限界・決着済みの論点
