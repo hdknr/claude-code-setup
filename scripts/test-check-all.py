@@ -59,6 +59,7 @@
   鍵が重なっていないこと。**ジョブを SKIPPED にしても `run:` の行は残るので、上の検査は緑のままで、`merge-pr.py` は SKIPPED を通過と読む**
   （#930 の `/code-review` が複製で示した）。**ジョブの見出しの字下げを崩した形**（深くして前のジョブの鍵になる・浅くして `jobs:` の外に出る）も赤にする。
   **「そもそも無い」「コメントアウト」とは別の行で、理由（ジョブの `if:`・`needs:`・`steps:` の外・ジョブの外・鍵の重なり）を名指しする。**
+  **コンパクトな列**（`steps:` と同じ字下げの `- run:`）も `steps:` の下と読む（#944。#931 では偽の赤だった）。
 
 守らない:
 
@@ -66,7 +67,7 @@
   **ステップの `if:` 条件・`continue-on-error`・ステップ内での失敗握り潰し**は
   見ていない。**言えるのは「走る形で書かれている」まで。** **ジョブ単位の `if:`・`needs:` は見る**（上の #931）が、
   **YAML のアンカー（`&`・`*`・`<<`）・複合の鍵・フロー形式のジョブ・再利用のワークフロー（`uses:` のジョブ）**は行の読み方の外にあり、
-  **タブで始まる行・コンパクトな列（`steps:` と同じ字下げの `- `）・必ず走る `if:`** は偽の赤になる（`gated_runs` の docstring）。
+  **タブで始まる行・必ず走る `if:`** は偽の赤になる（`gated_runs` の docstring）。
 - **コメントの側に `run:` が無い無効化は、コメント側として拾えない。**
   3 つの形がある——**(a)** `# run:` の次の行に `#   python3 scripts/x.py` と割った形、
   **(b)** コメントアウトした `run: |` のブロック、
@@ -673,6 +674,8 @@ def full_runs(ci: str) -> set[str]:
 # **引用符で囲んだ鍵も、コロンの前に空白を置いた鍵も鍵である**（`"if": false`・`if : false` は YAML で `if` の鍵
 # ——読まないと無条件と数える偽の緑。#931 の 1・2 パス目）。
 KEY_RE = re.compile(r"""(?:"([^"]*)"|'([^']*)'|([^\s:#'"-][^\s:]*))\s*:(?:\s|$)""")
+# **列の項の行**——`- ` か、`-` だけの行（#944。コンパクトな列を見分ける）。`-x` や `--` は列の項ではない。
+SEQ_RE = re.compile(r"-(?:\s|$)")
 # **ジョブを走らなくする、ジョブ単位の鍵**（#931）——値に依らない。
 GATE_KEYS = ("if", "needs")
 
@@ -706,12 +709,14 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
     - 空行とコメントだけの行は飛ばす（`split_comment` の生きている部分で決める）。ブロックの本文（`run: |` の下）は鍵の段より深いので、鍵とは読まない。
 
     - **鍵は引用符で囲んでも、コロンの前に空白を置いても鍵と読む**（`"if": false`・`if : false`。#931 の 1・2 パス目）。
+    - **鍵の段と同じ字下げの `- ` で始まる行（コンパクトな列）は、前の鍵の値の続きと読む**（#944）——YAML のブロックの列は親の鍵と
+      同じ字下げに置ける（`steps:` の次の行の `- run:`）。鍵を読み直さず、鍵の一覧にも足さない（`needs:` の下の `- plain` を重なりに数えない）。
+      **前の鍵が `steps` でなければ `steps:` の外のまま**で、**鍵の段より浅い `- `** は今までどおり鍵の段でない行と読む。
 
     **守らないもの**: ステップ単位の `if:`（PR 限定の歯止めが正しく使っている）・`continue-on-error`・ジョブの `strategy`・
     ワークフローの `on:`（モジュールの docstring の「守らない」）・
     YAML のアンカー（`&`・`*`・`<<`）・複合の鍵（`? if`）・フロー形式で書いたジョブ（`jobs: {a: …}`）・再利用のワークフロー（`uses:` のジョブ）。
     **偽の赤になる書き方**——**タブで始まる行**は字下げ 0 の最上位と読み、そこから先をジョブの外に数える（YAML はタブの字下げを許さない）。
-    **コンパクトな列**（`steps:` と同じ字下げの `- run:`）は `steps:` の外と読む（今の yml はこの書き方を使わない）。
     **値を読まない**ので、必ず走る `if: always()` も、`needs:` も、ジョブ単位にあれば赤にする。
     """
     records: list[tuple[set[str], str | None, str | None]] = []
@@ -746,7 +751,9 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
             elif job is not None:
                 if key_indent is None:
                     key_indent = indent
-                if indent <= key_indent:
+                if indent == key_indent and SEQ_RE.match(code.lstrip(" ")):
+                    pass  # コンパクトな列——前の鍵の値の続き（#944）
+                elif indent <= key_indent:
                     key = head if (head is not None and indent == key_indent) else None
                     if key is not None:
                         keys[job].append(key)
@@ -1138,7 +1145,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - run: python3 scripts/job-compact-a.py
-    - run: python3 scripts/job-compact-b.py
+    - name: 名前の次の行の run
+      run: python3 scripts/job-compact-b.py
+    -
+      run: python3 scripts/job-compact-dash.py
+  compact-needs:
+    runs-on: ubuntu-latest
+    steps:
+    - run: python3 scripts/job-compact-needs.py
+    needs:
+    - compact
+  compact-gated:
+    runs-on: ubuntu-latest
+    steps:
+    - run: python3 scripts/job-compact-gated.py
+    if: false
+  compact-other:
+    runs-on: ubuntu-latest
+    services:
+    - run: python3 scripts/job-compact-services.py
+    steps:
+    - run: python3 scripts/job-compact-after-services.py
+  compact-shallow:
+      runs-on: ubuntu-latest
+      steps:
+    - run: python3 scripts/job-compact-shallow.py
+    - run: python3 scripts/job-compact-shallow-2.py
+  dash-key:
+    runs-on: ubuntu-latest
+    steps:
+    - run: python3 scripts/job-before-dash-key.py
+    -weird:
+      run: python3 scripts/job-dash-key.py
 x-jobs:
   build:
     steps:
@@ -1192,9 +1230,21 @@ def scan_contract(scan, full_of, gate_of) -> list[tuple[str, bool]]:
         ("最上位の鍵は `jobs` に完全に一致するときだけジョブにする",
          "ジョブの外" in why.get("job-under-jobsish.py", set()) and "job-under-jobsish.py" not in ok),
         ("鍵の段でない行を鍵と読まない", "job-odd.py" in gated),
-        ("コンパクトな列（`steps:` と同じ字下げの `- `）は `steps:` の外と読む（守らない——偽の赤）",
-         {"job-compact-a.py", "job-compact-b.py"} <= gated
-         and why["job-compact-a.py"] == {"`steps:` の外（None）"}),
+        # #944: コンパクトな列（`steps:` と同じ字下げの `- `）
+        ("コンパクトな列を `steps:` の下と読む（`- run:`・名前の次の行・`-` だけの行）",
+         {"job-compact-a.py", "job-compact-b.py", "job-compact-dash.py",
+          "job-compact-after-services.py"} <= ok
+         and not {"job-compact-a.py", "job-compact-b.py", "job-compact-dash.py"} & set(why)),
+        ("コンパクトな列で書いた `needs:` を効かせ、鍵の重なりに数えない",
+         why.get("job-compact-needs.py") == {"ジョブの `needs:`"}),
+        ("コンパクトな列の後ろのジョブの `if:` を効かせる",
+         why.get("job-compact-gated.py") == {"ジョブの `if:`"}),
+        ("`steps:` でない鍵の下のコンパクトな列は `steps:` の外のまま",
+         why.get("job-compact-services.py") == {"`steps:` の外（services）"}),
+        ("鍵の段より浅い `- ` は鍵の段でない（`steps:` の外）",
+         why.get("job-compact-shallow.py") == {"`steps:` の外（None）"}),
+        ("`-` で始まる鍵（`-weird:`）は列の項と読まない（`steps:` の外）",
+         "job-before-dash-key.py" in ok and why.get("job-dash-key.py") == {"`steps:` の外（None）"}),
     ] + [
         ("生きたステップを拾う（陽性対照）", "check-live.py" in live),
         ("コメントアウトされたステップを、生きている側に数えない",
@@ -1304,7 +1354,7 @@ SCAN_MUTANTS = {
         '            in_jobs = in_jobs or head == "jobs"'),
     "見出しの段より浅い行で区切らない": (
         "                in_jobs = False  # 見出しの段より浅い", "                pass  # 見出しの段より浅い"),
-    "鍵の段より深い行も鍵と読む": ("                if indent <= key_indent:", "                if True:"),
+    "鍵の段より深い行も鍵と読む": ("                elif indent <= key_indent:", "                elif True:"),
     # #931 の 1 パス目（V1・V4）
     "引用符つきの鍵を読まない": (
         '''KEY_RE = re.compile(r"""(?:"([^"]*)"|\'([^\']*)\'|([^\\s:#\'"-][^\\s:]*))\\s*:(?:\\s|$)""")''',
@@ -1329,6 +1379,21 @@ SCAN_MUTANTS = {
         '                job = f"{len(keys)}:{head if', '                job = f"{head if'),
     "ジョブごとに鍵の段を戻さない": (
         "                keys[job] = []\n                key_indent = None\n", "                keys[job] = []\n"),
+    # #944: コンパクトな列
+    "コンパクトな列を `steps:` の外と読む（#944 の前に戻す）": (
+        '                if indent == key_indent and SEQ_RE.match(code.lstrip(" ")):',
+        '                if False:'),
+    "コンパクトな列を `steps` と決め打ちする": (
+        "                    pass  # コンパクトな列——前の鍵の値の続き（#944）",
+        '                    key = "steps"  # コンパクトな列——前の鍵の値の続き（#944）'),
+    "コンパクトな列を字下げに依らず続きと読む": (
+        '                if indent == key_indent and SEQ_RE.match(code.lstrip(" ")):',
+        '                if indent <= key_indent and SEQ_RE.match(code.lstrip(" ")):'),
+    "コンパクトな列を鍵の一覧に足す": (
+        "                    pass  # コンパクトな列——前の鍵の値の続き（#944）",
+        "                    keys[job].append(key)  # コンパクトな列——前の鍵の値の続き（#944）"),
+    "`-` だけの行を列の項と読まない": ('SEQ_RE = re.compile(r"-(?:\\s|$)")', 'SEQ_RE = re.compile(r"-\\s")'),
+    "`-x` も列の項と読む": ('SEQ_RE = re.compile(r"-(?:\\s|$)")', 'SEQ_RE = re.compile(r"-")'),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
