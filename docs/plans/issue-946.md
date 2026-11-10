@@ -75,8 +75,8 @@
 ## 関門の進捗（再開点）
 
 - 割り目（手順 4）: 割らない（cruise の周）
-- 1 パス目: 未着手
-- 実験: 未着手
+- 1 パス目: Verifier（`dev-loop:dev-loop-verifier`、sonnet）と `/code-review`（high）に受入基準 1〜6・既知の限界を渡す。起点 `e2407ac7`（1 パス目の関門に渡した時点の HEAD）
+- 実験: 実物の 3 つの yml に `trigger_reasons` を当てた——`docs.yml`・`plugins.yml` は空、`release.yml` は `pull_request`・`push` で起動しない（収録したスクリプトを回していないので赤にならない）。陽性対照は `mutation-claim`（`plugins.yml` の `pull_request:` を外す・`paths:` を足す）で関門に当てさせる
 
 ## 既知の限界・決着済みの論点
 
