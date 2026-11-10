@@ -80,7 +80,7 @@
   - `/code-review`: 指摘 8 件——採否は下の表。差し戻し: あり（手順 4 で直した。`6cd5a64c`）
 - 1 パス目の指摘対応: `6cd5a64c`（`git diff e2407ac7` は計画を除いて `scripts/test-check-all.py` 1 ファイル +91/−21——0 行ではないので 2 パス目を回す）
 - 割り目（手順 6）: 割らない（cruise の周）。残っているのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
-- 2 パス目の指摘対応の起点（狭いパス用）: `6cd5a64c` ではなく、2 パス目の関門に渡す時点の HEAD（計画のコミットの後）を下に書く
+- 2 パス目: Verifier と `/code-review` に受入基準 1〜6・既知の限界（1 パス目の採否の表を含む）を渡す。2 パス目の指摘対応の起点（狭いパス用）: `0341ef76`
 - 実験: 実物の 3 つの yml に `trigger_reasons` を当てた——`docs.yml`・`plugins.yml` は空、`release.yml` は `pull_request`・`push` で起動しない（収録したスクリプトを回していないので赤にならない）。陽性対照は `mutation-claim`（`plugins.yml` の `pull_request:` を外す・`paths:` を足す）で、両関門が退避した複製で赤を確かめた
 
 ## 既知の限界・決着済みの論点
