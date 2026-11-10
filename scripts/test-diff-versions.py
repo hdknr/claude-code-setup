@@ -11,7 +11,8 @@
 2. **同じ中身を置き直しただけのものは変更に数えない。**
 3. **v1 は前の版が無いので全部が追加。**
 4. **比べる相手は直前の版の時点の全体**——3 版あるとき、v3 の差分に v2 の変更・削除は出ず、`--version 2` の差分に v3 は出ない。
-5. **重ねないもの（`feasibility/`・`proposal/`・版でない名前）は差分に出ない。**
+5. **重ねないもの（`feasibility/`・`proposal/`・版でない名前）は差分に出ない。** **形式検査のモデル（`spec/formal/`）は重なるが、
+   追加・変更・削除のどれも出ない**（#908。接頭辞だけ同じ `spec/formalx.md` は出る）。
 6. **比べられないときは比べない**——その版が無い（2。文言は `--version`）・決まりに反する（1）・`docs` が無い（2）。
 7. **同じ入力から同じ出力。**
    **1 変更は 1 行**——セルの改行は `\\n` と書き、偽の変更行を作らない（件数と一覧の行数が食い違わない）。
@@ -84,6 +85,15 @@ Q&A（内部）: 追加 0・変更 0・削除 0
   追加 requirements/d.md
   削除 requirements/c.md（理由: 統合した）
 """
+# 形式検査のモデル: v1 に 2 つ置き、v2 で 1 つを変え・1 つを消し・1 つを足す。spec/formalx.md はモデルではない（接頭辞だけ同じ）
+FORMAL_TREE = {
+    "v1/spec/formal/order/Order.tla": "---- MODULE Order ----\n====\n",
+    "v1/spec/formal/stock/Stock.tla": "---- MODULE Stock ----\n====\n",
+    "v2/spec/formal/order/Order.tla": "---- MODULE Order ----\nVARIABLE x\n====\n",
+    "v2/spec/formal/pay/README.md": "記録\n",
+    "v2/spec/formalx.md": "x\n",
+    "v2/removed.csv": V2["v2/removed.csv"] + "ファイル,spec/formal/stock/Stock.tla,組み直した\n",
+}
 V3 = {
     # v3 は v2 で変えた b.md をさらに変え、v2 で足した F-003 を消す
     "v3/requirements/b.md": "b3\n",
@@ -123,6 +133,12 @@ CASES: list[tuple[str, dict | None, list[str], Callable[[Result], bool]]] = [
     ("重ねないものは差分に出ない", {**V1, **V2}, [],
      lambda r: r.code == 0 and "feasibility" not in r.output and "proposal" not in r.output and "index.md" not in r.output),
     ("同じ入力から同じ出力", {**V1, **V2, **V3}, [], lambda r: r.code == 0 and r.output == r.again),
+    # 形式検査のモデル（spec/formal/）は仕様から書き起こした写し——追加・変更・削除のどれも出ない（#908）。
+    # 同じ試料のほかのファイルの変化（V2_EXPECTED）は出る（陽性対照）。接頭辞だけ同じ spec/formalx.md は出る
+    ("形式検査のモデルは差分に出ない", {**V1, **V2, **FORMAL_TREE}, [],
+     lambda r: r.code == 0 and r.output == V2_EXPECTED.replace(
+         "ファイル: 追加 1・変更 1・削除 1\n", "ファイル: 追加 2・変更 1・削除 1\n").replace(
+         "  追加 requirements/d.md\n", "  追加 requirements/d.md\n  追加 spec/formalx.md\n")),
     ("その版が無いと比べない", {**V1, **V2}, ["--version", "3"],
      lambda r: r.code == 2 and "--version 3: v3 が無い" in r.output and "--upto" not in r.output and "比べていない" in r.output),
     ("決まりに反すると比べない", {**V1, **V2, "v2/removed.csv": "種類,対象,理由\n機能,F-999,誤記\n"}, [],
@@ -169,8 +185,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "3 種の追加・変更・削除"),
     ("理由を v1 から読む", "removal_reasons(versions[number - 1][1])", "removal_reasons(versions[0][1])",
      "3 種の追加・変更・削除"),
-    ("ファイルを比べない", "    diff.changes[merge_versions.KIND_FILE] = compare_maps(dict(sorted(before.files.items())),\n",
-     "    diff.changes[merge_versions.KIND_FILE] = [] or compare_maps({},\n", "3 種の追加・変更・削除"),
+    ("ファイルを比べない", "    diff.changes[merge_versions.KIND_FILE] = compare_maps(compared_files(before), compared_files(now))",
+     "    diff.changes[merge_versions.KIND_FILE] = [] or compare_maps({}, {})", "3 種の追加・変更・削除"),
+    ("形式検査のモデルも比べる", "if not merge_versions.is_formal(path)}", "if True}", "形式検査のモデルは差分に出ない"),
     ("範囲外の文言を言い直さない", 'str(e).replace("--upto", "--version", 1)', "str(e)", "その版が無いと比べない"),
     ("改行をそのまま出す", 'return text.replace("\\r\\n", "\\n")', 'return text\n    return text.replace("\\r\\n", "\\n")',
      "セルの改行は 1 行に留める"),

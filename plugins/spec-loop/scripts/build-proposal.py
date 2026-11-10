@@ -35,6 +35,8 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **書き出しが今のソースと合わない図**（ソース `X.drawio`・`X.bpmn` の隣の `X.svg` に `render-diagrams.py` の印が無いか、印の指紋がソースと違う。判定は
   `render-diagrams.py` の関数を読み込む。改行の変換で作業ツリーが CRLF でも合うと見る）**も載せ、仕様書にそう名指しする**（#902。終了コードは変えない）。
   `X.drawio.svg` は `X.drawio` の書き出しと数えるが、`X.bpmn.svg` は `X.bpmn` の書き出しと数えず、隣に `X.bpmn` があれば図としても載せない。載せるものと置き場所の正は `references/tree.md` の「仕様書」。
+  **形式検査のモデル（`spec/formal/`）は、規模・図・「仕様と要求のファイル」のどれにも入れない**——仕様から書き起こした写し（判別は `merge-versions.py` の `is_formal`。
+  `references/tree.md` の「形式検査のモデル」。#908）。「前の版からの変更」にも出ない（`diff-versions.py` が比べない）。
 - **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
 - **始める前に、前に作った出力を消し、全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
@@ -496,7 +498,7 @@ def figures_of(whole) -> tuple[list[str], list[str], list[str]]:
     `X.bpmn.svg` は BPMN の書き出しと数えず、隣に `X.bpmn` があれば図としても載せない（BPMN にその形は無い——手で作った書き出しなので、
     `X.bpmn` を「載せていない」と名指しするだけにし、載せつつ載せていないと言う矛盾を作らない。`X.bpmn` の無い `X.bpmn.svg` はふつうの図として載る）。
     ソースの消えた印つきの `.svg`（`render-diagrams.py --check` の「ソースが無い」）は見ない。"""
-    paths = sorted(p for p in whole.files if p.startswith(FIGURE_DIRS))
+    paths = sorted(p for p in whole.files if p.startswith(FIGURE_DIRS) and not signoff.versions.is_formal(p))
     bpmn_sources = {p.lower() for p in paths if p.lower().endswith(".bpmn")}
     svgs = [p for p in paths if p.lower().endswith(".svg") and not (p.lower().endswith(".bpmn.svg") and p[:-4].lower() in bpmn_sources)]
     by_lower = {p.lower(): p for p in svgs}
@@ -543,7 +545,8 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
         out += [f"（手書き部分（`{in_version(version, SPEC_HAND_DIR)}/*.md`）はありません——画面の一覧・"
                 "試作で確かめること・要約は載っていない）", ""]
 
-    files = sorted(whole.files)
+    # 形式検査のモデル（`spec/formal/`）は仕様から書き起こした写しなので、規模にも一覧にも入れない（#908）
+    files = sorted(p for p in whole.files if not signoff.versions.is_formal(p))
     decision = whole.files.get(DECISION_PATH)
     decision_rows = None
     if decision is not None:
@@ -559,7 +562,7 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
     out += ["## 規模", ""]
     out += table(["もの", "数"], [
         ["要求のファイル（`requirements/`）", str(sum(1 for p in files if p.startswith("requirements/")))],
-        ["仕様のファイル（`spec/`。中間表現と内部の Q&A 表を除く）", str(sum(1 for p in files if p.startswith("spec/")))],
+        ["仕様のファイル（`spec/`。中間表現・内部の Q&A 表・形式検査のモデルを除く）", str(sum(1 for p in files if p.startswith("spec/")))],
         ["決定表の行（見出しを除く）", str(len(decision_rows) - 1) if decision_rows else "—（決定表が無い）"],
         ["Q&A（共有。v1 から重ねた全体）",
          f"{len(shared_rows)}（決定 {decided}・暫定 {provisional}・未決定 {len(shared_rows) - decided - provisional}）"],

@@ -31,6 +31,7 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 | --- | --- |
 | **新しいつもりで前の版の番号を書いた** | 同じ番号は「変更」の意味と決めている。意図は機械で分からない |
 | **重ね合わせた `spec_ir.json` の中身の決まり** | `spec-ir.md` の決まりは `scaffold.py` が全体に当てる |
+| **形式検査のモデル（`spec/formal/`）の中身** | ほかのファイルと同じに重ねるだけで読まない。写しとして照合・差分・仕様書・未決定の印から外すのは、それぞれのスクリプトが `is_formal` で行う（`references/tree.md` の「形式検査のモデル」。#908） |
 | **凍結した版が直されていないか** | `release-v<n>` のタグとの照合で、タグが要る（このスクリプトが git を使うのは、名前の綴りを index と照合するときだけ） |
 | **フックの外から、`docs` の属さないリポジトリを指す `GIT_INDEX_FILE` を渡す** | `GIT_INDEX_FILE` は読む（フックの一時の index がコミットされる綴りを持つため。相対なら `docs` が属するリポジトリの根から。#570）。別のリポジトリの index を指していれば、その名前で照合する |
 | **作業ツリーの中なのに `git rev-parse --is-inside-work-tree` が失敗する形**（dubious ownership・壊れた `gitdir:` を持つ `.git`） | 失敗の理由は読み分けず（git のメッセージは版と言語で変わる）外と読む——作業ツリーの綴りで読むので、区別しない FS で作業ツリーのフォルダの綴りがコミットと違えば、タグと答えが食い違いうる（#572） |
@@ -108,6 +109,17 @@ REMOVED_COLUMNS = ["種類", "対象", "理由"]
 KIND_FILE, KIND_QA, KIND_FEATURE = "ファイル", "Q&A", "機能"
 KINDS = [KIND_FILE, KIND_QA, KIND_FEATURE]
 STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]
+# 形式検査のモデル（Formal Checker が仕様から書き起こした写し。置き方は `references/tree.md` の「形式検査のモデル」。#908）。
+# ここでは今のままファイルとして重ねる（次の版に前の版のモデルを渡すため）。承認の照合（`check-signoff.py`）・版の差分（`diff-versions.py`）・
+# 提案書の仕様書（`build-proposal.py`）・未決定の印の走査（`check-spec-exit.py`）は `is_formal` で外す——判別はここにだけ置く
+FORMAL_DIR = "spec/formal/"
+
+
+def is_formal(path: str) -> bool:
+    """版のディレクトリからのパスが形式検査のモデルの置き場所の中か（綴りどおりの `spec/formal/` だけ。#908）。"""
+    return path.startswith(FORMAL_DIR)
+
+
 MARKER = ".merged-versions"
 # git を呼ぶ前に外す、リポジトリの場所を指す環境変数（`run_git`。#570）。`GIT_INDEX_FILE` は外さず絶対パスにする（`tracked`）
 GIT_LOCATION = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")

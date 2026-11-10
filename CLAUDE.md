@@ -86,7 +86,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       図の決まりは `references/tree.md` の「図」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-render-diagrams.py`。
       **BPMN は同梱の `render-bpmn.mjs`（bpmn-js を headless の Chrome で動かす）を呼ぶ**——#901。テストは偽の描画口を差し、`render-bpmn.mjs` そのものは走らせない）
     - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
-      2 つの承認が見た中身（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` を除く）と `removed.csv`。#375）が一致するかの照合（#262。**どちらかの時点に比べる中身が
+      2 つの承認が見た中身（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` と形式検査のモデル `formal/` を除く。#908）と `removed.csv`。#375）が一致するかの照合（#262。**どちらかの時点に比べる中身が
       無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。**要求確定のタグの時点に `暫定反映` の Q&A が
       残れば 3**（#325。Q&A の行だけを版の順に重ね、重ね方はテストが `merge-versions.py` と突き合わせる。
       **要求確定のタグの時点の `removed.csv` の共有の Q&A の行（内部の層の `D-` は除く）について `merge` が拒否する配置は 2——判定は `merge-versions.py` の `check_removed`**（#338）。

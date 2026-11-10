@@ -7,14 +7,15 @@
 
 見るもの:
 
-1. **比べる場所（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`spec/qa-dev.csv` を除く）と `removed.csv`）が
+1. **比べる場所（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`spec/qa-dev.csv` と `spec/formal/` を除く）と `removed.csv`）が
    食い違うタグの組で非ゼロ（1）**——中身の違い・追加・削除・**前の版の `shared/`・`spec/` だけ**・
    **`requirements/`・`spec/` だけ**（#367）・**予算側だけの v1 の `removed.csv`**（#372）・
    **`removed.csv` の範囲に効く行（共有の Q&A・範囲の中のファイル・機能）だけ**の違い・
-   **片側だけ `.` で始まる名前の rename**（読む側に新しいファイルが現れる）。
+   **片側だけ `.` で始まる名前の rename**（読む側に新しいファイルが現れる）・**`spec/formal` と接頭辞だけ同じ別のファイル**（`spec/formalx.md`。#908）。
 2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致——**`feasibility/`・`proposal/`・`spec/qa-dev.csv`
    だけ・`removed.csv` の内部の Q&A の行・理由・行の順序だけが違う組も**（`removed.csv` のファイルの行は範囲の外の対象でも比べる——
    `merge` が拒否する行なので。#372 の B）。**`.` で始まる名前だけの違いも**——途中の `.` で始まるディレクトリの中も含む）。
+   **形式検査のモデル（`spec/formal/`。前の版のものも）だけ・`removed.csv` でそこのファイルを消した行だけが違う組も一致**（#908）。
 3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `v<n>/req-signoff-<k>`・`req-signoff-v<n>` を含む）を数えない**・
    指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ・
    **素の `v1` タグがあっても（先でも後でも）承認のタグを作れて照合が 0 になる**（#270）。
@@ -82,6 +83,7 @@ Steps = list[tuple[str, ...]] | None
 SHARED = "docs/v1/shared/qa.csv"
 SHARED2 = "docs/v2/shared/qa.csv"
 REMOVED2 = "docs/v2/removed.csv"
+FORMAL1 = "docs/v1/spec/formal/order/Order.tla"
 R1, B1 = "signoff/v1/req-1", "signoff/v1/budget-1"
 R2, B2 = "signoff/v2/req-1", "signoff/v2/budget-1"
 
@@ -194,16 +196,38 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                   ("c",), ("t", R2),
                                   ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD + "D-001,仕様レビュー,分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"),
                                   ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
     # 内部の層の Q&A（spec/qa-dev.csv の D-）は共有の範囲の外——表を変えても、removed.csv で消しても一致のまま（#339）
     ("removed.csv の内部の Q&A の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                                          ("w", REMOVED2, "種類,対象,理由\nQ&A,D-001,共有へ移した（Q-003）\n"),
                                          ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
     ("内部の Q&A 表だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD), ("c",), ("t", R1),
                            ("w", "docs/v1/spec/qa-dev.csv", QA_HEAD + "D-001,仕様レビュー,分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"),
                            ("c",), ("t", B1)],
      [], 0, "一致する"),
+    # 形式検査のモデル（spec/formal/）は仕様から書き起こした写し——保存し直しても照合は割れない（#908）
+    ("形式検査のモデルだけ違う", [("w", SHARED, QA_A), ("w", FORMAL1, "---- MODULE Order ----\n===="), ("c",), ("t", R1),
+                              ("w", FORMAL1, "---- MODULE Order ----\nVARIABLE x\n===="),
+                              ("w", "docs/v1/spec/formal/order/README.md", "記録\n"), ("c",), ("t", B1)],
+     [], 0, "v1〜v1 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
+    ("前の版の形式検査のモデルだけ違う", [("w", SHARED, QA_A), ("w", FORMAL1, "---- MODULE Order ----\n===="), ("w", SHARED2, QA_B),
+                                    ("c",), ("t", R2), ("w", FORMAL1, "---- MODULE Order ----\nVARIABLE x\n===="),
+                                    ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
+    ("removed.csv の形式検査のモデルの行だけ違う", [("w", SHARED, QA_A), ("w", FORMAL1, "---- MODULE Order ----\n===="),
+                                             ("w", SHARED2, QA_B), ("c",), ("t", R2),
+                                             ("w", REMOVED2, "種類,対象,理由\nファイル,spec/formal/order/Order.tla,組み直した\n"),
+                                             ("c",), ("t", B2)],
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
+    # 陽性対照: `spec/formal` という名前のファイル（ディレクトリでない）は仕様のファイルとして比べる（is_formal と同じ。#908 の CR6）
+    ("spec/formal という名前のファイルは比べる", [("w", SHARED, QA_A), ("w", "docs/v1/spec/formal", "a\n"), ("c",), ("t", R1),
+                                          ("w", "docs/v1/spec/formal", "b\n"), ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/spec/formal"),
+    # 陽性対照: 接頭辞だけ同じ別のファイル（spec/formalx.md）は仕様のファイルとして比べる
+    ("spec/formal と接頭辞だけ同じファイルは比べる", [("w", SHARED, QA_A), ("w", "docs/v1/spec/formalx.md", "a\n"), ("c",), ("t", R1),
+                                              ("w", "docs/v1/spec/formalx.md", "b\n"), ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/spec/formalx.md"),
     # 理由の列は比べない（消したものが同じなら、見た共有の範囲は同じ）
     # 消す行は前の版に置く——同じ版で置きつつ消す配置は決まりに反する（versions.md。照合は 2）
     ("removed.csv の理由だけ違う", [("w", SHARED, QA_B),
@@ -217,7 +241,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     # 重ね合わせ（merge-versions.py）は `.` で始まる名前を読まない——承認が見た範囲に入らない
     ("shared の . で始まるファイルだけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                                        ("w", "docs/v1/shared/.DS_Store", "x\n"), ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
     ("タグの時点の作業中の版が . で始まるファイルだけ", [("w", SHARED, QA_A), ("w", "docs/v2/.gitkeep", ""), ("c",),
                                                 ("t", R2), ("t", B2), ("w", "docs/v2/spec/s.md", "x\n"), ("c",)],
      [], 2, f"{R2} の時点に docs/v2/ のファイルが 1 つも無い"),
@@ -234,7 +258,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("removed.csv の行の順序だけ違う", [("w", SHARED, QA_B),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-001,不要\nQ&A,Q-002,不要\n"), ("c",), ("t", R2),
                                     ("w", REMOVED2, "種類,対象,理由\nQ&A,Q-002,不要\nQ&A,Q-001,不要\n"), ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
     # 決まりに反する removed.csv（見出しの順が違う）を、無い removed.csv と同じに読まない
     ("removed.csv が決まりに反する", [("w", SHARED, QA_A), ("w", SHARED2, QA_B),
                                    ("w", REMOVED2, "対象,種類,理由\nQ-001,Q&A,x\n"), ("c",), ("t", R2),
@@ -261,7 +285,7 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("範囲の外だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                        ("w", "docs/v2/feasibility/estimate.md", "x\n"), ("w", "docs/v1/proposal/p.md", "x\n"),
                        ("c",), ("t", B2)],
-     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv を除く）と removed.csv は同じ"),
+     [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
     # 作業中の版は v2 だがタグは v1 にしかない。v1 の範囲に v2 は入らない
     ("版を指定", [("w", SHARED, QA_A), ("c",), ("t", R1), ("w", SHARED2, QA_A), ("c",), ("t", B1)],
      ["--version", "1"], 0, f"一致する: {R1}"),
@@ -420,6 +444,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "spec だけ違う"),
     ("内部の Q&A 表を除かない", '    return paths + [f":(exclude){DOCS}/v{i}/{INTERNAL_QA}" for i in range(1, version + 1)]',
      "    return paths", "内部の Q&A 表だけ違う"),
+    ("形式検査のモデルを除かない", '    paths += [f":(exclude){DOCS}/v{i}/{versions.FORMAL_DIR}" for i in range(1, version + 1)]\n', "",
+     "形式検査のモデルだけ違う"),
+    ("前の版の形式検査のモデルを除かない", '    paths += [f":(exclude){DOCS}/v{i}/{versions.FORMAL_DIR}" for i in range(1, version + 1)]',
+     '    paths += [f":(exclude){DOCS}/v{version}/{versions.FORMAL_DIR}"]', "前の版の形式検査のモデルだけ違う"),
+    ("接頭辞で除く", '{DOCS}/v{i}/{versions.FORMAL_DIR}" for i', '{DOCS}/v{i}/{versions.FORMAL_DIR.rstrip(\'/\')}*" for i',
+     "spec/formal と接頭辞だけ同じファイルは比べる"),
+    # 末尾の `/` を外すと、`spec/formal` という名前のファイルも外れる（`is_formal` と食い違う。#908 の 1 パス目の CR6）
+    ("ディレクトリでない formal も除く", '{DOCS}/v{i}/{versions.FORMAL_DIR}" for i', '{DOCS}/v{i}/{versions.FORMAL_DIR.rstrip(\'/\')}" for i',
+     "spec/formal という名前のファイルは比べる"),
+    ("形式検査のモデルを消した行も比べる", "        if kind == REMOVED_FILE and versions.is_formal(target):\n            continue\n", "",
+     "removed.csv の形式検査のモデルの行だけ違う"),
     ("v1 の removed.csv を比べない", '    paths.append(f"{DOCS}/v1/{REMOVED}")\n', "", "v1 の removed.csv が予算側だけ"),
     ("removed.csv を比べない", "if removed_scope_rows(at_req) != removed_scope_rows(at_budget):", "if False:",
      "removed.csv だけ違う"),

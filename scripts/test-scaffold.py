@@ -1958,6 +1958,13 @@ CASES: list[Case] = [
     Case("版のディレクトリのパスを出所にする", 1, "の中に無い", ir=edit(lambda ir: f1(ir).update(source=["docs/v1/spec/order.md"]))),
     Case("ドットの場所の仕様", 1, "`.` で始まる場所", pre=plant_draft_spec,
          ir=edit(lambda ir: f1(ir).update(source=["spec/.draft/order.md"]))),
+    # 形式検査のモデル（spec/formal/）も check-spec-exit.py が走査しない——出所にすると未決定の印が素通りする（#908 の V1・CR2）
+    Case("形式検査のモデルを出所にする", 1, "形式検査のモデル（spec/formal/）の中にある",
+         extra={"docs/v1/spec/formal/order/README.md": SPEC + "上限は TBD。\n"},
+         ir=edit(lambda ir: f1(ir).update(source=["spec/formal/order/README.md"]))),
+    # 陽性対照: 接頭辞だけ同じ spec/formalx.md は仕様の原文として通す（印が無いので作れる）
+    Case("接頭辞だけ同じファイルを出所にする", 0, "作った", extra={"docs/v1/spec/formalx.md": SPEC},
+         ir=edit(lambda ir: f1(ir).update(source=["spec/order.md", "spec/formalx.md"]))),
     Case("中間表現を出所にする", 1, "中間表現そのもの", ir=edit(lambda ir: f1(ir).update(source=["spec/spec_ir.json"]))),
     Case("出所が空", 1, "仕様のファイルの配列（1 つ以上）でない", ir=edit(lambda ir: f1(ir).update(source=[]))),
     Case("メソッドが決まりに無い", 1, "operation.method: 決まりに無い", ir=edit(lambda ir: f1(ir)["operation"].update(method="FETCH"))),
@@ -2807,6 +2814,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("真偽値をどの型にも合うとする", '"        return kind == \\"boolean\\"",', '"        return True",',
      "真偽値を整数の項目に返す実装で失敗する"),
     ("型の名前の衝突を見ない", "                elif pascal(oid) in type_names:", "                elif False:", "型の名前が潰れる"),
+    ("形式検査のモデルの場所を許す", "        elif versions.is_formal(path.relative_to(whole.resolve()).as_posix()):", "        elif False:",
+     "形式検査のモデルを出所にする"),
+    ("接頭辞で形式検査のモデルの場所を断る", "        elif versions.is_formal(path.relative_to(whole.resolve()).as_posix()):",
+     '        elif path.relative_to(whole.resolve()).as_posix().startswith("spec/formal"):', "接頭辞だけ同じファイルを出所にする"),
     ("ドットの場所を許す", '        elif any(part.startswith(".") for part in path.relative_to(spec_root).parts):', "        elif False:",
      "ドットの場所の仕様"),
     # `surrogates(ir)` の検査には変異を置かない——版を重ねる段（`merge-versions.py` の `render`）が先に断るので、
