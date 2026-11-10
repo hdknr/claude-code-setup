@@ -80,6 +80,8 @@
 - Verifier 2 パス目（sonnet）: **反証 0 件**（報告は SubagentHandback で親に届かず、transcript の最後から読んだ）
 - `/code-review` 2 パス目（medium）: **指摘 8 件**（下の 2 パス目の採否の表）
 - 2 パス目の指摘対応の起点（狭いパスの起点）: `8f2ae7c`
+- 2 パス目の指摘対応の終点: `cb47dc4`。そこで `mkdocs build --strict`（Python 3.14）警告 0・終了 0、`check-plugin-versions`・`check-duplicate-counts`・`check-plan-counts`・`check-site-links`・`check-plan-scope` 緑
+- 狭いパス（sonnet の Verifier・`git diff 8f2ae7c cb47dc4`）: **反証 0 件・軽い指摘 2 件**（下の表。直さず人間に渡す）
 - 実験: ビルドの対照だけ——ローカルの Python 3.12 で base（`2cb883a` の `docs/`）を `mkdocs build` すると `docs/plans/issue-332.md` で AssertionError（この周の変更と無関係であることの対照）。CI と同じ Python 3.14 では worktree の `mkdocs build --strict` が警告 0・終了 0（83c0da3 の時点）
 
 ## 既知の限界・決着済みの論点
@@ -101,6 +103,13 @@
 | R2-6 | トレースのケースが「期待を持たない」と読める | 示せる——`spec-ir.md` の `outcomes`・`after` | 5 | 直す |
 | R2-7 | 「対象の選び方」を削りすぎた（照合先も渡す・選び方に反すれば指摘する） | 示せる——`spec-exit.md` の「改修の性質で選ぶ」の最後の段落 | 無し（受入基準 2 は写さないこと。指し先がある） | 残課題 |
 | R2-8 | データの表の `spec/formal/` の行が、上の「仕様」の行の読み手（`proposal`）との関係を書いていない | 示せる——`tree.md` の「形式検査のモデル」（仕様書に入れない） | 3 | 直す（`proposal` の仕様書には入らないと足した。`feasibility` は原本に明文が無いので書かない） |
+
+### 狭いパスの指摘（採否は人間が決める）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| N-1 | TLC の行の「場面ごとの扱いは `spec-review` の `SKILL.md` 手順 3」——狭いパスで訊かない規定は手順 5 にある | 示せる——spec-review の `SKILL.md` の「### 5. 直したら、もう 1 回だけレビューする」の 2 | 1（指し先が一部ずれる） | 人間が決める（推奨: マージ前に「手順 3・5」に直す） |
+| N-2 | 「狭いパスでは訊かない」は、直しで増えた対象の検査器が無いときの話 | 示せる——同上 | 1（原本よりやや広い） | 人間が決める（推奨: 「狭いパスで増えた対象は」と絞る） |
 
 ### 1 パス目の採否の表（直す線: 既定）
 
