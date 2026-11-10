@@ -135,7 +135,10 @@ Alloy の呼び方と確かめ方を述べるのは **9 箇所**——`check-all
 - 1 パス目の指摘対応のあとの `check-all.py`（run-serial 越し）: 70/70 緑（`test-render-diagrams.py` も緑）
 - Verifier 2 パス目（2026-11-10・`dev-loop:dev-loop-verifier`・sonnet。読んだ委譲文 170 行。報告は親に届かず（SubagentHandback が「親はすでに終了」で失敗）、トランスクリプトから読んだ）: **反証 1 件**（V3）。`git status --porcelain` は開始・終了とも ` M docs/plans/issue-922.md`
 - `/code-review` 2 パス目（2026-11-10・high・fork。委譲文は貼った。報告はトランスクリプトから読んだ）: **指摘 7 件**（CR2-1〜CR2-7）。`git status --porcelain` は開始・終了とも ` M docs/plans/issue-922.md`
-- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: この更新をコミットした SHA（下の「2 パス目の指摘の採否」の後に書く）
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `b0b654b211aa6d5f922d4c4e7cdcac28223defd1`
+- 2 パス目の指摘対応: 直すとした 4 件（V3・CR2-1〜CR2-3）を直した——先頭の拒否の一覧（組み込み・シェル）を許可の一覧（`java` か名前に `alloy` を含むコマンド）に替え、シェルの組み立ての文字にブレースとグロブ（`{}*?[]`）を足した。
+  docstring に `-q` を足さないこと（本物の Alloy 6.2.0 で `exec -q` は結果の行が出ず 1）と、`$HOME`・括弧を含むパスはクォートの中でも 4 であることを書いた。本物で `alloy exec`・`java -jar <jar> exec` が 0、`trap alloy EXIT exec` が 4（走らせていない）
+- 狭いパスの終点（2 パス目の指摘対応の最後のコミット）: `0736f25e679f779d4c10a8b7a117feb40fd784da`（起点の子孫であることを確かめた）
 - 交絡を潰した手順: 偽の Alloy の試料で、陽性対照（通る呼び方で 0・走ったら印）と陰性（反例なし・反例あり・到達できない・終了コード 0 以外で 1、`exec` の無い・`gui` の在る形で 4 かつ印なし）を並べた。
   偽の Alloy はモデルを読まないので、モデルが本物の Alloy で期待どおりの結果を出すかは本物の Alloy 6.2.0 で当てた（上の「Alloy の CLI の実測」）
 
