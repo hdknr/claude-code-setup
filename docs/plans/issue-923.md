@@ -73,7 +73,7 @@ scaffold の Red テストは `<impl_module>.<operation>(**input)` を 1 回呼�
 - 使った線と出所: `仕様の穴 = 推奨で決めて起票`（cruise の確かめた線（台帳 `issue-916`））。
 - 確認の Issue: PR を作った後に立てる（重さ: PR にあってまだマージしていないこと）
 
-## 受入基準（不変条件 × 経路）
+## verify の受入基準（不変条件 × 経路）
 
 入口: **`scaffold.py`**（生成・`--check`・`--dry-run`・`--red-check`・`--upto`・v2 の変化の判定・Issue の本文・性能テスト）・**生成した Red テスト**（`python3 -m unittest discover -s scaffold/tests`。
 dev-loop の周と `--red-check` が走らせる）・**dev-loop の写し**（`spec-fingerprint.py` が本文の指紋を確かめる）・**仕様を書く側**（Formal Checker → spec-review → 仕様 → scaffold が中間表現に書き起こす）・**利用者**（文書を読む）。
@@ -97,6 +97,27 @@ dev-loop の周と `--red-check` が走らせる）・**dev-loop の写し**（`
 TLC が出したトレース（行為の並び）を、spec-ir.md の形のトレースのケースに書き起こす。その中間表現から `scaffold.py` で作った Red テストを、
 競合する実装（読んでから書く）と正しい実装（排他で守る）に当てる。**書き起こすのは著者**——spec-review と scaffold の LLM が同じ書き起こしをするかは確かめない（下の「未証明」）。
 
+### 実走の結果（2026-11-10）
+
+試料の正本: `/private/tmp/claude-503/-Users-hdknr-Projects-hdknr-claude-code-setup/f7631199-07c6-418e-a902-1e3ccac0123f/scratchpad/run923/repo`（在庫の 3 機能。
+`docs/v1/spec/formal/stock-reserve/` に TLC のモデル `StockReserve.tla`・`.cfg` と記録 `README.md`。仕様 `spec/stock.md` にトレースのテストケース `S1-T1`）。
+
+- **TLC**（`java -cp /Users/hdknr/.local/share/formal-tools/tla2tools.jar tlc2.TLC -deadlock StockReserve`。TLC2 2.19。run-serial を通さずに走らせた——1 秒で終わる）:
+  `Invariant NoOversell is violated`。反例は `Read`（first）→ `Read`（second）→ `Write`（first）→ `Write`（second）で、2 つとも `ok`・在庫 0（13 states・12 distinct）。
+  この行為の並びを `steps` に、`Read`・`Write` を段の名前 `read`・`write` に書き起こした（中間表現の `F-001-C2`）。
+- **生成**: `scaffold.py --repo <試料>` が 0（機能 3・ケース 4・本文 3）。`scaffold/tests/test_f_001.py` に `test_f_001_c2`（`self.trace(...)`）が入った。
+- **Red テスト**（run-serial 越し。`python3 -B -m unittest discover -s scaffold/tests` を各 3 回）:
+
+| 実装 | 結果（3 回とも同じ） |
+| --- | --- |
+| 無い | `FAILED (failures=4)`——トレースのケースは `未実装: spec_impl.reset_state が無い` |
+| 競合する実装（読んでから書く。排他なし） | `FAILED (failures=1)`——`test_f_001_c2` だけが `結果が期待と違う: second が {'ok': True} を返した（期待の残り [{'error': 'OUT_OF_STOCK'}]。トレースの 4/4 段まで順に進めた）` |
+| 正しい実装（読むから書くまでを排他で守る） | `OK` |
+
+- **交絡**: 競合する実装が赤になったのが「順を強制したから」か「たまたま競合したから」かは、`test-scaffold.py` の変異「順を強制しない」（`drive` が段を 1 つも進めない）で
+  同じ試料が緑になる（＝変異が殺される）ことで分ける——順を強制しなければ競合する実装も 2 つの呼び出しが順に走って緑になる。
+- **確かめた範囲**: TLC の反例から中間表現への書き起こしは著者が手で行った（spec-review・scaffold の LLM が同じことをするかは確かめていない）。
+
 ### 未証明・BLOCKED
 
 - **未証明**: 段を待つ時間（2 秒）を超えて呼び出しが遅れる負荷の下で、競合する実装を見逃さないこと——時間で区切る以上、原理的に保証できない（正しい実装を赤にしないことは、どの順でも正しいことから言える）。人間のレビューに回す。
@@ -114,6 +135,10 @@ TLC が出したトレース（行為の並び）を、spec-ir.md の形のト�
 ## 関門の進捗（再開点）
 
 - 割り目（手順 4・手順 6）: 割らない（cruise の周）
+
+## 手順 8
+
+- この周の起票: 1 件（仕様の穴を不在の線で推奨により決めた確認の Issue——PR を作った後に立てる。起票の承認は不在のため訊いていない）
 
 ## 既知の限界・決着済みの論点
 
