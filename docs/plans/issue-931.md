@@ -69,8 +69,13 @@
 
 ## 関門の進捗（再開点）
 
-- 実装: 未着手
+- 実装: 済み・コミット済み（`6cdf32f`）。`check-all.py`（run-serial 越し）69/69 緑、`check-mutation-claims.py` 48/48 確認（44 → 48）
+- PR: #942
 - 手順 4 の割り目: 割らない（cruise の周）
+- 関門 1 パス目: Verifier と `/code-review` に渡した（2026-11-10）。1 パス目の指摘対応の起点: `6cdf32f`（関門に渡した時点の HEAD。成果物はコミット済み）
+  - Verifier: 報告待ち
+  - `/code-review`: 報告待ち
+- 交絡を潰した手順: 実験なし（変異と試料の当ては `check-mutation-claims.py`・`--part scan` が陽性対照つきで回す）
 
 ## 既知の限界・決着済みの論点
 
