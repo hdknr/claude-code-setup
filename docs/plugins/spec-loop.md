@@ -81,7 +81,7 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
 
 | 道具 | 何をするか | 決まりの原本 | 振る舞いの原本（終了コードなど） |
 | --- | --- | --- | --- |
-| `render-diagrams.py`（BPMN は `render-bpmn.mjs` を呼ぶ） | `docs/` の下の drawio と BPMN を隣の `.svg` に書き出し、ソースの指紋を書き込む。`--check` は鮮度だけを見る | `tree.md` の「図」 | [`render-diagrams.py`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/scripts/render-diagrams.py) の docstring |
+| `render-diagrams.py`（BPMN は既定では `render-bpmn.mjs` を呼ぶ） | `docs/` の下の drawio と BPMN を隣の `.svg` に書き出し、ソースの指紋を書き込む。`--check` は描画系を起こさず、何も書かずに鮮度を確かめる | `tree.md` の「図」 | [`render-diagrams.py`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/scripts/render-diagrams.py) の docstring |
 | `init-mkdocs.py`（雛形は `templates/mkdocs/`） | 正本リポジトリを MkDocs で閲覧できるように、設定・フック・表示用のページを写す | `tree.md` の「ドキュメントのツール」 | [`init-mkdocs.py`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/scripts/init-mkdocs.py) の docstring |
 
 ### 図 { #doc-diagrams }
@@ -100,9 +100,9 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
   ```
 
   `--check` は描画系（draw.io・Node・Chrome）を起動せず何も書かずに、書き出しが無い・古い・印が無い図と、ソースの無い書き出しを名指しします（CI でも回せます）。
-- **書き出しに要るもの**（BPMN は既定の描画口のとき）: drawio は draw.io の CLI（環境変数 `DRAWIO`。無ければ macOS の既定の場所、`PATH` の `drawio` の順に探す）。
+- **書き出しに要るもの**（BPMN は既定の描画口のとき）: drawio は draw.io の CLI（環境変数 `DRAWIO`。設定していなければ macOS の既定の場所、`PATH` の `drawio` の順に探す）。
   BPMN は Node（`PATH` の `node`）・bpmn-js と puppeteer-core（**正本リポジトリの外の**ディレクトリで `npm install bpmn-js puppeteer-core` を走らせ、そのディレクトリを `SPEC_LOOP_BPMN_DEPS` で渡す）・
-  Chrome（`CHROME_PATH`。無ければ macOS の既定の場所）です。**`--check` にはどれも要りません。**
+  Chrome（`CHROME_PATH`。設定していなければ macOS の既定の場所）です。`DRAWIO`・`CHROME_PATH` が指したものが無ければ、既定の場所には戻らずに止まります。**`--check` にはどれも要りません。**
   **在るソースの種類に要るものが 1 つでも無ければ**（`.drawio` があるのに draw.io の CLI が無い・`.bpmn` があるのに BPMN に要るものが無い）、**どちらの種類も 1 件も書かずに、無いものと書き出していないソースを名指しして止まります。**
   BPMN の描画口を `BPMN_RENDER` で差し替えると、Node・bpmn-js・Chrome は見ません。探す順・差し替え・時間切れ・確かめた版は `render-diagrams.py` の docstring を正とします。
 - **鮮度はバイトではなく、ソースの指紋で見ます。** 書き出しにはソースのバイトの sha256 を印として書き込み、`--check` はその印と今のソースを比べます。
@@ -124,7 +124,7 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
 - **写すのは、正本の `CLAUDE.md` がドキュメントのツールを決めておらず、MkDocs の設定（`mkdocs.yml`・`mkdocs.yaml`）も無いときだけです。**
   設定が在ればスクリプトは何も写しません。設定が無くて写すときも、**在るファイルは 1 バイトも変えません**——`pyproject.toml`・`.gitignore` が在れば触らずに、足りない依存・行を示します（足すかは利用者が決めます）。
   何を写すか・どこに置くかは `tree.md` の「ドキュメントのツール」を、`--dry-run` と終了コードは `init-mkdocs.py` の docstring を正とします。
-- **Q&A 表と決定表は CSV のまま描きます。** 表示用のページ（`docs/qa.md`・`docs/decision-table.md`）に印を書き、写したフックが各版の CSV を版ごとの節に描きます。
+- **Q&A 表と決定表は CSV のまま描きます。** 表示用のページ（`docs/qa.md`・`docs/decision-table.md`）に印を書き、写したフックが各版の共有の表（`shared/qa.csv`・`shared/decision_table.csv`）を版ごとの節に描きます（内部の Q&A 表 `spec/qa-dev.csv` は描きません）。
   本文の Q&A の番号（`Q-008`）は、フックが Q&A 表のページへのリンクにします（番号の書き方は [`qa-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/qa-csv.md) の「本文での番号」）。
 - **フックは標準ライブラリだけで単独で動きます**——正本リポジトリへ写された後は、プラグインを読み込みません。
   そして `init-mkdocs.py` は設定が在れば何も写さないので、**既に写した正本には新しいフックは届きません**（写し直しても入りません）。フックを新しくするときは `tree.md` の「Q&A 表を移す」の手順 4 で取り込みます。
