@@ -98,7 +98,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書と仕様書を作る
       （照合をスキルの判断に任せないため、**生成の側で照合する**。**前の出力は印 `.build-proposal` が名指しするものだけ消し、印に無いファイルは上書きしない**——#405。**暫定の行の判別は `check-qa-csv.py` の `is_provisional` を読む**——#374・#404。
       `--pptx` の PPTX は `qa-to-pptx.py` の `markdown_slides` で作る。テストは `scripts/test-build-proposal.py`）
-    - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**生成の側で
+    - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**トレースのケース（`trace`）は、形式検査の反例の実行順を実装の口で強制して再現する Red テストになる**——#923。形と口は `references/spec-ir.md` の「トレースのケース」を正とする。**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
       **入力は版を重ね合わせた全体で、メモリ上で重ねる**——`build/merged/` を書かない（#262）。
       **v2 以降は前の版の全体と比べて機能を追加・変更・削除に分け、変わった機能だけ本文を作る**（#264。

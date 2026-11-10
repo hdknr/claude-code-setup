@@ -54,12 +54,19 @@
   **全部に数えないもの**: 引数が 1 つでもある行・次の行へ折り返した値（**空行を挟んでも**。#752）・
   **`run:` から名前までのあいだに `名前=` の字句がある行**（環境変数で狭める形——`PART=scan python3 …`・`export PART=scan && …`。#750）。
   **深い字下げのコメントの行は続きと読まない**（#753）。詳細は `full_runs` の docstring を正とする。
+- **収録したスクリプトの生きた `run:` が、GitHub が無条件に走らせる位置に 1 つはあるか**（#931。`gated_runs`）——
+  `jobs:` の下のジョブの `steps:` の下にあり、そのジョブが**ジョブ単位の `if:`・`needs:`** を持たず（`steps:` の後ろに書いても）、
+  鍵が重なっていないこと。**ジョブを SKIPPED にしても `run:` の行は残るので、上の検査は緑のままで、`merge-pr.py` は SKIPPED を通過と読む**
+  （#930 の `/code-review` が複製で示した）。**ジョブの見出しの字下げを崩した形**（深くして前のジョブの鍵になる・浅くして `jobs:` の外に出る）も赤にする。
+  **「そもそも無い」「コメントアウト」とは別の行で、理由（ジョブの `if:`・`needs:`・`steps:` の外・ジョブの外・鍵の重なり）を名指しする。**
 
 守らない:
 
 - **「CI で実際に走った」の証明ではない。** 見ているのは**記述**だけで、
-  **ジョブやステップの `if:` 条件・`continue-on-error`・ステップ内での失敗握り潰し**は
-  見ていない。**言えるのは「走る形で書かれている」まで。**
+  **ステップの `if:` 条件・`continue-on-error`・ステップ内での失敗握り潰し**は
+  見ていない。**言えるのは「走る形で書かれている」まで。** **ジョブ単位の `if:`・`needs:` は見る**（上の #931）が、
+  **YAML のアンカー（`&`・`*`・`<<`）・複合の鍵・フロー形式のジョブ・再利用のワークフロー（`uses:` のジョブ）**は行の読み方の外にあり、
+  **タブで始まる行・コンパクトな列（`steps:` と同じ字下げの `- `）・必ず走る `if:`** は偽の赤になる（`gated_runs` の docstring）。
 - **コメントの側に `run:` が無い無効化は、コメント側として拾えない。**
   3 つの形がある——**(a)** `# run:` の次の行に `#   python3 scripts/x.py` と割った形、
   **(b)** コメントアウトした `run: |` のブロック、
@@ -662,6 +669,113 @@ def full_runs(ci: str) -> set[str]:
     return full
 
 
+# **鍵の行**——行の頭の `名前:` の後ろが空か空白（`run: x` も `steps:` も当たる。`- name: x` は `-` で始まるので当たらない）。
+# **引用符で囲んだ鍵も、コロンの前に空白を置いた鍵も鍵である**（`"if": false`・`if : false` は YAML で `if` の鍵
+# ——読まないと無条件と数える偽の緑。#931 の 1・2 パス目）。
+KEY_RE = re.compile(r"""(?:"([^"]*)"|'([^']*)'|([^\s:#'"-][^\s:]*))\s*:(?:\s|$)""")
+# **ジョブを走らなくする、ジョブ単位の鍵**（#931）——値に依らない。
+GATE_KEYS = ("if", "needs")
+
+
+def key_of(text: str) -> str | None:
+    """行の頭の鍵の名前（引用符は外す）。鍵の行でなければ `None`。"""
+    m = KEY_RE.match(text)
+    if not m:
+        return None
+    return next(g for g in m.groups() if g is not None)
+
+
+def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
+    """CI の yaml の**生きている** `run:` の行を、**GitHub が無条件に走らせる位置にあるか**で分ける（#931）。
+
+    返すのは `(無条件, 理由)`——**無条件**は、`jobs:` の下のジョブの `steps:` の下にあり、そのジョブがジョブ単位の
+    `if:`・`needs:` を持たず、鍵が重なっていない `run:` の行に現れる名前。**理由**は、そうでない行に現れる名前ごとの理由の集合。
+    **ジョブ単位の `if:` を足すとジョブは SKIPPED になり、`merge-pr.py` は SKIPPED を通過と読む**——`run:` の行は残るので
+    `scan_ci_runs` は「走っている」と数え、どこも赤にならなかった（#930 の `/code-review`）。
+
+    **YAML の読み方**——標準ライブラリだけで、行のインデントを数える:
+
+    - **インデント 0 の行**で区切る。`jobs:` の下だけがジョブで、ほかの最上位の鍵（`on:`・`concurrency:`）の下の `run:` は「ジョブの外」。
+      ファイルを繋いだ文字列でも、次のファイルの最上位の鍵で区切れる。
+    - **`jobs:` の最初の子のインデントがジョブの見出しの段**、**見出しの最初の子の段がジョブ単位の鍵の段**である。
+      見出しの段より浅い行が来たら、そこからは「ジョブの外」（YAML としても読めない形）。
+    - **`run:` の行は、その手前で最後に出たジョブ単位の鍵が `steps` のときだけ `steps:` の下にある**——見出しを深くすると、
+      そのジョブは前のジョブの鍵になり、その `run:` は `steps` 以外の鍵の下に入る（ジョブごと深くした形）か、
+      前のジョブの鍵が重なる（見出しだけ深くした形——`runs-on:`・`steps:` が 2 つになる）。
+    - **ジョブ単位の `if:`・`needs:` は `steps:` の後ろに書いても効く**ので、ジョブ全体の鍵を集めてから決める。
+    - 空行とコメントだけの行は飛ばす（`split_comment` の生きている部分で決める）。ブロックの本文（`run: |` の下）は鍵の段より深いので、鍵とは読まない。
+
+    - **鍵は引用符で囲んでも、コロンの前に空白を置いても鍵と読む**（`"if": false`・`if : false`。#931 の 1・2 パス目）。
+
+    **守らないもの**: ステップ単位の `if:`（PR 限定の歯止めが正しく使っている）・`continue-on-error`・ジョブの `strategy`・
+    ワークフローの `on:`（モジュールの docstring の「守らない」）・
+    YAML のアンカー（`&`・`*`・`<<`）・複合の鍵（`? if`）・フロー形式で書いたジョブ（`jobs: {a: …}`）・再利用のワークフロー（`uses:` のジョブ）。
+    **偽の赤になる書き方**——**タブで始まる行**は字下げ 0 の最上位と読み、そこから先をジョブの外に数える（YAML はタブの字下げを許さない）。
+    **コンパクトな列**（`steps:` と同じ字下げの `- run:`）は `steps:` の外と読む（今の yml はこの書き方を使わない）。
+    **値を読まない**ので、必ず走る `if: always()` も、`needs:` も、ジョブ単位にあれば赤にする。
+    """
+    records: list[tuple[set[str], str | None, str | None]] = []
+    keys: dict[str, list[str]] = {}
+    in_jobs = False
+    job_indent: int | None = None
+    key_indent: int | None = None
+    job: str | None = None
+    key: str | None = None
+    for raw in ci.split("\n"):
+        code, _ = split_comment(raw)
+        if not code.strip():
+            continue
+        indent = len(code) - len(code.lstrip(" "))
+        head = key_of(code.strip())
+        if indent == 0:
+            in_jobs = head == "jobs"
+            job_indent = key_indent = None
+            job = key = None
+        elif in_jobs:
+            if job_indent is None:
+                job_indent = indent
+            if indent < job_indent:
+                in_jobs = False  # 見出しの段より浅い——ここから先はジョブの外
+                job = key = None
+            elif indent == job_indent:
+                # **ファイルを繋いでも、同じ名前のジョブを別のジョブとして数える**（連番を付ける）
+                job = f"{len(keys)}:{head if head is not None else code.strip()}"
+                keys[job] = []
+                key_indent = None
+                key = None
+            elif job is not None:
+                if key_indent is None:
+                    key_indent = indent
+                if indent <= key_indent:
+                    key = head if (head is not None and indent == key_indent) else None
+                    if key is not None:
+                        keys[job].append(key)
+        names = set(NAME_RE.findall(code)) if "run:" in code else set()
+        if names:
+            records.append((names, job if in_jobs else None, key if in_jobs else None))
+    ok: set[str] = set()
+    why: dict[str, set[str]] = {}
+    for names, j, k in records:
+        reasons: set[str] = set()
+        if j is None:
+            reasons.add("ジョブの外")
+        else:
+            if k != "steps":
+                reasons.add(f"`steps:` の外（{k}）")
+            for g in GATE_KEYS:
+                if g in keys[j]:
+                    reasons.add(f"ジョブの `{g}:`")
+            dup = sorted({x for x in keys[j] if keys[j].count(x) > 1})
+            if dup:
+                reasons.add(f"ジョブの鍵が重なる（{', '.join(dup)}）")
+        for n in names:
+            if reasons:
+                why.setdefault(n, set()).update(reasons)
+            else:
+                ok.add(n)
+    return ok, why
+
+
 def test_ci_runs_every_registered_script() -> None:
     """実リポジトリを読む。**`check-all.py` に在るのに CI の yaml に無い**なら落とす。
 
@@ -721,6 +835,22 @@ def test_ci_runs_every_registered_script() -> None:
     if disabled:
         print(f"       コメントアウトされている: {disabled}")
         print("       **`#` を外す。** 手元では緑でも、CI では 1 度も走らない。")
+    # **ジョブ単位の `if:`・`needs:` で走らなくしたジョブ**（#931）——`run:` の行は生きているので上の 2 つは緑のまま。
+    # ジョブは SKIPPED になり、`merge-pr.py` は SKIPPED を通過と読む。実物の `plugins.yml` で当てる——ジョブに `if: false` を足すと赤:
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "  cruise-run-serial:\n    runs-on: ubuntu-latest\n", "new": "  cruise-run-serial:\n    if: false\n    runs-on: ubuntu-latest\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    # `needs:` を足しても赤（前のジョブが落ちると SKIPPED になる）:
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "  cruise-loops:\n    runs-on: ubuntu-latest\n", "new": "  cruise-loops:\n    runs-on: ubuntu-latest\n    needs: [check]\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    # ジョブの見出しを深くすると（前のジョブの鍵になる）赤:
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "\n  dev-loop:\n", "new": "\n    dev-loop:\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    # ジョブの見出しを最上位に出すと（`jobs:` の外になる）赤:
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "\n  spec-loop-autopilot-loop:\n", "new": "\nspec-loop-autopilot-loop:\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    ok, why = gated_runs(ci)
+    gated = [n for n in registered if n in live and n not in ok]
+    check("収録したものの CI ステップが、無条件に走るジョブの `steps:` の下にある（#931）", not gated)
+    if gated:
+        for n in gated:
+            print(f"       {n}: {'・'.join(sorted(why.get(n, {'(理由なし)'})))}")
+        print("       **ジョブ単位の `if:`・`needs:` を外し、ジョブの字下げを直す。** SKIPPED は失敗に数えられない。")
     # **回帰テストは引数なしで回す**（#687）——狭める口を付けたステップは、テストの一部しか回さない。
     # 実物の `plugins.yml` で当てる——狭める引数を足すと、このテストが赤になる:
     # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/test-check-duplicate-counts.py\n", "new": "        run: python3 scripts/test-check-duplicate-counts.py --only-scan\n", "red": "python3 scripts/test-check-all.py --part registry"}
@@ -891,8 +1021,133 @@ jobs:
 # mutation-claim: {"file": "scripts/test-check-all.py", "old": "      - name: scripts/check-label-only.py のラベルにだけ名前がある", "new": "        run: scripts/check-label-only.py のラベルにだけ名前がある", "red": "python3 scripts/test-check-all.py --part scan"}
 
 
-def scan_contract(scan, full_of) -> list[tuple[str, bool]]:
-    """**判別の契約。** 各行が `SAMPLE_CI` のどれかの経路に対応している。
+# **ジョブの位置の試料**（#931）——`gated_runs` の経路を全部踏ませる。ファイルを繋いだ形（2 つ目の `name:` から）も含める。
+SAMPLE_JOBS = """\
+name: one
+on:
+  push:
+    run: python3 scripts/job-under-on.py
+jobs:
+  plain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 無条件
+        run: python3 scripts/job-plain.py
+      - name: ステップの if は見ない
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/job-step-if.py
+      - name: 両方にある（無条件の側があれば赤にしない）
+        run: python3 scripts/job-both.py
+      # - run: python3 scripts/job-if.py
+      - name: scripts/job-label-only.py のラベルにだけ名前がある
+        run: echo ok
+  gated:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-if.py
+      - run: python3 scripts/job-both.py
+  waits:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-needs-after.py
+    needs:
+      - plain
+  # コメントだけの行は鍵の段を決めない
+  deep:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-before-deep.py
+    nested:
+      runs-on: ubuntu-latest
+      steps:
+        - run: python3 scripts/job-nested.py
+  dup:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-dup-first.py
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-dup.py
+  keyrun:
+    runs-on: ubuntu-latest
+    run: python3 scripts/job-keyrun.py
+    steps:
+      - run: python3 scripts/job-after-keyrun.py
+toplevel:
+  steps:
+    - run: python3 scripts/job-toplevel.py
+name: two
+jobs:
+  second:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-second-file.py
+name: three
+jobs:
+    wide:
+      runs-on: ubuntu-latest
+      steps:
+        - run: python3 scripts/job-wide.py
+  shallow:
+    steps:
+      - run: python3 scripts/job-shallow.py
+name: four
+jobs:
+  twin:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-twin-gated.py
+  flat:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-flat.py
+  deeper:
+      "if": false
+      runs-on: ubuntu-latest
+      steps:
+        - run: python3 scripts/job-deeper.py
+  "quoted":
+    runs-on: ubuntu-latest
+    'needs': [flat]
+    steps:
+      - run: python3 scripts/job-quoted-needs.py
+name: five
+jobs:
+  twin:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-twin-plain.py
+  spaced:
+    if : false
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-spaced-if.py
+  gap:
+    if: false
+  # 見出しと同じ字下げのコメント
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/job-comment-gap.py
+  odd:
+      runs-on: ubuntu-latest
+    steps:
+        - run: python3 scripts/job-odd.py
+  compact:
+    runs-on: ubuntu-latest
+    steps:
+    - run: python3 scripts/job-compact-a.py
+    - run: python3 scripts/job-compact-b.py
+x-jobs:
+  build:
+    steps:
+      - run: python3 scripts/job-under-jobsish.py
+"""
+
+
+def scan_contract(scan, full_of, gate_of) -> list[tuple[str, bool]]:
+    """**判別の契約。** 各行が `SAMPLE_CI`・`SAMPLE_JOBS` のどれかの経路に対応している。
 
     **陽性側も取る**——「拾わない」だけを並べると、**もともと空の集合**と区別がつかない
     （**陰性だけの対照は対照ではない**）。
@@ -900,7 +1155,47 @@ def scan_contract(scan, full_of) -> list[tuple[str, bool]]:
     live, commented = scan(SAMPLE_CI)
     seen = live | commented
     full = full_of(SAMPLE_CI)
+    ok, why = gate_of(SAMPLE_JOBS)
+    gated = set(why) - ok
     return [
+        # #931: ジョブの位置（陽性側も取る——無条件の位置を「無条件」に数える）
+        ("無条件のジョブの `steps:` の下を無条件に数える（陽性対照）",
+         {"job-plain.py", "job-step-if.py", "job-before-deep.py", "job-after-keyrun.py",
+          "job-second-file.py", "job-wide.py", "job-flat.py", "job-twin-plain.py"} <= ok),
+        ("ステップ単位の `if:` は見ない（守らない）", "job-step-if.py" in ok),
+        ("ジョブの `if:` の下を条件つきに数える", "job-if.py" in gated and "ジョブの `if:`" in why["job-if.py"]),
+        ("`steps:` の後ろの `needs:` も効かせる", "job-needs-after.py" in gated
+         and "ジョブの `needs:`" in why["job-needs-after.py"]),
+        ("無条件の側があれば条件つきに数えない", "job-both.py" in ok),
+        ("深くした見出しの下（前のジョブの鍵）を条件つきに数える", "job-nested.py" in gated),
+        ("鍵が重なるジョブを条件つきに数える", {"job-dup.py", "job-dup-first.py"} <= gated),
+        ("`steps:` の外の `run:` を条件つきに数える", "job-keyrun.py" in gated),
+        ("`jobs:` の外の `run:` を条件つきに数える",
+         {"job-under-on.py", "job-toplevel.py"} <= gated and "ジョブの外" in why["job-toplevel.py"]),
+        ("見出しの段より浅い行から先をジョブの外に数える", "ジョブの外" in why.get("job-shallow.py", set())),
+        # #931 の 1 パス目（V1・V4）
+        ("引用符つきの鍵（`\"if\":`・`\'needs\':`）も鍵と読む",
+         "ジョブの `if:`" in why.get("job-deeper.py", set())
+         and "ジョブの `needs:`" in why.get("job-quoted-needs.py", set())),
+        ("前のジョブより深い段の鍵も、そのジョブの鍵と読む（ジョブごとに鍵の段を決め直す）",
+         "ジョブの `if:`" in why.get("job-deeper.py", set()) and "job-deeper.py" not in ok),
+        ("別のファイルの同じ名前のジョブを、別のジョブとして数える",
+         "ジョブの `if:`" in why.get("job-twin-gated.py", set()) and "job-twin-plain.py" not in why),
+        ("試料の名前を全部どちらかに分ける（落とさない。ラベルにだけある名前は数えない）",
+         ok | set(why) == set(NAME_RE.findall(SAMPLE_JOBS)) - {"job-label-only.py"}),
+        # #931 の 2 パス目（VA・VB・R6）
+        ("コロンの前に空白を置いた鍵も鍵と読む", "ジョブの `if:`" in why.get("job-spaced-if.py", set())),
+        ("見出しと同じ字下げのコメントの行で、ジョブを区切らない",
+         "job-comment-gap.py" in gated and "ジョブの `if:`" in why["job-comment-gap.py"]),
+        ("コメントアウトしたステップを、無条件の位置に数えない", "job-if.py" not in ok),
+        ("`- name:` のラベルにだけある名前を拾わない", "job-label-only.py" not in ok | set(why)),
+        ("最上位の鍵は `jobs` に完全に一致するときだけジョブにする",
+         "ジョブの外" in why.get("job-under-jobsish.py", set()) and "job-under-jobsish.py" not in ok),
+        ("鍵の段でない行を鍵と読まない", "job-odd.py" in gated),
+        ("コンパクトな列（`steps:` と同じ字下げの `- `）は `steps:` の外と読む（守らない——偽の赤）",
+         {"job-compact-a.py", "job-compact-b.py"} <= gated
+         and why["job-compact-a.py"] == {"`steps:` の外（None）"}),
+    ] + [
         ("生きたステップを拾う（陽性対照）", "check-live.py" in live),
         ("コメントアウトされたステップを、生きている側に数えない",
          "check-dead.py" not in live),
@@ -996,6 +1291,44 @@ SCAN_MUTANTS = {
     "大文字の変数だけを見る（#750 の 2 パス目）": (
         'ENV_RE = re.compile(r"(?:^|\\s)[A-Za-z_][A-Za-z0-9_]*=")',
         'ENV_RE = re.compile(r"(?:^|\\s)[A-Z_][A-Z0-9_]*=")'),
+    # #931: ジョブの位置（`gated_runs`）
+    "ジョブの `if:` を見ない": ('GATE_KEYS = ("if", "needs")', 'GATE_KEYS = ("needs",)'),
+    "ジョブの `needs:` を見ない": ('GATE_KEYS = ("if", "needs")', 'GATE_KEYS = ("if",)'),
+    "`jobs:` の外を見ない": (
+        '            reasons.add("ジョブの外")', '            pass'),
+    "`steps:` の外を見ない": (
+        '            if k != "steps":', '            if False:'),
+    "鍵の重なりを見ない": ("            if dup:", "            if False:"),
+    "最上位の鍵で区切らない": (
+        '            in_jobs = head == "jobs"',
+        '            in_jobs = in_jobs or head == "jobs"'),
+    "見出しの段より浅い行で区切らない": (
+        "                in_jobs = False  # 見出しの段より浅い", "                pass  # 見出しの段より浅い"),
+    "鍵の段より深い行も鍵と読む": ("                if indent <= key_indent:", "                if True:"),
+    # #931 の 1 パス目（V1・V4）
+    "引用符つきの鍵を読まない": (
+        '''KEY_RE = re.compile(r"""(?:"([^"]*)"|\'([^\']*)\'|([^\\s:#\'"-][^\\s:]*))\\s*:(?:\\s|$)""")''',
+        '''KEY_RE = re.compile(r"""([^\\s:#\'"-][^\\s:]*)\\s*:(?:\\s|$)""")'''),
+    "コロンの前の空白を許さない": (
+        '''KEY_RE = re.compile(r"""(?:"([^"]*)"|\'([^\']*)\'|([^\\s:#\'"-][^\\s:]*))\\s*:(?:\\s|$)""")''',
+        '''KEY_RE = re.compile(r"""(?:"([^"]*)"|\'([^\']*)\'|([^\\s:#\'"-][^\\s:]*)):(?:\\s|$)""")'''),
+    # #931 の 2 パス目（VB）
+    "空行とコメントだけの行も飛ばさない": ("        if not code.strip():\n            continue\n        indent", "        if not code:\n            continue\n        indent"),
+    "コメントを切らずに読む": ("        code, _ = split_comment(raw)\n        if not code.strip():", "        code = raw\n        if not code.strip():"),
+    "`run:` の行に限らず名前を拾う": (
+        '        names = set(NAME_RE.findall(code)) if "run:" in code else set()',
+        '        names = set(NAME_RE.findall(code))'),
+    "`jobs` を部分一致で読む": ('            in_jobs = head == "jobs"', '            in_jobs = "jobs" in code'),
+    "鍵の段でない行も鍵と読む": (
+        "                    key = head if (head is not None and indent == key_indent) else None",
+        "                    key = head"),
+    "鍵でない行も鍵に数える": (
+        "                    if key is not None:\n                        keys[job].append(key)",
+        "                    if True:\n                        keys[job].append(key)"),
+    "ジョブの識別子に連番を付けない": (
+        '                job = f"{len(keys)}:{head if', '                job = f"{head if'),
+    "ジョブごとに鍵の段を戻さない": (
+        "                keys[job] = []\n                key_indent = None\n", "                keys[job] = []\n"),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
@@ -1081,7 +1414,7 @@ def run_contract_with_base(root: Path) -> None:
 
 def run_scan(root: Path) -> None:
     print("判別（合成試料——全部通らなければならない）:")
-    for name, ok in scan_contract(scan_ci_runs, full_runs):
+    for name, ok in scan_contract(scan_ci_runs, full_runs, gated_runs):
         check(name, ok)
 
     print("判別の変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
@@ -1100,8 +1433,12 @@ def run_scan(root: Path) -> None:
         # **最初の 1 件だけ置き換えれば、当たるのは判別の本体である。**
         p.write_text(SELF_SRC.replace(old, new, 1))
         scanned = load(p, f"scanned{i}")
-        broken = [n for n, ok in scan_contract(scanned.scan_ci_runs, scanned.full_runs)
-                  if not ok]
+        try:
+            broken = [n for n, ok in scan_contract(scanned.scan_ci_runs, scanned.full_runs,
+                                                   scanned.gated_runs)
+                      if not ok]
+        except Exception as e:  # 壊した判別が落ちた——契約は破れている（緑ではない）
+            broken = [f"例外: {e!r}"]
         check(f"変異 `{name}` を契約が捕まえる", bool(broken))
         if not broken:
             print("       壊したのに契約が全部通った")
