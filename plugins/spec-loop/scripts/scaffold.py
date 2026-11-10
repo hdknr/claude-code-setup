@@ -63,7 +63,8 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 実装に求める口は、呼び出しのキーワード引数 `checkpoint`（段の前で呼ぶ）と、モジュールの `reset_state()`（`CHECKPOINT`・`RESET`）。
 **1 段の時間（`TRACE_STEP_WAIT`）のうちに段に来ない（排他で待っている）呼び出しに当たったら順の強制をやめて全部を走らせる**——正しい実装はどの順でも正しいので緑、
 競合する実装は順を最後まで進められて反例と同じ誤りになり赤。**段に来ずに終わった・違う段に来た呼び出しは失敗**（口の約束を守っていない——一部の段だけに呼ぶ・名前を違える競合する実装を素通りさせない）。
-**負荷で 1 段の時間より遅れると競合する実装を見逃しうる。排他を待つ時間に上限を持つ実装は、テストが段で止めている間に待ちを打ち切って失敗しうる**（決まりの正は spec-ir.md）。
+`checkpoint` は段の操作の直前に、その段のために排他を取る前に呼ぶ（止められている間にほかを排他で待たせない）。
+**負荷で 1 段の時間より遅れる・口の約束を破る（排他の内側で呼ぶ・先にまとめて呼ぶ）と競合する実装を見逃しうる。排他を待つ時間に上限を持つ実装は、テストが段で止めている間に待ちを打ち切って失敗しうる**（決まりの正は spec-ir.md）。
 **`formal` の `spec/formal/<対象>/README.md` が無い・入口が中間表現に無い・値が型に反する・段の呼び出しが `calls` に無い・確かめるもの（`outcomes`・`after`）が無い・
 口と同じ名前の入口や入力の項目があるなら 1。** トレースのケースを持たない機能の Red テストと本文は、足す前と 1 バイトも変わらない
 （決まりの正は `references/spec-ir.md` の「トレースのケース」）。
@@ -1337,6 +1338,15 @@ def is_trace(case: dict) -> bool:
     return TRACE in case
 
 
+def canonical(value):
+    """入れ子の dict まで、キーを並べ替えた写し——Red テストのバイトが JSON に書いたキーの順で変わらないように（#923 の 2 パス目 P2-4）。"""
+    if isinstance(value, dict):
+        return {key: canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [canonical(item) for item in value]
+    return value
+
+
 def plain_cases(feature: dict) -> list[dict]:
     """入出力のケース（トレースのケースでないもの）。番号の順。"""
     return [case for case in sorted(feature["cases"], key=case_order) if not is_trace(case)]
@@ -1370,8 +1380,9 @@ def trace_nullable(feature: dict, ops: dict[str, dict]) -> dict[str, tuple]:
 
 
 # トレースのケースを持つ機能の Red テストにだけ足す部分（#923。`references/spec-ir.md` の「トレースのケース」）。
-# 呼び出しをスレッドで走らせ、口（`checkpoint`）で止めて、トレースの順に 1 段ずつ進める。来ない段（排他で待っている・
-# 別の段に来た・終わった）に当たったら、その順にはならないと読んで順の強制をやめ、全部を走らせる——正しい実装はどの順でも正しい
+# 呼び出しをスレッドで走らせ、口（`checkpoint`）で止めて、トレースの順に 1 段ずつ進める。1 段の時間のうちに段に来ない（排他で待っている）
+# 呼び出しに当たったら、その順にはならないと読んで順の強制をやめ、全部を走らせる——正しい実装はどの順でも正しい。
+# 段に来ずに終わった・違う段に来た呼び出しは `strayed` に記録して、全部が終わった後に失敗にする（口の約束を守っていない）
 TRACE_RUNTIME = (
     "def implementation_of(name):",
     "    try:",
@@ -1583,7 +1594,7 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
     for case in sorted(feature["cases"], key=case_order):
         refs = "・".join(case.get("qa", []))
         if is_trace(case):
-            run = f"        self.trace({literal(case[TRACE])})"
+            run = f"        self.trace({literal(canonical(case[TRACE]))})"
         else:
             expected = case["expected"] if "expected" in case else {"error": case["error"]}
             run = f"        self.check({literal(case['input'])}, {literal(expected)})"
@@ -1931,7 +1942,7 @@ def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
     """そのケースの Red テストが実行する中身のうち、型を除いたもの（題・コメントは入れない）。"""
     op = feature["operation"]
     if is_trace(case):
-        return impl_module, TRACE, literal(case[TRACE])
+        return impl_module, TRACE, literal(canonical(case[TRACE]))
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
     return impl_module, op["id"], literal(case["input"]), literal(expected)
 
@@ -2128,7 +2139,8 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
             *([f"- トレースのケース（形式検査の反例の実行順を再現する。spec-loop の `references/spec-ir.md` の「トレースのケース」）があるので、"
                f"実装はモジュール `{impl}` に状態を空に戻す関数 `{RESET}()` を持ち、トレースが同時に走らせる関数（"
                + "・".join(f"`{name}`" for name in concurrent_operations(feature))
-               + f"）はキーワード引数 `{CHECKPOINT}`（既定は何もしない）を受け取って、トレースの段の全部について、その段の前で `{CHECKPOINT}(\"<段の名前>\")` を呼ぶ"
+               + f"）はキーワード引数 `{CHECKPOINT}`（既定は何もしない）を受け取って、トレースの段の全部について、その段の操作の直前に——その段のために排他を取る前に——"
+               f"`{CHECKPOINT}(\"<段の名前>\")` を呼ぶ"
                "（結果で書かない分岐でも呼ぶ。段を飛ばす・違う名前で呼ぶと失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),
             "- 回し方（正本リポジトリの根で）:",
             "",

@@ -877,6 +877,16 @@ NO_KEYWORD_IMPL = SILENT_IMPL.replace("def reserve(item, qty, checkpoint=lambda 
 # 一部の段にだけ口を呼ぶ競合する実装（書く段の前で呼ばない）・段の名前を違える競合する実装——どちらも順を強制できないので失敗にする
 PARTIAL_IMPL = RACY_IMPL.replace('    checkpoint("write")\n', "")
 RENAMED_STEPS_IMPL = RACY_IMPL.replace('checkpoint("read")', 'checkpoint("load")').replace('checkpoint("write")', 'checkpoint("store")')
+# 口の約束（段の操作の直前に、その段のために排他を取る前に呼ぶ）を守る実装（#923 の 2 パス目）。
+# 読む段と書く段を別々の排他で守る競合する実装（TOCTOU）は赤、読むから書くまでを 1 つの排他で守る正しい実装は緑
+_RACY_BODY = ('    checkpoint("read")\n    have = _stock.get(item, 0)\n    checkpoint("write")\n    if have < qty:\n'
+              '        return {"error": "OUT_OF_STOCK"}\n    _stock[item] = have - qty\n    return {"ok": True}\n')
+TOCTOU_IMPL = GOOD_IMPL + STOCK_STATE + RACY_RESERVE.replace(_RACY_BODY, (
+    '    checkpoint("read")\n    with _lock:\n        have = _stock.get(item, 0)\n    checkpoint("write")\n    with _lock:\n'
+    '        if have < qty:\n            return {"error": "OUT_OF_STOCK"}\n        _stock[item] = have - qty\n        return {"ok": True}\n'))
+PRELOCK_IMPL = GOOD_IMPL + STOCK_STATE + RACY_RESERVE.replace(_RACY_BODY, (
+    '    checkpoint("read")\n    with _lock:\n        have = _stock.get(item, 0)\n        checkpoint("write")\n'
+    '        if have < qty:\n            return {"error": "OUT_OF_STOCK"}\n        _stock[item] = have - qty\n        return {"ok": True}\n'))
 # 状態を空に戻す関数の無い実装
 NO_RESET_IMPL = LOCKED_IMPL.replace("def reset_state():\n    _stock.clear()\n", "")
 TRACE_TEST = "scaffold/tests/test_f_003.py"
@@ -943,6 +953,32 @@ def trace_called_moved(repo: Path) -> str | None:
         return f"本文を作るのは F-003（トレースが呼ぶ入口が変わった）と F-005 のはず: {list(found)}"
     return body_has(found["F-003"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-003-C1` | 回帰 |", "| `F-003-C2` | 変更 |"),
                     "トレースが呼ぶ入口が変わった機能")
+
+
+def reversed_keys(value):
+    """入れ子の dict まで、キーの順を逆にした写し（中身は同じ）。"""
+    if isinstance(value, dict):
+        return {key: reversed_keys(value[key]) for key in reversed(list(value))}
+    if isinstance(value, list):
+        return [reversed_keys(item) for item in value]
+    return value
+
+
+def plant_reordered_v2(repo: Path) -> None:
+    """v1 で作った Red テストの sha256 を残し、中身が同じで F-003 のキーの順だけ逆にした v2 を置く。"""
+    (repo / "before.sha256").write_text(hashlib.sha256((repo / TRACE_TEST).read_bytes()).hexdigest(), encoding="utf-8")
+    for rel, body in v2([reversed_keys(STOCK_FEATURES[0])]).items():
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+
+def reordered_kept(repo: Path) -> str | None:
+    if "F-003" in bodies(repo):
+        return f"キーの順だけ変えた F-003 の本文を作った: {list(bodies(repo))}"
+    now = hashlib.sha256((repo / TRACE_TEST).read_bytes()).hexdigest()
+    before = (repo / "before.sha256").read_text(encoding="utf-8")
+    return None if now == before else f"キーの順だけ変えたのに {TRACE_TEST} のバイトが変わった（{before[:12]} → {now[:12]}）"
 
 
 def v2_trace(fn: Callable[[dict], None]) -> dict[str, str]:
@@ -1964,6 +2000,12 @@ CASES: list[Case] = [
          extra={**TRACE_FORMAL, **v2([dict(copy.deepcopy(STOCK_FEATURES[2]), operation=dict(
              copy.deepcopy(STOCK_FEATURES[2]["operation"]), output={"stock": {"type": "number"}}))])},
          post=trace_called_moved),
+    Case("トレース: 排他を分けた競合する実装で失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=TOCTOU_IMPL,
+         post=expect_trace_red("結果が期待と違う")),
+    Case("トレース: 排他の前で口を呼ぶ正しい実装で緑", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=PRELOCK_IMPL,
+         post=expect_green),
+    Case("トレース: v2 でキーの順だけ変えても Red テストは同じ", 0, "作った", ir=traced(), extra=TRACE_FORMAL,
+         generate_first=True, pre=plant_reordered_v2, post=reordered_kept),
     Case("トレース: v2 でほかのケースだけ変えたら回帰", 0, "作った", ir=traced(),
          extra=v2_trace(lambda f: f["cases"][0]["input"].update(qty=-1)), post=trace_v2("F-003-C2", "回帰")),
     Case("トレース: 形式検査の記録が無い", 1, "F-003-C2.trace.formal: spec/formal/stock-reserve/README.md が無い", ir=traced(),
@@ -2718,7 +2760,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("トレースの結果を比べない", '        "        if \\"outcomes\\" in trace:",', '        "        if False:",', "トレース: 競合する実装で失敗"),
     ("トレースの後の状態を比べない", '        "        for call in trace.get(\\"after\\", []):",', '        "        for call in []:",',
      "トレース: 後の状態だけで確かめる"),
-    ("v2 でトレースの変化を見ない", "        return impl_module, TRACE, literal(case[TRACE])", "        return impl_module, TRACE",
+    ("v2 でトレースの変化を見ない", "        return impl_module, TRACE, literal(canonical(case[TRACE]))", "        return impl_module, TRACE",
      "トレース: v2 でトレースを変えたら変更"),
     ("性能テストにトレースのケースを入れる", '    inputs = [case["input"] for case in plain_cases(feature)]',
      '    inputs = [case.get("input") for case in sorted(feature["cases"], key=case_order)]', "トレース: 性能テストに入れない"),
@@ -2731,6 +2773,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "                if False]", "トレース: v2 で呼ぶ入口の型だけ変えたら変更"),
     ("本文の口の行に setup・after だけの入口も挙げる", '               + "・".join(f"`{name}`" for name in concurrent_operations(feature))',
      '               + "・".join(f"`{name}`" for name in traced_operations(feature))', "トレース: 作る"),
+    ("トレースのキーを並べ替えない", "        return {key: canonical(value[key]) for key in sorted(value)}",
+     "        return {key: canonical(value[key]) for key in value}", "トレース: v2 でキーの順だけ変えても Red テストは同じ"),
     ("トレースの無い機能にも順の強制を足す", '    traced = any(is_trace(case) for case in feature["cases"])',
      "    traced = True", "トレース: 作る"),
     # #876: まとめた本文（--bundle）と依存の連鎖（depends）
