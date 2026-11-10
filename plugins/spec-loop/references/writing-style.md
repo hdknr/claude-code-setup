@@ -149,7 +149,7 @@ spec-loop のスキルが正本リポジトリに書く文書の文章は、こ�
 - リリースした版（`release-v<n>` のタグがある版）の `docs/v<n>/` は書き換えない（`versions.md` の「凍結」。`check-frozen.py` が 1 で落とす）。
 - 前の版のファイルを、記法のためだけに作業中の版へ写さない。
 - 写すと中身の文字列が違うので、版の差分（`diff-versions.py`）が `変更` に出し、変更の提案書の「前の版からの変更」にも載る（`versions.md` の「版の差分」）。
-- 前の版のファイルは、中身を直すために作業中の版へ写すときに、あわせて移す。
+- 前の版のファイルを中身を直すために作業中の版へ写したら、直しの commit の後に、移しだけの commit で移す（下の「移しだけの commit にする」）。
 
 **その版のサインオフを取る前に移す**
 
@@ -166,7 +166,7 @@ spec-loop のスキルが正本リポジトリに書く文書の文章は、こ�
 **移した後に、数が前後で同じかをスクリプトで確かめる**
 
 - 確かめるのは、表の行・見出し・印・囲みのコード・番号つきの項・未決定の印の数と、根拠の番号（`Q-R-004`・`D-F-002`・`F-001` の形）の集まりである。
-- 正本リポジトリの根で、移す前のコミットと作業中の版のディレクトリを渡して走らせる。
+- 正本リポジトリの根で、移す前のコミット（移しの commit の直前）と作業中の版のディレクトリを渡して走らせる。
 - どれかが違えば、そのファイルと項目を出して 1 で終わる。
 - 句点の数は前後を並べて出すだけで、違っても落とさない（文を分けると増え、見出しにすると減る）。
 - 句点の数が大きく変わったら、文を足したか消したかを疑う。
@@ -187,10 +187,11 @@ COUNTS = {
     "未決定の印": re.compile(r"(?i)(?<![a-z])(?:tbd|todo)(?![a-z])|未定(?!義)|要確認"),
 }
 NUMBER = re.compile(r"(?<![A-Za-z0-9])[A-Z]-(?:[A-Z]+-)?[0-9]+[a-z]?(?![A-Za-z0-9])")
-names = subprocess.run(["git", "diff", "--name-only", base, "--", root],
-                       capture_output=True, text=True, check=True).stdout.split()
-names += subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--", root],
-                        capture_output=True, text=True, check=True).stdout.split()
+# -z で読む（日本語・空白を含む名前を git が引用符で囲まないように）
+names = subprocess.run(["git", "diff", "--name-only", "-z", base, "--", root],
+                       capture_output=True, text=True, check=True).stdout.split("\0")
+names += subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z", "--", root],
+                        capture_output=True, text=True, check=True).stdout.split("\0")
 bad = 0
 for name in sorted(set(n for n in names if n.endswith(".md"))):
     old = subprocess.run(["git", "show", f"{base}:{name}"], capture_output=True, text=True)
