@@ -60,6 +60,9 @@
   （#930 の `/code-review` が複製で示した）。**ジョブの見出しの字下げを崩した形**（深くして前のジョブの鍵になる・浅くして `jobs:` の外に出る）も赤にする。
   **「そもそも無い」「コメントアウト」とは別の行で、理由（ジョブの `if:`・`needs:`・`steps:` の外・ジョブの外・鍵の重なり）を名指しする。**
   **コンパクトな列**（`steps:` と同じ字下げの `- run:`）も `steps:` の下と読む（#944。#931 では偽の赤だった）。
+- **収録した回帰テストを、無条件に走るジョブの*同じ `run:` の行*で引数なしで回しているか**（#945。`full_ungated_runs`）——
+  上の 2 つ（`full_runs`・`gated_runs`）は別々に見るので、**無条件のジョブでは狭め、全部を回す行は条件つきのジョブにだけ置く形**は
+  両方とも緑になる（無条件に全部を回す行は 1 本も無い）。2 つの判定を行の番号で突き合わせて赤にする。上の 2 つで赤になった名前は重ねて出さない。
 
 守らない:
 
@@ -89,6 +92,8 @@
   **環境変数の判定の偽陽性**（狭めない変数・変数でない字句——`echo a=b && …`・`-X utf8=1`——でも「狭めた」と数える）、
   **#754 で受け入れた 2 つの偽陽性**（`- run:` の次の行に深い字下げの `name:` を書く形・`&&` で終わる行。どちらも全部を回していても
   「狭めた」と誤って赤にする——黙って素通しはしない）、**`run:` の行より浅い継続行**（PyYAML 6.0.3 では YAML として読めなかった）。
+  **`full_ungated_runs`（#945）は 2 つの判定を同じ行で重ねたものなので、両方の守らないものをそのまま持つ**——たとえばステップの `env:` で狭めた行は、
+  無条件のジョブにあれば「無条件に全部を回している」に数える（黙って素通しする向き）。
 - **`on:` を変えてワークフローを起動しなくする**——**`*.yml` を読むだけなので、
   そのファイルが実際に起動するかは見ていない**（実測で緑のまま）。
   **`on:` を消す・条件を狭める・`workflow_dispatch` だけにする、いずれも素通しする。**
@@ -651,8 +656,18 @@ def full_runs(ci: str) -> set[str]:
     **引用した値**（`run: "python3 scripts/x.py"`）は引数が無くても全部に数えない（名前の後ろが閉じ引用符で、`FULL_RE` が当たらない。誤って赤）。**深い字下げの次の行が値の続きでなく別の鍵**（`- run:` の次の行の `name:`）と
     **`&&` で終わる行**（続きを次の行に書く）は、全部を回していても「全部」に数えない（誤って赤——#754 で受け入れた）。
     **`run:` の行より浅い継続行**は見ない（PyYAML 6.0.3 では YAML として読めなかった。GitHub の読み方は確かめていない）。
+    **その行がどのジョブにあるかは見ない**——条件つきのジョブ（`if:`・`needs:`）にしか引数なしの行が無くても「全部」に数える。
+    **無条件のジョブで全部を回しているかは `full_ungated_runs` が見る**（#945）。
     """
-    full: set[str] = set()
+    return set().union(*full_lines(ci).values())
+
+
+def full_lines(ci: str) -> dict[int, set[str]]:
+    """`full_runs` の行ごとの形（#945）——行の番号（`ci.split("\\n")` の 0 始まり）から、その行で引数なしで呼んでいる名前へ。
+
+    判定は `full_runs` の docstring を正とする。`full_ungated_runs` が `gate_records` と同じ行の番号で突き合わせるために分けた。
+    """
+    full: dict[int, set[str]] = {}
     lines = ci.split("\n")
     for i, raw in enumerate(lines):
         alive, _ = split_comment(raw)
@@ -666,7 +681,7 @@ def full_runs(ci: str) -> set[str]:
         for m in FULL_RE.finditer(alive.rstrip()):
             if ENV_RE.search(alive[head:m.start()]):
                 continue  # 環境変数を置いて狭めている（#750）
-            full.add(m.group(1))
+            full.setdefault(i, set()).add(m.group(1))
     return full
 
 
@@ -718,15 +733,33 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
     YAML のアンカー（`&`・`*`・`<<`）・複合の鍵（`? if`）・フロー形式で書いたジョブ（`jobs: {a: …}`）・再利用のワークフロー（`uses:` のジョブ）。
     **偽の赤になる書き方**——**タブで始まる行**は字下げ 0 の最上位と読み、そこから先をジョブの外に数える（YAML はタブの字下げを許さない）。
     **値を読まない**ので、必ず走る `if: always()` も、`needs:` も、ジョブ単位にあれば赤にする。
+    **その行が引数を付けて狭めているかは見ない**——無条件の位置の行が狭めていても「無条件」に数える。
+    **無条件のジョブで全部を回しているかは `full_ungated_runs` が見る**（#945）。
     """
-    records: list[tuple[set[str], str | None, str | None]] = []
+    ok: set[str] = set()
+    why: dict[str, set[str]] = {}
+    for _, names, reasons in gate_records(ci):
+        for n in names:
+            if reasons:
+                why.setdefault(n, set()).update(reasons)
+            else:
+                ok.add(n)
+    return ok, why
+
+
+def gate_records(ci: str) -> list[tuple[int, set[str], set[str]]]:
+    """`gated_runs` の行ごとの形（#945）——生きている `run:` の行ごとに `(行の番号, 名前, 理由)`。理由が空なら無条件の位置。
+
+    行の番号は `ci.split("\\n")` の 0 始まりで、`full_lines` と同じ。読み方は `gated_runs` の docstring を正とする。
+    """
+    records: list[tuple[int, set[str], str | None, str | None]] = []
     keys: dict[str, list[str]] = {}
     in_jobs = False
     job_indent: int | None = None
     key_indent: int | None = None
     job: str | None = None
     key: str | None = None
-    for raw in ci.split("\n"):
+    for i, raw in enumerate(ci.split("\n")):
         code, _ = split_comment(raw)
         if not code.strip():
             continue
@@ -759,10 +792,9 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
                         keys[job].append(key)
         names = set(NAME_RE.findall(code)) if "run:" in code else set()
         if names:
-            records.append((names, job if in_jobs else None, key if in_jobs else None))
-    ok: set[str] = set()
-    why: dict[str, set[str]] = {}
-    for names, j, k in records:
+            records.append((i, names, job if in_jobs else None, key if in_jobs else None))
+    out: list[tuple[int, set[str], set[str]]] = []
+    for i, names, j, k in records:
         reasons: set[str] = set()
         if j is None:
             reasons.add("ジョブの外")
@@ -775,12 +807,22 @@ def gated_runs(ci: str) -> tuple[set[str], dict[str, set[str]]]:
             dup = sorted({x for x in keys[j] if keys[j].count(x) > 1})
             if dup:
                 reasons.add(f"ジョブの鍵が重なる（{', '.join(dup)}）")
-        for n in names:
-            if reasons:
-                why.setdefault(n, set()).update(reasons)
-            else:
-                ok.add(n)
-    return ok, why
+        out.append((i, names, reasons))
+    return out
+
+
+def full_ungated_runs(ci: str) -> set[str]:
+    """**同じ `run:` の行で**、無条件に走るジョブの `steps:` の下にあり、かつ引数なしで呼んでいる名前（#945）。
+
+    `full_runs`（引数なしの行が 1 つはある）と `gated_runs`（無条件の位置に行が 1 つはある）は**別々に見る**ので、
+    **無条件のジョブでは狭め、全部を回す行は条件つきのジョブ（`if:`・`needs:`）にだけ置く形**は両方とも緑になる
+    ——無条件に全部を回している行は 1 本も無いのに（#942 の `/code-review` C1）。だから 2 つの判定を**行の番号で突き合わせる**。
+    名前ごとの集合の積（`full_runs(ci) & gated_runs(ci)[0]`）では、その形が積に入って緑のまま。
+
+    判定の中身（引数・続きの行・環境変数・ジョブの位置）と守らないものは `full_runs` と `gated_runs` の docstring を正とする。
+    """
+    full = full_lines(ci)
+    return {n for i, names, reasons in gate_records(ci) if not reasons for n in names & full.get(i, set())}
 
 
 def test_ci_runs_every_registered_script() -> None:
@@ -867,6 +909,16 @@ def test_ci_runs_every_registered_script() -> None:
     if narrowed:
         print(f"       引数を付けて回している: {narrowed}")
         print("       **引数を外す。** 狭めた回は、全部を回す回の代わりにならない。")
+    # **無条件のジョブで、引数なしで回しているか**（#945）——上の 2 つ（ジョブの位置・引数）は別々に見るので、無条件のジョブでは狭め、
+    # 全部を回す行は条件つきのジョブにだけ置く形は両方とも緑になる。上の 2 つのどちらかで赤になった名前はここに重ねて出さない。
+    # 実物の `plugins.yml` で当てる——無条件のジョブの行を狭め、全部を回す行を `if: false` のジョブにだけ置くと赤:
+    # mutation-claim: {"file": ".github/workflows/plugins.yml", "old": "        run: python3 scripts/test-run-serial.py\n\n", "new": "        run: python3 scripts/test-run-serial.py --narrow\n\n  run-serial-whole:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n      - run: python3 scripts/test-run-serial.py\n\n", "red": "python3 scripts/test-check-all.py --part registry"}
+    both = full_ungated_runs(ci)
+    split = [n for n in sorted(mod.TESTS) if n in full and n in ok and n not in both]
+    check("収録した回帰テストを、無条件に走るジョブの同じ `run:` の行で引数なしで回している（#945）", not split)
+    if split:
+        print(f"       無条件のジョブでは狭め、全部を回す行は条件つきのジョブにだけある: {split}")
+        print("       **引数なしの `run:` を無条件のジョブに置く。** 条件つきのジョブは SKIPPED になりうる。")
 
 
 # ------------------------------------------------------------------ 変異
@@ -1184,7 +1236,32 @@ x-jobs:
 """
 
 
-def scan_contract(scan, full_of, gate_of) -> list[tuple[str, bool]]:
+# **ジョブの位置と引数の組の試料**（#945）——`full_runs` と `gated_runs` は別々に見ると両方とも緑になる形。
+SAMPLE_SPLIT = """\
+jobs:
+  narrow:
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/test-split.py --part scan
+      - run: python3 scripts/test-whole.py
+      - run: python3 scripts/test-split-needs.py --part scan
+      - run: python3 scripts/test-pair-a.py --part scan && python3 scripts/test-pair-b.py
+  gated:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: python3 scripts/test-split.py
+      - run: python3 scripts/test-whole.py --part scan
+      - run: python3 scripts/test-pair-a.py
+  waits:
+    runs-on: ubuntu-latest
+    needs: [narrow]
+    steps:
+      - run: python3 scripts/test-split-needs.py
+"""
+
+
+def scan_contract(scan, full_of, gate_of, both_of) -> list[tuple[str, bool]]:
     """**判別の契約。** 各行が `SAMPLE_CI`・`SAMPLE_JOBS` のどれかの経路に対応している。
 
     **陽性側も取る**——「拾わない」だけを並べると、**もともと空の集合**と区別がつかない
@@ -1195,7 +1272,21 @@ def scan_contract(scan, full_of, gate_of) -> list[tuple[str, bool]]:
     full = full_of(SAMPLE_CI)
     ok, why = gate_of(SAMPLE_JOBS)
     gated = set(why) - ok
+    split_full = full_of(SAMPLE_SPLIT)
+    split_ok, _ = gate_of(SAMPLE_SPLIT)
+    both = both_of(SAMPLE_SPLIT)
     return [
+        # #945: ジョブの位置と引数を同じ行で突き合わせる（陽性側も取る）
+        ("無条件のジョブで引数なしの行を、両方を満たすと数える（陽性対照）",
+         {"test-whole.py", "test-pair-b.py"} <= both),
+        ("無条件のジョブでは狭め、全部を回すのは `if:` のジョブだけの形を数えない（別々には両方とも満たす）",
+         "test-split.py" in split_full and "test-split.py" in split_ok and "test-split.py" not in both),
+        ("全部を回すのが `needs:` のジョブだけの形も数えない",
+         "test-split-needs.py" in split_full and "test-split-needs.py" in split_ok
+         and "test-split-needs.py" not in both),
+        ("同じ行の別の名前が引数なしでも、狭めた名前は数えない",
+         "test-pair-a.py" in split_full and "test-pair-a.py" in split_ok and "test-pair-a.py" not in both),
+    ] + [
         # #931: ジョブの位置（陽性側も取る——無条件の位置を「無条件」に数える）
         ("無条件のジョブの `steps:` の下を無条件に数える（陽性対照）",
          {"job-plain.py", "job-step-if.py", "job-before-deep.py", "job-after-keyrun.py",
@@ -1394,6 +1485,12 @@ SCAN_MUTANTS = {
         "                    keys[job].append(key)  # コンパクトな列——前の鍵の値の続き（#944）"),
     "`-` だけの行を列の項と読まない": ('SEQ_RE = re.compile(r"-(?:\\s|$)")', 'SEQ_RE = re.compile(r"-\\s")'),
     "`-x` も列の項と読む": ('SEQ_RE = re.compile(r"-(?:\\s|$)")', 'SEQ_RE = re.compile(r"-")'),
+    # #945: ジョブの位置と引数を同じ行で突き合わせる（`full_ungated_runs`）
+    "名前ごとの集合の積で決める（#945 の前の 2 つの検査に戻す）": (
+        "    return {n for i, names, reasons in gate_records(ci) if not reasons for n in names & full.get(i, set())}",
+        "    return full_runs(ci) & gated_runs(ci)[0]"),
+    "条件つきの位置の行も数える": (" if not reasons for n in names & full", " for n in names & full"),
+    "狭めた行も数える": ("for n in names & full.get(i, set())}", "for n in names}"),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
@@ -1479,7 +1576,7 @@ def run_contract_with_base(root: Path) -> None:
 
 def run_scan(root: Path) -> None:
     print("判別（合成試料——全部通らなければならない）:")
-    for name, ok in scan_contract(scan_ci_runs, full_runs, gated_runs):
+    for name, ok in scan_contract(scan_ci_runs, full_runs, gated_runs, full_ungated_runs):
         check(name, ok)
 
     print("判別の変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
@@ -1500,7 +1597,7 @@ def run_scan(root: Path) -> None:
         scanned = load(p, f"scanned{i}")
         try:
             broken = [n for n, ok in scan_contract(scanned.scan_ci_runs, scanned.full_runs,
-                                                   scanned.gated_runs)
+                                                   scanned.gated_runs, scanned.full_ungated_runs)
                       if not ok]
         except Exception as e:  # 壊した判別が落ちた——契約は破れている（緑ではない）
             broken = [f"例外: {e!r}"]
