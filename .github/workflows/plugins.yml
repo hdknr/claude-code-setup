@@ -13,7 +13,8 @@ permissions:
 # **matrix にしない**——`run:` の行からスクリプト名が消えると、test-check-all.py の収録漏れの検査が CI のステップを見つけられない。
 # 各ジョブは同じ形で取る（fetch-depth: 0）——どのステップがどのジョブに移っても、見える履歴が分割前と同じになるように。
 jobs:
-  # カタログ・版・規約の歯止めとそのテスト
+  # カタログ・版・規約の歯止めとそのテスト、変異の主張の当て（check-mutation-claims）、check-all.py のテスト、
+  # 本体を CI から呼ばない道具のテスト（link-skills.sh・トランスクリプトの集計・利用上限の停止を記録する hook・dev-loop の Eval の実行と要約）
   check:
     runs-on: ubuntu-latest
     steps:
@@ -118,7 +119,8 @@ jobs:
         run: python3 scripts/test-check-plan-counts.py
 
       # 散文で書かれた「この変異で赤になる」を機械で当てる（#151）。
-      # 他の歯止めを子プロセスで回すので、1 本だけ重い。
+      # 他の歯止めを子プロセスで回すが、CI ではジョブを分けるほど重くない（分割前の run 42612174778 で 25 秒、
+      # 分割後の run 42732175841・42736693734・42742968130・42743663412 で 19〜32 秒）。
       - name: 散文の変異主張を当てる（#151）
         run: python3 scripts/check-mutation-claims.py
 
@@ -130,7 +132,8 @@ jobs:
       - name: check-all.py のテスト
         run: python3 scripts/test-check-all.py
 
-  # dev-loop の周の道具のテスト
+  # dev-loop の周の道具（worktree・周の探索・不在の点検・長期トークン・台帳・マージ）と、cruise の道具（親 Issue・子プロセス・片付け・
+  # コードブロックの読み方の写し）と、orca・cmux のタブ一致規則のテスト
   dev-loop:
     runs-on: ubuntu-latest
     steps:
@@ -201,7 +204,8 @@ jobs:
       - name: cruise の外側のループのテスト（#791）
         run: python3 scripts/test-outer-loop.py
 
-  # spec-loop のテスト（生成と autopilot の外側のループ以外）
+  # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分（casefold の FS を含む）、
+  # 作り直しの範囲と量、親 Issue の一覧、autopilot の台帳と点検、TLC の前提（表の検査と下のジョブの生成、autopilot の外側のループ以外）
   spec-loop:
     runs-on: ubuntu-latest
     steps:
@@ -278,7 +282,8 @@ jobs:
       - name: spec-loop の MkDocs の雛形のテスト（#266）
         run: python3 scripts/test-init-mkdocs.py
 
-  # spec-loop の生成のテスト
+  # spec-loop のテストのうち、表の検査（Q&A 表・仕様レビューを抜ける条件・スケジュールと見積りの表）と、
+  # ガントチャート・図の書き出し・Red テストと Issue の本文の生成（ジョブの名前より広い）
   spec-loop-generate:
     runs-on: ubuntu-latest
     steps:
