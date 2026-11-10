@@ -122,6 +122,10 @@ SPEC_STEPS = [("w", DECISION, "会員,金額,割引\nシルバー,10000 未満,0
               ("w", "docs/v1/spec/arch.drawio.svg", SVG), ("w", "docs/v1/shared/chart.svg", SVG), ("w", "docs/v1/requirements/flow.drawio", "<mxfile/>\n"),
               ("w", "docs/v1/proposal/spec/01-notes.md", "## 試作で確かめること\n\n読み取りの速さ。\n")]
 SIGNED_S = BASE[:-1] + SPEC_STEPS + [("c",), ("t", R1), ("t", B1)]
+# 形式検査のモデル（#908）: モデルと記録と、書き出しの形をした図。spec/formalx.md はモデルではない（接頭辞だけ同じ）
+FORMAL_STEPS = [("w", "docs/v1/spec/formal/order/Order.tla", "---- MODULE Order ----\n====\n"),
+                ("w", "docs/v1/spec/formal/order/README.md", "記録\n"), ("w", "docs/v1/spec/formal/order/trace.svg", SVG),
+                ("w", "docs/v1/spec/formalx.md", "x\n")]
 
 
 def _render_diagrams():
@@ -567,6 +571,17 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      and "| requirements/c.md |" in section(r.spec, "## 仕様と要求のファイル")
      and "requirements/b.md" not in section(r.spec, "## 仕様と要求のファイル")
      and "| Q&A（共有。v1 から重ねた全体） | 2（決定 2・暫定 0・未決定 0） |" in r.spec),
+    # 形式検査のモデル（spec/formal/）は仕様から書き起こした写し——規模・図・一覧のどれにも入れない（#908）。
+    # 陽性対照: 接頭辞だけ同じ spec/formalx.md は仕様のファイルとして数え、一覧に載る
+    ("仕様書に形式検査のモデルを入れない", BASE[:-1] + SPEC_STEPS + FORMAL_STEPS + [("c",), ("t", R1), ("t", B1)], False,
+     lambda r: made(r) and "spec/formal/" not in r.spec and "| spec/formalx.md |" in section(r.spec, "## 仕様と要求のファイル")
+     and "形式検査のモデルを除く） | 4 |" in r.spec and "spec/formal/" not in r.text),
+    ("変更の提案書に形式検査のモデルを載せない", SIGNED_R + [("w", "docs/v1/spec/formal/order/Order.tla", "---- MODULE Order ----\n====\n"),
+                                              ("c",), ("t", "signoff/v1/req-2"), ("t", "signoff/v1/budget-2")]
+     + V2_CHANGES + [("w", "docs/v2/spec/formal/order/Order.tla", "---- MODULE Order ----\nVARIABLE x\n====\n"),
+                     ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "## 前の版（v1）からの変更" in r.spec and "spec/formal/" not in r.spec and "spec/formal/" not in r.text
+     and "requirements/c.md" in r.text),
     # ---- PPTX（--pptx）
     ("PPTX も作る", SIGNED_S + [("arg", "--pptx")], False,
      lambda r: made(r) and set(k for k in r.pptx if not k.endswith(":bytes")) == {"proposal.pptx", "spec.pptx"}
@@ -596,6 +611,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("手書き部分の読めなさを捕まえない", "        except OSError as e:  # 権限などを", "        except ImportError as e:  # 権限などを",
      "手書き部分が読めない"),
     # 外さなくても `Q&A（内部）` の節は描かない（共有の種類だけ描く。#344）——外すことが効くのは内部の表の違反のほう
+    ("仕様書の規模と一覧にモデルを入れる", "    files = sorted(p for p in whole.files if not signoff.versions.is_formal(p))",
+     "    files = sorted(whole.files)", "仕様書に形式検査のモデルを入れない"),
+    ("図にモデルを入れる", "p.startswith(FIGURE_DIRS) and not signoff.versions.is_formal(p))", "p.startswith(FIGURE_DIRS))",
+     "仕様書に形式検査のモデルを入れない"),
     ("内部の Q&A も比較に載せる", "        drop_internal(Path(tmp) / signoff.DOCS)\n", "", "内部の表の違反でも比較を作る"),
     ("removed.csv の D- の行を外さない", "if len(kept) != len(rows):", "if False:", "内部の表の違反でも比較を作る"),
     ("内部の表を外さない", "            internal.unlink()\n", "            pass\n", "内部の表の違反でも比較を作る"),

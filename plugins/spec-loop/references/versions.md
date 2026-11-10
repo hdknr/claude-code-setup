@@ -136,7 +136,9 @@ python3 <spec-loop の base ディレクトリ>/scripts/diff-versions.py docs --
 | `削除` | `v<n-1>` の全体にあって、`v<n>` の全体に無い（`removed.csv` の `理由` を添える） |
 
 - 単位は「重ねるもの」と同じ——Q&A は行（`No`）、機能は `id`、ほかのファイルは版のディレクトリからのパス。
-  `spec_ir.json` の `features` 以外のキーと、`feasibility/`・`proposal/` は比べない。
+  `spec_ir.json` の `features` 以外のキーと、`feasibility/`・`proposal/`・**形式検査のモデル（`spec/formal/` の中のファイル）** は比べない
+  ——モデルは仕様から書き起こした写しで、保存するたびに文字列が変わる。重ね合わせには入る（次の版の Formal Checker が `build/merged/spec/formal/` から
+  前の版のモデルを読む）。置き方は `tree.md` の「形式検査のモデル」を正とする（#908）。
 - **Q&A は層で 2 つの種類に分けて出す**——`Q&A` は共有の層（`Q-`。`shared/qa.csv`）、`Q&A（内部）` は内部の層
   （`D-`。`spec/qa-dev.csv`。`qa-csv.md` の「層」）。どちらの層かは番号で決まる（`removed.csv` の種類はどちらも `Q&A`）。
   **利用者に見せてよいのは `Q&A` の節だけ**——`Q&A（内部）` は開発者が決めたことの差分で、レビュー会にも提案書にも載せない
