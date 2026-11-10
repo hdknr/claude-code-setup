@@ -77,6 +77,10 @@
 - Verifier 1 パス目: 通した——反証 0 件（所見 1 件は採否の表 V1）。報告は SubagentHandback が届かず、親がトランスクリプトから読んだ。偽の正本と偽の描画口で `render-diagrams.py` を走らせ、「要るものが無ければ 1 件も書かない」（`.bpmn` を消した対照で書き出すことも）と `--check` が何も書かないことを確かめた
 - `/code-review` 1 パス目: 通した——指摘 7 件（採否の表 R1〜R7。直す 5・残課題 2）。報告は親がトランスクリプトから読んだ。始める前と後の `git status --porcelain` の違いは親が計画ファイルを書き換えたもの（レビューの対象の `docs/plugins` は変わっていない）
 - 手順 5 への差し戻し: なし（Verifier の反証 0 件）。`/code-review` の直す 5 件は 1 パス目の指摘対応として直す
+- 1 パス目の指摘対応: 済み（`500e951`。成果物の差分 `git diff c402b87 -- ':(top)' ':(top,exclude)docs/plans/issue-926.md'` は `spec-loop.md` の 7 行＋/7 行−で 0 行ではない）。歯止め: `check-all.py`（run-serial 越し）70/70 緑・`mkdocs build --strict`（run-serial 越し・Python 3.14）終了 0・警告 0。残るのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の**両方**
+- 割り目（2 パス目の前）: 割らない（cruise の周）
+- Verifier 2 パス目: 通した——反証 0 件（R1〜R5 の直しを原本に当てて一致。指摘対応は新しい主張・リンク・アンカーを足していない）。報告は SubagentHandback が届かず、親がトランスクリプトから読んだ
+- `/code-review` 2 パス目: 起動済み（報告待ち——結果ではない）
 
 ## 既知の限界・決着済みの論点
 
