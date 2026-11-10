@@ -102,10 +102,10 @@
   無条件のジョブにあれば「無条件に全部を回している」に数える（黙って素通しする向き）。
 - **`on:` の値の中身**（#946）——**鍵の有無と `branches:` の値だけを見る**ので、**GitHub が実際に起動するかは見ていない。**
   外れる向きは**偽の赤**: `types:` に `synchronize` を含めた・`paths:` が全部に当たる・`branches:` を glob（`'**'`）で書いた、などの
-  起動する形も赤にする。**フロー形式のマッピング**（`on: {…}`・`push: {branches: [main]}`）・**読めない行**・**タブで始まる行**・**YAML のアンカー**も
+  起動する形も赤にする。**フロー形式のマッピング**（`on: {…}`・`push: {branches: [main]}`）・**読めない行**・**タブで字下げした行**・**YAML のアンカー**・
+  **重なる鍵**（`on:`・イベント・`branches:`）・**値と子が両方ある `on:`**・**列とマッピングが混ざる `on:`**・**`branches:` の `!` の除外**も
   読まずに赤で、`pull_request_target`・`workflow_call` などほかのイベントは起動に数えない（これも偽の赤の向き）。
-  **黙って素通しする向きに残るもの**: **ワークフロー単位の `concurrency:`（`cancel-in-progress`）で run を止める形**と、
-  **`on:` を 2 つ書いた形**（最初の 1 つだけ読む）。
+  **黙って素通しする向きに残るもの**: **ワークフロー単位の `concurrency:`（`cancel-in-progress`）で run を止める形**。
 - **`*.yaml`（拡張子違い）は読まない。**
 - **引用された値の中の `\\"` のような退避は解さない**——そこで閉じたと見なすので、
   **`run: "a \\" b # scripts/x.py"` の後半が値ではなくコメントとして切れる。**
@@ -874,10 +874,18 @@ def event_filter_reasons(ev: str, sub: list[tuple[int, str]]) -> set[str]:
     key: str | None = None
     branches: list[str] = []
     has_branches = False
+    seen: list[str] = []
     for ind, c in sub:
         item = SEQ_RE.match(c) is not None
-        if ind == level and not (key == "branches" and item):
+        if level is not None and ind < level:
+            out.add(f"`{ev}` の下の字下げを読めない")
+            key = None
+        elif ind == level and not (key == "branches" and item):
             key = key_of(c)
+            if key in seen:
+                out.add(f"`{ev}` の `{key}:` が重なる")
+            if key is not None:
+                seen.append(key)
             if key is None:
                 out.add(f"`{ev}` の下の行を読めない（`{c}`）")
             elif key == "branches":
@@ -889,6 +897,8 @@ def event_filter_reasons(ev: str, sub: list[tuple[int, str]]) -> set[str]:
             branches.append(scalar(c[1:]))
     if has_branches and "main" not in branches:
         out.add(f"`{ev}` の `branches:` に `main` が無い")
+    if any(b.startswith("!") for b in branches):
+        out.add(f"`{ev}` の `branches:` に `!` の除外がある")
     return out
 
 
@@ -900,55 +910,79 @@ def trigger_reasons(text: str) -> set[str]:
     **読み方**——字下げ 0 の `on:` の行を探し（引用符つきの `"on":` も読む）、その値か、次の字下げ 0 の行までの子を読む。
     値は、フロー形式の列（`[pull_request, push]`）・スカラー（`push`）を読み、フロー形式のマッピング（`{…}`）は読まずに赤。
     子は、ブロックのマッピング（鍵がイベント）とブロックの列（`- push`）を読む。イベントの値は空・`null`・`~`・`{}` だけを
-    「狭めていない」と読み、ほかの値（`{branches: [main]}` など）は読まずに赤。読めない行・`on:` の子より浅い行も赤。
+    「狭めていない」と読み、ほかの値（`{branches: [main]}` など）は読まずに赤。**読めない形はどれも赤**——読めない行・
+    子より浅い行（`on:` の下でもイベントの下でも）・列の項の下の行・フロー列の `{…}`・`[…]` の項・タブで字下げした行（ファイルのどこでも）・
+    2 つ目の `on:`・重なるイベント・イベントの下で重なる鍵（`branches:` を 2 つ）・値と子が両方ある `on:`・列とマッピングが混ざる `on:`。
+    `branches:` に `!` で始まる項（除外）があれば、`main` を含んでいても赤（後ろの `!` が `main` を外しうる——値の照合はしない）。
     コメントは `split_comment` で切ってから読む。
 
     **値を読まない理由**——`paths:` が変更に当たるか・`types:` に `synchronize` が入るか・glob が `main` に当たるかを決めるのは
     GitHub の照合規則の写しになり、写し損ねると黙って緑になる向きに外れる。鍵があるだけで赤にすれば、外れる向きは
     **偽の赤**（`types: [opened, synchronize, reopened]`・`branches: ['**']` など、起動するのに赤）だけになる。
     **偽の赤になる書き方**: `pull_request_target`・`workflow_call` などほかのイベント（起動の代わりに数えない）・YAML のアンカー
-    （`on: *x` はイベントの名前 `*x` に、`<<: *x` は鍵の名前 `<<` に読む——イベントの下なら狭める鍵）・タブで始まる行（字下げ 0 と読み、`on:` の子がそこで切れる）。
-    **見ないもの**: ワークフロー単位の `concurrency:`（走っている run を止めうる）・2 つ目の `on:`（最初の 1 つだけ読む）。
+    （`on: *x` はイベントの名前 `*x` に、`<<: *x` は鍵の名前 `<<` に読む——イベントの下なら狭める鍵）・複数行に折ったフロー列。
+    **見ないもの**: ワークフロー単位の `concurrency:`（走っている run を止めうる。黙って素通しする向き）。
     **GitHub が実際に起動するかは主張しない**——書いてある `on:` の形だけを見る。
     """
     lines: list[tuple[int, str]] = []
+    reasons: set[str] = set()
     for raw in text.split("\n"):
         code, _ = split_comment(raw)
         if code.strip():
+            if "\t" in code[:len(code) - len(code.lstrip())]:
+                reasons.add("タブで字下げした行がある")
             lines.append((len(code) - len(code.lstrip(" ")), code.strip()))
-    start = next((i for i, (ind, c) in enumerate(lines) if ind == 0 and key_of(c) == "on"), None)
-    if start is None:
-        return {"`on:` が無い"}
-    reasons: set[str] = set()
+    starts = [i for i, (ind, c) in enumerate(lines) if ind == 0 and key_of(c) == "on"]
+    if not starts:
+        return reasons | {"`on:` が無い"}
+    if len(starts) > 1:
+        reasons.add("`on:` が重なる")
+    start = starts[0]
     events: dict[str, tuple[str, list[tuple[int, str]]]] = {}
     value = inline_value(lines[start][1])
     if value.startswith("{"):
-        return {"`on:` の値を読めない（フロー形式のマッピング）"}
+        return reasons | {"`on:` の値を読めない（フロー形式のマッピング）"}
     for name in seq_items(value):
+        if name[:1] in "{[":
+            reasons.add(f"`on:` の項を読めない（`{name}`）")
         events[name] = ("", [])
     body: list[tuple[int, str]] = []
     for ind, c in lines[start + 1:]:
         if ind == 0:
             break
         body.append((ind, c))
+    if value and body:
+        reasons.add("`on:` に値と子が両方ある")
     level = body[0][0] if body else 0
     cur: str | None = None
+    kinds: set[str] = set()
     for ind, c in body:
         if ind < level:
             reasons.add("`on:` の字下げを読めない")
             cur = None
         elif ind == level:
             if SEQ_RE.match(c):
-                events[scalar(c[1:])] = ("", [])
-                cur = None
+                kinds.add("列")
+                name = scalar(c[1:])
+                if name in events:
+                    reasons.add(f"`on:` の `{name}` が重なる")
+                events[name] = ("", [])
+                cur = "- "
             else:
+                kinds.add("マッピング")
                 cur = key_of(c)
                 if cur is None:
                     reasons.add(f"`on:` の行を読めない（`{c}`）")
                 else:
+                    if cur in events:
+                        reasons.add(f"`on:` の `{cur}:` が重なる")
                     events[cur] = (inline_value(c), [])
+        elif cur == "- ":
+            reasons.add(f"`on:` の列の項の下の行を読めない（`{c}`）")
         elif cur is not None:
             events[cur][1].append((ind, c))
+    if len(kinds) > 1:
+        reasons.add("`on:` に列とマッピングが混ざる")
     for ev in TRIGGER_EVENTS:
         if ev not in events:
             reasons.add(f"`{ev}` で起動しない")
@@ -1083,10 +1117,11 @@ def test_ci_runs_every_registered_script() -> None:
     if idle:
         for fname, text in texts.items():
             reasons = trigger_reasons(text)
-            hit = sorted(set(idle) & set(NAME_RE.findall(text)))
+            hit = sorted(set(idle) & gated_runs(text)[0])
             if reasons and hit:
                 print(f"       {fname}: {'・'.join(sorted(reasons))} — {hit}")
-        print("       **`on:` に `pull_request:` と `push:`（`branches:` に `main`）を置き、狭める鍵を外す。** 起動しないワークフローは PR に検査を出さない。")
+        print("       **`on:` に `pull_request:` と `push:`（`branches:` に `main`）を置いて狭める鍵を外すか、その `run:`（全部を回す行）を起動するワークフローに移す。**"
+              " 起動しないワークフローは PR に検査を出さない。")
 
 
 # ------------------------------------------------------------------ 変異
@@ -1459,6 +1494,17 @@ SAMPLE_ON = {
     "odd-line": "on:\n  pull_request:\n  push:\n  ???\n",
     "event-odd": "on:\n  pull_request:\n    ???\n  push:\n",
     "shallow": "on:\n    pull_request:\n    push:\n  odd:\n",
+    # #946 の 1 パス目（Verifier の軽微・/code-review の CR1・CR2・CR4・CR5）——読めない・重なる形も赤（黙って緑にしない）
+    "tab-child": "on:\n  pull_request:\n  push:\n\tbranches: [dev]\n",
+    "negated": "on:\n  pull_request:\n    branches: [main, '!main']\n  push:\n    branches:\n      - main\n      - '!ma*'\n",
+    "dup-event": "on:\n  pull_request:\n    paths: [docs/**]\n  pull_request:\n  push:\n",
+    "dup-branches": "on:\n  pull_request:\n  push:\n    branches: [dev]\n    branches: [main]\n",
+    "dup-on": "on:\n  pull_request:\n  push:\non:\n  workflow_dispatch:\n",
+    "value-and-body": "on: workflow_dispatch\n  pull_request:\n  push:\n",
+    "mixed": "on:\n  pull_request:\n    paths: [x]\n  - pull_request\n  - push\n",
+    "seq-deeper": "on:\n  - pull_request\n  - push\n      paths: [x]\n",
+    "event-shallow": "on:\n  pull_request:\n      branches: [main]\n    paths: [docs]\n  push:\n",
+    "flow-odd-item": "on: [pull_request, push, {x: 1}]\n",
 }
 # `untriggered_runs`——起動するファイルでは狭め・位置は条件つき、起動しないファイルにだけ全部を回す行と無条件の行を置く。
 ON_FILES = [
@@ -1517,6 +1563,19 @@ def scan_contract(scan, full_of, gate_of, both_of, on_of, idle_of) -> list[tuple
         ("読めない行・`on:` の子より浅い行は赤",
          on["odd-line"] == {"`on:` の行を読めない（`???`）"} and on["shallow"] == {"`on:` の字下げを読めない"}
          and on["event-odd"] == {"`pull_request` の下の行を読めない（`???`）"}),
+        ("タブで字下げした行は赤（`on:` の子がそこで切れても緑にしない）", on["tab-child"] == {"タブで字下げした行がある"}),
+        ("`branches:` の `!` の除外は赤", on["negated"] == {"`pull_request` の `branches:` に `!` の除外がある",
+                                                        "`push` の `branches:` に `!` の除外がある"}),
+        ("重なる鍵は赤（イベント・`branches:`・`on:`）",
+         on["dup-event"] == {"`on:` の `pull_request:` が重なる"}
+         and on["dup-branches"] == {"`push` の `branches:` が重なる"}
+         and on["dup-on"] == {"`on:` が重なる"}),
+        ("値と子が両方・列とマッピングが混ざる・列の項の下の行・イベントの下の浅い行・フロー列の読めない項は赤",
+         on["value-and-body"] == {"`on:` に値と子が両方ある"}
+         and on["mixed"] == {"`on:` に列とマッピングが混ざる", "`on:` の `pull_request` が重なる"}
+         and on["seq-deeper"] == {"`on:` の列の項の下の行を読めない（`paths: [x]`）"}
+         and on["event-shallow"] == {"`pull_request` の下の字下げを読めない"}
+         and on["flow-odd-item"] == {"`on:` の項を読めない（`{x: 1}`）"}),
         ("起動しないファイルにだけある無条件の行を数える（起動するファイルでは条件つき）",
          "on-idle-only.py" in idle_ok and "on-both.py" not in idle_ok and "test-on-split.py" not in idle_ok),
         ("起動しないファイルにだけ全部を回す行を置き、起動するファイルでは狭める形を数える",
@@ -1748,22 +1807,22 @@ SCAN_MUTANTS = {
         '    if has_branches and not any("main" in b for b in branches):'),
     "引用符を外さない": ("        return t[1:-1]\n    return t", "        return t\n    return t"),
     "コンパクトな列を `branches:` の項と読まない": (
-        '        if ind == level and not (key == "branches" and item):', '        if ind == level:'),
+        '        elif ind == level and not (key == "branches" and item):', '        elif ind == level:'),
     "深い `- ` を `branches:` の項と読まない": (
         '        elif key == "branches" and item:\n            branches.append',
         '        elif False:\n            branches.append'),
     "`branches:` のフロー列を読まない": ("                branches += seq_items(inline_value(c))", "                pass"),
     "イベントの下の読めない行を飛ばす": (
         '                out.add(f"`{ev}` の下の行を読めない（`{c}`）")', '                pass'),
-    "字下げ 0 でない `on:` も読む": ('if ind == 0 and key_of(c) == "on"), None)', 'if key_of(c) == "on"), None)'),
+    "字下げ 0 でない `on:` も読む": ('if ind == 0 and key_of(c) == "on"]', 'if key_of(c) == "on"]'),
     "`on:` の子を字下げ 0 の行で切らない": (
         "        if ind == 0:\n            break\n        body.append", "        if False:\n            break\n        body.append"),
     "コメントを切らずに `on:` を読む": (
-        "        code, _ = split_comment(raw)\n        if code.strip():\n            lines.append",
-        "        code = raw\n        if code.strip():\n            lines.append"),
+        "        code, _ = split_comment(raw)\n        if code.strip():\n            if \"\\t\"",
+        "        code = raw\n        if code.strip():\n            if \"\\t\""),
     "フロー列を読まない": ('    if value.startswith("[") and value.endswith("]"):', '    if False:'),
     "フロー形式のマッピングを読んだことにする": (
-        '        return {"`on:` の値を読めない（フロー形式のマッピング）"}', '        pass'),
+        '        return reasons | {"`on:` の値を読めない（フロー形式のマッピング）"}', '        pass'),
     "イベントの値を何でも狭めていないと読む": ("        if val not in OPEN_VALUES:", "        if False:"),
     "イベントの値に `{}`・`null` を許さない": ('OPEN_VALUES = ("", "null", "~", "{}")', 'OPEN_VALUES = ("",)'),
     "読めない `on:` の行を飛ばす": ('                    reasons.add(f"`on:` の行を読めない（`{c}`）")', '                    pass'),
@@ -1771,6 +1830,17 @@ SCAN_MUTANTS = {
     "起動するかを見ずに全部を繋ぐ": (
         '    live_ci = "\\n".join(t for t in files if not trigger_reasons(t))', '    live_ci = "\\n".join(files)'),
     "全部を回す行の側を見ない": ("            full_ungated_runs(ci) - full_ungated_runs(live_ci))", "            set())"),
+    # #946 の 1 パス目
+    "タブの字下げを見ない": ('                reasons.add("タブで字下げした行がある")', '                pass'),
+    "`!` の除外を見ない": ('    if any(b.startswith("!") for b in branches):', '    if False:'),
+    "イベントの下の重なる鍵を見ない": ('            if key in seen:', '            if False:'),
+    "重なるイベントを見ない": ('                    if cur in events:', '                    if False:'),
+    "2 つ目の `on:` を見ない": ('    if len(starts) > 1:', '    if False:'),
+    "値と子が両方でも見ない": ('    if value and body:', '    if False:'),
+    "列とマッピングが混ざっても見ない": ('    if len(kinds) > 1:', '    if False:'),
+    "列の項の下の行を飛ばす": ('        elif cur == "- ":', '        elif False:'),
+    "イベントの下の浅い行を飛ばす": ('        if level is not None and ind < level:', '        if False:'),
+    "フロー列の読めない項を見ない": ('        if name[:1] in "{[":', '        if False:'),
     "`test-` を剥がして照合する（覆い隠しが戻る）": (
         r'NAME_RE = re.compile(r"scripts/([A-Za-z0-9_.-]+\.py)")',
         r'NAME_RE = re.compile(r"scripts/(?:test-)?([A-Za-z0-9_.-]+\.py)")'),
