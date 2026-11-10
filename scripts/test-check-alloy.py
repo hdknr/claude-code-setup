@@ -41,7 +41,7 @@ MUTATIONS = {
     "exec の無い・gui の在る呼び方を走らせる": [("        if call is not None:\n            check_form(call)\n", "        pass\n")],
     "クォートの中の gui を見ない": [('    if any("gui" in word.split() for word in words):\n', '    if "gui" in words:\n')],
     "シェルの組み立てを見ない": [("    if special:\n", "    if False:\n")],
-    "シェルの組み込み・シェルで始まる形を見ない": [("    if words and (words[0] in SHELL_BUILTINS or Path(words[0]).name in SHELLS):\n", "    if False:\n")],
+    "先頭の許可の一覧を見ない": [("    if not (head == HEAD_JAVA or HEAD_ALLOY in head.lower()):\n", "    if False:\n")],
     "通るモデルの終了コードを見ない": [("        if rc != 0:\n", "        if False:\n")],
     "到達できることを見ない": [('GOOD_EXPECT = {("run", "someA"): "SAT", ', "GOOD_EXPECT = {")],
     "成り立つ性質の反例を見ない": [(', ("check", "emptyOrNot"): "UNSAT"}', "}")],
@@ -109,19 +109,21 @@ def make_tools(base: Path) -> dict:
     t = {
         "good": write_exe(tools / "fake-alloy", fake_alloy()),
         # 何にでも「反例なし」と言う（違反するモデルでも）
-        "never-ce": write_exe(tools / "never-ce", fake_alloy(broken_check="UNSAT")),
+        "never-ce": write_exe(tools / "never-ce-alloy", fake_alloy(broken_check="UNSAT")),
         # 何にでも「反例あり」と言う（成り立つ性質でも）
-        "always-ce": write_exe(tools / "always-ce", fake_alloy(probe_check="SAT")),
+        "always-ce": write_exe(tools / "always-ce-alloy", fake_alloy(probe_check="SAT")),
         # 何も許さない（到達できない）
-        "unreachable": write_exe(tools / "unreachable", fake_alloy(probe_run="UNSAT")),
+        "unreachable": write_exe(tools / "unreachable-alloy", fake_alloy(probe_run="UNSAT")),
         # 結果の行は出すが終了コードが 0 でない
-        "bad-rc": write_exe(tools / "bad-rc", fake_alloy(probe_rc=3)),
+        "bad-rc": write_exe(tools / "bad-rc-alloy", fake_alloy(probe_rc=3)),
         # 起動しても Alloy でない（jar の場所が違う、の形）
-        "broken": write_exe(tools / "broken", "#!/bin/sh\necho 'Error: Unable to access jarfile /nowhere/alloy.jar' >&2\nexit 1\n"),
+        "broken": write_exe(tools / "broken-alloy", "#!/bin/sh\necho 'Error: Unable to access jarfile /nowhere/alloy.jar' >&2\nexit 1\n"),
         # 走ったら印を書く（走らせないことを見る）。中身は通る偽物
         "marker": write_exe(tools / "marker-alloy", fake_alloy(marker=True)),
         # 時間切れ（子のプロセスも残す——プロセスグループで止めないと出力の管が閉じない）
-        "slow": write_exe(tools / "slow", "#!/bin/sh\nsleep 20 &\nwait\n"),
+        "slow": write_exe(tools / "slow-alloy", "#!/bin/sh\nsleep 20 &\nwait\n"),
+        # 先頭が java の通る偽物（`java -jar <jar> exec` の形の陽性対照）
+        "java": write_exe(tools / "java", fake_alloy(marker=True)),
         # 空白を含むパスの通る偽物（クォートはシェルの組み立てに数えない）
         "spaced": write_exe(tools / "fake alloy", fake_alloy(marker=True)),
     }
@@ -196,6 +198,12 @@ def scenario(mod, base: Path, tag: str) -> dict:
     o["組み込みの exec で始まる（ラッパーの本文の形）"] = case(f"Alloy の呼び方: exec {tools['marker']}\n")
     o["シェルで始まる（sh -c）"] = case(f"Alloy の呼び方: sh -c '{tools['marker']}' exec\n")
     o["空白を含むパスをクォートで囲む"] = case(f"Alloy の呼び方: '{tools['spaced']}' exec\n")
+    o["先頭が java"] = case(f"Alloy の呼び方: {tools['java']} -Dx=1 -jar /opt/alloy.jar exec\n")
+    o["ブレースの展開"] = case(f"Alloy の呼び方: {tools['marker']} {{gui,}} exec\n")
+    o["組み込みの trap で始まる"] = case(f"Alloy の呼び方: trap {tools['marker']} EXIT exec\n")
+    o["別のシェルで始まる（tcsh -c）"] = case(f"Alloy の呼び方: tcsh -c {tools['marker']} exec\n")
+    o["環境変数の代入で始まる"] = case(f"Alloy の呼び方: FOO=1 exec {tools['marker']}\n")
+    o["! で始まる"] = case(f"Alloy の呼び方: ! exec {tools['marker']}\n")
     o["通らない呼び方"] = case(call_line("broken"))
     o["何にでも反例なし"] = case(call_line("never-ce"))
     o["何にでも反例あり"] = case(call_line("always-ce"))
@@ -255,6 +263,10 @@ def main() -> int:
         check("組み込みの exec で始まる・sh -c で始まる: 4 で走らせない",
               o["組み込みの exec で始まる（ラッパーの本文の形）"] == unknown and o["シェルで始まる（sh -c）"] == unknown)
         check("空白を含むパスをクォートで囲んだ呼び方: 0 で走らせる（陽性対照）", o["空白を含むパスをクォートで囲む"] == (0, True, True))
+        check("先頭が java の呼び方（-D の = を含む）: 0 で走らせる（陽性対照）", o["先頭が java"] == (0, True, True))
+        check("ブレースの展開（{gui,}）: 4 で走らせない", o["ブレースの展開"] == unknown)
+        check("先頭が trap・tcsh -c・環境変数の代入・!: 4 で走らせない",
+              all(o[k] == unknown for k in ("組み込みの trap で始まる", "別のシェルで始まる（tcsh -c）", "環境変数の代入で始まる", "! で始まる")))
         check("通らない呼び方: 1", o["通らない呼び方"] == missing)
         check("何にでも反例なしと言う呼び方: 1（陽性対照）", o["何にでも反例なし"] == missing)
         check("何にでも反例ありと言う呼び方: 1", o["何にでも反例あり"] == missing)
