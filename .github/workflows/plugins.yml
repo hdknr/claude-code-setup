@@ -213,7 +213,7 @@ jobs:
         run: python3 scripts/test-outer-loop.py
 
   # spec-loop のテストのうち、PPTX・提案書・MkDocs の雛形の生成、サインオフと凍結の照合、版の重ね合わせと差分、作り直しの範囲と量、
-  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
+  # 親 Issue の一覧、autopilot の台帳と点検、TLC の前提と Alloy の確かめと、版の重ね合わせ・MkDocs のフックを casefold の FS でもう 1 度回すステップ
   # （下の spec-loop-generate のテストと、autopilot の外側のループ以外）
   spec-loop:
     runs-on: ubuntu-latest
