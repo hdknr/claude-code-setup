@@ -58,6 +58,15 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **未決定事項があっても止めない**（案は登録しないので。件数を出す）。案を登録するか・未決定事項を spec-review に戻すかは `scaffold` スキルの手順 7
 （決まりの正は `references/spec-ir.md` の「呼ぶ側の分岐」）。
 
+**トレースのケース（`trace`。#923）**: ケースに `input`・`expected`・`error` の代わりに `trace` を書くと、形式検査の反例の実行順
+（`calls` の呼び出しと `steps` の段の並び）を実装の口で強制して再現する Red テストを、その機能の Red テストのファイルに足す。
+実装に求める口は、呼び出しのキーワード引数 `checkpoint`（段の前で呼ぶ）と、モジュールの `reset_state()`（`CHECKPOINT`・`RESET`）。
+**来ない段（排他で待っている・別の段・終わった）に当たったら順の強制をやめて全部を走らせる**——正しい実装はどの順でも正しいので緑、
+競合する実装は順を最後まで進められて反例と同じ誤りになり赤。**負荷で 1 段の時間（`TRACE_STEP_WAIT`）より遅れると競合する実装を見逃しうる**（正しい実装を赤にはしない）。
+**`formal` の `spec/formal/<対象>/README.md` が無い・入口が中間表現に無い・値が型に反する・段の呼び出しが `calls` に無い・確かめるもの（`outcomes`・`after`）が無い・
+口と同じ名前の入口や入力の項目があるなら 1。** トレースのケースを持たない機能の Red テストと本文は、足す前と 1 バイトも変わらない
+（決まりの正は `references/spec-ir.md` の「トレースのケース」）。
+
 **仕様の基準コミット（#874）**: 本文の `## 仕様` に、正本リポジトリで本文を生成した時点の HEAD とそのコミットの日時を
 `- 基準コミット: ` の行で書く——dev-loop が周の頭で、その後の変化が仕様の前提（既存のシステム）を崩していないかを点検する
 （dev-loop の `references/spec-gap.md`）。**git の作業ツリーの根でない・コミットが無い・git を起動できないなら止めずに**
@@ -278,6 +287,18 @@ LIMIT = re.compile(r"(0|[1-9][0-9]{0,8})(\.[0-9]{1,6})?")
 # 性能テストの置き場所（`scaffold/` の中）と、1 回のテストで実装を呼ぶ回数
 PERF_DIR = "perf"
 PERF_CALLS = 200
+
+# トレースのケース（#923。`references/spec-ir.md` の「トレースのケース」が原本）——形式検査の反例の実行順を、実装の口で強制して再現する
+TRACE = "trace"
+# 実装に求める口: 呼び出しのキーワード引数（段の前で呼ぶ）と、状態を空に戻すモジュールの関数
+CHECKPOINT = "checkpoint"
+RESET = "reset_state"
+# `spec/formal/<対象>/` の対象の名前（`references/tree.md` の「形式検査のモデル」）
+FORMAL_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
+FORMAL_RECORD = "README.md"
+# 1 段を待つ秒（来なければ、その順にはならないと読んで順の強制をやめる）と、呼び出しが全部終わるまでの上限の秒
+TRACE_STEP_WAIT = 2
+TRACE_LIMIT = 60
 
 
 class Unjudged(Exception):
@@ -547,6 +568,9 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
 
     feature_ids, operation_ids, routes, case_ids = set(), set(), set(), set()
     templates = {}  # 変数の名前を消したパス → 最初に使ったパス
+    # トレースのケースは、ほかの機能の入口も呼ぶ（#923）——先に全部の入口を集める（後ろの機能の入口も指せる）
+    ops = operations(ir)
+    traced = False
     type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
@@ -629,9 +653,16 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
         if "cases" in feature and (not isinstance(cases, list) or not cases):
             problems.append(f"{where}.cases: 1 つ以上の配列でない")
             continue
+        if isinstance(cases, list) and cases and all(isinstance(c, dict) and TRACE in c for c in cases):
+            # 性能テストと課題一覧はケースの入力を使う——入出力のケースが 1 つも無い機能は、それらを作れない
+            problems.append(f"{where}.cases: 入出力のケース（`{TRACE}` でないもの）が 1 つも無い")
         for cindex, case in enumerate(cases or []):
             at = f"{where}.cases[{cindex}]"
-            found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa", "ref"})
+            trace_case = isinstance(case, dict) and TRACE in case
+            if trace_case:
+                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref"})
+            else:
+                found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa", "ref"})
             if found:
                 problems += found
                 if not isinstance(case, dict):
@@ -646,19 +677,141 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
                 at = cid
             if "title" in case and not one_line(case["title"]):
                 problems.append(f"{at}: title が空か、1 行でない")
-            if "input" in case:
-                problems += check_values(f"{at}.input", case["input"], fields_in)
-            if ("expected" in case) == ("error" in case):
-                problems.append(f"{at}: expected と error のちょうど片方だけを書く")
-            elif "expected" in case:
-                problems += check_values(f"{at}.expected", case["expected"], fields_out)
-            elif case["error"] not in errors:
-                problems.append(f"{at}.error: operation.errors に無い: {case['error']!r}")
+            if trace_case:
+                traced = True
+                problems += check_trace(f"{at}.{TRACE}", case[TRACE], ops, whole)
+            else:
+                if "input" in case:
+                    problems += check_values(f"{at}.input", case["input"], fields_in)
+                if ("expected" in case) == ("error" in case):
+                    problems.append(f"{at}: expected と error のちょうど片方だけを書く")
+                elif "expected" in case:
+                    problems += check_values(f"{at}.expected", case["expected"], fields_out)
+                elif case["error"] not in errors:
+                    problems.append(f"{at}.error: operation.errors に無い: {case['error']!r}")
             if "qa" in case:
                 problems += check_qa_refs(f"{at}.qa", case["qa"], answered, provisional)
             if "ref" in case:
                 problems += check_ref(f"{at}.ref", case["ref"], feature.get("source"), whole)
+    if traced and RESET in operation_ids:
+        problems.append(f"spec_ir.json: 入口の名前 `{RESET}` は、トレースのケースが実装に求める口（状態を空に戻す関数）と重なる")
     return problems + check_called_by(features)
+
+
+def operations(ir) -> dict[str, dict]:
+    """{入口の名前: 入口}。形の崩れた機能・入口は飛ばす（誤りは `check_ir` が別に出す）。名前が重複すれば最初のもの。"""
+    found = {}
+    for feature in ir.get("features", []) if isinstance(ir, dict) and isinstance(ir.get("features"), list) else []:
+        op = feature.get("operation") if isinstance(feature, dict) else None
+        if isinstance(op, dict) and isinstance(op.get("id"), str):
+            found.setdefault(op["id"], op)
+    return found
+
+
+def op_fields(op: dict, key: str) -> dict:
+    fields = op.get(key)
+    return fields if isinstance(fields, dict) else {}
+
+
+def op_errors(op: dict) -> list:
+    errors = op.get("errors", [])
+    return errors if isinstance(errors, list) else []
+
+
+def check_call(where: str, call, ops: dict[str, dict], result: bool) -> list[str]:
+    """トレースの 1 つの呼び出し。`result` なら期待（`expected` か `error`）も持つ（`setup`・`after`）。"""
+    problems = keys_problem(where, call, {"operation", "input"}, {"expected", "error"} if result else set())
+    if not isinstance(call, dict):
+        return problems
+    name = call.get("operation")
+    op = ops.get(name) if isinstance(name, str) else None
+    if op is None:
+        if "operation" in call:
+            problems.append(f"{where}.operation: 中間表現の入口に無い: {name!r}")
+        return problems
+    if not result and CHECKPOINT in op_fields(op, "input"):
+        problems.append(f"{where}: 入口 {name} の入力に項目 `{CHECKPOINT}` がある（トレースの口の引数と重なる）")
+    if "input" in call:
+        problems += check_values(f"{where}.input", call["input"], op_fields(op, "input"))
+    if result:
+        if ("expected" in call) == ("error" in call):
+            problems.append(f"{where}: expected と error のちょうど片方だけを書く")
+        elif "expected" in call:
+            problems += check_values(f"{where}.expected", call["expected"], op_fields(op, "output"))
+        elif call["error"] not in op_errors(op):
+            problems.append(f"{where}.error: 入口 {name} の errors に無い: {call['error']!r}")
+    return problems
+
+
+def check_trace(where: str, trace, ops: dict[str, dict], whole: Path) -> list[str]:
+    """トレースのケースの `trace`（`references/spec-ir.md` の「トレースのケース」）。"""
+    problems = keys_problem(where, trace, {"formal", "calls", "steps"}, {"setup", "outcomes", "after"})
+    if not isinstance(trace, dict):
+        return problems
+    if "formal" in trace:
+        formal = trace["formal"]
+        if not isinstance(formal, str) or not FORMAL_NAME.fullmatch(formal):
+            problems.append(f"{where}.formal: 形式検査の対象の名前の形に反する（英小文字・数字・ハイフン）: {formal!r}")
+        elif not (whole / versions.FORMAL_DIR / formal / FORMAL_RECORD).is_file():
+            problems.append(f"{where}.formal: {versions.FORMAL_DIR}{formal}/{FORMAL_RECORD} が無い"
+                            "（反例を出した形式検査のモデルの記録を指す）")
+    calls = trace.get("calls")
+    if "calls" in trace:
+        if not isinstance(calls, dict) or len(calls) < 2:
+            problems.append(f"{where}.calls: 2 つ以上の呼び出しのオブジェクトでない")
+            calls = None
+        else:
+            for who, call in calls.items():
+                if not NAME.fullmatch(who):
+                    problems.append(f"{where}.calls: 呼び出しの名前の形に反する（英小文字で始まり英小文字・数字・_）: {who!r}")
+                problems += check_call(f"{where}.calls.{who}", call, ops, False)
+    if "steps" in trace:
+        steps = trace["steps"]
+        if not isinstance(steps, list) or len(steps) < 2:
+            problems.append(f"{where}.steps: 2 つ以上の段の配列でない")
+        else:
+            seen = set()
+            for index, step in enumerate(steps):
+                if not (isinstance(step, list) and len(step) == 2 and all(isinstance(part, str) for part in step)):
+                    problems.append(f"{where}.steps[{index}]: [呼び出しの名前, 段の名前] の形でない")
+                    continue
+                who, name = step
+                if calls is not None and who not in calls:
+                    problems.append(f"{where}.steps[{index}]: 呼び出し {who!r} が calls に無い")
+                if not NAME.fullmatch(name):
+                    problems.append(f"{where}.steps[{index}]: 段の名前の形に反する（英小文字で始まり英小文字・数字・_）: {name!r}")
+                seen.add(who)
+            if calls is not None and [who for who in calls if who not in seen]:
+                problems.append(f"{where}.steps: 段に出ない呼び出しがある: "
+                                + ", ".join(who for who in calls if who not in seen))
+    for key in ("setup", "after"):
+        if key in trace:
+            items = trace[key]
+            if not isinstance(items, list) or not items:
+                problems.append(f"{where}.{key}: 1 つ以上の呼び出しの配列でない")
+                continue
+            for index, call in enumerate(items):
+                problems += check_call(f"{where}.{key}[{index}]", call, ops, True)
+    if "outcomes" in trace:
+        outcomes = trace["outcomes"]
+        if not isinstance(outcomes, list) or (calls is not None and len(outcomes) != len(calls)):
+            problems.append(f"{where}.outcomes: 呼び出しの数と同じ長さの配列でない")
+        elif calls is not None:
+            called = [ops[c["operation"]] for c in calls.values()
+                      if isinstance(c, dict) and isinstance(c.get("operation"), str) and c["operation"] in ops]
+            for index, outcome in enumerate(outcomes):
+                if not any(outcome_fits(outcome, op) for op in called):
+                    problems.append(f"{where}.outcomes[{index}]: どの呼び出しの入口の出力（か errors）の形にも合わない:"
+                                    f" {json.dumps(outcome, ensure_ascii=False)}")
+    if "outcomes" not in trace and "after" not in trace:
+        problems.append(f"{where}: outcomes と after のどちらも無い（トレースの後に何も確かめない）")
+    return problems
+
+
+def outcome_fits(outcome, op: dict) -> bool:
+    if isinstance(outcome, dict) and set(outcome) == {RESERVED_OUTPUT}:
+        return outcome[RESERVED_OUTPUT] in op_errors(op)
+    return not check_values("outcome", outcome, op_fields(op, "output"))
 
 
 # 表の区切りの行（`| --- | :-: |`・先頭の `|` の無い `--- | ---`）。**`|` を 1 つ以上含む**——単独の `---`（水平線）は区切りと読まない
@@ -1179,24 +1332,204 @@ IMPLEMENTATION = (
 MISSING_FAIL = "            self.fail(f\"未実装: {IMPL_MODULE}.{OPERATION} が無い\")"
 
 
-def red_test(feature: dict, impl_module: str) -> str:
+def is_trace(case: dict) -> bool:
+    return TRACE in case
+
+
+def plain_cases(feature: dict) -> list[dict]:
+    """入出力のケース（トレースのケースでないもの）。番号の順。"""
+    return [case for case in sorted(feature["cases"], key=case_order) if not is_trace(case)]
+
+
+def trace_operations(case: dict) -> list[str]:
+    """トレースのケースが呼ぶ入口の名前（重複なし・名前の順）。"""
+    trace = case[TRACE]
+    calls = list(trace["calls"].values()) + trace.get("setup", []) + trace.get("after", [])
+    return sorted({call["operation"] for call in calls})
+
+
+def traced_operations(feature: dict) -> list[str]:
+    return sorted({name for case in feature["cases"] if is_trace(case) for name in trace_operations(case)})
+
+
+def trace_types(feature: dict, ops: dict[str, dict]) -> dict[str, dict]:
+    """{入口の名前: 出力の型}——トレースのケースが呼ぶ入口の全部。Red テストが値と一緒に型を見るのに使う。"""
+    return {name: output_types(ops[name]) for name in traced_operations(feature)}
+
+
+def trace_nullable(feature: dict, ops: dict[str, dict]) -> dict[str, tuple]:
+    """{入口の名前: null を許す出力の項目}——トレースのケースが呼ぶ入口の全部。"""
+    return {name: tuple(sorted(n for n, field in ops[name]["output"].items() if nullable(field)))
+            for name in traced_operations(feature)}
+
+
+# トレースのケースを持つ機能の Red テストにだけ足す部分（#923。`references/spec-ir.md` の「トレースのケース」）。
+# 呼び出しをスレッドで走らせ、口（`checkpoint`）で止めて、トレースの順に 1 段ずつ進める。来ない段（排他で待っている・
+# 別の段に来た・終わった）に当たったら、その順にはならないと読んで順の強制をやめ、全部を走らせる——正しい実装はどの順でも正しい
+TRACE_RUNTIME = (
+    "def implementation_of(name):",
+    "    try:",
+    "        module = importlib.import_module(IMPL_MODULE)",
+    "    except ModuleNotFoundError as exc:",
+    "        if exc.name is not None and (exc.name == IMPL_MODULE or IMPL_MODULE.startswith(exc.name + \".\")):",
+    "            return None",
+    "        raise",
+    "    return getattr(module, name, None)",
+    "",
+    "",
+    "class Schedule:",
+    "    # トレースの順に、呼び出しを口（checkpoint）で止めて 1 段ずつ進める",
+    "    def __init__(self, steps):",
+    "        self.steps = [tuple(step) for step in steps]",
+    "        self.names = {name for _, name in self.steps}",
+    "        self.cond = threading.Condition()",
+    "        self.at = {}",
+    "        self.go = set()",
+    "        self.free = False",
+    "        self.called = set()",
+    "        self.done = set()",
+    "        self.followed = 0",
+    "",
+    "    def checkpoint(self, who):",
+    "        def checkpoint(name):",
+    "            with self.cond:",
+    "                self.called.add(who)",
+    "                if self.free or name not in self.names:",
+    "                    return",
+    "                self.at[who] = name",
+    "                self.cond.notify_all()",
+    "                while not self.free and who not in self.go:",
+    "                    self.cond.wait()",
+    "                self.go.discard(who)",
+    "                self.at.pop(who, None)",
+    "        return checkpoint",
+    "",
+    "    def finished(self, who):",
+    "        with self.cond:",
+    "            self.done.add(who)",
+    "            self.cond.notify_all()",
+    "",
+    "    def wait_for(self, ready):",
+    "        end = time.monotonic() + TRACE_STEP_WAIT",
+    "        while not ready():",
+    "            left = end - time.monotonic()",
+    "            if left <= 0:",
+    "                return False",
+    "            self.cond.wait(left)",
+    "        return True",
+    "",
+    "    def drive(self):",
+    "        with self.cond:",
+    "            for who, name in self.steps:",
+    "                came = self.wait_for(lambda: who in self.at or who in self.done)",
+    "                if not came or self.at.get(who) != name:",
+    "                    break",
+    "                self.go.add(who)",
+    "                self.cond.notify_all()",
+    "                self.wait_for(lambda: who not in self.go and (who in self.at or who in self.done))",
+    "                self.followed += 1",
+    "            self.free = True",
+    "            self.cond.notify_all()",
+)
+
+
+def trace_methods() -> list[str]:
+    """トレースのケースを持つ機能の Red テストのクラスに足すメソッド（口の名前は定数から入れる）。"""
+    return [
+        "",
+        "    def function_of(self, name):",
+        "        function = implementation_of(name)",
+        "        if function is None:",
+        f"            self.fail(f\"{MISSING}{{IMPL_MODULE}}.{{name}} が無い\")",
+        "        return function",
+        "",
+        "    def fits(self, operation, actual, expected):",
+        "        # 等しく、項目の型が入口の出力の型に合う（null を許す項目の null は型を見ない）",
+        "        if not isinstance(actual, dict) or actual != expected:",
+        "            return False",
+        "        types, allow = TRACE_TYPES[operation], TRACE_NULLABLE[operation]",
+        "        return all((value is None and name in allow) or type_fits(types.get(name), value) for name, value in actual.items())",
+        "",
+        "    def step(self, call):",
+        "        actual = self.function_of(call[\"operation\"])(**call[\"input\"])",
+        "        expected = call[\"expected\"] if \"expected\" in call else {\"error\": call[\"error\"]}",
+        "        self.assertTrue(self.fits(call[\"operation\"], actual, expected),",
+        "                        f\"{call['operation']}({call['input']!r}) が {actual!r} を返した（期待 {expected!r}）\")",
+        "",
+        "    def trace(self, trace):",
+        "        reset = self.function_of(RESET)",
+        "        functions = {who: self.function_of(call[\"operation\"]) for who, call in trace[\"calls\"].items()}",
+        "        reset()",
+        "        for call in trace.get(\"setup\", []):",
+        "            self.step(call)",
+        "        schedule = Schedule(trace[\"steps\"])",
+        "        results, raised = {}, {}",
+        "",
+        "        def run(who):",
+        "            try:",
+        f"                results[who] = functions[who](**trace[\"calls\"][who][\"input\"], {CHECKPOINT}=schedule.checkpoint(who))",
+        "            except BaseException as exc:",
+        "                raised[who] = exc",
+        "            finally:",
+        "                schedule.finished(who)",
+        "",
+        "        threads = {who: threading.Thread(target=run, args=(who,), daemon=True) for who in trace[\"calls\"]}",
+        "        for thread in threads.values():",
+        "            thread.start()",
+        "        schedule.drive()",
+        "        end = time.monotonic() + TRACE_LIMIT",
+        "        for thread in threads.values():",
+        "            thread.join(max(0.0, end - time.monotonic()))",
+        "        followed = f\"トレースの {schedule.followed}/{len(schedule.steps)} 段まで順に進めた\"",
+        "        stuck = [who for who, thread in threads.items() if thread.is_alive()]",
+        "        if stuck:",
+        "            self.fail(f\"{TRACE_LIMIT} 秒で終わらない呼び出しがある: {', '.join(stuck)}（{followed}）\")",
+        "        for who in trace[\"calls\"]:",
+        "            if who in raised:",
+        "                self.fail(f\"{who}: 例外 {raised[who]!r}（{followed}）\")",
+        "        silent = [who for who in trace[\"calls\"] if who not in schedule.called]",
+        "        if silent:",
+        f"            self.fail(f\"{CHECKPOINT} を呼ばない呼び出しがある: {{', '.join(silent)}}——トレースの順に止められない"
+        f"（段の前で {CHECKPOINT}(<段の名前>) を呼ぶ。{{followed}}）\")",
+        "        if \"outcomes\" in trace:",
+        "            left = list(trace[\"outcomes\"])",
+        "            for who, call in trace[\"calls\"].items():",
+        "                found = next((i for i, expected in enumerate(left) if self.fits(call[\"operation\"], results[who], expected)), None)",
+        "                if found is None:",
+        "                    self.fail(f\"結果が期待と違う: {who} が {results[who]!r} を返した（期待の残り {left!r}。{followed}）\")",
+        "                del left[found]",
+        "        for call in trace.get(\"after\", []):",
+        "            self.step(call)",
+    ]
+
+
+def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None) -> str:
+    """`ops` は重ね合わせた全体の入口（`operations`）。トレースのケースを持つ機能だけが使う。"""
     op = feature["operation"]
     # null を許す出力の項目。無い機能の Red テストは、`nullable` を足す前と 1 バイトも変えない（既存の `scaffold/` を古くしない）
     allow_null = sorted(name for name, field in op["output"].items() if nullable(field))
+    # トレースのケース（#923）。無い機能の Red テストは、トレースを足す前と 1 バイトも変えない
+    traced = any(is_trace(case) for case in feature["cases"])
     lines = [
         f"# {GENERATED}",
         f"# {feature['id']}: {feature['title']} の Red テスト",
         f"# 実装は `{impl_module}` モジュールの `{op['id']}(**input) -> dict`。失敗は {{\"error\": \"<名前>\"}} を返す。",
         "# 実装が無ければ、エラーではなく失敗になる。",
+        *([f"# トレースのケースは、呼び出しに `{CHECKPOINT}` を渡して段の前で止め、`{RESET}()` で状態を空にしてから当てる"
+           "（references/spec-ir.md の「トレースのケース」）。"] if traced else []),
         "from __future__ import annotations",
         "",
         "import importlib",
+        *(["import threading", "import time"] if traced else []),
         "import unittest",
         "",
         f"IMPL_MODULE = {impl_module!r}",
         f"OPERATION = {op['id']!r}",
         f"OUTPUT_TYPES = {literal(output_types(op))}",
         *([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null else []),
+        *([f"TRACE_TYPES = {literal(trace_types(feature, ops))}",
+           f"TRACE_NULLABLE = {literal(trace_nullable(feature, ops))}", f"RESET = {RESET!r}",
+           f"TRACE_STEP_WAIT = {TRACE_STEP_WAIT}", f"TRACE_LIMIT = {TRACE_LIMIT}"] if traced else []),
         "",
         "",
         "def type_fits(kind, value):",
@@ -1215,6 +1548,7 @@ def red_test(feature: dict, impl_module: str) -> str:
         *IMPLEMENTATION,
         "",
         "",
+        *([*TRACE_RUNTIME, "", ""] if traced else []),
         f"class {test_class(feature)}(unittest.TestCase):",
         "    def call(self, given):",
         "        function = implementation()",
@@ -1229,15 +1563,20 @@ def red_test(feature: dict, impl_module: str) -> str:
         *(["            if value is None and name in NULLABLE:", "                continue"] if allow_null else []),
         "            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",
         "                            f\"{name}: 型が {OUTPUT_TYPES[name]} でない（{value!r}）\")",
+        *(trace_methods() if traced else []),
     ]
     for case in sorted(feature["cases"], key=case_order):
-        expected = case["expected"] if "expected" in case else {"error": case["error"]}
         refs = "・".join(case.get("qa", []))
+        if is_trace(case):
+            run = f"        self.trace({literal(case[TRACE])})"
+        else:
+            expected = case["expected"] if "expected" in case else {"error": case["error"]}
+            run = f"        self.check({literal(case['input'])}, {literal(expected)})"
         lines += [
             "",
             f"    # {case['id']}: {case['title']}" + (f"（{refs}）" if refs else ""),
             f"    def {test_method(case)}(self):",
-            f"        self.check({literal(case['input'])}, {literal(expected)})",
+            run,
         ]
     lines += ["", "", "if __name__ == \"__main__\":", "    unittest.main()"]
     return "\n".join(lines) + "\n"
@@ -1258,7 +1597,8 @@ def performance(loaded: "Loaded", feature: dict) -> list[dict[str, str]]:
 def perf_test(feature: dict, rows: list[dict[str, str]], impl_module: str) -> str:
     """性能テスト（`references/nfr.md` の「Issue と性能テストに写す」）。**負荷は再現しない**——1 回ずつ呼んで時間を測る。"""
     op = feature["operation"]
-    inputs = [case["input"] for case in sorted(feature["cases"], key=case_order)]
+    # トレースのケース（#923）は入力を 1 つに持たない——入出力のケースの入力だけを使う
+    inputs = [case["input"] for case in plain_cases(feature)]
     lines = [
         f"# {GENERATED}",
         f"# {feature['id']}: {feature['title']} の性能テスト（{merged(NFR_PATH)} の " + "・".join(feature[NFR]) + "）",
@@ -1570,25 +1910,42 @@ WIDENED = {("integer", "number")}
 def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
     """そのケースの Red テストが実行する中身のうち、型を除いたもの（題・コメントは入れない）。"""
     op = feature["operation"]
+    if is_trace(case):
+        return impl_module, TRACE, literal(case[TRACE])
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
     return impl_module, op["id"], literal(case["input"]), literal(expected)
 
 
-def case_changed(before: dict, old: dict, impl_before: str, feature: dict, case: dict, impl_now: str) -> bool:
+def trace_shape(case: dict, ops: dict[str, dict]) -> tuple:
+    """トレースのケースの Red テストが見る、呼ぶ入口の出力の型と null を許す項目（#923）。"""
+    names = trace_operations(case)
+    return tuple((name, literal(output_types(ops[name])),
+                  tuple(sorted(n for n, field in ops[name]["output"].items() if nullable(field)))) for name in names)
+
+
+def case_changed(before: dict, old: dict, impl_before: str, feature: dict, case: dict, impl_now: str,
+                 ops_before: dict[str, dict] | None = None, ops_now: dict[str, dict] | None = None) -> bool:
     """前の版で通った実装の上で、このケースの Red テストが失敗しうるか。
 
     型を見るのは期待にある項目だけ——Red テストは `actual == expected` のあとで `actual` の項目の型を見るので、
     期待に無い出力の項目・失敗のケースの `error` 以外の型は、そのケースの結果を変えない。
+    **トレースのケース**（#923）は、トレース・`impl_module`・呼ぶ入口の出力の型と null を許す項目のどれかが違えば変えたと読む
+    （型を広げただけの違いも変えたと読む——トレースは呼ぶ入口が多く、項目ごとに見分けない）。
     """
+    if is_trace(old) != is_trace(case):
+        return True
     if behavior(before, old, impl_before) != behavior(feature, case, impl_now):
         return True
+    if is_trace(case):
+        return trace_shape(old, ops_before or {}) != trace_shape(case, ops_now or {})
     was, now = output_types(before["operation"]), output_types(feature["operation"])
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
     return any(was.get(name) != now.get(name) and (was.get(name), now.get(name)) not in WIDENED for name in expected)
 
 
-def case_changes(change: Change, impl_now: str, impl_before: str) -> tuple[list[tuple[str, dict]], list[dict]]:
-    """([(変化, ケース)], 消したケース) を返す。並びはケースの番号の順。"""
+def case_changes(change: Change, impl_now: str, impl_before: str, ops_now: dict[str, dict] | None = None,
+                 ops_before: dict[str, dict] | None = None) -> tuple[list[tuple[str, dict]], list[dict]]:
+    """([(変化, ケース)], 消したケース) を返す。並びはケースの番号の順。`ops_*` はトレースのケース（#923）の入口の型を見るのに使う。"""
     cases = sorted(change.feature["cases"], key=case_order)
     if change.kind == REMOVE:
         return [(CASE_REMOVED, c) for c in cases], []
@@ -1599,7 +1956,7 @@ def case_changes(change: Change, impl_now: str, impl_before: str) -> tuple[list[
     for case in cases:
         if case["id"] not in old:
             rows.append((CASE_ADDED, case))
-        elif case_changed(change.before, old[case["id"]], impl_before, change.feature, case, impl_now):
+        elif case_changed(change.before, old[case["id"]], impl_before, change.feature, case, impl_now, ops_before, ops_now):
             rows.append((CASE_CHANGED, case))
         else:
             rows.append((CASE_KEPT, case))
@@ -1640,7 +1997,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     base = pascal(op["id"])
     names = [f"`{base}Input`", f"`{base}Output`"] + ([f"`{base}Error`"] if op.get("errors") else [])
     tfile = f"{OUT_DIR}/tests/{test_file(feature)}"
-    rows, gone = case_changes(change, impl_now, before.impl_module)
+    rows, gone = case_changes(change, impl_now, before.impl_module, operations(loaded.ir), operations(before.ir))
     previous = f"v{number - 1}"
     kind_text = {
         ADD: "追加（v1 の機能）" if number == 1 else f"追加（v{number} で足した機能）",
@@ -1743,6 +2100,11 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
             f"- ファイル: `{tfile}`（sha256: `{sha256(contract[f'tests/{test_file(feature)}'])}`）",
             f"- 実装を置く場所: モジュール `{impl}` の関数 `{op['id']}(**input) -> dict`"
             "（失敗は `{\"error\": \"<名前>\"}` を返す）",
+            *([f"- トレースのケース（形式検査の反例の実行順を再現する。spec-loop の `references/spec-ir.md` の「トレースのケース」）があるので、"
+               f"実装はモジュール `{impl}` に状態を空に戻す関数 `{RESET}()` を持ち、トレースが呼ぶ関数（"
+               + "・".join(f"`{name}`" for name in traced_operations(feature))
+               + f"）はキーワード引数 `{CHECKPOINT}`（既定は何もしない）を受け取って、トレースの段の前で `{CHECKPOINT}(\"<段の名前>\")` を呼ぶ"
+               "（各呼び出しで 1 回以上。呼ばなければ失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),
             "- 回し方（正本リポジトリの根で）:",
             "",
             "```bash",
@@ -1933,8 +2295,9 @@ def render_contract(loaded: Loaded) -> dict[str, str]:
     ir = loaded.ir
     impl_module = ir.get("impl_module", DEFAULT_IMPL_MODULE)
     contract = {"openapi.json": openapi(ir), "types.py": types_py(ir)}
+    ops = operations(ir)
     for feature in features_of(ir):
-        contract[f"tests/{test_file(feature)}"] = red_test(feature, impl_module)
+        contract[f"tests/{test_file(feature)}"] = red_test(feature, impl_module, ops)
         rows = performance(loaded, feature)
         if rows:
             contract[f"{PERF_DIR}/{perf_file(feature)}"] = perf_test(feature, rows, impl_module)
@@ -2082,7 +2445,7 @@ def render_issues(changes: list[Change], groups: list[list[Change]], bodies: dic
     issues, index = {}, []
 
     def red(change: Change) -> list[str]:
-        rows, _ = case_changes(change, impl_now, before.impl_module)
+        rows, _ = case_changes(change, impl_now, before.impl_module, operations(loaded.ir), operations(before.ir))
         return [] if change.kind == REMOVE else [test_name(change.feature, c) for c in red_cases(rows)]
 
     for group, depends in zip(groups, dependencies(groups)):
@@ -2166,7 +2529,8 @@ def previous_outcomes(repo: Path, before: Before) -> dict:
         tests = Path(tmp) / "tests"
         tests.mkdir()
         for feature in features:
-            (tests / test_file(feature)).write_text(red_test(feature, before.impl_module), encoding="utf-8")
+            (tests / test_file(feature)).write_text(red_test(feature, before.impl_module, operations(before.ir)),
+                                                    encoding="utf-8")
         return run_tests(repo, tests)
 
 
@@ -2180,7 +2544,7 @@ def red_check(repo: Path, loaded: Loaded, changes: list[Change], before: Before,
     red = set()
     for change in changes:
         if change.kind != REMOVE:
-            rows, _ = case_changes(change, impl_now, before.impl_module)
+            rows, _ = case_changes(change, impl_now, before.impl_module, operations(loaded.ir), operations(before.ir))
             red |= {test_id(change.feature, case) for case in red_cases(rows)}
     expected = [test_id(f, c) for f in features_of(loaded.ir) for c in sorted(f["cases"], key=case_order)]
     try:

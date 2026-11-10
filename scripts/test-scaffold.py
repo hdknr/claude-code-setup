@@ -773,6 +773,172 @@ def nfr_added_in_v2(repo: Path) -> str | None:
     return problem or (None if (repo / PERF_FILE).is_file() else f"v2 で nfr を足した機能の {PERF_FILE} が無い")
 
 
+# #923: トレースのケース（形式検査の反例の実行順を、実装の口で強制して再現する Red テスト）
+TRACE_FORMAL = {str(V1 / "spec" / "formal" / "stock-reserve" / "README.md"): "# stock-reserve\n\n結果: 反例あり（売り越し）\n"}
+STOCK_TRACE = {
+    "formal": "stock-reserve",
+    "setup": [{"operation": "set_stock", "input": {"item": "a", "qty": 1}, "expected": {"stock": 1}}],
+    "calls": {"first": {"operation": "reserve", "input": {"item": "a", "qty": 1}},
+              "second": {"operation": "reserve", "input": {"item": "a", "qty": 1}}},
+    "steps": [["first", "read"], ["second", "read"], ["first", "write"], ["second", "write"]],
+    "outcomes": [{"ok": True}, {"error": "OUT_OF_STOCK"}],
+    "after": [{"operation": "get_stock", "input": {"item": "a"}, "expected": {"stock": 0}}],
+}
+STOCK_FEATURES = [
+    {
+        "id": "F-003", "title": "在庫を引き当てる", "source": ["spec/order.md"], "qa": [],
+        "operation": {"id": "reserve", "method": "POST", "path": "/stock/reserve",
+                      "input": {"item": {"type": "string"}, "qty": {"type": "integer"}},
+                      "output": {"ok": {"type": "boolean"}}, "errors": ["INVALID_QTY", "OUT_OF_STOCK"]},
+        "cases": [
+            {"id": "F-003-C1", "title": "数量が 0 なら拒否する", "input": {"item": "a", "qty": 0}, "error": "INVALID_QTY"},
+            {"id": "F-003-C2", "title": "同じ品を同時に引き当てても売り越さない", "trace": STOCK_TRACE},
+        ],
+    },
+    {
+        "id": "F-004", "title": "在庫を置く", "source": ["spec/order.md"], "qa": [],
+        "operation": {"id": "set_stock", "method": "PUT", "path": "/stock",
+                      "input": {"item": {"type": "string"}, "qty": {"type": "integer"}}, "output": {"stock": {"type": "integer"}}},
+        "cases": [{"id": "F-004-C1", "title": "置いた数を返す", "input": {"item": "b", "qty": 3}, "expected": {"stock": 3}}],
+    },
+    {
+        "id": "F-005", "title": "在庫を数える", "source": ["spec/order.md"], "qa": [],
+        "operation": {"id": "get_stock", "method": "GET", "path": "/stock/count",
+                      "input": {"item": {"type": "string"}}, "output": {"stock": {"type": "integer"}}},
+        "cases": [{"id": "F-005-C1", "title": "置いていない品は 0", "input": {"item": "none"}, "expected": {"stock": 0}}],
+    },
+]
+
+
+def traced(fn: Callable[[dict], None] = lambda ir: None) -> Callable[[dict], dict]:
+    """基準の中間表現に在庫の 3 機能（F-003 がトレースのケースを持つ）を足し、`fn` で崩す。"""
+    def build_ir(ir: dict) -> dict:
+        ir = copy.deepcopy(ir)
+        ir["features"] += copy.deepcopy(STOCK_FEATURES)
+        fn(ir)
+        return ir
+    return build_ir
+
+
+def trace_of(ir: dict) -> dict:
+    return ir["features"][2]["cases"][1]["trace"]
+
+
+def after_only(ir: dict) -> None:
+    trace = trace_of(ir)
+    trace.pop("outcomes")
+    trace["setup"][0].update(input={"item": "a", "qty": 2}, expected={"stock": 2})
+
+
+STOCK_STATE = """
+import threading
+
+_stock = {}
+_lock = threading.Lock()
+
+
+def reset_state():
+    _stock.clear()
+
+
+def set_stock(item, qty):
+    _stock[item] = qty
+    return {"stock": qty}
+
+
+def get_stock(item):
+    return {"stock": _stock.get(item, 0)}
+"""
+# 競合する実装: 読んでから書くまでの間に、ほかの呼び出しが同じ在庫を読める（トレースの順で売り越す）
+RACY_RESERVE = """
+
+def reserve(item, qty, checkpoint=lambda name: None):
+    if qty <= 0:
+        return {"error": "INVALID_QTY"}
+    checkpoint("read")
+    have = _stock.get(item, 0)
+    checkpoint("write")
+    if have < qty:
+        return {"error": "OUT_OF_STOCK"}
+    _stock[item] = have - qty
+    return {"ok": True}
+"""
+RACY_IMPL = GOOD_IMPL + STOCK_STATE + RACY_RESERVE
+# 正しい実装（陽性対照）: 読むから書くまでを排他で守る——トレースの 2 段目で止めた呼び出しが排他を待つ
+LOCKED_IMPL = GOOD_IMPL + STOCK_STATE + RACY_RESERVE.replace(
+    '    checkpoint("read")\n    have = _stock.get(item, 0)\n    checkpoint("write")\n    if have < qty:\n'
+    '        return {"error": "OUT_OF_STOCK"}\n    _stock[item] = have - qty\n    return {"ok": True}\n',
+    '    with _lock:\n        checkpoint("read")\n        have = _stock.get(item, 0)\n        checkpoint("write")\n'
+    '        if have < qty:\n            return {"error": "OUT_OF_STOCK"}\n        _stock[item] = have - qty\n        return {"ok": True}\n')
+# 口を呼ばない競合する実装——順を強制できないので、素通りさせずに失敗にする
+SILENT_IMPL = RACY_IMPL.replace('    checkpoint("read")\n', "").replace('    checkpoint("write")\n', "")
+# 口の引数を受け取らない実装
+NO_KEYWORD_IMPL = SILENT_IMPL.replace("def reserve(item, qty, checkpoint=lambda name: None):", "def reserve(item, qty):")
+# 状態を空に戻す関数の無い実装
+NO_RESET_IMPL = LOCKED_IMPL.replace("def reset_state():\n    _stock.clear()\n", "")
+TRACE_TEST = "scaffold/tests/test_f_003.py"
+
+
+def expect_trace_red(reason: str) -> Callable[[Path], str | None]:
+    """トレースのケースだけが、`reason` を出して失敗（エラーではない）する。"""
+    def post(repo: Path) -> str | None:
+        code, out = red_run(repo)
+        if code == 0:
+            return f"トレースの Red テストが通った: {out[-300:]}"
+        if "FAILED (failures=1)" not in out:
+            return f"失敗がトレースのケースの 1 件（エラーなし）になっていない: {out[-600:]}"
+        if "test_f_003_c2" not in out or reason not in out:
+            return f"トレースのケースが {reason!r} で失敗していない: {out[-600:]}"
+        return None
+    return post
+
+
+def trace_written(repo: Path) -> str | None:
+    test = (repo / TRACE_TEST).read_text(encoding="utf-8")
+    for needle in ("    def test_f_003_c2(self):\n        self.trace({", "class Schedule:", "import threading",
+                   "TRACE_TYPES = {'get_stock': {'stock': 'integer', 'error': 'string'}, 'reserve': {'ok': 'boolean', 'error': 'string'}, "
+                   "'set_stock': {'stock': 'integer', 'error': 'string'}}", "RESET = 'reset_state'"):
+        if needle not in test:
+            return f"{TRACE_TEST} に {needle!r} が無い"
+    # トレースのケースを持たない機能の Red テストには足さない
+    for rel in ("scaffold/tests/test_f_004.py", "scaffold/tests/test_f_001.py"):
+        if "Schedule" in (repo / rel).read_text(encoding="utf-8"):
+            return f"トレースのケースを持たない {rel} に順の強制がある"
+    # トレースのケースを持たない機能の Red テストは、トレースを足す前と同じバイト（#923 の前の生成物）
+    for rel in ("scaffold/tests/test_f_001.py", "scaffold/tests/test_f_002.py"):
+        if hashlib.sha256((repo / rel).read_bytes()).hexdigest() != BASE_SHA256[rel]:
+            return f"トレースのケースを持たない {rel} が #923 の前の生成物と違う"
+    body = bodies(repo)["F-003"]
+    return body_has(body, ("| `F-003-C2` | 追加 | 同じ品を同時に引き当てても売り越さない | `TestF003.test_f_003_c2` |",
+                           "状態を空に戻す関数 `reset_state()`", "トレースが呼ぶ関数（`get_stock`・`reserve`・`set_stock`）",
+                           "`checkpoint(\"<段の名前>\")` を呼ぶ"), "トレースのケースを持つ機能")
+
+
+def trace_kept_out(repo: Path) -> str | None:
+    """トレースのケースを持たない機能の本文には、口の行が出ない。"""
+    return None if "reset_state" not in bodies(repo)["F-004"] else "トレースのケースを持たない機能の本文に口の行がある"
+
+
+def trace_perf(repo: Path) -> str | None:
+    perf = (repo / "scaffold" / "perf" / "perf_f_003.py").read_text(encoding="utf-8")
+    return None if "INPUTS = [{'item': 'a', 'qty': 0}]" in perf else f"性能テストの入力にトレースのケースが混ざった: {perf[:800]}"
+
+
+def trace_v2(case: str, status: str) -> Callable[[Path], str | None]:
+    def post(repo: Path) -> str | None:
+        found = bodies(repo)
+        if list(found) != ["F-003"]:
+            return f"本文を作るのは変えた機能だけのはず: {list(found)}"
+        return body_has(found["F-003"], (f"| `{case}` | {status} |",), "v2 の変更")
+    return post
+
+
+def v2_trace(fn: Callable[[dict], None]) -> dict[str, str]:
+    feature = copy.deepcopy(STOCK_FEATURES[0])
+    fn(feature)
+    return {**TRACE_FORMAL, **v2([feature])}
+
+
 class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
@@ -1754,6 +1920,74 @@ CASES: list[Case] = [
     Case("正しい実装で緑", 0, impl=GOOD_IMPL, post=expect_green),
     Case("型の違う実装で失敗する", 0, impl=WRONG_TYPE_IMPL, post=expect_red(2)),
     Case("本文から辿れる", 0, post=body_traceable),
+    # #923: トレースのケース。陽性対照は排他で守る実装で緑、競合する実装で赤
+    Case("トレース: 作る", 0, "作った", ir=traced(), extra=TRACE_FORMAL, post=trace_written),
+    Case("トレース: 口の行はトレースのケースを持つ機能だけ", 0, "作った", ir=traced(), extra=TRACE_FORMAL, post=trace_kept_out),
+    Case("トレース: 実装が無ければ失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, post=expect_red(7)),
+    Case("トレース: 正しい実装で緑", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=LOCKED_IMPL, post=expect_green),
+    Case("トレース: 競合する実装で失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=RACY_IMPL,
+         post=expect_trace_red("結果が期待と違う")),
+    Case("トレース: 口を呼ばない実装で失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=SILENT_IMPL,
+         post=expect_trace_red("checkpoint を呼ばない呼び出しがある")),
+    Case("トレース: 口の引数を受け取らない実装で失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=NO_KEYWORD_IMPL,
+         post=expect_trace_red("TypeError")),
+    Case("トレース: 状態を空に戻す関数が無ければ失敗", 0, "作った", ir=traced(), extra=TRACE_FORMAL, impl=NO_RESET_IMPL,
+         post=expect_trace_red("未実装: spec_impl.reset_state が無い")),
+    # 在庫 2 を 2 つが 1 ずつ引き当てる——競合する実装は 2 つとも 2 を読んで 1 を書くので、結果は同じで後の状態だけが違う
+    Case("トレース: 後の状態だけで確かめる", 0, "作った", ir=traced(after_only), extra=TRACE_FORMAL, impl=RACY_IMPL,
+         post=expect_trace_red("get_stock({'item': 'a'}) が {'stock': 1} を返した")),
+    Case("トレース: 後の状態だけで確かめる（正しい実装）", 0, "作った", ir=traced(after_only), extra=TRACE_FORMAL, impl=LOCKED_IMPL,
+         post=expect_green),
+    Case("トレース: --red-check が数える", 0, "失敗 1 件（追加・変更）", args=("--red-check",), generate_first=True,
+         ir=traced(), extra=TRACE_FORMAL, impl=RACY_IMPL),
+    Case("トレース: 性能テストに入れない", 0, "作った",
+         ir=traced(lambda ir: ir["features"][2].update(nfr=["N-001"])), extra={**TRACE_FORMAL, **with_nfr()}, post=trace_perf),
+    Case("トレース: v2 でトレースを変えたら変更", 0, "作った", ir=traced(),
+         extra=v2_trace(lambda f: f["cases"][1]["trace"]["steps"].reverse()), post=trace_v2("F-003-C2", "変更")),
+    Case("トレース: v2 でほかのケースだけ変えたら回帰", 0, "作った", ir=traced(),
+         extra=v2_trace(lambda f: f["cases"][0]["input"].update(qty=-1)), post=trace_v2("F-003-C2", "回帰")),
+    Case("トレース: 形式検査の記録が無い", 1, "F-003-C2.trace.formal: spec/formal/stock-reserve/README.md が無い", ir=traced(),
+         pre=plant_old_issues, post=nothing_written),
+    Case("トレース: 形式検査の対象の名前の形", 1, "F-003-C2.trace.formal: 形式検査の対象の名前の形に反する",
+         ir=traced(lambda ir: trace_of(ir).update(formal="Stock_Reserve")), extra=TRACE_FORMAL),
+    Case("トレース: 呼び出しが 1 つ", 1, "F-003-C2.trace.calls: 2 つ以上の呼び出しのオブジェクトでない",
+         ir=traced(lambda ir: trace_of(ir)["calls"].pop("second")), extra=TRACE_FORMAL),
+    Case("トレース: 入口が中間表現に無い", 1, "F-003-C2.trace.calls.second.operation: 中間表現の入口に無い: 'take'",
+         ir=traced(lambda ir: trace_of(ir)["calls"]["second"].update(operation="take")), extra=TRACE_FORMAL),
+    Case("トレース: 呼び出しの入力が型に反する", 1, "F-003-C2.trace.calls.first.input.qty: 型 integer でない",
+         ir=traced(lambda ir: trace_of(ir)["calls"]["first"]["input"].update(qty="1")), extra=TRACE_FORMAL),
+    Case("トレース: 前の呼び出しの期待が型に反する", 1, "F-003-C2.trace.setup[0].expected.stock: 型 integer でない",
+         ir=traced(lambda ir: trace_of(ir)["setup"][0]["expected"].update(stock=True)), extra=TRACE_FORMAL),
+    Case("トレース: 後の呼び出しの失敗が errors に無い", 1, "F-003-C2.trace.after[0].error: 入口 get_stock の errors に無い",
+         ir=traced(lambda ir: (trace_of(ir)["after"][0].update(error="GONE"), trace_of(ir)["after"][0].pop("expected"))),
+         extra=TRACE_FORMAL),
+    Case("トレース: 段の呼び出しが calls に無い", 1, "F-003-C2.trace.steps[3]: 呼び出し 'third' が calls に無い",
+         ir=traced(lambda ir: trace_of(ir)["steps"][3].__setitem__(0, "third")), extra=TRACE_FORMAL),
+    Case("トレース: 段の名前の形", 1, "F-003-C2.trace.steps[0]: 段の名前の形に反する",
+         ir=traced(lambda ir: trace_of(ir)["steps"][0].__setitem__(1, "Read")), extra=TRACE_FORMAL),
+    Case("トレース: 段の形", 1, "F-003-C2.trace.steps[1]: [呼び出しの名前, 段の名前] の形でない",
+         ir=traced(lambda ir: trace_of(ir)["steps"].__setitem__(1, "second.read")), extra=TRACE_FORMAL),
+    Case("トレース: 段に出ない呼び出し", 1, "F-003-C2.trace.steps: 段に出ない呼び出しがある: second",
+         ir=traced(lambda ir: trace_of(ir).update(steps=[["first", "read"], ["first", "write"]])), extra=TRACE_FORMAL),
+    Case("トレース: 確かめるものが無い", 1, "F-003-C2.trace: outcomes と after のどちらも無い",
+         ir=traced(lambda ir: (trace_of(ir).pop("outcomes"), trace_of(ir).pop("after"))), extra=TRACE_FORMAL),
+    Case("トレース: 結果の数が呼び出しの数と違う", 1, "F-003-C2.trace.outcomes: 呼び出しの数と同じ長さの配列でない",
+         ir=traced(lambda ir: trace_of(ir)["outcomes"].pop()), extra=TRACE_FORMAL),
+    Case("トレース: 結果がどの入口の形にも合わない", 1,
+         "F-003-C2.trace.outcomes[1]: どの呼び出しの入口の出力（か errors）の形にも合わない",
+         ir=traced(lambda ir: trace_of(ir)["outcomes"].__setitem__(1, {"error": "GONE"})), extra=TRACE_FORMAL),
+    Case("トレース: 入力に口と同じ名前の項目", 1, "F-003-C2.trace.calls.first: 入口 reserve の入力に項目 `checkpoint` がある",
+         ir=traced(lambda ir: (ir["features"][2]["operation"]["input"].update(checkpoint={"type": "boolean"}),
+                               ir["features"][2]["cases"][0]["input"].update(checkpoint=False),
+                               [c["input"].update(checkpoint=False) for c in trace_of(ir)["calls"].values()])),
+         extra=TRACE_FORMAL),
+    Case("トレース: 口と同じ名前の入口", 1, "入口の名前 `reset_state` は、トレースのケースが実装に求める口",
+         ir=traced(lambda ir: (ir["features"][3]["operation"].update(id="reset_state"),
+                               [c.update(operation="reset_state") for c in trace_of(ir)["setup"]])), extra=TRACE_FORMAL),
+    Case("トレース: 入出力と一緒に書く", 1, "F-003.cases[1]: 決まりに無いキー `input`",
+         ir=traced(lambda ir: ir["features"][2]["cases"][1].update(input={"item": "a", "qty": 1})), extra=TRACE_FORMAL),
+    Case("トレース: 入出力のケースが無い機能", 1, "F-003.cases: 入出力のケース（`trace` でないもの）が 1 つも無い",
+         ir=traced(lambda ir: ir["features"][2]["cases"].pop(0)), extra=TRACE_FORMAL),
     # #851: 作らないもの
     Case("作らないもの: 範囲の外の行と次の版の候補を写す", 0, "作った", ir=OUT_OF_SCOPE_IR, spec=SCOPE_SPEC, post=not_built_copied),
     Case("作らないもの: 節に無い行", 1, "F-001.out_of_scope: 範囲の文書の「範囲の外」の節に、この行が原文のまま無い",
@@ -2441,6 +2675,37 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #923: トレースのケース
+    ("トレースの形式検査の記録を見ない", "        elif not (whole / versions.FORMAL_DIR / formal / FORMAL_RECORD).is_file():",
+     "        elif False:", "トレース: 形式検査の記録が無い"),
+    ("段の呼び出しを calls と照らさない", "                if calls is not None and who not in calls:", "                if False:",
+     "トレース: 段の呼び出しが calls に無い"),
+    ("段に出ない呼び出しを見ない", "            if calls is not None and [who for who in calls if who not in seen]:", "            if False:",
+     "トレース: 段に出ない呼び出し"),
+    ("確かめるものの無いトレースを通す", '    if "outcomes" not in trace and "after" not in trace:', "    if False:",
+     "トレース: 確かめるものが無い"),
+    ("口と同じ名前の入口を通す", "    if traced and RESET in operation_ids:", "    if False:", "トレース: 口と同じ名前の入口"),
+    ("口と同じ名前の入力の項目を通す", '    if not result and CHECKPOINT in op_fields(op, "input"):', "    if False:",
+     "トレース: 入力に口と同じ名前の項目"),
+    ("入出力のケースの無い機能を通す",
+     "        if isinstance(cases, list) and cases and all(isinstance(c, dict) and TRACE in c for c in cases):",
+     "        if False:", "トレース: 入出力のケースが無い機能"),
+    ("結果の数を呼び出しの数と比べない", "        if not isinstance(outcomes, list) or (calls is not None and len(outcomes) != len(calls)):",
+     "        if not isinstance(outcomes, list):", "トレース: 結果の数が呼び出しの数と違う"),
+    ("順を強制しない", '    "            for who, name in self.steps:",', '    "            for who, name in []:",',
+     "トレース: 競合する実装で失敗"),
+    ("口を呼ばない呼び出しを通す", '        "        if silent:",', '        "        if False:",', "トレース: 口を呼ばない実装で失敗"),
+    ("トレースの結果を比べない", '        "        if \\"outcomes\\" in trace:",', '        "        if False:",', "トレース: 競合する実装で失敗"),
+    ("トレースの後の状態を比べない", '        "        for call in trace.get(\\"after\\", []):",', '        "        for call in []:",',
+     "トレース: 後の状態だけで確かめる"),
+    ("v2 でトレースの変化を見ない", "        return impl_module, TRACE, literal(case[TRACE])", "        return impl_module, TRACE",
+     "トレース: v2 でトレースを変えたら変更"),
+    ("性能テストにトレースのケースを入れる", '    inputs = [case["input"] for case in plain_cases(feature)]',
+     '    inputs = [case.get("input") for case in sorted(feature["cases"], key=case_order)]', "トレース: 性能テストに入れない"),
+    ("本文に口の行を書かない", '"（各呼び出しで 1 回以上。呼ばなければ失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),',
+     '"（各呼び出しで 1 回以上。呼ばなければ失敗）"] if False else []),', "トレース: 作る"),
+    ("トレースの無い機能にも順の強制を足す", '    traced = any(is_trace(case) for case in feature["cases"])',
+     "    traced = True", "トレース: 作る"),
     # #876: まとめた本文（--bundle）と依存の連鎖（depends）
     ("まとめない", "        if len(group) == 1:\n", "        if True:\n", "まとめた本文"),
     ("機能の一覧をタスクリストにする", 'f"- `{c.feature[\'id\']}` {cell(', 'f"- [ ] `{c.feature[\'id\']}` {cell(', "まとめた本文"),
@@ -3142,6 +3407,14 @@ def main() -> int:
               and len(branch_names) == 8, f"{constant(source, 'BRANCHES')} vs {branch_names}")
         check("試料の ALL_BRANCHES が references/spec-ir.md の分岐の名前の表と違う", list(ALL_BRANCHES) == branch_names,
               f"{ALL_BRANCHES} vs {branch_names}")
+        # トレースのケースが実装に求める口（#923）——原本は spec-ir.md の「実装に求める口」の表。待つ時間も原本の文と一致する
+        ports = table_cells(ir_ref, "### 実装に求める口")
+        check("CHECKPOINT, RESET が references/spec-ir.md の実装に求める口の表と違う",
+              ports == [constant(source, "CHECKPOINT"), constant(source, "RESET")], f"{ports}")
+        check("TRACE_STEP_WAIT・TRACE_LIMIT が references/spec-ir.md の「Red テストが確かめること」と違う",
+              f"（1 段 {constant(source, 'TRACE_STEP_WAIT')} 秒）" in ir_ref and f"（上限 {constant(source, 'TRACE_LIMIT')} 秒。" in ir_ref)
+        check("試料の実装が口の名前を使っていない（口の名前の変異を試料が判別しない）",
+              f"def {constant(source, 'RESET')}():" in LOCKED_IMPL and f", {constant(source, 'CHECKPOINT')}=" in LOCKED_IMPL)
         markers = table_cells(handoff, "## 印")
         marker = constant(source, "HANDOFF_MARKER")
         feature_marker = constant(source, "FEATURE_MARKER")
