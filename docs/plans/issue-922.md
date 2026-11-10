@@ -122,9 +122,10 @@ Alloy の呼び方と確かめ方を述べるのは **9 箇所**——`check-all
 - 実装のあとの `check-all.py`（run-serial 越し・2026-11-10）: 70 本のうち 69 本が緑、`test-render-diagrams.py` だけ「変異が生き残った: プロセスグループを止めない」で赤。
   この周はそのテストも本体（`render-diagrams.py`）も触っていない（`git diff ad90fbc` に無い）。同じテストを run-serial 越しに単独で回し直すと緑（試料 60・変異 53）。
   `check-all.py` の中の並列（28）の負荷で時間に依る変異が生き残った形と読むが、確かめてはいない——両方の結果をここに残す
-- 1 パス目の関門の起点（先に当てた関門に渡した時点の HEAD）: 計画ファイルのこの更新をコミットした SHA（下の行）
-- Verifier 1 パス目: （未）
-- `/code-review` 1 パス目: （未）
+- 1 パス目の関門の起点（先に当てた関門に渡した時点の HEAD）: `2b1b410b965332aaab94d8fdcd3f701a0f31681f`
+- Verifier 1 パス目（2026-11-10・`dev-loop:dev-loop-verifier`・sonnet。読んだ委譲文 170 行（`wc -l` は 169）。報告は親に届かず（`SendMessage` で催促し、トランスクリプトから読んだ））: **反証 2 件**（V1・V2）。`git status --porcelain` は開始・終了とも空
+- `/code-review` 1 パス目（2026-11-10・high・fork。委譲文は貼った。報告は親に届かず、トランスクリプトから読んだ）: **指摘 8 件**（CR1〜CR8）。`git status --porcelain` は開始・終了とも空
+- 差し戻し: 直すとした 3 件（V1・CR1・CR2）を手順 4 で直す
 - 交絡を潰した手順: 偽の Alloy の試料で、陽性対照（通る呼び方で 0・走ったら印）と陰性（反例なし・反例あり・到達できない・終了コード 0 以外で 1、`exec` の無い・`gui` の在る形で 4 かつ印なし）を並べた。
   偽の Alloy はモデルを読まないので、モデルが本物の Alloy で期待どおりの結果を出すかは本物の Alloy 6.2.0 で当てた（上の「Alloy の CLI の実測」）
 
@@ -134,5 +135,20 @@ Alloy の呼び方と確かめ方を述べるのは **9 箇所**——`check-all
 - `exec` を語として含むかで形を見る（`shlex` の語）。ラッパーの中で `exec` を足す形は 4——docstring の「守らない」。
 - HTML コメントの中の行も読む（`check-tlc.py` の読み方と同じ）。
 - `JAVA_TOOL_OPTIONS` の headless は保険で、GUI の形で走らせて確かめていない（未証明）。
+
+### 1 パス目の指摘の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1: シェルの組み立てで語の判定を素通りする——`<alloy> exec \|\| <alloy>` はサブコマンドの無い `<alloy> Probe.als` を走らせ、`sh -c '<alloy> gui' exec` は `gui` がクォートの中で語に出ない | 示せる（走ったら印を書く偽物で Verifier が実走） | 1（確かめが引数なし・`gui` の形を呼ばない） | 直す |
+| CR1: シェルの組み込みの `exec` を先頭に置いた `exec <alloy>`（利用者のラッパーの本文 `exec java -jar … "$@"` を写した形）が語 `exec` で通り、`sh` が `exec <alloy> Probe.als`（サブコマンドなし）を走らせて 0。`<alloy> # exec`・`<alloy>; : exec` も通る | 示せる（偽物で `/code-review` が実走） | 1 | 直す |
+| CR2: spec-review は `check-alloy.py` が 0 でなくても（`用意せずに進める`）呼び方の行を Formal Checker に渡し、Formal Checker は `exec` の無い呼び方を断らない——`Alloy の呼び方: alloy` で `alloy perm.als` を走らせる | 示せる（spec-review の SKILL の手順 3 と Formal Checker に渡す道具の文面・`formal-checker.md` の文面） | 2（Formal Checker が引数なし・`gui` の形で呼ばない） | 直す |
+| V2: `probe()`・`run_model()` は `check_form` を通らない（`main`→`judge` の経路だけが通る） | 示せない（それらを直に呼ぶ呼び出し元が無い） | 無し | 残課題 |
+| CR3: 偽の Alloy はモデルを読まないので、確かめのモデルを壊しても（空のモデルでも）テストが緑 | 示せる（`/code-review` が外の写しで空のモデルにして緑） | 無し（今のモデルは本物の Alloy 6.2.0 で判別することを確かめた。回帰の歯止めの穴） | 残課題 |
+| CR4: headless の保険は確かめの中だけで、Formal Checker が走らせるときには掛からない | 示せない（確かめを通り、GUI に入る呼び方の実物が無い） | 無し | 残課題 |
+| CR5: `run_model` が `check-tlc.py` の写し（時間切れとプロセスグループの止め方が 2 箇所） | 示せない（写しが食い違って起きた失敗は無い） | 無し | 残課題 |
+| CR6: docstring が「BOM を外すのは `check-tlc.py` の読み方と同じ——その関数を読み込んで使う」と読めるが、`scan_declarations` は BOM を外さず、`check-alloy.py` が自分で外す | 示せる（docstring と `check-tlc.py` の文面） | 無し | 残課題 |
+| CR7: 終了コードの表の 4 に「語に割れない（閉じないクォート）」が無い | 示せる | 無し | 残課題 |
+| CR8: `check-tlc.py` の docstring の「守らない」が「Alloy——#912 の範囲の外」のまま（`scan_declarations` を `check-alloy.py` が読み込むようになった） | 示せる（文面） | 無し | 残課題 |
 
 - この周の起票: 0 件（起票の承認は不在のため訊いていない）

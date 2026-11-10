@@ -319,7 +319,7 @@ Red テスト（`scaffold.py` が仕様のテストケースから作る）は�
 0.75.0 から、Alloy を `command -v` で探さなくなった（壊れる変更）。権限・ロールを形式検査する正本は、正本の `CLAUDE.md` に `Alloy の呼び方:` の行を
 `exec` まで含めて書く（`PATH` の `alloy` が jar を起動するラッパーなら `Alloy の呼び方: alloy exec`、jar を直に使うなら `Alloy の呼び方: java -jar <jar の場所> exec`）。
 書かないと spec-review は権限・ロールを選んだ回に Alloy が無いとして、判定役を起動せずに訊く。
-**前から `CLAUDE.md` に Alloy の呼び方を自由な書き方で書いていた正本も、この 1 行に書き直す。**
+**前から `CLAUDE.md` に Alloy の呼び方を自由な書き方で書いていた正本も、この 1 行に書き直す**（1 つのコマンドの形で。ラッパーの本文の `exec java -jar … "$@"` を写さない）。
 書いたら `python3 <spec-loop の根>/scripts/check-alloy.py <正本の根>` が 0 になることを確かめる。
 
 ## 指摘の重さ

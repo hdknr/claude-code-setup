@@ -39,6 +39,9 @@ MUTATIONS = {
                          "    if call is None:\n        return EXIT_MISSING,"),
                         ("import argparse\n", "import argparse\nimport shutil\n")],
     "exec の無い・gui の在る呼び方を走らせる": [("        if call is not None:\n            check_form(call)\n", "        pass\n")],
+    "クォートの中の gui を見ない": [('    if any("gui" in word.split() for word in words):\n', '    if "gui" in words:\n')],
+    "シェルの組み立てを見ない": [("    if special:\n", "    if False:\n")],
+    "シェルの組み込み・シェルで始まる形を見ない": [("    if words and (words[0] in SHELL_BUILTINS or Path(words[0]).name in SHELLS):\n", "    if False:\n")],
     "通るモデルの終了コードを見ない": [("        if rc != 0:\n", "        if False:\n")],
     "到達できることを見ない": [('GOOD_EXPECT = {("run", "someA"): "SAT", ', "GOOD_EXPECT = {")],
     "成り立つ性質の反例を見ない": [(', ("check", "emptyOrNot"): "UNSAT"}', "}")],
@@ -119,6 +122,8 @@ def make_tools(base: Path) -> dict:
         "marker": write_exe(tools / "marker-alloy", fake_alloy(marker=True)),
         # 時間切れ（子のプロセスも残す——プロセスグループで止めないと出力の管が閉じない）
         "slow": write_exe(tools / "slow", "#!/bin/sh\nsleep 20 &\nwait\n"),
+        # 空白を含むパスの通る偽物（クォートはシェルの組み立てに数えない）
+        "spaced": write_exe(tools / "fake alloy", fake_alloy(marker=True)),
     }
     # PATH の先頭に置く `alloy`（command -v で見つかる、通る偽物）
     pathdir = base / "pathbin"
@@ -184,6 +189,13 @@ def scenario(mod, base: Path, tag: str) -> dict:
     o["gui の呼び方"] = case(call_line("marker", " gui"))
     o["exec と gui の両方"] = case(call_line("marker", " exec gui"))
     o["exec が 1 語の一部"] = case(call_line("marker", "-exec"))
+    o["クォートの中の gui"] = case(call_line("marker", " exec 'x gui'"))
+    o["シェルの組み立て（||）"] = case(f"Alloy の呼び方: {tools['marker']} exec || {tools['marker']}\n")
+    o["シェルの組み立て（# の後ろの exec）"] = case(f"Alloy の呼び方: {tools['marker']} # exec\n")
+    o["シェルの組み立て（; の後ろの exec）"] = case(f"Alloy の呼び方: {tools['marker']}; : exec\n")
+    o["組み込みの exec で始まる（ラッパーの本文の形）"] = case(f"Alloy の呼び方: exec {tools['marker']}\n")
+    o["シェルで始まる（sh -c）"] = case(f"Alloy の呼び方: sh -c '{tools['marker']}' exec\n")
+    o["空白を含むパスをクォートで囲む"] = case(f"Alloy の呼び方: '{tools['spaced']}' exec\n")
     o["通らない呼び方"] = case(call_line("broken"))
     o["何にでも反例なし"] = case(call_line("never-ce"))
     o["何にでも反例あり"] = case(call_line("always-ce"))
@@ -237,6 +249,12 @@ def main() -> int:
         check("exec の無い呼び方（引数なしの形）: 4 で走らせない", o["exec の無い呼び方"] == unknown)
         check("gui の呼び方: 4 で走らせない", o["gui の呼び方"] == unknown and o["exec と gui の両方"] == unknown)
         check("exec が 1 語の一部: 4 で走らせない", o["exec が 1 語の一部"] == unknown)
+        check("クォートの中の gui: 4 で走らせない", o["クォートの中の gui"] == unknown)
+        check("シェルの組み立て（||・# の後ろ・; の後ろの exec）: 4 で走らせない",
+              all(o[k] == unknown for k in ("シェルの組み立て（||）", "シェルの組み立て（# の後ろの exec）", "シェルの組み立て（; の後ろの exec）")))
+        check("組み込みの exec で始まる・sh -c で始まる: 4 で走らせない",
+              o["組み込みの exec で始まる（ラッパーの本文の形）"] == unknown and o["シェルで始まる（sh -c）"] == unknown)
+        check("空白を含むパスをクォートで囲んだ呼び方: 0 で走らせる（陽性対照）", o["空白を含むパスをクォートで囲む"] == (0, True, True))
         check("通らない呼び方: 1", o["通らない呼び方"] == missing)
         check("何にでも反例なしと言う呼び方: 1（陽性対照）", o["何にでも反例なし"] == missing)
         check("何にでも反例ありと言う呼び方: 1", o["何にでも反例あり"] == missing)
@@ -277,6 +295,10 @@ def main() -> int:
         formal = (PLUGIN / "agents" / "formal-checker.md").read_text(encoding="utf-8")
         check("Formal Checker が呼び方の行を名指しし、引数なし・gui の形を禁じる",
               f"`{mod.CALL_KEY}`" in formal and "引数なし" in formal and "`gui`" in formal)
+        check("Formal Checker が、渡された呼び方でも exec の無い形を走らせないと書く",
+              re.search(r"渡された呼び方でも、語 `exec` が無い", formal) is not None)
+        check("spec-review が、check-alloy.py が 0 のときだけ呼び方を Formal Checker に渡す",
+              "`check-alloy.py` が 0 を返したときだけ** `Alloy の呼び方:`" in spec_review)
         autopilot_check = (PLUGIN / "scripts" / "autopilot-check.py").read_text(encoding="utf-8")
         check("autopilot の点検の一覧に check-alloy.py が入る（各起動が spec-review の手順 3 で呼ぶ）",
               re.search(r"SPEC_REVIEW_SCRIPTS = \([^)]*\"check-alloy\.py\"", autopilot_check) is not None)

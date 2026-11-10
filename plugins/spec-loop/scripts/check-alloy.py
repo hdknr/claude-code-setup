@@ -22,7 +22,11 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 | `Alloy の呼び方: <コマンド>` | Alloy に**モデルを CLI で検査させる**コマンド。**サブコマンド `exec` まで含めて書く**。**後ろにモデルのファイル（`<名前>.als`）を足し、モデルのディレクトリで `sh` に渡す**。例: `Alloy の呼び方: java -jar /opt/alloy/alloy.jar exec`・`Alloy の呼び方: alloy exec`（`alloy` が jar を起動するラッパーのとき） |
 
 - **引数なし・`gui` の形で呼ばない**——Alloy 6 の jar はどちらでも GUI を起動し、画面が開いたまま検査が止まる。
-  **呼び方に語 `exec` が無いか、語 `gui` が在れば、走らせずに「判定できない」（4）**——この 2 つの形を確かめのために起こさない。
+  **呼び方に語 `exec` が無いか、`gui` が在れば（クォートで 1 語にした中の `gui` も）、走らせずに「判定できない」（4）**——この 2 つの形を確かめのために起こさない。
+- **1 つのコマンドの形で書く**——呼び方は `sh` に渡すので、シェルの組み立て（`;`・`&`・`|`・`<`・`>`・`(`・`)`・`$`・`` ` ``・`#`・`\`・改行）を含む呼び方と、
+  シェルの組み込み（`exec`・`eval`・`command`・`builtin`・`.`・`source`）か、文字列を走らせるシェル（`sh`・`bash`・`zsh`・`dash`・`ksh`・`fish`）で始まる呼び方は、
+  語に `exec` が在っても Alloy のサブコマンドになるとは限らないので、**走らせずに 4**。とくに**ラッパーの本文（`exec java -jar … "$@"`）をそのまま写さない**——
+  先頭の `exec` はシェルの組み込みで、Alloy のサブコマンドではない。パスに空白があるならクォートで囲めばよい（クォートはシェルの組み立てに数えない）。
 - **`exec` はモデルの隣に、モデルの名前のディレクトリ（`<名前>/`。解の `.md` と `receipt.json`）を作り、そのディレクトリに中身が在ると 2 回目を断る**
   （Alloy 6.2.0 で `The output directory … contains files. Delete them or use the -f option` と終了コード 1）。同じモデルを走らせ直すなら、前の `<名前>/` を消すか、
   呼び方の後ろに `-f` を足す。このスクリプトは毎回新しい一時ディレクトリで走らせるので足さない。
@@ -49,7 +53,7 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 | 0 | 呼び方が通った |
 | 1 | Alloy が無い——呼び方の行が無い（`CLAUDE.md` が無いを含む）か、呼び方が通らない（時間切れを含む） |
 | 2 | 引数が違う |
-| 4 | 判定できなかった——`CLAUDE.md` を読めない、同じ行が 2 行以上、呼び方が空、呼び方に語 `exec` が無いか語 `gui` が在る（走らせていない） |
+| 4 | 判定できなかった——`CLAUDE.md` を読めない、同じ行が 2 行以上、呼び方が空、呼び方が 1 つのコマンドの形でない（シェルの組み立て・シェルの組み込みかシェルで始まる・語に割れない）か、語 `exec` が無いか `gui` が在る（どれも走らせていない） |
 
 ## 何を守り、何を守らないか
 
@@ -57,6 +61,9 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
 
 - **呼び方の行が無い正本を 0 にしない**——`PATH` に `alloy` が在っても 1（`command -v` で探さない）。
 - **呼び方に語 `exec` が無いか語 `gui` が在れば、走らせずに 4**——引数なし・`gui` の形を確かめのために起こさない。
+- **クォートで 1 語にした中の `gui` も見る**——`sh -c '… gui'` のように、`gui` を語の中に隠した形を素通りさせない。
+- **シェルの組み立てを含む呼び方は、走らせずに 4**——`<alloy> exec || <alloy>`・`<alloy> # exec`・`<alloy>; : exec` は、語 `exec` が在っても `sh` がサブコマンドの無い形を起こす。
+- **シェルの組み込みか、文字列を走らせるシェルで始まる呼び方は、走らせずに 4**——`exec <alloy>`（ラッパーの本文を写した形）・`sh -c '<alloy>' exec` は、語 `exec` が Alloy のサブコマンドにならない。
 - **通るモデルの終了コードを見る**——0 でなければ 1。
 - **通るモデルで到達できない呼び方を 0 にしない**——`run someA` が `SAT` でなければ 1。
 - **通るモデルで成り立つ性質に反例を出す呼び方を 0 にしない**——`check emptyOrNot` が `UNSAT` でなければ 1。
@@ -80,6 +87,8 @@ TLC（`check-tlc.py`。#912）と同じ形にした——**呼び方は正本の
   `java` を起動しない呼び方（Java 以外で書いた Alloy）には効かない。
 - **語の判定は `shlex` で割った語で見る**——`alloy-exec` のような 1 語や、ラッパーの中で `exec` を足す呼び方は「`exec` が無い」（4）。そう書いた利用者は、
   `exec` を語として書き直す（ラッパーの中身は読まない）。
+- **先頭より後ろで別のコマンドやシェルを起こす形**——`env sh -c '<alloy>' exec`・`nohup sh -c …` のように、先頭の語が組み込みでもシェルでもない形で文字列を走らせる呼び方は見分けない。
+  **呼び方の語が Alloy の何を起こすかは、語の並びからは決まらない**——見分けるのは、#922 とその関門が示した形（引数なし・`gui`・シェルの組み立て・先頭の組み込みとシェル）までである。
 - **呼び方が、Formal Checker が書く大きいモデルを検査できるか**（メモリ・時間・スコープ）——小さいモデル 2 つを検査できることだけを見る。
 - **呼び方の安全**——正本の `CLAUDE.md` に書いた文字列をそのまま `sh` で走らせる（正本の `CLAUDE.md` は利用者が書くもので、Formal Checker も同じ文字列を走らせる）。
 - **子孫のプロセスが自分で別のプロセスグループに移ったとき**——時間切れで止めるのはプロセスグループまで。
@@ -101,6 +110,11 @@ HERE = Path(__file__).resolve().parent
 CALL_KEY = "Alloy の呼び方:"
 PROBE_TIMEOUT = 120
 HEADLESS = "-Djava.awt.headless=true"
+# `sh` に渡すと語の並びと実際に起こす形が食い違う文字（区切り・パイプ・リダイレクト・置き換え・コメント・改行）
+SHELL_SPECIAL = set(";&|<>()$`#\n\\")
+# 先頭に置くと、後ろの語を Alloy のサブコマンドでなくするもの（シェルの組み込みと、文字列を走らせるシェル）
+SHELL_BUILTINS = {"exec", "eval", "command", "builtin", ".", "source"}
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish"}
 
 # 通るモデル: 到達できる（run が SAT）・成り立つ性質に反例が無い（check が UNSAT）
 GOOD_MODEL = ("Probe", "sig A {}\npred someA { some A }\nrun someA for 3\nassert emptyOrNot { no A or some A }\ncheck emptyOrNot for 3\n")
@@ -153,12 +167,17 @@ def read_call(root):
 
 
 def check_form(call):
-    """引数なし・`gui` の形を走らせない。語 `exec` が無いか語 `gui` が在れば Unknown。"""
+    """引数なし・`gui` の形を走らせない。形が決まらない・語 `exec` が無い・`gui` が在れば Unknown。"""
+    special = sorted(set(call) & SHELL_SPECIAL)
+    if special:
+        raise Unknown(f"呼び方 `{call}` にシェルの組み立て（{' '.join(special)}）がある——`sh` で走らせると、どの形で Alloy を起こすかが語だけで決まらないので走らせない")
     try:
         words = shlex.split(call)
     except ValueError as e:
         raise Unknown(f"呼び方 `{call}` を語に割れない: {e}")
-    if "gui" in words:
+    if words and (words[0] in SHELL_BUILTINS or Path(words[0]).name in SHELLS):
+        raise Unknown(f"呼び方 `{call}` が `{words[0]}` で始まる——シェルの組み込み・シェルを通すと、語 `exec` がサブコマンドにならないので走らせない")
+    if any("gui" in word.split() for word in words):
         raise Unknown(f"呼び方 `{call}` に `gui` がある——GUI を起動する形なので走らせない（`exec` で検査させる形を書く）")
     if "exec" not in words:
         raise Unknown(f"呼び方 `{call}` に `exec` が無い——引数なしや `gui` の形は GUI を起動するので走らせない"
