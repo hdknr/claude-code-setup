@@ -54,9 +54,27 @@ spec-loop のスキルが正本リポジトリに書く文書の文章は、こ�
 - 範囲の文書（`spec/scope.md`）の「原則」と「範囲の外」の節は、`## 原則`・`## 範囲の外` の見出しにする（`spec-scope.md` の「範囲の文書」）。
 - 仕様の設計メモを節に置くなら、見出しに「設計メモ（参考・拘束しない）」と書いた `##` の見出しにする（`spec-scope.md` の「縦の線」）。
 - 提案書と仕様書の手書き部分（`proposal/*.md`・`proposal/spec/*.md`）の節は、`##` の見出しにする（`tree.md` の「置き方の決まり」）。
-- `build-proposal.py` と `scaffold.py` は「範囲の外」の節を Markdown の見出しで探すので、太字の行にすると範囲の外の行を 1 つも載せない。
+- `build-proposal.py` と `scaffold.py` は「範囲の外」の節を Markdown の見出しで探す。
+- 太字の行にすると、`build-proposal.py` は仕様書に範囲の外の行を載せず、`scaffold.py` は範囲の外を挙げた機能があれば止まる。
 - PPTX（`qa-to-pptx.py`）は `#`・`##` の見出しごとに 1 枚を作るので、手書き部分の節を太字の行にすると、その節が前のスライドに寄る。
-- 節の中の段落の要点は、今までどおり太字の行にする。
+- 節の中の段落の要点は、今までどおり太字の行にする（範囲の外の節は除く。下の項）。
+
+**見出しで探す節の後ろには、別の内容を太字の行で続けない**
+
+- 見出しで探す節は、次の同じか上の水準の見出しまで続く。
+- その節の後ろに太字の行で段落を書くと、その段落も節の中身に入る。
+- 後ろに別の内容を書くなら、`##` の見出しを置いて節を閉じる。
+- 範囲の文書では、「範囲の外」の節を最後に置くか、後ろに `##` の見出しを置く。
+
+**範囲の外の節の中は、太字の行も箇条への分割も使わず、1 件を 1 行で書く**
+
+- 範囲の外の行は、`spec-scope.md` の「範囲の文書」のとおり 1 件 1 行で書く。
+- 1 つの行に場面・受ける原則・根拠を並べてよく、一文ずつの決まりはこの節に掛けない。
+- `scaffold.py` は節の空でない行を 1 行ずつ範囲の外の行と数え、中間表現の `out_of_scope` はその行を原文のまま引く。
+- 太字の見出しの行を置くと、その行も範囲の外の行に数えられる。
+- 1 件を箇条に分けると、1 件が何行にも数えられる。
+- 前の書き方の正本を移すときも、範囲の外の行は書き換えない。
+- 書き換えると中間表現が引いた原文と合わなくなり、`scaffold.py` が止まる。
 
 **番号つきの項は、番号を残して 1 行目を太字の見出しにする**
 
@@ -178,8 +196,8 @@ spec-loop のスキルが正本リポジトリに書く文書の文章は、こ�
 - 確かめるのは、表の行・見出し・印・囲みのコード・番号つきの項・未決定の印の数と、根拠の番号（`Q-R-004`・`D-F-002`・`F-001` の形）の集まりである。
 - 正本リポジトリの根で、移す前のコミット（移しの commit の直前）と作業中の版のディレクトリを渡して走らせる。
 - どれかが違えば、そのファイルと項目を出して 1 で終わる。
-- 最後に比べたファイルの数を出す。
-- 比べたファイルが 0 件なら、確かめていないので 2 で終わる（移しの commit の後のコミットを渡した・ディレクトリの名前を打ち間違えた、など）。
+- 最後に、前後の両方が在って数を比べたファイルの数を出す（片側に無いファイルは数えない）。
+- 移す前のコミットから変わった Markdown が 1 つも無ければ、何も比べていないので 2 で終わる（移しの commit の後のコミットを渡した・ディレクトリの名前を打ち間違えた、など）。
 - 句点の数は前後を並べて出すだけで、違っても落とさない（文を分けると増え、見出しにすると減る）。
 - 句点の数が大きく変わったら、文を足したか消したかを疑う。
 
@@ -205,13 +223,15 @@ names = subprocess.run(["git", "diff", "--name-only", "-z", base, "--", root],
 names += subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z", "--", root],
                         capture_output=True, text=True, check=True).stdout.split("\0")
 bad = 0
-compared = sorted(set(n for n in names if n.endswith(".md")))
-for name in compared:
+candidates = sorted(set(n for n in names if n.endswith(".md")))
+compared = 0  # 前後の両方が在って数を比べたファイルだけを数える
+for name in candidates:
     old = subprocess.run(["git", "show", f"{base}:{name}"], capture_output=True, text=True)
     if old.returncode != 0:
         print(f"{name}: 移す前に無い"); bad = 1; continue
     if not Path(name).is_file():
         print(f"{name}: 移した後に無い"); bad = 1; continue
+    compared += 1
     before = unicodedata.normalize("NFKC", old.stdout)
     after = unicodedata.normalize("NFKC", Path(name).read_text(encoding="utf-8"))
     for label, pattern in COUNTS.items():
@@ -223,9 +243,9 @@ for name in compared:
     if lost or added:
         print(f"{name}: 根拠の番号 消えた {sorted(lost)} 増えた {sorted(added)}"); bad = 1
     print(f"{name}: 句点 {before.count('。')} → {after.count('。')}")
-print(f"比べたファイル: {len(compared)} 件")
-if not compared:
-    # 0 件は「数が同じ」ではない——移す前のコミットかディレクトリの取り違えで、何も比べていない
+print(f"比べたファイル: {compared} 件")
+if not candidates:
+    # 変わったファイルが 0 件は「数が同じ」ではない——移す前のコミットかディレクトリの取り違えで、何も比べていない
     print(f"{root}: {base} から変わった Markdown が無い——移す前のコミットとディレクトリを確かめる")
     sys.exit(2)
 sys.exit(bad)
