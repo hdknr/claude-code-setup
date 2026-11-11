@@ -13,6 +13,7 @@
 - worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-982`
 - 起点コミット: `5b629b5f`
 - base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）を解決した `5b629b5f149408a39ae750ec4dae7462bb134470`
+- 載せ替えの履歴: 1 パス目のあとで main（#952。`10cb7ee8`）を取り込んだ（`3f377d38`）。式を当て直した base: `10cb7ee84606d8b2563f4ed156f3e998cd64023f`（`git merge-base origin/main HEAD`。2 パス目から使う）
 
 ## 変更範囲
 
@@ -80,6 +81,9 @@
 - 1 パス目の起点（指摘対応の 0 行判定用）: `0f190644`（関門に渡した時点の HEAD）
 - Verifier 1 パス目: 済み（反証 0 件・所見 2 件）
 - /code-review 1 パス目: 済み（指摘 8 件。直す 3・残課題 6——採否の表）
+- 1 パス目の指摘対応: 済み（`8c3fe656`。R1〜R3。指摘対応の差分は 0 行でない——2 パス目を回す）。取り込みと版の上げ直し `66b0968f`。`check-all.py` 73/73・失敗 0
+- 割り目（2 パス目の前）: AskUserQuestion で訊く——結果は下の行
+- 2 パス目: 残り——手順 5 の当て直し（Verifier）と `/code-review` の両方
 - 交絡を潰した手順: 実験は変異テストと陽性対照（本物の本体で 34 試料が期待どおり→変異で崩れる。references は崩さない形で一致→崩した形で不一致）
 
 ## 既知の限界・決着済みの論点
