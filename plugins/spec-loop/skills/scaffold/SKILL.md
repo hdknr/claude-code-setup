@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.79.0 -->
-> **このスキルの版: 0.79.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.80.0 -->
+> **このスキルの版: 0.80.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -101,6 +101,10 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 - **性能の要求の表（`shared/nfr.csv`）の性能の行のうち、その機能に効くもの（仕様がその機能の性質として書いた行）があれば、機能の `nfr` にその行の `No` を並べる**
   （`../../references/spec-ir.md` の「性能の要求」）——Issue の本文の性能予算に数字が写り、性能テストが作られる（#852）。**効く行が無い機能には書かない**
   （性能予算は「要求なし」。`../../references/nfr.md` の「既定の原則 — 要求の無い機能は最適化しない」）。表に無い数字を足さない。
+- **利用者向けの要求（`requirements/`）に、その機能の UI モック・業務フロー（BPMN の書き出し `.svg`）・画面遷移の図があれば、機能の `refs` にそのパスを並べる**
+  （`../../references/spec-ir.md` の「参考資料」）——Issue の本文の `## 参考資料` に載り、写しが `scaffold/refs/` に置かれて、dev-loop が見た目や業務の流れを推測で作らずに済む（#951）。
+  パスは**重ね合わせた全体の根から**（`requirements/flows/受注.svg`）。**参考資料は受入基準ではない**——見た目を受入基準にしたいなら仕様とケースに書く（`/spec-loop:spec-review` に戻す）。
+  関係する図が無い機能には書かない。
 - **仕様チェックリストの「呼ぶ側の分岐」の行（`../../references/spec-exit.md`）を、入口の機能（`called_by` を持たない機能）の `branches` に書き起こす**
   （`../../references/spec-ir.md` の「呼ぶ側の分岐」）——分岐ごとに見せるもの（`shows`）か該当なし（`none`）を、`source` の仕様の**原文の 1 行のまま**書く
   （純粋な計算で行ごと該当なしなら `none` だけ）。課題一覧（案）の受入基準の雛形に写る（#855）。**仕様が決めていない分岐は書かない**——案の未決定事項に出る。
@@ -194,7 +198,8 @@ python3 <このスキルの base ディレクトリ>/../../scripts/scaffold.py -
 
 **Issue が指すのは `scaffold/` と、正本の版から重ね合わせた中間表現（`build/merged/spec/spec_ir.json`）なので、
 登録より前に `scaffold/` と `docs/v<n>/` を、開発する側から見える場所に置く**（`build/merged/` は commit しない——
-開発する側が同じコマンドで作る）。
+開発する側が同じコマンドで作る）。**`scaffold/refs/`（参考資料の写しと目録。#951）も `scaffold/` と一緒に commit する**——正本と開発のリポジトリが別なら、
+本文の参考資料はこの写しで辿る。
 正本リポジトリの `CLAUDE.md` の決まりに従う。決まりが無ければ、変更したファイルの一覧を示して止まり、
 commit と push を利用者に任せる（**push されるまで登録しない**）。
 **本文の基準コミットは、4 で生成した時点の HEAD である**（`../../references/handoff-issue.md` の「基準コミット」。#874）——この commit の前の時点で、
