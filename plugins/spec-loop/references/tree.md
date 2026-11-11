@@ -17,6 +17,7 @@ docs/v<n>/
 │   └── infra.drawio         # 基盤の構成の図と書き出し infra.svg（任意。同上）
 ├── requirements/            # 利用者向け：業務ルール・画面・業務フロー
 │   ├── flows/               # 業務フローの図（BPMN の `<名前>.bpmn` と書き出し `<名前>.svg`。下の「図」の「業務フロー（BPMN）」）
+│   ├── mocks/               # UI モック（HTML の `<画面名>.html`・React の `<画面名>/`。参考資料で受入基準ではない。下の「UI モック」）
 │   ├── features.csv         # 機能一覧（下の「システム設計書の成果物」）
 │   ├── entities.csv         # データモデル（概念）の表。ER 図は er.drawio と書き出し er.svg（同上）
 │   ├── io.csv               # 入出力の一覧（同上）
@@ -48,6 +49,7 @@ docs/index.md                # 表紙（下の「ドキュメントのツール�
 docs/qa.md                   # Q&A 表の表示用ページ（同上。正本は各版の shared/qa.csv）
 docs/decision-table.md       # 決定表の表示用ページ（同上。正本は各版の shared/decision_table.csv）
 docs/infra.md                # 基盤要件の表示用ページ（同上。正本は各版の shared/infra.csv）
+docs/mocks.md                # UI モックへのリンクの表示用ページ（同上。正本は各版の requirements/mocks/）
 mkdocs.yml                   # MkDocs の設定（同上）
 hooks/spec_loop_pages.py     # 表示用ページを CSV から作るフック（同上）
 ```
@@ -422,6 +424,50 @@ spec/formal/<対象>/
   （drawio の図と同じ。#902）——承認のタグの後では書き出しを直せないので、`render-diagrams.py --check` を承認の前に回す。
 - **同じディレクトリに、同じ名前の `.drawio` と `.bpmn` を置かない**（大文字小文字だけ違う名前も）——書き出しが同じ `<名前>.svg` になる（大文字小文字を区別しないファイルシステムでは大文字小文字だけ違う名前も）ので、`render-diagrams.py` は何も書かずに止まる。
 
+## UI モック
+
+**「見て触らないと分からない要求」を引き出すための捨てるプロトタイプ**（画面のモック）は、**HTML か React** で書き、版の中の
+**`requirements/mocks/`** に置く（#952）。
+
+| 形式 | 向いている画面 | 置き方 | 見方 |
+| --- | --- | --- | --- |
+| **HTML** | 静的な画面（項目の並び・表示の確認） | **1 画面 1 ファイル** `requirements/mocks/<画面名>.html`。**外部への依存を持たない**——CSS・JS・画像を中に書き、`<link>`・`<script src>`・画像の URL で外のファイルを読まない | ブラウザでファイルを直に開くだけで見られる。MkDocs のサイトからも開ける |
+| **React** | 状態の変化・画面の切り替えなど、動きを確かめたい画面 | **1 画面 1 ディレクトリ** `requirements/mocks/<画面名>/`。入口の **`index.html`** と、コンポーネントのソースの **`.jsx`** を置く。**ビルドしない**——`package.json`・`node_modules/`・ビルドの出力を置かない。`.tsx` は置かない | **MkDocs のサイト（`uv run mkdocs serve` か公開したサイト）から開く**。ファイルを直に開くと、ブラウザが `.jsx` を読まないので描かれない。見るのにネットワークが要る（下） |
+
+- **React の入口 `index.html`**: 版を固定した React・ReactDOM と、ブラウザで JSX を変換する Babel を CDN から読み、同じディレクトリの `.jsx` を
+  `<script type="text/babel" src="…">` で読む（React と Babel のほかに外のものを読まない）。版は固定する——`react@18` のような幅のある指定にしない。例:
+
+  ```html
+  <!doctype html>
+  <html lang="ja">
+  <head><meta charset="utf-8"><title>在庫一覧</title></head>
+  <body>
+    <div id="root"></div>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+    <script type="text/babel" src="App.jsx"></script>
+  </body>
+  </html>
+  ```
+
+  `App.jsx` は `ReactDOM.createRoot(document.getElementById("root")).render(<App />);` で描く（`import` は書かない——React は入口が読んだものを使う）。
+  部品を分けるなら、`.jsx` を入口に並べて読む（読む順に、先に定義したものを後のファイルが使う）。
+- **置き場所は版の中だけ**——版の外（`docs/assets/` など）に置かない。2 つの承認の照合（`signoff-tags.md`）と版の重ね合わせ（`versions.md`）が比べるのは
+  版のディレクトリの中なので、版の外のモックは承認の範囲から外れる（図と同じ理由。上の「図」）。`requirements/mocks/` のファイルは、どの形式でも照合と重ね合わせの対象に入る——
+  v2 以降は、変えたモックを置き、消すなら `removed.csv` にファイルごとに書く（`versions.md`）。
+  **React のモックを変えるなら、そのディレクトリのファイルを全部（変えないものも）作業中の版に置く**——表示用のページ（下の「見せ方」）は版を重ね合わせず、
+  入口は同じディレクトリの `.jsx` しか読まないので、変えた `.jsx` だけを置くと、その版のモックは開けない（入口の無いディレクトリとして警告される）。
+  **`.` で始まる名前のファイル・ディレクトリは置かない**——重ね合わせも照合も読まない（`.DS_Store` を数えないため）。
+- **モックは参考資料で、受入基準ではない。** 守るべき性質とそれを確かめるテストは仕様（`spec/`）に書く。**モックと仕様が食い違ったら、どちらかで決めずに、
+  仕様の穴として作業中の版の Q&A 表に起票する**（`qa-csv.md`）。見た目を受入基準にしたいなら、その性質を仕様とケースに書く。
+- **モックを根拠として指す**——レビュー会でモックを見せて回答をもらった Q&A の行は、`回答` の括弧にモックのパスを書く
+  （`A（業務部が回答。モック requirements/mocks/受注入力.html）`。React は入口の `index.html` を書く）。列は足さない。
+- **見せ方**: MkDocs の雛形の表示用ページ `docs/mocks.md`（下の「ドキュメントのツール」）が、各版のモックへのリンクを版ごとに描く。
+  仕様書には「仕様と要求のファイル」にモックのパスが載る（下の「仕様書」）。
+- **開発ループへの受け渡し**: scaffold の中間表現の機能の `refs` に、その機能の画面のモックのパスを並べる（`spec-ir.md` の「参考資料」。#951）——
+  Issue の本文の `## 参考資料` に載り、写しが `scaffold/refs/` に置かれる。**`refs` はファイルを指す**ので、React のモックは入口の `index.html` とソースの `.jsx` をそれぞれ並べる。
+
 ## 生成物の置き場所
 
 レビュー会のスライドと同じく、**ガントチャートと提案書も生成物で、正本ではない**。ツリーには置かない。
@@ -505,7 +551,7 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | 決定表 | `shared/decision_table.csv`（1 行目を見出しとして、そのまま表にする） |
 | 範囲の外 | 範囲の文書（`spec/scope.md`。`spec-scope.md`）の、見出しに「範囲の外」を含む節の本文 |
 | 前の版からの変更 | v2 以降だけ。提案書と同じ比較（`versions.md` の「版の差分」） |
-| 仕様と要求のファイル | `spec/`・`requirements/` のパスの一覧 |
+| 仕様と要求のファイル | `spec/`・`requirements/` のパスの一覧（UI モック `requirements/mocks/` のパスも載る。上の「UI モック」） |
 
 - **一意に決まらないもの**——画面の一覧・試作で確かめること・要約・説明のときに確かめたいこと——は、
   作業中の版の **`proposal/spec/*.md`** に手で書く（ファイル名の順に仕様書の先頭へ並ぶ。無ければ無いと書く）。
@@ -554,11 +600,13 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
   在れば触らず、足りない依存・行を示すので、足すかどうかは利用者が決める。
 - 写すもの: `mkdocs.yml`（Material・`use_directory_urls: false`・nav は書かず自動）・`pyproject.toml`（uv。
   **MkDocs は 2 未満に固定**——2.0 は非互換の変更が予告されている）・`.gitignore`（`build/`・`site/`・`.venv/`・`__pycache__/`）・
-  `hooks/spec_loop_pages.py`・`docs/index.md`・`docs/qa.md`・`docs/decision-table.md`・`docs/infra.md`。閲覧は `uv run mkdocs serve`。
+  `hooks/spec_loop_pages.py`・`docs/index.md`・`docs/qa.md`・`docs/decision-table.md`・`docs/infra.md`・`docs/mocks.md`。閲覧は `uv run mkdocs serve`。
 - **CSV は Markdown に写さない。** 表示用のページに印（`<!-- spec-loop: qa -->`）を書き、フックが CSV から描く。
   `qa` の印は、各版の `docs/v<n>/shared/qa.csv` を**版ごとの節**に描く（重ね合わせない。アンカーは `v<n>-q-001`）。
   `decision_table` の印は、各版の `docs/v<n>/shared/decision_table.csv` を**見出しの行どおり**に版ごとの節に描く（#369）。
   `infra` の印は、各版の `docs/v<n>/shared/infra.csv`（基盤要件）を同じく見出しの行どおりに描く（#950）。
+  `mocks` の印は、各版の `docs/v<n>/requirements/mocks/` の UI モック（`<画面名>.html` と `<画面名>/index.html`）へのリンクを版ごとの節に描く（#952。上の「UI モック」）。
+  モックのファイルは MkDocs がそのまま写すので、リンクからサイトで開ける。入口の無いディレクトリ・`.html` でないファイルは警告して描かない。
   CSV の文字は表のセルにだけ置く（段落に置くと、行頭の `!!! ` や字下げがブロックの記法に読まれる）。
   ほかの CSV を描くときは、フックに描画関数を足す。
 - **要求・仕様から CSV へ直接リンクしない**——ブラウザでは CSV のページが開けない（#369）。リンクは表示用のページ
@@ -579,6 +627,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
   取り込んだあと警告が出たら、`versions.md` の「綴りの誤りの移行」で直す。
   **spec-loop 0.79.0 で、フックは `infra` の印（基盤要件）を描くようになった**（#950）——基盤要件の表を置くなら、同じ手順 4 の形でフックを取り込み、
   雛形の `docs/infra.md` を写す（在れば変えない）。
+  **spec-loop 0.81.0 で、フックは `mocks` の印（UI モックへのリンク）を描くようになった**（#952）——UI モックを置くなら、同じ手順 4 の形でフックを取り込み、
+  雛形の `docs/mocks.md` を写す（在れば変えない）。
 - **表示用のページは `shared/` に置かない**（`docs/qa.md` のように版の外に置く）。`shared/` は 2 つのサインオフが比べる範囲
   （`signoff-tags.md`）なので、表示用のファイルを入れると比べる中身が増える。版の外の名前は重ね合わせにも入らない（`versions.md`）。
 - **フックはサーバーの起動時にしか読まれない**——直したら `mkdocs serve` を起動し直す。
