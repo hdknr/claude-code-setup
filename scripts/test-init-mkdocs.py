@@ -65,6 +65,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -900,6 +901,83 @@ def init_infra_page(plugin: Path, work: Path) -> bool:
     return code == 0 and copied.is_file() and copied.read_bytes() == page.read_bytes()
 
 
+# UI モック（#952）——各版の requirements/mocks/ の HTML と React の入口へのリンクを、版ごとの節に描く
+MOCK_HTML = "v1/requirements/mocks/受注 入力.html"
+MOCK_REACT = "v1/requirements/mocks/在庫/index.html"
+
+
+def mock_link(target: str) -> str:
+    return urllib.parse.quote(target)
+
+
+def hook_mocks(plugin: Path, work: Path) -> bool:
+    """HTML（1 ファイル）と React（入口の index.html）を版ごとに描く。`.` で始まる名前は読まず、モックの無い版は飛ばす。名前は URL に符号化する。"""
+    docs = work / "docs"
+    write(docs, {MOCK_HTML: "<p>受注</p>\n", MOCK_REACT: "<div id=root></div>\n", "v1/requirements/mocks/在庫/App.jsx": "x\n",
+                 "v1/requirements/mocks/.DS_Store": "x", "v1/requirements/mocks/.draft/index.html": "x\n",
+                 "v1/requirements/mocks/消した/.DS_Store": "x",  # モックを消した跡（macOS）は無いのと同じ——警告しない
+                 "v1/requirements/mocks/消した/components/.DS_Store": "x",  # 下のフォルダの跡も同じ（2 パス目の CR2-1）
+                 "v1/requirements/mocks/部品だけ/components/Row.jsx": "x\n",  # 下に実物があれば、入口が無いと警告する
+                 "v2/requirements/mocks/在庫/index.html": "v2\n", "v2/requirements/mocks/在庫/App.jsx": "v2\n",
+                 "v3/requirements/a.md": "# a\n"})
+    out, warnings = render(plugin, docs, "# UI モック\n\n<!-- spec-loop: mocks -->\n", src="mocks.md")
+    v2 = out.find("## v2")
+    return (len(warnings) == 1 and "v1/requirements/mocks/部品だけ: 入口の index.html が無い" in warnings[0] and "## v3" not in out and v2 > out.find("## v1") >= 0
+            and f"| [受注 入力]({mock_link(MOCK_HTML)}) | HTML |" in out[:v2]
+            and f"| [在庫]({mock_link(MOCK_REACT)}) | React（ディレクトリ） |" in out[:v2]
+            and f"| [在庫]({mock_link('v2/requirements/mocks/在庫/index.html')}) | React（ディレクトリ） |" in out[v2:]
+            and "受注" not in out[v2:] and "DS_Store" not in out and "消した" not in out and "draft" not in out and "App.jsx" not in out
+            and "<!-- spec-loop" not in out)
+
+
+def hook_mocks_subdir_page(plugin: Path, work: Path) -> bool:
+    """印を版の外の下のページ（sub/page.md）に書いても、リンクはそのページからの相対になる。"""
+    docs = work / "docs"
+    write(docs, {MOCK_HTML: "<p>受注</p>\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: mocks -->", src="sub/page.md")
+    return not warnings and f"| [受注 入力]({mock_link('../' + MOCK_HTML)}) | HTML |" in out
+
+
+def hook_mocks_none(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/requirements/a.md": "# a\n", "v1/requirements/flows/受注.svg": "<svg/>\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: mocks -->", src="mocks.md")
+    return not warnings and "UI モック（`docs/v<n>/requirements/mocks/`）はまだ無い" in out and "| モック |" not in out
+
+
+def hook_mocks_problems(plugin: Path, work: Path) -> bool:
+    """入口の index.html が無い React のディレクトリ（綴りだけ違う Index.html も）・.html でないファイルは、警告してリンクにしない。正しいモックは描く。"""
+    docs = work / "docs"
+    write(docs, {"v1/requirements/mocks/a.html": "<p>a</p>\n", "v1/requirements/mocks/在庫/App.jsx": "x\n",
+                 "v1/requirements/mocks/注文/Index.html": "x\n", "v1/requirements/mocks/画面.png": "x"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: mocks -->", src="mocks.md")
+    return (len(warnings) == 3 and sum("入口の index.html が無い" in w for w in warnings) == 2
+            and any("v1/requirements/mocks/画面.png: UI モックの形でない" in w for w in warnings)
+            and f"| [a]({mock_link('v1/requirements/mocks/a.html')}) | HTML |" in out
+            and "[在庫]" not in out and "[注文]" not in out and "[画面]" not in out)
+
+
+def hook_misspelled_mocks(plugin: Path, work: Path) -> bool:
+    """綴りだけ違う `Requirements/mocks/` は警告して描かない。綴りどおりの版は描く。"""
+    docs = work / "docs"
+    write(docs, {MOCK_HTML: "<p>受注</p>\n", "v2/Requirements/mocks/b.html": "<p>b</p>\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: mocks -->", src="mocks.md")
+    return (len(warnings) == 1 and "v2/Requirements/mocks: requirements/mocks " + SPELLING in warnings[0]
+            and "[受注 入力]" in out and "[b]" not in out and "## v2" not in out)
+
+
+# 雛形の UI モックのページ（#952）——在って、印を持ち、空の根に写る
+def init_mocks_page(plugin: Path, work: Path) -> bool:
+    page = plugin / "templates" / "mkdocs" / "docs" / "mocks.md"
+    if not page.is_file() or "<!-- spec-loop: mocks -->" not in page.read_text(encoding="utf-8"):
+        return False
+    root = work / "root"
+    root.mkdir(parents=True)
+    code, _ = run_init(plugin, root)
+    copied = root / "docs" / "mocks.md"
+    return code == 0 and copied.is_file() and copied.read_bytes() == page.read_bytes()
+
+
 def hook_decision_table_none(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
     write(docs, {"v1/shared/qa.csv": QA_V1})
@@ -992,6 +1070,12 @@ CASES = {
     "基盤要件の表が無ければそう書く": hook_infra_none,
     "綴り違いの基盤要件の表は警告して描かない": hook_misspelled_infra,
     "雛形の基盤要件のページは印を持ち、空の根に写る": init_infra_page,
+    "UI モックを版ごとに HTML と React の入口へのリンクで描く": hook_mocks,
+    "UI モックのリンクは印のページからの相対": hook_mocks_subdir_page,
+    "UI モックが無ければそう書く": hook_mocks_none,
+    "入口の無いディレクトリと HTML でないファイルは警告してリンクにしない": hook_mocks_problems,
+    "綴り違いの requirements の UI モックは警告して描かない": hook_misspelled_mocks,
+    "雛形の UI モックのページは印を持ち、空の根に写る": init_mocks_page,
     "綴り違いの Q&A 表は警告して描かない": hook_misspelled_qa,
     "綴り違いの決定表は警告して描かない": hook_misspelled_decision_table,
     "綴り違いの表の番号はリンクにしない": hook_links_misspelled,
@@ -1052,6 +1136,31 @@ MUTATIONS: list[tuple] = [
      "雛形の決定表のページは印を持ち、空の根に写る"),
     ("雛形の基盤要件のページに印が無い", "templates/mkdocs/docs/infra.md", "<!-- spec-loop: infra -->", "",
      "雛形の基盤要件のページは印を持ち、空の根に写る"),
+    ("UI モックを描かない", HOOK, '    "mocks": render_mocks,\n', "", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("ドットで始まる名前も読む", HOOK, '            if name.startswith("."):  # 重ね合わせが読まない名前（.DS_Store など）\n                continue\n', "",
+     "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("モックの名前を URL に符号化しない", HOOK, "({quote(target)})", "({target})", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("リンクをページからの相対にしない", HOOK, 'posixpath.dirname(src) or "."', '"."', "UI モックのリンクは印のページからの相対"),
+    ("ドットの名前だけのフォルダも警告する", HOOK, "                if not has_content(path):\n",
+     "                if False:\n", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("下のフォルダを辿らない", HOOK, "        if not path.is_dir() or path.is_symlink() or has_content(path):\n            return True\n    return False\n\n\ndef render_mocks",
+     "        if not path.is_dir() or path.is_symlink():\n            return True\n    return False\n\n\ndef render_mocks",
+     "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("下のフォルダを中身とみなす", HOOK, "        if not path.is_dir() or path.is_symlink() or has_content(path):\n            return True\n    return False\n\n\ndef render_mocks",
+     "        if True:\n            return True\n    return False\n\n\ndef render_mocks",
+     "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("入口の無いディレクトリも描く", HOOK, "                if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():",
+     "                if True:", "入口の無いディレクトリと HTML でないファイルは警告してリンクにしない"),
+    ("入口の綴りを見ない", HOOK, "                if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():",
+     "                if (path / MOCK_ENTRY).is_file():", "入口の無いディレクトリと HTML でないファイルは警告してリンクにしない"),
+    ("HTML でないファイルも黙って飛ばす", HOOK, "            else:\n                problems.append(problem(f\"{path.relative_to(docs_dir)}: UI モックの形でない",
+     "            elif False:\n                problems.append(problem(f\"{path.relative_to(docs_dir)}: UI モックの形でない",
+     "入口の無いディレクトリと HTML でないファイルは警告してリンクにしない"),
+    ("綴り違いの requirements も読む", HOOK, "            step += [(directory / entry, spelled and entry == part) for entry in entries\n                     if fold(entry) == fold(part) and (directory / entry).is_dir()]",
+     "            step += [(directory / entry, spelled) for entry in entries\n                     if fold(entry) == fold(part) and (directory / entry).is_dir()]",
+     "綴り違いの requirements の UI モックは警告して描かない"),
+    ("雛形の UI モックのページに印が無い", "templates/mkdocs/docs/mocks.md", "<!-- spec-loop: mocks -->", "",
+     "雛形の UI モックのページは印を持ち、空の根に写る"),
     ("mkdocs.yml が在っても写す", INIT, "        if os.path.lexists(root / name):\n", "        if False:\n",
      "mkdocs.yml が在れば何も写さない"),
     ("mkdocs.yaml を設定とみなさない", INIT, 'CONFIG_NAMES = ("mkdocs.yml", "mkdocs.yaml")', 'CONFIG_NAMES = ("mkdocs.yml",)',
@@ -1255,7 +1364,7 @@ MUTATIONS: list[tuple] = [
 ]
 # 片方の FS でしか前の振る舞いと見分けられない変異——区別する FS では、前の振る舞いも綴り違いを開けず黙って飛ばすので、
 # 番号を読む側の変異は見分けられない。綴りどおりと綴り違いが並ぶ試料は区別する FS でしか作れない
-FOLD_ONLY = {"番号をパスを組み立てて読む"}
+FOLD_ONLY = {"番号をパスを組み立てて読む", "入口の綴りを見ない"}
 SENSITIVE_ONLY = {"区別する FS で綴り違いのほうを読む"}
 
 
@@ -1325,7 +1434,7 @@ def check_reference() -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     check("references/tree.md に「ドキュメントのツール」の節が無い", "\n## ドキュメントのツール\n" in text)
     section = text.split("\n## ドキュメントのツール\n", 1)[-1].split("\n## ", 1)[0]
-    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "docs/infra.md", "shared/",
+    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "docs/infra.md", "docs/mocks.md", "`mocks` の印", "shared/",
                  "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない",
                  "spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり"):
         check(f"references/tree.md の「ドキュメントのツール」に {word} が無い", word in section)

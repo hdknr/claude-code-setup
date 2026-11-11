@@ -217,6 +217,15 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
                                 "v2/spec/formal/stock/Stock.tla": "M2\n", "v2/spec/formal/stock/MC2.cfg": "C2\n"}, "none", [],
      lambda r: made(r) and sorted(p for p in r.tree if p.startswith("spec/formal/")) == [
          "spec/formal/stock/MC.cfg", "spec/formal/stock/MC2.cfg", "spec/formal/stock/Stock.tla"]),
+    # UI モック（#952）——requirements/mocks/ の HTML と React のディレクトリも、ほかの要求のファイルと同じく重ね・消す
+    ("UI モックも重ねる", {**MAIN, "v1/requirements/mocks/order.html": "<p>注文 v1</p>\n", "v1/requirements/mocks/old.html": "<p>旧</p>\n",
+                         "v1/requirements/mocks/stock/index.html": "入口 v1\n", "v1/requirements/mocks/stock/App.jsx": "App v1\n",
+                         "v2/requirements/mocks/stock/index.html": "入口 v1\n", "v2/requirements/mocks/stock/App.jsx": "App v2\n",
+                         "v2/removed.csv": REMOVED_HEAD + "ファイル,requirements/b.md,要件から外した\nファイル,requirements/mocks/old.html,画面を外した\n"},
+     "none", [],
+     lambda r: main_case(r) and r.text("requirements/mocks/order.html") == "<p>注文 v1</p>\n"
+     and r.text("requirements/mocks/stock/App.jsx") == "App v2\n" and r.text("requirements/mocks/stock/index.html") == "入口 v1\n"
+     and "requirements/mocks/old.html" not in r.tree),
     ("3 つ目の版を順に重ねる", {**MAIN, "v3/requirements/a.md": "A3\n", "v3/requirements/b.md": "B3\n"}, "none", [],
      lambda r: made(r) and r.text("requirements/a.md") == "A3\n" and r.text("requirements/b.md") == "B3\n"),
     ("--upto 1 は v1 だけ", MAIN, "none", ["--upto", "1"],
