@@ -79,6 +79,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-feasibility-csv.py` - スケジュールと見積りの表の検査（`schedule-to-gantt.py` と
       `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは
       `scripts/test-check-feasibility-csv.py`）
+    - `scripts/check-design-csv.py` - システム設計書の成果物の表（`requirements/` の機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、
+      `shared/nfr.csv` の可用性などの種類の行）の検査（#957。**形式の違反（1）・表が無い（止めない）・必須の欄が空と未決定の印（3）を分けて出す**。
+      `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
+      決まりの原本は `references/tree.md` の「システム設計書の成果物」、守る／守らないは docstring を正とする。テストは `scripts/test-check-design-csv.py`）
     - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
       作れなければ**前の出力を消す**——**消せなければ 2 で止まり、残った出力を名指しする**（#499）。テストは `scripts/test-schedule-to-gantt.py`）
     - `scripts/render-diagrams.py` - 正本リポジトリの `docs/` の下の drawio と BPMN を隣の SVG に書き出し、**ソースの指紋を書き出しに書き込む**
@@ -305,6 +309,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと
     タグを作って**当てる（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）
+  - `test-check-design-csv.py` - spec-loop のシステム設計書の成果物の表の検査（#957）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の
+    「性能のほかの種類」の表と一致することも見る**（`test-check-qa-csv.py` と同じ形）
   - `test-render-diagrams.py` - spec-loop の図の書き出し（#268・BPMN は #901）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**偽の draw.io の CLI を `DRAWIO` で、偽の BPMN の描画口を `BPMN_RENDER` で差し、既定のパスは
     `SPEC_LOOP_DRAWIO_DEFAULT`・`SPEC_LOOP_CHROME_DEFAULT` で、`PATH` は一時ディレクトリだけに差し替える**——本物の draw.io・Chrome・Node には届かない。書き出しの見た目は見ない
