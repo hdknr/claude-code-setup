@@ -235,6 +235,13 @@ MARKDOWN_LINES_PER_SLIDE = 14
 MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 MARKDOWN_TABLE_RULE = re.compile(r"\|(?:\s*:?-+:?\s*\|)+")
 MARKDOWN_CELL = re.compile(r"(?<!\\)\|")
+# 太字の行（`**…**` だけの行。#965）——中に `**` を含まず、内側の両端が空白でない。字下げは 3 個の空白まで（4 個からはコード）
+MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\*\*(?!\s)((?:(?!\*\*).)+?)(?<!\s)\*\*")
+# コードフェンスの開き（引用の印を外した行の頭。字下げは問わない——リストの中のフェンスも読む）。
+# 閉じるのは、同じ入れ物（引用の中か外か）で、同じ文字が開いた長さ以上並んだだけの行（#965 の 2 パス目）
+MARKDOWN_FENCE = re.compile(r"\s*(`{3,}|~{3,})")
+# 引用の印（`>` と、その後ろの空白 1 個まで）。残りの字下げは中身の字下げとして読む
+MARKDOWN_QUOTE = re.compile(r"(?:> ?)+")
 
 
 def markdown_row(line: str) -> str:
@@ -247,15 +254,27 @@ def markdown_slides(text: str, figure_note: str) -> list[str]:
     """`build-proposal.py` が作った Markdown（提案書・仕様書）を、見出し（`# `・`## `）ごとのスライドにする。
 
     最初の `# ` は表紙の題で、最初の見出しまでの行は表紙の本文。`### ` は太字の行、表は 1 行ずつ ` ／ ` でつなぐ
-    （見出しの行は太字）。長い節は `MARKDOWN_LINES_PER_SLIDE` 行ずつに分ける。コードフェンスの中は字句のまま。
+    （見出しの行は太字）。**`**…**` だけの行（`writing-style.md` の太字の見出しの行。引用の中も）は `**` を外して太字の行にする**
+    （#965。行の中の部分的な太字・4 個以上の空白で字下げしたコードは字句のまま）。
+    フェンスは ```` ``` ```` と `~~~`（引用の中も）で、同じ入れ物の、同じ文字が開いた長さ以上並んだだけの行で閉じる。
+    引用の中で開いたフェンスは、引用が終わったら閉じる。長い節は `MARKDOWN_LINES_PER_SLIDE` 行ずつに分ける。コードフェンスの中は字句のまま。
     **画像は載せない**——画像の行は `figure_note` を添えた 1 行に置き換える（標準ライブラリだけでは SVG を埋められない）。
     """
     lines = split_lines(text)
-    title, cover_body, sections, fence = "", [], [], False
+    title, cover_body, sections, fence = "", [], [], None
     for i, raw in enumerate(lines):
         line = raw.rstrip()
-        if line.lstrip().startswith("```"):
-            fence = not fence
+        quote = MARKDOWN_QUOTE.match(line) if line.startswith(">") else None
+        content = line[quote.end():] if quote else line
+        if fence is not None and fence[0] and not quote:
+            fence = None  # 引用が終われば、引用の中のフェンスも閉じる
+        if fence is None:
+            opening = MARKDOWN_FENCE.match(content)
+            if opening:
+                fence = (quote is not None, opening.group(1)[0], len(opening.group(1)))
+                continue
+        elif fence[0] == (quote is not None) and set(run := content.strip()) == {fence[1]} and len(run) >= fence[2]:
+            fence = None
             continue
         if not fence and line.startswith("# ") and not title:
             title = line[2:].strip()
@@ -274,8 +293,9 @@ def markdown_slides(text: str, figure_note: str) -> list[str]:
             header = i + 1 < len(lines) and MARKDOWN_TABLE_RULE.fullmatch(lines[i + 1].strip()) is not None
             body.append((markdown_row(line), header))
         else:
-            stripped = line.lstrip("> ").rstrip() if line.startswith(">") else line
-            body.append((MARKDOWN_IMAGE.sub(lambda m: f"（図「{m.group(1)}」は{figure_note}）", stripped), False))
+            bold = MARKDOWN_BOLD_LINE.fullmatch(content)
+            text = bold.group(1) if bold else content
+            body.append((MARKDOWN_IMAGE.sub(lambda m: f"（図「{m.group(1)}」は{figure_note}）", text), bold is not None))
     out = [slide(lines_of(title, 4000, bold=True), [p for t, b in cover_body for p in lines_of(t, 1600, b)])]
     for head, body in sections:
         chunks = [body[i:i + MARKDOWN_LINES_PER_SLIDE] for i in range(0, len(body), MARKDOWN_LINES_PER_SLIDE)] or [[]]

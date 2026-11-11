@@ -2177,6 +2177,13 @@ CASES: list[Case] = [
     Case("機能一覧: v2 で置き換えた一覧で照らす", 1, "F-002: 入口の機能が機能一覧",
          extra={FEATURES_FILE: FEATURES_LIST, str(V2 / "requirements" / "features.csv"): FEATURES_HEAD + "F-001,割引額を計算する,API,\n",
                 **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])}),
+    # #972: v2 で機能を消すとき、removed.csv だけでは一覧の行が残って止まる（tree.md の旧い案内の形）。一覧を置き直して行を外せば作る
+    Case("機能一覧: removed.csv で消しても一覧の行は残る", 1,
+         "F-002: 機能一覧（build/merged/requirements/features.csv）の機能が中間表現に無い",
+         extra={FEATURES_FILE: FEATURES_LIST, **v2([], removed="機能,F-002,取り消しはやめる\n")}, post=nothing_written),
+    Case("機能一覧: v2 で一覧を置き直して行を外せば作る", 0, "作った",
+         extra={FEATURES_FILE: FEATURES_LIST, str(V2 / "requirements" / "features.csv"): FEATURES_HEAD + "F-001,割引額を計算する,API,\n",
+                **v2([], removed="機能,F-002,取り消しはやめる\n")}, post=v2_removed, absent="機能一覧（"),
     Case("機能一覧: 表が無ければ照らさない", 0, "作った", absent="機能一覧"),
     Case("成果物の表: 未決定の欄で止める", 1, "build/merged/requirements/jobs.csv:2: 周期 に未決定の印（未定）",
          extra={JOBS_FILE: JOBS_UNDECIDED}, pre=plant_old_issues, post=nothing_written),
