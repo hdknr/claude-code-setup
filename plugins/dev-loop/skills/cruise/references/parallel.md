@@ -129,9 +129,9 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
    止める前に、**その pid がいまも、記録を書いたラッパーであること**を確かめる（D5）——記録だけ残った pid が別のプロセスに使い回されていることがあり
    （run-serial の docstring の「守らない」）、`run-serial.py` の部分一致では `test-run-serial.py`・別の周のラッパー・`holders` の呼び出しにも当たる。照合するのは次の 4 つで、**全部が合うときだけ止める**:
    - **枠の記録にその pid がある**——枠のディレクトリ（`<git の共通ディレクトリ>/dev-loop-serial/slot-<k>.lock`）の記録の `pid`
-   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] -- <コマンド>` で起こした形（`--timeout=<秒>` の形も。#917）
+   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] -- <コマンド>` で起こした形（`--timeout=<秒>` の形も、2 回以上渡した形も——run-serial は最後の値を使う。#917）
    - **`--` の後ろが、記録の `command` とちょうど同じ**、**プロセスの cwd が記録の `cwd` と同じ**（macOS は `lsof`、Linux は `/proc/<pid>/cwd`）
-   - **プロセスを起こした時刻が、記録の `started`（枠を取った時刻）より後でない**——後なら、記録の後に pid を使い回したプロセスである。`started` は時間帯（`%z`）つきで読む——記録を書いた子と親で `TZ` が違っても同じ瞬間と比べる（#917）
+   - **プロセスを起こした時刻が、記録の `started`（枠を取った時刻）より後でない**——後なら、記録の後に pid を使い回したプロセスである。`started` は時間帯（`%z`）つきで読み、起こした時刻は経過（`ps` の `etime`）から出す——記録を書いた子と親で `TZ` が違っても、夏時間の切り替わりでも、同じ瞬間どうしで比べる（秒までなので 2 秒の幅を見る。#917）
 
    合わなければ止めず、利用者に `holders` の行と、照合が出した理由を渡す。合えば、**コマンドの子孫の pid**（ラッパーから `pgrep -P` を子へ順にたどる）を数えてから、
    ラッパーに `kill -TERM <pid>` を送る（ラッパーは SIGTERM をコマンドに渡し、コマンドが終わってから枠を返す——docstring の「守る」）。
@@ -165,7 +165,7 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
        except OSError:
            out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
            return next((line[1:] for line in out.splitlines() if line.startswith("n")), None)
-   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout[ =][0-9]+)? -- (.*)", ps("command"))
+   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout[ =][0-9]+)* -- (.*)", ps("command"))
    why = None
    if rec is None:
        why = "枠の記録にこの pid が無い"
@@ -177,12 +177,13 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
        why = "記録の場所と違う"
    else:
        try:
-           begun = time.mktime(time.strptime(ps("lstart"), "%a %b %d %H:%M:%S %Y"))
+           e = re.fullmatch(r"(?:(?:([0-9]+)-)?([0-9]+):)?([0-9]+):([0-9]+)", ps("etime"))
+           begun = time.time() - (((int(e[1] or 0) * 24 + int(e[2] or 0)) * 60 + int(e[3])) * 60 + int(e[4]))
            taken = datetime.strptime(rec["started"], "%Y-%m-%dT%H:%M:%S%z").timestamp()
        except (KeyError, TypeError, ValueError):
            why = "起こした時刻か記録の時刻が読めない"
        else:
-           if begun > taken + 1:
+           if begun > taken + 2:
                why = "記録の後に起きたプロセス（pid の使い回し）"
    print("照合: " + (why or "合った——止める"))
    sys.exit(1 if why else 0)

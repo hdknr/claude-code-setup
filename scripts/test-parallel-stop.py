@@ -24,14 +24,19 @@
 8. **枠の記録に無い pid** なら止めない。
 9. **`--timeout <秒>`（空白の形）で起こした持ち主**は止める（#917 の E3）。
 10. **`--timeout=<秒>`（`=` の形）で起こした持ち主**も止める（#917 の E1——直す前の照合は本物でも拒んだ）。
-11. **記録の `started` が別の時間帯で書かれていても**（同じ瞬間）、止める（#917 の E2——直す前の照合は `%z` を見ず、本物を使い回しと拒んだ）。
+11. **記録の `started` が別の時間帯で書かれていても**（同じ瞬間）、止める（#917 の E2——直す前の照合は `%z` を見ず、
+    記録の時間帯が親より西なら本物を使い回しと拒んだ）。
 12. **記録の数秒後に起きたプロセス**（使い回し）なら止めない（#917 の E5——6 の 1 時間の差では、許容を広げた変異が素通りした）。
 13. **記録のコマンドが `--` の後ろの一部だけ**（部分一致では合う）なら止めない（#917 の E4）。
+14. **記録が親より東の時間帯で書かれ、その数秒後に起きたプロセス**（使い回し）なら止めない（#917 の E2 のもう一方の向き——
+    直す前の照合は記録を実際より遅いと読み、使い回したプロセスを止めた。1 パス目の `/code-review`）。
+15. **`--timeout` を 2 回渡した持ち主**（run-serial は最後の値を使う）も止める（1 パス目の `/code-review`）。
 
 止めないケースでは、照合が 1 で終わり、プロセスが生きたままであることを見る（止めたかを見るのはプロセスで、出力の文言ではない）。
 
 **変異テスト**: ブロックの照合を 1 箇所ずつ緩め（部分一致に戻す・コマンドを比べない・cwd を比べない・時刻を比べない・記録を見ない・
-`--timeout` の選択肢を外す・`=` の形を外す・時間帯を見ない・コマンドを部分一致で比べる・時刻の許容を広げる）、
+`--timeout` の選択肢を外す・`=` の形を外す・`--timeout` を 1 回だけ許す・時間帯を見ない・遅いほうの読みを採る・
+コマンドを部分一致で比べる・時刻の許容を広げる）、
 **緩めたのに全ケースが期待どおりなら失格**。壊す文字列がブロックにちょうど 1 回現れることを先に確かめる。
 
 **このテストは実環境を触らない**——リポジトリと枠のディレクトリは一時ディレクトリの中で、止めるのは自分が起こしたプロセスだけ。
@@ -62,23 +67,27 @@ ROOT = Path(__file__).resolve().parent.parent
 DOC = ROOT / "plugins/dev-loop/skills/cruise/references/parallel.md"
 RUN_SERIAL = ROOT / "plugins/dev-loop/skills/cruise/scripts/run-serial.py"
 HEADING = "### 止まっている枠の持ち主"
-CASES = 13
+CASES = 15
 
 MUTATIONS = [
     ("部分一致に戻す",
-     'm = re.fullmatch(r"(?:\\S*/)?[Pp]ython[0-9.]* (?:\\S*/)?run-serial\\.py(?: --timeout[ =][0-9]+)? -- (.*)", ps("command"))',
+     'm = re.fullmatch(r"(?:\\S*/)?[Pp]ython[0-9.]* (?:\\S*/)?run-serial\\.py(?: --timeout[ =][0-9]+)* -- (.*)", ps("command"))',
      'm = re.search(r"run-serial.py.*?(?: -- (.*))?$", ps("command"))'),
     ("コマンドを比べない", 'elif m.group(1) != rec.get("command"):', 'elif False:'),
     ("cwd を比べない", 'elif cwd() != rec.get("cwd"):', 'elif False:'),
-    ("時刻を比べない", "if begun > taken + 1:", "if False:"),
+    ("時刻を比べない", "if begun > taken + 2:", "if False:"),
     ("記録を見ない", 'if rec is None:\n    why = "枠の記録にこの pid が無い"',
      'if rec is None:\n    rec = {"command": (m.group(1) if m else None), "cwd": cwd(), "started": "2999-01-01T00:00:00+0000"}'),
-    ("`--timeout` の選択肢を外す（E3）", "(?: --timeout[ =][0-9]+)?", ""),
-    ("`=` の形を外す（E1）", "(?: --timeout[ =][0-9]+)?", "(?: --timeout [0-9]+)?"),
+    ("`--timeout` の選択肢を外す（E3）", "(?: --timeout[ =][0-9]+)*", ""),
+    ("`=` の形を外す（E1）", "(?: --timeout[ =][0-9]+)*", "(?: --timeout [0-9]+)*"),
+    ("`--timeout` を 1 回だけ許す", "(?: --timeout[ =][0-9]+)*", "(?: --timeout[ =][0-9]+)?"),
     ("時間帯を見ない（E2）", 'datetime.strptime(rec["started"], "%Y-%m-%dT%H:%M:%S%z").timestamp()',
      'time.mktime(time.strptime(rec["started"][:19], "%Y-%m-%dT%H:%M:%S"))'),
+    ("遅いほうの読みを採る（E2。1 パス目の `/code-review` が素通りを示した変異）",
+     'datetime.strptime(rec["started"], "%Y-%m-%dT%H:%M:%S%z").timestamp()',
+     'max(datetime.strptime(rec["started"], "%Y-%m-%dT%H:%M:%S%z").timestamp(), time.mktime(time.strptime(rec["started"][:19], "%Y-%m-%dT%H:%M:%S")))'),
     ("コマンドを部分一致で比べる（E4）", 'elif m.group(1) != rec.get("command"):', 'elif (rec.get("command") or "") not in m.group(1):'),
-    ("時刻の許容を広げる（E5）", "if begun > taken + 1:", "if begun > taken + 3000:"),
+    ("時刻の許容を広げる（E5）", "if begun > taken + 2:", "if begun > taken + 3000:"),
 ]
 
 
@@ -215,6 +224,10 @@ def cases(code: str) -> list[tuple[str, bool, bool]]:
                       shift=timedelta(hours=-5))
             fake_case("12 記録の数秒後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, -5)
             fake_case("13 記録のコマンドが一部だけ", False, "run-serial.py", ["--", "copy", "db"], fx.repo, "copy", fx.repo, later)
+            fake_case("14 東の時間帯の記録の数秒後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, -5,
+                      shift=timedelta(hours=5))
+            fake_case("15 `--timeout` を 2 回渡した形", True, "run-serial.py", ["--timeout", "600", "--timeout=300", "--", "copy", "db"],
+                      fx.repo, None, fx.repo, later)
         finally:
             fx.cleanup()
     return results
