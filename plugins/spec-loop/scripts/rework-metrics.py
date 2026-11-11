@@ -15,7 +15,7 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 
 **このスクリプトは `gh` を呼ばない**（`rebuild-scope.py` と同じ）。**`git` は呼ぶ**——正本リポジトリの Q&A 表の履歴を読むだけで、何も書かない。
 
-## 使い方（実案件で数えて #870 に貼るまで）
+## 使い方（実案件で数えて #980 に貼るまで）
 
 1. **開発のリポジトリ**（spec-loop の Issue を登録した先）の Issue と PR を、決まった 2 行で取る:
 
@@ -33,11 +33,11 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
    ```
 
    **終了コードを見る**——1 なら名指しされたもの（標準エラー）を直して取り直すか、数えきれなかったことを添えて貼る。2 なら何も数えていない。
-4. **#870 に貼る**——hdknr/claude-code-setup は公開リポジトリなので、**案件の Issue の題・Q&A の No を貼らないなら `--summary`**（数だけを出す）で数え直す:
+4. **#980 に貼る**（集計の貼り先。置き方の決まりは #980 の本文を正とする）——hdknr/claude-code-setup は公開リポジトリなので、**案件の Issue の題・Q&A の No を貼らないなら `--summary`**（数だけを出す）で数え直す:
 
    ```bash
    python3 <spec-loop の base ディレクトリ>/scripts/rework-metrics.py --issues issues.json --prs prs.json --spec-repo <正本リポジトリ> --summary > rework-summary.md
-   gh issue comment 870 --repo hdknr/claude-code-setup --body-file rework-summary.md
+   gh issue comment 980 --repo hdknr/claude-code-setup --body-file rework-summary.md
    ```
 
    貼る前に中身を読む——`--summary` が標準出力に出すのは数と、数えた時点（`--ref` を解決したコミットの日付）だけである（コミットの SHA も出さない）。
@@ -84,6 +84,7 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 | **入力が全部の Issue・PR を含むか** | `--limit` を超えた分・取った後に足した分は見えない（`rebuild-scope.py` と同じ） |
 | **確認の Issue の結果の行を誰が書いたか** | `rebuild-scope.py` の `Decision` の守らないものと同じ（行を読むだけ） |
 | **`--summary` が案件の情報を漏らさないこと** | 出すのは数と日付だけだが、貼る前に人が読む |
+| **版ごとの数** | 数は `--ref` までの累計である——Q&A 表は v1・v2… を重ねて読み、Issue・PR は渡した JSON の全件を読む（版で絞らない）。版ごとの増分は、リリースのタグごとに `--ref` を替えて数えた累計の差を手で出す。Issue・PR は取った時点で切れるので、`--ref` の時点と合わせて取らない限り Q&A の数とは揃わない |
 """
 
 from __future__ import annotations
