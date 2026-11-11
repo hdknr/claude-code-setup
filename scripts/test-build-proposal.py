@@ -113,6 +113,15 @@ V2_CHANGES = [
 V2C = SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")]
 
 
+# 基盤要件（#950）の試料: 根拠は BASE の Q&A（Q-001 が反映済み・Q-005 が確認中）を指す
+INFRA = "docs/v1/shared/infra.csv"
+INFRA_HEAD = "項目,決定,理由,費用への影響,水準,根拠,状態\n"
+INFRA_OK = (INFRA_HEAD + "言語,Python 3.12,保守の担当が読める,なし,,Q-001,決定\nDBMS,PostgreSQL 16,ライセンスが要らない,なし,,Q-001,決定\n"
+            "ホスティング環境,AWS,既存の契約,月 5 万円,,Q-001,決定\n")
+INFRA_UNDECIDED = INFRA_OK.replace("ホスティング環境,AWS,既存の契約,月 5 万円,,Q-001,決定", "ホスティング環境,,,,,Q-005,未決定")
+INFRA_WARN = "基盤要件の表（shared/infra.csv）が無い"
+
+
 # 仕様書（#374）の試料: v1 に決定表・範囲の文書・図（書き出しあり／なし）・仕様書の手書き部分を足して承認する
 DECISION = "docs/v1/shared/decision_table.csv"
 SCOPE_MD = "# 範囲\n\n## 線\n\n既定の線\n\n## 範囲の外\n\n| 場面 | 原則 |\n| --- | --- |\n| ディスクがいっぱい | 失敗を見せる |\n\n## 付録\n\n付録の本文\n"
@@ -320,6 +329,18 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      + BASE[1:] + [("t", R1), ("t", B1)],
      True, lambda r: not_made(3)(r) and "暫定の回答（暫定反映）が 1 件残る" in r.output
      and r.output.count("前に作った出力を消した") == len(STALE)),
+    # 基盤要件のゲート（#950）——承認したタグ（要求確定）の時点の全体に当てる
+    ("基盤要件が決まっていれば作る", BASE[:-1] + [("w", INFRA, INFRA_OK), ("c",), ("t", R1), ("t", B1)], False,
+     lambda r: made(r) and INFRA_WARN not in r.output and "関門（基盤要件" not in r.output),
+    ("基盤要件が未決定なら作らない", BASE[:-1] + [("w", INFRA, INFRA_UNDECIDED), ("c",), ("t", R1), ("t", B1)], True,
+     lambda r: not_made(1)(r) and "signoff/v1/req-1: shared/infra.csv:4: ホスティング環境 が未決定（根拠 Q-005 の回答待ち）" in r.output
+     and "関門（基盤要件" in r.output and r.output.count("前に作った出力を消した") == len(STALE)),
+    ("承認の後に決めた基盤要件は入らない", BASE[:-1] + [("w", INFRA, INFRA_UNDECIDED), ("c",), ("t", R1), ("t", B1),
+                                             ("w", INFRA, INFRA_OK), ("c",)], False,
+     lambda r: not_made(1)(r) and "ホスティング環境 が未決定" in r.output),
+    ("基盤要件の表が無ければ警告して作る", SIGNED, False, lambda r: made(r) and f"signoff/v1/req-1: {INFRA_WARN}" in r.output),
+    ("基盤要件の表が読めなければ作らない", BASE[:-1] + [("w", INFRA, ""), ("c",), ("t", R1), ("t", B1)], False,
+     lambda r: not_made(2)(r) and "shared/infra.csv: 空のファイル" in r.output),
     ("見積りが決まりに反すると作らない", BASE[:2] + [("w", ESTIMATE, estimate('"4,800,000"'))] + BASE[3:]
      + [("t", R1), ("t", B1)], False, not_made(1)),
     ("見積りが無いと作らない", [s for s in SIGNED if s[:2] != ("w", ESTIMATE)], False,
@@ -606,6 +627,16 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #950: 基盤要件のゲート
+    ("基盤要件のゲートを当てない", '    infra_gate(rendered, info["req"])\n', "", "基盤要件が未決定なら作らない"),
+    ("基盤要件を Q&A 表の無い全体に当てる", '    infra_gate(rendered, info["req"])\n', '    infra_gate(whole.files, info["req"])\n',
+     "基盤要件が決まっていれば作る"),
+    ("基盤要件を作業ツリーから読む", '    infra_gate(rendered, info["req"])\n',
+     '    infra_gate({**rendered, infra.INFRA: (top / in_version(info["version"], infra.INFRA)).read_bytes()}, info["req"])\n',
+     "承認の後に決めた基盤要件は入らない"),
+    ("基盤要件の表が無いのを知らせない", "    if report.missing:\n        print(", "    if report.missing:\n        return\n        print(",
+     "基盤要件の表が無ければ警告して作る"),
+    ("読めない基盤要件の表を 1 にする", "{2: 2, 4: 3}.get(code, 1)", "{4: 3}.get(code, 1)", "基盤要件の表が読めなければ作らない"),
     ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "Q&A 表に巨大なセル"),
     ("手書き部分の読めなさを捕まえない", "        except OSError as e:  # 権限などを", "        except ImportError as e:  # 権限などを",

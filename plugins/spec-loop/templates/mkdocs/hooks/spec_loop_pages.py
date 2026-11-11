@@ -7,6 +7,7 @@
 | --- | --- |
 | `qa` | 各版の `docs/v<n>/shared/qa.csv` を、版ごとの節に（件数・一覧・質問ごとの詳細。推奨の選択肢と理由も） |
 | `decision_table` | 各版の `docs/v<n>/shared/decision_table.csv` を、版ごとの節に（見出しの行どおりの表。#369） |
+| `infra` | 各版の `docs/v<n>/shared/infra.csv`（基盤要件）を、版ごとの節に（決定表と同じく見出しの行どおりの表。#950） |
 
 **描くのは共有の層の表だけ**——内部の層の表（`docs/v<n>/spec/qa-dev.csv`）は描かない（開発者が決めて記録するもの。
 spec-loop の `references/qa-csv.md` の「層」）。
@@ -87,6 +88,7 @@ QA_PAGE = "qa.md"
 SHARED = "shared"
 QA_TABLE = "qa.csv"
 DECISION_TABLE = "decision_table.csv"
+INFRA_TABLE = "infra.csv"
 SPELLING_MIGRATION = "spec-loop の references/versions.md の「綴りの誤りの移行」"
 # 素の本文の URL（#341）。番号のリンク化はこの中を変えない
 URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"']|&(?:lt|gt|quot|#39|#x27);|$)")
@@ -271,12 +273,22 @@ def render_qa(docs_dir: Path) -> str:
 
 def render_decision_table(docs_dir: Path) -> str:
     """各版の `shared/decision_table.csv` を、見出しの行どおりの表にする（#369）。"""
+    return render_shared_table(docs_dir, DECISION_TABLE, "決定表")
+
+
+def render_infra(docs_dir: Path) -> str:
+    """各版の `shared/infra.csv`（基盤要件）を、見出しの行どおりの表にする（#950。描き方は決定表と同じ）。"""
+    return render_shared_table(docs_dir, INFRA_TABLE, "基盤要件の表")
+
+
+def render_shared_table(docs_dir: Path, name: str, title: str) -> str:
+    """各版の `shared/<name>` を、見出しの行どおりの表にする（決定表と基盤要件の表。列は決めない）。"""
     out: list[str] = []
     for version, root in versions(docs_dir):
-        path, wrong, unverified = lookup(root, SHARED, DECISION_TABLE)
-        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}", unverified):
+        path, wrong, unverified = lookup(root, SHARED, name)
+        for warning in misspelled_problems(docs_dir, wrong, f"{SHARED}/{name}", unverified):
             out += [warning, ""]
-        if path is None:  # 決定表の無い版は飛ばす
+        if path is None:  # 表の無い版は飛ばす
             continue
         try:
             with path.open(newline="", encoding="utf-8-sig") as f:
@@ -296,13 +308,14 @@ def render_decision_table(docs_dir: Path) -> str:
                 for row in body]
         out.append("")
     if not out:
-        return "決定表（`docs/v<n>/shared/decision_table.csv`）はまだ無い。\n"
+        return f"{title}（`docs/v<n>/{SHARED}/{name}`）はまだ無い。\n"
     return "\n".join(out)
 
 
 RENDERERS = {
     "qa": render_qa,
     "decision_table": render_decision_table,
+    "infra": render_infra,
 }
 
 

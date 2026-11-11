@@ -324,6 +324,10 @@ jobs:
       - name: spec-loop のシステム設計書の成果物の表の検査のテスト（#957）
         run: python3 scripts/test-check-design-csv.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（feasibility がゲートに当て、scaffold・build-proposal が読み込む）。
+      - name: spec-loop の基盤要件の表の検査のテスト（#950）
+        run: python3 scripts/test-check-infra-csv.py
+
       # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
       - name: spec-loop の図の書き出しのテスト（#268）
         run: python3 scripts/test-render-diagrams.py
