@@ -20,7 +20,7 @@
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
-**変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
+**変異テストを含む。** 本体を 1 箇所ずつ壊し、**名指しした試料の終了コードが変わること**を確かめる（文言の違いでは殺したと数えない）。
 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる。
 """
 from __future__ import annotations
@@ -88,7 +88,8 @@ CASES: dict[str, tuple] = {
     "落ちる: 回が記法の移行の行": ("v1-findings.csv", F_HEAD + row(no="5", day="2026-11-04"), RUNS, None, 1, "実行の行"),
     "落ちる: 回が無い": ("v1-findings.csv", F_HEAD + row(no="9"), RUNS, None, 1, "実行の行"),
     "落ちる: 日付の形": ("v1-findings.csv", F_HEAD + row(day="2026/11/01"), RUNS, None, 1, "YYYY-MM-DD"),
-    "落ちる: 無い日付": ("v1-findings.csv", F_HEAD + row(day="2026-02-30"), RUNS, None, 1, "YYYY-MM-DD"),
+    # 実行の記録の側にも同じ無い日付を置く——日付の食い違いでは落ちず、無い日付だけで落ちる形にする
+    "落ちる: 無い日付": ("v1-findings.csv", F_HEAD + row(no="6", day="2026-02-30"), RUNS + "6,2026-02-30,抜けていない,満たさない,1,1,1,1,-,注文\n", None, 1, "YYYY-MM-DD"),
     "落ちる: 日付が実行の行と違う": ("v1-findings.csv", F_HEAD + row(day="2026-11-02"), RUNS, None, 1, "日付 '2026-11-01' と違う"),
     "落ちる: 指摘が空": ("v1-findings.csv", F_HEAD + row(text=""), RUNS, None, 1, "`指摘` が空"),
     "判定しない: 名前": ("findings.csv", GOOD, RUNS, None, 2, "v<n>-findings.csv でない"),
@@ -116,9 +117,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("指摘が空でも通す", "    if not cell[\"指摘\"]:\n", "    if False:\n", "落ちる: 指摘が空"),
     ("判定役の値を見ない", "(\"判定役\", JUDGES), ", "", "落ちる: 判定役の値"),
     ("BOM を読まない", "decode(\"utf-8-sig\")", "decode(\"utf-8\")", "通る: BOM つき"),
-    ("空のファイルを通す", "    if not rows:\n        raise", "    if False:\n        raise", "判定しない: 空のファイル"),
-    ("実行の記録が無くても通す", "    if not path.is_file():\n        raise", "    if not path.is_file() and what != \"実行の記録\":\n        raise", "判定しない: 実行の記録が無い"),
-    ("名前を見ない", "    if m is None:\n        raise", "    if False:\n        raise", "判定しない: 名前"),
+    # 「判定しない（2）」を崩す変異は、2 のままの形（別の例外で落ちる）にしない——判定して 0 か 1 を返す形にする（#982 の 1 パス目の R2）
+    ("空のファイルを見出しだけの表と読む", "    if not rows:\n        raise Unreadable(f\"{what}が空（見出しの行も無い）: {path}\")\n",
+     "    if not rows:\n        return [list(COLUMNS)]\n", "判定しない: 空のファイル"),
+    ("実行の記録が無ければ空と読む", "    rows = read_csv(path, \"実行の記録\")\n",
+     "    rows = read_csv(path, \"実行の記録\") if path.is_file() else [list(RUN_COLUMNS)]\n", "判定しない: 実行の記録が無い"),
+    ("名前を見ずに v1.csv を読む", "        raise Unreadable(f\"指摘の表の名前が v<n>-findings.csv でない: {findings.name}\")\n",
+     "        return findings.with_name(\"v1.csv\")\n", "判定しない: 名前"),
     ("違反を 0 で返す", "    return (1 if lines else 0), lines\n", "    return 0, lines\n", "落ちる: 回の形"),
 ]
 
@@ -253,7 +258,8 @@ def main() -> int:
             check(f"壊す箇所がちょうど 1 回: {name}", source.count(before) == 1, repr(before))
             mutant.write_text(source.replace(before, after), encoding="utf-8")
             result = run_one(mutant, work, CASES[killer])
-            check(f"変異が殺される: {name}（{killer}）", not as_expected(CASES[killer], result), result[1])
+            # 殺したと数えるのは終了コードが変わったときだけ（出力の文言の違いでは数えない）
+            check(f"変異が終了コードを変える: {name}（{killer}）", result[0] != CASES[killer][4], f"{result[0]}\n{result[1]}")
             killed += 1
         print(f"  {killed} 件 OK")
 
