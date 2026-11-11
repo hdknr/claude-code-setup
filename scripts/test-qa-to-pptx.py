@@ -97,11 +97,23 @@ BOLD_MARKDOWN = "\n".join([
     "```",
     "**フェンスの中**",
     "```",
+    # 字下げは 3 個の空白まで太字の行、4 個からはコード（CommonMark）。`~~~` と引用の中のフェンスもコード（#965 の 1 パス目 CR-1）
+    "  **前に空白**",
+    "    **字下げのコード**",
+    "~~~",
+    "**チルダの中**",
+    "```",
+    "~~~",
+    "> ```",
+    "> **引用のフェンスの中**",
+    "> ```",
 ])
 BOLD_EXPECTED = [
     [("提案書", True), ("表紙の太字の行", True)],
     [("節", True), ("節の太字の行", True), ("- 一文の箇条。", False), ("引用の太字の行", True),
-     ("本文の **部分** の太字", False), ("**a** と **b**", False), ("** 空白の **", False), ("**フェンスの中**", False)],
+     ("本文の **部分** の太字", False), ("**a** と **b**", False), ("** 空白の **", False), ("**フェンスの中**", False),
+     ("前に空白", True), ("    **字下げのコード**", False), ("**チルダの中**", False), ("```", False),
+     ("> **引用のフェンスの中**", False)],
 ]
 
 
@@ -331,12 +343,19 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("内部の表も載せる", "    if qa.is_internal(src):", "    if False:"),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
     # 太字の行（#965）——外すと `**` が文字のまま残る・中に `**` があっても 1 つと読むと 2 つの太字の行が化ける
-    ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(stripped.strip())\n",
+    ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(stripped)\n",
      "            bold = None\n"),
-    ("2 つの太字も太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*(?!\\s)((?:(?!\\*\\*).)+?)(?<!\\s)\\*\\*")',
-     'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*(?!\\s)(.+?)(?<!\\s)\\*\\*")'),
-    ("空白で始まる太字も太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*(?!\\s)((?:(?!\\*\\*).)+?)(?<!\\s)\\*\\*")',
-     'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*((?:(?!\\*\\*).)+?)\\*\\*")'),
+    ("2 つの太字も太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*(?!\\s)((?:(?!\\*\\*).)+?)(?<!\\s)\\*\\*")',
+     'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*(?!\\s)(.+?)(?<!\\s)\\*\\*")'),
+    ("空白で始まる太字も太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*(?!\\s)((?:(?!\\*\\*).)+?)(?<!\\s)\\*\\*")',
+     'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*((?:(?!\\*\\*).)+?)\\*\\*")'),
+    # コードの中を太字にしない（#965 の 1 パス目 CR-1）
+    ("4 個の空白の字下げも太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*', 'MARKDOWN_BOLD_LINE = re.compile(r"\\s*\\*\\*'),
+    ("~~~ をフェンスと読まない", 'MARKDOWN_FENCES = ("```", "~~~")', 'MARKDOWN_FENCES = ("```",)'),
+    ("引用の中のフェンスを見ない", '        probe = (line.lstrip("> ") if line.startswith(">") else line).lstrip()\n',
+     "        probe = line.lstrip()\n"),
+    ("違う印でもフェンスを閉じる", "        if fence is not None and probe.startswith(fence):",
+     "        if fence is not None and probe.startswith(MARKDOWN_FENCES):"),
 ]
 
 

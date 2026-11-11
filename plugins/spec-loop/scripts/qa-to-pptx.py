@@ -235,8 +235,10 @@ MARKDOWN_LINES_PER_SLIDE = 14
 MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 MARKDOWN_TABLE_RULE = re.compile(r"\|(?:\s*:?-+:?\s*\|)+")
 MARKDOWN_CELL = re.compile(r"(?<!\\)\|")
-# 太字の行（`**…**` だけの行。#965）——中に `**` を含まず、内側の両端が空白でない（CommonMark で 1 つの太字になる形）
-MARKDOWN_BOLD_LINE = re.compile(r"\*\*(?!\s)((?:(?!\*\*).)+?)(?<!\s)\*\*")
+# 太字の行（`**…**` だけの行。#965）——中に `**` を含まず、内側の両端が空白でない。字下げは 3 個の空白まで（4 個からはコード）
+MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\*\*(?!\s)((?:(?!\*\*).)+?)(?<!\s)\*\*")
+# コードフェンスの印（引用の印を外した行の頭）。閉じるのは開いたのと同じ印
+MARKDOWN_FENCES = ("```", "~~~")
 
 
 def markdown_row(line: str) -> str:
@@ -250,15 +252,20 @@ def markdown_slides(text: str, figure_note: str) -> list[str]:
 
     最初の `# ` は表紙の題で、最初の見出しまでの行は表紙の本文。`### ` は太字の行、表は 1 行ずつ ` ／ ` でつなぐ
     （見出しの行は太字）。**`**…**` だけの行（`writing-style.md` の太字の見出しの行。引用の中も）は `**` を外して太字の行にする**
-    （#965。行の中の部分的な太字は字句のまま）。長い節は `MARKDOWN_LINES_PER_SLIDE` 行ずつに分ける。コードフェンスの中は字句のまま。
+    （#965。行の中の部分的な太字・4 個以上の空白で字下げしたコードは字句のまま）。
+    フェンスは ```` ``` ```` と `~~~`（引用の中も）で、開いたのと同じ印で閉じる。長い節は `MARKDOWN_LINES_PER_SLIDE` 行ずつに分ける。コードフェンスの中は字句のまま。
     **画像は載せない**——画像の行は `figure_note` を添えた 1 行に置き換える（標準ライブラリだけでは SVG を埋められない）。
     """
     lines = split_lines(text)
-    title, cover_body, sections, fence = "", [], [], False
+    title, cover_body, sections, fence = "", [], [], None
     for i, raw in enumerate(lines):
         line = raw.rstrip()
-        if line.lstrip().startswith("```"):
-            fence = not fence
+        probe = (line.lstrip("> ") if line.startswith(">") else line).lstrip()
+        if fence is None and probe.startswith(MARKDOWN_FENCES):
+            fence = probe[:3]
+            continue
+        if fence is not None and probe.startswith(fence):
+            fence = None
             continue
         if not fence and line.startswith("# ") and not title:
             title = line[2:].strip()
@@ -278,7 +285,7 @@ def markdown_slides(text: str, figure_note: str) -> list[str]:
             body.append((markdown_row(line), header))
         else:
             stripped = line.lstrip("> ").rstrip() if line.startswith(">") else line
-            bold = MARKDOWN_BOLD_LINE.fullmatch(stripped.strip())
+            bold = MARKDOWN_BOLD_LINE.fullmatch(stripped)
             text = bold.group(1) if bold else stripped
             body.append((MARKDOWN_IMAGE.sub(lambda m: f"（図「{m.group(1)}」は{figure_note}）", text), bold is not None))
     out = [slide(lines_of(title, 4000, bold=True), [p for t, b in cover_body for p in lines_of(t, 1600, b)])]
