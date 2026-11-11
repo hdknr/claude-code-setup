@@ -235,6 +235,8 @@ MARKDOWN_LINES_PER_SLIDE = 14
 MARKDOWN_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 MARKDOWN_TABLE_RULE = re.compile(r"\|(?:\s*:?-+:?\s*\|)+")
 MARKDOWN_CELL = re.compile(r"(?<!\\)\|")
+# 太字の行（`**…**` だけの行。#965）——中に `**` を含まず、内側の両端が空白でない（CommonMark で 1 つの太字になる形）
+MARKDOWN_BOLD_LINE = re.compile(r"\*\*(?!\s)((?:(?!\*\*).)+?)(?<!\s)\*\*")
 
 
 def markdown_row(line: str) -> str:
@@ -247,7 +249,8 @@ def markdown_slides(text: str, figure_note: str) -> list[str]:
     """`build-proposal.py` が作った Markdown（提案書・仕様書）を、見出し（`# `・`## `）ごとのスライドにする。
 
     最初の `# ` は表紙の題で、最初の見出しまでの行は表紙の本文。`### ` は太字の行、表は 1 行ずつ ` ／ ` でつなぐ
-    （見出しの行は太字）。長い節は `MARKDOWN_LINES_PER_SLIDE` 行ずつに分ける。コードフェンスの中は字句のまま。
+    （見出しの行は太字）。**`**…**` だけの行（`writing-style.md` の太字の見出しの行。引用の中も）は `**` を外して太字の行にする**
+    （#965。行の中の部分的な太字は字句のまま）。長い節は `MARKDOWN_LINES_PER_SLIDE` 行ずつに分ける。コードフェンスの中は字句のまま。
     **画像は載せない**——画像の行は `figure_note` を添えた 1 行に置き換える（標準ライブラリだけでは SVG を埋められない）。
     """
     lines = split_lines(text)
@@ -275,7 +278,9 @@ def markdown_slides(text: str, figure_note: str) -> list[str]:
             body.append((markdown_row(line), header))
         else:
             stripped = line.lstrip("> ").rstrip() if line.startswith(">") else line
-            body.append((MARKDOWN_IMAGE.sub(lambda m: f"（図「{m.group(1)}」は{figure_note}）", stripped), False))
+            bold = MARKDOWN_BOLD_LINE.fullmatch(stripped.strip())
+            text = bold.group(1) if bold else stripped
+            body.append((MARKDOWN_IMAGE.sub(lambda m: f"（図「{m.group(1)}」は{figure_note}）", text), bold is not None))
     out = [slide(lines_of(title, 4000, bold=True), [p for t, b in cover_body for p in lines_of(t, 1600, b)])]
     for head, body in sections:
         chunks = [body[i:i + MARKDOWN_LINES_PER_SLIDE] for i in range(0, len(body), MARKDOWN_LINES_PER_SLIDE)] or [[]]

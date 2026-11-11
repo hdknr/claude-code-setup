@@ -80,6 +80,30 @@ DONE = [r for r in ROWS if r[8] == "反映済み"]
 # 内部の層の表（qa-dev.csv）——資料に載せない（#330）
 INTERNAL_ROWS = [["D-001", "仕様レビュー", "ワーカーを分けるか", "A: 分ける / B: 分けない", "B", "費用", "未回答", "—", "確認中", ""]]
 
+# 提案書・仕様書の手書き部分の太字の行（`writing-style.md` の太字の見出しの行。#965）——`markdown_slides` が `**` を外して太字にする。
+# 太字の行でない形（行の中の部分的な太字・2 つの太字・flanking で太字にならない形・コードフェンスの中）は字句のまま
+BOLD_MARKDOWN = "\n".join([
+    "# 提案書",
+    "**表紙の太字の行**",
+    "",
+    "## 節",
+    "**節の太字の行**",
+    "",
+    "- 一文の箇条。",
+    "> **引用の太字の行**",
+    "本文の **部分** の太字",
+    "**a** と **b**",
+    "** 空白の **",
+    "```",
+    "**フェンスの中**",
+    "```",
+])
+BOLD_EXPECTED = [
+    [("提案書", True), ("表紙の太字の行", True)],
+    [("節", True), ("節の太字の行", True), ("- 一文の箇条。", False), ("引用の太字の行", True),
+     ("本文の **部分** の太字", False), ("**a** と **b**", False), ("** 空白の **", False), ("**フェンスの中**", False)],
+]
+
 
 def marked(option: str, row: list[str]) -> bool:
     return option.split(":")[0] == row[4]
@@ -162,9 +186,25 @@ def slide_paragraphs(pptx: Path) -> tuple[list[list[str]], list[str]]:
     return out, problems
 
 
+def runs_of(slide_xml: str) -> list[tuple[str, bool]]:
+    """スライドの XML の段落ごとの (文字列, 太字か)。空の段落は飛ばす。"""
+    out = []
+    for p in ET.fromstring(slide_xml.encode("utf-8")).iter(f"{A}p"):
+        rs = list(p.iter(f"{A}r"))
+        if rs:
+            text = "".join(t.text or "" for r in rs for t in r.iter(f"{A}t"))
+            out.append((text, all(rpr.get("b") == "1" for r in rs for rpr in r.iter(f"{A}rPr"))))
+    return out
+
+
 def observe(mod, base: Path) -> dict:
     """1 つの本体に対する観測を全部まとめる（変異テストでも同じ観測を使う）。"""
     obs: dict = {}
+    # 手書き部分の太字の行（#965）——`build-proposal.py --pptx` が読む `markdown_slides` を直に呼ぶ
+    try:
+        obs["bold_lines"] = [runs_of(x) for x in mod.markdown_slides(BOLD_MARKDOWN, "載せていない")]
+    except Exception as e:  # noqa: BLE001
+        obs["bold_lines"] = f"例外: {type(e).__name__}"
     good = write_csv(base / "good.csv", ROWS)
     out = base / "out.pptx"
     obs["rc"] = run(mod, str(good), str(out), "--subtitle", "2026-10-13")
@@ -251,6 +291,7 @@ EXPECTED = {
     "bad_rc": 1, "bad_kept": True, "missing_rc": 2, "usage_rc": 2,
     "unwritable_rc": 3, "no_tmp_left": True,
     "same_rc": 2, "same_kept": True, "nested_rc": 0, "nested_made": True,
+    "bold_lines": BOLD_EXPECTED,
 }
 
 # 判別の本体を壊す（資料の側には写しが無いので、本体を壊せば資料が変わる）
@@ -289,6 +330,13 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("推奨しないのを推奨と書く", 'return "推奨なし" if label is None else f"推奨 {label}"', 'return f"推奨 {label}"'),
     ("内部の表も載せる", "    if qa.is_internal(src):", "    if False:"),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
+    # 太字の行（#965）——外すと `**` が文字のまま残る・中に `**` があっても 1 つと読むと 2 つの太字の行が化ける
+    ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(stripped.strip())\n",
+     "            bold = None\n"),
+    ("2 つの太字も太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*(?!\\s)((?:(?!\\*\\*).)+?)(?<!\\s)\\*\\*")',
+     'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*(?!\\s)(.+?)(?<!\\s)\\*\\*")'),
+    ("空白で始まる太字も太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*(?!\\s)((?:(?!\\*\\*).)+?)(?<!\\s)\\*\\*")',
+     'MARKDOWN_BOLD_LINE = re.compile(r"\\*\\*((?:(?!\\*\\*).)+?)\\*\\*")'),
 ]
 
 
