@@ -107,13 +107,35 @@ BOLD_MARKDOWN = "\n".join([
     "> ```",
     "> **引用のフェンスの中**",
     "> ```",
+    # 引用の中の 4 字下げはコード（#965 の 2 パス目 CR2-4）
+    ">     **引用のコード**",
+    # 外のフェンスは引用の中の印では閉じない・長い印は短い印では閉じない（CR2-1・CR2-3）
+    "## 印の節",
+    "```markdown",
+    "> ```",
+    "> **外のフェンスの中**",
+    "```",
+    "````",
+    "```",
+    "**長い印の中**",
+    "````",
+    # 引用の中で開いて閉じないフェンスは、引用が終われば閉じる（CR2-2）
+    "> ~~~",
+    "> 閉じないコード",
+    "",
+    "## 後の節",
+    "**後の太字の行**",
 ])
 BOLD_EXPECTED = [
     [("提案書", True), ("表紙の太字の行", True)],
     [("節", True), ("節の太字の行", True), ("- 一文の箇条。", False), ("引用の太字の行", True),
      ("本文の **部分** の太字", False), ("**a** と **b**", False), ("** 空白の **", False), ("**フェンスの中**", False),
      ("前に空白", True), ("    **字下げのコード**", False), ("**チルダの中**", False), ("```", False),
-     ("> **引用のフェンスの中**", False)],
+     ("> **引用のフェンスの中**", False), ("    **引用のコード**", False),
+    ],
+    [("印の節", True), ("> ```", False), ("> **外のフェンスの中**", False), ("```", False), ("**長い印の中**", False),
+     ("> 閉じないコード", False)],
+    [("後の節", True), ("後の太字の行", True)],
 ]
 
 
@@ -343,7 +365,7 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("内部の表も載せる", "    if qa.is_internal(src):", "    if False:"),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
     # 太字の行（#965）——外すと `**` が文字のまま残る・中に `**` があっても 1 つと読むと 2 つの太字の行が化ける
-    ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(stripped)\n",
+    ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(content)\n",
      "            bold = None\n"),
     ("2 つの太字も太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*(?!\\s)((?:(?!\\*\\*).)+?)(?<!\\s)\\*\\*")',
      'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*(?!\\s)(.+?)(?<!\\s)\\*\\*")'),
@@ -351,11 +373,14 @@ MUTATIONS: list[tuple[str, str, str]] = [
      'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*((?:(?!\\*\\*).)+?)\\*\\*")'),
     # コードの中を太字にしない（#965 の 1 パス目 CR-1）
     ("4 個の空白の字下げも太字の行と読む", 'MARKDOWN_BOLD_LINE = re.compile(r" {0,3}\\*\\*', 'MARKDOWN_BOLD_LINE = re.compile(r"\\s*\\*\\*'),
-    ("~~~ をフェンスと読まない", 'MARKDOWN_FENCES = ("```", "~~~")', 'MARKDOWN_FENCES = ("```",)'),
-    ("引用の中のフェンスを見ない", '        probe = (line.lstrip("> ") if line.startswith(">") else line).lstrip()\n',
-     "        probe = line.lstrip()\n"),
-    ("違う印でもフェンスを閉じる", "        if fence is not None and probe.startswith(fence):",
-     "        if fence is not None and probe.startswith(MARKDOWN_FENCES):"),
+    ("~~~ をフェンスと読まない", 'MARKDOWN_FENCE = re.compile(r"\\s*(`{3,}|~{3,})")', 'MARKDOWN_FENCE = re.compile(r"\\s*(`{3,})")'),
+    ("引用の中のフェンスを見ない", "            opening = MARKDOWN_FENCE.match(content)", "            opening = MARKDOWN_FENCE.match(line)"),
+    ("違う印でもフェンスを閉じる", "set(run := content.strip()) == {fence[1]}", 'set(run := content.strip()) <= {"`", "~"}'),
+    # 2 パス目（CR2-1〜CR2-4）
+    ("入れ物を見ずにフェンスを閉じる", "        elif fence[0] == (quote is not None) and set(", "        elif set("),
+    ("短い印でもフェンスを閉じる", " and len(run) >= fence[2]:", ":"),
+    ("引用が終わってもフェンスを閉じない", "        if fence is not None and fence[0] and not quote:", "        if False:"),
+    ("引用の印の後の空白を全部外す", 'MARKDOWN_QUOTE = re.compile(r"(?:> ?)+")', 'MARKDOWN_QUOTE = re.compile(r"[> ]+")'),
 ]
 
 
