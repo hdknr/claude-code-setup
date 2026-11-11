@@ -47,6 +47,16 @@ spec-loop のスキルが正本リポジトリに書く文書の文章は、こ�
 
 - 太字の行は目次とアンカーを作らないので、書き換えでリンクが壊れない。
 - 既にある Markdown の見出しは変えない（下の「変えないもの」）。
+- ただし、ほかの決まりやスクリプトが見出しで探す節は、新しく書くときも `##` の見出しにする（下の項）。
+
+**ほかの決まりやスクリプトが見出しで探す節は、太字の行にせず `##` の見出しで書く**
+
+- 範囲の文書（`spec/scope.md`）の「原則」と「範囲の外」の節は、`## 原則`・`## 範囲の外` の見出しにする（`spec-scope.md` の「範囲の文書」）。
+- 仕様の設計メモを節に置くなら、見出しに「設計メモ（参考・拘束しない）」と書いた `##` の見出しにする（`spec-scope.md` の「縦の線」）。
+- 提案書と仕様書の手書き部分（`proposal/*.md`・`proposal/spec/*.md`）の節は、`##` の見出しにする（`tree.md` の「置き方の決まり」）。
+- `build-proposal.py` と `scaffold.py` は「範囲の外」の節を Markdown の見出しで探すので、太字の行にすると範囲の外の行を 1 つも載せない。
+- PPTX（`qa-to-pptx.py`）は `#`・`##` の見出しごとに 1 枚を作るので、手書き部分の節を太字の行にすると、その節が前のスライドに寄る。
+- 節の中の段落の要点は、今までどおり太字の行にする。
 
 **番号つきの項は、番号を残して 1 行目を太字の見出しにする**
 
@@ -168,6 +178,8 @@ spec-loop のスキルが正本リポジトリに書く文書の文章は、こ�
 - 確かめるのは、表の行・見出し・印・囲みのコード・番号つきの項・未決定の印の数と、根拠の番号（`Q-R-004`・`D-F-002`・`F-001` の形）の集まりである。
 - 正本リポジトリの根で、移す前のコミット（移しの commit の直前）と作業中の版のディレクトリを渡して走らせる。
 - どれかが違えば、そのファイルと項目を出して 1 で終わる。
+- 最後に比べたファイルの数を出す。
+- 比べたファイルが 0 件なら、確かめていないので 2 で終わる（移しの commit の後のコミットを渡した・ディレクトリの名前を打ち間違えた、など）。
 - 句点の数は前後を並べて出すだけで、違っても落とさない（文を分けると増え、見出しにすると減る）。
 - 句点の数が大きく変わったら、文を足したか消したかを疑う。
 
@@ -193,7 +205,8 @@ names = subprocess.run(["git", "diff", "--name-only", "-z", base, "--", root],
 names += subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "-z", "--", root],
                         capture_output=True, text=True, check=True).stdout.split("\0")
 bad = 0
-for name in sorted(set(n for n in names if n.endswith(".md"))):
+compared = sorted(set(n for n in names if n.endswith(".md")))
+for name in compared:
     old = subprocess.run(["git", "show", f"{base}:{name}"], capture_output=True, text=True)
     if old.returncode != 0:
         print(f"{name}: 移す前に無い"); bad = 1; continue
@@ -210,6 +223,11 @@ for name in sorted(set(n for n in names if n.endswith(".md"))):
     if lost or added:
         print(f"{name}: 根拠の番号 消えた {sorted(lost)} 増えた {sorted(added)}"); bad = 1
     print(f"{name}: 句点 {before.count('。')} → {after.count('。')}")
+print(f"比べたファイル: {len(compared)} 件")
+if not compared:
+    # 0 件は「数が同じ」ではない——移す前のコミットかディレクトリの取り違えで、何も比べていない
+    print(f"{root}: {base} から変わった Markdown が無い——移す前のコミットとディレクトリを確かめる")
+    sys.exit(2)
 sys.exit(bad)
 EOF
 ```
