@@ -915,6 +915,7 @@ def hook_mocks(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
     write(docs, {MOCK_HTML: "<p>受注</p>\n", MOCK_REACT: "<div id=root></div>\n", "v1/requirements/mocks/在庫/App.jsx": "x\n",
                  "v1/requirements/mocks/.DS_Store": "x", "v1/requirements/mocks/.draft/index.html": "x\n",
+                 "v1/requirements/mocks/消した/.DS_Store": "x",  # モックを消した跡（macOS）は無いのと同じ——警告しない
                  "v2/requirements/mocks/在庫/index.html": "v2\n", "v2/requirements/mocks/在庫/App.jsx": "v2\n",
                  "v3/requirements/a.md": "# a\n"})
     out, warnings = render(plugin, docs, "# UI モック\n\n<!-- spec-loop: mocks -->\n", src="mocks.md")
@@ -923,7 +924,7 @@ def hook_mocks(plugin: Path, work: Path) -> bool:
             and f"| [受注 入力]({mock_link(MOCK_HTML)}) | HTML |" in out[:v2]
             and f"| [在庫]({mock_link(MOCK_REACT)}) | React（ディレクトリ） |" in out[:v2]
             and f"| [在庫]({mock_link('v2/requirements/mocks/在庫/index.html')}) | React（ディレクトリ） |" in out[v2:]
-            and "受注" not in out[v2:] and "DS_Store" not in out and "draft" not in out and "App.jsx" not in out
+            and "受注" not in out[v2:] and "DS_Store" not in out and "消した" not in out and "draft" not in out and "App.jsx" not in out
             and "<!-- spec-loop" not in out)
 
 
@@ -1138,6 +1139,8 @@ MUTATIONS: list[tuple] = [
      "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
     ("モックの名前を URL に符号化しない", HOOK, "({quote(target)})", "({target})", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
     ("リンクをページからの相対にしない", HOOK, 'posixpath.dirname(src) or "."', '"."', "UI モックのリンクは印のページからの相対"),
+    ("ドットの名前だけのフォルダも警告する", HOOK, "                if not any(not entry.startswith(\".\") for entry in inside):\n",
+     "                if False:\n", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
     ("入口の無いディレクトリも描く", HOOK, "                if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():",
      "                if True:", "入口の無いディレクトリと HTML でないファイルは警告してリンクにしない"),
     ("入口の綴りを見ない", HOOK, "                if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():",

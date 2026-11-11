@@ -370,6 +370,8 @@ def render_mocks(docs_dir: Path, src: str) -> str:
                 except OSError as e:
                     problems.append(problem(f"{path.relative_to(docs_dir)}: 一覧を読めない（{e.strerror}）"))
                     continue
+                if not any(not entry.startswith(".") for entry in inside):
+                    continue  # `.` で始まる名前（.DS_Store）だけのフォルダは無いのと同じ——重ね合わせも読まない（消したモックの跡）
                 if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():  # 綴りどおりの入口だけ（区別しない FS の Index.html を数えない）
                     rows.append((name, path / MOCK_ENTRY, "React（ディレクトリ）"))
                 else:

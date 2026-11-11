@@ -29,7 +29,8 @@
 - `plugins/spec-loop/templates/mkdocs/hooks/spec_loop_pages.py` — `mocks` の印（各版の `requirements/mocks/` のモックへのリンクの一覧）
 - `plugins/spec-loop/templates/mkdocs/docs/mocks.md` — 表示用ページ（新規）
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `scripts/test-init-mkdocs.py` — `mocks` の印の試料・変異、雛形のページ、`tree.md` の照合の語
 - `scripts/test-merge-versions.py` — UI モック（HTML と React のディレクトリ）を重ねる試料
 - `scripts/test-check-signoff.py` — UI モック（HTML・React の部品）の違いで照合が割れる試料
@@ -71,7 +72,7 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 
 - **I1 決まりが書かれている**: `tree.md` に UI モックの形式（HTML／React）と置き場所（版の中の `requirements/mocks/`）、React の見方が書かれている。ツリーの図にも載る。
 - **I2 承認の照合と重ね合わせの対象に入る**:
-  - 経路: `merge-versions.py`（v1 の HTML・React のディレクトリを重ねる、v2 で React の部品だけ差し替える、`removed.csv` で消す）／`check-signoff.py`（2 つのタグの間で HTML・React の部品が違えば 1）／
+  - 経路: `merge-versions.py`（v1 の HTML・React のディレクトリを重ねる、v2 で React のディレクトリを置き直す（部品の中身が変わる）、`removed.csv` で消す）／`check-signoff.py`（2 つのタグの間で HTML・React の部品が違えば 1）／
     `build-proposal.py`（仕様書の「仕様と要求のファイル」にパスが載る）／`scaffold.py`（`refs` で指せる。#951 の決まりのまま）
   - 守り方: 本体は `requirements/` を丸ごと読むので変えない。試料（`test-merge-versions.py`・`test-check-signoff.py`）で固定する
 - **I3 MkDocs のサイトからモックを開ける**:
@@ -109,8 +110,19 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 ## 関門の進捗（再開点）
 
 - 割り目: 割らない（cruise の周）
-- 手順 5 の反証と手順 4 への差し戻し: （未）
-- 交絡を潰した手順: （未）
+- 手順 4 の割り目: 割らない（cruise の周）——訊かずに続けた
+- 実装のコミット: `d5cff7fd`。ローカルの check-all（run-serial 越し）72/72 緑。`test-init-mkdocs.py` は Python 3.12（CI と同じ）でも緑
+- 実機確認（著者）: 雛形を空の根に `init-mkdocs.py` で写し、v1 に HTML のモック（`受注入力.html`）と React のモック（`在庫/index.html`・`Row.jsx`・`App.jsx`）を置いて
+  `mkdocs build --strict`（main の venv の MkDocs 1.6.1・Material 9.7.1）が 0。`mocks.html` のリンクが 2 つのモックに解決し、モックのファイルがバイトのまま写る（`cmp`）。
+  `use_directory_urls: true` でも `../v1/requirements/mocks/…` に直る。headless の Chrome で、http で配ったサイトの React のモックが描かれる（`在庫 3 件`・`ねじ: 3`。2 つの `.jsx` をまたいで使える）——
+  陰性側の対照: 同じ `index.html` を `file://` で開くと `#root` は空（`.jsx` を読まない）。HTML のモックは `file://` で開ける
+- 1 パス目の指摘対応の起点: `d5cff7fd`（1 パス目の関門に渡した時点の HEAD）
+- Verifier 1 パス目: 通した（base `43ad7fba`。dev-loop:dev-loop-verifier / sonnet。参照＋差分の形で verifier.md と gate-common.md を読ませた）——反証 0 件。`test-scaffold.py` は Verifier の側で時間切れ（未確認。著者の check-all 72/72 では緑）
+- `/code-review` 1 パス目: 通した（base `43ad7fba`。high）——指摘 7 件（CR1-1〜CR1-7）。受入基準 I1〜I5 に反する欠陥は無いとの報告
+- 1 パス目の指摘対応: 直す 1 件（CR1-1）。check-all（run-serial 越し）は 72 本中 2 本が落ちた——`check-plan-scope.py`（計画の 1 行に 2 つのパターンを書いていた。行を分けて直した）と `test-render-diagrams.py`（変異「プロセスグループを止めない」が生き残った。この周は触っていない時間待ちの試料で、load average 100 超。run-serial 越しに 1 度だけ回し直して緑——負荷による偽の失敗として扱った。両方の結果をここに残す）
+- 2 つ目の割り目: 割らない（cruise の周）——訊かずに続けた
+- 手順 5 の反証と手順 4 への差し戻し: 反証 0 件・差し戻しなし
+- 交絡を潰した手順: React の描画の陽性（http で描かれる）と陰性（`file://` で描かれない）を同じ `index.html` で取った——描かれないのが CDN に繋がらないせいでないことは、同じ回の http 側が描いたことで潰した
 
 ## 既知の限界・決着済みの論点
 
@@ -120,3 +132,19 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 | HTML の外部依存を機械で検査するか | しない | Issue の受入基準に無い。決まりとして書く |
 | 規模の「要求・仕様のファイルの数」に React のモックの部品が数えられる | そのまま | 数えるのは要求・仕様のファイルで、モックも `requirements/` のファイル。専用の数え方は Issue の外 |
 | 表示用ページで版を重ね合わせるか | 重ね合わせない | Q&A 表・決定表の印と同じ（版ごとの節）。`removed.csv` で消したモックも、消す前の版の節には出る |
+| React のモックの見せ方（ビルドしない・CDN の React と Babel・MkDocs から開く・`.tsx` は置かない） | 推奨 A で決めた（仕様の穴の記録） | 上の「仕様の穴」。受入基準は足さない |
+| v2 以降で React のモックを変えるとき、変えた `.jsx` だけを置いてよいか | 置かない（ディレクトリを全部置く）と決まりに書いた | 表示用ページは版を重ね合わせず、入口は同じディレクトリの `.jsx` しか読まない。部品だけ置いた版は入口の無いディレクトリとして警告される |
+| `requirements/mocks/` の外（`requirements/` のほかの場所）に置いた `.html` | 印は拾わない | 置き場所の決まりが `requirements/mocks/`。照合と重ね合わせには入る |
+| 一覧は読めるが入れない（`r--`）フォルダで `is_dir`・`is_file` が Python 3.12 で例外を投げうる | 見ない | 既存の `lookup` と同じ形。権限を外したフォルダは実際の利用でまず起きない |
+
+### 1 パス目の採否の表（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1-1 React のモックを消した跡（`.DS_Store` だけのフォルダ。macOS で `git rm` した後）を「入口の index.html が無い」と警告し、`mkdocs build --strict` が落ちる。重ね合わせはその形を無いとみなす | 示せる（/code-review が試料で警告を再現） | I3（サイトのビルドが通らない） | 直す（`.` で始まる名前だけのフォルダは飛ばす。試料と変異） |
+| CR1-2 scaffold の写し（`scaffold/refs/`）の React のモックは、開発のリポジトリで直に開くと描かれないのに、`handoff-issue.md`・dev-loop の `spec-gap.md` にそう書いていない | 示せる（`file://` で `#root` が空） | 無し（I2 の `refs` で指せる、は満たす。見方は `tree.md` に書いた） | 残課題 |
+| CR1-3 綴り違いと一覧を読めないときの警告が、その版の見出しの前に積まれ、直前の版の節に描かれる | 示せる（試料の出力） | 無し（警告は出る。既存の描画関数と同じ作り） | 残課題 |
+| CR1-4 `lookup_dir` が `lookup` の写しに近い・`maybe_file` の名前がディレクトリにも使われる | 示せない（保守の指摘） | 無し | 残課題 |
+| CR1-5 `tree.md` の移行の段落に版 `0.81.0` を直書き。マージ直前に版を上げ直すと古くなる | 示せない（起きていない） | 無し | 残課題（上げ直すときは段落の版も直す） |
+| CR1-6 描画関数の登録が `RENDERERS` と `PAGE_RENDERERS` の 2 つに分かれる | 示せない（設計） | 無し | 残課題 |
+| CR1-7 `受注.HTML`・`.htm` は「形でない」と警告される | 示せる（文言） | 無し（決まりは `.html`） | 残課題 |
