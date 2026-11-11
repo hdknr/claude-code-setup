@@ -151,11 +151,14 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
     ("種類の行の無い非機能要求の見出しは見ない", good(N="No,対象,指標,上限,単位,条件,理由\nN-001,a,p95,300,ms,b,c\n"), None, 0, "OK（", "見出しの行"),
     ("種類の行の列の数", nfr("N-001,a,可用性,99,%,b"), None, 1, "shared/nfr.csv:2: 列の数が 6", ""),
     # ---- 決まっていない欄（3）
+    ("読めない非機能要求", good(N=b"\x82\xa0No\n"), None, 2, "shared/nfr.csv: UTF-8 として読めない", ""),
     ("未決定の印", good(E=E_HEAD + "注文,番号,a,文字列,はい,未定\n"), None, 3, "未決定の印（1 件）:\n  requirements/entities.csv:2: 保管期間 に未決定の印（未定）", "形式の違反（"),
     ("全角の未決定の印", good(IO=IO_HEAD + "IO-001,a,入力,b,CSV,ＴＢＤ,カンマ,あり,c\n"), None, 3, "文字コード に未決定の印（TBD）", ""),
     ("値の決まった欄の未決定の印", good(F=F_HEAD + "F-001,a,要確認,\n"), None, 3, "種類 に未決定の印（要確認）", "どれでもない"),
     ("必須の欄が空", good(J=J_HEAD + "J-001,a,b,,d\n"), None, 3, "必須の欄が空（1 件）:\n  requirements/jobs.csv:2: 周期 が空", "形式の違反（"),
     ("空でよい欄が空", good(L=L_HEAD + "IO-001,1,a,文字列,,はい,b\n"), None, 0, "OK（", "が空"),
+    ("一覧の id が未決定ならレイアウトの id も未決定", good(IO=IO_HEAD + "TBD,受注の取り込み,入力,販売管理,CSV,UTF-8,カンマ,あり,毎日\n"), None, 3,
+     "id IO-001 が入出力の一覧（requirements/io.csv）に無い（一覧に id の決まっていない行がある）", "形式の違反（"),
     ("権限の可否が未決定", good(RO=RO_HEAD + "x,可,TBD\n"), None, 3, "担当者 の可否 に未決定の印（TBD）", "どれでもない"),
     ("種類の行の根拠が空", nfr("N-001,a,可用性,99,%,b,"), None, 3, "shared/nfr.csv:2: 根拠 が空", ""),
     ("種類の行の上限が未決定", nfr("N-001,a,保管期間,未定,年,b,c"), None, 3, "上限 に未決定の印（未定）", "正の整数でない"),
@@ -171,6 +174,8 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("一覧の未決定の id を見ない", '            elif row["id"].strip() not in listed and context.get(IO_LIST + "#pending"):',
+     "            elif False:", "一覧の id が未決定ならレイアウトの id も未決定"),
     ("見出しを見ない", "    if header == expected:\n        return True", "    if True:\n        return True", "見出しの順が違う"),
     ("物理設計の列を名指ししない", "    if extra:", "    if False:", "物理設計の列を足す"),
     ("列の数を見ない", "        if len(fields) != len(expected):", "        if False:", "列の数"),
@@ -206,7 +211,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("空でよい欄も数える", "MAY_BE_EMPTY = {\n    FEATURES: {\"関係\"},\n    IO_LAYOUT: {\"桁\"},", "MAY_BE_EMPTY = {\n    FEATURES: {\"関係\"},\n    IO_LAYOUT: set(),", "空でよい欄が空"),
     ("未決定を 0 にする", "        if self.empty or self.undecided:", "        if False:", "未決定の印"),
     ("表が無いのを止める", "        if self.violations:\n            return 1", "        if self.violations or self.missing:\n            return 1", "表が無いだけ"),
-    ("読めない表を 2 にしない", "        if self.unreadable:\n            return 2", "        if False:\n            return 2", "UTF-8 でない"),
+    ("読めない表を 2 にしない", "        if self.unreadable and (strict_nfr or", "        if False and (strict_nfr or", "UTF-8 でない"),
+    ("単体の検査で読めない非機能要求を 2 にしない", "def check(root: Path, strict_nfr: bool = True)", "def check(root: Path, strict_nfr: bool = False)",
+     "読めない非機能要求"),
     ("ファイルでないものを無い表と読む", "        if path.exists():", "        if False:", "ファイルでない"),
 ]
 

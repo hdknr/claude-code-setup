@@ -96,7 +96,9 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 必須の欄が空か未決定の印のある欄（3）が残れば 1 で何も作らない**（未決定の欄が残るうちは開発に渡さない）。**表が無いだけなら止めない**
 （前からの正本は表を持たない）。読めない表は 2。**機能一覧（`requirements/features.csv`）があれば、中間表現の機能と照らす**——
 入口（`called_by` を持たない機能）が一覧に無い・一覧の id が中間表現に無いなら 1。呼ばれる判定の関数は一覧に無くてよい。
-一覧が無ければ照らさない（決まりの正は `references/tree.md` の「システム設計書の成果物」）。
+一覧が無ければ照らさない。**読めない `shared/nfr.csv` では止めない**（種類の行が在るかを決められず、性能の行は指された行だけを読む——前からの扱い）。
+**`--upto` で前の版の時点を確かめるときは、この関門も照合も当てない**（前の版は凍結していれば直せない）
+（決まりの正は `references/tree.md` の「システム設計書の成果物」）。
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
@@ -1128,7 +1130,9 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
         return 1, problems + ["版の重ね合わせが決まりに反する（references/versions.md）。生成しない"], None
     if IR_PATH not in rendered:
         raise Unjudged(f"重ね合わせた全体に {IR_PATH} が無い（どの版にも中間表現が無い）。判定していない")
-    code, lines, ir, answered = read_whole(rendered, gate=True, provisional=provisional)
+    # 成果物の表の関門は作業中の版の全体だけ（`--upto` で前の版の時点を確かめるときは当てない——前の版は凍結していれば直せず、
+    # 0.78.0 より前に渡した版は表の決まりを知らない。#957）
+    code, lines, ir, answered = read_whole(rendered, gate=True, provisional=provisional, design_gate=upto is None)
     if code:
         return code, lines, None
     number = upto if upto is not None else len(found)
@@ -1137,7 +1141,8 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     return 0, [], loaded
 
 
-def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False) -> tuple[int, list[str], dict | None, dict]:
+def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False,
+               design_gate: bool = True) -> tuple[int, list[str], dict | None, dict]:
     """重ね合わせた全体を一時ディレクトリに置き、(終了コード, 出力する行, 中間表現, Q&A の行) を返す。
 
     `gate` なら関門（条件 1）も当てる——前の版の全体には当てない。**前の版がその時点で関門を通ったとは限らない**が、
@@ -1166,7 +1171,7 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
                 return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, {}
             # システム設計書の成果物の表（#957）。形式の違反（1）と、決まっていない欄（3）で止める——未決定の欄が残るうちは
             # 開発に渡さない。表が無いだけなら止めない（前からの正本は表を持たない）
-            code, lines = design.check(whole)
+            code, lines = design.check(whole, strict_nfr=False) if design_gate else (0, [])
             if code:
                 # 表のパスは重ね合わせた全体の根から——利用者が `merge-versions.py` で作れる場所で言う
                 lines = [re.sub(r"^  (requirements/|shared/)", rf"  {MERGED_DIR}/\1", line) for line in lines]
@@ -1190,7 +1195,7 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
                     f"{merged(QA_PATH)} に {qa.PROVISIONAL} の行が {len(held)} 件残る。"
                     "利用者に確かめてもらうまで生成しない（/spec-loop:req-loop）"], None, {}
         problems = check_ir(ir, whole, answered, path_rules=gate, provisional=provisional)
-        if gate and not problems:
+        if gate and design_gate and not problems:
             mismatched = listed_problems(ir, design.listed_features(whole))
             if mismatched:
                 return 1, mismatched + [f"機能一覧と中間表現の機能がずれている（{len(mismatched)} 件。references/tree.md の"

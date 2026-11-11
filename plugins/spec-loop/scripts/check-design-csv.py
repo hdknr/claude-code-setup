@@ -141,8 +141,10 @@ class Report:
         self.unreadable: list[str] = []
         self.rows: dict[str, int] = {}
 
-    def code(self) -> int:
-        if self.unreadable:
+    def code(self, strict_nfr: bool = True) -> int:
+        """`strict_nfr` が偽なら、読めない `shared/nfr.csv` を「判定していない」に数えない（scaffold の関門。種類の行が在るかを
+        読めない表で決められず、性能の行は scaffold が指された行だけを自分で読むので、前からの扱いを変えない）。"""
+        if self.unreadable and (strict_nfr or any(not item.startswith(NFR + ":") for item in self.unreadable)):
             return 2
         if self.violations:
             return 1
@@ -242,6 +244,7 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
     seen: dict[tuple[str, ...], int] = {}
     names: dict[str, tuple[str, int]] = {}
     ids: set[str] = set()
+    pending = False  # id が未決定・空の行がある（その行を指すレイアウトの id を違反と言い切れない）
     for line, fields in rows:
         where = f"{rel}:{line}"
         if len(fields) != len(expected):
@@ -250,6 +253,7 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
         row = dict(zip(expected, fields))
         decided = {column: cell_state(report, where, column, value, column in MAY_BE_EMPTY.get(rel, set()))
                    for column, value in row.items()}
+        pending = pending or ("id" in decided and not decided["id"])
         for column, value in row.items():
             if not decided[column]:
                 continue
@@ -275,6 +279,9 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
             listed = context.get(IO_LIST)
             if listed is None:
                 report.violations.append(f"{where}: id {row['id'].strip()} を照らす入出力の一覧（{IO_LIST}）が無い・読めない")
+            elif row["id"].strip() not in listed and context.get(IO_LIST + "#pending"):
+                # 一覧の id が未決定なら、指す先が決まっていない——違反でなく未決定に数える
+                report.undecided.append(f"{where}: id {row['id'].strip()} が入出力の一覧（{IO_LIST}）に無い（一覧に id の決まっていない行がある）")
             elif row["id"].strip() not in listed:
                 report.violations.append(f"{where}: id {row['id'].strip()} が入出力の一覧（{IO_LIST}）に無い")
         if rel == REPORTS and decided["id"] and decided["帳票名"]:
@@ -284,6 +291,7 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
             names.setdefault(rid, (name, line))
     report.rows[rel] = len(rows)
     context[rel] = ids
+    context[rel + "#pending"] = pending
 
 
 def check_roles(root: Path, report: Report) -> None:
@@ -386,9 +394,9 @@ def inspect(root: Path) -> Report:
     return report
 
 
-def check(root: Path) -> tuple[int, list[str]]:
+def check(root: Path, strict_nfr: bool = True) -> tuple[int, list[str]]:
     report = inspect(root)
-    return report.code(), report.lines()
+    return report.code(strict_nfr), report.lines()
 
 
 def listed_features(root: Path) -> list[str] | None:
