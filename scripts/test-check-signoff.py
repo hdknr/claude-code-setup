@@ -238,6 +238,14 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                                              ("w", REMOVED2, "種類,対象,理由\nファイル,spec/formal/order/Order.tla,組み直した\n"),
                                              ("c",), ("t", B2)],
      [], 0, "v1〜v2 の shared/・requirements/・spec/（spec/qa-dev.csv・spec/formal/ を除く）と removed.csv は同じ"),
+    # UI モック（#952）——requirements/mocks/ の HTML と React の部品も、2 つの承認が比べる中身に入る
+    ("UI モックの HTML が違う", [("w", SHARED, QA_A), ("w", "docs/v1/requirements/mocks/order.html", "<p>a</p>\n"), ("c",), ("t", R1),
+                              ("w", "docs/v1/requirements/mocks/order.html", "<p>b</p>\n"), ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/requirements/mocks/order.html"),
+    ("UI モックの React の部品が違う", [("w", SHARED, QA_A), ("w", "docs/v1/requirements/mocks/stock/index.html", "入口\n"),
+                                   ("w", "docs/v1/requirements/mocks/stock/App.jsx", "a\n"), ("c",), ("t", R1),
+                                   ("w", "docs/v1/requirements/mocks/stock/App.jsx", "b\n"), ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/requirements/mocks/stock/App.jsx"),
     # 陽性対照: `spec/formal` という名前のファイル（ディレクトリでない）は仕様のファイルとして比べる（is_formal と同じ。#908 の CR6）
     ("spec/formal という名前のファイルは比べる", [("w", SHARED, QA_A), ("w", "docs/v1/spec/formal", "a\n"), ("c",), ("t", R1),
                                           ("w", "docs/v1/spec/formal", "b\n"), ("c",), ("t", B1)],

@@ -510,7 +510,7 @@ def not_built_copied(repo: Path) -> str | None:
 
 # ---- 参考資料（#951）。重ね合わせた全体の requirements/ の図・モックを、中間表現の refs で機能に結びつける
 REF_FLOW = "requirements/flows/受注.svg"
-REF_MOCK = "requirements/mock/注文.html"
+REF_MOCK = "requirements/mocks/注文.html"
 REF_FILES = {str(V1 / REF_FLOW): "<svg xmlns='http://www.w3.org/2000/svg'><text>受注</text></svg>\n",
              str(V1 / REF_MOCK): "<html><body>注文の画面</body></html>\n"}
 # 本文の文言（本体の `REFS_NOT_CRITERIA`・`REFS_NONE` が本文に書くもの——`refs_copied` と `body_traceable` が本文とバイトで比べる）

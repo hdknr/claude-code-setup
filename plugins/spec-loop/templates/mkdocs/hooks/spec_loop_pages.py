@@ -8,6 +8,7 @@
 | `qa` | 各版の `docs/v<n>/shared/qa.csv` を、版ごとの節に（件数・一覧・質問ごとの詳細。推奨の選択肢と理由も） |
 | `decision_table` | 各版の `docs/v<n>/shared/decision_table.csv` を、版ごとの節に（見出しの行どおりの表。#369） |
 | `infra` | 各版の `docs/v<n>/shared/infra.csv`（基盤要件）を、版ごとの節に（決定表と同じく見出しの行どおりの表。#950） |
+| `mocks` | 各版の `docs/v<n>/requirements/mocks/` の UI モックへのリンクを、版ごとの節に（HTML の `<画面名>.html` と React の `<画面名>/index.html`。#952） |
 
 **描くのは共有の層の表だけ**——内部の層の表（`docs/v<n>/spec/qa-dev.csv`）は描かない（開発者が決めて記録するもの。
 spec-loop の `references/qa-csv.md` の「層」）。
@@ -31,7 +32,11 @@ spec-loop の `references/qa-csv.md` の「層」）。
   ——重ね合わせは index の綴りで読んで通すが、ここはディスクの綴りで読む（ディスク上で改名すれば消える）。
   見るのは版の中で表に届く綴りだけ——綴りの決まり全体（`removed.csv`・ほかのファイル）は重ね合わせの検査の仕事。
   **一覧を読めないフォルダ（実行の権限だけ）を通って表に届くなら、綴りを確かめられないので警告して描かない**（綴りどおりでも。CLI の検査と同じく止める側）。
-- 描くものを足すときは、描画関数を書いて `RENDERERS` に足す。
+- 描くものを足すときは、描画関数を書いて `RENDERERS` に足す（リンクをページからの相対で書く描画関数は `PAGE_RENDERERS`）。
+- **UI モック（`mocks`）はリンクを描くだけ**——モックのファイル（`.html`・`.jsx`）は MkDocs が `docs/` の中のほかのファイルと同じくそのまま写す。
+  リンクは印を書いたページからの相対で書き、MkDocs がサイトの URL に直す（`use_directory_urls` に従う）。**`.` で始まる名前は読まない**
+  （重ね合わせが読まないので）。**入口の `index.html` の無いディレクトリ・`.html` でないファイル・綴りだけ違う `requirements/`・`mocks/`・一覧を読めない
+  フォルダは、警告してリンクにしない**（黙って落とさない）。決まり（形式・置き場所）は spec-loop の `references/tree.md` の「UI モック」。
 - **決定表（`decision_table`）は列を決めない**——見出しの行をそのまま表の見出しにする（列の決まりは正本リポジトリが持つ）。
   **最初の行が見出し**で、空・空白だけなら警告する（次の行を見出しに繰り上げない）。見出しより長い行があれば、
   見出しの右を空で埋めて**全部の列を描く**（黙って切らない。`build-proposal.py` の仕様書と同じ）。版は重ね合わせない（Q&A 表と同じ）。
@@ -65,10 +70,12 @@ import csv
 import html
 import logging
 import os
+import posixpath
 import re
 import stat
 import unicodedata
 from pathlib import Path
+from urllib.parse import quote
 
 log = logging.getLogger("mkdocs.hooks.spec_loop_pages")
 
@@ -89,6 +96,10 @@ SHARED = "shared"
 QA_TABLE = "qa.csv"
 DECISION_TABLE = "decision_table.csv"
 INFRA_TABLE = "infra.csv"
+REQUIREMENTS = "requirements"
+MOCKS = "mocks"
+MOCK_HTML = ".html"
+MOCK_ENTRY = "index.html"
 SPELLING_MIGRATION = "spec-loop の references/versions.md の「綴りの誤りの移行」"
 # 素の本文の URL（#341）。番号のリンク化はこの中を変えない
 URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"']|&(?:lt|gt|quot|#39|#x27);|$)")
@@ -167,18 +178,40 @@ def lookup(root: Path, *parts: str) -> tuple[Path | None, list[Path], list[Path]
             unverified)
 
 
-def maybe_file(path: Path) -> bool:
+def maybe_file(path: Path, kind=stat.S_ISREG) -> bool:
     """書いた綴りのパスで表に届くかもしれないか。届く・確かめられない（権限の無いフォルダの下。EACCES）なら True、無いなら False。
+    `kind` は `stat.S_ISREG`（表のファイル）か `stat.S_ISDIR`（`lookup_dir` のディレクトリ）。
 
     `Path.is_file` は使わない——Python 3.12 は権限の無いフォルダの下で `PermissionError` を投げ（`mkdocs build` が落ちる）、
     3.14 は False を返す（黙って飛ばす）ので、版で答えが違う（#514 の狭いパスの F1）。どちらの版でも確かめられないものは警告する。
     """
     try:
-        return stat.S_ISREG(os.stat(path).st_mode)
+        return kind(os.stat(path).st_mode)
     except (FileNotFoundError, NotADirectoryError):
         return False
     except OSError:
         return True
+
+
+def lookup_dir(root: Path, *parts: str) -> tuple[Path | None, list[Path], list[Path]]:
+    """`root` の下の `parts` のディレクトリを書いた綴りで探す（`lookup` のディレクトリ版。#952）。
+    (綴りどおりに在るディレクトリ（無ければ None）, 綴りだけ違う名前で届くディレクトリ, 綴りを確かめられないフォルダ)。"""
+    found = [(root, True)]
+    unverified = []
+    for index, part in enumerate(parts):
+        step = []
+        for directory, spelled in found:
+            try:
+                entries = sorted(os.listdir(directory))
+            except OSError:
+                if spelled and maybe_file(directory.joinpath(*parts[index:]), stat.S_ISDIR):
+                    unverified.append(directory)
+                continue
+            step += [(directory / entry, spelled and entry == part) for entry in entries
+                     if fold(entry) == fold(part) and (directory / entry).is_dir()]
+        found = step
+    return (next((path for path, spelled in found if spelled), None), [path for path, spelled in found if not spelled],
+            unverified)
 
 
 def misspelled_problems(docs_dir: Path, wrong: list[Path], want: str, unverified: list[Path] = ()) -> list[str]:
@@ -312,10 +345,83 @@ def render_shared_table(docs_dir: Path, name: str, title: str) -> str:
     return "\n".join(out)
 
 
+def has_content(directory: Path) -> bool:
+    """`.` で始まらない名前を辿って、ディレクトリでない項目に届くか——spec-loop の `merge-versions.py` の `has_content` と同じ判定
+    （フックは単独で動くので読み込まない）。読めないフォルダは「在る」とみなす（黙って飛ばさず、入口の判定で警告させる）。"""
+    try:
+        entries = os.listdir(directory)
+    except OSError:  # 読めないフォルダは「在る」側に倒す
+        return True
+    for entry in entries:
+        if entry.startswith("."):
+            continue
+        path = directory / entry
+        if not path.is_dir() or path.is_symlink() or has_content(path):
+            return True
+    return False
+
+
+def render_mocks(docs_dir: Path, src: str) -> str:
+    """各版の `requirements/mocks/` の UI モックへのリンクを、版ごとの節に描く（#952）。`src` は印を書いたページの `docs/` からのパス。"""
+    out: list[str] = []
+    for version, root in versions(docs_dir):
+        mocks, wrong, unverified = lookup_dir(root, REQUIREMENTS, MOCKS)
+        for warning in misspelled_problems(docs_dir, wrong, f"{REQUIREMENTS}/{MOCKS}", unverified):
+            out += [warning, ""]
+        if mocks is None:  # モックの無い版は飛ばす
+            continue
+        try:
+            entries = sorted(os.listdir(mocks))
+        except OSError as e:
+            out += [problem(f"{mocks.relative_to(docs_dir)}: 一覧を読めない（{e.strerror}）"), ""]
+            continue
+        rows, problems = [], []
+        for name in entries:
+            if name.startswith("."):  # 重ね合わせが読まない名前（.DS_Store など）
+                continue
+            path = mocks / name
+            if path.is_dir():
+                try:
+                    inside = os.listdir(path)
+                except OSError as e:
+                    problems.append(problem(f"{path.relative_to(docs_dir)}: 一覧を読めない（{e.strerror}）"))
+                    continue
+                if not has_content(path):
+                    continue  # `.` で始まる名前（.DS_Store）とフォルダだけなら無いのと同じ——重ね合わせも読まない（消したモックの跡）
+                if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():  # 綴りどおりの入口だけ（区別しない FS の Index.html を数えない）
+                    rows.append((name, path / MOCK_ENTRY, "React（ディレクトリ）"))
+                else:
+                    problems.append(problem(f"{path.relative_to(docs_dir)}: 入口の {MOCK_ENTRY} が無いので開けない"
+                                            f"（React のモックは <画面名>/{MOCK_ENTRY} から開く。spec-loop の references/tree.md の「UI モック」）"))
+            elif name.endswith(MOCK_HTML):
+                rows.append((name[:-len(MOCK_HTML)], path, "HTML"))
+            else:
+                problems.append(problem(f"{path.relative_to(docs_dir)}: UI モックの形でない（HTML は <画面名>{MOCK_HTML}、"
+                                        f"React は <画面名>/{MOCK_ENTRY}。spec-loop の references/tree.md の「UI モック」）"))
+        if not rows and not problems:
+            continue
+        out += [f"## v{version}", ""]
+        if rows:
+            out += ["| モック | 形式 |", "| --- | --- |"]
+            for name, path, kind in rows:
+                target = posixpath.relpath(path.relative_to(docs_dir).as_posix(), posixpath.dirname(src) or ".")
+                out.append(f"| [{text(name)}]({quote(target)}) | {kind} |")
+            out.append("")
+        for warning in problems:
+            out += [warning, ""]
+    if not out:
+        return f"UI モック（`docs/v<n>/{REQUIREMENTS}/{MOCKS}/`）はまだ無い。\n"
+    return "\n".join(out)
+
+
 RENDERERS = {
     "qa": render_qa,
     "decision_table": render_decision_table,
     "infra": render_infra,
+}
+# リンクを印のページからの相対で書く描画関数（ページの `docs/` からのパスも受け取る）
+PAGE_RENDERERS = {
+    "mocks": render_mocks,
 }
 
 
@@ -387,9 +493,11 @@ def on_page_markdown(markdown: str, page, config, files) -> str:
 
     def replace(match: re.Match) -> str:
         name = match.group("name")
+        if name in PAGE_RENDERERS:
+            return PAGE_RENDERERS[name](docs_dir, page_path(page))
         renderer = RENDERERS.get(name)
         if renderer is None:
-            return problem(f"{page.file.src_path}: 知らない印 `spec-loop: {name}`（知っているのは {', '.join(RENDERERS)}）")
+            return problem(f"{page.file.src_path}: 知らない印 `spec-loop: {name}`（知っているのは {', '.join([*RENDERERS, *PAGE_RENDERERS])}）")
         return renderer(docs_dir)
 
     if any(match.group("name") == "qa" for match in MARKER.finditer(markdown)):

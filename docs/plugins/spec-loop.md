@@ -124,6 +124,7 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
 - **写すのは、正本の `CLAUDE.md` がドキュメントのツールを決めておらず、MkDocs の設定（`mkdocs.yml`・`mkdocs.yaml`）も無いときだけです。**
   設定が在ればスクリプトは何も写しません。設定が無くて写すときも、**在るファイルは 1 バイトも変えません**——`pyproject.toml`・`.gitignore` が在れば触らずに、足りない依存・行を示します（足すかは利用者が決めます）。
   何を写すか・どこに置くかは `tree.md` の「ドキュメントのツール」を、`--dry-run` と終了コードは `init-mkdocs.py` の docstring を正とします。
+- **UI モック**（画面の捨てるプロトタイプ）は、版の中の `requirements/mocks/` に **HTML**（`<画面名>.html`。外部への依存を持たない）か **React**（`<画面名>/index.html` と `.jsx`。ビルドしない）で置きます。参考資料で受入基準ではなく、仕様と食い違ったら Q&A 表に起票します。表示用のページ `docs/mocks.md` がモックへのリンクを版ごとに描きます。形式・置き場所・見方は `tree.md` の「UI モック」を正とします。
 - **Q&A 表と決定表は CSV のまま描きます。** 表示用のページ（`docs/qa.md`・`docs/decision-table.md`）に印を書き、写したフックが各版の共有の表（`shared/qa.csv`・`shared/decision_table.csv`）を版ごとの節に描きます（内部の Q&A 表 `spec/qa-dev.csv` は描きません）。
   本文の Q&A の番号（`Q-008`）は、フックが Q&A 表のページへのリンクにします（番号の書き方は [`qa-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/qa-csv.md) の「本文での番号」）。
 - **フックは標準ライブラリだけで単独で動きます**——正本リポジトリへ写された後は、プラグインを読み込みません。
