@@ -31,11 +31,13 @@
 - `plugins/spec-loop/skills/spec-review/SKILL.md` — 手順 2（成果物の表の欄を仕様の側で埋めない・物理設計は内部の表）と版
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 関門に足したものを 1 行と版
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（feasibility・proposal・autopilot）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `scripts/test-check-design-csv.py` — 新規。検査の回帰テスト（変異テストを含む）
 - `scripts/test-scaffold.py` — 機能一覧の照合・未決定で止まる試料と変異
 - `scripts/test-check-signoff.py` — 成果物の表だけが違うタグの組が 1 になる試料
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — 新しいテストの収録
+- `scripts/check-all.py` — 新しいテストの収録
+- `.github/workflows/plugins.yml` — 新しいテストの収録（CI のステップ）
 - `CLAUDE.md` — プロジェクト構成に新しいスクリプトとテストの行
 - `docs/plans/issue-957.md` — この計画
 
