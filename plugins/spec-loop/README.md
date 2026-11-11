@@ -34,6 +34,7 @@
 | `references/nfr.md` | 性能の要求の表（`shared/nfr.csv`）の列・性能を仕様に書く手順・要求の無い機能は最適化しない既定の原則・性能テスト |
 | `scripts/scaffold.py` | 中間表現から OpenAPI・型・Red テスト・Issue の本文を作る。関門（仕様レビューを抜ける条件 1）を自分で通す（標準ライブラリのみ） |
 | `references/versions.md` | 版のディレクトリ（`docs/v<n>/`）と、差分の重ね合わせ・削除（`removed.csv`）・凍結・前の構成からの移し方の決まり |
+| `references/writing-style.md` | 正本に書く文書の文章の記法（太字の見出し 1 行と一文ずつの箇条）と、前の書き方の正本を移す手順と確かめ方 |
 | `scripts/merge-versions.py` | 版ごとの差分を重ねて、ある版の時点の全体を作る（標準ライブラリのみ） |
 | `scripts/diff-versions.py` | ある版が前の版から何を足し・変え・消したかを、前の版の時点の全体と比べて出す（標準ライブラリのみ） |
 | `scripts/check-frozen.py` | リリースした版（`release-v<n>` のタグ）の `docs/v<n>/` が直されていないかの確かめ（標準ライブラリと `git`） |
