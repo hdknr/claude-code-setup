@@ -100,6 +100,13 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **`--upto` で前の版の時点を確かめるときは、この関門も照合も当てない**（前の版は凍結していれば直せない）
 （決まりの正は `references/tree.md` の「システム設計書の成果物」）。
 
+**基盤要件（#950）**: 上の関門を通ったら、重ね合わせた全体の `shared/infra.csv` に同梱の `check-infra-csv.py` を当てる——
+**形式の違反・未決定・暫定（`check-infra-csv.py` の 1・3・4）が残れば 1 で何も作らない**（誰も決めていない基盤で開発に渡さない）。読めない表は 2。
+**言語が `Python` で始まらない決定なら 1**——生成物（`types.py`・`unittest` の Red テスト・性能テスト）は Python だけで、黙って Python で作らない。
+**表が無ければ止めず、標準エラーに警告して Python で作る**（前からの正本は表を持たない）。全部決まっていれば、決まった基盤要件を
+書く生成と `--dry-run` の出力に 1 行で名指しする（開発のリポジトリの `CLAUDE.md` に写すのは利用者）。**`--upto` で前の版の時点を確かめるときは当てない**
+（上の関門と同じ条件）。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -336,6 +343,8 @@ diffs = _load("diff_versions", "diff-versions.py")
 frozen = _load("check_frozen", "check-frozen.py")
 # システム設計書の成果物の表の検査と機能一覧の読み方は `check-design-csv.py` のもの（写さない——#957）
 design = _load("check_design_csv", "check-design-csv.py")
+# 基盤要件の表の検査とゲートの判定は `check-infra-csv.py` のもの（写さない——#950）
+infra = _load("check_infra_csv", "check-infra-csv.py")
 
 
 def merged(path: str) -> str:
@@ -1093,6 +1102,8 @@ class Loaded:
                  nfr: bytes | None = None) -> None:
         self.ir = ir
         self.provisional = False  # `--provisional`（#875）——前の版の時点の判定にも同じ旗を当てる（`classify`）
+        self.notes: list[str] = []  # 止めずに標準エラーで知らせる行（基盤要件の表が無い。#950）
+        self.infra: str | None = None  # 決まった基盤要件の 1 行（書く生成と --dry-run で出す。#950）
         self.scope = scope  # 範囲の文書（`spec/scope.md`）のバイト。無ければ None
         self.nfr = nfr  # 性能の要求の表（`shared/nfr.csv`）のバイト。無ければ None
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
@@ -1132,13 +1143,44 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
         raise Unjudged(f"重ね合わせた全体に {IR_PATH} が無い（どの版にも中間表現が無い）。判定していない")
     # 成果物の表の関門は作業中の版の全体だけ（`--upto` で前の版の時点を確かめるときは当てない。`--upto <作業中の版>` には当てる——前の版は凍結していれば直せず、
     # 0.78.0 より前に渡した版は表の決まりを知らない。#957）
-    code, lines, ir, answered = read_whole(rendered, gate=True, provisional=provisional, design_gate=upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0))
+    design_gate = upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0)
+    code, lines, ir, answered = read_whole(rendered, gate=True, provisional=provisional, design_gate=design_gate)
+    if code:
+        return code, lines, None
+    # 基盤要件のゲート（#950）は成果物の表の関門と同じ条件で当てる（前の版の時点を確かめるときは当てない）
+    code, lines, notes, settled = infra_gate(rendered) if design_gate else (0, [], [], None)
     if code:
         return code, lines, None
     number = upto if upto is not None else len(found)
     loaded = Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
     loaded.provisional = provisional
+    loaded.notes = notes
+    loaded.infra = settled
     return 0, [], loaded
+
+
+def infra_gate(rendered: dict[str, bytes]) -> tuple[int, list[str], list[str], str | None]:
+    """基盤要件のゲート（#950。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」）。
+
+    (終了コード, 止めるときの行, 止めずに知らせる行, 決まった基盤要件の 1 行) を返す。表が無ければ止めずに知らせ、
+    形式の違反・未決定・暫定（`check-infra-csv.py` の 1・3・4）なら 1、読めなければ 2、言語が Python で始まらない決定なら 1。"""
+    report = infra.inspect_files(rendered)
+    if report.missing:
+        return 0, [], [f"基盤要件の表（{merged(infra.INFRA)}）が無い——{'・'.join(infra.REQUIRED_ITEMS)}が決まっていない。"
+                       "言語を決めないまま Python の生成物を作る（決めるなら feasibility で推奨付きの質問を起票して表を作る。"
+                       "references/tree.md の「基盤要件」）"], None
+    code = report.code()
+    if code:
+        lines = [re.sub(r"^  shared/", f"  {MERGED_DIR}/shared/", line) for line in report.lines()]
+        return (2 if code == 2 else 1), lines + [
+            "関門（基盤要件。references/tree.md の「基盤要件」の「ゲート」）を通らない。生成しない"], [], None
+    language = report.decided.get(infra.LANGUAGE, "")
+    if not infra.is_python(language):
+        return 1, [f"{merged(infra.INFRA)}: 言語が {language!r} に決まっている——scaffold が作る生成物（types.py・unittest の "
+                   "Red テスト・性能テスト）は Python だけで、別の言語が決まっているのに黙って Python で作らない。生成しない"
+                   "（references/tree.md の「基盤要件」の「ゲート」）"], [], None
+    settled = "・".join(f"{item}={value}" for item, value in report.decided.items())
+    return 0, [], [], f"基盤要件（{merged(infra.INFRA)}）: {settled}——開発のリポジトリの CLAUDE.md（開発の前提）に写す"
 
 
 def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False,
@@ -2825,6 +2867,9 @@ def run(repo: Path, args, writing: bool) -> int:
         code, lines = 2, [str(exc)]
     if code:
         return fail(repo, writing, code, lines)
+    for line in loaded.notes:
+        # 止めずに知らせる（基盤要件の表が無い。#950）
+        print(line, file=sys.stderr)
 
     contract = render_contract(loaded)
     features = len(loaded.ir["features"])
@@ -2883,9 +2928,14 @@ def run(repo: Path, args, writing: bool) -> int:
                     f"登録する本文は {len(groups)} 件")
     if args.dry_run:
         print(f"作れる（{summary}）。何も書いていない")
+        if loaded.infra:
+            print(loaded.infra)
         return 0
     write(repo, contract, issues)
     print(f"作った: {OUT_DIR}/ と {ISSUES_DIR}/（{summary}）")
+    if loaded.infra:
+        # 決まった基盤要件の受け渡し（#950）——開発のリポジトリの `CLAUDE.md` に写すのは利用者
+        print(loaded.infra)
     entries = proposal_changes(changes)
     print(f"課題一覧（案）: {ISSUES_DIR}/{PROPOSALS}（案 {len(entries)} 件・未決定事項 "
           f"{sum(len(undecided(c.feature)) for c in entries)} 件）——scaffold は案を登録しない。"

@@ -861,6 +861,45 @@ def hook_decision_table(plugin: Path, work: Path) -> bool:
             and "<!-- spec-loop" not in out)
 
 
+def hook_infra(plugin: Path, work: Path) -> bool:
+    """基盤要件の表（#950）を、決定表と同じく版ごとに見出しの行どおりに描く。表の無い版は飛ばし、決定表は描かない。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/infra.csv": "\ufeff項目,決定,状態\n言語,Python 3.12,決定\nDBMS,<b>x</b>,未決定\n",
+                 "v1/shared/decision_table.csv": "条件,結果\nA,B\n",
+                 "v2/requirements/a.md": "# a\n"})
+    out, warnings = render(plugin, docs, "# 基盤要件\n\n<!-- spec-loop: infra -->\n", src="infra.md")
+    return (not warnings and "## v2" not in out and "| 条件 | 結果 |" not in out
+            and "## v1\n\n| 項目 | 決定 | 状態 |\n| --- | --- | --- |\n| 言語 | Python 3.12 | 決定 |\n| DBMS | &lt;b&gt;x&lt;/b&gt; | 未決定 |\n" in out
+            and "<!-- spec-loop" not in out)
+
+
+def hook_infra_none(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/decision_table.csv": "条件,結果\nA,B\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: infra -->", src="infra.md")
+    return not warnings and "基盤要件の表（`docs/v<n>/shared/infra.csv`）はまだ無い" in out and "| 条件 |" not in out
+
+
+def hook_misspelled_infra(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/infra.csv": "項目,決定\n言語,Python\n", "v2/Shared/infra.csv": "列,値\nx,y\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: infra -->", src="infra.md")
+    return (len(warnings) == 1 and "v2/Shared/infra.csv: shared/infra.csv " + SPELLING in warnings[0]
+            and "| 項目 | 決定 |" in out and "| 列 | 値 |" not in out and "## v2" not in out)
+
+
+# 雛形の基盤要件のページ（#950）——在って、印を持ち、空の根に写る
+def init_infra_page(plugin: Path, work: Path) -> bool:
+    page = plugin / "templates" / "mkdocs" / "docs" / "infra.md"
+    if not page.is_file() or "<!-- spec-loop: infra -->" not in page.read_text(encoding="utf-8"):
+        return False
+    root = work / "root"
+    root.mkdir(parents=True)
+    code, _ = run_init(plugin, root)
+    copied = root / "docs" / "infra.md"
+    return code == 0 and copied.is_file() and copied.read_bytes() == page.read_bytes()
+
+
 def hook_decision_table_none(plugin: Path, work: Path) -> bool:
     docs = work / "docs"
     write(docs, {"v1/shared/qa.csv": QA_V1})
@@ -949,6 +988,10 @@ CASES = {
     "決定表が無ければそう書く": hook_decision_table_none,
     "読めない・見出しの無い決定表は警告": hook_decision_table_unreadable,
     "雛形の決定表のページは印を持ち、空の根に写る": init_decision_table_page,
+    "基盤要件の表を版ごとに見出しの行どおりに描く": hook_infra,
+    "基盤要件の表が無ければそう書く": hook_infra_none,
+    "綴り違いの基盤要件の表は警告して描かない": hook_misspelled_infra,
+    "雛形の基盤要件のページは印を持ち、空の根に写る": init_infra_page,
     "綴り違いの Q&A 表は警告して描かない": hook_misspelled_qa,
     "綴り違いの決定表は警告して描かない": hook_misspelled_decision_table,
     "綴り違いの表の番号はリンクにしない": hook_links_misspelled,
@@ -973,6 +1016,11 @@ MUTATIONS: list[tuple] = [
     ("URL の後ろを書き換えない", HOOK, 'return "".join(parts + [QA_NUMBER.sub(link, between[start:])])',
      'return "".join(parts + [between[start:]])', "素の URL の中の番号は変えない"),
     ("決定表を描かない", HOOK, '    "decision_table": render_decision_table,\n', "", "決定表を版ごとに見出しの行どおりに描く"),
+    ("基盤要件の表を描かない", HOOK, '    "infra": render_infra,\n', "", "基盤要件の表を版ごとに見出しの行どおりに描く"),
+    ("基盤要件の印で決定表を描く", HOOK, '    return render_shared_table(docs_dir, INFRA_TABLE, "基盤要件の表")',
+     '    return render_shared_table(docs_dir, DECISION_TABLE, "基盤要件の表")', "基盤要件の表を版ごとに見出しの行どおりに描く"),
+    ("基盤要件の表が無いと書かない", HOOK, '        return f"{title}（`docs/v<n>/{SHARED}/{name}`）はまだ無い。\\n"',
+     '        return ""', "基盤要件の表が無ければそう書く"),
     ("決定表の見出しを描かない", HOOK, '"| " + " | ".join(text(cell) for cell in header) + " |",',
      '"| " + " | ".join("" for cell in header) + " |",', "決定表を版ごとに見出しの行どおりに描く"),
     ("決定表をエスケープしない", HOOK, '" | ".join(text(cell) for cell in row + [""]', '" | ".join(cell for cell in row + [""]',
@@ -1002,6 +1050,8 @@ MUTATIONS: list[tuple] = [
     ("スキームに数字と記号を許す", HOOK, '(?:[A-Za-z]+://|www', '(?:[A-Za-z][A-Za-z0-9+.-]*://|www', "素の URL の中の番号は変えない"),
     ("雛形の決定表のページに印が無い", "templates/mkdocs/docs/decision-table.md", "<!-- spec-loop: decision_table -->", "",
      "雛形の決定表のページは印を持ち、空の根に写る"),
+    ("雛形の基盤要件のページに印が無い", "templates/mkdocs/docs/infra.md", "<!-- spec-loop: infra -->", "",
+     "雛形の基盤要件のページは印を持ち、空の根に写る"),
     ("mkdocs.yml が在っても写す", INIT, "        if os.path.lexists(root / name):\n", "        if False:\n",
      "mkdocs.yml が在れば何も写さない"),
     ("mkdocs.yaml を設定とみなさない", INIT, 'CONFIG_NAMES = ("mkdocs.yml", "mkdocs.yaml")', 'CONFIG_NAMES = ("mkdocs.yml",)',
@@ -1181,8 +1231,8 @@ MUTATIONS: list[tuple] = [
     ("番号をパスを組み立てて読む", HOOK, "        path, _, _ = lookup(root, SHARED, QA_TABLE)\n",
      "        path = root / SHARED / QA_TABLE if (root / SHARED / QA_TABLE).is_file() else None\n",
      "綴り違いの表の番号はリンクにしない"),
-    ("決定表をパスを組み立てて開く", HOOK, "        path, wrong, unverified = lookup(root, SHARED, DECISION_TABLE)\n",
-     "        path, wrong, unverified = (root / SHARED / DECISION_TABLE if (root / SHARED / DECISION_TABLE).is_file() else None), [], []\n",
+    ("決定表をパスを組み立てて開く", HOOK, "        path, wrong, unverified = lookup(root, SHARED, name)\n",
+     "        path, wrong, unverified = (root / SHARED / name if (root / SHARED / name).is_file() else None), [], []\n",
      "綴り違いの決定表は警告して描かない"),
     ("綴り違いを警告しない", HOOK, "            for path in wrong]", "            for path in wrong if False]", "綴り違いの Q&A 表は警告して描かない"),
     ("綴りが違っても綴りどおりと読む", HOOK, "(directory / entry, spelled and entry == part, ())", "(directory / entry, spelled, ())",
@@ -1198,8 +1248,8 @@ MUTATIONS: list[tuple] = [
     ("確かめられない形を無いと読む", HOOK, "    except OSError:\n        return True\n", "    except OSError:\n        return False\n",
      "権限の無い版のフォルダは警告して描かず、例外で落ちない"),
     ("決定表で確かめられないフォルダを警告しない", HOOK,
-     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}", unverified)',
-     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{DECISION_TABLE}")', "一覧を読めない版のフォルダの決定表は警告して描かない"),
+     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{name}", unverified)',
+     'misspelled_problems(docs_dir, wrong, f"{SHARED}/{name}")', "一覧を読めない版のフォルダの決定表は警告して描かない"),
     ("区別する FS で綴り違いのほうを読む", HOOK, "    return (next((path for path, spelled in files if spelled), None),",
      "    return (next((path for path, spelled in files), None),", "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く"),
 ]
@@ -1275,7 +1325,7 @@ def check_reference() -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     check("references/tree.md に「ドキュメントのツール」の節が無い", "\n## ドキュメントのツール\n" in text)
     section = text.split("\n## ドキュメントのツール\n", 1)[-1].split("\n## ", 1)[0]
-    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "shared/",
+    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "docs/infra.md", "shared/",
                  "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない",
                  "spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり"):
         check(f"references/tree.md の「ドキュメントのツール」に {word} が無い", word in section)

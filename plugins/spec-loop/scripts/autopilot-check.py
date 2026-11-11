@@ -122,7 +122,7 @@ LIMIT_RE = re.compile(r"周 ([1-9][0-9]{0,3}) まで続ける")
 # 線に依らず各起動が呼ぶスクリプト（spec-review の周と入口）。`止まる地点 = feasibility の後` なら FEASIBILITY_SCRIPTS も
 SPEC_REVIEW_SCRIPTS = ("autopilot-ledger.py", "autopilot-check.py", "check-tlc.py", "check-alloy.py", "check-qa-csv.py", "merge-versions.py",
                        "diff-versions.py", "check-spec-exit.py", "render-diagrams.py")
-FEASIBILITY_SCRIPTS = ("check-feasibility-csv.py", "schedule-to-gantt.py")
+FEASIBILITY_SCRIPTS = ("check-feasibility-csv.py", "schedule-to-gantt.py", "check-infra-csv.py")  # 基盤要件のゲート（#950）
 PR_OPS = ("git switch", "git pull", "git add", "git commit", "git push", "gh pr create")
 COMMIT_OPS = {"しない": (), "PR で止まる": PR_OPS, "マージまで": PR_OPS + ("gh pr merge",)}
 

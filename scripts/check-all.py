@@ -150,6 +150,7 @@ TESTS: list[str] = [
     "test-check-spec-exit.py",
     "test-check-feasibility-csv.py",
     "test-check-design-csv.py",
+    "test-check-infra-csv.py",
     "test-schedule-to-gantt.py",
     "test-render-diagrams.py",
     "test-check-signoff.py",
