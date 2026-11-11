@@ -4,7 +4,7 @@
 
 - 直す線: **既定**（出所: 手順 3 の `AskUserQuestion` に 600 秒答えが無かったので既定。2026-11-11）
 - 形式の検査: **足す**（Issue が「この周で決める」とした判断。同じ問いに答えが無かったので推奨の側。理由は下の「決着済みの論点」）
-- 版の上げ方: **spec-loop を minor で上げる**（0.80.1 → 0.81.0。0.x なので能力の追加は minor）。`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md` の 2 行
+- 版の上げ方: **spec-loop を minor で上げる**（0.80.1 → 0.81.0。main が #952 で 0.81.0 に先に達したので、取り込んで 0.82.0 に上げ直した。0.x なので能力の追加は minor）。`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md` の 2 行
 - PR は `Fixes #982`
 
 ## 周の在り処
@@ -22,10 +22,14 @@
 - `plugins/spec-loop/references/writing-style.md` — 記法が掛からないセルの列挙に指摘の表を足す
 - `plugins/spec-loop/skills/spec-review/SKILL.md` — 手順 4（表を残すことの予告）・手順 6（足して検査する）・手順 7（報告）・`用意してから呼び直す` の扱いと版
 - `plugins/spec-loop/skills/autopilot/SKILL.md` — `judge` 段とやり直しの扱いに指摘の表と版
-- `plugins/spec-loop/skills/req-loop/SKILL.md`・`feasibility/SKILL.md`・`proposal/SKILL.md`・`scaffold/SKILL.md` — 版の 2 行だけ
+- `plugins/spec-loop/skills/req-loop/SKILL.md` — 版の 2 行だけ
+- `plugins/spec-loop/skills/feasibility/SKILL.md` — 同上
+- `plugins/spec-loop/skills/proposal/SKILL.md` — 同上
+- `plugins/spec-loop/skills/scaffold/SKILL.md` — 同上
 - `plugins/spec-loop/scripts/check-findings-csv.py` — 新規。指摘の表の形式の検査
 - `plugins/spec-loop/scripts/autopilot-check.py` — 線に依らず点検するスクリプトの一覧に `check-findings-csv.py` を足す（実装中に見つけた経路: autopilot の周が新しい検査を呼ぶので、権限の点検の対象に要る。受入基準 1 の経路に足した）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `scripts/test-check-findings-csv.py` — 新規。検査の回帰テスト（変異テストを含む）
 - `scripts/check-all.py` — テストの登録
 - `.github/workflows/plugins.yml` — テストのステップ
