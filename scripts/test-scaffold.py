@@ -612,6 +612,15 @@ def plant_escaping_index(repo: Path) -> None:
                      encoding="utf-8")
 
 
+def plant_symlink_index(repo: Path) -> None:
+    """`scaffold/refs/` の中に正本の `spec/` を指すシンボリックリンクを置き、目録にそれを経由する行を書き足す（#951 の 2 パス目）。"""
+    drop_refs(repo)
+    (repo / "scaffold" / "refs" / "requirements" / "link").symlink_to(repo / V1 / "spec", target_is_directory=True)
+    index = repo / REFS_INDEX_FILE
+    index.write_text(index.read_text(encoding="utf-8") + f"- `requirements/link/order.md`（sha256: `{'0' * 64}`）\n",
+                     encoding="utf-8")
+
+
 def escaping_index_ignored(repo: Path) -> str | None:
     return None if (repo / V1 / "spec" / "order.md").is_file() else "目録の .. を辿って scaffold/refs/ の外を消した"
 
@@ -2289,10 +2298,15 @@ CASES: list[Case] = [
     Case("参考資料: 大文字小文字だけ違う綴り", 1, "F-001.refs: requirements/flows/受注.SVG が無い",
          ir=refs(["requirements/flows/受注.SVG"]), extra=REF_FILES),
     # 本文のコードスパンと目録の行に書けない名前は断る——通すと、外した後に写しが目録から読み戻せずに残る（#951 の 1 パス目）
-    Case("参考資料: バッククォート", 1, "F-001.refs: requirements/a`b.svg はバッククォートか \\ を含む",
+    Case("参考資料: バッククォート", 1, "F-001.refs: 'requirements/a`b.svg' はバッククォートか \\ か行の区切り",
          ir=refs(["requirements/a`b.svg"]), extra={**REF_FILES, str(V1 / "requirements" / "a`b.svg"): "<svg/>\n"}),
-    Case("参考資料: バックスラッシュ", 1, "F-001.refs: requirements/a\\b.svg はバッククォートか \\ を含む",
+    Case("参考資料: バックスラッシュ", 1, "はバッククォートか \\ か行の区切り",
          ir=refs(["requirements/a\\b.svg"]), extra=REF_FILES),
+    # 行の区切り（U+2028）は Cc ではないので 1 行に見えるが、目録を行に分けると割れて読み戻せない（#951 の 2 パス目）
+    Case("参考資料: 行の区切りを含む名前", 1, "はバッククォートか \\ か行の区切り",
+         ir=refs(["requirements/a\u2028b.svg"]), extra={**REF_FILES, str(V1 / "requirements" / "a\u2028b.svg"): "<svg/>\n"}),
+    Case("参考資料: 目録のシンボリックリンクを辿らない", 0, "作った", ir=REFS_IR, extra=REF_FILES, generate_first=True,
+         pre=plant_symlink_index, post=escaping_index_ignored),
     Case("参考資料: 空の配列", 1, "F-001.refs: 参考資料のファイルの配列（1 つ以上）でない", ir=refs([]), extra=REF_FILES),
     Case("参考資料: 重複", 1, "F-001.refs: 同じファイルを 2 度指している", ir=refs([REF_FLOW, REF_FLOW]), extra=REF_FILES),
     Case("参考資料: 文字列でない", 1, "F-001.refs: 重ね合わせた全体の根からの相対パスでない（1）", ir=refs([1]), extra=REF_FILES),
@@ -3212,7 +3226,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "参考資料: 大文字小文字だけ違う綴り"),
     ("requirements の外を見ない", '        elif not rel.startswith(f"{REQUIREMENTS_DIR}/"):', "        elif False:", "参考資料: requirements の外"),
     (". で始まる場所を見ない", '        elif any(part.startswith(".") for part in rel.split("/")):', "        elif False:", "参考資料: 上へ出る"),
-    ("参考資料のバッククォートを断らない", '        elif "`" in rel or "\\\\" in rel:', "        elif False:", "参考資料: バッククォート"),
+    ("参考資料のバッククォートを断らない", '        elif "`" in rel or "\\\\" in rel or rel.splitlines() != [rel]:', "        elif False:", "参考資料: バッククォート"),
+    ("参考資料の行の区切りを断らない", '        elif "`" in rel or "\\\\" in rel or rel.splitlines() != [rel]:',
+     '        elif "`" in rel or "\\\\" in rel:', "参考資料: 行の区切りを含む名前"),
+    ("目録のシンボリックリンクを辿る", "        if not (out / REFS_DIR / rel).resolve().is_relative_to(refs_root):",
+     "        if False:", "参考資料: 目録のシンボリックリンクを辿らない"),
     ("参考資料の空の親を消さない", "            while parent != out and parent.is_dir() and not any(parent.iterdir()):",
      "            while False:", "参考資料: refs を外すと写しを消す"),
     ("参考資料の空の配列を許す", '    if not isinstance(refs, list) or not refs:\n        return [f"{where}: 参考資料',
@@ -3223,8 +3241,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("参考資料の目録を作らない", "        contract[REFS_INDEX] = refs_index(loaded.refs)", "        pass", "参考資料: refs を外した --check"),
     ("残った写しを数えない", "    return sorted((generated_tests(out) | generated_refs(out)) - contract.keys())",
      "    return sorted(generated_tests(out) - contract.keys())", "参考資料: refs を外した --check"),
-    ("目録の .. を辿る", '        if "\\\\" in rel or rel.startswith("/") or any(part in ("", ".", "..") for part in rel.split("/")):',
-     "        if False:", "参考資料: 目録の .. を辿らない"),
+    # 目録の `..` の行を断る行だけを外す変異は、続く resolve の照合（上の変異「目録のシンボリックリンクを辿る」が外すもの）が同じ行を落とすので等価になる（#951 の 2 パス目）
     ("目録の印を見ない", '    if GENERATED not in text.split("\\n", 1)[0]:\n        return set()', "    if False:\n        return set()",
      "参考資料: 印の無い目録は読まない"),
     # #851: 作らないもの

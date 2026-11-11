@@ -552,9 +552,9 @@ def check_refs(where: str, refs, whole: Path) -> list[str]:
     for rel in refs:
         if not isinstance(rel, str) or not one_line(rel):
             problems.append(f"{where}: 重ね合わせた全体の根からの相対パスでない（{rel!r}）")
-        elif "`" in rel or "\\" in rel:
+        elif "`" in rel or "\\" in rel or rel.splitlines() != [rel]:
             # 本文のコードスパンと目録の行（`REFS_LINE`）に書けず、目録から読み戻せない——外した後に写しが残る
-            problems.append(f"{where}: {rel} はバッククォートか \\ を含む（本文と目録に書けない）")
+            problems.append(f"{where}: {rel!r} はバッククォートか \\ か行の区切り（U+2028 など）を含む（本文と目録に書けない）")
         elif not rel.startswith(f"{REQUIREMENTS_DIR}/"):
             problems.append(f"{where}: {rel} は {REQUIREMENTS_DIR}/ の中に無い（参考資料は利用者向けの要求の図・モックを指す）")
         elif any(part.startswith(".") for part in rel.split("/")):
@@ -2846,6 +2846,7 @@ def generated_refs(out: Path) -> set[str]:
     if GENERATED not in text.split("\n", 1)[0]:
         return set()
     found = {REFS_INDEX}
+    refs_root = (out / REFS_DIR).resolve()
     for line in text.splitlines():
         match = REFS_LINE.fullmatch(line)
         if not match:
@@ -2853,6 +2854,8 @@ def generated_refs(out: Path) -> set[str]:
         rel = match.group(1)
         if "\\" in rel or rel.startswith("/") or any(part in ("", ".", "..") for part in rel.split("/")):
             continue
+        if not (out / REFS_DIR / rel).resolve().is_relative_to(refs_root):
+            continue  # `scaffold/refs/` の中のシンボリックリンクを経由して外を指す行も数えない
         found.add(f"{REFS_DIR}/{rel}")
     return found
 
