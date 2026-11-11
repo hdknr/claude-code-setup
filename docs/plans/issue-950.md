@@ -42,6 +42,7 @@
 - `scripts/test-build-proposal.py` — 基盤要件のゲートの試料と変異
 - `scripts/test-check-signoff.py` — 基盤要件の表だけが違うタグの組が 1 になる試料
 - `scripts/test-init-mkdocs.py` — 表示用ページ（`infra` の印）の試料
+- `plugins/spec-loop/scripts/autopilot-check.py` — feasibility の単位が呼ぶスクリプトに `check-infra-csv.py` を足す（2 パス目の関門で広げた）
 - `scripts/test-check-qa-csv.py` — 暫定の判別を読む側（`READERS`）に `check-infra-csv.py` を足す（1 パス目の関門で広げた。判別を `is_provisional` に通した）
 - `scripts/check-all.py` — 新しいテストの収録
 - `.github/workflows/plugins.yml` — 新しいテストの収録（CI のステップ）
@@ -132,6 +133,10 @@
 - `/code-review` 1 パス目: 済み——指摘 9 件（high）。手元の `check-all.py` は 4 本赤（下の表の CR1〜CR3）
 - 差し戻し: 「直す」の行（CR1・CR2・CR3・CR4）を手順 4 で直した
 - 割り目（2 パス目の前）: 割らない（cruise の周）
+- 1 パス目の指摘対応: `38121d2f` → `1065cc44`（計画ファイルを除き 7 ファイル。0 行でないので 2 パス目を回した）。`check-all.py`（run-serial 越し）72/72 緑
+- Verifier 2 パス目（当て直し）: 済み——反証 0 件（sonnet・`dev-loop:dev-loop-verifier`。ツールは Read・Bash のみと報告）
+- `/code-review` 2 パス目: 済み——指摘 9 件（high）
+- 狭いパスの起点: `1065cc44c306835bbe6137bf4dee8bf88cb68951`（2 パス目の指摘対応を始める直前の HEAD）
 - 交絡: 実験なし（まだ）
 
 ## 既知の限界・決着済みの論点
@@ -160,3 +165,17 @@
 | CR9: `Python + TypeScript` のような混ざった言語の決定を Python と読む | 示せる | 無し（5 は「Python で始まらない決定で止める」） | 残課題 |
 | V 観察 1: `--provisional` と暫定の緊張 | — | 無し | CR6 と同じ |
 | V 観察 2: 暫定・未決定の行の単独の試料が無い | — | 4 | CR4 で直した（未決定の行は上の決着済み） |
+
+### 2 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| P2-1: autopilot の権限の点検（`FEASIBILITY_SCRIPTS`）が、feasibility が新しく呼ぶ `check-infra-csv.py` を見ない | 示せる（`autopilot-check.py:125` の一覧に無い。手順 1 の 3 が呼ぶ） | 9（autopilot の点検が呼ぶものを数えなくなる——この周が持ち込んだ後退） | 直す——一覧に足した |
+| P2-2: 暫定の回答が違う選択肢になって Q&A を `確認中` に戻したとき、表の行を `未決定` に戻す指示が無い（検査が 1 で落ちる） | 示せる（code-review が試料で 1 を再現） | 6（回答の反映が req-loop に書かれている） | 直す——req-loop の手順 2 の 4 に 1 文 |
+| P2-3: `qa_matches` の決定・未決定の枝の `not qa.is_provisional(row)` は効かない（READERS の数を満たすだけ） | 示せる（消しても振る舞いが変わらない） | 無し | 残課題 |
+| P2-4: `QA_STATE` の `f"{qa.PROVISIONAL}"` は静的検査の f-string の免除をくぐる | 示せる（形） | 無し | 残課題 |
+| P2-5: v2 が `removed.csv` で表を消すと「表が無い」として警告だけで進む | 合成の操作でのみ | 無し | 残課題 |
+| P2-6: scaffold・feasibility の frontmatter に新しい止まり方・自律提案が無い | 示せる（文言） | 無し | 残課題 |
+| P2-7: v2 以降の出力のパスが重ねた全体の根から（どの版のファイルか分からない） | 示せる（文言） | 無し | 残課題 |
+| P2-8: CSV の読み方が `check-design-csv.py` と重複 | 示せない（整理） | 無し | 残課題 |
+| P2-9: 読み込みの重複（モジュールを何度も読む） | 示せない（性能） | 無し | 残課題 |
