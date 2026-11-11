@@ -123,7 +123,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/rework-metrics.py` - 仮回答と推奨で決めた事項のうち**どれだけ変わり、変わったものでどれだけ作り直したか**を数える
       （#886。仮回答と確かめたときに回答が変わった数は**正本リポジトリの Q&A 表の git の履歴**から——**回答の選択肢のラベルで比べ、列全体の変化では見ない**。
       確認の Issue の内訳と作り直しの元の印で結んだ Issue・PR・差分の行数は `gh issue list`・`gh pr list` の JSON から。**`gh` は呼ばず、`git` は読むだけ**。
-      確認の Issue と印の読み方は `rebuild-scope.py` を読み込む——写さない。実案件で数えて #870 に貼る手順と守らないもの（#885 の限界を含む）は docstring を正とする。
+      確認の Issue と印の読み方は `rebuild-scope.py` を読み込む——写さない。実案件で数えて #980 に貼る手順と守らないもの（#885 の限界を含む）は docstring を正とする。
       テストは `scripts/test-rework-metrics.py`）
     - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
       （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に依存する。**項目の Issue は本文が生成した本文と同じもの**で、
