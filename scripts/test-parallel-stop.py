@@ -22,10 +22,16 @@
 6. **記録の時刻より後に起きたプロセス**（pid の使い回し）なら止めない。
 7. **`--` の無い起動**（`run-serial.py holders`）なら止めない。
 8. **枠の記録に無い pid** なら止めない。
+9. **`--timeout <秒>`（空白の形）で起こした持ち主**は止める（#917 の E3）。
+10. **`--timeout=<秒>`（`=` の形）で起こした持ち主**も止める（#917 の E1——直す前の照合は本物でも拒んだ）。
+11. **記録の `started` が別の時間帯で書かれていても**（同じ瞬間）、止める（#917 の E2——直す前の照合は `%z` を見ず、本物を使い回しと拒んだ）。
+12. **記録の数秒後に起きたプロセス**（使い回し）なら止めない（#917 の E5——6 の 1 時間の差では、許容を広げた変異が素通りした）。
+13. **記録のコマンドが `--` の後ろの一部だけ**（部分一致では合う）なら止めない（#917 の E4）。
 
 止めないケースでは、照合が 1 で終わり、プロセスが生きたままであることを見る（止めたかを見るのはプロセスで、出力の文言ではない）。
 
-**変異テスト**: ブロックの照合を 1 箇所ずつ緩め（部分一致に戻す・コマンドを比べない・cwd を比べない・時刻を比べない・記録を見ない）、
+**変異テスト**: ブロックの照合を 1 箇所ずつ緩め（部分一致に戻す・コマンドを比べない・cwd を比べない・時刻を比べない・記録を見ない・
+`--timeout` の選択肢を外す・`=` の形を外す・時間帯を見ない・コマンドを部分一致で比べる・時刻の許容を広げる）、
 **緩めたのに全ケースが期待どおりなら失格**。壊す文字列がブロックにちょうど 1 回現れることを先に確かめる。
 
 **このテストは実環境を触らない**——リポジトリと枠のディレクトリは一時ディレクトリの中で、止めるのは自分が起こしたプロセスだけ。
@@ -34,6 +40,7 @@
 
 - **Linux の `/proc/<pid>/cwd` の経路**——macOS（`lsof`）でだけ走らせている。
 - **pid が本当に使い回された実物**——使い回しは「記録の後に起きたプロセス」を手で作って当てる。
+- **親と子で `TZ` が本当に違う起動**——記録の `started` を別の時間帯の表記で手で書いて当てる（同じ瞬間を別の表記にした記録と同じ入力になる）。
 - **散文の箇条書きとコードの食い違い**——実行するのはコードだけ。
 
 標準ライブラリのみ。POSIX（`ps`・`pgrep`・`lsof` か `/proc`）。
@@ -48,22 +55,30 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DOC = ROOT / "plugins/dev-loop/skills/cruise/references/parallel.md"
 RUN_SERIAL = ROOT / "plugins/dev-loop/skills/cruise/scripts/run-serial.py"
 HEADING = "### 止まっている枠の持ち主"
+CASES = 13
 
 MUTATIONS = [
     ("部分一致に戻す",
-     'm = re.fullmatch(r"(?:\\S*/)?[Pp]ython[0-9.]* (?:\\S*/)?run-serial\\.py(?: --timeout [0-9]+)? -- (.*)", ps("command"))',
+     'm = re.fullmatch(r"(?:\\S*/)?[Pp]ython[0-9.]* (?:\\S*/)?run-serial\\.py(?: --timeout[ =][0-9]+)? -- (.*)", ps("command"))',
      'm = re.search(r"run-serial.py.*?(?: -- (.*))?$", ps("command"))'),
     ("コマンドを比べない", 'elif m.group(1) != rec.get("command"):', 'elif False:'),
     ("cwd を比べない", 'elif cwd() != rec.get("cwd"):', 'elif False:'),
     ("時刻を比べない", "if begun > taken + 1:", "if False:"),
     ("記録を見ない", 'if rec is None:\n    why = "枠の記録にこの pid が無い"',
-     'if rec is None:\n    rec = {"command": (m.group(1) if m else None), "cwd": cwd(), "started": "2999-01-01T00:00:00"}'),
+     'if rec is None:\n    rec = {"command": (m.group(1) if m else None), "cwd": cwd(), "started": "2999-01-01T00:00:00+0000"}'),
+    ("`--timeout` の選択肢を外す（E3）", "(?: --timeout[ =][0-9]+)?", ""),
+    ("`=` の形を外す（E1）", "(?: --timeout[ =][0-9]+)?", "(?: --timeout [0-9]+)?"),
+    ("時間帯を見ない（E2）", 'datetime.strptime(rec["started"], "%Y-%m-%dT%H:%M:%S%z").timestamp()',
+     'time.mktime(time.strptime(rec["started"][:19], "%Y-%m-%dT%H:%M:%S"))'),
+    ("コマンドを部分一致で比べる（E4）", 'elif m.group(1) != rec.get("command"):', 'elif (rec.get("command") or "") not in m.group(1):'),
+    ("時刻の許容を広げる（E5）", "if begun > taken + 1:", "if begun > taken + 3000:"),
 ]
 
 
@@ -127,10 +142,12 @@ class Fixture:
         self.procs.append(proc)
         return proc
 
-    def record(self, pid: int, command: str, cwd: Path, started: float) -> None:
+    def record(self, pid: int, command: str, cwd: Path, started: float, shift: timedelta = timedelta(0)) -> None:
+        """`shift` は記録を書く時間帯を親（このテスト）の時間帯からずらす量——同じ瞬間を別の表記で書く（#917 の E2）。"""
         self.lockdir.mkdir(exist_ok=True)
-        info = {"pid": pid, "cwd": str(cwd), "command": command,
-                "started": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(started))}
+        local = datetime.now().astimezone().utcoffset() or timedelta(0)
+        stamp = datetime.fromtimestamp(started, timezone(local + shift)).strftime("%Y-%m-%dT%H:%M:%S%z")
+        info = {"pid": pid, "cwd": str(cwd), "command": command, "started": stamp}
         (self.lockdir / f"slot-{self.slot}.lock").write_text(json.dumps(info, ensure_ascii=False))
         self.slot += 1
 
@@ -152,9 +169,6 @@ def cases(code: str) -> list[tuple[str, bool, bool]]:
     with tempfile.TemporaryDirectory() as tmp:
         fx = Fixture(Path(tmp))
         try:
-            later = time.time() + 3600
-            earlier = time.time() - 3600
-
             # 1. 本物の持ち主（worktree の run-serial.py が枠を取って記録を書く）
             out = fx.base / "real.out"
             with open(out, "w") as fh:
@@ -171,15 +185,22 @@ def cases(code: str) -> list[tuple[str, bool, bool]]:
             results.append(("1 本物の持ち主", True, stopped and real.returncode == 143 and not orphan and r.returncode == 0))
 
             def fake_case(name: str, expect: bool, script: str, argv_tail: list[str], cwd: Path,
-                          rec_command: str | None, rec_cwd: Path, started: float, record: bool = True) -> None:
+                          rec_command: str | None, rec_cwd: Path, started: float, record: bool = True,
+                          shift: timedelta = timedelta(0)) -> None:
+                """`started` は偽のプロセスを起こす直前の時刻からの秒数（記録の時刻）。"""
+                spawned = time.time()
                 proc = fx.spawn([sys.executable, str(fx.fake / script), *argv_tail], cwd)
                 if not wait_for(lambda: alive(proc.pid)):
                     sys.exit(f"失格: {name} の偽のプロセスが起きない")
                 if record:
-                    fx.record(proc.pid, rec_command if rec_command is not None else " ".join(argv_tail[1:]), rec_cwd, started)
+                    command = rec_command if rec_command is not None else " ".join(argv_tail[argv_tail.index("--") + 1:] if "--" in argv_tail else argv_tail[1:])
+                    fx.record(proc.pid, command, rec_cwd, spawned + started, shift)
                 res = run_block(code, fx.repo, proc.pid)
-                stopped = wait_for(lambda: proc.poll() is not None, 10.0 if expect else 3.0)
+                # 止めるときはブロックの中で kill してから 2 秒おく——ブロックが終わった後に生きていれば止めていない
+                stopped = wait_for(lambda: proc.poll() is not None, 10.0 if expect else 1.0)
                 results.append((name, expect, stopped and res.returncode == 0))
+
+            later, earlier = 3600, -3600
 
             fake_case("2 合う偽の持ち主（陽性対照）", True, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later)
             fake_case("3 ファイル名が test-run-serial.py", False, "test-run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later)
@@ -188,6 +209,12 @@ def cases(code: str) -> list[tuple[str, bool, bool]]:
             fake_case("6 記録の後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, earlier)
             fake_case("7 `--` の無い起動（holders）", False, "run-serial.py", ["holders"], fx.repo, "holders", fx.repo, later)
             fake_case("8 枠の記録に無い pid", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later, record=False)
+            fake_case("9 `--timeout <秒>` の形", True, "run-serial.py", ["--timeout", "600", "--", "copy", "db"], fx.repo, None, fx.repo, later)
+            fake_case("10 `--timeout=<秒>` の形", True, "run-serial.py", ["--timeout=600", "--", "copy", "db"], fx.repo, None, fx.repo, later)
+            fake_case("11 記録が別の時間帯（同じ瞬間）", True, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, 60,
+                      shift=timedelta(hours=-5))
+            fake_case("12 記録の数秒後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, -5)
+            fake_case("13 記録のコマンドが一部だけ", False, "run-serial.py", ["--", "copy", "db"], fx.repo, "copy", fx.repo, later)
         finally:
             fx.cleanup()
     return results
@@ -197,8 +224,8 @@ def main() -> int:
     code = block()
     failures = 0
     results = cases(code)
-    if len(results) != 8:
-        print(f"失格: ケースが 8 件でない（{len(results)} 件）")
+    if len(results) != CASES:
+        print(f"失格: ケースが {CASES} 件でない（{len(results)} 件）")
         return 1
     for name, expect, actual in results:
         ok = expect == actual
@@ -225,7 +252,7 @@ def main() -> int:
     if killed != len(MUTATIONS):
         print(f"失格: 変異 {len(MUTATIONS)} 件のうち殺せたのは {killed} 件")
         return 1
-    print(f"照合と止め方のテスト: すべて合格（ケース 8 件・変異 {len(MUTATIONS)} 件をすべて殺せた）")
+    print(f"照合と止め方のテスト: すべて合格（ケース {CASES} 件・変異 {len(MUTATIONS)} 件をすべて殺せた）")
     return 0
 
 
