@@ -152,14 +152,14 @@ class Report:
             return 3
         return 0
 
-    def lines(self) -> list[str]:
+    def lines(self, strict_nfr: bool = True) -> list[str]:
         out = []
         for title, items in (("読めない", self.unreadable), ("形式の違反", self.violations), ("表が無い", self.missing),
                              ("必須の欄が空", self.empty), ("未決定の印", self.undecided)):
             if items:
                 out.append(f"{title}（{len(items)} 件）:")
                 out.extend(f"  {item}" for item in items)
-        code = self.code()
+        code = self.code(strict_nfr)  # 終了コードと同じ判定で文面を作る（scaffold の関門は strict_nfr=False）
         if code == 2:
             out.append("読めない表がある。中身を検査していない（判定していない）")
         elif code == 1:
@@ -305,6 +305,10 @@ def check_roles(root: Path, report: Report) -> None:
     roles: dict[str, int] = {}
     for index, role in enumerate(header[1:], start=2):
         where = f"{ROLES}:1"
+        if not role.strip():
+            # 空のロール名は見出しの形の誤り（末尾のカンマなど）——未決定ではない
+            report.violations.append(f"{where}: {index} 列目のロール名が空")
+            continue
         if not cell_state(report, where, f"{index} 列目のロール名", role, False):
             continue
         if role.strip() in roles:
@@ -345,6 +349,7 @@ def check_nfr(root: Path, report: Report) -> None:
         check_columns(report, NFR, header, NFR_COLUMNS)
         return
     numbers: dict[str, int] = {}
+    counts: dict[str, int] = {}
     kinds = []
     for line, fields in rows:
         if len(fields) != len(NFR_COLUMNS):
@@ -353,6 +358,7 @@ def check_nfr(root: Path, report: Report) -> None:
             continue
         row = dict(zip(NFR_COLUMNS, fields))
         numbers.setdefault(row["No"].strip(), line)
+        counts[row["No"].strip()] = counts.get(row["No"].strip(), 0) + 1
         if row["指標"].strip() in NFR_KINDS:
             kinds.append((line, row))
     for line, row in kinds:
@@ -364,6 +370,9 @@ def check_nfr(root: Path, report: Report) -> None:
                 report.violations.append(f"{where}: No が N- に 3 桁以上の数字の形でない: {number!r}")
             elif numbers.get(number) != line:
                 report.violations.append(f"{where}: No が {numbers[number]} 行目と重複: {number}")
+            elif counts.get(number, 0) > 1:
+                # 種類の行が先で、後ろの行が同じ No を使う
+                report.violations.append(f"{where}: No が後ろの行と重複: {number}")
         for column in NFR_REQUIRED:
             cell_state(report, where, column, row[column], False)
         units = NFR_KINDS[kind]
@@ -396,7 +405,7 @@ def inspect(root: Path) -> Report:
 
 def check(root: Path, strict_nfr: bool = True) -> tuple[int, list[str]]:
     report = inspect(root)
-    return report.code(strict_nfr), report.lines()
+    return report.code(strict_nfr), report.lines(strict_nfr)
 
 
 def listed_features(root: Path) -> list[str] | None:

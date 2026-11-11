@@ -1130,9 +1130,9 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
         return 1, problems + ["版の重ね合わせが決まりに反する（references/versions.md）。生成しない"], None
     if IR_PATH not in rendered:
         raise Unjudged(f"重ね合わせた全体に {IR_PATH} が無い（どの版にも中間表現が無い）。判定していない")
-    # 成果物の表の関門は作業中の版の全体だけ（`--upto` で前の版の時点を確かめるときは当てない——前の版は凍結していれば直せず、
+    # 成果物の表の関門は作業中の版の全体だけ（`--upto` で前の版の時点を確かめるときは当てない。`--upto <作業中の版>` には当てる——前の版は凍結していれば直せず、
     # 0.78.0 より前に渡した版は表の決まりを知らない。#957）
-    code, lines, ir, answered = read_whole(rendered, gate=True, provisional=provisional, design_gate=upto is None)
+    code, lines, ir, answered = read_whole(rendered, gate=True, provisional=provisional, design_gate=upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0))
     if code:
         return code, lines, None
     number = upto if upto is not None else len(found)
