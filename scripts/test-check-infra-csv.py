@@ -143,17 +143,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("見出しを見ない", "    if header != COLUMNS:", "    if False:", "見出しの順が違う"),
     ("列の数を見ない", "        if len(fields) != len(COLUMNS):", "        if False:", "列の数"),
     ("項目の重複を見ない", "            if item in items:", "            if False:", "項目の重複"),
-    ("状態の値を見ない", "        if state_known and state not in STATES:", "        if False:", "状態の値"),
+    ("状態の値を見ない", "        if state_known and state not in INFRA_STATES:", "        if False:", "状態の値"),
     ("内部の番号を見ない", "            if qa.is_internal_number(number):", "            if False:", "根拠が内部の表"),
     ("根拠の形を見ない", "            elif not qa.NUMBER.fullmatch(number):", "            elif False:", "根拠の形"),
     ("Q&A 表が無いのを通す", "                if answers is None:", "                if False:", "Q&A 表が無い"),
     ("Q&A 表に無い番号を通す", "                elif number not in answers:", "                elif False:", "根拠が Q&A 表に無い"),
-    ("状態と根拠の状態を照らさない", "                elif state_known and answers[number] != QA_STATE[state]:", "                elif False:",
+    ("状態と根拠の状態を照らさない", "                elif state_known and not qa_matches(state, answers[number]):", "                elif False:",
      "決定なのに根拠が暫定反映"),
-    ("暫定と反映済みを取り違える", 'QA_STATE = {DECIDED: "反映済み", PROVISIONAL: "暫定反映", UNDECIDED: "確認中"}',
-     'QA_STATE = {DECIDED: "反映済み", PROVISIONAL: "反映済み", UNDECIDED: "確認中"}', "暫定なのに根拠が反映済み"),
-    ("未決定の根拠の状態を見ない", 'QA_STATE = {DECIDED: "反映済み", PROVISIONAL: "暫定反映", UNDECIDED: "確認中"}',
-     'QA_STATE = {DECIDED: "反映済み", PROVISIONAL: "暫定反映", UNDECIDED: "反映済み"}', "未決定なのに根拠が反映済み"),
+    ("暫定を is_provisional で見ない", "        return qa.is_provisional(row)\n", "        return True\n", "暫定なのに根拠が反映済み"),
+    ("未決定の根拠の状態を見ない", 'QA_STATE = {DECIDED: "反映済み", TENTATIVE: f"{qa.PROVISIONAL}", UNDECIDED: "確認中"}',
+     'QA_STATE = {DECIDED: "反映済み", TENTATIVE: f"{qa.PROVISIONAL}", UNDECIDED: "反映済み"}', "未決定なのに根拠が反映済み"),
     ("水準の形を見ない", "                if not design.NFR_NUMBER.fullmatch(number):", "                if False:", "水準の形"),
     ("非機能要求の表が無いのを通す", "                if levels is None:", "                if False:", "非機能要求の表が無い"),
     ("水準を照らさない", "                elif number not in levels:", "                elif False:", "水準が非機能要求の表に無い"),
@@ -161,7 +160,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("決定の行の決定を空でよいことにする", '    DECIDED: {"水準"},', '    DECIDED: {"水準", "決定"},', "決定の行の決定が空"),
     ("必ず置く項目を見ない", "    for item in REQUIRED_ITEMS:", "    for item in ():", "必ず置く項目が無い"),
     ("未決定の行を数えない", "        if state_known and state == UNDECIDED:", "        if False:", "未決定の行"),
-    ("暫定の行を数えない", "        if state_known and state == PROVISIONAL:", "        if False:", "暫定の行"),
+    ("暫定の行を数えない", "        if state_known and state == TENTATIVE:", "        if False:", "暫定の行"),
     ("表が無いのを 0 にする", "        if self.missing or self.undecided:", "        if self.undecided:", "表が無い"),
     ("暫定を 0 にする", "        if self.provisional:\n            return 4", "        if False:\n            return 4", "暫定の行"),
     ("暫定を未決定より先にする", "        if self.missing or self.undecided:\n            return 3\n        if self.provisional:\n            return 4",
@@ -263,8 +262,8 @@ def reference_mismatches(module, tree: str, qa_states: list[str]) -> list[str]:
         problems.append(f"必ず置く項目が違う（tree.md {items} ／ 本体 {module.REQUIRED_ITEMS}）")
     states = rows_of(section(infra, "### 状態"))
     names = tuple(row[0].strip("`") for row in states)
-    if names != module.STATES:
-        problems.append(f"状態が違う（tree.md {names} ／ 本体 {module.STATES}）")
+    if names != module.INFRA_STATES:
+        problems.append(f"状態が違う（tree.md {names} ／ 本体 {module.INFRA_STATES}）")
     for row in states:
         if len(row) != 4:
             problems.append(f"状態の表の列の数が 4 でない: {row}")

@@ -296,16 +296,18 @@ def drop_internal(docs: Path) -> None:
 
 
 def compare_at(top: Path, commit: str, tag: str, version: int):
-    """`commit` の時点の v1〜v<version> を重ねた全体と、v2 以降なら v<version-1> との比較を返す。作れなければ Stop。
+    """`commit` の時点の v1〜v<version> を重ねた全体と、v2 以降なら v<version-1> との比較と、重ねた全体のバイト（根からのパス → 中身）を返す。
+    作れなければ Stop。
 
     全体は仕様書の材料、比較は「前の版からの変更」の節（提案書と仕様書）。**v1 でも重ね合わせの決まりを通す**（#374）。
+    バイトは基盤要件のゲート（#950）が読む——`whole.files` は Q&A 表など構造ファイル（`merge-versions.py` の `STRUCTURED`）を持たない。
     """
     with tempfile.TemporaryDirectory() as tmp:
         copy_docs(top, commit, tag, Path(tmp))
         drop_internal(Path(tmp) / signoff.DOCS)
         prefix = str(Path(tmp)) + "/"
         try:
-            problems, _, whole, _ = diffs.merge_versions.merge(Path(tmp) / signoff.DOCS, version)
+            problems, _, whole, rendered = diffs.merge_versions.merge(Path(tmp) / signoff.DOCS, version)
             diff = None
             if not problems and version > 1:
                 problems, diff = diffs.compare(Path(tmp) / signoff.DOCS, version)
@@ -314,7 +316,7 @@ def compare_at(top: Path, commit: str, tag: str, version: int):
     if problems:
         raise Stop(1, [f"{tag}: {line.replace(prefix, '')}" for line in problems]
                    + ["仕様書・前の版との比較を作れない（重ね合わせが決まりに反する）"])
-    return whole, diff
+    return whole, diff, rendered
 
 
 def changes_section(diff, tag: str) -> list[str]:
@@ -662,8 +664,8 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
         raise Stop(1, [f"{info['budget']}:{schedule_path}: 工程が 1 行も無い。提案書の材料が無い"])
     if not estimate:
         raise Stop(1, [f"{info['budget']}:{estimate_path}: 費用が 1 行も無い。提案書の材料が無い"])
-    whole, diff = compare_at(top, info["req_commit"], info["req"], info["version"])
-    infra_gate(whole.files, info["req"])
+    whole, diff, rendered = compare_at(top, info["req_commit"], info["req"], info["version"])
+    infra_gate(rendered, info["req"])
     hand_dir = top / in_version(info["version"], HAND_DIR)
     hand = read_hand(hand_dir)
     if not hand:

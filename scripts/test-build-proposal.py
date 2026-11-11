@@ -628,9 +628,11 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
     # #950: 基盤要件のゲート
-    ("基盤要件のゲートを当てない", '    infra_gate(whole.files, info["req"])\n', "", "基盤要件が未決定なら作らない"),
-    ("基盤要件を作業ツリーから読む", '    infra_gate(whole.files, info["req"])\n',
-     '    infra_gate({infra.INFRA: (top / in_version(info["version"], infra.INFRA)).read_bytes(), **whole.files}, info["req"])\n',
+    ("基盤要件のゲートを当てない", '    infra_gate(rendered, info["req"])\n', "", "基盤要件が未決定なら作らない"),
+    ("基盤要件を Q&A 表の無い全体に当てる", '    infra_gate(rendered, info["req"])\n', '    infra_gate(whole.files, info["req"])\n',
+     "基盤要件が決まっていれば作る"),
+    ("基盤要件を作業ツリーから読む", '    infra_gate(rendered, info["req"])\n',
+     '    infra_gate({**rendered, infra.INFRA: (top / in_version(info["version"], infra.INFRA)).read_bytes()}, info["req"])\n',
      "承認の後に決めた基盤要件は入らない"),
     ("基盤要件の表が無いのを知らせない", "    if report.missing:\n        print(", "    if report.missing:\n        return\n        print(",
      "基盤要件の表が無ければ警告して作る"),

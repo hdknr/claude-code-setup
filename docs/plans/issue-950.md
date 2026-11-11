@@ -33,7 +33,8 @@
 - `plugins/spec-loop/skills/req-loop/SKILL.md` — 回答を基盤要件の表に反映する 1 項・手順 4 の検査と版
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 基盤要件で止まったときの扱いと、決まった基盤要件の受け渡しと版
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 基盤要件で止まったときの扱いと版
-- `plugins/spec-loop/skills/spec-review/SKILL.md`・`autopilot/SKILL.md` — 版の 2 行（spec-review は基盤要件を仕様で決めない 1 項も）
+- `plugins/spec-loop/skills/spec-review/SKILL.md` — 基盤要件を仕様で決めない 1 項と版
+- `plugins/spec-loop/skills/autopilot/SKILL.md` — 版の 2 行
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `scripts/test-check-infra-csv.py` — 新規。検査の回帰テスト（変異テストを含む）
@@ -41,6 +42,7 @@
 - `scripts/test-build-proposal.py` — 基盤要件のゲートの試料と変異
 - `scripts/test-check-signoff.py` — 基盤要件の表だけが違うタグの組が 1 になる試料
 - `scripts/test-init-mkdocs.py` — 表示用ページ（`infra` の印）の試料
+- `scripts/test-check-qa-csv.py` — 暫定の判別を読む側（`READERS`）に `check-infra-csv.py` を足す（1 パス目の関門で広げた。判別を `is_provisional` に通した）
 - `scripts/check-all.py` — 新しいテストの収録
 - `.github/workflows/plugins.yml` — 新しいテストの収録（CI のステップ）
 - `CLAUDE.md` — プロジェクト構成に新しいスクリプトとテストの行
@@ -114,6 +116,10 @@
   選択肢 A: feasibility は進む（暫定と明示）・proposal と scaffold は止める ／ B: 3 段とも止める ／ C: 3 段とも暫定と明示して進む。**推奨 A**——
   見積りは基盤の選択肢の費用を比べる材料なので、基盤が決まる前に要る。提案書（予算の決裁）と scaffold（開発に渡す）は決まっていない基盤で進めると、誰も決めていない基盤が実装される。確認の Issue: （起票後に書く）
 
+## 起票
+
+- この周の起票: 2 件（仕様の穴を推奨で決めた確認の Issue 2 件——表が無いときの扱い・段ごとの止め方）
+
 ## 未解決の判断・確認待ち
 
 - なし（上の 2 つは確認の Issue で利用者に渡す）
@@ -121,8 +127,11 @@
 ## 関門の進捗（再開点）
 
 - 割り目（手順 4・手順 6）: **割らない（cruise の周）**——訊かずに続ける
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- 1 パス目の指摘対応の起点: `38121d2ff4aaf6b96504da4af13d374ae2d87d9d`（1 パス目の関門に渡した時点の HEAD）
+- Verifier 1 パス目: 済み——反証 0 件（観察 2 件。sonnet・`dev-loop:dev-loop-verifier`。報告は agent の種類を「不明」と書いたが、ツールは Read・Bash のみと報告）
+- `/code-review` 1 パス目: 済み——指摘 9 件（high）。手元の `check-all.py` は 4 本赤（下の表の CR1〜CR3）
+- 差し戻し: 「直す」の行（CR1・CR2・CR3・CR4）を手順 4 で直した
+- 割り目（2 パス目の前）: 割らない（cruise の周）
 - 交絡: 実験なし（まだ）
 
 ## 既知の限界・決着済みの論点
@@ -134,3 +143,20 @@
 | 基盤要件の質問を共有の表に置くか（費用だけの選択は内部、の例外） | 共有に置く | Issue が発注者（予算の責任者）の合意が要る要件と書き、レビュー会で回答をもらうとしている。言語・基盤は発注者の資産・保守の人材・ベンダーへの依存に効く |
 | 状態を表に書くか Q&A から導くか | 表に書き、根拠の Q&A の行の状態と食い違えば違反 | Issue の列の案に `状態` がある。書いた状態を Q&A で照らすので、スキルが `決定` と書いて通すことはできない |
 | feasibility のゲートをスクリプトに埋めるか | 埋めない（スキルが `check-infra-csv.py` を当て、3・4 でも進む） | feasibility は止めない段で、判定は `check-infra-csv.py` が持つ。見積りの表の検査は表の形だけを見る |
+| scaffold の未決定の行・build-proposal の暫定（4 → 3）の単独の試料 | 置かない | 未決定の行は根拠の Q&A が `確認中` なので仕様レビューを抜ける条件 1 が先に止め、暫定は照合の 3 が先に止める（どちらも同じ分岐を通る） |
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1: build-proposal が `whole.files`（Q&A 表を持たない）に当て、表があると必ず「Q&A 表が無い」で 1 | 示せる（`check-all.py` の test-build-proposal「基盤要件が決まっていれば作る」が赤） | 4・9 | 直す——`merge` の 4 つ目（重ねた全体のバイト）に当てる。変異「Q&A 表の無い全体に当てる」を足した |
+| CR2: `test-check-qa-csv.py` の静的検査（暫定は `is_provisional` だけで決める）が赤 | 示せる（`check-all.py` で赤） | 9 | 直す——暫定かは `qa.is_provisional` で決める `qa_matches` に通し、定数を改名。`READERS` に足した |
+| CR3: 計画ファイルに件数の行が無い・`autopilot/SKILL.md` が変更範囲に無い | 示せる（check-plan-counts・check-plan-scope が赤） | 9 | 直す |
+| CR4: scaffold の暫定（4）で止めることを判別する試料が無い | 示せる（`if code not in (0, 4)` でも緑） | 4 | 直す——`--provisional` で Q&A の関門を通した暫定の行の試料と変異 |
+| CR5: build-proposal の暫定（4 → 3）の試料が無い | 示せない（照合の 3 が先に止めるので届かない） | 無し | 残課題（決着済みの論点に書いた） |
+| CR6: `--provisional` でも基盤要件の暫定で止まることが文書に無い | 示せる（文言の欠け） | 無し | 残課題 |
+| CR7: 表の無い正本の生成物がバイトで変わらないことを比べていない | 示せない（既存の 400 件の試料は表の無い正本で緑） | 無し | 残課題 |
+| CR8: `--red-check` にもゲートが掛かることが文書に無い | 示せる（文言の欠け） | 無し | 残課題 |
+| CR9: `Python + TypeScript` のような混ざった言語の決定を Python と読む | 示せる | 無し（5 は「Python で始まらない決定で止める」） | 残課題 |
+| V 観察 1: `--provisional` と暫定の緊張 | — | 無し | CR6 と同じ |
+| V 観察 2: 暫定・未決定の行の単独の試料が無い | — | 4 | CR4 で直した（未決定の行は上の決着済み） |

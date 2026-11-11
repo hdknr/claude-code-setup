@@ -79,17 +79,18 @@ COLUMNS = ["項目", "決定", "理由", "費用への影響", "水準", "根拠
 REQUIRED_ITEMS = ("言語", "DBMS", "ホスティング環境")
 LANGUAGE = "言語"
 DECIDED = "決定"
-PROVISIONAL = "暫定"
+TENTATIVE = "暫定"
 UNDECIDED = "未決定"
-STATES = (DECIDED, PROVISIONAL, UNDECIDED)
+INFRA_STATES = (DECIDED, TENTATIVE, UNDECIDED)
 # 状態 → 空でよい列（ほかの列が空なら未決定）
 MAY_BE_EMPTY = {
     DECIDED: {"水準"},
-    PROVISIONAL: {"水準"},
+    TENTATIVE: {"水準"},
     UNDECIDED: {"決定", "理由", "費用への影響", "水準"},
 }
 # 状態 → 根拠の Q&A の行の状態（`references/qa-csv.md` の「状態」）
-QA_STATE = {DECIDED: "反映済み", PROVISIONAL: "暫定反映", UNDECIDED: "確認中"}
+# **暫定の行かの判別は `check-qa-csv.py` の `is_provisional` だけで決める**（写さない——`qa_matches`）。ここの `暫定` の値は表示の名前
+QA_STATE = {DECIDED: "反映済み", TENTATIVE: f"{qa.PROVISIONAL}", UNDECIDED: "確認中"}
 # 水準に複数の No を並べるときの区切り
 LEVEL_SEPARATOR = "・"
 
@@ -205,6 +206,13 @@ def column_values(read: Callable[[str], str | None], rel: str, key: str, value: 
     return out
 
 
+def qa_matches(state: str, row: dict[str, str]) -> bool:
+    """表の状態と、根拠の Q&A の行の状態が対応するか。暫定かは `check-qa-csv.py` の `is_provisional` で決める（#404 と同じく写さない）。"""
+    if state == TENTATIVE:
+        return qa.is_provisional(row)
+    return not qa.is_provisional(row) and row["状態"].strip() == QA_STATE[state]
+
+
 def cell_state(report: Report, where: str, column: str, value: str, may_be_empty: bool) -> bool:
     """セルが決まっているか。空・印なら未決定に足して False（値の決まりに当てない）。"""
     hits = design.markers(value)
@@ -227,7 +235,7 @@ def check_rows(read: Callable[[str], str | None], report: Report) -> None:
     if header != COLUMNS:
         report.violations.append(f"{INFRA}:1: 見出しの行が決まりと違う（期待: {','.join(COLUMNS)} ／ 実際: {','.join(header)}）")
         return
-    answers: dict[str, str] | None | bool = False  # 読むまでは False（根拠を指す行が無ければ Q&A 表を読まない）
+    answers: dict[str, dict[str, str]] | None | bool = False  # 読むまでは False（根拠を指す行が無ければ Q&A 表を読まない）
     levels: dict[str, str] | None | bool = False
     items: dict[str, int] = {}
     for line, fields in rows:
@@ -238,8 +246,8 @@ def check_rows(read: Callable[[str], str | None], report: Report) -> None:
         row = dict(zip(COLUMNS, fields))
         state = row["状態"].strip()
         state_known = cell_state(report, where, "状態", row["状態"], False)
-        if state_known and state not in STATES:
-            report.violations.append(f"{where}: 状態 が {'・'.join(STATES)} のどれでもない: {state!r}")
+        if state_known and state not in INFRA_STATES:
+            report.violations.append(f"{where}: 状態 が {'・'.join(INFRA_STATES)} のどれでもない: {state!r}")
             state_known = False
         empty_ok = MAY_BE_EMPTY[state] if state_known else MAY_BE_EMPTY[UNDECIDED]
         item = row["項目"].strip()
@@ -254,7 +262,7 @@ def check_rows(read: Callable[[str], str | None], report: Report) -> None:
             report.decided.setdefault(item, row["決定"].strip())
         if state_known and state == UNDECIDED:
             report.undecided.append(f"{where}: {item or '(項目なし)'} が未決定（根拠 {row['根拠'].strip() or '(なし)'} の回答待ち）")
-        if state_known and state == PROVISIONAL:
+        if state_known and state == TENTATIVE:
             report.provisional.append(f"{where}: {item or '(項目なし)'} が暫定（根拠 {row['根拠'].strip() or '(なし)'} の確認待ち）: "
                                       f"{row['決定'].strip()!r}")
         # 根拠: 共有の Q&A 表の行で、その行の状態が表の状態と対応する
@@ -267,13 +275,14 @@ def check_rows(read: Callable[[str], str | None], report: Report) -> None:
                 report.violations.append(f"{where}: 根拠 が共有の Q&A 表の番号（Q-001・Q-F-001）の形でない: {number!r}")
             else:
                 if answers is False:
-                    answers = column_values(read, QA, "No", "状態")
+                    states = column_values(read, QA, "No", "状態")
+                    answers = None if states is None else {no: {"状態": value} for no, value in states.items()}
                 if answers is None:
                     report.violations.append(f"{where}: 根拠 {number} を照らす Q&A 表（{QA}）が無い")
                 elif number not in answers:
                     report.violations.append(f"{where}: 根拠 {number} が Q&A 表（{QA}）に無い")
-                elif state_known and answers[number] != QA_STATE[state]:
-                    report.violations.append(f"{where}: 状態 {state!r} なのに、根拠 {number} の Q&A の状態が {answers[number]!r}"
+                elif state_known and not qa_matches(state, answers[number]):
+                    report.violations.append(f"{where}: 状態 {state!r} なのに、根拠 {number} の Q&A の状態が {answers[number]['状態']!r}"
                                              f"（状態 {state!r} なら {QA_STATE[state]!r}）")
         # 水準: 非機能要求の表の No を `・` で区切る
         if cell_state(report, where, "水準", row["水準"], "水準" in empty_ok):
