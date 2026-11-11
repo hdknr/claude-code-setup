@@ -39,7 +39,8 @@ scaffold/                    # dev-loop に渡す契約（scaffold が生成し�
 ├── openapi.json
 ├── types.py
 ├── tests/test_<機能>.py     # Red テスト
-└── perf/perf_<機能>.py      # 性能テスト（性能の要求 nfr を指す機能だけ。nfr.md）
+├── perf/perf_<機能>.py      # 性能テスト（性能の要求 nfr を指す機能だけ。nfr.md）
+└── refs/                    # 参考資料の写しと目録 index.md（中間表現の refs を持つ機能があるときだけ。下の「scaffold の出力」）
 build/merged/                # 版を重ね合わせた全体（生成物。commit しない。versions.md）
 spec-review/v<n>.csv         # 仕様レビューの実行の記録（版ごと。commit する。docs/ の外——列と理由は spec-exit.md の「実行の上限と記録」）
 docs/index.md                # 表紙（下の「ドキュメントのツール」。版の外）
@@ -525,12 +526,18 @@ Issue の本文は**登録すれば GitHub に残る**ので、commit しなく�
 | `scaffold/types.py` | 入出力の型（Python の `TypedDict`） |
 | `scaffold/tests/test_<機能>.py` | Red テスト（Python の `unittest`。実装が無ければ失敗する） |
 | `scaffold/perf/perf_<機能>.py` | 性能テスト（Python の `unittest`。中間表現の `nfr` を持つ機能だけ。実装が無ければ失敗し、1 回ずつ呼んだ時間を上限と比べる。受入基準ではない——`nfr.md`） |
+| `scaffold/refs/<パス>`・`scaffold/refs/index.md` | 参考資料の写し（中間表現の `refs` が指す `requirements/` のファイルの、重ね合わせた全体のバイトそのもの。パスは全体の根からのまま）と、写しの目録（パスと sha256）。`refs` を持つ機能があるときだけ。受入基準ではない——`handoff-issue.md` の「参考資料」 |
+
+**`scaffold/refs/` の写しを消す・古いと言うのは、生成の印を持つ目録 `index.md` に載ったものだけ**——目録に無いファイルを置いても消さない（`--check` も数えない）。
+**写しは手で直さない**——元（版の `requirements/` のファイル）を直して作り直す。
 
 **正本と開発のリポジトリが別なら**、`scaffold/` を開発のリポジトリへどう写すかは正本リポジトリの `CLAUDE.md` に
 書いてもらう。**Issue の本文が指紋を持つのは、中間表現（重ね合わせた全体の `build/merged/spec/spec_ir.json`）の中のその機能と
 Red テストと性能テスト（sha256）だけ**——`openapi.json`・`types.py` は指紋を持たず、中間表現は `scaffold/` の外にあり、commit もしない。
 dev-loop は本文の指紋と sha256 を手元の中間表現と Red テストに当てるので、**開発のリポジトリにも正本の版を写して
 重ね合わせるか、どこで当てるかを決めて書く**。
+**参考資料（UI モック・業務フロー・画面遷移の図。#951）は `scaffold/refs/` に写しがある**ので、`scaffold/` を写せば開発のリポジトリから辿れる——
+本文は `build/merged/` のパスと写しのパスの両方を書く（`handoff-issue.md` の「参考資料」）。
 
 ## ドキュメントのツール
 

@@ -6,7 +6,8 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 作るもの（置き場所の正は `references/tree.md`）:
 
-- `scaffold/openapi.json`・`scaffold/types.py`・`scaffold/tests/test_<機能>.py`（Red テスト）・`scaffold/perf/perf_<機能>.py`（性能テスト。`nfr` を持つ機能だけ）——**commit する契約**
+- `scaffold/openapi.json`・`scaffold/types.py`・`scaffold/tests/test_<機能>.py`（Red テスト）・`scaffold/perf/perf_<機能>.py`（性能テスト。`nfr` を持つ機能だけ）・
+  `scaffold/refs/<パス>` と `scaffold/refs/index.md`（参考資料の写しと目録。`refs` を持つ機能があるときだけ）——**commit する契約**
 - `build/scaffold/issues/<機能の id>.md` と `issues.json`——**Issue の本文**（登録はスクリプトの外。`gh` を呼ばない）。`--bundle` でまとめた機能は
   `bundle-<機能の id>-<機能の id>.md` の 1 件（下の「まとめた本文」）
 - `build/scaffold/issues/proposals.md`——**課題一覧（案）**（#855。Issue の本文ではない。登録しない——下の「呼ぶ側の分岐」）
@@ -57,6 +58,15 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **未決定事項**（`branches` に無い分岐）・**受入基準の雛形**（見せるものの原文のチェックボックス）・**作らないもの**（本文の `## 作らないもの` と同じ中身）を付ける。
 **未決定事項があっても止めない**（案は登録しないので。件数を出す）。案を登録するか・未決定事項を spec-review に戻すかは `scaffold` スキルの手順 7
 （決まりの正は `references/spec-ir.md` の「呼ぶ側の分岐」）。
+
+**参考資料（`refs`。#951）**: 中間表現の機能の `refs` に、重ね合わせた全体の `requirements/` の中のファイル（UI モック・業務フローの図・画面遷移の図など）を
+根からのパスで書く。**`requirements/` の中に原文のまま（大文字小文字も）在るファイルでない・`.` で始まる場所・バッククォートか `\\` を含む・空の配列・重複なら 1**。本文の `## 参考資料` に
+`build/merged/<パス>` と写し `scaffold/refs/<パス>` を並べ、**受入基準ではない**こと（食い違ったら仕様の穴として Q&A 表に起票する）を書く——参照の無い機能は「無い」と書き、
+撤去の本文は 1 行だけ。**正本と開発のリポジトリが別でも辿れるよう、参照したファイルのバイトの写しを契約 `scaffold/refs/<パス>` に置き**、目録 `scaffold/refs/index.md`
+（生成の印つき。パスと sha256）を置く——**目録に載った写しだけ**を、消してよい・残っていたら古いと言ってよい生成物に数える（目録に無いファイルは消さない。消して空になった親のディレクトリは `scaffold/refs/` まで消す）。
+**`refs` を持たない中間表現の契約は 1 バイトも変わらない**（目録も作らない）。どのファイルがその機能に関わるかは書き起こす側の判断で、機械は在ることだけを見る。
+参照先の中身だけを直しても機能は変わらない（指紋は機能のオブジェクトだけを覆う）——写しが古いことは `--check` が言う
+（決まりの正は `references/spec-ir.md` の「参考資料」と `references/handoff-issue.md` の「参考資料」）。
 
 **トレースのケース（`trace`。#923）**: ケースに `input`・`expected`・`error` の代わりに `trace` を書くと、形式検査の反例の実行順
 （`calls` の呼び出しと `steps` の段の並び）を実装の口で強制して再現する Red テストを、その機能の Red テストのファイルに足す。
@@ -239,7 +249,7 @@ FEATURE_MARKER = "<!-- spec-loop-feature: {} -->"
 CHANGE_MARKER = "<!-- spec-loop-change: {}; base={} -->"
 ADD, MODIFY, REMOVE = "add", "modify", "remove"
 NO_BASE = "none"
-SECTIONS = ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 作らないもの", "## 仕様の穴を見つけたら")
+SECTIONS = ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 参考資料", "## 作らないもの", "## 仕様の穴を見つけたら")
 # `## 作らないもの` の小見出し（#851）
 NOT_BUILT = ("### 範囲の外", "### 次の版の候補", "### 性能予算")
 # 範囲の外の行のうち、次の版で受け持つ候補の印（`references/spec-scope.md` の「範囲の文書」の写し）
@@ -284,6 +294,19 @@ CALLED_BY = "called_by"
 OUT_OF_SCOPE = "out_of_scope"
 # 機能に効く性能の要求の行の `No` の配列（任意。`references/spec-ir.md` の「性能の要求」。#852）
 NFR = "nfr"
+# 機能に関係する参考資料（UI モック・業務フロー・画面遷移の図など）の、重ね合わせた全体の根からのパスの配列（任意。
+# `references/spec-ir.md` の「参考資料」。#951）——指せるのは `requirements/` の中だけ。写しは契約の `refs/` に置き、目録を `refs/index.md` に書く
+REFS = "refs"
+REQUIREMENTS_DIR = "requirements"
+REFS_DIR = "refs"
+REFS_INDEX = f"{REFS_DIR}/index.md"
+# 目録の行（`- `<パス>`（sha256: `<64 桁>`）`）。目録に載った写しだけを生成物に数える
+REFS_LINE = re.compile(r"- `([^`]+)`（sha256: `[0-9a-f]{64}`）")
+# 本文の `## 参考資料` の文言（`references/handoff-issue.md` の「参考資料」の写し）
+REFS_NOT_CRITERIA = ("**参考資料は受入基準ではない**——受入基準は上の Red テストの表である。参考資料（UI モック・業務フロー・画面遷移の図など）は、"
+                     "見た目・配置・機能どうしのつながりを読むためのもの。参考資料が Red テスト・仕様の原文と食い違うと読めたら、"
+                     "実装で決めず、仕様の穴として Q&A 表に起票する（下の「仕様の穴を見つけたら」）。")
+REFS_NONE = "この機能に結びつけた参考資料（中間表現の `refs`）は無い。"
 # 呼ぶ側の分岐の書き起こし（任意。`references/spec-ir.md` の「呼ぶ側の分岐」。#855）——分岐の名前 → 見せるもの（`shows`）か
 # 該当なし（`none`）。行ごと該当なしは `none` だけ。分岐の名前は `references/spec-ir.md` の分岐の表の写し
 BRANCHES_KEY = "branches"
@@ -515,6 +538,34 @@ def check_source(where: str, sources, whole: Path) -> list[str]:
     return problems
 
 
+def check_refs(where: str, refs, whole: Path) -> list[str]:
+    """機能の `refs`（#951）——重ね合わせた全体の根からのパスで、`requirements/` の中に**原文のまま**在るファイル。
+
+    在るかは `requirements/` の下のファイルの一覧と文字列で比べる（`resolve` で比べない）——`requirements/./a.svg`・`../`・
+    大文字小文字だけ違う綴りは、大文字小文字を区別しないファイルシステムでも在ることにしない（写しの置き場所と本文のパスが一意に決まるように）。"""
+    if not isinstance(refs, list) or not refs:
+        return [f"{where}: 参考資料のファイルの配列（1 つ以上）でない"]
+    problems = []
+    folder = whole / REQUIREMENTS_DIR
+    present = ({path.relative_to(whole).as_posix() for path in folder.rglob("*") if path.is_file()}
+               if folder.is_dir() else set())
+    for rel in refs:
+        if not isinstance(rel, str) or not one_line(rel):
+            problems.append(f"{where}: 重ね合わせた全体の根からの相対パスでない（{rel!r}）")
+        elif "`" in rel or "\\" in rel or rel.splitlines() != [rel]:
+            # 本文のコードスパンと目録の行（`REFS_LINE`）に書けず、目録から読み戻せない——外した後に写しが残る
+            problems.append(f"{where}: {rel!r} はバッククォートか \\ か行の区切り（U+2028 など）を含む（本文と目録に書けない）")
+        elif not rel.startswith(f"{REQUIREMENTS_DIR}/"):
+            problems.append(f"{where}: {rel} は {REQUIREMENTS_DIR}/ の中に無い（参考資料は利用者向けの要求の図・モックを指す）")
+        elif any(part.startswith(".") for part in rel.split("/")):
+            problems.append(f"{where}: {rel} は `.` で始まる場所にある")
+        elif rel not in present:
+            problems.append(f"{where}: {rel} が無い（重ね合わせた全体の {REQUIREMENTS_DIR}/ に、この綴りのファイルが無い）")
+    if len(set(map(str, refs))) != len(refs):
+        problems.append(f"{where}: 同じファイルを 2 度指している")
+    return problems
+
+
 def check_ref(where: str, ref, sources, whole: Path) -> list[str]:
     """ケースの `ref`——仕様の中でそのケースの元になった行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。#465）。
     機能の `source` の原文のどれかに、前後に英数字・`_`・`-` が続かない形で現れなければ断る（別の番号の一部は数えない）。
@@ -596,7 +647,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     for index, feature in enumerate(features):
         where = f"features[{index}]"
         found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"},
-                             {CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})
+                             {CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})
         if found:
             problems += found
             if not isinstance(feature, dict):
@@ -616,6 +667,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             problems += check_source(f"{where}.source", feature["source"], whole)
         if "qa" in feature:
             problems += check_qa_refs(f"{where}.qa", feature["qa"], answered, provisional)
+        if REFS in feature:
+            problems += check_refs(f"{where}.{REFS}", feature[REFS], whole)
         if OUT_OF_SCOPE in feature:
             problems += check_out_of_scope(f"{where}.{OUT_OF_SCOPE}", feature[OUT_OF_SCOPE], whole)
         if NFR in feature:
@@ -1106,6 +1159,7 @@ class Loaded:
         self.infra: str | None = None  # 決まった基盤要件の 1 行（書く生成と --dry-run で出す。#950）
         self.scope = scope  # 範囲の文書（`spec/scope.md`）のバイト。無ければ None
         self.nfr = nfr  # 性能の要求の表（`shared/nfr.csv`）のバイト。無ければ None
+        self.refs: dict[str, bytes] = {}  # 機能の `refs` が指すファイル（全体の根からのパス → バイト。#951）
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
         self.answered = answered  # Q&A の行（No → 行）
         self.number = number  # 重ねた最後の版の番号
@@ -1156,6 +1210,8 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     loaded.provisional = provisional
     loaded.notes = notes
     loaded.infra = settled
+    # 検査（`check_refs`）を通った後なので、指したパスは重ね合わせた全体に在る
+    loaded.refs = {rel: rendered[rel] for feature in features_of(ir) for rel in feature.get(REFS, [])}
     return 0, [], loaded
 
 
@@ -2246,10 +2302,11 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         lines += qa_rows(refs, before.answered, f"{previous} の時点の {tables} ")
     else:
         lines += qa_rows(refs, loaded.answered, f"生成した時点の {tables} ")
-    lines += ["", SECTIONS[4], ""] + not_built(change, loaded, contract)
+    lines += ["", SECTIONS[4], ""] + references(change)
+    lines += ["", SECTIONS[5], ""] + not_built(change, loaded, contract)
     lines += [
         "",
-        SECTIONS[5],
+        SECTIONS[6],
         "",
         f"**実装で決めない。** 作業中の版の Q&A 表（`{DOCS}/v<n>/{QA_PATH}`）に起票元 `開発` で起票して、要求側に差し戻す。",
         "手順は dev-loop の `references/spec-gap.md` にある。",
@@ -2263,6 +2320,19 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
                      "この Issue は手元の仕様と別の時点のもの**——")
     lines.append("実装に入らず、同じく差し戻す。")
     return "\n".join(lines) + "\n"
+
+
+def references(change: Change) -> list[str]:
+    """`## 参考資料` の節の中身（#951。`references/handoff-issue.md` の「参考資料」）。並びは中間表現の `refs` の順。"""
+    if change.kind == REMOVE:
+        return ["撤去の Issue なので、参考資料は無い——消した機能の画面・流れを作らない。"]
+    refs = change.feature.get(REFS, [])
+    lines = [REFS_NOT_CRITERIA, ""]
+    if not refs:
+        return lines + [REFS_NONE]
+    lines += [f"- `{merged(rel)}`（写し: `{OUT_DIR}/{REFS_DIR}/{rel}`）" for rel in refs]
+    return lines + ["", f"（`{MERGED_DIR}/` は上の `## 仕様` のコマンドで作る。写しは `{OUT_DIR}/` の契約で、"
+                        f"正本と開発のリポジトリが別でも `{OUT_DIR}/` を写せば届く。）"]
 
 
 def not_built(change: Change, loaded: Loaded, contract: dict[str, str]) -> list[str]:
@@ -2406,10 +2476,11 @@ def proposals(changes: list[Change], loaded: Loaded, contract: dict[str, str]) -
     return "\n".join(lines) + "\n"
 
 
-def render_contract(loaded: Loaded) -> dict[str, str]:
+def render_contract(loaded: Loaded) -> dict[str, str | bytes]:
     """{`scaffold/` からの相対パス: 中身} を返す。契約は全体から作る（変わっていない機能も）。
 
     性能テストは `nfr` を持つ機能だけ（#852）——持たない中間表現の契約は、`nfr` を足す前と 1 バイトも変わらない。
+    参考資料の写し（バイトのまま）と目録は `refs` を持つ機能があるときだけ（#951）——持たない中間表現の契約は変わらない。
     """
     ir = loaded.ir
     impl_module = ir.get("impl_module", DEFAULT_IMPL_MODULE)
@@ -2420,7 +2491,20 @@ def render_contract(loaded: Loaded) -> dict[str, str]:
         rows = performance(loaded, feature)
         if rows:
             contract[f"{PERF_DIR}/{perf_file(feature)}"] = perf_test(feature, rows, impl_module)
+    if loaded.refs:
+        for rel in sorted(loaded.refs):
+            contract[f"{REFS_DIR}/{rel}"] = loaded.refs[rel]
+        contract[REFS_INDEX] = refs_index(loaded.refs)
     return contract
+
+
+def refs_index(refs: dict[str, bytes]) -> str:
+    """参考資料の写しの目録（`scaffold/refs/index.md`。#951）。1 行目に生成の印。目録に載った写しだけを生成物に数える。"""
+    lines = [f"<!-- {GENERATED} -->", "", "# 参考資料の写し", "",
+             f"中間表現（`{IR_PATH}`）の機能の `{REFS}` が指す `{REQUIREMENTS_DIR}/` のファイルを、重ね合わせた全体から写したもの。"
+             f"正本と開発のリポジトリが別でも、`{OUT_DIR}/` を写せば届く。**受入基準ではない**——受入基準は `tests/` の Red テストである。", ""]
+    lines += [f"- `{rel}`（sha256: `{sha256(refs[rel])}`）" for rel in sorted(refs)]
+    return "\n".join(lines) + "\n"
 
 
 def parse_bundles(values: list[str]) -> tuple[list[list[str]], str | None]:
@@ -2749,7 +2833,39 @@ def generated_tests(out: Path) -> set[str]:
     return found
 
 
-def stale(out: Path, contract: dict[str, str]) -> list[str]:
+def generated_refs(out: Path) -> set[str]:
+    """前に作った参考資料の写し（#951）——生成の印を持つ目録 `scaffold/refs/index.md` と、そこに載ったパス（`refs/<パス>`）。
+
+    **目録に載っていないファイルは数えない**（手で置いたものを消さない）。目録の行のパスは、`..`・`.`・空の部分・`\\`・
+    絶対パスを含めば数えない（目録を書き換えて `scaffold/refs/` の外を消させない）。"""
+    index = out / REFS_INDEX
+    try:
+        text = index.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return set()
+    if GENERATED not in text.split("\n", 1)[0]:
+        return set()
+    found = {REFS_INDEX}
+    refs_root = (out / REFS_DIR).resolve()
+    for line in text.splitlines():
+        match = REFS_LINE.fullmatch(line)
+        if not match:
+            continue
+        rel = match.group(1)
+        if "\\" in rel or rel.startswith("/") or any(part in ("", ".", "..") for part in rel.split("/")):
+            continue
+        if not (out / REFS_DIR / rel).resolve().is_relative_to(refs_root):
+            continue  # `scaffold/refs/` の中のシンボリックリンクを経由して外を指す行も数えない
+        found.add(f"{REFS_DIR}/{rel}")
+    return found
+
+
+def leftovers(out: Path, contract: dict[str, str | bytes]) -> list[str]:
+    """前に作った生成物のうち、今の契約に無いもの（`scaffold/` からの相対パス）。"""
+    return sorted((generated_tests(out) | generated_refs(out)) - contract.keys())
+
+
+def stale(out: Path, contract: dict[str, str | bytes]) -> list[str]:
     problems = []
     for rel, text in contract.items():
         path = out / rel
@@ -2759,10 +2875,13 @@ def stale(out: Path, contract: dict[str, str]) -> list[str]:
             problems.append(f"{OUT_DIR}/{rel}: 無い（生成していない）")
             continue
         # 文字列で読むと改行が正規化され、CRLF に書き換えたものを新しいと言う
-        if current != text.encode("utf-8"):
+        if current != (text if isinstance(text, bytes) else text.encode("utf-8")):
             problems.append(f"{OUT_DIR}/{rel}: 今の入力から作るものと違う（古い・手で直した）")
-    for rel in sorted(generated_tests(out) - contract.keys()):
+    for rel in leftovers(out, contract):
+        if not (out / rel).exists():
+            continue  # 目録に載っていても、もう無い写しは残っていない
         problems.append(f"{OUT_DIR}/{rel}: " + ("性能の要求（nfr）を指す機能に無い性能テストが残っている" if rel.startswith(f"{PERF_DIR}/")
+                                               else "中間表現の refs に無い参考資料の写しが残っている" if rel.startswith(f"{REFS_DIR}/")
                                                else "中間表現に無い機能の Red テストが残っている"))
     return problems
 
@@ -2775,15 +2894,21 @@ def clear_issues(repo: Path) -> None:
         path.unlink()
 
 
-def write(repo: Path, contract: dict[str, str], issues: dict[str, str]) -> None:
+def write(repo: Path, contract: dict[str, str | bytes], issues: dict[str, str]) -> None:
     # **1 つ目のファイルに触る前に、全部をバイトにする**——符号化で落ちるなら、何も書かないうちに落ちる
-    contract_bytes = {rel: text.encode("utf-8") for rel, text in contract.items()}
+    contract_bytes = {rel: text if isinstance(text, bytes) else text.encode("utf-8") for rel, text in contract.items()}
     issue_bytes = {name: text.encode("utf-8") for name, text in issues.items()}
     # **契約に触る前に前の Issue の本文を消す**——書き込みが途中で失敗しても、古い本文が新しい契約と並ばない
     clear_issues(repo)
     out = repo / OUT_DIR
-    for rel in sorted(generated_tests(out) - contract.keys()):
-        (out / rel).unlink()
+    for rel in leftovers(out, contract):
+        (out / rel).unlink(missing_ok=True)
+        if rel.startswith(f"{REFS_DIR}/"):
+            # 写しの親が空になったら `refs/` まで遡って消す——空のディレクトリが残ると、後で同じ名前のファイルを書けない
+            parent = (out / rel).parent
+            while parent != out and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
     for rel, data in contract_bytes.items():
         path = out / rel
         path.parent.mkdir(parents=True, exist_ok=True)
