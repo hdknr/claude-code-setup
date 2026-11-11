@@ -43,6 +43,7 @@ scaffold/                    # dev-loop に渡す契約（scaffold が生成し�
 └── refs/                    # 参考資料の写しと目録 index.md（中間表現の refs を持つ機能があるときだけ。下の「scaffold の出力」）
 build/merged/                # 版を重ね合わせた全体（生成物。commit しない。versions.md）
 spec-review/v<n>.csv         # 仕様レビューの実行の記録（版ごと。commit する。docs/ の外——列と理由は spec-exit.md の「実行の上限と記録」）
+spec-review/v<n>-findings.csv  # 仕様レビューの指摘の表（1 指摘 1 行。同上——列は spec-exit.md の「指摘の表」）
 docs/index.md                # 表紙（下の「ドキュメントのツール」。版の外）
 docs/qa.md                   # Q&A 表の表示用ページ（同上。正本は各版の shared/qa.csv）
 docs/decision-table.md       # 決定表の表示用ページ（同上。正本は各版の shared/decision_table.csv）

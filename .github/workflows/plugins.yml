@@ -328,6 +328,10 @@ jobs:
       - name: spec-loop の基盤要件の表の検査のテスト（#950）
         run: python3 scripts/test-check-infra-csv.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 6 が指摘の表に当てる）。
+      - name: spec-loop の指摘の表の検査のテスト（#982）
+        run: python3 scripts/test-check-findings-csv.py
+
       # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
       - name: spec-loop の図の書き出しのテスト（#268）
         run: python3 scripts/test-render-diagrams.py
