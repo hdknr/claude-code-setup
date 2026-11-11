@@ -83,6 +83,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `shared/nfr.csv` の可用性などの種類の行）の検査（#957。**形式の違反（1）・表が無い（止めない）・必須の欄が空と未決定の印（3）を分けて出す**。
       `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
       決まりの原本は `references/tree.md` の「システム設計書の成果物」、守る／守らないは docstring を正とする。テストは `scripts/test-check-design-csv.py`）
+    - `scripts/check-infra-csv.py` - 基盤要件の表（`shared/infra.csv`。言語・DBMS・ホスティング環境など）の検査とゲートの判定（#950。
+      **形式の違反（1）・未決定（3。表が無いときも）・暫定（4）を分けて出し、表の状態と根拠の Q&A の行の状態の対応も照らす**。
+      feasibility がゲートに当て（止めない）、`scaffold.py`（未決定・暫定・Python でない言語で止める）と `build-proposal.py`（未決定で 1・暫定で 3）が読み込んで当てる。
+      表が無ければ両方とも警告して進む。決まりの原本は `references/tree.md` の「基盤要件」、守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-csv.py`）
     - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
       作れなければ**前の出力を消す**——**消せなければ 2 で止まり、残った出力を名指しする**（#499）。テストは `scripts/test-schedule-to-gantt.py`）
     - `scripts/render-diagrams.py` - 正本リポジトリの `docs/` の下の drawio と BPMN を隣の SVG に書き出し、**ソースの指紋を書き出しに書き込む**
@@ -312,6 +316,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-design-csv.py` - spec-loop のシステム設計書の成果物の表の検査（#957）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の
     「性能のほかの種類」の表と一致することも見る**（`test-check-qa-csv.py` と同じ形）
+  - `test-check-infra-csv.py` - spec-loop の基盤要件の表の検査（#950）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数が `references/tree.md` の「基盤要件」の表と一致すること・
+    根拠の Q&A の状態の名前が `check-qa-csv.py` の状態にあることも見る**（`test-check-design-csv.py` と同じ形）
   - `test-render-diagrams.py` - spec-loop の図の書き出し（#268・BPMN は #901）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**偽の draw.io の CLI を `DRAWIO` で、偽の BPMN の描画口を `BPMN_RENDER` で差し、既定のパスは
     `SPEC_LOOP_DRAWIO_DEFAULT`・`SPEC_LOOP_CHROME_DEFAULT` で、`PATH` は一時ディレクトリだけに差し替える**——本物の draw.io・Chrome・Node には届かない。書き出しの見た目は見ない

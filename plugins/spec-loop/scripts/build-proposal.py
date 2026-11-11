@@ -25,6 +25,10 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   **v2 以降で `shared/qa.csv` を置かない版**（Q&A を足さない版。`references/versions.md`）は、Q&A を 0 行として作る。
   v1 では `qa.csv` が無ければ作らない。
 - 読んだ表は決まりの検査（`check-qa-csv.py`・`check-feasibility-csv.py`）を通す。通らなければ書かない。
+- **基盤要件のゲート（#950）**: `signoff/v<n>/req-<k>` の時点の v1〜v<n> を重ねた全体（仕様書の材料と同じ）の `shared/infra.csv` に
+  同梱の `check-infra-csv.py` を当てる——**形式の違反・未決定は 1、暫定は 3、読めなければ 2 で書かない**（予算の決裁を、誰も決めていない
+  基盤で進めない）。暫定は、根拠の Q&A が `暫定反映` なので照合の 3 が先に止める。**表が無ければ止めず、標準エラーに警告して書く**
+  （前からの正本は表を持たない）。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」。
 - **暫定の行**（判別は `check-qa-csv.py` の `is_provisional`。決まりの正は `references/qa-csv.md` の「暫定の行の判別」）は
   主な決定事項に載せず、「利用者にまだ確かめていない決定」の節に載せる（0 件でも節を出す。#366）。
   **照合が 3 で止めるので、書いた提案書ではこの節は 0 件になる**（#404 で判別を状態だけにした）——節は、決裁者に
@@ -61,13 +65,13 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 終了コード:
 
 - 0: 書いた
-- 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い——書いていない
+- 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い・基盤要件が決まっていない（#950）——書いていない
 - 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・手書き部分のフォルダの綴りが書いた綴りと大文字小文字だけ違う（#514）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
   印に無いファイルが出力の名前で在る・印が読めない（書き換えない。#512）・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440。
   印が名指しする出力が先の在る symlink のときを含む——#512）・
   想定外の例外（128KB を超えるセルの `csv.Error` など。#286。前の出力は作り始める前に消してあり、書いている途中なら書きかけを消す）——書いていない。
   **git を起動できない・手書き部分を読めない・出力を書けない・一時ファイルを読み書きできないは、別の文言で strerror とパスを出す**
-- 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）——書いていない
+- 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）・基盤要件に暫定の行がある（#950）——書いていない
 
 **守らないもの**: 手書き部分の中身（判断であって一意に決まらない）・見た目（Markdown を表示して目で見る）・
 PPTX がアプリで開けること（見るのは部品の揃いと XML の整形式まで）・前の版の暫定の行（提案書に載るのはその版の `qa.csv` だけ）。
@@ -105,6 +109,8 @@ diffs = _load("diff_versions", "diff-versions.py")
 pptx = _load("qa_to_pptx", "qa-to-pptx.py")
 # 図の書き出しの印と指紋（#902）。判定の式を 2 箇所に置かない
 diagrams = _load("render_diagrams", "render-diagrams.py")
+# 基盤要件の表の検査とゲートの判定（#950。写さない）
+infra = _load("check_infra_csv", "check-infra-csv.py")
 
 # 版のディレクトリ（`docs/v<n>/`）からのパス
 QA_PATH = "shared/qa.csv"
@@ -621,6 +627,20 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
     return "\n".join(out), figures
 
 
+def infra_gate(files: dict[str, bytes], tag: str) -> None:
+    """基盤要件のゲート（#950。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」）。`files` は `tag` の時点の重ねた全体。
+    形式の違反・未決定は Stop(1)、暫定は Stop(3)、読めなければ Stop(2)。表が無ければ止めずに標準エラーで知らせる。"""
+    report = infra.inspect_files(files)
+    if report.missing:
+        print(f"{tag}: 基盤要件の表（{infra.INFRA}）が無い——{'・'.join(infra.REQUIRED_ITEMS)}が決まっていないまま提案書を作る"
+              "（決めるなら feasibility で推奨付きの質問を起票して表を作る。references/tree.md の「基盤要件」）", file=sys.stderr)
+        return
+    code = report.code()
+    if code:
+        raise Stop({2: 2, 4: 3}.get(code, 1), [f"{tag}: {line.strip()}" if line.startswith("  ") else line for line in report.lines()]
+                   + ["関門（基盤要件。references/tree.md の「基盤要件」の「ゲート」）を通らない"])
+
+
 def build(args, out: Path) -> dict[Path, bytes | list]:
     """書くもの（出力先 → 中身。PPTX は部品の一覧）を返す。作れなければ Stop——1 つでも作れなければ何も書かない。"""
     code, lines, info = signoff.resolve(args.repo, args.req, args.budget, args.version)
@@ -643,6 +663,7 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
     if not estimate:
         raise Stop(1, [f"{info['budget']}:{estimate_path}: 費用が 1 行も無い。提案書の材料が無い"])
     whole, diff = compare_at(top, info["req_commit"], info["req"], info["version"])
+    infra_gate(whole.files, info["req"])
     hand_dir = top / in_version(info["version"], HAND_DIR)
     hand = read_hand(hand_dir)
     if not hand:

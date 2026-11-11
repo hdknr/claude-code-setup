@@ -793,6 +793,24 @@ JOBS_HEAD = "id,名前,契機,周期,失敗したときの扱い\n"
 JOBS_DECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"
 JOBS_UNDECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,未定,翌朝に担当者へ通知する\n"
 DESIGN_GATE = "関門（システム設計書の成果物の表"
+# ---- 基盤要件（#950）。表が無ければ警告して作り、未決定・違反・Python でない言語で止める
+INFRA_FILE = str(V1 / "shared" / "infra.csv")
+INFRA_HEAD = "項目,決定,理由,費用への影響,水準,根拠,状態\n"
+INFRA_QA = (HEADER + QA_DONE + QA_DONE2
+            + "".join(f"Q-F-00{n},実現性・コスト,{what}は？,A: x / B: y,A,理由,A（業務部が回答）,shared/infra.csv,反映済み,A が安い\n"
+                      for n, what in ((1, "言語"), (2, "DBMS"), (3, "どこで動かすか"))))
+INFRA_DECIDED = (INFRA_HEAD + "言語,Python 3.12,保守の担当が読める,なし,,Q-F-001,決定\n"
+                 "DBMS,PostgreSQL 16,ライセンスが要らない,なし,,Q-F-002,決定\n"
+                 "ホスティング環境,AWS,既存の契約,月 5 万円,,Q-F-003,決定\n")
+INFRA_GATE = "関門（基盤要件"
+INFRA_MISSING = "基盤要件の表（build/merged/shared/infra.csv）が無い"
+INFRA_SETTLED = "基盤要件（build/merged/shared/infra.csv）: 言語=Python 3.12・DBMS=PostgreSQL 16・ホスティング環境=AWS"
+
+
+def plant_typescript(repo: Path) -> None:
+    """生成した後で、言語が TypeScript に決まった基盤要件の表を置く（`--check`・`--dry-run` も同じゲートで止まるか）。"""
+    (repo / INFRA_FILE).write_text(INFRA_DECIDED.replace("Python 3.12", "TypeScript"), encoding="utf-8")
+    (repo / V1 / "shared" / "qa.csv").write_text(INFRA_QA, encoding="utf-8")
 
 
 def plant_undecided_jobs(repo: Path) -> None:
@@ -2187,6 +2205,29 @@ CASES: list[Case] = [
          extra={**with_nfr(""), JOBS_FILE: JOBS_UNDECIDED}, absent="判定していない"),
     Case("成果物の表: --upto の無い v2 は当てる", 1, DESIGN_GATE, args=("--dry-run",),
          extra={JOBS_FILE: JOBS_UNDECIDED, **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])}),
+    # ---- 基盤要件（#950）
+    Case("基盤要件: 決まっていれば作り、決まった基盤要件を名指しする", 0, INFRA_SETTLED, qa=INFRA_QA, extra={INFRA_FILE: INFRA_DECIDED},
+         post=files_written, absent=INFRA_MISSING),
+    Case("基盤要件: --dry-run も決まった基盤要件を名指しする", 0, INFRA_SETTLED, args=("--dry-run",), qa=INFRA_QA,
+         extra={INFRA_FILE: INFRA_DECIDED}),
+    Case("基盤要件: 表が無ければ警告して作る", 0, INFRA_MISSING, post=files_written, absent=INFRA_GATE),
+    Case("基盤要件: 必ず置く項目が無ければ止める", 1, "必ず置く項目 'ホスティング環境' の行が無い", qa=INFRA_QA,
+         extra={INFRA_FILE: INFRA_DECIDED.replace("ホスティング環境,AWS,既存の契約,月 5 万円,,Q-F-003,決定\n", "")},
+         pre=plant_old_issues, post=nothing_written),
+    Case("基盤要件: 未決定の印で止める", 1, "build/merged/shared/infra.csv:2: 決定 に未決定の印（未定）", qa=INFRA_QA,
+         extra={INFRA_FILE: INFRA_DECIDED.replace("Python 3.12", "未定")}, post=nothing_written),
+    Case("基盤要件: 形式の違反で止める", 1, "状態 が 決定・暫定・未決定 のどれでもない: '確定'", qa=INFRA_QA,
+         extra={INFRA_FILE: INFRA_DECIDED.replace(",Q-F-001,決定", ",Q-F-001,確定")}, post=nothing_written),
+    Case("基盤要件: 読めない表は判定しない", 2, "build/merged/shared/infra.csv: 空のファイル", qa=INFRA_QA, extra={INFRA_FILE: ""},
+         post=nothing_written),
+    Case("基盤要件: 言語が Python でなければ止める", 1, "言語が 'TypeScript' に決まっている", qa=INFRA_QA,
+         extra={INFRA_FILE: INFRA_DECIDED.replace("Python 3.12", "TypeScript")}, pre=plant_old_issues, post=nothing_written),
+    Case("基盤要件: --check も止める", 1, "言語が 'TypeScript' に決まっている", args=("--check",), generate_first=True, pre=plant_typescript),
+    Case("基盤要件: --dry-run も止める", 1, "言語が 'TypeScript' に決まっている", args=("--dry-run",), pre=plant_typescript),
+    Case("基盤要件: --upto で前の版を確かめるときは当てない", 0, "", args=("--dry-run", "--upto", "1"), qa=INFRA_QA,
+         extra={INFRA_FILE: INFRA_DECIDED.replace("Python 3.12", "TypeScript"),
+                **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])},
+         absent="基盤要件"),
     Case("作らないもの: 文字列でない", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
          ir=out_of_scope([1]), spec=SCOPE_SPEC),
     Case("OpenAPI と型", 0, post=openapi_shape),
@@ -2794,15 +2835,26 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #950: 基盤要件
+    ("基盤要件のゲートを当てない", "    code, lines, notes, settled = infra_gate(rendered) if design_gate else (0, [], [], None)",
+     "    code, lines, notes, settled = (0, [], [], None)", "基盤要件: 必ず置く項目が無ければ止める"),
+    ("前の版の時点にも基盤要件を当てる", "infra_gate(rendered) if design_gate else", "infra_gate(rendered) if True else",
+     "基盤要件: --upto で前の版を確かめるときは当てない"),
+    ("言語を見ない", "    if not infra.is_python(language):", "    if False:", "基盤要件: 言語が Python でなければ止める"),
+    ("表が無いのを知らせない", "    for line in loaded.notes:", "    for line in ():", "基盤要件: 表が無ければ警告して作る"),
+    ("決まった基盤要件を名指ししない", "    if loaded.infra:\n        # 決まった基盤要件の受け渡し", "    if False:\n        # 決まった基盤要件の受け渡し",
+     "基盤要件: 決まっていれば作り、決まった基盤要件を名指しする"),
+    ("読めない基盤要件の表を 1 にする", '        return (2 if code == 2 else 1), lines + [\n            "関門（基盤要件',
+     '        return 1, lines + [\n            "関門（基盤要件', "基盤要件: 読めない表は判定しない"),
     # #957: システム設計書の成果物
     ("成果物の表を関門で見ない", "            code, lines = design.check(whole, strict_nfr=False) if design_gate else (0, [])\n            if code:",
      "            code, lines = design.check(whole)\n            if False:", "成果物の表: 未決定の欄で止める"),
     ("決まっていない欄（3）で止めない", "            code, lines = design.check(whole, strict_nfr=False) if design_gate else (0, [])\n            if code:",
      "            code, lines = design.check(whole)\n            if code in (1, 2):", "成果物の表: 必須の欄が空で止める"),
-    ("前の版の時点にも成果物の表を当てる", "design_gate=upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0))",
-     "design_gate=True)", "成果物の表: --upto で前の版を確かめるときは当てない"),
-    ("--upto に作業中の版を渡すと当てない", "design_gate=upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0))",
-     "design_gate=upto is None)", "成果物の表: --upto に作業中の版を渡しても当てる"),
+    ("前の版の時点にも成果物の表を当てる", "    design_gate = upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0)\n",
+     "    design_gate = True\n", "成果物の表: --upto で前の版を確かめるときは当てない"),
+    ("--upto に作業中の版を渡すと当てない", "    design_gate = upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0)\n",
+     "    design_gate = upto is None\n", "成果物の表: --upto に作業中の版を渡しても当てる"),
     ("--upto では機能一覧を照らす", "        if gate and design_gate and not problems:", "        if gate and not problems:",
      "成果物の表: --upto で前の版を確かめるときは機能一覧も照らさない"),
     ("読めない非機能要求の表で止める", "design.check(whole, strict_nfr=False) if design_gate", "design.check(whole, strict_nfr=True) if design_gate",
