@@ -92,6 +92,12 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 呼ばれる機能の Issue に依存する。番号は登録の後にしか無いので、cruise の親 Issue の書式（`- [ ] #N (depends: #M)`）で出すのは同梱の
 `parent-checklist.py`（登録した Issue の一覧から引く）。
 
+**システム設計書の成果物（#957）**: 関門で、重ね合わせた全体に同梱の `check-design-csv.py` を当てる——**形式の違反（1）と、
+必須の欄が空か未決定の印のある欄（3）が残れば 1 で何も作らない**（未決定の欄が残るうちは開発に渡さない）。**表が無いだけなら止めない**
+（前からの正本は表を持たない）。読めない表は 2。**機能一覧（`requirements/features.csv`）があれば、中間表現の機能と照らす**——
+入口（`called_by` を持たない機能）が一覧に無い・一覧の id が中間表現に無いなら 1。呼ばれる判定の関数は一覧に無くてよい。
+一覧が無ければ照らさない（決まりの正は `references/tree.md` の「システム設計書の成果物」）。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
@@ -326,6 +332,8 @@ SCOPE_PATH = proposal.SCOPE_PATH
 diffs = _load("diff_versions", "diff-versions.py")
 # リリースのタグの命名は `check-frozen.py` のもの（`releases`。写さない）
 frozen = _load("check_frozen", "check-frozen.py")
+# システム設計書の成果物の表の検査と機能一覧の読み方は `check-design-csv.py` のもの（写さない——#957）
+design = _load("check_design_csv", "check-design-csv.py")
 
 
 def merged(path: str) -> str:
@@ -1156,6 +1164,14 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
             code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR)
             if code:
                 return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, {}
+            # システム設計書の成果物の表（#957）。形式の違反（1）と、決まっていない欄（3）で止める——未決定の欄が残るうちは
+            # 開発に渡さない。表が無いだけなら止めない（前からの正本は表を持たない）
+            code, lines = design.check(whole)
+            if code:
+                # 表のパスは重ね合わせた全体の根から——利用者が `merge-versions.py` で作れる場所で言う
+                lines = [re.sub(r"^  (requirements/|shared/)", rf"  {MERGED_DIR}/\1", line) for line in lines]
+                return (2 if code == 2 else 1), [line for line in lines if not line.startswith("OK（")] + [
+                    "関門（システム設計書の成果物の表。references/tree.md の「システム設計書の成果物」）を通らない。生成しない"], None, {}
         raw = rendered[IR_PATH]
         try:
             ir = json.loads(raw.decode("utf-8"))
@@ -1174,6 +1190,11 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
                     f"{merged(QA_PATH)} に {qa.PROVISIONAL} の行が {len(held)} 件残る。"
                     "利用者に確かめてもらうまで生成しない（/spec-loop:req-loop）"], None, {}
         problems = check_ir(ir, whole, answered, path_rules=gate, provisional=provisional)
+        if gate and not problems:
+            mismatched = listed_problems(ir, design.listed_features(whole))
+            if mismatched:
+                return 1, mismatched + [f"機能一覧と中間表現の機能がずれている（{len(mismatched)} 件。references/tree.md の"
+                                        "「機能一覧と中間表現の照合」）。生成しない"], None, {}
         if gate and provisional and not problems:
             cited = cited_qa(ir)
             uncited = [no for no in held if no not in cited]
@@ -1186,6 +1207,20 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
     if problems:
         return 1, problems + [f"中間表現が決まりに反する（{len(problems)} 件）。生成しない"], None, {}
     return 0, [], ir, answered
+
+
+def listed_problems(ir: dict, listed: list[str] | None) -> list[str]:
+    """機能一覧（`requirements/features.csv`）と中間表現の機能の照合（#957。`references/tree.md` の「機能一覧と中間表現の照合」）。
+    一覧が無ければ照らさない。入口（`called_by` を持たない機能）は一覧に要り、一覧の id は中間表現に要る。
+    呼ばれる判定の関数（`called_by` を持つ機能）は一覧に無くてよい。検査を通った中間表現に呼ぶ。"""
+    if listed is None:
+        return []
+    ids = [f["id"] for f in features_of(ir)]
+    problems = [f"{f['id']}: 入口の機能が機能一覧（{merged(design.FEATURES)}）に無い——一覧に足すか、中間表現から外す"
+                for f in features_of(ir) if "called_by" not in f and f["id"] not in listed]
+    problems += [f"{fid}: 機能一覧（{merged(design.FEATURES)}）の機能が中間表現に無い——中間表現に書き起こすか、一覧から外す"
+                 for fid in listed if fid not in ids]
+    return problems
 
 
 def cited_qa(ir: dict) -> set[str]:
