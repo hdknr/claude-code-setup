@@ -916,11 +916,13 @@ def hook_mocks(plugin: Path, work: Path) -> bool:
     write(docs, {MOCK_HTML: "<p>受注</p>\n", MOCK_REACT: "<div id=root></div>\n", "v1/requirements/mocks/在庫/App.jsx": "x\n",
                  "v1/requirements/mocks/.DS_Store": "x", "v1/requirements/mocks/.draft/index.html": "x\n",
                  "v1/requirements/mocks/消した/.DS_Store": "x",  # モックを消した跡（macOS）は無いのと同じ——警告しない
+                 "v1/requirements/mocks/消した/components/.DS_Store": "x",  # 下のフォルダの跡も同じ（2 パス目の CR2-1）
+                 "v1/requirements/mocks/部品だけ/components/Row.jsx": "x\n",  # 下に実物があれば、入口が無いと警告する
                  "v2/requirements/mocks/在庫/index.html": "v2\n", "v2/requirements/mocks/在庫/App.jsx": "v2\n",
                  "v3/requirements/a.md": "# a\n"})
     out, warnings = render(plugin, docs, "# UI モック\n\n<!-- spec-loop: mocks -->\n", src="mocks.md")
     v2 = out.find("## v2")
-    return (not warnings and "## v3" not in out and v2 > out.find("## v1") >= 0
+    return (len(warnings) == 1 and "v1/requirements/mocks/部品だけ: 入口の index.html が無い" in warnings[0] and "## v3" not in out and v2 > out.find("## v1") >= 0
             and f"| [受注 入力]({mock_link(MOCK_HTML)}) | HTML |" in out[:v2]
             and f"| [在庫]({mock_link(MOCK_REACT)}) | React（ディレクトリ） |" in out[:v2]
             and f"| [在庫]({mock_link('v2/requirements/mocks/在庫/index.html')}) | React（ディレクトリ） |" in out[v2:]
@@ -1139,8 +1141,14 @@ MUTATIONS: list[tuple] = [
      "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
     ("モックの名前を URL に符号化しない", HOOK, "({quote(target)})", "({target})", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
     ("リンクをページからの相対にしない", HOOK, 'posixpath.dirname(src) or "."', '"."', "UI モックのリンクは印のページからの相対"),
-    ("ドットの名前だけのフォルダも警告する", HOOK, "                if not any(not entry.startswith(\".\") for entry in inside):\n",
+    ("ドットの名前だけのフォルダも警告する", HOOK, "                if not has_content(path):\n",
      "                if False:\n", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("下のフォルダを辿らない", HOOK, "        if not path.is_dir() or path.is_symlink() or has_content(path):\n            return True\n    return False\n\n\ndef render_mocks",
+     "        if not path.is_dir() or path.is_symlink():\n            return True\n    return False\n\n\ndef render_mocks",
+     "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
+    ("下のフォルダを中身とみなす", HOOK, "        if not path.is_dir() or path.is_symlink() or has_content(path):\n            return True\n    return False\n\n\ndef render_mocks",
+     "        if True:\n            return True\n    return False\n\n\ndef render_mocks",
+     "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
     ("入口の無いディレクトリも描く", HOOK, "                if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():",
      "                if True:", "入口の無いディレクトリと HTML でないファイルは警告してリンクにしない"),
     ("入口の綴りを見ない", HOOK, "                if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():",

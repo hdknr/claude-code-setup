@@ -345,6 +345,22 @@ def render_shared_table(docs_dir: Path, name: str, title: str) -> str:
     return "\n".join(out)
 
 
+def has_content(directory: Path) -> bool:
+    """`.` で始まらない名前を辿って、ディレクトリでない項目に届くか——spec-loop の `merge-versions.py` の `has_content` と同じ判定
+    （フックは単独で動くので読み込まない）。読めないフォルダは「在る」とみなす（黙って飛ばさず、入口の判定で警告させる）。"""
+    try:
+        entries = os.listdir(directory)
+    except OSError:  # 読めないフォルダは「在る」側に倒す
+        return True
+    for entry in entries:
+        if entry.startswith("."):
+            continue
+        path = directory / entry
+        if not path.is_dir() or path.is_symlink() or has_content(path):
+            return True
+    return False
+
+
 def render_mocks(docs_dir: Path, src: str) -> str:
     """各版の `requirements/mocks/` の UI モックへのリンクを、版ごとの節に描く（#952）。`src` は印を書いたページの `docs/` からのパス。"""
     out: list[str] = []
@@ -370,8 +386,8 @@ def render_mocks(docs_dir: Path, src: str) -> str:
                 except OSError as e:
                     problems.append(problem(f"{path.relative_to(docs_dir)}: 一覧を読めない（{e.strerror}）"))
                     continue
-                if not any(not entry.startswith(".") for entry in inside):
-                    continue  # `.` で始まる名前（.DS_Store）だけのフォルダは無いのと同じ——重ね合わせも読まない（消したモックの跡）
+                if not has_content(path):
+                    continue  # `.` で始まる名前（.DS_Store）とフォルダだけなら無いのと同じ——重ね合わせも読まない（消したモックの跡）
                 if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():  # 綴りどおりの入口だけ（区別しない FS の Index.html を数えない）
                     rows.append((name, path / MOCK_ENTRY, "React（ディレクトリ）"))
                 else:
