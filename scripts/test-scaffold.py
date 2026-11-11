@@ -579,8 +579,9 @@ def drop_refs(repo: Path) -> None:
 
 
 def refs_removed(repo: Path) -> str | None:
-    if (repo / "scaffold" / "refs").exists() and any(p.is_file() for p in (repo / "scaffold" / "refs").rglob("*")):
-        return f"refs を外したのに写しが残っている: {sorted(str(p) for p in (repo / 'scaffold' / 'refs').rglob('*'))}"
+    # 写しと目録だけでなく、空になったディレクトリも残さない（後で同じ名前のファイルを書けなくなる。#951 の /code-review 1 パス目）
+    if (repo / "scaffold" / "refs").exists():
+        return f"refs を外したのに scaffold/refs/ が残っている: {sorted(str(p) for p in (repo / 'scaffold' / 'refs').rglob('*'))}"
     # refs を持たない中間表現の契約は、#951 の前と 1 バイトも変わらない
     problem = unchanged_without_nullable(repo)
     if problem:
@@ -2287,6 +2288,11 @@ CASES: list[Case] = [
          ir=refs(["requirements/../spec/order.md"]), extra=REF_FILES),
     Case("参考資料: 大文字小文字だけ違う綴り", 1, "F-001.refs: requirements/flows/受注.SVG が無い",
          ir=refs(["requirements/flows/受注.SVG"]), extra=REF_FILES),
+    # 本文のコードスパンと目録の行に書けない名前は断る——通すと、外した後に写しが目録から読み戻せずに残る（#951 の 1 パス目）
+    Case("参考資料: バッククォート", 1, "F-001.refs: requirements/a`b.svg はバッククォートか \\ を含む",
+         ir=refs(["requirements/a`b.svg"]), extra={**REF_FILES, str(V1 / "requirements" / "a`b.svg"): "<svg/>\n"}),
+    Case("参考資料: バックスラッシュ", 1, "F-001.refs: requirements/a\\b.svg はバッククォートか \\ を含む",
+         ir=refs(["requirements/a\\b.svg"]), extra=REF_FILES),
     Case("参考資料: 空の配列", 1, "F-001.refs: 参考資料のファイルの配列（1 つ以上）でない", ir=refs([]), extra=REF_FILES),
     Case("参考資料: 重複", 1, "F-001.refs: 同じファイルを 2 度指している", ir=refs([REF_FLOW, REF_FLOW]), extra=REF_FILES),
     Case("参考資料: 文字列でない", 1, "F-001.refs: 重ね合わせた全体の根からの相対パスでない（1）", ir=refs([1]), extra=REF_FILES),
@@ -3206,6 +3212,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "参考資料: 大文字小文字だけ違う綴り"),
     ("requirements の外を見ない", '        elif not rel.startswith(f"{REQUIREMENTS_DIR}/"):', "        elif False:", "参考資料: requirements の外"),
     (". で始まる場所を見ない", '        elif any(part.startswith(".") for part in rel.split("/")):', "        elif False:", "参考資料: 上へ出る"),
+    ("参考資料のバッククォートを断らない", '        elif "`" in rel or "\\\\" in rel:', "        elif False:", "参考資料: バッククォート"),
+    ("参考資料の空の親を消さない", "            while parent != out and parent.is_dir() and not any(parent.iterdir()):",
+     "            while False:", "参考資料: refs を外すと写しを消す"),
     ("参考資料の空の配列を許す", '    if not isinstance(refs, list) or not refs:\n        return [f"{where}: 参考資料',
      '    if not isinstance(refs, list):\n        return [f"{where}: 参考資料', "参考資料: 空の配列"),
     ("参考資料の重複を見ない", '        problems.append(f"{where}: 同じファイルを 2 度指している")', "        pass", "参考資料: 重複"),

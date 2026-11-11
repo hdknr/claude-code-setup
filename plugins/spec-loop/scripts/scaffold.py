@@ -60,10 +60,10 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 （決まりの正は `references/spec-ir.md` の「呼ぶ側の分岐」）。
 
 **参考資料（`refs`。#951）**: 中間表現の機能の `refs` に、重ね合わせた全体の `requirements/` の中のファイル（UI モック・業務フローの図・画面遷移の図など）を
-根からのパスで書く。**`requirements/` の中に原文のまま（大文字小文字も）在るファイルでない・`.` で始まる場所・空の配列・重複なら 1**。本文の `## 参考資料` に
+根からのパスで書く。**`requirements/` の中に原文のまま（大文字小文字も）在るファイルでない・`.` で始まる場所・バッククォートか `\\` を含む・空の配列・重複なら 1**。本文の `## 参考資料` に
 `build/merged/<パス>` と写し `scaffold/refs/<パス>` を並べ、**受入基準ではない**こと（食い違ったら仕様の穴として Q&A 表に起票する）を書く——参照の無い機能は「無い」と書き、
 撤去の本文は 1 行だけ。**正本と開発のリポジトリが別でも辿れるよう、参照したファイルのバイトの写しを契約 `scaffold/refs/<パス>` に置き**、目録 `scaffold/refs/index.md`
-（生成の印つき。パスと sha256）を置く——**目録に載った写しだけ**を、消してよい・残っていたら古いと言ってよい生成物に数える（目録に無いファイルは消さない）。
+（生成の印つき。パスと sha256）を置く——**目録に載った写しだけ**を、消してよい・残っていたら古いと言ってよい生成物に数える（目録に無いファイルは消さない。消して空になった親のディレクトリは `scaffold/refs/` まで消す）。
 **`refs` を持たない中間表現の契約は 1 バイトも変わらない**（目録も作らない）。どのファイルがその機能に関わるかは書き起こす側の判断で、機械は在ることだけを見る。
 参照先の中身だけを直しても機能は変わらない（指紋は機能のオブジェクトだけを覆う）——写しが古いことは `--check` が言う
 （決まりの正は `references/spec-ir.md` の「参考資料」と `references/handoff-issue.md` の「参考資料」）。
@@ -552,6 +552,9 @@ def check_refs(where: str, refs, whole: Path) -> list[str]:
     for rel in refs:
         if not isinstance(rel, str) or not one_line(rel):
             problems.append(f"{where}: 重ね合わせた全体の根からの相対パスでない（{rel!r}）")
+        elif "`" in rel or "\\" in rel:
+            # 本文のコードスパンと目録の行（`REFS_LINE`）に書けず、目録から読み戻せない——外した後に写しが残る
+            problems.append(f"{where}: {rel} はバッククォートか \\ を含む（本文と目録に書けない）")
         elif not rel.startswith(f"{REQUIREMENTS_DIR}/"):
             problems.append(f"{where}: {rel} は {REQUIREMENTS_DIR}/ の中に無い（参考資料は利用者向けの要求の図・モックを指す）")
         elif any(part.startswith(".") for part in rel.split("/")):
@@ -2897,6 +2900,12 @@ def write(repo: Path, contract: dict[str, str | bytes], issues: dict[str, str]) 
     out = repo / OUT_DIR
     for rel in leftovers(out, contract):
         (out / rel).unlink(missing_ok=True)
+        if rel.startswith(f"{REFS_DIR}/"):
+            # 写しの親が空になったら `refs/` まで遡って消す——空のディレクトリが残ると、後で同じ名前のファイルを書けない
+            parent = (out / rel).parent
+            while parent != out and parent.is_dir() and not any(parent.iterdir()):
+                parent.rmdir()
+                parent = parent.parent
     for rel, data in contract_bytes.items():
         path = out / rel
         path.parent.mkdir(parents=True, exist_ok=True)
