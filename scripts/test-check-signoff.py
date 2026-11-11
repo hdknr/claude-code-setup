@@ -11,7 +11,8 @@
    食い違うタグの組で非ゼロ（1）**——中身の違い・追加・削除・**前の版の `shared/`・`spec/` だけ**・
    **`requirements/`・`spec/` だけ**（#367）・**予算側だけの v1 の `removed.csv`**（#372）・
    **`removed.csv` の範囲に効く行（共有の Q&A・範囲の中のファイル・機能）だけ**の違い・
-   **片側だけ `.` で始まる名前の rename**（読む側に新しいファイルが現れる）・**`spec/formal` と接頭辞だけ同じ別のファイル**（`spec/formalx.md`。#908）。
+   **片側だけ `.` で始まる名前の rename**（読む側に新しいファイルが現れる）・**`spec/formal` と接頭辞だけ同じ別のファイル**（`spec/formalx.md`。#908）・
+   **システム設計書の成果物の表（機能一覧・権限一覧）だけ**（#957）。
 2. **一致する組を通す**（陽性対照。比べる場所の外だけ違う組も一致——**`feasibility/`・`proposal/`・`spec/qa-dev.csv`
    だけ・`removed.csv` の内部の Q&A の行・理由・行の順序だけが違う組も**（`removed.csv` のファイルの行は範囲の外の対象でも比べる——
    `merge` が拒否する行なので。#372 の B）。**`.` で始まる名前だけの違いも**——途中の `.` で始まるディレクトリの中も含む）。
@@ -184,6 +185,17 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
     ("removed.csv の機能の行だけ違う", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
                                    ("w", REMOVED2, "種類,対象,理由\n機能,F-001,不要\n"), ("c",), ("t", B2)],
      [], 1, "docs/v2/removed.csv（比べる行が違う）"),
+    # システム設計書の成果物の表（#957）は requirements/ に置くので、比べる範囲の中——表だけが違う組は一致しない
+    ("成果物の表だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/requirements/features.csv", "id,名前,種類,関係\nF-001,注文の受付,API,\n"),
+                         ("c",), ("t", R1),
+                         ("w", "docs/v1/requirements/features.csv", "id,名前,種類,関係\nF-001,注文の受付,画面,\n"),
+                         ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/requirements/features.csv"),
+    ("権限一覧だけ違う", [("w", SHARED, QA_A), ("w", "docs/v1/requirements/roles.csv", "操作,管理者\n取り消し,可\n"),
+                       ("c",), ("t", R1),
+                       ("w", "docs/v1/requirements/roles.csv", "操作,管理者\n取り消し,不可\n"),
+                       ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/requirements/roles.csv"),
     # 範囲の外（feasibility/・proposal/・内部の Q&A 表）のファイルの行も比べる——merge が拒否する行が予算側だけにあるのを
     # 一致と言わない（#372 の B。#375 の 1 パス目で反証された）
     ("removed.csv の範囲の外のファイルの行も比べる", [("w", SHARED, QA_A), ("w", SHARED2, QA_B), ("c",), ("t", R2),
