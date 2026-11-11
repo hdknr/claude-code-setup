@@ -378,7 +378,7 @@ def main() -> int:
                     and "#885 の既知の限界" in text.split("## 守らないもの", 1)[-1])
 
         check("docstring に見分け方と #885 の限界がある", explains(doc))
-        check("docstring に実案件で貼るまでの手順がある", "## 使い方（実案件で数えて #870 に貼るまで）" in doc and "gh issue comment 870" in doc
+        check("docstring に実案件で貼るまでの手順がある", "## 使い方（実案件で数えて #980 に貼るまで）" in doc and "gh issue comment 980" in doc
               and "gh pr list --repo" in doc and "--json number,title,state,body,additions,deletions" in doc)
         for old in ("**`回答` の列全体の変化では見ない**", "#885 の既知の限界"):
             check(f"陽性対照: docstring の {old!r} を消すと突き合わせが落ちる", not explains(doc.replace(old, "")))
