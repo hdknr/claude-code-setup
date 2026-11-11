@@ -784,6 +784,24 @@ STOCK_TRACE = {
     "outcomes": [{"ok": True}, {"error": "OUT_OF_STOCK"}],
     "after": [{"operation": "get_stock", "input": {"item": "a"}, "expected": {"stock": 0}}],
 }
+# ---- システム設計書の成果物（#957）。機能一覧と中間表現の照合・成果物の表の未決定で止める関門
+FEATURES_FILE = str(V1 / "requirements" / "features.csv")
+FEATURES_HEAD = "id,名前,種類,関係\n"
+FEATURES_LIST = FEATURES_HEAD + "F-001,割引額を計算する,API,\nF-002,注文を取り消せるか,API,\n"
+JOBS_FILE = str(V1 / "requirements" / "jobs.csv")
+JOBS_HEAD = "id,名前,契機,周期,失敗したときの扱い\n"
+JOBS_DECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"
+JOBS_UNDECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,未定,翌朝に担当者へ通知する\n"
+DESIGN_GATE = "関門（システム設計書の成果物の表"
+
+
+def plant_undecided_jobs(repo: Path) -> None:
+    """生成した後で、決まっていない欄のあるジョブの一覧を置く（`--check`・`--dry-run` も同じ関門で止まるか）。"""
+    target = repo / JOBS_FILE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(JOBS_UNDECIDED, encoding="utf-8")
+
+
 STOCK_FEATURES = [
     {
         "id": "F-003", "title": "在庫を引き当てる", "source": ["spec/order.md"], "qa": [],
@@ -2130,6 +2148,52 @@ CASES: list[Case] = [
     Case("性能の要求: 配列でない", 1, "F-001.nfr: 性能の要求の行の No の 1 つ以上の配列でない", ir=nfr("N-001"), extra=with_nfr()),
     Case("性能の要求: No の形", 1, "F-001.nfr: No の形に反する（N- に 3 桁以上の数字）: 'N-1'", ir=nfr(["N-1"]), extra=with_nfr()),
     Case("性能の要求: 重複", 1, "F-001.nfr: 重複している", ir=nfr(["N-001", "N-001"]), extra=with_nfr()),
+    # ---- システム設計書の成果物（#957）
+    Case("機能一覧: 一致すれば作る", 0, "作った", extra={FEATURES_FILE: FEATURES_LIST}, post=files_written),
+    Case("機能一覧: 入口が一覧に無い", 1, "F-002: 入口の機能が機能一覧（build/merged/requirements/features.csv）に無い",
+         extra={FEATURES_FILE: FEATURES_HEAD + "F-001,割引額を計算する,API,\n"}, pre=plant_old_issues, post=nothing_written),
+    Case("機能一覧: 一覧の機能が中間表現に無い", 1, "F-009: 機能一覧（build/merged/requirements/features.csv）の機能が中間表現に無い",
+         extra={FEATURES_FILE: FEATURES_LIST + "F-009,在庫を引き当てる,API,\n"}),
+    Case("機能一覧: 呼ばれる機能は一覧に無くてよい", 0, "作った", ir=CALLED,
+         extra={FEATURES_FILE: FEATURES_HEAD + "F-002,注文を取り消せるか,API,\n"}),
+    Case("機能一覧: v2 で置き換えた一覧で照らす", 1, "F-002: 入口の機能が機能一覧",
+         extra={FEATURES_FILE: FEATURES_LIST, str(V2 / "requirements" / "features.csv"): FEATURES_HEAD + "F-001,割引額を計算する,API,\n",
+                **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])}),
+    # #972: v2 で機能を消すとき、removed.csv だけでは一覧の行が残って止まる（tree.md の旧い案内の形）。一覧を置き直して行を外せば作る
+    Case("機能一覧: removed.csv で消しても一覧の行は残る", 1,
+         "F-002: 機能一覧（build/merged/requirements/features.csv）の機能が中間表現に無い",
+         extra={FEATURES_FILE: FEATURES_LIST, **v2([], removed="機能,F-002,取り消しはやめる\n")}, post=nothing_written),
+    Case("機能一覧: v2 で一覧を置き直して行を外せば作る", 0, "作った",
+         extra={FEATURES_FILE: FEATURES_LIST, str(V2 / "requirements" / "features.csv"): FEATURES_HEAD + "F-001,割引額を計算する,API,\n",
+                **v2([], removed="機能,F-002,取り消しはやめる\n")}, post=v2_removed, absent="機能一覧（"),
+    Case("機能一覧: 表が無ければ照らさない", 0, "作った", absent="機能一覧"),
+    Case("成果物の表: 未決定の欄で止める", 1, "build/merged/requirements/jobs.csv:2: 周期 に未決定の印（未定）",
+         extra={JOBS_FILE: JOBS_UNDECIDED}, pre=plant_old_issues, post=nothing_written),
+    Case("成果物の表: 必須の欄が空で止める", 1, "build/merged/requirements/jobs.csv:2: 周期 が空",
+         extra={JOBS_FILE: JOBS_HEAD + "J-001,売上の締め,毎日 23 時,,翌朝に担当者へ通知する\n"}, post=nothing_written),
+    Case("成果物の表: 形式の違反で止める", 1, "id が J- に 3 桁以上の数字の形でない",
+         extra={JOBS_FILE: JOBS_HEAD + "J-1,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"}, post=nothing_written),
+    Case("成果物の表: 決まった表なら作る", 0, "作った", extra={JOBS_FILE: JOBS_DECIDED, FEATURES_FILE: FEATURES_LIST},
+         absent=DESIGN_GATE),
+    Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
+    Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
+    Case("成果物の表: 非機能要求の種類の行が未決定で止める", 1, "build/merged/shared/nfr.csv:5: 上限 に未決定の印（未定）",
+         extra=with_nfr(NFR_CSV + "N-004,注文の受付,可用性,未定,%,月の稼働で,契約\n")),
+    Case("成果物の表: 読めない非機能要求の表では止めない", 0, "作った", extra=with_nfr("")),
+    Case("成果物の表: --upto で前の版を確かめるときは当てない", 0, "", args=("--dry-run", "--upto", "1"),
+         extra={JOBS_FILE: JOBS_UNDECIDED, **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])},
+         absent=DESIGN_GATE),
+    Case("成果物の表: --upto に作業中の版を渡しても当てる", 1, DESIGN_GATE, args=("--dry-run", "--upto", "1"),
+         extra={JOBS_FILE: JOBS_UNDECIDED}),
+    Case("成果物の表: --upto で前の版を確かめるときは機能一覧も照らさない", 0, "", args=("--dry-run", "--upto", "1"),
+         extra={FEATURES_FILE: FEATURES_HEAD + "F-001,割引額を計算する,API,\n",
+                str(V2 / "requirements" / "features.csv"): FEATURES_LIST,
+                **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])},
+         absent="機能一覧（"),
+    Case("成果物の表: 読めない非機能要求があっても未決定の案内を出す", 1, "推測で埋めずに Q&A 表に起票する",
+         extra={**with_nfr(""), JOBS_FILE: JOBS_UNDECIDED}, absent="判定していない"),
+    Case("成果物の表: --upto の無い v2 は当てる", 1, DESIGN_GATE, args=("--dry-run",),
+         extra={JOBS_FILE: JOBS_UNDECIDED, **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])}),
     Case("作らないもの: 文字列でない", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
          ir=out_of_scope([1]), spec=SCOPE_SPEC),
     Case("OpenAPI と型", 0, post=openapi_shape),
@@ -2737,6 +2801,25 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #957: システム設計書の成果物
+    ("成果物の表を関門で見ない", "            code, lines = design.check(whole, strict_nfr=False) if design_gate else (0, [])\n            if code:",
+     "            code, lines = design.check(whole)\n            if False:", "成果物の表: 未決定の欄で止める"),
+    ("決まっていない欄（3）で止めない", "            code, lines = design.check(whole, strict_nfr=False) if design_gate else (0, [])\n            if code:",
+     "            code, lines = design.check(whole)\n            if code in (1, 2):", "成果物の表: 必須の欄が空で止める"),
+    ("前の版の時点にも成果物の表を当てる", "design_gate=upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0))",
+     "design_gate=True)", "成果物の表: --upto で前の版を確かめるときは当てない"),
+    ("--upto に作業中の版を渡すと当てない", "design_gate=upto is None or upto >= max((n for n, _ in versions.find_versions(docs, [])), default=0))",
+     "design_gate=upto is None)", "成果物の表: --upto に作業中の版を渡しても当てる"),
+    ("--upto では機能一覧を照らす", "        if gate and design_gate and not problems:", "        if gate and not problems:",
+     "成果物の表: --upto で前の版を確かめるときは機能一覧も照らさない"),
+    ("読めない非機能要求の表で止める", "design.check(whole, strict_nfr=False) if design_gate", "design.check(whole, strict_nfr=True) if design_gate",
+     "成果物の表: 読めない非機能要求の表では止めない"),
+    ("機能一覧を照らさない", "            mismatched = listed_problems(ir, design.listed_features(whole))",
+     "            mismatched = []", "機能一覧: 入口が一覧に無い"),
+    ("呼ばれる機能も一覧に要る", """if "called_by" not in f and f["id"] not in listed]""", """if f["id"] not in listed]""",
+     "機能一覧: 呼ばれる機能は一覧に無くてよい"),
+    ("一覧の余りを照らさない", "for fid in listed if fid not in ids]", "for fid in listed if False]",
+     "機能一覧: 一覧の機能が中間表現に無い"),
     # #923: トレースのケース
     ("トレースの形式検査の記録を見ない", "        elif not (whole / versions.FORMAL_DIR / formal / FORMAL_RECORD).is_file():",
      "        elif False:", "トレース: 形式検査の記録が無い"),

@@ -129,9 +129,9 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
    止める前に、**その pid がいまも、記録を書いたラッパーであること**を確かめる（D5）——記録だけ残った pid が別のプロセスに使い回されていることがあり
    （run-serial の docstring の「守らない」）、`run-serial.py` の部分一致では `test-run-serial.py`・別の周のラッパー・`holders` の呼び出しにも当たる。照合するのは次の 4 つで、**全部が合うときだけ止める**:
    - **枠の記録にその pid がある**——枠のディレクトリ（`<git の共通ディレクトリ>/dev-loop-serial/slot-<k>.lock`）の記録の `pid`
-   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] -- <コマンド>` で起こした形
+   - **`ps` のコマンド欄が、run-serial の起動そのもの**——`python`（`python3` など）が、ファイル名がちょうど `run-serial.py` のスクリプトを `[--timeout <秒>] -- <コマンド>` で起こした形（`--timeout=<秒>` の形も、2 回以上渡した形も——run-serial は最後の値を使う。#917）
    - **`--` の後ろが、記録の `command` とちょうど同じ**、**プロセスの cwd が記録の `cwd` と同じ**（macOS は `lsof`、Linux は `/proc/<pid>/cwd`）
-   - **プロセスを起こした時刻が、記録の `started`（枠を取った時刻）より後でない**——後なら、記録の後に pid を使い回したプロセスである
+   - **プロセスを起こした時刻が、記録の `started`（枠を取った時刻）より後でない**——後なら、記録の後に pid を使い回したプロセスである。`started` は時間帯（`%z`）つきで読み、起こした時刻は経過（`ps` の `etime`）から出す——記録を書いた子と親で `TZ` が違っても、夏時間の切り替わりでも、同じ瞬間どうしで比べる（秒までなので 2 秒の幅を見る。#917）
 
    合わなければ止めず、利用者に `holders` の行と、照合が出した理由を渡す。合えば、**コマンドの子孫の pid**（ラッパーから `pgrep -P` を子へ順にたどる）を数えてから、
    ラッパーに `kill -TERM <pid>` を送る（ラッパーは SIGTERM をコマンドに渡し、コマンドが終わってから枠を返す——docstring の「守る」）。
@@ -144,6 +144,7 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
    P=<pid>
    python3 - "$P" <<'PY' && bash -c 'P=$1; d() { for c in $(pgrep -P "$1"); do echo "$c"; d "$c"; done; }; DESC=$(d "$P"); echo "子孫: $(echo $DESC)"; kill -TERM "$P"; sleep 2; for c in $DESC; do kill -0 "$c" 2>/dev/null && { echo "残った: $c $(ps -p "$c" -o command=)"; kill -TERM "$c"; }; done; true' _ "$P"
    import json, os, re, subprocess, sys, time
+   from datetime import datetime
    pid = int(sys.argv[1])
    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
    lockdir = os.path.join(common, "dev-loop-serial")
@@ -164,7 +165,7 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
        except OSError:
            out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True).stdout
            return next((line[1:] for line in out.splitlines() if line.startswith("n")), None)
-   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout [0-9]+)? -- (.*)", ps("command"))
+   m = re.fullmatch(r"(?:\S*/)?[Pp]ython[0-9.]* (?:\S*/)?run-serial\.py(?: --timeout[ =][0-9]+)* -- (.*)", ps("command"))
    why = None
    if rec is None:
        why = "枠の記録にこの pid が無い"
@@ -176,12 +177,13 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
        why = "記録の場所と違う"
    else:
        try:
-           begun = time.mktime(time.strptime(ps("lstart"), "%a %b %d %H:%M:%S %Y"))
-           taken = time.mktime(time.strptime(rec["started"][:19], "%Y-%m-%dT%H:%M:%S"))
+           e = re.fullmatch(r"(?:(?:([0-9]+)-)?([0-9]+):)?([0-9]+):([0-9]+)", ps("etime"))
+           begun = time.time() - (((int(e[1] or 0) * 24 + int(e[2] or 0)) * 60 + int(e[3])) * 60 + int(e[4]))
+           taken = datetime.strptime(rec["started"], "%Y-%m-%dT%H:%M:%S%z").timestamp()
        except (KeyError, TypeError, ValueError):
            why = "起こした時刻か記録の時刻が読めない"
        else:
-           if begun > taken + 1:
+           if begun > taken + 2:
                why = "記録の後に起きたプロセス（pid の使い回し）"
    print("照合: " + (why or "合った——止める"))
    sys.exit(1 if why else 0)
@@ -202,6 +204,18 @@ python3 <このスキルの base ディレクトリ>/scripts/run-serial.py holde
    **知らされていなくても、run-serial 越しの検査がシグナルで終わった（終了コード 143 など 128 + シグナルの番号）なら、親が止めたかもしれない**——失敗として扱い、
    残った子孫が無いかを見る（`ps` でコマンドを探す）。**親から止めたと知らされた検査は、終了コードに依らず失敗として扱う**（SIGTERM を受け流したコマンドは 0 で終わることがある）。
    **ネットワークを待つ処理なら、走らせ直すときは枠の外で**（上の「通さないもの」）。
+
+**守らないもの**（#899 の関門の指摘のうち、#917 で直さないと決めたもの。どれも実物の失敗は示せていない——起きたら、そのときに直す）:
+
+- **周の子を前景で呼んでいるあいだは、親は見張れない**（D3）——親が塞がるので `holders` を回せない。前景で待っている体（関門の体など）にも、疑いの行を見たときの決まりは無い。
+- **子プロセスの周（`claude -p`）は、親が止めたことを知らされない**（D4）——宛てられないので、SIGTERM を受けて 0 で終わったコマンドを、子が緑と読みうる（上の 4 の「シグナルで終わった」に当たらない）。
+- **止める段は、この節の bash のブロックで、`run-serial.py` の口ではない**（D7）——照合はリポジトリの `test-parallel-stop.py` がこのブロックを抜き出して当てる。
+  止めるときの猶予のあいだに生まれた子孫は拾わない（3 の「残った」は先に数えた子孫だけを見る）。
+- **1 の場所の突き合わせは、親が読んで決める**（D8・V3）——機械では見ていない。「その worktree か、その下」はディレクトリの包含であって、文字列の前方一致ではない
+  （`…/issue-89` の下に `…/issue-899` は無い）。symlink を経由したパスは、解いてから（`realpath`）比べる——run-serial が記録する場所は解いたパスである。
+- **起動時の権限の点検（`check-unattended-env.py`）は、止める段で使う `kill`・`run-serial.py holders` の許可を見ない**（C6）——不在の親が止める段で許可を待って止まりうる。
+- **メインの作業ツリーや worktree の外の写しから呼んだ持ち主は、止めも知らせもしない**（C10）——1 のとおり利用者に渡すだけで、期限まで枠を握りうる。
+- **`枠の持ち主を止めた:` の項を `note` から外す時期は決めていない**（W2）——止めた記録で、次の見張りの判定には使わない（2 が見るのは `枠の確認:` の項）。
 
 ## 単独で回す周（#493 のコメント）
 

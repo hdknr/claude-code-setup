@@ -12,6 +12,7 @@
 - 実機確認: 台帳に線なし
 - 版の上げ方: **patch・spec-loop だけ**（main の先端 spec-loop 0.77.1 → 0.77.2。利用者に見える出力の誤りの修正）。dev-loop は触らない。
   マージの直前に main が進んでいれば、main の先端の版から同じ上げ方（patch）で 1 つ上げ直す（cruise の `parallel.md` の「版とマージの順」）
+  - マージの直前の取り込み（2026-11-11。利用者の判断「そのままマージ・NP-1 は直さない」による）: main `47a913fe`（spec-loop 0.78.1）を取り込み、0.78.2 に上げ直した
 - PR は `Fixes #965`・`Refs #963`
 - 並行する周: #917・#957（別の worktree。触らない。#957 も spec-loop を触るので版が衝突しうる）
 - 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.103.0/skills/cruise/scripts/run-serial.py` 越し
