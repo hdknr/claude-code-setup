@@ -1,0 +1,124 @@
+# Issue #951 — spec-loop: scaffold の Issue から UI モック・業務フロー・画面遷移の図がたどれない
+
+不在の周（cruise の子）。出所: `/dev-loop:cruise 963 --absent` の起動（2026-11-11T01:02Z）。親 Issue #963、台帳 `issue-963`（台帳は親だけが書く）。
+従う版は dev-loop 1.103.0（キャッシュ。`SKILL.md` 1861 行——`wc -l`）。依存先 #950（PR #974）はマージ済みで、その上に積む（main から切った——積んだ周ではない）。
+
+- 使った線（出所: cruise の確かめた線（台帳 `issue-963`）——利用者の確認（起動時・2026-11-11T01:02:52Z、配布を見せて確かめた））:
+  仕様の穴 = 推奨で決めて起票 / 直す線 = 既定 / マージ = 関門を通ればマージ / 周の途中の課題 = 台帳に足して直す / マージ前の判断 = 推奨で決めて起票
+- 直す線: **既定**（出所: cruise の確かめた線（台帳 `issue-963`））
+- 版の上げ方: **spec-loop を minor で上げる**（0.79.0 → 0.80.0。0.x なので能力の追加は minor）と **dev-loop を minor で上げる**（1.103.1 → 1.104.0。spec-gap.md が新しい節の読み方を持つ）。
+  `marketplace.json`・各 `plugin.json`・各プラグインの全 `SKILL.md` の 2 行。
+  マージの直前に main が進んでいれば、main の先端のそれぞれの版から minor で 1 つ上げた値に上げ直す（cruise の `parallel.md` の「版とマージの順」）
+- PR は `Fixes #951`。確認の Issue は閉じるキーワードで指さない（指すなら `Refs`）。手順 7 のマージは親がする（子は PR と PR 側の CI まで）
+- 後に #952（UI モックの形式と置き場所）が続く——その範囲（モックの形式・置き場所の決まり）に踏み込まない
+- 重い検査は `run-serial.py` 越し（`/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/1.103.0/skills/cruise/scripts/run-serial.py`）
+- 割り目（手順 4・手順 6）: **割らない（cruise の周）**——訊かずに続ける
+
+## 周の在り処
+
+- ブランチ: `issue/951-scaffold-refs`
+- worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-951`
+- 起点コミット: `3f7fd1c5`
+- base: 参照 `origin/main`（`refs/remotes/origin/HEAD`）を解決した `3f7fd1c5341d8afb793ce15d902cce410fa979f9`
+
+## 変更範囲
+
+触る:
+- `plugins/spec-loop/scripts/scaffold.py` — 中間表現の機能の任意の `refs`（`requirements/` の中の実在するファイル）の検査、Issue の本文の `## 参考資料` の節、契約 `scaffold/refs/` への写しと目録・`--check` の鮮度
+- `plugins/spec-loop/references/spec-ir.md` — 機能の表に `refs`、「参考資料（`refs`）」の節
+- `plugins/spec-loop/references/handoff-issue.md` — 節の表に `## 参考資料`（7 つ）、「参考資料」の節、前の本文が節を持たないこと
+- `plugins/spec-loop/references/tree.md` — ツリーと「scaffold の出力」に `scaffold/refs/`、正本と開発のリポジトリが別のときの写し
+- `plugins/spec-loop/skills/scaffold/SKILL.md` — 手順 2 に `refs` を書き起こす 1 項・手順 5 の commit に `scaffold/refs/`、版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（autopilot・feasibility・proposal・req-loop・spec-review）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 節の表に `## 参考資料`（7 つ）と読み方、本文の形の注記
+- `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行（dev-loop・cruise）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `scripts/test-scaffold.py` — `refs` の検査・本文の節・写しと目録・鮮度・後片付けの試料と変異、節の順の期待
+- `docs/plans/issue-951.md` — この計画
+- `docs/plugins/dev-loop-design.md` — 生成ブロック（`skill-metrics.py` が書き直す。`spec-gap.md` の文字数が変わるため。手で書かない）
+
+触らない:
+- #952 の UI モックの形式と置き場所の決まり（`requirements/` のどこに何の形式で置くか）——ここでは「`requirements/` の中の実在するファイル」を指せるところまで
+- 基盤要件の受け渡し（#950 で扱った）
+- 仕様書（`build-proposal.py`）の機能の一覧に参考資料を載せること
+- `merge-versions.py`・`diff-versions.py`・`spec-fingerprint.py`（dev-loop）——指紋は機能のオブジェクト全体なので式は変わらない
+- 本文の印の版（`<!-- spec-loop-handoff: v3 -->`）——#851 の `## 作らないもの` と同じく、節を足しただけで印の版は上げない
+- 公開ページ（`docs/` の本文）
+
+複製の数（同じことを述べている箇所）: 節の並びは `handoff-issue.md`（原本）・`scaffold.py` の `SECTIONS`（写し）・dev-loop の `spec-gap.md`（写し）の 3 箇所——`test-scaffold.py` が 3 つを突き合わせる。
+`refs` の決まりは `spec-ir.md`（原本）と `scaffold.py` の docstring・定数（写し）。`scaffold/refs/` の置き場所は `tree.md`（原本）。
+分けない理由: 2 つのプラグインの境界の写しは既にテストで突き合わせており、増える複製は無い。
+
+## 決めたこと（Issue の「提案」を形にした値）
+
+- 中間表現: 機能に任意の `refs`——**重ね合わせた全体の根からのパス**（`requirements/flows/受注.svg`）の配列（1 つ以上・重複なし）。
+  `requirements/` の中の実在するファイルだけ（`.` で始まる場所・`requirements/` の外・絶対パス・`\` を含むものは断る）。反すれば生成のスクリプトは 1（何も作らない）。
+  `refs` を足す・変える・外すと機能のオブジェクトが変わる（変更の機能になり、ケースは全部 `回帰`）——`out_of_scope` と同じ。
+- 本文: `## Q&A の回答` と `## 作らないもの` の間に `## 参考資料`（節は 7 つ）。追加・変更の本文は、受入基準ではないことと、食い違ったら仕様の穴として Q&A 表に起票することを書き、
+  参照ごとに `build/merged/<パス>` と写し `scaffold/refs/<パス>` を並べる。参照が無ければ「無い」と書く。撤去の本文は 1 行だけ（作るものが無い）。
+- 正本と開発のリポジトリが別のとき: **契約 `scaffold/refs/<パス>` に、参照したファイルのバイトの写しを置く**（commit する）。`scaffold/` を開発のリポジトリへ写す決まりが、そのまま写しも運ぶ。
+  写しの目録 `scaffold/refs/index.md`（生成の印つき。パスと sha256）を置き、**目録に載ったものだけ**を消してよい・残っていたら古いと言ってよい写しに数える。
+  `refs` を持たない中間表現の契約は 1 バイトも変わらない（目録も作らない）。**仕様の穴として推奨で決めた——下。**
+
+## デプロイ経路
+
+main へのマージで GitHub Pages の再ビルドとプラグインの配布（カタログ・`git pull` して張った利用者）。`.claude/dev-loop.md` の `マージの反映: ドキュメントとプラグインの配布`。
+マージは親がする。照合（宣言の外の反映が無いか）は下の「マージの照合」。
+
+## verify の受入基準
+
+不変条件 × 経路（経路は `scaffold.py` の入口——書く生成・`--dry-run`・`--check`・`--check --upto`・`--red-check`・`--bundle`、v1 と v2 以降、前の版の中間表現の検査——から数える）:
+
+- **I1 指せて、実在しないと止まる**: 中間表現の機能が `requirements/` の中のファイルを `refs` で指せる（0 で作れる）。実在しない・`requirements/` の外（`spec/`・`../`・絶対パス）・`.` で始まる場所・空の配列・重複・文字列でない値は 1 で、何も作らない（書く生成は前の本文を消す）。
+  - 経路: 書く生成・`--dry-run`・`--check`（どれも同じ関門）／v2 の差分で足した `refs`（重ね合わせた全体の `requirements/` で実在を見る）／前の版の中間表現（比べる相手）にも当たる
+  - 守り方: `check_ir` の 1 箇所（`load` を通る全部の入口が通る）
+- **I2 本文に参考資料の節があり、参照のパスが載る**: 追加・変更の本文の `## 参考資料` に、参照したファイルの `build/merged/` のパスと `scaffold/refs/` の写しのパスが載る。参照が無い機能では「無い」と書く。撤去の本文は 1 行。節の順は 7 つで固定。
+  - 経路: 追加（v1）・変更（v2 で `refs` を足した機能）・撤去・`--bundle` のまとめた本文の部分
+- **I3 受入基準ではないことと、食い違ったら Q&A 表に起票することが本文に書かれる**: 追加・変更のどの本文にも（参照が無い機能を含む）
+- **I4 正本と開発のリポジトリが別のとき辿れる**: 参照したファイルのバイトの写しが `scaffold/refs/<パス>` に置かれ（契約・commit する）、本文がそれを指す。`--check` は写しが無い・違う・目録に載った余りが残るのを古いと言い、書く生成は目録に載った余りを消す（目録に載らないファイルは消さない）。`refs` を持たない中間表現の契約は前と同じバイト（`BASE_SHA256`）。
+  - 経路: 書く生成・`--check`・`refs` を外した作り直し・参照先のファイルの中身だけ直した作り直し
+- **I5 境界の写しが揃う**: `SECTIONS` = `handoff-issue.md` の節の表 = dev-loop の `spec-gap.md` の節の表（`test-scaffold.py`）。`spec-ir.md` に `refs` の決まり。
+- **I6 版**: spec-loop と dev-loop の版が 3 種類で揃う（`check-plugin-versions.py`）・上がっている（`check-version-bump.py`）
+- **掛け算**: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目で渡す（4 つの受け渡し。2 パス目が該当なしなら 2 つ）
+
+未証明: **I4 の「開発のリポジトリから辿れる」のうち、写す操作そのもの**——`scaffold/` を開発のリポジトリへ写すのは利用者（正本の `CLAUDE.md` の決まり）で、この環境に 2 つのリポジトリを跨ぐ利用者の手順は無い。
+ここで証明するのは「写しが `scaffold/` の中にあり、本文がそれを指し、`--check` が鮮度を見る」まで。
+
+生成物: `scaffold/` の生成物は試料の中だけ（このリポジトリに commit した `scaffold/` は無い）。`SKILL.md` の測定値の生成ブロック（`skill-metrics.py --check`）——dev-loop の `SKILL.md` は版の行だけ変わる。図の書き出し: 該当なし。
+
+## 仕様の穴（不在の線で推奨により決めた）
+
+- 穴: 正本と開発のリポジトリが別のとき、参照した図を開発のリポジトリから辿れるようにする手段。Issue は「`scaffold/` の写し方と同じ決まりで」と書くが、`scaffold/` の写し方は正本の `CLAUDE.md` 任せで、図を運ぶ手段は決まっていない。
+- 選択肢: **A（推奨）** `scaffold/refs/<パス>` に参照したファイルの写しを生成して commit する（`scaffold/` を写せば図も届く。`--check` が鮮度を見る）／ B 写しを作らず、`tree.md` に「正本の `CLAUDE.md` の写し方に `requirements/` の図も含める」と書くだけにする
+- 推した理由: A なら `scaffold/` を写す決まり 1 つで図も届き、本文が指すパスが開発のリポジトリにも在ることを機械（`--check`）で保てる。B は利用者の決まりの書き忘れで黙って届かない（Issue の「届かないことがある」がそのまま残る）。代償は正本に図のバイトの写しが増えること。
+- 使った線と出所: `仕様の穴 = 推奨で決めて起票`（cruise の確かめた線。台帳 `issue-963`）
+- 確認の Issue: （PR を作った後に立てる）
+
+## 起票
+
+- この周の起票: 0 件（PR を作った後に確認の Issue を立てたら直す。起票の承認は不在のため訊いていない）
+
+## 未解決の判断・確認待ち
+
+- 上の仕様の穴（確認の Issue で利用者が確かめる）
+
+## 関門の進捗（再開点）
+
+- 割り目: 割らない（cruise の周）
+- Verifier 1 パス目: 未
+- `/code-review` 1 パス目: 未
+- 1 パス目の指摘対応の起点: 未
+- 2 パス目: 未
+- 狭いパス: 未
+- 手順 5 の反証と手順 4 への差し戻し: 0 件
+- 交絡を潰した手順: 実験なし（試料のテストだけ）
+
+## 既知の限界・決着済みの論点
+
+| 論点 | 決着 | 理由 |
+| --- | --- | --- |
+| 本文の印の版を上げるか | 上げない | #851 で `## 作らないもの` を足したときと同じ——印・指紋・sha256 は変わらず、節を足しただけ。前の本文に節が無いことを handoff-issue.md と spec-gap.md に書く |
+| 参照先のファイルの中身だけ変えたとき、機能が変更になるか | ならない（Issue は作らない） | 指紋は機能のオブジェクトだけを覆う（`out_of_scope`・`nfr` の行の数字と同じ扱い）。写しは `--check` が古いと言い、作り直せば新しくなる |
+| 大文字小文字だけ違う 2 つの参照 | 見ない | `requirements/` の中で大文字小文字だけ違うファイルを並べる書き方は実際の利用でまず起きない |

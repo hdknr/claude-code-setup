@@ -23,6 +23,10 @@
    本文がその sha256 と回し方を持つ。性能テストは実装が無ければ「未実装」で失敗し、上限を超える遅い実装で失敗し、速い実装で緑（陽性対照）。
    `nfr` の無い機能は「要求なし」で性能テストを作らない。`nfr` を外せば性能テストを消し、`--check` が残りを古いと言う。
    `nfr` や指した行が決まりに反するなら作らない。性能でない行を指さなければ止めない）・
+   **参考資料**（#951。中間表現の `refs` が指す `requirements/` のファイルが本文の `## 参考資料` に `build/merged/` と写しのパスで、`refs` の順に載り、
+   参照の無い機能は「無い」、どの本文も受入基準ではないことを書き、撤去の本文は 1 行。写しは `scaffold/refs/<パス>` に元のバイトのまま（UTF-8 でないものも）置かれ、
+   目録 `scaffold/refs/index.md` が生成の印とパスと sha256 を持つ。`refs` を外せば写しと目録を消して契約は前と同じバイト、`--check` は残った写しと元を直した写しを古いと言う。
+   目録に無いファイル・印の無い目録・目録の `..` の行では消さない。無い・`requirements/` の外・`.` で始まる・大文字小文字だけ違う綴り・空・重複・文字列でない `refs` なら作らない）・
    **課題一覧（案）**（#855。`build/scaffold/issues/proposals.md` に、追加・変更した入口の機能ごとに 1 案——呼ばれる関数・撤去には作らない。
    各案に、未決定事項〔中間表現の `branches` に無い呼ぶ側の分岐〕・受入基準の雛形〔見せるものの原文のチェックボックスと該当なしの分岐〕・
    作らないもの〔本文の `## 作らないもの` と同じ中身〕が出る。`branches` を書かなければ 8 分岐が全部未決定。
@@ -502,6 +506,153 @@ def not_built_copied(repo: Path) -> str | None:
             if stray in body:
                 return f"{fid} の本文に挙げていない行 {stray!r} がある"
     return None
+
+
+# ---- 参考資料（#951）。重ね合わせた全体の requirements/ の図・モックを、中間表現の refs で機能に結びつける
+REF_FLOW = "requirements/flows/受注.svg"
+REF_MOCK = "requirements/mock/注文.html"
+REF_FILES = {str(V1 / REF_FLOW): "<svg xmlns='http://www.w3.org/2000/svg'><text>受注</text></svg>\n",
+             str(V1 / REF_MOCK): "<html><body>注文の画面</body></html>\n"}
+# 本文の文言（本体の `REFS_NOT_CRITERIA`・`REFS_NONE` が本文に書くもの——`refs_copied` と `body_traceable` が本文とバイトで比べる）
+REFS_NOTE = ("**参考資料は受入基準ではない**——受入基準は上の Red テストの表である。参考資料（UI モック・業務フロー・画面遷移の図など）は、"
+             "見た目・配置・機能どうしのつながりを読むためのもの。参考資料が Red テスト・仕様の原文と食い違うと読めたら、"
+             "実装で決めず、仕様の穴として Q&A 表に起票する（下の「仕様の穴を見つけたら」）。")
+REFS_NONE_TEXT = "この機能に結びつけた参考資料（中間表現の `refs`）は無い。"
+REFS_INDEX_FILE = "scaffold/refs/index.md"
+
+
+def refs(f001, f002=None) -> Callable[[dict], dict]:
+    def apply(ir: dict) -> None:
+        f1(ir)["refs"] = f001
+        if f002 is not None:
+            ir["features"][1]["refs"] = f002
+    return edit(apply)
+
+
+# F-001 はモックを先に（並びは中間表現の順）。F-002 は参照を持たない
+REFS_IR = refs([REF_MOCK, REF_FLOW])
+
+
+def refs_section(body: str) -> str:
+    if "\n## 参考資料\n\n" not in body:
+        return "（参考資料の節が無い）"
+    return body.split("\n## 参考資料\n\n", 1)[1].split("\n\n## 作らないもの\n", 1)[0]
+
+
+def ref_line(rel: str) -> str:
+    return f"- `build/merged/{rel}`（写し: `scaffold/refs/{rel}`）"
+
+
+def refs_copied(repo: Path) -> str | None:
+    found = bodies(repo)
+    tail = "（`build/merged/` は上の `## 仕様` のコマンドで作る。写しは `scaffold/` の契約で、正本と開発のリポジトリが別でも `scaffold/` を写せば届く。）"
+    expected = {"F-001": "\n\n".join([REFS_NOTE, ref_line(REF_MOCK) + "\n" + ref_line(REF_FLOW), tail]),
+                "F-002": REFS_NOTE + "\n\n" + REFS_NONE_TEXT}
+    for fid, want in expected.items():
+        got = refs_section(found[fid])
+        if got != want:
+            return f"{fid} の参考資料の節が違う:\n{got}\n---- 期待:\n{want}"
+    # 写しは元のバイトのまま、`scaffold/refs/<パス>` に在る
+    for rel, text in REF_FILES.items():
+        inside = rel.split("/", 2)[2]  # docs/v1/ を外す
+        copy_path = repo / "scaffold" / "refs" / inside
+        if not copy_path.is_file() or copy_path.read_bytes() != text.encode("utf-8"):
+            return f"写し scaffold/refs/{inside} が無いか、元のバイトと違う"
+    index = (repo / REFS_INDEX_FILE).read_text(encoding="utf-8")
+    if "spec-loop scaffold が生成" not in index.split("\n", 1)[0]:
+        return f"目録の 1 行目に生成の印が無い: {index[:120]}"
+    for rel, text in REF_FILES.items():
+        line = f"- `{rel.split('/', 2)[2]}`（sha256: `{hashlib.sha256(text.encode('utf-8')).hexdigest()}`）"
+        if line not in index.splitlines():
+            return f"目録に {line!r} が無い"
+    # 本文のパスは、本文に書いたコマンドで作った全体の中に在る
+    merged = merge_with_script(repo)
+    return None if all((merged / rel).is_file() for rel in (REF_MOCK, REF_FLOW)) else "本文の build/merged/ のパスが辿れない"
+
+
+def drop_refs(repo: Path) -> None:
+    path = repo / IR_FILE
+    ir = json.loads(path.read_text(encoding="utf-8"))
+    for feature in ir["features"]:
+        feature.pop("refs", None)
+    path.write_text(json.dumps(ir, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def refs_removed(repo: Path) -> str | None:
+    if (repo / "scaffold" / "refs").exists() and any(p.is_file() for p in (repo / "scaffold" / "refs").rglob("*")):
+        return f"refs を外したのに写しが残っている: {sorted(str(p) for p in (repo / 'scaffold' / 'refs').rglob('*'))}"
+    # refs を持たない中間表現の契約は、#951 の前と 1 バイトも変わらない
+    problem = unchanged_without_nullable(repo)
+    if problem:
+        return problem
+    return None if REFS_NONE_TEXT in refs_section(bodies(repo)["F-001"]) else "refs を外した機能の参考資料が「無い」でない"
+
+
+HAND_REF = "scaffold/refs/手書き.md"
+
+
+def plant_hand_ref(repo: Path) -> None:
+    drop_refs(repo)
+    (repo / HAND_REF).write_text("手で置いた\n", encoding="utf-8")
+
+
+def hand_ref_kept(repo: Path) -> str | None:
+    if not (repo / HAND_REF).is_file():
+        return "目録に載っていないファイルを消した"
+    gone = [rel for rel in (REF_FLOW, REF_MOCK, "index.md") if (repo / "scaffold" / "refs" / rel).exists()]
+    return f"目録に載った写しが残っている: {gone}" if gone else None
+
+
+def plant_escaping_index(repo: Path) -> None:
+    """目録に `scaffold/refs/` の外を指す行を書き足す（`refs/../../docs/v1/spec/order.md` は正本の仕様）。"""
+    drop_refs(repo)
+    index = repo / REFS_INDEX_FILE
+    index.write_text(index.read_text(encoding="utf-8") + f"- `../../docs/v1/spec/order.md`（sha256: `{'0' * 64}`）\n",
+                     encoding="utf-8")
+
+
+def escaping_index_ignored(repo: Path) -> str | None:
+    return None if (repo / V1 / "spec" / "order.md").is_file() else "目録の .. を辿って scaffold/refs/ の外を消した"
+
+
+def plant_unmarked_index(repo: Path) -> None:
+    """生成の印の無い目録と、そこに載ったファイル——手で置いたものなので消さない。"""
+    (repo / "scaffold" / "refs" / "requirements").mkdir(parents=True)
+    (repo / "scaffold" / "refs" / "requirements" / "x.svg").write_text("<svg/>\n", encoding="utf-8")
+    (repo / REFS_INDEX_FILE).write_text(f"# 目録\n\n- `requirements/x.svg`（sha256: `{'0' * 64}`）\n", encoding="utf-8")
+
+
+def unmarked_index_kept(repo: Path) -> str | None:
+    kept = all((repo / rel).is_file() for rel in (REFS_INDEX_FILE, "scaffold/refs/requirements/x.svg"))
+    return None if kept else "生成の印の無い目録と、そこに載ったファイルを消した"
+
+
+BINARY_REF = bytes(range(256)) + b"\x89PNG\r\n\x1a\n"
+
+
+def plant_binary_ref(repo: Path) -> None:
+    path = repo / V1 / "requirements" / "mock.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(BINARY_REF)
+
+
+def binary_ref_copied(repo: Path) -> str | None:
+    path = repo / "scaffold" / "refs" / "requirements" / "mock.png"
+    return None if path.is_file() and path.read_bytes() == BINARY_REF else "UTF-8 でないファイルの写しが元のバイトと違う"
+
+
+def refs_added_in_v2(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのは refs を足した機能だけのはず: {list(found)}"
+    problem = body_has(found["F-001"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-001-C1` | 回帰 |",
+                                        ref_line(REF_FLOW)), "refs を足した変更")
+    return problem or (None if (repo / "scaffold" / "refs" / REF_FLOW).is_file() else "v2 で refs を足した機能の写しが無い")
+
+
+def touch_ref_source(repo: Path) -> None:
+    path = repo / V1 / REF_FLOW
+    path.write_text(path.read_text(encoding="utf-8").replace("受注", "受注（直した）"), encoding="utf-8")
 
 
 # ---- 呼ぶ側の分岐と課題一覧（案）（#855）。仕様の原文の行を、中間表現の branches で分岐に結びつける
@@ -1149,7 +1300,7 @@ def body_traceable(repo: Path) -> str | None:
     if lines[:3] != ["<!-- spec-loop-handoff: v3 -->", "<!-- spec-loop-feature: F-001 -->",
                      "<!-- spec-loop-change: add; base=none -->"]:
         return f"先頭 3 行が印でない: {lines[:3]}"
-    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 作らないもの", "## 仕様の穴を見つけたら")]
+    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 参考資料", "## 作らないもの", "## 仕様の穴を見つけたら")]
     if -1 in positions or positions != sorted(positions):
         return f"節が揃っていないか順が違う: {positions}"
     for needle in ("TestF001.test_f_001_c1", "TestF001.test_f_001_c2", "`F-001-C1`", "`F-001-C2`",
@@ -1162,7 +1313,9 @@ def body_traceable(repo: Path) -> str | None:
                    "実装が無い状態では、ケースの数だけ失敗する。",
                    # 範囲の外の行の無い機能でも、作らないものの節は 3 つの小見出しと「無い」を書く（#851）
                    NOT_BUILT_NONE.format("範囲の外の行"), NOT_BUILT_NONE.format("次の版の候補"),
-                   "### 性能予算\n\n" + NO_BUDGET):
+                   "### 性能予算\n\n" + NO_BUDGET,
+                   # 参照の無い機能でも、参考資料の節は受入基準でないことと「無い」を書く（#951）
+                   f"## 参考資料\n\n{REFS_NOTE}\n\n{REFS_NONE_TEXT}\n\n## 作らないもの"):
         if needle not in body:
             return f"本文に {needle!r} が無い"
     # 本文の指紋と sha256 と、指しているファイルの実物——中間表現は `merge-versions.py` が書く全体に、dev-loop の照合を当てる
@@ -1602,7 +1755,7 @@ def provisional_cited_by_feature_only(ir: dict) -> None:
 
 
 def sections_in_order(body: str) -> bool:
-    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 作らないもの", "## 仕様の穴を見つけたら")]
+    positions = [body.find(f"\n{s}\n") for s in ("## 仕様", "## 受入基準", "## Red テスト", "## Q&A の回答", "## 参考資料", "## 作らないもの", "## 仕様の穴を見つけたら")]
     return -1 not in positions and positions == sorted(positions)
 
 
@@ -1677,7 +1830,8 @@ def v2_removed(repo: Path) -> str | None:
     return body_has(body, ("理由: 取り消しはやめる", "撤去する API: `GET /orders/cancelable`", "| `F-002-C1` | 削除 |",
                            "—（`scaffold/tests/test_f_002.py` ごと消した）", "モジュール `spec_impl` の関数 `can_cancel`",
                            "python3 -m unittest discover -s scaffold/tests\n", "この機能が根拠にした Q&A は無い",
-                           "## 作らないもの\n\n撤去の Issue なので、作るものは無い——消した機能の代わりを作らない。\n\n## 仕様の穴を見つけたら"),
+                           "## 作らないもの\n\n撤去の Issue なので、作るものは無い——消した機能の代わりを作らない。\n\n## 仕様の穴を見つけたら",
+                           "## 参考資料\n\n撤去の Issue なので、参考資料は無い——消した機能の画面・流れを作らない。\n\n## 作らないもの"),
                     "撤去")
 
 
@@ -2121,6 +2275,36 @@ CASES: list[Case] = [
          ir=out_of_scope([SCOPE_ROWS[0] + "\n" + SCOPE_ROWS[2]]), spec=SCOPE_SPEC),
     Case("作らないもの: 前後に空白", 1, "F-001.out_of_scope: 前後に空白の無い 1 行の文字列でない行がある",
          ir=out_of_scope([" " + SCOPE_ROWS[0]]), spec=SCOPE_SPEC),
+    # #951: 参考資料。requirements/ の図・モックを指し、本文に節と写しのパス、契約に写しと目録
+    Case("参考資料: requirements の図を写す", 0, "作った", ir=REFS_IR, extra=REF_FILES, post=refs_copied),
+    Case("参考資料: 無いファイル", 1, "F-001.refs: requirements/flows/無い.svg が無い", ir=refs(["requirements/flows/無い.svg"]),
+         extra=REF_FILES, pre=plant_old_issues, post=nothing_written),
+    Case("参考資料: 無いファイルの --check", 1, "F-001.refs: requirements/flows/無い.svg が無い", args=("--check",),
+         ir=refs(["requirements/flows/無い.svg"]), extra=REF_FILES),
+    Case("参考資料: requirements の外", 1, "F-001.refs: spec/order.md は requirements/ の中に無い", ir=refs(["spec/order.md"]),
+         extra=REF_FILES),
+    Case("参考資料: 上へ出る", 1, "F-001.refs: requirements/../spec/order.md は `.` で始まる場所にある",
+         ir=refs(["requirements/../spec/order.md"]), extra=REF_FILES),
+    Case("参考資料: 大文字小文字だけ違う綴り", 1, "F-001.refs: requirements/flows/受注.SVG が無い",
+         ir=refs(["requirements/flows/受注.SVG"]), extra=REF_FILES),
+    Case("参考資料: 空の配列", 1, "F-001.refs: 参考資料のファイルの配列（1 つ以上）でない", ir=refs([]), extra=REF_FILES),
+    Case("参考資料: 重複", 1, "F-001.refs: 同じファイルを 2 度指している", ir=refs([REF_FLOW, REF_FLOW]), extra=REF_FILES),
+    Case("参考資料: 文字列でない", 1, "F-001.refs: 重ね合わせた全体の根からの相対パスでない（1）", ir=refs([1]), extra=REF_FILES),
+    Case("参考資料: UTF-8 でないファイルもバイトのまま写す", 0, "作った", ir=refs(["requirements/mock.png"]),
+         pre=plant_binary_ref, post=binary_ref_copied),
+    Case("参考資料: refs を外すと写しを消す", 0, "作った", ir=REFS_IR, extra=REF_FILES, generate_first=True,
+         pre=drop_refs, post=refs_removed),
+    Case("参考資料: refs を外した --check", 1, "scaffold/refs/requirements/flows/受注.svg: 中間表現の refs に無い参考資料の写しが残っている",
+         args=("--check",), ir=REFS_IR, extra=REF_FILES, generate_first=True, pre=drop_refs),
+    Case("参考資料: 元を直した --check", 1, "scaffold/refs/requirements/flows/受注.svg: 今の入力から作るものと違う", args=("--check",),
+         ir=REFS_IR, extra=REF_FILES, generate_first=True, pre=touch_ref_source),
+    Case("参考資料: 目録に無いファイルは消さない", 0, "作った", ir=REFS_IR, extra=REF_FILES, generate_first=True,
+         pre=plant_hand_ref, post=hand_ref_kept),
+    Case("参考資料: 目録の .. を辿らない", 0, "作った", ir=REFS_IR, extra=REF_FILES, generate_first=True,
+         pre=plant_escaping_index, post=escaping_index_ignored),
+    Case("参考資料: 印の無い目録は読まない", 0, "作った", pre=plant_unmarked_index, post=unmarked_index_kept),
+    Case("参考資料: v2 で refs を足す", 0, "作った",
+         extra={**REF_FILES, **v2([{**copy.deepcopy(IR["features"][0]), "refs": [REF_FLOW]}])}, post=refs_added_in_v2),
     # #852: 性能の要求。行があれば性能テストと予算、無ければ「要求なし」（基準の試料の本文は body_traceable が見る）
     Case("性能の要求: 行があれば性能テストと予算", 0, "作った", ir=nfr(["N-001"]), extra=with_nfr(), post=budget_copied),
     Case("性能の要求: 性能テストが上限と比べる", 0, "作った", ir=nfr(["N-002"]), extra=with_nfr(), post=budget_compared),
@@ -2987,7 +3171,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("仮回答の本文を出力で名指ししない", "    if marked:\n", "    if False:\n", "--provisional で暫定反映を指す"),
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
-    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY})",
+    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY, REFS})",
      "性能の要求: 行があれば性能テストと予算"),
     ("性能テストを作らない", "        if rows:\n            contract[f\"{PERF_DIR}/", "        if False:\n            contract[f\"{PERF_DIR}/",
      "性能の要求: 行があれば性能テストと予算"),
@@ -3013,8 +3197,29 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("No の形を見ない", "for no in refs if not isinstance(no, str) or not NFR_ID.fullmatch(no)]", "for no in refs if False]",
      "性能の要求: No の形"),
     ("残った性能テストを数えない", '(PERF_DIR, "perf_*.py")', '(PERF_DIR, "none_*.py")', "性能の要求: nfr を外した --check"),
+    # #951: 参考資料
+    ("参考資料の節を書かない", '    lines += ["", SECTIONS[4], ""] + references(change)', "    lines += []", "参考資料: requirements の図を写す"),
+    ("参考資料の検査を外す", "        if REFS in feature:\n            problems += check_refs", "        if False:\n            problems += check_refs",
+     "参考資料: 無いファイル"),
+    ("参考資料が在るかを見ない", "        elif rel not in present:", "        elif False:", "参考資料: 無いファイル"),
+    ("参考資料が在るかを resolve で見る", "        elif rel not in present:", "        elif not (whole / rel).is_file():",
+     "参考資料: 大文字小文字だけ違う綴り"),
+    ("requirements の外を見ない", '        elif not rel.startswith(f"{REQUIREMENTS_DIR}/"):', "        elif False:", "参考資料: requirements の外"),
+    (". で始まる場所を見ない", '        elif any(part.startswith(".") for part in rel.split("/")):', "        elif False:", "参考資料: 上へ出る"),
+    ("参考資料の空の配列を許す", '    if not isinstance(refs, list) or not refs:\n        return [f"{where}: 参考資料',
+     '    if not isinstance(refs, list):\n        return [f"{where}: 参考資料', "参考資料: 空の配列"),
+    ("参考資料の重複を見ない", '        problems.append(f"{where}: 同じファイルを 2 度指している")', "        pass", "参考資料: 重複"),
+    ("参考資料の写しを作らない", '            contract[f"{REFS_DIR}/{rel}"] = loaded.refs[rel]', "            pass",
+     "参考資料: requirements の図を写す"),
+    ("参考資料の目録を作らない", "        contract[REFS_INDEX] = refs_index(loaded.refs)", "        pass", "参考資料: refs を外した --check"),
+    ("残った写しを数えない", "    return sorted((generated_tests(out) | generated_refs(out)) - contract.keys())",
+     "    return sorted(generated_tests(out) - contract.keys())", "参考資料: refs を外した --check"),
+    ("目録の .. を辿る", '        if "\\\\" in rel or rel.startswith("/") or any(part in ("", ".", "..") for part in rel.split("/")):',
+     "        if False:", "参考資料: 目録の .. を辿らない"),
+    ("目録の印を見ない", '    if GENERATED not in text.split("\\n", 1)[0]:\n        return set()', "    if False:\n        return set()",
+     "参考資料: 印の無い目録は読まない"),
     # #851: 作らないもの
-    ("作らないものの節を書かない", '    lines += ["", SECTIONS[4], ""] + not_built(change, loaded, contract)', "    lines += []",
+    ("作らないものの節を書かない", '    lines += ["", SECTIONS[5], ""] + not_built(change, loaded, contract)', "    lines += []",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("次の版の候補も範囲の外に入れる", "[r for r in chosen if NEXT_VERSION not in r[0]]", "chosen",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
@@ -3028,7 +3233,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("表でない行を空の行で区切らない", "            if index and (header is None or header != group[index - 1][1]):",
      "            if index and header is not None and header != group[index - 1][1]:", "作らないもの: 範囲の外の行と次の版の候補を写す"),
-    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})", "{CALLED_BY, NFR, BRANCHES_KEY})",
+    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, NFR, BRANCHES_KEY, REFS})",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("out_of_scope の検査を呼ばない", "        if OUT_OF_SCOPE in feature:\n            problems += check_out_of_scope",
      "        if False:\n            problems += check_out_of_scope", "作らないもの: 節に無い行"),
@@ -3080,7 +3285,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("案が無いことを書かない", "    if not entries:\n", "    if False:\n", "課題一覧（案）: v2 で機能を消すだけなら案は無い"),
     ("案の件数を出さない", "（案 {len(entries)} 件", "（案 {len(changes)} 件", "課題一覧（案）: 呼ばれる関数には案を作らない"),
-    ("branches を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY})", "{CALLED_BY, OUT_OF_SCOPE, NFR})",
+    ("branches を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, OUT_OF_SCOPE, NFR, REFS})",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("branches の検査を呼ばない", "        if BRANCHES_KEY in feature:\n            problems += check_branches",
      "        if False:\n            problems += check_branches", "呼ぶ側の分岐: 原文に無い行"),
@@ -3240,7 +3445,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '                                          for part in value.split(".")[:1])', "実装のモジュールの 2 つ目の部の形"),
     ("実装のモジュールの予約語を許す", "all(NAME.fullmatch(part) and not keyword.iskeyword(part)",
      "all(NAME.fullmatch(part)", "実装のモジュールの予約語の部"),
-    ("--check が文字列で比べる", '        if current != text.encode("utf-8"):', '        if current.decode("utf-8").splitlines() != text.splitlines():',
+    ("--check が文字列で比べる", '        if current != (text if isinstance(text, bytes) else text.encode("utf-8")):',
+     '        if current.decode("utf-8").splitlines() != text.splitlines():',
      "改行を CRLF に変えた --check"),
     ("予期しない失敗で Issue の本文を消さない", "        if writing:\n            try:\n                clear_issues(repo)",
      "        if False:\n            try:\n                clear_issues(repo)", "仕様のパスに NUL"),
@@ -3321,12 +3527,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ケースの Q&A を本文に集めない", '    refs = set(feature["qa"]) | {no for _, case in rows for no in case.get("qa", [])}',
      '    refs = set(feature["qa"])', "本文から辿れる"),
     ("GET にも本文を付ける", '        if op["method"] in NO_BODY:', "        if False:", "OpenAPI と型"),
-    ("--check が残った Red テストを見ない", "    for rel in sorted(generated_tests(out) - contract.keys()):\n        problems",
-     "    for rel in []:\n        problems", "消した機能の Red テストが残る --check"),
-    ("書くときに残った Red テストを消さない", "    for rel in sorted(generated_tests(out) - contract.keys()):\n        (out / rel).unlink()",
-     "    for rel in []:\n        (out / rel).unlink()", "消した機能の Red テストを消す"),
+    ("--check が残った Red テストを見ない", "    for rel in leftovers(out, contract):\n        if not (out / rel).exists():",
+     "    for rel in []:\n        if not (out / rel).exists():", "消した機能の Red テストが残る --check"),
+    ("書くときに残った Red テストを消さない", "    for rel in leftovers(out, contract):\n        (out / rel).unlink(missing_ok=True)",
+     "    for rel in []:\n        (out / rel).unlink(missing_ok=True)", "消した機能の Red テストを消す"),
     ("印の無いテストも消す", "            if GENERATED in head:", "            if True:", "消した機能の Red テストを消す"),
-    ("--check が中身を比べない", '        if current != text.encode("utf-8"):', "        if False:", "手で直した後の --check"),
+    ("--check が中身を比べない", '        if current != (text if isinstance(text, bytes) else text.encode("utf-8")):', "        if False:", "手で直した後の --check"),
     ("機能の並びを保たない", '    return sorted(ir["features"], key=lambda f: f["id"])', '    return list(ir["features"])[::-1]',
      "本文から辿れる"),
     # ---- 版
@@ -3539,7 +3745,8 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
 
 # 大文字小文字を区別しないファイルシステムでだけ当てる変異（名前 → 理由）。区別するファイルシステムでは、綴りの違う
 # `NFR.csv` は本体の検査が無くても開けないので、試料がその変異を判別しない（#852 の狭いパスの N1）
-FOLDING_ONLY = {"表の名前の綴りを見ない": "綴りの違う表の名前を開けるのは大文字小文字を区別しないファイルシステムだけで、区別するなら本体の検査が無くても「表が無い」になる"}
+FOLDING_ONLY = {"表の名前の綴りを見ない": "綴りの違う表の名前を開けるのは大文字小文字を区別しないファイルシステムだけで、区別するなら本体の検査が無くても「表が無い」になる",
+                "参考資料が在るかを resolve で見る": "大文字小文字だけ違う綴りのファイルを開けるのは区別しないファイルシステムだけで、区別するなら変異の後も「無い」になる（#951）"}
 skipped: list[str] = []
 
 
