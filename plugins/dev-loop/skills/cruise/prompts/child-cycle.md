@@ -56,4 +56,10 @@
 読んだ `SKILL.md` の絶対パスと行数・worktree のパス・ブランチ・PR 番号と head の SHA・PR 側の CI の結果・関門ごとパスごとの結果（狭いパスを含む）・
 受入基準の証明できた／できていない・周の途中の課題（題・理由・どのパス・直す（どの条件か）／記録だけ／捨てる、直すなら仕様の穴か（穴なら選択肢と推奨。
 `../dev-loop/references/found-lines.md` の「仕様の穴の行」）と利用者の判断か）・拒まれた操作・利用者に要ること。
+**起動口が結果の形を渡していれば（既定）、最後の報告は `StructuredOutput` の道具で、形の欄に分けて返す**——
+`outcome`（`pr_ready` は PR を作り、PR 側の CI の最終の結果を見て、手順 8 を計画ファイルに書いたとき。それ以外は `stopped`）・
+`stop_reason`（止まった理由。`pr_ready` なら空文字）・`pr`・`head_sha`・`ci`（`pass`／`fail`／`pending`／`none`）・
+`skill_path` と `skill_lines`（読んだ `SKILL.md` の絶対パスと行数）・`denied_commands`（拒まれた操作をそのまま）・
+`needs_user`（利用者に要ること）・`report`（上の報告の全文）。**親が読むのは最後の `result` の分だけである**——
+背景で起こした体（Verifier など）を待つ間に途中の報告を返しても、周を止めるとき・終えるときに、その時点の報告でもう 1 度返す。
 **親はこの報告を実物（`gh pr view`・`gh pr checks`）で確かめてから台帳を書く。**
