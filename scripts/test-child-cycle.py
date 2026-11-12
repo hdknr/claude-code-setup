@@ -166,6 +166,9 @@ BROKEN_SCHEMAS = {
     "enum が数": ({"enum": 5}, DONE),
     "型を縛らない形に文字列の出力": ({}, "PR #9 を作った"),
 }
+# 検査器の再帰の上限を越える深さ（#991 の 2 パス目 C3）。json.dumps は Python の版によって深い入れ子で落ちるので、
+# 記録は JSON の文字列を手で組んで置く（`plant_deep`）
+DEEP = 2000
 
 MUTATIONS = {
     "子を切り離さない": [("start_new_session=True", "start_new_session=False")],
@@ -208,7 +211,10 @@ MUTATIONS = {
     "記録の形でなく本体の形で検査する": [("    schema = recorded_schema(meta)", "    schema = RESULT_SCHEMA")],
     "形を取り出せない記録を渡していないと読む": [("    return schema if isinstance(schema, dict) else UNREADABLE_SCHEMA",
                                     "    return schema if isinstance(schema, dict) else None")],
-    "検査の途中の例外を捕まえない": [("    except (TypeError, AttributeError, ValueError) as exc:", "    except ZeroDivisionError as exc:")],
+    "検査の途中の例外を捕まえない": [("    except (TypeError, AttributeError, ValueError, RecursionError) as exc:",
+                         "    except RecursionError as exc:")],
+    "検査器の再帰の上限を捕まえない": [("    except (TypeError, AttributeError, ValueError, RecursionError) as exc:",
+                          "    except (TypeError, AttributeError, ValueError) as exc:")],
 }
 
 
@@ -320,6 +326,16 @@ def plant(main: Path, number: int, pid: int, events, tag: str, structured=NO_KEY
     if structured is not NO_KEY:
         meta["structured"] = structured
     (d / f"{number}-{tag}.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+def plant_deep(main: Path, number: int, pid: int, depth: int, tag: str) -> None:
+    """形と出力が `depth` 段の入れ子の記録を、JSON の文字列を手で組んで置く。"""
+    schema = '{"type": "array", "items": ' * depth + '{"type": "string"}' + "}" * depth
+    output = "[" * depth + '"x"' + "]" * depth
+    line = json.dumps(result(1, structured_output="@@"), ensure_ascii=False).replace('"@@"', output)
+    plant(main, number, pid, [INIT, line], tag, structured={"schema": "@@"})
+    meta = main / ".claude" / "plans" / f"cruise-{NAME}-children" / f"{number}-{tag}.json"
+    meta.write_text(meta.read_text(encoding="utf-8").replace('"@@"', schema), encoding="utf-8")
 
 
 def stop(pid) -> None:
@@ -544,6 +560,10 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         for i, (name, (schema, output)) in enumerate(BROKEN_SCHEMAS.items()):
             plant(main, 150 + i, dead_pid(), [INIT, shaped(output)], "a", structured={"schema": schema})
             o[f"壊れた形 {name}"] = run(mod, ["status", NAME, str(150 + i)], main)[:2]
+        plant_deep(main, 160, dead_pid(), DEEP, "a")
+        o["深い入れ子"] = run(mod, ["status", NAME, "160"], main)[:2]
+        plant_deep(main, 161, dead_pid(), 50, "a")
+        o["浅い入れ子"] = run(mod, ["status", NAME, "161"], main)[:2]
         # pid が居ても claude でなければ走っていない
         sleeper = subprocess.Popen(["sleep", "30"])
         started.append(sleeper.pid)
@@ -681,6 +701,10 @@ def main() -> int:
                   and "形を取り出せない" in o[f"取り出せない {name}"][1])
         for name in BROKEN_SCHEMAS:
             check(f"壊れた形（{name}）でも落ちずに 3", o[f"壊れた形 {name}"][0] == 3)
+        # 浅い入れ子は検査器が最後まで歩いて「オブジェクトでない」に着く（試料が組めていることの陽性対照）
+        check("浅い入れ子（50 段）の記録は検査器が歩ききって 3", o["浅い入れ子"][0] == 3
+              and "オブジェクトでない" in o["浅い入れ子"][1])
+        check(f"深い入れ子（{DEEP} 段）の記録でも再帰の上限で落ちずに 3", o["深い入れ子"][0] == 3)
         brief_text = (SCRIPT.parent.parent / "prompts" / "child-cycle.md").read_text(encoding="utf-8").split("\n---\n", 1)[-1]
         missing = [k for k in mod.RESULT_SCHEMA["properties"] if f"`{k}`" not in brief_text]
         check(f"委譲文（--- より下）が形の欄を全部名指しする（無い: {missing}）", not missing)

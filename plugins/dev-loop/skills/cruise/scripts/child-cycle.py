@@ -104,6 +104,7 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **検査は記録に残した形で行い、形の無い記録（前の版の起動口・`--no-structured`）は検査しない**——本体の形が後で変わっても、古い記録を新しい形で判じない。
 - **「形を渡していない」と読むのは、記録の `structured` の鍵が無いか null のときだけ**——ほかの値で形（オブジェクト）を取り出せなければ 3 にする。検査せずに 0 にしない。
 - **記録の形や子の出力がどんな値でも、検査の途中で落ちずに 3 にする**——落ちると Python の終了コード 1 になり、「走っている」と読まれる。
+- **形や出力が深く入れ子でも、検査器の再帰の上限（`RecursionError`）で落ちずに 3 にする**——`json.loads` は深さ 5000 でも読めるので、漏れるのは検査器の側である（#991 の 2 パス目 C3）。
 
 守らない:
 
@@ -493,7 +494,7 @@ def structured_problems(summary, schema):
         if problems:
             return [f"structured_output が形に合わない（{clip('・'.join(problems), 160)}）"]
         return claimed_problems(output)
-    except (TypeError, AttributeError, ValueError) as exc:
+    except (TypeError, AttributeError, ValueError, RecursionError) as exc:
         return [f"記録の形が読めない（{type(exc).__name__}）"]
 
 
