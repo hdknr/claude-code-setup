@@ -325,7 +325,8 @@ def read_records(path: Path) -> tuple[str, list[dict], list[str]]:
         raise Bad(f"{path}: 記録のファイルが読めない（{exc.__class__.__name__}: {exc}）")
     records: list[dict] = []
     bad: list[str] = []
-    for n, line in enumerate(text.splitlines(), 1):
+    # 行は `\n` だけで分ける——`splitlines()` は JSON が素のまま書く U+2028・U+2029・U+0085 でも割る（2 パス目の CR2-4）
+    for n, line in enumerate(text.split("\n"), 1):
         if not line.strip():
             continue
         try:

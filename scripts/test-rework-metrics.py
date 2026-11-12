@@ -30,7 +30,7 @@
 - `--record` は標準出力と同じ数を 1 行の JSON で記録のファイルに追記する（既存の行を消さない・親のディレクトリが無ければ作る・改行で終わらないファイルにも行を分けて書く）。数えきれない件数も記録する
 - 記録の案件は `--case`、無ければ正本リポジトリの最上位のディレクトリの名前。コミットは `--ref` を解決した SHA、`date` はそのコミットの日付、`recorded` は記録した日で記録する
 - 同じ案件・同じコミットの記録がすでにあれば書かずに 3（`--ref` の綴りが違っても同じコミットなら同じ。案件が違えば書く）
-- 記録のファイルに読めない行があれば書かずに 2
+- 記録のファイルに読めない行があれば書かずに 2。行は改行（`\n`）だけで分ける（案件の名前に U+2028 などを含めても 1 行のまま）
 - 記録のファイルは `SPEC_LOOP_REWORK_LOG`、無ければ `~/.claude/spec-loop/rework-metrics.jsonl`（テストは一時の `HOME` の下と、一時ディレクトリを cwd にした子プロセスだけで書き、利用者の記録にもテストを走らせた cwd にも書かない）
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
@@ -328,6 +328,7 @@ MUTATIONS = [
     ("作り直しの行を記録しない", '"rework_lines": total_lines', '"rework_lines": 0', "記録"),
     ("数えきれない件数を記録しない", '"uncounted": len(bad)', '"uncounted": 0', "記録"),
     ("型を見ない", "    if wrong:\n", "    if False:\n", "記録"),
+    ("splitlines で行を分ける", 'enumerate(text.split("\\n"), 1)', "enumerate(text.splitlines(), 1)", "記録"),
     ("コミットの日付でなく今日を記録する", '"date": history.tip_date,', '"date": datetime.date.today().isoformat(),', "記録"),
     ("記録した日にコミットの日付を書く", '"recorded": datetime.date.today().isoformat(),', '"recorded": history.tip_date,', "記録"),
 ]
@@ -349,7 +350,7 @@ def record_scenario(scripts: Path, work: Path, env: dict[str, str]) -> str | Non
         return subprocess.run(args, capture_output=True, text=True, env=run_env or rec_env, cwd=work)
 
     def records(path: Path = log) -> list[dict]:
-        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
 
     def sha(ref: str) -> str:
         return subprocess.run(["git", "-C", str(work / "repo"), "rev-parse", ref], capture_output=True, text=True, env=env,
@@ -422,6 +423,16 @@ def record_scenario(scripts: Path, work: Path, env: dict[str, str]) -> str | Non
         proc = run("--ref", "early", "--record", issues="clean", prs="noprs", run_env=dict(env, SPEC_LOOP_REWORK_LOG=str(broken)))
         if proc.returncode != 2 or broken.read_text(encoding="utf-8") != text or "読めない行" not in proc.stderr:
             return f"{name}: exit={proc.returncode}・ファイル {broken.read_text(encoding='utf-8')!r}"
+
+    # JSON が素のまま書く行の区切り文字（U+2028・U+2029・U+0085）を案件の名前に含めても、1 行のまま読み戻せる（2 パス目の CR2-4）
+    odd = base / "odd.jsonl"
+    odd_env = dict(env, SPEC_LOOP_REWORK_LOG=str(odd))
+    for case in ("a\u2028b", "c\u2029d\u0085e"):
+        proc = run("--ref", "early", "--record", "--case", case, issues="clean", prs="noprs", run_env=odd_env)
+        if proc.returncode != 0:
+            return f"行の区切り文字を含む案件 {case!r}: exit={proc.returncode}: {proc.stderr[-400:]}"
+    if [x["case"] for x in records(odd)] != ["a\u2028b", "c\u2029d\u0085e"]:
+        return f"行の区切り文字を含む案件: 読み戻すと {[x['case'] for x in records(odd)]}"
 
     tail = base / "tail.jsonl"
     tail.write_text(json.dumps(dict(r, case="Z")), encoding="utf-8")  # 改行で終わらない
