@@ -88,7 +88,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       feasibility がゲートに当て（止めない）、`scaffold.py`（未決定・暫定・Python でない言語で止める）と `build-proposal.py`（未決定で 1・暫定で 3）が読み込んで当てる。
       表が無ければ両方とも警告して進む。決まりの原本は `references/tree.md` の「基盤要件」、守る／守らないは docstring を正とする。テストは `scripts/test-check-infra-csv.py`）
     - `scripts/check-findings-csv.py` - 仕様レビューの**指摘の表**（`spec-review/v<n>-findings.csv`。1 指摘 1 行）の形式の検査（#982。
-      **振り分けの列は `references/spec-scope.md` の区分の名前だけ**・数える列の値・`回` が隣の実行の記録（`v<n>.csv`）の実行の行を指し日付が同じことを見る。
+      **振り分けの列は `references/spec-scope.md` の区分の名前だけ**・数える列の値・`回` が隣の実行の記録（`v<n>.csv`）の実行の行を指し日付が同じこと・**`確かめられない` の行の `結果` が `-`**（#986）を見る。
       spec-review の手順 6 が実行の行と一緒に足して当てる。決まりの原本は `references/spec-exit.md` の「指摘の表」、守る／守らないは docstring を正とする。テストは `scripts/test-check-findings-csv.py`）
     - `scripts/schedule-to-gantt.py` - `schedule.csv` からガントチャート（SVG）を作る（**同じ表から同じバイト**。
       作れなければ**前の出力を消す**——**消せなければ 2 で止まり、残った出力を名指しする**（#499）。テストは `scripts/test-schedule-to-gantt.py`）
