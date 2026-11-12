@@ -169,6 +169,8 @@ BROKEN_SCHEMAS = {
 # 検査器の再帰の上限を越える深さ（#991 の 2 パス目 C3）。json.dumps は Python の版によって深い入れ子で落ちるので、
 # 記録は JSON の文字列を手で組んで置く（`plant_deep`）
 DEEP = 2000
+# json.loads の再帰の上限を越える深さ（#991 の狭いパス N1）。3.12 は 10 万段・3.14 は 100 万段で越えた（実測）ので、両方で越える値
+JSON_DEEP = 1_000_000
 
 MUTATIONS = {
     "子を切り離さない": [("start_new_session=True", "start_new_session=False")],
@@ -215,6 +217,9 @@ MUTATIONS = {
                          "    except RecursionError as exc:")],
     "検査器の再帰の上限を捕まえない": [("    except (TypeError, AttributeError, ValueError, RecursionError) as exc:",
                           "    except (TypeError, AttributeError, ValueError) as exc:")],
+    "json.loads の再帰の上限を捕まえない": [("    except (OSError, ValueError, RecursionError) as exc:",
+                                 "    except (OSError, ValueError) as exc:"),
+                                ("        except (ValueError, RecursionError):", "        except ValueError:")],
 }
 
 
@@ -336,6 +341,15 @@ def plant_deep(main: Path, number: int, pid: int, depth: int, tag: str) -> None:
     plant(main, number, pid, [INIT, line], tag, structured={"schema": "@@"})
     meta = main / ".claude" / "plans" / f"cruise-{NAME}-children" / f"{number}-{tag}.json"
     meta.write_text(meta.read_text(encoding="utf-8").replace('"@@"', schema), encoding="utf-8")
+
+
+def plant_json_deep(main: Path, number: int, pid: int, tag: str, where: str) -> None:
+    """`json.loads` の再帰の上限を越える行を、出力（`where="out"`）か記録（`where="meta"`）に置く。"""
+    deep = "[" * JSON_DEEP + "]" * JSON_DEEP
+    plant(main, number, pid, [INIT, deep if where == "out" else result(1)], tag)
+    if where == "meta":
+        meta = main / ".claude" / "plans" / f"cruise-{NAME}-children" / f"{number}-{tag}.json"
+        meta.write_text(meta.read_text(encoding="utf-8")[:-1] + ', "deep": ' + deep + "}", encoding="utf-8")
 
 
 def stop(pid) -> None:
@@ -564,6 +578,10 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         o["深い入れ子"] = run(mod, ["status", NAME, "160"], main)[:2]
         plant_deep(main, 161, dead_pid(), 50, "a")
         o["浅い入れ子"] = run(mod, ["status", NAME, "161"], main)[:2]
+        plant_json_deep(main, 162, dead_pid(), "a", "out")
+        o["json の深い出力の行"] = run(mod, ["status", NAME, "162"], main)[:2]
+        plant_json_deep(main, 163, dead_pid(), "a", "meta")
+        o["json の深い記録"] = run(mod, ["status", NAME, "163"], main)[:2]
         # pid が居ても claude でなければ走っていない
         sleeper = subprocess.Popen(["sleep", "30"])
         started.append(sleeper.pid)
@@ -705,6 +723,10 @@ def main() -> int:
         check("浅い入れ子（50 段）の記録は検査器が歩ききって 3", o["浅い入れ子"][0] == 3
               and "オブジェクトでない" in o["浅い入れ子"][1])
         check(f"深い入れ子（{DEEP} 段）の記録でも再帰の上限で落ちずに 3", o["深い入れ子"][0] == 3)
+        check(f"json.loads が越える深さ（{JSON_DEEP} 段）の出力の行は壊れた行に数えて 3",
+              o["json の深い出力の行"][0] == 3 and "result が無い" in o["json の深い出力の行"][1])
+        check(f"json.loads が越える深さ（{JSON_DEEP} 段）の記録は読めないと言って 4（走っているの 1 ではない）",
+              o["json の深い記録"][0] == 4)
         brief_text = (SCRIPT.parent.parent / "prompts" / "child-cycle.md").read_text(encoding="utf-8").split("\n---\n", 1)[-1]
         missing = [k for k in mod.RESULT_SCHEMA["properties"] if f"`{k}`" not in brief_text]
         check(f"委譲文（--- より下）が形の欄を全部名指しする（無い: {missing}）", not missing)

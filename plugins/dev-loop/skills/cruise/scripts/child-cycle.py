@@ -104,7 +104,9 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **検査は記録に残した形で行い、形の無い記録（前の版の起動口・`--no-structured`）は検査しない**——本体の形が後で変わっても、古い記録を新しい形で判じない。
 - **「形を渡していない」と読むのは、記録の `structured` の鍵が無いか null のときだけ**——ほかの値で形（オブジェクト）を取り出せなければ 3 にする。検査せずに 0 にしない。
 - **記録の形や子の出力がどんな値でも、検査の途中で落ちずに 3 にする**——落ちると Python の終了コード 1 になり、「走っている」と読まれる。
-- **形や出力が深く入れ子でも、検査器の再帰の上限（`RecursionError`）で落ちずに 3 にする**——`json.loads` は深さ 5000 でも読めるので、漏れるのは検査器の側である（#991 の 2 パス目 C3）。
+- **形や出力が深く入れ子でも、検査器の再帰の上限（`RecursionError`）で落ちずに 3 にする**（#991 の 2 パス目 C3）。
+- **記録や出力の行が `json.loads` の再帰の上限を越えても落ちない**——記録は読めないと言い、出力の行は壊れた行に数える。
+  どの深さで越えるかは Python の版で違う（実測で 3.12 は 10 万段、3.14 は 100 万段。#991 の狭いパス N1）。
 
 守らない:
 
@@ -353,8 +355,8 @@ def is_running(pid, number):
 def read_meta(path):
     try:
         meta = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise Unknown(f"記録を読めない: {path}: {exc}") from exc
+    except (OSError, ValueError, RecursionError) as exc:
+        raise Unknown(f"記録を読めない: {path}: {type(exc).__name__}") from exc
     if not isinstance(meta, dict) or not isinstance(meta.get("pid"), int) or not isinstance(meta.get("out"), str):
         raise Unknown(f"記録の形が違う: {path}")
     return meta
@@ -440,7 +442,7 @@ def summarize(out_path):
     for line in lines:
         try:
             event = json.loads(line)
-        except ValueError:
+        except (ValueError, RecursionError):
             broken += 1
             continue
         if not isinstance(event, dict):

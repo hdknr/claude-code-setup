@@ -138,8 +138,8 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 
 | # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- |
-| N1 | `summarize`（`except ValueError` だけ）と `read_meta` が `json.loads` の RecursionError を捕まえない。Python 3.12 では深さ 10 万段の出力の行で漏れうる（3.14 は 100 万段）。C3 で足した docstring の「`json.loads` は深さ 5000 でも読める」は版に依存する | 一部（`summarize` の例外までは Verifier が実測。`status` の rc は未実測） | A4（「落ちずに 3」）——ただし本物の `claude` の出力では起きにくい | **人間が決める**（狭いパスの指摘は直さない） |
+| N1 | `summarize`（`except ValueError` だけ）と `read_meta` が `json.loads` の RecursionError を捕まえない。Python 3.12 では深さ 10 万段の出力の行で漏れうる（3.14 は 100 万段）。C3 で足した docstring の「`json.loads` は深さ 5000 でも読める」は版に依存する | 一部（`summarize` の例外までは Verifier が実測。`status` の rc は未実測） | A4（「落ちずに 3」）——ただし本物の `claude` の出力では起きにくい | **人間が決めた: この PR で直す**（2026-11-12、手順 7 の前の `AskUserQuestion` の回答）。`read_meta` と `summarize` でも `RecursionError` を捕まえ（記録は読めない＝4、出力の行は壊れた行＝`result` が無ければ 3）、docstring の「5000 でも読める」を版に依存しない書き方に直した。試料は 100 万段（3.12・3.14 とも越える）、変異「json.loads の再帰の上限を捕まえない」は両方の版で赤。関門の当て直しはしていない（2 パスで打ち切り。テストと `check-all.py` だけ） |
 
 ## 起票
 
-- この周の起票: 0 件（起票の候補なし）
+- この周の起票: 0 件（手順 8 で C1・C2・C7・C8 を候補として訊き、利用者が「起票しない」を選んだ。2026-11-12）
