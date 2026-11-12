@@ -76,6 +76,10 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 - 実装（手順 4）: 済み。`check-all.py` 74 本中 73 本 OK、`test-render-diagrams.py` の 1 本だけ「プロセスグループを止めない」の変異が生き残った——
   同時に python3.12 で `test-rework-metrics.py` を走らせていた（負荷）。この周で触っていないファイルで、単独で回し直すと緑（試料 60・変異 53）。
   `test-rework-metrics.py`（試料 10・変異 61）・`test-rework-report.py`（試料 7・変異 24）は python3.14・3.12 の両方で緑
+- 実装のコミット: `29516084`
+- 割り目 1（手順 4 の後）: AskUserQuestion で訊いたが 600 秒答えが無かった——このまま続けた（2026-11-12）
+- 1 パス目の指摘対応の起点: このコミットの直後の HEAD（下の行に SHA を書く）
+- 関門: Verifier 1 パス目 未・/code-review 1 パス目 未（次は手順 5 から）
 
 ## 既知の限界・決着済みの論点
 
