@@ -117,6 +117,61 @@ FIXTURES = {
                  {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed_warning", "rateLimitType": "seven_day"}}, result(1)],
 }
 
+# 結果の形（#991）。済んだ子の申告
+DONE = {"outcome": "pr_ready", "stop_reason": "", "pr": 9, "head_sha": "abc123", "ci": "pass", "skill_path": "/x/SKILL.md",
+        "skill_lines": 1200, "denied_commands": [], "needs_user": [], "report": "最後の報告: PR #9"}
+EARLY = dict(DONE, outcome="stopped", stop_reason="背景の Verifier を待っている", pr=None, head_sha=None, ci="none")
+
+
+def shaped(output, turns=1, **extra):
+    return result(turns, structured_output=output, **extra)
+
+
+# 形を渡した記録に置く試料（名前 → (出力, 期待する終了コード)）。p2 の実測: 1 つ目の result は早すぎる報告で、最後が本当の報告
+SHAPED = {
+    "済んだ": ([INIT, shaped(DONE)], 0),
+    "最初が早すぎて最後が済んだ": ([INIT, shaped(EARLY, 3), shaped(DONE, 2)], 0),
+    "最初だけ済んで最後が止まった": ([INIT, shaped(DONE, 3), shaped(EARLY, 2)], 3),
+    "structured_output が無い": ([INIT, result(1)], 3),
+    "オブジェクトでない": ([INIT, shaped("PR #9 を作った")], 3),
+    "欄が欠ける": ([INIT, shaped({k: v for k, v in DONE.items() if k != "head_sha"})], 3),
+    "型が違う": ([INIT, shaped(dict(DONE, pr="9"))], 3),
+    "enum の外": ([INIT, shaped(dict(DONE, ci="green"))], 3),
+    "余分な欄": ([INIT, shaped(dict(DONE, extra="x"))], 3),
+    "配列の要素の型": ([INIT, shaped(dict(DONE, needs_user=[1]))], 3),
+    "真偽値を整数と読まない": ([INIT, shaped(dict(DONE, pr=True))], 3),
+    "配列でない needs_user（要約の行で落ちない）": ([INIT, shaped(dict(DONE, needs_user=5))], 3),
+    "止まったと申告": ([INIT, shaped(dict(EARLY, ci="pass", pr=9, head_sha="abc123"))], 3),
+    "CI が fail": ([INIT, shaped(dict(DONE, ci="fail"))], 3),
+    "PR が null": ([INIT, shaped(dict(DONE, pr=None))], 3),
+    "利用者に要ること": ([INIT, shaped(dict(DONE, needs_user=["マージの判断"]))], 3),
+    "拒まれたと申告": ([INIT, shaped(dict(DONE, denied_commands=["git push"]))], 3),
+    "予算切れ": ([INIT, result(3, subtype="error_max_budget_usd", is_error=True)], 3),
+}
+# 起動の後で本体の形が変わった記録——古い形（欄が少ない）で検査されれば 0、今の形で検査されれば 3
+OLD_SCHEMA = {"type": "object", "properties": {"outcome": {"type": "string"}, "pr": {"type": "integer"}, "ci": {"type": "string"}},
+              "required": ["outcome", "pr", "ci"]}
+OLD_OUTPUT = {"outcome": "pr_ready", "pr": 9, "ci": "pass"}
+# 記録の structured が鍵なし・null 以外で形を取り出せない（名前 → (structured, 出力)）——検査せずに 0 にしない
+UNREADABLE_RECORDS = {
+    "structured が空のオブジェクト": ({}, dict(DONE, outcome="stopped")),
+    "structured が文字列": ("x", dict(DONE, outcome="stopped")),
+    "schema が null": ({"schema": None}, dict(DONE, outcome="stopped")),
+}
+# 記録の形の語の値が壊れている・形が出力の型を縛らない——検査の途中で落ちて 1（走っている）にならず 3
+BROKEN_SCHEMAS = {
+    "type が dict": ({"type": {"a": 1}}, DONE),
+    "required が数": ({"type": "object", "required": 5}, DONE),
+    "properties が配列": ({"type": "object", "properties": [1]}, DONE),
+    "enum が数": ({"enum": 5}, DONE),
+    "型を縛らない形に文字列の出力": ({}, "PR #9 を作った"),
+}
+# 検査器の再帰の上限を越える深さ（#991 の 2 パス目 C3）。json.dumps は Python の版によって深い入れ子で落ちるので、
+# 記録は JSON の文字列を手で組んで置く（`plant_deep`）
+DEEP = 2000
+# json.loads の再帰の上限を越える深さ（#991 の狭いパス N1）。3.12 は 10 万段・3.14 は 100 万段で越えた（実測）ので、両方で越える値
+JSON_DEEP = 1_000_000
+
 MUTATIONS = {
     "子を切り離さない": [("start_new_session=True", "start_new_session=False")],
     "子の標準入力を閉じない": [("stdin=subprocess.DEVNULL, ", "")],
@@ -145,6 +200,26 @@ MUTATIONS = {
     "消す設定でも起動した claude の環境から渡す": [("        if mod.env_scrubbed(env):\n", "        if False:\n")],
     "長期トークンの値を出力に出す": [("起動した claude の環境の値を子に渡した（値は出さない）\"", "起動した claude の環境の値を子に渡した（{value}）\"")],
     "要約の行を切り詰めない": [('return text if len(text) <= limit else text[: limit - 1] + "…"', "return text")],
+    "既定で形を渡さない": [("    schema = None if args.no_structured else RESULT_SCHEMA", "    schema = None")],
+    "--no-structured でも形を渡す": [("    schema = None if args.no_structured else RESULT_SCHEMA", "    schema = RESULT_SCHEMA")],
+    "最初の result の structured_output を読む": [('    output = summary["results"][-1].get("structured_output")',
+                                            '    output = summary["results"][0].get("structured_output")')],
+    "形に合わなくても 3 にしない": [('        return ["結果の形を渡したのに、最後の result に structured_output が無い"]', "        return []"),
+                          ("        problems = schema_problems(output, schema)\n        if problems:",
+                           "        problems = schema_problems(output, schema)\n        if False:")],
+    "真偽値を整数と読む": [('            if isinstance(value, bool) and name in ("integer", "number"):\n'
+                   "                return False  # 真偽値を整数と読まない\n", "")],
+    "子の申告を見ない": [("    return claimed_problems(output)", "    return []")],
+    "記録の形でなく本体の形で検査する": [("    schema = recorded_schema(meta)", "    schema = RESULT_SCHEMA")],
+    "形を取り出せない記録を渡していないと読む": [("    return schema if isinstance(schema, dict) else UNREADABLE_SCHEMA",
+                                    "    return schema if isinstance(schema, dict) else None")],
+    "検査の途中の例外を捕まえない": [("    except (TypeError, AttributeError, ValueError, RecursionError) as exc:",
+                         "    except RecursionError as exc:")],
+    "検査器の再帰の上限を捕まえない": [("    except (TypeError, AttributeError, ValueError, RecursionError) as exc:",
+                          "    except (TypeError, AttributeError, ValueError) as exc:")],
+    "json.loads の再帰の上限を捕まえない": [("    except (OSError, ValueError, RecursionError) as exc:",
+                                 "    except (OSError, ValueError) as exc:"),
+                                ("        except (ValueError, RecursionError):", "        except ValueError:")],
 }
 
 
@@ -239,15 +314,42 @@ def write_stream(path: Path, events) -> None:
                     encoding="utf-8")
 
 
-def plant(main: Path, number: int, pid: int, events, tag: str) -> None:
-    """起動口を通さずに記録を置く（終わった子の要約を当てるため）。"""
+NO_KEY = object()
+
+
+def plant(main: Path, number: int, pid: int, events, tag: str, structured=NO_KEY) -> None:
+    """起動口を通さずに記録を置く（終わった子の要約を当てるため）。
+
+    `structured` を渡さなければ、記録に `structured` の鍵を置かない（#991 より前の起動口の記録の形）。
+    """
     d = main / ".claude" / "plans" / f"cruise-{NAME}-children"
     d.mkdir(parents=True, exist_ok=True)
     out = d / f"{number}-{tag}.jsonl"
     write_stream(out, events)
     (d / f"{number}-{tag}.err").write_text("", encoding="utf-8")
-    (d / f"{number}-{tag}.json").write_text(json.dumps({"pid": pid, "out": str(out), "err": str(d / f"{number}-{tag}.err")}),
-                                            encoding="utf-8")
+    meta = {"pid": pid, "out": str(out), "err": str(d / f"{number}-{tag}.err")}
+    if structured is not NO_KEY:
+        meta["structured"] = structured
+    (d / f"{number}-{tag}.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+def plant_deep(main: Path, number: int, pid: int, depth: int, tag: str) -> None:
+    """形と出力が `depth` 段の入れ子の記録を、JSON の文字列を手で組んで置く。"""
+    schema = '{"type": "array", "items": ' * depth + '{"type": "string"}' + "}" * depth
+    output = "[" * depth + '"x"' + "]" * depth
+    line = json.dumps(result(1, structured_output="@@"), ensure_ascii=False).replace('"@@"', output)
+    plant(main, number, pid, [INIT, line], tag, structured={"schema": "@@"})
+    meta = main / ".claude" / "plans" / f"cruise-{NAME}-children" / f"{number}-{tag}.json"
+    meta.write_text(meta.read_text(encoding="utf-8").replace('"@@"', schema), encoding="utf-8")
+
+
+def plant_json_deep(main: Path, number: int, pid: int, tag: str, where: str) -> None:
+    """`json.loads` の再帰の上限を越える行を、出力（`where="out"`）か記録（`where="meta"`）に置く。"""
+    deep = "[" * JSON_DEEP + "]" * JSON_DEEP
+    plant(main, number, pid, [INIT, deep if where == "out" else result(1)], tag)
+    if where == "meta":
+        meta = main / ".claude" / "plans" / f"cruise-{NAME}-children" / f"{number}-{tag}.json"
+        meta.write_text(meta.read_text(encoding="utf-8")[:-1] + ', "deep": ' + deep + "}", encoding="utf-8")
 
 
 def stop(pid) -> None:
@@ -314,6 +416,8 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         agent = re.search(r"^台帳の agent: claude-p:(.+)$", str(out), re.M)
         o["記録の場所"] = (Path(agent.group(1)).parent == children and Path(agent.group(1)).exists()) if agent else False
         o["記録の env"] = json.loads(Path(agent.group(1)).read_text(encoding="utf-8")).get("env") if agent else None
+        o["記録の structured"] = (json.loads(Path(agent.group(1)).read_text(encoding="utf-8")).get("structured", "鍵が無い")
+                                if agent else None)
         o["worktree に書かない"] = sorted(p.name for p in sub.parent.iterdir())
         # 走っている間
         o["status(走っている)"] = run(mod, ["status", NAME, "50"], main)[0]
@@ -329,7 +433,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
 
         # 起こして、出力を出して終わる子（端から端まで）
         stream = tmp / f"stream-{tag}.jsonl"
-        write_stream(stream, FIXTURES["済んだ（result が 3 つ）"])
+        # 形を渡した子（既定）: 最初の result は早すぎる報告、最後の 2 つが済んだ報告（最後は文が空・ターン 0）
+        write_stream(stream, [INIT, say("背景の体を待つ"), say("最後の報告: PR #9"), shaped(EARLY, 3), shaped(DONE, 1),
+                              shaped(DONE, 0, result="")])
         os.environ["FAKE_CLAUDE_OUTPUT"] = str(stream)
         os.environ["FAKE_CLAUDE_SLEEP"] = "0"
         assert "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS" not in os.environ
@@ -357,6 +463,23 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                                     json.loads(rec54.read_text(encoding="utf-8")).get("bg")
                                     if rec54 and wait_for(rec54.exists) and wait_for(lambda: rec54.stat().st_size > 0) else "記録なし")
         wait_for(lambda: run(mod, ["status", NAME, "54"], main)[0] != 1)
+        # --no-structured（#991）: 形を渡さず、記録は null、形の無い出力でも 0
+        plain = tmp / f"plain-{tag}.jsonl"
+        write_stream(plain, FIXTURES["済んだ（result が 3 つ）"])
+        os.environ["FAKE_CLAUDE_OUTPUT"] = str(plain)
+        rc, out, _ = run(mod, ["launch", NAME, "55", "--brief", str(brief), "--permission-mode", "auto", "--no-structured"], main)
+        m = re.search(r"pid (\d+)", str(out))
+        if m:
+            started.append(int(m.group(1)))
+        rec55 = home / f"claude-rec-{m.group(1)}.json" if m else None
+        agent55 = re.search(r"^台帳の agent: claude-p:(.+)$", str(out), re.M)
+        o["--no-structured"] = (rc, json.loads(rec55.read_text(encoding="utf-8")).get("argv")
+                                if rec55 and wait_for(rec55.exists) and wait_for(lambda: rec55.stat().st_size > 0) else "記録なし",
+                                json.loads(Path(agent55.group(1)).read_text(encoding="utf-8")).get("structured", "鍵が無い")
+                                if agent55 else None)
+        wait_for(lambda: run(mod, ["status", NAME, "55"], main)[0] != 1)
+        o["--no-structured の要約"] = run(mod, ["status", NAME, "55"], main)[:2]
+        os.environ["FAKE_CLAUDE_OUTPUT"] = str(stream)
 
         # 認証（#785）: 子の環境の CLAUDE_CODE_OAUTH_TOKEN の出所。偽の ps が起動した claude の環境を答える
         os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
@@ -434,6 +557,31 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
             plant(main, number, dead_pid(), events, "a")
             rc, out, _ = run(mod, ["status", NAME, str(number)], main)
             o[f"要約 {name}"] = (rc, out)
+        # 形を渡した記録（#991）
+        for i, (name, (events, _)) in enumerate(SHAPED.items()):
+            number = 100 + i
+            plant(main, number, dead_pid(), events, "a", structured={"schema": mod.RESULT_SCHEMA})
+            o[f"形 {name}"] = run(mod, ["status", NAME, str(number)], main)[:2]
+        plant(main, 130, dead_pid(), [INIT, shaped(OLD_OUTPUT)], "a", structured={"schema": OLD_SCHEMA})
+        o["形 古い形の記録"] = run(mod, ["status", NAME, "130"], main)[:2]
+        plant(main, 131, dead_pid(), [INIT, result(1)], "a", structured=None)
+        o["形 null の記録"] = run(mod, ["status", NAME, "131"], main)[:2]
+        plant(main, 132, dead_pid(), [INIT, shaped(DONE)], "a", structured={"schema": dict(OLD_SCHEMA, minimum=1)})
+        o["形 読めない語"] = run(mod, ["status", NAME, "132"], main)[:2]
+        for i, (name, (structured, output)) in enumerate(UNREADABLE_RECORDS.items()):
+            plant(main, 140 + i, dead_pid(), [INIT, shaped(output)], "a", structured=structured)
+            o[f"取り出せない {name}"] = run(mod, ["status", NAME, str(140 + i)], main)[:2]
+        for i, (name, (schema, output)) in enumerate(BROKEN_SCHEMAS.items()):
+            plant(main, 150 + i, dead_pid(), [INIT, shaped(output)], "a", structured={"schema": schema})
+            o[f"壊れた形 {name}"] = run(mod, ["status", NAME, str(150 + i)], main)[:2]
+        plant_deep(main, 160, dead_pid(), DEEP, "a")
+        o["深い入れ子"] = run(mod, ["status", NAME, "160"], main)[:2]
+        plant_deep(main, 161, dead_pid(), 50, "a")
+        o["浅い入れ子"] = run(mod, ["status", NAME, "161"], main)[:2]
+        plant_json_deep(main, 162, dead_pid(), "a", "out")
+        o["json の深い出力の行"] = run(mod, ["status", NAME, "162"], main)[:2]
+        plant_json_deep(main, 163, dead_pid(), "a", "meta")
+        o["json の深い記録"] = run(mod, ["status", NAME, "163"], main)[:2]
         # pid が居ても claude でなければ走っていない
         sleeper = subprocess.Popen(["sleep", "30"])
         started.append(sleeper.pid)
@@ -460,10 +608,18 @@ def main() -> int:
 
         print("起こす（L1・L3）")
         check("launch は 0 で、子の終わりを待たずに戻る", o["launch"] == 0 and o["launch の戻りが速い"])
-        check("引数: -p にスラッシュコマンド・stream-json・verbose・名指しした許可モード・委譲文・モデル・最後に --allowedTools",
+        schema_text = json.dumps(mod.RESULT_SCHEMA, ensure_ascii=False)
+        check("引数: -p にスラッシュコマンド・stream-json・verbose・名指しした許可モード・委譲文・モデル・結果の形・最後に --allowedTools",
               o["引数"][0] == ["-p", "/dev-loop:dev-loop 50", "--output-format", "stream-json", "--verbose",
                               "--permission-mode", "auto", "--append-system-prompt", BRIEF, "--model", "haiku",
-                              "--allowedTools", "Bash(git status)", "Agent"])
+                              "--json-schema", schema_text, "--allowedTools", "Bash(git status)", "Agent"])
+        check("記録の .json に渡した結果の形を残す（#991）", o["記録の structured"] == {"schema": mod.RESULT_SCHEMA})
+        check("結果の形の文字列に ' -p ' が無い（走っているかの判定が -p の直後を読むので）", " -p " not in schema_text)
+        rc55, argv55, structured55 = o["--no-structured"]
+        check("--no-structured なら --json-schema を渡さず、記録の structured は null",
+              rc55 == 0 and isinstance(argv55, list) and "--json-schema" not in argv55 and structured55 is None)
+        check("--no-structured の子は形を検査せず、形の無い出力でも 0（「結果の形: 渡していない」と出す）",
+              o["--no-structured の要約"][0] == 0 and "結果の形: 渡していない" in str(o["--no-structured の要約"][1]))
         check("worktree のサブディレクトリから呼んでも、子の cwd はメインの作業ツリー", o["cwd"] == str(main_tree))
         check("子は新しいセッション（親から切り離す）", o["別のセッション"])
         check("子の標準入力は閉じている（空）", o["標準入力は空"] == "")
@@ -544,6 +700,39 @@ def main() -> int:
         check("最後の文は子自身の発言（委譲先の発言ではない）", "最後の文: 子の報告" in o["要約 委譲先の発言が最後"][1])
         check("途中の init で dev-loop の版が変わったら両方を出す", "dev-loop の版: 1.63.6, → 途中から 1.64.0" in o["要約 途中で版が変わる"][1])
         check("長い文を切り詰める（要約は 1500 文字未満）", len(o["要約 長い文"][1]) < 1500)
+        check("形の鍵が無い記録（#991 より前の起動口）は形を検査しない（「結果の形: 渡していない」）",
+              "結果の形: 渡していない" in o["要約 済んだ（result が 3 つ）"][1])
+
+        print("\n結果の形（#991）")
+        check("端から端: 最後の result の structured_output の欄を 1 行で出す（最初の早すぎる報告ではない）",
+              "結果の形: outcome=pr_ready・PR 9・head abc123・CI pass" in str(out))
+        for name, (_, code) in SHAPED.items():
+            check(f"形 {name} は {code}", o[f"形 {name}"][0] == code)
+        check("形が無い出力は理由を出す", "structured_output が無い" in o["形 structured_output が無い"][1])
+        check("形に合わない出力は合わない欄を出す", "$.ci" in o["形 enum の外"][1] and "$.extra" in o["形 余分な欄"][1])
+        check("子の申告の止まった理由を出す", "子が止まったと申告" in o["形 止まったと申告"][1])
+        check("記録に残した古い形で検査する（今の形では欄が足りないが 0）", o["形 古い形の記録"][0] == 0)
+        check("記録の structured が null なら形を検査しない", o["形 null の記録"][0] == 0)
+        check("形に読めない語があれば 3", o["形 読めない語"][0] == 3 and "読めない語" in o["形 読めない語"][1])
+        for name in UNREADABLE_RECORDS:
+            check(f"記録の {name} は「渡していない」と読まずに 3", o[f"取り出せない {name}"][0] == 3
+                  and "形を取り出せない" in o[f"取り出せない {name}"][1])
+        for name in BROKEN_SCHEMAS:
+            check(f"壊れた形（{name}）でも落ちずに 3", o[f"壊れた形 {name}"][0] == 3)
+        # 浅い入れ子は検査器が最後まで歩いて「オブジェクトでない」に着く（試料が組めていることの陽性対照）
+        check("浅い入れ子（50 段）の記録は検査器が歩ききって 3", o["浅い入れ子"][0] == 3
+              and "オブジェクトでない" in o["浅い入れ子"][1])
+        check(f"深い入れ子（{DEEP} 段）の記録でも再帰の上限で落ちずに 3", o["深い入れ子"][0] == 3)
+        check(f"json.loads が越える深さ（{JSON_DEEP} 段）の出力の行は壊れた行に数えて 3",
+              o["json の深い出力の行"][0] == 3 and "result が無い" in o["json の深い出力の行"][1])
+        check(f"json.loads が越える深さ（{JSON_DEEP} 段）の記録は読めないと言って 4（走っているの 1 ではない）",
+              o["json の深い記録"][0] == 4)
+        brief_text = (SCRIPT.parent.parent / "prompts" / "child-cycle.md").read_text(encoding="utf-8").split("\n---\n", 1)[-1]
+        missing = [k for k in mod.RESULT_SCHEMA["properties"] if f"`{k}`" not in brief_text]
+        check(f"委譲文（--- より下）が形の欄を全部名指しする（無い: {missing}）", not missing)
+        enums = [v for p in mod.RESULT_SCHEMA["properties"].values() for v in p.get("enum", [])]
+        missing_enum = [v for v in enums if f"`{v}`" not in brief_text]
+        check(f"委譲文が enum の値を全部名指しする（無い: {missing_enum}）", not missing_enum)
 
         print("\n終了コードが docstring の表と一致する")
         source = SCRIPT.read_text(encoding="utf-8")
