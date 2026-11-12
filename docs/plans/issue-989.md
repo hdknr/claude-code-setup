@@ -86,8 +86,13 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
   `check-all.py` 74 本中 73 本 OK、`check-plan-scope.py` だけ漏れたファイルの削除を未コミットのまま回して落ち、コミット後に単独で緑
 - 次: 手順 5 の当て直し（Verifier 2 パス目）と /code-review 2 パス目（どちらも未）。base は同じ `5c2f4a3e…`
 - 割り目 2（2 パス目の前）: AskUserQuestion で訊いたが 600 秒答えが無かった——このまま続けた（2026-11-12）
-- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `497e3efa`
-- 関門 2 パス目: Verifier・/code-review とも起動した（報告待ち）
+- 関門 2 パス目: Verifier 反証 0 件・/code-review 指摘 9 件（直す 1 件 CR2-4・残課題 8 件。下の 2 パス目の採否の表）
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD。`497e3efa` から計画ファイルだけを足した）: `69e0fb62`・終点: `a46f4e8f`
+- 2 パス目の指摘対応: `check-all.py` 74/74 緑。著者の変異 1 本（`split("\n")` を `splitlines()` に戻す）は赤
+- 狭いパス（`69e0fb62`→`a46f4e8f`。dev-loop-verifier・sonnet）: 反証 0 件。著者の変異（`splitlines` に戻す）は test-rework-metrics.py で赤。
+  Verifier が設計した変異 2 本: `if not line.strip()` を `if not line` は test-rework-report.py で赤。`splitlines` に戻す変異は test-rework-report.py では素通り
+  （report 側に U+2028 の試料が無い）——読む関数は 1 つで、test-rework-metrics.py が同じ変異で赤（陽性対照）。CRLF のファイルは `read_text` が改行を揃えるので影響なし（Verifier が実測）。
+  狭いパスの指摘は直さない——素通りした変異は PR コメントで人に渡す
 
 ## 既知の限界・決着済みの論点
 
@@ -122,4 +127,4 @@ Verifier 2 パス目: 反証 0 件（陽性対照を独立に再現）。/code-r
 | CR2-8 `--summary --record` の標準エラーが案件の名前と SHA を出す | 示せる | 無し——C4 は標準出力の決まり。標準エラーは既存の名指しも題を出す | 残課題 |
 | CR2-9 C3 の守り方 `grep -rn 980` はテストの否定の記述に当たる | 示せる | 無し（記述は「指さないこと」を見る側） | 残課題 |
 
-- この周の起票: 0 件
+- この周の起票: 0 件（起票の 3 条件の (a) 実データで失敗を示せる残課題が無い——残課題は PR コメントに残す）
