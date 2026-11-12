@@ -89,7 +89,8 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 - 関門 2 パス目: **済み**（2026-11-12）。Verifier（`dev-loop:dev-loop-verifier`・sonnet。委譲文 170 行を読んだと報告、`wc -l` と一致）反証 **0 件**・反証でない観察 2 件／ `/code-review` high 指摘 **8 件**。採否は下の「2 パス目の採否の表」——直す 1 件（C3）
 - 2 パス目の指摘対応の起点（狭いパスの起点）: `3b8e283eaf70deaa4e1e7831be26f5492e06bd11`（指摘対応に入る前の HEAD。この行を書いたコミットはその子で、計画ファイルだけ）
 - 2 パス目の指摘対応の終点: `517702da4586195c009159ae119fbc86f5f59580`（C3 を直したコミット。`check-all.py` 74/74、`test-child-cycle.py` は 3.12・3.14 とも緑で「守る」33 行 ↔ 変異 33 件）。著者の変異は 1 本（`RecursionError` を except から外す——赤）
-- 狭いパス: `git diff 3b8e283e 517702da` に Verifier（sonnet）を 1 回当てる——結果は当てた後に書く
+- 狭いパス: **済み**（2026-11-12）。`git diff 3b8e283e 517702da` に Verifier（`dev-loop:dev-loop-verifier`・sonnet。170 行を読んだと報告、一致）。反証 **1 件**（N1。下の「狭いパスの採否の表」——人間が決める）。`test-child-cycle.py` は 3.12・3.14 とも緑、`git status --porcelain` は前後とも空
+- 関門はここで打ち切り（3 パス目は無い）。この先は人間レビュー
 - 再開する側への申し送り: 本物の `claude -p` の実測（p0〜p4）の出力は scratchpad にあり、セッションと一緒に消える——数は上の「実測」の表と `references/child-process.md` の「結果の形」が正。手元の dev-loop は 1.103.0（main の版は 1.104.0、この周で 1.105.0）
 - 反証と差し戻し: 1 パス目の 2 関門で計 11 件。直すと決めた 4 件（R1〜R4）は手順 4 に差し戻して直した（`c30501f3`。`check-all.py` 74/74）。1 パス目の指摘対応の差分は 0 行でない（`git diff c2cb2cb9` に child-cycle.py・test-child-cycle.py）ので 2 パス目を回す。**残っているのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方**
 - 交絡を潰した手順: R1〜R4 は直す前に本物の `status` を一時リポジトリの記録に当てて rc=1/0 を見（陽性）、直した後に同じ試料で rc=3 を見た。p0（陰性対照）と p1（陽性対照）で、`structured_output` が `--json-schema` によって出ることを分けた。p2 は「早い 1 つ目の result」と「最後の result」を分けて数えた。観測窓は各 1 回・haiku・小さな課題
@@ -132,6 +133,12 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 | C6 | `pr: 0`・負数・空の `head_sha` で 0 | 示せない（子がそう申告した実物は無い。R6 と同じ） | 無し（A5 は `pr` が null を名指し） | 残課題 |
 | C7 | 文字列の `needs_user` の件数を文字数で出す | 示せる（レビューの probe） | 無し（3 は返る。文言だけ） | 残課題 |
 | C8 | `integer` に float を許す変異が素通りする（試料に float が無い） | 示せる（レビューの変異） | 無し（本体は float を拒む。試料の穴） | 残課題 |
+
+### 狭いパスの採否の表
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| N1 | `summarize`（`except ValueError` だけ）と `read_meta` が `json.loads` の RecursionError を捕まえない。Python 3.12 では深さ 10 万段の出力の行で漏れうる（3.14 は 100 万段）。C3 で足した docstring の「`json.loads` は深さ 5000 でも読める」は版に依存する | 一部（`summarize` の例外までは Verifier が実測。`status` の rc は未実測） | A4（「落ちずに 3」）——ただし本物の `claude` の出力では起きにくい | **人間が決める**（狭いパスの指摘は直さない） |
 
 ## 起票
 
