@@ -64,7 +64,7 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 | 0 | launch: 起こした ／ status: 終わっていて、下の 3 の印が 1 つも無い |
 | 1 | status: 走っている（それまでの要約を出す） |
 | 2 | 引数が違う（名前・番号の形・選べない許可モード） |
-| 3 | launch: 起こさなかった（委譲文が無い・空・`{{` が残る・`bypassPermissions`・同じ Issue の子が走っている）／ status: 終わったが要確認（`result` が無い・最後の `result` が成功でない・API の誤り・拒否された操作・殺された体・利用上限の拒否・形を渡したのに結果が形に合わない・子が済んだと申告していない） |
+| 3 | launch: 起こさなかった（委譲文が無い・空・`{{` が残る・`bypassPermissions`・同じ Issue の子が走っている）／ status: 終わったが要確認（`result` が無い・最後の `result` が成功でない・API の誤り・拒否された操作・殺された体・利用上限の拒否・形を渡したのに結果が形に合わない・記録の形を取り出せない・読めない・子が済んだと申告していない） |
 | 4 | 判定できなかった（メインの作業ツリーを決められない・記録が無い・読めない・`claude` を起こせない・プロセスは居るが `ps` で確かめられない）。**「終わった」とも「走っている」とも答えていない** |
 
 ## 何を守り、何を守らないか
@@ -102,6 +102,8 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **形の検査で、真偽値を整数と読まない**——Python の `bool` は `int` の仲間なので、`isinstance` だけでは `true` が `pr` に合ってしまう。
 - **形に合っても、子が済んだと申告していなければ 3**——`pr_ready` でない・`ci` が `pass` でない・`pr` が null・`needs_user` か `denied_commands` が空でない。
 - **検査は記録に残した形で行い、形の無い記録（前の版の起動口・`--no-structured`）は検査しない**——本体の形が後で変わっても、古い記録を新しい形で判じない。
+- **「形を渡していない」と読むのは、記録の `structured` の鍵が無いか null のときだけ**——ほかの値で形（オブジェクト）を取り出せなければ 3 にする。検査せずに 0 にしない。
+- **記録の形や子の出力がどんな値でも、検査の途中で落ちずに 3 にする**——落ちると Python の終了コード 1 になり、「走っている」と読まれる。
 
 守らない:
 
@@ -222,8 +224,15 @@ def schema_problems(value, schema, where="$"):
     return found
 
 
+def count(value):
+    """欄の件数。配列でない値（記録の形が配列を求めていない）でも落ちずに数える。"""
+    return len(value) if isinstance(value, (list, str, dict)) else (1 if value else 0)
+
+
 def claimed_problems(output):
     """形に合った子の申告のうち、済んでいないと言っているもの。"""
+    if not isinstance(output, dict):
+        return [f"structured_output がオブジェクトでない（{type(output).__name__}）"]
     found = []
     if output.get("outcome") != "pr_ready":
         found.append(f"子が止まったと申告（{clip(str(output.get('stop_reason') or ''), 80)}）")
@@ -232,9 +241,9 @@ def claimed_problems(output):
     if output.get("pr") is None:
         found.append("PR 番号が無い")
     if output.get("needs_user"):
-        found.append(f"利用者に要ること {len(output['needs_user'])} 件")
+        found.append(f"利用者に要ること {count(output['needs_user'])} 件")
     if output.get("denied_commands"):
-        found.append(f"子が拒まれたと申告した操作 {len(output['denied_commands'])} 件")
+        found.append(f"子が拒まれたと申告した操作 {count(output['denied_commands'])} 件")
     return found
 
 
@@ -454,10 +463,20 @@ def summarize(out_path):
     return {"init": init, "last_init": last_init, "results": results, "limit": limit, "last_text": last_text, "broken": broken}
 
 
+UNREADABLE_SCHEMA = "記録の structured から形を取り出せない"
+
+
 def recorded_schema(meta):
-    """記録に残した結果の形。形を渡していない記録（前の版の起動口・--no-structured）は None。"""
+    """記録に残した結果の形。形を渡していない記録（前の版の起動口・--no-structured）は None。
+
+    鍵が無い・null のときだけ「渡していない」と読む。それ以外で形（オブジェクト）を取り出せなければ
+    UNREADABLE_SCHEMA を返し、`structured_problems` が 3 にする——渡したかもしれない記録を検査せずに通さない。
+    """
     structured = meta.get("structured")
-    return structured.get("schema") if isinstance(structured, dict) else None
+    if structured is None:
+        return None
+    schema = structured.get("schema") if isinstance(structured, dict) else None
+    return schema if isinstance(schema, dict) else UNREADABLE_SCHEMA
 
 
 def structured_problems(summary, schema):
@@ -467,10 +486,15 @@ def structured_problems(summary, schema):
     output = summary["results"][-1].get("structured_output")
     if output is None:
         return ["結果の形を渡したのに、最後の result に structured_output が無い"]
-    problems = schema_problems(output, schema)
-    if problems:
-        return [f"structured_output が形に合わない（{clip('・'.join(problems), 160)}）"]
-    return claimed_problems(output)
+    if schema is UNREADABLE_SCHEMA:
+        return [UNREADABLE_SCHEMA]
+    try:
+        problems = schema_problems(output, schema)
+        if problems:
+            return [f"structured_output が形に合わない（{clip('・'.join(problems), 160)}）"]
+        return claimed_problems(output)
+    except (TypeError, AttributeError, ValueError) as exc:
+        return [f"記録の形が読めない（{type(exc).__name__}）"]
 
 
 def concerns(summary, schema=None):
@@ -531,7 +555,7 @@ def cmd_status(args, cwd=None):
         if isinstance(output, dict):
             print(clip(f"結果の形: outcome={output.get('outcome')}・PR {output.get('pr')}・head {output.get('head_sha')}・"
                        f"CI {output.get('ci')}・止まった理由 {output.get('stop_reason') or '無し'}・"
-                       f"利用者に要ること {len(output.get('needs_user') or [])} 件・拒まれた操作 {len(output.get('denied_commands') or [])} 件・"
+                       f"利用者に要ること {count(output.get('needs_user'))} 件・拒まれた操作 {count(output.get('denied_commands'))} 件・"
                        f"SKILL.md {output.get('skill_path')}（{output.get('skill_lines')} 行）", 600))
         else:
             print(f"結果の形: 最後の result に structured_output が無い（{type(output).__name__}）")

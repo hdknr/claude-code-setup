@@ -140,6 +140,7 @@ SHAPED = {
     "余分な欄": ([INIT, shaped(dict(DONE, extra="x"))], 3),
     "配列の要素の型": ([INIT, shaped(dict(DONE, needs_user=[1]))], 3),
     "真偽値を整数と読まない": ([INIT, shaped(dict(DONE, pr=True))], 3),
+    "配列でない needs_user（要約の行で落ちない）": ([INIT, shaped(dict(DONE, needs_user=5))], 3),
     "止まったと申告": ([INIT, shaped(dict(EARLY, ci="pass", pr=9, head_sha="abc123"))], 3),
     "CI が fail": ([INIT, shaped(dict(DONE, ci="fail"))], 3),
     "PR が null": ([INIT, shaped(dict(DONE, pr=None))], 3),
@@ -151,6 +152,20 @@ SHAPED = {
 OLD_SCHEMA = {"type": "object", "properties": {"outcome": {"type": "string"}, "pr": {"type": "integer"}, "ci": {"type": "string"}},
               "required": ["outcome", "pr", "ci"]}
 OLD_OUTPUT = {"outcome": "pr_ready", "pr": 9, "ci": "pass"}
+# 記録の structured が鍵なし・null 以外で形を取り出せない（名前 → (structured, 出力)）——検査せずに 0 にしない
+UNREADABLE_RECORDS = {
+    "structured が空のオブジェクト": ({}, dict(DONE, outcome="stopped")),
+    "structured が文字列": ("x", dict(DONE, outcome="stopped")),
+    "schema が null": ({"schema": None}, dict(DONE, outcome="stopped")),
+}
+# 記録の形の語の値が壊れている・形が出力の型を縛らない——検査の途中で落ちて 1（走っている）にならず 3
+BROKEN_SCHEMAS = {
+    "type が dict": ({"type": {"a": 1}}, DONE),
+    "required が数": ({"type": "object", "required": 5}, DONE),
+    "properties が配列": ({"type": "object", "properties": [1]}, DONE),
+    "enum が数": ({"enum": 5}, DONE),
+    "型を縛らない形に文字列の出力": ({}, "PR #9 を作った"),
+}
 
 MUTATIONS = {
     "子を切り離さない": [("start_new_session=True", "start_new_session=False")],
@@ -185,12 +200,15 @@ MUTATIONS = {
     "最初の result の structured_output を読む": [('    output = summary["results"][-1].get("structured_output")',
                                             '    output = summary["results"][0].get("structured_output")')],
     "形に合わなくても 3 にしない": [('        return ["結果の形を渡したのに、最後の result に structured_output が無い"]', "        return []"),
-                          ("    problems = schema_problems(output, schema)\n    if problems:",
-                           "    problems = schema_problems(output, schema)\n    if False:")],
+                          ("        problems = schema_problems(output, schema)\n        if problems:",
+                           "        problems = schema_problems(output, schema)\n        if False:")],
     "真偽値を整数と読む": [('            if isinstance(value, bool) and name in ("integer", "number"):\n'
                    "                return False  # 真偽値を整数と読まない\n", "")],
     "子の申告を見ない": [("    return claimed_problems(output)", "    return []")],
     "記録の形でなく本体の形で検査する": [("    schema = recorded_schema(meta)", "    schema = RESULT_SCHEMA")],
+    "形を取り出せない記録を渡していないと読む": [("    return schema if isinstance(schema, dict) else UNREADABLE_SCHEMA",
+                                    "    return schema if isinstance(schema, dict) else None")],
+    "検査の途中の例外を捕まえない": [("    except (TypeError, AttributeError, ValueError) as exc:", "    except ZeroDivisionError as exc:")],
 }
 
 
@@ -520,6 +538,12 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         o["形 null の記録"] = run(mod, ["status", NAME, "131"], main)[:2]
         plant(main, 132, dead_pid(), [INIT, shaped(DONE)], "a", structured={"schema": dict(OLD_SCHEMA, minimum=1)})
         o["形 読めない語"] = run(mod, ["status", NAME, "132"], main)[:2]
+        for i, (name, (structured, output)) in enumerate(UNREADABLE_RECORDS.items()):
+            plant(main, 140 + i, dead_pid(), [INIT, shaped(output)], "a", structured=structured)
+            o[f"取り出せない {name}"] = run(mod, ["status", NAME, str(140 + i)], main)[:2]
+        for i, (name, (schema, output)) in enumerate(BROKEN_SCHEMAS.items()):
+            plant(main, 150 + i, dead_pid(), [INIT, shaped(output)], "a", structured={"schema": schema})
+            o[f"壊れた形 {name}"] = run(mod, ["status", NAME, str(150 + i)], main)[:2]
         # pid が居ても claude でなければ走っていない
         sleeper = subprocess.Popen(["sleep", "30"])
         started.append(sleeper.pid)
@@ -652,6 +676,11 @@ def main() -> int:
         check("記録に残した古い形で検査する（今の形では欄が足りないが 0）", o["形 古い形の記録"][0] == 0)
         check("記録の structured が null なら形を検査しない", o["形 null の記録"][0] == 0)
         check("形に読めない語があれば 3", o["形 読めない語"][0] == 3 and "読めない語" in o["形 読めない語"][1])
+        for name in UNREADABLE_RECORDS:
+            check(f"記録の {name} は「渡していない」と読まずに 3", o[f"取り出せない {name}"][0] == 3
+                  and "形を取り出せない" in o[f"取り出せない {name}"][1])
+        for name in BROKEN_SCHEMAS:
+            check(f"壊れた形（{name}）でも落ちずに 3", o[f"壊れた形 {name}"][0] == 3)
         brief_text = (SCRIPT.parent.parent / "prompts" / "child-cycle.md").read_text(encoding="utf-8").split("\n---\n", 1)[-1]
         missing = [k for k in mod.RESULT_SCHEMA["properties"] if f"`{k}`" not in brief_text]
         check(f"委譲文（--- より下）が形の欄を全部名指しする（無い: {missing}）", not missing)
