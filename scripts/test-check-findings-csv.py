@@ -9,7 +9,7 @@
 
 1. **決まりに反する形を、理由つきで落とす（1）**——見出し（順・列の過不足）・列の数・数える列の値（レビュー・判定役・重さ・確かめたか）・
    **振り分けが区分の名前でない（言い換え・理由を足した・`確かめられない`）**・`-` と `確かめられない` の対応（2 方向）・
-   範囲の外／実装に渡す の行の重さ・`回` の形・`回` が実行の行でない（`上限` の行・無い番号）・日付の形と食い違い・`指摘` が空。
+   範囲の外／実装に渡す の行の重さ・振り分けが `-` の行の `結果`（#986）・`回` の形・`回` が実行の行でない（`上限` の行・無い番号）・日付の形と食い違い・`指摘` が空。
 2. **決まりどおりの形を通す（0）**——**6 つの区分のどれも通す**（「実装に渡す」「退ける」の行を含む）・`確かめられない` の行の `-`・
    3 つのレビュー・BOM・見出しの行だけ・`記法の移行` の行を持つ実行の記録。
 3. **中身を検査していない形を 0 にしない（2）**——名前が `v<n>-findings.csv` でない・ファイルが無い・空・UTF-8 でない・
@@ -79,8 +79,9 @@ CASES: dict[str, tuple] = {
     "落ちる: 振り分けの言い換え": ("v1-findings.csv", F_HEAD + row(category="実装へ", weight="-"), RUNS, None, 1, "区分の名前でない"),
     "落ちる: 振り分けに理由を足した": ("v1-findings.csv", F_HEAD + row(category="退ける（誤り）"), RUNS, None, 1, "区分の名前でない"),
     "落ちる: 振り分けに確かめられない": ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない", category="確かめられない"), RUNS, None, 1, "区分の名前でない"),
-    "落ちる: 確かめたのに振り分けが -": ("v1-findings.csv", F_HEAD + row(category="-"), RUNS, None, 1, "`振り分け` が `-` なのは"),
+    "落ちる: 確かめたのに振り分けが -": ("v1-findings.csv", F_HEAD + row(category="-", result="-"), RUNS, None, 1, "`振り分け` が `-` なのは"),
     "落ちる: 確かめられないのに区分を確定": ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない"), RUNS, None, 1, "どの区分にも確定しない"),
+    "落ちる: 確かめられない行の結果が - でない": ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない", category="-", result="次の回"), RUNS, None, 1, "の行の `結果` は `-`"),
     "落ちる: 実装に渡すの重さ": ("v1-findings.csv", F_HEAD + row(category="実装に渡す", weight="補い"), RUNS, None, 1, "の行の `重さ` は `-`"),
     "落ちる: 範囲の外の重さ": ("v1-findings.csv", F_HEAD + row(category="範囲の外として記録する", weight="判断が要る"), RUNS, None, 1, "の行の `重さ` は `-`"),
     "落ちる: 回の形": ("v1-findings.csv", F_HEAD + row(no="01"), RUNS, None, 1, "1 からの番号でない"),
@@ -107,6 +108,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("振り分けの値を見ない", "    elif category not in CATEGORIES:\n", "    elif False:\n", "落ちる: 振り分けの言い換え"),
     ("確かめたのに - を通す", "        if cell[\"確かめたか\"] != UNCONFIRMED:\n", "        if False:\n", "落ちる: 確かめたのに振り分けが -"),
     ("確かめられないのに区分を通す", "    elif cell[\"確かめたか\"] == UNCONFIRMED:\n", "    elif False:\n", "落ちる: 確かめられないのに区分を確定"),
+    ("確かめられない行の結果を見ない", "    if category == NONE and cell[\"結果\"] != NONE:\n", "    if False:\n", "落ちる: 確かめられない行の結果が - でない"),
     ("範囲の外・実装に渡すの重さを見ない", "    if category in NO_WEIGHT and cell[\"重さ\"] != NONE:\n", "    if False:\n", "落ちる: 実装に渡すの重さ"),
     ("回が実行の行かを見ない", "    elif no not in runs:\n", "    elif False:\n", "落ちる: 回が無い"),
     ("上限の行も実行の行と読む", "        if row[at[\"結果\"]].strip() in RUN_RESULTS:\n", "        if True:\n", "落ちる: 回が上限の行"),
