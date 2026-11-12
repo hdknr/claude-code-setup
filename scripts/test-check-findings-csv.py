@@ -9,7 +9,7 @@
 
 1. **決まりに反する形を、理由つきで落とす（1）**——見出し（順・列の過不足）・列の数・数える列の値（レビュー・判定役・重さ・確かめたか）・
    **振り分けが区分の名前でない（言い換え・理由を足した・`確かめられない`）**・`-` と `確かめられない` の対応（2 方向）・
-   範囲の外／実装に渡す の行の重さ・振り分けが `-` の行の `結果`（#986）・`回` の形・`回` が実行の行でない（`上限` の行・無い番号）・日付の形と食い違い・`指摘` が空。
+   範囲の外／実装に渡す の行の重さ・`確かめられない` の行の `結果`（#986。`確かめた` のまま `振り分け` を `-` にした行に `結果` を消せと案内しないことも）・`回` の形・`回` が実行の行でない（`上限` の行・無い番号）・日付の形と食い違い・`指摘` が空。
 2. **決まりどおりの形を通す（0）**——**6 つの区分のどれも通す**（「実装に渡す」「退ける」の行を含む）・`確かめられない` の行の `-`・
    3 つのレビュー・BOM・見出しの行だけ・`記法の移行` の行を持つ実行の記録。
 3. **中身を検査していない形を 0 にしない（2）**——名前が `v<n>-findings.csv` でない・ファイルが無い・空・UTF-8 でない・
@@ -238,16 +238,19 @@ def main() -> int:
         result = run_one(SCRIPTS / TARGET, work, both)
         check("確かめられない行の区分と `結果` を 1 回で両方出す",
               result[0] == 1 and "どの区分にも確定しない" in result[1] and "の行の `結果` は `-`" in result[1], result[1])
-        for mutated in (source.replace("    if cell[\"確かめたか\"] == UNCONFIRMED and cell[\"結果\"] != NONE:\n",
-                                       "    if category == NONE and cell[\"結果\"] != NONE:\n"),):
-            check("案内の変異の壊す箇所がちょうど 1 回", source.count("cell[\"確かめたか\"] == UNCONFIRMED and cell[\"結果\"]") == 1)
-            probe = root / "probe" / TARGET
-            probe.parent.mkdir(exist_ok=True)
-            probe.write_text(mutated, encoding="utf-8")
-            out1 = run_one(probe, work, CASES["落ちる: 確かめたのに - で結果あり"])[1]
-            out2 = run_one(probe, work, both)[1]
-            check("`振り分け` で見る変異を、上の 2 つのどちらかが捕まえる",
-                  "の行の `結果` は `-`" in out1 or "の行の `結果` は `-`" not in out2, out1 + out2)
+        # 変異: 条件を `振り分け` で取る形（1 パス目の R2・R3 の前の形）に戻す。殺したと数えるのは、変異が走りきり（終了コード 1）、
+        # 区分の違反を出したうえで、上の 2 つの案内のどちらかを崩したときだけ（落ちた変異を殺したと数えない。#986 の 2 パス目）
+        guard = "    if cell[\"確かめたか\"] == UNCONFIRMED and cell[\"結果\"] != NONE:\n"
+        check("案内の変異の壊す箇所がちょうど 1 回", source.count(guard) == 1)
+        probe = root / "probe" / TARGET
+        probe.parent.mkdir()
+        probe.write_text(source.replace(guard, "    if category == NONE and cell[\"結果\"] != NONE:\n"), encoding="utf-8")
+        code1, out1 = run_one(probe, work, CASES["落ちる: 確かめたのに - で結果あり"])
+        code2, out2 = run_one(probe, work, both)
+        check("案内の変異が走りきる", code1 == 1 and code2 == 1
+              and "`振り分け` が `-` なのは" in out1 and "どの区分にも確定しない" in out2, out1 + out2)
+        check("`振り分け` で見る変異を、上の 2 つのどちらかが捕まえる",
+              "の行の `結果` は `-`" in out1 or "の行の `結果` は `-`" not in out2, out1 + out2)
         print("  2 件 OK・変異 1 件 OK")
 
         print("references との突き合わせ")
