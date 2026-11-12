@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """仮回答と推奨で決めた事項のうち、どれだけ変わり、変わったものでどれだけ作り直したかを数える（#886）。
 
-usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR の一覧の JSON> [--spec-repo <正本リポジトリ>] [--ref <参照>] [--summary]
+usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR の一覧の JSON> [--spec-repo <正本リポジトリ>] [--ref <参照>] [--summary] [--record [--case <案件の名前>]]
 
 出すのは 3 つである:
 
@@ -15,7 +15,7 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 
 **このスクリプトは `gh` を呼ばない**（`rebuild-scope.py` と同じ）。**`git` は呼ぶ**——正本リポジトリの Q&A 表の履歴を読むだけで、何も書かない。
 
-## 使い方（実案件で数えて #980 に貼るまで）
+## 使い方（実案件で数えて、spec-loop を回す PC の中に記録するまで）
 
 1. **開発のリポジトリ**（spec-loop の Issue を登録した先）の Issue と PR を、決まった 2 行で取る:
 
@@ -25,23 +25,28 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
    ```
 
    `--limit` は Issue・PR の数より大きくする（超えた分は見えない）。
-2. **正本リポジトリ**（`docs/v<n>/shared/qa.csv` を持つリポジトリ）を数えたい時点にする（`git pull`。別の時点なら `--ref`）。
-3. 数える:
+2. **正本リポジトリ**（`docs/v<n>/shared/qa.csv` を持つリポジトリ）を数えたい時点にする（`git pull`。別の時点なら `--ref`。版の区切りならリリースのタグ `--ref release-v<n>`）。
+3. 数えて、記録する（#989）:
 
    ```bash
-   python3 <spec-loop の base ディレクトリ>/scripts/rework-metrics.py --issues issues.json --prs prs.json --spec-repo <正本リポジトリ> > rework.txt
+   python3 <spec-loop の base ディレクトリ>/scripts/rework-metrics.py --issues issues.json --prs prs.json --spec-repo <正本リポジトリ> --ref release-v1 --record
    ```
 
-   **終了コードを見る**——1 なら名指しされたもの（標準エラー）を直して取り直すか、数えきれなかったことを添えて貼る。2 なら何も数えていない。
-4. **#980 に貼る**（集計の貼り先。置き方の決まりは #980 の本文を正とする）——hdknr/claude-code-setup は公開リポジトリなので、**案件の Issue の題・Q&A の No を貼らないなら `--summary`**（数だけを出す）で数え直す:
+   **終了コードを見る**——1 なら名指しされたもの（標準エラー）を直して取り直すか、数えきれなかった件数（記録の `uncounted`）を承知で残す。2 なら何も数えていない（`--record` なら記録もしていない）。
+   3 なら同じ案件・同じコミットの記録がすでにあるので書いていない（下の「記録」）。
+4. **分析する**——`python3 <spec-loop の base ディレクトリ>/scripts/rework-report.py`（案件 × 時点の表・時点どうしの差・合計と率。使い方はその docstring を正とする）。
+   `issues.json`・`prs.json` は案件の情報を含むので、使い終わったら捨てる（記録に残るのは数だけ）。
+   規範を変える判断の根拠にするときは、`rework-report.py` の出力から数を人が読んで、起票の本文に書く——**記録のファイルを公開の場へ自動では出さない**（このリポジトリは公開）。
 
-   ```bash
-   python3 <spec-loop の base ディレクトリ>/scripts/rework-metrics.py --issues issues.json --prs prs.json --spec-repo <正本リポジトリ> --summary > rework-summary.md
-   gh issue comment 980 --repo hdknr/claude-code-setup --body-file rework-summary.md
-   ```
+## 記録（`--record`。#989）
 
-   貼る前に中身を読む——`--summary` が標準出力に出すのは数と、数えた時点（`--ref` を解決したコミットの日付）だけである（コミットの SHA も出さない）。
-   **数えきれないものの名指し（No・Issue の題）は `--summary` でも標準エラーに出る**——上のようにリダイレクトするのは標準出力だけにする。案件の名前は添える人が決める。
+- **置き場所**: 環境変数 `SPEC_LOOP_REWORK_LOG` があればそのパス、無ければ `~/.claude/spec-loop/rework-metrics.jsonl`（spec-loop を回す PC の中。リポジトリには置かない）。
+  無ければ親のディレクトリごと作る。
+- **1 行 1 記録の JSON**（鍵の一覧は `RECORD_KEYS`）: 案件（`--case`。既定は正本リポジトリの最上位のディレクトリの名前——worktree や別名で clone したなら `--case` で揃える）・
+  `--ref` の文字列・解決したコミットの SHA とその日付・記録した日と、標準出力に出した数（`uncounted` は数えきれないものの件数）。
+- **同じ案件・同じコミットの行がすでにあれば書かない**（3）——`--ref` の綴りが違っても同じコミットなら同じと読む。
+  取り直した数を残したいなら、その行を手で消してから記録する。**記録のファイルに読めない行があれば書かない**（2）——二重かを決められないので。
+- 既存の行は消さない（追記だけ）。`--summary` と併せてよい（記録する数は同じ）。
 
 ## 回答が変わった（Q&A 表の履歴の読み方）
 
@@ -63,8 +68,10 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
   読めない Q&A 表（見出しが決まりの形でない・CSV として読めない）のあるコミット（そのコミットではその表を前の時点のまま読む）・
   結果の行が決まりの形でない確認の Issue・変えた確認の Issue のうち台帳の行（`決めた値: `・`影響する Issue: `）が無い／形に反するもの・
   頭 `作り直しの元:`（全角のコロン `作り直しの元：` も）で始まり、後ろが空白 1 つと Q&A の No か `#<番号>` でない行（空白が無い・2 つ・全角・後ろが空・コロンが全角）・印の元が変わったと数えた件に無い Issue・PR（合計に入れていない）・Q&A 表を変えたコミットが 1 本も無い（`--spec-repo` が正本リポジトリでないかもしれない）
+- 3: 数えたが記録しなかった（`--record` で、同じ案件・同じコミットの記録がすでにある）
 - 2: 数えていない——引数の誤り・入力が読めない（JSON でない・Issue／PR の形が違う・確認の Issue を数えるのに `comments` の鍵が無い・PR に `additions`・`deletions` が無い）・
-  `--spec-repo` が git のリポジトリでない・`--ref` が解決できない・`git` が失敗した
+  `--spec-repo` が git のリポジトリでない・`--ref` が解決できない・`git` が失敗した・
+  `--record` で記録のファイルが読めない／書けない／読めない行がある（数は出すが記録しない）
 
 対象リポジトリで単体で動くよう、**標準ライブラリだけ**を使う（同じ `scripts/` の `rebuild-scope.py`・`check-qa-csv.py` を読み込む）。
 
@@ -84,16 +91,20 @@ usage: python3 rework-metrics.py --issues <Issue の一覧の JSON> --prs <PR �
 | **入力が全部の Issue・PR を含むか** | `--limit` を超えた分・取った後に足した分は見えない（`rebuild-scope.py` と同じ） |
 | **確認の Issue の結果の行を誰が書いたか** | `rebuild-scope.py` の `Decision` の守らないものと同じ（行を読むだけ） |
 | **`--summary` が案件の情報を漏らさないこと** | 出すのは数と日付だけだが、貼る前に人が読む |
-| **版ごとの数** | 数は `--ref` までの累計である——Q&A 表は v1・v2… を重ねて読み、Issue・PR は渡した JSON の全件を読む（版で絞らない）。版ごとの増分は、リリースのタグごとに `--ref` を替えて数えた累計の差を手で出す。Issue・PR は取った時点で切れるので、`--ref` の時点と合わせて取らない限り Q&A の数とは揃わない |
+| **版ごとの数** | 数は `--ref` までの累計である——Q&A 表は v1・v2… を重ねて読み、Issue・PR は渡した JSON の全件を読む（版で絞らない）。版ごとの増分は、リリースのタグごとに `--ref` を替えて記録し、`rework-report.py` が時点どうしの差で出す。Issue・PR は取った時点で切れるので、`--ref` の時点と合わせて取らない限り Q&A の数とは揃わない |
+| **同じコミットで取り直した数を残すこと** | 記録は案件とコミットで 1 行——Issue・PR を後で取り直して数えても、同じコミットなら書かない（3）。残すなら前の行を手で消す |
+| **記録のファイルを壊さずに書くこと（同時に 2 つ走らせたとき）** | 読んでから追記するだけで、ロックは取らない——同じ時に 2 つ記録すると二重を見落としうる |
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import datetime
 import importlib.util
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -125,6 +136,17 @@ ORIGIN_HEAD = rebuild.ORIGIN.rstrip()
 # 全角のコロンで書いた頭（`作り直しの元：`）も、形に反する印として拾って名指しする（利用者の判断 2026-11-06。狭いパスの N-2）
 ORIGIN_HEADS = (ORIGIN_HEAD, ORIGIN_HEAD[:-1] + "：")
 PR_STATES_MERGED = "MERGED"
+
+# 記録（#989）——この形は `rework-report.py` も読み込む（写さない）
+RECORD_ENV = "SPEC_LOOP_REWORK_LOG"
+RECORD_DEFAULT = Path(".claude") / "spec-loop" / "rework-metrics.jsonl"  # `HOME` の下
+RECORD_TEXT = ("case", "ref", "commit", "date", "recorded")
+RECORD_COUNTS = (
+    "provisional", "confirmed", "changed", "same", "unknown", "vanished", "still", "provisional_now",
+    "decisions", "kept", "decision_changed", "decision_none", "decision_malformed",
+    "rework_items", "rework_issues", "rework_prs", "rework_lines", "uncounted",
+)
+RECORD_KEYS = RECORD_TEXT + RECORD_COUNTS
 
 
 class Bad(Exception):
@@ -272,6 +294,82 @@ def origins(body: str) -> tuple[list[str], list[str]]:
     return found, bad
 
 
+def record_path() -> Path:
+    """記録のファイル。環境変数 `SPEC_LOOP_REWORK_LOG` があればそれ、無ければ `~/.claude/spec-loop/rework-metrics.jsonl`。"""
+    env = os.environ.get(RECORD_ENV)
+    return Path(env) if env else Path.home() / RECORD_DEFAULT
+
+
+def check_record(rec: object) -> str | None:
+    """記録の 1 行の形の誤り。正しければ None。"""
+    if not isinstance(rec, dict):
+        return "記録の形でない（JSON のオブジェクトでない）"
+    missing = [k for k in RECORD_KEYS if k not in rec]
+    if missing:
+        return f"鍵が足りない（{'・'.join(missing)}）"
+    wrong = ([k for k in RECORD_TEXT if not isinstance(rec[k], str)]
+             + [k for k in RECORD_COUNTS if type(rec[k]) is not int or rec[k] < 0])
+    if wrong:
+        return f"値の型が違う（{'・'.join(wrong)}）"
+    return None
+
+
+def read_records(path: Path) -> tuple[str, list[dict], list[str]]:
+    """記録のファイルを読む。(本文, 読めた記録, 読めない行の名指し)。ファイルが無ければ空。読めなければ Bad。
+    空白だけの行は読み飛ばす（末尾の改行など）。"""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return "", [], []
+    except (OSError, UnicodeDecodeError) as exc:
+        raise Bad(f"{path}: 記録のファイルが読めない（{exc.__class__.__name__}: {exc}）")
+    records: list[dict] = []
+    bad: list[str] = []
+    for n, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except (ValueError, RecursionError):
+            bad.append(f"{path}:{n}: JSON として読めない")
+            continue
+        problem = check_record(rec)
+        if problem:
+            bad.append(f"{path}:{n}: {problem}")
+            continue
+        records.append(rec)
+    return text, records, bad
+
+
+def write_record(record: dict) -> int:
+    """記録を 1 行追記する。0: 書いた・2: 書けない／記録のファイルに読めない行がある・3: 同じ案件・同じコミットの行がある（書かない）。"""
+    path = record_path()
+    try:
+        text, records, unreadable = read_records(path)
+    except Bad as exc:
+        print(f"{exc}。記録しなかった", file=sys.stderr)
+        return 2
+    if unreadable:  # 読めない行が同じ案件・同じコミットかは決められない——黙って二重に書かない
+        for line in unreadable:
+            print(f"記録のファイルの読めない行——{line}", file=sys.stderr)
+        print(f"{path} に読めない行がある——直してから記録する。記録しなかった", file=sys.stderr)
+        return 2
+    for rec in records:
+        if rec["case"] == record["case"] and rec["commit"] == record["commit"]:
+            print(f"{path} に案件 {record['case']} のコミット {record['commit'][:7]} の行がすでにある（{rec['ref']}・記録 {rec['recorded']}）"
+                  "——取り直した数を残すなら、その行を消してから記録する。記録しなかった", file=sys.stderr)
+            return 3
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(("\n" if text and not text.endswith("\n") else "") + json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"{path}: 書けない（{exc.__class__.__name__}: {exc}）。記録しなかった", file=sys.stderr)
+        return 2
+    print(f"記録した——{path}（案件 {record['case']}・{record['ref']}・{record['date']}）", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--issues", required=True)
@@ -279,6 +377,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--spec-repo", default=".")
     parser.add_argument("--ref", default="HEAD")
     parser.add_argument("--summary", action="store_true")
+    parser.add_argument("--record", action="store_true")
+    parser.add_argument("--case", default="")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -412,7 +512,23 @@ def main(argv: list[str]) -> int:
         print(line)
     for line in bad:
         print(f"数えきれない——{line}", file=sys.stderr)
-    return 1 if bad else 0
+    code = 1 if bad else 0
+    if args.record:
+        record = {
+            "case": args.case or history.repo.name, "ref": args.ref, "commit": history.tip, "date": history.tip_date,
+            "recorded": datetime.date.today().isoformat(),
+            "provisional": len(nos), "confirmed": confirmed, "changed": count["変わった"], "same": count["同じ"],
+            "unknown": count["見分けられない"], "vanished": count["消えた"], "still": count["まだ暫定反映"],
+            "provisional_now": len(history.still),
+            "decisions": len(decisions), "kept": len(kept), "decision_changed": len(changed), "decision_none": len(none),
+            "decision_malformed": len(malformed),
+            "rework_items": len(items), "rework_issues": len(counted_issues), "rework_prs": len(counted_prs),
+            "rework_lines": total_lines, "uncounted": len(bad),
+        }
+        written = write_record(record)
+        if written:
+            return written
+    return code
 
 
 if __name__ == "__main__":
