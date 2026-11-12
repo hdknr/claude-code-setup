@@ -27,18 +27,26 @@
 - `--summary` は数と日付だけを出す（題・No・番号・コミットの SHA を出さない）
 - Q&A 表を変えたコミットが 1 本も無いリポジトリは名指しして 1（黙って 0 件と出さない）
 - 入力の形が違えば 2（PR に `additions`・`deletions` が無い・git のリポジトリでない・`--ref` が解決できない）
+- `--record` は標準出力と同じ数を 1 行の JSON で記録のファイルに追記する（既存の行を消さない・親のディレクトリが無ければ作る・改行で終わらないファイルにも行を分けて書く）。数えきれない件数も記録する
+- 記録の案件は `--case`、無ければ正本リポジトリの最上位のディレクトリの名前。コミットは `--ref` を解決した SHA、`date` はそのコミットの日付、`recorded` は記録した日で記録する
+- 同じ案件・同じコミットの記録がすでにあれば書かずに 3（`--ref` の綴りが違っても同じコミットなら同じ。案件が違えば書く）
+- 記録のファイルに読めない行があれば書かずに 2。行は改行（`\n`）だけで分ける（案件の名前に U+2028 などを含めても 1 行のまま）
+- 記録のファイルは `SPEC_LOOP_REWORK_LOG`、無ければ `~/.claude/spec-loop/rework-metrics.jsonl`（テストは一時の `HOME` の下と、一時ディレクトリを cwd にした子プロセスだけで書き、利用者の記録にもテストを走らせた cwd にも書かない）
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。変異ごとに、
 **壊す箇所が本体にちょうど 1 回現れること**を先に確かめる（届いていない変異は、穴が無くても緑になるので）。
 
 **docstring の突き合わせ**: 本体の docstring に「回答が変わった」の見分け方（選択肢のラベルで比べ、列全体では見ない）と、#885 の限界を守らないものとして持つこと（陽性対照つき）。
+実案件で数えて PC の中に記録するまでの手順を持ち、公開の貼り先（閉じる #980）を指さないこと（#989）。
 """
 from __future__ import annotations
 
 import ast
+import datetime
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -301,10 +309,150 @@ MUTATIONS = [
     ("崩れた印を黙って落とす", "        if not line.startswith(ORIGIN_HEADS):", "        if not ORIGIN_LINE.match(line):", "全部"),
     ("ほかの元で合計に入れた Issue も名指しする", "for i in marked[key] if i[\"number\"] not in counted_issues]", "for i in marked[key]]", "全部"),
     ("全角のコロンの印を黙って落とす", 'ORIGIN_HEADS = (ORIGIN_HEAD, ORIGIN_HEAD[:-1] + "：")', "ORIGIN_HEADS = (ORIGIN_HEAD,)", "全部"),
-    ("数えきれなくても 0", "    return 1 if bad else 0", "    return 0", "全部"),
+    ("数えきれなくても 0", "    code = 1 if bad else 0", "    code = 0", "全部"),
+    ("記録しない", "        written = write_record(record)", "        written = 0", "記録"),
+    ("二重を見ない", 'if rec["case"] == record["case"] and rec["commit"] == record["commit"]:', "if False:", "記録"),
+    ("案件を見ずに二重と読む", 'if rec["case"] == record["case"] and rec["commit"] == record["commit"]:', 'if rec["commit"] == record["commit"]:', "記録"),
+    ("コミットでなく --ref の綴りで二重を見る", 'and rec["commit"] == record["commit"]:', 'and rec["ref"] == record["ref"]:', "記録"),
+    ("--ref の綴りをコミットとして記録する", '"commit": history.tip,', '"commit": args.ref,', "記録"),
+    ("書かなかったのに 3 を返さない", "        if written:\n            return written", "        pass", "記録"),
+    ("読めない行があっても書く", "    if unreadable:  #", "    if False:  #", "記録"),
+    ("上書きする", 'path.open("a", encoding="utf-8")', 'path.open("w", encoding="utf-8")', "記録"),
+    ("改行で終わらないファイルに続けて書く", '("\\n" if text and not text.endswith("\\n") else "")', '""', "記録"),
+    ("親のディレクトリを作らない", "        path.parent.mkdir(parents=True, exist_ok=True)\n", "", "記録"),
+    ("環境変数を見ない", "return Path(env) if env else Path.home() / RECORD_DEFAULT", "return Path.home() / RECORD_DEFAULT", "記録"),
+    ("既定のパスを HOME の下にしない", "return Path(env) if env else Path.home() / RECORD_DEFAULT", "return Path(env) if env else Path.cwd() / RECORD_DEFAULT", "記録"),
+    ("既定の案件の名前を使わない", '"case": args.case or history.repo.name', '"case": args.case or "default"', "記録"),
+    ("--case を見ない", '"case": args.case or history.repo.name', '"case": history.repo.name', "記録"),
+    ("変わった数を記録しない", '"changed": count["変わった"]', '"changed": 0', "記録"),
+    ("作り直しの行を記録しない", '"rework_lines": total_lines', '"rework_lines": 0', "記録"),
+    ("数えきれない件数を記録しない", '"uncounted": len(bad)', '"uncounted": 0', "記録"),
+    ("型を見ない", "    if wrong:\n", "    if False:\n", "記録"),
+    ("splitlines で行を分ける", 'enumerate(text.split("\\n"), 1)', "enumerate(text.splitlines(), 1)", "記録"),
+    ("コミットの日付でなく今日を記録する", '"date": history.tip_date,', '"date": datetime.date.today().isoformat(),', "記録"),
+    ("記録した日にコミットの日付を書く", '"recorded": datetime.date.today().isoformat(),', '"recorded": history.tip_date,', "記録"),
 ]
 
 failures: list[str] = []
+DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def record_scenario(scripts: Path, work: Path, env: dict[str, str]) -> str | None:
+    """`--record` の筋書き。問題があれば説明、無ければ None。記録のファイルは毎回作り直す。"""
+    base = work / "record"
+    shutil.rmtree(base, ignore_errors=True)
+    log = base / "nested" / "log.jsonl"  # 親のディレクトリはまだ無い
+    rec_env = dict(env, SPEC_LOOP_REWORK_LOG=str(log))
+
+    def run(*extra: str, issues: str = "issues", prs: str = "prs", run_env: dict[str, str] | None = None):  # cwd は一時ディレクトリ
+        args = [sys.executable, "-I", str(scripts / TARGET), "--issues", str(work / f"{issues}.json"),
+                "--prs", str(work / f"{prs}.json"), "--spec-repo", str(work / "repo"), *extra]
+        return subprocess.run(args, capture_output=True, text=True, env=run_env or rec_env, cwd=work)
+
+    def records(path: Path = log) -> list[dict]:
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").split("\n") if line.strip()]
+
+    def sha(ref: str) -> str:
+        return subprocess.run(["git", "-C", str(work / "repo"), "rev-parse", ref], capture_output=True, text=True, env=env,
+                              check=True).stdout.strip()
+
+    today = datetime.date.today().isoformat()  # 日付をまたいだら、終わった時点の日付も受ける
+    plain = run(run_env=env)
+    proc = run("--ref", "early", "--record", "--case", "A", issues="clean", prs="noprs")
+    if proc.returncode != 0 or not log.is_file():
+        return f"1 回目: exit={proc.returncode}・記録のファイル {log.is_file()}: {proc.stderr[-600:]}"
+    first = records()
+    if len(first) != 1:
+        return f"1 回目: 行が {len(first)} 行"
+    r = first[0]
+    expected_keys = ["case", "ref", "commit", "date", "recorded", "provisional", "confirmed", "changed", "same", "unknown", "vanished", "still",
+                     "provisional_now", "decisions", "kept", "decision_changed", "decision_none", "decision_malformed",
+                     "rework_items", "rework_issues", "rework_prs", "rework_lines", "uncounted"]
+    if list(r) != expected_keys:
+        return f"1 回目: 鍵が違う {list(r)}"
+    if (r["case"], r["ref"], r["commit"], r["provisional"], r["confirmed"], r["still"], r["uncounted"]) != ("A", "early", sha("early"), 9, 0, 9, 0):
+        return f"1 回目: 値が違う {r}"
+    commit_date = subprocess.run(["git", "-C", str(work / "repo"), "log", "-1", "--format=%cs", "early"], capture_output=True, text=True,
+                                 env=env, check=True).stdout.strip()
+    if r["date"] != commit_date or commit_date == today:  # 試料のコミットの日付は今日でない（今日と取り違えても見分けられる）
+        return f"1 回目: date が --ref のコミットの日付 {commit_date} でない: {r['date']}"
+    if r["recorded"] not in (today, datetime.date.today().isoformat()) or not DATE.fullmatch(r["recorded"]):
+        return f"1 回目: recorded が記録した日 {today} でない: {r['recorded']}"
+
+    proc = run("--record", "--case", "A")
+    if proc.returncode != 1:
+        return f"2 回目: exit={proc.returncode}（期待 1）: {proc.stderr[-600:]}"
+    if proc.stdout != plain.stdout:
+        return "2 回目: --record の標準出力が --record なしと違う"
+    second = records()
+    if len(second) != 2 or second[0] != r:
+        return f"2 回目: 行が 2 行でないか、1 行目が変わった: {second}"
+    want = {"case": "A", "ref": "HEAD", "commit": sha("HEAD"), "provisional": 11, "confirmed": 7, "changed": 4, "same": 2, "unknown": 1,
+            "vanished": 1, "still": 3, "provisional_now": 4, "decisions": 6, "kept": 2, "decision_changed": 2, "decision_none": 1,
+            "decision_malformed": 1, "rework_items": 6, "rework_issues": 3, "rework_prs": 5, "rework_lines": 24}
+    got = {k: second[1][k] for k in want}
+    if got != want:
+        return f"2 回目: 値が違う {got}"
+    if second[1]["uncounted"] < 1 or proc.stderr.count("数えきれない——") != second[1]["uncounted"]:
+        return f"2 回目: uncounted {second[1]['uncounted']} が名指しの数と違う"
+
+    proc = run("--ref", sha("HEAD"), "--record", "--case", "A")
+    if proc.returncode != 3 or "すでにある" not in proc.stderr or len(records()) != 2:
+        return f"同じコミット（綴りの違う --ref）: exit={proc.returncode}・行 {len(records())}: {proc.stderr[-400:]}"
+    if proc.stdout != plain.stdout:
+        return "同じコミット: 書かなくても数は出す"
+
+    proc = run("--record", "--case", "B")
+    if proc.returncode != 1 or len(records()) != 3 or records()[2]["case"] != "B":
+        return f"別の案件: exit={proc.returncode}・行 {len(records())}"
+
+    proc = run("--ref", "early", "--record", issues="clean", prs="noprs")
+    if proc.returncode != 0 or records()[3]["case"] != "repo":
+        return f"既定の案件の名前: exit={proc.returncode}・{records()[-1]['case']}"
+
+    default = Path(env["HOME"]) / ".claude" / "spec-loop" / "rework-metrics.jsonl"
+    if default.exists():
+        default.unlink()
+    proc = run("--ref", "early", "--record", issues="clean", prs="noprs", run_env=env)
+    if proc.returncode != 0 or not default.is_file() or len(records(default)) != 1:
+        return f"既定のパス: exit={proc.returncode}・{default} {default.is_file()}"
+
+    broken = base / "broken.jsonl"
+    for name, text in (("JSON でない行", "{not json\n"), ("型の違う行", json.dumps(dict(r, commit="x" * 40, changed="4")) + "\n")):
+        broken.write_text(text, encoding="utf-8")
+        proc = run("--ref", "early", "--record", issues="clean", prs="noprs", run_env=dict(env, SPEC_LOOP_REWORK_LOG=str(broken)))
+        if proc.returncode != 2 or broken.read_text(encoding="utf-8") != text or "読めない行" not in proc.stderr:
+            return f"{name}: exit={proc.returncode}・ファイル {broken.read_text(encoding='utf-8')!r}"
+
+    # JSON が素のまま書く行の区切り文字（U+2028・U+2029・U+0085）を案件の名前に含めても、1 行のまま読み戻せる（2 パス目の CR2-4）
+    odd = base / "odd.jsonl"
+    odd_env = dict(env, SPEC_LOOP_REWORK_LOG=str(odd))
+    for case in ("a\u2028b", "c\u2029d\u0085e"):
+        proc = run("--ref", "early", "--record", "--case", case, issues="clean", prs="noprs", run_env=odd_env)
+        if proc.returncode != 0:
+            return f"行の区切り文字を含む案件 {case!r}: exit={proc.returncode}: {proc.stderr[-400:]}"
+    if [x["case"] for x in records(odd)] != ["a\u2028b", "c\u2029d\u0085e"]:
+        return f"行の区切り文字を含む案件: 読み戻すと {[x['case'] for x in records(odd)]}"
+
+    tail = base / "tail.jsonl"
+    tail.write_text(json.dumps(dict(r, case="Z")), encoding="utf-8")  # 改行で終わらない
+    proc = run("--ref", "early", "--record", "--case", "A", issues="clean", prs="noprs", run_env=dict(env, SPEC_LOOP_REWORK_LOG=str(tail)))
+    if proc.returncode != 0 or [x["case"] for x in records(tail)] != ["Z", "A"]:
+        return f"改行で終わらないファイル: exit={proc.returncode}・{tail.read_text(encoding='utf-8')!r}"
+    return None
+
+
+def guarded(scenario):
+    """筋書きの中の例外（壊れた記録を JSON として読めないなど）も「期待どおりでない」と読む。"""
+    def run(scripts: Path, work: Path, env: dict[str, str]) -> str | None:
+        try:
+            return scenario(scripts, work, env)
+        except Exception as exc:  # noqa: BLE001
+            return f"筋書きが例外で止まった（{type(exc).__name__}: {exc}）"
+    return run
+
+
+SCENARIOS = {"記録": guarded(record_scenario)}
 
 
 def check(name: str, cond: bool, detail: str = "") -> None:
@@ -317,7 +465,7 @@ def run_case(scripts: Path, work: Path, env: dict[str, str], case: Case) -> str 
             "--prs", str(work / f"{case.prs}.json"), "--spec-repo", str(work / case.repo), *case.extra]
     if case.ref:
         args += ["--ref", case.ref]
-    proc = subprocess.run(args, capture_output=True, text=True, env=env)
+    proc = subprocess.run(args, capture_output=True, text=True, env=env, cwd=work)
     out = proc.stdout + proc.stderr
     if proc.returncode != case.code:
         return f"exit={proc.returncode}（期待 {case.code}）{out[-800:]}"
@@ -336,10 +484,15 @@ def run_case(scripts: Path, work: Path, env: dict[str, str], case: Case) -> str 
 def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="test-rework-metrics-")).resolve()
     assert REAL_REPO not in work.parents
+    real_log = Path(os.path.expanduser("~")) / ".claude" / "spec-loop" / "rework-metrics.jsonl"
+    real_before = real_log.stat().st_mtime_ns if real_log.exists() else None
+    # 子プロセスは一時ディレクトリを cwd にして走らせる——テストを走らせた cwd（リポジトリの根・$HOME）に記録ができないことも見る（1 パス目の R1・CR2）
+    cwd_log = Path.cwd() / ".claude" / "spec-loop" / "rework-metrics.jsonl"
+    cwd_before = cwd_log.stat().st_mtime_ns if cwd_log.exists() else None
     try:
         home = work / "home"
         home.mkdir()
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k != "SPEC_LOOP_REWORK_LOG"}
         env.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(home / "gitconfig"), GIT_CONFIG_NOSYSTEM="1")
         scripts = work / "scripts"
         shutil.copytree(SCRIPTS, scripts, ignore=shutil.ignore_patterns("__pycache__"))
@@ -369,6 +522,10 @@ def main() -> int:
             problem = run_case(scripts, work, env, case)
             check(f"試料: {case.name}", problem is None, problem or "")
 
+        for name, scenario in SCENARIOS.items():
+            problem = scenario(scripts, work, env)
+            check(f"筋書き: {name}", problem is None, problem or "")
+
         print("docstring の突き合わせ")
         source = (scripts / TARGET).read_text(encoding="utf-8")
         doc = ast.get_docstring(ast.parse(source)) or ""
@@ -378,8 +535,10 @@ def main() -> int:
                     and "#885 の既知の限界" in text.split("## 守らないもの", 1)[-1])
 
         check("docstring に見分け方と #885 の限界がある", explains(doc))
-        check("docstring に実案件で貼るまでの手順がある", "## 使い方（実案件で数えて #980 に貼るまで）" in doc and "gh issue comment 980" in doc
+        check("docstring に実案件で記録するまでの手順がある", "## 使い方（実案件で数えて、spec-loop を回す PC の中に記録するまで）" in doc
+              and "--record" in doc and "rework-report.py" in doc
               and "gh pr list --repo" in doc and "--json number,title,state,body,additions,deletions" in doc)
+        check("docstring が公開の貼り先（#980）を指さない", "980" not in doc and "gh issue comment" not in doc)
         for old in ("**`回答` の列全体の変化では見ない**", "#885 の既知の限界"):
             check(f"陽性対照: docstring の {old!r} を消すと突き合わせが落ちる", not explains(doc.replace(old, "")))
 
@@ -393,7 +552,8 @@ def main() -> int:
                 continue
             (scripts / TARGET).write_text(pristine.replace(old, new), encoding="utf-8")
             try:
-                problem = run_case(scripts, work, env, by_name[target])
+                problem = (SCENARIOS[target](scripts, work, env) if target in SCENARIOS
+                           else run_case(scripts, work, env, by_name[target]))
             finally:
                 (scripts / TARGET).write_text(pristine, encoding="utf-8")
             check(f"変異が素通りした: {name}（試料: {target}）", problem is not None)
@@ -402,6 +562,10 @@ def main() -> int:
               f"変異 {len(MUTATIONS)}・行 {rules}")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    real_after = real_log.stat().st_mtime_ns if real_log.exists() else None
+    check("利用者の ~/.claude/spec-loop/rework-metrics.jsonl に触っていない", real_before == real_after)
+    cwd_after = cwd_log.stat().st_mtime_ns if cwd_log.exists() else None
+    check(f"テストを走らせた cwd に記録のファイルを作っていない（{cwd_log}）", cwd_before == cwd_after)
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")
