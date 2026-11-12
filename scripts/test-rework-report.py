@@ -5,8 +5,9 @@
 
 **本体はプラグインの中にある**（`plugins/spec-loop/scripts/`）。`test-rework-metrics.py` と同じ形。
 
-**このテストは実環境を触らない。** 記録のファイルはすべて一時ディレクトリに書き、`HOME` を一時ディレクトリに差し替える——
-利用者の `~/.claude/spec-loop/` は読まない（既定のパスの試料も一時の `HOME` の下に置く）。
+**このテストは実環境を触らない。** 記録のファイルはすべて一時ディレクトリに書き、`HOME` と子プロセスの cwd を一時ディレクトリに差し替える——
+利用者の `~/.claude/spec-loop/` は読まない（既定のパスの試料も一時の `HOME` の下に置く）。読まないことはこの差し替えで決まり、
+終わった後のアサートが見るのは書いていないこと（mtime）だけである——読んだことは mtime に出ない。
 **プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる**（正本リポジトリで単体で動くこと）。
 
 **守ること**（各行に変異が 1 つ以上ある——下の `MUTATIONS`）:
@@ -158,7 +159,7 @@ def run_case(scripts: Path, work: Path, env: dict[str, str], case: Case) -> str 
         args += ["--log", str(work / case.log)]
     run_env = dict(env)
     run_env.update({k: v.replace("{work}", str(work)) for k, v in case.env.items()})
-    proc = subprocess.run(args, capture_output=True, text=True, env=run_env)
+    proc = subprocess.run(args, capture_output=True, text=True, env=run_env, cwd=work)  # cwd も一時ディレクトリ（1 パス目の CR3）
     out = proc.stdout + proc.stderr
     if proc.returncode != case.code:
         return f"exit={proc.returncode}（期待 {case.code}）{out[-800:]}"
@@ -240,7 +241,7 @@ def main() -> int:
     finally:
         shutil.rmtree(work, ignore_errors=True)
     real_after = real_log.stat().st_mtime_ns if real_log.exists() else None
-    check("利用者の ~/.claude/spec-loop/rework-metrics.jsonl に触っていない", real_before == real_after)
+    check("利用者の ~/.claude/spec-loop/rework-metrics.jsonl に書いていない", real_before == real_after)
 
     if failures:
         print(f"{len(failures)} 件の失敗:\n")

@@ -337,9 +337,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-rework-metrics.py` - spec-loop の作り直しの量を数えるスクリプト（#886）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**Q&A 表の履歴は一時ディレクトリに本物の git リポジトリで作り**（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）、
     Issue の本文は `test-rebuild-scope.py` の試料のまま本物の `scaffold.py --provisional` で作る——本物の GitHub には届かない。
-    **`--record` の記録は `SPEC_LOOP_REWORK_LOG` と一時の `HOME` の下にだけ書き、利用者の記録に触らないことも見る**（#989）
+    **`--record` の記録は `SPEC_LOOP_REWORK_LOG` と一時の `HOME` の下、一時ディレクトリを cwd にした子プロセスでだけ書き、利用者の記録にもテストを走らせた cwd にも書かないことも見る**（#989）
   - `test-rework-report.py` - spec-loop の作り直しの量の記録を分析するスクリプト（#989）の回帰テスト（変異テストを含む）。
-    **本体は `plugins/spec-loop/scripts/` にある**。**記録のファイルは一時ディレクトリに書き、`HOME` を一時ディレクトリに差し替える**——利用者の `~/.claude/spec-loop/` は読まない。
+    **本体は `plugins/spec-loop/scripts/` にある**。**記録のファイルは一時ディレクトリに書き、`HOME` と子プロセスの cwd を一時ディレクトリに差し替える**——利用者の `~/.claude/spec-loop/` は読まない。
     **記録の形を `rework-metrics.py` から読み込むこと（写さないこと）も見る**
   - `test-parent-checklist.py` - spec-loop の親 Issue の一覧を出すスクリプト（#876）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**索引と本文は本物の `scaffold.py` で作り、出した行を本物の dev-loop の `parent-issue.py show` に通す**
