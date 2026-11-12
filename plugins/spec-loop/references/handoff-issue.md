@@ -210,7 +210,8 @@ dev-loop は同じ式の写し（dev-loop のスキルの `scripts/spec-fingerpr
 **下書きは同梱の `rebuild-scope.py --draft <No か #番号>` が出す**——上の範囲（作り直す Issue とケース）を印の後ろに並べる。使い方は `rebuild-scope.py` の docstring を正とする。
 **PR に写すのは dev-loop の周である**（`spec-gap.md` の「作り直しの周」）。
 **数えるのは同梱の `rework-metrics.py` である**——仮回答のうち確かめたときに回答が変わった数（Q&A 表の git の履歴から）・確認の Issue の推奨のまま／変えた／結果なし・
-変わった 1 件ごとの引いた範囲と、この印で結んだ Issue・PR・差分の行数を出す（#886。実案件で数えて貼るまでの手順と、印の無い本文を数えられないことを含む守らないものは、その docstring を正とする）。
+変わった 1 件ごとの引いた範囲と、この印で結んだ Issue・PR・差分の行数を出す（#886。`--record` で spec-loop を回す PC の中に貯め、同梱の `rework-report.py` が案件と時点をまたいで分析する——#989。
+実案件で数えて記録するまでの手順と、印の無い本文を数えられないことを含む守らないものは、`rework-metrics.py` の docstring を正とする）。
 
 ## まとめた本文
 

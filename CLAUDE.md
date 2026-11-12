@@ -126,8 +126,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/rework-metrics.py` - 仮回答と推奨で決めた事項のうち**どれだけ変わり、変わったものでどれだけ作り直したか**を数える
       （#886。仮回答と確かめたときに回答が変わった数は**正本リポジトリの Q&A 表の git の履歴**から——**回答の選択肢のラベルで比べ、列全体の変化では見ない**。
       確認の Issue の内訳と作り直しの元の印で結んだ Issue・PR・差分の行数は `gh issue list`・`gh pr list` の JSON から。**`gh` は呼ばず、`git` は読むだけ**。
-      確認の Issue と印の読み方は `rebuild-scope.py` を読み込む——写さない。実案件で数えて #980 に貼る手順と守らないもの（#885 の限界を含む）は docstring を正とする。
+      確認の Issue と印の読み方は `rebuild-scope.py` を読み込む——写さない。**`--record` で数を spec-loop を回す PC の中（既定 `~/.claude/spec-loop/rework-metrics.jsonl`）に 1 行ずつ貯める**（#989。
+      同じ案件・同じコミットは 2 度書かない）。実案件で数えて記録する手順と守らないもの（#885 の限界を含む）は docstring を正とする。
       テストは `scripts/test-rework-metrics.py`）
+    - `scripts/rework-report.py` - `rework-metrics.py --record` が貯めた記録を読み、**案件 × 時点の表・同じ案件の時点どうしの差（版ごとの増分）・案件ごとの最新を足した合計と率**を出す
+      （#989。**読むだけで何も書かない**。記録の置き場所と形は `rework-metrics.py` から読み込む——写さない。**CI からは呼ばない**——入力が利用者の PC にある。
+      守る／守らないは docstring を正とする。テストは `scripts/test-rework-report.py`）
     - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
       （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に依存する。**項目の Issue は本文が生成した本文と同じもの**で、
       `gh issue list --json` の出力から引く。**`gh` は呼ばない**。守る／守らないは docstring を正とする。テストは `scripts/test-parent-checklist.py`）
@@ -332,7 +336,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `plugins/spec-loop/scripts/` にある**。**spec-loop の Issue の本文は本物の `scaffold.py --provisional` で作り**、`gh issue list` と同じ鍵の JSON に包んで渡す——本物の GitHub には届かない
   - `test-rework-metrics.py` - spec-loop の作り直しの量を数えるスクリプト（#886）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**Q&A 表の履歴は一時ディレクトリに本物の git リポジトリで作り**（`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）、
-    Issue の本文は `test-rebuild-scope.py` の試料のまま本物の `scaffold.py --provisional` で作る——本物の GitHub には届かない
+    Issue の本文は `test-rebuild-scope.py` の試料のまま本物の `scaffold.py --provisional` で作る——本物の GitHub には届かない。
+    **`--record` の記録は `SPEC_LOOP_REWORK_LOG` と一時の `HOME` の下、一時ディレクトリを cwd にした子プロセスでだけ書き、利用者の記録にもテストを走らせた cwd にも書かないことも見る**（#989）
+  - `test-rework-report.py` - spec-loop の作り直しの量の記録を分析するスクリプト（#989）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**記録のファイルは一時ディレクトリに書き、`HOME` と子プロセスの cwd を一時ディレクトリに差し替える**——利用者の `~/.claude/spec-loop/` は読まない。
+    **記録の形を `rework-metrics.py` から読み込むこと（写さないこと）も見る**
   - `test-parent-checklist.py` - spec-loop の親 Issue の一覧を出すスクリプト（#876）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**索引と本文は本物の `scaffold.py` で作り、出した行を本物の dev-loop の `parent-issue.py show` に通す**
     （子 Issue の本文を取る `gh` は `PATH` の先頭に置いた偽物）——本物の GitHub には届かない
