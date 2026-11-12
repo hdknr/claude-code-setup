@@ -9,7 +9,7 @@
 
 1. **決まりに反する形を、理由つきで落とす（1）**——見出し（順・列の過不足）・列の数・数える列の値（レビュー・判定役・重さ・確かめたか）・
    **振り分けが区分の名前でない（言い換え・理由を足した・`確かめられない`）**・`-` と `確かめられない` の対応（2 方向）・
-   範囲の外／実装に渡す の行の重さ・`回` の形・`回` が実行の行でない（`上限` の行・無い番号）・日付の形と食い違い・`指摘` が空。
+   範囲の外／実装に渡す の行の重さ・`確かめられない` の行の `結果`（#986。`確かめた` のまま `振り分け` を `-` にした行に `結果` を消せと案内しないことも）・`回` の形・`回` が実行の行でない（`上限` の行・無い番号）・日付の形と食い違い・`指摘` が空。
 2. **決まりどおりの形を通す（0）**——**6 つの区分のどれも通す**（「実装に渡す」「退ける」の行を含む）・`確かめられない` の行の `-`・
    3 つのレビュー・BOM・見出しの行だけ・`記法の移行` の行を持つ実行の記録。
 3. **中身を検査していない形を 0 にしない（2）**——名前が `v<n>-findings.csv` でない・ファイルが無い・空・UTF-8 でない・
@@ -79,8 +79,11 @@ CASES: dict[str, tuple] = {
     "落ちる: 振り分けの言い換え": ("v1-findings.csv", F_HEAD + row(category="実装へ", weight="-"), RUNS, None, 1, "区分の名前でない"),
     "落ちる: 振り分けに理由を足した": ("v1-findings.csv", F_HEAD + row(category="退ける（誤り）"), RUNS, None, 1, "区分の名前でない"),
     "落ちる: 振り分けに確かめられない": ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない", category="確かめられない"), RUNS, None, 1, "区分の名前でない"),
-    "落ちる: 確かめたのに振り分けが -": ("v1-findings.csv", F_HEAD + row(category="-"), RUNS, None, 1, "`振り分け` が `-` なのは"),
-    "落ちる: 確かめられないのに区分を確定": ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない"), RUNS, None, 1, "どの区分にも確定しない"),
+    "落ちる: 確かめたのに振り分けが -": ("v1-findings.csv", F_HEAD + row(category="-", result="-"), RUNS, None, 1, "`振り分け` が `-` なのは"),
+    "落ちる: 確かめられないのに区分を確定": ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない", result="-"), RUNS, None, 1, "どの区分にも確定しない"),
+    "落ちる: 確かめられない行の結果が - でない": ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない", category="-", result="次の回"), RUNS, None, 1, "の行の `結果` は `-`"),
+    # 確かめた行の `振り分け` を `-` にしたときは、`結果` を消せと案内しない（区分を選ぶのが直し方。#986 の 1 パス目）
+    "落ちる: 確かめたのに - で結果あり": ("v1-findings.csv", F_HEAD + row(category="-"), RUNS, None, 1, "`振り分け` が `-` なのは"),
     "落ちる: 実装に渡すの重さ": ("v1-findings.csv", F_HEAD + row(category="実装に渡す", weight="補い"), RUNS, None, 1, "の行の `重さ` は `-`"),
     "落ちる: 範囲の外の重さ": ("v1-findings.csv", F_HEAD + row(category="範囲の外として記録する", weight="判断が要る"), RUNS, None, 1, "の行の `重さ` は `-`"),
     "落ちる: 回の形": ("v1-findings.csv", F_HEAD + row(no="01"), RUNS, None, 1, "1 からの番号でない"),
@@ -107,6 +110,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("振り分けの値を見ない", "    elif category not in CATEGORIES:\n", "    elif False:\n", "落ちる: 振り分けの言い換え"),
     ("確かめたのに - を通す", "        if cell[\"確かめたか\"] != UNCONFIRMED:\n", "        if False:\n", "落ちる: 確かめたのに振り分けが -"),
     ("確かめられないのに区分を通す", "    elif cell[\"確かめたか\"] == UNCONFIRMED:\n", "    elif False:\n", "落ちる: 確かめられないのに区分を確定"),
+    ("確かめられない行の結果を見ない", "    if cell[\"確かめたか\"] == UNCONFIRMED and cell[\"結果\"] != NONE:\n", "    if False:\n", "落ちる: 確かめられない行の結果が - でない"),
     ("範囲の外・実装に渡すの重さを見ない", "    if category in NO_WEIGHT and cell[\"重さ\"] != NONE:\n", "    if False:\n", "落ちる: 実装に渡すの重さ"),
     ("回が実行の行かを見ない", "    elif no not in runs:\n", "    elif False:\n", "落ちる: 回が無い"),
     ("上限の行も実行の行と読む", "        if row[at[\"結果\"]].strip() in RUN_RESULTS:\n", "        if True:\n", "落ちる: 回が上限の行"),
@@ -226,6 +230,28 @@ def main() -> int:
             result = run_one(SCRIPTS / TARGET, work, case)
             check(name, as_expected(case, result), f"期待 {case[4]}・{case[5]!r}、実際 {result[0]}\n{result[1]}")
         print(f"  {len(CASES)} 件 OK")
+
+        print("`結果` の案内は `確かめたか` で決まる（#986 の 1 パス目）")
+        result = run_one(SCRIPTS / TARGET, work, CASES["落ちる: 確かめたのに - で結果あり"])
+        check("確かめた行に `結果` を消せと案内しない", "の行の `結果` は `-`" not in result[1], result[1])
+        both = ("v1-findings.csv", F_HEAD + row(confirmed="確かめられない", category="仕様を直す"), RUNS, None, 1, "")
+        result = run_one(SCRIPTS / TARGET, work, both)
+        check("確かめられない行の区分と `結果` を 1 回で両方出す",
+              result[0] == 1 and "どの区分にも確定しない" in result[1] and "の行の `結果` は `-`" in result[1], result[1])
+        # 変異: 条件を `振り分け` で取る形（1 パス目の R2・R3 の前の形）に戻す。殺したと数えるのは、変異が走りきり（終了コード 1）、
+        # 区分の違反を出したうえで、上の 2 つの案内のどちらかを崩したときだけ（落ちた変異を殺したと数えない。#986 の 2 パス目）
+        guard = "    if cell[\"確かめたか\"] == UNCONFIRMED and cell[\"結果\"] != NONE:\n"
+        check("案内の変異の壊す箇所がちょうど 1 回", source.count(guard) == 1)
+        probe = root / "probe" / TARGET
+        probe.parent.mkdir()
+        probe.write_text(source.replace(guard, "    if category == NONE and cell[\"結果\"] != NONE:\n"), encoding="utf-8")
+        code1, out1 = run_one(probe, work, CASES["落ちる: 確かめたのに - で結果あり"])
+        code2, out2 = run_one(probe, work, both)
+        check("案内の変異が走りきる", code1 == 1 and code2 == 1
+              and "`振り分け` が `-` なのは" in out1 and "どの区分にも確定しない" in out2, out1 + out2)
+        check("`振り分け` で見る変異を、上の 2 つのどちらかが捕まえる",
+              "の行の `結果` は `-`" in out1 or "の行の `結果` は `-`" not in out2, out1 + out2)
+        print("  2 件 OK・変異 1 件 OK")
 
         print("references との突き合わせ")
         module = load(SCRIPTS / TARGET)
