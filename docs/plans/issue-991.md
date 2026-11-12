@@ -80,7 +80,11 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/991-child-json-schema`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-991`・起点 `9f16aebe`・base の参照 `origin/main`・base の SHA `9f16aebe2e4a15793f722082a26e6b0d6e4cc008`
-- 関門: まだ当てていない
+- 実装: 済み（`c2cb2cb9`）。`check-all.py` は 74 本中 73 本が通り、落ちた `check-plan-counts.py`（件数の行が無い）は行を足して単独で通した
+- 関門: まだ当てていない。次は手順 5（Verifier）と手順 6（`/code-review`）の 1 パス目
+- 1 パス目の指摘対応の起点: `c2cb2cb9`（1 パス目の関門に渡す成果物の HEAD。この後のコミットは計画ファイルだけ）
+- 手順 4 の割り目: 訊いた（2026-11-12）——**「ここで割る」**。再開は worktree の中で `/clear` → `/dev-loop:dev-loop 991` から手順 5（1 パス目の Verifier と `/code-review`）
+- 再開する側への申し送り: 本物の `claude -p` の実測（p0〜p4）の出力は scratchpad にあり、セッションと一緒に消える——数は上の「実測」の表と `references/child-process.md` の「結果の形」が正。手元の dev-loop は 1.103.0（main の版は 1.104.0、この周で 1.105.0）
 - 反証と差し戻し: なし
 - 交絡を潰した手順: p0（陰性対照）と p1（陽性対照）で、`structured_output` が `--json-schema` によって出ることを分けた。p2 は「早い 1 つ目の result」と「最後の result」を分けて数えた。観測窓は各 1 回・haiku・小さな課題
 
