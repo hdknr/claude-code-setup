@@ -81,6 +81,10 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 - 1 パス目の指摘対応の起点: このコミットの直後の HEAD（下の行に SHA を書く）
 - 1 パス目の指摘対応の起点（1 パス目の関門に渡した時点の HEAD）: `aaec397831572951adef4cebb3e7073beb009ccf`
 - 関門 1 パス目: Verifier（dev-loop:dev-loop-verifier・sonnet）反証 1 件（R1）・/code-review（high）指摘 8 件（CR1〜CR8）。下の採否の表。手順 4 へ差し戻し（R1・CR1・CR2・CR3・CR4・CR6 を直す）
+- 1 パス目の指摘対応: 済み（`a5f29872`）。`git diff aaec3978 -- ':(top)' ':(top,exclude)docs/plans/issue-989.md'` は空でない（テスト 2 本・CLAUDE.md・漏れたファイルの削除）——2 パス目を回す。
+  陽性対照: cwd の分離を外した写しで「テストを走らせた cwd に記録のファイルを作っていない」が赤（1 件の失敗）。
+  `check-all.py` 74 本中 73 本 OK、`check-plan-scope.py` だけ漏れたファイルの削除を未コミットのまま回して落ち、コミット後に単独で緑
+- 次: 手順 5 の当て直し（Verifier 2 パス目）と /code-review 2 パス目（どちらも未）。base は同じ `5c2f4a3e…`
 
 ## 既知の限界・決着済みの論点
 
