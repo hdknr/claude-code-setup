@@ -13,7 +13,8 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 
 `plugins/` の下の Markdown（`*.md`）。段落（空行・見出し・リストの項・表の行・引用の始まり・区切り線・フェンスなどで区切る）ごとに、
 `*` がちょうど 2 つ並んだ区切り（`**`）を前から順に拾い、**1 つ目を開き、2 つ目を閉じ**……と
-著者の意図どおりに組んだとみなして、それぞれが CommonMark の規則で開け閉めできるかを見る:
+著者の意図どおりに組んだとみなして、それぞれが CommonMark の規則で開け閉めできるかを見る
+（`*` が 4 つ以上続く並びは、別に CommonMark の組み方でなぞって、字のまま残る `*` があるかを見る——下の「守る」。#1007）:
 
 - **開き**は left-flanking でなければならない——後ろが空白でなく、かつ
   「後ろが句読点でない」か「前が空白か句読点」。`X**「` は前が文字で後ろが句読点なので開けない。
@@ -98,11 +99,20 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
   そこから使う（`>⇥--- | ---` は 2 桁の字下げ）。ほかのタブは減らさない。容れ物の桁（リストの項の中身の桁・印の後ろの空白）・
   インデントしたコード・区切り線・見出しの下線・表の区切りの行と表の終わり、どれも同じ数え方である
   （`- a | b⏎⇥--- | ---` は項の中の表、`a | b⏎--- | ---⏎⇥foo` の 3 行目はインデントしたコード。#623・#624。#581 の狭いパス NP-2）。
+- **`*` が 4 つ以上続く並びは、組みきれずに字のまま残る `*` があれば落とす**（#1007）——閉じの `**` の直後に開きの `**` を置いた
+  `**…。****…**` は、CommonMark では 1 つの並びとして読まれ、`**` か `****` が字のまま残る（#996 の周で 2 回入り、どちらもこの検査を通った）。
+  意図の推測では決まらない（`****二重****` は入れ子の太字として描かれる）ので、**段落の中の `*` の並び（1 つの並びも含む）を、
+  CommonMark の強調の組み方（「process emphasis」——後ろの閉じから前の開きを探す・3 の倍数の規則・間の並びを外す）でなぞり**、
+  組み終えて `*` が残る 4 つ以上の並びだけを落とす。並びの開け閉めの向きは上の flanking の規則で決める。
+  **`*` の並びだけの行の並びは落とさない**（上の「区切りに数えない」と同じ）。
 
 守らない:
 
-- **`__`・`*` 1 つ（斜体）・`*` が 4 つ以上の並び**——見るのは `*` が 2 つか 3 つ（`***` は太字の斜体）の区切りだけ。
-  **これらが同じ段落に混ざると、CommonMark の実際の組み方とこの検査の組み方がずれうる。**
+- **`__`・`*` 1 つ（斜体）の崩れ**——見るのは `*` が 2 つか 3 つ（`***` は太字の斜体）の区切りの開け閉めと、
+  4 つ以上の並びに残る `*` だけ。**2 つか 3 つの区切りの組み方（著者の意図どおりに前から組む）は 4 つ以上の並びを数えない**ので、
+  **それらが同じ段落に混ざると、CommonMark の実際の組み方と 2・3 の判定の組み方がずれうる。**
+- **4 つ以上の並びのなぞりは `*` の並びどうしの組み方だけ**——`_` の並びと、リンクの括弧の中を別に組む規則は
+  見ない（リンクの文字の中に 4 つ以上の並びを書くと、判定が描画とずれうる）。
 - **著者の意図が「前から順に組む」でない形**——`**` を字のまま見せたい段落（コードスパンに
   入れていない）は、組み方を推測できないので、崩れとして出る（免除の印で名指しする）。
 - **リンクの URL・自動リンク・HTML の属性の中の `**`**——段落の本文として数える。
@@ -510,6 +520,69 @@ def runs(text: str):
         i = j
 
 
+def star_runs(text: str):
+    """逃がしていない `*` の並びを、長さによらず全部 `(位置, 長さ)` で返す（4 つ以上の並びのなぞりに使う）。"""
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] != "*":
+            i += 1
+            continue
+        j = i
+        while j < n and text[j] == "*":
+            j += 1
+        yield i, j - i
+        i = j
+
+
+def leftover_stars(text: str) -> list[tuple[int, int, int]]:
+    """段落の `*` の並びを CommonMark の強調の組み方でなぞり、組みきれずに字のまま残る `*` を持つ 4 つ以上の並びを
+    `(位置, 長さ, 残る数)` で返す。
+
+    CommonMark の「process emphasis」（spec の 6.2 の付録）を `*` だけで行う——閉じられる並びを前から順に取り、
+    その前の開ける並びを後ろから探す。**3 の倍数の規則**: どちらかが開けも閉じもできる並びなら、2 つの並びの元の長さの和が
+    3 の倍数のとき組まない（両方が 3 の倍数なら組む）。組めたら両方が 2 つ以上残っていれば 2 つ（太字）、でなければ 1 つ（斜体）を使い、
+    間にある並びは外す（外した並びの `*` は字のまま残る）。
+    """
+    delims = []
+    for pos, length in star_runs(text):
+        before = text[pos - 1] if pos > 0 else None
+        after = text[pos + length] if pos + length < len(text) else None
+        delims.append({"pos": pos, "orig": length, "left": length,
+                       "open": left_flanking(before, after), "close": right_flanking(before, after)})
+    current = 0
+    while current < len(delims):
+        closer = delims[current]
+        if not closer["close"] or not closer["left"]:
+            current += 1
+            continue
+        found = None
+        for k in range(current - 1, -1, -1):
+            opener = delims[k]
+            if not opener["open"] or not opener["left"]:
+                continue
+            both = opener["close"] or closer["open"]
+            total = opener["orig"] + closer["orig"]
+            if both and total % 3 == 0 and not (opener["orig"] % 3 == 0 and closer["orig"] % 3 == 0):
+                continue
+            found = k
+            break
+        if found is None:
+            current += 1
+            continue
+        opener = delims[found]
+        use = 2 if opener["left"] >= 2 and closer["left"] >= 2 else 1
+        opener["left"] -= use
+        closer["left"] -= use
+        for between in delims[found + 1:current]:
+            between["open"] = between["close"] = False  # 間の並びは外す——残った `*` は字のまま
+        if not closer["left"]:
+            current += 1
+    return [(d["pos"], d["orig"], d["left"]) for d in delims if d["orig"] >= 4 and d["left"]]
+
+
 def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
     """崩れ `(行番号, 理由, 断片)` の一覧と、使われなかった免除の印の行番号を返す。"""
     found_blocks, comment_marks = blocks(strip_frontmatter(text).split("\n"))
@@ -557,6 +630,13 @@ def scan(text: str) -> tuple[list[tuple[int, str, str]], list[int]]:
             else:
                 continue
             problems.append((lineno, reason, fragment))
+        # `*` が 4 つ以上続く並び（#1007）——上の 2・3 の組み方とは別に、CommonMark の組み方でなぞって `*` が残るものを落とす
+        for pos, length, left in leftover_stars(joined):
+            row = bisect.bisect_right(offsets, pos) - 1
+            if bare[row] == "*" * length:
+                continue  # `*` の並びだけの行は落とさない（上の 2・3 と同じ）
+            reason = f"`*` が {length} つ続く並びが組みきれない（{left} つの `*` が字のまま残る）"
+            problems.append((start + row, reason, original[max(0, pos - 6):pos + length + 6].replace("\n", "⏎")))
 
     hit = {lineno for lineno, _, _ in problems}
     kept = [p for p in problems if p[0] not in exempt]
@@ -604,6 +684,8 @@ def main(argv=None) -> int:
                 print(f"ERROR:   {rel}:{lineno}", file=sys.stderr)
         print("ERROR:", file=sys.stderr)
         print("ERROR: `**` の外側（句読点の側ではなく文字の側）に空白を足すと直る（#496・#516・#519）。",
+              file=sys.stderr)
+        print("ERROR: `*` が 4 つ以上続く並びは、閉じの `**` と開きの `**` の間に空白を入れるか、1 つの太字にまとめると直る（#1007）。",
               file=sys.stderr)
         print("ERROR: わざと崩した例なら、その行に `<!-- bold-flanking-ok: <理由> -->` を書くこと（#537）。",
               file=sys.stderr)
