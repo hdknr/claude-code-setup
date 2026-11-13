@@ -10,6 +10,7 @@
 
 - **宣言**: `<project>/.claude/dev-loop.md`（`--project` を渡さなければ cwd）の `外部レビュー: <login>[, <login> …]` の行。
   login は GitHub の REST が返す `user.login`（`coderabbitai[bot]` など）。**`[bot]` の有無と大文字小文字は区別しない。**
+  **同じ bot でも取り口で login が違うことがある**（Copilot はレビューが `copilot-pull-request-reviewer[bot]`、行のコメントが `Copilot`）——宣言に両方を並べる。
   区切りは `,`・`、`・空白。フェンスと HTML コメントの中は読まない——**読み方は `check-unattended-env.py` の `visible_lines` を読み込む（写さない）**。
 - **PR**: `gh pr view <n> --json headRefOid`（先端のコミット）と、`gh api --paginate` の 3 つ——
   `repos/{owner}/{repo}/pulls/<n>/reviews`（レビュー）・`…/pulls/<n>/comments`（行のコメント）・`repos/{owner}/{repo}/issues/<n>/comments`（会話のコメント）。
@@ -147,7 +148,8 @@ def json_values(text: str) -> list:
 
 
 def fetch(pr: int) -> tuple[str, dict[str, list[dict]]]:
-    head = json.loads(gh(["pr", "view", str(pr), "--json", "headRefOid"])).get("headRefOid")
+    view = json.loads(gh(["pr", "view", str(pr), "--json", "headRefOid"]))
+    head = view.get("headRefOid") if isinstance(view, dict) else None
     if not isinstance(head, str) or not head:
         raise ValueError("先端のコミット（headRefOid）が読めない")
     found = {}

@@ -205,6 +205,13 @@ def contract(script: Path, base: Path) -> list[tuple[str, bool]]:
     rc, text, _ = run(script, project(base / f"p7-{i}", DECLARED), fake(base / f"g7-{i}", reviews_text="{\"message\": \"x\"}"), "42")
     got += [("配列でない JSON → 2", rc == 2)]
 
+    for name, head in (("配列", "[]"), ("null", "null")):
+        i = len(got)
+        g = fake(base / f"g6h-{i}")
+        (g / "head.json").write_text(head, encoding="utf-8")
+        rc, text, _ = run(script, project(base / f"p6h-{i}", DECLARED), g, "42")
+        got += [(f"pr view が {name} を返す → 2", rc == 2 and "判定できない" in text)]
+
     # 6) 引数
     rc, _, calls = run(script, project(base / "p8", DECLARED), fake(base / "g8"), "abc")
     got += [("PR 番号が数でない → 1", rc == 1 and calls == [])]
@@ -220,6 +227,21 @@ def contract(script: Path, base: Path) -> list[tuple[str, bool]]:
     # 8) `[bot]` を付けずに宣言しても、`[bot]` 付きの書き手に当たる
     rc, text, _ = run(script, project(base / "p10", "外部レビュー: coderabbitai\n"), fake(base / "g10"), "42")
     got += [("[bot] なしの宣言が [bot] 付きの書き手に当たる", rc == 0 and "coderabbitai: レビュー 2・行のコメント 1・会話のコメント 1" in text)]
+
+    # 9) 文書の例の宣言で、取り口ごとに違う login で書く bot（Copilot: レビューは copilot-pull-request-reviewer[bot]、
+    #    行のコメントは Copilot。djensenius/audiobookshelf-apple#535 で実物を観測）を両方取る
+    example = next((ln for ln in DOCS["references/external-review.md"].read_text(encoding="utf-8").splitlines()
+                    if ln.startswith("外部レビュー: ")), "")
+    g = fake(base / "g11", reviews_text=json.dumps([{"id": 30, "user": user("copilot-pull-request-reviewer[bot]"),
+                                                     "state": "COMMENTED", "commit_id": HEAD, "body": "COPILOT-REVIEW"}]))
+    (g / "inline.json").write_text(json.dumps([{"id": 31, "user": user("Copilot"), "commit_id": HEAD, "path": "a.py",
+                                                "line": 1, "body": "COPILOT-INLINE"}]), encoding="utf-8")
+    (g / "issue.json").write_text("[]", encoding="utf-8")
+    out = base / "p11-out.md"
+    rc, text, _ = run(script, project(base / "p11", example + "\n"), g, "42", "--out", str(out))
+    body = out.read_text(encoding="utf-8") if out.exists() else ""
+    got += [("文書の例の宣言で Copilot のレビューと行のコメントを両方取る",
+             rc == 0 and "COPILOT-REVIEW" in body and "COPILOT-INLINE" in body)]
     return got
 
 
@@ -241,6 +263,7 @@ MUTATIONS = {
     "login でない語を通す": ("    bad = [t for t in tokens if not LOGIN.match(t)]\n", "    bad = []\n"),
     "gh の失敗を見ない": ("    if done.returncode != 0:\n", "    if False:\n"),
     "配列でない JSON を通す": ('            raise ValueError(f"配列でない JSON（{type(value).__name__}）")\n', "            pass\n"),
+    "pr view の形を見ない": ('    head = view.get("headRefOid") if isinstance(view, dict) else None\n', '    head = view.get("headRefOid")\n'),
     # 守る: --out の先頭に注意を置く
     "注意を置かない": ("    body = [NOTICE, ", "    body = ["),
 }
