@@ -292,3 +292,16 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 | 後退を示す指摘（D-R1 `****` の崩れ・D-R3 `docs/constraints.txt` の取りこぼし・D-R7 constraints の誤検知） | **止める** | 後退は推奨で進めない決まり。どれも小さい（553 行目の空白 1 つ・`constraints` の文書の除外を外す） |
 | 満たしていない受入基準（D-R2・D-R4 は N3、D-R6 は N2） | **止める** | この周の受入基準を破る |
 | 手順の誤り（D-R5） | 直してからマージする | `uv run` で build が走りうる |
+
+## 利用者の判断による 3 回目の続き（2026-11-13T08:24Z）
+
+**出所: 利用者の直接の指示**（cruise #999 の親から、この周への指示として）。2 回目の当て直しの 7 件（D-R1・D-R3・D-R7・D-R2・D-R4・D-R6・D-R5）を直し、起点 `853bc361` からの差分に Verifier を 1 回だけ当てる（/code-review は当てない）。D-R8・D-R9・D-R10・D-V2 は直さない。
+
+| 指摘 | 直し方 |
+| --- | --- |
+| D-R1 | 553 行目の太字を 1 つにまとめた（`****` を無くした）。`check-bold-flanking.py` に加え、pandoc（gfm）で 4 ファイルの描画に `**` が 1 つも残らないことを main と比べて確かめた |
+| D-R3・D-R7 | constraints を `constraints.txt`・`constraints.in` と、版の番号か決まった用途の付いた `constraints-<…>`・`constraints_<…>` だけにし、文書のディレクトリの特例を外した（`docs/constraints.txt` を拾い、`notes/constraints-analysis.txt`・`constraints_overview.txt` を拾わない）。試料と変異 3 本 |
+| D-R2 | 「`マージ = 関門を通ればマージ`」の止まる条件に依存の行を足し、「ほかの止まる条件はそのまま止まる」にも挙げた |
+| D-R4 | 表の `マージ前の判断` の行と cruise の SKILL.md の 2 箇所の要約に、依存の表の止まる条件を足した |
+| D-R6 | `dependencies.md` の写しを消し、「不在の周」の節を指すだけにした |
+| D-R5 | 入れた後に止めたままにする操作に、`uv run`（`--no-sync` か `--frozen`）と `npx`・`pnpm dlx`・`yarn dlx`（使わない）を足した |
