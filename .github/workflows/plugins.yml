@@ -266,6 +266,10 @@ jobs:
       - name: spec-loop の作り直しの量の記録を分析するスクリプトのテスト（#989）
         run: python3 scripts/test-rework-report.py
 
+      # 本体は plugins/spec-loop/scripts/intake-code.py（持ち込まれたコードから要求の候補を起こす取り込み。正本と取り込む元は一時の git リポジトリで作る）。
+      - name: spec-loop の持ち込まれたコードの取り込みのテスト（#998）
+        run: python3 scripts/test-intake-code.py
+
       # 本体は plugins/spec-loop/scripts/parent-checklist.py（登録した Issue から依存の連鎖を cruise の親 Issue の書式で出す。
       # 索引と本文は本物の scaffold.py で作り、出した行を本物の parent-issue.py show に通す）。
       - name: spec-loop の親 Issue の一覧を出すスクリプトのテスト（#876）
