@@ -73,7 +73,12 @@ members = ["backend"]
 ```
 
 - **雛形を変えずに足せる。** 雛形の `pyproject.toml` にこの節を足し、`backend/pyproject.toml` を置くと `uv lock` が通る
-  （uv 0.11.14 で確かめた）。
+  （uv 0.11.14 で確かめた）。**`uv lock` が通ることは、member を作れることを意味しない**——作れるかは次の `uv sync --all-packages` で分かる。
+- **確かめた member の形は `backend/src/app/`**（hatchling で `[tool.hatch.build.targets.wheel]` に `packages = ["src/app"]`）である。
+  **上の「推奨のレイアウト」の `backend/app/` のまま、`packages` を書かずに hatchling で作らせると、`uv sync --all-packages` が失敗した**
+  （作るものが見つからないと止まり、`import app` は `ModuleNotFoundError`）。workspace にするなら、member が作れる形
+  （`src/` に置いて `packages` を書く、など）にしてから下の確かめ方で読み込めることを見る。**`src/` の形では `PYTHONPATH` の値も
+  `backend/src` になる**（下の「Red テストを走らせる」の `backend` を読み替える）。
 - **`uv sync` だけでは member は入らない**——`uv sync --all-packages` で `backend` が直下の `.venv` に入り、
   直下から `import app` できるようになる（同上。`uv sync` の後は `ModuleNotFoundError` だった）。
 - **`--all-packages` の後に素の `uv sync` を走らせると、member は消える**（同上。`Uninstalled 1 package - backend` と出て、
@@ -104,27 +109,41 @@ Red テスト（`scaffold/tests/test_<機能>.py`）は**リポジトリの根�
    - **`--red-check` も同じ `PYTHONPATH` で走らせる**——Red テストを走らせる子のプロセスは環境を引き継ぐ。
    - **確かめた範囲**: `backend/app/spec_impl.py` に正しい実装を置いた試料で、1 行目は緑、実装を誤ったものに替えると失敗した。
      2 行目は正しい実装で「もう緑 3 件」と出て 0 だった——**ただし v1 の `--red-check` は、誤った実装でも `PYTHONPATH` の付け忘れでも 0 を返す**
-     （下の「付け忘れは『未実装』と同じに見える」）。**読み込めているかを決めるのは終了コードではなく、1 行目の結果と下の `import` の 1 行である。**
+     （下の「付け忘れは『未実装』と同じに見える」）。**`--red-check` の終了コードは、読み込めているかを決めない**——見分け方は下の同じ節。
    - **走らせる Python は、実装の依存を読み込めるものにする。** 試料の実装は標準ライブラリだけだった。実装がほかのパッケージに依存するなら、
      素の `python3` ではその依存が読み込めず、Red テストはエラーになる——実装の環境の Python（`backend/.venv/bin/python` など）で走らせる
      （**この形は確かめていない**）。`--red-check` は `scaffold.py` を走らせた Python で Red テストを走らせる。
-3. **workspace の形なら**、`uv sync --all-packages` の後は `PYTHONPATH` を付けずに直下の `.venv` で読み込める
-   （`uv run python -m unittest discover -s scaffold/tests`）。**確かめたのは `import` までで、この形で Red テストと `--red-check` を走らせることは確かめていない。**
-4. **Issue の本文の「回し方」は、読み込み方を持たない。** scaffold が作る本文は `python3 -m unittest discover -s scaffold/tests -p <ファイル>` を
-   「正本リポジトリの根で」と書き、実装の場所はモジュール名（`app.spec_impl`）だけを書く。dev-loop はこの本文を受入基準として写すので、
-   **直下の `CLAUDE.md`（か `.claude/dev-loop.md`）に「Red テストは `PYTHONPATH=backend` を付けて走らせる」「`impl_module` のモジュールは `backend/` の下に置く」と書く**
-   （下の「CLAUDE.md の分担」）。書かなければ、dev-loop の周は付け忘れたまま「未実装」の失敗を数えるか、モジュールを根に作って緑にしうる。
+3. **workspace の形なら**、member を作れたうえで（上の「pyproject.toml と .gitignore」）、`uv sync --all-packages` の後は
+   `PYTHONPATH` を付けずに直下の `.venv` で読み込める（`uv run python -m unittest discover -s scaffold/tests`）。
+   **確かめたのは `src/` の形での `import` までで、この形で Red テストと `--red-check` を走らせることは確かめていない。**
+   読み込めることの確かめ方は `uv run python -c "import app.spec_impl"`——**素の `uv sync` の後は失敗する**（member が消える）。
+4. **Issue の本文に書かれた `unittest` のコマンドは、どれも読み込み方を持たない。** scaffold が作る本文は、Red テストの「回し方」
+   （`python3 -m unittest discover -s scaffold/tests -p <ファイル>`）・変更と撤去の本文の回帰（`-p` 無しで `scaffold/tests` 全部）・
+   性能テストの「回し方」（`-s scaffold/perf`。性能テストも同じ読み込み方で実装を探す）を「正本リポジトリの根で」と書き、
+   実装の場所はモジュール名（`app.spec_impl`）だけを書く。dev-loop はこの本文を受入基準として写すので、
+   **直下の `CLAUDE.md`（か `.claude/dev-loop.md`）に「Issue の本文の `unittest` のコマンドはどれも `PYTHONPATH=backend` を付けて走らせる」
+   「`impl_module` のモジュールは `backend/` の下に置く」と書く**（下の「CLAUDE.md の分担」）。書かなければ、dev-loop の周は付け忘れたまま
+   「未実装」の失敗を数えるか（撤去の回帰は前も後も全部が「未実装」で、「前に緑だったものが後も緑」が中身なしに通る）、モジュールを根に作って緑にしうる。
 
 **付け忘れは「未実装」と同じに見える。** `PYTHONPATH` を付けずに走らせると、Red テストは
 **「未実装: app.spec_impl.<関数> が無い」で失敗する**——読み込めないことと、実装が無いことが同じ出力になる。
-**回帰のケースが無い版（v1。全部の機能を足したか変えた版——`impl_module` を変えた版もこれにあたる）の `--red-check` は、
-「全部が失敗」を期待どおりとして 0 を返す**ので、付け忘れが黙って通る（v1 は試料で確かめた。回帰のケースのある版で全部が「未実装」なら、
-`--red-check` は「回帰のケースを判定していない」で 2 を返す——`scaffold.py` の `red_check`）。
-実装のモジュールを置いたら、読み込めることを先に 1 行で確かめる:
+**回帰のケース（前の版から変わらないケース）が 1 つも無い版の `--red-check` は、「全部が失敗」を期待どおりとして 0 を返す**ので、
+付け忘れが黙って通る。v1 はいつもこれにあたり、`impl_module` だけを変えた版もこれにあたる（全部のケースが `変更` になる）。
+**回帰はケースごとに決まる**——変更の機能でも変わらないケースは回帰なので、回帰のケースのある版で全部が「未実装」なら、
+`--red-check` は回帰のケースを判定していないと言って 2 を返す（`scaffold.py` の `red_check`。v1 と、変更の機能 2 つに変わらないケースの残る v2 を試料で確かめた）。
 
-```bash
-PYTHONPATH=backend python3 -c "import app.spec_impl"
-```
+**見分け方は 2 段に分ける**——どちらか一方では足りない:
+
+1. **置き場所**: 実装のモジュールを置いたら、そこから読み込めることを確かめる。この 1 行は自分で `PYTHONPATH` を付けるので、
+   **テストのコマンドに付けたかは見分けない**——見分けるのは、モジュールが `backend/` の下の正しい名前にあることまで。
+
+   ```bash
+   PYTHONPATH=backend python3 -c "import app.spec_impl"
+   ```
+
+2. **テストのコマンド**: 実装に関数を 1 つでも置いたあとは、Red テスト（か `--red-check`）の出力の失敗が**全部「未実装: …」で始まっていないか**を見る。
+   置いた関数のテストまで「未実装」で落ちるなら、そのコマンドは実装を読み込んでいない（付け忘れ・workspace の member が消えたなど）。
+   **実装がまだ 1 つも無いあいだは、この形でも見分けられない**——1 の行と、コマンドに `PYTHONPATH` があることを目で見て確かめる。
 
 **実装が Python でないなら、この文書の形は使えない。** 基盤要件の言語が Python で始まらない決定なら、`scaffold.py` は止まる
 （`tree.md` の「基盤要件」の「ゲート」）。
@@ -152,7 +171,8 @@ PYTHONPATH=backend python3 -c "import app.spec_impl"
 
 - 実装のモジュール名（`impl_module`）: `app.spec_impl`（`backend/` から見た名前。モジュールは `backend/app/spec_impl.py` に置く——根に作らない）
 - Red テストの走らせ方: 根で `PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests`
-  （Issue の本文の「回し方」のコマンドにも `PYTHONPATH=backend` を付けて走らせる。先に `PYTHONPATH=backend python3 -c "import app.spec_impl"` で読み込めることを確かめる）
+  （Issue の本文の `unittest` のコマンド——回し方・回帰・性能テスト——にも、どれも `PYTHONPATH=backend` を付けて走らせる。
+  先に `PYTHONPATH=backend python3 -c "import app.spec_impl"` で置き場所を確かめ、実装を置いたあとは失敗が全部「未実装」でないかを見る）
 - 正本と開発のリポジトリ: 同じリポジトリ
 - Issue を登録するリポジトリ・ラベル: <owner>/<repo>・<ラベル>
 - commit・push の決まり: <決まり>
@@ -212,5 +232,9 @@ on:
 #   PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests
 #   （実装自身のテスト）
 ```
+
+**Red テストを全部回す検査は、版の機能を実装し終えるまで赤い**——Red テストは、まだ実装していない機能と、足した・変えたケースで失敗するように作る。
+1 Issue = 1 機能で周を回すあいだは、この検査を必須にしない（緑をマージの条件にしない）か、周の Issue の `-p <ファイル>` に絞る。
+版を実装し終えたら、全部を回す検査で回帰を見る。
 
 CI でプラグインのスクリプトをどこから取るかは、正本リポジトリの `CLAUDE.md` に書いてもらう（この文書は決めない）。
