@@ -633,6 +633,10 @@ dev-loop の**手前にある、要求側のループ**（要求確定・仕様�
   [`spec-scope.md` の「振り分けの区分」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-scope.md)を正とします。
 - **0.18.0 で Q&A 表の見出しが変わりました**（推奨の 2 列）。前の形の表と、写し済みの MkDocs のフックを移す手順は
   [`tree.md` の「Q&A 表を移す」](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/tree.md)を正とします。
+- **エンジニアでない人が持ち込んだ動くコード（PR・ブランチ・ディレクトリ）を渡すと、要求の候補を起こします**（手順 3a）。
+  コードはマージせず、読むだけで正本の外に写し、要求・業務ルール・暗黙の前提を「コードではこうなっていた」と該当箇所つきの回答待ちの質問として起票し、
+  既存の正本との食い違い（基盤要件の AWS と Google Cloud の違いなど）を挙げます。確定は今までどおり利用者の回答で行います。決まりは
+  [`intake.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/intake.md)を正とします。
 - PPTX は同梱のスクリプト（標準ライブラリのみ）で作ります。正本リポジトリの `CLAUDE.md` に
   スライドの形式の指定があれば、そちらに従います。
 
