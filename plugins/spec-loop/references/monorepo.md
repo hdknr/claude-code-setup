@@ -1,0 +1,199 @@
+# モノレポのレイアウト
+
+正本リポジトリ（spec-loop）と開発のリポジトリ（dev-loop）を **1 つのリポジトリ（モノレポ）** に置くときの推奨の形（#994）。
+scaffold の既定は「同じリポジトリとして扱う」（`skills/scaffold/SKILL.md` の「はじめに」）なので、`scaffold/` を写す手順も
+Issue の指紋を当てる場所も決めずに済む——**仕組みとしてはモノレポのほうが素直である。**
+
+ただし `tree.md` のツリーは、**リポジトリの直下を spec-loop とドキュメントの道具が占める**前提で書いてある。
+実装を同じリポジトリに足すときは、この文書の形に揃え、**決めたことを直下の `CLAUDE.md` に書く**（下の「CLAUDE.md の分担」）。
+**正本リポジトリの `CLAUDE.md` が別の置き方を決めていれば、そちらが先に立つ**（`tree.md` の「プロジェクトに任せること」）。
+
+## 推奨のレイアウト
+
+```
+<リポジトリの根>/
+├── docs/                    # MkDocs の docs_dir（tree.md のとおり）
+│   ├── v<n>/                # 仕様の版（shared/・requirements/・spec/……）
+│   ├── dev/                 # 開発用の文書（ADR・手順書）。版の外（下の「開発用の文書」）
+│   └── index.md・qa.md……    # 表示用のページ（版の外）
+├── scaffold/                # scaffold の生成物（commit する。Red テストは scaffold/tests/）
+├── spec-review/             # 仕様レビューの記録
+├── build/                   # spec-loop の生成物（commit しない。下の「build/ を分けない」）
+├── mkdocs.yml・hooks/       # ドキュメントのツール（init-mkdocs.py が写す）
+├── pyproject.toml           # MkDocs の依存だけ（package = false。下の「pyproject.toml と .gitignore」）
+├── .gitignore               # build/・site/・.venv/・__pycache__/
+├── CLAUDE.md                # 置き場所の表と、spec-loop・dev-loop の両方が読む項目
+├── .claude/dev-loop.md      # dev-loop の verify・deploy（任意）
+├── backend/                 # 実装（Python）。自分の pyproject.toml・CLAUDE.md を持ってよい
+│   └── app/spec_impl.py     # Red テストが読み込むモジュール（impl_module。下の「Red テストを走らせる」）
+└── frontend/                # 実装（フロントエンド）。ビルドの出力は frontend/ の中に置く
+```
+
+- **実装は直下に置かず、サブディレクトリ（`backend/`・`frontend/` など）に置く。** 直下には `init-mkdocs.py` が
+  `pyproject.toml`・`.gitignore`・`mkdocs.yml`・`hooks/`・`docs/` を写す（`tree.md` の「ドキュメントのツール」）。
+  実装を直下に置くと、`pyproject.toml` を共有するかどうかを最初に決めることになる。
+- **名前は例である。** `backend/`・`frontend/` でなくてよいが、**spec-loop が直下で使う名前**（`docs/`・`scaffold/`・
+  `spec-review/`・`build/`・`site/`・`hooks/`）は実装に使わない。
+
+## build/ を分けない
+
+spec-loop の生成物（`build/merged/`・`build/scaffold/`・`build/feasibility/`・`build/proposal/`・`build/req-loop/`。
+`tree.md` の「生成物の置き場所」）は、**モノレポでも `build/spec-loop/` に寄せない。** 理由:
+
+- **実装をサブディレクトリに置けば、ぶつからない。** フロントエンドのビルド道具が慣習で使う `build/` は
+  `frontend/build/` になり、直下の `build/` とは別のディレクトリである。
+- **寄せると壊れる変更になる。** 出力先はスクリプト（`scaffold.py`・`build-proposal.py` など）・Issue の本文
+  （`build/merged/spec/spec_ir.json` を指す）・dev-loop が spec-loop の Issue を読む手順・各スキルの `SKILL.md` に書いてあり、
+  すでにある正本の手順と CI も変わる。名前空間を分けることで得るものは、上の形では無い。
+
+それでも実装のビルドを直下の `build/` に出す道具を使うなら、**出力先を実装のディレクトリの中に変える**。
+**spec-loop の生成物と同じ名前（`build/merged/` など）を実装に使わない。**
+
+**`.gitignore` の `build/` はどの階層にも効く**（`/` を末尾にしか持たないパターンなので、`frontend/build/` も
+`backend/build/` も無視される）。実装のビルドの出力を commit しないなら、そのままでよい。
+**実装の中に commit したい `build/` という名前のディレクトリがあるなら**、実装のディレクトリの `.gitignore` に例外（`!build/`）を書く
+（`backend/.gitignore` に `!build/` を書くと `backend/build/` は無視されなくなり、`frontend/build/` と直下の `build/` は無視されたままだった。
+雛形の `.gitignore` で `git check-ignore` と `git status` で確かめた）。
+
+## pyproject.toml と .gitignore
+
+**直下の `pyproject.toml` は MkDocs の依存だけにし（雛形のまま。`package = false`）、実装は自分の `pyproject.toml` を
+`backend/` に持つ。** 2 つの形がある——どちらでも Red テストは走らせられる（下の「Red テストを走らせる」）:
+
+| 形 | やること | 向いているとき |
+| --- | --- | --- |
+| **別々のプロジェクト** | 直下で `uv run mkdocs serve`、実装は `cd backend && uv run …` | ドキュメントと実装の依存を混ぜたくない |
+| **uv の workspace** | 直下の `pyproject.toml` に下の 1 節を足す | 1 つの `.venv` で両方を回したい |
+
+```toml
+[tool.uv.workspace]
+members = ["backend"]
+```
+
+- **雛形を変えずに足せる。** 雛形の `pyproject.toml` にこの節を足し、`backend/pyproject.toml` を置くと `uv lock` が通る
+  （uv 0.11.14 で確かめた）。
+- **`uv sync` だけでは member は入らない**——`uv sync --all-packages` で `backend` が直下の `.venv` に入り、
+  直下から `import app` できるようになる（同上。`uv sync` の後は `ModuleNotFoundError` だった）。
+- **`init-mkdocs.py` の前から直下に `pyproject.toml` があれば、スクリプトはそれを変えずに足りない依存を示す**
+  （`tree.md` の「ドキュメントのツール」）。実装の `pyproject.toml` を直下に置いていたなら、`backend/` に移してから
+  `init-mkdocs.py` を走らせると、雛形がそのまま写る。
+
+**`.gitignore` は直下の 1 本（雛形）で spec-loop の分は足りる**（`build/`・`site/`・`.venv/`・`__pycache__/`）。
+実装だけが要る行（`node_modules/` など）は、実装のディレクトリの `.gitignore` に書く。
+
+## Red テストを走らせる
+
+Red テスト（`scaffold/tests/test_<機能>.py`）は**リポジトリの根から** `importlib.import_module(IMPL_MODULE)` で実装を読み込む。
+実装が `backend/` にあるなら、**`backend/` を読み込みの経路に入れる。**
+
+1. **`impl_module` を、最初の scaffold の前に決める。** 実装のディレクトリ（`backend/`）から見たモジュール名を書く
+   （`backend/app/spec_impl.py` なら `app.spec_impl`）。**後から変えると、機能が同じでも全部の機能が `変更` になる**
+   （`handoff-issue.md`）。書く場所は中間表現の `impl_module`（`spec-ir.md` の「全体」）。
+2. **`PYTHONPATH` で読み込む**（どちらの形のプロジェクトでも使える）:
+
+   ```bash
+   PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests
+   PYTHONPATH=backend python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo . --red-check
+   ```
+
+   **`--red-check` も同じ `PYTHONPATH` で走らせる**——子のプロセスは環境を引き継ぐ（上の 2 行は、`backend/app/spec_impl.py` に
+   正しい実装を置いた試料で、どちらも緑になることを確かめた。実装を誤ったものに替えると失敗する）。
+3. **workspace の形なら**、`uv sync --all-packages` の後は `PYTHONPATH` を付けずに直下の `.venv` で読み込める
+   （`uv run python -m unittest discover -s scaffold/tests`）。**確かめたのは `import` までで、この形で `--red-check` を走らせることは確かめていない。**
+
+**付け忘れは「未実装」と同じに見える。** `PYTHONPATH` を付けずに走らせると、Red テストは
+**「未実装: app.spec_impl.<関数> が無い」で失敗する**——読み込めないことと、実装が無いことが同じ出力になる。
+**v1 の `--red-check` は「全部が失敗」を期待どおりとして 0 を返す**ので、付け忘れが黙って通る（どちらも試料で確かめた）。
+実装のモジュールを置いたら、読み込めることを先に 1 行で確かめる:
+
+```bash
+PYTHONPATH=backend python3 -c "import app.spec_impl"
+```
+
+**実装が Python でないなら、この文書の形は使えない。** 基盤要件の言語が Python で始まらない決定なら、`scaffold.py` は止まる
+（`tree.md` の「基盤要件」の「ゲート」）。
+
+## CLAUDE.md の分担
+
+**scaffold が読むのは直下の `CLAUDE.md` である**（`skills/scaffold/SKILL.md` の「はじめに」）。だから `impl_module` と読み込み方は、
+サブディレクトリの `CLAUDE.md` ではなく**直下に書く**。分担の推奨:
+
+| ファイル | 書くこと |
+| --- | --- |
+| 直下の `CLAUDE.md` | 置き場所の表（上の「推奨のレイアウト」のうち、このリポジトリで使うもの）・spec-loop の事情（scaffold の「はじめに」の項目）・実装の場所への指し先 |
+| `.claude/dev-loop.md` | dev-loop の verify・deploy・「歯止めを全部回す 1 本のコマンド」（dev-loop はここを追補設定として最優先で読む） |
+| `backend/CLAUDE.md` など | その実装だけのコーディング規約・依存の入れ方 |
+
+直下の `CLAUDE.md` に書く項目の雛形（scaffold の「はじめに」の表と同じ項目）:
+
+```markdown
+## 置き場所
+
+- 仕様: `docs/v<n>/`（spec-loop の `references/tree.md`）。開発用の文書は `docs/dev/`
+- 実装: `backend/`（Python）・`frontend/`
+
+## spec-loop（scaffold）
+
+- 実装のモジュール名（`impl_module`）: `app.spec_impl`（`backend/` から見た名前）
+- Red テストの走らせ方: 根で `PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests`
+- 正本と開発のリポジトリ: 同じリポジトリ
+- Issue を登録するリポジトリ・ラベル: <owner>/<repo>・<ラベル>
+- commit・push の決まり: <決まり>
+```
+
+**サブディレクトリの `CLAUDE.md` がいつ読み込まれるかは、Claude Code の動きによる**（ここでは確かめていない）。
+spec-loop・dev-loop のどちらも頼る項目（Red テストの走らせ方・verify のコマンド）を、サブディレクトリの `CLAUDE.md` だけに書かない。
+
+## 開発用の文書
+
+**ADR・手順書は `docs/dev/` のような版の外のディレクトリに置く。** `docs/v<n>/` の下には置かない——
+`docs/v<n>/` は重ね合わせの対象で（`versions.md`）、その中の `shared/`・`requirements/`・`spec/` はサインオフで比べる範囲である
+（`signoff-tags.md`）。
+
+- **`merge-versions.py` は、`v` と数字で始まらない名前を読まない**——`docs/dev/` は重ね合わせの全体に入らない
+  （試料で確かめた）。**`docs/v1-notes/` のように `v` と数字で始まる名前は、版の名前の誤りとして名指しされる**——付けない。
+- `docs/dev/` は MkDocs の `docs_dir` の中なので、サイトにも載る。載せたくないなら `docs/` の外（`dev-docs/` など）に置く。
+- 開発用のスクリプトの置き場所は spec-loop は決めない——spec-loop のスクリプトはプラグインの中から呼ぶので、直下の
+  `scripts/` を使わない。実装のディレクトリの中に置くと、仕様と実装の境目が分かりやすい。
+
+## 2 つの「版」
+
+モノレポでは、**仕様の版**（`docs/v<n>/`）と**アプリのリリース**が同じリポジトリに並ぶ。タグの名前で分ける:
+
+| タグ | 意味 | 付ける人 |
+| --- | --- | --- |
+| `signoff/v<n>/req-<k>`・`signoff/v<n>/budget-<k>` | 仕様の版の承認（`signoff-tags.md`） | 人間 |
+| `release-v<n>` | **仕様の版の凍結**（`versions.md` の「凍結」。`check-frozen.py` が見る） | 人間 |
+| `v1.0.0` など | アプリのリリース | 開発の決まり |
+
+- **アプリのリリースに `release-v<数字>` の形を使わない。** `check-frozen.py` は `release-v` と数字だけの名前（`release-v1`）を
+  **仕様の版の凍結**として数える——アプリの `release-v1` を付けると、`docs/v1/` が凍結したと読まれる。
+  `v1.0.0`・`app-v1.0.0` のような名前にする。
+- 素の `v<n>`・`v1.0.0` のタグは、承認のタグ（`signoff/` の下）とぶつからない（`signoff-tags.md`）。
+
+## CI のパスの分け方
+
+仕様の変更と実装の変更で、走らせる検査を分けてよい。**`scaffold/` の変更は両方に入れる**——Red テストは実装に当てる契約なので、
+仕様が変わって `scaffold/` が作り直されたら実装のテストも回す。GitHub Actions の例:
+
+```yaml
+on:
+  pull_request:
+    paths: ["docs/**", "scaffold/**", "spec-review/**", "mkdocs.yml", "hooks/**"]
+# 仕様の検査（例）:
+#   python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py docs/v<n>/shared/qa.csv
+#   python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo . --check
+#   python3 <spec-loop の base ディレクトリ>/scripts/check-frozen.py   # fetch-depth: 0 で取る（versions.md）
+#   uv run mkdocs build --strict
+```
+
+```yaml
+on:
+  pull_request:
+    paths: ["backend/**", "scaffold/**"]
+# 実装の検査（例）:
+#   PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests
+#   （実装自身のテスト）
+```
+
+CI でプラグインのスクリプトをどこから取るかは、正本リポジトリの `CLAUDE.md` に書いてもらう（この文書は決めない）。

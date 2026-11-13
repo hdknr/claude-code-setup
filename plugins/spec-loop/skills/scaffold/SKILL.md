@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.84.0 -->
-> **このスキルの版: 0.84.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.85.0 -->
+> **このスキルの版: 0.85.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -23,12 +23,13 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 ## データの決まり
 
-**中間表現の形・Issue の本文の形・置き場所の正は次の 4 つで**、このスキルと同じプラグインの中にある:
+**中間表現の形・Issue の本文の形・置き場所の正は次の 5 つで**、このスキルと同じプラグインの中にある:
 
 - `../../references/spec-ir.md` — 中間表現（`spec_ir.json`）の形と、書き起こすときの決まり
 - `../../references/handoff-issue.md` — dev-loop に渡す Issue の本文の形
 - `../../references/spec-exit.md` — 入力にしてよい仕様（仕様レビューを抜ける条件）
 - `../../references/tree.md` — 中間表現・生成物（`scaffold/`）・Issue の本文の置き場所
+- `../../references/monorepo.md` — 実装を同じリポジトリのサブディレクトリに置くとき（モノレポ）の置き場所・Red テストの走らせ方・`CLAUDE.md` に書く項目
 
 ## 守ること
 
@@ -51,6 +52,12 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 | 正本のツリー・仕様の置き場所 | `../../references/tree.md` のとおり |
 | 実装のモジュール名（Red テストが探すもの。中間表現の `impl_module` に書く） | 書かない（スクリプトの既定 `spec_impl`） |
 | 正本と開発のリポジトリが別か、別なら `scaffold/` をどう写すか | 同じリポジトリとして扱う |
+| 同じリポジトリなら、実装を置くディレクトリと Red テストの読み込み方（`PYTHONPATH` など） | 根から読み込めるものとして扱う |
+
+**同じリポジトリで実装をサブディレクトリに置く（モノレポ）なら、`impl_module` は最初の scaffold の前に決め、
+4 の `--red-check` も Red テストと同じ読み込み方で走らせる**——書き方と、読み込み方を付け忘れると Red テストが
+「未実装」と同じ出力で失敗し v1 の `--red-check` が 0 を返す落とし穴は `../../references/monorepo.md` の「Red テストを走らせる」を正とする。
+実装がサブディレクトリにあるのに `CLAUDE.md` に読み込み方が無ければ、推測で決めずに利用者に確かめる。
 | Issue を登録するリポジトリ・ラベル | 正本リポジトリに、ラベルなしで |
 | commit・push の決まり | 変更したファイルの一覧を示して止まり、commit するかどうかを利用者に任せる |
 
