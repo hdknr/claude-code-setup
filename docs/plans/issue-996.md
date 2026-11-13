@@ -116,9 +116,9 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 
 - 周の在り処: ブランチ `issue/996-dependency-gate`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-996`・起点 `4e767b32`・base の参照 `origin/main`・base の SHA `4e767b32b9d3de89e2301aa258c91169c1b0e579`
 - 割り目（手順 4）: 割らない（cruise の周）
-- Verifier 1 パス目: 未
+- Verifier 1 パス目: 起動（dev-loop:dev-loop-verifier・sonnet。実装は opus）
 - /code-review 1 パス目: 未
-- 1 パス目の指摘対応の起点: 未
+- 1 パス目の指摘対応の起点: `e9101bda`（1 パス目の関門に渡した時点の HEAD）
 - 割り目（手順 6）: 未
 - 2 パス目: 未
 - 狭いパス: 未
@@ -134,4 +134,6 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 
 ## 手順 8
 
-（マージの前に書く）
+（振り分けと焼き戻しはマージの前に書く）
+
+- この周の起票: 1 件（仕様の穴を推奨で決めた確認の Issue。起票の承認は不在のため訊いていない）
