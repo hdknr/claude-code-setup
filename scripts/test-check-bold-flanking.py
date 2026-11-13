@@ -12,7 +12,7 @@
 （変異はどの「守る」を壊すかを番号で持つ）。
 
 **実際に起きた崩れを試料に入れてある。** #519 が直した `SKILL.md` の行と、この周（#525）が直した
-spec-loop の `agents/` の行を、直す前の形のまま置いている——**作り話ではなく、このリポジトリが実際に踏んだ形である。**
+spec-loop の `agents/` の行と、#996 の周が 2 回入れた `****` の行（#1007）を、直す前の形のまま置いている——**作り話ではなく、このリポジトリが実際に踏んだ形である。**
 **どの試料も、GitHub の描画（`gh api -X POST /markdown`、`mode=gfm`）で崩れる・崩れないを確かめてある**（#525 の周）。
 """
 import contextlib
@@ -384,6 +384,52 @@ SAMPLES = {
         "`c1`\nX**「y」\n\n"
         ">\t`ab` X**「y」\n\n"
         "- a\n\t`cd` X**「y」\n"),
+    # #1007: `*` が 4 つ以上続く並び。どれも GitHub の描画（`gh api -X POST /markdown`、`mode=gfm`）で崩れる・崩れないを確かめた。
+    # **実際に起きた形**（#996 の周の `absent-lines.md` 25 行目・C-R4）——閉じの `**` の直後に開きの `**`。並びの前が句読点・後ろが文字
+    "real-996-cr4.md": (
+        "**宣言（cruise の台帳の確かめた線を含む。下の「cruise で確かめた線」）が無ければ、この表のどの線も「止まる」である（必須）。"
+        "****例外は `依存の追加・更新` の 1 行だけ**——宣言に依らず、下の「`依存の追加・更新 = 表で確かめて進める`」のとおり"
+        "疑わしいときだけ止まる（利用者が #1003 で決めた）。\n"),
+    # **実際に起きた形**（#996 の周の `absent-lines.md` 553 行目・D-R1）——並びの両側が文字（3 の倍数の規則で組めず `****` が残る）
+    "real-996-dr1.md": (
+        "4. **進むときの入れ方——インストールスクリプトを止める****版を固定する形で**（道具が持つ形で。例: "
+        "`npm install --ignore-scripts --save-exact <名前>@<版>`・`pnpm add --ignore-scripts --save-exact <名前>@<版>`・"
+        "Yarn Berry は `enableScripts: false` で `yarn add --exact <名前>@<版>`、\n"),
+    # 両側が句読点（2・3 の判定も閉じの `**` を落とすので 2 つ出る）・`*` が 5 つ（字の `*` が 1 つ残る）・長さの合わない開きの 4 つ
+    "stars-adjacent-punct.md": "**閉じ。****「開き」**と書く。\n",
+    "stars-five.md": "**閉じ*****開き**と書く。\n",
+    "stars-open-mismatch.md": "前の ****二重**の太字。\n",
+    # 容れ物（リストの項・引用・表のセル）の中と、段落の中で行をまたぐ形
+    "stars-containers.md": (
+        "- **項の閉じ****開き**だ\n\n"
+        "> **引用の閉じ****開き**だ\n\n"
+        "| **セル****二つ** | b |\n| --- | --- |\n\n"
+        "行を **またぐ\n閉じ****開き** です。\n"),
+    # 間の並びを外す——`****` は `い**う` に飛ばされて（3 の倍数の規則）外れ、後ろの `****` と組まない（GitHub: `<strong>あ ****い</strong>う****`）
+    "stars-between.md": "**あ ****い**う****\n",
+    # 1 つの `*` も組み方に入る——`*い` が真ん中の `****` の 1 つと組み（斜体）、残った 3 つが後ろの `****` の 3 つと組んで
+    # （太字と斜体）、後ろの並びの `*` が 1 つ字のまま残る（GitHub: `<em>い</em><em><strong>い</strong></em>*`）
+    "stars-single.md": "*い****い****\n",
+    # 探す範囲の下限（cmark-gfm の openers_bottom）——`**。*` が開きを見つけられずに下限を上げるので、後ろの `* と**` は
+    # 真ん中の `****` まで探しに行かず、`****` の 2 つが字のまま残る（GitHub: `これは *注。**<em><em>強調。**。</em>。「</em> と** です`。
+    # pandoc は全部組む。#1007 の /code-review 1 パス目 CR1-1）
+    # frontmatter の中の 4 つ以上の並びは見ない（#1007 の /code-review 2 パス目 CR2-7）
+    "stars-frontmatter.md": "---\nname: x\ndescription: 閉じ。****開き\n---\n\n本文の **太字** だ。\n",
+    "stars-bottom.md": "これは *注。****強調。**。*。「* と** です\n",
+    # 正しく描かれる形（誤検出しない）——直した形（間に空白・2 つの太字）・`****二重****`（GitHub では 1 つの太字）・太字と太字の斜体・両方が 3 の倍数の並び・
+    # 1 つの `*` と組んで描かれる形・コードスパン・逃がした `*`・区切り線・フェンス・`*` の並びだけの段落の続きの行・免除の印
+    "stars-clean.md": (
+        "**宣言（必須）。** **例外は `x` の 1 行だけ**——止まる。\n\n"
+        "4. **止める**・**版を固定する形で**（例）\n\n"
+        "****二重****の太字。\n\n"
+        "**一つ*****二つ***\n\n"
+        "***あ******い***\n\n"
+        "*。****い*****\n\n"
+        "コードの `****` と、逃がした \\*\\*\\*\\* だ。\n\n"
+        "****\n\n"
+        "~~~\n**a****b**\n~~~\n\n"
+        "**a\n    ****\nb**\n\n"
+        "**閉じ****開き** <!-- bold-flanking-ok: 例として崩した形 -->\n"),
     # 崩れていない形（誤検出しない）——句読点の両側・空白の外側・引用・表のセル・GitHub が句読点と見ない記号。
     "clean.md": (
         "# 見出しの **太字**\n\n"
@@ -573,6 +619,17 @@ EXPECTED = {
     'item-thematic-star.md': ((), ()),
     'quote-thematic-after-open.md': ((), ()),
     'item-thematic-after-open.md': ((), ()),
+    "real-996-cr4.md": ((1,), ()),
+    "real-996-dr1.md": ((1,), ()),
+    "stars-adjacent-punct.md": ((1, 1), ()),
+    "stars-five.md": ((1,), ()),
+    "stars-open-mismatch.md": ((1, 1), ()),
+    "stars-containers.md": ((1, 3, 5, 9), ()),
+    "stars-between.md": ((1, 1), ()),
+    "stars-single.md": ((1,), ()),
+    "stars-bottom.md": ((1,), ()),
+    "stars-frontmatter.md": ((), ()),
+    "stars-clean.md": ((), ()),
     "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19, 21, 24), ()),
     "clean.md": ((), ()),
 }
@@ -950,6 +1007,34 @@ MUTATIONS = {
     "容れ物を開いた直後の区切り線を項として開く（#648 の狭いパス NP-3）": (17,
         "            item = None if THEMATIC.match(text[pos:]) else item_of(text[pos:])",
         "            item = None if THEMATIC.match(text[pos:]) and not new else item_of(text[pos:])"),
+    # #1007 の変異。上の SAMPLES の #1007 の段の試料が殺す。
+    "4 つ以上の並びを見ない（#1007 の前の形）": (28,
+        "        for pos, length, left in leftover_stars(joined):",
+        "        for pos, length, left in []:"),
+    "3 の倍数の規則を見ない": (28,
+        '            if both and total % 3 == 0 and not (opener["orig"] % 3 == 0 and closer["orig"] % 3 == 0):',
+        "            if False:"),
+    "両方が 3 の倍数の並びにも 3 の倍数の規則を掛ける": (28,
+        ' and not (opener["orig"] % 3 == 0 and closer["orig"] % 3 == 0):',
+        ":"),
+    "間の並びを外さない": (28,
+        '            between["open"] = between["close"] = False',
+        "            pass"),
+    "4 つちょうどの並びしか落とさない": (28,
+        'if d["orig"] >= 4 and d["left"]]',
+        'if d["orig"] == 4 and d["left"]]'),
+    "1 つの `*` を組み方に入れない": (28,
+        "        yield i, j - i\n        i = j\n\n\ndef leftover_stars",
+        "        if j - i >= 2:\n            yield i, j - i\n        i = j\n\n\ndef leftover_stars"),
+    "探す範囲の下限を上げない（#1007 の CR1-1）": (28,
+        '            bottom[closer["orig"] % 3] = current - 1',
+        "            pass"),
+    "開け閉めの向きを逆に取る": (28,
+        '"open": left_flanking(before, after), "close": right_flanking(before, after)',
+        '"open": right_flanking(before, after), "close": left_flanking(before, after)'),
+    "`*` の並びだけの行の 4 つ以上の並びも落とす": (28,
+        "            if bare[row] == \"*\" * length:\n                continue  # `*` の並びだけの行は落とさない",
+        "            if False:\n                continue  # `*` の並びだけの行は落とさない"),
 }
 
 
