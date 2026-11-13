@@ -23,6 +23,8 @@
 - `rows` の起票元は `要求確定（取り込み・<種類>。<出所>）`
 - `rows` の番号は `Q-R-` の、全部の版を通した最大の次（ほかの印は数えない）で、作業中の版の表に書く
 - `rows` が書いた表は本物の `check-qa-csv.py` を通る。`--dry-run` は書かない
+- `rows` は同じ候補の JSON で当て直しても（`code_behavior` を直して前の版の行と比べても）同じ質問を重ねて足さず、1 で何も書かない
+- `rows` は既にある表の BOM と改行（CRLF・LF）を保ち、既にある行のバイトを変えずに足す（末尾に改行の無い表も同じ改行で足す）
 - スキルが書いた食い違いは、正本のファイルに在る引用だけを通す（無い引用・無いファイルは 1）
 - 基盤要件のホスティング環境・DBMS・言語は、決定と違う種類の目印があれば食い違い（3）、同じ種類だけなら 0 件（0）。言語は決定の言語のファイルより多いほかの言語を出す（同じ数なら出さない）。読み飛ばすディレクトリ（`node_modules`）は照らさない
 
@@ -487,6 +489,67 @@ def case_rows_duplicate(e, fx):
     return None if code == 1 and "同じ質問が既にある" in out else f"exit={code}: {out}"
 
 
+def case_rows_rerun(e, fx):
+    """同じ候補の JSON で 2 回走らせる——2 回目は「同じ質問が既にある」の 1 で、表を変えない（#1005）。"""
+    code, out, _, after, added, target = rows_case(e, fx, variant(findings=[]))
+    if code != 3 or len(added) != 1:
+        return f"1 回目: exit={code}・足した={len(added)}: {out}"
+    path = e.fresh("c").with_suffix(".json")
+    path.write_text(json.dumps(variant(findings=[]), ensure_ascii=False), encoding="utf-8")
+    canon = target.parents[3]
+    code2, out2 = e.run("rows", str(canon), str(path), str(snap_of(e, fx)))
+    again = target.read_text(encoding="utf-8")
+    if code2 != 1 or "同じ質問が既にある" not in out2 or again != after:
+        return f"2 回目: exit={code2}（期待 1）・表が{'変わらない' if again == after else '変わった'}: {out2}"
+    return None
+
+
+def case_rows_rerun_edited(e, fx):
+    """前の版に取り込んだ行（添え書きつき）があり、`code_behavior` と該当箇所を直した同じ質問を v2 で当て直す——1 で、何も書かない（#1005）。"""
+    old = "Q-R-005,要求確定（取り込み・業務ルール。PR #7（abc1234））,ゴールド会員の割引は、いくら以上の注文から付けますか？（コードではこうなっていた: 古い説明。app/main.py:4）," \
+          "A: 5000 円以上 / B: 10000 円以上,B,理由,未回答,—,確認中,\n"
+    canon = canon_copy(e, fx, v2=HEADER + "Q-R-006,要求確定,v2 の質問ですか？,A: はい / B: いいえ,A,理由,未回答,—,確認中,\n")
+    write(canon / "docs" / "v1" / "shared" / "qa.csv", QA_V1 + old)
+    target = canon / "docs" / "v2" / "shared" / "qa.csv"
+    before = target.read_text(encoding="utf-8")
+    path = e.fresh("c").with_suffix(".json")
+    path.write_text(json.dumps(variant(findings=[]), ensure_ascii=False), encoding="utf-8")
+    code, out = e.run("rows", str(canon), str(path), str(snap_of(e, fx)))
+    if code != 1 or "同じ質問が既にある" not in out or target.read_text(encoding="utf-8") != before:
+        return f"exit={code}（期待 1）: {out}"
+    return None
+
+
+def case_rows_bom_crlf(e, fx):
+    """既にある表の BOM と改行を保つ（Excel が書く BOM・CRLF ほか）。既にある行のバイトはそのまま、足した行も同じ改行（#1005）。"""
+    forms = {"BOM・CRLF": ("\ufeff", "\r\n", True), "CRLF": ("", "\r\n", True), "BOM・LF": ("\ufeff", "\n", True),
+             "CRLF・末尾の改行なし": ("\ufeff", "\r\n", False)}
+    for name, (bom, eol, tail) in forms.items():
+        canon = canon_copy(e, fx)
+        target = canon / "docs" / "v1" / "shared" / "qa.csv"
+        body = (bom + QA_V1.replace("\n", eol)).encode("utf-8")
+        if not tail:
+            body = body[: -len(eol.encode())]
+        target.write_bytes(body)
+        path = e.fresh("c").with_suffix(".json")
+        path.write_text(json.dumps(variant(findings=[]), ensure_ascii=False), encoding="utf-8")
+        code, out = e.run("rows", str(canon), str(path), str(snap_of(e, fx)))
+        if code != 3:
+            return f"{name}: exit={code}（期待 3）: {out}"
+        after = target.read_bytes()
+        if not after.startswith(body):
+            return f"{name}: 既にある行のバイトが変わった: {after[:80]!r}"
+        added = after[len(body):].decode("utf-8")
+        expect_head = "" if tail else eol
+        if not added.startswith(expect_head + "Q-R-005,") or not added.endswith(eol) or added.replace(eol, "").count("\n") or \
+                (eol == "\n" and "\r" in added):
+            return f"{name}: 足した行の改行が違う: {added!r}"
+        rc, text = qa_check(e, target)
+        if rc != 0:
+            return f"{name}: check-qa-csv.py が通らない: {text}"
+    return None
+
+
 def case_rows_dry(e, fx):
     code, out, before, after, *_ = rows_case(e, fx, GOOD, dry=True)
     return None if code == 3 and before == after and "書いていない（--dry-run）" in out and "Q-R-005" in out else f"exit={code}: {out}"
@@ -521,7 +584,7 @@ CASES = {f.__name__[5:]: f for f in [
     case_rows_language_majority, case_snapshot_crafted_tree, case_snapshot_dir_symlink, case_rows_language_equal,
     case_snapshot_bad_source, case_rows_good, case_rows_control, case_rows_db, case_rows_language, case_rows_unreadable_value,
     case_rows_answer, case_rows_bad_code, case_rows_bad_finding, case_rows_bad_option, case_rows_duplicate, case_rows_dry,
-    case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
+    case_rows_rerun, case_rows_rerun_edited, case_rows_bom_crlf, case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
 ]}
 
 # (名前, 壊す箇所, 置き換え, 落ちるはずの試料)
@@ -568,6 +631,12 @@ MUTATIONS = [
     ("言語を照らさない", "            own = sum(1 for rel in files if rel.suffix in mine[0])", "            own = 10 ** 9", "rows_language"),
     ("食い違いがあっても 0", "    return (3 if findings else 0), report", "    return 0, report", "rows_db"),
     ("DBMS の目印を持たない", '         re.compile(r"\\bpsycopg2?\\b|\\basyncpg\\b|', '         re.compile(r"\\bnever-matches\\b|', "rows_db"),
+    ("添え書きを外さずに照らす", '            asked = {squash(bare(r["質問"])) for r in', '            asked = {squash(r["質問"]) for r in', "rows_rerun"),
+    ("添え書きを外す文を前の版の行で見ない", "    return question[:at] if at > 0 and", "    return question if at > 0 and", "rows_rerun_edited"),
+    ("BOM を落として読む", '        existing = target.read_bytes().decode("utf-8")', '        existing = target.read_bytes().decode("utf-8-sig")', "rows_bom_crlf"),
+    ("改行を揃えて読む", '        existing = target.read_bytes().decode("utf-8")', '        existing = target.read_text(encoding="utf-8")', "rows_bom_crlf"),
+    ("足した行を LF で書く", '    eol = "\\r\\n" if existing.split("\\n", 1)[0].endswith("\\r") else "\\n"', '    eol = "\\n"', "rows_bom_crlf"),
+    ("末尾に改行の無い表に LF を足す", '    text = existing if existing.endswith("\\n") else existing + eol', '    text = existing if existing.endswith("\\n") else existing + "\\n"', "rows_bom_crlf"),
     ("出所の印が無くても読む", '        raise Stop(f"{snap}: スナップショットでない（{SOURCE_FILE} が読めない——snapshot で作る）") from None', '        label = "?"', "rows_not_snapshot"),
 ]
 
