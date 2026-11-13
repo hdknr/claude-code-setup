@@ -56,6 +56,10 @@ CI（.github/workflows/plugins.yml）が PR で呼ぶ。ローカルでも実行
 | **触らないと宣言した側** | **`触らない:` は読むが、判定には使わない。** 触る側に当たらなければ、そもそもエラーになる |
 | **受入基準を広げたか** | 手順 4 は「範囲を広げたら受入基準も広げる」と決めているが、**それはここでは見ていない**（採点表の中身は機械で読めない） |
 
+**依存の申告も見る**（#996）——差分に依存の定義・lockfile・取得経路の設定があるのに、計画に `依存の追加・更新: あり` が無ければエラー。
+**判定はプラグインの `check-deps-declared.py` の `judge` を読み込む**（式を 2 箇所に置かない）。差分はここと同じ 3 点（`base...HEAD`）。
+計画ファイルが見つからない PR は、変更範囲と同じく「判定していない」で 0 のまま。何を守り何を守らないかはその本体の docstring を正とする。
+
 標準ライブラリのみ。git はサブプロセスで呼ぶ。
 """
 
@@ -63,6 +67,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib.util
 import os
 import re
 import subprocess
@@ -70,10 +75,19 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+DEPS_SCRIPT = REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "check-deps-declared.py"
 PLAN_GLOBS = ("docs/plans/issue-*.md", ".claude/plans/issue-*.md")
 HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 BULLET = re.compile(r"^\s*[-*]\s+")
 TICKED = re.compile(r"`([^`]+)`")
+
+
+def deps_module():
+    """依存の申告の判定（#996）。**プラグインの本体を読み込む——写さない。**"""
+    spec = importlib.util.spec_from_file_location("check_deps_declared", DEPS_SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def git(*args: str) -> tuple[int, str]:
@@ -223,6 +237,7 @@ def main() -> int:
         if f != rel and not covered(f, patterns)
     ]
     print(f"計画: {rel}（触る: {len(patterns)} パターン） / 差分: {len(files)} ファイル")
+    failed = False
     if outside:
         print("\n変更範囲の外に出ているファイル:")
         for f in outside:
@@ -232,9 +247,21 @@ def main() -> int:
             f"広げると決めたなら、{rel} の「変更範囲」に足してからコミットする。\n"
             "**範囲を広げたら受入基準も広げる**（手順 4。ここでは見ていない）。"
         )
-        return 1
-    print("差分はすべて変更範囲の中にある。")
-    return 0
+        failed = True
+    else:
+        print("差分はすべて変更範囲の中にある。")
+
+    code, deps, reason = deps_module().judge(files, plan.read_text())
+    if deps:
+        print(f"\n依存のファイル（#996）: {', '.join(deps)}")
+        print(reason)
+    if code != 0:
+        print(
+            f"依存を追加・更新するなら、{rel} に `依存の追加・更新: あり` を 1 行書く"
+            "（plugins/dev-loop/skills/dev-loop/references/dependencies.md を正とする）。"
+        )
+        failed = True
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

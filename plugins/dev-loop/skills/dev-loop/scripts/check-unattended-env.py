@@ -25,6 +25,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 | 質問の待ち | settings の `askUserQuestionTimeout`（**managed・flag・user の層だけ**） | `60s` `5m` `10m` | 未設定・`never`・それ以外 |
 | 通知 | settings の全部の層（managed・flag・local・project・user）の `agentPushNotifEnabled`（`/config` の「Push when Claude decides」）と `inputNeededNotifEnabled`（「Push when actions required」）。**どの層にも無いときだけ**グローバル設定（下の「設定の層」）の値（#822） | `true` | 未設定（どこにも無い——本体の既定はオフ）・`false`。**ただし非対話の起動（`CLAUDE_CODE_ENTRYPOINT` が `sdk-cli`・`sdk-ts`・`sdk-py`。`-p` など）では、どの値でも 2 つを「人が見る」の 1 行にまとめる**（値を添え、要対処にも判定できないにもしない——通知の設定は人を呼ぶ経路の決め手にならない。#635） |
 | スリープ | macOS の `pmset -g custom`・`pmset -g batt`・`ps` | いまの電源の `sleep` が 0、または `-t`・`-w` の無い `caffeinate` が system の idle sleep を防いでいる（`-i`・`-d`・`-s` か、アサーションのフラグ無し） | どちらも無い |
+| 依存の取得経路（#996。**`--present` では出さない**） | `--project` の下の依存の定義（一覧は同じ場所の `check-deps-declared.py` の `DEPENDENCY_FILES`）と、生態系ごとの取得経路の設定（下の「依存の取得経路」） | **無い**——見つかっても「人が見る」（効いているかはファイルからは決まらない） | npm 系か Python の依存の定義があるのに、その場所にもプロジェクトの根にも取得経路の設定が 1 つも無い |
 | 認証（#584。`--present` でも出す） | このスクリプトの環境変数と settings の `apiKeyHelper`。**環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、最寄りの祖先の `claude`（セッションを起動したプロセス）の環境**（`ps eww`。変数の名前と空かどうかだけ）——**Claude Code 2.1.316 は起動時のトークンを Bash の環境から外す**（下の「実測した前提」の認証の項） | `CLAUDE_CODE_OAUTH_TOKEN` が空でない——自分の環境か、起動した `claude` の環境（長期トークン） | どちらにも無い——対話ログインの OAuth（8 時間で切れる。`--present` では人が見る）。直し方に起動口 `launch-with-long-token.sh` の絶対パス |
 
 認証の項目は、ほかに 2 つの判定を持つ（値は出力に出さない。見るのは空かどうかだけ）:
@@ -42,6 +43,31 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **iPhone がつながる先は、いまのセッション（`/remote-control`）であって `claude rc` の待ち受けではない**
   ——待ち受けは新しいセッションを起こすので、そこから送った 1 行は作業中のセッションに届かない
 - **蓋を閉じる・電源が変わる**——`pmset` の値は電源ごとで、蓋を閉じればスリープする
+
+## 依存の取得経路（#996）
+
+**周の中で足された包が悪性でないか**を、関門（Verifier の包ごとの表。`references/dependencies.md`）より手前で守るのは、
+**包を取りに行く経路の設定**である。**どの製品・設定を使うかはプロジェクトが選ぶ**ので、ここは**どれかがあるか**だけを見る。
+
+- **依存の定義を探す**——`--project` の下を走査する（`.` で始まるディレクトリ・`node_modules`・`vendor`・`venv`・`__pycache__` は入らない）。
+  パスの最後の要素が `check-deps-declared.py` の `DEPENDENCY_FILES` の npm・Python・Go・Rust・Ruby・PHP のどれかに当たるもの。
+- **見る設定**（依存の定義のあるディレクトリと、`--project` の根の、次のファイルの行）:
+
+  | 生態系 | ファイル | 行（どれか） | 意味 |
+  | --- | --- | --- | --- |
+  | npm 系 | `.npmrc` | `registry=` が `registry.npmjs.org` でない | レジストリのプロキシ |
+  | npm 系 | `.npmrc` | `ignore-scripts=true` | インストールスクリプトを止める |
+  | npm 系 | `.npmrc` | `before=` | 公開日の上限 |
+  | npm 系 | `.yarnrc.yml` | `npmRegistryServer:` が既定でない・`enableScripts: false`・`npmMinimalAgeGate:` | 同上 |
+  | npm 系 | `pnpm-workspace.yaml` | `minimumReleaseAge:` | 公開日の下限 |
+  | npm 系 | `bunfig.toml` | `registry =`・`minimumReleaseAge =` | 同上 |
+  | Python | `pyproject.toml`・`uv.toml` | `exclude-newer =`・`index-url =`・`[[tool.uv.index]]`（`uv.toml` は `[[index]]`）・`[[tool.poetry.source]]` | 公開日の上限・レジストリのプロキシ |
+  | Python | `pip.conf`・`requirements*.txt` | `index-url =`／`--index-url`・`-i` | レジストリのプロキシ |
+
+- **判定**: 生態系（npm 系・Python）ごとに、依存の定義のあるディレクトリのどれにも（そこか根に）設定が 1 つも無い → **要対処**（直し方に上の 3 種類を挙げる）。
+  どのディレクトリにもあれば **人が見る**（見つけた設定を名指す——プロキシが本物か・利用者の設定や環境変数が上書きしていないかは見えない）。
+  **「良い」は出さない。** ファイルを読めない・走査に失敗したら **判定できない**。依存の定義が無い・設定を読まない生態系（Go・Rust・Ruby・PHP）だけなら **人が見る**。
+- **行の値は見るが、その道具がその設定を本当に持つか・効いているかは確かめていない**——キーの一覧は道具の文書から写したもので、この周（#996）では道具を走らせて確かめていない。
 
 ## cruise の起動時（`--cruise`・`--present`。#466）
 
@@ -257,6 +283,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 - **`--cruise` で、宣言した操作を点検から落とさない**——既定（か `--command`）に足す。フェンスの中の行は宣言にしない。
   **種類の違うフェンスの記号では閉じない**。**宣言の形に届かなかった行を黙って読み飛ばさない**（要対処）。
   **フェンスとコメントの読み方は、同じ `.claude/dev-loop.md` を読む cruise の `run-serial.py` と同じにする**（#759。`visible_lines` の docstring）
+- **依存の取得経路で「良い」を出さない**（#996）——設定が無ければ要対処、読めなければ判定できない、見つかっても人が見る。
+  **`--present` では出さない**（居る cruise の点検の結果を変えない）
 - **`--cruise` で、止まりうる操作を「良い」と出した操作からも外さない**——settings の判定とは別の区分で全部出す
 - **`--cruise` で、worktree の中からの起動を「良い」にしない**——判定できなければ「判定できない」
 - **`--present` で、許可の項目を落とさない**——落とすのは不在に限る項目だけ
@@ -344,6 +372,7 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 """
 
 import argparse
+import fnmatch
 import hashlib
 import importlib.util
 import json
@@ -1103,6 +1132,111 @@ def ledger_module():
     return mod
 
 
+DEPENDENCY_PATH = "依存の取得経路"
+DEPS_SKIP_DIRS = ("node_modules", "vendor", "venv", "__pycache__")
+JUDGED_ECOSYSTEMS = {"npm": "npm 系", "python": "Python"}
+# (生態系, ファイル名の glob, 行の正規表現, 意味)。docstring の「依存の取得経路」の表と同じ順
+DEPS_GUARDS = (
+    ("npm", ".npmrc", r"^\s*registry\s*=\s*(?![\"']?https?://registry\.npmjs\.org/?[\"']?\s*$)\S", "レジストリのプロキシ（registry）"),
+    ("npm", ".npmrc", r"^\s*ignore-scripts\s*=\s*true\s*$", "インストールスクリプトを止める（ignore-scripts）"),
+    ("npm", ".npmrc", r"^\s*before\s*=\s*\S", "公開日の上限（before）"),
+    ("npm", ".yarnrc.yml", r"^\s*npmRegistryServer\s*:\s*(?![\"']?https?://registry\.(?:npmjs\.org|yarnpkg\.com)/?[\"']?\s*$)\S",
+     "レジストリのプロキシ（npmRegistryServer）"),
+    ("npm", ".yarnrc.yml", r"^\s*enableScripts\s*:\s*false\b", "インストールスクリプトを止める（enableScripts）"),
+    ("npm", ".yarnrc.yml", r"^\s*npmMinimalAgeGate\s*:", "公開日の下限（npmMinimalAgeGate）"),
+    ("npm", "pnpm-workspace.yaml", r"^\s*minimumReleaseAge\s*:", "公開日の下限（minimumReleaseAge）"),
+    ("npm", "bunfig.toml", r"^\s*(?:registry|minimumReleaseAge)\s*=", "レジストリか公開日の下限（bunfig.toml）"),
+    ("python", "pyproject.toml", r"^\s*exclude-newer\s*=", "公開日の上限（exclude-newer）"),
+    ("python", "pyproject.toml", r"^\s*index-url\s*=|^\s*\[\[tool\.uv\.index\]\]|^\s*\[\[tool\.poetry\.source\]\]",
+     "レジストリのプロキシ（pyproject.toml の index）"),
+    ("python", "uv.toml", r"^\s*exclude-newer\s*=", "公開日の上限（exclude-newer）"),
+    ("python", "uv.toml", r"^\s*index-url\s*=|^\s*\[\[index\]\]", "レジストリのプロキシ（uv.toml の index）"),
+    ("python", "pip.conf", r"^\s*index-url\s*=", "レジストリのプロキシ（pip.conf）"),
+    ("python", "requirements*.txt", r"^\s*(?:--index-url|-i)(?:\s|=)", "レジストリのプロキシ（requirements の --index-url）"),
+)
+
+
+def deps_module():
+    """同じ場所の `check-deps-declared.py`（依存のファイルの一覧を 2 箇所に置かない。#996）。"""
+    spec = importlib.util.spec_from_file_location("check_deps_declared", Path(__file__).resolve().parent / "check-deps-declared.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def dependency_dirs(project):
+    """{生態系: {ディレクトリ}} と、走査で失敗したパスの一覧。"""
+    files = deps_module().DEPENDENCY_FILES
+    found, errors = {}, []
+    for top, dirs, names in os.walk(project, onerror=lambda e: errors.append(f"{e.filename}: {e.strerror}")):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in DEPS_SKIP_DIRS)
+        for name in names:
+            for eco, pats in files.items():
+                if eco == "取得経路の設定":
+                    continue
+                if any(fnmatch.fnmatchcase(name, pat) for pat in pats):
+                    found.setdefault(eco, set()).add(Path(top))
+    return found, errors
+
+
+def guards_in(directory, eco):
+    """そのディレクトリの取得経路の設定。(見つけた意味の一覧, 読めなかったものの一覧)。"""
+    hits, errors = [], []
+    for g_eco, pattern, line_re, meaning in DEPS_GUARDS:
+        if g_eco != eco:
+            continue
+        for path in sorted(directory.glob(pattern)):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as e:
+                errors.append(f"{path}: {e}")
+                continue
+            if any(re.search(line_re, line) for line in text.splitlines()):
+                hits.append(f"{meaning}（{path.name}）")
+    return hits, errors
+
+
+def check_dependency_path(project):
+    """依存の取得経路（#996）。**「良い」は出さない**——docstring の「依存の取得経路」。"""
+    project = Path(project)
+    found, walk_errors = dependency_dirs(project)
+    if walk_errors:
+        return [(UNKNOWN, DEPENDENCY_PATH, "走査できなかった: " + "; ".join(walk_errors[:3]), "")]
+    items = []
+    for eco, label in JUDGED_ECOSYSTEMS.items():
+        dirs = sorted(found.get(eco, ()))
+        if not dirs:
+            continue
+        name = f"{DEPENDENCY_PATH}（{label}）"
+        root_hits, errors = guards_in(project, eco)
+        lacking, seen = [], set(root_hits)
+        for d in dirs:
+            hits, errs = ([], []) if d == project else guards_in(d, eco)
+            errors += errs
+            seen.update(hits)
+            if not hits and not root_hits:
+                lacking.append(str(d.relative_to(project)) or ".")
+        if errors:
+            items.append((UNKNOWN, name, "設定を読めなかった: " + "; ".join(errors[:3]), ""))
+        elif lacking:
+            items.append((ACTION, name,
+                          f"依存の定義のある場所（{', '.join(lacking)}）にも根にも、取得経路を守る設定が見つからない",
+                          "レジストリのプロキシ・公開日の下限・インストールスクリプトを止める設定のどれかを置く"
+                          "（どれを使うかはプロジェクトが選ぶ。見る設定は check-unattended-env.py の docstring）"))
+        else:
+            items.append((HUMAN, name, "見つけた設定: " + "・".join(sorted(seen)),
+                          "効いているか（プロキシが本物か・利用者の設定や環境変数が上書きしていないか）を人が見る"))
+    others = sorted(e for e in found if e not in JUDGED_ECOSYSTEMS)
+    if others:
+        items.append((HUMAN, f"{DEPENDENCY_PATH}（ほか）",
+                      f"設定を読まない生態系の依存の定義がある（{', '.join(others)}）", "取得経路の守りは人が見る"))
+    if not found:
+        items.append((HUMAN, DEPENDENCY_PATH, f"依存の定義が見つからない（{project} の下）", ""))
+    return items
+
+
 def gh_pr(project, number):
     """`gh pr view` の state・mergeable・files。読めなければ None。"""
     try:
@@ -1326,6 +1460,7 @@ def gather(project, commands, flag_path, managed_path, home, platform, flag_note
         items += check_notifications(stack, home, env)
         items += check_sleep(platform)
         items += human_items(stack)
+        items += check_dependency_path(project)
     items += check_auth(stack, os.environ if env is None else env, present, ancestor)
     return stack, items
 

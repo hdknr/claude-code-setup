@@ -24,6 +24,9 @@ from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "scripts" / "check-plan-scope.py"
+# 依存の申告の判定（#996）はプラグインの本体を読み込む——偽リポジトリにも同じ場所に置く
+DEPS_REL = "plugins/dev-loop/skills/dev-loop/scripts/check-deps-declared.py"
+DEPS_SCRIPT = REAL_REPO / DEPS_REL
 
 failures: list[str] = []
 
@@ -73,12 +76,16 @@ PLAN = """# Issue #7 の計画
 
 def build(root: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
           head_files: dict[str, str] | None = None,
-          script_text: str | None = None) -> Path:
+          script_text: str | None = None, deps_text: str | None = None) -> Path:
     """偽リポジトリを作り、base（main）と HEAD を持たせる。scripts/ の場所を返す。"""
     assert_not_real_repo(root)
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
     (root / "seed.txt").write_text("seed\n")
+    # 本体が読み込む依存の判定は base に置く（差分に出さない）
+    deps = root / DEPS_REL
+    deps.parent.mkdir(parents=True)
+    deps.write_text(deps_text if deps_text is not None else DEPS_SCRIPT.read_text())
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", "base")
 
@@ -126,14 +133,15 @@ def run(root: Path, *args: str, env: dict | None = None, detach: bool = False) -
 
 
 # ------------------------------------------------------------------- 契約
-def contract(tmp: Path, tag: str, script_text: str | None = None) -> list[tuple[str, bool]]:
+def contract(tmp: Path, tag: str, script_text: str | None = None,
+             deps_text: str | None = None) -> list[tuple[str, bool]]:
     got: list[tuple[str, bool]] = []
     i = [0]
 
     def fresh(**kw) -> Path:
         i[0] += 1
         d = tmp / f"{tag}{i[0]}"
-        build(d, script_text=script_text, **kw)
+        build(d, script_text=script_text, deps_text=deps_text, **kw)
         return d
 
     # 1) 範囲の中だけ → 緑
@@ -235,6 +243,28 @@ def contract(tmp: Path, tag: str, script_text: str | None = None) -> list[tuple[
         ("GITHUB_REF_NAME の HEAD をブランチ名として報告しない", "ブランチ: (取れない)" in out),
     ]
 
+    # 12) 依存の申告（#996）——範囲の中（docs/）の package.json を、申告せずに足したら赤
+    d = fresh(head_files={"docs/app/package.json": "{}\n"})
+    rc, out = run(d, "main")
+    got += [
+        ("依存のファイルを申告せずに足したら rc=1", rc == 1),
+        ("依存のファイルを名指しする", "docs/app/package.json" in out),
+        ("依存の申告の書き方を案内する", "依存の追加・更新: あり" in out),
+        ("範囲の中の依存のファイルを範囲の外と言わない", "package.json" not in outside(out)),
+    ]
+    # 13) 申告があれば緑（陽性対照——12 の赤が申告の有無で決まっていることを示す）
+    d = fresh(plan=PLAN + "\n依存の追加・更新: あり\n", head_files={"docs/app/package.json": "{}\n"})
+    rc, out = run(d, "main")
+    got += [("依存の申告があれば rc=0", rc == 0)]
+    # 14) `なし` と申告して足したら赤
+    d = fresh(plan=PLAN + "\n依存の追加・更新: なし\n", head_files={"docs/app/uv.lock": "x\n"})
+    rc, out = run(d, "main")
+    got += [("`なし` と申告して依存のファイルを触ったら rc=1", rc == 1)]
+    # 15) 計画が無い PR は、依存のファイルがあっても今までどおり「判定していない」
+    d = fresh(plan=None, head_files={"package.json": "{}\n"})
+    rc, out = run(d, "main")
+    got += [("計画が無ければ依存のファイルがあっても rc=0（判定していない）", rc == 0 and "判定していない" in out)]
+
     return got
 
 
@@ -243,8 +273,8 @@ MUTANTS = {
                                    "        if False\n"),
     "常に覆われていると答える": ("    for pat in patterns:\n",
                                  "    return True\n    for pat in patterns:\n"),
-    "外があっても 0 を返す": ('        return 1\n    print("差分はすべて変更範囲の中にある。")\n',
-                              '        return 0\n    print("差分はすべて変更範囲の中にある。")\n'),
+    "外があっても 0 を返す": ("        failed = True\n    else:\n",
+                              "        failed = False\n    else:\n"),
     "節が読めなくても通す": ('            "  バッククォートで囲んだパターンの箇条書きを置く（SKILL.md 手順 3 を正とする）。"\n        )\n        return 1\n',
                              '            "  バッククォートで囲んだパターンの箇条書きを置く（SKILL.md 手順 3 を正とする）。"\n        )\n        return 0\n'),
     "計画が無いときに黙る": ('    plan = find_plan(opts.plan)\n',
@@ -258,6 +288,17 @@ MUTANTS = {
         '    return "" if name == "HEAD" else name\n', "    return name\n"),
     "計画ファイル自身も外として数える": ("        if f != rel and not covered(f, patterns)\n",
                                         "        if not covered(f, patterns)\n"),
+    # 依存の申告（#996）
+    "依存の判定を当てない": ("    code, deps, reason = deps_module().judge(files, plan.read_text())\n",
+                            '    code, deps, reason = 0, [], ""\n'),
+    "依存の判定が赤でも通す": ("        failed = True\n    return 1 if failed else 0\n",
+                              "        pass\n    return 1 if failed else 0\n"),
+}
+
+# 判定の式をプラグインの本体から読み込んでいること（写していないこと）を、本体のほうを壊して見る（#996 の D6）
+DEPS_MUTANTS = {
+    "本体の宣言の値を見ない": ('    if values[0] != "あり":\n', "    if False:\n"),
+    "本体が依存のファイルを 1 つも見つけない": ("    deps = dependency_files(paths)\n", "    deps = []\n"),
 }
 
 
@@ -281,6 +322,18 @@ def main() -> int:
             check(f"変異 `{name}` を契約が捕まえる", bool(broken))
             if not broken:
                 print("       壊したのに契約が全部通った")
+
+        print("依存の判定の本体の変異（check-plan-scope.py が本体を読み込んでいるか）:")
+        deps_src = DEPS_SCRIPT.read_text()
+        for i, (name, (old, new)) in enumerate(DEPS_MUTANTS.items()):
+            if deps_src.count(old) != 1:
+                check(f"変異 `{name}` の当て先が 1 箇所", False)
+                continue
+            broken = [
+                n for n, ok in contract(root / f"d{i}", f"d{i}", deps_text=deps_src.replace(old, new))
+                if not ok
+            ]
+            check(f"変異 `{name}` を契約が捕まえる", bool(broken))
     if failures:
         print(f"\n{len(failures)} 件失敗: {failures}")
         return 1

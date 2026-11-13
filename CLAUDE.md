@@ -25,6 +25,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/spec-fingerprint.py` - spec-loop から来た Issue の**機能の指紋**を手元の中間表現から出す
       （#290。**式は spec-loop の `scaffold.py` の `fingerprint` の写しで、`scripts/test-scaffold.py` が両方を走らせて
       一致を見る**——同じ理由）
+    - `skills/dev-loop/scripts/check-deps-declared.py` - **依存の定義・lockfile・取得経路の設定を触ったのに、計画に `依存の追加・更新: あり` が無い周を赤くする**
+      （#996。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。このリポジトリの CI では `scripts/check-plan-scope.py` が判定の関数を読み込んで当てる。
+      宣言の書き方・Verifier の包ごとの表・不在の周の扱いは `references/dependencies.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-deps-declared.py`）
     - `skills/cruise/` - **オートクルーズの入口**（#446。`/dev-loop:cruise <親 Issue> [--absent]`）。親 Issue のチェックリストから
       `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**。
       親 Issue の `cruise:` の行（線）も確かめてから台帳に残す——#458。線の項目と値は `ledger.py` の `LINES` を読む）。
@@ -178,7 +181,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **base の先端より版が下がった差分も落とす**（#253。比較は数値——`1.38.10` > `1.38.9`）
   - `test-check-version-bump.py` - 上の回帰テスト（変異テストを含む）
   - `check-description-sync.py` - description の同期漏れ（PR 限定）
-  - `check-plan-scope.py` - 差分が計画ファイルの「変更範囲」に収まっているか（PR 限定）
+  - `check-plan-scope.py` - 差分が計画ファイルの「変更範囲」に収まっているか（PR 限定）。**依存の申告（#996）も、プラグインの `check-deps-declared.py` の判定を読み込んで当てる**
   - `check-norm-markers.py` - `（必須）` が原本（**スキルのディレクトリ**＝
     `SKILL.md` ＋ `references/*.md`）の外に漏れていないか
   - `check-duplicate-counts.py` - **同じファイルの中で、同じ語句に違う数が付いていないか**
@@ -243,6 +246,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `scripts/` に無い**——`plugins/dev-loop/skills/dev-loop/scripts/find-cycle.py`
     に置いてある（**`dev-loop` はどのリポジトリでも使うスキル**なので、
     対象リポジトリの `scripts/` に在ることを当てにできない）
+  - `test-check-deps-declared.py` - **依存の申告の歯止め**の回帰テスト（#996。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-deps-declared.py`**（`test-find-cycle.py` と同じ形）。
+    一時の git リポジトリに当て、**Verifier の委譲文の依存の差し込みが表の欄を全部名指すこと**も見る
   - `test-check-unattended-env.py` - **利用者が不在になる前の環境点検**の回帰テスト（#394。変異テストを含む）。
     **cruise の起動時の点検（`--cruise`・`--present`）も見る**——利用者が居る cruise でも回す（#466）。
     **不在の間にどこまで進めるか（`--ledger`。#490）は、一時のリポジトリの台帳と偽の `gh` で当てる**——実際の台帳は読まない。
