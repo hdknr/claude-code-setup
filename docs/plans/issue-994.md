@@ -76,7 +76,9 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 - 周の在り処: ブランチ `issue/994-spec-loop-monorepo`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-994`・起点 `90a9c503`・base `origin/main` → `90a9c503c6a9fd1ef1e77036909434a4f5696350`
 - 関門: 1 パス目（Verifier・/code-review）に渡した。1 パス目の指摘対応の起点 `d570055d7d21f637aa8afcada1f01e2d40ba93cd`
   - 1 パス目の結果: Verifier（sonnet・dev-loop:dev-loop-verifier）反証 2 件、/code-review（high）指摘 10 件（うち 2 件は Verifier と同じ）。採否は下の表——直す 8・残課題 2。手順 4 への差し戻し 1 回（指摘対応）
-  - 2 パス目: 残っている——手順 5 の当て直し（Verifier）と /code-review 2 パス目の両方
+  - 1 パス目の指摘対応のコミット: `329eb6122b67b4393aa9de18f0a4e7c88b2da867`（差分は 0 行でない——2 パス目を回す）
+  - 割り目 2（2 パス目の前）: AskUserQuestion で訊いた。10 分答えが無く、先に「続けて」と言われていたので続けた（2026-11-13）
+  - 2 パス目: 手順 5 の当て直し（Verifier）と /code-review 2 パス目に渡した。2 パス目の指摘対応の起点（狭いパスの起点）は渡した時点の HEAD（この行を足したコミット）
 - 割り目 1（手順 4 の後）: 訊かずに続けた——利用者が「続けて」と指示（2026-11-13）
 - 交絡: 上の「実験」（陽性対照: `WRONG_IMPL` で失敗すること）
 
