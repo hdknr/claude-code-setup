@@ -59,10 +59,15 @@ Issue の 2 行（チェックリスト）を不変条件にする。入口は�
 
 - 周の在り処: ブランチ `issue/1008-absent-lines-no-sync`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1008`・起点 `b68e125d`・base `origin/main` → `b68e125dc5d399a31bdc1e6ff5d683b90913c57e`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: 未着手
-- 反証と差し戻し: 未着手
+- 関門: 1 パス目済み——Verifier（sonnet・dev-loop:dev-loop-verifier）反証 0 件、/code-review（high）指摘 6 件（直す 0・残課題 6）。1 パス目の指摘対応の起点: `326b91224e422699311e2232a6b4e2bf583007ae`
+- 2 パス目: 該当なし（1 パス目の指摘対応の差分 0 行——起点 `326b9122` から `git diff <起点> -- ':(top)' ':(top,exclude)docs/plans/issue-1008.md'` が空、`git status --porcelain` は計画ファイルだけ）
+- 狭いパス: 該当なし
+- 割り目（手順 6・2 パス目の前）: 2 パス目が無いので置かない
+- 歯止め: `check-all.py`（run-serial 越し）76 本中 75 本が緑・`check-plan-counts.py` だけ件数の行が無くて赤 → 件数の行を足して `check-plan-counts.py` が緑（`326b9122`）
+- 反証と差し戻し: 1 パス目 Verifier 0 件・/code-review 6 件（直す 0）。手順 4 への差し戻しなし
 - 交絡: 実験 1 つ（U2）。一時ディレクトリ（scratchpad）に、`setup.py` が build のたびに印のファイルへ 1 行書く sdist だけの path 依存を持つ uv の project を作り、`uv lock` の後に
-  `uv run --no-sync python -c …`（印のファイルが作られない）と `uv run --frozen python -c 'import markerdep'`（`Built markerdep` と出て印のファイルに 2 行）を比べた。
+  `uv run --no-sync python -c …`（ログに `Building`/`Built` の行が出ない）と `uv run --frozen python -c 'import markerdep'`（ログに `Built markerdep` と `Installed 1 package` が出た）を比べた。
+  判別に使うのはログの build の行である——印のファイルは `MARKER` の環境変数が無いと `/dev/null` に書く作りで、`--no-sync` の側の「印が無い」だけでは判別しない（/code-review 1 パス目 CR1-6）。Verifier 1 パス目も独立に、印を数えて（lock の後 2 行・`--no-sync` で増えず・`--frozen` で 4 行）同じ結論を出した。
   陽性対照は `--frozen` の側（同じ観測点で build が起きると印が出ることを示す）。`UV_CACHE_DIR` を一時ディレクトリに向け、手元のキャッシュの wheel で build が飛ばされる形を外した。観測窓: uv 0.11.14・1 回ずつ・path 依存の sdist（レジストリの sdist では試していない）。
 
 ## 既知の限界・決着済みの論点
@@ -71,6 +76,29 @@ Issue の 2 行（チェックリスト）を不変条件にする。入口は�
 - **`--locked` には触れない**——lockfile が変わらないことを確かめるだけで、sync は止めない（`uv run --help`）。557 行目は `--locked` を挙げていないので、足さない。
 - **`UV_NO_SYNC` の環境変数・`[tool.uv]` の設定で止める形は書かない**——Issue の範囲の外（557 行目は引数の形で案内している）。
 
+### 採否の表
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| CR1-1 | /code-review 1 パス目: `--no-sync` は PEP 723 の script（inline の依存）では no-op で、`--with` も止めない——557 行目は `--no-sync` だけで足りるように読める | 示せる（/code-review が uv 0.11.14・offline で `Building markerdep`） | 無し（U1 は `--frozen` を並べないこと、U2 は project の `uv run` の事実） | 残課題 |
+| CR1-2 | 使わない一覧（`npx`・`pnpm dlx`・`yarn dlx`）に uv の `uvx`／`uv tool run` が無い | 示せる（`uvx --from <path>` で build） | 無し | 残課題 |
+| CR1-3 | 新しい worktree には `.venv` が無く、`uv run --no-sync` は空の環境を作る——先に入れる方法を書いていない | 示せる（空の venv で ModuleNotFoundError） | 無し | 残課題 |
+| CR1-4 | 根の直し方: `uv run --no-build`（sync はするが build を拒む）で書く | 示せる（`--no-build` で exit 2・印なし） | 無し | 残課題 |
+| CR1-5 | `prompts/verifier.md:127` の「包を入れない」に `uv run` が無く、`agents/dev-loop-verifier.md:49-50` は `uv run`・`uv sync` を副作用として許す | 示せない（Verifier が `uv run` で sdist を build する形を実物で示していない） | 無し | 残課題 |
+| CR1-6 | 計画の交絡の証拠を「印のファイルが作られない」としているが、`setup.py` は `MARKER` が無いと `/dev/null` に書く | 示せる（`dep/setup.py`） | 無し（計画は成果物でない。U2 の結論は変わらない） | 残課題（計画の記述は直した——成果物の差分ではない） |
+
 ## 経験の還元（手順 8）
 
-- この周の起票: 0 件（起票の承認は不在のため訊いていない。周の途中の課題の振り分けで直すの行が出たら直す）
+### 周の途中の課題の振り分け（`references/found-lines.md`。この周は `<!-- cruise-found:` の周——後続の後続なので、3 つに当たらなければ記録だけ）
+
+| 行 | 出所 | 実物で失敗を示せるか | 振り分け | 理由 |
+| --- | --- | --- | --- | --- |
+| CR1-1 PEP 723 の script・`--with` では `--no-sync` が効かない | #1008 /code-review 1 パス目 | 示せる | 記録だけ | 依存を足す不在の周で、PEP 723 の script や `--with` で検証を走らせる形はまず起きない（ふつうは project の `uv run pytest`）。迷ったら記録だけ |
+| CR1-2 `uvx`／`uv tool run` が使わない一覧に無い | #1008 /code-review 1 パス目 | 示せる | 記録だけ | 一覧の抜け（文言）。書いてあることに従って誤った操作になる記述ではない |
+| CR1-3 新しい worktree で `--no-sync` が空の環境を作る | #1008 /code-review 1 パス目 | 示せる | 捨てる | 同じ文の前半が「検証・テスト・重い検査で入れ直すとき（… `uv sync` …）も同じ止める形で走らせ」と、先に止める形（`--no-build`）で入れることを求めている——文に従えば空の環境にならない |
+| CR1-4 `uv run --no-build` で書く | #1008 /code-review 1 パス目 | 示せる（代案が動くこと） | 記録だけ | 設計の代案。今の文の失敗ではない |
+| CR1-5 `prompts/verifier.md`・`agents/dev-loop-verifier.md` が `uv run` を止めない | #1008 /code-review 1 パス目 | 示せない | 記録だけ | 手順 4 の止める形（`--no-build`）で入れた後の lock には wheel の無い包が残らないので、Verifier の素の `uv run` が包の build を走らせる形を示していない |
+| CR1-6 計画の交絡の証拠の書き方 | #1008 /code-review 1 パス目 | 示せる | 捨てる | 計画は成果物でない。記述は直し、U2 は 2 つの関門が独立に確かめた |
+
+
+- この周の起票: 0 件（振り分けで直すの行が無かった。起票の承認は不在のため訊いていない）
