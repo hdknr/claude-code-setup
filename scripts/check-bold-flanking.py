@@ -102,7 +102,8 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **`*` が 4 つ以上続く並びは、組みきれずに字のまま残る `*` があれば落とす**（#1007）——閉じの `**` の直後に開きの `**` を置いた
   `**…。****…**` は、CommonMark では 1 つの並びとして読まれ、`**` か `****` が字のまま残る（#996 の周で 2 回入り、どちらもこの検査を通った）。
   意図の推測では決まらない（`****二重****` は入れ子の太字として描かれる）ので、**段落の中の `*` の並び（1 つの並びも含む）を、
-  CommonMark の強調の組み方（「process emphasis」——後ろの閉じから前の開きを探す・3 の倍数の規則・間の並びを外す）でなぞり**、
+  CommonMark の強調の組み方（「process emphasis」——後ろの閉じから前の開きを探す・3 の倍数の規則・間の並びを外す・
+  探す範囲の下限（cmark-gfm——GitHub の描画——の `openers_bottom`））でなぞり**、
   組み終えて `*` が残る 4 つ以上の並びだけを落とす。並びの開け閉めの向きは上の flanking の規則で決める。
   **`*` の並びだけの行の並びは落とさない**（上の「区切りに数えない」と同じ）。
 
@@ -121,15 +122,16 @@ r"""太字の `**` が、CommonMark の flanking の規則で開け閉めでき�
 - **引用・リストの項の中で閉じ忘れた `<!--` の後ろの本文**——GitHub は容れ物が終わっても生の `<!--` を閉じず、次の `-->` までの本文を
   画面に描かない。この検査は容れ物の終わりでコメントのブロックも閉じたものとして読むので、**画面に出ない行の崩れを落とすことがある**
   （`> <!--⏎> x⏎⏎X**「例」**Y` の 4 行目。#606。閉じ忘れそのものが誤りで、落ちれば気づける——要確認 #607 で今のままと決めた）。
-- **`*` が 2 つか 3 つ並んだだけの行の `**`**——字のまま描かれるが落とさない（守るの「区切りに数えない」）。
+- **`*` の並びだけの行の `*`**（2 つか 3 つの行の `**`・4 つ以上の行の `****` など）——字のまま描かれるが落とさない
+  （守るの「区切りに数えない」と、4 つ以上の並びの項の「落とさない」）。
 - **行末が `\v`・`\f` の区切りの行**（`|-|` の後ろに `\v`）——GitHub は表の区切りと読むが、この検査は区切りの行と読まない（main から。#667 の CR1-4）。
 - **表のセルをまたいで組んだ形**——表は 1 行を 1 段落として組む。セルごとには分けない。
 - **HTML のブロック（`<div>` など）で表を終わらせない**——コメントのほかの HTML のブロックを持たない。
 - **一般カテゴリ S の記号**（`→` `×` など ASCII 以外の記号）を句読点として扱わない——cmark-gfm と同じ。
   **CommonMark 0.31 は S も句読点に数える**ので、新しい版の描画器とは判定がずれうる。
 - **`plugins/` の外**（`docs/`・`CLAUDE.md`・計画ファイル）——#537 で、最初の対象を `plugins/` に決めた。
-- **これは「描画が崩れていない」の証明ではない。** **`**` の開け閉めという、実際に 3 度起きた
-  1 つの形の検査**である。
+- **これは「描画が崩れていない」の証明ではない。** **`**` の開け閉め（実際に 3 度起きた形）と、
+  `*` が 4 つ以上続く並びに残る `*`（#996 の周で 2 度起きた形。#1007）という、2 つの形の検査**である。
 """
 
 from __future__ import annotations
@@ -542,7 +544,8 @@ def leftover_stars(text: str) -> list[tuple[int, int, int]]:
     `(位置, 長さ, 残る数)` で返す。
 
     CommonMark の「process emphasis」（spec の 6.2 の付録）を `*` だけで行う——閉じられる並びを前から順に取り、
-    その前の開ける並びを後ろから探す。**3 の倍数の規則**: どちらかが開けも閉じもできる並びなら、2 つの並びの元の長さの和が
+    その前の開ける並びを後ろから探す。**探す範囲の下限は cmark-gfm（GitHub の描画）に合わせる**——閉じの元の長さを 3 で割った余りごとに、
+    開きが見つからなかった閉じの位置まで下限を上げる（`openers_bottom`。spec の参照実装と違い、pandoc とは組み方がずれることがある）。**3 の倍数の規則**: どちらかが開けも閉じもできる並びなら、2 つの並びの元の長さの和が
     3 の倍数のとき組まない（両方が 3 の倍数なら組む）。組めたら両方が 2 つ以上残っていれば 2 つ（太字）、でなければ 1 つ（斜体）を使い、
     間にある並びは外す（外した並びの `*` は字のまま残る）。
     """
@@ -552,6 +555,9 @@ def leftover_stars(text: str) -> list[tuple[int, int, int]]:
         after = text[pos + length] if pos + length < len(text) else None
         delims.append({"pos": pos, "orig": length, "left": length,
                        "open": left_flanking(before, after), "close": right_flanking(before, after)})
+    # 閉じの元の長さを 3 で割った余りごとの、開きを探す範囲の下限（その位置より前は探さない）。cmark-gfm（GitHub）の openers_bottom で、
+    # 組めなかった閉じの位置まで上げる——上げないと、GitHub では字のまま残る `*` を組んでしまう（#1007 の /code-review 1 パス目 CR1-1）
+    bottom = {0: -1, 1: -1, 2: -1}
     current = 0
     while current < len(delims):
         closer = delims[current]
@@ -559,7 +565,7 @@ def leftover_stars(text: str) -> list[tuple[int, int, int]]:
             current += 1
             continue
         found = None
-        for k in range(current - 1, -1, -1):
+        for k in range(current - 1, bottom[closer["orig"] % 3], -1):
             opener = delims[k]
             if not opener["open"] or not opener["left"]:
                 continue
@@ -570,6 +576,7 @@ def leftover_stars(text: str) -> list[tuple[int, int, int]]:
             found = k
             break
         if found is None:
+            bottom[closer["orig"] % 3] = current - 1  # 探す範囲の下限を上げる（cmark-gfm の openers_bottom）
             current += 1
             continue
         opener = delims[found]

@@ -407,8 +407,13 @@ SAMPLES = {
         "行を **またぐ\n閉じ****開き** です。\n"),
     # 間の並びを外す——`****` は `い**う` に飛ばされて（3 の倍数の規則）外れ、後ろの `****` と組まない（GitHub: `<strong>あ ****い</strong>う****`）
     "stars-between.md": "**あ ****い**う****\n",
-    # 1 つの `*` も組み方に入る——`*い` が `****` の 1 つと組み、残った 3 つのうち 2 つが後ろの 4 つと組んで `*` が 1 つ残る
+    # 1 つの `*` も組み方に入る——`*い` が真ん中の `****` の 1 つと組み（斜体）、残った 3 つが後ろの `****` の 3 つと組んで
+    # （太字と斜体）、後ろの並びの `*` が 1 つ字のまま残る（GitHub: `<em>い</em><em><strong>い</strong></em>*`）
     "stars-single.md": "*い****い****\n",
+    # 探す範囲の下限（cmark-gfm の openers_bottom）——`**。*` が開きを見つけられずに下限を上げるので、後ろの `* と**` は
+    # 真ん中の `****` まで探しに行かず、`****` の 2 つが字のまま残る（GitHub: `これは *注。**<em><em>強調。**。</em>。「</em> と** です`。
+    # pandoc は全部組む。#1007 の /code-review 1 パス目 CR1-1）
+    "stars-bottom.md": "これは *注。****強調。**。*。「* と** です\n",
     # 正しく描かれる形（誤検出しない）——直した形（間に空白・2 つの太字）・入れ子の太字・太字と太字の斜体・両方が 3 の倍数の並び・
     # 1 つの `*` と組んで描かれる形・コードスパン・逃がした `*`・区切り線・フェンス・`*` の並びだけの段落の続きの行・免除の印
     "stars-clean.md": (
@@ -620,6 +625,7 @@ EXPECTED = {
     "stars-containers.md": ((1, 3, 5, 9), ()),
     "stars-between.md": ((1, 1), ()),
     "stars-single.md": ((1,), ()),
+    "stars-bottom.md": ((1,), ()),
     "stars-clean.md": ((), ()),
     "excerpt.md": ((4, 6, 8, 10, 12, 14, 16, 19, 21, 24), ()),
     "clean.md": ((), ()),
@@ -1017,6 +1023,9 @@ MUTATIONS = {
     "1 つの `*` を組み方に入れない": (28,
         "        yield i, j - i\n        i = j\n\n\ndef leftover_stars",
         "        if j - i >= 2:\n            yield i, j - i\n        i = j\n\n\ndef leftover_stars"),
+    "探す範囲の下限を上げない（#1007 の CR1-1）": (28,
+        '            bottom[closer["orig"] % 3] = current - 1',
+        "            pass"),
     "開け閉めの向きを逆に取る": (28,
         '"open": left_flanking(before, after), "close": right_flanking(before, after)',
         '"open": right_flanking(before, after), "close": left_flanking(before, after)'),
