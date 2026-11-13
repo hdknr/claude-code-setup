@@ -161,7 +161,8 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     got += [("消した yarn.lock で 1", rc == 1 and "yarn.lock" in out)]
 
     for rel in ("requirements/base.txt", "dev-requirements.txt", "constraints.txt", "svc/requirements/base.in",
-                "requirements-dev.in", "docs/requirements.txt"):
+                "requirements-dev.in", "docs/requirements.txt", "constraints-3.8.txt", "constraints-dev.txt",
+                "dev_requirements.txt"):
         d, base = fresh()
         put(d, rel, commit=True)
         rc, _ = run(script, d, base)
@@ -243,6 +244,9 @@ MUTATIONS = {
     "requirements/ の下の .in を見ない": ('REQUIREMENTS_DIR_SUFFIXES = (".txt", ".in")', 'REQUIREMENTS_DIR_SUFFIXES = (".txt",)'),
     "requirements/ の下の何でも数える": ("and name.endswith(REQUIREMENTS_DIR_SUFFIXES)", "and True"),
     "文書のディレクトリの下の requirements/ も数える": ("            and not any(d.lower() in DOC_DIRS for d in parts[:-2])):", "            ):"),
+    "文書のディレクトリの下の constraints も数える": ('            if name.startswith("constraints") and any(', '            if False and any('),
+    "constraints-*.txt を見ない": ('"constraints*.txt", "constraints*.in"', '"constraints.txt", "constraints.in"'),
+    "下線区切りの用途の名前を見ない": ('for sep in ("-", "_")', 'for sep in ("-",)'),
     "名前に requirements を含む何でも数える": ('               "requirements*.txt", "requirements*.in",', '               "*requirements*.txt", "*requirements*.in",'),
     "下の階層を見ない": ("    name = parts[-1]\n", "    name = path\n"),
     "消したファイルを見ない": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
