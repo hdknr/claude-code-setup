@@ -29,6 +29,10 @@ usage:
 - `rows` の行は必ず `回答 = 未回答`・`反映先 = —`・`状態 = 確認中`——候補の JSON に回答・状態・反映先の鍵があれば違反（1）で、何も書かない
 - 候補の各行に、スナップショットの中の実在するファイル（途中のシンボリックリンクでスナップショットの外へ出ない）と範囲の中の行（`code`）と、コードの振る舞い（`code_behavior`）が要る。質問の文の後ろに
   `（コードではこうなっていた: <振る舞い>。<パス>:<行>）` を足す
+- 同じ質問の行は足さない——既にある行（全部の版を重ねた全体）の質問が、候補の質問と同じか、候補の質問に取り込みの添え書き `（コードではこうなっていた: …）` を
+  足した形（候補の質問＋添え書きの頭で始まり「）」で終わる）なら違反（1）で何も書かない（同じ候補の JSON で当て直しても、`code_behavior`・該当箇所を直して当て直しても重ねて足さない）
+- 既にある作業中の版の表の BOM と改行（CRLF か LF。最初の行で決める）を保って書く——既にある行のバイトは変えず、足した行も同じ改行で書く。表が無ければ BOM なし・LF で作る。
+  足す行が無ければ書かない
 - 番号は `Q-R-` の、全部の版の `shared/qa.csv` を通した最大の次から振る（印の無い前の形の番号と、ほかの印の番号は数えない）
 - 起票元は `要求確定（取り込み・<種類>。<出所>）`（`references/intake.md` の「起票の形」）
 - スキルが書いた食い違いは、`canon` が重ね合わせた全体のファイルで、`canon_quote` がその中に在るときだけ出す（無ければ違反）
@@ -97,6 +101,7 @@ TOP_KEYS = {"candidates", "findings"}
 CONFIRMING = ("answer", "回答", "state", "状態", "target", "反映先")
 # 取り込んだ行の状態（回答待ち）。名前が `check-qa-csv.py` の状態に無ければ、書く前の表全体の検査が落とす
 PENDING = "確認中"
+CODE_NOTE = "（コードではこうなっていた: "  # build_row が質問の後ろに足す添え書きの頭（重複の照合で外す）
 QA_PATH = "shared/qa.csv"
 INFRA_PATH = "shared/infra.csv"
 # 正本の中で、スナップショットを置いてよいのはここだけ（生成物で commit しない）
@@ -421,6 +426,13 @@ def squash(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def already_asked(question: str, existing: list[str]) -> bool:
+    """既にある行の質問（squash 済み）のどれかが、候補の質問と同じか、候補の質問に build_row の添え書き `（コードではこうなっていた: …）` を
+    足した形（候補の質問＋添え書きの頭で始まり「）」で終わる）なら真。添え書きを既にある行の側で切り出さないので、`code_behavior` の中身に依らない。"""
+    whole, head = squash(question), squash(question + CODE_NOTE)
+    return any(q == whole or (q.startswith(head) and q.endswith("）")) for q in existing)
+
+
 def check_finding(f, where: str, snap: Path, canon: dict[str, bytes], problems: list[str]) -> str | None:
     before = len(problems)
     if not check_keys(f, FINDING_KEYS, FINDING_KEYS, where, problems):
@@ -529,9 +541,12 @@ def rows(root: Path, candidates_path: Path, snap: Path, dry_run: bool) -> tuple[
         code, out = qa.check(target)
         if code != 0:
             raise Stop("作業中の版の Q&A 表が検査を通らない——先に直す:\n" + "\n".join(f"  {line}" for line in out))
-        existing = target.read_text(encoding="utf-8-sig")
+        # 既にある表の BOM と改行を保つ——read_text(encoding="utf-8-sig") は BOM を落とし改行を \n に揃えるので、
+        # そのまま書き戻すと既存の全行が差分になる。BOM は文字のまま先頭に残し、書くときもそのまま書く
+        existing = target.read_bytes().decode("utf-8")
     else:
         existing = ",".join(qa.COLUMNS) + "\n"
+    eol = "\r\n" if existing.split("\n", 1)[0].endswith("\r") else "\n"
     try:
         data = json.loads(candidates_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
@@ -544,15 +559,16 @@ def rows(root: Path, candidates_path: Path, snap: Path, dry_run: bool) -> tuple[
         if not isinstance(data["candidates"], list) or not isinstance(data["findings"], list):
             errors.append("候補の JSON: `candidates` と `findings` は並び（無ければ []）")
         else:
-            asked = {squash(r["質問"]) for r in csv.DictReader(io.StringIO(canon.get(QA_PATH, b"").decode("utf-8-sig"), newline=""))}
+            # 候補の質問を、既にある行の質問そのものか、それに取り込みの添え書きを足した形と照らす——同じ候補で当て直したときに重ねて足さない
+            asked = [squash(r["質問"]) for r in csv.DictReader(io.StringIO(canon.get(QA_PATH, b"").decode("utf-8-sig"), newline=""))]
             for i, c in enumerate(data["candidates"]):
                 row = build_row(c, f"candidates[{i}]", snap, label, errors)
                 if row is None:
                     continue
-                if squash(c["question"]) in asked:
+                if already_asked(c["question"], asked):
                     errors.append(f"candidates[{i}]: 同じ質問が既にある: {c['question']!r}")
                     continue
-                asked.add(squash(c["question"]))
+                asked.append(squash(row["質問"]))
                 new_rows.append(row)
             for i, f in enumerate(data["findings"]):
                 line = check_finding(f, f"findings[{i}]", snap, canon, errors)
@@ -565,15 +581,16 @@ def rows(root: Path, candidates_path: Path, snap: Path, dry_run: bool) -> tuple[
     for offset, row in enumerate(new_rows):
         row["No"] = f"Q-{MARK}-{start + offset:03d}"
     buffer = io.StringIO(newline="")
-    writer = csv.writer(buffer, lineterminator="\n")
+    writer = csv.writer(buffer, lineterminator=eol)
     for row in new_rows:
         writer.writerow([row[c] for c in qa.COLUMNS])
-    text = existing if existing.endswith("\n") else existing + "\n"
+    text = existing if existing.endswith("\n") else existing + eol
     text += buffer.getvalue()
+    payload = text.encode("utf-8")
 
     with tempfile.TemporaryDirectory() as tmp:
         probe = Path(tmp) / "qa.csv"
-        probe.write_text(text, encoding="utf-8")
+        probe.write_bytes(payload)
         code, out = qa.check(probe)
     if code != 0:
         return 1, ["足した後の表が check-qa-csv.py を通らない（何も書いていない）:"] + [f"  {line}" for line in out]
@@ -583,11 +600,13 @@ def rows(root: Path, candidates_path: Path, snap: Path, dry_run: bool) -> tuple[
     report = []
     if dry_run:
         report.append(f"書いていない（--dry-run）。{target} に足すはずの行 {len(new_rows)} 件:")
-        report.append(buffer.getvalue().rstrip("\n"))
+        report.append(buffer.getvalue().replace("\r\n", "\n").rstrip("\n"))
+    elif not new_rows:
+        report.append(f"{target} に足す行は無い（書いていない）")
     else:
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".intake-tmp")
-        tmp.write_text(text, encoding="utf-8")
+        tmp.write_bytes(payload)
         os.replace(tmp, target)
         numbers = "・".join(r["No"] for r in new_rows) or "無し"
         report.append(f"{target} に {len(new_rows)} 行を足した（{numbers}。どれも `確認中`・`未回答`——利用者が回答するまで確定しない）")
