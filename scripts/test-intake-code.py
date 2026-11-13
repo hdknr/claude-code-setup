@@ -23,8 +23,8 @@
 - `rows` の起票元は `要求確定（取り込み・<種類>。<出所>）`
 - `rows` の番号は `Q-R-` の、全部の版を通した最大の次（ほかの印は数えない）で、作業中の版の表に書く
 - `rows` が書いた表は本物の `check-qa-csv.py` を通る。`--dry-run` は書かない
-- `rows` は同じ候補の JSON で当て直しても（`code_behavior` を直して前の版の行と比べても）同じ質問を重ねて足さず、1 で何も書かない
-- `rows` は既にある表の BOM と改行（CRLF・LF）を保ち、既にある行のバイトを変えずに足す（末尾に改行の無い表も同じ改行で足す）
+- `rows` は同じ候補の JSON で当て直しても（`code_behavior` を直して前の版の行と比べても、`code_behavior` が添え書きの頭を含んでも）同じ質問を重ねて足さず、1 で何も書かない
+- `rows` は既にある表の BOM と改行（CRLF・LF）を保ち、既にある行のバイトを変えずに足す（末尾に改行の無い表も同じ改行で足す。足す行が無ければ書かない）
 - スキルが書いた食い違いは、正本のファイルに在る引用だけを通す（無い引用・無いファイルは 1）
 - 基盤要件のホスティング環境・DBMS・言語は、決定と違う種類の目印があれば食い違い（3）、同じ種類だけなら 0 件（0）。言語は決定の言語のファイルより多いほかの言語を出す（同じ数なら出さない）。読み飛ばすディレクトリ（`node_modules`）は照らさない
 
@@ -504,6 +504,34 @@ def case_rows_rerun(e, fx):
     return None
 
 
+def case_rows_rerun_note_in_behavior(e, fx):
+    """`code_behavior` が添え書きの頭を含む候補で 2 回走らせる——2 回目は 1 で、表を変えない（#1005 の /code-review CR1-2）。"""
+    data = variant(findings=[], c_code_behavior="「（コードではこうなっていた: X）」と画面に出していた")
+    code, out, _, after, added, target = rows_case(e, fx, data)
+    if code != 3 or len(added) != 1:
+        return f"1 回目: exit={code}・足した={len(added)}: {out}"
+    path = e.fresh("c").with_suffix(".json")
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    code2, out2 = e.run("rows", str(target.parents[3]), str(path), str(snap_of(e, fx)))
+    if code2 != 1 or "同じ質問が既にある" not in out2 or target.read_text(encoding="utf-8") != after:
+        return f"2 回目: exit={code2}（期待 1）: {out2}"
+    return None
+
+
+def case_rows_empty_keeps_bytes(e, fx):
+    """候補が 0 件なら表を書かない——末尾に改行の無い CRLF の表の最後の行のバイトも変えない（#1005 の /code-review CR1-4）。"""
+    canon = canon_copy(e, fx)
+    target = canon / "docs" / "v1" / "shared" / "qa.csv"
+    body = ("\ufeff" + QA_V1.replace("\n", "\r\n")).encode("utf-8")[:-2]
+    target.write_bytes(body)
+    path = e.fresh("c").with_suffix(".json")
+    path.write_text(json.dumps({"candidates": [], "findings": []}), encoding="utf-8")
+    code, out = e.run("rows", str(canon), str(path), str(snap_of(e, fx)))
+    if code not in (0, 3) or target.read_bytes() != body or "書いていない" not in out:
+        return f"exit={code}・表が{'変わらない' if target.read_bytes() == body else '変わった'}: {out}"
+    return None
+
+
 def case_rows_rerun_edited(e, fx):
     """前の版に取り込んだ行（添え書きつき）があり、`code_behavior` と該当箇所を直した同じ質問を v2 で当て直す——1 で、何も書かない（#1005）。"""
     old = "Q-R-005,要求確定（取り込み・業務ルール。PR #7（abc1234））,ゴールド会員の割引は、いくら以上の注文から付けますか？（コードではこうなっていた: 古い説明。app/main.py:4）," \
@@ -584,7 +612,7 @@ CASES = {f.__name__[5:]: f for f in [
     case_rows_language_majority, case_snapshot_crafted_tree, case_snapshot_dir_symlink, case_rows_language_equal,
     case_snapshot_bad_source, case_rows_good, case_rows_control, case_rows_db, case_rows_language, case_rows_unreadable_value,
     case_rows_answer, case_rows_bad_code, case_rows_bad_finding, case_rows_bad_option, case_rows_duplicate, case_rows_dry,
-    case_rows_rerun, case_rows_rerun_edited, case_rows_bom_crlf, case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
+    case_rows_rerun, case_rows_rerun_edited, case_rows_rerun_note_in_behavior, case_rows_bom_crlf, case_rows_empty_keeps_bytes, case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
 ]}
 
 # (名前, 壊す箇所, 置き換え, 落ちるはずの試料)
@@ -624,19 +652,21 @@ MUTATIONS = [
     ("引用を確かめない", "    elif quote and squash(quote) not in squash(canon[path].decode(\"utf-8\", \"replace\")):", "    elif False:", "rows_bad_finding"),
     ("正本に無いファイルを見ない", "    if not isinstance(path, str) or path not in canon:", "    if False:", "rows_bad_finding"),
     ("選択肢の区切りを見ない", ' or qa.OPTION_SEPARATOR in option:', ":", "rows_bad_option"),
-    ("重複を見ない", "                if squash(c[\"question\"]) in asked:", "                if False:", "rows_duplicate"),
+    ("重複を見ない", "                if squash(c[\"question\"]) in asked or squash(row[\"質問\"]) in asked_whole:", "                if False:", "rows_duplicate"),
     ("決定と同じ種類も食い違いにする", "            if name == mine[0]:\n                continue\n", "", "rows_control"),
     ("決定の値を読まずに AWS とする", "mine = [name for name, word, _ in families if word.search(value)]", "mine = [families[0][0]]", "rows_good"),
     ("node_modules も照らす", 'if d not in SKIP_DIRS and not d.startswith(".")', 'if not d.startswith(".")', "rows_control"),
     ("言語を照らさない", "            own = sum(1 for rel in files if rel.suffix in mine[0])", "            own = 10 ** 9", "rows_language"),
     ("食い違いがあっても 0", "    return (3 if findings else 0), report", "    return 0, report", "rows_db"),
     ("DBMS の目印を持たない", '         re.compile(r"\\bpsycopg2?\\b|\\basyncpg\\b|', '         re.compile(r"\\bnever-matches\\b|', "rows_db"),
-    ("添え書きを外さずに照らす", '            asked = {squash(bare(r["質問"])) for r in', '            asked = {squash(r["質問"]) for r in', "rows_rerun"),
+    ("添え書きを外さずに照らす", '            asked = {squash(bare(q)) for q in existing_questions}', '            asked = {squash(q) for q in existing_questions}', "rows_rerun_edited"),
     ("添え書きを外す文を前の版の行で見ない", "    return question[:at] if at > 0 and", "    return question if at > 0 and", "rows_rerun_edited"),
     ("BOM を落として読む", '        existing = target.read_bytes().decode("utf-8")', '        existing = target.read_bytes().decode("utf-8-sig")', "rows_bom_crlf"),
     ("改行を揃えて読む", '        existing = target.read_bytes().decode("utf-8")', '        existing = target.read_text(encoding="utf-8")', "rows_bom_crlf"),
     ("足した行を LF で書く", '    eol = "\\r\\n" if existing.split("\\n", 1)[0].endswith("\\r") else "\\n"', '    eol = "\\n"', "rows_bom_crlf"),
     ("末尾に改行の無い表に LF を足す", '    text = existing if existing.endswith("\\n") else existing + eol', '    text = existing if existing.endswith("\\n") else existing + "\\n"', "rows_bom_crlf"),
+    ("足す行の質問をそのままの文と照らさない", ' or squash(row["質問"]) in asked_whole:', ":", "rows_rerun_note_in_behavior"),
+    ("足す行が無くても書く", "    elif not new_rows:\n", "    elif False:\n", "rows_empty_keeps_bytes"),
     ("出所の印が無くても読む", '        raise Stop(f"{snap}: スナップショットでない（{SOURCE_FILE} が読めない——snapshot で作る）") from None', '        label = "?"', "rows_not_snapshot"),
 ]
 

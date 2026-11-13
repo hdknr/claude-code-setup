@@ -30,8 +30,10 @@ usage:
 - 候補の各行に、スナップショットの中の実在するファイル（途中のシンボリックリンクでスナップショットの外へ出ない）と範囲の中の行（`code`）と、コードの振る舞い（`code_behavior`）が要る。質問の文の後ろに
   `（コードではこうなっていた: <振る舞い>。<パス>:<行>）` を足す
 - 同じ質問の行は足さない——候補の質問を、既にある行（全部の版）の質問から取り込みの添え書き `（コードではこうなっていた: …）` を外した文と照らし、
-  一致すれば違反（1）で何も書かない（同じ候補の JSON で当て直しても、`code_behavior`・該当箇所を直して当て直しても重ねて足さない）
-- 既にある作業中の版の表の BOM と改行（CRLF か LF。最初の行で決める）を保って書く——既にある行のバイトは変えず、足した行も同じ改行で書く。表が無ければ BOM なし・LF で作る
+  足す行の質問（添え書きつき）も既にある行の質問のそのままの文と照らし、どちらかが一致すれば違反（1）で何も書かない
+  （同じ候補の JSON で当て直しても、`code_behavior`・該当箇所を直して当て直しても重ねて足さない）
+- 既にある作業中の版の表の BOM と改行（CRLF か LF。最初の行で決める）を保って書く——既にある行のバイトは変えず、足した行も同じ改行で書く。表が無ければ BOM なし・LF で作る。
+  足す行が無ければ書かない
 - 番号は `Q-R-` の、全部の版の `shared/qa.csv` を通した最大の次から振る（印の無い前の形の番号と、ほかの印の番号は数えない）
 - 起票元は `要求確定（取り込み・<種類>。<出所>）`（`references/intake.md` の「起票の形」）
 - スキルが書いた食い違いは、`canon` が重ね合わせた全体のファイルで、`canon_quote` がその中に在るときだけ出す（無ければ違反）
@@ -557,16 +559,20 @@ def rows(root: Path, candidates_path: Path, snap: Path, dry_run: bool) -> tuple[
         if not isinstance(data["candidates"], list) or not isinstance(data["findings"], list):
             errors.append("候補の JSON: `candidates` と `findings` は並び（無ければ []）")
         else:
-            # 既にある行の質問は、取り込みの添え書きを外した文で照らす——同じ候補で当て直したときに重ねて足さない
-            asked = {squash(bare(r["質問"])) for r in csv.DictReader(io.StringIO(canon.get(QA_PATH, b"").decode("utf-8-sig"), newline=""))}
+            # 既にある行の質問は、取り込みの添え書きを外した文で照らす——同じ候補で当て直したときに重ねて足さない。
+            # 足す行の質問（添え書きつき）は、既にある行の質問のそのままの文とも照らす——添え書きの頭を `code_behavior` が含んでも当て直しを見つける
+            existing_questions = [r["質問"] for r in csv.DictReader(io.StringIO(canon.get(QA_PATH, b"").decode("utf-8-sig"), newline=""))]
+            asked = {squash(bare(q)) for q in existing_questions}
+            asked_whole = {squash(q) for q in existing_questions}
             for i, c in enumerate(data["candidates"]):
                 row = build_row(c, f"candidates[{i}]", snap, label, errors)
                 if row is None:
                     continue
-                if squash(c["question"]) in asked:
+                if squash(c["question"]) in asked or squash(row["質問"]) in asked_whole:
                     errors.append(f"candidates[{i}]: 同じ質問が既にある: {c['question']!r}")
                     continue
                 asked.add(squash(c["question"]))
+                asked_whole.add(squash(row["質問"]))
                 new_rows.append(row)
             for i, f in enumerate(data["findings"]):
                 line = check_finding(f, f"findings[{i}]", snap, canon, errors)
@@ -599,6 +605,8 @@ def rows(root: Path, candidates_path: Path, snap: Path, dry_run: bool) -> tuple[
     if dry_run:
         report.append(f"書いていない（--dry-run）。{target} に足すはずの行 {len(new_rows)} 件:")
         report.append(buffer.getvalue().replace("\r\n", "\n").rstrip("\n"))
+    elif not new_rows:
+        report.append(f"{target} に足す行は無い（書いていない）")
     else:
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(target.name + ".intake-tmp")
