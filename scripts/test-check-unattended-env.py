@@ -329,7 +329,7 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         env.all_good()
         code, items, out = run(mod, env)
         check("全部良ければ 0", code == 0, bad)
-        check("人が見るを毎回出す", sum(1 for s, n, *_ in items if s == mod.HUMAN and not n.startswith(mod.DEPENDENCY_PATH)) == 3, bad)
+        check("人が見るを毎回出す", sum(1 for s, *_ in items if s == mod.HUMAN) == 3, bad)
         check("人が見るは出力にも出る", "[人が見る] モバイルの登録" in out, bad)
 
     # 認証（#584）: 長期トークン／8 時間のトークン／先に使われる認証／判定できない。値は出さない
@@ -1263,11 +1263,10 @@ def dependency_path_scenarios(mod, bad):
     with scenario(SCRIPT) as env:
         env.all_good()
         code, got = items_of(env)
-        check("依存: 依存の定義が無ければ人が見る 1 行で、終了コードは変えない",
-              [g[0] for g in got] == [mod.HUMAN] and "見つからない" in got[0][2] and code == 0, bad)
+        check("依存: 依存の定義が無ければ項目を出さず、終了コードは変えない", got == [] and code == 0, bad)
         dep(env, **{"node_modules/x/package.json": "{}", ".hidden/package.json": "{}"})
         code, got = items_of(env)
-        check("依存: node_modules と . で始まるディレクトリには入らない", [g[0] for g in got] == [mod.HUMAN] and code == 0, bad)
+        check("依存: node_modules と . で始まるディレクトリには入らない", got == [] and code == 0, bad)
     with scenario(SCRIPT) as env:
         env.all_good()
         dep(env, **{"package.json": "{}"})
@@ -1281,12 +1280,17 @@ def dependency_path_scenarios(mod, bad):
         code, got = items_of(env)
         check("依存: プロキシの registry があれば人が見る（良いにしない）",
               [g[0] for g in got] == [mod.HUMAN] and "registry" in got[0][2] and code == 0, bad)
-        dep(env, **{".npmrc": "ignore-scripts=true\n"})
+        dep(env, **{".npmrc": "ignore-scripts=true\n", "bunfig.toml": "[install]\nregistry = \"https://registry.npmjs.org/\"\n"})
         code, got = items_of(env)
         check("依存: ignore-scripts=true も設定に数える", [g[0] for g in got] == [mod.HUMAN], bad)
         dep(env, **{".npmrc": b"\xff\xfe registry=x"})
         code, got = items_of(env)
         check("依存: 設定を読めなければ判定できない", [g[0] for g in got] == [mod.UNKNOWN] and code == 2, bad)
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        dep(env, **{"package.json": "{}", "bunfig.toml": "[install]\nregistry = \"https://registry.npmjs.org/\"\n"})
+        code, got = items_of(env)
+        check("依存: bunfig.toml の既定のレジストリはプロキシに数えない", [g[0] for g in got] == [mod.ACTION], bad)
     with scenario(SCRIPT) as env:
         env.all_good()
         dep(env, **{"web/package.json": "{}", "web/.npmrc": "before=2026-01-01\n"})
@@ -1304,6 +1308,10 @@ def dependency_path_scenarios(mod, bad):
         dep(env, **{"pyproject.toml": "[project]\nname = 'x'\n"})
         code, got = items_of(env)
         check("依存: Python の定義があり設定が無ければ要対処", [g[0] for g in got] == [mod.ACTION] and "Python" in got[0][1], bad)
+        dep(env, **{"pip.conf": "[global]\nindex-url = https://proxy.example.invalid/simple\n"})
+        code, got = items_of(env)
+        check("依存: プロジェクトの pip.conf は設定に数えない（pip が読まない）", [g[0] for g in got] == [mod.ACTION], bad)
+        (env.project / "pip.conf").unlink()
         dep(env, **{"pyproject.toml": "[project]\nname = 'x'\n[tool.uv]\nexclude-newer = \"2026-01-01T00:00:00Z\"\n"})
         code, got = items_of(env)
         check("依存: exclude-newer があれば人が見る", [g[0] for g in got] == [mod.HUMAN] and "exclude-newer" in got[0][2], bad)
@@ -2209,6 +2217,9 @@ MUTATIONS = {
     "依存: 既定のレジストリをプロキシと読む": (
         r"""    ("npm", ".npmrc", r"^\s*registry\s*=\s*(?![\"']?https?://registry\.npmjs\.org/?[\"']?\s*$)\S", "レジストリのプロキシ（registry）"),""",
         r"""    ("npm", ".npmrc", r"^\s*registry\s*=\s*\S", "レジストリのプロキシ（registry）"),"""),
+    "依存: bunfig.toml の既定のレジストリをプロキシと読む": (
+        r"""    ("npm", "bunfig.toml", r"^\s*registry\s*=\s*(?![\"']?https?://registry\.npmjs\.org/?[\"']?\s*$)\S", "レジストリのプロキシ（bunfig.toml）"),""",
+        r"""    ("npm", "bunfig.toml", r"^\s*registry\s*=\s*\S", "レジストリのプロキシ（bunfig.toml）"),"""),
     "依存: node_modules に入る": ('DEPS_SKIP_DIRS = ("node_modules", "vendor", "venv", "__pycache__")', "DEPS_SKIP_DIRS = ()"),
     "依存: 設定の無い下の階層を見逃す": ("            if not hits and not root_hits:\n", "            if False:\n"),
     "依存: 下の階層の設定を見ない": ("            hits, errs = ([], []) if d == project else guards_in(d, eco)\n",

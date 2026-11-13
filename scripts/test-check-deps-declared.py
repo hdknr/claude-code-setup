@@ -161,6 +161,11 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     got += [("消した yarn.lock で 1", rc == 1 and "yarn.lock" in out)]
 
     d, base = fresh()
+    put(d, "サービス/package.json", "{}\n", commit=True)
+    rc, out = run(script, d, base)
+    got += [("非 ASCII の名前のディレクトリの下の package.json で 1", rc == 1 and "サービス/package.json" in out)]
+
+    d, base = fresh()
     put(d, ".npmrc", "registry=https://example.invalid/\n", commit=True)
     rc, _ = run(script, d, base)
     got += [("取得経路の設定（.npmrc）を触ったら 1", rc == 1)]
@@ -218,6 +223,7 @@ MUTATIONS = {
                        "    return [line for line in diff.splitlines() if line.strip()]\n"),
     "3 点で取る（未コミットを見ない）": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
                                        '    rc1, diff = git("diff", "--name-only", "--no-renames", f"{base}...HEAD")\n'),
+    "非 ASCII のパスを引用符で包ませる": ('["git", "-c", "core.quotePath=false", *args]', '["git", *args]'),
     "下の階層を見ない": ('    name = path.rsplit("/", 1)[-1]\n', "    name = path\n"),
     "消したファイルを見ない": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
                               '    rc1, diff = git("diff", "--name-only", "--no-renames", "--diff-filter=d", base)\n'),
@@ -232,8 +238,10 @@ def static_checks() -> None:
     start = text.find("依存を追加・更新する周なら")
     section = text[start:start + 3000] if start >= 0 else ""
     check("verifier.md に依存の差し込みがある", bool(section))
+    header = next((ln for ln in section.splitlines() if ln.strip().startswith("| 名前")), "")
+    cells = [c.strip() for c in header.strip().strip("|").split("|")]
     for col in TABLE_COLUMNS:
-        check(f"依存の差し込みが欄「{col}」を名指す", col in section)
+        check(f"依存の差し込みの表の見出しの行が欄「{col}」を持つ", any(c.startswith(col) for c in cells))
     check("依存の差し込みが包を入れないよう言う", "入れないで" in section)
     doc = DEPS_DOC.read_text(encoding="utf-8")
     check("dependencies.md が未検証の扱いを持つ", "未検証" in doc)

@@ -92,7 +92,7 @@ def deps_module():
 
 def git(*args: str) -> tuple[int, str]:
     proc = subprocess.run(
-        ["git", *args], capture_output=True, text=True, check=False, cwd=REPO
+        ["git", "-c", "core.quotePath=false", *args], capture_output=True, text=True, check=False, cwd=REPO
     )
     return proc.returncode, proc.stdout
 

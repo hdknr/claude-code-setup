@@ -4,7 +4,8 @@
     python3 <このスキルの base ディレクトリ>/scripts/check-deps-declared.py <base> [--plan <計画ファイル>]
 
 **周が PR を作る前に、worktree を cwd にして素の 1 行で呼ぶ**（`SKILL.md` 手順 6。終了コードで分岐する）。
-`<base>` は周の base（計画ファイルの「周の在り処」の SHA）。
+`<base>` は周の base（計画ファイルの「周の在り処」の SHA）。**main を取り込んだ後は、`SKILL.md` 手順 4 の式（`git merge-base <切った元の参照> HEAD`）を当て直した SHA を渡す**
+——記録した古い SHA のままだと、main が足した依存のファイルがこの周の変更に見えて 1 になる。
 
 ## なぜ要るか
 
@@ -36,7 +37,7 @@ lockfile の更新にしか見えない。**周が依存を足したことを計
 
 - **依存のファイルが差分にあれば、宣言が `あり` でない限り 0 にしない**——`なし`・別の値・2 本以上・フェンスの中だけ、のどれも 1
 - **計画が見つからないとき、依存のファイルがあれば 0 にしない**（2）
-- **未コミットの変更・未追跡のファイル・消したファイル・下の階層の依存のファイルを落とさない**
+- **未コミットの変更・未追跡のファイル・消したファイル・下の階層の依存のファイル・非 ASCII の名前のディレクトリの下の依存のファイルを落とさない**
 - **依存のファイルが差分に無ければ、宣言の有無に依らず 0**——宣言だけで赤くしない
 
 守らない:
@@ -128,7 +129,8 @@ def judge(paths, plan_text: str | None) -> tuple[int, list[str], str]:
 
 
 def git(*args: str) -> tuple[int, str]:
-    proc = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
+    # core.quotePath=false: 非 ASCII のパスを "\343…" と引用符で包ませない（包むと最後の要素が名前に当たらない）
+    proc = subprocess.run(["git", "-c", "core.quotePath=false", *args], capture_output=True, text=True, check=False)
     return proc.returncode, proc.stdout
 
 

@@ -60,13 +60,15 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   | npm 系 | `.npmrc` | `before=` | 公開日の上限 |
   | npm 系 | `.yarnrc.yml` | `npmRegistryServer:` が既定でない・`enableScripts: false`・`npmMinimalAgeGate:` | 同上 |
   | npm 系 | `pnpm-workspace.yaml` | `minimumReleaseAge:` | 公開日の下限 |
-  | npm 系 | `bunfig.toml` | `registry =`・`minimumReleaseAge =` | 同上 |
+  | npm 系 | `bunfig.toml` | `registry =` が `registry.npmjs.org` でない・`minimumReleaseAge =` | 同上 |
   | Python | `pyproject.toml`・`uv.toml` | `exclude-newer =`・`index-url =`・`[[tool.uv.index]]`（`uv.toml` は `[[index]]`）・`[[tool.poetry.source]]` | 公開日の上限・レジストリのプロキシ |
-  | Python | `pip.conf`・`requirements*.txt` | `index-url =`／`--index-url`・`-i` | レジストリのプロキシ |
+  | Python | `requirements*.txt` | `--index-url`・`-i` | レジストリのプロキシ |
+
+  **プロジェクトの `pip.conf` は見ない**——pip はプロジェクトのディレクトリの `pip.conf` を読まない（読むのは利用者・全体・venv の設定と `PIP_CONFIG_FILE`）。
 
 - **判定**: 生態系（npm 系・Python）ごとに、依存の定義のあるディレクトリのどれにも（そこか根に）設定が 1 つも無い → **要対処**（直し方に上の 3 種類を挙げる）。
   どのディレクトリにもあれば **人が見る**（見つけた設定を名指す——プロキシが本物か・利用者の設定や環境変数が上書きしていないかは見えない）。
-  **「良い」は出さない。** ファイルを読めない・走査に失敗したら **判定できない**。依存の定義が無い・設定を読まない生態系（Go・Rust・Ruby・PHP）だけなら **人が見る**。
+  **「良い」は出さない。** ファイルを読めない・走査に失敗したら **判定できない**。設定を読まない生態系（Go・Rust・Ruby・PHP）は **人が見る**。**依存の定義が無ければ、この項目は出さない**（点検の出力と終了コードを変えない）。
 - **行の値は見るが、その道具がその設定を本当に持つか・効いているかは確かめていない**——キーの一覧は道具の文書から写したもので、この周（#996）では道具を走らせて確かめていない。
 
 ## cruise の起動時（`--cruise`・`--present`。#466）
@@ -1145,13 +1147,13 @@ DEPS_GUARDS = (
     ("npm", ".yarnrc.yml", r"^\s*enableScripts\s*:\s*false\b", "インストールスクリプトを止める（enableScripts）"),
     ("npm", ".yarnrc.yml", r"^\s*npmMinimalAgeGate\s*:", "公開日の下限（npmMinimalAgeGate）"),
     ("npm", "pnpm-workspace.yaml", r"^\s*minimumReleaseAge\s*:", "公開日の下限（minimumReleaseAge）"),
-    ("npm", "bunfig.toml", r"^\s*(?:registry|minimumReleaseAge)\s*=", "レジストリか公開日の下限（bunfig.toml）"),
+    ("npm", "bunfig.toml", r"^\s*registry\s*=\s*(?![\"']?https?://registry\.npmjs\.org/?[\"']?\s*$)\S", "レジストリのプロキシ（bunfig.toml）"),
+    ("npm", "bunfig.toml", r"^\s*minimumReleaseAge\s*=", "公開日の下限（bunfig.toml）"),
     ("python", "pyproject.toml", r"^\s*exclude-newer\s*=", "公開日の上限（exclude-newer）"),
     ("python", "pyproject.toml", r"^\s*index-url\s*=|^\s*\[\[tool\.uv\.index\]\]|^\s*\[\[tool\.poetry\.source\]\]",
      "レジストリのプロキシ（pyproject.toml の index）"),
     ("python", "uv.toml", r"^\s*exclude-newer\s*=", "公開日の上限（exclude-newer）"),
     ("python", "uv.toml", r"^\s*index-url\s*=|^\s*\[\[index\]\]", "レジストリのプロキシ（uv.toml の index）"),
-    ("python", "pip.conf", r"^\s*index-url\s*=", "レジストリのプロキシ（pip.conf）"),
     ("python", "requirements*.txt", r"^\s*(?:--index-url|-i)(?:\s|=)", "レジストリのプロキシ（requirements の --index-url）"),
 )
 
@@ -1232,9 +1234,7 @@ def check_dependency_path(project):
     if others:
         items.append((HUMAN, f"{DEPENDENCY_PATH}（ほか）",
                       f"設定を読まない生態系の依存の定義がある（{', '.join(others)}）", "取得経路の守りは人が見る"))
-    if not found:
-        items.append((HUMAN, DEPENDENCY_PATH, f"依存の定義が見つからない（{project} の下）", ""))
-    return items
+    return items  # 依存の定義が無ければ何も出さない（点検の出力と終了コードを変えない）
 
 
 def gh_pr(project, number):
