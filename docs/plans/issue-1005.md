@@ -62,7 +62,7 @@ Issue の 2 行（チェックリスト）を不変条件にする。入口は `
 
 - 周の在り処: ブランチ `issue/1005-intake-rows-rerun-bom`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1005`・起点 `fd1afe51`・base `origin/main` → `fd1afe5100d5303c2fbf79ad33d4b5d2800e1c29`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 2 パス目: Verifier（sonnet）反証 0 件（注記 1 件 V2-1）、/code-review（high）指摘 7 件。直すのは CR2-1（CR2-2 の直し方で）。狭いパスの起点: `297660bac5a66d71dd675a7cebc1ba6232eabc6b`（指摘対応の前の HEAD）
+- 2 パス目: Verifier（sonnet）反証 0 件（注記 1 件 V2-1）、/code-review（high）指摘 7 件。直すのは CR2-1（CR2-2 の直し方で）。狭いパスの起点: `297660bac5a66d71dd675a7cebc1ba6232eabc6b`（指摘対応の前の HEAD）。狭いパスの終点: `905d8dd31a3141344e09ed571a54ddbae2aa6486`
 - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。指摘対応のコミット `297660ba` の後、2 パス目は手順 5 の当て直し（Verifier）と /code-review の 2 つとも残っている
 - 関門: 1 パス目済み——Verifier（sonnet・dev-loop:dev-loop-verifier。1 体目は接続エラーで止まり起こし直した）反証 0 件（試料の穴 1 件 V1-A）、/code-review（high）指摘 8 件。直すのは CR1-2・CR1-4。1 パス目の指摘対応の起点: `9e03f711b7a3a3fe5d17cb16fc8bbc8101e710b2`
 - 反証と差し戻し: 1 パス目 Verifier 0 件・/code-review 8 件（直す 2・残課題 6）。手順 4 へ戻して直した（`297660ba`。1 パス目の指摘対応の差分は 0 行でない——2 パス目を回す）
