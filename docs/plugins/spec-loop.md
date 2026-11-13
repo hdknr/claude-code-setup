@@ -239,6 +239,10 @@ Red テストを正本リポジトリの根で走らせ、**いまの実装に�
   変えていないケース（回帰）は緑であること、足した・変えたケースは作業中の版で失敗し前の版で緑か前の版に無い（まだこの版を実装していない）か、
   前の版の実装がもう満たしている（「もう緑」と名指しして知らせる）ことなどを見ます（どちらの版でも「未実装」で落ちるなど、ほかの形は docstring）。
 - **`--in-progress`**: この版の Issue を登録して実装が始まったあとの**作り直し**で使います。作業中の版の期待をもう満たしたケースを実装済みとして数え、止めません。
+- **モノレポ**（正本と実装を 1 つのリポジトリに置き、実装を `backend/` などに置く）: Red テストは根から実装を読み込むので、`PYTHONPATH=backend` のように
+  読み込みの経路を足して走らせます。**付け忘れると「未実装」と同じ出力で失敗し、回帰のケースが無い版（v1 など）の `--red-check` はそれを期待どおりとして 0 を返します。**
+  置き場所・`build/`・`pyproject.toml`・`CLAUDE.md` の分担を含めて
+  [`monorepo.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/monorepo.md) を正とします。
 
 **判定の本体（ケースごとの判定の表・終了コード・何を守らないか）は
 [`scaffold.py` の docstring](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/scripts/scaffold.py) を正とします。**

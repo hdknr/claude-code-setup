@@ -2,6 +2,8 @@
 
 要求・見積り・提案書の元ファイルは、**1 つの git リポジトリ（正本）** に置く。
 spec-loop のスキルはどれも、このツリーを前提に読み書きする。
+**実装（dev-loop の開発）を同じリポジトリに置く（モノレポ）なら、実装の置き場所・`build/`・`pyproject.toml`・
+Red テストの走らせ方・`CLAUDE.md` の分担は `monorepo.md` を正とする**（#994）。
 
 **`docs/` は版ごとのディレクトリ（`docs/v1/`・`docs/v2/`…）に分け、v2 以降には前の版からの差分だけを置く。**
 版の決まり（作業中の版・凍結・重ね合わせ・削除・移し方）は `versions.md` を正とする。
@@ -482,6 +484,7 @@ spec/formal/<対象>/
 | サイト | `site/`（MkDocs の出力。下の「ドキュメントのツール」） | `mkdocs build` |
 
 **commit しなくてよい**——同梱の生成スクリプトは、同じ入力から同じバイトを作る。
+**モノレポでも出力先を `build/spec-loop/` に寄せない**——理由と、実装のビルドとぶつけない置き方は `monorepo.md` の「build/ を分けない」を正とする。
 提案書は**サインオフのタグの時点の中身**から作るので、タグがあれば作り直せる（`signoff-tags.md`）。
 
 **ガントチャートは、作れなかったとき（引数の誤りのほかの 0 以外）に前の出力を消す**（引数の誤りでは出力先が分からないので消さない）。
@@ -586,6 +589,9 @@ dev-loop は本文の指紋と sha256 を手元の中間表現と Red テスト�
 **参考資料（UI モック・業務フロー・画面遷移の図。#951）は `scaffold/refs/` に写しがある**ので、`scaffold/` を写せば開発のリポジトリから辿れる——
 本文は `build/merged/` のパスと写しのパスの両方を書く（`handoff-issue.md` の「参考資料」）。
 
+**同じリポジトリで、実装をサブディレクトリ（`backend/` など）に置くなら**、Red テストは根から実装を読み込むので、
+読み込みの経路にそのディレクトリを入れる——走らせ方と、付け忘れが「未実装」と同じに見える落とし穴は `monorepo.md` の「Red テストを走らせる」を正とする。
+
 ## ドキュメントのツール
 
 **既定は MkDocs。** `docs/` を最初から閲覧できるように、プラグインは雛形（`templates/mkdocs/`）を持ち、
@@ -601,6 +607,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
 - 写すもの: `mkdocs.yml`（Material・`use_directory_urls: false`・nav は書かず自動）・`pyproject.toml`（uv。
   **MkDocs は 2 未満に固定**——2.0 は非互換の変更が予告されている）・`.gitignore`（`build/`・`site/`・`.venv/`・`__pycache__/`）・
   `hooks/spec_loop_pages.py`・`docs/index.md`・`docs/qa.md`・`docs/decision-table.md`・`docs/infra.md`・`docs/mocks.md`。閲覧は `uv run mkdocs serve`。
+  **実装を同じリポジトリに置くなら、`pyproject.toml` は雛形のまま（MkDocs の依存だけ）にして実装は自分の `pyproject.toml` を
+  サブディレクトリに持つ**——uv の workspace に足す形は `monorepo.md` の「pyproject.toml と .gitignore」を正とする。
 - **CSV は Markdown に写さない。** 表示用のページに印（`<!-- spec-loop: qa -->`）を書き、フックが CSV から描く。
   `qa` の印は、各版の `docs/v<n>/shared/qa.csv` を**版ごとの節**に描く（重ね合わせない。アンカーは `v<n>-q-001`）。
   `decision_table` の印は、各版の `docs/v<n>/shared/decision_table.csv` を**見出しの行どおり**に版ごとの節に描く（#369）。
