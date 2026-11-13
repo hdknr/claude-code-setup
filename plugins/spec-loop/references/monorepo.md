@@ -6,7 +6,7 @@ Issue の指紋を当てる場所も決めずに済む——**仕組みとして
 
 ただし `tree.md` のツリーは、**リポジトリの直下を spec-loop とドキュメントの道具が占める**前提で書いてある。
 実装を同じリポジトリに足すときは、この文書の形に揃え、**決めたことを直下の `CLAUDE.md` に書く**（下の「CLAUDE.md の分担」）。
-**正本リポジトリの `CLAUDE.md` が別の置き方を決めていれば、そちらが先に立つ**（`tree.md` の「プロジェクトに任せること」）。
+**この文書は推奨である**——正本リポジトリの `CLAUDE.md` に別の置き方を書いたなら、それに従う。
 
 ## 推奨のレイアウト
 
@@ -37,8 +37,9 @@ Issue の指紋を当てる場所も決めずに済む——**仕組みとして
 
 ## build/ を分けない
 
-spec-loop の生成物（`build/merged/`・`build/scaffold/`・`build/feasibility/`・`build/proposal/`・`build/req-loop/`。
-`tree.md` の「生成物の置き場所」）は、**モノレポでも `build/spec-loop/` に寄せない。** 理由:
+spec-loop の生成物（`build/merged/`・`build/merged-v<n>/`（撤去の Issue の本文が作らせる前の版の全体）・`build/scaffold/`・
+`build/feasibility/`・`build/proposal/`・`build/req-loop/`。置き場所は `tree.md` の「生成物の置き場所」と各スキルの `SKILL.md`）は、
+**モノレポでも `build/spec-loop/` に寄せない。** 理由:
 
 - **実装をサブディレクトリに置けば、ぶつからない。** フロントエンドのビルド道具が慣習で使う `build/` は
   `frontend/build/` になり、直下の `build/` とは別のディレクトリである。
@@ -47,7 +48,8 @@ spec-loop の生成物（`build/merged/`・`build/scaffold/`・`build/feasibilit
   すでにある正本の手順と CI も変わる。名前空間を分けることで得るものは、上の形では無い。
 
 それでも実装のビルドを直下の `build/` に出す道具を使うなら、**出力先を実装のディレクトリの中に変える**。
-**spec-loop の生成物と同じ名前（`build/merged/` など）を実装に使わない。**
+**直下の `build/` の下は spec-loop に任せ、実装の出力を置かない**——上に挙げた名前（`build/merged-v1/` のような版つきの名前を含む）と
+ぶつけないためで、名前を 1 つずつ避けるより確かである。
 
 **`.gitignore` の `build/` はどの階層にも効く**（`/` を末尾にしか持たないパターンなので、`frontend/build/` も
 `backend/build/` も無視される）。実装のビルドの出力を commit しないなら、そのままでよい。
@@ -74,6 +76,9 @@ members = ["backend"]
   （uv 0.11.14 で確かめた）。
 - **`uv sync` だけでは member は入らない**——`uv sync --all-packages` で `backend` が直下の `.venv` に入り、
   直下から `import app` できるようになる（同上。`uv sync` の後は `ModuleNotFoundError` だった）。
+- **`--all-packages` の後に素の `uv sync` を走らせると、member は消える**（同上。`Uninstalled 1 package - backend` と出て、
+  `import app` が `ModuleNotFoundError` に戻った）。ドキュメントの依存を更新するときも `uv sync --all-packages` を使う。
+  **消えても Red テストは「未実装」で失敗するだけ**なので、下の「付け忘れは『未実装』と同じに見える」と同じ形で黙って通りうる。
 - **`init-mkdocs.py` の前から直下に `pyproject.toml` があれば、スクリプトはそれを変えずに足りない依存を示す**
   （`tree.md` の「ドキュメントのツール」）。実装の `pyproject.toml` を直下に置いていたなら、`backend/` に移してから
   `init-mkdocs.py` を走らせると、雛形がそのまま写る。
@@ -89,21 +94,32 @@ Red テスト（`scaffold/tests/test_<機能>.py`）は**リポジトリの根�
 1. **`impl_module` を、最初の scaffold の前に決める。** 実装のディレクトリ（`backend/`）から見たモジュール名を書く
    （`backend/app/spec_impl.py` なら `app.spec_impl`）。**後から変えると、機能が同じでも全部の機能が `変更` になる**
    （`handoff-issue.md`）。書く場所は中間表現の `impl_module`（`spec-ir.md` の「全体」）。
-2. **`PYTHONPATH` で読み込む**（どちらの形のプロジェクトでも使える）:
+2. **`PYTHONPATH` で読み込む**:
 
    ```bash
    PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests
    PYTHONPATH=backend python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo . --red-check
    ```
 
-   **`--red-check` も同じ `PYTHONPATH` で走らせる**——子のプロセスは環境を引き継ぐ（上の 2 行は、`backend/app/spec_impl.py` に
-   正しい実装を置いた試料で、どちらも緑になることを確かめた。実装を誤ったものに替えると失敗する）。
+   - **`--red-check` も同じ `PYTHONPATH` で走らせる**——Red テストを走らせる子のプロセスは環境を引き継ぐ。
+   - **確かめた範囲**: `backend/app/spec_impl.py` に正しい実装を置いた試料で、1 行目は緑、実装を誤ったものに替えると失敗した。
+     2 行目は正しい実装で「もう緑 3 件」と出て 0 だった——**ただし v1 の `--red-check` は、誤った実装でも `PYTHONPATH` の付け忘れでも 0 を返す**
+     （下の「付け忘れは『未実装』と同じに見える」）。**読み込めているかを決めるのは終了コードではなく、1 行目の結果と下の `import` の 1 行である。**
+   - **走らせる Python は、実装の依存を読み込めるものにする。** 試料の実装は標準ライブラリだけだった。実装がほかのパッケージに依存するなら、
+     素の `python3` ではその依存が読み込めず、Red テストはエラーになる——実装の環境の Python（`backend/.venv/bin/python` など）で走らせる
+     （**この形は確かめていない**）。`--red-check` は `scaffold.py` を走らせた Python で Red テストを走らせる。
 3. **workspace の形なら**、`uv sync --all-packages` の後は `PYTHONPATH` を付けずに直下の `.venv` で読み込める
-   （`uv run python -m unittest discover -s scaffold/tests`）。**確かめたのは `import` までで、この形で `--red-check` を走らせることは確かめていない。**
+   （`uv run python -m unittest discover -s scaffold/tests`）。**確かめたのは `import` までで、この形で Red テストと `--red-check` を走らせることは確かめていない。**
+4. **Issue の本文の「回し方」は、読み込み方を持たない。** scaffold が作る本文は `python3 -m unittest discover -s scaffold/tests -p <ファイル>` を
+   「正本リポジトリの根で」と書き、実装の場所はモジュール名（`app.spec_impl`）だけを書く。dev-loop はこの本文を受入基準として写すので、
+   **直下の `CLAUDE.md`（か `.claude/dev-loop.md`）に「Red テストは `PYTHONPATH=backend` を付けて走らせる」「`impl_module` のモジュールは `backend/` の下に置く」と書く**
+   （下の「CLAUDE.md の分担」）。書かなければ、dev-loop の周は付け忘れたまま「未実装」の失敗を数えるか、モジュールを根に作って緑にしうる。
 
 **付け忘れは「未実装」と同じに見える。** `PYTHONPATH` を付けずに走らせると、Red テストは
 **「未実装: app.spec_impl.<関数> が無い」で失敗する**——読み込めないことと、実装が無いことが同じ出力になる。
-**v1 の `--red-check` は「全部が失敗」を期待どおりとして 0 を返す**ので、付け忘れが黙って通る（どちらも試料で確かめた）。
+**回帰のケースが無い版（v1。全部の機能を足したか変えた版——`impl_module` を変えた版もこれにあたる）の `--red-check` は、
+「全部が失敗」を期待どおりとして 0 を返す**ので、付け忘れが黙って通る（v1 は試料で確かめた。回帰のケースのある版で全部が「未実装」なら、
+`--red-check` は「回帰のケースを判定していない」で 2 を返す——`scaffold.py` の `red_check`）。
 実装のモジュールを置いたら、読み込めることを先に 1 行で確かめる:
 
 ```bash
@@ -134,8 +150,9 @@ PYTHONPATH=backend python3 -c "import app.spec_impl"
 
 ## spec-loop（scaffold）
 
-- 実装のモジュール名（`impl_module`）: `app.spec_impl`（`backend/` から見た名前）
+- 実装のモジュール名（`impl_module`）: `app.spec_impl`（`backend/` から見た名前。モジュールは `backend/app/spec_impl.py` に置く——根に作らない）
 - Red テストの走らせ方: 根で `PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests`
+  （Issue の本文の「回し方」のコマンドにも `PYTHONPATH=backend` を付けて走らせる。先に `PYTHONPATH=backend python3 -c "import app.spec_impl"` で読み込めることを確かめる）
 - 正本と開発のリポジトリ: 同じリポジトリ
 - Issue を登録するリポジトリ・ラベル: <owner>/<repo>・<ラベル>
 - commit・push の決まり: <決まり>

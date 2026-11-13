@@ -8,7 +8,8 @@
 - `plugins/spec-loop/references/tree.md` — 冒頭・「生成物の置き場所」・「scaffold の出力」・「ドキュメントのツール」から `monorepo.md` を指す（列挙は持たない）
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 「はじめに」の表と「データの決まり」から `monorepo.md` を指す。版の 2 行
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行だけ
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — spec-loop の版（0.84.0 → 0.85.0）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — spec-loop の版（0.84.0 → 0.85.0）
+- `.claude-plugin/marketplace.json` — 同上
 - `docs/plugins/spec-loop.md` — 公開ページから `monorepo.md` を指す 1 項
 - `docs/plans/issue-994.md` — この計画
 
@@ -74,6 +75,8 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 
 - 周の在り処: ブランチ `issue/994-spec-loop-monorepo`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-994`・起点 `90a9c503`・base `origin/main` → `90a9c503c6a9fd1ef1e77036909434a4f5696350`
 - 関門: 1 パス目（Verifier・/code-review）に渡した。1 パス目の指摘対応の起点 `d570055d7d21f637aa8afcada1f01e2d40ba93cd`
+  - 1 パス目の結果: Verifier（sonnet・dev-loop:dev-loop-verifier）反証 2 件、/code-review（high）指摘 10 件（うち 2 件は Verifier と同じ）。採否は下の表——直す 8・残課題 2。手順 4 への差し戻し 1 回（指摘対応）
+  - 2 パス目: 残っている——手順 5 の当て直し（Verifier）と /code-review 2 パス目の両方
 - 割り目 1（手順 4 の後）: 訊かずに続けた——利用者が「続けて」と指示（2026-11-13）
 - 交絡: 上の「実験」（陽性対照: `WRONG_IMPL` で失敗すること）
 
@@ -82,3 +85,15 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- |
 | `build/` を `build/spec-loop/` に移すべき | — | — | 採らない（利用者が「移さず理由を書く」を選んだ。理由は `monorepo.md`） |
+| V1-1: scaffold の `SKILL.md` の「はじめに」の表の途中に段落を挟み、後ろの 2 行（Issue の登録先・commit の決まり）が表から外れた | 示せる（`sed -n 47,63p`。表の行が段落の後ろに残る） | A1 | 直す |
+| V1-2: `monorepo.md` の「`--red-check` も緑になることを確かめた。誤った実装で失敗する」は、v1 の `--red-check` が正しい実装・付け忘れ・誤った実装のどれでも 0 を返すので、`--red-check` について判別していない | 示せる（Verifier が 3 通りを走らせて全部 0） | A4 | 直す |
+| R1-1: V1-1 と同じ（表が切れる）。加えて新しい行の「無いとき」と段落の「利用者に確かめる」が食い違う | 示せる（同上） | A1 | 直す（段落を表の後ろへ。行の「無いとき」に確かめる条件を入れた） |
+| R1-2: V1-2 と同じ | 示せる | A4 | 直す |
+| R1-3: Issue の本文の「回し方」は `PYTHONPATH` を持たず、実装の場所はモジュール名だけ。dev-loop はそれを写すので、`monorepo.md` が dev-loop の経路を覆っていない | 示せる（`scaffold.py:2286` の本文の行） | A3 | 直す（`monorepo.md` に 4 番目の項と、`CLAUDE.md` の雛形に行を足した。`scaffold.py` の本文は変えない） |
+| R1-4: workspace で `--all-packages` の後に素の `uv sync` を走らせると member が消える | 示せる（著者も再実行。`Uninstalled 1 package - backend`→`ModuleNotFoundError`） | A3 | 直す |
+| R1-5: 「`PYTHONPATH` はどちらの形でも使える」は依存の無い試料でしか確かめていない | 示せる（試料の実装は標準ライブラリだけ。`--red-check` は `sys.executable`） | A4 | 直す（主張を確かめた範囲に弱め、依存のある形は確かめていないと書いた） |
+| R1-6: 「v1 の `--red-check` が 0」は狭い。回帰のケースが無い版（全部を足した・変えた版、`impl_module` を変えた版）も 0 | 示せる（`scaffold.py` の `red_check`: 2 で止まるのは回帰のケースがあり全部が「未実装」のときだけ） | A3 | 直す（`monorepo.md`・scaffold の `SKILL.md`・公開ページ） |
+| R1-7: `render-diagrams.py` は `docs/` 全体を歩くので、`docs/dev/` の図もその検査に入る | 示せる（`render-diagrams.py:137`） | 無し（A7 はサインオフと重ね合わせ） | 残課題 |
+| R1-8: `release-v<n>` を読むのは `check-frozen.py` だけでなく `scaffold.py`（前の版の凍結）もで、影響の書き方が狭い | 示せる（`scaffold.py:32`） | 無し（A6 の「衝突を避ける形を書く」は満たす） | 残課題 |
+| R1-9: 「正本の `CLAUDE.md` が先に立つ」の出典に挙げた `tree.md` の「プロジェクトに任せること」は、置き場所について言っていない | 示せる（`tree.md` の同節はドキュメントの道具・サイト・スライドだけ） | A8 | 直す（出典を外し、推奨であると書いた） |
+| R1-10: 生成物の一覧が `tree.md` の表と合わず、`build/merged-v<n-1>/` が抜けている | 示せる（`build/merged-v<n-1>` は references・SKILL に 6 箇所） | A2 | 直す（一覧に足し、出典を直し、「直下の `build/` の下に実装の出力を置かない」にした） |
