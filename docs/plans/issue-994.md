@@ -73,7 +73,8 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/994-spec-loop-monorepo`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-994`・起点 `90a9c503`・base `origin/main` → `90a9c503c6a9fd1ef1e77036909434a4f5696350`
-- 関門: まだ
+- 関門: 1 パス目（Verifier・/code-review）に渡した。1 パス目の指摘対応の起点 `d570055d7d21f637aa8afcada1f01e2d40ba93cd`
+- 割り目 1（手順 4 の後）: 訊かずに続けた——利用者が「続けて」と指示（2026-11-13）
 - 交絡: 上の「実験」（陽性対照: `WRONG_IMPL` で失敗すること）
 
 ## 既知の限界・決着済みの論点
