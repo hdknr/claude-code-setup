@@ -160,11 +160,19 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run(script, d, base)
     got += [("消した yarn.lock で 1", rc == 1 and "yarn.lock" in out)]
 
-    for rel in ("requirements/base.txt", "dev-requirements.txt", "constraints.txt"):
+    for rel in ("requirements/base.txt", "dev-requirements.txt", "constraints.txt", "svc/requirements/base.in",
+                "requirements-dev.in", "docs/requirements.txt"):
         d, base = fresh()
         put(d, rel, commit=True)
         rc, _ = run(script, d, base)
         got += [(f"{rel} で 1", rc == 1)]
+    # 負の試料（#996 の NF1）——依存でない文書を拾わない
+    for rel in ("docs/product-requirements.txt", "docs/requirements/overview.txt", "requirements/README.md",
+                "docs/constraints-list.txt", "spec/requirements/functional.in"):
+        d, base = fresh()
+        put(d, rel, commit=True)
+        rc, _ = run(script, d, base)
+        got += [(f"文書 {rel} は依存のファイルに数えない（0）", rc == 0)]
 
     d, base = fresh()
     put(d, "サービス/package.json", "{}\n", commit=True)
@@ -230,7 +238,12 @@ MUTATIONS = {
     "3 点で取る（未コミットを見ない）": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
                                        '    rc1, diff = git("diff", "--name-only", "--no-renames", f"{base}...HEAD")\n'),
     "非 ASCII のパスを引用符で包ませる": ('["git", "-c", "core.quotePath=false", *args]', '["git", *args]'),
-    "requirements/ の下を見ない": ('    if len(parts) >= 2 and parts[-2] == "requirements"', '    if False and parts[-2] == "requirements"'),
+    "requirements/ の下を見ない": ('    if (len(parts) >= 2 and parts[-2] == "requirements"', '    if (False and parts[-2] == "requirements"'),
+    "requirements/ を入れ子で見ない": ('parts[-2] == "requirements" and name', 'parts[0] == "requirements" and name'),
+    "requirements/ の下の .in を見ない": ('REQUIREMENTS_DIR_SUFFIXES = (".txt", ".in")', 'REQUIREMENTS_DIR_SUFFIXES = (".txt",)'),
+    "requirements/ の下の何でも数える": ("and name.endswith(REQUIREMENTS_DIR_SUFFIXES)", "and True"),
+    "文書のディレクトリの下の requirements/ も数える": ("            and not any(d.lower() in DOC_DIRS for d in parts[:-2])):", "            ):"),
+    "名前に requirements を含む何でも数える": ('               "requirements*.txt", "requirements*.in",', '               "*requirements*.txt", "*requirements*.in",'),
     "下の階層を見ない": ("    name = parts[-1]\n", "    name = path\n"),
     "消したファイルを見ない": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
                               '    rc1, diff = git("diff", "--name-only", "--no-renames", "--diff-filter=d", base)\n'),

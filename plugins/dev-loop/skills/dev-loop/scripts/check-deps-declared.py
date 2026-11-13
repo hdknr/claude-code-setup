@@ -44,7 +44,7 @@ lockfile の更新にしか見えない。**周が依存を足したことを計
 
 - **宣言の真偽**——`あり` と書けば通る。足した包が安全かは Verifier の表が見る（`references/dependencies.md`）
 - **`触る:` のパターンの名前**——判定は差分だけ。依存のファイルを `触る:` に書いても、差分に現れるまでは何も言わない
-- **`DEPENDENCY_FILES` に無い名前**——ここに無い生態系の依存のファイル・独自の名前の requirements（`deps/base.in` など。`requirements/` の下の `.txt`・`.in` と、名前に `requirements` を含む `.txt`・`.in` は見る）は見えない
+- **`DEPENDENCY_FILES` に無い名前**——ここに無い生態系の依存のファイル・独自の名前の requirements（`deps/base.in`・一覧に無い用途の `<用途>-requirements.txt` など）は見えない。**文書を拾わないために絞っている**——見るのは `requirements*.txt`・`requirements*.in`・`constraints.txt`・決まった用途の `<用途>-requirements.txt` と、文書のディレクトリ（`docs`・`spec` など）の下でない `requirements/` の中の `.txt`・`.in`
 - **差分の中身**——lockfile のどの包が増えたかは読まない（増えた包は Verifier が差分から数える）
 
 標準ライブラリのみ。
@@ -66,7 +66,10 @@ DEPENDENCY_FILES = {
     "npm": ("package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml",
             "pnpm-workspace.yaml", "yarn.lock", "bun.lock", "bun.lockb"),
     "python": ("pyproject.toml", "uv.lock", "poetry.lock", "Pipfile", "Pipfile.lock",
-               "*requirements*.txt", "*requirements*.in", "constraints*.txt", "setup.py", "setup.cfg"),
+               "requirements*.txt", "requirements*.in", "constraints.txt", "constraints.in", "setup.py", "setup.cfg",
+               # `<用途>-requirements.txt` は決まった用途の名前だけ——`product-requirements.txt` のような文書を拾わない（#996 の NF1）
+               *(f"{use}-requirements.{ext}" for use in ("dev", "test", "tests", "ci", "build", "docs", "lint", "base",
+                                                         "local", "prod", "production", "optional") for ext in ("txt", "in"))),
     "go": ("go.mod", "go.sum"),
     "rust": ("Cargo.toml", "Cargo.lock"),
     "ruby": ("Gemfile", "Gemfile.lock", "*.gemspec"),
@@ -79,8 +82,10 @@ FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 PLAN_TEMPLATES = ("docs/plans/issue-{}.md", ".claude/plans/issue-{}.md")
 
 
-# `requirements/base.txt` の形（ディレクトリの名前が requirements で、中の .txt・.in）も Python の依存のファイルに数える
+# `requirements/base.txt` の形（ディレクトリの名前が requirements で、中の .txt・.in）も Python の依存のファイルに数える。
+# **ただし文書のディレクトリの下の `requirements/` は数えない**——`docs/requirements/overview.txt` は要求の文書である（#996 の NF1）
 REQUIREMENTS_DIR_SUFFIXES = (".txt", ".in")
+DOC_DIRS = ("docs", "doc", "documentation", "spec", "specs")
 
 
 def ecosystem_of(path: str) -> str | None:
@@ -90,7 +95,8 @@ def ecosystem_of(path: str) -> str | None:
     for eco, pats in DEPENDENCY_FILES.items():
         if any(fnmatch.fnmatchcase(name, pat) for pat in pats):
             return eco
-    if len(parts) >= 2 and parts[-2] == "requirements" and name.endswith(REQUIREMENTS_DIR_SUFFIXES):
+    if (len(parts) >= 2 and parts[-2] == "requirements" and name.endswith(REQUIREMENTS_DIR_SUFFIXES)
+            and not any(d.lower() in DOC_DIRS for d in parts[:-2])):
         return "python"
     return None
 
