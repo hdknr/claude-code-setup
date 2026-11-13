@@ -187,6 +187,7 @@ def contract(script: Path, base: Path) -> list[tuple[str, bool]]:
                       ("全角コロン", "外部レビュー：coderabbitai[bot]\n"),
                       ("空の値", "外部レビュー:   \n"),
                       ("login でない語", "外部レビュー: code rabbit!\n"),
+                      ("見出し", "## 外部レビュー: coderabbitai[bot]\n"),
                       ("2 本", "外部レビュー: a\n外部レビュー: b\n")):
         i = len(got)
         g = fake(base / f"g4-{i}")
@@ -223,6 +224,10 @@ def contract(script: Path, base: Path) -> list[tuple[str, bool]]:
     (g / "issue.json").write_text("[]", encoding="utf-8")
     rc, text, _ = run(script, project(base / f"p9-{i}", "外部レビュー: coderabbitai\n"), g, "42")
     got += [("何も無い → 0 で未着と言う", rc == 0 and "coderabbitai: まだ何も無い（先端へのレビューは未着）" in text)]
+
+    # 8') 大文字の `[BOT]` で宣言しても当たる
+    rc, text, _ = run(script, project(base / "p12", "外部レビュー: CodeRabbitAI[BOT]\n"), fake(base / "g12"), "42")
+    got += [("大文字の [BOT] の宣言が当たる", rc == 0 and "CodeRabbitAI[BOT]: レビュー 2・行のコメント 1・会話のコメント 1" in text)]
 
     # 8) `[bot]` を付けずに宣言しても、`[bot]` 付きの書き手に当たる
     rc, text, _ = run(script, project(base / "p10", "外部レビュー: coderabbitai\n"), fake(base / "g10"), "42")
@@ -263,6 +268,8 @@ MUTATIONS = {
     "login でない語を通す": ("    bad = [t for t in tokens if not LOGIN.match(t)]\n", "    bad = []\n"),
     "gh の失敗を見ない": ("    if done.returncode != 0:\n", "    if False:\n"),
     "配列でない JSON を通す": ('            raise ValueError(f"配列でない JSON（{type(value).__name__}）")\n', "            pass\n"),
+    "見出しの宣言を崩れと見ない": ("|#{1,6}|", "|"),
+    "[BOT] を login と認めない": (', re.IGNORECASE)', ')'),
     "pr view の形を見ない": ('    head = view.get("headRefOid") if isinstance(view, dict) else None\n', '    head = view.get("headRefOid")\n'),
     # 守る: --out の先頭に注意を置く
     "注意を置かない": ("    body = [NOTICE, ", "    body = ["),
