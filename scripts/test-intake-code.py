@@ -17,13 +17,14 @@
 - `snapshot` は出力先が正本の中（`build/` の下でない・`build/` が `.gitignore` に外されていない）か空でなければ 2 で止まり、何も写さない
 - `snapshot` は `--remote` の `-` で始まる名前を断り、設定の refspec があっても正本の参照を作らない
 - `snapshot` は持ち込んだ側の `.gitattributes` を効かせずに木を写し、シンボリックリンクは写さずに名前を出す
+- `snapshot` は木の `.git`・根の出所の印と同じ名前・大文字小文字だけ違う名前を写さずに名前を出し、ディレクトリのシンボリックリンクをたどって正本に書かない
 - `rows` の行は `確認中`・`未回答`・`—` で、回答・状態・反映先の鍵を書いた JSON は 1 で何も書かない
 - `rows` の行の質問には「コードではこうなっていた」と該当箇所（パス:行）が付き、在らないファイル・範囲の外の行・途中のシンボリックリンクでスナップショットの外へ出るパスは 1
 - `rows` の起票元は `要求確定（取り込み・<種類>。<出所>）`
 - `rows` の番号は `Q-R-` の、全部の版を通した最大の次（ほかの印は数えない）で、作業中の版の表に書く
 - `rows` が書いた表は本物の `check-qa-csv.py` を通る。`--dry-run` は書かない
 - スキルが書いた食い違いは、正本のファイルに在る引用だけを通す（無い引用・無いファイルは 1）
-- 基盤要件のホスティング環境・DBMS・言語は、決定と違う種類の目印があれば食い違い（3）、同じ種類だけなら 0 件（0）。言語は決定の言語のファイル以上の数があるほかの言語を出す。読み飛ばすディレクトリ（`node_modules`）は照らさない
+- 基盤要件のホスティング環境・DBMS・言語は、決定と違う種類の目印があれば食い違い（3）、同じ種類だけなら 0 件（0）。言語は決定の言語のファイルより多いほかの言語を出す（同じ数なら出さない）。読み飛ばすディレクトリ（`node_modules`）は照らさない
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる。
@@ -101,6 +102,12 @@ class Env:
             raise RuntimeError(f"git {args}: {proc.stderr}")
         return proc.stdout
 
+    def git_in(self, cwd: Path, text: str, *args: str) -> str:
+        proc = subprocess.run(["git", "-C", str(cwd), *args], input=text, capture_output=True, text=True, env=self.env)
+        if proc.returncode != 0:
+            raise RuntimeError(f"git {args}: {proc.stderr}")
+        return proc.stdout.strip()
+
     def run(self, *args: str) -> tuple[int, str]:
         proc = subprocess.run([sys.executable, "-I", str(self.scripts / TARGET), *args], capture_output=True, text=True,
                               env=self.env, cwd=self.work)
@@ -135,6 +142,14 @@ def build_fixtures(e: Env) -> dict[str, Path]:
     e.git(proto, "add", "-A")
     e.git(proto, "commit", "-qm", "attributes")
     e.git(proto, "push", "-q", str(origin), "HEAD:refs/pull/8/head")
+    # 手で組んだ木（git の checkout は拒むが ls-tree には出る）: .git/config・大文字小文字だけ違う名前・根の出所の印と同じ名前のディレクトリ
+    blob = lambda text: e.git_in(proto, text, "hash-object", "-w", "--stdin")
+    git_dir = e.git_in(proto, f"100644 blob {blob('[core]\n\tfsmonitor = touch PWNED\n')}\tconfig\n", "mktree")
+    meta_dir = e.git_in(proto, f"100644 blob {blob('x\n')}\tk\n", "mktree")
+    app = e.git_in(proto, f"100644 blob {blob('A = 1\n')}\tConfig.py\n100644 blob {blob('B = 2\n')}\tconfig.py\n", "mktree")
+    top = e.git_in(proto, f"040000 tree {git_dir}\t.git\n040000 tree {meta_dir}\t.intake-source.json\n040000 tree {app}\tapp\n", "mktree")
+    crafted = e.git_in(proto, "", "commit-tree", top, "-m", "crafted")
+    e.git(proto, "push", "-q", str(origin), f"{crafted}:refs/heads/crafted")
     canon = e.work / "canon"
     write(canon / ".gitignore", "build/\n")
     write(canon / "docs" / "v1" / "shared" / "qa.csv", QA_V1)
@@ -275,7 +290,59 @@ def case_snapshot_attributes(e, fx):
         return "export-ignore のファイルが写っていない"
     if (out / "evil").exists() or (out / "evil").is_symlink():
         return "シンボリックリンクを写した"
-    return None if "写していない（シンボリックリンク・サブモジュール）: evil" in text else text
+    return None if "写していない（" in text and "evil" in text.split("写していない（", 1)[1] else text
+
+
+def case_snapshot_crafted_tree(e, fx):
+    out = e.fresh("snap")
+    code, text = e.run("snapshot", str(fx["canon"]), "branch:origin/crafted", str(out))
+    if code != 0:
+        return f"exit={code}: {text}"
+    if (out / ".git").exists():
+        return "木の .git を写した"
+    meta = json.loads((out / ".intake-source.json").read_text(encoding="utf-8"))
+    if meta.get("kind") != "branch":
+        return f"出所の印が {meta}"
+    written = sorted(p.name for p in (out / "app").iterdir())
+    if len(written) != 1:
+        return f"大文字小文字だけ違う名前を両方書いた: {written}"
+    for name in (".git/config", ".intake-source.json/k", "app/config.py"):
+        if name not in text:
+            return f"写していないものに {name} が無い: {text}"
+    return None
+
+
+def case_snapshot_dir_symlink(e, fx):
+    """取り込む元のディレクトリの出所の印の名前のシンボリックリンクが正本のファイルを指していても、正本に書かない。"""
+    canon = canon_copy(e, fx)
+    target = canon / "docs" / "v1" / "shared" / "qa.csv"
+    src = e.fresh("src")
+    write(src / "app" / "main.py", MAIN_PY)
+    os.symlink(target, src / ".intake-source.json")
+    os.symlink("/etc", src / "evil")
+    before = state(e, canon), target.read_text(encoding="utf-8")
+    out = e.fresh("snap")
+    code, text = e.run("snapshot", str(canon), f"dir:{src}", str(out))
+    if code != 0:
+        return f"exit={code}: {text}"
+    if (state(e, canon), target.read_text(encoding="utf-8")) != before:
+        return "正本のファイルを書き換えた"
+    if (out / "evil").is_symlink() or (out / ".intake-source.json").is_symlink():
+        return "シンボリックリンクを写した"
+    return None if "evil" in text and ".intake-source.json" in text.split("写していない", 1)[-1] else text
+
+
+def case_rows_language_equal(e, fx):
+    """Python の試作に静的な JS が 1 本——同じ数なら言語の食い違いにしない。"""
+    src = e.fresh("src")
+    write(src / "app" / "main.py", MAIN_PY)
+    write(src / "static" / "main.js", "console.log(1)\n")
+    snap = e.fresh("snap")
+    code, text = e.run("snapshot", str(fx["canon"]), f"dir:{src}", str(snap))
+    if code != 0:
+        return f"snapshot exit={code}: {text}"
+    code, out, *_ = rows_case(e, fx, variant(findings=[]), infra={"lang": "Python 3.12", "db": "PostgreSQL 16", "host": "AWS"}, snap=snap)
+    return None if code == 0 and "食い違い: 0 件" in out else f"exit={code}: {out}"
 
 
 def case_snapshot_into_docs(e, fx):
@@ -378,11 +445,12 @@ def case_rows_symlink_dir(e, fx):
     outside = e.fresh("outside")
     write(outside / "s.txt", "a\nb\nc\n")
     write(src / "app" / "main.py", MAIN_PY)
-    os.symlink(outside, src / "linkdir")
     snap = e.fresh("snap")
     code, text = e.run("snapshot", str(fx["canon"]), f"dir:{src}", str(snap))
     if code != 0:
         return f"snapshot exit={code}: {text}"
+    # snapshot はシンボリックリンクを写さないので、写した後に手で置く（写した先を後から書き換えられた形）
+    os.symlink(outside, snap / "linkdir")
     code, out, before, after, *_ = rows_case(e, fx, variant(c_code=[{"path": "linkdir/s.txt", "line": 2}], findings=[]), snap=snap)
     return None if code == 1 and before == after and "スナップショットの外を指す" in out else f"exit={code}: {out}"
 
@@ -450,7 +518,7 @@ def case_rows_not_snapshot(e, fx):
 CASES = {f.__name__[5:]: f for f in [
     case_snapshot_pr, case_snapshot_branch, case_snapshot_dir, case_snapshot_build, case_snapshot_into_docs, case_snapshot_nonempty,
     case_snapshot_not_ignored, case_snapshot_remote_option, case_snapshot_refmap, case_snapshot_attributes, case_rows_symlink_dir,
-    case_rows_language_majority,
+    case_rows_language_majority, case_snapshot_crafted_tree, case_snapshot_dir_symlink, case_rows_language_equal,
     case_snapshot_bad_source, case_rows_good, case_rows_control, case_rows_db, case_rows_language, case_rows_unreadable_value,
     case_rows_answer, case_rows_bad_code, case_rows_bad_finding, case_rows_bad_option, case_rows_duplicate, case_rows_dry,
     case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
@@ -467,8 +535,16 @@ MUTATIONS = [
      "            import tarfile; tarfile.open(fileobj=io.BytesIO(git(root, \"archive\", \"--format=tar\", meta[\"commit\"], binary=True).stdout)).extractall(out, filter=\"tar\")",
      "snapshot_attributes"),
     ("途中のシンボリックリンクを見ない", "        if not inside(path.resolve(), snap.resolve()):", "        if False:", "rows_symlink_dir"),
-    ("言語は決定の言語が 1 本も無いときだけ", "if ext != mine[0] and found and len(found) >= own:", "if ext != mine[0] and found and own == 0:", "rows_language_majority"),
-    ("ディレクトリの .git も写す", 'ignore=shutil.ignore_patterns(".git")', "ignore=None", "snapshot_dir"),
+    ("言語は決定の言語が 1 本も無いときだけ", "if ext != mine[0] and found and len(found) > own:", "if ext != mine[0] and found and own == 0:", "rows_language_majority"),
+    ("同じ数の言語も食い違いにする", "if ext != mine[0] and found and len(found) > own:", "if ext != mine[0] and found and len(found) >= own:", "rows_language_equal"),
+    ("木の .git も写す", '    return ".git" in folded or (bool(folded) and folded[0] == SOURCE_FILE.casefold())',
+     '    return bool(folded) and folded[0] == SOURCE_FILE.casefold()', "snapshot_crafted_tree"),
+    ("根の出所の印の名前も写す", '    return ".git" in folded or (bool(folded) and folded[0] == SOURCE_FILE.casefold())',
+     '    return ".git" in folded', "snapshot_crafted_tree"),
+    ("大文字小文字だけ違う名前も写す", "        if key in seen_files or key in seen_dirs or prefixes & seen_files:", "        if False:", "snapshot_crafted_tree"),
+    ("ディレクトリのシンボリックリンクも写す", "            if (Path(directory) / name).is_symlink() or unsafe_name(rel.parts):",
+     "            if unsafe_name(rel.parts):", "snapshot_dir_symlink"),
+    ("ディレクトリの .git も写す", " or unsafe_name(rel.parts):", ":", "snapshot_dir"),
     ("正本の中にも写す", "        if not inside(out, root / BUILD):\n            raise Stop(", "        if False:\n            raise Stop(", "snapshot_into_docs"),
     ("build/ の下も断る", "        if not inside(out, root / BUILD):\n            raise Stop(", "        if True:\n            raise Stop(", "snapshot_build"),
     ("空でなくても写す", "if out.exists() and (not out.is_dir() or any(out.iterdir())):", "if False:", "snapshot_nonempty"),

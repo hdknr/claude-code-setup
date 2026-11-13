@@ -23,7 +23,8 @@ usage:
 
 - `snapshot` は正本のリポジトリで `git fetch`・`git rev-parse`・`git ls-tree`・`git cat-file`・`git check-ignore` だけを走らせる——`merge`・`checkout`・`switch`・`commit`・`push` を走らせない。
   `pr:` の `fetch` は `--refmap=` で参照を作らずに取る（git が `FETCH_HEAD` を書く）。正本のブランチ・HEAD・作業ツリー・index は変わらない。`--remote` の名前が `-` で始まれば 2
-- `snapshot` はコミットの木を `ls-tree`・`cat-file` で写す——取り込む元の `.gitattributes`（`export-ignore` など）を効かせない。シンボリックリンクとサブモジュールは写さず、名前を出す。失敗したら半端な写しを残さない
+- `snapshot` はコミットの木を `ls-tree`・`cat-file` で写す——取り込む元の `.gitattributes`（`export-ignore` など）を効かせない。
+  木でもディレクトリでも、シンボリックリンク・サブモジュール・どの段の `.git`・根の `.intake-source.json`・大文字小文字だけ違う名前（とファイルとディレクトリの衝突）は写さず、名前を出す。失敗したら半端な写しを残さない
 - `snapshot` の出力先が正本の中で `build/` の下でない・`build/` の下でも正本の `.gitignore` に外されていない・空でなければ、2 で止まって何も写さない
 - `rows` の行は必ず `回答 = 未回答`・`反映先 = —`・`状態 = 確認中`——候補の JSON に回答・状態・反映先の鍵があれば違反（1）で、何も書かない
 - 候補の各行に、スナップショットの中の実在するファイル（途中のシンボリックリンクでスナップショットの外へ出ない）と範囲の中の行（`code`）と、コードの振る舞い（`code_behavior`）が要る。質問の文の後ろに
@@ -32,7 +33,7 @@ usage:
 - 起票元は `要求確定（取り込み・<種類>。<出所>）`（`references/intake.md` の「起票の形」）
 - スキルが書いた食い違いは、`canon` が重ね合わせた全体のファイルで、`canon_quote` がその中に在るときだけ出す（無ければ違反）
 - 基盤要件の `ホスティング環境`・`DBMS` の行で `決定` の値から種類を読めれば、コードの目印が別の種類を示すたびに食い違いを 1 件出す。
-  `言語` は拡張子で数え、決定の言語のファイルの数以上あるほかの言語ごとに 1 件出す（決定の言語が多数なら、設定や補助の数本のほかの言語は出さない）
+  `言語` は拡張子で数え、決定の言語のファイルより多いほかの言語ごとに 1 件出す（同じ数以下のほかの言語——設定や補助の数本——は出さない）
 
 終了コード:
 
@@ -198,7 +199,9 @@ def snapshot(root: Path, source: str, out: Path, remote: str) -> list[str]:
         if meta["commit"]:
             skipped = extract_tree(root, meta["commit"], out)
         else:
-            shutil.copytree(src, out, symlinks=True, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git"))
+            skipped = copy_dir(src, out)
+        if (out / SOURCE_FILE).exists() or (out / SOURCE_FILE).is_symlink():
+            raise Stop(f"{out / SOURCE_FILE}: 出所の印の場所に、写したものが在る")
         (out / SOURCE_FILE).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except BaseException:
         # 半端な写しを残さない（次の実行が「空でない」で止まる）
@@ -211,8 +214,33 @@ def snapshot(root: Path, source: str, out: Path, remote: str) -> list[str]:
     files = sum(1 for _ in source_files(out))
     report = [f"写した: {meta['label']} → {out}（ファイル {files} 件）"]
     if skipped:
-        report.append(f"写していない（シンボリックリンク・サブモジュール）: {'、'.join(skipped)}")
+        report.append(f"写していない（シンボリックリンク・サブモジュール・`.git`・出所の印の名前・大文字小文字だけ違う名前）: {'、'.join(skipped)}")
     return report + ["正本のブランチ・作業ツリーには何も書いていない（マージしない・正本にしない）"]
+
+
+def unsafe_name(parts: tuple[str, ...]) -> bool:
+    """写さない名前——どの段でも `.git`（写した先が git のリポジトリになり、中で git を走らせると持ち込んだ側の設定が動く）と、
+    根の出所の印 `.intake-source.json`（印とぶつかる）。大文字小文字は問わない。"""
+    folded = [part.casefold() for part in parts]
+    return ".git" in folded or (bool(folded) and folded[0] == SOURCE_FILE.casefold())
+
+
+def copy_dir(src: Path, out: Path) -> list[str]:
+    """ディレクトリを写す。シンボリックリンク・`.git`・根の出所の印は写さず、名前を返す。"""
+    skipped: list[str] = []
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        base = Path(directory).relative_to(src)
+        drop = set()
+        for name in names:
+            rel = base / name
+            if (Path(directory) / name).is_symlink() or unsafe_name(rel.parts):
+                drop.add(name)
+                skipped.append(rel.as_posix())
+        return drop
+
+    shutil.copytree(src, out, symlinks=True, dirs_exist_ok=True, ignore=ignore)
+    return skipped
 
 
 def extract_tree(root: Path, commit: str, out: Path) -> list[str]:
@@ -223,6 +251,8 @@ def extract_tree(root: Path, commit: str, out: Path) -> list[str]:
     listing = git(root, "ls-tree", "-r", "-z", "--full-tree", commit, binary=True).stdout
     blobs: list[tuple[str, str]] = []
     skipped: list[str] = []
+    seen_files: set[str] = set()
+    seen_dirs: set[str] = set()
     for entry in listing.split(b"\0"):
         if not entry:
             continue
@@ -230,9 +260,18 @@ def extract_tree(root: Path, commit: str, out: Path) -> list[str]:
         mode, kind, sha = head.decode().split()
         rel = raw.decode("utf-8", "surrogateescape")
         parts = Path(rel).parts
-        if kind != "blob" or mode == "120000" or rel.startswith("/") or ".." in parts:
+        if kind != "blob" or mode == "120000" or rel.startswith("/") or ".." in parts or unsafe_name(parts):
             skipped.append(rel)
             continue
+        # 大文字小文字を区別しないファイルシステムで同じ場所になるもの・ファイルとディレクトリがぶつかるものは、後のほうを写さない
+        folded = [part.casefold() for part in parts]
+        key = "/".join(folded)
+        prefixes = {"/".join(folded[:i]) for i in range(1, len(folded))}
+        if key in seen_files or key in seen_dirs or prefixes & seen_files:
+            skipped.append(rel)
+            continue
+        seen_files.add(key)
+        seen_dirs.update(prefixes)
         blobs.append((sha, rel))
     if not blobs:
         return skipped
@@ -447,8 +486,8 @@ def infra_findings(snap: Path, canon: dict[str, bytes]) -> tuple[list[str], list
             own = sum(1 for rel in files if rel.suffix in mine[0])
             for name, _, ext in LANGUAGES:
                 found = [rel for rel in files if rel.suffix in ext]
-                # 決定の言語のファイルより多い（か同じ数の）ほかの言語を食い違いにする——設定や補助の数本は数えない
-                if ext != mine[0] and found and len(found) >= own:
+                # 決定の言語のファイルより多いほかの言語を食い違いにする——同じ数以下（補助の数本・小さな試作の静的な JS）は数えない
+                if ext != mine[0] and found and len(found) > own:
                     findings.append(f"基盤要件の{LANGUAGE_ITEM}: 正本は「{value}」（{INFRA_PATH}）、持ち込まれたコードは {name} で書かれている"
                                     f"（{found[0]} ほか {len(found)} 件）")
     return findings, notes
