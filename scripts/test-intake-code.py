@@ -23,7 +23,7 @@
 - `rows` の起票元は `要求確定（取り込み・<種類>。<出所>）`
 - `rows` の番号は `Q-R-` の、全部の版を通した最大の次（ほかの印は数えない）で、作業中の版の表に書く
 - `rows` が書いた表は本物の `check-qa-csv.py` を通る。`--dry-run` は書かない
-- `rows` は同じ候補の JSON で当て直しても（`code_behavior` を直して前の版の行と比べても、`code_behavior` が添え書きの頭を含んでも）同じ質問を重ねて足さず、1 で何も書かない
+- `rows` は同じ候補の JSON で当て直しても（`code_behavior` を直して前の版の行と比べても、`code_behavior` が添え書きの頭を含んでも、それを直して当て直しても）同じ質問を重ねて足さず、1 で何も書かない
 - `rows` は既にある表の BOM と改行（CRLF・LF）を保ち、既にある行のバイトを変えずに足す（末尾に改行の無い表も同じ改行で足す。足す行が無ければ書かない）
 - スキルが書いた食い違いは、正本のファイルに在る引用だけを通す（無い引用・無いファイルは 1）
 - 基盤要件のホスティング環境・DBMS・言語は、決定と違う種類の目印があれば食い違い（3）、同じ種類だけなら 0 件（0）。言語は決定の言語のファイルより多いほかの言語を出す（同じ数なら出さない）。読み飛ばすディレクトリ（`node_modules`）は照らさない
@@ -532,6 +532,20 @@ def case_rows_empty_keeps_bytes(e, fx):
     return None
 
 
+def case_rows_rerun_note_then_edited(e, fx):
+    """1 回目の `code_behavior` が添え書きの頭を含み、2 回目に `code_behavior` を直して当て直す——1 で、表を変えない（#1005 の /code-review CR2-1）。"""
+    first = variant(findings=[], c_code_behavior="「（コードではこうなっていた: X）」と画面に出していた")
+    code, out, _, after, added, target = rows_case(e, fx, first)
+    if code != 3 or len(added) != 1:
+        return f"1 回目: exit={code}・足した={len(added)}: {out}"
+    path = e.fresh("c").with_suffix(".json")
+    path.write_text(json.dumps(variant(findings=[]), ensure_ascii=False), encoding="utf-8")
+    code2, out2 = e.run("rows", str(target.parents[3]), str(path), str(snap_of(e, fx)))
+    if code2 != 1 or "同じ質問が既にある" not in out2 or target.read_text(encoding="utf-8") != after:
+        return f"2 回目: exit={code2}（期待 1）: {out2}"
+    return None
+
+
 def case_rows_rerun_edited(e, fx):
     """前の版に取り込んだ行（添え書きつき）があり、`code_behavior` と該当箇所を直した同じ質問を v2 で当て直す——1 で、何も書かない（#1005）。"""
     old = "Q-R-005,要求確定（取り込み・業務ルール。PR #7（abc1234））,ゴールド会員の割引は、いくら以上の注文から付けますか？（コードではこうなっていた: 古い説明。app/main.py:4）," \
@@ -578,6 +592,14 @@ def case_rows_bom_crlf(e, fx):
     return None
 
 
+def case_rows_duplicate_in_json(e, fx):
+    """同じ JSON の中の 2 候補が同じ質問——1 で何も書かない。"""
+    data = variant(findings=[])
+    data["candidates"].append(dict(data["candidates"][0], code_behavior="別の説明"))
+    code, out, before, after, *_ = rows_case(e, fx, data)
+    return None if code == 1 and before == after and "candidates[1]: 同じ質問が既にある" in out else f"exit={code}: {out}"
+
+
 def case_rows_dry(e, fx):
     code, out, before, after, *_ = rows_case(e, fx, GOOD, dry=True)
     return None if code == 3 and before == after and "書いていない（--dry-run）" in out and "Q-R-005" in out else f"exit={code}: {out}"
@@ -611,8 +633,8 @@ CASES = {f.__name__[5:]: f for f in [
     case_snapshot_not_ignored, case_snapshot_remote_option, case_snapshot_refmap, case_snapshot_attributes, case_rows_symlink_dir,
     case_rows_language_majority, case_snapshot_crafted_tree, case_snapshot_dir_symlink, case_rows_language_equal,
     case_snapshot_bad_source, case_rows_good, case_rows_control, case_rows_db, case_rows_language, case_rows_unreadable_value,
-    case_rows_answer, case_rows_bad_code, case_rows_bad_finding, case_rows_bad_option, case_rows_duplicate, case_rows_dry,
-    case_rows_rerun, case_rows_rerun_edited, case_rows_rerun_note_in_behavior, case_rows_bom_crlf, case_rows_empty_keeps_bytes, case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
+    case_rows_answer, case_rows_bad_code, case_rows_bad_finding, case_rows_bad_option, case_rows_duplicate, case_rows_duplicate_in_json, case_rows_dry,
+    case_rows_rerun, case_rows_rerun_edited, case_rows_rerun_note_in_behavior, case_rows_rerun_note_then_edited, case_rows_bom_crlf, case_rows_empty_keeps_bytes, case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
 ]}
 
 # (名前, 壊す箇所, 置き換え, 落ちるはずの試料)
@@ -652,20 +674,20 @@ MUTATIONS = [
     ("引用を確かめない", "    elif quote and squash(quote) not in squash(canon[path].decode(\"utf-8\", \"replace\")):", "    elif False:", "rows_bad_finding"),
     ("正本に無いファイルを見ない", "    if not isinstance(path, str) or path not in canon:", "    if False:", "rows_bad_finding"),
     ("選択肢の区切りを見ない", ' or qa.OPTION_SEPARATOR in option:', ":", "rows_bad_option"),
-    ("重複を見ない", "                if squash(c[\"question\"]) in asked or squash(row[\"質問\"]) in asked_whole:", "                if False:", "rows_duplicate"),
+    ("重複を見ない", "                if already_asked(c[\"question\"], asked):", "                if False:", "rows_duplicate"),
     ("決定と同じ種類も食い違いにする", "            if name == mine[0]:\n                continue\n", "", "rows_control"),
     ("決定の値を読まずに AWS とする", "mine = [name for name, word, _ in families if word.search(value)]", "mine = [families[0][0]]", "rows_good"),
     ("node_modules も照らす", 'if d not in SKIP_DIRS and not d.startswith(".")', 'if not d.startswith(".")', "rows_control"),
     ("言語を照らさない", "            own = sum(1 for rel in files if rel.suffix in mine[0])", "            own = 10 ** 9", "rows_language"),
     ("食い違いがあっても 0", "    return (3 if findings else 0), report", "    return 0, report", "rows_db"),
     ("DBMS の目印を持たない", '         re.compile(r"\\bpsycopg2?\\b|\\basyncpg\\b|', '         re.compile(r"\\bnever-matches\\b|', "rows_db"),
-    ("添え書きを外さずに照らす", '            asked = {squash(bare(q)) for q in existing_questions}', '            asked = {squash(q) for q in existing_questions}', "rows_rerun_edited"),
-    ("添え書きを外す文を前の版の行で見ない", "    return question[:at] if at > 0 and", "    return question if at > 0 and", "rows_rerun_edited"),
+    ("添え書きを外さずに照らす", '    return any(q == whole or (q.startswith(head) and q.endswith("）")) for q in existing)', '    return any(q == whole for q in existing)', "rows_rerun_edited"),
+    ("添え書きの頭で前方一致しない（rfind で切る前の形）", "    return any(q == whole or (q.startswith(head) and q.endswith(\"）\")) for q in existing)", "    return any((q[:q.rfind(\"（コードではこうなっていた: \")] if q.rfind(\"（コードではこうなっていた: \") > 0 else q) == whole for q in existing)", "rows_rerun_note_then_edited"),
     ("BOM を落として読む", '        existing = target.read_bytes().decode("utf-8")', '        existing = target.read_bytes().decode("utf-8-sig")', "rows_bom_crlf"),
     ("改行を揃えて読む", '        existing = target.read_bytes().decode("utf-8")', '        existing = target.read_text(encoding="utf-8")', "rows_bom_crlf"),
     ("足した行を LF で書く", '    eol = "\\r\\n" if existing.split("\\n", 1)[0].endswith("\\r") else "\\n"', '    eol = "\\n"', "rows_bom_crlf"),
     ("末尾に改行の無い表に LF を足す", '    text = existing if existing.endswith("\\n") else existing + eol', '    text = existing if existing.endswith("\\n") else existing + "\\n"', "rows_bom_crlf"),
-    ("足す行の質問をそのままの文と照らさない", ' or squash(row["質問"]) in asked_whole:', ":", "rows_rerun_note_in_behavior"),
+    ("足した行を同じ JSON の後の候補と照らさない", "                asked.append(squash(row[\"質問\"]))", "                pass", "rows_duplicate_in_json"),
     ("足す行が無くても書く", "    elif not new_rows:\n", "    elif False:\n", "rows_empty_keeps_bytes"),
     ("出所の印が無くても読む", '        raise Stop(f"{snap}: スナップショットでない（{SOURCE_FILE} が読めない——snapshot で作る）") from None', '        label = "?"', "rows_not_snapshot"),
 ]

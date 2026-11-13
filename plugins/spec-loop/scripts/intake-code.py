@@ -29,9 +29,8 @@ usage:
 - `rows` の行は必ず `回答 = 未回答`・`反映先 = —`・`状態 = 確認中`——候補の JSON に回答・状態・反映先の鍵があれば違反（1）で、何も書かない
 - 候補の各行に、スナップショットの中の実在するファイル（途中のシンボリックリンクでスナップショットの外へ出ない）と範囲の中の行（`code`）と、コードの振る舞い（`code_behavior`）が要る。質問の文の後ろに
   `（コードではこうなっていた: <振る舞い>。<パス>:<行>）` を足す
-- 同じ質問の行は足さない——候補の質問を、既にある行（全部の版）の質問から取り込みの添え書き `（コードではこうなっていた: …）` を外した文と照らし、
-  足す行の質問（添え書きつき）も既にある行の質問のそのままの文と照らし、どちらかが一致すれば違反（1）で何も書かない
-  （同じ候補の JSON で当て直しても、`code_behavior`・該当箇所を直して当て直しても重ねて足さない）
+- 同じ質問の行は足さない——既にある行（全部の版を重ねた全体）の質問が、候補の質問と同じか、候補の質問に取り込みの添え書き `（コードではこうなっていた: …）` を
+  足した形（候補の質問＋添え書きの頭で始まり「）」で終わる）なら違反（1）で何も書かない（同じ候補の JSON で当て直しても、`code_behavior`・該当箇所を直して当て直しても重ねて足さない）
 - 既にある作業中の版の表の BOM と改行（CRLF か LF。最初の行で決める）を保って書く——既にある行のバイトは変えず、足した行も同じ改行で書く。表が無ければ BOM なし・LF で作る。
   足す行が無ければ書かない
 - 番号は `Q-R-` の、全部の版の `shared/qa.csv` を通した最大の次から振る（印の無い前の形の番号と、ほかの印の番号は数えない）
@@ -427,10 +426,11 @@ def squash(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def bare(question: str) -> str:
-    """取り込んだ行の質問から、build_row が足した末尾の添え書き `（コードではこうなっていた: …）` を外した文。添え書きが無ければそのまま。"""
-    at = question.rfind(CODE_NOTE)
-    return question[:at] if at > 0 and question.rstrip().endswith("）") else question
+def already_asked(question: str, existing: list[str]) -> bool:
+    """既にある行の質問（squash 済み）のどれかが、候補の質問と同じか、候補の質問に build_row の添え書き `（コードではこうなっていた: …）` を
+    足した形（候補の質問＋添え書きの頭で始まり「）」で終わる）なら真。添え書きを既にある行の側で切り出さないので、`code_behavior` の中身に依らない。"""
+    whole, head = squash(question), squash(question + CODE_NOTE)
+    return any(q == whole or (q.startswith(head) and q.endswith("）")) for q in existing)
 
 
 def check_finding(f, where: str, snap: Path, canon: dict[str, bytes], problems: list[str]) -> str | None:
@@ -559,20 +559,16 @@ def rows(root: Path, candidates_path: Path, snap: Path, dry_run: bool) -> tuple[
         if not isinstance(data["candidates"], list) or not isinstance(data["findings"], list):
             errors.append("候補の JSON: `candidates` と `findings` は並び（無ければ []）")
         else:
-            # 既にある行の質問は、取り込みの添え書きを外した文で照らす——同じ候補で当て直したときに重ねて足さない。
-            # 足す行の質問（添え書きつき）は、既にある行の質問のそのままの文とも照らす——添え書きの頭を `code_behavior` が含んでも当て直しを見つける
-            existing_questions = [r["質問"] for r in csv.DictReader(io.StringIO(canon.get(QA_PATH, b"").decode("utf-8-sig"), newline=""))]
-            asked = {squash(bare(q)) for q in existing_questions}
-            asked_whole = {squash(q) for q in existing_questions}
+            # 候補の質問を、既にある行の質問そのものか、それに取り込みの添え書きを足した形と照らす——同じ候補で当て直したときに重ねて足さない
+            asked = [squash(r["質問"]) for r in csv.DictReader(io.StringIO(canon.get(QA_PATH, b"").decode("utf-8-sig"), newline=""))]
             for i, c in enumerate(data["candidates"]):
                 row = build_row(c, f"candidates[{i}]", snap, label, errors)
                 if row is None:
                     continue
-                if squash(c["question"]) in asked or squash(row["質問"]) in asked_whole:
+                if already_asked(c["question"], asked):
                     errors.append(f"candidates[{i}]: 同じ質問が既にある: {c['question']!r}")
                     continue
-                asked.add(squash(c["question"]))
-                asked_whole.add(squash(row["質問"]))
+                asked.append(squash(row["質問"]))
                 new_rows.append(row)
             for i, f in enumerate(data["findings"]):
                 line = check_finding(f, f"findings[{i}]", snap, canon, errors)
