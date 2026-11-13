@@ -21,6 +21,8 @@
 | `references/spec-exit.md` | 仕様レビューを抜ける条件・未決定の印・仕様チェックリスト・形式検査の対象 |
 | `scripts/check-qa-csv.py` | Q&A 表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/qa-to-pptx.py` | Q&A 表からレビュー会用の PPTX を作る（標準ライブラリのみ） |
+| `references/intake.md` | 持ち込まれた動くコード（PR・ブランチ・ディレクトリ）から要求の候補を起こす取り込みの段（req-loop の手順 3a）の決まり |
+| `scripts/intake-code.py` | 取り込みの段の機械で決まる部分——持ち込まれたコードを読むだけで写し（`snapshot`）、候補の JSON を検査して Q&A 表の回答待ちの行にし、基盤要件との食い違いを照らす（`rows`）（標準ライブラリと `git`） |
 | `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
