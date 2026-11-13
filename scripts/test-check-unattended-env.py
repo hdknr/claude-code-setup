@@ -1240,7 +1240,115 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
 
     noninteractive_scenarios(mod, bad)
     since_last_scenarios(mod, script, bad)
+    dependency_path_scenarios(mod, bad)
     return bad
+
+
+def dependency_path_scenarios(mod, bad):
+    """依存の取得経路（#996）: 設定が無ければ要対処・読めなければ判定できない・見つかっても人が見る。「良い」は出さない。"""
+    seen = []
+
+    def dep(env, **files):
+        for rel, body in files.items():
+            f = env.project / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            (f.write_bytes if isinstance(body, bytes) else f.write_text)(body)
+
+    def items_of(env):
+        code, items, out = run(mod, env)
+        got = [(st, n, d) for st, n, d, *_ in items if n.startswith(mod.DEPENDENCY_PATH)]
+        seen.extend(got)
+        return code, got
+
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        code, got = items_of(env)
+        check("依存: 依存の定義が無ければ項目を出さず、終了コードは変えない", got == [] and code == 0, bad)
+        locked = env.project / "locked"
+        locked.mkdir()
+        locked.chmod(0)
+        try:
+            code, got = items_of(env)
+        finally:
+            locked.chmod(0o755)
+        check("依存: 依存の定義が無ければ、走査に失敗しても出さない", got == [] and code == 0, bad)
+        dep(env, **{"node_modules/x/package.json": "{}", ".hidden/package.json": "{}"})
+        code, got = items_of(env)
+        check("依存: node_modules と . で始まるディレクトリには入らない", got == [] and code == 0, bad)
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        dep(env, **{"package.json": "{}"})
+        code, got = items_of(env)
+        check("依存: npm の定義があり設定が無ければ要対処", [g[0] for g in got] == [mod.ACTION] and code == 1
+              and "npm 系" in got[0][1], bad)
+        dep(env, **{".npmrc": "registry=https://registry.npmjs.org/\n"})
+        code, got = items_of(env)
+        check("依存: 既定のレジストリはプロキシに数えない", [g[0] for g in got] == [mod.ACTION], bad)
+        dep(env, **{".npmrc": "registry=https://proxy.example.invalid/npm/\n"})
+        code, got = items_of(env)
+        check("依存: プロキシの registry があれば人が見る（良いにしない）",
+              [g[0] for g in got] == [mod.HUMAN] and "registry" in got[0][2] and code == 0, bad)
+        dep(env, **{".npmrc": "ignore-scripts=true\n", "bunfig.toml": "[install]\nregistry = \"https://registry.npmjs.org/\"\n"})
+        code, got = items_of(env)
+        check("依存: ignore-scripts=true も設定に数える", [g[0] for g in got] == [mod.HUMAN], bad)
+        dep(env, **{".npmrc": b"\xff\xfe registry=x"})
+        code, got = items_of(env)
+        check("依存: 設定を読めなければ判定できない", [g[0] for g in got] == [mod.UNKNOWN] and code == 2, bad)
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        dep(env, **{"package.json": "{}", "bunfig.toml": "[install]\nregistry = \"https://registry.npmjs.org/\"\n"})
+        code, got = items_of(env)
+        check("依存: bunfig.toml の既定のレジストリはプロキシに数えない", [g[0] for g in got] == [mod.ACTION], bad)
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        dep(env, **{"web/package.json": "{}", "web/.npmrc": "before=2026-01-01\n"})
+        code, got = items_of(env)
+        check("依存: 下の階層の定義は、その場所の設定で人が見る", [g[0] for g in got] == [mod.HUMAN], bad)
+        dep(env, **{"api/package.json": "{}"})
+        code, got = items_of(env)
+        check("依存: 設定の無い場所が 1 つでもあれば要対処で、その場所を名指す",
+              [g[0] for g in got] == [mod.ACTION] and "api" in got[0][2] and "web" not in got[0][2], bad)
+        dep(env, **{".npmrc": "registry=https://proxy.example.invalid/\n"})
+        code, got = items_of(env)
+        check("依存: 根の設定は下の階層にも数える", [g[0] for g in got] == [mod.HUMAN], bad)
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        dep(env, **{"pyproject.toml": "[project]\nname = 'x'\n"})
+        code, got = items_of(env)
+        check("依存: Python の定義があり設定が無ければ要対処", [g[0] for g in got] == [mod.ACTION] and "Python" in got[0][1], bad)
+        dep(env, **{"uv.toml": "index-url = \"https://pypi.org/simple\"\n[[index]]\nurl = \"https://download.pytorch.org/whl/cpu\"\n"})
+        code, got = items_of(env)
+        check("依存: 既定の PyPI と追加の index は設定に数えない", [g[0] for g in got] == [mod.ACTION], bad)
+        (env.project / "uv.toml").unlink()
+        dep(env, **{"requirements/base.txt": "x\n"})
+        code, got = items_of(env)
+        check("依存: requirements/ の下も依存の定義に数える", [g[0] for g in got] == [mod.ACTION] and "requirements" in got[0][2], bad)
+        (env.project / "requirements" / "base.txt").unlink()
+        dep(env, **{"pip.conf": "[global]\nindex-url = https://proxy.example.invalid/simple\n"})
+        code, got = items_of(env)
+        check("依存: プロジェクトの pip.conf は設定に数えない（pip が読まない）", [g[0] for g in got] == [mod.ACTION], bad)
+        (env.project / "pip.conf").unlink()
+        dep(env, **{"pyproject.toml": "[project]\nname = 'x'\n[tool.uv]\nexclude-newer = \"2026-01-01T00:00:00Z\"\n"})
+        code, got = items_of(env)
+        check("依存: exclude-newer があれば人が見る", [g[0] for g in got] == [mod.HUMAN] and "exclude-newer" in got[0][2], bad)
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        dep(env, **{"go.mod": "module x\n"})
+        code, got = items_of(env)
+        check("依存: 設定を読まない生態系は人が見る", [g[0] for g in got] == [mod.HUMAN] and "go" in got[0][2] and code == 0, bad)
+        locked = env.project / "locked"
+        locked.mkdir()
+        locked.chmod(0)
+        try:
+            code, got = items_of(env)
+        finally:
+            locked.chmod(0o755)
+        check("依存: 依存の定義があって走査に失敗したら判定できない", mod.UNKNOWN in [g[0] for g in got] and code == 2, bad)
+        _, items = run_cruise(mod, env, present=True)[:2]
+        check("依存: --present では出さない", not [n for _s, n, *_ in items if n.startswith(mod.DEPENDENCY_PATH)], bad)
+    check("依存: どの場合も「良い」を出さない", seen and all(st != mod.GOOD for st, *_ in seen), bad)
+    check("依存: 依存のファイルの一覧を写さない（check-deps-declared.py を読む）",
+          "package-lock.json" not in SCRIPT.read_text(encoding="utf-8"), bad)
 
 
 def notification_layer_scenarios(mod, bad):
@@ -2113,6 +2221,29 @@ MUTATIONS = {
     "到達: note を切らない": (
         '    return text if len(text) <= width else text[:width] + "…"',
         "    return text"),
+    # 依存の取得経路（#996）
+    "依存: 見つけた設定を良いにする": (
+        '            items.append((HUMAN, name, "見つけた設定: "', '            items.append((GOOD, name, "見つけた設定: "'),
+    "依存: 設定が無くても人が見る": ("            items.append((ACTION, name,\n", "            items.append((HUMAN, name,\n"),
+    "依存: 読めない設定を無視する": ("        if errors:\n            items.append((UNKNOWN, name,", "        if False:\n            items.append((UNKNOWN, name,"),
+    "依存: 走査の失敗を無視する": ("    if walk_errors and found:\n", "    if False:\n"),
+    "依存: 依存の定義が無くても走査の失敗を出す": ("    if walk_errors and found:\n", "    if walk_errors:\n"),
+    "依存: 既定の PyPI をプロキシと読む": (
+        r"""    ("python", "uv.toml", r"^\s*index-url\s*=\s*(?![\"']?https?://pypi\.org/simple/?[\"']?\s*$)\S", "レジストリのプロキシ（uv.toml の index-url）"),""",
+        r"""    ("python", "uv.toml", r"^\s*index-url\s*=\s*\S", "レジストリのプロキシ（uv.toml の index-url）"),"""),
+    "依存: --present でも出す": ("    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",
+                                "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n"
+                                "    items += check_dependency_path(project) if present else []\n"),
+    "依存: 既定のレジストリをプロキシと読む": (
+        r"""    ("npm", ".npmrc", r"^\s*registry\s*=\s*(?![\"']?https?://registry\.npmjs\.org/?[\"']?\s*$)\S", "レジストリのプロキシ（registry）"),""",
+        r"""    ("npm", ".npmrc", r"^\s*registry\s*=\s*\S", "レジストリのプロキシ（registry）"),"""),
+    "依存: bunfig.toml の既定のレジストリをプロキシと読む": (
+        r"""    ("npm", "bunfig.toml", r"^\s*registry\s*=\s*(?![\"']?https?://registry\.npmjs\.org/?[\"']?\s*$)\S", "レジストリのプロキシ（bunfig.toml）"),""",
+        r"""    ("npm", "bunfig.toml", r"^\s*registry\s*=\s*\S", "レジストリのプロキシ（bunfig.toml）"),"""),
+    "依存: node_modules に入る": ('DEPS_SKIP_DIRS = ("node_modules", "vendor", "venv", "__pycache__")', "DEPS_SKIP_DIRS = ()"),
+    "依存: 設定の無い下の階層を見逃す": ("            if not hits and not root_hits:\n", "            if False:\n"),
+    "依存: 下の階層の設定を見ない": ("            hits, errs = ([], []) if d == project else guards_in(d, eco)\n",
+                                    "            hits, errs = ([], [])\n"),
     "文字列の true を受ける": (
         "    if value is True:",
         "    if value:"),
@@ -2225,6 +2356,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         # 本体は同じ場所の ledger.py を読む（台帳の読み方を 2 箇所に置かない）——変異の隣にも置く
         (Path(tmp) / "ledger.py").write_bytes((SCRIPT.parent / "ledger.py").read_bytes())
+        # 依存の取得経路（#996）も同じ場所の check-deps-declared.py を読む
+        (Path(tmp) / "check-deps-declared.py").write_bytes((SCRIPT.parent / "check-deps-declared.py").read_bytes())
         order, mutants = [], []  # order: (変異の名前, mutants の番号。置換元が 1 つでなければ None)——結果は宣言順に出す
         for i, (name, (old, new)) in enumerate(MUTATIONS.items()):
             if src.count(old) != 1:
