@@ -554,7 +554,7 @@ PR #539（作れなかったときに古い出力の名前を出す）をマー�
 4. **進むときの入れ方——インストールスクリプトを止め、版を固定する形で**（道具が持つ形で。例: `npm install --ignore-scripts --save-exact <名前>@<版>`・`pnpm add --ignore-scripts --save-exact <名前>@<版>`・Yarn Berry は `enableScripts: false` で `yarn add --exact <名前>@<版>`、
    Python は `uv add --no-build <名前>==<版>`・`pip install --only-binary :all: <名前>==<版>`——`^<版>` の範囲で保存すると、後の lockfile の作り直しで表を通していない版が入る）。**入れた後に lockfile に新しく現れた推移的な包**は、手順 5 の Verifier の包ごとの表で見る（`references/dependencies.md`）。
    **止める形が無い道具・止めると入らない包なら止まる**（上の 3 のとおり）。
-   **入れた後も、その周の中ではインストールスクリプトを止めたままにする**——検証・テスト・重い検査で入れ直すとき（`npm ci`・`npm install`・`pnpm install`・`yarn install`・`uv sync`・`pip install`）も同じ止める形で走らせ、`npm rebuild` のようにスクリプトを走らせる操作をしない。**暗黙に入れる操作も同じ**——`uv run` は既定で sync して sdist を build するので `--no-sync`（か `--frozen`）を付け、`npx`・`pnpm dlx`・`yarn dlx` は手元に無い包を取って走らせるので使わない。
+   **入れた後も、その周の中ではインストールスクリプトを止めたままにする**——検証・テスト・重い検査で入れ直すとき（`npm ci`・`npm install`・`pnpm install`・`yarn install`・`uv sync`・`pip install`）も同じ止める形で走らせ、`npm rebuild` のようにスクリプトを走らせる操作をしない。**暗黙に入れる操作も同じ**——`uv run` は既定で sync して sdist を build するので `--no-sync` を付け（`--frozen` は lockfile を書き換えないだけで、sync は止めない）、`npx`・`pnpm dlx`・`yarn dlx` は手元に無い包を取って走らせるので使わない。
    **走らせないと検証できない**（ネイティブのビルドが要る・検証のコマンドが止める形を受けない）**なら、止まる**——推移的な包のスクリプトは、Verifier の表で見る前に利用者の機械で走ってしまう。
 5. **確認の Issue を立てる**——**直接足した・変えた包ごとに 1 件**（上の「1 件に 1 つの判断」——一部だけ戻す選び方を残すため）（選べることは「足したままにする【推奨】／戻す（revert）」）。題・ラベル・本文は上の「確認の Issue の書き方」を正とし、
    本文の `## 背景` に表を写す。**閉じない**（閉じるのは利用者）。cruise の周なら、報告に番号を書き、親が台帳の `decisions` に足す。
