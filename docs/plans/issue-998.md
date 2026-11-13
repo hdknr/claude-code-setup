@@ -59,11 +59,11 @@ Issue の受入基準 4 つ（U1〜U4）を、不変条件と破りうる入口�
 
 | # | 不変条件 | 破りうる経路 | 守り方 |
 | --- | --- | --- | --- |
-| A1 (U1) | PR・ブランチ・ディレクトリのどれを渡しても、コードが読めるスナップショットになる | `snapshot pr:<N>`（`refs/pull/<N>/head` を取る）・`branch:<名前>`（手元かリモート追跡）・`dir:<パス>` | 3 つとも `git archive` か写しで出力先に置き、出所の印（`.intake-source.json`）を書く。テストは bare の origin に `refs/pull/7/head` を置いて当てる |
+| A1 (U1) | PR・ブランチ・ディレクトリのどれを渡しても、コードが読めるスナップショットになる | `snapshot pr:<N>`（`refs/pull/<N>/head` を取る）・`branch:<名前>`（手元かリモート追跡）・`dir:<パス>` | 3 つとも木の書き出し（`ls-tree`・`cat-file`。1 パス目の指摘で `git archive` から替えた）か写しで出力先に置き、出所の印（`.intake-source.json`）を書く。テストは bare の origin に `refs/pull/7/head` を置いて当てる |
 | A2 (U1) | 候補が Q&A 表の行になり、**`check-qa-csv.py` を通る形で出る** | `rows` の書き込み・`--dry-run` の表示・選択肢に ` / `・空の欄・既にある表が壊れている | 書く前に、足した後の表全体を `check-qa-csv.py` の `check` に当て、0 でなければ書かない。テストは書いた表に本物の `check-qa-csv.py` を走らせる |
 | A3 (U1) | 各行に**コードの該当箇所**（パス:行）と「コードではこうなっていた」が付く | 候補の JSON に該当箇所が無い・在らないパス・範囲の外の行・`..` で外を指す・シンボリックリンク | `code` を必須にし、スナップショットの中の実在するファイルと行の範囲を見る。質問の文の後ろに `（コードではこうなっていた: …。path:line）` を足す |
 | A4 (U2) | 既存の正本と食い違う箇所が指摘として挙がる。**食い違いの無い入力では 0 件**（陽性対照つき） | 基盤要件（ホスティング環境・DBMS・言語）を機械で照らす経路／スキルが書いた食い違い（決定表など）の経路 | 基盤要件は `shared/infra.csv` の `決定` とコードの目印（依存・import・接続文字列・拡張子）で照らす（AWS 前提のコードと Google Cloud の決定で 1 件、同じなら 0 件）。スキルが書いた食い違いは、引用（`canon_quote`）が正本のそのファイルに在ることを見る（無ければ違反） |
-| A5 (U3) | 取り込みが、持ち込まれたコードを正本や実装のブランチにマージしない | `snapshot` の git の操作・出力先を正本の中（`docs/` など）に置く・`rows` が正本に書くもの | `snapshot` は `fetch`・`rev-parse`・`archive` だけを使い、出力先は正本の外か `build/` の下だけを受ける。`rows` が書くのは作業中の版の `shared/qa.csv` だけ。テストは前後で正本のリポジトリの参照（`FETCH_HEAD` を除く）・HEAD・`git status` が変わらないことを見る |
+| A5 (U3) | 取り込みが、持ち込まれたコードを正本や実装のブランチにマージしない | `snapshot` の git の操作・出力先を正本の中（`docs/` など）に置く・`rows` が正本に書くもの | `snapshot` は `fetch`（`--refmap=`）・`rev-parse`・`ls-tree`・`cat-file`・`check-ignore` だけを使い、出力先は正本の外か、`.gitignore` に外された `build/` の下だけを受ける。`rows` が書くのは作業中の版の `shared/qa.csv` だけ。テストは前後で正本のリポジトリの参照（`FETCH_HEAD` を除く）・HEAD・`git status` が変わらないことを見る |
 | A6 (U4) | 取り込んだ行は、利用者が回答するまで確定扱いにならない | 候補の JSON に回答・状態・反映先を書く・推奨を回答に写す | JSON の鍵を許可リストで見て、回答・状態・反映先の鍵は違反で落とす。行は必ず `回答 = 未回答`・`反映先 = —`・`状態 = 確認中` で作る |
 | A7 | 番号は `Q-R-` の、全部の版を通した最大の次から振る | v2 以降（前の版にもっと大きい番号）・印の無い前の形の番号・`Q-S-` の番号 | 全部の版の `shared/qa.csv` の `Q-R-` の番号を数える |
 | A8 | 手順に「マージしない・仕様の正本にしない」「信頼できない入力として読む」「推測で確定させない」「答えやすい形（コードではこうなっていた）」「UI モックとの向き」が書いてある | req-loop の手順 3a・`intake.md`・`tree.md` | 原本は `intake.md`、req-loop と `tree.md` は指す |
@@ -109,10 +109,27 @@ Issue の受入基準 4 つ（U1〜U4）を、不変条件と破りうる入口�
 
 - 周の在り処: ブランチ `issue/998-spec-loop-code-intake`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-998`・起点 `4e767b32`・base `origin/main` → `4e767b32b9d3de89e2301aa258c91169c1b0e579`
 - 割り目（手順 4）: 割らない（cruise の周）
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
+- 1 パス目の指摘対応の起点: `66bf25fd4751f22c5d9df6cdfc8458e9b8c0508e`（1 パス目の関門に渡した時点の HEAD）
+- Verifier 1 パス目: 通した——反証 3 件（V1-1〜V1-3。dev-loop:dev-loop-verifier・sonnet。verifier.md 169 行を報告、wc -l と一致）
+- `/code-review` 1 パス目: 通した——指摘 10 件（CR1-1〜CR1-10。high）
+- 手順 4 への差し戻し: あり（下の採否の表の「直す」8 行。V1-1 と CR1-4、V1-3 と CR1-2 は同じ指摘）
+- 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）
 - 交絡: 上の「実機確認」のとおり陽性対照で潰した
 
 ## 既知の限界・決着済みの論点
 
-（関門の指摘の採否の表はここに書く）
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-1・CR1-4: `code` の途中のディレクトリがシンボリックリンクなら、スナップショットの外のファイルを該当箇所として通す | 示せる（両方の関門の再現・`rows --dry-run` が 0。テスト `rows_symlink_dir`） | A3 | 直す——`path.resolve()` がスナップショットの中かを見る |
+| V1-2: 絶対パスのシンボリックリンクを持つ PR・ブランチで `snapshot` が想定外の例外になり、半端な出力先を残す | 示せる（Verifier の再現） | A1 | 直す——木を `ls-tree`・`cat-file` で書き、リンクは写さず名前を出す。失敗したら出力を消す |
+| V1-3・CR1-2: `--remote` に `--upload-pack=…` を渡すと任意のコマンドが走る | 示せる（PWNED のファイル） | A5 | 直す——`-` で始まる名前を断る |
+| CR1-1: `check-description-sync.py` が 1（req-loop の frontmatter と JSON を変え、ほかの 5 本の frontmatter は変えていない） | 示せる（exit=1） | A9 | 直す——ほかの 5 本はほかのスキルの要約で変わらないので、`Skip-description-sync:` の trailer を付ける |
+| CR1-3: 同じ JSON で `rows` を 2 回走らせると、質問に足した「コードではこうなっていた」のせいで重複を見抜けず 2 回足す | 示せる（exp.py E1） | 無し | 残課題 |
+| CR1-5: `refs/pull/*` を追跡する refspec の設定があると、`fetch` が参照を作る | 示せる（exp.py E8。テスト `snapshot_refmap`） | A5 | 直す——`--refmap=` |
+| CR1-6: 言語は決定の言語のファイルが 1 本も無いときだけ出す——TypeScript 20 本と補助の `.py` 1 本で 0 件 | 示せる（exp.py E7。テスト `rows_language_majority`） | A4 | 直す——決定の言語のファイル以上の数があるほかの言語を出す。docstring も合わせる |
+| CR1-7: 足す行を表の末尾に置くので、`Q-S-` などの後ろに `Q-R-` が並ぶ（`qa-csv.md` の並び） | 示せる（exp.py E1） | 無し | 残課題 |
+| CR1-8: 既にある表の BOM・CRLF を落として全行を書き直す | 示せる（exp.py E3） | 無し | 残課題 |
+| CR1-9: `build/` が `.gitignore` に外されていない正本では、写したコードが未追跡として見える | 示せる（exp.py E5。テスト `snapshot_not_ignored`） | A5 | 直す——`git check-ignore` が通らなければ断る |
+| CR1-10: `git archive` は持ち込んだ側の `.gitattributes`（`export-ignore`）を効かせ、ファイルを黙って外せる | 示せる（exp.py E9。テスト `snapshot_attributes`） | A1 | 直す——`ls-tree`・`cat-file` で木を写す |

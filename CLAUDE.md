@@ -69,7 +69,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       他のスクリプトはそれを読む**——#353。**暫定の行の判別 `is_provisional`（`状態` だけで決め、`回答` の文言は見ない）も同じで、
       全段が読み、テストが静的に見る**（MkDocs のフックだけは単独で動くので写しを持ち、テストが本体と突き合わせる）——#404。テストは `scripts/test-check-qa-csv.py`）
     - `scripts/intake-code.py` - 持ち込まれた動くコード（PR・ブランチ・ディレクトリ）から要求の候補を起こす取り込みの段（req-loop の手順 3a。#998）の機械で決まる部分。
-      **`snapshot` は正本で `fetch`・`rev-parse`・`archive` だけを走らせて正本の外か `build/` の下へ写し（マージしない）、`rows` はスキルが書いた候補の JSON を検査して作業中の版の Q&A 表に `確認中`・`未回答` の行で足す**
+      **`snapshot` は正本で `fetch`・`rev-parse`・`ls-tree`・`cat-file`・`check-ignore` だけを走らせて正本の外か（`.gitignore` に外された）`build/` の下へ写し（マージしない）、`rows` はスキルが書いた候補の JSON を検査して作業中の版の Q&A 表に `確認中`・`未回答` の行で足す**
       （回答・状態・反映先の鍵は違反。足した表全体を `check-qa-csv.py` に当ててから書く）。基盤要件の 3 項目はコードの目印と機械で照らし、ほかの食い違いはスキルが引いた正本の文が在るかだけを見る。
       決まりの原本は `references/intake.md`、守る／守らないは docstring を正とする。テストは `scripts/test-intake-code.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。

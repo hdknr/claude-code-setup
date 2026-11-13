@@ -14,14 +14,16 @@
 
 - `snapshot` は PR（`refs/pull/<n>/head`）・ブランチ・ディレクトリのどれも写し、写した前後で正本の参照・HEAD・`git status` が変わらない（マージしない）
 - `snapshot` はディレクトリの `.git` を写さない
-- `snapshot` は出力先が正本の中（`build/` の下でない）か空でなければ 2 で止まり、何も写さない
+- `snapshot` は出力先が正本の中（`build/` の下でない・`build/` が `.gitignore` に外されていない）か空でなければ 2 で止まり、何も写さない
+- `snapshot` は `--remote` の `-` で始まる名前を断り、設定の refspec があっても正本の参照を作らない
+- `snapshot` は持ち込んだ側の `.gitattributes` を効かせずに木を写し、シンボリックリンクは写さずに名前を出す
 - `rows` の行は `確認中`・`未回答`・`—` で、回答・状態・反映先の鍵を書いた JSON は 1 で何も書かない
-- `rows` の行の質問には「コードではこうなっていた」と該当箇所（パス:行）が付き、在らないファイル・範囲の外の行は 1
+- `rows` の行の質問には「コードではこうなっていた」と該当箇所（パス:行）が付き、在らないファイル・範囲の外の行・途中のシンボリックリンクでスナップショットの外へ出るパスは 1
 - `rows` の起票元は `要求確定（取り込み・<種類>。<出所>）`
 - `rows` の番号は `Q-R-` の、全部の版を通した最大の次（ほかの印は数えない）で、作業中の版の表に書く
 - `rows` が書いた表は本物の `check-qa-csv.py` を通る。`--dry-run` は書かない
 - スキルが書いた食い違いは、正本のファイルに在る引用だけを通す（無い引用・無いファイルは 1）
-- 基盤要件のホスティング環境・DBMS・言語は、決定と違う種類の目印があれば食い違い（3）、同じ種類だけなら 0 件（0）。読み飛ばすディレクトリ（`node_modules`）は照らさない
+- 基盤要件のホスティング環境・DBMS・言語は、決定と違う種類の目印があれば食い違い（3）、同じ種類だけなら 0 件（0）。言語は決定の言語のファイル以上の数があるほかの言語を出す。読み飛ばすディレクトリ（`node_modules`）は照らさない
 
 **変異テストを含む。** 写した本体を 1 箇所ずつ壊し、**名指しした試料が期待どおりでなくなること**を確かめる。
 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる。
@@ -126,7 +128,15 @@ def build_fixtures(e: Env) -> dict[str, Path]:
     origin = e.work / "origin.git"
     e.git(e.work, "init", "-q", "--bare", str(origin))
     e.git(proto, "push", "-q", str(origin), "HEAD:refs/pull/7/head", "HEAD:refs/heads/feature/x")
+    # PR #8: 持ち込んだ側の .gitattributes が rules.py を archive から外し、絶対パスのシンボリックリンクを持つ
+    write(proto / "app" / "rules.py", "LIMIT = 5000\n")
+    write(proto / ".gitattributes", "app/rules.py export-ignore\n")
+    os.symlink("/etc", proto / "evil")
+    e.git(proto, "add", "-A")
+    e.git(proto, "commit", "-qm", "attributes")
+    e.git(proto, "push", "-q", str(origin), "HEAD:refs/pull/8/head")
     canon = e.work / "canon"
+    write(canon / ".gitignore", "build/\n")
     write(canon / "docs" / "v1" / "shared" / "qa.csv", QA_V1)
     write(canon / "docs" / "v1" / "shared" / "infra.csv", INFRA.format(lang="Python 3.12", db="PostgreSQL 16", host="Google Cloud（東京）"))
     write(canon / "docs" / "v1" / "shared" / "decision_table.csv", DECISION)
@@ -230,6 +240,44 @@ def case_snapshot_build(e, fx):
     return None if code == 0 and (out / "app" / "main.py").is_file() else f"exit={code}: {text}"
 
 
+def case_snapshot_not_ignored(e, fx):
+    canon = canon_copy(e, fx)
+    write(canon / ".gitignore", "site/\n")
+    out = canon / "build" / "intake" / "x"
+    code, text = e.run("snapshot", str(canon), "pr:7", str(out))
+    return None if code == 2 and not out.exists() and ".gitignore が build/ を外していない" in text else f"exit={code}: {text}"
+
+
+def case_snapshot_remote_option(e, fx):
+    mark = e.fresh("PWNED")
+    code, text = e.run("snapshot", str(fx["canon"]), "pr:7", str(e.fresh("snap")), "--remote", f"--upload-pack=touch {mark}")
+    return None if code == 2 and not mark.exists() and "`-` で始まる" in text else f"exit={code}・走った={mark.exists()}: {text}"
+
+
+def case_snapshot_refmap(e, fx):
+    """refs/pull/* を追跡する設定の正本でも、参照を作らない。"""
+    canon = canon_copy(e, fx)
+    e.git(canon, "config", "--add", "remote.origin.fetch", "+refs/pull/*/head:refs/remotes/origin/pr/*")
+    before = state(e, canon)
+    code, text = e.run("snapshot", str(canon), "pr:7", str(e.fresh("snap")))
+    if code != 0:
+        return f"exit={code}: {text}"
+    return None if state(e, canon) == before else "設定の refspec で参照が増えた"
+
+
+def case_snapshot_attributes(e, fx):
+    """持ち込んだ側の export-ignore を効かせず、シンボリックリンクは写さずに名前を出す。"""
+    out = e.fresh("snap")
+    code, text = e.run("snapshot", str(fx["canon"]), "pr:8", str(out))
+    if code != 0:
+        return f"exit={code}: {text}"
+    if not (out / "app" / "rules.py").is_file():
+        return "export-ignore のファイルが写っていない"
+    if (out / "evil").exists() or (out / "evil").is_symlink():
+        return "シンボリックリンクを写した"
+    return None if "写していない（シンボリックリンク・サブモジュール）: evil" in text else text
+
+
 def case_snapshot_into_docs(e, fx):
     canon = canon_copy(e, fx)
     out = canon / "docs" / "v1" / "intake"
@@ -325,6 +373,34 @@ def case_rows_bad_code(e, fx):
     return None if code == 1 and "1 つも無い" in out else f"code が空: exit={code}: {out}"
 
 
+def case_rows_symlink_dir(e, fx):
+    src = e.fresh("src")
+    outside = e.fresh("outside")
+    write(outside / "s.txt", "a\nb\nc\n")
+    write(src / "app" / "main.py", MAIN_PY)
+    os.symlink(outside, src / "linkdir")
+    snap = e.fresh("snap")
+    code, text = e.run("snapshot", str(fx["canon"]), f"dir:{src}", str(snap))
+    if code != 0:
+        return f"snapshot exit={code}: {text}"
+    code, out, before, after, *_ = rows_case(e, fx, variant(c_code=[{"path": "linkdir/s.txt", "line": 2}], findings=[]), snap=snap)
+    return None if code == 1 and before == after and "スナップショットの外を指す" in out else f"exit={code}: {out}"
+
+
+def case_rows_language_majority(e, fx):
+    """決定は Python・コードは TypeScript が多数で、補助の .py が 1 本だけ——言語の食い違いを出す。"""
+    src = e.fresh("src")
+    write(src / "app" / "main.py", MAIN_PY)
+    for i in range(3):
+        write(src / "web" / f"page{i}.ts", "export const x = 1;\n")
+    snap = e.fresh("snap")
+    code, text = e.run("snapshot", str(fx["canon"]), f"dir:{src}", str(snap))
+    if code != 0:
+        return f"snapshot exit={code}: {text}"
+    code, out, *_ = rows_case(e, fx, variant(findings=[]), infra={"lang": "Python 3.12", "db": "PostgreSQL 16", "host": "AWS"}, snap=snap)
+    return None if code == 3 and "持ち込まれたコードは TypeScript で書かれている" in out and "Python で書かれている" not in out else f"exit={code}: {out}"
+
+
 def case_rows_bad_finding(e, fx):
     code, out, before, after, *_ = rows_case(e, fx, variant(f_canon_quote="ゴールド,3000 円以上"))
     if code != 1 or before != after or "`canon_quote` が shared/decision_table.csv に無い" not in out:
@@ -373,6 +449,8 @@ def case_rows_not_snapshot(e, fx):
 
 CASES = {f.__name__[5:]: f for f in [
     case_snapshot_pr, case_snapshot_branch, case_snapshot_dir, case_snapshot_build, case_snapshot_into_docs, case_snapshot_nonempty,
+    case_snapshot_not_ignored, case_snapshot_remote_option, case_snapshot_refmap, case_snapshot_attributes, case_rows_symlink_dir,
+    case_rows_language_majority,
     case_snapshot_bad_source, case_rows_good, case_rows_control, case_rows_db, case_rows_language, case_rows_unreadable_value,
     case_rows_answer, case_rows_bad_code, case_rows_bad_finding, case_rows_bad_option, case_rows_duplicate, case_rows_dry,
     case_rows_v2, case_rows_broken_table, case_rows_not_snapshot,
@@ -381,9 +459,18 @@ CASES = {f.__name__[5:]: f for f in [
 # (名前, 壊す箇所, 置き換え, 落ちるはずの試料)
 MUTATIONS = [
     ("PR を正本のブランチにして取る", 'f"refs/pull/{ref}/head")', 'f"refs/pull/{ref}/head:refs/heads/pr-{ref}")', "snapshot_pr"),
+    ("設定の refspec で参照を更新させる", '"--refmap=", ', "", "snapshot_refmap"),
+    ("--remote の - を見ない", '    if remote.startswith("-"):', "    if False:", "snapshot_remote_option"),
+    ("build/ が外されているかを見ない", "        if ignored.returncode != 0:", "        if False:", "snapshot_not_ignored"),
+    ("シンボリックリンクも写す", 'if kind != "blob" or mode == "120000" or', 'if kind != "blob" or', "snapshot_attributes"),
+    ("git archive で写す", "            skipped = extract_tree(root, meta[\"commit\"], out)",
+     "            import tarfile; tarfile.open(fileobj=io.BytesIO(git(root, \"archive\", \"--format=tar\", meta[\"commit\"], binary=True).stdout)).extractall(out, filter=\"tar\")",
+     "snapshot_attributes"),
+    ("途中のシンボリックリンクを見ない", "        if not inside(path.resolve(), snap.resolve()):", "        if False:", "rows_symlink_dir"),
+    ("言語は決定の言語が 1 本も無いときだけ", "if ext != mine[0] and found and len(found) >= own:", "if ext != mine[0] and found and own == 0:", "rows_language_majority"),
     ("ディレクトリの .git も写す", 'ignore=shutil.ignore_patterns(".git")', "ignore=None", "snapshot_dir"),
-    ("正本の中にも写す", "if inside(out, root) and not inside(out, root / BUILD):", "if False:", "snapshot_into_docs"),
-    ("build/ の下も断る", "if inside(out, root) and not inside(out, root / BUILD):", "if inside(out, root):", "snapshot_build"),
+    ("正本の中にも写す", "        if not inside(out, root / BUILD):\n            raise Stop(", "        if False:\n            raise Stop(", "snapshot_into_docs"),
+    ("build/ の下も断る", "        if not inside(out, root / BUILD):\n            raise Stop(", "        if True:\n            raise Stop(", "snapshot_build"),
     ("空でなくても写す", "if out.exists() and (not out.is_dir() or any(out.iterdir())):", "if False:", "snapshot_nonempty"),
     ("行を反映済みにする", '"状態": PENDING', '"状態": "反映済み"', "rows_good"),
     ("推奨を回答に写す", '"回答": qa.NO_ANSWER', '"回答": recommend', "rows_good"),
@@ -402,7 +489,7 @@ MUTATIONS = [
     ("決定と同じ種類も食い違いにする", "            if name == mine[0]:\n                continue\n", "", "rows_control"),
     ("決定の値を読まずに AWS とする", "mine = [name for name, word, _ in families if word.search(value)]", "mine = [families[0][0]]", "rows_good"),
     ("node_modules も照らす", 'if d not in SKIP_DIRS and not d.startswith(".")', 'if not d.startswith(".")', "rows_control"),
-    ("言語を照らさない", "        elif not any(rel.suffix in mine[0] for rel in files):", "        elif False:", "rows_language"),
+    ("言語を照らさない", "            own = sum(1 for rel in files if rel.suffix in mine[0])", "            own = 10 ** 9", "rows_language"),
     ("食い違いがあっても 0", "    return (3 if findings else 0), report", "    return 0, report", "rows_db"),
     ("DBMS の目印を持たない", '         re.compile(r"\\bpsycopg2?\\b|\\basyncpg\\b|', '         re.compile(r"\\bnever-matches\\b|', "rows_db"),
     ("出所の印が無くても読む", '        raise Stop(f"{snap}: スナップショットでない（{SOURCE_FILE} が読めない——snapshot で作る）") from None', '        label = "?"', "rows_not_snapshot"),

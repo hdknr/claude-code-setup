@@ -12,7 +12,7 @@ usage:
 
 2 つの口がある:
 
-- **`snapshot`**——取り込む元を、**読むだけで**出力先に写す（`git archive` か、ディレクトリの写し）。出所の印 `.intake-source.json` を書く。
+- **`snapshot`**——取り込む元を、**読むだけで**出力先に写す（コミットの木を `git ls-tree`・`git cat-file` で書き出すか、ディレクトリの写し）。出所の印 `.intake-source.json` を書く。
   **出力先は正本の外か、正本の `build/` の下だけ**——`docs/`・`scaffold/` などの正本の中には置かない。
 - **`rows`**——スキル（LLM）が書いた候補の JSON を検査し、**作業中の版（`docs/` の版で番号が最大のもの）の `shared/qa.csv`** に、
   `確認中`・`未回答`・`—` の行として足す。足した後の表全体を `check-qa-csv.py` に当て、通らなければ書かない。
@@ -21,16 +21,18 @@ usage:
 
 **守ること**:
 
-- `snapshot` は正本のリポジトリで `git fetch`・`git rev-parse`・`git archive` だけを走らせる——`merge`・`checkout`・`switch`・`commit`・`push` を走らせない。
-  `pr:` の `fetch` は参照を作らずに取る（git が `FETCH_HEAD` を書く）。正本のブランチ・HEAD・作業ツリー・index は変わらない
-- `snapshot` の出力先が正本の中で `build/` の下でなければ、空でなければ、2 で止まって何も写さない
+- `snapshot` は正本のリポジトリで `git fetch`・`git rev-parse`・`git ls-tree`・`git cat-file`・`git check-ignore` だけを走らせる——`merge`・`checkout`・`switch`・`commit`・`push` を走らせない。
+  `pr:` の `fetch` は `--refmap=` で参照を作らずに取る（git が `FETCH_HEAD` を書く）。正本のブランチ・HEAD・作業ツリー・index は変わらない。`--remote` の名前が `-` で始まれば 2
+- `snapshot` はコミットの木を `ls-tree`・`cat-file` で写す——取り込む元の `.gitattributes`（`export-ignore` など）を効かせない。シンボリックリンクとサブモジュールは写さず、名前を出す。失敗したら半端な写しを残さない
+- `snapshot` の出力先が正本の中で `build/` の下でない・`build/` の下でも正本の `.gitignore` に外されていない・空でなければ、2 で止まって何も写さない
 - `rows` の行は必ず `回答 = 未回答`・`反映先 = —`・`状態 = 確認中`——候補の JSON に回答・状態・反映先の鍵があれば違反（1）で、何も書かない
-- 候補の各行に、スナップショットの中の実在するファイルと範囲の中の行（`code`）と、コードの振る舞い（`code_behavior`）が要る。質問の文の後ろに
+- 候補の各行に、スナップショットの中の実在するファイル（途中のシンボリックリンクでスナップショットの外へ出ない）と範囲の中の行（`code`）と、コードの振る舞い（`code_behavior`）が要る。質問の文の後ろに
   `（コードではこうなっていた: <振る舞い>。<パス>:<行>）` を足す
 - 番号は `Q-R-` の、全部の版の `shared/qa.csv` を通した最大の次から振る（印の無い前の形の番号と、ほかの印の番号は数えない）
 - 起票元は `要求確定（取り込み・<種類>。<出所>）`（`references/intake.md` の「起票の形」）
 - スキルが書いた食い違いは、`canon` が重ね合わせた全体のファイルで、`canon_quote` がその中に在るときだけ出す（無ければ違反）
-- 基盤要件の `ホスティング環境`・`DBMS`・`言語` の行で `決定` の値から種類を読めれば、コードの目印が別の種類を示すたびに食い違いを 1 件出す
+- 基盤要件の `ホスティング環境`・`DBMS` の行で `決定` の値から種類を読めれば、コードの目印が別の種類を示すたびに食い違いを 1 件出す。
+  `言語` は拡張子で数え、決定の言語のファイルの数以上あるほかの言語ごとに 1 件出す（決定の言語が多数なら、設定や補助の数本のほかの言語は出さない）
 
 終了コード:
 
@@ -65,7 +67,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 from pathlib import Path
 
@@ -156,17 +157,25 @@ def inside(child: Path, parent: Path) -> bool:
 def snapshot(root: Path, source: str, out: Path, remote: str) -> list[str]:
     if not root.is_dir():
         raise Stop(f"{root}: 正本の根がディレクトリでない")
-    if inside(out, root) and not inside(out, root / BUILD):
-        raise Stop(f"{out}: 正本の中に置かない（正本の外か {root / BUILD} の下にする）")
+    if inside(out, root):
+        if not inside(out, root / BUILD):
+            raise Stop(f"{out}: 正本の中に置かない（正本の外か {root / BUILD} の下にする）")
+        # build/ が git に外されていなければ、写したコードが正本の未追跡のファイルとして見え、`git add -A` で入る
+        ignored = subprocess.run(["git", "-C", str(root), "check-ignore", "-q", str(out)], capture_output=True)
+        if ignored.returncode != 0:
+            raise Stop(f"{out}: 正本の .gitignore が {BUILD}/ を外していない（写したコードが正本に入りうる）——正本の外に写すか、.gitignore に {BUILD}/ を足す")
     if out.exists() and (not out.is_dir() or any(out.iterdir())):
         raise Stop(f"{out}: 空でない（前の取り込みを残したまま重ねない）")
+    if remote.startswith("-"):
+        raise Stop(f"--remote の名前が `-` で始まる: {remote!r}")
     kind, _, ref = source.partition(":")
     if not ref or ref.startswith("-"):
         raise Stop(f"取り込む元の形でない: {source!r}（pr:<番号>・branch:<名前>・dir:<パス>）")
     if kind == "pr":
         if not ref.isdigit():
             raise Stop(f"PR の番号が数字でない: {ref!r}")
-        git(root, "fetch", "--no-tags", "--quiet", remote, f"refs/pull/{ref}/head")
+        # `--refmap=` で、設定の refspec（`refs/pull/*` を追跡する設定など）による参照の更新もしない
+        git(root, "fetch", "--no-tags", "--quiet", "--refmap=", remote, f"refs/pull/{ref}/head")
         commit = git(root, "rev-parse", "--verify", "FETCH_HEAD^{commit}").stdout.strip()
         meta = {"kind": "pr", "ref": ref, "commit": commit, "label": f"PR #{ref}（{commit[:7]}）"}
     elif kind == "branch":
@@ -182,17 +191,65 @@ def snapshot(root: Path, source: str, out: Path, remote: str) -> list[str]:
     else:
         raise Stop(f"取り込む元の種類が無い: {kind!r}（pr・branch・dir）")
 
+    created = not out.exists()
     out.mkdir(parents=True, exist_ok=True)
-    if meta["commit"]:
-        data = git(root, "archive", "--format=tar", meta["commit"], binary=True).stdout
-        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
-            tar.extractall(out, filter="data")
-    else:
-        shutil.copytree(src, out, symlinks=True, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git"))
-    (out / SOURCE_FILE).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    skipped: list[str] = []
+    try:
+        if meta["commit"]:
+            skipped = extract_tree(root, meta["commit"], out)
+        else:
+            shutil.copytree(src, out, symlinks=True, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git"))
+        (out / SOURCE_FILE).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except BaseException:
+        # 半端な写しを残さない（次の実行が「空でない」で止まる）
+        if created:
+            shutil.rmtree(out, ignore_errors=True)
+        else:
+            for child in out.iterdir():
+                shutil.rmtree(child) if child.is_dir() and not child.is_symlink() else child.unlink()
+        raise
     files = sum(1 for _ in source_files(out))
-    return [f"写した: {meta['label']} → {out}（ファイル {files} 件）",
-            "正本のブランチ・作業ツリーには何も書いていない（マージしない・正本にしない）"]
+    report = [f"写した: {meta['label']} → {out}（ファイル {files} 件）"]
+    if skipped:
+        report.append(f"写していない（シンボリックリンク・サブモジュール）: {'、'.join(skipped)}")
+    return report + ["正本のブランチ・作業ツリーには何も書いていない（マージしない・正本にしない）"]
+
+
+def extract_tree(root: Path, commit: str, out: Path) -> list[str]:
+    """コミットの木のファイルを、`git ls-tree` と `git cat-file` で出力先に書く。返すのは写さなかったもののパス。
+
+    `git archive` を使わない——取り込む元の `.gitattributes`（`export-ignore`・`export-subst`）が効き、持ち込んだ側が
+    ファイルを黙って外したり書き換えたりできる。シンボリックリンク（120000）とサブモジュール（160000）は写さない。"""
+    listing = git(root, "ls-tree", "-r", "-z", "--full-tree", commit, binary=True).stdout
+    blobs: list[tuple[str, str]] = []
+    skipped: list[str] = []
+    for entry in listing.split(b"\0"):
+        if not entry:
+            continue
+        head, _, raw = entry.partition(b"\t")
+        mode, kind, sha = head.decode().split()
+        rel = raw.decode("utf-8", "surrogateescape")
+        parts = Path(rel).parts
+        if kind != "blob" or mode == "120000" or rel.startswith("/") or ".." in parts:
+            skipped.append(rel)
+            continue
+        blobs.append((sha, rel))
+    if not blobs:
+        return skipped
+    proc = subprocess.run(["git", "-C", str(root), "cat-file", "--batch"], input="".join(f"{sha}\n" for sha, _ in blobs).encode(),
+                          capture_output=True)
+    if proc.returncode != 0:
+        raise Stop(f"git cat-file が失敗した: {proc.stderr.decode('utf-8', 'replace').strip()}")
+    data, pos = proc.stdout, 0
+    for sha, rel in blobs:
+        end = data.index(b"\n", pos)
+        size = int(data[pos:end].split()[2])
+        content = data[end + 1:end + 1 + size]
+        pos = end + 1 + size + 1
+        dest = out / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(content)
+    return skipped
 
 
 # ---------------------------------------------------------------- 読む
@@ -239,6 +296,9 @@ def locate(snap: Path, code, where: str, problems: list[str]) -> list[str]:
         path = snap / rel
         if path.is_symlink() or not path.is_file():
             problems.append(f"{at}: スナップショットに無いファイル: {rel}")
+            continue
+        if not inside(path.resolve(), snap.resolve()):
+            problems.append(f"{at}: スナップショットの外を指す（途中にシンボリックリンクがある）: {rel}")
             continue
         lines = read_lines(path)
         if lines is None:
@@ -383,10 +443,12 @@ def infra_findings(snap: Path, canon: dict[str, bytes]) -> tuple[list[str], list
         mine = [ext for name, word, ext in LANGUAGES if word.search(value)]
         if len(mine) != 1:
             notes.append(f"基盤要件の{LANGUAGE_ITEM}「{value}」から種類を読めない——照らしていない")
-        elif not any(rel.suffix in mine[0] for rel in files):
+        else:
+            own = sum(1 for rel in files if rel.suffix in mine[0])
             for name, _, ext in LANGUAGES:
                 found = [rel for rel in files if rel.suffix in ext]
-                if found:
+                # 決定の言語のファイルより多い（か同じ数の）ほかの言語を食い違いにする——設定や補助の数本は数えない
+                if ext != mine[0] and found and len(found) >= own:
                     findings.append(f"基盤要件の{LANGUAGE_ITEM}: 正本は「{value}」（{INFRA_PATH}）、持ち込まれたコードは {name} で書かれている"
                                     f"（{found[0]} ほか {len(found)} 件）")
     return findings, notes
