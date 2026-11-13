@@ -44,7 +44,7 @@ lockfile の更新にしか見えない。**周が依存を足したことを計
 
 - **宣言の真偽**——`あり` と書けば通る。足した包が安全かは Verifier の表が見る（`references/dependencies.md`）
 - **`触る:` のパターンの名前**——判定は差分だけ。依存のファイルを `触る:` に書いても、差分に現れるまでは何も言わない
-- **`DEPENDENCY_FILES` に無い名前**——ここに無い生態系の依存のファイル・独自の名前の requirements（`deps/base.in` など）は見えない
+- **`DEPENDENCY_FILES` に無い名前**——ここに無い生態系の依存のファイル・独自の名前の requirements（`deps/base.in` など。`requirements/` の下の `.txt`・`.in` と、名前に `requirements` を含む `.txt`・`.in` は見る）は見えない
 - **差分の中身**——lockfile のどの包が増えたかは読まない（増えた包は Verifier が差分から数える）
 
 標準ライブラリのみ。
@@ -66,7 +66,7 @@ DEPENDENCY_FILES = {
     "npm": ("package.json", "package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml",
             "pnpm-workspace.yaml", "yarn.lock", "bun.lock", "bun.lockb"),
     "python": ("pyproject.toml", "uv.lock", "poetry.lock", "Pipfile", "Pipfile.lock",
-               "requirements*.txt", "requirements*.in", "setup.py", "setup.cfg"),
+               "*requirements*.txt", "*requirements*.in", "constraints*.txt", "setup.py", "setup.cfg"),
     "go": ("go.mod", "go.sum"),
     "rust": ("Cargo.toml", "Cargo.lock"),
     "ruby": ("Gemfile", "Gemfile.lock", "*.gemspec"),
@@ -79,9 +79,24 @@ FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 PLAN_TEMPLATES = ("docs/plans/issue-{}.md", ".claude/plans/issue-{}.md")
 
 
+# `requirements/base.txt` の形（ディレクトリの名前が requirements で、中の .txt・.in）も Python の依存のファイルに数える
+REQUIREMENTS_DIR_SUFFIXES = (".txt", ".in")
+
+
+def ecosystem_of(path: str) -> str | None:
+    """依存のファイルなら生態系（`DEPENDENCY_FILES` の鍵）、そうでなければ None。"""
+    parts = path.split("/")
+    name = parts[-1]
+    for eco, pats in DEPENDENCY_FILES.items():
+        if any(fnmatch.fnmatchcase(name, pat) for pat in pats):
+            return eco
+    if len(parts) >= 2 and parts[-2] == "requirements" and name.endswith(REQUIREMENTS_DIR_SUFFIXES):
+        return "python"
+    return None
+
+
 def is_dependency_file(path: str) -> bool:
-    name = path.rsplit("/", 1)[-1]
-    return any(fnmatch.fnmatchcase(name, pat) for pats in DEPENDENCY_FILES.values() for pat in pats)
+    return ecosystem_of(path) is not None
 
 
 def dependency_files(paths) -> list[str]:

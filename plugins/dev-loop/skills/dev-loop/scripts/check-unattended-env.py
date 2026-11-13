@@ -61,14 +61,16 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   | npm 系 | `.yarnrc.yml` | `npmRegistryServer:` が既定でない・`enableScripts: false`・`npmMinimalAgeGate:` | 同上 |
   | npm 系 | `pnpm-workspace.yaml` | `minimumReleaseAge:` | 公開日の下限 |
   | npm 系 | `bunfig.toml` | `registry =` が `registry.npmjs.org` でない・`minimumReleaseAge =` | 同上 |
-  | Python | `pyproject.toml`・`uv.toml` | `exclude-newer =`・`index-url =`・`[[tool.uv.index]]`（`uv.toml` は `[[index]]`）・`[[tool.poetry.source]]` | 公開日の上限・レジストリのプロキシ |
-  | Python | `requirements*.txt` | `--index-url`・`-i` | レジストリのプロキシ |
+  | Python | `pyproject.toml`・`uv.toml` | `exclude-newer =`・`index-url =` が `pypi.org/simple` でない | 公開日の上限・レジストリのプロキシ |
+  | Python | `requirements*.txt` | `--index-url`・`-i` が `pypi.org/simple` でない | レジストリのプロキシ |
+
+  **追加の index（`[[tool.uv.index]]`・`[[tool.poetry.source]]`・`--extra-index-url`）は数えない**——既定の PyPI に足す取り先で、守りではない。
 
   **プロジェクトの `pip.conf` は見ない**——pip はプロジェクトのディレクトリの `pip.conf` を読まない（読むのは利用者・全体・venv の設定と `PIP_CONFIG_FILE`）。
 
 - **判定**: 生態系（npm 系・Python）ごとに、依存の定義のあるディレクトリのどれにも（そこか根に）設定が 1 つも無い → **要対処**（直し方に上の 3 種類を挙げる）。
   どのディレクトリにもあれば **人が見る**（見つけた設定を名指す——プロキシが本物か・利用者の設定や環境変数が上書きしていないかは見えない）。
-  **「良い」は出さない。** ファイルを読めない・走査に失敗したら **判定できない**。設定を読まない生態系（Go・Rust・Ruby・PHP）は **人が見る**。**依存の定義が無ければ、この項目は出さない**（点検の出力と終了コードを変えない）。
+  **「良い」は出さない。** 設定ファイルを読めない、または依存の定義が見つかったプロジェクトで走査に失敗した場所があれば **判定できない**（依存の定義が見つからなければ、走査の失敗でも出さない）。設定を読まない生態系（Go・Rust・Ruby・PHP）は **人が見る**。**依存の定義が無ければ、この項目は出さない**（点検の出力と終了コードを変えない）。
 - **行の値は見るが、その道具がその設定を本当に持つか・効いているかは確かめていない**——キーの一覧は道具の文書から写したもので、この周（#996）では道具を走らせて確かめていない。
 
 ## cruise の起動時（`--cruise`・`--present`。#466）
@@ -374,7 +376,6 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
 """
 
 import argparse
-import fnmatch
 import hashlib
 import importlib.util
 import json
@@ -1150,11 +1151,10 @@ DEPS_GUARDS = (
     ("npm", "bunfig.toml", r"^\s*registry\s*=\s*(?![\"']?https?://registry\.npmjs\.org/?[\"']?\s*$)\S", "レジストリのプロキシ（bunfig.toml）"),
     ("npm", "bunfig.toml", r"^\s*minimumReleaseAge\s*=", "公開日の下限（bunfig.toml）"),
     ("python", "pyproject.toml", r"^\s*exclude-newer\s*=", "公開日の上限（exclude-newer）"),
-    ("python", "pyproject.toml", r"^\s*index-url\s*=|^\s*\[\[tool\.uv\.index\]\]|^\s*\[\[tool\.poetry\.source\]\]",
-     "レジストリのプロキシ（pyproject.toml の index）"),
+    ("python", "pyproject.toml", r"^\s*index-url\s*=\s*(?![\"']?https?://pypi\.org/simple/?[\"']?\s*$)\S", "レジストリのプロキシ（pyproject.toml の index-url）"),
     ("python", "uv.toml", r"^\s*exclude-newer\s*=", "公開日の上限（exclude-newer）"),
-    ("python", "uv.toml", r"^\s*index-url\s*=|^\s*\[\[index\]\]", "レジストリのプロキシ（uv.toml の index）"),
-    ("python", "requirements*.txt", r"^\s*(?:--index-url|-i)(?:\s|=)", "レジストリのプロキシ（requirements の --index-url）"),
+    ("python", "uv.toml", r"^\s*index-url\s*=\s*(?![\"']?https?://pypi\.org/simple/?[\"']?\s*$)\S", "レジストリのプロキシ（uv.toml の index-url）"),
+    ("python", "requirements*.txt", r"^\s*(?:--index-url|-i)(?:\s+|=)(?!https?://pypi\.org/simple/?\s*$)\S", "レジストリのプロキシ（requirements の --index-url）"),
 )
 
 
@@ -1168,16 +1168,14 @@ def deps_module():
 
 def dependency_dirs(project):
     """{生態系: {ディレクトリ}} と、走査で失敗したパスの一覧。"""
-    files = deps_module().DEPENDENCY_FILES
+    ecosystem_of = deps_module().ecosystem_of
     found, errors = {}, []
     for top, dirs, names in os.walk(project, onerror=lambda e: errors.append(f"{e.filename}: {e.strerror}")):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in DEPS_SKIP_DIRS)
         for name in names:
-            for eco, pats in files.items():
-                if eco == "取得経路の設定":
-                    continue
-                if any(fnmatch.fnmatchcase(name, pat) for pat in pats):
-                    found.setdefault(eco, set()).add(Path(top))
+            eco = ecosystem_of((Path(top) / name).relative_to(project).as_posix())
+            if eco and eco != "取得経路の設定":
+                found.setdefault(eco, set()).add(Path(top))
     return found, errors
 
 
@@ -1204,9 +1202,10 @@ def check_dependency_path(project):
     """依存の取得経路（#996）。**「良い」は出さない**——docstring の「依存の取得経路」。"""
     project = Path(project)
     found, walk_errors = dependency_dirs(project)
-    if walk_errors:
-        return [(UNKNOWN, DEPENDENCY_PATH, "走査できなかった: " + "; ".join(walk_errors[:3]), "")]
     items = []
+    if walk_errors and found:
+        # 依存の定義が見つかったプロジェクトだけ——見えなかった場所に別の依存の定義がありうる。無ければ出さない（終了コードを変えない）
+        items.append((UNKNOWN, DEPENDENCY_PATH, "走査できなかった場所がある: " + "; ".join(walk_errors[:3]), ""))
     for eco, label in JUDGED_ECOSYSTEMS.items():
         dirs = sorted(found.get(eco, ()))
         if not dirs:

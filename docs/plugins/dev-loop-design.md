@@ -1325,12 +1325,12 @@ Eotel 側で同じ範囲を覆う 5 本
 | 守ること | 28 | 1 |
 | 複数の Issue を回すとき | 7 | 1 |
 
-**このほかに、起点に載らないファイルが 13 本・2508 行**（`（必須）` 141 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 4379 行・`（必須）` 322 個）。
+**このほかに、起点に載らないファイルが 13 本・2512 行**（`（必須）` 141 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 4383 行・`（必須）` 322 個）。
 
 | 起点に載らないファイル | 行 | `（必須）` |
 | --- | --- | --- |
 | references/absent-lines.md | 643 | 39 |
-| references/dependencies.md | 62 | 5 |
+| references/dependencies.md | 64 | 5 |
 | references/fix-line.md | 67 | 8 |
 | references/found-lines.md | 244 | 5 |
 | references/guard-rejections.md | 115 | 16 |
@@ -1341,7 +1341,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | references/untrusted-input.md | 50 | 2 |
 | prompts/implementer.md | 96 | — |
 | prompts/review-handoff.md | 131 | — |
-| prompts/verifier.md | 182 | — |
+| prompts/verifier.md | 184 | — |
 
 <small>この表と上の段落は `scripts/skill-metrics.py` が生成している。**手で書き換えない**——`SKILL.md` を編集したら `python3 scripts/skill-metrics.py` で作り直す（CI が `--check` で見ている）。</small>
 

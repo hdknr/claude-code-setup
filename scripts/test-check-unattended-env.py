@@ -1264,6 +1264,14 @@ def dependency_path_scenarios(mod, bad):
         env.all_good()
         code, got = items_of(env)
         check("依存: 依存の定義が無ければ項目を出さず、終了コードは変えない", got == [] and code == 0, bad)
+        locked = env.project / "locked"
+        locked.mkdir()
+        locked.chmod(0)
+        try:
+            code, got = items_of(env)
+        finally:
+            locked.chmod(0o755)
+        check("依存: 依存の定義が無ければ、走査に失敗しても出さない", got == [] and code == 0, bad)
         dep(env, **{"node_modules/x/package.json": "{}", ".hidden/package.json": "{}"})
         code, got = items_of(env)
         check("依存: node_modules と . で始まるディレクトリには入らない", got == [] and code == 0, bad)
@@ -1308,6 +1316,14 @@ def dependency_path_scenarios(mod, bad):
         dep(env, **{"pyproject.toml": "[project]\nname = 'x'\n"})
         code, got = items_of(env)
         check("依存: Python の定義があり設定が無ければ要対処", [g[0] for g in got] == [mod.ACTION] and "Python" in got[0][1], bad)
+        dep(env, **{"uv.toml": "index-url = \"https://pypi.org/simple\"\n[[index]]\nurl = \"https://download.pytorch.org/whl/cpu\"\n"})
+        code, got = items_of(env)
+        check("依存: 既定の PyPI と追加の index は設定に数えない", [g[0] for g in got] == [mod.ACTION], bad)
+        (env.project / "uv.toml").unlink()
+        dep(env, **{"requirements/base.txt": "x\n"})
+        code, got = items_of(env)
+        check("依存: requirements/ の下も依存の定義に数える", [g[0] for g in got] == [mod.ACTION] and "requirements" in got[0][2], bad)
+        (env.project / "requirements" / "base.txt").unlink()
         dep(env, **{"pip.conf": "[global]\nindex-url = https://proxy.example.invalid/simple\n"})
         code, got = items_of(env)
         check("依存: プロジェクトの pip.conf は設定に数えない（pip が読まない）", [g[0] for g in got] == [mod.ACTION], bad)
@@ -1327,7 +1343,7 @@ def dependency_path_scenarios(mod, bad):
             code, got = items_of(env)
         finally:
             locked.chmod(0o755)
-        check("依存: 走査に失敗したら判定できない", [g[0] for g in got] == [mod.UNKNOWN] and code == 2, bad)
+        check("依存: 依存の定義があって走査に失敗したら判定できない", mod.UNKNOWN in [g[0] for g in got] and code == 2, bad)
         _, items = run_cruise(mod, env, present=True)[:2]
         check("依存: --present では出さない", not [n for _s, n, *_ in items if n.startswith(mod.DEPENDENCY_PATH)], bad)
     check("依存: どの場合も「良い」を出さない", seen and all(st != mod.GOOD for st, *_ in seen), bad)
@@ -2210,7 +2226,11 @@ MUTATIONS = {
         '            items.append((HUMAN, name, "見つけた設定: "', '            items.append((GOOD, name, "見つけた設定: "'),
     "依存: 設定が無くても人が見る": ("            items.append((ACTION, name,\n", "            items.append((HUMAN, name,\n"),
     "依存: 読めない設定を無視する": ("        if errors:\n            items.append((UNKNOWN, name,", "        if False:\n            items.append((UNKNOWN, name,"),
-    "依存: 走査の失敗を無視する": ("    if walk_errors:\n", "    if False:\n"),
+    "依存: 走査の失敗を無視する": ("    if walk_errors and found:\n", "    if False:\n"),
+    "依存: 依存の定義が無くても走査の失敗を出す": ("    if walk_errors and found:\n", "    if walk_errors:\n"),
+    "依存: 既定の PyPI をプロキシと読む": (
+        r"""    ("python", "uv.toml", r"^\s*index-url\s*=\s*(?![\"']?https?://pypi\.org/simple/?[\"']?\s*$)\S", "レジストリのプロキシ（uv.toml の index-url）"),""",
+        r"""    ("python", "uv.toml", r"^\s*index-url\s*=\s*\S", "レジストリのプロキシ（uv.toml の index-url）"),"""),
     "依存: --present でも出す": ("    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n",
                                 "    items += check_auth(stack, os.environ if env is None else env, present, ancestor)\n"
                                 "    items += check_dependency_path(project) if present else []\n"),

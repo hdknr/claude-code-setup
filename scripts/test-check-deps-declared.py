@@ -29,7 +29,7 @@ SCRIPT = SKILL_DIR / "scripts" / "check-deps-declared.py"
 VERIFIER = SKILL_DIR / "prompts" / "verifier.md"
 DEPS_DOC = SKILL_DIR / "references" / "dependencies.md"
 # Verifier の表の欄（`prompts/verifier.md` が正。Issue #996 の受入基準 2 の 5 つと、名前の近い包）
-TABLE_COLUMNS = ("名前", "版", "公開日", "公開者", "インストールスクリプト", "名前の近い")
+TABLE_COLUMNS = ("名前", "版", "公開日", "公開者", "インストールスクリプトの有無", "名前の近い有名な包")
 
 failures: list[str] = []
 
@@ -160,6 +160,12 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run(script, d, base)
     got += [("消した yarn.lock で 1", rc == 1 and "yarn.lock" in out)]
 
+    for rel in ("requirements/base.txt", "dev-requirements.txt", "constraints.txt"):
+        d, base = fresh()
+        put(d, rel, commit=True)
+        rc, _ = run(script, d, base)
+        got += [(f"{rel} で 1", rc == 1)]
+
     d, base = fresh()
     put(d, "サービス/package.json", "{}\n", commit=True)
     rc, out = run(script, d, base)
@@ -224,7 +230,8 @@ MUTATIONS = {
     "3 点で取る（未コミットを見ない）": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
                                        '    rc1, diff = git("diff", "--name-only", "--no-renames", f"{base}...HEAD")\n'),
     "非 ASCII のパスを引用符で包ませる": ('["git", "-c", "core.quotePath=false", *args]', '["git", *args]'),
-    "下の階層を見ない": ('    name = path.rsplit("/", 1)[-1]\n', "    name = path\n"),
+    "requirements/ の下を見ない": ('    if len(parts) >= 2 and parts[-2] == "requirements"', '    if False and parts[-2] == "requirements"'),
+    "下の階層を見ない": ("    name = parts[-1]\n", "    name = path\n"),
     "消したファイルを見ない": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
                               '    rc1, diff = git("diff", "--name-only", "--no-renames", "--diff-filter=d", base)\n'),
     # 守る: 依存のファイルが無ければ 0
@@ -241,7 +248,10 @@ def static_checks() -> None:
     header = next((ln for ln in section.splitlines() if ln.strip().startswith("| 名前")), "")
     cells = [c.strip() for c in header.strip().strip("|").split("|")]
     for col in TABLE_COLUMNS:
-        check(f"依存の差し込みの表の見出しの行が欄「{col}」を持つ", any(c.startswith(col) for c in cells))
+        check(f"依存の差し込みの表の見出しの行が欄「{col}」を持つ", col in cells)
+    check("依存の差し込みが公開者を _npmUser で取らせる", "_npmUser" in section)
+    check("依存の差し込みがインストールスクリプトを install 系で判定させる",
+          all(k in section for k in ("preinstall", "postinstall")))
     check("依存の差し込みが包を入れないよう言う", "入れないで" in section)
     doc = DEPS_DOC.read_text(encoding="utf-8")
     check("dependencies.md が未検証の扱いを持つ", "未検証" in doc)

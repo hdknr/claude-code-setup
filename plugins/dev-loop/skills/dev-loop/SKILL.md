@@ -1522,7 +1522,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   ```bash
   python3 <このスキルの base ディレクトリ>/scripts/check-deps-declared.py <周の base の SHA>
   ```
-  **0 以外なら PR を作らない。** 終了コードの読み方と直し方は `references/dependencies.md` の「宣言」を正とする（**0 なら読まなくてよい**）。
+  **main を取り込んだ後は、手順 4 の式を当て直した base を渡す**（古い SHA のままだと main の依存の変更がこの周のものに見える）。**0 以外なら PR を作らない。** 終了コードの読み方と直し方は `references/dependencies.md` の「宣言」を正とする（**0 なら読まなくてよい**）。
 - worktree 上のブランチを push して PR を作成する（`gh pr create`）。
     - **積んだ周は、下の周のブランチを base にして出す（必須）**——素の `gh pr create` は既定ブランチを
       base にするので、下の差分が上の PR に載る。**`references/stacked.md` の「積むと決めたら」を正とする。**

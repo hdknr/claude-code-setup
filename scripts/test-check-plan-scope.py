@@ -260,6 +260,10 @@ def contract(tmp: Path, tag: str, script_text: str | None = None,
     d = fresh(plan=PLAN + "\n依存の追加・更新: なし\n", head_files={"docs/app/uv.lock": "x\n"})
     rc, out = run(d, "main")
     got += [("`なし` と申告して依存のファイルを触ったら rc=1", rc == 1)]
+    # 14b) 非 ASCII の名前のディレクトリの下も拾う（git の引用符で名前が崩れない）
+    d = fresh(head_files={"docs/サービス/package.json": "{}\n"})
+    rc, out = run(d, "main")
+    got += [("非 ASCII のディレクトリの下の依存のファイルで rc=1 と名指し", rc == 1 and "docs/サービス/package.json" in out)]
     # 15) 計画が無い PR は、依存のファイルがあっても今までどおり「判定していない」
     d = fresh(plan=None, head_files={"package.json": "{}\n"})
     rc, out = run(d, "main")
@@ -289,6 +293,7 @@ MUTANTS = {
     "計画ファイル自身も外として数える": ("        if f != rel and not covered(f, patterns)\n",
                                         "        if not covered(f, patterns)\n"),
     # 依存の申告（#996）
+    "非 ASCII のパスを引用符で包ませる": ('["git", "-c", "core.quotePath=false", *args]', '["git", *args]'),
     "依存の判定を当てない": ("    code, deps, reason = deps_module().judge(files, plan.read_text())\n",
                             '    code, deps, reason = 0, [], ""\n'),
     "依存の判定が赤でも通す": ("        failed = True\n    return 1 if failed else 0\n",
