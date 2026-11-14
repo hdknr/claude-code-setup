@@ -14,7 +14,10 @@ usage:
 
 - 版は `docs/` 直下の `v<n>`（見つけ方は `merge-versions.py` の `find_versions` を読み込む——写さない）。**書くのは番号が最大の版（作業中の版）だけ**。
 - **作業中の版にリリースのタグ `release-v<n>` があれば書かない（3）**——凍結した版を直すと `check-frozen.py` が落ちる。
-  次の版を作ってから呼び直す。タグの命名・浅い clone の扱いは `check-frozen.py` の `releases`・`git` を読み込む（写さない）。
+  次の版を作ってから呼び直す。タグの命名は `check-frozen.py` の `releases` を読み込む（写さない）。
+- **タグを見る前に、リモートがあればタグを取り直す**（`git fetch --all --tags`）——`--no-tags` で取った clone や、他の人が付けて
+  まだ取っていない `release-v<n>` を「リリースしていない」と読まないため（#1031 の 1 パス目）。**取り直せなければ 2**。リモートが無ければ手元のタグを見る。
+  **これだけがリポジトリの状態を変える操作である**（リモート追跡のタグを足す。作業ツリーと HEAD は変えない）。
 - 0 なら、書く場所（`docs/v<n>/spec/formal/`）と、保存したモデルを探す場所（v1 は同じ場所、v2 以降は重ね合わせた全体
   `build/merged/spec/formal/`——`merge-versions.py docs build/merged` が作る）を出す。
 
@@ -22,7 +25,8 @@ usage:
 
 - **置き場所**: 親が `spec/formal/` で、`<対象>` の名前が英小文字・数字・ハイフンだけ。
 - **`README.md` の記録**: `| 項目 | 記録 |` の 2 列の表で、`tree.md` の項目が 1 行ずつ、記録が空でなく、同じ項目が 2 行無い。
-  `結果` は `反例なし`／`反例あり` で始まる（`判定できなかった` の対象は残さない）。`前回のモデル` は 4 つの値のどれかで始まる。
+  `結果` は `反例なし`／`反例あり` のどちらか（後ろに続けてよいのは `（` で始まる要約だけ。`判定できなかった` の対象は残さない）。
+  `前回のモデル` も 4 つの値のどれか（同じく `（` で始まる要約を続けてよい）。
 - **`モデルのファイル`**: バッククォートで囲んだファイルの名前が 1 つ以上あり、どれもこのディレクトリの通常のファイルである（`/` を含まない・`README.md` でない）。
 - **ディレクトリの中身は、`README.md` と `モデルのファイル` の一覧だけ**——TLC の `states/`・Alloy の `<名前>/`・出力を落としたファイル・前に残したファイルが在れば違反。
 
@@ -30,7 +34,7 @@ usage:
 
 - 0: `target` は書く場所を決めた／`check` は形どおり
 - 1: `check` の違反（違反を全部出す）
-- 2: 判定していない——git でない・浅い clone・版が無い・版の決まりに反する・ディレクトリが無い・`README.md` が読めない・想定外の例外
+- 2: 判定していない——git でない・浅い clone・タグを取り直せない・版が無い・版の決まりに反する・ディレクトリが無い・`README.md` が読めない・想定外の例外
 - 3: `target` で、作業中の版がリリース済み（書かない）
 
 **守ること**:
@@ -38,17 +42,19 @@ usage:
 | 守ること | 破る形 |
 | --- | --- |
 | 作業中の版がリリース済みなら書く場所を出さない（3） | 凍結した版に書いて `check-frozen.py` が落ちる |
-| 版が無い・版の決まりに反する・タグが見えないなら 2 で、書く場所を出さない | 「凍結していない」と読み違えて書く |
+| 版が無い・版の決まりに反する・浅い clone なら 2 で、書く場所を出さない | 「凍結していない」と読み違えて書く |
+| リモートがあればタグを取り直してから見る。取り直せなければ 2 | `--no-tags` の clone・取っていないタグで、リリース済みの版に書く |
 | 一覧に無いファイル・ディレクトリを違反にする | 検査器の作業ファイルや前の残りが基準のモデルに混ざる |
 | 一覧のファイルが無ければ違反にする | 次の回が読むモデルが欠ける |
 | 記録の項目が欠けた・空・2 行あるなら違反にする | 次の回が前提や陽性対照を確かめ直せない |
-| `結果` が `反例なし`／`反例あり` でなければ違反にする | 走らせていないモデルが残る |
+| `結果`・`前回のモデル` は値そのものか、値に `（` で始まる要約を続けた形だけを通す | `反例なしかは判定できなかった` のような、走らせていないモデルが残る |
 | 置き場所と名前の形を見る | 次の回が同じ名前で探せない |
 
 **守らないもの**:
 
 | 守らないもの | なぜ |
 | --- | --- |
+| **リモートにも押していない `release-v<n>`**（他の人の手元にだけあるタグ） | 取り直す先に無いものは見えない。タグは付けたら押す運用で守る |
 | **モデルの中身が仕様に合っているか・検査器が本当に走らせたものか** | 判定役の仕事で、報告から写すときにスキルが守る（`cp` で写す） |
 | **記録の値が正しいか**（陽性対照が本当に反例を出したか・前提が全部か） | 文面の真偽は機械で決まらない |
 | **`残した回` が記録の表の行を指しているか** | 記録の表は版ごとに `docs/` の外にあり、このディレクトリからは決まらない |
@@ -61,7 +67,9 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -114,6 +122,15 @@ def _target(repo: Path) -> tuple[int, list[str]]:
     shallow = frozen.git(root, "rev-parse", "--is-shallow-repository")
     if shallow.returncode != 0 or shallow.stdout.strip() == "true":
         return 2, ["浅い clone である（か確かめられない）。リリースのタグが見えないので判定していない"]
+    remotes = frozen.git(root, "remote")
+    if remotes.returncode != 0:
+        return 2, [f"リモートを読めない: {remotes.stderr.strip()}。判定していない"]
+    if remotes.stdout.strip():
+        fetched = subprocess.run(["git", "-C", str(root), "fetch", "--all", "--tags", "--quiet"], capture_output=True, text=True,
+                                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        if fetched.returncode != 0:
+            return 2, [f"リリースのタグを取り直せない（git fetch --all --tags: {fetched.stderr.strip()}）。"
+                       "取っていないタグを「リリースしていない」と読まないため判定していない"]
     listed = frozen.git(root, "tag", "--list")
     if listed.returncode != 0:
         return 2, [f"タグを読めない: {listed.stderr.strip()}。判定していない"]
@@ -124,6 +141,11 @@ def _target(repo: Path) -> tuple[int, list[str]]:
                    f"次の版（{frozen.DOCS}/v{number + 1}/）を作ってから呼び直す（references/versions.md）"]
     saved = where if number == 1 else f"build/merged/{versions.FORMAL_DIR}（merge-versions.py docs build/merged が作る）"
     return 0, [f"版: v{number}", f"書く場所: {where}<対象>/", f"保存したモデルを探す場所: {saved}"]
+
+
+def one_of(value: str, allowed: tuple[str, ...]) -> bool:
+    """値そのものか、値の直後に `（` で始まる要約を続けた形か（`反例あり（2 重の取り消し）`）。"""
+    return any(value == a or value.startswith(a + "（") for a in allowed)
 
 
 def read_records(readme: Path) -> tuple[dict[str, str], list[str]]:
@@ -170,11 +192,11 @@ def check(directory: Path) -> tuple[int, list[str]]:
         elif not records[item]:
             problems.append(f"{README}: 項目「{item}」の記録が空")
     result = records.get("結果", "")
-    if result and not result.startswith(RESULTS):
-        problems.append(f"{README}: 結果が {'／'.join(RESULTS)} で始まらない（判定できなかった対象は残さない）: {result!r}")
+    if result and not one_of(result, RESULTS):
+        problems.append(f"{README}: 結果が {'／'.join(RESULTS)} のどちらでもない（続けてよいのは「（」で始まる要約だけ。判定できなかった対象は残さない）: {result!r}")
     previous = records.get("前回のモデル", "")
-    if previous and not previous.startswith(PREVIOUS):
-        problems.append(f"{README}: 前回のモデルが {'／'.join(PREVIOUS)} で始まらない: {previous!r}")
+    if previous and not one_of(previous, PREVIOUS):
+        problems.append(f"{README}: 前回のモデルが {'／'.join(PREVIOUS)} のどれでもない（続けてよいのは「（」で始まる要約だけ）: {previous!r}")
     listed = FILE.findall(records.get("モデルのファイル", ""))
     if records.get("モデルのファイル") and not listed:
         problems.append(f"{README}: モデルのファイルにバッククォートで囲んだ名前が 1 つも無い")

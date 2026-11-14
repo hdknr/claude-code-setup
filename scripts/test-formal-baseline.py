@@ -67,6 +67,12 @@ TARGET_CASES: list[tuple[str, Steps, int, str]] = [
     # 陽性対照: 同じ元から履歴とタグをすべて取った clone は判定できる
     ("深い clone", [("w", V1, "a\n"), ("c",), ("t", "release-v1"), ("deep",)], 3, "リリース済み"),
     ("git でない", None, 2, "git の作業ツリーでない"),
+    # タグを取っていない clone（--no-tags）・あとで付いて取っていないタグは、取り直してから見る（#1031 の 1 パス目）
+    ("--no-tags の clone", [("w", V1, "a\n"), ("c",), ("t", "release-v1"), ("notags",)], 3, "リリース済み"),
+    ("取っていないタグ", [("w", V1, "a\n"), ("c",), ("deep",), ("ts", "release-v1")], 3, "リリース済み"),
+    ("取り直せない", [("w", V1, "a\n"), ("c",), ("t", "release-v1"), ("deep",), ("rmsrc",)], 2, "リリースのタグを取り直せない"),
+    # 陽性対照: 取っていないタグが無ければ、取り直しても書ける
+    ("取り直しても書ける", [("w", V1, "a\n"), ("c",), ("deep",)], 0, "書く場所: docs/v1/"),
 ]
 
 # ---- check の試料
@@ -106,7 +112,11 @@ CHECK_CASES: list[CheckCase] = [
     ("陽性対照の行が無い", GOOD_DIR, {"README.md": readme(drop=("陽性対照",)), **MODEL_FILES}, 1, "項目「陽性対照」の行が無い"),
     ("置いた前提が空", GOOD_DIR, {"README.md": readme(置いた前提=""), **MODEL_FILES}, 1, "項目「置いた前提」の記録が空"),
     ("結果が 2 行", GOOD_DIR, {"README.md": readme() + "| 結果 | 反例あり |\n", **MODEL_FILES}, 1, "項目「結果」が 2 行ある"),
-    ("結果が判定できなかった", GOOD_DIR, {"README.md": readme(結果="判定できなかった"), **MODEL_FILES}, 1, "結果が 反例なし／反例あり で始まらない"),
+    ("結果が判定できなかった", GOOD_DIR, {"README.md": readme(結果="判定できなかった"), **MODEL_FILES}, 1, "結果が 反例なし／反例あり のどちらでもない"),
+    ("結果の後ろに判定できなかった", GOOD_DIR, {"README.md": readme(結果="反例なしかは判定できなかった"), **MODEL_FILES}, 1,
+     "結果が 反例なし／反例あり のどちらでもない"),
+    ("前回のモデルの後ろに別の語", GOOD_DIR, {"README.md": readme(前回のモデル="直さず使ったかは不明"), **MODEL_FILES}, 1, "前回のモデルが"),
+    ("前回のモデルに要約", GOOD_DIR, {"README.md": readme(前回のモデル="直して使った（排他を足した）"), **MODEL_FILES}, 0, "形どおり"),
     ("結果が反例あり", GOOD_DIR, {"README.md": readme(結果="反例あり（2 重の取り消し）"), **MODEL_FILES}, 0, "形どおり"),
     ("前回のモデルが違う値", GOOD_DIR, {"README.md": readme(前回のモデル="新しく作った"), **MODEL_FILES}, 1, "前回のモデルが"),
     ("一覧にバッククォートが無い", GOOD_DIR, {"README.md": readme(モデルのファイル="order.tla・order.cfg"), **MODEL_FILES}, 1,
@@ -134,8 +144,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("項目の欠けを通す", "        if item not in records:\n            problems.append(", "        if False:\n            problems.append(", "陽性対照の行が無い"),
     ("空の記録を通す", "        elif not records[item]:\n", "        elif False:\n", "置いた前提が空"),
     ("2 行ある項目を通す", '            problems.append(f"{readme}: 項目「{item}」が 2 行ある")\n', "            pass\n", "結果が 2 行"),
-    ("判定できなかったを通す", "    if result and not result.startswith(RESULTS):\n", "    if False:\n", "結果が判定できなかった"),
-    ("前回のモデルの値を通す", "    if previous and not previous.startswith(PREVIOUS):\n", "    if False:\n", "前回のモデルが違う値"),
+    ("判定できなかったを通す", "    if result and not one_of(result, RESULTS):\n", "    if False:\n", "結果が判定できなかった"),
+    ("前回のモデルの値を通す", "    if previous and not one_of(previous, PREVIOUS):\n", "    if False:\n", "前回のモデルが違う値"),
+    ("前方一致に戻す", '    return any(value == a or value.startswith(a + "（") for a in allowed)', "    return value.startswith(allowed)",
+     "結果の後ろに判定できなかった"),
+    ("タグを取り直さない", "    if remotes.stdout.strip():\n", "    if False:\n", "取っていないタグ"),
+    ("取り直せなくても続ける", "        if fetched.returncode != 0:\n", "        if False:\n", "取り直せない"),
     ("バッククォートの無い一覧を通す", '    if records.get("モデルのファイル") and not listed:\n', "    if False:\n", "一覧にバッククォートが無い"),
     ("パスを含む名前を通す", 'if "/" in name or name in (README, ".", ".."):', 'if name in (README, ".", ".."):', "一覧の名前にパス"),
     ("README を一覧に入れるのを通す", 'if "/" in name or name in (README, ".", ".."):', 'if "/" in name:', "README を一覧に入れる"),
@@ -207,12 +221,16 @@ def build_target(root: Path, steps: Steps, env: dict[str, str]) -> list[str]:
             run_git(root, env, "commit", "-q", "-m", "step")
         elif kind == "t":
             run_git(root, env, "tag", step[1])
-        elif kind in ("shallow", "deep"):
+        elif kind in ("shallow", "deep", "notags"):
             source = root.with_name(root.name + "-src")
             root.rename(source)
-            options = ["--depth=1", "--no-tags"] if kind == "shallow" else []
+            options = {"shallow": ["--depth=1", "--no-tags"], "notags": ["--no-tags"], "deep": []}[kind]
             subprocess.run(["git", "clone", "-q", *options, f"file://{source}", str(root)],
                            check=True, capture_output=True, env=env)
+        elif kind == "ts":  # clone した元にだけタグを付ける（取っていないタグ）
+            run_git(root.with_name(root.name + "-src"), env, "tag", step[1])
+        elif kind == "rmsrc":  # clone した元を消す（取り直せない）
+            shutil.rmtree(root.with_name(root.name + "-src"))
         elif kind == "arg":
             repo_arg = root / step[1]
     return ["target", "--repo", str(repo_arg)]
