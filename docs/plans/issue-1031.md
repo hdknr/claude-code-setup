@@ -81,9 +81,12 @@ main へのマージで GitHub Pages の再ビルド（`docs/` を触る）と�
 
 - 周の在り処: ブランチ `issue/1031-formal-baseline`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1031`・
   起点 `1698006`・base の参照 `origin/main`・base の SHA `1698006bf97f8873037a21a6d3c18455909732f1`
+- 実装: `866102a` でコミット済み（手順 4 の終わり）。`check-all.py` は 79 本中 78 本が緑。
+  落ちた 1 本 `test-check-deps-declared.py` は 2 回とも `shutil.copytree` が一時ディレクトリの `.git/objects/maintenance.lock` を見失う形で、単独では緑（この周の差分の外。手順 8 で起票を訊く候補）
+- 割り目（手順 4 の終わり）: `AskUserQuestion` で訊いたが 300 秒で答えが返らず、このまま続けた
 - 関門: まだ当てていない
 - 反証と差し戻し: なし
-- 交絡を潰した手順: 実験なし
+- 交絡を潰した手順: 実験なし（テストの陽性対照として、効かない変異を 1 つ足した写しが赤になることを見た）
 
 ## 起票
 
