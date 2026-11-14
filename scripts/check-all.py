@@ -39,10 +39,10 @@
   **別のセッションの `check-all.py` と重なったときの取り合いは、ここでは絞れない**。打ち切りの原因は特定していない
   ——#449 の打ち切りは重なりを記録していない日の値で、#460 で届いた 1 回は別のセッションが `check-all.py` を走らせていた
   時間帯だが、重なっていたかは記録していない。
-  **回帰テストのうち変異を別々のプロセスで同時に当てるもの**（`test-check-unattended-env.py`・`test-ledger.py`。#494）にも
-  同じ値を `--jobs` で渡す（#748・#749）——テストの側は自分の上限（4）で切る。
+  **回帰テストのうち変異を別々のプロセスで同時に当てるもの**（`test-check-unattended-env.py`・`test-ledger.py`。#494。
+  `test-check-deps-declared.py`。#1021）にも同じ値を `--jobs` で渡す（#748・#749）——テストの側は自分の上限（4）で切る。
   **`--jobs 1` は「子孫まで直列」ではない**（#749 の 2 パス目）。絞れるのは `check-all.py` の作業者と、`--jobs` を渡す
-  `NESTED` の 3 本が**自分で**起こす並列（`check-mutation-claims.py` の主張の作業者・2 本のテストの変異の作業者）だけである。
+  `NESTED` の 4 本が**自分で**起こす並列（`check-mutation-claims.py` の主張の作業者・3 本のテストの変異の作業者）だけである。
   その先——`check-mutation-claims.py` が当てる主張の red のコマンドが起こすテスト——と、並列の振る舞いそのものを試すテスト
   （`test-check-all.py`・`test-check-mutation-claims.py`・`test-run-serial.py` など。`--jobs 2` の直書き・既定の `--jobs`・
   同時に起こす子プロセス）の中は、`--jobs 1` でも並列に回る。
@@ -100,9 +100,9 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-plan-scope.py", [], True),
 ]
 
-# 中で自分も `--jobs` で並列に回すもの（#460。回帰テストの 2 本は #748・#749）。親の並列数から決めた `--jobs` を渡す——
+# 中で自分も `--jobs` で並列に回すもの（#460。回帰テストの 3 本は #748・#749・#1021）。親の並列数から決めた `--jobs` を渡す——
 # 渡さないと入れ子の既定（CPU の数・テストは 4）で起き、親の作業者と同じ CPU を取り合い、`--jobs 1` でも直列にならない。
-NESTED = ("check-mutation-claims.py", "test-check-unattended-env.py", "test-ledger.py")
+NESTED = ("check-mutation-claims.py", "test-check-unattended-env.py", "test-ledger.py", "test-check-deps-declared.py")
 
 
 def nested_jobs(jobs: int) -> int:
@@ -164,6 +164,7 @@ TESTS: list[str] = [
     "test-rework-report.py",
     "test-intake-code.py",
     "test-parent-checklist.py",
+    "test-green-list.py",
     "test-merge-versions.py",
     "test-diff-versions.py",
     "test-check-frozen.py",

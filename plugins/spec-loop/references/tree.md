@@ -599,6 +599,89 @@ dev-loop は本文の指紋と sha256 を手元の中間表現と Red テスト�
 **同じリポジトリで、実装をサブディレクトリ（`backend/` など）に置くなら**、Red テストは根から実装を読み込むので、
 読み込みの経路にそのディレクトリを入れる——走らせ方と、付け忘れが「未実装」と同じに見える落とし穴は `monorepo.md` の「Red テストを走らせる」を正とする。
 
+## Red テストを CI で走らせ続ける（#1000）
+
+**実装が緑にした機能の Red テストは、製品のリポジトリ（実装のあるリポジトリ）の CI で、マージのたびに走らせ続ける。**
+周の中の確かめ（dev-loop の受入基準・次の版の `scaffold.py --red-check`）だけでは、周と周のあいだの変更
+（spec-loop から来ていない Issue・手での修正・依存の更新）が仕様の性質を壊しても、次に誰かが `--red-check` を回すまで見つからない。
+**ここがこの決まりの原本である**——ほかの文書は指すだけにする。
+
+- **CI で見るケースは、緑のケースの一覧（製品のリポジトリの根の `scaffold-green.txt`）で機械で選ぶ。**
+  同梱の `green-list.py record` が `scaffold/tests` の Red テストを走らせて、**緑のケースとその中身の指紋**を書き、
+  CI の `green-list.py check` は、**一覧に載って指紋の同じケースが緑のままか**を見る。
+  **一覧に無いケース（まだ実装していない機能のケース）の赤では「壊した」にならない**——版の機能を実装し終えるまで赤い全部の Red テストを、マージの条件にしないで済む。
+- **一覧は手で書かない。** `check` は、緑なのに一覧に無いケース・指紋が変わったケース（いま緑かどうかも出す）・もう無いケースがあれば
+  「一覧が古い」（3）で赤にする——**その PR で `record` して一覧を commit する**（実装してケースが緑になった周・`scaffold/` を作り直した周・機能を消した周）。
+  **だから `scaffold/` を作り直した PR は、載ったケースの指紋を変えていれば（そのケースの入力・期待、その機能の型・`impl_module` を変えた）`record` するまで赤い**
+  ——題だけ直した・まだ緑でない機能だけ足した作り直しでは赤くならない。指紋が変わって緑でないケースを一覧から外すのは、下の `--accept-changed` である。
+  **`record` は、載ったケースを壊していれば何も書かない**（1）。**指紋が変わって緑でない載ったケースも、`--accept-changed` を付けなければ書かない**——
+  作り直しで仕様が期待を変えたのか、同じ PR で実装を壊したのかは機械では分けられない（型を広げただけの作り直しでも指紋は変わる）ので、
+  仕様がそのケースを変えたと人が確かめたときだけ付ける（Red テストと仕様の差分で確かめる）。付けたことは、書いた一覧に `# accepted-changed: <名前>` の行で残り、PR の差分で手で行を消したのと見分けられる。
+- **一覧を置くのは `scaffold/` の外**——`scaffold/` は正本から作る生成物で、`scaffold.py --check` と写しの比べ（下）の範囲である。一覧は実装の状態で、製品のリポジトリのものである。
+- **指紋は「そのケースの Red テストが実行する中身」から取る**——同じ機能の別のケースや題・コメントを直した作り直しでは変わらず、そのケースの入力・期待や、
+  型・`impl_module` を変えると変わる。終了コード（壊した・一覧が古い・判定していない）と、何を守り何を守らないかは `green-list.py` の docstring を正とする。
+- **Red テストの読み込み方は、手で回すときと同じにする**——モノレポで実装がサブディレクトリにあるなら、`check` にも `PYTHONPATH` を付ける
+  （`monorepo.md` の「Red テストを走らせる」）。付け忘れると載ったケースが全部「未実装」で落ちて赤になる（`check` はその見込みも出す）。
+- **性能テスト（`scaffold/perf/`）は、マージごとの CI に入れない**——受入基準ではなく（`nfr.md`）、CI の機械の速さで結果が揺れる。
+  回すなら別のジョブ（手で起こすか定時）にし、マージの条件にしない。`green-list.py` は `scaffold/tests` だけを見る。
+- **CI では、Red テストの前に `scaffold/` の時点を確かめる**——古い `scaffold/` が緑でも、仕様の性質を確かめたことにならない:
+    - **同じリポジトリ**なら `scaffold.py --repo . --check`。
+    - **正本と開発のリポジトリが別**なら、`scaffold/` を写すときに、写した元の正本のリポジトリとコミットを製品のリポジトリの根の
+      `scaffold-source.txt` に 1 行（`<owner>/<repo>@<コミット>`）で書き、**同じ commit に入れる**。CI はそのコミットの正本を取り、
+      `scaffold.py --repo <正本> --check`（正本の `scaffold/` が正本の仕様から見て新しい）と
+      `diff -r -x __pycache__ <正本>/scaffold scaffold`（写しが正本の `scaffold/` と同じ）を当てる——写しを手で直した・正本を作り直したのに写していない、が非 0 で出る。
+      **比べる相手の時点を名指しする**のは、dev-loop が Issue の指すファイルを比べるとき（`spec-gap.md` の「写し方と確かめ方」）と同じである。
+- **CI でプラグインのスクリプトをどこから取るかは、製品のリポジトリの `CLAUDE.md` に書く**（下の雛形は、このリポジトリを版を固定して取る形の例）。
+
+GitHub Actions の雛形（正本と開発のリポジトリが別の形。同じリポジトリなら、正本を取る 2 つのステップを外し、`--repo .canonical` を `--repo .` にして `diff` の行を外す）:
+
+```yaml
+name: red-tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  red-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: spec-loop のスクリプトを取る（版を固定する）
+        uses: actions/checkout@v4
+        with:
+          repository: hdknr/claude-code-setup
+          ref: <spec-loop を含む版のタグかコミット>
+          path: .spec-loop
+      - name: 写した元の正本を名指しする
+        id: source
+        run: |
+          src=$(cat scaffold-source.txt)
+          echo "repo=${src%@*}" >> "$GITHUB_OUTPUT"
+          echo "sha=${src#*@}" >> "$GITHUB_OUTPUT"
+      - name: その時点の正本を取る（private なら token を渡す）
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.source.outputs.repo }}
+          ref: ${{ steps.source.outputs.sha }}
+          path: .canonical
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # 実装の依存を入れる手順はここに足す（製品のもの）
+      - name: 正本の scaffold/ が正本の仕様から見て新しい
+        run: python3 .spec-loop/plugins/spec-loop/scripts/scaffold.py --repo .canonical --check
+      - name: 写した scaffold/ が正本のものと同じ
+        run: diff -r -x __pycache__ .canonical/scaffold scaffold
+      - name: 実装済みのケースが緑のまま
+        run: python3 .spec-loop/plugins/spec-loop/scripts/green-list.py check --repo .
+        # モノレポで実装が backend/ にあるなら:
+        # env:
+        #   PYTHONPATH: backend
+```
+
+**確かめた範囲**: 走らせるコマンド（`scaffold.py --check`・`diff -r -x __pycache__`・`green-list.py check`）が、実装を壊す・写しを手で直す・正本の仕様だけ変えると
+非 0 を返すことは、このリポジトリの `scripts/test-green-list.py` が試料で確かめている。**雛形の YAML そのもの（`actions/checkout` の引数・別リポジトリを取る権限）は GitHub Actions の上で走らせていない。**
+
 ## ドキュメントのツール
 
 **既定は MkDocs。** `docs/` を最初から閲覧できるように、プラグインは雛形（`templates/mkdocs/`）を持ち、
