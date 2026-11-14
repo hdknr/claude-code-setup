@@ -239,6 +239,8 @@ TLC の版を上げる判断と JSON からの変換はこの周で書いてい�
 - `check-all.py`: `6d78b9d` で 77/77。最終の状態（`0100f9c`）で 76/77——`test-parallel-stop.py` が負荷の高い回で失格（本物の run-serial が枠の記録を書かなかった）し、単独で回し直して緑
 - PR #1023。PR 側の CI は全部緑（`deploy` はスキップ）。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` の終了コード 3）
 - マージ: 利用者の判断（2026-11-14）で、#1022 を含む main を取り込み、N1 を直してからマージする
+- N1 を直した後の `check-all.py`: 77/78。`test-check-deps-declared.py` が `shutil.copytree` の最中に雛形の `.git/objects/maintenance.lock` が消えて `FileNotFoundError`（#1022 で入った雛形の複製）。単独で回し直して緑。
+  前の回の `test-parallel-stop.py` の失格は #1024 の形（別の実行の `sleep 117` を数える）の可能性がある——どちらもこの周の差分（計画ファイルだけ）の外
 - 関門で使った検査の注意: 2 つの関門と著者が同時に `quint verify` を走らせるとポート 8822 を取り合う——2 パス目は関門を 1 つずつ走らせるか、関門に `quint verify` を走らせ直さないよう頼む
 - 交絡を潰した手順: 到達の確かめ（`NotReachedGood`）と壊した版（`Guard = FALSE`）を TLC・Apalache の両方で取った。
   A5 は行き詰まりが本物であることを素の TLC（既定のオプション）で示した。A3 の「違反なし」は深さで変わることを 1〜4 で並べた
