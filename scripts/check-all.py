@@ -130,6 +130,7 @@ TESTS: list[str] = [
     "test-record-stop-failure.py",
     "test-find-cycle.py",
     "test-check-deps-declared.py",
+    "test-check-spec-writeback.py",
     "test-external-reviews.py",
     "test-check-unattended-env.py",
     "test-launch-with-long-token.py",

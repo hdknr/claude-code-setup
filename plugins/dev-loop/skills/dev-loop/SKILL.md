@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.107.1 -->
-> **このスキルの版: 1.107.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.108.0 -->
+> **このスキルの版: 1.108.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -315,6 +315,9 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
         - **依存の定義・lockfile・取得経路の設定を触る周は、計画に `依存の追加・更新: あり` の行を書く（必須）**——
           **書き方・PR の前に当てる歯止め・Verifier の表・不在の周の扱いは `references/dependencies.md` を正とする**（このスキルと同じ場所にある。#996）。
           **触らない周では読まなくてよい。**
+        - **対象リポジトリに spec-loop の正本があるなら、計画に `仕様の振る舞い: ` の行を書く（必須）**——仕様にある機能の利用者に見える振る舞いを変えるか、の申告である。
+          **値・変える周が正本に残すもの・PR の前に当てる歯止め・Red テストが赤になったときの扱いは `references/spec-writeback.md` を正とする**（このスキルと同じ場所にある。#1001）。
+          **正本の無いリポジトリでは読まなくてよい**（何が正本かもそこにある）。
     2. 乗るデプロイ経路（手順 7 で参照）
     3. **verify の受入基準** — 何を目視できたら通ったと言えるか。書き方はこの節の後続 3 項目
        （**経路への展開／証明できないものの分離／生成物の鮮度**）に従う
@@ -1478,7 +1481,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     ——**値の突き合わせは、走らせる側ではなく読む側でやる。**
     **上のコードブロックが 1 行ずつに割ってあるのは、この実測の結果である**（#110）。
     - **終了コードで分岐するスクリプトは、包まずに素の 1 行で呼ぶ（必須。ここが原本）。**
-      **対象は `find-cycle.py`・`prepare-worktree.sh`・`check-pr-preconditions.sh`・`check-deps-declared.py`・`external-reviews.py`。**
+      **対象は `find-cycle.py`・`prepare-worktree.sh`・`check-pr-preconditions.sh`・`check-deps-declared.py`・`check-spec-writeback.py`・`external-reviews.py`。**
       **終了コードは足さなくても見える**——**0 以外なら道具の結果に `Exit code N` と出て、
       0 なら何も出ない**（実測。**ハーネスの現在の挙動であって、約束ではない**）。
       **包むと、その見え方が壊れる**:
@@ -1523,6 +1526,11 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   python3 <このスキルの base ディレクトリ>/scripts/check-deps-declared.py <周の base の SHA>
   ```
   **main を取り込んだ後は、手順 4 の式を当て直した base を渡す**（古い SHA のままだと main の依存の変更がこの周のものに見える）。**0 以外なら PR を作らない。** 終了コードの読み方と直し方は `references/dependencies.md` の「宣言」を正とする（**0 なら読まなくてよい**）。
+- **PR 作成の前に、仕様への戻しも当てる（必須）**——spec-loop の正本があるリポジトリで、申告と正本への行を残したかを見る（正本が無ければ何も求めずに 0。#1001）:
+  ```bash
+  python3 <このスキルの base ディレクトリ>/scripts/check-spec-writeback.py <周の base の SHA>
+  ```
+  **main を取り込んだ後は、手順 4 の式を当て直した base を渡す。** **0 以外なら PR を作らない。** 終了コードの読み方と直し方は `references/spec-writeback.md` の「PR の前に当てる」を正とする（**0 なら読まなくてよい**）。
 - worktree 上のブランチを push して PR を作成する（`gh pr create`）。
     - **積んだ周は、下の周のブランチを base にして出す（必須）**——素の `gh pr create` は既定ブランチを
       base にするので、下の差分が上の PR に載る。**`references/stacked.md` の「積むと決めたら」を正とする。**
