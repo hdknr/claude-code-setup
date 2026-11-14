@@ -69,10 +69,15 @@
   npm は `protobufjs` の postinstall について警告を出した（保存した npm の出力の `npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:`・`protobufjs@7.6.6 (postinstall: node scripts/postinstall)`）。
   postinstall が実際に走らなかったかは確かめていない——型検査・Apalache・TLC の経路は動いた。
 - **`~/.quint` は周を始める前から在った**（`apalache-dist-0.62.4`・`rust-evaluator-v0.7.1`。日付は 2026-11-09——記事を書いたときの実験の残り。190 MB）。
-  **`find ~/.quint -type f -newermt "2026-11-14 00:00"` は 0 件**（ファイルは全部で 5 つ。この周の実行はすべて 2026-11-14 の 14 時以降）——この周の実行は `~/.quint` にファイルを書いていない（初回の取得の挙動はこの周では観測していない）。
+  **`find ~/.quint -newerct "2026-11-14 00:00"` と `-newerBt`（作成時刻）はどちらも 0 件**（種別を絞らない。この周の実行はすべて 2026-11-14 の 14 時以降）——この周の実行は `~/.quint` に書いていない（初回の取得の挙動はこの周では観測していない）。
+  **1 パス目の根拠にした `-newermt`（更新時刻）は判別しない**（2 パス目の `/code-review` の指摘 2）——展開したファイルはアーカイブの時刻を持つ
+  （`apalache.jar` は更新時刻 2026-10-12・変更時刻 2026-11-09）ので、この周に取りに行って展開していても `-newermt` は 0 件を返した。
   （`run-deadlock.sh` の前後の `ls ~/.quint` も比べたが、前の一覧を取ったのは A2・A3 を走らせた後なので、周の全体の根拠にはならない——根拠は上の `find`。）
 - `quint verify` は Apalache をサーバー（`localhost:8822`）として起こす。走り終えた後に `apalache` のプロセスは残っていなかった（`ps`）。
   `--backend=tlc` が `$TMPDIR` に作る `quint-tlc-*` も残っていなかった。
+- **ほかに書かれたもの**（2 パス目の `/code-review` の指摘 5）: `quint verify` は走らせた cwd に `_apalache-out/server/<時刻>/`（反例の `.tla`・`.itf.json`・`detailed.log`・`log0.smt`）を残す——
+  メインの作業ツリーで走らせれば追跡されないディレクトリが残る。`npm install` はホームの下に `~/.npm/_logs/2026-11-14T05_06_09_226Z-debug-0.log` とキャッシュの索引を書いた
+  （キャッシュの索引のうち 2026-11-14 に作られたものは 79 件——2 パス目の前に入れ直した分を含み、分けていない）。
 - Apalache の出力には毎回 protobuf の脆弱性の警告（`makeExtensionsImmutable should not be called from protobuf gencode`）が出る。
 
 ### A1: TLC（合成のモデル。付録 A）
@@ -133,7 +138,8 @@ TLC は幅優先の全探索で、直した版を `9 distinct states found, 0 st
 **rc=1 は「違反あり」だけではない。** 関門の Verifier・`/code-review` が同じ時刻に `quint verify` を走らせた回は、2 本が
 `Error while starting Apalache server: Failed to bind to address 0.0.0.0/0.0.0.0:8822: Address already in use` で、**結果の行を出さずに rc=1** で終わった。
 **rc だけで判定すると「違反あり」と読む。** 結果の行（`No violation found`・`Found … error`・`Found a deadlock`）が無い回は判定できないと読み、
-`run-depth.sh` は結果の行が無ければ「判定できない」と出す形で 8 通りを走らせ直した（上の表はその値）。**同じ PC で 2 つの検査を並べると、ポート 8822 を取り合う**——cruise の並行する周や、関門と並べた検査で起きる形である。
+`run-depth.sh` は結果の行が無ければ「判定できない」と出す形で 8 通りを走らせ直した（上の表はその値）。**同じ PC で 2 つの検査を既定のまま並べると、ポート 8822 を取り合う**——cruise の並行する周や、関門と並べた検査で起きる形である。
+**ただし `quint verify` には `--server-endpoint`（既定 `localhost:8822`）があり**（`quint verify --help`。2 パス目の `/code-review` の指摘 4）、検査ごとに違うポートを渡せば避けられる見込みがある——**この周では試していない。**
 
 ### A4: ITF から trace ケースへの変換
 
@@ -146,7 +152,7 @@ TLC は幅優先の全探索で、直した版を `9 distinct states found, 0 st
 - **変換の出力は、本物の `plugins/spec-loop/scripts/scaffold.py` の `check_trace` を通った**（付録 E。入口 3 つを置き、`spec/formal/version-write/README.md` を一時ディレクトリに置いた）。
   陽性対照として段の呼び出しの名前を `calls` に無いものに変えた版は赤（`check_trace` が問題を返す）だった。
   **ただし `check_trace` は形だけを見て、段の順の正しさは見ない**（1 パス目の `/code-review` の指摘 3。旧が先の順・書くが先の順に変えても通る）。
-- **段の順の正しさは、生成した Red テストで判別した**（付録 G）。変換の出力から本物の `scaffold.py` の `red_test` で Red テストを作り、
+- **段の順の誤りのうち、下の 2 つの変異は生成した Red テストで判別した**（付録 G）。変換の出力から本物の `scaffold.py` の `red_test` で Red テストを作り、
   守りの無い実装（モデルの `broken`）と守りのある実装（`fixed`）に当てた。どちらも 1 つの排他の中で読むと書くをまとめ、その直前に `checkpoint("read")`・`checkpoint("write")` を続けて呼ぶ（`spec-ir.md` の「実装に求める口」）:
 
   | 段の順 | 実装 | 結果 |
@@ -156,7 +162,11 @@ TLC は幅優先の全探索で、直した版を `9 distinct states found, 0 st
   | 旧が先の順（変異） | 守りあり | **赤**——期待（直した仕様のこの順での結果）と合わない |
   | 書くが先の順（変異） | 守りあり | **赤**——`段 write の前で checkpoint を呼ばずに段 read に来た` |
 
-  **変換した順だけが「守りなしを赤・守りありを緑」に分け、順を変えた版は正しい実装まで赤にする**——Red テストは段の順の誤りを判別する。
+  **試した 2 つの変異は正しい実装まで赤にし、変換した順だけが「守りなしを赤・守りありを緑」に分けた。**
+  **ただし段の順の誤りを全部判別するわけではない**（2 パス目の `/code-review` の指摘 1）——モデルでは到達できない交互の順
+  （`[new_writer, read]`・`[old_writer, read]`・`[new_writer, write]`・`[old_writer, write]`。2 つの書き手が同時に排他を持つ）を変換が出しても、
+  **守りなしは赤・守りありは緑（`OK`）で、変換した順と同じに分かれた**（2 パス目に走らせた）。どちらの実装も `checkpoint("read")` と `checkpoint("write")` を
+  1 つの操作の直前に続けて呼ぶので、読む段の位置が観測されない。**読む段の位置の誤りは、この Red テストでは判別できない。**
 - **ITF から決まった変換で出たのは `steps` だけ**（1 パス目の `/code-review` の指摘 4。`calls` は付録 D の対応表をそのまま写している）。次は ITF に無いので人が書く:
   - モデルの書き手と実装の入口・入力の対応（`old` → `write_row {"key": "k", "ver": 1}`）
   - モデルの段（`Read`・`Write`）とトレースの段の名前の対応
@@ -166,15 +176,23 @@ TLC は幅優先の全探索で、直した版を `9 distinct states found, 0 st
   正規表現で読み（TLA+ の値の構文は解かない）、`pc` が変わった呼び出しから段を決めた。**出た `steps` は Apalache の ITF から出したものと同じ**（上の Red テストで判別した順）で、本物の `scaffold.py` の `check_trace` も通った。 ただしこの読み方は `pc` の値が文字列から文字列への関数の形であることに乗っている
   ——値がレコードや入れ子になると、正規表現では読めない（そこでは TLA+ の値の構文を解く必要がある。JSON の ITF なら要らない）。
   手元の TLC 2.19 は `-dumpTrace json` を持たなかった（`Error: unrecognized option: -dumpTrace`）。`-tool`（機械向けの出力）と `-generateSpecTE` は試していない。
+- **`apalache.jar` に入っている TLC は `-dumpTrace json` を持ち、反例を JSON で出す**（2 パス目の Verifier の反証 1。付録 A の守りなしに当てた）——
+  段ごとに行為の名前と引数（`"name":"Read",…,"context":{"w":"new"},"parameters":["w"]`）と前後の状態（`"pc":{"old":"read","new":"write"}` など）を持つ。
+  **つまり網羅する検査器（TLC）の反例から、行為の名前・引数・状態を JSON で取れる道が手元にあった**——1 パス目の記録はこれを試さずに「確かめていない」としていた。
+- **Apalache（`quint verify`）も、ITF とは別に書く反例の `.tla`（`_apalache-out/server/<時刻>/violation1.tla`）に、各状態を起こした遷移の番号を残す**
+  （`(* State1 [_transition(1)] *)`・`State2 [_transition(3)]`・…。2 パス目の `/code-review` の指摘 9）——番号から行為は決まるが、引数（どの書き手か）は持たない。
+  上の「ITF は行為の名前も引数も持たない」は ITF について言ったもので、Apalache の出力の全部についてではない。
 
 ### A5: `--backend=tlc` とデッドロック
 
-全員が終わった後の `done` を外した step（`stepNoDone`。終わった状態で行き詰まる）を当てた:
+全員が終わった後の `done` を外した step（`stepNoDone`。終わった状態で行き詰まる）を当てた。
+**モジュールは `fixed`**（1 パス目の記録は名指ししておらず、2 パス目の `/code-review` が `fixed` で同じ行を再現した（指摘 7）。
+`broken` に `--invariant=noRollback` で当てると、深さ 4 の不変条件の違反が先に出て `The outcome is: Error` になり、行き詰まりは出ない）:
 
 | 検査器 | 結果 |
 | --- | --- |
-| Apalache（`quint verify --step=stepNoDone`） | rc=1・`Found a deadlock.`・`The outcome is: Deadlock` |
-| **Quint 経由の TLC（`--backend=tlc`）** | **rc=0・`Model checking completed. No error has been found.`・`[ok] No violation found`** |
+| Apalache（`quint verify --main=fixed --step=stepNoDone`） | rc=1・`Found a deadlock.`・`The outcome is: Deadlock` |
+| **Quint 経由の TLC（`--main=fixed --backend=tlc`）** | **rc=0・`Model checking completed. No error has been found.`・`[ok] No violation found`** |
 | 素の TLC（同じ形の `NoDone.tla`・既定のオプション） | rc=11・`Error: Deadlock reached.`（対照: 行き詰まりは本物） |
 | 素の TLC（`-deadlock`） | rc=0・`No error has been found.` |
 
@@ -189,17 +207,20 @@ TLC は幅優先の全探索で、直した版を `9 distinct states found, 0 st
 **採らない（TLC を Quint に置き換えない。Quint を Formal Checker の道具にも足さない）。** 理由（上の結果だけから）:
 
 1. **期待した利点（反例の書き写しを機械にする）は、Quint に乗らなくても取れた。** 反例から決まった変換で出たのは `steps` で、
-   その決め方（`pc` の差）を手元の TLC 2.19 の反例のテキストに当てても、同じ `steps` が出た（A4。順の正しさは Red テストで判別した）。
-   行為の名前と引数を持つ反例は、Quint では網羅しない `quint run --mbt` の ITF にしか無かったが、**`apalache.jar` の TLC（網羅する）はテキストに行為の名前と引数を出す**（A1）——
-   TLC の版を上げれば、`pc` の差に頼らずに段を読める見込みがある（確かめていない）。
-   Apalache の ITF と TLC の反例の違いは JSON か TLA+ の値の文字列か——`pc` が単純な形なら正規表現で足り、入れ子の値になると JSON の利点が効く。
-2. **Quint の 2 つの検査の経路は、どちらも今の TLC より弱い。** Apalache は深さが足りないと壊れたモデルに rc=0 の「違反なし」を返し、足りるかは出力からも決まらない（A3。`You may increase --max-steps.` は足りていても出る）。
-   ポートの取り合いでは結果を出さずに rc=1 を返す（A3）。Quint 経由の TLC は行き詰まりを見ず、手元の TLC と違う TLC を、`TLC の呼び方:` を通らずに起動する（A5）。
+   その決め方（`pc` の差）を手元の TLC 2.19 の反例のテキストに当てても、同じ `steps` が出た（A4。試した 2 つの順の変異は Red テストで判別した——読む段の位置の誤りは判別しない）。
+   行為の名前と引数を持つ反例は、Quint では網羅しない `quint run --mbt` の ITF にしか無かった（Apalache の反例の `.tla` は遷移の番号だけ。A4）。
+   **一方 `apalache.jar` の TLC（網羅する）は、`-dumpTrace json` で行為の名前・引数・状態を JSON で出す**（A4。2 パス目の Verifier の反証 1）——
+   **JSON の反例は Quint に乗らなくても TLC から取れる**ので、入れ子の値の読み方も Quint の利点にならない。
+2. **この模型では、Quint の 2 つの検査の経路はどちらも今の TLC より弱かった。** Apalache は深さが足りないと壊れたモデルに rc=0 の「違反なし」を返し、足りるかは出力からも決まらない（A3。`You may increase --max-steps.` は足りていても出る）。
+   ポートを既定のまま並べると結果を出さずに rc=1 を返す（A3。`--server-endpoint` で避けられる見込みは試していない）。Quint 経由の TLC は行き詰まりを見ず、手元の TLC と違う TLC を、`TLC の呼び方:` を通らずに起動する（A5）。
    深さの不足はこの模型では同じ深さの到達の確かめで拾えた（A3）が、行き詰まりは陽性対照の 2 つ（到達・壊した版）では拾えない。
-3. **入れるものが増える**（Node＋npm の包・Apalache の 190 MB・サーバーのポート）のに、TLC の前提（`check-tlc.py`・autopilot の点検）は残る。
+   **「弱い」はこの模型（状態 9 つの有限のモデル）に限る**（2 パス目の `/code-review` の指摘 3）——TLC が深さで打ち切らないのは状態空間が小さく有限だからで、
+   状態が爆発するモデルでは TLC も終わらない。Apalache の深さに依らない検査（`quint verify --inductive-invariant`）は試していない。
+3. **入れるものが増える**（Node＋npm の包・Apalache の 190 MB・サーバーのポート・cwd に残る `_apalache-out/`。A7）のに、TLC の前提（`check-tlc.py`・autopilot の点検）は残る。
 
 **保留にしたもの**: TLC の反例から `steps` を変換すること自体には値がある（`spec-ir.md` の「トレースのケース」の書き写しが今は手）。
-この模型では `pc` の行を正規表現で読む形で動いたが、入れ子の値の読み方（`-tool` の出力・`-generateSpecTE`）と、行為の引数を出す TLC の版は確かめていないので、この周では起票の根拠にしない。
+`apalache.jar` の TLC の `-dumpTrace json` なら行為の名前と引数で段を読める（A4）が、正本の `TLC の呼び方:` の TLC（手元は 2.19）はこれを持たず、
+TLC の版を上げる判断と JSON からの変換はこの周で書いていないので、この周では起票の根拠にしない。
 
 **一般化の限界（未証明）**: 標本は合成のモデル 1 つ（直した版の状態 9 つ・反例 4 遷移）。整数の範囲が広く TLC で状態が爆発するモデルでの Apalache の利点（記事が挙げるもの）は、この周では測っていない。
 
@@ -208,10 +229,12 @@ TLC は幅優先の全探索で、直した版を `9 distinct states found, 0 st
 - 手順 4: 実験と記録を済ませた（2026-11-14）。割り目: 「このまま続ける」（`AskUserQuestion` の回答・2026-11-14）
 - 1 パス目の指摘対応の起点: `fe7b3e1`（1 パス目の関門に渡した時点の HEAD）
 - 1 パス目: Verifier（sonnet）反証 3 件・`/code-review`（high）指摘 10 件。採否は下の表——直す 12 件・残課題 1 件。手順 4 への差し戻し: あり（V1〜V3・C1〜C9 を直した）
-- 2 パス目: 手順 5 の当て直し（Verifier）と `/code-review` の 2 パス目の両方が残っている。対象は `fe7b3e1..a153f28`（指摘対応）で、base は周の base のまま。
-  割り目: 「ここで割る」（`AskUserQuestion` の回答・2026-11-14）。再開したら 2 パス目の 2 つの関門から
+- 2 パス目の前の割り目: 「ここで割る」（`AskUserQuestion` の回答・2026-11-14）。2026-11-14 に新しいセッションで再開した（前のセッションの scratchpad は消えていたので、付録 A〜G を抜き出し、Quint 0.33.1 を新しい scratchpad に入れ直して関門に渡した）
+- 2 パス目（base は周の base `3aa4f0b` のまま。関門は 1 つずつ走らせた）: 手順 5 の当て直し（Verifier・sonnet）反証 2 件・`/code-review`（high）2 パス目 指摘 10 件。
+  採否は下の「2 パス目の指摘の採否」——直す 10 件・残課題 2 件。振る舞いについての指摘は著者が走らせて確かめた（P1・P3・P4・P6・P7・P9 など）
 - 2 パス目の指摘対応の起点（狭いパスの起点）: `e46576b`（再開点を書いたコミット。2 パス目の指摘対応はこの後から）
-- `check-all.py`: `fe7b3e1` の時点でバックグラウンドで起動した（結果は 2 パス目の前に見る。PR の前にもう 1 度回す）
+- 狭いパス: 残っている（終点は指摘対応のコミット。下に書く）
+- `check-all.py`: `fe7b3e1` の時点でバックグラウンドで起動した結果は前のセッションと一緒に消えた。再開後（`6d78b9d`）にもう 1 度起動した。PR の前に指摘対応の後で回す
 - 関門で使った検査の注意: 2 つの関門と著者が同時に `quint verify` を走らせるとポート 8822 を取り合う——2 パス目は関門を 1 つずつ走らせるか、関門に `quint verify` を走らせ直さないよう頼む
 - 交絡を潰した手順: 到達の確かめ（`NotReachedGood`）と壊した版（`Guard = FALSE`）を TLC・Apalache の両方で取った。
   A5 は行き詰まりが本物であることを素の TLC（既定のオプション）で示した。A3 の「違反なし」は深さで変わることを 1〜4 で並べた
@@ -243,7 +266,35 @@ TLC は幅優先の全探索で、直した版を `9 distinct states found, 0 st
 | C9 | `TLC2 Version 2026.11.14.050951` は時刻で、版の証拠ではない | 示せる——走らせ直すと `…052122` | A5 | 直す |
 | C10 | 変換は `pc` の変わらない遷移・引数の無い行為を黙って落とす。「決まった変換」はこの模型に限る | 示せない——この周の模型にそういう遷移は無い（仮定の模型での話） | 無し | 残課題（記録は `pc` の前提を書いてあり、採否は「採らない」なので変換を使う周で扱う） |
 
-## 付録（モデルと変換の全文。走らせたファイルそのもの）
+### 2 パス目の指摘の採否（直す線: 既定）
+
+P1・P2 は Verifier、P3〜P12 は `/code-review`（P3 = 指摘 1 … P12 = 指摘 10）。
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| P1 | `apalache.jar` の TLC の `-dumpTrace json` を試さずに、A6 理由 1 が「JSON の利点は ITF の側」と書いている | 示せる——著者が残ったファイルで確かめた（`trace.json` に `"name":"Read"`・`"context":{"w":"new"}`・`"pc":{…}`） | A4・A6 | 直す（A4 に足し、A6 理由 1 と保留を書き直した。結論「採らない」は変わらない） |
+| P2 | 付録が再現に要るファイルを欠く（`.cfg`・`NoDone.tla`・`run-*.sh`・`check_with_scaffold_ops.py`） | 示せる——付録 G は `check_with_scaffold_ops` を読み込むが付録に無い | A4 | 直す（付録の見出しの「走らせたファイルそのもの」を外し、載っていないものを名指しした。消えたファイルは作り直さない） |
+| P3 | Red テストが段の順の誤りを判別すると言い過ぎ——到達できない交互の順は守りなし赤・守りあり緑に分かれる | 示せる——著者が走らせて `守りあり: 緑（OK）` | A4 | 直す（判別したのは試した 2 つの変異だけで、読む段の位置の誤りは判別しないと書いた） |
+| P4 | A7 の根拠 `-newermt` は展開したファイルのアーカイブの時刻を見るので判別しない | 示せる——`stat`: `apalache.jar` は更新時刻 10-12・変更時刻 11-09 | A7 | 直す（`-newerct`・`-newerBt` の 0 件に替えた。結論は変わらない） |
+| P5 | A6 理由 2「どちらの経路も TLC より弱い」は、有限の小さい模型で `--inductive-invariant` も試していないので判別しない | 示せる——`quint verify --help` に `--inductive-invariant`、A3 の模型は状態 9 つ | A6 | 直す（「この模型では」に限り、試していないことを書いた） |
+| P6 | ポート 8822 の取り合いは `--server-endpoint` で避けられうるのに、Quint の弱さに数えている | 示せる——`quint verify --help` に `--server-endpoint` | A3・A6 | 直す（「既定のまま並べると」に限り、避けられる見込みは試していないと書いた） |
+| P7 | A7 が `_apalache-out/`（cwd）と `~/.npm` のログ・キャッシュを記録していない | 示せる——`~/.npm/_logs/2026-11-14T05_06_09_226Z-debug-0.log`・関門の作業場所の `_apalache-out/server/` | A7 | 直す |
+| P8 | 付録 F に付録 D の表を渡すと `KeyError: 'read'`。A4 は表を変えたことを書いていない | 示せる——著者が走らせて `KeyError: 'read'`、小文字の鍵の表で同じ `steps` | A4 | 直す（付録の冒頭に書いた） |
+| P9 | A5 の表がモジュールを名指ししておらず、`broken` では行き詰まりではなく不変条件の違反が出る | 示せる——関門の `q-dl-apa.txt`（`broken`）は `The outcome is: Error`、`q-dl-apa-fixed.txt` は `Deadlock` | A5 | 直す（`--main=fixed` を書いた） |
+| P10 | 付録 F の正規表現は単語でない `pc` の値（`in-flight`）と 1 変数のモデル（`/\ ` が無い）を黙って落とす | 示せない——この周の模型にそういう値は無い（関門が別の小さいモデルで確かめた形で、この周の主張の反例ではない） | 無し | 残課題（C10 と同じく、変換を使う周で扱う） |
+| P11 | Apalache の反例の `.tla` は遷移の番号を持つのに、A4・A6 が見ていない | 示せる——`violation1.tla` の `State1 [_transition(1)]` | A4・A6 | 直す（A4 に足し、A6 理由 1 を書き直した） |
+| P12 | 周のコミットに `Fixes #1015` が無い（リポジトリの `CLAUDE.md` の Git ワークフロー） | 示せる——`git log 3aa4f0b..HEAD` | 無し（記録の受入基準ではない） | 残課題（成果物の直しではない。PR の本文に `Fixes #1015` を書き、この指摘対応のコミットメッセージにも入れた） |
+
+注（Verifier の注意。反証ではない）: 直した版の到達の確かめが届いたのは旧が先の正常な順で、守りが `stale` を返す枝（新が先）に到達できるかは見ていない。
+
+## 付録（モデルと変換の全文）
+
+**載せたのは A〜G だけで、実験に使ったファイルの全部ではない**（2 パス目の Verifier の反証 2・`/code-review` の指摘 6）。
+次は載っておらず、走らせた scratchpad はセッションと一緒に消えた——**ここからは再現できない**:
+TLC の `.cfg`（`CONSTANT Guard`・`INIT Init`・`NEXT Next`・`INVARIANT …`）、A5 の `NoDone.tla`、`run-depth.sh`・`run-deadlock.sh`・`run-jar-tlc.sh`、
+付録 G が読み込む `check_with_scaffold_ops.py`（付録 E の `OPS` を切り出したもの。2 パス目の関門が切り出して再現した）。
+**付録 F に付録 D の表をそのまま渡すと `KeyError: 'read'` で落ちる**——F は状態の `pc` の値（小文字の `read`・`write`）で `phases` を引くので、
+鍵を小文字にした表が要る（`{"read": "read", "write": "write"}`。2 パス目に組み直した表で、A4 と同じ `steps` が出た。1 パス目に F に渡した表は残っていない）。
 
 ### 付録 A: VersionWrite.tla（TLC）
 
