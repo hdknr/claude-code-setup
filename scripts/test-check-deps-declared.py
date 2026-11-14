@@ -63,8 +63,10 @@ def assert_not_real_repo(root: Path) -> None:
 
 
 def git(root: Path, *args: str) -> str:
-    # 親の GIT_*（hook の中の GIT_DIR など）を引き継ぐと、`-C root` でも偽のリポジトリではなくそちらに書く（#1028）
+    # 親の GIT_*（hook の中の GIT_DIR など）を引き継ぐと、`-C root` でも偽のリポジトリではなくそちらに書く（#1028）。
+    # 剥がしたうえで利用者・システムの設定も読ませない——読めば利用者の hook・署名・fsmonitor が偽のリポジトリに効く
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
     return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-C", str(root), *args],
                           check=True, capture_output=True, text=True, env=env).stdout
 
