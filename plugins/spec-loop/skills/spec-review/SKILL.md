@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.87.0 -->
-> **このスキルの版: 0.87.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.88.0 -->
+> **このスキルの版: 0.88.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -239,6 +239,7 @@ Alloy は Java と Alloy の jar を置き、正本の `CLAUDE.md` に `Alloy �
 2. **`README.md` に記録を書く**——報告の対象の行（対象・道具と版・構成の大きさ・結果・陽性対照・置いた前提・前回のモデル）と、**モデルのファイル**（いま写したファイルの名前の一覧）と、
    残した回（版・日付・何回目のレビューか）。**v2 以降は、重ね合わせた全体の同じディレクトリに前の版のファイルが残ることがある**（前の版のファイルは直さない）——
    **次の回が使うのは `README.md` の「モデルのファイル」の一覧のファイルだけ**なので、前の版の残りを `removed.csv` で消さない。
+   書いたら `python3 <このスキルの base ディレクトリ>/../../scripts/formal-baseline.py check docs/v<n>/spec/formal/<対象>` を当て、0 になるまで直す（記録の表の形と見るものは `../../references/tree.md` の同じ節）。
 3. **残したことは commit の対象である**（commit するかは上の「守ること」の決まりのまま）。
 
 ### 4. 指摘を振り分ける
