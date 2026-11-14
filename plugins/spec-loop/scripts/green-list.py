@@ -25,7 +25,8 @@ usage: python3 green-list.py record [--repo <リポジトリ>] [--list <一覧>]
   ケースが無くなった載った行は落とす（機能を消した）。指紋が変わって今も緑の行は、今の指紋で載せ直す。
 - **指紋が変わって緑でない載った行は、`--accept-changed` が無ければ何も書かずに 1**——作り直しで仕様が期待を変えたのか、
   同じ PR で実装を壊したのかは、このスクリプトには分けられない（型を広げただけの作り直しでも指紋は変わる）。仕様がそのケースを変えたと
-  人が確かめたときだけ `--accept-changed` を付けて落とす——付けたことはコマンドと一覧の差分に残る。落とした行は出力で名指しする。
+  人が確かめたときだけ `--accept-changed` を付けて落とす——落とした行は出力で名指しし、書いた一覧に `# accepted-changed: <名前>` の行で残す
+  （PR の差分で、手で行を消したのと見分けられる。次の `record` で消える）。
 - 0: 書いた ／ 1: 載ったケースを壊している（書いていない）／ 2: 判定していない（下）。
 
 `check`（CI が呼ぶ）:
@@ -168,6 +169,10 @@ def observe(repo: Path) -> tuple[dict[str, str], dict]:
     return prints, outcomes
 
 
+def kept_count(listed: dict[str, str], prints: dict[str, str]) -> int:
+    return sum(1 for name, digest in listed.items() if prints.get(name) == digest)
+
+
 def compare(listed: dict[str, str], prints: dict[str, str], outcomes: dict) -> tuple[list[str], list[str], list[str], list[str]]:
     """(壊した, 指紋が変わった, もう無い, 緑なのに載っていない)。"""
     broken, moved, gone = [], [], []
@@ -187,10 +192,11 @@ def describe(outcome) -> str:
             "skip": "飛ばされた"}.get(outcome, str(outcome))
 
 
-def say_broken(broken: list[str], outcomes: dict) -> None:
+def say_broken(broken: list[str], outcomes: dict, kept: int) -> None:
+    """`kept` は一覧に載って指紋が同じケースの数——その全部が「未実装」で落ちたときだけ、読み込みの経路の見込みを出す。"""
     for name in broken:
         print(f"壊した: {name}（{describe(outcomes.get(name))}）", file=sys.stderr)
-    if broken and all(outcomes.get(name) == "missing" for name in broken):
+    if broken and len(broken) == kept and all(outcomes.get(name) == "missing" for name in broken):
         print("載ったケースが全部「未実装」で落ちた——実装を読み込めていない見込みもある"
               "（読み込みの経路 PYTHONPATH の付け忘れ。references/monorepo.md の「Red テストを走らせる」）", file=sys.stderr)
 
@@ -200,7 +206,7 @@ def record(repo: Path, path: Path, accept_changed: bool = False) -> int:
     prints, outcomes = observe(repo)
     broken, moved, gone, unlisted = compare(listed, prints, outcomes)
     if broken:
-        say_broken(broken, outcomes)
+        say_broken(broken, outcomes, kept_count(listed, prints))
         print(f"一覧に載ったケースのうち {len(broken)} 件が緑でない。一覧を書き直していない"
               "（壊したケースを record で落とさない——実装を直す）", file=sys.stderr)
         return 1
@@ -213,7 +219,8 @@ def record(repo: Path, path: Path, accept_changed: bool = False) -> int:
               "——仕様がそのケースを変えた（作り直しで期待が変わった）と確かめたなら --accept-changed を付けて落とす。"
               "そうでなければ実装を直す", file=sys.stderr)
         return 1
-    path.write_text(HEADER + "".join(f"{name} {prints[name]}\n" for name in green), encoding="utf-8")
+    accepted = "".join(f"# accepted-changed: {name}\n" for name in changed_red)
+    path.write_text(HEADER + accepted + "".join(f"{name} {prints[name]}\n" for name in green), encoding="utf-8")
     for name in moved:
         print(f"指紋が変わった: {name}（" + ("緑なので今の指紋で載せ直した" if name in green else "緑でないので落とした") + "）")
     for name in gone:
@@ -230,17 +237,20 @@ def check(repo: Path, path: Path) -> int:
     prints, outcomes = observe(repo)
     broken, moved, gone, unlisted = compare(listed or {}, prints, outcomes)
     if broken:
-        say_broken(broken, outcomes)
+        say_broken(broken, outcomes, kept_count(listed or {}, prints))
         print(f"実装済みのケースのうち {len(broken)} 件が緑でない——性質を壊した", file=sys.stderr)
         return 1
     stale = [f"緑なのに一覧に無い: {name}" for name in unlisted]
-    stale += [f"指紋が変わった（仕様が変えた）: {name}" for name in moved]
+    stale += [f"指紋が変わった: {name}（いま{'緑' if outcomes.get(name) == 'pass' else describe(outcomes.get(name))}）" for name in moved]
     stale += [f"もう無い: {name}" for name in gone]
     if stale:
         if listed is None:
             print(f"{path}: 一覧が無い", file=sys.stderr)
         for line in stale:
             print(line, file=sys.stderr)
+        if any(outcomes.get(name) != "pass" for name in moved):
+            print("指紋が変わって緑でないケースは、作り直しで仕様が期待を変えたのか、同じ PR で実装を壊したのかを分けていない"
+                  "——Red テストと仕様の差分で確かめてから record --accept-changed で外す（壊したなら実装を直す）", file=sys.stderr)
         print(f"一覧が古い（{len(stale)} 件）——green-list.py record で書き直して commit する", file=sys.stderr)
         return 3
     red = sum(1 for name in prints if outcomes.get(name) != "pass")
