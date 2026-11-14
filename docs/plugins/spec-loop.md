@@ -226,6 +226,9 @@ Formal Checker はリポジトリの外でモデルを組んで走らせ、**`sp
   （本文の形は [`handoff-issue.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/handoff-issue.md)、
   dev-loop の側の受入基準の写し方は dev-loop の [`spec-gap.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/dev-loop/references/spec-gap.md) を正とします）。
 - **Red テストは手で直しません。** 期待を変えたいなら、仕様（と Q&A 表）を直して作り直します。
+- **実装が緑にした機能の Red テストは、製品のリポジトリの CI で走らせ続けます。** 緑のケースの一覧を `green-list.py record` が書き、
+  CI の `green-list.py check` が一覧のケースが緑のままかを見ます——まだ実装していない機能の赤では落ちません。選び方・性能テストの扱い・別リポジトリの形・GitHub Actions の雛形は
+  [`tree.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/tree.md) の「Red テストを CI で走らせ続ける」を正とします。
 
 ### `--red-check` が見るもの { #red-check }
 
