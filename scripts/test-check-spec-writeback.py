@@ -144,10 +144,16 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run(script, d, base)
     got += [("正本があって申告が無ければ 1", rc == 1 and "仕様の振る舞い:" in out),
             ("1 のとき原本を案内する", "spec-writeback.md" in out)]
-    for rel in ("docs/v1/requirements/r.md", "docs/v1/spec/s.md"):
-        d, base = fresh(base_files={rel: "x\n"})
+    for rel in ("docs/v1/spec/openapi.yaml", "docs/v1/requirements/r.md", "docs/v1/shared/qa.csv"):
+        d, base = fresh(base_files={rel: "openapi: 3.0.0\n" if rel.endswith(".yaml") else "x,y,z\n"})
         rc, _ = run(script, d, base)
-        got += [(f"{rel.split('/')[2]}/ だけの版も正本（申告が無ければ 1）", rc == 1)]
+        got += [(f"spec-loop の形の qa.csv が無い（{rel} だけ）なら正本でなく 0", rc == 0)]
+    d, base = fresh(base_files={**CANON, "docs/v2/spec/s.md": "x\n"})
+    rc, out = run(script, d, base)
+    got += [("spec-loop の形の qa.csv が v1 にあれば、spec/ だけの v2 を作業中の版と読む（申告が無ければ 1）", rc == 1 and "docs/v2/" in out)]
+    d, base = fresh(base_files={"docs/v1/shared/qa.csv": "\ufeff" + HEADER})
+    rc, _ = run(script, d, base)
+    got += [("BOM 付きの qa.csv も spec-loop の形と読む（申告が無ければ 1）", rc == 1)]
     d, base = fresh(base_files=CANON, plan=decl("変えない"))
     put(d, "src/a.py", commit=True)
     rc, _ = run(script, d, base)
@@ -200,6 +206,9 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     d, base = fresh(base_files={".claude/dev-loop.md": "```text\n仕様の正本: acme/spec\n```\n"})
     rc, _ = run(script, d, base)
     got += [("フェンスの中の `仕様の正本:` は宣言でない（0）", rc == 0)]
+    d, base = fresh(base_files={".claude/dev-loop.md": "<!--\n例:\n仕様の正本: acme/spec\n-->\n"}, plan=None, branch="feature/x")
+    rc, _ = run(script, d, base)
+    got += [("HTML コメントの中の `仕様の正本:` は宣言でない（0）", rc == 0)]
     d, base = fresh(base_files={"scaffold-source.txt": "acme/spec@0123abc\n"})
     rc, out = run(script, d, base)
     got += [("scaffold-source.txt があれば正本（申告が無いと 1）", rc == 1 and "acme/spec" in out)]
@@ -209,6 +218,15 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     d, base = fresh(base_files=sep, plan=decl("変える"))
     rc, out = run(script, d, base)
     got += [("別のリポジトリで `変える` なのに計画の行が無ければ 1", rc == 1 and "正本に起票する行:" in out)]
+    # 計画が git に載っていない（gitignore した .claude/plans/）なら、行があっても 1
+    d, base = fresh(base_files={**CANON, ".gitignore": ".claude/plans/\n"}, plan=None)
+    put(d, ".claude/plans/issue-7.md", decl("変える") + row)
+    rc, out = run(script, d, base)
+    got += [("`変える` で計画が git に載っていなければ 1", rc == 1 and "git に載っていない" in out)]
+    d, base = fresh(base_files={**CANON, ".gitignore": ".claude/plans/\n"}, plan=None)
+    put(d, ".claude/plans/issue-7.md", decl("変えない"))
+    rc, _ = run(script, d, base)
+    got += [("`変えない` なら計画が git に載っていなくても 0", rc == 0)]
 
     # 7) 緑のケースの一覧から載った行が減った
     canon_green = {**CANON, "scaffold-green.txt": GREEN}
@@ -237,7 +255,7 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run(script, d, base, "--plan", "notes/plan.md")
     got += [("`変える` で Issue の番号が取れなければ 2", rc == 2)]
     d, base = fresh(base_files=CANON, plan=None, branch="feature/x")
-    put(d, "notes/issue-7.md", decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n")
+    put(d, "notes/issue-7.md", decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n", commit=True)
     rc, _ = run(script, d, base, "--plan", "notes/issue-7.md")
     got += [("--plan の名前 issue-<n>.md から番号を取る", rc == 0)]
     d, base = fresh(base_files=CANON)
@@ -274,11 +292,13 @@ MUTATIONS = {
     "状態を見ない": ('            and fields.get("状態", "").strip() == OPEN_STATE)', "            )"),
     "計画の行をフェンスの中も読む": ("    for value in scan(plan_text, ROW_LINE):", "    for value in [m.group(1) for m in map(ROW_LINE.match, plan_text.splitlines()) if m]:"),
     "箇条書きの計画の行を数えない": (r'ROW_LINE = re.compile(r"^(?:[-*]\s+)?正本に起票する行:\s*(.*?)\s*$")', r'ROW_LINE = re.compile(r"^正本に起票する行:\s*(.*?)\s*$")'),
+    "qa.csv の形を見ない": ("    if not any(is_qa_table(child / \"shared\" / \"qa.csv\") for _, child in found):\n", "    if not found:\n"),
+    "BOM を残して読む": ('with path.open(encoding="utf-8-sig", newline="")', 'with path.open(encoding="utf-8", newline="")'),
+    "計画が git に載っているかを見ない": ("    if not plan_tracked:\n", "    if False:\n"),
     # 守る: 正本が別のリポジトリ
     "scaffold-source.txt を見ない": ("    if src.is_file():\n", "    if False:\n"),
-    "宣言を見ない": ("        if values:\n            return values[0]\n", ""),
-    "宣言をフェンスの中も読む": ("            values = [v for v in scan(conf.read_text(encoding=\"utf-8\"), CANONICAL_DECL) if v]",
-                                "            values = [m.group(1) for m in map(CANONICAL_DECL.match, conf.read_text(encoding=\"utf-8\").splitlines()) if m]"),
+    "宣言を見ない": ("    if values:\n        return values[0]\n", ""),
+    "宣言をコメントとフェンスの中も読む": ("    return list(env.visible_lines(text)) if text else []", "    return text.splitlines()"),
     # 守る: 緑のケースの一覧
     "一覧の減りを見ない": ("        if removed:\n", "        if False:\n"),
     "`spec-loop の Issue` でも一覧の減りを赤にする": ("    if value != FROM_SPEC_LOOP:\n", "    if True:\n"),
@@ -317,7 +337,8 @@ def static_checks() -> None:
     table_values = re.findall(r"^\| `([^`]+)` \|", section, flags=re.M)
     check("原本の「申告」の表の値が本体の VALUES と同じ（順も）", tuple(table_values) == tuple(body.VALUES))
     check("原本が PR の前に当てるコマンドを書く", "scripts/check-spec-writeback.py <周の base の SHA>" in doc)
-    check("原本が別のリポジトリの計画の行を書く", "正本に起票する行: " in doc)
+    check("原本が計画の行（正本に起票する行:）を書く", "正本に起票する行: " in doc)
+    check("原本が、周は正本の Q&A 表に書かないと決めている（W4）", "**正本の Q&A 表にも、周の中で書かない**" in doc)
 
 
 def leak_control(tmp: Path) -> None:

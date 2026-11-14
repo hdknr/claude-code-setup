@@ -5,7 +5,7 @@
 
 **周が PR を作る前に、worktree を cwd にして素の 1 行で呼ぶ**（`SKILL.md` 手順 6。終了コードで分岐する）。
 `<base>` は周の base（計画ファイルの「周の在り処」の SHA）。**main を取り込んだ後は、`SKILL.md` 手順 4 の式を当て直した SHA を渡す**
-——記録した古い SHA のままだと、main が足した Q&A 表の行や緑のケースの一覧の変化がこの周の変更に見える。
+——記録した古い SHA のままだと、main が変えた緑のケースの一覧がこの周の変更に見える。
 **規定（いつ申告するか・値の意味・変える周が残すもの・赤になったときにどうするか）の原本は `references/spec-writeback.md`**。
 
 ## なぜ要るか
@@ -17,8 +17,11 @@ spec-loop → dev-loop は仕様からコードへの向きのずれを何重に
 ## 読むもの
 
 - **正本の有無**（どれも無ければ 0。申告も計画も求めない）:
-    - **同じリポジトリ**: `docs/v<数字>/` の下に `shared/`・`requirements/`・`spec/` のどれかがある。**作業中の版は番号が最大のもの**（`spec-gap.md` の「差し戻す」と同じ）。
-    - **別のリポジトリ**: `.claude/dev-loop.md` の行頭の `仕様の正本: <owner>/<repo>`（コードフェンスの中は数えない）か、
+    - **同じリポジトリ**: `docs/v<数字>/` の下に `shared/`・`requirements/`・`spec/` のどれかがあり、**どれかの版の `shared/qa.csv` の見出しの行が
+      spec-loop の Q&A 表の形（`COLUMNS` の先頭 3 つで始まる）**——版ごとの API 仕様（`docs/v1/spec/openapi.yaml`）だけのリポジトリを正本と取り違えない。
+      **作業中の版は番号が最大のもの**（`spec-gap.md` の「差し戻す」と同じ。出力に名前を出すだけ）。
+    - **別のリポジトリ**: `.claude/dev-loop.md` の行頭の `仕様の正本: <owner>/<repo>`（コードフェンスと HTML コメントの中は数えない。
+      読み方は同じ場所の `check-unattended-env.py` の `visible_lines`・`read_dev_loop_md` を読み込む——写さない）か、
       リポジトリの根の `scaffold-source.txt`（spec-loop プラグインの `tree.md` の「Red テストを CI で走らせ続ける」。写した元の正本を名指す）。
       **同じリポジトリの正本があれば、そちらを採る。**
 - **差分**: `git diff --name-only --no-renames <base>`（**2 点**——未コミットの変更・消したファイルも入る）。緑のケースの一覧を見つけるためだけに使う。
@@ -28,6 +31,7 @@ spec-loop → dev-loop は仕様からコードへの向きのずれを何重に
 - **変える周が残すもの**（正本が同じリポジトリでも別のリポジトリでも同じ）: 計画ファイルの行頭の `正本に起票する行: <CSV の 1 行>`
   （Q&A 表の列の順。`No` は空でよい。コードフェンスの中は数えない）で、列の数が `COLUMNS` と同じで、
   起票元が `開発（#<n>）`・回答が `未回答`・状態が `確認中` のもの。**正本の Q&A 表は読まない**——周は正本の表に書かない（`references/spec-writeback.md`）。
+  **計画ファイルが git に載っている（`git ls-files` に出る）こと**も見る——gitignore した `.claude/plans/` の計画に書いた行は、worktree と一緒に消える。
 - **緑のケースの一覧**: 差分にある、名前が `scaffold-green.txt` のファイル（置き場所は問わない）。base の時点と今の、
   `#` で始まらない行の（ケースの名前, 指紋）の組を比べる——base の組が今の一覧に無ければ「減った」（行を外した・指紋を変えた）。
 
@@ -43,9 +47,10 @@ spec-loop → dev-loop は仕様からコードへの向きのずれを何重に
 
 - **正本があれば、申告が 1 本で決まった値でない限り 0 にしない**——行が無い・別の値・2 本以上・フェンスの中だけ、のどれも 1
 - **正本があるのに計画が見つからなければ 0 にしない**（2）
-- **正本が無ければ、申告の有無に依らず 0**——`docs/` があるだけ・`docs/v1-notes/` のような名前・版のディレクトリに `shared/`・`requirements/`・`spec/` が無い、は正本ではない
+- **正本が無ければ、申告の有無に依らず 0**——`docs/` があるだけ・`docs/v1-notes/` のような名前・版のディレクトリに `shared/`・`requirements/`・`spec/` が無い・
+  どの版にも spec-loop の形の `shared/qa.csv` が無い（`docs/v1/spec/openapi.yaml` だけ）・`.claude/dev-loop.md` の HTML コメントの中の `仕様の正本:`、は正本ではない
 - **`変える` の周は、計画の `正本に起票する行:` が無いか、列の数・起票元 `開発（#<この Issue>）`・回答 `未回答`・状態 `確認中` のどれかで合わなければ 1**——
-  正本の表に直接足しただけ、も 1（周は正本の表に書かない）
+  正本の表に直接足しただけ、も 1（周は正本の表に書かない）。計画ファイルが git に載っていなければ、行があっても 1
 - **緑のケースの一覧から載った組（名前と指紋）が減ったら、値が `spec-loop の Issue` でない限り 1**——一覧ごと消した・`--accept-changed` で外した・
   Red テストを直して `record` し直した（名前は同じで指紋が変わった）、も減ったに数える
 - **未コミットの変更・消した一覧・下の階層の一覧を落とさない**
@@ -67,6 +72,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import os
 import re
 import subprocess
@@ -93,6 +99,7 @@ CANONICAL_PARTS = ("shared", "requirements", "spec")
 GREEN_LIST = "scaffold-green.txt"
 SCAFFOLD_SOURCE = "scaffold-source.txt"
 PLAN_TEMPLATES = ("docs/plans/issue-{}.md", ".claude/plans/issue-{}.md")
+HERE = Path(__file__).resolve().parent
 
 
 def scan(text: str, pattern: re.Pattern) -> list[str]:
@@ -116,8 +123,18 @@ def scan(text: str, pattern: re.Pattern) -> list[str]:
     return values
 
 
+def is_qa_table(path: Path) -> bool:
+    """spec-loop の Q&A 表の見出しの行か（`COLUMNS` の先頭 3 つで始まる）。"""
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as f:
+            head = next(csv.reader(f), [])
+    except (OSError, UnicodeDecodeError, csv.Error):
+        return False
+    return [c.strip() for c in head[:3]] == COLUMNS[:3]
+
+
 def working_version(root: Path) -> int | None:
-    """同じリポジトリの正本の作業中の版（番号が最大のもの）。無ければ None。"""
+    """同じリポジトリの正本の作業中の版（番号が最大のもの）。正本でなければ None。"""
     docs = root / "docs"
     if not docs.is_dir():
         return None
@@ -125,20 +142,29 @@ def working_version(root: Path) -> int | None:
     for child in docs.iterdir():
         m = VERSION_DIR.match(child.name)
         if m and child.is_dir() and any((child / part).is_dir() for part in CANONICAL_PARTS):
-            found.append(int(m.group(1)))
-    return max(found) if found else None
+            found.append((int(m.group(1)), child))
+    if not any(is_qa_table(child / "shared" / "qa.csv") for _, child in found):
+        return None
+    return max(n for n, _ in found)
+
+
+def dev_loop_md_lines(root: Path) -> list[str]:
+    """`.claude/dev-loop.md` の、フェンスと HTML コメントの外の行（同じ場所の `check-unattended-env.py` を読み込む——写さない）。"""
+    spec = importlib.util.spec_from_file_location("check_unattended_env", HERE / "check-unattended-env.py")
+    env = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(env)
+    try:
+        text = env.read_dev_loop_md(root)
+    except (OSError, UnicodeDecodeError):
+        return []
+    return list(env.visible_lines(text)) if text else []
 
 
 def separate_canonical(root: Path) -> str | None:
     """別のリポジトリの正本の名前（宣言か `scaffold-source.txt`）。無ければ None。"""
-    conf = root / ".claude" / "dev-loop.md"
-    if conf.is_file():
-        try:
-            values = [v for v in scan(conf.read_text(encoding="utf-8"), CANONICAL_DECL) if v]
-        except (OSError, UnicodeDecodeError):
-            values = []
-        if values:
-            return values[0]
+    values = [m.group(1) for m in map(CANONICAL_DECL.match, dev_loop_md_lines(root)) if m and m.group(1)]
+    if values:
+        return values[0]
     src = root / SCAFFOLD_SOURCE
     if src.is_file():
         try:
@@ -179,7 +205,7 @@ def green_pairs(text: str | None) -> set[tuple[str, str]]:
 
 
 def judge(*, version: int | None, separate: str | None, plan_text: str | None, issue: str | None,
-          green: list[tuple[str, str | None, str | None]]) -> tuple[int, str]:
+          green: list[tuple[str, str | None, str | None]], plan_tracked: bool = True) -> tuple[int, str]:
     """(終了コード, 理由)。`green` は (一覧のパス, base の中身, 今の中身)。"""
     if version is None and separate is None:
         return 0, "spec-loop の正本が無い（docs/v<n>/ も `仕様の正本:` の宣言も scaffold-source.txt も無い）——該当なし"
@@ -203,6 +229,9 @@ def judge(*, version: int | None, separate: str | None, plan_text: str | None, i
     if issue is None:
         return 2, "申告が `変える` なのに Issue の番号が取れない（ブランチ名 issue/<n>-… か計画ファイルの名前 issue-<n>.md）——判定していない（緑ではない）"
     where = f"docs/v{version}/" if version is not None else separate
+    if not plan_tracked:
+        return 1, ("申告が `変える` なのに、計画ファイルが git に載っていない（gitignore した `.claude/plans/` など）——計画の行が worktree と一緒に消える。"
+                   "`docs/plans/` のような commit する場所に置く")
     if any(writeback_ok(r, issue) for r in plan_rows(plan_text)):
         return 0, f"申告は `変える`。正本（{where}）に起票する行が計画にある"
     return 1, (f"申告が `変える` なのに、計画に正本（{where}）に起票する `正本に起票する行:` の行"
@@ -295,8 +324,9 @@ def main(argv=None) -> int:
             print(f"計画ファイル {plan} を読めなかった: {e}——判定していない（緑ではない）。")
             return 2
     green = [(p, at_base(opts.base, p), read_now(root, p)) for p in paths if p.split("/")[-1] == GREEN_LIST]
+    tracked = plan is not None and git("ls-files", "--error-unmatch", "--", str(plan))[0] == 0
     code, reason = judge(version=version, separate=separate, plan_text=plan_text, issue=issue_number(plan),
-                         green=green)
+                         green=green, plan_tracked=tracked)
     where = f"同じリポジトリ（docs/v{version}/）" if version is not None else (f"別のリポジトリ（{separate}）" if separate else "無い")
     print(f"正本: {where} / 計画: {plan if plan else '(見つからない)'} / 差分: {len(paths)} ファイル")
     print(reason)
