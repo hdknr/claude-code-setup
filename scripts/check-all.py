@@ -170,6 +170,7 @@ TESTS: list[str] = [
     "test-check-frozen.py",
     "test-autopilot-ledger.py",
     "test-autopilot-check.py",
+    "test-formal-baseline.py",
     "test-check-tlc.py",
     "test-check-alloy.py",
     "test-autopilot-loop.py",

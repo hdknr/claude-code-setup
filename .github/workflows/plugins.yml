@@ -302,6 +302,10 @@ jobs:
       - name: spec-loop の autopilot の線と権限の点検のテスト（#849）
         run: python3 scripts/test-autopilot-check.py
 
+      # 本体は plugins/spec-loop/scripts/formal-baseline.py（形式検査のモデルの書く場所と形の確かめ。一時ディレクトリの git リポジトリとタグで当てる）。
+      - name: spec-loop の形式検査のモデルの書く場所と形の確かめのテスト（#1031）
+        run: python3 scripts/test-formal-baseline.py
+
       # 本体は plugins/spec-loop/scripts/check-tlc.py（TLC の前提の確かめ。偽の TLC と一時ディレクトリの正本で当て、本物の TLC は走らせない）。
       - name: spec-loop の TLC の前提の確かめのテスト（#912）
         run: python3 scripts/test-check-tlc.py

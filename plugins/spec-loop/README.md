@@ -7,6 +7,7 @@
 **スキルは `req-loop`（要求確定）・`spec-review`（仕様レビュー）・`feasibility`（実現性とコスト）・
 `proposal`（提案書）・`scaffold`（dev-loop への引き渡し）の 5 本です**（計画は [#214](https://github.com/hdknr/claude-code-setup/issues/214)）。
 **それらを利用者の不在のあいだに 1 単位ずつ回す入口 `autopilot` も持ちます**（下の「`autopilot` — 不在のあいだに回す入口」）。
+**レビューをせずに今の仕様から形式検査のモデルを組んで残す `formal-baseline` も持ちます**（下の「`formal-baseline` — 形式検査のモデルを基準として残す」）。
 
 設計の背景（なぜ dev-loop と分けるか・なぜ 1 つのプラグインにまとめるか）は記事を参照:
 <https://hdknr.github.io/blogs/posts/2026/10/spec-loop-plugin/>
@@ -44,6 +45,7 @@
 | `templates/mkdocs/` | 正本リポジトリを MkDocs で閲覧するための雛形（設定・Q&A 表を CSV から描くフック・表示用のページ） |
 | `scripts/autopilot-ledger.py` | autopilot の台帳（版ごとの `.claude/plans/spec-autopilot-v<版>.json`）の読み書き（標準ライブラリと `git`） |
 | `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検（標準ライブラリと `git`） |
+| `scripts/formal-baseline.py` | 形式検査のモデルを書いてよい版を決め（リリース済みなら書かない）、残したモデルの形（記録の項目・一覧に無いファイル）を確かめる（標準ライブラリと `git`） |
 | `scripts/check-tlc.py` | TLC が正本リポジトリの `CLAUDE.md` に書いた呼び方で使えるかの確かめ（標準ライブラリと、書いた呼び方の TLC。下の「前提」） |
 | `scripts/check-alloy.py` | Alloy が正本リポジトリの `CLAUDE.md` に書いた呼び方（`exec`）で使えるかの確かめ（標準ライブラリと、書いた呼び方の Alloy。下の「前提」の「Alloy の用意」） |
 | `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
@@ -53,6 +55,7 @@
 | `skills/proposal/` | 関門を照合して提案書を作るスキル |
 | `skills/scaffold/` | 確定した仕様を Red テストと Issue に変え、dev-loop に渡すスキル |
 | `skills/autopilot/` | 仕様レビューと実現性・コストのループを、利用者の不在のあいだに 1 単位ずつ進める入口 |
+| `skills/formal-baseline/` | レビューをせずに、今の仕様から形式検査のモデルを組んで `spec/formal/` に基準として残すスキル |
 | `agents/` | 仕様を批判する 3 つの判定役（`red-team`・`domain-checker`・`formal-checker`）と見積りの検証役（`estimate-checker`）。**書き込みツールを持たない** |
 
 **データの決まりは `references/` だけに書きます。** このファイルも、スキルも、公開ページも、
@@ -149,6 +152,13 @@ python3 <spec-loop の base ディレクトリ>/scripts/green-list.py {record|ch
 **サインオフのタグ・scaffold・Issue の登録はしません。**
 
 手順と守ることは [`skills/autopilot/SKILL.md`](skills/autopilot/SKILL.md) を、台帳の形と線の一覧は `scripts/autopilot-ledger.py`・`scripts/autopilot-check.py` の docstring を正とします。
+
+## `formal-baseline` — 形式検査のモデルを基準として残す
+
+`/spec-loop:formal-baseline` で呼びます。`spec-review` は Formal Checker を呼ぶたびにモデルを `spec/formal/<対象>/` に残します（#908）が、それより前に抜けた仕様には残したモデルがありません。このスキルは**レビューをせずに**、Formal Checker だけを呼んで今の仕様からモデルを組み、基準として残します（#1031）。
+**書くのは作業中の版だけで、リリース済みなら書かずに止まります。反例が出たらモデルを残して振り分けずに止まり、`spec-review` を回すよう伝えます。**
+
+手順と守ることは [`skills/formal-baseline/SKILL.md`](skills/formal-baseline/SKILL.md) を、置き場所と記録の項目は `references/tree.md` の「形式検査のモデル」を、スクリプトが見るものは `scripts/formal-baseline.py` の docstring を正とします。
 
 ## Q&A 表を検査する
 
