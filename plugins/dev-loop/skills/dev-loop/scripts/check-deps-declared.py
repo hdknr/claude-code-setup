@@ -44,7 +44,7 @@ lockfile の更新にしか見えない。**周が依存を足したことを計
 
 - **宣言の真偽**——`あり` と書けば通る。足した包が安全かは Verifier の表が見る（`references/dependencies.md`）
 - **`触る:` のパターンの名前**——判定は差分だけ。依存のファイルを `触る:` に書いても、差分に現れるまでは何も言わない
-- **`DEPENDENCY_FILES` に無い名前**——ここに無い生態系の依存のファイル・独自の名前の requirements（`deps/base.in`・一覧に無い用途の `<用途>-requirements.txt` など）は見えない。**文書を拾わないために絞っている**——見るのは `requirements*.txt`・`requirements*.in`・`constraints.txt`・`constraints.in`・版の番号か決まった用途の付いた `constraints-<…>.txt`・`.in`・決まった用途の `<用途>-requirements.txt`・`<用途>_requirements.txt` と、文書のディレクトリ（`docs`・`spec` など）の下でない `requirements/` の中の `.txt`・`.in`
+- **`DEPENDENCY_FILES` に無い名前**——ここに無い生態系の依存のファイル・独自の名前の requirements（`deps/base.in`・一覧に無い用途の `<用途>-requirements.txt` など）は見えない。**文書を拾わないために絞っている**——見るのは `requirements*.txt`・`requirements*.in`・`constraints.txt`・`constraints.in`・版の番号（数字で始まる形）か、Python の版を表す接頭辞（`py`・`python`・`pypy`・`pyodide`）の直後に数字が続く形（`constraints-py38.txt`・`constraints_python3.12.txt`）か、決まった用途の付いた `constraints-<…>.txt`・`.in`（区切りは `-` か `_`。`constraints-pyproject-notes.txt` のように接頭辞の直後が数字でないものは見ない）・決まった用途の `<用途>-requirements.txt`・`<用途>_requirements.txt` と、文書のディレクトリ（`docs`・`spec` など）の下でない `requirements/` の中の `.txt`・`.in`
 - **差分の中身**——lockfile のどの包が増えたかは読まない（増えた包は Verifier が差分から数える）
 
 標準ライブラリのみ。
@@ -63,6 +63,9 @@ from pathlib import Path
 # `<用途>-requirements.txt`・`constraints-<用途>.txt` の用途の名前（決まった名前だけ——文書を拾わない。#996 の NF1・D-R7）
 REQUIREMENT_USES = ("dev", "test", "tests", "ci", "build", "docs", "lint", "base", "local", "prod", "production", "optional")
 
+# `constraints-py38.txt`・`constraints-python312.txt` の Python の版の接頭辞（直後に数字が続くときだけ——`constraints-pyproject-notes.txt` を拾わない。#1012）
+PYTHON_VERSION_PREFIXES = ("py", "python", "pypy", "pyodide")
+
 # 依存の定義・lockfile・取得経路の設定（パスの最後の要素で照合する。glob）。
 # `check-unattended-env.py` の「依存の取得経路」もここを読む——一覧を 2 箇所に置かない。
 DEPENDENCY_FILES = {
@@ -72,6 +75,8 @@ DEPENDENCY_FILES = {
                "requirements*.txt", "requirements*.in", "constraints.txt", "constraints.in", "setup.py", "setup.cfg",
                # constraints は版の番号か決まった用途の名前の付いたものだけ——`constraints-analysis.txt` のような文書を拾わない（#996 の D-R7）
                *(f"constraints{sep}[0-9]*.{ext}" for sep in ("-", "_") for ext in ("txt", "in")),
+               # Python の版を英字の接頭辞で書いたもの（FreeCAD-addons の `constraints-py38.txt`・cibuildwheel の `constraints-pyodide313.txt`。#1012）
+               *(f"constraints{sep}{py}[0-9]*.{ext}" for py in PYTHON_VERSION_PREFIXES for sep in ("-", "_") for ext in ("txt", "in")),
                # `<用途>-requirements.txt` は決まった用途の名前だけ——`product-requirements.txt` のような文書を拾わない（#996 の NF1）
                *(f"{use}{sep}requirements.{ext}" for use in REQUIREMENT_USES for sep in ("-", "_") for ext in ("txt", "in")),
                *(f"constraints{sep}{use}.{ext}" for use in REQUIREMENT_USES for sep in ("-", "_") for ext in ("txt", "in"))),

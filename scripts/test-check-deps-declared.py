@@ -162,7 +162,10 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
 
     for rel in ("requirements/base.txt", "dev-requirements.txt", "constraints.txt", "svc/requirements/base.in",
                 "requirements-dev.in", "docs/requirements.txt", "constraints-3.8.txt", "constraints-dev.txt",
-                "dev_requirements.txt", "docs/constraints.txt", "constraints.in", "ci_requirements.in"):
+                "dev_requirements.txt", "docs/constraints.txt", "constraints.in", "ci_requirements.in",
+                # Python の版の英字の接頭辞（#1012。FreeCAD-addons・cibuildwheel に在る形）
+                "constraints/constraints-py38.txt", "constraints_python3.12.txt", "constraints-pyodide313.in",
+                "constraints-pypy3.10.txt"):
         d, base = fresh()
         put(d, rel, commit=True)
         rc, _ = run(script, d, base)
@@ -170,7 +173,7 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     # 負の試料（#996 の NF1）——依存でない文書を拾わない
     for rel in ("docs/product-requirements.txt", "docs/requirements/overview.txt", "requirements/README.md",
                 "docs/constraints-list.txt", "spec/requirements/functional.in", "notes/constraints-analysis.txt",
-                "constraints_overview.txt"):
+                "constraints_overview.txt", "constraints-pyproject-notes.txt", "constraints-python-notes.txt"):
         d, base = fresh()
         put(d, rel, commit=True)
         rc, _ = run(script, d, base)
@@ -247,6 +250,14 @@ MUTATIONS = {
     "文書のディレクトリの下の requirements/ も数える": ("            and not any(d.lower() in DOC_DIRS for d in parts[:-2])):", "            ):"),
     "constraints の版の番号の形を見ない": ('*(f"constraints{sep}[0-9]*.{ext}"', '*(f"constraints{sep}[0-9]*.no{ext}"'),
     "constraints の名前を広げる（文書を拾う）": ('"constraints.txt", "constraints.in", "setup.py"', '"constraints*.txt", "constraints*.in", "setup.py"'),
+    "constraints の Python の版の接頭辞を見ない": ('*(f"constraints{sep}{py}[0-9]*.{ext}"', '*(f"constraints{sep}{py}[0-9]*.no{ext}"'),
+    "Python の版の接頭辞の後ろに何でも許す（文書を拾う）": ('f"constraints{sep}{py}[0-9]*.{ext}"', 'f"constraints{sep}{py}*.{ext}"'),
+    "Python の版の接頭辞で下線区切りを見ない": ('for py in PYTHON_VERSION_PREFIXES for sep in ("-", "_")', 'for py in PYTHON_VERSION_PREFIXES for sep in ("-",)'),
+    "Python の版の接頭辞で .in を見ない": ('{py}[0-9]*.{ext}" for py in PYTHON_VERSION_PREFIXES for sep in ("-", "_") for ext in ("txt", "in")',
+                                         '{py}[0-9]*.{ext}" for py in PYTHON_VERSION_PREFIXES for sep in ("-", "_") for ext in ("txt",)'),
+    **{f"Python の版の接頭辞 {py} を見ない": ('PYTHON_VERSION_PREFIXES = ("py", "python", "pypy", "pyodide")',
+                                         "PYTHON_VERSION_PREFIXES = (" + ", ".join(f'"{q}"' for q in ("py", "python", "pypy", "pyodide") if q != py) + ")")
+       for py in ("py", "python", "pypy", "pyodide")},
     "constraints.in を見ない": ('"constraints.txt", "constraints.in", "setup.py"', '"constraints.txt", "setup.py"'),
     "下線区切りの用途の名前を見ない": ('f"{use}{sep}requirements.{ext}" for use in REQUIREMENT_USES for sep in ("-", "_")',
                                     'f"{use}{sep}requirements.{ext}" for use in REQUIREMENT_USES for sep in ("-",)'),
