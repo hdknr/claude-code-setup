@@ -66,6 +66,10 @@ I1 を破りうる経路（偽のリポジトリでコミットする・git を�
 - 著者が (3)〜(5) を台本（`probe1028.py`。`GIT_TRACE2_EVENT` でコミットの子プロセスに `maintenance` が出るか）で確かめた:
   設定なし True／`maintenance.auto=false` のみ True／`gc.auto=0` のみ False／両方 False（陽性対照は「設定なし」）。
   雛形の `--local` に 2 つの鍵、`--global` には無い。複製の `--local` にも写り、複製の上のコミットで False
+- 1 パス目 `/code-review`（high）: 指摘 7 件・直す 1 件（CR1。採否の表）
+- 1 パス目の指摘対応: `fd8d573`（`0cb802c` からの成果物の差分は `scripts/test-check-deps-declared.py` の `git()` の 3 行）
+- 2 つ目の割り目: `AskUserQuestion` で訊いたが 300 秒で回答なし→このまま続けた
+- 次に残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。2 パス目の指摘対応の起点は、指摘対応を始める直前に書く
 - 関連: #1034（#1024 の周で同じ欠陥を重複して起票し、#1028 の重複として閉じた）
 
 ## 既知の限界・決着済みの論点
