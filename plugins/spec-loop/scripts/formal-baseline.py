@@ -15,9 +15,9 @@ usage:
 - 版は `docs/` 直下の `v<n>`（見つけ方は `merge-versions.py` の `find_versions` を読み込む——写さない）。**書くのは番号が最大の版（作業中の版）だけ**。
 - **作業中の版にリリースのタグ `release-v<n>` があれば書かない（3）**——凍結した版を直すと `check-frozen.py` が落ちる。
   次の版を作ってから呼び直す。タグの命名は `check-frozen.py` の `releases` を読み込む（写さない）。
-- **タグを見る前に、リモートがあればタグを取り直す**（`git fetch --all --tags`）——`--no-tags` で取った clone や、他の人が付けて
-  まだ取っていない `release-v<n>` を「リリースしていない」と読まないため（#1031 の 1 パス目）。**取り直せなければ 2**。リモートが無ければ手元のタグを見る。
-  **これだけがリポジトリの状態を変える操作である**（リモート追跡のタグを足す。作業ツリーと HEAD は変えない）。
+- **手元のタグに加えて、リモートごとに `git ls-remote --tags` で訊いたタグも見る**——`--no-tags` で取った clone や、他の人が付けて
+  まだ取っていない `release-v<n>` を「リリースしていない」と読まないため（#1031 の 1 パス目）。**どれか 1 つのリモートでも訊けなければ 2**。リモートが無ければ手元のタグだけを見る。
+  **リポジトリの状態は変えない**——`git fetch` は使わない（利用者の `fetch.prune`・`fetch.pruneTags` に従って、手元にだけあるタグ（押す前のサインオフのタグ）を消すため。#1031 の 2 パス目）。
 - 0 なら、書く場所（`docs/v<n>/spec/formal/`）と、保存したモデルを探す場所（v1 は同じ場所、v2 以降は重ね合わせた全体
   `build/merged/spec/formal/`——`merge-versions.py docs build/merged` が作る）を出す。
 
@@ -34,7 +34,7 @@ usage:
 
 - 0: `target` は書く場所を決めた／`check` は形どおり
 - 1: `check` の違反（違反を全部出す）
-- 2: 判定していない——git でない・浅い clone・タグを取り直せない・版が無い・版の決まりに反する・ディレクトリが無い・`README.md` が読めない・想定外の例外
+- 2: 判定していない——git でない・浅い clone・リモートのタグを訊けない・版が無い・版の決まりに反する・ディレクトリが無い・`README.md` が読めない・想定外の例外
 - 3: `target` で、作業中の版がリリース済み（書かない）
 
 **守ること**:
@@ -43,18 +43,19 @@ usage:
 | --- | --- |
 | 作業中の版がリリース済みなら書く場所を出さない（3） | 凍結した版に書いて `check-frozen.py` が落ちる |
 | 版が無い・版の決まりに反する・浅い clone なら 2 で、書く場所を出さない | 「凍結していない」と読み違えて書く |
-| リモートがあればタグを取り直してから見る。取り直せなければ 2 | `--no-tags` の clone・取っていないタグで、リリース済みの版に書く |
+| リモートのタグも `ls-remote` で訊いて見る。訊けなければ 2 | `--no-tags` の clone・取っていないタグで、リリース済みの版に書く |
+| `git fetch` を使わず、リポジトリを変えない | 利用者の `fetch.pruneTags` で、押す前のサインオフのタグが消える |
 | 一覧に無いファイル・ディレクトリを違反にする | 検査器の作業ファイルや前の残りが基準のモデルに混ざる |
 | 一覧のファイルが無ければ違反にする | 次の回が読むモデルが欠ける |
 | 記録の項目が欠けた・空・2 行あるなら違反にする | 次の回が前提や陽性対照を確かめ直せない |
-| `結果`・`前回のモデル` は値そのものか、値に `（` で始まる要約を続けた形だけを通す | `反例なしかは判定できなかった` のような、走らせていないモデルが残る |
+| `結果`・`前回のモデル` は値そのものか、値に `（…）` の要約を 1 つだけ続けた形（閉じた後ろに何も無い）だけを通す | `反例なしかは判定できなかった`・`反例なし（N=3）かは判定できなかった` のような、走らせていないモデルが残る |
 | 置き場所と名前の形を見る | 次の回が同じ名前で探せない |
 
 **守らないもの**:
 
 | 守らないもの | なぜ |
 | --- | --- |
-| **リモートにも押していない `release-v<n>`**（他の人の手元にだけあるタグ） | 取り直す先に無いものは見えない。タグは付けたら押す運用で守る |
+| **リモートにも押していない `release-v<n>`**（他の人の手元にだけあるタグ） | 訊く先に無いものは見えない。タグは付けたら押す運用で守る |
 | **モデルの中身が仕様に合っているか・検査器が本当に走らせたものか** | 判定役の仕事で、報告から写すときにスキルが守る（`cp` で写す） |
 | **記録の値が正しいか**（陽性対照が本当に反例を出したか・前提が全部か） | 文面の真偽は機械で決まらない |
 | **`残した回` が記録の表の行を指しているか** | 記録の表は版ごとに `docs/` の外にあり、このディレクトリからは決まらない |
@@ -125,16 +126,18 @@ def _target(repo: Path) -> tuple[int, list[str]]:
     remotes = frozen.git(root, "remote")
     if remotes.returncode != 0:
         return 2, [f"リモートを読めない: {remotes.stderr.strip()}。判定していない"]
-    if remotes.stdout.strip():
-        fetched = subprocess.run(["git", "-C", str(root), "fetch", "--all", "--tags", "--quiet"], capture_output=True, text=True,
-                                 env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
-        if fetched.returncode != 0:
-            return 2, [f"リリースのタグを取り直せない（git fetch --all --tags: {fetched.stderr.strip()}）。"
-                       "取っていないタグを「リリースしていない」と読まないため判定していない"]
     listed = frozen.git(root, "tag", "--list")
     if listed.returncode != 0:
         return 2, [f"タグを読めない: {listed.stderr.strip()}。判定していない"]
-    released = {n for n, _ in frozen.releases(listed.stdout.split())}
+    names = listed.stdout.split()
+    for remote in remotes.stdout.split():
+        asked = subprocess.run(["git", "-C", str(root), "ls-remote", "--tags", remote], capture_output=True, text=True,
+                               env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+        if asked.returncode != 0:
+            return 2, [f"リモート {remote} のタグを読めない（git ls-remote --tags: {asked.stderr.strip()}）。"
+                       "取っていないタグを「リリースしていない」と読まないため判定していない"]
+        names += remote_tags(asked.stdout)
+    released = {n for n, _ in frozen.releases(names)}
     where = f"{frozen.DOCS}/v{number}/{versions.FORMAL_DIR}"
     if number in released:
         return 3, [f"作業中の版 v{number} はリリース済み（release-v{number}）。{where} には書かない",
@@ -143,9 +146,38 @@ def _target(repo: Path) -> tuple[int, list[str]]:
     return 0, [f"版: v{number}", f"書く場所: {where}<対象>/", f"保存したモデルを探す場所: {saved}"]
 
 
+def remote_tags(output: str) -> list[str]:
+    """`git ls-remote --tags` の出力（`<sha>\\trefs/tags/<名前>`、注釈つきタグは `^{}` の行も）からタグの名前を取る。"""
+    names = []
+    for line in output.splitlines():
+        ref = line.partition("\t")[2]
+        if ref.startswith("refs/tags/"):
+            names.append(ref[len("refs/tags/"):].removesuffix("^{}"))
+    return names
+
+
 def one_of(value: str, allowed: tuple[str, ...]) -> bool:
-    """値そのものか、値の直後に `（` で始まる要約を続けた形か（`反例あり（2 重の取り消し）`）。"""
-    return any(value == a or value.startswith(a + "（") for a in allowed)
+    """値そのものか、値の直後に `（…）` の要約を 1 つだけ続けた形か（`反例あり（2 重の取り消し）`）。
+
+    要約は `（` で始まり、それと対応する `）` で終わる（中の入れ子は構わない）。閉じた後ろに続けた語・閉じていない形・空の要約は通さない。
+    """
+    for a in allowed:
+        if value == a:
+            return True
+        summary = value[len(a):] if value.startswith(a) else ""
+        if len(summary) > 2 and summary[0] == "（" and closes_at_end(summary):
+            return True
+    return False
+
+
+def closes_at_end(summary: str) -> bool:
+    """`（` で始まる文字列の最初の `（` と対応する `）` が、ちょうど末尾にあるか。"""
+    depth = 0
+    for i, ch in enumerate(summary):
+        depth += {"（": 1, "）": -1}.get(ch, 0)
+        if depth == 0:
+            return i == len(summary) - 1
+    return False
 
 
 def read_records(readme: Path) -> tuple[dict[str, str], list[str]]:

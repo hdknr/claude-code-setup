@@ -70,7 +70,9 @@ TARGET_CASES: list[tuple[str, Steps, int, str]] = [
     # タグを取っていない clone（--no-tags）・あとで付いて取っていないタグは、取り直してから見る（#1031 の 1 パス目）
     ("--no-tags の clone", [("w", V1, "a\n"), ("c",), ("t", "release-v1"), ("notags",)], 3, "リリース済み"),
     ("取っていないタグ", [("w", V1, "a\n"), ("c",), ("deep",), ("ts", "release-v1")], 3, "リリース済み"),
-    ("取り直せない", [("w", V1, "a\n"), ("c",), ("t", "release-v1"), ("deep",), ("rmsrc",)], 2, "リリースのタグを取り直せない"),
+    ("取り直せない", [("w", V1, "a\n"), ("c",), ("t", "release-v1"), ("deep",), ("rmsrc",)], 2, "のタグを読めない"),
+    # 手元にだけあるタグを消さない——利用者の fetch.prune・fetch.pruneTags で fetch がタグを消す（#1031 の 2 パス目）
+    ("prune の設定でも手元のタグを見る", [("w", V1, "a\n"), ("c",), ("deep",), ("prune",), ("t", "release-v1")], 3, "リリース済み"),
     # 陽性対照: 取っていないタグが無ければ、取り直しても書ける
     ("取り直しても書ける", [("w", V1, "a\n"), ("c",), ("deep",)], 0, "書く場所: docs/v1/"),
 ]
@@ -117,6 +119,11 @@ CHECK_CASES: list[CheckCase] = [
      "結果が 反例なし／反例あり のどちらでもない"),
     ("前回のモデルの後ろに別の語", GOOD_DIR, {"README.md": readme(前回のモデル="直さず使ったかは不明"), **MODEL_FILES}, 1, "前回のモデルが"),
     ("前回のモデルに要約", GOOD_DIR, {"README.md": readme(前回のモデル="直して使った（排他を足した）"), **MODEL_FILES}, 0, "形どおり"),
+    ("結果の要約の後ろに判定できなかった", GOOD_DIR, {"README.md": readme(結果="反例なし（N=3）かは判定できなかった"), **MODEL_FILES}, 1,
+     "結果が 反例なし／反例あり のどちらでもない"),
+    ("結果の要約が閉じない", GOOD_DIR, {"README.md": readme(結果="反例あり（2 重の取り消し"), **MODEL_FILES}, 1, "結果が 反例なし／反例あり のどちらでもない"),
+    ("結果の要約が空", GOOD_DIR, {"README.md": readme(結果="反例あり（）"), **MODEL_FILES}, 1, "結果が 反例なし／反例あり のどちらでもない"),
+    ("結果の要約に入れ子", GOOD_DIR, {"README.md": readme(結果="反例あり（2 重の取り消し（A と B））"), **MODEL_FILES}, 0, "形どおり"),
     ("結果が反例あり", GOOD_DIR, {"README.md": readme(結果="反例あり（2 重の取り消し）"), **MODEL_FILES}, 0, "形どおり"),
     ("前回のモデルが違う値", GOOD_DIR, {"README.md": readme(前回のモデル="新しく作った"), **MODEL_FILES}, 1, "前回のモデルが"),
     ("一覧にバッククォートが無い", GOOD_DIR, {"README.md": readme(モデルのファイル="order.tla・order.cfg"), **MODEL_FILES}, 1,
@@ -146,10 +153,19 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("2 行ある項目を通す", '            problems.append(f"{readme}: 項目「{item}」が 2 行ある")\n', "            pass\n", "結果が 2 行"),
     ("判定できなかったを通す", "    if result and not one_of(result, RESULTS):\n", "    if False:\n", "結果が判定できなかった"),
     ("前回のモデルの値を通す", "    if previous and not one_of(previous, PREVIOUS):\n", "    if False:\n", "前回のモデルが違う値"),
-    ("前方一致に戻す", '    return any(value == a or value.startswith(a + "（") for a in allowed)', "    return value.startswith(allowed)",
+    ("前方一致に戻す", "    for a in allowed:\n        if value == a:", "    for a in allowed:\n        if value.startswith(a):",
      "結果の後ろに判定できなかった"),
-    ("タグを取り直さない", "    if remotes.stdout.strip():\n", "    if False:\n", "取っていないタグ"),
-    ("取り直せなくても続ける", "        if fetched.returncode != 0:\n", "        if False:\n", "取り直せない"),
+    ("閉じた後ろの語を通す", 'summary[0] == "（" and closes_at_end(summary)', 'summary[0] == "（"', "結果の要約の後ろに判定できなかった"),
+    ("閉じない要約を通す", "            return i == len(summary) - 1\n    return False", "            return i == len(summary) - 1\n    return True",
+     "結果の要約が閉じない"),
+    ("空の要約を通す", "if len(summary) > 2 and", "if len(summary) > 1 and", "結果の要約が空"),
+    ("入れ子の要約を通さない", '        depth += {"（": 1, "）": -1}.get(ch, 0)', '        depth = 0 if ch == "）" else 1', "結果の要約に入れ子"),
+    ("リモートのタグを訊かない", "    for remote in remotes.stdout.split():\n", "    for remote in []:\n", "取っていないタグ"),
+    ("訊けなくても続ける", "        if asked.returncode != 0:\n", "        if False:\n", "取り直せない"),
+    # 1 パス目の本体の形（タグを読む前に fetch --all --tags）を戻す
+    ("fetch に戻す", '    listed = frozen.git(root, "tag", "--list")\n',
+     '    subprocess.run(["git", "-C", str(root), "fetch", "--all", "--tags", "--quiet"], capture_output=True)\n'
+     '    listed = frozen.git(root, "tag", "--list")\n', "prune の設定でも手元のタグを見る"),
     ("バッククォートの無い一覧を通す", '    if records.get("モデルのファイル") and not listed:\n', "    if False:\n", "一覧にバッククォートが無い"),
     ("パスを含む名前を通す", 'if "/" in name or name in (README, ".", ".."):', 'if name in (README, ".", ".."):', "一覧の名前にパス"),
     ("README を一覧に入れるのを通す", 'if "/" in name or name in (README, ".", ".."):', 'if "/" in name:', "README を一覧に入れる"),
@@ -229,6 +245,9 @@ def build_target(root: Path, steps: Steps, env: dict[str, str]) -> list[str]:
                            check=True, capture_output=True, env=env)
         elif kind == "ts":  # clone した元にだけタグを付ける（取っていないタグ）
             run_git(root.with_name(root.name + "-src"), env, "tag", step[1])
+        elif kind == "prune":  # 利用者の設定で fetch がタグを刈り込む clone
+            run_git(root, env, "config", "fetch.prune", "true")
+            run_git(root, env, "config", "fetch.pruneTags", "true")
         elif kind == "rmsrc":  # clone した元を消す（取り直せない）
             shutil.rmtree(root.with_name(root.name + "-src"))
         elif kind == "arg":
