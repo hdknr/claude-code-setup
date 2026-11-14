@@ -28,6 +28,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/check-deps-declared.py` - **依存の定義・lockfile・取得経路の設定を触ったのに、計画に `依存の追加・更新: あり` が無い周を赤くする**
       （#996。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。このリポジトリの CI では `scripts/check-plan-scope.py` が判定の関数を読み込んで当てる。
       宣言の書き方・Verifier の包ごとの表・不在の周の扱いは `references/dependencies.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-deps-declared.py`）
+    - `skills/dev-loop/scripts/check-spec-writeback.py` - **spec-loop の正本があるリポジトリで、計画に `仕様の振る舞い:` の申告が無い・`変える` なのに正本に起票する行（`正本に起票する行:`）が計画に無い・緑のケースの一覧から載った行を外したか指紋を変えた周を赤くする**
+      （#1001。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。正本が無ければ何も求めずに 0。
+      申告の値・変える周が残すもの・正本が別リポジトリのとき・Red テストが赤になったときの扱いは `references/spec-writeback.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-spec-writeback.py`）
     - `skills/dev-loop/scripts/external-reviews.py` - **PR に付いた外部レビュー bot（CodeRabbit など）のコメントを、`.claude/dev-loop.md` の `外部レビュー:` で宣言した bot の分だけ取り出す**
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。
       読む時点・採否の表への載せ方・2 パスとの関係・待ち方は `references/external-review.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-reviews.py`）
@@ -265,6 +268,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-deps-declared.py` - **依存の申告の歯止め**の回帰テスト（#996。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-deps-declared.py`**（`test-find-cycle.py` と同じ形）。
     一時の git リポジトリに当て、**Verifier の委譲文の依存の差し込みが表の欄を全部名指すこと**も見る
+  - `test-check-spec-writeback.py` - **仕様への戻しの歯止め**の回帰テスト（#1001。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-spec-writeback.py`**（`test-find-cycle.py` と同じ形）。一時の git リポジトリに当て、
+    **申告漏れの陽性対照は spec-loop の本物の `scaffold.py` と `green-list.py` で作った緑のケースの一覧で取る**。Q&A 表の列の写しを `check-qa-csv.py` と突き合わせる
   - `test-external-reviews.py` - **外部レビュー bot のコメントの取り出し**の回帰テスト（#997。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/external-reviews.py`**（`test-find-cycle.py` と同じ形）。
     **偽の `gh` を `PATH` の先頭に置き、`PATH` の残りは `/usr/bin:/bin` だけにする**——本物の GitHub には届かない。**渡す文面が bot のコメントの中の指示に従わないと書くこと**も見る
