@@ -40,6 +40,8 @@
 **緩めたのに全ケースが期待どおりなら失格**。壊す文字列がブロックにちょうど 1 回現れることを先に確かめる。
 
 **このテストは実環境を触らない**——リポジトリと枠のディレクトリは一時ディレクトリの中で、止めるのは自分が起こしたプロセスだけ。
+1 の取り残しも、ブロックを流す前に本物の持ち主からたどった子孫だけを見る——マシン全体を探すと、同時に走る
+別の実行（別のセッション・別の worktree）の `sleep` を取り残しと数え、それを止めた（#1024）。
 
 守らないもの:
 
@@ -111,6 +113,24 @@ def block() -> str:
 def alive(pid: int) -> bool:
     out = subprocess.run(["ps", "-p", str(pid), "-o", "stat="], capture_output=True, text=True).stdout.strip()
     return bool(out) and not out.startswith("Z")
+
+
+def command_of(pid: int) -> str:
+    return subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True).stdout.strip()
+
+
+def descendants(pid: int) -> dict[int, str]:
+    """`pid` の子孫（`pgrep -P` で子へ順にたどる）の pid → コマンド。`pid` 自身は含めない。"""
+    found: dict[int, str] = {}
+    stack = [pid]
+    while stack:
+        parent = stack.pop()
+        kids = subprocess.run(["pgrep", "-P", str(parent)], capture_output=True, text=True).stdout.split()
+        for kid in map(int, kids):
+            if kid not in found:
+                found[kid] = command_of(kid)
+                stack.append(kid)
+    return found
 
 
 def run_block(code: str, repo: Path, pid: int) -> subprocess.CompletedProcess:
@@ -186,11 +206,16 @@ def cases(code: str) -> list[tuple[str, bool, bool]]:
             fx.procs.append(real)
             if not wait_for(lambda: any(p.read_text().strip() for p in fx.lockdir.glob("slot-*.lock")) if fx.lockdir.is_dir() else False):
                 sys.exit("失格: 本物の run-serial が枠の記録を書かなかった")
+            # 子孫は、ブロックを流す前に real からたどって数える——マシン全体を `pgrep -f` で探すと、
+            # 同時に走る別の実行の `sleep 117` を取り残しと数え、しかもそれを止める（#1024）
+            if not wait_for(lambda: any(cmd == "sleep 117" for cmd in descendants(real.pid).values())):
+                sys.exit("失格: 本物の run-serial の子孫に `sleep 117` が起きない")
+            mine = descendants(real.pid)
             r = run_block(code, fx.repo, real.pid)
             stopped = wait_for(lambda: real.poll() is not None)
-            orphan = subprocess.run(["pgrep", "-f", "sleep 117"], capture_output=True, text=True).stdout.split()
+            orphan = [pid for pid, cmd in mine.items() if alive(pid) and command_of(pid) == cmd]
             for pid in orphan:
-                os.kill(int(pid), 9)
+                os.kill(pid, 9)
             results.append(("1 本物の持ち主", True, stopped and real.returncode == 143 and not orphan and r.returncode == 0))
 
             def fake_case(name: str, expect: bool, script: str, argv_tail: list[str], cwd: Path,
