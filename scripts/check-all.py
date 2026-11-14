@@ -164,6 +164,7 @@ TESTS: list[str] = [
     "test-rework-report.py",
     "test-intake-code.py",
     "test-parent-checklist.py",
+    "test-green-list.py",
     "test-merge-versions.py",
     "test-diff-versions.py",
     "test-check-frozen.py",
