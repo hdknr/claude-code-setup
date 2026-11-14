@@ -73,6 +73,10 @@ def repo(root: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
     assert_not_real_repo(root)
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
+    # コミットの後の `git maintenance run --auto` は切り離して走り、`.git/objects/maintenance.lock` を作っては消す——
+    # 雛形を複製する `copytree` がその途中に当たると落ちる（#1028）。`.git/config` に書くので複製にも写る
+    git(root, "config", "maintenance.auto", "false")
+    git(root, "config", "gc.auto", "0")
     files = {"seed.txt": "seed\n", **(base_files or {})}
     for rel, body in files.items():
         f = root / rel
