@@ -281,6 +281,11 @@ jobs:
       - name: spec-loop の親 Issue の一覧を出すスクリプトのテスト（#876）
         run: python3 scripts/test-parent-checklist.py
 
+      # 本体は plugins/spec-loop/scripts/green-list.py（scaffold の Red テストのうち緑のケースを一覧に書き、CI で緑のままかを見る。
+      # scaffold/ は本物の scaffold.py で作り、別リポジトリの形の陽性対照も持つ）。
+      - name: spec-loop の緑のケースの一覧のテスト（#1000）
+        run: python3 scripts/test-green-list.py
+
       # 本体は plugins/spec-loop/scripts/ にある（ある版が前の版から何を足し・変え・消したか）。
       - name: spec-loop の版の差分のテスト（#263）
         run: python3 scripts/test-diff-versions.py

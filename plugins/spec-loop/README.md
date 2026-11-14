@@ -35,6 +35,7 @@
 | `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |
 | `references/nfr.md` | 性能の要求の表（`shared/nfr.csv`）の列・性能を仕様に書く手順・要求の無い機能は最適化しない既定の原則・性能テスト |
 | `scripts/scaffold.py` | 中間表現から OpenAPI・型・Red テスト・Issue の本文を作る。関門（仕様レビューを抜ける条件 1）を自分で通す（標準ライブラリのみ） |
+| `scripts/green-list.py` | 製品のリポジトリで、scaffold の Red テストのうち緑のケースを一覧に書き（`record`）、CI で一覧のケースが緑のままかを見る（`check`）。決まりは `references/tree.md` の「Red テストを CI で走らせ続ける」（標準ライブラリのみ） |
 | `references/versions.md` | 版のディレクトリ（`docs/v<n>/`）と、差分の重ね合わせ・削除（`removed.csv`）・凍結・前の構成からの移し方の決まり |
 | `references/writing-style.md` | 正本に書く文書の文章の記法（太字の見出し 1 行と一文ずつの箇条）と、前の書き方の正本を移す手順と確かめ方 |
 | `scripts/merge-versions.py` | 版ごとの差分を重ねて、ある版の時点の全体を作る（標準ライブラリのみ） |
@@ -127,6 +128,7 @@ Q&A 表に起票元 `開発` で差し戻します（規定は dev-loop の `ref
 ```bash
 python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional] [--bundle F-001,F-002]...
 python3 <spec-loop の base ディレクトリ>/scripts/parent-checklist.py --index build/scaffold/issues/issues.json --issues <gh issue list の出力>
+python3 <spec-loop の base ディレクトリ>/scripts/green-list.py {record|check} [--repo <製品のリポジトリ>] [--list <一覧>]
 ```
 
 `--check` は、置いてある `scaffold/` が今の中間表現から作るものと同じかを、バイトで確かめます（鮮度）。
@@ -136,6 +138,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/parent-checklist.py --in
 この版をもう実装し始めた作り直しの経路では `--in-progress` を付けます。
 実装を置くモジュールは、中間表現の `impl_module` に書きます（`references/spec-ir.md`）。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
+実装が緑にした機能の Red テストを製品のリポジトリの CI で走らせ続けるには `green-list.py` を使います——決まりと GitHub Actions の雛形は `references/tree.md` の「Red テストを CI で走らせ続ける」を正とします。
 
 ## `autopilot` — 不在のあいだに回す入口
 

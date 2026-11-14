@@ -145,6 +145,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/parent-checklist.py` - 登録した Issue から、**依存の連鎖を cruise の親 Issue の書式**（`- [ ] #N (depends: #M)`）で出す
       （#876。依存は `scaffold.py` が `issues.json` の `depends` に書く——呼ぶ機能が呼ばれる機能に依存する。**項目の Issue は本文が生成した本文と同じもの**で、
       `gh issue list --json` の出力から引く。**`gh` は呼ばない**。守る／守らないは docstring を正とする。テストは `scripts/test-parent-checklist.py`）
+    - `scripts/green-list.py` - 製品のリポジトリで、scaffold の Red テストのうち**緑のケースとその中身の指紋を一覧（`scaffold-green.txt`）に書き（`record`）、CI で一覧のケースが緑のままかを見る（`check`）**
+      （#1000。**一覧に無いケース（まだ実装していない機能）の赤では落ちず、`record` は載ったケースを壊していれば書かない**。走らせ方は `scaffold.py` の `run_tests` を読み込む。
+      決まり（選び方・性能テストの扱い・別リポジトリの形・GitHub Actions の雛形）の原本は `references/tree.md` の「Red テストを CI で走らせ続ける」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-green-list.py`）
     - `scripts/merge-versions.py` - バージョンアップの版（`docs/v<n>/`。v2 以降は差分だけ）を重ねて、ある版の時点の全体を作る
       （#261。決まりは `references/versions.md`。**印 `.merged-versions` の無い出力先は消さない**。
       `scaffold.py` と `check-signoff.py` もここの関数で重ね・版を見つける——写しを作らない。
@@ -363,6 +366,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-parent-checklist.py` - spec-loop の親 Issue の一覧を出すスクリプト（#876）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**索引と本文は本物の `scaffold.py` で作り、出した行を本物の dev-loop の `parent-issue.py show` に通す**
     （子 Issue の本文を取る `gh` は `PATH` の先頭に置いた偽物）——本物の GitHub には届かない
+  - `test-green-list.py` - spec-loop の緑のケースの一覧のスクリプト（#1000）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**`scaffold/` は本物の `scaffold.py` で作り**（v2 の作り直しも）、実装を壊すと `check` が 1 になる陽性対照と、
+    別リポジトリの形（`scaffold.py --check` と `diff -r` が、写しを直す・正本だけ変えると非 0）を見る。**変異の数は本体の docstring の「守ること」の行の数以上**
   - `test-merge-versions.py` - spec-loop の段 5a（#261）の回帰テスト（変異テストを含む）。
     **本体の定数が `references/versions.md` と一致することも見る**
   - `test-diff-versions.py` - spec-loop の段 5c（#263）の版の差分の回帰テスト（変異テストを含む）。

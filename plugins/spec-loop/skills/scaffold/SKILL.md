@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.86.1 -->
-> **このスキルの版: 0.86.1**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.87.0 -->
+> **このスキルの版: 0.87.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -271,3 +271,5 @@ dev-loop の点検が日時での近似に落ちる。生成の出力が「基�
   dev-loop は Q&A 表に起票元 `開発` で差し戻す——その回答は `/spec-loop:req-loop` から受け直し、
   仕様レビューを抜けてから、このスキルで作り直す（手順 4 は `--red-check --in-progress`）。dev-loop に渡す受入基準は、
   **周の前に緑だった Red テストが、周の後も緑のままであること**を回帰の形にする（`../../references/handoff-issue.md`）
+- 周と周のあいだも、実装が緑にした機能の Red テストを製品のリポジトリの CI で走らせ続けることを伝える——
+  緑のケースの一覧と CI のジョブの決まりは `../../references/tree.md` の「Red テストを CI で走らせ続ける」を正とする（このスキルは CI を書かない）
