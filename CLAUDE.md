@@ -28,7 +28,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/check-deps-declared.py` - **依存の定義・lockfile・取得経路の設定を触ったのに、計画に `依存の追加・更新: あり` が無い周を赤くする**
       （#996。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。このリポジトリの CI では `scripts/check-plan-scope.py` が判定の関数を読み込んで当てる。
       宣言の書き方・Verifier の包ごとの表・不在の周の扱いは `references/dependencies.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-deps-declared.py`）
-    - `skills/dev-loop/scripts/check-spec-writeback.py` - **spec-loop の正本があるリポジトリで、計画に `仕様の振る舞い:` の申告が無い・`変える` なのに正本の Q&A 表に戻す行が無い・緑のケースの一覧から載った行を外した周を赤くする**
+    - `skills/dev-loop/scripts/check-spec-writeback.py` - **spec-loop の正本があるリポジトリで、計画に `仕様の振る舞い:` の申告が無い・`変える` なのに正本に起票する行（`正本に起票する行:`）が計画に無い・緑のケースの一覧から載った行を外したか指紋を変えた周を赤くする**
       （#1001。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。正本が無ければ何も求めずに 0。
       申告の値・変える周が残すもの・正本が別リポジトリのとき・Red テストが赤になったときの扱いは `references/spec-writeback.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-spec-writeback.py`）
     - `skills/dev-loop/scripts/external-reviews.py` - **PR に付いた外部レビュー bot（CodeRabbit など）のコメントを、`.claude/dev-loop.md` の `外部レビュー:` で宣言した bot の分だけ取り出す**

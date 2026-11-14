@@ -169,44 +169,28 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run(script, d, base)
     got += [("正本があって計画が見つからなければ 2", rc == 2 and "緑ではない" in out)]
 
-    # 5) `変える`: 作業中の版の共有の表に、起票元 `開発（#7）`・未回答・確認中の新しい行
+    # 5) `変える`: 計画の `正本に起票する行:`（同じリポジトリでも）。正本の表に直接足しただけでは 1
+    row = f"\n正本に起票する行: {PLAN_ROW}\n"
+    d, base = fresh(base_files=CANON, plan=decl("変える") + row)
+    rc, _ = run(script, d, base)
+    got += [("`変える` で計画に行があれば 0（同じリポジトリ）", rc == 0)]
+    d, base = fresh(base_files=CANON, plan=decl("変える") + f"\n- 正本に起票する行: {PLAN_ROW}\n")
+    rc, _ = run(script, d, base)
+    got += [("箇条書きの `- 正本に起票する行:` も数える", rc == 0)]
     d, base = fresh(base_files=CANON, plan=decl("変える"))
     put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW + NEW_ROW, commit=True)
-    rc, _ = run(script, d, base)
-    got += [("`変える` で新しい行を足していれば 0", rc == 0)]
-    d, base = fresh(base_files=CANON, plan=decl("変える"))
-    put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW + NEW_ROW)  # コミットしない
-    rc, _ = run(script, d, base)
-    got += [("`変える` で未コミットの行も数える", rc == 0)]
-    d, base = fresh(base_files=CANON, plan=decl("変える"))
-    put(d, "src/a.py", commit=True)
     rc, out = run(script, d, base)
-    got += [("`変える` で行が無ければ 1", rc == 1 and "開発（#7）" in out)]
-    d, base = fresh(base_files=CANON, plan=decl("変える"))
-    put(d, "docs/v1/spec/qa-dev.csv", HEADER + NEW_ROW.replace("Q-D-001", "D-D-001"), commit=True)
+    got += [("`変える` で正本の表に直接足しただけなら 1", rc == 1 and "正本に起票する行:" in out and "開発（#7）" in out)]
+    d, base = fresh(base_files=CANON, plan=decl("変える") + f"\n```text\n正本に起票する行: {PLAN_ROW}\n```\n")
     rc, _ = run(script, d, base)
-    got += [("`変える` で内部の表にだけ足したなら 1", rc == 1)]
-    d, base = fresh(base_files={**CANON, "docs/v2/shared/qa.csv": HEADER}, plan=decl("変える"))
-    put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW + NEW_ROW, commit=True)
-    rc, _ = run(script, d, base)
-    got += [("`変える` で前の版の表に足したなら 1", rc == 1)]
-    for label, row in (("別の Issue の起票元", NEW_ROW.replace("（#7）", "（#8）")),
-                       ("状態が `反映済み`", NEW_ROW.replace(",確認中,", ",反映済み,")),
-                       ("回答を埋めた", NEW_ROW.replace(",未回答,", ",A,"))):
-        d, base = fresh(base_files=CANON, plan=decl("変える"))
-        put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW + row, commit=True)
+    got += [("`変える` で行がフェンスの中だけなら 1", rc == 1)]
+    for label, r in (("列が 1 つ足りない", PLAN_ROW[:-1]),
+                     ("別の Issue の起票元", PLAN_ROW.replace("（#7）", "（#8）")),
+                     ("状態が `反映済み`", PLAN_ROW.replace(",確認中,", ",反映済み,")),
+                     ("回答を埋めた", PLAN_ROW.replace(",未回答,", ",A,"))):
+        d, base = fresh(base_files=CANON, plan=decl("変える") + f"\n正本に起票する行: {r}\n")
         rc, _ = run(script, d, base)
-        got += [(f"`変える` で足した行が{label}なら 1", rc == 1)]
-    d, base = fresh(base_files=CANON, plan=decl("変える"))
-    put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW.replace("要求確定", "開発（#7）").replace(",A,決定表 4 行目,反映済み,", ",未回答,—,確認中,"),
-        commit=True)
-    rc, _ = run(script, d, base)
-    got += [("`変える` で既にあった行を書き換えただけなら 1", rc == 1)]
-    # 新しい版のディレクトリを周の中で作った（base の時点に表が無い・未追跡）
-    d, base = fresh(base_files=CANON, plan=decl("変える"))
-    put(d, "docs/v2/shared/qa.csv", HEADER + NEW_ROW)  # 未追跡のまま
-    rc, _ = run(script, d, base)
-    got += [("`変える` で base に無かった版の表（未追跡）に足しても 0", rc == 0)]
+        got += [(f"`変える` で計画の行が{label}なら 1", rc == 1)]
 
     # 6) 正本が別のリポジトリ（宣言か scaffold-source.txt）
     sep = {".claude/dev-loop.md": "# 追補\n\n仕様の正本: acme/spec\n"}
@@ -219,27 +203,19 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     d, base = fresh(base_files={"scaffold-source.txt": "acme/spec@0123abc\n"})
     rc, out = run(script, d, base)
     got += [("scaffold-source.txt があれば正本（申告が無いと 1）", rc == 1 and "acme/spec" in out)]
-    d, base = fresh(base_files=sep, plan=decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n")
+    d, base = fresh(base_files=sep, plan=decl("変える") + row)
     rc, _ = run(script, d, base)
-    got += [("別のリポジトリで `変える` と計画の `正本に起票する行:` があれば 0", rc == 0)]
+    got += [("別のリポジトリで `変える` と計画の行があれば 0", rc == 0)]
     d, base = fresh(base_files=sep, plan=decl("変える"))
     rc, out = run(script, d, base)
     got += [("別のリポジトリで `変える` なのに計画の行が無ければ 1", rc == 1 and "正本に起票する行:" in out)]
-    for label, row in (("列が 1 つ足りない", PLAN_ROW[:-1]),
-                       ("別の Issue の起票元", PLAN_ROW.replace("（#7）", "（#8）")),
-                       ("状態が `反映済み`", PLAN_ROW.replace(",確認中,", ",反映済み,"))):
-        d, base = fresh(base_files=sep, plan=decl("変える") + f"\n正本に起票する行: {row}\n")
-        rc, _ = run(script, d, base)
-        got += [(f"別のリポジトリで計画の行が{label}なら 1", rc == 1)]
-    d, base = fresh(base_files={**CANON, **sep}, plan=decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n")
-    rc, _ = run(script, d, base)
-    got += [("同じリポジトリの正本があればそちらを採る（計画の行だけでは 1）", rc == 1)]
 
     # 7) 緑のケースの一覧から載った行が減った
     canon_green = {**CANON, "scaffold-green.txt": GREEN}
     for label, value, body, want in (("`変えない` で 1 行外した", "変えない", GREEN.split("a.T.test_2")[0], 1),
                                      ("`spec-loop の Issue` で 1 行外した", "spec-loop の Issue", GREEN.split("a.T.test_2")[0], 0),
                                      ("`変えない` で行を足しただけ", "変えない", GREEN + "a.T.test_3 " + "2" * 64 + "\n", 0),
+                                     ("`変えない` で名前は同じまま指紋を変えた", "変えない", GREEN.replace("1" * 64, "3" * 64), 1),
                                      ("`変えない` で accepted-changed の行にした", "変えない",
                                       GREEN.split("a.T.test_2")[0] + "# accepted-changed: a.T.test_2\n", 1)):
         d, base = fresh(base_files=canon_green, plan=decl(value))
@@ -250,8 +226,7 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     (d / "svc" / "scaffold-green.txt").unlink()  # 消してコミットしない
     rc, out = run(script, d, base)
     got += [("一覧: 下の階層の一覧を消した（未コミット）なら 1", rc == 1 and "svc/scaffold-green.txt" in out)]
-    d, base = fresh(base_files=canon_green, plan=decl("変える"))
-    put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW + NEW_ROW)
+    d, base = fresh(base_files=canon_green, plan=decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n")
     put(d, "scaffold-green.txt", GREEN.split("a.T.test_2")[0], commit=True)
     rc, _ = run(script, d, base)
     got += [("一覧: `変える` で行を足しても、載った行を外したら 1", rc == 1)]
@@ -262,8 +237,7 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run(script, d, base, "--plan", "notes/plan.md")
     got += [("`変える` で Issue の番号が取れなければ 2", rc == 2)]
     d, base = fresh(base_files=CANON, plan=None, branch="feature/x")
-    put(d, "notes/issue-7.md", decl("変える"))
-    put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW + NEW_ROW)
+    put(d, "notes/issue-7.md", decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n")
     rc, _ = run(script, d, base, "--plan", "notes/issue-7.md")
     got += [("--plan の名前 issue-<n>.md から番号を取る", rc == 0)]
     d, base = fresh(base_files=CANON)
@@ -292,34 +266,28 @@ MUTATIONS = {
     "正本が無くても申告を求める": ("    if version is None and separate is None:\n", "    if False:\n"),
     "版の名前を広げる（v1-notes を拾う）": ('VERSION_DIR = re.compile(r"^v([0-9]+)$")', 'VERSION_DIR = re.compile(r"^v([0-9]+)")'),
     "版の中身を見ない": ("and any((child / part).is_dir() for part in CANONICAL_PARTS)", "and True"),
-    # 守る: `変える` の周の行
-    "`変える` で行を見ない": ("        if any(writeback_ok(r, issue) for r in new_rows(qa_base, qa_now)):\n",
-                            "        if True:\n"),
+    # 守る: `変える` の周の計画の行
+    "計画の行を見ない": ("    if any(writeback_ok(r, issue) for r in plan_rows(plan_text)):\n", "    if True:\n"),
+    "計画の行の列の数を見ない": ("        if len(cells) == len(COLUMNS):\n", "        if len(cells) >= 9:\n"),
     "起票元を見ない": ('    return (fields.get("起票元", "").strip() == f"開発（#{issue}）"\n', '    return (True\n'),
     "回答を見ない": ('            and fields.get("回答", "").strip() == NO_ANSWER\n', ""),
     "状態を見ない": ('            and fields.get("状態", "").strip() == OPEN_STATE)', "            )"),
-    "新しい行でなく全部の行を見る": ("and r.get(\"No\", \"\").strip() not in old]", "]"),
-    "内部の表も見る": ('        qa_path = f"docs/v{version}/shared/qa.csv"', '        qa_path = f"docs/v{version}/spec/qa-dev.csv"'),
-    "最小の版を作業中と読む": ("    return max(found) if found else None", "    return min(found) if found else None"),
-    # 守る: 別のリポジトリの計画の行
-    "計画の行を見ない": ("    if any(writeback_ok(r, issue) for r in plan_rows(plan_text)):\n", "    if True:\n"),
-    "計画の行の列の数を見ない": ("        if len(cells) == len(COLUMNS):\n", "        if len(cells) >= 9:\n"),
+    "計画の行をフェンスの中も読む": ("    for value in scan(plan_text, ROW_LINE):", "    for value in [m.group(1) for m in map(ROW_LINE.match, plan_text.splitlines()) if m]:"),
+    "箇条書きの計画の行を数えない": (r'ROW_LINE = re.compile(r"^(?:[-*]\s+)?正本に起票する行:\s*(.*?)\s*$")', r'ROW_LINE = re.compile(r"^正本に起票する行:\s*(.*?)\s*$")'),
+    # 守る: 正本が別のリポジトリ
     "scaffold-source.txt を見ない": ("    if src.is_file():\n", "    if False:\n"),
     "宣言を見ない": ("        if values:\n            return values[0]\n", ""),
     "宣言をフェンスの中も読む": ("            values = [v for v in scan(conf.read_text(encoding=\"utf-8\"), CANONICAL_DECL) if v]",
                                 "            values = [m.group(1) for m in map(CANONICAL_DECL.match, conf.read_text(encoding=\"utf-8\").splitlines()) if m]"),
-    "別のリポジトリの宣言を同じリポジトリより先に採る": ("    separate = None if version is not None else separate_canonical(root)",
-                                                   "    separate = separate_canonical(root)\n    version = None if separate else version"),
     # 守る: 緑のケースの一覧
     "一覧の減りを見ない": ("        if removed:\n", "        if False:\n"),
     "`spec-loop の Issue` でも一覧の減りを赤にする": ("    if value != FROM_SPEC_LOOP:\n", "    if True:\n"),
     "下の階層の一覧を見ない": ('if p.split("/")[-1] == GREEN_LIST]', "if p == GREEN_LIST]"),
+    "指紋を比べず名前だけを比べる": ("for name, _ in green_pairs(old) - green_pairs(now)}", "for name in {n for n, _ in green_pairs(old)} - {n for n, _ in green_pairs(now)}}"),
     "消した一覧を見ない": ('if p.split("/")[-1] == GREEN_LIST]', 'if p.split("/")[-1] == GREEN_LIST and (root / p).is_file()]'),
-    # 守る: 未コミット・未追跡・base に無かった表を落とさない
-    "3 点で取る（未コミットを見ない）": ('    rc1, diff = git("diff", "--name-only", "--no-renames", base)\n',
-                                       '    rc1, diff = git("diff", "--name-only", "--no-renames", f"{base}...HEAD")\n'),
-    "base に表が無ければ行を数えない": ("        if any(writeback_ok(r, issue) for r in new_rows(qa_base, qa_now)):\n",
-                                       "        if qa_base is not None and any(writeback_ok(r, issue) for r in new_rows(qa_base, qa_now)):\n"),
+    # 守る: 未コミットの変更・消した一覧を落とさない
+    "3 点で取る（未コミットを見ない）": ('    rc, diff = git("diff", "--name-only", "--no-renames", base)\n',
+                                       '    rc, diff = git("diff", "--name-only", "--no-renames", f"{base}...HEAD")\n'),
     # 判定できないものを緑にしない
     "Issue の番号が取れなくても 0": ('        return 2, "申告が `変える` なのに Issue の番号が取れない', '        return 0, "申告が `変える` なのに Issue の番号が取れない'),
     "git の失敗を 0 にする": ('        print(f"git で差分を取れなかった（base: {opts.base}）——判定していない（緑ではない）。")\n        return 2\n',
