@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scaffold の Red テストのうち緑のケースを一覧に書き（`record`）、一覧に載ったケースが緑のままかを見る（`check`）。
 
-usage: python3 green-list.py record [--repo <リポジトリ>] [--list <一覧>]
+usage: python3 green-list.py record [--repo <リポジトリ>] [--list <一覧>] [--accept-changed]
        python3 green-list.py check  [--repo <リポジトリ>] [--list <一覧>]
 
 **製品のリポジトリの CI で、実装が緑にした機能の Red テストを走らせ続ける**ための道具である（#1000）。
@@ -22,7 +22,10 @@ usage: python3 green-list.py record [--repo <リポジトリ>] [--list <一覧>]
 
 - Red テストを走らせ、**緑（pass）のケースだけ**を、今の指紋と一緒に一覧に書く（名前の順。前の一覧は書き直す）。
 - **前の一覧に載り、今も同じ指紋のケースが緑でなければ、何も書かずに 1**——壊したケースを `record` で一覧から落とさない。
-  指紋が変わった・ケースが無くなった載った行は落としてよい（仕様が変えた）——落とした行を出力で名指しする。
+  ケースが無くなった載った行は落とす（機能を消した）。指紋が変わって今も緑の行は、今の指紋で載せ直す。
+- **指紋が変わって緑でない載った行は、`--accept-changed` が無ければ何も書かずに 1**——作り直しで仕様が期待を変えたのか、
+  同じ PR で実装を壊したのかは、このスクリプトには分けられない（型を広げただけの作り直しでも指紋は変わる）。仕様がそのケースを変えたと
+  人が確かめたときだけ `--accept-changed` を付けて落とす——付けたことはコマンドと一覧の差分に残る。落とした行は出力で名指しする。
 - 0: 書いた ／ 1: 載ったケースを壊している（書いていない）／ 2: 判定していない（下）。
 
 `check`（CI が呼ぶ）:
@@ -41,10 +44,12 @@ Red テストを走らせられない（`run_tests` が落ちた・時間切れ�
 
 - `check` は、一覧に載って指紋が同じケースが緑でなければ 1 を返し、名指しする
 - `check` は、一覧に載っていないケースの失敗で 1 にしない
-- `check` は、指紋が変わったケース・もう無いケースを壊したと読まず、3 で書き直しを求める
+- `check` は、指紋が変わったケースを壊したと読まず、3 で書き直しを求める
 - `check` は、緑なのに一覧に無いケースがあれば 3
 - `record` は緑のケースだけを書く
 - `record` は、載って指紋が同じケースが緑でなければ何も書かずに 1
+- `record` は、載って指紋が変わったケースが緑でなければ、`--accept-changed` が無ければ何も書かずに 1
+- `check` は、もう無いケースを壊したと読まず、3 で書き直しを求める
 - 指紋は、同じ機能の別のケースとコメントの変更では変わらず、そのケースの中身と共通の部分の変更では変わる
 - 生成の印を持たないテストのファイルは見ない
 - 一覧の形が違えば 2
@@ -190,7 +195,7 @@ def say_broken(broken: list[str], outcomes: dict) -> None:
               "（読み込みの経路 PYTHONPATH の付け忘れ。references/monorepo.md の「Red テストを走らせる」）", file=sys.stderr)
 
 
-def record(repo: Path, path: Path) -> int:
+def record(repo: Path, path: Path, accept_changed: bool = False) -> int:
     listed = read_list(path) or {}
     prints, outcomes = observe(repo)
     broken, moved, gone, unlisted = compare(listed, prints, outcomes)
@@ -200,6 +205,14 @@ def record(repo: Path, path: Path) -> int:
               "（壊したケースを record で落とさない——実装を直す）", file=sys.stderr)
         return 1
     green = sorted(name for name in prints if outcomes.get(name) == "pass")
+    changed_red = [name for name in moved if name not in green]
+    if changed_red and not accept_changed:
+        for name in changed_red:
+            print(f"指紋が変わって緑でない: {name}（{describe(outcomes.get(name))}）", file=sys.stderr)
+        print(f"一覧に載ったケースのうち {len(changed_red)} 件が、指紋が変わって緑でない。一覧を書き直していない"
+              "——仕様がそのケースを変えた（作り直しで期待が変わった）と確かめたなら --accept-changed を付けて落とす。"
+              "そうでなければ実装を直す", file=sys.stderr)
+        return 1
     path.write_text(HEADER + "".join(f"{name} {prints[name]}\n" for name in green), encoding="utf-8")
     for name in moved:
         print(f"指紋が変わった: {name}（" + ("緑なので今の指紋で載せ直した" if name in green else "緑でないので落とした") + "）")
@@ -240,11 +253,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("command", choices=("record", "check"))
     parser.add_argument("--repo", default=".")
     parser.add_argument("--list")
+    parser.add_argument("--accept-changed", action="store_true")
     args = parser.parse_args(argv)
     repo = Path(args.repo).resolve()
     path = Path(args.list) if args.list else repo / DEFAULT_LIST
     try:
-        return record(repo, path) if args.command == "record" else check(repo, path)
+        if args.accept_changed and args.command != "record":
+            raise Unjudged("--accept-changed は record と一緒にだけ使う")
+        return record(repo, path, args.accept_changed) if args.command == "record" else check(repo, path)
     except Unjudged as exc:
         print(f"{exc}。判定していない", file=sys.stderr)
         return 2

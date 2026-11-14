@@ -7,8 +7,9 @@
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。**`scaffold/` は本物の `scaffold.py` で作る**——
 手で書いた Red テストに当てると、生成の形が変わっても緑のままになる。v2 の試料（1 つのケースの期待を変え、別のケースの題だけ直す）も
-本物の `scaffold.py` で作り直す。**プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる**
-（`-I` は `PYTHONPATH` を読まないので、Red テストを走らせる子のプロセスにも試料の外の経路は入らない）。
+本物の `scaffold.py` で作り直す。**プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせ、
+子のプロセスの環境から `PYTHONPATH` を外す**——`-I` が効くのは起こしたプロセスだけで、`green-list.py` が Red テストを走らせる孫のプロセス
+（`scaffold.py` の `run_tests`）は環境を引き継ぐ。外さないと、試料の外の `spec_impl.py` が読み込まれて陽性対照が崩れうる。
 
 試料: 機能 F-001（`double`。2 ケース）と F-002（`negate`。2 ケース）。実装は試料の根の `spec_impl.py`（`impl_module` の既定）。
 
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -42,6 +44,7 @@ SPEC = "# 計算\n\n倍と符号。\n"
 IMPL_DOUBLE = 'def double(n):\n    return {"v": n * 2}\n'
 IMPL_NEGATE = '\n\ndef negate(n):\n    return {"v": -n}\n'
 IMPL_ALL = IMPL_DOUBLE + IMPL_NEGATE
+CHILD_ENV = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
 HAND_TEST = "import unittest\n\n\nclass TestHand(unittest.TestCase):\n    def test_hand(self):\n        self.assertTrue(True)\n"
 
 C1, C2 = "test_f_001.TestF001.test_f_001_c1", "test_f_001.TestF001.test_f_001_c2"
@@ -62,12 +65,17 @@ IR_V1 = {"spec_ir_version": 1, "title": "計算", "features": [
 # v2: F-001-C2 の期待を変え（4 → 5）、F-001-C1 は題だけ直す——C1 の指紋は変わらず、C2 だけ変わる
 IR_V2 = {"spec_ir_version": 1, "title": "計算", "features": [
     feature("F-001", "double", "倍にする", [("1 なら 2（題を直した）", 1, 2), ("2 なら 5", 2, 5)])]}
+# v2（型を広げる）: F-001 の出力 v を integer から number に広げる。期待は変えない——共通の部分だけが変わり、C1・C2 の指紋が変わる
+IR_V2_WIDEN = {"spec_ir_version": 1, "title": "計算", "features": [
+    feature("F-001", "double", "倍にする", [("1 なら 2", 1, 2), ("2 なら 4", 2, 4)])]}
+IR_V2_WIDEN["features"][0]["operation"]["output"] = {"v": {"type": "number"}}
 
 
 class Case:
     def __init__(self, name: str, steps: list, code: int, err: tuple[str, ...] = (), out: tuple[str, ...] = (),
                  absent: tuple[str, ...] = (), listed: tuple[str, ...] | None = None):
-        # steps: 試料を作る手順（("impl", 中身)・("record",)・("v2",)・("hand",)・("list", 中身)・("noimpl",)）。最後に check を走らせる
+        # steps: 試料を作る手順（("impl", 中身)・("record"[, 終了コード, 旗…])・("v2"[, 中間表現])・("hand",)・("list", 中身)・("noimpl",)・
+        # ("rm", scaffold/ からのパス)）。最後に check を走らせる
         # listed: check の後の一覧に載っているテストの名前（全部。None なら見ない）
         self.name, self.steps, self.code, self.err, self.out = name, steps, code, err, out
         self.absent, self.listed = absent, listed
@@ -87,7 +95,15 @@ CASES = [
     Case("一覧が無いのに緑がある", [("impl", IMPL_ALL)], 3, err=("一覧が無い", f"緑なのに一覧に無い: {C1}")),
     Case("仕様が変えたケース", [("impl", IMPL_ALL), ("record",), ("v2",)], 3,
          err=(f"指紋が変わった（仕様が変えた）: {C2}",), absent=(C1, "壊した"), listed=(C1, C2, D1, D2)),
-    Case("仕様が変えたケースを書き直す", [("impl", IMPL_ALL), ("record",), ("v2",), ("record",)], 0, listed=(C1, D1, D2)),
+    Case("仕様が変えたケースを書き直す", [("impl", IMPL_ALL), ("record",), ("v2",), ("record", 1), ("record", 0, "--accept-changed")], 0,
+         listed=(C1, D1, D2)),
+    Case("型を変えた作り直し", [("impl", IMPL_ALL), ("record",), ("v2", IR_V2_WIDEN)], 3,
+         err=(f"指紋が変わった（仕様が変えた）: {C1}", f"指紋が変わった（仕様が変えた）: {C2}"), absent=("壊した",)),
+    Case("型を広げた作り直しと同時に壊した", [("impl", IMPL_ALL), ("record",), ("v2", IR_V2_WIDEN),
+                                     ("impl", IMPL_ALL.replace("n * 2", "n * 3")), ("record", 1)], 3,
+         err=(f"指紋が変わった（仕様が変えた）: {C1}",), listed=(C1, C2, D1, D2)),
+    Case("機能を消した", [("impl", IMPL_ALL), ("record",), ("rm", "tests/test_f_002.py")], 3,
+         err=(f"もう無い: {D1}", f"もう無い: {D2}"), absent=("壊した",), listed=(C1, C2, D1, D2)),
     Case("生成の印の無いテストは見ない", [("impl", IMPL_ALL), ("record",), ("hand",)], 0, listed=(C1, C2, D1, D2)),
     Case("読み込めない", [("impl", IMPL_ALL), ("record",), ("noimpl",)], 1, err=("PYTHONPATH",)),
     Case("一覧の形が違う", [("impl", IMPL_ALL), ("record",), ("list", "test_x 123\n")], 2, err=("一覧の行の形が違う",)),
@@ -115,6 +131,11 @@ MUTATIONS = [
      "        if False:\n            continue", "生成の印の無いテストは見ない"),
     ("形の違う行を飛ばす", "        if not match:\n            raise Unjudged(", "        if not match:\n            continue\n            raise Unjudged(",
      "一覧の形が違う"),
+    ("指紋が変わって緑でないケースを黙って落とす", "    if changed_red and not accept_changed:", "    if False:",
+     "型を広げた作り直しと同時に壊した"),
+    ("指紋に共通の部分を入れない", 'f"{common}\\n\\0\\n{body}"', 'f"{body}"', "型を変えた作り直し"),
+    ("もう無いケースを壊したと読む", "            gone.append(name)", "            broken.append(name)", "機能を消した"),
+    ("もう無いケースを数えない", '    stale += [f"もう無い: {name}" for name in gone]', "    stale += []", "機能を消した"),
 ]
 
 failures: list[str] = []
@@ -127,7 +148,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 def scaffold_run(scripts: Path, repo: Path, *extra: str) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, "-I", str(scripts / "scaffold.py"), "--repo", str(repo), *extra],
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, timeout=120, env=CHILD_ENV)
 
 
 def make_base(work: Path, scripts: Path) -> Path:
@@ -144,9 +165,9 @@ def make_base(work: Path, scripts: Path) -> Path:
     return repo
 
 
-def green(scripts: Path, repo: Path, command: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-I", str(scripts / TARGET), command, "--repo", str(repo)],
-                          capture_output=True, text=True, timeout=300)
+def green(scripts: Path, repo: Path, command: str, *extra: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-I", str(scripts / TARGET), command, "--repo", str(repo), *extra],
+                          capture_output=True, text=True, timeout=300, env=CHILD_ENV)
 
 
 def listed_names(repo: Path) -> list[str] | None:
@@ -167,13 +188,16 @@ def run_case(work: Path, scripts: Path, base: Path, case: Case, tag: str) -> str
             elif kind == "noimpl":
                 (repo / "spec_impl.py").unlink(missing_ok=True)
             elif kind == "record":
-                proc = green(scripts, repo, "record")
+                proc = green(scripts, repo, "record", *step[2:])
                 want = step[1] if len(step) > 1 else 0
                 if proc.returncode != want:
                     return f"record: exit={proc.returncode}（期待 {want}）{(proc.stdout + proc.stderr)[-400:]}"
+            elif kind == "rm":
+                (repo / "scaffold" / step[1]).unlink()
             elif kind == "v2":
                 (repo / "docs" / "v2" / "spec").mkdir(parents=True)
-                (repo / "docs" / "v2" / "spec" / "spec_ir.json").write_text(json.dumps(IR_V2, ensure_ascii=False, indent=2),
+                ir = step[1] if len(step) > 1 else IR_V2
+                (repo / "docs" / "v2" / "spec" / "spec_ir.json").write_text(json.dumps(ir, ensure_ascii=False, indent=2),
                                                                            encoding="utf-8")
                 proc = scaffold_run(scripts, repo)
                 if proc.returncode != 0:

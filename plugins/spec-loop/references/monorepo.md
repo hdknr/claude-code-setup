@@ -227,9 +227,8 @@ on:
 ```yaml
 on:
   pull_request:
-    paths: ["backend/**", "scaffold/**"]
-# 実装の検査（例）:
-#   PYTHONPATH=backend python3 -m unittest discover -s scaffold/tests
+# 実装の検査（例。paths で絞らない——依存の更新・scaffold-green.txt の変更でも回す）:
+#   PYTHONPATH=backend python3 <spec-loop の base ディレクトリ>/scripts/green-list.py check --repo .
 #   （実装自身のテスト）
 ```
 
