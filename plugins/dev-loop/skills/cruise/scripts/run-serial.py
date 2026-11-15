@@ -16,7 +16,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 
 ## 枠
 
-**同じリポジトリ（worktree をまたいで）で、同時に走らせるのは `N` 本まで。** `N` はメインの作業ツリーの `.claude/dev-loop.md` の
+**同じリポジトリ（worktree をまたいで）で、同時に走らせるのは `N` 本まで**（`空いているときの検査:` も宣言していれば、空いているときは `M` 本まで——下の「空いていれば足す」）。 `N` はメインの作業ツリーの `.claude/dev-loop.md` の
 宣言 1 行で決める:
 
 ```
@@ -37,8 +37,30 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 読むのは**メインの作業ツリー**の `.claude/dev-loop.md`（共通ディレクトリ `--git-common-dir` が `.git` ならその親）。
   **worktree の中の写しは読まない**——周ごとにブランチの写しが違うと、同じリポジトリで枠の数が食い違う。
   メインの作業ツリーが決まらない（`--separate-git-dir`・サブモジュール・bare）なら宣言は読まず 1。
-- 枠のファイルは共通ディレクトリの下の `dev-loop-serial/slot-<k>.lock`（`k` は 0 から `N-1`）。**枠は `fcntl.flock` の排他で、
+- 枠のファイルは共通ディレクトリの下の `dev-loop-serial/slot-<k>.lock`（`k` は 0 から `N-1`。足した枠は `N` から `M-1`）。**枠は `fcntl.flock` の排他で、
   持ったプロセスが終われば（異常終了でも）外れる。** 持っている間はファイルに pid・場所・コマンド・始めた時刻を書き、待つ側がそれを出す。
+
+## 空いていれば足す（#1057）
+
+**`N` 本の枠が埋まっていても、機械が空いていれば、`M` 本まで足した枠で走らせる。** `M` は同じ `.claude/dev-loop.md` の宣言 1 行で決める
+（`並行の検査:` の `N` を含めた、空いているときの同時の本数の上限）:
+
+```
+並行の検査: 1
+空いているときの検査: 3
+```
+
+- **#1049**: 宣言 1 の枠を、CPU をほとんど使わない持ち主（時間で待ち合わせるテスト）が約 9 分握り、負荷 2.76（28 コア）なのに重い検査が 40 分以上待った。
+  枠を外すと #493 の掛け算に戻るので、**空いているときだけ**超えて入れる。
+- **宣言が無ければ今と同じ**——負荷を読まず、`N` 本で待つ。値が 1 以上の整数（6 桁まで）でない・`N` 以下・行が 2 本以上・`空いているときの検査` を含むのに
+  上の形に合わない行があるなら、足さず（負荷を読まず）、そう言う。読み方（コードブロックと HTML コメントの中は数えない・メインの作業ツリーだけ）は `並行の検査:` と同じ。
+  `並行の検査` を含まない名前なので、この行を知らない古い版の run-serial には黙って無視される（`N` 本のまま）。
+- **空いている**: `os.getloadavg()` の 1 分の平均が `os.cpu_count()` × `IDLE_RATIO`（0.5）未満。**読めなければ**（`getloadavg` が無い・`OSError`・コアの数が分からない）**足さない**。
+- **続けて足さない**: 足した枠は `slot-N`〜`slot-(M-1)` の `M - N` 個だけで、**枠を取ったら（宣言の `N` 本の枠も足した枠も）`SPACING`（60 秒）は足さない**——1 分の平均は
+  入れた直後の検査をまだ数えていない（60 秒はその時定数。測って決めた値ではない）。枠を取った時刻は枠のディレクトリの `extra.lock` に書き、
+  間隔の判定と足した枠を取るのは、そのファイルの `flock` の中で行う（2 つの待ち手が同時に見て両方が足さないように）。
+- **待っている側は、足さない理由を待ちの報告の行に出す**（負荷とコアの数・足した枠も埋まっている・前に枠を取ってからの秒・負荷を読めない）。足した枠を取ったら、そう言う。
+- 足した枠も期限・持ち主の表示・入れ子は同じ（持ち主は `slot-<k>.lock` の全部から出す）。
 
 ## 期限（#897）
 
@@ -93,7 +115,7 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 ## 守る／守らない
 
 守る:
-- 同じリポジトリでは、worktree をまたいで、枠の本数（宣言、無ければ 1）を超えて同時に走らせない
+- 同じリポジトリでは、worktree をまたいで、枠の本数（宣言、無ければ 1。空いていて `空いているときの検査:` を宣言していれば、その本数）を超えて同時に走らせない
 - 待たされたら、待っていることと、いま走っているもの（pid・場所・コマンド）を出力で言う
 - 走らせたコマンドの終了コードをそのまま返す（シグナルは 128 + 番号）
 - 入れ子で呼ばれたら（同じリポジトリの枠を持つ順番待ちの子孫）、待たずにそのまま走らせる
@@ -147,6 +169,14 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - 待ち手は、出力のファイルの 1 つでも自分の標準エラーと同じ持ち主の出力の最終更新を「分からない」と言う——自分の書き込みで新しく見えるので、疑いを決めない（#898 の 1・2 パス目）
 - 待ち手が自分と同じと見るのは標準エラー（待っているあいだに書くのはそこだけ）のファイルだけ——標準出力だけが同じ持ち主は、ふつうに出力の最終更新で疑う（#898 の 2 パス目）
 - 持ち主の行に改行などの制御文字を出さない——コマンド・場所の制御文字は `\n` のように書き換え、1 持ち主 1 行にする（#898 の 1 パス目）
+- `空いているときの検査:` の宣言が無ければ負荷を読まず、枠の本数どおりに待つ（#1057）
+- 宣言があり負荷が閾値未満なら、枠が埋まっていても足した枠を取って走らせる（#1057）
+- 負荷が閾値以上なら足さずに待つ（#1057）
+- 枠を取ったら（宣言の枠も足した枠も）、`SPACING` 秒は足さない（#1057）
+- 足すのは宣言の上限の本数まで（#1057）
+- 負荷を読めなければ（`getloadavg` が無い・失敗する）足さない（#1057）
+- 待っているあいだ、足さない理由を待ちの報告の行に出す（#1057）
+- `空いているときの検査` の行が書式に合わないなら、足さずに言う（#1057）
 
 守らない:
 - 別のリポジトリ・別のマシンの実行とは数えない
@@ -180,6 +210,12 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - `holders` が読むあいだに持ち主が替わると、古い記録か新しい記録のどちらかを出す（書きかけで読めなければ出さない）
 - CommonMark の全部は写さない——段落を切るほかの行（空行・見出し・リスト）は、行の途中で始まったコメントを終わらせない（コメントのまま外す。宣言は増えない側）。
   行頭のコメントは `-->` を含む行で閉じるまで続く（その行の後ろで開き直した `<!--` も、閉じるまでコメント）。`<!-->`・`<!--->` は閉じたコメントと読まない
+- 負荷は機械全体の 1 分の平均で見る——別のリポジトリ・ほかのプロセスの負荷も数え、入れた直後の検査はまだ数えない（間隔で手当てするだけ）。
+  閾値（`IDLE_RATIO`）と間隔（`SPACING`）は測って決めた値ではなく、それで掛け算を防げることは確かめていない（#1057）
+- 足した枠を取った後は負荷を見ない——走り出した検査が重くなっても止めない（止めるのは期限だけ）
+- コアの数は `os.cpu_count()`（論理コア）——コンテナの CPU の上限（cgroup）は見ない
+- 前に枠を取った時刻が今より後（時計を戻した）なら、間隔を見ずに足す
+- 宣言の枠を取ってから時刻を書くまでのわずかな間（門の外）に、別の待ち手が足すことはある。時刻を書けなければ（`extra.lock` を開けない）間隔は前の時刻のまま
 
 標準ライブラリのみ。POSIX（`fcntl`）が要る——macOS と Linux。
 """
@@ -212,6 +248,10 @@ STALL = 600
 HOLDERS = "holders"
 SLOT = re.compile(r"slot-([0-9]+)\.lock")
 DECL = re.compile(r"^並行の検査:[ \t]*(.*?)[ \t]*$")
+EXTRA = re.compile(r"^空いているときの検査:[ \t]*(.*?)[ \t]*$")
+IDLE_RATIO = 0.5
+SPACING = 60.0
+GATE = "extra.lock"
 NEWLINE = re.compile(r"\r\n|\r|\n")
 DIGITS = re.compile(r"[0-9]{1,6}")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
@@ -325,6 +365,104 @@ def slots_from(text: str | None) -> tuple[int, str | None]:
     return int(value), None
 
 
+def extra_from(text: str | None, slots: int) -> tuple[int, str | None]:
+    """宣言 `空いているときの検査: M` から、空いているときの本数の上限を決める。(上限, 言うこと)。
+    宣言が無い・読めない・`slots` 以下なら `slots`（足さない——負荷も読まない）。"""
+    if text is None:
+        return slots, None
+    lines = declared_lines(text)
+    found = [m.group(1) for line in lines if (m := EXTRA.match(line))]
+    strange = [line for line in lines if "空いているときの検査" in line and not EXTRA.match(line)]
+    if strange:
+        return slots, f"`空いているときの検査` の行が書式に合わない（{strange[0].strip()!r}）——足さない（{slots} 本まで）"
+    if not found:
+        return slots, None
+    if len(found) > 1:
+        return slots, f"`空いているときの検査:` の行が {len(found)} 本ある——足さない（{slots} 本まで）"
+    wanted = found[0]
+    if not DIGITS.fullmatch(wanted) or int(wanted) < 1:
+        shown = wanted if len(wanted) <= 20 else wanted[:20] + "…"
+        return slots, f"`空いているときの検査:` の値 {shown!r} は 1 以上の整数（6 桁まで）でない——足さない（{slots} 本まで）"
+    if int(wanted) <= slots:
+        return slots, f"`空いているときの検査:` の値 {int(wanted)} が `並行の検査` の {slots} 本以下——足さない"
+    return int(wanted), None
+
+
+def idle() -> tuple[bool, str]:
+    """機械が空いているか（1 分の平均の負荷がコアの数 × `IDLE_RATIO` 未満）。(空いているか, 言うこと)。読めなければ空いていないとする。"""
+    try:
+        load = os.getloadavg()[0]
+        cpus = os.cpu_count()
+    except (AttributeError, OSError) as exc:
+        return False, f"負荷を読めない（{exc.__class__.__name__}）"
+    if not cpus:
+        return False, "負荷を読めない（コアの数が分からない）"
+    if load >= cpus * IDLE_RATIO:
+        return False, f"負荷 {load:.2f}（1 分の平均）がコア {cpus} の {IDLE_RATIO:.0%} 以上"
+    return True, f"負荷 {load:.2f}（1 分の平均）がコア {cpus} の {IDLE_RATIO:.0%} 未満"
+
+
+def try_slot(lockdir: Path, k: int) -> int | None:
+    """枠 `slot-<k>.lock` を待たずに取る。取れたら fd、ふさがっていれば None。"""
+    fd = os.open(lockdir / f"slot-{k}.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def write_stamp(gate: int) -> None:
+    """枠を取った時刻を門（`GATE`）に書く——次に足すまでの間隔（`SPACING`）はここから数える。"""
+    os.ftruncate(gate, 0)
+    os.pwrite(gate, repr(time.time()).encode("ascii"), 0)
+
+
+def stamp(lockdir: Path) -> None:
+    """宣言の枠を取ったときにも時刻を書く（`空いているときの検査:` の宣言があるときだけ）——入れた直後の検査は 1 分の平均にまだ出ないので、
+    その直後に足さないように。書けなくても枠は取れているので、走らせるのはやめない。"""
+    try:
+        gate = os.open(lockdir / GATE, os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError:
+        return
+    try:
+        fcntl.flock(gate, fcntl.LOCK_EX)
+        write_stamp(gate)
+    except OSError:
+        pass
+    finally:
+        os.close(gate)
+
+
+def take_extra(lockdir: Path, slots: int, upper: int) -> tuple[int | None, str]:
+    """`slots` 本の枠が埋まっているときに、機械が空いていれば足した枠（`slot-<slots>`〜`slot-<upper-1>`）を 1 つ取る。(fd か None, 言うこと)。
+
+    枠を取った時刻（宣言の枠は `stamp`、足した枠はここ）は `GATE` に書き、間隔の判定と取るのはその `flock` の中——2 つの待ち手が同時に見て、両方が足さないように。"""
+    ok, said = idle()
+    if not ok:
+        return None, said
+    gate = os.open(lockdir / GATE, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(gate, fcntl.LOCK_EX)
+        try:
+            last = float(os.pread(gate, 64, 0).decode("ascii") or 0)
+        except ValueError:
+            last = 0.0
+        since = time.time() - last
+        if 0 <= since < SPACING:
+            return None, f"前に枠を取ってから {span(since)}（{span(SPACING)} あける——1 分の平均は入れた直後の検査をまだ数えていない）"
+        for k in range(slots, upper):
+            fd = try_slot(lockdir, k)
+            if fd is None:
+                continue
+            write_stamp(gate)
+            return fd, f"枠は埋まっているが空いている（{said}）——足した枠 slot-{k} を取った（空いていれば {upper} 本まで）"
+        return None, f"足した枠も埋まっている（空いていれば {upper} 本まで）"
+    finally:
+        os.close(gate)
+
+
 def declaration(common: Path) -> tuple[str | None, str | None]:
     """メインの作業ツリーの `.claude/dev-loop.md`。(中身, 言うこと)。無ければ (None, None)、在るのに読めなければ言う。"""
     if common.name != ".git":
@@ -435,30 +573,38 @@ def show_holders() -> int:
     return 0
 
 
-def acquire(lockdir: Path, slots: int, parent: int) -> int | None:
-    """枠を 1 つ取って fd を返す。取れるまで待つ。待っているあいだに起動したときの親（`parent`）が居なくなったら、取らずに None。"""
+def acquire(lockdir: Path, slots: int, parent: int, upper: int | None = None) -> int | None:
+    """枠を 1 つ取って fd を返す。取れるまで待つ。待っているあいだに起動したときの親（`parent`）が居なくなったら、取らずに None。
+    `upper` が `slots` より大きければ（宣言 `空いているときの検査:`）、枠が埋まっていても空いていれば足した枠を取る（`take_extra`）。"""
     waited = reported = None
     mine = waiter_files()
+    upper = slots if upper is None else upper
     while True:
         if os.getppid() != parent:
             say(f"呼び出し元（pid {parent}）が居なくなった——枠を取らずに終わる（走らせていない）")
             return None
         for k in range(slots):
-            fd = os.open(lockdir / f"slot-{k}.lock", os.O_RDWR | os.O_CREAT, 0o644)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                os.close(fd)
+            fd = try_slot(lockdir, k)
+            if fd is None:
                 continue
+            if upper > slots:
+                stamp(lockdir)
             if waited is not None:
                 say(f"{time.monotonic() - waited:.1f} 秒待って枠を取った")
             return fd
+        why = ""
+        if upper > slots:
+            fd, said = take_extra(lockdir, slots, upper)
+            if fd is not None:
+                say(said + (f"（{time.monotonic() - waited:.1f} 秒待った）" if waited is not None else ""))
+                return fd
+            why = f"。空いていれば {upper} 本まで——いまは足さない: {said}"
         now = time.monotonic()
         if waited is None or now - reported >= REPORT:
             if waited is None:
-                waited, head = now, f"待っている（同じリポジトリで同時に {slots} 本まで）。走っているもの:"
+                waited, head = now, f"待っている（同じリポジトリで同時に {slots} 本まで{why}）。走っているもの:"
             else:
-                head = f"まだ待っている（{span(now - waited)}）。走っているもの:"
+                head = f"まだ待っている（{span(now - waited)}{why}）。走っているもの:"
             reported = now
             running = holders(lockdir, mine)
             say(head + ("" if running else " （読めなかった）"))
@@ -665,9 +811,12 @@ def main(argv: list[str]) -> int:
     slots, note = slots_from(text)
     if note:
         say(note)
+    upper, extra_note = extra_from(text, slots)
+    if extra_note:
+        say(extra_note)
     try:
         lockdir.mkdir(exist_ok=True)
-        fd = acquire(lockdir, slots, parent)
+        fd = acquire(lockdir, slots, parent, upper)
         if fd is None:
             return CANNOT
         record(fd, command)

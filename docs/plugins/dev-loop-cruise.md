@@ -89,6 +89,7 @@ cruise の操作: gh workflow run infra-apply.yml
   `マージ` の線が効かないリポジトリでは、`--absent` の起動時の確認にそう出ます。
 - **`並行の検査: N` は、周が同じリポジトリで同時に走らせる重い検査・アプリの起動の本数**です（書かなければ 1——順番待ちで 1 本ずつ）。
   検査が互いに干渉せず、ポート・データベースを奪い合わないと分かっているリポジトリだけ増やします。**利用者が居る cruise にも効きます。**
+  **`空いているときの検査: M` も書くと、N 本が埋まっていても機械が空いているときだけ M 本まで走らせます**（書かなければ負荷を見ません。#1057）。
   書式は [`run-serial.py` の docstring](https://github.com/hdknr/claude-code-setup/blob/main/plugins/dev-loop/skills/cruise/scripts/run-serial.py) を正とします。
 - **`cruise の操作:` は、周で打つ操作のうち既定の点検（`git push`・`gh pr create`・`gh pr merge`・`gh pr comment`・`gh issue create`）に
   無いもの**を 1 行 1 コマンドで書きます（本番反映の口など）。起動時の点検がその許可を見ます。**利用者が居る cruise でも書いておきます。**
