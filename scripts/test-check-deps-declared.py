@@ -430,6 +430,23 @@ def template_checks(tmp: Path) -> None:
           ok and git(after, "config", "--get", "maintenance.auto").strip() == "false"
           and git(after, "config", "--get", "gc.auto").strip() == "0")
 
+    # 契約と変異の作業者が使う複製の口（`fresh_repo`）が `copy_template` を通ること——上の試料は `copy_template` を直に呼ぶので、
+    # `fresh_repo` が素の `copytree` に戻っても緑のまま残る（#1032 の 2 パス目の指摘）
+    calls: list[Path] = []
+    real = globals()["copy_template"]
+
+    def spy(src: Path, dst: Path, **kw) -> None:
+        calls.append(dst)
+        real(src, dst, **kw)
+
+    via = tmp / "via-fresh" / "f1"
+    globals()["copy_template"] = spy
+    try:
+        fresh_repo(via, branch="issue/7-via-fresh")
+    finally:
+        globals()["copy_template"] = real
+    check("fresh_repo は copy_template を通して複製する", calls == [via])
+
 
 def check_pool_size() -> None:
     """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
