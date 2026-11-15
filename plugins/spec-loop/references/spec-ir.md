@@ -291,6 +291,8 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 
 **ケースの `id`・`title`・`qa`・`ref` は入出力のケースと同じ決まり**で、`input`・`expected`・`error` は書かない。
 
+**ここ（中間表現）に写すのは仕様のテストケースからである**（#1020）——段の並び（`steps`）は、Formal Checker が報告した `トレース` を spec-review が仕様のテストケースに書いたもので、Formal Checker は不変条件の違反の反例なら TLC の `-dumpTrace json` の JSON から `scripts/tlc-trace.py` で出し、出せなければ検査器の出力から写す（`agents/formal-checker.md`）。`calls` の入口と入力・`setup`・`outcomes`・`after`（直した仕様の結果）は、spec-review が仕様のテストケースを書くときに決める——反例からは出ない。変換の対応表の形と止める条件はスクリプトの docstring を正とする。
+
 ### 実装に求める口
 
 トレースのケースを持つ機能の Red テストは、実装に次の口を求める（Issue の本文の `## Red テスト` にも出る）:
