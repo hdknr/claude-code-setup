@@ -516,7 +516,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     # 9) 入れ子の並列を絞る（#460）——`check-mutation-claims.py` に、親より少ない `--jobs` を渡す。
     #    **実物の `GUARDS` のまま、起動の引数だけを記録する**（`run` を差し替えるので何も走らない）。
     #    **値そのものは見ない**——見るのは「渡すこと」「親が 1 なら 1」「親が 2 以上なら親より少ない」。
-    #    **回帰テストのうち変異を同時に当てる 6 本にも渡す**（#748・#749・#1021・#1049・#1051・#1050）——実物の `TESTS` のまま、渡さないものには何も足さない。
+    #    **回帰テストのうち変異を同時に当てる 7 本にも渡す**（#748・#749・#1021・#1049・#1051・#1050・#1052）——実物の `TESTS` のまま、渡さないものには何も足さない。
     recorded: dict[str, list[tuple[str, list[str]]]] = {}
 
     def nested_args(jobs: str, script: str = "check-mutation-claims.py") -> list[list[str]]:
@@ -537,7 +537,7 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     got.append(("--jobs 1 なら入れ子も --jobs 1", one == 1))
     got.append(("--jobs 4 なら入れ子は 1 以上 4 未満", four is not None and 1 <= four < 4))
     nested_tests = ("test-check-unattended-env.py", "test-ledger.py", "test-check-deps-declared.py",
-                    "test-check-spec-writeback.py", "test-run-serial.py", "test-parallel-stop.py")
+                    "test-check-spec-writeback.py", "test-run-serial.py", "test-parallel-stop.py", "test-outer-loop.py")
     got.append(("--jobs 1 なら変異を同時に当てる回帰テストにも --jobs 1（#749）",
                 all(inner(nested_args("1", t)) == 1 for t in nested_tests)))
     got.append(("--jobs 4 なら変異を同時に当てる回帰テストは 1 以上 4 未満（#749）",
