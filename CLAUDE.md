@@ -50,7 +50,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
         **未コミットの変更がある木は消さずに名指しし**（親が台帳の `note` に `片付けで残した:` で残す）、**リモートのブランチ・PR には触らない**（`remotes` で数えるだけ）。
         守る／守らないは docstring を正とする。テストは `scripts/test-cleanup-cycle.py`）
       - `skills/cruise/scripts/outer-loop.py` - cruise を `claude -p` で**外から繰り返し起動するループ**（#791。**任意**）。`ledger.py status` が 0 のときだけ起こし、
-        1 回の起動で台帳が進んだかを `ledger.py progress`（`updated`・`note` を含まない要約）で比べ、前進なしが続く・起動の上限・`claude` の失敗で止まって通知する。
+        1 回の起動で台帳が進んだかを `ledger.py progress`（`updated`・`note` を含まない要約）で比べ、前進なしが続く・起動の上限・`claude` の失敗・費用の合計の上限（`--max-total-usd`。#992）で止まって通知する。
         守る／守らないは docstring を正とする。テストは `scripts/test-outer-loop.py`）
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
     - `skills/req-loop/` - 要求確定のループ（#216。1 周 = レビュー会 1 回。**回答待ちで止まる**）。
@@ -190,9 +190,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **Alloy は必須ではなく、spec-review の手順 3 が権限・ロールを対象に選んだときに呼ぶ**。**引数なし・`gui` の形は GUI を開くので、`exec` の無い・`gui` の在る呼び方は走らせずに 4**。
       **`command -v` では探さない**。宣言の読み方は `check-tlc.py` の `scan_declarations` を読み込む（写さない）。守る／守らないは docstring を正とする。テストは `scripts/test-check-alloy.py`）
     - `scripts/autopilot-loop.py` - autopilot を `claude -p` で**外から繰り返し起動するループ**（#850）。台帳の `status` が `running` のときだけ起こし、
-      `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗で止まって通知する。
+      `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗・費用の合計の上限（`--max-total-usd`。#992）で止まって通知する。
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
-      **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
+      **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。

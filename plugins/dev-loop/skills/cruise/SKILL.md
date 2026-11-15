@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.108.0 -->
-> **このスキルの版: 1.108.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 1.109.0 -->
+> **このスキルの版: 1.109.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -505,7 +505,7 @@ cruise の状態は会話の外——台帳・各周の計画ファイル・GitH
 **この 2 つの終える条件と「まだ終えない」は、`ledger.py status issue-<親>` が終了コードで返す**（#632。0: 進められる・3: 人を待つ周だけ・5: 一覧の行がすべて済んだ・4: 判定できなかった）
 ——cruise を外から繰り返し起こすループは、`show` の文面ではなくこれで続けるかを決める。判定の順は `../dev-loop/scripts/ledger.py` の docstring を正とする。
 **外側のループは同梱の `scripts/outer-loop.py` を使う（#791）**——`status` が 0 のときだけ起こし、1 回の起動で台帳が進んだかを `ledger.py progress`
-（`updated`・`note` を含まない要約）で比べ、前進なしが続く・起動の上限・`claude` の失敗で止まって通知する。止まる条件と守らないものは、その docstring を正とする。
+（`updated`・`note` を含まない要約）で比べ、前進なしが続く・起動の上限・`claude` の失敗・費用の合計の上限（`--max-total-usd`。#992）で止まって通知する。止まる条件と守らないものは、その docstring を正とする。
 **終える前に、main の先端で全部の歯止めを 1 回流す（#831）**——メインの作業ツリーで main の先端を取り直し（`git fetch` してから `git pull --ff-only`）、
 対象リポジトリの「歯止めを全部回す 1 本のコマンド」（`../dev-loop/SKILL.md` の「はじめに」。このリポジトリなら `python3 scripts/check-all.py`）を
 `scripts/run-serial.py`（このスキルの base ディレクトリの絶対パス）越しに 1 回流す（長いので背景で起こし、出力はファイルに落として集計行だけ読む——待ち方は `references/parallel.md` の「通知だけを頼りに待たない」）。
