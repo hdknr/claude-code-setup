@@ -391,14 +391,16 @@ def template_checks(tmp: Path) -> None:
     print("土台の複製（消えるロックの競合。#1032）:")
     tpl = tmp / "tpl-race"
     repo(tpl, base_files={"yarn.lock": "x\n"})
-    lock = tpl / ".git" / "objects" / "maintenance.lock"
+    # 保守のロック（1 段下）と、`.git` 直下のロック（`index.lock`）の両方——`.git` の下に限る条件を `.git/objects` に狭めた形も捕まえる
+    locks = (tpl / ".git" / "objects" / "maintenance.lock", tpl / ".git" / "index.lock")
 
     def racer(src, dst, *, follow_symlinks=True):
-        if Path(src) == lock:
-            lock.unlink()  # 一覧に載った後、写す前に消える
+        if Path(src) in locks:
+            Path(src).unlink()  # 一覧に載った後、写す前に消える
         return shutil.copy2(src, dst, follow_symlinks=follow_symlinks)
 
-    lock.write_text("")
+    for lock in locks:
+        lock.write_text("")
     before = tmp / "race-before"
     assert_not_real_repo(before)
     try:
@@ -406,9 +408,11 @@ def template_checks(tmp: Path) -> None:
         err = ""
     except shutil.Error as e:
         err = str(e)
-    check("陽性対照: 直す前の形（素の copytree）は消えたロックで shutil.Error", "maintenance.lock" in err)
+    check("陽性対照: 直す前の形（素の copytree）は消えたロック 2 つ（maintenance.lock・index.lock）で shutil.Error",
+          "maintenance.lock" in err and "index.lock" in err)
 
-    lock.write_text("")
+    for lock in locks:
+        lock.write_text("")
     after = tmp / "race-after"
     assert_not_real_repo(after)
     try:
