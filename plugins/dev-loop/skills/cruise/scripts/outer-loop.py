@@ -103,6 +103,9 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **ループを起こした時に在った子の記録は数えない**——前のループ・前の cruise の子の費用を足さない。
 - **走っている子は、合計にも取れなかった数にも入れない**——止めずに、止まった行に数を出す。
 - **止まった行（通知の本文）に、費用の合計と取れなかった起動の数を出す**——上限を渡していなくても・費用で止まったのでなくても。
+- **中断・例外で終わった起動を、取れなかった起動として数える**——走った起動を数えずに合計を少なく見せない（#992 の 1 パス目）。
+- **上限を見る直前に子の記録を数え直す**——前の起動の後に走りきった子の費用を、次を起こす判定に入れる（#992 の 1 パス目）。
+- **済んだ・人待ちの判定は、費用の上限より先**——最後の起動で済んだのに「上限」と言わない。
 
 守らない:
 
@@ -113,8 +116,8 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **`claude` の版・許可モード・モデル・認証**——足す引数（`--` の後ろ）と `--claude` で利用者が決める（cruise `SKILL.md` §3 の点検）。
   長期トークンの起動口（`../dev-loop/scripts/launch-with-long-token.sh`）に `-p` を渡す形は確かめていない。
 - **同じ台帳を回すループ・対話の cruise が他に走っていないか**——台帳を書くのは親 1 体である（`../dev-loop/references/ledger.md`）。
-- **本物の `total_cost_usd` が何を含むか**——親が起こしたサブエージェント（Verifier・`/code-review` の fork）の分を含むと読んでいるが、本物の `claude -p` で
-  測っていない。使用量の上限・中断で終わった起動の `result` に費用が載るかも測っていない（載らなければ取れなかった起動になる）。
+- **本物の `total_cost_usd` が何を含むか**——1 回だけ測った（2026-11-15・Claude Code 2.1.325・haiku・背景の `Agent` 1 体）——`result` は 3 つで、`total_cost_usd` はどれも同じ値、`modelUsage` の累計は親の 2 ターンと背景の体の分を足した量だった（背景の体の分を含み、最後の `result` は累計）。
+  `/code-review` の fork・実際の cruise の長い起動では測っていない。使用量の上限・中断で終わった起動の `result` に費用が載るかも測っていない（載らなければ取れなかった起動になる）。
 - **上限を超えないこと**——判定は起動と起動の間だけで、起動の途中では止めない。値は API の料金に換算した推定で、利用枠そのものではない。
 - **ループを起こし直した後の合計**——このループの起動の中だけを数える（台帳に書かないので、前のループの分を数える出所が無い）。
 - **子の記録が子プロセスの周のものか**——`cruise-issue-<親>-children/` の `.json` を子の記録として読む。走っているかの判定は `child-cycle.py` の `is_running` の「守らない」を引き継ぐ。
@@ -358,12 +361,17 @@ def run_loop(args):
         if launches >= args.max_launches:
             return EXIT_LIMIT, f"起動の上限 {args.max_launches} 回に達した（status は 0 のまま）"
         if args.max_total_usd is not None:
+            costs.children = child_costs(children, seen)  # 前の起動の後に走りきった子も入れて判定する
             if costs.unknown():
                 return EXIT_COST_UNKNOWN, f"費用を取れない起動か子がある——上限 ${args.max_total_usd:.2f} を守れると言えないので起こさない"
             if costs.total() >= args.max_total_usd:
                 return EXIT_BUDGET, f"費用の上限 ${args.max_total_usd:.2f} に達した（status は 0 のまま）"
         launches += 1
-        rc, out = launch(args, main_tree, logs, launches)
+        try:
+            rc, out = launch(args, main_tree, logs, launches)
+        except BaseException:  # 中断・例外——走った起動の費用を読めないので、取れなかったと数える
+            costs.add(launches, None)
+            raise
         if rc is not None:
             costs.add(launches, read_cost(out))
         costs.children = child_costs(children, seen)

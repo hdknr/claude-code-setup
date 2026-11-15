@@ -189,7 +189,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/autopilot-loop.py` - autopilot を `claude -p` で**外から繰り返し起動するループ**（#850）。台帳の `status` が `running` のときだけ起こし、
       `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗・費用の合計の上限（`--max-total-usd`。#992）で止まって通知する。
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
-      **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
+      **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。

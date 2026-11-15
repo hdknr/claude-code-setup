@@ -26,6 +26,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
@@ -96,7 +97,9 @@ sys.exit(step.get("rc", 0))
 """
 
 # 走っている子の代わり: `ps` に `… /claude -p /dev-loop:dev-loop <番号>` と出て、しばらく居る
-FAKE_CHILD = "#!/usr/bin/env python3\nimport time\ntime.sleep(120)\n"
+# FAKE_RELEASE のファイルが現れたら（その試料だけ）早く終わる
+FAKE_CHILD = ("#!/usr/bin/env python3\nimport os, time\nr = os.environ.get(\"FAKE_RELEASE\")\nend = time.time() + 120\n"
+              "while time.time() < end and not (r and os.path.exists(r)):\n    time.sleep(0.05)\n")
 
 FAKE_OSASCRIPT = r"""#!/usr/bin/env python3
 import json, os, sys
@@ -138,13 +141,18 @@ MUTATIONS = {
     "起こせなかった起動も数える": [("        if rc is not None:\n            costs.add(", "        if True:\n            costs.add(")],
     "ちょうど上限なら起こす": [("            if costs.total() >= args.max_total_usd:\n", "            if costs.total() > args.max_total_usd:\n")],
     "費用を取れなくても上限があれば止めない": [("            if costs.unknown():\n", "            if False:\n")],
-    "上限が無くても費用を取れなければ止める": [("        if args.max_total_usd is not None:\n            if costs.unknown():\n",
-                                         "        if True:\n            if costs.unknown():\n")],
+    "上限が無くても費用を取れなければ止める": [("        if args.max_total_usd is not None:\n            costs.children",
+                                         "        if True:\n            costs.children")],
     "子の費用を数えない": [("        costs.children = child_costs(children, seen)\n", "")],
     "起動時に在った子の記録も数える": [("        if meta_path.name in seen:\n            continue\n", "")],
     "走っている子を取れなかったと数える": [("                running.append(label)\n                continue\n",
                                           "                missing.append(label)\n                continue\n")],
     "止まった行に費用を出さない": [('    line += f" 費用: {args.costs.summary()}"\n', "")],
+    "中断した起動を数えない": [("            costs.add(launches, None)\n            raise\n", "            raise\n")],
+    "上限の直前に子を数え直さない": [("            costs.children = child_costs(children, seen)  # 前の起動の後に走りきった子も入れて判定する\n", "")],
+    "費用の上限を済んだの判定より先に見る": [('        code, out = ledger("status", name)\n        print(f"status:',
+                                         '        if args.max_total_usd is not None and costs.total() >= args.max_total_usd:\n            return EXIT_BUDGET, "x"\n'
+                                         '        code, out = ledger("status", name)\n        print(f"status:')],
 }
 
 
@@ -455,6 +463,39 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
                 os.kill(int(line), signal.SIGKILL)
         pids.unlink()
 
+    # C10: 最後の起動で済み、合計もちょうど上限 → 済んだが先で 0
+    make(79, [(1, "todo"), (2, "todo")])
+    plan["79"] = [cost_step(79, i, 0.5) for i in (1, 2)]
+    go("C10 済んだのが先", 79, ["--max-total-usd", "1.0"])
+
+    # C11: 起動 1 の後は走っていた子（5 ドル）が、次の判定の前に走りきる → 上限 3 で 2 回目を起こさずに 11
+    make(78, [(1, "todo"), (2, "todo")])
+    release = tmp / f"release-{tag}"
+    os.environ["FAKE_RELEASE"] = str(release)
+    child_late = {"running": True, "stdout": [json.dumps({"type": "result", "total_cost_usd": 5.0})]}
+    plan["78"] = [cost_step(78, 1, 0.1, children=[child_late]), cost_step(78, 2, 0.1)]
+    real_ledger, calls = mod.ledger, {"status": 0}
+
+    def ledger_releasing(*args):
+        if args[:1] == ("status",):
+            calls["status"] += 1
+            if calls["status"] == 2:  # 起動 1 の後の判定の前に、子を走りきらせる
+                release.touch()
+                pid = int((home / "running-pids").read_text(encoding="utf-8").split()[-1])
+                for _ in range(200):
+                    try:
+                        os.kill(pid, 0)
+                    except OSError:
+                        break
+                    time.sleep(0.05)
+        return real_ledger(*args)
+    mod.ledger = ledger_releasing
+    try:
+        go("C11 走りきった子を次の判定に入れる", 78, ["--max-total-usd", "3"])
+    finally:
+        mod.ledger = real_ledger
+        del os.environ["FAKE_RELEASE"]
+
     # C9: 上限の値が違う → 2
     for key, value in (("0", "0"), ("負", "-1"), ("nan", "nan"), ("inf", "inf"), ("数でない", "abc")):
         o[f"C9 上限 {key}"] = run(mod, ["70", "--max-total-usd", value], root)[0]
@@ -553,6 +594,11 @@ def main() -> int:
         check("C8 上限があっても走っている子では止めない（0）", a("C8 走っている子では止めない")[0][0] == 0
               and "走っている 1 体" in line("C8 走っている子では止めない"))
         check("C9 上限が 0・負・nan・inf・数でないなら 2", all(o[f"C9 上限 {k}"] == 2 for k in ("0", "負", "nan", "inf", "数でない")))
+        check("C10 最後の起動で済めば、合計がちょうど上限でも 0", a("C10 済んだのが先")[0][0] == 0 and "合計 $1.00" in line("C10 済んだのが先"))
+        check("C11 前の起動の後に走りきった子の費用で、次を起こさずに 11（起動 1）",
+              a("C11 走りきった子を次の判定に入れる")[0][0] == 11 and a("C11 走りきった子を次の判定に入れる")[1:] == (1, 1)
+              and "合計 $5.10" in line("C11 走りきった子を次の判定に入れる"))
+        check("S11 中断した起動は取れなかった起動に数える", "起動 1 回のうち取れなかった 1 回（1 回目）" in line("S11 中断"))
         check("S6 起こせなかった起動は費用の起動に数えない", "起動 0 回" in line("S6 claude が無い"))
         check("止まった行に親と理由が出る", a("S2 note だけ")[0][1].startswith("外側のループ: 止まった（issue-51: 前進なしが続けて 2 回"))
         body = notes(Path(os.environ["FAKE_HOME"]))

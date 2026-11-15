@@ -139,6 +139,9 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 - **`--max-total-usd` を渡したなら、費用を取れなかった起動があれば、次を起こさずに止まる（12）。**
 - **`--max-total-usd` を渡さなければ、費用を取れなくても止めない**——止まった行に数を出すだけ。
 - **止まった行（通知の本文）に、費用の合計と取れなかった起動の数を出す**——上限を渡していなくても・費用で止まったのでなくても。
+- **中断・例外で終わった起動を、取れなかった起動として数える**（#992 の 1 パス目）。
+- **使用量の上限を待つ前に費用の上限に達していても、済んだ・止まったなら待たずに上の判定に戻る**——済んだ台帳を「費用の上限」と言わない（#992 の 1 パス目）。
+- **済んだ・止まったの判定は、起動の前の費用の上限より先。**
 
 守らない:
 
@@ -156,7 +159,7 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
   0 以外で終わるので 8 で止まる。
 - **同じ台帳を回すループ・対話のセッションが他に走っていないか**——台帳を書くのは 1 体である。
 - **出力の置き場（`spec-autopilot-v<版>-loop/`）を消すこと・大きさ**——起動ごとにファイルが増える。
-- **本物の `total_cost_usd` が何を含むか**——起動の中のサブエージェント（判定役）の分を含むと読んでいるが、本物の `claude -p` で測っていない。
+- **本物の `total_cost_usd` が何を含むか**——cruise の `outer-loop.py` の「守らない」と同じ（1 回だけ測った（2026-11-15・Claude Code 2.1.325・haiku・背景の `Agent` 1 体）——`result` は 3 つで、`total_cost_usd` はどれも同じ値、`modelUsage` の累計は親の 2 ターンと背景の体の分を足した量だった（背景の体の分を含み、最後の `result` は累計）。判定役を回す実際の起動では測っていない）。
   使用量の上限・中断で終わった起動の `result` に費用が載るかも測っていない（載らなければ取れなかった起動になる）。
   **`--max-total-usd` を渡したループでは、費用の載らない使用量の上限の起動は、待って再開せずに 12 で止まる**——上限を守れると言えないので。
 - **上限を超えないこと**——判定は起動と起動の間（と使用量の上限の待ちの前）だけで、起動の途中では止めない。値は API の料金に換算した推定である。
@@ -441,7 +444,11 @@ def run_loop(args):
         if stop:
             return stop
         launches += 1
-        rc, files = launch(args, main_tree, logs, launches)
+        try:
+            rc, files = launch(args, main_tree, logs, launches)
+        except BaseException:  # 中断・例外——走った起動の費用を読めないので、取れなかったと数える
+            args.costs.add(launches, None)
+            raise
         if rc is not None:
             args.costs.add(launches, read_cost(files[0]))
         print(f"費用: {args.costs.summary()}", flush=True)
@@ -462,6 +469,9 @@ def run_loop(args):
                 why = "解除の時刻を読めない"
             stop = over_budget(args)
             if stop:  # 使用量の上限を待つ前に——上限を超えた後に何時間も待ってから止まらない
+                code, _ = ledger("status", args.version)
+                if code != 0:  # 済んだ・止まった——待たずに上の判定に任せる
+                    continue
                 return stop
             if wait > args.max_limit_wait:
                 return EXIT_LIMIT_FAR, f"使用量の上限の解除が遠い（{why}・待ち {wait:.0f} 秒 > {args.max_limit_wait} 秒・{launches} 回目の起動）"

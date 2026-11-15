@@ -137,8 +137,8 @@ MUTATIONS = {
     "時刻が読めないとき待たない": [("                wait = args.limit_wait\n", "                wait = 0\n")],
     "解除が遠くても待つ": [("            if wait > args.max_limit_wait:\n", "            if False:\n")],
     "上限の起動を同じ状態に数える": [
-        ("        rc, files = launch(args, main_tree, logs, launches)\n",
-         "        rc, files = launch(args, main_tree, logs, launches)\n        seen[before] = seen.get(before, 0) + 1\n"),
+        ("            rc, files = launch(args, main_tree, logs, launches)\n",
+         "            rc, files = launch(args, main_tree, logs, launches)\n            seen[before] = seen.get(before, 0) + 1\n"),
         ("        seen[before] = seen.get(before, 0) + 1\n        if after == before:\n", "        if after == before:\n")],
     "上限の起動を前進なしに数える": [("            if after != before:\n                stalls = 0\n            if reset is not None:\n",
                                     "            stalls += 1\n            if after != before:\n                stalls = 0\n            if reset is not None:\n")],
@@ -175,6 +175,11 @@ MUTATIONS = {
     "費用を取れなくても上限があれば止めない": [("    if args.costs.missing:\n", "    if False:\n")],
     "上限が無くても費用を取れなければ止める": [("    if args.max_total_usd is None:\n        return None\n", "")],
     "止まった行に費用を出さない": [('    line += f" 費用: {args.costs.summary()}"\n', "")],
+    "中断した起動を数えない": [("            args.costs.add(launches, None)\n            raise\n", "            raise\n")],
+    "待つ前の費用の上限で済んだを見ない": [("                if code != 0:  # 済んだ・止まった", "                if False:  # 済んだ・止まった")],
+    "費用の上限を済んだの判定より先に見る": [('        code, out = ledger("status", args.version)\n        print(f"status:',
+                                         '        if args.max_total_usd is not None and args.costs.known >= args.max_total_usd:\n            return EXIT_BUDGET, "x"\n'
+                                         '        code, out = ledger("status", args.version)\n        print(f"status:')],
 }
 
 
@@ -586,6 +591,16 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     plan["54"] = [{"rc": 1, "stdout": ["usage limit reached"], "cost": 1.0}, {"ledger": [done(54)]}]
     go("B5 待つ前に費用の上限", 54, ["--max-total-usd", "1.0", "--limit-wait", "9"])
 
+    # B7: 済みを書いてから使用量の上限で終わる・費用 1.0・上限 0.5 → 待たず、済んだが先で 0
+    make(55)
+    plan["55"] = [{"ledger": [done(55)], "rc": 1, "stdout": ["usage limit reached"], "cost": 1.0}]
+    go("B7 待つ前でも済んだが先", 55, ["--max-total-usd", "0.5", "--limit-wait", "9"])
+
+    # B8: 最後の起動で済み、合計がちょうど上限 → 0
+    make(56)
+    plan["56"] = [{"ledger": [stage(56, "round1")], "cost": 0.5}, {"ledger": [done(56)], "cost": 0.5}]
+    go("B8 済んだのが先", 56, ["--max-total-usd", "1.0"])
+
     # B6: 上限の値が違う → 2
     for key, value in (("0", "0"), ("負", "-1"), ("nan", "nan"), ("inf", "inf"), ("数でない", "abc")):
         o[f"B6 上限 {key}"] = run(mod, ["50", "--max-total-usd", value], root)[0]
@@ -696,6 +711,9 @@ def main() -> int:
         check("B5 使用量の上限を待つ前に費用の上限を見て、待たずに 11（起動 1・待ち 0）",
               res("B5 待つ前に費用の上限") == 11 and a("B5 待つ前に費用の上限")[1:] == (1, 1) and a("B5 待つ前に費用の上限 待ち") == [])
         check("B6 上限が 0・負・nan・inf・数でないなら 2", all(o[f"B6 上限 {k}"] == 2 for k in ("0", "負", "nan", "inf", "数でない")))
+        check("B7 待つ前に費用の上限でも、済んでいれば待たずに 0", res("B7 待つ前でも済んだが先") == 0 and a("B7 待つ前でも済んだが先 待ち") == [])
+        check("B8 最後の起動で済めば、合計がちょうど上限でも 0", res("B8 済んだのが先") == 0 and "合計 $1.00" in line("B8 済んだのが先"))
+        check("A23 中断した起動は取れなかった起動に数える", "起動 1 回のうち取れなかった 1 回（1 回目）" in line("A23 中断"))
         check("A11 起こせなかった起動は費用の起動に数えない", "起動 0 回" in line("A11 claude が無い"))
         check("止まった行に版と理由が出る", a("A2 時刻だけ")[0][1].startswith("autopilot の外側のループ: 止まった（v2: 前進なしが続けて 2 回"))
         body = notes(Path(os.environ["FAKE_HOME"]))
