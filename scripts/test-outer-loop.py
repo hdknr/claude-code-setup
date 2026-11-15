@@ -2,6 +2,7 @@
 """`outer-loop.py`（cruise を外から繰り返し起こすループ。#791）の回帰テスト。
 
     python3 scripts/test-outer-loop.py
+    python3 scripts/test-outer-loop.py --jobs 1    # 陽性対照と変異を 1 つずつ（check-all.py --jobs 1 が渡す）
 
 **本体はプラグインの中にある**（`plugins/dev-loop/skills/cruise/scripts/`）。`test-child-cycle.py` と同じ形——
 **`dev-loop` はどのリポジトリでも使えるプラグイン**なので、本体は対象リポジトリの `scripts/` に在ることを当てにできない。
@@ -14,7 +15,22 @@
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**壊したのに緑のままなら失格**とする。
 **陽性対照**: 壊さない本体で全試料が緑であること。本体の docstring の「守る」の行数だけ変異を当て
 （**テスト自身に数えさせる**）、終了コードも docstring の表と突き合わせる。
+
+**速さ**（#1052）: 本体のままの回をこのプロセスで 1 回走らせて全部の check を当てた後、**陽性対照（壊さない本体）と変異の全部を、
+別々のプロセス（`--observe`）で同時に観測する**（`--jobs` で絞る。上限 4。`--jobs 1` で 1 つずつ）。`scenario()` は `os.environ`・
+偽の `HOME` の記録・シグナルの扱いを書き換えるので、スレッドではなくプロセスで分ける——各プロセスは自分のテンポラリで `isolate_env` を通り
+（偽の `claude` を `PATH` の先頭に置き、本物の `claude` が在る項を外す）、そこで本体を読み込む。形は `test-autopilot-loop.py` の `--observe`。
+観測はテンポラリのパスを伏せ、JSON の往復でそろえてから比べる。**陽性対照が、このプロセスの観測と一致しなければ失格**
+——観測の経路そのものが差を作っていれば、変異の「違う」は殺せた証拠にならない。
+本体のままの回をプールと同時に走らせないのは、`--jobs 1` で直列にするため。
+
+守らないもの:
+
+- **`--jobs` を受けた回のプールの大きさ**は `--pool-size` の経路で見る（`test-parallel-stop.py` と同じ形）。本当の回のプールの数は見ない。
+- **観測のプロセスの中の時間切れ**（1 本 1800 秒）は、負荷で延びた回と止まった回を分けない——どちらも「当てられなかった」で失格にする。
 """
+import argparse
+import concurrent.futures
 import contextlib
 import importlib.util
 import io
@@ -35,6 +51,12 @@ LEDGER = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" 
 CHILD_CYCLE = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "child-cycle.py"
 
 failures: list[str] = []
+
+JOBS_MAX = max(1, min(4, os.cpu_count() or 1))  # 同時に観測するプロセスの数の上限（test-parallel-stop.py と同じ）
+JOBS = JOBS_MAX
+pool_sizes: list[int] = []  # プールに渡した作業者の数（`--pool-size` が出す）
+CONTROL = "（陽性対照: 壊さない本体）"
+OBSERVE_TIMEOUT = 1800
 
 # 偽の claude: 起動を記録し、筋書き（FAKE_PLAN の親ごとの起動の並び。尽きたら最後の要素を繰り返す）どおりに台帳を書き換える
 FAKE_CLAUDE = r"""#!/usr/bin/env python3
@@ -272,6 +294,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
 
     plan = {}
     o = {}
+    # 偽の claude だけが PATH に在る（並列の観測のプロセスでも同じこと——陽性対照の一致で見る。#1052）
+    o["PATH の claude"] = ["<偽物>" if p == str(home / "bin") else p
+                          for p in os.environ["PATH"].split(os.pathsep) if p and os.access(os.path.join(p, "claude"), os.X_OK)]
     plan_path = tmp / f"plan-{tag}.json"
     os.environ["FAKE_PLAN"] = str(plan_path)
 
@@ -536,14 +561,34 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
 
 
 def main() -> int:
+    global JOBS
+    parser = argparse.ArgumentParser(description="outer-loop.py（cruise の外側のループ）の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=JOBS_MAX,
+                        help=f"陽性対照と変異を同時に観測するプロセスの数（既定と上限: {JOBS_MAX}。1 で 1 つずつ）")
+    parser.add_argument("--pool-size", action="store_true", help="プールに渡す作業者の数を出して終わる（試料の中で使う）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    JOBS = min(opts.jobs, JOBS_MAX)
+    if opts.pool_size:
+        run_observations([], {})  # 当てる経路そのもの（`run_observations`）でプールを作る——当てるものが 0 件なので作業者は起きない
+        print(pool_sizes[-1] if pool_sizes else "")
+        return 0
+
+    print("作業者の数:")
+    check("--jobs をプールに渡す（1 なら 1・99 なら上限）", check_pool_size())
+
     tmp = Path(tempfile.mkdtemp(prefix="test-outer-loop-")).resolve()  # macOS の /var は /private/var——git と cwd が返す形にそろえる
     saved_env = dict(os.environ)
     try:
         isolate_env(tmp / "home")
         mod = load()
         print("正しい本体")
+        began = time.monotonic()
         o = scenario(mod, tmp, "correct")
+        print(f"  （本体のままの回 {time.monotonic() - began:.1f} 秒）")
         a = lambda key: o[key]  # noqa: E731
+        check("PATH で実行できる claude は偽物だけ（本物の claude が在る項を外した）", a("PATH の claude") == ["<偽物>"])
         check("S1 前進が続けば済むまで回し、0 で止まる（起動 2・通知 1）", a("S1 前進して済む")[0][0] == 0 and a("S1 前進して済む")[1:] == (2, 1))
         check("S1 claude の引数は -p・/dev-loop:cruise 50 --absent・stream-json・追記・足す引数",
               all(r == ["-p", "/dev-loop:cruise 50 --absent", "--output-format", "stream-json", "--verbose",
@@ -634,6 +679,8 @@ def main() -> int:
         check(f"表 {sorted(documented)} と定数 {sorted(defined)}", documented == defined)
 
         print("\n変異テスト（壊したのに緑なら失格）")
+        # 陽性対照と変異を、別々のプロセス（`--observe`）で同時に観測する（#1052）。各プロセスは自分のテンポラリと環境を持つ
+        jobs: dict[str, Path] = {}
         for name, pairs in MUTATIONS.items():
             mutated = source
             missing = [n for n, _ in pairs if n not in mutated]
@@ -642,23 +689,29 @@ def main() -> int:
                 continue
             for needle, replacement in pairs:
                 mutated = mutated.replace(needle, replacement)
-            d = tmp / f"mut-{abs(hash(name))}"
+            d = tmp / f"mut-{len(jobs)}"
             d.mkdir()
             broken = d / "outer-loop.py"
             broken.write_text(mutated, encoding="utf-8")
-            # **読み込めない変異は「殺せた」ではなく「当てられなかった」**
-            try:
-                mutant = load(broken)
-            except Exception as exc:
-                check(f"変異を読み込める（当てられなかった）: {name}: {type(exc).__name__}", False)
-                continue
-            try:
-                got = scenario(mutant, tmp, f"mut-{abs(hash(name))}")
-            except Exception:
-                check(f"変異を殺せる: {name}", True)
-                continue
-            # 止まった行には試料ごとのリポジトリのパスが入らないよう伏せてある——そのまま比べる
-            check(f"変異を殺せる: {name}", got != o)
+            jobs[name] = broken
+        # 陽性対照: 壊さない本体を同じ経路で観測し、このプロセスの観測と一致すること（観測の経路そのものが差を作らない）
+        jobs = {CONTROL: SCRIPT, **jobs}
+        print(f"  陽性対照と変異 {len(jobs) - 1} 本を {JOBS} 並列で観測する")
+        began = time.monotonic()
+        results = run_observations(list(jobs.values()), saved_env)
+        wall = time.monotonic() - began
+        expected = normalize(o, tmp)
+        (control, secs) = results[0]
+        check(f"陽性対照: 壊さない本体を別のプロセスで観測しても同じ（{secs:.1f} 秒）", control == expected)
+        for name, (got, secs) in zip(list(jobs)[1:], results[1:]):
+            # **読み込めない・観測できない変異は「殺せた」ではなく「当てられなかった」**
+            if got == "load-error":
+                check(f"変異を読み込める（当てられなかった）: {name}", False)
+            elif got is None:
+                check(f"変異を観測できる（当てられなかった）: {name}（{secs:.1f} 秒）", False)
+            else:
+                check(f"変異を殺せる: {name}（{secs:.1f} 秒）", got != expected)
+        print(f"  （観測の全体 {wall:.1f} 秒・{JOBS} 並列）")
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
         body = source.split("守る:")[1].split("守らない:")[0]
@@ -687,5 +740,85 @@ def main() -> int:
     return 0
 
 
+def normalize(o: dict, tmp: Path):
+    """比べる形にする——テンポラリのパスを伏せ、JSON の往復でそろえる（別のプロセスの観測は tuple が list になって返る）。"""
+    text = json.dumps(o, ensure_ascii=False, sort_keys=True, default=str).replace(str(tmp), "<tmp>")
+    return json.loads(text)
+
+
+class _ObservePool(concurrent.futures.ThreadPoolExecutor):
+    """観測のプロセスを起こす作業者のプール。**渡された作業者の数を `pool_sizes` に残す**（`--pool-size` が出す）。
+
+    作業者はスレッドだが、観測そのものは作業者ごとに起こす別のプロセス（`--observe`）で走る——同時に走る観測は `JOBS` 本まで。"""
+
+    def __init__(self, max_workers, **kwargs):
+        pool_sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+def run_observations(scripts: list[Path], env: dict) -> list[tuple]:
+    """`scripts` を `JOBS` 個の作業者で観測し、渡した順に (観測, 秒) を返す（終わった順ではない）。"""
+    with _ObservePool(max_workers=JOBS) as pool:
+        return list(pool.map(lambda script: observe_in_process(script, env), scripts))
+
+
+def check_pool_size() -> bool:
+    """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
+    （`test-parallel-stop.py` と同じ形——受けた `--jobs` を使わなくても、遅く・速くなるだけで緑のままなので）。"""
+    ok = True
+    for asked in (1, 99):
+        want = min(asked, JOBS_MAX)
+        proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
+                              capture_output=True, text=True, timeout=120)
+        got = proc.stdout.strip()
+        good = proc.returncode == 0 and got == str(want)
+        print(f"  {'OK  ' if good else 'FAIL'} --jobs {asked} でプールに渡す作業者は {want}（出力: {got or '空'}・終了コード {proc.returncode}）")
+        ok = ok and good
+    return ok
+
+
+def observe_in_process(script: Path, env: dict) -> tuple:
+    """別のプロセスで `--observe` を走らせ、(正規化した観測, 秒) を返す。観測は、読み込めなければ "load-error"、観測できなければ None。
+
+    `env` は `isolate_env` の前の環境——子は自分のテンポラリで `isolate_env` を通ってから本体を読み込む。"""
+    out = Path(tempfile.mkdtemp(prefix="test-outer-loop-obs-")).resolve() / "o.json"
+    start = time.monotonic()
+    try:
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--observe", str(script), str(out)],
+                           env=env, capture_output=True, text=True, timeout=OBSERVE_TIMEOUT)
+        if r.returncode == 3:
+            return "load-error", time.monotonic() - start
+        if r.returncode != 0 or not out.exists():
+            return None, time.monotonic() - start
+        return json.loads(out.read_text(encoding="utf-8")), time.monotonic() - start
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None, time.monotonic() - start
+    finally:
+        shutil.rmtree(out.parent, ignore_errors=True)
+
+
+def observe(script: Path, out: Path) -> int:
+    """`--observe`: この本体（変異の写しを含む）で全試料を走らせ、正規化した観測を書く。変異で例外になれば、その例外を観測として書く。
+
+    試料の名前（`correct`）は本体のままの回と同じにする——リポジトリのパスはテンポラリを伏せれば同じ形になる。"""
+    tmp = Path(tempfile.mkdtemp(prefix="test-outer-loop-w-")).resolve()
+    try:
+        isolate_env(tmp / "home")
+        try:
+            mod = load(script)
+        except Exception:
+            return 3
+        try:
+            got = normalize(scenario(mod, tmp, "correct"), tmp)
+        except Exception as exc:  # 変異で落ちたら、それも「違う挙動」として観測する
+            got = {"例外": type(exc).__name__}
+        out.write_text(json.dumps(got, ensure_ascii=False), encoding="utf-8")
+        return 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--observe"]:
+        sys.exit(observe(Path(sys.argv[2]), Path(sys.argv[3])))
     sys.exit(main())
