@@ -17,6 +17,12 @@
 並列になる・出力が宣言順でなくなる。**契約の 5) 〜 8) がそれに対応する。**
 **契約の 10) は #509**——並列で、打ち切られた子（シグナルで止まり、終了コードが負）を表示と集計の両方で
 失敗に数え、FAIL の行の数と「失敗 N」が一致することを見る。
+**契約の 11) と 6) の末尾は #1040**——1 本ごとの所要時間が `OK` と `FAIL` の行に出て `SKIP` の行に出ないこと、
+集計の上位（長い順・本数・`OK` と `FAIL` の両方・行の値と一致）と全体の壁時計が出ること、
+`--jobs 1` で後ろの 1 本が前の 1 本の時間を背負わない（順番待ちを測らない）こと。
+**時間を出しても判定が変わらないことは、契約 1〜10 を期待値を変えずに通すことで見る**（11 も rc と「失敗 1」を見る）。
+**契約の 12) も #1040**——回した本が上位の本数より少なく `SKIP` がある回で、見出しの本数と、`SKIP` を上位に入れないことを見る
+（11 だけでは回した本が多く、`SKIP` を 0 秒で足しても上位の外に隠れた）。
 
 **変異は 2 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
 **このファイルの中の判別**（CI の yaml の読み方）に当てる。**後者は自分自身を壊す。**
@@ -187,6 +193,8 @@ BARRIER_SERIAL_WAIT = 0.5
 SERIAL = "serial"
 # 契約 10 の「遅れて落ちる歯止め」が、打ち切られる子の起動を待つ上限（秒）。通る回は印を見て即座に抜ける。
 KILLED_WAIT = 0.2
+# 契約 11 の「遅く通る回帰テスト」が眠る秒数（#1040）。所要時間がこれ以上と出ることを見る——0 にする変異を捕まえる。
+SLOW_OK = 0.3
 BARRIER = """\
 import pathlib, sys, time
 d = pathlib.Path("{flags}")
@@ -209,6 +217,39 @@ def clear_flags(root: Path) -> None:
             f.unlink()
 
 
+# `OK` / `FAIL` の行の末尾の所要時間（#1040）。名前は最初の語。
+TIMED_LINE = re.compile(r"^  (?:OK  |FAIL) (\S+)\s.*?(\d+\.\d) 秒$")
+# 集計の上位の行。`  OK  ` などで始まらない（`order` と FAIL の行の数え方に混ざらない）。
+TOP_LINE = re.compile(r"^\s+(\d+\.\d) 秒  (\S+?)(（FAIL）)?$")
+TOP_HEADER = "所要時間の長い順"
+WALL_LINE = re.compile(r"^全体: (\d+\.\d) 秒（壁時計）$", re.M)
+
+
+def times(out: str) -> dict[str, float]:
+    """`OK` / `FAIL` の行から、名前 → 所要秒。時間の欄が無い行は入れない。"""
+    got = {}
+    for l in out.splitlines():
+        m = TIMED_LINE.match(l)
+        if m:
+            got[m.group(1)] = float(m.group(2))
+    return got
+
+
+def top_entries(out: str) -> list[tuple[float, str, bool]]:
+    """集計の上位を (秒, 名前, FAIL か) で、出た順に返す。見出しが無ければ空。"""
+    lines = out.splitlines()
+    idx = [i for i, l in enumerate(lines) if l.startswith(TOP_HEADER)]
+    if len(idx) != 1:
+        return []
+    got = []
+    for l in lines[idx[0] + 1:]:
+        m = TOP_LINE.match(l)
+        if not m:
+            break
+        got.append((float(m.group(1)), m.group(2), bool(m.group(3))))
+    return got
+
+
 def order(out: str) -> list[str]:
     """OK/FAIL/SKIP の行に出た名前を、出た順に返す。"""
     return [l.split()[1] for l in out.splitlines()
@@ -226,6 +267,10 @@ def build_fake(root: Path) -> Path:
     # 回帰テストの側の先頭。**順序を見る契約 1 では、遅延ではなく `hold_head_test` が後に終わらせる**（#437）。
     (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n")
     (scripts / "ok-c.py").write_text("print('c ok')\n")
+    # 契約 11 の遅く通る 1 本（#1040）。
+    # 3 本——並列のとき、1 本ごとの合計が壁時計より丸めの誤差を越えて長くなるように（#1040 の 2 パス目）。
+    for slow in ("slow-ok.py", "slow-ok2.py", "slow-ok3.py"):
+        (scripts / slow).write_text(f"import time; time.sleep({SLOW_OK}); print('slow ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
@@ -258,9 +303,11 @@ def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
     mod.TESTS = ["ok-t.py", "ok-b.py"]
     if bad_guard:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
-        # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
-        # **この主張は機械で当ててある**（#151）——後ろに回すと、この回帰テストが赤くなる。
-        # mutation-claim: {"file": "scripts/test-check-all.py", "old": "GUARDS.insert(1, (\"bad.py\"", "new": "GUARDS.append((\"bad.py\"", "red": "python3 scripts/test-check-all.py --mutant 最初の失敗で止める"}
+        # 契約 2 は「最初の失敗で止める」変異を捕まえられない（実際に一度そうなった）。
+        # **#1040 から、この置き場所はその変異を捕まえる唯一の手ではない**——契約 6 の直列の回（落ちた par-a の後の
+        # par-b の所要時間）と契約 11（落ちる slow-bad の後ろの ok-c）も捕まえる。だから、ここを後ろに回しても
+        # この回帰テストは赤にならない（#151 の機械の当て `mutation-claim` は、#1040 の `check-mutation-claims.py` が
+        # 「当てられなかった」と出したので外した）。契約 2 の「後続の歯止めを回す」を判別するために、置き場所はこのまま。
         mod.GUARDS.insert(1, ("bad.py", [], False))
     if bad_test:
         mod.TESTS.append("bad-test.py")
@@ -433,6 +480,11 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
     rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "1"])
     got.append(("--jobs 1 で同時に走らない", rc != 0 and "相手が来ない" in out))
     got.append(("--jobs 1 で作業者を 1 つにする", [p.workers for p in pools] == [1]))
+    # **順番待ちを測らない**（#1040）——直列では par-a が相手を待って時間切れで落ちてから par-b が起き、par-b は印を見て即座に通る。
+    # 投げた時点から測ると、par-b が par-a の時間を背負って長くなる。
+    t = times(out)
+    got.append(("--jobs 1 で後ろの 1 本は前の 1 本の時間を背負わない（#1040）",
+                {"par-a.py", "par-b.py"} <= set(t) and t["par-b.py"] < t["par-a.py"]))
 
     # 7) 既定（--jobs を渡さない）でも同時に走る——既定が直列なら速くならない。
     #    **区間の重なりではなく待ち合わせで見る**——重なりは起動の遅れに負けるが、
@@ -509,6 +561,63 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         ("FAIL の行の数と「失敗 N」が一致する（#509）",
          len(fail_lines) == 2 and "（失敗 2 /" in out),
         ("打ち切られた子も名指しする", "落ちたもの: slow-bad.py, killed.py" in out),
+    ]
+
+    # 11) 所要時間（#1040）。遅く通る回帰テスト（slow-ok）と遅れて落ちる歯止め（slow-bad。印が無いので KILLED_WAIT 待つ）を含む 8 本と SKIP 1 本。
+    #     **上位の本数（TOP）より多く回す**——本数を絞らない変異を捕まえるため。
+    #     **遅く通る回帰テストは 3 本で、全部を同時に起こす（--jobs 8）**——合計と壁時計の差を、丸めの誤差より大きくする（下の合計の表明）。
+    mod = load(target, f"{tag}_timed")
+    mod.SCRIPTS = root / "scripts"
+    mod.GUARDS = [("ok-a.py", [], False), ("slow-bad.py", [], False), ("ok-c.py", [], False),
+                  ("needs-base.py", [], True)]
+    mod.TESTS = ["slow-ok.py", "slow-ok2.py", "slow-ok3.py", "ok-t.py", "ok-b.py"]
+    top_n = load(TARGET, f"{tag}_topn").TOP  # 本数は本体の宣言を正とする（変異の側の値ではなく）
+    clear_flags(root)  # 契約 10 が置いた killed の印を消す——残っていると slow-bad が待たずに落ちる
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "8"])
+    status = [l for l in out.splitlines() if l.startswith(("  OK  ", "  FAIL"))]
+    t = times(out)
+    top = top_entries(out)
+    wall = WALL_LINE.search(out)
+    got += [
+        ("OK と FAIL の全部の行に所要時間が出る（#1040）",
+         len(status) == 8 and len(t) == 8 and all(TIMED_LINE.match(l) for l in status)),
+        ("FAIL の行にも所要時間が出る（#1040）", "slow-bad.py" in t),
+        ("SKIP の行には所要時間を出さない（#1040）",
+         any(l.startswith("  SKIP needs-base.py") and "秒" not in l for l in out.splitlines())),
+        ("所要時間はその 1 本の壁時計（眠った秒以上。#1040）", t.get("slow-ok.py", 0.0) >= SLOW_OK),
+        ("上位は TOP 本（回したのが多いとき。#1040）", top_n == 5 and len(top) == top_n),
+        ("上位は長い順（#1040）", bool(top) and [x[0] for x in top] == sorted((x[0] for x in top), reverse=True)),
+        ("上位の先頭は行の最大と一致（#1040）", bool(top) and bool(t) and top[0][0] == max(t.values())),
+        ("上位の値は行の値と一致（#1040）", bool(top) and all(t.get(n) == v for v, n, _ in top)),
+        ("上位に遅い歯止め（FAIL）と遅い回帰テストが入る（#1040）",
+         {"slow-ok.py", "slow-bad.py"} <= {n for _, n, _ in top}
+         and all(f == (n == "slow-bad.py") for _, n, f in top)),
+        ("全体の壁時計が出て、1 本の最大以上（#1040）",
+         wall is not None and bool(t) and float(wall.group(1)) >= max(t.values())),
+        # **並列（--jobs 8）なので、壁時計は 1 本ごとの合計より短い**——合計を全体と称する変異を捕まえる（#1040 の 1 パス目）。
+        # 合計は遅い 4 本（SLOW_OK × 3 と KILLED_WAIT）と 8 本ぶんの起動を足したもの、壁時計はほぼ最も遅い 1 本と base の解決。
+        # **丸めの誤差ぶんの余裕を取る**（#1040 の 2 パス目）——行の値は 0.1 秒に丸めるので、行の合計は本当の合計より最大 0.05 × 本数だけ大きい。
+        # 余裕なしの `<` では、負荷の下で軽い本が 0.1 に切り上がり、合計を全体と称する変異が 4 回に 1 回ほど素通りした（/code-review の実測）。
+        ("全体は壁時計で、1 本ごとの合計ではない（並列。#1040）",
+         wall is not None and bool(t) and float(wall.group(1)) + 0.05 * (len(t) + 1) < sum(t.values())),
+        ("所要時間を出しても判定は変わらない（rc=1・失敗 1・飛ばし 1。#1040）",
+         rc == 1 and "（失敗 1 / 飛ばし 1）" in out and "落ちたもの: slow-bad.py" in out),
+    ]
+
+    # 12) 回した本が TOP より少なく、SKIP がある回（#1040 の 1 パス目）。契約 11 は回した本が TOP より多いので、
+    #     0.0 秒の SKIP を上位に足す変異も、見出しの本数を TOP に固定する変異も、見えないところに隠れて通った。
+    mod = load(target, f"{tag}_fewtimed")
+    mod.SCRIPTS = root / "scripts"
+    mod.GUARDS = [("ok-c.py", [], False), ("needs-base.py", [], True)]
+    mod.TESTS = ["ok-b.py"]
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
+    t = times(out)
+    top = top_entries(out)
+    got += [
+        ("回した本が TOP より少なければ、見出しはその本数（#1040）", "所要時間の長い順（上位 2 本）:" in out),
+        ("上位は回した本だけで、SKIP を入れない（#1040）",
+         sorted(n for _, n, _ in top) == ["ok-b.py", "ok-c.py"] and set(t) == {"ok-b.py", "ok-c.py"}),
+        ("SKIP があっても判定は変わらない（rc=0・飛ばし 1。#1040）", rc == 0 and "（失敗 0 / 飛ばし 1）" in out),
     ]
     return got
 
@@ -1187,6 +1296,30 @@ MUTANTS = {
     "回帰テストの全部に --jobs を渡す（#749）": (
         '["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []',
         '["--jobs", str(nested_jobs(opts.jobs))]'),
+    # 以下は #1040（所要時間）
+    "歯止めの行に所要時間を出さない": (
+        "            print(f\"  {'OK  ' if ok else 'FAIL'} {label:<40} {secs:7.1f} 秒\", flush=True)\n",
+        "            print(f\"  {'OK  ' if ok else 'FAIL'} {label}\", flush=True)\n"),
+    "回帰テストの行に所要時間を出さない": (
+        "                print(f\"  {'OK  ' if ok else 'FAIL'} {name:<40} {secs:7.1f} 秒\", flush=True)\n",
+        "                print(f\"  {'OK  ' if ok else 'FAIL'} {name}\", flush=True)\n"),
+    "所要時間を 0 にする": ("    return ok, out, time.monotonic() - t0\n", "    return ok, out, 0.0\n"),
+    "所要時間を最初の 1 本の起動から測る（順番待ちを含む）": (
+        "    t0 = time.monotonic()\n",
+        "    t0 = globals().setdefault('_T0', time.monotonic())\n"),
+    "上位を短い順に並べる": ("reverse=True)[:TOP]", "reverse=False)[:TOP]"),
+    "上位の本数を絞らない": ("reverse=True)[:TOP]", "reverse=True)"),
+    "上位から FAIL を外す": ("sorted(timings, key=", "sorted([x for x in timings if x[2]], key="),
+    "歯止めの時間を上位に入れない": ("            timings.append((secs, label, ok))\n", "            pass\n"),
+    "回帰テストの時間を上位に入れない": ("                timings.append((secs, name, ok))\n", "                pass\n"),
+    "全体の壁時計を出さない": ('    print(f"全体: {elapsed:.1f} 秒（壁時計）")\n', "    pass\n"),
+    # 以下は #1040 の 1 パス目（Verifier と /code-review が複製で素通りを示した 3 本）
+    "SKIP を 0 秒で上位に入れる": (
+        "                skipped.append(label)\n                continue\n",
+        "                skipped.append(label)\n                timings.append((0.0, label, True))\n                continue\n"),
+    "全体を 1 本ごとの合計にする": ("    elapsed = time.monotonic() - started\n",
+                                    "    elapsed = sum(x[0] for x in timings)\n"),
+    "上位の見出しの本数を TOP に固定する": ("（上位 {min(TOP, len(timings))} 本）", "（上位 {TOP} 本）"),
     "入れ子に親と同じ並列数を渡す": ("    return max(1, jobs // 2)\n", "    return jobs\n"),
     "入れ子を 0 にしうる": ("    return max(1, jobs // 2)\n", "    return jobs // 2\n"),
     # **終わった順に出す**本体を写した変異（`as_completed`。#430 の 2 パス目）。`reversed()` だけでは、

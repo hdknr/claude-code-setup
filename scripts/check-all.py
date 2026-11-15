@@ -47,6 +47,19 @@
   （`test-check-all.py`・`test-check-mutation-claims.py`・`test-run-serial.py` など。`--jobs 2` の直書き・既定の `--jobs`・
   同時に起こす子プロセス）の中は、`--jobs 1` でも並列に回る。
 - **出力は宣言順**（終わった順ではない）。先頭が最も重いので、最初の行が出るまで待つ。
+- **1 本ごとの所要時間を `OK` / `FAIL` の行の末尾に出す**（#1040）。集計には、所要時間の長い順の上位
+  （`TOP` 本。`OK` と `FAIL` の両方から）と、全体の壁時計の秒を出す。**速くする手を当てる先を数字で決めるため**——
+  並列なので全体の時間は最も遅い数本でほぼ決まる。時間の取り方:
+    - **1 本の時間は、作業者のスレッドが `run` を呼ぶ直前から、子が終わって出力を読み終えるまでの壁時計**
+      （`time.monotonic()`）。**プールの順番待ちは含まない**——`--jobs 1` でも、後ろの 1 本は前の 1 本の時間を背負わない。
+      **起動の排他（`_live_lock`）の待ちは含む**——子の起動（`Popen`）はこの排他の中で行うので、
+      並列のときは他の作業者が子を起こし終えるのを待つ時間が入る（起動の重さの一部として数える）。
+      **CPU 時間ではない**——並列のときは、同時に走っている他の子との取り合いと、子プロセスの起動の重さを含む。
+      上位を比べるなら同じ `--jobs` の回どうしで比べ、**他の重い処理（別の `check-all.py` など）と重ねて測らない**。
+    - **`SKIP` の行には時間を出さない**（回していない）。上位にも入れない。
+    - **全体は、引数を読んだ後から集計を出す直前までの壁時計**（base の解決を含む）。
+    - **時間を出しても判定は変えない**——終了コード・「失敗 N」・`FAIL` の行の数・`SKIP` の数え方は時間に依らない。
+      上位の行は `  OK  ` / `  FAIL` / `  SKIP` で始めない（行を数える側に混ざらないように）。
 - **Ctrl-C で、まだ起動していないものは起動せず、走っているものは止める**
   （親だけに SIGINT が届いた場合も——子を止めるのは親である）。**孫まで止める**——
   子は自分のプロセスグループで起こし、止めるときはグループに SIGINT を送って
@@ -192,6 +205,8 @@ _live_lock = threading.Lock()
 _stopping = False
 # 子が自分の後始末（一時ディレクトリの削除など）を済ませるのを待つ秒数。過ぎたら SIGKILL。
 GRACE = 3.0
+# 集計に出す、所要時間の長い順の上位の本数（#1040）。
+TOP = 5
 
 
 def run(name: str, args: list[str]) -> tuple[bool, str]:
@@ -215,6 +230,17 @@ def run(name: str, args: list[str]) -> tuple[bool, str]:
         with _live_lock:
             _live.discard(proc)
     return proc.returncode == 0, (out + err)
+
+
+def timed(name: str, args: list[str]) -> tuple[bool, str, float]:
+    """`run` を回し、(通ったか, 出力, 所要秒) を返す（#1040）。
+
+    **作業者のスレッドの中で測る**——プールに投げた時点から測ると、順番待ちの時間が入る。
+    `run` の中の起動の排他（`_live_lock`）の待ちは含む（docstring の「時間の取り方」）。
+    判定（通ったか）は `run` の返り値をそのまま返す——時間で変えない。"""
+    t0 = time.monotonic()
+    ok, out = run(name, args)
+    return ok, out, time.monotonic() - t0
 
 
 def signal_group(proc: subprocess.Popen, sig: int) -> None:
@@ -274,11 +300,13 @@ def main() -> int:
     if opts.jobs < 1:
         parser.error(f"--jobs は 1 以上: {opts.jobs}")
 
+    started = time.monotonic()
     have_base = base_resolves(opts.base)
 
     failed: list[str] = []
     skipped: list[str] = []
     logs: list[tuple[str, str]] = []
+    timings: list[tuple[float, str, bool]] = []  # (所要秒, 名前, 通ったか)。SKIP は入れない
 
     pool = ThreadPoolExecutor(max_workers=opts.jobs)
     try:
@@ -292,9 +320,9 @@ def main() -> int:
             args = [*extra, opts.base] if needs_base else extra
             if name in NESTED:
                 args = [*args, "--jobs", str(nested_jobs(opts.jobs))]
-            guard_runs.append((label, pool.submit(run, name, args)))
+            guard_runs.append((label, pool.submit(timed, name, args)))
         test_runs = ([] if opts.guards_only
-                     else [(name, pool.submit(run, name, ["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []))
+                     else [(name, pool.submit(timed, name, ["--jobs", str(nested_jobs(opts.jobs))] if name in NESTED else []))
                            for name in TESTS])
 
         print(f"=== 歯止め === （{opts.jobs} 並列）")
@@ -303,8 +331,9 @@ def main() -> int:
                 print(f"  SKIP {label:<40} base `{opts.base}` が解決できない")
                 skipped.append(label)
                 continue
-            ok, out = fut.result()
-            print(f"  {'OK  ' if ok else 'FAIL'} {label}", flush=True)
+            ok, out, secs = fut.result()
+            timings.append((secs, label, ok))
+            print(f"  {'OK  ' if ok else 'FAIL'} {label:<40} {secs:7.1f} 秒", flush=True)
             if not ok:
                 failed.append(label)
                 logs.append((label, out))
@@ -315,8 +344,9 @@ def main() -> int:
         else:
             print("=== 回帰テスト ===")
             for name, fut in test_runs:
-                ok, out = fut.result()
-                print(f"  {'OK  ' if ok else 'FAIL'} {name}", flush=True)
+                ok, out, secs = fut.result()
+                timings.append((secs, name, ok))
+                print(f"  {'OK  ' if ok else 'FAIL'} {name:<40} {secs:7.1f} 秒", flush=True)
                 if not ok:
                     failed.append(name)
                     logs.append((name, out))
@@ -333,6 +363,12 @@ def main() -> int:
 
     total = len(GUARDS) + len(TESTS)
     ran = total - len(skipped)
+    elapsed = time.monotonic() - started
+    if timings:
+        print(f"\n所要時間の長い順（上位 {min(TOP, len(timings))} 本）:")
+        for secs, label, ok in sorted(timings, key=lambda t: t[0], reverse=True)[:TOP]:
+            print(f"  {secs:9.1f} 秒  {label}{'' if ok else '（FAIL）'}")
+    print(f"全体: {elapsed:.1f} 秒（壁時計）")
     print(f"\n{ran}/{total} 本を回した（失敗 {len(failed)} / 飛ばし {len(skipped)}）")
     if skipped:
         print("飛ばしたもの: " + ", ".join(skipped))
