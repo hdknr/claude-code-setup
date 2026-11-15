@@ -74,7 +74,8 @@ TLC に `-dumpTrace json <ファイル>` を渡すと、違反したときだけ
 - **状態の番号が続かない反例を読まない**——初めの行為の前が 1 でない・行為の前の状態が前の行為の後の状態と違う・後が前の次でない（戻る形を除く）なら 2。
 - **段が 2 つより少ない反例を 0 にしない**——初めの状態で違反した（行為が 0 個）反例を含め、1。
 - **`rest` で `formal`・`calls`・`steps` を上書きしない**——`rest` に `setup`・`outcomes`・`after` のほかの鍵があれば 2。
-- **呼び出しの名前が重なる表を読まない**——2 つの呼び出しが 1 つにまとまって出るので、2。
+- **呼び出しの名前が重なる表を読まない**——2 つの呼び出しが 1 つにまとまって出るので、2。名前は空でない文字列に限る（`true` と `1` を別の名前と読まない）。
+- **形の違う行為を 1 にしない**——`name` が空でない文字列でない・`parameters` が文字列の配列でない・`parameters` と `context` の片方にだけ呼び出しの引数がある行為は、モデルの書き方ではなく JSON の形の違いなので 2。
 - **`actions` と `skip` に同じ行為を書いた表を読まない**——どちらを採るかを決めないので、2。
 - **ファイルを書かない**——出すのは標準出力だけ。
 
@@ -86,6 +87,10 @@ TLC に `-dumpTrace json <ファイル>` を渡すと、違反したときだけ
 - **呼び出しごとに引数の名前が違うモデル**（`Read(w)`・`Approve(a)`）——`caller` は 1 つ。モデルの引数の名前を揃える。
 - **`skip` に挙げた行為が状態を変えるか**——挙げた行為は順に入らない（環境の行為を飛ばすと、その順は落ちる）。
 - **整数と文字列の同じ表記の値**（`2` と `"2"`）を同じモデルで使うとき——`calls` の鍵は同じ `"2"` になる。
+- **活性の違反のうち、前の状態へ戻らずに終わるもの**（公平性なしで止まって終わる反例など）——JSON の形は不変条件の違反と同じで、ここでは見分けられない（0 で `steps` を出す）。
+  **使うのは不変条件の違反（TLC の `Invariant … is violated`。終了コード 12）の反例だけにする**——呼び出し側（`agents/formal-checker.md`）の決まり。
+- **行為の中の選択**（`Put(w) == \E v \in S : …`）——選んだ値は JSON に出ない（`context` は行為の引数だけ）ので、0 で `steps` を出し、テストは値を強制できない。
+  呼び出しの入力に写る選択は、行為の引数にしてモデルを書く（引数にすれば、ほかの引数として 1 で止まる）。
 - **TLC の版による JSON の形の違い**——v1.8.0 のプレリリースで確かめた形だけ。CI には TLC が無いので、回帰テストは手元で取った JSON を試料にする。
 """
 
@@ -131,7 +136,9 @@ def check_table(table):
         if not isinstance(call, dict) or set(call) != {"name", "operation", "input"}:
             raise Malformed(f"対応表の `calls` の `{value}` が name・operation・input のオブジェクトでない")
     names = [call["name"] for call in calls.values()]
-    if len(set(map(json.dumps, names))) != len(names):
+    if not all(isinstance(n, str) and n for n in names):
+        raise Malformed(f"対応表の `calls` の name が空でない文字列でない: {names}")
+    if len(set(names)) != len(names):
         raise Malformed(f"対応表の `calls` に同じ呼び出しの名前がある: {names}")
     if not isinstance(actions, dict) or not actions or not all(isinstance(v, str) for v in actions.values()):
         raise Malformed("対応表の `actions` が、行為の名前 → 段の名前（文字列）の空でないオブジェクトでない")
@@ -196,15 +203,19 @@ def convert(dump, table):
     steps = []
     for i, action in enumerate(actions_of(dump), 1):
         name = action.get("name")
+        if not isinstance(name, str) or not name:
+            raise Malformed(f"{i} 番目の行為の name が空でない文字列でない: {json.dumps(name, ensure_ascii=False)}")
         if name in skip:
             continue
         if name not in table["actions"]:
             raise Cannot(f"{i} 番目の行為 {name} が対応表の `actions` にも `skip` にも無い")
         params = action.get("parameters", [])
         context = action.get("context", {})
-        if not isinstance(params, list) or not isinstance(context, dict):
+        if not isinstance(params, list) or not all(isinstance(p, str) for p in params) or not isinstance(context, dict):
             raise Malformed(f"{i} 番目の行為 {name} の parameters・context の形が違う")
-        if caller not in params or caller not in context:
+        if (caller in params) != (caller in context):
+            raise Malformed(f"{i} 番目の行為 {name} の parameters と context の片方にだけ `{caller}` がある")
+        if caller not in params:
             raise Cannot(f"{i} 番目の行為 {name} に呼び出しの引数 `{caller}` が無い（引数: {params}）——"
                          "呼び出しを引数に取る名前つきの行為で書くか、段にしないなら `skip` に挙げる")
         others = [p for p in params if p != caller]

@@ -55,7 +55,9 @@ MUTATIONS = {
     "前の状態の番号を見ない": [("        if before != expect:\n", "        if False:\n")],
     "段の数を見ない": [("MIN_STEPS = 2\n", "MIN_STEPS = 0\n")],
     "rest のほかの鍵を見ない": [("    if extra:\n", "    if False:\n")],
-    "呼び出しの名前の重なりを見ない": [("    if len(set(map(json.dumps, names))) != len(names):\n", "    if False:\n")],
+    "呼び出しの名前の重なりを見ない": [("    if not all(isinstance(n, str) and n for n in names):\n", "    if False:\n"),
+                          ("    if len(set(names)) != len(names):\n", "    if False:\n")],
+    "形の違う行為を 2 にしない": [("        if (caller in params) != (caller in context):\n", "        if False:\n")],
     "actions と skip の重なりを見ない": [("    if both:\n", "    if False:\n")],
     "ファイルに書く": [("    print(json.dumps(trace, ensure_ascii=False))\n",
                     "    print(json.dumps(trace, ensure_ascii=False))\n    open(\"trace.json\", \"w\", encoding=\"utf-8\").write(\"{}\")\n")],
@@ -129,6 +131,18 @@ def dump(name: str) -> dict:
     return json.loads(FIXTURES[name])
 
 
+def with_action(d: dict, index: int, **changes) -> dict:
+    """本物の試料の index 番目の行為の鍵を書き換えた写し（値が None なら鍵を消す）。"""
+    d = copy.deepcopy(d)
+    action = d["counterexample"]["action"][index][1]
+    for key, value in changes.items():
+        if value is None:
+            action.pop(key, None)
+        else:
+            action[key] = value
+    return d
+
+
 def samples() -> dict:
     """ラベル → (反例の JSON（オブジェクトか、そのまま書く文字列）, 対応表)。"""
     vw = dump("version-write")
@@ -171,6 +185,11 @@ def samples() -> dict:
         "rest に steps": (vw, table_with(rest={"steps": [["old_writer", "read"]]})),
         "呼び出しの名前が重なる": (vw, table_with(calls={"old": VW_TABLE["calls"]["old"], "new": VW_TABLE["calls"]["old"]})),
         "actions と skip が重なる": (vw, table_with(skip=["Read"])),
+        "名前が真偽と数": (vw, table_with(calls={"old": {**VW_TABLE["calls"]["old"], "name": True},
+                                                 "new": {**VW_TABLE["calls"]["new"], "name": 1}})),
+        "行為の name が配列": (with_action(vw, 0, name=["Read"]), VW_TABLE),
+        "行為に name が無い": (with_action(vw, 0, name=None), VW_TABLE),
+        "parameters にだけ呼び出しの引数": (with_action(vw, 0, context={}), VW_TABLE),
         "JSON でない": ("{not json", VW_TABLE),
         "counterexample が無い": ({"vars": []}, VW_TABLE),
     }
@@ -200,7 +219,9 @@ def scenario(mod, base: Path, label: str) -> dict:
             dpath, tpath = inputs / f"{i}-dump.json", inputs / f"{i}-table.json"
             dpath.write_text(d if isinstance(d, str) else json.dumps(d), encoding="utf-8")
             tpath.write_text(json.dumps(t), encoding="utf-8")
-            o[name] = run(mod, [str(dpath), str(tpath)])
+            rc, text = run(mod, [str(dpath), str(tpath)])
+            # 入力のパスは試料ごとの置き場所で変わるので伏せる——伏せないと、何もしない変異も「殺せた」になる（#1020 の 1 パス目）
+            o[name] = (rc, text.replace(str(inputs), "<in>") if isinstance(text, str) else text)
         o["引数なし"] = run(mod, [])[0]
         o["読めないファイル"] = run(mod, [str(inputs / "無い.json"), str(inputs / "0-table.json")])[0]
         o["cwd に書いたもの"] = sorted(p.name for p in work.iterdir())
@@ -234,7 +255,8 @@ def main() -> int:
         for name in ("skip を外す", "引数の無い行為を actions に", "Next の中の存在量化", "引数が 2 つ", "calls に無い呼び出し",
                      "真偽の呼び出し", "繰り返し", "初めの状態で違反"):
             check(f"{name}: 1", o[name][0] == 1)
-        for name in ("番号が飛ぶ", "rest に steps", "呼び出しの名前が重なる", "actions と skip が重なる", "JSON でない",
+        for name in ("番号が飛ぶ", "rest に steps", "呼び出しの名前が重なる", "名前が真偽と数", "行為の name が配列", "行為に name が無い",
+                     "parameters にだけ呼び出しの引数", "JSON でない",
                      "counterexample が無い", "引数なし", "読めないファイル"):
             got = o[name][0] if isinstance(o[name], tuple) else o[name]
             check(f"{name}: 2", got == 2)
@@ -274,6 +296,12 @@ def main() -> int:
         readme = (PLUGIN / "README.md").read_text(encoding="utf-8")
         check("README の中身の表と「TLC の用意」が tlc-trace.py を挙げる",
               "| `scripts/tlc-trace.py` |" in readme and "tlc-trace.py" in readme.split("### TLC の用意")[1].split("\n### ")[0])
+
+        print("\n陽性対照: 何もしない変異は殺せない（観測が置き場所で変わらない）")
+        d = tmp / "noop"
+        d.mkdir()
+        (d / "tlc-trace.py").write_text(source, encoding="utf-8")
+        check("壊さない写しを別の場所で走らせた観測が、正しい本体と同じ", scenario(load_module(d / "tlc-trace.py", "noop"), d, "s") == o)
 
         print("\n変異テスト（壊したのに観測がそろったままなら失格）")
         for i, (name, pairs) in enumerate(MUTATIONS.items()):

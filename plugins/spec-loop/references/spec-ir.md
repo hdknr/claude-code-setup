@@ -291,7 +291,7 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 
 **ケースの `id`・`title`・`qa`・`ref` は入出力のケースと同じ決まり**で、`input`・`expected`・`error` は書かない。
 
-**反例が TLC の `-dumpTrace json` の JSON で在るなら、`steps` は手で写さず `scripts/tlc-trace.py` で作る**（#1020）——行為の名前と引数から段を決め、`calls`・段の名前の対応・`setup`・`outcomes`・`after` は人が書く対応表から写す。対応表の形・止める条件・`-dumpTrace` を持つ TLC の版は、スクリプトの docstring を正とする。
+**段の並びは、Formal Checker が反例の JSON（TLC の `-dumpTrace json`）から `scripts/tlc-trace.py` で出したものが仕様のテストケースに入る**（#1020。`agents/formal-checker.md`）——ここ（中間表現）に写すのは仕様のテストケースからで、JSON は残らない。変換は行為の名前と引数から段を決め、`calls`・段の名前の対応・`setup`・`outcomes`・`after` は人が書く対応表から写す。対応表の形・止める条件・`-dumpTrace` を持つ TLC の版は、スクリプトの docstring を正とする。
 
 ### 実装に求める口
 
