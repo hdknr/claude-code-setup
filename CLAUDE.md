@@ -174,6 +174,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **`AskUserQuestion` は台帳が無いときの起動時の確認でだけ使い**、各起動は線に従う。**`stopped`・`done` なら何もせず台帳も書き換えない**。素のスキルとして張れないのは同上
     - `scripts/autopilot-check.py` - autopilot の**線の検査**（項目と値の一覧はここが正）と、線から決まる周で使う操作の**権限の点検**（#849）。
       **設定の層と許可の判定は dev-loop の `check-unattended-env.py` の写し**で、テストが突き合わせる。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-check.py`）
+    - `skills/formal-baseline/` - **レビューをせずに、今の仕様から形式検査のモデルを組んで `spec/formal/<対象>/` に基準として残す**入口（#1031。`/spec-loop:formal-baseline`）。
+      Formal Checker だけを別ティアで呼び、渡し方と残し方は spec-review の手順 3 を指す（写さない）。**作業中の版がリリース済みなら書かず、反例が出たらモデルを残して振り分けずに止まる**。
+      記録の表に `モデルの保存` の行（実行の行ではない）を足す。素のスキルとして張れないのは同上
+    - `scripts/formal-baseline.py` - 形式検査のモデルを**書いてよい版を決め**（`target`。作業中の版がリリース済みなら 3）、**残したモデルの形を確かめる**（`check`。記録の項目・値と、
+      **一覧に無いファイル（検査器の作業ファイル・出力・前の残り）**を見る。spec-review の「モデルを残す」も呼ぶ）（#1031。版の見つけ方は `merge-versions.py`、凍結は `check-frozen.py` を読み込む——写さない。
+      記録の項目は `references/tree.md` の写しで、テストが突き合わせる。守る／守らないは docstring を正とする。テストは `scripts/test-formal-baseline.py`）
     - `scripts/check-tlc.py` - **TLC が正本の `CLAUDE.md` に書いた呼び方で使えるか**を、小さいモデル 2 つ（通るもの・わざと違反するもの）を検査させて確かめる（#912。
       **TLC は既定で必須の前提**で、書く行（`TLC の呼び方:`・外す宣言 `業務フローの形式検査: しない`）の原本はここの docstring。**`command -v` では探さない**。
       spec-review の手順 3 が呼び、autopilot は起動時の点検（`autopilot-check.py check` が読み込む）と Formal Checker を起こす段の始め（`--autopilot`。`commit` の段と feasibility では確かめない）で使う。テストは `scripts/test-check-tlc.py`）
@@ -392,6 +398,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-alloy.py` - spec-loop の Alloy の確かめ（#922）の回帰テスト（変異テストを含む）。
     **偽の Alloy（Alloy 6.2.0 の `exec` の結果の行の形を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `alloy` を置く**——本物の Alloy は走らせない（出力の形は見ない）。
     **引数なし・`gui` の形は偽物でも走らせない**（走ったら印を書く偽物で見る）
+  - `test-formal-baseline.py` - spec-loop の形式検査のモデルの書く場所と形の確かめ（#1031）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の git リポジトリとタグを作って**当て、**本体の記録の項目が `references/tree.md` の表と一致すること**と、
+    `check-findings-csv.py` が `モデルの保存` の行を実行の行と読まないことも見る
   - `test-autopilot-loop.py` - spec-loop の autopilot の外側のループ（#850）の回帰テスト（変異テストを含む。変異は別のプロセスで並列に観測する）。
     **偽の `claude`・`osascript`・`security`・`uname` を `PATH` の先頭に置き、本物の `claude` が在る `PATH` の項は外す**。台帳は本物の `autopilot-ledger.py` で作り、
     長期トークンは本物の起動口（`launch-with-long-token.sh`）を偽の `security` で回す。上限の待ちは眠らずに秒数を記録する

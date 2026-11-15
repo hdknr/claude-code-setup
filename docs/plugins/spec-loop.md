@@ -66,7 +66,7 @@ spec-loop は、要求・仕様・見積りを **1 つの git リポジトリ（
 | 要求と決定表（`requirements/`・`shared/decision_table.csv`） | `req-loop`（回答の反映） | `spec-review`（書き下す元）・`feasibility`（規模を数える）・`proposal`（提案書と仕様書） | `tree.md` |
 | 仕様（`spec/`） | `spec-review` | `scaffold`（中間表現に書き起こす）・`feasibility`（数え方を確かめる）・`proposal`（仕様書） | [`spec-exit.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-exit.md)・[`spec-scope.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-scope.md) |
 | スケジュールと見積り（`feasibility/schedule.csv`・`estimate.csv`） | `feasibility` | `proposal` | [`feasibility-csv.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/feasibility-csv.md) |
-| 形式検査のモデル（`spec/formal/<対象>/`） | `spec-review`（Formal Checker が走らせたモデルを写す） | `spec-review`（次の回に Formal Checker へ渡す。版の重ね合わせで次の版にも渡る）。**上の「仕様」の行の `proposal` の仕様書には入らない** | `tree.md` の「形式検査のモデル」（下の「[モデルの置き場所と次の回](#formal-models)」） |
+| 形式検査のモデル（`spec/formal/<対象>/`） | `spec-review`（Formal Checker が走らせたモデルを写す）・`formal-baseline`（レビューをせずに組んで基準として残す） | `spec-review`（次の回に Formal Checker へ渡す。版の重ね合わせで次の版にも渡る）。**上の「仕様」の行の `proposal` の仕様書には入らない** | `tree.md` の「形式検査のモデル」（下の「[モデルの置き場所と次の回](#formal-models)」） |
 | サインオフのタグ | 人間（利用者・予算責任者） | `proposal`（照合） | `signoff-tags.md` |
 | 中間表現（`spec/spec_ir.json`） | `scaffold`（スキルが書き起こす） | `scaffold.py`・`proposal`（仕様書の機能の一覧）・dev-loop（機能の指紋） | [`spec-ir.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/spec-ir.md) |
 | 契約（`scaffold/` の OpenAPI・型・Red テスト） | `scaffold.py`（生成。commit する） | dev-loop（Red テストを回す） | `tree.md` の「scaffold の出力」 |
@@ -181,6 +181,8 @@ Formal Checker の手順（道具の使い方・報告の形）の原本は [`fo
 Formal Checker はリポジトリの外でモデルを組んで走らせ、**`spec-review` が検査器の走った対象のモデルと設定をそのまま**作業中の版の
 `docs/v<n>/spec/formal/<対象>/` に写し、記録の `README.md`（結果・陽性対照・置いた前提・前回のモデルをどう使ったか など）を書きます（#908）。
 走らせていない（判定できなかった）対象のモデルは残しません。
+
+**#908 より前に抜けた仕様には、残したモデルがありません。** `formal-baseline`（#1031）は、レビューをせずに Formal Checker だけを呼んで今の仕様からモデルを組み、同じ場所に基準として残します——取り戻すのは過去のモデルではなく、これからの基準です。**作業中の版がリリース済みなら書かずに止まり、反例が出たらモデルを `反例あり` として残して振り分けずに止まり、`spec-review` を回すよう伝えます**（[スキルの本文](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/skills/formal-baseline/SKILL.md)）。
 
 - **次の回（次の周・次の版）は保存したモデルから始めます。** 仕様が変わっていなければ直さずに走らせ、前回と同じモデルで「反例なし」が続くことが回帰の確かめになります。
   前回の「置いた前提」は引き継ぐものではなく、確かめ直す対象です。
