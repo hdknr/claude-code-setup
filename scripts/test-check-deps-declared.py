@@ -63,8 +63,12 @@ def assert_not_real_repo(root: Path) -> None:
 
 
 def git(root: Path, *args: str) -> str:
+    # 親の GIT_*（hook の中の GIT_DIR など）を引き継ぐと、`-C root` でも偽のリポジトリではなくそちらに書く（#1028）。
+    # 剥がしたうえで利用者・システムの設定も読ませない——読めば利用者の hook・署名・fsmonitor が偽のリポジトリに効く
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
     return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-C", str(root), *args],
-                          check=True, capture_output=True, text=True).stdout
+                          check=True, capture_output=True, text=True, env=env).stdout
 
 
 def repo(root: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
@@ -73,6 +77,10 @@ def repo(root: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
     assert_not_real_repo(root)
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
+    # コミットの後の `git maintenance run --auto` は切り離して走り、`.git/objects/maintenance.lock` を作っては消す——
+    # 雛形を複製する `copytree` がその途中に当たると落ちる（#1028）。`.git/config` に書くので複製にも写る
+    git(root, "config", "maintenance.auto", "false")
+    git(root, "config", "gc.auto", "0")
     files = {"seed.txt": "seed\n", **(base_files or {})}
     for rel, body in files.items():
         f = root / rel
