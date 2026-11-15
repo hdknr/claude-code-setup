@@ -24,7 +24,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
        <--claude> -p "/dev-loop:cruise <親>[ --absent]" --output-format stream-json --verbose --append-system-prompt <追記> [<足す引数> …]
 
    を起こし、終わるのを待つ。標準出力と標準エラーは台帳の隣の `cruise-issue-<親>-loop/` に起動ごとのファイル（`<NNN>-<UTC の時刻>.out`・`.err`）で残す
-   （費用を読むため。#992）。環境には **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`** を置く——`-p` はターンを閉じた後の背景のタスクを
+   （費用を読むため。#992）。**`claude` の出力は端末に出さない**——見るならそのファイルを開く。環境には **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`** を置く——`-p` はターンを閉じた後の背景のタスクを
    上限の時間（既定 10 分）しか待たずに止める（#633。標準エラーの `Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.`
    の文言による。0 で止めずに待つことは測っていない）。**利用者の環境に別の値があっても 0 で上書きし、上書きしたことを出す**（`child-cycle.py` と同じ）。
    **追記（`APPEND`）は、非対話の起動の決まりを親に渡す**——権限の判定に拒まれたら周を `await` にして次へ進み、「止まった」と書いて
@@ -106,6 +106,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **中断・例外で終わった起動を、取れなかった起動として数える**——走った起動を数えずに合計を少なく見せない（#992 の 1 パス目）。
 - **上限を見る直前に子の記録を数え直す**——前の起動の後に走りきった子の費用を、次を起こす判定に入れる（#992 の 1 パス目）。
 - **済んだ・人待ちの判定は、費用の上限より先**——最後の起動で済んだのに「上限」と言わない。
+- **止まった行の子の内訳は、止まる直前に数え直す**——上限を渡していなくても、前の起動の後に走りきった子の費用を落とさない（#992 の 2 パス目）。
 
 守らない:
 
@@ -116,7 +117,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **`claude` の版・許可モード・モデル・認証**——足す引数（`--` の後ろ）と `--claude` で利用者が決める（cruise `SKILL.md` §3 の点検）。
   長期トークンの起動口（`../dev-loop/scripts/launch-with-long-token.sh`）に `-p` を渡す形は確かめていない。
 - **同じ台帳を回すループ・対話の cruise が他に走っていないか**——台帳を書くのは親 1 体である（`../dev-loop/references/ledger.md`）。
-- **本物の `total_cost_usd` が何を含むか**——1 回だけ測った（2026-11-15・Claude Code 2.1.325・haiku・背景の `Agent` 1 体）——`result` は 3 つで、`total_cost_usd` はどれも同じ値、`modelUsage` の累計は親の 2 ターンと背景の体の分を足した量だった（背景の体の分を含み、最後の `result` は累計）。
+- **本物の `total_cost_usd` が何を含むか**——1 回だけ測った（2026-11-15・Claude Code 2.1.325・haiku・背景の `Agent` 1 体）——`result` は 3 つで、`total_cost_usd` はどれも同じ値だった。`modelUsage` のキャッシュ読みの累計は親の 2 ターンの `usage` の和より大きかった（差を背景の体の分と読んでいるが、差は引き算の残りで、体の `usage` と突き合わせてはいない）。3 つが同じ値なので、最初と最後のどちらを読むかもこの 1 回では分けられない。
   `/code-review` の fork・実際の cruise の長い起動では測っていない。使用量の上限・中断で終わった起動の `result` に費用が載るかも測っていない（載らなければ取れなかった起動になる）。
 - **上限を超えないこと**——判定は起動と起動の間だけで、起動の途中では止めない。値は API の料金に換算した推定で、利用枠そのものではない。
 - **ループを起こし直した後の合計**——このループの起動の中だけを数える（台帳に書かないので、前のループの分を数える出所が無い）。
@@ -266,6 +267,7 @@ class Costs:
         self.launches = 0  # 費用を数えた起動（起こせなかった起動は入れない）
         self.missing = []  # 取れなかった起動の番号
         self.children = (0.0, 0, [], [])  # child_costs の戻り値
+        self.rescan = None  # 止まった行を書く前に子を数え直す（run_loop が置く）
 
     def add(self, n, cost):
         self.launches += 1
@@ -345,6 +347,7 @@ def run_loop(args):
     except OSError as exc:
         return EXIT_UNKNOWN, f"出力の置き場を作れない（{logs}: {exc}）"
     costs = args.costs
+    costs.rescan = lambda: child_costs(children, seen)
     launches = stalls = 0
     while True:
         code, out = ledger("status", name)
@@ -449,6 +452,11 @@ def main(argv=None):
         for s, h in saved.items():
             signal.signal(s, h)
     line = f"外側のループ: 止まった（issue-{args.parent}: {reason}）"
+    if args.costs.rescan is not None:  # 止まる直前の子の内訳で書く——前の起動の後に走りきった子を落とさない
+        try:
+            args.costs.children = args.costs.rescan()
+        except Exception:  # noqa: BLE001 — 数え直せなくても止まった行は書く
+            pass
     line += f" 費用: {args.costs.summary()}"
     print(line, flush=True)
     notify(line)

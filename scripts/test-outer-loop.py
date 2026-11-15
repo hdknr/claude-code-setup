@@ -143,12 +143,13 @@ MUTATIONS = {
     "費用を取れなくても上限があれば止めない": [("            if costs.unknown():\n", "            if False:\n")],
     "上限が無くても費用を取れなければ止める": [("        if args.max_total_usd is not None:\n            costs.children",
                                          "        if True:\n            costs.children")],
-    "子の費用を数えない": [("        costs.children = child_costs(children, seen)\n", "")],
+    "子の費用を数えない": [("            known += cost\n            counted += 1\n", "            counted += 1\n")],
     "起動時に在った子の記録も数える": [("        if meta_path.name in seen:\n            continue\n", "")],
     "走っている子を取れなかったと数える": [("                running.append(label)\n                continue\n",
                                           "                missing.append(label)\n                continue\n")],
     "止まった行に費用を出さない": [('    line += f" 費用: {args.costs.summary()}"\n', "")],
     "中断した起動を数えない": [("            costs.add(launches, None)\n            raise\n", "            raise\n")],
+    "止まった行の子を数え直さない": [("    costs.rescan = lambda: child_costs(children, seen)\n", "")],
     "上限の直前に子を数え直さない": [("            costs.children = child_costs(children, seen)  # 前の起動の後に走りきった子も入れて判定する\n", "")],
     "費用の上限を済んだの判定より先に見る": [('        code, out = ledger("status", name)\n        print(f"status:',
                                          '        if args.max_total_usd is not None and costs.total() >= args.max_total_usd:\n            return EXIT_BUDGET, "x"\n'
@@ -416,7 +417,9 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     go("C2 上限の下で済む", 71, ["--max-total-usd", "10"])
     prog = subprocess.run([sys.executable, str(LEDGER), "progress", "issue-71"], cwd=root, capture_output=True, text=True)
     o["C2 progress"] = (prog.returncode, prog.stdout)
-    o["C2 台帳のファイル"] = (root / ".claude" / "plans" / "cruise-issue-71.json").read_text(encoding="utf-8")
+    # 台帳のファイルは更新時刻を持つので、そのまま観測に入れない（変異の比べ合いが時刻で必ず違ってしまう）——判定だけ入れる
+    o["C2 台帳のファイルに費用が無い"] = not re.search(r"cost|費用|0\.25|0\.5", (root / ".claude" / "plans" / "cruise-issue-71.json").read_text(encoding="utf-8"))
+    o["C2 正規表現の陽性対照"] = bool(re.search(r"cost|費用|0\.25|0\.5", "合計 $0.50"))
 
     # C3: 費用の出ない起動（result が無い）・上限あり → 1 回で 12。C4: 同じ筋書き・上限なし → 止めずに済み、数を出す
     make(72, [(1, "todo"), (2, "todo")])
@@ -492,6 +495,20 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     mod.ledger = ledger_releasing
     try:
         go("C11 走りきった子を次の判定に入れる", 78, ["--max-total-usd", "3"])
+    finally:
+        mod.ledger = real_ledger
+        del os.environ["FAKE_RELEASE"]
+
+    # C12: 上限なし・起動の後は走っていた子（5 ドル）が、済んだの判定の前に走りきる → 止まった行は数え直した内訳
+    make(80, [(1, "todo")])
+    release2 = tmp / f"release2-{tag}"
+    os.environ["FAKE_RELEASE"] = str(release2)
+    plan["80"] = [cost_step(80, 1, 0.1, children=[child_late])]
+    calls["status"] = 0
+    release = release2
+    mod.ledger = ledger_releasing
+    try:
+        go("C12 止まった行は数え直す", 80, [])
     finally:
         mod.ledger = real_ledger
         del os.environ["FAKE_RELEASE"]
@@ -578,7 +595,7 @@ def main() -> int:
         check("C2 上限の下なら済むまで回して 0・合計 $0.50", a("C2 上限の下で済む")[0][0] == 0 and "合計 $0.50" in line("C2 上限の下で済む"))
         check("C2 progress の出力に費用が入らない", a("C2 progress")[0] == 0 and a("C2 progress")[1].strip() != ""
               and not re.search(r"cost|費用|0\.25|0\.5", a("C2 progress")[1]))
-        check("C2 台帳のファイルに費用が入らない", not re.search(r"cost|費用|0\.25|0\.5", a("C2 台帳のファイル")))
+        check("C2 台帳のファイルに費用が入らない（正規表現は費用の文に当たる——陽性対照）", a("C2 台帳のファイルに費用が無い") and a("C2 正規表現の陽性対照"))
         check("C3 上限があり費用を取れない起動があれば、次を起こさずに 12（起動 1）",
               a("C3 取れない・上限あり")[0][0] == 12 and a("C3 取れない・上限あり")[1:] == (1, 1)
               and "取れなかった 1 回（1 回目）" in line("C3 取れない・上限あり"))
@@ -598,6 +615,9 @@ def main() -> int:
         check("C11 前の起動の後に走りきった子の費用で、次を起こさずに 11（起動 1）",
               a("C11 走りきった子を次の判定に入れる")[0][0] == 11 and a("C11 走りきった子を次の判定に入れる")[1:] == (1, 1)
               and "合計 $5.10" in line("C11 走りきった子を次の判定に入れる"))
+        check("C12 止まった行の子の内訳は止まる直前に数え直す（0・合計 $5.10・走っている 0 体）",
+              a("C12 止まった行は数え直す")[0][0] == 0 and "合計 $5.10" in line("C12 止まった行は数え直す")
+              and "走っている 0 体" in line("C12 止まった行は数え直す"))
         check("S11 中断した起動は取れなかった起動に数える", "起動 1 回のうち取れなかった 1 回（1 回目）" in line("S11 中断"))
         check("S6 起こせなかった起動は費用の起動に数えない", "起動 0 回" in line("S6 claude が無い"))
         check("止まった行に親と理由が出る", a("S2 note だけ")[0][1].startswith("外側のループ: 止まった（issue-51: 前進なしが続けて 2 回"))
