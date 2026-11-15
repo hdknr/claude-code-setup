@@ -57,7 +57,7 @@ MUTATIONS = {
     "rest のほかの鍵を見ない": [("    if extra:\n", "    if False:\n")],
     "呼び出しの名前の重なりを見ない": [("    if not all(isinstance(n, str) and n for n in names):\n", "    if False:\n"),
                           ("    if len(set(names)) != len(names):\n", "    if False:\n")],
-    "形の違う行為を 2 にしない": [("        if (caller in params) != (caller in context):\n", "        if False:\n")],
+    "形の違う行為を 2 にしない": [("        if set(params) != set(context):\n", "        if False:\n")],
     "actions と skip の重なりを見ない": [("    if both:\n", "    if False:\n")],
     "ファイルに書く": [("    print(json.dumps(trace, ensure_ascii=False))\n",
                     "    print(json.dumps(trace, ensure_ascii=False))\n    open(\"trace.json\", \"w\", encoding=\"utf-8\").write(\"{}\")\n")],
@@ -190,6 +190,9 @@ def samples() -> dict:
         "行為の name が配列": (with_action(vw, 0, name=["Read"]), VW_TABLE),
         "行為に name が無い": (with_action(vw, 0, name=None), VW_TABLE),
         "parameters にだけ呼び出しの引数": (with_action(vw, 0, context={}), VW_TABLE),
+        "context にだけほかの鍵": (with_action(vw, 0, context={"w": "new", "v": 2}), VW_TABLE),
+        "calls に名前だけ": (vw, table_with(calls={k: {"name": c["name"]} for k, c in VW_TABLE["calls"].items()})),
+        "入れ子が深すぎる JSON": ("[" * 100000 + "]" * 100000, VW_TABLE),
         "JSON でない": ("{not json", VW_TABLE),
         "counterexample が無い": ({"vars": []}, VW_TABLE),
     }
@@ -256,13 +259,17 @@ def main() -> int:
                      "真偽の呼び出し", "繰り返し", "初めの状態で違反"):
             check(f"{name}: 1", o[name][0] == 1)
         for name in ("番号が飛ぶ", "rest に steps", "呼び出しの名前が重なる", "名前が真偽と数", "行為の name が配列", "行為に name が無い",
-                     "parameters にだけ呼び出しの引数", "JSON でない",
+                     "parameters にだけ呼び出しの引数", "context にだけほかの鍵", "入れ子が深すぎる JSON", "JSON でない",
                      "counterexample が無い", "引数なし", "読めないファイル"):
             got = o[name][0] if isinstance(o[name], tuple) else o[name]
             check(f"{name}: 2", got == 2)
         check("Next の中の存在量化: 呼び出しの引数が無いと名指しする", "呼び出しの引数 `p` が無い" in o["Next の中の存在量化"][1])
         check("繰り返し: 活性の違反と名指しする", "繰り返しのある反例" in o["繰り返し"][1])
         check("cwd に何も書かない", o["cwd に書いたもの"] == [])
+
+        rc, names_only = o["calls に名前だけ"]
+        check("calls に名前だけの表: 0 で、同じ steps と、入口・入力の無い calls",
+              rc == 0 and names_only["steps"] == VW_STEPS and names_only["calls"] == {"old_writer": {}, "new_writer": {}})
 
         print("\n本物の scaffold.py の check_trace に当てる")
         sys.path.insert(0, str(PLUGIN / "scripts"))

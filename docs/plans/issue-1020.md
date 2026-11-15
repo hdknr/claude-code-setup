@@ -28,7 +28,7 @@
 - `plugins/spec-loop/references/spec-ir.md` — 「トレースのケース」に変換を指す 1 段落
 - `plugins/spec-loop/agents/formal-checker.md` — `トレース` の段の並びを、`-dumpTrace` を持つ TLC なら変換で出す
 - `plugins/spec-loop/README.md` — 中身の表に 1 行・「TLC の用意」に `-dumpTrace` の版の 1 段落
-- `plugins/spec-loop/skills/*/SKILL.md` — 版のバナー（全スキル）
+- `plugins/spec-loop/skills/*/SKILL.md` — 版のバナー（全スキル）。spec-review は手順 3 の Formal Checker に渡すものに spec-loop の根の絶対パスを足す（2 パス目の CR2-1 で広げた——Formal Checker が `scripts/tlc-trace.py` を解決できないため）
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `CLAUDE.md` — プロジェクト構成（スクリプトとテスト）
@@ -97,6 +97,8 @@ main へのマージでプラグインの配布（`marketplace.json`・`link-ski
 - 手順 4 への差し戻し: あり（「直す」の行を直す）。
 - 1 パス目の指摘対応: V1・V2・CR1・CR2・CR4・CR5・CR6・CR7・CR9・CR10 を直した（テスト 53 件合格・変異 16/16・何もしない変異の陽性対照つき。check-all 81/81 緑、run-serial 越し）。差分は起点 `36abfc9` から 0 行でない → 2 パス目を回す。
 - 2 つ目の割り目: このまま続ける（cruise の周なので訊かない）。残っているのは手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方。
+- Verifier 2 パス目: 反証 0 件（テンプレート 185 行を報告）。`/code-review` 2 パス目: 指摘 9 件（CR2-1〜CR2-9）。
+- 狭いパスの起点: `e38b4c9`（2 パス目の指摘対応を始める直前の HEAD）。終点: （コミット後に書く）
 - 実験: 本物の TLC v1.8.0 で `-dumpTrace json` の形を確かめた（#1015 の付録 A のモデルの守りなし・引数の 2 つの行為・`\E` を行為の中に書いたモデル・活性の違反（繰り返し）・初めの状態の違反・デッドロック）。
 
 ## 既知の限界・決着済みの論点
@@ -121,6 +123,21 @@ main へのマージでプラグインの配布（`marketplace.json`・`link-ski
 | CR8 | 段が 1 つの試料が無く、`MIN_STEPS = 1` は文面でしか殺せない | 示せる | 無し（コードは守っている） | 残課題 |
 | CR9 | spec-ir.md の段落が、JSON の無い scaffold の段に向いている | 示せる（JSON は Formal Checker の一時ファイル） | F(1) | 直す——段の並びを出すのは Formal Checker（formal-checker.md）だと指す形にする |
 | CR10 | `parameters` に呼び出しの引数があり `context` に無い壊れた JSON を「引数が無い」（1）と読む | 示せる——レビューの記述どおりの試料で再現できる | D(2) | 直す（CR6 と一緒に。2 にする） |
+
+
+### 2 パス目の指摘の採否（直す線: 既定）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| CR2-1 | Formal Checker に `scripts/tlc-trace.py` の在り処が渡らない（cwd は正本） | 示せる——spec-review の手順 3 の渡すものにプラグインの根が無い | F(1)（指し先が実行時に解決しない） | 直す——spec-review が Formal Checker に spec-loop の根の絶対パスを渡し、formal-checker.md はそれで指す |
+| CR2-2 | 対応表の `calls` に `operation`・`input` が要り、Formal Checker は知らないので 2 になる | 示せる——レビューが本物の JSON で rc=2 | F（文書と本体の食い違い）・A | 直す——`operation`・`input` を任意にし、無ければ出す `calls` にも出さない（`check_trace` が後で見る） |
+| CR2-3 | spec-ir.md が、段の並びを常に変換で出す・期待も対応表から写すと読める | 示せる（formal-checker.md と spec-review の手順と食い違う） | F | 直す——期待は仕様のテストケース（spec-review）から、段の並びは Formal Checker の報告から、と書き直す |
+| CR2-4 | `parameters`・`context` の型の検査に試料が無い | 示せる（変異が生き残る） | 無し（コードは守っている） | 残課題 |
+| CR2-5 | `context` にだけある鍵を黙って捨てる・`parameters` にだけあるほかの引数が 1 | 示せる——書き換えた JSON で rc=0 | B | 直す——`parameters` と `context` の鍵の組が違えば 2 |
+| CR2-6 | 対応表の形の検査に試料が無い | 示せる（変異が生き残る） | 無し | 残課題 |
+| CR2-7 | テストの docstring の「書き換えた試料は 3 つだけ」が古い | 示せる | 無し | 残課題 |
+| CR2-8 | 途中の行為が戻る壊れた JSON を 1 と読む | 示せない（TLC は出さない形） | 無し | 残課題 |
+| CR2-9 | 深い入れ子の JSON の `RecursionError` が 1 で終わる | 示せる——レビューが実行 | D(2) | 直す——読むときの `RecursionError` を 2 にする |
 
 ## 手順 8（起票数）
 

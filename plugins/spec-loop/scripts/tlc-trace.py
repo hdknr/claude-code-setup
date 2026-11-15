@@ -43,12 +43,12 @@ TLC に `-dumpTrace json <ファイル>` を渡すと、違反したときだけ
 | --- | --- |
 | `formal` | 反例を出した形式検査の対象の名前（トレースのケースの `formal` にそのまま写す） |
 | `caller` | 呼び出しを決める行為の引数の名前（行為の `parameters` の 1 つ）。全部の行為で同じ名前 |
-| `calls` | 呼び出しの引数の値 → `{"name": <呼び出しの名前>, "operation": <入口>, "input": <入力>}`。値は文字列か整数で、鍵は文字列にした値（整数の `2` は `"2"`） |
+| `calls` | 呼び出しの引数の値 → `{"name": <呼び出しの名前>, "operation": <入口>, "input": <入力>}`。値は文字列か整数で、鍵は文字列にした値（整数の `2` は `"2"`）。**`operation`・`input` は任意**——Formal Checker は実装の入口を知らないので名前だけを書き、出す `calls` にも書いた鍵だけが出る（仕様のテストケースを書く側が足す） |
 | `actions` | 行為の名前 → 段の名前 |
 | `skip` | （任意）段にしない行為の名前の配列（全員が終わった後の `Done` など）。`actions` と重ねない |
 | `rest` | （任意）`setup`・`outcomes`・`after` だけを持つオブジェクト。トレースのケースにそのまま写す |
 
-**出す `calls` は、対応表の `calls` の全部**（段に出ない呼び出しも出す——`scaffold.py` の `check_trace` が「どれも 1 回以上出る」で落とす）。
+**出す `calls` は、対応表の `calls` の全部**（`operation`・`input` を書いていなければ、`scaffold.py` の `check_trace` はその値を通さない）（段に出ない呼び出しも出す——`scaffold.py` の `check_trace` が「どれも 1 回以上出る」で落とす）。
 
 ## 終了コード
 
@@ -56,7 +56,7 @@ TLC に `-dumpTrace json <ファイル>` を渡すと、違反したときだけ
 | --- | --- |
 | 0 | 作れた（標準出力に `trace` の値） |
 | 1 | 反例を段の並びにできない——表に無い行為、呼び出しの引数の無い・ほかの引数もある行為、`calls` に無い呼び出し、繰り返しのある反例、段が 2 つより少ない |
-| 2 | 引数が違う・読めない・JSON でない・反例の JSON か対応表の形が違う（状態の番号が続かないを含む） |
+| 2 | 引数が違う・読めない・JSON でない（入れ子が深すぎるを含む）・反例の JSON か対応表の形が違う（状態の番号が続かないを含む） |
 
 ## 何を守り、何を守らないか
 
@@ -75,7 +75,7 @@ TLC に `-dumpTrace json <ファイル>` を渡すと、違反したときだけ
 - **段が 2 つより少ない反例を 0 にしない**——初めの状態で違反した（行為が 0 個）反例を含め、1。
 - **`rest` で `formal`・`calls`・`steps` を上書きしない**——`rest` に `setup`・`outcomes`・`after` のほかの鍵があれば 2。
 - **呼び出しの名前が重なる表を読まない**——2 つの呼び出しが 1 つにまとまって出るので、2。名前は空でない文字列に限る（`true` と `1` を別の名前と読まない）。
-- **形の違う行為を 1 にしない**——`name` が空でない文字列でない・`parameters` が文字列の配列でない・`parameters` と `context` の片方にだけ呼び出しの引数がある行為は、モデルの書き方ではなく JSON の形の違いなので 2。
+- **形の違う行為を 1 にしない**——`name` が空でない文字列でない・`parameters` が文字列の配列でない・`parameters` と `context` の鍵の組が違う行為は、モデルの書き方ではなく JSON の形の違いなので 2（`context` にだけある値を黙って捨てない）。
 - **`actions` と `skip` に同じ行為を書いた表を読まない**——どちらを採るかを決めないので、2。
 - **ファイルを書かない**——出すのは標準出力だけ。
 
@@ -117,8 +117,8 @@ def load(path, what):
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except (OSError, ValueError) as e:
-        raise Malformed(f"{what}（{path}）を読めない: {e}")
+    except (OSError, ValueError, RecursionError) as e:
+        raise Malformed(f"{what}（{path}）を読めない: {type(e).__name__}: {e}")
 
 
 def check_table(table):
@@ -133,8 +133,8 @@ def check_table(table):
     if not isinstance(calls, dict) or not calls:
         raise Malformed("対応表の `calls` が空でないオブジェクトでない")
     for value, call in calls.items():
-        if not isinstance(call, dict) or set(call) != {"name", "operation", "input"}:
-            raise Malformed(f"対応表の `calls` の `{value}` が name・operation・input のオブジェクトでない")
+        if not isinstance(call, dict) or "name" not in call or not set(call) <= {"name", "operation", "input"}:
+            raise Malformed(f"対応表の `calls` の `{value}` が name（と任意の operation・input）のオブジェクトでない")
     names = [call["name"] for call in calls.values()]
     if not all(isinstance(n, str) and n for n in names):
         raise Malformed(f"対応表の `calls` の name が空でない文字列でない: {names}")
@@ -213,8 +213,8 @@ def convert(dump, table):
         context = action.get("context", {})
         if not isinstance(params, list) or not all(isinstance(p, str) for p in params) or not isinstance(context, dict):
             raise Malformed(f"{i} 番目の行為 {name} の parameters・context の形が違う")
-        if (caller in params) != (caller in context):
-            raise Malformed(f"{i} 番目の行為 {name} の parameters と context の片方にだけ `{caller}` がある")
+        if set(params) != set(context):
+            raise Malformed(f"{i} 番目の行為 {name} の parameters {params} と context の鍵 {sorted(context)} が違う")
         if caller not in params:
             raise Cannot(f"{i} 番目の行為 {name} に呼び出しの引数 `{caller}` が無い（引数: {params}）——"
                          "呼び出しを引数に取る名前つきの行為で書くか、段にしないなら `skip` に挙げる")
@@ -227,7 +227,7 @@ def convert(dump, table):
         steps.append([table["calls"][key]["name"], table["actions"][name]])
     if len(steps) < MIN_STEPS:
         raise Cannot(f"段が {len(steps)} つ（{MIN_STEPS} つより少ない）——初めの状態で違反した反例は段の並びにしない")
-    calls = {c["name"]: {"operation": c["operation"], "input": c["input"]} for c in table["calls"].values()}
+    calls = {c["name"]: {k: c[k] for k in ("operation", "input") if k in c} for c in table["calls"].values()}
     trace = {"formal": table["formal"], "calls": calls, "steps": steps}
     trace.update(table.get("rest", {}))
     return trace
