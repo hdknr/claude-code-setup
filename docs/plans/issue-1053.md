@@ -75,7 +75,9 @@ main へのマージ。`scripts/` は配布物ではない。公開サイトは 
   - 狭いパス: 該当なし
   - 割り目（手順 6）: 2 パス目が無いので無し
 - PR の前の歯止め（再開した子・2026-11-15）: `check-pr-preconditions.sh` 0・`check-deps-declared.py` 0・`check-spec-writeback.py` 0（正本なし）。`check-all.py`（run-serial 越し・計画ファイルに振り分けと件数の行を足した後）: 81/81 本・失敗 0・飛ばし 0（壁時計 2148 秒）。前の子は `check-all.py` の途中でプロセスごと止まった
-- 外部レビュー: PR の後に `external-reviews.py` で見る
+- PR: #1065。PR 側の CI（先端 `ed0d919`）: build・check・cruise-loops・cruise-run-serial・dev-loop・spec-loop・spec-loop-autopilot-loop・spec-loop-generate が pass（deploy は skipping）・MERGEABLE
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` の終了コード 3）
+- マージ: この子はしない（親がする）
 
 ## 既知の限界・決着済みの論点
 
@@ -113,3 +115,5 @@ main へのマージ。`scripts/` は配布物ではない。公開サイトは 
 ## 経験の還元（手順 8）
 
 - この周の起票: 0 件（振り分けで直すの行が 0 件。不在の周で起票は訊かない）
+
+焼き戻す学びなし——変更は 1 本のテストの中の置き方で閉じ、規範・手順に足す型は出ていない（前の子が `check-all.py` の途中でプロセスごと止まった件は、原因を確かめていないので書き戻さない）。永続メモリには書かない。
