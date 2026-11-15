@@ -313,6 +313,10 @@ jobs:
       - name: spec-loop の TLC の前提の確かめのテスト（#912）
         run: python3 scripts/test-check-tlc.py
 
+      # 本体は plugins/spec-loop/scripts/tlc-trace.py（TLC の反例の JSON から trace ケースを作る変換。手元の本物の TLC で取った JSON を試料にし、TLC は走らせない）。
+      - name: spec-loop の TLC の反例の JSON から trace ケースを作る変換のテスト（#1020）
+        run: python3 scripts/test-tlc-trace.py
+
       # 本体は plugins/spec-loop/scripts/check-alloy.py（Alloy の確かめ。偽の Alloy と一時ディレクトリの正本で当て、本物の Alloy は走らせない）。
       - name: spec-loop の Alloy の確かめのテスト（#922）
         run: python3 scripts/test-check-alloy.py

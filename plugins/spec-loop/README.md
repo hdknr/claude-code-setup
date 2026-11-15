@@ -47,6 +47,7 @@
 | `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検（標準ライブラリと `git`） |
 | `scripts/formal-baseline.py` | 形式検査のモデルを書いてよい版を決め（リリース済みなら書かない）、残したモデルの形（記録の項目・一覧に無いファイル）を確かめる（標準ライブラリと `git`） |
 | `scripts/check-tlc.py` | TLC が正本リポジトリの `CLAUDE.md` に書いた呼び方で使えるかの確かめ（標準ライブラリと、書いた呼び方の TLC。下の「前提」） |
+| `scripts/tlc-trace.py` | TLC の反例の JSON（`-dumpTrace json`）と対応表から、トレースのケース（`references/spec-ir.md` の「トレースのケース」）を作る（標準ライブラリのみ） |
 | `scripts/check-alloy.py` | Alloy が正本リポジトリの `CLAUDE.md` に書いた呼び方（`exec`）で使えるかの確かめ（標準ライブラリと、書いた呼び方の Alloy。下の「前提」の「Alloy の用意」） |
 | `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
@@ -246,6 +247,8 @@ TLC の呼び方: java -cp /opt/tla/tla2tools.jar tlc2.TLC
 ```bash
 python3 <spec-loop の base ディレクトリ>/scripts/check-tlc.py <正本リポジトリの根>
 ```
+
+**反例を JSON で書く `-dumpTrace json` は任意です**——持つ TLC（TLA+ のプレリリース v1.8.0 の `tla2tools.jar`・`apalache.jar` に入っている TLC）の呼び方なら、Formal Checker は反例の段の並びを `scripts/tlc-trace.py` で JSON から出します。安定版の v1.7.4（TLC 2.19）は持たず、そのときは今のとおり出力から写します（`check-tlc.py` はこれを確かめません）。
 
 ### 業務フローを形式検査しない案件
 
