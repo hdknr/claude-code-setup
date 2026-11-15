@@ -13,6 +13,10 @@
 **変異の前に、元の本体で全部緑であること（陽性対照）を見る。** 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる。
 **変異の回は最初に破れた契約で止め、変異どうしは別々のプロセスで同時に当てる。土台のリポジトリは形ごとに 1 度作って複製する**
 （#1049。`test-check-deps-declared.py` の #1021 と同じ形。理由は `MUTANT_JOBS_MAX` の上）。
+**変異を入れた本体は、本体の隣のファイルごと写した場所に置く**（#1053。`place_body`）——本体は同じ場所の `check-unattended-env.py` を読み込むので、
+単独で一時ディレクトリに置くと何も変えない写しでも契約が破れ、変異が効いたのか置き場所のせいかを判別しない。
+**置き方の陽性対照**: 何も変えない写しを同じ置き方で置き、契約が全部通ることを毎回見る。あわせて単独で置く形（#1053 の前の置き方）では
+何も変えない写しでも契約が破れることを見る——置き方の対照が置き方を判別していることの確かめ。
 
 **申告漏れの陽性対照**（Issue の受入基準 3）: spec-loop の本物の `scaffold.py` で `scaffold/` を作り、実装の見本と本物の `green-list.py record` で
 緑のケースの一覧を書いた試料で、計画の申告を `変えない` のまま実装の値を変えると `green-list.py check` が 1、壊れたケースを一覧から手で外すと
@@ -183,6 +187,11 @@ def contract(script: Path, tmp: Path, tag: str) -> Iterator[tuple[str, bool]]:
     d, base = fresh(base_files={**CANON, "docs/v2/spec/s.md": "x\n"})
     rc, out = run(script, d, base)
     yield from [("spec-loop の形の qa.csv が v1 にあれば、spec/ だけの v2 を作業中の版と読む（申告が無ければ 1）", rc == 1 and "docs/v2/" in out)]
+    # 版のディレクトリでも shared・requirements・spec が無ければ版に数えない——作業中の版は v1 のまま（#1053。変異 `版の中身を見ない` を捕まえる）
+    d, base = fresh(base_files={**CANON, "docs/v2/notes.md": "x\n"})
+    rc, out = run(script, d, base)
+    yield from [("v2 に shared・requirements・spec が無ければ作業中の版は v1 のまま（申告が無ければ 1）",
+                 rc == 1 and "docs/v1/" in out and "docs/v2/" not in out)]
     d, base = fresh(base_files={"docs/v1/shared/qa.csv": "\ufeff" + HEADER})
     rc, _ = run(script, d, base)
     yield from [("BOM 付きの qa.csv も spec-loop の形と読む（申告が無ければ 1）", rc == 1)]
@@ -432,29 +441,68 @@ class _MutantPool(concurrent.futures.ProcessPoolExecutor):
         super().__init__(max_workers, **kwargs)
 
 
-def _kill_one(job: tuple[int, str, str]) -> bool:
-    """作業者で変異を 1 つ当て、契約が 1 件でも破れたら True。**最初に破れたところで止める。**"""
-    i, mutated, tmp = job
-    mutant = Path(tmp) / f"mutant{i}.py"
-    mutant.write_text(mutated, encoding="utf-8")
-    return any(not ok for _, ok in contract(mutant, Path(tmp) / f"m{i}", f"m{i}"))
+def place_body(dest: Path, text: str) -> Path:
+    """本体の隣のファイルごと `dest` に写し、本体だけを `text` に差し替えて、そのパスを返す（#1053）。
+
+    **本体は同じ場所の `check-unattended-env.py` を読み込む**（`HERE / …`）——本体だけを一時ディレクトリに置くと、
+    何も変えない写しでも契約が破れる。どの隣を読むかを数えずにディレクトリごと写す（隣を読む箇所が増えても置き方は追従する）。"""
+    assert_not_real_repo(dest)
+    shutil.copytree(SCRIPT.parent, dest, ignore=shutil.ignore_patterns("__pycache__"))
+    body = dest / SCRIPT.name
+    body.write_text(text, encoding="utf-8")
+    return body
 
 
-def kill_mutations(mutations: dict[str, tuple[str, str]], src: str, tmp: Path) -> None:
+def _kill_one(job: tuple[int, str, str, bool]) -> list[str]:
+    """作業者で本体の写しを 1 つ当て、破れた契約の名前を返す。
+
+    `full` が偽（変異）なら**最初に破れたところで止める**——判定は「1 件でも破れたか」なので。
+    真（何も変えない写しの陽性対照）なら止めずに全部を当てる。"""
+    i, text, tmp, full = job
+    body = place_body(Path(tmp) / f"body{i}", text)
+    broken = []
+    for name, ok in contract(body, Path(tmp) / f"m{i}", f"m{i}"):
+        if not ok:
+            broken.append(name)
+            if not full:
+                break
+    return broken
+
+
+def kill_mutations(mutations: dict[str, tuple[str, str]], src: str, tmp: Path, *, identity: bool = True) -> None:
+    """変異を当てる。`identity` が真なら、**何も変えない写しを変異と同じ置き方（`place_body`）・同じプールで当て**、
+    契約が全部通ることを見る（置き方の陽性対照。#1053）——通らなければ、変異が捕まったのは置き場所のせいかもしれない。"""
     order, jobs = [], []  # order: (変異の名前, jobs の番号。当てる先が 1 箇所でなければ None)
+    if identity:
+        jobs.append((len(mutations), src, str(tmp), True))
     for i, (name, (old, new)) in enumerate(mutations.items()):
         if src.count(old) != 1:
             order.append((name, None))
             continue
         order.append((name, len(jobs)))
-        jobs.append((i, src.replace(old, new), str(tmp)))
+        jobs.append((i, src.replace(old, new), str(tmp), False))
     with _MutantPool(max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
         results = list(pool.map(_kill_one, jobs))
+    if identity:
+        broken = results[0]
+        check(f"置き方の陽性対照: 何も変えない写しを変異と同じ置き方で当てると契約が全部通る（破れた: {broken or 'なし'}）", not broken)
     for name, k in order:  # 出力は変異の宣言順（終わった順ではない）
         if k is None:
             check(f"変異 `{name}` の当て先が 1 箇所", False)
         else:
-            check(f"変異 `{name}` を契約が捕まえる", results[k])
+            check(f"変異 `{name}` を契約が捕まえる", bool(results[k]))
+
+
+def check_solo_placement_breaks(src: str, tmp: Path) -> None:
+    """置き方の対照が置き方を判別していることの確かめ（#1053）: 本体を**単独で**一時ディレクトリに置く形（#1053 の前の置き方）なら、
+    何も変えない写しでも契約が破れる。破れなくなったら（本体が隣を読まなくなったら）、置き方の陽性対照は何も判別していない——
+    そのときはこの確かめと `place_body` の理由を見直す。最初に破れたところで止める。"""
+    solo = tmp / "solo" / SCRIPT.name
+    assert_not_real_repo(solo.parent)
+    solo.parent.mkdir(parents=True)
+    solo.write_text(src, encoding="utf-8")
+    broken = next((name for name, ok in contract(solo, tmp / "solo-m", "s") if not ok), None)
+    check(f"置き方の対照: 本体を単独で置くと、何も変えない写しでも契約が破れる（最初に破れた: {broken or 'なし'}）", broken is not None)
 
 
 def check_pool_size() -> None:
@@ -483,7 +531,7 @@ def main() -> int:
     if opts.pool_size:
         with tempfile.TemporaryDirectory() as tmp:
             # 変異を当てる経路そのもの（`kill_mutations`）でプールを作る——変異が 0 件なので作業者は起きない
-            kill_mutations({}, "", Path(tmp))
+            kill_mutations({}, "", Path(tmp), identity=False)
         print(pool_sizes[-1] if pool_sizes else "")
         return 0
 
@@ -497,7 +545,9 @@ def main() -> int:
         print("陽性対照（元の本体——全部通らなければならない）:")
         for name, ok in contract(SCRIPT, root / "real", "r"):
             check(name, ok)
-        print("変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
+        print("置き方（変異を置く場所が判定を決めていないか。#1053）:")
+        check_solo_placement_breaks(src, root)
+        print("変異（1 箇所ずつ壊す——契約が破れなければ失格）。何も変えない写しも同じ置き方で当てる:")
         kill_mutations(MUTATIONS, src, root)
     if failures:
         print(f"\n{len(failures)} 件失敗: {failures}")
