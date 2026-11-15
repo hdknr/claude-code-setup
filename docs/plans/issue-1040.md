@@ -63,6 +63,8 @@ main へのマージ。`scripts/` は配布物ではない（手元で回す入�
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1040-check-all-timings`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1040`・起点 `902bc79`・base `origin/main` → `902bc79d136a73a5c9275a1aa85ddc00dc919318`
+- 実装: `69ac483`（手順 4 完了）。`test-check-all.py` 全部が緑（新しい変異 10 本を含め全部を捕まえた）。`check-all.py` を run-serial 越しに回している（T7 の測定を兼ねる）
+- 割り目 1（手順 4 の後）: 訊いた → 300 秒で答えが無く、このまま続けた
 - 関門: まだ
 - 反証・差し戻し: まだ
 - 交絡を潰した手順: まだ
