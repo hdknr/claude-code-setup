@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """`check-spec-writeback.py`（仕様にある振る舞いを変える周が、申告と正本への戻しを残しているかを見る。#1001）の回帰テスト。
 
-    python3 scripts/test-check-spec-writeback.py
+    python3 scripts/test-check-spec-writeback.py            # 変異は既定で 4 つまで同時に当てる
+    python3 scripts/test-check-spec-writeback.py --jobs 1   # 変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
 
 **本体はプラグインの中にある**（`plugins/dev-loop/skills/dev-loop/scripts/`）——`test-check-deps-declared.py` と同じ形で、
 **`dev-loop` はどのリポジトリでも使えるスキル**なので。
@@ -10,6 +11,8 @@
 
 **変異テストを含む。** 本体の docstring の「守る」の各行に変異を 1 つ以上当て、**壊したのに契約が保たれるなら失格**とする。
 **変異の前に、元の本体で全部緑であること（陽性対照）を見る。** 変異ごとに、**壊す箇所が本体にちょうど 1 回現れること**を先に確かめる。
+**変異の回は最初に破れた契約で止め、変異どうしは別々のプロセスで同時に当てる。土台のリポジトリは形ごとに 1 度作って複製する**
+（#1049。`test-check-deps-declared.py` の #1021 と同じ形。理由は `MUTANT_JOBS_MAX` の上）。
 
 **申告漏れの陽性対照**（Issue の受入基準 3）: spec-loop の本物の `scaffold.py` で `scaffold/` を作り、実装の見本と本物の `green-list.py record` で
 緑のケースの一覧を書いた試料で、計画の申告を `変えない` のまま実装の値を変えると `green-list.py check` が 1、壊れたケースを一覧から手で外すと
@@ -22,14 +25,18 @@
 
 from __future__ import annotations
 
+import argparse
+import concurrent.futures
 import importlib.util
 import json
+import multiprocessing
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 REAL_REPO = Path(__file__).resolve().parent.parent
@@ -38,6 +45,8 @@ SCRIPT = SKILL_DIR / "scripts" / "check-spec-writeback.py"
 DOC = SKILL_DIR / "references" / "spec-writeback.md"
 SPEC_LOOP_SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 CHILD_ENV = {k: v for k, v in os.environ.items() if k != "PYTHONPATH" and not k.startswith("GIT_")}
+# 偽のリポジトリの git には利用者・システムの設定を読ませない——読めば利用者の hook・署名・fsmonitor・保守が効く（#1028 と同じ。#1049）
+GIT_ENV = {**CHILD_ENV, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
 failures: list[str] = []
 
@@ -72,7 +81,7 @@ def assert_not_real_repo(root: Path) -> None:
 
 def git(root: Path, *args: str) -> str:
     return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "-C", str(root), *args],
-                          check=True, capture_output=True, text=True, env=CHILD_ENV).stdout
+                          check=True, capture_output=True, text=True, env=GIT_ENV).stdout
 
 
 def repo(root: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
@@ -81,6 +90,10 @@ def repo(root: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
     assert_not_real_repo(root)
     root.mkdir(parents=True)
     git(root, "init", "-q", "-b", "main")
+    # コミットの後の `git maintenance run --auto` は切り離して走り、`.git/objects/maintenance.lock` を作っては消す——
+    # 土台を複製する `copytree` がその途中に当たると落ちる（#1028・#1032）。`.git/config` に書くので複製にも写る
+    git(root, "config", "maintenance.auto", "false")
+    git(root, "config", "gc.auto", "0")
     files = {"seed.txt": "seed\n", **(base_files or {})}
     for rel, body in files.items():
         put(root, rel, body)
@@ -90,6 +103,25 @@ def repo(root: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
     git(root, "switch", "-q", "-c", branch)
     if plan is not None:
         put(root, "docs/plans/issue-7.md", plan, commit=True)
+    return base
+
+
+# **土台のリポジトリは形ごとに 1 度だけ作り、複製する**（#1049。#1021 と同じ）——契約 1 回で 40 近い土台を作り直し、
+# 1 つに `git` を 6〜7 回起こしていた。土台の形は `repo` の引数だけで決まるので、同じ引数なら中身（コミットの SHA まで）が同じ複製で足りる。
+# 置き場はプロセスごとに分ける（変異の作業者は別プロセスで、同じ一時ディレクトリの下に作る）。
+_TEMPLATES: dict[tuple, tuple[Path, str]] = {}
+
+
+def fresh_repo(d: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo",
+               base_files: dict[str, str] | None = None) -> str:
+    """`repo(d, ...)` と同じリポジトリを、土台の複製で作って base の SHA を返す。"""
+    assert_not_real_repo(d)
+    key = (plan, branch, tuple(sorted((base_files or {}).items())))
+    if key not in _TEMPLATES:
+        tpl = d.parent.parent / f"tpl-{os.getpid()}" / str(len(_TEMPLATES))
+        _TEMPLATES[key] = (tpl, repo(tpl, plan=plan, branch=branch, base_files=base_files))
+    tpl, base = _TEMPLATES[key]
+    shutil.copytree(tpl, d, symlinks=True)
     return base
 
 
@@ -116,51 +148,51 @@ def decl(value: str) -> str:
     return PLAN + f"\n仕様の振る舞い: {value}\n"
 
 
-def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
-    got: list[tuple[str, bool]] = []
+def contract(script: Path, tmp: Path, tag: str) -> Iterator[tuple[str, bool]]:
+    """契約を 1 ケースずつ当てて `(名前, 通ったか)` を出す。**逐次に評価する**ので、変異の回は最初に破れたところで止められる（#1049）。"""
     n = [0]
 
     def fresh(**kw) -> tuple[Path, str]:
         n[0] += 1
         d = tmp / f"{tag}{n[0]}"
-        return d, repo(d, **kw)
+        return d, fresh_repo(d, **kw)
 
     # 1) 正本が無い → 申告が無くても 0（計画も要らない）
     d, base = fresh(plan=None, branch="feature/x")
     put(d, "src/a.py", commit=True)
     rc, out = run(script, d, base)
-    got += [("正本が無ければ計画が無くても 0", rc == 0 and "該当なし" in out)]
+    yield from [("正本が無ければ計画が無くても 0", rc == 0 and "該当なし" in out)]
     for label, files in (("docs/ があるだけ", {"docs/index.md": "x\n"}),
                          ("docs/v1-notes/ は版でない", {"docs/v1-notes/shared/qa.csv": HEADER}),
                          ("版のディレクトリに shared・requirements・spec が無い", {"docs/v1/notes.md": "x\n"})):
         d, base = fresh(base_files=files)
         put(d, "src/a.py", commit=True)
         rc, _ = run(script, d, base)
-        got += [(f"{label}なら正本でなく 0", rc == 0)]
+        yield from [(f"{label}なら正本でなく 0", rc == 0)]
 
     # 2) 正本があるのに申告が無い → 1。`変えない` → 0（陽性対照）。箇条書きも数える
     d, base = fresh(base_files=CANON)
     put(d, "src/a.py", commit=True)
     rc, out = run(script, d, base)
-    got += [("正本があって申告が無ければ 1", rc == 1 and "仕様の振る舞い:" in out),
+    yield from [("正本があって申告が無ければ 1", rc == 1 and "仕様の振る舞い:" in out),
             ("1 のとき原本を案内する", "spec-writeback.md" in out)]
     for rel in ("docs/v1/spec/openapi.yaml", "docs/v1/requirements/r.md", "docs/v1/shared/qa.csv"):
         d, base = fresh(base_files={rel: "openapi: 3.0.0\n" if rel.endswith(".yaml") else "x,y,z\n"})
         rc, _ = run(script, d, base)
-        got += [(f"spec-loop の形の qa.csv が無い（{rel} だけ）なら正本でなく 0", rc == 0)]
+        yield from [(f"spec-loop の形の qa.csv が無い（{rel} だけ）なら正本でなく 0", rc == 0)]
     d, base = fresh(base_files={**CANON, "docs/v2/spec/s.md": "x\n"})
     rc, out = run(script, d, base)
-    got += [("spec-loop の形の qa.csv が v1 にあれば、spec/ だけの v2 を作業中の版と読む（申告が無ければ 1）", rc == 1 and "docs/v2/" in out)]
+    yield from [("spec-loop の形の qa.csv が v1 にあれば、spec/ だけの v2 を作業中の版と読む（申告が無ければ 1）", rc == 1 and "docs/v2/" in out)]
     d, base = fresh(base_files={"docs/v1/shared/qa.csv": "\ufeff" + HEADER})
     rc, _ = run(script, d, base)
-    got += [("BOM 付きの qa.csv も spec-loop の形と読む（申告が無ければ 1）", rc == 1)]
+    yield from [("BOM 付きの qa.csv も spec-loop の形と読む（申告が無ければ 1）", rc == 1)]
     d, base = fresh(base_files=CANON, plan=decl("変えない"))
     put(d, "src/a.py", commit=True)
     rc, _ = run(script, d, base)
-    got += [("申告が `変えない` なら 0", rc == 0)]
+    yield from [("申告が `変えない` なら 0", rc == 0)]
     d, base = fresh(base_files=CANON, plan=PLAN + "\n- 仕様の振る舞い: spec-loop の Issue\n")
     rc, _ = run(script, d, base)
-    got += [("箇条書きの `- 仕様の振る舞い: spec-loop の Issue` も申告", rc == 0)]
+    yield from [("箇条書きの `- 仕様の振る舞い: spec-loop の Issue` も申告", rc == 0)]
 
     # 3) 値が違う・2 本以上・フェンスの中だけ → 1
     for label, extra in (("決まった値でない", "\n仕様の振る舞い: たぶん変えない\n"),
@@ -168,65 +200,65 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
                          ("フェンスの中だけ", "\n```text\n仕様の振る舞い: 変えない\n```\n")):
         d, base = fresh(base_files=CANON, plan=PLAN + extra)
         rc, _ = run(script, d, base)
-        got += [(f"申告が{label}なら 1", rc == 1)]
+        yield from [(f"申告が{label}なら 1", rc == 1)]
 
     # 4) 正本があって計画が見つからない → 2
     d, base = fresh(base_files=CANON, plan=None, branch="feature/x")
     rc, out = run(script, d, base)
-    got += [("正本があって計画が見つからなければ 2", rc == 2 and "緑ではない" in out)]
+    yield from [("正本があって計画が見つからなければ 2", rc == 2 and "緑ではない" in out)]
 
     # 5) `変える`: 計画の `正本に起票する行:`（同じリポジトリでも）。正本の表に直接足しただけでは 1
     row = f"\n正本に起票する行: {PLAN_ROW}\n"
     d, base = fresh(base_files=CANON, plan=decl("変える") + row)
     rc, _ = run(script, d, base)
-    got += [("`変える` で計画に行があれば 0（同じリポジトリ）", rc == 0)]
+    yield from [("`変える` で計画に行があれば 0（同じリポジトリ）", rc == 0)]
     d, base = fresh(base_files=CANON, plan=decl("変える") + f"\n- 正本に起票する行: {PLAN_ROW}\n")
     rc, _ = run(script, d, base)
-    got += [("箇条書きの `- 正本に起票する行:` も数える", rc == 0)]
+    yield from [("箇条書きの `- 正本に起票する行:` も数える", rc == 0)]
     d, base = fresh(base_files=CANON, plan=decl("変える"))
     put(d, "docs/v1/shared/qa.csv", HEADER + OLD_ROW + NEW_ROW, commit=True)
     rc, out = run(script, d, base)
-    got += [("`変える` で正本の表に直接足しただけなら 1", rc == 1 and "正本に起票する行:" in out and "開発（#7）" in out)]
+    yield from [("`変える` で正本の表に直接足しただけなら 1", rc == 1 and "正本に起票する行:" in out and "開発（#7）" in out)]
     d, base = fresh(base_files=CANON, plan=decl("変える") + f"\n```text\n正本に起票する行: {PLAN_ROW}\n```\n")
     rc, _ = run(script, d, base)
-    got += [("`変える` で行がフェンスの中だけなら 1", rc == 1)]
+    yield from [("`変える` で行がフェンスの中だけなら 1", rc == 1)]
     for label, r in (("列が 1 つ足りない", PLAN_ROW[:-1]),
                      ("別の Issue の起票元", PLAN_ROW.replace("（#7）", "（#8）")),
                      ("状態が `反映済み`", PLAN_ROW.replace(",確認中,", ",反映済み,")),
                      ("回答を埋めた", PLAN_ROW.replace(",未回答,", ",A,"))):
         d, base = fresh(base_files=CANON, plan=decl("変える") + f"\n正本に起票する行: {r}\n")
         rc, _ = run(script, d, base)
-        got += [(f"`変える` で計画の行が{label}なら 1", rc == 1)]
+        yield from [(f"`変える` で計画の行が{label}なら 1", rc == 1)]
 
     # 6) 正本が別のリポジトリ（宣言か scaffold-source.txt）
     sep = {".claude/dev-loop.md": "# 追補\n\n仕様の正本: acme/spec\n"}
     d, base = fresh(base_files=sep)
     rc, out = run(script, d, base)
-    got += [("宣言で別のリポジトリの正本があれば申告が無いと 1", rc == 1 and "acme/spec" in out)]
+    yield from [("宣言で別のリポジトリの正本があれば申告が無いと 1", rc == 1 and "acme/spec" in out)]
     d, base = fresh(base_files={".claude/dev-loop.md": "```text\n仕様の正本: acme/spec\n```\n"})
     rc, _ = run(script, d, base)
-    got += [("フェンスの中の `仕様の正本:` は宣言でない（0）", rc == 0)]
+    yield from [("フェンスの中の `仕様の正本:` は宣言でない（0）", rc == 0)]
     d, base = fresh(base_files={".claude/dev-loop.md": "<!--\n例:\n仕様の正本: acme/spec\n-->\n"}, plan=None, branch="feature/x")
     rc, _ = run(script, d, base)
-    got += [("HTML コメントの中の `仕様の正本:` は宣言でない（0）", rc == 0)]
+    yield from [("HTML コメントの中の `仕様の正本:` は宣言でない（0）", rc == 0)]
     d, base = fresh(base_files={"scaffold-source.txt": "acme/spec@0123abc\n"})
     rc, out = run(script, d, base)
-    got += [("scaffold-source.txt があれば正本（申告が無いと 1）", rc == 1 and "acme/spec" in out)]
+    yield from [("scaffold-source.txt があれば正本（申告が無いと 1）", rc == 1 and "acme/spec" in out)]
     d, base = fresh(base_files=sep, plan=decl("変える") + row)
     rc, _ = run(script, d, base)
-    got += [("別のリポジトリで `変える` と計画の行があれば 0", rc == 0)]
+    yield from [("別のリポジトリで `変える` と計画の行があれば 0", rc == 0)]
     d, base = fresh(base_files=sep, plan=decl("変える"))
     rc, out = run(script, d, base)
-    got += [("別のリポジトリで `変える` なのに計画の行が無ければ 1", rc == 1 and "正本に起票する行:" in out)]
+    yield from [("別のリポジトリで `変える` なのに計画の行が無ければ 1", rc == 1 and "正本に起票する行:" in out)]
     # 計画が git に載っていない（gitignore した .claude/plans/）なら、行があっても 1
     d, base = fresh(base_files={**CANON, ".gitignore": ".claude/plans/\n"}, plan=None)
     put(d, ".claude/plans/issue-7.md", decl("変える") + row)
     rc, out = run(script, d, base)
-    got += [("`変える` で計画が git に載っていなければ 1", rc == 1 and "git に載っていない" in out)]
+    yield from [("`変える` で計画が git に載っていなければ 1", rc == 1 and "git に載っていない" in out)]
     d, base = fresh(base_files={**CANON, ".gitignore": ".claude/plans/\n"}, plan=None)
     put(d, ".claude/plans/issue-7.md", decl("変えない"))
     rc, _ = run(script, d, base)
-    got += [("`変えない` なら計画が git に載っていなくても 0", rc == 0)]
+    yield from [("`変えない` なら計画が git に載っていなくても 0", rc == 0)]
 
     # 7) 緑のケースの一覧から載った行が減った
     canon_green = {**CANON, "scaffold-green.txt": GREEN}
@@ -239,35 +271,34 @@ def contract(script: Path, tmp: Path, tag: str) -> list[tuple[str, bool]]:
         d, base = fresh(base_files=canon_green, plan=decl(value))
         put(d, "scaffold-green.txt", body, commit=True)
         rc, out = run(script, d, base)
-        got += [(f"一覧: {label}なら {want}", rc == want and (want == 0 or "a.T.test_2" in out))]
+        yield from [(f"一覧: {label}なら {want}", rc == want and (want == 0 or "a.T.test_2" in out))]
     d, base = fresh(base_files={**canon_green, "svc/scaffold-green.txt": GREEN}, plan=decl("変えない"))
     (d / "svc" / "scaffold-green.txt").unlink()  # 消してコミットしない
     rc, out = run(script, d, base)
-    got += [("一覧: 下の階層の一覧を消した（未コミット）なら 1", rc == 1 and "svc/scaffold-green.txt" in out)]
+    yield from [("一覧: 下の階層の一覧を消した（未コミット）なら 1", rc == 1 and "svc/scaffold-green.txt" in out)]
     d, base = fresh(base_files=canon_green, plan=decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n")
     put(d, "scaffold-green.txt", GREEN.split("a.T.test_2")[0], commit=True)
     rc, _ = run(script, d, base)
-    got += [("一覧: `変える` で行を足しても、載った行を外したら 1", rc == 1)]
+    yield from [("一覧: `変える` で行を足しても、載った行を外したら 1", rc == 1)]
 
     # 8) `変える` で Issue の番号が取れない → 2。--plan の名前からは取る
     d, base = fresh(base_files=CANON, plan=None, branch="feature/x")
     put(d, "notes/plan.md", decl("変える"))
     rc, out = run(script, d, base, "--plan", "notes/plan.md")
-    got += [("`変える` で Issue の番号が取れなければ 2", rc == 2)]
+    yield from [("`変える` で Issue の番号が取れなければ 2", rc == 2)]
     d, base = fresh(base_files=CANON, plan=None, branch="feature/x")
     put(d, "notes/issue-7.md", decl("変える") + f"\n正本に起票する行: {PLAN_ROW}\n", commit=True)
     rc, _ = run(script, d, base, "--plan", "notes/issue-7.md")
-    got += [("--plan の名前 issue-<n>.md から番号を取る", rc == 0)]
+    yield from [("--plan の名前 issue-<n>.md から番号を取る", rc == 0)]
     d, base = fresh(base_files=CANON)
     git(d, "switch", "-q", "--detach", "HEAD")
     rc, out = run(script, d, base, env={"GITHUB_HEAD_REF": "issue/7-demo"})
-    got += [("detached でも GITHUB_HEAD_REF から計画を当てる", rc == 1 and "issue-7.md" in out)]
+    yield from [("detached でも GITHUB_HEAD_REF から計画を当てる", rc == 1 and "issue-7.md" in out)]
 
     # 9) git が失敗 → 2
     d, base = fresh(base_files=CANON)
     rc, _ = run(script, d, "no-such-ref")
-    got += [("git が失敗したら 2", rc == 2)]
-    return got
+    yield from [("git が失敗したら 2", rc == 2)]
 
 
 MUTATIONS = {
@@ -384,8 +415,81 @@ def leak_control(tmp: Path) -> None:
     check("そのとき check-spec-writeback.py が 1 で外したケースを名指す", rc == 1 and "test_f_001" in out)
 
 
+# **変異は別々のプロセスで同時に当て、最初に破れた契約で止める**（#1049。#1021 と同じ）——直列に契約を 31 回（陽性対照 1 回・変異 30 個）
+# 全部当てていて（契約 1 回で約 26 秒・git を 316 回）、2026-11-15 の `check-all.py`（28 並列）で 437.9 秒、全体の律速だった（#1040 の測定）。
+# 変異の判定は「1 件でも破れたか」なので、止めても判定は変わらない。**陽性対照は止めずに全部を見る。**
+# **`--jobs N` で絞る**——`check-all.py` が入れ子として親の半分を渡す（`NESTED`）。上限は `test-check-deps-declared.py` と同じ 4。
+MUTANT_JOBS_MAX = max(1, min(4, os.cpu_count() or 1))
+MUTANT_JOBS = MUTANT_JOBS_MAX
+pool_sizes: list[int] = []
+
+
+class _MutantPool(concurrent.futures.ProcessPoolExecutor):
+    """変異の作業者のプール。**渡された作業者の数を `pool_sizes` に残す**（`--pool-size` が出す）。"""
+
+    def __init__(self, max_workers, **kwargs):
+        pool_sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+def _kill_one(job: tuple[int, str, str]) -> bool:
+    """作業者で変異を 1 つ当て、契約が 1 件でも破れたら True。**最初に破れたところで止める。**"""
+    i, mutated, tmp = job
+    mutant = Path(tmp) / f"mutant{i}.py"
+    mutant.write_text(mutated, encoding="utf-8")
+    return any(not ok for _, ok in contract(mutant, Path(tmp) / f"m{i}", f"m{i}"))
+
+
+def kill_mutations(mutations: dict[str, tuple[str, str]], src: str, tmp: Path) -> None:
+    order, jobs = [], []  # order: (変異の名前, jobs の番号。当てる先が 1 箇所でなければ None)
+    for i, (name, (old, new)) in enumerate(mutations.items()):
+        if src.count(old) != 1:
+            order.append((name, None))
+            continue
+        order.append((name, len(jobs)))
+        jobs.append((i, src.replace(old, new), str(tmp)))
+    with _MutantPool(max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
+        results = list(pool.map(_kill_one, jobs))
+    for name, k in order:  # 出力は変異の宣言順（終わった順ではない）
+        if k is None:
+            check(f"変異 `{name}` の当て先が 1 箇所", False)
+        else:
+            check(f"変異 `{name}` を契約が捕まえる", results[k])
+
+
+def check_pool_size() -> None:
+    """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
+    （`test-check-deps-declared.py` と同じ形——受けた `--jobs` を使わなくても、遅く・速くなるだけで緑のままなので）。"""
+    for asked in (1, 99):
+        want = min(asked, MUTANT_JOBS_MAX)
+        proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
+                              capture_output=True, text=True, timeout=120)
+        got = proc.stdout.strip()
+        check(f"--jobs {asked} で変異のプールに渡す作業者は {want}（出力: {got or '空'}・終了コード {proc.returncode}）",
+              proc.returncode == 0 and got == str(want))
+
+
 def main() -> int:
+    global MUTANT_JOBS
+    parser = argparse.ArgumentParser(description="check-spec-writeback.py の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS_MAX,
+                        help=f"変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS_MAX}。1 で 1 つずつ）")
+    parser.add_argument("--pool-size", action="store_true",
+                        help="変異のプールに渡す作業者の数を出して終わる（試料の中で使う）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS_MAX)
+    if opts.pool_size:
+        with tempfile.TemporaryDirectory() as tmp:
+            # 変異を当てる経路そのもの（`kill_mutations`）でプールを作る——変異が 0 件なので作業者は起きない
+            kill_mutations({}, "", Path(tmp))
+        print(pool_sizes[-1] if pool_sizes else "")
+        return 0
+
     static_checks()
+    print("変異の作業者の数:")
+    check_pool_size()
     src = SCRIPT.read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -394,14 +498,7 @@ def main() -> int:
         for name, ok in contract(SCRIPT, root / "real", "r"):
             check(name, ok)
         print("変異（1 箇所ずつ壊す——契約が破れなければ失格）:")
-        for i, (name, (old, new)) in enumerate(MUTATIONS.items()):
-            if src.count(old) != 1:
-                check(f"変異 `{name}` の当て先が 1 箇所", False)
-                continue
-            mutant = root / f"mutant{i}.py"
-            mutant.write_text(src.replace(old, new), encoding="utf-8")
-            broken = [nm for nm, ok in contract(mutant, root / f"m{i}", f"m{i}") if not ok]
-            check(f"変異 `{name}` を契約が捕まえる", bool(broken))
+        kill_mutations(MUTATIONS, src, root)
     if failures:
         print(f"\n{len(failures)} 件失敗: {failures}")
         return 1
