@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """cruise の親が止まっている枠の持ち主を止める手順（`parallel.md` の照合と止め方）の回帰テスト（#899 の D5）。
 
-    python3 scripts/test-parallel-stop.py
+    python3 scripts/test-parallel-stop.py             # 本体のままの 1 パスと変異 12 本のパスを並列に（既定と上限: 4）
+    python3 scripts/test-parallel-stop.py --jobs 1    # 13 パスを 1 つずつ（check-all.py --jobs 1 が渡す）
 
 **本体は `plugins/dev-loop/skills/cruise/references/parallel.md` の中にある**——「止まっている枠の持ち主」の節の、
 `P=<pid>` で始まる `bash` ブロックである。**写しを作らない**——毎回そこから抜き出し、リストの字下げ（3 桁）を外し、
@@ -12,8 +13,8 @@
 
 見るもの（どれも一時の git リポジトリの中で。枠の記録は本物の run-serial が書いたものと、手で書いたものの両方）:
 
-1. **本物の持ち主は止める**——worktree の `run-serial.py` で `bash -c 'sleep …; echo after'` を走らせ、その pid を渡すと、
-   照合が「合った」と言い、ラッパーが 143 で終わり、子孫の `sleep` も残らない。
+1. **本物の持ち主は止める**——worktree の `run-serial.py` で `bash -c '<python> <印のついた sleeper.py>; echo after'` を走らせ、その pid を渡すと、
+   照合が「合った」と言い、ラッパーが 143 で終わり、子孫の sleeper も残らない。
 2. **合う偽の持ち主も止める**（下の 3〜6 の陽性対照）——`run-serial.py` という名前の偽のスクリプトを `-- <コマンド>` で起こし、
    pid・コマンド・場所・時刻が合う記録を手で書くと、止める。
 3. **ファイル名が違う**（`test-run-serial.py`）なら止めない。
@@ -32,16 +33,36 @@
     直す前の照合は記録を実際より遅いと読み、使い回したプロセスを止めた。1 パス目の `/code-review`）。
 15. **`--timeout` を 2 回渡した持ち主**（run-serial は最後の値を使う）も止める（1 パス目の `/code-review`）。
 
-止めないケースでは、照合が 1 で終わり、プロセスが生きたままであることを見る（止めたかを見るのはプロセスで、出力の文言ではない）。
+**止めたかの判定**（#1050 で、時間の窓に頼らない形にした）:
+
+- **止めるケース**は、照合が 0 で終わり、プロセスが終わった（ブロックが終わってから最大 10 秒待つ——ブロックは SIGTERM を送ってから
+  2 秒おいて終わるので、ふつうは待たずに終わっている）。
+- **止めないケース**は、照合が 1 で終わり、**全部のブロックが終わった後に**プロセスがまだ生きている。**窓を待たない**——
+  ブロックが SIGTERM を送るのは照合が 0 のとき（`&&` の後ろ）だけで、送ったら 2 秒おいてから終わる。だから照合が 1 なら送っておらず、
+  照合が 0 ならそれだけで「止めた」側になる（止まるのを待つ必要が無い）。生きているかは止める側の窓と同じく、ブロックの終わりより後に見る。
+  偽のプロセスは 600 秒眠る——パスが負荷で延びても、ひとりでに終わって「止めた」と読まれない。
+  （#1050 の前は、止めないケースごとに 1 秒の窓を待ち切っていた——1 パスで 9 秒。）
+
+**速さ**（#1050）: `main()` は本体のままの 1 パスと変異 12 本の 12 パス、計 13 パスを**別々のプロセスで同時に**回す（`--jobs` で絞る。上限 4）。
+各パスは自分の一時ディレクトリ・リポジトリ・枠・偽のスクリプトを持つので、パスどうしは同じものを触らない。
+**1 パスの中では、15 ケースの持ち主を先に全部起こして記録を書き、15 のブロックをスレッドで同時に流す**——ブロックの `sleep 2`（止める 6 ケース）が
+ケースの数だけでなく 1 回分に重なる。**`parallel.md` のブロック（利用者に渡る手順）の `sleep` は変えない。**
+ブロックどうしは別の pid を扱い、自分の pid と、その pid から先にたどった子孫にしか SIGTERM を送らないので、同時に流しても互いの持ち主を止めない。
 
 **変異テスト**: ブロックの照合を 1 箇所ずつ緩め（部分一致に戻す・コマンドを比べない・cwd を比べない・時刻を比べない・記録を見ない・
 `--timeout` の選択肢を外す・`=` の形を外す・`--timeout` を 1 回だけ許す・時間帯を見ない・遅いほうの読みを採る・
 コマンドを部分一致で比べる・時刻の許容を広げる）、
 **緩めたのに全ケースが期待どおりなら失格**。壊す文字列がブロックにちょうど 1 回現れることを先に確かめる。
+**パスの中で例外が起きた（「失格」を含む）ら、殺せたと数えず失格にする。**
 
 **このテストは実環境を触らない**——リポジトリと枠のディレクトリは一時ディレクトリの中で、止めるのは自分が起こしたプロセスだけ。
 1 の取り残しも、ブロックを流す前に本物の持ち主からたどった子孫だけを見る——マシン全体を探すと、同時に走る
 別の実行（別のセッション・別の worktree）の `sleep` を取り残しと数え、それを止めた（#1024）。
+**後片付けも名前の一致で止めない**（`pkill` は使わない）——自分が起こしたプロセスのグループ（`start_new_session`）にだけ送る。
+
+**取り残しを見る**（#1050）: このテストが起こすプロセスは、どれもコマンド欄に**その回だけの印**（`tps<pid>x<乱数>p<パスの番号>q`。一時ディレクトリの名前に入る）を持つ
+——偽の持ち主・本物の run-serial とその `bash`・sleeper。各パスの後片付けの後と、全部のパスの後に、`ps` のコマンド欄にその回の印を持つプロセスが
+無いことを確かめ、在れば名指しして失格にする（その pid だけに SIGKILL を送る——印はこの回だけのものなので、他のセッションのプロセスに当たらない）。
 
 守らないもの:
 
@@ -49,15 +70,23 @@
 - **pid が本当に使い回された実物**——使い回しは「記録の後に起きたプロセス」を手で作って当てる。
 - **親と子で `TZ` が本当に違う起動**——記録の `started` を別の時間帯の表記で手で書いて当てる（同じ瞬間を別の表記にした記録と同じ入力になる）。
 - **散文の箇条書きとコードの食い違い**——実行するのはコードだけ。
+- **ブロックを 1 つずつ流したときだけ起きる振る舞い**——1 パスの中ではブロックを同時に流す。ブロックは自分の pid にしか触らないので、
+  同時かどうかで照合の結果は変わらない（ほかのブロックの `ps`・`lsof` の負荷は掛かる）。
+- **印を持たない孫**——ブロックの中で起きる `ps`・`lsof`・`pgrep` は印を持たず、取り残しの確かめに入らない（ブロックの終わりと一緒に終わる）。
+- **`--jobs` を受けた回のプールの大きさ**は `--pool-size` の経路で見る（`test-run-serial.py` と同じ形）。本当の回のプールの数は見ない。
 
 標準ライブラリのみ。POSIX（`ps`・`pgrep`・`lsof` か `/proc`）。
 """
 
 from __future__ import annotations
 
+import argparse
+import concurrent.futures
 import json
+import multiprocessing
 import os
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -70,6 +99,15 @@ DOC = ROOT / "plugins/dev-loop/skills/cruise/references/parallel.md"
 RUN_SERIAL = ROOT / "plugins/dev-loop/skills/cruise/scripts/run-serial.py"
 HEADING = "### 止まっている枠の持ち主"
 CASES = 15
+FAKE_SLEEP = 600  # 偽の持ち主が眠る秒——パスが負荷で延びても、ひとりでに終わって「止めた」と読まれない長さ
+
+# **パスを別々のプロセスで同時に回す**（#1050）——直列では 13 パス × 約 30 秒で 390〜402 秒かかり、
+# 2026-11-15 の `check-all.py`（28 並列）で上位 3 位だった。CPU は 19 秒ほどで大半は待ち（ブロックの `sleep 2` と 1 秒の窓）。
+# **上限は小さく取る**（Issue の指定）——1 パスは 15 のブロックを同時に流し、ブロックは `ps`・`lsof` を起こすので、
+# 並列を広げると負荷が上がる。兄弟のテスト（`test-run-serial.py` など）と同じ 4。`check-all.py` が入れ子として親の半分を渡す（`NESTED`）。
+JOBS_MAX = max(1, min(4, os.cpu_count() or 1))
+JOBS = JOBS_MAX
+pool_sizes: list[int] = []
 
 MUTATIONS = [
     ("部分一致に戻す",
@@ -91,6 +129,10 @@ MUTATIONS = [
     ("コマンドを部分一致で比べる（E4）", 'elif m.group(1) != rec.get("command"):', 'elif (rec.get("command") or "") not in m.group(1):'),
     ("時刻の許容を広げる（E5）", "if begun > taken + 2:", "if begun > taken + 3000:"),
 ]
+
+
+class Disqualified(Exception):
+    """パスを続けられない（試料が立たない）。殺せたと数えず、失格にする。"""
 
 
 def block() -> str:
@@ -133,6 +175,29 @@ def descendants(pid: int) -> dict[int, str]:
     return found
 
 
+def marked(mark: str) -> dict[int, str]:
+    """コマンド欄に `mark` を持つプロセス（自分を除く）の pid → コマンド。"""
+    out = subprocess.run(["ps", "-ax", "-o", "pid=,command="], capture_output=True, text=True,
+                         env={**os.environ, "LC_ALL": "C"}).stdout
+    found: dict[int, str] = {}
+    for line in out.splitlines():
+        pid, _, cmd = line.strip().partition(" ")
+        if mark in cmd and pid.isdigit() and int(pid) != os.getpid():
+            found[int(pid)] = cmd.strip()
+    return found
+
+
+def leftovers(mark: str) -> list[str]:
+    """`mark` を持つプロセスが残っていれば、その pid にだけ SIGKILL を送り、名指しを返す（名前の一致では送らない）。"""
+    left = marked(mark)
+    for pid in left:
+        try:
+            os.kill(pid, 9)
+        except OSError:
+            pass
+    return [f"{pid} {cmd}" for pid, cmd in sorted(left.items())]
+
+
 def run_block(code: str, repo: Path, pid: int) -> subprocess.CompletedProcess:
     script = code.replace("P=<pid>", f"P={pid}", 1)
     return subprocess.run(["bash", "-c", script], cwd=repo, capture_output=True, text=True, timeout=60)
@@ -157,11 +222,12 @@ class Fixture:
         self.lockdir = self.repo / ".git" / "dev-loop-serial"
         self.other = Path(os.path.realpath(base)) / "other"
         self.other.mkdir()
-        fake = base / "fake"
+        fake = Path(os.path.realpath(base)) / "fake"
         fake.mkdir()
-        body = "import time\ntime.sleep(120)\n"
+        body = f"import time\ntime.sleep({FAKE_SLEEP})\n"
         (fake / "run-serial.py").write_text(body)
         (fake / "test-run-serial.py").write_text(body)
+        (fake / "sleeper.py").write_text("import time\ntime.sleep(117)\n")
         self.fake = fake
         self.procs: list[subprocess.Popen] = []
         self.slot = 10
@@ -192,105 +258,209 @@ class Fixture:
                 pass
 
 
-def cases(code: str) -> list[tuple[str, bool, bool]]:
-    """(名前, 期待: 止める, 実際: 止めた——照合が 0 で終わり、プロセスが終わった)。"""
-    results = []
-    with tempfile.TemporaryDirectory() as tmp:
+def cases(code: str, mark: str) -> tuple[list[tuple[str, bool, bool]], list[str]]:
+    """(結果, 取り残し)。結果は (名前, 期待: 止める, 実際: 止めた) の並び。
+
+    **持ち主を全部起こしてから、15 のブロックを同時に流す**（#1050）。止めたかの判定はモジュールの docstring の「止めたかの判定」。
+    取り残しは、後片付けの後に `mark` を持つプロセス（在れば名指しして SIGKILL を送ったもの）。"""
+    results: list[tuple[str, bool, bool]] = []
+    with tempfile.TemporaryDirectory(prefix=f"{mark}-") as tmp:
         fx = Fixture(Path(tmp))
         try:
-            # 1. 本物の持ち主（worktree の run-serial.py が枠を取って記録を書く）
+            # 1. 本物の持ち主（worktree の run-serial.py が枠を取って記録を書く）。眠る孫は印のついた sleeper.py
+            sleeper = fx.fake / "sleeper.py"
             out = fx.base / "real.out"
             with open(out, "w") as fh:
-                real = subprocess.Popen([sys.executable, str(RUN_SERIAL), "--", "bash", "-c", "sleep 117; echo after"],
+                real = subprocess.Popen([sys.executable, str(RUN_SERIAL), "--", "bash", "-c", f"{sys.executable} {sleeper}; echo after"],
                                         cwd=fx.repo, stdout=fh, stderr=subprocess.STDOUT, start_new_session=True)
             fx.procs.append(real)
             if not wait_for(lambda: any(p.read_text().strip() for p in fx.lockdir.glob("slot-*.lock")) if fx.lockdir.is_dir() else False):
-                sys.exit("失格: 本物の run-serial が枠の記録を書かなかった")
+                raise Disqualified("本物の run-serial が枠の記録を書かなかった")
             # 子孫は、ブロックを流す前に real からたどって数える——マシン全体を `pgrep -f` で探すと、
-            # 同時に走る別の実行の `sleep 117` を取り残しと数え、しかもそれを止める（#1024）
-            if not wait_for(lambda: any(cmd == "sleep 117" for cmd in descendants(real.pid).values())):
-                sys.exit("失格: 本物の run-serial の子孫に `sleep 117` が起きない")
+            # 同時に走る別の実行の眠る孫を取り残しと数え、しかもそれを止める（#1024）
+            if not wait_for(lambda: any(cmd.endswith(str(sleeper)) for cmd in descendants(real.pid).values())):
+                raise Disqualified("本物の run-serial の子孫に sleeper.py が起きない")
             mine = descendants(real.pid)
-            r = run_block(code, fx.repo, real.pid)
+
+            later, earlier = 3600, -3600
+            # (名前, 期待: 止める, 偽のスクリプト, 引数, cwd, 記録のコマンド（None なら `--` の後ろ）, 記録の場所, 記録の時刻（起こす直前からの秒）,
+            #  記録を書くか, 記録の時間帯のずれ)
+            table = [
+                ("2 合う偽の持ち主（陽性対照）", True, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later, True, timedelta(0)),
+                ("3 ファイル名が test-run-serial.py", False, "test-run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later, True, timedelta(0)),
+                ("4 記録のコマンドと違う", False, "run-serial.py", ["--", "copy", "db"], fx.repo, "other command", fx.repo, later, True, timedelta(0)),
+                ("5 cwd が記録の場所と違う", False, "run-serial.py", ["--", "copy", "db"], fx.other, None, fx.repo, later, True, timedelta(0)),
+                ("6 記録の後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, earlier, True, timedelta(0)),
+                ("7 `--` の無い起動（holders）", False, "run-serial.py", ["holders"], fx.repo, "holders", fx.repo, later, True, timedelta(0)),
+                ("8 枠の記録に無い pid", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later, False, timedelta(0)),
+                ("9 `--timeout <秒>` の形", True, "run-serial.py", ["--timeout", "600", "--", "copy", "db"], fx.repo, None, fx.repo, later, True, timedelta(0)),
+                ("10 `--timeout=<秒>` の形", True, "run-serial.py", ["--timeout=600", "--", "copy", "db"], fx.repo, None, fx.repo, later, True, timedelta(0)),
+                ("11 記録が別の時間帯（同じ瞬間）", True, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, 60, True, timedelta(hours=-5)),
+                ("12 記録の数秒後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, -5, True, timedelta(0)),
+                ("13 記録のコマンドが一部だけ", False, "run-serial.py", ["--", "copy", "db"], fx.repo, "copy", fx.repo, later, True, timedelta(0)),
+                ("14 東の時間帯の記録の数秒後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, -5, True,
+                 timedelta(hours=5)),
+                ("15 `--timeout` を 2 回渡した形", True, "run-serial.py", ["--timeout", "600", "--timeout=300", "--", "copy", "db"],
+                 fx.repo, None, fx.repo, later, True, timedelta(0)),
+            ]
+            fakes: list[tuple[str, bool, subprocess.Popen]] = []
+            for name, expect, script, argv_tail, cwd, rec_command, rec_cwd, started, record, shift in table:
+                spawned = time.time()
+                proc = fx.spawn([sys.executable, str(fx.fake / script), *argv_tail], cwd)
+                if not wait_for(lambda: alive(proc.pid)):
+                    raise Disqualified(f"{name} の偽のプロセスが起きない")
+                if record:
+                    command = rec_command if rec_command is not None else " ".join(argv_tail[argv_tail.index("--") + 1:] if "--" in argv_tail else argv_tail[1:])
+                    fx.record(proc.pid, command, rec_cwd, spawned + started, shift)
+                fakes.append((name, expect, proc))
+
+            # 15 のブロックを同時に流す——止める 6 ケースの `sleep 2` が 1 回分に重なる
+            pids = [real.pid] + [proc.pid for _, _, proc in fakes]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(pids)) as threads:
+                runs = list(threads.map(lambda pid: run_block(code, fx.repo, pid), pids))
+
+            # 1 の判定: 照合が 0・ラッパーが 143 で終わった・先に数えた子孫が残っていない
+            r = runs[0]
             stopped = wait_for(lambda: real.poll() is not None)
             orphan = [pid for pid, cmd in mine.items() if alive(pid) and command_of(pid) == cmd]
             for pid in orphan:
                 os.kill(pid, 9)
             results.append(("1 本物の持ち主", True, stopped and real.returncode == 143 and not orphan and r.returncode == 0))
 
-            def fake_case(name: str, expect: bool, script: str, argv_tail: list[str], cwd: Path,
-                          rec_command: str | None, rec_cwd: Path, started: float, record: bool = True,
-                          shift: timedelta = timedelta(0)) -> None:
-                """`started` は偽のプロセスを起こす直前の時刻からの秒数（記録の時刻）。"""
-                spawned = time.time()
-                proc = fx.spawn([sys.executable, str(fx.fake / script), *argv_tail], cwd)
-                if not wait_for(lambda: alive(proc.pid)):
-                    sys.exit(f"失格: {name} の偽のプロセスが起きない")
-                if record:
-                    command = rec_command if rec_command is not None else " ".join(argv_tail[argv_tail.index("--") + 1:] if "--" in argv_tail else argv_tail[1:])
-                    fx.record(proc.pid, command, rec_cwd, spawned + started, shift)
-                res = run_block(code, fx.repo, proc.pid)
-                # 止めるときはブロックの中で kill してから 2 秒おく——ブロックが終わった後に生きていれば止めていない
-                stopped = wait_for(lambda: proc.poll() is not None, 10.0 if expect else 1.0)
-                results.append((name, expect, stopped and res.returncode == 0))
-
-            later, earlier = 3600, -3600
-
-            fake_case("2 合う偽の持ち主（陽性対照）", True, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later)
-            fake_case("3 ファイル名が test-run-serial.py", False, "test-run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later)
-            fake_case("4 記録のコマンドと違う", False, "run-serial.py", ["--", "copy", "db"], fx.repo, "other command", fx.repo, later)
-            fake_case("5 cwd が記録の場所と違う", False, "run-serial.py", ["--", "copy", "db"], fx.other, None, fx.repo, later)
-            fake_case("6 記録の後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, earlier)
-            fake_case("7 `--` の無い起動（holders）", False, "run-serial.py", ["holders"], fx.repo, "holders", fx.repo, later)
-            fake_case("8 枠の記録に無い pid", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, later, record=False)
-            fake_case("9 `--timeout <秒>` の形", True, "run-serial.py", ["--timeout", "600", "--", "copy", "db"], fx.repo, None, fx.repo, later)
-            fake_case("10 `--timeout=<秒>` の形", True, "run-serial.py", ["--timeout=600", "--", "copy", "db"], fx.repo, None, fx.repo, later)
-            fake_case("11 記録が別の時間帯（同じ瞬間）", True, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, 60,
-                      shift=timedelta(hours=-5))
-            fake_case("12 記録の数秒後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, -5)
-            fake_case("13 記録のコマンドが一部だけ", False, "run-serial.py", ["--", "copy", "db"], fx.repo, "copy", fx.repo, later)
-            fake_case("14 東の時間帯の記録の数秒後に起きたプロセス", False, "run-serial.py", ["--", "copy", "db"], fx.repo, None, fx.repo, -5,
-                      shift=timedelta(hours=5))
-            fake_case("15 `--timeout` を 2 回渡した形", True, "run-serial.py", ["--timeout", "600", "--timeout=300", "--", "copy", "db"],
-                      fx.repo, None, fx.repo, later)
+            # 2〜15 の判定（モジュールの docstring の「止めたかの判定」）
+            for (name, expect, proc), res in zip(fakes, runs[1:]):
+                if res.returncode == 0:
+                    actual = wait_for(lambda: proc.poll() is not None) if expect else True
+                else:
+                    actual = False if expect else proc.poll() is not None
+                results.append((name, expect, actual))
         finally:
             fx.cleanup()
-    return results
+    return results, leftovers(mark)
+
+
+def _pass_job(job: tuple) -> tuple:
+    """作業者で 1 パス当て、(結果, 取り残し, 秒, 失格の理由か None) を返す。
+
+    **作業者の中の例外は値として返す**——プールの外に投げると残りの結果まで失う。`SystemExit` も受ける（`BaseException`）。"""
+    code, mark = job
+    start = time.monotonic()
+    try:
+        results, left = cases(code, mark)
+    except BaseException as exc:  # noqa: BLE001 — 失格の理由として親に返す
+        return [], leftovers(mark), time.monotonic() - start, f"{exc.__class__.__name__}: {exc}"
+    return results, left, time.monotonic() - start, None
+
+
+class _PassPool(concurrent.futures.ProcessPoolExecutor):
+    """パスの作業者のプール。**渡された作業者の数を `pool_sizes` に残す**（`--pool-size` が出す）。"""
+
+    def __init__(self, max_workers, **kwargs):
+        pool_sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+def run_passes(jobs: list[tuple]) -> list[tuple]:
+    """`jobs` を `JOBS` 個の作業者で当て、渡した順に結果を返す（終わった順ではない）。"""
+    with _PassPool(max_workers=JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
+        return list(pool.map(_pass_job, jobs))
+
+
+def check_pool_size() -> bool:
+    """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
+    （`test-run-serial.py` と同じ形——受けた `--jobs` を使わなくても、遅く・速くなるだけで緑のままなので）。"""
+    ok = True
+    for asked in (1, 99):
+        want = min(asked, JOBS_MAX)
+        proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
+                              capture_output=True, text=True, timeout=120)
+        got = proc.stdout.strip()
+        good = proc.returncode == 0 and got == str(want)
+        print(f"  {'OK  ' if good else 'FAIL'} --jobs {asked} でプールに渡す作業者は {want}（出力: {got or '空'}・終了コード {proc.returncode}）")
+        ok = ok and good
+    return ok
 
 
 def main() -> int:
-    code = block()
-    failures = 0
-    results = cases(code)
-    if len(results) != CASES:
-        print(f"失格: ケースが {CASES} 件でない（{len(results)} 件）")
-        return 1
-    for name, expect, actual in results:
-        ok = expect == actual
-        print(f"  {'OK  ' if ok else 'FAIL'} {name}（期待: {'止める' if expect else '止めない'}）")
-        failures += not ok
-    if failures:
-        print(f"照合と止め方のテスト: 失敗 {failures} 件")
-        return 1
+    global JOBS
+    parser = argparse.ArgumentParser(description="parallel.md の止まっている枠の持ち主を止める手順の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=JOBS_MAX,
+                        help=f"パスを同時に回すプロセスの数（既定と上限: {JOBS_MAX}。1 で 1 つずつ）")
+    parser.add_argument("--pool-size", action="store_true", help="プールに渡す作業者の数を出して終わる（試料の中で使う）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    JOBS = min(opts.jobs, JOBS_MAX)
+    if opts.pool_size:
+        run_passes([])  # 当てる経路そのもの（`run_passes`）でプールを作る——当てるものが 0 件なので作業者は起きない
+        print(pool_sizes[-1] if pool_sizes else "")
+        return 0
 
-    killed = 0
-    for name, old, new in MUTATIONS:
+    code = block()
+    print("作業者の数:")
+    if not check_pool_size():
+        print("照合と止め方のテスト: --jobs をプールに渡していない")
+        return 1
+    for name, old, _ in MUTATIONS:
         count = code.count(old)
         if count != 1:
             print(f"失格: 変異「{name}」の壊す文字列がブロックに {count} 回（1 回のはず）")
             return 1
-        mutant = code.replace(old, new)
-        res = cases(mutant)
+
+    run = f"tps{os.getpid()}x{secrets.token_hex(4)}"  # この回だけの印（取り残しを探すのに使う）
+    # パスの印は `q` で閉じる——`p1` のままだと `p10`〜`p12` の前方に当たり、パス 1 の取り残しの確かめが別のパスのプロセスを名指しする
+    jobs = [(code, f"{run}p0q")] + [(code.replace(old, new), f"{run}p{i}q") for i, (_, old, new) in enumerate(MUTATIONS, 1)]
+    print(f"\n本体のままの 1 パスと変異 {len(MUTATIONS)} 本のパスを {JOBS} 並列で当てる")
+    began = time.monotonic()
+    outcomes = run_passes(jobs)
+    wall = time.monotonic() - began
+
+    failures = 0
+    left_all: list[str] = []
+    results, left, secs, err = outcomes[0]
+    left_all += left
+    if err is not None:
+        print(f"失格: 本体のままのパスが当てられなかった（{err}）")
+        failures += 1
+    elif len(results) != CASES:
+        print(f"失格: ケースが {CASES} 件でない（{len(results)} 件）")
+        failures += 1
+    else:
+        for name, expect, actual in results:
+            ok = expect == actual
+            print(f"  {'OK  ' if ok else 'FAIL'} {name}（期待: {'止める' if expect else '止めない'}）")
+            failures += not ok
+    print(f"  （本体のままのパス {secs:.1f} 秒）")
+    if failures:
+        print(f"照合と止め方のテスト: 失敗 {failures} 件")
+
+    killed = 0
+    for (name, _, _), (res, left, secs, err) in zip(MUTATIONS, outcomes[1:]):
+        left_all += left
+        if err is not None:
+            print(f"  失格 変異「{name}」: 当てられなかった（{err}）（{secs:.1f} 秒）")
+            continue
         bad = [n for n, expect, actual in res if expect != actual]
-        if bad:
+        if len(res) != CASES:
+            print(f"  失格 変異「{name}」: ケースが {CASES} 件でない（{len(res)} 件）（{secs:.1f} 秒）")
+        elif bad:
             killed += 1
-            print(f"  殺せた 変異「{name}」: {', '.join(bad)}")
+            print(f"  殺せた 変異「{name}」: {', '.join(bad)}（{secs:.1f} 秒）")
         else:
-            print(f"  素通り 変異「{name}」")
+            print(f"  素通り 変異「{name}」（{secs:.1f} 秒）")
+
+    left_all += leftovers(run)  # 全部のパスの後にも、この回の印を持つプロセスが無いかを見る
+    if left_all:
+        print(f"失格: テストが起こしたプロセスが残った（{len(left_all)} 件。SIGKILL を送った）:")
+        for line in left_all:
+            print(f"    {line}")
+    print(f"  （全体 {wall:.1f} 秒・{JOBS} 並列）")
+    if failures or left_all:
+        return 1
     if killed != len(MUTATIONS):
         print(f"失格: 変異 {len(MUTATIONS)} 件のうち殺せたのは {killed} 件")
         return 1
-    print(f"照合と止め方のテスト: すべて合格（ケース {CASES} 件・変異 {len(MUTATIONS)} 件をすべて殺せた）")
+    print(f"照合と止め方のテスト: すべて合格（ケース {CASES} 件・変異 {len(MUTATIONS)} 件をすべて殺せた・取り残し 0 件）")
     return 0
 
 
