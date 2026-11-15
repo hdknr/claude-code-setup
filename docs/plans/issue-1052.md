@@ -83,7 +83,10 @@ main へのマージ。`scripts/` は配布物ではない。公開サイトは 
 - **2 パス目: 該当なし**（1 パス目の指摘対応の差分 0 行。起点 `35fd2363662ed5bf53833d2b081cd84dd5ea9d3e`。判定の 2 本に計画ファイル以外が出なかった）
 - **狭いパス: 該当なし**
 - 割り目 2: 置かない（2 パス目が無い）
-- 外部レビュー: PR の後に `external-reviews.py` で見る
+- PR #1073（先端 `8d7d639`）。PR 側の CI は全部 pass（build・check・cruise-loops・cruise-run-serial・dev-loop・spec-loop・spec-loop-autopilot-loop・spec-loop-generate。deploy は skipping）。先端は origin/main（`b8dd370`）を含む・`MERGEABLE`
+- 外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）
+- PR の前の歯止め: `check-deps-declared.py`・`check-spec-writeback.py`・`check-pr-preconditions.sh` とも 0
+- 手順 7: 子はマージしない（cruise の決まり）。手順 8: 振り分けは採否の表の右端の列（直す 0 件・記録だけ 8 件）。焼き戻す学びなし（cruise の周の測定の手順は既存の parallel.md と委譲文のとおり）
 - 交絡: 実験は所要時間の前後の測定だけ（A5）。主張は「前後の秒」までで、負荷を外したとは言わない（前の回の初めの負荷 6.34、後の回の終わりの負荷 7.25——後の回は自分の 4 並列で負荷を上げている）
 
 ### 1 パス目の採否の表（直す線: `既定`）
