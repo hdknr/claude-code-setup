@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """`run-serial.py`（重い検査・アプリの起動の順番待ち。#493）の回帰テスト。
 
-    python3 scripts/test-run-serial.py
+    python3 scripts/test-run-serial.py                    # 全部（本体のままの観測 16 種と変異の全部）
+    python3 scripts/test-run-serial.py --jobs 1           # 観測と変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
+    python3 scripts/test-run-serial.py --part holders     # 本体のままの観測を名指しした分だけ（繰り返せる。変異は当てない）
+    python3 scripts/test-run-serial.py --mutant '経過を出さない'   # 名指しした変異だけ（繰り返せる。本体の観測は当てない）
 
 **本体はプラグインの中にある**（`plugins/dev-loop/skills/cruise/scripts/run-serial.py`）——
 cruise はどのリポジトリでも使うので、対象リポジトリの `scripts/` に在ることを当てにできない（`test-find-cycle.py` と同じ形）。
@@ -19,11 +22,18 @@ cruise はどのリポジトリでも使うので、対象リポジトリの `sc
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、壊したのに判定（`check`）が 1 つも落ちなければ失格とする——
 **観測の値が正しい本体と違うだけでは「見つけた」に数えない**（#745。値が違っても判定が通るなら、そのテストは壊れたコードで緑になる）。
 **本体の docstring の「守る」の行数と変異の数が等しいことを、テスト自身が数える。**
+
+**観測と変異は別々のプロセスで同時に当てる**（#1051。`--jobs` で絞る。下の `MUTANT_JOBS_MAX` の上のコメント）。
+観測ごと・変異ごとの秒を行に添え、最後に長い順の上位を出す。**`--part`・`--mutant` で狭く回した回は全部ではない**——
+最後の行が「狭く回した分」と言い、変異と「守る」の照合が全部そろっていることは引数なしの回だけが見る（照合そのものは毎回回す）。
 """
 from __future__ import annotations
 
+import argparse
 import ast
+import concurrent.futures
 import json
+import multiprocessing
 import os
 import re
 import signal
@@ -1084,6 +1094,69 @@ def observe_all(script: Path, tmp: Path, tag: str, only=None) -> dict:
     return {k: f(script, tmp, tag) for k, f in OBSERVERS.items() if only is None or k in only}
 
 
+# **観測と変異は別々のプロセスで同時に当てる**（#1051）——直列に当てると本体のままの観測 16 種と変異 54 本で 389〜439 秒かかり
+# （#1040 の測定と #1051 の分析）、2026-11-15 の `check-all.py`（28 並列）で上位 4 位だった。CPU は 25% ほどで大半は待ち（印・`LIMIT`）なので、重ねれば縮む。
+# **スレッドでは重ねられない**——`observe_deadline` は `os.chdir`・`os.environ` を、`observe_orphan` は `os.getppid` を触る（プロセス全体に効く）。
+# **判定は変えない**——本体のままの観測は作業者が値を返して親で `judge` を当て、変異は作業者の中で `MUTATION_PROBE` の観測に `judge` を当てて落ちた判定を返す。
+# **`--jobs N` で絞る**——`check-all.py` が入れ子として親の半分を渡す（`NESTED`）。上限は `test-check-spec-writeback.py` と同じ 4。
+MUTANT_JOBS_MAX = max(1, min(4, os.cpu_count() or 1))
+MUTANT_JOBS = MUTANT_JOBS_MAX
+pool_sizes: list[int] = []
+
+
+class _MutantPool(concurrent.futures.ProcessPoolExecutor):
+    """観測と変異の作業者のプール。**渡された作業者の数を `pool_sizes` に残す**（`--pool-size` が出す）。"""
+
+    def __init__(self, max_workers, **kwargs):
+        pool_sizes.append(max_workers)
+        super().__init__(max_workers, **kwargs)
+
+
+def _observe_job(job: tuple) -> tuple:
+    """作業者で 1 つ当て、(値, 秒, 例外の名前か None) を返す。
+
+    - `("part", 観測の名前, tmp)`: 本体のままの観測を当て、観測の値を返す（判定は親で当てる）。
+    - `("mutant", 番号, 変異の名前, 変異した本体の中身, tmp)`: 変異した本体を `tmp/mut<番号>/` に置いて `MUTATION_PROBE` の観測と
+      判定を当て、落ちた判定の名前を返す。
+
+    **例外は見つけたと数えない**——名前を返し、親が「当てられなかった」として落とす（#745）。"""
+    start = time.monotonic()
+    tmp = Path(job[-1])
+    try:
+        if job[0] == "part":
+            value = OBSERVERS[job[1]](SCRIPT, tmp, "ok")
+        else:
+            _, i, name, text, _ = job
+            mdir = tmp / f"mut{i}"
+            mdir.mkdir()
+            mutated = mdir / "run-serial.py"
+            mutated.write_text(text, encoding="utf-8")
+            fell: list[str] = []
+            judge(observe_all(mutated, tmp, f"m{i}", MUTATION_PROBE[name]), fell, quiet=True)
+            value = fell
+    except Exception as exc:  # 作業者の中の例外は値として返す——プールの外に投げると、残りの結果まで失う
+        return None, time.monotonic() - start, exc.__class__.__name__
+    return value, time.monotonic() - start, None
+
+
+def run_jobs(jobs: list[tuple]) -> list[tuple]:
+    """`jobs` を `MUTANT_JOBS` 個の作業者で当て、渡した順に結果を返す（終わった順ではない）。"""
+    with _MutantPool(max_workers=MUTANT_JOBS, mp_context=multiprocessing.get_context("spawn")) as pool:
+        return list(pool.map(_observe_job, jobs))
+
+
+def check_pool_size() -> None:
+    """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
+    （`test-check-spec-writeback.py` と同じ形——受けた `--jobs` を使わなくても、遅く・速くなるだけで緑のままなので）。"""
+    for asked in (1, 99):
+        want = min(asked, MUTANT_JOBS_MAX)
+        proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--jobs", str(asked), "--pool-size"],
+                              capture_output=True, text=True, timeout=120)
+        got = proc.stdout.strip()
+        check(f"--jobs {asked} でプールに渡す作業者は {want}（出力: {got or '空'}・終了コード {proc.returncode}）",
+              proc.returncode == 0 and got == str(want))
+
+
 def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
     """観測に判定を当てる。`o` にある観測だけを見る（変異では絞った観測だけ）。落ちた判定は `sink`（無ければ全体の失敗）に足す。"""
     def ck(name: str, cond: bool) -> None:
@@ -1252,30 +1325,81 @@ def annotations(test_source: str) -> list[tuple[str, int, str]]:
 
 
 def main() -> int:
+    global MUTANT_JOBS
+    parser = argparse.ArgumentParser(description="run-serial.py の回帰テスト")
+    parser.add_argument("--jobs", type=int, default=MUTANT_JOBS_MAX,
+                        help=f"観測と変異を同時に当てるプロセスの数（既定と上限: {MUTANT_JOBS_MAX}。1 で 1 つずつ）")
+    parser.add_argument("--part", action="append", choices=list(OBSERVERS), metavar="観測",
+                        help=f"本体のままの観測をこれだけ当てる（繰り返せる。{'・'.join(OBSERVERS)}）。変異は --mutant で名指ししたものだけ")
+    parser.add_argument("--mutant", action="append", metavar="変異",
+                        help="変異をこれだけ当てる（MUTATIONS の名前。繰り返せる）。本体のままの観測は --part で名指ししたものだけ")
+    parser.add_argument("--pool-size", action="store_true",
+                        help="プールに渡す作業者の数を出して終わる（試料の中で使う）")
+    opts = parser.parse_args()
+    if opts.jobs < 1:
+        parser.error(f"--jobs は 1 以上: {opts.jobs}")
+    unknown = [m for m in opts.mutant or [] if m not in MUTATIONS]
+    if unknown:
+        parser.error(f"知らない変異: {'、'.join(unknown)}")
+    MUTANT_JOBS = min(opts.jobs, MUTANT_JOBS_MAX)
+    if opts.pool_size:
+        run_jobs([])  # 当てる経路そのもの（`run_jobs`）でプールを作る——当てるものが 0 件なので作業者は起きない
+        print(pool_sizes[-1] if pool_sizes else "")
+        return 0
+    narrow = opts.part is not None or opts.mutant is not None
+    parts = [k for k in OBSERVERS if not narrow or k in (opts.part or [])]
+    chosen = [k for k in MUTATIONS if not narrow or k in (opts.mutant or [])]
+
+    print("作業者の数:")
+    check_pool_size()
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t).resolve()
         assert_not_real_repo(tmp)
-        correct = observe_all(SCRIPT, tmp, "ok")
+        source = SCRIPT.read_text(encoding="utf-8")
+        jobs: list[tuple] = [("part", name, str(tmp)) for name in parts]
+        order: list[tuple[str, int | None]] = []  # (変異の名前, jobs の番号。当てる先が無ければ None)
+        for i, (name, (needle, replacement)) in enumerate(MUTATIONS.items()):
+            if name not in chosen:
+                continue
+            if needle not in source:
+                order.append((name, None))
+                continue
+            order.append((name, len(jobs)))
+            jobs.append(("mutant", i, name, source.replace(needle, replacement, 1), str(tmp)))
+        print(f"\n本体のままの観測 {len(parts)} 種と変異 {len(chosen)} 本を {MUTANT_JOBS} 並列で当てる"
+              + ("（狭く回した——全部ではない）" if narrow else ""))
+        began = time.monotonic()
+        results = run_jobs(jobs)
+        wall = time.monotonic() - began
+
+        print("\n本体のままの観測（陽性対照）")
+        correct = {}
+        for k, name in enumerate(parts):
+            value, secs, err = results[k]
+            print(f"  観測 {name}: {secs:.1f} 秒")
+            if err is not None:
+                check(f"本体のままの観測を当てられた: {name}（例外: {err}）", False)
+            else:
+                correct[name] = value
         judge(correct)
 
         print("\n変異テスト（壊したのに判定が 1 つも落ちなければ失格）")
-        source = SCRIPT.read_text(encoding="utf-8")
-        for i, (name, (needle, replacement)) in enumerate(MUTATIONS.items()):
-            if needle not in source:
+        for name, k in order:
+            if k is None:
                 check(f"変異を当てる先がある: {name}", False)
                 continue
-            mdir = tmp / f"mut{i}"
-            mdir.mkdir()
-            mutated = mdir / "run-serial.py"
-            mutated.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
-            only = MUTATION_PROBE[name]
-            fell: list[str] = []
-            try:
-                judge(observe_all(mutated, tmp, f"m{i}", only), fell, quiet=True)
-            except Exception as exc:  # 例外は判定の失敗ではない——見つけたと数えず、当てられなかったとして落とす（#745）
-                check(f"変異を当てられた: {name}（観測が例外で止まった: {exc.__class__.__name__}）", False)
+            fell, secs, err = results[k]
+            if err is not None:  # 例外は判定の失敗ではない——見つけたと数えず、当てられなかったとして落とす（#745）
+                check(f"変異を当てられた: {name}（観測が例外で止まった: {err}）", False)
                 continue
-            check(f"変異を殺せる: {name}" + (f"（落ちた判定 {len(fell)} 件。最初: {fell[0]}）" if fell else ""), bool(fell))
+            check(f"変異を殺せる: {name}（{secs:.1f} 秒）"
+                  + (f"（落ちた判定 {len(fell)} 件。最初: {fell[0]}）" if fell else ""), bool(fell))
+
+        timed = sorted([(results[k][1], f"観測 {name}") for k, name in enumerate(parts)]
+                       + [(results[k][1], f"変異 {name}") for name, k in order if k is not None], reverse=True)
+        print(f"\n所要時間（作業者 {MUTANT_JOBS}・当てた全体 {wall:.1f} 秒）。長い順の上位:")
+        for secs, label in timed[:8]:
+            print(f"    {secs:6.1f} 秒  {label}")
 
         print("\n「守る」の行数と変異の数が 1 対 1 か（手で数えない）")
         body = source.split("守る:")[1].split("守らない:")[0]
@@ -1305,7 +1429,7 @@ def main() -> int:
         for name in failures:
             print(f"  - {name}")
         return 1
-    print("順番待ちのテスト: すべて合格")
+    print("順番待ちのテスト: " + ("狭く回した分（--part・--mutant で名指しした分だけ）はすべて合格" if narrow else "すべて合格"))
     return 0
 
 
