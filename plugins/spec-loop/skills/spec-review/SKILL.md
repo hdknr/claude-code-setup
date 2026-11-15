@@ -5,8 +5,8 @@ description: "仕様レビューのループを 1 回分進める。確定した
 
 # spec-review スキル
 
-<!-- skill-version: 0.88.0 -->
-> **このスキルの版: 0.88.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.89.0 -->
+> **このスキルの版: 0.89.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -216,7 +216,7 @@ Alloy は Java と Alloy の jar を置き、正本の `CLAUDE.md` に `Alloy �
   仕様を減らせる指摘（重複・手段の記述・要求に無い決まり）を、足す指摘より先に挙げよ」**（`../../references/spec-exit.md` の「指摘の重さ」「仕様の規模」）
 - **「リポジトリの追跡対象ファイルを変更するな。副作用のある操作（commit・push・投稿・送信・パッケージの導入）をするな。
   コマンドを実行できなかったら、その旨を明記せよ」**
-- 役ごとに: Domain Checker には照合先と性能の要求の表（重ね合わせた全体の `shared/nfr.csv`。無ければ「無い」と。根拠の無い桁上げを見る）、Formal Checker には形式検査の道具（「はじめに」で拾ったもの。TLC は `TLC の呼び方:` の行の呼び方、Alloy は**手順 3 の `check-alloy.py` が 0 を返したときだけ** `Alloy の呼び方:` の行の呼び方——0 でなければ（`用意せずに進める` を選んだときを含む）呼び方を渡さず「Alloy は無い」と渡す）と、
+- 役ごとに: Domain Checker には照合先と性能の要求の表（重ね合わせた全体の `shared/nfr.csv`。無ければ「無い」と。根拠の無い桁上げを見る）、Formal Checker には spec-loop の根の絶対パス（このスキルの base ディレクトリの 2 つ上。反例の段の並びを `../../scripts/tlc-trace.py` で出すため——`../../agents/formal-checker.md`。#1020）と、形式検査の道具（「はじめに」で拾ったもの。TLC は `TLC の呼び方:` の行の呼び方、Alloy は**手順 3 の `check-alloy.py` が 0 を返したときだけ** `Alloy の呼び方:` の行の呼び方——0 でなければ（`用意せずに進める` を選んだときを含む）呼び方を渡さず「Alloy は無い」と渡す）と、
   **権限・ロールを対象に選んだら、権限一覧（重ね合わせた全体の `requirements/roles.csv`。無ければ「無い」と）を入力として**（#957。`../../references/tree.md` の「権限一覧（`requirements/roles.csv`）」）、
   **このスキルが選んだ形式検査の対象と選んだ理由、外した対象と外した理由**（`../../references/spec-exit.md` の「改修の性質で選ぶ」。
   業務フローがシステムに前からあるかは要求と照合先から決める）と、**Domain Checker と同じ照合先**と、
