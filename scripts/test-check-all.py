@@ -268,7 +268,9 @@ def build_fake(root: Path) -> Path:
     (scripts / "ok-t.py").write_text("import time; time.sleep(0.05); print('t ok')\n")
     (scripts / "ok-c.py").write_text("print('c ok')\n")
     # 契約 11 の遅く通る 1 本（#1040）。
-    (scripts / "slow-ok.py").write_text(f"import time; time.sleep({SLOW_OK}); print('slow ok')\n")
+    # 3 本——並列のとき、1 本ごとの合計が壁時計より丸めの誤差を越えて長くなるように（#1040 の 2 パス目）。
+    for slow in ("slow-ok.py", "slow-ok2.py", "slow-ok3.py"):
+        (scripts / slow).write_text(f"import time; time.sleep({SLOW_OK}); print('slow ok')\n")
     (scripts / "bad.py").write_text("import sys; print('BOOM-GUARD'); sys.exit(1)\n")
     (scripts / "bad-test.py").write_text("import sys; print('BOOM-TEST'); sys.exit(1)\n")
     (scripts / "needs-base.py").write_text("print('base ok')\n")
@@ -561,23 +563,24 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
         ("打ち切られた子も名指しする", "落ちたもの: slow-bad.py, killed.py" in out),
     ]
 
-    # 11) 所要時間（#1040）。遅く通る回帰テスト（slow-ok）と遅れて落ちる歯止め（slow-bad。印が無いので KILLED_WAIT 待つ）を含む 6 本と SKIP 1 本。
-    #     **上位の本数（TOP）より 1 本多く回す**——本数を絞らない変異を捕まえるため。
+    # 11) 所要時間（#1040）。遅く通る回帰テスト（slow-ok）と遅れて落ちる歯止め（slow-bad。印が無いので KILLED_WAIT 待つ）を含む 8 本と SKIP 1 本。
+    #     **上位の本数（TOP）より多く回す**——本数を絞らない変異を捕まえるため。
+    #     **遅く通る回帰テストは 3 本で、全部を同時に起こす（--jobs 8）**——合計と壁時計の差を、丸めの誤差より大きくする（下の合計の表明）。
     mod = load(target, f"{tag}_timed")
     mod.SCRIPTS = root / "scripts"
     mod.GUARDS = [("ok-a.py", [], False), ("slow-bad.py", [], False), ("ok-c.py", [], False),
                   ("needs-base.py", [], True)]
-    mod.TESTS = ["slow-ok.py", "ok-t.py", "ok-b.py"]
+    mod.TESTS = ["slow-ok.py", "slow-ok2.py", "slow-ok3.py", "ok-t.py", "ok-b.py"]
     top_n = load(TARGET, f"{tag}_topn").TOP  # 本数は本体の宣言を正とする（変異の側の値ではなく）
     clear_flags(root)  # 契約 10 が置いた killed の印を消す——残っていると slow-bad が待たずに落ちる
-    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "4"])
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "8"])
     status = [l for l in out.splitlines() if l.startswith(("  OK  ", "  FAIL"))]
     t = times(out)
     top = top_entries(out)
     wall = WALL_LINE.search(out)
     got += [
         ("OK と FAIL の全部の行に所要時間が出る（#1040）",
-         len(status) == 6 and len(t) == 6 and all(TIMED_LINE.match(l) for l in status)),
+         len(status) == 8 and len(t) == 8 and all(TIMED_LINE.match(l) for l in status)),
         ("FAIL の行にも所要時間が出る（#1040）", "slow-bad.py" in t),
         ("SKIP の行には所要時間を出さない（#1040）",
          any(l.startswith("  SKIP needs-base.py") and "秒" not in l for l in out.splitlines())),
@@ -591,10 +594,12 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
          and all(f == (n == "slow-bad.py") for _, n, f in top)),
         ("全体の壁時計が出て、1 本の最大以上（#1040）",
          wall is not None and bool(t) and float(wall.group(1)) >= max(t.values())),
-        # **並列（--jobs 4）なので、壁時計は 1 本ごとの合計より短い**——合計を全体と称する変異を捕まえる（#1040 の 1 パス目）。
-        # 合計は遅い 2 本（SLOW_OK と KILLED_WAIT）と 6 本ぶんの起動を足したもの、壁時計はほぼ最も遅い 1 本と base の解決。
+        # **並列（--jobs 8）なので、壁時計は 1 本ごとの合計より短い**——合計を全体と称する変異を捕まえる（#1040 の 1 パス目）。
+        # 合計は遅い 4 本（SLOW_OK × 3 と KILLED_WAIT）と 8 本ぶんの起動を足したもの、壁時計はほぼ最も遅い 1 本と base の解決。
+        # **丸めの誤差ぶんの余裕を取る**（#1040 の 2 パス目）——行の値は 0.1 秒に丸めるので、行の合計は本当の合計より最大 0.05 × 本数だけ大きい。
+        # 余裕なしの `<` では、負荷の下で軽い本が 0.1 に切り上がり、合計を全体と称する変異が 4 回に 1 回ほど素通りした（/code-review の実測）。
         ("全体は壁時計で、1 本ごとの合計ではない（並列。#1040）",
-         wall is not None and bool(t) and float(wall.group(1)) < sum(t.values())),
+         wall is not None and bool(t) and float(wall.group(1)) + 0.05 * (len(t) + 1) < sum(t.values())),
         ("所要時間を出しても判定は変わらない（rc=1・失敗 1・飛ばし 1。#1040）",
          rc == 1 and "（失敗 1 / 飛ばし 1）" in out and "落ちたもの: slow-bad.py" in out),
     ]
