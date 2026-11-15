@@ -3,7 +3,7 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
 `running` のあいだだけ `claude -p` を 1 回ずつ起こし、使用量の上限に当たったら解除の時刻まで待って起こし直す。
 
     python3 <spec-loop の根>/scripts/autopilot-loop.py <版> [--max-launches 20] [--max-stalls 2] [--max-same-state 3] \
-        [--limit-wait 1800] [--max-limit-wait 21600] [--claude claude] [--prompt "/spec-loop:autopilot <版>"] [-- <claude に足す引数> …]
+        [--limit-wait 1800] [--max-limit-wait 21600] [--max-total-usd <ドル>] [--claude claude] [--prompt "/spec-loop:autopilot <版>"] [-- <claude に足す引数> …]
 
 長期トークン（#584）で起こすなら、dev-loop の起動口を `--claude` に渡す——`--claude "bash <dev-loop の skills/dev-loop>/scripts/launch-with-long-token.sh"`
 （アカウントを分けるなら起動口の決まりどおり `… launch-with-long-token.sh --account <名前>`）。起動口は受けた引数をそのまま `claude` に渡す。
@@ -16,7 +16,7 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
 
 **cruise の外側のループ（dev-loop の `skills/cruise/scripts/outer-loop.py`。#791）を写した形だが、import も相対パスでの呼び出しもしない**——spec-loop だけを
 入れた利用者に dev-loop が在るとは限らず、プラグインをまたいで相対パスで指せない（`autopilot-ledger.py` の `main_worktree` の写しと同じ理由）。
-**写しは `notify`・`stop_child` の 2 関数だけ**で、元とずれないことを `scripts/test-autopilot-loop.py`（リポジトリの根）が関数のソースを突き合わせて見る。
+**写しは `notify`・`stop_child`・`cost_of`・`read_cost` の 4 関数だけ**で、元とずれないことを `scripts/test-autopilot-loop.py`（リポジトリの根）が関数のソースを突き合わせて見る。
 ループの本体は、cruise に無い止め方（同じ状態での起動の上限・使用量の上限の待ち）を持つので写しにしていない。
 
 ## 1 回の起動
@@ -27,6 +27,7 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
 2. `autopilot-ledger.py progress <版>`（`phase`・`cycle`・`stage`・`commit` だけの 1 行。`updated` などを含まない）を控える。
 3. 起動の総数が `--max-launches` に達していれば、起こさずに止まる。**同じ `progress` から起こした起動（使用量の上限で終わったものを除く）が `--max-same-state` 回に
    達していれば、起こさずに止まる**——段を行き来させる（A→B→A→B…）起動は毎回 `progress` が変わって前進なしに数えられないので、こちらで止める（#858 の C1-5）。
+   **`--max-total-usd` を渡したなら**、費用を取れなかった起動が 1 つでもあれば（12）、取れた分の合計が上限以上なら（11）、起こさずに止まる（下の「費用の数え方」）。
 4. メインの作業ツリー（台帳の場所——`autopilot-ledger.py path` から）を cwd に、標準入力を閉じて
 
        <--claude> -p <--prompt> --output-format stream-json --verbose --append-system-prompt <追記> [<足す引数> …]
@@ -36,13 +37,14 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
    cruise の `outer-loop.py` と同じ。0 で止めずに待つことは測っていない）。利用者の環境に別の値があっても 0 で上書きし、上書きしたことを出す。
    **追記（`APPEND`）は、非対話の起動の決まりを渡す**——`status` が `running` でなければ何もせず台帳も書き換えずに終える・進めるのは次の 1 単位まで
    （#790 の直し方の「ループが終われなかったときの二重の歯止め」）。原本は入口のスキル（#849）で、追記は短く指すだけにする。
-5. **出力に使用量の上限の印があれば**（下の「上限の読み方」）、解除の時刻に `LIMIT_MARGIN` 秒（既定 60）を足した時刻まで待って（時刻が読めなければ
-   `--limit-wait` 秒）、1 に戻る。待つ時間が `--max-limit-wait` 秒を超えるなら待たずに止まる（週の上限で何日も黙って待たない）。
+5. その起動の費用を数え（下の「費用の数え方」）、`費用:` の行に出す。
+6. **出力に使用量の上限の印があれば**（下の「上限の読み方」）、解除の時刻に `LIMIT_MARGIN` 秒（既定 60）を足した時刻まで待って（時刻が読めなければ
+   `--limit-wait` 秒）、1 に戻る。**待つ前に、4 と同じ費用の上限を見る**——上限に達していれば待たずに止まる（何時間も待ってから止まらない）。待つ時間が `--max-limit-wait` 秒を超えるなら待たずに止まる（週の上限で何日も黙って待たない）。
    **上限の起動は、前進なしにも同じ状態の回数にも数えない**（前進があれば前進なしの数を 0 に戻す）。**起動の総数には数える**——上限が続いても無限には回らない。
-6. 上限の印が無く、`claude` が 0 以外で終わった・起こせなかったら止まる（ログインの期限切れなどで、何も進めずにすぐ終わる起動を繰り返さない）。
-7. もう一度 `progress` を取り、2 と同じなら「前進なし」を 1 つ数える。**続けて `--max-stalls` 回になったら止まる**。変わっていれば数を 0 に戻す。
+7. 上限の印が無く、`claude` が 0 以外で終わった・起こせなかったら止まる（ログインの期限切れなどで、何も進めずにすぐ終わる起動を繰り返さない）。
+8. もう一度 `progress` を取り、2 と同じなら「前進なし」を 1 つ数える。**続けて `--max-stalls` 回になったら止まる**。変わっていれば数を 0 に戻す。
 
-止まるときは、理由を標準出力の最後の行に出し、**通知する**（`osascript` が在れば macOS の通知。本文は argv で渡し、AppleScript の文字列に埋め込まない）。
+止まるときは、理由と費用（`費用: 取れた分の合計 …`）を標準出力の最後の行に出し、**通知する**（`osascript` が在れば macOS の通知。本文は argv で渡し、AppleScript の文字列に埋め込まない）。
 
 ### 上限の読み方
 
@@ -60,12 +62,23 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 解除の時刻に使うのは数だけで、真偽値・NaN は読めないものとして扱う。**ミリ秒のように桁の多い値・無限・float に収まらない整数は、遠い時刻として読み、待ちが長すぎるので 10 で止まる**（単位は測っていない）。
 **`rate_limit_event` で上限と決まったときは、解除の時刻もその event の `resetsAt` だけから読む**（無ければ読めない）——前の行の別の上限の時刻を引き継がない。
 
+### 費用の数え方（#992）
+
+- 起動の出力（stream-json）の**最後の** `result` の `total_cost_usd`。`result` が無い・その値が無い・数でない（真偽値・文字列）・負・有限でない・
+  float に収まらない整数なら、**取れなかった起動**として数え、0 と数えない（読み方は cruise の `outer-loop.py` の `cost_of`・`read_cost` の写し）。
+  **使用量の上限で終わった起動も数える**（費用が載っていれば足し、無ければ取れなかった起動）。`claude` を起こせなかった起動は数えない。
+- **合計は、このループの起動の中だけ**——ループを起こし直すと 0 から数える（起動ごとの出力は残る）。**台帳には書かない**——
+  `autopilot-ledger.py progress` に費用の欄は無く、前進の判定に混ざらない。
+- **上限（`--max-total-usd`）は目安である**——`total_cost_usd` は API の料金に換算した推定で、サブスクリプションの利用枠そのものではなく、
+  1 回の起動の途中では止めないので、最後の起動の分だけ上限を超えうる。**使用量の上限の待ちの代わりにはならない**（あれは利用枠の上限で、こちらは推定の金額）。
+- **止まった行（通知の本文）には、上限を渡していなくても毎回費用を出す**——取れた分の合計・起動の回数と取れなかった回数（何回目か）。
+
 ## 終了コード
 
 | コード | 意味 |
 | --- | --- |
 | 0 | 済んだ——`status` が 5（`done`） |
-| 2 | 引数が違う（版の形——正の整数で先頭に 0 を付けない・桁が `int()` の上限を超える・上限が 1 未満・待ちが負・`--claude` を語に分けられない・`--prompt` が空）。**通知しない**（引数を読む前に止まる） |
+| 2 | 引数が違う（版の形——正の整数で先頭に 0 を付けない・桁が `int()` の上限を超える・上限が 1 未満・待ちが負・`--max-total-usd` が正の有限の数でない・`--claude` を語に分けられない・`--prompt` が空）。**通知しない**（引数を読む前に止まる） |
 | 3 | 止まった——`status` が 3（`stopped`）。理由と利用者に頼むことは `autopilot-ledger.py status <版>` の出力（止まった行にも写す） |
 | 4 | 判定できなかった——`status` が 4 か表に無い値・`progress` が 0 以外・台帳の場所を決められない・出力の置き場を作れない・ループの中の予期しない例外。**「済んだ」とも「止まった」とも答えていない** |
 | 6 | 前進なし——`progress` の変わらない起動が続けて `--max-stalls` 回 |
@@ -73,6 +86,8 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 | 8 | `claude` が 0 以外で終わった（使用量の上限と読めない）・起こせなかった |
 | 9 | 同じ状態での起動の上限——同じ `progress` から（使用量の上限で終わらなかった）起動を `--max-same-state` 回起こした（段の行き来） |
 | 10 | 使用量の上限の解除が遠い——待つ時間が `--max-limit-wait` 秒を超える |
+| 11 | 費用の上限——取れた分の合計が `--max-total-usd` 以上（次を起こす前と、使用量の上限を待つ前に見る） |
+| 12 | 費用を取れない——`--max-total-usd` を渡したのに、費用を取れなかった起動がある（上限を守れると言えない） |
 | 130 | 中断された（Ctrl-C・SIGTERM・SIGHUP。待ちの中も。起動時に無視させられていたシグナルは除く） |
 
 ## 何を守り、何を守らないか
@@ -105,7 +120,7 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 - **上限と読めない失敗は、`progress` を読む前に 8 で止まる**——台帳が読めなくても `claude` の失敗の理由を隠さない。
 - **`allowed_warning` の `rate_limit_event` と、JSON の中のアシスタントの文の「usage limit」を上限と読まない。**
 - **`rate_limit_event` は最後の 1 つで決める**——途中で拒まれて後で `allowed` に戻った起動を上限と読まない。
-- **引数を読めた後の止まるすべての経路で通知する**——済んだ・止まった・判定できない・前進なし・起動の上限・同じ状態の上限・`claude` の失敗・解除が遠い・
+- **引数を読めた後の止まるすべての経路で通知する**——済んだ・止まった・判定できない・前進なし・起動の上限・同じ状態の上限・`claude` の失敗・解除が遠い・費用の上限・費用を取れない・
   中断（`claude` の実行中も待ちの中も）・ループの中の予期しない例外。
 - **`claude` の cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも同じ。
 - **`claude` の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——利用者の環境に無くても、別の値があっても（上書きしたと出す）。
@@ -115,7 +130,15 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 - **版は正の整数だけで、先頭の 0 と桁が `int()` の上限を超える値を 2 で拒む**——台帳と同じ形（`autopilot-ledger.py` が `03` を拒むので、ここで別の台帳を指さない）。
 - **起動時に無視させられていた SIGTERM・SIGHUP（`nohup` の SIGHUP など。SIG_IGN）にはハンドラを置かない**——無視したまま回り続ける（cruise の `outer-loop.py` と同じ。#820）。
 - **中断されたら、`claude` にまず SIGTERM を送って `GRACE` 秒（既定 10）終わるのを待ち、終わらなければ SIGKILL で止める**——`claude` を残したまま終わらない。
-- **`notify`・`stop_child` は cruise の `outer-loop.py` の写しで、ソースが一致する**（テストが突き合わせる）。
+- **`notify`・`stop_child`・`cost_of`・`read_cost` は cruise の `outer-loop.py` の写しで、ソースが一致する**（テストが突き合わせる。費用の値の読み方の「守る」は `outer-loop.py` を正とする）。
+- **費用の読めない起動を 0 と数えない**——取れなかった起動として数える（#992）。
+- **使用量の上限で終わった起動の費用も数える。**
+- **起こせなかった起動は、費用を数える起動に入れない。**
+- **取れた分の合計が `--max-total-usd` 以上なら、次を起こさずに止まる（11）**——ちょうど上限でも起こさない。
+- **使用量の上限を待つ前にも費用の上限を見て、達していれば待たずに止まる（11）。**
+- **`--max-total-usd` を渡したなら、費用を取れなかった起動があれば、次を起こさずに止まる（12）。**
+- **`--max-total-usd` を渡さなければ、費用を取れなくても止めない**——止まった行に数を出すだけ。
+- **止まった行（通知の本文）に、費用の合計と取れなかった起動の数を出す**——上限を渡していなくても・費用で止まったのでなくても。
 
 守らない:
 
@@ -133,6 +156,11 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
   0 以外で終わるので 8 で止まる。
 - **同じ台帳を回すループ・対話のセッションが他に走っていないか**——台帳を書くのは 1 体である。
 - **出力の置き場（`spec-autopilot-v<版>-loop/`）を消すこと・大きさ**——起動ごとにファイルが増える。
+- **本物の `total_cost_usd` が何を含むか**——起動の中のサブエージェント（判定役）の分を含むと読んでいるが、本物の `claude -p` で測っていない。
+  使用量の上限・中断で終わった起動の `result` に費用が載るかも測っていない（載らなければ取れなかった起動になる）。
+  **`--max-total-usd` を渡したループでは、費用の載らない使用量の上限の起動は、待って再開せずに 12 で止まる**——上限を守れると言えないので。
+- **上限を超えないこと**——判定は起動と起動の間（と使用量の上限の待ちの前）だけで、起動の途中では止めない。値は API の料金に換算した推定である。
+- **ループを起こし直した後の合計**——このループの起動の中だけを数える（台帳に書かないので、前のループの分を数える出所が無い）。
 """
 
 import argparse
@@ -174,6 +202,8 @@ EXIT_LIMIT = 7
 EXIT_CLAUDE = 8
 EXIT_SAME_STATE = 9
 EXIT_LIMIT_FAR = 10
+EXIT_BUDGET = 11
+EXIT_COST_UNKNOWN = 12
 EXIT_INTERRUPTED = 130
 
 
@@ -278,6 +308,67 @@ def read_limit(paths, rc):
     return limited, reset
 
 
+def cost_of(value):
+    """費用の値を float で。読めなければ None——数でない・真偽値・負・有限でない・float に収まらない整数を 0 と読まない。"""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        value = float(value)
+    except OverflowError:  # 桁の多すぎる整数——例外にせず読めないものとして扱う
+        return None
+    return value if math.isfinite(value) and value >= 0 else None
+
+
+def read_cost(path):
+    """その起動の費用（出力の最後の `result` の `total_cost_usd`）。`result` が無い・値が読めなければ None。"""
+    try:
+        lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    last = None
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            last = event
+    return cost_of(last.get("total_cost_usd")) if last is not None else None
+
+
+class Costs:
+    """このループの起動の中の費用（#992）。台帳には書かない——`progress` に混ぜない。"""
+
+    def __init__(self):
+        self.known = 0.0
+        self.launches = 0  # 費用を数えた起動（起こせなかった起動は入れない）
+        self.missing = []  # 取れなかった起動の番号
+
+    def add(self, n, cost):
+        self.launches += 1
+        if cost is None:
+            self.missing.append(n)
+        else:
+            self.known += cost
+
+    def summary(self):
+        line = f"取れた分の合計 ${self.known:.2f}・起動 {self.launches} 回のうち取れなかった {len(self.missing)} 回"
+        if self.missing:
+            line += "（" + "・".join(f"{n} 回目" for n in self.missing) + "）"
+        return line
+
+
+def over_budget(args):
+    """費用で止まるなら (終了コード, 理由)、止まらないなら None。上限を渡していなければ止めない。"""
+    if args.max_total_usd is None:
+        return None
+    if args.costs.missing:
+        return EXIT_COST_UNKNOWN, f"費用を取れない起動がある——上限 ${args.max_total_usd:.2f} を守れると言えないので起こさない"
+    if args.costs.known >= args.max_total_usd:
+        return EXIT_BUDGET, f"費用の上限 ${args.max_total_usd:.2f} に達した（status は running のまま）"
+    return None
+
+
 def launch(args, main_tree, logs, n):
     """(終了コード か None, 出力のファイルの組)。"""
     cmd = [*args.claude_cmd, "-p", args.prompt, "--output-format", "stream-json", "--verbose",
@@ -346,8 +437,14 @@ def run_loop(args):
             return EXIT_LIMIT, f"起動の上限 {args.max_launches} 回に達した（status は running のまま）"
         if seen.get(before, 0) >= args.max_same_state:
             return EXIT_SAME_STATE, f"同じ状態（{before.strip()}）から {seen[before]} 回起こした（{launches} 回起動）"
+        stop = over_budget(args)
+        if stop:
+            return stop
         launches += 1
         rc, files = launch(args, main_tree, logs, launches)
+        if rc is not None:
+            args.costs.add(launches, read_cost(files[0]))
+        print(f"費用: {args.costs.summary()}", flush=True)
         limited, reset = read_limit(files, rc) if rc is not None else (False, None)
         if not limited and rc != 0:  # progress を読む前に——台帳が読めなくても失敗の理由を隠さない
             return EXIT_CLAUDE, f"claude が失敗した（{rc if rc is not None else '起こせない'}・{launches} 回目の起動）"
@@ -363,6 +460,9 @@ def run_loop(args):
             else:
                 wait = args.limit_wait
                 why = "解除の時刻を読めない"
+            stop = over_budget(args)
+            if stop:  # 使用量の上限を待つ前に——上限を超えた後に何時間も待ってから止まらない
+                return stop
             if wait > args.max_limit_wait:
                 return EXIT_LIMIT_FAR, f"使用量の上限の解除が遠い（{why}・待ち {wait:.0f} 秒 > {args.max_limit_wait} 秒・{launches} 回目の起動）"
             print(f"使用量の上限（{why}）——{int(wait)} 秒待つ", flush=True)
@@ -386,6 +486,7 @@ def build_parser():
     p.add_argument("--max-same-state", type=int, default=3, help="同じ progress から起こす回数の上限（既定 3）")
     p.add_argument("--limit-wait", type=int, default=1800, help="上限の解除の時刻が読めないとき待つ秒数（既定 1800）")
     p.add_argument("--max-limit-wait", type=int, default=21600, help="これより長く待つなら止まる（秒。既定 21600）")
+    p.add_argument("--max-total-usd", type=float, default=None, help="費用の合計の上限（ドル。既定なし——上限なし）")
     p.add_argument("--claude", default="claude", help="claude を起こすコマンド（既定 claude。長期トークンなら起動口）")
     p.add_argument("--prompt", default=None, help="起こす文（既定 /spec-loop:autopilot <版>）")
     return p
@@ -418,10 +519,12 @@ def main(argv=None):
     if (not re.fullmatch(r"[1-9][0-9]*", args.version) or (limit and len(args.version) > limit)
             or args.max_launches < 1 or args.max_stalls < 1 or args.max_same_state < 1
             or args.limit_wait < 0 or args.max_limit_wait < 0 or not args.claude_cmd
+            or (args.max_total_usd is not None and not (math.isfinite(args.max_total_usd) and args.max_total_usd > 0))
             or (args.prompt is not None and not args.prompt.strip())):
-        print("引数が違う: 版は正の整数（先頭に 0 を付けない）、上限は 1 以上、待ちは 0 以上、--claude は語に分けられるコマンド、--prompt は空でない",
-              file=sys.stderr)
+        print("引数が違う: 版は正の整数（先頭に 0 を付けない）、上限は 1 以上、待ちは 0 以上、--max-total-usd は正の有限の数、"
+              "--claude は語に分けられるコマンド、--prompt は空でない", file=sys.stderr)
         return EXIT_USAGE
+    args.costs = Costs()
     if args.prompt is None:
         args.prompt = f"/spec-loop:autopilot {args.version}"
     # **起動時に無視させられていたら（`nohup` の SIGHUP など。SIG_IGN）置かない**——上書きすると、無視させて起動した側の意図を破って止まる（#820 と同じ）
@@ -439,6 +542,7 @@ def main(argv=None):
         for s, h in saved.items():
             signal.signal(s, h)
     line = f"autopilot の外側のループ: 止まった（v{args.version}: {reason}）"
+    line += f" 費用: {args.costs.summary()}"
     print(line, flush=True)
     notify(line)
     return code

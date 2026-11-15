@@ -41,7 +41,7 @@ SCRIPT = REAL_REPO / "plugins" / "spec-loop" / "scripts" / "autopilot-loop.py"
 LEDGER = REAL_REPO / "plugins" / "spec-loop" / "scripts" / "autopilot-ledger.py"
 CRUISE_LOOP = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "outer-loop.py"
 LONG_TOKEN = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "launch-with-long-token.sh"
-COPIED = ("notify", "stop_child")
+COPIED = ("notify", "stop_child", "cost_of", "read_cost")
 TOKEN = "fake-long-token-850"
 CONTROL = "（陽性対照）"
 
@@ -77,6 +77,8 @@ for line in step.get("stdout", []):
     print(line.replace("RESET", str(reset)))
 for line in step.get("stderr", []):
     print(line.replace("RESET", str(reset)), file=sys.stderr)
+if "cost" in step:  # 費用（#992）——最後の result に total_cost_usd を載せる
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": step["cost"]}))
 sys.stdout.flush()
 if step.get("hang"):  # SIGTERM を受けたら印を書いて終わる（後始末の代わり）
     def on_term(*_):
@@ -162,6 +164,17 @@ MUTATIONS = {
     "無視させられたシグナルにもハンドラを置く": [("\n             if signal.getsignal(s) != signal.SIG_IGN}", "}")],
     "中断でいきなり SIGKILL": [("        proc.terminate()\n", "        proc.kill()\n")],
     "写しを書き換える": [("        proc.wait(timeout=GRACE)\n", "        proc.wait(timeout=GRACE + 0)\n")],
+    "読めない起動を 0 と数える": [("        if cost is None:\n            self.missing.append(n)\n        else:\n            self.known += cost\n",
+                                "        self.known += cost or 0.0\n")],
+    "使用量の上限の起動の費用を数えない": [("        if rc is not None:\n            args.costs.add(",
+                                          "        if rc is not None and not read_limit(files, rc)[0]:\n            args.costs.add(")],
+    "起こせなかった起動も数える": [("        if rc is not None:\n            args.costs.add(", "        if True:\n            args.costs.add(")],
+    "ちょうど上限なら起こす": [("    if args.costs.known >= args.max_total_usd:\n", "    if args.costs.known > args.max_total_usd:\n")],
+    "使用量の上限を待つ前に費用の上限を見ない": [("            stop = over_budget(args)\n            if stop:  # 使用量の上限を待つ前に",
+                                              "            stop = None\n            if stop:  # 使用量の上限を待つ前に")],
+    "費用を取れなくても上限があれば止めない": [("    if args.costs.missing:\n", "    if False:\n")],
+    "上限が無くても費用を取れなければ止める": [("    if args.max_total_usd is None:\n        return None\n", "")],
+    "止まった行に費用を出さない": [('    line += f" 費用: {args.costs.summary()}"\n', "")],
 }
 
 
@@ -544,6 +557,39 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     plan["42"] = [{"corrupt": True, "rc": 1}]
     go("A42 壊して失敗", 42, [])
 
+    # ---- 費用（#992）----
+    # B1: 1 起動 0.5 ドル・上限 1.0 → 2 回でちょうど上限 → 3 回目を起こさずに 11
+    make(50)
+    plan["50"] = [{"ledger": [stage(50, s)], "cost": 0.5} for s in ("round1", "fix1", "round2")]
+    go("B1 ちょうど上限", 50, ["--max-total-usd", "1.0"])
+
+    # B2: 上限あり・費用の出ない起動 → 1 回で 12
+    make(51)
+    plan["51"] = [{"ledger": [stage(51, "round1")]}, {"ledger": [done(51)]}]
+    go("B2 取れない・上限あり", 51, ["--max-total-usd", "100"])
+
+    # B3: 上限なし・費用あり／無し／あり → 止めずに済み、取れなかった数を出す。progress と台帳のファイルに費用が入らない
+    make(52)
+    plan["52"] = [{"ledger": [stage(52, "round1")], "cost": 0.75}, {"ledger": [stage(52, "fix1")]}, {"ledger": [done(52)], "cost": 0.25}]
+    go("B3 取れない・上限なし", 52, [])
+    prog = subprocess.run([sys.executable, str(LEDGER), "progress", "52"], cwd=root, capture_output=True, text=True)
+    o["B3 progress"] = (prog.returncode, prog.stdout)
+    o["B3 台帳のファイル"] = (root / ".claude" / "plans" / "spec-autopilot-v52.json").read_text(encoding="utf-8")
+
+    # B4: 使用量の上限で終わった起動の費用も数える（上限 0.3 → 済む 0.2 で合計 0.50）
+    make(53)
+    plan["53"] = [{"rc": 1, "stdout": ["usage limit reached"], "cost": 0.3}, {"ledger": [done(53)], "cost": 0.2}]
+    go("B4 上限の起動の費用", 53, ["--limit-wait", "0"])
+
+    # B5: 上限 1.0・使用量の上限で終わった起動が 1.0 → 待たずに 11
+    make(54)
+    plan["54"] = [{"rc": 1, "stdout": ["usage limit reached"], "cost": 1.0}, {"ledger": [done(54)]}]
+    go("B5 待つ前に費用の上限", 54, ["--max-total-usd", "1.0", "--limit-wait", "9"])
+
+    # B6: 上限の値が違う → 2
+    for key, value in (("0", "0"), ("負", "-1"), ("nan", "nan"), ("inf", "inf"), ("数でない", "abc")):
+        o[f"B6 上限 {key}"] = run(mod, ["50", "--max-total-usd", value], root)[0]
+
     # A30: 引数が違う → 2。通知しない
     go("A30 引数", 30, ["--max-same-state", "0"])
     limit = sys.get_int_max_str_digits()
@@ -634,6 +680,23 @@ def main() -> int:
               and all(a(f"A30 {k}") == 2 for k in ("先頭 0", "0", "番号でない", "ASCII でない", "桁が多すぎる", "負の待ち",
                                                    "空の文", "語に分けられない --claude", "上限 0")))
         check("A30 int() の上限ちょうどの桁数は通る（台帳が無いので 4）", a("A30 上限ちょうどの桁数（台帳が無いので 4）") == 4)
+        line = lambda key: a(key)[0][1]  # noqa: E731
+        check("B1 ちょうど上限で 3 回目を起こさずに 11（起動 2・通知 1）・合計を出す",
+              res("B1 ちょうど上限") == 11 and a("B1 ちょうど上限")[1:] == (2, 1) and "費用の上限 $1.00 に達した" in line("B1 ちょうど上限")
+              and "費用: 取れた分の合計 $1.00・起動 2 回のうち取れなかった 0 回" in line("B1 ちょうど上限"))
+        check("B2 上限があり費用を取れない起動があれば、次を起こさずに 12（起動 1）",
+              res("B2 取れない・上限あり") == 12 and a("B2 取れない・上限あり")[1:] == (1, 1) and "取れなかった 1 回（1 回目）" in line("B2 取れない・上限あり"))
+        check("B3 上限が無ければ止めずに済み、取れなかった数を出す（0 と合計しない）",
+              res("B3 取れない・上限なし") == 0 and "合計 $1.00・起動 3 回のうち取れなかった 1 回（2 回目）" in line("B3 取れない・上限なし"))
+        check("B3 progress の出力に費用が入らない", a("B3 progress")[0] == 0 and a("B3 progress")[1].strip() != ""
+              and not re.search(r"cost|費用|0\.75|0\.25", a("B3 progress")[1]))
+        check("B3 台帳のファイルに費用が入らない", not re.search(r"cost|費用|0\.75|0\.25", a("B3 台帳のファイル")))
+        check("B4 使用量の上限で終わった起動の費用も数える（0・合計 $0.50）",
+              res("B4 上限の起動の費用") == 0 and "合計 $0.50・起動 2 回のうち取れなかった 0 回" in line("B4 上限の起動の費用"))
+        check("B5 使用量の上限を待つ前に費用の上限を見て、待たずに 11（起動 1・待ち 0）",
+              res("B5 待つ前に費用の上限") == 11 and a("B5 待つ前に費用の上限")[1:] == (1, 1) and a("B5 待つ前に費用の上限 待ち") == [])
+        check("B6 上限が 0・負・nan・inf・数でないなら 2", all(o[f"B6 上限 {k}"] == 2 for k in ("0", "負", "nan", "inf", "数でない")))
+        check("A11 起こせなかった起動は費用の起動に数えない", "起動 0 回" in line("A11 claude が無い"))
         check("止まった行に版と理由が出る", a("A2 時刻だけ")[0][1].startswith("autopilot の外側のループ: 止まった（v2: 前進なしが続けて 2 回"))
         body = notes(Path(os.environ["FAKE_HOME"]))
         check("通知の本文は argv で渡す（スクリプトに埋め込まない）",

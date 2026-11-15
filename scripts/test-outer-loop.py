@@ -31,6 +31,7 @@ from pathlib import Path
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "outer-loop.py"
 LEDGER = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "ledger.py"
+CHILD_CYCLE = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "child-cycle.py"
 
 failures: list[str] = []
 
@@ -48,6 +49,35 @@ plan = json.load(open(os.environ["FAKE_PLAN"]))[parent]
 step = plan[min(n, len(plan) - 1)]
 for args in step.get("ledger", []):
     subprocess.run([os.environ["FAKE_PY"], os.environ["FAKE_LEDGER"], *args], check=True, capture_output=True)
+# 費用（#992）: 本物の -p と同じく、stream-json を頼まれたときだけ JSON の行を出す
+streamed = "--output-format" in sys.argv and sys.argv[sys.argv.index("--output-format") + 1] == "stream-json"
+if streamed:
+    for line in step.get("stdout", []):
+        print(line)
+    if "cost" in step:
+        print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "total_cost_usd": step["cost"]}))
+    sys.stdout.flush()
+# 子プロセスの周の記録（child-cycle.py と同じ置き場と形）。finished は終わった子・running は claude の名前で走る子
+if step.get("children"):
+    path = subprocess.run([os.environ["FAKE_PY"], os.environ["FAKE_LEDGER"], "path", "issue-" + parent],
+                          check=True, capture_output=True, text=True).stdout.strip()
+    kids = os.path.join(os.path.dirname(path), "cruise-issue-%s-children" % parent)
+    os.makedirs(kids, exist_ok=True)
+    for i, kid in enumerate(step["children"]):
+        number = 700 + i
+        if kid.get("running"):
+            p = subprocess.Popen([os.environ["FAKE_PY"], os.path.join(home, "child-bin", "claude"), "-p", "/dev-loop:dev-loop", str(number)],
+                                 start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with open(os.path.join(home, "running-pids"), "a") as f:
+                f.write("%d\n" % p.pid)
+        else:
+            p = subprocess.Popen(["true"])
+            p.wait()
+        base = os.path.join(kids, "%d-2026%04d" % (number, n))
+        with open(base + ".jsonl", "w") as f:
+            for line in kid.get("stdout", []):
+                f.write(line + "\n")
+        json.dump({"pid": p.pid, "number": number, "out": base + ".jsonl"}, open(base + ".json", "w"))
 if step.get("corrupt"):
     out = subprocess.run([os.environ["FAKE_PY"], os.environ["FAKE_LEDGER"], "path", "issue-" + parent],
                          check=True, capture_output=True, text=True).stdout.strip()
@@ -64,6 +94,9 @@ if step.get("hang"):
     open(os.path.join(home, "survived-%s" % parent), "w").close()  # SIGKILL されていれば書かれない
 sys.exit(step.get("rc", 0))
 """
+
+# 走っている子の代わり: `ps` に `… /claude -p /dev-loop:dev-loop <番号>` と出て、しばらく居る
+FAKE_CHILD = "#!/usr/bin/env python3\nimport time\ntime.sleep(120)\n"
 
 FAKE_OSASCRIPT = r"""#!/usr/bin/env python3
 import json, os, sys
@@ -93,6 +126,25 @@ MUTATIONS = {
     "無視させられたシグナルにもハンドラを置く": [("\n             if signal.getsignal(s) != signal.SIG_IGN}", "}")],
     "中断でいきなり SIGKILL": [("        proc.terminate()\n", "        proc.kill()\n")],
     "時間切れでも SIGKILL しない": [("        proc.kill()\n        proc.wait()\n", "        proc.wait()\n")],
+    "stream-json で起こさない": [('"--output-format", "stream-json", "--verbose",\n', "\n")],
+    "最初の result で読む": [("            last = event\n", "            last = last or event\n")],
+    "読めない起動を 0 と数える": [("        if cost is None:\n            self.missing.append(n)\n        else:\n            self.known += cost\n",
+                                "        self.known += cost or 0.0\n")],
+    "真偽値を費用と読む": [("    if not isinstance(value, (int, float)) or isinstance(value, bool):\n",
+                         "    if not isinstance(value, (int, float)):\n")],
+    "負・有限でない値を費用と読む": [("    return value if math.isfinite(value) and value >= 0 else None\n", "    return value\n")],
+    "float に収まらない整数で落ちる": [("    try:\n        value = float(value)\n    except OverflowError:  # 桁の多すぎる整数——例外にせず読めないものとして扱う\n        return None\n",
+                                     "    value = float(value)\n")],
+    "起こせなかった起動も数える": [("        if rc is not None:\n            costs.add(", "        if True:\n            costs.add(")],
+    "ちょうど上限なら起こす": [("            if costs.total() >= args.max_total_usd:\n", "            if costs.total() > args.max_total_usd:\n")],
+    "費用を取れなくても上限があれば止めない": [("            if costs.unknown():\n", "            if False:\n")],
+    "上限が無くても費用を取れなければ止める": [("        if args.max_total_usd is not None:\n            if costs.unknown():\n",
+                                         "        if True:\n            if costs.unknown():\n")],
+    "子の費用を数えない": [("        costs.children = child_costs(children, seen)\n", "")],
+    "起動時に在った子の記録も数える": [("        if meta_path.name in seen:\n            continue\n", "")],
+    "走っている子を取れなかったと数える": [("                running.append(label)\n                continue\n",
+                                          "                missing.append(label)\n                continue\n")],
+    "止まった行に費用を出さない": [('    line += f" 費用: {args.costs.summary()}"\n', "")],
 }
 
 
@@ -101,6 +153,7 @@ def load(script: Path = SCRIPT):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     mod.LEDGER = LEDGER  # 変異の写しはテンポラリにあるので、台帳は本物の ledger.py で読む
+    mod.CHILD_CYCLE = CHILD_CYCLE  # 子の記録の読み方も本物の child-cycle.py から
     return mod
 
 
@@ -131,6 +184,8 @@ def isolate_env(home: Path) -> None:
         fake = home / "bin" / name
         fake.write_text(body, encoding="utf-8")
         fake.chmod(0o755)
+    (home / "child-bin").mkdir()
+    (home / "child-bin" / "claude").write_text(FAKE_CHILD, encoding="utf-8")  # PATH には置かない
     rest = [p for p in os.environ["PATH"].split(os.pathsep) if p and not os.access(os.path.join(p, "claude"), os.X_OK)]
     os.environ.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(home / "gitconfig"), GIT_CONFIG_NOSYSTEM="1",
                       FAKE_HOME=str(home), FAKE_PY=sys.executable, FAKE_LEDGER=str(LEDGER),
@@ -338,6 +393,72 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         mod.GRACE = saved_grace
     o["S17 claude は残らない"] = not (home / "survived-66").exists()
 
+    # ---- 費用（#992）----
+    def cost_step(parent, n, cost, **kw):
+        return dict(merge(parent, n), cost=cost, **kw)
+
+    # C1: 1 起動 0.5 ドル・上限 1.0 → 2 回でちょうど上限 → 3 回目を起こさずに 11（行が 1 つ残っている）
+    make(70, [(1, "todo"), (2, "todo"), (3, "todo")])
+    plan["70"] = [cost_step(70, i, 0.5) for i in (1, 2, 3)]
+    go("C1 ちょうど上限", 70, ["--max-total-usd", "1.0"])
+
+    # C2: 上限の下で済む → 0。台帳の progress と台帳のファイルに費用が入らない（陽性対照: 止まった行には出る）
+    make(71, [(1, "todo"), (2, "todo")])
+    plan["71"] = [cost_step(71, i, 0.25) for i in (1, 2)]
+    go("C2 上限の下で済む", 71, ["--max-total-usd", "10"])
+    prog = subprocess.run([sys.executable, str(LEDGER), "progress", "issue-71"], cwd=root, capture_output=True, text=True)
+    o["C2 progress"] = (prog.returncode, prog.stdout)
+    o["C2 台帳のファイル"] = (root / ".claude" / "plans" / "cruise-issue-71.json").read_text(encoding="utf-8")
+
+    # C3: 費用の出ない起動（result が無い）・上限あり → 1 回で 12。C4: 同じ筋書き・上限なし → 止めずに済み、数を出す
+    make(72, [(1, "todo"), (2, "todo")])
+    plan["72"] = [merge(72, 1), merge(72, 2)]
+    go("C3 取れない・上限あり", 72, ["--max-total-usd", "100"])
+    make(73, [(1, "todo"), (2, "todo")])
+    plan["73"] = [merge(73, 1), cost_step(73, 2, 0.75)]
+    go("C4 取れない・上限なし", 73, [])
+
+    # C5: 最後の result だけで読む——前の result に費用があっても、最後に無ければ取れない（上限ありで 12）
+    make(74, [(1, "todo"), (2, "todo")])
+    first = json.dumps({"type": "result", "total_cost_usd": 3.0})
+    last = json.dumps({"type": "result", "subtype": "success"})
+    plan["74"] = [dict(merge(74, 1), stdout=[first, last]), merge(74, 2)]
+    go("C5 最後の result", 74, ["--max-total-usd", "100"])
+
+    # C6: 真偽値・負・NaN・float に収まらない整数・文字列は費用と読まない（上限なし——4 回とも取れない）
+    make(75, [(i, "todo") for i in range(1, 6)])
+    weird = ["true", "-1.5", "NaN", "9" * 400, '"0.5"']
+    plan["75"] = [dict(merge(75, i), stdout=['{"type": "result", "total_cost_usd": %s}' % v]) for i, v in enumerate(weird, 1)]
+    go("C6 読めない値", 75, [])
+
+    # C7: 子プロセスの周——ループの前に在った記録（100 ドル）は数えない。終わった子 0.4・費用の無い子・走っている子
+    make(76, [(1, "todo")])
+    kids = root / ".claude" / "plans" / "cruise-issue-76-children"
+    kids.mkdir(parents=True)
+    old = subprocess.Popen(["true"])
+    old.wait()
+    (kids / "1-old.jsonl").write_text(json.dumps({"type": "result", "total_cost_usd": 100}) + "\n", encoding="utf-8")
+    (kids / "1-old.json").write_text(json.dumps({"pid": old.pid, "number": 1, "out": str(kids / "1-old.jsonl")}), encoding="utf-8")
+    child_ok = {"stdout": [json.dumps({"type": "result", "total_cost_usd": 0.4})]}
+    child_none = {"stdout": [json.dumps({"type": "assistant", "message": {}})]}
+    plan["76"] = [cost_step(76, 1, 0.1, children=[child_ok, child_none, {"running": True}])]
+    go("C7 子の費用", 76, [])
+
+    # C8: 上限あり・終わった子は費用あり・走っている子 → 走っている子では止めずに済む（0）
+    make(77, [(1, "todo"), (2, "todo")])
+    plan["77"] = [cost_step(77, 1, 0.1, children=[child_ok, {"running": True}]), cost_step(77, 2, 0.1)]
+    go("C8 走っている子では止めない", 77, ["--max-total-usd", "100"])
+    pids = home / "running-pids"
+    if pids.exists():
+        for line in pids.read_text(encoding="utf-8").split():
+            with contextlib.suppress(OSError):
+                os.kill(int(line), signal.SIGKILL)
+        pids.unlink()
+
+    # C9: 上限の値が違う → 2
+    for key, value in (("0", "0"), ("負", "-1"), ("nan", "nan"), ("inf", "inf"), ("数でない", "abc")):
+        o[f"C9 上限 {key}"] = run(mod, ["70", "--max-total-usd", value], root)[0]
+
     # S12: 引数が違う → 2。通知しない
     go("S12 引数", 61, ["--max-stalls", "0"])
     o["S12 番号でない"] = run(mod, ["abc"], root)[0]
@@ -366,9 +487,11 @@ def main() -> int:
         o = scenario(mod, tmp, "correct")
         a = lambda key: o[key]  # noqa: E731
         check("S1 前進が続けば済むまで回し、0 で止まる（起動 2・通知 1）", a("S1 前進して済む")[0][0] == 0 and a("S1 前進して済む")[1:] == (2, 1))
-        check("S1 claude の引数は -p・/dev-loop:cruise 50 --absent・追記・足す引数",
-              all(r[:3] == ["-p", "/dev-loop:cruise 50 --absent", "--append-system-prompt"] and r[4:] == ["--model", "sonnet"]
-                  and r[3] == mod.APPEND for r in a("S1 引数")))
+        check("S1 claude の引数は -p・/dev-loop:cruise 50 --absent・stream-json・追記・足す引数",
+              all(r == ["-p", "/dev-loop:cruise 50 --absent", "--output-format", "stream-json", "--verbose",
+                        "--append-system-prompt", mod.APPEND, "--model", "sonnet"] for r in a("S1 引数")))
+        check("S1 出力は台帳の隣に起動ごとに残る（.out・.err が 2 つずつ）",
+              sorted(p.suffix for p in (tmp / "repo-correct" / ".claude" / "plans" / "cruise-issue-50-loop").iterdir()) == [".err"] * 2 + [".out"] * 2)
         check("S1 worktree のサブディレクトリから呼んでも cwd はメインの作業ツリー", a("S1 cwd") == [".", "."])
         check("S1 利用者の上限 600000 を 0 で上書きする", a("S1 上限") == ["0", "0"])
         check("S2 note だけの起動は前進なしで、2 回で 6", a("S2 note だけ")[0][0] == 6 and a("S2 note だけ")[1:] == (2, 1))
@@ -407,6 +530,30 @@ def main() -> int:
         check("S16 claude にまず SIGTERM を送り、後始末を待つ", a("S16 claude が SIGTERM を受けた"))
         check("S17 SIGTERM を無視する claude は GRACE 秒で SIGKILL（130）",
               a("S17 SIGTERM を無視する claude")[0][0] == 130 and a("S17 claude は残らない"))
+        line = lambda key: a(key)[0][1]  # noqa: E731
+        check("C1 ちょうど上限で 3 回目を起こさずに 11（起動 2・通知 1）・合計を出す",
+              a("C1 ちょうど上限")[0][0] == 11 and a("C1 ちょうど上限")[1:] == (2, 1)
+              and "費用の上限 $1.00 に達した" in line("C1 ちょうど上限") and "費用: 取れた分の合計 $1.00・起動 2 回のうち取れなかった 0 回" in line("C1 ちょうど上限"))
+        check("C2 上限の下なら済むまで回して 0・合計 $0.50", a("C2 上限の下で済む")[0][0] == 0 and "合計 $0.50" in line("C2 上限の下で済む"))
+        check("C2 progress の出力に費用が入らない", a("C2 progress")[0] == 0 and a("C2 progress")[1].strip() != ""
+              and not re.search(r"cost|費用|0\.25|0\.5", a("C2 progress")[1]))
+        check("C2 台帳のファイルに費用が入らない", not re.search(r"cost|費用|0\.25|0\.5", a("C2 台帳のファイル")))
+        check("C3 上限があり費用を取れない起動があれば、次を起こさずに 12（起動 1）",
+              a("C3 取れない・上限あり")[0][0] == 12 and a("C3 取れない・上限あり")[1:] == (1, 1)
+              and "取れなかった 1 回（1 回目）" in line("C3 取れない・上限あり"))
+        check("C4 上限が無ければ止めずに済み、取れなかった数を出す（0 と合計しない）",
+              a("C4 取れない・上限なし")[0][0] == 0 and "合計 $0.75・起動 2 回のうち取れなかった 1 回（1 回目）" in line("C4 取れない・上限なし"))
+        check("C5 最後の result に費用が無ければ取れない（前の result の値を使わない）",
+              a("C5 最後の result")[0][0] == 12 and "合計 $0.00" in line("C5 最後の result"))
+        check("C6 真偽値・負・NaN・巨大な整数・文字列は費用と読まない（5 回とも取れない）",
+              a("C6 読めない値")[0][0] == 0 and "合計 $0.00・起動 5 回のうち取れなかった 5 回" in line("C6 読めない値"))
+        check("C7 子の費用を足し、ループの前の記録は数えない・走っている子は入れない",
+              a("C7 子の費用")[0][0] == 0
+              and "合計 $0.50・起動 1 回のうち取れなかった 0 回・子 3 体のうち取れなかった 1 体・走っている 1 体" in line("C7 子の費用"))
+        check("C8 上限があっても走っている子では止めない（0）", a("C8 走っている子では止めない")[0][0] == 0
+              and "走っている 1 体" in line("C8 走っている子では止めない"))
+        check("C9 上限が 0・負・nan・inf・数でないなら 2", all(o[f"C9 上限 {k}"] == 2 for k in ("0", "負", "nan", "inf", "数でない")))
+        check("S6 起こせなかった起動は費用の起動に数えない", "起動 0 回" in line("S6 claude が無い"))
         check("止まった行に親と理由が出る", a("S2 note だけ")[0][1].startswith("外側のループ: 止まった（issue-51: 前進なしが続けて 2 回"))
         body = notes(Path(os.environ["FAKE_HOME"]))
         check("通知の本文は argv で渡す（スクリプトに埋め込まない）",
@@ -417,7 +564,7 @@ def main() -> int:
         table = source.split("## 終了コード")[1].split("## ")[0]
         documented = {int(m) for m in re.findall(r"^\| (\d+) \|", table, re.M)}
         defined = {mod.EXIT_DONE, mod.EXIT_USAGE, mod.EXIT_WAITING, mod.EXIT_UNKNOWN, mod.EXIT_STALLED,
-                   mod.EXIT_LIMIT, mod.EXIT_CLAUDE, mod.EXIT_INTERRUPTED}
+                   mod.EXIT_LIMIT, mod.EXIT_CLAUDE, mod.EXIT_BUDGET, mod.EXIT_COST_UNKNOWN, mod.EXIT_INTERRUPTED}
         check(f"表 {sorted(documented)} と定数 {sorted(defined)}", documented == defined)
 
         print("\n変異テスト（壊したのに緑なら失格）")
