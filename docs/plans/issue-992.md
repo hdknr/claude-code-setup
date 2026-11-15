@@ -96,6 +96,7 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 - Verifier: 2 パス目 通した（sonnet）——実行で示せた反証 0 件・テスト全体は枠待ちと時間切れで未確認（A6〜A8 は著者の check-all に依る）・観察 2（中断の行の子が古い・CR1 は上限のときだけ）。**他の周（issue-1040）の test-outer-loop.py の pid 50599 を誤って kill したと自己申告**
 - /code-review: 2 パス目 通した（high）——指摘 9 件。直す 4（R2-1・R2-2・R2-3・R2-4）
 - 2 パス目の指摘対応の起点（狭いパスの起点）: `fb28dfab659f39c2b35a879d72f2328a5335ef94`
+- 2 パス目の指摘対応の終点: `fd1c5f06119cdd40b90444df93ec12da9892c15f`
 - 歯止め（2 パス目の直し）: check-all 80 本のうち 79 本 OK・`test-outer-loop.py` で変異「子の費用を数えない」が素通り（R2-1 で観測が判別するようになり、R2-3 の数え直しがその変異を打ち消した）→ 変異を `child_costs` の足し算を外す形に当て直し、`test-outer-loop.py` を単独で回して合格
 - 歯止め: `check-all.py` 80 本のうち 79 本 OK・1 本（`check-plan-counts.py`——件数の行が無い）が落ち、件数の行を足して単独で回して 0（`8cab16c` の前）
 - 交絡: 実験 1 つ（CR3 の実測）。主張は「背景の体の分を含み、最後の result が累計」。交絡の候補——(1) 1 つ目の result が全部の後に出力されただけで値は途中の値では？→ 1 つ目の modelUsage の cacheRead 98356 が親 1 ターン目の usage（42663）より大きく、親 2 ターン目（34779）と背景の体（残り 20914）を足した量なので、途中の値ではない。(2) 背景の体が走っていない？→ subagent_stats の completed 1・Bash の sleep 15 の tool_use が出ている（陽性）。観測窓: 1 回・haiku・2.1.325・背景の Agent 1 体。/code-review の fork・長い起動は見ていない
