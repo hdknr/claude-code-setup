@@ -21,7 +21,9 @@ spec-loop から来た Issue ではない。`作り直しの元:` の行も無�
 - `plugins/dev-loop/skills/cruise/references/parallel.md` — 「なぜ要るか」「重い検査とアプリの起動は、順番待ちに通す」を宣言の形に合わせる
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 宣言の一覧の `並行の検査:` の項に新しい行を足す（宣言の書き場所の一覧）
 - `docs/plugins/dev-loop-cruise.md` — 公開ページの `並行の検査: N` の項に 1 文（指し先は docstring）
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/dev-loop/skills/*/SKILL.md` — 版（1.110.0 → 1.111.0。能力の追加なので minor）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（1.110.0 → 1.111.0。能力の追加なので minor）
+- `.claude-plugin/marketplace.json` — 同じ版
+- `plugins/dev-loop/skills/*/SKILL.md` — 同じ版の 2 行（`dev-loop`・`cruise`）
 - `docs/plans/issue-1057.md` — この計画
 
 触らない:
@@ -89,9 +91,33 @@ main へのマージで、プラグインの配布（カタログ）と公開サ
 
 - 周の在り処: ブランチ `issue/1057-run-serial-load`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1057`・起点 `b240b30`・base `origin/main` → `b240b304d9f8223adaef41123a773ac6f1742751`
 - 割り目 1（手順 4 の後）: 割らない（cruise の周）
+- 実装: `5385f5b`。`test-run-serial.py --part load` 緑（10.2 秒）・新しい変異 8 本とも殺せる（run-serial 越し）
+- 1 パス目の指摘対応の起点: `5385f5b6c4bd0750b28f5b3c34ce2d87aec741d9`（1 パス目の関門に渡した時点の HEAD）
 - 交絡を潰した手順: 実験なし（負荷は差し替えで決め、実際の負荷に依らない）
+- 関門 1 パス目（2026-11-15）:
+  - Verifier（`dev-loop:dev-loop-verifier`・sonnet。テンプレート 185 行を読んだと報告）: **反証 0 件**。L1〜L10 一致。`--part load` と変異 3 本を当てた（残り 59 本は当てていない）。
+    run-serial の待ちが 12 分を超えたので、自分の待ち手を止めて狭い回（約 11 秒）を run-serial を通さず走らせたと申告（実リポジトリの枠は前後で同じと報告）
+  - `/code-review`（high。走らせられなかった——順番待ちの後ろでシグナルで止まった、と申告。読解と外での写しの確認）: **指摘 10 件**（下の採否の表）。直す 4 件
+  - `check-all.py`（`5385f5b`、run-serial 越し）: 40 本目まで（`test-parallel-stop.py`）で FAIL 2（`check-plan-scope.py`——計画の 1 行に 3 パスを書いて 1 つしか拾われなかった、行を分けて単独で 0。`test-run-serial.py`——CR1 と同じ変異の素通り）。
+    古い形のまま走っていたので、指摘対応の後に止めた（終了 143）——全部の回は指摘対応の後で取り直す
+- 1 パス目の指摘対応: CR1・CR2・CR3・CR4・CR5（下の表）。`test-run-serial.py --part load --part serial` と変異 9 本（守る 1 と 55〜62）を run-serial 越しに当てて全部殺せる
 
 ## 既知の限界・決着済みの論点
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1 既存の変異「枠を取らずに走らせる」（守る 1）の当てる行が 2 つになり、先に出る `take_extra` の行に当たって素通りする | 示せる——`5385f5b` で `test-run-serial.py --mutant 枠を取らずに走らせる` が `FAIL 変異を殺せる`（rc=1）。`check-all.py` の `test-run-serial.py` の FAIL | L8 | 直す——枠を待たずに取る口を `try_slot` 1 つにまとめ（CR9 も同じ直しで消える）、変異の当てる行を 1 つにした |
+| CR2 間隔の時刻を足した枠を取ったときだけ書くので、宣言の枠を取った直後に足せる（#493 の同時起動の形） | 示せる——足した新しい試料「間隔」（A が宣言の枠を取った直後の B）が `5385f5b` の形では B を走らせる（`stamp` を呼ばない形） | L3 | 直す——宣言があるときは宣言の枠を取ったときも門に時刻を書く（`stamp`）。試料「間隔」を A→B の形に変えた |
+| CR3 docstring の「守る 1」と「枠」の節が N 本までと言ったまま | 示せる——docstring の 19・40・118 行（`5385f5b`）| L9 | 直す |
+| CR4 負荷の試料（0.1/3.0・3 つとも同じ値）では 1 分の平均・コアの数・割合を見なくても通る | 示せる（読解。`idle` の比較の式と試料の値の関係） | L2・L8 | 直す——5・15 分の平均を 9.0、空いている 1.9・混んでいる 2.0（境目）にした |
+| CR5 absent-lines.md が M を「足す本数」と書き、docstring（合計）と食い違う | 示せる（absent-lines.md 64 行） | L9 | 直す |
+| CR6 門の `flock` を外しても緑（同時の 2 つの待ち手の試料が無い） | 示せない（変異を当てていない。同時を作る試料が要る） | 無し（L3 の経路だが、示せない） | 残課題 |
+| CR7 `extra.lock` を開けない（権限）と `acquire` から OSError が出て 125——宣言の枠を待たない | 示せない（走らせていない）。宣言があるときだけ | 無し | 残課題（宣言の枠を取るときの `stamp` は OSError を飲む形にした） |
+| CR8 cruise の `SKILL.md` 299 行と `CLAUDE.md` 47 行が `並行の検査:` の本数ずつとだけ言う | 示せる（読解） | 無し（L9 は docstring と parallel.md） | 残課題 |
+| CR9 `take_extra` が `acquire` の枠の取り方を写し、`extra_from` が `slots_from` を写す | — | 無し | 前半は CR1 の直しで消えた。後半は残課題 |
+| CR10 parallel.md が閾値と秒数の値を写している | 示せる（読解） | 無し | 残課題（CR2 の直しで書き直した文から値を外した） |
 
 - 閾値・間隔は測って決めた値ではない（上の「決めたこと」・未証明 (a)）。
 - 古い版の run-serial は新しい行を読まない（N 本のまま）——安全側なので手当てしない。

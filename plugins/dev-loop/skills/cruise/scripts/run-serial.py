@@ -16,7 +16,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 
 ## 枠
 
-**同じリポジトリ（worktree をまたいで）で、同時に走らせるのは `N` 本まで。** `N` はメインの作業ツリーの `.claude/dev-loop.md` の
+**同じリポジトリ（worktree をまたいで）で、同時に走らせるのは `N` 本まで**（`空いているときの検査:` も宣言していれば、空いているときは `M` 本まで——下の「空いていれば足す」）。 `N` はメインの作業ツリーの `.claude/dev-loop.md` の
 宣言 1 行で決める:
 
 ```
@@ -37,7 +37,7 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
 - 読むのは**メインの作業ツリー**の `.claude/dev-loop.md`（共通ディレクトリ `--git-common-dir` が `.git` ならその親）。
   **worktree の中の写しは読まない**——周ごとにブランチの写しが違うと、同じリポジトリで枠の数が食い違う。
   メインの作業ツリーが決まらない（`--separate-git-dir`・サブモジュール・bare）なら宣言は読まず 1。
-- 枠のファイルは共通ディレクトリの下の `dev-loop-serial/slot-<k>.lock`（`k` は 0 から `N-1`）。**枠は `fcntl.flock` の排他で、
+- 枠のファイルは共通ディレクトリの下の `dev-loop-serial/slot-<k>.lock`（`k` は 0 から `N-1`。足した枠は `N` から `M-1`）。**枠は `fcntl.flock` の排他で、
   持ったプロセスが終われば（異常終了でも）外れる。** 持っている間はファイルに pid・場所・コマンド・始めた時刻を書き、待つ側がそれを出す。
 
 ## 空いていれば足す（#1057）
@@ -56,10 +56,10 @@ cruise の親が 7 体のサブエージェントを並行に走らせ、各体�
   上の形に合わない行があるなら、足さず（負荷を読まず）、そう言う。読み方（コードブロックと HTML コメントの中は数えない・メインの作業ツリーだけ）は `並行の検査:` と同じ。
   `並行の検査` を含まない名前なので、この行を知らない古い版の run-serial には黙って無視される（`N` 本のまま）。
 - **空いている**: `os.getloadavg()` の 1 分の平均が `os.cpu_count()` × `IDLE_RATIO`（0.5）未満。**読めなければ**（`getloadavg` が無い・`OSError`・コアの数が分からない）**足さない**。
-- **続けて足さない**: 足した枠は `slot-N`〜`slot-(M-1)` の `M - N` 個だけで、**足した枠を取ったら `SPACING`（60 秒）は次を足さない**——1 分の平均は
-  入れた直後の検査をまだ数えていない（60 秒はその時定数。測って決めた値ではない）。前に足した時刻は枠のディレクトリの `extra.lock` に書き、
+- **続けて足さない**: 足した枠は `slot-N`〜`slot-(M-1)` の `M - N` 個だけで、**枠を取ったら（宣言の `N` 本の枠も足した枠も）`SPACING`（60 秒）は足さない**——1 分の平均は
+  入れた直後の検査をまだ数えていない（60 秒はその時定数。測って決めた値ではない）。枠を取った時刻は枠のディレクトリの `extra.lock` に書き、
   間隔の判定と足した枠を取るのは、そのファイルの `flock` の中で行う（2 つの待ち手が同時に見て両方が足さないように）。
-- **待っている側は、足さない理由を待ちの報告の行に出す**（負荷とコアの数・足した枠も埋まっている・前に足してからの秒・負荷を読めない）。足した枠を取ったら、そう言う。
+- **待っている側は、足さない理由を待ちの報告の行に出す**（負荷とコアの数・足した枠も埋まっている・前に枠を取ってからの秒・負荷を読めない）。足した枠を取ったら、そう言う。
 - 足した枠も期限・持ち主の表示・入れ子は同じ（持ち主は `slot-<k>.lock` の全部から出す）。
 
 ## 期限（#897）
@@ -115,7 +115,7 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 ## 守る／守らない
 
 守る:
-- 同じリポジトリでは、worktree をまたいで、枠の本数（宣言、無ければ 1）を超えて同時に走らせない
+- 同じリポジトリでは、worktree をまたいで、枠の本数（宣言、無ければ 1。空いていて `空いているときの検査:` を宣言していれば、その本数）を超えて同時に走らせない
 - 待たされたら、待っていることと、いま走っているもの（pid・場所・コマンド）を出力で言う
 - 走らせたコマンドの終了コードをそのまま返す（シグナルは 128 + 番号）
 - 入れ子で呼ばれたら（同じリポジトリの枠を持つ順番待ちの子孫）、待たずにそのまま走らせる
@@ -172,7 +172,7 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - `空いているときの検査:` の宣言が無ければ負荷を読まず、枠の本数どおりに待つ（#1057）
 - 宣言があり負荷が閾値未満なら、枠が埋まっていても足した枠を取って走らせる（#1057）
 - 負荷が閾値以上なら足さずに待つ（#1057）
-- 足した枠を取ったら、`SPACING` 秒は次を足さない（#1057）
+- 枠を取ったら（宣言の枠も足した枠も）、`SPACING` 秒は足さない（#1057）
 - 足すのは宣言の上限の本数まで（#1057）
 - 負荷を読めなければ（`getloadavg` が無い・失敗する）足さない（#1057）
 - 待っているあいだ、足さない理由を待ちの報告の行に出す（#1057）
@@ -215,7 +215,7 @@ pid・場所・コマンド・**経過**（枠を取ってから。始めた時�
 - 足した枠を取った後は負荷を見ない——走り出した検査が重くなっても止めない（止めるのは期限だけ）
 - コアの数は `os.cpu_count()`（論理コア）——コンテナの CPU の上限（cgroup）は見ない
 - 前に足した時刻が今より後（時計を戻した）なら、間隔を見ずに足す
-- 間隔は足した枠を取った時刻だけで数える——宣言の `N` 本の枠を取ったものは数えない
+- 宣言の枠を取ってから時刻を書くまでのわずかな間（門の外）に、別の待ち手が足すことはある。時刻を書けなければ（`extra.lock` を開けない）間隔は前の時刻のまま
 
 標準ライブラリのみ。POSIX（`fcntl`）が要る——macOS と Linux。
 """
@@ -402,6 +402,39 @@ def idle() -> tuple[bool, str]:
     return True, f"負荷 {load:.2f}（1 分の平均）がコア {cpus} の {IDLE_RATIO:.0%} 未満"
 
 
+def try_slot(lockdir: Path, k: int) -> int | None:
+    """枠 `slot-<k>.lock` を待たずに取る。取れたら fd、ふさがっていれば None。"""
+    fd = os.open(lockdir / f"slot-{k}.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def write_stamp(gate: int) -> None:
+    """枠を取った時刻を門（`GATE`）に書く——次に足すまでの間隔（`SPACING`）はここから数える。"""
+    os.ftruncate(gate, 0)
+    os.pwrite(gate, repr(time.time()).encode("ascii"), 0)
+
+
+def stamp(lockdir: Path) -> None:
+    """宣言の枠を取ったときにも時刻を書く（`空いているときの検査:` の宣言があるときだけ）——入れた直後の検査は 1 分の平均にまだ出ないので、
+    その直後に足さないように。書けなくても枠は取れているので、走らせるのはやめない。"""
+    try:
+        gate = os.open(lockdir / GATE, os.O_RDWR | os.O_CREAT, 0o644)
+    except OSError:
+        return
+    try:
+        fcntl.flock(gate, fcntl.LOCK_EX)
+        write_stamp(gate)
+    except OSError:
+        pass
+    finally:
+        os.close(gate)
+
+
 def take_extra(lockdir: Path, slots: int, upper: int) -> tuple[int | None, str]:
     """`slots` 本の枠が埋まっているときに、機械が空いていれば足した枠（`slot-<slots>`〜`slot-<upper-1>`）を 1 つ取る。(fd か None, 言うこと)。
 
@@ -418,16 +451,12 @@ def take_extra(lockdir: Path, slots: int, upper: int) -> tuple[int | None, str]:
             last = 0.0
         since = time.time() - last
         if 0 <= since < SPACING:
-            return None, f"前に足してから {span(since)}（{span(SPACING)} あける——1 分の平均は入れた直後の検査をまだ数えていない）"
+            return None, f"前に枠を取ってから {span(since)}（{span(SPACING)} あける——1 分の平均は入れた直後の検査をまだ数えていない）"
         for k in range(slots, upper):
-            fd = os.open(lockdir / f"slot-{k}.lock", os.O_RDWR | os.O_CREAT, 0o644)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                os.close(fd)
+            fd = try_slot(lockdir, k)
+            if fd is None:
                 continue
-            os.ftruncate(gate, 0)
-            os.pwrite(gate, repr(time.time()).encode("ascii"), 0)
+            write_stamp(gate)
             return fd, f"枠は埋まっているが空いている（{said}）——足した枠 slot-{k} を取った（空いていれば {upper} 本まで）"
         return None, f"足した枠も埋まっている（空いていれば {upper} 本まで）"
     finally:
@@ -555,12 +584,11 @@ def acquire(lockdir: Path, slots: int, parent: int, upper: int | None = None) ->
             say(f"呼び出し元（pid {parent}）が居なくなった——枠を取らずに終わる（走らせていない）")
             return None
         for k in range(slots):
-            fd = os.open(lockdir / f"slot-{k}.lock", os.O_RDWR | os.O_CREAT, 0o644)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                os.close(fd)
+            fd = try_slot(lockdir, k)
+            if fd is None:
                 continue
+            if upper > slots:
+                stamp(lockdir)
             if waited is not None:
                 say(f"{time.monotonic() - waited:.1f} 秒待って枠を取った")
             return fd

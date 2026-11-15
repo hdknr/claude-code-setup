@@ -813,7 +813,7 @@ def fake():
     if mode == "raise":
         raise OSError("差し替えた getloadavg")
     value = float(open(path).read())
-    return (value, value, value)
+    return (value, 9.0, 9.0)   # 5 分・15 分の平均は混んでいる値——1 分の平均を見ていなければ結果が変わる
 if mode == "missing":
     del os.getloadavg
 else:
@@ -821,8 +821,8 @@ else:
 os.cpu_count = lambda: 4
 sys.exit(mod.main(sys.argv[5:]))
 """
-LOAD_IDLE = "0.1"   # コア 4 の 50%（2.0）未満——空いている
-LOAD_BUSY = "3.0"   # 2.0 以上——混んでいる
+LOAD_IDLE = "1.9"   # コア 4 の 50%（2.0）のすぐ下——空いている（コアの数を見ない・割合を変えると混んでいる側に倒れる）
+LOAD_BUSY = "2.0"   # ちょうど 2.0——混んでいる（`>=` の境目。割合を上げると空いている側に倒れる）
 
 # `extra_from` を直に当てる試料（#1057）: (宣言, `並行の検査` の本数) → 期待する (上限, 言うことに含む語か None)
 EXTRA_SAMPLES = {
@@ -868,12 +868,12 @@ def observe_load(script: Path, tmp: Path, tag: str) -> dict:
         p = marks / f"{name}.err"
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
-    def pair(case: str, decl: str | None, load: str, mode: str = "fake") -> dict:
+    def pair(case: str, decl: str | None, load: str, mode: str = "fake", spacing: str = "0") -> dict:
         """A は go を待ち、B は a.end を待つ（直列の形）。B が A の終わる前に始めたら「足した」。"""
         root, wt, marks = setup(case, decl, load)
-        a = go(marks, root, "a", "go", mode)
+        a = go(marks, root, "a", "go", mode, spacing)
         started = wait_until(lambda: (marks / "a.start").exists(), [a])
-        b = go(marks, wt, "b", "a.end", mode)
+        b = go(marks, wt, "b", "a.end", mode, spacing)
         wait_until(lambda: "待っている" in err(marks, "b") or (marks / "b.start").exists(), [b], limit=10)
         b_early = (marks / "b.start").exists() and not (marks / "a.end").exists()
         (marks / "go").write_text("")
@@ -915,8 +915,8 @@ def observe_load(script: Path, tmp: Path, tag: str) -> dict:
 
     # 上限: 宣言 2（間隔 0）——A・B の後の C は待つ
     out["上限"] = triple("upper", "空いているときの検査: 2\n", "0")
-    # 間隔: 宣言 3（間隔 1000 秒）——B が足した直後の C は、枠 slot-2 が空いていても待つ
-    out["間隔"] = triple("spacing", "空いているときの検査: 3\n", "1000")
+    # 間隔: 宣言 3（間隔 1000 秒）——A が宣言の枠を取った直後の B は、足した枠が空いていても待つ（#1057 の /code-review 1 パス目）
+    out["間隔"] = pair("spacing", "空いているときの検査: 3\n", LOAD_IDLE, spacing="1000")
 
     # 入れ子: 宣言あり・混んでいる。外が枠を持った中から同じリポジトリの順番待ちを呼んでも、待たずに走る
     root, _, marks = setup("nested", "空いているときの検査: 2\n", LOAD_BUSY)
@@ -937,8 +937,8 @@ MUTATIONS = {
     # main がこの並び・番号・文言を本体と突き合わせる（#758。番号を手で追うと違う行に着いた）
     # 守る 1: 同じリポジトリでは、worktree をまたいで、枠の本数
     "枠を取らずに走らせる": (
-        "                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)",
-        "                pass"),
+        "        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)",
+        "        pass"),
     # 守る 2: 待たされたら、待っていることと
     "待っていると言わない": (
         "            say(head + (\"\" if running else \" （読めなかった）\"))\n"
@@ -1167,7 +1167,7 @@ MUTATIONS = {
     "混んでいても足す": (
         "    if load >= cpus * IDLE_RATIO:",
         "    if False:"),
-    # 守る 58: 足した枠を取ったら、`SPACING` 秒は次を足さない
+    # 守る 58: 枠を取ったら（宣言の枠も足した枠も）、`SPACING` 秒は足さない
     "間隔を見ない": (
         "        if 0 <= since < SPACING:",
         "        if False:"),
@@ -1490,7 +1490,8 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
             ck(f"{label}: 負荷を読んでいない", not p["負荷を読んだ"])
             ck(f"{label}: 待ちの行は今の文言（足す・負荷を言わない）", "待っている" in p["B の出力"] and "足" not in p["B の出力"] and "負荷" not in p["B の出力"])
             ck(f"{label}: 両方 0 で終わった", p["終了コード"] == [0, 0])
-        for label, words in (("混んでいる", "負荷 3.00（1 分の平均）がコア 4 の 50% 以上"),
+        for label, words in (("混んでいる", "負荷 2.00（1 分の平均）がコア 4 の 50% 以上"),
+                             ("間隔", "前に枠を取ってから"),
                              ("getloadavg が OSError", "負荷を読めない（OSError）"),
                              ("getloadavg が無い", "負荷を読めない（AttributeError）")):
             p = ld[label]
@@ -1501,7 +1502,7 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
         ck("空いている: 枠 1 が埋まっていても 2 本が同時に走った", i["2 本が同時に走った"])
         ck("空いている: 足した枠を取ったと言った", i["足したと言った"])
         ck("空いている: 両方 0 で終わった", i["終了コード"] == [0, 0])
-        for label, words in (("上限", "足した枠も埋まっている（空いていれば 2 本まで）"), ("間隔", "前に足してから")):
+        for label, words in (("上限", "足した枠も埋まっている（空いていれば 2 本まで）"),):
             t = ld[label]
             ck(f"{label}: A と B が同時に走った（B は足した枠）", t["A と B が同時に走った"])
             ck(f"{label}: C は A・B が終わるまで始めなかった", not t["C が go の前に始めた"])
