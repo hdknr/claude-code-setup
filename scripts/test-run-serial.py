@@ -917,6 +917,20 @@ def observe_load(script: Path, tmp: Path, tag: str) -> dict:
     out["上限"] = triple("upper", "空いているときの検査: 2\n", "0")
     # 間隔: 宣言 3（間隔 1000 秒）——A が宣言の枠を取った直後の B は、足した枠が空いていても待つ（#1057 の /code-review 1 パス目）
     out["間隔"] = pair("spacing", "空いているときの検査: 3\n", LOAD_IDLE, spacing="1000")
+    # 足した枠の後の間隔（#1057 の /code-review 2 パス目）: 宣言 3・間隔 6 秒。A が宣言の枠を取り、間隔を過ぎてから B が足した枠を取る。
+    # その直後の C は slot-2 が空いていても待つ——足した枠を取ったときに時刻を書かなければ、門の時刻は A のままで C も足す
+    root, wt, marks = setup("spacing-extra", "空いているときの検査: 3\n", LOAD_IDLE)
+    a = go(marks, root, "a", "go", spacing="6")
+    wait_until(lambda: (marks / "a.start").exists(), [a])
+    time.sleep(6.5)
+    b = go(marks, wt, "b", "go", spacing="6")
+    b_ran = wait_until(lambda: (marks / "b.start").exists(), [b], limit=10)
+    c = go(marks, wt, "c", "go", spacing="6")
+    wait_until(lambda: "待っている" in err(marks, "c") or (marks / "c.start").exists(), [c], limit=10)
+    c_early = (marks / "c.start").exists()
+    (marks / "go").write_text("")
+    codes = finish(a, b, c)
+    out["足した枠の後の間隔"] = {"B が足した枠で走った": b_ran, "C が go の前に始めた": c_early, "C の出力": err(marks, "c"), "終了コード": codes}
 
     # 入れ子: 宣言あり・混んでいる。外が枠を持った中から同じリポジトリの順番待ちを呼んでも、待たずに走る
     root, _, marks = setup("nested", "空いているときの検査: 2\n", LOAD_BUSY)
@@ -1508,6 +1522,11 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
             ck(f"{label}: C は A・B が終わるまで始めなかった", not t["C が go の前に始めた"])
             ck(f"{label}: C の待ちの行に足さない理由（{words}）", words in t["C の出力"])
             ck(f"{label}: 全部 0 で終わった", t["終了コード"] == [0, 0, 0])
+        t = ld["足した枠の後の間隔"]
+        ck("足した枠の後の間隔: 間隔を過ぎた B は足した枠で走った", t["B が足した枠で走った"])
+        ck("足した枠の後の間隔: B が足した直後の C は待った", not t["C が go の前に始めた"])
+        ck("足した枠の後の間隔: C の待ちの行に足さない理由（前に枠を取ってから）", "前に枠を取ってから" in t["C の出力"])
+        ck("足した枠の後の間隔: 全部 0 で終わった", t["終了コード"] == [0, 0, 0])
         ck("入れ子（宣言あり・混んでいる）: 外が枠を持った中から呼んでも固まらずに走った", ld["入れ子"]["固まらずに走った"])
         for label, got in ld["extra_from"].items():
             want_n, want_word = EXTRA_SAMPLES[label][2]
