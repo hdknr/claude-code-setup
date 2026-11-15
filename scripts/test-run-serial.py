@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`run-serial.py`（重い検査・アプリの起動の順番待ち。#493）の回帰テスト。
 
-    python3 scripts/test-run-serial.py                    # 全部（本体のままの観測 16 種と変異の全部）
+    python3 scripts/test-run-serial.py                    # 全部（本体のままの観測 17 種と変異の全部）
     python3 scripts/test-run-serial.py --jobs 1           # 観測と変異を 1 つずつ当てる（check-all.py --jobs 1 が渡す）
     python3 scripts/test-run-serial.py --part holders     # 本体のままの観測を名指しした分だけ（繰り返せる。変異は当てない）
     python3 scripts/test-run-serial.py --mutant '経過を出さない'   # 名指しした変異だけ（繰り返せる。本体の観測は当てない）
@@ -797,6 +797,141 @@ def observe_shared(script: Path, tmp: Path, tag: str) -> dict:
     }
 
 
+# 負荷を差し替えて本体の `main` を呼ぶ起動口（#1057）——実際の負荷に依らずに、空いている・混んでいる・読めないの分岐を見る。
+# 引数: 本体・形（`fake`: 負荷は <負荷のファイル> の値、`raise`: `getloadavg` が OSError、`missing`: `getloadavg` が無い）・負荷のファイル・`SPACING`、
+# その後ろが `main` の引数。コアの数は 4 に差し替える。`getloadavg` が呼ばれたら <負荷のファイル>.called に足す（宣言が無ければ読まないことを見る）。
+LOAD_LAUNCHER = r"""
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("rs_load", sys.argv[1])
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+mode, path = sys.argv[2], sys.argv[3]
+mod.SPACING = float(sys.argv[4])
+def fake():
+    with open(path + ".called", "a") as f:
+        f.write("x")
+    if mode == "raise":
+        raise OSError("差し替えた getloadavg")
+    value = float(open(path).read())
+    return (value, value, value)
+if mode == "missing":
+    del os.getloadavg
+else:
+    os.getloadavg = fake
+os.cpu_count = lambda: 4
+sys.exit(mod.main(sys.argv[5:]))
+"""
+LOAD_IDLE = "0.1"   # コア 4 の 50%（2.0）未満——空いている
+LOAD_BUSY = "3.0"   # 2.0 以上——混んでいる
+
+# `extra_from` を直に当てる試料（#1057）: (宣言, `並行の検査` の本数) → 期待する (上限, 言うことに含む語か None)
+EXTRA_SAMPLES = {
+    "宣言なし（ファイルが無い）": (None, 1, (1, None)),
+    "並行の検査だけ": ("並行の検査: 2\n", 2, (2, None)),
+    "上限 3": ("並行の検査: 1\n空いているときの検査: 3\n", 1, (3, None)),
+    "行末の HTML コメント": ("空いているときの検査: 3 <!-- メモ -->\n", 1, (3, None)),
+    "コードブロックの中": ("```\n空いているときの検査: 3\n```\n", 1, (1, None)),
+    "HTML コメントの中": ("<!--\n空いているときの検査: 3\n-->\n", 1, (1, None)),
+    "並行の検査以下": ("並行の検査: 2\n空いているときの検査: 2\n", 2, (2, "以下")),
+    "0": ("空いているときの検査: 0\n", 1, (1, "整数")),
+    "abc": ("空いているときの検査: abc\n", 1, (1, "整数")),
+    "7 桁": ("空いているときの検査: 1234567\n", 1, (1, "整数")),
+    "2 行": ("空いているときの検査: 2\n空いているときの検査: 3\n", 1, (1, "2 本")),
+    "全角のコロン": ("空いているときの検査：3\n", 1, (1, "書式に合わない")),
+    "箇条書き": ("- 空いているときの検査: 3\n", 1, (1, "書式に合わない")),
+}
+
+
+def observe_load(script: Path, tmp: Path, tag: str) -> dict:
+    """負荷を差し替えて、宣言 `空いているときの検査:` の分岐を見る（#1057）。判定は印（`.start`・`.timeout`）と出力の行で決め、時間では決めない。"""
+    import importlib.util
+    launcher = tmp / f"{tag}-load-launcher.py"
+    launcher.write_text(LOAD_LAUNCHER, encoding="utf-8")
+    worker = tmp / f"{tag}-load-worker.py"
+    worker.write_text(WORKER, encoding="utf-8")
+    py = sys.executable
+    out: dict = {}
+
+    def setup(case: str, decl: str | None, load: str):
+        root = tmp / f"{tag}-load-{case}"
+        wt = build_repo(root, decl)
+        marks = tmp / f"{tag}-load-{case}-marks"
+        marks.mkdir()
+        (marks / "load").write_text(load, encoding="utf-8")
+        return root, wt, marks
+
+    def go(marks: Path, cwd: Path, name: str, wait_for: str, mode: str = "fake", spacing: str = "0") -> subprocess.Popen:
+        return launch(launcher, cwd, [py, str(worker), str(marks), name, wait_for, "10"], marks / f"{name}.err",
+                      opts=(str(script), mode, str(marks / "load"), spacing))
+
+    def err(marks: Path, name: str) -> str:
+        p = marks / f"{name}.err"
+        return p.read_text(encoding="utf-8") if p.exists() else ""
+
+    def pair(case: str, decl: str | None, load: str, mode: str = "fake") -> dict:
+        """A は go を待ち、B は a.end を待つ（直列の形）。B が A の終わる前に始めたら「足した」。"""
+        root, wt, marks = setup(case, decl, load)
+        a = go(marks, root, "a", "go", mode)
+        started = wait_until(lambda: (marks / "a.start").exists(), [a])
+        b = go(marks, wt, "b", "a.end", mode)
+        wait_until(lambda: "待っている" in err(marks, "b") or (marks / "b.start").exists(), [b], limit=10)
+        b_early = (marks / "b.start").exists() and not (marks / "a.end").exists()
+        (marks / "go").write_text("")
+        codes = finish(a, b)
+        return {"A が走った": started, "B が A の終わる前に始めた": b_early, "B の出力": err(marks, "b"),
+                "負荷を読んだ": (marks / "load.called").exists(), "終了コード": codes}
+
+    # 宣言が無い（ファイルが無い・`並行の検査` だけ）——空いていても今と同じ（直列・負荷を読まない・文言に「足」が無い）
+    out["宣言なし"] = pair("none", None, LOAD_IDLE)
+    out["並行の検査だけ"] = pair("only", "並行の検査: 1\n", LOAD_IDLE)
+    # 宣言があり混んでいる——待つ。理由に負荷を言う
+    out["混んでいる"] = pair("busy", "空いているときの検査: 2\n", LOAD_BUSY)
+    # 負荷を読めない 2 形——待つ。理由に読めないと言う
+    out["getloadavg が OSError"] = pair("raise", "空いているときの検査: 2\n", LOAD_IDLE, "raise")
+    out["getloadavg が無い"] = pair("missing", "空いているときの検査: 2\n", LOAD_IDLE, "missing")
+
+    # 空いている——A と B が互いの始まりを待つ（同時に走れなければ時間切れ）
+    root, wt, marks = setup("idle", "空いているときの検査: 2\n", LOAD_IDLE)
+    a = go(marks, root, "a", "b.start")
+    b = go(marks, wt, "b", "a.start")
+    codes = finish(a, b)
+    out["空いている"] = {"2 本が同時に走った": not (marks / "a.timeout").exists() and not (marks / "b.timeout").exists()
+                         and (marks / "a.end").exists() and (marks / "b.end").exists(),
+                         "足したと言った": "足した枠 slot-1 を取った" in err(marks, "a") + err(marks, "b"), "終了コード": codes}
+
+    def triple(case: str, decl: str, spacing: str) -> dict:
+        """A・B が走っているところへ C を起こす。C が go の前に始めたら「足した」。"""
+        root, wt, marks = setup(case, decl, LOAD_IDLE)
+        a = go(marks, root, "a", "go", spacing=spacing)
+        wait_until(lambda: (marks / "a.start").exists(), [a])
+        b = go(marks, wt, "b", "go", spacing=spacing)
+        both = wait_until(lambda: (marks / "b.start").exists(), [b], limit=10)
+        c = go(marks, wt, "c", "go", spacing=spacing)
+        wait_until(lambda: "待っている" in err(marks, "c") or (marks / "c.start").exists(), [c], limit=10)
+        c_early = (marks / "c.start").exists()
+        (marks / "go").write_text("")
+        codes = finish(a, b, c)
+        return {"A と B が同時に走った": both, "C が go の前に始めた": c_early, "C の出力": err(marks, "c"), "終了コード": codes}
+
+    # 上限: 宣言 2（間隔 0）——A・B の後の C は待つ
+    out["上限"] = triple("upper", "空いているときの検査: 2\n", "0")
+    # 間隔: 宣言 3（間隔 1000 秒）——B が足した直後の C は、枠 slot-2 が空いていても待つ
+    out["間隔"] = triple("spacing", "空いているときの検査: 3\n", "1000")
+
+    # 入れ子: 宣言あり・混んでいる。外が枠を持った中から同じリポジトリの順番待ちを呼んでも、待たずに走る
+    root, _, marks = setup("nested", "空いているときの検査: 2\n", LOAD_BUSY)
+    mark = marks / "inner.done"
+    inner = [py, str(launcher), str(script), "fake", str(marks / "load"), "0", "--", py, "-c", f"open({str(mark)!r}, 'w').write('x')"]
+    code, _ = run_once(launcher, root, inner, limit=10, opts=(str(script), "fake", str(marks / "load"), "0"))
+    out["入れ子"] = {"固まらずに走った": code == 0 and mark.exists()}
+
+    spec = importlib.util.spec_from_file_location(f"rs_extra_{tag}", script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    out["extra_from"] = {label: mod.extra_from(text, slots) for label, (text, slots, _) in EXTRA_SAMPLES.items()}
+    return out
+
+
 MUTATIONS = {
     # 注釈 `# 守る N: <文言>` は、本体の docstring の「守る」の N 行目の書き出し（「- 」の後ろ）と同じ文言にする——
     # main がこの並び・番号・文言を本体と突き合わせる（#758。番号を手で追うと違う行に着いた）
@@ -1020,6 +1155,38 @@ MUTATIONS = {
     "制御文字を書き換えない": (
         "    line = flat(\"・\".join(parts))",
         "    line = \"・\".join(parts)"),
+    # 守る 55: `空いているときの検査:` の宣言が無ければ負荷を読まず
+    "宣言が無くても足す": (
+        "    if not found:\n        return slots, None",
+        "    if not found:\n        return slots + 1, None"),
+    # 守る 56: 宣言があり負荷が閾値未満なら、枠が埋まっていても足した枠を取って走らせる
+    "空いていても足さない": (
+        "        for k in range(slots, upper):",
+        "        for k in range(slots, slots):"),
+    # 守る 57: 負荷が閾値以上なら足さずに待つ
+    "混んでいても足す": (
+        "    if load >= cpus * IDLE_RATIO:",
+        "    if False:"),
+    # 守る 58: 足した枠を取ったら、`SPACING` 秒は次を足さない
+    "間隔を見ない": (
+        "        if 0 <= since < SPACING:",
+        "        if False:"),
+    # 守る 59: 足すのは宣言の上限の本数まで
+    "上限を超えて足す": (
+        "        for k in range(slots, upper):",
+        "        for k in range(slots, upper + 1):"),
+    # 守る 60: 負荷を読めなければ
+    "読めない負荷を空いていると読む": (
+        "        return False, f\"負荷を読めない（{exc.__class__.__name__}）\"",
+        "        return True, f\"負荷を読めない（{exc.__class__.__name__}）\""),
+    # 守る 61: 待っているあいだ、足さない理由を待ちの報告の行に出す
+    "足さない理由を出さない": (
+        "            why = f\"。空いていれば {upper} 本まで——いまは足さない: {said}\"",
+        "            why = \"\""),
+    # 守る 62: `空いているときの検査` の行が書式に合わないなら、足さずに言う
+    "書式に合わない行を見ない": (
+        "    if strange:",
+        "    if False:"),
 }
 
 OBSERVERS = {
@@ -1027,7 +1194,7 @@ OBSERVERS = {
     "cannot": observe_cannot, "decl": observe_decl, "sigterm": observe_sigterm, "parse": observe_parse,
     "sigint": observe_sigint, "timeout": observe_timeout, "timeout-kill": observe_timeout_kill, "orphan": observe_orphan,
     "deadline": observe_deadline, "timeout-late": observe_timeout_late, "holders": observe_holders,
-    "shared": observe_shared,
+    "shared": observe_shared, "load": observe_load,
 }
 
 # 変異ごとに当てる観測（全部を当てると、待ちの上限で止まる観測が重なって数分かかる）。
@@ -1087,6 +1254,14 @@ MUTATION_PROBE = {
     "自分と同じ出力のファイルも見る": ("shared",),
     "待ち手の標準出力も自分と見る": ("shared",),
     "制御文字を書き換えない": ("shared",),
+    "宣言が無くても足す": ("load",),
+    "空いていても足さない": ("load",),
+    "混んでいても足す": ("load",),
+    "間隔を見ない": ("load",),
+    "上限を超えて足す": ("load",),
+    "読めない負荷を空いていると読む": ("load",),
+    "足さない理由を出さない": ("load",),
+    "書式に合わない行を見ない": ("load",),
 }
 
 
@@ -1306,6 +1481,38 @@ def judge(o: dict, sink: list[str] | None = None, quiet: bool = False) -> None:
         mine = x["待ち手が自分と見るファイル"]
         ck(f"待ち手が自分と見るのは標準エラーのファイルで、標準出力のファイルは見ない（{mine}）",
            mine is not None and tuple(x["標準エラーのファイル"]) in mine and tuple(x["標準出力のファイル"]) not in mine)
+    if "load" in o:
+        ld = o["load"]
+        head(f"\n空いていれば足す（#1057。負荷を差し替える: 空いている {LOAD_IDLE}・混んでいる {LOAD_BUSY}、コア 4）")
+        for label in ("宣言なし", "並行の検査だけ"):
+            p = ld[label]
+            ck(f"{label}: 空いていても B は A が終わるまで始めなかった（今と同じ）", p["A が走った"] and not p["B が A の終わる前に始めた"])
+            ck(f"{label}: 負荷を読んでいない", not p["負荷を読んだ"])
+            ck(f"{label}: 待ちの行は今の文言（足す・負荷を言わない）", "待っている" in p["B の出力"] and "足" not in p["B の出力"] and "負荷" not in p["B の出力"])
+            ck(f"{label}: 両方 0 で終わった", p["終了コード"] == [0, 0])
+        for label, words in (("混んでいる", "負荷 3.00（1 分の平均）がコア 4 の 50% 以上"),
+                             ("getloadavg が OSError", "負荷を読めない（OSError）"),
+                             ("getloadavg が無い", "負荷を読めない（AttributeError）")):
+            p = ld[label]
+            ck(f"{label}: B は A が終わるまで始めなかった", p["A が走った"] and not p["B が A の終わる前に始めた"])
+            ck(f"{label}: 待ちの行に足さない理由（{words}）", "いまは足さない: " + words in p["B の出力"])
+            ck(f"{label}: 両方 0 で終わった", p["終了コード"] == [0, 0])
+        i = ld["空いている"]
+        ck("空いている: 枠 1 が埋まっていても 2 本が同時に走った", i["2 本が同時に走った"])
+        ck("空いている: 足した枠を取ったと言った", i["足したと言った"])
+        ck("空いている: 両方 0 で終わった", i["終了コード"] == [0, 0])
+        for label, words in (("上限", "足した枠も埋まっている（空いていれば 2 本まで）"), ("間隔", "前に足してから")):
+            t = ld[label]
+            ck(f"{label}: A と B が同時に走った（B は足した枠）", t["A と B が同時に走った"])
+            ck(f"{label}: C は A・B が終わるまで始めなかった", not t["C が go の前に始めた"])
+            ck(f"{label}: C の待ちの行に足さない理由（{words}）", words in t["C の出力"])
+            ck(f"{label}: 全部 0 で終わった", t["終了コード"] == [0, 0, 0])
+        ck("入れ子（宣言あり・混んでいる）: 外が枠を持った中から呼んでも固まらずに走った", ld["入れ子"]["固まらずに走った"])
+        for label, got in ld["extra_from"].items():
+            want_n, want_word = EXTRA_SAMPLES[label][2]
+            n, said = got
+            ck(f"extra_from {label}: 上限 {want_n}・言うこと {want_word or '無し'}（{got}）",
+               n == want_n and (said is None if want_word is None else (said is not None and want_word in said)))
 
 
 def annotations(test_source: str) -> list[tuple[str, int, str]]:
