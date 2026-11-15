@@ -21,6 +21,8 @@
 集計の上位（長い順・本数・`OK` と `FAIL` の両方・行の値と一致）と全体の壁時計が出ること、
 `--jobs 1` で後ろの 1 本が前の 1 本の時間を背負わない（順番待ちを測らない）こと。
 **時間を出しても判定が変わらないことは、契約 1〜10 を期待値を変えずに通すことで見る**（11 も rc と「失敗 1」を見る）。
+**契約の 12) も #1040**——回した本が上位の本数より少なく `SKIP` がある回で、見出しの本数と、`SKIP` を上位に入れないことを見る
+（11 だけでは回した本が多く、`SKIP` を 0 秒で足しても上位の外に隠れた）。
 
 **変異は 2 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
 **このファイルの中の判別**（CI の yaml の読み方）に当てる。**後者は自分自身を壊す。**
@@ -587,8 +589,28 @@ def contract(target: Path, root: Path, tag: str) -> list[tuple[str, bool]]:
          and all(f == (n == "slow-bad.py") for _, n, f in top)),
         ("全体の壁時計が出て、1 本の最大以上（#1040）",
          wall is not None and bool(t) and float(wall.group(1)) >= max(t.values())),
+        # **並列（--jobs 4）なので、壁時計は 1 本ごとの合計より短い**——合計を全体と称する変異を捕まえる（#1040 の 1 パス目）。
+        # 合計は遅い 2 本（SLOW_OK と KILLED_WAIT）と 6 本ぶんの起動を足したもの、壁時計はほぼ最も遅い 1 本と base の解決。
+        ("全体は壁時計で、1 本ごとの合計ではない（並列。#1040）",
+         wall is not None and bool(t) and float(wall.group(1)) < sum(t.values())),
         ("所要時間を出しても判定は変わらない（rc=1・失敗 1・飛ばし 1。#1040）",
          rc == 1 and "（失敗 1 / 飛ばし 1）" in out and "落ちたもの: slow-bad.py" in out),
+    ]
+
+    # 12) 回した本が TOP より少なく、SKIP がある回（#1040 の 1 パス目）。契約 11 は回した本が TOP より多いので、
+    #     0.0 秒の SKIP を上位に足す変異も、見出しの本数を TOP に固定する変異も、見えないところに隠れて通った。
+    mod = load(target, f"{tag}_fewtimed")
+    mod.SCRIPTS = root / "scripts"
+    mod.GUARDS = [("ok-c.py", [], False), ("needs-base.py", [], True)]
+    mod.TESTS = ["ok-b.py"]
+    rc, out = run_main(mod, ["--base", "no-such-ref-xyz", "--jobs", "2"])
+    t = times(out)
+    top = top_entries(out)
+    got += [
+        ("回した本が TOP より少なければ、見出しはその本数（#1040）", "所要時間の長い順（上位 2 本）:" in out),
+        ("上位は回した本だけで、SKIP を入れない（#1040）",
+         sorted(n for _, n, _ in top) == ["ok-b.py", "ok-c.py"] and set(t) == {"ok-b.py", "ok-c.py"}),
+        ("SKIP があっても判定は変わらない（rc=0・飛ばし 1。#1040）", rc == 0 and "（失敗 0 / 飛ばし 1）" in out),
     ]
     return got
 
@@ -1284,6 +1306,13 @@ MUTANTS = {
     "歯止めの時間を上位に入れない": ("            timings.append((secs, label, ok))\n", "            pass\n"),
     "回帰テストの時間を上位に入れない": ("                timings.append((secs, name, ok))\n", "                pass\n"),
     "全体の壁時計を出さない": ('    print(f"全体: {elapsed:.1f} 秒（壁時計）")\n', "    pass\n"),
+    # 以下は #1040 の 1 パス目（Verifier と /code-review が複製で素通りを示した 3 本）
+    "SKIP を 0 秒で上位に入れる": (
+        "                skipped.append(label)\n                continue\n",
+        "                skipped.append(label)\n                timings.append((0.0, label, True))\n                continue\n"),
+    "全体を 1 本ごとの合計にする": ("    elapsed = time.monotonic() - started\n",
+                                    "    elapsed = sum(x[0] for x in timings)\n"),
+    "上位の見出しの本数を TOP に固定する": ("（上位 {min(TOP, len(timings))} 本）", "（上位 {TOP} 本）"),
     "入れ子に親と同じ並列数を渡す": ("    return max(1, jobs // 2)\n", "    return jobs\n"),
     "入れ子を 0 にしうる": ("    return max(1, jobs // 2)\n", "    return jobs // 2\n"),
     # **終わった順に出す**本体を写した変異（`as_completed`。#430 の 2 パス目）。`reversed()` だけでは、
