@@ -65,10 +65,10 @@ main へのマージ。`scripts/` は配布物ではない。公開サイトは 
 
 - 周の在り処: ブランチ `issue/1049-spec-writeback-test-speed`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1049`・起点 `6c66fd8`・base `origin/main` → `6c66fd84938f92a06fb5cba5511de9e5a5dbe345`
 - 実装: `2842b88`。単独で 10.8 秒（並列 4・負荷 14）・`--jobs 1` で 23.8 秒。陽性対照 44 件・変異 30 本とも緑。`test-check-all.py --part contract --part registry` 緑。`--jobs 0` は 2 で断る
-- 前（main）の単独の所要時間: run-serial 越しに測定中（main の `6c66fd8` を `git archive` で写した木で回す——この worktree の編集と混ざらない）
-- 割り目 1（手順 4 の後）: 訊く
+- 前（main）の単独の所要時間: 割る時点で run-serial 越しに測定中だった（main の `6c66fd8` を `git archive` で写した木で回す——この worktree の編集と混ざらない）。結果は前のセッションの scratchpad の `sw-before.txt`・`sw-before-out.txt` に出る。**再開した側で見つからなければ、同じ形で測り直す**（`git archive 6c66fd8 scripts plugins` を一時ディレクトリに展開し、`run-serial.py -- /usr/bin/time -p python3 <展開先>/scripts/test-check-spec-writeback.py`）
+- 割り目 1（手順 4 の後）: 訊いた → **ここで割る**（2026-11-15）。再開したら手順 5 から（関門はまだ 1 つも起動していない）
 - 1 パス目の指摘対応の起点: `2842b88807cfb91be2f244316d690f387a4adddf`
-- 関門: 1 パス目を起動
+- 関門: まだ起動していない（割ったので、再開した側が 1 パス目の Verifier と `/code-review` を起動する。起点は上の `2842b88`）
 - 交絡を潰した手順: 速さの比較は (1) 同じ機械で、(2) 前は main の写し・後はこのブランチの写し、(3) run-serial 越しに続けて回し、時刻と `uptime` を添える。置き方の欠陥（K1）が後の時間を短く見せる交絡は、#1053 を直した形の写しで測り直して並べる（99.2 秒）
 
 ## 既知の限界・決着済みの論点
