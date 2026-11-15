@@ -15,6 +15,8 @@
 
 あわせて、**Verifier の委譲文（`prompts/verifier.md`）の依存の差し込みが、表の欄を全部名指していること**と、
 **`references/dependencies.md` が未検証の扱いを持つこと**を見る（受入基準 V1・V2）——欄を 1 つ落とすと赤。
+
+**土台の複製が、一覧の後に消えた `.git` の下のロックで落ちないこと**も、決定的な競合の試料と陽性対照で見る（#1032。`template_checks`）。
 """
 
 from __future__ import annotations
@@ -114,8 +116,25 @@ def fresh_repo(d: Path, *, plan: str | None = PLAN, branch: str = "issue/7-demo"
         tpl = d.parent.parent / f"tpl-{os.getpid()}" / str(len(_TEMPLATES))
         _TEMPLATES[key] = (tpl, repo(tpl, plan=plan, branch=branch, base_files=base_files))
     tpl, base = _TEMPLATES[key]
-    shutil.copytree(tpl, d, symlinks=True)
+    copy_template(tpl, d)
     return base
+
+
+def copy_template(tpl: Path, d: Path, *, copy_function=shutil.copy2) -> None:
+    """土台 `tpl` を `d` に複製する。**`.git` の下の `*.lock` は写さない**（#1032）。
+
+    `copytree` は一覧を取ってから 1 つずつ写すので、その間に消えたファイルは `shutil.Error` になる——git の保守の
+    `.git/objects/maintenance.lock` で実際に落ちた（#1028・#1032）。保守は土台の設定で止めてある（`repo()`）が、
+    ロックは作業中の印で、写す意味が無い。**作業ツリーの `*.lock`（`yarn.lock` など）は依存のファイルなので写す**——だから `.git` の下に限る。
+    `copy_function` は試料が消えるロックの競合を作るための差し口（`template_checks`）。"""
+    root = os.fspath(tpl)
+
+    def skip_git_locks(src: str, names: list[str]) -> set[str]:
+        if Path(os.path.relpath(src, root)).parts[:1] != (".git",):
+            return set()
+        return {n for n in names if n.endswith(".lock")}
+
+    shutil.copytree(tpl, d, symlinks=True, ignore=skip_git_locks, copy_function=copy_function)
 
 
 def put(root: Path, rel: str, body: str = "x\n", commit: bool = False) -> None:
@@ -363,6 +382,72 @@ def kill_mutations(mutations: dict[str, tuple[str, str]], src: str, tmp: Path) -
             check(f"変異 `{name}` を契約が捕まえる", results[k])
 
 
+def template_checks(tmp: Path) -> None:
+    """土台の複製が、一覧の後に消えたロックで落ちないことを、**決定的な競合の試料**で見る（#1032 の受入基準 2）。
+
+    競合は「写す関数が、ロックを写す直前にそのロックを消す」で作る——一覧に載った後、写す前に消えた形（#1028 の CI の失敗と同じ）。
+    **陽性対照は素の `shutil.copytree(tpl, d, symlinks=True)`（直す前の `fresh_repo` の形）で、同じ試料で `shutil.Error` になること**を見る
+    ——それが落ちなければ、試料が競合を作れていない。"""
+    print("土台の複製（消えるロックの競合。#1032）:")
+    tpl = tmp / "tpl-race"
+    repo(tpl, base_files={"yarn.lock": "x\n"})
+    # 保守のロック（1 段下）と、`.git` 直下のロック（`index.lock`）の両方——`.git` の下に限る条件を `.git/objects` に狭めた形も捕まえる
+    locks = (tpl / ".git" / "objects" / "maintenance.lock", tpl / ".git" / "index.lock")
+
+    def racer(src, dst, *, follow_symlinks=True):
+        if Path(src) in locks:
+            Path(src).unlink()  # 一覧に載った後、写す前に消える
+        return shutil.copy2(src, dst, follow_symlinks=follow_symlinks)
+
+    for lock in locks:
+        lock.write_text("")
+    before = tmp / "race-before"
+    assert_not_real_repo(before)
+    try:
+        shutil.copytree(tpl, before, symlinks=True, copy_function=racer)
+        err = ""
+    except shutil.Error as e:
+        err = str(e)
+    check("陽性対照: 直す前の形（素の copytree）は消えたロック 2 つ（maintenance.lock・index.lock）で shutil.Error",
+          "maintenance.lock" in err and "index.lock" in err)
+
+    for lock in locks:
+        lock.write_text("")
+    after = tmp / "race-after"
+    assert_not_real_repo(after)
+    try:
+        copy_template(tpl, after, copy_function=racer)
+        err = ""
+    except shutil.Error as e:
+        err = str(e)
+    check(f"copy_template は消えたロックで落ちない（{err or '例外なし'}）", not err)
+    ok = after.is_dir()
+    check("複製は土台と同じ HEAD を持つ", ok and git(after, "rev-parse", "HEAD") == git(tpl, "rev-parse", "HEAD"))
+    check("複製の作業ツリーは綺麗（git status が空）", ok and git(after, "status", "--porcelain") == "")
+    check("作業ツリーの yarn.lock は写す（.git の外の *.lock を落とさない）",
+          ok and (after / "yarn.lock").is_file() and (after / "yarn.lock").read_text() == "x\n")
+    check("#1028 の保守の停止が複製に残る（maintenance.auto=false・gc.auto=0）",
+          ok and git(after, "config", "--get", "maintenance.auto").strip() == "false"
+          and git(after, "config", "--get", "gc.auto").strip() == "0")
+
+    # 契約と変異の作業者が使う複製の口（`fresh_repo`）が `copy_template` を通ること——上の試料は `copy_template` を直に呼ぶので、
+    # `fresh_repo` が素の `copytree` に戻っても緑のまま残る（#1032 の 2 パス目の指摘）
+    calls: list[Path] = []
+    real = globals()["copy_template"]
+
+    def spy(src: Path, dst: Path, **kw) -> None:
+        calls.append(dst)
+        real(src, dst, **kw)
+
+    via = tmp / "via-fresh" / "f1"
+    globals()["copy_template"] = spy
+    try:
+        fresh_repo(via, branch="issue/7-via-fresh")
+    finally:
+        globals()["copy_template"] = real
+    check("fresh_repo は copy_template を通して複製する", calls == [via])
+
+
 def check_pool_size() -> None:
     """自分を `--jobs N --pool-size` で起こし、プールに渡した作業者の数が `min(N, 上限)` かを見る
     （`test-ledger.py` の #762 と同じ形——受けた `--jobs` を使わなくても、遅く・速くなるだけで緑のままなので）。"""
@@ -399,6 +484,7 @@ def main() -> int:
     src = SCRIPT.read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        template_checks(root)
         print("陽性対照（元の本体——全部通らなければならない）:")
         for name, ok in contract(SCRIPT, root / "real", "r"):
             check(name, ok)
