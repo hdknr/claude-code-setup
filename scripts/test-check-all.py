@@ -301,9 +301,11 @@ def wire(mod, root: Path, *, bad_guard: bool, bad_test: bool) -> None:
     mod.TESTS = ["ok-t.py", "ok-b.py"]
     if bad_guard:
         # **ok-c.py より前**に挟む。後ろに通る歯止めが無いと、
-        # 「最初の失敗で止める」変異を契約が捕まえられない（実際に一度そうなった）。
-        # **この主張は機械で当ててある**（#151）——後ろに回すと、この回帰テストが赤くなる。
-        # mutation-claim: {"file": "scripts/test-check-all.py", "old": "GUARDS.insert(1, (\"bad.py\"", "new": "GUARDS.append((\"bad.py\"", "red": "python3 scripts/test-check-all.py --mutant 最初の失敗で止める"}
+        # 契約 2 は「最初の失敗で止める」変異を捕まえられない（実際に一度そうなった）。
+        # **#1040 から、この置き場所はその変異を捕まえる唯一の手ではない**——契約 6 の直列の回（落ちた par-a の後の
+        # par-b の所要時間）と契約 11（落ちる slow-bad の後ろの ok-c）も捕まえる。だから、ここを後ろに回しても
+        # この回帰テストは赤にならない（#151 の機械の当て `mutation-claim` は、#1040 の `check-mutation-claims.py` が
+        # 「当てられなかった」と出したので外した）。契約 2 の「後続の歯止めを回す」を判別するために、置き場所はこのまま。
         mod.GUARDS.insert(1, ("bad.py", [], False))
     if bad_test:
         mod.TESTS.append("bad-test.py")
