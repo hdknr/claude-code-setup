@@ -183,6 +183,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-tlc.py` - **TLC が正本の `CLAUDE.md` に書いた呼び方で使えるか**を、小さいモデル 2 つ（通るもの・わざと違反するもの）を検査させて確かめる（#912。
       **TLC は既定で必須の前提**で、書く行（`TLC の呼び方:`・外す宣言 `業務フローの形式検査: しない`）の原本はここの docstring。**`command -v` では探さない**。
       spec-review の手順 3 が呼び、autopilot は起動時の点検（`autopilot-check.py check` が読み込む）と Formal Checker を起こす段の始め（`--autopilot`。`commit` の段と feasibility では確かめない）で使う。テストは `scripts/test-check-tlc.py`）
+    - `scripts/tlc-trace.py` - **TLC の反例の JSON（`-dumpTrace json`）と、人が書く対応表から、spec-ir のトレースのケース（`calls`・`steps` と期待）を作る**（#1020。
+      **段は行為の名前と呼び出しの引数だけで決め、状態（`pc`）の差から推さない**。表に無い行為・呼び出しを決められない行為・繰り返しのある反例（活性の違反）は止める。
+      `-dumpTrace` は任意（安定版の TLC 2.19 は持たない）。Formal Checker が反例の段の並びを出すのに使う。対応表の形と守る／守らないは docstring を正とする。テストは `scripts/test-tlc-trace.py`）
     - `scripts/check-alloy.py` - **Alloy が正本の `CLAUDE.md` に書いた呼び方（`Alloy の呼び方:`。`exec` まで含めた形）で使えるか**を、小さいモデル 2 つ（到達でき反例の出ないもの・わざと反例の出るもの）を CLI で検査させて確かめる（#922。
       **Alloy は必須ではなく、spec-review の手順 3 が権限・ロールを対象に選んだときに呼ぶ**。**引数なし・`gui` の形は GUI を開くので、`exec` の無い・`gui` の在る呼び方は走らせずに 4**。
       **`command -v` では探さない**。宣言の読み方は `check-tlc.py` の `scan_declarations` を読み込む（写さない）。守る／守らないは docstring を正とする。テストは `scripts/test-check-alloy.py`）
@@ -395,6 +398,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **`HOME` をテンポラリにし `CLAUDE_CONFIG_DIR` を外し、flag と managed の層をテンポラリのファイルで渡す**——実機の設定を読まない。**許可の判定の写しを dev-loop の `check-unattended-env.py` と突き合わせる**
   - `test-check-tlc.py` - spec-loop の TLC の前提の確かめ（#912）の回帰テスト（変異テストを含む）。
     **偽の TLC（本物の出力に合わせた 2 つの文字列を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `tlc` を置く**——本物の TLC は走らせない（出力の形は見ない）
+  - `test-tlc-trace.py` - spec-loop の TLC の反例の JSON から trace ケースを作る変換（#1020）の回帰テスト（変異テストを含む）。
+    **試料の反例の JSON は本物の TLC（v1.8.0 のプレリリース）で手元で取ったものを埋める**——CI に TLC は無い。出力は本物の `scaffold.py` の `check_trace` に当てる
   - `test-check-alloy.py` - spec-loop の Alloy の確かめ（#922）の回帰テスト（変異テストを含む）。
     **偽の Alloy（Alloy 6.2.0 の `exec` の結果の行の形を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `alloy` を置く**——本物の Alloy は走らせない（出力の形は見ない）。
     **引数なし・`gui` の形は偽物でも走らせない**（走ったら印を書く偽物で見る）
