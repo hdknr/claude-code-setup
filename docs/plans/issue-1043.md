@@ -143,7 +143,12 @@ main へのマージで、プラグインの配布（カタログ）と公開サ
 - 狭いパス: 起点 `8b355b7` → 終点 `02d56fa`。Verifier（`dev-loop:dev-loop-verifier`・sonnet・`a9e8df6`。引き渡しが届かず、最終の応答の本文をトランスクリプトから読んだ）: **反証 2 件**（N1・N2。下の「狭いパスの指摘」）。
   自分で設計した変異のうち、BOM の除去を外す・知らない値の単独宣言を宣言と読む、の 2 本が著者のテストで素通り（変異が届くことは一時のリポジトリで本体 rc=0・変異 rc=3 で示した）。`git status --porcelain` 前後同じ
 - `check-all.py`（`02d56fa`、run-serial 越し）: **82/82 本・失敗 0**（壁時計 1003.9 秒）
-- PR: #1083。外部レビュー: PR 側の CI の後に `external-reviews.py` で見る
+- PR: #1083。作った直後は main と衝突して CI が 1 本も走っていなかった（`no checks reported`・`CONFLICTING`）——main（`7589c10`、dev-loop 1.112.0）を取り込んだ（`525907e`）。
+  衝突は版の行だけ（4 ファイル）で、塊ごとに 2.0.0 を採った（1.112.0 から major でも 2.0.0）。取り込みで増えた歯止めは無い（main が変えたのは `child-cycle.py` とそのテスト）。
+  `check-plugin-versions.py`・`skill-metrics.py --check` 緑。取り込みの後のローカルの `check-all.py` は他の周の検査の後ろで待っていたので止めた（`02d56fa` で 82/82。取り込みは main の分と版の行だけ）——**PR 側の CI（`525907e`）は全部通った**（deploy は PR では skipping）
+- 関門の照合（`525907e`、`--absent`）: rc=0（取り込みの merge commit は既定ブランチの親を持つので関門が見なくてよい形）
+- 外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）
+- 割らない（cruise の周）。マージは親がする（子は PR 側の CI まで）
 - 関門の照合（この計画を、この周が作った `check-gates.py` に当てた——実データ）: `--head HEAD --absent` で **rc=0**（`02d56fa`・受入基準 9 件・未証明 A3）。
   陰性対照: 同じ計画から 2 パス目の 2 行を消した写しで **rc=3**（2 パス目の記録が無い・`d0965d4` が関門の見ていないコミット。写しは別のパスなので `8b355b7` も出た）
 
