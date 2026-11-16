@@ -95,7 +95,12 @@ Issue の受入基準 2 つ（U1: `git tag` が allow の settings で点検が�
 - 周の在り処: ブランチ `issue/1046-autopilot-refuse-ops`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1046`・
   起点 `52d73bc`・base（`git merge-base origin/main HEAD`。参照 `origin/main`）`52d73bc36861fd90c59a10ab65ab949d20e96ec5`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 交絡: （実機確認の後に書く）
+- 実機確認: 一時の git リポジトリ（HOME も一時）で本物の CLI を走らせた——`Bash(git tag:*)` の allow で 1（`git tag`・広い allow が覆う `git push --tags`・scaffold が要対処、→ に deny の案）、
+  同じ settings に 4 つの deny を足すと 0（4 つとも良い、周で使う `git push` は良いのまま）。
+- 交絡: 実験は「deny の有無だけを変えた 2 つの settings」で、1 と 0 が分かれた（陽性対照が 1 側）——0 は点検が走らなかったことによる 0 ではない（`拒む:` の行が 4 つ良いで出ている）。
+  テストの最初の 1 回（`test-autopilot-check.py` 単体）は順番待ち（run-serial）を通さずに走らせた（周の手順の誤り。時間で待ち合わせるテストではない）。
+- 1 パス目の指摘対応の起点: `5619c2d`（1 パス目の関門に渡した時点の HEAD。計画ファイルだけのコミットはこの後に積む）
+- 1 パス目: Verifier（起動済み・報告待ち）／`/code-review`（未）
 
 ## 既知の限界・決着済みの論点
 
