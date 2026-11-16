@@ -50,7 +50,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/merge-versions.py docs b
 
 | 読むもの | どう読むか |
 | --- | --- |
-| 仕様レビューを抜ける条件 1（`check-spec-exit.py`） | `build/merged/shared/qa.csv` と `build/merged/spec` に当てる |
+| 仕様レビューを抜ける条件 1（`check-spec-exit.py`） | `build/merged/shared/qa.csv` と `build/merged/spec` に当てる。画面の関門（`--docs docs`。#1097）は `docs` を自分で重ねる（`screen-gate.py`） |
 | `scaffold.py` | **自分でメモリ上に重ねる**（`build/merged/` は書かない。同じバイト）。中間表現の `source` は**重ね合わせた全体の根からのパス**（`spec-ir.md`）。**機能を追加・変更・削除に分けるのは、`v<n-1>` の全体との比較**（下の「版の差分」。`handoff-issue.md`） |
 | Issue の本文 | 中間表現は `build/merged/spec/spec_ir.json`（機能の指紋はこの中の機能。撤去の本文は前の版の全体 `build/merged-v<n-1>/`。`handoff-issue.md`）。開発する側は**本文のコマンド**（`--upto <n>` で版を指定する）で作って当てる |
 
