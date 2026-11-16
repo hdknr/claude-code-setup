@@ -51,13 +51,16 @@
    `なし` は宣言が無いこと。
    **宣言は既定ブランチから読む**——PR の中で足した・書き換えた宣言を効かせない（`references/absent-lines.md`）。
 5. **影響範囲（`--absent` だけ。#1047）**——周の差分（既定ブランチとの分岐点から head まで。`git diff --name-only --no-renames`。計画ファイルは数えない）が触るファイルのうち、
-   次のどちらかに当たるものがあれば通さない（不在の周ではマージせず、PR で止めて利用者に回す——`references/absent-lines.md` の「影響範囲で止める」）:
+   次の 2 つの範囲に当たるものがあれば通さない。宣言そのものを外す差分と、読めない宣言も通さない（下の 3・4 つ目。どれも不在の周ではマージせず、PR で止めて利用者に回す——`references/absent-lines.md` の「影響範囲で止める」）:
    - **既定ブランチの `.claude/dev-loop.md` の `不在で止める範囲: <パターン>` の行**——1 行に 1 つ、何本でも書ける。パターンは glob（`fnmatch`。`*` はディレクトリ区切りも跨ぐ）で、
      `/` で終われば配下すべて。glob の文字（`*?[`）を持たないパターンは、そのパス自身と配下の両方に当てる（`src/shared` は `src/shared/x.py` にも当たる）。
-     読むのはコードブロックと HTML コメントの外の行だけ（4 と同じ読み方）。**空白を含む・`/` か `./` で始まるパターンは読めない宣言として止める**（黙って何にも当たらない宣言にしない）。
+     読むのはコードブロックと HTML コメントの外の行だけ（4 と同じ読み方）。
    - **既定ブランチで戻した（revert した）コミットが触ったファイル**——既定ブランチから辿れるコミットの本文の `This reverts commit <SHA>`（`git revert` が書く行）のうち、
      その SHA が既定ブランチから辿れる（既定ブランチの祖先の）もの。merge commit で入れた PR の中のコミットも含む。戻されたコミットがその最初の親から変えたファイルを、戻した履歴のある範囲とする。
-   - **周の差分が、既定ブランチの `不在で止める範囲:` の行を 1 本でも外す**（head の `.claude/dev-loop.md` に同じパターンの行が無い）——周が自分の止まる範囲を外さない。
+   - **周の差分が、既定ブランチの `不在で止める範囲:` の行を 1 本でも外す**——分岐点にも既定ブランチにもあるパターンの行が、head の `.claude/dev-loop.md` に無い。
+     周が自分の止まる範囲を外さない。分岐の後に既定ブランチへ足された行は、head に無くても外したと読まない。
+   - **読めない宣言**——`不在で止める範囲` を含むのに上の形で読めない行（全角のコロン・箇条書きの印など）と、既定ブランチの木（`git ls-tree`）と周の差分のどのパスにも当たらないパターン
+     （`/` で始まる・行末の注釈・`**/x` が根の `x` に当たらない、など）。書き損じを文字で列挙せず、当たるパスが無いことで見る——**まだ無いパスを宣言すると、できるまで止まり続ける**。
 
 | 判定 | 通る判断の出所 |
 | --- | --- |
@@ -94,7 +97,9 @@
 - **`--absent` では、既定ブランチで戻した（revert した）コミットが触ったファイルを変えた差分を通さない**（#1047）。
 - **既定ブランチから辿れないコミットを戻した行は、戻した履歴に数えない**——squash した PR の本文に残った、PR の途中の revert。
 - **merge commit で既定ブランチに入れたコミットを戻した行も、戻した履歴に数える**——戻されたコミットが既定ブランチの最初の親の線に無くても。
-- **空白を含む・`/` か `./` で始まる `不在で止める範囲:` のパターンを、黙って捨てない**——読めない宣言として止める。
+- **既定ブランチの木と周の差分のどのパスにも当たらないパターンを、黙って捨てない**——読めない宣言として止める。
+- **`不在で止める範囲` を含むのに形の読めない行を、黙って捨てない**——読めない宣言として止める。
+- **分岐の後に既定ブランチへ足された範囲の宣言を、周の差分が外したと読まない。**
 - **glob の文字を持たないパターンは、配下にも当てる**——末尾の `/` を書き忘れたディレクトリを、黙って何にも当たらない宣言にしない。
 - **`--absent` では、既定ブランチの `不在で止める範囲:` の行を外す差分を通さない**——周が自分の止まる範囲を外さない。
 - **影響範囲を見る差分は既定ブランチとの分岐点から取る**——周に取り込んだ既定ブランチの変更（周の base より後）を、周の差分に数えない。
@@ -170,7 +175,7 @@ VERSION_JSON_FILES = (".claude-plugin/plugin.json", ".claude-plugin/marketplace.
 VERSION_SKILL = re.compile(r"^<!-- skill-version: \S+ -->$|^> \*\*このスキルの版: \S+\*\*（プラグイン `[^`]+`）。$")
 ID_HEADERS = ("#", "番号", "ID")
 STOP_DECL = re.compile(r"^不在で止める範囲:\s*(.+?)\s*$")  # 影響範囲の宣言（#1047）
-REVERTS = re.compile(r"This reverts commit ([0-9a-f]{7,40})")
+REVERTS = re.compile(r"This reverts commit ([0-9a-f]{7,64})\b")  # SHA-1（40 桁）と SHA-256（64 桁）
 
 LINE_FORMS = {
     "base": re.compile(rf"^周の base:\s*{SHA}$"),
@@ -549,14 +554,19 @@ def matches(path: str, pattern: str) -> bool:
     return fnmatch.fnmatchcase(path, pattern)
 
 
-def unreadable(pattern: str) -> bool:
-    """どのパスにも当たりようのない宣言か（空白を含む・`/` か `./` で始まる）。"""
-    return any(c.isspace() for c in pattern) or pattern.startswith(("/", "./"))
+def stop_lines(text: str) -> tuple[list[str], list[str]]:
+    """`.claude/dev-loop.md` の `不在で止める範囲:` のパターンと、`不在で止める範囲` を含むのに形の読めない行（コードブロックと HTML コメントの外）。"""
+    patterns, bad = [], []
+    for l in visible(text):
+        if "不在で止める範囲" in l:
+            m = STOP_DECL.match(l)
+            (patterns.append(m.group(1)) if m else bad.append(l.strip()))
+    return patterns, bad
 
 
-def stop_patterns(text: str) -> list[str]:
-    """`.claude/dev-loop.md` の `不在で止める範囲:` のパターン（コードブロックと HTML コメントの外）。"""
-    return [m.group(1) for l in visible(text) if (m := STOP_DECL.match(l))]
+def dev_loop_md_at(ctx: Context, rev: str) -> str:
+    res = ctx.git("show", f"{rev}:.claude/dev-loop.md", ok=(0, 128))
+    return res.stdout if res.returncode == 0 else ""
 
 
 def rolled_back(ctx: Context) -> dict[str, str]:
@@ -588,20 +598,24 @@ def check_risk(rec: Record, ctx: Context) -> list[str]:
     fork = ctx.git("merge-base", default, ctx.head).stdout.strip()
     files = [f for f in ctx.git("diff", "--name-only", "--no-renames", fork, ctx.head).stdout.splitlines()
              if f and f != ctx.plan_rel]
-    patterns = stop_patterns(default_dev_loop_md(ctx))
+    patterns, bad = stop_lines(default_dev_loop_md(ctx))
     rolled = rolled_back(ctx) if files else {}
     reasons = []
+    for l in bad:
+        reasons.append(f"影響範囲: 既定ブランチ（{default}）の行「{l}」が `不在で止める範囲: <パターン>` の形で読めない"
+                       "——読めない宣言は止まる側に倒す")
+    if patterns:
+        paths = set(ctx.git("ls-tree", "-r", "--name-only", default).stdout.splitlines()) | set(files)
+        for pat in patterns:
+            if not any(matches(f, pat) for f in paths):
+                reasons.append(f"影響範囲: 既定ブランチ（{default}）の宣言「不在で止める範囲: {pat}」が、既定ブランチの木と周の差分の"
+                               "どのパスにも当たらない（読めない宣言）——黙って何にも当たらない宣言にせず、止まる側に倒す")
+    kept = set(stop_lines(dev_loop_md_at(ctx, ctx.head))[0])
+    at_fork = set(stop_lines(dev_loop_md_at(ctx, fork))[0])
     for pat in patterns:
-        if unreadable(pat):
-            reasons.append(f"影響範囲: 既定ブランチ（{default}）の宣言「不在で止める範囲: {pat}」が読めない"
-                           "（空白を含む・/ か ./ で始まる）——読めない宣言は止まる側に倒す")
-    head_md = ctx.git("show", f"{ctx.head}:.claude/dev-loop.md", ok=(0, 128))
-    kept = set(stop_patterns(head_md.stdout if head_md.returncode == 0 else ""))
-    for pat in patterns:
-        if pat not in kept:
+        if pat in at_fork and pat not in kept:
             reasons.append(f"影響範囲: 周の差分が既定ブランチの宣言「不在で止める範囲: {pat}」を外す"
                            "——止まる範囲を外す変更は利用者が居る周でマージする")
-    patterns = [p for p in patterns if not unreadable(p)]
     for f in files:
         hit = next((p for p in patterns if matches(f, p)), None)
         if hit:
