@@ -19,6 +19,7 @@
 - `plugins/screen-spec/references/tables.md` — `例` の列の「モックの最初の値」から `mock.md` を指す程度（要れば）
 - `plugins/screen-spec/.claude-plugin/plugin.json` — 版と description
 - `.claude-plugin/marketplace.json` — screen-spec の版と description
+- `plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行だけ（main の取り込みで #1093 の 0.2.0 と衝突し、0.3.0 に上げ直したとき。広げた理由: 版を揃える箇所が #1093 で 3 種類になった）
 - `scripts/test-build-mock.py` — 新設。回帰テスト（CI で回す部分と、`--browser` で手元のヘッドレスの Chrome で回す部分）
 - `scripts/check-all.py` — テストの収録
 - `.github/workflows/plugins.yml` — テストの収録
@@ -88,7 +89,7 @@ screen-spec を minor で上げる（能力の追加。0.x）: main の先端の
 | M11 | 描き方の差し替え（画面ID ごとの素の JS）を埋め込み、名前・ボタン・遷移は表から読む | `screen-spec/renderers/<画面ID>.js`・表に無い画面ID のファイル・`</script` を含むファイル | CI: 埋め込み・警告。手元: 差し替えた画面が描かれ、`ctx.button` のボタンで遷移できる |
 | M12 | 出力は HTML 1 枚、標準ライブラリだけ。書くのは出力の 1 ファイルだけ（正本・spec-loop・screen-spec を書かない） | 出力のほかのファイル・`__pycache__` | CI: 実行の前後の差分 |
 | M13 | 本体の定数が `references/mock.md` と一致する（写しのずれ） | 定数 | テストが突き合わせ、崩しで落ちることも見る |
-| M14 | 歯止めが全部緑（版 2 箇所・description 2 箇所・CI と `check-all.py` への収録・指し先） | `check-plugin-versions.py`・`test-check-all.py` ほか | `check-all.py`（順番待ち越し） |
+| M14 | 歯止めが全部緑（版 2 箇所——取り込みの後は `SKILL.md` を含む 3 種類・description 2 箇所・CI と `check-all.py` への収録・指し先） | `check-plugin-versions.py`・`test-check-all.py` ほか | `check-all.py`（順番待ち越し） |
 | X1 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方 × 1・2 パス目に渡す（2 パス目が「該当なし」の周は 1 パス目の 2 つ） | — | 再開点で記録 |
 
 **CI で回す部分と手元で回す部分**: Issue のとおり分ける。`python3 scripts/test-build-mock.py`（引数なし）が CI で回す部分（M1 の文字列・M3 の静的な読み込み・M4・M5・M7・M9・M10 の埋め込み・M11 の埋め込み・M12・M13）。
