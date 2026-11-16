@@ -59,8 +59,8 @@
      その SHA が既定ブランチから辿れる（既定ブランチの祖先の）もの。merge commit で入れた PR の中のコミットも含む。戻されたコミットがその最初の親から変えたファイルを、戻した履歴のある範囲とする。
    - **周の差分が、既定ブランチの `不在で止める範囲:` の行を 1 本でも外す**——分岐点にも既定ブランチにもあるパターンの行が、head の `.claude/dev-loop.md` に無い。
      周が自分の止まる範囲を外さない。分岐の後に既定ブランチへ足された行は、head に無くても外したと読まない。
-   - **読めない宣言**——`不在で止める範囲` の直後にコロン（全角も）が続くのに上の形で読めない行（全角のコロン・箇条書きの印など。
-     キーワードを含むだけの散文の行は宣言と読まない）と、既定ブランチの木（`git ls-tree`）と周の差分のどのパスにも当たらないパターン
+   - **読めない宣言**——行頭の Markdown の飾りを外して `不在で止める範囲` で始まるのに、直後（強調の閉じと空白を除く）がコロン（全角も）でも助詞（は・を・が・も・の・に・で・と・や）でもない行
+     （`=`・コロン抜け・読点など。助詞が続く行は散文として読み飛ばし、飾りを外してもキーワードで始まらない行は読まない。飾った行・全角のコロンの行は宣言として読む）と、既定ブランチの木（`git ls-tree`）と周の差分のどのパスにも当たらないパターン
      （`/` で始まる・行末の注釈・`**/x` が根の `x` に当たらない、など）。書き損じを文字で列挙せず、当たるパスが無いことで見る——**まだ無いパスを宣言すると、できるまで止まり続ける**。
 
 | 判定 | 通る判断の出所 |
@@ -99,8 +99,10 @@
 - **既定ブランチから辿れないコミットを戻した行は、戻した履歴に数えない**——squash した PR の本文に残った、PR の途中の revert。
 - **merge commit で既定ブランチに入れたコミットを戻した行も、戻した履歴に数える**——戻されたコミットが既定ブランチの最初の親の線に無くても。
 - **既定ブランチの木と周の差分のどのパスにも当たらないパターンを、黙って捨てない**——読めない宣言として止める。
-- **`不在で止める範囲` の直後にコロンが続くのに形の読めない行を、黙って捨てない**——読めない宣言として止める。
-- **キーワードを含むだけの散文の行（`不在で止める範囲は…`）を、宣言の候補にしない**——説明の行で不在のマージを止めない。
+- **行頭の Markdown の飾り（リストの印・番号・チェックボックス・見出し・引用・強調・空白）を外してから読む**——飾った宣言（`**不在で止める範囲:** x`・`## 不在で止める範囲: x` など）を宣言として読む。
+- **キーワードで始まり、コロン（全角も）でも助詞でもないものが続く行を、黙って捨てない**——`=`・コロン抜け・読点の行を読めない宣言として止める。
+- **キーワードの直後が助詞（は・を・が・も・の・に・で・と・や）の行は、散文として読み飛ばす**——説明の行で不在のマージを止めない。
+- **全角のコロンの宣言も宣言として読む。**
 - **パスは引用符なしで読む**（`core.quotePath=false`）——非 ASCII のパスの宣言を、どのパスにも当たらない宣言と読まない。
 - **分岐の後に既定ブランチへ足された範囲の宣言を、周の差分が外したと読まない。**
 - **glob の文字を持たないパターンは、配下にも当てる**——末尾の `/` を書き忘れたディレクトリを、黙って何にも当たらない宣言にしない。
@@ -177,9 +179,11 @@ VERSION_JSON = re.compile(r'^\s*"version"\s*:\s*"[^"]*",?\s*$')
 VERSION_JSON_FILES = (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
 VERSION_SKILL = re.compile(r"^<!-- skill-version: \S+ -->$|^> \*\*このスキルの版: \S+\*\*（プラグイン `[^`]+`）。$")
 ID_HEADERS = ("#", "番号", "ID")
-STOP_DECL = re.compile(r"^不在で止める範囲:\s*(.+?)\s*$")  # 影響範囲の宣言（#1047）
-# 宣言のつもりの行（箇条書きの印を外して、キーワードの直後がコロン——全角も）。散文の行は候補にしない（#1047 J2）
-STOP_CANDIDATE = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)?不在で止める範囲\s*[:：]")
+STOP_KEYWORD = "不在で止める範囲"  # 影響範囲の宣言のキーワード（#1047）
+# 行頭の Markdown の飾り（空白・リストの印・番号・チェックボックス・見出し・引用・強調の開き）。1 つずつ繰り返し外す（#1047 R1）
+DECOR = re.compile(r"^(?:\s+|[-*+]\s+|\d+[.)]\s+|\[[ xX]\]\s*|#{1,6}\s+|>\s*|\*\*|__|\*|_)")
+PARTICLES = "はをがもののにでとや"  # キーワードの直後がこれなら散文（#1047 J2）
+COLONS = (":", "：")
 REVERTS = re.compile(r"This reverts commit ([0-9a-f]{7,64})\b")  # SHA-1（40 桁）と SHA-256（64 桁）
 
 LINE_FORMS = {
@@ -560,13 +564,39 @@ def matches(path: str, pattern: str) -> bool:
     return fnmatch.fnmatchcase(path, pattern)
 
 
+def read_stop_line(line: str) -> tuple[str, str | None]:
+    """1 行を `("pattern", <パターン>)`・`("bad", <行>)`・`("skip", None)` に分ける（#1047 R1・J2）。
+
+    行頭の飾りを外し、キーワードで始まらなければ skip。キーワードの直後（強調の閉じと空白を外して）が
+    助詞なら散文で skip、コロン（全角も）で値があれば pattern、それ以外（`=`・空白とパス・行末・読点など）は bad。
+    """
+    s = line
+    while True:
+        m = DECOR.match(s)
+        if not m:
+            break
+        s = s[m.end():]
+    if not s.startswith(STOP_KEYWORD):
+        return "skip", None
+    rest = s[len(STOP_KEYWORD):].lstrip("*_ \t")
+    if rest and rest[0] in PARTICLES:
+        return "skip", None  # 散文（`不在で止める範囲は…`）
+    if rest[:1] in COLONS:
+        value = re.sub(r"^(\*\*|__)\s+", "", rest[1:].strip()).strip()  # 強調の閉じが値の前にあれば外す
+        if value:
+            return "pattern", value
+    return "bad", line.strip()
+
+
 def stop_lines(text: str) -> tuple[list[str], list[str]]:
     """`.claude/dev-loop.md` の `不在で止める範囲:` のパターンと、宣言のつもりなのに形の読めない行（コードブロックと HTML コメントの外）。"""
     patterns, bad = [], []
     for l in visible(text):
-        if STOP_CANDIDATE.match(l.strip()):
-            m = STOP_DECL.match(l)
-            (patterns.append(m.group(1)) if m else bad.append(l.strip()))
+        kind, v = read_stop_line(l)
+        if kind == "pattern":
+            patterns.append(v)
+        elif kind == "bad":
+            bad.append(v)
     return patterns, bad
 
 

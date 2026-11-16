@@ -119,6 +119,12 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     # J1（#1047）: 非 ASCII のパスの宣言（git は既定で引用符つきで出す——core.quotePath）
     s["M6"] = commit(repo, "non-ascii decl", {".claude/dev-loop.md": MAIN_MD + JP_DECL, "docs/設計/a.md": "a\n"})
     git(repo, "reset", "-q", "--hard", s["M"])
+    # R1（#1047）: 飾った宣言・全角のコロン（宣言として読む）と、書き損じ（読めない宣言として止める）
+    s["M8"] = commit(repo, "decorated decls", {".claude/dev-loop.md": MAIN_MD + DECORATED,
+                                               **{f"dir{i}/k.txt": "k\n" for i in range(1, 9)}})
+    git(repo, "reset", "-q", "--hard", s["M"])
+    s["M9"] = commit(repo, "misspelled decls", {".claude/dev-loop.md": MAIN_MD + MISSPELLED})
+    git(repo, "reset", "-q", "--hard", s["M"])
     # J2（#1047）: キーワードを含むだけの散文の行
     s["M7"] = commit(repo, "prose line", {".claude/dev-loop.md": MAIN_MD + PROSE})
     git(repo, "reset", "-q", "--hard", s["M"])
@@ -148,6 +154,9 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
                        ("H6", {".claude/dev-loop.md": MAIN_MD + JP_DECL}),
                        ("H7", {".claude/dev-loop.md": MAIN_MD + JP_DECL, "docs/設計/b.md": "b\n"}),
                        ("H8", {".claude/dev-loop.md": MAIN_MD + PROSE}),
+                       ("H9", {".claude/dev-loop.md": MAIN_MD + DECORATED}),
+                       ("H10", {".claude/dev-loop.md": MAIN_MD + DECORATED, **{f"dir{i}/x.txt": "x\n" for i in range(1, 9)}}),
+                       ("H11", {".claude/dev-loop.md": MAIN_MD + MISSPELLED}),
                        ("Y2", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: a.txt\n"})):
         git(repo, "reset", "-q", "--hard", s["MM"])
         s[key] = commit(repo, f"touch {key}", files)
@@ -169,6 +178,10 @@ MAIN_MD = ("# 追補\n\nマージの反映: ドキュメントとプラグイン
            "不在で止める範囲: risky/\n不在で止める範囲: m.txt\n")
 JP_DECL = "不在で止める範囲: docs/設計/\n"
 PROSE = "\n不在で止める範囲は risky/ と m.txt にしている。\n"
+DECORATED = ("\n**不在で止める範囲:** dir1/\n**不在で止める範囲**: dir2/\n## 不在で止める範囲: dir3/\n"
+             "> 不在で止める範囲: dir4/\n- [ ] 不在で止める範囲: dir5/\n不在で止める範囲：dir6/\n"
+             "- 不在で止める範囲: dir7/\n__不在で止める範囲__: dir8/\n")
+MISSPELLED = ("\n不在で止める範囲 risky/\n不在で止める範囲=risky/\n不在で止める範囲、つまり risky/ のこと\n")
 TABLE = ("## 受入基準（不変条件 × 経路）\n\n| # | 不変条件 | 守り方 |\n| --- | --- | --- |\n"
          "| A1 | x | y |\n| **A2** | x | y |\n\n## ほか\n\n| # | 受入基準ではない |\n| --- | --- |\n| Z9 | z |\n")
 CRIT = ["受入基準: A1 満たす", "受入基準: A2 未証明"]
@@ -282,8 +295,16 @@ CASES = {
         (FULL + ["関門: 当て直し {MM} {R5} 反証=0", REFL], "R5", 3, ["--absent"], {}, "不在で止める範囲: m.txt」を外す"),
     "読めない範囲の宣言（/ で始まる）は、不在の周で止める":
         (FULL + ["関門: 当て直し {MM} {H2} 反証=0", REFL], "H2", 3, ["--absent"], {"default": "M2"}, "読めない"),
-    "形の読めない範囲の宣言の行（箇条書きの印）は、不在の周で止める":
-        (FULL + ["関門: 当て直し {MM} {H4} 反証=0", REFL], "H4", 3, ["--absent"], {"default": "M4"}, "の形で読めない"),
+    "箇条書きの印の付いた宣言は、宣言として読む（当たらない差分は止めない）":
+        (FULL + ["関門: 当て直し {MM} {H4} 反証=0", REFL], "H4", 0, ["--absent"], {"default": "M4"}),
+    "飾った宣言・全角のコロンの宣言は宣言として読み、当たらない差分は止めない（R1）":
+        (FULL + ["関門: 当て直し {MM} {H9} 反証=0", REFL], "H9", 0, ["--absent"], {"default": "M8"}),
+    "飾った宣言・全角のコロンの宣言に当たる差分は、それぞれ宣言に当たったと言って止める（R1）":
+        (FULL + ["関門: 当て直し {MM} {H10} 反証=0", REFL], "H10", 3, ["--absent"], {"default": "M8"},
+         *[f"「不在で止める範囲: dir{i}/」に当たる" for i in range(1, 9)]),
+    "コロン抜け・=・読点の書き損じは、読めない宣言として止める（R1）":
+        (FULL + ["関門: 当て直し {MM} {H11} 反証=0", REFL], "H11", 3, ["--absent"], {"default": "M9"},
+         "「不在で止める範囲 risky/」", "「不在で止める範囲=risky/」", "「不在で止める範囲、つまり risky/ のこと」"),
     "分岐の後に既定ブランチへ足された範囲の宣言を、周が外したと読まない":
         (FULL + [REFL], "MM", 0, ["--absent"], {"default": "M5"}),
     "非 ASCII のパスの宣言に当たらない差分は、不在の周でも止めない（J1）":
@@ -401,11 +422,14 @@ MUTATIONS = {
                                  'if not full or full not in ctx.git("rev-list", "--first-parent", default).stdout.split():'),
     # 守る（#1047）: 読めない宣言を黙って捨てない
     "当たらない宣言を捨てる": ("            if not any(matches(f, pat) for f in paths):\n", "            if False:\n"),
-    # 守る（#1047）: 形の読めない行を黙って捨てない
-    "形の読めない行を捨てる": ("(patterns.append(m.group(1)) if m else bad.append(l.strip()))",
-                           "(patterns.append(m.group(1)) if m else None)"),
-    # 守る（#1047 J2）: 散文の行を宣言の候補にしない
-    "散文の行も宣言の候補にする": ("if STOP_CANDIDATE.match(l.strip()):", 'if "不在で止める範囲" in l:'),
+    # 守る（#1047 R1）: 書き損じを黙って捨てない
+    "書き損じを捨てる": ('    return "bad", line.strip()\n', '    return "skip", None\n'),
+    # 守る（#1047 J2）: 助詞が続く行は散文
+    "助詞の行も書き損じと読む": ("    if rest and rest[0] in PARTICLES:\n", "    if False:\n"),
+    # 守る（#1047 R1）: 行頭の飾りを外してから読む
+    "飾りを外さない": ("        m = DECOR.match(s)\n", "        m = None\n"),
+    # 守る（#1047 R1）: 全角のコロンも宣言
+    "全角のコロンを読まない": ('COLONS = (":", "：")', 'COLONS = (":",)'),
     # 守る（#1047 J1）: パスは引用符なしで読む
     "パスを引用符つきで読む": ('["git", "-c", "core.quotePath=false", *args]', '["git", *args]'),
     # 守る（#1047）: 分岐の後に足された宣言を外したと読まない
@@ -452,9 +476,11 @@ KILLS = {
     "辿れないコミットを戻した行も数える": ["既定ブランチから辿れないコミットを戻した行（squash に残った revert）は数えない"],
     "最初の親の線にあるものだけ数える": ["merge commit で入れた PR の中のコミットを main で戻したら、その範囲も不在の周で非 0"],
     "当たらない宣言を捨てる": ["読めない範囲の宣言（/ で始まる）は、不在の周で止める"],
-    "形の読めない行を捨てる": ["形の読めない範囲の宣言の行（箇条書きの印）は、不在の周で止める"],
+    "書き損じを捨てる": ["コロン抜け・=・読点の書き損じは、読めない宣言として止める（R1）"],
+    "飾りを外さない": ["飾った宣言・全角のコロンの宣言に当たる差分は、それぞれ宣言に当たったと言って止める（R1）"],
+    "全角のコロンを読まない": ["飾った宣言・全角のコロンの宣言は宣言として読み、当たらない差分は止めない（R1）"],
     "後から足された宣言を外したと読む": ["分岐の後に既定ブランチへ足された範囲の宣言を、周が外したと読まない"],
-    "散文の行も宣言の候補にする": ["キーワードを含むだけの散文の行では止めない（J2）"],
+    "助詞の行も書き損じと読む": ["キーワードを含むだけの散文の行では止めない（J2）"],
     "パスを引用符つきで読む": ["非 ASCII のパスの宣言に当たらない差分は、不在の周でも止めない（J1）",
                           "非 ASCII のパスの宣言に当たる差分は、宣言に当たったと言って止める（J1）"],
     "glob の無いパターンを配下に当てない": ["glob の文字の無い範囲の宣言は、配下にも当てる"],
