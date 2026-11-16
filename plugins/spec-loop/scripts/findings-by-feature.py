@@ -14,11 +14,11 @@ usage: python3 findings-by-feature.py <spec-review/v<n>-findings.csv>...
 **行を機能に結ぶのは `指摘` と `根拠` の文面の印である**（指摘の表は機能の列を持たない）:
 
 - **`（機能: <名前>）`**——`spec-exit.md` の「指摘の表」の印（`spec-scope.md` の起票元の詳細と同じ書き方）。コロンは全角でもよい。
-  **印は開き括弧か `／` の直後に始まり、名前は閉じ括弧か `／` で終わる**（前後の空白を外す）——名前の区切りの記号: `）` `)` `／`。
-  括弧に入っていない「機能:」（「非機能: 性能」・地の文）は印に数えない。閉じない印も数えない（行の残りを名前として出さないため）。
-  名前の中の `/`・`、`・`,` は名前の一部である。
+  **印は開き括弧（`（` か `(`）の直後の「機能:」で始まり、対になる閉じ括弧で終わる**——括弧の中の括弧（`受注（EDI）`）は数えて対を取るので、名前の一部になる。
+  1 つの印に 2 つ以上の機能を書くときは `（機能: <名前>／機能: <名前>）`——**`／` の直後が「機能:」のときだけ区切る**（`入出庫／棚卸し` は 1 つの名前）。
+  名前の前後の空白は外す。括弧に入っていない「機能:」（「非機能: 性能」・地の文・`見出し／機能: …`）と、閉じない印は数えない——行の残りを名前として出さないため。
 - **機能の id**——`F-` に 3 桁以上の数字（`references/spec-ir.md`）。ケースの id（`F-001-C1`）は機能 `F-001` に数える。
-  前後が英数字の綴り（`XF-001`・`F-001a`）は id に数えない。
+  前後が英数字の綴り（`XF-001`・`F-001a`）は id に数えない。**印の中（名前）の id は拾わない**——`（機能: F-001 受注）` は名前 1 つに数える。
 
 1 行が 2 つ以上の機能を挙げていれば、その全部に 1 件ずつ数え、その行の数を別に出す。**印の無い行は「（機能を決められない）」の行に数える**——
 黙って落とさない。同じ機能を名前と id の両方で書いた行は、別々の機能として 2 つに数える（名前と id を結ばない）。
@@ -48,6 +48,8 @@ usage: python3 findings-by-feature.py <spec-review/v<n>-findings.csv>...
 - **同じ表を 2 度渡したら数えない**（2）——数が倍になる。
 - **検査に通らない表の違反の行を写さない**——違反の行はセルの値を含む。
 - **括弧に入っていない「機能:」を印に読まない・閉じない印を読まない**——地の文を機能の名前として出さない。
+- **括弧の中の括弧を名前の一部にする・`／` は後ろが「機能:」のときだけ区切る**——見出しどおりの名前を切らない。
+- **印の中の id を別の機能に数えない。**
 
 **守らないもの**:
 
@@ -87,25 +89,62 @@ EXIT_UNCOUNTED = 2
 
 # 印を拾う列（`spec-exit.md` の「指摘の表」）
 MARKED = ("指摘", "根拠")
-# `機能: <名前>`——名前は区切りの記号の手前まで
-NAME_MARK = re.compile(r"(?<=[（(／])\s*機能\s*[:：]\s*([^）)／\n]+?)\s*(?=[）)／])")
+# 印の始まり（開き括弧の直後の「機能:」）と、1 つの印の中の機能の区切り（`／` の直後が「機能:」）
+MARK_HEAD = re.compile(r"[（(]\s*機能\s*[:：]")
+MARK_SPLIT = re.compile(r"\s*／\s*(?=機能\s*[:：])")
+MARK_LABEL = re.compile(r"^機能\s*[:：]\s*")
+OPENS = "（("
+CLOSES = "）)"
 # 機能の id（`F-001`）。ケースの id（`F-001-C1`）の頭も拾う
-ID_MARK = re.compile(r"(?<![A-Za-z0-9_-])(F-[0-9]{3,})(?![0-9A-Za-z_])")
+ID_MARK = re.compile(r"(?<![A-Za-z0-9_])(F-[0-9]{3,})(?![0-9A-Za-z_])")
 UNKNOWN = "（機能を決められない）"
 # 列の並び: 振り分けの区分の 6 つと、確かめられなかった行の `-`
 BUCKETS = (*findings.CATEGORIES, findings.NONE)
+
+
+def closing(text: str, start: int) -> int | None:
+    """`start` の開き括弧と対になる閉じ括弧の位置。閉じなければ None。"""
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] in OPENS:
+            depth += 1
+        elif text[i] in CLOSES:
+            depth -= 1
+            if depth == 0:
+                return i
+    return None
+
+
+def marks(text: str) -> tuple[list[str], str]:
+    """印が挙げた機能の名前と、印を消した残りの文（id はそこから拾う）。"""
+    names: list[str] = []
+    rest: list[str] = []
+    done = 0
+    for m in MARK_HEAD.finditer(text):
+        if m.start() < done:
+            continue
+        end = closing(text, m.start())
+        if end is None:
+            continue
+        for part in MARK_SPLIT.split(text[m.start() + 1:end]):
+            name = MARK_LABEL.sub("", part).strip()
+            if name:
+                names.append(name)
+        rest.append(text[done:m.start()])
+        done = end + 1
+    rest.append(text[done:])
+    return names, " ".join(rest)
 
 
 def features_of(cell: dict[str, str]) -> list[str]:
     """1 行が挙げた機能（出てきた順・重複なし）。"""
     out: list[str] = []
     for column in MARKED:
-        text = cell[column]
-        for m in NAME_MARK.finditer(text):
-            name = m.group(1).strip()
-            if name and name not in out:
+        names, rest = marks(cell[column])
+        for name in names:
+            if name not in out:
                 out.append(name)
-        for m in ID_MARK.finditer(text):
+        for m in ID_MARK.finditer(rest):
             if m.group(1) not in out:
                 out.append(m.group(1))
     return out

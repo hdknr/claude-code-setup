@@ -13,7 +13,7 @@
 3. **中身を数えていない形を 0 にしない（2）**——検査に通らない表・無いファイル・引数の誤り。
 4. **指摘の文面を出さない**——出力に `指摘`・`根拠`・`結果` の自由文が無い。
 5. **原本との突き合わせ**——`references/spec-exit.md` の指摘の表が `（機能: <名前>）` の印と本体を指し、`references/spec-scope.md` が数え方を指す。
-   本体の docstring に書いた名前の区切りの記号が、本体の正規表現と同じ。括弧の外の「機能:」・閉じない印・英数字に続く id を数えず、
+   本体の docstring と `spec-exit.md` が同じ印の形（`（機能: <名前>／機能: <名前>）`）を書く。括弧の中の括弧は名前の一部で、括弧の外の「機能:」・閉じない印・英数字に続く id を数えず、
    違反の行（セルの値）を写さず、同じ表を 2 度渡せば 2。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -92,6 +92,12 @@ CASES: dict[str, tuple] = {
     "数えない: 違反の行を写さない": ({"v1-findings.csv": F_HEAD + f("（機能: 注文）x", confirmed="確かめられない").replace(",-\n", f",{SECRET}\n")},
                                [], 2, ["検査に通らない"], [SECRET]),
     "数えない: 同じ表を 2 度渡す": ({"v1-findings.csv": F_HEAD + f("（機能: 注文）x")}, ["SAME"], 2, ["2 度"], ["| 注文 |"]),
+    "数える: 括弧の中の括弧は名前の一部": ({"v1-findings.csv": F_HEAD + f("（機能: 受注（EDI））の検証") + f("（機能: 入出庫／棚卸し）y")}, [], 0,
+                                      [row("受注（EDI）", 1, 1), row("入出庫／棚卸し", 1, 1)], []),
+    "数える: 括弧の外の ／機能: は印でない": ({"v1-findings.csv": F_HEAD + f(f"見出し／機能: {SECRET}（と思う）")}, [], 0, [row(UNKNOWN, 1, 1)], [SECRET]),
+    "数える: 閉じない印の後ろの括弧まで読まない": ({"v1-findings.csv": F_HEAD + f(f"（機能: 注文 の{SECRET}。例えば（0 件）のとき")}, [], 0, [row(UNKNOWN, 1, 1)], [SECRET]),
+    "数える: 印の中の id は数えない": ({"v1-findings.csv": F_HEAD + f("（機能: F-001 受注）x")}, [], 0, [row("F-001 受注", 1, 1), "2 つ以上の機能に数えた行: 0"], []),
+    "数える: つながった id は両方": ({"v1-findings.csv": F_HEAD + f("F-001-F-002 の境界")}, [], 0, [row("F-001", 1, 1), row("F-002", 1, 1)], []),
     "数えない: 検査に通らない表": ({"v1-findings.csv": F_HEAD + f("（機能: 注文）x", category="直す")}, [], 2, ["検査に通らない"], ["| 注文 |"]),
     "数えない: 2 つ目の表が検査に通らない": ({"v1-findings.csv": F_HEAD + f("（機能: 注文）x"), "v2-findings.csv": F_HEAD + f("（機能: 注文）y", no="9")},
                                       [], 2, ["v2-findings.csv が check-findings-csv.py の検査に通らない"], ["| 注文 |"]),
@@ -103,20 +109,22 @@ CASES: dict[str, tuple] = {
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("根拠の列を見ない", 'MARKED = ("指摘", "根拠")', 'MARKED = ("指摘",)', "数える: 根拠の列の名前の印"),
-    ("全角のコロンを読まない", r'機能\s*[:：]\s*', r'機能\s*[:]\s*', "数える: 全角のコロン"),
-    ("区切りの／で切らない", "([^）)／\\n]+?)\\s*(?=[）)／])", "([^）)\\n]+?)\\s*(?=[）)])", "数える: 2 つの機能を挙げた行は両方"),
+    ("全角のコロンを読まない", 'MARK_HEAD = re.compile(r"[（(]\\s*機能\\s*[:：]")', 'MARK_HEAD = re.compile(r"[（(]\\s*機能\\s*[:]")', "数える: 全角のコロン"),
+    ("／で分けない", 'MARK_SPLIT = re.compile(r"\\s*／\\s*(?=機能\\s*[:：])")', 'MARK_SPLIT = re.compile(r"(?!)")', "数える: 2 つの機能を挙げた行は両方"),
     ("ケースの id を機能に寄せない", '(F-[0-9]{3,})(?![0-9A-Za-z_])', '(F-[0-9]{3,}(?:-C[0-9]+)?)(?![0-9A-Za-z_])', "数える: 機能の id とケースの id"),
     ("id の桁を 3 桁で切る", '(F-[0-9]{3,})(?![0-9A-Za-z_])', '(F-[0-9]{3})', "数える: 機能の id とケースの id"),
     ("id の後ろの英字を見ない", '(?![0-9A-Za-z_])"', '(?![0-9])"', "数える: 英数字に続く id は数えない"),
-    ("id の前の英字を見ない", 'r"(?<![A-Za-z0-9_-])(F-', 'r"(F-', "数える: 英数字に続く id は数えない"),
-    ("括弧の外の機能: も読む", 'r"(?<=[（(／])\\s*機能', 'r"機能', "数える: 括弧の外の機能: は印でない"),
-    ("閉じない印も読む", '\\s*(?=[）)／])"', '\\s*(?=[）)／]|$)"', "数える: 閉じない印は数えない"),
+    ("id の前の英字を見ない", 'r"(?<![A-Za-z0-9_])(F-', 'r"(F-', "数える: 英数字に続く id は数えない"),
+    ("id の前の - も止める", 'r"(?<![A-Za-z0-9_])(F-', 'r"(?<![A-Za-z0-9_-])(F-', "数える: つながった id は両方"),
+    ("閉じない印も読む", "        if end is None:\n            continue\n", "        if end is None:\n            end = len(text)\n", "数える: 閉じない印は数えない"),
+    ("括弧の入れ子を数えない", "        if text[i] in OPENS:\n            depth += 1\n", "        if i == start:\n            depth += 1\n", "数える: 括弧の中の括弧は名前の一部"),
+    ("印の中の id も数える", "        for m in ID_MARK.finditer(rest):\n", "        for m in ID_MARK.finditer(cell[column]):\n", "数える: 印の中の id は数えない"),
     ("違反の行を写す", '                             f"——違反は python3 check-findings-csv.py {table} で見る")', '                             + "\\n".join(problems))', "数えない: 違反の行を写さない"),
     ("同じ表を 2 度数える", "        if table.resolve() in seen:\n", "        if False:\n", "数えない: 同じ表を 2 度渡す"),
     ("| を逃がさない", '    return name.replace("|", "\\\\|")\n', "    return name\n", "数える: 名前の | を逃がす"),
     ("印の無い行を落とす", "                names = [UNKNOWN]\n", "                continue\n", "数える: 印の無い行は決められない"),
     ("2 つ以上の機能を 1 つに寄せる", "            for name in names:\n", "            for name in names[:1]:\n", "数える: 2 つの機能を挙げた行は両方"),
-    ("同じ機能を 2 度数える", "            if name and name not in out:\n", "            if name:\n", "数える: 同じ機能を 2 度書いても 1 件"),
+    ("同じ機能を 2 度数える", "            if name not in out:\n", "            if True:\n", "数える: 同じ機能を 2 度書いても 1 件"),
     ("検査に通らない表を数える", "        if code != 0:\n", "        if False:\n", "数えない: 検査に通らない表"),
     ("1 つ目の表だけ数える", "    for table in tables:\n", "    for table in tables[:1]:\n", "数える: 2 つの版の表を足し合わせる"),
     ("区分を取り違える", "[cell[\"振り分け\"]] += 1", "[findings.CATEGORIES[0]] += 1", "数える: 名前の印（陽性対照）"),
@@ -166,14 +174,11 @@ def reference_problems(source: str, spec_exit: str, spec_scope: str) -> list[str
         problems.append("spec-exit.md の「機能ごとに数える」が本体を指さない")
     if "**数え方は `spec-exit.md` の「機能ごとに数える」を正とする**" not in spec_scope:
         problems.append("spec-scope.md が数え方を指さない")
-    documented = re.search(r"名前の区切りの記号: ((?:`[^`]+` ?)+)。", source)
-    regex = re.search(r'NAME_MARK = re\.compile\(r"[^"]*?\(\[\^([^\]]+)\]\+\?\)', source)
-    if not documented or not regex:
-        problems.append("docstring か正規表現の区切りの記号が読めない")
-    else:
-        doc = "".join(re.findall(r"`([^`]+)`", documented.group(1))) + "\\n"
-        if doc != regex.group(1):
-            problems.append(f"区切りの記号: docstring {doc!r} ≠ 正規表現 {regex.group(1)!r}")
+    form = "`（機能: <名前>／機能: <名前>）`"
+    if form not in spec_exit:
+        problems.append(f"spec-exit.md に 2 つ以上の機能の印の形 {form} が無い")
+    if form not in source:
+        problems.append(f"本体の docstring に印の形 {form} が無い")
     return problems
 
 
@@ -194,7 +199,7 @@ def main() -> int:
         spec_scope = SPEC_SCOPE.read_text(encoding="utf-8")
         problems = reference_problems(source, spec_exit, spec_scope)
         check("本体と references が一致する", not problems, "; ".join(problems))
-        broken = source.replace("`）` `)` `／`。", "`）` `)`。", 1)
+        broken = source.replace("`（機能: <名前>／機能: <名前>）`", "`（機能: <名前>）`", 1)
         check("崩した docstring で突き合わせが落ちる（陽性対照）", reference_problems(broken, spec_exit, spec_scope) != [])
         print("  OK")
 
