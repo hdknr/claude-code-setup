@@ -41,7 +41,7 @@ usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--since <�
 - 書くのは出力の 1 ファイルだけ（正本・spec-loop・screen-spec を書かない。`__pycache__` も、正本の git の index も書かない——`--no-optional-locks`）
 - 埋め込む JSON と描き方の JS が `</script` で HTML を閉じない。描き方のファイルは 1 つずつ別の `<script>` に置く（構文の誤りがほかを巻き込まない）
 - 表の遷移は、きっかけの項目の種類（ボタン・一覧・表示・入力・一覧の列）に依らずモックの上で押せる。タブの中のタブは道筋のタブを選ぶ
-- 差分の印は変わった画面・項目・遷移にだけ付ける（v1 には前の版からの印を付けない。埋め込む列が `D-` を外して同じなら変更に数えない）。根拠は共有の層の番号だけ（消した行は消した理由の番号も足す。理由は v1〜v<n> の `removed.csv` から）
+- 差分の印は変わった画面・項目・遷移にだけ付ける（v1 には前の版からの印を付けない。埋め込む列が `D-` を外して同じなら変更に数えない）。根拠は共有の層の番号だけ（消した行は消した理由の番号も足す。理由は基準の時点に重ねた版から v<n> までの `removed.csv` から）
 - 基準の時点は一時ディレクトリに取り出し、終わったら消す（正本・git の index に書かない）。解決できなければ 2、その時点の重ね合わせが決まりに反すれば 1
 - レビュー会の進め方は共有の層の `反映済み` でない行だけを Q&A 表の順に並べ、質問の画面（画面・その項目・その画面を遷移元にする遷移のセルに番号がある画面）へ飛ぶ
 - 未回答の注記は共有の層の未回答の行を指す項目・遷移にだけ出す。画面に掛かる行（共有と内部）に回答の未反映が残っていれば標準出力に警告する（0 のまま）
@@ -132,6 +132,7 @@ class Sharer:
         text = re.sub(r"[（(][\s、,]*[)）]", "", text)  # 番号だけを囲んでいた括弧
         text = re.sub(rf"(?:\s*{screens_check.SEPARATOR}\s*)+", screens_check.SEPARATOR, text)
         text = re.sub(rf"([（(]){screens_check.SEPARATOR}|{screens_check.SEPARATOR}([)）])", r"\1\2", text)  # 括弧の中に余った区切り
+        text = re.sub(r"[ \t]{2,}", " ", text)  # 文の途中の番号を外して余った空白
         return text.strip().strip(screens_check.SEPARATOR).strip()
 
 
@@ -282,7 +283,7 @@ def load_diff(spec_loop: Path):
 
 
 def baseline(docs: Path, ref: str, number: int, versions_module):
-    """(基準の時点の名前, その時点の docs を重ねた全体)。`docs` の git で `ref` をコミットに解決し、その時点の `docs` を一時ディレクトリに
+    """(基準の時点の名前, その時点の docs を重ねた全体, 重ねた版の番号)。`docs` の git で `ref` をコミットに解決し、その時点の `docs` を一時ディレクトリに
     取り出して（終わったら消す）、同じ版（その時点に無ければその時点の最大の版）まで重ねる。正本も git の index も書かない。"""
     if git(docs, "rev-parse", "--is-inside-work-tree") != "true":
         raise screens_check.Unreadable(f"--since {ref}: docs が git の作業ツリーの外——基準の時点を決められない")
@@ -308,14 +309,16 @@ def baseline(docs: Path, ref: str, number: int, versions_module):
             raise screens_check.Unreadable(f"--since {ref}: その時点の docs を取り出せない（{e}）") from None
         try:
             try:
-                problems, _, whole, _ = versions_module.merge(target, number)
+                problems, found, whole, _ = versions_module.merge(target, number)
+                used = number
             except versions_module.OutOfRange:
-                problems, _, whole, _ = versions_module.merge(target, None)  # その時点にはまだ v<n> が無い
+                problems, found, whole, _ = versions_module.merge(target, None)  # その時点にはまだ v<n> が無い
+                used = len(found)
         except versions_module.Unreadable as e:
             raise screens_check.Unreadable(f"--since {ref}: {e}") from None
     if problems:
         raise Refused(f"基準の時点（{ref}）の版の重ね合わせが spec-loop の決まりに反する:\n" + "\n".join(f"  {p}" for p in problems))
-    return f"{ref}（コミット {commit}）", whole
+    return f"{ref}（コミット {commit}）", whole, used
 
 
 def shown_row(name: str, row: dict[str, str], sharer: Sharer) -> dict[str, str]:
@@ -395,9 +398,10 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str,
         diffs.append(diff_entry("version", f"前の版（v{number - 1}）から", diff.changes, row_tables, names, numbers, sharer,
                                 diff_versions.REMOVED, diff_versions.CHANGED))
     if since is not None:
-        label, before = baseline(docs, since, number, checker.versions)
+        label, before, used = baseline(docs, since, number, checker.versions)
         reasons: dict = {}
-        for _, root in versions[:number]:  # 基準の時点がもっと前の版なら、間の版の removed.csv の理由も要る
+        # 基準の時点に重ねた版から v<n> までの removed.csv の理由（それより前の版の理由は、基準の時点より前に消した行のもの）
+        for _, root in versions[max(used, 1) - 1:number]:
             reasons.update(diff_versions.removal_reasons(root))
         changes = {}
         for path, (row_kind, _, _) in row_tables.items():

@@ -89,7 +89,7 @@ V1_TRANSITIONS = T_HEAD + (
     "T-004,S-002,I-021,,入力に確認の要る値があるとき（D-S-001）,S-004,,F-002、D-S-001\n"
     "T-005,S-003,I-031,,,S-001,,F-001\n"
     "T-006,S-004,I-040,,,S-002,,F-002\n"
-    "T-007,S-005,I-050,,,S-006,,F-001\n"
+    "T-007,S-005,I-050,,履歴を 見る,S-006,,F-001\n"
     "T-010,S-003,I-030,,,S-007,,F-001\n"   # 表示の項目が きっかけ
     "T-011,S-002,I-020,,,S-001,,F-002\n"   # 入力の項目が きっかけ
     "T-012,S-001,I-012,,,S-003,,Q-R-001\n"   # 一覧の列が きっかけ
@@ -114,7 +114,8 @@ V2_ITEMS = I_HEAD + ("I-014,S-001,操作,5,配置図,ボタン,,,,,,,,F-001\n"
                      "I-031,S-003,操作,2,戻る,ボタン,一覧へ戻る,,,,,,,F-001、Q-R-002\n")   # 前の版から変えた項目
 V2_TRANSITIONS = T_HEAD + ("T-008,S-001,I-014,,,S-008,,F-001\n"
                            "T-009,S-008,I-080,,,S-001,,F-001\n"
-                           "T-005,S-003,I-031,,保存せずに戻るとき,S-001,,F-001、Q-R-002、D-S-001\n")   # 前の版から変えた遷移
+                           "T-005,S-003,I-031,,保存せずに戻るとき,S-001,,F-001、Q-R-002、D-S-001\n"   # 前の版から変えた遷移
+                           "T-007,S-005,I-050,,履歴を D-S-001 見る,S-006,,F-001\n")   # 文の途中に内部の番号を足しただけ（変更に数えない）
 V2_REMOVED = "種類,対象,理由\n遷移,T-015,使わなくなった（Q-R-002、D-S-001）\n"   # 前の版から消した遷移
 QA_V1 = QA_HEAD + (
     "Q-R-001,要求確定,一覧の絞り込みを置くか,A: 置く / B: 置かない,A,理由,未回答,—,確認中,\n"
@@ -230,6 +231,9 @@ CASES: list[tuple[str, dict, object, list[str], int, str | None, str]] = [
      "build/mock/v2/index.html", "書いた:"),
     ("since-v3", with_(base_files(), {"docs/v3/" + DATA + "screens.csv": S_HEAD + "S-009,お知らせ,static,,担当者,下書き,,知らせる,読む,F-001,,,F-001\n"}),
      ("since", v1_only()), ["--since", "review-1"], 0, "build/mock/v3/index.html", "書いた:"),
+    ("since-readded", with_(base_files(), {"docs/v3/" + DATA + "transitions.csv": T_HEAD}),
+     ("since", with_(base_files(), {"docs/v3/" + DATA + "transitions.csv": T_HEAD + "T-015,S-003,I-032,,,S-001,,F-001\n"})),
+     ["--since", "review-1"], 0, "build/mock/v3/index.html", "書いた:"),
     ("reflected", with_(base_files(), {"docs/v1/shared/qa.csv": QA_V1.replace("A,理由,A,—,確認中,", "A,理由,A,requirements/screens/data/screen-items.csv,反映済み,"),
                                        "docs/v1/spec/qa-dev.csv": QA_DEV_V1.replace("A,理由,A,—,確認中,", "A,理由,A,spec/x.md,反映済み,")}),
      "git", [], 0, "build/mock/v2/index.html", "書いた:"),
@@ -438,11 +442,12 @@ def shared_view(row: dict[str, str]) -> dict[str, str]:
     return {k: re.sub(r"[、（）()\s]", "", re.sub(r"D-(?:[A-Z]-)?[0-9]{3,}", "", v or "")) for k, v in row.items() if k != "パス"}
 
 
-def expected_diff(before_files: dict[str, str], before_upto: int, after_files: dict[str, str], upto: int) -> tuple[dict, dict]:
+def expected_diff(before_files: dict[str, str], before_upto: int, after_files: dict[str, str], upto: int,
+                  reason_from: int) -> tuple[dict, dict]:
     """(表 → 鍵 → 追加／変更／削除, 表 → 鍵 → 共有の層の根拠の番号)。重ねた表どうしを独立に比べる。
-    消した行の根拠には、v<upto> の removed.csv でその行を名指しした理由の番号も足す。"""
+    消した行の根拠には、v<reason_from>〜v<upto> の removed.csv でその行を名指しした理由の番号も足す。"""
     reasons: dict[str, str] = {}
-    for version in range(1, upto + 1):
+    for version in range(reason_from, upto + 1):
         removed_csv = after_files.get(f"docs/v{version}/removed.csv")
         reasons.update({r["対象"]: r["理由"] for r in table_rows(removed_csv)} if removed_csv else {})
     marks: dict[str, dict[str, str]] = {}
@@ -478,7 +483,7 @@ def review_problems(case, result: dict, data: dict, upto: int) -> list[str]:
         problems.append(f"差分の種類が {[d.get('kind') for d in diffs]}（期待 {[k for k, _, _ in expected_kinds]}）")
         return problems
     for diff, (kind, before, before_upto) in zip(diffs, expected_kinds):
-        marks, basis = expected_diff(before, before_upto, files, upto)
+        marks, basis = expected_diff(before, before_upto, files, upto, upto if kind == "version" else max(before_upto, 1))
         if diff.get("marks") != marks:
             problems.append(f"{kind} の差分の印が違う: {diff.get('marks')}（期待 {marks}）")
         if diff.get("basis") != basis:
@@ -488,6 +493,8 @@ def review_problems(case, result: dict, data: dict, upto: int) -> list[str]:
             problems.append(f"{kind} の消したものの一覧が違う: {removed}")
         reasons = {r["key"]: r["reason"] for r in diff.get("removed", [])}
         for key, reason in (("T-015", "使わなくなった（Q-R-002）"), ("S-004", "使わなくなった"), ("I-040", "画面 S-004 を消した: 使わなくなった")):
+            if name == "since-readded" and kind == "since":
+                reason = ""  # 基準の時点より前（v2）に消して v3 で置き直した行——前の版の理由を拾わない
             if key in reasons and reasons[key] != reason and not (kind == "since" and key != "T-015"):
                 problems.append(f"消した {key} の理由が {reasons[key]!r}（期待 {reason!r}）")
         if kind == "since" and "--since" in args:
@@ -657,7 +664,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     # ---- #1096
     ("前の版との差分を出さない", "    if number > 1:\n        try:\n", "    if False:\n        try:\n", "good"),
     ("基準の時点を無視する", "    if since is not None:\n", "    if False:\n", "since"),
-    ("その時点に無い版で止まる", "                problems, _, whole, _ = versions_module.merge(target, None)  # その時点にはまだ v<n> が無い\n",
+    ("その時点に無い版で止まる", "                problems, found, whole, _ = versions_module.merge(target, None)  # その時点にはまだ v<n> が無い\n",
      "                raise\n", "since-before-v2"),
     ("差分の根拠に内部の層の番号を残す", "            basis[change.key] = numbers.of(row, shared_only=True)\n", "            basis[change.key] = numbers.of(row)\n", "good"),
     ("消した理由の番号を根拠に足さない", '                basis[change.key] += [n for n in numbers.of({"理由": change.reason or ""}, shared_only=True) if n not in basis[change.key]]\n',
@@ -673,8 +680,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "               for key, row in whole.tables[path].items() if False}", "good"),
     ("内部の番号だけの変更にも印を付ける", "            if change.status == changed_status and shown_row(name, change.before, sharer) == shown_row(name, change.after, sharer):\n",
      "            if False:\n", "good"),
-    ("基準の時点の理由を作業中の版の removed.csv だけから読む", "        for _, root in versions[:number]:  # 基準の時点がもっと前の版なら",
-     "        for _, root in versions[number - 1:number]:  # 基準の時点がもっと前の版なら", "since-v3"),
+    ("基準の時点の理由を作業中の版の removed.csv だけから読む", "        for _, root in versions[max(used, 1) - 1:number]:\n",
+     "        for _, root in versions[number - 1:number]:\n", "since-v3"),
+    ("基準の時点より前の版の理由も読む", "        for _, root in versions[max(used, 1) - 1:number]:\n",
+     "        for _, root in versions[:number]:\n", "since-readded"),
+    ("文の途中の番号を外して余った空白を畳まない", '        text = re.sub(r"[ \\t]{2,}", " ", text)  # 文の途中の番号を外して余った空白\n', "", "good"),
     ("基準の時点を一時ディレクトリの外に取り出す", '    with tempfile.TemporaryDirectory(prefix="screen-spec-since-") as tmp:\n        target = Path(tmp) / "docs"\n',
      '    if True:\n        target = docs.resolve().parent / "since-docs"\n', "since"),
 ]
