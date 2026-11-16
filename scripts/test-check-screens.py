@@ -369,6 +369,11 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
                                        NEW_MD=doc("S-002", "受注登録") + profile_section(f"**{UNDECIDED}**"),
                                        COMMON="# 共通仕様\n\n" + profile_section(UNDECIDED)),
      None, [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "違反:"),
+    ("web-spa-undecided-in-subsection", web_spa(NEW_MD=doc("S-002", "受注登録") + profile_section(
+        f"### ディープリンク・別タブ\n\n{UNDECIDED}\n\n### 一覧の送り方\n\n")), None, [], 1, "に小見出し ### 認証と権限の外れ が無い", ""),
+    ("web-spa-undecided-partial-emphasis", web_spa(S=SW_HEAD + S1.replace("\n", ",**N/A**。実現方式が未定\n") + WS2,
+                                                   NEW_MD=doc("S-002", "受注登録") + profile_section("**N/A**。実現方式が未定")),
+     None, [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "違反:"),
     ("web-spa-no-common-ok", web_spa(COMMON=None), None, [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件", "違反:"),
     ("web-spa-no-section", web_spa(NEW_MD=doc("S-002", "受注登録")), None, [], 1, "order-new.md: 節 ## 実現方式: web-spa が無い（profile web-spa）", ""),
     ("web-spa-section-in-comment", web_spa(NEW_MD=doc("S-002", "受注登録") + "\n<!--" + profile_section() + "-->\n"), None, [], 1,
@@ -610,7 +615,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("profile の節が無いのを見ない", "self.report.violations.append(f\"{path}: 節 ## {name} が無い（profile {self.profile}）\")", "pass", "web-spa-no-section"),
     ("2 つある profile の節を見ない", "for index in places[1:]:", "for index in []:", "web-spa-section-twice"),
     ("profile の節が末尾かを見ない", "if after is not None and at < after:", "if False:", "web-spa-section-not-last"),
-    ("方式が未定でも小見出しを求める", "        if undecided_profile(HEADING_LINE.sub(", "        if False and undecided_profile(HEADING_LINE.sub(", "web-spa-undecided-good"),
+    ("方式が未定でも小見出しを求める", "        if undecided_profile(COMMENT.sub(", "        if False and undecided_profile(COMMENT.sub(", "web-spa-undecided-good"),
+    ("小見出しの中の言い回しで節ごと通す", "undecided_profile(COMMENT.sub(\"\", \"\\n\".join(lines[at + 1:lead])))",
+     "undecided_profile(HEADING_LINE.sub(\"\", COMMENT.sub(\"\", \"\\n\".join(lines[at + 1:end]))))", "web-spa-undecided-in-subsection"),
+    ("字の間の強調を言い回しに数えない", "r\"[*_`~]*\".join(map(re.escape, PROFILE_UNDECIDED_TEXT))", "re.escape(PROFILE_UNDECIDED_TEXT)", "web-spa-undecided-partial-emphasis"),
     ("無い小見出しを見ない", "            if found is None:\n", "            if False:\n", "web-spa-subsection-missing"),
     ("空の小見出しを見ない", "self.report.violations.append(f\"{path}:{sub_at + 1}: 小見出し ### {subsection} が空", "None and (f\"{path}:{sub_at + 1}: 小見出し ### {subsection} が空",
      "web-spa-subsection-empty"),
@@ -694,7 +702,7 @@ def profile_mismatches(module, profiles: str, directories: list[str]) -> list[st
     same("仕様書の小見出し", module.PROFILES["web-spa"]["screen"], screen)
     same("共通仕様の小見出し", module.PROFILES["web-spa"]["common"], common)
     same("節の名前", [module.PROFILE_SECTION + "<profile>"], sorted(set(re.findall(r"`## ([^`]+: <profile>)`", adds))))
-    same("方式が未定の言い回し", [module.PROFILE_UNDECIDED.pattern], sorted(set(re.findall(r"`(N/A。[^`]+)`", undecided))))
+    same("方式が未定の言い回し", [module.PROFILE_UNDECIDED_TEXT], sorted(set(re.findall(r"`(N/A。[^`]+)`", undecided))))
     same("未設定", [module.UNSET], re.findall(r"\*\*`([^`]+)` なら、profile の列と節を求めない", choose))
     # 各項目を誰が決めるか（共有の Q&A 表か spec/qa-dev.csv か）が書いてある
     items = [n for names in module.PROFILES["web-spa"]["columns"].values() for n in names] + screen + common

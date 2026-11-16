@@ -161,7 +161,9 @@ PROFILE_SECTION = "実現方式: "  # 続けて profile の名前
 PATH_COLUMN = "パス"  # web-spa: `/` で始まる。種別が `tab`・`dialog`（CHILD_KINDS）のときだけ空でよい
 TAB_COLUMN = "種類"  # web-spa（遷移）: 空は同じタブ
 TAB_KINDS = ("同じタブ", "別タブ")
-PROFILE_UNDECIDED = re.compile(r"N/A。実現方式が未定", re.IGNORECASE)  # NFKC にしてから当てる
+PROFILE_UNDECIDED_TEXT = "N/A。実現方式が未定"
+# NFKC にしてから当てる。強調・コードの印（`**N/A**。…`）が字の間に入っても同じ言い回しと読む——伏せる側と節・セルを読む側で揃える
+PROFILE_UNDECIDED = re.compile(r"[*_`~]*".join(map(re.escape, PROFILE_UNDECIDED_TEXT)), re.IGNORECASE)
 
 
 def mask_undecided(text: str) -> str:
@@ -176,7 +178,7 @@ def bare_not_applicable(content: str) -> bool:
 
 def undecided_profile(text: str) -> bool:
     """`N/A。実現方式が未定` で始まるか（強調・箇条書きの印は外して見る）。"""
-    plain = DECORATION.sub("", LIST_MARK.sub("", unicodedata.normalize("NFKC", text))).strip()
+    plain = LIST_MARK.sub("", unicodedata.normalize("NFKC", text)).strip().lstrip("*_`~")
     return PROFILE_UNDECIDED.match(plain) is not None
 
 
@@ -793,7 +795,9 @@ class Checker:
         if after is not None and at < after:
             self.report.violations.append(f"{path}:{at + 1}: 節 ## {name} を末尾（## {SECTIONS[-1][0]} の後ろ）に置いていない")
         end = next((h[0] for h in headings[index + 1:] if h[1] <= 2), len(lines))
-        if undecided_profile(HEADING_LINE.sub("", COMMENT.sub("", "\n".join(lines[at + 1:end])))):
+        # 方式が未定かは、節の見出しから最初の小見出しまでの本文で決める（小見出しの中の言い回しで節ごと通さない）
+        lead = next((h[0] for h in headings[index + 1:] if h[0] < end), end)
+        if undecided_profile(COMMENT.sub("", "\n".join(lines[at + 1:lead]))):
             return
         inner = [(i, h) for i, h in enumerate(headings) if at < h[0] < end]
         for subsection in subsections:
