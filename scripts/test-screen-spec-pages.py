@@ -72,7 +72,8 @@ V1_TRANSITIONS = T_HEAD + (
     "T-001,S-001,I-013,受注の登録,担当者のみ（D-S-001）,S-002,,F-002\n"
     "T-002,S-002,I-021,受注の登録,,S-001,保存した,F-002\n"
     "T-003,S-001,I-014,,,S-002,,F-001\n")   # 条件の無い遷移（権限の節に出さない）
-V2_SCREENS = S_HEAD + "S-001,受注一覧,top,,担当者,記入中,,受注を探す,一覧と絞り込みと並び替え,F-001,,order-list.md,Q-R-001\n"
+V2_SCREENS = S_HEAD + "S-001,受注一覧,top,,担当者,記入中,,受注を探す,一覧と絞り込みと並び替え,F-001,,order-list.md,Q-R-001\n" + (
+    "S-002,受注登録,form,,担当者,記入中,,未定（Q-R-001）,入力と確認,F-002,,order-new.md,F-002、D-S-001\n")  # 仕様書を v2 に写さずに表だけ変える
 TABLED = ["1. 基本情報", "2. 画面概要", "3. レイアウト", "4. データ表示", "5. 操作とアクション", "6. 入力とバリデーション",
           "8. 権限とデータの見える範囲", "12. 一覧・表の能力", "13. 画面遷移"]
 MARK = "<!-- screen-spec: 表 -->"
@@ -274,6 +275,7 @@ def tables_in_sections(plugin: Path, work: Path) -> bool:
     return (not warnings and MARK not in s1 + s2 + v2
             and "| 画面ID | S-001 |" in section(s1, "1. 基本情報") and "| 呼び出し元 | S-002（T-002） |" in section(s1, "1. 基本情報")
             and "| できること | 一覧と絞り込み |" in section(s1, "2. 画面概要") and "| できること | 一覧と絞り込みと並び替え |" in section(v2, "2. 画面概要")
+            and "| できること | 入力と確認 |" in section(s2, "2. 画面概要")
             and layout_rows == ["I-011", "I-012", "I-010", "I-014", "I-013"]
             and "I-014" in section(s1, "4. データ表示") and "I-011" in section(s1, "4. データ表示") and "I-013" not in section(s1, "4. データ表示")
             and "| T-001 | I-013 | 受注の登録 | 担当者のみ | S-002 |" in section(s1, "5. 操作とアクション")
@@ -428,7 +430,10 @@ MUTATIONS: list[tuple] = [
     ("条件の無い遷移も権限の節に出す", IMPL, ' and r.get("条件", "").strip()]', "]", "画面の表の行が仕様書の節に表として出る"),
     ("遷移先の遷移を画面遷移の節に出さない", IMPL, '            return [r for r in source if screen_id in (r.get("遷移元", "").strip(), r.get("遷移先", "").strip())]',
      '            return [r for r in source if screen_id == r.get("遷移元", "").strip()]', "画面の表の行が仕様書の節に表として出る"),
-    ("版の重ね方を見ない", IMPL, "        _, whole, checker = merged(docs, version)\n", "        _, whole, checker = merged(docs, None)\n",
+    ("表だけ変えた後の版を見ない", IMPL, "    upto = last_version_of(docs, version, document)\n", "    upto = version\n",
+     "画面の表の行が仕様書の節に表として出る"),
+    ("後の版の仕様書を見ない", IMPL, "            return number - 1\n", "            pass\n", "画面の表の行が仕様書の節に表として出る"),
+    ("版の重ね方を見ない", IMPL, "    upto = last_version_of(docs, version, document)\n", "    upto = None\n",
      "画面の表の行が仕様書の節に表として出る"),
     ("節を見ずに出す", IMPL, "        if section not in SECTION_TABLES:\n", "        if section not in SECTION_TABLES and False:\n",
      "仕様書でないページとコードブロックの印は変えず、散文の節と当たらない仕様書は注意書き"),

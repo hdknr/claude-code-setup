@@ -15,6 +15,7 @@
 - 案件の雛形（`docs/v<k>/requirements/screens/templates/` の下）はサイトに出さない（`{{画面ID}}` を持ち、リンクが解決しない）
 - 正本を書かない——書くのは `<docs の親>/build/mock/v<n>/index.html`（`build-mock.py` と同じ場所。commit しない）だけ。`mkdocs.yml` を書き換えない
 - 表を出すのは `docs/v<k>/requirements/screens/` の直下の Markdown の、表で持つ節の印だけ（ほかのページ・コードブロックの中は変えない）
+- 版 `v<k>` の仕様書には、後の版が同じ名前の仕様書を置くまでの版を重ねた行を出す（表だけを変えた版の行も出る）
 - 出す列は `references/mkdocs.md` の表の列だけ（`build-mock.py` の許可の列の中）。どのセルからも `D-` の番号を外す
 - 未決定の印を含むセルの頭に `⚠️ ` を付ける（見せるときだけ。正本には書かない）
 - 当たる画面が無い・重ね合わせの違反・散文の節の印・作れなかったモックは、警告（`mkdocs` のロガー）とページの注意書きにする（黙って空にしない）
@@ -219,6 +220,16 @@ def replace_marks(markdown: str, render) -> str:
     return "\n".join(out)
 
 
+def last_version_of(docs: Path, version: int, document: str) -> int:
+    """仕様書 `v<version>/…/<document>` が重ねた全体の仕様書である最後の版——後の版が同じ名前の仕様書を置くまで（版は差分だけを置くので、
+    仕様書を写さずに表だけを変えた版の行も、このページに出す）。"""
+    later = [n for n in raw_versions(docs) if n > version]
+    for number in later:
+        if (docs / f"v{number}" / checks.SCREENS_DIR / document).is_file():
+            return number - 1
+    return max(later) if later else version
+
+
 def on_page_markdown(markdown: str, page, config, files):
     if checks.TABLE_MARK not in markdown:
         return markdown
@@ -227,12 +238,18 @@ def on_page_markdown(markdown: str, page, config, files):
         return markdown  # 仕様書でないページ（案件の雛形 templates/spec.md など）の印は変えない
     docs = Path(config["docs_dir"])
     version, document = int(match.group(1)), match.group(2)
+    upto = last_version_of(docs, version, document)
     try:
-        _, whole, checker = merged(docs, version)
+        _, whole, checker = merged(docs, upto)
         tables = Tables(whole, checker)
         screen = tables.screen_of(document)
+        if screen is None and upto != version:  # 後の版で消した画面——そのページの版で重ねたものを出す
+            upto = version
+            _, whole, checker = merged(docs, upto)
+            tables = Tables(whole, checker)
+            screen = tables.screen_of(document)
         if screen is None:
-            raise Problem(f"v1〜v{version} を重ねた画面の表に、仕様書が {document} の画面が 1 つに決まらない")
+            raise Problem(f"v1〜v{upto} を重ねた画面の表に、仕様書が {document} の画面が 1 つに決まらない")
     except Problem as e:
         message = f"{page_path(page)}: 表を出せない（{e}）"
         log.warning("screen-spec: %s", message)
