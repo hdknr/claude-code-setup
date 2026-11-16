@@ -8,6 +8,8 @@
 
 1. **3 種（Q&A・機能・ファイル）それぞれの追加・変更・削除**が、前の版の時点の全体との比較で出る。削除には
    `removed.csv` の理由が付く。**出力の全行を期待値と突き合わせる。**
+   **行の単位で重ねる画面の表（#1091）は画面・項目・遷移の行の単位で出す**——v2 に画面を 1 つ足すとその 1 画面だけが追加、
+   画面を消すと連鎖で消えた項目・遷移も削除（消した画面の理由を添える）。表の無い正本では種類の行そのものを出さない（上の期待値のまま）。
 2. **同じ中身を置き直しただけのものは変更に数えない。**
 3. **v1 は前の版が無いので全部が追加。**
 4. **比べる相手は直前の版の時点の全体**——3 版あるとき、v3 の差分に v2 の変更・削除は出ず、`--version 2` の差分に v3 は出ない。
@@ -94,6 +96,34 @@ FORMAL_TREE = {
     "v2/spec/formalx.md": "x\n",
     "v2/removed.csv": V2["v2/removed.csv"] + "ファイル,spec/formal/stock/Stock.tla,組み直した\n",
 }
+# 行の単位で重ねる画面の表（#1091）。v1 に 3 画面・3 項目・3 遷移
+SD = "requirements/screens/data/"
+SCREENS_HEAD = "画面ID,画面名,種別,根拠\n"
+SCREENS_V1 = {
+    f"v1/{SD}screens.csv": SCREENS_HEAD + "S-001,一覧,list,Q-001\nS-002,詳細,detail,Q-001\nS-003,編集,form,Q-002\n",
+    f"v1/{SD}screen-items.csv": "番号,画面ID,表示名,根拠\nI-001,S-001,名前,Q-001\nI-002,S-002,住所,Q-001\nI-003,S-003,入力,Q-002\n",
+    f"v1/{SD}transitions.csv": "番号,遷移元,遷移先,きっかけ,根拠\nT-001,S-001,S-002,行クリック,Q-001\n"
+                               "T-002,S-002,S-003,編集,Q-002\nT-003,S-003,S-001,保存,Q-002\n",
+}
+# v2 に screens.csv の行を 1 つだけ足す（Issue #1091 の受入基準 1）。ほかは V2 と同じ
+SCREENS_ADD = {**V1, **V2, **SCREENS_V1, f"v2/{SD}screens.csv": SCREENS_HEAD + "S-004,設定,setting,Q-003\n"}
+SCREENS_ADD_EXPECTED = V2_EXPECTED + """画面: 追加 1・変更 0・削除 0
+  追加 S-004 設定
+項目: 追加 0・変更 0・削除 0
+遷移: 追加 0・変更 0・削除 0
+"""
+# v2 で画面 S-002 を消す（受入基準 2）。項目 I-002 と、S-002 を元・行き先にする遷移 T-001・T-002 が一緒に消える。S-003 は名前を変える
+SCREENS_DROP = {**V1, **V2, **SCREENS_V1, f"v2/{SD}screens.csv": SCREENS_HEAD + "S-003,編集 v2,form,Q-004\n",
+                "v2/removed.csv": V2["v2/removed.csv"] + "画面,S-002,詳細を一覧に統合した\n"}
+SCREENS_DROP_EXPECTED = V2_EXPECTED + """画面: 追加 0・変更 1・削除 1
+  変更 S-003 編集 v2
+  削除 S-002 詳細（理由: 詳細を一覧に統合した）
+項目: 追加 0・変更 0・削除 1
+  削除 I-002（理由: 画面 S-002 を消した: 詳細を一覧に統合した）
+遷移: 追加 0・変更 0・削除 2
+  削除 T-001（理由: 画面 S-002 を消した: 詳細を一覧に統合した）
+  削除 T-002（理由: 画面 S-002 を消した: 詳細を一覧に統合した）
+"""
 V3 = {
     # v3 は v2 で変えた b.md をさらに変え、v2 で足した F-003 を消す
     "v3/requirements/b.md": "b3\n",
@@ -125,6 +155,11 @@ CASES: list[tuple[str, dict | None, list[str], Callable[[Result], bool]]] = [
      lambda r: r.code == 0 and r.output.startswith("v1 の差分（前の版が無いので、全部が追加）")
      and "Q&A: 追加 3・変更 0・削除 0" in r.output and "ファイル: 追加 3・変更 0・削除 0" in r.output
      and "  追加 F-002 送料\n" in r.output),
+    # 画面の表（#1091）——1 画面足すと、その 1 画面だけが追加。表は「ファイル」に出ない
+    ("画面を 1 つ足すとその画面だけが追加", SCREENS_ADD, [], lambda r: r.code == 0 and r.output == SCREENS_ADD_EXPECTED),
+    ("画面を消すと項目と遷移も削除", SCREENS_DROP, [], lambda r: r.code == 0 and r.output == SCREENS_DROP_EXPECTED),
+    ("v1 の画面は全部が追加", SCREENS_ADD, ["--version", "1"],
+     lambda r: r.code == 0 and "画面: 追加 3・変更 0・削除 0\n  追加 S-001 一覧\n" in r.output and "遷移: 追加 3・変更 0・削除 0" in r.output),
     ("v3 は v2 の時点と比べる", {**V1, **V2, **V3}, [],
      lambda r: r.code == 0 and r.output.startswith("v3 の差分（v2 の時点の全体との比較）")
      and "  変更 requirements/b.md\n" in r.output and "  削除 F-003 ポイント（理由: やめた）\n" in r.output
@@ -185,6 +220,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "3 種の追加・変更・削除"),
     ("理由を v1 から読む", "removal_reasons(versions[number - 1][1])", "removal_reasons(versions[0][1])",
      "3 種の追加・変更・削除"),
+    ("画面の表を比べない", "            diff.changes[kind] = compare_maps(before.tables.get(path, {}), now.tables.get(path, {}))",
+     "            diff.changes[kind] = []", "画面を 1 つ足すとその画面だけが追加"),
+    ("表が無くても画面の種類を出す", "        if path in before.headers or path in now.headers:", "        if True:",
+     "3 種の追加・変更・削除"),
+    ("連鎖で消えた行に理由を添えない", "            if not change.reason and refs.get(kind):", "            if False:",
+     "画面を消すと項目と遷移も削除"),
+    ("画面の名前を添えない", '        return value.get("画面名", "").strip()', '        return ""', "画面を 1 つ足すとその画面だけが追加"),
     ("ファイルを比べない", "    diff.changes[merge_versions.KIND_FILE] = compare_maps(compared_files(before), compared_files(now))",
      "    diff.changes[merge_versions.KIND_FILE] = [] or compare_maps({}, {})", "3 種の追加・変更・削除"),
     ("形式検査のモデルも比べる", "if not merge_versions.is_formal(path)}", "if True}", "形式検査のモデルは差分に出ない"),

@@ -19,7 +19,7 @@
 - `plugins/spec-loop/scripts/qa-to-pptx.py` — `--focus <No>[,<No>…]`（表紙の次に「今回の会で決めたい問」の 1 枚）
 - `plugins/spec-loop/references/qa-csv.md` — 起票元の表の `要求確定` の行から `hearing.md` を指す（指し先だけ）
 - `plugins/spec-loop/README.md` — 中身の表に `references/hearing.md` の 1 行と、PPTX の使い方の行に `--focus`
-- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.92.0 → 0.93.0）と description
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.92.0 → 0.94.0）と description
 - `.claude-plugin/marketplace.json` — 同上
 - `scripts/test-qa-to-pptx.py` — `--focus` の観測と変異
 - `scripts/test-check-qa-csv.py` — `qa-to-pptx.py` が `is_provisional` を呼ぶ数（4 → 5。「今回の会で決めたい問」の 1 枚も暫定を見分けるため）。check-all で落ちて広げた
@@ -54,7 +54,7 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 
 ## 版の上げ方
 
-spec-loop を minor で上げる（0.92.0 → 0.93.0。能力の追加）——`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md`（7 本）の 2 行。
+spec-loop を minor で上げる（0.92.0 → 0.94.0。能力の追加。main が並行して 0.93.0 に上げたので取り込みで上げ直した）——`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md`（7 本）の 2 行。
 
 ## 受入基準（不変条件 × 経路）
 
