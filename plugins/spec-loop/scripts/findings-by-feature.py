@@ -13,9 +13,12 @@ usage: python3 findings-by-feature.py <spec-review/v<n>-findings.csv>...
 
 **行を機能に結ぶのは `指摘` と `根拠` の文面の印である**（指摘の表は機能の列を持たない）:
 
-- **`機能: <名前>`**——`spec-scope.md` の起票元の詳細と同じ形。コロンは全角でもよい。名前は、次の区切りの記号の手前か行末まで
-  （前後の空白を外す）: `）` `)` `／` `/` `;` `；` `、` `,` `。` `」` と改行。
+- **`（機能: <名前>）`**——`spec-exit.md` の「指摘の表」の印（`spec-scope.md` の起票元の詳細と同じ書き方）。コロンは全角でもよい。
+  **印は開き括弧か `／` の直後に始まり、名前は閉じ括弧か `／` で終わる**（前後の空白を外す）——名前の区切りの記号: `）` `)` `／`。
+  括弧に入っていない「機能:」（「非機能: 性能」・地の文）は印に数えない。閉じない印も数えない（行の残りを名前として出さないため）。
+  名前の中の `/`・`、`・`,` は名前の一部である。
 - **機能の id**——`F-` に 3 桁以上の数字（`references/spec-ir.md`）。ケースの id（`F-001-C1`）は機能 `F-001` に数える。
+  前後が英数字の綴り（`XF-001`・`F-001a`）は id に数えない。
 
 1 行が 2 つ以上の機能を挙げていれば、その全部に 1 件ずつ数え、その行の数を別に出す。**印の無い行は「（機能を決められない）」の行に数える**——
 黙って落とさない。同じ機能を名前と id の両方で書いた行は、別々の機能として 2 つに数える（名前と id を結ばない）。
@@ -28,7 +31,7 @@ usage: python3 findings-by-feature.py <spec-review/v<n>-findings.csv>...
 | 値 | 意味 |
 | --- | --- |
 | 0 | 数えた（行が 1 つも無い表でも 0。印の無い行だけでも 0——決められない行の数が出る） |
-| 2 | 数えていない——引数の誤り・表が `check-findings-csv.py` の検査に通らない（読めない・無い・違反がある）・想定外の例外 |
+| 2 | 数えていない——引数の誤り・同じ表を 2 度渡した・表が `check-findings-csv.py` の検査に通らない（読めない・無い・違反がある）・想定外の例外 |
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う。
 
@@ -42,6 +45,9 @@ usage: python3 findings-by-feature.py <spec-review/v<n>-findings.csv>...
 - **ケースの id を機能の id に寄せる**——`F-001-C1` は `F-001`。
 - **指摘の文面を出力に出さない。**
 - **複数の表の行を足し合わせる**——版ごとの表（`v1-findings.csv`・`v2-findings.csv`）を一度に渡せる。
+- **同じ表を 2 度渡したら数えない**（2）——数が倍になる。
+- **検査に通らない表の違反の行を写さない**——違反の行はセルの値を含む。
+- **括弧に入っていない「機能:」を印に読まない・閉じない印を読まない**——地の文を機能の名前として出さない。
 
 **守らないもの**:
 
@@ -82,9 +88,9 @@ EXIT_UNCOUNTED = 2
 # 印を拾う列（`spec-exit.md` の「指摘の表」）
 MARKED = ("指摘", "根拠")
 # `機能: <名前>`——名前は区切りの記号の手前まで
-NAME_MARK = re.compile(r"機能\s*[:：]\s*([^）)／/;；、,。」\n]+)")
+NAME_MARK = re.compile(r"(?<=[（(／])\s*機能\s*[:：]\s*([^）)／\n]+?)\s*(?=[）)／])")
 # 機能の id（`F-001`）。ケースの id（`F-001-C1`）の頭も拾う
-ID_MARK = re.compile(r"(?<![A-Za-z0-9_-])(F-[0-9]{3,})(?![0-9])")
+ID_MARK = re.compile(r"(?<![A-Za-z0-9_-])(F-[0-9]{3,})(?![0-9A-Za-z_])")
 UNKNOWN = "（機能を決められない）"
 # 列の並び: 振り分けの区分の 6 つと、確かめられなかった行の `-`
 BUCKETS = (*findings.CATEGORIES, findings.NONE)
@@ -109,11 +115,16 @@ def count(tables: list[Path]) -> tuple[dict[str, dict[str, int]], dict[str, int]
     """機能 → 区分 → 件数と、まとめの数を返す。検査に通らない表があれば Unreadable。"""
     per: dict[str, dict[str, int]] = {}
     totals = {"表": 0, "行": 0, "決められない行": 0, "2 つ以上の機能に数えた行": 0}
+    seen: set[Path] = set()
     for table in tables:
+        if table.resolve() in seen:
+            raise Unreadable(f"同じ表を 2 度渡している: {table}")
+        seen.add(table.resolve())
         code, problems = findings.check(table)
         if code != 0:
-            raise Unreadable(f"{table} が check-findings-csv.py の検査に通らない（{len(problems)} 件）。数えていない:\n  "
-                             + "\n  ".join(problems))
+            # 違反の行はセルの値（指摘の文面）を含むので写さない——件数だけ言い、中身は検査を走らせて見てもらう
+            raise Unreadable(f"{table} が check-findings-csv.py の検査に通らない（{len(problems)} 件）。数えていない"
+                             f"——違反は python3 check-findings-csv.py {table} で見る")
         rows = findings.read_csv(table, "指摘の表")
         totals["表"] += 1
         for row in rows[1:]:
@@ -130,12 +141,17 @@ def count(tables: list[Path]) -> tuple[dict[str, dict[str, int]], dict[str, int]
     return per, totals
 
 
+def cell_text(name: str) -> str:
+    """Markdown の表のセルに入れる——`|` を逃がす。"""
+    return name.replace("|", "\\|")
+
+
 def render(per: dict[str, dict[str, int]], totals: dict[str, int]) -> list[str]:
     lines = ["| 機能 | 合計 | " + " | ".join(BUCKETS) + " |", "| --- | --- | " + " | ".join("---" for _ in BUCKETS) + " |"]
     known = sorted((n for n in per if n != UNKNOWN), key=lambda n: (-sum(per[n].values()), n))
     for name in known + ([UNKNOWN] if UNKNOWN in per else []):
         cells = per[name]
-        lines.append(f"| {name} | {sum(cells.values())} | " + " | ".join(str(cells[b]) for b in BUCKETS) + " |")
+        lines.append(f"| {cell_text(name)} | {sum(cells.values())} | " + " | ".join(str(cells[b]) for b in BUCKETS) + " |")
     lines.append("")
     lines.append("・".join(f"{k}: {v}" for k, v in totals.items()))
     return lines
