@@ -63,7 +63,7 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
   `gh pr merge` が 0 で終わっても `MERGED` とは限らない（マージキューに入っただけのことがある）。
 - **関門の照合（`check-gates.py`）が 0 でなければマージしない**（#1043）——照合を通らない・記録の形が違うなら 13。
   照合は確かめた head の SHA（`--match-head-commit` に渡すもの）に当てる。
-- **計画ファイルが見つからなければマージしない**（13）——照合する相手が無い。
+- **計画ファイルが見つからなければマージしない**（13）——照合する相手が無い。`--plan` に渡したファイルが無いときも 13。
 - **照合が判定できなければマージしない**（7）——`check-gates.py` が 0・2・3 のどれでもない（既定ブランチの追跡参照が無い、など）。
 - **cruise の台帳で利用者の判断を待っている行の PR をマージしない**（#631）——メインの作業ツリーの `.claude/plans/cruise-*.json` を全部読み、
   その PR を `pr` に持つ行が `blocked` か、`note` が `利用者の判断待ち:` で始まるなら（`ledger.py` の判断待ちの印）、12 で止める。
@@ -623,8 +623,8 @@ def main(argv: list[str]) -> int:
             print(f"ブランチ {branch} を持つ worktree は無い。")
 
         plan = Path(a.plan) if a.plan else find_plan(branch, wt)
-        if not plan:
-            print(f"**計画ファイルが見つからない**（ブランチ {branch} の worktree の docs/plans・.claude/plans）。"
+        if not plan or not plan.is_file():
+            print(f"**計画ファイルが見つからない**（{plan or f'ブランチ {branch} の worktree の docs/plans・.claude/plans'}）。"
                   "--plan で渡す。マージしない。", file=sys.stderr)
             return 13
         grc, gout = gates(plan, head_sha, a.absent)

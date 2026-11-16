@@ -33,8 +33,9 @@
 - **SHA** は 7〜40 桁の 16 進。**件数** は 0 以上の整数（「通した」は結果まで書く——手順 3）。
 - **判断の出所** は `利用者の指示（<YYYY-MM-DD…>）`・`マージ前の判断`・`実機確認` の 3 つ。
 - **判断=** の後ろは行末まで（空白を含んでよい）。
-- **受入基準の表**: 見出しに「受入基準」を含む節（次の同じか上の階層の見出しまで。下位の見出しの下を含む）の中の表のうち、
-  第 1 列の見出しが `#`・`番号`・`ID` のもの。その第 1 列が番号である。
+- **受入基準の表**: 見出しに「受入基準」を含む節（`##` 以下の見出し。次の同じか上の階層の見出しまでで、下位の見出しの下を含む。
+  `#` の見出しは文書の題で、節に数えない）の中の表のうち、第 1 列の見出しが `#`・`番号`・`ID` のもの。その第 1 列が番号で、**計画の中で重複しない**
+  （まとめの周は Issue ごとに番号を分ける——cruise の `references/grouping.md`）。
 
 ## 何を照合するか
 
@@ -45,7 +46,9 @@
    **関門が見なくてよい形**（計画ファイルだけ・版の行だけ（下の「守らない」の形）を変えたコミット・既定ブランチの親を取り込んだ merge commit）かのどれか。
    **どれでもないコミットがあれば通さない**——2 パス目を回さずに直した・狭いパスの後に直した・最後の関門の後に足した、の形がここに出る。
 3. **受入基準の判定**——表の番号ごとに判定があるか。`BLOCKED`・`満たさない` は判断の出所があるか（下の表）。
-4. **マージの反映**——記録の値が、既定ブランチの `.claude/dev-loop.md` の宣言と同じか（`なし` は宣言が 1 本も無いこと。値はちょうど 1 本あること）。
+4. **マージの反映**——記録の値が、既定ブランチの `.claude/dev-loop.md` の宣言と同じか。宣言はコードブロックと HTML コメントの外の行だけを読み
+   （`check-unattended-env.py` の `visible_lines`）、読める値（`ドキュメントのみ`・`ドキュメントとプラグインの配布`）がちょうど 1 本のときだけ宣言がある（`references/absent-lines.md` の「行が無い・値が違う・2 本以上ある」）。
+   `なし` は宣言が無いこと。
    **宣言は既定ブランチから読む**——PR の中で足した・書き換えた宣言を効かせない（`references/absent-lines.md`）。
 
 | 判定 | 通る判断の出所 |
@@ -59,9 +62,11 @@
 - **記録が無い・2 つある計画を通さない**（2）。
 - **読めない行を黙って読み飛ばさない**（2）。
 - **受入基準の表が無い計画を通さない**（2）——番号と判定を突き合わせる相手が無い。
+- **受入基準の番号が重複する計画を通さない**（2）——1 行の判定が、別の表の同じ番号まで覆ってしまう。
 - **1 パス目の Verifier と `/code-review` の両方が無ければ通さない。**
 - **2 パス目は、両方の記録か「該当なし」の明記が無ければ通さない。**
 - **狭いパスは、記録か「該当なし」の明記が無ければ通さない。**
+- **2 パス目が「該当なし」なら、狭いパスの記録を通さない**——狭いパスは 2 パス目で直した差分に当てるもので、1 パス目の後の直しを覆わない。
 - **記録の SHA が head の祖先でなければ通さない**——rebase した・別の履歴の記録。
 - **周の base が既定ブランチに入っていなければ通さない**——base を周の線の上にずらすと、その前のコミットが照合から外れる。
 - **関門が見ていないコミットを通さない**——ある回の 2 つの関門の両方の終点に含まれるか、狭いパス・当て直しの範囲にあるものだけを、見たとみなす。
@@ -74,6 +79,7 @@
 - **`--absent` でなければ、線の判断を通さない**——線は不在の周にだけ効く。
 - **`マージの反映:` の記録が既定ブランチの宣言と違えば通さない**——`なし` と書いても、既定ブランチに宣言があれば違う。
 - **宣言は既定ブランチから読み、head からは読まない。**
+- **コードブロックと HTML コメントの中の行・読めない値・2 本以上の宣言を、宣言と読まない。**
 - **`--absent` では、`マージの反映:` の記録が無ければ通さない。**
 - **判定できないことを、通過と答えない**（7）。
 
@@ -96,6 +102,8 @@
 - **既定ブランチは手元の追跡参照で決める**（`refs/remotes/origin/HEAD` → `origin/main` → `origin/master`）。**取り直さない**——古ければ古い既定ブランチと比べる。
 - **狭いパスの指摘の振り分け・PR コメントの推奨・CI・宣言の外の反映（ワークフロー）は見ない**——今までどおり親のモデルと `merge-pr.py` の既存の段。
 - **線の判断（`マージ前の判断`・`実機確認`）が、台帳の確かめた線にその値であるかは見ない**——`--absent` かどうかと、判定に対して出所が許されるかだけを見る。線があるかは親が読む（`references/absent-lines.md`）。
+- **載せ替えた（rebase した）周の記録の書き直しが正しいかは見ない**——積んだ周は載せ替えの後、記録の SHA を載せ替え先の対応するコミットと新しい base に
+  書き直す（`references/stacked.md` の「下の周がマージされたら」）。照合は書き直した記録を履歴と突き合わせるだけで、対応が `git range-diff` のとおりかは見ない。
 - **`当て直し` がどの直しに当てたものかは見ない**——2 パス目を「該当なし」にして、1 パス目の後の直しを `当て直し`（Verifier 1 回）で覆った記録は通る。
   外部レビュー bot の指摘を 2 パス目「該当なし」の周で直した正しい記録（`references/external-review.md` の「2 パスとの関係」）と、履歴の形が同じで分けられない。
 - **既定ブランチの追跡参照が無いリポジトリでは判定できない**（7）——base が既定ブランチに入っているかを決められない。
@@ -113,6 +121,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import subprocess
 import sys
@@ -150,6 +159,18 @@ def closes(line: str, fence: str) -> bool:
     """コードブロックを閉じる行か（開いた印と同じ文字が同じ数以上だけの行）。"""
     t = line.strip()
     return t.startswith(fence) and not t.strip(fence[0])
+
+
+def _visible_lines():
+    """`.claude/dev-loop.md` の宣言を読む関数（同じ場所の `check-unattended-env.py` の `visible_lines`。読み方の写しを作らない）。"""
+    path = Path(__file__).resolve().parent / "check-unattended-env.py"
+    try:
+        spec = importlib.util.spec_from_file_location("dev_loop_check_unattended_env", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.visible_lines
+    except (OSError, ImportError, SyntaxError, AttributeError) as e:
+        raise Undetermined(f"宣言を読む check-unattended-env.py を読み込めない（{path}）: {e}") from e
 
 
 class Malformed(Exception):
@@ -216,7 +237,9 @@ def table_ids(text: str) -> list[str]:
         h = re.match(r"^(#{1,6})\s", line)
         if h:
             in_table = False
-            if not (in_section and len(h.group(1)) > level):  # 下位の見出しは節の中
+            if len(h.group(1)) == 1:  # 文書の題——節に数えない
+                in_section = False
+            elif not (in_section and len(h.group(1)) > level):  # 下位の見出しは節の中
                 in_section, level = "受入基準" in line, len(h.group(1))
             continue
         if not in_section or not line.lstrip().startswith("|"):
@@ -277,6 +300,9 @@ def parse(text: str) -> Record:
     rec.table_ids = table_ids(text)
     if not rec.table_ids:
         raise Malformed("受入基準の表が無い（見出しに「受入基準」を含む節に、第 1 列の見出しが # の表を置く）")
+    dup = sorted({i for i in rec.table_ids if rec.table_ids.count(i) > 1})
+    if dup:
+        raise Malformed(f"受入基準の番号が重複している: {'・'.join(dup)}（まとめの周は Issue ごとに番号を分ける）")
     return rec
 
 
@@ -346,6 +372,8 @@ def check_passes(rec: Record, ctx: Context) -> list[str]:
     elif not rec.pass2_none and len(two) < 2:
         missing = [k for k in ("Verifier", "/code-review") if k not in two]
         reasons.append(f"2 パス目の {'・'.join(missing)} の記録も「該当なし」も無い")
+    if rec.pass2_none and rec.narrow:
+        reasons.append("2 パス目が「該当なし」なのに狭いパスの記録がある（狭いパスは 2 パス目で直した差分に当てる）")
     if rec.narrow_none and rec.narrow:
         reasons.append("狭いパスに、記録と「該当なし」の両方がある")
     elif not rec.narrow_none and not rec.narrow:
@@ -448,22 +476,16 @@ def check_criteria(rec: Record, ctx: Context) -> list[str]:
     return reasons
 
 
-def declared(text: str) -> list[str]:
-    """`.claude/dev-loop.md` の `マージの反映:` の値（コードブロックの外）。"""
-    values, fence = [], None
-    for line in text.splitlines():
-        if fence:
-            if closes(line, fence):
-                fence = None
-            continue
-        m = FENCE_ANY.match(line)
-        if m:
-            fence = m.group(1)
-            continue
+def declared(text: str) -> str:
+    """`.claude/dev-loop.md` の `マージの反映:` の宣言。読める値がちょうど 1 本のときだけその値、ほかは `なし`。"""
+    values = []
+    for line in _visible_lines()(text.lstrip("\ufeff")):
         m = re.match(r"^マージの反映:\s*(.+?)\s*$", line)
         if m:
             values.append(m.group(1))
-    return values
+    if len(values) == 1 and values[0] in REFLECTIONS[:2]:
+        return values[0]
+    return "なし"
 
 
 def check_reflection(rec: Record, ctx: Context) -> list[str]:
@@ -472,11 +494,9 @@ def check_reflection(rec: Record, ctx: Context) -> list[str]:
         return ["不在の周で、マージの反映の記録が無い"] if ctx.absent else []
     ref = ctx.default_ref()
     res = ctx.git("show", f"{ref}:.claude/dev-loop.md", ok=(0, 128))
-    values = declared(res.stdout) if res.returncode == 0 else []
-    want = [] if rec.reflection == "なし" else [rec.reflection]
-    if values != want:
-        found = "・".join(values) if values else "無い"
-        return [f"マージの反映の記録「{rec.reflection}」が、既定ブランチ（{ref}）の宣言（{found}）と違う"
+    value = declared(res.stdout) if res.returncode == 0 else "なし"
+    if value != rec.reflection:
+        return [f"マージの反映の記録「{rec.reflection}」が、既定ブランチ（{ref}）の宣言（{value}）と違う"
                 "——その周が足した・書き換えた宣言は効かない"]
     return []
 
@@ -500,7 +520,7 @@ def main(argv: list[str]) -> int:
     plan = Path(a.plan)
     try:
         text = plan.read_text(encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         print(f"**判定できなかった**: 計画ファイルを読めない: {e}", file=sys.stderr)
         return 7
     try:

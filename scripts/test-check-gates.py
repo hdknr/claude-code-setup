@@ -94,7 +94,8 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "switch", "-q", "main")
     s["M"] = commit(repo, "main moves", {
         "m.txt": "m\n",
-        ".claude/dev-loop.md": "# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n```text\nマージの反映: ドキュメントのみ\n```\n",
+        ".claude/dev-loop.md": ("# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n```text\nマージの反映: ドキュメントのみ\n```\n\n"
+                                "<!--\nマージの反映: ドキュメントのみ\n-->\n"),
     })
     git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
     git(repo, "switch", "-q", "issue/1-x")
@@ -133,10 +134,10 @@ ONE_PASS = ["周の base: {B}", "関門: Verifier 1 {C1} 反証=0", "関門: /co
             "関門: 狭いパス 該当なし"]
 
 
-def plan_text(lines, crit=CRIT, table=TABLE, block=True, extra="") -> str:
+def plan_text(lines, crit=CRIT, table=TABLE, block=True, extra="", title="# Issue #1\n") -> str:
     body = "\n".join([*lines, *crit])
     fence = f"```dev-loop-gates\n# 関門の記録\n{body}\n```\n" if block else ""
-    return f"# Issue #1\n\n```bash\n周の base: 読まない\n```\n\n{table}\n## 関門の記録\n\n{fence}{extra}"
+    return f"{title}\n```bash\n周の base: 読まない\n```\n\n{table}\n## 関門の記録\n\n{fence}{extra}"
 
 
 def sub(lines, **repl):
@@ -210,6 +211,13 @@ CASES = {
         (FULL, "Z1", 3, [], {}, "banner with more text"),
     "plugin.json・marketplace.json でない version の行だけの変更は非 0":
         (FULL, "Z2", 3, [], {}, "version of another file"),
+    "2 パス目が該当なしなら、狭いパスで 1 パス目の後の直しを覆えない":
+        (["周の base: {B}", "関門: Verifier 1 {C1} 反証=0", "関門: /code-review 1 {C1} 指摘=0",
+          "関門: 2 パス目 該当なし {C1}", "関門: 狭いパス {C1} {C2} 反証=0"], "C2", 3, [], {}, "該当なし"),
+    "受入基準の番号が重複していれば 2":
+        (FULL, "MM", 2, [], {"table": TABLE + "\n## 受入基準（2 つ目の Issue）\n\n| # | x |\n| --- | --- |\n| A1 | x |\n"}, "重複"),
+    "題（#）に「受入基準」があっても、文書全体を受入基準の節と読まない":
+        (FULL, "MM", 0, [], {"title": "# Issue #1 — 受入基準を照合する\n\n| # | 指摘 |\n| --- | --- |\n| CR1 | x |\n"}),
     "判断に空白を含んでも読める":
         (FULL, "MM", 0, [], {"crit": ["受入基準: A1 BLOCKED 判断=利用者の指示（2026-11-16 Slack で）", "受入基準: A2 満たす"]}),
     "受入基準の節の下位の見出しの下の表も読む":
@@ -260,6 +268,12 @@ MUTATIONS = {
     "狭いパスの記録を見ない": ("elif not rec.narrow_none and not rec.narrow:", "elif False:"),
     # 守る 7: head の祖先
     "head の祖先かを見ない": ("if not ctx.is_ancestor(full, ctx.head):", "if False:"),
+    # 守る（追加）: 2 パス目が該当なしなら狭いパスの記録を通さない
+    "該当なしと狭いパスを一緒に通す": ("if rec.pass2_none and rec.narrow:", "if False:"),
+    # 守る（追加）: 受入基準の番号の重複
+    "番号の重複を見ない": ("    if dup:\n", "    if False:\n"),
+    # 守る（追加）: コードブロック・コメントの中の行・読めない値・2 本以上を宣言と読まない
+    "宣言を素の行で読む": ('for line in _visible_lines()(text.lstrip("\\ufeff")):', "for line in text.splitlines():"),
     # 守る 8: 周の base が既定ブランチに入っていない
     "base を既定ブランチと照らさない": ("if not ctx.is_ancestor(base, default):", "if False:"),
     # 守る 9: 関門が見ていないコミット
@@ -279,7 +293,7 @@ MUTATIONS = {
     # 守る 16: 不在の周でなければ線を通さない
     "居る周でも線を通す": ("elif not ctx.absent:", "elif False:"),
     # 守る 17: マージの反映が違う
-    "マージの反映を既定ブランチと比べない": ("if values != want:", "if False:"),
+    "マージの反映を既定ブランチと比べない": ("if value != rec.reflection:", "if False:"),
     # 守る 18: 宣言は既定ブランチから読む
     "宣言を head から読む": ('ctx.git("show", f"{ref}:.claude/dev-loop.md", ok=(0, 128))',
                          'ctx.git("show", f"{ctx.head}:.claude/dev-loop.md", ok=(0, 128))'),
@@ -313,6 +327,9 @@ KILLS = {
     "マージの反映を既定ブランチと比べない": ["マージの反映の記録が既定ブランチの宣言と違えば非 0",
                                "「なし」と記録しても、既定ブランチに宣言があれば非 0"],
     "宣言を head から読む": ["ブランチにだけ足した宣言は効かない（既定ブランチから読む）"],
+    "該当なしと狭いパスを一緒に通す": ["2 パス目が該当なしなら、狭いパスで 1 パス目の後の直しを覆えない"],
+    "番号の重複を見ない": ["受入基準の番号が重複していれば 2"],
+    "宣言を素の行で読む": ["不在の周では BLOCKED を線（マージ前の判断）で通す"],
     "base を既定ブランチと照らさない": ["周の base が既定ブランチに入っていなければ非 0（base を周の線の上にずらす）"],
     "不在の周でもマージの反映の記録を求めない": ["不在の周でマージの反映の記録が無ければ非 0"],
     "判定できないを通過と答える": ["head が解決しなければ 7"],
@@ -347,6 +364,12 @@ def main() -> int:
         check(f"取り込みが無くても、origin の参照が無ければ 7: rc={rc}（期待 7）", rc == 7 and "既定ブランチ" in out)
         git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
 
+        print("\n判定できない: UTF-8 でない計画は 7（traceback の 1 にしない）")
+        bad = repo / PLAN_REL
+        bad.write_bytes(b"\xff\xfe# plan\n")
+        r = subprocess.run([sys.executable, str(SCRIPT), str(bad)], cwd=str(repo), capture_output=True, text=True, env=ENV)
+        check(f"UTF-8 でない計画: rc={r.returncode}（期待 7）", r.returncode == 7 and "Traceback" not in r.stderr)
+
         print("\n変異（壊したのに期待どおりなら失格）")
         if failures:
             print("  陽性対照が落ちているので、変異の結果は読まない")
@@ -356,6 +379,8 @@ def main() -> int:
                 mutant = base / f"mutant{i}" / "check-gates.py"
                 mutant.parent.mkdir(parents=True)
                 mutant.write_text(source.replace(old, new, 1), encoding="utf-8")
+                (mutant.parent / "check-unattended-env.py").write_text(  # 宣言を読むのに読み込む
+                    (SCRIPT.parent / "check-unattended-env.py").read_text(encoding="utf-8"), encoding="utf-8")
                 for t in KILLS[mname]:
                     rc, out = run(mutant, repo, s, t, CASES[t])
                     check(f"{mname} → 赤（{t}: rc={rc}）", not as_expected(CASES[t], rc, out))

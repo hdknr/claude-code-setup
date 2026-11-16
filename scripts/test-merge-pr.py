@@ -490,6 +490,8 @@ CASES = {
         dict(make_view=lambda s: [pr(s)], plan=None), 13, False, True, "計画ファイルが見つからない"),
     "線の判断（BLOCKED）は --absent を渡せば通す": (
         dict(make_view=lambda s: [pr(s)], plan="absent", args=("--absent",)), 0, True, False),
+    "--plan に渡したファイルが無ければマージしない（13）": (
+        dict(make_view=lambda s: [pr(s)], args=("--plan", "/nonexistent/issue-42.md")), 13, False, True, "計画ファイルが見つからない"),
     "照合が判定できなければマージしない（7）": (
         dict(make_view=lambda s: [pr(s)], origin=False), 7, False, True, "関門の照合が判定できなかった"),
     "線の判断（BLOCKED）は --absent が無ければ通さない": (
@@ -601,7 +603,8 @@ KILLS = {
                        "merge が 0 でも MERGED にならなければ 8・worktree を残す"],
     "照合を通さない": ["関門を 1 パスしか通していない計画の PR はマージしない（#1043）",
                     "線の判断（BLOCKED）は --absent が無ければ通さない"],
-    "計画が無ければ照合を飛ばす": ["計画ファイルが見つからなければマージしない"],
+    "計画が無ければ照合を飛ばす": ["計画ファイルが見つからなければマージしない",
+                           "--plan に渡したファイルが無ければマージしない（13）"],
     "照合の判定できないを通す": ["照合が判定できなければマージしない（7）"],
     "台帳の判断待ちを見ない": ["台帳の行が判断待ちの PR はマージしない（#631）",
                          "台帳の行が blocked の PR はマージしない（番号は #42 の形）",
@@ -661,6 +664,8 @@ def main() -> int:
                 mutant.write_text(source.replace(old, new, 1), encoding="utf-8")
                 (mutant.parent / "ledger.py").write_text(LEDGER.read_text(encoding="utf-8"), encoding="utf-8")
                 (mutant.parent / "check-gates.py").write_text(GATES.read_text(encoding="utf-8"), encoding="utf-8")
+                (mutant.parent / "check-unattended-env.py").write_text(  # check-gates.py が宣言を読むのに読み込む
+                    (SCRIPT.parent / "check-unattended-env.py").read_text(encoding="utf-8"), encoding="utf-8")
                 targets = KILLS[mname]
                 if not targets:
                     r = run_case(base / f"mutant{i}", "case", mutant, make_view=lambda s: [pr(s)])

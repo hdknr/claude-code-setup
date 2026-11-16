@@ -23,6 +23,8 @@ spec-loop から来た Issue ではない。`作り直しの元:` の行も無�
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 3（再開点に記録を書く）・手順 6（終了コードで分岐するスクリプトの一覧）・手順 7（マージの前に照合を通す。どの経路でも）
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 「マージ = 関門を通ればマージ」の止まる条件のうち照合が見るもの・`--absent` で呼ぶこと
 - `plugins/dev-loop/skills/dev-loop/references/external-review.md` — 「2 パスとの関係」に、直しに当てた Verifier を記録の `当て直し` の行で書くこと（実装中に広げた——書かないと照合がその直しを止めるため）
+- `plugins/dev-loop/skills/dev-loop/references/stacked.md` — 「下の周がマージされたら」の 5 に、載せ替えの後に関門の記録を書き直すこと（2 パス目の CR2-1 で広げた——受入基準 A2・A9 は積んだ周の経路にも掛かる）
+- `plugins/dev-loop/skills/cruise/references/grouping.md` — まとめの周の受入基準の番号を重複させないこと（2 パス目の CR2-4 で広げた——A5・A9）
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §4 の 4（`merge-pr.py --absent`・13 の扱い）・版の 2 行
 - `docs/plugins/dev-loop-cruise.md` — 道具の表の `merge-pr.py` の行に照合を足す
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す。手で書かない）
