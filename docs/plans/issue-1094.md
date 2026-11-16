@@ -122,7 +122,10 @@ screen-spec を main の先端の 0.3.0（#1095 が先に上げた）から **0.
 
 ## 関門の進捗（再開点）
 
-- PR: #1126
+- PR: #1126（関門の結果・振り分けの PR コメントは issuecomment-6917995413）
+- PR 側の CI（`a3` の前の先端）: 9 本すべて pass・deploy は skipping
+- 外部レビュー: 該当なし（`external-reviews.py` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）
+- 手順 8: 焼き戻す学びなし（main の取り込みで、並行の周が足したスクリプトが profile の列で止まった——取り込みで入ったスクリプトを見る規約は CLAUDE.md にある）。振り分けは PR コメントに書いた（直す 1・記録だけ 15・捨てる 0）
 - 周の在り処: ブランチ `issue/1094-web-spa-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1094`・起点 `3801c9d`・base `origin/main` → `3801c9d3457d3f2e3809e76c904b1bf3bec79026`
 - 割り目（手順 4）: 割らない（cruise の周）
 - 実装のコミット: `f7afc34`
