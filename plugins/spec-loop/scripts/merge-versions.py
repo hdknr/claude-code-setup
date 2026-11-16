@@ -513,10 +513,15 @@ def read_rows(path: Path, key: str, refs: tuple[str, ...], problems: list[str]) 
             continue
         row = dict(zip(header, fields))
         value = row[key]
-        # 鍵と画面を指す列は文字どおりに照らす（置き換え・削除・連鎖）——前後の空白は別の値になって黙って外れるので、決まりに反する
+        # 鍵と画面を指す列は文字どおりに照らす（置き換え・削除・連鎖）——前後の空白・NFC でない値は別の値になって黙って外れるので、決まりに反する
         padded = [name for name in (key, *refs) if row[name] != row[name].strip()]
         if padded:
             problems.append(f"{path}:{line}: {'・'.join(f'`{name}`' for name in padded)} の値の前後に空白がある")
+            ok = False
+        elif [name for name in (key, *refs) if row[name] != unicodedata.normalize("NFC", row[name])]:
+            # 正規化だけ違う値（NFD の `ガ`）も別の値になって黙って外れる（#1091 の 2 パス目の指摘）
+            names = [name for name in (key, *refs) if row[name] != unicodedata.normalize("NFC", row[name])]
+            problems.append(f"{path}:{line}: {'・'.join(f'`{name}`' for name in names)} の値が Unicode の NFC でない")
             ok = False
         elif not value.strip():
             problems.append(f"{path}:{line}: `{key}` が空")
