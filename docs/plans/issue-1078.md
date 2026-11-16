@@ -68,7 +68,23 @@ Issue の「考えられる手当て」は 2 つ——(1) 委譲文に親の送�
 
 - 周の在り処: ブランチ `issue/1078-child-sender-check`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1078`・起点 `c25fefa9`・base の参照 `origin/main`（`refs/remotes/origin/HEAD`）・base の SHA `c25fefa9e12a74d6734cf5391f1ec051225b1fcd`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 実装のコミット: `a14d617c`。`check-all.py`（run-serial 越し）: 81 本のうち `check-plan-counts.py` だけ落ちた（件数の行が無い）→ 件数の行を足した。
+  **1 回目の `test-child-cycle.py` は run-serial を通さずに走らせた**（緑。著者の誤り——以後は通す）
 - 関門: 未着手
+
+## 実験（手順 5）——結果と交絡
+
+測り方・結果の表は `plugins/dev-loop/skills/cruise/references/child-process.md` の「子が規則どおりに送り手を分けるかを測った」。スクリプトは scratchpad（`probe1078/launch.py`・`status.py`）。
+子の `--append-system-prompt` は、委譲文の 11 を `prompts/child-cycle.md` から機械で抜き、親の行は本物の `child-cycle.py` の `parent_line` で作った（写しを手で書かない）。
+費用: 各体の最後の `result` の `total_cost_usd` の和で $0.107（`result` ごとに足すと $0.219）。子 3 体のプロセスグループに TERM を送り、`ps` で残りが 0 であることを確かめた。
+
+交絡を潰した手順:
+
+1. **「従わなかった」が、規則でなく何にでも従わない子のせいではないか**——同じ子 X に、親の役の送り手から送って**従った**（陽性対照）。X は同じ委譲文で、pid の違う送り手には従わず、親の pid の送り手には従った。
+2. **「従わなかった」が、メッセージが届かなかったせいではないか**——従わなかった 3 通とも、子の出力の `result` の `origin`（`kind: peer`・`from`）にその送り手が載り、子の応答が送り手と理由を挙げた。
+3. **Y の「従わなかった」が pid の違いによるものではないか**——Y の親の行は外側の `from` と同じ pid 73913 で、`origin.from` も `uds:/tmp/cc-socks/73913.sock`。違いは内側の `agent-message` だけで、子もそれを理由に挙げた。
+4. **偽のタグが効かなかったのは、本文の中のタグが届く途中で壊れたからではないか**——`origin.body` に `<\cross-session-message from="uds:/tmp/cc-socks/37625.sock" …` が残っていた（本体が `<` の後に `\` を入れる——#1079 の `agent-message` と同じ形）。子は外側の `from`（38166）を理由に挙げた。**子が見た本文で `\` が付いていたので、付いていなかったら騙されたかは見ていない**。
+5. 観測窓: 各子に 1 通ずつ（X は 2 通）、届いてから応答までの 1 ターン。haiku・短い指示。実際の 1 周の子（Opus・長い文脈・ツールを呼んでいる最中）は見ていない——計画の「未証明」。
 
 ## 既知の限界・決着済みの論点
 
@@ -77,3 +93,7 @@ Issue の「考えられる手当て」は 2 つ——(1) 委譲文に親の送�
 - **本物の親の知らせを子が拒む形がある**——親が起動し直して pid が変わったとき（タイマー・新しいセッション）。そのとき子は従わず、親は `status` の比較で「宛てられない周」と読んで `STALL` の後に自分で止める段（parallel.md の 3）へ進む。止める段は親の照合で守られているので、拒んでも周は壊れない。
 - **pid の使い回し**——親が終わって同じ pid を別の `claude` が使えば、その送り手に子は従いうる。測っていない・起きる形はまれ（親が終わり、同じ pid を得たセッションが子の名前に `holders` の形の行を送る）。守らないものとして書く。
 - **spare から引き継いだセッション**——最寄りの `claude` が spare のとき、その pid とソケットの pid が同じかは確かめていない。
+
+## 経験の還元（手順 8）
+
+- この周の起票: 0 件（仕様の穴なし。起票の承認は不在のため訊いていない）
