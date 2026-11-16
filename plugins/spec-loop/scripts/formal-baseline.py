@@ -28,7 +28,9 @@ usage:
   `結果` は `反例なし`／`反例あり` のどちらか（後ろに続けてよいのは `（` で始まる要約だけ。`判定できなかった` の対象は残さない）。
   `前回のモデル` も 4 つの値のどれか（同じく `（` で始まる要約を続けてよい）。
 - **`モデルのファイル`**: バッククォートで囲んだファイルの名前が 1 つ以上あり、どれもこのディレクトリの通常のファイルである（`/` を含まない・`README.md` でない）。
-- **ディレクトリの中身は、`README.md` と `モデルのファイル` の一覧だけ**——TLC の `states/`・Alloy の `<名前>/`・出力を落としたファイル・前に残したファイルが在れば違反。
+- **`陽性対照のファイル`（任意。#1044）**: 行があれば `モデルのファイル` と同じ形で見る。**行が無くても違反にしない**——前から残したモデルは持たない
+  （`check-formal-rerun.py` は、行が無い対象を「判定できなかった」にする）。
+- **ディレクトリの中身は、`README.md` と `モデルのファイル`・`陽性対照のファイル` の一覧だけ**——TLC の `states/`・Alloy の `<名前>/`・出力を落としたファイル・前に残したファイルが在れば違反。
 
 終了コード:
 
@@ -47,7 +49,8 @@ usage:
 | `git fetch` を使わず、リポジトリを変えない | 利用者の `fetch.pruneTags` で、押す前のサインオフのタグが消える |
 | 一覧に無いファイル・ディレクトリを違反にする | 検査器の作業ファイルや前の残りが基準のモデルに混ざる |
 | 一覧のファイルが無ければ違反にする | 次の回が読むモデルが欠ける |
-| 記録の項目が欠けた・空・2 行あるなら違反にする | 次の回が前提や陽性対照を確かめ直せない |
+| 記録の項目が欠けた・空・2 行あるなら違反にする（`陽性対照のファイル` は欠けてよい——空・2 行は違反） | 次の回が前提や陽性対照を確かめ直せない |
+| `陽性対照のファイル` の一覧のファイルが無ければ違反にし、一覧のファイルは残ってよいとする | 走らせ直し（`check-formal-rerun.py`）が陽性対照を読めない・陽性対照を残すと違反になる |
 | `結果`・`前回のモデル` は値そのものか、値に `（…）` の要約を 1 つだけ続けた形（閉じた後ろに何も無い）だけを通す | `反例なしかは判定できなかった`・`反例なし（N=3）かは判定できなかった` のような、走らせていないモデルが残る |
 | 置き場所と名前の形を見る | 次の回が同じ名前で探せない |
 
@@ -88,7 +91,9 @@ versions = _load("merge_versions", "merge-versions.py")
 frozen = _load("check_frozen", "check-frozen.py")
 
 # ---- `references/tree.md` の「形式検査のモデル」の写し（`README.md` の記録の項目）
-ITEMS = ("対象", "検査器", "構成の大きさ", "結果", "陽性対照", "置いた前提", "前回のモデル", "モデルのファイル", "残した回")
+ITEMS = ("対象", "検査器", "構成の大きさ", "結果", "陽性対照", "置いた前提", "前回のモデル", "モデルのファイル", "陽性対照のファイル", "残した回")
+# 行が無くてもよい項目（#1044。前から残したモデルは持たない——`check-formal-rerun.py` は無ければ判定できなかったにする）
+OPTIONAL = ("陽性対照のファイル",)
 RESULTS = ("反例なし", "反例あり")
 PREVIOUS = ("無かった", "直さず使った", "直して使った", "組み直した")
 README = "README.md"
@@ -220,7 +225,8 @@ def check(directory: Path) -> tuple[int, list[str]]:
     problems += found
     for item in ITEMS:
         if item not in records:
-            problems.append(f"{README}: 項目「{item}」の行が無い")
+            if item not in OPTIONAL:
+                problems.append(f"{README}: 項目「{item}」の行が無い")
         elif not records[item]:
             problems.append(f"{README}: 項目「{item}」の記録が空")
     result = records.get("結果", "")
@@ -229,21 +235,26 @@ def check(directory: Path) -> tuple[int, list[str]]:
     previous = records.get("前回のモデル", "")
     if previous and not one_of(previous, PREVIOUS):
         problems.append(f"{README}: 前回のモデルが {'／'.join(PREVIOUS)} のどれでもない（続けてよいのは「（」で始まる要約だけ）: {previous!r}")
-    listed = FILE.findall(records.get("モデルのファイル", ""))
-    if records.get("モデルのファイル") and not listed:
-        problems.append(f"{README}: モデルのファイルにバッククォートで囲んだ名前が 1 つも無い")
-    for name in listed:
-        path = directory / name
-        if "/" in name or name in (README, ".", ".."):
-            problems.append(f"{README}: モデルのファイル「{name}」はこのディレクトリのファイルの名前でない")
-        elif path.is_symlink() or not path.is_file():
-            problems.append(f"{README}: モデルのファイル「{name}」がこのディレクトリの通常のファイルとして無い")
+    listed: list[str] = []
+    counts = []
+    for item in ("モデルのファイル", "陽性対照のファイル"):
+        names = FILE.findall(records.get(item, ""))
+        if records.get(item) and not names:
+            problems.append(f"{README}: {item}にバッククォートで囲んだ名前が 1 つも無い")
+        for name in names:
+            path = directory / name
+            if "/" in name or name in (README, ".", ".."):
+                problems.append(f"{README}: {item}「{name}」はこのディレクトリのファイルの名前でない")
+            elif path.is_symlink() or not path.is_file():
+                problems.append(f"{README}: {item}「{name}」がこのディレクトリの通常のファイルとして無い")
+        listed += names
+        counts.append(f"{item} {len(names)} 件")
     for entry in sorted(p.name for p in directory.iterdir()):
         if entry != README and entry not in listed:
-            problems.append(f"{directory}/{entry}: モデルのファイルの一覧に無い（検査器の作業ファイル・出力・前の残りは残さない）")
+            problems.append(f"{directory}/{entry}: モデルのファイルの一覧に無い（陽性対照のファイルの一覧にも無い。検査器の作業ファイル・出力・前の残りは残さない）")
     if problems:
         return 1, problems
-    return 0, [f"{directory}: 形どおり（モデルのファイル {len(listed)} 件）"]
+    return 0, [f"{directory}: 形どおり（{'・'.join(counts)}）"]
 
 
 def main(argv: list[str]) -> int:

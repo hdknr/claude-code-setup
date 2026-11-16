@@ -146,6 +146,10 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         failures.append(f"{name}{': ' + detail if detail else ''}")
 
 
+# 仕様レビューの記録（#1044）——scaffold.py は作業中の版の最後の実行の行が `抜けた` でなければ作らない
+PASSED_RECORD = "回,日付,結果,条件2〜4,要求の行,決定表の行,テストケース,仕様の行,判断,機能\n1,2026-11-01,抜けた,満たす,1,1,1,1,-,-\n"
+
+
 def scaffold_run(scripts: Path, repo: Path, *extra: str) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, "-I", str(scripts / "scaffold.py"), "--repo", str(repo), *extra],
                           capture_output=True, text=True, timeout=120, env=CHILD_ENV)
@@ -160,6 +164,9 @@ def make_base(work: Path, scripts: Path) -> Path:
     (base / "shared" / "qa.csv").write_text(QA, encoding="utf-8")
     (base / "spec" / "calc.md").write_text(SPEC, encoding="utf-8")
     (base / "spec" / "spec_ir.json").write_text(json.dumps(IR_V1, ensure_ascii=False, indent=2), encoding="utf-8")
+    (repo / "spec-review").mkdir()
+    for number in (1, 2):  # v2 の段も同じ記録で作る
+        (repo / "spec-review" / f"v{number}.csv").write_text(PASSED_RECORD, encoding="utf-8")
     proc = scaffold_run(scripts, repo)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     return repo
