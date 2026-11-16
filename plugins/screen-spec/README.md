@@ -5,7 +5,7 @@
 
 screen-spec は spec-loop の決まり（Q&A 表・版の重ね方・未決定の印）に従い、spec-loop は screen-spec に依存しません。画面の無い案件では spec-loop を単独で使えます。
 
-いまは表の検査と、画面設計書を始めて画面を足すスキル（`init`・`add`）と雛形と、表から UI モックを作る生成器と、MkDocs で表とモックを見せるフックまでです。実現方式ごとの profile（`web-spa`）・モックの差分の印とレビュー会の進め方は後の段で足します（#1094・#1096）。
+いまは表の検査と、画面設計書を始めて画面を足すスキル（`init`・`add`）と雛形と、表から UI モックを作る生成器と、実現方式の profile（`web-spa`）と、MkDocs で表とモックを見せるフックまでです。モックの差分の印とレビュー会の進め方は後の段で足します（#1096）。
 
 ## スキル
 
@@ -22,6 +22,7 @@ screen-spec は spec-loop の決まり（Q&A 表・版の重ね方・未決定�
 | --- | --- |
 | `references/tables.md` | 画面・項目・遷移の表の置き場所・列・決まった値と、検査の項目と終了コード |
 | `references/prose.md` | 散文の仕様書の形（表とのつながり・節の名前と順・空の節と N/A）・雛形・書き方・レビュー観点・共通仕様 |
+| `references/profiles.md` | 実現方式の profile（選び方・足す列と節・方式が未定のとき・`web-spa` の列と小見出しと誰が決めるか） |
 | `references/spec-loop.md` | spec-loop との境目——対応する spec-loop の版の範囲・spec-loop の見つけ方・Q&A の番号を振らないこと |
 | `references/mkdocs.md` | MkDocs のフックの決まり——登録（spec-loop の登録の口）・このプラグインの見つけ方・表を仕様書の節に出す行と列・版ごとのモックの置き場所 |
 | `references/mock.md` | UI モックの生成器の決まり——出力の置き場所・種別ごとの描き方・説明の欄・共有の層だけを出すこと・描き方の差し替え・何で作ったかの印・終了コード |
@@ -30,6 +31,7 @@ screen-spec は spec-loop の決まり（Q&A 表・版の重ね方・未決定�
 | `scripts/write-screens.py` | `init`・`add` のスキルが呼ぶ書き込み（表と雛形を置く・画面ID を採番する・MkDocs のフックを登録する。標準ライブラリのみ） |
 | `scripts/mkdocs-pages.py` | MkDocs のフックの本体（表を仕様書の節に出す・版ごとのモックをサイトに置く。正本に登録した薄いフックが読み込む） |
 | `templates/` | MkDocs の正本に登録する薄いフック（`mkdocs/screen_spec_pages.py`）・仕様書（`spec.md`）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`。drawio の中身で、拡張子を `.drawio` にしない——このリポジトリの図の検査が `diagrams/` の外の `.drawio` を止めるので）の雛形 |
+| `profiles/` | profile ごとの雛形（`web-spa/spec.md`＝仕様書の末尾の節、`web-spa/common.md`＝共通仕様の節） |
 | `skills/` | `init`・`add` のスキル |
 
 ## 検査を走らせる

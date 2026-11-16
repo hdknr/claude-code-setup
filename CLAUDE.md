@@ -209,9 +209,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
       **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
   - `screen-spec/` - 画面設計書を spec-loop とは別に持つプラグイン（#1081。**spec-loop の決まりに従い、spec-loop は screen-spec に依存しない**。
-    いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器まで。profile・モックの差分の印は後の段——#1094・#1096）
+    いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器と、profile `web-spa`（#1094）まで。モックの差分の印は後の段——#1096）
     - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・案件ごとの設定（`settings.csv`）・`init` と `add`（採番）・検査と終了コードは `tables.md`、
-      散文の仕様書の節・雛形・書き方・レビュー観点・共通仕様は `prose.md`、対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`）
+      散文の仕様書の節・雛形・書き方・レビュー観点・共通仕様は `prose.md`、実現方式の profile（列・節と小見出し・方式が未定のとき・誰が決めるか）は `profiles.md`、
+      対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`）
+    - `profiles/` - profile ごとの雛形（`web-spa/`。仕様書の末尾の節と共通仕様の節。**`init` が案件の雛形と共通仕様の末尾に足す**）。
+      **profile の列は表の見出し行に入るので、profile は表を置く最初の版で決める**（見出し行は版の間で変えない——#1105）
     - `skills/init/`・`skills/add/` - 画面設計書を始める・画面を 1 つ足すスキル（#1093。`/screen-spec:init`・`/screen-spec:add`）。**書き込みは同梱のスクリプトがし、スキルは値を利用者と決めるだけ**。
       **Q&A 表を書かず、番号を振らない**。共有の `references/` と `scripts/` を `../../` で指すので、**素のスキルとしては張れない**
     - `templates/` - 仕様書（`spec.md`。表で持つ節は表を出す印だけ）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`）の雛形。

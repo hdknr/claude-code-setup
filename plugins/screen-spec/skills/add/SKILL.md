@@ -1,12 +1,12 @@
 ---
 name: add
-description: "spec-loop の正本リポジトリの画面設計書に、画面を 1 つ足す。同梱のスクリプトが画面ID を採番し（接頭辞は案件ごとの設定。どの版の番号とも、消した番号とも重ねない）、作業中の版の画面の表に 1 行足し、画面の仕様書（13 次元の節・目次・未決の論点。表で持つ節は表を出す印だけ）とワイヤーフレーム（drawio）の雛形を置く。行の中身（画面名・種別・主たる利用者・目的と背景・できること・根拠）は利用者と要求から決め、推測で埋めない。Q&A 表は書かず、番号も振らない（決まっていない欄は未決定の印にし、起票は spec-loop に任せる）。足した後に検査（check-screens.py）を走らせて結果を伝える。init の後に、画面を足したいときに使う。引数なし。"
+description: "spec-loop の正本リポジトリの画面設計書に、画面を 1 つ足す。同梱のスクリプトが画面ID を採番し（接頭辞は案件ごとの設定。どの版の番号とも、消した番号とも重ねない）、作業中の版の画面の表に 1 行足し、画面の仕様書（13 次元の節・目次・未決の論点。表で持つ節は表を出す印だけ）とワイヤーフレーム（drawio）の雛形を置く。行の中身（画面名・種別・主たる利用者・目的と背景・できること・根拠、profile が web-spa ならパス）は利用者と要求から決め、推測で埋めない。Q&A 表は書かず、番号も振らない（決まっていない欄は未決定の印にし、起票は spec-loop に任せる）。足した後に検査（check-screens.py）を走らせて結果を伝える。init の後に、画面を足したいときに使う。引数なし。"
 ---
 
 # add スキル
 
-<!-- skill-version: 0.4.0 -->
-> **このスキルの版: 0.4.0**（プラグイン `screen-spec`）。
+<!-- skill-version: 0.5.0 -->
+> **このスキルの版: 0.5.0**（プラグイン `screen-spec`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update screen-spec@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -19,7 +19,8 @@ description: "spec-loop の正本リポジトリの画面設計書に、画面�
 
 ## 決まり
 
-**画面の表の列・種別・採番・`add` が足すものは `../../references/tables.md`、仕様書の雛形と書き方は `../../references/prose.md` を正とする**
+**画面の表の列・種別・採番・`add` が足すものは `../../references/tables.md`、仕様書の雛形と書き方は `../../references/prose.md`、
+profile の列と節は `../../references/profiles.md` を正とする**
 （このスキルと同じプラグインの中にある）。**行の中身を決める前に `../../references/tables.md` の「画面（`screens.csv`）」を読む。**
 
 ## 守ること
@@ -40,12 +41,14 @@ description: "spec-loop の正本リポジトリの画面設計書に、画面�
 - `根拠` は Q&A の番号・業務ルール・機能の番号（`F-001`）。**Q&A の番号は Q&A 表に在るものだけ**を書く。
 - `機能`・`帳票` は spec-loop の機能一覧・帳票の `id`。
 - 案件の最初の画面は種別 `top`（入口）にする——検査は入口から遷移で辿る。
+- 案件の profile（`settings.csv` の `profile`）が `web-spa` なら、`パス`（`/` で始まる画面のルート）も決める——種別が `tab`・`dialog` でなければ要る。
+  パスは開発者が決めることなので、決まっていなければ未決定の印にする（方式が決まっていなければ `N/A。実現方式が未定`）。
 
 ### 2. 足す
 
 ```bash
 python3 <このスキルの base ディレクトリ>/../../scripts/write-screens.py add <docs> --name <画面名> --kind <種別> --user <主たる利用者> \
-  --purpose <目的と背景> --can <できること> --basis <根拠> [--parent <親画面>] [--features <機能>] [--reports <帳票>] [--refs <参考資料>]
+  --purpose <目的と背景> --can <できること> --basis <根拠> [--parent <親画面>] [--features <機能>] [--reports <帳票>] [--refs <参考資料>] [--path <パス>]
 ```
 
 `<docs>` は spec-loop の正本の `docs`（版のディレクトリの親）。複数の値は `、` で区切る。
