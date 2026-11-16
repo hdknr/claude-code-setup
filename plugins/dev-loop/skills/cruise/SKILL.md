@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 1.112.1 -->
-> **このスキルの版: 1.112.1**（プラグイン `dev-loop`）。
+<!-- skill-version: 2.0.0 -->
+> **このスキルの版: 2.0.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -355,6 +355,9 @@ check-unattended-env.py --cruise --ledger issue-<親> --since-last  # --absent �
 3. **依存先がマージ待ちのうちに積んで始めるかは、人間が決める**——`../dev-loop/references/stacked.md` の「台帳を使う周では」を正とする。
    **`--absent` の起動で、利用者が積んでよいと言っていなければ積まない。**
 4. **マージは dev-loop の `SKILL.md` 手順 7 のとおり**（`../dev-loop/scripts/merge-pr.py` に任せてよい）。
+   **手順 7 の関門の照合（`check-gates.py`）はどの経路でも通す**——`merge-pr.py` は中で通し、**`--absent` の cruise では `merge-pr.py <PR 番号> --absent` と呼ぶ**（#1043）。
+   **13（照合を通らない・計画が見つからない）は、子の報告と食い違う関門の記録である**——マージせず、台帳のその行の `note` を `利用者の判断待ち: 関門の照合を通らない（<出力の理由>）` で始めて止める
+   （照合の理由は記録か関門のやり直しで直すもので、親が記録を書き足して通さない）。
    **マージを確かめたら、台帳に `merged` を書く手前で、その周の worktree とローカルブランチを片付ける（#823）**——メインの作業ツリーで
    `python3 <このスキルの base ディレクトリ>/scripts/cleanup-cycle.py cycle <PR 番号>` を素の 1 行で呼ぶ（終了コードで分岐する——`../dev-loop/SKILL.md` の「終了コードで分岐するスクリプトは、包まずに素の 1 行で呼ぶ」）。
    消すのは、その PR から決まる木（周の作業木と、Verifier・`/code-review` の隔離木）とブランチだけで、**リモートのブランチ・PR には触らない**。
