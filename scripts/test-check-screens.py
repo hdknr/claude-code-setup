@@ -56,9 +56,9 @@ S_HEAD = "画面ID,画面名,種別,親画面,主たる利用者,ステータス
 I_HEAD = "番号,画面ID,まとまり,並び順,項目名,種類,中身,例,必須,入力チェック,エラーメッセージ,並び替え,絞り込み,根拠\n"
 T_HEAD = "番号,遷移元,きっかけ,操作,条件,遷移先,結果,根拠\n"
 
-S1 = "S-001,受注一覧,top,,担当者,記入中,,受注を探す,一覧と絞り込み,F-001,,order-list.md,Q-R-001\n"
+S1 = "S-001,受注一覧,top,,担当者,記入中,,受注を探す,一覧と絞り込み,F-001,,order-list.md,Q-R-002\n"
 S2 = "S-002,受注登録,form,,担当者,記入中,,受注を入れる,入力,F-002,,order-new.md,F-002\n"
-I1 = "I-001,S-001,一覧,1,受注日,一覧の列,受注した日,2026/11/16,,,,はい,いいえ,Q-R-001\n"
+I1 = "I-001,S-001,一覧,1,受注日,一覧の列,受注した日,2026/11/16,,,,はい,いいえ,Q-R-002\n"
 I2 = "I-002,S-001,操作,2,新規,ボタン,,,,,,,,F-002\n"
 I3 = "I-003,S-002,入力,1,顧客名,入力,顧客の名前,山田,はい,30 文字まで,30 文字までで入れてください,,,F-002\n"
 I4 = "I-004,S-002,操作,2,保存,ボタン,,,,,,,,F-002\n"
@@ -169,15 +169,17 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
      "T-001 きっかけ: 項目 I-004 は遷移元 S-001 の項目でない", ""),
     ("trigger-missing-item", good(T=T_HEAD + T1 + T2 + "T-003,S-001,I-099,,,S-002,,F-002\n"), None, [], 1, "T-003 きっかけ: I-099 が項目の表に無い", ""),
     # ---- U4 Q&A 表に無い根拠の番号
-    ("qa-missing", good(S=S_HEAD + S1.replace(",Q-R-001\n", ",Q-R-099\n") + S2), None, [], 1, "Q&A Q-R-099 が Q&A 表に無い", ""),
+    ("qa-missing", good(S=S_HEAD + S1.replace(",Q-R-002\n", ",Q-R-099\n") + S2), None, [], 1, "Q&A Q-R-099 が Q&A 表に無い", ""),
     ("qa-missing-in-prose", good(LIST_MD=doc("S-001", "受注一覧", {"7. 状態": "空のときは何も出さない（Q-R-098）"})), None, [], 1,
      "order-list.md:", ""),
     ("qa-missing-internal", good(S=S_HEAD + S1 + S2.replace(",F-002\n", ",D-S-009\n")), None, [], 1, "Q&A D-S-009 が Q&A 表に無い", ""),
     ("qa-removed-warns", with_files(base(), **{V2_REMOVED: "種類,対象,理由\nQ&A,Q-R-002,取り下げた\n",
                                                V2_S: S_HEAD + S2.replace(",F-002\n", ",Q-R-002\n")}), None, [], 0,
      "removed.csv で消した Q&A Q-R-002 を指す（反映を確かめる）", "違反:"),
-    ("qa-answered-not-reflected-warns", good(S=S_HEAD + S1 + S2.replace(",F-002\n", ",Q-R-003\n")), None, [], 0,
-     "Q&A Q-R-003 は回答があるがまだ反映していない（反映を確かめる）", "違反:"),
+    ("qa-answered-warns", good(S=S_HEAD + S1 + S2.replace(",F-002\n", ",Q-R-003\n")), None, [], 0,
+     "Q&A Q-R-003 は回答がある（反映を確かめる）", "違反:"),
+    ("qa-reflected-warns", good(S=S_HEAD + S1 + S2.replace(",F-002\n", ",Q-R-001\n")), None, [], 0,
+     "Q&A Q-R-001 は回答がある（反映を確かめる）", "違反:"),
     ("feature-number-in-basis-missing", good(T=T_HEAD + T1 + T2.replace(",F-002\n", ",F-009\n")), None, [], 1,
      "根拠: 機能 F-009 が requirements/features.csv に無い", ""),
     # ---- U5 散文
@@ -237,9 +239,9 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
              T=T_HEAD + T1 + T2 + "T-003,未定（Q-R-002）,I-002,,,S-003,,F-001\n"),
         **{"v1/requirements/screens/order-detail.md": doc("S-003", "受注の詳細")}), None, [], 3, "S-003: 入口の画面から遷移で辿れないかもしれない", "違反:"),
     ("marker-on-trigger", good(T=T_HEAD + T1.replace(",I-002,", ",未定（Q-R-002）,") + T2), None, [], 3,
-     "ボタン '新規' を きっかけ にする遷移が無い（きっかけが未決定", "違反:"),
+     "ボタン '新規' を きっかけ にする遷移が無いかもしれない（きっかけが未決定", "違反:"),
     ("marker-on-entry-kind", good(S=S_HEAD + S1.replace(",top,", ",未定（Q-R-002）,") + S2), None, [], 3,
-     "入口の画面（種別 top）が無い（種別が未決定", "違反:"),
+     "入口の画面（種別 top）が無いかもしれない（種別が未決定", "違反:"),
     ("marker-on-tab-parent", with_files(
         good(S=S_HEAD + S1 + S2 + "S-003,受注の明細,tab,未定（Q-R-002）,担当者,記入中,,明細を見る,明細の一覧,F-002,,order-tab.md,F-002\n"),
         **{"v1/requirements/screens/order-tab.md": doc("S-003", "受注の明細")}), None, [], 3, "S-003: 入口の画面から遷移で辿れないかもしれない", "違反:"),
@@ -248,6 +250,37 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     ("prose-subheading-only", good(LIST_MD=doc("S-001", "受注一覧", {"7. 状態": "### 補足"})), None, [], 1, "節 ## 7. 状態 が空", ""),
     ("prose-na-lowercase", good(LIST_MD=doc("S-001", "受注一覧", {"9. 他システム連携": "n/a"})), None, [], 1, "が N/A だけで理由が無い", ""),
     ("prose-na-decorated", good(LIST_MD=doc("S-001", "受注一覧", {"9. 他システム連携": "N/A -"})), None, [], 1, "が N/A だけで理由が無い", ""),
+    ("reach-list-with-undecided-parent", with_files(
+        good(S=S_HEAD + S1 + S2 + "S-003,受注の詳細,list,未定（Q-R-002）,担当者,記入中,,詳しく見る,詳細,F-001,,order-detail.md,F-001\n"),
+        **{"v1/requirements/screens/order-detail.md": doc("S-003", "受注の詳細")}), None, [], 1, "S-003: 入口の画面から遷移で辿れない\n", ""),
+    ("reach-own-undecided-target", with_files(
+        good(S=S_HEAD + S1 + S2 + "S-003,受注の詳細,detail,,担当者,記入中,,詳しく見る,詳細,F-001,,order-detail.md,F-001\n",
+             I=I_HEAD + I1 + I2 + I3 + I4 + "I-005,S-003,操作,1,戻る,ボタン,,,,,,,,F-001\n",
+             T=T_HEAD + T1 + T2 + "T-003,S-003,I-005,,,未定（Q-R-002）,,F-001\n"),
+        **{"v1/requirements/screens/order-detail.md": doc("S-003", "受注の詳細")}), None, [], 1, "S-003: 入口の画面から遷移で辿れない\n", ""),
+    ("reach-undecided-propagates", with_files(
+        good(S=S_HEAD + S1 + S2 + "S-003,受注の詳細,未定（Q-R-002）,,担当者,記入中,,詳しく見る,詳細,F-001,,order-detail.md,F-001\n"
+             + "S-004,受注の履歴,list,,担当者,記入中,,履歴を見る,履歴,F-001,,order-history.md,F-001\n",
+             I=I_HEAD + I1 + I2 + I3 + I4 + "I-005,S-003,操作,1,履歴,ボタン,,,,,,,,F-001\n",
+             T=T_HEAD + T1 + T2 + "T-003,S-003,I-005,,,S-004,,F-001\n"),
+        **{"v1/requirements/screens/order-detail.md": doc("S-003", "受注の詳細"),
+           "v1/requirements/screens/order-history.md": doc("S-004", "受注の履歴")}), None, [], 3,
+     "S-004: 入口の画面から遷移で辿れないかもしれない", "違反:"),
+    ("button-more-than-undecided-triggers", good(
+        I=I_HEAD + I1 + I2 + I3 + I4 + "I-020,S-001,操作,3,印刷,ボタン,,,,,,,,F-001\nI-021,S-001,操作,4,削除,ボタン,,,,,,,,F-001\n",
+        T=T_HEAD + T1 + T2 + "T-020,S-001,未定（Q-R-002）,,,S-001,,F-001\n"), None, [], 1, "少なくとも 1 個は遷移が無い", ""),
+    ("button-undecided-screen", good(I=I_HEAD + I1 + I2 + I3 + I4.replace(",S-002,", ",未定（Q-R-002）,"),
+                                     T=T_HEAD + T1 + T2.replace(",I-004,", ",未定（Q-R-002）,")), None, [], 3,
+     "ボタン '保存' を きっかけ にする遷移が無いかもしれない", "違反:"),
+    ("parent-missing-undecided-kind", with_files(
+        good(S=S_HEAD + S1 + S2 + "S-003,明細,未定（Q-R-002）,S-999,担当者,記入中,,明細を見る,明細,F-002,,order-tab.md,F-002\n"),
+        **{"v1/requirements/screens/order-tab.md": doc("S-003", "明細")}), None, [], 1, "親画面: S-999 が画面の表に無い", ""),
+    ("prose-na-emphasis", good(LIST_MD=doc("S-001", "受注一覧", {"9. 他システム連携": "**N/A**"})), None, [], 1, "が N/A だけで理由が無い", ""),
+    ("prose-na-list-mark", good(LIST_MD=doc("S-001", "受注一覧", {"9. 他システム連携": "- N/A"})), None, [], 1, "が N/A だけで理由が無い", ""),
+    ("prose-comment-open-in-fence", good(LIST_MD=doc("S-001", "受注一覧", {"3. レイアウト": MARK + "\n\n```html\n<!-- 例: ここに部品\n```",
+                                                                         "11. 表示ルール": "日付は YYYY/MM/DD <!-- メモ -->"})),
+     None, [], 0, "違反 0 件", "違反:"),
+    ("prose-indented-heading", good(LIST_MD=doc("S-001", "受注一覧").replace("\n## 7. 状態\n", "\n  ## 7. 状態\n")), None, [], 0, "違反 0 件", "違反:"),
     # ---- U8 spec-loop の版
     ("spec-loop-too-old", base(), ("version", "0.92.9"), [], 4, "spec-loop の版 0.92.9", "違反"),
     ("spec-loop-too-new", base(), ("version", "1.0.0"), [], 4, "対応の範囲の外", "違反"),
@@ -395,7 +428,7 @@ def run_cases(plugin: Path, sibling: Path, work: Path, only: str | None = None) 
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("辿り始めを全部の画面にする", "reached = set(entries)", "reached = set(screens)", "unreachable-screen"),
+    ("辿り始めを全部の画面にする", "reached = walk(entries)", "reached = set(screens)", "unreachable-screen"),
     ("入口が無いのを見ない", "        if not entries:\n", "        if False:\n", "no-entry"),
     ("タブを親から辿らない", "edges.get(here, []) + children.get(here, [])", "edges.get(here, [])", "good-tab-reached-by-parent"),
     ("遷移の無いボタンを見ない", "if row.get(\"種類\") == BUTTON and key not in triggered:", "if False:", "button-without-transition"),
@@ -407,7 +440,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("表に無い Q&A を警告にする", "self.report.violations.append(f\"{where}: Q&A {number} が Q&A 表に無い\")",
      "self.report.warnings.append(f\"{where}: Q&A {number} が Q&A 表に無い\")", "qa-missing"),
     ("消した Q&A を違反にする", "if number in self.removed:", "if False:", "qa-removed-warns"),
-    ("回答があるが未反映を警告しない", "row.get(\"状態\") not in self.qa.REFLECTED", "False", "qa-answered-not-reflected-warns"),
+    ("回答のある行を警告しない", "elif row.get(\"回答\") != self.qa.NO_ANSWER:", "elif False:", "qa-reflected-warns"),
     ("内部の Q&A 表を引かない", "self.all_qa = {**whole.qa, **whole.internal}", "self.all_qa = dict(whole.qa)", "good-internal-qa"),
     ("散文の Q&A の番号を見ない", "            self.references(where, line)\n", "            pass\n", "qa-missing-in-prose"),
     ("根拠の機能の番号を見ない", "for match in self.feature_number.finditer(decided[\"根拠\"]):", "for match in []:", "feature-number-in-basis-missing"),
@@ -422,14 +455,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "                self.undecided_cells.add((path, key, name))\n", "marker-skips-reference"),
     ("散文の未決定の印を見ない", "            self.marked(where, line)\n", "            pass\n", "marker-in-prose"),
     ("空の節を見ない", "            if not content:\n", "            if False:\n", "prose-empty-section"),
-    ("理由の無い N/A を見ない", "elif NOT_APPLICABLE.fullmatch(content):", "elif False:", "prose-na-without-reason"),
+    ("理由の無い N/A を見ない", "elif NOT_APPLICABLE.fullmatch(DECORATION.sub(\"\", LIST_MARK.sub(\"\", content)).strip()):", "elif False:", "prose-na-without-reason"),
+    ("N/A の強調を理由に数える", "DECORATION.sub(\"\", LIST_MARK.sub(\"\", content))", "LIST_MARK.sub(\"\", content)", "prose-na-emphasis"),
+    ("N/A の箇条書きの印を理由に数える", "DECORATION.sub(\"\", LIST_MARK.sub(\"\", content))", "DECORATION.sub(\"\", content)", "prose-na-list-mark"),
     ("散文の節の表を出す印を中身に数える", "if tabled and TABLE_MARK in body:", "if TABLE_MARK in body:", "prose-mark-in-prose-section"),
     ("散文の節の表を出す印を中身に数える（コメントを外さない）", "HEADING_LINE.sub(\"\", COMMENT.sub(\"\", body))", "HEADING_LINE.sub(\"\", body)",
      "prose-mark-in-prose-section"),
     ("無い節を見ない", "            if name not in found:\n", "            if False:\n", "prose-missing-section"),
     ("節の順を見ない", "if [found[name] for name in order] != sorted(found[name] for name in order):", "if False:", "prose-order"),
     ("重なる節を見ない", "            if heading in found:\n", "            if False:\n", "prose-duplicate-section"),
-    ("コードブロックの中の見出しを数える", "opened = FENCE.match(line.lstrip())", "opened = None", "heading-in-fence"),
+    ("コードブロックの中の見出しを数える", "opened = FENCE.match(line.lstrip())\n            if fence is not None:\n", "opened = None\n            if fence is not None:\n", "heading-in-fence"),
     ("最初の見出しの画面ID を見ない", "if title is None or key not in title[2]:", "if title is None:", "prose-title-without-id"),
     ("無い仕様書を見ない", "self.report.violations.append(f\"{SCREENS} {key} 仕様書: {path} が無い\")", "pass", "prose-file-missing"),
     ("表から指されない仕様書を見ない", "elif name not in referenced:", "elif False:", "prose-orphan"),
@@ -458,12 +493,20 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "merge-header-differs"),
     ("--upto を渡さない", "self.versions.merge(self.docs, self.upto)", "self.versions.merge(self.docs, None)", "upto-ignores-later"),
     ("印のあるセルの Q&A の番号を見ない", "                self.references(where, value)  # 印に添えた", "                pass  # 印に添えた", "marker-cell-bad-qa"),
-    ("未決定の遷移先でも辿れないを違反にする", "if (None in open_targets or key in open_targets", "if (False", "marker-on-reach-target"),
-    ("未決定の遷移元の遷移先を違反にする", "None in open_targets or key in open_targets or", "None in open_targets or", "marker-on-reach-source"),
-    ("未決定の親画面を違反にする", "or (SCREENS, key, \"親画面\") in self.undecided_cells):", "):", "marker-on-tab-parent"),
-    ("未決定のきっかけでもボタンを違反にする", "if row.get(\"画面ID\") in open_sources or None in open_sources:", "if False:", "marker-on-trigger"),
-    ("未決定の種別でも入口が無いを違反にする", "if any((SCREENS, key, \"種別\") in self.undecided_cells for key in screens):", "if False:", "marker-on-entry-kind"),
-    ("コメントの中の見出しを数える", "COMMENT.sub(lambda m: m.group(0) if m.group(0) == TABLE_MARK else \"\\n\" * m.group(0).count(\"\\n\"), text)", "text", "prose-heading-in-comment"),
+    ("未決定の遷移先でも辿れないを違反にする", "if anywhere or key in maybe:", "if key in maybe:", "marker-on-reach-target"),
+    ("遷移元が辿れない未決定の遷移先でも警告にする", "and (row.get(\"遷移元\") in maybe or undecided(TRANSITIONS, key, \"遷移元\"))", "", "reach-own-undecided-target"),
+    ("未決定の遷移元の遷移先を辿らない", "seeds += [row[\"遷移先\"]", "seeds += [][:0] and [row[\"遷移先\"]", "marker-on-reach-source"),
+    ("未決定の親画面を辿らない", "or (undecided(SCREENS, key, \"親画面\") and row.get(\"種別\") in REACHED_WITH_PARENT)]", "]", "marker-on-tab-parent"),
+    ("未決定の親画面をどの種別でも警告にする", "and row.get(\"種別\") in REACHED_WITH_PARENT)]", ")]", "reach-list-with-undecided-parent"),
+    ("未決定を先へ伝えない", "maybe = walk(set(seeds) | reached)", "maybe = set(seeds) | reached", "reach-undecided-propagates"),
+    ("未決定のきっかけでもボタンを違反にする", "if len(keys) <= room:", "if False:", "marker-on-trigger"),
+    ("指しうる数より多いボタンを警告にする", "if len(keys) <= room:", "if room:", "button-more-than-undecided-triggers"),
+    ("画面ID が未決定のボタンを指しうる数を数えない", "room = sum(open_by_source.values()) if screen is None else", "room = 0 if screen is None else", "button-undecided-screen"),
+    ("未決定の種別でも入口が無いを違反にする", "if any(undecided(SCREENS, key, \"種別\") for key in screens):", "if False:", "marker-on-entry-kind"),
+    ("種別が未決定の画面の親画面を見ない", "            elif parent and parent not in screens:\n", "            elif False:\n", "parent-missing-undecided-kind"),
+    ("コメントの中の見出しを数える", "        lines = self.without_comments(text)\n", "        lines = text.splitlines()\n", "prose-heading-in-comment"),
+    ("コードブロックの中の <!-- をコメントに数える", "            if fence is not None or opened:\n", "            if False:\n", "prose-comment-open-in-fence"),
+    ("字下げした見出しを見ない", "HEADING = re.compile(r\" {0,3}(#{1,6})", "HEADING = re.compile(r\"(#{1,6})", "prose-indented-heading"),
     ("小見出しを中身に数える", "HEADING_LINE.sub(\"\", COMMENT.sub(\"\", body))", "COMMENT.sub(\"\", body)", "prose-subheading-only"),
     ("N/A の大文字小文字を区別する", "、\\-－—–()（）\\[\\]「」]*\", re.IGNORECASE)", "、\\-－—–()（）\\[\\]「」]*\")", "prose-na-lowercase"),
     ("N/A の飾りを理由に数える", "、\\-－—–()（）\\[\\]「」]*", "、]*", "prose-na-decorated"),

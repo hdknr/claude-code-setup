@@ -128,7 +128,10 @@ SECTIONS = [
 TABLE_MARK = "<!-- screen-spec: 表 -->"
 
 NOT_APPLICABLE = re.compile(r"N/A[\s。．.:：、\-－—–()（）\[\]「」]*", re.IGNORECASE)
-HEADING_LINE = re.compile(r"^[ \t]*#{1,6}([ \t].*)?$", re.MULTILINE)
+HEADING_LINE = re.compile(r"^ {0,3}#{1,6}([ \t].*)?$", re.MULTILINE)
+HEADING = re.compile(r" {0,3}(#{1,6})[ \t]+(.*?)[ \t#]*$")
+LIST_MARK = re.compile(r"^[ \t]*(?:[-+*>]|[0-9]+[.)])[ \t]+", re.MULTILINE)  # 箇条書き・引用の印
+DECORATION = re.compile(r"[*_`~]")  # 強調・コードの印
 FENCE = re.compile(r"(`{3,}|~{3,})")
 COMMENT = re.compile(r"<!--.*?-->", re.S)
 
@@ -330,8 +333,8 @@ class Checker:
                     self.report.warnings.append(f"{where}: removed.csv で消した Q&A {number} を指す（反映を確かめる）")
                 else:
                     self.report.violations.append(f"{where}: Q&A {number} が Q&A 表に無い")
-            elif row.get("回答") != self.qa.NO_ANSWER and row.get("状態") not in self.qa.REFLECTED:
-                self.report.warnings.append(f"{where}: Q&A {number} は回答があるがまだ反映していない（反映を確かめる）")
+            elif row.get("回答") != self.qa.NO_ANSWER:
+                self.report.warnings.append(f"{where}: Q&A {number} は回答がある（反映を確かめる）")
 
     def cells(self, path: str, key: str, row: dict[str, str]) -> dict[str, str]:
         """印の無いセルの値（前後の空白を除く）。印のあるセルは値の決まりに当てないので入れない。空の必須の欄は数える。"""
@@ -429,6 +432,8 @@ class Checker:
                     self.report.violations.append(f"{where} 親画面: 自分を親にしている")
             elif kind in SCREEN_KINDS:
                 self.must_be_empty(f"{where} 親画面", parent, f"種別 {kind} の画面")
+            elif parent and parent not in screens:
+                self.report.violations.append(f"{where} 親画面: {parent} が画面の表に無い")
             for value in self.split(row.get("機能")):
                 self.listed(f"{where} 機能", value, self.features, self.design.FEATURES, "機能")
             for value in self.split(row.get("帳票")):
@@ -490,13 +495,25 @@ class Checker:
             operation = row.get("操作")
             if operation:
                 self.listed(f"{where} 操作", operation, self.roles, self.design.ROLES, "操作")
-        # きっかけが未決定の遷移は、遷移元の画面（遷移元も未決定ならどの画面でも）のボタンを指しうる——その画面のボタンは決められない
-        open_sources = {row.get("遷移元") for key, row in transitions.items() if (TRANSITIONS, key, "きっかけ") in self.undecided_cells}
+        # きっかけが未決定の遷移は、遷移元の画面（遷移元も未決定ならどの画面でも）のボタンを 1 つずつ指しうる。
+        # 指しうる数より遷移の無いボタンが多ければ、どれかは確かに遷移が無い（違反）。指しうる数に収まれば決められない（警告）
+        open_by_source: dict[str | None, int] = {}
+        for key, row in transitions.items():
+            if (TRANSITIONS, key, "きっかけ") in self.undecided_cells:
+                open_by_source[row.get("遷移元")] = open_by_source.get(row.get("遷移元"), 0) + 1
+        untriggered: dict[str | None, list[str]] = {}
         for key, row in items.items():
             if row.get("種類") == BUTTON and key not in triggered:
-                message = f"{ITEMS} {key}: ボタン {row.get('項目名', '')!r} を きっかけ にする遷移が無い"
-                if row.get("画面ID") in open_sources or None in open_sources:
-                    self.report.warnings.append(f"{message}（きっかけが未決定の遷移があるので決められない）")
+                untriggered.setdefault(row.get("画面ID"), []).append(key)
+        for screen, keys in untriggered.items():
+            room = sum(open_by_source.values()) if screen is None else open_by_source.get(screen, 0) + open_by_source.get(None, 0)
+            for key in keys:
+                message = f"{ITEMS} {key}: ボタン {items[key].get('項目名', '')!r} を きっかけ にする遷移が無い"
+                if len(keys) <= room:
+                    self.report.warnings.append(f"{message}かもしれない（きっかけが未決定の遷移があるので決められない）")
+                elif room:
+                    self.report.violations.append(f"{message}（きっかけが未決定の遷移は {room} つで、{len(keys)} 個のボタンの少なくとも "
+                                                  f"{len(keys) - room} 個は遷移が無い）")
                 else:
                     self.report.violations.append(message)
 
@@ -504,16 +521,14 @@ class Checker:
         if not screens:
             return
         entries = [key for key, row in screens.items() if row.get("種別") == ENTRY_KIND]
+        undecided = lambda table, key, name: (table, key, name) in self.undecided_cells  # noqa: E731
         if not entries:
             message = f"{SCREENS}: 入口の画面（種別 {ENTRY_KIND}）が無い"
-            if any((SCREENS, key, "種別") in self.undecided_cells for key in screens):
-                self.report.warnings.append(f"{message}（種別が未決定の画面があるので決められない）")
+            if any(undecided(SCREENS, key, "種別") for key in screens):
+                self.report.warnings.append(f"{message}かもしれない（種別が未決定の画面があるので決められない）")
             else:
                 self.report.violations.append(message)
-            return
-        # 遷移先が未決定の遷移はどの画面へも行きうる。遷移元だけが未決定なら、その遷移先に行きうる。種別・親画面が未決定の画面は自分のことが決められない
-        open_targets = {row.get("遷移先") for key, row in transitions.items()
-                        if (TRANSITIONS, key, "遷移元") in self.undecided_cells or (TRANSITIONS, key, "遷移先") in self.undecided_cells}
+                return
         edges: dict[str, list[str]] = {}
         for row in transitions.values():
             if row.get("遷移元") in screens and row.get("遷移先") in screens:
@@ -522,19 +537,32 @@ class Checker:
         for key, row in screens.items():
             if row.get("種別") in REACHED_WITH_PARENT and row.get("親画面") in screens:
                 children.setdefault(row["親画面"], []).append(key)
-        reached = set(entries)
-        queue = deque(entries)
-        while queue:
-            here = queue.popleft()
-            for there in edges.get(here, []) + children.get(here, []):
-                if there not in reached:
-                    reached.add(there)
-                    queue.append(there)
+
+        def walk(starts) -> set[str]:
+            seen = set(starts)
+            queue = deque(starts)
+            while queue:
+                here = queue.popleft()
+                for there in edges.get(here, []) + children.get(here, []):
+                    if there not in seen:
+                        seen.add(there)
+                        queue.append(there)
+            return seen
+
+        reached = walk(entries)
+        # 辿れるかもしれない画面: 種別が未決定（入口かもしれない）・親画面が未決定のタブ（か種別も未決定）・遷移元が未決定の遷移の遷移先から辿れるもの。
+        # 遷移先が未決定の遷移は、遷移元が辿れる（かもしれない）か未決定なら、どの画面へも行きうる
+        seeds = [key for key, row in screens.items()
+                 if undecided(SCREENS, key, "種別")
+                 or (undecided(SCREENS, key, "親画面") and row.get("種別") in REACHED_WITH_PARENT)]
+        seeds += [row["遷移先"] for key, row in transitions.items() if undecided(TRANSITIONS, key, "遷移元") and row.get("遷移先") in screens]
+        maybe = walk(set(seeds) | reached)
+        anywhere = any(undecided(TRANSITIONS, key, "遷移先") and (row.get("遷移元") in maybe or undecided(TRANSITIONS, key, "遷移元"))
+                       for key, row in transitions.items())
         for key in screens:
             if key not in reached:
                 message = f"{SCREENS} {key}: 入口の画面から遷移で辿れない"
-                if (None in open_targets or key in open_targets or (SCREENS, key, "種別") in self.undecided_cells
-                        or (SCREENS, key, "親画面") in self.undecided_cells):
+                if anywhere or key in maybe:
                     self.report.warnings.append(f"{message}かもしれない（未決定の遷移・種別・親画面があるので決められない）")
                 else:
                     self.report.violations.append(message)
@@ -575,11 +603,31 @@ class Checker:
             self.marked(where, line)
             self.references(where, line)
 
+    @staticmethod
+    def without_comments(text: str) -> list[str]:
+        """HTML のコメントを外した行（行の位置は保ち、表を出す印は残す）。コードブロックの中の `<!--` はコメントに数えない。"""
+        lines = text.splitlines()
+        fenced: dict[int, str] = {}
+        fence = None
+        for at, line in enumerate(lines):
+            opened = FENCE.match(line.lstrip())
+            if fence is not None or opened:
+                fenced[at] = line
+                lines[at] = ""
+                if fence is None:
+                    fence = opened.group(1)
+                elif opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence):
+                    fence = None
+        joined = COMMENT.sub(lambda m: m.group(0) if m.group(0) == TABLE_MARK else "\n" * m.group(0).count("\n"), "\n".join(lines))
+        out = joined.split("\n")
+        for at, line in fenced.items():
+            out[at] = line
+        return out
+
     def check_document(self, path: str, text: str, key: str) -> None:
         self.scan_lines(path, text)
         # HTML のコメントの中の見出しは見出しに数えない（表を出す印は残す）。行の位置は保つ
-        blanked = COMMENT.sub(lambda m: m.group(0) if m.group(0) == TABLE_MARK else "\n" * m.group(0).count("\n"), text)
-        lines = blanked.splitlines()
+        lines = self.without_comments(text)
         headings: list[tuple[int, int, str]] = []  # (行の位置, 段, 見出しの文字)
         fence = None
         for at, line in enumerate(lines):
@@ -591,7 +639,7 @@ class Checker:
             if opened:
                 fence = opened.group(1)
                 continue
-            match = re.match(r"(#{1,6})[ \t]+(.*?)[ \t#]*$", line)
+            match = HEADING.match(line)
             if match:
                 headings.append((at, len(match.group(1)), match.group(2).strip()))
         title = next((h for h in headings if h[1] == 1), None)
@@ -614,7 +662,7 @@ class Checker:
                 continue
             if not content:
                 self.report.violations.append(f"{path}:{at + 1}: 節 ## {heading} が空（書くことが無ければ N/A と理由を書く）")
-            elif NOT_APPLICABLE.fullmatch(content):
+            elif NOT_APPLICABLE.fullmatch(DECORATION.sub("", LIST_MARK.sub("", content)).strip()):
                 self.report.violations.append(f"{path}:{at + 1}: 節 ## {heading} が N/A だけで理由が無い")
         for name in names:
             if name not in found:
