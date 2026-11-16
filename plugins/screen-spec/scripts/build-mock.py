@@ -41,7 +41,7 @@ usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--since <�
 - 書くのは出力の 1 ファイルだけ（正本・spec-loop・screen-spec を書かない。`__pycache__` も、正本の git の index も書かない——`--no-optional-locks`）
 - 埋め込む JSON と描き方の JS が `</script` で HTML を閉じない。描き方のファイルは 1 つずつ別の `<script>` に置く（構文の誤りがほかを巻き込まない）
 - 表の遷移は、きっかけの項目の種類（ボタン・一覧・表示・入力・一覧の列）に依らずモックの上で押せる。タブの中のタブは道筋のタブを選ぶ
-- 差分の印は変わった画面・項目・遷移にだけ付ける（v1 には前の版からの印を付けない）。根拠は共有の層の番号だけ（消した行は消した理由の番号も足す）
+- 差分の印は変わった画面・項目・遷移にだけ付ける（v1 には前の版からの印を付けない。埋め込む列が `D-` を外して同じなら変更に数えない）。根拠は共有の層の番号だけ（消した行は消した理由の番号も足す。理由は v1〜v<n> の `removed.csv` から）
 - 基準の時点は一時ディレクトリに取り出し、終わったら消す（正本・git の index に書かない）。解決できなければ 2、その時点の重ね合わせが決まりに反すれば 1
 - レビュー会の進め方は共有の層の `反映済み` でない行だけを Q&A 表の順に並べ、質問の画面（画面・その項目・その画面を遷移元にする遷移のセルに番号がある画面）へ飛ぶ
 - 未回答の注記は共有の層の未回答の行を指す項目・遷移にだけ出す。画面に掛かる行（共有と内部）に回答の未反映が残っていれば標準出力に警告する（0 のまま）
@@ -323,7 +323,7 @@ def shown_row(name: str, row: dict[str, str], sharer: Sharer) -> dict[str, str]:
 
 
 def diff_entry(kind: str, label: str, changes: dict, row_tables: dict, names: dict, numbers: Numbers, sharer: Sharer,
-               removed_status: str) -> dict:
+               removed_status: str, changed_status: str) -> dict:
     """差分 1 つ分の印（画面・項目・遷移の鍵 → 追加／変更／削除）・根拠（共有の層の Q&A の番号）・消したもの。"""
     entry: dict[str, object] = {"kind": kind, "label": label, "marks": {}, "basis": {}, "removed": []}
     for path, (row_kind, _, _) in row_tables.items():
@@ -331,6 +331,8 @@ def diff_entry(kind: str, label: str, changes: dict, row_tables: dict, names: di
         marks: dict[str, str] = {}
         basis: dict[str, list[str]] = {}
         for change in changes.get(row_kind, []):
+            if change.status == changed_status and shown_row(name, change.before, sharer) == shown_row(name, change.after, sharer):
+                continue  # 埋め込まない列・内部の層の番号だけが変わった行——共有の層には変わって見えないので印を付けない
             row = change.after if change.after is not None else change.before
             marks[change.key] = change.status
             basis[change.key] = numbers.of(row, shared_only=True)
@@ -391,10 +393,12 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str,
         if diff_problems:
             raise Refused("前の版との差分を作れない:\n" + "\n".join(f"  {p}" for p in diff_problems))
         diffs.append(diff_entry("version", f"前の版（v{number - 1}）から", diff.changes, row_tables, names, numbers, sharer,
-                                diff_versions.REMOVED))
+                                diff_versions.REMOVED, diff_versions.CHANGED))
     if since is not None:
         label, before = baseline(docs, since, number, checker.versions)
-        reasons = diff_versions.removal_reasons(versions[number - 1][1])
+        reasons: dict = {}
+        for _, root in versions[:number]:  # 基準の時点がもっと前の版なら、間の版の removed.csv の理由も要る
+            reasons.update(diff_versions.removal_reasons(root))
         changes = {}
         for path, (row_kind, _, _) in row_tables.items():
             changes[row_kind] = diff_versions.compare_maps(before.tables.get(path, {}), whole.tables[path])
@@ -402,7 +406,7 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str,
                 if change.status == diff_versions.REMOVED:
                     change.reason = reasons.get((row_kind, change.key), "")
         diffs.append(diff_entry("since", f"基準の時点 {label} から", changes, row_tables, names, numbers, sharer,
-                                diff_versions.REMOVED))
+                                diff_versions.REMOVED, diff_versions.CHANGED))
     data["diffs"] = diffs
 
     # ---- Q&A（共有の層だけを埋め込む）・レビュー会の進め方・未回答の注記・未反映の警告

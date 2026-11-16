@@ -99,6 +99,8 @@ V1_TRANSITIONS = T_HEAD + (
 V2_SCREENS = S_HEAD + "S-008,配置図,setting,,管理者,下書き,,配置を見る,機器の配置,F-001,,layout.md,F-001\n"
 # 前の版から変えた画面（根拠に共有の Q&A と内部の Q&A。差分の根拠には共有の層だけが出る）
 V2_SCREENS += "S-002,受注登録,form,,担当者,記入中,,受注を入れて確かめる,入力と確認,F-002,,order-new.md,F-002、Q-R-002、D-S-001\n"
+# 内部の層の番号だけを変えた画面（共有の層には変わって見えないので、差分の印を付けない）
+V2_SCREENS += "S-003,受注の詳細,detail,,担当者,記入中,,詳しく見る,詳細を見る,F-001,,order-detail.md,F-001、D-S-002\n"
 # 親画面が巡るタブ（検査の違反。生成器は検査の結果に依らず作るので、開いても落ちないことを見る）
 V2_SCREENS += ("S-090,巡る A,tab,S-091,担当者,記入中,,巡る,巡る,F-001,,cycle-a.md,F-001\n"
                "S-091,巡る B,tab,S-090,担当者,記入中,,巡る,巡る,F-001,,cycle-b.md,F-001\n")
@@ -226,6 +228,8 @@ CASES: list[tuple[str, dict, object, list[str], int, str | None, str]] = [
     ("since-upto-1", after_review(), ("since", base_files()), ["--upto", "1", "--since", "review-1"], 0, "build/mock/v1/index.html", "書いた:"),
     ("since-removed", base_files(), ("since", with_(base_files(), {"docs/v2/removed.csv": None})), ["--since", "review-1"], 0,
      "build/mock/v2/index.html", "書いた:"),
+    ("since-v3", with_(base_files(), {"docs/v3/" + DATA + "screens.csv": S_HEAD + "S-009,お知らせ,static,,担当者,下書き,,知らせる,読む,F-001,,,F-001\n"}),
+     ("since", v1_only()), ["--since", "review-1"], 0, "build/mock/v3/index.html", "書いた:"),
     ("reflected", with_(base_files(), {"docs/v1/shared/qa.csv": QA_V1.replace("A,理由,A,—,確認中,", "A,理由,A,requirements/screens/data/screen-items.csv,反映済み,"),
                                        "docs/v1/spec/qa-dev.csv": QA_DEV_V1.replace("A,理由,A,—,確認中,", "A,理由,A,spec/x.md,反映済み,")}),
      "git", [], 0, "build/mock/v2/index.html", "書いた:"),
@@ -429,11 +433,18 @@ def max_version(files: dict[str, str]) -> int:
     return max(int(m.group(1)) for m in (re.match(r"docs/v([0-9]+)/", k) for k in files) if m)
 
 
+def shared_view(row: dict[str, str]) -> dict[str, str]:
+    """共有の層に見える行（`D-` の番号と、それを囲む括弧・区切りを落とす。埋め込まない列——試料ではパス——も落とす）。"""
+    return {k: re.sub(r"[、（）()\s]", "", re.sub(r"D-(?:[A-Z]-)?[0-9]{3,}", "", v or "")) for k, v in row.items() if k != "パス"}
+
+
 def expected_diff(before_files: dict[str, str], before_upto: int, after_files: dict[str, str], upto: int) -> tuple[dict, dict]:
     """(表 → 鍵 → 追加／変更／削除, 表 → 鍵 → 共有の層の根拠の番号)。重ねた表どうしを独立に比べる。
     消した行の根拠には、v<upto> の removed.csv でその行を名指しした理由の番号も足す。"""
-    removed_csv = after_files.get(f"docs/v{upto}/removed.csv")
-    reasons = {r["対象"]: r["理由"] for r in table_rows(removed_csv)} if removed_csv else {}
+    reasons: dict[str, str] = {}
+    for version in range(1, upto + 1):
+        removed_csv = after_files.get(f"docs/v{version}/removed.csv")
+        reasons.update({r["対象"]: r["理由"] for r in table_rows(removed_csv)} if removed_csv else {})
     marks: dict[str, dict[str, str]] = {}
     basis: dict[str, dict[str, list[str]]] = {}
     for name, table in TABLE_FILES.items():
@@ -441,7 +452,7 @@ def expected_diff(before_files: dict[str, str], before_upto: int, after_files: d
         after = merged_rows(after_files, upto, table)
         marks[name], basis[name] = {}, {}
         for key, row in after.items():
-            if key not in before or before[key] != row:
+            if key not in before or shared_view(before[key]) != shared_view(row):
                 marks[name][key] = "追加" if key not in before else "変更"
                 basis[name][key] = numbers_of(row, shared_only=True)
         for key, row in before.items():
@@ -534,7 +545,7 @@ def case_problems(case, result: dict) -> list[str]:
         return problems
     page = result["page"]
     data = embedded(page)
-    upto = int(args[1]) if args[:1] == ["--upto"] else 2
+    upto = int(args[1]) if args[:1] == ["--upto"] else max_version(files)
     problems += review_problems(case, result, data, upto)
     screens = merged_rows(files, upto, "screens.csv")
     items = merged_rows(files, upto, "screen-items.csv")
@@ -660,6 +671,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("未反映と未回答を取り違える", "    return UNREFLECTED\n", "    return UNANSWERED\n", "good"),
     ("未回答の注記を出さない", "               for key, row in whole.tables[path].items() if any(n in unanswered for n in numbers.of(row, shared_only=True))}",
      "               for key, row in whole.tables[path].items() if False}", "good"),
+    ("内部の番号だけの変更にも印を付ける", "            if change.status == changed_status and shown_row(name, change.before, sharer) == shown_row(name, change.after, sharer):\n",
+     "            if False:\n", "good"),
+    ("基準の時点の理由を作業中の版の removed.csv だけから読む", "        for _, root in versions[:number]:  # 基準の時点がもっと前の版なら",
+     "        for _, root in versions[number - 1:number]:  # 基準の時点がもっと前の版なら", "since-v3"),
     ("基準の時点を一時ディレクトリの外に取り出す", '    with tempfile.TemporaryDirectory(prefix="screen-spec-since-") as tmp:\n        target = Path(tmp) / "docs"\n',
      '    if True:\n        target = docs.resolve().parent / "since-docs"\n', "since"),
 ]
