@@ -15,14 +15,17 @@
 
 - `plugins/screen-spec/scripts/write-screens.py` — 新設。`init`・`add` のスキルが呼ぶ書き込み（`hint`・`init`・`add`）
 - `plugins/screen-spec/templates/` — 新設。仕様書（`spec.md`）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`）の雛形
-- `plugins/screen-spec/skills/init/SKILL.md`・`plugins/screen-spec/skills/add/SKILL.md` — 新設
+- `plugins/screen-spec/skills/init/SKILL.md` — 新設
+- `plugins/screen-spec/skills/add/SKILL.md` — 新設
 - `plugins/screen-spec/references/tables.md` — 置き場所（設定・雛形・ワイヤーフレーム）・案件ごとの設定・`init` と `add`（採番）
 - `plugins/screen-spec/references/prose.md` — 雛形・書き方・レビュー観点・共通仕様
 - `plugins/screen-spec/scripts/check-screens.py` — docstring の「守らないもの」の 2 行（#1093 を指していた prefix と `common.md` の節）だけ
 - `plugins/screen-spec/README.md` — スキルと中身の一覧
-- `plugins/screen-spec/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（0.2.0）と description
+- `plugins/screen-spec/.claude-plugin/plugin.json` — 版（0.2.0）と description
+- `.claude-plugin/marketplace.json` — 同じ版と description
 - `scripts/test-write-screens.py` — 新設。回帰テスト（受入基準の再現・変異テスト・原本との突き合わせ）
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — テストの収録
+- `scripts/check-all.py` — テストの収録
+- `.github/workflows/plugins.yml` — テストの収録
 - `CLAUDE.md` — プロジェクト構成に screen-spec のスキル・スクリプト・テストを足す
 - `docs/plans/issue-1093.md` — この計画
 
@@ -103,6 +106,10 @@ screen-spec を main の先端の 0.1.0 から **0.2.0**（minor——スキル�
 
 - 上の穴 1——確認の Issue で利用者に渡す（閉じるのは利用者）。
 
+## 起票
+
+- この周の起票: 1 件（仕様の穴 1 つ——案件ごとの設定の置き場所——を `仕様の穴 = 推奨で決めて起票` の線で推奨により決めた確認の Issue。番号は PR を作った後に起票して書く。関門の指摘の残課題の起票の承認は不在のため訊いていない）
+
 ## 直す線
 
 `既定`（出所: cruise の台帳の確かめた線。不在の周）。
@@ -118,6 +125,10 @@ screen-spec を main の先端の 0.1.0 から **0.2.0**（minor——スキル�
 - `/code-review` 1 パス目: 通した——指摘 10 件（CR1-1〜CR1-10。high。委譲文は貼った）
 - 手順 4 への差し戻し: あり（採否の表の「直す」: R1=CR1-1・CR1-2、CR1-3）
 - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方
+- check-all（`1101110`。run-serial 越し）: 86 本のうち失敗 3——`check-plan-counts.py`（件数の行が無い）・`check-plan-scope.py`（計画の `触る:` の 1 行に 2 つのパターンを書き、2 つ目が拾われなかった）・`test-check-screens.py`（`references/prose.md` の「雛形」に表を出す印をもう 1 回書いた）。2 パス目の指摘対応で直す
+- Verifier 2 パス目: 通した——反証 0 件（verifier-2.md 187 行を報告、wc -l と一致）
+- `/code-review` 2 パス目: 通した——指摘 8 件（CR2-1〜CR2-8。high。委譲文は貼った）
+- 2 パス目の指摘対応の起点（狭いパスの起点）: `1101110`
 - 交絡を潰した手順: 実験なし（反証の再現は著者が手で走らせて確かめた——`init --prefix Q-`・`TODO-` → `add` → `check-screens.py` が 1）
 
 ## 既知の限界・決着済みの論点
@@ -140,4 +151,18 @@ screen-spec を main の先端の 0.1.0 から **0.2.0**（minor——スキル�
 | CR1-8: v2 が作業中の版の `init` → `add` → 検査の試料が無い | 示せない（今は通る） | 無し | 残課題 |
 | CR1-9: `Docs` が `check-screens.py` の読み込みと `text` を写している | 示せない（食い違いは起きていない） | 無し | 残課題 |
 | CR1-10: `used_keys` が `merge` と別に表を読み直す | 示せない | 無し | 残課題 |
+
+### 2 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR2-1: UTF-8 にできない値の `add` が、作業中の版の `screens.csv` を 0 バイトにして「書いていない」と言う | 示せる（著者が `1101110` の本体で再現: `add --name $'bad\377'` → exit 2・`screens.csv` 0 バイト） | A5 | 直す——書く前に全部を UTF-8 にし、1 つのファイルは一時のファイルに書いてから置き換える |
+| CR2-2: 表の見出し行が決まりと違っても `add` が決まりの列の順で行を足す | 示せる（code-review の再現: 見出しの 1・2 列目を入れ替えると `トップ` が画面ID の列に入る） | A5・A4 | 直す——3 つの表の見出し行が決まりと違えば 3 で止める |
+| CR2-3: add のスキルの「0 以外なら何も書かれていない」が、書いている途中の失敗では偽 | 示せる（ディスク・権限の失敗のとき） | 無し | 残課題 |
+| CR2-4: 1 つずつ名指しする `print` と、置き場所がディレクトリの分岐を試料が当てない | 示せる（`print` を消してもテストが緑） | 無し | 残課題 |
+| CR2-5: 版の名前の誤り（`v01`）で「版が無い」（3）と言い、検査は 1 | 示せる | 無し（書かないことは守る） | 残課題 |
+| CR2-6: `check_prefix` が検査の読み方を写さず独自に判定している | 示せない（19 の接頭辞で食い違いなし） | 無し | 残課題 |
+| CR2-7: `used_keys` が `merge` の綴りの照合を通らない | 示せない | 無し | 残課題（CR1-10 と同じ） |
+| CR2-8: `settings.csv` の同じ項目の 2 行で後の値を黙って採る | 示せる | 無し | 残課題 |
+| check-all の 3 本（件数の行・`触る:` の 1 行に 2 つ・prose.md の印の 2 回目） | 示せる（check-all の出力） | A9 | 直す |
 

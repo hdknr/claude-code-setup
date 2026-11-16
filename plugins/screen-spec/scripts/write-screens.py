@@ -33,7 +33,8 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - 接頭辞は、採る画面ID が spec-loop の成果物の表の番号・Q&A の番号の形・未決定の印に読まれないものだけを受ける（読まれると足した直後の検査が違反か未決定になる）
 - `add` の行は、種別・親画面の組・必須の欄を満たす（満たさない引数は 2 で何も書かない）。ステータスは `下書き`
 - `add` の仕様書は、重ねた全体に案件の雛形（`templates/spec.md`）があればそれを、無ければこのプラグインの雛形を使う
-- 書く前に全部を決め、決まらなければ 1 つも書かない（引数・状態・重ね合わせ・spec-loop の版）
+- 書く前に全部を決め、決まらなければ 1 つも書かない（引数・状態・重ね合わせ・spec-loop の版・表の見出し行・置き場所の形・UTF-8 にできない値）。
+  1 つのファイルは一時のファイルに書いてから置き換える（書いている途中で止まっても、前の中身を空にしない）
 - spec-loop を読み込むときの `__pycache__` を書かない
 
 **守らないもの**:
@@ -201,11 +202,16 @@ class Docs:
                     blocked.append(f"{path}（ディレクトリが在る）")
         if blocked:
             raise Refused("置き場所に書けない——何も書いていない: " + "、".join(blocked))
-        for path, text in files.items():
+        try:
+            data = {path: text.encode("utf-8") for path, text in files.items()}  # 書く前に全部を符号にする（符号にできない値で途中から止めない）
+        except UnicodeEncodeError as e:
+            raise ValueError(f"UTF-8 にできない値がある（{e}）") from None
+        for path, body in data.items():
             target = self.root / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("w", encoding="utf-8", newline="") as f:
-                f.write(text)
+            temporary = target.with_name(f".{target.name}.write-screens")
+            temporary.write_bytes(body)
+            temporary.replace(target)  # 置き換えは一度に——前の中身を空にしてから書かない
             print(f"書いた: {target}", flush=True)
 
 
@@ -272,6 +278,8 @@ def add(docs: Docs, values: dict[str, str]) -> int:
     for path in checks.TABLES:
         if path not in docs.whole.headers:
             raise Refused(f"{path} が無い——先に init を走らせる")
+        if docs.whole.headers[path] != checks.COLUMNS[path]:
+            raise Refused(f"{path}:1: 見出し行が決まり（{','.join(checks.COLUMNS[path])}）と違う——直してから足す（references/tables.md）")
     settings = docs.settings()
     try:
         prefix = check_prefix(settings.get(PREFIX_KEY, ""), docs)
