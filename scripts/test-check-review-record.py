@@ -71,14 +71,17 @@ CASES: dict[str, tuple] = {
     "条件: 1 回目に直した行は 2 回目が指摘なしなら数えない": ("conditions", F_HEAD + f(weight="結果が割れる"), RUNS, [], 0, "最後のレビューは 2回目（その行 0 件）"),
     "条件: 範囲の外に足した行も 2 回目を回す": ("conditions", F_HEAD + f(weight="判断が要る", category="共有の Q&A 表に起票する", result="Q-001")
                                     + f(weight="-", category="範囲の外として記録する"), RUNS, [], 0, "最後のレビューは 2回目"),
-    "条件: 1 回目が直さなければ 2 回目は無い": ("conditions", F_HEAD + f(weight="結果が割れる", category="内部の Q&A 表に記録する", result="D-001"),
+    "条件: 1 回目が直さなければ 2 回目は無い": ("conditions", F_HEAD + f(weight="結果が割れる", category="共有の Q&A 表に起票する", result="Q-001"),
                                    RUNS, [], 1, "最後のレビューは 1回目"),
+    # 内部の Q&A 表に記録した行は、その回に決めて仕様に反映すれば 2 回目が回る（1 パス目の CR3）
+    "条件: 内部の Q&A に記録した行も 2 回目を回す": ("conditions", F_HEAD + f(weight="結果が割れる", category="内部の Q&A 表に記録する", result="D-001"),
+                                       RUNS, [], 0, "最後のレビューは 2回目（その行 0 件）"),
     "条件: 1 回目の効く重さは 2 回目があれば数えない": ("conditions", F_HEAD + f(weight="結果が割れる") + f(review="2回目"), RUNS, [], 0, "満たす"),
     "条件: 狭いパスはほかの役でも数える": ("conditions", F_HEAD + f() + f(review="狭いパス", judge="formal-checker", weight="結果が割れる"),
                                 RUNS, [], 1, "狭いパス・formal-checker"),
     "条件: 確かめられない行は重さのまま数える": ("conditions", F_HEAD + f(weight="判断が要る", confirmed="確かめられない"), RUNS, [], 1, "満たさない"),
     "条件: 前の回の行は数えない": ("conditions", F_HEAD + f(no="1", day="2026-11-01", weight="判断が要る", category="共有の Q&A 表に起票する")
-                           + f(category="内部の Q&A 表に記録する", result="D-001"), RUNS, [], 0, "満たす: 回 2・最後のレビューは 1回目"),
+                           + f(category="共有の Q&A 表に起票する", result="Q-002"), RUNS, [], 0, "満たす: 回 2・最後のレビューは 1回目"),
     "条件: --run で前の回を数える": ("conditions", F_HEAD + f(no="1", day="2026-11-01", weight="判断が要る", category="共有の Q&A 表に起票する")
                              + f(), RUNS, ["--run", "1"], 1, "回 1"),
     "条件: 見出しだけの表": ("conditions", F_HEAD, RUNS, [], 0, "満たす"),
@@ -107,6 +110,9 @@ CASES: dict[str, tuple] = {
     "上限: --limit で N を変える": ("limit", None, R_HEAD + run_row("1", "2026-11-01") + run_row("2", "2026-11-02"), ["--limit", "2"], 3, "上限: 2 件 ≧ 2"),
     "上限: 機能がすべて - なら言う": ("limit", None, R_HEAD + run_row("1", "2026-11-01", cond="判定できなかった", feature="-"), ["--limit", "1"], 3,
                               "すべて `-`"),
+    # 列の欠けた行を飛ばすと、上限に達した記録で 0 になる（1 パス目の CR4）
+    "判定しない: 記録の行の列が足りない": ("limit", None, R_HEAD + "1,2026-11-01,抜けていない,満たさない\n2,2026-11-02,抜けていない,満たさない\n"
+                                + run_row("3", "2026-11-03"), [], 2, "列が足りない"),
     "判定しない: 記録の見出しに判断が無い": ("limit", None, R_HEAD.replace(",判断,", ",決定,") + run_row("1", "2026-11-01"), [], 2, "判断 が無い"),
     "判定しない: --limit が 0": ("limit", None, RUNS, ["--limit", "0"], 2, "--limit は 1 以上"),
     "判定しない: 引数なし": ("", None, RUNS, [], 2, "usage"),
@@ -138,6 +144,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("N を 1 つずらす", "    if len(counted) >= n:\n", "    if len(counted) > n:\n", "上限: 3 行で達する"),
     ("--limit を使わない", "            code, lines = limit(args.record, int(args.limit))\n", "            code, lines = limit(args.record, LIMIT)\n",
      "上限: --limit で N を変える"),
+    ("内部の Q&A で 2 回目と読まない", ', "内部の Q&A 表に記録する")', ")", "条件: 内部の Q&A に記録した行も 2 回目を回す"),
+    ("列の足りない行を飛ばす", "    if short:\n", "    if False:\n", "判定しない: 記録の行の列が足りない"),
     ("表が無ければ判定しない", "    if not record.exists():\n        return EXIT_OK", "    if False:\n        return EXIT_OK", "上限: 表が無ければ 0 回"),
 ]
 

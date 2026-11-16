@@ -101,6 +101,9 @@ CASES: dict[str, tuple] = {
     "本体が構文の誤り": (f"TLC の呼び方: {CALL}\n", {T1: target(body="PARSE")}, [], 4, "通らず、反例も出さなかった"),
     "本体が通ったと言わない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SILENT")}, [], 4, "通らず、反例も出さなかった"),
     "時相の性質と行き止まりの印を読む": (f"TLC の呼び方: {CALL}\n", {T1: target(controls=("TEMPORAL", "DEADLOCK"))}, [], 0, "満たす"),
+    # 陽性対照を両方の一覧に書いた記録（1 パス目の CR1）——陽性対照を本体の反例と読まない
+    "両方の一覧に書いた陽性対照は本体に数えない": (f"TLC の呼び方: {CALL}\n", {T1: target(model_list="`Order.tla`・`Order.cfg`・`Broken0.tla`・`Broken0.cfg`")},
+                                    [], 0, "満たす"),
     "陽性対照のファイルが無い": (f"TLC の呼び方: {CALL}\n", {T1: target(controls=())}, [], 4, "陽性対照のファイルに TLC のモデル"),
     "TLC でない対象": (f"TLC の呼び方: {CALL}\n", {T1: {**target(model_list="`perm.als`"), "perm.als": "sig A {}\n"}}, [], 4, "TLC でない対象は走らせ直さない"),
     "呼び方の行が無い": (None, {T1: target()}, [], 4, "TLC の呼び方が無い"),
@@ -125,6 +128,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("TLC のモデルが無くても通す", "    if not bodies:\n        return UNKNOWN", "    if False:\n        return UNKNOWN", "TLC でない対象"),
     ("呼び方が無ければ PATH の tlc を使う", "    if call is None:\n        print(f\"注記: {note}\")\n",
      "    if call is None:\n        call = \"tlc\"\n        print(f\"注記: {note}\")\n", "呼び方の行が無い"),
+    ("陽性対照を本体からも外さない", "    bodies = [n for n in entries(models) if n not in broken]\n", "    bodies = entries(models)\n",
+     "両方の一覧に書いた陽性対照は本体に数えない"),
     ("正本で走らせる", "        where = tmp ", "        where = str(directory) ", "満たす"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),

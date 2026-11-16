@@ -17,8 +17,8 @@ usage:
 
 ## 何を走らせるか
 
-- **本体**: 記録の `モデルのファイル` の一覧の `.tla` のうち、同じ名前の `.cfg` も一覧にあるもの（1 つ以上）。
-- **陽性対照**: 記録の `陽性対照のファイル` の一覧の同じ形のもの（1 つ以上）——わざと壊したモデル。
+- **本体**: 記録の `モデルのファイル` の一覧の `.tla` のうち、同じ名前の `.cfg` も一覧にあるもの（1 つ以上）。陽性対照の一覧にもある名前は本体に数えない。
+- **陽性対照**: 記録の `陽性対照のファイル` の一覧の同じ形のもの（1 つ以上）——わざと壊したモデルと到達の確かめ（反例が出ることを確かめたもの）。
 - 両方の一覧のファイルを 1 つの一時ディレクトリに写し、呼び方の後ろに `<名前>.tla` を足して、そのディレクトリで `sh` に渡す（`check-tlc.py` と同じ）。
 
 ## 判定（対象ごと）
@@ -118,7 +118,9 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
         return UNKNOWN, problems
     models = baseline.FILE.findall(records.get(MODEL_ITEM, ""))
     controls = baseline.FILE.findall(records.get(CONTROL_ITEM, ""))
-    bodies, broken = entries(models), entries(controls)
+    broken = entries(controls)
+    # 陽性対照の一覧にもある名前は本体として走らせない（両方の一覧に書いた記録で、陽性対照を本体の反例と読まない）
+    bodies = [n for n in entries(models) if n not in broken]
     if not bodies:
         return UNKNOWN, [f"{directory}: {MODEL_ITEM}に TLC のモデル（同じ名前の .tla と .cfg）が無い——TLC でない対象は走らせ直さない"]
     if not broken:
