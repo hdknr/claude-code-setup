@@ -43,7 +43,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **dev-loop スキルを `../dev-loop/` で指す**ので、**素のスキルとしては張れない**。書式と守る／守らないは docstring を正とする。
       テストは `scripts/test-parent-issue.py`
       - `skills/cruise/scripts/child-cycle.py` - 周を **`claude -p` の子プロセス**で回す起動口と、出力（stream-json）の要約（#491。**任意で、既定はサブエージェントのまま**。
-        子は親から切り離して起き、記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く。回し方と確かめた範囲は `references/child-process.md`、
+        子は親から切り離して起き、`--name cruise-<名前>-<番号>` を付けて親が `SendMessage` で宛てられるようにし（#1039）、記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く。回し方と確かめた範囲は `references/child-process.md`、
         守る／守らないは docstring を正とする。テストは `scripts/test-child-cycle.py`）
       - `skills/cruise/scripts/run-serial.py` - cruise の周の**重い検査・アプリの起動を、同じリポジトリでは順番待ちにして走らせる**（#493。
         本数は `.claude/dev-loop.md` の `並行の検査:`、無ければ 1。どのコマンドを通すか・単独で回す周・版とマージの順（#531）は `references/parallel.md`、
