@@ -36,8 +36,15 @@ r"""spec-loop の autopilot（#789）の入口（#849）が使う判定——台
 
 - **spec-loop のスクリプト**——`python3 <spec-loop の根>/scripts/<名前>`。線に依らず `SPEC_REVIEW_SCRIPTS`、`止まる地点` が `feasibility の後` なら `FEASIBILITY_SCRIPTS` も。
   **入口はこの絶対パスの形で呼ぶ**（許可の規則は文字列で当たるので、`../../` を含む形で呼ぶと点検と食い違う）
+- **screen-spec のスクリプト**（#1097）——正本（`check` は `--project`、`ops` はメインの作業ツリー）の `docs/v<n>/requirements/screens/` に画面の表があり、screen-spec が見つかれば
+  `python3 <screen-spec の根>/scripts/check-screens.py`（spec-review が画面の表の検査の出力を読むのに直に呼ぶ。spec-loop の `screen-gate.py` も子のプロセスで呼ぶ）。
+  見つけ方と画面の表とは何かは spec-loop の `screen-gate.py` の docstring を正とする。画面の表が無ければ足さない
 - **git と PR**——`commit` の値で `COMMIT_OPS` から（`しない` なら無し）
 - `--command` で渡したもの（繰り返し可）
+
+`check` は、これらに加えて **screen-spec の項目**（#1097）を 1 つ足す——画面の表が無ければ人が見る（点検しない）、
+画面の表があって screen-spec が見つかれば良い（その `check-screens.py` を上で点検した）、**画面の表があるのに見つからなければ要対処**
+（入れるまで spec-review の抜ける条件 1 と scaffold が止まる）。
 
 `check` は、これらに加えて **TLC の前提**（#912）を 1 項目として点検する——`check-tlc.py` を読み込み、`--project` の `CLAUDE.md` の宣言で決める
 （宣言の書き方と確かめ方は `check-tlc.py` の docstring を正とする）。外す宣言（`業務フローの形式検査: しない`）が無く、呼び方が無いか通らなければ要対処、
@@ -98,6 +105,9 @@ spec-loop だけを入れた利用者に dev-loop が在るとは限らず、プ
 - **線がそろっていなければ権限を点検しない**——`check` は 3 で終え、許可の項目を出さない（そろっていない線から操作を決めない）。
 - **spec-loop のスクリプトを線に依らず点検する**——`commit = しない` でも、各起動が呼ぶスクリプトの許可は見る。
 - **`commit = マージまで` で `gh pr merge` を点検から落とさない**——#790 で拒まれたのはマージである。
+- **画面の表のある正本で、見つけた screen-spec の `check-screens.py` を点検から落とさない**（`ops`・`check`。#1097）。
+- **画面の表のある正本で screen-spec が見つからなければ、screen-spec の項目を要対処にする**——単位を進める前に利用者に見せる。
+- **画面の表の無い正本では、screen-spec のスクリプトを点検に足さない**——使わない操作で要対処を作らない。
 - **`commit = しない` で git の書き込みと PR を点検しない**——使わない操作で要対処を作らない。
 - **`止まる地点 = feasibility の後` で feasibility のスクリプトを点検から落とさない。**
 - **`deny`・`ask` は `allow` より強い**——どちらかに当たれば、`allow` に当たっても要対処（写しの `check_permissions`）。
@@ -154,7 +164,8 @@ LIMIT_RE = re.compile(r"周 ([1-9][0-9]{0,3}) まで続ける")
 # 線に依らず各起動が呼ぶスクリプト（spec-review の周と入口）。`止まる地点 = feasibility の後` なら FEASIBILITY_SCRIPTS も
 SPEC_REVIEW_SCRIPTS = ("autopilot-ledger.py", "autopilot-check.py", "check-tlc.py", "check-alloy.py", "check-qa-csv.py", "merge-versions.py",
                        "diff-versions.py", "check-spec-exit.py", "render-diagrams.py", "check-findings-csv.py",  # 指摘の表（#982）
-                       "check-review-record.py", "check-formal-rerun.py")  # 条件 2〜4 と上限の数え直し（#1044）
+                       "check-review-record.py", "check-formal-rerun.py",  # 条件 2〜4 と上限の数え直し（#1044）
+                       "screen-gate.py")  # 画面の表の関門（#1097）
 FEASIBILITY_SCRIPTS = ("check-feasibility-csv.py", "schedule-to-gantt.py", "check-infra-csv.py")  # 基盤要件のゲート（#950）
 PR_OPS = ("git switch", "git pull", "git add", "git commit", "git push", "gh pr create")
 COMMIT_OPS = {"しない": (), "PR で止まる": PR_OPS, "マージまで": PR_OPS + ("gh pr merge",)}
@@ -448,10 +459,35 @@ def read_lines(lg, version, cwd):
     return values, data["lines"]["source"]
 
 
-def operations(values, root=HERE):
-    """線から決まる、周で使う操作（点検する順）。"""
+def screen_gate_module(root=HERE):
+    """同じプラグインの `screen-gate.py`（写さずに読む。#1097）。使うときだけ読み込む。"""
+    spec = importlib.util.spec_from_file_location("spec_loop_screen_gate", root / "screen-gate.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def screen_spec_state(project):
+    """(正本に画面の表があるか, 見つけた screen-spec の根か None, 見つからない理由)。判定は `screen-gate.py` の `placed`・`find_screen_spec`。"""
+    gate = screen_gate_module()
+    docs = Path(project) / "docs"
+    try:
+        placed = docs.is_dir() and gate.placed(docs, None)
+    except (OSError, gate.versions.Unreadable):
+        placed = False
+    if not placed:
+        return False, None, ""
+    try:
+        return True, gate.find_screen_spec(None, docs), ""
+    except gate.NotFound as exc:
+        return True, None, str(exc)
+
+
+def operations(values, root=HERE, screen_spec=None):
+    """線から決まる、周で使う操作（点検する順）。`screen_spec` は画面の表のある正本で見つけた screen-spec の根（#1097）。"""
     scripts = SPEC_REVIEW_SCRIPTS + (FEASIBILITY_SCRIPTS if values["止まる地点"] == "feasibility の後" else ())
-    return [f"python3 {root / name}" for name in scripts] + list(COMMIT_OPS[values["commit"]])
+    screen = [f"python3 {Path(screen_spec) / 'scripts' / 'check-screens.py'}"] if screen_spec else []
+    return [f"python3 {root / name}" for name in scripts] + screen + list(COMMIT_OPS[values["commit"]])
 
 
 def refused_operations(root=HERE):
@@ -504,6 +540,18 @@ def stoppable_item(commands):
             " ／ (c) このまま回し、拒まれたらその段で止まる（`stopped`）")
 
 
+def screen_spec_item(state):
+    """screen-spec の項目（#1097）。`state` は `screen_spec_state` の結果。"""
+    placed, root, reason = state
+    label = "screen-spec（画面の表の検査）"
+    if not placed:
+        return (HUMAN, label, "正本に画面の表（docs/v<n>/requirements/screens/）が無い——screen-spec のスクリプトは点検しない", "")
+    if root is not None:
+        return (GOOD, label, f"正本に画面の表があり、screen-spec を見つけた（{root}）——check-screens.py の許可は上で点検した", "")
+    return (ACTION, label, f"正本に画面の表がある。{reason}",
+            "screen-spec のプラグインを入れる（か環境変数 SPEC_LOOP_SCREEN_SPEC で渡す）。入れるまで spec-review の抜ける条件 1 と scaffold は止まる")
+
+
 def tlc_item(project):
     """TLC の前提の項目（#912）。判定は `check-tlc.py` の `judge`（`--autopilot` と同じ——外す宣言が有れば確かめない）。"""
     tlc = tlc_module()
@@ -546,17 +594,19 @@ def report(stack, items):
     return code
 
 
-def cmd_check(args, values, project):
+def cmd_check(args, values, project, state):
     flag_path, flag_note = args.flag_settings, None
     if flag_path is None:
         flag_path, flag_note = find_flag_settings()
     managed = args.managed_settings or MANAGED_DEFAULTS.get(sys.platform)
     stack = layers(project, flag_path, managed, Path.home(), None, flag_note)
-    commands = operations(values) + [c for c in (args.command or []) if c not in operations(values)]
+    ops = operations(values, screen_spec=state[1])
+    commands = ops + [c for c in (args.command or []) if c not in ops]
     items = [(UNKNOWN, f"設定（{name}）", f"{path} を読めなかった: {data.reason}", "")
              for name, path, data in stack if isinstance(data, Unreadable)]
     items += check_permissions(stack, commands)
     items += check_refused(stack, refused_operations())
+    items.append(screen_spec_item(state))
     items.append(tlc_item(project))
     items.append(stoppable_item(commands))
     return report(stack, items)
@@ -586,7 +636,7 @@ def main(argv=None, cwd=None):
         version = lg.parse_version(args.version)
         values, source = read_lines(lg, version, cwd)
         project = args.project if args.cmd == "check" and args.project else None
-        if args.cmd == "check" and project is None:
+        if project is None:
             project = lg.main_worktree(cwd)
     except lg.Usage as exc:
         print(f"引数が違う: {exc}", file=sys.stderr)
@@ -604,10 +654,10 @@ def main(argv=None, cwd=None):
             print(f"{item} = {values[item]}")
         print(f"出所: {source}")
     elif args.cmd == "ops":
-        for command in operations(values):
+        for command in operations(values, screen_spec=screen_spec_state(project)[1]):
             print(command)
     else:
-        return cmd_check(args, values, project)
+        return cmd_check(args, values, project, screen_spec_state(project))
     return EXIT_OK
 
 

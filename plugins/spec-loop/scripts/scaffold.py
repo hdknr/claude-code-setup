@@ -117,6 +117,11 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 書く生成と `--dry-run` の出力に 1 行で名指しする（開発のリポジトリの `CLAUDE.md` に写すのは利用者）。**`--upto` で前の版の時点を確かめるときは当てない**
 （上の関門と同じ条件）。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」。
 
+**画面の表（#1097）**: 上の 2 つを通ったら、同じ条件で同梱の `screen-gate.py` を正本の `docs` に当てる——**画面の表（`requirements/screens/`）が
+あれば、その未決定の印か screen-spec の検査の違反・未決定で 1、判定していない・画面の表があるのに screen-spec が無い（などで止めた）で 2、
+どちらでも何も作らない**。画面の表が無ければ何も足さない。**`--upto` で前の版の時点を確かめるときは当てない**（上の関門と同じ条件）。
+画面の表とは何か・screen-spec の見つけ方・終了コードの読み替えは `screen-gate.py` の docstring を正とする。
+
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
 通らなければ 1 バイトも書かない。**条件 2〜5 は判定し直さない**——代わりに、**書く生成と `--dry-run`（`--upto` なし）では、作業中の版の
 仕様レビューの記録（正本の根の `spec-review/v<n>.csv`）の最後の実行の行（`結果` が `抜けた`／`抜けていない`）が `抜けた` であることを読む**（#1044。
@@ -163,10 +168,10 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 終了コード:
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
-- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
+- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
   反する（全部を 1 行ずつ出す）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
-- 2: 判定していない——仕様レビューの記録が読めない・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
+- 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
   まとめ方の誤り（上の「まとめた本文」）・`--check`・`--red-check` との組み合わせを含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
@@ -370,6 +375,8 @@ diffs = _load("diff_versions", "diff-versions.py")
 frozen = _load("check_frozen", "check-frozen.py")
 # システム設計書の成果物の表の検査と機能一覧の読み方は `check-design-csv.py` のもの（写さない——#957）
 design = _load("check_design_csv", "check-design-csv.py")
+# 画面の関門は `check-spec-exit.py` が読み込んだ `screen-gate.py` のもの（写さない——#1097）
+screens = spec_exit.screens
 # 基盤要件の表の検査とゲートの判定は `check-infra-csv.py` のもの（写さない——#950）
 infra = _load("check_infra_csv", "check-infra-csv.py")
 # 仕様レビューの記録の表の読み方は `check-review-record.py` のもの（写さない——#1044）
@@ -1212,6 +1219,12 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     code, lines, notes, settled = infra_gate(rendered) if design_gate else (0, [], [], None)
     if code:
         return code, lines, None
+    # 画面の関門（#1097。`screen-gate.py` の docstring を正とする）も同じ条件で当てる——1 は 1、2・4（判定していない・
+    # 画面の表があるのに screen-spec が無いなどで止めた）は 2。画面の表が無ければ何も足さない
+    code, lines = screens.check(docs, upto) if design_gate else (0, [])
+    if code:
+        return (1 if code == screens.EXIT_FAIL else 2), [line.replace(str(docs), DOCS) for line in lines] + [
+            "関門（画面の表。screen-gate.py）を通らない。生成しない"], None
     number = upto if upto is not None else len(found)
     loaded = Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
     loaded.provisional = provisional
@@ -1271,7 +1284,8 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
             return [line.replace(str(whole), MERGED_DIR) for line in lines]
 
         if gate:
-            code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR)
+            # 画面の関門（#1097）はここでは当てない——`load` が成果物の表の関門と同じ条件で `screen-gate.py` を当てる
+            code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR, screen=False)
             if code:
                 return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, {}
             # システム設計書の成果物の表（#957）。形式の違反（1）と、決まっていない欄（3）で止める——未決定の欄が残るうちは

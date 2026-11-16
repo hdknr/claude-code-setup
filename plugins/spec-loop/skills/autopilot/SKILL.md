@@ -110,6 +110,9 @@ python3 <このスキルの base ディレクトリ>/../../scripts/autopilot-che
   正本の `CLAUDE.md` に `業務フローの形式検査: しない` の宣言が無く、`TLC の呼び方:` の行が無いか通らなければ要対処になる。
   **要対処なら、用意のしかた（Java と `tla2tools.jar` を置き、`TLC の呼び方:` の行を書く。業務フローを形式検査しない案件なら外す宣言）を利用者に示す**——
   用意するまで、各起動は Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めで止まる（下の 3）。宣言が有れば確かめず、人が見る項目に出る。書き方は `../../scripts/check-tlc.py` の docstring を正とする。
+- **点検には screen-spec の項目（`screen-spec（画面の表の検査）`）も入る**（#1097）——正本に画面の表（`docs/v<n>/requirements/screens/`）があり screen-spec が見つかれば、
+  その `check-screens.py` を周で使う操作として点検する。**画面の表があるのに見つからなければ要対処**——入れるまで spec-review の抜ける条件 1 と scaffold が止まるので、
+  screen-spec を入れる（か `SPEC_LOOP_SCREEN_SPEC` で渡す）よう利用者に示す。画面の表が無ければ人が見る項目に出る（点検しない）。
 - **点検には拒むべき操作も入る**（#1046）——このスキルが線に依らずしない `git tag`・`git push --tags`・`gh issue create` と `scaffold`（`python3 <spec-loop の根>/scripts/scaffold.py`）を、
   **settings が拒むか**を見る（出力の `拒む:` の行）。deny に当たれば良い。deny・ask に当たらずに allow に当たる（`Bash(git:*)`・`Bash(python3:*)` のような広い規則を含む）か `defaultMode` が `bypassPermissions` なら要対処、
   ask に当たるか、どれにも当たらなければ人が見る項目になる。**一覧と区分は `../../scripts/autopilot-check.py` の docstring の「拒むべき操作」を正とする。**
