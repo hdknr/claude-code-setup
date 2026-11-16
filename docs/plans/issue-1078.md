@@ -34,7 +34,7 @@
 
 ## 版
 
-dev-loop 1.112.1（main の先端）→ **1.113.0**（minor——起動口と委譲文に送り手の確かめを足す）。`marketplace.json`・`plugin.json`・`SKILL.md`（dev-loop と cruise の 2 本）の 3 種類に同じ値。
+dev-loop 1.112.1（周を切った時点の main）→ 1.113.0 で作り、PR を出す前に main（#1043 で **2.0.0**）を取り込んで **2.1.0**（minor——起動口と委譲文に送り手の確かめを足す）に上げ直した。`marketplace.json`・`plugin.json`・`SKILL.md`（dev-loop と cruise の 2 本）の 3 種類に同じ値。
 cruise の周なので、マージの直前に main が進んでいたら、main の先端の版から minor で 1 つ上げた値に上げ直す（parallel.md の「版とマージの順」）。
 
 ## デプロイ経路
