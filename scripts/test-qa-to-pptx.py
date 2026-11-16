@@ -17,7 +17,10 @@
    書けない出力先は 3 で、**一時ファイルを残さない。**
 5. **出力が入力と引数だけで決まる**——時刻をまたいで 2 回作り、バイトが一致する。
 6. **リポジトリの外で単体で動く**——2 本のスクリプトだけを一時ディレクトリに写し、`python3 -I` で走らせる。
-7. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、既存の出力に触らず、トレースバックの 1 にしない**。
+7. **`--focus` の「今回の会で決めたい問」**（#1042）——表紙の次の 1 枚に、渡した番号だけを渡した順に載せ、
+   残りの枚は `--focus` 無しと同じ。資料に載らない番号・表に無い番号・重複・空・上限を超える数は 2 で、既存の出力に触らない。
+   内部の表は `--focus` があっても 2。
+8. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、既存の出力に触らず、トレースバックの 1 にしない**。
    `-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
 
 **見ないもの**: PowerPoint・LibreOffice で開けること（CI に無い。周の検証で手で当てる）、
@@ -77,6 +80,14 @@ PENDING = [r for r in ROWS if r[8] != "反映済み"]
 PROVISIONAL = [r for r in ROWS if r[8] == "暫定反映"]
 UNSETTLED = [r for r in PENDING if r not in PROVISIONAL]
 DONE = [r for r in ROWS if r[8] == "反映済み"]
+# `--focus` の試料（#1042）——2 行の質問・推奨なし・暫定の行を混ぜ、番号の順と違う順に渡す
+FOCUS = ["Q-005", "Q-002", "Q-006"]
+FOCUS_EXPECTED = ["今回の会で決めたい問",
+                  "1. Q-005  2 行の質問の 1 行目  ［推奨なし］",
+                  "2. Q-002  決済の途中で通信が切れたとき、注文は？  ［推奨 B］",
+                  "3. Q-006（暫定）  暫定で採った質問  ［推奨 A］"]
+# 拒む形: 反映済み・表に無い・重複・空・空の要素・上限（3）を超える
+FOCUS_REJECTED = ["Q-001", "Q-999", "Q-002,Q-002", "", "Q-002,", "Q-002,Q-003,Q-004,Q-005"]
 # 内部の層の表（qa-dev.csv）——資料に載せない（#330）
 INTERNAL_ROWS = [["D-001", "仕様レビュー", "ワーカーを分けるか", "A: 分ける / B: 分けない", "B", "費用", "未回答", "—", "確認中", ""]]
 
@@ -268,11 +279,33 @@ def observe(mod, base: Path) -> dict:
         obs["index_marks"] = sorted(p.split("  ")[0] for p in flat if "（暫定）  " in p)
         questions = [p for sl in slides if sl and sl[0].startswith("Q-") for p in sl]
         obs["answer_labels"] = sorted(p for p in questions if p.startswith(("回答（未反映）: ", "暫定の回答（反映済み・確認待ち）: ")))
+        # `--focus`（#1042）——表紙の次に 1 枚だけ増え、ほかの枚は `--focus` 無しと同じ
+        focused = base / "focused.pptx"
+        try:
+            obs["focus_rc"] = run(mod, str(good), str(focused), "--subtitle", "2026-10-13", "--focus", ",".join(FOCUS))
+        except Exception as e:  # noqa: BLE001
+            obs["focus_rc"] = f"例外: {type(e).__name__}"
+        fslides = slide_paragraphs(focused)[0] if obs["focus_rc"] == 0 and focused.exists() else []
+        obs["focus_slide"] = fslides[1] if len(fslides) > 1 else None
+        obs["focus_rest_same"] = fslides[:1] + fslides[2:] == slides
         # 決定性: 時刻をまたいで作り直す（zip の時刻を固定していないと、ここで違う）
         time.sleep(2.1)
         again = base / "again.pptx"
         run(mod, str(good), str(again), "--subtitle", "2026-10-13")
         obs["deterministic"] = again.exists() and again.read_bytes() == out.read_bytes()
+
+    # `--focus` で拒む形は 2 で、既存の出力に触らない（#1042）
+    rejected = []
+    for n, value in enumerate(FOCUS_REJECTED):
+        target = base / f"focus-kept-{n}.pptx"
+        target.write_bytes(b"OLD")
+        try:
+            rc = run(mod, str(good), str(target), "--focus", value)
+        except Exception as e:  # noqa: BLE001
+            rc = f"例外: {type(e).__name__}"
+        rejected.append((value, rc, target.read_bytes() == b"OLD"))
+    obs["focus_rejected"] = rejected
+    obs["focus_no_value_rc"] = run(mod, str(good), str(base / "x.pptx"), "--focus")
 
     bad = write_csv(base / "bad.csv", ROWS + [["Q-006", "未知の起票元", "q", "A: x", "A", "r", "未回答", "—", "確認中", ""]])
 
@@ -282,6 +315,7 @@ def observe(mod, base: Path) -> dict:
     internal_out = base / "internal.pptx"
     obs["internal_rc"] = run(mod, str(internal), str(internal_out))
     obs["internal_absent"] = not internal_out.exists()
+    obs["internal_focus_rc"] = run(mod, str(internal), str(internal_out), "--focus", "D-001")
     kept = base / "kept.pptx"
     kept.write_bytes(b"OLD")
     obs["bad_rc"] = run(mod, str(bad), str(kept))
@@ -326,6 +360,8 @@ EXPECTED = {
     "unwritable_rc": 3, "no_tmp_left": True,
     "same_rc": 2, "same_kept": True, "nested_rc": 0, "nested_made": True,
     "bold_lines": BOLD_EXPECTED,
+    "focus_rc": 0, "focus_slide": FOCUS_EXPECTED, "focus_rest_same": True,
+    "focus_rejected": [(v, 2, True) for v in FOCUS_REJECTED], "focus_no_value_rc": 2, "internal_focus_rc": 2,
 }
 
 # 判別の本体を壊す（資料の側には写しが無いので、本体を壊せば資料が変わる）
@@ -363,6 +399,19 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("推奨の理由を載せない", '    body += [paragraph("", 1200)] + lines_of(f"{head}: {row[\'推奨の理由\']}", 1600)\n', ""),
     ("推奨しないのを推奨と書く", 'return "推奨なし" if label is None else f"推奨 {label}"', 'return f"推奨 {label}"'),
     ("内部の表も載せる", "    if qa.is_internal(src):", "    if False:"),
+    ("今回の会で決めたい問を載せない", "    head = [cover(title, subtitle, rows)] + ([focus_slide(focus)] if focus else [])",
+     "    head = [cover(title, subtitle, rows)]"),
+    ("今回の会で決めたい問を一覧の後に置く",
+     "    slides = head + index_slides(rows) + [question_slide(r) for r in rows]",
+     "    slides = head[:1] + index_slides(rows) + head[1:] + [question_slide(r) for r in rows]"),
+    ("--focus の値を捨てる", 'focus = None if opts["--focus"] is None else', 'focus = None if True else'),
+    ("--focus を番号の順に並べ直す", "    return [by_no[n] for n in numbers], None",
+     '    return [r for r in rows if r["No"].strip() in numbers], None'),
+    ("--focus の上限を見ない", "    if len(numbers) > FOCUS_MAX:", "    if False:"),
+    ("--focus の重複を見ない", "    if len(set(numbers)) != len(numbers):", "    if False:"),
+    ("--focus の載らない番号を通す", "    missing = [n for n in numbers if n not in by_no]",
+     "    missing = [n for n in numbers if n not in by_no and n.startswith('Q-9')]"),
+    ("--focus で暫定を見分けない", 'tag = "（暫定）" if qa.is_provisional(row) else ""', 'tag = ""'),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
     # 太字の行（#965）——外すと `**` が文字のまま残る・中に `**` があっても 1 つと読むと 2 つの太字の行が化ける
     ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(content)\n",

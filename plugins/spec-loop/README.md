@@ -22,6 +22,7 @@
 | `references/spec-exit.md` | 仕様レビューを抜ける条件・未決定の印・仕様チェックリスト・形式検査の対象 |
 | `scripts/check-qa-csv.py` | Q&A 表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/qa-to-pptx.py` | Q&A 表からレビュー会用の PPTX を作る（標準ライブラリのみ） |
+| `references/hearing.md` | v1 の最初の実行と利用者が求めたときに、決定表の骨組みを作る前に業務の前提・判断の基準・優先順位を対話で聞き出す初回ヒアリング（req-loop の手順 0）の決まり |
 | `references/intake.md` | 持ち込まれた動くコード（PR・ブランチ・ディレクトリ）から要求の候補を起こす取り込みの段（req-loop の手順 3a）の決まり |
 | `scripts/intake-code.py` | 取り込みの段の機械で決まる部分——持ち込まれたコードを読むだけで写し（`snapshot`）、候補の JSON を検査して Q&A 表の回答待ちの行にし、基盤要件との食い違いを照らす（`rows`）（標準ライブラリと `git`） |
 | `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
@@ -180,10 +181,11 @@ python3 <spec-loop の base ディレクトリ>/scripts/check-qa-csv.py <Q&A 表
 `req-loop` が使うスクリプトを、単体でも呼べます:
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/qa-to-pptx.py <Q&A 表のパス> <出力先.pptx> [--title <題>] [--subtitle <副題>]
+python3 <spec-loop の base ディレクトリ>/scripts/qa-to-pptx.py <Q&A 表のパス> <出力先.pptx> [--title <題>] [--subtitle <副題>] [--focus <No>[,<No>…]]
 ```
 
 載るのは状態が回答待ち・未反映の行だけで、Q&A 表が検査を通らなければ作りません。
+`--focus` を渡すと、表紙の次に「今回の会で決めたい問」（最大 3 問。どれを選ぶかは `req-loop` の手順 4）の 1 枚を足します。
 出力先の既定は `references/tree.md` の「スライドの置き場所」にあります。
 何を守り何を守らないか（終了コードを含む）は、スクリプトの docstring を正とします。
 
