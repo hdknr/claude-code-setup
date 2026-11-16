@@ -203,9 +203,16 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
       **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
   - `screen-spec/` - 画面設計書を spec-loop とは別に持つプラグイン（#1081。**spec-loop の決まりに従い、spec-loop は screen-spec に依存しない**。
-    いまは骨組みと表の検査だけで、スキル（`init`・`add`）・profile・UI モックの生成は後の段——#1093〜#1096）
-    - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・検査と終了コードは `tables.md`、散文の仕様書の節は `prose.md`、
-      対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`）
+    いまは表の検査と、スキル `init`・`add` と雛形まで。profile・UI モックの生成は後の段——#1094〜#1096）
+    - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・案件ごとの設定（`settings.csv`）・`init` と `add`（採番）・検査と終了コードは `tables.md`、
+      散文の仕様書の節・雛形・書き方・レビュー観点・共通仕様は `prose.md`、対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`）
+    - `skills/init/`・`skills/add/` - 画面設計書を始める・画面を 1 つ足すスキル（#1093。`/screen-spec:init`・`/screen-spec:add`）。**書き込みは同梱のスクリプトがし、スキルは値を利用者と決めるだけ**。
+      **Q&A 表を書かず、番号を振らない**。共有の `references/` と `scripts/` を `../../` で指すので、**素のスキルとしては張れない**
+    - `templates/` - 仕様書（`spec.md`。表で持つ節は表を出す印だけ）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`）の雛形。
+      **ワイヤーフレームの雛形の拡張子を `.drawio` にしない**——`check-diagram-freshness.py` が `diagrams/` の外の `.drawio` を止める
+    - `scripts/write-screens.py` - `init`・`add` のスキルが呼ぶ書き込み（#1093。`hint`・`init`・`add`）。作業中の版の `requirements/screens/` に表と雛形を置き、
+      **画面ID をどの版の生の表の鍵とも重ねずに採番する**。`check-screens.py` を読み込み、spec-loop の見つけ方・版の範囲・表の列を共有する（写さない）。
+      **書けないときは 1 つも書かない**。守る／守らないは docstring を正とする。テストは `scripts/test-write-screens.py`
     - `scripts/check-screens.py` - 画面の表と散文の仕様書を、**spec-loop の重ね方（`merge-versions.py` の `merge`）で重ねた全体**に当てる検査（#1092。
       表どうし・入口から辿れること・遷移の無いボタン・Q&A の根拠・成果物の表への参照・未決定の印・散文の節）。**spec-loop の決まりは写さずに読み込み**（Q&A の番号の形・未決定の印・成果物の表の置き場所も）、
       **検査の前に spec-loop の版が対応の範囲かを確かめて、外なら 4 で止まる**。**ファイルを書かず、Q&A の番号を振らない**（起票の候補を出すだけ）。
@@ -383,6 +390,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `plugins/screen-spec/scripts/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べて走らせ**（spec-loop の重ね方を読み込むので）、
     #1092 の受入基準の陽性対照・陰性対照・実行の前後で正本が変わらないこと（Q&A の番号を振らない）と、**本体の定数が `plugins/screen-spec/references/` の原本と一致すること**を見る。
     spec-loop の版の範囲は写しの `plugin.json` を書き換えて、プラグインのキャッシュの形は一時の設定のディレクトリ（`CLAUDE_CONFIG_DIR`）に作って当てる——利用者の `~/.claude` は読まない
+  - `test-write-screens.py` - screen-spec の `init`・`add` の書き込みと雛形（#1093）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/screen-spec/scripts/` と `plugins/screen-spec/templates/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べ、スキルの手順をスクリプトで再現する**
+    （`hint` → `init` → `add` → `check-screens.py`）。#1093 の受入基準（空の案件で 0・Q&A 表を書き換えない・表で持つ節は印だけ）・採番・書けないときに書かないことと、
+    **雛形が `references/prose.md` の「雛形」に、本体の定数が `references/tables.md` に合うこと**を見る
   - `test-check-review-record.py` - spec-loop の仕様レビューの記録の数え直し（#1044）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数（効く重さ・上限の数える値と数え直しの判断）が `references/spec-exit.md` と一致することも見る**
   - `test-check-formal-rerun.py` - spec-loop の保存した TLC のモデルの走らせ直し（#1044）の回帰テスト（変異テストを含む）。
