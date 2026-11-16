@@ -118,7 +118,11 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 （上の関門と同じ条件）。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」。
 
 **生成の前に、自分で関門を通す**——`check-spec-exit.py` の条件 1（仕様に反映した状態でない Q&A・未決定の印が 0 件）を呼び、
-通らなければ 1 バイトも書かない。**条件 2〜5 は判定しない**（判定役の報告で決まる。`scaffold` の本文）。
+通らなければ 1 バイトも書かない。**条件 2〜5 は判定し直さない**——代わりに、**書く生成と `--dry-run`（`--upto` なし）では、作業中の版の
+仕様レビューの記録（正本の根の `spec-review/v<n>.csv`）の最後の実行の行（`結果` が `抜けた`／`抜けていない`）が `抜けた` であることを読む**（#1044。
+読み方は同梱の `check-review-record.py` の `last_run`）。**記録が無い・実行の行が無い・最後の実行の行が `抜けていない` なら 1 で何も作らない**
+（書く生成なら前の本文を消す）。読めない記録は 2。`--check`・`--red-check` は本文を作らない（別リポジトリの CI が `--check` を当てる。`references/tree.md`）ので、
+`--upto` は前の版の時点を見るので、記録を読まない。**`抜けた` の後に仕様を直したかは見ない**（記録を読むだけ）。
 **全部を組み立ててから書く**ので、入力の誤りで途中で落ちて一部だけ書くことはない。
 **書き込みそのもの（ファイルシステム）が途中で失敗すると、`scaffold/` は一部だけ書かれうる**——そのときも
 **Issue の本文は書く前に消してある**（古い本文を登録させない）ので、契約の乖離は `--check` が言う。
@@ -159,10 +163,10 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 終了コード:
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
-- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・中間表現（前の版のものを含む）が決まりに
+- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
   反する（全部を 1 行ずつ出す）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
-- 2: 判定していない——引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
+- 2: 判定していない——仕様レビューの記録が読めない・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
   まとめ方の誤り（上の「まとめた本文」）・`--check`・`--red-check` との組み合わせを含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
@@ -368,6 +372,9 @@ frozen = _load("check_frozen", "check-frozen.py")
 design = _load("check_design_csv", "check-design-csv.py")
 # 基盤要件の表の検査とゲートの判定は `check-infra-csv.py` のもの（写さない——#950）
 infra = _load("check_infra_csv", "check-infra-csv.py")
+# 仕様レビューの記録の表の読み方は `check-review-record.py` のもの（写さない——#1044）
+review = _load("check_review_record", "check-review-record.py")
+REVIEW_DIR = "spec-review"
 
 
 def merged(path: str) -> str:
@@ -2995,6 +3002,14 @@ def run(repo: Path, args, writing: bool) -> int:
     for line in loaded.notes:
         # 止めずに知らせる（基盤要件の表が無い。#950）
         print(line, file=sys.stderr)
+    passed = ""
+    if not (args.check or args.red_check) and args.upto is None:
+        # 仕様レビューの記録（#1044）——本文を作るモードだけ。`--check`・`--red-check` は本文を作らず（別リポジトリの CI が `--check` を当てる）、
+        # `--upto` は前の版の時点を見る（システム設計書の関門と同じ）
+        code, lines = review_gate(repo, loaded.number)
+        if code:
+            return fail(repo, writing, code, lines)
+        passed = lines[0]
 
     contract = render_contract(loaded)
     features = len(loaded.ir["features"])
@@ -3052,6 +3067,7 @@ def run(repo: Path, args, writing: bool) -> int:
         summary += (f"。--bundle で {sum(len(g) for g in merged_groups)} 件の機能を {len(merged_groups)} 件の本文にまとめ、"
                     f"登録する本文は {len(groups)} 件")
     if args.dry_run:
+        print(passed)
         print(f"作れる（{summary}）。何も書いていない")
         if loaded.infra:
             print(loaded.infra)
@@ -3065,8 +3081,25 @@ def run(repo: Path, args, writing: bool) -> int:
     print(f"課題一覧（案）: {ISSUES_DIR}/{PROPOSALS}（案 {len(entries)} 件・未決定事項 "
           f"{sum(len(undecided(c.feature)) for c in entries)} 件）——scaffold は案を登録しない。"
           "未決定事項のある案は、登録の前に spec-review に戻す")
-    print("**条件 2〜5 は判定していない**——spec-review が「抜けた」と報告したことを確かめてから登録する")
+    print(f"{passed}——条件 2〜5 は記録を読んだだけで、判定し直していない")
     return 0
+
+
+def review_gate(repo: Path, number: int) -> tuple[int, list[str]]:
+    """作業中の版の仕様レビューの記録（`spec-review/v<n>.csv`）の最後の実行の行が `抜けた` か（#1044）。(終了コード, 行)。"""
+    rel = f"{REVIEW_DIR}/v{number}.csv"
+    path = repo / rel
+    if not path.exists():
+        return 1, [f"{rel}: 仕様レビューの記録が無い——v{number} で spec-review を回していない（抜けていない）。生成しない（/spec-loop:spec-review）"]
+    try:
+        last = review.last_run(path)
+    except review.Unreadable as exc:
+        return 2, [f"{exc}。仕様レビューを抜けたかを読めない。生成しない（判定していない）"]
+    if last is None:
+        return 1, [f"{rel}: 実行の行（結果が {'／'.join(review.findings.RUN_RESULTS)}）が無い——抜けていない。生成しない（/spec-loop:spec-review）"]
+    if last["結果"] != review.PASSED:
+        return 1, [f"{rel}: 最後の実行の行（回 {last['回']}）が {last['結果']}——仕様レビューを抜けていない。生成しない（/spec-loop:spec-review）"]
+    return 0, [f"仕様レビューの記録: {rel} の最後の実行の行（回 {last['回']}）が {review.PASSED}"]
 
 
 if __name__ == "__main__":

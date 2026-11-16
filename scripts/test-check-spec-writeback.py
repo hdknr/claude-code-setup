@@ -395,7 +395,9 @@ def leak_control(tmp: Path) -> None:
          "cases": [{"id": "F-001-C1", "title": "1 なら 2", "input": {"n": 1}, "expected": {"v": 2}}]}]}
     files = {"docs/v1/shared/qa.csv": HEADER + OLD_ROW, "docs/v1/spec/calc.md": "# 計算\n\n倍。\n",
              "docs/v1/spec/spec_ir.json": json.dumps(ir, ensure_ascii=False, indent=2),
-             "spec_impl.py": 'def double(n):\n    return {"v": n * 2}\n', ".gitignore": "__pycache__/\n"}
+             "spec_impl.py": 'def double(n):\n    return {"v": n * 2}\n', ".gitignore": "__pycache__/\n",
+             # 仕様レビューの記録（#1044）——scaffold.py は最後の実行の行が `抜けた` でなければ作らない
+             "spec-review/v1.csv": "回,日付,結果,条件2〜4,要求の行,決定表の行,テストケース,仕様の行,判断,機能\n1,2026-11-01,抜けた,満たす,1,1,1,1,-,-\n"}
     d.mkdir(parents=True)
     git(d, "init", "-q", "-b", "main")
     for rel, b in files.items():
