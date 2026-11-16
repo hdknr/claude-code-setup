@@ -114,7 +114,16 @@ spec-loop を **minor** で上げる（能力の追加。0.x なので壊れる�
 
 - 周の在り処: ブランチ `issue/1100-req-loop-screens-pptx`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1100`・起点 `6f815ea`・base `origin/main` → `6f815ea1312d55c28d0d74405d4971f1f9f81422`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 交絡を潰した手順: （実機確認の後に書く）
+- 実装のコミット: `bbd7354`
+- check-all（実装の直前の作業ツリー。run-serial 越し）: 89 本のうち失敗 2（`check-skill-pointers.py`——req-loop の本文の `scripts/build-mock.py` を spec-loop の中の指し先と読んだ・`check-plan-counts.py`——件数の行が無い）。
+  直して、2 本と静的な歯止め（norm-markers・duplicate-counts・bold-flanking・site-links・plugin-versions・plan-scope・version-bump・description-sync）を回し直して緑。ほかの 87 本は緑
+- 実機確認（`bbd7354` 相当の作業ツリー）:
+  - main（`6f815ea`）の `qa-to-pptx.py` と周の `qa-to-pptx.py` を、`test-qa-to-pptx.py` の試料の表と 4 通りの引数（引数なし・`--focus Q-005,Q-002`・`--title T --subtitle 2026-11-17`・`--focus Q-006`）で走らせ、4 通りとも同じバイト（U3）
+  - 一時の正本（`test-check-screens.py` の `base()`。`S-001` の `目的と背景` を番号の無い `未定` に）で `screen-gate.py docs` → rc 1・`screen-spec: 起票の候補: requirements/screens/data/screens.csv S-001 目的と背景: 未定` の 1 行（U1）。
+    `build-mock.py docs --spec-loop <spec-loop>` → rc 0・`build/mock/v1/index.html`（画面ID `S-001`・`S-002`）。資料に載る `Q-R-002` が `S-001` の行にあるのでリンクの表 `{"Q-R-002": "../mock/v1/index.html#screen=S-001"}`。
+    `qa-to-pptx.py … --links` → rc 0・質問の頁の関係が `../mock/v1/index.html#screen=S-001`（`TargetMode="External"`。PPTX から解決した先が実在し、画面ID がモックにある）（U2・U6）
+- 交絡を潰した手順: U3 の「同じバイト」は陽性対照として `--links` を渡した出力が違うバイトになる（関係が増える）ことを `test-qa-to-pptx.py` の `links` の観測で見ている。U1 の陰性対照は番号を添えた印（`未定（Q-R-002）`）で候補が出ないこと（`test-screen-gate.py`）
+- 1 パス目の指摘対応の起点: `bbd7354`（1 パス目の関門に渡した時点の成果物の HEAD。あとの計画ファイルだけのコミットは 0 行の判定から除く）
 
 ## 既知の限界・決着済みの論点
 
