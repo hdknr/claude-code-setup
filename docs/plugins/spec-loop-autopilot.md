@@ -56,6 +56,9 @@ spec-loop 全体の流れは [spec-loop の流れと Red テスト](spec-loop.md
   点検する操作は線で決まります（spec-loop のスクリプト・git と PR の操作のどれを点検するかは、線の値で変わります。一覧は `autopilot-check.py` の docstring の「点検する操作」）。
   **止まりうる操作**（自動モードの分類器・worktree 隔離のガードは settings に現れません）は、操作ごとに「許可を足す／`commit` の線を下げる／このまま回して、拒まれたらその段で止まる」から選びます。
   **点検は読むだけで、settings を書き換えません**——許可を足すのは利用者です。
+- **点検は、autopilot が線に依らずしない操作（サインオフのタグ `git tag`・`git push --tags`、Issue の登録 `gh issue create`、`scaffold.py`）を settings が拒むかも見ます**（[#1046](https://github.com/hdknr/claude-code-setup/issues/1046)）。
+  deny・ask に当たらずに allow に当たれば（`Bash(git:*)`・`Bash(python3:*)` のような広い規則を含む）要対処で、起動時の確認が deny に足す規則を示します——足すのは利用者です。
+  一覧と区分は `autopilot-check.py` の docstring の「拒むべき操作」を正とします。
 - **点検には TLC の前提も入ります**（下の「4. 前提」）。
 
 点検が何を見て何を見ないか（`Bash` の規則だけを照合する・flag の層はこのセッションのもの、など）は、`autopilot-check.py` の docstring と入口のスキル本文の「権限の点検」を正とします。

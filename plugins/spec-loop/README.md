@@ -46,7 +46,7 @@
 | `scripts/check-frozen.py` | リリースした版（`release-v<n>` のタグ）の `docs/v<n>/` が直されていないかの確かめ（標準ライブラリと `git`） |
 | `templates/mkdocs/` | 正本リポジトリを MkDocs で閲覧するための雛形（設定・Q&A 表を CSV から描くフック・表示用のページ） |
 | `scripts/autopilot-ledger.py` | autopilot の台帳（版ごとの `.claude/plans/spec-autopilot-v<版>.json`）の読み書き（標準ライブラリと `git`） |
-| `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検（標準ライブラリと `git`） |
+| `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検・しない操作（タグ・Issue の登録・scaffold）を settings が拒むかの点検（標準ライブラリと `git`） |
 | `scripts/formal-baseline.py` | 形式検査のモデルを書いてよい版を決め（リリース済みなら書かない）、残したモデルの形（記録の項目・一覧に無いファイル）を確かめる（標準ライブラリと `git`） |
 | `scripts/check-tlc.py` | TLC が正本リポジトリの `CLAUDE.md` に書いた呼び方で使えるかの確かめ（標準ライブラリと、書いた呼び方の TLC。下の「前提」） |
 | `scripts/tlc-trace.py` | TLC の反例の JSON（`-dumpTrace json`）と対応表から、トレースのケース（`references/spec-ir.md` の「トレースのケース」）を作る（標準ライブラリのみ） |
