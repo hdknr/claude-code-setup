@@ -32,7 +32,8 @@
    の `merge` と同じこと——作業ツリーを重ねて突き合わせる）・Q&A 表が決まりに反する／読めないなら 2・
    **`merge` が拒否する `removed.csv` の配置（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）も 2**
    （#338。`merge` が実際に拒否することも突き合わせる）・**種類 `ファイル` の行で構造ファイルを消す・同じファイルを
-   2 度消す・v1 に `removed.csv` を置くのも 2**（#348）・**拒否のメッセージにパスが 1 度だけ出る**（#351）・
+   2 度消す・v1 に `removed.csv` を置くのも 2**（#348）・**画面の表をファイルとして消す・同じ画面を 2 度消すのも 2**（#1091）・
+   **拒否のメッセージにパスが 1 度だけ出る**（#351）・
    **要求確定側と予算側の `removed.csv` を入れ替えると、要求確定側だけが拒否する試料で捕まる**（#349。その試料と
    「removed.csv だけ違う」の作業ツリー＝予算側は `merge` が受け付ける）・**3 の案内が「要求確定と予算の合意の両方」を取り直させる**（#336。
    出力は試料と変異で、docstring の終了コード 3 の項は文字列で見る）。
@@ -84,6 +85,9 @@ Steps = list[tuple[str, ...]] | None
 SHARED = "docs/v1/shared/qa.csv"
 SHARED2 = "docs/v2/shared/qa.csv"
 REMOVED2 = "docs/v2/removed.csv"
+# 行の単位で重ねる画面の表（#1091）
+SCREENS1 = "docs/v1/requirements/screens/data/screens.csv"
+SCREENS_CSV = "画面ID,画面名\nS-001,一覧\nS-002,詳細\n"
 FORMAL1 = "docs/v1/spec/formal/order/Order.tla"
 R1, B1 = "signoff/v1/req-1", "signoff/v1/budget-1"
 R2, B2 = "signoff/v2/req-1", "signoff/v2/budget-1"
@@ -384,6 +388,21 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
                              ("w", REMOVED2, "種類,対象,理由\nファイル,shared/nfr.csv,不要\nファイル,shared/nfr.csv,重複\n"),
                              ("c",), ("t", R2), ("t", B2)],
      [], 2, "docs/v2/removed.csv:3: 2 行目と同じ対象を 2 度消す: shared/nfr.csv"),
+    # 行の単位で重ねる画面の表（#1091）——表をファイルとして消す・同じ画面を 2 度消すも 2（見なければ暫定の Q-001 を数えて 3 になる。
+    # 2 度消すは `screens = []` の変異で見る）。陽性対照: 正しい画面・項目の行（前の版に在るものを 1 度だけ消す）は拒否しない
+    ("画面の表をファイルとして消す", [("w", SHARED, QA_HEAD + P_1), ("w", SCREENS1, SCREENS_CSV), ("w", SHARED2, QA_HEAD + QA_2),
+                                 ("w", REMOVED2, "種類,対象,理由\nファイル,requirements/screens/data/screens.csv,不要\n"),
+                                 ("c",), ("t", R2), ("t", B2)],
+     [], 2, "docs/v2/removed.csv:2: requirements/screens/data/screens.csv はファイルとしては消せない"),
+    ("同じ画面を 2 度消す", [("w", SHARED, QA_HEAD + P_1), ("w", SCREENS1, SCREENS_CSV), ("w", SHARED2, QA_HEAD + QA_2),
+                          ("w", REMOVED2, "種類,対象,理由\n画面,S-001,不要\n画面,S-001,重複\n"), ("c",), ("t", R2), ("t", B2)],
+     [], 2, "docs/v2/removed.csv:3: 2 行目と同じ対象を 2 度消す: S-001"),
+    ("要求確定の時点に正しい画面の行がある", [("w", SHARED, QA_HEAD + P_1), ("w", SCREENS1, SCREENS_CSV),
+                                       ("w", SHARED2, QA_HEAD + QA_2),
+                                       ("w", REMOVED2, "種類,対象,理由\n画面,S-001,不要\n項目,I-009,不要\n"),
+                                       ("w", "docs/v1/requirements/screens/data/screen-items.csv", "番号,画面ID\nI-009,S-002\n"),
+                                       ("c",), ("t", R2), ("t", B2)],
+     [], 3, "Q-001: A（推奨案を暫定で採用"),
     ("v1 に removed.csv を置く", [("w", SHARED, QA_HEAD + P_1), ("w", "docs/v1/removed.csv", "種類,対象,理由\n"),
                                 ("c",), ("t", R1), ("t", B1)],
      [], 2, "docs/v1/removed.csv: v1 には置かない（消すものが無い）"),
@@ -418,23 +437,27 @@ OVERLAY_CASES = ["前の版の暫定が残る", "後の版で反映済みにし�
 # （期待の文字列のうち、`removed.csv` の位置より後ろが `merge` の問題の行にも現れること）
 REFUSED_CASES = ["同じ版で置いて消した暫定", "前の版までに無い行を消す", "同じ行を 2 度消す",
                  "構造ファイルをファイルとして消す", "同じファイルを 2 度消す", "v1 に removed.csv を置く",
+                 "画面の表をファイルとして消す", "同じ画面を 2 度消す",
                  "v2 のタグの時点に v1 の removed.csv がある"]
 
 # 作業ツリー（予算側と同じ中身）を `merge` が受け付ける——変異の捕捉が、拒否される配置に寄りかからない（#349）
-ACCEPTED_CASES = ["removed.csv だけ違う", "要求確定側だけが拒否する配置", "要求確定の時点に正しいファイルの行がある"]
+ACCEPTED_CASES = ["removed.csv だけ違う", "要求確定側だけが拒否する配置", "要求確定の時点に正しいファイルの行がある",
+                  "要求確定の時点に正しい画面の行がある"]
 
 # `removed.csv` の拒否のメッセージに、そのパスがちょうど 1 度出る（#351）。as_expected で見る
 ONCE = {name: path for path, names in (
     ("docs/v2/removed.csv", ["removed.csv が決まりに反する", "同じ版で置いて消した暫定", "前の版までに無い行を消す",
                              "同じ行を 2 度消す", "構造ファイルをファイルとして消す", "同じファイルを 2 度消す",
-                             "要求確定側だけが拒否する配置"]),
+                             "要求確定側だけが拒否する配置", "画面の表をファイルとして消す", "同じ画面を 2 度消す"]),
     ("docs/v1/removed.csv", ["v1 に removed.csv を置く", "v2 のタグの時点に v1 の removed.csv がある"])) for name in names}
 
 # 直す前の `provisional_rows` は `removed.csv` の行を `pop(target, None)` で黙って消していた（#338）
 CHECK_REMOVED = (
-    "            versions.check_removed(path, sorted(rows + files),\n"
-    "                                   {REMOVED_QA: placed, REMOVED_FILE: set()},\n"
-    "                                   {REMOVED_QA: set(whole), REMOVED_FILE: {target for _, _, target in files}}, problems)\n"
+    "            versions.check_removed(path, sorted(rows + files + screens),\n"
+    "                                   {REMOVED_QA: placed, REMOVED_FILE: set(), **{kind: set() for kind in versions.ROW_KINDS}},\n"
+    "                                   {REMOVED_QA: set(whole), REMOVED_FILE: {target for _, _, target in files},\n"
+    "                                    **{kind: {target for _, k, target in screens if k == kind} for kind in versions.ROW_KINDS}},\n"
+    "                                   problems)\n"
     "            if problems:\n"
     "                raise Unjudged(refused(tag, problems))\n"
     "            for _, _, target in rows:\n"
@@ -570,16 +593,25 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "files = []", "構造ファイルをファイルとして消す"),
     ("ファイルの行を見ない（2 度）", "files = [row for row in removed[path] or [] if row[1] == REMOVED_FILE]",
      "files = []", "同じファイルを 2 度消す"),
+    # #1091 の前の形（画面・項目・遷移の行を渡さない）に戻す
+    ("画面の行を見ない（2 度）", "screens = [row for row in removed[path] or [] if row[1] in versions.ROW_KINDS]",
+     "screens = []", "同じ画面を 2 度消す"),
     ("v1 の removed.csv を見ない", "            if listed.stdout.strip():\n                raise Unjudged(refused(",
      "            if False:\n                raise Unjudged(refused(", "v1 に removed.csv を置く"),
     ("v1 の removed.csv を v1 のタグだけで見る", "            if listed.stdout.strip():\n                raise Unjudged(refused(",
      "            if listed.stdout.strip() and version == 1:\n                raise Unjudged(refused(",
      "v2 のタグの時点に v1 の removed.csv がある"),
     # 判定できない 2 形を判定しようとして、正しいファイルの行まで拒否する
-    ("ファイルの行を前の版までに無いとする", "REMOVED_FILE: {target for _, _, target in files}}",
-     "REMOVED_FILE: set()}", "要求確定の時点に正しいファイルの行がある"),
-    ("ファイルの行を同じ版で置いたとする", "{REMOVED_QA: placed, REMOVED_FILE: set()}",
-     "{REMOVED_QA: placed, REMOVED_FILE: {target for _, _, target in files}}", "要求確定の時点に正しいファイルの行がある"),
+    ("ファイルの行を前の版までに無いとする", "REMOVED_FILE: {target for _, _, target in files},",
+     "REMOVED_FILE: set(),", "要求確定の時点に正しいファイルの行がある"),
+    ("ファイルの行を同じ版で置いたとする", "{REMOVED_QA: placed, REMOVED_FILE: set(),",
+     "{REMOVED_QA: placed, REMOVED_FILE: {target for _, _, target in files},", "要求確定の時点に正しいファイルの行がある"),
+    # 画面・項目・遷移の行も同じ形（#1091）——在るとしない・置いたとすると、正しい画面の行を 2 にする
+    ("画面の行を前の版までに無いとする", "**{kind: {target for _, k, target in screens if k == kind} for kind in versions.ROW_KINDS}}",
+     "**{kind: set() for kind in versions.ROW_KINDS}}", "要求確定の時点に正しい画面の行がある"),
+    ("画面の行を同じ版で置いたとする", "REMOVED_FILE: set(), **{kind: set() for kind in versions.ROW_KINDS}}",
+     "REMOVED_FILE: set(), **{kind: {target for _, k, target in screens if k == kind} for kind in versions.ROW_KINDS}}",
+     "要求確定の時点に正しい画面の行がある"),
     ("予算の時点の暫定を見る",'provisional_rows(repo, info["req_commit"], info["req"], version,',
      'provisional_rows(repo, info["budget_commit"], info["budget"], version,', "予算のタグの時点の暫定は見ない"),
     # 確かめると予算の合意とも一致しなくなる——案内を要求確定だけに戻させない（#336）

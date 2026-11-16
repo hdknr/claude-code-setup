@@ -7,7 +7,10 @@ usage: python3 diff-versions.py <docs ディレクトリ> [--version <n>]
 
 - **v<n> の差分 ＝ v<n-1> の時点の全体と v<n> の時点の全体の比較。** 全体は同梱の `merge-versions.py` の `merge` で重ねる
   （**重ね方を写さない**）。`--version` を省けば作業中の版（番号が最大の版）。
-- 単位は重ね合わせと同じ——Q&A は行（`No`）、機能は `id`、ほかのファイルは版のディレクトリからのパス。
+- 単位は重ね合わせと同じ——Q&A は行（`No`）、機能は `id`、ほかのファイルは版のディレクトリからのパス、
+  **行の単位で重ねる表（画面・項目・遷移。`merge-versions.py` の `ROW_TABLES`）は鍵の列の値**（#1091）。
+  **画面・項目・遷移の種類は、どちらかの版の全体にその表があるときだけ出す**（表の無い正本の出力は変わらない）。
+  画面を消して連鎖で消えた項目・遷移の削除には、消した画面の行の理由を `画面 <画面ID> を消した: <理由>` の形で添える。
   **Q&A は層で 2 つの種類に分けて出す**——`Q&A` は共有の層（`Q-`）、`Q&A（内部）` は内部の層（`D-`）。
   層は番号で決める（`check-qa-csv.py` の `is_internal_number`）。利用者に見せてよいのは `Q&A` の節だけ（#344）。
   **追加**は v<n> にだけある、**変更**は両方にあって中身が違う、**削除**は v<n-1> にだけある。
@@ -62,6 +65,8 @@ REMOVED_KIND = {KIND_QA_INTERNAL: merge_versions.KIND_QA}
 # 利用者・決裁者に見せる種類（提案書はこれだけを描く）
 SHARED_KINDS = [merge_versions.KIND_QA, merge_versions.KIND_FEATURE, merge_versions.KIND_FILE]
 KINDS = [merge_versions.KIND_QA, KIND_QA_INTERNAL, merge_versions.KIND_FEATURE, merge_versions.KIND_FILE]
+# 行の単位で重ねる表の種類（画面・項目・遷移）。表があるときだけ `KINDS` の後ろに出す（#1091）
+ROW_KINDS = merge_versions.ROW_KINDS
 
 
 # dataclass は使わない——ほかのスクリプトが importlib で読み込むと sys.modules に無く、dataclass が落ちる
@@ -145,11 +150,22 @@ def compare(docs: Path, version: int | None = None) -> tuple[list[str], Diff | N
     diff.changes[KIND_QA_INTERNAL] = compare_maps(before_internal, now_internal)
     diff.changes[merge_versions.KIND_FEATURE] = compare_maps(before.features, now.features)
     diff.changes[merge_versions.KIND_FILE] = compare_maps(compared_files(before), compared_files(now))
+    for path, (kind, _, _) in merge_versions.ROW_TABLES.items():
+        if path in before.headers or path in now.headers:
+            diff.changes[kind] = compare_maps(before.tables.get(path, {}), now.tables.get(path, {}))
     reasons = removal_reasons(versions[number - 1][1])
-    for kind in KINDS:
-        for change in diff.changes[kind]:
-            if change.status == REMOVED:
-                change.reason = reasons.get((REMOVED_KIND.get(kind, kind), change.key), "")
+    refs = {kind: refs for kind, _, refs in merge_versions.ROW_TABLES.values()}
+    for kind, changes in diff.changes.items():
+        for change in changes:
+            if change.status != REMOVED:
+                continue
+            change.reason = reasons.get((REMOVED_KIND.get(kind, kind), change.key), "")
+            if not change.reason and refs.get(kind):
+                # 画面を消して連鎖で消えた行——消した画面の行の理由を添える
+                screen = next((change.before[ref] for ref in refs[kind]
+                               if (merge_versions.KIND_SCREEN, change.before[ref]) in reasons), None)
+                if screen is not None:
+                    change.reason = f"{merge_versions.KIND_SCREEN} {screen} を消した: {reasons[(merge_versions.KIND_SCREEN, screen)]}"
     return [], diff
 
 
@@ -161,6 +177,8 @@ def label(kind: str, change: Change) -> str:
     if kind == merge_versions.KIND_FEATURE:
         title = value.get("title") if isinstance(value, dict) else None
         return title.strip() if isinstance(title, str) else ""
+    if kind == merge_versions.KIND_SCREEN:
+        return value.get("画面名", "").strip()
     return ""
 
 
@@ -174,7 +192,7 @@ def render(diff: Diff) -> list[str]:
         lines = ["v1 の差分（前の版が無いので、全部が追加）"]
     else:
         lines = [f"v{diff.version} の差分（v{diff.version - 1} の時点の全体との比較）"]
-    for kind in KINDS:
+    for kind in diff.changes:  # `KINDS` の順のあとに、表がある画面・項目・遷移（`compare` が足した順）
         counts = "・".join(f"{s} {diff.count(kind, s)}" for s in STATUSES)
         lines.append(f"{kind}: {counts}")
         for change in diff.changes[kind]:
