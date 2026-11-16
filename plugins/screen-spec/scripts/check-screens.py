@@ -25,16 +25,17 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 **守ること**:
 
 - 表に無い画面を指す項目・遷移・親画面を違反にする（v1 の行も、後の版で置いた行も、重ねた全体で照らす）
-- 入口（種別 `top`）から遷移で辿れない画面を違反にする（`tab` は親の画面が辿れれば辿れる）。入口が 1 つも無いのも違反
+- 入口（種別 `top`）から遷移で辿れない画面を違反にする（`tab` は親の画面が辿れれば辿れる）。入口が 1 つも無いのも違反。
+  ただし未決定のセル（遷移の `遷移元`・`遷移先`・`きっかけ`、画面の `種別`・`親画面`）があって決められないものは警告にする（未決定は 3 のまま）
 - それを `きっかけ` にする遷移の無いボタンを違反にする。`きっかけ` が遷移元の画面の項目でないのも違反
-- `根拠` と散文の Q&A の番号が重ねた Q&A 表（共有と内部）に無ければ違反、回答はあるが未反映の行・`removed.csv` で消した行なら警告
+- `根拠`・印に添えた番号・散文の Q&A の番号が重ねた Q&A 表（共有と内部）に無ければ違反、回答はあるが未反映の行・`removed.csv` で消した行なら警告
 - 画面の `機能`・`根拠` の機能の番号・`帳票`・遷移の `操作` が成果物の表に無ければ違反（表が無いときも）
 - 表のセルと散文に残った未決定の印を「未決定」（3）にし、Q&A の番号の無いものを「起票の候補」に出す。`⚠️` だけのものは警告
 - 仕様書が無い・最初の見出しに画面ID が無い・節が無い／順が違う／重なる・空の節・理由の無い `N/A`・表から指されない仕様書を違反にする
 - 画面ID と項目・遷移の番号が表をまたいで重なるのを違反にする
 - 見出し行・決まった値・種別や種類に合わない列の値を違反にし、必須の欄の空を 3 にする
 - spec-loop が見つからない・版が範囲の外なら、検査の前に 4 で止める（名指しした spec-loop が spec-loop でなければ、ほかを探さずに止める）
-- ファイルを書かない（Q&A の番号を振らない）
+- ファイルを書かない（Q&A の番号を振らない。spec-loop を読み込むときの `__pycache__` も書かない）
 
 **守らないもの**:
 
@@ -63,6 +64,8 @@ from collections import deque
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# spec-loop のスクリプトを読み込むときに `__pycache__` を書かない（このスクリプトはファイルを 1 つも書かない。`-I` では環境変数が効かない）
+sys.dont_write_bytecode = True
 PLUGIN_ROOT = HERE.parent
 
 # ---- `references/spec-loop.md` の写し
@@ -124,7 +127,8 @@ SECTIONS = [
 ]
 TABLE_MARK = "<!-- screen-spec: 表 -->"
 
-NOT_APPLICABLE = re.compile(r"N/A[\s。．.:：、]*")
+NOT_APPLICABLE = re.compile(r"N/A[\s。．.:：、\-－—–()（）\[\]「」]*", re.IGNORECASE)
+HEADING_LINE = re.compile(r"^[ \t]*#{1,6}([ \t].*)?$", re.MULTILINE)
 FENCE = re.compile(r"(`{3,}|~{3,})")
 COMMENT = re.compile(r"<!--.*?-->", re.S)
 
@@ -257,6 +261,7 @@ class Checker:
         self.docs = docs
         self.upto = upto
         self.report = Report()
+        self.undecided_cells: set[tuple[str, str, str]] = set()  # 印のあったセル（表のパス, 鍵, 列）
 
     # ---- 読む
 
@@ -335,6 +340,8 @@ class Checker:
             value = row[name]
             where = f"{path} {key} {name}"
             if self.marked(where, value):
+                self.references(where, value)  # 印に添えた Q&A の番号も Q&A 表に在ること
+                self.undecided_cells.add((path, key, name))
                 continue
             decided[name] = value.strip()
             if not decided[name] and name not in MAY_BE_EMPTY[path]:
@@ -483,17 +490,30 @@ class Checker:
             operation = row.get("操作")
             if operation:
                 self.listed(f"{where} 操作", operation, self.roles, self.design.ROLES, "操作")
+        # きっかけが未決定の遷移は、遷移元の画面（遷移元も未決定ならどの画面でも）のボタンを指しうる——その画面のボタンは決められない
+        open_sources = {row.get("遷移元") for key, row in transitions.items() if (TRANSITIONS, key, "きっかけ") in self.undecided_cells}
         for key, row in items.items():
             if row.get("種類") == BUTTON and key not in triggered:
-                self.report.violations.append(f"{ITEMS} {key}: ボタン {row.get('項目名', '')!r} を きっかけ にする遷移が無い")
+                message = f"{ITEMS} {key}: ボタン {row.get('項目名', '')!r} を きっかけ にする遷移が無い"
+                if row.get("画面ID") in open_sources or None in open_sources:
+                    self.report.warnings.append(f"{message}（きっかけが未決定の遷移があるので決められない）")
+                else:
+                    self.report.violations.append(message)
 
     def check_reach(self, screens, transitions) -> None:
         if not screens:
             return
         entries = [key for key, row in screens.items() if row.get("種別") == ENTRY_KIND]
         if not entries:
-            self.report.violations.append(f"{SCREENS}: 入口の画面（種別 {ENTRY_KIND}）が無い")
+            message = f"{SCREENS}: 入口の画面（種別 {ENTRY_KIND}）が無い"
+            if any((SCREENS, key, "種別") in self.undecided_cells for key in screens):
+                self.report.warnings.append(f"{message}（種別が未決定の画面があるので決められない）")
+            else:
+                self.report.violations.append(message)
             return
+        # 遷移先が未決定の遷移はどの画面へも行きうる。遷移元だけが未決定なら、その遷移先に行きうる。種別・親画面が未決定の画面は自分のことが決められない
+        open_targets = {row.get("遷移先") for key, row in transitions.items()
+                        if (TRANSITIONS, key, "遷移元") in self.undecided_cells or (TRANSITIONS, key, "遷移先") in self.undecided_cells}
         edges: dict[str, list[str]] = {}
         for row in transitions.values():
             if row.get("遷移元") in screens and row.get("遷移先") in screens:
@@ -512,7 +532,12 @@ class Checker:
                     queue.append(there)
         for key in screens:
             if key not in reached:
-                self.report.violations.append(f"{SCREENS} {key}: 入口の画面から遷移で辿れない")
+                message = f"{SCREENS} {key}: 入口の画面から遷移で辿れない"
+                if (None in open_targets or key in open_targets or (SCREENS, key, "種別") in self.undecided_cells
+                        or (SCREENS, key, "親画面") in self.undecided_cells):
+                    self.report.warnings.append(f"{message}かもしれない（未決定の遷移・種別・親画面があるので決められない）")
+                else:
+                    self.report.violations.append(message)
 
     @staticmethod
     def split(value: str | None) -> list[str]:
@@ -552,7 +577,9 @@ class Checker:
 
     def check_document(self, path: str, text: str, key: str) -> None:
         self.scan_lines(path, text)
-        lines = text.splitlines()
+        # HTML のコメントの中の見出しは見出しに数えない（表を出す印は残す）。行の位置は保つ
+        blanked = COMMENT.sub(lambda m: m.group(0) if m.group(0) == TABLE_MARK else "\n" * m.group(0).count("\n"), text)
+        lines = blanked.splitlines()
         headings: list[tuple[int, int, str]] = []  # (行の位置, 段, 見出しの文字)
         fence = None
         for at, line in enumerate(lines):
@@ -582,7 +609,7 @@ class Checker:
             end = next((h[0] for h in headings[index + 1:] if h[1] <= 2), len(lines))
             body = "\n".join(lines[at + 1:end])
             tabled = dict(SECTIONS)[heading]
-            content = unicodedata.normalize("NFKC", COMMENT.sub("", body)).strip()
+            content = unicodedata.normalize("NFKC", HEADING_LINE.sub("", COMMENT.sub("", body))).strip()  # 小見出しだけの節は空
             if tabled and TABLE_MARK in body:
                 continue
             if not content:

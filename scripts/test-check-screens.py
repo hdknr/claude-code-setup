@@ -228,6 +228,26 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
      "未決定: requirements/screens/data/transitions.csv T-002 遷移先", "違反:"),
     ("marker-and-violation", good(S=S_HEAD + S1.replace(",受注を探す,", ",未定（Q-R-002）,") + S2,
                                   T=T_HEAD + T1 + T2 + "T-003,S-001,I-002,,,S-999,,F-002\n"), None, [], 1, "未決定: ", ""),
+    ("marker-cell-bad-qa", good(S=S_HEAD + S1 + S2.replace(",F-002\n", ",未定（Q-R-999）\n")), None, [], 1,
+     "S-002 根拠: Q&A Q-R-999 が Q&A 表に無い", ""),
+    ("marker-on-reach-target", good(T=T_HEAD + T1.replace(",S-002,,", ",未定（Q-R-002）,,") + T2), None, [], 3,
+     "S-002: 入口の画面から遷移で辿れないかもしれない", "違反:"),
+    ("marker-on-reach-source", with_files(
+        good(S=S_HEAD + S1 + S2 + "S-003,受注の詳細,detail,,担当者,記入中,,詳しく見る,詳細,F-001,,order-detail.md,F-001\n",
+             T=T_HEAD + T1 + T2 + "T-003,未定（Q-R-002）,I-002,,,S-003,,F-001\n"),
+        **{"v1/requirements/screens/order-detail.md": doc("S-003", "受注の詳細")}), None, [], 3, "S-003: 入口の画面から遷移で辿れないかもしれない", "違反:"),
+    ("marker-on-trigger", good(T=T_HEAD + T1.replace(",I-002,", ",未定（Q-R-002）,") + T2), None, [], 3,
+     "ボタン '新規' を きっかけ にする遷移が無い（きっかけが未決定", "違反:"),
+    ("marker-on-entry-kind", good(S=S_HEAD + S1.replace(",top,", ",未定（Q-R-002）,") + S2), None, [], 3,
+     "入口の画面（種別 top）が無い（種別が未決定", "違反:"),
+    ("marker-on-tab-parent", with_files(
+        good(S=S_HEAD + S1 + S2 + "S-003,受注の明細,tab,未定（Q-R-002）,担当者,記入中,,明細を見る,明細の一覧,F-002,,order-tab.md,F-002\n"),
+        **{"v1/requirements/screens/order-tab.md": doc("S-003", "受注の明細")}), None, [], 3, "S-003: 入口の画面から遷移で辿れないかもしれない", "違反:"),
+    ("prose-heading-in-comment", good(LIST_MD=doc("S-001", "受注一覧", order=[h for h, _ in SECTIONS if h != "9. 他システム連携"])
+                                      + "\n<!--\n## 9. 他システム連携\n\nあとで\n-->\n"), None, [], 1, "節 ## 9. 他システム連携 が無い", ""),
+    ("prose-subheading-only", good(LIST_MD=doc("S-001", "受注一覧", {"7. 状態": "### 補足"})), None, [], 1, "節 ## 7. 状態 が空", ""),
+    ("prose-na-lowercase", good(LIST_MD=doc("S-001", "受注一覧", {"9. 他システム連携": "n/a"})), None, [], 1, "が N/A だけで理由が無い", ""),
+    ("prose-na-decorated", good(LIST_MD=doc("S-001", "受注一覧", {"9. 他システム連携": "N/A -"})), None, [], 1, "が N/A だけで理由が無い", ""),
     # ---- U8 spec-loop の版
     ("spec-loop-too-old", base(), ("version", "0.92.9"), [], 4, "spec-loop の版 0.92.9", "違反"),
     ("spec-loop-too-new", base(), ("version", "1.0.0"), [], 4, "対応の範囲の外", "違反"),
@@ -349,11 +369,13 @@ def run_one(plugin: Path, sibling: Path, case_dir: Path, case) -> tuple[int, str
         argv = [str(case_dir / "nowhere")]
     else:
         argv = [str(docs), *args]
-    before = snapshot(docs)
+    # 書かないことは、正本だけでなく走らせた場所（cwd）と、読み込む spec-loop・screen-spec の写し（`__pycache__`）でも見る
+    watched = (case_dir, sibling.parent)
+    before = [snapshot(root) for root in watched]
     proc = subprocess.run([sys.executable, "-I", str(script), *argv, *extra], capture_output=True, text=True, cwd=case_dir, env=env)
     out = proc.stdout + proc.stderr
-    if snapshot(docs) != before:
-        out += "\n<<正本が書き換わった>>"
+    if [snapshot(root) for root in watched] != before:
+        out += "\n<<正本か走らせた場所か読み込んだプラグインにファイルを書いた>>"
     written = "".join(b.decode("utf-8", "replace") if isinstance(b, bytes) else b for b in files.values())
     invented = sorted({n for n in NUMBER.findall(out) if n not in written})
     if invented:
@@ -396,13 +418,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("未決定の印を数えない", "        if hits:\n", "        if False:\n", "marker-in-table"),
     ("起票の候補を出さない", "if not self.qa_number.search(value):", "if False:", "marker-without-number"),
     ("⚠️ だけを警告しない", "if any(sign in value for sign in WARNING_SIGNS):", "if False:", "warning-sign-only"),
-    ("印のあるセルも値の決まりに当てる", "            if self.marked(where, value):\n                continue\n",
-     "            self.marked(where, value)\n", "marker-skips-reference"),
+    ("印のあるセルも値の決まりに当てる", "                self.undecided_cells.add((path, key, name))\n                continue\n",
+     "                self.undecided_cells.add((path, key, name))\n", "marker-skips-reference"),
     ("散文の未決定の印を見ない", "            self.marked(where, line)\n", "            pass\n", "marker-in-prose"),
     ("空の節を見ない", "            if not content:\n", "            if False:\n", "prose-empty-section"),
     ("理由の無い N/A を見ない", "elif NOT_APPLICABLE.fullmatch(content):", "elif False:", "prose-na-without-reason"),
     ("散文の節の表を出す印を中身に数える", "if tabled and TABLE_MARK in body:", "if TABLE_MARK in body:", "prose-mark-in-prose-section"),
-    ("HTML のコメントを中身に数える", "COMMENT.sub(\"\", body)", "body", "prose-comment-only"),
+    ("散文の節の表を出す印を中身に数える（コメントを外さない）", "HEADING_LINE.sub(\"\", COMMENT.sub(\"\", body))", "HEADING_LINE.sub(\"\", body)",
+     "prose-mark-in-prose-section"),
     ("無い節を見ない", "            if name not in found:\n", "            if False:\n", "prose-missing-section"),
     ("節の順を見ない", "if [found[name] for name in order] != sorted(found[name] for name in order):", "if False:", "prose-order"),
     ("重なる節を見ない", "            if heading in found:\n", "            if False:\n", "prose-duplicate-section"),
@@ -434,6 +457,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("重ね合わせの違反を見ない", "        if problems:\n            for problem in problems:", "        if False:\n            for problem in problems:",
      "merge-header-differs"),
     ("--upto を渡さない", "self.versions.merge(self.docs, self.upto)", "self.versions.merge(self.docs, None)", "upto-ignores-later"),
+    ("印のあるセルの Q&A の番号を見ない", "                self.references(where, value)  # 印に添えた", "                pass  # 印に添えた", "marker-cell-bad-qa"),
+    ("未決定の遷移先でも辿れないを違反にする", "if (None in open_targets or key in open_targets", "if (False", "marker-on-reach-target"),
+    ("未決定の遷移元の遷移先を違反にする", "None in open_targets or key in open_targets or", "None in open_targets or", "marker-on-reach-source"),
+    ("未決定の親画面を違反にする", "or (SCREENS, key, \"親画面\") in self.undecided_cells):", "):", "marker-on-tab-parent"),
+    ("未決定のきっかけでもボタンを違反にする", "if row.get(\"画面ID\") in open_sources or None in open_sources:", "if False:", "marker-on-trigger"),
+    ("未決定の種別でも入口が無いを違反にする", "if any((SCREENS, key, \"種別\") in self.undecided_cells for key in screens):", "if False:", "marker-on-entry-kind"),
+    ("コメントの中の見出しを数える", "COMMENT.sub(lambda m: m.group(0) if m.group(0) == TABLE_MARK else \"\\n\" * m.group(0).count(\"\\n\"), text)", "text", "prose-heading-in-comment"),
+    ("小見出しを中身に数える", "HEADING_LINE.sub(\"\", COMMENT.sub(\"\", body))", "COMMENT.sub(\"\", body)", "prose-subheading-only"),
+    ("N/A の大文字小文字を区別する", "、\\-－—–()（）\\[\\]「」]*\", re.IGNORECASE)", "、\\-－—–()（）\\[\\]「」]*\")", "prose-na-lowercase"),
+    ("N/A の飾りを理由に数える", "、\\-－—–()（）\\[\\]「」]*", "、]*", "prose-na-decorated"),
+    ("__pycache__ を書く", "sys.dont_write_bytecode = True", "sys.dont_write_bytecode = False", "good"),
     ("未決定を 0 にする", "return 3 if self.undecided or self.empty else 0", "return 0", "marker-in-table"),
 ]
 OO_MUTATIONS = [("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else")]
