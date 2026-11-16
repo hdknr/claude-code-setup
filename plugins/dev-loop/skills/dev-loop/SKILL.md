@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 1.111.0 -->
-> **このスキルの版: 1.111.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 2.0.0 -->
+> **このスキルの版: 2.0.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -337,6 +337,10 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
         - **手順 5 で挙がった反証と、手順 4 への差し戻しの履歴**——ここには件数と差し戻しの有無まで。
           **反証 1 件ずつは、6 番目の採否の表に書く**（手順 6）
         - **交絡を潰した手順**（手順 5。実験をしていない周は「実験なし」と書く）
+        - **関門の記録（必須。#1043）**——上の散文とは別に、**情報文字列が `dev-loop-gates` のコードブロックを 1 つ**置き、
+          周の base・関門ごとの終点の SHA と件数・2 パス目と狭いパス（「該当なし」も明記）・受入基準ごとの判定（`BLOCKED`・`満たさない` は判断の出所）を 1 行ずつ書く。
+          **関門に渡すたびに足す。** **手順 7 の照合（`scripts/check-gates.py`）がこれを読み、リポジトリの履歴と突き合わせる**——
+          **記録の形は `scripts/check-gates.py` の docstring の「記録の形」を正とする**（このスキルと同じ場所にある）。
     6. **既知の限界・決着済みの論点** — **両方の関門に毎パス渡す**（手順 5・手順 6）。
        **片方だけに渡すのは、受入基準を片方だけに渡すのと同じ失敗である**（原則）。
        **関門はパス間に記憶を持たない**——毎回ゼロから導出するので、**一度決着した論点を
@@ -1486,7 +1490,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
     ——**値の突き合わせは、走らせる側ではなく読む側でやる。**
     **上のコードブロックが 1 行ずつに割ってあるのは、この実測の結果である**（#110）。
     - **終了コードで分岐するスクリプトは、包まずに素の 1 行で呼ぶ（必須。ここが原本）。**
-      **対象は `find-cycle.py`・`prepare-worktree.sh`・`check-pr-preconditions.sh`・`check-deps-declared.py`・`check-spec-writeback.py`・`external-reviews.py`。**
+      **対象は `find-cycle.py`・`prepare-worktree.sh`・`check-pr-preconditions.sh`・`check-deps-declared.py`・`check-spec-writeback.py`・`external-reviews.py`・`check-gates.py`。**
       **終了コードは足さなくても見える**——**0 以外なら道具の結果に `Exit code N` と出て、
       0 なら何も出ない**（実測。**ハーネスの現在の挙動であって、約束ではない**）。
       **包むと、その見え方が壊れる**:
@@ -1661,6 +1665,17 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 **利用者が不在の周は訊かない**（`references/absent-lines.md` の「訊く場面」を正とする）。
 **不在の周のマージは、宣言（cruise の台帳の確かめた線を含む）が無ければしない**（`references/absent-lines.md` の「`マージ = 関門を通ればマージ`」を正とする）。
 
+**マージの前に、関門を通ったかをスクリプトで照合する（必須。どの経路でマージしても。#1043）。** 周の worktree を cwd にして、素の 1 行で呼ぶ:
+
+```bash
+python3 <このスキルの base ディレクトリ>/scripts/check-gates.py <計画ファイル> --head <PR の head の SHA>
+```
+
+**0 でなければマージしない**——**2**: 記録の形が違う（手順 3 の「関門の記録」を直す）、**3**: 照合を通らない（出力の理由を見る。
+関門を回していないなら回す——記録だけ書き足して通さない）、**7**: 判定できなかった。**不在の周のマージは `--absent` を付ける。**
+**`merge-pr.py` は `gh pr merge` の前に同じ照合を通す**（0 でなければ 13 で止まる）——照合が見るもの・見ないものは、そのスクリプトの docstring を正とする。
+**照合はマージしてよいかを決めない**——通っても、承認は下の 1 のとおりで、不在の周は `references/absent-lines.md` の「`マージ = 関門を通ればマージ`」の止まる条件も見る。
+
 対象リポジトリの CLAUDE.md ／ deploy runbook に従う。固有手順が無い一般的なプロジェクトでは:
 
 1. レビュー承認 → merge
@@ -1668,10 +1683,10 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
 3. デプロイ後の疎通・マイグレーション等、リポジトリの手順に従って本番状態を確認
 
 **マージすると決めたら、手続きはスクリプトに任せてよい（任意）**——CI と `mergeable` を待ち、
-worktree を点検し、squash し、worktree を撤去して、閉じるはずの Issue が閉じたかを確かめる:
+worktree を点検し、上の照合を通し、squash し、worktree を撤去して、閉じるはずの Issue が閉じたかを確かめる:
 
 ```bash
-python3 <このスキルの base ディレクトリ>/scripts/merge-pr.py <PR 番号>
+python3 <このスキルの base ディレクトリ>/scripts/merge-pr.py <PR 番号>            # 不在の周は --absent を付ける
 ```
 
 **マージしてよいかは決めない**——承認は上の 1 のまま人間が持つ。**メインの作業ツリーから呼ぶ**

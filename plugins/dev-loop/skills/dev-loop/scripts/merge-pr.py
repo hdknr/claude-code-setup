@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """PR をマージする手続きを 1 本にする——CI を待ち、worktree を点検し、squash し、後を片付けて確かめる。
 
-    python3 <このスキルの base ディレクトリ>/scripts/merge-pr.py <PR 番号> [--interval 秒] [--timeout 秒] [--settle 秒]
+    python3 <このスキルの base ディレクトリ>/scripts/merge-pr.py <PR 番号> [--plan 計画ファイル] [--absent] [--interval 秒] [--timeout 秒] [--settle 秒]
 
 **マージすると決めた後の手続きだけ**を担う（#389）。**マージしてよいかは決めない**
 ——承認は人間か、人間が許した範囲の判断である（`SKILL.md` 手順 7）。
+**ただし関門を通ったかの照合は、ここで必ず通す**（#1043）——`gh pr merge` の前に、同じ場所の `check-gates.py` に
+計画ファイルと確かめた head の SHA を渡し、0 でなければマージしない。照合の中身は `check-gates.py` の docstring を正とする。
+計画ファイルは `--plan` で渡すか、head ブランチ（`issue/<番号>-…`）の worktree の `docs/plans/issue-<番号>.md`・
+`.claude/plans/issue-<番号>.md` の順に探す。**`--absent`** は不在の周のマージとして照合させる（`check-gates.py --absent`）。
 cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決する）。**メインの作業ツリーから呼ぶ。**
 
 ## なぜスクリプトなのか
@@ -57,6 +61,9 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **ロックされた worktree も撤去できる**——unlock してから `git worktree remove`（**`--force` は使わない**）。
 - **`MERGED` を確かめるまで worktree を残す**——撤去はその後に置く（点検はマージの前に済ませる）。
   `gh pr merge` が 0 で終わっても `MERGED` とは限らない（マージキューに入っただけのことがある）。
+- **関門の照合（`check-gates.py`）が 0 でなければマージしない**（#1043）——照合を通らない・記録の形が違うなら 13。
+  照合は確かめた head の SHA（`--match-head-commit` に渡すもの）に当てる。
+- **計画ファイルが見つからなければマージしない**（13）——照合する相手が無い。
 - **cruise の台帳で利用者の判断を待っている行の PR をマージしない**（#631）——メインの作業ツリーの `.claude/plans/cruise-*.json` を全部読み、
   その PR を `pr` に持つ行が `blocked` か、`note` が `利用者の判断待ち:` で始まるなら（`ledger.py` の判断待ちの印）、12 で止める。
   **読むのは `gh pr merge` の直前**——CI を待つ間に親がその行を判断待ちにしても止まり、OPEN でない・draft の PR は今までどおり 2 になる。
@@ -89,6 +96,8 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **11**: head が最後の base の付け替えより前に届いている——検査は前の base と比べた結果（マージしていない。新しいコミットを push する）
 - **12**: cruise の台帳で、この PR を持つ行が利用者の判断を待っている（`blocked`・`note` が `利用者の判断待ち:`）——マージしていない。
   台帳が読めない・形が違うときは 7（判定できなかった）
+- **13**: 関門の照合を通らない・記録の形が違う・計画ファイルが見つからない（マージしていない。`check-gates.py` の出力をそのまま出す。
+  照合が判定できなかったときは 7）
 
 ## 何を守らないか
 
@@ -126,6 +135,10 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **隣に `ledger.py` が無い置き方では、台帳の無いリポジトリでも 7 で止まる**——プラグインは 2 つを同じ場所に置く。
 - **`pr` を `PR #42`・URL の形で書いた行には当たらない**——cruise の台帳は番号の形で書く。
 - **最後に読んでから `gh pr merge` までの間の付け替えは見ない**——`--match-head-commit` は head しか固定しない。
+- **照合が見ないものは見ない**——記録が本当か・狭いパスの指摘の振り分け・PR コメントの推奨（`check-gates.py` の「守らない」）。
+- **計画ファイルを head のコミットからは探さない**——worktree の作業ファイルを読む（`merge-pr.py` は未コミットと push していない worktree を止めるので、
+  worktree があればその中身が head と同じである）。worktree の無い PR は `--plan` で渡す。
+- **`--absent` を渡し忘れると、居る周として照合する**——不在の周で線で決めた判断（`BLOCKED`）が通らず 13 で止まる（止まる側に倒れる）。
 """
 from __future__ import annotations
 
@@ -133,6 +146,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -490,6 +504,25 @@ def wait_for(fn, interval: float, timeout: float) -> bool:
         time.sleep(interval)
 
 
+def find_plan(branch: str, wt: dict | None) -> Path | None:
+    """head ブランチの worktree にある計画ファイル（`issue/<番号>-…` から決める）。"""
+    m = re.match(r"^issue/(\d+)-", branch)
+    if not wt or not m:
+        return None
+    for rel in (f"docs/plans/issue-{m.group(1)}.md", f".claude/plans/issue-{m.group(1)}.md"):
+        path = Path(wt["path"]) / rel
+        if path.is_file():
+            return path
+    return None
+
+
+def gates(plan: Path, head_sha: str, absent: bool) -> tuple[int, str]:
+    """同じ場所の `check-gates.py` で照合する。(終了コード, 出力)。"""
+    script = Path(__file__).resolve().parent / "check-gates.py"
+    res = run([sys.executable, str(script), str(plan), "--head", head_sha, *(["--absent"] if absent else [])])
+    return res.returncode, (res.stdout + res.stderr).strip()
+
+
 def ledger_holds(number: str) -> list[str]:
     """cruise の台帳で、この PR を持つ行が利用者の判断を待っているなら、行ごとの理由（#631）。
 
@@ -556,6 +589,8 @@ def main(argv: list[str]) -> int:
     p.add_argument("--interval", type=float, default=30, help="読み直す間隔（秒）")
     p.add_argument("--timeout", type=float, default=3600, help="CI と mergeable を待つ期限（秒）")
     p.add_argument("--settle", type=float, default=300, help="マージの後、MERGED と Issue の CLOSED を待つ期限（秒）")
+    p.add_argument("--plan", help="関門の照合に渡す計画ファイル（既定は head ブランチの worktree から探す）")
+    p.add_argument("--absent", action="store_true", help="不在の周のマージとして照合する（check-gates.py --absent）")
     a = p.parse_args(argv)
     if not a.number.isdigit():
         p.error(f"PR 番号が数字でない: {a.number!r}")
@@ -585,6 +620,20 @@ def main(argv: list[str]) -> int:
             print(f"worktree を点検した: {where}{'（ロックされている）' if wt['locked'] else ''}")
         else:
             print(f"ブランチ {branch} を持つ worktree は無い。")
+
+        plan = Path(a.plan) if a.plan else find_plan(branch, wt)
+        if not plan:
+            print(f"**計画ファイルが見つからない**（ブランチ {branch} の worktree の docs/plans・.claude/plans）。"
+                  "--plan で渡す。マージしない。", file=sys.stderr)
+            return 13
+        grc, gout = gates(plan, head_sha, a.absent)
+        if grc in (2, 3):
+            print(gout, file=sys.stderr)
+            print(f"**関門の照合を通らない**（{plan}）。マージしない。", file=sys.stderr)
+            return 13
+        if grc != 0:
+            raise Undetermined(f"関門の照合が判定できなかった（rc={grc}）: {gout}")
+        print(f"関門の照合を通った: {plan}")
 
         holds = ledger_holds(a.number)  # マージの直前に読む——待つ間に判断待ちにした行も止める
         if holds:
