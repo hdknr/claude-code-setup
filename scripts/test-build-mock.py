@@ -448,9 +448,12 @@ def max_version(files: dict[str, str]) -> int:
     return max(int(m.group(1)) for m in (re.match(r"docs/v([0-9]+)/", k) for k in files) if m)
 
 
-def shared_view(row: dict[str, str]) -> dict[str, str]:
-    """共有の層に見える行（`D-` の番号と、それを囲む括弧・区切りを落とす。埋め込まない列——試料ではパス——も落とす）。"""
-    return {k: re.sub(r"[、（）()\s]", "", re.sub(r"D-(?:[A-Z]-)?[0-9]{3,}", "", v or "")) for k, v in row.items() if k != "パス"}
+CORE_COLUMNS = {name: (S_HEAD if name == "screens" else I_HEAD if name == "items" else T_HEAD).strip().split(",") for name in TABLE_FILES}
+
+
+def shared_view(name: str, row: dict[str, str]) -> dict[str, str]:
+    """共有の層に見える行（`D-` の番号と、それを囲む括弧・区切りを落とす。profile の列——試料ではパス・遷移の種類——は埋め込まないので落とす）。"""
+    return {k: re.sub(r"[、（）()\s]", "", re.sub(r"D-(?:[A-Z]-)?[0-9]{3,}", "", v or "")) for k, v in row.items() if k in CORE_COLUMNS[name]}
 
 
 def expected_diff(before_files: dict[str, str], before_upto: int, after_files: dict[str, str], upto: int,
@@ -468,7 +471,7 @@ def expected_diff(before_files: dict[str, str], before_upto: int, after_files: d
         after = merged_rows(after_files, upto, table)
         marks[name], basis[name] = {}, {}
         for key, row in after.items():
-            if key not in before or shared_view(before[key]) != shared_view(row):
+            if key not in before or shared_view(name, before[key]) != shared_view(name, row):
                 marks[name][key] = "追加" if key not in before else "変更"
                 basis[name][key] = numbers_of(row, shared_only=True)
         for key, row in before.items():
