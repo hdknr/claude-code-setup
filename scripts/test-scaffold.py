@@ -957,6 +957,9 @@ JOBS_HEAD = "id,名前,契機,周期,失敗したときの扱い\n"
 JOBS_DECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"
 JOBS_UNDECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,未定,翌朝に担当者へ通知する\n"
 DESIGN_GATE = "関門（システム設計書の成果物の表"
+# ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
+SCREEN_NOTE = str(V1 / "requirements" / "screens" / "order-list.md")
+SCREEN_GATE = "関門（画面の表。screen-gate.py）"
 # ---- 基盤要件（#950）。表が無ければ警告して作り、未決定・違反・Python でない言語で止める
 INFRA_FILE = str(V1 / "shared" / "infra.csv")
 INFRA_HEAD = "項目,決定,理由,費用への影響,水準,根拠,状態\n"
@@ -2431,6 +2434,14 @@ CASES: list[Case] = [
          absent=DESIGN_GATE),
     Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
     Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
+    Case("画面の表: screen-spec が見つからなければ 2 で止める（#1097）", 2, "画面の表があるのに screen-spec が見つからない",
+         extra={SCREEN_NOTE: "# 受注一覧\n"}, pre=plant_old_issues, post=nothing_written),
+    Case("画面の表: --dry-run も止める", 2, SCREEN_GATE, args=("--dry-run",), extra={SCREEN_NOTE: "# 受注一覧\n"}),
+    Case("画面の表: 未定が残れば 1 で止める（screen-spec が無くても）", 1, "requirements/screens/order-list.md:3: 未決定の印 未定",
+         extra={SCREEN_NOTE: "# 受注一覧\n\n並び方は未定\n"}, post=nothing_written),
+    Case("画面の表: --upto で前の版を確かめるときは当てない", 0, "", args=("--dry-run", "--upto", "1"),
+         extra={SCREEN_NOTE: "# 受注一覧\n", **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])},
+         absent=SCREEN_GATE),
     Case("成果物の表: 非機能要求の種類の行が未決定で止める", 1, "build/merged/shared/nfr.csv:5: 上限 に未決定の印（未定）",
          extra=with_nfr(NFR_CSV + "N-004,注文の受付,可用性,未定,%,月の稼働で,契約\n")),
     Case("成果物の表: 読めない非機能要求の表では止めない", 0, "作った", extra=with_nfr("")),
@@ -3730,6 +3741,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "Red の状態: v2 で実装が無い"),
     ("--red-check が鮮度を見ない", "    if args.red_check:\n        problems = stale(repo / OUT_DIR, contract)\n        if problems:",
      "    if args.red_check:\n        problems = stale(repo / OUT_DIR, contract)\n        if False:", "Red の状態: scaffold が古い"),
+    ("画面の関門を当てない（#1097）", "    code, lines = screens.check(docs, upto) if design_gate else (0, [])", "    code, lines = (0, [])",
+     "画面の表: screen-spec が見つからなければ 2 で止める（#1097）"),
+    ("画面の関門の 4 を 1 にする", "        return (1 if code == screens.EXIT_FAIL else 2), [", "        return 1, [",
+     "画面の表: screen-spec が見つからなければ 2 で止める（#1097）"),
+    ("前の版の時点にも画面の関門を当てる", "    code, lines = screens.check(docs, upto) if design_gate else (0, [])",
+     "    code, lines = screens.check(docs, upto)", "画面の表: --upto で前の版を確かめるときは当てない"),
     ("重ね合わせの誤りを見ない", '    if problems:\n        return 1, problems + ["版の重ね合わせ',
      '    if False:\n        return 1, problems + ["版の重ね合わせ', "重ね合わせが決まりに反する"),
     ("一時ディレクトリの名前で言う", "return [line.replace(str(whole), MERGED_DIR) for line in lines]", "return lines",
