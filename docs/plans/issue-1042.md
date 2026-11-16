@@ -22,6 +22,7 @@
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版（0.92.0 → 0.93.0）と description
 - `.claude-plugin/marketplace.json` — 同上
 - `scripts/test-qa-to-pptx.py` — `--focus` の観測と変異
+- `scripts/test-check-qa-csv.py` — `qa-to-pptx.py` が `is_provisional` を呼ぶ数（4 → 5。「今回の会で決めたい問」の 1 枚も暫定を見分けるため）。check-all で落ちて広げた
 - `docs/plugins/index.md` — 公開ページの req-loop の節に 1 項（指し先だけ）
 - `docs/plans/issue-1042.md` — この計画
 
@@ -97,3 +98,5 @@ spec-loop を minor で上げる（0.92.0 → 0.93.0。能力の追加）——`
 ## 既知の限界・決着済みの論点
 
 （まだ無い）
+
+- この周の起票: 0 件
