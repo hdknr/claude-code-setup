@@ -71,7 +71,7 @@ main へのマージで、プラグインの配布（カタログ。spec-loop �
 
 ## 版の上げ方
 
-spec-loop を **minor** で上げる（能力の追加。0.x なので壊れる変更も minor。`0.93.0` → `0.94.0`）。`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md` の 2 行。
+spec-loop を **minor** で上げる（能力の追加。0.x なので壊れる変更も minor。main の先端の版から 1 つ上げる——取り込みの後は `0.94.0` → `0.95.0`）。`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md` の 2 行。
 並行する #1093・#1095 は screen-spec を触る周で、spec-loop の版とは衝突しない見込み。マージの直前に main が進んでいたら、main の先端の spec-loop の版から minor で 1 つ上げた値に上げ直し、
 `check-plugin-versions.py`・`skill-metrics.py --check` だけ回して push し、PR 側の CI を見る（cruise の `references/parallel.md` の「版とマージの順」・CLAUDE.md の「並行する周は、同じ版に上げて衝突する」の 5）。
 
@@ -125,6 +125,7 @@ spec-loop を **minor** で上げる（能力の追加。0.x なので壊れる�
 - Verifier 1 パス目: 通した——反証 1 件（R1。dev-loop:dev-loop-verifier・sonnet。verifier.md 185 行を報告、wc -l と一致。テストは run-serial の枠が埋まって走らせられず、変異は未確認と報告）
 - `/code-review` 1 パス目: 通した——指摘 10 件（CR1-1〜CR1-10。high。委譲文は貼ったが、届いたのはレビューの途中だった——報告は受入基準の番号で書かれている）
 - 手順 4 への差し戻し: あり（採否の表の「直す」: R1・CR1-1・CR1-4）
+- 1 パス目の指摘対応: `103ccde`。そのあと main（#1112 が spec-loop を 0.94.0 に、#1113 が screen-spec を 0.2.0 に）を取り込み `e780db4`、spec-loop を 0.95.0 に上げ直した。周の base は `git merge-base origin/main HEAD` で当て直す
 - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方
 - 手順 4 の途中の事故: 委譲文を組む Bash のヒアドキュメントを引用符なし（`<<EOF`）で書き、本文のバッククォートがコマンド置換として走った——`claude plugin eval` がメインの作業ツリーで走って約 $1.4 を課金し `evals/results/` を作った（止めて、作った `evals/` を消した。scaffold は走らず `git config` は変わっていない）。`claude -p` は入力が無く失敗、`gh` は使い方を出しただけ。以後は `<<'EOF'` で書く
 
