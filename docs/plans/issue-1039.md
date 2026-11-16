@@ -56,7 +56,8 @@ main へのマージで、プラグインの配布と GitHub Pages の再ビル�
 - Verifier 1 パス目（sonnet・`dev-loop:dev-loop-verifier`）: 反証 0 件・所見 2 件（V-A1・V-A2）
 - `/code-review` 1 パス目（high）: 指摘 8 件（CR1〜CR8）。直す 4 件（CR1・CR2・CR6・CR7）・残課題 4 件
 - 手順 4 への差し戻し: なし（反証 0 件）
-- 2 パス目: 未（指摘対応の差分があるので回す。残っているのは Verifier の当て直しと `/code-review` 2 パス目の両方）
+- 2 パス目: 未（指摘対応の差分があるので回す。残っているのは Verifier の当て直しと `/code-review` 2 パス目の両方）。指摘対応の終点 `5cb404ff5e8a428cda9ae3fe20203db1f4b6a01e`（1 パス目の指摘対応のコミット。2 パス目の関門に渡す base は周の base のまま）
+- 割り目（2 パス目の前）: 2026-11-16 に AskUserQuestion で訊き、利用者は「ここで割る」を選んだ。PR #1077（draft）
 - 実験: あり（交絡の潰し方は上の「実験の交絡」）
 
 ## 既知の限界・決着済みの論点
