@@ -85,7 +85,7 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 | B7 | 実案件の既存の指摘の表で確かめる（Issue の受入基準 2 の括弧） | **BLOCKED の見込み**——実案件の `v<n>-findings.csv` が手元に見つからない（`find /Users/hdknr -maxdepth 7 -name '*findings*.csv'`（`Library`・`node_modules` を除く）が 0 件。深さ 7 より下と、GitHub の上の案件のリポジトリは探していない）。次善: 検査を通る現行の形の試料（テスト） |
 | B8 | 棚卸しの結果（移す／残すと理由）が docs に残っている | `docs/plugins/dev-loop-design.md` §8.4。読む＋`mkdocs build --strict`（CI） |
 | B9 | リポジトリの外で単体で動く——標準ライブラリだけ、同じディレクトリの `check-findings-csv.py` を読み込む | テスト（`scripts/` を一時ディレクトリに写し `python3 -I`） |
-| B10 | 版が 3 箇所で揃って上がり（dev-loop 2.3.0 → 2.4.0・spec-loop 0.94.0 → 0.95.0）、§8.2 の生成ブロックが新しく、テストが `check-all.py` と CI に収録され、`CLAUDE.md` に載る | `check-plugin-versions.py`・`skill-metrics.py --check`・`test-check-all.py`・`check-all.py` |
+| B10 | 版が 3 箇所で揃って上がり（dev-loop 2.3.0 → 2.4.0・spec-loop 0.95.0 → 0.96.0（main の取り込みで上げ直した））、§8.2 の生成ブロックが新しく、テストが `check-all.py` と CI に収録され、`CLAUDE.md` に載る | `check-plugin-versions.py`・`skill-metrics.py --check`・`test-check-all.py`・`check-all.py` |
 
 必須要件の掛け算: 受入基準を 2 つの関門 × 2 パスに渡す（4 つの受け渡し。2 パス目が「該当なし」なら初回の 2 つ）。
 
@@ -112,8 +112,28 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 狭いパス: Verifier（sonnet）`git diff fb46add d36c9be` **反証 4 件**（後退 1 件・下の「狭いパスの指摘」）。
 - 推奨の直し（`マージ前の判断 = 推奨で決めて起票` の線。main の absent-lines.md の「後退の分け方」）: 後退 N1 を直した。当て直しの起点 `d36c9be8d885c380b2377b8a88ae5ffa57beaf35`。
 
+- 当て直し（推奨の直し N1）: Verifier（sonnet）`git diff d36c9be df7b6fd` **反証 0 件**・新しい後退なし（d36c9be と df7b6fd の `marks` を合成の文字列約 56 万件で比べ、違いは全部「印の頭の空白」の型）。
+- main（ecd2ab0）を取り込み（bb4271c）、spec-loop を 0.96.0 に上げ直した（main が #1119 で 0.95.0 に上げていた）。
+
 ```dev-loop-gates
 周の base: a1138bb94f74623273e2a7dcc40e8e55bc9d61c2
+関門: Verifier 1 2089f70ef312b7b7870058447a51a0bd015a79a9 反証=2
+関門: /code-review 1 2089f70ef312b7b7870058447a51a0bd015a79a9 指摘=10
+関門: Verifier 2 fb46addaca1d8fcce9727103b5211982869d1230 反証=2
+関門: /code-review 2 fb46addaca1d8fcce9727103b5211982869d1230 指摘=10
+関門: 狭いパス fb46addaca1d8fcce9727103b5211982869d1230 d36c9be8d885c380b2377b8a88ae5ffa57beaf35 反証=4
+関門: 当て直し d36c9be8d885c380b2377b8a88ae5ffa57beaf35 df7b6fd60605d8c174dca51492002ba0468ce51e 反証=0
+受入基準: B1 満たす
+受入基準: B2 満たす
+受入基準: B3 満たす
+受入基準: B4 満たす
+受入基準: B5 満たす
+受入基準: B6 満たす
+受入基準: B7 BLOCKED 判断=マージ前の判断
+受入基準: B8 満たす
+受入基準: B9 満たす
+受入基準: B10 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
 
 ## 既知の限界・決着済みの論点
