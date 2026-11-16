@@ -127,7 +127,12 @@ MkDocs 1.6 のほかの版（1.5・2.x）での `File` の作り方——手元�
 
 - 周の在り処: ブランチ `issue/1098-mkdocs-hook-port`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1098`・起点 `50ce545`・base `origin/main` → `50ce54527eb6386c5068202791900cb7bbc9e8d9`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 交絡を潰した手順: （実機確認の後に書く）
+- 実装のコミット: `8b0e9ff`
+- 1 パス目の指摘対応の起点: `8b0e9ff`（1 パス目の関門に渡した時点の HEAD）
+- 交絡を潰した手順:
+  - 受入基準 4（出力が今と同じ）: main（`50ce545`）の `init-mkdocs.py` とこの周の `init-mkdocs.py` を、空の根・設定が在る根・在るファイルを残す根の `--dry-run` で回し、出す行（根のパスを伏せて）が 3 つとも一致、写したファイルの一覧も一致、違うのはフックのファイルだけ（口の分）。既存の `test-init-mkdocs.py` の試料 71 件（フックが描くページ）も変えずに通った。
+  - 本物の MkDocs（このリポジトリの `.venv` の 1.6）で一時の正本を `mkdocs build --strict`: 登録して `SCREEN_SPEC_PLUGIN` を渡すと 0（サイトに `mock/v1/index.html`・`mock/v2/index.html`、`mocks.html` の v1・v2 の節にリンク、仕様書のページの節に表・`⚠️`・`D-` なし、モックの中の仕様書へのリンクは `../../v1/requirements/screens/S-001.html`）。
+    陽性対照（同じ正本で前提を外す）: `SCREEN_SPEC_PLUGIN` を外し空の `CLAUDE_CONFIG_DIR` にすると 1（警告 5 件——見つからない・v1・v2 のモック・雛形のリンク）、登録を外すと `site/mock` が無く、仕様書の印は HTML のコメントのまま残る（9 個）。
 
 ## 既知の限界・決着済みの論点
 
