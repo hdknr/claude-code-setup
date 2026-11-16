@@ -26,6 +26,7 @@ from pathlib import Path
 REAL_REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "merge-pr.py"
 LEDGER = SCRIPT.parent / "ledger.py"  # merge-pr.py が台帳を読むのに読み込む（#631）。変異の隣にも写す
+GATES = SCRIPT.parent / "check-gates.py"  # merge-pr.py がマージの前に呼ぶ照合（#1043）。変異の隣にも写す
 
 failures: list[str] = []
 
@@ -119,8 +120,29 @@ BRANCH = "issue/42-sample"
 ISSUE_URL = "https://example.invalid/o/r/issues/42"
 
 
-def make_repo(root: Path, lock: bool = True) -> tuple[Path, Path, str]:
-    """メインの作業ツリーと、PR のブランチを持つ worktree。(main, wt, head の SHA)。"""
+PLAN_REL = "docs/plans/issue-42.md"
+
+
+def plan_text(base: str, feat: str, kind: str) -> str:
+    """関門の記録（check-gates.py の形）を持つ計画。kind: full（通る）・one（1 パス目の後に直したのに 2 パス目が無い）・absent（線の判断）。"""
+    lines = [f"周の base: {base}", f"関門: Verifier 1 {feat} 反証=0", f"関門: /code-review 1 {feat} 指摘=0",
+             "関門: 狭いパス 該当なし", "受入基準: A1 満たす"]
+    if kind == "absent":
+        lines[-1] = "受入基準: A1 BLOCKED 判断=マージ前の判断"
+        lines.append("マージの反映: なし")
+    if kind != "one":
+        lines.append(f"関門: 2 パス目 該当なし {feat}")
+    return ("# Issue #42\n\n## 受入基準\n\n| # | 不変条件 |\n| --- | --- |\n| A1 | x |\n\n"
+            "```dev-loop-gates\n" + "\n".join(lines) + "\n```\n")
+
+
+def make_repo(root: Path, lock: bool = True, plan: str | None = "full", origin: bool = True) -> tuple[Path, Path, str]:
+    """メインの作業ツリーと、PR のブランチを持つ worktree。(main, wt, head の SHA)。
+
+    worktree には関門の記録を持つ計画をコミットする（#1043。`plan=None` なら置かない）。
+    `one` は 1 パス目の後に直したコミットを足す——2 パス目の記録が無いので照合を通らない。
+    `origin=False` なら既定ブランチの追跡参照を置かない——照合は判定できない（7）。
+    """
     main = root / "main"
     main.mkdir(parents=True)
     assert_not_real_repo(main)
@@ -130,11 +152,22 @@ def make_repo(root: Path, lock: bool = True) -> tuple[Path, Path, str]:
     (main / "README.md").write_text("x\n", encoding="utf-8")
     git(main, "add", "-A")
     git(main, "commit", "-qm", "init")
+    if origin:  # 照合が既定ブランチを読む（check-gates.py。周の base が既定ブランチに入っているか）
+        git(main, "update-ref", "refs/remotes/origin/main", "main")
     wt = main / ".claude" / "worktrees" / "issue-42"
     git(main, "worktree", "add", "-q", str(wt), "-b", BRANCH)
     (wt / "a.txt").write_text("a\n", encoding="utf-8")
     git(wt, "add", "-A")
     git(wt, "commit", "-qm", "feat")
+    if plan:
+        base_sha, feat = git(main, "rev-parse", "main").strip(), git(wt, "rev-parse", "HEAD").strip()
+        if plan == "one":
+            (wt / "a.txt").write_text("fixed\n", encoding="utf-8")
+            git(wt, "commit", "-qam", "fix after pass 1")
+        (wt / PLAN_REL).parent.mkdir(parents=True)
+        (wt / PLAN_REL).write_text(plan_text(base_sha, feat, plan), encoding="utf-8")
+        git(wt, "add", "-A")
+        git(wt, "commit", "-qm", "plan")
     if lock:
         git(main, "worktree", "lock", "--reason", "claude agent agent-abc (pid 1)", str(wt))
     return main, wt, git(wt, "rev-parse", "HEAD").strip()
@@ -151,9 +184,14 @@ def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False, 
 
 def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after=None, issues=None,
              merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5",
-             merge_drop=False, default=None, number="42", late_ledger=None, **gh) -> dict:
+             merge_drop=False, default=None, number="42", late_ledger=None, plan="full", main_plan=False,
+             args=(), origin=True, **gh) -> dict:
     root = base / name
-    main, wt, sha = make_repo(root, lock=lock)
+    main, wt, sha = make_repo(root, lock=lock, plan=plan, origin=origin)
+    if main_plan:  # 計画をメインの作業ツリーにも写して --plan で渡す（worktree を撤去する試料のため）
+        (main / PLAN_REL).parent.mkdir(parents=True)
+        (main / PLAN_REL).write_text((wt / PLAN_REL).read_text(encoding="utf-8"), encoding="utf-8")
+        args = (*args, "--plan", str(main / PLAN_REL))
     if prepare:
         prepare(main, wt)
     # 試料の "HEAD" は、この試料の head の SHA に置き換える（commits の oid と timeline の commit_id）
@@ -179,7 +217,7 @@ def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after
     env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
                FAKE_GH_SCENARIO=str(scn_path), FAKE_GH_LOG=str(log))
     res = subprocess.run([sys.executable, str(script), number, "--interval", "0.05",
-                          "--timeout", timeout, "--settle", "0.5"],
+                          "--timeout", timeout, "--settle", "0.5", *args],
                          cwd=str(wt if cwd_in_wt else main), env=env, capture_output=True, text=True)
     if prepare and hasattr(prepare, "after"):
         prepare.after(main)
@@ -440,10 +478,24 @@ CASES = {
     "台帳の場所が読めなければマージしない（判定できなかった）": (
         dict(make_view=lambda s: [pr(s)], prepare=locked(ledger((8, "todo", "", "")))), 7, False, True, "台帳"),
     "`.claude` が読めなければマージしない（判定できなかった）": (
-        dict(make_view=lambda s: [pr(s)], prepare=locked_claude(ledger((7, "blocked", "42", JUDGE))), lock=False),
+        dict(make_view=lambda s: [pr(s)], prepare=locked_claude(ledger((7, "blocked", "42", JUDGE))), lock=False,
+             main_plan=True),
         7, False, False, "台帳"),
     "台帳が読めなければマージしない（判定できなかった）": (
         dict(make_view=lambda s: [pr(s)], prepare=ledger(raw="{")), 7, False, True, "台帳"),
+    # #1043: 関門の照合を通らなければマージしない
+    "関門を 1 パスしか通していない計画の PR はマージしない（#1043）": (
+        dict(make_view=lambda s: [pr(s)], plan="one"), 13, False, True, "関門が見ていないコミット"),
+    "計画ファイルが見つからなければマージしない": (
+        dict(make_view=lambda s: [pr(s)], plan=None), 13, False, True, "計画ファイルが見つからない"),
+    "線の判断（BLOCKED）は --absent を渡せば通す": (
+        dict(make_view=lambda s: [pr(s)], plan="absent", args=("--absent",)), 0, True, False),
+    "--plan に渡したファイルが無ければマージしない（13）": (
+        dict(make_view=lambda s: [pr(s)], args=("--plan", "/nonexistent/issue-42.md")), 13, False, True, "計画ファイルが見つからない"),
+    "照合が判定できなければマージしない（7）": (
+        dict(make_view=lambda s: [pr(s)], origin=False), 7, False, True, "関門の照合が判定できなかった"),
+    "線の判断（BLOCKED）は --absent が無ければ通さない": (
+        dict(make_view=lambda s: [pr(s)], plan="absent"), 13, False, True, "--absent"),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
     "draft なら何もしない": (dict(make_view=lambda s: [pr(s, draft=True)]), 2, False, True),
     "gh が失敗したら判定できなかった": (dict(make_view=lambda s: [pr(s)], fail_all=True), 7, False, True),
@@ -505,15 +557,23 @@ MUTATIONS = {
     "撤去をマージの前に置く": (
         '        res = run(["gh", "pr", "merge"',
         '        remove_worktree(wt) if wt and not wt["main"] else None\n        res = run(["gh", "pr", "merge"'),
-    # 守る 18: 台帳で利用者の判断を待っている行の PR をマージしない（#631）
+    # 守る 18: 関門の照合が 0 でなければマージしない（#1043）
+    "照合を通さない": ("grc, gout = gates(plan, head_sha, a.absent)", 'grc, gout = 0, ""'),
+    # 守る 19: 計画ファイルが見つからなければマージしない
+    "計画が無ければ照合を飛ばす": (
+        '"--plan で渡す。マージしない。", file=sys.stderr)\n            return 13\n        grc, gout = gates(plan, head_sha, a.absent)',
+        '"--plan で渡す。マージしない。", file=sys.stderr)\n        grc, gout = gates(plan, head_sha, a.absent) if plan else (0, "")'),
+    # 守る 20: 照合が判定できなければマージしない（7）
+    "照合の判定できないを通す": ("if grc != 0:\n            raise Undetermined", "if False:\n            raise Undetermined"),
+    # 守る 21: 台帳で利用者の判断を待っている行の PR をマージしない（#631）
     "台帳の判断待ちを見ない": ('if holds:', 'if False:'),
-    # 守る 19: この PR を持たない行の判断待ちでは止めない
+    # 守る 22: この PR を持たない行の判断待ちでは止めない
     "この PR を持たない行も見る": ('if not (pr_.isascii() and pr_.isdigit() and int(pr_) == int(number)):', 'if False:'),
-    # 守る 20: 閉じるはずの Issue を確かめる
+    # 守る 23: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
-    # 守る 21: 判定できなかったことを時間切れと答えない
+    # 守る 24: 判定できなかったことを時間切れと答えない
     "判定できなかったを時間切れと答える": ('        return 7\n', '        return 5\n'),
-    # 守る 22: 7 でも済んでいないことを出す
+    # 守る 25: 7 でも済んでいないことを出す
     "7 で済んでいないことを出さない": ('        for pr_ in problems:\n            print(f"  済んでいないこと',
                                  '        for pr_ in []:\n            print(f"  済んでいないこと'),
 }
@@ -541,6 +601,11 @@ KILLS = {
     "unlock しない": ["UNKNOWN の後に MERGEABLE（ロック済み worktree）"],
     "撤去をマージの前に置く": ["マージが失敗したら worktree を残す",
                        "merge が 0 でも MERGED にならなければ 8・worktree を残す"],
+    "照合を通さない": ["関門を 1 パスしか通していない計画の PR はマージしない（#1043）",
+                    "線の判断（BLOCKED）は --absent が無ければ通さない"],
+    "計画が無ければ照合を飛ばす": ["計画ファイルが見つからなければマージしない",
+                           "--plan に渡したファイルが無ければマージしない（13）"],
+    "照合の判定できないを通す": ["照合が判定できなければマージしない（7）"],
     "台帳の判断待ちを見ない": ["台帳の行が判断待ちの PR はマージしない（#631）",
                          "台帳の行が blocked の PR はマージしない（番号は #42 の形）",
                          "別の行に利用者の判断があっても、判断待ちの行の PR はマージしない（#2427 の形）",
@@ -598,6 +663,9 @@ def main() -> int:
                 mutant.parent.mkdir(parents=True)
                 mutant.write_text(source.replace(old, new, 1), encoding="utf-8")
                 (mutant.parent / "ledger.py").write_text(LEDGER.read_text(encoding="utf-8"), encoding="utf-8")
+                (mutant.parent / "check-gates.py").write_text(GATES.read_text(encoding="utf-8"), encoding="utf-8")
+                (mutant.parent / "check-unattended-env.py").write_text(  # check-gates.py が宣言を読むのに読み込む
+                    (SCRIPT.parent / "check-unattended-env.py").read_text(encoding="utf-8"), encoding="utf-8")
                 targets = KILLS[mname]
                 if not targets:
                     r = run_case(base / f"mutant{i}", "case", mutant, make_view=lambda s: [pr(s)])
