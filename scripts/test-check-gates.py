@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`check-gates.py` の回帰テスト（#1043）。
+"""`check-gates.py` の回帰テスト（#1043。影響範囲は #1047）。
 
     python3 scripts/test-check-gates.py
 
@@ -91,11 +91,21 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
         ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.1"\n}\n',
         "SKILL.md": "# s\n\n<!-- skill-version: 1.0.1 -->\n> **このスキルの版: 1.0.1**（プラグイン `p`）。\n\n本文\n",
     })
+    # 脇: SD（main に入らない枝の変更。main の SQ の本文がそれを「戻した」と引く——squash に残った PR の途中の revert）
+    git(repo, "switch", "-qc", "side", s["B"])
+    s["SD"] = commit(repo, "side work", {"sd.txt": "s\n"})
     git(repo, "switch", "-q", "main")
+    # main: R0（rolled.txt を足す）→ RV（R0 を git revert で戻す）→ SQ（本文に SD を戻したと書いた squash）→ M
+    s["R0"] = commit(repo, "risky change", {"rolled.txt": "r\n"})
+    git(repo, "revert", "--no-edit", s["R0"])
+    s["RV"] = git(repo, "rev-parse", "HEAD")
+    s["SQ"] = commit(repo, f"squashed pr\n\n* Revert side\n\nThis reverts commit {s['SD']}.", {"q.txt": "q\n"})
     s["M"] = commit(repo, "main moves", {
         "m.txt": "m\n",
-        ".claude/dev-loop.md": ("# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n```text\nマージの反映: ドキュメントのみ\n```\n\n"
-                                "<!--\nマージの反映: ドキュメントのみ\n-->\n"),
+        ".claude/dev-loop.md": ("# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n```text\nマージの反映: ドキュメントのみ\n"
+                                "不在で止める範囲: a.txt\n```\n\n"
+                                "<!--\nマージの反映: ドキュメントのみ\n不在で止める範囲: a.txt\n-->\n\n"
+                                "不在で止める範囲: risky/\n不在で止める範囲: m.txt\n"),
     })
     git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
     git(repo, "switch", "-q", "issue/1-x")
@@ -113,6 +123,12 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
         "SKILL.md": "# s\n\n<!-- skill-version: 1.0.1 -->\n> **このスキルの版: 1.0.1**（プラグイン `p`）。 ついでに規範を書き換えた\n\n本文\n"})
     git(repo, "reset", "-q", "--hard", s["MM"])
     s["Z2"] = commit(repo, "version of another file", {"other.json": '{\n  "version": "9.9.9"\n}\n'})
+    # 影響範囲（#1047）: 宣言した範囲・戻した範囲・main の線に無い revert の範囲・ブランチにだけ足した宣言
+    for key, files in (("R1", {"risky/deep/x.txt": "x\n"}), ("R2", {"rolled.txt": "again\n"}),
+                       ("R3", {"sd.txt": "s2\n"}),
+                       ("Y2", {".claude/dev-loop.md": "# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n不在で止める範囲: a.txt\n"})):
+        git(repo, "reset", "-q", "--hard", s["MM"])
+        s[key] = commit(repo, f"touch {key}", files)
     git(repo, "switch", "-qc", "other", s["B"])
     s["O"] = commit(repo, "other work", {"o.txt": "o\n"})
     git(repo, "switch", "-qc", "other2", s["C3"])
@@ -130,6 +146,7 @@ TABLE = ("## 受入基準（不変条件 × 経路）\n\n| # | 不変条件 | �
 CRIT = ["受入基準: A1 満たす", "受入基準: A2 未証明"]
 FULL = ["周の base: {B}", "関門: Verifier 1 {C1} 反証=2", "関門: /code-review 1 {C1} 指摘=5",
         "関門: Verifier 2 {C2} 反証=1", "関門: /code-review 2 {C2} 指摘=3", "関門: 狭いパス {C2} {C3} 反証=0"]
+REFL = "マージの反映: ドキュメントとプラグインの配布"
 ONE_PASS = ["周の base: {B}", "関門: Verifier 1 {C1} 反証=0", "関門: /code-review 1 {C1} 指摘=0",
             "関門: 狭いパス 該当なし"]
 
@@ -222,6 +239,17 @@ CASES = {
         (FULL, "MM", 0, [], {"crit": ["受入基準: A1 BLOCKED 判断=利用者の指示（2026-11-16 Slack で）", "受入基準: A2 満たす"]}),
     "受入基準の節の下位の見出しの下の表も読む":
         (FULL, "MM", 0, [], {"table": "## 受入基準\n\n### 表\n\n| # | x |\n| --- | --- |\n| A1 | x |\n| A2 | y |\n"}),
+    # 影響範囲（#1047）
+    "不在の周で、宣言した範囲（risky/ の配下）に当たる差分は非 0":
+        (FULL + ["関門: 当て直し {MM} {R1} 反証=0", REFL], "R1", 3, ["--absent"], {}, "不在で止める範囲: risky/"),
+    "居る周では、宣言した範囲に当たっても止めない":
+        (FULL + ["関門: 当て直し {MM} {R1} 反証=0", REFL], "R1", 0, [], {}),
+    "不在の周で、既定ブランチで戻したコミットが触ったファイルを変えた差分は非 0":
+        (FULL + ["関門: 当て直し {MM} {R2} 反証=0", REFL], "R2", 3, ["--absent"], {}, "risky change"),
+    "既定ブランチの線に無いコミットを戻した行（squash に残った revert）は数えない":
+        (FULL + ["関門: 当て直し {MM} {R3} 反証=0", REFL], "R3", 0, ["--absent"], {}),
+    "ブランチにだけ足した範囲の宣言は効かない（既定ブランチから読む）":
+        (FULL + ["関門: 当て直し {MM} {Y2} 反証=0", REFL], "Y2", 0, ["--absent"], {}),
     "記録が無ければ 2": (FULL, "MM", 2, [], {"block": False}, "記録"),
     "記録が 2 つあれば 2": (FULL, "MM", 2, [], {"extra": "\n```dev-loop-gates\n周の base: {B}\n```\n"}, "2 つ"),
     "読めない行があれば 2": (FULL + ["関門: Verifier 1 {C1}"], "MM", 2, [], {}, "読めない行"),
@@ -273,7 +301,7 @@ MUTATIONS = {
     # 守る（追加）: 受入基準の番号の重複
     "番号の重複を見ない": ("    if dup:\n", "    if False:\n"),
     # 守る（追加）: コードブロック・コメントの中の行・読めない値・2 本以上を宣言と読まない
-    "宣言を素の行で読む": ('for line in _visible_lines()(text.lstrip("\\ufeff")):', "for line in text.splitlines():"),
+    "宣言を素の行で読む": ('return _visible_lines()(text.lstrip("\\ufeff"))', "return text.splitlines()"),
     # 守る 8: 周の base が既定ブランチに入っていない
     "base を既定ブランチと照らさない": ("if not ctx.is_ancestor(base, default):", "if False:"),
     # 守る 9: 関門が見ていないコミット
@@ -295,11 +323,24 @@ MUTATIONS = {
     # 守る 17: マージの反映が違う
     "マージの反映を既定ブランチと比べない": ("if value != rec.reflection:", "if False:"),
     # 守る 18: 宣言は既定ブランチから読む
-    "宣言を head から読む": ('ctx.git("show", f"{ref}:.claude/dev-loop.md", ok=(0, 128))',
+    "宣言を head から読む": ('ctx.git("show", f"{ctx.default_ref()}:.claude/dev-loop.md", ok=(0, 128))',
                          'ctx.git("show", f"{ctx.head}:.claude/dev-loop.md", ok=(0, 128))'),
     # 守る 19: 不在の周で記録が無い
     "不在の周でもマージの反映の記録を求めない": (
         'return ["不在の周で、マージの反映の記録が無い"] if ctx.absent else []', "return []"),
+    # 守る（#1047）: 宣言した範囲に当たる差分を不在の周で通さない
+    "宣言した範囲を見ない": ("        if hit:\n", "        if False:\n"),
+    # 守る（#1047）: / で終わるパターンは配下すべて
+    "/ で終わるパターンを配下に当てない": ('return fnmatch.fnmatchcase(path, pattern + "*")',
+                                     "return fnmatch.fnmatchcase(path, pattern)"),
+    # 守る（#1047）: 戻した範囲に当たる差分を不在の周で通さない
+    "戻した範囲を見ない": ("        if f in rolled:\n", "        if False:\n"),
+    # 守る（#1047）: main の線に無いコミットを戻した行を数えない
+    "線に無いコミットを戻した行も数える": ("if not full or full not in line:", "if not full:"),
+    # 守る（#1047）: 差分は既定ブランチとの分岐点から
+    "差分を周の base から取る": ('fork = ctx.git("merge-base", default, ctx.head).stdout.strip()', "fork = rec.base"),
+    # 守る（#1047）: 居る周では影響範囲で止めない
+    "居る周でも影響範囲で止める": ("    if not ctx.absent:\n        return []\n    default", "    default"),
     # 守る 20: 判定できないことを通過と答えない
     "判定できないを通過と答える": (
         'print(f"**判定できなかった**: {e}", file=sys.stderr)\n        return 7',
@@ -326,10 +367,17 @@ KILLS = {
     "居る周でも線を通す": ["BLOCKED を線（マージ前の判断）で通すのは不在の周だけ"],
     "マージの反映を既定ブランチと比べない": ["マージの反映の記録が既定ブランチの宣言と違えば非 0",
                                "「なし」と記録しても、既定ブランチに宣言があれば非 0"],
-    "宣言を head から読む": ["ブランチにだけ足した宣言は効かない（既定ブランチから読む）"],
+    "宣言を head から読む": ["ブランチにだけ足した宣言は効かない（既定ブランチから読む）",
+                         "ブランチにだけ足した範囲の宣言は効かない（既定ブランチから読む）"],
+    "宣言した範囲を見ない": ["不在の周で、宣言した範囲（risky/ の配下）に当たる差分は非 0"],
+    "/ で終わるパターンを配下に当てない": ["不在の周で、宣言した範囲（risky/ の配下）に当たる差分は非 0"],
+    "戻した範囲を見ない": ["不在の周で、既定ブランチで戻したコミットが触ったファイルを変えた差分は非 0"],
+    "線に無いコミットを戻した行も数える": ["既定ブランチの線に無いコミットを戻した行（squash に残った revert）は数えない"],
+    "差分を周の base から取る": ["不在の周では BLOCKED を線（マージ前の判断）で通す"],
+    "居る周でも影響範囲で止める": ["居る周では、宣言した範囲に当たっても止めない"],
     "該当なしと狭いパスを一緒に通す": ["2 パス目が該当なしなら、狭いパスで 1 パス目の後の直しを覆えない"],
     "番号の重複を見ない": ["受入基準の番号が重複していれば 2"],
-    "宣言を素の行で読む": ["不在の周では BLOCKED を線（マージ前の判断）で通す"],
+    "宣言を素の行で読む": ["不在の周では BLOCKED を線（マージ前の判断）で通す"],  # コードブロック・コメントの中の a.txt
     "base を既定ブランチと照らさない": ["周の base が既定ブランチに入っていなければ非 0（base を周の線の上にずらす）"],
     "不在の周でもマージの反映の記録を求めない": ["不在の周でマージの反映の記録が無ければ非 0"],
     "判定できないを通過と答える": ["head が解決しなければ 7"],

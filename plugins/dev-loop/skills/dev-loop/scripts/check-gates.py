@@ -50,6 +50,12 @@
    （`check-unattended-env.py` の `visible_lines`）、読める値（`ドキュメントのみ`・`ドキュメントとプラグインの配布`）がちょうど 1 本のときだけ宣言がある（`references/absent-lines.md` の「行が無い・値が違う・2 本以上ある」）。
    `なし` は宣言が無いこと。
    **宣言は既定ブランチから読む**——PR の中で足した・書き換えた宣言を効かせない（`references/absent-lines.md`）。
+5. **影響範囲（`--absent` だけ。#1047）**——周の差分（既定ブランチとの分岐点から head まで。`git diff --name-only --no-renames`。計画ファイルは数えない）が触るファイルのうち、
+   次のどちらかに当たるものがあれば通さない（不在の周ではマージせず、PR で止めて利用者に回す——`references/absent-lines.md` の「影響範囲で止める」）:
+   - **既定ブランチの `.claude/dev-loop.md` の `不在で止める範囲: <パターン>` の行**——1 行に 1 つ、何本でも書ける。パターンは glob（`fnmatch`。`*` はディレクトリ区切りも跨ぐ）で、
+     `/` で終われば配下すべて。読むのはコードブロックと HTML コメントの外の行だけ（4 と同じ読み方）。
+   - **既定ブランチで戻した（revert した）コミットが触ったファイル**——既定ブランチから辿れるコミットの本文の `This reverts commit <SHA>`（`git revert` が書く行）のうち、
+     その SHA が既定ブランチの線（`--first-parent`）にあるもの。戻されたコミットがその最初の親から変えたファイルを、戻した履歴のある範囲とする。
 
 | 判定 | 通る判断の出所 |
 | --- | --- |
@@ -78,9 +84,15 @@
 - **`満たさない` を線（`マージ前の判断`・`実機確認`）で通さない。**
 - **`--absent` でなければ、線の判断を通さない**——線は不在の周にだけ効く。
 - **`マージの反映:` の記録が既定ブランチの宣言と違えば通さない**——`なし` と書いても、既定ブランチに宣言があれば違う。
-- **宣言は既定ブランチから読み、head からは読まない。**
-- **コードブロックと HTML コメントの中の行・読めない値・2 本以上の宣言を、宣言と読まない。**
+- **宣言（`マージの反映:`・`不在で止める範囲:`）は既定ブランチから読み、head からは読まない。**
+- **コードブロックと HTML コメントの中の行・読めない値・2 本以上の宣言を、宣言と読まない**（`不在で止める範囲:` は何本でも読む）。
 - **`--absent` では、`マージの反映:` の記録が無ければ通さない。**
+- **`--absent` では、既定ブランチの宣言 `不在で止める範囲:` に当たるファイルを変えた差分を通さない**（#1047）。
+- **`/` で終わるパターンは、その配下のファイルすべてに当てる。**
+- **`--absent` では、既定ブランチで戻した（revert した）コミットが触ったファイルを変えた差分を通さない**（#1047）。
+- **既定ブランチの線（`--first-parent`）に無いコミットを戻した行は、戻した履歴に数えない**——squash した PR の本文に残った、PR の途中の revert。
+- **影響範囲を見る差分は既定ブランチとの分岐点から取る**——周に取り込んだ既定ブランチの変更（周の base より後）を、周の差分に数えない。
+- **`--absent` でなければ、影響範囲で止めない**——居る周のマージは人が決める。
 - **判定できないことを、通過と答えない**（7）。
 
 ## 終了コード
@@ -111,6 +123,13 @@
 - **計画は作業ツリーのファイルを読む**——`--head` のコミットの中の計画とは比べない（`merge-pr.py` は未コミットと push していない worktree を先に止める）。
 - **受入基準の表の形は 1 つだけ読む**——第 1 列の見出しが `#`・`番号`・`ID` の表。箇条書きの受入基準は数えない（表が無ければ 2）。
 - **計画ファイルの外の受入基準（Issue の本文）とは照合しない。**
+- **影響範囲は、ファイルの名前でだけ決める**——差分の中身（どの関数・何行）は見ない。宣言に無い共有モジュール・スキーマは、名前が何でも止めない（宣言するのは利用者）。
+- **計画ファイルは影響範囲に数えない**——周の記録で、成果物ではない（`docs/` を宣言しても、計画だけでは止まらない）。
+- **戻した履歴は、既定ブランチの本文の `This reverts commit <SHA>` の行だけから読む**——GitHub の Issue・PR・ラベルは読まない（取り直さない・ネットに出ない）。
+  `git revert` を使わずに手で戻した変更は数えない。revert でない本文がこの行を引用していても、戻したと読む（止まる側に倒れる）。
+  **期間で区切らない**——何年前に戻した範囲でも止まる。止めたくなければ利用者が居る周でマージする。
+  **マージの後に見つかった欠陥**（revert していないもの）は、利用者が `不在で止める範囲:` の行を足して止める（`references/absent-lines.md` の「影響範囲で止める」）。
+- **戻されたコミットの範囲は、その最初の親からの差分のファイルである**——merge commit を戻したなら、取り込んだ側の変更すべて。
 
 ## 判定を足すとき（#1047 など）
 
@@ -121,6 +140,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import importlib.util
 import re
 import subprocess
@@ -142,6 +162,8 @@ VERSION_JSON = re.compile(r'^\s*"version"\s*:\s*"[^"]*",?\s*$')
 VERSION_JSON_FILES = (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
 VERSION_SKILL = re.compile(r"^<!-- skill-version: \S+ -->$|^> \*\*このスキルの版: \S+\*\*（プラグイン `[^`]+`）。$")
 ID_HEADERS = ("#", "番号", "ID")
+STOP_DECL = re.compile(r"^不在で止める範囲:\s*(.+?)\s*$")  # 影響範囲の宣言（#1047）
+REVERTS = re.compile(r"This reverts commit ([0-9a-f]{7,40})")
 
 LINE_FORMS = {
     "base": re.compile(rf"^周の base:\s*{SHA}$"),
@@ -476,10 +498,21 @@ def check_criteria(rec: Record, ctx: Context) -> list[str]:
     return reasons
 
 
+def visible(text: str) -> list[str]:
+    """`.claude/dev-loop.md` の、コードブロックと HTML コメントの外の行。"""
+    return _visible_lines()(text.lstrip("\ufeff"))
+
+
+def default_dev_loop_md(ctx: Context) -> str:
+    """既定ブランチの `.claude/dev-loop.md`（無ければ空）。宣言は head からは読まない。"""
+    res = ctx.git("show", f"{ctx.default_ref()}:.claude/dev-loop.md", ok=(0, 128))
+    return res.stdout if res.returncode == 0 else ""
+
+
 def declared(text: str) -> str:
     """`.claude/dev-loop.md` の `マージの反映:` の宣言。読める値がちょうど 1 本のときだけその値、ほかは `なし`。"""
     values = []
-    for line in _visible_lines()(text.lstrip("\ufeff")):
+    for line in visible(text):
         m = re.match(r"^マージの反映:\s*(.+?)\s*$", line)
         if m:
             values.append(m.group(1))
@@ -493,15 +526,65 @@ def check_reflection(rec: Record, ctx: Context) -> list[str]:
     if rec.reflection is None:
         return ["不在の周で、マージの反映の記録が無い"] if ctx.absent else []
     ref = ctx.default_ref()
-    res = ctx.git("show", f"{ref}:.claude/dev-loop.md", ok=(0, 128))
-    value = declared(res.stdout) if res.returncode == 0 else "なし"
+    value = declared(default_dev_loop_md(ctx))
     if value != rec.reflection:
         return [f"マージの反映の記録「{rec.reflection}」が、既定ブランチ（{ref}）の宣言（{value}）と違う"
                 "——その周が足した・書き換えた宣言は効かない"]
     return []
 
 
-CHECKS = (check_passes, check_coverage, check_criteria, check_reflection)
+def matches(path: str, pattern: str) -> bool:
+    """`不在で止める範囲:` のパターンに当たるか（glob。`/` で終われば配下すべて）。"""
+    if pattern.endswith("/"):
+        return fnmatch.fnmatchcase(path, pattern + "*")
+    return fnmatch.fnmatchcase(path, pattern)
+
+
+def rolled_back(ctx: Context) -> dict[str, str]:
+    """既定ブランチで戻した（revert した）コミットが触ったファイル → そのコミット（`<SHA> <件名>`）。"""
+    default = ctx.default_ref()
+    line = set(ctx.git("rev-list", "--first-parent", default).stdout.split())
+    out: dict[str, str] = {}
+    for entry in ctx.git("log", "--format=%H%x00%B%x1e", default).stdout.split("\x1e"):
+        if "\x00" not in entry:
+            continue
+        for m in REVERTS.finditer(entry.split("\x00", 1)[1]):
+            full = ctx.resolve(m.group(1))
+            if not full or full not in line:
+                continue  # 既定ブランチの線に無い——PR の途中の revert
+            parent = ctx.resolve(f"{full}^1")
+            files = (ctx.git("diff", "--name-only", "--no-renames", parent, full) if parent else
+                     ctx.git("diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "--no-renames", full))
+            subject = ctx.git("log", "-1", "--format=%s", full).stdout.strip()
+            for f in files.stdout.splitlines():
+                if f:
+                    out.setdefault(f, f"{full[:12]} {subject}")
+    return out
+
+
+def check_risk(rec: Record, ctx: Context) -> list[str]:
+    """影響範囲（#1047）——不在の周で、宣言した範囲・戻した履歴のある範囲に触れる差分を通さない。"""
+    if not ctx.absent:
+        return []
+    default = ctx.default_ref()
+    fork = ctx.git("merge-base", default, ctx.head).stdout.strip()
+    files = [f for f in ctx.git("diff", "--name-only", "--no-renames", fork, ctx.head).stdout.splitlines()
+             if f and f != ctx.plan_rel]
+    patterns = [m.group(1) for l in visible(default_dev_loop_md(ctx)) if (m := STOP_DECL.match(l))]
+    rolled = rolled_back(ctx) if files else {}
+    reasons = []
+    for f in files:
+        hit = next((p for p in patterns if matches(f, p)), None)
+        if hit:
+            reasons.append(f"影響範囲: {f} が既定ブランチ（{default}）の宣言「不在で止める範囲: {hit}」に当たる"
+                           "——不在の周ではマージせず、PR で止めて利用者に回す")
+        if f in rolled:
+            reasons.append(f"影響範囲: {f} は既定ブランチで戻した（revert した）コミット {rolled[f]} が触ったファイル"
+                           "——不在の周ではマージせず、PR で止めて利用者に回す")
+    return reasons
+
+
+CHECKS = (check_passes, check_coverage, check_criteria, check_reflection, check_risk)
 
 
 class Parser(argparse.ArgumentParser):

@@ -35,7 +35,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。
       読む時点・採否の表への載せ方・2 パスとの関係・待ち方は `references/external-review.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-reviews.py`）
     - `skills/dev-loop/scripts/check-gates.py` - **計画ファイルの関門の記録（`dev-loop-gates` のブロック）を、リポジトリの履歴と照合する**——周の線のコミットごとにそれを見た関門があるか・2 パスと狭いパス・受入基準ごとの判定と判断の出所・`マージの反映:` の出所
-      （#1043。`SKILL.md` 手順 7 がマージの前に素の 1 行で呼び、`merge-pr.py` は `gh pr merge` の前に通して 0 でなければ 13 で止まる。**記録の形の原本と、守る／守らないは docstring を正とする**。判定を足す口は `CHECKS`（#1047）。テストは `scripts/test-check-gates.py`）
+      （#1043。`SKILL.md` 手順 7 がマージの前に素の 1 行で呼び、`merge-pr.py` は `gh pr merge` の前に通して 0 でなければ 13 で止まる。**記録の形の原本と、守る／守らないは docstring を正とする**。判定を足す口は `CHECKS`。**`--absent` では影響範囲（既定ブランチの `.claude/dev-loop.md` の `不在で止める範囲:` と、既定ブランチで revert したコミットが触ったファイル）に触れる差分も通さない**——#1047。テストは `scripts/test-check-gates.py`）
     - `skills/cruise/` - **オートクルーズの入口**（#446。`/dev-loop:cruise <親 Issue> [--absent]`）。親 Issue のチェックリストから
       `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**。
       親 Issue の `cruise:` の行（線）も確かめてから台帳に残す——#458。線の項目と値は `ledger.py` の `LINES` を読む）。
