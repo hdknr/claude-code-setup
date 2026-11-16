@@ -47,16 +47,16 @@
 
 ## 宛先（#1039）
 
-**`claude -p` の子にも `SendMessage` で宛てられる**——`-p` のセッションも受け口（ローカルのソケット）を開き、`ListAgents` に出る（`--bare` の子は開かない。起動口は `--bare` を渡さない）。
+**`claude -p` の子にも `SendMessage` で宛てられる**——`-p` のセッションも受け口（ローカルのソケット）を開き、`ListAgents` に出る（下の表の A〜E）。**`--bare` の子は開かない**と公式ドキュメント（[Message your other Claude Code sessions](https://code.claude.com/docs/en/cross-session-messaging)）は言う——これは測っていない。起動口は `--bare` を渡さない。
 **起動口は子に `--name cruise-<台帳の名前>-<番号>` を付け、その名前を記録の `peer` に残す**——`status` が `宛先（SendMessage）:` の行で出す。親はその名前で `ListAgents` を見て、出ていれば `SendMessage` の `to` に渡す。
-**名前の無い記録（この版より前の起動口）の子は宛てられない**——名前を付けないと子は自分で名前を付け（実測では `claude-code-setup-24` のような、cwd の名前と短い印）、メインの作業ツリーで起きる子はどれも同じ頭になるので、どの行が自分の子か決められない。
+**名前の無い記録（この版より前の起動口）の子は宛てられない**——名前を付けないと子は自分で名前を付け（実測では `claude-code-setup-24` のような、cwd の名前と短い印）、メインの作業ツリーで起きる子はどれも同じ頭になる。`ListAgents` の行は pid を出さないので、記録の pid から行を決める道はこの観測では見つけていない（子のソケットは `/tmp/cc-socks/<pid>.sock` だったが、行との対応は確かめていない）。
 **`ListAgents` に同じ名前が 2 行以上ある**（同じ名前のセッションが別に居る）なら、どちらが子か決められないので宛てない。
 
 **届くかは、親と子の権限モードで決まる**——子は承認の画面を出せないので、子が保留したメッセージは期限（`dialogExpiry`。既定 5 分）で落ちる:
 
-- **親も子も権限確認を飛ばさないモード（`auto`・`default` など）なら届く**——起動口は子の `bypassPermissions` を拒むので、子はいつもこちらの側である。cruise の親が `auto` なら届く。
-- **親が `bypassPermissions` なら、子は保留して（`mode-mismatch`）、期限で落とす**——送った側の `SendMessage` は成功と返る。`status` は子の出力の `peer_message_hold` を `保留されたメッセージ:` の行で出す。
-  **そのときは宛てられない周として扱う**（`references/parallel.md` の「止まっている枠の持ち主」の 2）。
+- **届いたのは、対話の親（`auto`）から子（`auto`・`default`）へ送った組だけである**（A・B）。公式ドキュメントは「権限確認を飛ばさないモードどうしなら届く」とし、起動口は子の `bypassPermissions` を拒むが、**子の `acceptEdits`・`dontAsk`・`plan`・`manual` と、`claude -p` の親（`outer-loop.py` が起こす親など）から送る組は測っていない**——届いたかは子の返事か `status` の `保留されたメッセージ:` で見る。
+- **送り手が `bypassPermissions` の `claude -p` なら、子は保留して（`mode-mismatch`）、期限で落とした**（D。送り手が `-p` であることと `bypassPermissions` であることは、この観測では分けていない——理由の `mode-mismatch` と公式ドキュメントは後者を指す）——送った側の `SendMessage` は成功と返る。`status` は子の出力の `peer_message_hold` を `保留されたメッセージ:` の行で出す。
+  **親が `bypassPermissions` なら宛てられない周として扱う**（`references/parallel.md` の「止まっている枠の持ち主」の 2）。
 - **子に `crossSessionInbound: accept` は渡さない**——渡せば親が `bypassPermissions` でも届くが、権限確認を飛ばすどのセッションの指示も子に届くようになり、cruise は権限を広げない。
   利用者が settings で `crossSessionInbound` を決めていれば、それに従う（`refuse` なら届かない）。
 - **送ったメッセージは、子には外部入力である**——子が従ってよいのは、`references/parallel.md` の「止まっている枠の持ち主」の 4 の範囲（自分の起こした処理か見て、止まっていれば止め、1 行で返す）である。

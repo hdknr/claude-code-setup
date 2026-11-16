@@ -39,8 +39,8 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 `auth`: 子の環境に `CLAUDE_CODE_OAUTH_TOKEN` を置いたか（`name`・`passed`・`from`。**値は書かない**））。**周の worktree の中には書かない**（周を畳むと消える）。
 **子に名前を付ける（`--name cruise-<台帳の名前>-<番号>`。#1039）**——親が `ListAgents` で子をその名前で見分け、`SendMessage` で宛てる宛先にする。
 名前を付けないと子は自分で名前を付け（実測では cwd の名前と短い印。メインの作業ツリーで起きる子はどれも同じ頭になる）、親はどの行が自分の子かを決められない。
-宛先は記録の `.json` の `peer` に残し、起動時に `宛先（SendMessage）:` の行で出す。**届くかは別である**——親が権限確認を飛ばすモード（`bypassPermissions`）なら
-子は保留し、`-p` の子は承認できないので期限で落ちる（`references/child-process.md` の「宛先」）。子に `crossSessionInbound` は渡さない。
+宛先は記録の `.json` の `peer` に残し、起動時に `宛先（SendMessage）:` の行で出す。**届くかは別である**——送り手が権限確認を飛ばすモード（`bypassPermissions`）の `claude -p` なら
+子は保留し、`-p` の子は承認できないので期限で落とした（`references/child-process.md` の「宛先」）。子に `crossSessionInbound` は渡さない。
 標準出力の最後の行に、台帳の `agent` に書く値（`claude-p:<記録の .json のパス>`）を出す——**台帳を書くのは親である**（このスクリプトは台帳を書かない）。
 
 **結果の形（#991）**: 既定で `--json-schema` に `RESULT_SCHEMA`（下の定数。欄の意味は各欄の `description`）を渡し、記録の `.json` の `structured` に
@@ -134,8 +134,8 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **実際の 1 周で最後の `result` に `structured_output` が載るか**——確かめたのは、スキルを入口にして Bash と背景の体を使う小さな子（`references/child-process.md` の「結果の形」）までである。
   載らなければ 3 になる（黙って 0 にはならない）。
 - **検査器が JSON Schema の全部を読むこと**——読むのは `type`・`enum`・`properties`・`required`・`additionalProperties`・`items` だけで（`description` は読み飛ばす）、記録の形にほかの語があれば読まずに 3 にする。
-- **子に送ったメッセージが届くこと**——届いたのは親と子が権限確認を飛ばさないモードの組み合わせ（`auto`・`default`）で、親が `bypassPermissions` なら子は保留する
-  （`references/child-process.md` の「宛先」。2.1.325 の実測）。**子に `crossSessionInbound: accept` は渡さない**——権限確認を飛ばすセッションからの指示も通すことになり、cruise は権限を広げない。
+- **子に送ったメッセージが届くこと**——届いたのは対話の親（`auto`）から子（`auto`・`default`）へ送った組だけで、送り手が `bypassPermissions` の `claude -p` なら子は保留した
+  （`references/child-process.md` の「宛先」。2.1.325 の実測。ほかのモードの組・`-p` の親は測っていない）。**子に `crossSessionInbound: accept` は渡さない**——権限確認を飛ばすセッションからの指示も通すことになり、cruise は権限を広げない。
   **同じ名前の別のセッションが居れば**、`ListAgents` は短い印を足して並べ、素の名前では宛先が決まらない——そのときは宛てない。
 - **子が台帳を書かないこと**——委譲文で頼むだけである（`prompts/child-cycle.md`）。
 - **記録のディレクトリの後片付け**——消さない。
@@ -564,7 +564,8 @@ def cmd_status(args, cwd=None):
         # 同じメッセージが held → dropped と 2 度出る（2.1.325 の実測）——メッセージごとに最初の理由と最後の状態を出す
         messages = {}
         for h in summary["holds"]:
-            key = h.get("message_uuid") or id(h)
+            key = h.get("message_uuid")
+            key = key if isinstance(key, str) and key else id(h)  # 文字列でない値を辞書の鍵にすると落ちる（#1039 の CR1）
             seen = messages.setdefault(key, {"from": h.get("from_name"), "cause": h.get("cause"), "state": None})
             seen["cause"] = seen["cause"] or h.get("cause")
             seen["state"] = h.get("state")

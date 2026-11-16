@@ -111,6 +111,11 @@ FIXTURES = {
                                  "from_name": "probe-sender", "cause": "mode-mismatch"}, result(1),
                          {"type": "system", "subtype": "peer_message_hold", "state": "dropped", "message_uuid": "m-1",
                           "from_name": "probe-sender", "outcome": "discarded"}],
+    # message_uuid が文字列でない（#1039 の CR1）——辞書の鍵にして落ちず、別々のメッセージとして数える
+    "保留の message_uuid が文字列でない": [INIT, {"type": "system", "subtype": "peer_message_hold", "state": "held",
+                                          "message_uuid": ["a"], "from_name": "x", "cause": "mode-mismatch"},
+                                  {"type": "system", "subtype": "peer_message_hold", "state": "held",
+                                   "message_uuid": {"k": 1}, "from_name": "y", "cause": "mode-mismatch"}, result(1)],
     "殺された体": [INIT, result(2, subagent_stats={"spawned": 1, "completed": 0, "killed": {"parent": 1, "user": 0, "system": 0}})],
     "利用上限の拒否": [INIT, {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "seven_day",
                                                                          "resetsAt": 1793269200}}, result(1)],
@@ -708,7 +713,9 @@ def main() -> int:
         check("子が保留したメッセージを、送った側の名前と理由つきで出す（終了コードは変えない）",
               "保留されたメッセージ: 1 件（probe-sender・mode-mismatch・dropped）" in o["要約 保留されたメッセージ"][1]
               and "保留されたメッセージ" not in o["要約 済んだ（result が 3 つ）"][1])
-        expected = {"済んだ（result が 3 つ）": 0, "保留されたメッセージ": 0, "最後の result が API の誤り": 3, "result が無い": 3, "成功でない": 3,
+        check("保留の message_uuid が文字列でなくても落ちず、別々に数える（#1039 の CR1）",
+              "保留されたメッセージ: 2 件" in o["要約 保留の message_uuid が文字列でない"][1])
+        expected = {"済んだ（result が 3 つ）": 0, "保留されたメッセージ": 0, "保留の message_uuid が文字列でない": 0, "最後の result が API の誤り": 3, "result が無い": 3, "成功でない": 3,
                     "拒否された操作": 3, "殺された体": 3, "利用上限の拒否": 3, "長い文": 0, "上限が近いだけ": 0, "委譲先の発言が最後": 0, "途中で版が変わる": 0}
         for name, code in expected.items():
             check(f"{name} は {code}", o[f"要約 {name}"][0] == code)
