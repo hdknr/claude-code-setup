@@ -53,9 +53,11 @@
 5. **影響範囲（`--absent` だけ。#1047）**——周の差分（既定ブランチとの分岐点から head まで。`git diff --name-only --no-renames`。計画ファイルは数えない）が触るファイルのうち、
    次のどちらかに当たるものがあれば通さない（不在の周ではマージせず、PR で止めて利用者に回す——`references/absent-lines.md` の「影響範囲で止める」）:
    - **既定ブランチの `.claude/dev-loop.md` の `不在で止める範囲: <パターン>` の行**——1 行に 1 つ、何本でも書ける。パターンは glob（`fnmatch`。`*` はディレクトリ区切りも跨ぐ）で、
-     `/` で終われば配下すべて。読むのはコードブロックと HTML コメントの外の行だけ（4 と同じ読み方）。
+     `/` で終われば配下すべて。glob の文字（`*?[`）を持たないパターンは、そのパス自身と配下の両方に当てる（`src/shared` は `src/shared/x.py` にも当たる）。
+     読むのはコードブロックと HTML コメントの外の行だけ（4 と同じ読み方）。**空白を含む・`/` か `./` で始まるパターンは読めない宣言として止める**（黙って何にも当たらない宣言にしない）。
    - **既定ブランチで戻した（revert した）コミットが触ったファイル**——既定ブランチから辿れるコミットの本文の `This reverts commit <SHA>`（`git revert` が書く行）のうち、
-     その SHA が既定ブランチの線（`--first-parent`）にあるもの。戻されたコミットがその最初の親から変えたファイルを、戻した履歴のある範囲とする。
+     その SHA が既定ブランチから辿れる（既定ブランチの祖先の）もの。merge commit で入れた PR の中のコミットも含む。戻されたコミットがその最初の親から変えたファイルを、戻した履歴のある範囲とする。
+   - **周の差分が、既定ブランチの `不在で止める範囲:` の行を 1 本でも外す**（head の `.claude/dev-loop.md` に同じパターンの行が無い）——周が自分の止まる範囲を外さない。
 
 | 判定 | 通る判断の出所 |
 | --- | --- |
@@ -90,7 +92,11 @@
 - **`--absent` では、既定ブランチの宣言 `不在で止める範囲:` に当たるファイルを変えた差分を通さない**（#1047）。
 - **`/` で終わるパターンは、その配下のファイルすべてに当てる。**
 - **`--absent` では、既定ブランチで戻した（revert した）コミットが触ったファイルを変えた差分を通さない**（#1047）。
-- **既定ブランチの線（`--first-parent`）に無いコミットを戻した行は、戻した履歴に数えない**——squash した PR の本文に残った、PR の途中の revert。
+- **既定ブランチから辿れないコミットを戻した行は、戻した履歴に数えない**——squash した PR の本文に残った、PR の途中の revert。
+- **merge commit で既定ブランチに入れたコミットを戻した行も、戻した履歴に数える**——戻されたコミットが既定ブランチの最初の親の線に無くても。
+- **空白を含む・`/` か `./` で始まる `不在で止める範囲:` のパターンを、黙って捨てない**——読めない宣言として止める。
+- **glob の文字を持たないパターンは、配下にも当てる**——末尾の `/` を書き忘れたディレクトリを、黙って何にも当たらない宣言にしない。
+- **`--absent` では、既定ブランチの `不在で止める範囲:` の行を外す差分を通さない**——周が自分の止まる範囲を外さない。
 - **影響範囲を見る差分は既定ブランチとの分岐点から取る**——周に取り込んだ既定ブランチの変更（周の base より後）を、周の差分に数えない。
 - **`--absent` でなければ、影響範囲で止めない**——居る周のマージは人が決める。
 - **判定できないことを、通過と答えない**（7）。
@@ -127,6 +133,7 @@
 - **計画ファイルは影響範囲に数えない**——周の記録で、成果物ではない（`docs/` を宣言しても、計画だけでは止まらない）。
 - **戻した履歴は、既定ブランチの本文の `This reverts commit <SHA>` の行だけから読む**——GitHub の Issue・PR・ラベルは読まない（取り直さない・ネットに出ない）。
   `git revert` を使わずに手で戻した変更は数えない。revert でない本文がこの行を引用していても、戻したと読む（止まる側に倒れる）。
+  **merge commit で入れるリポジトリでは、PR の中で自分のコミットを revert した行も数える**（その PR がマージされた後は、戻されたコミットも既定ブランチから辿れる。止まる側に倒れる）。
   **期間で区切らない**——何年前に戻した範囲でも止まる。止めたくなければ利用者が居る周でマージする。
   **マージの後に見つかった欠陥**（revert していないもの）は、利用者が `不在で止める範囲:` の行を足して止める（`references/absent-lines.md` の「影響範囲で止める」）。
 - **戻されたコミットの範囲は、その最初の親からの差分のファイルである**——merge commit を戻したなら、取り込んだ側の変更すべて。
@@ -534,24 +541,35 @@ def check_reflection(rec: Record, ctx: Context) -> list[str]:
 
 
 def matches(path: str, pattern: str) -> bool:
-    """`不在で止める範囲:` のパターンに当たるか（glob。`/` で終われば配下すべて）。"""
+    """`不在で止める範囲:` のパターンに当たるか（glob。`/` で終われば配下すべて。glob の文字が無ければ自身と配下）。"""
     if pattern.endswith("/"):
         return fnmatch.fnmatchcase(path, pattern + "*")
+    if not any(c in pattern for c in "*?["):
+        return path == pattern or path.startswith(pattern + "/")
     return fnmatch.fnmatchcase(path, pattern)
+
+
+def unreadable(pattern: str) -> bool:
+    """どのパスにも当たりようのない宣言か（空白を含む・`/` か `./` で始まる）。"""
+    return any(c.isspace() for c in pattern) or pattern.startswith(("/", "./"))
+
+
+def stop_patterns(text: str) -> list[str]:
+    """`.claude/dev-loop.md` の `不在で止める範囲:` のパターン（コードブロックと HTML コメントの外）。"""
+    return [m.group(1) for l in visible(text) if (m := STOP_DECL.match(l))]
 
 
 def rolled_back(ctx: Context) -> dict[str, str]:
     """既定ブランチで戻した（revert した）コミットが触ったファイル → そのコミット（`<SHA> <件名>`）。"""
     default = ctx.default_ref()
-    line = set(ctx.git("rev-list", "--first-parent", default).stdout.split())
     out: dict[str, str] = {}
     for entry in ctx.git("log", "--format=%H%x00%B%x1e", default).stdout.split("\x1e"):
         if "\x00" not in entry:
             continue
         for m in REVERTS.finditer(entry.split("\x00", 1)[1]):
             full = ctx.resolve(m.group(1))
-            if not full or full not in line:
-                continue  # 既定ブランチの線に無い——PR の途中の revert
+            if not full or not ctx.is_ancestor(full, default):
+                continue  # 既定ブランチから辿れない——squash した PR の途中の revert
             parent = ctx.resolve(f"{full}^1")
             files = (ctx.git("diff", "--name-only", "--no-renames", parent, full) if parent else
                      ctx.git("diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "--no-renames", full))
@@ -570,9 +588,20 @@ def check_risk(rec: Record, ctx: Context) -> list[str]:
     fork = ctx.git("merge-base", default, ctx.head).stdout.strip()
     files = [f for f in ctx.git("diff", "--name-only", "--no-renames", fork, ctx.head).stdout.splitlines()
              if f and f != ctx.plan_rel]
-    patterns = [m.group(1) for l in visible(default_dev_loop_md(ctx)) if (m := STOP_DECL.match(l))]
+    patterns = stop_patterns(default_dev_loop_md(ctx))
     rolled = rolled_back(ctx) if files else {}
     reasons = []
+    for pat in patterns:
+        if unreadable(pat):
+            reasons.append(f"影響範囲: 既定ブランチ（{default}）の宣言「不在で止める範囲: {pat}」が読めない"
+                           "（空白を含む・/ か ./ で始まる）——読めない宣言は止まる側に倒す")
+    head_md = ctx.git("show", f"{ctx.head}:.claude/dev-loop.md", ok=(0, 128))
+    kept = set(stop_patterns(head_md.stdout if head_md.returncode == 0 else ""))
+    for pat in patterns:
+        if pat not in kept:
+            reasons.append(f"影響範囲: 周の差分が既定ブランチの宣言「不在で止める範囲: {pat}」を外す"
+                           "——止まる範囲を外す変更は利用者が居る周でマージする")
+    patterns = [p for p in patterns if not unreadable(p)]
     for f in files:
         hit = next((p for p in patterns if matches(f, p)), None)
         if hit:

@@ -21,6 +21,7 @@ spec-loop から来た Issue ではない。`作り直しの元:` の行も無�
 - `plugins/dev-loop/skills/dev-loop/scripts/check-gates.py` — `CHECKS` に `check_risk` を足す（`--absent` だけ。宣言 `不在で止める範囲:` と既定ブランチの revert の履歴）。docstring の「何を照合するか」「守る」「守らない」
 - `scripts/test-check-gates.py` — 試料（main の revert・squash に残った revert・範囲の宣言・ブランチの宣言）・ケース・変異（「守る」と 1 対 1）
 - `scripts/test-merge-pr.py` — `merge-pr.py --absent` が範囲に当たる PR をマージせず 13 で止める end-to-end の試料と、居る周の対照
+- `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py` — docstring の 1 項だけ（`--absent` を渡し忘れると影響範囲は見ない）。1 パス目の CR4 で広げた——A8（docstring と食い違わない）
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 「宣言の置き場所と書き方」に `不在で止める範囲:`、「マージ = 関門を通ればマージ」の止まる条件、「マージ前の判断 = 推奨で決めて起票」の「この線でも止まるもの」、新しい節「影響範囲で止める（#1047）」
 - `plugins/dev-loop/skills/cruise/SKILL.md` — §4 の 4（13 のうち影響範囲の理由は記録の食い違いでなく、利用者に回すもの）・版の 2 行
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
@@ -33,7 +34,7 @@ spec-loop から来た Issue ではない。`作り直しの元:` の行も無�
 
 触らない:
 
-- `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`——照合は `check-gates.py` が持ち、`merge-pr.py` は 0 でなければ 13 で止める（#1043 のまま）。中身を変えない
+- `plugins/dev-loop/skills/dev-loop/scripts/merge-pr.py`——照合は `check-gates.py` が持ち、`merge-pr.py` は 0 でなければ 13 で止める（#1043 のまま）。docstring の 1 項のほかは変えない
 - このリポジトリの `.claude/dev-loop.md` に `不在で止める範囲:` を足すこと——どの範囲を止めるかは利用者が決める（宣言を足すのは利用者。著者も自分で広げない）
 - GitHub の Issue・ラベルからマージ後の欠陥を読むこと——照合はネットに出ない・取り直さない（下の「仕様の穴」）
 - 影響範囲を差分の中身（関数・行）で決めること——Issue はファイルのパターンで判定すると言っている
@@ -73,7 +74,7 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 | A4 | 既定ブランチで戻した（revert した）コミットが触ったファイルを変えた PR も、不在の周は止める | `rolled_back`。`test-check-gates.py`（R2） |
 | A5 | 宣言は既定ブランチから読む——PR で足した・書き換えた範囲の宣言を効かせない。コードブロック・HTML コメントの中の行を読まない | `default_dev_loop_md`・`visible`。`test-check-gates.py`（Y2・M の中の a.txt） |
 | A6 | 居る周（`--absent` でない）のマージを、影響範囲で止めない | `check_risk` の先頭。`test-check-gates.py`・`test-merge-pr.py` の居る周の対照 |
-| A7 | 既定ブランチの線に無いコミットを戻した行（squash の本文に残った PR の途中の revert）を、戻した履歴に数えない | `rolled_back` の first-parent の照合。`test-check-gates.py`（R3）。このリポジトリの 5b2d1ab（本文に `This reverts commit` を含む squash）が実データ |
+| A7 | 既定ブランチから辿れないコミットを戻した行（squash の本文に残った PR の途中の revert）を、戻した履歴に数えない | `rolled_back` の祖先の照合。`test-check-gates.py`（R3。合成）。このリポジトリの 5b2d1ab（本文に `This reverts commit 8bacadd…` を含む squash）は、引いた SHA が手元で解決しないので外れる——実データが示すのは「解決しない SHA を数えない」までで、祖先の照合は合成の R3 だけが判別する（1 パス目の CR5 で主張を弱めた） |
 | A8 | 文書（`absent-lines.md`・cruise `SKILL.md`）が、範囲で止まった PR を「マージ前の判断」の推奨で進めない・記録の書き足しで通さないと書き、事実として docstring と食い違わない | 読んで照合。`check-skill-pointers.py`・`check-all.py` |
 | A9 | 版を 3 種類（marketplace・plugin.json・SKILL.md 2 本）で揃え、生成ブロックが新しい | `check-plugin-versions.py`・`skill-metrics.py --check` |
 
@@ -93,9 +94,13 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
   起点 `a6f8d59`・base 参照 `origin/main`・base SHA `a6f8d5981c144e459d1138edb9fda810441cff64`
 - 割り目（手順 4・6）: **割らない（cruise の周）**——利用者に訊かない（不在の周・cruise の子）
 - 交絡: 実験なし（試料は一時の git リポジトリの合成と、このリポジトリの main への当て）
+- 1 パス目: Verifier（sonnet・`dev-loop:dev-loop-verifier`）cf93f38 **反証 3 件**／`/code-review`（high）cf93f38 **指摘 7 件**。差し戻し: あり（直す 4 件——下の表）。
+  1 パス目の指摘対応の起点: `cf93f38036a708e207117a060a77a231f801c2e5`（1 パス目の関門に渡した HEAD）
 
 ```dev-loop-gates
 周の base: a6f8d5981c144e459d1138edb9fda810441cff64
+関門: Verifier 1 cf93f38036a708e207117a060a77a231f801c2e5 反証=3
+関門: /code-review 1 cf93f38036a708e207117a060a77a231f801c2e5 指摘=7
 受入基準: A1 満たす
 受入基準: A2 満たす
 受入基準: A3 満たす
@@ -114,7 +119,22 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - revert の履歴は期間で区切らない（Issue の「過去に」）。止めたくなければ居る周でマージする。
 - 本文が `This reverts commit <既定ブランチの線の SHA>` を引用しただけの revert でないコミットも、戻した履歴と読む（止まる側に倒れる）。
 - `git revert` を使わずに手で戻した変更は数えない。
+- merge commit で入れるリポジトリでは、PR の中で自分のコミットを revert した行も数える（止まる側に倒れる）。
+
+### 1 パス目の採否の表（直す線 = 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1・CR1 merge commit で入れた PR の中のコミットを main で revert しても数えない（first-parent で代用） | 示せる——両関門が一時リポジトリで `rolled_back` = `{}` を実走 | A4 | 直す（祖先の照合に変える。試料 R4） |
+| V2・CR3 書き損じた宣言（行末の注釈・`/` 始まり・`./`・末尾の `/` の無いディレクトリ）が黙って何にも当たらない | 示せる——両関門が実走で `check_risk` = `[]` | A1 | 直す（空白・`/`・`./` で始まるものは読めない宣言として止める。glob の無いパターンは配下にも当てる。試料 H2・H3） |
+| CR2 周の差分が既定ブランチの `不在で止める範囲:` を消しても止まらない（文書の「消す・緩める PR は利用者のレビューを通す」が強制されていない） | 示せる——実走で `check_risk` = `[]` | A3・A8 | 直す（既定ブランチの行を外す差分を止める。試料 R5） |
+| CR4 `merge-pr.py` の docstring「`--absent` を渡し忘れると止まる側に倒れる」が影響範囲では偽 | 示せる——`check_risk` は `--absent` が無ければ `[]`（読んで照合） | A8 | 直す（docstring に 1 項。範囲を広げた） |
+| CR5 A7 の実データ（5b2d1ab）は祖先／first-parent の照合を判別していない | 示せる（SHA が解決しない） | 無し（計画の主張） | 残課題——計画の A7 の主張を弱めた（計画は成果物ではない） |
+| CR6 `rolled_back` が毎回全コミットの本文を読む（効率） | 示せない（遅さの実測なし） | 無し | 残課題 |
+| V3・CR7 変異「差分を周の base から取る」「宣言を素の行で読む」を殺す試料が、注釈の理由で赤になったかを判別しない | 示せる（試料の読み） | 無し | 残課題（試料の穴） |
 
 ## 手順 8（経験の還元）
 
 （周の終わりに書く）
+
+- この周の起票: 1 件（仕様の穴 G1 の確認の Issue。番号は起票の後に書く）

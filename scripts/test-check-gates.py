@@ -100,13 +100,18 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "revert", "--no-edit", s["R0"])
     s["RV"] = git(repo, "rev-parse", "HEAD")
     s["SQ"] = commit(repo, f"squashed pr\n\n* Revert side\n\nThis reverts commit {s['SD']}.", {"q.txt": "q\n"})
-    s["M"] = commit(repo, "main moves", {
-        "m.txt": "m\n",
-        ".claude/dev-loop.md": ("# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n```text\nマージの反映: ドキュメントのみ\n"
-                                "不在で止める範囲: a.txt\n```\n\n"
-                                "<!--\nマージの反映: ドキュメントのみ\n不在で止める範囲: a.txt\n-->\n\n"
-                                "不在で止める範囲: risky/\n不在で止める範囲: m.txt\n"),
-    })
+    # merge commit で入れた PR の中のコミット IN を、main の上で git revert で戻す（IN は main の最初の親の線に無い）
+    git(repo, "switch", "-qc", "pr1")
+    s["IN"] = commit(repo, "inner change", {"in.txt": "i\n"})
+    git(repo, "switch", "-q", "main")
+    git(repo, "merge", "-q", "--no-edit", "--no-ff", "pr1")
+    git(repo, "revert", "--no-edit", s["IN"])
+    s["M"] = commit(repo, "main moves", {"m.txt": "m\n", ".claude/dev-loop.md": MAIN_MD})
+    # 既定ブランチを差し替える試料（M の子。周の head には入らない）: 読めない宣言・glob の文字の無いディレクトリの宣言
+    s["M2"] = commit(repo, "unreadable decl", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: /risky/\n"})
+    git(repo, "reset", "-q", "--hard", s["M"])
+    s["M3"] = commit(repo, "dir decl without slash", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: deepdir\n"})
+    git(repo, "reset", "-q", "--hard", s["M"])
     git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
     git(repo, "switch", "-q", "issue/1-x")
     git(repo, "merge", "-q", "--no-edit", "--no-ff", "main")
@@ -125,8 +130,11 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     s["Z2"] = commit(repo, "version of another file", {"other.json": '{\n  "version": "9.9.9"\n}\n'})
     # 影響範囲（#1047）: 宣言した範囲・戻した範囲・main の線に無い revert の範囲・ブランチにだけ足した宣言
     for key, files in (("R1", {"risky/deep/x.txt": "x\n"}), ("R2", {"rolled.txt": "again\n"}),
-                       ("R3", {"sd.txt": "s2\n"}),
-                       ("Y2", {".claude/dev-loop.md": "# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n不在で止める範囲: a.txt\n"})):
+                       ("R3", {"sd.txt": "s2\n"}), ("R4", {"in.txt": "again\n"}),
+                       ("R5", {".claude/dev-loop.md": MAIN_MD.replace("不在で止める範囲: m.txt\n", "")}),
+                       ("H2", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: /risky/\n"}),
+                       ("H3", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: deepdir\n", "deepdir/x.txt": "d\n"}),
+                       ("Y2", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: a.txt\n"})):
         git(repo, "reset", "-q", "--hard", s["MM"])
         s[key] = commit(repo, f"touch {key}", files)
     git(repo, "switch", "-qc", "other", s["B"])
@@ -141,6 +149,10 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     return repo, s
 
 
+MAIN_MD = ("# 追補\n\nマージの反映: ドキュメントとプラグインの配布\n\n```text\nマージの反映: ドキュメントのみ\n"
+           "不在で止める範囲: a.txt\n```\n\n"
+           "<!--\nマージの反映: ドキュメントのみ\n不在で止める範囲: a.txt\n-->\n\n"
+           "不在で止める範囲: risky/\n不在で止める範囲: m.txt\n")
 TABLE = ("## 受入基準（不変条件 × 経路）\n\n| # | 不変条件 | 守り方 |\n| --- | --- | --- |\n"
          "| A1 | x | y |\n| **A2** | x | y |\n\n## ほか\n\n| # | 受入基準ではない |\n| --- | --- |\n| Z9 | z |\n")
 CRIT = ["受入基準: A1 満たす", "受入基準: A2 未証明"]
@@ -246,8 +258,16 @@ CASES = {
         (FULL + ["関門: 当て直し {MM} {R1} 反証=0", REFL], "R1", 0, [], {}),
     "不在の周で、既定ブランチで戻したコミットが触ったファイルを変えた差分は非 0":
         (FULL + ["関門: 当て直し {MM} {R2} 反証=0", REFL], "R2", 3, ["--absent"], {}, "risky change"),
-    "既定ブランチの線に無いコミットを戻した行（squash に残った revert）は数えない":
+    "既定ブランチから辿れないコミットを戻した行（squash に残った revert）は数えない":
         (FULL + ["関門: 当て直し {MM} {R3} 反証=0", REFL], "R3", 0, ["--absent"], {}),
+    "merge commit で入れた PR の中のコミットを main で戻したら、その範囲も不在の周で非 0":
+        (FULL + ["関門: 当て直し {MM} {R4} 反証=0", REFL], "R4", 3, ["--absent"], {}, "inner change"),
+    "周の差分が既定ブランチの範囲の宣言を外せば、不在の周で非 0":
+        (FULL + ["関門: 当て直し {MM} {R5} 反証=0", REFL], "R5", 3, ["--absent"], {}, "不在で止める範囲: m.txt」を外す"),
+    "読めない範囲の宣言（/ で始まる）は、不在の周で止める":
+        (FULL + ["関門: 当て直し {MM} {H2} 反証=0", REFL], "H2", 3, ["--absent"], {"default": "M2"}, "読めない"),
+    "glob の文字の無い範囲の宣言は、配下にも当てる":
+        (FULL + ["関門: 当て直し {MM} {H3} 反証=0", REFL], "H3", 3, ["--absent"], {"default": "M3"}, "不在で止める範囲: deepdir」に当たる"),
     "ブランチにだけ足した範囲の宣言は効かない（既定ブランチから読む）":
         (FULL + ["関門: 当て直し {MM} {Y2} 反証=0", REFL], "Y2", 0, ["--absent"], {}),
     "記録が無ければ 2": (FULL, "MM", 2, [], {"block": False}, "記録"),
@@ -261,6 +281,18 @@ CASES = {
 
 def run(script: Path, repo: Path, s: dict, name: str, case) -> tuple[int, str]:
     lines, head, _rc, args, kw, *_ = case
+    kw = dict(kw)
+    default = kw.pop("default", None)  # 既定ブランチ（origin/main）をこのケースだけ差し替える
+    if default:
+        git(repo, "update-ref", "refs/remotes/origin/main", s[default])
+    try:
+        return _run(script, repo, s, lines, head, args, kw)
+    finally:
+        if default:
+            git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
+
+
+def _run(script: Path, repo: Path, s: dict, lines, head, args, kw) -> tuple[int, str]:
     repl = {"{" + k + "}": v for k, v in s.items()}
     kw = {k: (sub(v, **repl) if isinstance(v, list) else
               v.replace("{B}", s["B"]) if isinstance(v, str) else v) for k, v in kw.items()}
@@ -336,7 +368,16 @@ MUTATIONS = {
     # 守る（#1047）: 戻した範囲に当たる差分を不在の周で通さない
     "戻した範囲を見ない": ("        if f in rolled:\n", "        if False:\n"),
     # 守る（#1047）: main の線に無いコミットを戻した行を数えない
-    "線に無いコミットを戻した行も数える": ("if not full or full not in line:", "if not full:"),
+    "辿れないコミットを戻した行も数える": ("if not full or not ctx.is_ancestor(full, default):", "if not full:"),
+    # 守る（#1047）: merge commit で入れたコミットを戻した行も数える
+    "最初の親の線にあるものだけ数える": ("if not full or not ctx.is_ancestor(full, default):",
+                                 'if not full or full not in ctx.git("rev-list", "--first-parent", default).stdout.split():'),
+    # 守る（#1047）: 読めない宣言を黙って捨てない
+    "読めない宣言を捨てる": ('return any(c.isspace() for c in pattern) or pattern.startswith(("/", "./"))', "return False"),
+    # 守る（#1047）: glob の文字の無いパターンは配下にも当てる
+    "glob の無いパターンを配下に当てない": ('return path == pattern or path.startswith(pattern + "/")', "return path == pattern"),
+    # 守る（#1047）: 範囲の宣言を外す差分を通さない
+    "宣言を外す差分を通す": ("        if pat not in kept:\n", "        if False:\n"),
     # 守る（#1047）: 差分は既定ブランチとの分岐点から
     "差分を周の base から取る": ('fork = ctx.git("merge-base", default, ctx.head).stdout.strip()', "fork = rec.base"),
     # 守る（#1047）: 居る周では影響範囲で止めない
@@ -372,7 +413,11 @@ KILLS = {
     "宣言した範囲を見ない": ["不在の周で、宣言した範囲（risky/ の配下）に当たる差分は非 0"],
     "/ で終わるパターンを配下に当てない": ["不在の周で、宣言した範囲（risky/ の配下）に当たる差分は非 0"],
     "戻した範囲を見ない": ["不在の周で、既定ブランチで戻したコミットが触ったファイルを変えた差分は非 0"],
-    "線に無いコミットを戻した行も数える": ["既定ブランチの線に無いコミットを戻した行（squash に残った revert）は数えない"],
+    "辿れないコミットを戻した行も数える": ["既定ブランチから辿れないコミットを戻した行（squash に残った revert）は数えない"],
+    "最初の親の線にあるものだけ数える": ["merge commit で入れた PR の中のコミットを main で戻したら、その範囲も不在の周で非 0"],
+    "読めない宣言を捨てる": ["読めない範囲の宣言（/ で始まる）は、不在の周で止める"],
+    "glob の無いパターンを配下に当てない": ["glob の文字の無い範囲の宣言は、配下にも当てる"],
+    "宣言を外す差分を通す": ["周の差分が既定ブランチの範囲の宣言を外せば、不在の周で非 0"],
     "差分を周の base から取る": ["不在の周では BLOCKED を線（マージ前の判断）で通す"],
     "居る周でも影響範囲で止める": ["居る周では、宣言した範囲に当たっても止めない"],
     "該当なしと狭いパスを一緒に通す": ["2 パス目が該当なしなら、狭いパスで 1 パス目の後の直しを覆えない"],
