@@ -10,7 +10,10 @@
 - `scripts/test-child-cycle.py` — 上の回帰テストと変異（3 件）
 - `plugins/dev-loop/skills/cruise/references/child-process.md` — 「宛先（#1039）」の節（実測の表・届く条件・確かめていないこと）と、`/clear` 後の項の「宛てられない」を直す
 - `plugins/dev-loop/skills/cruise/references/parallel.md` — 「止まっている枠の持ち主」の 2 の宛先と「宛てられない周」、守らないもの D4
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/dev-loop/skills/dev-loop/SKILL.md`・`plugins/dev-loop/skills/cruise/SKILL.md` — 版（1.111.0 → 1.112.0。能力の追加なので minor）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（1.111.0 → 1.112.0。能力の追加なので minor）
+- `.claude-plugin/marketplace.json` — 同上
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行だけ
 - `CLAUDE.md` — child-cycle.py の説明に名前を付けることを 1 句
 - `docs/plans/issue-1039.md` — この計画
 
