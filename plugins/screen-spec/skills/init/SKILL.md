@@ -1,12 +1,12 @@
 ---
 name: init
-description: "spec-loop の正本リポジトリに、画面設計書の置き場所（作業中の版の requirements/screens/）を用意する。画面・項目・遷移の 3 つの表（見出し行だけ）・案件ごとの設定（画面IDの接頭辞と profile）・共通仕様（common.md）の雛形・画面の仕様書の雛形を同梱のスクリプトで置き、検査（check-screens.py）が通ることを確かめる。profile は shared/infra.csv のフロントエンドの行から推して利用者に確かめる（このプラグインに profile が無ければ未設定）。Q&A 表は書かず、番号も振らない。置き済みなら何も書かない。画面設計書を始めたいときに使う。引数なし。"
+description: "spec-loop の正本リポジトリに、画面設計書の置き場所（作業中の版の requirements/screens/）を用意する。画面・項目・遷移の 3 つの表（見出し行だけ）・案件ごとの設定（画面IDの接頭辞と profile）・共通仕様（common.md）の雛形・画面の仕様書の雛形を同梱のスクリプトで置き、検査（check-screens.py）が通ることを確かめる。profile（いまは web-spa）は shared/infra.csv のフロントエンドの行から推して利用者に確かめ、選べば profile の列を表の見出し行に入れ、profile の節の雛形を共通仕様と仕様書の雛形の末尾に足す（profile は最初の版で決まり、後の版で変えられない）。Q&A 表は書かず、番号も振らない。置き済みなら何も書かない。画面設計書を始めたいときに使う。引数なし。"
 ---
 
 # init スキル
 
-<!-- skill-version: 0.3.0 -->
-> **このスキルの版: 0.3.0**（プラグイン `screen-spec`）。
+<!-- skill-version: 0.5.0 -->
+> **このスキルの版: 0.5.0**（プラグイン `screen-spec`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update screen-spec@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -20,7 +20,7 @@ spec-loop の正本リポジトリに、画面設計書の置き場所を用意�
 ## 決まり
 
 **置き場所・3 つの表・案件ごとの設定は `../../references/tables.md`、仕様書と共通仕様の雛形の決まりは `../../references/prose.md`、
-spec-loop との境目は `../../references/spec-loop.md` を正とする**（このスキルと同じプラグインの中にある）。
+実現方式の profile は `../../references/profiles.md`、spec-loop との境目は `../../references/spec-loop.md` を正とする**（このスキルと同じプラグインの中にある）。
 
 ## 守ること
 
@@ -46,6 +46,8 @@ python3 <このスキルの base ディレクトリ>/../../scripts/write-screens
 
 - **profile**: 一覧にある profile のうち、フロントエンドの行に合うものを推す。**一覧が空なら `未設定`**（訊かない）。
   一覧があるなら `AskUserQuestion` で、推したもの（理由はフロントエンドの行）・ほかの profile・`未設定` を選択肢にして訊く。
+  **profile は表を置く最初の版で決まり、後の版で変えられない**（表の見出し行に profile の列が入る。`../../references/profiles.md` の「選び方」）ことも添えて訊く。
+  方式がまだ決まっていなくても、使う見込みの profile を選べる——列と節に `N/A。実現方式が未定` と書いておける。
 - **画面IDの接頭辞**: 既定は `S-`。案件ですでに使っている画面ID の形があれば、それに合わせるかを `AskUserQuestion` で訊く。
   形は英大文字で始まり英大文字と数字が続き `-` で終わる（`../../references/tables.md` の「案件ごとの設定」）。
 
@@ -63,7 +65,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/write-screens
 python3 <このスキルの base ディレクトリ>/../../scripts/check-screens.py <docs>
 ```
 
-置いた直後は 0 になる（画面の行がまだ無い）。**0 以外なら、出力を利用者に見せて止まる**——置いたものを手で直さない。
+置いた直後は 0 になる（画面の行がまだ無い。profile の節の雛形は `N/A。実現方式が未定` で、検査を通る）。**0 以外なら、出力を利用者に見せて止まる**——置いたものを手で直さない。
 
 ### 5. 終える
 

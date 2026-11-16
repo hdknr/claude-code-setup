@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """画面・項目・遷移の表から、UI モック（HTML 1 枚）を生成する。
 
-usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--spec-loop <spec-loop のプラグインの根>]
+usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--since <コミットかタグ>] [--spec-loop <spec-loop のプラグインの根>]
 
 **決まりの正は `references/mock.md` である**（このプラグインの中にある）。下の定数（出力の置き場所・描き方のファイルの置き場所と名前・
 版の中で止めるディレクトリの名前・出す列・説明の欄に出す画面の列）はその写しで、
@@ -17,13 +17,18 @@ usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--spec-loop
   `plugin.json`）・描き方のファイルのコミット。時刻は書かない（同じ入力から同じバイト）。
 - **共有の層だけを出す**: 許可した列のほかは埋め込まず、どのセルからも内部の層の Q&A の番号（`D-`）を外す。
 - **表の検査の結果に依らず作る**（違反・未決定のある表でも作る。検査は `check-screens.py` を先に回す——#1095 の確認の Issue で決めた値）。
+- **差分の印**（#1096）: v2 以降は前の版から（spec-loop の `diff-versions.py` の `compare` を読み込む——写さない）、`--since <コミットかタグ>` を渡すと
+  その時点から（その時点の `docs` を一時ディレクトリに取り出して同じ版まで重ね、`compare_maps` で比べる）、変えた画面・項目・遷移に印と根拠の Q&A の番号を付け、
+  消したものを一覧に並べる。
+- **レビュー会の進め方・未回答・未反映**（#1096）: 共有の層の Q&A のうち `反映済み` でない行を並べて「質問 → 画面」の逆引きで飛ばし、
+  未回答の質問に掛かる項目・遷移に「推奨案（X）で描いている」と出し、画面に掛かる行に回答の未反映が残っていれば警告する（モックは作る）。
 - 標準ライブラリだけを使う。
 
 終了コード:
 
 - 0: 書いた
-- 1: 決まりに反する——重ね合わせが spec-loop の決まりに反する・3 つの表が揃っていない・見出し行が決まりと違う・描き方のファイルが版の中に在る。書かない
-- 2: 判定していない——引数の誤り・`docs` が無い・`--upto` の版が無い・読めない・書けない・想定外の例外
+- 1: 決まりに反する——重ね合わせ（基準の時点の重ね合わせを含む）が spec-loop の決まりに反する・3 つの表が揃っていない・見出し行が決まりと違う・描き方のファイルが版の中に在る。書かない
+- 2: 判定していない——引数の誤り・`docs` が無い・`--upto` の版が無い・`--since` を解決できない（git の外・その時点に `docs` が無い）・読めない・書けない・想定外の例外
 - 4: 検査の前に止めた——spec-loop が見つからない・spec-loop の版が読めない・対応の範囲の外（`check-screens.py` と同じ）
 
 **守ること**:
@@ -36,6 +41,11 @@ usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--spec-loop
 - 書くのは出力の 1 ファイルだけ（正本・spec-loop・screen-spec を書かない。`__pycache__` も、正本の git の index も書かない——`--no-optional-locks`）
 - 埋め込む JSON と描き方の JS が `</script` で HTML を閉じない。描き方のファイルは 1 つずつ別の `<script>` に置く（構文の誤りがほかを巻き込まない）
 - 表の遷移は、きっかけの項目の種類（ボタン・一覧・表示・入力・一覧の列）に依らずモックの上で押せる。タブの中のタブは道筋のタブを選ぶ
+- 差分の印は変わった画面・項目・遷移にだけ付ける（v1 には前の版からの印を付けない。埋め込む列が `D-` を外して同じなら変更に数えない）。根拠は共有の層の番号だけ（消した行は消した理由の番号も足す。理由は基準の時点に重ねた版から v<n> までの `removed.csv` から）
+- 基準の時点は一時ディレクトリに取り出し、終わったら消す（正本・git の index に書かない）。解決できなければ 2、その時点の重ね合わせが決まりに反すれば 1
+- レビュー会の進め方は共有の層の `反映済み` でない行だけを Q&A 表の順に並べ、質問の画面（画面・その項目・その画面を遷移元にする遷移のセルに番号がある画面）へ飛ぶ
+- 未回答の注記は共有の層の未回答の行を指す項目・遷移にだけ出す。画面に掛かる行（共有と内部）に回答の未反映が残っていれば標準出力に警告する（0 のまま）
+- 埋め込む Q&A は共有の層の行の許可した列だけ（内部の層の行を埋め込まない）
 
 **守らないもの**:
 
@@ -46,17 +56,23 @@ usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--spec-loop
 | **描き方のファイルの中身**（表に無い名前を書いた・外を読む） | 素の JS で、案件の開発者が書く。表に無い遷移を呼べばモックが「遷移が表に無い」と出すところまで |
 | **Chrome のほかのブラウザでの見え方** | 手元で確かめたのはヘッドレスの Chrome だけ（`scripts/test-build-mock.py --browser`） |
 | **前の出力**（止めたときに `build/mock/v<n>/index.html` を消さない） | 止めたことは終了コードと出力で分かる |
+| **基準の時点からの差分で、画面を消して連鎖で消えた項目・遷移の理由** | 前の版からの差分は `diff-versions.py` が画面の行の理由を添えるが、基準の時点からの差分は `removed.csv` でその行を名指しした理由だけを添える（`compare` の連鎖の理由の付け方を写さないため） |
+| **変えた根拠のうち、セルに書いていない番号** | 根拠は変わった行のセル（と消した理由）にある番号だけ。行を変えた理由の質問を `根拠` に書かなければ出ない |
+| **`TMPDIR` が git の作業ツリーの中を指すとき** | 基準の時点を取り出した一時ディレクトリが別の git の作業ツリーの中にあると、spec-loop の重ね方がその index を読む。既定の一時ディレクトリでは起きない |
 """
 
 from __future__ import annotations
 
 import html
 import importlib.util
+import io
 import json
 import os
 import re
 import subprocess
 import sys
+import tarfile
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -77,6 +93,11 @@ SHOWN = {
               "並び替え", "絞り込み", "根拠"],
     "transitions": ["番号", "遷移元", "きっかけ", "操作", "条件", "遷移先", "結果", "根拠"],
 }
+
+# 埋め込む Q&A の列（共有の層の行だけ。レビュー会の進め方・未回答の注記・未反映の印に使う）
+QA_SHOWN = ["No", "質問", "選択肢", "推奨", "回答", "状態"]
+# Q&A の行の分け方（`references/mock.md` の「未回答・未反映」）
+UNANSWERED, UNREFLECTED, PROVISIONAL, REFLECTED = "未回答", "未反映", "暫定反映", "反映済み"
 
 LIST = "一覧"  # 項目の種類のうち、行の並ぶ表（`references/tables.md` の「項目の種類」）
 
@@ -110,20 +131,28 @@ class Sharer:
         text = self.internal.sub("", value)
         text = re.sub(r"[（(][\s、,]*[)）]", "", text)  # 番号だけを囲んでいた括弧
         text = re.sub(rf"(?:\s*{screens_check.SEPARATOR}\s*)+", screens_check.SEPARATOR, text)
+        text = re.sub(rf"([（(]){screens_check.SEPARATOR}|{screens_check.SEPARATOR}([)）])", r"\1\2", text)  # 括弧の中に余った区切り
+        text = re.sub(r"[ \t]{2,}", " ", text)  # 文の途中の番号を外して余った空白
         return text.strip().strip(screens_check.SEPARATOR).strip()
 
 
 # ---- git（何で作ったか）
 
-def git(cwd: Path, *args: str) -> str | None:
+def git_bytes(cwd: Path, *args: str) -> bytes | None:
+    """git の標準出力（失敗・走らせられなければ None）。任意のロックを取らない——正本の git の index を書き換えない。"""
     env = {k: v for k, v in os.environ.items() if k not in GIT_LOCATION}
     try:
-        proc = subprocess.run(["git", "--no-optional-locks", "-C", str(cwd), *args], capture_output=True, env=env, timeout=60)
+        proc = subprocess.run(["git", "--no-optional-locks", "-C", str(cwd), *args], capture_output=True, env=env, timeout=120)
     except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
         return None
-    return proc.stdout.decode("utf-8", "replace").strip()
+    return proc.stdout
+
+
+def git(cwd: Path, *args: str) -> str | None:
+    out = git_bytes(cwd, *args)
+    return None if out is None else out.decode("utf-8", "replace").strip()
 
 
 def source_of_tables(docs: Path) -> str:
@@ -228,7 +257,110 @@ def json_for_script(data) -> str:
     return json.dumps(data, ensure_ascii=False, sort_keys=False).replace("<", "\\u003c")
 
 
-def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str) -> tuple[Path, str, list[str]]:
+class Numbers:
+    """セルの中の Q&A の番号（形は spec-loop の `check-qa-csv.py`。`check-screens.py` の `Checker` が作った正規表現を使う）。"""
+
+    def __init__(self, checker) -> None:
+        self.any = checker.qa_number  # 共有（`Q-`）と内部（`D-`）
+        self.is_internal = checker.qa.is_internal_number
+
+    def of(self, row: dict[str, str], shared_only: bool = False) -> list[str]:
+        found: list[str] = []
+        for value in row.values():
+            for match in self.any.finditer(value or ""):
+                number = match.group(0)
+                if number not in found and not (shared_only and self.is_internal(number)):
+                    found.append(number)
+        return found
+
+
+def load_diff(spec_loop: Path):
+    """spec-loop の `diff-versions.py`（版の差分。写さない）。"""
+    try:
+        return screens_check._load("spec_loop_diff_versions", spec_loop / "scripts" / "diff-versions.py")
+    except (OSError, SyntaxError, ImportError) as e:
+        raise screens_check.Stop(f"{spec_loop / 'scripts'}: spec-loop のスクリプトを読み込めない（{e}）") from None
+
+
+def baseline(docs: Path, ref: str, number: int, versions_module):
+    """(基準の時点の名前, その時点の docs を重ねた全体, 重ねた版の番号)。`docs` の git で `ref` をコミットに解決し、その時点の `docs` を一時ディレクトリに
+    取り出して（終わったら消す）、同じ版（その時点に無ければその時点の最大の版）まで重ねる。正本も git の index も書かない。"""
+    if git(docs, "rev-parse", "--is-inside-work-tree") != "true":
+        raise screens_check.Unreadable(f"--since {ref}: docs が git の作業ツリーの外——基準の時点を決められない")
+    commit = git(docs, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    if not commit:
+        raise screens_check.Unreadable(f"--since {ref}: コミットに解決できない")
+    prefix = (git(docs, "rev-parse", "--show-prefix") or "").rstrip("/")
+    top = git(docs, "rev-parse", "--show-toplevel")
+    # 根から呼ぶ——下のディレクトリから呼ぶと、git archive はその場所をもう一度前に付けて何も出さない
+    archive = git_bytes(Path(top), "archive", "--format=tar", f"{commit}:{prefix}" if prefix else commit) if top else None
+    if archive is None:
+        raise screens_check.Unreadable(f"--since {ref}: その時点（コミット {commit}）の docs（{prefix or '.'}）を取り出せない——その時点に無いか、git が失敗した")
+    with tempfile.TemporaryDirectory(prefix="screen-spec-since-") as tmp:
+        target = Path(tmp) / "docs"
+        target.mkdir()
+        try:
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                if hasattr(tarfile, "data_filter"):
+                    tar.extractall(target, filter="data")
+                else:  # pragma: no cover — filter の無い古い Python
+                    tar.extractall(target)
+        except (tarfile.TarError, OSError) as e:
+            raise screens_check.Unreadable(f"--since {ref}: その時点の docs を取り出せない（{e}）") from None
+        try:
+            try:
+                problems, found, whole, _ = versions_module.merge(target, number)
+                used = number
+            except versions_module.OutOfRange:
+                problems, found, whole, _ = versions_module.merge(target, None)  # その時点にはまだ v<n> が無い
+                used = len(found)
+        except versions_module.Unreadable as e:
+            raise screens_check.Unreadable(f"--since {ref}: {e}") from None
+    if problems:
+        raise Refused(f"基準の時点（{ref}）の版の重ね合わせが spec-loop の決まりに反する:\n" + "\n".join(f"  {p}" for p in problems))
+    return f"{ref}（コミット {commit}）", whole, used
+
+
+def shown_row(name: str, row: dict[str, str], sharer: Sharer) -> dict[str, str]:
+    return {column: sharer.clean(row.get(column, "")) for column in SHOWN[name] if column in row}
+
+
+def diff_entry(kind: str, label: str, changes: dict, row_tables: dict, names: dict, numbers: Numbers, sharer: Sharer,
+               removed_status: str, changed_status: str) -> dict:
+    """差分 1 つ分の印（画面・項目・遷移の鍵 → 追加／変更／削除）・根拠（共有の層の Q&A の番号）・消したもの。"""
+    entry: dict[str, object] = {"kind": kind, "label": label, "marks": {}, "basis": {}, "removed": []}
+    for path, (row_kind, _, _) in row_tables.items():
+        name = names[path]
+        marks: dict[str, str] = {}
+        basis: dict[str, list[str]] = {}
+        for change in changes.get(row_kind, []):
+            if change.status == changed_status and shown_row(name, change.before, sharer) == shown_row(name, change.after, sharer):
+                continue  # 埋め込まない列・内部の層の番号だけが変わった行——共有の層には変わって見えないので印を付けない
+            row = change.after if change.after is not None else change.before
+            marks[change.key] = change.status
+            basis[change.key] = numbers.of(row, shared_only=True)
+            if change.status == removed_status:  # 消した行は、消した理由（removed.csv）に書いた番号も根拠に足す
+                basis[change.key] += [n for n in numbers.of({"理由": change.reason or ""}, shared_only=True) if n not in basis[change.key]]
+                entry["removed"].append({"table": name, "kind": row_kind, "key": change.key, "row": shown_row(name, row, sharer),
+                                         "reason": sharer.clean(change.reason or ""), "basis": basis[change.key]})
+        entry["marks"][name] = marks
+        entry["basis"][name] = basis
+    return entry
+
+
+def qa_class(row: dict[str, str], qa) -> str:
+    """Q&A の行の分け方（`references/mock.md` の「未回答・未反映」）。"""
+    if row.get("回答", "").strip() in ("", qa.NO_ANSWER):
+        return UNANSWERED
+    state = row.get("状態", "").strip()
+    if state == qa.DONE:
+        return REFLECTED
+    if qa.is_provisional(row):
+        return PROVISIONAL
+    return UNREFLECTED
+
+
+def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str, since: str | None = None) -> tuple[Path, str, list[str]]:
     checker = screens_check.Checker(spec_loop, docs, upto)
     problems, versions, whole = checker.merged()
     if problems:
@@ -241,22 +373,89 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str)
     missing = [p for p in screens_check.TABLES if p not in whole.headers]
     if missing:
         raise Refused("画面の表が揃っていない（3 つの表を置く）: " + "、".join(missing))
+    # 案件の profile の列（`references/profiles.md`）を足した見出し行で照らす。読めない・誤った profile なら決まりの列だけ（検査が違反を出す）
+    profile = checker.read_profile(whole)
+    extra = screens_check.PROFILES[profile]["columns"] if profile in screens_check.PROFILES else {}
     for path in screens_check.TABLES:
-        if whole.headers[path] != screens_check.COLUMNS[path]:
-            raise Refused(f"{path}: 見出し行が決まり（{','.join(screens_check.COLUMNS[path])}）と違う: {','.join(whole.headers[path])}")
+        expected = screens_check.COLUMNS[path] + extra.get(path, [])
+        if whole.headers[path] != expected:
+            raise Refused(f"{path}: 見出し行が決まり（{','.join(expected)}）と違う: {','.join(whole.headers[path])}")
 
     sharer = Sharer(checker.qa)
     names = {screens_check.SCREENS: "screens", screens_check.ITEMS: "items", screens_check.TRANSITIONS: "transitions"}
     data: dict[str, object] = {}
     for path, name in names.items():
-        data[name] = [{column: sharer.clean(row.get(column, "")) for column in SHOWN[name] if column in row}
-                      for row in whole.tables[path].values()]
+        data[name] = [shown_row(name, row, sharer) for row in whole.tables[path].values()]
+
+    # ---- 差分の印（前の版から・基準の時点から）
+    diff_versions = load_diff(spec_loop)
+    row_tables = checker.versions.ROW_TABLES
+    numbers = Numbers(checker)
+    diffs = []
+    if number > 1:
+        try:
+            diff_problems, diff = diff_versions.compare(docs, number)
+        except diff_versions.merge_versions.Unreadable as e:
+            raise screens_check.Unreadable(str(e)) from None
+        if diff_problems:
+            raise Refused("前の版との差分を作れない:\n" + "\n".join(f"  {p}" for p in diff_problems))
+        diffs.append(diff_entry("version", f"前の版（v{number - 1}）から", diff.changes, row_tables, names, numbers, sharer,
+                                diff_versions.REMOVED, diff_versions.CHANGED))
+    if since is not None:
+        label, before, used = baseline(docs, since, number, checker.versions)
+        reasons: dict = {}
+        # 基準の時点に重ねた版から v<n> までの removed.csv の理由（それより前の版の理由は、基準の時点より前に消した行のもの）
+        for _, root in versions[max(used, 1) - 1:number]:
+            reasons.update(diff_versions.removal_reasons(root))
+        changes = {}
+        for path, (row_kind, _, _) in row_tables.items():
+            changes[row_kind] = diff_versions.compare_maps(before.tables.get(path, {}), whole.tables[path])
+            for change in changes[row_kind]:
+                if change.status == diff_versions.REMOVED:
+                    change.reason = reasons.get((row_kind, change.key), "")
+        diffs.append(diff_entry("since", f"基準の時点 {label} から", changes, row_tables, names, numbers, sharer,
+                                diff_versions.REMOVED, diff_versions.CHANGED))
+    data["diffs"] = diffs
+
+    # ---- Q&A（共有の層だけを埋め込む）・レビュー会の進め方・未回答の注記・未反映の警告
+    qa = checker.qa
+    screens_raw = whole.tables[screens_check.SCREENS]
+    items_raw = whole.tables[screens_check.ITEMS]
+    transitions_raw = whole.tables[screens_check.TRANSITIONS]
+    screen_refs: dict[str, list[str]] = {}  # 画面 → その画面に掛かる Q&A の番号（共有と内部）
+    for key, row in screens_raw.items():
+        found = numbers.of(row)
+        related = [r for r in items_raw.values() if r.get("画面ID") == key] + [r for r in transitions_raw.values() if r.get("遷移元") == key]
+        for other in related:  # その画面の項目と、その画面を遷移元にする遷移
+            found += [n for n in numbers.of(other) if n not in found]
+        screen_refs[key] = found
+    shared = {no: row for no, row in whole.qa.items() if not qa.is_internal_number(no)}
+    all_qa = {**whole.qa, **whole.internal}
+    agenda_numbers = [no for no, row in shared.items() if row.get("状態", "").strip() != qa.DONE]
+    referenced = [n for found in screen_refs.values() for n in found if n in shared]
+    embedded_qa = [no for no in shared if no in agenda_numbers or no in referenced]
+    data["qa"] = [{column: sharer.clean(shared[no].get(column, "")) for column in QA_SHOWN} for no in embedded_qa]
+    data["qaClass"] = {no: qa_class(shared[no], qa) for no in embedded_qa}
+    data["agenda"] = [{"No": no, "screens": [key for key, found in screen_refs.items() if no in found]} for no in agenda_numbers]
+    data["screenQa"] = {key: [n for n in found if n in shared] for key, found in screen_refs.items()}
+    unanswered = {no for no in embedded_qa if data["qaClass"][no] == UNANSWERED}
+    data["pending"] = {
+        name: {key: [n for n in numbers.of(row, shared_only=True) if n in unanswered]
+               for key, row in whole.tables[path].items() if any(n in unanswered for n in numbers.of(row, shared_only=True))}
+        for path, name in ((screens_check.ITEMS, "items"), (screens_check.TRANSITIONS, "transitions"))}
+    warnings: list[str] = []
+    for key, found in screen_refs.items():
+        for no in found:
+            row = all_qa.get(no)
+            if row is not None and qa_class(row, qa) == UNREFLECTED:
+                warnings.append(f"画面 {key} に掛かる Q&A {no} は回答があるが未反映（回答を反映してからモックを作る——references/mock.md）")
 
     repo = docs.resolve().parent
     out_dir = repo / OUT_DIR / f"v{number}"
-    screens = {row["画面ID"]: row for row in whole.tables[screens_check.SCREENS].values()}
+    screens = {row["画面ID"]: row for row in screens_raw.values()}
     renderer_dir = repo / RENDERERS
-    renderers, used, warnings = read_renderers(renderer_dir, screens)
+    renderers, used, renderer_warnings = read_renderers(renderer_dir, screens)
+    warnings = renderer_warnings + warnings
     provenance = {
         "版": f"v{number}",
         "表の出どころ": source_of_tables(docs),
@@ -274,6 +473,8 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str)
     data["separator"] = screens_check.SEPARATOR
     data["kinds"] = {"button": screens_check.BUTTON, "input": screens_check.INPUT, "listColumn": screens_check.LIST_COLUMN,
                      "list": LIST}
+    data["qaWords"] = {"noRecommendation": qa.NO_RECOMMENDATION, "optionSeparator": qa.OPTION_SEPARATOR,
+                       "unanswered": UNANSWERED, "unreflected": UNREFLECTED, "removed": diff_versions.REMOVED}
     return out_dir, render_html(number, data, renderers), warnings
 
 
@@ -320,6 +521,18 @@ footer#provenance { padding: 8px 16px 24px; color: var(--muted); font-size: 12px
 footer#provenance dl { display: grid; grid-template-columns: 9em 1fr; gap: 2px 8px; margin: 0; }
 footer#provenance dd { margin: 0; word-break: break-all; }
 .renderer-error { color: #a3261b; }
+.diff-mark { display: inline-block; font-size: 11px; padding: 0 6px; margin: 0 4px; border-radius: 8px; background: #fff3cd; color: #6b4e00; border: 1px solid #e0c060; }
+.diff-mark[data-diff="追加"] { background: #e3f4e6; color: #1f5b2c; border-color: #8cc79a; }
+.diff-mark[data-diff="削除"] { background: #fbe5e3; color: #7a1f17; border-color: #e0a19a; }
+.pending-note { display: inline-block; font-size: 11px; padding: 0 6px; margin: 0 4px; border-radius: 4px; background: #eef3fb; color: #1f3f7a; border: 1px dashed #7d9bd1; }
+.item-notes { margin: 0 0 4px; }
+.unreflected { color: #a3261b; }
+section.panel { margin: 0 16px 12px; background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 4px 12px; font-size: 13px; }
+section.panel summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
+section.panel ol, section.panel ul { margin: 4px 0 8px; padding-left: 1.5em; }
+section.panel li { margin: 4px 0; }
+button.agenda-question, button.removed-entry, button.goto { font: inherit; border: none; background: none; color: var(--accent); text-decoration: underline; cursor: pointer; padding: 0; text-align: left; }
+.options { color: var(--muted); }
 """
 
 APP = r"""
@@ -348,6 +561,11 @@ APP = r"""
     transitions[t["番号"]] = t;
     (byTrigger[t["きっかけ"]] = byTrigger[t["きっかけ"]] || []).push(t);
   });
+  var W = DATA.qaWords;
+  var qa = {};
+  DATA.qa.forEach(function (q) { qa[q["No"]] = q; });
+  var agendaList = document.getElementById("agenda-list");
+  var removedList = document.getElementById("removed-list");
   var values = {};    // 項目の値（モックの中だけで覚える）
   var history = [];   // 通った遷移
   var selectedTab = {};
@@ -368,6 +586,45 @@ APP = r"""
   function say(text) { message.textContent = text; }
   function nameOf(id) { return screens[id] ? screens[id]["画面名"] : id; }
 
+  // ---- 差分の印（前の版から・基準の時点から）と未回答の注記
+  function diffMarks(table, key) {
+    var out = [];
+    DATA.diffs.forEach(function (d) {
+      var status = d.marks[table] && d.marks[table][key];
+      if (status) out.push({diff: d, status: status, basis: (d.basis[table] && d.basis[table][key]) || []});
+    });
+    return out;
+  }
+  function markText(m) { return m.diff.label + " " + m.status + (m.basis.length ? "（根拠: " + m.basis.join(DATA.separator) + "）" : ""); }
+  function markNodes(table, key, prefix) {
+    return diffMarks(table, key).map(function (m) {
+      return el("span", {"class": "diff-mark", "data-diff": m.status, "data-diff-of": m.diff.kind, "data-diff-table": table,
+                         "data-diff-key": key}, (prefix || "") + markText(m));
+    });
+  }
+  function pendingText(no) {
+    var q = qa[no] || {};
+    var r = q["推奨"];
+    return (r && r !== W.noRecommendation ? "推奨案（" + r + "）で描いている。" : "推奨なし（表の値で描いている）。") + no + " は未回答";
+  }
+  function pendingOf(table, key) { return (DATA.pending[table] && DATA.pending[table][key]) || []; }
+  function pendingNodes(table, key, prefix) {
+    return pendingOf(table, key).map(function (no) {
+      return el("span", {"class": "pending-note", "data-pending-table": table, "data-pending": key, "data-question": no}, (prefix || "") + pendingText(no));
+    });
+  }
+  function notes(item) {  // 項目の印・注記と、それを きっかけ にする遷移の印・注記
+    var nodes = markNodes("items", item["番号"]).concat(pendingNodes("items", item["番号"]));
+    (byTrigger[item["番号"]] || []).forEach(function (t) {
+      var prefix = "遷移 " + t["番号"] + ": ";
+      nodes = nodes.concat(markNodes("transitions", t["番号"], prefix), pendingNodes("transitions", t["番号"], prefix));
+    });
+    if (!nodes.length) return null;
+    var box = el("div", {"class": "item-notes", "data-notes": item["番号"]});
+    nodes.forEach(function (n) { box.appendChild(n); });
+    return box;
+  }
+
   function follow(number) {
     var t = transitions[number];
     if (!t) { say("遷移が表に無い: " + number); return false; }
@@ -383,8 +640,11 @@ APP = r"""
     box.appendChild(el("h2", null, "ボタンの遷移"));
     list.forEach(function (t) {
       var dl = el("dl");
-      [["番号", t["番号"]], ["行き先", t["遷移先"] + " " + nameOf(t["遷移先"])], ["操作", t["操作"]], ["条件", t["条件"]],
-       ["結果", t["結果"]], ["根拠", t["根拠"]]].forEach(function (p) {
+      var pairs = [["番号", t["番号"]], ["行き先", t["遷移先"] + " " + nameOf(t["遷移先"])], ["操作", t["操作"]], ["条件", t["条件"]],
+       ["結果", t["結果"]], ["根拠", t["根拠"]]];
+      diffMarks("transitions", t["番号"]).forEach(function (m) { pairs.push(["差分", markText(m)]); });
+      pendingOf("transitions", t["番号"]).forEach(function (no) { pairs.push(["未回答", pendingText(no)]); });
+      pairs.forEach(function (p) {
         dl.appendChild(el("dt", null, p[0])); dl.appendChild(el("dd", null, p[1] || "—"));
       });
       box.appendChild(dl);
@@ -492,11 +752,14 @@ APP = r"""
       var box = el("fieldset", {"data-group": g});
       box.appendChild(el("legend", null, g));
       byGroup[g].forEach(function (it) {
+        var drawnItems = [it];
         if (it["種類"] === K.button) box.appendChild(button(it));
         else if (it["種類"] === K.list) {
           var columns = list.filter(function (c) { return c["種類"] === K.listColumn && c["まとまり"] === it["項目名"]; });
           box.appendChild(listTable(it, columns));
+          drawnItems = drawnItems.concat(columns);
         } else box.appendChild(field(it));
+        drawnItems.forEach(function (d) { var n = notes(d); if (n) box.appendChild(n); });
       });
       container.appendChild(box);
     });
@@ -544,6 +807,7 @@ APP = r"""
     var head = el("div", {"class": "screen-head"});
     head.appendChild(el("h1", {"data-role": "screen-name", "data-screen": id}, s["画面名"]));
     head.appendChild(el("span", {"class": "meta"}, id + " ・ " + s["種別"]));
+    markNodes("screens", id).forEach(function (n) { head.appendChild(n); });
     container.appendChild(head);
     drawBody(id, container);
     var tabs = order.filter(function (k) { return screens[k]["種別"] === DATA.tabKind && screens[k]["親画面"] === id && !drawn[k]; });
@@ -620,6 +884,64 @@ APP = r"""
     explain.appendChild(box);
   }
 
+  function drawChanges(id) {  // この画面・その項目・この画面を遷移元にする遷移の差分（消したものを含む）
+    var lines = [];
+    function add(table, key, what) {
+      diffMarks(table, key).forEach(function (m) { lines.push({text: what + ": " + markText(m), status: m.status}); });
+    }
+    add("screens", id, "画面 " + id);
+    (itemsOf[id] || []).forEach(function (it) { add("items", it["番号"], "項目 " + it["番号"] + " " + it["項目名"]); });
+    DATA.transitions.forEach(function (t) { if (t["遷移元"] === id) add("transitions", t["番号"], "遷移 " + t["番号"]); });
+    DATA.diffs.forEach(function (d) {
+      d.removed.forEach(function (r) {
+        var own = (r.table === "items" && r.row["画面ID"] === id) || (r.table === "transitions" && r.row["遷移元"] === id);
+        if (own) lines.push({text: r.kind + " " + r.key + ": " + d.label + " " + W.removed + (r.reason ? "（理由: " + r.reason + "）" : "")
+                                   + (r.basis.length ? "（根拠: " + r.basis.join(DATA.separator) + "）" : ""), status: W.removed});
+      });
+    });
+    if (!lines.length) return;
+    explain.appendChild(el("h2", null, "変わったもの"));
+    var ul = el("ul", {"data-role": "changes"});
+    lines.forEach(function (l) { ul.appendChild(el("li", {"data-diff": l.status}, l.text)); });
+    explain.appendChild(ul);
+  }
+
+  function questionLine(no, extra) {
+    var q = qa[no] || {};
+    var li = el("li", {"data-question": no}, no + " " + (q["質問"] || "") + (extra ? "——" + extra : ""));
+    if (q["選択肢"]) li.appendChild(el("div", {"class": "options"}, q["選択肢"] + "（推奨: " + (q["推奨"] || "—") + "）"));
+    return li;
+  }
+
+  function drawQuestions(id) {  // その画面に掛かる未回答の Q&A と、回答はあるが未反映の Q&A（共有の層だけ）
+    var numbers = DATA.screenQa[id] || [];
+    var unanswered = numbers.filter(function (no) { return DATA.qaClass[no] === W.unanswered; });
+    var unreflected = numbers.filter(function (no) { return DATA.qaClass[no] === W.unreflected; });
+    if (unanswered.length) {
+      explain.appendChild(el("h2", null, "この画面に掛かる未回答の Q&A"));
+      var ul = el("ul", {"data-role": "unanswered"});
+      unanswered.forEach(function (no) { ul.appendChild(questionLine(no, pendingText(no))); });
+      explain.appendChild(ul);
+    }
+    if (unreflected.length) {
+      explain.appendChild(el("h2", {"class": "unreflected"}, "回答はあるが未反映の Q&A（モックはまだ回答を反映していない）"));
+      var ur = el("ul", {"data-role": "unreflected"});
+      unreflected.forEach(function (no) { ur.appendChild(questionLine(no, "回答: " + ((qa[no] || {})["回答"] || ""))); });
+      explain.appendChild(ur);
+    }
+  }
+
+  function drawRemoved(d, r) {  // 消したものを説明の欄に出す（前の版・基準の時点の行。許可した列だけ）
+    clearExplain();
+    explain.appendChild(el("h2", null, "消したもの: " + r.kind + " " + r.key));
+    var pairs = [["差分", d.label + " " + W.removed], ["理由", r.reason], ["根拠の Q&A", r.basis.join(DATA.separator)]];
+    Object.keys(r.row).forEach(function (k) { pairs.push([k, r.row[k]]); });
+    var dl = pairList(pairs);
+    dl.setAttribute("data-role", "removed-detail");
+    explain.appendChild(dl);
+    drawHistory();
+  }
+
   function drawExplain(id) {
     clearExplain();
     var s = screens[id];
@@ -627,6 +949,8 @@ APP = r"""
     explain.appendChild(el("h2", null, "画面"));
     explain.appendChild(pairList([["画面", id + " " + s["画面名"]], ["種別", s["種別"]], ["目的と背景", s["目的と背景"]],
       ["できること", s["できること"]], ["主たる利用者", s["主たる利用者"]], ["ステータス", s["ステータス"]], ["根拠", s["根拠"]]]));
+    drawChanges(id);
+    drawQuestions(id);
     var list = itemsOf[id] || [];
     if (list.length) {
       explain.appendChild(el("h2", null, "項目"));
@@ -671,8 +995,56 @@ APP = r"""
     render(id);
   }
 
+  if (agendaList) {  // レビュー会の進め方: 今回の会の質問を順に並べ、選ぶとその画面に飛ぶ
+    if (!DATA.agenda.length) agendaList.appendChild(el("li", null, "今回の会の質問は無い"));
+    DATA.agenda.forEach(function (a) {
+      var q = qa[a.No] || {};
+      var li = el("li", {"data-agenda": a.No});
+      var title = el("button", {"type": "button", "class": "agenda-question", "data-question": a.No}, a.No + " " + (q["質問"] || ""));
+      title.addEventListener("click", function () {
+        if (a.screens.length) open(a.screens[0]); else say("質問 " + a.No + " は画面に掛からない（画面の表のどこからも指されていない）");
+      });
+      li.appendChild(title);
+      li.appendChild(el("span", {"class": "meta"}, "（" + (DATA.qaClass[a.No] || "") + "）"));
+      if (q["選択肢"]) {
+        var ul = el("ul", {"class": "options"});
+        q["選択肢"].split(W.optionSeparator).forEach(function (o) {
+          ul.appendChild(el("li", null, o + (q["推奨"] && o.indexOf(q["推奨"] + ":") === 0 ? "（推奨）" : "")));
+        });
+        li.appendChild(ul);
+      }
+      var where = el("div");
+      if (!a.screens.length) where.appendChild(el("span", {"class": "meta"}, "画面に掛からない"));
+      a.screens.forEach(function (k) {
+        var b = el("button", {"type": "button", "class": "goto", "data-goto": k}, "→ " + k + " " + nameOf(k));
+        b.addEventListener("click", function () { open(k); });
+        where.appendChild(b);
+        where.appendChild(document.createTextNode(" "));
+      });
+      li.appendChild(where);
+      agendaList.appendChild(li);
+    });
+  }
+  if (removedList) {  // 消したもの（前の版から・基準の時点から）
+    var count = 0;
+    DATA.diffs.forEach(function (d) {
+      d.removed.forEach(function (r) {
+        count += 1;
+        var li = el("li");
+        var b = el("button", {"type": "button", "class": "removed-entry", "data-removed": r.key, "data-diff-of": d.kind},
+                   d.label + ": " + r.kind + " " + r.key + (r.row["画面名"] || r.row["項目名"] ? " " + (r.row["画面名"] || r.row["項目名"]) : ""));
+        b.addEventListener("click", function () { drawRemoved(d, r); });
+        li.appendChild(b);
+        removedList.appendChild(li);
+      });
+    });
+    if (!count) removedList.appendChild(el("li", null, DATA.diffs.length ? "消したものは無い" : "比べる前の版も基準の時点も無い"));
+  }
   if (picker) {
-    order.forEach(function (k) { picker.appendChild(el("option", {"value": k}, k + " " + screens[k]["画面名"])); });
+    order.forEach(function (k) {
+      var marks = diffMarks("screens", k).map(function (m) { return "［" + m.status + "］"; }).join("");
+      picker.appendChild(el("option", {"value": k}, marks + k + " " + screens[k]["画面名"]));
+    });
     picker.addEventListener("change", function () { open(picker.value); });
   }
   window.screenSpecMock = { follow: follow, open: open, history: history };
@@ -706,6 +1078,8 @@ def render_html(number: int, data: dict, renderers: dict[str, str]) -> str:
 <body>
 <header class="bar"><span>画面モック（画面の表から生成した参考資料。受入基準ではない）</span><label>画面 <select id="screen-picker" aria-label="画面"></select></label></header>
 <div id="message" role="status"></div>
+<section class="panel" id="agenda"><details open><summary>レビュー会の進め方（今回の会の質問。選ぶとその画面に飛ぶ）</summary><ol id="agenda-list"></ol></details></section>
+<section class="panel" id="removed"><details><summary>消したもの</summary><ul id="removed-list"></ul></details></section>
 <div id="app"><main id="stage"></main><aside id="explain" aria-label="説明"></aside></div>
 <footer id="provenance"><dl>{footer}</dl></footer>
 <script type="application/json" id="screen-spec-data">{json_for_script(data)}</script>
@@ -720,6 +1094,7 @@ def main(argv: list[str]) -> int:
     args = list(argv)
     named = None
     upto = None
+    since = None
     try:
         while "--spec-loop" in args:
             at = args.index("--spec-loop")
@@ -732,6 +1107,12 @@ def main(argv: list[str]) -> int:
             if at + 1 >= len(args) or upto is not None or not re.fullmatch(r"[1-9][0-9]*", args[at + 1]):
                 raise ValueError("--upto には 1 以上の整数を 1 つ渡す")
             upto = int(args[at + 1])
+            del args[at:at + 2]
+        while "--since" in args:
+            at = args.index("--since")
+            if at + 1 >= len(args) or since is not None or not args[at + 1] or args[at + 1].startswith("-"):
+                raise ValueError("--since には基準の時点（コミットかタグ）を 1 つ渡す")
+            since = args[at + 1]
             del args[at:at + 2]
         if len(args) != 1 or args[0].startswith("-"):
             raise ValueError(__doc__.splitlines()[2] if __doc__ else
@@ -750,7 +1131,7 @@ def main(argv: list[str]) -> int:
         print(f"止めた: {e}", file=sys.stderr)
         return 4
     try:
-        out_dir, text, warnings = build(docs, upto, spec_loop, f"spec-loop {shown}")
+        out_dir, text, warnings = build(docs, upto, spec_loop, f"spec-loop {shown}", since)
     except screens_check.Stop as e:
         print(f"止めた: {e}", file=sys.stderr)
         return 4

@@ -48,6 +48,8 @@ usage: python3 screen-gate.py <docs ディレクトリ> [--upto <n>] [--screen-s
 - scaffold の関門（`scaffold.py`）——成果物の表の関門と同じ条件で当てる。1 は 1、2・4 は 2
 - サインオフの前の確かめ（`references/signoff-tags.md`）——要求確定のタグを付ける前に 0 であること
 - req-loop は 4・2 で止まる（1 では止まらない——未決定を起票する段である）。spec-review・scaffold は 0 以外で止まる（各 `SKILL.md`）
+- req-loop は出力の `screen-spec: 起票の候補: ` で始まる行（screen-spec の検査が出す、Q&A の番号を添えていない未決定の印）を起票の候補として読む
+  （#1100。読み方と起票の仕方は req-loop の `SKILL.md` の手順 3 を正とする）
 
 **守ること**:
 
@@ -56,6 +58,7 @@ usage: python3 screen-gate.py <docs ディレクトリ> [--upto <n>] [--screen-s
 - 名指しした screen-spec が screen-spec でなければ、ほかを探さずに 4
 - 画面の表に残った未決定の印を、screen-spec が無くても 1 にする
 - screen-spec の検査の 1・3 を 1、2 を 2、4 を 4 にし、知らない終了コードを 0 にしない（2）
+- screen-spec の検査の出力を、`screen-spec: ` を前に付けて全部写す（起票の候補の行を落とさない。#1100）
 - 1 を 4・2 より強くする
 - screen-spec を読み込まない（子のプロセスで呼ぶ）。ファイルを書かない（`__pycache__` も）
 
