@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """Q&A 表（`qa.csv`）から、レビュー会用の PPTX を作る。
 
-usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>]
+usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>] [--focus <No>[,<No>…]]
 
 **載せるのは、利用者にまだ見せる行だけ**——`状態` が `check-qa-csv.py` の
 `DONE` でない行である（状態の意味は `references/qa-csv.md` を正とする）。回答待ち・回答はあるが未反映の行に加えて、
 **暫定の回答で反映した行も載る**——確認してもらうため（判別は `check-qa-csv.py` の `is_provisional`。写さない——#404）。
 **状態の名前を列挙して絞らない**——決まりに状態が増えても、確認が残っている行を黙って落とさない。
-表紙・一覧・1 問 1 枚の順に並べる。**表紙の件数と各問の回答の見出しは、未反映と暫定で分ける**
+表紙・（`--focus` を渡したときだけ）今回の会で決めたい問・一覧・1 問 1 枚の順に並べる。**表紙の件数と各問の回答の見出しは、未反映と暫定で分ける**
 （暫定の行を「未反映」と書かない——仕様には反映済みなので）。
 **推奨を目立たせる**——一覧の各行に推奨のラベル、各問の頁で推奨の選択肢を太字にして「（推奨）」を添え、推奨の理由を載せる
 （推奨しない質問は「推奨なし」と理由。#267）。
+
+**`--focus` で、表紙の次に「今回の会で決めたい問」の 1 枚を足す**（#1042）——渡した番号を**渡した順に**、番号・質問の 1 行目・推奨のラベルで載せる。
+**どれを選びどう並べるかはこのスクリプトでは決めない**（req-loop の `SKILL.md` の手順 4 を正とする）。守るのは次だけ:
+渡せるのは**資料に載る行の番号だけ**（反映済み・表に無い番号は 2）・**重複も空の番号も 2**・**`FOCUS_MAX` 問を超えたら 2**・**`--focus` を 2 度書いたら 2**
+（どれも出力を作らず、既存の出力に触らない）。**`--focus` を渡さなければ、出力は前と同じ**——枚を足さない。
+**Q&A 表の行の並びは変えない**（表は番号の順。`references/qa-csv.md` の「番号の振り方」）——優先はこの 1 枚でだけ表す。
 
 **載せるのは共有の層の表だけ**——内部の層の表（`check-qa-csv.py` の `INTERNAL_NAME`）を渡されたら作らない（2）。
 内部の質問は開発者が決めるもので、利用者に見せない（`references/qa-csv.md` の「層」。#330）。
@@ -31,7 +37,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 - 0: 作った（載せた質問の数を、回答待ち・未反映と暫定に分けて出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
-- 2: 引数の誤り・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・
+- 2: 引数の誤り（`--focus` の番号が資料に載る行に無い・重複・空・`FOCUS_MAX` 問を超える・`--focus` を 2 度書いた、を含む）・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・
   **書いたパスと大文字小文字だけ違う名前を開く表**（`docs/v2/shared/qa.csv` と書いてディスクが `Shared/`。`check-qa-csv.py` の `misspelled`。#514）・想定外の例外（128KB を超えるセルの
   `csv.Error` など。書いている途中でも一時ファイルを消すので既存の出力は残る。#286）（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
@@ -78,6 +84,7 @@ qa = _load_checker()
 SLIDE_W, SLIDE_H = 12192000, 6858000
 MARGIN = 457200
 INDEX_PER_SLIDE = 10
+FOCUS_MAX = 3  # 「今回の会で決めたい問」の上限（#1042。元記事の「最大 3 問ずつ」に合わせる）
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 
 # XML 1.0 に書けない文字（タブ・改行・復帰を除く制御文字など）
@@ -195,6 +202,29 @@ def index_slides(rows: list[dict[str, str]]) -> list[str]:
             body += lines_of(f"{row['No']}{mark}  {first}  ［{recommendation_label(row)}］", 1600)
         out.append(slide(lines_of(head, 3200, bold=True), body))
     return out
+
+
+def focus_slide(rows: list[dict[str, str]]) -> str:
+    """「今回の会で決めたい問」の 1 枚。`rows` は `--focus` で渡した順。"""
+    body = []
+    for n, row in enumerate(rows, 1):
+        first = split_lines(row["質問"])[0]
+        tag = "（暫定）" if qa.is_provisional(row) else ""
+        body += lines_of(f"{n}. {row['No']}{tag}  {first}  ［{recommendation_label(row)}］", 2000)
+    return slide(lines_of("今回の会で決めたい問", 3200, bold=True), body)
+
+
+def pick_focus(rows: list[dict[str, str]], numbers: list[str]) -> tuple[list[dict[str, str]], str | None]:
+    """(`--focus` の番号の行を渡した順に, 問題) を返す。問題があれば行は空。"""
+    if len(numbers) > FOCUS_MAX:
+        return [], f"--focus は {FOCUS_MAX} 問まで（{len(numbers)} 問を渡された）"
+    if len(set(numbers)) != len(numbers):
+        return [], "--focus に同じ番号が 2 度ある"
+    by_no = {row["No"].strip(): row for row in rows}
+    missing = [n for n in numbers if n not in by_no]
+    if missing:
+        return [], f"--focus の {', '.join(n or '（空）' for n in missing)} は資料に載る行に無い（反映済みか、表に無い）"
+    return [by_no[n] for n in numbers], None
 
 
 def recommended(row: dict[str, str]) -> str | None:
@@ -433,8 +463,10 @@ def package(slides: list[str], title: str) -> list[tuple[str, str]]:
     return parts
 
 
-def build(rows: list[dict[str, str]], title: str, subtitle: str) -> list[tuple[str, str]]:
-    slides = [cover(title, subtitle, rows)] + index_slides(rows) + [question_slide(r) for r in rows]
+def build(rows: list[dict[str, str]], title: str, subtitle: str,
+          focus: list[dict[str, str]] | None = None) -> list[tuple[str, str]]:
+    head = [cover(title, subtitle, rows)] + ([focus_slide(focus)] if focus else [])
+    slides = head + index_slides(rows) + [question_slide(r) for r in rows]
     return package(slides, title)
 
 
@@ -458,14 +490,16 @@ def write(parts: list[tuple[str, str]], out: Path) -> None:
 
 # ---------------------------------------------------------------- 入口
 
-def parse(argv: list[str]) -> tuple[Path, Path, str, str] | None:
-    args, opts = [], {"--title": "レビュー会の確認事項", "--subtitle": ""}
+def parse(argv: list[str]) -> tuple[Path, Path, str, str, list[str] | None] | None:
+    args, opts = [], {"--title": "レビュー会の確認事項", "--subtitle": "", "--focus": None}
     it = iter(argv)
     for a in it:
         if a in opts:
             value = next(it, None)
             if value is None:
                 return None
+            if a == "--focus" and opts[a] is not None:
+                return None  # 2 度目の --focus で前の値を黙って捨てない（#1042 の 1 パス目）
             opts[a] = value
         elif a.startswith("--"):
             return None
@@ -473,7 +507,8 @@ def parse(argv: list[str]) -> tuple[Path, Path, str, str] | None:
             args.append(a)
     if len(args) != 2:
         return None
-    return Path(args[0]), Path(args[1]), opts["--title"], opts["--subtitle"]
+    focus = None if opts["--focus"] is None else [n.strip() for n in opts["--focus"].split(",")]
+    return Path(args[0]), Path(args[1]), opts["--title"], opts["--subtitle"], focus
 
 
 def main(argv: list[str]) -> int:
@@ -482,7 +517,7 @@ def main(argv: list[str]) -> int:
         print(__doc__.splitlines()[2] if __doc__ else
               f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
-    src, out, title, subtitle = parsed
+    src, out, title, subtitle, numbers = parsed
     problem = qa.misspelled(src)
     if problem:  # 区別しないファイルシステムでだけ開ける綴り違いの表から作らない（#514）
         print(f"{problem}。PPTX を作らない", file=sys.stderr)
@@ -500,13 +535,20 @@ def main(argv: list[str]) -> int:
             print(line, file=sys.stderr)
         print(f"{src}: 列検査を通らないので PPTX を作らない", file=sys.stderr)
         return code
+    focus = None
+    if numbers is not None:
+        focus, problem = pick_focus(rows, numbers)
+        if problem:
+            print(f"{src}: {problem}。PPTX を作らない", file=sys.stderr)
+            return 2
     try:
-        write(build(rows, title, subtitle), out)
+        write(build(rows, title, subtitle, focus), out)
     except OSError as e:
         print(f"{out}: 書けない（{e.strerror}）。既存の出力には触っていない", file=sys.stderr)
         return 3
     settled = sum(qa.is_provisional(row) for row in rows)
-    print(f"{out}: 質問 {len(rows)} 件を載せた（回答待ち・未反映 {len(rows) - settled} 件・暫定の回答 {settled} 件）")
+    picked = f"・今回の会で決めたい問 {len(focus)} 問" if focus else ""
+    print(f"{out}: 質問 {len(rows)} 件を載せた（回答待ち・未反映 {len(rows) - settled} 件・暫定の回答 {settled} 件{picked}）")
     return 0
 
 
