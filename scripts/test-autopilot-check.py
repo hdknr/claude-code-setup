@@ -18,6 +18,9 @@
 
 **TLC の前提の項目（#912）**: 正本の `CLAUDE.md` をテンポラリの試料に書き、TLC は偽物（絶対パスのスクリプト）で当てる——本物の TLC は走らせない。
 
+**screen-spec の項目（#1097）**: 正本の `docs/v1/requirements/screens/` に画面の表を置き、screen-spec は偽物（`plugin.json` の `name` が `screen-spec` のディレクトリ）を
+環境変数 `SPEC_LOOP_SCREEN_SPEC` で渡す——**本体はテンポラリの写し（`scripts/` を丸ごと）から読み込む**（リポジトリの `plugins/screen-spec/` が隣に在って見つかるのを避ける。正しい本体と変異で同じ場所の形にする）。
+
 **拒むべき操作（#1046）**: Issue の受入基準の陽性対照（`Bash(git tag:*)` が allow で 1）と、deny で通ること。scaffold の deny の規則は
 **テストが本体の場所（`HERE`）から自分で組む**——本体の `refused_operations` で組むと、本体が名前を変えても試料が一緒に変わって当たってしまう。
 """
@@ -63,10 +66,15 @@ MUTATIONS = {
                            "    except LinesError as exc:\n        if args.cmd == \"check\":\n"
                            "            return cmd_check(args, {\"commit\": \"しない\", \"止まる地点\": \"spec-review を抜けたら\"}, lg.main_worktree(cwd))\n"
                            "        print(")],
-    "commit = しない でスクリプトを点検しない": [('    return [f"python3 {root / name}" for name in scripts] + list(COMMIT_OPS[values["commit"]])',
+    "commit = しない でスクリプトを点検しない": [('    return [f"python3 {root / name}" for name in scripts] + screen + list(COMMIT_OPS[values["commit"]])',
                                        '    return ([f"python3 {root / name}" for name in scripts] if values["commit"] != "しない" else []) '
-                                       '+ list(COMMIT_OPS[values["commit"]])')],
+                                       '+ screen + list(COMMIT_OPS[values["commit"]])')],
     "マージを点検から落とす": [('"マージまで": PR_OPS + ("gh pr merge",)}', '"マージまで": PR_OPS}')],
+    "見つけた screen-spec の check-screens.py を点検から落とす": [
+        ("    screen = [f\"python3 {Path(screen_spec) / 'scripts' / 'check-screens.py'}\"] if screen_spec else []\n", "    screen = []\n")],
+    "画面の表があるのに screen-spec が無くても要対処にしない": [("    return (ACTION, label, f\"正本に画面の表がある。{reason}\",",
+                                                  "    return (HUMAN, label, f\"正本に画面の表がある。{reason}\",")],
+    "画面の表が無くても screen-spec を点検に足す": [("        placed = docs.is_dir() and gate.placed(docs, None)\n", "        placed = True\n")],
     "commit = しない で git を点検する": [('COMMIT_OPS = {"しない": (),', 'COMMIT_OPS = {"しない": PR_OPS,')],
     "feasibility のスクリプトを落とす": [('(FEASIBILITY_SCRIPTS if values["止まる地点"] == "feasibility の後" else ())', "()")],
     "allow が deny・ask に勝つ": [("        if denied:\n", "        if denied and not allowed:\n"),
@@ -93,6 +101,8 @@ MUTATIONS = {
 }
 
 TLC_LABEL = "TLC（業務フローの形式検査）"
+SCREEN_LABEL = "screen-spec（画面の表の検査）"
+FAKE_SCREEN_SPEC: list[str] = []  # main がテンポラリに作る偽の screen-spec の根（正しい本体と変異で同じパス）
 GOOD_LINES = {"上限": "周 5 まで続ける", "判断が要る": "推奨を暫定で採る", "commit": "マージまで", "止まる地点": "feasibility の後"}
 ALLOW_ALL = ["Bash(python3:*)", "Bash(git switch:*)", "Bash(git pull:*)", "Bash(git add:*)", "Bash(git commit:*)",
              "Bash(git push:*)", "Bash(gh pr create:*)", "Bash(gh pr merge:*)"]
@@ -284,6 +294,21 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
     check_with(safe)
     o["読むだけ"] = snapshot(ledger) == before and settings.read_text(encoding="utf-8") == before_settings
 
+    # screen-spec の項目（#1097）。許可は全部 allow・拒む操作は deny
+    write_lines(GOOD_LINES)
+    o["画面: 無い・check"] = check_with(safe)
+    screens = root / "docs" / "v1" / "requirements" / "screens" / "data" / "screens.csv"
+    screens.parent.mkdir(parents=True)
+    screens.write_text("画面ID\n", encoding="utf-8")
+    os.environ["SPEC_LOOP_SCREEN_SPEC"] = FAKE_SCREEN_SPEC[0]
+    o["画面: ある・見つかる・ops"] = call(["ops", "3"])[1].splitlines()
+    o["画面: ある・見つかる・check"] = check_with(safe)
+    o["画面: ある・見つかる・check（python3 を allow しない）"] = check_with({"allow": ALLOW_ALL[1:], "deny": deny_refused})
+    del os.environ["SPEC_LOOP_SCREEN_SPEC"]
+    o["画面: ある・見つからない・ops"] = call(["ops", "3"])[1].splitlines()
+    o["画面: ある・見つからない・check"] = check_with(safe)
+    shutil.rmtree(root / "docs")
+
     # TLC の前提（#912）。許可は全部 allow にして、TLC の項目だけを動かす
     for name, text in (("宣言なし・呼び方なし", "# 正本\n"),
                        ("宣言なし・通る呼び方", f"TLC の呼び方: {fake_tlc}\n"),
@@ -314,7 +339,15 @@ def main() -> int:
     saved_env = dict(os.environ)
     try:
         isolate_env(tmp / "home")
-        mod = load_module(SCRIPT, "apc")
+        # 本体はテンポラリの写しから読む（docstring の「screen-spec の項目」）
+        shutil.copytree(SCRIPTS, tmp / "plugin" / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+        mod = load_module(tmp / "plugin" / "scripts" / "autopilot-check.py", "apc")
+        fake = tmp / "fake-screen-spec"
+        (fake / ".claude-plugin").mkdir(parents=True)
+        (fake / ".claude-plugin" / "plugin.json").write_text('{"name": "screen-spec"}', encoding="utf-8")
+        (fake / "scripts").mkdir()
+        (fake / "scripts" / "check-screens.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+        FAKE_SCREEN_SPEC.append(str(fake))
         lg = load_module(LEDGER, "apl")
         print("正しい本体")
         o = scenario(mod, lg, tmp, "correct")
@@ -342,9 +375,24 @@ def main() -> int:
         n_ops = len(sr + fe + pr) + 1
         n_refused = len(REFUSED) + 1
         allowed = o["全部 allow"]
-        check("全部 allow・拒む操作は deny（TLC を外す宣言あり）: 0、全操作と拒む操作が良い、TLC と止まりうる操作が人が見る",
-              allowed[0] == 0 and [s for s, _ in allowed[1]] == ["良い"] * (n_ops + n_refused) + ["人が見る", "人が見る"]
-              and allowed[1][-2][1] == TLC_LABEL and allowed[1][-1][1] == "止まりうる操作")
+        check("全部 allow・拒む操作は deny（TLC を外す宣言あり・画面の表なし）: 0、全操作と拒む操作が良い、screen-spec・TLC と止まりうる操作が人が見る",
+              allowed[0] == 0 and [s for s, _ in allowed[1]] == ["良い"] * (n_ops + n_refused) + ["人が見る", "人が見る", "人が見る"]
+              and allowed[1][-3][1] == SCREEN_LABEL and allowed[1][-2][1] == TLC_LABEL and allowed[1][-1][1] == "止まりうる操作")
+        screen_line = f"python3 {Path(FAKE_SCREEN_SPEC[0]) / 'scripts' / 'check-screens.py'}"
+        check("画面の表が無い: screen-spec の項目は人が見る（点検に足さない）",
+              o["画面: 無い・check"][0] == 0 and (("人が見る", SCREEN_LABEL) in o["画面: 無い・check"][1])
+              and not any("check-screens" in lab for _, lab in o["画面: 無い・check"][1]))
+        check("画面の表があり screen-spec が見つかる: ops は spec-loop のスクリプトの後に check-screens.py（#1097 の受入基準）",
+              o["画面: ある・見つかる・ops"] == sr + fe + [screen_line] + pr + ["gh pr merge"])
+        found = o["画面: ある・見つかる・check"]
+        check("画面の表があり screen-spec が見つかる: check-screens.py の許可を点検し（良い）、screen-spec の項目は良い、0",
+              found[0] == 0 and ("良い", f"許可: `{screen_line}`") in found[1] and ("良い", SCREEN_LABEL) in found[1])
+        check("画面の表があり screen-spec が見つかる: python3 を allow しなければ check-screens.py が要対処（陽性対照）",
+              o["画面: ある・見つかる・check（python3 を allow しない）"][0] == 1
+              and ("要対処", f"許可: `{screen_line}`") in o["画面: ある・見つかる・check（python3 を allow しない）"][1])
+        check("画面の表があるのに screen-spec が見つからない: ops に足さず、check は screen-spec の項目が要対処で 1",
+              o["画面: ある・見つからない・ops"] == sr + fe + pr + ["gh pr merge"]
+              and o["画面: ある・見つからない・check"][0] == 1 and ("要対処", SCREEN_LABEL) in o["画面: ある・見つからない・check"][1])
         merge = o["merge を deny（allow もある）"]
         check("deny は allow より強い: 1、gh pr merge が要対処", merge[0] == 1 and ("要対処", "許可: `gh pr merge`") in merge[1])
         push = o["push を ask（allow もある）"]
@@ -454,11 +502,10 @@ def main() -> int:
             for needle, replacement in pairs:
                 mutated = mutated.replace(needle, replacement)
             d = tmp / f"mut-{i}"
-            (d / "scripts").mkdir(parents=True)
-            broken = d / "scripts" / "autopilot-check.py"
+            # scripts/ を丸ごと写す（screen-gate.py とその読み込む先も要る。#1097）——正しい本体と同じく、隣に screen-spec は無い
+            shutil.copytree(SCRIPTS, d / "plugin" / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+            broken = d / "plugin" / "scripts" / "autopilot-check.py"
             broken.write_text(mutated, encoding="utf-8")
-            shutil.copy(LEDGER, d / "scripts" / "autopilot-ledger.py")
-            shutil.copy(TLC, d / "scripts" / "check-tlc.py")
             # **読み込めない変異は「殺せた」ではなく「当てられなかった」**
             try:
                 mutant = load_module(broken, "mut")

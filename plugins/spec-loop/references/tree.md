@@ -20,6 +20,7 @@ docs/v<n>/
 ├── requirements/            # 利用者向け：業務ルール・画面・業務フロー
 │   ├── flows/               # 業務フローの図（BPMN の `<名前>.bpmn` と書き出し `<名前>.svg`。下の「図」の「業務フロー（BPMN）」）
 │   ├── mocks/               # UI モック（HTML の `<画面名>.html`・React の `<画面名>/`。参考資料で受入基準ではない。下の「UI モック」）
+│   ├── screens/             # 画面の表と散文の仕様書（任意。screen-spec のプラグインの決まり。下の「画面の表」）
 │   ├── features.csv         # 機能一覧（下の「システム設計書の成果物」）
 │   ├── entities.csv         # データモデル（概念）の表。ER 図は er.drawio と書き出し er.svg（同上）
 │   ├── io.csv               # 入出力の一覧（同上）
@@ -477,6 +478,19 @@ spec/formal/<対象>/
   仕様書には「仕様と要求のファイル」にモックのパスが載る（下の「仕様書」）。
 - **開発ループへの受け渡し**: scaffold の中間表現の機能の `refs` に、その機能の画面のモックのパスを並べる（`spec-ir.md` の「参考資料」。#951）——
   Issue の本文の `## 参考資料` に載り、写しが `scaffold/refs/` に置かれる。**`refs` はファイルを指す**ので、React のモックは入口の `index.html` とソースの `.jsx` をそれぞれ並べる。
+
+## 画面の表（任意。#1097）
+
+**`requirements/screens/` は任意の項目である**——画面の表（`data/screens.csv`・`data/screen-items.csv`・`data/transitions.csv`）と散文の仕様書を、
+**screen-spec のプラグイン**の決まりで置く（列・節・検査は screen-spec の `references/` を正とする。spec-loop は書かない）。
+**spec-loop は screen-spec に依存しない**——置かなければ、spec-loop は今までどおり動く。
+
+- **重ね方**: 3 つの表は行の単位で重なる（`versions.md` の「行の単位で重ねる表」）。散文の仕様書はほかのファイルと同じくファイルの単位。
+- **承認の照合の範囲に入る**——`requirements/` の中なので、2 つのサインオフが比べる（`signoff-tags.md`）。
+- **関門に入る**——置いた正本では、抜ける条件 1（`check-spec-exit.py --docs`）・scaffold の関門・サインオフの前の確かめが、画面の表の未決定の印と
+  screen-spec の検査の結果を入れ、**screen-spec が見つからなければ止まる**（検査を飛ばしたまま承認と scaffold を通さない）。
+  判定・screen-spec の見つけ方・終了コードは同梱の `scripts/screen-gate.py` の docstring を正とする。
+- **仕様（`spec/`）との境目**——画面の表と仕様書は要求の入力で、spec-review は `spec/` に画面の見た目・配置を書き写さない（`spec-scope.md` の「画面の表」）。
 
 ## 持ち込まれたコードの取り込み（#998）
 

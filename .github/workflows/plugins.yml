@@ -365,6 +365,10 @@ jobs:
       - name: screen-spec の画面・項目・遷移の表の検査のテスト（#1092）
         run: python3 scripts/test-check-screens.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（画面の表の関門。本物の screen-spec の写しを隣に置いて回す）。
+      - name: spec-loop の画面の表の関門のテスト（#1097）
+        run: python3 scripts/test-screen-gate.py
+
       # 本体は plugins/screen-spec/scripts/ にある（init・add のスキルが呼ぶ。spec-loop の重ね方を読み込むので、本物の spec-loop と並べて回す）。
       - name: screen-spec の init・add の書き込みと雛形のテスト（#1093）
         run: python3 scripts/test-write-screens.py

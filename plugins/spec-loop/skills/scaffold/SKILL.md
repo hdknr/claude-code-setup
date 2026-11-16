@@ -69,10 +69,12 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 ```bash
 python3 <このスキルの base ディレクトリ>/../../scripts/merge-versions.py docs build/merged
-python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-exit.py build/merged/shared/qa.csv build/merged/spec
+python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-exit.py build/merged/shared/qa.csv build/merged/spec --docs docs
 ```
 
 - **重ね合わせが 0 以外なら止まる**（版の決まりに反する。出力を示す）。
+- **画面の表（`requirements/screens/`）を置いた正本では、`--docs docs` で画面の関門も入る**（#1097）——**画面の表があるのに screen-spec が見つからなければ 2 で止まる**
+  （screen-spec を入れるか `SPEC_LOOP_SCREEN_SPEC` で渡すよう案内する）。`scaffold.py` も生成の前に同じ関門を自分で当てる（`../../scripts/screen-gate.py` の docstring を正とする）。
 - **0 以外なら止まる。** 出力（仕様に反映した状態でない Q&A・未決定の印）を示し、`/spec-loop:req-loop`・`/spec-loop:spec-review` を案内する。
 - **0 でも、抜けたとは限らない**——条件 2〜5 は判定役の報告で決まる（`../../references/spec-exit.md`）。
   **抜けたかは、正本の作業中の版の記録の表（`spec-review/v<n>.csv`）の最後の実行の行で決まり、`scaffold.py` が自分で読む**（#1044。書く生成と `--dry-run`）——

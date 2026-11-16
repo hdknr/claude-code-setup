@@ -169,6 +169,7 @@ TESTS: list[str] = [
     "test-check-design-csv.py",
     "test-check-infra-csv.py",
     "test-check-screens.py",
+    "test-screen-gate.py",
     "test-write-screens.py",
     "test-build-mock.py",
     "test-screen-spec-pages.py",
