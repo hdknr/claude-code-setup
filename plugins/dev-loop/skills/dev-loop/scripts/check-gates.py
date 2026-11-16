@@ -59,7 +59,8 @@
      その SHA が既定ブランチから辿れる（既定ブランチの祖先の）もの。merge commit で入れた PR の中のコミットも含む。戻されたコミットがその最初の親から変えたファイルを、戻した履歴のある範囲とする。
    - **周の差分が、既定ブランチの `不在で止める範囲:` の行を 1 本でも外す**——分岐点にも既定ブランチにもあるパターンの行が、head の `.claude/dev-loop.md` に無い。
      周が自分の止まる範囲を外さない。分岐の後に既定ブランチへ足された行は、head に無くても外したと読まない。
-   - **読めない宣言**——`不在で止める範囲` を含むのに上の形で読めない行（全角のコロン・箇条書きの印など）と、既定ブランチの木（`git ls-tree`）と周の差分のどのパスにも当たらないパターン
+   - **読めない宣言**——`不在で止める範囲` の直後にコロン（全角も）が続くのに上の形で読めない行（全角のコロン・箇条書きの印など。
+     キーワードを含むだけの散文の行は宣言と読まない）と、既定ブランチの木（`git ls-tree`）と周の差分のどのパスにも当たらないパターン
      （`/` で始まる・行末の注釈・`**/x` が根の `x` に当たらない、など）。書き損じを文字で列挙せず、当たるパスが無いことで見る——**まだ無いパスを宣言すると、できるまで止まり続ける**。
 
 | 判定 | 通る判断の出所 |
@@ -98,7 +99,9 @@
 - **既定ブランチから辿れないコミットを戻した行は、戻した履歴に数えない**——squash した PR の本文に残った、PR の途中の revert。
 - **merge commit で既定ブランチに入れたコミットを戻した行も、戻した履歴に数える**——戻されたコミットが既定ブランチの最初の親の線に無くても。
 - **既定ブランチの木と周の差分のどのパスにも当たらないパターンを、黙って捨てない**——読めない宣言として止める。
-- **`不在で止める範囲` を含むのに形の読めない行を、黙って捨てない**——読めない宣言として止める。
+- **`不在で止める範囲` の直後にコロンが続くのに形の読めない行を、黙って捨てない**——読めない宣言として止める。
+- **キーワードを含むだけの散文の行（`不在で止める範囲は…`）を、宣言の候補にしない**——説明の行で不在のマージを止めない。
+- **パスは引用符なしで読む**（`core.quotePath=false`）——非 ASCII のパスの宣言を、どのパスにも当たらない宣言と読まない。
 - **分岐の後に既定ブランチへ足された範囲の宣言を、周の差分が外したと読まない。**
 - **glob の文字を持たないパターンは、配下にも当てる**——末尾の `/` を書き忘れたディレクトリを、黙って何にも当たらない宣言にしない。
 - **`--absent` では、既定ブランチの `不在で止める範囲:` の行を外す差分を通さない**——周が自分の止まる範囲を外さない。
@@ -175,6 +178,8 @@ VERSION_JSON_FILES = (".claude-plugin/plugin.json", ".claude-plugin/marketplace.
 VERSION_SKILL = re.compile(r"^<!-- skill-version: \S+ -->$|^> \*\*このスキルの版: \S+\*\*（プラグイン `[^`]+`）。$")
 ID_HEADERS = ("#", "番号", "ID")
 STOP_DECL = re.compile(r"^不在で止める範囲:\s*(.+?)\s*$")  # 影響範囲の宣言（#1047）
+# 宣言のつもりの行（箇条書きの印を外して、キーワードの直後がコロン——全角も）。散文の行は候補にしない（#1047 J2）
+STOP_CANDIDATE = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)?不在で止める範囲\s*[:：]")
 REVERTS = re.compile(r"This reverts commit ([0-9a-f]{7,64})\b")  # SHA-1（40 桁）と SHA-256（64 桁）
 
 LINE_FORMS = {
@@ -351,7 +356,8 @@ class Context:
 
     def git(self, *args: str, ok: tuple[int, ...] = (0,)) -> subprocess.CompletedProcess:
         try:
-            res = subprocess.run(["git", *args], cwd=str(self.top), capture_output=True, text=True)
+            res = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=str(self.top),
+                                 capture_output=True, text=True)  # 非 ASCII のパスを引用符なしで読む（#1047 J1）
         except OSError as e:
             raise Undetermined(f"git を起動できなかった: {e}") from e
         if res.returncode not in ok:
@@ -555,10 +561,10 @@ def matches(path: str, pattern: str) -> bool:
 
 
 def stop_lines(text: str) -> tuple[list[str], list[str]]:
-    """`.claude/dev-loop.md` の `不在で止める範囲:` のパターンと、`不在で止める範囲` を含むのに形の読めない行（コードブロックと HTML コメントの外）。"""
+    """`.claude/dev-loop.md` の `不在で止める範囲:` のパターンと、宣言のつもりなのに形の読めない行（コードブロックと HTML コメントの外）。"""
     patterns, bad = [], []
     for l in visible(text):
-        if "不在で止める範囲" in l:
+        if STOP_CANDIDATE.match(l.strip()):
             m = STOP_DECL.match(l)
             (patterns.append(m.group(1)) if m else bad.append(l.strip()))
     return patterns, bad

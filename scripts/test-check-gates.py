@@ -116,6 +116,12 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "reset", "-q", "--hard", s["M"])
     s["M5"] = commit(repo, "decl added after the fork", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: q.txt\n"})
     git(repo, "reset", "-q", "--hard", s["M"])
+    # J1（#1047）: 非 ASCII のパスの宣言（git は既定で引用符つきで出す——core.quotePath）
+    s["M6"] = commit(repo, "non-ascii decl", {".claude/dev-loop.md": MAIN_MD + JP_DECL, "docs/設計/a.md": "a\n"})
+    git(repo, "reset", "-q", "--hard", s["M"])
+    # J2（#1047）: キーワードを含むだけの散文の行
+    s["M7"] = commit(repo, "prose line", {".claude/dev-loop.md": MAIN_MD + PROSE})
+    git(repo, "reset", "-q", "--hard", s["M"])
     git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
     git(repo, "switch", "-q", "issue/1-x")
     git(repo, "merge", "-q", "--no-edit", "--no-ff", "main")
@@ -139,6 +145,9 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
                        ("H2", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: /risky/\n"}),
                        ("H3", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: deepdir\n", "deepdir/x.txt": "d\n"}),
                        ("H4", {".claude/dev-loop.md": MAIN_MD + "- 不在で止める範囲: q.txt\n"}),
+                       ("H6", {".claude/dev-loop.md": MAIN_MD + JP_DECL}),
+                       ("H7", {".claude/dev-loop.md": MAIN_MD + JP_DECL, "docs/設計/b.md": "b\n"}),
+                       ("H8", {".claude/dev-loop.md": MAIN_MD + PROSE}),
                        ("Y2", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: a.txt\n"})):
         git(repo, "reset", "-q", "--hard", s["MM"])
         s[key] = commit(repo, f"touch {key}", files)
@@ -158,6 +167,8 @@ MAIN_MD = ("# 追補\n\nマージの反映: ドキュメントとプラグイン
            "不在で止める範囲: a.txt\n```\n\n"
            "<!--\nマージの反映: ドキュメントのみ\n不在で止める範囲: a.txt\n-->\n\n"
            "不在で止める範囲: risky/\n不在で止める範囲: m.txt\n")
+JP_DECL = "不在で止める範囲: docs/設計/\n"
+PROSE = "\n不在で止める範囲は risky/ と m.txt にしている。\n"
 TABLE = ("## 受入基準（不変条件 × 経路）\n\n| # | 不変条件 | 守り方 |\n| --- | --- | --- |\n"
          "| A1 | x | y |\n| **A2** | x | y |\n\n## ほか\n\n| # | 受入基準ではない |\n| --- | --- |\n| Z9 | z |\n")
 CRIT = ["受入基準: A1 満たす", "受入基準: A2 未証明"]
@@ -275,6 +286,13 @@ CASES = {
         (FULL + ["関門: 当て直し {MM} {H4} 反証=0", REFL], "H4", 3, ["--absent"], {"default": "M4"}, "の形で読めない"),
     "分岐の後に既定ブランチへ足された範囲の宣言を、周が外したと読まない":
         (FULL + [REFL], "MM", 0, ["--absent"], {"default": "M5"}),
+    "非 ASCII のパスの宣言に当たらない差分は、不在の周でも止めない（J1）":
+        (FULL + ["関門: 当て直し {MM} {H6} 反証=0", REFL], "H6", 0, ["--absent"], {"default": "M6"}),
+    "非 ASCII のパスの宣言に当たる差分は、宣言に当たったと言って止める（J1）":
+        (FULL + ["関門: 当て直し {MM} {H7} 反証=0", REFL], "H7", 3, ["--absent"], {"default": "M6"},
+         "「不在で止める範囲: docs/設計/」に当たる"),
+    "キーワードを含むだけの散文の行では止めない（J2）":
+        (FULL + ["関門: 当て直し {MM} {H8} 反証=0", REFL], "H8", 0, ["--absent"], {"default": "M7"}),
     "glob の文字の無い範囲の宣言は、配下にも当てる":
         (FULL + ["関門: 当て直し {MM} {H3} 反証=0", REFL], "H3", 3, ["--absent"], {"default": "M3"}, "不在で止める範囲: deepdir」に当たる"),
     "ブランチにだけ足した範囲の宣言は効かない（既定ブランチから読む）":
@@ -386,6 +404,10 @@ MUTATIONS = {
     # 守る（#1047）: 形の読めない行を黙って捨てない
     "形の読めない行を捨てる": ("(patterns.append(m.group(1)) if m else bad.append(l.strip()))",
                            "(patterns.append(m.group(1)) if m else None)"),
+    # 守る（#1047 J2）: 散文の行を宣言の候補にしない
+    "散文の行も宣言の候補にする": ("if STOP_CANDIDATE.match(l.strip()):", 'if "不在で止める範囲" in l:'),
+    # 守る（#1047 J1）: パスは引用符なしで読む
+    "パスを引用符つきで読む": ('["git", "-c", "core.quotePath=false", *args]', '["git", *args]'),
     # 守る（#1047）: 分岐の後に足された宣言を外したと読まない
     "後から足された宣言を外したと読む": ("if pat in at_fork and pat not in kept:", "if pat not in kept:"),
     # 守る（#1047）: glob の文字の無いパターンは配下にも当てる
@@ -432,6 +454,9 @@ KILLS = {
     "当たらない宣言を捨てる": ["読めない範囲の宣言（/ で始まる）は、不在の周で止める"],
     "形の読めない行を捨てる": ["形の読めない範囲の宣言の行（箇条書きの印）は、不在の周で止める"],
     "後から足された宣言を外したと読む": ["分岐の後に既定ブランチへ足された範囲の宣言を、周が外したと読まない"],
+    "散文の行も宣言の候補にする": ["キーワードを含むだけの散文の行では止めない（J2）"],
+    "パスを引用符つきで読む": ["非 ASCII のパスの宣言に当たらない差分は、不在の周でも止めない（J1）",
+                          "非 ASCII のパスの宣言に当たる差分は、宣言に当たったと言って止める（J1）"],
     "glob の無いパターンを配下に当てない": ["glob の文字の無い範囲の宣言は、配下にも当てる"],
     "宣言を外す差分を通す": ["周の差分が既定ブランチの範囲の宣言を外せば、不在の周で非 0"],
     "差分を周の base から取る": ["不在の周では BLOCKED を線（マージ前の判断）で通す"],
