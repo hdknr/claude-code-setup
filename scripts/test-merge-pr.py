@@ -136,12 +136,17 @@ def plan_text(base: str, feat: str, kind: str) -> str:
             "```dev-loop-gates\n" + "\n".join(lines) + "\n```\n")
 
 
-def make_repo(root: Path, lock: bool = True, plan: str | None = "full", origin: bool = True) -> tuple[Path, Path, str]:
+RISKY = "# 追補\n\n不在で止める範囲: a.txt\n"  # #1047: 試料の PR の差分（a.txt）に当たる宣言
+
+
+def make_repo(root: Path, lock: bool = True, plan: str | None = "full", origin: bool = True,
+              declare: str | None = None) -> tuple[Path, Path, str]:
     """メインの作業ツリーと、PR のブランチを持つ worktree。(main, wt, head の SHA)。
 
     worktree には関門の記録を持つ計画をコミットする（#1043。`plan=None` なら置かない）。
     `one` は 1 パス目の後に直したコミットを足す——2 パス目の記録が無いので照合を通らない。
     `origin=False` なら既定ブランチの追跡参照を置かない——照合は判定できない（7）。
+    `declare` は既定ブランチの `.claude/dev-loop.md` の中身（#1047。影響範囲の宣言）。
     """
     main = root / "main"
     main.mkdir(parents=True)
@@ -150,6 +155,9 @@ def make_repo(root: Path, lock: bool = True, plan: str | None = "full", origin: 
     git(main, "config", "user.email", "t@example.invalid")
     git(main, "config", "user.name", "t")
     (main / "README.md").write_text("x\n", encoding="utf-8")
+    if declare is not None:
+        (main / ".claude").mkdir()
+        (main / ".claude" / "dev-loop.md").write_text(declare, encoding="utf-8")
     git(main, "add", "-A")
     git(main, "commit", "-qm", "init")
     if origin:  # 照合が既定ブランチを読む（check-gates.py。周の base が既定ブランチに入っているか）
@@ -185,9 +193,9 @@ def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False, 
 def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after=None, issues=None,
              merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5",
              merge_drop=False, default=None, number="42", late_ledger=None, plan="full", main_plan=False,
-             args=(), origin=True, **gh) -> dict:
+             args=(), origin=True, declare=None, **gh) -> dict:
     root = base / name
-    main, wt, sha = make_repo(root, lock=lock, plan=plan, origin=origin)
+    main, wt, sha = make_repo(root, lock=lock, plan=plan, origin=origin, declare=declare)
     if main_plan:  # 計画をメインの作業ツリーにも写して --plan で渡す（worktree を撤去する試料のため）
         (main / PLAN_REL).parent.mkdir(parents=True)
         (main / PLAN_REL).write_text((wt / PLAN_REL).read_text(encoding="utf-8"), encoding="utf-8")
@@ -490,6 +498,12 @@ CASES = {
         dict(make_view=lambda s: [pr(s)], plan=None), 13, False, True, "計画ファイルが見つからない"),
     "線の判断（BLOCKED）は --absent を渡せば通す": (
         dict(make_view=lambda s: [pr(s)], plan="absent", args=("--absent",)), 0, True, False),
+    # #1047: 既定ブランチで宣言した影響範囲に当たる差分は、不在の周ではマージしない
+    "宣言した影響範囲に当たる差分は --absent でマージしない（#1047）": (
+        dict(make_view=lambda s: [pr(s)], plan="absent", args=("--absent",), declare=RISKY),
+        13, False, True, "不在で止める範囲: a.txt"),
+    "宣言した影響範囲に当たっても、居る周（--absent なし）はマージする": (
+        dict(make_view=lambda s: [pr(s)], declare=RISKY), 0, True, False),
     "--plan に渡したファイルが無ければマージしない（13）": (
         dict(make_view=lambda s: [pr(s)], args=("--plan", "/nonexistent/issue-42.md")), 13, False, True, "計画ファイルが見つからない"),
     "照合が判定できなければマージしない（7）": (
@@ -602,7 +616,8 @@ KILLS = {
     "撤去をマージの前に置く": ["マージが失敗したら worktree を残す",
                        "merge が 0 でも MERGED にならなければ 8・worktree を残す"],
     "照合を通さない": ["関門を 1 パスしか通していない計画の PR はマージしない（#1043）",
-                    "線の判断（BLOCKED）は --absent が無ければ通さない"],
+                    "線の判断（BLOCKED）は --absent が無ければ通さない",
+                    "宣言した影響範囲に当たる差分は --absent でマージしない（#1047）"],
     "計画が無ければ照合を飛ばす": ["計画ファイルが見つからなければマージしない",
                            "--plan に渡したファイルが無ければマージしない（13）"],
     "照合の判定できないを通す": ["照合が判定できなければマージしない（7）"],
