@@ -52,7 +52,7 @@ main へのマージで、プラグインの配布（カタログ・link-skills 
 
 ## 版の上げ方
 
-spec-loop を minor で上げる（0.90.0 → 0.91.0。能力の追加。0.x なので壊れる変更も minor）——`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md`（7 本）の 2 行。
+spec-loop を minor で上げる（0.90.0 → 0.91.0、main の取り込みで 0.92.0 → 0.93.0。能力の追加。0.x なので壊れる変更も minor）——`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md`（7 本）の 2 行。
 マージの直前に main が進んでいたら、main の先端の spec-loop の版から minor で 1 つ上げた値にする（cruise の `references/parallel.md` の「版とマージの順」）。
 
 ## 受入基準（不変条件 × 経路）
@@ -70,7 +70,7 @@ Issue の受入基準 4 つ（U1〜U4）を、不変条件と破りうる入口�
 | A7 (U3) | 画面の表が無い正本で、3 本の出力が今と変わらない | 3 本の CLI（既存の試料） | 既存のテストの期待値（全行・全バイト）がそのまま通ること。表が無ければ差分に画面の種類の行を出さない |
 | A8 (U4) | `test-merge-versions.py` が、本体の一覧が `versions.md` の一覧と一致することを見る | `check_reference` | 一覧の表の行（パス・種類・鍵の列・画面を指す列）と `removed.csv` の種類を突き合わせる。変異（一覧をずらす）で落ちることも見る |
 | A9 | 一覧の表の各版の形の誤り（見出しに鍵の列が無い・鍵が空・鍵の重複・列の数・見出しが前の版と違う・綴り違いの名前）は決まりに反する（1） | `merge-versions.py` | `read_rows`・`misnamed_structured` |
-| A10 | 版が 3 種類で 0.91.0・指し先が実在する・歯止めが全部緑 | `check-plugin-versions.py` ほか | `check-all.py`（順番待ち越し） |
+| A10 | 版が 3 種類で揃い main より上（0.93.0）・指し先が実在する・歯止めが全部緑 | `check-plugin-versions.py` ほか | `check-all.py`（順番待ち越し） |
 | X1 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方 × 1・2 パス目に渡す | — | 再開点で記録 |
 
 **証明できないもの（未証明）**: 無し（どれも一時ディレクトリの試料で走らせて確かめられる）。
