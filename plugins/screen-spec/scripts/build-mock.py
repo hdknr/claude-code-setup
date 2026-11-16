@@ -373,9 +373,13 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str,
     missing = [p for p in screens_check.TABLES if p not in whole.headers]
     if missing:
         raise Refused("画面の表が揃っていない（3 つの表を置く）: " + "、".join(missing))
+    # 案件の profile の列（`references/profiles.md`）を足した見出し行で照らす。読めない・誤った profile なら決まりの列だけ（検査が違反を出す）
+    profile = checker.read_profile(whole)
+    extra = screens_check.PROFILES[profile]["columns"] if profile in screens_check.PROFILES else {}
     for path in screens_check.TABLES:
-        if whole.headers[path] != screens_check.COLUMNS[path]:
-            raise Refused(f"{path}: 見出し行が決まり（{','.join(screens_check.COLUMNS[path])}）と違う: {','.join(whole.headers[path])}")
+        expected = screens_check.COLUMNS[path] + extra.get(path, [])
+        if whole.headers[path] != expected:
+            raise Refused(f"{path}: 見出し行が決まり（{','.join(expected)}）と違う: {','.join(whole.headers[path])}")
 
     sharer = Sharer(checker.qa)
     names = {screens_check.SCREENS: "screens", screens_check.ITEMS: "items", screens_check.TRANSITIONS: "transitions"}

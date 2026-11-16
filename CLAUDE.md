@@ -35,7 +35,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。
       読む時点・採否の表への載せ方・2 パスとの関係・待ち方は `references/external-review.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-reviews.py`）
     - `skills/dev-loop/scripts/check-gates.py` - **計画ファイルの関門の記録（`dev-loop-gates` のブロック）を、リポジトリの履歴と照合する**——周の線のコミットごとにそれを見た関門があるか・2 パスと狭いパス・受入基準ごとの判定と判断の出所・`マージの反映:` の出所
-      （#1043。`SKILL.md` 手順 7 がマージの前に素の 1 行で呼び、`merge-pr.py` は `gh pr merge` の前に通して 0 でなければ 13 で止まる。**記録の形の原本と、守る／守らないは docstring を正とする**。判定を足す口は `CHECKS`（#1047）。テストは `scripts/test-check-gates.py`）
+      （#1043。`SKILL.md` 手順 7 がマージの前に素の 1 行で呼び、`merge-pr.py` は `gh pr merge` の前に通して 0 でなければ 13 で止まる。**記録の形の原本と、守る／守らないは docstring を正とする**。判定を足す口は `CHECKS`。**`--absent` では影響範囲（既定ブランチの `.claude/dev-loop.md` の `不在で止める範囲:` と、既定ブランチで revert したコミットが触ったファイル）に触れる差分も通さない**——#1047。テストは `scripts/test-check-gates.py`）
     - `skills/cruise/` - **オートクルーズの入口**（#446。`/dev-loop:cruise <親 Issue> [--absent]`）。親 Issue のチェックリストから
       `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**。
       親 Issue の `cruise:` の行（線）も確かめてから台帳に残す——#458。線の項目と値は `ledger.py` の `LINES` を読む）。
@@ -89,8 +89,13 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
       （**0 でも「抜けた」ではない**。Q&A 表は `qa-to-pptx.py` の `read_rows` で読み、**仕様に反映した状態**
       （`check-qa-csv.py` の `REFLECTED`——`暫定反映` を含む）でない行を数える——**資料に載る行とは別の定義**（#325）。
-      **仕様のディレクトリの中の内部の表（`qa-dev.csv`）も数え、未決定の印の走査からは外す**（#339）。テストは
-      `scripts/test-check-spec-exit.py`）
+      **仕様のディレクトリの中の内部の表（`qa-dev.csv`）も数え、未決定の印の走査からは外す**（#339）。
+      **`--docs` で画面の関門（`screen-gate.py`）も入れる**（#1097）。テストは
+      `scripts/test-check-spec-exit.py`・`scripts/test-screen-gate.py`）
+    - `scripts/screen-gate.py` - **画面の表の関門**（#1097）——画面の表（`requirements/screens/`。任意）があれば、その未決定の印と screen-spec の検査（`check-screens.py`。**子のプロセスで呼び、読み込まない**）の結果を入れ、
+      **画面の表があるのに screen-spec が見つからなければ 4 で止まる**。画面の表が無ければ何も出さずに 0（spec-loop は screen-spec に依存しない）。
+      抜ける条件 1（`check-spec-exit.py --docs`）・scaffold の関門（`scaffold.py`）・`autopilot-check.py` が読み込み、req-loop・spec-review・サインオフの前の確かめが CLI で呼ぶ。
+      screen-spec の見つけ方は screen-spec の spec-loop の見つけ方と同じ形の写し。守る／守らないは docstring を正とする。テストは `scripts/test-screen-gate.py`
     - `scripts/check-feasibility-csv.py` - スケジュールと見積りの表の検査（`schedule-to-gantt.py` と
       `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは
       `scripts/test-check-feasibility-csv.py`）
@@ -203,9 +208,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
       **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
   - `screen-spec/` - 画面設計書を spec-loop とは別に持つプラグイン（#1081。**spec-loop の決まりに従い、spec-loop は screen-spec に依存しない**。
-    いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器まで。profile・モックの差分の印は後の段——#1094・#1096）
+    いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器と、profile `web-spa`（#1094）まで。モックの差分の印は後の段——#1096）
     - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・案件ごとの設定（`settings.csv`）・`init` と `add`（採番）・検査と終了コードは `tables.md`、
-      散文の仕様書の節・雛形・書き方・レビュー観点・共通仕様は `prose.md`、対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`）
+      散文の仕様書の節・雛形・書き方・レビュー観点・共通仕様は `prose.md`、実現方式の profile（列・節と小見出し・方式が未定のとき・誰が決めるか）は `profiles.md`、
+      対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`）
+    - `profiles/` - profile ごとの雛形（`web-spa/`。仕様書の末尾の節と共通仕様の節。**`init` が案件の雛形と共通仕様の末尾に足す**）。
+      **profile の列は表の見出し行に入るので、profile は表を置く最初の版で決める**（見出し行は版の間で変えない——#1105）
     - `skills/init/`・`skills/add/` - 画面設計書を始める・画面を 1 つ足すスキル（#1093。`/screen-spec:init`・`/screen-spec:add`）。**書き込みは同梱のスクリプトがし、スキルは値を利用者と決めるだけ**。
       **Q&A 表を書かず、番号を振らない**。共有の `references/` と `scripts/` を `../../` で指すので、**素のスキルとしては張れない**
     - `templates/` - 仕様書（`spec.md`。表で持つ節は表を出す印だけ）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`）の雛形。
@@ -396,6 +404,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `plugins/screen-spec/scripts/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べて走らせ**（spec-loop の重ね方を読み込むので）、
     #1092 の受入基準の陽性対照・陰性対照・実行の前後で正本が変わらないこと（Q&A の番号を振らない）と、**本体の定数が `plugins/screen-spec/references/` の原本と一致すること**を見る。
     spec-loop の版の範囲は写しの `plugin.json` を書き換えて、プラグインのキャッシュの形は一時の設定のディレクトリ（`CLAUDE_CONFIG_DIR`）に作って当てる——利用者の `~/.claude` は読まない
+  - `test-screen-gate.py` - spec-loop の画面の表の関門（#1097）と、それを条件 1 に入れる `check-spec-exit.py` の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の spec-loop の写しを置き、隣に本物の screen-spec の写しを置く・置かない・偽物を名指す**で当て、
+    正本の試料は `test-check-screens.py` の `base()` を読み込む。**陽性対照: 同じ「未定」の正本で、画面の関門を当てない条件 1 は 0**。プラグインのキャッシュの形は一時の `CLAUDE_CONFIG_DIR` に作る——利用者の `~/.claude` は読まない
   - `test-write-screens.py` - screen-spec の `init`・`add` の書き込みと雛形（#1093）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` と `plugins/screen-spec/templates/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べ、スキルの手順をスクリプトで再現する**
     （`hint` → `init` → `add` → `check-screens.py`）。#1093 の受入基準（空の案件で 0・Q&A 表を書き換えない・表で持つ節は印だけ）・採番・書けないときに書かないことと、

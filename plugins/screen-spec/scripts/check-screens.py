@@ -3,8 +3,9 @@
 
 usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-loop <spec-loop のプラグインの根>]
 
-**決まりの正は `references/tables.md`・`references/prose.md`・`references/spec-loop.md` である**（このプラグインの中にある）。
-下の定数（表の置き場所・列・空でよい列・決まった値・入口の種別・散文の節・表を出す印・対応する spec-loop の版の範囲）はその写しで、
+**決まりの正は `references/tables.md`・`references/prose.md`・`references/profiles.md`・`references/spec-loop.md` である**（このプラグインの中にある）。
+下の定数（表の置き場所・列・空でよい列・決まった値・入口の種別・散文の節・表を出す印・案件ごとの設定・profile の列と節と小見出し・
+方式が未定の言い回し・対応する spec-loop の版の範囲）はその写しで、
 **写しがずれていないかは、このプラグインを置いているリポジトリの `scripts/test-check-screens.py` が突き合わせる。**
 
 - **spec-loop の決まりを写さない**——版の重ね方は spec-loop の `merge-versions.py` の `merge`、Q&A の番号の形は `check-qa-csv.py`、
@@ -32,6 +33,11 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 - 画面の `機能`・`根拠` の機能の番号・`帳票`・遷移の `操作` が成果物の表に無ければ違反（表が無いときも）
 - 表のセルと散文に残った未決定の印を「未決定」（3）にし、Q&A の番号の無いものを「起票の候補」に出す。`⚠️` だけのものは警告
 - 仕様書が無い・最初の見出しに画面ID が無い・節が無い／順が違う／重なる・空の節・理由の無い `N/A`・表から指されない仕様書を違反にする
+- 案件ごとの設定（`settings.csv`）の `profile` を読み、`未設定`（設定が無いときも）なら profile の列と節を求めない。このプラグインの profile でも `未設定` でもなければ違反
+- profile があれば、表の見出し行に profile の列を求め、仕様書の末尾（`## 未決の論点` の後ろ）と共通仕様（置いたときだけ）に profile の節を 1 つ求め、
+  節の小見出しを全部・どれも空でなく理由の無い `N/A` でないことを求める。節が `N/A。実現方式が未定` で始まれば小見出しを求めない
+- profile の列の値（web-spa の `パス` の必須と形・遷移の `種類` の値）を見る。`N/A。実現方式が未定` のセルは値の決まりに当てない
+- `N/A。実現方式が未定` を未決定の印に数えない（言い回しを伏せてから印を探す）
 - 画面ID と項目・遷移の番号が表をまたいで重なるのを違反にする
 - 見出し行・決まった値・種別や種類に合わない列の値を違反にし、必須の欄の空を 3 にする
 - spec-loop が見つからない・版が範囲の外なら、検査の前に 4 で止める（名指しした spec-loop が spec-loop でなければ、ほかを探さずに止める）
@@ -42,6 +48,8 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 | 守らないもの | なぜ |
 | --- | --- |
 | **画面ID・番号の prefix**（`settings.csv` の `画面IDの接頭辞`） | 接頭辞は `add` が採番に使う設定で、手で置いた画面ID を止めない（`references/tables.md` の「案件ごとの設定」） |
+| **profile の小見出しの順・同じ `パス` を 2 つの画面が持つか・パスのパラメータの書き方** | 有無と中身だけを見る（`references/profiles.md`） |
+| **後の版で profile を変えたとき** | profile の列は見出し行に入り、見出し行が版の間で違えば spec-loop の重ね方が止める（違反 1。`references/profiles.md` の「選び方」） |
 | **セルの中身の意味**（目的が業務に合うか・入力チェックが足りるか） | 判断であって、一意に決まらない |
 | **印を使わずに書いた未決定**（「あとで決める」） | 言い回しは列挙しきれない。spec-loop の `check-spec-exit.py` と同じ限界 |
 | **成果物の表そのものの形** | spec-loop の `check-design-csv.py` が見る。ここは指す先の `id`・`操作` が在るかだけ |
@@ -134,6 +142,44 @@ LIST_MARK = re.compile(r"^[ \t]*(?:[-+*>]|[0-9]+[.)])[ \t]+", re.MULTILINE)  # �
 DECORATION = re.compile(r"[*_`~]")  # 強調・コードの印
 FENCE = re.compile(r"(`{3,}|~{3,})")
 COMMENT = re.compile(r"<!--.*?-->", re.S)
+
+# ---- `references/tables.md` の「案件ごとの設定」の写し（`write-screens.py` もここを読む）
+SETTINGS = SCREENS_DIR + "settings.csv"
+SETTINGS_COLUMNS = ["項目", "値"]
+PROFILE_KEY = "profile"
+UNSET = "未設定"
+
+# ---- `references/profiles.md` の写し
+PROFILES = {
+    "web-spa": {
+        "columns": {SCREENS: ["パス"], TRANSITIONS: ["種類"]},
+        "screen": ["ディープリンク・別タブ", "戻る・進む・再読み込み", "ダイアログの実体", "一覧の送り方", "ファイル出力・印刷", "認証と権限の外れ"],
+        "common": ["アプリの外枠", "対象デバイスと画面幅"],
+    },
+}
+PROFILE_SECTION = "実現方式: "  # 続けて profile の名前
+PATH_COLUMN = "パス"  # web-spa: `/` で始まる。種別が `tab`・`dialog`（CHILD_KINDS）のときだけ空でよい
+TAB_COLUMN = "種類"  # web-spa（遷移）: 空は同じタブ
+TAB_KINDS = ("同じタブ", "別タブ")
+PROFILE_UNDECIDED_TEXT = "N/A。実現方式が未定"
+# NFKC にしてから当てる。強調・コードの印（`**N/A**。…`）が字の間に入っても同じ言い回しと読む——伏せる側と節・セルを読む側で揃える
+PROFILE_UNDECIDED = re.compile(r"[*_`~]*".join(map(re.escape, PROFILE_UNDECIDED_TEXT)), re.IGNORECASE)
+
+
+def mask_undecided(text: str) -> str:
+    """`N/A。実現方式が未定` を伏せた文字列（NFKC。長さは正規化の後のまま）——未決定の印に数えない。"""
+    return PROFILE_UNDECIDED.sub(lambda m: "\0" * len(m.group(0)), unicodedata.normalize("NFKC", text))
+
+
+def bare_not_applicable(content: str) -> bool:
+    """`N/A` だけで理由が無いか（強調・コード・箇条書き・引用の印は外して見る）。"""
+    return NOT_APPLICABLE.fullmatch(DECORATION.sub("", LIST_MARK.sub("", content)).strip()) is not None
+
+
+def undecided_profile(text: str) -> bool:
+    """`N/A。実現方式が未定` で始まるか（強調・箇条書きの印は外して見る）。"""
+    plain = LIST_MARK.sub("", unicodedata.normalize("NFKC", text)).strip().lstrip("*_`~")
+    return PROFILE_UNDECIDED.match(plain) is not None
 
 
 class Stop(Exception):
@@ -265,6 +311,8 @@ class Checker:
         self.upto = upto
         self.report = Report()
         self.undecided_cells: set[tuple[str, str, str]] = set()  # 印のあったセル（表のパス, 鍵, 列）
+        self.profile: str | None = UNSET
+        self.columns = dict(COLUMNS)
 
     # ---- 読む
 
@@ -313,7 +361,7 @@ class Checker:
 
     def marked(self, where: str, value: str) -> bool:
         """未決定の印があれば数えて True。`⚠` だけなら警告する。"""
-        hits = self.find_markers(value)
+        hits = self.find_markers(mask_undecided(value))
         if hits:
             for _, marker in hits:
                 self.report.undecided.append(f"{where}: 未決定の印 {marker!r}")
@@ -339,7 +387,7 @@ class Checker:
     def cells(self, path: str, key: str, row: dict[str, str]) -> dict[str, str]:
         """印の無いセルの値（前後の空白を除く）。印のあるセルは値の決まりに当てないので入れない。空の必須の欄は数える。"""
         decided = {}
-        for name in COLUMNS[path]:
+        for name in self.columns[path]:
             value = row[name]
             where = f"{path} {key} {name}"
             if self.marked(where, value):
@@ -347,7 +395,7 @@ class Checker:
                 self.undecided_cells.add((path, key, name))
                 continue
             decided[name] = value.strip()
-            if not decided[name] and name not in MAY_BE_EMPTY[path]:
+            if not decided[name] and name not in MAY_BE_EMPTY[path] and name in COLUMNS[path]:
                 self.report.empty.append(where)
         if "根拠" in decided:
             self.references(f"{path} {key} 根拠", decided["根拠"])
@@ -385,11 +433,15 @@ class Checker:
         if not placed:
             print("画面の表が無い（requirements/screens/data/ に 3 つの表のどれも無い）——検査するものが無い")
             return 0
+        self.profile = self.read_profile(whole)
+        extra = PROFILES[self.profile]["columns"] if self.profile in PROFILES else {}
+        self.columns = {path: COLUMNS[path] + extra.get(path, []) for path in TABLES}
         for path in TABLES:
             if path not in whole.headers:
                 self.report.violations.append(f"{path}: 表が無い（3 つの表は揃えて置く。行が無くても見出し行は置く）")
-            elif whole.headers[path] != COLUMNS[path]:
-                self.report.violations.append(f"{path}:1: 見出し行が決まり（{','.join(COLUMNS[path])}）と違う: {','.join(whole.headers[path])}")
+            elif whole.headers[path] != self.columns[path]:
+                shown = f"決まり（profile {self.profile} の列を足した）" if extra.get(path) else "決まり"
+                self.report.violations.append(f"{path}:1: 見出し行が{shown}（{','.join(self.columns[path])}）と違う: {','.join(whole.headers[path])}")
         if self.report.violations:
             return self.finish()
 
@@ -412,8 +464,52 @@ class Checker:
         self.check_items(screens, items)
         self.check_transitions(screens, items, transitions)
         self.check_reach(screens, transitions)
+        self.check_profile_cells(screens, transitions)
         self.check_prose(whole, screens)
         return self.finish()
+
+    def read_profile(self, whole) -> str | None:
+        """`settings.csv` の `profile`。設定が無い・行が無ければ `未設定`。決まりに反すれば違反を出して None。"""
+        text = self.text(whole, SETTINGS)
+        if text is None:
+            return UNSET
+        try:
+            rows = list(csv.reader(io.StringIO(text, newline="")))
+        except csv.Error as e:
+            raise Unreadable(f"{SETTINGS}: CSV として読めない（{e}）") from None
+        if not rows or [cell.strip() for cell in rows[0]] != SETTINGS_COLUMNS:
+            self.report.violations.append(f"{SETTINGS}:1: 見出し行が決まり（{','.join(SETTINGS_COLUMNS)}）と違う")
+            return None
+        values = [row[1].strip() if len(row) > 1 else "" for row in rows[1:] if row and row[0].strip() == PROFILE_KEY]
+        if not values:
+            return UNSET
+        if len(values) > 1:
+            self.report.violations.append(f"{SETTINGS}: {PROFILE_KEY} の行が {len(values)} つある")
+            return None
+        if values[0] != UNSET and values[0] not in PROFILES:
+            self.report.violations.append(f"{SETTINGS} {PROFILE_KEY}: {values[0]!r} はこのプラグインの profile（{'・'.join(PROFILES)}）でも {UNSET} でもない")
+            return None
+        return values[0]
+
+    def check_profile_cells(self, screens, transitions) -> None:
+        """profile の列の値（`references/profiles.md`）。印のあるセルは `cells` が外している。"""
+        columns = PROFILES[self.profile]["columns"] if self.profile in PROFILES else {}
+        if PATH_COLUMN in columns.get(SCREENS, []):
+            for key, row in screens.items():
+                value = row.get(PATH_COLUMN)
+                where = f"{SCREENS} {key} {PATH_COLUMN}"
+                if value is None or undecided_profile(value):
+                    continue
+                if value == "":
+                    if row.get("種別") not in CHILD_KINDS:
+                        self.report.empty.append(f"{where}（profile {self.profile}。種別 {'・'.join(CHILD_KINDS)} のほかは書く）")
+                elif not value.startswith("/"):
+                    self.report.violations.append(f"{where}: {value!r} は / で始まらない")
+        if TAB_COLUMN in columns.get(TRANSITIONS, []):
+            for key, row in transitions.items():
+                value = row.get(TAB_COLUMN)
+                if value and not undecided_profile(value):
+                    self.one_of(f"{TRANSITIONS} {key} {TAB_COLUMN}", value, TAB_KINDS, TAB_COLUMN)
 
     def check_screens(self, screens: dict[str, dict[str, str]]) -> None:
         documents: dict[str, str] = {}
@@ -593,7 +689,11 @@ class Checker:
             if "/" in name:
                 continue
             if name == COMMON:
-                self.scan_lines(path, self.text(whole, path) or "")
+                common = self.text(whole, path) or ""
+                self.scan_lines(path, common)
+                if self.profile in PROFILES:
+                    lines = self.without_comments(common)
+                    self.check_profile_section(path, lines, self.headings(lines), PROFILES[self.profile]["common"], after=None)
             elif name not in referenced:
                 self.report.violations.append(f"{path}: どの画面の 仕様書 からも指されていない（表から指されない仕様書を残さない）")
 
@@ -628,20 +728,7 @@ class Checker:
         self.scan_lines(path, text)
         # HTML のコメントの中の見出しは見出しに数えない（表を出す印は残す）。行の位置は保つ
         lines = self.without_comments(text)
-        headings: list[tuple[int, int, str]] = []  # (行の位置, 段, 見出しの文字)
-        fence = None
-        for at, line in enumerate(lines):
-            opened = FENCE.match(line.lstrip())
-            if fence is not None:
-                if opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence):
-                    fence = None
-                continue
-            if opened:
-                fence = opened.group(1)
-                continue
-            match = HEADING.match(line)
-            if match:
-                headings.append((at, len(match.group(1)), match.group(2).strip()))
+        headings = self.headings(lines)
         title = next((h for h in headings if h[1] == 1), None)
         if title is None or key not in title[2]:
             self.report.violations.append(f"{path}: 最初の # の見出しに画面ID {key} を書いていない")
@@ -662,7 +749,7 @@ class Checker:
                 continue
             if not content:
                 self.report.violations.append(f"{path}:{at + 1}: 節 ## {heading} が空（書くことが無ければ N/A と理由を書く）")
-            elif NOT_APPLICABLE.fullmatch(DECORATION.sub("", LIST_MARK.sub("", content)).strip()):
+            elif bare_not_applicable(content):
                 self.report.violations.append(f"{path}:{at + 1}: 節 ## {heading} が N/A だけで理由が無い")
         for name in names:
             if name not in found:
@@ -670,6 +757,62 @@ class Checker:
         order = [name for name in names if name in found]
         if [found[name] for name in order] != sorted(found[name] for name in order):
             self.report.violations.append(f"{path}: 節の順が決まり（references/prose.md）と違う")
+        if self.profile in PROFILES:
+            last = names[-1]
+            self.check_profile_section(path, lines, headings, PROFILES[self.profile]["screen"],
+                                       after=headings[found[last]][0] if last in found else None)
+
+    @staticmethod
+    def headings(lines: list[str]) -> list[tuple[int, int, str]]:
+        """(行の位置, 段, 見出しの文字) の並び。コードブロックの中の行は見出しに数えない。"""
+        headings: list[tuple[int, int, str]] = []
+        fence = None
+        for at, line in enumerate(lines):
+            opened = FENCE.match(line.lstrip())
+            if fence is not None:
+                if opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence):
+                    fence = None
+                continue
+            if opened:
+                fence = opened.group(1)
+                continue
+            match = HEADING.match(line)
+            if match:
+                headings.append((at, len(match.group(1)), match.group(2).strip()))
+        return headings
+
+    def check_profile_section(self, path: str, lines: list[str], headings, subsections: list[str], after: int | None) -> None:
+        """profile の節（`references/profiles.md` の「足すもの」）。`after` は節より前に在るべき見出しの行の位置（仕様書の `## 未決の論点`）。"""
+        name = PROFILE_SECTION + self.profile
+        places = [index for index, (_, level, heading) in enumerate(headings) if level == 2 and heading == name]
+        if not places:
+            self.report.violations.append(f"{path}: 節 ## {name} が無い（profile {self.profile}）")
+            return
+        for index in places[1:]:
+            self.report.violations.append(f"{path}:{headings[index][0] + 1}: 節 ## {name} が 2 つある")
+        index = places[0]
+        at = headings[index][0]
+        if after is not None and at < after:
+            self.report.violations.append(f"{path}:{at + 1}: 節 ## {name} を末尾（## {SECTIONS[-1][0]} の後ろ）に置いていない")
+        end = next((h[0] for h in headings[index + 1:] if h[1] <= 2), len(lines))
+        # 方式が未定かは、節の見出しから最初の小見出しまでの本文で決める（小見出しの中の言い回しで節ごと通さない）
+        lead = next((h[0] for h in headings[index + 1:] if h[0] < end), end)
+        if undecided_profile(COMMENT.sub("", "\n".join(lines[at + 1:lead]))):
+            return
+        inner = [(i, h) for i, h in enumerate(headings) if at < h[0] < end]
+        for subsection in subsections:
+            found = next(((i, h) for i, h in inner if h[1] == 3 and h[2] == subsection), None)
+            if found is None:
+                self.report.violations.append(f"{path}:{at + 1}: 節 ## {name} に小見出し ### {subsection} が無い"
+                                              f"（方式が未定なら節を N/A。実現方式が未定 と書く）")
+                continue
+            i, (sub_at, _, _) = found
+            sub_end = next((h[0] for h in headings[i + 1:] if h[1] <= 3), len(lines))
+            content = unicodedata.normalize("NFKC", HEADING_LINE.sub("", COMMENT.sub("", "\n".join(lines[sub_at + 1:sub_end])))).strip()
+            if not content:
+                self.report.violations.append(f"{path}:{sub_at + 1}: 小見出し ### {subsection} が空（書くことが無ければ N/A と理由を書く）")
+            elif bare_not_applicable(content):
+                self.report.violations.append(f"{path}:{sub_at + 1}: 小見出し ### {subsection} が N/A だけで理由が無い")
 
     def finish(self) -> int:
         for line in self.report.lines():
