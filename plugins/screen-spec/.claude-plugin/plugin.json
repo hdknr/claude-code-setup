@@ -1,0 +1,6 @@
+{
+  "name": "screen-spec",
+  "description": "画面設計書を spec-loop とは別に持つプラグイン（spec-loop の決まりに従い、spec-loop は依存しない）。画面・項目・遷移の 3 つの表（requirements/screens/data/）と散文の仕様書の形を決め、check-screens.py が spec-loop の重ね方で重ねた全体に検査を当てる（表どうし・入口から辿れること・遷移の無いボタン・Q&A の根拠・成果物の表への参照・未決定の印・散文の節）。Q&A の番号は振らず、起票の候補を出すだけ。対応する spec-loop の版の範囲の外なら検査の前に止まる。スキル・profile・UI モックの生成はまだ無い",
+  "version": "0.1.0",
+  "author": { "name": "hdknr" }
+}
