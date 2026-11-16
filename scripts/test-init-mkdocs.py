@@ -1714,7 +1714,7 @@ def check_reference() -> None:
                  "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない",
                  "spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり",
                  "`hooks/spec_loop_plugins/<名前>.py`", "`init-mkdocs.py --hook <ファイル>`", "`spec_loop_mocks(docs_dir)`",
-                 "どちらのプラグインも `mkdocs.yml` を書き換えない", "spec-loop 0.95.0 で、フックはほかのプラグインのフックを登録する口"):
+                 "どちらのプラグインも `mkdocs.yml` を書き換えない", "spec-loop 0.96.0 で、フックはほかのプラグインのフックを登録する口"):
         check(f"references/tree.md の「ドキュメントのツール」に {word} が無い", word in section)
     qa = (PLUGIN / "references" / "qa-csv.md").read_text(encoding="utf-8")
     check("references/qa-csv.md に「本文での番号」の節が無い", "\n## 本文での番号\n" in qa)
