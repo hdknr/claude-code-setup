@@ -84,7 +84,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （回答・状態・反映先の鍵は違反。足した表全体を `check-qa-csv.py` に当ててから書く）。基盤要件の 3 項目はコードの目印と機械で照らし、ほかの食い違いはスキルが引いた正本の文が在るかだけを見る。
       決まりの原本は `references/intake.md`、守る／守らないは docstring を正とする。テストは `scripts/test-intake-code.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
-      列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
+      列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。**`--links` で質問ごとのリンク（画面の表から作るモックの `#screen=`）を外から受けて質問の頁に載せ、
+      渡さなければ前と同じバイト**——#1100。テストは
       `scripts/test-qa-to-pptx.py`）
     - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
       （**0 でも「抜けた」ではない**。Q&A 表は `qa-to-pptx.py` の `read_rows` で読み、**仕様に反映した状態**
