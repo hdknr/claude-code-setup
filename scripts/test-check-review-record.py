@@ -61,8 +61,16 @@ CASES: dict[str, tuple] = {
     # ---- conditions
     "条件: 判断が要るが 1 行（陽性対照）": ("conditions", F_HEAD + f(weight="判断が要る", category="共有の Q&A 表に起票する", result="Q-001"),
                                      RUNS, [], 1, "満たさない: 回 2・最後のレビューは 1回目"),
-    "条件: 結果が割れるが 2 回目に 1 行": ("conditions", F_HEAD + f() + f(review="2回目", weight="結果が割れる"), RUNS, [], 1, "最後のレビューは 2回目"),
-    "条件: 補いだけ": ("conditions", F_HEAD + f() + f(review="2回目") + f(review="2回目", judge="domain-checker"), RUNS, [], 0, "満たす: 回 2"),
+    "条件: 結果が割れるが 2 回目に 1 行": ("conditions", F_HEAD + f() + f(review="2回目", weight="結果が割れる", result="次の回"), RUNS, [], 1, "最後のレビューは 2回目"),
+    # 2 回目のあとで直した行（`結果` が `次の回` でない）は狭いパスに任せて数えない（2 パス目の CR2-1）
+    "条件: 2 回目のあとで直した行は数えない": ("conditions", F_HEAD + f() + f(review="2回目", weight="結果が割れる", result="spec/a.md:12"),
+                                   RUNS, [], 0, "満たす: 回 2・最後のレビューは 2回目（その行 1 件）"),
+    "条件: 2 回目のあとで直しても狭いパスの効く重さは数える": ("conditions", F_HEAD + f() + f(review="2回目", weight="結果が割れる", result="spec/a.md:12")
+                                            + f(review="狭いパス", weight="結果が割れる", result="次の回"), RUNS, [], 1, "狭いパス・red-team"),
+    "条件: 2 回目の起票の行は直しでないので数える": ("conditions", F_HEAD + f() + f(review="2回目", weight="判断が要る", category="共有の Q&A 表に起票する",
+                                                                     result="Q-009"), RUNS, [], 1, "最後のレビューは 2回目"),
+    "条件: 補いだけ": ("conditions", F_HEAD + f() + f(review="2回目", result="次の回") + f(review="2回目", judge="domain-checker", result="次の回"),
+                RUNS, [], 0, "満たす: 回 2"),
     "条件: 退けた行は数えない": ("conditions", F_HEAD + f(weight="結果が割れる", category="退ける", result="誤り"), RUNS, [], 0, "満たす"),
     "条件: 範囲の外・実装に渡すは数えない": ("conditions", F_HEAD + f(weight="-", category="実装に渡す") + f(weight="-", category="範囲の外として記録する"),
                                     RUNS, [], 0, "満たす"),
@@ -123,7 +131,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("効く重さを見ない", "               if c[\"重さ\"] in EFFECTIVE and c[\"振り分け\"] != REJECTED\n",
      "               if c[\"振り分け\"] != REJECTED\n", "条件: 補いだけ"),
     ("退けた行も数える", " and c[\"振り分け\"] != REJECTED\n", "\n", "条件: 退けた行は数えない"),
-    ("Red Team に絞らない", "(c[\"レビュー\"] == last and c[\"判定役\"] == RED_TEAM)", "(c[\"レビュー\"] == last)",
+    ("Red Team に絞らない", " and c[\"判定役\"] == RED_TEAM and", " and",
      "条件: ほかの判定役の効く重さは数えない"),
     ("狭いパスを数えない", " or c[\"レビュー\"] == NARROW)]", ")]", "条件: 狭いパスはほかの役でも数える"),
     ("1 回目の直しで 2 回目と読まない", "    second = any(c[\"レビュー\"] == SECOND for _, c in mine) or any(\n",
@@ -146,6 +154,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "上限: --limit で N を変える"),
     ("内部の Q&A で 2 回目と読まない", ', "内部の Q&A 表に記録する")', ")", "条件: 内部の Q&A に記録した行も 2 回目を回す"),
     ("列の足りない行を飛ばす", "    if short:\n", "    if False:\n", "判定しない: 記録の行の列が足りない"),
+    ("2 回目のあとで直した行も数える", " and not fixed_after_second(c))", ")", "条件: 2 回目のあとで直した行は数えない"),
+    ("次の回の行も直したと読む", '    return c["レビュー"] == SECOND and c["振り分け"] == FIX and c["結果"] != NEXT_RUN\n',
+     '    return c["レビュー"] == SECOND and c["振り分け"] == FIX\n', "条件: 結果が割れるが 2 回目に 1 行"),
+    ("起票の行も直したと読む", '    return c["レビュー"] == SECOND and c["振り分け"] == FIX and c["結果"] != NEXT_RUN\n',
+     '    return c["レビュー"] == SECOND and c["結果"] != NEXT_RUN\n', "条件: 2 回目の起票の行は直しでないので数える"),
     ("表が無ければ判定しない", "    if not record.exists():\n        return EXIT_OK", "    if False:\n        return EXIT_OK", "上限: 表が無ければ 0 回"),
 ]
 

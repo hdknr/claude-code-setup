@@ -23,6 +23,8 @@ usage:
   2 回目の行が 0 件なら、2 回目は指摘なし）。そうでなければ 1 回目。
 - **数える行**: 最後のレビューの `red-team` の行と、`狭いパス` の行（役を問わない——spec-exit.md の「2 回目のあとの直し」の 3 つ目）のうち、
   **重さが `判断が要る`・`結果が割れる`** で、**振り分けが `退ける` でない**もの（退けた指摘は誤り。`確かめられない` の行は判定役の重さのまま数える）。
+  **2 回目の `仕様を直す` の行で `結果` が `次の回` でないもの（その回の 2 回目のあとで直した）は数えない**——spec-exit.md の「2 回目の `満たさない` を
+  解消済みに置き換えてよい」の道で、直しは狭いパスが確かめる（2 パス目の CR2-1）。
 - 1 件でもあれば `満たさない`（1）。数えた行を全部出す。
 
 ## `limit` — 実行の上限を数える
@@ -63,7 +65,7 @@ N は正本の `CLAUDE.md` で変えてよい（spec-exit.md）——このス�
 | 守らないもの | なぜ |
 | --- | --- |
 | **判定役が案を「範囲の外」「実装に渡す」とした行を、範囲の中に振り直した回**（spec-exit.md の条件の表の下） | 指摘の表は判定役の案を残さない。spec-review は判定役の判定と数え直しの両方が `満たす` のときだけ満たすとする |
-| **狭いパスが全部の役から返ったか・元の指摘が `解消した` か**（狭いパスの 1・2 つ目） | 指摘の表に残らない |
+| **狭いパスが全部の役から返ったか・元の指摘が `解消した` か**（狭いパスの 1・2 つ目） | 指摘の表に残らない。2 回目のあとで直した行は数えないので、その行が解消したかは判定役（狭いパス）の判定だけで決まる |
 | **2 回目を回す前に止めた回**で、1 回目に直した行がある | 2 回目は指摘なしと読む。その回の記録は `抜けていない` なので、scaffold は止まる |
 | **判定役の書いた重さが正しいか**・行を落とさずに足したか | 判断であり、表の元は会話にしか無い（`check-findings-csv.py` と同じ） |
 | **条件 1・4・5** | 条件 1 は `check-spec-exit.py`、条件 4 の TLC のモデルは `check-formal-rerun.py`、条件 5 は振り分けの表 |
@@ -108,6 +110,9 @@ RECOUNT = ("続ける", "範囲を決め直す")
 STOP = "止める"
 LIMIT = 3
 LIMIT_COLUMNS = ("回", "結果", "条件2〜4", "判断", "機能")
+# 2 回目の `仕様を直す` の行で、その回は直さなかった印（spec-exit.md の「指摘の表」の `結果`）
+NEXT_RUN = "次の回"
+FIX = "仕様を直す"
 
 EXIT_OK, EXIT_UNMET, EXIT_UNJUDGED, EXIT_LIMIT = 0, 1, 2, 3
 
@@ -153,12 +158,20 @@ def conditions(table: Path, run: str | None) -> tuple[int, list[str]]:
     last = SECOND if second else FIRST
     counted = [(number, c) for number, c in mine
                if c["重さ"] in EFFECTIVE and c["振り分け"] != REJECTED
-               and ((c["レビュー"] == last and c["判定役"] == RED_TEAM) or c["レビュー"] == NARROW)]
+               and ((c["レビュー"] == last and c["判定役"] == RED_TEAM and not fixed_after_second(c)) or c["レビュー"] == NARROW)]
     seen = f"回 {run}・最後のレビューは {last}（その行 {sum(1 for _, c in mine if c['レビュー'] == last)} 件）"
     if not counted:
         return EXIT_OK, [f"満たす: {seen}——Red Team と狭いパスに、効く重さ（{'・'.join(EFFECTIVE)}）の行が無い"]
     lines = [f"{table}:{number}: {c['レビュー']}・{c['判定役']}・{c['重さ']}・{c['振り分け']}: {c['指摘']}" for number, c in counted]
     return EXIT_UNMET, lines + [f"満たさない: {seen}——効く重さの行が {len(counted)} 件（条件 2・3 か狭いパスの 3 つ目。references/spec-exit.md の「指摘の重さ」）"]
+
+
+def fixed_after_second(c: dict[str, str]) -> bool:
+    """2 回目のあとで直した行か——2 回目の `仕様を直す` で、`結果` が `次の回` でない（その回に直した）。
+
+    その直しは狭いパスが確かめる（解消したかは指摘の表に残らない——判定役の側の判定）。数え直しは、狭いパスの新しい効く重さの行を数える。
+    """
+    return c["レビュー"] == SECOND and c["振り分け"] == FIX and c["結果"] != NEXT_RUN
 
 
 def limit(record: Path, n: int) -> tuple[int, list[str]]:
