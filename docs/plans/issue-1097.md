@@ -119,6 +119,14 @@ spec-loop を **minor** で上げる（能力の追加。0.x なので壊れる�
 
 - 周の在り処: ブランチ `issue/1097-screen-gate`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1097`・起点 `d0a62f2`・base `origin/main` → `d0a62f2f008127a19d82573cf2eda2b8c73138c3`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 実装のコミット: `a7ab627`（と計画の直し `68954a8`）
+- 1 パス目の指摘対応の起点: `68954a8`（1 パス目の関門に渡した時点の HEAD）
+- check-all（`68954a8`。run-serial 越し）: 86/86 本・失敗 0
+- Verifier 1 パス目: 通した——反証 1 件（R1。dev-loop:dev-loop-verifier・sonnet。verifier.md 185 行を報告、wc -l と一致。テストは run-serial の枠が埋まって走らせられず、変異は未確認と報告）
+- `/code-review` 1 パス目: 通した——指摘 10 件（CR1-1〜CR1-10。high。委譲文は貼ったが、届いたのはレビューの途中だった——報告は受入基準の番号で書かれている）
+- 手順 4 への差し戻し: あり（採否の表の「直す」: R1・CR1-1・CR1-4）
+- 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方
+- 手順 4 の途中の事故: 委譲文を組む Bash のヒアドキュメントを引用符なし（`<<EOF`）で書き、本文のバッククォートがコマンド置換として走った——`claude plugin eval` がメインの作業ツリーで走って約 $1.4 を課金し `evals/results/` を作った（止めて、作った `evals/` を消した。scaffold は走らず `git config` は変わっていない）。`claude -p` は入力が無く失敗、`gh` は使い方を出しただけ。以後は `<<'EOF'` で書く
 
 ## 既知の限界・決着済みの論点
 
@@ -126,3 +134,19 @@ spec-loop を **minor** で上げる（能力の追加。0.x なので壊れる�
 - screen-spec の版（spec-loop が対応する screen-spec の版の範囲）は見ない——screen-spec の側が spec-loop の版を見る（#1110）。逆向きの範囲は #1081 に無い。
 - `check-spec-exit.py --docs` の `docs` と、引数の重ねた全体（`build/merged`）が同じ正本から作られたかは見ない——スキルは同じ `docs` から作った直後に呼ぶ。
 - 本物のプラグインの記録から screen-spec を見つける経路は未証明（上）。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R1: `spec-scope.md` が profile の項目を「screen-spec の決まり」と書くが、screen-spec 0.1.0 に profile の決まりは無い | 示せる（`grep` で screen-spec に「ディープリンク」「画面幅」が無い） | U7（書かれた内容が事実と合う） | 直す——#1081 の案で、screen-spec はまだ持たない（#1094）と書く |
+| CR1-1: `test-scaffold.py` が環境を丸ごと渡し、`SPEC_LOOP_SCREEN_SPEC` を設定したシェルでは「screen-spec が見つからない」の試料が通らない | 示せる（code-review の再現） | U2（の証明が利用者の環境で変わる） | 直す——生成のコマンドの環境から `SPEC_LOOP_SCREEN_SPEC`・`CLAUDE_CONFIG_DIR` を外す |
+| CR1-2: `--red-check`・`--check` も画面の関門を通るので、製品のリポジトリで screen-spec が要る | 示せる（読解。成果物の表の関門と同じ条件） | 無し（関門は計画のとおり成果物の表の関門と同じ条件） | 残課題 |
+| CR1-3: `scaffold.py` に `--screen-spec` が無い（環境変数・隣・キャッシュでしか渡せない） | 示せる | 無し（止まる側に倒れる） | 残課題 |
+| CR1-4: 表を持たない `requirements/screens/`（ワイヤーフレームだけ）でも画面の表とみなし、screen-spec が無ければ止まる（screen-spec は「画面の表が無い」で 0） | 示せる（code-review の再現: rc=4） | U1（画面の表の無い正本で出力が変わる） | 直す——3 つの表のどれかがあるときだけ画面の表と見る（`merge-versions.py` の `ROW_TABLES` を読む） |
+| CR1-5: キャッシュの記録の `local` の範囲・シンボリックリンクの `projectPath` を読まない | 示せない（記録の形を測っていない。screen-spec 側と同じ写し） | 無し（止まる側） | 残課題 |
+| CR1-6: `check()` のたびに `check-spec-exit.py` を読み込み直す（読み込みが循環する） | 示せない（失敗は無い。重さだけ） | 無し | 残課題 |
+| CR1-7: 呼ぶ側が重ねた全体を持っているのに重ね直す | 示せない（重さだけ） | 無し | 残課題 |
+| CR1-8: `sys.dont_write_bytecode = True` が読み込んだ側のプロセス全体に効く | 示せる（読解） | 無し（書かない向き） | 残課題 |
+| CR1-9: 印を数える拡張子の比べが大文字小文字を区別する（`ORDER.MD`） | 示せる（合成の試料） | 無し（まれな書き方） | 残課題 |
+| CR1-10: コミットメッセージが `Refs #1097` で `Fixes` でない | 示せない（PR の本文に `Fixes #1097` を書く。cruise の親がマージする） | 無し | 残課題（捨てる候補） |

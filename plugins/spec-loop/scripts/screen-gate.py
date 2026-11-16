@@ -8,9 +8,10 @@ usage: python3 screen-gate.py <docs ディレクトリ> [--upto <n>] [--screen-s
 画面の表があるときだけ screen-spec の `scripts/check-screens.py` を**子のプロセスで**呼ぶ（読み込まない——screen-spec が無くても
 このスクリプトと、これを読み込む `check-spec-exit.py`・`scaffold.py` は読み込めて動く）。
 
-**画面の表がある**とは、`--upto` までの版のディレクトリのどれかの `requirements/screens/` の下に `.` で始まらない名前のファイルがあり、
-重ねた全体（spec-loop の `merge-versions.py` の `merge`）にも `requirements/screens/` の下のファイルが残ること
-（`removed.csv` で全部消したなら無いと同じ）。版のディレクトリに無ければ重ね合わせもしない。
+**画面の表がある**とは、`--upto` までの版のディレクトリのどれかに 3 つの表（`requirements/screens/data/` の `screens.csv`・`screen-items.csv`・
+`transitions.csv`。置き場所は `merge-versions.py` の `ROW_TABLES` を読む——写さない）のどれかがあり、重ねた全体（spec-loop の `merge-versions.py` の `merge`）にも残ること。
+**表を持たない `requirements/screens/`（ワイヤーフレームだけ・散文だけ）は画面の表と見ない**——screen-spec の検査も「画面の表が無い」として 0 にする形にそろえる。
+版のディレクトリに無ければ重ね合わせもしない。
 
 画面の表があれば、次の 2 つを見る:
 
@@ -64,6 +65,7 @@ usage: python3 screen-gate.py <docs ディレクトリ> [--upto <n>] [--screen-s
 | --- | --- |
 | **screen-spec の版の範囲** | screen-spec の側が spec-loop の版を見る（#1110）。逆向きの範囲は #1081 に無い |
 | **画面の表の中身の決まり**（参照・辿れること・散文の節） | screen-spec の `check-screens.py` が見る。ここは結果を読み替えるだけ |
+| **表を持たない `requirements/screens/` の中の印**（散文だけ・ワイヤーフレームだけ） | 画面の表と見ない（screen-spec の検査と同じ）。表を置いたら数える |
 | **`.csv`・`.md` のほかのファイル（ワイヤーフレームの drawio・svg）の中の印** | 表と散文の仕様書だけを数える。図の中の未決定は図の決まり（`tree.md` の「図」）で扱う |
 | **大文字小文字を区別しない FS の `Requirements/Screens/`** | 画面の表が在るかの先の見方はパスの綴りどおり。重ね合わせは `merge-versions.py` の綴りの決まりのまま |
 | **本物のプラグインのキャッシュの形が変わったとき**（`installed_plugins.json` の形） | screen-spec の `check-screens.py` と同じ 1 つの実測の形に合わせて読む。読めなければ見つからないとして 4 |
@@ -106,6 +108,8 @@ def _load(name: str, filename: str):
 
 
 versions = _load("merge_versions", "merge-versions.py")
+# 画面の表の 3 つの置き場所（`merge-versions.py` の行の単位で重ねる表。写さない）
+TABLES = tuple(versions.ROW_TABLES)
 
 
 class NotFound(Exception):
@@ -169,17 +173,14 @@ def find_screen_spec(named: str | None, docs: Path) -> Path:
                    "検査を飛ばしたまま関門を通さない")
 
 
-def has_files(base: Path) -> bool:
-    """`base` の下に `.` で始まらない名前のファイルがあるか（無いディレクトリは無い）。"""
-    if not base.is_dir():
-        return False
-    return any(path.is_file() and not any(part.startswith(".") for part in path.relative_to(base).parts)
-               for path in base.rglob("*"))
+def has_tables(root: Path) -> bool:
+    """`root`（版のディレクトリか重ねた全体の根）に 3 つの表のどれかがあるか。"""
+    return any((root / table).is_file() for table in TABLES)
 
 
 def placed(docs: Path, upto: int | None) -> bool:
-    """`upto` までの版のディレクトリのどれかの `requirements/screens/` の下に、`.` で始まらない名前のファイルがあるか。"""
-    return any(has_files(root / SCREENS_DIR) for _, root in versions.find_versions(docs, [])[:upto])
+    """`upto` までの版のディレクトリのどれかに 3 つの表のどれかがあるか。"""
+    return any(has_tables(root) for _, root in versions.find_versions(docs, [])[:upto])
 
 
 def run_screen_spec(root: Path, docs: Path, upto: int | None) -> tuple[int, list[str], str]:
@@ -209,9 +210,9 @@ def check(docs: Path, upto: int | None = None, named: str | None = None) -> tupl
         return EXIT_UNJUDGED, [f"{e}——画面の関門を判定していない"]
     if problems:
         return EXIT_FAIL, problems + ["版の重ね合わせが決まりに反する（references/versions.md）——画面の関門を通らない"]
-    screens = sorted(path for path in rendered if path.startswith(SCREENS_DIR))
-    if not screens:
+    if not any(table in rendered for table in TABLES):
         return EXIT_OK, []
+    screens = sorted(path for path in rendered if path.startswith(SCREENS_DIR))
 
     spec_exit = _load("check_spec_exit", "check-spec-exit.py")
     lines = [f"画面の表がある（{SCREENS_DIR} の下に {len(screens)} ファイル）——画面の関門を当てる"]

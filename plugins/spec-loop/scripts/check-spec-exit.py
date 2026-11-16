@@ -16,7 +16,7 @@ spec-review はその記録に置いた前提（未決定のことを含む）�
 **画面の表（`requirements/screens/`）があれば、画面の関門も条件 1 に入れる**（#1097）——`--docs` で正本の `docs` を渡すと、
 同梱の `screen-gate.py` の `check` を当て（`--upto`・`--screen-spec` もそのまま渡す）、**1 は条件 1 を満たさない（1）、2・4（判定していない・
 screen-spec が無いなどで止めた）は条件 1 を判定していない（2）**。画面の表が無ければ何も足さない（出力も変えない）。
-**`--docs` を渡さずに、仕様のディレクトリの親（重ねた全体の根）の `requirements/screens/` にファイルがあれば 2**——画面の関門を判定していない。
+**`--docs` を渡さずに、仕様のディレクトリの親（重ねた全体の根）に画面の表があれば 2**——画面の関門を判定していない。
 画面の表とは何か・screen-spec の見つけ方・終了コードの読み替えは `screen-gate.py` の docstring を正とする。
 **`--docs` の `docs` と、引数の Q&A 表・仕様のディレクトリが同じ正本から重ねたものかは見ない**（スキルは同じ `docs` から重ねた直後に呼ぶ）。
 **条件 2〜5 はこのスクリプトでは判定しない**——判定役の報告で決まる（`spec-review` の本文）。
@@ -142,7 +142,7 @@ def screen_gate(spec_dir: Path, docs: Path | None, upto: int | None, named: str 
     """画面の関門（#1097）。`docs` があれば `screen-gate.py` の `check`、無ければ重ねた全体の根に画面の表が無いことだけを見る。"""
     if docs is not None:
         return screens.check(docs, upto, named)
-    if screens.has_files(spec_dir.parent / screens.SCREENS_DIR):
+    if screens.has_tables(spec_dir.parent):
         return screens.EXIT_UNJUDGED, [
             f"{spec_dir.parent / screens.SCREENS_DIR}: 画面の表があるのに --docs が無い——画面の関門を判定していない"
             "（--docs <docs ディレクトリ> を渡す。screen-gate.py）"]

@@ -104,6 +104,8 @@ NOTE = "v1/requirements/screens/note.md"
 REMOVED_NOTE = plus(NONE, **{"v1__requirements__screens__note.md": "# メモ\n\n未定\n",
                              "v2__removed.csv": "種類,対象,理由\nファイル,requirements/screens/note.md,要らない\n",
                              "v2__spec__rules.md": "# 業務ルール\n\n受注は登録できる。v2\n"})
+WIREFRAME_ONLY = plus(NONE, **{"v1__requirements__screens__wireframes__order-list.drawio": "<mxfile>未定</mxfile>\n"})
+PROSE_ONLY = plus(NONE, **{"v1__requirements__screens__order-list.md": "# S-001 受注一覧\n\n並び方は未定\n"})
 HEADER_CHANGED = plus(GOOD, **{"v2__requirements__screens__data__screens.csv": t.S_HEAD.replace(",根拠\n", ",根拠,備考\n")
                                + t.S2.replace("\n", ",\n")})
 
@@ -166,6 +168,8 @@ CASES = [
     Case("画面の表も screen-spec も無い: 何も出さずに 0", "alone", NONE, 0, empty=True),
     Case("画面の表が無い: screen-spec を呼ばない（偽物が 1 でも 0）", "fake:1", NONE, 0, empty=True),
     Case("画面の表を removed.csv で消した: 何も出さずに 0", "alone", REMOVED_NOTE, 0, empty=True),
+    Case("ワイヤーフレームだけの screens/ は画面の表でない: 何も出さずに 0", "alone", WIREFRAME_ONLY, 0, empty=True),
+    Case("散文だけの screens/ は画面の表でない: 何も出さずに 0", "alone", PROSE_ONLY, 0, empty=True),
     Case("画面の表があって screen-spec が無い: 4", "alone", GOOD, 4, "画面の表があるのに screen-spec が見つからない"),
     Case("画面の表の未定: 1（screen-spec あり）", "sibling", UNDECIDED, 1, "requirements/screens/data/screens.csv:2: 未決定の印 未定"),
     Case("画面の表の未定: screen-spec が無くても 1（4 より強い）", "alone", UNDECIDED, 1, "screen-spec が見つからない"),
@@ -196,6 +200,7 @@ CASES = [
     # 5. 条件 1（check-spec-exit.py）
     Case("条件 1: 画面の表が無い正本は --docs なしで 0", "alone", NONE, 0, "条件 1 を満たす", script="exit"),
     Case("条件 1: 画面の表が無い正本は --docs ありで 0（出力は --docs なしと同じ）", "alone", NONE, 0, "条件 1 を満たす", script="exit-docs"),
+    Case("条件 1: ワイヤーフレームだけの screens/ は --docs なしでも 0", "alone", WIREFRAME_ONLY, 0, "条件 1 を満たす", script="exit"),
     Case("条件 1: 画面の表があるのに --docs が無い: 2", "sibling", GOOD, 2, "画面の表があるのに --docs が無い", script="exit"),
     Case("条件 1: 画面の表があって screen-spec が無い: 2", "alone", GOOD, 2, "screen-spec が見つからない", script="exit-docs"),
     Case("条件 1: 正しい表と本物の screen-spec: 0", "sibling", GOOD, 0, "画面の関門を通る", script="exit-docs"),
@@ -308,17 +313,18 @@ MUTATIONS = [
      "別のマーケットプレイスの記録だけなら見つからない"),
     ("--spec-loop を渡さない", GATE, ', "--spec-loop", str(PLUGIN_ROOT)]', "]", "screen-spec の 0 は 0（--spec-loop を渡す）"),
     ("--upto を渡さない", GATE, '        command += ["--upto", str(upto)]', "        pass", "--upto を screen-spec に渡す"),
-    ("画面の表が無いことを先に見ない", GATE, "return any(has_files(root / SCREENS_DIR) for _, root in versions.find_versions(docs, [])[:upto])",
-     "return False", "画面の表があって screen-spec が無い: 4"),
-    ("重ねた全体に画面の表が無くても当てる", GATE, "    if not screens:\n        return EXIT_OK, []",
-     "    if False:\n        return EXIT_OK, []", "画面の表を removed.csv で消した: 何も出さずに 0"),
+    ("画面の表が無いことを先に見ない", GATE, "    return any(has_tables(root) for _, root in versions.find_versions(docs, [])[:upto])",
+     "    return False", "画面の表があって screen-spec が無い: 4"),
+    ("表の無い screens/ も画面の表と見る", GATE, "    return any((root / table).is_file() for table in TABLES)",
+     "    return any((root / table).is_file() for table in TABLES) or (root / SCREENS_DIR).is_dir()",
+     "条件 1: ワイヤーフレームだけの screens/ は --docs なしでも 0"),
     ("重ね合わせの誤りを見ない", GATE, "    if problems:\n        return EXIT_FAIL, problems",
      "    if False:\n        return EXIT_FAIL, problems", "版の間で画面の表の見出し行が違う: 1（重ね合わせ）"),
     ("__pycache__ を書く", GATE, "sys.dont_write_bytecode = True", "sys.dont_write_bytecode = False",
      "画面の表があって screen-spec が無い: 4"),
     ("条件 1 に画面の関門を入れない", EXIT, "screen_gate(spec_dir, docs, upto, named) if screen else (0, [])", "(0, [])",
      "条件 1: 画面の表の未定: 1"),
-    ("--docs が無いのに画面の表があっても通す", EXIT, "    if screens.has_files(spec_dir.parent / screens.SCREENS_DIR):",
+    ("--docs が無いのに画面の表があっても通す", EXIT, "    if screens.has_tables(spec_dir.parent):",
      "    if False:", "条件 1: 画面の表があるのに --docs が無い: 2"),
     ("画面の関門の 4 を条件 1 の 0 にする", EXIT, "    if screen_code:\n        return 2, notes + screen_lines",
      "    if False:\n        return 2, notes + screen_lines", "条件 1: 画面の表があって screen-spec が無い: 2"),

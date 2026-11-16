@@ -960,6 +960,11 @@ DESIGN_GATE = "関門（システム設計書の成果物の表"
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_NOTE = str(V1 / "requirements" / "screens" / "order-list.md")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
+
+
+def hermetic_env() -> dict[str, str]:
+    """生成のコマンドの環境——screen-spec の在り処を名指す変数と設定のディレクトリを外す（利用者のシェルの値で画面の関門の試料が変わらないように。#1097）。"""
+    return {k: v for k, v in os.environ.items() if k not in ("SPEC_LOOP_SCREEN_SPEC", "CLAUDE_CONFIG_DIR")}
 # ---- 基盤要件（#950）。表が無ければ警告して作り、未決定・違反・Python でない言語で止める
 INFRA_FILE = str(V1 / "shared" / "infra.csv")
 INFRA_HEAD = "項目,決定,理由,費用への影響,水準,根拠,状態\n"
@@ -3802,13 +3807,12 @@ def run_case(scripts: Path, work: Path, case: Case) -> tuple[bool, str]:
     shutil.copytree(scripts, work / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
     command = [sys.executable, "-I", str(work / "scripts" / TARGET), "--repo", str(repo)]
     if case.generate_first:
-        first = subprocess.run(command, capture_output=True, text=True)
+        first = subprocess.run(command, capture_output=True, text=True, env=hermetic_env())
         if first.returncode != 0:
             return False, f"前段の生成が失敗した: {first.stdout}{first.stderr}"
     if case.pre:
         case.pre(repo)
-    proc = subprocess.run(command + list(case.args), capture_output=True, text=True,
-                          env={**os.environ, **case.env} if case.env else None)
+    proc = subprocess.run(command + list(case.args), capture_output=True, text=True, env={**hermetic_env(), **(case.env or {})})
     out = proc.stdout + proc.stderr
     if proc.returncode != case.code:
         return False, f"exit={proc.returncode}（期待 {case.code}）{out[-400:]}"
