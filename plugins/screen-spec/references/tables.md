@@ -1,7 +1,7 @@
 # 画面・項目・遷移の表
 
 画面の仕様は、表（画面・項目・遷移の 3 つの CSV）と散文の仕様書の組み合わせで持つ。この文書は表の形と、`scripts/check-screens.py` が表に当てる検査の原本である
-（散文の仕様書の決まりは `references/prose.md`、spec-loop との境目は `references/spec-loop.md`）。
+（散文の仕様書の決まりは `references/prose.md`、実現方式の profile は `references/profiles.md`、spec-loop との境目は `references/spec-loop.md`）。
 検査の本体の定数はこの文書の写しで、写しがずれていないかは、このプラグインを置いているリポジトリ（hdknr/claude-code-setup）のテスト test-check-screens.py が突き合わせる。
 
 ## 置き場所
@@ -38,21 +38,23 @@ requirements/screens/
 | 項目 | 値 | 既定（`init` の引数を省いたとき） |
 | --- | --- | --- |
 | `画面IDの接頭辞` | `add` が採る画面ID の頭。英大文字で始まり、英大文字と数字が続き、`-` で終わる（`S-`・`SCR-`）。spec-loop の成果物の表の番号の頭（`F-` など）と重ねず、画面ID が Q&A の番号の形（`Q-`・`D-`）や未決定の印（`TBD-`・`TODO-`）にならないもの | `S-` |
-| `profile` | 実現方式の profile の名前（このプラグインの `profiles/` にあるもの）か `未設定` | `未設定` |
+| `profile` | 実現方式の profile の名前（このプラグインの `profiles/` にあるもの。`references/profiles.md`）か `未設定` | `未設定` |
 
 - `profile` の初期値は、`init` のスキルが spec-loop の基盤要件（`shared/infra.csv`）のフロントエンドの行（`項目` が `frontend`・`フロントエンド`）から推し、利用者に確かめて決める。
-  このプラグインに profile がまだ無い（#1094 で足す）ので、いまは `未設定` だけを置ける。
-- 検査（`check-screens.py`）は設定を見ない——画面ID が接頭辞で始まるかも見ない（手で置いた画面ID を止めない）。
+  profile を選ぶと、表の見出し行に profile の列が入り、仕様書と共通仕様に profile の節が要る（`references/profiles.md`）。**profile は表を置く最初の版で決める**——見出し行は版の間で変えない。
+- 検査（`check-screens.py`）は設定のうち `profile` だけを読む（設定が無ければ `未設定`）——画面ID が接頭辞で始まるかは見ない（手で置いた画面ID を止めない）。
 
 ## `init` と `add`
 
 **`init`**（`write-screens.py init`）は、作業中の版（いちばん大きい `v<n>`）の `requirements/screens/` に、3 つの表（見出し行だけ）・`settings.csv`・`common.md`・`templates/spec.md` を置く。
+profile を選べば、表の見出し行に profile の列を入れ、`common.md` と `templates/spec.md` の末尾に profile の節の雛形（このプラグインの `profiles/<profile>/`）を足す。
 重ねた全体か作業中の版にどれか 1 つでも在れば、何も書かない。版が 1 つも無ければ何も書かない（版を作るのは spec-loop）。
 
 **`add`**（`write-screens.py add`）は、画面を 1 つ足す。足すものは次の 3 つで、**項目と遷移の行は足さない**（ボタンと遷移は画面の中身で、利用者と決めて表に足す）。
 
 - 画面の表の 1 行——作業中の版の `screens.csv` に足す（無ければ見出し行と一緒に置く）。`ステータス` は `下書き`、`仕様書` は `<画面ID>.md`。ほかの列は引数のまま。
-- 仕様書 `<画面ID>.md`——重ねた全体の `templates/spec.md`（案件の雛形）から作る。無ければこのプラグインの雛形（`templates/spec.md`）から作る。雛形の決まりは `references/prose.md` の「雛形」。
+  profile の列のうち、web-spa の `パス` は引数で渡す（種別が `tab`・`dialog` でなければ要る）。
+- 仕様書 `<画面ID>.md`——重ねた全体の `templates/spec.md`（案件の雛形）から作る。無ければこのプラグインの雛形（`templates/spec.md`）に profile の節の雛形を足して作る。雛形の決まりは `references/prose.md` の「雛形」。
 - ワイヤーフレーム `wireframes/<画面ID>.drawio`——このプラグインの雛形（画面の枠と、画面ID と画面名の見出しだけ）から作る。書き出し（`.svg`）は spec-loop の `render-diagrams.py`。
 
 **採番**: 画面ID は `<接頭辞><番号>`。番号は 3 桁以上の 0 埋めで、**どの版の 3 つの表の鍵（重ねる前の生の行。`removed.csv` で消した鍵も、前の版の行に在るので含む）の、同じ接頭辞の番号の最大の次**——
@@ -68,6 +70,7 @@ requirements/screens/
 - 未決定のセルには spec-loop の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）と、その件の Q&A の番号を書く（例: `未定（Q-R-012）`）。印のあるセルは値の決まりに当てない。
   `⚠️` は MkDocs で見せる飾りで、印の代わりにならない（`⚠️` だけのセルは警告する）。印に添えた Q&A の番号も、Q&A 表に在ること（`根拠` と同じく照らす）。
 - 下の表の「空でよい」が「いいえ」の列を空にすると「必須の欄が空」になる（要る情報がまだ無い）。
+- profile を選んだ案件では、下の列の後ろに profile の列が続く（列と値の決まりは `references/profiles.md`）。
 
 ## 画面（`screens.csv`）
 
@@ -161,8 +164,10 @@ v1〜v<n>（省略すると作業中の版まで）を spec-loop の重ね方で
 | 成果物の表 | 画面の `機能` が `features.csv` に・`帳票` が `reports.csv` に・遷移の `操作` が `roles.csv` に無い（表そのものが無いときも） | — | — |
 | 未決定の印 | — | 表のセル・散文に spec-loop の未決定の印がある | `⚠️` だけで印の無いセル・行 |
 | 散文 | `references/prose.md` のとおり | — | — |
+| profile | 設定の `profile` がこのプラグインの profile でも `未設定` でもない・profile の列の値（`references/profiles.md`）・仕様書と共通仕様の profile の節（無い・2 つある・仕様書の末尾にない・小見出しが無い・空・理由の無い `N/A`） | — | — |
 
 - 未決定の印の判定は spec-loop の `check-spec-exit.py` の `find_markers` を、Q&A の番号の形は spec-loop の `check-qa-csv.py` を読み込む（写さない）。
+  `N/A。実現方式が未定` は伏せてから印を探す（`references/profiles.md` の「方式が未定のとき」）。
 - 出力は 1 行 1 件で、行頭に `違反: `・`未決定: `・`必須の欄が空: `・`警告: `・`起票の候補: ` のどれかを置く。表のセルは `<表のパス> <鍵> <列>`、散文は `<パス>:<行>` で場所を示す。
 - 起票の候補: Q&A の番号を添えていない未決定の印（表のセル・散文の行）を、そのまま出す。番号を振って Q&A 表に起票するのは spec-loop の req-loop・spec-review である（番号は起票したループの印ごとに振るので、ループの外で振ると並行するループと番号がぶつかる）。
 

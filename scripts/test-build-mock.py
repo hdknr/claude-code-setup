@@ -182,6 +182,17 @@ CASES: list[tuple[str, dict, object, list[str], int, str | None, str]] = [
         "docs/v2/" + DATA + "screens.csv": "\n".join(line + ("," + (SECRET_PATH if i else "パス") if line else "")
                                                      for i, line in enumerate(V2_SCREENS.split("\n")))}),
      "pathcol", [], 0, "build/mock/v2/index.html", "書いた:"),
+    ("web-spa-profile", with_(base_files(), {  # profile web-spa の列（パス・種類）を持つ案件（#1094）。パスは埋め込まない
+        "docs/v1/requirements/screens/settings.csv": "項目,値\n画面IDの接頭辞,S-\nprofile,web-spa\n",
+        "docs/v1/" + DATA + "screens.csv": "\n".join(line + ("," + (SECRET_PATH if i else "パス") if line else "")
+                                                     for i, line in enumerate(V1_SCREENS.split("\n"))),
+        "docs/v2/" + DATA + "screens.csv": "\n".join(line + ("," + (SECRET_PATH if i else "パス") if line else "")
+                                                     for i, line in enumerate(V2_SCREENS.split("\n"))),
+        "docs/v1/" + DATA + "transitions.csv": "\n".join(line + ("," + ("同じタブ" if i else "種類") if line else "")
+                                                         for i, line in enumerate(V1_TRANSITIONS.split("\n"))),
+        "docs/v2/" + DATA + "transitions.csv": "\n".join(line + ("," + ("別タブ" if i else "種類") if line else "")
+                                                         for i, line in enumerate(V2_TRANSITIONS.split("\n")))}),
+     "git", [], 0, "build/mock/v2/index.html", "書いた:"),
     ("removed", with_(base_files(), {"docs/v2/removed.csv": "種類,対象,理由\n画面,S-004,使わなくなった\nファイル,requirements/screens/order-detail.md,仕様書を消した\n"}),
      "git", [], 0, "build/mock/v2/index.html", "書いた:"),
     # ---- 止まる（1）
@@ -461,7 +472,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("未コミットの変更を書かない", '        out += "（docs に未コミットの変更あり）"\n', "        pass\n", "dirty"),
     ("表に無い画面の描き方も埋め込む", "        if key not in screens:\n", "        if False:\n", "good"),
     ("表が揃っていなくても作る", "    if missing:\n", "    if False:\n", "tables-missing"),
-    ("見出し行を見ない", "        if whole.headers[path] != screens_check.COLUMNS[path]:\n", "        if False:\n", "header-differs-from-rule"),
+    ("見出し行を見ない", "        if whole.headers[path] != expected:\n", "        if False:\n", "header-differs-from-rule"),
+    ("profile の列を足さずに照らす", "        expected = screens_check.COLUMNS[path] + extra.get(path, [])\n",
+     "        expected = screens_check.COLUMNS[path]\n", "web-spa-profile"),
     ("消した仕様書も指す", "        if screens_check.SCREENS_DIR + document not in merged_files:\n", "        if False:\n", "removed"),
     ("git の任意のロックを取る", '["git", "--no-optional-locks", "-C"', '["git", "-C"', "dirty"),
     ("描き方のファイルのコミットを書かない", '    out = f"コミット {last}" if last else "コミットが無い"\n', '    out = "コミットが無い"\n', "good"),
