@@ -14,8 +14,11 @@
 - `plugins/spec-loop/scripts/merge-versions.py` — 一覧の表を行の単位で重ねる・`removed.csv` の新しい種類・画面を消したときの項目と遷移の連鎖・綴り違いとファイルとしての削除の拒否
 - `plugins/spec-loop/scripts/diff-versions.py` — 画面・項目・遷移の行の単位で追加・変更・削除を出す（表が無ければ今と同じ出力）
 - `plugins/spec-loop/scripts/check-signoff.py` — `removed.csv` の新しい種類の検査（2 度消す・一覧の表をファイルとして消す）と docstring
-- `scripts/test-merge-versions.py`・`scripts/test-diff-versions.py`・`scripts/test-check-signoff.py` — 試料・変異・原本との突き合わせ
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（0.90.0 → 0.91.0）
+- `scripts/test-merge-versions.py` — 試料・変異・原本との突き合わせ
+- `scripts/test-diff-versions.py` — 同上
+- `scripts/test-check-signoff.py` — 同上
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行だけ（7 本）
 - `docs/plans/issue-1091.md` — この計画
 
@@ -106,9 +109,26 @@ scratchpad の一時ディレクトリ（`v1091/`）で、Python 3 の本体を�
 - 割り目（手順 4）: 割らない（cruise の周）
 - 1 パス目の指摘対応の起点: `8a544f37c3951597b08d04a5c739525c0a80dc1c`（1 パス目の関門に渡した時点の HEAD）
 - 実機確認: 済み（下の「実機確認の結果」）
+- Verifier 1 パス目: 通した——反証 1 件（V1-1。dev-loop:dev-loop-verifier・sonnet。verifier.md 185 行を報告、wc -l と一致）
+- `/code-review` 1 パス目: 通した——指摘 7 件（CR1-1〜CR1-7。high。委譲文は全文を SendMessage で貼った）
+- 手順 4 への差し戻し: あり（採否の表の「直す」1 行: CR1-2）
+- 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）
 
 ## 既知の限界・決着済みの論点
 
 - 提案書（`build-proposal.py`）の「前の版からの変更」は画面・項目・遷移を載せない（`SHARED_KINDS` は 3 種類のまま）。画面の表は `whole.files` に入らなくなるので、提案書の規模の「要求のファイル」の数にも入らない——画面の表を持つ正本はまだ無い。Issue の範囲の外（#1081 の後の段）。
 - `check-signoff.py` は、新しい種類の行の「前の版までに無い」「同じ版で置きつつ消す」を見ない——`機能` と同じく、版ごとの行の一覧を git の上で作ることになる（`merge` が作業ツリーで見る）。
 - 画面の表どうしの参照（項目・遷移が在る画面を指すか）は見ない——`check-screens.py`（#1092）。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-1: 画面の表が `whole.files` から外れ、`build-proposal.py` の仕様書の「仕様と要求のファイル」の一覧からも消える | 示せない（画面の表を持つ正本で提案書を作っていない。読んだだけ） | 無し | 残課題 |
+| CR1-1: 画面の表だけを変えた版で、提案書の「前の版からの変更」が「（前の版からの変更はありません）」と出る（前は `ファイル` の変更として出た） | 示せない（走らせていない。`build-proposal.py` の 329 行を読んだだけ） | 無し（A1〜A10 は提案書を含まない） | 残課題 |
+| CR1-2: 鍵・画面を指す列の値の前後の空白で、連鎖の消去と置き換えが外れる（`S-002 ` の項目が画面 S-002 を消しても残る） | 示せる（scratchpad `v1091/d4` で rc=0・`I-001,S-002 ` が残った） | A4・A9 | 直す——鍵と画面を指す列の値の前後に空白があれば決まりに反する（1） |
+| CR1-3: 画面の表を csv.writer で書き直すので、改行・引用符・BOM が元のファイルと変わる | 示せる（code-review の再現） | 無し（A7 は表の無い正本） | 残課題 |
+| CR1-4: 移行の手順が versions.md に無い（壊れる変更を minor で入れた） | 示せない（このパスに表を置いた正本が無い） | 無し | 残課題 |
+| CR1-5: CLI の要約の行が画面の表を数えない | 示せる（code-review の再現） | 無し | 残課題 |
+| CR1-6: `diff-versions.py` の `ROW_KINDS` を誰も読まない | 示せる（grep） | 無し | 残課題 |
+| CR1-7: 連鎖の理由を diff-versions.py が引き直す（決まりが 2 箇所） | 示せない（今は一致している） | 無し | 残課題 |

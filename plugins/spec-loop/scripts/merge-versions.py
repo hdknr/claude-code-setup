@@ -513,7 +513,12 @@ def read_rows(path: Path, key: str, refs: tuple[str, ...], problems: list[str]) 
             continue
         row = dict(zip(header, fields))
         value = row[key]
-        if not value.strip():
+        # 鍵と画面を指す列は文字どおりに照らす（置き換え・削除・連鎖）——前後の空白は別の値になって黙って外れるので、決まりに反する
+        padded = [name for name in (key, *refs) if row[name] != row[name].strip()]
+        if padded:
+            problems.append(f"{path}:{line}: {'・'.join(f'`{name}`' for name in padded)} の値の前後に空白がある")
+            ok = False
+        elif not value.strip():
             problems.append(f"{path}:{line}: `{key}` が空")
             ok = False
         elif value in rows:
