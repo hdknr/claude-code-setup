@@ -130,6 +130,13 @@ feasibility の例（A9）は同じ正本に `diff-versions.py` を当て、画�
 
 - 周の在り処: ブランチ `issue/1099-scaffold-screen-refs`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1099`・起点 `ecd2ab0`・base `origin/main` → `ecd2ab01d13a8dcdb37db194860718923ab48c7f`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 実装のコミット: `6b16321`
+- check-all（`6b16321` の直前の作業ツリー。run-serial 越し）: 89/89 本・失敗 0。`test-scaffold-screens.py` は単独でも「試料 12 件・変異 10 件」で緑（1 回目は試料の組み方の誤り——`unlinked()` の assert が `根拠` の列の `F-002` に当たった——で落ち、直して緑）
+- 実機確認: 一時ディレクトリの正本（本物の spec-loop と screen-spec の写し）で書く生成を走らせ、本文の `## 参考資料`・`scaffold/refs/`・目録を目で見た。
+  feasibility の例（A9）は、文書の例と同じ表（`screens.csv` 2 行・`features.csv` 3 行・`screen-items.csv` 4 行・`transitions.csv` 2 行）に `diff-versions.py docs` を当て、
+  `画面: 追加 2`・`項目: 追加 4`・`遷移: 追加 2` と `features.csv` の 3 行を数えた——文書の「画面 2・機能 3・項目 4・遷移 2」と一致（`機能:` の節は中間表現の機能で 0——文書に書いたとおり）
+- 交絡を潰した手順: 受入基準 1 の試料は、v1 と v2 の写しのモックに生成器の版の印（`screen-spec 0.3.0` → `screen-spec 9.9.9`）が実際に入ったことを確かめてから本文 0 件を見る（版が変わっていない試料では判別しない）。陽性対照（中間表現を直せば変更）を同じ試料で取る
+- 1 パス目の指摘対応の起点: `6b16321`（1 パス目の関門に渡した時点の HEAD——計画の再開点の更新は計画ファイルだけ）
 
 ## 既知の限界・決着済みの論点
 
