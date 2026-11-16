@@ -18,10 +18,13 @@
 - `plugins/spec-loop/scripts/autopilot-check.py` — `screen-gate.py` と screen-spec の `check-screens.py` を権限の点検に足す
 - `plugins/spec-loop/references/` — `tree.md`（`requirements/screens/` を任意の項目として）・`spec-scope.md`（画面の表は要求の入力で、`spec/` に見た目・配置を写さない）・`spec-exit.md`（条件 1 の画面の分）・`versions.md`（条件 1 の当て方の行）・`signoff-tags.md`（サインオフの前の確かめ）
 - `plugins/spec-loop/skills/*/SKILL.md` — req-loop・spec-review・scaffold・autopilot の手順（画面の関門を呼んで止まる）と、全スキルの版の 2 行
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — spec-loop の版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — spec-loop の版
+- `.claude-plugin/marketplace.json` — spec-loop の版
 - `scripts/test-screen-gate.py` — 新設。回帰テスト（陽性対照・陰性対照・変異）
-- `scripts/test-check-spec-exit.py`・`scripts/test-scaffold.py`・`scripts/test-autopilot-check.py` — 画面の関門の分の試料
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — 新しいテストの収録
+- `scripts/test-scaffold.py` — 画面の関門の分の試料と変異
+- `scripts/test-autopilot-check.py` — screen-spec の項目の試料と変異（本体はテンポラリの写しから読む）
+- `scripts/check-all.py` — 新しいテストの収録
+- `.github/workflows/plugins.yml` — 新しいテストの収録
 - `CLAUDE.md` — プロジェクト構成に `screen-gate.py` と新しいテストを足す
 - `docs/plans/issue-1097.md` — この計画
 
