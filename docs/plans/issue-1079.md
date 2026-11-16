@@ -88,11 +88,12 @@ main へのマージで、プラグインの配布と GitHub Pages の再ビル�
 
 - 周の在り処: ブランチ `issue/1079-measure-sendmessage-modes`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1079`・起点 `7589c103`・base `origin/main` = `7589c103641f8dc7d91071c1e31a561661f76b3f`
 - 割り目（手順 4）: 割らない（cruise の周）
-- 1 パス目の関門に渡した起点（指摘対応の起点）: 未
-- Verifier 1 パス目: 未
-- `/code-review` 1 パス目: 未
-- 手順 4 への差し戻し: 未
-- 2 パス目: 未
+- 1 パス目の関門に渡した起点（指摘対応の起点）: `ec315b98826d76ef123ede4047f91280adbd2cbd`
+- 歯止め: `check-all.py`（run-serial 越し）81 本中 80 本 OK、`check-plan-counts.py` が件数の行の欠けで FAIL → 行を足して単独で再実行し OK
+- Verifier 1 パス目（sonnet・`dev-loop:dev-loop-verifier`。テンプレート 186 行を読んだと報告——`wc -l` と一致）: 反証 0 件・軽微な指摘 3 件（V1〜V3）。`git status --porcelain` は前後で同じ
+- `/code-review` 1 パス目（high）: 指摘 8 件（CR1〜CR8）。`git status --porcelain` は前後で同じ
+- 採否: 11 件とも「直す」（下の採否の表）。手順 4 への差し戻し: なし（Verifier の反証 0 件。指摘対応として直した）
+- 2 パス目: 回す（指摘対応の差分あり）。残っているのは Verifier の当て直しと `/code-review` 2 パス目の両方
 - 割り目（2 パス目の前）: 割らない（cruise の周）
 - 狭いパス: 未
 - 外部レビュー: 未
@@ -107,7 +108,23 @@ main へのマージで、プラグインの配布と GitHub Pages の再ビル�
 
 ## 採否の表
 
-（関門の指摘を 1 件 1 行で書く）
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1: 「`-p` の子の標準出力には本文が載らない」は偽——`result` の `origin` に本文・送り手・`verifiedPeerPid` が載る | 示せる——`probe-pauto-1079.out` などの `result` の `origin`（著者が走らせて確かめた） | 3（送り手の形） | 直す |
+| CR2・V1: parallel.md が「`auto` の親（対話・`-p`・サブエージェント）は測ったどの子のモードにも届いた」と直積で書く | 示せる——対話の親と `-p` から acceptEdits・dontAsk・plan の子へは測っていない（表 A〜M） | 2 | 直す（表を正とする指し先に替えた） |
+| CR3: 「A〜M はどれも届いた」「約 1〜3 分」は誤り（C・D・M は届いていない。#1079 は 13〜48 秒） | 示せる——表と子の記録の時刻 | 1・2 | 直す |
+| CR4: 箇条の書き出し「権限確認を飛ばさないモードなら、測ったどの子のモードにも届いた」が一般化している | 示せる——同じ箇条の後ろの「測っていない」と食い違う | 2 | 直す |
+| CR5: 対話の親・サブエージェントの `peer_message_hold` の `from_name` が「見ていない」とも書かれていない | 示せる——保留した組は bypass の `-p` だけ | 3 | 直す（見ていないと書いた。BLOCKED として申告——下） |
+| CR6: M の送り手は `--tools SendMessage` でも K と違うので、K・L と M の対比だけでは `bypassPermissions` が原因と決まらない | 示せる——`bysender.out` の init の `tools` は `SendMessage` だけ | 2（実験の判別） | 直す（交絡を書き、根拠を `cause` と公式ドキュメントにした） |
+| CR7: child-cycle.py の docstring も直積に読める | 示せる——CR2 と同じ | 2 | 直す（表を正とする指し先に替えた） |
+| CR8: 組の一覧を 3 箇所に写して既に食い違っている | 示せる——parallel.md と docstring は manual を落としていた | 2 | 直す（CR2・CR7 の直しで写しを無くした） |
+| V2: F〜J の送り手の親が `auto` である出所が無い | 示せる——`from-mode` は auto でも default でも `prompting` | 2 | 直す（親のセッションの記録の `permissionMode` が 19 件とも `auto` と書いた） |
+| V3: 道具の説明を「保留する」と言い切るが原文は usually | 示せる——道具の結果の文 "usually a different permission mode" | 2 | 直す |
+
+## BLOCKED
+
+- **不変条件 3 のうち、対話の親・サブエージェントから送って保留したときの `peer_message_hold` の `from_name`**——保留が起きたのは送り手が `bypassPermissions` の組だけで、対話の親やそのサブエージェントを `bypassPermissions` で起こす手段がこの周（cruise の子のサブエージェント）に無い（無いのは権限・環境）。次善: `-p` の送り手（bypass）の保留で `from_name` が `--name` の値になることを見た（M）。
+  不在の周で `マージ前の判断 = 推奨で決めて起票` の線があるので、PR コメントに推奨（マージする）とマージ後の確かめ方を書き、確認の Issue は親が立てる。
 
 ## 起票（手順 8）
 

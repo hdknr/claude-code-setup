@@ -134,8 +134,8 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **実際の 1 周で最後の `result` に `structured_output` が載るか**——確かめたのは、スキルを入口にして Bash と背景の体を使う小さな子（`references/child-process.md` の「結果の形」）までである。
   載らなければ 3 になる（黙って 0 にはならない）。
 - **検査器が JSON Schema の全部を読むこと**——読むのは `type`・`enum`・`properties`・`required`・`additionalProperties`・`items` だけで（`description` は読み飛ばす）、記録の形にほかの語があれば読まずに 3 にする。
-- **子に送ったメッセージが届くこと**——届いたのは送り手が `auto`（対話の親・そのサブエージェント・`claude -p`）の組で、子は `auto`・`default`・`acceptEdits`・`dontAsk`・`plan` を測った。送り手が `bypassPermissions` の `claude -p` なら子は保留した
-  （`references/child-process.md` の「宛先」。2.1.325 の実測。#1079。`auto` と `bypassPermissions` のほかのモードの送り手は測っていない）。**子に `crossSessionInbound: accept` は渡さない**——権限確認を飛ばすセッションからの指示も通すことになり、cruise は権限を広げない。
+- **子に送ったメッセージが届くこと**——届くかは送り手と子の権限モードの組で決まり、送り手が `bypassPermissions` の `claude -p` なら子は保留した。
+  どの組で届き、どの組を測っていないかは `references/child-process.md` の「宛先」の表を正とする（2.1.325 の実測。#1039・#1079）。**子に `crossSessionInbound: accept` は渡さない**——権限確認を飛ばすセッションからの指示も通すことになり、cruise は権限を広げない。
   **同じ名前の別のセッションが居れば**、`ListAgents` は短い印を足して並べ、素の名前では宛先が決まらない——そのときは宛てない。
 - **子が台帳を書かないこと**——委譲文で頼むだけである（`prompts/child-cycle.md`）。
 - **記録のディレクトリの後片付け**——消さない。

@@ -54,11 +54,13 @@
 
 **届くかは、親と子の権限モードで決まる**——子は承認の画面を出せないので、子が保留したメッセージは期限（`dialogExpiry`。既定 5 分）で落ちる:
 
-- **送り手が権限確認を飛ばさないモードなら、測ったどの子のモードにも届いた**——対話の親（`auto`）から子（`auto`・`default`）（A・B）、`auto` の親のサブエージェントから子（`auto`・`acceptEdits`・`dontAsk`・`plan`・`manual`）（F〜J）、
-  `auto` の `claude -p` の送り手から子（`auto`・`default`）（K・L。#1079）。**子と送り手のモードの名前が違っても届いた**——`SendMessage` の道具の説明（2.1.325）は「送り手と違う権限モードのセッションは保留する」と言うが、
-  届いたメッセージの `from-mode` は `auto` の送り手で `prompting`、`bypassPermissions` の送り手で `bypass` で、**保留したのは送り手が `bypass` の組だけだった**（D・M）。
+- **届いた組・保留した組は、下の表 A〜M を正とする**——送り手と子のモードの組ごとに測ったもので、**表に無い組は測っていない**。
+  `auto` の送り手から測った組はどれも届いた: 対話の親から子 `auto`・`default`（A・B）、`auto` の親のサブエージェントから子 `auto`・`acceptEdits`・`dontAsk`・`manual`・`plan`（F〜J）、`auto` の `claude -p` から子 `auto`・`default`（K・L。#1079）。
+  **対話の親・`claude -p` から `acceptEdits`・`dontAsk`・`plan` の子へ直に送った組は測っていない**（サブエージェントから送った組と同じとは書かない——外側の宛先は親のセッションと同じだが、送ったのは親のターンではない）。
+  **子と送り手のモードの名前が違っても届いた組がある**（G〜J・L）——`SendMessage` の道具の説明（2.1.325）は「送り手と違う権限モードのセッションは、ふつう（usually）保留する」と言う。
+  届いた本文の `from-mode` は `auto` の送り手で `prompting`、`bypassPermissions` の送り手で `bypass` で、**保留したのは送り手が `bypassPermissions` の組だけだった**（D・M）。
   **本体の判定は読んでいないので、測った組の外に一般化しない**——子の `bypassPermissions`（起動口が拒む）、`auto` と `bypassPermissions` のほかのモードの送り手（`acceptEdits` の親など）は測っていない。届いたかは子の返事か `status` の `保留されたメッセージ:` で見る。
-- **送り手が `bypassPermissions` の `claude -p` なら、子は保留して（`mode-mismatch`）、期限で落とした**（D。M は保留を見たところで子を止め、止めたときに同じメッセージが `dropped` になった。送り手が `-p` であることと `bypassPermissions` であることは、この観測では分けていない——`-p` の `auto` の送り手（K・L）は届いたので、効いているのは後者である）——送った側の `SendMessage` は成功と返る。`status` は子の出力の `peer_message_hold` を `保留されたメッセージ:` の行で出す。
+- **送り手が `bypassPermissions` の `claude -p` なら、子は保留して（`mode-mismatch`）、期限で落とした**（D。M は保留を見たところで子を止め、止めたときに同じメッセージが `dropped` になった。送り手が `-p` であることと `bypassPermissions` であることは、この観測では分けていない——`-p` の `auto` の送り手（K・L）は届いたが、M の送り手は道具を `SendMessage` だけに絞っていた（K・L の送り手は絞っていない）ので、K・L と M の対比だけでは決まらない。後者とするのは、保留の理由の `cause: mode-mismatch` と公式ドキュメントによる）——送った側の `SendMessage` は成功と返る。`status` は子の出力の `peer_message_hold` を `保留されたメッセージ:` の行で出す。
   **親が `bypassPermissions` なら宛てられない周として扱う**（`references/parallel.md` の「止まっている枠の持ち主」の 2）。
 - **子に `crossSessionInbound: accept` は渡さない**——渡せば親が `bypassPermissions` でも届くが、権限確認を飛ばすどのセッションの指示も子に届くようになり、cruise は権限を広げない。
   利用者が settings で `crossSessionInbound` を決めていれば、それに従う（`refuse` なら届かない）。
@@ -77,7 +79,8 @@
 
 **同じ日に、同じ版・同じ起動の形で、まだ測っていなかった組を測った**（#1079。子 9 体——plan は 2 回起こした——と送り手 2 体で計約 $0.49。うち plan の子の 1 回目が $0.28。下）。
 子は背景で `sleep 600` を起こしてターンを閉じ（`--allowedTools "Bash(sleep 600)"`）、届いたら道具を使わずに 1 行で返すよう頼んだ。数えたのは子の出力ファイル（2 回目の init・`peer_message_hold`・`result`）と、子のセッションの記録（`~/.claude/projects/<cwd>/<セッション>.jsonl`）に入った本文の実物である。
-F〜J の送り手は、`auto` の対話のセッション（cruise の親）から起こされたサブエージェント（この周の子）で、送った文は親のセッションの宛先で出た（道具の説明どおり）。settings は上と同じ（`crossSessionInbound`・`dialogExpiry` は無い。親の `--settings` のファイルにも無い）:
+F〜J の送り手は、`auto` の対話のセッション（cruise の親）から起こされたサブエージェント（この周の子）で、送った文は親のセッションの宛先で出た（道具の説明どおり）。
+親のモードは、親のセッションの記録の `permissionMode` がすべて `auto`（19 件）だったことで確かめた——`from-mode` は `auto` でも `default` でも `prompting` と出る（A・B・K）ので、本文からは決まらない。settings は上と同じ（`crossSessionInbound`・`dialogExpiry` は無い。親の `--settings` のファイルにも無い）:
 
 | 子 | 子の許可モード | 送り手（モード） | `ListAgents`（K の送り手が見た） | 結果 |
 | --- | --- | --- | --- | --- |
@@ -96,17 +99,20 @@ F〜J の送り手は、`auto` の対話のセッション（cruise の親）か
 **`ListAgents` の行は `-p` の子も `interactive` と出る**——種別で子を見分けられない。見分けるのは名前である（K の送り手が見た一覧でも、子はどれも `interactive`・`busy`）。
 **子は背景の `sleep` の通知の後に自分で終わった**（A は先に止めた。F〜M は測り終えた時点で親が止め、残っていないことを `ps` で確かめた）。
 
-**届いた本文の送り手の形**（#1079。#1078——子が送り手を確かめる——がこれを使う）。子のモデルが受け取る本文は次の形で、**`-p` の子の標準出力（stream-json）には本文が載らない**——載るのはセッションの記録（`queue-operation` の `content`）と、子がそれを引いて書いた応答だけである:
+**届いた本文の送り手の形**（#1079。#1078——子が送り手を確かめる——がこれを使う）。子のモデルが受け取る本文は次の形で、子のセッションの記録には `queue-operation` の `content` に入る。
+**`-p` の子の標準出力（stream-json）では、届いたターンの `result` の `origin` に載る**——`kind: peer`・`from`・`verifiedPeerPid`（送り手の pid）・`msg_id`・`name`（`from-name` と同じ値）・`fromMode`・`body`（本文。サブエージェントからなら内側の `agent-message` を含む）・`verifiedLocal: true`（F〜L の出力で見た。`user` や `assistant` の行には本文が出ない）:
 
 - **対話の親**: `<cross-session-message from="uds:/tmp/cc-socks/<親の pid>.sock" from-name="<親のセッションの名前>" from-mode="prompting">`（A・B の子の記録。親は `auto`。`from-name` は `claude-code-setup-de` のような cwd の名前と短い印）
 - **サブエージェント**: 外側は**親のセッションの宛先**（`from` は親の pid のソケット・`from-name` は親のセッションの名前・`from-mode` は `prompting`）で、その中に `<\agent-message from="<サブエージェントの agentId>">…<\/agent-message>` が入る（F〜J。記録のとおり、`agent-message` の前に `\` が付いていた）——**`from` と `from-name` では、親が送ったのかサブエージェントが送ったのかは分けられない**。分けるのは内側の `agent-message` の有無である。
 - **`claude -p` の送り手**: `from="uds:/tmp/cc-socks/<送り手の pid>.sock"`・`from-name="<--name の値>"`・`from-mode` は `auto` で `prompting`（K・L）、`bypassPermissions` で `bypass`（E）。
 - **保留した記録**: 子の出力の `peer_message_hold` の `from` は送り手の pid のソケット、`from_name` は送り手の `--name` の値だった（M。`held` と `dropped` の両方に同じ値）。
+  **保留したのは `bypassPermissions` の `claude -p` の送り手の組だけなので、対話の親・サブエージェントから送って保留したときの `from_name` の形は見ていない。**
 
-**`from` の pid は送り手のプロセスのもので、送り手が終われば同じ pid が使い回されうる**——`from` だけで送り手を確かめたことにしない（#1078 が決める）。
+**`from` の pid は送り手のプロセスのもので、送り手が終われば同じ pid が使い回されうる**——`from` だけで送り手を確かめたことにしない。
+`origin` の `verifiedPeerPid`・`verifiedLocal` は本体が付けた値だが、何をどう確かめた印かは本体を読んでいない——使うかは #1078 が決める。
 
 **確かめていないこと**: **実際の dev-loop の 1 周（`/dev-loop:dev-loop <番号>`・数十分）の子に届いて、子が `references/parallel.md` の 4 のとおり動くか**——試しの子は短い指示に従っただけである。
-**子がツールを呼んでいる最中に届くか**——A〜M はどれもターンを閉じて背景の体を待つ間に届いた（送ったのは子が起きてから約 1〜3 分の間）。**子から親への返事が届くか**——A〜M の子は届いた本文をファイルに書くか 1 行で応じただけで、`SendMessage` を返していない（子のモードと親のモードが違えば、親の側で保留されうる）。**`/clear` した後の親に届くか**も見ていない。
+**子がツールを呼んでいる最中に届くか**——届いた組（A・B・E・F〜L）はどれもターンを閉じて背景の体を待つ間に届いた（#1079 の組は、子が起きてから約 13〜48 秒で受けた——子のセッションの記録の時刻）。**子から親への返事が届くか**——届いた組の子は本文をファイルに書くか 1 行で応じただけで、`SendMessage` を返していない（子のモードと親のモードが違えば、親の側で保留されうる）。**`/clear` した後の親に届くか**も見ていない。
 **`auto` と `bypassPermissions` のほかのモードの送り手**（`acceptEdits`・`dontAsk`・`plan`・`default` の親）——届いた本文の `from-mode` がそれぞれ何になり、子が保留するかは測っていない。返事が無ければ、`references/parallel.md` の「止まっている枠の持ち主」の 3 のとおり `STALL` の後に止める。
 **拒まれたこと・落とされたことを送った側がいつ知るか**——C・D とも、送った側の `SendMessage` はその場では成功と返った。
 C の拒否の知らせ（`[Cross-session delivery notice] … was refused …`）は送ってから約 7 分後、子が終わった後に親の会話に入った——この会話はその間ターンの途中だったので、いつ届いていたかは分けていない。
