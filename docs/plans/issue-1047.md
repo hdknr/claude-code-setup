@@ -105,6 +105,7 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 割り目（2 パス目の前）: 割らない（cruise の周）
 - 狭いパス: Verifier（sonnet）`git diff 8105ac1 99db9d9` **反証 3 件**（F1・F2 は後退を示す。下の「狭いパスの指摘」）。直さない・当て直さない。
 - **A2 は満たしていない**——狭いパスの F1・F2 が示し、2 パス目で直せなかった（狭いパスの指摘は直さない）。判断の出所は無い（利用者の指示が要る）ので、照合（`check-gates.py --absent`）は 3 で通さない——この PR は利用者の判断待ちで止まる。
+- PR #1106。main（889d346）を取り込み dev-loop を 2.2.0 へ上げ直した（c52d311）。PR 側の CI は c52d311 で全部 pass（deploy は skipping）・`MERGEABLE`・先端は origin/main を含む。外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` が 3）。
 - `check-all.py`（run-serial 越し）: 99db9d9 で 82/82 緑（計画ファイルだけ未コミット）。cf93f38 の回は計画の件数の行が無く 1 本落ちた（直した）。8105ac1 の回は作業ツリーを書き換えたので途中で止めた（証拠にしない）。
 
 ```dev-loop-gates
