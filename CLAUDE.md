@@ -143,7 +143,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `--check --upto <n-1>` で前の版の時点の鮮度を見る）。
       **前の版の時点に `反映済み` でない Q&A が残れば、指しているかに依らず止める——凍結した前の版なら止めずに全部を追加にする**
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
-      テストは `scripts/test-scaffold.py`）
+      **画面の表があれば、`機能` の列が機能を挙げる画面の仕様書・ワイヤーフレーム・生成したモック（書く生成が screen-spec の `build-mock.py` で作る）を本文と `scaffold/refs/` に足す——
+      機能のオブジェクトには入れず、`--check` はモックを生成し直さない**（#1099。決まりは `references/handoff-issue.md` の「画面の表から引く参考資料」）。
+      テストは `scripts/test-scaffold.py`・`scripts/test-scaffold-screens.py`）
     - `scripts/rebuild-scope.py` - **仮回答と推奨で決めた事項の台帳**から、利用者が確かめたときに作り直す範囲（Issue と受入基準のケース）を引く
       （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行と閉じのコメントの `確認の結果: ` の行（#884）を、
       `gh issue list --json` の出力から読む。**`gh` は呼ばない**。印の定数は `scaffold.py` から読み、確認の Issue の 2 行の頭は dev-loop の `absent-lines.md` の写しで、テストが突き合わせる。
@@ -402,6 +404,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-screen-gate.py` - spec-loop の画面の表の関門（#1097）と、それを条件 1 に入れる `check-spec-exit.py` の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の spec-loop の写しを置き、隣に本物の screen-spec の写しを置く・置かない・偽物を名指す**で当て、
     正本の試料は `test-check-screens.py` の `base()` を読み込む。**陽性対照: 同じ「未定」の正本で、画面の関門を当てない条件 1 は 0**。プラグインのキャッシュの形は一時の `CLAUDE_CONFIG_DIR` に作る——利用者の `~/.claude` は読まない
+  - `test-scaffold-screens.py` - spec-loop の scaffold の画面の表の参考資料と生成したモック（#1099）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/scaffold.py`**。**一時ディレクトリに本物の spec-loop と screen-spec の写しを並べ、本物の `scaffold.py` と生成器を走らせる**
+    （正本の試料は `test-screen-gate.py` の `reflected()` を読み込む）。**生成器の版だけを変えた v2 で本文 0 件と、陽性対照（中間表現を直せば変更）**、
+    照合（`check-signoff.py`）が画面の表だけの違いを拾うこと（陽性対照つき。一時の git リポジトリで、`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）も見る
   - `test-write-screens.py` - screen-spec の `init`・`add` の書き込みと雛形（#1093）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` と `plugins/screen-spec/templates/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べ、スキルの手順をスクリプトで再現する**
     （`hint` → `init` → `add` → `check-screens.py`）。#1093 の受入基準（空の案件で 0・Q&A 表を書き換えない・表で持つ節は印だけ）・採番・書けないときに書かないことと、
