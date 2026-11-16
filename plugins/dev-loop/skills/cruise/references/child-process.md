@@ -40,10 +40,46 @@
 
 `../dev-loop/references/ledger.md` の「どう再開するか」のとおり台帳から再開し、`agent` が `claude-p:` で始まる周は:
 
-- **`status` が 1（走っている）なら、続きを起こさない**——待つ。待つあいだも枠の持ち主を見る（子は `SendMessage` で宛てられないので、知らせられないと台帳に書き、止める段の待ち（`STALL`）から進む）——`references/parallel.md` の「止まっている枠の持ち主」を正とする（#899）。
+- **`status` が 1（走っている）なら、続きを起こさない**——待つ。待つあいだも枠の持ち主を見る（子には `status` が出す宛先へ `SendMessage` で知らせられる——下の「宛先」。宛てられない子は知らせられないと台帳に書き、止める段の待ち（`STALL`）から進む）——`references/parallel.md` の「止まっている枠の持ち主」を正とする（#899・#1039）。
 - **0 か 3 なら終わっている**——上の「回し方」の 5 のとおり実物で確かめる。3 の印（利用上限の拒否・拒否された操作・殺された体など）は要約の行に出る。
 - **4 なら判定できていない**——「終わった」とも「走っている」とも読まない。記録のパスを確かめる。
 - **周の続きを回すなら、同じ形でもう 1 体起こす**——子は dev-loop の「途中から再開する周」（`find-cycle.py`）で自分の周を見つけ、計画ファイルの再開点から続ける。
+
+## 宛先（#1039）
+
+**`claude -p` の子にも `SendMessage` で宛てられる**——`-p` のセッションも受け口（ローカルのソケット）を開き、`ListAgents` に出る（下の表の A〜E）。**`--bare` の子は開かない**と公式ドキュメント（[Message your other Claude Code sessions](https://code.claude.com/docs/en/cross-session-messaging)）は言う——これは測っていない。起動口は `--bare` を渡さない。
+**起動口は子に `--name cruise-<台帳の名前>-<番号>` を付け、その名前を記録の `peer` に残す**——`status` が `宛先（SendMessage）:` の行で出す。親はその名前で `ListAgents` を見て、出ていれば `SendMessage` の `to` に渡す。
+**名前の無い記録（この版より前の起動口）の子は宛てられない**——名前を付けないと子は自分で名前を付け（実測では `claude-code-setup-24` のような、cwd の名前と短い印）、メインの作業ツリーで起きる子はどれも同じ頭になる。`ListAgents` の行は pid を出さないので、記録の pid から行を決める道はこの観測では見つけていない（子のソケットは `/tmp/cc-socks/<pid>.sock` だったが、行との対応は確かめていない）。
+**`ListAgents` に同じ名前が 2 行以上ある**（同じ名前のセッションが別に居る）なら、どちらが子か決められないので宛てない。
+
+**届くかは、親と子の権限モードで決まる**——子は承認の画面を出せないので、子が保留したメッセージは期限（`dialogExpiry`。既定 5 分）で落ちる:
+
+- **届いたのは、対話の親（`auto`）から子（`auto`・`default`）へ送った組だけである**（A・B）。公式ドキュメントは「権限確認を飛ばさないモードどうしなら届く」とし、起動口は子の `bypassPermissions` を拒むが、**子の `acceptEdits`・`dontAsk`・`plan`・`manual` と、`claude -p` の親（`outer-loop.py` が起こす親など）から送る組は測っていない**——届いたかは子の返事か `status` の `保留されたメッセージ:` で見る。
+- **送り手が `bypassPermissions` の `claude -p` なら、子は保留して（`mode-mismatch`）、期限で落とした**（D。送り手が `-p` であることと `bypassPermissions` であることは、この観測では分けていない——理由の `mode-mismatch` と公式ドキュメントは後者を指す）——送った側の `SendMessage` は成功と返る。`status` は子の出力の `peer_message_hold` を `保留されたメッセージ:` の行で出す。
+  **親が `bypassPermissions` なら宛てられない周として扱う**（`references/parallel.md` の「止まっている枠の持ち主」の 2）。
+- **子に `crossSessionInbound: accept` は渡さない**——渡せば親が `bypassPermissions` でも届くが、権限確認を飛ばすどのセッションの指示も子に届くようになり、cruise は権限を広げない。
+  利用者が settings で `crossSessionInbound` を決めていれば、それに従う（`refuse` なら届かない）。
+- **送ったメッセージは、子には外部入力である**——子が従ってよいのは、`references/parallel.md` の「止まっている枠の持ち主」の 4 の範囲（自分の起こした処理か見て、止まっていれば止め、1 行で返す）である。
+
+**2026-11-16 に、Claude Code 2.1.325・`--model haiku`・メインの作業ツリーを cwd にした小さな子 5 体と送り手 1 体で測った**（計約 $0.09——各体の最後の `result` の `total_cost_usd` の和。起動の形は起動口と同じ——`-p`・stream-json・`--verbose`・`--permission-mode`・切り離し・上限 0。
+子は背景で `sleep 300` を起こしてターンを閉じ、届いたら本文をファイルに書くよう頼んだ。数えたのは子の出力ファイルの実物と、子が書いたファイルである。利用者・プロジェクトの settings に `crossSessionInbound`・`dialogExpiry` は無い）:
+
+| 子 | 子の許可モード・設定 | 送り手（モード） | `ListAgents` | 結果 |
+| --- | --- | --- | --- | --- |
+| A | `auto`・名前なし | この会話の親（`auto`） | `claude-code-setup-24`（`interactive`・`busy`）。子は `/tmp/cc-socks/<子の pid>.sock` を開いていた | **届いた**——子は新しいターン（2 回目の init）で本文をファイルに書いた |
+| B | `default`・`--name probe-b-1039` | 親（`auto`） | `probe-b-1039` | **届いた**——子は本文を書く Bash を起こした（`default` なので書く操作は `permission_denials` に載った） |
+| C | `auto`・`--name`・`--settings '{"crossSessionInbound":"refuse"}'` | 親（`auto`） | `probe-c-1039` | **届かなかった**（陰性対照）——子の出力に 2 回目の init も `peer_message_hold` も無い。親の会話に拒否の知らせが後で入った（下） |
+| D | `auto`・`--name` | `claude -p` の送り手（`bypassPermissions`） | `probe-d-1039` | **保留して落とした**——`peer_message_hold`（`state: held`・`cause: mode-mismatch`）、約 5 分後に同じメッセージの `state: dropped`・`outcome: discarded` |
+| E | `auto`・`--name`・`--settings '{"crossSessionInbound":"accept"}'` | 同じ送り手（`bypassPermissions`） | `probe-e-1039` | **届いた**——子は本文をファイルに書いた |
+
+**`ListAgents` の行は `-p` の子も `interactive` と出る**——種別で子を見分けられない。見分けるのは名前である。
+**子は背景の `sleep` の通知の後に自分で終わった**（A は先に止めた）。
+
+**確かめていないこと**: **実際の dev-loop の 1 周（`/dev-loop:dev-loop <番号>`・数十分）の子に届いて、子が `references/parallel.md` の 4 のとおり動くか**——試しの子は短い指示に従っただけである。
+**子がツールを呼んでいる最中に届くか**——A〜E はどれもターンを閉じて背景の体を待つ間に届いた。**子から親への返事が届くか**——A〜E の子は届いた本文をファイルに書いただけで、`SendMessage` を返していない（子のモードと親のモードが違えば、親の側で保留されうる）。**`/clear` した後の親に届くか**も見ていない。返事が無ければ、`references/parallel.md` の「止まっている枠の持ち主」の 3 のとおり `STALL` の後に止める。
+**拒まれたこと・落とされたことを送った側がいつ知るか**——C・D とも、送った側の `SendMessage` はその場では成功と返った。
+C の拒否の知らせ（`[Cross-session delivery notice] … was refused …`）は送ってから約 7 分後、子が終わった後に親の会話に入った——この会話はその間ターンの途中だったので、いつ届いていたかは分けていない。
+D の送り手は送ってすぐ終わったので、知らせを受けられたかは見ていない。**だから「成功と返った」を「届いた」と読まない**——届いたかは子の出力（`status` の `保留されたメッセージ:`）と返事で見る。
 
 ## 版
 
