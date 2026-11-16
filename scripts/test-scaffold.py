@@ -154,6 +154,9 @@ IR = {
 SPEC = "# 注文\n\n割引と取り消し。\n"
 # 試料の正本は版のディレクトリに置く（`references/versions.md`）
 V1 = Path("docs") / "v1"
+# 仕様レビューの記録（#1044）。列は references/spec-exit.md の「記録の表」
+RECORD_HEAD = "回,日付,結果,条件2〜4,要求の行,決定表の行,テストケース,仕様の行,判断,機能\n"
+PASSED_RECORD = RECORD_HEAD + "1,2026-11-01,抜けていない,満たさない,10,5,8,40,-,注文\n2,2026-11-02,抜けた,満たす,10,5,9,44,-,-\n"
 V2 = Path("docs") / "v2"
 IR_FILE = V1 / "spec" / "spec_ir.json"
 
@@ -1188,7 +1191,8 @@ class Case:
     def __init__(self, name: str, code: int, text: str = "", *, ir=None, raw: str | None = None, qa: str | None = None,
                  spec: dict[str, str] | None = None, args: tuple[str, ...] = (), pre: Callable[[Path], None] | None = None,
                  post: Callable[[Path], str | None] | None = None, generate_first: bool = False, impl: str | None = None,
-                 extra: dict[str, str] | None = None, root: Path = V1, absent: str = "", env: dict[str, str] | None = None):
+                 extra: dict[str, str] | None = None, root: Path = V1, absent: str = "", env: dict[str, str] | None = None,
+                 record: str | None = PASSED_RECORD):
         # absent: 出力に現れてはならない文言（対照）。env: 生成のコマンドの環境に重ねるもの（`git` を外す試料）
         self.name, self.code, self.text, self.absent, self.env = name, code, text, absent, env
         self.ir, self.raw, self.qa, self.spec = ir, raw, qa, spec
@@ -1196,6 +1200,9 @@ class Case:
         self.generate_first, self.impl = generate_first, impl
         # extra: 正本の根からのパス → 中身（v2 の差分など）。root: 試料の版 1 を置く場所（旧い構成なら docs）
         self.extra, self.root = extra or {}, root
+        # record: 仕様レビューの記録（`spec-review/v<n>.csv`。#1044）——既定は v1〜v9 のどれにも `抜けた` を置く（pre が版を足しても）。
+        # None なら置かない。文字列なら v1〜v9 にその中身を置く
+        self.record = record
 
 
 def red_run(repo: Path) -> tuple[int, str]:
@@ -2161,6 +2168,31 @@ def git_init_only(repo: Path) -> None:
 
 
 CASES: list[Case] = [
+    # 仕様レビューの記録（#1044）——最後の実行の行が `抜けた` でなければ何も作らない（Issue の受入基準 3）
+    Case("記録: 最後の実行が抜けていない", 1, "最後の実行の行（回 3）が 抜けていない——仕様レビューを抜けていない",
+         record=PASSED_RECORD + "3,2026-11-03,抜けていない,満たさない,10,5,9,44,-,注文\n", pre=plant_old_issues, post=nothing_written),
+    Case("記録: 抜けた後の実行でない行は見ない", 0, "最後の実行の行（回 2）が 抜けた",
+         record=PASSED_RECORD + "3,2026-11-03,モデルの保存,-,-,-,-,-,-,-\n4,2026-11-03,上限,-,-,-,-,-,-,-\n"),
+    Case("記録: 抜けていないの後に実行でない行があっても止める", 1, "最後の実行の行（回 3）が 抜けていない",
+         record=PASSED_RECORD + "3,2026-11-03,抜けていない,満たさない,10,5,9,44,-,注文\n4,2026-11-04,利用者の判断,-,-,-,-,-,続ける,-\n",
+         post=nothing_written),
+    Case("記録: 記録が無い", 1, "spec-review/v1.csv: 仕様レビューの記録が無い", record=None, pre=plant_old_issues, post=nothing_written),
+    Case("記録: 実行の行が無い", 1, "実行の行（結果が 抜けた／抜けていない）が無い",
+         record=RECORD_HEAD + "1,2026-11-01,モデルの保存,-,-,-,-,-,-,-\n", post=nothing_written),
+    Case("記録: 見出しに結果が無い", 2, "実行の記録の見出しに 結果 が無い", record=RECORD_HEAD.replace(",結果,", ",出来事,"),
+         pre=plant_old_issues, post=nothing_written),
+    Case("記録: --dry-run も止める", 1, "仕様レビューを抜けていない", args=("--dry-run",),
+         record=PASSED_RECORD + "3,2026-11-03,抜けていない,満たさない,10,5,9,44,-,注文\n", pre=plant_old_issues, post=old_issues_kept),
+    Case("記録: --check は記録で止めない", 0, "は新しい", args=("--check",), generate_first=True,
+         pre=lambda repo: (repo / "spec-review" / "v1.csv").write_text(RECORD_HEAD, encoding="utf-8")),
+    Case("記録: --upto で前の版を確かめるときは読まない", 0, "作れる", args=("--dry-run", "--upto", "1"),
+         extra=v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}]),
+         pre=lambda repo: (repo / "spec-review" / "v1.csv").unlink()),
+    Case("記録: 作業中の版の記録を読む", 1, "spec-review/v2.csv: 最後の実行の行（回 3）が 抜けていない",
+         extra=v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}]),
+         pre=lambda repo: (repo / "spec-review" / "v2.csv").write_text(
+             PASSED_RECORD + "3,2026-11-03,抜けていない,満たさない,10,5,9,44,-,注文\n", encoding="utf-8")),
+    Case("記録: 抜けたなら作り、記録を読んだと言う", 0, "仕様レビューの記録: spec-review/v1.csv の最後の実行の行（回 2）が 抜けた——条件 2〜5 は記録を読んだだけ"),
     Case("作る", 0, "作った", post=files_written),
     Case("Red テストが失敗する", 0, post=expect_red(3)),
     Case("関数の無い実装でも失敗する", 0, impl=NO_FUNCTION_IMPL, post=expect_red(3)),
@@ -3052,6 +3084,16 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #1044: 仕様レビューの記録
+    ("記録の関門を当てない", "        code, lines = review_gate(repo, loaded.number)\n        if code:\n",
+     "        code, lines = review_gate(repo, loaded.number)\n        if False:\n", "記録: 最後の実行が抜けていない"),
+    ("抜けていないを通す", '    if last["結果"] != review.PASSED:\n', "    if False:\n", "記録: 最後の実行が抜けていない"),
+    ("記録が無いのを通す", "    if not path.exists():\n        return 1, [", "    if False:\n        return 1, [", "記録: 記録が無い"),
+    ("--check にも記録の関門を当てる", "    if not (args.check or args.red_check) and args.upto is None:\n",
+     "    if not args.red_check and args.upto is None:\n", "記録: --check は記録で止めない"),
+    ("--upto でも記録を読む", "    if not (args.check or args.red_check) and args.upto is None:\n",
+     "    if not (args.check or args.red_check):\n", "記録: --upto で前の版を確かめるときは読まない"),
+    ("v1 の記録を読む", '    rel = f"{REVIEW_DIR}/v{number}.csv"\n', '    rel = f"{REVIEW_DIR}/v1.csv"\n', "記録: 作業中の版の記録を読む"),
     # #950: 基盤要件
     ("基盤要件のゲートを当てない", "    code, lines, notes, settled = infra_gate(rendered) if design_gate else (0, [], [], None)",
      "    code, lines, notes, settled = (0, [], [], None)", "基盤要件: 必ず置く項目が無ければ止める"),
@@ -3710,6 +3752,10 @@ def assert_in_tmp(path: Path) -> None:
 
 def build(root: Path, case: Case) -> Path:
     assert_in_tmp(root)
+    if case.record is not None:
+        (root / "spec-review").mkdir(parents=True)
+        for number in range(1, 10):
+            (root / "spec-review" / f"v{number}.csv").write_text(case.record, encoding="utf-8")
     base = root / case.root
     (base / "shared").mkdir(parents=True)
     (base / "spec").mkdir(parents=True)
