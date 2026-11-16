@@ -33,8 +33,9 @@ usage: python3 build-mock.py <docs ディレクトリ> [--upto <n>] [--spec-loop
 - 版・表の出どころ・生成器の版・描き方のファイルのコミットを HTML に書く（見える文字と `<meta>`）
 - 描き方のファイルが版の中に在れば 1 で止めて書かない（`--upto` より後の版でも）
 - 許可した列のほかを埋め込まない。どのセルからも `D-` の番号を外す
-- 書くのは出力の 1 ファイルだけ（正本・spec-loop・screen-spec を書かない。`__pycache__` も書かない）
-- 埋め込む JSON と描き方の JS が `</script` で HTML を閉じない
+- 書くのは出力の 1 ファイルだけ（正本・spec-loop・screen-spec を書かない。`__pycache__` も、正本の git の index も書かない——`--no-optional-locks`）
+- 埋め込む JSON と描き方の JS が `</script` で HTML を閉じない。描き方のファイルは 1 つずつ別の `<script>` に置く（構文の誤りがほかを巻き込まない）
+- 表の遷移は、きっかけの項目の種類（ボタン・一覧・表示・入力・一覧の列）に依らずモックの上で押せる。タブの中のタブは道筋のタブを選ぶ
 
 **守らないもの**:
 
@@ -117,7 +118,7 @@ class Sharer:
 def git(cwd: Path, *args: str) -> str | None:
     env = {k: v for k, v in os.environ.items() if k not in GIT_LOCATION}
     try:
-        proc = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, env=env, timeout=60)
+        proc = subprocess.run(["git", "--no-optional-locks", "-C", str(cwd), *args], capture_output=True, env=env, timeout=60)
     except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
@@ -262,6 +263,7 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str)
         "spec-loop": spec_loop_version,
     }
     data["provenance"] = provenance
+    data["renderers"] = sorted(renderers)
     data["documents"] = document_links(versions, number, screens, out_dir)
     data["proseSections"] = [name for name, tabled in screens_check.SECTIONS if not tabled]
     data["entryKind"] = screens_check.ENTRY_KIND
@@ -304,6 +306,7 @@ table.mock-list { border-collapse: collapse; width: 100%; margin: 4px 0; }
 table.mock-list th, table.mock-list td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
 table.mock-list tr.clickable { cursor: pointer; }
 table.mock-list tr.clickable:hover { background: #eef3fb; }
+.clickable-item { cursor: pointer; color: var(--accent); text-decoration: underline; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 12px 0 8px; }
 .tabs button { font: inherit; border: 1px solid var(--line); border-bottom: none; background: #eceef1; padding: 4px 12px; border-radius: 4px 4px 0 0; cursor: pointer; }
 .tabs button[aria-selected="true"] { background: #fff; font-weight: bold; }
@@ -429,9 +432,12 @@ APP = r"""
       var input = el("input", {"type": "text", "data-item": item["番号"]});
       input.value = values[item["番号"]] !== undefined ? values[item["番号"]] : item["例"];
       input.addEventListener("input", function () { values[item["番号"]] = input.value; });
+      if (byTrigger[item["番号"]]) trigger(item, input);  // 入力の項目を きっかけ にする遷移（押すと遷移する）
       row.appendChild(input);
     } else {
-      row.appendChild(el("span", {"data-item": item["番号"]}, item["例"] || item["中身"] || ""));
+      var shown = el("span", {"data-item": item["番号"]}, item["例"] || item["中身"] || "");
+      if (byTrigger[item["番号"]]) { shown.className = "clickable-item"; trigger(item, shown); }
+      row.appendChild(shown);
     }
     return row;
   }
@@ -449,7 +455,9 @@ APP = r"""
     var table = el("table", {"class": "mock-list"});
     var head = el("tr");
     columns.forEach(function (c) {
-      head.appendChild(el("th", {"data-item": c["番号"], "data-role": "item-name"}, c["項目名"] + (c["並び替え"] === "はい" ? " ⇅" : "")));
+      var th = el("th", {"data-item": c["番号"], "data-role": "item-name"}, c["項目名"] + (c["並び替え"] === "はい" ? " ⇅" : ""));
+      if (byTrigger[c["番号"]]) { th.className = "clickable-item"; trigger(c, th); }
+      head.appendChild(th);
     });
     table.appendChild(head);
     var row = el("tr");
@@ -494,7 +502,8 @@ APP = r"""
       root: container,
       button: function (number) {
         var it = items[number];
-        if (!it || it["画面ID"] !== id) { var x = el("span", {"class": "renderer-error"}, "項目が表に無い: " + number); return x; }
+        if (!it || it["画面ID"] !== id) return el("span", {"class": "renderer-error"}, "項目が表に無い: " + number);
+        if (it["種類"] !== K.button) return el("span", {"class": "renderer-error"}, "ボタンでない項目: " + number);
         return button(it);
       },
       item: function (number) {
@@ -509,6 +518,9 @@ APP = r"""
 
   function drawBody(id, container) {
     var custom = RENDERERS[id];
+    if (!custom && DATA.renderers.indexOf(id) >= 0) {
+      container.appendChild(el("p", {"class": "renderer-error"}, "描き方のファイル " + id + ".js を読み込めない（構文の誤りなど）——表の既定の描き方で描く"));
+    }
     if (custom) {
       try { custom(context(id, container)); return; }
       catch (e) {
@@ -518,16 +530,19 @@ APP = r"""
     drawItems(id, container);
   }
 
-  function drawScreen(id, container, focus) {
+  function drawScreen(id, container, path, drawn) {
+    drawn = drawn || {};
+    drawn[id] = true;  // 親画面が巡っている（検査の違反）とき、描いた画面をタブとして描き直さない
     var s = screens[id];
     var head = el("div", {"class": "screen-head"});
     head.appendChild(el("h1", {"data-role": "screen-name", "data-screen": id}, s["画面名"]));
     head.appendChild(el("span", {"class": "meta"}, id + " ・ " + s["種別"]));
     container.appendChild(head);
     drawBody(id, container);
-    var tabs = order.filter(function (k) { return screens[k]["種別"] === DATA.tabKind && screens[k]["親画面"] === id; });
+    var tabs = order.filter(function (k) { return screens[k]["種別"] === DATA.tabKind && screens[k]["親画面"] === id && !drawn[k]; });
     if (tabs.length) {
-      var chosen = focus && tabs.indexOf(focus) >= 0 ? focus : (selectedTab[id] && tabs.indexOf(selectedTab[id]) >= 0 ? selectedTab[id] : tabs[0]);
+      var inPath = tabs.filter(function (k) { return path.indexOf(k) >= 0; })[0];
+      var chosen = inPath ? inPath : (selectedTab[id] && tabs.indexOf(selectedTab[id]) >= 0 ? selectedTab[id] : tabs[0]);
       selectedTab[id] = chosen;
       var strip = el("div", {"class": "tabs", "role": "tablist"});
       tabs.forEach(function (k) {
@@ -537,7 +552,7 @@ APP = r"""
       });
       container.appendChild(strip);
       var panel = el("div", {"role": "tabpanel", "data-tab-panel": chosen});
-      drawScreen(chosen, panel, focus);
+      drawScreen(chosen, panel, path, drawn);
       container.appendChild(panel);
     }
   }
@@ -559,17 +574,17 @@ APP = r"""
     document.getElementById("app").setAttribute("data-current", id);
     var path = chain(id);
     var base = path[0];
-    // 根の画面と、その中のタブを描く。dialog は根から順に重ねる
-    var focusTab = null;
-    for (var i = 1; i < path.length; i++) if (screens[path[i]]["種別"] === DATA.tabKind) focusTab = path[i];
+    // 根の画面と、その中のタブ（入れ子のタブは道筋のものを選ぶ）を描く。dialog は根から順に重ねる
     var holder = el("div", {"data-screen-root": base});
-    drawScreen(base, holder, focusTab);
+    drawScreen(base, holder, path);
     stage.appendChild(holder);
+    var overlaid = {};
     path.slice(1).forEach(function (k) {
-      if (screens[k]["種別"] === DATA.tabKind) return;
+      if (screens[k]["種別"] === DATA.tabKind || overlaid[k]) return;
+      overlaid[k] = true;
       var overlay = el("div", {"class": "overlay", "data-dialog": k});
       var box = el("div", {"class": "dialog", "role": "dialog"});
-      drawScreen(k, box, focusTab);
+      drawScreen(k, box, path);
       overlay.appendChild(box);
       stage.appendChild(overlay);
     });
@@ -635,7 +650,10 @@ APP = r"""
 
   function fromHash() {
     var found = /^#screen=(.*)$/.exec(location.hash);
-    var id = found ? decodeURIComponent(found[1]) : null;
+    var id = null;
+    if (found) {
+      try { id = decodeURIComponent(found[1]); } catch (e) { say("画面が表に無い: " + found[1]); return; }
+    }
     if (id !== null && !screens[id]) { say("画面が表に無い: " + id); return; }
     say("");
     if (id === null) {
@@ -663,10 +681,11 @@ def render_html(number: int, data: dict, renderers: dict[str, str]) -> str:
         for key, value in (("version", provenance["版"]), ("tables", provenance["表の出どころ"]),
                            ("generator", provenance["生成器"]), ("renderers", provenance["描き方のファイル"])))
     footer = "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>" for k, v in provenance.items())
-    blocks = []
+    # 描き方のファイルは 1 つずつ別の <script> に置く——構文の誤りが、ほかのファイルを巻き込まない
+    blocks = ["<script>window.screenSpecRenderers = {};</script>"]
     for key in sorted(renderers):
-        blocks.append(f"window.screenSpecRenderers[{json_for_script(key)}] = function (ctx) {{\n{script_safe(renderers[key])}\n}};")
-    renderer_script = "window.screenSpecRenderers = {};\n" + "\n".join(blocks)
+        blocks.append(f"<script>\nwindow.screenSpecRenderers[{json_for_script(key)}] = function (ctx) {{\n{script_safe(renderers[key])}\n}};\n</script>")
+    renderer_script = "\n".join(blocks)
     return f"""<!doctype html>
 <html lang="ja">
 <head>
@@ -682,9 +701,7 @@ def render_html(number: int, data: dict, renderers: dict[str, str]) -> str:
 <div id="app"><main id="stage"></main><aside id="explain" aria-label="説明"></aside></div>
 <footer id="provenance"><dl>{footer}</dl></footer>
 <script type="application/json" id="screen-spec-data">{json_for_script(data)}</script>
-<script>
 {renderer_script}
-</script>
 <script>{APP}</script>
 </body>
 </html>

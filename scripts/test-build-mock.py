@@ -60,7 +60,8 @@ V1_SCREENS = S_HEAD + (
     "S-003,受注の詳細,detail,,担当者,記入中,,詳しく見る,詳細を見る,F-001,,order-detail.md,F-001、D-S-001\n"
     "S-004,登録の確認,dialog,S-002,担当者,記入中,,確かめる,内容を確かめる,F-002,,order-confirm.md,F-002\n"
     "S-005,明細,tab,S-003,担当者,記入中,,明細を見る,明細の一覧,F-001,,order-lines.md,F-001\n"
-    "S-006,履歴,tab,S-003,担当者,記入中,,履歴を見る,変更の履歴,F-001,,order-history.md,F-001\n")
+    "S-006,履歴,tab,S-003,担当者,記入中,,履歴を見る,変更の履歴,F-001,,order-history.md,F-001\n"
+    "S-007,履歴の補足,tab,S-006,担当者,記入中,,補足を見る,補足,F-001,,order-note.md,F-001\n")
 V1_ITEMS = I_HEAD + (
     "I-010,S-001,一覧,1,受注の一覧,一覧,受注の並び,,,,,,,Q-R-001\n"
     "I-011,S-001,受注の一覧,2,受注日,一覧の列,受注した日,2026/11/16,,,,はい,はい,Q-R-001\n"
@@ -72,7 +73,8 @@ V1_ITEMS = I_HEAD + (
     "I-031,S-003,操作,2,戻る,ボタン,,,,,,,,F-001\n"
     "I-040,S-004,操作,1,閉じる,ボタン,,,,,,,,F-002\n"
     "I-050,S-005,操作,1,履歴へ,ボタン,,,,,,,,F-001\n"
-    "I-060,S-006,操作,1,印刷,ボタン,,,,,,,,F-001\n")
+    "I-060,S-006,操作,1,印刷,ボタン,,,,,,,,F-001\n"
+    "I-070,S-007,操作,1,詳細へ,ボタン,,,,,,,,F-001\n")
 V1_TRANSITIONS = T_HEAD + (
     "T-001,S-001,I-013,受注の登録,,S-002,,F-002\n"
     "T-002,S-001,I-010,,,S-003,,Q-R-001\n"
@@ -80,20 +82,30 @@ V1_TRANSITIONS = T_HEAD + (
     "T-004,S-002,I-021,,入力に確認の要る値があるとき（D-S-001）,S-004,,F-002、D-S-001\n"
     "T-005,S-003,I-031,,,S-001,,F-001\n"
     "T-006,S-004,I-040,,,S-002,,F-002\n"
-    "T-007,S-005,I-050,,,S-006,,F-001\n")
+    "T-007,S-005,I-050,,,S-006,,F-001\n"
+    "T-010,S-003,I-030,,,S-007,,F-001\n"   # 表示の項目が きっかけ
+    "T-011,S-002,I-020,,,S-001,,F-002\n"   # 入力の項目が きっかけ
+    "T-012,S-001,I-012,,,S-003,,Q-R-001\n"   # 一覧の列が きっかけ
+    "T-013,S-007,I-070,,,S-003,,F-001\n")
 V2_SCREENS = S_HEAD + "S-008,配置図,setting,,管理者,下書き,,配置を見る,機器の配置,F-001,,layout.md,F-001\n"
+# 親画面が巡るタブ（検査の違反。生成器は検査の結果に依らず作るので、開いても落ちないことを見る）
+V2_SCREENS += ("S-090,巡る A,tab,S-091,担当者,記入中,,巡る,巡る,F-001,,cycle-a.md,F-001\n"
+               "S-091,巡る B,tab,S-090,担当者,記入中,,巡る,巡る,F-001,,cycle-b.md,F-001\n")
+CYCLE = ("S-090", "S-091")
 V2_ITEMS = I_HEAD + ("I-014,S-001,操作,5,配置図,ボタン,,,,,,,,F-001\n"
-                     "I-080,S-008,操作,1,一覧へ戻る,ボタン,,,,,,,,F-001\n")
+                     "I-080,S-008,操作,1,一覧へ戻る,ボタン,,,,,,,,F-001\n"
+                     "I-081,S-008,説明,2,配置の説明,表示,配置の見方,,,,,,,F-001\n")
 V2_TRANSITIONS = T_HEAD + ("T-008,S-001,I-014,,,S-008,,F-001\n"
                            "T-009,S-008,I-080,,,S-001,,F-001\n")
 DOCS = {"S-001": "order-list.md", "S-002": "order-new.md", "S-003": "order-detail.md", "S-004": "order-confirm.md",
-        "S-005": "order-lines.md", "S-006": "order-history.md"}
+        "S-005": "order-lines.md", "S-006": "order-history.md", "S-007": "order-note.md"}
 RENDERER = """// 案件に固有の描き方（配置図）。名前とボタンは表から読む
 var box = document.createElement("div");
 box.className = "custom-layout";
 box.textContent = "（配置）" + ctx.screen["画面名"] + "</script><!-- 閉じない -->";
 ctx.root.appendChild(box);
 ctx.root.appendChild(ctx.button("I-080"));
+ctx.root.appendChild(ctx.button("I-081"));  // ボタンでない項目——ボタンにしない
 """
 SECRET_PATH = "/orders/secret-path-1095"
 
@@ -117,6 +129,7 @@ def base_files() -> dict[str, str]:
         "docs/v2/requirements/screens/layout.md": doc("S-008"),
         "screen-spec/renderers/S-008.js": RENDERER,
         "screen-spec/renderers/S-999.js": "ctx.root.textContent = 'x';\n",
+        "screen-spec/renderers/S-005.js": "var broken = ;\n",  # 構文の誤り（ほかの描き方を巻き込まない）
         "screen-spec/renderers/README.txt": "メモ\n",
     }
     for key, name in DOCS.items():
@@ -154,6 +167,7 @@ CASES: list[tuple[str, dict, object, list[str], int, str | None, str]] = [
     ("dirty", base_files(), "dirty", [], 0, "build/mock/v2/index.html", "書いた:"),
     ("nogit", base_files(), "nogit", [], 0, "build/mock/v2/index.html", "書いた:"),
     ("no-renderers", with_(base_files(), {"screen-spec/renderers/S-008.js": None, "screen-spec/renderers/S-999.js": None,
+                                          "screen-spec/renderers/S-005.js": None,
                                           "screen-spec/renderers/README.txt": None}), "git", [], 0, "build/mock/v2/index.html", "書いた:"),
     ("path-column", with_(base_files(), {
         "docs/v1/" + DATA + "screens.csv": "\n".join(line + ("," + (SECRET_PATH if i else "パス") if line else "")
@@ -217,8 +231,7 @@ PATH_COLUMN = ('"機能", "帳票", "仕様書", "根拠"],', '"機能", "帳票
 
 def snapshot(root: Path, skip: str | None = None) -> dict[str, bytes]:
     return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*"))
-            if p.is_file() and "/.git/" not in f"/{p.relative_to(root).as_posix()}"
-            and not (skip and p.relative_to(root).as_posix().startswith(skip))}
+            if p.is_file() and not (skip and p.relative_to(root).as_posix().startswith(skip))}
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -245,6 +258,11 @@ def make_repo(case_dir: Path, files: dict[str, str], how) -> Path:
             git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "描き方")
             git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "表")
         git(repo, "tag", "signoff/v2/req-1")
+        # 中身を変えずに時刻だけ進める——任意のロックを取る git status は index を書き直す（書かないことを見る陽性対照の足場）
+        later = max(p.stat().st_mtime for p in repo.rglob("*") if p.is_file()) + 5
+        for path in (repo / "docs").rglob("*"):
+            if path.is_file():
+                os.utime(path, (later, later))
     if how == "dirty":
         (repo / "docs" / "v1" / DATA / "screens.csv").write_text(V1_SCREENS + "\n", encoding="utf-8")
     return repo
@@ -359,7 +377,7 @@ def case_problems(case, result: dict) -> list[str]:
             problems.append(f"表の出どころにタグが無い: {meta.get('tables')!r}")
         if (how == "dirty") != ("未コミットの変更あり" in meta.get("tables", "")):
             problems.append(f"未コミットの変更の印が違う: {meta.get('tables')!r}")
-        if "screen-spec/renderers/S-008.js" in files and upto >= 2:
+        if data.get("renderers"):
             last = git(repo, "log", "-1", "--format=%H", "--", "screen-spec/renderers")
             if meta.get("renderers") != f"コミット {last}":
                 problems.append(f"描き方のファイルの印が違う: {meta.get('renderers')!r}（期待 コミット {last}）")
@@ -385,7 +403,10 @@ def case_problems(case, result: dict) -> list[str]:
         problems.append("描き方のファイルの埋め込みが違う")
     if has_renderer and ("<\\/script><\\!-- 閉じない -->" not in page):
         problems.append("描き方のファイルの </script・<!-- を閉じない形にしていない")
-    if page.count("</script>") != 3:
+    expected_scripts = 3 + len([k for k in data.get("renderers", [])])
+    if data.get("renderers") != sorted(k for k in ("S-005", "S-008") if f"screen-spec/renderers/{k}.js" in files and k in screens):
+        problems.append(f"埋め込んだ描き方の一覧が違う: {data.get('renderers')}")
+    if page.count("</script>") != expected_scripts:
         problems.append(f"</script> が {page.count('</script>')} 回（埋め込みで閉じている）")
     if 'window.screenSpecRenderers["S-999"]' in page:
         problems.append("表に無い画面の描き方を埋め込んだ")
@@ -421,6 +442,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("表に無い画面の描き方も埋め込む", "        if key not in screens:\n", "        if False:\n", "good"),
     ("表が揃っていなくても作る", "    if missing:\n", "    if False:\n", "tables-missing"),
     ("見出し行を見ない", "        if whole.headers[path] != screens_check.COLUMNS[path]:\n", "        if False:\n", "header-differs-from-rule"),
+    ("git の任意のロックを取る", '["git", "--no-optional-locks", "-C"', '["git", "-C"', "dirty"),
     ("描き方のファイルのコミットを書かない", '    out = f"コミット {last}" if last else "コミットが無い"\n', '    out = "コミットが無い"\n', "good"),
 ]
 OO_MUTATIONS = [("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else")]
@@ -609,11 +631,23 @@ const walker = async function (plan) {
   await reset();
   await go(plan.custom.screen);
   out.custom.drawn = document.querySelector(plan.custom.selector) !== null;
+  out.custom.errors = [...document.querySelectorAll('.renderer-error')].map((n) => n.textContent).join(' / ');
   out.custom.text = (document.querySelector(plan.custom.selector) || {}).textContent || null;
   const own = document.querySelector(`[data-item="${plan.custom.item}"]`);
   out.custom.button = own ? own.textContent : null;
   if (own) { own.click(); await wait(); await wait(); }
   out.custom.current = app.getAttribute('data-current');
+  await reset();
+  await go(plan.cycle);
+  out.cycle = { current: app.getAttribute('data-current'), heads: [...document.querySelectorAll('[data-role=screen-name]')].map((n) => n.textContent) };
+  await reset();
+  location.hash = '#screen=%E0';
+  await wait(); await wait();
+  out.badHash = msg();
+  await reset();
+  await go('S-005');
+  out.broken = [...document.querySelectorAll('.renderer-error')].map((n) => n.textContent).join(' / ');
+  out.brokenDefault = document.querySelector('[data-item="I-050"]') !== null;
   out.provenance = document.getElementById('provenance').textContent;
   out.text = document.body.innerText;
   return out;
@@ -644,7 +678,16 @@ BROWSER_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("D- を外さない", "        if not self.internal.search(value):\n            return value\n", "        return value\n", "説明の欄に D- の番号が出ない"),
     ("外の画像を読む", '<div id="message" role="status"></div>', '<div id="message" role="status"></div><img src="https://example.invalid/x.png" alt="">',
      "file: のほかの要求が 0 件"),
-    ("dialog を重ねない", '      if (screens[k]["種別"] === DATA.tabKind) return;\n', "      return;\n", "#screen=S-004（dialog）"),
+    ("dialog を重ねない", '      if (screens[k]["種別"] === DATA.tabKind || overlaid[k]) return;\n', "      return;\n", "#screen=S-004（dialog）"),
+    ("ボタンのほかの項目を押せない", '      if (byTrigger[item["番号"]]) { shown.className = "clickable-item"; trigger(item, shown); }\n', "", "遷移 T-010"),
+    ("入れ子のタブで道筋を選ばない", '      var chosen = inPath ? inPath : (', '      var chosen = false ? inPath : (', "#screen=S-007"),
+    ("描き方を 1 つの script に置く", '    blocks = ["<script>window.screenSpecRenderers = {};</script>"]\n',
+     '    blocks = ["<script>window.screenSpecRenderers = {};"]\n', "ほかの描き方（S-008）は効く"),
+    ("読み込めない描き方を黙る", "    if (!custom && DATA.renderers.indexOf(id) >= 0) {\n", "    if (false) {\n", "その画面に失敗を出して"),
+    ("ボタンでない項目もボタンにする", '        if (it["種類"] !== K.button) return el("span", {"class": "renderer-error"}, "ボタンでない項目: " + number);\n', "", "描き方の差し替え（S-008）"),
+    ("親画面の巡りで止まらない", ' && screens[k]["親画面"] === id && !drawn[k]; });', ' && screens[k]["親画面"] === id; });', "親画面が巡るタブ"),
+    ("壊れたハッシュで落ちる", "      try { id = decodeURIComponent(found[1]); } catch (e) { say(\"画面が表に無い: \" + found[1]); return; }",
+     "      id = decodeURIComponent(found[1]);", "壊れた #screen="),
     ("遷移の無いボタンで黙る", '      if (!list.length) { say("遷移が表に無い: "', '      if (!list.length) { say("" + ', "遷移の無いボタン I-060"),
 ]
 
@@ -656,7 +699,8 @@ def walk(plugin: Path, sibling: Path, work: Path, chrome: str, node: str) -> tup
     transitions = merged_rows(files, 2, "transitions.csv")
     triggered = {t["きっかけ"] for t in transitions.values()}
     plan = {
-        "screens": list(screens),
+        "screens": [k for k in screens if k not in CYCLE],
+        "cycle": CYCLE[0],
         "transitions": [{"id": k, "from": t["遷移元"], "trigger": t["きっかけ"], "to": t["遷移先"]} for k, t in transitions.items()],
         "untriggered": [{"screen": i["画面ID"], "item": k} for k, i in items.items() if i["種類"] == "ボタン" and k not in triggered],
         "hover": {"screen": "S-002", "item": "I-021"},
@@ -686,7 +730,8 @@ def walk(plugin: Path, sibling: Path, work: Path, chrome: str, node: str) -> tup
     row("開いた URL が file:// で、file: のほかの要求が 0 件（ネットワークを切って開いた）",
         out["url"].startswith("file://") and all(u.startswith("file:") for u in out["requests"]),
         f"要求 {len(out['requests'])} 件: " + ", ".join(sorted({u.split(':', 1)[0] for u in out['requests']})))
-    row("ページの例外が 0 件", not out["errors"], "; ".join(out["errors"])[:300])
+    others = [e for e in out["errors"] if "SyntaxError" not in e]
+    row("構文の誤りのある描き方（S-005）のほかに、ページの例外が 0 件", not others and len(out["errors"]) <= 1, "; ".join(out["errors"])[:300])
     row("ハッシュ無しで開くと入口（種別 top）の画面が出る", out["loaded"]["current"] == "S-001", str(out["loaded"]))
     for step in out["steps"]:
         t = transitions[step["id"]]
@@ -721,8 +766,14 @@ def walk(plugin: Path, sibling: Path, work: Path, chrome: str, node: str) -> tup
     row("ボタンにカーソルを当てると遷移の番号・条件・根拠が出る",
         all(w in out["hover"] for w in ("T-003", "T-004", "入力チェックが通ったとき", "F-002")) and "D-S-" not in out["hover"], out["hover"][:200])
     row("描き方の差し替え（S-008）で描かれ、ctx.button のボタンで遷移できる",
-        out["custom"]["drawn"] and out["custom"]["button"] == "一覧へ戻る" and out["custom"]["current"] == "S-001",
+        out["custom"]["drawn"] and out["custom"]["button"] == "一覧へ戻る" and out["custom"]["current"] == "S-001"
+        and "ボタンでない項目: I-081" in out["custom"]["errors"],
         json.dumps(out["custom"], ensure_ascii=False))
+    row("構文の誤りのある描き方（S-005）はその画面に失敗を出して既定の描き方で描き、ほかの描き方（S-008）は効く",
+        "S-005.js を読み込めない" in out["broken"] and out["brokenDefault"] and out["custom"]["drawn"], out["broken"][:200])
+    row("親画面が巡るタブ（S-090・S-091。検査の違反）を開いても落ちず、その画面が描かれる",
+        out["cycle"]["current"] == "S-090" and "巡る A" in out["cycle"]["heads"], json.dumps(out["cycle"], ensure_ascii=False))
+    row("壊れた #screen=（%E0）で開くと「画面が表に無い」", "画面が表に無い" in out["badHash"], out["badHash"])
     row("何で作ったかの印が見える", all(w in out["provenance"] for w in ("v2", "コミット", "signoff/v2/req-1", "screen-spec ")), out["provenance"][:300])
     return rows, ""
 
