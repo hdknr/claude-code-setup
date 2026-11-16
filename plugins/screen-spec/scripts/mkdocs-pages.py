@@ -15,7 +15,7 @@
 - 案件の雛形（`docs/v<k>/requirements/screens/templates/` の下）はサイトに出さない（`{{画面ID}}` を持ち、リンクが解決しない）
 - 正本を書かない——書くのは `<docs の親>/build/mock/v<n>/index.html`（`build-mock.py` と同じ場所。commit しない）だけ。`mkdocs.yml` を書き換えない
 - 表を出すのは `docs/v<k>/requirements/screens/` の直下の Markdown の、表で持つ節の印だけ（ほかのページ・コードブロックの中は変えない）
-- 版 `v<k>` の仕様書には、後の版が同じ名前の仕様書を置くまでの版を重ねた行を出す（表だけを変えた版の行も出る）
+- 版 `v<k>` の仕様書には、後の版が同じ名前の仕様書を置くまでの版を重ねた行を出す（表だけを変えた版の行も出る）。その範囲で画面を消した版・重ね合わせが決まりに反する版は飛ばして下の版を探し（v<k> より下へは行かない）、表の上にどの版まで重ねたかを書く。同じ名前の仕様書を指す画面が 2 つ以上なら注意書き
 - 出す列は `references/mkdocs.md` の表の列だけ（`build-mock.py` の許可の列の中）。どのセルからも `D-` の番号を外す
 - 未決定の印を含むセルの頭に `⚠️ ` を付ける（見せるときだけ。正本には書かない）
 - 当たる画面が無い・重ね合わせの違反・散文の節の印・作れなかったモックは、警告（`mkdocs` のロガー）とページの注意書きにする（黙って空にしない）
@@ -35,6 +35,7 @@ from __future__ import annotations
 import html
 import importlib.util
 import logging
+import os
 import posixpath
 import re
 import sys
@@ -71,6 +72,7 @@ SECTION_TABLES = {
 }
 CALLERS = "呼び出し元"  # `1. 基本情報` に足す行
 NO_ROWS = "この画面に当たる行は無い"
+RANGE = "（v1〜v{upto} を重ねた表の行）"  # 表の上に置く、どの版まで重ねたか
 SITE_DIR = "mock"  # サイトの中の置き場所 `mock/v<n>/index.html`
 MOCK_NAME = "画面モック（表から生成）"
 MOCK_KIND = "HTML（screen-spec が生成）"
@@ -145,9 +147,8 @@ class Tables:
         text = cell_text(shown)
         return DECORATION + text if self.find_markers(shown) else text
 
-    def screen_of(self, document: str) -> dict | None:
-        found = [row for row in self.screens if (row.get("仕様書") or "").strip() == document]
-        return found[0] if len(found) == 1 else None
+    def screens_of(self, document: str) -> list[dict]:
+        return [row for row in self.screens if (row.get("仕様書") or "").strip() == document]
 
     def rows(self, kind: str, kinds: tuple, screen_id: str) -> list[dict]:
         if kind == "項目":
@@ -225,9 +226,33 @@ def last_version_of(docs: Path, version: int, document: str) -> int:
     仕様書を写さずに表だけを変えた版の行も、このページに出す）。"""
     later = [n for n in raw_versions(docs) if n > version]
     for number in later:
-        if (docs / f"v{number}" / checks.SCREENS_DIR / document).is_file():
+        try:  # 書いた綴りで探す（大文字小文字を区別しないファイルシステムで、綴りだけ違う名前に当てない）
+            names = os.listdir(docs / f"v{number}" / checks.SCREENS_DIR)
+        except OSError:
+            continue
+        if document in names and (docs / f"v{number}" / checks.SCREENS_DIR / document).is_file():
             return number - 1
     return max(later) if later else version
+
+
+def screen_for(docs: Path, version: int, document: str):
+    """(画面の行, Tables, 重ねた版の上限)。後の版が同じ名前の仕様書を置く手前の版から下へ、その画面が在る最後の版を探す——
+    後の版の重ね合わせが決まりに反する・画面を消した版は飛ばす（そのページの版より下へは行かない）。
+    同じ名前の仕様書を指す画面が 2 つ以上なら Problem（黙って前の版に戻らない）。"""
+    for upto in range(last_version_of(docs, version, document), version - 1, -1):
+        try:
+            _, whole, checker = merged(docs, upto)
+            tables = Tables(whole, checker)
+        except Problem:
+            if upto == version:
+                raise
+            continue  # 後の版の誤りで前の版のページを止めない（その版のモックの節が警告する）
+        found = tables.screens_of(document)
+        if len(found) > 1:
+            raise Problem(f"v1〜v{upto} を重ねた画面の表に、仕様書が {document} の画面が {len(found)} つある")
+        if found:
+            return found[0], tables, upto
+    raise Problem(f"v1〜v{version} を重ねた画面の表に、仕様書が {document} の画面が無い")
 
 
 def on_page_markdown(markdown: str, page, config, files):
@@ -238,18 +263,8 @@ def on_page_markdown(markdown: str, page, config, files):
         return markdown  # 仕様書でないページ（案件の雛形 templates/spec.md など）の印は変えない
     docs = Path(config["docs_dir"])
     version, document = int(match.group(1)), match.group(2)
-    upto = last_version_of(docs, version, document)
     try:
-        _, whole, checker = merged(docs, upto)
-        tables = Tables(whole, checker)
-        screen = tables.screen_of(document)
-        if screen is None and upto != version:  # 後の版で消した画面——そのページの版で重ねたものを出す
-            upto = version
-            _, whole, checker = merged(docs, upto)
-            tables = Tables(whole, checker)
-            screen = tables.screen_of(document)
-        if screen is None:
-            raise Problem(f"v1〜v{upto} を重ねた画面の表に、仕様書が {document} の画面が 1 つに決まらない")
+        screen, tables, upto = screen_for(docs, version, document)
     except Problem as e:
         message = f"{page_path(page)}: 表を出せない（{e}）"
         log.warning("screen-spec: %s", message)
@@ -258,7 +273,7 @@ def on_page_markdown(markdown: str, page, config, files):
     def render(section: str | None) -> str:
         if section not in SECTION_TABLES:
             return notice(f"{page_path(page)}: 表を出す印が、表で持つ節の外にある（節: {section or 'なし'}。references/prose.md の「節」）")
-        return tables.section(section, screen)
+        return f"{RANGE.format(upto=upto)}\n\n" + tables.section(section, screen)
 
     return replace_marks(markdown, render)
 

@@ -287,7 +287,26 @@ def tables_in_sections(plugin: Path, work: Path) -> bool:
             and "T-001" in section(s1, "13. 画面遷移") and "T-002" in section(s1, "13. 画面遷移")
             and "D-S-001" not in s1 + s2 + v2 and "| 根拠 | F-002 |" in section(s2, "1. 基本情報")
             and "| 目的と背景 | ⚠️ 未定（Q-R-001） |" in section(s2, "2. 画面概要") and "⚠️" not in s1
-            and "N/A。無い" in section(s1, "7. 状態"))
+            and "N/A。無い" in section(s1, "7. 状態")
+            and "（v1〜v1 を重ねた表の行）" in section(s1, "2. 画面概要") and "（v1〜v2 を重ねた表の行）" in section(s2, "2. 画面概要"))
+
+
+def later_versions(plugin: Path, work: Path) -> bool:
+    """後の版の重ね合わせの誤りで前の版のページを止めない・後の版で画面を消しても、消す手前の版の行を出す・
+    同じ名前の仕様書を指す画面が 2 つあれば注意書き。"""
+    files = base_files()
+    files["docs/v3/removed.csv"] = "種類,対象,理由\n画面,S-002,やめた\n"
+    files["docs/v4/" + DATA + "screens.csv"] = S_HEAD.replace("根拠", "根拠X")
+    root, _, _, env = project(work, plugin, files)
+    _, out, _ = build(root, env, spec_pages(root))
+    s2 = out[f"v1/{SD}order-new.md"]
+    dup = base_files()
+    dup["docs/v2/" + DATA + "screens.csv"] = V2_SCREENS + "S-003,重なる,detail,,担当者,記入中,,x,x,F-001,,order-new.md,F-001\n"
+    root2, _, _, env2 = project(work / "dup", plugin, dup)
+    _, out2, warnings2 = build(root2, env2, spec_pages(root2))
+    return ("| できること | 入力と確認 |" in section(s2, "2. 画面概要") and "（v1〜v2 を重ねた表の行）" in section(s2, "2. 画面概要")
+            and "表示できない" not in s2
+            and "2 つある" in out2[f"v1/{SD}order-new.md"] and "| できること |" not in out2[f"v1/{SD}order-new.md"] and bool(warnings2))
 
 
 def marks_left_alone(plugin: Path, work: Path) -> bool:
@@ -408,6 +427,7 @@ def env_for(work: Path, screen: Path) -> dict[str, str]:
 CASES = {
     "登録した案件で回し直しても登録は消えない": registered_kept,
     "画面の表の行が仕様書の節に表として出る": tables_in_sections,
+    "後の版の誤り・消した画面・重なる仕様書": later_versions,
     "仕様書でないページとコードブロックの印は変えず、散文の節と当たらない仕様書は注意書き": marks_left_alone,
     "docs/mocks.md に版ごとの生成したモックへのリンクが出る": mocks_page,
     "use_directory_urls のサイトでは仕様書のディレクトリの URL を指す": mocks_directory_urls,
@@ -430,11 +450,18 @@ MUTATIONS: list[tuple] = [
     ("条件の無い遷移も権限の節に出す", IMPL, ' and r.get("条件", "").strip()]', "]", "画面の表の行が仕様書の節に表として出る"),
     ("遷移先の遷移を画面遷移の節に出さない", IMPL, '            return [r for r in source if screen_id in (r.get("遷移元", "").strip(), r.get("遷移先", "").strip())]',
      '            return [r for r in source if screen_id == r.get("遷移元", "").strip()]', "画面の表の行が仕様書の節に表として出る"),
-    ("表だけ変えた後の版を見ない", IMPL, "    upto = last_version_of(docs, version, document)\n", "    upto = version\n",
+    ("表だけ変えた後の版を見ない", IMPL, "    for upto in range(last_version_of(docs, version, document), version - 1, -1):\n",
+     "    for upto in range(version, version - 1, -1):\n",
      "画面の表の行が仕様書の節に表として出る"),
     ("後の版の仕様書を見ない", IMPL, "            return number - 1\n", "            pass\n", "画面の表の行が仕様書の節に表として出る"),
-    ("版の重ね方を見ない", IMPL, "    upto = last_version_of(docs, version, document)\n", "    upto = None\n",
+    ("版の重ね方を見ない", IMPL, "            _, whole, checker = merged(docs, upto)\n", "            _, whole, checker = merged(docs, None)\n",
      "画面の表の行が仕様書の節に表として出る"),
+    ("後の版の誤りで前の版のページを止める", IMPL, "            if upto == version:\n                raise\n", "            raise\n",
+     "後の版の誤り・消した画面・重なる仕様書"),
+    ("重なる仕様書で前の版に戻る", IMPL, "        if len(found) > 1:\n", "        if False:\n", "後の版の誤り・消した画面・重なる仕様書"),
+    ("画面を消した版で下へ探さない", IMPL, "        if found:\n            return found[0], tables, upto\n",
+     "        if True:\n            raise Problem('消した')\n", "後の版の誤り・消した画面・重なる仕様書"),
+    ("どの版まで重ねたかを書かない", IMPL, 'f"{RANGE.format(upto=upto)}\\n\\n" + ', "", "画面の表の行が仕様書の節に表として出る"),
     ("節を見ずに出す", IMPL, "        if section not in SECTION_TABLES:\n", "        if section not in SECTION_TABLES and False:\n",
      "仕様書でないページとコードブロックの印は変えず、散文の節と当たらない仕様書は注意書き"),
     ("コードブロックの中も置き換える", IMPL, "        if fence is not None:\n", "        if False:\n",
