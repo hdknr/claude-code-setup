@@ -28,6 +28,7 @@ r"""spec-loop の autopilot（#789）の入口（#849）が使う判定——台
 | `止まる地点` | `spec-review を抜けたら`・`feasibility の後` |
 
 **サインオフのタグ・scaffold・Issue の登録は線の値にしない**——入口は線に依らずそれらをしない。値に置くと選ばれうる。
+**それらを settings が拒むかは `check` が点検する**（下の「拒むべき操作」。#1046）。
 
 ## 点検する操作（`ops`・`check`）
 
@@ -45,6 +46,23 @@ r"""spec-loop の autopilot（#789）の入口（#849）が使う判定——台
 `check` は、これらの許可を settings で判定し（下の「写し」）、**止まりうる操作**（人が見る）を毎回足す——自動モードの分類器と worktree 隔離のガードは
 settings に現れないので、「良い」と出た操作も止まりうる。設定の層（user・project・local・flag・managed）の読み方は dev-loop の
 `check-unattended-env.py` の docstring の「設定の層」を正とする。`--project` の既定はメインの作業ツリー（`autopilot-ledger.py` の `main_worktree`）。
+
+### 拒むべき操作（#1046）
+
+`check` は、入口が線に依らずしない操作（`REFUSED_OPS` と scaffold——`git tag`・`git push --tags`・`gh issue create`・
+`python3 <spec-loop の根>/scripts/scaffold.py`）を、**settings が拒むか**も点検する（周で使う操作ではないので `ops` は出さない）。
+入口がしないのは散文の縛りで、許可では止まっていなかった——許可が残っていれば、入口が散文を破ったときに止めるものが無い。
+照合は周で使う操作と同じ近似（下の「写し」の `collect_rules`・`rule_matches`）で、判定は:
+
+| settings | 区分 |
+| --- | --- |
+| deny に当たる（allow・ask に当たっても） | 良い |
+| deny に当たらず、読めない層がある | 判定できない |
+| ask に当たる | 人が見る（確認に答えれば通る） |
+| allow に当たる、または `defaultMode` が `bypassPermissions` | 要対処 |
+| どれにも当たらない | 人が見る（自動モードの分類器・起動の `--allowedTools`・`--permission-mode` が通しうる） |
+
+良い以外の行には、deny に足す規則（`Bash(<操作>:*)`）を → の行に出す——足すのは利用者である（点検は settings を書かない）。
 
 ## 写し
 
@@ -88,6 +106,13 @@ spec-loop だけを入れた利用者に dev-loop が在るとは限らず、プ
 - **要対処があれば 1 で終える**——判定できないが一緒にあっても 1。
 - **外す宣言の無い正本で TLC が無ければ、TLC の項目を要対処にする**（`check-tlc.py` の 1）——単位を進める前に利用者に見せる。
 - **外す宣言の有る正本では、TLC の項目を要対処にしない**——TLC を確かめず、人が見る項目にする。
+- **拒むべき操作が deny・ask に当たらずに allow に当たれば要対処にする**——`Bash(git:*)`・`Bash(python3:*)` のような広い規則で当たっても（#1046 の受入基準）。
+- **`defaultMode` が `bypassPermissions` なら、allow に無くても拒むべき操作を要対処にする**（deny・ask に当たらず、`disableBypassPermissionsMode` で落とされていないとき）——deny に当たらない限り通る。
+- **拒むべき操作が deny に当たれば、allow・ask に当たっても良いにする**——deny は allow より強い（#1046 の受入基準）。
+- **deny に当たらない拒むべき操作を「良い」と言わない**——allow に無い・ask に当たるは人が見る項目にし、deny の案を出す。
+- **読めない層があって deny に当たらなければ、拒むべき操作を判定できないにする**——読めない層に allow も deny もありうる。
+- **拒むべき操作を線に依らず点検する**——`commit = しない` でも（scaffold・Issue の登録は線に依らずしない）。
+- **scaffold は、`ops` の行と同じ形（`../..` を畳んだ絶対パス）で照合する**——名前だけ（`python3 scaffold.py`）で照合すると、入口が打つ形に当たらない deny（`Bash(python3 scaffold.py:*)`）を良いと言い、打つ形を名指した deny を見落とす。
 
 守らない:
 
@@ -98,6 +123,13 @@ spec-loop だけを入れた利用者に dev-loop が在るとは限らず、プ
   **ファイルの書き込み（`Write`・`Edit`）と判定役（`Agent`）の起動の許可も見ない**——settings の `Bash` の規則しか照合しない（止まりうる操作の項目でそう言う）。
 - **flag の層は点検を走らせたセッションのもの**——外側のループが `claude -p` を別の `--settings` で起動するなら、`--flag-settings` で渡さない限り映らない。`--permission-mode`・`--allowedTools` はどちらにしても見ない。
 - **起動の後に設定が変わること**——点検は起動のときの 1 回。
+- **拒むべき操作の照合の網羅**——`Bash(<操作>:*)` の形の近似なので、`git push origin --tags`・`git push --follow-tags`・
+  相対パスや `cd` してから呼ぶ scaffold・scaffold のスキルの本文の形（`<base>/../../scripts/scaffold.py`。`..` を畳まない——入口のスキルの「畳む」決まりは `ops` の行と spec-review・feasibility の
+  スクリプトに掛かり、scaffold には掛からないので、入口が決まりを破って scaffold を打つなら、この形がいちばんありうる）・`gh api` での Issue の登録は、
+  deny の案に当たらず、点検にも映らない。
+- **deny が実際にどの起動の形でも効くか**——自動モード・`bypassPermissions` で Claude Code が deny の規則を守るかは試さない。点検は settings の規則を読むだけ。
+- **プラグインを更新したあとの scaffold の deny**——scaffold は版のディレクトリを含む絶対パスで照合するので、版を名指した deny は更新した版に当たらない（allow の規則と同じ。入口のスキルの「守らないもの」）。
+- **拒むべき操作を `--command` で渡したとき**——周で使う操作としても点検するので、両方を満たす settings は無い（要対処が残る）。
 """
 
 import argparse
@@ -125,6 +157,8 @@ SPEC_REVIEW_SCRIPTS = ("autopilot-ledger.py", "autopilot-check.py", "check-tlc.p
 FEASIBILITY_SCRIPTS = ("check-feasibility-csv.py", "schedule-to-gantt.py", "check-infra-csv.py")  # 基盤要件のゲート（#950）
 PR_OPS = ("git switch", "git pull", "git add", "git commit", "git push", "gh pr create")
 COMMIT_OPS = {"しない": (), "PR で止まる": PR_OPS, "マージまで": PR_OPS + ("gh pr merge",)}
+# 入口が線に依らずしない操作（#1046）。settings が拒むかを `check` が点検する。scaffold は `refused_operations` が足す
+REFUSED_OPS = ("git tag", "git push --tags", "gh issue create")
 
 MANAGED_DEFAULTS = {
     "darwin": "/Library/Application Support/ClaudeCode/managed-settings.json",
@@ -419,6 +453,46 @@ def operations(values, root=HERE):
     return [f"python3 {root / name}" for name in scripts] + list(COMMIT_OPS[values["commit"]])
 
 
+def refused_operations(root=HERE):
+    """拒むべき操作（点検する順）。scaffold は点検するスクリプトと同じ絶対パスの形。"""
+    return list(REFUSED_OPS) + [f"python3 {root / 'scaffold.py'}"]
+
+
+def check_refused(stack, commands):
+    """拒むべき操作を settings が拒むか（#1046）。区分は docstring の「拒むべき操作」の表。"""
+    items = []
+    only_managed = managed_rules_only(stack)
+    deny_rules = collect_rules(stack, "deny", only_managed)
+    ask_rules = collect_rules(stack, "ask", only_managed)
+    allow_rules = collect_rules(stack, "allow", only_managed)
+    unreadable = [name for name, _path, data in stack if isinstance(data, Unreadable)]
+    mode, mode_layer = perm_value(stack, "defaultMode")
+    bypass_off, _ = perm_value(stack, "disableBypassPermissionsMode")
+    bypassed = mode == "bypassPermissions" and bypass_off not in ("disable", True)
+    for command in commands:
+        call = command + " <引数>"
+        deny_hits = [r for r in deny_rules if rule_matches(r, call)]
+        ask_hits = [r for r in ask_rules if rule_matches(r, call)]
+        allow_hits = [r for r in allow_rules if rule_matches(r, call)]
+        label = f"拒む: `{command}`"
+        proposal = f'settings の permissions.deny に "Bash({command}:*)" を足す（足すのは利用者）'
+        if deny_hits:
+            items.append((GOOD, label, f"deny に当たる（{', '.join(deny_hits)}）", ""))
+        elif unreadable:
+            items.append((UNKNOWN, label, "deny に当たらず、読めない層がある（" + ", ".join(unreadable) +
+                          "）——そこに allow も deny もありうる", proposal))
+        elif ask_hits:
+            items.append((HUMAN, label, f"ask に当たる（{', '.join(ask_hits)}）——確認に答えれば通る", proposal))
+        elif allow_hits:
+            items.append((ACTION, label, f"allow に当たる（{', '.join(allow_hits)}）——入口は散文でしないだけで、許可では止まらない", proposal))
+        elif bypassed:
+            items.append((ACTION, label, f"defaultMode が bypassPermissions（{mode_layer}）——許可では止まらない", proposal))
+        else:
+            items.append((HUMAN, label, "allow に無いが deny にも無い——自動モードの分類器・起動の --allowedTools・--permission-mode が通しうる",
+                          proposal))
+    return items
+
+
 def stoppable_item(commands):
     return (HUMAN, "止まりうる操作",
             "自動モードの分類器と worktree 隔離のガードは settings に現れない——上で「良い」と出た操作も止まりうる。"
@@ -481,6 +555,7 @@ def cmd_check(args, values, project):
     items = [(UNKNOWN, f"設定（{name}）", f"{path} を読めなかった: {data.reason}", "")
              for name, path, data in stack if isinstance(data, Unreadable)]
     items += check_permissions(stack, commands)
+    items += check_refused(stack, refused_operations())
     items.append(tlc_item(project))
     items.append(stoppable_item(commands))
     return report(stack, items)
