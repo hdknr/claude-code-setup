@@ -136,11 +136,12 @@ def plan_text(base: str, feat: str, kind: str) -> str:
             "```dev-loop-gates\n" + "\n".join(lines) + "\n```\n")
 
 
-def make_repo(root: Path, lock: bool = True, plan: str | None = "full") -> tuple[Path, Path, str]:
+def make_repo(root: Path, lock: bool = True, plan: str | None = "full", origin: bool = True) -> tuple[Path, Path, str]:
     """メインの作業ツリーと、PR のブランチを持つ worktree。(main, wt, head の SHA)。
 
     worktree には関門の記録を持つ計画をコミットする（#1043。`plan=None` なら置かない）。
     `one` は 1 パス目の後に直したコミットを足す——2 パス目の記録が無いので照合を通らない。
+    `origin=False` なら既定ブランチの追跡参照を置かない——照合は判定できない（7）。
     """
     main = root / "main"
     main.mkdir(parents=True)
@@ -151,6 +152,8 @@ def make_repo(root: Path, lock: bool = True, plan: str | None = "full") -> tuple
     (main / "README.md").write_text("x\n", encoding="utf-8")
     git(main, "add", "-A")
     git(main, "commit", "-qm", "init")
+    if origin:  # 照合が既定ブランチを読む（check-gates.py。周の base が既定ブランチに入っているか）
+        git(main, "update-ref", "refs/remotes/origin/main", "main")
     wt = main / ".claude" / "worktrees" / "issue-42"
     git(main, "worktree", "add", "-q", str(wt), "-b", BRANCH)
     (wt / "a.txt").write_text("a\n", encoding="utf-8")
@@ -182,9 +185,9 @@ def pr(sha: str, mergeable="MERGEABLE", checks=None, state="OPEN", draft=False, 
 def run_case(base: Path, name: str, script: Path, make_view, *, lock=True, after=None, issues=None,
              merge_rc=0, fail_all=False, prepare=None, cwd_in_wt=False, timeout="5",
              merge_drop=False, default=None, number="42", late_ledger=None, plan="full", main_plan=False,
-             args=(), **gh) -> dict:
+             args=(), origin=True, **gh) -> dict:
     root = base / name
-    main, wt, sha = make_repo(root, lock=lock, plan=plan)
+    main, wt, sha = make_repo(root, lock=lock, plan=plan, origin=origin)
     if main_plan:  # 計画をメインの作業ツリーにも写して --plan で渡す（worktree を撤去する試料のため）
         (main / PLAN_REL).parent.mkdir(parents=True)
         (main / PLAN_REL).write_text((wt / PLAN_REL).read_text(encoding="utf-8"), encoding="utf-8")
@@ -487,6 +490,8 @@ CASES = {
         dict(make_view=lambda s: [pr(s)], plan=None), 13, False, True, "計画ファイルが見つからない"),
     "線の判断（BLOCKED）は --absent を渡せば通す": (
         dict(make_view=lambda s: [pr(s)], plan="absent", args=("--absent",)), 0, True, False),
+    "照合が判定できなければマージしない（7）": (
+        dict(make_view=lambda s: [pr(s)], origin=False), 7, False, True, "関門の照合が判定できなかった"),
     "線の判断（BLOCKED）は --absent が無ければ通さない": (
         dict(make_view=lambda s: [pr(s)], plan="absent"), 13, False, True, "--absent"),
     "OPEN でなければ何もしない": (dict(make_view=lambda s: [pr(s, state="MERGED")]), 2, False, True),
@@ -556,15 +561,17 @@ MUTATIONS = {
     "計画が無ければ照合を飛ばす": (
         '"--plan で渡す。マージしない。", file=sys.stderr)\n            return 13\n        grc, gout = gates(plan, head_sha, a.absent)',
         '"--plan で渡す。マージしない。", file=sys.stderr)\n        grc, gout = gates(plan, head_sha, a.absent) if plan else (0, "")'),
-    # 守る 20: 台帳で利用者の判断を待っている行の PR をマージしない（#631）
+    # 守る 20: 照合が判定できなければマージしない（7）
+    "照合の判定できないを通す": ("if grc != 0:\n            raise Undetermined", "if False:\n            raise Undetermined"),
+    # 守る 21: 台帳で利用者の判断を待っている行の PR をマージしない（#631）
     "台帳の判断待ちを見ない": ('if holds:', 'if False:'),
-    # 守る 21: この PR を持たない行の判断待ちでは止めない
+    # 守る 22: この PR を持たない行の判断待ちでは止めない
     "この PR を持たない行も見る": ('if not (pr_.isascii() and pr_.isdigit() and int(pr_) == int(number)):', 'if False:'),
-    # 守る 22: 閉じるはずの Issue を確かめる
+    # 守る 23: 閉じるはずの Issue を確かめる
     "Issue が閉じたかを見ない": ('if wait_for(closed, a.interval, a.settle):', 'if True:'),
-    # 守る 23: 判定できなかったことを時間切れと答えない
+    # 守る 24: 判定できなかったことを時間切れと答えない
     "判定できなかったを時間切れと答える": ('        return 7\n', '        return 5\n'),
-    # 守る 24: 7 でも済んでいないことを出す
+    # 守る 25: 7 でも済んでいないことを出す
     "7 で済んでいないことを出さない": ('        for pr_ in problems:\n            print(f"  済んでいないこと',
                                  '        for pr_ in []:\n            print(f"  済んでいないこと'),
 }
@@ -595,6 +602,7 @@ KILLS = {
     "照合を通さない": ["関門を 1 パスしか通していない計画の PR はマージしない（#1043）",
                     "線の判断（BLOCKED）は --absent が無ければ通さない"],
     "計画が無ければ照合を飛ばす": ["計画ファイルが見つからなければマージしない"],
+    "照合の判定できないを通す": ["照合が判定できなければマージしない（7）"],
     "台帳の判断待ちを見ない": ["台帳の行が判断待ちの PR はマージしない（#631）",
                          "台帳の行が blocked の PR はマージしない（番号は #42 の形）",
                          "別の行に利用者の判断があっても、判断待ちの行の PR はマージしない（#2427 の形）",

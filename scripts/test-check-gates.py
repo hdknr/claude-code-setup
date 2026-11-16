@@ -78,7 +78,8 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     s["B"] = commit(repo, "init", {
         "README.md": "x\n",
         ".claude/dev-loop.md": "# 追補\n",
-        "plugin.json": '{\n  "name": "p",\n  "version": "1.0.0"\n}\n',
+        ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.0"\n}\n',
+        "other.json": '{\n  "version": "1.0.0"\n}\n',
         "SKILL.md": "# s\n\n<!-- skill-version: 1.0.0 -->\n> **このスキルの版: 1.0.0**（プラグイン `p`）。\n\n本文\n",
     })
     git(repo, "switch", "-qc", "issue/1-x")
@@ -87,7 +88,7 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     s["C3"] = commit(repo, "fix after pass 2", {"a.txt": "3\n"})
     s["P"] = commit(repo, "plan", {PLAN_REL: "# plan\n"})
     s["V"] = commit(repo, "version", {
-        "plugin.json": '{\n  "name": "p",\n  "version": "1.0.1"\n}\n',
+        ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.1"\n}\n',
         "SKILL.md": "# s\n\n<!-- skill-version: 1.0.1 -->\n> **このスキルの版: 1.0.1**（プラグイン `p`）。\n\n本文\n",
     })
     git(repo, "switch", "-q", "main")
@@ -102,7 +103,15 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     s["D"] = commit(repo, "late fix", {"a.txt": "4\n"})
     git(repo, "reset", "-q", "--hard", s["MM"])
     s["X"] = commit(repo, "version and more", {
-        "plugin.json": '{\n  "name": "p",\n  "version": "1.0.2"\n}\n', "a.txt": "5\n"})
+        ".claude-plugin/plugin.json": '{\n  "name": "p",\n  "version": "1.0.2"\n}\n', "a.txt": "5\n"})
+    git(repo, "reset", "-q", "--hard", s["MM"])
+    s["Y"] = commit(repo, "declare on the branch", {
+        ".claude/dev-loop.md": "# 追補\n\nマージの反映: ドキュメントのみ\n"})
+    git(repo, "reset", "-q", "--hard", s["MM"])
+    s["Z1"] = commit(repo, "banner with more text", {
+        "SKILL.md": "# s\n\n<!-- skill-version: 1.0.1 -->\n> **このスキルの版: 1.0.1**（プラグイン `p`）。 ついでに規範を書き換えた\n\n本文\n"})
+    git(repo, "reset", "-q", "--hard", s["MM"])
+    s["Z2"] = commit(repo, "version of another file", {"other.json": '{\n  "version": "9.9.9"\n}\n'})
     git(repo, "switch", "-qc", "other", s["B"])
     s["O"] = commit(repo, "other work", {"o.txt": "o\n"})
     git(repo, "switch", "-qc", "other2", s["C3"])
@@ -191,8 +200,20 @@ CASES = {
         (FULL + ["マージの反映: ドキュメントのみ"], "MM", 3, [], {}, "既定ブランチ"),
     "不在の周でマージの反映の記録が無ければ非 0":
         (FULL, "MM", 3, ["--absent"], {}, "マージの反映の記録が無い"),
-    "マージの反映が「なし」なら既定ブランチを読まない":
-        (FULL + ["マージの反映: なし"], "MM", 0, ["--absent"], {}),
+    "「なし」と記録しても、既定ブランチに宣言があれば非 0":
+        (FULL + ["マージの反映: なし"], "MM", 3, ["--absent"], {}, "既定ブランチ"),
+    "ブランチにだけ足した宣言は効かない（既定ブランチから読む）":
+        (FULL + ["関門: 当て直し {MM} {Y} 反証=0", "マージの反映: ドキュメントのみ"], "Y", 3, [], {}, "既定ブランチ"),
+    "周の base が既定ブランチに入っていなければ非 0（base を周の線の上にずらす）":
+        (["周の base: {C1}"] + FULL[1:], "MM", 3, [], {}, "既定ブランチ"),
+    "版の行の後ろに文を足したコミットは非 0":
+        (FULL, "Z1", 3, [], {}, "banner with more text"),
+    "plugin.json・marketplace.json でない version の行だけの変更は非 0":
+        (FULL, "Z2", 3, [], {}, "version of another file"),
+    "判断に空白を含んでも読める":
+        (FULL, "MM", 0, [], {"crit": ["受入基準: A1 BLOCKED 判断=利用者の指示（2026-11-16 Slack で）", "受入基準: A2 満たす"]}),
+    "受入基準の節の下位の見出しの下の表も読む":
+        (FULL, "MM", 0, [], {"table": "## 受入基準\n\n### 表\n\n| # | x |\n| --- | --- |\n| A1 | x |\n| A2 | y |\n"}),
     "記録が無ければ 2": (FULL, "MM", 2, [], {"block": False}, "記録"),
     "記録が 2 つあれば 2": (FULL, "MM", 2, [], {"extra": "\n```dev-loop-gates\n周の base: {B}\n```\n"}, "2 つ"),
     "読めない行があれば 2": (FULL + ["関門: Verifier 1 {C1}"], "MM", 2, [], {}, "読めない行"),
@@ -239,28 +260,33 @@ MUTATIONS = {
     "狭いパスの記録を見ない": ("elif not rec.narrow_none and not rec.narrow:", "elif False:"),
     # 守る 7: head の祖先
     "head の祖先かを見ない": ("if not ctx.is_ancestor(full, ctx.head):", "if False:"),
-    # 守る 8: 関門が見ていないコミット
+    # 守る 8: 周の base が既定ブランチに入っていない
+    "base を既定ブランチと照らさない": ("if not ctx.is_ancestor(base, default):", "if False:"),
+    # 守る 9: 関門が見ていないコミット
     "見ていないコミットを通す": ("if seen or exempt(ctx, commit, parents):", "if True:"),
-    # 守る 9: 起点そのものを数えない
+    # 守る 10: 起点そのものを数えない
     "起点を範囲に数える": ("commit != s and ", ""),
-    # 守る 10: 計画と版の行だけは通す
+    # 守る 11: 計画と版の行だけは通す
     "計画だけのコミットを通さない": ("if f == ctx.plan_rel:", "if False:"),
-    # 守る 11: 既定ブランチ以外の取り込み
+    # 守る 12: 既定ブランチ以外の取り込み
     "どの枝の取り込みも通す": ("return all(ctx.is_ancestor(p, default) for p in parents[1:])", "return True"),
-    # 守る 12: 表の番号に判定
+    # 守る 13: 表の番号に判定
     "判定の無い番号を見ない": ("if i not in rec.criteria:", "if False:"),
-    # 守る 13: 判断の出所
+    # 守る 14: 判断の出所
     "判断の出所が無くても通す": ('reasons.append(f"受入基準 {i} が {verdict} で、判断の出所（判断=）が無い")', "continue"),
-    # 守る 14: 満たさないを線で通さない
+    # 守る 15: 満たさないを線で通さない
     "満たさないを線で通す": ('elif verdict == "満たさない":', "elif False:"),
-    # 守る 15: 不在の周でなければ線を通さない
+    # 守る 16: 不在の周でなければ線を通さない
     "居る周でも線を通す": ("elif not ctx.absent:", "elif False:"),
-    # 守る 16: マージの反映が違う
-    "マージの反映を既定ブランチと比べない": ("if values != [rec.reflection]:", "if False:"),
-    # 守る 17: 不在の周で記録が無い
+    # 守る 17: マージの反映が違う
+    "マージの反映を既定ブランチと比べない": ("if values != want:", "if False:"),
+    # 守る 18: 宣言は既定ブランチから読む
+    "宣言を head から読む": ('ctx.git("show", f"{ref}:.claude/dev-loop.md", ok=(0, 128))',
+                         'ctx.git("show", f"{ctx.head}:.claude/dev-loop.md", ok=(0, 128))'),
+    # 守る 19: 不在の周で記録が無い
     "不在の周でもマージの反映の記録を求めない": (
         'return ["不在の周で、マージの反映の記録が無い"] if ctx.absent else []', "return []"),
-    # 守る 18: 判定できないことを通過と答えない
+    # 守る 20: 判定できないことを通過と答えない
     "判定できないを通過と答える": (
         'print(f"**判定できなかった**: {e}", file=sys.stderr)\n        return 7',
         'print(f"**判定できなかった**: {e}", file=sys.stderr)\n        return 0'),
@@ -284,7 +310,10 @@ KILLS = {
     "判断の出所が無くても通す": ["BLOCKED に判断の出所が無ければ非 0"],
     "満たさないを線で通す": ["満たさないを線で通さない（不在の周でも）"],
     "居る周でも線を通す": ["BLOCKED を線（マージ前の判断）で通すのは不在の周だけ"],
-    "マージの反映を既定ブランチと比べない": ["マージの反映の記録が既定ブランチの宣言と違えば非 0"],
+    "マージの反映を既定ブランチと比べない": ["マージの反映の記録が既定ブランチの宣言と違えば非 0",
+                               "「なし」と記録しても、既定ブランチに宣言があれば非 0"],
+    "宣言を head から読む": ["ブランチにだけ足した宣言は効かない（既定ブランチから読む）"],
+    "base を既定ブランチと照らさない": ["周の base が既定ブランチに入っていなければ非 0（base を周の線の上にずらす）"],
     "不在の周でもマージの反映の記録を求めない": ["不在の周でマージの反映の記録が無ければ非 0"],
     "判定できないを通過と答える": ["head が解決しなければ 7"],
 }
@@ -310,12 +339,12 @@ def main() -> int:
             if not ok:
                 print("    " + out.strip().replace("\n", "\n    "))
 
-        print("\n判定できない: 取り込みがあるのに既定ブランチの追跡参照が無ければ 7")
+        print("\n判定できない: 既定ブランチの追跡参照が無ければ 7（base が既定ブランチに入っているかを決められない）")
         git(repo, "update-ref", "-d", "refs/remotes/origin/main")
         rc, out = run(SCRIPT, repo, s, "", (FULL, "MM", 7, [], {}))
         check(f"取り込みがあり、origin の参照が無い: rc={rc}（期待 7）", rc == 7 and "既定ブランチ" in out)
-        rc, _ = run(SCRIPT, repo, s, "", (FULL[:5] + ["関門: 狭いパス {C2} {C3} 反証=0"], "C3", 0, [], {}))
-        check(f"取り込みが無ければ、origin の参照が無くても判定できる: rc={rc}（期待 0）", rc == 0)
+        rc, out = run(SCRIPT, repo, s, "", (FULL[:5] + ["関門: 狭いパス {C2} {C3} 反証=0"], "C3", 7, [], {}))
+        check(f"取り込みが無くても、origin の参照が無ければ 7: rc={rc}（期待 7）", rc == 7 and "既定ブランチ" in out)
         git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
 
         print("\n変異（壊したのに期待どおりなら失格）")

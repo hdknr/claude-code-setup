@@ -32,17 +32,21 @@
 
 - **SHA** は 7〜40 桁の 16 進。**件数** は 0 以上の整数（「通した」は結果まで書く——手順 3）。
 - **判断の出所** は `利用者の指示（<YYYY-MM-DD…>）`・`マージ前の判断`・`実機確認` の 3 つ。
-- **受入基準の表**: 見出しに「受入基準」を含む節の中の表のうち、第 1 列の見出しが `#`・`番号`・`ID` のもの。その第 1 列が番号である。
+- **判断=** の後ろは行末まで（空白を含んでよい）。
+- **受入基準の表**: 見出しに「受入基準」を含む節（次の同じか上の階層の見出しまで。下位の見出しの下を含む）の中の表のうち、
+  第 1 列の見出しが `#`・`番号`・`ID` のもの。その第 1 列が番号である。
 
 ## 何を照合するか
 
 1. **関門の記録**——1 パス目の Verifier と `/code-review`・2 パス目（両方か「該当なし」）・狭いパス（記録か「該当なし」）。
-2. **コミットごとに、それを見た関門があるか**——周の base から head までの周自身の線（`--first-parent`）のコミットを 1 つずつ見て、
+2. **コミットごとに、それを見た関門があるか**——周の base（既定ブランチに入っていること）から head までの周自身の線（`--first-parent`）の、
+   既定ブランチに入っていないコミットを 1 つずつ見て、
    **ある回の Verifier と `/code-review` の両方の終点に含まれる**か、**狭いパス・当て直しの範囲（起点の後から終点まで）にある**か、
-   **関門が見なくてよい形**（計画ファイルだけ・版の行だけを変えたコミット・既定ブランチの親を取り込んだ merge commit）かのどれか。
+   **関門が見なくてよい形**（計画ファイルだけ・版の行だけ（下の「守らない」の形）を変えたコミット・既定ブランチの親を取り込んだ merge commit）かのどれか。
    **どれでもないコミットがあれば通さない**——2 パス目を回さずに直した・狭いパスの後に直した・最後の関門の後に足した、の形がここに出る。
 3. **受入基準の判定**——表の番号ごとに判定があるか。`BLOCKED`・`満たさない` は判断の出所があるか（下の表）。
-4. **マージの反映**——記録の値（`なし` 以外）が、既定ブランチの `.claude/dev-loop.md` にちょうど 1 本ある宣言と同じか（PR の中で足した宣言を効かせない——`references/absent-lines.md`）。
+4. **マージの反映**——記録の値が、既定ブランチの `.claude/dev-loop.md` の宣言と同じか（`なし` は宣言が 1 本も無いこと。値はちょうど 1 本あること）。
+   **宣言は既定ブランチから読む**——PR の中で足した・書き換えた宣言を効かせない（`references/absent-lines.md`）。
 
 | 判定 | 通る判断の出所 |
 | --- | --- |
@@ -59,6 +63,7 @@
 - **2 パス目は、両方の記録か「該当なし」の明記が無ければ通さない。**
 - **狭いパスは、記録か「該当なし」の明記が無ければ通さない。**
 - **記録の SHA が head の祖先でなければ通さない**——rebase した・別の履歴の記録。
+- **周の base が既定ブランチに入っていなければ通さない**——base を周の線の上にずらすと、その前のコミットが照合から外れる。
 - **関門が見ていないコミットを通さない**——ある回の 2 つの関門の両方の終点に含まれるか、狭いパス・当て直しの範囲にあるものだけを、見たとみなす。
 - **狭いパス・当て直しの起点そのものを、その範囲に数えない**——範囲は起点の後から終点まで。
 - **計画ファイルと版の行だけのコミットは、関門が見ていなくても通す**——関門の後に再開点を書く・main を取り込んで版を上げ直す（cruise の `references/parallel.md`）。
@@ -67,7 +72,8 @@
 - **`BLOCKED`・`満たさない` は、判断の出所が無ければ通さない。**
 - **`満たさない` を線（`マージ前の判断`・`実機確認`）で通さない。**
 - **`--absent` でなければ、線の判断を通さない**——線は不在の周にだけ効く。
-- **`マージの反映:` の記録が既定ブランチの宣言と違えば通さない。**
+- **`マージの反映:` の記録が既定ブランチの宣言と違えば通さない**——`なし` と書いても、既定ブランチに宣言があれば違う。
+- **宣言は既定ブランチから読み、head からは読まない。**
 - **`--absent` では、`マージの反映:` の記録が無ければ通さない。**
 - **判定できないことを、通過と答えない**（7）。
 
@@ -84,10 +90,17 @@
 - **記録が本当かは見ない**——関門の件数・判断の出所・`利用者の指示` の日付は、書いてあれば通る。照合が塞ぐのは**記録が無い・履歴と合わない**形だけで、記録を書き換えれば通る。
 - **関門が未コミットの変更を見たかは見ない**——終点はコミットで、関門に渡した時点の未コミットの分は記録に残らない。未コミットのまま関門に渡し、後でコミットした分は「見ていない」と出る（手順 6 は、渡す前にコミットする）。
 - **merge commit の中の変更は見ない**——既定ブランチの親を取り込んだ merge commit は丸ごと通す。衝突を解いた変更は関門が見ていなくても通る。
-- **版の行の形はこのリポジトリの決まり**（JSON の `"version":`・`<!-- skill-version: … -->`・`> **このスキルの版: …`）——ほかの形の版の行は、関門の見ていない変更と出る。
+- **版の行の形はこのリポジトリの決まり**——`.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` の `"version": "…"` の行と、
+  `SKILL.md` の `<!-- skill-version: … -->`・`> **このスキルの版: …**（プラグイン `…`）。` の行全体。ほかのファイル・形の版の行（`package.json` など）は、関門の見ていない変更と出る。
   生成ブロックの書き直し（`skill-metrics.py`）など、版のほかの機械の書き直しも同じく出る——取り込みの merge commit の中で直せば通る。
 - **既定ブランチは手元の追跡参照で決める**（`refs/remotes/origin/HEAD` → `origin/main` → `origin/master`）。**取り直さない**——古ければ古い既定ブランチと比べる。
 - **狭いパスの指摘の振り分け・PR コメントの推奨・CI・宣言の外の反映（ワークフロー）は見ない**——今までどおり親のモデルと `merge-pr.py` の既存の段。
+- **線の判断（`マージ前の判断`・`実機確認`）が、台帳の確かめた線にその値であるかは見ない**——`--absent` かどうかと、判定に対して出所が許されるかだけを見る。線があるかは親が読む（`references/absent-lines.md`）。
+- **`当て直し` がどの直しに当てたものかは見ない**——2 パス目を「該当なし」にして、1 パス目の後の直しを `当て直し`（Verifier 1 回）で覆った記録は通る。
+  外部レビュー bot の指摘を 2 パス目「該当なし」の周で直した正しい記録（`references/external-review.md` の「2 パスとの関係」）と、履歴の形が同じで分けられない。
+- **既定ブランチの追跡参照が無いリポジトリでは判定できない**（7）——base が既定ブランチに入っているかを決められない。
+- **HTML コメントの中の記録も読む**——コメントで無効にした記録も、記録の 1 つに数える。
+- **計画は作業ツリーのファイルを読む**——`--head` のコミットの中の計画とは比べない（`merge-pr.py` は未コミットと push していない worktree を先に止める）。
 - **受入基準の表の形は 1 つだけ読む**——第 1 列の見出しが `#`・`番号`・`ID` の表。箇条書きの受入基準は数えない（表が無ければ 2）。
 - **計画ファイルの外の受入基準（Issue の本文）とは照合しない。**
 
@@ -116,7 +129,9 @@ LINE_JUDGES = ("マージ前の判断", "実機確認")  # 線で決めた判断
 REFLECTIONS = ("ドキュメントのみ", "ドキュメントとプラグインの配布", "なし")
 DEFAULT_REFS = ("refs/remotes/origin/HEAD", "refs/remotes/origin/main", "refs/remotes/origin/master")
 # 関門が見なくてよい「版の行」（このリポジトリの決まり。docstring の「守らない」）
-VERSION_LINE = re.compile(r'^\s*"version"\s*:\s*"[^"]*",?\s*$|^<!-- skill-version: \S+ -->$|^> \*\*このスキルの版: ')
+VERSION_JSON = re.compile(r'^\s*"version"\s*:\s*"[^"]*",?\s*$')
+VERSION_JSON_FILES = (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json")
+VERSION_SKILL = re.compile(r"^<!-- skill-version: \S+ -->$|^> \*\*このスキルの版: \S+\*\*（プラグイン `[^`]+`）。$")
 ID_HEADERS = ("#", "番号", "ID")
 
 LINE_FORMS = {
@@ -126,7 +141,7 @@ LINE_FORMS = {
     "narrow": re.compile(rf"^関門:\s*狭いパス\s+{SHA}\s+{SHA}\s+{COUNT}$"),
     "narrow_none": re.compile(r"^関門:\s*狭いパス\s+該当なし$"),
     "redo": re.compile(rf"^関門:\s*当て直し\s+{SHA}\s+{SHA}\s+{COUNT}$"),
-    "criterion": re.compile(r"^受入基準:\s*(\S+)\s+(\S+)(?:\s+判断=(\S+))?$"),
+    "criterion": re.compile(r"^受入基準:\s*(\S+)\s+(\S+)(?:\s+判断=(.+?))?$"),
     "reflection": re.compile(r"^マージの反映:\s*(\S+)$"),
 }
 
@@ -187,7 +202,7 @@ def gate_block(text: str) -> list[str]:
 
 def table_ids(text: str) -> list[str]:
     """受入基準の表の第 1 列の番号（コードブロックの外・見出しに「受入基準」を含む節）。"""
-    ids, in_section, fence, header, in_table = [], False, None, None, False
+    ids, in_section, level, fence, in_table = [], False, 0, None, False
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if fence:
@@ -198,8 +213,11 @@ def table_ids(text: str) -> list[str]:
         if m:
             fence = m.group(1)
             continue
-        if re.match(r"^#{1,6}\s", line):
-            in_section, in_table = "受入基準" in line, False
+        h = re.match(r"^(#{1,6})\s", line)
+        if h:
+            in_table = False
+            if not (in_section and len(h.group(1)) > level):  # 下位の見出しは節の中
+                in_section, level = "受入基準" in line, len(h.group(1))
             continue
         if not in_section or not line.lstrip().startswith("|"):
             in_table = False
@@ -347,10 +365,16 @@ def exempt(ctx: Context, commit: str, parents: list[str]) -> bool:
     for f in files:
         if f == ctx.plan_rel:
             continue
+        if f.endswith(VERSION_JSON_FILES):
+            rx = VERSION_JSON
+        elif f == "SKILL.md" or f.endswith("/SKILL.md"):
+            rx = VERSION_SKILL
+        else:
+            return False
         diff = ctx.git("diff", "-U0", "--no-color", "--no-ext-diff", f"{commit}^", commit, "--", f).stdout
         changed = [l[1:] for l in diff.splitlines()
                    if l[:1] in "+-" and not l.startswith(("+++", "---"))]
-        if not changed or not all(VERSION_LINE.match(l) for l in changed):
+        if not changed or not all(rx.match(l) for l in changed):
             return False
     return True
 
@@ -370,16 +394,24 @@ def check_coverage(rec: Record, ctx: Context) -> list[str]:
     for name, rows in (("狭いパス", rec.narrow), ("当て直し", rec.redo)):
         for s, e in rows:
             fs, fe = known(ctx, s, f"{name}の起点", reasons), known(ctx, e, f"{name}の終点", reasons)
-            if fs and fe:
-                if ctx.is_ancestor(fs, fe):
-                    ranges.append((fs, fe))
-                else:
-                    reasons.append(f"{name}の起点 {s} が終点 {e} の祖先でない")
+            if not (fs and fe):
+                continue
+            if not ctx.is_ancestor(fs, fe):
+                reasons.append(f"{name}の起点 {s} が終点 {e} の祖先でない")
+            else:
+                ranges.append((fs, fe))
     if not base:
+        return reasons
+    default = ctx.default_ref()
+    if not ctx.is_ancestor(base, default):
+        reasons.append(f"周の base {rec.base} が既定ブランチ（{default}）に入っていない"
+                       "（手順 4 の base——周を切った元の参照との merge-base を書く）")
         return reasons
     out = ctx.git("rev-list", "--first-parent", "--reverse", "--parents", f"{base}..{ctx.head}").stdout
     for line in out.splitlines():
         commit, *parents = line.split()
+        if ctx.is_ancestor(commit, default):
+            continue  # 既定ブランチに入っている——周のコミットではない
         seen = any(all(any(ctx.is_ancestor(commit, e) for e in ends.get((k, n), []))
                        for k in ("Verifier", "/code-review")) for n in (1, 2))
         seen = seen or any(commit != s and ctx.is_ancestor(s, commit) and ctx.is_ancestor(commit, e)
@@ -438,12 +470,11 @@ def check_reflection(rec: Record, ctx: Context) -> list[str]:
     """`マージの反映:` の記録が、既定ブランチの宣言と同じか。"""
     if rec.reflection is None:
         return ["不在の周で、マージの反映の記録が無い"] if ctx.absent else []
-    if rec.reflection == "なし":
-        return []
     ref = ctx.default_ref()
     res = ctx.git("show", f"{ref}:.claude/dev-loop.md", ok=(0, 128))
     values = declared(res.stdout) if res.returncode == 0 else []
-    if values != [rec.reflection]:
+    want = [] if rec.reflection == "なし" else [rec.reflection]
+    if values != want:
         found = "・".join(values) if values else "無い"
         return [f"マージの反映の記録「{rec.reflection}」が、既定ブランチ（{ref}）の宣言（{found}）と違う"
                 "——その周が足した・書き換えた宣言は効かない"]
