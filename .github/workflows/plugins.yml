@@ -369,6 +369,11 @@ jobs:
       - name: screen-spec の init・add の書き込みと雛形のテスト（#1093）
         run: python3 scripts/test-write-screens.py
 
+      # 本体は plugins/screen-spec/scripts/build-mock.py（check-screens.py と spec-loop の重ね方を読み込む）。
+      # ヘッドレスのブラウザで踏む部分（--browser）は CI に Chrome が無いので手元で回し、結果を PR に貼る（#1095）。
+      - name: screen-spec の UI モックの生成器のテスト（#1095）
+        run: python3 scripts/test-build-mock.py
+
       # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 6 が指摘の表に当てる）。
       - name: spec-loop の指摘の表の検査のテスト（#982）
         run: python3 scripts/test-check-findings-csv.py
