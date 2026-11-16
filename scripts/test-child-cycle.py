@@ -106,6 +106,16 @@ FIXTURES = {
     "result が無い": [INIT, say("途中"), "壊れた行"],
     "成功でない": [INIT, result(5, subtype="error_max_turns", is_error=True)],
     "拒否された操作": [INIT, result(2, permission_denials=[{"tool_name": "Bash", "tool_input": {"command": "git push"}}])],
+    # 2.1.325 の実測の形: 同じメッセージが held（理由つき）→ dropped（理由なし）と 2 度出る
+    "保留されたメッセージ": [INIT, {"type": "system", "subtype": "peer_message_hold", "state": "held", "message_uuid": "m-1",
+                                 "from_name": "probe-sender", "cause": "mode-mismatch"}, result(1),
+                         {"type": "system", "subtype": "peer_message_hold", "state": "dropped", "message_uuid": "m-1",
+                          "from_name": "probe-sender", "outcome": "discarded"}],
+    # message_uuid が文字列でない（#1039 の CR1）——辞書の鍵にして落ちず、別々のメッセージとして数える
+    "保留の message_uuid が文字列でない": [INIT, {"type": "system", "subtype": "peer_message_hold", "state": "held",
+                                          "message_uuid": ["a"], "from_name": "x", "cause": "mode-mismatch"},
+                                  {"type": "system", "subtype": "peer_message_hold", "state": "held",
+                                   "message_uuid": {"k": 1}, "from_name": "y", "cause": "mode-mismatch"}, result(1)],
     "殺された体": [INIT, result(2, subagent_stats={"spawned": 1, "completed": 0, "killed": {"parent": 1, "user": 0, "system": 0}})],
     "利用上限の拒否": [INIT, {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "seven_day",
                                                                          "resetsAt": 1793269200}}, result(1)],
@@ -174,6 +184,9 @@ JSON_DEEP = 1_000_000
 
 MUTATIONS = {
     "子を切り離さない": [("start_new_session=True", "start_new_session=False")],
+    "子に名前を付けない": [('"--verbose", "--name", peer,', '"--verbose",')],
+    "宛先を記録に残さない": [('"peer": peer, ', "")],
+    "保留されたメッセージを出さない": [('    if summary["holds"]:', "    if False:")],
     "子の標準入力を閉じない": [("stdin=subprocess.DEVNULL, ", "")],
     "子の環境に上限 0 を置かない": [(", env=env)", ")")],
     "cwd をメインの作業ツリーにしない": [("cwd=main_tree, stdin", "cwd=None, stdin")],
@@ -415,6 +428,8 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         o["上限(親に別の値)"] = rec.get("bg")
         agent = re.search(r"^台帳の agent: claude-p:(.+)$", str(out), re.M)
         o["記録の場所"] = (Path(agent.group(1)).parent == children and Path(agent.group(1)).exists()) if agent else False
+        o["記録の peer"] = json.loads(Path(agent.group(1)).read_text(encoding="utf-8")).get("peer") if agent else None
+        o["起動時の宛先"] = re.search(r"^宛先（SendMessage）: (.+)$", str(out), re.M).group(1) if "宛先（SendMessage）: " in str(out) else None
         o["記録の env"] = json.loads(Path(agent.group(1)).read_text(encoding="utf-8")).get("env") if agent else None
         o["記録の structured"] = (json.loads(Path(agent.group(1)).read_text(encoding="utf-8")).get("structured", "鍵が無い")
                                 if agent else None)
@@ -611,8 +626,10 @@ def main() -> int:
         schema_text = json.dumps(mod.RESULT_SCHEMA, ensure_ascii=False)
         check("引数: -p にスラッシュコマンド・stream-json・verbose・名指しした許可モード・委譲文・モデル・結果の形・最後に --allowedTools",
               o["引数"][0] == ["-p", "/dev-loop:dev-loop 50", "--output-format", "stream-json", "--verbose",
-                              "--permission-mode", "auto", "--append-system-prompt", BRIEF, "--model", "haiku",
+                              "--name", "cruise-issue-50-50", "--permission-mode", "auto", "--append-system-prompt", BRIEF, "--model", "haiku",
                               "--json-schema", schema_text, "--allowedTools", "Bash(git status)", "Agent"])
+        check("子に --name cruise-<台帳の名前>-<番号> を付け、その宛先を記録の peer に残し、起動時に出す（#1039）",
+              o["記録の peer"] == "cruise-issue-50-50" and o["起動時の宛先"] == "cruise-issue-50-50")
         check("記録の .json に渡した結果の形を残す（#991）", o["記録の structured"] == {"schema": mod.RESULT_SCHEMA})
         check("結果の形の文字列に ' -p ' が無い（走っているかの判定が -p の直後を読むので）", " -p " not in schema_text)
         rc55, argv55, structured55 = o["--no-structured"]
@@ -690,7 +707,15 @@ def main() -> int:
         check("result を 3 つ数え、最後の result（ターン 0）を読む", "result: 3 個 ／ 最後: success・is_error=False・ターン 0" in str(out))
         check("dev-loop の版・許可モード・セッションを出す", "dev-loop の版: 1.63.6 ／ 許可モード: auto ／ セッション: s-1" in str(out))
         check("最後の文は最後の assistant の文（最後の result の文は空）", "最後の文: 最後の報告: PR #9" in str(out))
-        expected = {"済んだ（result が 3 つ）": 0, "最後の result が API の誤り": 3, "result が無い": 3, "成功でない": 3,
+        check("status は記録の宛先を出す（#1039）", "宛先（SendMessage）: cruise-issue-50-51" in str(out))
+        check("宛先の無い記録（名前を付けずに起こした起動口）は、無いと出す",
+              "宛先（SendMessage）: 無し（名前を付けずに起こした記録）" in o["要約 済んだ（result が 3 つ）"][1])
+        check("子が保留したメッセージを、送った側の名前と理由つきで出す（終了コードは変えない）",
+              "保留されたメッセージ: 1 件（probe-sender・mode-mismatch・dropped）" in o["要約 保留されたメッセージ"][1]
+              and "保留されたメッセージ" not in o["要約 済んだ（result が 3 つ）"][1])
+        check("保留の message_uuid が文字列でなくても落ちず、別々に数える（#1039 の CR1）",
+              "保留されたメッセージ: 2 件" in o["要約 保留の message_uuid が文字列でない"][1])
+        expected = {"済んだ（result が 3 つ）": 0, "保留されたメッセージ": 0, "保留の message_uuid が文字列でない": 0, "最後の result が API の誤り": 3, "result が無い": 3, "成功でない": 3,
                     "拒否された操作": 3, "殺された体": 3, "利用上限の拒否": 3, "長い文": 0, "上限が近いだけ": 0, "委譲先の発言が最後": 0, "途中で版が変わる": 0}
         for name, code in expected.items():
             check(f"{name} は {code}", o[f"要約 {name}"][0] == code)

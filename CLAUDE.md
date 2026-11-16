@@ -34,6 +34,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/external-reviews.py` - **PR に付いた外部レビュー bot（CodeRabbit など）のコメントを、`.claude/dev-loop.md` の `外部レビュー:` で宣言した bot の分だけ取り出す**
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。
       読む時点・採否の表への載せ方・2 パスとの関係・待ち方は `references/external-review.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-reviews.py`）
+    - `skills/dev-loop/scripts/check-gates.py` - **計画ファイルの関門の記録（`dev-loop-gates` のブロック）を、リポジトリの履歴と照合する**——周の線のコミットごとにそれを見た関門があるか・2 パスと狭いパス・受入基準ごとの判定と判断の出所・`マージの反映:` の出所
+      （#1043。`SKILL.md` 手順 7 がマージの前に素の 1 行で呼び、`merge-pr.py` は `gh pr merge` の前に通して 0 でなければ 13 で止まる。**記録の形の原本と、守る／守らないは docstring を正とする**。判定を足す口は `CHECKS`（#1047）。テストは `scripts/test-check-gates.py`）
     - `skills/cruise/` - **オートクルーズの入口**（#446。`/dev-loop:cruise <親 Issue> [--absent]`）。親 Issue のチェックリストから
       `scripts/parent-issue.py` が台帳を作る（**`show` の結果を利用者が確かめ、`apply` は本文を取り直して指紋を比べる**。
       親 Issue の `cruise:` の行（線）も確かめてから台帳に残す——#458。線の項目と値は `ledger.py` の `LINES` を読む）。
@@ -41,7 +43,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **dev-loop スキルを `../dev-loop/` で指す**ので、**素のスキルとしては張れない**。書式と守る／守らないは docstring を正とする。
       テストは `scripts/test-parent-issue.py`
       - `skills/cruise/scripts/child-cycle.py` - 周を **`claude -p` の子プロセス**で回す起動口と、出力（stream-json）の要約（#491。**任意で、既定はサブエージェントのまま**。
-        子は親から切り離して起き、記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く。回し方と確かめた範囲は `references/child-process.md`、
+        子は親から切り離して起き、`--name cruise-<名前>-<番号>` を付けて親が `SendMessage` で宛てられるようにし（#1039）、記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く。回し方と確かめた範囲は `references/child-process.md`、
         守る／守らないは docstring を正とする。テストは `scripts/test-child-cycle.py`）
       - `skills/cruise/scripts/run-serial.py` - cruise の周の**重い検査・アプリの起動を、同じリポジトリでは順番待ちにして走らせる**（#493。
         本数は `.claude/dev-loop.md` の `並行の検査:`、無ければ 1。どのコマンドを通すか・単独で回す周・版とマージの順（#531）は `references/parallel.md`、
@@ -283,6 +285,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-external-reviews.py` - **外部レビュー bot のコメントの取り出し**の回帰テスト（#997。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/external-reviews.py`**（`test-find-cycle.py` と同じ形）。
     **偽の `gh` を `PATH` の先頭に置き、`PATH` の残りは `/usr/bin:/bin` だけにする**——本物の GitHub には届かない。**渡す文面が bot のコメントの中の指示に従わないと書くこと**も見る
+  - `test-check-gates.py` - **関門の照合**の回帰テスト（#1043。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-gates.py`**（`test-find-cycle.py` と同じ形）。一時ディレクトリに本物の git リポジトリ（周の線・main の取り込み・別の枝）を作って当て、**1 パスしか通していない計画が非 0・全部通した計画が 0** を陽性対照にする
   - `test-check-unattended-env.py` - **利用者が不在になる前の環境点検**の回帰テスト（#394。変異テストを含む）。
     **cruise の起動時の点検（`--cruise`・`--present`）も見る**——利用者が居る cruise でも回す（#466）。
     **不在の間にどこまで進めるか（`--ledger`。#490）は、一時のリポジトリの台帳と偽の `gh` で当てる**——実際の台帳は読まない。

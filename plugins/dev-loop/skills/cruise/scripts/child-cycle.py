@@ -14,7 +14,7 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 
 メインの作業ツリー（どこから呼んでも同じ。台帳と同じ決め方——`../../dev-loop/scripts/ledger.py` の `main_worktree`）を cwd にして、
 
-    claude -p "/dev-loop:dev-loop <番号>" --output-format stream-json --verbose \
+    claude -p "/dev-loop:dev-loop <番号>" --output-format stream-json --verbose --name cruise-<台帳の名前>-<番号> \
         --permission-mode <許可モード> --append-system-prompt <委譲文の中身> [--model …] [--max-budget-usd …] \
         [--json-schema <結果の形>] [--allowedTools <道具> …]
 
@@ -37,6 +37,10 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く——`<番号>-<UTC の時刻>.jsonl`（標準出力 = stream-json）、
 `.err`（標準エラー）、`.json`（pid・引数・パス・起動時刻・子に渡した `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`——**渡した値で、子が受けた値ではない**——と、
 `auth`: 子の環境に `CLAUDE_CODE_OAUTH_TOKEN` を置いたか（`name`・`passed`・`from`。**値は書かない**））。**周の worktree の中には書かない**（周を畳むと消える）。
+**子に名前を付ける（`--name cruise-<台帳の名前>-<番号>`。#1039）**——親が `ListAgents` で子をその名前で見分け、`SendMessage` で宛てる宛先にする。
+名前を付けないと子は自分で名前を付け（実測では cwd の名前と短い印。メインの作業ツリーで起きる子はどれも同じ頭になる）、親はどの行が自分の子かを決められない。
+宛先は記録の `.json` の `peer` に残し、起動時に `宛先（SendMessage）:` の行で出す。**届くかは別である**——送り手が権限確認を飛ばすモード（`bypassPermissions`）の `claude -p` なら
+子は保留し、`-p` の子は承認できないので期限で落とした（`references/child-process.md` の「宛先」）。子に `crossSessionInbound` は渡さない。
 標準出力の最後の行に、台帳の `agent` に書く値（`claude-p:<記録の .json のパス>`）を出す——**台帳を書くのは親である**（このスクリプトは台帳を書かない）。
 
 **結果の形（#991）**: 既定で `--json-schema` に `RESULT_SCHEMA`（下の定数。欄の意味は各欄の `description`）を渡し、記録の `.json` の `structured` に
@@ -46,7 +50,7 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 ## status
 
 その Issue の**いちばん新しい**記録を読み、要約の行だけを出す（出力を丸ごと出さない）:
-走っているか・`dev-loop` の版（init の `plugins`）・許可モード（init の `permissionMode`）・セッション・`result` の数と最後の `result`
+走っているか・`dev-loop` の版（init の `plugins`）・許可モード（init の `permissionMode`）・セッション・宛先（記録の `peer`）・保留されたメッセージ（`peer_message_hold`）・`result` の数と最後の `result`
 （種別・誤り・ターン数・費用・API の誤り・拒否された操作）・親に殺された背景の体の数・利用上限の拒否・最後の文（切り詰め）・標準エラーの末尾。
 
 **子は `result` を 2 つ以上出すことがある**——背景の体が走っている間に最初の `result` を出し、終わらずに待って、通知で続ける
@@ -72,6 +76,10 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 守る:
 
 - **子を親から切り離す**——新しいセッションで起こし、終わるのを待たずに戻る。
+- **子に `--name cruise-<台帳の名前>-<番号>` で名前を付ける**（#1039）——親が `ListAgents` で見分けて `SendMessage` で宛てる宛先になる。付けないと子が自分で名前を付け、どれが自分の子か決められない。
+- **宛先を記録の `.json` の `peer` に残し、起動時と `status` で出す**——親は台帳の `agent`（記録のパス）から宛先を引く。
+- **子が保留したメッセージ（`peer_message_hold`）を `status` で出す**——送った側の `SendMessage` はその場で成功と返るので、`SendMessage` の結果では保留を確かめられない
+  （送り手が `claude -p` なら出力に保留の知らせが出たが（`references/child-process.md` の「宛先」の M）、対話の親の側で見えるかは測っていない）。子の側で確かめるのは子の出力である。
 - **子の標準入力を閉じる**——親の標準入力を子に継がせない（端末なら子が親の入力を読み、待ちうる）。
 - **子の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——親の環境に無くても、別の値があっても 0 にする（別の値は上書きしたと出す）。
 - **Bash の環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、起動した `claude` の環境の値を子に置く。**
@@ -127,6 +135,9 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **実際の 1 周で最後の `result` に `structured_output` が載るか**——確かめたのは、スキルを入口にして Bash と背景の体を使う小さな子（`references/child-process.md` の「結果の形」）までである。
   載らなければ 3 になる（黙って 0 にはならない）。
 - **検査器が JSON Schema の全部を読むこと**——読むのは `type`・`enum`・`properties`・`required`・`additionalProperties`・`items` だけで（`description` は読み飛ばす）、記録の形にほかの語があれば読まずに 3 にする。
+- **子に送ったメッセージが届くこと**——届くかは送り手と子の権限モードの組で決まり、送り手が `bypassPermissions` の `claude -p` なら子は保留した。
+  どの組で届き、どの組を測っていないかは `references/child-process.md` の「宛先」の表を正とする（2.1.325 の実測。#1039・#1079）。**子に `crossSessionInbound: accept` は渡さない**——権限確認を飛ばすセッションからの指示も通すことになり、cruise は権限を広げない。
+  **同じ名前の別のセッションが居れば**、`ListAgents` は短い印を足して並べ、素の名前では宛先が決まらない——そのときは宛てない。
 - **子が台帳を書かないこと**——委譲文で頼むだけである（`prompts/child-cycle.md`）。
 - **記録のディレクトリの後片付け**——消さない。
 - **子を起こした後に記録を書けなかったとき**——子は走り続け、記録が無いので `status` も 2 体目の歯止めも見えない（pid は 4 の理由に出す）。
@@ -362,6 +373,11 @@ def read_meta(path):
     return meta
 
 
+def peer_name(name, number):
+    """子のセッションの名前——親が ListAgents で見分け、SendMessage で宛てる宛先（#1039）。"""
+    return f"cruise-{name}-{number}"
+
+
 def cmd_launch(args, cwd=None):
     number = parse_number(args.number)
     if args.permission_mode not in PERMISSION_MODES:
@@ -385,7 +401,8 @@ def cmd_launch(args, cwd=None):
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     base = directory / f"{number}-{stamp}"
     out, err, meta_path = base.with_suffix(".jsonl"), base.with_suffix(".err"), base.with_suffix(".json")
-    command = ["claude", "-p", f"/dev-loop:dev-loop {number}", "--output-format", "stream-json", "--verbose",
+    peer = peer_name(args.name, number)
+    command = ["claude", "-p", f"/dev-loop:dev-loop {number}", "--output-format", "stream-json", "--verbose", "--name", peer,
                "--permission-mode", args.permission_mode, "--append-system-prompt", brief]
     if args.model:
         command += ["--model", args.model]
@@ -414,7 +431,7 @@ def cmd_launch(args, cwd=None):
     shown = [c if c != brief else f"<委譲文: {brief_path.resolve()}>" for c in command]
     meta = {"format": 1, "name": args.name, "number": number, "pid": proc.pid, "cwd": str(main_tree),
             "command": shown, "brief": str(brief_path.resolve()), "out": str(out), "err": str(err),
-            "started": stamp, "env": {BG_WAIT_CEILING: env[BG_WAIT_CEILING]},
+            "started": stamp, "peer": peer, "env": {BG_WAIT_CEILING: env[BG_WAIT_CEILING]},
             "structured": None if schema is None else {"schema": schema},
             "auth": {"name": LONG_TOKEN, "passed": token_from is not None, "from": token_from}}
     try:
@@ -427,12 +444,13 @@ def cmd_launch(args, cwd=None):
     print(token_line)
     print(f"出力: {out}")
     print(f"標準エラー: {err}")
+    print(f"宛先（SendMessage）: {peer}")
     print(f"台帳の agent: claude-p:{meta_path}")
     return EXIT_OK
 
 
 def summarize(out_path):
-    init, last_init, results, limit, last_text, broken = None, None, [], None, "", 0
+    init, last_init, results, limit, last_text, broken, holds = None, None, [], None, "", 0, []
     try:
         lines = Path(out_path).read_text(encoding="utf-8", errors="replace").splitlines()
     except FileNotFoundError:
@@ -455,6 +473,8 @@ def summarize(out_path):
             last_init = event
         elif kind == "result":
             results.append(event)
+        elif kind == "system" and event.get("subtype") == "peer_message_hold":  # 子が保留した他のセッションのメッセージ（#1039）
+            holds.append(event)
         elif kind == "rate_limit_event":
             info = event.get("rate_limit_info") or {}
             if info.get("status") not in (None, "allowed", "allowed_warning"):
@@ -463,7 +483,8 @@ def summarize(out_path):
             for block in (event.get("message") or {}).get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "text" and block.get("text", "").strip():
                     last_text = block["text"]
-    return {"init": init, "last_init": last_init, "results": results, "limit": limit, "last_text": last_text, "broken": broken}
+    return {"init": init, "last_init": last_init, "results": results, "limit": limit, "last_text": last_text, "broken": broken,
+            "holds": holds}
 
 
 UNREADABLE_SCHEMA = "記録の structured から形を取り出せない"
@@ -539,6 +560,18 @@ def cmd_status(args, cwd=None):
     print(f"#{number}: {'走っている' if running else '終わった'}（pid {meta['pid']}・記録 {found[-1]}）")
     print(f"dev-loop の版: {', '.join(map(str, dev_loop)) or '無し'} ／ 許可モード: {init.get('permissionMode', '無し')}"
           f" ／ セッション: {init.get('session_id', '無し')}")
+    print(f"宛先（SendMessage）: {meta.get('peer') or '無し（名前を付けずに起こした記録）'}")
+    if summary["holds"]:
+        # 同じメッセージが held → dropped と 2 度出る（2.1.325 の実測）——メッセージごとに最初の理由と最後の状態を出す
+        messages = {}
+        for h in summary["holds"]:
+            key = h.get("message_uuid")
+            key = key if isinstance(key, str) and key else id(h)  # 文字列でない値を辞書の鍵にすると落ちる（#1039 の CR1）
+            seen = messages.setdefault(key, {"from": h.get("from_name"), "cause": h.get("cause"), "state": None})
+            seen["cause"] = seen["cause"] or h.get("cause")
+            seen["state"] = h.get("state")
+        held = [f"{m['from']}・{m['cause']}・{m['state']}" for m in messages.values()]
+        print(clip(f"保留されたメッセージ: {len(held)} 件（{', '.join(held)}）——子は承認できず、期限で落ちる"))
     results = summary["results"]
     if results:
         last = results[-1]

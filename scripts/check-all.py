@@ -196,6 +196,7 @@ TESTS: list[str] = [
     "test-tab-match.py",
     "test-check-plan-counts.py",
     "test-merge-pr.py",
+    "test-check-gates.py",
 ]
 
 
