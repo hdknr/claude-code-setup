@@ -28,7 +28,10 @@ spec-loop から来た Issue ではない。`作り直しの元:` の行も無�
 - `docs/plugins/dev-loop-cruise.md` — 道具の表の `merge-pr.py` の行に影響範囲を足す
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す。手で書かない。変わらなければ触らない）
 - `CLAUDE.md` — プロジェクト構成の `check-gates.py` の行に影響範囲
-- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（2.0.0 → 2.1.0）
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版（2.0.0 → 2.1.0。main が先に 2.1.0 へ進んだので、取り込みの後に 2.2.0）
+
+版の上げ方: dev-loop を **minor**（能力の追加）。マージの直前の上げ直しは、main の先端の版から minor で 1 つ上げる（cruise `parallel.md` の「版とマージの順」）。
+
 - `.claude-plugin/marketplace.json` — 同じ版
 - `docs/plans/issue-1047.md` — この計画
 
