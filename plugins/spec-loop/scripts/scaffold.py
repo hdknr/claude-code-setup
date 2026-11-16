@@ -68,6 +68,16 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 参照先の中身だけを直しても機能は変わらない（指紋は機能のオブジェクトだけを覆う）——写しが古いことは `--check` が言う
 （決まりの正は `references/spec-ir.md` の「参考資料」と `references/handoff-issue.md` の「参考資料」）。
 
+**画面の表の参考資料（#1099）**: 重ね合わせた全体に画面の表（`requirements/screens/data/screens.csv`）があり、その `機能` の列が中間表現の機能の `id` を挙げる画面があれば、
+その機能の本文の `## 参考資料` に、画面ごとに仕様書（`requirements/screens/<仕様書の列>`）・ワイヤーフレームの書き出し（`requirements/screens/wireframes/<画面ID>.svg`）
+——重ね合わせた全体に在るものだけ——と**生成したモック**（`build/mock/v<n>/index.html#screen=<画面ID>`）を並べ、写しを `scaffold/refs/` に置く（モックは `scaffold/refs/mock/index.html`）。
+**どの画面が機能に結びつくかは画面の表の `機能` の列が決め、中間表現の機能のオブジェクトには入れない**——機能の指紋と v2 以降の変更の判定は中間表現だけを見るので、
+画面の表の中身や生成器（screen-spec）の版が変わっても機能は「変更」にならない（変わるのは写しだけ）。**書く生成は、モックを screen-spec の `build-mock.py` で作る**
+（screen-spec は画面の関門と同じ見つけ方で探し、子のプロセスで呼ぶ——`build/mock/v<n>/` を書く）。**作れなければ何も書かない**（生成器の 1 は 1、ほかは 2）。
+**`--check`・`--red-check` はモックを生成し直さない**——写しが目録に載って在ることと、目録の sha256 と同じこと（手で直していない）だけを見る。`--dry-run` は作らない。
+**画面の表が無い・どの画面も機能を挙げないなら、契約と本文は #1099 の前と 1 バイトも変わらない**（決まりの正は `references/handoff-issue.md` の「参考資料」と
+`references/tree.md` の「UI モック」）。
+
 **トレースのケース（`trace`。#923）**: ケースに `input`・`expected`・`error` の代わりに `trace` を書くと、形式検査の反例の実行順
 （`calls` の呼び出しと `steps` の段の並び）を実装の口で強制して再現する Red テストを、その機能の Red テストのファイルに足す。
 実装に求める口は、呼び出しのキーワード引数 `checkpoint`（段の前で呼ぶ）と、モジュールの `reset_state()`（`CHECKPOINT`・`RESET`）。
@@ -168,10 +178,10 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 終了コード:
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
-- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
+- 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・生成したモックの生成器が 1（#1099）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
   反する（全部を 1 行ずつ出す）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
-- 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
+- 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・生成したモックを作れない（生成器の 1 のほか。#1099）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
   まとめ方の誤り（上の「まとめた本文」）・`--check`・`--red-check` との組み合わせを含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
@@ -200,6 +210,9 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 | **基準コミットから後の変化が仕様の前提を崩したか** | 本文に時点を残すだけ。点検は dev-loop の周の頭（dev-loop の `references/spec-gap.md`） |
 | **`--bundle` でまとめた機能が、同じモジュール・同じ受入基準・同じデプロイ経路か** | 中間表現はデプロイ経路を持たず、`impl_module` は全体で 1 つ。機械が見るのは変化が揃うことだけで、選ぶのは scaffold を回す人 |
 | **撤去の順（呼ぶ側を変えてから撤去する）** | `depends` は今の版の `called_by` から作る。撤去の機能は前の版の `called_by` しか持たないので、依存に出さない |
+| **置いてある生成したモックの写しが、今の画面の表から作るものと同じか**（`--check`・`--red-check`） | 生成し直さない（#1099）——生成器は版で見た目が変わり、`--check` は別のリポジトリの CI でも走る。表を直したら書く生成で作り直す（仕様書の写しと本文は古いと言う） |
+| **生成したモックの中の、仕様書へのリンクが写しから辿れるか** | リンクは生成器が生成した場所（`build/mock/v<n>/`）からの相対のパスで書く。同じリポジトリなら写し（`scaffold/refs/mock/`）からも同じ深さで届くが、開発のリポジトリが別なら届かない（仕様書の写しは本文が名指す） |
+| **画面の表の `機能` の列が、その機能に関わる画面を漏れなく挙げているか** | 表の中身は利用者と決めるもの。機械は挙げた画面だけを並べる |
 | **もう緑の追加・変更が、中間表現の書き起こしの誤りか** | 前の版の実装がもう満たすケースは名指しで知らせるだけ（0）。Red テストがその変化を判別しないのが誤りかは意味の問題で、`scaffold` スキルの手順 4 で利用者に示す |
 """
 
@@ -213,6 +226,7 @@ import io
 import json
 import keyword
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -222,6 +236,8 @@ import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# このプラグインの根（生成したモックを作る screen-spec の `build-mock.py` に、同じ spec-loop の決まりで重ねさせる。#1099）
+PLUGIN_ROOT = HERE.parent
 
 # 置き場所（`references/tree.md`・`references/versions.md` の写し）
 DOCS = "docs"
@@ -316,6 +332,18 @@ REFS_NOT_CRITERIA = ("**参考資料は受入基準ではない**——受入基
                      "見た目・配置・機能どうしのつながりを読むためのもの。参考資料が Red テスト・仕様の原文と食い違うと読めたら、"
                      "実装で決めず、仕様の穴として Q&A 表に起票する（下の「仕様の穴を見つけたら」）。")
 REFS_NONE = "この機能に結びつけた参考資料（中間表現の `refs`）は無い。"
+# 画面の表から引く参考資料（#1099。`references/handoff-issue.md` の「参考資料」と `references/tree.md` の「UI モック」の写し）——
+# 画面の表の `機能` の列がその機能の id を挙げる画面ごとに、仕様書・ワイヤーフレームの書き出し・生成したモック。**機能のオブジェクトには入れない**
+SCREENS_DIR = "requirements/screens"
+WIREFRAME = "requirements/screens/wireframes/{}.svg"
+SCREEN_COLUMNS = ("画面ID", "画面名", "機能", "仕様書")
+SCREEN_SEPARATOR = "、"
+# 生成したモック（screen-spec の `references/mock.md` の「出力」の写し）——生成した場所（`docs` の親からのパス）と、写しの置き場所（`refs/` の下）
+MOCK_SCRIPT = "scripts/build-mock.py"
+MOCK_OUT = "build/mock/v{}/index.html"
+MOCK_COPY = "mock/index.html"
+REFS_SCREENS = ("画面の表（`requirements/screens/data/screens.csv` の `機能` の列）がこの機能を挙げる画面——仕様書・ワイヤーフレームの書き出し・生成したモック。"
+                "**生成したモックは画面の表から作った生成物で、承認の対象は画面の表である**——機能の変更の判定には使わない。モックのコードを実装に流用しない。")
 # 呼ぶ側の分岐の書き起こし（任意。`references/spec-ir.md` の「呼ぶ側の分岐」。#855）——分岐の名前 → 見せるもの（`shows`）か
 # 該当なし（`none`）。行ごと該当なしは `none` だけ。分岐の名前は `references/spec-ir.md` の分岐の表の写し
 BRANCHES_KEY = "branches"
@@ -1173,7 +1201,10 @@ class Loaded:
         self.infra: str | None = None  # 決まった基盤要件の 1 行（書く生成と --dry-run で出す。#950）
         self.scope = scope  # 範囲の文書（`spec/scope.md`）のバイト。無ければ None
         self.nfr = nfr  # 性能の要求の表（`shared/nfr.csv`）のバイト。無ければ None
-        self.refs: dict[str, bytes] = {}  # 機能の `refs` が指すファイル（全体の根からのパス → バイト。#951）
+        self.refs: dict[str, bytes] = {}  # 機能の `refs` が指すファイル（全体の根からのパス → バイト。#951）と、画面の表から引いたファイル（#1099）
+        # 画面の表から引いた参考資料（#1099）——機能の id → [(画面ID, 画面名, [全体の根からのパス])]（画面の表の並び）。機能のオブジェクトには入れない
+        self.screens: dict[str, list[tuple[str, str, list[str]]]] = {}
+        self.mock: bytes | None = None  # 生成したモック（書く生成は作ったもの、`--check`・`--red-check` は置いてある写し。#1099）
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
         self.answered = answered  # Q&A の行（No → 行）
         self.number = number  # 重ねた最後の版の番号
@@ -1232,7 +1263,43 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     loaded.infra = settled
     # 検査（`check_refs`）を通った後なので、指したパスは重ね合わせた全体に在る
     loaded.refs = {rel: rendered[rel] for feature in features_of(ir) for rel in feature.get(REFS, [])}
+    # 画面の表から引いた参考資料（#1099）——在るファイルだけを写す
+    loaded.screens = linked_screens(rendered, ir)
+    loaded.refs.update({rel: rendered[rel] for linked in loaded.screens.values() for _, _, paths in linked for rel in paths})
     return 0, [], loaded
+
+
+def linked_screens(rendered: dict[str, bytes], ir: dict) -> dict[str, list[tuple[str, str, list[str]]]]:
+    """画面の表（重ね合わせた全体の `screens.csv`）の `機能` の列が、中間表現の機能の id を挙げる画面（#1099）。
+
+    機能の id → [(画面ID, 画面名, [仕様書・ワイヤーフレームの書き出しのうち重ね合わせた全体に在るもの])]。並びは画面の表の行の順。
+    画面の表が無い・読めない・列が無い・どの画面も機能を挙げないなら空（何も足さない）——表の決まりは関門（screen-spec の検査）が見る。"""
+    raw = rendered.get(versions.SCREENS_DATA + "screens.csv")
+    if raw is None:
+        return {}
+    try:
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        rows = list(reader)
+    except (UnicodeDecodeError, csv.Error):
+        return {}
+    if not all(column in (reader.fieldnames or []) for column in SCREEN_COLUMNS):
+        return {}
+    ids = {feature["id"] for feature in features_of(ir)}
+    linked: dict[str, list[tuple[str, str, list[str]]]] = {}
+    for row in rows:
+        screen = (row.get("画面ID") or "").strip()
+        if not screen:
+            continue
+        named = {part.strip() for part in (row.get("機能") or "").split(SCREEN_SEPARATOR)} & ids
+        if not named:
+            continue
+        document = (row.get("仕様書") or "").strip()
+        # 本文のコードスパンと目録の行に書けない名前（バッククォート・`\\`・行の区切り）は並べない（`check_refs` と同じ理由）
+        paths = [rel for rel in ((f"{SCREENS_DIR}/{document}" if document else ""), WIREFRAME.format(screen))
+                 if rel and rel in rendered and "`" not in rel and "\\" not in rel and rel.splitlines() == [rel]]
+        for fid in sorted(named):
+            linked.setdefault(fid, []).append((screen, (row.get("画面名") or "").strip(), paths))
+    return linked
 
 
 def infra_gate(rendered: dict[str, bytes]) -> tuple[int, list[str], list[str], str | None]:
@@ -2323,7 +2390,7 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
         lines += qa_rows(refs, before.answered, f"{previous} の時点の {tables} ")
     else:
         lines += qa_rows(refs, loaded.answered, f"生成した時点の {tables} ")
-    lines += ["", SECTIONS[4], ""] + references(change)
+    lines += ["", SECTIONS[4], ""] + references(change, loaded)
     lines += ["", SECTIONS[5], ""] + not_built(change, loaded, contract)
     lines += [
         "",
@@ -2343,17 +2410,30 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     return "\n".join(lines) + "\n"
 
 
-def references(change: Change) -> list[str]:
-    """`## 参考資料` の節の中身（#951。`references/handoff-issue.md` の「参考資料」）。並びは中間表現の `refs` の順。"""
+def references(change: Change, loaded: Loaded) -> list[str]:
+    """`## 参考資料` の節の中身（#951。`references/handoff-issue.md` の「参考資料」）。並びは中間表現の `refs` の順。
+
+    画面の表がこの機能を挙げる画面があれば（#1099）、その後ろに画面ごとに仕様書・ワイヤーフレームの書き出し・生成したモックを並べる
+    （中間表現の `refs` に同じパスがあれば 2 度並べない）。無ければ #1099 の前と同じバイト。"""
     if change.kind == REMOVE:
         return ["撤去の Issue なので、参考資料は無い——消した機能の画面・流れを作らない。"]
     refs = change.feature.get(REFS, [])
+    screens = loaded.screens.get(change.feature["id"], [])
     lines = [REFS_NOT_CRITERIA, ""]
-    if not refs:
+    if not refs and not screens:
         return lines + [REFS_NONE]
-    lines += [f"- `{merged(rel)}`（写し: `{OUT_DIR}/{REFS_DIR}/{rel}`）" for rel in refs]
-    return lines + ["", f"（`{MERGED_DIR}/` は上の `## 仕様` のコマンドで作る。写しは `{OUT_DIR}/` の契約で、"
-                        f"正本と開発のリポジトリが別でも `{OUT_DIR}/` を写せば届く。）"]
+    if refs:
+        lines += [f"- `{merged(rel)}`（写し: `{OUT_DIR}/{REFS_DIR}/{rel}`）" for rel in refs] + [""]
+    if screens:
+        mock = MOCK_OUT.format(loaded.number)
+        lines += [REFS_SCREENS, ""]
+        for screen, name, paths in screens:
+            lines.append(f"- 画面 `{screen}`" + (f"（{name}）" if name else ""))
+            lines += [f"  - `{merged(rel)}`（写し: `{OUT_DIR}/{REFS_DIR}/{rel}`）" for rel in paths if rel not in refs]
+            lines.append(f"  - `{mock}#screen={screen}`（生成したモック。写し: `{OUT_DIR}/{REFS_DIR}/{MOCK_COPY}#screen={screen}`）")
+        lines += ["", f"（`{mock}` は scaffold の書く生成が screen-spec の `{MOCK_SCRIPT}` で作り、commit しない——写しは `{OUT_DIR}/` の契約である。）", ""]
+    return lines + [f"（`{MERGED_DIR}/` は上の `## 仕様` のコマンドで作る。写しは `{OUT_DIR}/` の契約で、"
+                    f"正本と開発のリポジトリが別でも `{OUT_DIR}/` を写せば届く。）"]
 
 
 def not_built(change: Change, loaded: Loaded, contract: dict[str, str]) -> list[str]:
@@ -2512,18 +2592,25 @@ def render_contract(loaded: Loaded) -> dict[str, str | bytes]:
         rows = performance(loaded, feature)
         if rows:
             contract[f"{PERF_DIR}/{perf_file(feature)}"] = perf_test(feature, rows, impl_module)
-    if loaded.refs:
-        for rel in sorted(loaded.refs):
-            contract[f"{REFS_DIR}/{rel}"] = loaded.refs[rel]
-        contract[REFS_INDEX] = refs_index(loaded.refs)
+    # 生成したモックの写し（#1099）——画面の表が機能を挙げる画面があるときだけ（`run` が置く。`--dry-run` では置かない）
+    copies = dict(loaded.refs, **({MOCK_COPY: loaded.mock} if loaded.mock is not None else {}))
+    if copies:
+        for rel in sorted(copies):
+            contract[f"{REFS_DIR}/{rel}"] = copies[rel]
+        contract[REFS_INDEX] = refs_index(copies, loaded.mock is not None)
     return contract
 
 
-def refs_index(refs: dict[str, bytes]) -> str:
-    """参考資料の写しの目録（`scaffold/refs/index.md`。#951）。1 行目に生成の印。目録に載った写しだけを生成物に数える。"""
+def refs_index(refs: dict[str, bytes], mock: bool = False) -> str:
+    """参考資料の写しの目録（`scaffold/refs/index.md`。#951）。1 行目に生成の印。目録に載った写しだけを生成物に数える。
+    画面の表から引いた写しと生成したモックがあれば（#1099）、そう 1 段落書き足す——無ければ #1099 の前と同じバイト。"""
     lines = [f"<!-- {GENERATED} -->", "", "# 参考資料の写し", "",
              f"中間表現（`{IR_PATH}`）の機能の `{REFS}` が指す `{REQUIREMENTS_DIR}/` のファイルを、重ね合わせた全体から写したもの。"
              f"正本と開発のリポジトリが別でも、`{OUT_DIR}/` を写せば届く。**受入基準ではない**——受入基準は `tests/` の Red テストである。", ""]
+    if mock:
+        lines += [f"画面の表（`{versions.SCREENS_DATA}screens.csv` の `機能` の列）が機能を挙げる画面の仕様書・ワイヤーフレームの書き出しも写す。"
+                  f"`{MOCK_COPY}` は screen-spec の `{MOCK_SCRIPT}` が生成したモックの写しで、`scaffold.py --check` は生成し直さない"
+                  "（写しが在ることと、この目録の sha256 と同じことだけを見る）。", ""]
     lines += [f"- `{rel}`（sha256: `{sha256(refs[rel])}`）" for rel in sorted(refs)]
     return "\n".join(lines) + "\n"
 
@@ -3025,11 +3112,23 @@ def run(repo: Path, args, writing: bool) -> int:
             return fail(repo, writing, code, lines)
         passed = lines[0]
 
+    mock_missing: list[str] = []
+    if loaded.screens:
+        # 生成したモック（#1099）——書く生成は screen-spec の生成器で作る（失敗したら何も書かない）。`--check`・`--red-check` は生成し直さず、
+        # 置いてある写しを使う（無ければ古い）。`--dry-run` は作らない（何も書かない）
+        if writing:
+            code, lines = build_mock(repo, loaded)
+            if code:
+                return fail(repo, writing, code, lines)
+        elif args.check or args.red_check:
+            loaded.mock = placed_mock(repo / OUT_DIR)
+            if loaded.mock is None:
+                mock_missing = [f"{OUT_DIR}/{REFS_DIR}/{MOCK_COPY}: 無い（生成したモックの写し。画面の表が機能を挙げる画面がある——書く生成で作る）"]
     contract = render_contract(loaded)
     features = len(loaded.ir["features"])
     cases = sum(len(f["cases"]) for f in loaded.ir["features"])
     if args.check:
-        problems = stale(repo / OUT_DIR, contract)
+        problems = mock_missing + stale(repo / OUT_DIR, contract)
         for line in problems:
             print(line, file=sys.stderr)
         if problems:
@@ -3048,7 +3147,7 @@ def run(repo: Path, args, writing: bool) -> int:
         # 止めずに知らせること（凍結した前の版を信じなかった。#357・呼ぶ機能が変わっていない。#609）
         print(line)
     if args.red_check:
-        problems = stale(repo / OUT_DIR, contract)
+        problems = mock_missing + stale(repo / OUT_DIR, contract)
         if problems:
             for line in problems:
                 print(line, file=sys.stderr)
@@ -3097,6 +3196,45 @@ def run(repo: Path, args, writing: bool) -> int:
           "未決定事項のある案は、登録の前に spec-review に戻す")
     print(f"{passed}——条件 2〜5 は記録を読んだだけで、判定し直していない")
     return 0
+
+
+def build_mock(repo: Path, loaded: Loaded) -> tuple[int, list[str]]:
+    """生成したモックを作る（#1099）——screen-spec を画面の関門と同じ見つけ方で探し、その `build-mock.py` を子のプロセスで呼んで
+    （同じ spec-loop の決まりで重ねさせる）、`<正本>/build/mock/v<n>/index.html` を `loaded.mock` に読む。(終了コード, 止めるときの行)。
+
+    **失敗したら止める**——生成器の 1（決まりに反する）は 1、ほか（2・4・知らない終了コード・起動できない・出力が無い）は 2。
+    spec-loop は screen-spec を読み込まない（画面の関門と同じ）。"""
+    docs = repo / DOCS
+    try:
+        root = screens.find_screen_spec(None, docs)
+    except screens.NotFound as exc:
+        return 2, [f"生成したモックを作れない: {exc}", "参考資料のモックを作れない。生成しない（判定していない）"]
+    command = [sys.executable, str(root / MOCK_SCRIPT), str(docs), "--upto", str(loaded.number), "--spec-loop", str(PLUGIN_ROOT)]
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, check=False, env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"))
+    except OSError as exc:
+        return 2, [f"screen-spec の {MOCK_SCRIPT} を起動できない（{exc}）", "参考資料のモックを作れない。生成しない（判定していない）"]
+    shown = [f"screen-spec: {line}" for line in (proc.stdout + proc.stderr).splitlines()]
+    if proc.returncode != 0:
+        return (1 if proc.returncode == 1 else 2), shown + [
+            f"screen-spec の {MOCK_SCRIPT} の終了コード: {proc.returncode}（{root}）",
+            "参考資料のモック（画面の表から生成する）を作れない。生成しない" + ("" if proc.returncode == 1 else "（判定していない）")]
+    out = repo / MOCK_OUT.format(loaded.number)
+    try:
+        loaded.mock = out.read_bytes()
+    except OSError as exc:
+        return 2, shown + [f"{MOCK_OUT.format(loaded.number)}: 生成器が 0 で終わったのに読めない（{exc}）。生成しない（判定していない）"]
+    return 0, []
+
+
+def placed_mock(out: Path) -> bytes | None:
+    """置いてある生成したモックの写し（#1099）——生成の印を持つ目録に載っていれば、そのバイト。無ければ None。"""
+    if f"{REFS_DIR}/{MOCK_COPY}" not in generated_refs(out):
+        return None
+    try:
+        return (out / REFS_DIR / MOCK_COPY).read_bytes()
+    except OSError:
+        return None
 
 
 def review_gate(repo: Path, number: int) -> tuple[int, list[str]]:
