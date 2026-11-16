@@ -111,10 +111,10 @@ python3 <このスキルの base ディレクトリ>/../../scripts/autopilot-che
   **要対処なら、用意のしかた（Java と `tla2tools.jar` を置き、`TLC の呼び方:` の行を書く。業務フローを形式検査しない案件なら外す宣言）を利用者に示す**——
   用意するまで、各起動は Formal Checker を起こす段（`round1`・`round2`・`narrow`）の始めで止まる（下の 3）。宣言が有れば確かめず、人が見る項目に出る。書き方は `../../scripts/check-tlc.py` の docstring を正とする。
 - **点検には拒むべき操作も入る**（#1046）——このスキルが線に依らずしない `git tag`・`git push --tags`・`gh issue create` と `scaffold`（`python3 <spec-loop の根>/scripts/scaffold.py`）を、
-  **settings が拒むか**を見る（出力の `拒む:` の行）。allow に当たる（`Bash(git:*)`・`Bash(python3:*)` のような広い規則を含む）か `defaultMode` が `bypassPermissions` なら要対処、
-  deny に当たれば良い、どちらでもなければ人が見る項目になる。**一覧と区分は `../../scripts/autopilot-check.py` の docstring の「拒むべき操作」を正とする。**
+  **settings が拒むか**を見る（出力の `拒む:` の行）。deny に当たれば良い。deny・ask に当たらずに allow に当たる（`Bash(git:*)`・`Bash(python3:*)` のような広い規則を含む）か `defaultMode` が `bypassPermissions` なら要対処、
+  ask に当たるか、どれにも当たらなければ人が見る項目になる。**一覧と区分は `../../scripts/autopilot-check.py` の docstring の「拒むべき操作」を正とする。**
 
-1. **結果を利用者に見せる。** 要対処と判定できない項目を名指しする——要対処は、周で使う操作（`許可:` の行）なら `deny`・`ask` に当たる・`allow` に無い、拒むべき操作（`拒む:` の行）なら逆に `allow` に当たる・`defaultMode` が `bypassPermissions` である。
+1. **結果を利用者に見せる。** 要対処と判定できない項目を名指しする——要対処は、周で使う操作（`許可:` の行）なら `deny`・`ask` に当たる・`allow` に無い、拒むべき操作（`拒む:` の行）なら `deny`・`ask` に当たらずに `allow` に当たる、または `defaultMode` が `bypassPermissions` である（`ask` に当たる行は人が見る）。
    **拒むべき操作の行（`拒む:`）が良い以外なら、deny に足す規則（出力の → の行の `Bash(<操作>:*)`）をまとめて示し、足すよう勧める**——
    足すのは利用者である（`/permissions` か `update-config`。**このスキルは settings を書かない**）。足したら `check` を回し直して、`拒む:` の行が良いになったことを見せる。
 2. **止まりうる操作**（自動モードの分類器と worktree 隔離のガードは settings に現れない。出力の「人が見る」の `止まりうる操作` の項目）**を、操作ごとに `AskUserQuestion` で選んでもらう**——**`拒む:` の人が見るの行はここに入れない**（上の 1 の deny の案で扱い、許可を足す選択肢を出さない）:
@@ -236,7 +236,8 @@ python3 <このスキルの base ディレクトリ>/../../scripts/autopilot-led
 
 - **モデルが 1 単位で止まること・線どおりに振る舞うこと**——この本文は散文で、判定はスクリプトにあるが振る舞いは機械で見ていない。外側のループ（#850）は進捗の欄が動かなければ止まる。
 - **プラグインを更新したあとの許可**——`ops` のパスはインストール先の版のディレクトリを含む（`…/spec-loop/<版>/scripts/…`）。パスを名指しした allow の規則は、版が変わると当たらなくなる。
-  **scaffold の deny の規則も同じ**——版のディレクトリを名指した deny は、更新した版の scaffold に当たらない。更新したら `--lines` で確かめ直す（点検も回し直す）か、版に依らない規則にする。
+  更新したら `--lines` で確かめ直す（点検も回し直す）か、allow は版に依らない規則にする。
+  **scaffold の deny の規則は版に依らない形にできない**——版のディレクトリを名指した deny は更新した版の scaffold に当たらず、点検は途中に `*` を置いた規則を照合しない。更新したら点検を回し直し、出た deny の案を足し直す。
 - **拒むべき操作を settings が実際に拒むこと**——点検は settings の規則を近似で照合するだけで、各起動では点検しない。deny の形に当たらない呼び方（`git push origin --tags`・`gh api` での登録など）は点検にも映らない（`../../scripts/autopilot-check.py` の docstring の「守らない」）。
 - **判定役が中で走らせる `Bash`**（Formal Checker の検査器・`python3 -c` など）——点検の一覧に無い。拒まれれば判定できなかったになり、その周は抜けない。
 - **分類器・ガードが実際にどの操作を止めるか**——起動時の点検は settings だけを照合し、止まりうる操作を並べるだけである（`../../scripts/autopilot-check.py` の docstring の「守らない」）。

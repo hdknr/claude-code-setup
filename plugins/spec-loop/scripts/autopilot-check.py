@@ -106,13 +106,13 @@ spec-loop だけを入れた利用者に dev-loop が在るとは限らず、プ
 - **要対処があれば 1 で終える**——判定できないが一緒にあっても 1。
 - **外す宣言の無い正本で TLC が無ければ、TLC の項目を要対処にする**（`check-tlc.py` の 1）——単位を進める前に利用者に見せる。
 - **外す宣言の有る正本では、TLC の項目を要対処にしない**——TLC を確かめず、人が見る項目にする。
-- **拒むべき操作が allow に当たれば要対処にする**——`Bash(git:*)`・`Bash(python3:*)` のような広い規則で当たっても（#1046 の受入基準）。
-- **`defaultMode` が `bypassPermissions` なら、allow に無くても拒むべき操作を要対処にする**——deny に当たらない限り通る。
+- **拒むべき操作が deny・ask に当たらずに allow に当たれば要対処にする**——`Bash(git:*)`・`Bash(python3:*)` のような広い規則で当たっても（#1046 の受入基準）。
+- **`defaultMode` が `bypassPermissions` なら、allow に無くても拒むべき操作を要対処にする**（deny・ask に当たらず、`disableBypassPermissionsMode` で落とされていないとき）——deny に当たらない限り通る。
 - **拒むべき操作が deny に当たれば、allow・ask に当たっても良いにする**——deny は allow より強い（#1046 の受入基準）。
 - **deny に当たらない拒むべき操作を「良い」と言わない**——allow に無い・ask に当たるは人が見る項目にし、deny の案を出す。
 - **読めない層があって deny に当たらなければ、拒むべき操作を判定できないにする**——読めない層に allow も deny もありうる。
 - **拒むべき操作を線に依らず点検する**——`commit = しない` でも（scaffold・Issue の登録は線に依らずしない）。
-- **scaffold は、点検するスクリプトと同じ形（`../..` を畳んだ絶対パス——入口のスキルがスクリプトをそう打つと決めている形）で照合する**——名前だけ（`python3 scaffold.py`）で照合すると、入口が打つ形に当たらない deny（`Bash(python3 scaffold.py:*)`）を良いと言い、打つ形を名指した deny を見落とす。
+- **scaffold は、`ops` の行と同じ形（`../..` を畳んだ絶対パス）で照合する**——名前だけ（`python3 scaffold.py`）で照合すると、入口が打つ形に当たらない deny（`Bash(python3 scaffold.py:*)`）を良いと言い、打つ形を名指した deny を見落とす。
 
 守らない:
 
@@ -124,7 +124,8 @@ spec-loop だけを入れた利用者に dev-loop が在るとは限らず、プ
 - **flag の層は点検を走らせたセッションのもの**——外側のループが `claude -p` を別の `--settings` で起動するなら、`--flag-settings` で渡さない限り映らない。`--permission-mode`・`--allowedTools` はどちらにしても見ない。
 - **起動の後に設定が変わること**——点検は起動のときの 1 回。
 - **拒むべき操作の照合の網羅**——`Bash(<操作>:*)` の形の近似なので、`git push origin --tags`・`git push --follow-tags`・
-  相対パスや `cd` してから呼ぶ scaffold・scaffold のスキルの本文の形（`<base>/../../scripts/scaffold.py`。`..` を畳まない）・`gh api` での Issue の登録は、
+  相対パスや `cd` してから呼ぶ scaffold・scaffold のスキルの本文の形（`<base>/../../scripts/scaffold.py`。`..` を畳まない——入口のスキルの「畳む」決まりは `ops` の行と spec-review・feasibility の
+  スクリプトに掛かり、scaffold には掛からないので、入口が決まりを破って scaffold を打つなら、この形がいちばんありうる）・`gh api` での Issue の登録は、
   deny の案に当たらず、点検にも映らない。
 - **deny が実際にどの起動の形でも効くか**——自動モード・`bypassPermissions` で Claude Code が deny の規則を守るかは試さない。点検は settings の規則を読むだけ。
 - **プラグインを更新したあとの scaffold の deny**——scaffold は版のディレクトリを含む絶対パスで照合するので、版を名指した deny は更新した版に当たらない（allow の規則と同じ。入口のスキルの「守らないもの」）。

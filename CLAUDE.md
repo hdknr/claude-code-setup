@@ -173,7 +173,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/autopilot/` - autopilot の**入口**（#849。`/spec-loop:autopilot <版> [--lines]`）。1 回の起動で台帳の次の 1 単位（仕様レビューの周の 1 段か feasibility の 1 回）だけを進める。
       **`AskUserQuestion` は台帳が無いときの起動時の確認でだけ使い**、各起動は線に従う。**`stopped`・`done` なら何もせず台帳も書き換えない**。素のスキルとして張れないのは同上
     - `scripts/autopilot-check.py` - autopilot の**線の検査**（項目と値の一覧はここが正）と、線から決まる周で使う操作の**権限の点検**（#849）。
-      **入口がしない操作（`git tag`・`git push --tags`・`gh issue create`・`scaffold.py`）を settings が拒むか（deny か）も点検し、allow に当たれば要対処にする**（#1046）。
+      **入口がしない操作（`git tag`・`git push --tags`・`gh issue create`・`scaffold.py`）を settings が拒むか（deny か）も点検し、deny・ask に当たらずに allow に当たれば要対処にする**（#1046）。
       **設定の層と許可の判定は dev-loop の `check-unattended-env.py` の写し**で、テストが突き合わせる。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-check.py`）
     - `skills/formal-baseline/` - **レビューをせずに、今の仕様から形式検査のモデルを組んで `spec/formal/<対象>/` に基準として残す**入口（#1031。`/spec-loop:formal-baseline`）。
       Formal Checker だけを別ティアで呼び、渡し方と残し方は spec-review の手順 3 を指す（写さない）。**作業中の版がリリース済みなら書かず、反例が出たらモデルを残して振り分けずに止まる**。
