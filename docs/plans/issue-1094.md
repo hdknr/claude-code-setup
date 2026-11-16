@@ -27,6 +27,8 @@
 - `scripts/test-check-screens.py` — profile の試料・変異・原本との突き合わせ
 - `scripts/test-write-screens.py` — profile を選んだ `init` → `add` → 検査・雛形・変異
 - `CLAUDE.md` — プロジェクト構成の screen-spec の行（profile）
+- `plugins/screen-spec/scripts/build-mock.py` — 見出し行の照らし合わせに案件の profile の列を足す（範囲を広げた: 2 パス目の後に main を取り込んだら #1095 の生成器が入っており、profile の列を持つ案件で「見出し行が決まりと違う」と止まった）
+- `scripts/test-build-mock.py` — profile web-spa の案件の試料と変異（同上）
 - `docs/plans/issue-1094.md` — この計画
 
 触らない:
@@ -69,11 +71,11 @@
 
 ## デプロイ経路
 
-main へのマージで、プラグインの配布（カタログ。screen-spec 0.3.0）。公開ページ（`docs/`）は計画ファイルのほか触らない。
+main へのマージで、プラグインの配布（カタログ。screen-spec 0.4.0）。公開ページ（`docs/`）は計画ファイルのほか触らない。
 
 ## 版の上げ方
 
-screen-spec を main の先端の 0.2.0 から **0.3.0**（minor——profile の追加）。`marketplace.json`・`plugin.json`・2 つの `SKILL.md`（2 行 1 組）。
+screen-spec を main の先端の 0.3.0（#1095 が先に上げた）から **0.4.0**（minor——profile の追加）。`marketplace.json`・`plugin.json`・2 つの `SKILL.md`（2 行 1 組）。
 並行する #1095 も screen-spec を触るので版が衝突しうる——cruise の `references/parallel.md` の「版とマージの順」のとおり、親はマージの直前に取り込みと上げ直しを頼む
 （取り込んだら版を main の先端から minor で 1 つ上げ、`check-plugin-versions.py`・`skill-metrics.py --check` を回して push し、PR 側の CI を見る）。
 
@@ -94,6 +96,7 @@ screen-spec を main の先端の 0.2.0 から **0.3.0**（minor——profile �
 | B9 | 定数の写しが `references/profiles.md`・`tables.md` と一致し、`profiles/` のディレクトリと定数の profile が一致する | 列・小見出し・節の名前・言い回し・決める人 | テストが突き合わせる |
 | B10 | 各項目を誰が決めるか（共有の Q&A 表か `spec/qa-dev.csv` か）が書き方の決まりに書いてある | `references/profiles.md` | テストが表を読む |
 | B11 | 歯止めが全部緑（版 3 種類・description・指し先・収録） | `check-all.py`（順番待ち越し） | `check-all.py` |
+| B12（取り込みで広げた） | profile web-spa の案件（パス・種類の列）でも `build-mock.py` がモックを作り、パスを埋め込まない | 設定の profile・v1 と v2 の表 | 見出し行を決まりの列＋profile の列で照らす。テスト（試料と変異） |
 | X1 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方 × 1・2 パス目に渡す（2 パス目が「該当なし」の周は 1 パス目の 2 つ） | — | 再開点で記録 |
 
 **証明できないもの（未証明）**: スキルの本文どおりにモデルが動くか（`init` で profile を推して訊く）——スクリプトで再現したテストで確かめる（Eval は回さない）。
@@ -128,6 +131,12 @@ screen-spec を main の先端の 0.2.0 から **0.3.0**（minor——profile �
 - `/code-review` 1 パス目: 通した——指摘 8 件（CR1-1〜CR1-8。high。委譲文は貼った）
 - 手順 4 への差し戻し: あり（直す: CR1-1・CR1-2）
 - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方
+- 1 パス目の指摘対応のコミット: `d20b7fc`（`git diff f7afc34` は非 0——2 パス目を回した）
+- Verifier 2 パス目: 通した——反証 0 件（verifier.md 185 行を報告、wc -l と一致）
+- `/code-review` 2 パス目: 通した——指摘 8 件（CR2-1〜CR2-8。high。委譲文は貼った）。直すの行は 0 件
+- 狭いパス: 該当なし（2 パス目で直した行が 0 件）
+- main の取り込み（PR の前）: #1095（screen-spec 0.3.0・build-mock.py）が先にマージされた。README・CLAUDE.md・2 つの JSON の description が衝突——塊ごとに両側を合わせて解いた。版は 0.4.0 に上げ直した
+- 取り込みで広げた範囲: `build-mock.py` が profile の列を持つ案件で止まる（B12）——直した。直しの差分は関門を通していないので、狭いパスと同じ形の Verifier を 1 回当てる
 - test-check-screens（run-serial 越し）: 試料 123・変異 100・references の崩し 28——OK。test-write-screens（同）: 試料 43・変異 36・雛形の崩し 14・references の崩し 6——OK
 
 ## 既知の限界・決着済みの論点
@@ -150,3 +159,18 @@ screen-spec を main の先端の 0.2.0 から **0.3.0**（minor——profile �
 | CR1-6: 設定の profile が誤っているとき、正しい見出し行まで違反に出す | 示せる | 無し | 残課題 |
 | CR1-7: 種別が未決定の画面で、空のパスを必須の欄の空に出す（3 は変わらない） | 示せる | 無し | 残課題 |
 | CR1-8: 表が 1 つも無いと、誤った profile の設定を見ない（0） | 示せない（走らせていない） | 無し | 残課題 |
+
+### 2 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| Verifier 2 パス目: 反証 0 件（テストは run-serial の待ちで未実行。code-review が同じテストを run-serial 越しに回して OK——試料 125・変異 102・references の崩し 28） | — | — | — |
+| CR2-1: 節の冒頭が `N/A。実現方式が未定` なら、後ろに書き始めた小見出しが空でも見ない | 示せる | 無し（決めたこと「`N/A。実現方式が未定` で始まれば小見出しを求めない」のとおり） | 残課題 |
+| CR2-2: 4 字下げのコードブロック・setext の見出しの中の言い回しも方式が未定と読む | 示せる（作為的な形） | 無し | 残課題 |
+| CR2-3: `N/A.`・`N/A．` の句点違いを言い回しと読まず `未定` を未決定にする | 示せる | 無し（言い回しは `N/A。実現方式が未定`） | 残課題 |
+| CR2-4: `（N/A。実現方式が未定）` のセルは伏せるが値の決まりには当てる（形の違反） | 示せる | 無し | 残課題 |
+| CR2-5: profile の節の後ろに別の `##` の節があっても通す | 示せる | 無し（B4 の末尾は「`## 未決の論点` の後ろ」） | 残課題 |
+| CR2-6: 別の profile の名前の節が残っていても何も言わない | 示せる | 無し | 残課題 |
+| CR2-7: `add` のパスの受理と見出し行の組み立てが検査の写し | 示せない（食い違いは起きていない） | 無し | 残課題 |
+| CR2-8: 小見出しの本文の正規化と空・N/A の判定が core の節の写し | 示せない | 無し | 残課題 |
+| check-all（`d20b7fc`）: 86 本のうち失敗 1——check-version-bump（main に #1095 が screen-spec 0.3.0 で入った） | 示せる | B11 | 直す——PR の前に main を取り込み、版を 0.4.0 に上げ直す |
