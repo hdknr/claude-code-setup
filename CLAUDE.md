@@ -203,13 +203,17 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
       **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
   - `screen-spec/` - 画面設計書を spec-loop とは別に持つプラグイン（#1081。**spec-loop の決まりに従い、spec-loop は screen-spec に依存しない**。
-    いまは骨組みと表の検査だけで、スキル（`init`・`add`）・profile・UI モックの生成は後の段——#1093〜#1096）
+    いまは骨組みと表の検査と UI モックの生成器で、スキル（`init`・`add`）・profile・モックの差分の印は後の段——#1093・#1094・#1096）
     - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・検査と終了コードは `tables.md`、散文の仕様書の節は `prose.md`、
-      対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`）
+      対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`）
     - `scripts/check-screens.py` - 画面の表と散文の仕様書を、**spec-loop の重ね方（`merge-versions.py` の `merge`）で重ねた全体**に当てる検査（#1092。
       表どうし・入口から辿れること・遷移の無いボタン・Q&A の根拠・成果物の表への参照・未決定の印・散文の節）。**spec-loop の決まりは写さずに読み込み**（Q&A の番号の形・未決定の印・成果物の表の置き場所も）、
       **検査の前に spec-loop の版が対応の範囲かを確かめて、外なら 4 で止まる**。**ファイルを書かず、Q&A の番号を振らない**（起票の候補を出すだけ）。
       守る／守らないは docstring を正とする。テストは `scripts/test-check-screens.py`）
+    - `scripts/build-mock.py` - 画面の表から **UI モック（HTML 1 枚）を生成する**（#1095。`check-screens.py` を読み込み、同じ重ね方の表から `<docs の親>/build/mock/v<n>/index.html` を書く——commit しない）。
+      **外を読まず**、表は許可した列だけを JSON で埋め込み、**どのセルからも内部の層の番号（`D-`）を外す**。描き方の差し替えは版の外の `screen-spec/renderers/<画面ID>.js` で、
+      **版の中に `renderers` のディレクトリが在れば止める**。版・表の出どころ・生成器の版・描き方のファイルのコミットを書き込む。**表の検査の結果に依らず作る**。
+      決まりの原本は `references/mock.md`、守る／守らないは docstring を正とする。テストは `scripts/test-build-mock.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -383,6 +387,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体は `plugins/screen-spec/scripts/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べて走らせ**（spec-loop の重ね方を読み込むので）、
     #1092 の受入基準の陽性対照・陰性対照・実行の前後で正本が変わらないこと（Q&A の番号を振らない）と、**本体の定数が `plugins/screen-spec/references/` の原本と一致すること**を見る。
     spec-loop の版の範囲は写しの `plugin.json` を書き換えて、プラグインのキャッシュの形は一時の設定のディレクトリ（`CLAUDE_CONFIG_DIR`）に作って当てる——利用者の `~/.claude` は読まない
+  - `test-build-mock.py` - screen-spec の UI モックの生成器（#1095）の回帰テスト（変異テストを含む）。**本体は `plugins/screen-spec/scripts/` にある**。
+    **引数なし（CI）は文字列と印で決まる部分**——一時の git リポジトリの正本で生成し、埋め込んだ表を表と突き合わせ、外を読まない・印・版の中の描き方で止まる・`D-` と許可の外の列が出ない・書くのは出力の 1 ファイルだけ、と
+    **本体の定数が `references/mock.md` と一致すること**を見る。**`--browser` は手元で回す部分**——ヘッドレスの Chrome を `node` の組み込みの WebSocket で動かし（依存は足さない）、
+    ネットワークを切って遷移の表の手順を踏み、本体を壊したモックで NG になる陽性対照も回す。**CI からは呼ばない**（Chrome が無い）——結果を PR に貼る。道具が無ければ 3
   - `test-check-review-record.py` - spec-loop の仕様レビューの記録の数え直し（#1044）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数（効く重さ・上限の数える値と数え直しの判断）が `references/spec-exit.md` と一致することも見る**
   - `test-check-formal-rerun.py` - spec-loop の保存した TLC のモデルの走らせ直し（#1044）の回帰テスト（変異テストを含む）。
