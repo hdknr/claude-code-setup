@@ -17,6 +17,8 @@ spec-loop のスクリプトを読み込むので、一時ディレクトリに 
 4. **雛形が `references/prose.md` の「雛形」に合う**（節の名前と順・印・未決定の印と Q&A の番号と「決定」「確定」が無い・差し込み）。崩すと落ちることも見る。
 5. **本体の定数が `references/tables.md` の原本と一致する**（写しのずれ。崩すと落ちることも見る）。
 6. **リポジトリの外で単体で動く**——どの実行も `python3 -I`。spec-loop を隣に置かない形（`--spec-loop`）も当てる。
+7. **profile（#1094）**——`init --profile web-spa` → `add --path` の直後に検査が 0（表の見出し行に profile の列・共通仕様と仕様書に profile の節）。
+   `--path` の要る・要らない・形、`未設定` の案件で `--path` を受けないこと、profile の節の雛形（`profiles/web-spa/`）が決まりに合うこと（崩すと落ちることも見る）。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書き、`HOME` を一時ディレクトリにし、`CLAUDE_CONFIG_DIR`・`SCREEN_SPEC_SPEC_LOOP` を外す。
 
@@ -55,6 +57,7 @@ DIR = None  # 試料の値が DIR ならディレクトリだけを作る
 
 
 def add(name: str = "受注一覧", kind: str = "top", **extra: str) -> list[str]:
+    """`add` の引数。`path` は `--path`（profile web-spa のパス）。"""
     values = {"name": name, "kind": kind, "user": "担当者", "purpose": "受注を探す", "can": "一覧と絞り込み", "basis": "業務ルール: 担当者が受注を探す"}
     values.update(extra)
     argv = ["add"]
@@ -83,6 +86,13 @@ V1_TWO = {  # 手で置いた v1（画面 2 つ・項目と遷移つき）
     SD + "S-001.md": doc("S-001", "受注一覧"),
     SD + "S-002.md": doc("S-002", "受注登録"),
 }
+V1_WEB_SPA = {  # 手で置いた v1（profile web-spa。案件の雛形は無い）
+    SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n") + "S-001,受注一覧,top,,担当者,記入中,,探す,一覧,,,S-001.md,業務,/orders\n",
+    SD + "data/screen-items.csv": I_HEAD,
+    SD + "data/transitions.csv": T_HEAD.replace(",根拠\n", ",根拠,種類\n"),
+    SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"),
+    SD + "S-001.md": doc("S-001", "受注一覧") + (PLUGIN / "profiles" / "web-spa" / "spec.md").read_text(encoding="utf-8"),
+}
 REMOVE_S002 = "種類,対象,理由\n画面,S-002,使わない\n遷移,T-001,使わない\n項目,I-001,使わない\nファイル,requirements/screens/S-002.md,使わない\n"
 INFRA = "項目,決定,理由,費用への影響,水準,根拠,状態\nフロントエンド,React（SPA）,既存の資産,無し,,Q-F-001,決定\n"
 QA = QA_HEAD + "Q-R-001,要求確定,質問,A: はい / B: いいえ,A,理由,未回答,—,確認中,\nQ-F-001,実現性・コスト,質問,A: はい / B: いいえ,A,理由,A,shared/infra.csv,反映済み,A は安い\n"
@@ -94,7 +104,7 @@ QA_DEV = QA_HEAD + "D-S-001,仕様レビュー,質問,A: はい / B: いいえ,A
 CASES: list[tuple] = [
     # ---- U1・U2・U3: 空の案件に init → add
     ("empty-init-add", {"v1": DIR}, [
-        (["hint"], 0, "このプラグインにはまだ無い——未設定 にする"),
+        (["hint"], 0, "profile: web-spa"),
         (["init"], 0, "画面IDの接頭辞: S-、profile: 未設定"),
         (add(), 0, "画面ID: S-001"),
     ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件"), INIT_FILES + added("S-001")[1:],
@@ -164,7 +174,28 @@ CASES: list[tuple] = [
      None, INIT_FILES + added("S-001")[1:], {SD + "data/screens.csv": "S-001,受注一覧,top,"}),
     ("place-blocked-writes-nothing", {**V1_TWO, SD + "wireframes": "ファイル\n"},
      [(add("設定", "setting"), 3, "置き場所に書けない——何も書いていない")], None, [], {}),
-    ("unknown-profile", {"v1": DIR}, [(["init", "--profile", "web-spa"], 2, "profile 'web-spa' はこのプラグインに無い")], None, [], {}),
+    ("unknown-profile", {"v1": DIR}, [(["init", "--profile", "desktop"], 2, "profile 'desktop' はこのプラグインに無い")], None, [], {}),
+    # ---- profile（#1094）
+    ("web-spa-init-add", {"v1": DIR}, [
+        (["init", "--profile", "web-spa"], 0, "profile: web-spa"),
+        (add(path="/orders"), 0, "画面ID: S-001"),
+    ], (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件"), INIT_FILES + added("S-001")[1:],
+     {SD + "data/screens.csv": S_HEAD.replace(",根拠\n", ",根拠,パス\n") + "S-001,受注一覧,top,,担当者,下書き,,受注を探す,一覧と絞り込み,,,S-001.md,業務ルール: 担当者が受注を探す,/orders\n",
+      SD + "data/transitions.csv": T_HEAD.replace(",根拠\n", ",根拠,種類\n"),
+      SD + "settings.csv": SETTINGS.replace("未設定", "web-spa"), SD + "common.md": "\n## 実現方式: web-spa\n",
+      SD + "templates/spec.md": "## 未決の論点", SD + "S-001.md": "\n## 実現方式: web-spa\n"}),
+    ("web-spa-add-without-path", {"v1": DIR}, [(["init", "--profile", "web-spa"], 0, ""), (add(), 2, "--path（パス）が要る")], None, INIT_FILES, {}),
+    ("web-spa-add-tab-without-path", {"v1": DIR}, [
+        (["init", "--profile", "web-spa"], 0, ""), (add(path="/orders"), 0, "S-001"), (add("明細", "tab", parent="S-001"), 0, "画面ID: S-002"),
+    ], (0, "違反 0 件・必須の欄が空 0 件"), None, {SD + "data/screens.csv": "S-002,明細,tab,S-001,担当者,下書き,,受注を探す,一覧と絞り込み,,,S-002.md,業務ルール: 担当者が受注を探す,\n"}),
+    ("web-spa-add-undecided-path", {"v1": DIR}, [(["init", "--profile", "web-spa"], 0, ""), (add(path="N/A。実現方式が未定"), 0, "S-001")],
+     (0, "違反 0 件・必須の欄が空 0 件・未決定 0 件"), None, {}),
+    ("web-spa-add-bad-path", {"v1": DIR}, [(["init", "--profile", "web-spa"], 0, ""), (add(path="orders"), 2, "パス 'orders' は / で始まらない")], None, INIT_FILES, {}),
+    ("unset-add-with-path", {"v1": DIR}, [(["init"], 0, ""), (add(path="/orders"), 2, "パスの列は無い")], None, INIT_FILES, {}),
+    ("web-spa-plugin-template-when-none", {**V1_WEB_SPA}, [(add("設定", "setting", path="/settings"), 0, "<plugin>/templates/spec.md")],
+     (1, "S-002: 入口の画面から遷移で辿れない"), None, {SD + "S-002.md": "\n## 実現方式: web-spa\n"}),
+    ("settings-unknown-profile", {**V1_TWO, SD + "settings.csv": SETTINGS.replace("未設定", "desktop")}, [(add("設定", "setting"), 3, "profile 'desktop' はこのプラグインに無い")],
+     None, [], {}),
     ("settings-bad-prefix", {**V1_TWO, SD + "settings.csv": "項目,値\n画面IDの接頭辞,x\nprofile,未設定\n"}, [(add(), 3, "settings.csv: 画面IDの接頭辞 'x'")], None, [], {}),
     ("spec-file-taken", {**V1_TWO, SD + "S-003.md": doc("S-003", "残り")}, [(add("設定", "setting"), 3, "雛形の置き場所が使われている")], None, [], {}),
     ("spec-loop-out-of-range", {"v1": DIR}, [(["init", "<old>"], 4, "対応の範囲")], None, [], {}),
@@ -329,7 +360,7 @@ def sections(text: str) -> list[tuple[str, list[str]]]:
 
 def section_problems(text: str) -> list[str]:
     """節の名前と順・表で持つ節は印だけ・散文の節は空でない。"""
-    found = sections(text)
+    found = [(h, lines) for h, lines in sections(text) if not h.startswith(CHECKS.PROFILE_SECTION)]  # profile の節は profile_template_problems
     problems = []
     if [h for h, _ in found] != [h for h, _ in CHECKS.SECTIONS]:
         problems.append(f"節が {[h for h, _ in found]}")
@@ -364,6 +395,41 @@ def template_problems(spec: str, common: str) -> list[str]:
     if listed is None or names != listed.group(1).split("・"):
         problems.append(f"共通仕様の雛形の節 {names} が references/prose.md の「共通仕様」と違う")
     return problems
+
+
+def profile_template_problems(fragments: dict[str, str]) -> list[str]:
+    """profile の節の雛形（`profiles/<profile>/`）——節の見出し・方式が未定の言い回し・方式が決まったら書く小見出しの一覧・印と番号と語（#1094）。"""
+    problems = []
+    for profile, parts in sorted(fragments.items()):
+        for name, text in sorted(parts.items()):
+            label = f"profiles/{profile}/{name}"
+            if not text.startswith(f"\n## {CHECKS.PROFILE_SECTION}{profile}\n"):
+                problems.append(f"{label} が空行と ## {CHECKS.PROFILE_SECTION}{profile} で始まらない")
+            lines = CHECKS.Checker.without_comments(text)
+            body = "\n".join(line for line in lines if not line.startswith("## ")).strip()
+            if not CHECKS.undecided_profile(body):
+                problems.append(f"{label} の中身が N/A。実現方式が未定 でない: {body!r}")
+            want = CHECKS.PROFILES.get(profile, {}).get("screen" if name == "spec.md" else "common", None)
+            listed = re.findall(r"^### (.+)$", "\n".join(CHECKS.COMMENT.findall(text)), flags=re.MULTILINE)
+            if want is None or listed != want:
+                problems.append(f"{label} の書く小見出しの一覧 {listed} が check-screens.py の PROFILES と違う")
+            if SPEC_EXIT.find_markers(CHECKS.mask_undecided(text)):
+                problems.append(f"{label} に未決定の印がある")
+            if QA_NUMBER.search(text):
+                problems.append(f"{label} に Q&A の番号がある")
+            for word in ("決定", "確定"):
+                if word in text:
+                    problems.append(f"{label} に「{word}」がある")
+    return problems
+
+
+PROFILE_TEMPLATE_MUTATIONS = [
+    ("見出しを変える", "spec.md", "## 実現方式: web-spa\n", "## 方式: web-spa\n"),
+    ("言い回しを変える", "spec.md", "\nN/A。実現方式が未定\n", "\nN/A。あとで\n"),
+    ("小見出しを落とす", "spec.md", "### 一覧の送り方\n", ""),
+    ("共通仕様の小見出しを変える", "common.md", "### アプリの外枠\n", "### 外枠\n"),
+    ("未決定の印を置く", "common.md", "\nN/A。実現方式が未定\n", "\nN/A。実現方式が未定\nTBD\n"),
+]
 
 
 # (名前, 雛形, 壊す前, 壊した後)
@@ -447,10 +513,28 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("Q&A の番号の形を見ない", "    if any(shape.fullmatch(sample) for shape in (qa.NUMBER, qa.INTERNAL_NUMBER)):", "    if False:", "prefix-looks-like-qa"),
     ("未決定の印を見ない", "    if docs.design.spec_exit.find_markers(sample):", "    if False:", "prefix-has-marker"),
     ("書けない置き場所を書く前に見ない", "        if blocked:\n", "        if False:\n", "place-blocked-writes-nothing"),
-    ("表の見出し行を見ない", "        if docs.whole.headers[path] != checks.COLUMNS[path]:", "        if False:", "bad-header-refused"),
+    ("表の見出し行を見ない", "        if docs.whole.headers[path] != columns(path, profile):", "        if False:", "bad-header-refused"),
     ("書く前に符号にしない", "            data = {path: text.encode(\"utf-8\") for path, text in files.items()}", "            data = {path: text for path, text in files.items()}", "unencodable-keeps-table"),
     ("成果物の表の番号と重ねてよい", "    if prefix in taken:", "    if False:", "prefix-collides-feature"),
-    ("profile を確かめない", "    if profile != UNSET and profile not in profiles():", "    if False:", "unknown-profile"),
+    ("profile を確かめない", "    if profile != UNSET and (profile not in profiles() or profile not in checks.PROFILES):", "    if False:", "unknown-profile"),
+    # ---- profile（#1094）
+    ("profile の列を見出し行に入れない", "files = {path: table(columns(path, profile), []) for path in checks.TABLES}",
+     "files = {path: table(checks.COLUMNS[path], []) for path in checks.TABLES}", "web-spa-init-add"),
+    ("共通仕様に profile の節を足さない", "files[COMMON] = with_profile((TEMPLATES / \"common.md\").read_text(encoding=\"utf-8\"), profile, \"common.md\")",
+     "files[COMMON] = (TEMPLATES / \"common.md\").read_text(encoding=\"utf-8\")", "web-spa-init-add"),
+    ("案件の雛形に profile の節を足さない", "files[SPEC_TEMPLATE] = with_profile((TEMPLATES / \"spec.md\").read_text(encoding=\"utf-8\"), profile, \"spec.md\")",
+     "files[SPEC_TEMPLATE] = (TEMPLATES / \"spec.md\").read_text(encoding=\"utf-8\")", "web-spa-init-add"),
+    ("プラグインの雛形に profile の節を足さない", "        template = with_profile((TEMPLATES / \"spec.md\").read_text(encoding=\"utf-8\"), profile, \"spec.md\")",
+     "        template = (TEMPLATES / \"spec.md\").read_text(encoding=\"utf-8\")", "web-spa-plugin-template-when-none"),
+    ("パスを求めない", "        if not path_value and kind not in checks.CHILD_KINDS:", "        if False:", "web-spa-add-without-path"),
+    ("tab にもパスを求める", "        if not path_value and kind not in checks.CHILD_KINDS:", "        if not path_value:", "web-spa-add-tab-without-path"),
+    ("パスの形を見ない", "        if (path_value and not path_value.startswith(\"/\")", "        if (False and not path_value.startswith(\"/\")", "web-spa-add-bad-path"),
+    ("方式が未定のパスを形に当てる", "and not checks.undecided_profile(path_value)\n", "\n", "web-spa-add-undecided-path"),
+    ("未設定でパスを受ける", "    elif path_value:\n        raise ValueError(f\"profile が", "    elif False:\n        raise ValueError(f\"profile が", "unset-add-with-path"),
+    ("設定の知らない profile を通す", "    if profile != UNSET and profile not in checks.PROFILES:\n        raise Refused", "    if False:\n        raise Refused",
+     "settings-unknown-profile"),
+    ("見出し行を profile の列なしで比べる", "        if docs.whole.headers[path] != columns(path, profile):", "        if docs.whole.headers[path] != checks.COLUMNS[path]:",
+     "web-spa-init-add"),
     ("spec-loop の版を確かめない", "        shown = checks.check_version(spec_loop)", "        shown = '?'", "spec-loop-out-of-range"),
     ("版が無いのを見ない", "            if not self.versions.find_versions(docs, []):", "            if False:", "no-version"),
     ("雛形の置き場所が使われていても書く", "    if there:\n        raise Refused(f\"画面ID", "    if False:\n        raise Refused(f\"画面ID", "spec-file-taken"),
@@ -487,6 +571,19 @@ def main() -> int:
             broken[which] = templates[which].replace(before, after)
             check(f"崩すと落ちる: {name}", bool(template_problems(broken["spec"], broken["common"])))
 
+        fragments = {d.name: {f.name: f.read_text(encoding="utf-8") for f in sorted(d.glob("*.md"))}
+                     for d in sorted((PLUGIN / "profiles").iterdir()) if d.is_dir()}
+        problems = profile_template_problems(fragments)
+        check("profile の節の雛形が決まりに合わない", not problems, "; ".join(problems))
+        check("profile の節の雛形が web-spa の spec.md・common.md でない", sorted(fragments.get("web-spa", {})) == ["common.md", "spec.md"], str(sorted(fragments)))
+        for name, which, before, after in PROFILE_TEMPLATE_MUTATIONS:
+            text = fragments["web-spa"][which]
+            if text.count(before) != 1:
+                check(f"崩すと落ちる: profile の雛形: {name}", False, f"崩す箇所が {text.count(before)} 回現れる")
+                continue
+            broken = {**fragments, "web-spa": {**fragments["web-spa"], which: text.replace(before, after)}}
+            check(f"崩すと落ちる: profile の雛形: {name}", bool(profile_template_problems(broken)))
+
         module = load("write_screens_for_test", PLUGIN / "scripts" / TARGET)
         tables = (REFS / "tables.md").read_text(encoding="utf-8")
         problems = reference_mismatches(module, tables)
@@ -515,7 +612,8 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・雛形の崩し {len(TEMPLATE_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・雛形の崩し {len(TEMPLATE_MUTATIONS) + len(PROFILE_TEMPLATE_MUTATIONS)} 件・"
+          f"references の崩し {len(REFERENCE_MUTATIONS)} 件")
     return 0
 
 
