@@ -2,7 +2,7 @@
 
 **利用者が居る周**（`/dev-loop:dev-loop 1101`・2026-11-16）。cruise の台帳で回す周ではない。
 
-直す線: `既定`（出所: `.claude/dev-loop.md` に `直す線:` の行が無い。この周は利用者が居るが、訊く前に既定で書いておき、関門の指摘が出たら手順 3 のとおり訊く）。
+直す線: `既定`（出所: 手順 3 の回答——`.claude/dev-loop.md` に `直す線:` の行が無いので `AskUserQuestion` で訊き、利用者が `既定` を選んだ・2026-11-16）。
 版の上げ方: `dev-loop` を **minor**（線で推奨に回せる範囲を広げる——能力の追加）。着手時の main は 2.1.0 なので 2.2.0。
 
 Issue 本文（外部入力）から読んだ要件: `マージ前の判断 = 推奨で決めて起票` の線で、後退を示す狭いパスの指摘は今まで一律に止まっていた。
@@ -86,8 +86,11 @@ PR #1088（小さく直せて陽性対照で確かめられる後退）と PR #1
 ## 関門の進捗（再開点）
 
 - **周の在り処**: ブランチ `issue/1101-absent-fix-regression`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1101`・起点 `8aaf97ec`・base（`origin/main` の merge-base）`8aaf97ecc19024ad0c472c7121dff08c9bbb364a`。
-- 割り目: まだ。
-- 関門: まだ。
+- 実装のコミット: `54131e6f`（成果物の全部。計画ファイルを含む）。
+- 割り目（手順 4）: `AskUserQuestion` で訊き、利用者が **「ここで割る」** を選んだ（2026-11-16）。再開は worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1101` の中で `/clear` → `/dev-loop:dev-loop 1101`。
+- 関門: **まだ 1 つも起動していない。** 再開したら手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）から。
+  1 パス目の指摘対応の起点は、1 パス目の関門に渡す時点の HEAD をそのとき書く（再開点を書くこのコミットの後の HEAD になる）。
+- 歯止め: `check-all.py`（`54131e6f` の作業ツリー）84/84 本緑（失敗 0・飛ばし 0）。
 - 反証と差し戻し: まだ。
 - 交絡: 実験なし。
 
