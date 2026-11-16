@@ -140,6 +140,7 @@ cwd のリポジトリに対して走る（`gh` も `git` も cwd から解決�
 - **計画ファイルを head のコミットからは探さない**——worktree の作業ファイルを読む（`merge-pr.py` は未コミットと push していない worktree を止めるので、
   worktree があればその中身が head と同じである）。worktree の無い PR・head ブランチが `issue/<番号>-` で始まらない PR は `--plan` で渡す（渡さなければ 13）。
 - **`--absent` を渡し忘れると、居る周として照合する**——不在の周で線で決めた判断（`BLOCKED`）が通らず 13 で止まる（止まる側に倒れる）。
+  **ただし影響範囲（`check-gates.py` の「何を照合するか」の 5。#1047）は `--absent` が無いと見ない**——渡し忘れると、宣言した範囲・戻した範囲に触れる PR も通る（通る側に倒れる）。
 """
 from __future__ import annotations
 
