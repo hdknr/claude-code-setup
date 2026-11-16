@@ -78,6 +78,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -179,8 +180,11 @@ def has_tables(root: Path) -> bool:
 
 
 def placed(docs: Path, upto: int | None) -> bool:
-    """`upto` までの版のディレクトリのどれかに 3 つの表のどれかがあるか。"""
-    return any(has_tables(root) for _, root in versions.find_versions(docs, [])[:upto])
+    """`upto` までの版のディレクトリのどれかに 3 つの表のどれかがあるか。版の名前は `merge` と同じく git の index の綴りで読む
+    （大文字小文字を区別しない FS で、作業ツリーのフォルダの綴りだけが `V1` に変わっていても `merge` が読む `v1` を見落とさない）。"""
+    found = versions.tracked(docs)
+    index = None if found is None else found[0].get((), set())
+    return any(has_tables(root) for _, root in versions.find_versions(docs, [], index)[:upto])
 
 
 def run_screen_spec(root: Path, docs: Path, upto: int | None) -> tuple[int, list[str], str]:
@@ -188,7 +192,7 @@ def run_screen_spec(root: Path, docs: Path, upto: int | None) -> tuple[int, list
     command = [sys.executable, str(root / SCREEN_SPEC_SCRIPT), str(docs), "--spec-loop", str(PLUGIN_ROOT)]
     if upto is not None:
         command += ["--upto", str(upto)]
-    shown = " ".join(["python3"] + command[1:])
+    shown = shlex.join(["python3"] + command[1:])  # spec-review がこの行を直に打つ——空白を含むパスでも打てる形
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
     try:
         proc = subprocess.run(command, capture_output=True, text=True, check=False, env=env)

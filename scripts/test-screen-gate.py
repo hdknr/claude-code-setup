@@ -313,7 +313,7 @@ MUTATIONS = [
      "別のマーケットプレイスの記録だけなら見つからない"),
     ("--spec-loop を渡さない", GATE, ', "--spec-loop", str(PLUGIN_ROOT)]', "]", "screen-spec の 0 は 0（--spec-loop を渡す）"),
     ("--upto を渡さない", GATE, '        command += ["--upto", str(upto)]', "        pass", "--upto を screen-spec に渡す"),
-    ("画面の表が無いことを先に見ない", GATE, "    return any(has_tables(root) for _, root in versions.find_versions(docs, [])[:upto])",
+    ("画面の表が無いことを先に見ない", GATE, "    return any(has_tables(root) for _, root in versions.find_versions(docs, [], index)[:upto])",
      "    return False", "画面の表があって screen-spec が無い: 4"),
     ("表の無い screens/ も画面の表と見る", GATE, "    return any((root / table).is_file() for table in TABLES)",
      "    return any((root / table).is_file() for table in TABLES) or (root / SCREENS_DIR).is_dir()",
@@ -324,7 +324,7 @@ MUTATIONS = [
      "画面の表があって screen-spec が無い: 4"),
     ("条件 1 に画面の関門を入れない", EXIT, "screen_gate(spec_dir, docs, upto, named) if screen else (0, [])", "(0, [])",
      "条件 1: 画面の表の未定: 1"),
-    ("--docs が無いのに画面の表があっても通す", EXIT, "    if screens.has_tables(spec_dir.parent):",
+    ("--docs が無いのに画面の表があっても通す", EXIT, "    if screens.has_tables(spec_dir.resolve().parent):",
      "    if False:", "条件 1: 画面の表があるのに --docs が無い: 2"),
     ("画面の関門の 4 を条件 1 の 0 にする", EXIT, "    if screen_code:\n        return 2, notes + screen_lines",
      "    if False:\n        return 2, notes + screen_lines", "条件 1: 画面の表があって screen-spec が無い: 2"),
@@ -359,6 +359,40 @@ def main() -> int:
         check("陽性対照: 画面の関門を当てない条件 1 は、画面の表に未定が残っても 0", made.returncode == 0 and code == 0, f"merge={made.returncode} code={code}")
         code, _ = exit_module.check(work / "merged" / "shared" / "qa.csv", work / "merged" / "spec", work / "docs")
         check("同じ正本で、画面の関門を当てた条件 1 は 1", code == 1, f"code={code}")
+
+        # 2 パス目の指摘（#1097）: 仕様のディレクトリを `.` で渡しても、--docs の無い条件 1 は重ねた全体の画面の表を見て 2
+        def dot_spec_dir(spec_loop_dir: Path, work_dir: Path) -> int:
+            write_docs(work_dir / "docs", GOOD)
+            scripts = spec_loop_dir / "scripts"
+            subprocess.run([sys.executable, "-B", str(scripts / "merge-versions.py"), str(work_dir / "docs"), str(work_dir / "merged")],
+                           capture_output=True, text=True, check=True)
+            return subprocess.run([sys.executable, "-B", str(scripts / EXIT), "../shared/qa.csv", "."],
+                                  capture_output=True, text=True, cwd=work_dir / "merged" / "spec").returncode
+        dot = tmp_path / "dot"
+        code = dot_spec_dir(copy_spec_loop(dot / "plugins" / "spec-loop"), dot)
+        check("仕様のディレクトリを . で渡しても、画面の表があって --docs が無ければ 2", code == 2, f"code={code}")
+        source = (SPEC_LOOP / "scripts" / EXIT).read_text(encoding="utf-8")
+        before_dot = "screens.has_tables(spec_dir.resolve().parent)"
+        if source.count(before_dot) != 1:
+            check("変異が届いていない: . の親を解決しない", False)
+        else:
+            mutated = copy_spec_loop(tmp_path / "dot-mut" / "plugins" / "spec-loop")
+            (mutated / "scripts" / EXIT).write_text(source.replace(before_dot, "screens.has_tables(spec_dir.parent)"), encoding="utf-8")
+            code = dot_spec_dir(mutated, tmp_path / "dot-mut")
+            check("変異が生き残った: . の親を解決しない", code != 2, f"code={code}")
+
+        # 2 パス目の指摘（#1097）: 出力の「screen-spec の検査:」の行は、空白を含むパスでもそのまま打てる形
+        spaced = tmp_path / "sp ace"
+        write_docs(spaced / "docs", GOOD)
+        fake = fake_screen_spec(spaced / "fake ss", 0)
+        gate_script = copy_spec_loop(spaced / "plugins" / "spec-loop") / "scripts" / GATE
+        proc = subprocess.run([sys.executable, "-B", str(gate_script), str(spaced / "docs"), "--screen-spec", str(fake)],
+                              capture_output=True, text=True)
+        line = next((l for l in proc.stdout.splitlines() if l.startswith("screen-spec の検査: ")), "")
+        import shlex
+        argv = shlex.split(line[len("screen-spec の検査: "):]) if line else []
+        check("screen-spec の検査の行が、空白を含むパスでも 1 つの引数に読める",
+              len(argv) >= 3 and argv[1] == str(fake / "scripts" / "check-screens.py") and argv[2] == str(spaced / "docs"), line)
 
         sources = {name: (SPEC_LOOP / "scripts" / name).read_text(encoding="utf-8") for name in (GATE, EXIT)}
         for index, (name, target, before, after, killer) in enumerate(MUTATIONS):

@@ -142,7 +142,7 @@ def screen_gate(spec_dir: Path, docs: Path | None, upto: int | None, named: str 
     """画面の関門（#1097）。`docs` があれば `screen-gate.py` の `check`、無ければ重ねた全体の根に画面の表が無いことだけを見る。"""
     if docs is not None:
         return screens.check(docs, upto, named)
-    if screens.has_tables(spec_dir.parent):
+    if screens.has_tables(spec_dir.resolve().parent):  # `.` で渡されても重ねた全体の根を見る
         return screens.EXIT_UNJUDGED, [
             f"{spec_dir.parent / screens.SCREENS_DIR}: 画面の表があるのに --docs が無い——画面の関門を判定していない"
             "（--docs <docs ディレクトリ> を渡す。screen-gate.py）"]
