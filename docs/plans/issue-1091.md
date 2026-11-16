@@ -78,6 +78,16 @@ Issue の受入基準 4 つ（U1〜U4）を、不変条件と破りうる入口�
 
 一時ディレクトリに正本（`docs/v1/`・`docs/v2/` に画面の表）を置き、`merge-versions.py`・`diff-versions.py` を走らせて U1・U2 を目で見る。U3 は既存の試料（画面の表の無い正本）で 3 本の出力が main の版と同じかを比べる。
 
+### 実機確認の結果
+
+scratchpad の一時ディレクトリ（`v1091/`）で、Python 3 の本体を直に走らせた。
+
+- U1: v1 に 3 画面、v2 の `screens.csv` に `S-004` の 1 行だけ → 重ねた `screens.csv` は `S-001`〜`S-004` の 4 行。**陽性対照**: 同じ docs を main の `merge-versions.py`（ファイルの単位）で重ねると `S-004` の 1 行だけになり、v1 の画面が消えた。
+  `diff-versions.py` は `画面: 追加 1・変更 0・削除 0` と `追加 S-004 設定` だけを出し、`ファイル` の行には出ない。
+- U2: v2 の `removed.csv` に `画面,S-002,…` → 項目 `I-002` と、`S-002` を元・行き先にする遷移 `T-001`・`T-002` が消え、`diff-versions.py` が 3 つとも `削除` と出し、理由に `画面 S-002 を消した: …` を添えた。
+- U3: 画面の表の無い docs（v1・v2・removed.csv・spec_ir.json）で、main と worktree の `merge-versions.py` の出力の木（`diff -r`）・標準出力・`diff-versions.py` の出力がどれも同じ。`check-signoff.py` は既存の試料の期待値（88 件）がそのまま通る。
+- 交絡: U3 は否定的な結果（変わらない）なので、同じ比べ方で画面の表のある docs では出力が変わること（U1 の陽性対照）を見て、比べ方が何を渡しても同じと言う形でないことを確かめた。
+
 ## 未解決の判断
 
 - 上の穴 2 つ（確認の Issue で利用者に渡す）。
@@ -94,6 +104,8 @@ Issue の受入基準 4 つ（U1〜U4）を、不変条件と破りうる入口�
 
 - 周の在り処: ブランチ `issue/1091-screen-row-merge`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1091`・起点 `a6f8d59`・base `origin/main` → `a6f8d5981c144e459d1138edb9fda810441cff64`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 1 パス目の指摘対応の起点: `8a544f37c3951597b08d04a5c739525c0a80dc1c`（1 パス目の関門に渡した時点の HEAD）
+- 実機確認: 済み（下の「実機確認の結果」）
 
 ## 既知の限界・決着済みの論点
 
