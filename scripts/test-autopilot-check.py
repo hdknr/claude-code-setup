@@ -17,6 +17,9 @@
 1 文字変えた写しで「違う」と出ること）。線の値がスキル（`skills/autopilot/SKILL.md`）に書かれていること。点検するスクリプトの名前が実在すること。
 
 **TLC の前提の項目（#912）**: 正本の `CLAUDE.md` をテンポラリの試料に書き、TLC は偽物（絶対パスのスクリプト）で当てる——本物の TLC は走らせない。
+
+**拒むべき操作（#1046）**: Issue の受入基準の陽性対照（`Bash(git tag:*)` が allow で 1）と、deny で通ること。scaffold の deny の規則は
+**テストが本体の場所（`HERE`）から自分で組む**——本体の `refused_operations` で組むと、本体が名前を変えても試料が一緒に変わって当たってしまう。
 """
 import ast
 import contextlib
@@ -73,6 +76,16 @@ MUTATIONS = {
                                   "    if exit_code(items):\n        items.append(stoppable_item(commands))\n")],
     "TLC が無くても要対処にしない": [("        return (ACTION, label, detail,", "        return (GOOD, label, detail,")],
     "外す宣言でも TLC を確かめる": [("tlc.judge(project, autopilot=True)", "tlc.judge(project, autopilot=False)")],
+    "拒むべき操作が allow に当たっても良いにする": [('items.append((ACTION, label, f"allow に当たる（', 'items.append((GOOD, label, f"allow に当たる（')],
+    "bypassPermissions で拒むべき操作を良いにする": [('items.append((ACTION, label, f"defaultMode が bypassPermissions',
+                                             'items.append((GOOD, label, f"defaultMode が bypassPermissions')],
+    "拒むべき操作で allow・ask が deny に勝つ": [("        if deny_hits:\n", "        if deny_hits and not allow_hits and not ask_hits:\n")],
+    "deny に当たらない拒むべき操作を良いと言う": [('items.append((HUMAN, label, f"ask に当たる（', 'items.append((GOOD, label, f"ask に当たる（'),
+                                         ('items.append((HUMAN, label, "allow に無いが deny にも無い', 'items.append((GOOD, label, "allow に無いが deny にも無い')],
+    "読めない層でも拒むべき操作を判定する": [("        elif unreadable:\n", "        elif False:\n")],
+    "commit = しない で拒むべき操作を点検しない": [("    items += check_refused(stack, refused_operations())\n",
+                                        "    items += check_refused(stack, refused_operations()) if values[\"commit\"] != \"しない\" else []\n")],
+    "scaffold を名前だけで照合する": [("[f\"python3 {root / 'scaffold.py'}\"]", "[\"python3 scaffold.py\"]")],
     "判定できないを要対処より先に返す": [("    if any(item[0] == ACTION for item in items):\n        return EXIT_ACTION\n"
                                 "    if any(item[0] == UNKNOWN for item in items):\n        return EXIT_UNKNOWN\n",
                                 "    if any(item[0] == UNKNOWN for item in items):\n        return EXIT_UNKNOWN\n"
@@ -83,6 +96,7 @@ TLC_LABEL = "TLC（業務フローの形式検査）"
 GOOD_LINES = {"上限": "周 5 まで続ける", "判断が要る": "推奨を暫定で採る", "commit": "マージまで", "止まる地点": "feasibility の後"}
 ALLOW_ALL = ["Bash(python3:*)", "Bash(git switch:*)", "Bash(git pull:*)", "Bash(git add:*)", "Bash(git commit:*)",
              "Bash(git push:*)", "Bash(gh pr create:*)", "Bash(gh pr merge:*)"]
+REFUSED = ("git tag", "git push --tags", "gh issue create")  # scaffold は本体の場所から組む（docstring）
 
 
 def load_module(path: Path, name: str):
@@ -145,7 +159,7 @@ def run(mod, argv, cwd):
 
 def items_of(text: str) -> list:
     """`check` の出力の項目（区分とラベル）。"""
-    return re.findall(r"^\[([^\]]+)\] (許可: `[^`]+`|[^:]+):", text, re.M)
+    return re.findall(r"^\[([^\]]+)\] ((?:許可|拒む): `[^`]+`|[^:]+):", text, re.M)
 
 
 def scenario(mod, lg, base: Path, tag: str) -> dict:
@@ -167,6 +181,10 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
                         "  Probe.tla) echo 'Model checking completed. No error has been found.'; exit 0;;\n"
                         "  Broken.tla) echo 'Error: Invariant Inv is violated.'; exit 12;;\nesac\nexit 1\n", encoding="utf-8")
     fake_tlc.chmod(0o755)
+
+    scaffold = f"python3 {mod.HERE / 'scaffold.py'}"
+    deny_refused = [f"Bash({c}:*)" for c in (*REFUSED, scaffold)]
+    safe = {"allow": ALLOW_ALL, "deny": deny_refused}
 
     def call(argv):
         return run(mod, argv, root)
@@ -228,23 +246,42 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
     # 権限
     write_lines(GOOD_LINES)
     before = snapshot(ledger)
-    o["全部 allow"] = check_with({"allow": ALLOW_ALL})
+    o["全部 allow"] = check_with(safe)
     o["merge を deny（allow もある）"] = check_with({"allow": ALLOW_ALL, "deny": ["Bash(gh pr merge:*)"]})
     o["push を ask（allow もある）"] = check_with({"allow": ALLOW_ALL, "ask": ["Bash(git push:*)"]})
     o["allow に無い"] = check_with({"allow": ["Bash(python3:*)"]})
     o["読めない層"] = check_with({"allow": ALLOW_ALL}, broken_local=True)
     o["読めない層と deny"] = check_with({"allow": ALLOW_ALL, "deny": ["Bash(gh pr merge:*)"]}, broken_local=True)
     write_lines(GOOD_LINES | {"commit": "しない"})
-    o["しない で python3 だけ allow"] = check_with({"allow": ["Bash(python3:*)"]})
-    o["--command を足す"] = check_with({"allow": ["Bash(python3:*)"]})  # 下で --command つきと比べる
+    o["しない で python3 だけ allow"] = check_with({"allow": ["Bash(python3:*)"], "deny": deny_refused})
+    o["しない で python3 だけ allow（拒む操作の deny なし）"] = check_with({"allow": ["Bash(python3:*)"]})
+    o["--command を足す"] = check_with({"allow": ["Bash(python3:*)"], "deny": deny_refused})  # 下で --command つきと比べる
     rc, out, _ = call(["check", "3", "--flag-settings", str(flag), "--managed-settings", str(managed), "--command", "gh workflow run"])
     o["--command つき"] = (rc, items_of(out))
+
+    # 拒むべき操作（#1046）。線は全部の操作を使う GOOD_LINES に戻す
+    write_lines(GOOD_LINES)
+    o["拒む: 全部 allow・deny なし"] = check_with({"allow": ALLOW_ALL})
+    o["拒む: 全部 deny（allow もある）"] = check_with(safe)
+    o["拒む: git tag を allow（他は deny）"] = check_with({"allow": ALLOW_ALL + ["Bash(git tag:*)"], "deny": deny_refused[1:]})
+    o["拒む: git を丸ごと allow"] = check_with({"allow": ALLOW_ALL + ["Bash(git:*)"], "deny": deny_refused[2:]})
+    o["拒む: git tag を allow と deny の両方"] = check_with({"allow": ALLOW_ALL + ["Bash(git tag:*)"], "deny": deny_refused})
+    o["拒む: ask"] = check_with({"allow": ALLOW_ALL, "ask": deny_refused})
+    o["拒む: ask と deny"] = check_with({"allow": ALLOW_ALL, "ask": deny_refused, "deny": deny_refused})
+    o["拒む: bypassPermissions・deny なし"] = check_with({"defaultMode": "bypassPermissions"})
+    o["拒む: bypassPermissions・deny あり"] = check_with({"defaultMode": "bypassPermissions", "deny": deny_refused})
+    o["拒む: 読めない層と deny"] = check_with(safe, broken_local=True)
+    settings.write_text(json.dumps({"permissions": {"allow": ALLOW_ALL}}), encoding="utf-8")
+    rc, out, _ = call(["check", "3", "--flag-settings", str(flag), "--managed-settings", str(managed)])
+    o["拒む: deny の案"] = [line.strip() for line in out.splitlines() if "permissions.deny" in line]
+    o["拒む: ops に出ない"] = [c for c in call(["ops", "3"])[1].splitlines() if "scaffold" in c or c.startswith(("git tag", "gh issue"))]
     o["線の書き直しで台帳は変わる（陽性対照）"] = snapshot(ledger) != before  # 線を書き直したので変わっている（陽性対照）
     before = snapshot(ledger)
     for c in ("lines", "ops"):
         call([c, "3"])
-    check_with({"allow": ALLOW_ALL})
-    o["読むだけ"] = snapshot(ledger) == before
+    before_settings = json.dumps({"permissions": safe})
+    check_with(safe)
+    o["読むだけ"] = snapshot(ledger) == before and settings.read_text(encoding="utf-8") == before_settings
 
     # TLC の前提（#912）。許可は全部 allow にして、TLC の項目だけを動かす
     for name, text in (("宣言なし・呼び方なし", "# 正本\n"),
@@ -253,9 +290,9 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
                        ("宣言あり・呼び方なし", "業務フローの形式検査: しない\n"),
                        ("同じ宣言が 2 行", "業務フローの形式検査: しない\n業務フローの形式検査: しない\n")):
         claude_md.write_text(text, encoding="utf-8")
-        o["TLC: " + name] = check_with({"allow": ALLOW_ALL})
+        o["TLC: " + name] = check_with(safe)
     claude_md.unlink()
-    o["TLC: CLAUDE.md が無い"] = check_with({"allow": ALLOW_ALL})
+    o["TLC: CLAUDE.md が無い"] = check_with(safe)
     claude_md.write_text("業務フローの形式検査: しない\n", encoding="utf-8")
 
     # 壊れた台帳
@@ -302,9 +339,10 @@ def main() -> int:
         check("ops: PR の操作は git switch・pull・add・commit・push と gh pr create",
               pr == ["git switch", "git pull", "git add", "git commit", "git push", "gh pr create"])
         n_ops = len(sr + fe + pr) + 1
+        n_refused = len(REFUSED) + 1
         allowed = o["全部 allow"]
-        check("全部 allow（TLC を外す宣言あり）: 0、全操作が良い、TLC と止まりうる操作が人が見る",
-              allowed[0] == 0 and [s for s, _ in allowed[1]] == ["良い"] * n_ops + ["人が見る", "人が見る"]
+        check("全部 allow・拒む操作は deny（TLC を外す宣言あり）: 0、全操作と拒む操作が良い、TLC と止まりうる操作が人が見る",
+              allowed[0] == 0 and [s for s, _ in allowed[1]] == ["良い"] * (n_ops + n_refused) + ["人が見る", "人が見る"]
               and allowed[1][-2][1] == TLC_LABEL and allowed[1][-1][1] == "止まりうる操作")
         merge = o["merge を deny（allow もある）"]
         check("deny は allow より強い: 1、gh pr merge が要対処", merge[0] == 1 and ("要対処", "許可: `gh pr merge`") in merge[1])
@@ -319,6 +357,47 @@ def main() -> int:
         check("読めない層と deny: 1（要対処が先）", o["読めない層と deny"][0] == 1)
         check("しない で python3 だけ allow: 0（使わない git・PR で要対処を作らない）", o["しない で python3 だけ allow"][0] == 0
               and not any(lab.startswith("許可: `g") for _, lab in o["しない で python3 だけ allow"][1]))
+
+        def refused(key):
+            rc, items = o["拒む: " + key] if not key.startswith("しない") else o[key]
+            return rc, {lab[len("拒む: `"):-1].replace("<scripts>/", ""): st for st, lab in items if lab.startswith("拒む: ")}
+        sc = "python3 scaffold.py"
+        check("拒む: 点検する操作は git tag・git push --tags・gh issue create・scaffold（絶対パス）",
+              list(refused("全部 deny（allow もある）")[1]) == [*REFUSED, sc])
+        check("拒む: 全部 deny（allow もある）は 0 で 4 つとも良い（#1046 の受入基準 2）",
+              refused("全部 deny（allow もある）") == (0, dict.fromkeys([*REFUSED, sc], "良い")))
+        check("拒む: git tag を allow（他は deny）は 1 で git tag だけ要対処（#1046 の受入基準 1・陽性対照）",
+              refused("git tag を allow（他は deny）") == (1, {"git tag": "要対処", "git push --tags": "良い", "gh issue create": "良い", sc: "良い"}))
+        check("拒む: 全部 allow・deny なしは 1。git push:* が覆う push --tags と python3:* が覆う scaffold が要対処、残りは人が見る",
+              refused("全部 allow・deny なし") == (1, {"git tag": "人が見る", "git push --tags": "要対処", "gh issue create": "人が見る", sc: "要対処"}))
+        check("拒む: git を丸ごと allow（gh と scaffold は deny）は 1 で git tag と push --tags が要対処",
+              refused("git を丸ごと allow") == (1, {"git tag": "要対処", "git push --tags": "要対処", "gh issue create": "良い", sc: "良い"}))
+        check("拒む: allow と deny の両方なら deny が勝って 0", refused("git tag を allow と deny の両方")[0] == 0
+              and refused("git tag を allow と deny の両方")[1]["git tag"] == "良い")
+        check("拒む: ask（allow もある）は 0 で 4 つとも人が見る（許可されていない）",
+              refused("ask") == (0, dict.fromkeys([*REFUSED, sc], "人が見る")))
+        check("拒む: ask と deny は 0 で良い", refused("ask と deny") == (0, dict.fromkeys([*REFUSED, sc], "良い")))
+        check("拒む: bypassPermissions・deny なしは 1 で 4 つとも要対処",
+              refused("bypassPermissions・deny なし") == (1, dict.fromkeys([*REFUSED, sc], "要対処")))
+        check("拒む: bypassPermissions・deny ありは 0 で良い", refused("bypassPermissions・deny あり") == (0, dict.fromkeys([*REFUSED, sc], "良い")))
+        check("拒む: 読めない層と deny は良い（deny は読めない層に覆されない）",
+              set(refused("読めない層と deny")[1].values()) == {"良い"} and refused("読めない層と deny")[0] == 4)
+        check("拒む: 読めない層（deny なし）は判定できない（要対処とも良いとも言わない）",
+              {lab: st for st, lab in o["読めない層"][1] if lab.startswith("拒む: ")} != {}
+              and all(st == "判定できない" for st, lab in o["読めない層"][1] if lab.startswith("拒む: ")))
+        check("拒む: allow に無い（python3 だけ allow）は git tag・push --tags・gh issue create が人が見る、scaffold が要対処",
+              {lab: st for st, lab in o["allow に無い"][1] if lab.startswith("拒む: ")}
+              == {"拒む: `git tag`": "人が見る", "拒む: `git push --tags`": "人が見る", "拒む: `gh issue create`": "人が見る",
+                  "拒む: `python3 <scripts>/scaffold.py`": "要対処"})
+        check("拒む: commit = しない でも点検する（python3 だけ allow・deny なしで scaffold が要対処、1）",
+              refused("しない で python3 だけ allow（拒む操作の deny なし）") == (1, {"git tag": "人が見る", "git push --tags": "人が見る",
+                                                                         "gh issue create": "人が見る", sc: "要対処"}))
+        check("拒む: 良い以外の行に deny の案を出す（全部 allow・deny なしで 4 行）",
+              o["拒む: deny の案"] == [f'→ settings の permissions.deny に "Bash({c}:*)" を足す（足すのは利用者）'
+                                    for c in (*REFUSED, "python3 <scripts>/scaffold.py")])
+        check("拒む: ops には拒む操作を出さない", o["拒む: ops に出ない"] == [])
+        check("拒む: 周で使う git push は push --tags の deny に当たらない（全部 deny で git push は良い）",
+              ("良い", "許可: `git push`") in o["拒む: 全部 deny（allow もある）"][1])
         check("--command で足した操作も点検する", o["--command つき"][0] == 1
               and ("要対処", "許可: `gh workflow run`") in o["--command つき"][1] and o["--command を足す"][0] == 0)
         check("lines・ops・check は台帳を書かない（線を書き直した台帳は変わる——陽性対照）", o["読むだけ"] and o["線の書き直しで台帳は変わる（陽性対照）"])
@@ -358,8 +437,11 @@ def main() -> int:
         documented_codes = {int(m) for m in re.findall(r"^\| (\d+) \|", exits, re.M)}
         defined = {mod.EXIT_OK, mod.EXIT_ACTION, mod.EXIT_USAGE, mod.EXIT_LINES, mod.EXIT_UNKNOWN}
         check(f"終了コードの表 {sorted(documented_codes)} と定数 {sorted(defined)}", documented_codes == defined)
-        for name in mod.SPEC_REVIEW_SCRIPTS + mod.FEASIBILITY_SCRIPTS:
+        for name in mod.SPEC_REVIEW_SCRIPTS + mod.FEASIBILITY_SCRIPTS + ("scaffold.py",):
             check(f"点検するスクリプトが実在する: {name}", (SCRIPTS / name).is_file())
+        check(f"本体の拒む操作 {mod.REFUSED_OPS} とテストの REFUSED が同じ", mod.REFUSED_OPS == REFUSED)
+        for name in (*REFUSED, "scaffold"):
+            check(f"スキルの「権限の点検」に拒む操作 {name} が書かれている", f"`{name}`" in skill.split("### 権限の点検")[1].split("## ")[0])
 
         print("\n変異テスト（壊したのに観測がそろったままなら失格）")
         for i, (name, pairs) in enumerate(MUTATIONS.items()):
