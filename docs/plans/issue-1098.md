@@ -17,21 +17,28 @@
 - `plugins/spec-loop/scripts/init-mkdocs.py` — `--hook <ファイル>` でフックを `hooks/spec_loop_plugins/` に登録する（在れば変えない）。登録があるのにフックが口を持たないときに言う
 - `plugins/spec-loop/references/tree.md` — 「ドキュメントのツール」に登録の口を書く
 - `plugins/spec-loop/README.md` — `init-mkdocs.py` の行に登録の口を足す（要れば）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/spec-loop/skills/*/SKILL.md`（版の 2 行だけ）
+- `plugins/spec-loop/.claude-plugin/plugin.json`
+- `plugins/spec-loop/skills/*/SKILL.md`
 - `plugins/screen-spec/templates/mkdocs/screen_spec_pages.py` — 新設。正本に登録する薄いフック（screen-spec を見つけて、本体に渡す）
 - `plugins/screen-spec/scripts/mkdocs-pages.py` — 新設。フックの本体（表を仕様書の節に出す・版ごとにモックを生成してサイトに置く・`⚠️` の飾り）
 - `plugins/screen-spec/scripts/build-mock.py` — 仕様書へのリンクの作り方を外から渡せるようにする（サイトに置いたモックから、サイトのページを指す）
 - `plugins/screen-spec/scripts/write-screens.py` — `mkdocs` の入口（spec-loop の `init-mkdocs.py --hook` で登録する）
 - `plugins/screen-spec/references/mkdocs.md` — 新設。フックの決まりの原本（節ごとに出す行と列・モックの置き場所・screen-spec の見つけ方）
-- `plugins/screen-spec/references/prose.md`・`references/mock.md`・`references/tables.md` — 「フックは #1098」などの指し先を `mkdocs.md` に（要れば）
+- `plugins/screen-spec/references/prose.md` — 「フックは #1098」などの指し先を `mkdocs.md` に（要れば）
+- `plugins/screen-spec/references/mock.md` — 「フックは #1098」などの指し先を `mkdocs.md` に（要れば）
+- `plugins/screen-spec/references/tables.md` — 「フックは #1098」などの指し先を `mkdocs.md` に（要れば）
 - `plugins/screen-spec/skills/init/SKILL.md` — フックを登録する手順（任意の手順）と版の 2 行
 - `plugins/screen-spec/skills/add/SKILL.md` — 版の 2 行
-- `plugins/screen-spec/README.md`・`plugins/screen-spec/.claude-plugin/plugin.json`
+- `plugins/screen-spec/README.md`
+- `plugins/screen-spec/.claude-plugin/plugin.json`
 - `.claude-plugin/marketplace.json` — spec-loop と screen-spec の版、screen-spec の description
 - `scripts/test-init-mkdocs.py` — 登録の口の試料と変異
 - `scripts/test-screen-spec-pages.py` — 新設。screen-spec のフックの試料と変異
-- `scripts/test-build-mock.py`・`scripts/test-write-screens.py` — 足した引数・入口の試料（要れば）
-- `scripts/check-all.py`・`.github/workflows/plugins.yml`・`CLAUDE.md` — テストの収録
+- `scripts/test-build-mock.py` — 足した引数・入口の試料（要れば）
+- `scripts/test-write-screens.py` — 足した引数・入口の試料（要れば）
+- `scripts/check-all.py` — テストの収録
+- `.github/workflows/plugins.yml` — テストの収録
+- `CLAUDE.md` — テストの収録
 - `docs/plans/issue-1098.md` — この計画
 
 触らない:
