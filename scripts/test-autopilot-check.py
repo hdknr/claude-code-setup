@@ -259,8 +259,9 @@ def scenario(mod, lg, base: Path, tag: str) -> dict:
     rc, out, _ = call(["check", "3", "--flag-settings", str(flag), "--managed-settings", str(managed), "--command", "gh workflow run"])
     o["--command つき"] = (rc, items_of(out))
 
-    # 拒むべき操作（#1046）。線は全部の操作を使う GOOD_LINES に戻す
-    write_lines(GOOD_LINES)
+    # 拒むべき操作（#1046）。線は全部の操作を使う形に戻す——**上限だけ GOOD_LINES と違える**:
+    # 同じ線に書き戻すと、同じ秒のうちなら台帳がバイトで同じになり、下の陽性対照（線を書き直した台帳は変わる）が偽になる
+    write_lines(GOOD_LINES | {"上限": "止まる"})
     o["拒む: 全部 allow・deny なし"] = check_with({"allow": ALLOW_ALL})
     o["拒む: 全部 deny（allow もある）"] = check_with(safe)
     o["拒む: git tag を allow（他は deny）"] = check_with({"allow": ALLOW_ALL + ["Bash(git tag:*)"], "deny": deny_refused[1:]})
