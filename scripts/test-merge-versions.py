@@ -44,7 +44,9 @@
    書いている途中の想定外の例外でも書きかけを残さない。前の出力を消そうとして上がった例外も入口が 2 にする
    （トレースバックの 1 にしない）。`-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
-7. **決まりの写しがずれていない**——本体の定数が `references/versions.md` と一致する。
+7. **決まりの写しがずれていない**——本体の定数が `references/versions.md` と一致する。**行の単位で重ねる表の一覧（パス・種類・鍵の列・画面を指す列）も**（#1091）。
+10. **行の単位で重ねる画面の表**（#1091）——v2 に `screens.csv` の行を 1 つだけ置くと v1 の画面が残る（陽性対照: 一覧から外す変異で、
+   ファイルの単位で重なって v1 の画面が消える）・置き換えは前の位置に・画面を消すと項目と遷移も消える・表の形の誤りは 1。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
@@ -147,6 +149,33 @@ def with_removed(*rows: str) -> dict[str, str]:
     return {**MAIN, "v2/removed.csv": REMOVED_HEAD + "".join(rows)}
 
 
+# 行の単位で重ねる画面の表（#1091）。v1 に 3 画面・3 項目・3 遷移
+SD = "requirements/screens/data/"
+SCREENS_HEAD = "画面ID,画面名,種別,根拠\n"
+ITEMS_HEAD = "番号,画面ID,表示名,根拠\n"
+TRANS_HEAD = "番号,遷移元,遷移先,きっかけ,根拠\n"
+SCREENS_V1 = {
+    f"v1/{SD}screens.csv": SCREENS_HEAD + "S-001,一覧,list,Q-001\nS-002,詳細,detail,Q-001\nS-003,編集,form,Q-002\n",
+    f"v1/{SD}screen-items.csv": ITEMS_HEAD + "I-001,S-001,名前,Q-001\nI-002,S-002,住所,Q-001\nI-003,S-003,入力,Q-002\n",
+    f"v1/{SD}transitions.csv": TRANS_HEAD + "T-001,S-001,S-002,行クリック,Q-001\nT-002,S-002,S-003,編集,Q-002\n"
+                               "T-003,S-003,S-001,保存,Q-002\n",
+}
+# v2 に screens.csv の行を 1 つだけ足す（Issue #1091 の受入基準 1）
+SCREENS_ADD = {**MAIN, **SCREENS_V1, f"v2/{SD}screens.csv": SCREENS_HEAD + "S-004,設定,setting,Q-003\n"}
+
+
+def with_screens(*removed: str, **v2: str) -> dict[str, str]:
+    """MAIN と v1 の画面の表に、v2 の表（キーワードはファイル名の `-` を `_` にしたもの）と removed.csv の行を足す。"""
+    tree = {**MAIN, **SCREENS_V1, **{f"v2/{SD}{name.replace('_', '-')}.csv": text for name, text in v2.items()}}
+    if removed:
+        tree["v2/removed.csv"] = REMOVED_HEAD + "ファイル,requirements/b.md,要件から外した\n" + "".join(removed)
+    return tree
+
+
+def keys(r: "Result", name: str) -> list[str]:
+    return [line.split(",")[0] for line in r.text(SD + name).splitlines()[1:]]
+
+
 class Result:
     def __init__(self, code: int, output: str, tree: dict[str, bytes] | None, preexisting: str | None = None,
                  again: dict[str, bytes] | None = None, docs_intact: bool = True, leftover: list[str] | None = None,
@@ -226,6 +255,56 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: main_case(r) and r.text("requirements/mocks/order.html") == "<p>注文 v1</p>\n"
      and r.text("requirements/mocks/stock/App.jsx") == "App v2\n" and r.text("requirements/mocks/stock/index.html") == "入口 v1\n"
      and "requirements/mocks/old.html" not in r.tree),
+    # 行の単位で重ねる画面の表（#1091）
+    ("画面の表を行の単位で重ねる", SCREENS_ADD, "none", [],
+     lambda r: main_case(r) and keys(r, "screens.csv") == ["S-001", "S-002", "S-003", "S-004"]
+     and r.text(SD + "screens.csv").startswith(SCREENS_HEAD) and keys(r, "screen-items.csv") == ["I-001", "I-002", "I-003"]
+     and keys(r, "transitions.csv") == ["T-001", "T-002", "T-003"]),
+    ("画面の表の置き換えは前の位置に", with_screens(screens=SCREENS_HEAD + "S-004,設定,setting,Q-003\nS-002,詳細 v2,detail,Q-003\n"),
+     "none", [], lambda r: made(r) and keys(r, "screens.csv") == ["S-001", "S-002", "S-003", "S-004"]
+     and "S-002,詳細 v2,detail,Q-003" in r.text(SD + "screens.csv") and "S-002,詳細,detail" not in r.text(SD + "screens.csv")),
+    ("--upto 1 は v1 の画面だけ", SCREENS_ADD, "none", ["--upto", "1"],
+     lambda r: made(r) and keys(r, "screens.csv") == ["S-001", "S-002", "S-003"]),
+    ("画面を消すと項目と遷移も消える", with_screens("画面,S-002,詳細を一覧に統合した\n"), "none", [],
+     lambda r: main_case(r) and keys(r, "screens.csv") == ["S-001", "S-003"] and keys(r, "screen-items.csv") == ["I-001", "I-003"]
+     and keys(r, "transitions.csv") == ["T-003"]),
+    ("項目と遷移を行で消す", with_screens("項目,I-001,x\n", "遷移,T-003,x\n"), "none", [],
+     lambda r: made(r) and keys(r, "screens.csv") == ["S-001", "S-002", "S-003"] and keys(r, "screen-items.csv") == ["I-002", "I-003"]
+     and keys(r, "transitions.csv") == ["T-001", "T-002"]),
+    ("消した画面を指す項目を同じ版で置く", with_screens("画面,S-002,x\n", screen_items=ITEMS_HEAD + "I-004,S-002,電話,Q-003\n"),
+     "none", [], lambda r: refused(r, "同じ版で消した画面 S-002 を指す項目 I-004 を置いている")),
+    ("消した画面を行き先にする遷移を同じ版で置く", with_screens("画面,S-003,x\n", transitions=TRANS_HEAD + "T-004,S-001,S-003,x,Q-003\n"),
+     "none", [], lambda r: refused(r, "同じ版で消した画面 S-003 を指す遷移 T-004 を置いている")),
+    ("画面の表の見出しが前の版と違う", with_screens(screens="画面ID,画面名,種別,根拠,備考\nS-004,設定,setting,Q-003,x\n"), "none", [],
+     lambda r: refused(r, "見出し行が前の版と違う")),
+    ("画面の表に鍵の列が無い", with_screens(screens="画面名,種別,根拠\n設定,setting,Q-003\n"), "none", [],
+     lambda r: refused(r, "見出し行に 画面ID の列が無い")),
+    ("遷移の表に画面を指す列が無い", {**MAIN, f"v1/{SD}transitions.csv": "番号,遷移元,きっかけ\nT-001,S-001,x\n"}, "none", [],
+     lambda r: refused(r, "見出し行に 遷移先 の列が無い")),
+    ("画面の表の鍵が空", with_screens(screens=SCREENS_HEAD + ",設定,setting,Q-003\n"), "none", [], lambda r: refused(r, "`画面ID` が空")),
+    # 前後の空白は別の値になり、連鎖の消去が外れる（#1091 の 1 パス目 CR1-2。直す前は rc=0 で I-001 が残った）
+    ("画面を指す列の値に空白", {**MAIN, **SCREENS_V1, f"v1/{SD}screen-items.csv": ITEMS_HEAD + "I-001,S-002 ,名前,Q-001\n",
+                             "v2/removed.csv": REMOVED_HEAD + "ファイル,requirements/b.md,要件から外した\n画面,S-002,x\n"},
+     "none", [], lambda r: refused(r, "`画面ID` の値の前後に空白がある")),
+    ("画面の表の鍵に空白", with_screens(screens=SCREENS_HEAD + "S-001 ,一覧 v2,list,Q-003\n"), "none", [],
+     lambda r: refused(r, "`画面ID` の値の前後に空白がある")),
+    # 正規化だけ違う値も別の値になり、連鎖の消去が外れる（#1091 の 2 パス目 CR2-1。直す前は rc=0 で I-001 が残った）
+    ("画面を指す列の値が NFC でない", {**MAIN, f"v1/{SD}screens.csv": SCREENS_HEAD + "S-\u30ac,一覧,list,Q-001\n",
+                                   f"v1/{SD}screen-items.csv": ITEMS_HEAD + "I-001,S-\u30ab\u3099,名前,Q-001\n",
+                                   "v2/removed.csv": REMOVED_HEAD + "ファイル,requirements/b.md,要件から外した\n画面,S-\u30ac,x\n"},
+     "none", [], lambda r: refused(r, "`画面ID` の値が Unicode の NFC でない")),
+    ("画面の表の鍵の重複", with_screens(screens=SCREENS_HEAD + "S-004,設定,setting,Q-003\nS-004,設定2,setting,Q-003\n"), "none", [],
+     lambda r: refused(r, "`画面ID` が版の中で重複: S-004")),
+    ("画面の表の列の数", with_screens(screens=SCREENS_HEAD + "S-004,設定\n"), "none", [], lambda r: refused(r, "列の数が 2")),
+    ("画面の表の列の名前が重なる", {**MAIN, f"v1/{SD}screens.csv": "画面ID,画面名,画面名\nS-001,a,b\n"}, "none", [],
+     lambda r: refused(r, "列の名前が重なる: 画面名")),
+    ("画面の表をファイルとして消す", with_screens(f"ファイル,{SD}screens.csv,x\n"), "none", [],
+     lambda r: refused(r, "はファイルとしては消せない")),
+    ("無い画面を消す", with_screens("画面,S-009,x\n"), "none", [], lambda r: refused(r, "前の版までに無いものを消そうとしている: 画面 S-009")),
+    ("置きつつ画面を消す", with_screens("画面,S-004,x\n", screens=SCREENS_HEAD + "S-004,設定,setting,Q-003\n"), "none", [],
+     lambda r: refused(r, "同じ版で置きつつ消している: S-004")),
+    ("画面の表の綴り違い", {**MAIN, **SCREENS_V1, f"v2/{SD}Screens.csv": SCREENS_HEAD + "S-004,設定,setting,Q-003\n"}, "none", [],
+     lambda r: refused(r, "requirements/screens/data/screens.csv と大文字小文字・Unicode の正規化だけ違う名前は置かない")),
     ("3 つ目の版を順に重ねる", {**MAIN, "v3/requirements/a.md": "A3\n", "v3/requirements/b.md": "B3\n"}, "none", [],
      lambda r: made(r) and r.text("requirements/a.md") == "A3\n" and r.text("requirements/b.md") == "B3\n"),
     ("--upto 1 は v1 だけ", MAIN, "none", ["--upto", "1"],
@@ -247,7 +326,7 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
      lambda r: refused(r, "`id`（文字列）が無い")),
     ("features が配列でない", {**MAIN, "v2/spec/spec_ir.json": js({"title": "x"})}, "none", [],
      lambda r: refused(r, "`features` が配列でない")),
-    ("消す種類が決まりに無い", with_removed("画面,requirements/b.md,x\n"), "none", [], lambda r: refused(r, "`種類` が")),
+    ("消す種類が決まりに無い", with_removed("画像,requirements/b.md,x\n"), "none", [], lambda r: refused(r, "`種類` が")),
     ("無いものを消す", with_removed("ファイル,requirements/z.md,x\n"), "none", [], lambda r: refused(r, "前の版までに無いもの")),
     ("置きつつ消す", with_removed("ファイル,requirements/a.md,x\n"), "none", [], lambda r: refused(r, "置きつつ消している")),
     ("同じ対象を 2 度消す", with_removed("Q&A,Q-001,x\n", "Q&A,Q-001,y\n"), "none", [], lambda r: refused(r, "2 度消す")),
@@ -509,7 +588,28 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("無いものを消すのを見ない", "elif target not in present[kind]:", "elif False:", "無いものを消す"),
     ("置きつつ消すのを見ない", "elif target in placed[kind]:", "elif False:", "置きつつ消す"),
     ("2 度消すのを見ない", "if (kind, target) in seen:", "if False:", "同じ対象を 2 度消す"),
-    ("構造ファイルの削除を通す", "if kind == KIND_FILE and target in STRUCTURED:", "if False:",
+    # 行の単位で重ねる画面の表（#1091）。1 つ目は受入基準 1 の陽性対照——一覧から外すとファイルの単位で重なり、v1 の画面が消える
+    ("画面の表をファイルの単位で重ねる", '    SCREENS_DATA + "screens.csv": (KIND_SCREEN, "画面ID", ()),\n', "", "画面の表を行の単位で重ねる"),
+    ("画面の表の置き換えを末尾に回す", "            self.tables.setdefault(path, {}).update(rows)\n",
+     "            table = self.tables.setdefault(path, {})\n            [table.pop(k, None) for k in rows]\n            table.update(rows)\n",
+     "画面の表の置き換えは前の位置に"),
+    ("画面を消しても項目・遷移を消さない", "                rows.pop(key)\n", "                rows.get(key)\n", "画面を消すと項目と遷移も消える"),
+    ("画面を指す列の片方だけ見る", "dropped for ref in refs)]:", "dropped for ref in refs[:1])]:", "画面を消すと項目と遷移も消える"),
+    ("消した画面を指す行を置くのを見ない", "                if hit is not None:\n", "                if False:\n", "消した画面を指す項目を同じ版で置く"),
+    ("画面の表の見出しの違いを見ない", "if path in self.headers and read[0] != self.headers[path]:", "if False:", "画面の表の見出しが前の版と違う"),
+    ("画面の表の鍵の列を見ない", "    if missing:\n", "    if False:\n", "遷移の表に画面を指す列が無い"),
+    ("画面の表の鍵の重複を見ない", "elif value in rows:", "elif False:", "画面の表の鍵の重複"),
+    ("値の空白を見ない", "        if padded:\n", "        if False:\n", "画面を指す列の値に空白"),
+    ("値の正規化を見ない", 'elif [name for name in (key, *refs) if row[name] != unicodedata.normalize("NFC", row[name])]:',
+     "elif False:", "画面を指す列の値が NFC でない"),
+    ("画面を指す列の空白を見ない", "for name in (key, *refs) if row[name] != row[name].strip()]",
+     "for name in (key,) if row[name] != row[name].strip()]", "画面を指す列の値に空白"),
+    ("画面の表の鍵の空を見ない", "if not value.strip():", "if False:", "画面の表の鍵が空"),
+    ("画面の表をファイルとして消せる", "if kind == KIND_FILE and target in UNIT_FILES:", "if kind == KIND_FILE and target in STRUCTURED:",
+     "画面の表をファイルとして消す"),
+    ("画面の表の綴り違いを見ない", "expected = {fold(path): path for path in UNIT_FILES}", "expected = {fold(path): path for path in STRUCTURED}",
+     "画面の表の綴り違い"),
+    ("構造ファイルの削除を通す", "if kind == KIND_FILE and target in UNIT_FILES:", "if False:",
      "構造ファイルをファイルとして消す"),
     ("理由の空を通す", "elif not reason.strip():", "elif False:", "理由が空"),
     ("v1 の removed.csv を通す", "if number == 1:", "if False:", "v1 に removed.csv"),
@@ -1093,6 +1193,13 @@ def check_reference() -> None:
           "**" + "・".join(f"`{path}`" for path in module.STRUCTURED) + " はファイルとしては消せない**" in text)
     check("重ねる置き場所が versions.md と違う",
           "（" + "・".join(f"`{a}/`" for a in module.AREAS) + "）" in text)
+    # 行の単位で重ねる表の一覧（#1091 の受入基準 4）——パス・種類・鍵の列・画面を指す列
+    rows_section = text.split("### 行の単位で重ねる表", 1)[1].split("\n### ", 1)[0]
+    listed = {}
+    for path, kind, key, refs in re.findall(r"^\| `([^`]+)` \| `([^`]+)` \| `([^`]+)` \| ([^|]+) \|$", rows_section, re.M):
+        listed[path] = (kind, key, tuple(re.findall(r"`([^`]+)`", refs)))
+    check("行の単位で重ねる表の一覧が versions.md と違う", listed == module.ROW_TABLES, f"{listed} vs {module.ROW_TABLES}")
+    check("行の単位で重ねる表の種類が removed.csv の種類に無い", all(k in module.KINDS for k in module.ROW_KINDS))
     check("出力先の印が versions.md と違う", f"（`{module.MARKER}`）" in text)
     check("removed.csv の名前が versions.md と違う", f"### 削除（`{module.REMOVED}`）" in text)
     # 形式検査のモデルの判別（#908）。照合・差分・仕様書・未決定の印の 4 本が読む 1 箇所なので、ここで真理値を当てる

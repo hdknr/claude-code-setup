@@ -26,6 +26,8 @@
 | `scripts/intake-code.py` | 取り込みの段の機械で決まる部分——持ち込まれたコードを読むだけで写し（`snapshot`）、候補の JSON を検査して Q&A 表の回答待ちの行にし、基盤要件との食い違いを照らす（`rows`）（標準ライブラリと `git`） |
 | `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
+| `scripts/check-review-record.py` | 仕様レビューの記録（指摘の表と実行の記録）から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限を数え直す。`scaffold.py` は最後の実行の行をここで読む（標準ライブラリのみ） |
+| `scripts/check-formal-rerun.py` | 保存した TLC のモデルの本体と陽性対照を、正本の `CLAUDE.md` の呼び方で走らせ直し、抜ける条件 4 を判定し直す（標準ライブラリと TLC） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
 | `scripts/render-diagrams.py` | 正本リポジトリの `docs/` の下の drawio と BPMN を隣の SVG に書き出し、ソースの指紋を書き込む。`--check` で書き出しが今のソースのものかを確かめる（標準ライブラリと draw.io の CLI。BPMN は下の `render-bpmn.mjs`。図の決まりは `references/tree.md` の「図」を正とする） |
@@ -44,7 +46,7 @@
 | `scripts/check-frozen.py` | リリースした版（`release-v<n>` のタグ）の `docs/v<n>/` が直されていないかの確かめ（標準ライブラリと `git`） |
 | `templates/mkdocs/` | 正本リポジトリを MkDocs で閲覧するための雛形（設定・Q&A 表を CSV から描くフック・表示用のページ） |
 | `scripts/autopilot-ledger.py` | autopilot の台帳（版ごとの `.claude/plans/spec-autopilot-v<版>.json`）の読み書き（標準ライブラリと `git`） |
-| `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検（標準ライブラリと `git`） |
+| `scripts/autopilot-check.py` | autopilot の線の検査と、線から決まる周で使う操作の権限の点検・しない操作（タグ・Issue の登録・scaffold）を settings が拒むかの点検（標準ライブラリと `git`） |
 | `scripts/formal-baseline.py` | 形式検査のモデルを書いてよい版を決め（リリース済みなら書かない）、残したモデルの形（記録の項目・一覧に無いファイル）を確かめる（標準ライブラリと `git`） |
 | `scripts/check-tlc.py` | TLC が正本リポジトリの `CLAUDE.md` に書いた呼び方で使えるかの確かめ（標準ライブラリと、書いた呼び方の TLC。下の「前提」） |
 | `scripts/tlc-trace.py` | TLC の反例の JSON（`-dumpTrace json`）と対応表から、トレースのケース（`references/spec-ir.md` の「トレースのケース」）を作る（標準ライブラリのみ） |

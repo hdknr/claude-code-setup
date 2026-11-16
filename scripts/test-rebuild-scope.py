@@ -328,6 +328,10 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         failures.append(f"{name}{': ' + detail if detail else ''}")
 
 
+# 仕様レビューの記録（#1044）——scaffold.py は作業中の版の最後の実行の行が `抜けた` でなければ作らない
+PASSED_RECORD = "回,日付,結果,条件2〜4,要求の行,決定表の行,テストケース,仕様の行,判断,機能\n1,2026-11-01,抜けた,満たす,1,1,1,1,-,-\n"
+
+
 def make_bodies(work: Path, scripts: Path) -> dict[str, str]:
     """本物の `scaffold.py --provisional` で本文を作る。`bundle` の鍵に、F-001 と F-002 をまとめた本文（`--bundle`。#876）も入れる。"""
     repo = work / "repo"
@@ -337,6 +341,8 @@ def make_bodies(work: Path, scripts: Path) -> dict[str, str]:
     (base / "shared" / "qa.csv").write_text(QA, encoding="utf-8")
     (base / "spec" / "order.md").write_text(SPEC, encoding="utf-8")
     (base / "spec" / "spec_ir.json").write_text(json.dumps(IR, ensure_ascii=False, indent=2), encoding="utf-8")
+    (repo / "spec-review").mkdir()
+    (repo / "spec-review" / "v1.csv").write_text(PASSED_RECORD, encoding="utf-8")
     proc = subprocess.run([sys.executable, "-I", str(scripts / "scaffold.py"), "--repo", str(repo), "--provisional"],
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
