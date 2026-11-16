@@ -104,6 +104,10 @@ Issue の受入基準 2 つ（U1: `git tag` が allow の settings で点検が�
   （`SubagentHandback` が届かない——欠票として再実行し、3 体目に `SendMessage` で報告をファイルに書かせて受け取った）。`/code-review`（high）——指摘 8 件（報告をファイルで受け取った。テスト・変異は走らせていない）。
   反証・指摘 9 件のうち直す 3 行（下の採否の表）。差し戻しあり（手順 4 へ）。
 - 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）
+- 1 パス目の指摘対応: `55279d7`（直すの 3 行。成果物の差分は 0 行でない——2 パス目を回した）。その後の `check-all.py`（run-serial 越し）の結果は下の行
+- 2 パス目: Verifier——反証 0 件（報告をファイルで受け取った。`test-autopilot-check.py` は別の周の検査の順番待ちで走らせられず、読解と本物の CLI で確かめた）。
+  `/code-review`（high）——指摘 7 件。直すの 3 行（下の「2 パス目の採否の表」）。
+- 2 パス目の指摘対応の起点: この行を書いたコミット（計画ファイルだけ）。終点は直しのコミットの後に書く
 
 ## 既知の限界・決着済みの論点
 
@@ -121,7 +125,7 @@ Issue の受入基準 2 つ（U1: `git tag` が allow の settings で点検が�
 | CR1 | scaffold のスキルの本文は `<base>/../../scripts/scaffold.py`（`..` を畳まない）で打つので、畳んだ絶対パスの deny は当たらない。A6 の「入口が呼ぶ形」は事実と違う | 示せる——`rule_matches("Bash(python3 scaffold.py:*)", "python3 /x/scaffold.py <引数>")` は False、畳まない形と畳んだ形の前方一致は当たらない | A10（記述）。A6 の不変条件（点検するスクリプトと同じ形）は満たしている | 直す（記述だけ: 守るの行を「入口のスキルがスクリプトを畳んだ形で打つ」に、守らないに畳まない形を足す）。照合の形は変えない（既知の限界の 1 行目と同じ近似） |
 | CR2 | スキルの手順 2 が「出力の『人が見る』」を止まりうる操作と言い、`拒む:` の人が見るの行に「許可を足す」を勧めうる | 示せる——本物の CLI の出力に `[人が見る] 拒む: \`gh issue create\`` が出る | A9・A10 | 直す（手順 2 を `止まりうる操作` の項目に限り、`拒む:` の行は手順 1 の deny の案で扱うと書く） |
 | CR3 | スキルの手順 1 の要対処の説明（deny・ask に当たる・allow に無い）が `拒む:` の行と逆 | 示せる——本物の CLI で `[要対処] 拒む: \`git tag\`: allow に当たる` | A10 | 直す（区分を行の種類で分けて書く） |
-| CR4 | deny の案が層を名指さず、`Bash(git tag:*)` は `git tag --list` も拒む。利用者の層に足すと他のリポジトリのタグ打ちも止まる | 示せない（Claude Code が実際にどう拒むかは測っていない。`rule_matches` が `git tag --list` に当たることは示せる） | 無し | 残課題 |
+| CR4 | deny の案が層を名指さず、`Bash(git tag:*)` は `git tag --list` も拒む。利用者の層に足すと他のリポジトリのタグ打ちも止まる | 示せる（2 パス目の CR2-1 で訂正）——`rule_matches` が `git tag --list` に当たり、spec-loop の `references/tree.md` の Q&A 表の移行の手順がそれを打つ。Claude Code が実際に拒むかは測っていない | 無し | 残課題（受入基準を破らない。found-lines の振り分けで扱う） |
 | CR5 | `allowManagedPermissionRulesOnly` のとき、案のとおり user・project に deny を足しても良いにならない（managed に足すと言わない） | 示せない（その設定の環境は手元に無い。点検の判定そのものは Claude Code の規則の効き方と同じ向き） | 無し | 残課題 |
 | CR6 | ask を常に人が見るにする——`bypassPermissions`・`claude -p` で ask が確認を出すかは確かめていない | 示せない | 無し | 残課題 |
 | CR7 | `check_refused` が `check_permissions` と同じ集計と bypass の式を写しの外に手で複製している | 示せない（いま食い違ってはいない） | 無し | 残課題 |
@@ -130,3 +134,15 @@ Issue の受入基準 2 つ（U1: `git tag` が allow の settings で点検が�
 ## 手順 8
 
 - この周の起票: 0 件（関門の残課題は PR コメントに残す。起票の承認は不在のため訊いていない）
+
+### 2 パス目の採否の表
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| CR2-1 | CR4 の決着理由「示せない」は誤り（`git tag --list` を打つ手順が spec-loop の中にある） | 示せる（上の CR4 の行を訂正した） | 無し | 残課題（CR4 の採否は変えない） |
+| CR2-2 | docstring の守るの行「入口のスキルがスクリプトをそう打つと決めている形」は scaffold に当たらない——autopilot のスキルの「畳む」決まりは `ops` の行と spec-review・feasibility のスクリプトだけで、scaffold を打つ指示は scaffold のスキルの畳まない形だけ | 示せる——autopilot `SKILL.md` の 27〜29 行、scaffold `SKILL.md` の 125・159・160 行、`rule_matches` が畳まない形に False | A10 | 直す（記述: 守るの行を「`ops` の行と同じ畳んだ形」に直し、scaffold のスキルの形に当たらないことを守らないに書く。照合の形は変えない） |
+| CR2-3 | スキルの守らないもの「版に依らない規則にする」は scaffold の deny では点検と両立しない（途中に `*` を置く規則に `rule_matches` は False） | 示せる——`rule_matches("Bash(python3 *scaffold.py:*)", …)` は False | A9・A10 | 直す（scaffold の deny は更新のたびに足し直すと書き、版に依らない形を勧めない） |
+| CR2-4 | `disableBypassPermissionsMode` の分岐を通る試料が無い・守るの行に例外が書かれていない | 示せない（判定は正しい向き。試料の穴） | 無し | 残課題 |
+| CR2-5 | 「allow に当たれば要対処」「逆に」は、ask と読めない層が allow より先に効くことを書いていない（allow と ask の両方で人が見る） | 示せる——テストの「拒む: ask」（allow もある）で人が見る | A10 | 直す（守るの行・スキルの手順 1・公開ページ・`CLAUDE.md` を「deny・ask に当たらず allow に当たる」に） |
+| CR2-6 | `git push --tags` の deny は名前を指したタグの push（`git push origin signoff/v1/req-1`）を覆わない | 示せない（照合の近似の範囲。既知の限界の 1 行目と同じ型） | 無し | 残課題 |
+| CR2-7 | `defaultMode: dontAsk` のとき allow に無い拒むべき操作は自動で拒まれるのに「人が見る——通しうる」と出る | 示せない（人が見るは良いと言わない側で、誤った緑ではない。dontAsk の振る舞いは測っていない） | 無し | 残課題 |
