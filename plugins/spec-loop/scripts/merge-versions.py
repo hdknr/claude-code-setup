@@ -4,7 +4,7 @@
 usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレクトリ> [--upto <n>]
 
 **決まりの正は `references/versions.md` である**（このプラグインの中にある）。
-下の定数（版の名前・重ねる置き場所・`removed.csv` の列と種類・ファイルとしては消せないもの・出力先の印）はその写しで、
+下の定数（版の名前・重ねる置き場所・`removed.csv` の列と種類・ファイルとしては消せないもの・行の単位で重ねる表・出力先の印）はその写しで、
 **写しがずれていないかは、このリポジトリの `scripts/test-merge-versions.py` が `references/versions.md` と突き合わせて見る**。
 
 - v1 に v2、…、v<n> の差分を順に重ねる。`--upto` を省けば、番号が最大の版（作業中の版）まで。
@@ -12,6 +12,9 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 - **同じ入力から同じバイトを作る**——時刻を使わず、行・機能は前の版の順、ファイルはパスの順。
 - 各版の `qa.csv`（と内部の `spec/qa-dev.csv`）は同梱の `check-qa-csv.py` で検査する（**列の決まりを写さない**）。
   内部の表も共有の表と同じく行（`No`）で重ねる。`removed.csv` の `Q&A` は、番号（`Q-`／`D-`）で消す表が決まる。
+- **行の単位で重ねる表（`ROW_TABLES`。画面の表——`requirements/screens/data/` の `screens.csv`・`screen-items.csv`・`transitions.csv`）は、
+  鍵の列の値で行を重ねる**（#1091。同じ鍵は置き換え、新しい鍵は末尾）。見出し行は版の間で変えない。`removed.csv` の `画面`・`項目`・`遷移` で
+  行を消し、**画面を消したら、画面を指す列（項目の `画面ID`・遷移の `遷移元`・`遷移先`）がその画面の行も消す**。表の中身（ほかの列）は見ない。
 - 標準ライブラリだけを使う。
 
 終了コード:
@@ -31,6 +34,7 @@ usage: python3 merge-versions.py <docs ディレクトリ> <出力先ディレ�
 | --- | --- |
 | **新しいつもりで前の版の番号を書いた** | 同じ番号は「変更」の意味と決めている。意図は機械で分からない |
 | **重ね合わせた `spec_ir.json` の中身の決まり** | `spec-ir.md` の決まりは `scaffold.py` が全体に当てる |
+| **画面の表どうしの参照**（項目・遷移が在る画面を指すか・遷移の行き先）と、鍵と画面を指す列のほかの列 | 画面の表の検査（`check-screens.py`。#1092）が重ねた全体に当てる。ここは重ねるのに要る鍵の列と画面を指す列だけを見る |
 | **形式検査のモデル（`spec/formal/`）の中身** | ほかのファイルと同じに重ねるだけで読まない。写しとして照合・差分・仕様書・未決定の印から外すのは、それぞれのスクリプトが `is_formal` で行う（`references/tree.md` の「形式検査のモデル」。#908） |
 | **凍結した版が直されていないか** | `release-v<n>` のタグとの照合で、タグが要る（このスクリプトが git を使うのは、名前の綴りを index と照合するときだけ） |
 | **フックの外から、`docs` の属さないリポジトリを指す `GIT_INDEX_FILE` を渡す** | `GIT_INDEX_FILE` は読む（フックの一時の index がコミットされる綴りを持つため。相対なら `docs` が属するリポジトリの根から。#570）。別のリポジトリの index を指していれば、その名前で照合する |
@@ -107,8 +111,21 @@ INTERNAL_QA_PATH = "spec/" + qa.INTERNAL_NAME
 REMOVED = "removed.csv"
 REMOVED_COLUMNS = ["種類", "対象", "理由"]
 KIND_FILE, KIND_QA, KIND_FEATURE = "ファイル", "Q&A", "機能"
-KINDS = [KIND_FILE, KIND_QA, KIND_FEATURE]
+# 行の単位で重ねる表（`references/versions.md` の「行の単位で重ねる表」。#1091）の行を消す種類
+KIND_SCREEN, KIND_ITEM, KIND_TRANSITION = "画面", "項目", "遷移"
+KINDS = [KIND_FILE, KIND_QA, KIND_FEATURE, KIND_SCREEN, KIND_ITEM, KIND_TRANSITION]
 STRUCTURED = [QA_PATH, INTERNAL_QA_PATH, SPEC_PATH]
+SCREENS_DATA = "requirements/screens/data/"
+# 行の単位で重ねる表: 版のディレクトリからのパス → (removed.csv の種類, 鍵の列, 画面を指す列)。
+# 画面を消したら、画面を指す列がその画面の鍵と同じ行も消す（連鎖）。成果物の表（`features.csv` など）は載せない（#1090）
+ROW_TABLES: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    SCREENS_DATA + "screens.csv": (KIND_SCREEN, "画面ID", ()),
+    SCREENS_DATA + "screen-items.csv": (KIND_ITEM, "番号", ("画面ID",)),
+    SCREENS_DATA + "transitions.csv": (KIND_TRANSITION, "番号", ("遷移元", "遷移先")),
+}
+ROW_KINDS = [kind for kind, _, _ in ROW_TABLES.values()]
+# ファイルの単位では重ねないもの（構造ファイルと行の単位で重ねる表）——ファイルとしては消せず、綴り違いの名前も置かない
+UNIT_FILES = STRUCTURED + list(ROW_TABLES)
 # 形式検査のモデル（Formal Checker が仕様から書き起こした写し。置き方は `references/tree.md` の「形式検査のモデル」。#908）。
 # ここでは今のままファイルとして重ねる（次の版に前の版のモデルを渡すため）。承認の照合（`check-signoff.py`）・版の差分（`diff-versions.py`）・
 # 提案書の仕様書（`build-proposal.py`）・未決定の印の走査（`check-spec-exit.py`）は `is_formal` で外す——判別はここにだけ置く
@@ -340,7 +357,7 @@ def misnamed_structured(root: Path, files: dict[str, Path]) -> list[str]:
     重ねた出力を読む側（`check-spec-exit.py`・`scaffold.py`）は決まった名前でパスを組み立てるので、
     区別しないファイルシステムでだけ `shared/QA.csv` を Q&A 表として開いてしまう。
     """
-    expected = {fold(path): path for path in STRUCTURED}
+    expected = {fold(path): path for path in UNIT_FILES}
     found = []
     for path in sorted(files):
         want = expected.get(fold(path))
@@ -465,6 +482,48 @@ def read_spec(path: Path, problems: list[str]) -> dict | None:
     return data if ok else None
 
 
+def read_rows(path: Path, key: str, refs: tuple[str, ...], problems: list[str]) -> tuple[list[str], dict[str, dict[str, str]]] | None:
+    """行の単位で重ねる表の (見出し行, 鍵 → 行)。決まりに反すれば None（`problems` に足す）。
+
+    見るのは重ねるのに要る形だけ——見出し行に鍵の列と画面を指す列があること・列の名前が重ならないこと・
+    行の列の数・鍵が空でないこと・鍵が版の中で重ならないこと。ほかの列の決まりは見ない（画面の表の検査。#1092）。
+    """
+    reader = csv.reader(io.StringIO(read_text(path), newline=""))
+    header = next(reader, None)
+    if not header or not any(name.strip() for name in header):
+        problems.append(f"{path}:1: 見出し行が無い")
+        return None
+    missing = [name for name in (key, *refs) if name not in header]
+    if missing:
+        problems.append(f"{path}:1: 見出し行に {'・'.join(missing)} の列が無い（行の鍵・画面を指す列。references/versions.md）")
+        return None
+    duplicated = sorted({name for name in header if header.count(name) > 1})
+    if duplicated:
+        problems.append(f"{path}:1: 見出し行で列の名前が重なる: {'・'.join(duplicated)}")
+        return None
+    rows: dict[str, dict[str, str]] = {}
+    ok = True
+    for fields in reader:
+        line = reader.line_num
+        if not any(f.strip() for f in fields):
+            continue
+        if len(fields) != len(header):
+            problems.append(f"{path}:{line}: 列の数が {len(fields)}（見出しは {len(header)}）")
+            ok = False
+            continue
+        row = dict(zip(header, fields))
+        value = row[key]
+        if not value.strip():
+            problems.append(f"{path}:{line}: `{key}` が空")
+            ok = False
+        elif value in rows:
+            problems.append(f"{path}:{line}: `{key}` が版の中で重複: {value}")
+            ok = False
+        else:
+            rows[value] = row
+    return (header, rows) if ok else None
+
+
 def read_removed(path: Path, problems: list[str]) -> list[tuple[int, str, str]]:
     reader = csv.reader(io.StringIO(read_text(path), newline=""))
     header = next(reader, None)
@@ -505,7 +564,7 @@ def check_removed(removed_path: Path | str, removed: list[tuple[int, str, str]],
             problems.append(f"{where}: {seen[(kind, target)]} 行目と同じ対象を 2 度消す: {target}")
             continue
         seen[(kind, target)] = line
-        if kind == KIND_FILE and target in STRUCTURED:
+        if kind == KIND_FILE and target in UNIT_FILES:
             problems.append(f"{where}: {target} はファイルとしては消せない（行・機能の単位で消す）")
         elif target in placed[kind]:
             problems.append(f"{where}: 同じ版で置きつつ消している: {target}")
@@ -524,6 +583,10 @@ class Whole:
         self.features: dict[str, dict] = {}
         self.has_qa = False  # どれかの版に qa.csv があれば、行が 0 でも見出しだけ書く（出力を docs/ と同じ形に）
         self.has_internal = False  # 内部の表も同じ
+        # 行の単位で重ねる表（`ROW_TABLES`）: パス → 鍵 → 行（挿入順 = 並び順）と、最初に置いた版の見出し行。
+        # どれかの版に表があれば、行が 0 でも見出しだけ書く
+        self.tables: dict[str, dict[str, dict[str, str]]] = {}
+        self.headers: dict[str, list[str]] = {}
 
     def apply(self, number: int, root: Path, problems: list[str], index: dict[tuple[str, ...], set[str]] | None = None,
               owned: dict[tuple[int, int], set[str]] | None = None) -> None:
@@ -547,18 +610,39 @@ class Whole:
         qa_rows = read_qa(files[QA_PATH], problems) if QA_PATH in files else []
         internal_rows = read_qa(files[INTERNAL_QA_PATH], problems) if INTERNAL_QA_PATH in files else []
         spec = read_spec(files[SPEC_PATH], problems) if SPEC_PATH in files else None
+        tables: dict[str, tuple[list[str], dict[str, dict[str, str]]]] = {}
+        for path, (_, key, refs) in ROW_TABLES.items():
+            if path not in files:
+                continue
+            read = read_rows(files[path], key, refs, problems)
+            if read is None:
+                continue
+            if path in self.headers and read[0] != self.headers[path]:
+                problems.append(f"{files[path]}:1: 見出し行が前の版と違う（前の版: {','.join(self.headers[path])}）"
+                                "——版の間で列を変えない（references/versions.md）")
+                continue
+            tables[path] = read
         placed = {
-            KIND_FILE: set(files) - set(STRUCTURED),
+            KIND_FILE: set(files) - set(UNIT_FILES),
             KIND_QA: {row["No"] for row in qa_rows + internal_rows},
             KIND_FEATURE: {f["id"] for f in spec["features"]} if spec else set(),
+            **{kind: set(tables[path][1]) if path in tables else set() for path, (kind, _, _) in ROW_TABLES.items()},
         }
-        present = {KIND_FILE: set(self.files), KIND_QA: set(self.qa) | set(self.internal), KIND_FEATURE: set(self.features)}
+        present = {KIND_FILE: set(self.files), KIND_QA: set(self.qa) | set(self.internal), KIND_FEATURE: set(self.features),
+                   **{kind: set(self.tables.get(path, {})) for path, (kind, _, _) in ROW_TABLES.items()}}
         check_removed(removed_path, removed, placed, present, problems)
+        # 画面を消したら、その画面を指す項目・遷移も消す（連鎖）。同じ版で、消した画面を指す行を置くのは「置きつつ消す」
+        dropped = {target for _, kind, target in removed if kind == KIND_SCREEN}
+        for path, (kind, _, refs) in ROW_TABLES.items():
+            for key, row in (tables[path][1].items() if path in tables else ()):
+                hit = next((row[ref] for ref in refs if row[ref] in dropped), None)
+                if hit is not None:
+                    problems.append(f"{files[path]}: 同じ版で消した画面 {hit} を指す{kind} {key} を置いている（画面を消すと、指す{kind}も消える）")
 
         if problems:
             return
         for path, source in files.items():
-            if path not in STRUCTURED:
+            if path not in UNIT_FILES:
                 try:
                     self.files[path] = source.read_bytes()
                 except OSError as e:
@@ -574,10 +658,18 @@ class Whole:
             self.spec = {**base, **{k: v for k, v in spec.items() if k != "features"}}
             for feature in spec["features"]:
                 self.features[feature["id"]] = feature
+        for path, (header, rows) in tables.items():
+            self.headers.setdefault(path, header)
+            self.tables.setdefault(path, {}).update(rows)
+        by_kind = {kind: self.tables.get(path, {}) for path, (kind, _, _) in ROW_TABLES.items()}
         for _, kind, target in removed:
             # 消す表は番号で決まる（`D-` なら内部の表）。番号と表が食い違わないことは `read_qa` の検査が保証する
             table = (self.internal if qa.is_internal_number(target) else self.qa) if kind == KIND_QA else None
-            {KIND_FILE: self.files, KIND_QA: table, KIND_FEATURE: self.features}[kind].pop(target)
+            {KIND_FILE: self.files, KIND_QA: table, KIND_FEATURE: self.features, **by_kind}[kind].pop(target)
+        for path, (_, _, refs) in ROW_TABLES.items():
+            rows = self.tables.get(path, {})
+            for key in [k for k, row in rows.items() if any(row[ref] in dropped for ref in refs)]:
+                rows.pop(key)
 
     def render(self, problems: list[str]) -> dict[str, bytes]:
         """書く前に、出力の全部をバイトにする——書いている途中で作れないと分かる経路を残さない。"""
@@ -590,6 +682,13 @@ class Whole:
             writer.writerow(qa.COLUMNS)
             for row in rows.values():
                 writer.writerow([row[c] for c in qa.COLUMNS])
+            rendered[path] = buffer.getvalue().encode("utf-8")
+        for path, header in self.headers.items():
+            buffer = io.StringIO(newline="")
+            writer = csv.writer(buffer, lineterminator="\n")
+            writer.writerow(header)
+            for row in self.tables[path].values():
+                writer.writerow([row[c] for c in header])
             rendered[path] = buffer.getvalue().encode("utf-8")
         if self.spec is not None:
             whole = {**self.spec, "features": list(self.features.values())}

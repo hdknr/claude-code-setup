@@ -65,6 +65,7 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 | **誰がタグを付けたか** | 署名を検査しない。タグを付けられる人を絞るのはリポジトリの権限 |
 | **比べる範囲の外**（`feasibility/`・`proposal/`・`spec/qa-dev.csv`・`spec/formal/`） | 予算の合意・決裁の側と開発者の内部が書くもの、仕様から書き起こした写し。2 つの承認の間で変わってよい |
 | **綴りだけ違う `spec/Formal/`** | 形式検査のモデルと見なさず、ふつうの仕様のファイルとして比べる（`is_formal` は綴りどおりの名前だけを見る） |
+| **画面の表（`requirements/screens/data/`）の行の単位の比べ** | 承認が見た中身はファイルのバイトで比べる（ほかの `requirements/` のファイルと同じ）。行の単位で重ねるのは重ね合わせと版の差分（`references/versions.md`） |
 | **タグの時点の版の並びが決まりに反するか** | 照合するのは比べる場所の中身だけ。版の並びは作業ツリーで `merge-versions.py` が見る |
 """
 
@@ -228,10 +229,10 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
     **共有の Q&A の行（内部の層の `D-` は除く。#339）について `merge` が拒否する配置**（同じ版で置きつつ消す・前の版までに無い行を消す・同じ行を 2 度消す）は
     2 にする——判定は `merge-versions.py` の `check_removed`（写しを作らない）。黙って消すと、置いた暫定の行を
     数え落とすか、`merge` が拒否する中身を承認したことになる。**種類 `ファイル` の行は、版のファイルの一覧を作らずに
-    判定できる形——構造ファイル（`shared/qa.csv` など）を消す・同じファイルを 2 度消す——と、v1 に `removed.csv` を
-    置くことも 2 にする**（#348。v1 の文言は `merge-versions.py` の `V1_REMOVED`）。**種類 `ファイル` の行の
-    「前の版までに無いファイルを消す」「同じ版で置きつつ消す」と、種類 `機能` の行の配置は 2 にしない**——判定に
-    版ごとのファイル（機能）の一覧が要り、`merge-versions.py` の読み方を git の上で写すことになるので。
+    判定できる形——構造ファイル（`shared/qa.csv` など）と行の単位で重ねる表（画面の表。#1091）を消す・同じファイルを 2 度消す——と、v1 に `removed.csv` を
+    置くことも 2 にする**（#348。v1 の文言は `merge-versions.py` の `V1_REMOVED`）。**種類 `画面`・`項目`・`遷移` の行は、同じ行を 2 度消すことを 2 にする**（#1091）。
+    **種類 `ファイル`・`画面`・`項目`・`遷移` の行の「前の版までに無いものを消す」「同じ版で置きつつ消す」と、種類 `機能` の行の配置は 2 にしない**——判定に
+    版ごとのファイル（機能・表の行）の一覧が要り、`merge-versions.py` の読み方を git の上で写すことになるので。
     v2 以降の `removed.csv` の形式の違反は種類によらず `read_removed_at` が 2 にする。呼ぶのは要求確定のタグの
     時点だけなので、予算の合意のタグの時点の配置は見ない。
     """
@@ -277,14 +278,18 @@ def provisional_rows(repo: Path, commit: str, tag: str, version: int,
             # 内部の層の Q&A（`D-`）を消した行は見ない——ここで重ねるのは共有の `qa.csv` だけ（#339）
             rows = [row for row in removed[path] or []
                     if row[1] == REMOVED_QA and not qa.is_internal_number(row[2])]
-            # 種類 `ファイル` の行は、版のファイルの一覧を作らずに判定できる形（構造ファイルを消す・2 度消す）だけを見る（#348）。
+            # 種類 `ファイル` の行は、版のファイルの一覧を作らずに判定できる形（構造ファイルと行の単位で重ねる表を消す・2 度消す）だけを見る（#348・#1091）。
+            # 画面・項目・遷移の行も 2 度消すだけを見る（#1091）。
             # 置いたものは空・在るものは行の対象そのものとして渡す——「置きつつ消す」「前の版までに無い」は判定しない
             files = [row for row in removed[path] or [] if row[1] == REMOVED_FILE]
+            screens = [row for row in removed[path] or [] if row[1] in versions.ROW_KINDS]
             # 前の版までに在るかを今の版の行を含めて見てよい——今の版が置いた行は、先に「置きつつ消す」で落ちる
             problems = []
-            versions.check_removed(path, sorted(rows + files),
-                                   {REMOVED_QA: placed, REMOVED_FILE: set()},
-                                   {REMOVED_QA: set(whole), REMOVED_FILE: {target for _, _, target in files}}, problems)
+            versions.check_removed(path, sorted(rows + files + screens),
+                                   {REMOVED_QA: placed, REMOVED_FILE: set(), **{kind: set() for kind in versions.ROW_KINDS}},
+                                   {REMOVED_QA: set(whole), REMOVED_FILE: {target for _, _, target in files},
+                                    **{kind: {target for _, k, target in screens if k == kind} for kind in versions.ROW_KINDS}},
+                                   problems)
             if problems:
                 raise Unjudged(refused(tag, problems))
             for _, _, target in rows:

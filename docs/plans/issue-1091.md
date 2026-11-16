@@ -1,0 +1,102 @@
+# Issue #1091 — spec-loop: 画面の表（screens.csv など）を行の単位で重ねる（#1081 段 4 の先行分）
+
+**不在の周である**——cruise（親 Issue #1081）の子として回す。出所: `/dev-loop:cruise 1081 --absent` の起動（2026-11-16T04:38Z）。
+確かめた線（台帳 `issue-1081`。出所: 利用者の確認（起動時・2026-11-16、配布を見せて確かめた））:
+直す線 = 既定 / 仕様の穴 = 推奨で決めて起票 / マージ = 関門を通ればマージ / 周の途中の課題 = 外に出す / マージ前の判断 = 推奨で決めて起票。実機確認の線は無い。
+#1091 は spec-loop から来た Issue ではない（本文に `spec-loop-handoff` の印は無い）。
+この周はマージしない（親がする）——PR を作り、PR 側の CI が通るのを見るところまで。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/references/versions.md` — 「行の単位で重ねる表」の一覧（画面の表 3 つと鍵の列・画面を指す列）、`removed.csv` の種類 `画面`・`項目`・`遷移`、画面を消したときに項目・遷移も消すこと、版の差分の単位
+- `plugins/spec-loop/scripts/merge-versions.py` — 一覧の表を行の単位で重ねる・`removed.csv` の新しい種類・画面を消したときの項目と遷移の連鎖・綴り違いとファイルとしての削除の拒否
+- `plugins/spec-loop/scripts/diff-versions.py` — 画面・項目・遷移の行の単位で追加・変更・削除を出す（表が無ければ今と同じ出力）
+- `plugins/spec-loop/scripts/check-signoff.py` — `removed.csv` の新しい種類の検査（2 度消す・一覧の表をファイルとして消す）と docstring
+- `scripts/test-merge-versions.py`・`scripts/test-diff-versions.py`・`scripts/test-check-signoff.py` — 試料・変異・原本との突き合わせ
+- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（0.90.0 → 0.91.0）
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行だけ（7 本）
+- `docs/plans/issue-1091.md` — この計画
+
+触らない:
+
+- 成果物の表（`features.csv` など）を行の単位にすること（#1081 の決めること 9。#1090）
+- 画面の表の列の全体の定義と表どうしの検査（`check-screens.py`。#1092）——ここで決めるのは重ねるのに要る鍵の列と画面を指す列だけ
+- `build-proposal.py`（提案書の「前の版からの変更」に画面・項目・遷移を載せること。Issue の範囲の外。下の「既知の限界」）
+- `tree.md`（画面の表を置く場所の記述。#1081 の後の段）
+
+複製の数: 決まりの本体は `versions.md` の 1 箇所。`merge-versions.py` の定数（一覧・種類）はその写しで、`test-merge-versions.py` が突き合わせる（Issue の受入基準 4）。
+`diff-versions.py`・`check-signoff.py` は `merge-versions.py` の定数を読み込む（写さない）。分けない理由: 写しは 1 つで、テストが見る。
+
+依存の追加・更新: なし
+
+## 決めたこと（仕様の穴。`仕様の穴 = 推奨で決めて起票` の線で推奨により決めた）
+
+- **穴 1: 鍵の列と画面を指す列の名前**——Issue は「画面の表とその行の鍵の列を載せる」と言うが、列の名前を決めていない（列の定義は #1092）。
+  - 選択肢: A) 画面 `screens.csv` の鍵 `画面ID`、項目 `screen-items.csv` の鍵 `番号`・画面を指す列 `画面ID`、遷移 `transitions.csv` の鍵 `番号`・画面を指す列 `遷移元`・`遷移先`（推奨）／
+    B) 項目の鍵を `画面ID` と `番号` の組にする（画面ごとの番号）／ C) 列の名前を決めず、#1092 で表の定義を決めるまで行の単位の重ね方を入れない
+  - 推奨 A。理由: #1081 の「検査」が「画面ID・項目・遷移の番号が重ならない」（表の中で一意）と書き、13 次元の「画面遷移」が「遷移元・遷移先」と書いている。B は削除の対象を 2 つの列で書く形が `removed.csv` に無い。C は v2 を作る前に要るという段の順（決めること 7）に反する。
+- **穴 2: 版の間で表の見出し行（列）が違うとき**——Issue は決めていない。
+  - 選択肢: A) 前の版で最初に置いた見出し行と違えば決まりに反する（1。列を変えるなら #1092 の列の定義で決める）（推奨）／
+    B) 後の版の見出し行を採り、前の版の行の無い列は空にする／ C) 列の名前で合わせ、どちらかにしか無い列も全部残す
+  - 推奨 A。理由: Q&A 表と同じく列の決まった表として扱える。B・C は、v2 に 1 行置いただけで v1 の全部の行の列が変わり、版の比べが全部の行を「変更」と出す（どこが変わったかを示すという目的に反する）。
+- 決めた値は受入基準を足さない（`absent-lines.md`）。確認の Issue は PR を作った後に穴ごとに 1 件立てる。
+
+## デプロイ経路
+
+main へのマージで、プラグインの配布（カタログ・link-skills の利用者）。公開ページ（`docs/`）は触らない。
+
+## 版の上げ方
+
+spec-loop を minor で上げる（0.90.0 → 0.91.0。能力の追加。0.x なので壊れる変更も minor）——`marketplace.json`・`plugin.json`・spec-loop の全 `SKILL.md`（7 本）の 2 行。
+マージの直前に main が進んでいたら、main の先端の spec-loop の版から minor で 1 つ上げた値にする（cruise の `references/parallel.md` の「版とマージの順」）。
+
+## 受入基準（不変条件 × 経路）
+
+Issue の受入基準 4 つ（U1〜U4）を、不変条件と破りうる入口に展開する。入口は `merge-versions.py`（CLI と `merge` を読み込む `diff-versions.py`・`scaffold.py`・`build-proposal.py`）・`diff-versions.py`（CLI と `compare`）・`check-signoff.py`（CLI と `resolve` を読み込む `build-proposal.py`）。
+
+| # | 不変条件 | 破りうる経路 | 守り方 |
+| --- | --- | --- | --- |
+| A1 (U1) | v2 に `screens.csv` の行を 1 つだけ足すと、重ねた全体に v1 の画面がすべて残り、足した画面が末尾に入る | `merge-versions.py` の CLI 出力・`merge` の `rendered`（`scaffold.py`・`build-proposal.py` が読む） | 一覧の表は `Whole.tables` に行で重ね、`render` が見出し＋全行を書く。**陽性対照**: 同じ例を一覧から外した（ファイルの単位の）重ね方で走らせ、v1 の画面が消えることを先に見る（テストの変異と試料） |
+| A2 (U1) | 版の比べがその 1 画面だけを `追加` と出す（ほかの画面・`ファイル` の行に出さない） | `diff-versions.py` の CLI・`compare` | 画面・項目・遷移の種類を行の鍵で比べ、一覧の表を `ファイル` の比較から外す |
+| A3 (U1) | 同じ鍵の行は置き換え（前の版の位置）、新しい鍵は末尾 | v2 の `screens.csv`・`screen-items.csv`・`transitions.csv` | `Whole.tables[path][key] = row`（挿入順） |
+| A4 (U2) | `removed.csv` で画面を消すと、その画面の項目と、その画面を `遷移元`・`遷移先` にする遷移が重ねた全体から消える | `removed.csv` の `画面` の行 | 置いた後に連鎖で消す。**同じ版で、消した画面を指す項目・遷移を置くのは決まりに反する（1）**（置きつつ消す） |
+| A5 (U2) | 版の比べが、消した画面・連鎖で消えた項目と遷移を `削除` と出す（理由を添える） | `diff-versions.py` | 前の全体にあって今の全体に無い行を `削除`。連鎖の行の理由は消した画面の行から引く |
+| A6 (U2) | `removed.csv` の新しい種類の誤り（無いものを消す・置きつつ消す・2 度消す・一覧の表をファイルとして消す）は決まりに反する | `merge-versions.py` の `check_removed`・`check-signoff.py` の `provisional_rows`（要求確定のタグの時点） | `KINDS` に 3 種類を足し、`check_removed` に一覧の表をファイルとして消せないことを足す。`check-signoff.py` は 2 度消す・ファイルとして消すを 2 にする（配置の判定は `機能` と同じく見ない） |
+| A7 (U3) | 画面の表が無い正本で、3 本の出力が今と変わらない | 3 本の CLI（既存の試料） | 既存のテストの期待値（全行・全バイト）がそのまま通ること。表が無ければ差分に画面の種類の行を出さない |
+| A8 (U4) | `test-merge-versions.py` が、本体の一覧が `versions.md` の一覧と一致することを見る | `check_reference` | 一覧の表の行（パス・種類・鍵の列・画面を指す列）と `removed.csv` の種類を突き合わせる。変異（一覧をずらす）で落ちることも見る |
+| A9 | 一覧の表の各版の形の誤り（見出しに鍵の列が無い・鍵が空・鍵の重複・列の数・見出しが前の版と違う・綴り違いの名前）は決まりに反する（1） | `merge-versions.py` | `read_rows`・`misnamed_structured` |
+| A10 | 版が 3 種類で 0.91.0・指し先が実在する・歯止めが全部緑 | `check-plugin-versions.py` ほか | `check-all.py`（順番待ち越し） |
+| X1 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方 × 1・2 パス目に渡す | — | 再開点で記録 |
+
+**証明できないもの（未証明）**: 無し（どれも一時ディレクトリの試料で走らせて確かめられる）。
+
+**生成物**: `SKILL.md` の測定値（設計 §8.2 の生成ブロック）は dev-loop の `SKILL.md` だけを測るので、spec-loop の変更では動かない——`skill-metrics.py --check` で確かめる。図の書き出しは無し。
+
+## 実機確認
+
+一時ディレクトリに正本（`docs/v1/`・`docs/v2/` に画面の表）を置き、`merge-versions.py`・`diff-versions.py` を走らせて U1・U2 を目で見る。U3 は既存の試料（画面の表の無い正本）で 3 本の出力が main の版と同じかを比べる。
+
+## 未解決の判断
+
+- 上の穴 2 つ（確認の Issue で利用者に渡す）。
+
+## 起票
+
+- この周の起票: 0 件
+
+## 直す線
+
+`既定`（出所: cruise の台帳の確かめた線。不在の周）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1091-screen-row-merge`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1091`・起点 `a6f8d59`・base `origin/main` → `a6f8d5981c144e459d1138edb9fda810441cff64`
+- 割り目（手順 4）: 割らない（cruise の周）
+
+## 既知の限界・決着済みの論点
+
+- 提案書（`build-proposal.py`）の「前の版からの変更」は画面・項目・遷移を載せない（`SHARED_KINDS` は 3 種類のまま）。画面の表は `whole.files` に入らなくなるので、提案書の規模の「要求のファイル」の数にも入らない——画面の表を持つ正本はまだ無い。Issue の範囲の外（#1081 の後の段）。
+- `check-signoff.py` は、新しい種類の行の「前の版までに無い」「同じ版で置きつつ消す」を見ない——`機能` と同じく、版ごとの行の一覧を git の上で作ることになる（`merge` が作業ツリーで見る）。
+- 画面の表どうしの参照（項目・遷移が在る画面を指すか）は見ない——`check-screens.py`（#1092）。
