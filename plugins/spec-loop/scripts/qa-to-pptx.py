@@ -22,7 +22,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 （req-loop が画面の表から作るモックの `#screen=<画面ID>`。どの質問にどのリンクを渡すかは req-loop の `SKILL.md` の手順 4 を正とする）。
 渡した質問の頁（1 問 1 枚）の最後に「モック: <リンク>」の 1 段落を足し、その文字にハイパーリンク（スライドの関係。`TargetMode="External"`）を付ける。
 表紙・一覧・今回の会で決めたい問の枚には載せない。**リンクの中身（行き先が在るか・開けるか）は見ない**——文字列のまま載せる。
-守るのは次だけ: **読めない・JSON のオブジェクトでない・鍵が資料に載る行の番号でない（反映済み・表に無い）・値が空か文字列でない・`--links` を 2 度書いた、はどれも 2**
+守るのは次だけ: **読めない・JSON のオブジェクトでない・鍵が資料に載る行の番号でない（反映済み・表に無い）・値が空（XML に書けない文字を外した後で）か文字列でない・`--links` を 2 度書いた、はどれも 2**
 （出力を作らず、既存の出力に触らない）。**`--links` を渡さなければ、出力は前と同じバイト**——段落も関係も足さない。
 
 **載せるのは共有の層の表だけ**——内部の層の表（`check-qa-csv.py` の `INTERNAL_NAME`）を渡されたら作らない（2）。
@@ -517,7 +517,8 @@ def read_links(path: Path, rows: list[dict[str, str]]) -> tuple[dict[str, str], 
     missing = [n for n in data if n not in shown]
     if missing:
         return {}, f"--links の {', '.join(n or '（空）' for n in missing)} は資料に載る行に無い（反映済みか、表に無い）"
-    empty = [n for n, v in data.items() if not isinstance(v, str) or not v.strip()]
+    # 空かは XML に書けない文字を外した後で見る（制御文字だけのリンクが空の関係の行き先になる。#1100 の 1 パス目）
+    empty = [n for n, v in data.items() if not isinstance(v, str) or not INVALID_XML.sub("", v).strip()]
     if empty:
         return {}, f"--links の {', '.join(empty)} のリンクが空か文字列でない"
     return {n: v.strip() for n, v in data.items()}, None

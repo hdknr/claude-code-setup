@@ -104,7 +104,7 @@ LINKS_EXPECTED = {
     "<external>": 2,
 }
 # 拒む形（ファイルの中身）: JSON でない・オブジェクトでない・反映済みの番号・表に無い番号・空の値・文字列でない値
-LINKS_REJECTED = ["{", '["Q-002"]', '{"Q-001": "x"}', '{"Q-999": "x"}', '{"Q-002": "  "}', '{"Q-002": 1}']
+LINKS_REJECTED = ["{", '["Q-002"]', '{"Q-001": "x"}', '{"Q-999": "x"}', '{"Q-002": "  "}', '{"Q-002": 1}', '{"Q-002": "\\u0001 "}']
 # 内部の層の表（qa-dev.csv）——資料に載せない（#330）
 INTERNAL_ROWS = [["D-001", "仕様レビュー", "ワーカーを分けるか", "A: 分ける / B: 分けない", "B", "費用", "未回答", "—", "確認中", ""]]
 
@@ -531,6 +531,7 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("オブジェクトでない JSON を通す", "    if not isinstance(data, dict):", "    if False:"),
     ("載らない番号のリンクを通す", "    if missing:\n        return {}, f\"--links の", "    if False:\n        return {}, f\"--links の"),
     ("空のリンクを通す", "    if empty:\n        return {}", "    if False:\n        return {}"),
+    ("制御文字を外す前に空かを見る", 'not INVALID_XML.sub("", v).strip()]', "not v.strip()]"),
     ("--links の値を捨てる", 'links = None if opts["--links"] is None else Path(opts["--links"])', "links = None"),
     ("2 度目の --links で上書きする", '            if a in ("--focus", "--links") and opts[a] is not None:',
      '            if a == "--focus" and opts[a] is not None:'),
