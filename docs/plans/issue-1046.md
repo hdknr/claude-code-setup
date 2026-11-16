@@ -61,8 +61,8 @@ Issue の受入基準 2 つ（U1: `git tag` が allow の settings で点検が�
 
 | # | 不変条件 | 破りうる経路 | 守り方 |
 | --- | --- | --- | --- |
-| A1 (U1) | settings が拒むべき操作を許していれば `check` は 1 で、その操作を要対処と名指す | `Bash(git tag:*)`（陽性対照）・広い allow（`Bash(git:*)`・`Bash(git push:*)` が `git push --tags` を、`Bash(python3:*)` が scaffold を覆う）・`defaultMode: bypassPermissions`・どの層に書いた allow でも | 写しの `collect_rules`・`rule_matches` で全層の規則を集め、allow に当たるか bypass なら要対処 |
-| A2 (U2) | 拒むべき操作が deny に当たれば良い——allow・ask と一緒にあっても。ほかに要対処が無ければ 0 | deny を allow と同じ設定に書く（`Bash(git push:*)` を allow しつつ `Bash(git push --tags:*)` を deny）・deny を別の層に書く | deny を最初に見る |
+| A1 | (U1) settings が拒むべき操作を許していれば `check` は 1 で、その操作を要対処と名指す | `Bash(git tag:*)`（陽性対照）・広い allow（`Bash(git:*)`・`Bash(git push:*)` が `git push --tags` を、`Bash(python3:*)` が scaffold を覆う）・`defaultMode: bypassPermissions`・どの層に書いた allow でも | 写しの `collect_rules`・`rule_matches` で全層の規則を集め、allow に当たるか bypass なら要対処 |
+| A2 | (U2) 拒むべき操作が deny に当たれば良い——allow・ask と一緒にあっても。ほかに要対処が無ければ 0 | deny を allow と同じ設定に書く（`Bash(git push:*)` を allow しつつ `Bash(git push --tags:*)` を deny）・deny を別の層に書く | deny を最初に見る |
 | A3 | deny に当たらない拒むべき操作を「良い」と言わない | allow に無い・ask に当たる | 人が見る項目にし、deny の案を出す |
 | A4 | 読めない層があり deny に当たらなければ、判定できない（良いとも要対処とも言わない） | local が壊れている | deny の次に読めない層を見る |
 | A5 | 拒むべき操作は線に依らず点検する | `commit = しない`（git も PR も使わない線） | `cmd_check` で線を見ずに足す |
