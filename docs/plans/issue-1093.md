@@ -111,6 +111,14 @@ screen-spec を main の先端の 0.1.0 から **0.2.0**（minor——スキル�
 
 - 周の在り処: ブランチ `issue/1093-screen-spec-init-add`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1093`・起点 `d0a62f2`・base `origin/main` → `d0a62f2f008127a19d82573cf2eda2b8c73138c3`
 - 割り目（手順 4）: 割らない（cruise の周）
+- 実装のコミット: `35b6e17`
+- 1 パス目の指摘対応の起点: `35b6e17`（1 パス目の関門に渡した時点の HEAD）
+- check-all（`35b6e17`）: 回していない——run-serial の順番待ち（#1095 が枠を持っていた）の間に 1 パス目の指摘対応で作業ツリーを変えることになったので止めた。指摘対応の後に回す
+- Verifier 1 パス目: 通した——反証 1 件（R1。dev-loop:dev-loop-verifier・sonnet。verifier-1.md 167 行を報告、wc -l と一致）
+- `/code-review` 1 パス目: 通した——指摘 10 件（CR1-1〜CR1-10。high。委譲文は貼った）
+- 手順 4 への差し戻し: あり（採否の表の「直す」: R1=CR1-1・CR1-2、CR1-3）
+- 割り目（手順 6・2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方
+- 交絡を潰した手順: 実験なし（反証の再現は著者が手で走らせて確かめた——`init --prefix Q-`・`TODO-` → `add` → `check-screens.py` が 1）
 
 ## 既知の限界・決着済みの論点
 
@@ -118,3 +126,18 @@ screen-spec を main の先端の 0.1.0 から **0.2.0**（minor——スキル�
 - 作業中の版がリリース済みかは見ない——正本の CI の spec-loop の `check-frozen.py` が見る（`write-screens.py` の docstring）。
 - 雛形の散文の節の既定の文は書き直す前提（上の「決めたこと」）。
 - 公開ページに screen-spec を載せるのは、この周の外（上の「触らない」）。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R1・CR1-1・CR1-2: 接頭辞 `Q-`・`D-`・`TBD-`・`TODO-` を `init` が受け、`add` の直後の検査が 1（画面ID が Q&A の番号の形・未決定の印に読まれる） | 示せる（著者が再現: `Q-` で違反 5 件、`TODO-` で違反 1・未決定 2） | A1（`--prefix` の経路）・A5 | 直す——採る画面ID が Q&A の番号の形・未決定の印に当たる接頭辞を 2 で止める（`check-qa-csv.py` の `NUMBER`・`INTERNAL_NUMBER` と `find_markers` を読み込む） |
+| CR1-3: 途中の置き場所がファイルだと、書いている途中で止まり、書いた分を名指ししない | 示せる（code-review の再現: `wireframes` をファイルにして `add` → `screens.csv` と `S-001.md` が残り exit 2・`書いた:` 無し） | A5 | 直す——書く前に置き場所の形を確かめて 3 で止め、書いたら 1 つずつ名指しする |
+| CR1-4: 変異「init の前の add を止めない」は文言の違いでしか死なない（守りが無くても書かない） | 示せる | 無し（A5 は守られている） | 残課題 |
+| CR1-5: 他の `.md` がある `requirements/screens/` に `init` すると検査が 0 から 1 になる（スキルの手順 4 の「0 になる」が偽） | 示せる | 無し（A1 は空の案件） | 残課題 |
+| CR1-6: 設定の見出しの誤りは 2 で、docstring の「設定が読めない」の 3 と食い違う | 示せる | 無し | 残課題 |
+| CR1-7: `settings.csv` の空行で `add` が 2 | 示せる | 無し | 残課題 |
+| CR1-8: v2 が作業中の版の `init` → `add` → 検査の試料が無い | 示せない（今は通る） | 無し | 残課題 |
+| CR1-9: `Docs` が `check-screens.py` の読み込みと `text` を写している | 示せない（食い違いは起きていない） | 無し | 残課題 |
+| CR1-10: `used_keys` が `merge` と別に表を読み直す | 示せない | 無し | 残課題 |
+

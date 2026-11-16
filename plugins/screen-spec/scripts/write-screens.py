@@ -30,6 +30,7 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 - 書くのは作業中の版（いちばん大きい `v<n>`）の `requirements/screens/` の中だけ。版が 1 つも無ければ何も書かない（3。版を作るのは spec-loop）
 - `init` は、重ねた全体か作業中の版に、3 つの表・`settings.csv`・`common.md`・`templates/spec.md` のどれかが在れば何も書かない（3）
 - `add` は、どの版の画面・項目・遷移の表の鍵（重ねる前の生の行。`removed.csv` で消した鍵も含む）とも重ならない番号を採る（接頭辞は `settings.csv`。最大の番号の次）
+- 接頭辞は、採る画面ID が spec-loop の成果物の表の番号・Q&A の番号の形・未決定の印に読まれないものだけを受ける（読まれると足した直後の検査が違反か未決定になる）
 - `add` の行は、種別・親画面の組・必須の欄を満たす（満たさない引数は 2 で何も書かない）。ステータスは `下書き`
 - `add` の仕様書は、重ねた全体に案件の雛形（`templates/spec.md`）があればそれを、無ければこのプラグインの雛形を使う
 - 書く前に全部を決め、決まらなければ 1 つも書かない（引数・状態・重ね合わせ・spec-loop の版）
@@ -43,7 +44,7 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 | **足した行が検査を通るか**（機能・帳票の在りか・入口から辿れること） | `check-screens.py` が見る。`add` のスキルは書いた後にそれを走らせる |
 | **項目と遷移の行**（ボタン・遷移） | 画面の中身で、利用者と決める。`add` は画面の行だけを足す（`references/tables.md` の「`init` と `add`」） |
 | **ワイヤーフレームの書き出し（SVG）** | spec-loop の `render-diagrams.py` が書き出す。`add` のスキルは書いた後にそれを走らせる |
-| **書いている途中の失敗**（ディスクが一杯など） | 書いた分は残る。書いたものを出力に名指しする |
+| **書いている途中の失敗**（ディスクが一杯・権限など） | 置き場所の形（途中がファイル・置き場所がディレクトリ）は書く前に確かめて 3 で止めるが、ほかの失敗では書いた分が残る。書いたものは 1 つずつ出力に名指しする |
 | **profile の中身** | profile はまだ無い（#1094）。`--profile` は `未設定` かこのプラグインの `profiles/` にあるディレクトリの名前だけを受ける |
 """
 
@@ -187,15 +188,25 @@ class Docs:
         return keys
 
     def write(self, files: dict[str, str]) -> None:
-        written = []
+        """書く前に、どの置き場所も書けない形（途中がファイル・置き場所がディレクトリ）でないことを確かめてから、1 つずつ書いて名指しする。"""
+        blocked = []
+        for path in files:
+            target = self.root / path
+            for parent in reversed(target.relative_to(self.root).parents):
+                if parent.parts and (self.root / parent).exists() and not (self.root / parent).is_dir():
+                    blocked.append(f"{path}（{parent} がディレクトリでない）")
+                    break
+            else:
+                if target.is_dir():
+                    blocked.append(f"{path}（ディレクトリが在る）")
+        if blocked:
+            raise Refused("置き場所に書けない——何も書いていない: " + "、".join(blocked))
         for path, text in files.items():
             target = self.root / path
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("w", encoding="utf-8", newline="") as f:
                 f.write(text)
-            written.append(target)
-        for target in written:
-            print(f"書いた: {target}")
+            print(f"書いた: {target}", flush=True)
 
 
 def profiles() -> list[str]:
@@ -204,12 +215,19 @@ def profiles() -> list[str]:
     return sorted(p.name for p in PROFILES.iterdir() if p.is_dir() and not p.name.startswith((".", "_")))
 
 
-def check_prefix(prefix: str, design) -> str:
+def check_prefix(prefix: str, docs: "Docs") -> str:
+    """接頭辞の形と、採る画面ID が spec-loop のほかの番号・未決定の印に読まれないこと（読まれると、足した直後の検査が違反・未決定になる）。"""
     if not PREFIX.fullmatch(prefix):
         raise ValueError(f"画面IDの接頭辞 {prefix!r} は英大文字で始まり英大文字と数字が続き `-` で終わる形（例: S-）でない")
-    taken = {value for value in design.ID_PREFIX.values()}
+    taken = {value for value in docs.design.ID_PREFIX.values()}
     if prefix in taken:
         raise ValueError(f"画面IDの接頭辞 {prefix!r} は spec-loop の成果物の表の番号（{'・'.join(sorted(taken))}）と重なる")
+    sample = f"{prefix}{1:0{ID_DIGITS}d}"
+    qa = docs.versions.qa
+    if any(shape.fullmatch(sample) for shape in (qa.NUMBER, qa.INTERNAL_NUMBER)):
+        raise ValueError(f"画面IDの接頭辞 {prefix!r} では画面ID（{sample}）が spec-loop の Q&A の番号の形になる")
+    if docs.design.spec_exit.find_markers(sample):
+        raise ValueError(f"画面IDの接頭辞 {prefix!r} では画面ID（{sample}）が spec-loop の未決定の印を含む")
     return prefix
 
 
@@ -234,7 +252,7 @@ def hint(docs: Docs) -> int:
 
 
 def init(docs: Docs, prefix: str, profile: str) -> int:
-    check_prefix(prefix, docs.design)
+    check_prefix(prefix, docs)
     if profile != UNSET and profile not in profiles():
         raise ValueError(f"profile {profile!r} はこのプラグインに無い（あるもの: {'・'.join(profiles()) or 'なし'}。無ければ {UNSET}）")
     targets = [*checks.TABLES, SETTINGS, COMMON, SPEC_TEMPLATE]
@@ -256,7 +274,7 @@ def add(docs: Docs, values: dict[str, str]) -> int:
             raise Refused(f"{path} が無い——先に init を走らせる")
     settings = docs.settings()
     try:
-        prefix = check_prefix(settings.get(PREFIX_KEY, ""), docs.design)
+        prefix = check_prefix(settings.get(PREFIX_KEY, ""), docs)
     except ValueError as e:
         raise Refused(f"{SETTINGS}: {e}") from None
     kind = values["種別"]
