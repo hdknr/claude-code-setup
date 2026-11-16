@@ -1,0 +1,120 @@
+# Issue #1093 — screen-spec: init・add のスキルと、散文の仕様書・共通仕様の雛形（#1081 段 1）
+
+**不在の周である**——cruise（親 Issue #1081）の子として回す。出所: `/dev-loop:cruise 1081 --absent` の起動（2026-11-16T04:38Z）。
+確かめた線（台帳 `issue-1081`。出所: 利用者の確認（起動時・2026-11-16、配布を見せて確かめた））:
+直す線 = 既定 / 仕様の穴 = 推奨で決めて起票 / マージ = 関門を通ればマージ / 周の途中の課題 = 外に出す / マージ前の判断 = 推奨で決めて起票。実機確認の線は無い。
+#1093 は spec-loop から来た Issue ではない（本文に `spec-loop-handoff` の印は無い）。
+この周はマージしない（親がする）——PR を作り、PR 側の CI が通るのを見るところまで。
+依存先 #1092（PR #1108）は main に入っている（`d0a62f2`）。承認済みの値: #1104（表の鍵と画面を指す列）・#1105（版の間で見出し行が違えば止める）。
+確認待ちの値（閉じない・閉じるキーワードで指さない）: #1109（入口は種別 `top`）・#1110（対応する spec-loop の版の範囲）・#1111。
+#1093・#1095・#1097 の 3 周が同時に走っている——重い検査は run-serial 越しに回す。
+
+## 変更範囲
+
+触る:
+
+- `plugins/screen-spec/scripts/write-screens.py` — 新設。`init`・`add` のスキルが呼ぶ書き込み（`hint`・`init`・`add`）
+- `plugins/screen-spec/templates/` — 新設。仕様書（`spec.md`）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`）の雛形
+- `plugins/screen-spec/skills/init/SKILL.md`・`plugins/screen-spec/skills/add/SKILL.md` — 新設
+- `plugins/screen-spec/references/tables.md` — 置き場所（設定・雛形・ワイヤーフレーム）・案件ごとの設定・`init` と `add`（採番）
+- `plugins/screen-spec/references/prose.md` — 雛形・書き方・レビュー観点・共通仕様
+- `plugins/screen-spec/scripts/check-screens.py` — docstring の「守らないもの」の 2 行（#1093 を指していた prefix と `common.md` の節）だけ
+- `plugins/screen-spec/README.md` — スキルと中身の一覧
+- `plugins/screen-spec/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版（0.2.0）と description
+- `scripts/test-write-screens.py` — 新設。回帰テスト（受入基準の再現・変異テスト・原本との突き合わせ）
+- `scripts/check-all.py`・`.github/workflows/plugins.yml` — テストの収録
+- `CLAUDE.md` — プロジェクト構成に screen-spec のスキル・スクリプト・テストを足す
+- `docs/plans/issue-1093.md` — この計画
+
+触らない:
+
+- `check-screens.py` の検査の中身（設定・接頭辞・`common.md` の節は見ないまま。docstring の 2 行だけ直す）
+- profile（`web-spa`。#1094）・モック（#1095）・MkDocs のフック（表を出す印を描く。#1098）
+- spec-loop の側（`tree.md` に画面の表の置き場所を書く・関門。#1097）
+- 公開ページ（`docs/plugins/index.md` に screen-spec を載せる）——Issue のやることに無い。PR コメントの残課題に書く
+- 項目・遷移の行を `add` で足すこと——Issue は「表の行と仕様書・ワイヤーフレームの雛形」で、ボタンと遷移は画面の中身（利用者と決める）
+
+複製の数: 設定の項目名・既定・ファイル名は `references/tables.md`（原本）と `write-screens.py` の定数（写し）の 2 箇所——テストが突き合わせる。
+表の列・種別・節の名前は `check-screens.py` の定数を読み込む（写さない）。雛形の節は `check-screens.py` の `SECTIONS` とテストが照らす。
+スキルの手順はスクリプトを呼ぶだけで、決まりは `references/` を指す（写さない）。分けない理由: 写しは 1 つで、テストが見る。
+
+依存の追加・更新: なし
+
+## 決めたこと（実装で決めてよいもの）
+
+- **書き込みはスクリプト 1 本（`write-screens.py hint|init|add`）**——Issue の「スキルが呼ぶ機械の部分はスクリプトにする」。`check-screens.py` を読み込み、spec-loop の見つけ方・版の範囲・表の列と種別を共有する。
+- **書く版は作業中の版（いちばん大きい `v<n>`）**。版が 1 つも無ければ書かない（3）——spec-loop の重ね方は版が無い正本を違反にし、版を作るのは spec-loop。「空の案件」は `docs/v1/` だけがある正本。
+- **`init` は置き済みなら何も書かない（3）**——上書きで利用者の表を消さない。
+- **採番**: `<接頭辞><3 桁以上の 0 埋め>`。どの版の 3 つの表の生の行の鍵の最大の次（`removed.csv` で消した鍵も前の版の行に在るので含む。消した番号を使い直さない——版の比べで、消した画面と足した画面が同じ鍵になる）。既定の接頭辞 `S-` は `references/tables.md` の例の形。
+- **`add` が足すのは画面の行と 2 つの雛形だけ**（上の「触らない」）。仕様書のファイル名は `<画面ID>.md`、ワイヤーフレームは `wireframes/<画面ID>.drawio`。
+- **雛形の散文の節の既定の文**: 受入基準 1（足した直後に検査が 0）のため、散文の節は空にも未決定の印にもできない。#1081 の「状態・表示ルールは共通仕様との差だけを書く」から、
+  状態・同時編集・表示ルールは「共通仕様のとおりで固有の差は無い」、他システム連携は「やりとりしない」、未決の論点は「無い」を `N/A。` と理由で置く。書き直す前提で、レビュー観点に入れた（`references/prose.md`）。
+- **ワイヤーフレームの雛形の拡張子は `.xml`**——このリポジトリの `check-diagram-freshness.py` が `diagrams/` の外の `.drawio` を止める（雛形は図ではない）。
+- **profile の推し方**: `hint` が `shared/infra.csv` の `項目` が `frontend`・`フロントエンド` の行と、このプラグインの `profiles/` のディレクトリの一覧を出し、スキルが推して利用者に確かめる。
+  profile はまだ無い（#1094）ので、いま置けるのは `未設定` だけ。
+- **共通仕様の節は検査しない**（`check-screens.py` は今のまま Q&A の番号と未決定の印だけを見る）。書いていない節は空でよく、レビュー観点で見る。
+
+## 決めたこと（仕様の穴。`仕様の穴 = 推奨で決めて起票` の線で推奨により決めた）
+
+- **穴 1: 案件ごとの設定（画面IDの接頭辞と profile）の置き場所**——#1081 は「画面ID の prefix は案件ごとの設定」、#1093 は「profile を選ぶ」と書くが、どこに置くかを決めていない。
+  - 選択肢: A) 版の中の `requirements/screens/settings.csv`（見出し `項目,値`。ファイルの単位で重なる）（推奨）／ B) 正本の `CLAUDE.md` に行で書く（`画面IDの接頭辞: S-` など。版の外）／ C) 版の外の `docs/screen-spec.csv`
+  - 推奨 A。理由: profile は仕様書の末尾の節（実現方式）を決め、接頭辞は画面ID の形を決める——どちらも利用者に見える仕様の一部なので、2 つの承認（サインオフ）が比べる版の中に置く。
+    B・C は版の外で、変えても承認の取り直しにならない。CSV は spec-loop の成果物の表と同じ形で、`init` が置き、スクリプトが読む。
+- 決めた値は受入基準を足さない（`absent-lines.md`）。確認の Issue は PR を作った後に 1 件立てる。
+
+## デプロイ経路
+
+main へのマージで、プラグインの配布（カタログ。screen-spec 0.2.0）。公開ページ（`docs/`）は計画ファイルのほか触らない。
+
+## 版の上げ方
+
+screen-spec を main の先端の 0.1.0 から **0.2.0**（minor——スキルの追加）。`marketplace.json`・`plugin.json`・2 つの `SKILL.md`（2 行 1 組）。
+並行する #1095 も screen-spec を触るので版が衝突しうる——cruise の `references/parallel.md` の「版とマージの順」のとおり、親はマージの直前に取り込みと上げ直しを頼む
+（取り込んだら版をもう 1 つ上げ、`check-plugin-versions.py`・`skill-metrics.py --check` を回して push し、PR 側の CI を見る）。
+
+## 受入基準（不変条件 × 経路）
+
+入口は `write-screens.py` の 3 つのサブコマンドと、それを呼ぶ 2 つのスキルの手順（スクリプトで再現する）。読むのは spec-loop の重ね方で重ねた全体（v1 だけ・v2 以降の差分の版）。
+
+| # | 不変条件 | 破りうる経路 | 守り方 |
+| --- | --- | --- | --- |
+| A1 (U1) | 空の案件（`docs/v1/` だけ）に `init` → `add` した直後に `check-screens.py` が 0 | このプラグインの雛形・案件の雛形・Q&A 表がある正本・`--prefix`・v2 が作業中の版 | スクリプトで再現するテスト（スキルの手順 3・4 と、add の手順 2・4） |
+| A2 (U2) | `add`（と `init`）が Q&A 表を書き換えない・Q&A の番号を振らない | 共有の `shared/qa.csv`・内部の `spec/qa-dev.csv`・`removed.csv` | 実行の前後で正本の全ファイルを比べ、変わったのが書くと決めたファイルだけ |
+| A3 (U3) | 表に置いた次元の節は、表を出す印だけを持つ（散文に表の次元を二重に書かない） | このプラグインの雛形・`add` が作った仕様書 | テストが節ごとに中身を照らす（印のほかの行が無い）。散文の節は空でない |
+| A4 | 採番した画面ID が、どの版の表の鍵とも消した鍵とも重ならない | 前の版の画面・`removed.csv` の画面・項目と遷移の番号・設定の接頭辞・作業中の版に置き済みの行 | どの版の生の表から最大の次を採る（消した鍵は前の版の生の行に在る） |
+| A5 | 書けないときは 1 つも書かない（0 以外） | 置き済みの `init`・`init` の前の `add`・引数の誤り（種別・親画面・必須の欄）・版が無い・重ね合わせの違反・spec-loop の版の範囲の外・設定が読めない | 書く前に全部を決める。テストが実行の前後で正本が変わらないことを見る |
+| A6 | 雛形が `references/prose.md` の「雛形」に合う（節の名前と順・印・未決定の印と Q&A の番号と「決定」「確定」が無い・差し込み） | `templates/spec.md`・`templates/common.md` | テスト |
+| A7 | 定数の写しが `references/tables.md` と一致する | 設定の項目名・既定・ファイル名 | テストが突き合わせる |
+| A8 | リポジトリの外で単体で動く（`python3 -I`・`--spec-loop`） | 写した一時ディレクトリ | テスト |
+| A9 | プラグインの骨組みがカタログと一致し、歯止めが全部緑（版 3 種類・description・指し先・収録） | `check-all.py`（順番待ち越し） | `check-all.py` |
+| X1 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方 × 1・2 パス目に渡す（2 パス目が「該当なし」の周は 1 パス目の 2 つ） | — | 再開点で記録 |
+
+**証明できないもの（未証明）**: スキルの本文どおりにモデルが動くか（`AskUserQuestion` で訊く・推測で埋めない）——受入基準はスクリプトで再現したテストで確かめると Issue が決めている（Eval は回さない）。
+ワイヤーフレームの雛形が draw.io で開けて書き出せるか——CI に draw.io が無い。テストは XML として読めることと差し込みだけを見る（手元に draw.io があれば実機確認で 1 度書き出す）。
+
+**生成物**: 無し——`SKILL.md` の測定値（設計 §8.2）は dev-loop の `SKILL.md` だけを測る。図の書き出しも無し（雛形は `.xml`）。`skill-metrics.py --check` で変わらないことを確かめる。
+
+## 実機確認
+
+一時ディレクトリに空の正本（`docs/v1/`）を置き、`write-screens.py hint` → `init` → `add`（top）→ `check-screens.py` を走らせて 0 を見る。
+2 つ目の画面を足すと「入口から辿れない」で 1 になること（`add` が遷移を足さない）、v2 で採番が前の版と消した番号を避けることも見る。
+
+## 未解決の判断
+
+- 上の穴 1——確認の Issue で利用者に渡す（閉じるのは利用者）。
+
+## 直す線
+
+`既定`（出所: cruise の台帳の確かめた線。不在の周）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1093-screen-spec-init-add`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1093`・起点 `d0a62f2`・base `origin/main` → `d0a62f2f008127a19d82573cf2eda2b8c73138c3`
+- 割り目（手順 4）: 割らない（cruise の周）
+
+## 既知の限界・決着済みの論点
+
+- 項目と遷移の行は `add` が足さない——2 つ目からの画面は足した直後に「入口から辿れない」（1）になる（上の「決めたこと」）。
+- 作業中の版がリリース済みかは見ない——正本の CI の spec-loop の `check-frozen.py` が見る（`write-screens.py` の docstring）。
+- 雛形の散文の節の既定の文は書き直す前提（上の「決めたこと」）。
+- 公開ページに screen-spec を載せるのは、この周の外（上の「触らない」）。
