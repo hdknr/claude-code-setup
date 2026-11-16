@@ -78,7 +78,8 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **子を親から切り離す**——新しいセッションで起こし、終わるのを待たずに戻る。
 - **子に `--name cruise-<台帳の名前>-<番号>` で名前を付ける**（#1039）——親が `ListAgents` で見分けて `SendMessage` で宛てる宛先になる。付けないと子が自分で名前を付け、どれが自分の子か決められない。
 - **宛先を記録の `.json` の `peer` に残し、起動時と `status` で出す**——親は台帳の `agent`（記録のパス）から宛先を引く。
-- **子が保留したメッセージ（`peer_message_hold`）を `status` で出す**——送った側にはその場で成功と返るので、保留を確かめられるのは子の出力である。
+- **子が保留したメッセージ（`peer_message_hold`）を `status` で出す**——送った側の `SendMessage` はその場で成功と返るので、`SendMessage` の結果では保留を確かめられない
+  （送り手が `claude -p` なら出力に保留の知らせが出たが（`references/child-process.md` の「宛先」の M）、対話の親の側で見えるかは測っていない）。子の側で確かめるのは子の出力である。
 - **子の標準入力を閉じる**——親の標準入力を子に継がせない（端末なら子が親の入力を読み、待ちうる）。
 - **子の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——親の環境に無くても、別の値があっても 0 にする（別の値は上書きしたと出す）。
 - **Bash の環境に `CLAUDE_CODE_OAUTH_TOKEN` が無ければ、起動した `claude` の環境の値を子に置く。**
@@ -134,8 +135,8 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **実際の 1 周で最後の `result` に `structured_output` が載るか**——確かめたのは、スキルを入口にして Bash と背景の体を使う小さな子（`references/child-process.md` の「結果の形」）までである。
   載らなければ 3 になる（黙って 0 にはならない）。
 - **検査器が JSON Schema の全部を読むこと**——読むのは `type`・`enum`・`properties`・`required`・`additionalProperties`・`items` だけで（`description` は読み飛ばす）、記録の形にほかの語があれば読まずに 3 にする。
-- **子に送ったメッセージが届くこと**——届いたのは対話の親（`auto`）から子（`auto`・`default`）へ送った組だけで、送り手が `bypassPermissions` の `claude -p` なら子は保留した
-  （`references/child-process.md` の「宛先」。2.1.325 の実測。ほかのモードの組・`-p` の親は測っていない）。**子に `crossSessionInbound: accept` は渡さない**——権限確認を飛ばすセッションからの指示も通すことになり、cruise は権限を広げない。
+- **子に送ったメッセージが届くこと**——届くかは送り手と子の権限モードの組で決まり、送り手が `bypassPermissions` の `claude -p` なら子は保留した。
+  どの組で届き、どの組を測っていないかは `references/child-process.md` の「宛先」の表を正とする（2.1.325 の実測。#1039・#1079）。**子に `crossSessionInbound: accept` は渡さない**——権限確認を飛ばすセッションからの指示も通すことになり、cruise は権限を広げない。
   **同じ名前の別のセッションが居れば**、`ListAgents` は短い印を足して並べ、素の名前では宛先が決まらない——そのときは宛てない。
 - **子が台帳を書かないこと**——委譲文で頼むだけである（`prompts/child-cycle.md`）。
 - **記録のディレクトリの後片付け**——消さない。
