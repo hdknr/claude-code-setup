@@ -306,6 +306,11 @@ def observe(mod, base: Path) -> dict:
         rejected.append((value, rc, target.read_bytes() == b"OLD"))
     obs["focus_rejected"] = rejected
     obs["focus_no_value_rc"] = run(mod, str(good), str(base / "x.pptx"), "--focus")
+    # 2 度書いた --focus は後の値で上書きせずに 2（#1042 の 1 パス目の /code-review）
+    twice = base / "focus-twice.pptx"
+    twice.write_bytes(b"OLD")
+    obs["focus_twice"] = (run(mod, str(good), str(twice), "--focus", "Q-002", "--focus", "Q-005"),
+                          twice.read_bytes() == b"OLD")
 
     bad = write_csv(base / "bad.csv", ROWS + [["Q-006", "未知の起票元", "q", "A: x", "A", "r", "未回答", "—", "確認中", ""]])
 
@@ -362,6 +367,7 @@ EXPECTED = {
     "bold_lines": BOLD_EXPECTED,
     "focus_rc": 0, "focus_slide": FOCUS_EXPECTED, "focus_rest_same": True,
     "focus_rejected": [(v, 2, True) for v in FOCUS_REJECTED], "focus_no_value_rc": 2, "internal_focus_rc": 2,
+    "focus_twice": (2, True),
 }
 
 # 判別の本体を壊す（資料の側には写しが無いので、本体を壊せば資料が変わる）
@@ -409,8 +415,15 @@ MUTATIONS: list[tuple[str, str, str]] = [
      '    return [r for r in rows if r["No"].strip() in numbers], None'),
     ("--focus の上限を見ない", "    if len(numbers) > FOCUS_MAX:", "    if False:"),
     ("--focus の重複を見ない", "    if len(set(numbers)) != len(numbers):", "    if False:"),
-    ("--focus の載らない番号を通す", "    missing = [n for n in numbers if n not in by_no]",
-     "    missing = [n for n in numbers if n not in by_no and n.startswith('Q-9')]"),
+    # 検査を外し、載らない番号を例外で落ちずに黙って落とす形（#1042 の 1 パス目の /code-review——
+    # 検査だけを外す形は KeyError でも殺せてしまい、検査が守っていることを示さない）
+    ("--focus の載らない番号を黙って落とす",
+     "    missing = [n for n in numbers if n not in by_no]\n    if missing:\n"
+     "        return [], f\"--focus の {', '.join(n or '（空）' for n in missing)} は資料に載る行に無い（反映済みか、表に無い）\"\n"
+     "    return [by_no[n] for n in numbers], None",
+     "    return [by_no[n] for n in numbers if n in by_no], None"),
+    ("値の無い --focus を通す", "            if value is None:\n                return None\n", ""),
+    ("2 度目の --focus で上書きする", '            if a == "--focus" and opts[a] is not None:', "            if False:"),
     ("--focus で暫定を見分けない", 'tag = "（暫定）" if qa.is_provisional(row) else ""', 'tag = ""'),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
     # 太字の行（#965）——外すと `**` が文字のまま残る・中に `**` があっても 1 つと読むと 2 つの太字の行が化ける
