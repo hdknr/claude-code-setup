@@ -35,6 +35,7 @@ PLUGIN = REAL_REPO / "plugins" / "spec-loop"
 SCRIPTS = PLUGIN / "scripts"
 TARGET = "check-review-record.py"
 SPEC_EXIT = PLUGIN / "references" / "spec-exit.md"
+SPEC_REVIEW = PLUGIN / "skills" / "spec-review" / "SKILL.md"
 
 R_HEAD = "回,日付,結果,条件2〜4,要求の行,決定表の行,テストケース,仕様の行,判断,機能\n"
 
@@ -67,7 +68,10 @@ CASES: dict[str, tuple] = {
                                    RUNS, [], 0, "満たす: 回 2・最後のレビューは 2回目（その行 1 件）"),
     "条件: 2 回目のあとで直しても狭いパスの効く重さは数える": ("conditions", F_HEAD + f() + f(review="2回目", weight="結果が割れる", result="spec/a.md:12")
                                             + f(review="狭いパス", weight="結果が割れる", result="次の回"), RUNS, [], 1, "狭いパス・red-team"),
-    "条件: 2 回目の起票の行は直しでないので数える": ("conditions", F_HEAD + f() + f(review="2回目", weight="判断が要る", category="共有の Q&A 表に起票する",
+    # `判断が要る` は直しても解消済みにならない（spec-exit.md。狭いパスの N1）
+    "条件: 2 回目の判断が要るは直しても数える": ("conditions", F_HEAD + f() + f(review="2回目", weight="判断が要る", result="spec/a.md:12"),
+                                     RUNS, [], 1, "2回目・red-team・判断が要る"),
+    "条件: 2 回目の起票の行は直しでないので数える": ("conditions", F_HEAD + f() + f(review="2回目", weight="結果が割れる", category="共有の Q&A 表に起票する",
                                                                      result="Q-009"), RUNS, [], 1, "最後のレビューは 2回目"),
     "条件: 補いだけ": ("conditions", F_HEAD + f() + f(review="2回目", result="次の回") + f(review="2回目", judge="domain-checker", result="次の回"),
                 RUNS, [], 0, "満たす: 回 2"),
@@ -155,10 +159,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("内部の Q&A で 2 回目と読まない", ', "内部の Q&A 表に記録する")', ")", "条件: 内部の Q&A に記録した行も 2 回目を回す"),
     ("列の足りない行を飛ばす", "    if short:\n", "    if False:\n", "判定しない: 記録の行の列が足りない"),
     ("2 回目のあとで直した行も数える", " and not fixed_after_second(c))", ")", "条件: 2 回目のあとで直した行は数えない"),
-    ("次の回の行も直したと読む", '    return c["レビュー"] == SECOND and c["振り分け"] == FIX and c["結果"] != NEXT_RUN\n',
-     '    return c["レビュー"] == SECOND and c["振り分け"] == FIX\n', "条件: 結果が割れるが 2 回目に 1 行"),
-    ("起票の行も直したと読む", '    return c["レビュー"] == SECOND and c["振り分け"] == FIX and c["結果"] != NEXT_RUN\n',
-     '    return c["レビュー"] == SECOND and c["結果"] != NEXT_RUN\n', "条件: 2 回目の起票の行は直しでないので数える"),
+    ("次の回の行も直したと読む", 'and c["振り分け"] == FIX and c["結果"] != NEXT_RUN and',
+     'and c["振り分け"] == FIX and', "条件: 結果が割れるが 2 回目に 1 行"),
+    ("起票の行も直したと読む", 'and c["振り分け"] == FIX and c["結果"] != NEXT_RUN and',
+     'and c["結果"] != NEXT_RUN and', "条件: 2 回目の起票の行は直しでないので数える"),
+    ("判断が要るも直したと読む", ' and c["重さ"] != DECIDE\n', "\n", "条件: 2 回目の判断が要るは直しても数える"),
     ("表が無ければ判定しない", "    if not record.exists():\n        return EXIT_OK", "    if False:\n        return EXIT_OK", "上限: 表が無ければ 0 回"),
 ]
 
@@ -225,6 +230,17 @@ def reference_mismatches(source: str, spec_exit: str) -> list[str]:
     return problems
 
 
+def step6_problems(skill: str) -> list[str]:
+    """spec-review の手順 6 が、数え直しを厳しくする向きにだけ使い、`回答待ち` を `結果が割れる` の行で `満たさない` に直させるか（N2）。"""
+    step = skill.split("### 6.", 1)[-1].split("### 7.", 1)[0]
+    problems = []
+    if "`回答待ち` なら変えない" in step:
+        problems.append("「回答待ち なら変えない」が残る——結果が割れる の行が出ても 満たさない にならない")
+    if "`回答待ち` で、数えた行に `結果が割れる` があれば `満たさない`" not in step:
+        problems.append("回答待ちを 結果が割れる で 満たさない にする文が無い")
+    return problems
+
+
 def main() -> int:
     source = (SCRIPTS / TARGET).read_text(encoding="utf-8")
     with tempfile.TemporaryDirectory(prefix="check-review-record-test-") as tmp:
@@ -243,6 +259,11 @@ def main() -> int:
         check("本体の定数が references/spec-exit.md と一致する", not problems, "; ".join(problems))
         broken = re.sub(r"(\| `結果が割れる` \|[^\n]*\| )\*\*効く\*\*( \|)", r"\1効かない\2", spec_exit, count=1)
         check("崩した references で突き合わせが落ちる（陽性対照）", reference_mismatches(source, broken) != [])
+        print("  OK")
+
+        print("spec-review の手順 6（狭いパスの N2）")
+        problems = step6_problems(SPEC_REVIEW.read_text(encoding="utf-8"))
+        check("手順 6 が、回答待ちの行で数え直しに 結果が割れる があれば 満たさない にさせる", not problems, "; ".join(problems))
         print("  OK")
 
         print("変異テスト")
