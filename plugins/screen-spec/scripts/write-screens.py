@@ -6,11 +6,15 @@ usage: python3 write-screens.py hint <docs ディレクトリ> [--spec-loop <spe
        python3 write-screens.py add <docs ディレクトリ> --name <画面名> --kind <種別> --user <主たる利用者> --purpose <目的と背景>
                                     --can <できること> --basis <根拠> [--parent <画面ID>] [--features <機能>] [--reports <帳票>]
                                     [--refs <参考資料>] [--spec-loop <…>]
+       python3 write-screens.py mkdocs <docs ディレクトリ> [--spec-loop <…>]
 
 - `hint`: 何も書かない。`shared/infra.csv` のフロントエンドの行と、このプラグインにある profile の一覧を出す（`init` のスキルが profile を推す材料）。
 - `init`: 作業中の版の `requirements/screens/` に、3 つの表（見出し行だけ）・案件ごとの設定（`settings.csv`）・共通仕様（`common.md`）・
   仕様書の雛形（`templates/spec.md`）を置く。
 - `add`: 画面ID を採番し、作業中の版の画面の表に 1 行足し、仕様書（`<画面ID>.md`）とワイヤーフレーム（`wireframes/<画面ID>.drawio`）の雛形を置く。
+- `mkdocs`: このプラグインの MkDocs のフック（`templates/mkdocs/screen_spec_pages.py`）を、spec-loop の `init-mkdocs.py --hook` で正本（`docs` の親）に登録する（#1098）。
+  書くのは spec-loop の `init-mkdocs.py`（`mkdocs.yml` が無ければ spec-loop の雛形も写す。在るファイルは変えない。`mkdocs.yml` は書き換えない）。
+  決まりは `references/mkdocs.md`。
 
 **決まりの正は `references/tables.md`（置き場所・設定・採番）と `references/prose.md`（雛形）である**（このプラグインの中にある）。
 表の置き場所・列・種別・spec-loop の見つけ方と版の範囲は `check-screens.py` を読み込む（写さない）。
@@ -18,9 +22,9 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 
 終了コード:
 
-- 0: 書いた（`hint` は出した）
+- 0: 書いた（`hint` は出した。`mkdocs` は登録した・登録済み）
 - 1: 重ね合わせが spec-loop の決まりに反する——書かない
-- 2: 引数の誤り・`docs` が無い・読めない・想定外の例外——書かない
+- 2: 引数の誤り・`docs` が無い・読めない・想定外の例外——書かない（`mkdocs` は spec-loop の `init-mkdocs.py` が 0 以外で終わったときも 2）
 - 3: 今の正本の状態では書けない——版が無い、`init` は置き済み、`add` は `init` の前・設定が読めない・同じ名前の仕様書かワイヤーフレームが在る。書かない
 - 4: spec-loop が見つからない・版が対応の範囲の外（`check-screens.py` と同じ）——書かない
 
@@ -28,6 +32,7 @@ spec-loop の決まりは spec-loop のスクリプトを読み込む——版�
 
 - Q&A 表を読むだけで書かない——Q&A の番号を振らない（番号は spec-loop の req-loop・spec-review が振る）
 - 書くのは作業中の版（いちばん大きい `v<n>`）の `requirements/screens/` の中だけ。版が 1 つも無ければ何も書かない（3。版を作るのは spec-loop）
+- `mkdocs` は自分では書かない——spec-loop の `init-mkdocs.py --hook` に渡す（`mkdocs.yml` を書き換えない・在るファイルを変えないのは向こうの決まり）
 - `init` は、重ねた全体か作業中の版に、3 つの表・`settings.csv`・`common.md`・`templates/spec.md` のどれかが在れば何も書かない（3）
 - `add` は、どの版の画面・項目・遷移の表の鍵（重ねる前の生の行。`removed.csv` で消した鍵も含む）とも重ならない番号を採る（接頭辞は `settings.csv`。最大の番号の次）
 - 接頭辞は、採る画面ID が spec-loop の成果物の表の番号・Q&A の番号の形・未決定の印に読まれないものだけを受ける（読まれると足した直後の検査が違反か未決定になる）
@@ -55,6 +60,7 @@ import csv
 import importlib.util
 import io
 import re
+import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -67,6 +73,8 @@ HERE = Path(__file__).resolve().parent
 PLUGIN_ROOT = HERE.parent
 TEMPLATES = PLUGIN_ROOT / "templates"
 PROFILES = PLUGIN_ROOT / "profiles"
+MKDOCS_HOOK = TEMPLATES / "mkdocs" / "screen_spec_pages.py"  # `references/mkdocs.md` の写し（テストが突き合わせる）
+INIT_MKDOCS = "scripts/init-mkdocs.py"  # spec-loop の中
 
 
 def _load(name: str, path: Path):
@@ -361,13 +369,26 @@ def parse(args: list[str], allowed: set[str]) -> tuple[list[str], dict[str, str]
     return positional, options
 
 
+def mkdocs(spec_loop: Path, docs_dir: Path) -> int:
+    """フックを spec-loop の `init-mkdocs.py --hook` で登録する。出力はそのまま出す。"""
+    root = docs_dir.resolve().parent
+    proc = subprocess.run([sys.executable, "-I", str(spec_loop / INIT_MKDOCS), str(root), "--hook", str(MKDOCS_HOOK)],
+                          capture_output=True, text=True, check=False)
+    sys.stdout.write(proc.stdout)
+    sys.stderr.write(proc.stderr)
+    if proc.returncode != 0:
+        print(f"spec-loop の init-mkdocs.py が {proc.returncode} で終わった——登録していない（上の出力）", file=sys.stderr)
+        return 2
+    return 0
+
+
 def usage() -> str:
-    return "\n".join(__doc__.splitlines()[2:7]) if __doc__ else f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）"
+    return "\n".join(__doc__.splitlines()[2:8]) if __doc__ else f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）"
 
 
 def main(argv: list[str]) -> int:
     try:
-        if not argv or argv[0] not in ("hint", "init", "add"):
+        if not argv or argv[0] not in ("hint", "init", "add", "mkdocs"):
             raise ValueError(usage())
         command = argv[0]
         allowed = {"--spec-loop"} | ({"--prefix", "--profile"} if command == "init" else set(OPTIONS) if command == "add" else set())
@@ -388,6 +409,9 @@ def main(argv: list[str]) -> int:
     try:
         spec_loop = checks.find_spec_loop(options.get("--spec-loop"), docs_dir)
         shown = checks.check_version(spec_loop)
+        if command == "mkdocs":
+            print(f"spec-loop {shown}（{spec_loop}）の init-mkdocs.py で登録する")
+            return mkdocs(spec_loop, docs_dir)
         docs = Docs(spec_loop, docs_dir)
     except checks.Stop as e:
         print(f"止めた: {e}", file=sys.stderr)

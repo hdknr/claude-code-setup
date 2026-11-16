@@ -171,6 +171,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       単独で動くので、Q&A の列名の写しを持つ**——`scripts/test-init-mkdocs.py` が `check-qa-csv.py` と突き合わせる。
       雛形の `gitignore` は写すときに `.gitignore` になる——プラグインの中で本物として効かないように）
     - `scripts/init-mkdocs.py` - 雛形を正本リポジトリへ写す（いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする。
+      **`--hook` はほかのプラグインのフックを `hooks/spec_loop_plugins/` に登録する口**（#1098。雛形のフックが MkDocs のイベントを渡す。**`mkdocs.yml` を書き換えず、在れば変えない**）。
       テストは `scripts/test-init-mkdocs.py`）
     - `scripts/check-frozen.py` - リリースした版（`release-v<n>`）の `docs/v<n>/` が直されていないかの確かめ
       （#262。**正本リポジトリの CI で使う**。タグの時点に版が無ければ 2。テストは `scripts/test-check-frozen.py`）
@@ -221,6 +222,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **外を読まず**、表は許可した列だけを JSON で埋め込み、**どのセルからも内部の層の番号（`D-`）を外す**。描き方の差し替えは版の外の `screen-spec/renderers/<画面ID>.js` で、
       **版の中に `renderers` のディレクトリが在れば止める**。版・表の出どころ・生成器の版・描き方のファイルのコミットを書き込む。**表の検査の結果に依らず作る**。
       決まりの原本は `references/mock.md`、守る／守らないは docstring を正とする。テストは `scripts/test-build-mock.py`）
+    - `scripts/mkdocs-pages.py`・`templates/mkdocs/screen_spec_pages.py` - **MkDocs のフック**（#1098）。正本に登録するのは薄いフック（screen-spec を環境変数 `SCREEN_SPEC_PLUGIN` か
+      プラグインの記録から探して本体に渡すだけ）で、**`write-screens.py mkdocs` が spec-loop の `init-mkdocs.py --hook` で登録する（`mkdocs.yml` を書き換えない）**。
+      本体は画面の表の行を仕様書の「表で持つ」節に表として出し（共有の層だけ・未決定のセルに `⚠️` の飾り）、ビルドのときに版ごとのモックを `build-mock.py` の `build` で作って
+      サイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
+      決まりの原本は `references/mkdocs.md`、守る／守らないは docstring を正とする。テストは `scripts/test-screen-spec-pages.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
@@ -402,6 +408,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **引数なし（CI）は文字列と印で決まる部分**——一時の git リポジトリの正本で生成し、埋め込んだ表を表と突き合わせ、外を読まない・印・版の中の描き方で止まる・`D-` と許可の外の列が出ない・書くのは出力の 1 ファイルだけ、と
     **本体の定数が `references/mock.md` と一致すること**を見る。**`--browser` は手元で回す部分**——ヘッドレスの Chrome を `node` の組み込みの WebSocket で動かし（依存は足さない）、
     ネットワークを切って遷移の表の手順を踏み、本体を壊したモックで NG になる陽性対照も回す。**CI からは呼ばない**（Chrome が無い）——結果を PR に貼る。道具が無ければ 3
+  - `test-screen-spec-pages.py` - screen-spec の MkDocs のフック（#1098）の回帰テスト（変異テストを含む）。**本体は `plugins/screen-spec/` にある**。
+    **一時ディレクトリに screen-spec と本物の spec-loop（`templates/` を含む）の写しを並べ、`write-screens.py mkdocs` で登録した正本のフックを読み込んで MkDocs のイベントを直に呼ぶ**
+    （`File` は偽物。`mkdocs build` は走らせない）。#1098 の受入基準（回し直しても登録が消えない・`docs/mocks.md` に版ごとの生成したモック・節に表）と、
+    **本体の定数が `references/mkdocs.md` と一致すること**を見る
   - `test-check-review-record.py` - spec-loop の仕様レビューの記録の数え直し（#1044）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数（効く重さ・上限の数える値と数え直しの判断）が `references/spec-exit.md` と一致することも見る**
   - `test-check-formal-rerun.py` - spec-loop の保存した TLC のモデルの走らせ直し（#1044）の回帰テスト（変異テストを含む）。
@@ -435,7 +445,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **本体の定数が `references/versions.md` と一致することも見る**
   - `test-diff-versions.py` - spec-loop の段 5c（#263）の版の差分の回帰テスト（変異テストを含む）。
     **出力の全行を期待値と突き合わせる**
-  - `test-init-mkdocs.py` - spec-loop の MkDocs の雛形（#266）の回帰テスト（変異テストを含む）。**写し方とフックの描き方を見る。
+  - `test-init-mkdocs.py` - spec-loop の MkDocs の雛形（#266）の回帰テスト（変異テストを含む）。**写し方とフックの描き方と、ほかのプラグインのフックを登録する口（#1098）を見る。
     `mkdocs build` は走らせない**（CI に MkDocs と Material の組が無い）
   - `test-check-frozen.py` - spec-loop の凍結の確かめ（#262）の回帰テスト（変異テストを含む）。
     `test-check-signoff.py` と同じく**一時ディレクトリに本物の git リポジトリとタグを作って**当てる

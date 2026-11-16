@@ -41,6 +41,16 @@ spec-loop の `references/qa-csv.md` の「層」）。
   **最初の行が見出し**で、空・空白だけなら警告する（次の行を見出しに繰り上げない）。見出しより長い行があれば、
   見出しの右を空で埋めて**全部の列を描く**（黙って切らない。`build-proposal.py` の仕様書と同じ）。版は重ね合わせない（Q&A 表と同じ）。
 
+**ほかのプラグインのフックを登録する口**（#1098）——このファイルの隣の `spec_loop_plugins/` に置いた Python のファイル（`.`・`_` で始まる名前は除く）を
+名前の順に読み込み、MkDocs のイベント（`EVENTS`）を、spec-loop の処理の後に順に渡す。**`mkdocs.yml` を書き換えずにフックを足すため**で、登録は
+spec-loop の `init-mkdocs.py --hook <ファイル>` が写す。決まり（置き場所・渡すイベント・UI モックの行）は spec-loop の `references/tree.md` の「ドキュメントのツール」。
+
+- 返した値は次のフックに渡す（`None` なら受けた値のまま）——MkDocs のフックと同じ形。
+- **読み込めないファイル**（構文の誤り・例外）は警告して飛ばす（`--strict` で落ちる）。イベントの中の例外は止めずに MkDocs に上げる（ビルドが落ちる）。
+- **UI モック**: 登録したフックが `spec_loop_mocks(docs_dir)` を持てば、`mocks` の印がその行を版ごとの節に足す。行は辞書で、`version`（版の番号）と、
+  `name`（名前）・`path`（サイトの中の場所——フックが `on_files` で足したファイルの `src_uri`）・`kind`（形式）か、`problem`（作れなかった理由。警告と注意書きにする）。
+- **登録が無ければ（ディレクトリが無い・空）、今までと同じに描く。**
+
 **本文の Q&A の番号（`Q-008`）は、Q&A 表のページ（`qa.md`）のアンカーへのリンクにする**（正本は番号のまま。
 決まりは spec-loop の `references/qa-csv.md` の「本文での番号」）。`on_page_content` が**描いた後の HTML** に掛けるので、
 描画関数が描いた表のセルにも掛かる。
@@ -68,6 +78,7 @@ from __future__ import annotations
 
 import csv
 import html
+import importlib.util
 import logging
 import os
 import posixpath
@@ -101,6 +112,20 @@ MOCKS = "mocks"
 MOCK_HTML = ".html"
 MOCK_ENTRY = "index.html"
 SPELLING_MIGRATION = "spec-loop の references/versions.md の「綴りの誤りの移行」"
+# ほかのプラグインのフックを登録する口（#1098）。このファイルの隣のディレクトリ。名前は init-mkdocs.py の写し（テストが突き合わせる）
+PLUGINS_DIR = "spec_loop_plugins"
+# 登録したフックに渡す MkDocs のイベント（受けるもの → 渡すときのキーワード）。最初の引数を受けるイベントは、返した値を次に渡す
+EVENTS = {
+    "on_config": ("config", ()),
+    "on_pre_build": (None, ("config",)),
+    "on_files": ("files", ("config",)),
+    "on_nav": ("nav", ("config", "files")),
+    "on_page_markdown": ("markdown", ("page", "config", "files")),
+    "on_page_content": ("html", ("page", "config", "files")),
+    "on_post_page": ("output", ("page", "config")),
+    "on_post_build": (None, ("config",)),
+}
+MOCKS_PORT = "spec_loop_mocks"
 # 素の本文の URL（#341）。番号のリンク化はこの中を変えない
 URL = re.compile(r"(?:[A-Za-z]+://|www\.)\S+?(?=[\s<>\"']|&(?:lt|gt|quot|#39|#x27);|$)")
 # URL を終える全角の文字（丸括弧は対で数えるので url_end が見る）
@@ -362,19 +387,27 @@ def has_content(directory: Path) -> bool:
 
 
 def render_mocks(docs_dir: Path, src: str) -> str:
-    """各版の `requirements/mocks/` の UI モックへのリンクを、版ごとの節に描く（#952）。`src` は印を書いたページの `docs/` からのパス。"""
-    out: list[str] = []
+    """各版の `requirements/mocks/` の UI モックへのリンクを、版ごとの節に描く（#952）。`src` は印を書いたページの `docs/` からのパス。
+    登録したフックが出すモックの行（`spec_loop_mocks`。#1098）も、同じ版の節に足す。"""
+    extra, out = plugin_mocks(docs_dir)
+    out = [line for warning in out for line in (warning, "")]
+    known = set()
     for version, root in versions(docs_dir):
+        known.add(version)
+        added, added_problems = extra.get(version, ([], []))
         mocks, wrong, unverified = lookup_dir(root, REQUIREMENTS, MOCKS)
         for warning in misspelled_problems(docs_dir, wrong, f"{REQUIREMENTS}/{MOCKS}", unverified):
             out += [warning, ""]
-        if mocks is None:  # モックの無い版は飛ばす
+        if mocks is None and not added and not added_problems:  # モックの無い版は飛ばす
             continue
-        try:
-            entries = sorted(os.listdir(mocks))
-        except OSError as e:
-            out += [problem(f"{mocks.relative_to(docs_dir)}: 一覧を読めない（{e.strerror}）"), ""]
-            continue
+        entries: list[str] = []
+        if mocks is not None:
+            try:
+                entries = sorted(os.listdir(mocks))
+            except OSError as e:
+                out += [problem(f"{mocks.relative_to(docs_dir)}: 一覧を読めない（{e.strerror}）"), ""]
+                if not added and not added_problems:
+                    continue
         rows, problems = [], []
         for name in entries:
             if name.startswith("."):  # 重ね合わせが読まない名前（.DS_Store など）
@@ -389,29 +422,61 @@ def render_mocks(docs_dir: Path, src: str) -> str:
                 if not has_content(path):
                     continue  # `.` で始まる名前（.DS_Store）とフォルダだけなら無いのと同じ——重ね合わせも読まない（消したモックの跡）
                 if MOCK_ENTRY in inside and (path / MOCK_ENTRY).is_file():  # 綴りどおりの入口だけ（区別しない FS の Index.html を数えない）
-                    rows.append((name, path / MOCK_ENTRY, "React（ディレクトリ）"))
+                    rows.append((name, (path / MOCK_ENTRY).relative_to(docs_dir).as_posix(), "React（ディレクトリ）"))
                 else:
                     problems.append(problem(f"{path.relative_to(docs_dir)}: 入口の {MOCK_ENTRY} が無いので開けない"
                                             f"（React のモックは <画面名>/{MOCK_ENTRY} から開く。spec-loop の references/tree.md の「UI モック」）"))
             elif name.endswith(MOCK_HTML):
-                rows.append((name[:-len(MOCK_HTML)], path, "HTML"))
+                rows.append((name[:-len(MOCK_HTML)], path.relative_to(docs_dir).as_posix(), "HTML"))
             else:
                 problems.append(problem(f"{path.relative_to(docs_dir)}: UI モックの形でない（HTML は <画面名>{MOCK_HTML}、"
                                         f"React は <画面名>/{MOCK_ENTRY}。spec-loop の references/tree.md の「UI モック」）"))
+        rows += added
+        problems += added_problems
         if not rows and not problems:
             continue
         out += [f"## v{version}", ""]
         if rows:
             out += ["| モック | 形式 |", "| --- | --- |"]
             for name, path, kind in rows:
-                target = posixpath.relpath(path.relative_to(docs_dir).as_posix(), posixpath.dirname(src) or ".")
-                out.append(f"| [{text(name)}]({quote(target)}) | {kind} |")
+                target = posixpath.relpath(path, posixpath.dirname(src) or ".")
+                out.append(f"| [{text(name)}]({quote(target)}) | {text(kind)} |")
             out.append("")
         for warning in problems:
             out += [warning, ""]
+    for version in sorted(set(extra) - known):
+        out += [problem(f"v{version}: 登録したフックがモックの行を出したが、docs/v{version}/ が無い"), ""]
     if not out:
         return f"UI モック（`docs/v<n>/{REQUIREMENTS}/{MOCKS}/`）はまだ無い。\n"
     return "\n".join(out)
+
+
+def plugin_mocks(docs_dir: Path) -> tuple[dict[int, tuple[list[tuple[str, str, str]], list[str]]], list[str]]:
+    """登録したフックの `spec_loop_mocks` が出すモックの行を、版ごとに (行, 注意書き) にまとめる。形に合わない行は注意書きにする。
+    行は (名前, サイトの中の場所, 形式)。登録が無ければ空。"""
+    found: dict[int, tuple[list[tuple[str, str, str]], list[str]]] = {}
+    loose: list[str] = []
+    for name, module in plugins():
+        port = getattr(module, MOCKS_PORT, None)
+        if port is None:
+            continue
+        for entry in port(docs_dir) or []:
+            version = entry.get("version") if isinstance(entry, dict) else None
+            if not isinstance(version, int) or isinstance(version, bool):
+                loose.append(problem(f"{PLUGINS_DIR}/{name}: {MOCKS_PORT} の行に版の番号（version）が無い: {entry!r}"))
+                continue
+            rows, problems = found.setdefault(version, ([], []))
+            if isinstance(entry.get("problem"), str) and entry["problem"].strip():
+                problems.append(problem(f"v{version}: {entry['problem']}（{PLUGINS_DIR}/{name}）"))
+                continue
+            label, path, kind = entry.get("name"), entry.get("path"), entry.get("kind")
+            if not (isinstance(label, str) and label.strip() and isinstance(kind, str) and isinstance(path, str)
+                    and path and not path.startswith("/") and ".." not in path.split("/") and "\\" not in path):
+                problems.append(problem(f"v{version}: {PLUGINS_DIR}/{name} の {MOCKS_PORT} の行の形が違う"
+                                        f"（name・path（サイトの中の相対の場所）・kind が要る）: {entry!r}"))
+                continue
+            rows.append((label, path, kind))
+    return found, loose
 
 
 RENDERERS = {
@@ -488,7 +553,7 @@ def page_path(page) -> str:
     return getattr(page.file, "src_uri", page.file.src_path).replace("\\", "/")
 
 
-def on_page_markdown(markdown: str, page, config, files) -> str:
+def spec_loop_page_markdown(markdown: str, page, config, files) -> str:
     docs_dir = Path(config["docs_dir"])
 
     def replace(match: re.Match) -> str:
@@ -507,9 +572,93 @@ def on_page_markdown(markdown: str, page, config, files) -> str:
     return MARKER.sub(replace, markdown)
 
 
-def on_page_content(content: str, page, config, files) -> str:
+def spec_loop_page_content(content: str, page, config, files) -> str:
     src_path = page_path(page)
     qa = files.get_file_from_path(QA_PAGE)
     if src_path in qa_pages or qa is None:
         return content
     return link_numbers(content, src_path, qa.url_relative_to(page.file), Path(config["docs_dir"]))
+
+
+# ---- ほかのプラグインのフックを登録する口（#1098）
+
+_plugins: dict[Path, list[tuple[str, object]]] = {}
+
+
+def plugins_dir() -> Path:
+    return Path(__file__).resolve().parent / PLUGINS_DIR
+
+
+def plugins() -> list[tuple[str, object]]:
+    """登録したフック（`spec_loop_plugins/*.py`）を名前の順に読み込む（1 度だけ）。(ファイルの名前, モジュール) の一覧。
+    ディレクトリが無ければ空。読み込めないファイルは警告して飛ばす。"""
+    directory = plugins_dir()
+    if directory in _plugins:
+        return _plugins[directory]
+    loaded: list[tuple[str, object]] = []
+    _plugins[directory] = loaded
+    try:
+        names = sorted(os.listdir(directory))
+    except FileNotFoundError:
+        return loaded
+    except OSError as e:
+        log.warning("spec-loop: hooks/%s: 一覧を読めないので、登録したフックを読み込まない（%s）", PLUGINS_DIR, e.strerror)
+        return loaded
+    for name in names:
+        path = directory / name
+        if name.startswith((".", "_")) or not name.endswith(".py") or not path.is_file():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(f"spec_loop_plugin_{name[:-3]}", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except Exception as e:  # noqa: BLE001 — 登録したフックの誤りで spec-loop のページまで止めない
+            log.warning("spec-loop: hooks/%s/%s: 読み込めないので飛ばす（%s: %s）", PLUGINS_DIR, name, type(e).__name__, e)
+            continue
+        loaded.append((name, module))
+    return loaded
+
+
+def dispatch(event: str, item, **kwargs):
+    """登録したフックの `event` を名前の順に呼ぶ。最初の引数を受けるイベントは、返した値（None でなければ）を次に渡す。"""
+    first, _ = EVENTS[event]
+    for _, module in plugins():
+        handler = getattr(module, event, None)
+        if handler is None:
+            continue
+        result = handler(item, **kwargs) if first else handler(**kwargs)
+        if first and result is not None:
+            item = result
+    return item
+
+
+def on_config(config):
+    return dispatch("on_config", config)
+
+
+def on_pre_build(config) -> None:
+    dispatch("on_pre_build", None, config=config)
+
+
+def on_files(files, config):
+    return dispatch("on_files", files, config=config)
+
+
+def on_nav(nav, config, files):
+    return dispatch("on_nav", nav, config=config, files=files)
+
+
+def on_page_markdown(markdown: str, page, config, files) -> str:
+    return dispatch("on_page_markdown", spec_loop_page_markdown(markdown, page, config, files), page=page, config=config, files=files)
+
+
+def on_page_content(content: str, page, config, files) -> str:
+    return dispatch("on_page_content", spec_loop_page_content(content, page, config, files), page=page, config=config, files=files)
+
+
+def on_post_page(output: str, page, config) -> str:
+    return dispatch("on_post_page", output, page=page, config=config)
+
+
+def on_post_build(config) -> None:
+    dispatch("on_post_build", None, config=config)

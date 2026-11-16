@@ -1,0 +1,135 @@
+# Issue #1098 — spec-loop・screen-spec: MkDocs のフックの登録の口と、版ごとの生成したモック（#1081 段 4）
+
+**不在の周である**——cruise（親 Issue #1081）の子として回す。出所: `/dev-loop:cruise 1081 --absent` の起動（2026-11-16T04:38Z）。
+確かめた線（cruise の確かめた線（台帳 `issue-1081`）。出所: 利用者の確認（起動時・2026-11-16、配布を見せて確かめた））:
+直す線 = 既定 / 仕様の穴 = 推奨で決めて起票 / マージ = 関門を通ればマージ / 周の途中の課題 = 外に出す / マージ前の判断 = 推奨で決めて起票。実機確認の線は無い。
+#1098 は spec-loop から来た Issue ではない（本文に `spec-loop-handoff` の印は無い。`作り直しの元: ` の行も無い）。
+この周はマージしない（親がする）——PR を作り、PR 側の CI が通るのを見るところまで。
+依存先 #1093（PR #1113）・#1095（PR #1116）は main にマージ済み（`50ce545`）。
+承認済みの決めた値: #1104・#1105。推奨で決めて確認待ち: #1109・#1110・#1111・#1114・#1117・#1118——どれも閉じず、閉じるキーワードで指さない。
+並行する周: #1094・#1096（screen-spec を触る）・#1097（spec-loop を触る）。版の行が衝突しうる。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/templates/mkdocs/hooks/spec_loop_pages.py` — 登録の口（`hooks/spec_loop_plugins/*.py` を読み込み、MkDocs のイベントを順に渡す。`mocks` の印に、登録したフックが出すモックの行を足す）
+- `plugins/spec-loop/scripts/init-mkdocs.py` — `--hook <ファイル>` でフックを `hooks/spec_loop_plugins/` に登録する（在れば変えない）。登録があるのにフックが口を持たないときに言う
+- `plugins/spec-loop/references/tree.md` — 「ドキュメントのツール」に登録の口を書く
+- `plugins/spec-loop/README.md` — `init-mkdocs.py` の行に登録の口を足す（要れば）
+- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/spec-loop/skills/*/SKILL.md`（版の 2 行だけ）
+- `plugins/screen-spec/templates/mkdocs/screen_spec_pages.py` — 新設。正本に登録する薄いフック（screen-spec を見つけて、本体に渡す）
+- `plugins/screen-spec/scripts/mkdocs-pages.py` — 新設。フックの本体（表を仕様書の節に出す・版ごとにモックを生成してサイトに置く・`⚠️` の飾り）
+- `plugins/screen-spec/scripts/build-mock.py` — 仕様書へのリンクの作り方を外から渡せるようにする（サイトに置いたモックから、サイトのページを指す）
+- `plugins/screen-spec/scripts/write-screens.py` — `mkdocs` の入口（spec-loop の `init-mkdocs.py --hook` で登録する）
+- `plugins/screen-spec/references/mkdocs.md` — 新設。フックの決まりの原本（節ごとに出す行と列・モックの置き場所・screen-spec の見つけ方）
+- `plugins/screen-spec/references/prose.md`・`references/mock.md`・`references/tables.md` — 「フックは #1098」などの指し先を `mkdocs.md` に（要れば）
+- `plugins/screen-spec/skills/init/SKILL.md` — フックを登録する手順（任意の手順）と版の 2 行
+- `plugins/screen-spec/skills/add/SKILL.md` — 版の 2 行
+- `plugins/screen-spec/README.md`・`plugins/screen-spec/.claude-plugin/plugin.json`
+- `.claude-plugin/marketplace.json` — spec-loop と screen-spec の版、screen-spec の description
+- `scripts/test-init-mkdocs.py` — 登録の口の試料と変異
+- `scripts/test-screen-spec-pages.py` — 新設。screen-spec のフックの試料と変異
+- `scripts/test-build-mock.py`・`scripts/test-write-screens.py` — 足した引数・入口の試料（要れば）
+- `scripts/check-all.py`・`.github/workflows/plugins.yml`・`CLAUDE.md` — テストの収録
+- `docs/plans/issue-1098.md` — この計画
+
+触らない:
+
+- 雛形の `mkdocs.yml`・`docs/mocks.md`・ほかの雛形のファイル（登録の口を使わない案件の出力を変えない）
+- spec-loop の関門・scaffold・req-loop（#1097・#1099・#1100）
+- モックの差分の印（#1096）・profile（#1094）
+- 公開ページ（`docs/plugins/`）——原本は `tree.md`
+- `⚠️` の飾りを、表のセルのほかの散文に付けること（下の「決めたこと」）
+
+複製の数: フックの決まりは `references/mkdocs.md`（原本）と `mkdocs-pages.py` の定数（写し）の 2 箇所——テストが突き合わせる。
+登録の口の決まりは `tree.md`（原本）と、`spec_loop_pages.py`・`init-mkdocs.py` の定数（写し。ディレクトリの名前）の 3 箇所——テストが突き合わせる。
+分けない理由: 写しはどれも 1 つで、テストと `check-plugin-versions.py` が見る。
+
+依存の追加・更新: なし
+
+## 決めたこと（実装で決めてよいもの）
+
+- **登録の口**: 正本の `hooks/spec_loop_plugins/<名前>.py`（spec-loop のフックの隣のディレクトリ）。spec-loop のフック（`mkdocs.yml` が指す 1 本）がそこの Python のファイルを名前の順に読み込み、
+  MkDocs のイベント（`on_config`・`on_pre_build`・`on_files`・`on_nav`・`on_page_markdown`・`on_page_content`・`on_post_page`・`on_post_build`）を spec-loop の処理の後に順に渡す。
+  どちらのプラグインも `mkdocs.yml` を書き換えない。登録は `init-mkdocs.py --hook <ファイル>` が写す（在れば変えない）。読み込めないファイルは警告して飛ばす。
+- **UI モックのページ**: 登録したフックが `spec_loop_mocks(docs_dir)` を持てば、spec-loop の `mocks` の印がその行（版・名前・サイトの中の場所・形式）を版ごとの節に足す——spec-loop は screen-spec の名前を知らない。
+- **screen-spec のフック**: 正本に写すのは薄いフック（`screen_spec_pages.py`）で、screen-spec を環境変数 `SCREEN_SPEC_PLUGIN` → Claude Code のプラグインの記録（`installed_plugins.json` の `screen-spec@…`）の順に探し、
+  本体（`scripts/mkdocs-pages.py`）に渡す——描き方はプラグインの更新で届く（写し直さない）。見つからなければ警告し（`--strict` で落ちる）、ページに注意書きを置く。
+- **表を節に出す**: 版 `v<k>` の `requirements/screens/<slug>.md` の印 `<!-- screen-spec: 表 -->` を、v1〜v<k> を重ねた表のうち `仕様書` がそのファイルの画面の行で置き換える。節ごとの行と列は `references/mkdocs.md`（#1081 の 13 次元の表のとおり）。
+  共有の層だけを出す（列は `build-mock.py` の許可の一覧の中・`D-` の番号を外す）。
+- **版ごとのモック**: MkDocs のビルドのとき（`on_files`）、表のある版ごとに `build-mock.py` の `build`（`--upto <n>` と同じ）で作り、`<docs の親>/build/mock/v<n>/index.html` に書いて、サイトの `mock/v<n>/index.html` に置く。
+  モックの中の仕様書へのリンクは、サイトの仕様書のページを指す。作れなかった版は警告し、モックのページのその版の節に注意書きを置く。
+- **`⚠️` の飾り**: フックが出す表のセルのうち、未決定の印（spec-loop の `find_markers`）を含むセルの頭に `⚠️` を付ける——正本には書かない。散文には付けない（散文の書き換えは本文を壊しうる。残課題）。
+- **受入基準 4 の「出力」**: `init-mkdocs.py` が出す行・写すファイルの一覧と、フックのほかのファイルのバイト。フック（`spec_loop_pages.py`）は口を持つので中身が変わるが、
+  登録の無い案件で描くページは今と同じ（既存の試料がそのまま通る）。
+
+## 決めたこと（仕様の穴。`仕様の穴 = 推奨で決めて起票` の線で推奨により決めた）
+
+- **穴 1: 正本の CI（Claude Code の入っていない環境）で MkDocs をビルドするとき、screen-spec のフックが screen-spec をどう見つけるか**——#1081 は「ビルドのときに生成して載せる」とだけ書き、
+  ビルドする環境に screen-spec が無いときを決めていない。
+  - 選択肢: A) 環境変数 `SCREEN_SPEC_PLUGIN`（と spec-loop の `SCREEN_SPEC_SPEC_LOOP`）か Claude Code のプラグインの記録から探し、無ければ警告してページに注意書きを置く（CI では claude-code-setup を取得して環境変数で渡す）（推奨）／
+    B) 登録のときに screen-spec と spec-loop のスクリプトを正本に写す（写しが古くなる・spec-loop の「写さない」に反する）／ C) モックを手元で生成して commit する（決めること 7 の「commit しない」に反する）
+  - 推奨 A。理由: 正本に写すのは探す部分だけになり、描き方と重ね方はプラグインの更新で届く。B は版ごとに写しが食い違い、C は決めること 7 の回答に反する。
+- 決めた値は受入基準を足さない（`absent-lines.md`）。確認の Issue は PR を作った後に 1 件立てる。
+
+## デプロイ経路
+
+main へのマージで、プラグインの配布（カタログ。spec-loop と screen-spec の版が上がる）。公開ページ（`docs/`）は触らない。
+
+## 版の上げ方
+
+- spec-loop を minor で上げる（能力の追加。0.x）: main の先端の値（0.94.0）の次 → **0.95.0**。`marketplace.json`・`plugin.json`・`SKILL.md` 7 本の 2 行。
+- screen-spec を minor で上げる: main の先端の値（0.3.0）の次 → **0.4.0**。`marketplace.json`・`plugin.json`・`SKILL.md` 2 本の 2 行。
+- 並行する #1094・#1096（screen-spec）・#1097（spec-loop）も版を上げうる——親はマージの直前に取り込みを頼む。そのときは main の先端の値から minor で 1 つ上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+  取り込みの後は `check-plugin-versions.py`・`skill-metrics.py --check` だけを回して push し、PR 側の CI を見る（CLAUDE.md の「並行する周は、同じ版に上げて衝突する」の 5）。
+
+## 受入基準（不変条件 × 経路）
+
+入口: `init-mkdocs.py`（空の根・設定が在る根・`--hook`・`--dry-run`・回し直し）、`write-screens.py mkdocs`、MkDocs のビルド（`mkdocs build`・`mkdocs serve`。フックのイベント）、
+ページ（`docs/mocks.md` の `mocks` の印・`docs/v<k>/requirements/screens/<slug>.md` の表の印・ほかのページ）。
+
+| # | 不変条件 | 破りうる経路 | 守り方・確かめ方 |
+| --- | --- | --- | --- |
+| A1 | screen-spec のフックを登録した案件で、`init-mkdocs.py` を回し直しても登録が消えない（バイトも変わらない） | 設定が在る根での回し直し・設定を消した根での回し直し（雛形を写し直す）・`--hook` での回し直し（中身の違うファイル）・`--dry-run` | CI: 登録の後に各形で回し、登録のファイルのバイトを比べる |
+| A2 | `docs/mocks.md` に、版ごとの生成したモックへのリンクが出る（手で書いたモックのリンクと並ぶ）。リンクの先がサイトに置かれる | 表のある版・無い版・作れない版（重ね合わせの違反・spec-loop が無い）・手で書いたモックのある版 | CI: spec-loop のフックの雛形と screen-spec のフックを組み、`on_files` → `mocks.md` の `on_page_markdown` を通して見る（偽の `File`）。手元: 本物の `mkdocs build --strict` |
+| A3 | 画面の表の行が、仕様書の節に表として出る（節ごとの行と列は `mkdocs.md`。共有の層だけ。`⚠️` は飾りだけ） | 表で持つ 9 つの節・散文の節に置いた印・表に無い仕様書・v2 で変えた・消した行・`D-` の根拠・未決定のセル | CI: フックを直に呼ぶ（`test-init-mkdocs.py` と同じ形）。手元: 本物の `mkdocs build --strict` |
+| A4 | 登録の口を使わない案件で、`init-mkdocs.py` の出力（出す行・写すファイルの一覧・フックのほかのファイルのバイト）が今と同じ。フックが描くページも今と同じ | 空の根・設定が在る根・`--dry-run`・在るファイルを残す根 | CI: 出す行と写すファイルを固定の期待値と比べ、既存の試料がそのまま通る。手元: main の `init-mkdocs.py` と出力を比べる |
+| A5 | どちらのプラグインも `mkdocs.yml` を書き換えない | `init-mkdocs.py --hook`・`write-screens.py mkdocs`・フックのイベント | CI: 実行の前後で `mkdocs.yml` のバイトが同じ |
+| A6 | 登録したフックが読み込めない・screen-spec が見つからないとき、黙って落とさない（警告とページの注意書き） | 構文の誤りのある登録・`SCREEN_SPEC_PLUGIN` が誤り・記録が無い | CI |
+| A7 | 本体の定数が原本（`references/mkdocs.md`・`tree.md`）と一致する | 定数 | テストが突き合わせ、崩しで落ちることも見る |
+| A8 | 歯止めが全部緑（版 3 種類・description 2 箇所・CI と `check-all.py` への収録・指し先） | `check-plugin-versions.py`・`test-check-all.py` ほか | `check-all.py`（順番待ち越し） |
+| X1 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方 × 1・2 パス目に渡す（2 パス目が「該当なし」の周は 1 パス目の 2 つ） | — | 再開点で記録 |
+
+**証明できないもの（未証明）**: 正本の CI（GitHub Actions など、Claude Code の無い環境）で screen-spec を取得して環境変数で渡したビルド——手元の 1 例（環境変数で渡した `mkdocs build`）は回すが、利用者の CI の形はこの環境に無い。
+MkDocs 1.6 のほかの版（1.5・2.x）での `File` の作り方——手元の版だけで確かめる。
+
+**生成物**: 生成したモック（`build/`）は commit しない。このリポジトリの生成物（図・`SKILL.md` の測定値）は触らない——`skill-metrics.py --check` で変わらないことを確かめる。
+
+## 実機確認
+
+一時ディレクトリに正本（`docs/v1/`・`docs/v2/`）を置き、`init-mkdocs.py` → `write-screens.py init`・`add` → `write-screens.py mkdocs` で登録し、
+このリポジトリの `.venv` の MkDocs（1.6）で `mkdocs build --strict` を走らせて、サイトの `mocks.html`・`mock/v<n>/index.html`・仕様書のページを見る。陽性対照: 登録を外したビルドで表とモックが出ないこと。
+
+## 未解決の判断
+
+- 上の穴 1——確認の Issue で利用者に渡す（閉じるのは利用者）。
+
+## 起票
+
+- この周の起票: 0 件（PR を作った後に穴 1 の確認の Issue を立てたら直す）
+
+## 直す線
+
+`既定`（出所: cruise の確かめた線（台帳 `issue-1081`）。不在の周）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1098-mkdocs-hook-port`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1098`・起点 `50ce545`・base `origin/main` → `50ce54527eb6386c5068202791900cb7bbc9e8d9`
+- 割り目（手順 4）: 割らない（cruise の周）
+- 交絡を潰した手順: （実機確認の後に書く）
+
+## 既知の限界・決着済みの論点
+
+- 受入基準 4 の「出力」の読み方（上の「決めたこと」）——フックの雛形は口を持つので中身が変わる。登録の無い案件で描くページと、写すファイルの一覧・出す行は変わらない。
+- 既に雛形を写した正本には、口を持つフックは届かない（`init-mkdocs.py` は在るファイルを変えない）——`tree.md` の「Q&A 表を移す」の手順 4 で取り込む。`--hook` で登録したのに口が無ければ `init-mkdocs.py` が言う。
