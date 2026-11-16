@@ -958,7 +958,7 @@ JOBS_DECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,毎日,翌朝に
 JOBS_UNDECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,未定,翌朝に担当者へ通知する\n"
 DESIGN_GATE = "関門（システム設計書の成果物の表"
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
-SCREEN_NOTE = str(V1 / "requirements" / "screens" / "order-list.md")
+SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
 
 
@@ -2440,12 +2440,12 @@ CASES: list[Case] = [
     Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
     Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
     Case("画面の表: screen-spec が見つからなければ 2 で止める（#1097）", 2, "画面の表があるのに screen-spec が見つからない",
-         extra={SCREEN_NOTE: "# 受注一覧\n"}, pre=plant_old_issues, post=nothing_written),
-    Case("画面の表: --dry-run も止める", 2, SCREEN_GATE, args=("--dry-run",), extra={SCREEN_NOTE: "# 受注一覧\n"}),
-    Case("画面の表: 未定が残れば 1 で止める（screen-spec が無くても）", 1, "requirements/screens/order-list.md:3: 未決定の印 未定",
-         extra={SCREEN_NOTE: "# 受注一覧\n\n並び方は未定\n"}, post=nothing_written),
+         extra={SCREEN_TABLE: "画面ID,画面名\nS-001,受注一覧\n"}, pre=plant_old_issues, post=nothing_written),
+    Case("画面の表: --dry-run も止める", 2, SCREEN_GATE, args=("--dry-run",), extra={SCREEN_TABLE: "画面ID,画面名\nS-001,受注一覧\n"}),
+    Case("画面の表: 未定が残れば 1 で止める（screen-spec が無くても）", 1, "requirements/screens/data/screens.csv:2: 未決定の印 未定",
+         extra={SCREEN_TABLE: "画面ID,画面名\nS-001,未定\n"}, post=nothing_written),
     Case("画面の表: --upto で前の版を確かめるときは当てない", 0, "", args=("--dry-run", "--upto", "1"),
-         extra={SCREEN_NOTE: "# 受注一覧\n", **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])},
+         extra={SCREEN_TABLE: "画面ID,画面名\nS-001,受注一覧\n", **v2([{**copy.deepcopy(IR["features"][0]), "title": "割引額を計算する（v2）"}])},
          absent=SCREEN_GATE),
     Case("成果物の表: 非機能要求の種類の行が未決定で止める", 1, "build/merged/shared/nfr.csv:5: 上限 に未決定の印（未定）",
          extra=with_nfr(NFR_CSV + "N-004,注文の受付,可用性,未定,%,月の稼働で,契約\n")),
