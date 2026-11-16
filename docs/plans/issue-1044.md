@@ -27,12 +27,20 @@ spec-loop から来た Issue ではない（本文の先頭に `<!-- spec-loop-h
 - `plugins/spec-loop/skills/formal-baseline/SKILL.md` — 陽性対照のファイルを写す
 - `plugins/spec-loop/agents/formal-checker.md` — TLC の陽性対照のモデルを、写すファイルとして挙げる
 - `plugins/spec-loop/README.md` — スクリプトの表に新設の 2 本
-- `scripts/test-check-review-record.py`・`scripts/test-check-formal-rerun.py` — 新設（変異テストを含む）
-- `scripts/test-scaffold.py`・`scripts/test-green-list.py`・`scripts/test-parent-checklist.py`・`scripts/test-rebuild-scope.py`・`scripts/test-check-spec-writeback.py` — 試料の正本に記録の表（`抜けた`）を置く。test-scaffold には記録の関門の試料
+- `scripts/test-check-review-record.py` — 新設（変異テストを含む）
+- `scripts/test-check-formal-rerun.py` — 新設（変異テストを含む。偽の TLC）
+- `scripts/test-scaffold.py` — 試料の正本に記録の表（`抜けた`）を置く。記録の関門の試料と変異
+- `scripts/test-green-list.py` — 試料の正本に記録の表
+- `scripts/test-parent-checklist.py` — 同上
+- `scripts/test-rebuild-scope.py` — 同上（`test-rework-metrics.py` はこの試料を読み込む）
+- `scripts/test-check-spec-writeback.py` — 同上
 - `scripts/test-formal-baseline.py` — `陽性対照のファイル` の試料
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — 新設のテスト 2 本の収録
+- `scripts/check-all.py` — 新設のテスト 2 本の収録
+- `.github/workflows/plugins.yml` — 同上
 - `CLAUDE.md` — プロジェクト構成の一覧に新設の 2 本とテスト
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（7 本）
 - `docs/plans/issue-1044.md` — この計画
 
 触らない:
