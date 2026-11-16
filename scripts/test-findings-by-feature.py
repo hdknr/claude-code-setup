@@ -98,6 +98,9 @@ CASES: dict[str, tuple] = {
     "数える: 閉じない印の後ろの括弧まで読まない": ({"v1-findings.csv": F_HEAD + f(f"（機能: 注文 の{SECRET}。例えば（0 件）のとき")}, [], 0, [row(UNKNOWN, 1, 1)], [SECRET]),
     "数える: 印の中の id は数えない": ({"v1-findings.csv": F_HEAD + f("（機能: F-001 受注）x")}, [], 0, [row("F-001 受注", 1, 1), "2 つ以上の機能に数えた行: 0"], []),
     "数える: つながった id は両方": ({"v1-findings.csv": F_HEAD + f("F-001-F-002 の境界")}, [], 0, [row("F-001", 1, 1), row("F-002", 1, 1)], []),
+    "数える: 印の頭の空白": ({"v1-findings.csv": F_HEAD + f("（ 機能: 注文）x") + f("（\u3000機能: 注文 ）y") + f("(機能: 出荷)z")}, [], 0,
+                         [row("注文", 2, 2), row("出荷", 1, 1)], ["機能: 注文", "| 注文  |"]),
+    "数える: 半角と全角の括弧の入れ子": ({"v1-findings.csv": F_HEAD + f("（機能: 受注(EDI)）x")}, [], 0, [row("受注(EDI)", 1, 1)], []),
     "数えない: 検査に通らない表": ({"v1-findings.csv": F_HEAD + f("（機能: 注文）x", category="直す")}, [], 2, ["検査に通らない"], ["| 注文 |"]),
     "数えない: 2 つ目の表が検査に通らない": ({"v1-findings.csv": F_HEAD + f("（機能: 注文）x"), "v2-findings.csv": F_HEAD + f("（機能: 注文）y", no="9")},
                                       [], 2, ["v2-findings.csv が check-findings-csv.py の検査に通らない"], ["| 注文 |"]),
@@ -108,6 +111,9 @@ CASES: dict[str, tuple] = {
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("印の頭の空白を外さずに機能: を外す", 'MARK_LABEL.sub("", part.strip()).strip()', 'MARK_LABEL.sub("", part).strip()', "数える: 印の頭の空白"),
+    ("半角の開き括弧を数えない", 'OPENS = "（("', 'OPENS = "（"', "数える: 半角と全角の括弧の入れ子"),
+    ("半角の閉じ括弧を数えない", 'CLOSES = "）)"', 'CLOSES = "）"', "数える: 印の頭の空白"),
     ("根拠の列を見ない", 'MARKED = ("指摘", "根拠")', 'MARKED = ("指摘",)', "数える: 根拠の列の名前の印"),
     ("全角のコロンを読まない", 'MARK_HEAD = re.compile(r"[（(]\\s*機能\\s*[:：]")', 'MARK_HEAD = re.compile(r"[（(]\\s*機能\\s*[:]")', "数える: 全角のコロン"),
     ("／で分けない", 'MARK_SPLIT = re.compile(r"\\s*／\\s*(?=機能\\s*[:：])")', 'MARK_SPLIT = re.compile(r"(?!)")', "数える: 2 つの機能を挙げた行は両方"),

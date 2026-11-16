@@ -127,7 +127,7 @@ def marks(text: str) -> tuple[list[str], str]:
         if end is None:
             continue
         for part in MARK_SPLIT.split(text[m.start() + 1:end]):
-            name = MARK_LABEL.sub("", part).strip()
+            name = MARK_LABEL.sub("", part.strip()).strip()
             if name:
                 names.append(name)
         rest.append(text[done:m.start()])
