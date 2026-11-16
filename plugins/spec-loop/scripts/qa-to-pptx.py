@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q&A 表（`qa.csv`）から、レビュー会用の PPTX を作る。
 
-usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>] [--focus <No>[,<No>…]]
+usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>] [--focus <No>[,<No>…]] [--links <JSON>]
 
 **載せるのは、利用者にまだ見せる行だけ**——`状態` が `check-qa-csv.py` の
 `DONE` でない行である（状態の意味は `references/qa-csv.md` を正とする）。回答待ち・回答はあるが未反映の行に加えて、
@@ -17,6 +17,13 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 渡せるのは**資料に載る行の番号だけ**（反映済み・表に無い番号は 2）・**重複も空の番号も 2**・**`FOCUS_MAX` 問を超えたら 2**・**`--focus` を 2 度書いたら 2**
 （どれも出力を作らず、既存の出力に触らない）。**`--focus` を渡さなければ、出力は前と同じ**——枚を足さない。
 **Q&A 表の行の並びは変えない**（表は番号の順。`references/qa-csv.md` の「番号の振り方」）——優先はこの 1 枚でだけ表す。
+
+**`--links <JSON>` で、質問ごとのリンクを外から渡す**（#1100）——JSON のオブジェクトで、鍵が質問の番号、値がリンクの文字列
+（req-loop が画面の表から作るモックの `#screen=<画面ID>`。どの質問にどのリンクを渡すかは req-loop の `SKILL.md` の手順 4 を正とする）。
+渡した質問の頁（1 問 1 枚）の最後に「モック: <リンク>」の 1 段落を足し、その文字にハイパーリンク（スライドの関係。`TargetMode="External"`）を付ける。
+表紙・一覧・今回の会で決めたい問の枚には載せない。**リンクの中身（行き先が在るか・開けるか）は見ない**——文字列のまま載せる。
+守るのは次だけ: **読めない・JSON のオブジェクトでない・鍵が資料に載る行の番号でない（反映済み・表に無い）・値が空か文字列でない・`--links` を 2 度書いた、はどれも 2**
+（出力を作らず、既存の出力に触らない）。**`--links` を渡さなければ、出力は前と同じバイト**——段落も関係も足さない。
 
 **載せるのは共有の層の表だけ**——内部の層の表（`check-qa-csv.py` の `INTERNAL_NAME`）を渡されたら作らない（2）。
 内部の質問は開発者が決めるもので、利用者に見せない（`references/qa-csv.md` の「層」。#330）。
@@ -37,7 +44,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 - 0: 作った（載せた質問の数を、回答待ち・未反映と暫定に分けて出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
-- 2: 引数の誤り（`--focus` の番号が資料に載る行に無い・重複・空・`FOCUS_MAX` 問を超える・`--focus` を 2 度書いた、を含む）・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・
+- 2: 引数の誤り（`--focus` の番号が資料に載る行に無い・重複・空・`FOCUS_MAX` 問を超える・`--focus` を 2 度書いた、`--links` の拒む形、を含む）・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・
   **書いたパスと大文字小文字だけ違う名前を開く表**（`docs/v2/shared/qa.csv` と書いてディスクが `Shared/`。`check-qa-csv.py` の `misspelled`。#514）・想定外の例外（128KB を超えるセルの
   `csv.Error` など。書いている途中でも一時ファイルを消すので既存の出力は残る。#286）（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
@@ -52,6 +59,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 | **文字がスライドからはみ出さないこと** | 文字の幅を測る手段が標準ライブラリに無い。枠には自動縮小の指定を付けるが、効くかはアプリ次第 |
 | **見た目の作り込み**（配色・ロゴ・テンプレート） | 形式の指定は対象リポジトリの `CLAUDE.md` に任せる（`references/tree.md`） |
 | **すべてのアプリで開けること** | 確かめたのは macOS の PowerPoint と LibreOffice だけ |
+| **`--links` のリンクをアプリで押して開けること**（相対のパスの解決を含む） | 書くのはハイパーリンクの関係まで。アプリで押して確かめていない（#1100） |
 """
 
 from __future__ import annotations
@@ -59,6 +67,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import io
+import json
 import os
 import re
 import sys
@@ -131,6 +140,17 @@ def read_pending(path: Path) -> tuple[int, list[str], list[dict[str, str]]]:
 
 def clean(text: str) -> str:
     return escape(INVALID_XML.sub("", text))
+
+
+def attribute(text: str) -> str:
+    """属性の値に書く文字列（`"` も逃がす）。"""
+    return escape(INVALID_XML.sub("", text), {'"': "&quot;"})
+
+
+def link_paragraph(text: str, size: int, rel_id: str) -> str:
+    """文字全体にハイパーリンク（スライドの関係 `rel_id`）を付けた 1 段落。"""
+    return (f'<a:p><a:r><a:rPr lang="ja-JP" sz="{size}" dirty="0"><a:hlinkClick r:id="{rel_id}"/></a:rPr>'
+            f'<a:t>{clean(text)}</a:t></a:r></a:p>')
 
 
 def paragraph(text: str, size: int, bold: bool = False, indent: int = 0) -> str:
@@ -238,7 +258,10 @@ def recommendation_label(row: dict[str, str]) -> str:
     return "推奨なし" if label is None else f"推奨 {label}"
 
 
-def question_slide(row: dict[str, str]) -> str:
+LINK_REL_ID = "rId2"  # 質問の頁の関係: rId1 がレイアウト、rId2 がリンク
+
+
+def question_slide(row: dict[str, str], link: str | None = None) -> str:
     title = lines_of(f"{row['No']}（{row['起票元']}）", 2800, bold=True)
     body = lines_of(row["質問"], 2200, bold=True) + [paragraph("", 1200)]
     for option in row["選択肢"].split(qa.OPTION_SEPARATOR):
@@ -256,6 +279,8 @@ def question_slide(row: dict[str, str]) -> str:
         body += lines_of(f"反映先: {row['反映先']}", 1600)
     elif row["回答"].strip() != qa.NO_ANSWER:
         body += [paragraph("", 1200)] + lines_of(f"回答（未反映）: {row['回答']}", 1600)
+    if link is not None:
+        body += [paragraph("", 1200), link_paragraph(f"モック: {link}", 1600, LINK_REL_ID)]
     return slide(title, body)
 
 
@@ -377,17 +402,21 @@ LAYOUT = (
 )
 
 
-def rels(items: list[tuple[str, str]]) -> str:
+def rels(items: list[tuple[str, str]], external: tuple[str, str] | None = None) -> str:
+    """`external` は (型, 行き先) で、最後の関係として `TargetMode="External"` で足す（質問の頁のリンク。#1100）。"""
     body = "".join(
         f'<Relationship Id="rId{i}" Type="{t}" Target="{target}"/>'
         for i, (t, target) in enumerate(items, 1)
     )
+    if external is not None:
+        body += (f'<Relationship Id="rId{len(items) + 1}" Type="{external[0]}" Target="{attribute(external[1])}" '
+                 'TargetMode="External"/>')
     return (DECL + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
             + body + "</Relationships>")
 
 
-def package(slides: list[str], title: str) -> list[tuple[str, str]]:
-    """(zip の中のパス, 中身) を、書く順に返す。"""
+def package(slides: list[str], title: str, links: list[str | None] | None = None) -> list[tuple[str, str]]:
+    """(zip の中のパス, 中身) を、書く順に返す。`links` はスライドごとのリンクの行き先（無ければ None）。"""
     n = len(slides)
     types = (
         DECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -457,17 +486,41 @@ def package(slides: list[str], title: str) -> list[tuple[str, str]]:
         ("ppt/slideLayouts/_rels/slideLayout1.xml.rels",
          rels([(f"{REL}/slideMaster", "../slideMasters/slideMaster1.xml")])),
     ]
+    layout = [(f"{REL}/slideLayout", "../slideLayouts/slideLayout1.xml")]
     for i, body in enumerate(slides, 1):
+        link = links[i - 1] if links else None
         parts.append((f"ppt/slides/slide{i}.xml", body))
-        parts.append((f"ppt/slides/_rels/slide{i}.xml.rels", layout_rel))
+        parts.append((f"ppt/slides/_rels/slide{i}.xml.rels",
+                      layout_rel if link is None else rels(layout, (f"{REL}/hyperlink", link))))
     return parts
 
 
 def build(rows: list[dict[str, str]], title: str, subtitle: str,
-          focus: list[dict[str, str]] | None = None) -> list[tuple[str, str]]:
+          focus: list[dict[str, str]] | None = None, links: dict[str, str] | None = None) -> list[tuple[str, str]]:
+    links = links or {}
     head = [cover(title, subtitle, rows)] + ([focus_slide(focus)] if focus else [])
-    slides = head + index_slides(rows) + [question_slide(r) for r in rows]
-    return package(slides, title)
+    front = head + index_slides(rows)
+    question_links = [links.get(r["No"].strip()) for r in rows]
+    slides = front + [question_slide(r, link) for r, link in zip(rows, question_links)]
+    return package(slides, title, [None] * len(front) + question_links)
+
+
+def read_links(path: Path, rows: list[dict[str, str]]) -> tuple[dict[str, str], str | None]:
+    """(`--links` の表, 問題) を返す。問題があれば表は空。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        return {}, f"--links の {path} を JSON として読めない（{type(e).__name__}）"
+    if not isinstance(data, dict):
+        return {}, f"--links の {path} が JSON のオブジェクトでない（鍵が質問の番号、値がリンク）"
+    shown = {row["No"].strip() for row in rows}
+    missing = [n for n in data if n not in shown]
+    if missing:
+        return {}, f"--links の {', '.join(n or '（空）' for n in missing)} は資料に載る行に無い（反映済みか、表に無い）"
+    empty = [n for n, v in data.items() if not isinstance(v, str) or not v.strip()]
+    if empty:
+        return {}, f"--links の {', '.join(empty)} のリンクが空か文字列でない"
+    return {n: v.strip() for n, v in data.items()}, None
 
 
 def write(parts: list[tuple[str, str]], out: Path) -> None:
@@ -490,16 +543,16 @@ def write(parts: list[tuple[str, str]], out: Path) -> None:
 
 # ---------------------------------------------------------------- 入口
 
-def parse(argv: list[str]) -> tuple[Path, Path, str, str, list[str] | None] | None:
-    args, opts = [], {"--title": "レビュー会の確認事項", "--subtitle": "", "--focus": None}
+def parse(argv: list[str]) -> tuple[Path, Path, str, str, list[str] | None, Path | None] | None:
+    args, opts = [], {"--title": "レビュー会の確認事項", "--subtitle": "", "--focus": None, "--links": None}
     it = iter(argv)
     for a in it:
         if a in opts:
             value = next(it, None)
             if value is None:
                 return None
-            if a == "--focus" and opts[a] is not None:
-                return None  # 2 度目の --focus で前の値を黙って捨てない（#1042 の 1 パス目）
+            if a in ("--focus", "--links") and opts[a] is not None:
+                return None  # 2 度目の --focus・--links で前の値を黙って捨てない（#1042 の 1 パス目・#1100）
             opts[a] = value
         elif a.startswith("--"):
             return None
@@ -508,7 +561,8 @@ def parse(argv: list[str]) -> tuple[Path, Path, str, str, list[str] | None] | No
     if len(args) != 2:
         return None
     focus = None if opts["--focus"] is None else [n.strip() for n in opts["--focus"].split(",")]
-    return Path(args[0]), Path(args[1]), opts["--title"], opts["--subtitle"], focus
+    links = None if opts["--links"] is None else Path(opts["--links"])
+    return Path(args[0]), Path(args[1]), opts["--title"], opts["--subtitle"], focus, links
 
 
 def main(argv: list[str]) -> int:
@@ -517,7 +571,7 @@ def main(argv: list[str]) -> int:
         print(__doc__.splitlines()[2] if __doc__ else
               f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
-    src, out, title, subtitle, numbers = parsed
+    src, out, title, subtitle, numbers, links_path = parsed
     problem = qa.misspelled(src)
     if problem:  # 区別しないファイルシステムでだけ開ける綴り違いの表から作らない（#514）
         print(f"{problem}。PPTX を作らない", file=sys.stderr)
@@ -541,13 +595,20 @@ def main(argv: list[str]) -> int:
         if problem:
             print(f"{src}: {problem}。PPTX を作らない", file=sys.stderr)
             return 2
+    links = None
+    if links_path is not None:
+        links, problem = read_links(links_path, rows)
+        if problem:
+            print(f"{src}: {problem}。PPTX を作らない", file=sys.stderr)
+            return 2
     try:
-        write(build(rows, title, subtitle, focus), out)
+        write(build(rows, title, subtitle, focus, links), out)
     except OSError as e:
         print(f"{out}: 書けない（{e.strerror}）。既存の出力には触っていない", file=sys.stderr)
         return 3
     settled = sum(qa.is_provisional(row) for row in rows)
     picked = f"・今回の会で決めたい問 {len(focus)} 問" if focus else ""
+    picked += f"・モックへのリンク {len(links)} 問" if links else ""
     print(f"{out}: 質問 {len(rows)} 件を載せた（回答待ち・未反映 {len(rows) - settled} 件・暫定の回答 {settled} 件{picked}）")
     return 0
 

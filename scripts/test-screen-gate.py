@@ -16,6 +16,8 @@
 3. **screen-spec の見つけ方**——引数・環境変数・隣・`installed_plugins.json`（一時の `CLAUDE_CONFIG_DIR`）。名指しが screen-spec でなければほかを探さずに 4。
 4. **本物の screen-spec を通す**——違反（遷移先の無い遷移）で 1、spec-loop の版が対応の範囲の外で 4、正しい表で 0。
 5. **ファイルを書かない**——正本・走らせた場所・プラグインの写し（`__pycache__` を含む。`-B` を付けずに走らせる）。
+6. **req-loop が読む起票の候補**（#1100）——画面の表のセル・散文の仕様書に Q&A の番号を添えていない未決定の印があれば、出力に
+   `screen-spec: 起票の候補: <場所>: <値>` の行が出る（本物の screen-spec）。**陰性対照: 番号を添えた印（`未定（Q-R-002）`）は起票の候補に出ない**。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書き、`HOME` を一時ディレクトリにし、`CLAUDE_CONFIG_DIR`・`SPEC_LOOP_SCREEN_SPEC`・
 `SCREEN_SPEC_SPEC_LOOP`・`PYTHONDONTWRITEBYTECODE` を外す（試料が名指すときだけ一時ディレクトリの値を渡す）。
@@ -106,6 +108,8 @@ REMOVED_NOTE = plus(NONE, **{"v1__requirements__screens__note.md": "# メモ\n\n
                              "v2__spec__rules.md": "# 業務ルール\n\n受注は登録できる。v2\n"})
 WIREFRAME_ONLY = plus(NONE, **{"v1__requirements__screens__wireframes__order-list.drawio": "<mxfile>未定</mxfile>\n"})
 PROSE_ONLY = plus(NONE, **{"v1__requirements__screens__order-list.md": "# S-001 受注一覧\n\n並び方は未定\n"})
+UNNUMBERED = changed(t.S, "受注を探す", "未定")
+UNNUMBERED_PROSE = changed(t.LIST_MD, "## 3. レイアウト\n\n<!-- screen-spec: 表 -->", "## 3. レイアウト\n\n<!-- screen-spec: 表 -->\n\n並び方は 未定")
 HEADER_CHANGED = plus(GOOD, **{"v2__requirements__screens__data__screens.csv": t.S_HEAD.replace(",根拠\n", ",根拠,備考\n")
                                + t.S2.replace("\n", ",\n")})
 
@@ -193,6 +197,11 @@ CASES = [
     Case("遷移先の無い遷移: 1（screen-spec の違反）", "sibling", VIOLATION, 1, "screen-spec: 違反:"),
     Case("spec-loop の版が対応の範囲の外: 4", "range", GOOD, 4, "対応の範囲の外"),
     Case("版の間で画面の表の見出し行が違う: 1（重ね合わせ）", "sibling", HEADER_CHANGED, 1, "版の重ね合わせが決まりに反する"),
+    # 6. req-loop が読む起票の候補（#1100）
+    Case("番号の無い表のセルの印: 起票の候補に出る", "sibling", UNNUMBERED, 1,
+         "screen-spec: 起票の候補: requirements/screens/data/screens.csv S-001 目的と背景: 未定"),
+    Case("番号の無い散文の印: 起票の候補に出る", "sibling", UNNUMBERED_PROSE, 1, "screen-spec: 起票の候補: requirements/screens/order-list.md:"),
+    Case("番号を添えた印: 起票の候補に出ない", "sibling", UNDECIDED, 1, "screen-spec: 未決定: ", absent="起票の候補: requirements/"),
     # 引数
     Case("引数が無い: 2", "alone", NONE, 2, "usage", args=("<none>",)),
     Case("--upto 0: 2", "alone", NONE, 2, "--upto", args=("--upto", "0")),
@@ -320,6 +329,8 @@ MUTATIONS = [
      "条件 1: ワイヤーフレームだけの screens/ は --docs なしでも 0"),
     ("重ね合わせの誤りを見ない", GATE, "    if problems:\n        return EXIT_FAIL, problems",
      "    if False:\n        return EXIT_FAIL, problems", "版の間で画面の表の見出し行が違う: 1（重ね合わせ）"),
+    ("screen-spec の出力を写さない", GATE, '    lines = [f"screen-spec: {line}" for line in (proc.stdout + proc.stderr).splitlines()]',
+     "    lines = []", "番号の無い表のセルの印: 起票の候補に出る"),
     ("__pycache__ を書く", GATE, "sys.dont_write_bytecode = True", "sys.dont_write_bytecode = False",
      "画面の表があって screen-spec が無い: 4"),
     ("条件 1 に画面の関門を入れない", EXIT, "screen_gate(spec_dir, docs, upto, named) if screen else (0, [])", "(0, [])",
