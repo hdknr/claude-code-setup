@@ -136,6 +136,8 @@ screen-spec を main の先端の 0.3.0（#1095 が先に上げた）から **0.
 - `/code-review` 2 パス目: 通した——指摘 8 件（CR2-1〜CR2-8。high。委譲文は貼った）。直すの行は 0 件
 - 狭いパス: 該当なし（2 パス目で直した行が 0 件）
 - main の取り込み（PR の前）: #1095（screen-spec 0.3.0・build-mock.py）が先にマージされた。README・CLAUDE.md・2 つの JSON の description が衝突——塊ごとに両側を合わせて解いた。版は 0.4.0 に上げ直した
+- check-all（`7e735ad`。run-serial 越し）: 87/87 本・失敗 0
+- 狭いパスと同じ形の Verifier（取り込みで広げた `build-mock.py` の直し。`git diff 50ce545 7e735ad -- build-mock.py test-build-mock.py`）: 通した——受入基準を破る指摘 0 件・軽微な指摘 1 件（N-1。verifier.md 185 行を報告）
 - 取り込みで広げた範囲: `build-mock.py` が profile の列を持つ案件で止まる（B12）——直した。直しの差分は関門を通していないので、狭いパスと同じ形の Verifier を 1 回当てる
 - test-check-screens（run-serial 越し）: 試料 123・変異 100・references の崩し 28——OK。test-write-screens（同）: 試料 43・変異 36・雛形の崩し 14・references の崩し 6——OK
 
@@ -174,3 +176,9 @@ screen-spec を main の先端の 0.3.0（#1095 が先に上げた）から **0.
 | CR2-7: `add` のパスの受理と見出し行の組み立てが検査の写し | 示せない（食い違いは起きていない） | 無し | 残課題 |
 | CR2-8: 小見出しの本文の正規化と空・N/A の判定が core の節の写し | 示せない | 無し | 残課題 |
 | check-all（`d20b7fc`）: 86 本のうち失敗 1——check-version-bump（main に #1095 が screen-spec 0.3.0 で入った） | 示せる | B11 | 直す——PR の前に main を取り込み、版を 0.4.0 に上げ直す |
+
+### 狭いパス（取り込みで広げた分）の指摘の振り分け（`references/found-lines.md` の「振り分け」）
+
+| 指摘 | 後退を示すか | 振り分け | 理由 |
+| --- | --- | --- | --- |
+| N-1: 誤った profile・読めない設定のとき、`build-mock.py` は「見出し行が決まりと違う」とだけ言い、設定の誤りを名指ししない | 示さない（main の `build-mock.py` も profile の列を持つ表を同じ文言で止めていた） | 記録だけ | 止まる側で、検査（`check-screens.py`）は設定の違反を名指しする。文言の診断性だけ |
