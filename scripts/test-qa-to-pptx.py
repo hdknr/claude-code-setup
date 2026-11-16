@@ -23,6 +23,11 @@
    内部の表は `--focus` があっても 2。
 8. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、既存の出力に触らず、トレースバックの 1 にしない**。
    `-OO`（docstring が無い）で引数なしに呼んでも使い方の誤りとして 2（#286）。
+9. **`--links` の質問ごとのリンク**（#1100）——渡した質問の頁の最後に「モック: <リンク>」の段落が載り、その文字のハイパーリンクが
+   同じ頁の関係（`TargetMode="External"`・行き先がリンクそのもの）を指す。ほかの段落と枚は `--links` 無しと同じ。XML の特殊文字で壊れない。
+   **渡さないときは、どの頁にもハイパーリンクも外を指す関係も無い**（今と同じバイトであることは周の実機確認で main の版と `cmp` した——
+   テストは main の版を持たないので形で見る）。読めない・オブジェクトでない・載らない番号・空の値・文字列でない値・2 度書いた・値の無い `--links` は 2 で、
+   既存の出力に触らない。
 
 **見ないもの**: PowerPoint・LibreOffice で開けること（CI に無い。周の検証で手で当てる）、
 文字がはみ出さないこと（本体の docstring の「守らないもの」）。
@@ -37,6 +42,7 @@ from __future__ import annotations
 import csv
 import importlib.util
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -89,6 +95,16 @@ FOCUS_EXPECTED = ["今回の会で決めたい問",
                   "3. Q-006（暫定）  暫定で採った質問  ［推奨 A］"]
 # 拒む形: 反映済み・表に無い・重複・空・空の要素・上限（3）を超える
 FOCUS_REJECTED = ["Q-001", "Q-999", "Q-002,Q-002", "", "Q-002,", "Q-002,Q-003,Q-004,Q-005"]
+# `--links` の試料（#1100）——モックのリンクと、XML の特殊文字・制御文字を含むリンク
+ODD_LINK = 'm.html?a=1&b=<2>#"x"\x01'
+LINKS = {"Q-002": "../mock/v1/index.html#screen=S-004", "Q-006": ODD_LINK}
+LINKS_EXPECTED = {
+    "Q-002（仕様レビュー（Red Team））": [("モック: ../mock/v1/index.html#screen=S-004", "../mock/v1/index.html#screen=S-004", "External")],
+    "Q-006（要求確定）": [("モック: " + ODD_LINK.replace("\x01", ""), ODD_LINK.replace("\x01", ""), "External")],
+    "<external>": 2,
+}
+# 拒む形（ファイルの中身）: JSON でない・オブジェクトでない・反映済みの番号・表に無い番号・空の値・文字列でない値
+LINKS_REJECTED = ["{", '["Q-002"]', '{"Q-001": "x"}', '{"Q-999": "x"}', '{"Q-002": "  "}', '{"Q-002": 1}', '{"Q-002": "\\u0001 "}']
 # 内部の層の表（qa-dev.csv）——資料に載せない（#330）
 INTERNAL_ROWS = [["D-001", "仕様レビュー", "ワーカーを分けるか", "A: 分ける / B: 分けない", "B", "費用", "未回答", "—", "確認中", ""]]
 
@@ -215,6 +231,8 @@ def slide_paragraphs(pptx: Path) -> tuple[list[list[str]], list[str]]:
                 continue
             base = Path(name).parent.parent  # `ppt/slides/_rels/x.rels` → `ppt/slides`
             for rel in tree:
+                if rel.get("TargetMode") == "External":
+                    continue  # 外を指す関係（`--links` のリンク。#1100）は部品の中に無い——行き先は `links_of` で見る
                 target = os.path.normpath(base / rel.get("Target")).replace(os.sep, "/")
                 if target not in names:
                     problems.append(f"関係の行き先が無い: {name} → {target}")
@@ -230,6 +248,38 @@ def slide_paragraphs(pptx: Path) -> tuple[list[list[str]], list[str]]:
         if len(ids) != len(slides):
             problems.append(f"sldIdLst が {len(ids)} 件、スライドが {len(slides)} 件")
     return out, problems
+
+
+R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+PKG = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def links_of(pptx: Path) -> dict[str, object]:
+    """スライドごとの（題の 1 段落目 → [(ハイパーリンクの段落の文字, 関係の行き先, 外か)]）と、外を指す関係の総数。"""
+    out: dict[str, object] = {}
+    external = 0
+    with zipfile.ZipFile(pptx) as z:
+        names = z.namelist()
+        for name in names:
+            if not (name.startswith("ppt/slides/slide") and name.endswith(".xml")):
+                continue
+            tree = ET.fromstring(z.read(name))
+            rels_name = f"ppt/slides/_rels/{name.rsplit('/', 1)[1]}.rels"
+            rels = {r.get("Id"): r for r in ET.fromstring(z.read(rels_name))} if rels_name in names else {}
+            external += sum(r.get("TargetMode") == "External" for r in rels.values())
+            found = []
+            for para in tree.iter(f"{A}p"):
+                for run in para.iter(f"{A}r"):
+                    for click in run.iter(f"{A}hlinkClick"):
+                        rel = rels.get(click.get(f"{R}id"))
+                        text = "".join(t.text or "" for t in para.iter(f"{A}t"))
+                        found.append((text, None if rel is None else rel.get("Target"),
+                                      None if rel is None else rel.get("TargetMode")))
+            if found:
+                first = next(("".join(t.text or "" for t in p.iter(f"{A}t")) for p in tree.iter(f"{A}p")), "")
+                out[first] = found
+    out["<external>"] = external
+    return out
 
 
 def runs_of(slide_xml: str) -> list[tuple[str, bool]]:
@@ -289,6 +339,23 @@ def observe(mod, base: Path) -> dict:
         fslides = slide_paragraphs(focused)[0] if obs["focus_rc"] == 0 and focused.exists() else []
         obs["focus_slide"] = fslides[1] if len(fslides) > 1 else None
         obs["focus_rest_same"] = fslides[:1] + fslides[2:] == slides
+        # `--links` を渡さなければ、ハイパーリンクも外を指す関係も無い（#1100）
+        obs["no_links_plain"] = links_of(out) == {"<external>": 0}
+        # `--links`（#1100）——渡した質問の頁の最後に段落とハイパーリンク。ほかは --links 無しと同じ
+        links_file = base / "links.json"
+        links_file.write_text(json.dumps(LINKS, ensure_ascii=False), encoding="utf-8")
+        linked = base / "linked.pptx"
+        try:
+            obs["links_rc"] = run(mod, str(good), str(linked), "--subtitle", "2026-10-13", "--links", str(links_file))
+        except Exception as e:  # noqa: BLE001
+            obs["links_rc"] = f"例外: {type(e).__name__}"
+        if obs["links_rc"] == 0 and linked.exists():
+            lslides, lproblems = slide_paragraphs(linked)
+            obs["links_problems"] = lproblems
+            obs["links"] = links_of(linked) if not lproblems else lproblems
+            stripped = [sl[:-2] if sl and sl[-1].startswith("モック: ") and sl[-2] == "" else sl for sl in lslides]
+            obs["links_rest_same"] = stripped == slides
+            obs["links_last"] = sorted(sl[-1] for sl in lslides if sl and sl[-1].startswith("モック: "))
         # 決定性: 時刻をまたいで作り直す（zip の時刻を固定していないと、ここで違う）
         time.sleep(2.1)
         again = base / "again.pptx"
@@ -312,6 +379,27 @@ def observe(mod, base: Path) -> dict:
     twice.write_bytes(b"OLD")
     obs["focus_twice"] = (run(mod, str(good), str(twice), "--focus", "Q-002", "--focus", "Q-005"),
                           twice.read_bytes() == b"OLD")
+    # `--links` で拒む形は 2 で、既存の出力に触らない（#1100）
+    rejected = []
+    for n, body in enumerate(LINKS_REJECTED + [None]):
+        source = base / f"links-bad-{n}.json"
+        if body is not None:
+            source.write_text(body, encoding="utf-8")  # None は読めないファイル（無い）
+        target = base / f"links-kept-{n}.pptx"
+        target.write_bytes(b"OLD")
+        try:
+            rc = run(mod, str(good), str(target), "--links", str(source))
+        except Exception as e:  # noqa: BLE001
+            rc = f"例外: {type(e).__name__}"
+        rejected.append((body, rc, target.read_bytes() == b"OLD"))
+    obs["links_rejected"] = rejected
+    ok_links = base / "links-ok.json"
+    ok_links.write_text(json.dumps({"Q-002": "x"}), encoding="utf-8")
+    twice = base / "links-twice.pptx"
+    twice.write_bytes(b"OLD")
+    obs["links_twice"] = (run(mod, str(good), str(twice), "--links", str(ok_links), "--links", str(ok_links)),
+                          twice.read_bytes() == b"OLD")
+    obs["links_no_value_rc"] = run(mod, str(good), str(base / "x.pptx"), "--links")
 
     bad = write_csv(base / "bad.csv", ROWS + [["Q-006", "未知の起票元", "q", "A: x", "A", "r", "未回答", "—", "確認中", ""]])
 
@@ -369,6 +457,9 @@ EXPECTED = {
     "focus_rc": 0, "focus_slide": FOCUS_EXPECTED, "focus_rest_same": True,
     "focus_rejected": [(v, 2, True) for v in FOCUS_REJECTED], "focus_no_value_rc": 2, "internal_focus_rc": 2,
     "focus_twice": (2, True),
+    "no_links_plain": True, "links_rc": 0, "links_problems": [], "links": LINKS_EXPECTED, "links_rest_same": True,
+    "links_last": sorted(f"モック: {v.replace(chr(1), '')}" for v in LINKS.values()),
+    "links_rejected": [(b, 2, True) for b in LINKS_REJECTED + [None]], "links_twice": (2, True), "links_no_value_rc": 2,
 }
 
 # 判別の本体を壊す（資料の側には写しが無いので、本体を壊せば資料が変わる）
@@ -409,8 +500,8 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("今回の会で決めたい問を載せない", "    head = [cover(title, subtitle, rows)] + ([focus_slide(focus)] if focus else [])",
      "    head = [cover(title, subtitle, rows)]"),
     ("今回の会で決めたい問を一覧の後に置く",
-     "    slides = head + index_slides(rows) + [question_slide(r) for r in rows]",
-     "    slides = head[:1] + index_slides(rows) + head[1:] + [question_slide(r) for r in rows]"),
+     "    front = head + index_slides(rows)",
+     "    front = head[:1] + index_slides(rows) + head[1:]"),
     ("--focus の値を捨てる", 'focus = None if opts["--focus"] is None else', 'focus = None if True else'),
     ("--focus を番号の順に並べ直す", "    return [by_no[n] for n in numbers], None",
      '    return [r for r in rows if r["No"].strip() in numbers], None'),
@@ -424,8 +515,26 @@ MUTATIONS: list[tuple[str, str, str]] = [
      "    return [by_no[n] for n in numbers], None",
      "    return [by_no[n] for n in numbers if n in by_no], None"),
     ("値の無い --focus を通す", "            if value is None:\n                return None\n", ""),
-    ("2 度目の --focus で上書きする", '            if a == "--focus" and opts[a] is not None:', "            if False:"),
+    ("2 度目の --focus で上書きする", '            if a in ("--focus", "--links") and opts[a] is not None:',
+     '            if a == "--links" and opts[a] is not None:'),
     ("--focus で暫定を見分けない", 'tag = "（暫定）" if qa.is_provisional(row) else ""', 'tag = ""'),
+    # `--links`（#1100）
+    ("リンクの段落を載せない", "    if link is not None:\n        body += [paragraph(", "    if False:\n        body += [paragraph("),
+    ("リンクの関係を足さない", 'layout_rel if link is None else rels(layout, (f"{REL}/hyperlink", link))', "layout_rel"),
+    ("関係を外を指すものにしない", """                 'TargetMode="External"/>')""", """                 '/>')"""),
+    ("関係の行き先の引用符を逃がさない", """return escape(INVALID_XML.sub("", text), {'"': "&quot;"})""",
+     'return INVALID_XML.sub("", text).replace("&", "&amp;").replace("<", "&lt;")'),
+    ("リンクの文字を逃がさない", "            f'<a:t>{clean(text)}</a:t></a:r></a:p>')\n\n\ndef paragraph(",
+     "            f'<a:t>{text}</a:t></a:r></a:p>')\n\n\ndef paragraph("),
+    ("リンクを質問の頁でなく前の枚に付ける", "    return package(slides, title, [None] * len(front) + question_links)",
+     "    return package(slides, title, question_links + [None] * len(front))"),
+    ("オブジェクトでない JSON を通す", "    if not isinstance(data, dict):", "    if False:"),
+    ("載らない番号のリンクを通す", "    if missing:\n        return {}, f\"--links の", "    if False:\n        return {}, f\"--links の"),
+    ("空のリンクを通す", "    if empty:\n        return {}", "    if False:\n        return {}"),
+    ("制御文字を外す前に空かを見る", 'not INVALID_XML.sub("", v).strip()]', "not v.strip()]"),
+    ("--links の値を捨てる", 'links = None if opts["--links"] is None else Path(opts["--links"])', "links = None"),
+    ("2 度目の --links で上書きする", '            if a in ("--focus", "--links") and opts[a] is not None:',
+     '            if a == "--focus" and opts[a] is not None:'),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
     # 太字の行（#965）——外すと `**` が文字のまま残る・中に `**` があっても 1 つと読むと 2 つの太字の行が化ける
     ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(content)\n",

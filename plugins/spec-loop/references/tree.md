@@ -377,6 +377,8 @@ spec/formal/<対象>/
 - 既定の出力先は **`build/req-loop/qa-review.pptx`**（リポジトリ直下の `build/`）。
   **commit しなくてよい**——同梱の生成スクリプトは、同じ `qa.csv` と引数から同じバイトを作るので、
   レビュー会で見せたものは `qa.csv` の履歴から作り直せる。
+- **画面の表がある案件では、質問ごとのモックへのリンクの表（`build/req-loop/mock-links.json`）も入力になる**（#1100。`qa-to-pptx.py --links`）——
+  画面の表から req-loop が作るもので、commit しない（作り方は req-loop の `SKILL.md` の手順 4）。リンクは PPTX からモック（`build/mock/v<n>/`）への相対のパスである。
 - 正本リポジトリの `CLAUDE.md` が出力先や形式を決めていれば、そちらに従う（下）。
 
 ## 図
