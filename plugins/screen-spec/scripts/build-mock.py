@@ -179,12 +179,14 @@ def forbidden_renderers(versions) -> list[str]:
     return sorted(found)
 
 
-def document_links(versions, upto: int, screens: dict, out_dir: Path) -> dict[str, str]:
+def document_links(versions, upto: int, screens: dict, out_dir: Path, merged_files) -> dict[str, str]:
     links = {}
     for key, row in screens.items():
         document = (row.get("仕様書") or "").strip()
         if not document or "/" in document or "\\" in document or not document.endswith(".md"):
             continue
+        if screens_check.SCREENS_DIR + document not in merged_files:
+            continue  # 重ねた全体に無い（removed.csv で消した）仕様書は指さない
         for _, root in reversed(versions[:upto]):
             path = root / screens_check.SCREENS_DIR / document
             if path.is_file():
@@ -264,7 +266,7 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str)
     }
     data["provenance"] = provenance
     data["renderers"] = sorted(renderers)
-    data["documents"] = document_links(versions, number, screens, out_dir)
+    data["documents"] = document_links(versions, number, screens, out_dir, whole.files)
     data["proseSections"] = [name for name, tabled in screens_check.SECTIONS if not tabled]
     data["entryKind"] = screens_check.ENTRY_KIND
     data["childKinds"] = list(screens_check.CHILD_KINDS)
@@ -391,9 +393,9 @@ APP = r"""
     drawHistory();
   }
 
-  function trigger(item, node) {
+  function trigger(item, node, attribute) {
     var list = byTrigger[item["番号"]] || [];
-    node.setAttribute("data-item", item["番号"]);
+    node.setAttribute(attribute || "data-item", item["番号"]);
     node.addEventListener("mouseenter", function () { if (list.length) showTransitions(list); });
     node.addEventListener("focus", function () { if (list.length) showTransitions(list); });
     node.addEventListener("mouseleave", function () { drawExplain(current); });
@@ -432,10 +434,14 @@ APP = r"""
       var input = el("input", {"type": "text", "data-item": item["番号"]});
       input.value = values[item["番号"]] !== undefined ? values[item["番号"]] : item["例"];
       input.addEventListener("input", function () { values[item["番号"]] = input.value; });
-      if (byTrigger[item["番号"]]) trigger(item, input);  // 入力の項目を きっかけ にする遷移（押すと遷移する）
       row.appendChild(input);
+      if (byTrigger[item["番号"]]) {  // 入力の項目を きっかけ にする遷移——入力欄は入力に使い、隣の印で遷移する
+        var go = el("button", {"type": "button", "class": "mock-button follow-input"}, "→ " + item["項目名"]);
+        row.appendChild(trigger(item, go, "data-trigger"));
+      }
     } else {
-      var shown = el("span", {"data-item": item["番号"]}, item["例"] || item["中身"] || "");
+      var shown = el("span", {"data-item": item["番号"]},
+                     item["例"] || item["中身"] || (byTrigger[item["番号"]] ? item["項目名"] : ""));  // 押せる項目は空にしない
       if (byTrigger[item["番号"]]) { shown.className = "clickable-item"; trigger(item, shown); }
       row.appendChild(shown);
     }
@@ -462,6 +468,7 @@ APP = r"""
     table.appendChild(head);
     var row = el("tr");
     columns.forEach(function (c) { row.appendChild(el("td", null, c["例"] || "")); });
+    if (!columns.length) row.appendChild(el("td", null, item["項目名"]));  // 列の無い一覧も押せる行を持つ
     if (byTrigger[item["番号"]]) { row.className = "clickable"; trigger(item, row); }
     else row.setAttribute("data-item", item["番号"]);
     table.appendChild(row);
@@ -579,6 +586,7 @@ APP = r"""
     drawScreen(base, holder, path);
     stage.appendChild(holder);
     var overlaid = {};
+    overlaid[base] = true;  // dialog の親が巡っている（検査の違反）とき、根の画面を重ねて描き直さない
     path.slice(1).forEach(function (k) {
       if (screens[k]["種別"] === DATA.tabKind || overlaid[k]) return;
       overlaid[k] = true;

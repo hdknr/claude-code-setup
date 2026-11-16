@@ -74,7 +74,9 @@ V1_ITEMS = I_HEAD + (
     "I-040,S-004,操作,1,閉じる,ボタン,,,,,,,,F-002\n"
     "I-050,S-005,操作,1,履歴へ,ボタン,,,,,,,,F-001\n"
     "I-060,S-006,操作,1,印刷,ボタン,,,,,,,,F-001\n"
-    "I-070,S-007,操作,1,詳細へ,ボタン,,,,,,,,F-001\n")
+    "I-070,S-007,操作,1,詳細へ,ボタン,,,,,,,,F-001\n"
+    "I-015,S-001,一覧,6,空の一覧,一覧,,,,,,,,F-001\n"   # 列の無い一覧（押せる行を持つこと）
+    "I-032,S-003,概要,3,中身の無い表示,表示,,,,,,,,F-001\n")   # 例も中身も空（押せる大きさを持つこと）
 V1_TRANSITIONS = T_HEAD + (
     "T-001,S-001,I-013,受注の登録,,S-002,,F-002\n"
     "T-002,S-001,I-010,,,S-003,,Q-R-001\n"
@@ -86,12 +88,17 @@ V1_TRANSITIONS = T_HEAD + (
     "T-010,S-003,I-030,,,S-007,,F-001\n"   # 表示の項目が きっかけ
     "T-011,S-002,I-020,,,S-001,,F-002\n"   # 入力の項目が きっかけ
     "T-012,S-001,I-012,,,S-003,,Q-R-001\n"   # 一覧の列が きっかけ
-    "T-013,S-007,I-070,,,S-003,,F-001\n")
+    "T-013,S-007,I-070,,,S-003,,F-001\n"
+    "T-014,S-001,I-015,,,S-003,,F-001\n"
+    "T-015,S-003,I-032,,,S-001,,F-001\n")
 V2_SCREENS = S_HEAD + "S-008,配置図,setting,,管理者,下書き,,配置を見る,機器の配置,F-001,,layout.md,F-001\n"
 # 親画面が巡るタブ（検査の違反。生成器は検査の結果に依らず作るので、開いても落ちないことを見る）
 V2_SCREENS += ("S-090,巡る A,tab,S-091,担当者,記入中,,巡る,巡る,F-001,,cycle-a.md,F-001\n"
                "S-091,巡る B,tab,S-090,担当者,記入中,,巡る,巡る,F-001,,cycle-b.md,F-001\n")
+V2_SCREENS += ("S-092,巡る C,dialog,S-093,担当者,記入中,,巡る,巡る,F-001,,cycle-c.md,F-001\n"
+               "S-093,巡る D,dialog,S-092,担当者,記入中,,巡る,巡る,F-001,,cycle-d.md,F-001\n")
 CYCLE = ("S-090", "S-091")
+DIALOG_CYCLE = ("S-092", "S-093")
 V2_ITEMS = I_HEAD + ("I-014,S-001,操作,5,配置図,ボタン,,,,,,,,F-001\n"
                      "I-080,S-008,操作,1,一覧へ戻る,ボタン,,,,,,,,F-001\n"
                      "I-081,S-008,説明,2,配置の説明,表示,配置の見方,,,,,,,F-001\n")
@@ -175,6 +182,8 @@ CASES: list[tuple[str, dict, object, list[str], int, str | None, str]] = [
         "docs/v2/" + DATA + "screens.csv": "\n".join(line + ("," + (SECRET_PATH if i else "パス") if line else "")
                                                      for i, line in enumerate(V2_SCREENS.split("\n")))}),
      "pathcol", [], 0, "build/mock/v2/index.html", "書いた:"),
+    ("removed", with_(base_files(), {"docs/v2/removed.csv": "種類,対象,理由\n画面,S-004,使わなくなった\nファイル,requirements/screens/order-detail.md,仕様書を消した\n"}),
+     "git", [], 0, "build/mock/v2/index.html", "書いた:"),
     # ---- 止まる（1）
     ("renderers-in-version", with_(base_files(), {"docs/v1/requirements/screens/renderers/S-001.js": "ctx.root.textContent='x';\n"}),
      "git", [], 1, None, "描き方のファイルを版の中に置いている"),
@@ -315,11 +324,18 @@ def table_rows(text: str) -> list[dict[str, str]]:
 
 
 def merged_rows(files: dict[str, str], upto: int, table: str) -> dict[str, dict[str, str]]:
+    """版を重ねた表の行（試料が使う形だけ: 同じ鍵は置き換え、removed.csv の `画面` はその画面を指す項目・遷移も消す）。"""
     rows: dict[str, dict[str, str]] = {}
     for version in range(1, upto + 1):
         text = files.get(f"docs/v{version}/{DATA}{table}")
         for row in table_rows(text) if text else []:
             rows[row["画面ID" if table == "screens.csv" else "番号"]] = row
+        removed = files.get(f"docs/v{version}/removed.csv")
+        for gone in (table_rows(removed) if removed else []):
+            if gone["種類"] == "画面":
+                rows = {k: r for k, r in rows.items()
+                        if gone["対象"] not in (k if table == "screens.csv" else None, r.get("画面ID") if table == "screen-items.csv" else None,
+                                               r.get("遷移元"), r.get("遷移先"))}
     return rows
 
 
@@ -395,7 +411,7 @@ def case_problems(case, result: dict) -> list[str]:
     if detail.get("根拠") != "F-001":
         problems.append(f"D- を外した根拠が {detail.get('根拠')!r}")
     branch = next((t for t in data.get("transitions", []) if t.get("番号") == "T-004"), {})
-    if branch.get("条件") != "入力に確認の要る値があるとき" or branch.get("根拠") != "F-002":
+    if "T-004" in transitions and (branch.get("条件") != "入力に確認の要る値があるとき" or branch.get("根拠") != "F-002"):
         problems.append(f"D- を外した条件・根拠が {branch.get('条件')!r}・{branch.get('根拠')!r}")
     # M11 描き方の差し替え
     has_renderer = "screen-spec/renderers/S-008.js" in files and upto >= 2
@@ -414,7 +430,11 @@ def case_problems(case, result: dict) -> list[str]:
         problems.append("表に無い画面の描き方の警告が無い")
     if "screen-spec/renderers/README.txt" in files and "README.txt: 描き方のファイル" not in result["stdout"]:
         problems.append(".js でないファイルの警告が無い")
-    # M10 散文の節へのリンク
+    # M10 散文の節へのリンク（removed.csv で消した仕様書は指さない）
+    if name == "removed" and "S-003" in data.get("documents", {}):
+        problems.append(f"消した仕様書を指す: {data['documents']['S-003']!r}")
+    if name != "removed" and "S-003" not in data.get("documents", {}):
+        problems.append("S-003 の仕様書を指していない")
     if data.get("documents", {}).get("S-001") != "../../../docs/v1/requirements/screens/order-list.md":
         problems.append(f"散文の節へのリンクが違う: {data.get('documents', {}).get('S-001')!r}")
     if data.get("proseSections") != ["7. 状態", "9. 他システム連携", "10. 同時編集", "11. 表示ルール", "未決の論点"]:
@@ -442,6 +462,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("表に無い画面の描き方も埋め込む", "        if key not in screens:\n", "        if False:\n", "good"),
     ("表が揃っていなくても作る", "    if missing:\n", "    if False:\n", "tables-missing"),
     ("見出し行を見ない", "        if whole.headers[path] != screens_check.COLUMNS[path]:\n", "        if False:\n", "header-differs-from-rule"),
+    ("消した仕様書も指す", "        if screens_check.SCREENS_DIR + document not in merged_files:\n", "        if False:\n", "removed"),
     ("git の任意のロックを取る", '["git", "--no-optional-locks", "-C"', '["git", "-C"', "dirty"),
     ("描き方のファイルのコミットを書かない", '    out = f"コミット {last}" if last else "コミットが無い"\n', '    out = "コミットが無い"\n', "good"),
 ]
@@ -592,9 +613,11 @@ const walker = async function (plan) {
     await reset();
     await go(t.from);
     const before = window.screenSpecMock.history.length;
-    const node = document.querySelector(`[data-item="${t.trigger}"]`);
+    const node = document.querySelector(`[data-trigger="${t.trigger}"]`) || document.querySelector(`[data-item="${t.trigger}"]`);
     const step = { id: t.id, found: node !== null };
     if (node) {
+      const box = node.getBoundingClientRect();
+      step.size = box.width * box.height;
       node.click();
       await wait(); await wait();
       const choice = document.querySelector(`button[data-transition="${t.id}"]`);
@@ -637,6 +660,14 @@ const walker = async function (plan) {
   out.custom.button = own ? own.textContent : null;
   if (own) { own.click(); await wait(); await wait(); }
   out.custom.current = app.getAttribute('data-current');
+  await reset();
+  await go(plan.input.screen);
+  const field = document.querySelector(`input[data-item="${plan.input.item}"]`);
+  if (field) { field.click(); field.value = '入れた'; field.dispatchEvent(new Event('input')); await wait(); await wait(); }
+  out.input = { found: field !== null, current: app.getAttribute('data-current'), value: field ? field.value : null };
+  await reset();
+  await go(plan.dialogCycle);
+  out.dialogCycle = [...document.querySelectorAll(`[data-screen="${plan.dialogCycle}"]`)].length;
   await reset();
   await go(plan.cycle);
   out.cycle = { current: app.getAttribute('data-current'), heads: [...document.querySelectorAll('[data-role=screen-name]')].map((n) => n.textContent) };
@@ -686,6 +717,9 @@ BROWSER_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("読み込めない描き方を黙る", "    if (!custom && DATA.renderers.indexOf(id) >= 0) {\n", "    if (false) {\n", "その画面に失敗を出して"),
     ("ボタンでない項目もボタンにする", '        if (it["種類"] !== K.button) return el("span", {"class": "renderer-error"}, "ボタンでない項目: " + number);\n', "", "描き方の差し替え（S-008）"),
     ("親画面の巡りで止まらない", ' && screens[k]["親画面"] === id && !drawn[k]; });', ' && screens[k]["親画面"] === id; });', "親画面が巡るタブ"),
+    ("入力欄を押すと遷移する", '        row.appendChild(trigger(item, go, "data-trigger"));\n', '        row.appendChild(trigger(item, go, "data-trigger")); trigger(item, input);\n', "入力の項目（I-020"),
+    ("巡る dialog の根を重ねる", "    overlaid[base] = true;", "    overlaid[base] = false;", "親画面が巡る dialog"),
+    ("列の無い一覧に行を持たせない", '    if (!columns.length) row.appendChild(el("td", null, item["項目名"]));', "", "遷移 T-014"),
     ("壊れたハッシュで落ちる", "      try { id = decodeURIComponent(found[1]); } catch (e) { say(\"画面が表に無い: \" + found[1]); return; }",
      "      id = decodeURIComponent(found[1]);", "壊れた #screen="),
     ("遷移の無いボタンで黙る", '      if (!list.length) { say("遷移が表に無い: "', '      if (!list.length) { say("" + ', "遷移の無いボタン I-060"),
@@ -699,8 +733,10 @@ def walk(plugin: Path, sibling: Path, work: Path, chrome: str, node: str) -> tup
     transitions = merged_rows(files, 2, "transitions.csv")
     triggered = {t["きっかけ"] for t in transitions.values()}
     plan = {
-        "screens": [k for k in screens if k not in CYCLE],
+        "screens": [k for k in screens if k not in CYCLE + DIALOG_CYCLE],
         "cycle": CYCLE[0],
+        "dialogCycle": DIALOG_CYCLE[0],
+        "input": {"screen": "S-002", "item": "I-020"},
         "transitions": [{"id": k, "from": t["遷移元"], "trigger": t["きっかけ"], "to": t["遷移先"]} for k, t in transitions.items()],
         "untriggered": [{"screen": i["画面ID"], "item": k} for k, i in items.items() if i["種類"] == "ボタン" and k not in triggered],
         "hover": {"screen": "S-002", "item": "I-021"},
@@ -735,7 +771,7 @@ def walk(plugin: Path, sibling: Path, work: Path, chrome: str, node: str) -> tup
     row("ハッシュ無しで開くと入口（種別 top）の画面が出る", out["loaded"]["current"] == "S-001", str(out["loaded"]))
     for step in out["steps"]:
         t = transitions[step["id"]]
-        ok = step["found"] and step.get("current") == t["遷移先"] and step.get("last") == step["id"] and step["id"] in step.get("historyShown", [])
+        ok = step["found"] and step.get("size", 0) > 0 and step.get("current") == t["遷移先"] and step.get("last") == step["id"] and step["id"] in step.get("historyShown", [])
         row(f"遷移 {step['id']}（{t['遷移元']} の {t['きっかけ']} → {t['遷移先']}）を踏めて、履歴に出る"
             + ("（条件で分かれるので選んだ）" if step.get("chose") else ""), ok, json.dumps(step, ensure_ascii=False))
     for screen in out["screens"]:
@@ -773,6 +809,9 @@ def walk(plugin: Path, sibling: Path, work: Path, chrome: str, node: str) -> tup
         "S-005.js を読み込めない" in out["broken"] and out["brokenDefault"] and out["custom"]["drawn"], out["broken"][:200])
     row("親画面が巡るタブ（S-090・S-091。検査の違反）を開いても落ちず、その画面が描かれる",
         out["cycle"]["current"] == "S-090" and "巡る A" in out["cycle"]["heads"], json.dumps(out["cycle"], ensure_ascii=False))
+    row("入力の項目（I-020。遷移の きっかけ）の欄を押しても遷移せず、値を入れられる",
+        out["input"]["found"] and out["input"]["current"] == "S-002" and out["input"]["value"] == "入れた", json.dumps(out["input"], ensure_ascii=False))
+    row("親画面が巡る dialog（S-092・S-093）を開いても、同じ画面を 2 度描かない", out["dialogCycle"] == 1, str(out["dialogCycle"]))
     row("壊れた #screen=（%E0）で開くと「画面が表に無い」", "画面が表に無い" in out["badHash"], out["badHash"])
     row("何で作ったかの印が見える", all(w in out["provenance"] for w in ("v2", "コミット", "signoff/v2/req-1", "screen-spec ")), out["provenance"][:300])
     return rows, ""
