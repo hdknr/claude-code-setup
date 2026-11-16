@@ -105,7 +105,14 @@ def readme(drop: tuple[str, ...] = (), **over: str) -> str:
 GOOD_DIR = "docs/v1/spec/formal/order-cancel"
 CheckCase = tuple[str, str, dict[str, str | None] | None, int, str]
 CHECK_CASES: list[CheckCase] = [
-    ("形どおり", GOOD_DIR, {"README.md": readme(), **MODEL_FILES}, 0, "形どおり（モデルのファイル 2 件）"),
+    ("形どおり", GOOD_DIR, {"README.md": readme(), **MODEL_FILES}, 0, "形どおり（モデルのファイル 2 件・陽性対照のファイル 0 件）"),
+    # 陽性対照のファイル（#1044。任意の項目）
+    ("陽性対照のファイルの行が無い", GOOD_DIR, {"README.md": readme(), **MODEL_FILES}, 0, "陽性対照のファイル 0 件"),
+    ("陽性対照のファイルが残る", GOOD_DIR, {"README.md": readme() + "| 陽性対照のファイル | `broken.tla`・`broken.cfg` |\n", **MODEL_FILES,
+                                         "broken.tla": "x", "broken.cfg": "x"}, 0, "形どおり（モデルのファイル 2 件・陽性対照のファイル 2 件）"),
+    ("陽性対照のファイルが無い", GOOD_DIR, {"README.md": readme() + "| 陽性対照のファイル | `broken.tla`・`broken.cfg` |\n", **MODEL_FILES,
+                                         "broken.tla": "x"}, 1, "陽性対照のファイル「broken.cfg」がこのディレクトリの通常のファイルとして無い"),
+    ("陽性対照のファイルが空", GOOD_DIR, {"README.md": readme() + "| 陽性対照のファイル |  |\n", **MODEL_FILES}, 1, "項目「陽性対照のファイル」の記録が空"),
     ("states が残る", GOOD_DIR, {"README.md": readme(), **MODEL_FILES, "states/x.st": "x"}, 1, "states: モデルのファイルの一覧に無い"),
     ("出力のファイルが残る", GOOD_DIR, {"README.md": readme(), **MODEL_FILES, "tlc.out": "x"}, 1, "tlc.out: モデルのファイルの一覧に無い"),
     ("一覧のファイルが無い", GOOD_DIR, {"README.md": readme(), "order.tla": "x"}, 1, "「order.cfg」がこのディレクトリの通常のファイルとして無い"),
@@ -148,7 +155,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("一覧に無いファイルを通す", "        if entry != README and entry not in listed:\n", "        if False:\n", "states が残る"),
     ("一覧のファイルが無いのを通す", "elif path.is_symlink() or not path.is_file():", "elif path.is_symlink():", "一覧のファイルが無い"),
     ("symlink を通す", "elif path.is_symlink() or not path.is_file():", "elif not path.is_file():", "一覧のファイルが symlink"),
-    ("項目の欠けを通す", "        if item not in records:\n            problems.append(", "        if False:\n            problems.append(", "陽性対照の行が無い"),
+    ("項目の欠けを通す", "        if item not in records:\n            if item not in OPTIONAL:\n", "        if item not in records:\n            if False:\n", "陽性対照の行が無い"),
+    # 任意の項目（#1044）: 行が無いのは通し、書いた一覧のファイルは見る
+    ("任意の項目も欠けを落とす", "            if item not in OPTIONAL:\n", "            if True:\n", "陽性対照のファイルの行が無い"),
     ("空の記録を通す", "        elif not records[item]:\n", "        elif False:\n", "置いた前提が空"),
     ("2 行ある項目を通す", '            problems.append(f"{readme}: 項目「{item}」が 2 行ある")\n', "            pass\n", "結果が 2 行"),
     ("判定できなかったを通す", "    if result and not one_of(result, RESULTS):\n", "    if False:\n", "結果が判定できなかった"),
@@ -166,7 +175,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("fetch に戻す", '    listed = frozen.git(root, "tag", "--list")\n',
      '    subprocess.run(["git", "-C", str(root), "fetch", "--all", "--tags", "--quiet"], capture_output=True)\n'
      '    listed = frozen.git(root, "tag", "--list")\n', "prune の設定でも手元のタグを見る"),
-    ("バッククォートの無い一覧を通す", '    if records.get("モデルのファイル") and not listed:\n', "    if False:\n", "一覧にバッククォートが無い"),
+    ("バッククォートの無い一覧を通す", '        if records.get(item) and not names:\n', "        if False:\n", "一覧にバッククォートが無い"),
+    ("陽性対照のファイルを一覧に足さない", "        listed += names\n", '        listed += names if item == "モデルのファイル" else []\n', "陽性対照のファイルが残る"),
     ("パスを含む名前を通す", 'if "/" in name or name in (README, ".", ".."):', 'if name in (README, ".", ".."):', "一覧の名前にパス"),
     ("README を一覧に入れるのを通す", 'if "/" in name or name in (README, ".", ".."):', 'if "/" in name:', "README を一覧に入れる"),
     ("名前の形を見ない", "    if not NAME.fullmatch(resolved.name):\n", "    if False:\n", "名前に大文字"),

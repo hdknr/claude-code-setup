@@ -365,6 +365,14 @@ jobs:
       - name: spec-loop の指摘の表の検査のテスト（#982）
         run: python3 scripts/test-check-findings-csv.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 1・6 が記録の表と指摘の表から条件 2・3 と上限を数え直す）。
+      - name: spec-loop の仕様レビューの記録の数え直しのテスト（#1044）
+        run: python3 scripts/test-check-review-record.py
+
+      # 本体は plugins/spec-loop/scripts/ にある（保存した TLC のモデルを走らせ直す。偽の TLC で回す）。
+      - name: spec-loop の形式検査のモデルの走らせ直しのテスト（#1044）
+        run: python3 scripts/test-check-formal-rerun.py
+
       # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
       - name: spec-loop の図の書き出しのテスト（#268）
         run: python3 scripts/test-render-diagrams.py
