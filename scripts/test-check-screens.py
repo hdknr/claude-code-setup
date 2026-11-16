@@ -15,6 +15,9 @@
 3. **検査が Q&A の番号を振らない**——どの試料でも、実行の前後で正本のファイルのバイトが変わらず、出力の Q&A の番号はどれも正本に書いてある。
 4. **ほかの検査**（表どうし・形・散文・重ね合わせ・spec-loop の見つけ方・引数と読めない入力の 2・`-OO`）。
 5. **本体の定数が `plugins/screen-spec/references/` の原本と一致する**（写しのずれ。崩すと落ちることも見る）。
+   profile の定数は `references/profiles.md` と、profile の名前は `profiles/` のディレクトリと突き合わせ、各項目を誰が決めるかが書いてあることも見る（#1094）。
+7. **#1094 の受入基準**——profile が `web-spa` で `## 実現方式: web-spa` の節が無い仕様書を止める（1）・profile が `未設定` なら profile の節と列を求めない（0）・
+   方式が未定で `N/A。実現方式が未定` と書いた節（とセル）を通す（0。未決定にも起票の候補にもしない）。profile の列と節のほかの検査も当てる。
 6. **リポジトリの外で単体で動く**——プラグインを一時ディレクトリに写し、`python3 -I` で走らせる。プラグインのキャッシュの形
    （`installed_plugins.json` が名指しする spec-loop）も一時の設定のディレクトリに作って当てる。
 
@@ -116,6 +119,50 @@ def with_files(files: dict[str, object], **extra: object) -> dict[str, object]:
     merged.update(extra)
     return merged
 
+
+# ---- profile（#1094）
+SETTINGS_CSV = "v1/requirements/screens/settings.csv"
+COMMON_MD = "v1/requirements/screens/common.md"
+WEB_SPA = "項目,値\n画面IDの接頭辞,S-\nprofile,web-spa\n"
+UNSET_SETTINGS = "項目,値\n画面IDの接頭辞,S-\nprofile,未設定\n"
+SUBSECTIONS = ["ディープリンク・別タブ", "戻る・進む・再読み込み", "ダイアログの実体", "一覧の送り方", "ファイル出力・印刷", "認証と権限の外れ"]
+COMMON_SUBSECTIONS = ["アプリの外枠", "対象デバイスと画面幅"]
+UNDECIDED = "N/A。実現方式が未定"
+SW_HEAD = S_HEAD.replace(",根拠\n", ",根拠,パス\n")
+TW_HEAD = T_HEAD.replace(",根拠\n", ",根拠,種類\n")
+
+
+def subsections(names: list[str], bodies: dict[str, str] | None = None) -> str:
+    bodies = bodies or {}
+    return "\n".join(f"### {name}\n\n{bodies.get(name, 'N/A。この画面には無い')}\n" for name in names)
+
+
+def profile_section(body: str | None = None) -> str:
+    return "\n## 実現方式: web-spa\n\n" + (subsections(SUBSECTIONS) if body is None else body) + "\n"
+
+
+def web_spa(**changes) -> dict[str, object]:
+    """profile web-spa の正しい正本（列・仕様書の末尾の節・共通仕様の節）。"""
+    files = base()
+    files[SETTINGS_CSV] = WEB_SPA
+    files[S] = SW_HEAD + S1.replace("\n", ",/orders\n") + S2.replace("\n", ",/orders/new\n")
+    files[T] = TW_HEAD + T1.replace("\n", ",\n") + T2.replace("\n", ",同じタブ\n")
+    files[LIST_MD] = doc("S-001", "受注一覧") + profile_section()
+    files[NEW_MD] = doc("S-002", "受注登録") + profile_section()
+    files[COMMON_MD] = "# 共通仕様\n\n## 用語\n\n" + profile_section(subsections(COMMON_SUBSECTIONS))
+    for key, value in changes.items():
+        path = {"S": S, "T": T, "LIST_MD": LIST_MD, "NEW_MD": NEW_MD, "COMMON": COMMON_MD, "SETTINGS": SETTINGS_CSV}[key]
+        if value is None:
+            files.pop(path)
+        else:
+            files[path] = value
+    return files
+
+
+WS1 = S1.replace("\n", ",/orders\n")
+WS2 = S2.replace("\n", ",/orders/new\n")
+WT1 = T1.replace("\n", ",\n")
+WT2 = T2.replace("\n", ",同じタブ\n")
 
 V2_S = "v2/requirements/screens/data/screens.csv"
 V2_I = "v2/requirements/screens/data/screen-items.csv"
@@ -314,6 +361,48 @@ CASES: list[tuple[str, dict, object, list[str], int, str, str]] = [
     ("basis-empty", good(T=T_HEAD + T1 + T2.replace(",F-002\n", ",\n")), None, [], 3, "必須の欄が空: requirements/screens/data/transitions.csv T-002 根拠", ""),
     ("merge-header-differs", with_files(base(), **{V2_S: S_HEAD.replace(",根拠\n", ",根拠,備考\n")}), None, [], 1, "版の重ね合わせ: ", ""),
     # ---- 判定していない（2）
+    # ---- profile（#1094）
+    ("profile-unset-no-section", with_files(base(), **{SETTINGS_CSV: UNSET_SETTINGS}), None, [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件", "実現方式"),
+    ("web-spa-good", web_spa(), None, [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "違反:"),
+    ("web-spa-undecided-good", web_spa(S=SW_HEAD + S1.replace("\n", f",{UNDECIDED}\n") + WS2, T=TW_HEAD + WT1 + T2.replace("\n", f",{UNDECIDED}\n"),
+                                       LIST_MD=doc("S-001", "受注一覧") + profile_section(UNDECIDED + "（Q-R-002 で決める）"),
+                                       NEW_MD=doc("S-002", "受注登録") + profile_section(f"**{UNDECIDED}**"),
+                                       COMMON="# 共通仕様\n\n" + profile_section(UNDECIDED)),
+     None, [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件・警告 0 件・起票の候補 0 件", "違反:"),
+    ("web-spa-no-common-ok", web_spa(COMMON=None), None, [], 0, "違反 0 件・必須の欄が空 0 件・未決定 0 件", "違反:"),
+    ("web-spa-no-section", web_spa(NEW_MD=doc("S-002", "受注登録")), None, [], 1, "order-new.md: 節 ## 実現方式: web-spa が無い（profile web-spa）", ""),
+    ("web-spa-section-in-comment", web_spa(NEW_MD=doc("S-002", "受注登録") + "\n<!--" + profile_section() + "-->\n"), None, [], 1,
+     "order-new.md: 節 ## 実現方式: web-spa が無い", ""),
+    ("web-spa-section-as-h3", web_spa(NEW_MD=doc("S-002", "受注登録") + profile_section().replace("## 実現方式", "### 実現方式")), None, [], 1,
+     "order-new.md: 節 ## 実現方式: web-spa が無い", ""),
+    ("web-spa-section-not-last", web_spa(NEW_MD=doc("S-002", "受注登録").replace("## 未決の論点", profile_section().lstrip("\n") + "\n## 未決の論点")),
+     None, [], 1, "を末尾（## 未決の論点 の後ろ）に置いていない", ""),
+    ("web-spa-section-twice", web_spa(NEW_MD=doc("S-002", "受注登録") + profile_section() + profile_section()), None, [], 1,
+     "節 ## 実現方式: web-spa が 2 つある", ""),
+    ("web-spa-subsection-missing", web_spa(NEW_MD=doc("S-002", "受注登録") + profile_section(subsections(SUBSECTIONS[:-1]))), None, [], 1,
+     "に小見出し ### 認証と権限の外れ が無い", ""),
+    ("web-spa-subsection-empty", web_spa(NEW_MD=doc("S-002", "受注登録") + profile_section(subsections(SUBSECTIONS, {"一覧の送り方": "<!-- あとで -->"}))),
+     None, [], 1, "小見出し ### 一覧の送り方 が空", ""),
+    ("web-spa-subsection-na-only", web_spa(NEW_MD=doc("S-002", "受注登録") + profile_section(subsections(SUBSECTIONS, {"ダイアログの実体": "N/A"}))),
+     None, [], 1, "小見出し ### ダイアログの実体 が N/A だけで理由が無い", ""),
+    ("web-spa-common-no-section", web_spa(COMMON="# 共通仕様\n\n## 用語\n"), None, [], 1, "common.md: 節 ## 実現方式: web-spa が無い", ""),
+    ("web-spa-common-subsection-missing", web_spa(COMMON="# 共通仕様\n" + profile_section(subsections(COMMON_SUBSECTIONS[:1]))), None, [], 1,
+     "に小見出し ### 対象デバイスと画面幅 が無い", ""),
+    ("web-spa-header-core-only", web_spa(S=S_HEAD + S1 + S2), None, [], 1, "見出し行が決まり（profile web-spa の列を足した）", ""),
+    ("unset-header-with-profile-column", with_files(web_spa(), **{SETTINGS_CSV: UNSET_SETTINGS}), None, [], 1, "screens.csv:1: 見出し行が決まり", ""),
+    ("profile-unknown", web_spa(SETTINGS=WEB_SPA.replace("web-spa", "desktop")), None, [], 1, "'desktop' はこのプラグインの profile（web-spa）でも 未設定 でもない", ""),
+    ("profile-twice", web_spa(SETTINGS=WEB_SPA + "profile,web-spa\n"), None, [], 1, "profile の行が 2 つある", ""),
+    ("web-spa-path-empty", web_spa(S=SW_HEAD + S1.replace("\n", ",\n") + WS2), None, [], 3,
+     "必須の欄が空: requirements/screens/data/screens.csv S-001 パス", ""),
+    ("web-spa-tab-path-empty-ok", with_files(
+        web_spa(S=SW_HEAD + WS1 + WS2 + "S-003,受注の明細,tab,S-002,担当者,記入中,,明細を見る,明細の一覧,F-002,,order-tab.md,F-002,\n"),
+        **{"v1/requirements/screens/order-tab.md": doc("S-003", "受注の明細") + profile_section()}), None, [], 0, "違反 0 件・必須の欄が空 0 件", "違反:"),
+    ("web-spa-path-not-slash", web_spa(S=SW_HEAD + WS1 + S2.replace("\n", ",orders/new\n")), None, [], 1, "S-002 パス: 'orders/new' は / で始まらない", ""),
+    ("web-spa-path-marker", web_spa(S=SW_HEAD + WS1 + S2.replace("\n", ",未定（D-S-001）\n")), None, [], 3, "S-002 パス: 未決定の印 '未定'", "違反:"),
+    ("web-spa-tab-kind-bad", web_spa(T=TW_HEAD + WT1 + T2.replace("\n", ",新しいタブ\n")), None, [], 1, "種類 '新しいタブ' は決まった値（同じタブ・別タブ）でない", ""),
+    ("web-spa-v2-doc-without-section", with_files(
+        web_spa(), **{"v2/requirements/screens/order-new.md": doc("S-002", "受注登録")}), None, [], 1,
+     "order-new.md: 節 ## 実現方式: web-spa が無い", ""),
     ("no-args", {}, None, ["<none>"], 2, "usage:", "Traceback"),
     ("docs-missing", {}, None, ["<missing>"], 2, "ディレクトリが無い", ""),
     ("upto-bad", base(), None, ["--upto", "0"], 2, "--upto には", ""),
@@ -454,8 +543,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("印のあるセルも値の決まりに当てる", "                self.undecided_cells.add((path, key, name))\n                continue\n",
      "                self.undecided_cells.add((path, key, name))\n", "marker-skips-reference"),
     ("散文の未決定の印を見ない", "            self.marked(where, line)\n", "            pass\n", "marker-in-prose"),
-    ("空の節を見ない", "            if not content:\n", "            if False:\n", "prose-empty-section"),
-    ("理由の無い N/A を見ない", "elif NOT_APPLICABLE.fullmatch(DECORATION.sub(\"\", LIST_MARK.sub(\"\", content)).strip()):", "elif False:", "prose-na-without-reason"),
+    ("空の節を見ない", "self.report.violations.append(f\"{path}:{at + 1}: 節 ## {heading} が空", "None and (f\"{path}:{at + 1}: 節 ## {heading} が空", "prose-empty-section"),
+    ("理由の無い N/A を見ない", "self.report.violations.append(f\"{path}:{at + 1}: 節 ## {heading} が N/A だけ", "None and (f\"{path}:{at + 1}: 節 ## {heading} が N/A だけ",
+     "prose-na-without-reason"),
     ("N/A の強調を理由に数える", "DECORATION.sub(\"\", LIST_MARK.sub(\"\", content))", "LIST_MARK.sub(\"\", content)", "prose-na-emphasis"),
     ("N/A の箇条書きの印を理由に数える", "DECORATION.sub(\"\", LIST_MARK.sub(\"\", content))", "DECORATION.sub(\"\", content)", "prose-na-list-mark"),
     ("散文の節の表を出す印を中身に数える", "if tabled and TABLE_MARK in body:", "if TABLE_MARK in body:", "prose-mark-in-prose-section"),
@@ -478,7 +568,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("キャッシュの記録を読まない", "chosen = project if project else user", "chosen = []", "spec-loop-from-cache"),
     ("キャッシュのマーケットプレイスを見ない", "f\"{SPEC_LOOP_NAME}@{market}\"", "f\"{SPEC_LOOP_NAME}@other-market\"", "spec-loop-from-cache-too-old"),
     ("表をまたいだ番号の重なりを見ない", "for key in sorted(set(keys_a) & set(keys_b)):", "for key in []:", "key-overlap"),
-    ("見出し行を見ない", "elif whole.headers[path] != COLUMNS[path]:", "elif False:", "header-wrong"),
+    ("見出し行を見ない", "elif whole.headers[path] != self.columns[path]:", "elif False:", "header-wrong"),
     ("揃っていない表を見ない", "self.report.violations.append(f\"{path}: 表が無い（3 つの表は揃えて置く。行が無くても見出し行は置く）\")", "pass", "table-missing"),
     ("種別を見ない", "self.one_of(f\"{where} 種別\", kind, SCREEN_KINDS, \"種別\")", "None", "kind-invalid"),
     ("ステータスを見ない", "self.one_of(f\"{where} ステータス\", row.get(\"ステータス\"), STATUSES, \"ステータス\")", "None", "status-invalid"),
@@ -488,7 +578,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("種類に合わない列を見ない", "self.must_be_empty(f\"{where} {name}\", row.get(name), f\"種類 {kind} の項目\")\n            for",
      "None\n            for", "required-on-display"),
     ("一覧の列の並び替えの空を見ない", "self.report.empty.append(f\"{where} {name}（種類 {LIST_COLUMN} の項目は書く）\")", "pass", "list-column-without-sort"),
-    ("必須の欄の空を見ない", "if not decided[name] and name not in MAY_BE_EMPTY[path]:", "if False:", "required-empty"),
+    ("必須の欄の空を見ない", "if not decided[name] and name not in MAY_BE_EMPTY[path] and name in COLUMNS[path]:", "if False:", "required-empty"),
     ("重ね合わせの違反を見ない", "        if problems:\n            for problem in problems:", "        if False:\n            for problem in problems:",
      "merge-header-differs"),
     ("--upto を渡さない", "self.versions.merge(self.docs, self.upto)", "self.versions.merge(self.docs, None)", "upto-ignores-later"),
@@ -511,6 +601,31 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("N/A の大文字小文字を区別する", "、\\-－—–()（）\\[\\]「」]*\", re.IGNORECASE)", "、\\-－—–()（）\\[\\]「」]*\")", "prose-na-lowercase"),
     ("N/A の飾りを理由に数える", "、\\-－—–()（）\\[\\]「」]*", "、]*", "prose-na-decorated"),
     ("__pycache__ を書く", "sys.dont_write_bytecode = True", "sys.dont_write_bytecode = False", "good"),
+    # ---- profile（#1094）
+    ("設定の profile を読まない", "self.profile = self.read_profile(whole)", "self.profile = UNSET", "web-spa-no-section"),
+    ("profile の列を求めない", "extra = PROFILES[self.profile][\"columns\"] if self.profile in PROFILES else {}", "extra = {}", "web-spa-good"),
+    ("知らない profile を通す", "if values[0] != UNSET and values[0] not in PROFILES:", "if False:", "profile-unknown"),
+    ("profile の行の重なりを見ない", "        if len(values) > 1:\n", "        if False:\n", "profile-twice"),
+    ("仕様書の profile の節を見ない", "        if self.profile in PROFILES:\n            last = names[-1]", "        if False:\n            last = names[-1]", "web-spa-no-section"),
+    ("profile の節が無いのを見ない", "self.report.violations.append(f\"{path}: 節 ## {name} が無い（profile {self.profile}）\")", "pass", "web-spa-no-section"),
+    ("2 つある profile の節を見ない", "for index in places[1:]:", "for index in []:", "web-spa-section-twice"),
+    ("profile の節が末尾かを見ない", "if after is not None and at < after:", "if False:", "web-spa-section-not-last"),
+    ("方式が未定でも小見出しを求める", "        if undecided_profile(HEADING_LINE.sub(", "        if False and undecided_profile(HEADING_LINE.sub(", "web-spa-undecided-good"),
+    ("無い小見出しを見ない", "            if found is None:\n", "            if False:\n", "web-spa-subsection-missing"),
+    ("空の小見出しを見ない", "self.report.violations.append(f\"{path}:{sub_at + 1}: 小見出し ### {subsection} が空", "None and (f\"{path}:{sub_at + 1}: 小見出し ### {subsection} が空",
+     "web-spa-subsection-empty"),
+    ("理由の無い N/A の小見出しを見ない", "self.report.violations.append(f\"{path}:{sub_at + 1}: 小見出し ### {subsection} が N/A だけ", "None and (f\"{path}:{sub_at + 1}: 小見出し ### {subsection} が N/A だけ",
+     "web-spa-subsection-na-only"),
+    ("共通仕様の profile の節を見ない", "                if self.profile in PROFILES:\n                    lines = self.without_comments(common)",
+     "                if False:\n                    lines = self.without_comments(common)", "web-spa-common-no-section"),
+    ("言い回しを未決定の印に数える", "hits = self.find_markers(mask_undecided(value))", "hits = self.find_markers(value)", "web-spa-undecided-good"),
+    ("パスの空を見ない", "                    if row.get(\"種別\") not in CHILD_KINDS:", "                    if False:", "web-spa-path-empty"),
+    ("tab のパスの空も求める", "                    if row.get(\"種別\") not in CHILD_KINDS:", "                    if True:", "web-spa-tab-path-empty-ok"),
+    ("パスの形を見ない", "elif not value.startswith(\"/\"):", "elif False:", "web-spa-path-not-slash"),
+    ("言い回しのパスを値の決まりに当てる", "if value is None or undecided_profile(value):", "if value is None:", "web-spa-undecided-good"),
+    ("遷移の種類の値を見ない", "                if value and not undecided_profile(value):", "                if False:", "web-spa-tab-kind-bad"),
+    ("言い回しの種類を値の決まりに当てる", "                if value and not undecided_profile(value):", "                if value:", "web-spa-undecided-good"),
+    ("profile の列を必須の欄の空に数える", " and name in COLUMNS[path]:", ":", "web-spa-good"),
     ("未決定を 0 にする", "return 3 if self.undecided or self.empty else 0", "return 0", "marker-in-table"),
 ]
 OO_MUTATIONS = [("-OO で docstring が無いと落ちる", "__doc__.splitlines()[2] if __doc__ else", "__doc__.splitlines()[2] if True else")]
@@ -540,6 +655,54 @@ def rows_of(text: str) -> list[list[str]]:
 
 def ticked(cell: str) -> list[str]:
     return re.findall(r"`([^`]+)`", cell)
+
+
+def profile_mismatches(module, profiles: str, directories: list[str]) -> list[str]:
+    """profile の定数と `references/profiles.md`・`profiles/` のディレクトリ（#1094）。"""
+    problems = []
+
+    def same(what: str, ours, theirs) -> None:
+        if ours != theirs:
+            problems.append(f"{what}: 本体 {ours!r} ／ references {theirs!r}")
+
+    try:
+        listed = [ticked(r[0])[0] for r in rows_of(section(profiles, "## profile の一覧"))]
+        spa = section(profiles, "## `web-spa`")
+        columns = rows_of(section(spa, "### 表の列"))
+        screen = [ticked(r[0])[0] for r in rows_of(section(spa, "### 仕様書の小見出し"))]
+        common = [ticked(r[0])[0] for r in rows_of(section(spa, "### 共通仕様の小見出し"))]
+        deciders = {ticked(r[0])[0]: r for r in rows_of(section(spa, "### 誰が決めるか"))}
+        choose = section(profiles, "## 選び方")
+        undecided = section(profiles, "## 方式が未定のとき")
+        adds = section(profiles, "## 足すもの")
+    except ValueError as e:
+        return [f"references/profiles.md の節が無い: {e}"]
+    same("profile の名前", sorted(module.PROFILES), sorted(listed))
+    same("profiles/ のディレクトリ", sorted(module.PROFILES), sorted(directories))
+    tables = {"screens.csv": module.SCREENS, "transitions.csv": module.TRANSITIONS}
+    ours = {path: names for path, names in module.PROFILES["web-spa"]["columns"].items()}
+    theirs: dict[str, list[str]] = {}
+    for row in columns:
+        theirs.setdefault(tables.get(ticked(row[0])[0], ticked(row[0])[0]), []).append(ticked(row[1])[0])
+    same("web-spa の列", ours, theirs)
+    by_name = {ticked(r[1])[0]: r for r in columns}
+    same("パスの列", module.PATH_COLUMN in by_name and ticked(by_name[module.PATH_COLUMN][0])[0] == "screens.csv", True)
+    same("パスを空にしてよい種別", list(module.CHILD_KINDS), ticked(by_name.get(module.PATH_COLUMN, ["", "", "", ""])[3]))
+    same("種類の列", module.TAB_COLUMN in by_name and ticked(by_name[module.TAB_COLUMN][0])[0] == "transitions.csv", True)
+    same("種類の値", list(module.TAB_KINDS), ticked(by_name.get(module.TAB_COLUMN, ["", "", ""])[2]))
+    same("パスは / で始まる", "（`/` で始まる）" in by_name.get(module.PATH_COLUMN, ["", "", ""])[2], True)
+    same("仕様書の小見出し", module.PROFILES["web-spa"]["screen"], screen)
+    same("共通仕様の小見出し", module.PROFILES["web-spa"]["common"], common)
+    same("節の名前", [module.PROFILE_SECTION + "<profile>"], sorted(set(re.findall(r"`## ([^`]+: <profile>)`", adds))))
+    same("方式が未定の言い回し", [module.PROFILE_UNDECIDED.pattern], sorted(set(re.findall(r"`(N/A。[^`]+)`", undecided))))
+    same("未設定", [module.UNSET], re.findall(r"\*\*`([^`]+)` なら、profile の列と節を求めない", choose))
+    # 各項目を誰が決めるか（共有の Q&A 表か spec/qa-dev.csv か）が書いてある
+    items = [n for names in module.PROFILES["web-spa"]["columns"].values() for n in names] + screen + common
+    same("誰が決めるかの項目", sorted(items), sorted(deciders))
+    for name, row in deciders.items():
+        if not re.fullmatch(r"(`shared/qa\.csv`|`spec/qa-dev\.csv`)(・(`shared/qa\.csv`|`spec/qa-dev\.csv`))*", row[-1]):
+            problems.append(f"誰が決めるか: {name} の起票する表 {row[-1]!r} が共有の Q&A 表か spec/qa-dev.csv でない")
+    return problems
 
 
 def reference_mismatches(module, tables: str, prose: str, boundary: str) -> list[str]:
@@ -582,6 +745,10 @@ def reference_mismatches(module, tables: str, prose: str, boundary: str) -> list
          (tuple(map(int, found.group(1).split("."))), tuple(map(int, found.group(2).split(".")))) if found else None)
     same("環境変数", [module.SPEC_LOOP_ENV], re.findall(r"環境変数 `([A-Z_]+)`", boundary))
     same("記録のファイル", module.INSTALLED.split("/")[-1] in boundary, True)
+    settings = section(tables, "## 案件ごとの設定（`settings.csv`）")
+    same("設定のファイル", f"`{module.SETTINGS}`" in settings, True)
+    same("設定の見出し行", f"見出し行は `{','.join(module.SETTINGS_COLUMNS)}`" in settings, True)
+    same("設定の profile", re.findall(r"^\| `(profile)` \|.*\| `([^`]+)` \|$", settings, flags=re.MULTILINE), [(module.PROFILE_KEY, module.UNSET)])
     return problems
 
 
@@ -601,6 +768,20 @@ REFERENCE_MUTATIONS = [
     ("版の下限を変える", "boundary", "| `0.93.0` | `1.0.0` |", "| `0.94.0` | `1.0.0` |"),
     ("版の上限を変える", "boundary", "| `0.93.0` | `1.0.0` |", "| `0.93.0` | `0.94.0` |"),
     ("環境変数の名前を変える", "boundary", "環境変数 `SCREEN_SPEC_SPEC_LOOP`", "環境変数 `SPEC_LOOP_DIR`"),
+    ("設定の profile の既定を変える", "tables", "か `未設定` | `未設定` |", "か `未設定` | `なし` |"),
+]
+PROFILE_MUTATIONS = [
+    ("profile を足す", "| `web-spa` | `profiles/web-spa/` |", "| `web-spa` | `profiles/web-spa/` |\n| `desktop` | `profiles/desktop/` |"),
+    ("列の名前を変える", "| `screens.csv` | `パス` |", "| `screens.csv` | `ルート` |"),
+    ("列の表を変える", "| `transitions.csv` | `種類` |", "| `screens.csv` | `種類` |"),
+    ("種類の値を変える", "`同じタブ`・`別タブ` のどちらで", "`同じタブ`・`別タブ`・`窓` のどれで"),
+    ("パスを空にしてよい種別を変える", "種別が `tab`・`dialog` のときだけ空でよい", "種別が `tab` のときだけ空でよい"),
+    ("小見出しを落とす", "| `一覧の送り方` | ページ番号か", "| `送り方` | ページ番号か"),
+    ("共通仕様の小見出しを変える", "| `アプリの外枠` | 共通ヘッダー", "| `外枠` | 共通ヘッダー"),
+    ("言い回しを変える", "`N/A。実現方式が未定` と書いておける", "`N/A。方式が未定` と書いておける"),
+    ("誰が決めるかを落とす", "| `一覧の送り方` | 利用者 | `shared/qa.csv` |\n", ""),
+    ("起票する表を変える", "| `パス` | 開発者 | `spec/qa-dev.csv` |", "| `パス` | 開発者 | 開発者が決める |"),
+    ("節の名前を変える", "`## 実現方式: <profile>` を 1 つ置き、下の「仕様書の小見出し」", "`## 方式: <profile>` を 1 つ置き、下の「仕様書の小見出し」"),
 ]
 
 
@@ -632,6 +813,16 @@ def main() -> int:
                 "boundary": (REFS / "spec-loop.md").read_text(encoding="utf-8")}
         problems = reference_mismatches(module, docs["tables"], docs["prose"], docs["boundary"])
         check("本体の定数が references と一致しない", not problems, "; ".join(problems))
+        profiles_md = (REFS / "profiles.md").read_text(encoding="utf-8")
+        directories = sorted(d.name for d in (PLUGIN / "profiles").iterdir() if d.is_dir())
+        problems = profile_mismatches(module, profiles_md, directories)
+        check("本体の profile の定数が references/profiles.md・profiles/ と一致しない", not problems, "; ".join(problems))
+        check("崩すと不一致になる: profiles/ のディレクトリを足す", bool(profile_mismatches(module, profiles_md, directories + ["desktop"])))
+        for name, before, after in PROFILE_MUTATIONS:
+            if profiles_md.count(before) != 1:
+                check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {profiles_md.count(before)} 回現れる")
+                continue
+            check(f"崩すと不一致になる: {name}", bool(profile_mismatches(module, profiles_md.replace(before, after), directories)))
         for name, which, before, after in REFERENCE_MUTATIONS:
             if docs[which].count(before) != 1:
                 check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {docs[which].count(before)} 回現れる")
@@ -669,7 +860,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS) + len(PROFILE_MUTATIONS) + 1} 件")
     return 0
 
 

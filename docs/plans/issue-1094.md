@@ -1,0 +1,126 @@
+# Issue #1094 — screen-spec: web-spa の profile（#1081 段 2）
+
+**不在の周である**——cruise（親 Issue #1081）の子として回す。出所: `/dev-loop:cruise 1081 --absent` の起動（2026-11-16T04:38Z）。
+確かめた線（台帳 `issue-1081`。出所: 利用者の確認（起動時・2026-11-16、配布を見せて確かめた））:
+直す線 = 既定 / 仕様の穴 = 推奨で決めて起票 / マージ = 関門を通ればマージ / 周の途中の課題 = 外に出す / マージ前の判断 = 推奨で決めて起票。実機確認の線は無い。
+#1094 は spec-loop から来た Issue ではない（本文に `spec-loop-handoff` の印は無い）。
+この周はマージしない（親がする）——PR を作り、PR 側の CI が通るのを見るところまで。手順 8 は計画ファイルに書くところまで。
+依存先 #1091（PR #1103）・#1092（PR #1108）・#1093（PR #1113）は main に入っている（`3801c9d`）。承認済みの値: #1104（表の鍵と画面を指す列）・#1105（版の間で見出し行が違えば止める）。
+確認待ちの値（閉じない・閉じるキーワードで指さない）: #1109（入口は種別 `top`）・#1110（対応する spec-loop の版の範囲）・#1111・#1114（案件ごとの設定は版の中の `requirements/screens/settings.csv`）。
+#1094・#1095・#1097 の 3 周が同時に走っている（#1095 も screen-spec を触る）——重い検査は run-serial 越しに回す（枠は 1 本）。
+
+## 変更範囲
+
+触る:
+
+- `plugins/screen-spec/scripts/check-screens.py` — profile を設定から読み、profile の列（画面の `パス`・遷移の `種類`）と節（仕様書・共通仕様の `## 実現方式: web-spa`）を検査する。`N/A。実現方式が未定` を通す
+- `plugins/screen-spec/scripts/write-screens.py` — `init --profile web-spa` で profile の列を見出しに入れ、共通仕様と案件の雛形に profile の節を足す。`add --path`
+- `plugins/screen-spec/profiles/web-spa/` — 新設。仕様書の末尾の節と共通仕様の節の雛形
+- `plugins/screen-spec/references/profiles.md` — 新設。profile の決まりの原本（列・節・小見出し・誰が決めるか・方式が未定のとき）
+- `plugins/screen-spec/references/tables.md` — 設定の `profile`・検査の表（設定を読む・profile の検査）
+- `plugins/screen-spec/references/prose.md` — profile の節（仕様書の末尾・共通仕様）
+- `plugins/screen-spec/skills/init/SKILL.md` — 版と、profile を選んだときのこと
+- `plugins/screen-spec/skills/add/SKILL.md` — 版と `--path`
+- `plugins/screen-spec/README.md` — 中身の一覧
+- `plugins/screen-spec/.claude-plugin/plugin.json` — 版（0.3.0）と description
+- `.claude-plugin/marketplace.json` — 同じ版と description
+- `scripts/test-check-screens.py` — profile の試料・変異・原本との突き合わせ
+- `scripts/test-write-screens.py` — profile を選んだ `init` → `add` → 検査・雛形・変異
+- `CLAUDE.md` — プロジェクト構成の screen-spec の行（profile）
+- `docs/plans/issue-1094.md` — この計画
+
+触らない:
+
+- spec-loop の側（`tree.md`・関門・`init` が `infra.csv` から推す以外のこと）——#1097 以降
+- モック（#1095・#1096）・MkDocs のフック（#1098）
+- `desktop`・`hybrid` の profile（#1081 の「この cruise に入れないもの」）
+- 公開ページ（`docs/plugins/`）——Issue のやることに無い
+
+複製の数: profile の列・節・小見出し・方式が未定の書き方は `references/profiles.md`（原本）と `check-screens.py` の定数（写し）の 2 箇所——テストが突き合わせる。
+雛形（`profiles/web-spa/*.md`）の節と小見出しは、テストが `check-screens.py` の定数と照らす。`write-screens.py` は `check-screens.py` の定数を読み込む（写さない）。分けない理由: 写しは 1 つで、テストが見る。
+
+依存の追加・更新: なし
+
+## 決めたこと（実装で決めてよいもの）
+
+- **profile の定義の置き場所**: 原本は `references/profiles.md`、雛形はプラグインの `profiles/<profile>/`（`spec.md`＝仕様書の末尾に足す節、`common.md`＝共通仕様に足す節）。
+  `profiles/` のディレクトリが「このプラグインにある profile」（`write-screens.py` の一覧と、`references/tables.md` の設定の説明が既にそう決めている）。
+- **profile の列は、決まりの列の後ろに足す**（画面の表の `パス`・遷移の表の `種類`）。profile が `未設定` なら見出し行は決まりの列だけ（profile の列を求めない。置けば見出し行の違反）。
+  見出し行は版の間で変えない（#1105）ので、**profile は表を置く最初の版で決める**——方式が決まっていなければ、profile を置いて列と節に `N/A。実現方式が未定` を書く（#1081 の「方式が決まるまで N/A。実現方式が未定と書いておける」）。
+- **検査が `settings.csv` の `profile` を読む**（これまでは設定を見なかった）。`settings.csv` が無ければ `未設定`。値が `未設定` でもこのプラグインの profile でもなければ違反。
+- **仕様書の profile の節**: `## 実現方式: web-spa` を 1 つ、`## 未決の論点` より後ろ（末尾。#1081 の決めること 3）に置く。中身は profile の小見出し（`### `）を全部持つか、`N/A。実現方式が未定` で始まる。
+  小見出しはどれも空にせず、書くことが無ければ `N/A` と理由（core の節と同じ）。
+- **共通仕様の profile の節**: `common.md` があれば、同じ `## 実現方式: web-spa` に共通の小見出し（アプリの外枠・対象デバイスと画面幅）を持つか `N/A。実現方式が未定`。
+  `common.md` の core の節は今までどおり見ない。
+- **`N/A。実現方式が未定` は未決定の印に数えない**——文字列に spec-loop の印 `未定` を含むが、受入基準 3 が「通す」と決めている。検査はこの言い回しを伏せてから印を探す（spec-loop の `未定義` と同じ扱い）。
+- **`パス`**: 種別が `tab`・`dialog` でない画面は空にしない（必須の欄）。値は `/` で始まるか `N/A。実現方式が未定` か未決定の印。`tab`・`dialog` は空でよい（URL を持つかはダイアログの実体で決める）。
+  同じパスを 2 つの画面が持つかは見ない。
+- **`種類`（遷移）**: `同じタブ`・`別タブ` か `N/A。実現方式が未定`。空でよい（空は同じタブ）——下の穴 1。
+- **雛形**: 仕様書・共通仕様の profile の節は `N/A。実現方式が未定` と、方式が決まったら書く小見出しの一覧（HTML のコメント）。足した直後の検査が 0 になるため（#1093 の雛形と同じ理由）。
+- **`add` の `パス`**: profile が `web-spa` で、種別が `tab`・`dialog` でない画面には `--path` が要る（無ければ 2）。値は検査と同じ決まり（未決定の印か `N/A。実現方式が未定` でもよい）。
+
+## 決めたこと（仕様の穴。`仕様の穴 = 推奨で決めて起票` の線で推奨により決めた）
+
+- **穴 1: 別タブ・ディープリンクを、遷移の表の列で持つか、仕様書の節の散文で持つか**——#1081 の web-spa の表は「ディープリンク・別タブ」の書く場所を「遷移の表の `種類`」と書くが、#1094 のやることは「画面の表のパスの列」だけを挙げ、`種類` の値を決めていない。
+  - 選択肢: A) 遷移の表に profile の列 `種類` を足し、値は `同じタブ`・`別タブ`（空は同じタブ）。他システムから開く URL は仕様書の profile の節の小見出し「ディープリンク・別タブ」に散文で書く（推奨）／
+    B) 遷移の表に列を足さず、別タブも仕様書の profile の節の散文だけで書く／ C) A の列を必須にする（空を許さない）
+  - 推奨 A。理由: #1081 の表が遷移の表の `種類` と書いており、別タブで開くかは遷移ごとに決まる（散文では遷移の番号との対応を手で書くことになる）。空を同じタブと読めば、既存の遷移の行に値を書き足さずに済む。
+- 決めた値は受入基準を足さない（`absent-lines.md`）。確認の Issue は PR を作った後に 1 件立てる。
+
+## デプロイ経路
+
+main へのマージで、プラグインの配布（カタログ。screen-spec 0.3.0）。公開ページ（`docs/`）は計画ファイルのほか触らない。
+
+## 版の上げ方
+
+screen-spec を main の先端の 0.2.0 から **0.3.0**（minor——profile の追加）。`marketplace.json`・`plugin.json`・2 つの `SKILL.md`（2 行 1 組）。
+並行する #1095 も screen-spec を触るので版が衝突しうる——cruise の `references/parallel.md` の「版とマージの順」のとおり、親はマージの直前に取り込みと上げ直しを頼む
+（取り込んだら版を main の先端から minor で 1 つ上げ、`check-plugin-versions.py`・`skill-metrics.py --check` を回して push し、PR 側の CI を見る）。
+
+## 受入基準（不変条件 × 経路）
+
+入口は `check-screens.py`（正本の `docs` に当てる）と `write-screens.py` の `hint`・`init`・`add`（とそれを呼ぶ 2 つのスキル）。読むのは spec-loop の重ね方で重ねた全体（v1 だけ・v2 以降の差分の版）。
+
+| # | 不変条件 | 破りうる経路 | 守り方 |
+| --- | --- | --- | --- |
+| B1 (U1) | profile が `web-spa` で `## 実現方式: web-spa` の節が無い仕様書を、検査が止める（1） | 節が無い・別の profile の名前の節・`### ` の見出し・HTML のコメントの中・コードブロックの中・v2 で置き直した仕様書 | `check_document` が profile の節を探す（core の節と同じ見出しの読み方）。テストの陽性対照 |
+| B2 (U2) | profile が `未設定`（か `settings.csv` が無い）なら、profile の節と列を求めない | 設定が無い・`未設定`・v2 の設定・決まりの列だけの表・profile の節の無い仕様書 | 設定から profile を決め、求める列と節を profile で決める。テストの陰性対照 |
+| B3 (U3) | 方式が未定で `N/A。実現方式が未定` と書いた節を、検査が通す（0。未決定にも起票の候補にもしない） | 仕様書の節・共通仕様の節・`パス` と `種類` のセル・全角や強調の飾り | 言い回しを未決定の印から伏せ、節の小見出しを求めない。テストの陰性対照 |
+| B4 | profile の節の中身: 小見出しを全部持ち、どれも空でなく理由の無い `N/A` でない。節は 1 つで末尾（`## 未決の論点` の後ろ） | 小見出しが無い・空・`N/A` だけ・節が 2 つ・未決の論点の前 | 検査。テスト |
+| B5 | profile の列: 見出し行が決まりの列＋profile の列。`パス` の必須（tab・dialog を除く）と形（`/` で始まる）、`種類` の値 | 見出し行・セル・印のあるセル・v2 の行 | 検査。テスト |
+| B6 | `settings.csv` の `profile` がこのプラグインの profile か `未設定` でなければ違反 | 知らない名前・空 | 検査。テスト |
+| B7 | `init --profile web-spa` → `add`（top）した直後の検査が 0。`add` が Q&A 表を書き換えない | 空の案件・案件の雛形・`--path` 無し（2 で書かない） | スクリプトで再現するテスト |
+| B8 | 雛形（`profiles/web-spa/`）が profile の節の決まりに合い、未決定の印・Q&A の番号・「決定」「確定」を（伏せる言い回しのほかに）持たない | 雛形 | テスト（崩すと落ちる） |
+| B9 | 定数の写しが `references/profiles.md`・`tables.md` と一致し、`profiles/` のディレクトリと定数の profile が一致する | 列・小見出し・節の名前・言い回し・決める人 | テストが突き合わせる |
+| B10 | 各項目を誰が決めるか（共有の Q&A 表か `spec/qa-dev.csv` か）が書き方の決まりに書いてある | `references/profiles.md` | テストが表を読む |
+| B11 | 歯止めが全部緑（版 3 種類・description・指し先・収録） | `check-all.py`（順番待ち越し） | `check-all.py` |
+| X1 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方 × 1・2 パス目に渡す（2 パス目が「該当なし」の周は 1 パス目の 2 つ） | — | 再開点で記録 |
+
+**証明できないもの（未証明）**: スキルの本文どおりにモデルが動くか（`init` で profile を推して訊く）——スクリプトで再現したテストで確かめる（Eval は回さない）。
+
+**生成物**: 無し——`SKILL.md` の測定値（設計 §8.2）は dev-loop の `SKILL.md` だけを測る。図の書き出しも無し。`skill-metrics.py --check` で変わらないことを確かめる。
+
+## 実機確認
+
+一時ディレクトリに空の正本（`docs/v1/`）を置き、`write-screens.py init --profile web-spa` → `add`（top・`--path /orders`）→ `check-screens.py` で 0 を見る。
+仕様書の profile の節を消すと 1、`settings.csv` を `未設定` に戻して表の見出しを決まりの列だけにすると 0、節を `N/A。実現方式が未定` にして 0 を見る。
+
+## 未解決の判断
+
+- 上の穴 1——確認の Issue で利用者に渡す（閉じるのは利用者）。
+
+## 直す線
+
+`既定`（出所: cruise の台帳の確かめた線。不在の周）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1094-web-spa-profile`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1094`・起点 `3801c9d`・base `origin/main` → `3801c9d3457d3f2e3809e76c904b1bf3bec79026`
+- 割り目（手順 4）: 割らない（cruise の周）
+
+## 既知の限界・決着済みの論点
+
+- profile は表を置く最初の版で決める——見出し行は版の間で変えない（#1105）ので、後の版で profile を変えると重ね合わせが止める（上の「決めたこと」）。
+- 同じ `パス` を 2 つの画面が持つか・パスのパラメータの書き方は見ない。
+- profile の小見出しの順は見ない（有無と中身だけ）。
+- `N/A。実現方式が未定` は profile の節でなくても未決定の印に数えない（言い回しを伏せる）。
