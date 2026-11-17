@@ -103,6 +103,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-review-record.py` - 仕様レビューの**記録の表と指摘の表から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限を数え直す**（#1044。`conditions` と `limit`。
       **判定役の判定と食い違ったら厳しいほうを取る**——spec-review の手順 1・6 が呼ぶ。`scaffold.py` は記録の表の最後の実行の行が `抜けた` かをここの `last_run` で読み、そうでなければ作らない。
       指摘の表の列と検査は `check-findings-csv.py` を読み込む——写さない。決まりの原本は `references/spec-exit.md` の「条件 2〜4 と上限を数え直す」、守る／守らないは docstring を正とする。テストは `scripts/test-check-review-record.py`）
+    - `scripts/findings-by-feature.py` - 仕様レビューの**指摘の表から、機能ごとの指摘の件数（合計と振り分けの区分ごと）を数える**（#1045。仕事の切り方——範囲の既定の線・scaffold の `--bundle`——を見直す材料）。
+      **行を機能に結ぶのは `指摘`・`根拠` の文面の印（`（機能: <名前>）` と機能の id）で、印の無い行は「（機能を決められない）」に数える**。指摘の文面は出さない。
+      表は `check-findings-csv.py` の検査に当ててから数える（読み込む——写さない）。印の決まりと使い方の原本は `references/spec-exit.md` の「機能ごとに数える」と `references/spec-scope.md`、守る／守らないは docstring を正とする。テストは `scripts/test-findings-by-feature.py`）
     - `scripts/check-formal-rerun.py` - **保存した TLC のモデル（`spec/formal/<対象>/`）の本体と陽性対照（記録の `陽性対照のファイル`）を、正本の `CLAUDE.md` の呼び方で一時ディレクトリに写して走らせ直し、条件 4 を判定し直す**
       （#1044。陽性対照で反例が出ない・陽性対照のファイルが無いは「判定できなかった」（4）。呼び方の読み方と走らせ方は `check-tlc.py`、記録の読み方は `formal-baseline.py` を読み込む——写さない。
       TLC でない対象は走らせ直さない。守る／守らないは docstring を正とする。テストは `scripts/test-check-formal-rerun.py`——偽の TLC で回す）
@@ -424,6 +427,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     ネットワークを切って遷移の表の手順を踏み、本体を壊したモックで NG になる陽性対照も回す。**CI からは呼ばない**（Chrome が無い）——結果を PR に貼る。道具が無ければ 3
   - `test-check-review-record.py` - spec-loop の仕様レビューの記録の数え直し（#1044）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数（効く重さ・上限の数える値と数え直しの判断）が `references/spec-exit.md` と一致することも見る**
+  - `test-findings-by-feature.py` - spec-loop の指摘の機能ごとの数え方（#1045）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。試料の表は一時ディレクトリに書き、**出力に指摘の文面が出ないこと**と、
+    **本体の docstring の名前の区切りの記号が正規表現と同じこと・`references/spec-exit.md` と `spec-scope.md` が印と数え方を指すこと**も見る
   - `test-check-formal-rerun.py` - spec-loop の保存した TLC のモデルの走らせ直し（#1044）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**偽の TLC（モデルの中の印を読んで TLC 2.19 の出力の行の形を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `tlc` を置く**——本物の TLC は走らせない。
     偽の TLC は走った場所に `states/` を作り、正本に残さないことも見る
