@@ -1463,9 +1463,9 @@ def main() -> int:
         check("周の途中の課題は found-lines.md の 2 値（既定が外に出す）",
               mod.LINES["周の途中の課題"] == ("外に出す", "台帳に足して直す")
               and "`周の途中の課題 = 外に出す`（既定）" in found and "`周の途中の課題 = 台帳に足して直す`" in found)
-        check("マージ前の判断は absent-lines.md の表の 2 値（既定が止まる）で、その節がある（#829）",
-              mod.LINES["マージ前の判断"] == ("止まる", "推奨で決めて起票")
-              and rows.get("マージ前の判断") == ("止まる", "推奨で決めて起票")
+        check("マージ前の判断は absent-lines.md の表の 3 値（既定が止まる。後退・未達を含む値は #1176）で、その節がある（#829）",
+              mod.LINES["マージ前の判断"] == ("止まる", "推奨で決めて起票", "推奨で決めて起票（後退・未達を含む）")
+              and rows.get("マージ前の判断") == ("止まる", "推奨で決めて起票", "推奨で決めて起票（後退・未達を含む）")
               and "## `マージ前の判断 = 推奨で決めて起票`" in (REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references"
                                                          / "absent-lines.md").read_text(encoding="utf-8"))
 
