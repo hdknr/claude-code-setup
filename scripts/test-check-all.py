@@ -2034,7 +2034,7 @@ HOOK = SCRIPTS / "check_all_trace" / "usercustomize.py"
 CACHE_HOOK_REL = "scripts/check_all_trace/usercustomize.py"
 CACHE_TESTS = ["t-file.py", "t-list.py", "t-absent.py", "t-child.py", "t-iso.py", "t-sh.py",
                "t-git.py", "t-layout.py", "t-flaky.py", "t-edit.py", "t-import.py", "t-nested.py", "t-fresh.py",
-               "t-gittmp.py", "t-strip.py", "t-nous.py", "t-relcwd.py", "t-shell.py", "t-wopt.py", "t-del.py", "t-slow.py", "t-hooked.py"]
+               "t-gittmp.py", "t-strip.py", "t-nous.py", "t-relcwd.py", "t-shell.py", "t-wopt.py", "t-del.py", "t-slow.py", "t-hooked.py", "t-exe.py", "t-rmdir.py", "t-mkd.py"]
 CACHE_OVERRIDE = (
     'GUARDS = [("g.py", [], False)]\n'
     f"TESTS = {CACHE_TESTS!r}\n"
@@ -2106,6 +2106,15 @@ CACHE_FAKES = {
                  "if m:\n    open(m, 'w').write('started')\n    time.sleep(60)\n",
     # 環境を引き継いだ子の Python がスクリプトを走らせる（hook が入る——読んだファイルだけが入力で、プラグインの全体ではない）
     "t-hooked.py": "import subprocess, sys\nsubprocess.run([sys.executable, 'plugins/h/read.py'], check=True)\n",
+    # 作業ツリーの中のスクリプトを、引数つきで直に起こす（先頭の語も粗い単位にする）
+    "t-exe.py": "import subprocess\nsubprocess.run(['plugins/x/run.sh', 'arg'], check=True, capture_output=True)\n",
+    # 回している間に、自分の入力を親のディレクトリごと消す
+    "t-rmdir.py": "import contextlib, os, shutil\n"
+                  "with contextlib.suppress(FileNotFoundError):\n    open('data/sub/x.txt').read()\n"
+                  "if os.environ.get('CACHE_T_DEL'):\n    shutil.rmtree('data/sub')\n",
+    # 一覧を取り、回している間にその中にサブディレクトリを作る
+    "t-mkd.py": "import os\nos.listdir('data/m')\n"
+                "if os.environ.get('CACHE_T_EDIT'):\n    os.makedirs('data/m/sub', exist_ok=True)\n",
     "helpmod.py": "X = 1\n",
 }
 CACHE_DATA = {
@@ -2119,6 +2128,8 @@ CACHE_DATA = {
     "plugins/u/x.txt": "x\n", "plugins/v/y.txt": "y\n",
     "plugins/w/s.py": "open('plugins/w/side.txt').read()\n", "plugins/w/side.txt": "side\n",
     "plugins/h/read.py": "open('plugins/h/a.txt').read()\n", "plugins/h/a.txt": "a\n", "plugins/h/b.txt": "b\n",
+    "plugins/x/run.sh": "#!/bin/sh\ncat plugins/x/other.txt\n", "plugins/x/other.txt": "o\n",
+    "data/sub/x.txt": "x\n", "data/m/one.txt": "1\n",
     "data/del.txt": "del\n", "data/slow.txt": "slow\n",
 }
 GIT_ID = ["-c", "user.email=t@t", "-c", "user.name=t"]
@@ -2138,6 +2149,7 @@ def build_cache_repo(root: Path, src: str, hook_src: str) -> Path:
     for rel, body in CACHE_DATA.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(body)
+    (root / "plugins" / "x" / "run.sh").chmod(0o755)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "-m", "init"], check=True)
@@ -2208,7 +2220,7 @@ def cache_contract(root: Path):
 
     def dirty(*names: str) -> set[str]:
         """作業ツリーを変えた段で回るもの。**git を作業ツリーに当てた `t-git.py` は、どのファイルを変えても回る**
-        （git の状態は HEAD の木と `git status` に出たパスの中身）。"""
+        （git の状態は HEAD のコミットと `git status` に出たパスの中身）。"""
         return {*names, "t-git.py"}
 
     # 1) 記録が無ければ全部回り、全部緑。
@@ -2288,6 +2300,20 @@ def cache_contract(root: Path):
     rc2, out2 = cache_run(root)
     yield "回している間に入力が消えたら記録せず、次も回る（A6）", (
         rc == 0 and "記録しなかった: t-del.py" in out and rc2 == 0 and only(out2, dirty("t-del.py")))
+    touch("data/sub/x.txt", "x changed\n")
+    rc, out = cache_run(root, delete=True)
+    rc2, out2 = cache_run(root)
+    yield "回している間に入力が親のディレクトリごと消えたら記録せず、次も回る（A6）", (
+        rc == 0 and "記録しなかった: t-rmdir.py" in out and rc2 == 0 and only(out2, dirty("t-rmdir.py")))
+    touch("data/m/two.txt", "2\n")
+    rc, out = cache_run(root, edit=True)
+    rc2, out2 = cache_run(root)
+    yield "回している間に一覧の中にサブディレクトリが作られたら記録せず、次も回る（A6）", (
+        # 空のディレクトリは `git status` に出ない——次の回に回るのは t-mkd.py だけ（t-git.py は前の回で記録した）。
+        rc == 0 and "記録しなかった: t-mkd.py" in out and rc2 == 0 and only(out2, {"t-mkd.py"}))
+    touch("plugins/x/run.sh", "#!/bin/sh\ncat plugins/x/other.txt\necho changed\n")
+    rc, out = cache_run(root)
+    yield "引数つきで直に起こした作業ツリーの中のスクリプトを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-exe.py"))
     # 中断した回は記録を消さない（入力が同じなら、次は当たる）。
     rc, out = cache_run(root)
     seen = cache_interrupt(root)
@@ -2298,6 +2324,10 @@ def cache_contract(root: Path):
     subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "-m", "c2"], check=True)
     rc, out = cache_run(root)
     yield "コミットすると git を当てたテストが回り、配置だけの rev-parse は回らない（A2）", rc == 0 and only(out, {"t-git.py"})
+    # 木の変わらないコミット（空のコミット）でも、`git log` を読むテストは回る。
+    subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "--allow-empty", "-m", "empty"], check=True)
+    rc, out = cache_run(root)
+    yield "木の変わらないコミットでも git を当てたテストが回る（A2）", rc == 0 and only(out, {"t-git.py"})
     # 5) 落ちた回は記録を消す（入力が同じでも、次は回る）。
     rc, out = cache_run(root, "--no-cache", fail=True)
     yield "--no-cache は記録を読まずに全部回す（A7）", rc == 1 and ran_tests(out) == every
@@ -2314,18 +2344,21 @@ def cache_contract(root: Path):
     (store / "t-file.py.json").write_text("{壊れた")
     rc, out = cache_run(root)
     yield "壊れた記録は無いと扱って回す（A12）", rc == 0 and "t-file.py" in ran_tests(out) and "Traceback" not in out
-    # 8) 集め方・比べ方を直したら全部回る（キー）。**先に、hook が入らない回は記録しないことを見る**——
-    # 直した直後は記録が全部古いので、ここで記録されたものだけが次の回に当たる。
+    # 8) 集め方・比べ方を直したら全部回る（キー）。**直す前に記録が揃っていることを確かめる**——
+    # 記録が無ければ、キーを見なくても全部回る（それでは A11 を判別しない）。
     hook = root / "scripts" / "check_all_trace" / "usercustomize.py"
+    rc, out = cache_run(root)
     hook.write_text(hook.read_text() + "\n# 直した\n")
+    rc2, out2 = cache_run(root)
+    yield "hook を直すと全部回る（A11）", rc == 0 and only(out, set()) and rc2 == 0 and ran_tests(out2) == every
+    # hook が入らない回は記録しない。**直した直後で記録が全部古い状態から**——ここで何かが記録されれば、次の回に当たる。
+    hook.write_text(hook.read_text() + "\n# もう 1 度直した\n")
     rc, out = cache_run(root, nousersite=True)
     rc2, out2 = cache_run(root, nousersite=True)
     yield "hook が入らなかった回は記録せず、次も全部回る（A2）", (
         rc == 0 and ran_tests(out) == every and "記録しなかった: t-file.py" in out
         and rc2 == 0 and ran_tests(out2) == every)
-    hook.write_text(hook.read_text() + "\n# もう 1 度直した\n")
-    rc, out = cache_run(root)
-    yield "hook を直すと全部回る（A11）", rc == 0 and ran_tests(out) == every
+    rc, out = cache_run(root)  # 記録を作り直す（次の段の当たりの前提）
     # この回は `__pycache__/helpmod.*.pyc` が在る——import は `.py` を開かない。
     touch("scripts/helpmod.py", "X = 2\n")
     rc, out = cache_run(root)
@@ -2392,8 +2425,13 @@ CACHE_MUTANTS = {
     "`.pyc` を元の `.py` に戻さない": ("check-all", "            src = pyc_source(val)\n", "            src = None\n"),
     "シェルの文字列を語に割らない": ("check-all", "                if any(ch.isspace() for ch in w):\n", "                if False:\n"),
     "`-W` の値をスクリプトの名前と読む": ("check-all", "        if a in PYTHON_VALUE_OPTS:\n", "        if False:\n"),
-    "消えた入力を変化と見ない": ("check-all", "                if os.stat(p.parent).st_mtime_ns >= since_ns:\n", "                if False:\n"),
+    "消えた入力を変化と見ない": ("check-all", "                if os.stat(up).st_mtime_ns >= since_ns:\n", "                if False:\n"),
     "テスト自身を読んだ跡が無くても記録する": ("check-all", '    if f"scripts/{name}" not in deps["files"]:\n', "    if False:\n"),
+    "git の状態を HEAD の木で見る": ("check-all", '            tree = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, check=False, cwd=self.repo)\n',
+                                      '            tree = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], capture_output=True, check=False, cwd=self.repo)\n'),
+    "hook の入らない子の先頭の語を見ない": ("check-all", "            words = argv  #", "            words = argv[1:] if len(argv) > 1 else argv  #"),
+    "消えた入力の親だけを見る": ("check-all", "            while up != repo and not up.exists() and repo in up.parents:\n", "            while False:\n"),
+    "一覧の中のサブディレクトリを見ない": ("check-all", "            if p.is_dir() and rel not in entries:\n", "            if p.is_dir():\n"),
     "中断した回の記録を消す": ("check-all", '    if ctx["stopping"]():\n        return ok, out, secs', '    if False:\n        return ok, out, secs'),
 }
 

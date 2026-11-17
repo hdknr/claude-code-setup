@@ -83,7 +83,7 @@
       引数は子の cwd（相対の cwd も、起こした側の cwd で絶対にする）で解決する。**空白を含む引数**（`sh -c "<コマンド>"`・`shell=True`・
       `os.system`）は語に割って同じように見て、語に `git` があれば git の状態も入力にする。
     - **作業ツリーに当てた git**（`-C`・`--git-dir`・cwd で決まる先が作業ツリーの中か、引数が作業ツリーの中を指す）——**git の状態**
-      （HEAD の木と、`git status` に出たパスとその中身）を入力にする。**どのファイルを変えても回る。**
+      （HEAD のコミットと、`git status` に出たパスとその中身）を入力にする。**どのファイルを変えても回る。**
       例外は配置だけを訊く `git rev-parse`（`--show-toplevel` など。`GIT_LAYOUT_ARGS`）と、リポジトリを読まないサブコマンド（`GIT_READ_FREE`）。
     - **キー**——Python の版と実行ファイル・OS・記録の形式（`CACHE_FORMAT`）・テストの名前と引数（`--jobs` は除く）・
       **`check-all.py` と hook の中身**（集め方と比べ方を直したら、古い記録を当たりにしない）。
@@ -93,7 +93,8 @@
   **テスト自身（`scripts/<名前>`）を読んだ跡が無い回は記録しない**——hook が入らなかった（`usercustomize` を読まない Python など）。
   空の依存を記録すると、何を変えても当たりになる。
   **回している間に入力が書き換わった回は記録しない**（`check-all.py` を始めた時刻より新しい mtime・git の状態の変化）。
-  **依存のファイルが無いときは、親のディレクトリの mtime で見る**（回している間に消えた）。それ以外でディレクトリそのものの mtime は見ない
+  **依存のファイルが無いときは、在る最も近い祖先のディレクトリの mtime で見る**（回している間に消えた——親ごとでも）。
+  **列挙したディレクトリの中のサブディレクトリはその mtime で見る**（回している間に作られた）。それ以外でディレクトリそのものの mtime は見ない
   ——Python が `__pycache__` を書くだけで動く。
 - **歯止め（`GUARDS`）は載せない——毎回回す。** 実リポジトリの中身を広く読む（指し先・リンク・版）ので当たらず、
   重いのは `check-mutation-claims.py` だけである。
@@ -475,7 +476,7 @@ def collect_deps(log: Path, repo: Path) -> dict:
             if traced:
                 continue  # 子の hook が自分で書く
             # **hook の入らない子**——引数に現れた作業ツリーの中のパスを、粗い単位で依存にする。
-            words = argv[1:] if len(argv) > 1 else argv
+            words = argv  # 先頭も見る——作業ツリーの中のスクリプトを直に起こす子（`plugins/x/run.sh arg`）
             for w in words:
                 cands = [w, w.split("=", 1)[1] if "=" in w else None]
                 if any(ch.isspace() for ch in w):
@@ -546,13 +547,14 @@ class Hasher:
         return h.hexdigest()
 
     def git_state(self) -> str:
-        """HEAD の木と、作業中の変更——`git status` に出たパスと、**その中身**。
+        """HEAD のコミットと、作業中の変更——`git status` に出たパスと、**その中身**。
+        木ではなくコミットで見る——木が同じコミット（空のコミット・メッセージの直し）でも、`git log` を読むテストは変わる。
 
         パスだけでは、変更済みのファイルをさらに書き換えても同じになる。`__pycache__`・`.pyc`・`.DS_Store` は
         数えない（回したテストが作るので、数えると回すたびに変わる）。"""
         if self.git_state_memo is None:
             h = hashlib.sha256()
-            tree = subprocess.run(["git", "rev-parse", "HEAD^{tree}"], capture_output=True, check=False, cwd=self.repo)
+            tree = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, check=False, cwd=self.repo)
             h.update(tree.stdout if tree.returncode == 0 else b"<error>")
             st = subprocess.run(["git", "status", "--porcelain=v1", "-uall", "-z"],
                                 capture_output=True, check=False, cwd=self.repo)
@@ -584,14 +586,20 @@ def changed_during(repo: Path, deps: dict, since_ns: int) -> list[str]:
     回したテストのほとんどが「変わった」になる（#1151 の 1 回目の実走で 15 本）。一覧はその中の名前
     （`LISTING_NOISE` と `.pyc` を除く）の mtime で、粗い単位はその下のファイルの mtime で見る。
     **回している間に名前が消えたことは、ここでは見えない**（消えた名前には mtime が無い）。
-    **例外は依存のファイルが無いとき**——親のディレクトリの mtime で見る（消すと親が動く）。"""
+    **例外は 2 つ**——依存のファイルが無いときは、在る最も近い祖先のディレクトリの mtime で見る（消すと親が動く。
+    親ごと消えたなら、その親の親が動く）。一覧の中の名前がディレクトリなら、その mtime も見る（回している間に作られた
+    サブディレクトリは、作られた時刻を持つ）。"""
     paths = list(deps["files"])
+    entries: set[str] = set()
     for rel in deps["dirs"]:
         try:
-            paths.extend(f"{rel}/{n}" if rel != "." else n for n in os.listdir(repo / rel)
-                         if n not in LISTING_NOISE and not n.endswith(".pyc"))
+            names = [f"{rel}/{n}" if rel != "." else n for n in os.listdir(repo / rel)
+                     if n not in LISTING_NOISE and not n.endswith(".pyc")]
         except OSError:
-            pass
+            continue
+        names = [n for n in names if not _ignored(n)]  # 根の一覧の `.git` は回すたびに動く
+        paths.extend(names)
+        entries.update(names)
     for rel in deps["coarse"]:
         p = repo / rel
         if p.is_dir():
@@ -605,15 +613,19 @@ def changed_during(repo: Path, deps: dict, since_ns: int) -> list[str]:
     for rel in paths:
         p = repo / rel
         try:
-            if p.is_dir():
+            if p.is_dir() and rel not in entries:
                 continue
             if os.stat(p).st_mtime_ns >= since_ns:
                 hits.append(rel)
         except OSError:
-            # 無い——回している間に消えたかもしれない。**親のディレクトリの mtime で見る**（消すと親が動く）。
-            # 初めから無かったものも、親の中で何かが書かれた回は「変わった」になる（記録しないだけで、判定は変えない）。
+            # 無い——回している間に消えたかもしれない。**在る最も近い祖先の mtime で見る**（消すと親が動き、
+            # 親ごと消えたなら親の親が動く）。初めから無かったものも、その祖先の中で何かが書かれた回は
+            # 「変わった」になる（記録しないだけで、判定は変えない）。
+            up = p.parent
+            while up != repo and not up.exists() and repo in up.parents:
+                up = up.parent
             try:
-                if os.stat(p.parent).st_mtime_ns >= since_ns:
+                if os.stat(up).st_mtime_ns >= since_ns:
                     hits.append(rel)
             except OSError:
                 pass
