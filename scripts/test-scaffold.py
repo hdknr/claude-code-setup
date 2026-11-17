@@ -963,6 +963,11 @@ PURPOSES_HEAD = "id,上位,誰の課題か,内容,成功の判定,機能\n"
 PURPOSES_PARTIAL = (PURPOSES_HEAD + "G-001,,受注の担当者,割引の計算の手間を減らす,,\n"
                     "K-001,G-001,,1 件の割引の計算にかかる時間,5 分から 1 分以下に,F-001\n")
 PURPOSES_FULL = PURPOSES_PARTIAL.replace(",F-001\n", ",F-001・F-002\n")
+# 関係者の表（#1161）: 回答者の照合は終了コードに数えない——通ったときにも scaffold が報告を出す
+STAKEHOLDERS_FILE = str(V1 / "shared" / "stakeholders.csv")
+STAKEHOLDERS_HEAD = "id,名前,役割,関心事,答える範囲,合意\n"
+STAKEHOLDERS_OTHER = STAKEHOLDERS_HEAD + "P-001,経理部,予算責任者,開発費,なし,予算\n"
+STAKEHOLDERS_LISTED = STAKEHOLDERS_HEAD + "P-001,業務部,利用者,割引の計算,割引の業務ルール,要求確定\n"
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
@@ -2443,6 +2448,10 @@ CASES: list[Case] = [
          extra={JOBS_FILE: JOBS_HEAD + "J-1,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"}, post=nothing_written),
     Case("成果物の表: 決まった表なら作る", 0, "作った", extra={JOBS_FILE: JOBS_DECIDED, FEATURES_FILE: FEATURES_LIST},
          absent=DESIGN_GATE),
+    Case("関係者の表: 通っても回答者の照合を出す（#1161）", 0, "Q-001 の回答者 業務部 が関係者の表（shared/stakeholders.csv）の名前に無い",
+         extra={STAKEHOLDERS_FILE: STAKEHOLDERS_OTHER}),
+    Case("関係者の表: 表にある回答者なら照合を出さない（#1161）", 0, "作った",
+         extra={STAKEHOLDERS_FILE: STAKEHOLDERS_LISTED}, absent="回答者の照合"),
     Case("目的の表: 目的を指さない機能があれば止める（#1154）", 1,
          "build/merged/requirements/purposes.csv: 機能一覧の F-002 が、どの指標の 機能 にも無い（目的を指さない機能",
          extra={FEATURES_FILE: FEATURES_LIST, PURPOSES_FILE: PURPOSES_PARTIAL}, post=nothing_written),
@@ -3111,6 +3120,9 @@ CASES: list[Case] = [
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #1161: 関係者の表の回答者の照合
+    ("通ったときに回答者の照合を出さない", "            for line in design.respondent_block(lines):\n", "            for line in []:\n",
+     "関係者の表: 通っても回答者の照合を出す（#1161）"),
     # #1044: 仕様レビューの記録
     ("記録の関門を当てない", "        code, lines = review_gate(repo, loaded.number)\n        if code:\n",
      "        code, lines = review_gate(repo, loaded.number)\n        if False:\n", "記録: 最後の実行が抜けていない"),

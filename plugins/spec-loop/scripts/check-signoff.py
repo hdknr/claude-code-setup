@@ -500,7 +500,10 @@ def agreement_report(repo: Path, info: dict) -> list[str]:
                 copy = Path(tmp) / design.STAKEHOLDERS
                 copy.parent.mkdir(parents=True)
                 copy.write_bytes(result.stdout)
-                table = design.agreements(Path(tmp))
+                try:
+                    table = design.agreements(Path(tmp))
+                except Exception:  # 128KB を超えるセルの csv.Error など——報告だけなので、照合の結果（終了コード）を変えない
+                    table = None
             if table is None:
                 body.append(f"{head}: {path} が決まりに反する・読めない——合意が要る関係者を報告していない"
                             f"（check-design-csv.py で確かめる）")

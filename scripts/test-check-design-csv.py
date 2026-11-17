@@ -264,6 +264,11 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
     ("関係者の表: 合意の区切り", stakeholders(S_OK.replace("要求確定・決裁", "要求確定、決裁")), None, 1,
      "合意 の値が 要求確定・予算・決裁 のどれでもない: '要求確定、決裁'", ""),
     ("関係者の表: 合意になしとほかを混ぜる", stakeholders(S_OK.replace(",予算\n", ",予算・なし\n")), None, 1, "合意 に なし とほかの値を混ぜた", ""),
+    ("関係者の表: 名前に区切りの文字", stakeholders(S_OK.replace("経理部", "総務・経理部")), None, 1,
+     "shared/stakeholders.csv:3: 名前 に '・' を使った（承認の行の区切りと回答の括弧に使う文字）: 総務・経理部", ""),
+    ("関係者の表: 名前に括弧", stakeholders(S_OK.replace("経理部", "情報システム部（IT）")), None, 1, "名前 に '（'・'）' を使った", ""),
+    ("回答者: Q&A 表の巨大なセルでも終了コードを変えない", stakeholders(qa=Q_HEAD + "Q-R-001,要求確定,質問,A: x / B: y,A," + "x" * 200_000 + ",A（業務部長が回答）,a,反映済み,\n"),
+     None, 0, "shared/qa.csv: CSV として読めない", "想定外の例外"),
     ("関係者の表: 必須の欄が空", stakeholders(S_OK.replace("開発費と運用費", "")), None, 3, "shared/stakeholders.csv:3: 関心事 が空", ""),
     ("関係者の表: 未決定の印", stakeholders(S_OK.replace("受注の業務ルール", "未定")), None, 3, "shared/stakeholders.csv:2: 答える範囲 に未決定の印（未定）", ""),
     ("回答者: 表に無い", stakeholders(qa=qa_rows(("A（業務部長が回答）", "反映済み"), ("A（営業部が回答）", "反映済み"))), None, 0,
@@ -378,7 +383,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("関係者の表の列の数を見ない", "        if len(fields) != len(STAKEHOLDERS_COLUMNS):", "        if False:", "関係者の表: 列の数"),
     ("関係者の表の id を 1 桁から許す", 'STAKEHOLDER_ID = re.compile(r"P-[0-9]{3,}")', 'STAKEHOLDER_ID = re.compile(r"P-[0-9]{1,}")', "関係者の表: id の形"),
     ("関係者の表の id の重複を見ない", "            elif value in ids:", "            elif False:", "関係者の表: id の重複"),
-    ("名前の重複を見ない", "            if name in names:", "            if False:", "関係者の表: 名前の重複"),
+    ("名前の重複を見ない", "            elif name in names:", "            elif False:", "関係者の表: 名前の重複"),
     ("役割と合意の値を見ない", "                if item not in allowed:", "                if False:", "関係者の表: 役割の値"),
     ("役割になしを許す", '("役割", STAKEHOLDER_ROLES, None)', '("役割", STAKEHOLDER_ROLES, STAKEHOLDER_NONE)', "関係者の表: 役割になしを書く"),
     ("同じ値の重ねを見ない", "            if len(set(items)) != len(items):", "            if False:", "関係者の表: 役割の重ね"),
@@ -392,7 +397,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("範囲が未決定の人を答えない人に数える", '            answers[name] = not (scope and row["答える範囲"].strip() == STAKEHOLDER_NONE)',
      '            answers[name] = scope and row["答える範囲"].strip() != STAKEHOLDER_NONE', "回答者: 範囲が未決定の人は答える人に数える"),
     ("違反のある表で照らす", "    return answers if len(report.violations) == before else None", "    return answers", "回答者: 表が決まりに反するなら照らさない"),
-    ("Q&A 表の見出しを見ない", "    if next(reader, None) != qa.COLUMNS:", "    if next(reader, None) is None:", "回答者: Q&A 表の見出しが違えば照らさない"),
+    ("Q&A 表の見出しを見ない", "    if not rows or rows[0] != qa.COLUMNS:", "    if not rows:", "回答者: Q&A 表の見出しが違えば照らさない"),
+    ("名前の文字を見ない", "            if used:\n", "            if False:\n", "関係者の表: 名前に区切りの文字"),
+    ("名前の括弧を見ない", 'STAKEHOLDER_NAME_FORBIDDEN = ("・", "（", "）")', 'STAKEHOLDER_NAME_FORBIDDEN = ("・",)', "関係者の表: 名前に括弧"),
+    ("Q&A 表の CSV の誤りを報告に寄せない", "    except csv.Error as e:\n        # 128KB", "    except ValueError as e:\n        # 128KB",
+     "回答者: Q&A 表の巨大なセルでも終了コードを変えない"),
     ("回答者の照合を終了コードに数える", "        if self.empty or self.undecided:", "        if self.empty or self.undecided or self.respondents:", "回答者: 表に無い"),
 ]
 
@@ -568,6 +577,8 @@ def stakeholder_mismatches(module, design: str) -> list[str]:
     separator = f"`{module.STAKEHOLDER_SEPARATOR}` で区切って"
     if separator not in rows["役割"][1] or separator not in rows["合意"][1]:
         problems.append(f"{module.STAKEHOLDERS}: 区切り（{module.STAKEHOLDER_SEPARATOR}）が tree.md と違う")
+    if "・".join(f"`{char}`" for char in module.STAKEHOLDER_NAME_FORBIDDEN) + " を使わない" not in rows["名前"][1]:
+        problems.append(f"{module.STAKEHOLDERS}: 名前に使わない文字（{module.STAKEHOLDER_NAME_FORBIDDEN}）が tree.md と違う")
     if f"要らないなら `{module.STAKEHOLDER_NONE}`" not in rows["合意"][1] or f"答えないなら `{module.STAKEHOLDER_NONE}`" not in rows["答える範囲"][1]:
         problems.append(f"{module.STAKEHOLDERS}: 無いことの値（{module.STAKEHOLDER_NONE}）が tree.md と違う")
     return problems
@@ -593,6 +604,7 @@ REFERENCE_MUTATIONS = [
     ("関係者の表の合意を変える", "tree", "`決裁`（提案書の決裁）", "`発注`（提案書の決裁）"),
     ("関係者の表の区切りを変える", "tree", "を `・` で区切って並べる（`利用者・決裁者`）", "を `,` で区切って並べる（`利用者・決裁者`）"),
     ("関係者の表のなしを変える", "tree", "要らないなら `なし`", "要らないなら `無し`"),
+    ("関係者の表の名前の文字を変える", "tree", "`・`・`（`・`）` を使わない", "`・` を使わない"),
     ("関係者の表の決める人を崩す", "tree", "答えないなら `なし` | 利用者 |", "答えないなら `なし` | 開発者 |"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]

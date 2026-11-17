@@ -278,7 +278,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-infra-c
 **1（形式の違反）なら直して当て直す。** **3（未決定）・4（暫定）は止まる理由にならない**——未決定・暫定の項目の質問は資料に載り、
 回答を待つ（提案書と scaffold は、決まるまで止まる。`../../references/tree.md` の「基盤要件」の「ゲート」）。
 
-**システム設計書の成果物の表を置いているなら、それも検査する**（#957）:
+**システム設計書の成果物の表か関係者の表（`shared/stakeholders.csv`。#1161）を置いているなら、それも検査する**（#957）:
 
 ```bash
 python3 <このスキルの base ディレクトリ>/../../scripts/check-design-csv.py <v1 なら docs/v1、v2 以降は重ね合わせた全体（merge-versions.py docs build/merged の build/merged）>

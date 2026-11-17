@@ -59,6 +59,8 @@ Issue 本文（外部入力）から読んだ要件: 関係者の表（例 `shar
 - `plugins/spec-loop/scripts/check-design-csv.py` — 関係者の表の検査と回答者の照合の報告
 - `plugins/spec-loop/scripts/check-qa-csv.py` — 回答の括弧から答えた人を読む `respondent`
 - `plugins/spec-loop/scripts/check-signoff.py` — 合意が要る関係者の報告（CLI の出力）
+- `plugins/spec-loop/scripts/scaffold.py` — 関門が通ったときも回答者の照合の報告を出す（1 パス目の指摘 CR1 で広げた。受入基準 B5 の経路「scaffold の関門」のため）
+- `scripts/test-scaffold.py` — その試料と変異（同上）
 - `plugins/spec-loop/skills/req-loop/SKILL.md` — 手順 0 の要点・手順 2 の回答者の確かめ・手順 4 の報告の読み方
 - `scripts/test-check-design-csv.py` — 関係者の表の試料・変異・references との突き合わせ、回答者の報告
 - `scripts/test-check-qa-csv.py` — `respondent` の試料と変異
@@ -71,7 +73,7 @@ Issue 本文（外部入力）から読んだ要件: 関係者の表（例 `shar
 
 触らない:
 
-- `plugins/spec-loop/scripts/merge-versions.py`・`scaffold.py`・`build-proposal.py` の本体——関係者の表は `shared/` のファイルの単位で重なり（D3）、照合の範囲も scaffold の関門も今の `shared/` と `check-design-csv.py` の読み方のまま効く
+- `plugins/spec-loop/scripts/merge-versions.py`・`build-proposal.py` の本体（`scaffold.py` は上の 1 か所だけ）——関係者の表は `shared/` のファイルの単位で重なり（D3）、照合の範囲も scaffold の関門も今の `shared/` と `check-design-csv.py` の読み方のまま効く
 - Q&A 表の列（H3）・`versions.md` の一覧（D3）・照合の終了コード（H5）
 - 入出力の一覧の `相手` と関係者の表の対応（名前の付け方が違う——`check-design-csv.py` の「表どうしの整合」と同じ）
 - 説明文（`plugin.json`・`marketplace.json`・`SKILL.md` の frontmatter）・`README.md`・公開ページ——今の要約が偽にならない（要約で、全部を挙げる文ではない）
@@ -132,11 +134,29 @@ spec-review と scaffold の関門（重ねた全体に `check-design-csv.py`）
 
 - 周の在り処: ブランチ `issue/1161-stakeholders-table`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1161`・起点 `850ca17`・base の参照 `origin/main`（解決した SHA `850ca178806f8430b547526e3a481e4494b85c50`）
 - 割り目（手順 4）: 割らない（cruise の周）
-- 関門: まだ当てていない
-- 交絡: 実験なし（まだ）
+- 1 パス目の起点（先に当てた Verifier に渡した時点の HEAD）: `f3cfce350125aca93c92731bc338fd9337b57a6e`
+- Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 反証 2 件。`/code-review` 1 パス目（high）: 指摘 10 件。手順 4 への差し戻し: あり（直すの 6 行）
+- 割り目（手順 6 の 2 パス目の前）: 割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 交絡: B8 の照合（陽性対照つき。下の「実験と確認の記録」）。関門の再現は scratch のリポジトリ
 
 ## 既知の限界・決着済みの論点
 
 （関門に毎パス渡す。決着の理由が誤っていると判断したなら、それは新しい反証である）
 
 - 上の H1〜H5 と D1〜D5。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1・CR2: 名前に `・` があると承認の行で必ず「注釈に無い」と「合意が要るとしていない」が同時に出る | 示せる（関門 2 体が scratch で再現。直した後は `test-check-design-csv.py` の「名前に区切りの文字」が 1） | B7・B1 | 直す——名前に `・`・`（`・`）` を違反にし、tree.md に書いた |
+| V2: 名前に全角括弧があると回答者の照合が必ず「読めない」 | 示せる（`respondent('A（情報システム部（IT）が回答）')` が None） | B5・B6 | 直す（同上） |
+| CR1: scaffold の関門が通ると回答者の照合の報告を捨てる | 示せる（`test-scaffold.py` の「通っても回答者の照合を出す」が直す前の本体で出ない——変異「通ったときに回答者の照合を出さない」で赤） | B5（経路に scaffold の関門） | 直す——`scaffold.py` が通ったときも `respondent_block` を標準エラーに出す（`触る:` に `scaffold.py` を足した） |
+| CR3: 128KB を超えるセルで照合が 0 から 2 に変わる（関係者の表・Q&A 表） | 示せる（scratch で再現。直した後は試料「巨大なセルでも照合の結果を変えない」「Q&A 表の巨大なセルでも終了コードを変えない」が 0） | B7・B5 | 直す——報告の側で例外を「読めない」に寄せる |
+| CR4: req-loop 手順 4 の条件が成果物の表だけで、関係者の表だけの正本では検査を当てない | 示せる（`req-loop/SKILL.md` の条件の文） | B5（経路 req-loop 手順 4）・B10 | 直す——条件に関係者の表を足した |
+| CR5: v2 のヒアリングで前の版の関係者の表を写す決まりが無く、ファイルの単位で重なるので前の行が消える | 示せる（`hearing.md` の落とし先の文と D3） | B9 | 直す——写すファイルに目的の表・関係者の表を足した |
+| CR6: 関係者の表の未決定の欄で scaffold が止まることが scaffold の SKILL.md に無い | 示せない（止まること自体は B3 の意図どおり。書き漏れ） | 無し | 残課題 |
+| CR7: `stakeholders_at` が `removed.csv` を 2 度読む | 示せない（答えは同じ） | 無し | 残課題 |
+| CR8: 連名の回答（`業務部長・経理部が回答`）を 1 人として読み「表に無い」と出す | 示せる | 無し（連名の書き方は決まりに無い） | 残課題 |
+| CR9: hearing.md の記録の例が個人名（`業務部 山田`）を `requirements/` に書く | 示せる | 無し（B9 は関係者の表の話） | 残課題 |
+| CR10: 掃除（`repo` の引数・`for-each-ref` 2 回・`agreements` の読み直し）と、表が決まりに反するときの注記が「回答者の照合」の見出しの下に出る | 示せない（振る舞いは正しい） | 無し | 残課題 |

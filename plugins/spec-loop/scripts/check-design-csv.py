@@ -146,6 +146,10 @@ STAKEHOLDER_ROLES = ("利用者", "予算責任者", "決裁者", "連携先")
 STAKEHOLDER_AGREEMENTS = ("要求確定", "予算", "決裁")
 STAKEHOLDER_SEPARATOR = "・"
 STAKEHOLDER_NONE = "なし"
+# 名前に使わない文字——承認の行の区切り（`・`）と、回答の括弧（`（`・`）`）で名前を読めなくなる
+STAKEHOLDER_NAME_FORBIDDEN = ("・", "（", "）")
+# 回答者の照合の報告の見出し（scaffold の関門が、通ったときにもこの見出しから後ろを出す）
+RESPONDENT_HEADING = "回答者の照合（終了コードに数えない。"
 # 回答者を照らす Q&A 表（共有の表だけ。内部の表は開発者が決める）
 QA_TABLE = "shared/qa.csv"
 # ---- `references/nfr.md` の写し
@@ -207,7 +211,7 @@ class Report:
             checked = ", ".join(f"{name}（{count} 行）" for name, count in self.rows.items())
             out.append(f"OK（{checked or '検査した表なし'}）")
         if self.respondents:
-            out.append(f"回答者の照合（終了コードに数えない。{len(self.respondents)} 件）:")
+            out.append(f"{RESPONDENT_HEADING}{len(self.respondents)} 件）:")
             out.extend(f"  {item}" for item in self.respondents)
             out.append("表に無い人・答える範囲の無い人の回答は、範囲を持つ関係者に確かめてから反映する"
                        "（references/tree.md の「関係者の表」。質問がその人の範囲かは機械で見ていない）")
@@ -512,7 +516,11 @@ def check_stakeholders(root: Path, report: Report) -> dict[str, bool] | None:
         name = None
         if cell_state(report, where, "名前", row["名前"], False):
             name = row["名前"].strip()
-            if name in names:
+            used = [char for char in STAKEHOLDER_NAME_FORBIDDEN if char in name]
+            if used:
+                report.violations.append(f"{where}: 名前 に {'・'.join(repr(char) for char in used)} を使った（承認の行の区切りと回答の括弧に使う文字）: {name}")
+                name = None
+            elif name in names:
                 report.violations.append(f"{where}: 名前 が {names[name]} 行目と重複: {name}")
                 name = None
             else:
@@ -575,18 +583,23 @@ def check_respondents(root: Path, report: Report, answers: dict[str, bool]) -> N
     except (OSError, UnicodeDecodeError):
         report.respondents.append(f"{QA_TABLE}: 読めない——回答者を照らしていない（check-qa-csv.py で確かめる）")
         return
-    reader = csv.reader(io.StringIO(text, newline=""))
-    if next(reader, None) != qa.COLUMNS:
+    try:
+        rows = list(csv.reader(io.StringIO(text, newline="")))
+    except csv.Error as e:
+        # 128KB を超えるセルなど——表の検査は check-qa-csv.py の仕事で、ここは報告だけなので終了コードを変えない
+        report.respondents.append(f"{QA_TABLE}: CSV として読めない（{e}）——回答者を照らしていない（check-qa-csv.py で確かめる）")
+        return
+    if not rows or rows[0] != qa.COLUMNS:
         report.respondents.append(f"{QA_TABLE}: 見出しの行が決まりと違う——回答者を照らしていない（check-qa-csv.py で確かめる）")
         return
-    for fields in reader:
+    for line_num, fields in enumerate(rows[1:], start=2):
         if not any(f.strip() for f in fields) or len(fields) != len(qa.COLUMNS):
             continue  # 空行と列の数の違う行は check-qa-csv.py が見る
         row = dict(zip(qa.COLUMNS, fields))
         answer = row["回答"].strip()
         if answer == qa.NO_ANSWER or qa.is_provisional(row):
             continue
-        where = f"{QA_TABLE}:{reader.line_num}: {row['No'].strip()}"
+        where = f"{QA_TABLE}:{line_num}: {row['No'].strip()}"
         who = qa.respondent(answer)
         if who is None:
             report.respondents.append(f"{where} の回答から答えた人を読めない（括弧を `<関係者の名前>が回答` で始める）: {answer!r}")
@@ -669,6 +682,12 @@ def inspect(root: Path) -> Report:
     elif (root / STAKEHOLDERS).is_file():
         report.respondents.append(f"{STAKEHOLDERS} が決まりに反する・読めないので、回答者を照らしていない")
     return report
+
+
+def respondent_block(lines: list[str]) -> list[str]:
+    """`check` の出力のうち、回答者の照合の報告（見出しから後ろ）。無ければ空。scaffold の関門が、通ったときにも出す。"""
+    start = next((i for i, line in enumerate(lines) if line.startswith(RESPONDENT_HEADING)), None)
+    return [] if start is None else lines[start:]
 
 
 def check(root: Path, strict_nfr: bool = True) -> tuple[int, list[str]]:
