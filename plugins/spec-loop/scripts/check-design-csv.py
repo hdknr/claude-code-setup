@@ -11,7 +11,7 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 
 - **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ）・列の数・番号の形・重複・
   決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
-  目的の表（#1154）の種類ごとに空にする欄に書いた・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた
+  目的の表（#1154）の種類ごとに空にする欄に書いた（未決定の印なら未決定に数える）・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
@@ -348,7 +348,10 @@ def check_purposes(root: Path, report: Report, context: dict) -> None:
         for column in PURPOSES_COLUMNS:
             if column in ("id", "内容") or column in own:
                 continue
-            if row[column].strip():
+            if markers(row[column]):
+                # 印は未決定（値の決まりに当てない——上の docstring）。空にする欄でも違反にしない
+                cell_state(report, where, column, row[column], True)
+            elif row[column].strip():
                 other = next(k for k, columns in PURPOSE_OWN.items() if column in columns)
                 report.violations.append(f"{where}: {PURPOSE_KINDS[kind]}の行に {column} を書いた（{PURPOSE_KINDS[other]}の行だけに書く）: "
                                          f"{row[column].strip()!r}")
