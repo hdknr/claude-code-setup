@@ -225,6 +225,7 @@ TESTS: list[str] = [
     "test-check-review-record.py",
     "test-findings-by-feature.py",
     "test-check-formal-rerun.py",
+    "test-formal-statechart.py",
     "test-schedule-to-gantt.py",
     "test-render-diagrams.py",
     "test-check-signoff.py",

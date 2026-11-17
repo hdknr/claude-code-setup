@@ -407,6 +407,10 @@ jobs:
       - name: spec-loop の形式検査のモデルの走らせ直しのテスト（#1044）
         run: python3 scripts/test-check-formal-rerun.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（保存した TLC のモデルを状態遷移図にする。本物の TLC で取った出力を返す偽の TLC で回す）。
+      - name: spec-loop の形式検査のモデルの状態遷移図のテスト（#1177）
+        run: python3 scripts/test-formal-statechart.py
+
       # 本体は plugins/spec-loop/scripts/ にある（正本リポジトリの drawio を SVG に書き出す。偽の draw.io の CLI で回す）。
       - name: spec-loop の図の書き出しのテスト（#268）
         run: python3 scripts/test-render-diagrams.py

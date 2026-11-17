@@ -113,6 +113,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-formal-rerun.py` - **保存した TLC のモデル（`spec/formal/<対象>/`）の本体と陽性対照（記録の `陽性対照のファイル`）を、正本の `CLAUDE.md` の呼び方で一時ディレクトリに写して走らせ直し、条件 4 を判定し直す**
       （#1044。陽性対照で反例が出ない・陽性対照のファイルが無いは「判定できなかった」（4）。呼び方の読み方と走らせ方は `check-tlc.py`、記録の読み方は `formal-baseline.py` を読み込む——写さない。
       TLC でない対象は走らせ直さない。守る／守らないは docstring を正とする。テストは `scripts/test-check-formal-rerun.py`——偽の TLC で回す）
+    - `scripts/formal-statechart.py` - **保存した TLC のモデルを TLC で展開し（`-continue -dump dot,actionlabels`）、図の対応（記録の `図の対応のファイル`。`view.json`）の利用者の言葉で Mermaid の状態遷移図にする**
+      （#1177。**図は描かずにモデルからレンダリングする**——変数名・行為の名前は図に出さず、対応に無い状態・行為があれば描かない。規則を破る状態に `⚠` の印、最初の反例を番号つきの経路で描く。
+      spec-review の「モデルを残す」が `statechart.md` に書き、範囲の中の反例を Q&A 表に起票するときに質問へパスを添える。置き場所は `references/tree.md` の「形式検査のモデル」、守る／守らないは docstring を正とする。
+      テストは `scripts/test-formal-statechart.py`——本物の TLC で取った出力を返す偽の TLC で回す）
     - `scripts/check-design-csv.py` - システム設計書の成果物の表（`requirements/` の機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、
       `shared/nfr.csv` の可用性などの種類の行）の検査（#957。**形式の違反（1）・表が無い（止めない）・必須の欄が空と未決定の印（3）を分けて出す**。
       `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
@@ -494,6 +498,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **`HOME` をテンポラリにし `CLAUDE_CONFIG_DIR` を外し、flag と managed の層をテンポラリのファイルで渡す**——実機の設定を読まない。**許可の判定の写しを dev-loop の `check-unattended-env.py` と突き合わせる**
   - `test-check-tlc.py` - spec-loop の TLC の前提の確かめ（#912）の回帰テスト（変異テストを含む）。
     **偽の TLC（本物の出力に合わせた 2 つの文字列を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `tlc` を置く**——本物の TLC は走らせない（出力の形は見ない）
+  - `test-formal-statechart.py` - spec-loop の保存した TLC のモデルの状態遷移図（#1177）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**偽の TLC が、本物の TLC 2.19 に `-continue -dump dot,actionlabels` を渡して手元で取った出力と状態グラフをそのまま返す**（CI に TLC は無い）。
+    **図と TLC の状態グラフが食い違わないことを、状態グラフと反例をテストの側で別に読んで突き合わせる**（状態・遷移・初めの状態・印・経路。突き合わせの側の陽性対照つき）
   - `test-tlc-trace.py` - spec-loop の TLC の反例の JSON から trace ケースを作る変換（#1020）の回帰テスト（変異テストを含む）。
     **試料の反例の JSON は本物の TLC（v1.8.0 のプレリリース）で手元で取ったものを埋める**——CI に TLC は無い。出力は本物の `scaffold.py` の `check_trace` に当てる
   - `test-check-alloy.py` - spec-loop の Alloy の確かめ（#922）の回帰テスト（変異テストを含む）。
