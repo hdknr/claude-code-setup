@@ -40,7 +40,7 @@ SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 TARGET = "formal-statechart.py"
 
 # 本物の TLC 2.19（tla2tools v1.7.4）で手元で取った出力（2026-11-18）。鍵はモジュールの名前（`:nocontinue` は -continue なし）。
-# `ActProp`（行為の性質の違反）・`Ends`（行き止まりで止まり、同じ言葉の終わりの状態が報告されない）は 2 パス目の関門の指摘を受けて足した。
+# `ActProp`（行為の性質の違反）・`Ends`（行き止まりで止まり、同じ言葉の終わりの状態が報告されない）は 2 パス目の関門の指摘を、`Mid`（行き止まりと先へ進める状態）は狭いパスの指摘を受けて足した。
 # `InitBad`（初めの状態が破る）・`CrashAfter`（反例の後に評価の誤り）・`Dup`（同じ辺を重ねて書く）は 1 パス目の関門の指摘を受けて同じ日に足した。
 # `Skew` は本物の `OrderBroken` を書き換えて作った（反例の 2 段目の行為を `Ship` から `Pay` に替え、状態グラフの辺と食い違わせた）。
 FIXTURES: dict[str, dict] = {'Order': {'rc': 0,
@@ -745,6 +745,47 @@ FIXTURES: dict[str, dict] = {'Order': {'rc': 0,
                  'Spec == Init /\\ [][Next]_<<status, n>>\n'
                  '====\n',
           'cfg': 'SPECIFICATION Spec\n'},
+ 'Mid': {'rc': 11,
+         'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
+                   'Semantic processing of module Naturals\n'
+                   'Semantic processing of module Mid\n'
+                   'Computing initial states...\n'
+                   'Error: Deadlock reached.\n'
+                   'Error: The behavior up to this point is:\n'
+                   'State 1: <Initial predicate>\n'
+                   'x = 0\n'
+                   '\n'
+                   'State 2: <Inc line 5, col 8 to line 5, col 26 of module Mid>\n'
+                   'x = 1\n'
+                   '\n'
+                   'State 3: <Inc line 5, col 8 to line 5, col 26 of module Mid>\n'
+                   'x = 2\n'
+                   '\n'
+                   '3 states generated, 3 distinct states found, 0 states left on queue.\n'
+                   'The depth of the complete state graph search is 3.\n'
+                   'The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 1 and the 95th percentile is 1).\n',
+         'dot': 'strict digraph DiskGraph {\n'
+                'nodesep=0.35;\n'
+                'subgraph cluster_graph {\n'
+                'color="white";\n'
+                '2067335237120451972 [label="x = 0",style = filled]\n'
+                '2067335237120451972 -> -243121665473337171 [label="Inc",color="black",fontcolor="black"];\n'
+                '-243121665473337171 [label="x = 1"];\n'
+                '-243121665473337171 -> 5184847016464905161 [label="Inc",color="black",fontcolor="black"];\n'
+                '5184847016464905161 [label="x = 2"];\n'
+                '{rank = same; 2067335237120451972;}\n'
+                '{rank = same; -243121665473337171;}\n'
+                '}\n'
+                '}',
+         'tla': '---- MODULE Mid ----\n'
+                'EXTENDS Naturals\n'
+                'VARIABLES x\n'
+                'Init == x = 0\n'
+                "Inc == x < 2 /\\ x' = x + 1\n"
+                'Next == Inc\n'
+                'Spec == Init /\\ [][Next]_x\n'
+                '====\n',
+         'cfg': 'SPECIFICATION Spec\n'},
  'Skew': {'rc': 0,
           'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
                     'Semantic processing of module Naturals\n'
@@ -862,6 +903,9 @@ VIEW_INIT = {"states": [{"when": {"x": str(n)}, "label": f"{n} 個"} for n in ra
 VIEW_DUP = {"states": [{"when": {"x": "0"}, "label": "はじめ"}, {"when": {"x": "1"}, "label": "進んだ"}], "actions": {"Next": "進む"}}
 VIEW_ENDS = {"states": [{"when": {"status": '"draft"'}, "label": "下書き"}, {"when": {"status": '"shipped"'}, "label": "出荷済み"}],
              "actions": {"Ship": "出荷する"}}
+# 行き止まり（x=2）と、先へ進める状態（x=1）を同じ言葉にまとめる——狭いパスの指摘（R1）の試料
+VIEW_MID = {"states": [{"when": {"x": "0"}, "label": "はじめ"}, {"when": {"x": "1"}, "label": "途中終わり"}, {"when": {"x": "2"}, "label": "途中終わり"}],
+            "actions": {"Inc": "増やす"}}
 # 図に出てはならない語（変数名・行為の名前・TLA+ の値）
 HIDDEN = {"Order": ["status", "paid", "Submit", "Ship", "Cancel", "draft", "FALSE"], "OrderBroken": ["status", "paid", "Ship", "FALSE"],
           "Two": ["x =", "Inc", "Reset"], "Par": ["done", "Write"], "Dead": ["|->", "Stop", "Go"]}
@@ -916,6 +960,7 @@ CASES: dict[str, tuple] = {
     "行為の性質の反例は描かない": (f"TLC の呼び方: {CALL}\n", target("ActProp", view=VIEW_TWO | {"actions": {"Inc": "増やす", "Back": "戻す"}}),
                         ["--out", OUT], 1, "行為の性質", []),
     "行き止まりで止まった同じ言葉の終わり": (f"TLC の呼び方: {CALL}\n", target("Ends", view=VIEW_ENDS), [], 0, "行き止まり", [("Ends", VIEW_ENDS, False)]),
+    "行き止まりと先へ進める状態をまとめる": (f"TLC の呼び方: {CALL}\n", target("Mid", view=VIEW_MID), [], 1, "同じ言葉にまとめている", []),
     "大きいモデルは経路だけ": (f"TLC の呼び方: {CALL}\n", target("Two", view=VIEW_TWO), ["--max-edges", "2"], 0, "経路だけを描いた", [("Two", VIEW_TWO, True)]),
     "まとめて skip": (f"TLC の呼び方: {CALL}\n", target(view=VIEW_ORDER_MERGED), [], 0, "申請済み", [("Order", VIEW_ORDER_MERGED, False)]),
     "--out に書く": (f"TLC の呼び方: {CALL}\n", target(), ["--out", OUT], 0, "書いた", [("Order", VIEW_ORDER, False)]),
@@ -1134,8 +1179,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("反例の後の評価の誤りを通す", "            if odd:", "            if False:", "反例の後に評価の誤りで止まる"),
     ("重なった辺を数える", "遷移 {len(edge_set)}）", "遷移 {len(edges)}）", "重なった辺は 1 本に数える"),
     ("行為の性質の反例を不変条件の反例と読む", '            if line.startswith("Error: Action property"):', "            if False:", "行為の性質の反例は描かない"),
-    ("行き止まりにもまとめの検査を当てる", "    broken = {walk[-1][1] for walk, (dead, _) in zip(walks, traces) if not dead}", "    broken = bad_nodes",
-     "行き止まりで止まった同じ言葉の終わり"),
+    ("行き止まりにもまとめの検査をそのまま当てる", "    broken = {labels[walk[-1][1]] for walk, (dead, _) in zip(walks, traces) if not dead}",
+     "    broken = bad_labels", "行き止まりで止まった同じ言葉の終わり"),
+    ("行き止まりを先へ進める状態とまとめても通す", "(lab in broken or n in moving)", "(lab in broken)", "行き止まりと先へ進める状態をまとめる"),
     ("使えない文字を通す", "    if bad:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}", "    if False:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}",
      "使えない文字"),
 ]

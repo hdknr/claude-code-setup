@@ -70,7 +70,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 対応に無い状態・行為があれば描かない（1） | 変数名・行為の名前・状態の式が図に出る |
 | `skip` は、まとめた後で同じ状態に戻る辺だけを描かない | 別の状態へ移る遷移が図から黙って消える |
 | 反例の最後の状態に印を付ける（`-continue` で違反ごとの反例を読む） | 規則を破る状態が図の上で見分けられない |
-| 規則を破る状態と破らない状態を 1 つの言葉にまとめた対応を通さない（1。不変条件の反例だけに当てる——行き止まりで TLC が止まると、同じ言葉のほかの終わりの状態は報告されない） | 印が、破らない状態まで覆う |
+| 規則を破る状態と破らない状態を 1 つの言葉にまとめた対応を通さない（1。行き止まりの反例の状態は、同じ言葉の先へ進める状態とまとめたときだけ——行き止まりで TLC が止まると、同じ言葉のほかの終わりの状態は報告されない） | 印が、破らない状態・先へ進める状態まで覆う |
 | 最初の反例の段を番号つきの遷移と経路の一覧で描く | 「どの状態から、どの操作で」破るかが図に出ない |
 | 反例の状態と段が状態グラフに無ければ 4 | 状態グラフと食い違う経路を描く |
 | `--controls` の陽性対照で違反が出なければ 4 | 印を付ける形が空振りのまま、描けたと言う |
@@ -345,10 +345,13 @@ def render(name: str, kind: str, dot: str, out: str, view, max_edges: int) -> tu
             walk.append((action, node))
         walks.append(walk)
     bad_nodes = {walk[-1][1] for walk in walks}
-    # 行き止まりで TLC が止まると、同じ言葉のほかの終わりの状態は展開されず報告されない——まとめの検査は不変条件の反例だけに当てる
-    broken = {walk[-1][1] for walk, (dead, _) in zip(walks, traces) if not dead}
+    # 不変条件の反例の最後の状態は、同じ言葉のどの状態とも食い違う。行き止まりの反例の最後の状態は、同じ言葉の状態のうち
+    # 先へ進める（別の状態への辺を持つ）ものとだけ食い違う——TLC が行き止まりで止まると、同じ言葉のほかの終わりの状態は展開されず報告されない
+    broken = {labels[walk[-1][1]] for walk, (dead, _) in zip(walks, traces) if not dead}
+    moving = {a for a, b, _ in edges if a != b}
     bad_labels = {labels[n] for n in bad_nodes}
-    mixed = sorted(lab for lab in {labels[n] for n in broken} if any(labels[n] == lab and n not in bad_nodes for n in nodes))
+    mixed = sorted(lab for lab in bad_labels
+                   if any(labels[n] == lab and n not in bad_nodes and (lab in broken or n in moving) for n in nodes))
     if mixed:
         raise Stop(EXIT_UNDRAWABLE, f"{name}.tla: 規則を破る状態と破らない状態を同じ言葉にまとめている: {mixed}")
     view_edges: set[tuple[str, str, str]] = set()
