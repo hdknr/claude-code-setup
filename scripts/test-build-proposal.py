@@ -111,6 +111,17 @@ V2_CHANGES = [
     ("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV), ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
     ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n返品を受け付ける。\n")]
 V2C = SIGNED_R + V2_CHANGES + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")]
+# 画面の表（行の単位で重ねる。#1091）の比較（#1152）: v1 に画面 2・項目 1・遷移 1 を置いて承認し、v2 で画面・項目を足し、画面を変え、画面 S-002 を消す
+# （S-002 を指す遷移 T-001 は連鎖で消える）。表は `requirements/screens/data/` の下（`merge-versions.py` の `ROW_TABLES`）
+SCREENS_DIR = "requirements/screens/data/"
+SCREENS_V1 = [("w", f"docs/v1/{SCREENS_DIR}screens.csv", "画面ID,画面名\nS-001,一覧\nS-002,詳細\n"),
+              ("w", f"docs/v1/{SCREENS_DIR}screen-items.csv", "番号,画面ID,項目名\nI-001,S-001,検索語\n"),
+              ("w", f"docs/v1/{SCREENS_DIR}transitions.csv", "番号,遷移元,遷移先\nT-001,S-001,S-002\n")]
+SCREENS_V2 = [("w", f"docs/v2/{SCREENS_DIR}screens.csv", "画面ID,画面名\nS-001,一覧（改）\nS-003,返品\n"),
+              ("w", f"docs/v2/{SCREENS_DIR}screen-items.csv", "番号,画面ID,項目名\nI-002,S-003,理由\n")]
+V2S = (SIGNED_R[:-3] + SCREENS_V1 + [("c",), ("t", R1), ("t", B1)]
+       + [("w", "docs/v2/removed.csv", "種類,対象,理由\n画面,S-002,詳細を一覧に統合した\n") if s[:2] == ("w", "docs/v2/removed.csv") else s for s in V2_CHANGES]
+       + SCREENS_V2 + [("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")])
 
 
 # 基盤要件（#950）の試料: 根拠は BASE の Q&A（Q-001 が反映済み・Q-005 が確認中）を指す
@@ -382,6 +393,26 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      and "この版（v2）の差分の見積り" in r.text
      and r.text.find("## 変更の背景") < r.text.find("## 前の版（v1）からの変更") < r.text.find("## 主な決定事項")),
     ("比較も同じ入力から同じバイト", V2C, False, lambda r: made(r) and r.text == r.again),
+    # 画面の表（#1152）。#1091 の後、比較は画面・項目・遷移の変更を「変更なし」と出していた
+    ("画面の表の変更を比較に載せる", V2S, False,
+     lambda r: made(r) and "| 画面 | 1 | 1 | 1 |" in r.text and "| 項目 | 1 | 0 | 0 |" in r.text and "| 遷移 | 0 | 0 | 1 |" in r.text
+     and "### 画面" in r.text and "### 項目" in r.text and "### 遷移" in r.text
+     and "| S-003 | 追加 | 返品 | — |" in r.text and "| S-001 | 変更 | 一覧（改） | — |" in r.text
+     and "| S-002 | 削除 | 詳細 | 詳細を一覧に統合した |" in r.text
+     and "| I-002 | 追加 | — | — |" in r.text
+     and "| T-001 | 削除 | — | 画面 S-002 を消した: 詳細を一覧に統合した |" in r.text
+     and "（前の版からの変更はありません）" not in r.text),
+    ("画面の表だけの変更でも変更なしと言わない",
+     SIGNED_R[:-3] + SCREENS_V1 + [("c",), ("t", R1), ("t", B1)]
+     + [("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV), ("w", "docs/v2/feasibility/estimate.csv", estimate("700000")),
+        ("w", "docs/v2/proposal/01-change.md", "## 変更の背景\n\n画面だけ。\n"), ("w", f"docs/v2/{SCREENS_DIR}screens.csv", "画面ID,画面名\nS-002,詳細（改）\n"),
+        ("c",), ("t", "signoff/v2/req-1"), ("t", "signoff/v2/budget-1")], False,
+     lambda r: made(r) and "（前の版からの変更はありません）" not in r.text and "| S-002 | 変更 | 詳細（改） | — |" in r.text),
+    ("画面の表を持たない正本は比較に画面を載せない", V2C, False,
+     lambda r: made(r) and (lambda part: "### 画面" not in part and "### 項目" not in part and "### 遷移" not in part
+                            and "| 画面 |" not in part and "| 項目 |" not in part and "| 遷移 |" not in part
+                            and "| 種類 | 追加 | 変更 | 削除 |\n| --- | --- | --- | --- |\n| Q&A | 1 | 1 | 1 |\n| 機能 | 1 | 1 | 1 |\n| ファイル | 1 | 1 | 1 |\n" in part)(
+         r.text.split("## 前の版（v1）からの変更")[1].split("\n## ")[0])),
     ("足しただけの版は追加だけを載せる", V2, False,
      lambda r: made(r) and "| Q&A | 1 | 0 | 0 |" in r.text and "### Q&A" in r.text and "### 機能" not in r.text),
     ("変更が無い版", SIGNED + [("w", "docs/v2/feasibility/schedule.csv", SCHEDULE_CSV),
@@ -656,7 +687,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "内部の表の違反でも比較を作る"),
     ("removed.csv の層を入れ替える", "r[0] == mv.KIND_QA and qa.is_internal_number(r[1].strip())",
      "r[0] == mv.KIND_QA and not qa.is_internal_number(r[1].strip())", "内部の表の違反でも比較を作る"),
-    ("件数の表に内部の層も載せる", "for k in diffs.SHARED_KINDS])", "for k in diffs.KINDS])", "内部の Q&A は比較に載せない"),
+    ("画面の表を比較に載せない", "    row_kinds = [k for k in diffs.ROW_KINDS if k in diff.changes]\n", "    row_kinds = []\n",
+     "画面の表の変更を比較に載せる"),
+    ("画面の表の節だけ出さない", "    for kind in row_kinds:\n        if diff.changes[kind]:\n", "    for kind in []:\n        if diff.changes[kind]:\n",
+     "画面の表の変更を比較に載せる"),
+    ("件数の表だけ画面を足さない", "for k in shown])", "for k in diffs.SHARED_KINDS])", "画面の表の変更を比較に載せる"),
+    ("変更なしの判定に画面を入れない", "    if not any(diff.changes[k] for k in shown):", "    if not any(diff.changes[k] for k in diffs.SHARED_KINDS):",
+     "画面の表だけの変更でも変更なしと言わない"),
+    ("表が無くても画面の種類を載せる", "    row_kinds = [k for k in diffs.ROW_KINDS if k in diff.changes]\n",
+     "    row_kinds = list(diffs.ROW_KINDS)\n    for k in row_kinds:\n        diff.changes.setdefault(k, [])\n", "画面の表を持たない正本は比較に画面を載せない"),
+    ("件数の表に内部の層も載せる", "for k in shown])", "for k in [*diffs.KINDS, *row_kinds]])", "内部の Q&A は比較に載せない"),
     ("v2 以降も Q&A 表を必須にする", 'if info["version"] > 1 and not exists(', 'if False and not exists(',
      "Q&A を足さない版でも作る"),
     ("v1 でも Q&A 表を省ける", 'if info["version"] > 1 and not exists(', 'if not exists(',
