@@ -40,6 +40,7 @@ SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 TARGET = "formal-statechart.py"
 
 # 本物の TLC 2.19（tla2tools v1.7.4）で手元で取った出力（2026-11-18）。鍵はモジュールの名前（`:nocontinue` は -continue なし）。
+# `ActProp`（行為の性質の違反）・`Ends`（行き止まりで止まり、同じ言葉の終わりの状態が報告されない）は 2 パス目の関門の指摘を受けて足した。
 # `InitBad`（初めの状態が破る）・`CrashAfter`（反例の後に評価の誤り）・`Dup`（同じ辺を重ねて書く）は 1 パス目の関門の指摘を受けて同じ日に足した。
 # `Skew` は本物の `OrderBroken` を書き換えて作った（反例の 2 段目の行為を `Ship` から `Pay` に替え、状態グラフの辺と食い違わせた）。
 FIXTURES: dict[str, dict] = {'Order': {'rc': 0,
@@ -654,6 +655,96 @@ FIXTURES: dict[str, dict] = {'Order': {'rc': 0,
                 '}',
          'tla': "---- MODULE Dup ----\nVARIABLES x\nInit == x = 0\nNext == \\E i \\in {1, 2} : x' = 1\nSpec == Init /\\ [][Next]_x\n====\n",
          'cfg': 'SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\n'},
+ 'ActProp': {'rc': 0,
+             'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
+                       'Semantic processing of module Naturals\n'
+                       'Semantic processing of module ActProp\n'
+                       'Computing initial states...\n'
+                       'Error: Action property Mono is violated.\n'
+                       'Error: The behavior up to this point is:\n'
+                       'State 1: <Initial predicate>\n'
+                       'x = 0\n'
+                       '\n'
+                       'State 2: <Inc line 5, col 8 to line 5, col 26 of module ActProp>\n'
+                       'x = 1\n'
+                       '\n'
+                       'State 3: <Inc line 5, col 8 to line 5, col 26 of module ActProp>\n'
+                       'x = 2\n'
+                       '\n'
+                       'State 4: <Back line 6, col 9 to line 6, col 23 of module ActProp>\n'
+                       'x = 1\n'
+                       '\n'
+                       'Model checking completed. No error has been found.\n'
+                       '  Estimates of the probability that TLC did not check all reachable states\n'
+                       '  because two distinct states had the same fingerprint:\n'
+                       '  calculated (optimistic):  val = 1.6E-19\n'
+                       '4 states generated, 3 distinct states found, 0 states left on queue.\n'
+                       'The depth of the complete state graph search is 3.\n'
+                       'The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 1 and the 95th percentile is 1).\n',
+             'dot': 'strict digraph DiskGraph {\n'
+                    'nodesep=0.35;\n'
+                    'subgraph cluster_graph {\n'
+                    'color="white";\n'
+                    '-1367331574555479329 [label="x = 0",style = filled]\n'
+                    '-1367331574555479329 -> -637813419044459402 [label="Inc",color="black",fontcolor="black"];\n'
+                    '-637813419044459402 [label="x = 1"];\n'
+                    '-637813419044459402 -> -2790308373070655603 [label="Inc",color="black",fontcolor="black"];\n'
+                    '-2790308373070655603 [label="x = 2"];\n'
+                    '-2790308373070655603 -> -637813419044459402 [label="Back",color="black",fontcolor="black"];\n'
+                    '{rank = same; -1367331574555479329;}\n'
+                    '{rank = same; -637813419044459402;}\n'
+                    '{rank = same; -2790308373070655603;}\n'
+                    '}\n'
+                    '}',
+             'tla': '---- MODULE ActProp ----\n'
+                    'EXTENDS Naturals\n'
+                    'VARIABLES x\n'
+                    'Init == x = 0\n'
+                    "Inc == x < 2 /\\ x' = x + 1\n"
+                    "Back == x = 2 /\\ x' = 1\n"
+                    'Next == Inc \\/ Back\n'
+                    'Spec == Init /\\ [][Next]_x\n'
+                    "Mono == [][x' >= x]_x\n"
+                    '====\n',
+             'cfg': 'SPECIFICATION Spec\nPROPERTY Mono\nCHECK_DEADLOCK FALSE\n'},
+ 'Ends': {'rc': 11,
+          'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
+                    'Semantic processing of module Ends\n'
+                    'Computing initial states...\n'
+                    'Error: Deadlock reached.\n'
+                    'Error: The behavior up to this point is:\n'
+                    'State 1: <Initial predicate>\n'
+                    '/\\ n = 0\n'
+                    '/\\ status = "draft"\n'
+                    '\n'
+                    'State 2: <Ship line 4, col 9 to line 4, col 62 of module Ends>\n'
+                    '/\\ n = 0\n'
+                    '/\\ status = "shipped"\n'
+                    '\n'
+                    '4 states generated, 4 distinct states found, 1 states left on queue.\n'
+                    'The depth of the complete state graph search is 2.\n'
+                    'The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 1 and the 95th percentile is 1).\n',
+          'dot': 'strict digraph DiskGraph {\n'
+                 'nodesep=0.35;\n'
+                 'subgraph cluster_graph {\n'
+                 'color="white";\n'
+                 '-1166403320719592901 [label="/\\\\ n = 0\\n/\\\\ status = \\"draft\\"",style = filled]\n'
+                 '389800232400978624 [label="/\\\\ n = 1\\n/\\\\ status = \\"draft\\"",style = filled]\n'
+                 '-1166403320719592901 -> -5910665020207294348 [label="Ship",color="black",fontcolor="black"];\n'
+                 '-5910665020207294348 [label="/\\\\ n = 0\\n/\\\\ status = \\"shipped\\""];\n'
+                 '389800232400978624 -> -8316141006715767992 [label="Ship",color="black",fontcolor="black"];\n'
+                 '-8316141006715767992 [label="/\\\\ n = 1\\n/\\\\ status = \\"shipped\\""];\n'
+                 '{rank = same; 389800232400978624;-1166403320719592901;}\n'
+                 '}\n'
+                 '}',
+          'tla': '---- MODULE Ends ----\n'
+                 'VARIABLES status, n\n'
+                 'Init == status = "draft" /\\ n \\in {0, 1}\n'
+                 'Ship == status = "draft" /\\ status\' = "shipped" /\\ UNCHANGED n\n'
+                 'Next == Ship\n'
+                 'Spec == Init /\\ [][Next]_<<status, n>>\n'
+                 '====\n',
+          'cfg': 'SPECIFICATION Spec\n'},
  'Skew': {'rc': 0,
           'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
                     'Semantic processing of module Naturals\n'
@@ -769,6 +860,8 @@ VIEW_DEAD = {"states": [{"when": {"x": "1"}, "label": "止めた"}, {"when": {"r
              "actions": {"Stop": "止める", "Go": "進める", "Step": "次へ", "Back": "戻る"}}
 VIEW_INIT = {"states": [{"when": {"x": str(n)}, "label": f"{n} 個"} for n in range(7)], "actions": {"Inc": "増やす"}}
 VIEW_DUP = {"states": [{"when": {"x": "0"}, "label": "はじめ"}, {"when": {"x": "1"}, "label": "進んだ"}], "actions": {"Next": "進む"}}
+VIEW_ENDS = {"states": [{"when": {"status": '"draft"'}, "label": "下書き"}, {"when": {"status": '"shipped"'}, "label": "出荷済み"}],
+             "actions": {"Ship": "出荷する"}}
 # 図に出てはならない語（変数名・行為の名前・TLA+ の値）
 HIDDEN = {"Order": ["status", "paid", "Submit", "Ship", "Cancel", "draft", "FALSE"], "OrderBroken": ["status", "paid", "Ship", "FALSE"],
           "Two": ["x =", "Inc", "Reset"], "Par": ["done", "Write"], "Dead": ["|->", "Stop", "Go"]}
@@ -820,6 +913,9 @@ CASES: dict[str, tuple] = {
     "重なった辺は 1 本に数える": (f"TLC の呼び方: {CALL}\n", target("Dup", view=VIEW_DUP), [], 0, "TLC の状態 2・遷移 2）", [("Dup", VIEW_DUP, False)]),
     "反例の後に評価の誤りで止まる": (f"TLC の呼び方: {CALL}\n", target("CrashAfter", view=VIEW_TWO | {"actions": {"Inc": "増やす", "Boom": "壊す"}}),
                           ["--out", OUT], 4, "unexpected exception", []),
+    "行為の性質の反例は描かない": (f"TLC の呼び方: {CALL}\n", target("ActProp", view=VIEW_TWO | {"actions": {"Inc": "増やす", "Back": "戻す"}}),
+                        ["--out", OUT], 1, "行為の性質", []),
+    "行き止まりで止まった同じ言葉の終わり": (f"TLC の呼び方: {CALL}\n", target("Ends", view=VIEW_ENDS), [], 0, "行き止まり", [("Ends", VIEW_ENDS, False)]),
     "大きいモデルは経路だけ": (f"TLC の呼び方: {CALL}\n", target("Two", view=VIEW_TWO), ["--max-edges", "2"], 0, "経路だけを描いた", [("Two", VIEW_TWO, True)]),
     "まとめて skip": (f"TLC の呼び方: {CALL}\n", target(view=VIEW_ORDER_MERGED), [], 0, "申請済み", [("Order", VIEW_ORDER_MERGED, False)]),
     "--out に書く": (f"TLC の呼び方: {CALL}\n", target(), ["--out", OUT], 0, "書いた", [("Order", VIEW_ORDER, False)]),
@@ -1037,6 +1133,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("初めの状態が破る形を読まない", "            if line.rstrip().endswith(INITIAL):", "            if False:", "初めの状態が破る"),
     ("反例の後の評価の誤りを通す", "            if odd:", "            if False:", "反例の後に評価の誤りで止まる"),
     ("重なった辺を数える", "遷移 {len(edge_set)}）", "遷移 {len(edges)}）", "重なった辺は 1 本に数える"),
+    ("行為の性質の反例を不変条件の反例と読む", '            if line.startswith("Error: Action property"):', "            if False:", "行為の性質の反例は描かない"),
+    ("行き止まりにもまとめの検査を当てる", "    broken = {walk[-1][1] for walk, (dead, _) in zip(walks, traces) if not dead}", "    broken = bad_nodes",
+     "行き止まりで止まった同じ言葉の終わり"),
     ("使えない文字を通す", "    if bad:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}", "    if False:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}",
      "使えない文字"),
 ]

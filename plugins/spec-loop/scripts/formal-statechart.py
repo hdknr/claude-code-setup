@@ -56,7 +56,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | コード | 意味 |
 | --- | --- |
 | 0 | 描けた（`--out` に書いたか、標準出力に出した） |
-| 1 | 描けない——対応に無い状態・行為がある、対応の形が違う・使えない文字、`skip` の行為が別の状態へ移る、規則を破る状態と破らない状態を 1 つの言葉にまとめた、時相の性質の反例（繰り返しのある反例）。対応を直す |
+| 1 | 描けない——対応に無い状態・行為がある、対応の形が違う・使えない文字、`skip` の行為が別の状態へ移る、規則を破る状態と破らない状態を 1 つの言葉にまとめた（不変条件の反例のとき）、時相の性質の反例（繰り返しのある反例）・行為の性質の反例。対応を直すか、描かない対象と読む |
 | 2 | 引数が違う・想定外の例外 |
 | 4 | 判定できなかった——呼び方の行が無い、記録が読めない、TLC のモデルが一覧に無い、`図の対応のファイル` が無い、一覧のファイルが無い、TLC が走りきらない（時間切れ・反例の印と別の `Error: ` の行——反例の後の評価の誤りを含む）・状態グラフが無いか読めない、反例の状態・段が状態グラフに無い、`--controls` で陽性対照に違反が出ない |
 
@@ -70,11 +70,11 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 対応に無い状態・行為があれば描かない（1） | 変数名・行為の名前・状態の式が図に出る |
 | `skip` は、まとめた後で同じ状態に戻る辺だけを描かない | 別の状態へ移る遷移が図から黙って消える |
 | 反例の最後の状態に印を付ける（`-continue` で違反ごとの反例を読む） | 規則を破る状態が図の上で見分けられない |
-| 規則を破る状態と破らない状態を 1 つの言葉にまとめた対応を通さない（1） | 印が、破らない状態まで覆う |
+| 規則を破る状態と破らない状態を 1 つの言葉にまとめた対応を通さない（1。不変条件の反例だけに当てる——行き止まりで TLC が止まると、同じ言葉のほかの終わりの状態は報告されない） | 印が、破らない状態まで覆う |
 | 最初の反例の段を番号つきの遷移と経路の一覧で描く | 「どの状態から、どの操作で」破るかが図に出ない |
 | 反例の状態と段が状態グラフに無ければ 4 | 状態グラフと食い違う経路を描く |
 | `--controls` の陽性対照で違反が出なければ 4 | 印を付ける形が空振りのまま、描けたと言う |
-| 時相の性質の反例（繰り返しのある反例）は描かない（1） | 戻る経路を、規則を破る状態への経路と読ませる |
+| 時相の性質の反例（繰り返しのある反例）と行為の性質の反例（`Action property … is violated`）は描かない（1） | 戻る経路や、破った遷移の行き先を、規則を破る状態と読ませる |
 | TLC が走りきらない（反例の印と別の `Error: ` の行がある）・状態グラフが無いなら 4 | 走っていないモデル・途中で止まったモデルの図を出す |
 | 待ちの状態が残ったグラフには「全体ではない」と書く | 途中で止まった展開を全体と読ませる |
 | 一時ディレクトリで走らせ、描けたときだけ `--out` の 1 ファイルを書く | 正本に `states/` や状態グラフが残る・描けなかったのに古い図が新しく見える |
@@ -225,6 +225,8 @@ def read_traces(out: str) -> list[tuple[bool, list[tuple[str | None, dict[str, s
         if line.startswith("Error: ") and any(mark in line for mark in TRACE_START):
             if "were violated" in line:
                 raise Stop(EXIT_UNDRAWABLE, "時相の性質の反例（繰り返しのある反例）は描かない")
+            if line.startswith("Error: Action property"):
+                raise Stop(EXIT_UNDRAWABLE, "行為の性質の反例は描かない（破るのは状態ではなく遷移で、最後の状態に印を付けると誤る）")
             trace: list[tuple[str | None, dict[str, str]]] = []
             deadlock = "Deadlock reached" in line
             i += 1
@@ -343,8 +345,10 @@ def render(name: str, kind: str, dot: str, out: str, view, max_edges: int) -> tu
             walk.append((action, node))
         walks.append(walk)
     bad_nodes = {walk[-1][1] for walk in walks}
+    # 行き止まりで TLC が止まると、同じ言葉のほかの終わりの状態は展開されず報告されない——まとめの検査は不変条件の反例だけに当てる
+    broken = {walk[-1][1] for walk, (dead, _) in zip(walks, traces) if not dead}
     bad_labels = {labels[n] for n in bad_nodes}
-    mixed = sorted(lab for lab in bad_labels if any(labels[n] == lab and n not in bad_nodes for n in nodes))
+    mixed = sorted(lab for lab in {labels[n] for n in broken} if any(labels[n] == lab and n not in bad_nodes for n in nodes))
     if mixed:
         raise Stop(EXIT_UNDRAWABLE, f"{name}.tla: 規則を破る状態と破らない状態を同じ言葉にまとめている: {mixed}")
     view_edges: set[tuple[str, str, str]] = set()

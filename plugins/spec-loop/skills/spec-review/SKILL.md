@@ -265,8 +265,8 @@ Alloy は Java と Alloy の jar を置き、正本の `CLAUDE.md` に `Alloy �
    **0 でなければ図を残さない**——`statechart.md`（前の図を含む）を消し、記録から `状態遷移図のファイル` の行を外し、手順 7 で「図を作れなかった」とスクリプトの出力の 1 行を報告する
    （報告に図の対応が無ければ `view.json` と `図の対応のファイル` の行も書かない）。**図を作れないことは抜ける条件に数えない**（判定は検査器の出力で決まる）。
    形と、図に何が出るかは `../../references/tree.md` の同じ節の「状態遷移図」とスクリプトの docstring を正とする。
-   書いたら `python3 <このスキルの base ディレクトリ>/../../scripts/formal-baseline.py check docs/v<n>/spec/formal/<対象>` を当て、0 になるまで直す（記録の表の形と見るものは `../../references/tree.md` の同じ節）。
-4. **残したことは commit の対象である**（commit するかは上の「守ること」の決まりのまま）。
+4. **書いたら（TLC の対象は 3 の後に）、どの対象にも** `python3 <このスキルの base ディレクトリ>/../../scripts/formal-baseline.py check docs/v<n>/spec/formal/<対象>` を当て、0 になるまで直す（記録の表の形と見るものは `../../references/tree.md` の同じ節）。
+5. **残したことは commit の対象である**（commit するかは上の「守ること」の決まりのまま）。
 
 ### 4. 指摘を振り分ける
 
