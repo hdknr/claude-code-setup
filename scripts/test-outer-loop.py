@@ -130,7 +130,7 @@ with open(os.path.join(os.environ["FAKE_HOME"], "notify.jsonl"), "a") as f:
 """
 
 MUTATIONS = {
-    "窓を常に渡す": [("*child_cycle().window_flag(args.window), ", '"--autocompact", "400000", ')],
+    "窓を常に渡す": [("*([] if args.window is None else child_cycle().window_flag(args.window)), ", '"--autocompact", "400000", ')],
     "窓の範囲を検査しない": [("child_cycle().parse_window(args.autocompact_window)", '(lambda t: int(t.rstrip("kK") or 0) * (1000 if t[-1:] in "kK" else 1))(args.autocompact_window)')],
     "環境変数に上書きされても言わない": [("window_override_note(args.window, os.environ)", "window_override_note(args.window, {})")],
     "人待ち・判定できないでも起こす": [
@@ -352,15 +352,20 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         o[key] = {"rc": rc_, "lines": [l for l in out_.getvalue().splitlines() if "窓" in l], "stderr": err_.getvalue().strip()[:60],
                   "argv": [r["argv"] for r in records(home, parent)], "notify": len(notes(home)) - before}
 
-    make(180, [(1, "todo")])
-    plan["180"] = [merge(180, 1)]
+    make(180, [(1, "todo"), (2, "todo")])
+    plan["180"] = [merge(180, 1), merge(180, 2)]
     go_out("W1 窓 400k", 180, ["--autocompact-window", "400k", "--", "--model", "sonnet"])
-    make(181, [(1, "todo")])
-    plan["181"] = [merge(181, 1)]
+    make(181, [(1, "todo"), (2, "todo")])
+    plan["181"] = [merge(181, 1), merge(181, 2)]
     go_out("W2 窓と環境変数", 181, ["--autocompact-window", "1M"], {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"})
     make(182, [(1, "todo")])
     plan["182"] = [merge(182, 1)]
     go_out("W3 窓なしと環境変数", 182, [], {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"})
+    # W5: 拒んだ起動は、台帳があっても出力の置き場を作らない（検査は起動の前）
+    make(183, [(1, "todo")])
+    plan["183"] = [merge(183, 1)]
+    go_out("W5 台帳ありで拒む", 183, ["--autocompact-window", "99999"])
+    o["W5 出力の置き場"] = (root / ".claude" / "plans" / "cruise-issue-183-loop").exists()
     for i, bad in enumerate(("400", "99999", "1000001", "4e5", "", "-1", "１００k", "400kk")):
         go_out(f"W4 拒む {bad!r}", 90, ["--autocompact-window", bad])
 
@@ -643,14 +648,16 @@ def main() -> int:
               w1["rc"] == 0 and w1["argv"] and all(r == ["-p", "/dev-loop:cruise 180", "--output-format", "stream-json", "--verbose",
                                                          "--append-system-prompt", mod.APPEND, "--autocompact", "400000", "--model", "sonnet"]
                                                     for r in w1["argv"])
-              and w1["lines"] == ["auto-compact の窓: 400000 トークンを --autocompact で渡す（起こす claude 1 つにだけ効く）"])
+              and len(w1["argv"]) == 2 and w1["lines"] == ["auto-compact の窓: 400000 トークンを --autocompact で渡す（起こす claude 1 つにだけ効く）"])
         w2 = a("W2 窓と環境変数")
         check("W2 環境変数が設定されていれば、効かないと 1 度言う（それでも渡す）",
-              w2["argv"] and w2["argv"][0][-2:] == ["--autocompact", "1000000"] and len(w2["lines"]) == 2
+              len(w2["argv"]) == 2 and w2["argv"][0][-2:] == ["--autocompact", "1000000"] and len(w2["lines"]) == 2
               and "窓 1000000 は効かない: 環境変数 CLAUDE_CODE_AUTO_COMPACT_WINDOW='300000'" in w2["lines"][1])
         w3 = a("W3 窓なしと環境変数")
         check("W3 窓を渡していなければ、環境変数があっても何も言わず、--autocompact を足さない",
               w3["lines"] == [] and w3["argv"] and all("--autocompact" not in r for r in w3["argv"]))
+        check("W5 台帳があっても、拒んだ起動は 2 で、出力の置き場を作らず、claude を起こさない",
+              a("W5 台帳ありで拒む")["rc"] == 2 and a("W5 台帳ありで拒む")["argv"] == [] and a("W5 出力の置き場") is False)
         bads = {k: v for k, v in o.items() if k.startswith("W4 拒む")}
         check("W4 範囲の外・書式の誤りは起動の前に 2 で拒み、claude を起こさず、通知もしない",
               len(bads) == 8 and all(v["rc"] == 2 and v["argv"] == [] and v["notify"] == 0 and "--autocompact-window" in v["stderr"] for v in bads.values()))

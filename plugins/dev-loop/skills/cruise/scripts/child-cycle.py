@@ -144,6 +144,8 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 
 - **窓が子で実際に効くか**——実物の `claude` で確かめたのは `references/child-process.md` の「auto-compact の窓」の範囲（小さな呼び出し・haiku）までで、
   実際の長い周で compact の頻度や品質がどう変わるかは見ていない。**`--autocompact` が受ける書式の全部（`auto`・`100k` 未満の略記）は扱わない**（拒む）。
+- **環境変数の値が範囲の外・数字でないときにも、フラグが効かないか**——空でない値なら「効かない」と言うだけで、その値を `claude` がどう読むかは確かめていない
+  （範囲内の値が優先されることだけ、大小両方向で実物で確かめた。`references/child-process.md` の「auto-compact の窓」）。
 - **子が周を終えられるか**——関門（`/code-review` の fork を含む）が `-p` の中で回りきるか、許可で止まらないかは、このスクリプトの外である
   （確かめた範囲は `references/child-process.md`）。
 - **pid のコマンドが別の `claude` か**——同じ pid で、同じ Issue の `/dev-loop:dev-loop <番号>` を持つ別の `claude` が走っていれば「走っている」と読む。

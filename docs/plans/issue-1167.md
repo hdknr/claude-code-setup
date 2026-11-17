@@ -27,12 +27,17 @@ Issue 本文（外部入力）から読んだ要件: 3 つの起動口（`child-
 
 - `plugins/dev-loop/skills/cruise/scripts/child-cycle.py` — 窓の引数・正規化・検査・フラグを渡す・環境変数の通知・記録（正規化の原本）
 - `plugins/dev-loop/skills/cruise/scripts/outer-loop.py` — 同じ引数。検査と正規化は `child-cycle.py` を読み込む（写さない）
-- `plugins/spec-loop/scripts/autopilot-loop.py` — 同じ引数。spec-loop だけの利用者に dev-loop は無いので、関数は写しを持つ（`notify` などと同じ理由）
-- `scripts/test-child-cycle.py`・`scripts/test-outer-loop.py`・`scripts/test-autopilot-loop.py` — 回帰テスト（変異テストを含む）
+- `plugins/spec-loop/scripts/autopilot-loop.py` — 同じ引数。spec-loop だけの利用者に dev-loop は無いので、関数は写しを持つ
+- `scripts/test-child-cycle.py` — 回帰テスト（変異テストを含む）
+- `scripts/test-outer-loop.py` — 回帰テスト（変異テストを含む）
+- `scripts/test-autopilot-loop.py` — 回帰テスト（変異テストを含む）
 - `plugins/dev-loop/skills/cruise/references/child-process.md` — 「auto-compact の窓」の 1 節（実物で確かめた記録の置き場）
-- `plugins/dev-loop/skills/dev-loop/SKILL.md`・`plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行だけ（cruise の `SKILL.md` の説明は別 Issue）
-- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行だけ
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
+- `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行だけ（cruise の `SKILL.md` の説明は別 Issue）
+- `plugins/spec-loop/skills/` — 各 `SKILL.md` の版の 2 行だけ
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `CLAUDE.md` — 3 起動口の項目に窓の 1 文（プロジェクトの構成の一覧。原本は docstring）
 - `docs/plans/issue-1167.md` — この計画ファイル
 
@@ -94,7 +99,7 @@ Issue 本文（外部入力）から読んだ要件: 3 つの起動口（`child-
 
 実物の Claude Code 2.1.326・`--model haiku`（init の `model` は `claude-haiku-5-5`）で、`child-cycle.py launch` が組んだ引数を、使い捨てのディレクトリ（リポジトリの外のスクラッチ・空の git リポジトリ）で最小の呼び出しに差し替えて実物の `claude` に渡した。
 差し替えは `claude` の前に置いた包み（`-p` の文と `--append-system-prompt` の中身だけ。`/dev-loop:dev-loop` の周は回さない）。`--autocompact` と環境は起動口のまま。許可モード `dontAsk`・`--allowed-tools Read`・`--max-budget-usd 0.6`。長期トークンの値は出力に出していない（`認証:` の行は「値は出さない」）。
-計約 $0.74（最初の試しの $0.45 を含む。1 回目は 1 ターンに約 44.5 万トークンを渡して予算を食った）。詳細な表と読み方は `plugins/dev-loop/skills/cruise/references/child-process.md` の「auto-compact の窓」。
+計約 $0.89（出力ファイルの合計 $0.85 に書式の確かめと逆向きの対照の分を足した。最初の試しの $0.45 を含む。1 回目は 1 ターンに約 44.5 万トークンを渡して予算を食った）。詳細な表と読み方は `plugins/dev-loop/skills/cruise/references/child-process.md` の「auto-compact の窓」。
 
 - **交絡の候補**（主張が偽でも同じ出力が出る設定）: (1) 窓を渡した子が compact したのは、渡した窓のせいではなく入力が違うから → 同じ 7 ファイル・同じ文で、窓を渡さない子（compact 0・8 ターン）と比べた。(2) 窓を渡さない子が compact しないのは「もともと compact しない」設定だから → 窓を渡した子が同じ入力で compact した（陽性対照）。
   (3) 環境変数が効くはずなのに効かない → 環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000` と窓 100k を併せた子は compact 0（環境変数が優先。起動口の「効かない」の表示と合う）。
@@ -106,6 +111,7 @@ Issue 本文（外部入力）から読んだ要件: 3 つの起動口（`child-
 | 窓を渡さない（環境変数も無い） | 0 | 8 |
 | `--autocompact-window 100k` | 2 | 10 |
 | `--autocompact-window 100k` ＋ 環境変数 1000000 | 0 | 8 |
+| `--autocompact-window 1M` ＋ 環境変数 100000（逆向き） | 2 | 10 |
 
 **実物を起こしたのは `child-cycle.py` の経路だけである。** `outer-loop.py`・`autopilot-loop.py` は、同じ `--autocompact <整数>` を同じ位置で渡すことを偽の `claude` で確かめた（未証明に書いた）。
 

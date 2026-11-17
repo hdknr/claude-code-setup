@@ -306,7 +306,7 @@ def launch(args, main_tree, logs, n):
     """(終了コード か None, 標準出力のファイル)。"""
     prompt = f"/dev-loop:cruise {args.parent}" + (" --absent" if args.absent else "")
     cmd = [*args.claude_cmd, "-p", prompt, "--output-format", "stream-json", "--verbose",
-           "--append-system-prompt", APPEND, *child_cycle().window_flag(args.window), *args.extra]
+           "--append-system-prompt", APPEND, *([] if args.window is None else child_cycle().window_flag(args.window)), *args.extra]
     env = dict(os.environ)
     if env.get(BG_CEILING) not in (None, "0"):
         print(f"{BG_CEILING}={env[BG_CEILING]} を 0 で上書きした")
