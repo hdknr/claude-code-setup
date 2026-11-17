@@ -957,6 +957,12 @@ JOBS_HEAD = "id,名前,契機,周期,失敗したときの扱い\n"
 JOBS_DECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"
 JOBS_UNDECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,未定,翌朝に担当者へ通知する\n"
 DESIGN_GATE = "関門（システム設計書の成果物の表"
+# 目的の表（#1154）: 指標 K-001 が F-001 だけを動かす——F-002 は目的を指さない機能
+PURPOSES_FILE = str(V1 / "requirements" / "purposes.csv")
+PURPOSES_HEAD = "id,上位,誰の課題か,内容,成功の判定,機能\n"
+PURPOSES_PARTIAL = (PURPOSES_HEAD + "G-001,,受注の担当者,割引の計算の手間を減らす,,\n"
+                    "K-001,G-001,,1 件の割引の計算にかかる時間,5 分から 1 分以下に,F-001\n")
+PURPOSES_FULL = PURPOSES_PARTIAL.replace(",F-001\n", ",F-001・F-002\n")
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
@@ -2437,6 +2443,11 @@ CASES: list[Case] = [
          extra={JOBS_FILE: JOBS_HEAD + "J-1,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"}, post=nothing_written),
     Case("成果物の表: 決まった表なら作る", 0, "作った", extra={JOBS_FILE: JOBS_DECIDED, FEATURES_FILE: FEATURES_LIST},
          absent=DESIGN_GATE),
+    Case("目的の表: 目的を指さない機能があれば止める（#1154）", 1,
+         "build/merged/requirements/purposes.csv: 機能一覧の F-002 が、どの指標の 機能 にも無い（目的を指さない機能",
+         extra={FEATURES_FILE: FEATURES_LIST, PURPOSES_FILE: PURPOSES_PARTIAL}, post=nothing_written),
+    Case("目的の表: 機能一覧の機能をどれも指していれば作る（#1154）", 0, "作った",
+         extra={FEATURES_FILE: FEATURES_LIST, PURPOSES_FILE: PURPOSES_FULL}, absent=DESIGN_GATE),
     Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
     Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
     Case("画面の表: screen-spec が見つからなければ 2 で止める（#1097）", 2, "画面の表があるのに screen-spec が見つからない",
