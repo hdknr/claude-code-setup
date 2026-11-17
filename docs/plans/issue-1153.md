@@ -77,6 +77,7 @@
 - 2 パス目の指摘対応の起点（1 パス目の関門に渡した HEAD）: `500a4c138b4a19098515ce6218e29b255cfb63fd`。指摘対応の終点: `91a6501e0ed0cb2a4abf5a8e6fe3d4a0b9118189`。
 - 2 パス目: Verifier 反証 1 件（V2-R1）・/code-review 指摘 5 件（CR2-1〜5）。採否は下の表。
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `91a6501e0ed0cb2a4abf5a8e6fe3d4a0b9118189`。
+- 狭いパス: 起点 `91a6501e0ed0cb2a4abf5a8e6fe3d4a0b9118189`・終点 `81bdd49e20f39b9606af425c8d3149fff934bcd3`。Verifier（別ティア）反証 0 件。素通りした変異 4 本（prose.md:40 を狭く・広く・条件落としに崩した文）は、記述を見る機械の歯止めが無いことによる（陽性対照: 照合が prose.md を読むことは別の変異で確認）。受入基準 1 は目で読む判定で、この周は試料を足さない。
 - 割り目: 割らない（cruise の周）。
 
 ```dev-loop-gates
@@ -85,6 +86,7 @@
 関門: /code-review 1 500a4c138b4a19098515ce6218e29b255cfb63fd 指摘=5
 関門: Verifier 2 91a6501e0ed0cb2a4abf5a8e6fe3d4a0b9118189 反証=1
 関門: /code-review 2 91a6501e0ed0cb2a4abf5a8e6fe3d4a0b9118189 指摘=5
+関門: 狭いパス 91a6501e0ed0cb2a4abf5a8e6fe3d4a0b9118189 81bdd49e20f39b9606af425c8d3149fff934bcd3 反証=0
 受入基準: 1 満たす
 受入基準: 2 満たす
 受入基準: 3 満たす
