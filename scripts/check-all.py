@@ -176,6 +176,7 @@ TESTS: list[str] = [
     "test-screen-spec-pages.py",
     "test-check-findings-csv.py",
     "test-check-review-record.py",
+    "test-findings-by-feature.py",
     "test-check-formal-rerun.py",
     "test-schedule-to-gantt.py",
     "test-render-diagrams.py",

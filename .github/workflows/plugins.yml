@@ -395,6 +395,10 @@ jobs:
       - name: spec-loop の仕様レビューの記録の数え直しのテスト（#1044）
         run: python3 scripts/test-check-review-record.py
 
+      # 本体は plugins/spec-loop/scripts/ にある（指摘の表から機能ごとの指摘の件数を数える。check-findings-csv.py を読み込む）。
+      - name: spec-loop の指摘の機能ごとの数え方のテスト（#1045）
+        run: python3 scripts/test-findings-by-feature.py
+
       # 本体は plugins/spec-loop/scripts/ にある（保存した TLC のモデルを走らせ直す。偽の TLC で回す）。
       - name: spec-loop の形式検査のモデルの走らせ直しのテスト（#1044）
         run: python3 scripts/test-check-formal-rerun.py
