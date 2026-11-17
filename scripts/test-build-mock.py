@@ -584,6 +584,10 @@ def case_problems(case, result: dict) -> list[str]:
     for pattern in (r"<script[^>]*\ssrc=", r"<link\b", r"<img\b", r"<iframe\b", r"url\(", r"@import", r"https?://"):
         if re.search(pattern, page, re.I):
             problems.append(f"外を読みうる {pattern!r} がある")
+    # 見た目の注記（#1082）——見出しに出る
+    header = re.search(r'<header class="bar"><span>(.*?)</span>', page)
+    if not header or "確かめるのは項目・操作・遷移で、見た目（色・余白・フォント）は確かめる対象ではない" not in header.group(1):
+        problems.append("見出しに見た目の注記が無い")
     # M4 何で作ったか
     meta = dict(re.findall(r'<meta name="screen-spec-([a-z]+)" content="([^"]*)">', page))
     if meta.get("version") != f"v{upto}":
@@ -658,6 +662,7 @@ def run_cases(plugin: Path, sibling: Path, work: Path, only: str | None = None) 
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("見出しに見た目の注記を出さない", "。{html.escape(APPEARANCE_NOTE)}</span>", "</span>", "good"),
     ("D- を外さない", "        if not self.internal.search(value):\n            return value\n",
      "        return value\n", "good"),
     ("版の中の描き方で止めない", "    if forbidden:\n", "    if False:\n", "renderers-in-version"),
@@ -743,6 +748,7 @@ def reference_mismatches(module, mock: str, tables: str) -> list[str]:
     output = table_cells(section(mock, "## 出力"))
     same("出力の置き場所", f"`<docs の親>/{module.OUT_DIR}/v<n>/`", output.get("出力の置き場所"))
     same("出力のファイル", f"`{module.OUT_NAME}`", output.get("出力のファイル"))
+    same("見出しの注記", f"`{module.APPEARANCE_NOTE}`", output.get("見出しの注記"))
     renderers = table_cells(section(mock, "## 描き方の差し替え"))
     same("描き方の置き場所", f"`<docs の親>/{module.RENDERERS}/`（版の外）", renderers.get("置き場所"))
     same("描き方のファイルの名前", f"`<画面ID>{module.RENDERER_SUFFIX}`", renderers.get("ファイルの名前"))
@@ -767,6 +773,7 @@ REFERENCE_MUTATIONS = [
     ("埋め込む列", "| 遷移 | `番号`・`遷移元`・`きっかけ`・`操作`・`条件`・", "| 遷移 | `番号`・`遷移元`・`きっかけ`・`条件`・"),
     ("埋め込む Q&A の列", "| Q&A | `No`・`質問`・`選択肢`・`推奨`・`回答`・`状態` |", "| Q&A | `No`・`質問`・`選択肢`・`推奨`・`回答`・`推奨の理由`・`状態` |"),
     ("Q&A の行の分け方", "| `未反映` | `回答` があり、", "| `回答はあるが未反映` | `回答` があり、"),
+    ("見出しの注記", "| 見出しの注記 | `確かめるのは項目・操作・遷移で、見た目（色・余白・フォント）は確かめる対象ではない` |", "| 見出しの注記 | `見た目は確かめる対象ではない` |"),
 ]
 
 

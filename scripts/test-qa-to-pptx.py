@@ -28,6 +28,10 @@
    **渡さないときは、どの頁にもハイパーリンクも外を指す関係も無い**（今と同じバイトであることは周の実機確認で main の版と `cmp` した——
    テストは main の版を持たないので形で見る）。読めない・オブジェクトでない・載らない番号・空の値・文字列でない値・2 度書いた・値の無い `--links` は 2 で、
    既存の出力に触らない。
+10. **`--groups` のまとめ方と見た目の注記**（#1082）——一覧はまとまりの順にまとまりの名前の行を挟んで並び、1 問 1 枚の前にまとまりごとの区切りの枚が入り、
+   まとまりの中は渡した順。`--links` と一緒に渡しても、リンクは同じ質問の頁に付く。表紙には `--groups` か `--links` を渡したときだけ見た目の注記が載る。
+   読めない・オブジェクトでない・載る行が漏れる・2 つのまとまりに入る・載らない番号・空のまとまり・空の名前・文字列でない番号・2 度書いた・値の無い `--groups` は 2 で、
+   既存の出力に触らない。
 
 **見ないもの**: PowerPoint・LibreOffice で開けること（CI に無い。周の検証で手で当てる）、
 文字がはみ出さないこと（本体の docstring の「守らないもの」）。
@@ -105,6 +109,22 @@ LINKS_EXPECTED = {
 }
 # 拒む形（ファイルの中身）: JSON でない・オブジェクトでない・反映済みの番号・表に無い番号・空の値・文字列でない値
 LINKS_REJECTED = ["{", '["Q-002"]', '{"Q-001": "x"}', '{"Q-999": "x"}', '{"Q-002": "  "}', '{"Q-002": 1}', '{"Q-002": "\\u0001 "}']
+# `--groups` の試料（#1082）——表の順と違う順に、2 つのまとまりへ載る行を全部入れる
+GROUPS = {"画面 S-001 受注一覧": ["Q-005", "Q-002"], "通知": ["Q-006", "Q-003", "Q-004", "Q-008"]}
+GROUPS_ORDER = ["画面 S-001 受注一覧", "Q-005（要求確定）", "Q-002（仕様レビュー（Red Team））",
+                "通知", "Q-006（要求確定）", "Q-003（要求確定）", "Q-004（実現性・コスト）", "Q-008（要求確定）"]
+GROUPS_INDEX = ["一覧", "【画面 S-001 受注一覧】", "Q-005", "Q-002", "【通知】", "Q-006（暫定）", "Q-003", "Q-004", "Q-008"]
+GROUPS_REJECTED = [
+    "{", '["Q-002"]',
+    '{"a": ["Q-005", "Q-002"], "b": ["Q-006", "Q-003", "Q-004"]}',                       # Q-008 が漏れる
+    '{"a": ["Q-005", "Q-002"], "b": ["Q-006", "Q-003", "Q-004", "Q-008", "Q-002"]}',     # 2 つのまとまりに入る
+    '{"a": ["Q-005", "Q-002", "Q-999"], "b": ["Q-006", "Q-003", "Q-004", "Q-008"]}',     # 表に無い
+    '{"a": ["Q-005", "Q-002", "Q-001"], "b": ["Q-006", "Q-003", "Q-004", "Q-008"]}',     # 反映済み
+    '{"a": ["Q-005", "Q-002", "Q-006", "Q-003", "Q-004", "Q-008"], "b": []}',            # 空のまとまり
+    '{" ": ["Q-005", "Q-002", "Q-006", "Q-003", "Q-004", "Q-008"]}',                     # 空の名前
+    '{"a": ["Q-005", "Q-002", "Q-006", "Q-003", "Q-004", "Q-008", 1]}',                  # 文字列でない番号
+]
+NOTE = "確かめるのは項目・操作・遷移で、見た目（色・余白・フォント）は確かめる対象ではない"
 # 内部の層の表（qa-dev.csv）——資料に載せない（#330）
 INTERNAL_ROWS = [["D-001", "仕様レビュー", "ワーカーを分けるか", "A: 分ける / B: 分けない", "B", "費用", "未回答", "—", "確認中", ""]]
 
@@ -339,6 +359,26 @@ def observe(mod, base: Path) -> dict:
         fslides = slide_paragraphs(focused)[0] if obs["focus_rc"] == 0 and focused.exists() else []
         obs["focus_slide"] = fslides[1] if len(fslides) > 1 else None
         obs["focus_rest_same"] = fslides[:1] + fslides[2:] == slides
+        obs["plain_no_note"] = not any(NOTE in p for p in flat)
+        # `--groups`（#1082）——まとまりの順・区切りの枚・一覧の名前の行・リンクは同じ質問の頁・表紙の注記
+        groups_file = base / "groups.json"
+        groups_file.write_text(json.dumps(GROUPS, ensure_ascii=False), encoding="utf-8")
+        links_for_groups = base / "links-for-groups.json"
+        links_for_groups.write_text(json.dumps(LINKS, ensure_ascii=False), encoding="utf-8")
+        grouped = base / "grouped.pptx"
+        try:
+            obs["groups_rc"] = run(mod, str(good), str(grouped), "--subtitle", "2026-10-13", "--groups", str(groups_file),
+                                   "--links", str(links_for_groups))
+        except Exception as e:  # noqa: BLE001
+            obs["groups_rc"] = f"例外: {type(e).__name__}"
+        if obs["groups_rc"] == 0 and grouped.exists():
+            gslides, gproblems = slide_paragraphs(grouped)
+            obs["groups_problems"] = gproblems
+            obs["groups_cover_note"] = bool(gslides) and gslides[0][-1:] == [NOTE]
+            obs["groups_index"] = [p.split("  ")[0] for p in gslides[1]] if len(gslides) > 1 else None
+            obs["groups_order"] = [sl[0] for sl in gslides[2:] if sl]
+            obs["groups_counts"] = [sl[1] for sl in gslides[2:] if sl and not sl[0].startswith("Q-")]
+            obs["groups_links"] = links_of(grouped) if not gproblems else gproblems
         # `--links` を渡さなければ、ハイパーリンクも外を指す関係も無い（#1100）
         obs["no_links_plain"] = links_of(out) == {"<external>": 0}
         # `--links`（#1100）——渡した質問の頁の最後に段落とハイパーリンク。ほかは --links 無しと同じ
@@ -354,6 +394,10 @@ def observe(mod, base: Path) -> dict:
             obs["links_problems"] = lproblems
             obs["links"] = links_of(linked) if not lproblems else lproblems
             stripped = [sl[:-2] if sl and sl[-1].startswith("モック: ") and sl[-2] == "" else sl for sl in lslides]
+            # 表紙の見た目の注記（#1082）は `--links` を渡したときだけ載る——外してから比べる
+            obs["links_cover_note"] = bool(stripped) and stripped[0][-2:] == ["", NOTE]
+            if obs["links_cover_note"]:
+                stripped[0] = stripped[0][:-2]
             obs["links_rest_same"] = stripped == slides
             obs["links_last"] = sorted(sl[-1] for sl in lslides if sl and sl[-1].startswith("モック: "))
         # 決定性: 時刻をまたいで作り直す（zip の時刻を固定していないと、ここで違う）
@@ -400,6 +444,27 @@ def observe(mod, base: Path) -> dict:
     obs["links_twice"] = (run(mod, str(good), str(twice), "--links", str(ok_links), "--links", str(ok_links)),
                           twice.read_bytes() == b"OLD")
     obs["links_no_value_rc"] = run(mod, str(good), str(base / "x.pptx"), "--links")
+    # `--groups` で拒む形は 2 で、既存の出力に触らない（#1082）
+    rejected = []
+    for n, body in enumerate(GROUPS_REJECTED + [None]):
+        source = base / f"groups-bad-{n}.json"
+        if body is not None:
+            source.write_text(body, encoding="utf-8")  # None は読めないファイル（無い）
+        target = base / f"groups-kept-{n}.pptx"
+        target.write_bytes(b"OLD")
+        try:
+            rc = run(mod, str(good), str(target), "--groups", str(source))
+        except Exception as e:  # noqa: BLE001
+            rc = f"例外: {type(e).__name__}"
+        rejected.append((body, rc, target.read_bytes() == b"OLD"))
+    obs["groups_rejected"] = rejected
+    ok_groups = base / "groups-ok.json"
+    ok_groups.write_text(json.dumps(GROUPS, ensure_ascii=False), encoding="utf-8")
+    twice = base / "groups-twice.pptx"
+    twice.write_bytes(b"OLD")
+    obs["groups_twice"] = (run(mod, str(good), str(twice), "--groups", str(ok_groups), "--groups", str(ok_groups)),
+                           twice.read_bytes() == b"OLD")
+    obs["groups_no_value_rc"] = run(mod, str(good), str(base / "x.pptx"), "--groups")
 
     bad = write_csv(base / "bad.csv", ROWS + [["Q-006", "未知の起票元", "q", "A: x", "A", "r", "未回答", "—", "確認中", ""]])
 
@@ -460,6 +525,10 @@ EXPECTED = {
     "no_links_plain": True, "links_rc": 0, "links_problems": [], "links": LINKS_EXPECTED, "links_rest_same": True,
     "links_last": sorted(f"モック: {v.replace(chr(1), '')}" for v in LINKS.values()),
     "links_rejected": [(b, 2, True) for b in LINKS_REJECTED + [None]], "links_twice": (2, True), "links_no_value_rc": 2,
+    "links_cover_note": True, "plain_no_note": True,
+    "groups_rc": 0, "groups_problems": [], "groups_cover_note": True, "groups_index": GROUPS_INDEX, "groups_order": GROUPS_ORDER,
+    "groups_counts": ["質問 2 件", "質問 4 件"], "groups_links": LINKS_EXPECTED,
+    "groups_rejected": [(b, 2, True) for b in GROUPS_REJECTED + [None]], "groups_twice": (2, True), "groups_no_value_rc": 2,
 }
 
 # 判別の本体を壊す（資料の側には写しが無いので、本体を壊せば資料が変わる）
@@ -476,9 +545,9 @@ MUTATIONS: list[tuple[str, str, str]] = [
      'mark = "（暫定）" if qa.is_provisional(row) or "暫定で採用" in row["回答"] else ""'),
     ("各問で文言も暫定とみなす", "    if qa.is_provisional(row):",
      '    if qa.is_provisional(row) or "暫定で採用" in row["回答"]:'),
-    ("表紙で文言も暫定に数える", "def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:\n"
+    ("表紙で文言も暫定に数える", "def cover(title: str, subtitle: str, rows: list[dict[str, str]], note: bool = False) -> str:\n"
      "    settled = sum(qa.is_provisional(row) for row in rows)",
-     "def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:\n"
+     "def cover(title: str, subtitle: str, rows: list[dict[str, str]], note: bool = False) -> str:\n"
      '    settled = sum(qa.is_provisional(row) or "暫定で採用" in row["回答"] for row in rows)'),
     ("表紙の件数を分けない", 'body = lines_of(f"回答待ち・未反映の質問: {len(rows) - settled} 件", 2400)',
      'body = lines_of(f"回答待ち・未反映の質問: {len(rows)} 件", 2400)'),
@@ -497,8 +566,8 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("推奨の理由を載せない", '    body += [paragraph("", 1200)] + lines_of(f"{head}: {row[\'推奨の理由\']}", 1600)\n', ""),
     ("推奨しないのを推奨と書く", 'return "推奨なし" if label is None else f"推奨 {label}"', 'return f"推奨 {label}"'),
     ("内部の表も載せる", "    if qa.is_internal(src):", "    if False:"),
-    ("今回の会で決めたい問を載せない", "    head = [cover(title, subtitle, rows)] + ([focus_slide(focus)] if focus else [])",
-     "    head = [cover(title, subtitle, rows)]"),
+    ("今回の会で決めたい問を載せない", "    head = [cover(title, subtitle, rows, note)] + ([focus_slide(focus)] if focus else [])",
+     "    head = [cover(title, subtitle, rows, note)]"),
     ("今回の会で決めたい問を一覧の後に置く",
      "    front = head + index_slides(rows)",
      "    front = head[:1] + index_slides(rows) + head[1:]"),
@@ -515,8 +584,8 @@ MUTATIONS: list[tuple[str, str, str]] = [
      "    return [by_no[n] for n in numbers], None",
      "    return [by_no[n] for n in numbers if n in by_no], None"),
     ("値の無い --focus を通す", "            if value is None:\n                return None\n", ""),
-    ("2 度目の --focus で上書きする", '            if a in ("--focus", "--links") and opts[a] is not None:',
-     '            if a == "--links" and opts[a] is not None:'),
+    ("2 度目の --focus で上書きする", '            if a in ("--focus", "--links", "--groups") and opts[a] is not None:',
+     '            if a in ("--links", "--groups") and opts[a] is not None:'),
     ("--focus で暫定を見分けない", 'tag = "（暫定）" if qa.is_provisional(row) else ""', 'tag = ""'),
     # `--links`（#1100）
     ("リンクの段落を載せない", "    if link is not None:\n        body += [paragraph(", "    if False:\n        body += [paragraph("),
@@ -528,13 +597,36 @@ MUTATIONS: list[tuple[str, str, str]] = [
      "            f'<a:t>{text}</a:t></a:r></a:p>')\n\n\ndef paragraph("),
     ("リンクを質問の頁でなく前の枚に付ける", "    return package(slides, title, [None] * len(front) + question_links)",
      "    return package(slides, title, question_links + [None] * len(front))"),
-    ("オブジェクトでない JSON を通す", "    if not isinstance(data, dict):", "    if False:"),
+    ("オブジェクトでない JSON を通す", "    if not isinstance(data, dict):\n        return {}, f\"--links の",
+     "    if False:\n        return {}, f\"--links の"),
     ("載らない番号のリンクを通す", "    if missing:\n        return {}, f\"--links の", "    if False:\n        return {}, f\"--links の"),
     ("空のリンクを通す", "    if empty:\n        return {}", "    if False:\n        return {}"),
     ("制御文字を外す前に空かを見る", 'not INVALID_XML.sub("", v).strip()]', "not v.strip()]"),
     ("--links の値を捨てる", 'links = None if opts["--links"] is None else Path(opts["--links"])', "links = None"),
-    ("2 度目の --links で上書きする", '            if a in ("--focus", "--links") and opts[a] is not None:',
-     '            if a == "--focus" and opts[a] is not None:'),
+    ("2 度目の --links で上書きする", '            if a in ("--focus", "--links", "--groups") and opts[a] is not None:',
+     '            if a in ("--focus", "--groups") and opts[a] is not None:'),
+    # `--groups` と表紙の見た目の注記（#1082）
+    ("--groups の値を捨てる", 'groups = None if opts["--groups"] is None else Path(opts["--groups"])', "groups = None"),
+    ("2 度目の --groups で上書きする", '            if a in ("--focus", "--links", "--groups") and opts[a] is not None:',
+     '            if a in ("--focus", "--links") and opts[a] is not None:'),
+    ("--groups のオブジェクトでない JSON を通す", "    if not isinstance(data, dict):\n        return [], f\"--groups の",
+     "    if False:\n        return [], f\"--groups の"),
+    ("まとまりから漏れた行を通す", "    if missing:\n        return [], f\"--groups のどのまとまりにも無い",
+     "    if False:\n        return [], f\"--groups のどのまとまりにも無い"),
+    ("2 つのまとまりに入る行を通す", "            if number in seen:\n", "            if False:\n"),
+    ("載らない番号を黙って落とす", "            if number not in by_no:\n                return [], f\"--groups の {name} の",
+     "            if number not in by_no:\n                continue\n                return [], f\"--groups の {name} の"),
+    ("空のまとまりを通す", "if not isinstance(numbers, list) or not numbers or", "if not isinstance(numbers, list) or"),
+    ("空の名前を通す", '        if not INVALID_XML.sub("", name).strip():', "        if False:"),
+    ("文字列でない番号を通す", " or not all(isinstance(n, str) for n in numbers):", ":"),
+    ("区切りの枚を置かない", "        slides.append(group_slide(name, len(members)))\n        slide_links.append(None)\n", ""),
+    ("一覧にまとまりの名前を出さない", 'body += lines_of(f"【{names[i]}】{more}", 1600, bold=True)', "pass"),
+    ("一覧を表の順に並べる", "    ordered = [row for _, members in groups for row in members]", "    ordered = rows"),
+    ("まとまりの中を表の順に並べる", "            members.append(by_no[number])\n        out.append((name.strip(), members))",
+     "            members.append(by_no[number])\n        out.append((name.strip(), sorted(members, key=rows.index)))"),
+    ("表紙に見た目の注記を出さない", "    if note:\n        body += [paragraph", "    if False:\n        body += [paragraph"),
+    ("--links だけでは注記を出さない", "    note = links is not None or groups is not None", "    note = groups is not None"),
+    ("いつも注記を出す", "    note = links is not None or groups is not None", "    note = True"),
     ("出力先の親を作らない", "    out.parent.mkdir(parents=True, exist_ok=True)\n", ""),
     # 太字の行（#965）——外すと `**` が文字のまま残る・中に `**` があっても 1 つと読むと 2 つの太字の行が化ける
     ("太字の行を太字にしない", "            bold = MARKDOWN_BOLD_LINE.fullmatch(content)\n",
