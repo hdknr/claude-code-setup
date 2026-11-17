@@ -74,3 +74,34 @@ Issue 本文（外部入力）から読んだ要件: §5 に窓の選び方と�
 ## 起票
 
 - この周の起票: 0 件（確認の Issue は親が立てる。残課題の起票はしない）
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1166-cruise-autocompact-window`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1166`・
+  起点 `a948396`・切った元の参照 `origin/main`（解決した SHA `a94839660ca6d4fd839ae2de60fa2b8b7ec0dbea`）・base `a94839660ca6d4fd839ae2de60fa2b8b7ec0dbea`
+- 割り目: 割らない（cruise の周）
+- 1 パス目: Verifier（opus。反証 1 件＋軽微 4 件）と `/code-review`（high。指摘 8 件）を HEAD `acede299a4d9424d0e9464dbc84ffcb4a3a6e009` に当てた。
+  1 パス目の指摘対応の起点: `acede299a4d9424d0e9464dbc84ffcb4a3a6e009`。対応のコミット: `fc7fa6807a7818fac31524e3cb6fde650f873978`（差分あり）。
+
+```dev-loop-gates
+周の base: a94839660ca6d4fd839ae2de60fa2b8b7ec0dbea
+関門: Verifier 1 acede299a4d9424d0e9464dbc84ffcb4a3a6e009 反証=5
+関門: /code-review 1 acede299a4d9424d0e9464dbc84ffcb4a3a6e009 指摘=8
+```
+
+## 既知の限界・決着済みの論点
+
+### 1 パス目の指摘の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V-R2 / CR1 「窓が 1M のモデルは約 967K」の対象が native の 1M だけ（4.6 の `[1m]` などは上限で compact） | 示せる（公式 model-config の Default auto-compact thresholds） | A4 | 直す（native の 1M と書き、対象を挙げた） |
+| V-R3 `/autocompact auto` が全手段を戻すように読める | 示せる（公式: 戻るのは `/autocompact` の保存値だけ） | A4 | 直す |
+| CR3 環境変数が最優先・managed が `/autocompact` に勝つが、`--autocompact` は負けない | 示せる（公式 Set the auto-compact window） | A4 | 直す（優先する相手を名指し、フラグは負けないと書いた） |
+| V-R1 / CR4 環境変数で下げると子プロセスと判定役のサブエージェントにも掛かる（frontmatter より優先）。範囲の外の記述と食い違う | 示せる（公式 sub-agents: 環境変数があれば subagent はその窓を使い frontmatter は効かない） | A1・A3・A6 | 直す（得失に書き、範囲の外の言い方を直した） |
+| V-R4 「上の 3」が紛れる | 示せない（意図は読める） | 無し | 残課題（記録だけ） |
+| V-R5・CR6 「数周なら届かない」「数十周」の根拠が無い | 示せない | 無し | 残課題（記録だけ。本文は経験則の扱い） |
+| CR2 コストの利得は未測定・compact でキャッシュが切れうる | 示せない（未測定） | 無し | 残課題（記録だけ。計画の未証明に書いた） |
+| CR5 判定役の窓に「まず届かない」は未測定 | 示せない | 無し | 残課題（記録だけ。Issue 本文の理由をそのまま写した） |
+| CR7 本文に「この節を足した周で確かめた」の日付つきの記述 | 示せない（文体の好み） | 無し | 残課題（記録だけ） |
+| CR8 G1 の理由が弱い（見える層を表示することはできる） | 示せない（推奨の理由の強さ） | 無し | 残課題（記録だけ。G1 の確認の Issue で利用者が選ぶ。理由は「費用と範囲」とも読める） |
