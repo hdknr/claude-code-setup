@@ -246,7 +246,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
     ——CI は各スクリプトを個別のステップとして呼ぶ。そのほうがどれが落ちたか UI に出る）。
-    **中で並列に回す**（#430。既定は CPU の数、`--jobs 1` で直列。**並列で安全である前提と出力の順は docstring を正とする**）
+    **中で並列に回す**（#430。既定は CPU の数、`--jobs 1` で直列。**並列で安全である前提と出力の順は docstring を正とする**）。
+    **入力が前回の緑から変わっていない回帰テストは `CACHED` として回さない**（#1151。飛ばすかはハッシュで機械が決める。`--no-cache` で全部。
+    **何を入力に数え、何を取りこぼすかは docstring を正とする**——取りこぼしの砦は、全部回す PR 側の CI）
+    - `check_all_trace/usercustomize.py` - 上のキャッシュが、回帰テストとその子の Python の読んだものを集める audit hook（#1151。
+      **`check-all.py` が `PYTHONPATH` で差し込むだけで、手で読み込まない**。`sitecustomize` にしないのは Homebrew の Python が自前のものを持つから）
   - `check-plugin-versions.py` - カタログ構造と version 一致。**`agents/` の定義が許可リストで、
     読み取りと `Bash` 以外のツールと `model:` を持たないこと**も見る（#217）
   - `check-version-bump.py` - 中身を変えたのに version を上げていない差分（PR 限定）。
@@ -829,6 +833,10 @@ git diff --name-status --no-renames HEAD...origin/main -- scripts/ 'plugins/*/sc
 ```bash
 python3 scripts/check-all.py        # 歯止めと回帰テストを全部（本数は出力が言う）
 ```
+
+**入力が変わっていない回帰テストは `CACHED` になる**（#1151）——飛ばすかを決めるのは人ではなくハッシュなので、
+この節の「選ばない」とは食い違わない。**`CACHED` は回していない**（`OK` と数えない）。全部回したいときは `--no-cache`。
+**取りこぼしうる形と、何を入力に数えるかは `check-all.py` の docstring を正とする。**
 
 **「この編集はあの検査に関係ない」という判断が、この型の事故を作る**
 ——**関係の有無を判断する側が間違える。** #110 の周では、直前の編集のあと
