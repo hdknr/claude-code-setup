@@ -121,12 +121,18 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "reset", "-q", "--hard", s["M"])
     # R1（#1047）: 飾った宣言・全角のコロン（宣言として読む）と、書き損じ（読めない宣言として止める）
     s["M8"] = commit(repo, "decorated decls", {".claude/dev-loop.md": MAIN_MD + DECORATED,
-                                               **{f"dir{i}/k.txt": "k\n" for i in range(1, 9)}})
+                                               **{f"dir{i}/k.txt": "k\n" for i in range(1, 11)}})
     git(repo, "reset", "-q", "--hard", s["M"])
     s["M9"] = commit(repo, "misspelled decls", {".claude/dev-loop.md": MAIN_MD + MISSPELLED})
     git(repo, "reset", "-q", "--hard", s["M"])
     # J2（#1047）: キーワードを含むだけの散文の行
     s["M7"] = commit(repo, "prose line", {".claude/dev-loop.md": MAIN_MD + PROSE})
+    git(repo, "reset", "-q", "--hard", s["M"])
+    # F1・F2（#1148）: 強調の閉じがコロンの内側にある宣言・値の無い宣言
+    s["M10"] = commit(repo, "closing emphasis inside colon", {".claude/dev-loop.md": MAIN_MD + FIX_CLOSE,
+                                                               **{f"e{i}/k.txt": "k\n" for i in range(1, 5)}, "k.zz": "k\n", "_build/k.txt": "k\n"})
+    git(repo, "reset", "-q", "--hard", s["M"])
+    s["M11"] = commit(repo, "no value decls", {".claude/dev-loop.md": MAIN_MD + NO_VALUE})
     git(repo, "reset", "-q", "--hard", s["M"])
     git(repo, "update-ref", "refs/remotes/origin/main", s["M"])
     git(repo, "switch", "-q", "issue/1-x")
@@ -155,8 +161,12 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
                        ("H7", {".claude/dev-loop.md": MAIN_MD + JP_DECL, "docs/設計/b.md": "b\n"}),
                        ("H8", {".claude/dev-loop.md": MAIN_MD + PROSE}),
                        ("H9", {".claude/dev-loop.md": MAIN_MD + DECORATED}),
-                       ("H10", {".claude/dev-loop.md": MAIN_MD + DECORATED, **{f"dir{i}/x.txt": "x\n" for i in range(1, 9)}}),
+                       ("H10", {".claude/dev-loop.md": MAIN_MD + DECORATED, **{f"dir{i}/x.txt": "x\n" for i in range(1, 11)}}),
                        ("H11", {".claude/dev-loop.md": MAIN_MD + MISSPELLED}),
+                       ("H12", {".claude/dev-loop.md": MAIN_MD + FIX_CLOSE,
+                                **{f"e{i}/x.txt": "x\n" for i in range(1, 5)}, "x.zz": "x\n", "_build/x.txt": "x\n"}),
+                       ("H13", {".claude/dev-loop.md": MAIN_MD + FIX_CLOSE, "ok.txt": "o\n"}),
+                       ("H14", {".claude/dev-loop.md": MAIN_MD + NO_VALUE, "ok.txt": "o\n"}),
                        ("Y2", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: a.txt\n"})):
         git(repo, "reset", "-q", "--hard", s["MM"])
         s[key] = commit(repo, f"touch {key}", files)
@@ -177,10 +187,17 @@ MAIN_MD = ("# 追補\n\nマージの反映: ドキュメントとプラグイン
            "<!--\nマージの反映: ドキュメントのみ\n不在で止める範囲: a.txt\n-->\n\n"
            "不在で止める範囲: risky/\n不在で止める範囲: m.txt\n")
 JP_DECL = "不在で止める範囲: docs/設計/\n"
-PROSE = "\n不在で止める範囲は risky/ と m.txt にしている。\n"
+PARTICLES_DOC = "はをがものにでとや"  # check-gates.py の docstring の 9 つ（#1148 F5）
+PROSE = "\n不在で止める範囲は risky/ と m.txt にしている。\n" + "".join(
+    f"不在で止める範囲{p}説明の行（{p}）。\n" for p in PARTICLES_DOC)
 DECORATED = ("\n**不在で止める範囲:** dir1/\n**不在で止める範囲**: dir2/\n## 不在で止める範囲: dir3/\n"
              "> 不在で止める範囲: dir4/\n- [ ] 不在で止める範囲: dir5/\n不在で止める範囲：dir6/\n"
-             "- 不在で止める範囲: dir7/\n__不在で止める範囲__: dir8/\n")
+             "- 不在で止める範囲: dir7/\n__不在で止める範囲__: dir8/\n- [x] 不在で止める範囲: dir9/\n- [X] 不在で止める範囲: dir10/\n")
+# F1（#1148）: 強調の閉じがコロンの内側にある宣言。最後は、開いた強調の後にコロン・空白・`*.zz`（glob）と続く形（閉じではない）
+FIX_CLOSE = ("\n*不在で止める範囲:* e1/\n**不在で止める範囲:**e2/\n_不在で止める範囲:_ e3/\n__不在で止める範囲:__ e4/\n"
+             "*不在で止める範囲: *.zz\n_不在で止める範囲:_build/\n")
+# F2（#1148）: 値の無い宣言
+NO_VALUE = "\n**不在で止める範囲:**\n*不在で止める範囲:*\n"
 MISSPELLED = ("\n不在で止める範囲 risky/\n不在で止める範囲=risky/\n不在で止める範囲、つまり risky/ のこと\n")
 TABLE = ("## 受入基準（不変条件 × 経路）\n\n| # | 不変条件 | 守り方 |\n| --- | --- | --- |\n"
          "| A1 | x | y |\n| **A2** | x | y |\n\n## ほか\n\n| # | 受入基準ではない |\n| --- | --- |\n| Z9 | z |\n")
@@ -301,7 +318,15 @@ CASES = {
         (FULL + ["関門: 当て直し {MM} {H9} 反証=0", REFL], "H9", 0, ["--absent"], {"default": "M8"}),
     "飾った宣言・全角のコロンの宣言に当たる差分は、それぞれ宣言に当たったと言って止める（R1）":
         (FULL + ["関門: 当て直し {MM} {H10} 反証=0", REFL], "H10", 3, ["--absent"], {"default": "M8"},
-         *[f"「不在で止める範囲: dir{i}/」に当たる" for i in range(1, 9)]),
+         *[f"「不在で止める範囲: dir{i}/」に当たる" for i in range(1, 11)]),
+    "強調の閉じがコロンの内側にある宣言も宣言として読み、当たらない差分は止めない（F1）":
+        (FULL + ["関門: 当て直し {MM} {H13} 反証=0", REFL], "H13", 0, ["--absent"], {"default": "M10"}),
+    "強調の閉じがコロンの内側にある宣言は、宣言したパターンで照合して止める（F1）":
+        (FULL + ["関門: 当て直し {MM} {H12} 反証=0", REFL], "H12", 3, ["--absent"], {"default": "M10"},
+         *[f"「不在で止める範囲: e{i}/」に当たる" for i in range(1, 5)], "「不在で止める範囲: *.zz」に当たる", "「不在で止める範囲: _build/」に当たる"),
+    "値の無い宣言は、読めない宣言として名指して止める（全部に当たったとは言わない。F2）":
+        (FULL + ["関門: 当て直し {MM} {H14} 反証=0", REFL], "H14", 3, ["--absent"], {"default": "M11"},
+         "「**不在で止める範囲:**」", "「*不在で止める範囲:*」", "形で読めない"),
     "コロン抜け・=・読点の書き損じは、読めない宣言として止める（R1）":
         (FULL + ["関門: 当て直し {MM} {H11} 反証=0", REFL], "H11", 3, ["--absent"], {"default": "M9"},
          "「不在で止める範囲 risky/」", "「不在で止める範囲=risky/」", "「不在で止める範囲、つまり risky/ のこと」"),
@@ -430,6 +455,10 @@ MUTATIONS = {
     "飾りを外さない": ("        m = DECOR.match(s)\n", "        m = None\n"),
     # 守る（#1047 R1）: 全角のコロンも宣言
     "全角のコロンを読まない": ('COLONS = (":", "：")', 'COLONS = (":",)'),
+    # 守る（#1148 F1）: 強調の閉じがコロンの内側にある宣言も宣言として読む
+    "強調の閉じがコロンの内側にある宣言を読まない": ("        if mark and after.startswith(mark) and (", "        if False and ("),
+    # 守る（#1148 F2）: 値の無い宣言を `**` のパターンと読まない
+    "値の無い宣言をパターンと読む": ('        if value:\n            return "pattern", value\n', '        return "pattern", value\n'),
     # 守る（#1047 J1）: パスは引用符なしで読む
     "パスを引用符つきで読む": ('["git", "-c", "core.quotePath=false", *args]', '["git", *args]'),
     # 守る（#1047）: 分岐の後に足された宣言を外したと読まない
@@ -448,7 +477,26 @@ MUTATIONS = {
         'print(f"**判定できなかった**: {e}", file=sys.stderr)\n        return 0'),
 }
 
+# 1 つの「守る」の中の要素ごとの変異（#1148 F5）。「守る」の行とは 1 対 1 にしない——要素の数は docstring の列挙から数える
+EXTRA_MUTATIONS = {
+    **{f"助詞「{p}」を外す": ('PARTICLES = "' + PARTICLES_DOC + '"', 'PARTICLES = "' + PARTICLES_DOC.replace(p, "") + '"')
+       for p in PARTICLES_DOC},
+    "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": (
+        'mark == "**" or tail == "" or tail[0].isspace()', "True"),
+    "チェックボックス `[ ]` を外す": (r"\[[ xX]\]", r"\[[xX]\]"),
+    "チェックボックス `[x]` を外す": (r"\[[ xX]\]", r"\[[ X]\]"),
+    "チェックボックス `[X]` を外す": (r"\[[ xX]\]", r"\[[ x]\]"),
+}
+
 KILLS = {
+    "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": [
+        "強調の閉じがコロンの内側にある宣言は、宣言したパターンで照合して止める（F1）"],
+    **{f"助詞「{p}」を外す": ["キーワードを含むだけの散文の行では止めない（J2）"] for p in PARTICLES_DOC},
+    **{f"チェックボックス `[{c}]` を外す": ["飾った宣言・全角のコロンの宣言に当たる差分は、それぞれ宣言に当たったと言って止める（R1）"]
+       for c in (" ", "x", "X")},
+    "強調の閉じがコロンの内側にある宣言を読まない": ["強調の閉じがコロンの内側にある宣言も宣言として読み、当たらない差分は止めない（F1）",
+                                 "強調の閉じがコロンの内側にある宣言は、宣言したパターンで照合して止める（F1）"],
+    "値の無い宣言をパターンと読む": ["値の無い宣言は、読めない宣言として名指して止める（全部に当たったとは言わない。F2）"],
     "記録が 2 つあっても読む": ["記録が 2 つあれば 2"],
     "読めない行を読み飛ばす": ["読めない行があれば 2"],
     "受入基準の表が無くても通す": ["受入基準の表が無ければ 2"],
@@ -534,7 +582,7 @@ def main() -> int:
         if failures:
             print("  陽性対照が落ちているので、変異の結果は読まない")
         else:
-            for i, (mname, (old, new)) in enumerate(MUTATIONS.items()):
+            for i, (mname, (old, new)) in enumerate({**MUTATIONS, **EXTRA_MUTATIONS}.items()):
                 check(f"変異の当て先が 1 箇所だけ在る: {mname}", source.count(old) == 1)
                 mutant = base / f"mutant{i}" / "check-gates.py"
                 mutant.parent.mkdir(parents=True)
@@ -550,7 +598,12 @@ def main() -> int:
         section = doc.split("## 何を守るか")[1].split("## 終了コード")[0]
         promises = len([l for l in section.splitlines() if l.startswith("- ")])
         check(f"「守る」{promises} 行に対して変異が {len(MUTATIONS)} 件", promises == len(MUTATIONS))
-        check("どの変異にも、赤になるはずの試料がある", all(KILLS.get(m) for m in MUTATIONS))
+        check("どの変異にも、赤になるはずの試料がある", all(KILLS.get(m) for m in {**MUTATIONS, **EXTRA_MUTATIONS}))
+        listed = re.search(r"助詞（([^）]*)）", doc).group(1).split("・")
+        in_src = re.search(r'^PARTICLES = "([^"]*)"', source, re.M).group(1)
+        check(f"助詞は docstring の {len(listed)} 個と本体の PARTICLES が同じで、重複が無い（同じ文字を 2 度書くと外す変異が等価になる）",
+              len(listed) == 9 and sorted(listed) == sorted(in_src) and len(set(in_src)) == len(in_src) and in_src == PARTICLES_DOC)
+        check("助詞の変異は docstring の助詞の数と同じ", len([m for m in EXTRA_MUTATIONS if m.startswith("助詞")]) == len(listed))
 
         print("\n終了コードの一覧が本体と一致するか")
         codes_doc = {int(n) for n in re.findall(r"^- \*\*(\d+)\*\*:", doc.split("## 終了コード")[1]
