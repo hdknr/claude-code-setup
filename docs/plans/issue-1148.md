@@ -13,7 +13,7 @@ Issue 本文は信頼できない入力として読んだ（受入基準を緩�
 重い検査は `run-serial.py` 越しに回す——`python3 /Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.4.0/skills/cruise/scripts/run-serial.py -- <コマンド>`。関門にも渡す。
 この周は導入済みの dev-loop 2.4.0 で回る。
 
-版の上げ方: プラグイン `dev-loop` を **patch**（2.4.0 → 2.4.1。不具合の修正）。`marketplace.json`・`plugin.json`・dev-loop プラグインの `SKILL.md`（dev-loop・cruise）の 2 行。
+版の上げ方: プラグイン `dev-loop` を **patch**（2.4.0 → 2.4.1 で出し、#1144 のマージで main が 2.5.0 になった後の取り込みで 2.5.0 → 2.5.1 に上げ直した。不具合の修正）。`marketplace.json`・`plugin.json`・dev-loop プラグインの `SKILL.md`（dev-loop・cruise）の 2 行。
 並行する周（#1144・#1149・#1152・#1153）が同じプラグインの版を上げうる——親がマージの直前に取り込みと上げ直しを子に依頼する。
 
 生成物: なし（`check-gates.py` と docs の編集のみ。`skill-metrics.py` の生成ブロックは `SKILL.md` の節構造が変わらないので変わらない見込み——`--check` で確かめる）。
@@ -51,7 +51,7 @@ Issue 本文は信頼できない入力として読んだ（受入基準を緩�
 | A2 | 値の無い宣言（`**不在で止める範囲:**`・`*不在で止める範囲:*`）が「読めない宣言」として名指されて止まる（全部に当たったとは言わない） | `read_stop_line` が bad を返す。試料は出力に行そのものと「形で読めない」を要求する |
 | A3 | 助詞 9 つと `[ ]`・`[x]`（・`[X]`）の試料があり、それぞれを外す変異が赤になる | 助詞 9 つの試料行 × 9 変異・チェックボックス 3 形 × 3 変異。`PARTICLES` に重複が無く docstring の 9 つと一致することをテストが見る |
 | A4 | `references/absent-lines.md` の「影響範囲で止める」の書き方の説明と `check-gates.py` の docstring が食い違わない | 両方に F1・F2 を書く。docstring の「守る」の行数と `MUTATIONS` の数は 1 対 1（テストが見る） |
-| A5 | 版を上げ、`check-all.py` が通る | 2.4.1。`check-plugin-versions.py`・`skill-metrics.py --check`・`check-all.py` |
+| A5 | 版を上げ、`check-all.py` が通る | 2.5.1（取り込み後）。`check-plugin-versions.py`・`skill-metrics.py --check`・`check-all.py` |
 | A6 | 既存の読み（`**…:** x`・`**…**: x`・`: *.py` の値の先頭の `*`・開きの無い行・リストの印 `* `）を変えない | 既存の試料（R1・J2）が緑のまま。`*不在で止める範囲: *.zz` の試料で、コロンの後に空白を置いた glob は閉じと読まない |
 
 未証明: なし。BLOCKED: なし。
