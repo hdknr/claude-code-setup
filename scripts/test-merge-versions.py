@@ -47,6 +47,8 @@
 7. **決まりの写しがずれていない**——本体の定数が `references/versions.md` と一致する。**行の単位で重ねる表の一覧（パス・種類・鍵の列・画面を指す列）も**（#1091）。
 10. **行の単位で重ねる画面の表**（#1091）——v2 に `screens.csv` の行を 1 つだけ置くと v1 の画面が残る（陽性対照: 一覧から外す変異で、
    ファイルの単位で重なって v1 の画面が消える）・置き換えは前の位置に・画面を消すと項目と遷移も消える・表の形の誤りは 1。
+11. **成果物の表はファイルの単位で重なる**（#1090）——v2 に v1 の行を 1 つ外した `features.csv` を置くと、重ねた表は v2 の表そのもの
+   （外した行は残らない。陽性対照: 行の単位で重ねる表の一覧に `features.csv` を足す変異で、外した行が残る）。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
@@ -164,6 +166,13 @@ SCREENS_V1 = {
 SCREENS_ADD = {**MAIN, **SCREENS_V1, f"v2/{SD}screens.csv": SCREENS_HEAD + "S-004,設定,setting,Q-003\n"}
 
 
+# 成果物の表はファイルの単位で重ねる（#1090）。v2 は v1 の F-002 を外し、F-003 を変え、F-004 を足した表を丸ごと置く
+FEATURES_HEAD = "id,名前,種類,関係\n"
+FEATURES_V2 = FEATURES_HEAD + "F-001,注文,画面,\nF-003,ポイント v2,API,\nF-004,返品,画面,\n"
+DELIVERABLES = {**MAIN, "v1/requirements/features.csv": FEATURES_HEAD + "F-001,注文,画面,\nF-002,送料,API,\nF-003,ポイント,API,\n",
+                "v2/requirements/features.csv": FEATURES_V2}
+
+
 def with_screens(*removed: str, **v2: str) -> dict[str, str]:
     """MAIN と v1 の画面の表に、v2 の表（キーワードはファイル名の `-` を `_` にしたもの）と removed.csv の行を足す。"""
     tree = {**MAIN, **SCREENS_V1, **{f"v2/{SD}{name.replace('_', '-')}.csv": text for name, text in v2.items()}}
@@ -263,6 +272,9 @@ CASES: list[tuple[str, dict, str, list[str], Callable[[Result], bool]]] = [
     ("画面の表の置き換えは前の位置に", with_screens(screens=SCREENS_HEAD + "S-004,設定,setting,Q-003\nS-002,詳細 v2,detail,Q-003\n"),
      "none", [], lambda r: made(r) and keys(r, "screens.csv") == ["S-001", "S-002", "S-003", "S-004"]
      and "S-002,詳細 v2,detail,Q-003" in r.text(SD + "screens.csv") and "S-002,詳細,detail" not in r.text(SD + "screens.csv")),
+    # 成果物の表（#1090）——v2 の表が丸ごと置き換わり、外した F-002 は残らない
+    ("成果物の表はファイルの単位で重ねる", DELIVERABLES, "none", [],
+     lambda r: main_case(r) and r.text("requirements/features.csv") == FEATURES_V2),
     ("--upto 1 は v1 の画面だけ", SCREENS_ADD, "none", ["--upto", "1"],
      lambda r: made(r) and keys(r, "screens.csv") == ["S-001", "S-002", "S-003"]),
     ("画面を消すと項目と遷移も消える", with_screens("画面,S-002,詳細を一覧に統合した\n"), "none", [],
@@ -590,6 +602,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("2 度消すのを見ない", "if (kind, target) in seen:", "if False:", "同じ対象を 2 度消す"),
     # 行の単位で重ねる画面の表（#1091）。1 つ目は受入基準 1 の陽性対照——一覧から外すとファイルの単位で重なり、v1 の画面が消える
     ("画面の表をファイルの単位で重ねる", '    SCREENS_DATA + "screens.csv": (KIND_SCREEN, "画面ID", ()),\n', "", "画面の表を行の単位で重ねる"),
+    # 成果物の表（#1090）の陽性対照——一覧に features.csv を足すと行の単位で重なり、v2 で外した F-002 が残る
+    ("成果物の表を行の単位で重ねる", '    SCREENS_DATA + "screens.csv": (KIND_SCREEN, "画面ID", ()),\n',
+     '    SCREENS_DATA + "screens.csv": (KIND_SCREEN, "画面ID", ()),\n    "requirements/features.csv": (KIND_FEATURE, "id", ()),\n',
+     "成果物の表はファイルの単位で重ねる"),
     ("画面の表の置き換えを末尾に回す", "            self.tables.setdefault(path, {}).update(rows)\n",
      "            table = self.tables.setdefault(path, {})\n            [table.pop(k, None) for k in rows]\n            table.update(rows)\n",
      "画面の表の置き換えは前の位置に"),
