@@ -141,6 +141,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import signal
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -2033,7 +2034,7 @@ HOOK = SCRIPTS / "check_all_trace" / "usercustomize.py"
 CACHE_HOOK_REL = "scripts/check_all_trace/usercustomize.py"
 CACHE_TESTS = ["t-file.py", "t-list.py", "t-absent.py", "t-child.py", "t-iso.py", "t-sh.py",
                "t-git.py", "t-layout.py", "t-flaky.py", "t-edit.py", "t-import.py", "t-nested.py", "t-fresh.py",
-               "t-gittmp.py"]
+               "t-gittmp.py", "t-strip.py", "t-nous.py", "t-relcwd.py", "t-shell.py", "t-wopt.py", "t-del.py", "t-slow.py", "t-hooked.py"]
 CACHE_OVERRIDE = (
     'GUARDS = [("g.py", [], False)]\n'
     f"TESTS = {CACHE_TESTS!r}\n"
@@ -2081,6 +2082,30 @@ CACHE_FAKES = {
                    "os.makedirs(os.path.join(d, 'data'))\n"
                    "open(os.path.join(d, 'data', 'a.txt'), 'w').write('t')\n"
                    "subprocess.run(['git', '-C', d, 'add', 'data/a.txt'], check=True)\n",
+    # 書く先の変数は残したまま `PYTHONPATH` だけ外した子（hook は入らない——粗い単位。#1151 の 1 パス目）
+    "t-strip.py": "import os, subprocess, sys\n"
+                  "env = {k: v for k, v in os.environ.items() if k != 'PYTHONPATH'}\n"
+                  "subprocess.run([sys.executable, 'plugins/s/read.py'], check=True, env=env)\n",
+    # `PYTHONNOUSERSITE` を足した子（`usercustomize` を読まない——粗い単位）
+    "t-nous.py": "import os, subprocess, sys\n"
+                 "subprocess.run([sys.executable, 'plugins/n/read.py'], check=True, env=dict(os.environ, PYTHONNOUSERSITE='1'))\n",
+    # 相対の cwd で起こした Python でない子（引数は子の cwd で解決する）
+    "t-relcwd.py": "import subprocess\nsubprocess.run(['cat', 'x.txt'], cwd='plugins/u', check=True, capture_output=True)\n",
+    # シェルの文字列の中のパス（`shell=True`）
+    "t-shell.py": "import subprocess\nsubprocess.run('cat plugins/v/y.txt', shell=True, check=True, capture_output=True)\n",
+    # 値を取る `-W` の後ろの `-I`（`ignore` をスクリプトの名前と読まない）
+    "t-wopt.py": "import subprocess, sys\n"
+                 "subprocess.run([sys.executable, '-W', 'ignore', '-I', 'plugins/w/s.py'], check=True)\n",
+    # 回している間に自分の入力を消す
+    "t-del.py": "import contextlib, os\n"
+                "with contextlib.suppress(FileNotFoundError):\n    open('data/del.txt').read()\n"
+                "if os.environ.get('CACHE_T_DEL'):\n    os.remove('data/del.txt')\n",
+    # 合図の変数があれば、始まったことを書いて眠る（中断の段で止められる）
+    "t-slow.py": "import os, time\nopen('data/slow.txt').read()\n"
+                 "m = os.environ.get('CACHE_T_SLOW')\n"
+                 "if m:\n    open(m, 'w').write('started')\n    time.sleep(60)\n",
+    # 環境を引き継いだ子の Python がスクリプトを走らせる（hook が入る——読んだファイルだけが入力で、プラグインの全体ではない）
+    "t-hooked.py": "import subprocess, sys\nsubprocess.run([sys.executable, 'plugins/h/read.py'], check=True)\n",
     "helpmod.py": "X = 1\n",
 }
 CACHE_DATA = {
@@ -2089,6 +2114,12 @@ CACHE_DATA = {
     "plugins/p/s.py": "open('plugins/p/side.txt').read()\n", "plugins/p/side.txt": "side\n",
     "plugins/q/run.sh": "cat plugins/q/other.txt\n", "plugins/q/other.txt": "other\n",
     "plugins/r/read.py": "open('plugins/r/x.txt').read()\n", "plugins/r/x.txt": "x\n",
+    "plugins/s/read.py": "open('plugins/s/x.txt').read()\n", "plugins/s/x.txt": "x\n",
+    "plugins/n/read.py": "open('plugins/n/x.txt').read()\n", "plugins/n/x.txt": "x\n",
+    "plugins/u/x.txt": "x\n", "plugins/v/y.txt": "y\n",
+    "plugins/w/s.py": "open('plugins/w/side.txt').read()\n", "plugins/w/side.txt": "side\n",
+    "plugins/h/read.py": "open('plugins/h/a.txt').read()\n", "plugins/h/a.txt": "a\n", "plugins/h/b.txt": "b\n",
+    "data/del.txt": "del\n", "data/slow.txt": "slow\n",
 }
 GIT_ID = ["-c", "user.email=t@t", "-c", "user.name=t"]
 
@@ -2113,18 +2144,44 @@ def build_cache_repo(root: Path, src: str, hook_src: str) -> Path:
     return root
 
 
-def cache_run(root: Path, *args: str, fail: bool = False, edit: bool = False) -> tuple[int, str]:
-    """偽のリポジトリで本体を回す。`base` は無いので PR 限定の歯止めは無い（偽の歯止めは base を要しない）。"""
-    assert_not_real_repo(root)
+def cache_env(fail: bool = False, edit: bool = False, delete: bool = False, nousersite: bool = False) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("CHECK_ALL_TRACE")}
     env.pop("PYTHONPATH", None)
-    if fail:
-        env["CACHE_T_FAIL"] = "1"
-    if edit:
-        env["CACHE_T_EDIT"] = "1"
+    env.pop("PYTHONNOUSERSITE", None)
+    for flag, key in ((fail, "CACHE_T_FAIL"), (edit, "CACHE_T_EDIT"), (delete, "CACHE_T_DEL"), (nousersite, "PYTHONNOUSERSITE")):
+        if flag:
+            env[key] = "1"
+    return env
+
+
+def cache_run(root: Path, *args: str, **flags: bool) -> tuple[int, str]:
+    """偽のリポジトリで本体を回す。`base` は無いので PR 限定の歯止めは無い（偽の歯止めは base を要しない）。"""
+    assert_not_real_repo(root)
     proc = subprocess.run([sys.executable, str(root / "scripts" / "check-all.py"), "--jobs", "4", *args],
-                          capture_output=True, text=True, cwd=root, env=env, timeout=300)
+                          capture_output=True, text=True, cwd=root, env=cache_env(**flags), timeout=300)
     return proc.returncode, proc.stdout + proc.stderr
+
+
+def cache_interrupt(root: Path) -> bool:
+    """`--no-cache` で回し、`t-slow.py` が眠り始めたら本体に SIGINT を送る。眠りに入ったのを見られたか。"""
+    assert_not_real_repo(root)
+    marker = root.parent / f"{root.name}-slow-started"
+    env = cache_env()
+    env["CACHE_T_SLOW"] = str(marker)
+    proc = subprocess.Popen([sys.executable, str(root / "scripts" / "check-all.py"), "--jobs", "4", "--no-cache"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root, env=env)
+    try:
+        deadline = time.time() + 120
+        while time.time() < deadline and not marker.exists() and proc.poll() is None:
+            time.sleep(0.05)
+        seen = marker.exists()
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=60)
+        return seen
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
 
 
 def ran_tests(out: str) -> set[str]:
@@ -2204,6 +2261,38 @@ def cache_contract(root: Path):
     # 入れ子に渡るのは親の半分（`nested_jobs`）——2 と 3 はどちらも 1 になるので、1 と 3 になる 2 と 6 で比べる。
     rc, out = cache_run(root, "--jobs", "6")
     yield "`--jobs` の値が違っても当たる（キーに入れない）", rc == 0 and only(out, set())
+    touch("plugins/h/b.txt", "b changed\n")
+    rc, out = cache_run(root)
+    yield "hook の入る子は粗い単位にしない（同じプラグインの読んでいないファイルを変えても回さない）", rc == 0 and only(out, dirty())
+    touch("plugins/h/a.txt", "a changed\n")
+    rc, out = cache_run(root)
+    yield "hook の入る子がスクリプトとして読んだファイルを変えると回る（A2）", rc == 0 and only(out, dirty("t-hooked.py"))
+    touch("plugins/s/x.txt", "x changed\n")
+    rc, out = cache_run(root)
+    yield "書く先の変数を残して PYTHONPATH を外した子が読むファイルを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-strip.py"))
+    touch("plugins/n/x.txt", "x changed\n")
+    rc, out = cache_run(root)
+    yield "PYTHONNOUSERSITE の子が読むファイルを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-nous.py"))
+    touch("plugins/u/x.txt", "x changed\n")
+    rc, out = cache_run(root)
+    yield "相対の cwd で起こした子が読むファイルを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-relcwd.py"))
+    touch("plugins/v/y.txt", "y changed\n")
+    rc, out = cache_run(root)
+    yield "シェルの文字列の中のパスを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-shell.py"))
+    touch("plugins/w/side.txt", "side changed\n")
+    rc, out = cache_run(root)
+    yield "-W の値の後ろの -I の子が読む隣のファイルを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-wopt.py"))
+    # 回している間に消えた入力。消した回は記録せず、次も回る（消えたことを「無い」の指紋で記録しない）。
+    touch("data/del.txt", "del changed\n")
+    rc, out = cache_run(root, delete=True)
+    rc2, out2 = cache_run(root)
+    yield "回している間に入力が消えたら記録せず、次も回る（A6）", (
+        rc == 0 and "記録しなかった: t-del.py" in out and rc2 == 0 and only(out2, dirty("t-del.py")))
+    # 中断した回は記録を消さない（入力が同じなら、次は当たる）。
+    rc, out = cache_run(root)
+    seen = cache_interrupt(root)
+    rc2, out2 = cache_run(root)
+    yield "中断した回は記録を書きも消しもしない（A5）", seen and rc2 == 0 and "t-slow.py" in cached_tests(out2) and "t-slow.py" not in ran_tests(out2)
     # 4) git の状態。コミットすると、git を当てたテストだけが回る（配置だけを訊くものは回らない）。
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "-m", "c2"], check=True)
@@ -2225,11 +2314,22 @@ def cache_contract(root: Path):
     (store / "t-file.py.json").write_text("{壊れた")
     rc, out = cache_run(root)
     yield "壊れた記録は無いと扱って回す（A12）", rc == 0 and "t-file.py" in ran_tests(out) and "Traceback" not in out
-    # 8) 集め方・比べ方を直したら全部回る（キー）。
+    # 8) 集め方・比べ方を直したら全部回る（キー）。**先に、hook が入らない回は記録しないことを見る**——
+    # 直した直後は記録が全部古いので、ここで記録されたものだけが次の回に当たる。
     hook = root / "scripts" / "check_all_trace" / "usercustomize.py"
     hook.write_text(hook.read_text() + "\n# 直した\n")
+    rc, out = cache_run(root, nousersite=True)
+    rc2, out2 = cache_run(root, nousersite=True)
+    yield "hook が入らなかった回は記録せず、次も全部回る（A2）", (
+        rc == 0 and ran_tests(out) == every and "記録しなかった: t-file.py" in out
+        and rc2 == 0 and ran_tests(out2) == every)
+    hook.write_text(hook.read_text() + "\n# もう 1 度直した\n")
     rc, out = cache_run(root)
     yield "hook を直すと全部回る（A11）", rc == 0 and ran_tests(out) == every
+    # この回は `__pycache__/helpmod.*.pyc` が在る——import は `.py` を開かない。
+    touch("scripts/helpmod.py", "X = 2\n")
+    rc, out = cache_run(root)
+    yield "`.pyc` から import したモジュールの `.py` を変えると回る（A2）", rc == 0 and only(out, dirty("t-import.py"))
     me = root / "scripts" / "check-all.py"
     me.write_text(me.read_text() + "\n# 直した\n")
     rc, out = cache_run(root)
@@ -2280,8 +2380,21 @@ CACHE_MUTANTS = {
         "        if a and _rel(repo, a, cwd) is not None and os.path.exists(os.path.join(cwd, a)):\n"),
     "hook が import の仕組みの列挙も数える": ("hook", '        return "_bootstrap_external" in caller.f_code.co_filename\n', "        return False\n"),
     "hook が子を記録しない": ("hook", "                spawn(argv, cwd, env)\n", "                pass\n"),
-    "hook が環境を組み直した子も hook が入ると書く": ("hook", "                env_ok = (env.get(\"CHECK_ALL_TRACE_LOG\") or env.get(b\"CHECK_ALL_TRACE_LOG\")) is not None\n",
-                                                     "                env_ok = True\n"),
+    "hook が環境を組み直した子も hook が入ると書く": ("hook", "            env_ok = hooked(os.environ if env is None else env)\n",
+                                                     "            env_ok = True\n"),
+    "hook が環境を引き継いだ子も hook が入らないと書く": ("hook", "            env_ok = hooked(os.environ if env is None else env)\n",
+                                                         "            env_ok = False\n"),
+    "hook が PYTHONPATH の外れた子も hook が入ると書く": ("hook", "        return any(p and os.path.abspath(p) == here for p in paths)\n",
+                                                         "        return True\n"),
+    "hook が PYTHONNOUSERSITE の子も hook が入ると書く": ("hook", '        if env_get(env, "PYTHONNOUSERSITE"):\n            return False\n', ""),
+    "hook が相対の cwd をそのまま書く": ("hook", "        where = os.getcwd() if cwd is None else os.path.join(os.getcwd(), text(cwd))\n",
+                                         "        where = os.getcwd() if cwd is None else text(cwd)\n"),
+    "`.pyc` を元の `.py` に戻さない": ("check-all", "            src = pyc_source(val)\n", "            src = None\n"),
+    "シェルの文字列を語に割らない": ("check-all", "                if any(ch.isspace() for ch in w):\n", "                if False:\n"),
+    "`-W` の値をスクリプトの名前と読む": ("check-all", "        if a in PYTHON_VALUE_OPTS:\n", "        if False:\n"),
+    "消えた入力を変化と見ない": ("check-all", "                if os.stat(p.parent).st_mtime_ns >= since_ns:\n", "                if False:\n"),
+    "テスト自身を読んだ跡が無くても記録する": ("check-all", '    if f"scripts/{name}" not in deps["files"]:\n', "    if False:\n"),
+    "中断した回の記録を消す": ("check-all", '    if ctx["stopping"]():\n        return ok, out, secs', '    if False:\n        return ok, out, secs'),
 }
 
 

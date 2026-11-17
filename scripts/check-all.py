@@ -72,12 +72,16 @@
   回帰テストを回すときに、**そのテストと、環境を引き継いだ子の Python に audit hook を差し込み**（`check_all_trace/usercustomize.py`。
   `PYTHONPATH` の先頭に置く）、**緑だった回に読んだもの**を記録する。次の回は、記録した入力の指紋が全部同じなら `CACHED` として回さない。
 - **入力に数えるもの**:
-    - **開いたファイルの中身**（無かったことも——無いファイルが現れれば回る）。
+    - **開いたファイルの中身**（無かったことも——無いファイルが現れれば回る）。**import が `__pycache__` の `.pyc` だけを開いた
+      モジュールは、元の `.py` を読んだと数える**（`.pyc` が新しければ `.py` は開かれない）。
     - **列挙したディレクトリの名前の一覧**（`os.listdir`・`os.scandir`。中のファイルの中身ではない）。**import の仕組み（`FileFinder`）が
       `sys.path` を列挙するのは数えない**——数えると `scripts/` にファイルを足すたびに全部が回る。
-    - **hook の入らない子**——`-I`・`-E`・`-s`・`-S` で起こした Python・環境を組み直して起こした子・Python でない子（`sh`・`node` など）。
-      その子が読むものは見えないので、**引数に現れた作業ツリーの中のパスを粗い単位にする**——`plugins/<名前>/` の下ならそのプラグインの全体、
-      `scripts/` の下なら `scripts/` の全体、ほかはそのパス。
+    - **hook の入らない子**——`-I`・`-E`・`-s`・`-S` で起こした Python（`-W`・`-X` の値は飛ばして読む）・環境を組み直して起こした子
+      （**書く先の変数が残っていても、`PYTHONPATH` から hook のディレクトリが外れたか `PYTHONNOUSERSITE` を付けたなら入らないと見る**）・
+      Python でない子（`sh`・`node` など）。その子が読むものは見えないので、**引数に現れた作業ツリーの中のパスを粗い単位にする**
+      ——`plugins/<名前>/` の下ならそのプラグインの全体、`scripts/` の下なら `scripts/` の全体、ほかはそのパス。
+      引数は子の cwd（相対の cwd も、起こした側の cwd で絶対にする）で解決する。**空白を含む引数**（`sh -c "<コマンド>"`・`shell=True`・
+      `os.system`）は語に割って同じように見て、語に `git` があれば git の状態も入力にする。
     - **作業ツリーに当てた git**（`-C`・`--git-dir`・cwd で決まる先が作業ツリーの中か、引数が作業ツリーの中を指す）——**git の状態**
       （HEAD の木と、`git status` に出たパスとその中身）を入力にする。**どのファイルを変えても回る。**
       例外は配置だけを訊く `git rev-parse`（`--show-toplevel` など。`GIT_LAYOUT_ARGS`）と、リポジトリを読まないサブコマンド（`GIT_READ_FREE`）。
@@ -86,8 +90,11 @@
 - **入力に数えないもの**: `.git/` の下（git の中身は git コマンドの側で見る）・`__pycache__`・`.pyc`・`.DS_Store`・
   作業ツリーの外（一時ディレクトリなど）。
 - **記録するのは緑だけ。** 落ちた回は記録を消す（入力が同じでも次は回る）。中断した回は書きも消しもしない。
+  **テスト自身（`scripts/<名前>`）を読んだ跡が無い回は記録しない**——hook が入らなかった（`usercustomize` を読まない Python など）。
+  空の依存を記録すると、何を変えても当たりになる。
   **回している間に入力が書き換わった回は記録しない**（`check-all.py` を始めた時刻より新しい mtime・git の状態の変化）。
-  ディレクトリそのものの mtime は見ない——Python が `__pycache__` を書くだけで動く。
+  **依存のファイルが無いときは、親のディレクトリの mtime で見る**（回している間に消えた）。それ以外でディレクトリそのものの mtime は見ない
+  ——Python が `__pycache__` を書くだけで動く。
 - **歯止め（`GUARDS`）は載せない——毎回回す。** 実リポジトリの中身を広く読む（指し先・リンク・版）ので当たらず、
   重いのは `check-mutation-claims.py` だけである。
 - **記録の置き場所**は `git rev-parse --git-common-dir` の下の `check-all-cache/`——**worktree の間で共有する**（中身で引くので安全）。
@@ -104,7 +111,7 @@
 | **CI が回すもののうち、ここに無いもの** | 収録は下の `GUARDS` / `TESTS` が正。**`scripts/` に検査を足してここへ登録し忘れると落ちる**（`test-check-all.py` がそれを見る）が、**CI のワークフローに直接書かれたステップ**（`mkdocs build` など）は**見ていない** |
 | **検査そのものの正しさ** | 各検査の回帰テストが見る。**このスクリプトは「全部回したか」だけを見る** |
 | **出力を落としたファイルが、この 1 回の出力だけであること** | **FAIL の行と集計は同じ分岐で決まる**（`main` の `if not ok` で、表示と `failed` への積み上げが一緒に動く。打ち切られた子——シグナルで止まり終了コードが負——も失敗に数える。`test-check-all.py` の契約 10）。だが**2 つの実行が同じファイルへ `>` で落とすと、互いの行が上書きで混ざる**——#509 の「FAIL の行があるのに『失敗 0』・失敗の中身が無い」は、**片方が FAIL の行を書いたあと残りを書く前に止められ、もう片方と同じファイルに落としている**形で 5 回中 5 回再現した（同じく止めて別々のファイルに落とした対照では 10 本中 0 本、止めずに同じファイルに落とした形では 5 回中 0 回）。**#509 の当時に何が起きたかは確かめていない**——言えるのは、この形で症状が出ることまで。**出力は実行ごとに別のファイル（`mktemp` など）に落とす。** 共有の scratchpad の決まった名前（`checkall.txt`）を使わない |
-| **キャッシュが入力を取りこぼさないこと**（#1151） | **集めるのは Python の audit イベントと子の引数だけである。** OS の読み取りを全部見る手段（`fs_usage`・DTrace）は root が要る。見えない形: **開かずに在るかだけを見る**（`os.stat`・`Path.exists`。イベントが無い）・**`dir_fd` 基準の相対パスの `os.open`**（基準がイベントに載らない）・**hook の入らない子が、粗い単位の外を読む**（引数に無いプラグインの外のファイルなど）・**hook の入らない子の、さらに子**・**作業ツリーの外**（worktree から回したときのメインの作業ツリーなど）・**回している間に一覧から名前が消えた**（消えた名前には mtime が無い）。**ほかの `usercustomize` を隠す**（`PYTHONPATH` の先頭に置くので）。**テストが作業ツリーの外の状態に依る**（時刻・ネットワーク・`git`・`node` の版・`~/.claude`）——外が変わっても回さない。**取りこぼしの砦は PR 側の CI である**——CI は `check-all.py` を通さず全部回す。疑わしいときは `--no-cache` で回す |
+| **キャッシュが入力を取りこぼさないこと**（#1151） | **集めるのは Python の audit イベントと子の引数だけである。** OS の読み取りを全部見る手段（`fs_usage`・DTrace）は root が要る。見えない形: **開かずに在るかだけを見る**（`os.stat`・`Path.exists`。イベントが無い）・**相対パスの `os.open`**（`dir_fd` 基準かどうかがイベントに載らないので、`os.chdir` の後に `dir_fd` 無しで開いたものも数えない）・**hook が入ると見えて入らない子**（`PYTHONPATH` と `PYTHONNOUSERSITE` は見るが、`usercustomize` を読まない Python——venv の Python など——は見分けない。テスト自身は上の「読んだ跡」で止める）・**hook の入らない子が、粗い単位の外を読む**（引数に無いプラグインの外のファイルなど）・**hook の入らない子の、さらに子**・**作業ツリーの外**（worktree から回したときのメインの作業ツリーなど）・**回している間に一覧から名前が消えた**（消えた名前には mtime が無い）。**ほかの `usercustomize` を隠す**（`PYTHONPATH` の先頭に置くので）。**テストが作業ツリーの外の状態に依る**（時刻・ネットワーク・`git`・`node` の版・`~/.claude`）——外が変わっても回さない。**取りこぼしの砦は PR 側の CI である**——CI は `check-all.py` を通さず全部回す。疑わしいときは `--no-cache` で回す |
 | **並列に回して安全であること** | **各スクリプトが一時ディレクトリで作業する（実リポジトリと固定のパスに書かない）ことを前提にしている。** #430 の時点の 49 本は、並列で回して全部通り、作業ツリーに変化が無かった（確かめたのはそこまで）が、**後から足した 1 本が実リポジトリに書けば、並列のときだけ壊れうる**。疑わしいときは `--jobs 1` で回して比べる |
 
 標準ライブラリのみ。
@@ -118,6 +125,8 @@ import hashlib
 import json
 import os
 import platform
+import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -340,6 +349,18 @@ def _ignored(rel: str) -> bool:
     return parts[0] == ".git" or "__pycache__" in parts or rel.endswith(".pyc")
 
 
+PYC = re.compile(r"^(?:(?P<dir>.*)/)?__pycache__/(?P<mod>[^/.]+)\.[^/]+\.pyc$")
+
+
+def pyc_source(rel: str) -> str | None:
+    """`<dir>/__pycache__/<mod>.<tag>.pyc` を `<dir>/<mod>.py` に戻す。**import は `.pyc` が新しければ `.py` を開かない**
+    （stat で鮮度を見るだけ）ので、`.pyc` を開いたことを、その元の `.py` を読んだことと数える（#1151 の 1 パス目）。"""
+    m = PYC.match(rel)
+    if not m:
+        return None
+    return f"{m.group('dir')}/{m.group('mod')}.py" if m.group("dir") else f"{m.group('mod')}.py"
+
+
 def coarse_unit(rel: str) -> str:
     """hook の入らない子が読みうる範囲。プラグインならその全体、`scripts/` ならその全体、ほかはそのパス。"""
     parts = rel.split("/")
@@ -354,15 +375,29 @@ def _is_python(prog: str) -> bool:
     return os.path.basename(prog).lower().startswith("python") or prog == sys.executable
 
 
+PYTHON_VALUE_OPTS = {"-W", "-X", "--check-hash-based-pycs"}
+
+
 def _python_untraced_flags(argv: list[str]) -> bool:
-    """`-I`・`-E`・`-s`・`-S` を渡した Python には hook が入らない。"""
-    for a in argv[1:]:
+    """`-I`・`-E`・`-s`・`-S` を渡した Python には hook が入らない。**値を取る `-W`・`-X` の値はスクリプトの名前と読まない。**"""
+    args = argv[1:]
+    i = 0
+    while i < len(args):
+        a = args[i]
         if not a.startswith("-") or a in ("-c", "-m", "-"):
             return False
+        if a in PYTHON_VALUE_OPTS:
+            i += 2
+            continue
         if a.startswith("--"):
+            i += 1
+            continue
+        if a[1] in "WX":  # `-Wignore`・`-Xdev` の形——値が続けて書いてある
+            i += 1
             continue
         if any(ch in a[1:] for ch in "IEsS"):
             return True
+        i += 1
     return False
 
 
@@ -419,8 +454,12 @@ def collect_deps(log: Path, repo: Path) -> dict:
             kind, val = json.loads(line)
         except ValueError:
             continue
-        if kind == "open" and not _ignored(val):
-            files.add(val)
+        if kind == "open":
+            src = pyc_source(val)
+            if src is not None and not _ignored(src):
+                files.add(src)
+            elif not _ignored(val):
+                files.add(val)
         elif kind == "list" and not _ignored(val):
             dirs.add(val)
         elif kind == "spawn":
@@ -438,7 +477,17 @@ def collect_deps(log: Path, repo: Path) -> dict:
             # **hook の入らない子**——引数に現れた作業ツリーの中のパスを、粗い単位で依存にする。
             words = argv[1:] if len(argv) > 1 else argv
             for w in words:
-                for cand in (w, w.split("=", 1)[1] if "=" in w else None):
+                cands = [w, w.split("=", 1)[1] if "=" in w else None]
+                if any(ch.isspace() for ch in w):
+                    # `sh -c "<コマンド>"`・`shell=True`・`os.system` は、コマンドが 1 つの引数に入る——語に割って見る。
+                    # その中の git は中身に依ると見なす（どの git かを割った語から決めない）。
+                    try:
+                        toks = shlex.split(w)
+                    except ValueError:
+                        toks = w.split()
+                    cands += toks
+                    git = git or any(os.path.basename(t) == "git" for t in toks)
+                for cand in cands:
                     if not cand or cand.startswith("-"):
                         continue
                     rel = _rel(repo, cand, cwd)
@@ -534,7 +583,8 @@ def changed_during(repo: Path, deps: dict, since_ns: int) -> list[str]:
     **ディレクトリそのものの mtime は見ない**——Python が `__pycache__` を書くだけで親の mtime が動き、
     回したテストのほとんどが「変わった」になる（#1151 の 1 回目の実走で 15 本）。一覧はその中の名前
     （`LISTING_NOISE` と `.pyc` を除く）の mtime で、粗い単位はその下のファイルの mtime で見る。
-    **回している間に名前が消えたことは、ここでは見えない**（消えた名前には mtime が無い）。"""
+    **回している間に名前が消えたことは、ここでは見えない**（消えた名前には mtime が無い）。
+    **例外は依存のファイルが無いとき**——親のディレクトリの mtime で見る（消すと親が動く）。"""
     paths = list(deps["files"])
     for rel in deps["dirs"]:
         try:
@@ -560,7 +610,13 @@ def changed_during(repo: Path, deps: dict, since_ns: int) -> list[str]:
             if os.stat(p).st_mtime_ns >= since_ns:
                 hits.append(rel)
         except OSError:
-            pass
+            # 無い——回している間に消えたかもしれない。**親のディレクトリの mtime で見る**（消すと親が動く）。
+            # 初めから無かったものも、親の中で何かが書かれた回は「変わった」になる（記録しないだけで、判定は変えない）。
+            try:
+                if os.stat(p.parent).st_mtime_ns >= since_ns:
+                    hits.append(rel)
+            except OSError:
+                pass
     return hits
 
 
@@ -622,6 +678,12 @@ def traced_run(name: str, args: list[str], ctx: dict) -> tuple[bool, str, float]
         drop_record(ctx["root"], name)
         return ok, out, secs
     deps = collect_deps(log, ctx["repo"])
+    if f"scripts/{name}" not in deps["files"]:
+        # **テスト自身を読んだ跡が無い——hook が入らなかった**（`usercustomize` を読まない Python・中断の途中で記録が消えた）。
+        # 空の依存を記録すると、何を変えても当たりになる（#1151 の 1 パス目）。
+        drop_record(ctx["root"], name)
+        ctx["unrecorded"].append((name, "読んだものを集められなかった（hook が入っていない）"))
+        return ok, out, secs
     moved = changed_during(ctx["repo"], deps, ctx["since_ns"])
     if deps["git"] and Hasher(ctx["repo"]).git_state() != ctx["git_at_start"]:
         moved.append("<git の状態>")

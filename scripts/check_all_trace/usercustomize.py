@@ -16,9 +16,12 @@
 何を見ないか（取りこぼしの本体は `check-all.py` の docstring を正とする）:
 
 - **`os.stat` など、開かずに在るかだけを見る操作**——audit イベントが無い。
-- **`dir_fd` 基準の相対パスの `os.open`**——どのディレクトリ基準かがイベントに載らない（`shutil.rmtree` がこの形で一時ディレクトリを消す）。
+- **相対パスの `os.open`（どれも）**——`dir_fd` 基準かどうかがイベントに載らない（`shutil.rmtree` がこの形で一時ディレクトリを消す）ので、
+  **`os.chdir` の後に `dir_fd` 無しで開いたものも含めて**数えない。組み込みの `open`（`io.open`）と `io.open_code` の相対パスは cwd で解決して数える。
 - **import の仕組みがディレクトリを列挙すること**——`sys.path` のディレクトリにファイルが増えるたびに全部が外れるので数えない。
 """
+
+from __future__ import annotations
 
 import os
 import sys
@@ -43,7 +46,7 @@ def _install(log: str, root: str) -> None:
         finally:
             os.close(fd)
 
-    def inside(path) -> str | None:
+    def inside(path):
         """根の内側の絶対パスなら、根からの相対パスを返す。"""
         if isinstance(path, int) or path is None:
             return None
@@ -66,18 +69,38 @@ def _install(log: str, root: str) -> None:
     def text(x) -> str:
         return x if isinstance(x, str) else os.fsdecode(x) if isinstance(x, (bytes, os.PathLike)) else str(x)
 
+    here = os.path.dirname(os.path.abspath(__file__))
+
+    def env_get(env, key: str):
+        v = env.get(key)
+        if v is None:
+            try:
+                v = env.get(key.encode())  # `subprocess` には bytes の鍵の env も渡せる
+            except TypeError:  # `os.environ` は bytes の鍵を訊くと TypeError
+                v = None
+        return os.fsdecode(v) if v is not None else None
+
+    def hooked(env) -> bool:
+        """子にこの hook が入るか。**書く先の変数が残っていても、`PYTHONPATH` からこのディレクトリが外れた・
+        `PYTHONNOUSERSITE` で `usercustomize` を読まない環境なら入らない**（#1151 の 1 パス目）。"""
+        if env_get(env, "CHECK_ALL_TRACE_LOG") is None or env_get(env, "CHECK_ALL_TRACE_ROOT") is None:
+            return False
+        if env_get(env, "PYTHONNOUSERSITE"):
+            return False
+        paths = (env_get(env, "PYTHONPATH") or "").split(os.pathsep)
+        return any(p and os.path.abspath(p) == here for p in paths)
+
     def spawn(argv, cwd, env) -> None:
         if isinstance(argv, (str, bytes)):
             argv = [argv]
         argv = [text(a) for a in (argv or [])]
-        env_ok = None
-        if env is not None:
-            try:
-                env_ok = (env.get("CHECK_ALL_TRACE_LOG") or env.get(b"CHECK_ALL_TRACE_LOG")) is not None
-            except Exception:
-                env_ok = False
-        write(["spawn", {"argv": argv, "cwd": text(cwd) if cwd is not None else os.getcwd(),
-                         "env": True if env is None else env_ok}])
+        try:
+            env_ok = hooked(os.environ if env is None else env)
+        except Exception:
+            env_ok = False
+        # cwd は相対でも渡せる——ここで絶対にしておく（`check-all.py` は記録を書いた後に読むので、cwd を知らない）。
+        where = os.getcwd() if cwd is None else os.path.join(os.getcwd(), text(cwd))
+        write(["spawn", {"argv": argv, "cwd": os.path.normpath(where), "env": env_ok}])
 
     def hook(event: str, args) -> None:
         try:
