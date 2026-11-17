@@ -78,9 +78,11 @@ Issue 本文（外部入力）から読んだ要件: req-loop に、モックを
 - `scripts/test-build-mock.py` — 注記の確かめ
 - `CLAUDE.md` — 新しいスクリプトとテストの項
 - `docs/plugins/index.md` — 公開ページの spec-loop の説明（req-loop の行があれば）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/screen-spec/.claude-plugin/plugin.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/screen-spec/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
-- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行
 - `docs/plans/issue-1082.md` — この計画ファイル
 
 触らない:
@@ -129,6 +131,10 @@ req-loop のスキル（モデル）が手順の文のとおりに振る舞う�
 ```dev-loop-gates
 周の base: f58baafeb8e7209f7d18d166b235662c0645a118
 ```
+
+## 手順 8（起票数）
+
+- この周の起票: 4 件（仕様の穴を推奨で決めた確認の Issue H1〜H4。`references/absent-lines.md` の「`仕様の穴 = 推奨で決めて起票`」）
 
 ## 関門の進捗（再開点）
 
