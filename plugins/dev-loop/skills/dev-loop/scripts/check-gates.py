@@ -518,7 +518,7 @@ def check_criteria(rec: Record, ctx: Context) -> list[str]:
         elif judge not in LINE_JUDGES:
             reasons.append(f"受入基準 {i} の判断の出所が読めない: {judge}")
         elif verdict == "満たさない" and judge not in UNMET_JUDGES:
-            reasons.append(f"受入基準 {i} が満たさないで、線（{judge}）では通さない（利用者の指示だけ）")
+            reasons.append(f"受入基準 {i} が満たさないで、この出所（{judge}）では通さない")
         elif not ctx.absent:
             reasons.append(f"受入基準 {i} が {verdict} で、線（{judge}）は不在の周（--absent）でしか通さない")
     return reasons
