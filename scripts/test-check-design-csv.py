@@ -218,6 +218,8 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
      "requirements/purposes.csv:2: 成功の判定 に未決定の印（未定）", "を書いた"),
     ("目的の表: 必須の欄が空", purposes(P_OK.replace(",受注の担当者,", ",,")), None, 3, "requirements/purposes.csv:2: 誰の課題か が空", ""),
     ("目的の表: 機能の未決定の印", purposes(P_OK.replace("F-001・F-002", "未定")), None, 3, "requirements/purposes.csv:3: 機能 に未決定の印（未定）", ""),
+    ("目的の表: 印と並べた決まった id は結び付けに数える", purposes(P_OK.replace("F-001・F-002", "F-001・未定")), None, 3,
+     "requirements/purposes.csv:3: 機能 に未決定の印（未定）", "機能一覧の F-001 が"),
     ("目的の表: 一覧の id が未決定なら機能の id も未決定", purposes(P_OK.replace("なし", "F-009"), features=GOOD[F] + "TBD,x,API,\n"), None, 3,
      "機能 F-009 が機能一覧（requirements/features.csv）に無い（一覧に id の決まっていない行がある）", ""),
     ("UTF-8 でない", good(F=(F_HEAD + "F-001,注文,API,\n").encode("cp932")), None, 2, "requirements/features.csv: UTF-8 として読めない", ""),
@@ -304,6 +306,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "目的の表: 機能が機能一覧に無い"),
     ("一覧の未決定の id を機能の照合で見ない", "            elif features_pending:", "            elif False:", "目的の表: 一覧の id が未決定なら機能の id も未決定"),
     ("目的を測る指標を見ない", "    for goal in sorted(goals - measured):", "    for goal in []:", "目的の表: 目的を測る指標が無い"),
+    ("印と並べた決まった id を結び付けに数えない", "            covered.update(item.strip() for item in value.split(PURPOSE_SEPARATOR) if item.strip() in features)\n",
+     "", "目的の表: 印と並べた決まった id は結び付けに数える"),
     ("目的を指さない機能を見ない", "        for feature in sorted(features - covered):", "        for feature in []:", "目的の表: 目的を指さない機能"),
 ]
 

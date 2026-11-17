@@ -70,7 +70,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 
 - 0: 書いた
 - 1: 照合が一致しない・表が決まりに反する（目的の表の見出しの行・列の数を含む。#1154）・材料（表・手書き部分）が無い・基盤要件が決まっていない（#950）——書いていない
-- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・手書き部分のフォルダの綴りが書いた綴りと大文字小文字だけ違う（#514）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
+- 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ。目的の表の空のファイルを含む——#1154）・手書き部分のフォルダの綴りが書いた綴りと大文字小文字だけ違う（#514）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
   印に無いファイルが出力の名前で在る・印が読めない（書き換えない。#512）・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440。
   印が名指しする出力が先の在る symlink のときを含む——#512）・
   想定外の例外（128KB を超えるセルの `csv.Error` など。#286。前の出力は作り始める前に消してあり、書いている途中なら書きかけを消す）——書いていない。
@@ -409,11 +409,16 @@ def read_purposes(files: dict[str, bytes], tag: str) -> list[list[str]] | None:
     if content is None:
         return None
     label = f"{tag}:{design.PURPOSES}"
+    text = decode(content, label)
+    if not text.strip():
+        raise Stop(2, [f"{label}: 空のファイル。提案書を作れない"])  # check-design-csv.py と同じく「読めない」（2）
     try:
-        rows = [r for r in csv.reader(io.StringIO(decode(content, label), newline="")) if any(c.strip() for c in r)]
+        rows = list(csv.reader(io.StringIO(text, newline="")))
     except csv.Error as e:
         raise Stop(2, [f"{label}: CSV として読めない（{e}）。提案書を作れない"])
-    if not rows or rows[0] != design.PURPOSES_COLUMNS:
+    # 見出しは最初の行（check-design-csv.py と同じ——空行を飛ばして次の行を見出しに取らない）。空行を除くのは本文だけ
+    rows = rows[:1] + [r for r in rows[1:] if any(c.strip() for c in r)]
+    if rows[0] != design.PURPOSES_COLUMNS:
         raise Stop(1, [f"{label}: 見出しの行が決まり（{','.join(design.PURPOSES_COLUMNS)}）と違う。提案書の材料にできない"
                        "（check-design-csv.py で直す。references/tree.md の「目的と成功の判定」）"])
     bad = [str(n) for n, r in enumerate(rows[1:], 1) if len(r) != len(design.PURPOSES_COLUMNS)]

@@ -384,6 +384,8 @@ def check_purposes(root: Path, report: Report, context: dict) -> None:
             continue
         if markers(value):
             cell_state(report, where, "機能", value, False)
+            # 印と並べた決まった id は結び付けに数える（印があるだけで、載っている機能を目的を指さない機能と名指ししない）
+            covered.update(item.strip() for item in value.split(PURPOSE_SEPARATOR) if item.strip() in features)
             continue
         if not value.strip():
             report.empty.append(f"{where}: 機能 が空（どの機能も動かさない指標——動かす機能を足すか、{PURPOSE_NONE} と決める）")
