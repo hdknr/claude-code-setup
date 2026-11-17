@@ -118,7 +118,11 @@ CI・影響範囲・宣言の外の反映・依存の表・推奨が無い／「
 - 周の在り処: ブランチ `issue/1176-merge-decision-regression-unmet`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1176`・
   起点 `3052f61`・切った元の参照 `origin/main`（解決した SHA `3052f61362826dcafce5ee593c8ca92e66c6481f`）・base `3052f61362826dcafce5ee593c8ca92e66c6481f`
 - 割り目（手順 4）: 割らない（cruise の周）。
-- 1 パス目: 起点（1 パス目の関門に渡した HEAD）`3ac7a03`。Verifier（sonnet・`dev-loop:dev-loop-verifier`）と `/code-review` を当てる。
+- 1 パス目: Verifier（sonnet・`dev-loop:dev-loop-verifier`。HEAD `4a8e191`。反証 0・軽微 2）と `/code-review`（high。HEAD `043033b`——`4a8e191` の後は計画ファイルだけ。指摘 10 件）。
+  1 パス目の指摘対応の起点: `4a8e1911ac2b7d678bcdd688dd578a989775d716`（先に当てた Verifier に渡した HEAD）。対応のコミット `c123efbf8ca938ea60b26e99a5ba33477ffd537f`（差分あり——2 パス目を回す）。
+  Verifier の報告は SubagentHandback が届かず、親が報告のファイルの場所を知らせ、トランスクリプトから読んだ。
+- A6 を手で確かめた: 一時の git リポジトリで `ledger.py lines t "マージ前の判断=推奨で決めて起票（後退・未達を含む）"` が 0・`show` が値を出す・半角の括弧の値は 3。`parent-issue.py show 1 --body-file`（偽の `gh`）が線を値として出す。
+- 割り目（2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直しと手順 6 の 2 パス目の両方。
 - 交絡を潰した手順: 実験なし（A2 の直す前に赤・直した後に緑は試料の当て比べで、陽性対照は直した版の 0）。
 - A2 の直す前に赤・直した後に緑（手で当てた）: 新しい `scripts/test-check-gates.py` を、`3052f61`（main）の `plugins/dev-loop/skills/dev-loop/scripts/` を写した一時ディレクトリの `check-gates.py` に向けて走らせると、
   試料「不在の周では満たさないを線（マージ前の判断（後退・未達を含む））で通す（#1176）」が rc=3（期待 0）で赤。同じ試料は直した版で rc=0（`test-check-gates.py` 193 件すべて合格・変異 42 件すべて赤）。
@@ -126,6 +130,8 @@ CI・影響範囲・宣言の外の反映・依存の表・推奨が無い／「
 
 ```dev-loop-gates
 周の base: 3052f61362826dcafce5ee593c8ca92e66c6481f
+関門: Verifier 1 4a8e1911ac2b7d678bcdd688dd578a989775d716 反証=2
+関門: /code-review 1 043033b 指摘=10
 ```
 
 ## 既知の限界・決着済みの論点
