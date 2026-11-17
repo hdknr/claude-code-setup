@@ -117,18 +117,18 @@ cruise #1075 の周 #1045 の子（サブエージェント）は、`check-all.p
     until grep -q '^__CRUISE_DONE__ exit=' "$OUT" 2>/dev/null || { [ -f "$OUT.pid" ] && ! kill -0 "$(cat "$OUT.pid")" 2>/dev/null; }; do
       [ "$(date +%s)" -ge "$end" ] && { why="上限"; break; }; sleep 30; done
     grep -q '^__CRUISE_DONE__ exit=' "$OUT" 2>/dev/null || [ "$why" = "上限" ] || why="印が無いままシェルが居ない"
-    done_at=$(stat -c %Y "$OUT" 2>/dev/null || stat -f %m "$OUT"); sleep 120
+    done_at=$(stat -c %Y "$OUT" 2>/dev/null || stat -f %m "$OUT" 2>/dev/null); done_at=${done_at:-$(date +%s)}; sleep 120
     last=$(git -C "$W" log -1 --format=%ct)
     while IFS= read -r -d '' e; do f=${e:3}; t=$(stat -c %Y "$W/$f" 2>/dev/null || stat -f %m "$W/$f" 2>/dev/null); [ -n "$t" ] && [ "$t" -gt "$last" ] && last=$t
     done < <(git -C "$W" status --porcelain -uall -z)
-    if [ "$last" -ge "$done_at" ]; then echo "見張り: ${why}・前進あり"; else echo "見張り: ${why}・前進なし——催促"; fi
+    if [ "$last" -gt "$done_at" ]; then echo "見張り: ${why}・前進あり"; else echo "見張り: ${why}・前進なし——催促"; fi
   } > "$LOG" 2>&1; echo "__WATCH_DONE__" >> "$LOG"
   ```
 
   **見張りの出力の `見張り:` の行を読んで決める**（通知の文面で決めない。**`印が無いままシェルが居ない`・`上限` は走りきった印ではない**——緑と読まず、催促のとき子にそう伝える。見張りの終わりの通知で起きなければ、再開タイマーが保険——`../dev-loop/references/ledger.md` の「どう再開するか」の 2）。
   **親が §4 の 2 のとおりターンを閉じずに待っているなら、上の待ちの 100 秒の区切りの中で同じ条件を見てもよい**（背景で起こさない）。
   **前進の見方は `../dev-loop/references/ledger.md` の同項（worktree の HEAD のコミットの時刻と、未コミットのファイルの更新時刻の新しいほう）と同じ**——
-  上の形はその写しで、`-z` で読むので空白・日本語のパスも測れる（改名の古いほうのパスは `stat` できず数えない。消したファイルも数えない）。細部は同項を正とする。
+  上の形はその写しで、`-z` で読むので空白・日本語のパスも測れる（消したファイルは数えない。改名の古いほうのパスは先頭 3 字を削って測るので、まれに別のファイルの更新時刻を数える——既知の限界）。細部は同項を正とする。
 - **催促する**: 台帳のその周の `agent`（`SendMessage` で宛てられる子の ID）へ、**終わったこと（出力ファイルの終わりの印と exit）を知らせ、出力ファイルを自分で読んで続けるよう送る**。
   **訊いたことを、その場で `note` に残す**——`ledger.py set issue-<親> <番号> note="<前の note>; 前進の確認: <日時> に <名前> へ催促した（背景の <task の ID> の終わり）"`
   （前の項——`単独:` など——を残す。`note` は置き換えなので）。**返事か前進があったら、その場で `前進の確認:` の項を `note` から外す**（`ledger.md` の同項。残すと、後の発火が古い項を読んで問い合わせなしに止まった扱いにする）。**2 体目は起こさない**——同じ worktree で 2 体が書く。
