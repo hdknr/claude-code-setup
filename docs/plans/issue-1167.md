@@ -127,8 +127,56 @@ Issue 本文（外部入力）から読んだ要件: 3 つの起動口（`child-
 
 - 周の在り処: ブランチ `issue/1167-autocompact-window`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1167`・
   起点 `692913b`・切った元の参照 `origin/main`（解決した SHA `692913bc4b579ffa03ec0e4d70ccd2c58a35f40d`）・base `692913bc4b579ffa03ec0e4d70ccd2c58a35f40d`
-- 割り目: 割らない（cruise の周）。交絡を潰した手順: 後の「実物の確かめ」に書く。
+- 割り目: 割らない（cruise の周）。
+- 1 パス目: Verifier（opus。反証 3 件）と `/code-review`（high。指摘 5 件）を HEAD `2a4e4a0ba81e26619cad7b5b90cf71a76cfb6df5` に当てた。1 パス目の指摘対応の起点: `2a4e4a0ba81e26619cad7b5b90cf71a76cfb6df5`、対応のコミット `7bb91af24bf16c6872901098d734f4b97dc494b5`（差分あり）。
+- 2 パス目: Verifier（opus。受入基準を破る反証 0 件・軽微 4 件）と `/code-review`（high。指摘 7 件）を HEAD `7bb91af24bf16c6872901098d734f4b97dc494b5` に当てた。
+  2 パス目の指摘対応の起点: `7bb91af24bf16c6872901098d734f4b97dc494b5`、終点（最後のコミット）: `ba7cf7556aab0d1a70eb8d1d1abfb781511c8546`。
+- 狭いパス: 起点 `7bb91af24bf16c6872901098d734f4b97dc494b5` → 終点 `ba7cf7556aab0d1a70eb8d1d1abfb781511c8546` の差分（文と docstring の 5 行）だけに別ティア（opus）の Verifier を 1 回当てた。反証 1 件（費用の合計 $0.887 は実物 0.88650 の丸め $0.886 と端数が合わない。直さず、人間に渡す）。
+  変異 2 本はどちらも素通り（想定どおり。docs の件数文を見張る機械・docstring の「元」を見るテストは無い）。陽性対照: 同じ種類の件数の食い違いは `check-duplicate-counts.py` が `が／は` を伴う表現でだけ ERROR にする。
+- 割り目: 割らない（cruise の周）。交絡を潰した手順: 上の「実物の確かめ」。
+- 版の上げ方: dev-loop を minor・spec-loop を minor（PR を出す時点の main の先端 `692913b` の版 2.6.0・0.100.1 から 2.7.0・0.101.0）。マージの直前に main が進んでいたら、親の依頼で取り込み、先端の版から上げ直す。
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に宣言が無い）。
+- 全部の歯止め: `check-all.py`（run-serial 越し）を 1 パス目の指摘対応の HEAD `7bb91af` で通した（exit 0）。以後の差分は文・docstring・計画ファイルだけ（`check-plan-scope.py`・`check-duplicate-counts.py`・`skill-metrics.py --check`・`check-plugin-versions.py` は `ba7cf75` で 0）。
+
+```dev-loop-gates
+周の base: 692913bc4b579ffa03ec0e4d70ccd2c58a35f40d
+関門: Verifier 1 2a4e4a0ba81e26619cad7b5b90cf71a76cfb6df5 反証=3
+関門: /code-review 1 2a4e4a0ba81e26619cad7b5b90cf71a76cfb6df5 指摘=5
+関門: Verifier 2 7bb91af24bf16c6872901098d734f4b97dc494b5 反証=4
+関門: /code-review 2 7bb91af24bf16c6872901098d734f4b97dc494b5 指摘=7
+関門: 狭いパス 7bb91af24bf16c6872901098d734f4b97dc494b5 ba7cf7556aab0d1a70eb8d1d1abfb781511c8546 反証=1
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+受入基準: A7 満たす
+受入基準: A8 満たす
+受入基準: A9 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
 
 ## 既知の限界・決着済みの論点
 
-（関門の採否の表をここに畳む）
+### 1 パス目の指摘の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| check-plan-scope が 1 行に複数パスの計画を通さない（Verifier） | 示せる（`check-plan-scope.py origin/main` が 1） | A7・A8 | 直す（1 行 1 パス） |
+| 窓を 1 度だけ出す・拒んだ起動が出力の置き場を作らないことのテストの穴（Verifier・code-review） | 示せる（Verifier の変異が素通り） | A2・A4 | 直す（W1/W2 を 2 回起動に・W5） |
+| outer-loop が窓なしでも child-cycle.py を読み込む（code-review） | 示せる（壊れた child-cycle で base は rc 0・HEAD は rc 4） | A1 | 直す |
+| 環境変数が勝つ主張の判別力（code-review） | 示せる（大小の片方向だけ） | A6 | 直す（逆向きの対照 env4） |
+| 費用・入力トークンの数字（Verifier・code-review） | 示せる | A6 | 直す |
+| 公開ページの使い方の行に窓が無い（code-review） | 示せない（欠落であって誤りではない） | 無し | 残課題（記録だけ） |
+
+### 2 パス目の指摘の採否
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| 費用の内訳の文が数字と合わない・読み方の文が env3/env4 と食い違う・計画の 13 万・docstring の「4 関数だけ」（code-review・Verifier） | 示せる（文と実物の食い違い） | A6 | 直す（狭いパスを当てた） |
+| 環境変数の値が範囲外・非数字のときも「効かない」と言う（code-review） | 示せない（claude の挙動を確かめていない） | 無し | 残課題（記録だけ。docstring と child-process.md に未確認と書いた） |
+| outer-loop が child_cycle() を毎回読み込み直す・main の読み込み失敗が捕まらない（code-review） | 示せない（既存の形。壊れた child-cycle.py はふつうの利用で起きない） | 無し | 残課題（記録だけ） |
+| 「検査を置き場の後ろに移す」変異が MUTATIONS に無い・窓なしで child-cycle を読まないことのテストが無い（code-review・Verifier） | 示せる（試料の穴。W1/W5 は赤になる） | 無し | 残課題（記録だけ。試料の穴） |
+| 未証明の分類: outer/autopilot の実物は包みで測れる（Verifier） | 示せない | 無し | 残課題（記録だけ。主張は偽の claude で測った範囲に弱めてあり、分類は要らない） |
+| 低い hint（99999k に勧めるなど）・child-process.md の表の言い回し（code-review） | 示せない | 無し | 残課題（記録だけ） |
