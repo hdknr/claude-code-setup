@@ -471,7 +471,7 @@ cruise の状態は会話の外——台帳・各周の計画ファイル・GitH
    **枠の持ち主も見る**——`references/parallel.md` の「止まっている枠の持ち主」を正とする（#899）。
    **compact の前に起こしたサブエージェントの完了の通知も、要約の中では当てにしない**——実物で見る。
 
-**自動の compact が始まる大きさ（窓）は、利用者が選べる（#1166）。** 窓が 1M のモデルは、何も設定しなければ約 967K まで compact しない
+**自動の compact が始まる大きさ（窓）は、利用者が選べる（#1166）。** 窓が 1M のモデル（公式の言う native の 1M。Opus 4.7 以降・Sonnet 5 以降・Fable・Haiku 5.5 など）は、何も設定しなければ約 967K まで compact しない
 （公式の [Model configuration](https://code.claude.com/docs/en/model-config) の「Default auto-compact thresholds」。この節を足した周で、同じページを読んで確かめた——Claude Code は走らせていない）。
 長い cruise で窓を下げると、毎ターン送り直す会話が短くなり、周を重ねたときのターンあたりのコストと文脈の劣化を抑えられる。
 **その代わり compact の回数が増え、増えた回数だけ上の 3 つの読み直しが走り、要約で細部が落ちる回数も増える。**
@@ -480,14 +480,16 @@ cruise の状態は会話の外——台帳・各周の計画ファイル・GitH
   **値は利用者が決める**——公式は 100K から 1M の範囲を受け付け、`400K` は経験則で公式の推奨値ではない。品質が落ちるトークン数の閾値も、公式には示されていない。
   下げすぎると、周の途中（関門の報告を待つあいだなど）で compact が起き、読み直しが増える——下げるほど、台帳と計画ファイルに書いたものだけが頼りになる。
 - **設定する手段**（公式の同じページの「Set the auto-compact window」）: `/autocompact 400k`（今のモデルだけ。続く会話にも残る）・settings の `autoCompactWindow`（全モデル）・
-  起動時の `--autocompact`（その 1 回だけ）・環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（最優先。`claude -p` や無人の起動向け）。
-  managed settings が窓を決めていれば、`/autocompact` の値はそれに負ける。戻すのは `/autocompact auto`。
+  起動時の `--autocompact`（その 1 回だけ）・環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（`/autocompact`・`--autocompact`・`autoCompactWindow` より優先。`claude -p` や無人の起動向け）。
+  managed settings が窓を決めていれば、`/autocompact` の値はそれに負ける（`--autocompact` は負けない）。窓は、どの手段でもモデルの窓を超えない。
+  `/autocompact auto` が戻すのは `/autocompact` で保存した値だけで、環境変数・`autoCompactWindow` で決めた窓は、その設定を外して戻す。
+  **環境変数で下げると、起こした子プロセスと判定役のサブエージェントにも同じ窓が掛かる**（公式の sub-agents のページ。frontmatter の窓より環境変数が優先される）——判定役の窓だけを既定に残すことはできない。
 - **スキルは窓を変えない。** `/autocompact` を自分で打たず、利用者の settings・環境変数を書き換えず、窓を下げるよう促して止まることもしない。
   下げるかは利用者が決める（線を広げられるのが利用者だけ、という既存の決まりと同じ向き。`../dev-loop/references/absent-lines.md` の「線を広げられるのは利用者だけ」）。
   **起動時の点検（上の 3）も窓を表示しない**——有効な窓は環境変数・フラグ・managed settings・モデルごとの保存で変わり、点検が 1 つの値を言い切れない。
 - **窓を下げても、上の決まりは変わらない。** compact は起きる前提にしない（窓が既定でも下げても、自動の compact が切れていれば割る）。起きたら次の操作の前に上の 3 つを読み直す。
   親は利用者が窓を下げたかを知らなくてよく、知っていることを当てにして読み直しを省かない。
-- **範囲の外**: 子プロセス（`claude -p`）や外側のループに窓を渡す仕組みは、この節の決まりではない。判定役（`dev-loop-verifier` など）の frontmatter に窓を書かない——
+- **範囲の外**: 子プロセス（`claude -p`）や外側のループに窓を渡す仕組みを、この節は作らない（上のとおり、環境変数なら起動の形に依らず渡る）。判定役（`dev-loop-verifier` など）の frontmatter に窓を書かない——
   短く走って終わるので窓に届くことはまずなく、届けば判定の途中で証拠が要約に落ちるほうが損になる。
 
 **会話の中で利用者が決めた cruise 全体の方針は、台帳に項目を足して残さない（#583）:**
