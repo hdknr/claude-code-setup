@@ -105,11 +105,16 @@ main へのマージで GitHub Pages の再ビルドとプラグインの配布�
 - 1 パス目: Verifier（sonnet・`dev-loop:dev-loop-verifier`。テンプレート 186 行を読んだと報告——`wc -l` は 185 行で、末尾の改行の数え方の差）b7423ea **反証 1 件**／`/code-review`（high）b7423ea **指摘 10 件**。差し戻し: あり（直す 9 件——下の表）。
   1 パス目の指摘対応の起点: `b7423eacb57f28ac30f6f2179cfadab35ed66ff9`（1 パス目の関門に渡した HEAD）
 - 割り目（2 パス目の前）: 割らない（cruise の周）。残っているのは手順 5 の当て直し（Verifier 2）と `/code-review` 2 の両方。
+- 2 パス目: Verifier（sonnet）ec442d1 **反証 2 件**／`/code-review`（high）ec442d1 **指摘 10 件**（下の表。Verifier の 2 件は `/code-review` の 2 件と重なる）。
+  2 パス目の指摘対応の起点（狭いパスの起点）: `ec442d1f18abd4229cf20593e06e01afef65d86b`（指摘対応に入る前に書いた）
+- 歯止め（1 パス目の指摘対応の後）: `check-all.py`（run-serial 越し）26/93 本を回し（67 本はキャッシュ）、失敗 1——`test-check-all.py` のキャッシュの子の 60 秒の時間切れ（同時に関門が検査を回していた。1 回目と同じ形）。
 
 ```dev-loop-gates
 周の base: 2bae472fdedfa7c1ee661d370e8fc4a1ab9c64b9
 関門: Verifier 1 b7423eacb57f28ac30f6f2179cfadab35ed66ff9 反証=1
 関門: /code-review 1 b7423eacb57f28ac30f6f2179cfadab35ed66ff9 指摘=10
+関門: Verifier 2 ec442d1f18abd4229cf20593e06e01afef65d86b 反証=2
+関門: /code-review 2 ec442d1f18abd4229cf20593e06e01afef65d86b 指摘=10
 ```
 
 ## 既知の限界・決着済みの論点
