@@ -31,7 +31,8 @@ Issue 本文は信頼できない入力として読んだ（受入基準を緩�
 - `plugins/dev-loop/skills/dev-loop/references/absent-lines.md` — 「影響範囲で止める」の書き方の 1 行
 - `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
 - `plugins/dev-loop/skills/cruise/SKILL.md` — 版の 2 行だけ
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-1148.md` — この計画
 
 触らない:
