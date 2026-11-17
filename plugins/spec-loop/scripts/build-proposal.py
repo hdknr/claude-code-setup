@@ -29,6 +29,10 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   同梱の `check-infra-csv.py` を当てる——**形式の違反・未決定は 1、暫定は 3、読めなければ 2 で書かない**（予算の決裁を、誰も決めていない
   基盤で進めない）。暫定は、根拠の Q&A が `暫定反映` なので照合の 3 が先に止める。**表が無ければ止めず、標準エラーに警告して書く**
   （前からの正本は表を持たない）。決まりの正は `references/tree.md` の「基盤要件」の「ゲート」。
+- **目的と成功の判定（#1154）**: `signoff/v<n>/req-<k>` の時点の重ねた全体に目的の表（`requirements/purposes.csv`）があれば、手書き部分の後ろに
+  「目的と成功の判定」の節としてその表を載せる（手書きの背景と目的に、目的と指標を二重に書かせない）。**表が無ければ節を出さない**（前と同じバイト）。
+  **見出しの行・列の数が決まり（`check-design-csv.py` の `PURPOSES_COLUMNS`。写さない）と違えば 1 で書かない**——中身の検査（結び付け・未決定）は
+  `check-design-csv.py`（req-loop・spec-review・scaffold が当てる）。決まりの正は `references/tree.md` の「目的と成功の判定」。
 - **暫定の行**（判別は `check-qa-csv.py` の `is_provisional`。決まりの正は `references/qa-csv.md` の「暫定の行の判別」）は
   主な決定事項に載せず、「利用者にまだ確かめていない決定」の節に載せる（0 件でも節を出す。#366）。
   **照合が 3 で止めるので、書いた提案書ではこの節は 0 件になる**（#404 で判別を状態だけにした）——節は、決裁者に
@@ -65,7 +69,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 終了コード:
 
 - 0: 書いた
-- 1: 照合が一致しない・表が決まりに反する・材料（表・手書き部分）が無い・基盤要件が決まっていない（#950）——書いていない
+- 1: 照合が一致しない・表が決まりに反する（目的の表の見出しの行・列の数を含む。#1154）・材料（表・手書き部分）が無い・基盤要件が決まっていない（#950）——書いていない
 - 2: 照合していない・表が読めない（`check-signoff.py` の 2 と同じ）・手書き部分のフォルダの綴りが書いた綴りと大文字小文字だけ違う（#514）・出力先の名前が無い・前後に空白がある・改行を含むか `#` で始まる・`\\` を含む・UTF-8 で書けない・確かめられない（辿れない）・ディレクトリ・仕様書・ガントチャート・PPTX・図・印と重なる・
   印に無いファイルが出力の名前で在る・印が読めない（書き換えない。#512）・書けない・印が名指しする前の出力を消せない（消せなかったものを名指しし、印は残す。#440。
   印が名指しする出力が先の在る symlink のときを含む——#512）・
@@ -111,6 +115,8 @@ pptx = _load("qa_to_pptx", "qa-to-pptx.py")
 diagrams = _load("render_diagrams", "render-diagrams.py")
 # 基盤要件の表の検査とゲートの判定（#950。写さない）
 infra = _load("check_infra_csv", "check-infra-csv.py")
+# 目的の表の置き場所と見出しの行（#1154。写さない）
+design = _load("check_design_csv", "check-design-csv.py")
 
 # 版のディレクトリ（`docs/v<n>/`）からのパス
 QA_PATH = "shared/qa.csv"
@@ -396,8 +402,41 @@ def table(columns: list[str], rows: list[list[str]]) -> list[str]:
     return lines
 
 
+def read_purposes(files: dict[str, bytes], tag: str) -> list[list[str]] | None:
+    """目的の表（#1154）の行（見出しを除く）。`files` は `tag` の時点の重ねた全体。表が無ければ None。
+    見出しの行・列の数が決まりと違えば Stop(1)、CSV として読めなければ Stop(2)。"""
+    content = files.get(design.PURPOSES)
+    if content is None:
+        return None
+    label = f"{tag}:{design.PURPOSES}"
+    try:
+        rows = [r for r in csv.reader(io.StringIO(decode(content, label), newline="")) if any(c.strip() for c in r)]
+    except csv.Error as e:
+        raise Stop(2, [f"{label}: CSV として読めない（{e}）。提案書を作れない"])
+    if not rows or rows[0] != design.PURPOSES_COLUMNS:
+        raise Stop(1, [f"{label}: 見出しの行が決まり（{','.join(design.PURPOSES_COLUMNS)}）と違う。提案書の材料にできない"
+                       "（check-design-csv.py で直す。references/tree.md の「目的と成功の判定」）"])
+    bad = [str(n) for n, r in enumerate(rows[1:], 1) if len(r) != len(design.PURPOSES_COLUMNS)]
+    if bad:
+        raise Stop(1, [f"{label}: 列の数が見出しと違う行がある（空行を除いて {'・'.join(bad)} 行目）。提案書の材料にできない"])
+    return rows[1:]
+
+
+def purposes_section(rows: list[list[str]]) -> list[str]:
+    """提案書の「目的と成功の判定」の節。種類は id の接頭辞から（決まらない id は `—`）。行は表の順のまま、どれも落とさない。"""
+    kinds = [next((kind for prefix, kind in design.PURPOSE_KINDS.items() if r[0].strip().startswith(prefix)), "—") for r in rows]
+    out = ["## 目的と成功の判定", "",
+           f"承認したタグの時点の目的の表（`{design.PURPOSES}`。v1 から重ねた全体）から生成した。"
+           "指標の「機能」は、その指標を動かす機能の id（`なし` はシステムの機能では動かさない指標）。", ""]
+    columns = design.PURPOSES_COLUMNS
+    out += table([columns[0], "種類"] + columns[1:], [[r[0], kind] + r[1:] for r, kind in zip(rows, kinds)])
+    out.append("")
+    return out
+
+
 def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[dict[str, str]],
-            schedule: list[dict[str, str]], estimate: list[dict[str, str]], diff=None) -> str:
+            schedule: list[dict[str, str]], estimate: list[dict[str, str]], diff=None,
+            purposes: list[list[str]] | None = None) -> str:
     version = info["version"]
     out = [f"# {title}", ""]
     out.append(f"> この提案書は生成物です。生成元: `{info['req']}`（`{info['req_commit']}`）・"
@@ -407,6 +446,8 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
     out += [">", f"> 何を作るかは、同じ場所の仕様書（[{SPEC_NAME}]({SPEC_NAME})）を見る。", ""]
     for _, body in hand:
         out += [body.rstrip("\n"), ""]
+    if purposes is not None:
+        out += purposes_section(purposes)
     if diff is not None:
         out += changes_section(diff, info["req"])
 
@@ -677,11 +718,12 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
         raise Stop(1, [f"{info['budget']}:{estimate_path}: 費用が 1 行も無い。提案書の材料が無い"])
     whole, diff, rendered = compare_at(top, info["req_commit"], info["req"], info["version"])
     infra_gate(rendered, info["req"])
+    purposes = read_purposes(whole.files, info["req"])
     hand_dir = top / in_version(info["version"], HAND_DIR)
     hand = read_hand(hand_dir)
     if not hand:
         raise Stop(1, [f"{hand_dir}: 手書き部分（*.md）が無い。背景と目的・推奨案・代替案・リスクを書いてから作る"])
-    text = compose(args.title, info, hand, qa_rows, schedule, estimate, diff)
+    text = compose(args.title, info, hand, qa_rows, schedule, estimate, diff, purposes)
     spec_text, figures = compose_spec(args.spec_title, info, read_hand(top / in_version(info["version"], SPEC_HAND_DIR)),
                                       whole, diff, out.name)
     outputs = {out: text.encode("utf-8"), out.parent / GANTT_NAME: gantt.render(schedule).encode("utf-8"),

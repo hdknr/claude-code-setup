@@ -131,6 +131,13 @@ INFRA_OK = (INFRA_HEAD + "言語,Python 3.12,保守の担当が読める,なし,
             "ホスティング環境,AWS,既存の契約,月 5 万円,,Q-001,決定\n")
 INFRA_UNDECIDED = INFRA_OK.replace("ホスティング環境,AWS,既存の契約,月 5 万円,,Q-001,決定", "ホスティング環境,,,,,Q-005,未決定")
 INFRA_WARN = "基盤要件の表（shared/infra.csv）が無い"
+# 目的の表（#1154）。承認したタグの時点の表から「目的と成功の判定」の節を作る
+PURPOSES = "docs/v1/requirements/purposes.csv"
+PURPOSES_HEAD = "id,上位,誰の課題か,内容,成功の判定,機能\n"
+PURPOSES_OK = (PURPOSES_HEAD + "G-001,,受注の担当者,受注の入力の手間を減らす,,\n"
+               "K-001,G-001,,1 件の受注の入力にかかる時間,5 分から 2 分以下に,F-001\n"
+               "未定,,営業,見積りを早く出す,,\n")
+PURPOSES_SECTION = "## 目的と成功の判定"
 
 
 # 仕様書（#374）の試料: v1 に決定表・範囲の文書・図（書き出しあり／なし）・仕様書の手書き部分を足して承認する
@@ -340,6 +347,20 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      + BASE[1:] + [("t", R1), ("t", B1)],
      True, lambda r: not_made(3)(r) and "暫定の回答（暫定反映）が 1 件残る" in r.output
      and r.output.count("前に作った出力を消した") == len(STALE)),
+    # 目的と成功の判定（#1154）——承認したタグ（要求確定）の時点の全体の目的の表から
+    ("目的の表から目的と成功の判定の節を作る", BASE[:-1] + [("w", PURPOSES, PURPOSES_OK), ("c",), ("t", R1), ("t", B1)], False,
+     lambda r: made(r) and "| G-001 | 目的 |  | 受注の担当者 | 受注の入力の手間を減らす |  |  |" in r.text
+     and "| K-001 | 指標 | G-001 |  | 1 件の受注の入力にかかる時間 | 5 分から 2 分以下に | F-001 |" in r.text
+     and "| 未定 | — |  | 営業 | 見積りを早く出す |  |  |" in r.text
+     and 0 < r.text.find("## 背景と目的") < r.text.find(PURPOSES_SECTION) < r.text.find("## 主な決定事項")),
+    ("目的の表が無ければ節を出さない", SIGNED, False, lambda r: made(r) and "目的と成功の判定" not in r.text),
+    ("承認の後に足した目的の表は入らない", SIGNED + [("w", PURPOSES, PURPOSES_OK), ("c",)], False,
+     lambda r: made(r) and "目的と成功の判定" not in r.text),
+    ("目的の表の見出しが違えば作らない", BASE[:-1] + [("w", PURPOSES, PURPOSES_OK.replace("誰の課題か,内容", "内容,誰の課題か", 1)), ("c",),
+                                                  ("t", R1), ("t", B1)], True,
+     lambda r: not_made(1)(r) and "signoff/v1/req-1:requirements/purposes.csv: 見出しの行が決まり（id,上位,誰の課題か,内容,成功の判定,機能）と違う" in r.output),
+    ("目的の表の列の数が違えば作らない", BASE[:-1] + [("w", PURPOSES, PURPOSES_OK + "K-002,G-001,,a\n"), ("c",), ("t", R1), ("t", B1)], True,
+     lambda r: not_made(1)(r) and "列の数が見出しと違う行がある（空行を除いて 4 行目）" in r.output),
     # 基盤要件のゲート（#950）——承認したタグ（要求確定）の時点の全体に当てる
     ("基盤要件が決まっていれば作る", BASE[:-1] + [("w", INFRA, INFRA_OK), ("c",), ("t", R1), ("t", B1)], False,
      lambda r: made(r) and INFRA_WARN not in r.output and "関門（基盤要件" not in r.output),
@@ -658,6 +679,19 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # #1154: 目的と成功の判定
+    ("目的の表を読まない", '    purposes = read_purposes(whole.files, info["req"])\n', "    purposes = None\n", "目的の表から目的と成功の判定の節を作る"),
+    ("目的の表を作業ツリーから読む", '    purposes = read_purposes(whole.files, info["req"])\n',
+     '    purposes = read_purposes({design.PURPOSES: p.read_bytes()} if (p := top / in_version(info["version"], design.PURPOSES)).exists() else {}, info["req"])\n',
+     "承認の後に足した目的の表は入らない"),
+    ("目的の表の見出しを見ない", "    if not rows or rows[0] != design.PURPOSES_COLUMNS:", "    if not rows:", "目的の表の見出しが違えば作らない"),
+    ("目的の表の列の数を見ない", '    if bad:\n        raise Stop(1, [f"{label}: 列の数', '    if False:\n        raise Stop(1, [f"{label}: 列の数', "目的の表の列の数が違えば作らない"),
+    ("決まらない id の行を落とす", "[[r[0], kind] + r[1:] for r, kind in zip(rows, kinds)]",
+     '[[r[0], kind] + r[1:] for r, kind in zip(rows, kinds) if kind != "—"]', "目的の表から目的と成功の判定の節を作る"),
+    ("目的の節を手書き部分より前に置く",
+     '    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n    if purposes is not None:\n        out += purposes_section(purposes)\n',
+     '    if purposes is not None:\n        out += purposes_section(purposes)\n    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n',
+     "目的の表から目的と成功の判定の節を作る"),
     # #950: 基盤要件のゲート
     ("基盤要件のゲートを当てない", '    infra_gate(rendered, info["req"])\n', "", "基盤要件が未決定なら作らない"),
     ("基盤要件を Q&A 表の無い全体に当てる", '    infra_gate(rendered, info["req"])\n', '    infra_gate(whole.files, info["req"])\n',
@@ -748,8 +782,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("v2 以降も比較の節を出さない", "if not problems and version > 1:", "if False:", "前の版との比較を載せる"),
     ("シンボリックリンクを中身で写す", '        if mode == "120000":\n', '        if False:\n',
      "版の中のシンボリックリンクは比較で断る"),
-    ("比較の節を手書き部分の前に置く", '    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n    if diff is not None:\n        out += changes_section(diff, info["req"])\n',
-     '    if diff is not None:\n        out += changes_section(diff, info["req"])\n    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n',
+    ("比較の節を手書き部分の前に置く", '    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n    if purposes is not None:\n        out += purposes_section(purposes)\n    if diff is not None:\n        out += changes_section(diff, info["req"])\n',
+     '    if diff is not None:\n        out += changes_section(diff, info["req"])\n    for _, body in hand:\n        out += [body.rstrip("\\n"), ""]\n    if purposes is not None:\n        out += purposes_section(purposes)\n',
      "前の版との比較を載せる"),
     ("削除の理由を載せない", "answer(c.before), answer(c.after), c.reason or \"—\"]",
      "answer(c.before), answer(c.after), \"—\"]", "前の版との比較を載せる"),

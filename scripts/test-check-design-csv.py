@@ -9,13 +9,17 @@
 
 1. **決まりに反する形を、理由つきで落とす（1）**——見出し（順・物理設計の列を足す）・列の数・id の形・重複（id・エンティティと項目・
    id と順番）・決まった値（種類・必須・向き・ヘッダー・権限の可否）・順番・レイアウトの id が一覧に無い（一覧が無いときも）・帳票名・
-   権限一覧の見出し（1 列目・ロールが無い・重複）と操作の重複・非機能要求の種類の上限と単位・No の形と重複・見出し。
+   権限一覧の見出し（1 列目・ロールが無い・重複）と操作の重複・非機能要求の種類の上限と単位・No の形と重複・見出し・
+   目的の表（#1154）の見出し・列の数・id の形と重複・種類ごとに空にする欄・上位が目的でない／表に無い・機能の id の形・機能一覧に無い id（一覧が無いときも）・`なし` の混在。
 2. **決まりどおりの形を通す**（陽性対照。BOM・空でよい欄が空・性能の行とほかの語の行は崩れていても見ない）。
 3. **4 つを分けて出す**——形式の違反（1）・表が無い（止めない。0）・必須の欄が空（3）・未決定の印（3。全角も）。
    **未決定の印のあるセルを値の違反に数えない**。違反と未決定が両方あれば 1 で、両方の見出しを出す。
+   **目的の表の結び付けの欠け**（目的を測る指標が無い・目的を指さない機能・機能一覧があるのに指標の機能が空）も 3。
+   機能一覧が無ければ指標の機能は空でよい（0）。
 4. **中身を検査していない形を 0 にしない（2）**——UTF-8 でない・空のファイル・ファイルでない・ディレクトリが無い・引数の誤り・
    想定外の例外（128KB 超のセルの `csv.Error`）・`-OO` で引数なし。
-5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ）。
+5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ。
+   目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -48,6 +52,7 @@ R = "requirements/reports.csv"
 RO = "requirements/roles.csv"
 J = "requirements/jobs.csv"
 N = "shared/nfr.csv"
+P = "requirements/purposes.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
 E_HEAD = "エンティティ,項目,意味,型,必須,保管期間\n"
@@ -57,6 +62,10 @@ R_HEAD = "id,帳票名,順番,項目,意味,書式\n"
 RO_HEAD = "操作,管理者,担当者\n"
 J_HEAD = "id,名前,契機,周期,失敗したときの扱い\n"
 N_HEAD = "No,対象,指標,上限,単位,条件,根拠\n"
+P_HEAD = "id,上位,誰の課題か,内容,成功の判定,機能\n"
+P_GOAL = "G-001,,受注の担当者,受注の入力の手間を減らす,,\n"
+P_OK = (P_GOAL + "K-001,G-001,,1 件の受注の入力にかかる時間,5 分から 2 分以下に,F-001・F-002\n"
+        "K-002,G-001,,入力の誤り,月 3 件以下,なし\n")
 
 GOOD = {
     F: F_HEAD + "F-001,注文の受付,API,flows/受注.svg\nF-002,注文の一覧,画面,\n",
@@ -94,11 +103,20 @@ def nfr(row: str) -> dict:
     return good(N=N_HEAD + row + "\n")
 
 
+def purposes(body: str, features: str | None = None) -> dict:
+    """目的の表の試料（#1154）。機能一覧は GOOD のもの（F-001・F-002）か `features`（"" なら置かない）。ほかの表は置かない。"""
+    files = {P: P_HEAD + body}
+    feature_list = GOOD[F] if features is None else features
+    if feature_list:
+        files[F] = feature_list
+    return files
+
+
 # (名前, 置く表（パス → 中身。bytes はそのまま・"<dir>" はディレクトリ）, 引数（None なら根）, 期待する終了コード, 出力に含まれるべき文字列, 含まれてはならない文字列)
 CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
-    ("決まりどおり", GOOD, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
+    ("決まりどおり", GOOD | {P: P_HEAD + P_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
     ("BOM 付き", {rel: "﻿" + body for rel, body in GOOD.items()}, None, 0, "OK（", "見出しの行"),
-    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（7 件）", "成果物の表が 1 つも無い"),
+    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（8 件）", "成果物の表が 1 つも無い"),
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
@@ -167,6 +185,39 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
     ("種類の行の上限が未決定", nfr("N-001,a,保管期間,未定,年,b,c"), None, 3, "上限 に未決定の印（未定）", "正の整数でない"),
     ("違反と未決定が両方", good(F=F_HEAD + "F-01,a,API,\n", J=J_HEAD + "J-001,a,b,,d\n"), None, 1, "必須の欄が空（1 件）", ""),
     # ---- 判定していない（2）
+    # ---- 目的の表（#1154）
+    ("目的の表: 決まりどおり", purposes(P_OK), None, 0, "requirements/purposes.csv（3 行）", "目的を指さない"),
+    ("目的の表: 見出し", purposes(P_OK) | {P: "id,上位,内容,誰の課題か,成功の判定,機能\n" + P_OK}, None, 1,
+     "requirements/purposes.csv:1: 見出しの行が決まりと違う", ""),
+    ("目的の表: 列の数", purposes(P_GOAL + "K-001,G-001,,a,b\n"), None, 1, "requirements/purposes.csv:3: 列の数が 5", ""),
+    ("目的の表: id の形", purposes(P_OK.replace("K-002", "K-02")), None, 1, "id が G-（目的）か K-（指標）に 3 桁以上の数字の形でない: 'K-02'", ""),
+    ("目的の表: id の重複", purposes(P_OK + P_GOAL), None, 1, "requirements/purposes.csv:5: id が 2 行目と重複: G-001", ""),
+    ("目的の表: 目的の行に成功の判定", purposes(P_OK.replace("受注の入力の手間を減らす,,", "受注の入力の手間を減らす,半分に,")), None, 1,
+     "目的の行に 成功の判定 を書いた（指標の行だけに書く）: '半分に'", ""),
+    ("目的の表: 指標の行に誰の課題か", purposes(P_OK.replace("K-002,G-001,,", "K-002,G-001,営業,")), None, 1,
+     "指標の行に 誰の課題か を書いた（目的の行だけに書く）: '営業'", ""),
+    ("目的の表: 上位が目的でない", purposes(P_OK.replace("K-002,G-001", "K-002,K-001")), None, 1, "上位 K-001 が目的（G-）の行でない", ""),
+    ("目的の表: 上位が表に無い", purposes(P_OK.replace("K-002,G-001", "K-002,G-009")), None, 1, "上位 G-009 が表の目的に無い", ""),
+    ("目的の表: id の決まっていない行があれば上位は未決定", purposes(P_OK.replace("K-002,G-001", "K-002,G-009") + "未定,,営業,b,,\n"), None, 3,
+     "上位 G-009 が表に無い（表に id の決まっていない行がある）", "が表の目的に無い"),
+    ("目的の表: 機能が機能一覧に無い", purposes(P_OK.replace("なし", "F-009")), None, 1,
+     "機能 F-009 が機能一覧（requirements/features.csv）に無い", ""),
+    ("目的の表: 機能の区切り", purposes(P_OK.replace("F-001・F-002", "F-001、F-002")), None, 1, "機能 の値が機能一覧の id（F- に 3 桁以上の数字）でない", ""),
+    ("目的の表: なしと id を混ぜる", purposes(P_OK.replace(",なし", ",なし・F-001")), None, 1, "機能 に なし と機能の id を混ぜた", ""),
+    ("目的の表: 機能一覧が無いのに機能を書く", purposes(P_OK, features=""), None, 1,
+     "機能 の id を照らす機能一覧（requirements/features.csv）が無い・読めない", ""),
+    ("目的の表: 機能一覧が無ければ機能は空でよい", purposes(P_OK.replace("F-001・F-002", ""), features=""), None, 0, "requirements/purposes.csv（3 行）",
+     "機能 が空"),
+    ("目的の表: 機能一覧があれば機能が空は未決定", purposes(P_OK.replace("F-001・F-002", "")), None, 3,
+     "requirements/purposes.csv:3: 機能 が空（どの機能も動かさない指標", ""),
+    ("目的の表: 目的を指さない機能", purposes(P_OK.replace("F-001・F-002", "F-001")), None, 3,
+     "requirements/purposes.csv: 機能一覧の F-002 が、どの指標の 機能 にも無い（目的を指さない機能", "F-001 が、どの指標"),
+    ("目的の表: 目的を測る指標が無い", purposes(P_OK + "G-002,,営業,見積りを早く出す,,\n"), None, 3,
+     "requirements/purposes.csv:5: 目的 G-002 を測る指標（上位が G-002 の K- の行）が無い", "目的 G-001"),
+    ("目的の表: 必須の欄が空", purposes(P_OK.replace(",受注の担当者,", ",,")), None, 3, "requirements/purposes.csv:2: 誰の課題か が空", ""),
+    ("目的の表: 機能の未決定の印", purposes(P_OK.replace("F-001・F-002", "未定")), None, 3, "requirements/purposes.csv:3: 機能 に未決定の印（未定）", ""),
+    ("目的の表: 一覧の id が未決定なら機能の id も未決定", purposes(P_OK.replace("なし", "F-009"), features=GOOD[F] + "TBD,x,API,\n"), None, 3,
+     "機能 F-009 が機能一覧（requirements/features.csv）に無い（一覧に id の決まっていない行がある）", ""),
     ("UTF-8 でない", good(F=(F_HEAD + "F-001,注文,API,\n").encode("cp932")), None, 2, "requirements/features.csv: UTF-8 として読めない", ""),
     ("空のファイル", good(F=""), None, 2, "requirements/features.csv: 空のファイル", ""),
     ("ファイルでない", good(F="<dir>"), None, 2, "requirements/features.csv: ファイルでない", ""),
@@ -220,6 +271,37 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("単体の検査で読めない非機能要求を 2 にしない", "def check(root: Path, strict_nfr: bool = True)", "def check(root: Path, strict_nfr: bool = False)",
      "読めない非機能要求"),
     ("ファイルでないものを無い表と読む", "        if path.exists():", "        if False:", "ファイルでない"),
+    # ---- 目的の表（#1154）
+    ("目的の表を検査しない", "    check_purposes(root, report, context)", "    pass", "目的の表: 決まりどおり"),
+    ("目的の表の見出しを見ない", "    if not check_columns(report, PURPOSES, header, PURPOSES_COLUMNS):\n        return",
+     "    if False:\n        return", "目的の表: 見出し"),
+    ("目的の表の列の数を見ない", "        if len(fields) != len(PURPOSES_COLUMNS):", "        if False:", "目的の表: 列の数"),
+    ("目的の表の id を 1 桁から許す", 'PURPOSE_ID = re.compile(r"([GK]-)[0-9]{3,}")', 'PURPOSE_ID = re.compile(r"([GK]-)[0-9]{1,}")', "目的の表: id の形"),
+    ("目的の表の id の重複を見ない", "            elif value in seen:\n                report.violations.append(f\"{where}: id が",
+     "            elif False:\n                report.violations.append(f\"{where}: id が", "目的の表: id の重複"),
+    ("種類ごとに空にする欄を見ない", "            if row[column].strip():\n                other", "            if False:\n                other",
+     "目的の表: 目的の行に成功の判定"),
+    ("種類ごとに書く欄の空を見ない", '            if column != "機能":\n                cell_state', "            if False:\n                cell_state",
+     "目的の表: 必須の欄が空"),
+    ("上位が指標でも通す", "            elif value in seen:\n                report.violations.append(f\"{where}: 上位",
+     "            elif False:\n                report.violations.append(f\"{where}: 上位", "目的の表: 上位が目的でない"),
+    ("上位が表に無くても通す", '                report.violations.append(f"{where}: 上位 {value} が表の目的に無い")', "                pass",
+     "目的の表: 上位が表に無い"),
+    ("id の決まっていない行があっても上位を違反にする", "            elif pending:", "            elif False:",
+     "目的の表: id の決まっていない行があれば上位は未決定"),
+    ("機能一覧が無いのに書いた id を通す", '            if cell_state(report, where, "機能", value, True) and value.strip() != PURPOSE_NONE:',
+     "            if False:", "目的の表: 機能一覧が無いのに機能を書く"),
+    ("機能一覧が無くても機能の空を数える", 'cell_state(report, where, "機能", value, True)', 'cell_state(report, where, "機能", value, False)',
+     "目的の表: 機能一覧が無ければ機能は空でよい"),
+    ("機能の空を数えない", "        if not value.strip():\n            report.empty.append", "        if False:\n            report.empty.append",
+     "目的の表: 機能一覧があれば機能が空は未決定"),
+    ("なしの混在を見ない", "        if PURPOSE_NONE in items:", "        if False:", "目的の表: なしと id を混ぜる"),
+    ("機能の id の形を見ない", "            if not FEATURE_ID.fullmatch(item):", "            if False:", "目的の表: 機能の区切り"),
+    ("機能の id を機能一覧に照らさない", '                report.violations.append(f"{where}: 機能 {item} が機能一覧（{FEATURES}）に無い")', "                pass",
+     "目的の表: 機能が機能一覧に無い"),
+    ("一覧の未決定の id を機能の照合で見ない", "            elif features_pending:", "            elif False:", "目的の表: 一覧の id が未決定なら機能の id も未決定"),
+    ("目的を測る指標を見ない", "    for goal in sorted(goals - measured):", "    for goal in []:", "目的の表: 目的を測る指標が無い"),
+    ("目的を指さない機能を見ない", "        for feature in sorted(features - covered):", "        for feature in []:", "目的の表: 目的を指さない機能"),
 ]
 
 # -OO（docstring が無い）で引数なしに呼んでも、使い方の誤りとして 2（#286）。(名前, 壊す前, 壊した後)
@@ -333,6 +415,7 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
               for rel in re.findall(r"（`((?:requirements|shared)/[^`]+\.csv)`）", line)]
     if sorted(tables) != sorted(module.ALL_TABLES):
         problems.append(f"成果物の表の一覧が違う（tree.md {sorted(tables)} ／ 本体 {sorted(module.ALL_TABLES)}）")
+    problems += purpose_mismatches(module, design)
     kinds = {}
     for row in rows_of(section(nfr_md, "## 性能のほかの種類"))[1:]:  # 1 行目は見出し（`指標`・`上限`・`単位`）
         kinds[row[0].strip("`")] = () if row[2] == "空にする" else tuple(re.findall(r"`([^`]+)`", row[2]))
@@ -344,6 +427,32 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
     return problems
 
 
+def purpose_mismatches(module, design: str) -> list[str]:
+    """目的の表（#1154）の定数が tree.md の「目的と成功の判定」と一致するか。"""
+    heading = next((line for line in design.splitlines() if line.startswith("### ") and f"（`{module.PURPOSES}`）" in line), None)
+    if heading is None:
+        return [f"{module.PURPOSES}: tree.md に節が無い"]
+    body = section(design, heading)
+    rows = rows_of(body)
+    problems = []
+    names = [row[0].strip("`") for row in rows]
+    if names != module.PURPOSES_COLUMNS:
+        return [f"{module.PURPOSES}: 列が違う（tree.md {names} ／ 本体 {module.PURPOSES_COLUMNS}）"]
+    if any(len(row) != 3 or row[2] != "利用者" for row in rows):
+        problems.append(f"{module.PURPOSES}: 「決める人」が利用者でない行がある")
+    kinds = dict(re.findall(r"(目的|指標)は `([A-Z]+-)`", rows[0][1]))
+    if {prefix: kind for kind, prefix in kinds.items()} != module.PURPOSE_KINDS:
+        problems.append(f"{module.PURPOSES}: id の接頭辞と種類が違う（tree.md {kinds} ／ 本体 {module.PURPOSE_KINDS}）")
+    own = {prefix: tuple(row[0].strip("`") for row in rows if row[1].startswith(f"{kind}の行だけ"))
+           for prefix, kind in module.PURPOSE_KINDS.items()}
+    if own != module.PURPOSE_OWN:
+        problems.append(f"{module.PURPOSES}: 種類ごとに書く列が違う（tree.md {own} ／ 本体 {module.PURPOSE_OWN}）")
+    feature = rows[-1][1]
+    if f"`{module.PURPOSE_SEPARATOR}` で区切って" not in feature or f"`{module.PURPOSE_NONE}` とだけ書く" not in feature:
+        problems.append(f"{module.PURPOSES}: 機能 の区切り（{module.PURPOSE_SEPARATOR}）か動かさない値（{module.PURPOSE_NONE}）が tree.md と違う")
+    return problems
+
+
 # references を崩すと不一致になる（突き合わせが空振りでないこと）。(名前, ファイル, 崩す前, 崩した後)
 REFERENCE_MUTATIONS = [
     ("機能一覧の列を消す", "tree", "| `関係` | 関係する画面", "| 関係 | 関係する画面"),
@@ -352,6 +461,12 @@ REFERENCE_MUTATIONS = [
     ("決める人を崩す", "tree", "| `相手` | 誰と（どのシステム・部署と）やり取りするか | 連携先 |", "| `相手` | 誰と（どのシステム・部署と）やり取りするか | 開発者 |"),
     ("接頭辞を変える", "tree", "| `id` | `J-` に 3 桁以上の数字", "| `id` | `JOB-` に 3 桁以上の数字"),
     ("権限の値を変える", "tree", "セルは `可`・`不可` のどちらか", "セルは `○`・`×` のどちらか"),
+    ("目的の表の列を消す", "tree", "| `機能` | 指標の行だけ", "| 機能 | 指標の行だけ"),
+    ("目的の表の接頭辞を変える", "tree", "目的は `G-`、指標は `K-`", "目的は `P-`、指標は `K-`"),
+    ("目的の表の種類ごとの列を変える", "tree", "| `上位` | 指標の行だけ", "| `上位` | 目的の行だけ"),
+    ("目的の表の区切りを変える", "tree", "`・` で区切って並べる（`F-001・F-003`）", "`,` で区切って並べる（`F-001・F-003`）"),
+    ("目的の表の決める人を崩す", "tree", "の `id` を `・` で区切って並べる（`F-001・F-003`）。システムの機能では動かさない指標（業務の手順で動かす）は `なし` とだけ書く。目的の行は空にする | 利用者 |",
+     "の `id` を `・` で区切って並べる（`F-001・F-003`）。システムの機能では動かさない指標（業務の手順で動かす）は `なし` とだけ書く。目的の行は空にする | 開発者 |"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""システム設計書の成果物の表（機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）を検査する。
+"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）を検査する。
 
 usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か重ね合わせた全体（build/merged）>
 
@@ -10,11 +10,14 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 渡したディレクトリの `requirements/` と `shared/nfr.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
 
 - **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ）・列の数・番号の形・重複・
-  決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形
+  決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
+  目的の表（#1154）の種類ごとに空にする欄に書いた・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
-  印の判定は `check-spec-exit.py` の `find_markers` を読む（写さない）。**印のあるセルと空のセルは、値の決まりに当てない**——未決定は違反ではない
+  印の判定は `check-spec-exit.py` の `find_markers` を読む（写さない）。**印のあるセルと空のセルは、値の決まりに当てない**——未決定は違反ではない。
+  **目的の表の結び付けの欠け**（目的を測る指標が無い・機能一覧の機能がどの指標の `機能` にも無い——目的を指さない機能）もここに数える——
+  要るかどうかは利用者が決めることで、表の形の誤りではない
 
 **v2 以降は重ね合わせた全体（`merge-versions.py docs build/merged`）に当てる**——版のディレクトリは足した・変えた表しか持たない。
 
@@ -36,7 +39,8 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 | --- | --- |
 | **欄の中身**（意味の書き方・保管期間が業務に合うか・ロールの切り方） | 判断であって、一意に決まらない |
 | **帳票の見本・ER 図があるか** | 見本は HTML か PDF、図は drawio で、表の検査の外（図の鮮度は `render-diagrams.py --check`） |
-| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は入出力のレイアウトの id だけ**（一覧に無い id は落とす） |
+| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は id で指す 2 つだけ**——入出力のレイアウトの id（一覧に無い id は落とす）と、目的の表の指標の `機能`（機能一覧の id と照らす） |
+| **目的に照らした過不足の中身**（`機能` に載った機能が本当にその指標を動かすか・目的の切り方が正しいか） | 判断であって、一意に決まらない。spec-review の Domain Checker が目的の表を照合先にして見る。ここは結び付けの有無と id の実在だけ |
 | **機能一覧と中間表現の機能の対応** | このスクリプトは中間表現を読まない。`scaffold.py` が関門で照らす（`listed_features` を読む） |
 | **印を使わずに書いた未決定**（「あとで決める」） | 言い回しは列挙しきれない。`check-spec-exit.py` と同じ限界 |
 | **非機能要求の性能の行・ほかの語の行・種類の語の綴りの揺れ**（`稼働率` と書いた行） | 上のとおり見ない。種類は `指標` の語が 4 つのどれかと一致する行だけ |
@@ -73,6 +77,7 @@ IO_LAYOUT = "requirements/io-layout.csv"
 REPORTS = "requirements/reports.csv"
 JOBS = "requirements/jobs.csv"
 ROLES = "requirements/roles.csv"
+PURPOSES = "requirements/purposes.csv"
 NFR = "shared/nfr.csv"
 # 置き場所（版の根から）→ 見出しの行
 COLUMNS = {
@@ -109,6 +114,15 @@ UNIQUE = {
     REPORTS: ("id", "順番"),
     JOBS: ("id",),
 }
+# 目的の表（`references/tree.md` の「目的と成功の判定」。#1154）: 見出しの行・id の接頭辞 → 種類・種類ごとに書く列
+# （`id`・`内容` はどちらの種類も書く。ここに無い列は、その種類では空にする）・`機能` の区切りと「動かす機能が無い」の値
+PURPOSES_COLUMNS = ["id", "上位", "誰の課題か", "内容", "成功の判定", "機能"]
+PURPOSE_KINDS = {"G-": "目的", "K-": "指標"}
+PURPOSE_OWN = {"G-": ("誰の課題か",), "K-": ("上位", "成功の判定", "機能")}
+PURPOSE_ID = re.compile(r"([GK]-)[0-9]{3,}")
+PURPOSE_SEPARATOR = "・"
+PURPOSE_NONE = "なし"
+FEATURE_ID = re.compile(r"F-[0-9]{3,}")
 # 順番の列（正の整数）
 ORDER_COLUMN = "順番"
 # 権限一覧: 1 列目の名前と、ロールの列のセルの値
@@ -129,7 +143,7 @@ NFR_REQUIRED = ("対象", "条件", "根拠")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]{0,8}")
 PERCENT = re.compile(r"(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,6})?")
 
-ALL_TABLES = list(COLUMNS) + [ROLES, NFR]
+ALL_TABLES = list(COLUMNS) + [PURPOSES, ROLES, NFR]
 
 
 class Report:
@@ -294,6 +308,108 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
     context[rel + "#pending"] = pending
 
 
+def check_purposes(root: Path, report: Report, context: dict) -> None:
+    """目的の表（#1154）。機能一覧の id は `context`（`check_plain` が先に読む）から照らす。"""
+    table = read_table(root, PURPOSES, report)
+    if table is None:
+        return
+    header, rows = table
+    if not check_columns(report, PURPOSES, header, PURPOSES_COLUMNS):
+        return
+    features = context.get(FEATURES)  # 機能一覧が無い・読めない・見出しが違うなら None
+    features_pending = context.get(FEATURES + "#pending", False)
+    seen: dict[str, int] = {}
+    goals: set[str] = set()
+    measures: list[tuple[str, dict[str, str]]] = []
+    pending = False  # id が未決定・空の行がある（その行を指す上位を違反と言い切れない）
+    for line, fields in rows:
+        where = f"{PURPOSES}:{line}"
+        if len(fields) != len(PURPOSES_COLUMNS):
+            report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(PURPOSES_COLUMNS)}）")
+            continue
+        row = dict(zip(PURPOSES_COLUMNS, fields))
+        kind = None
+        if cell_state(report, where, "id", row["id"], False):
+            value = row["id"].strip()
+            matched = PURPOSE_ID.fullmatch(value)
+            if not matched:
+                report.violations.append(f"{where}: id が G-（目的）か K-（指標）に 3 桁以上の数字の形でない: {value!r}")
+            elif value in seen:
+                report.violations.append(f"{where}: id が {seen[value]} 行目と重複: {value}")
+            else:
+                seen[value] = line
+                kind = matched.group(1)
+        else:
+            pending = True
+        cell_state(report, where, "内容", row["内容"], False)
+        if kind is None:
+            continue
+        own = PURPOSE_OWN[kind]
+        for column in PURPOSES_COLUMNS:
+            if column in ("id", "内容") or column in own:
+                continue
+            if row[column].strip():
+                other = next(k for k, columns in PURPOSE_OWN.items() if column in columns)
+                report.violations.append(f"{where}: {PURPOSE_KINDS[kind]}の行に {column} を書いた（{PURPOSE_KINDS[other]}の行だけに書く）: "
+                                         f"{row[column].strip()!r}")
+        for column in own:
+            if column != "機能":
+                cell_state(report, where, column, row[column], False)
+        if kind == "G-":
+            goals.add(row["id"].strip())
+        else:
+            measures.append((where, row))
+    measured: set[str] = set()
+    covered: set[str] = set()
+    for where, row in measures:
+        upper = row["上位"]
+        if not markers(upper) and upper.strip():
+            value = upper.strip()
+            if value in goals:
+                measured.add(value)
+            elif value in seen:
+                report.violations.append(f"{where}: 上位 {value} が目的（G-）の行でない——指標の上位は目的を指す")
+            elif pending:
+                report.undecided.append(f"{where}: 上位 {value} が表に無い（表に id の決まっていない行がある）")
+            else:
+                report.violations.append(f"{where}: 上位 {value} が表の目的に無い")
+        value = row["機能"]
+        if features is None:
+            # 機能一覧が無ければ照らす相手が無い——空でよく、書いた id は違反（入出力のレイアウトと同じ扱い）
+            if cell_state(report, where, "機能", value, True) and value.strip() != PURPOSE_NONE:
+                report.violations.append(f"{where}: 機能 の id を照らす機能一覧（{FEATURES}）が無い・読めない")
+            continue
+        if markers(value):
+            cell_state(report, where, "機能", value, False)
+            continue
+        if not value.strip():
+            report.empty.append(f"{where}: 機能 が空（どの機能も動かさない指標——動かす機能を足すか、{PURPOSE_NONE} と決める）")
+            continue
+        items = [item.strip() for item in value.split(PURPOSE_SEPARATOR)]
+        if items == [PURPOSE_NONE]:
+            continue
+        if PURPOSE_NONE in items:
+            report.violations.append(f"{where}: 機能 に {PURPOSE_NONE} と機能の id を混ぜた: {value.strip()!r}")
+            continue
+        for item in items:
+            if not FEATURE_ID.fullmatch(item):
+                report.violations.append(f"{where}: 機能 の値が機能一覧の id（F- に 3 桁以上の数字）でない: {item!r}"
+                                         f"（区切りは {PURPOSE_SEPARATOR}）")
+            elif item in features:
+                covered.add(item)
+            elif features_pending:
+                report.undecided.append(f"{where}: 機能 {item} が機能一覧（{FEATURES}）に無い（一覧に id の決まっていない行がある）")
+            else:
+                report.violations.append(f"{where}: 機能 {item} が機能一覧（{FEATURES}）に無い")
+    for goal in sorted(goals - measured):
+        report.undecided.append(f"{PURPOSES}:{seen[goal]}: 目的 {goal} を測る指標（上位が {goal} の K- の行）が無い——成功の判定が決まっていない")
+    if features is not None:
+        for feature in sorted(features - covered):
+            report.undecided.append(f"{PURPOSES}: 機能一覧の {feature} が、どの指標の 機能 にも無い（目的を指さない機能——"
+                                    "要るか、要るならどの目的のためかを Q&A 表に起票する）")
+    report.rows[PURPOSES] = len(rows)
+
+
 def check_roles(root: Path, report: Report) -> None:
     table = read_table(root, ROLES, report)
     if table is None:
@@ -398,6 +514,7 @@ def inspect(root: Path) -> Report:
     context: dict = {}
     for rel in COLUMNS:  # 入出力の一覧はレイアウトより先（辞書の順）
         check_plain(root, rel, report, context)
+    check_purposes(root, report, context)  # 機能一覧より後（`context` の機能一覧の id を照らす）
     check_roles(root, report)
     check_nfr(root, report)
     return report

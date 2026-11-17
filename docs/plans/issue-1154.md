@@ -1,0 +1,132 @@
+# Issue #1154 — spec-loop: 目的の層（誰の課題か・何を改善するか・成功の判定）を上流の文書にし、機能から辿れるようにする
+
+**不在の周**（`/dev-loop:cruise 1169 --absent` の起動・2026-11-17T10:47Z）。利用者には訊かない。親（cruise #1169）から委譲文で受けた子。
+確かめた線（出所: cruise の確かめた線（台帳 `issue-1169`）。利用者の確認（起動時・2026-11-17T10:47:55Z、配布を見せて確かめた））:
+`直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`・`マージ前の判断 = 推奨で決めて起票`（古い値。後退・未達は推奨で進めない）。実機確認の線は無い。
+台帳（`.claude/plans/cruise-issue-1169.json`）は書かない（親だけ）。手順 7 のマージはしない（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+読み込んだ dev-loop は 2.7.0（`SKILL.md` 1920 行を読んだ）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
+版の上げ方: `spec-loop` を **minor**（目的の表と、その検査・提案書の節・ヒアリングの型・判定役の観点を足す——CLAUDE.md の「能力・手順の追加」）。着手時の main は spec-loop 0.102.0 → 0.103.0。
+マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.7.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
+割り目: 割らない（cruise の周）。
+
+Issue 本文（外部入力）から読んだ要件: 目的の文書を `requirements/` に置き承認の照合の範囲に入れる（案 1）・初回ヒアリングに 3 点を足す（案 2）・機能に「どの目的のための機能か」を持たせ scaffold が実在を確かめ、目的を指さない機能は要るかを共有の Q&A 表に起票する（案 3）・判定役に目的に照らした過不足の観点を足す（案 4）・提案書の「背景と目的」を二重に書かない。
+コメント（利用者）: 成功の判定は KGI → CSF → KPI の分解があり、機能が KPI の行を指せば「どの機能も動かさない KPI」も見つかる。本文とコメントに受入基準を緩める指示は無い。
+
+## 決めた値（依存する周 #1161（関係者）・#1163（必須度）が前提にする）
+
+- **D1 目的の表は `requirements/purposes.csv`**（UTF-8 の CSV。1 行が目的か指標）。列は `id`・`上位`・`誰の課題か`・`内容`・`成功の判定`・`機能`。
+- **D2 id の形**: 目的は **`G-` に 3 桁以上の数字**（`G-001`）、成功の判定を持つ指標は **`K-` に 3 桁以上の数字**（`K-001`）。種類は接頭辞で決まる（種類の列は持たない）。
+  ほかの表（#1161 の関係者の表・#1163 の必須度）が目的の層を指すときは、この id で指す。
+- **D3 指標の行（`K-`）の `上位` は目的の id**、`成功の判定` に目標の値と測り方、`機能` にその指標を動かす機能一覧の `id` を `・` で区切って書く（システムの機能では動かさない指標は `なし`）。
+  目的の行（`G-`）は `誰の課題か` と `内容` を書き、`上位`・`成功の判定`・`機能` は空にする。
+- **D4 重ね方**: 一覧（`versions.md` の「行の単位で重ねる表」）に載せない——**ファイルの単位で重なる**（#1090 の D2 のとおり）。
+
+### 仕様の穴（推奨で決めた。`仕様の穴 = 推奨で決めて起票`）
+
+- **H1（決めること 1）目的の文書を必須にするか**: (a) 任意——表が無ければ「表が無い」と出すだけで止めない（推奨）／(b) 必須——表が無ければ scaffold と提案書を止め、既存の正本の移し方を書く。
+  推した理由: 前からの正本はどれも目的の表を持たないので、(b) は全部の正本の scaffold を止め、移行を要る。成果物の表（#957）と同じ「どれも任意」に揃う。置いた正本では、目的を指さない機能が未決定として scaffold を止める（下の H3）。
+- **H2（決めること 2）成功の判定を受入基準（Red テスト）と別の層として持つか**: (a) 別の層——目的の表の指標の行（`K-`）に持ち、Red テストにしない（推奨）／(b) 中間表現のケースに写して Red テストにする。
+  推した理由: 成功の判定（入力時間が 1 件 5 分から 2 分になる、など）は運用の後に業務で測る値で、実装の入出力で確かめられない。Red テストは仕様の振る舞いを確かめる層で、混ぜると実装が無くても決まらないケースになる。
+- **H3（案 3）機能と目的の結び付けをどこに持つか**: (a) 目的の表の指標の行の `機能` の列（推奨）／(b) 機能一覧（`features.csv`）に `目的` の列を足す／(c) 中間表現の機能に持たせる。
+  推した理由: (b) は機能一覧の見出しの行を変えるので、前からの正本の `features.csv` が「見出しの行が決まりと違う」で落ちる（#1163 も同じ表に列を足すので、移し方を 2 度決めることになる）。
+  (c) は中間表現が scaffold の段にしか無く、要求確定の段で辿れない。(a) は新しい表の中で閉じ、利用者のコメントのとおり指標（KPI）から機能を指すので「どの機能も動かさない指標」が空の欄として見える。
+  機能から目的へは、機能の id で目的の表を引いて辿る（`spec-ir.md` に書く）。
+- **H4（提案書）「背景と目的」を二重に書かない形**: (a) 目的の表から提案書に「目的と成功の判定」の節を生成し、手書きの背景は目的と指標を書き直さない（推奨）／(b) 手書きの背景から目的の表を指すだけ。
+  推した理由: 決裁者は提案書だけを読み、正本のリポジトリを開かない。承認したタグの時点の表から生成すれば、二重に書かずに中身が提案書に載る。
+- **H5（案 4）観点を足す判定役**: (a) Domain Checker（推奨）／(b) Red Team。
+  推した理由: Red Team は抜ける条件 2・3（仕様チェックリストとテストケースの揃い）を判定する役で、目的の過不足を足すと条件の判定が混ざる。Domain Checker は「仕様の外にある決まりを照合先として引き、食い違いを挙げる」役で、目的の表を照合先にする形に合う。
+  機械で決まる部分（結び付けの有無・id の実在）は `check-design-csv.py` が見る。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/references/tree.md` — ツリーに `purposes.csv`、「システム設計書の成果物」に目的の表の節（列・決める人・id の形・種類ごとの欄・結び付けの検査）、`proposal/` の手書き部分の決まり
+- `plugins/spec-loop/references/hearing.md` — 型と落とし先に目的の 3 点
+- `plugins/spec-loop/references/spec-ir.md` — 機能から目的へ辿る道（中間表現に持たない）
+- `plugins/spec-loop/scripts/check-design-csv.py` — 目的の表の検査と、機能一覧との照合
+- `plugins/spec-loop/scripts/build-proposal.py` — 提案書の「目的と成功の判定」の節
+- `plugins/spec-loop/agents/domain-checker.md` — 目的に照らした過不足の観点
+- `plugins/spec-loop/skills/spec-review/SKILL.md` — Domain Checker に目的の表を渡す
+- `plugins/spec-loop/skills/req-loop/SKILL.md` — 手順 0 の要点に目的の 3 点
+- `plugins/spec-loop/skills/proposal/SKILL.md` — 手書き部分に目的と指標を書き直さない
+- `scripts/test-check-design-csv.py` — 目的の表の試料・変異・references との突き合わせ
+- `scripts/test-build-proposal.py` — 提案書の節の試料と変異
+- `scripts/test-scaffold.py` — scaffold の関門が目的の表で止まる・通す試料
+- `CLAUDE.md` — `check-design-csv.py` の項に目的の表
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `docs/plans/issue-1154.md` — この計画ファイル
+
+触らない:
+
+- `plugins/spec-loop/scripts/merge-versions.py`・`check-signoff.py`・`scaffold.py` の本体——目的の表は `requirements/` のファイルの単位で重なり（D4）、照合も scaffold の関門も今の `requirements/` と `check-design-csv.py` の読み方のまま効く
+- `features.csv` の列（H3）・中間表現の形・Red テストの生成（H2）
+- `agents/red-team.md`（H5）
+- 説明文（`plugin.json`・`marketplace.json`・`SKILL.md` の frontmatter）・`README.md`・公開ページの初回ヒアリングの要約——「業務の前提・判断の基準・優先順位を聞く」は今も偽にならない（要約で、全部を挙げる文ではない）
+- #1161（関係者の表）・#1163（必須度の列）の中身
+
+依存の追加・更新: なし
+
+**複製の数**: 目的の表の列と id の形を述べる箇所は 3（`tree.md` の節が原本、`check-design-csv.py` の定数が写し——`test-check-design-csv.py` が突き合わせる——、`build-proposal.py` は列を `check-design-csv.py` から読む）。
+初回ヒアリングで目的を聞くことは 2（`hearing.md` が原本、`req-loop/SKILL.md` の手順 0 の要点）。分けない理由: 決まりの原本は `references/`、スクリプトは写しを持たず読み込む。
+
+## デプロイ経路
+
+プラグイン（`marketplace.json` のカタログと、`link-skills.sh` を使う利用者の `git pull`）と公開サイトの再ビルド。**マージの反映: ドキュメントとプラグインの配布**（`.claude/dev-loop.md` の宣言どおり）。
+
+## 受入基準（不変条件 × 経路）
+
+入口（目的の表を書く・読む・照らす場所）: 初回ヒアリング（`hearing.md` → req-loop 手順 0）・req-loop 手順 3／4（起票と `check-design-csv.py`）・spec-review（仕様の書き下しと `check-design-csv.py`・Domain Checker）・
+scaffold の関門（重ねた全体に `check-design-csv.py`）・照合（`check-signoff.py` が `requirements/` を比べる）・提案書（`build-proposal.py`）・重ね合わせ（`merge-versions.py`）・依存する周（#1161・#1163 が id で指す）。
+
+| # | 不変条件 | 経路 | 守り方 | 証明 |
+| --- | --- | --- | --- | --- |
+| B1 | 目的の表の決まり（置き場所・列・id の形・種類ごとの欄・決める人=利用者・任意・承認の照合の範囲・ファイルの単位で重なる）が `tree.md` の 1 箇所にあり、依存する周が id で指せる | 決まりを読む人・スキル・依存する周 | `tree.md` の節 | 読んで確かめる＋`test-check-design-csv.py` の突き合わせ（列・接頭辞） |
+| B2 | `check-design-csv.py` が目的の表の形の違反を 1 で落とす（見出し・列の数・id の形・重複・上位が無い／目的でない・種類ごとに空にする欄に書いた・`なし` と id の混在・機能の id が機能一覧に無い・機能一覧が無いのに機能を書いた） | 正本の版・重ねた全体を検査する req-loop／spec-review／scaffold | 検査の関数 | 試料と変異（`test-check-design-csv.py`） |
+| B3 | 決まっていないことを 3 で出す: 必須の欄が空・未決定の印・目的を測る指標が無い・機能一覧の機能がどの指標の `機能` にも無い（目的を指さない機能）。表が無ければ「表が無い」と出して 0 | 同上 | 検査の関数 | 試料と変異 |
+| B4 | 前からの表の検査は変わらない（目的の表が無い正本の結果は前と同じ。終了コードと文面——「表が無い」の件数を除く） | 前からの正本 | — | 前からの試料が全部通る（件数の文面は直す） |
+| B5 | scaffold の関門が目的の表で止まり（目的を指さない機能 → 1・何も作らない）、決まった表なら作る | scaffold | 関門は `design.check` のまま | `test-scaffold.py` の試料 2 つ |
+| B6 | 承認の照合（`check-signoff.py`）が目的の表の違いを拾う（`requirements/` の中なので） | proposal の照合 | 照合の範囲のまま | 一時の git リポジトリで、目的の表だけ違う 2 つのタグを照合して非 0（陽性対照: 同じなら 0） |
+| B7 | 提案書が、承認したタグの時点の目的の表から「目的と成功の判定」の節を出す。表が無ければ節を出さず、前と同じバイト。見出しが決まりと違う表なら作らない | `build-proposal.py` | 生成の関数 | `test-build-proposal.py` の試料と変異 |
+| B8 | 初回ヒアリングが目的の 3 点（誰の課題か・何を改善するか・成功の判定）を聞き、明示されたものを目的の表に、決まらないものを Q&A 表に落とす（推測で埋めない） | req-loop 手順 0 | `hearing.md`・`req-loop/SKILL.md` | 読んで確かめる |
+| B9 | Domain Checker が目的の表を照合先にして過不足（目的にならない機能・どの機能も受け持たない目的・動かす機能の無い指標）を挙げ、spec-review が目的の表を渡す | spec-review 手順 3 | `domain-checker.md`・`spec-review/SKILL.md` | 読んで確かめる（判定役の振る舞いは実行しない——下の未証明） |
+| B10 | 機能から目的へ辿る道が書いてある（中間表現の機能 id = 機能一覧の id → 目的の表の `機能` → `上位`） | 読む人 | `spec-ir.md`・`tree.md` | 読んで確かめる |
+| B11 | 版を 3 種類で揃えて上げ、`check-all.py` が緑 | CI | 版の行 | `check-all.py`・`check-plugin-versions.py` |
+| B12 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目（または「該当なし」）で渡す | 関門 | 委譲文 | 関門の記録 |
+
+**この環境では証明できないもの（未証明）**: B9 の判定役が実際の仕様レビューで目的に照らした過不足を挙げること（判定役を実際の正本で走らせて観測していない——人間のレビューに回す）。
+
+**生成物**: 生成物なし（変更するファイルに生成物は無い。`skill-metrics.py` の生成ブロックは dev-loop の `SKILL.md` を測るもので、この周は触らない——`--check` は `check-all.py` で見る）。
+`build-proposal.py` の出力は正本で作るもので、このリポジトリには commit しない。
+
+## 未解決・確認待ち
+
+- H1〜H5 の確認の Issue（利用者が戻ってから確かめる）。
+
+## 実験と確認の記録
+
+- **B6（承認の照合が目的の表の違いを拾う）**: 一時の git リポジトリ（`HOME`・`GIT_CONFIG_GLOBAL` を差し替え）で `docs/v1/shared/qa.csv` と `docs/v1/requirements/purposes.csv` を置き、
+  同じコミットに `signoff/v1/req-1`・`signoff/v1/budget-1` を付けて `check-signoff.py --version 1` → **0**（陽性対照: 「一致する」）。
+  目的の表の `成功の判定` だけを直したコミットに `signoff/v1/budget-2` を付けて（budget-1 は外した）同じく → **1**（「一致しない…`M docs/v1/requirements/purposes.csv`」）。
+  観測窓: v1 だけ・1 回。照合のコードは変えていない（`requirements/` を比べる今の範囲が拾う）。
+
+## 手順 8（起票数）
+
+- この周の起票: 5 件（仕様の穴を推奨で決めた確認の Issue H1〜H5。番号は PR を作ってから足す）
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1154-purpose-layer`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1154`・起点 `1017c78`・
+  base `1017c789d4ccfe8fe80c89018d67075651d13626`（`origin/main`＝`refs/remotes/origin/HEAD` を start-point に `prepare-worktree.sh` が出した値）。
+- 関門: まだ当てていない。
+- 交絡を潰した手順: 実験なし（まだ）。
+- 割り目: 割らない（cruise の周）。
+
+## 既知の限界・決着済みの論点
+
+（関門の指摘と採否はここに表で足す）
