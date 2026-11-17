@@ -104,10 +104,17 @@ OS の読み取りを全部見る手段（`fs_usage`・DTrace は root が要る
 
 - 周の在り処: ブランチ `issue/1151-check-all-cache`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1151`・起点 `1d39e55a`・
   base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `1d39e55a2d854a9bcaa6cccc581f925b75e9a1ff`
-- 関門: 1 パス目の前（実装は `561dc4db` まで。計画の実測は `6bbb51b2`）
+- 関門: **1 パス目を通した**（2026-11-17。終点 `803f24e9`）——Verifier（`dev-loop:dev-loop-verifier`・sonnet）**反証 4 件**、
+  `/code-review`（high）**指摘 10 件**（重なり 2——V-R1 と CR2、V-R4 と CR4。ほかに補足 1 件）。採否は下の「1 パス目の指摘の採否」。**直す 12 行・残課題 1 行**。差し戻し: 手順 4 へ 1 回
+- 1 パス目の指摘対応: `ca9f20a5`（起点 `803f24e9` から。成果物の差分あり——2 パス目を回す）。`check-all.py` の全件 91/91 緑（1029 秒・「記録しなかった」0 本）、
+  `test-check-all.py --part cache` は新しい契約と変異 13 本を含めて全部通った（変異はどれも狙った段で捕まった）
+- 直す途中で 1 件見つけて直した: hook の `env_get` が `os.environ` に bytes の鍵を訊いて `TypeError` になり、**hook の入る子をすべて「入らない」と書いていた**
+  （回し過ぎの側。変異 2 本が生き残ったことで見つかった）。契約「hook の入る子は粗い単位にしない」と変異を足した
+- **次にすること**: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目。**両方とも残っている**。base は `1d39e55a…` のまま
 - 割り目（手順 4 の完了時。2026-11-17）: `AskUserQuestion` で訊き、**「ここで割る」**——worktree の中で `/clear` して `/dev-loop:dev-loop 1151` で手順 5 から再開する
 - 再開したら次にすること: 手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。base は上の `1d39e55a…`。
   1 パス目の指摘対応の起点は、関門に渡す時点の HEAD（再開して最初に渡す前に、ここに書く）。
+- 再開（2026-11-17）: worktree・ブランチ・`803f24e9` を肯定的に確認。**1 パス目の指摘対応の起点: `803f24e9`**（Verifier・`/code-review` の 1 パス目に渡した時点の HEAD。作業ツリーは clean）
   **手元の dev-loop は 1.112.0 なので、リポジトリの 2.4.0 の `SKILL.md`（`plugins/dev-loop/skills/dev-loop/`）に従う**（冒頭）
 - 交絡を潰した手順: 手順 2 の試作の見積りは近似のまま（PR には「見積り」と書く）。実測（A1・A2）は下の「実装の後の実測」。
   **実測の秒数は負荷に揺れる**——測った回はどれも `uptime` のロードが 17〜41 で、別の処理と重なっていた。比べるのは「何本回したか」を主にし、秒数は負荷を添える
@@ -131,6 +138,8 @@ OS の読み取りを全部見る手段（`fs_usage`・DTrace は root が要る
 
 ```dev-loop-gates
 周の base: 1d39e55a2d854a9bcaa6cccc581f925b75e9a1ff
+関門: Verifier 1 803f24e9 反証=4
+関門: /code-review 1 803f24e9 指摘=10
 マージの反映: ドキュメントとプラグインの配布
 ```
 
@@ -143,3 +152,22 @@ OS の読み取りを全部見る手段（`fs_usage`・DTrace は root が要る
 | `sitecustomize` で差し込むか | `usercustomize` | Homebrew の Python は自前の `sitecustomize` を持つ（実測）。隠すと挙動が変わる |
 | 取りこぼしをどこで止めるか | PR 側の CI | CI は `check-all.py` を通さず全部回す。#831 で受け入れた「ローカルで省いた分を CI で捕まえる」と同じ形 |
 | `.git/` の下のファイルと一覧 | 依存に入れない（git の中身への依存は git コマンドの側で捉える） | 試作のトレースでは、34 本の `.git` の読み取りは `rmtree` の `dir_fd` 相対の見かけで、一覧は `test-check-mutation-claims` が写すときの列挙だけだった。`.git/index` などを中身で比べると毎回外れる |
+
+### 1 パス目の指摘の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| CR1 import が `.pyc` だけを開くと元の `.py` が依存に載らない | 示せる——scratchpad で `python3 t.py` を 2 回、2 回目の記録は `__pycache__/m.cpython-314.pyc` だけ（著者が再現） | A2 | 直す（`pyc_source`。契約「`.pyc` から import したモジュール」） |
+| V-R1／CR2 `PYTHONPATH` を外した子を、書く先の変数だけで「hook が入る」と数える | 示せる——Verifier・`/code-review` が偽リポジトリで `CACHED` のままを再現。実リポジトリの `test-check-spec-writeback.py`・`test-green-list.py` が同型 | A3・A2 | 直す（hook の `hooked`。契約 `t-strip`） |
+| V-R2 `PYTHONNOUSERSITE` の子に hook が入らない | 示せる——Verifier が再現 | A3 | 直す（`hooked`。契約 `t-nous`） |
+| CR3 テスト自身に hook が入らない回（venv・`PYTHONNOUSERSITE`）が空の依存を記録し、永久に当たる | 示せる——`/code-review` が venv と `PYTHONNOUSERSITE=1` で再現 | A2・A5 | 直す（テスト自身を読んだ跡が無ければ記録しない。契約「hook が入らなかった回」） |
+| V-R4／CR4 hook が Python 3.9 で読めず、子が黙って追えない | 示せる——`/usr/bin/python3` 3.9.6 で記録が書かれない（両者が再現。直した後に著者が 3.9.6 で記録を確かめた） | A3 | 直す（注釈を外し `from __future__ import annotations`） |
+| CR5 相対の cwd を解決しない | 示せる——`/code-review` が再現 | A3・A2 | 直す（hook で絶対にする。契約 `t-relcwd`） |
+| CR6 回している間に消えた入力が「無い」の指紋で記録される | 示せる——契約 `t-del` が直す前の本体で `CACHED` になる（変異「消えた入力を変化と見ない」） | A6 | 直す（親のディレクトリの mtime で見る） |
+| CR7 シェルの文字列（`sh -c`・`shell=True`・`os.system`）の中のパスが粗い単位にならない | 示せる——`/code-review` が再現 | A3 | 直す（語に割る。語に `git` があれば git の状態も。契約 `t-shell`） |
+| CR8 中断した回の契約と変異が無く、`rmtree` との競合で空の依存を記録しうる | 示せる——停止の判定を消した変異が既存の契約で生き残る（`/code-review`）。競合は CR3 の直しで塞いだ | A5・A15 | 直す（契約「中断した回は記録を書きも消しもしない」と変異） |
+| CR9 `-W`・`-X` の値をスクリプトの名前と読み、後ろの `-I` を見落とす | 示せる——関数に `[python, '-W', 'error', '-I', …]` を渡すと False（実リポジトリに今この形は無い） | A3 | 直す（値を飛ばす。契約 `t-wopt`） |
+| V-R3 `os.chdir` の後の相対 `os.open` が見えないことが docstring に名指しされていない | 示せる——Verifier が再現 | A13 | 直す（hook と `check-all.py` の docstring に名指し） |
+| CR 補足 hook の docstring は「`dir_fd` 基準」と書くが、実際は相対の `os.open` をすべて落とす | 示せる——`usercustomize.py` の判定の行 | A13 | 直す（V-R3 と同じ直し） |
+| CR10 `test-check-all.py` の `one()` の返り値の式が冗長 | 示せない（振る舞いは同じ） | 無し | 残課題 |
+
