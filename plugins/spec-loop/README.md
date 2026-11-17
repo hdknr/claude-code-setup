@@ -25,6 +25,7 @@
 | `references/hearing.md` | v1 で要求がまだ無いときと利用者が求めたときに、決定表の骨組みを作る前に業務の前提・判断の基準・優先順位を対話で聞き出す初回ヒアリング（req-loop の手順 0）の決まり |
 | `references/intake.md` | 持ち込まれた動くコード（PR・ブランチ・ディレクトリ）から要求の候補を起こす取り込みの段（req-loop の手順 3a）の決まり |
 | `scripts/intake-code.py` | 取り込みの段の機械で決まる部分——持ち込まれたコードを読むだけで写し（`snapshot`）、候補の JSON を検査して Q&A 表の回答待ちの行にし、基盤要件との食い違いを照らす（`rows`）（標準ライブラリと `git`） |
+| `scripts/review-meeting.py` | モックと Q&A 表で進めるレビュー会の機械で決まる部分——会の記録（`reviews/<日付>/notes.csv`）を読んで回答の候補と指摘を出し（`notes`。何も書かない）、指摘の振り分けを検査して回答待ちの行として起票し（`rows`）、資料に載る質問を画面の表の逆引きで画面ごとにまとめる（`groups`。`qa-to-pptx.py --groups` に渡す）（標準ライブラリだけ） |
 | `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-review-record.py` | 仕様レビューの記録（指摘の表と実行の記録）から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限と、条件 5 のうち内部の Q&A 表の足した・変えた行を Domain Checker が確かめたかを数え直す。`scaffold.py` は最後の実行の行をここで読む（標準ライブラリのみ） |

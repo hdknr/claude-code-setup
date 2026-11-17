@@ -85,8 +85,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       決まりの原本は `references/intake.md`、守る／守らないは docstring を正とする。テストは `scripts/test-intake-code.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
       列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。**`--links` で質問ごとのリンク（画面の表から作るモックの `#screen=`）を外から受けて質問の頁に載せ、
-      渡さなければ前と同じバイト**——#1100。テストは
+      渡さなければ前と同じバイト**——#1100。**`--groups` で質問のまとめ方（画面ごと・テーマ）を外から受けて並べ、`--groups`・`--links` のときは表紙に見た目の注記**——#1082。テストは
       `scripts/test-qa-to-pptx.py`）
+    - `scripts/review-meeting.py` - **モックと Q&A 表で進めるレビュー会の機械で決まる部分**（#1082）——会の記録（`reviews/<日付>/notes.csv`。版の外で、サインオフで比べない）を読んで回答の候補と指摘を出し（`notes`。**何も書かない**——回答は req-loop が利用者に確かめてから書く）、
+      指摘の振り分け（`triage.json`）を検査して `確認中`・`未回答` の行として起票し（`rows`。**指摘を 1 件も落とさない**・起票元にレビュー会の日付・質問の文に対象の番号）、資料に載る質問を画面の表の逆引きで画面ごとにまとめる（`groups`。`qa-to-pptx.py --groups` に渡す）。
+      決まりの原本は `references/tree.md` の「レビュー会の記録」、守る／守らないは docstring を正とする。番号の振り方は `intake-code.py` の `next_number` を読み込む——写さない。テストは `scripts/test-review-meeting.py`）
     - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
       （**0 でも「抜けた」ではない**。Q&A 表は `qa-to-pptx.py` の `read_rows` で読み、**仕様に反映した状態**
       （`check-qa-csv.py` の `REFLECTED`——`暫定反映` を含む）でない行を数える——**資料に載る行とは別の定義**（#325）。
@@ -465,6 +468,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-intake-code.py` - spec-loop の持ち込まれたコードの取り込み（#998）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**正本と取り込む元は一時ディレクトリに本物の git リポジトリで作り（PR は bare の `origin` の `refs/pull/<n>/head`）、
     写した前後で正本の参照・HEAD・`git status` が変わらないことと、足した表に本物の `check-qa-csv.py` が通ることを見る**——本物の GitHub には届かない
+  - `test-review-meeting.py` - spec-loop のレビュー会の記録の口（#1082）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**正本（2 つの版・画面の表・`reviews/<日付>/`）は試料ごとに一時ディレクトリに作り、写した `scripts/` を `python3 -I` で走らせる**。
+    `notes` が何も書かないこと・起票の番号と起票元と対象・指摘を落とさないこと・画面の表の逆引き（遷移先では引かない）と、**本体の定数が `references/tree.md` の「レビュー会の記録」と一致すること**を見る
   - `test-rework-report.py` - spec-loop の作り直しの量の記録を分析するスクリプト（#989）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**記録のファイルは一時ディレクトリに書き、`HOME` と子プロセスの cwd を一時ディレクトリに差し替える**——利用者の `~/.claude/spec-loop/` は読まない。
     **記録の形を `rework-metrics.py` から読み込むこと（写さないこと）も見る**

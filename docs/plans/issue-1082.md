@@ -1,0 +1,143 @@
+# Issue #1082 — spec-loop req-loop: モックと Q&A 表で進めるレビュー会の運用
+
+**不在の周**（`/dev-loop:cruise 1169 --absent` の起動・2026-11-17T10:47Z）。利用者には訊かない。親（cruise #1169）から委譲文で受けた子。
+確かめた線（出所: cruise の確かめた線（台帳 `issue-1169`）。利用者の確認（起動時・2026-11-17T10:47:55Z、配布を見せて確かめた））:
+`直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`・`マージ前の判断 = 推奨で決めて起票`（古い値。後退・未達は推奨で進めない）。実機確認の線は無い。
+台帳（`.claude/plans/cruise-issue-1169.json`）は書かない（親だけ）。手順 7 のマージはしない（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+読み込んだ dev-loop は 2.7.0（`SKILL.md` 1920 行を読んだ）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
+版の上げ方: `spec-loop` を **minor**、`screen-spec` を **minor**（どちらも手順・口の追加——CLAUDE.md の「能力・手順の追加」。0.x なので壊れる変更も minor）。
+着手時の main は spec-loop 0.104.0 → 0.105.0、screen-spec 0.6.1 → 0.7.0。
+マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.7.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
+割り目: 割らない（cruise の周）。
+`仕様の振る舞い:` の申告は要らない（`check-spec-writeback.py` が「spec-loop の正本が無い——該当なし」）。依存の定義・lockfile は触らない。
+
+Issue 本文（外部入力）から読んだ要件: req-loop に、モックを見せて進めるレビュー会の運用を 5 つ足す——
+(1) 会で出た新しい指摘を起票の候補として受ける入口（番号は req-loop が振る・起票元にレビュー会の日付・指摘の対象の番号を落とさない）、
+(2) 会で見せたモックを版の外の `reviews/<日付>/mock.html` に会ごとの記録として残し（commit する・サインオフの範囲に入れない）、`回答` の括弧にそのパスを書く、
+(3) 見た目（色・余白・フォント）の指摘を範囲の外にする（資料とモックの冒頭に書く・共有の Q&A 表に起票しない・`spec-scope.md` の振り分けに「見た目」を足す）、
+(4) 画面の表があれば質問を画面ごとに自動でまとめ、画面に掛からない質問だけを手で決めたテーマに入れる（`qa-to-pptx.py` にまとめ方を外から渡す口）、
+(5) 回答のメモを 1 と同じ形で書き出し、req-loop が手順 1 で `回答` の候補として読む（利用者に確かめたものだけを書く）。
+本文に受入基準を緩める指示は無い（コメントは無い）。**#1156 は 3 を前提にする**——3 の決めた形は下の「3 の決めた形（#1156 への引き渡し）」。
+
+## 決めた値
+
+### 仕様の穴（推奨で決めた。`仕様の穴 = 推奨で決めて起票`）
+
+- **H1（Issue の 1・5「候補の形（JSON か CSV）」）**: (a) **CSV**——`reviews/<日付>/notes.csv`、列は `種類`（`指摘`・`回答`）・`No`・`対象`・`メモ`・`発言者`（推奨）／(b) JSON。
+  推した理由: 書くのは会の記録を取る人（利用者の側）で、Q&A 表と同じく Excel で開いて書ける。JSON は手で書くと括弧や引用符で壊れやすい。
+  1 と 5 を同じファイルの `種類` で分けるので、1 回の会の記録が 1 ファイルにまとまる。
+- **H2（Issue の 5「書き出しの手段」）**: (a) **会の記録の決まった書式（H1 の CSV）を人が書く。モックには欄を足さない**（推奨）／(b) 生成したモックに回答のメモの欄と書き出しのボタンを足す。
+  推した理由: Issue が「生成器（#1081）に依らず req-loop 側の運用として決められる」とした範囲に収まる。(b) はモックに入力の保存と書き出しを持たせ、
+  モックの「どこにも保存しない・外を読まない」の決まり（screen-spec の `references/mock.md`）を変える。手で書いたモックを見せた会にも (a) は使える。
+- **H3（Issue の 4「手で決めたテーマ」を誰がどこに書くか）**: (a) **req-loop がその回の資料を作るときにテーマを決めて `build/req-loop/themes.json` に書く（commit しない。画面に掛かる質問を入れたら拒む）**（推奨）／
+  (b) 案件が commit するテーマの表（例: `reviews/themes.csv`）を利用者が持ち、req-loop はそれを読む。
+  推した理由: 画面に掛からない質問は会ごとに入れ替わり、決まった表に持つと毎回直す手間が増える。テーマの名前は利用者の業務の判断ではなく資料の並べ方（req-loop の「自分で決められることを質問にしない」）。
+  (b) は今の「案件のスクリプトの表に手で書き足す」形を正本に移すだけで、手作業が残る。
+- **H4（Issue の 3「範囲の外として記録し」の置き場所）**: (a) **会の記録の隣の振り分けのファイル（`reviews/<日付>/triage.json`。commit する）に `見た目` として残す。`spec/scope.md` には足さない**（推奨）／
+  (b) 仕様の範囲の文書（`spec/scope.md`）の「範囲の外」に 1 件 1 行で足す。
+  推した理由: `spec/scope.md` は spec-review が書く仕様の範囲の線で、サインオフで比べる範囲（`requirements/`・`spec/`）に入る——会ごとの見た目の指摘を足すと、
+  見た目だけの話で 2 つの承認の照合が割れる（screen-spec の描き方の差し替えを版の外に置いたのと同じ理由）。(a) は `reviews/` の中で範囲の外。#1156 が後で行き先（デザインの正本）を決めるときも、ここから拾える。
+
+決めた値は受入基準を足さない（手順 3 の受入基準は下のとおり固定）。確認の Issue は穴ごとに 1 件（H1〜H4）。
+
+### Issue が決めていたもの（穴ではない）
+
+- 会で見せたモックの置き場所は `reviews/<日付>/mock.html`（Issue の例のまま。`spec-review/` と同じく正本の根の、版の外）。
+- 起票元の詳細は `要求確定（レビュー会 <日付>）`（Issue の例のまま。印は `R`——req-loop が起票する）。
+- `回答` の括弧のモックの根拠は、会で見せたモックの写し（`A（業務部が回答。モック reviews/2026-11-20/mock.html）`）——#1099 で決めた「画面の表を指す」はこれで置き換える（生成したモックが commit されないので画面の表を指していた。写しを commit するので指せる）。
+
+### 3 の決めた形（#1156 への引き渡し）
+
+- **見た目**＝画面の表（画面・項目・遷移）にも仕様にも列の無い描き方——**色・余白・フォント・大きさ・飾り**。項目の有無・名前・並び（`まとまり`・`並び順`）・操作・遷移は見た目ではない（今までどおり共有の Q&A 表）。
+- 見た目の指摘は **共有の Q&A 表に起票しない**。req-loop は会の振り分けのファイル（`reviews/<日付>/triage.json`）に `見た目` として残す（H4）。spec-review の判定役の指摘なら、`spec-scope.md` の振り分けの区分の **範囲の外として記録する**（受ける原則は「見た目は確かめる対象ではない——受入基準にしたいなら、その性質を仕様とケースに書く」）。
+- 見た目を受入基準にしたいときは、今の決まりのまま（`tree.md` の「UI モック」: その性質を仕様とケースに書く）。
+- モックの冒頭（screen-spec の生成器の見出し）とレビュー会の PPTX の表紙（`--groups` か `--links` を渡したとき）に「確かめるのは項目・操作・遷移で、見た目は確かめる対象ではない」と出す。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/scripts/review-meeting.py` — 新規。会の記録の読み（`notes`）・指摘からの起票（`rows`）・質問のまとめ（`groups`）
+- `scripts/test-review-meeting.py` — 新規。上の回帰テスト（変異テストを含む）
+- `plugins/spec-loop/scripts/qa-to-pptx.py` — `--groups`（まとめ方を外から渡す口）と、表紙の見た目の注記
+- `scripts/test-qa-to-pptx.py` — `--groups` と注記の試料・変異
+- `scripts/test-check-signoff.py` — `reviews/` を置いても照合の結果が変わらない試料
+- `scripts/check-all.py` — 新しいテストの登録
+- `.github/workflows/plugins.yml` — 新しいテストのステップ
+- `plugins/spec-loop/skills/req-loop/SKILL.md` — 手順 1（回答の候補）・手順 3（会で出た指摘）・手順 4（まとめ・会で見せたモックの写し）・手順 5（報告）
+- `plugins/spec-loop/references/tree.md` — ツリーの `reviews/`・「レビュー会の記録」の節（決まりの原本）・「UI モック」の回答の根拠・「スライドの置き場所」
+- `plugins/spec-loop/references/qa-csv.md` — 起票元の詳細・回答の括弧のモック
+- `plugins/spec-loop/references/spec-scope.md` — 振り分けに「見た目」
+- `plugins/spec-loop/references/signoff-tags.md` — 範囲の外に `reviews/`
+- `plugins/spec-loop/README.md` — スクリプトの一覧（あれば）
+- `plugins/screen-spec/scripts/build-mock.py` — 見出しの見た目の注記
+- `plugins/screen-spec/references/mock.md` — 注記の決まり
+- `scripts/test-build-mock.py` — 注記の確かめ
+- `CLAUDE.md` — 新しいスクリプトとテストの項
+- `docs/plugins/index.md` — 公開ページの spec-loop の説明（req-loop の行があれば）
+- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/screen-spec/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/screen-spec/skills/*/SKILL.md` — 版の 2 行
+- `docs/plans/issue-1082.md` — この計画ファイル
+
+触らない:
+
+- `check-signoff.py`・`merge-versions.py`・`check-frozen.py` の本体——`reviews/` は版の外で、もともと比べない（試料で確かめるだけ）
+- `intake-code.py` の本体（番号の振り方 `next_number` を読み込む——写さない）
+- screen-spec の表の列・検査・`mock.md` の「どこにも保存しない」（H2 でモックに欄を足さない）
+- 説明文（`plugin.json`・`marketplace.json`・`SKILL.md` の frontmatter）——「レビュー会用 PPTX」「回答をスキルが推測で埋めることはしない」は偽にならない
+- `spec/scope.md` の形（H4。見た目は会の振り分けのファイルに残す）
+
+## デプロイ経路
+
+main へのマージで GitHub Pages の再ビルドとプラグインの配布（`.claude/dev-loop.md` の「マージの反映: ドキュメントとプラグインの配布」）。
+
+## 受入基準（不変条件 × 経路）
+
+経路は入口一覧から数える——会の記録を読む・起票する・まとめる・資料を作る・モックを作る・承認を照合する、の 6 つの入口（`review-meeting.py notes|rows|groups`・`qa-to-pptx.py`・`build-mock.py`・`check-signoff.py`）と、req-loop の手順の文。
+
+| # | 不変条件 | 破りうる経路 | どう守るか |
+| --- | --- | --- | --- |
+| A1 | 会で出た指摘の候補のファイルを渡すと、番号（`Q-R-` の全部の版を通した最大の次）を振って作業中の版の共有の表に起票し、起票元が `要求確定（レビュー会 <日付>）`、質問の文に対象の画面・項目・遷移の番号（記録の `対象`）が残る。行は `確認中`・`未回答`・`—` | `rows` の番号・起票元・質問の組み立て／候補に回答・状態の鍵を書く／対象を落とす候補（記録の行を指さない・指摘の行を候補にも見送りにもしない）／同じ候補で当て直す（二重の起票）／記録の `No` に番号を書いた指摘（ループの外の番号）／req-loop の手順 3 の文 | `rows` が記録の行を指す候補だけを受け、対象を記録から写して質問に付ける。指摘の行が候補にも見送りにも無ければ 1。回答の鍵は 1。起票済みの指摘（質問の印）を再び候補にすれば 1。指摘の `No` が空でなければ 1。書いた表は `check-qa-csv.py` を通る。テスト（試料と変異） |
+| A2 | `reviews/<日付>/mock.html`（と記録・振り分けのファイル）を置いても、サインオフの照合の結果が変わらない | `check-signoff.py` の比べる範囲／`build-proposal.py`（照合を通す）／`merge-versions.py`（重ね合わせ）／`signoff-tags.md`・`tree.md` の範囲の記述 | 範囲は `docs/v<n>/` の中だけ（本体は変えない）。`test-check-signoff.py` に、同じ手順に `reviews/` を足しただけの組（一致・食い違いの両方）で結果が同じ試料。文書に範囲の外と書く |
+| A3 | 画面の表がある例で、PPTX の質問が画面ごとにまとまり、画面に掛からない質問だけが手で決めたテーマに入る | `groups` の逆引き（画面の行・その画面の項目・その画面を遷移元にする遷移）／テーマに画面に掛かる質問を入れる／テーマから漏れた質問／同じ質問を 2 つのまとまりに入れる／`qa-to-pptx.py --groups` が渡されたまとまりのとおりに並べない・載る行を落とす／req-loop の手順 4 の文 | `groups` が画面ごとのまとまりを機械で作り、テーマに画面に掛かる質問・漏れ・重複があれば 1 で書かない。`--groups` は載る行が全部ちょうど 1 つのまとまりに入るときだけ作り（ほかは 2）、まとまりの順に区切りの枚と質問の頁を並べる。テスト |
+| A4 | 回答の候補のファイルを渡しても、利用者に確かめる前に `回答` を書き換えない | `notes`（読むだけ）／`rows`（候補に回答の鍵を書く）／req-loop の手順 1 の文（候補を示して確かめたものだけを手順 2 の「この会話で利用者が明示した回答の転記」として書く） | `notes` は何も書かない（Q&A 表のバイトが同じ）。`rows` は回答の鍵を拒む（1）。手順 1 の文が「確かめる前に書かない」と書く。テスト |
+| A5 | 見た目（色・余白・フォント）の指摘は共有の Q&A 表に起票しない。資料とモックの冒頭に「確かめるのは項目・操作・遷移で、見た目は確かめる対象ではない」と出る | `rows` の見送り（`見た目`）／`spec-scope.md` の振り分けの区分と「画面の表」の節（今の「見た目・配置の指摘は Q&A 表に回す」と食い違わない）／`qa-to-pptx.py` の表紙／`build-mock.py` の見出し／req-loop の手順 3 の文 | `rows` は `見た目` の見送りを受けて行を足さない。`spec-scope.md` に見た目の定義と区分を書き、「画面の表」の節を直す。表紙（`--groups`・`--links` のとき）と見出しに注記。テスト |
+| A6 | 会で見せたモックを `reviews/<日付>/mock.html` に残し、`回答` の括弧にそのパスを書く決まりが、`tree.md`・`qa-csv.md`・req-loop の手順で食い違わない | `tree.md` の「UI モック」の「画面の表があるとき」（#1099 の「画面の表を指す」）／`qa-csv.md` の回答の括弧／req-loop の手順 4（写しを残す）・手順 1（回答の根拠） | 3 箇所を同じ決まりに直す（原本は `tree.md` の「レビュー会の記録」）。関門が読み比べる |
+| A7 | 版を 3 箇所（`marketplace.json`・`plugin.json`・`SKILL.md` の 2 行）で揃えて上げる（spec-loop・screen-spec） | 版の書き換え漏れ | `check-plugin-versions.py`・`check-version-bump.py` |
+| A8 | 新しいテストが全部回しと CI に入る | `check-all.py` の一覧・`plugins.yml` | `test-check-all.py` |
+| A9 | 2 つの関門 × 2 パスに受入基準を渡す（必須の掛け算） | 委譲文 | `prompts/verifier.md`・`prompts/review-handoff.md` に毎回この表を貼る |
+
+**この環境で証明できないもの（未証明）**: なし——ただし `--groups` の PPTX を PowerPoint で開いて見ることは受入基準に入れない（`qa-to-pptx.py` の「守らないもの」のまま）。
+req-loop のスキル（モデル）が手順の文のとおりに振る舞うかは受入基準にしない——受入基準は口（スクリプト）の振る舞いと手順の文の食い違いの無さ（A1・A4・A6 の文の経路は関門が読み比べる）。
+
+**生成物の該当判定**: 図の書き出し（`diagrams/`）・`skill-metrics.py` の生成ブロック（dev-loop の `SKILL.md` だけ）は触らない——生成物なし。`check-diagram-freshness.py`・`skill-metrics.py --check` は全部回しで当てる。
+
+**周の大きさ**: 同じ決まりを述べる箇所は、`reviews/` の範囲の外が 3（`tree.md`・`signoff-tags.md`・`check-signoff` の試料）、回答の括弧のモックが 3（`tree.md`・`qa-csv.md`・req-loop）、
+見た目の線が 4（`spec-scope.md`・`mock.md`・`qa-to-pptx.py`・`build-mock.py`）。原本を `tree.md` の「レビュー会の記録」と `spec-scope.md` の「見た目」に置き、ほかは指す。
+5 つの項目を 1 周に入れる——分けない理由: 1・5 は同じ記録のファイル、2 は同じ `reviews/<日付>/`、3 の見送りは 1 の振り分けの一部、4 は同じ手順 4 の資料。分けると `reviews/` の決まりを 2 周で書くことになる。
+
+## 未解決・確認待ち
+
+- H1〜H4 の確認の Issue（下の「関門の進捗」に番号）。
+
+## 関門の記録
+
+```dev-loop-gates
+周の base: f58baafeb8e7209f7d18d166b235662c0645a118
+```
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1082-review-meeting-mock`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1082`・起点 `f58baaf`・base `origin/main` = `f58baafeb8e7209f7d18d166b235662c0645a118`
+- 割り目（手順 4）: 割らない（cruise の周）
+- 関門: まだ
+- 実験: なし
+
+## 既知の限界・決着済みの論点
+
+- 会の記録（`notes.csv`）と振り分けのファイル（`triage.json`）の中身が会で実際に出たことと合うかは、口が見ない（人が書く記録）。
+- `対象` の番号が画面の表に在るかは `rows` が見ない（写すだけ。画面の表の検査は screen-spec の `check-screens.py`）——対象を落とさないことだけを守る。

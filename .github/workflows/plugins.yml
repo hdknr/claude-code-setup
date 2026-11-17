@@ -282,6 +282,10 @@ jobs:
       - name: spec-loop の持ち込まれたコードの取り込みのテスト（#998）
         run: python3 scripts/test-intake-code.py
 
+      # 本体は plugins/spec-loop/scripts/review-meeting.py（モックと Q&A 表で進めるレビュー会の記録の読み・指摘からの起票・質問のまとめ。正本は一時ディレクトリに作る）。
+      - name: spec-loop のレビュー会の記録の口のテスト（#1082）
+        run: python3 scripts/test-review-meeting.py
+
       # 本体は plugins/spec-loop/scripts/parent-checklist.py（登録した Issue から依存の連鎖を cruise の親 Issue の書式で出す。
       # 索引と本文は本物の scaffold.py で作り、出した行を本物の parent-issue.py show に通す）。
       - name: spec-loop の親 Issue の一覧を出すスクリプトのテスト（#876）
