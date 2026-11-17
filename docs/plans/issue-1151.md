@@ -121,7 +121,10 @@ OS の読み取りを全部見る手段（`fs_usage`・DTrace は root が要る
   観察 3 件（反証ではない。直さず PR コメントで人間に渡す）: (1) 一覧の中のディレクトリの mtime を見る直しで、`__pycache__` がまだ無い worktree の
   最初の回は、根や `plugins/<p>` を列挙するテストが記録されない（温まった後の回は記録される。冷えた worktree での 2 回目は未測定）・
   (2) 先頭の語を粗い単位にした直しが回し直しの本数をどれだけ増やすかは未測定・(3) 一覧から名前が消えたことは見えない（既知。docstring に名指し済み）
-- **次にすること**: PR の前の歯止め（`check-pr-preconditions.sh`・`check-deps-declared.py`・`check-spec-writeback.py`）→ PR → PR 側の CI → 外部レビュー → `check-gates.py`
+- PR の前の歯止め: `check-pr-preconditions.sh` 0・`check-deps-declared.py` 0・`check-spec-writeback.py` 0（正本なし）
+- PR #1165（head `70067350`）。PR 側の CI: 8 本通過・1 本スキップ・`MERGEABLE`
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い。`external-reviews.py` が 3）
+- **次にすること**: `check-gates.py` → PR コメント（未証明・残課題・狭いパスの観察）→ **マージは人間の承認待ち**
 - A1 の実測（直した後・実リポジトリ）: 何も変えずに 2 回目——**78/78 `CACHED`・歯止め 13 本だけ・25.4 秒**（ロード 11）。その前の回は計画のコミットで HEAD が動いたので、git の状態に依る 2 本だけ回った（57.5 秒）
 - 割り目（手順 4 の完了時。2026-11-17）: `AskUserQuestion` で訊き、**「ここで割る」**——worktree の中で `/clear` して `/dev-loop:dev-loop 1151` で手順 5 から再開する
 - 再開したら次にすること: 手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。base は上の `1d39e55a…`。
