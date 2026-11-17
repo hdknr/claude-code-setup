@@ -32,7 +32,7 @@ spec-loop から来た Issue の周は、手順 2（文脈収集）と手順 4�
 
 - **0**: 数えた。
 - **1**: 数えたが、形に合わない行があった——ファイルと行番号を出す（その行は数えない）。形に合わない行は、行頭の飾り（字下げ・リストの印・番号・チェックボックス・見出し・引用・強調）を外すと
-  `読んだ成果物` で始まり、直後が助詞（は・を・が・も・の・に・で・と・や——散文）でも行末（見出し）でもないのに、上の形でないもの
+  `読んだ成果物` で始まり、直後（空白を除く）がコロン（全角も）・括弧・`=`・バッククォートなのに、上の形でないもの（直後がほかの文字か行末なら散文・見出しと読む）
   （装飾つき・字下げ・コロンの無いラベル・括弧つきのラベル・全角のコロン・バッククォートの無いパス・空のパス・1 行に 2 つのパス）。
   ほかに、ファイルごとに次も名指しして 1 にする: `なし` とパスを同じファイルに書いた（`なし` の行番号。パスの行は数える）・閉じないコードブロックがある（開きの行番号。その後ろは読んでいない）・
   関門の記録が読めない（ブロックが 2 つある・閉じていない・`LINE_FORMS` のどれにも当たらない行がある。その周の関門の指摘は「記録が無い」に数える）。
@@ -62,7 +62,7 @@ from pathlib import Path
 
 LINE = re.compile(r"^- 読んだ成果物: (?:`(?P<path>[^`\s][^`]*)`|(?P<none>なし))(?P<rest>$|[\s（][^`]*$)")
 LABEL = re.compile(r"^`?読んだ成果物(?:`|\*\*|__)*")
-PARTICLES = "はをがものにでとや"  # ラベルの直後がこれか行末なら散文（check-gates.py の `PARTICLES` と同じ考え方）
+STARTS = ":：（(=`"  # ラベルの直後がこれで始まれば、記録の行を書こうとした形（ほかは散文）
 COUNT = re.compile(r"^- この周の起票: ([0-9]+) 件")
 NEEDED = ("DECOR", "FENCE_ANY", "FENCE_OPEN", "LINE_FORMS", "closes", "gate_block", "Malformed")
 
@@ -91,7 +91,7 @@ def normalize(path: str) -> str:
 
 
 def looks_like(line: str, gates) -> bool:
-    """行頭の飾り（`check-gates.py` の `DECOR`）を外すと `読んだ成果物` で始まり、直後が助詞でも行末でもないか（コロン・括弧・空白とパスなど）。"""
+    """行頭の飾り（`check-gates.py` の `DECOR`）を外すと `読んだ成果物` で始まり、直後（空白を除く）がコロン・括弧・`=`・バッククォートか。"""
     t = line
     while True:
         m = gates.DECOR.match(t)
@@ -102,12 +102,27 @@ def looks_like(line: str, gates) -> bool:
     if not m:
         return False
     after = t[m.end():].strip()
-    return bool(after) and after[0] not in PARTICLES
+    return bool(after) and after[0] in STARTS
+
+
+def has_gate_block(text: str, gates) -> bool:
+    """コードブロックの外で `dev-loop-gates` のブロックを開いているか（ほかのブロックの中の例は数えない。読み方は `gate_block` と同じ）。"""
+    fence = None
+    for line in text.splitlines():
+        if fence is None:
+            if gates.FENCE_OPEN.match(line):
+                return True
+            m = gates.FENCE_ANY.match(line)
+            if m:
+                fence = m.group(1)
+        elif gates.closes(line, fence):
+            fence = None
+    return False
 
 
 def gate_findings(text: str, gates) -> tuple[int | None, str | None]:
     """関門の記録の反証・指摘の合計。記録が無ければ None、読めなければ理由（ブロックが 2 つ・閉じない・`LINE_FORMS` のどれにも当たらない行）。"""
-    if not any(gates.FENCE_OPEN.match(line) for line in text.splitlines()):
+    if not has_gate_block(text, gates):
         return None, None
     try:
         block = gates.gate_block(text)
