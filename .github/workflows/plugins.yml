@@ -382,6 +382,11 @@ jobs:
       - name: screen-spec の UI モックの生成器のテスト（#1095）
         run: python3 scripts/test-build-mock.py
 
+      # 本体は plugins/screen-spec/scripts/mkdocs-pages.py と templates/mkdocs/screen_spec_pages.py（spec-loop の登録の口に置く。
+      # 本物の spec-loop の雛形のフックと init-mkdocs.py と並べて回す。mkdocs build は CI に無いので、フックを直に呼ぶ）。
+      - name: screen-spec の MkDocs のフックのテスト（#1098）
+        run: python3 scripts/test-screen-spec-pages.py
+
       # 本体は plugins/spec-loop/scripts/ にある（spec-review の手順 6 が指摘の表に当てる）。
       - name: spec-loop の指摘の表の検査のテスト（#982）
         run: python3 scripts/test-check-findings-csv.py

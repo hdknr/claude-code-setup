@@ -52,7 +52,7 @@
 | `scripts/check-tlc.py` | TLC が正本リポジトリの `CLAUDE.md` に書いた呼び方で使えるかの確かめ（標準ライブラリと、書いた呼び方の TLC。下の「前提」） |
 | `scripts/tlc-trace.py` | TLC の反例の JSON（`-dumpTrace json`）と対応表から、トレースのケース（`references/spec-ir.md` の「トレースのケース」）を作る（標準ライブラリのみ） |
 | `scripts/check-alloy.py` | Alloy が正本リポジトリの `CLAUDE.md` に書いた呼び方（`exec`）で使えるかの確かめ（標準ライブラリと、書いた呼び方の Alloy。下の「前提」の「Alloy の用意」） |
-| `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
+| `scripts/init-mkdocs.py` | 雛形を正本リポジトリへ写す（標準ライブラリのみ。`--hook` でほかのプラグインのフックを登録する口もある。いつ何を写すかは `references/tree.md` の「ドキュメントのツール」を正とする） |
 | `skills/req-loop/` | 要求確定のループを 1 周（= レビュー会 1 回分）進めるスキル |
 | `skills/spec-review/` | 仕様レビューのループを 1 回分進めるスキル（仕様を書く側） |
 | `skills/feasibility/` | 実現性・コストのループを 1 回分進めるスキル（見積りを書く側） |
