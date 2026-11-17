@@ -80,6 +80,7 @@ python3 scripts/write-screens.py mkdocs <docs ディレクトリ> [--spec-loop <
 
 - ビルドのとき（MkDocs の `on_files`）、v1〜v<n> を重ねた全体に画面の表がある版ごとに、`build-mock.py` と同じものを作り、`<docs の親>/build/mock/v<n>/index.html` に書いて、サイトの上の場所に置く（commit しない——#1081 の決めること 7）。
 - **モックの中の仕様書へのリンクは、サイトの仕様書のページを指す**（`build-mock.py` だけで作ったモックは Markdown のファイルを指す）。
+- **基準の時点（`--since`）は渡さない**——ビルドには「前回の会」が無いので、サイトのモックに基準の時点からの差分の印は付かない。前の版からの差分の印（v2 以降）は `build-mock.py --upto <n>` と同じく付く（`references/mock.md` の「差分の印」）。
 - `docs/mocks.md` の版ごとの節には、spec-loop のフックの口（`spec_loop_mocks`）を通して、手で書いたモックのリンクと並べて出す。
 - 作れなかった版（重ね合わせが決まりに反する・3 つの表が揃っていない・描き方のファイルが版の中に在る・spec-loop やこのプラグインが見つからない）は、警告し、モックのページのその版の節に理由を出す。
   表の検査の違反・未決定では止めない（`build-mock.py` と同じ）。

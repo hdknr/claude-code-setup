@@ -86,8 +86,8 @@ main へのマージで、プラグインの配布（カタログ。spec-loop �
 
 ## 版の上げ方
 
-- spec-loop を minor で上げる（能力の追加。0.x）: main の先端の値（0.94.0）の次 → **0.95.0**。PR を作った後に main（#1097 が 0.95.0 に上げた）を取り込み、**0.96.0** に上げ直した。`marketplace.json`・`plugin.json`・`SKILL.md` 7 本の 2 行。
-- screen-spec を minor で上げる: main の先端の値（0.3.0）の次 → **0.4.0**。`marketplace.json`・`plugin.json`・`SKILL.md` 2 本の 2 行。
+- spec-loop を minor で上げる（能力の追加。0.x）: main の先端の値（0.94.0）の次 → **0.95.0**。PR を作った後に main（#1097 が 0.95.0 に上げた）を取り込み、**0.96.0** に上げ直した。マージの直前の 2 回目の取り込み（main は 0.97.0）で **0.98.0** に上げ直した（`tree.md` の版の記述と、それを見る `test-init-mkdocs.py` も）。`marketplace.json`・`plugin.json`・`SKILL.md` 7 本の 2 行。
+- screen-spec を minor で上げる: main の先端の値（0.3.0）の次 → **0.4.0**（1 回目の取り込みで 0.5.0、2 回目の取り込みで main の 0.5.0 の次の **0.6.0**）。`marketplace.json`・`plugin.json`・`SKILL.md` 2 本の 2 行。
 - 並行する #1094・#1096（screen-spec）・#1097（spec-loop）も版を上げうる——親はマージの直前に取り込みを頼む。そのときは main の先端の値から minor で 1 つ上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
   取り込みの後は `check-plugin-versions.py`・`skill-metrics.py --check` だけを回して push し、PR 側の CI を見る（CLAUDE.md の「並行する周は、同じ版に上げて衝突する」の 5）。
 
@@ -150,6 +150,19 @@ MkDocs 1.6 のほかの版（1.5・2.x）での `File` の作り方——手元�
 - 狭いパス（`bbafe57..f73cf45`）: 通した——反証 1 件（N-1。verifier.md を 186 行と報告——`wc -l` は 185。前の周と同じ食い違い）。素通りした変異 2 本（N-1 の下限の変異・CR2-7 の綴りの変異——後者は等価変異と陽性対照で示された）
 - PR: #1124
 - main の取り込み（PR を作った後。#1097・#1047 が入っていた）: 衝突なし。spec-loop を **0.96.0** に上げ直した（`plugin.json`・`marketplace.json`・`SKILL.md` 7 本・`tree.md` の版の記述と、それを見るテスト）。取り込みの後は `check-plugin-versions.py`・`skill-metrics.py --check`（と、版の記述を見る `test-init-mkdocs.py`）だけを回し、PR 側の CI で確かめる
+- main の 2 回目の取り込み（マージの直前。main `0fcbb65`——#1096・#1099・#1100 が入っていた）: 版の行のほかに衝突が出て、利用者の判断（2026-11-16）で子が両側を合わせて解き、取り込みの差分に関門を当て直す。
+  - 衝突の解き方（塊ごと。`--ours`/`--theirs` でファイルごと取っていない）:
+    - 版の行: main 側を取って上げ直した——spec-loop **0.97.0 → 0.98.0**（`marketplace.json`・`plugin.json`・`SKILL.md` 7 本の 2 行と、`tree.md` の「spec-loop 0.96.0 で」の版の記述 2 箇所とそれを見る `test-init-mkdocs.py`）、screen-spec **0.5.0 → 0.6.0**（`marketplace.json`・`plugin.json`・`SKILL.md` 2 本の 2 行。2 本は衝突せずに 0.5.0 のまま入っていたので一緒に上げた）。どちらも minor（計画の「版の上げ方」）。
+    - screen-spec の `description`（`marketplace.json`・`plugin.json`）: main（#1096 の差分の印・`--since`・レビュー会の進め方）を土台に、#1098 の MkDocs のフックの文を後ろに足し、#1098 の「モックの差分の印はまだ無い」を「サイトのモックには差分の印を付けない」に替えた（下の推奨で決めた値。ここでの「差分の印」は基準の時点からの印）。
+    - `plugins/screen-spec/README.md` の 3 塊: 「いまは〜まで」は両方の追加を 1 文に、参照の表は #1098 の `mkdocs.md` の行と #1096 の `mock.md` の行を並べ、「UI モックを作る」は #1096 の文の後ろに #1098 の「MkDocs で見せる」の節を置いた（節にサイトのモックには基準の時点の印を付けないと 1 句足した）。
+    - `plugins/screen-spec/scripts/build-mock.py`: #1096 の `Numbers`・`load_diff`・`baseline`・`shown_row`・`diff_entry`・`qa_class` をそのまま取り、`build()` を
+      `build(docs, upto, spec_loop, spec_loop_version, since=None, link=None)` にした（#1096 の `main` は `since` を 5 番目に位置で渡すので `since` を先に、#1098 の `mkdocs-pages.py` は `link=` をキーワードで渡す）。docstring は #1098 のものに `since` を足した。
+  - 取り込みの後に直したもの（衝突の外）: `references/mkdocs.md` の「版ごとのモック」に「基準の時点（`--since`）は渡さない」の 1 項、`CLAUDE.md` の screen-spec の「いまは〜まで」（main の側でも #1096 の後で古くなっていた）と `mkdocs-pages.py` の行に同じ 1 句。
+    `scripts/test-screen-spec-pages.py` に試料「サイトのモックに基準の時点からの印を付けない」と変異「基準の時点を渡す」（`mkdocs-pages.py` の `mock.build(...)` に `"HEAD"` を足す）を足した——
+    試料の正本は git に commit してから v2 の表を変える（git の外だと `since` を渡す変異は `--since` を解決できずにモックを作れなくなり、印が付くことではなく作れないことで落ちる——判別しない）。
+    陽性対照（手元）: 本体では v1 の差分 `[]`・v2 は `version` だけ、変異では v1 に `since`、v2 に `since`（`S-002` 変更）が出て試料が偽。既存のテストの比べ方は直していない（`test-build-mock.py` 28 件・33 変異、`test-screen-spec-pages.py` は取り込み直後 11 件・31 変異でそのまま通った）。
+  - **推奨で決めた値**（`マージ前の判断 = 推奨で決めて起票`。確認の Issue は親が立てる）: MkDocs のフック（`mkdocs-pages.py`）から作るモックは `since` を渡さない——ビルドに「前回の会」が無いので、サイトのモックに基準の時点からの差分の印は付かない。
+    **前の版からの差分の印（v2 以降。#1096 の受入基準 A1）は `build-mock.py --upto <n>` と同じく付く**——`since=None` でも `build()` は `number > 1` なら前の版との差分を作るので（`build-mock.py` の「差分の印」）。前の版からの印もサイトで消すなら、`build()` にもう 1 つ引数が要る（この取り込みではしていない）。
 - 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` で確かめる）
 - 交絡を潰した手順:
   - 受入基準 4（出力が今と同じ）: main（`50ce545`）の `init-mkdocs.py` とこの周の `init-mkdocs.py` を、空の根・設定が在る根・在るファイルを残す根の `--dry-run` で回し、出す行（根のパスを伏せて）が 3 つとも一致、写したファイルの一覧も一致、違うのはフックのファイルだけ（口の分）。既存の `test-init-mkdocs.py` の試料 71 件（フックが描くページ）も変えずに通った。

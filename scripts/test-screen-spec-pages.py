@@ -356,6 +356,25 @@ def mocks_directory_urls(plugin: Path, work: Path) -> bool:
     return data["documents"].get("S-001") == "../../v2/requirements/screens/order-list/"
 
 
+def mocks_no_since(plugin: Path, work: Path) -> bool:
+    """サイトのモックには基準の時点（`--since`。#1096）からの印を付けない（#1098 の取り込みで推奨により決めた値）——正本を git に commit した後で
+    v2 の表を変えても、v2 のモックの差分は前の版から（`version`）だけで、v1 には差分が無い。git の正本にするのは、`since` を渡す変異で
+    基準の時点の印が実際に出る（重ね合わせに失敗して落ちるのではない）ようにするため。"""
+    root, _, _, env = project(work, plugin)
+    git_env = dict(env, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "base"]):
+        subprocess.run(["git", *args], cwd=root, env=git_env, check=True, capture_output=True)
+    screens = root / "docs" / "v2" / DATA / "screens.csv"
+    screens.write_text(screens.read_text(encoding="utf-8").replace("入力と確認", "入力と確認と送信"), encoding="utf-8")
+    build(root, git_env, {})
+    kinds = {}
+    for number in (1, 2):
+        text = (root / "build" / "mock" / f"v{number}" / "index.html").read_text(encoding="utf-8")
+        data = json.loads(re.search(r'id="screen-spec-data">(.*?)</script>', text, re.S).group(1))
+        kinds[number] = [d["kind"] for d in data["diffs"]]
+    return kinds == {1: [], 2: ["version"]}
+
+
 def mocks_broken_version(plugin: Path, work: Path) -> bool:
     """作れない版（見出し行が前の版と違う）は、警告し、モックのページのその版の節に理由を出す。ほかの版は作る。"""
     files = base_files()
@@ -432,6 +451,7 @@ CASES = {
     "docs/mocks.md に版ごとの生成したモックへのリンクが出る": mocks_page,
     "use_directory_urls のサイトでは仕様書のディレクトリの URL を指す": mocks_directory_urls,
     "作れない版はモックのページに理由を出す": mocks_broken_version,
+    "サイトのモックに基準の時点からの印を付けない": mocks_no_since,
     "screen-spec が見つからなければ警告と注意書き": not_found,
     "記録から screen-spec を見つける": found_in_record,
     "環境変数の screen-spec を使う": found_by_env,
@@ -489,6 +509,8 @@ MUTATIONS: list[tuple] = [
     ("環境変数を見ない", SHIM, "    named = os.environ.get(ENV)\n", "    named = None\n", "環境変数の screen-spec を使う"),
     ("init-mkdocs.py の失敗を 0 にする", WRITE, "    if proc.returncode != 0:\n", "    if False:\n", "write-screens.py mkdocs の終了コード"),
     ("--hook を渡さない", WRITE, ', "--hook", str(MKDOCS_HOOK)]', "]", "登録した案件で回し直しても登録は消えない"),
+    ("基準の時点を渡す", IMPL, ", link=site_link(docs, number, use_directory_urls))", ", \"HEAD\", link=site_link(docs, number, use_directory_urls))",
+     "サイトのモックに基準の時点からの印を付けない"),
     ("link を使わない", BUILD, "                links[key] = link(path) if link else", "                links[key] =",
      "docs/mocks.md に版ごとの生成したモックへのリンクが出る"),
 ]

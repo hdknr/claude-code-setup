@@ -84,7 +84,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （回答・状態・反映先の鍵は違反。足した表全体を `check-qa-csv.py` に当ててから書く）。基盤要件の 3 項目はコードの目印と機械で照らし、ほかの食い違いはスキルが引いた正本の文が在るかだけを見る。
       決まりの原本は `references/intake.md`、守る／守らないは docstring を正とする。テストは `scripts/test-intake-code.py`）
     - `scripts/qa-to-pptx.py` - Q&A 表からレビュー会用の PPTX を作る（**標準ライブラリのみ**。
-      列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。テストは
+      列の定数は `check-qa-csv.py` から読み込む——写しを増やさない。**`--links` で質問ごとのリンク（画面の表から作るモックの `#screen=`）を外から受けて質問の頁に載せ、
+      渡さなければ前と同じバイト**——#1100。テストは
       `scripts/test-qa-to-pptx.py`）
     - `scripts/check-spec-exit.py` - 仕様レビューを抜ける条件のうち**機械で決まる条件 1 だけ**を判定する
       （**0 でも「抜けた」ではない**。Q&A 表は `qa-to-pptx.py` の `read_rows` で読み、**仕様に反映した状態**
@@ -143,7 +144,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `--check --upto <n-1>` で前の版の時点の鮮度を見る）。
       **前の版の時点に `反映済み` でない Q&A が残れば、指しているかに依らず止める——凍結した前の版なら止めずに全部を追加にする**
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
-      テストは `scripts/test-scaffold.py`）
+      **画面の表があれば、`機能` の列が機能を挙げる画面の仕様書・ワイヤーフレーム・生成したモック（書く生成が screen-spec の `build-mock.py` で作る）を本文と `scaffold/refs/` に足す——
+      機能のオブジェクトには入れず、`--check` はモックを生成し直さない**（#1099。決まりは `references/handoff-issue.md` の「画面の表から引く参考資料」）。
+      テストは `scripts/test-scaffold.py`・`scripts/test-scaffold-screens.py`）
     - `scripts/rebuild-scope.py` - **仮回答と推奨で決めた事項の台帳**から、利用者が確かめたときに作り直す範囲（Issue と受入基準のケース）を引く
       （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行と閉じのコメントの `確認の結果: ` の行（#884）を、
       `gh issue list --json` の出力から読む。**`gh` は呼ばない**。印の定数は `scaffold.py` から読み、確認の Issue の 2 行の頭は dev-loop の `absent-lines.md` の写しで、テストが突き合わせる。
@@ -209,7 +212,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
       **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
   - `screen-spec/` - 画面設計書を spec-loop とは別に持つプラグイン（#1081。**spec-loop の決まりに従い、spec-loop は screen-spec に依存しない**。
-    いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器と、profile `web-spa`（#1094）まで。モックの差分の印は後の段——#1096）
+    いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器（差分の印とレビュー会の進め方——#1096）と、profile `web-spa`（#1094）と、MkDocs のフック（#1098）まで）
     - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・案件ごとの設定（`settings.csv`）・`init` と `add`（採番）・検査と終了コードは `tables.md`、
       散文の仕様書の節・雛形・書き方・レビュー観点・共通仕様は `prose.md`、実現方式の profile（列・節と小見出し・方式が未定のとき・誰が決めるか）は `profiles.md`、
       対応する spec-loop の版の範囲と spec-loop の見つけ方は `spec-loop.md`、UI モックの生成器の決まりは `mock.md`）
@@ -229,10 +232,12 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/build-mock.py` - 画面の表から **UI モック（HTML 1 枚）を生成する**（#1095。`check-screens.py` を読み込み、同じ重ね方の表から `<docs の親>/build/mock/v<n>/index.html` を書く——commit しない）。
       **外を読まず**、表は許可した列だけを JSON で埋め込み、**どのセルからも内部の層の番号（`D-`）を外す**。描き方の差し替えは版の外の `screen-spec/renderers/<画面ID>.js` で、
       **版の中に `renderers` のディレクトリが在れば止める**。版・表の出どころ・生成器の版・描き方のファイルのコミットを書き込む。**表の検査の結果に依らず作る**。
+      前の版から（spec-loop の `diff-versions.py` を読み込む）・基準の時点（`--since`。一時ディレクトリに取り出して重ねる）から変えた画面・項目・遷移に印と根拠の Q&A の番号を付け、
+      レビュー会の進め方（今回の会の質問 → 画面）・未回答の注記を出し、画面に掛かる回答の未反映を警告する（#1096）。
       決まりの原本は `references/mock.md`、守る／守らないは docstring を正とする。テストは `scripts/test-build-mock.py`）
     - `scripts/mkdocs-pages.py`・`templates/mkdocs/screen_spec_pages.py` - **MkDocs のフック**（#1098）。正本に登録するのは薄いフック（screen-spec を環境変数 `SCREEN_SPEC_PLUGIN` か
       プラグインの記録から探して本体に渡すだけ）で、**`write-screens.py mkdocs` が spec-loop の `init-mkdocs.py --hook` で登録する（`mkdocs.yml` を書き換えない）**。
-      本体は画面の表の行を仕様書の「表で持つ」節に表として出し（共有の層だけ・未決定のセルに `⚠️` の飾り）、ビルドのときに版ごとのモックを `build-mock.py` の `build` で作って
+      本体は画面の表の行を仕様書の「表で持つ」節に表として出し（共有の層だけ・未決定のセルに `⚠️` の飾り）、ビルドのときに版ごとのモックを `build-mock.py` の `build` で作って（**基準の時点（`--since`）は渡さない**——サイトのモックに前回の会からの印は付かない）
       サイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
       決まりの原本は `references/mkdocs.md`、守る／守らないは docstring を正とする。テストは `scripts/test-screen-spec-pages.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
@@ -411,6 +416,10 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-screen-gate.py` - spec-loop の画面の表の関門（#1097）と、それを条件 1 に入れる `check-spec-exit.py` の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリに本物の spec-loop の写しを置き、隣に本物の screen-spec の写しを置く・置かない・偽物を名指す**で当て、
     正本の試料は `test-check-screens.py` の `base()` を読み込む。**陽性対照: 同じ「未定」の正本で、画面の関門を当てない条件 1 は 0**。プラグインのキャッシュの形は一時の `CLAUDE_CONFIG_DIR` に作る——利用者の `~/.claude` は読まない
+  - `test-scaffold-screens.py` - spec-loop の scaffold の画面の表の参考資料と生成したモック（#1099）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/scaffold.py`**。**一時ディレクトリに本物の spec-loop と screen-spec の写しを並べ、本物の `scaffold.py` と生成器を走らせる**
+    （正本の試料は `test-screen-gate.py` の `reflected()` を読み込む）。**生成器の版だけを変えた v2 で本文 0 件と、陽性対照（中間表現を直せば変更）**、
+    照合（`check-signoff.py`）が画面の表だけの違いを拾うこと（陽性対照つき。一時の git リポジトリで、`HOME`・`GIT_CONFIG_GLOBAL` を差し替える）も見る
   - `test-write-screens.py` - screen-spec の `init`・`add` の書き込みと雛形（#1093）の回帰テスト（変異テストを含む）。
     **本体は `plugins/screen-spec/scripts/` と `plugins/screen-spec/templates/` にある**。**一時ディレクトリに screen-spec と本物の spec-loop の写しを並べ、スキルの手順をスクリプトで再現する**
     （`hint` → `init` → `add` → `check-screens.py`）。#1093 の受入基準（空の案件で 0・Q&A 表を書き換えない・表で持つ節は印だけ）・採番・書けないときに書かないことと、
