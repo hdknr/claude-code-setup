@@ -24,8 +24,16 @@
 **契約の 12) も #1040**——回した本が上位の本数より少なく `SKIP` がある回で、見出しの本数と、`SKIP` を上位に入れないことを見る
 （11 だけでは回した本が多く、`SKIP` を 0 秒で足しても上位の外に隠れた）。
 
-**変異は 2 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
+**キャッシュ（#1151）の契約は `--part cache`**——**偽のリポジトリ（`git init` した一時ディレクトリ）に本体と hook を写し、子プロセスとして十数回起こす**
+（既存の契約はこのプロセスの中で本体を回し `sys.stdout` を差し替えるので、並列にできない）。入力の種類ごと（中身・一覧・無いファイル・
+hook の入る子・`-I` の子・Python でない子・環境を組み直した子・git・配置だけの rev-parse・import の列挙）に「変えたものだけが回る」を見て、
+集計（`CACHED` を `OK` に数えない）・落ちた回・回している間の変化・壊れた記録・キー・`--no-cache`・歯止めを見る。
+`CACHE_MUTANTS` は本体と hook の両方に当て、**最初に破れた段を出力に名指しする**（狙った段の手前で別の理由で破れていないかを読めるように）。
+**既存の契約 1〜12 は git のリポジトリでない一時ディレクトリで回るので、キャッシュは使われない**（今までと同じ全部回す経路）。
+
+**変異は 3 組ある**——`MUTANTS` は `check-all.py`（集約）に、`SCAN_MUTANTS` は
 **このファイルの中の判別**（CI の yaml の読み方）に当てる。**後者は自分自身を壊す。**
+`CACHE_MUTANTS` は `check-all.py` のキャッシュと hook に当てる（上の段落）。
 
 ## CI の走査が、何を守り、何を守らないか（#155）
 
@@ -2016,7 +2024,286 @@ SCAN_MUTANTS = {
 }
 
 
-PARTS = ("registry", "contract", "scan", "mutants")
+# ------------------------------------------------------ キャッシュ（#1151）
+# **偽のリポジトリ（`git init` した一時ディレクトリ）に `check-all.py` と hook を写し、子プロセスとして回す。**
+# 既存の契約は `run_main` で `sys.stdout` を差し替えて本体をこのプロセスの中で回すので、並列にできない——
+# キャッシュの契約は 1 回に本体を十数回起こすので、変異ごとに別のプロセス・別のリポジトリで並列に当てる。
+# **偽の `GUARDS`・`TESTS`・`NESTED` は、写した本体の末尾（`if __name__` の前）で上書きする**——`main` は呼ばれた時点の大域を読む。
+HOOK = SCRIPTS / "check_all_trace" / "usercustomize.py"
+CACHE_HOOK_REL = "scripts/check_all_trace/usercustomize.py"
+CACHE_TESTS = ["t-file.py", "t-list.py", "t-absent.py", "t-child.py", "t-iso.py", "t-sh.py",
+               "t-git.py", "t-layout.py", "t-flaky.py", "t-edit.py", "t-import.py", "t-nested.py", "t-fresh.py"]
+CACHE_OVERRIDE = (
+    'GUARDS = [("g.py", [], False)]\n'
+    f"TESTS = {CACHE_TESTS!r}\n"
+    'NESTED = ("t-nested.py",)\n'
+)
+# 偽の回帰テスト。名前 → 中身。**どれも作業ツリーの中の何かを、違う経路で読む。**
+CACHE_FAKES = {
+    "g.py": "print('guard ok')\n",
+    # 中身を読む（ファイル）
+    "t-file.py": "open('data/a.txt').read()\n",
+    # ディレクトリの名前の一覧
+    "t-list.py": "import os; os.listdir('data/d')\n",
+    # 無いファイルを開こうとする（無いことも入力）
+    "t-absent.py": "import contextlib\nwith contextlib.suppress(FileNotFoundError):\n    open('data/maybe.txt').read()\n",
+    # 環境を引き継いだ子の Python が読む（hook が入る）
+    "t-child.py": "import subprocess, sys\n"
+                  "subprocess.run([sys.executable, '-c', 'open(\"data/c.txt\").read()'], check=True)\n",
+    # `-I` の子が、引数に無い隣のファイルを読む（hook が入らない——プラグインの全体で数える）
+    "t-iso.py": "import subprocess, sys\n"
+                "subprocess.run([sys.executable, '-I', 'plugins/p/s.py'], check=True)\n",
+    # Python でない子が、引数に無いファイルを読む（同じく粗い単位）
+    "t-sh.py": "import subprocess\nsubprocess.run(['sh', 'plugins/q/run.sh'], check=True, capture_output=True)\n",
+    # 作業ツリーに git を当てる（git の状態が入力）
+    "t-git.py": "import subprocess\nsubprocess.run(['git', 'log', '-1', '--format=%H'], check=True, capture_output=True)\n",
+    # 配置だけを訊く rev-parse（git の状態を入力にしない）
+    "t-layout.py": "import subprocess\n"
+                   "subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--show-toplevel'], check=True, capture_output=True)\n",
+    # 環境変数で落ちる（入力が同じでも落ちる回を作る）
+    "t-flaky.py": "import os, sys\nsys.exit(1 if os.environ.get('CACHE_T_FAIL') else 0)\n",
+    # 回している間に自分の入力を書き換える
+    "t-edit.py": "import os\nopen('data/e.txt').read()\n"
+                 "if os.environ.get('CACHE_T_EDIT'):\n    open('data/e.txt', 'a').write('x')\n",
+    # 隣のモジュールを import する（import の仕組みの列挙を入力にしない）
+    "t-import.py": "import sys; sys.path.insert(0, 'scripts'); import helpmod\n",
+    # `--jobs` を受ける（`--jobs` はキーに入れない）
+    "t-nested.py": "import sys\nassert sys.argv[1] == '--jobs'\nopen('data/a2.txt').read()\n",
+    # 環境を組み直した子の Python（hook が入らない）が、引数に無いファイルを読む
+    "t-fresh.py": "import os, subprocess, sys\n"
+                  "subprocess.run([sys.executable, 'plugins/r/read.py'], check=True, env={'PATH': os.environ['PATH']})\n",
+    "helpmod.py": "X = 1\n",
+}
+CACHE_DATA = {
+    "data/a.txt": "a\n", "data/a2.txt": "a2\n", "data/c.txt": "c\n", "data/e.txt": "e\n",
+    "data/d/one.txt": "1\n", "data/g.txt": "g\n",
+    "plugins/p/s.py": "open('plugins/p/side.txt').read()\n", "plugins/p/side.txt": "side\n",
+    "plugins/q/run.sh": "cat plugins/q/other.txt\n", "plugins/q/other.txt": "other\n",
+    "plugins/r/read.py": "open('plugins/r/x.txt').read()\n", "plugins/r/x.txt": "x\n",
+}
+GIT_ID = ["-c", "user.email=t@t", "-c", "user.name=t"]
+
+
+def build_cache_repo(root: Path, src: str, hook_src: str) -> Path:
+    """偽のリポジトリを作り、本体（`src`）と hook（`hook_src`）を写して 1 度コミットする。"""
+    assert_not_real_repo(root)
+    scripts = root / "scripts"
+    (scripts / "check_all_trace").mkdir(parents=True)
+    head, sep, tail = src.rpartition('\nif __name__ == "__main__":')
+    assert sep, "本体の末尾の `if __name__` が見つからない"
+    (scripts / "check-all.py").write_text(head + "\n" + CACHE_OVERRIDE + sep + tail)
+    (scripts / "check_all_trace" / "usercustomize.py").write_text(hook_src)
+    for name, body in CACHE_FAKES.items():
+        (scripts / name).write_text(body)
+    for rel, body in CACHE_DATA.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(body)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "-m", "init"], check=True)
+    return root
+
+
+def cache_run(root: Path, *args: str, fail: bool = False, edit: bool = False) -> tuple[int, str]:
+    """偽のリポジトリで本体を回す。`base` は無いので PR 限定の歯止めは無い（偽の歯止めは base を要しない）。"""
+    assert_not_real_repo(root)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CHECK_ALL_TRACE")}
+    env.pop("PYTHONPATH", None)
+    if fail:
+        env["CACHE_T_FAIL"] = "1"
+    if edit:
+        env["CACHE_T_EDIT"] = "1"
+    proc = subprocess.run([sys.executable, str(root / "scripts" / "check-all.py"), "--jobs", "4", *args],
+                          capture_output=True, text=True, cwd=root, env=env, timeout=300)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def ran_tests(out: str) -> set[str]:
+    """回した回帰テスト（OK・FAIL の行の名前のうち `t-` で始まるもの）。"""
+    return {l.split()[1] for l in out.splitlines()
+            if l.startswith(("  OK  ", "  FAIL")) and l.split()[1].startswith("t-")}
+
+
+def cached_tests(out: str) -> set[str]:
+    return {l.split()[1] for l in out.splitlines() if l.startswith("  CACHED ")}
+
+
+def cache_contract(root: Path):
+    """キャッシュの契約。**段ごとに (名前, 通ったか) を 1 つずつ出す**——変異は最初に破れた段で止める。"""
+    every = set(CACHE_TESTS)
+
+    def touch(rel: str, body: str) -> None:
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body)
+
+    def only(out: str, want: set[str]) -> bool:
+        return ran_tests(out) == want and cached_tests(out) == every - want
+
+    def dirty(*names: str) -> set[str]:
+        """作業ツリーを変えた段で回るもの。**git を作業ツリーに当てた `t-git.py` は、どのファイルを変えても回る**
+        （git の状態は HEAD の木と `git status` に出たパスの中身）。"""
+        return {*names, "t-git.py"}
+
+    # 1) 記録が無ければ全部回り、全部緑。
+    rc, out = cache_run(root)
+    yield "記録が無い回は全部回し、全部緑（A2）", rc == 0 and ran_tests(out) == every and not cached_tests(out)
+    # 2) 何も変えなければ、回帰テストは全部 CACHED。歯止めは回す。
+    rc, out = cache_run(root)
+    yield "何も変えなければ回帰テストは全部 CACHED（A1）", rc == 0 and only(out, set())
+    yield "歯止めは毎回回す（A8）", "  OK   g.py" in out
+    total = 1 + len(CACHE_TESTS)
+    yield "CACHED を回したに数えない（A4）", f"1/{total} 本を回した（失敗 0 / 飛ばし 0）" in out
+    yield "CACHED の本数を集計に出す（A4）", f"キャッシュ: {len(CACHE_TESTS)} 本" in out
+    tops = top_entries(out)
+    yield "CACHED を上位に入れない（A4）", [n for _, n, _ in tops] == ["g.py"]
+    yield "CACHED の行に所要時間を出さない（A4）", not any(n.startswith("t-") for n in times(out))
+    # 3) 入力の種類ごとに、変えたテストだけが回る。
+    touch("data/a.txt", "a changed\n")
+    rc, out = cache_run(root)
+    yield "読んだファイルの中身を変えると、それだけ回る（A2）", rc == 0 and only(out, dirty("t-file.py"))
+    touch("data/d/two.txt", "2\n")
+    rc, out = cache_run(root)
+    yield "列挙したディレクトリに名前が増えると、それだけ回る（A2）", rc == 0 and only(out, dirty("t-list.py"))
+    touch("data/d/one.txt", "1 changed\n")
+    rc, out = cache_run(root)
+    yield "列挙しただけのディレクトリの中身が変わっても回さない（A2）", rc == 0 and only(out, dirty())
+    touch("data/maybe.txt", "now\n")
+    rc, out = cache_run(root)
+    yield "無かったファイルが現れると回る（A2）", rc == 0 and only(out, dirty("t-absent.py"))
+    (root / "data" / "maybe.txt").unlink()
+    rc, out = cache_run(root)
+    yield "在ったファイルが消えると回る（A2）", rc == 0 and only(out, dirty("t-absent.py"))
+    touch("data/c.txt", "c changed\n")
+    rc, out = cache_run(root)
+    yield "hook の入る子の Python が読んだファイルを変えると回る（A2）", rc == 0 and only(out, dirty("t-child.py"))
+    touch("plugins/p/side.txt", "side changed\n")
+    rc, out = cache_run(root)
+    yield "`-I` の子が読む隣のファイルを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-iso.py"))
+    touch("plugins/q/other.txt", "other changed\n")
+    rc, out = cache_run(root)
+    yield "Python でない子が読むファイルを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-sh.py"))
+    touch("plugins/r/x.txt", "x changed\n")
+    rc, out = cache_run(root)
+    yield "環境を組み直した子が読むファイルを変えると回る（粗い単位。A3）", rc == 0 and only(out, dirty("t-fresh.py"))
+    touch("scripts/zzz-new.txt", "new\n")
+    rc, out = cache_run(root)
+    yield "import の仕組みの列挙を入力にしない（scripts/ に足しても回さない）", rc == 0 and only(out, dirty())
+    touch("data/a2.txt", "a2 changed\n")
+    rc, out = cache_run(root, "--jobs", "2")
+    yield "`--jobs` を受けるテストも、入力が変われば回る", rc == 0 and only(out, dirty("t-nested.py"))
+    # 入れ子に渡るのは親の半分（`nested_jobs`）——2 と 3 はどちらも 1 になるので、1 と 3 になる 2 と 6 で比べる。
+    rc, out = cache_run(root, "--jobs", "6")
+    yield "`--jobs` の値が違っても当たる（キーに入れない）", rc == 0 and only(out, set())
+    # 4) git の状態。コミットすると、git を当てたテストだけが回る（配置だけを訊くものは回らない）。
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "-m", "c2"], check=True)
+    rc, out = cache_run(root)
+    yield "コミットすると git を当てたテストが回り、配置だけの rev-parse は回らない（A2）", rc == 0 and only(out, {"t-git.py"})
+    # 5) 落ちた回は記録を消す（入力が同じでも、次は回る）。
+    rc, out = cache_run(root, "--no-cache", fail=True)
+    yield "--no-cache は記録を読まずに全部回す（A7）", rc == 1 and ran_tests(out) == every
+    rc, out = cache_run(root)
+    yield "落ちた回は記録を消し、入力が同じでも次は回る（A5）", rc == 0 and only(out, {"t-flaky.py"})
+    # 6) 回している間に入力が変わったら記録しない。
+    touch("data/e.txt", "e changed\n")
+    rc, out = cache_run(root, edit=True)
+    rc2, out2 = cache_run(root)
+    yield "回している間に入力が変わったら記録せず、次も回る（A6）", (
+        rc == 0 and "記録しなかった: t-edit.py" in out and rc2 == 0 and only(out2, dirty("t-edit.py")))
+    # 7) 壊れた記録は「無い」と扱う。
+    store = root / ".git" / "check-all-cache"
+    (store / "t-file.py.json").write_text("{壊れた")
+    rc, out = cache_run(root)
+    yield "壊れた記録は無いと扱って回す（A12）", rc == 0 and "t-file.py" in ran_tests(out) and "Traceback" not in out
+    # 8) 集め方・比べ方を直したら全部回る（キー）。
+    hook = root / "scripts" / "check_all_trace" / "usercustomize.py"
+    hook.write_text(hook.read_text() + "\n# 直した\n")
+    rc, out = cache_run(root)
+    yield "hook を直すと全部回る（A11）", rc == 0 and ran_tests(out) == every
+    me = root / "scripts" / "check-all.py"
+    me.write_text(me.read_text() + "\n# 直した\n")
+    rc, out = cache_run(root)
+    yield "check-all.py を直すと全部回る（A11）", rc == 0 and ran_tests(out) == every
+
+
+def cache_contract_list(root: Path, src: str, hook_src: str, stop_first: bool) -> list[tuple[str, bool]]:
+    build_cache_repo(root, src, hook_src)
+    got = []
+    for name, ok in cache_contract(root):
+        got.append((name, ok))
+        if stop_first and not ok:
+            break
+    return got
+
+
+# 本体（`check-all.py`）と hook に当てる変異。(当てるファイル, 壊す前, 壊した後)。
+CACHE_MUTANTS = {
+    "当たったものを OK の行で出す": ("check-all", 'print(f"  CACHED {name}", flush=True)', 'print(f"  OK   {name}", flush=True)'),
+    "当たったものを回したに数える": ("check-all", "    ran = total - len(skipped) - len(cached)\n", "    ran = total - len(skipped)\n"),
+    "当たったものを上位に入れる": ("check-all", "                    cached.append(name)\n",
+                                     "                    cached.append(name)\n                    timings.append((0.0, name, True))\n"),
+    "当たりの本数を集計に出さない": ("check-all", "    if cached:\n        print(", "    if False:\n        print("),
+    "記録を読まない": ("check-all", "                hits = {name for name in TESTS if is_cached(store, name, test_args[name], hasher)}\n",
+                       "                hits = set()\n"),
+    "--no-cache を無視する": ("check-all", "            if not opts.no_cache:\n", "            if True:\n"),
+    "歯止めを回さない": ("check-all", "            guard_runs.append((label, pool.submit(timed, name, args)))\n",
+                         "            guard_runs.append((label, None if store is not None else pool.submit(timed, name, args)))\n"),
+    "一覧を入力に数えない": ("check-all", "            dirs.add(val)\n", "            pass\n"),
+    "無いファイルを入力に数えない": ("check-all", "            files.add(val)\n", "            files.add(val) if (repo / val).exists() else None\n"),
+    "一覧の中身の変化を一覧の変化と数える": ("check-all", "        return hashlib.sha256(\"\\0\".join(names).encode()).hexdigest()\n",
+                                             "        return self.unit(rel)\n"),
+    "hook の入らない子を数えない": ("check-all", "                    coarse.add(coarse_unit(rel))\n", "                    pass\n"),
+    "粗い単位を引数のパスだけにする": ("check-all", '        return "/".join(parts[:2])\n', "        return rel\n"),
+    "`-I` の子にも hook が入ると見なす": ("check-all", '        if any(ch in a[1:] for ch in "IEsS"):\n', "        if False:\n"),
+    "git を入力に数えない": ("check-all", "                git = git or _git_reads_repo(repo, argv, cwd)\n", "                git = False\n"),
+    "配置だけの rev-parse も git の状態にする": ("check-all", '    if sub == "rev-parse" and rest and all(r in GIT_LAYOUT_ARGS for r in rest):\n', "    if False:\n"),
+    "落ちた回の記録を消さない": ("check-all", "    if not ok:\n        drop_record(ctx[\"root\"], name)\n", "    if not ok:\n        pass\n"),
+    "回している間の変化を見ない": ("check-all", "            if os.stat(p).st_mtime_ns >= since_ns:\n", "            if False:\n"),
+    "壊れた記録で落ちる": ("check-all", "    except (OSError, ValueError):\n        return None\n    if not isinstance(rec, dict)", "    except OSError:\n        return None\n    if not isinstance(rec, dict)"),
+    "キーに check-all.py を入れない": ("check-all", '    for f in (SCRIPTS / "check-all.py", SCRIPTS / TRACE_DIRNAME / "usercustomize.py"):\n',
+                                         '    for f in (SCRIPTS / TRACE_DIRNAME / "usercustomize.py",):\n'),
+    "キーに hook を入れない": ("check-all", '    for f in (SCRIPTS / "check-all.py", SCRIPTS / TRACE_DIRNAME / "usercustomize.py"):\n',
+                               '    for f in (SCRIPTS / "check-all.py",):\n'),
+    "キーに --jobs の値を入れる": ("check-all", '        if a == "--jobs":\n', "        if False:\n"),
+    "hook が import の仕組みの列挙も数える": ("hook", '        return "_bootstrap_external" in caller.f_code.co_filename\n', "        return False\n"),
+    "hook が子を記録しない": ("hook", "                spawn(argv, cwd, env)\n", "                pass\n"),
+    "hook が環境を組み直した子も hook が入ると書く": ("hook", "                env_ok = (env.get(\"CHECK_ALL_TRACE_LOG\") or env.get(b\"CHECK_ALL_TRACE_LOG\")) is not None\n",
+                                                     "                env_ok = True\n"),
+}
+
+
+# 変異を同時に当てる本数。1 本の変異は本体を十数回起こすだけなので、CPU の数まで広げない。
+CACHE_MUTANT_JOBS = 4
+
+
+def run_cache(root: Path) -> None:
+    print("キャッシュの契約（#1151。本体そのまま——全部通らなければならない）:")
+    src, hook_src = TARGET.read_text(), HOOK.read_text()
+    for name, ok in cache_contract_list(root / "cache-real", src, hook_src, stop_first=False):
+        check(name, ok)
+    print("キャッシュの変異（1 箇所ずつ壊す——契約が破れなければ失格。並列に当て、最初に破れた段で止める）:")
+
+    def one(i: int, name: str, where: str, old: str, new: str) -> tuple[str, str]:
+        base = src if where == "check-all" else hook_src
+        if base.count(old) != 1:
+            return name, ""
+        s2, h2 = (src.replace(old, new), hook_src) if where == "check-all" else (src, hook_src.replace(old, new))
+        got = cache_contract_list(root / f"cache-m{i}", s2, h2, stop_first=True)
+        broken = [n for n, ok in got if not ok]
+        return name, (f"" if not broken else broken[0]) if broken else None
+
+    with ThreadPoolExecutor(max_workers=CACHE_MUTANT_JOBS) as ex:
+        futs = [ex.submit(one, i, n, *spec) for i, (n, spec) in enumerate(CACHE_MUTANTS.items())]
+        for f in futs:
+            name, first = f.result()
+            # **最初に破れた段を名指しする**——狙った段の手前で別の理由で破れていないかを、読む側が確かめられるように。
+            check(f"変異 `{name}` を契約が捕まえる" + (f"（{first}）" if first else ""), bool(first))
+            if not first:
+                print("       壊したのに契約が全部通った" if first is None else "       当て先が 1 箇所でない")
+
+
+PARTS = ("registry", "contract", "scan", "mutants", "cache")
 
 
 def parse_args(argv: list[str]) -> tuple[set[str], set[str] | None]:
@@ -2074,6 +2361,8 @@ def main(argv: list[str] | None = None) -> int:
             run_scan(root)
         if "mutants" in parts:
             run_mutants(root, only_mutant)
+        if "cache" in parts:
+            run_cache(root)
 
     if failures:
         print(f"\n{len(failures)} 件失敗: {failures}")
