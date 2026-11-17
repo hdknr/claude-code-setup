@@ -106,8 +106,10 @@ Mermaid の図が GitHub の上で描けること（GitHub の描画は CI に�
 
 - 周の在り処: ブランチ `issue/1177-formal-statechart`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1177`・起点 `2bae472`・
   base `2bae472fdedfa7c1ee661d370e8fc4a1ab9c64b9`（`origin/main`＝`refs/remotes/origin/HEAD` を start-point に `prepare-worktree.sh` が出した値）。
-- 関門: まだ通していない。
-- 交絡を潰した手順: （実装のあとに書く）
+- 関門: **1 パス目の指摘対応の起点: `34ebf50`**（1 パス目の関門に渡した時点の HEAD）。
+- 交絡を潰した手順: 本物の TLC 2.19（`/Users/hdknr/.local/bin/tlc`。tla2tools v1.7.4）で手元の試料の正本を作って走らせた——本体（`Order`。反例なし）と陽性対照（`OrderBroken`。出荷の支払いの条件を外した版）で、
+  陽性対照だけに `⚠ 未払いのまま出荷済み` と番号つきの経路が付き、本体には付かない（同じ対応・同じ呼び方。陰性と陽性の両方を見た）。`Two`（反例 3 つ）・`Par`（行き止まり）・`Live`（時相の性質→1）・`--max-edges 2`（経路だけ）も走らせた。
+  `-continue` を外すと状態グラフが途中で切れ、反例も 1 つになる（`Two` で実測——回帰テストの変異「-continue を渡さない」の試料）。`-continue` のとき違反があっても `No error has been found` が出て終了コード 0 になることも実測（違反の判定は出力の印で読む）。
 - 割り目: 割らない（cruise の周）。
 
 ## 既知の限界・決着済みの論点
