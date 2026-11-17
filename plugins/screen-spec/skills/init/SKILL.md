@@ -1,12 +1,12 @@
 ---
 name: init
-description: "spec-loop の正本リポジトリに、画面設計書の置き場所（作業中の版の requirements/screens/）を用意する。画面・項目・遷移の 3 つの表（見出し行だけ）・案件ごとの設定（画面IDの接頭辞と profile）・共通仕様（common.md）の雛形・画面の仕様書の雛形を同梱のスクリプトで置き、検査（check-screens.py）が通ることを確かめる。profile（いまは web-spa）は shared/infra.csv のフロントエンドの行から推して利用者に確かめ、選べば profile の列を表の見出し行に入れ、profile の節の雛形を共通仕様と仕様書の雛形の末尾に足す（profile は最初の版で決まり、後の版で変えられない）。Q&A 表は書かず、番号も振らない。置き済みなら何も書かない。画面設計書を始めたいときに使う。引数なし。"
+description: "spec-loop の正本リポジトリに、画面設計書の置き場所（作業中の版の requirements/screens/）を用意する。画面・項目・遷移の 3 つの表（見出し行だけ）・案件ごとの設定（画面IDの接頭辞と profile）・共通仕様（common.md）の雛形・画面の仕様書の雛形を同梱のスクリプトで置き、検査（check-screens.py）が通ることを確かめる。profile（いまは web-spa）は shared/infra.csv のフロントエンドの行から推して利用者に確かめ、選べば profile の列を表の見出し行に入れ、profile の節の雛形を共通仕様と仕様書の雛形の末尾に足す（profile は最初の版で決まり、後の版で変えられない）。Q&A 表は書かず、番号も振らない。置き済みなら何も書かない。正本が spec-loop の MkDocs の雛形を使うなら、表を仕様書の節に出し版ごとのモックをサイトに置くフックを、spec-loop の登録の口に同梱のスクリプトで登録する（mkdocs.yml は書き換えない）。画面設計書を始めたいときに使う。引数なし。"
 ---
 
 # init スキル
 
-<!-- skill-version: 0.5.0 -->
-> **このスキルの版: 0.5.0**（プラグイン `screen-spec`）。
+<!-- skill-version: 0.6.0 -->
+> **このスキルの版: 0.6.0**（プラグイン `screen-spec`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update screen-spec@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -67,7 +67,19 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-screens
 
 置いた直後は 0 になる（画面の行がまだ無い。profile の節の雛形は `N/A。実現方式が未定` で、検査を通る）。**0 以外なら、出力を利用者に見せて止まる**——置いたものを手で直さない。
 
-### 5. 終える
+### 5. MkDocs のフックを登録する（正本が spec-loop の MkDocs の雛形を使うときだけ）
+
+正本の根（`docs` の親）に `hooks/spec_loop_pages.py` が在るなら、表を仕様書の節に出し版ごとのモックをサイトに置くフックを登録する（`mkdocs.yml` は書き換えない）:
+
+```bash
+python3 <このスキルの base ディレクトリ>/../../scripts/write-screens.py mkdocs <docs>
+```
+
+書くのは spec-loop の `init-mkdocs.py --hook` で、在れば変えない。**出力に `注意:` の行があれば**（フックが登録の口を持たない前の版の写し・`mkdocs.yml` がフックを指していない）、
+利用者に見せる——取り込む手順は spec-loop の `references/tree.md` の「ドキュメントのツール」。決まり（このプラグインの見つけ方・正本の CI でビルドするとき）は `../../references/mkdocs.md` を正とする。
+`hooks/spec_loop_pages.py` が無ければ飛ばす（MkDocs を使うかは spec-loop の側で決める）。
+
+### 6. 終える
 
 置いたファイル（スクリプトの出力の `書いた:` の行）と、次に画面を足すのは `/screen-spec:add` であることを利用者に伝える。
 共通仕様（`common.md`）の節は利用者と埋める——書き方は `../../references/prose.md` の「共通仕様」。

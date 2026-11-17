@@ -730,7 +730,7 @@ jobs:
 同梱のスクリプトで正本リポジトリへ写す（**手で写さない**）:
 
 ```bash
-python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本リポジトリの根>] [--dry-run]
+python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本リポジトリの根>] [--dry-run] [--hook <フックのファイル> …]
 ```
 
 - **写すのは、正本リポジトリの `CLAUDE.md` がドキュメントのツールを決めておらず、MkDocs の設定（`mkdocs.yml`・`mkdocs.yaml`）も
@@ -749,6 +749,16 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
   モックのファイルは MkDocs がそのまま写すので、リンクからサイトで開ける。入口の無いディレクトリ・`.html` でないファイルは警告して描かない。
   CSV の文字は表のセルにだけ置く（段落に置くと、行頭の `!!! ` や字下げがブロックの記法に読まれる）。
   ほかの CSV を描くときは、フックに描画関数を足す。
+- **ほかのプラグインのフックを登録する口**（spec-loop 0.99.0。#1098）——ほかのプラグイン（screen-spec など）がページを描き足すときも、
+  **どちらのプラグインも `mkdocs.yml` を書き換えない**。フックを正本の `hooks/spec_loop_plugins/<名前>.py` に置けば、spec-loop のフック
+  （`mkdocs.yml` が指す 1 本）が名前の順に読み込み、MkDocs のイベント（`on_config`・`on_pre_build`・`on_files`・`on_nav`・`on_page_markdown`・
+  `on_page_content`・`on_post_page`・`on_post_build`）を spec-loop の処理の後に順に渡す（返した値を次に渡す）。読み込めないファイルは警告して飛ばす。
+  - **登録は `init-mkdocs.py --hook <ファイル>` が写す**（`mkdocs.yml` が在っても登録だけはする）。**在れば変えない**——回し直しても登録は消えず、
+    中身の違うファイルを渡せばそう言う（新しくするなら、消してから登録し直す）。名前は英字で始まる `[A-Za-z0-9_]` の `.py`。
+    登録が在るのに、正本のフックが口を持たない（前の版の写し）・`mkdocs.yml` がフックを指していないなら、`init-mkdocs.py` がそう言う。
+  - **UI モック**: 登録したフックが `spec_loop_mocks(docs_dir)` を持てば、`mocks` の印がその行（版・名前・サイトの中の場所・形式、か作れなかった理由）を
+    手で書いたモックと同じ版の節に足す——spec-loop はほかのプラグインの名前を知らない。行の形はフックの docstring を正とする。
+  - **登録しない正本では、`init-mkdocs.py` の出力と描くページは今までと同じ**（フックの雛形の中身だけが口の分だけ変わる）。
 - **要求・仕様から CSV へ直接リンクしない**——ブラウザでは CSV のページが開けない（#369）。リンクは表示用のページ
   （`docs/qa.md`・`docs/decision-table.md`。版の節は `#v1` のようなアンカー）へ張る。
 - **本文の Q&A の番号（`Q-008`）は、フックが Q&A 表（`docs/qa.md`）のアンカーへのリンクにする**（描画関数が描いた表のセルを含む。
@@ -769,6 +779,8 @@ python3 <spec-loop の base ディレクトリ>/scripts/init-mkdocs.py [<正本�
   雛形の `docs/infra.md` を写す（在れば変えない）。
   **spec-loop 0.81.0 で、フックは `mocks` の印（UI モックへのリンク）を描くようになった**（#952）——UI モックを置くなら、同じ手順 4 の形でフックを取り込み、
   雛形の `docs/mocks.md` を写す（在れば変えない）。
+  **spec-loop 0.99.0 で、フックはほかのプラグインのフックを登録する口（`hooks/spec_loop_plugins/`）を持った**（#1098）——登録するなら、
+  同じ手順 4 の形でフックを取り込む（口を持たないフックのまま `--hook` で登録すると、`init-mkdocs.py` が「呼ばれない」と言う）。
 - **表示用のページは `shared/` に置かない**（`docs/qa.md` のように版の外に置く）。`shared/` は 2 つのサインオフが比べる範囲
   （`signoff-tags.md`）なので、表示用のファイルを入れると比べる中身が増える。版の外の名前は重ね合わせにも入らない（`versions.md`）。
 - **フックはサーバーの起動時にしか読まれない**——直したら `mkdocs serve` を起動し直す。

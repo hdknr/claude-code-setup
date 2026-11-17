@@ -208,7 +208,9 @@ def forbidden_renderers(versions) -> list[str]:
     return sorted(found)
 
 
-def document_links(versions, upto: int, screens: dict, out_dir: Path, merged_files) -> dict[str, str]:
+def document_links(versions, upto: int, screens: dict, out_dir: Path, merged_files, link=None) -> dict[str, str]:
+    """画面ID → 仕様書へのリンク。`link`（仕様書の Markdown のパス → リンク）を渡せばそれで作る（MkDocs のサイトに置くとき。#1098）。
+    渡さなければ、出力の場所からの相対のパス。"""
     links = {}
     for key, row in screens.items():
         document = (row.get("仕様書") or "").strip()
@@ -219,7 +221,7 @@ def document_links(versions, upto: int, screens: dict, out_dir: Path, merged_fil
         for _, root in reversed(versions[:upto]):
             path = root / screens_check.SCREENS_DIR / document
             if path.is_file():
-                links[key] = Path(os.path.relpath(path.resolve(), out_dir.resolve())).as_posix()
+                links[key] = link(path) if link else Path(os.path.relpath(path.resolve(), out_dir.resolve())).as_posix()
                 break
     return links
 
@@ -360,7 +362,11 @@ def qa_class(row: dict[str, str], qa) -> str:
     return UNREFLECTED
 
 
-def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str, since: str | None = None) -> tuple[Path, str, list[str]]:
+def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str, since: str | None = None,
+          link=None) -> tuple[Path, str, list[str]]:
+    """(出力のディレクトリ, HTML, 警告)。書かない（書くのは `main`。MkDocs のフック（`mkdocs-pages.py`）も読み込んで使う）。
+    `since` は基準の時点（`--since`。#1096）、`link` は仕様書へのリンクの作り方（`document_links`。#1098）。
+    MkDocs のフックは `since` を渡さない——サイトのモックに基準の時点からの印は付かない（前の版からの印は `--upto` と同じく付く）。"""
     checker = screens_check.Checker(spec_loop, docs, upto)
     problems, versions, whole = checker.merged()
     if problems:
@@ -465,7 +471,7 @@ def build(docs: Path, upto: int | None, spec_loop: Path, spec_loop_version: str,
     }
     data["provenance"] = provenance
     data["renderers"] = sorted(renderers)
-    data["documents"] = document_links(versions, number, screens, out_dir, whole.files)
+    data["documents"] = document_links(versions, number, screens, out_dir, whole.files, link)
     data["proseSections"] = [name for name, tabled in screens_check.SECTIONS if not tabled]
     data["entryKind"] = screens_check.ENTRY_KIND
     data["childKinds"] = list(screens_check.CHILD_KINDS)

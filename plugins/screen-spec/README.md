@@ -5,7 +5,7 @@
 
 screen-spec は spec-loop の決まり（Q&A 表・版の重ね方・未決定の印）に従い、spec-loop は screen-spec に依存しません。画面の無い案件では spec-loop を単独で使えます。
 
-いまは表の検査と、画面設計書を始めて画面を足すスキル（`init`・`add`）と雛形と、表から UI モックを作る生成器（前の版・前回の会からの差分の印とレビュー会の進め方を含む）と、実現方式の profile（`web-spa`）までです。
+いまは表の検査と、画面設計書を始めて画面を足すスキル（`init`・`add`）と雛形と、表から UI モックを作る生成器（前の版・前回の会からの差分の印とレビュー会の進め方を含む）と、実現方式の profile（`web-spa`）と、MkDocs で表とモックを見せるフックまでです。
 
 ## スキル
 
@@ -24,11 +24,13 @@ screen-spec は spec-loop の決まり（Q&A 表・版の重ね方・未決定�
 | `references/prose.md` | 散文の仕様書の形（表とのつながり・節の名前と順・空の節と N/A）・雛形・書き方・レビュー観点・共通仕様 |
 | `references/profiles.md` | 実現方式の profile（選び方・足す列と節・方式が未定のとき・`web-spa` の列と小見出しと誰が決めるか） |
 | `references/spec-loop.md` | spec-loop との境目——対応する spec-loop の版の範囲・spec-loop の見つけ方・Q&A の番号を振らないこと |
+| `references/mkdocs.md` | MkDocs のフックの決まり——登録（spec-loop の登録の口）・このプラグインの見つけ方・表を仕様書の節に出す行と列・版ごとのモックの置き場所 |
 | `references/mock.md` | UI モックの生成器の決まり——出力の置き場所・種別ごとの描き方・説明の欄・共有の層だけを出すこと・差分の印・レビュー会の進め方・未回答と未反映・描き方の差し替え・何で作ったかの印・終了コード |
 | `scripts/check-screens.py` | 表と散文の仕様書の検査（標準ライブラリのみ。spec-loop のスクリプトを読み込む） |
 | `scripts/build-mock.py` | 表から UI モック（HTML 1 枚）を生成する（標準ライブラリのみ。`check-screens.py` を読み込む） |
-| `scripts/write-screens.py` | `init`・`add` のスキルが呼ぶ書き込み（表と雛形を置く・画面ID を採番する。標準ライブラリのみ） |
-| `templates/` | 仕様書（`spec.md`）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`。drawio の中身で、拡張子を `.drawio` にしない——このリポジトリの図の検査が `diagrams/` の外の `.drawio` を止めるので）の雛形 |
+| `scripts/write-screens.py` | `init`・`add` のスキルが呼ぶ書き込み（表と雛形を置く・画面ID を採番する・MkDocs のフックを登録する。標準ライブラリのみ） |
+| `scripts/mkdocs-pages.py` | MkDocs のフックの本体（表を仕様書の節に出す・版ごとのモックをサイトに置く。正本に登録した薄いフックが読み込む） |
+| `templates/` | MkDocs の正本に登録する薄いフック（`mkdocs/screen_spec_pages.py`）・仕様書（`spec.md`）・共通仕様（`common.md`）・ワイヤーフレーム（`wireframe.xml`。drawio の中身で、拡張子を `.drawio` にしない——このリポジトリの図の検査が `diagrams/` の外の `.drawio` を止めるので）の雛形 |
 | `profiles/` | profile ごとの雛形（`web-spa/spec.md`＝仕様書の末尾の節、`web-spa/common.md`＝共通仕様の節） |
 | `skills/` | `init`・`add` のスキル |
 
@@ -47,3 +49,12 @@ python3 scripts/build-mock.py <正本リポジトリの docs ディレクトリ>
 ```
 
 `<docs の親>/build/mock/v<n>/index.html` に書きます（commit しない）。v2 以降は前の版から、`--since` を渡すとその時点から変えた画面・項目・遷移に印が付き、モックの「レビュー会の進め方」から今回の会の質問の画面に飛べます。決まりは `references/mock.md` を正とします。
+
+## MkDocs で見せる
+
+```bash
+python3 scripts/write-screens.py mkdocs <正本リポジトリの docs ディレクトリ>
+```
+
+spec-loop の MkDocs の雛形のフックに、このプラグインのフックを登録します（`mkdocs.yml` は書き換えません）。画面の表の行が仕様書の節に表として出て、
+ビルドのときに版ごとのモックが `build/mkdocs/mock/v<n>/` に生成されて（`build-mock.py` の出力の `build/mock/` は書き換えません）`docs/mocks.md` に載ります（サイトのモックには基準の時点（`--since`）からの差分の印を付けません。前の版からの印は付きます）。決まりは `references/mkdocs.md` を正とします。

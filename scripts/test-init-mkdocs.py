@@ -42,6 +42,13 @@
    単独で動くので import できず、写しを持つ）。フックの `fold` は `merge-versions.py` の `fold` と同じ答えを返す（#514）。
 4. **重ね合わせに混ざらない**——雛形を写した正本で `merge-versions.py` が通り、出力に表示用のファイルが入らない。
 5. **決まりの原本（`references/tree.md`）の「ドキュメントのツール」の節が、写し方のコマンドを載せている。**
+6. **ほかのプラグインのフックを登録する口**（#1098）——`--hook` は雛形を写してから登録し、設定が在る根でも登録だけをし、
+   **登録した後に回し直しても（設定が在る・設定を消した・中身の違うファイル・`--dry-run`）登録は消えず、`mkdocs.yml` を書き換えない**（#1098 の受入基準 1）。
+   受けない名前・読めないフック・同じ名前の 2 つは 2 で何も写さない。登録が在るのにフックが口を持たない・`mkdocs.yml` が指していないなら言う。
+   **登録の口を使わない根の出す行は、今（#1098 の前）の行と同じ**（空の根・設定が在る根・`--dry-run`。受入基準 4）。
+   フックは登録を名前の順に読み込み（`.`・`_` で始まる名前は読まない）、spec-loop の処理の後にイベントを渡し（返した値を次へ。`None` は受けた値のまま）、
+   読み込めない登録は警告して飛ばす。登録したフックの `spec_loop_mocks` の行を、手で書いたモックと同じ版の節に足す。**登録が無ければ描くページは同じ。**
+   init-mkdocs.py の `PLUGINS_DIR` はフックの `PLUGINS_DIR` の写しで、ここで突き合わせる。
    本文の番号の書き方は `references/qa-csv.md` の「本文での番号」にあり、`tree.md` がそこを指している。
 
 **`mkdocs build` は走らせない**（CI に MkDocs と Material の組を入れていない）。実際に組んで表が出ることは
@@ -1012,6 +1019,224 @@ def init_decision_table_page(plugin: Path, work: Path) -> bool:
     return code == 0 and copied.is_file() and copied.read_bytes() == page.read_bytes()
 
 
+# ---- ほかのプラグインのフックを登録する口（#1098）----
+
+PLUGIN_HOOK = "spec_loop_plugins"
+REGISTERED = "hooks/spec_loop_plugins/"
+# 登録の口を使わない空の根で、今（#1098 の前）の init-mkdocs.py が出す行（受入基準 4。写すファイルの一覧が変われば変わる）
+EXPECTED_EMPTY = ["写した: docs/decision-table.md", "写した: docs/index.md", "写した: docs/infra.md", "写した: docs/mocks.md",
+                  "写した: docs/qa.md", "写した: .gitignore", "写した: hooks/spec_loop_pages.py", "写した: pyproject.toml", "写した: mkdocs.yml"]
+
+
+def hook_file(work: Path, name: str, body: str) -> Path:
+    path = work / "plugin-hooks" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def lines_of(out: str, root: Path) -> list[str]:
+    return [line.replace(str(root), "ROOT") for line in out.splitlines() if line]
+
+
+def init_unregistered_output(plugin: Path, work: Path) -> bool:
+    """登録の口を使わない根で、出す行と写すファイルが今と同じ（受入基準 4）——空の根・設定が在る根・--dry-run。"""
+    empty = work / "empty"
+    empty.mkdir(parents=True)
+    code, out = run_init(plugin, empty)
+    config = work / "config"
+    write(config, {"mkdocs.yml": "site_name: 既存\n"})
+    code2, out2 = run_init(plugin, config)
+    dry = work / "dry"
+    dry.mkdir()
+    code3, out3 = run_init(plugin, dry, "--dry-run")
+    return (code == code2 == code3 == 0 and lines_of(out, empty) == EXPECTED_EMPTY
+            and lines_of(out2, config) == ["ROOT/mkdocs.yml が既にある。何も写さない（プロジェクトの設定に従う）"]
+            and lines_of(out3, dry) == [line.replace("写した: ", "写す（--dry-run なので書かない）: ") for line in EXPECTED_EMPTY]
+            and sorted(snapshot(empty)) == sorted(set(snapshot(empty)) - {REGISTERED.rstrip("/")}) and not (empty / REGISTERED).exists())
+
+
+def init_hook_register(plugin: Path, work: Path) -> bool:
+    """空の根に --hook を渡すと、雛形を写してから登録する（バイトどおり）。"""
+    root = work / "repo"
+    root.mkdir(parents=True)
+    hook = hook_file(work, "screen_spec_pages.py", "X = 1\n")
+    code, out = run_init(plugin, root, "--hook", str(hook))
+    return (code == 0 and (root / REGISTERED / hook.name).read_bytes() == hook.read_bytes() and (root / "mkdocs.yml").is_file()
+            and f"登録した: {REGISTERED}{hook.name}" in out and "注意:" not in out)
+
+
+def init_hook_config_exists(plugin: Path, work: Path) -> bool:
+    """設定が在る根でも登録だけはする。mkdocs.yml・在るファイルは変えない。"""
+    root = work / "repo"
+    write(root, {"mkdocs.yml": "site_name: 既存\nhooks:\n  - hooks/spec_loop_pages.py\n"})
+    (root / "hooks").mkdir()
+    shutil.copyfile(plugin / HOOK, root / "hooks" / "spec_loop_pages.py")
+    before = snapshot(root)
+    hook = hook_file(work, "screen_spec_pages.py", "X = 1\n")
+    code, out = run_init(plugin, root, "--hook", str(hook))
+    after = snapshot(root)
+    added = set(after) - set(before)
+    return (code == 0 and all(after[k] == v for k, v in before.items()) and added == {REGISTERED + hook.name}
+            and "雛形は写さない" in out and "注意:" not in out)
+
+
+def init_hook_rerun_keeps(plugin: Path, work: Path) -> bool:
+    """登録した後に init-mkdocs.py を回し直しても登録は消えない（受入基準 1）——設定が在る根・設定を消した根（雛形を写し直す）・
+    中身の違うファイルを --hook・--dry-run。mkdocs.yml を書き換えない。"""
+    root = work / "repo"
+    root.mkdir(parents=True)
+    hook = hook_file(work, "screen_spec_pages.py", "X = 1\n")
+    code, _ = run_init(plugin, root, "--hook", str(hook))
+    registered = root / REGISTERED / hook.name
+    kept = registered.read_bytes()
+    config = (root / "mkdocs.yml").read_bytes()
+    results = [code == 0]
+    code, _ = run_init(plugin, root)
+    results.append(code == 0 and registered.read_bytes() == kept and (root / "mkdocs.yml").read_bytes() == config)
+    other = hook_file(work / "other", "screen_spec_pages.py", "X = 2\n")
+    code, out = run_init(plugin, root, "--hook", str(other))
+    results.append(code == 0 and registered.read_bytes() == kept and "中身が" in out and (root / "mkdocs.yml").read_bytes() == config)
+    code, _ = run_init(plugin, root, "--dry-run", "--hook", str(other))
+    results.append(code == 0 and registered.read_bytes() == kept)
+    (root / "mkdocs.yml").unlink()
+    code, out = run_init(plugin, root)
+    results.append(code == 0 and registered.read_bytes() == kept and "写した: mkdocs.yml" in out)
+    return all(results)
+
+
+def init_hook_refused(plugin: Path, work: Path) -> bool:
+    """受けない名前・読めないフック・同じ名前の 2 つは 2 で、何も写さない。"""
+    results = []
+    for index, (name, body) in enumerate((("screen-spec.py", "X = 1\n"), ("_hidden.py", "X = 1\n"), ("hook.txt", "X\n"))):
+        root = work / f"r{index}"
+        root.mkdir(parents=True)
+        code, _ = run_init(plugin, root, "--hook", str(hook_file(work / f"h{index}", name, body)))
+        results.append(code == 2 and snapshot(root) == {})
+    root = work / "missing"
+    root.mkdir()
+    code, _ = run_init(plugin, root, "--hook", str(work / "nope.py"))
+    results.append(code == 2 and snapshot(root) == {})
+    root = work / "twice"
+    root.mkdir()
+    code, _ = run_init(plugin, root, "--hook", str(hook_file(work / "a", "x.py", "X\n")), "--hook", str(hook_file(work / "b", "x.py", "Y\n")))
+    results.append(code == 2 and snapshot(root) == {})
+    return all(results)
+
+
+def init_hook_old_port(plugin: Path, work: Path) -> bool:
+    """登録が在るのに、正本のフックが口を持たない・mkdocs.yml がフックを指していないなら言う（直さない）。登録の無い根では言わない。"""
+    root = work / "repo"
+    old = (plugin / HOOK).read_text(encoding="utf-8").replace(PLUGIN_HOOK, "nothing_here")
+    write(root, {"mkdocs.yml": "site_name: 既存\n", "hooks/spec_loop_pages.py": old})
+    code0, out0 = run_init(plugin, root)
+    hook = hook_file(work, "screen_spec_pages.py", "X = 1\n")
+    code, out = run_init(plugin, root, "--hook", str(hook))
+    code2, out2 = run_init(plugin, root)
+    return (code0 == code == code2 == 0 and "注意:" not in out0 and "登録の口を持たない" in out and "指していない" in out
+            and "登録の口を持たない" in out2 and (root / "hooks" / "spec_loop_pages.py").read_text(encoding="utf-8") == old)
+
+
+def project_hook(plugin: Path, root: Path, registered: dict[str, str] | None = None):
+    """正本の根に雛形のフックを写し（init-mkdocs.py の形）、登録のファイルを置いて、正本のフックを読み込む。"""
+    (root / "hooks").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(plugin / HOOK, root / "hooks" / "spec_loop_pages.py")
+    for name, body in (registered or {}).items():
+        write(root / "hooks" / PLUGIN_HOOK, {name: body})
+    spec = importlib.util.spec_from_file_location(f"project_hook_{abs(hash(str(root)))}", root / "hooks" / "spec_loop_pages.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+PLUGIN_A = """
+def on_page_markdown(markdown, page, config, files):
+    return markdown + "\\nA:" + page.file.src_path
+def on_files(files, config):
+    return files + ["A"]
+def on_page_content(html, page, config, files):
+    return html + "<A>"
+def on_post_build(config):
+    config["calls"].append("A")
+"""
+PLUGIN_B = """
+def on_page_markdown(markdown, page, config, files):
+    return markdown + "\\nB"
+def on_files(files, config):
+    return None  # 受けた値のまま
+def on_post_build(config):
+    config["calls"].append("B")
+"""
+
+
+def hook_port_dispatch(plugin: Path, work: Path) -> bool:
+    """登録したフックに、spec-loop の処理の後で、名前の順にイベントを渡す（返した値を次へ。None は受けた値のまま）。mkdocs.yml を書かない。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1})
+    hook = project_hook(plugin, work, {"b_second.py": PLUGIN_B, "a_first.py": PLUGIN_A, "_skip.py": "raise RuntimeError(\"読んではならない\")", "note.txt": "x"})
+    config = {"docs_dir": str(docs), "calls": []}
+    page = SimpleNamespace(file=SimpleNamespace(src_path="qa.md"))
+    with warnings_of() as stream:
+        out = hook.on_page_markdown("<!-- spec-loop: qa -->\n", page, config, None)
+        files = hook.on_files(["x"], config=config)
+        hook.on_post_build(config=config)
+    return (out.endswith("\nA:qa.md\nB") and "## v1" in out and "Q-001" in out and files == ["x", "A"] and config["calls"] == ["A", "B"]
+            and not stream.getvalue() and not (work / "mkdocs.yml").exists())
+
+
+def hook_port_broken(plugin: Path, work: Path) -> bool:
+    """読み込めない登録は警告して飛ばし、ほかの登録と spec-loop の印は描く。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1})
+    hook = project_hook(plugin, work, {"a_broken.py": "def on_page_markdown(:\n", "b_ok.py": PLUGIN_B})
+    page = SimpleNamespace(file=SimpleNamespace(src_path="qa.md"))
+    with warnings_of() as stream:
+        out = hook.on_page_markdown("<!-- spec-loop: qa -->\n", page, {"docs_dir": str(docs)}, None)
+    warnings = [line for line in stream.getvalue().splitlines() if line]
+    return len(warnings) == 1 and "a_broken.py: 読み込めないので飛ばす" in warnings[0] and out.endswith("\nB") and "## v1" in out
+
+
+PLUGIN_MOCKS = """
+def spec_loop_mocks(docs_dir):
+    return [{"version": 1, "name": "画面モック（生成）", "path": "mock/v1/index.html", "kind": "生成"},
+            {"version": 2, "problem": "作れない理由"},
+            {"version": 3, "name": "画面", "path": "mock/v3/index.html", "kind": "生成"},
+            {"version": 1, "name": "外", "path": "../x.html", "kind": "生成"},
+            {"name": "版が無い"}]
+"""
+
+
+def hook_port_mocks(plugin: Path, work: Path) -> bool:
+    """登録したフックの spec_loop_mocks の行を、手で書いたモックと同じ版の節に足す（受入基準 2 の spec-loop の側）。
+    作れなかった理由・形の違う行・docs に無い版は警告と注意書き。"""
+    docs = work / "docs"
+    write(docs, {MOCK_HTML: "<p>受注</p>\n", "v2/requirements/a.md": "# a\n"})
+    hook = project_hook(plugin, work, {"screen.py": PLUGIN_MOCKS})
+    with warnings_of() as stream:
+        page = SimpleNamespace(file=SimpleNamespace(src_path="sub/mocks.md"))
+        out = hook.on_page_markdown("<!-- spec-loop: mocks -->\n", page, {"docs_dir": str(docs)}, None)
+    warnings = [line for line in stream.getvalue().splitlines() if line]
+    v1, v2 = out.find("## v1"), out.find("## v2")
+    return (0 <= v1 < v2 and "| [画面モック（生成）](../mock/v1/index.html) | 生成 |" in out[v1:v2]
+            and f"| [受注 入力]({urllib.parse.quote('../' + MOCK_HTML)}) | HTML |" in out[v1:v2]
+            and "作れない理由" in out[v2:] and "../x.html" in out and "docs/v3/ が無い" in out and len(warnings) == 4
+            and "版の番号（version）が無い" in out)
+
+
+def hook_port_none(plugin: Path, work: Path) -> bool:
+    """登録が無ければ（ディレクトリが無い・空）、描くページは雛形のフックをそのまま読み込んだときと同じ（受入基準 4 のページの側）。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/qa.csv": QA_V1, "v2/shared/qa.csv": QA_V2, MOCK_HTML: "<p>x</p>\n"})
+    page = SimpleNamespace(file=SimpleNamespace(src_path="mocks.md"))
+    markdown = "<!-- spec-loop: qa -->\n<!-- spec-loop: mocks -->\n"
+    base = load_hook(plugin).on_page_markdown(markdown, page, {"docs_dir": str(docs)}, None)
+    absent = project_hook(plugin, work / "absent").on_page_markdown(markdown, page, {"docs_dir": str(docs)}, None)
+    (work / "empty" / "hooks" / PLUGIN_HOOK).mkdir(parents=True)
+    empty = project_hook(plugin, work / "empty").on_page_markdown(markdown, page, {"docs_dir": str(docs)}, None)
+    files = project_hook(plugin, work / "files").on_files(["x"], config={})
+    return base == absent == empty and "## v2" in base and files == ["x"]
+
+
 CASES = {
     "空の根には雛形をすべて写す": init_empty,
     "mkdocs.yml が在れば何も写さない": init_config_exists,
@@ -1084,10 +1309,54 @@ CASES = {
     "一覧を読めない版のフォルダの決定表は警告して描かない": hook_unlisted_decision_table,
     "区別する FS で綴りどおりと綴り違いが並ぶなら綴りどおりを描く": hook_both_spellings,
     "重ね合わせに表示用のファイルが混ざらない": merge_ignores_pages,
+    "登録の口を使わない根の出力は今と同じ": init_unregistered_output,
+    "--hook で雛形を写してから登録する": init_hook_register,
+    "設定が在る根でも --hook で登録だけする": init_hook_config_exists,
+    "登録した後に回し直しても登録は消えない": init_hook_rerun_keeps,
+    "受けない名前・読めないフックは 2 で何も写さない": init_hook_refused,
+    "登録が在るのにフックが口を持たなければ言う": init_hook_old_port,
+    "登録したフックに名前の順にイベントを渡す": hook_port_dispatch,
+    "読み込めない登録は警告して飛ばす": hook_port_broken,
+    "登録したフックのモックの行を版の節に足す": hook_port_mocks,
+    "登録が無ければ描くページは同じ": hook_port_none,
 }
 
 # (名前, 壊す対象, 壊す前, 壊した後, 殺すはずの試料の名前)。2 箇所を壊すときは (壊す前, 壊した後) の列を渡す
 MUTATIONS: list[tuple] = [
+    ("登録で在るファイルを上書きする", INIT, [("        if os.path.lexists(root / rel):  # リンク（壊れていても）も在るとみなす\n", "        if False:\n"),
+                                           ("os.link(tmp, dest)", '__import__("shutil").copyfile(tmp, dest)')],
+     "登録した後に回し直しても登録は消えない"),
+    ("設定が在れば登録しない", INIT, "            return register(root, hooks, args.dry_run)\n", "            return 0\n",
+     "設定が在る根でも --hook で登録だけする"),
+    ("登録の無い根でも前と違う行を出す", INIT, '                print(f"{root / name} が既にある。何も写さない（プロジェクトの設定に従う）")',
+     '                print(f"{root / name} が既にある。雛形は写さない（プロジェクトの設定に従う）")', "登録の口を使わない根の出力は今と同じ"),
+    ("口を持たないフックを言わない", INIT, "        for message in port_problems(root):", "        for message in []:",
+     "登録が在るのにフックが口を持たなければ言う"),
+    ("登録の名前を見ない", INIT, "        if not HOOK_NAME.fullmatch(source.name):", "        if False:",
+     "受けない名前・読めないフックは 2 で何も写さない"),
+    ("同じ名前の 2 つを止めない", INIT, "        if any(source.name == other.name for other, _ in hooks):", "        if False:",
+     "受けない名前・読めないフックは 2 で何も写さない"),
+    ("登録の後は雛形を写さない", INIT, '    if not wrote:\n        print("写すものは無かった")\n    return register(root, hooks, args.dry_run)',
+     '    if not wrote:\n        print("写すものは無かった")\n    return 0', "--hook で雛形を写してから登録する"),
+    ("返した値を次へ渡さない", HOOK, "        if first and result is not None:\n            item = result\n", "        if first and result is not None:\n            pass\n",
+     "登録したフックに名前の順にイベントを渡す"),
+    ("None を受けた値のままにしない", HOOK, "        if first and result is not None:\n", "        if first:\n",
+     "登録したフックに名前の順にイベントを渡す"),
+    ("登録を名前の逆順に読む", HOOK, "        names = sorted(os.listdir(directory))\n", "        names = sorted(os.listdir(directory), reverse=True)\n",
+     "登録したフックに名前の順にイベントを渡す"),
+    ("_ で始まる登録も読む", HOOK, '        if name.startswith((".", "_")) or not name.endswith(".py") or not path.is_file():',
+     '        if name.startswith(".") or not name.endswith(".py") or not path.is_file():', "登録したフックに名前の順にイベントを渡す"),
+    ("on_files を渡さない", HOOK, '    return dispatch("on_files", files, config=config)', "    return files",
+     "登録したフックに名前の順にイベントを渡す"),
+    ("on_post_build を渡さない", HOOK, '    dispatch("on_post_build", None, config=config)', "    pass",
+     "登録したフックに名前の順にイベントを渡す"),
+    ("読み込めない登録で止まる", HOOK, "        except Exception as e:  # noqa: BLE001 — 登録したフックの誤りで spec-loop のページまで止めない",
+     "        except ImportError as e:  # noqa: BLE001 — 登録したフックの誤りで spec-loop のページまで止めない", "読み込めない登録は警告して飛ばす"),
+    ("登録したモックの行を足さない", HOOK, "        rows += added\n", "        rows += []\n", "登録したフックのモックの行を版の節に足す"),
+    ("登録したモックの理由を出さない", HOOK, "        problems += added_problems\n", "        problems += []\n", "登録したフックのモックの行を版の節に足す"),
+    ("登録したモックの場所を確かめない", HOOK, ' and ".." not in path.split("/")', "", "登録したフックのモックの行を版の節に足す"),
+    ("登録したモックだけの版を飛ばす", HOOK, "        if mocks is None and not added and not added_problems:  # モックの無い版は飛ばす",
+     "        if mocks is None:  # モックの無い版は飛ばす", "登録したフックのモックの行を版の節に足す"),
     ("想定外の例外を 2 に寄せない", INIT, "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "想定外の例外は 2 で、切れたファイルを残さない"),
     ("素の URL の中も書き換える", HOOK, "            parts += [QA_NUMBER.sub(link, between[start:url.start()]), between[url.start():end]]",
@@ -1389,6 +1658,13 @@ def check_copies() -> None:
     samples = ["shared", "Shared", "ＳＨＡＲＥＤ", "ſhared", "Straße", "STRASSE", "İ", "i̇", "\u304b\u3099", "\u304c", "ΣΑΣ", "σας"]
     wrong = [f"{x!r}: {hook.fold(x)!r} != {merge.fold(x)!r}" for x in samples if hook.fold(x) != merge.fold(x)]
     check("フックの fold が merge-versions.py の fold と違う", not wrong, "; ".join(wrong))
+    init = importlib.util.spec_from_file_location("init_mkdocs_copy", PLUGIN / INIT)
+    init_module = importlib.util.module_from_spec(init)
+    init.loader.exec_module(init_module)
+    check("init-mkdocs.py の PLUGINS_DIR がフックの PLUGINS_DIR と違う",
+          init_module.PLUGINS_DIR == f"{Path(init_module.HOOK).parent.as_posix()}/{hook.PLUGINS_DIR}" and hook.PLUGINS_DIR == PLUGIN_HOOK,
+          f"{init_module.PLUGINS_DIR!r} / {hook.PLUGINS_DIR!r}")
+    check("init-mkdocs.py の HOOK が雛形のフックの場所と違う", init_module.HOOK == HOOK.relative_to("templates/mkdocs").as_posix())
     check("雛形の pyproject.toml が mkdocs を 2 未満に留めていない",
           '"mkdocs>=1.6,<2"' in (PLUGIN / "templates" / "mkdocs" / "pyproject.toml").read_text(encoding="utf-8"))
 
@@ -1436,7 +1712,9 @@ def check_reference() -> None:
     section = text.split("\n## ドキュメントのツール\n", 1)[-1].split("\n## ", 1)[0]
     for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "docs/infra.md", "docs/mocks.md", "`mocks` の印", "shared/",
                  "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない",
-                 "spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり"):
+                 "spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり",
+                 "`hooks/spec_loop_plugins/<名前>.py`", "`init-mkdocs.py --hook <ファイル>`", "`spec_loop_mocks(docs_dir)`",
+                 "どちらのプラグインも `mkdocs.yml` を書き換えない", "spec-loop 0.99.0 で、フックはほかのプラグインのフックを登録する口"):
         check(f"references/tree.md の「ドキュメントのツール」に {word} が無い", word in section)
     qa = (PLUGIN / "references" / "qa-csv.md").read_text(encoding="utf-8")
     check("references/qa-csv.md に「本文での番号」の節が無い", "\n## 本文での番号\n" in qa)
