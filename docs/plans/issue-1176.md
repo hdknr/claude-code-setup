@@ -113,6 +113,7 @@ CI・影響範囲・宣言の外の反映・依存の表・推奨が無い／「
 - 周の在り処: ブランチ `issue/1176-merge-decision-regression-unmet`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1176`・
   起点 `3052f61`・切った元の参照 `origin/main`（解決した SHA `3052f61362826dcafce5ee593c8ca92e66c6481f`）・base `3052f61362826dcafce5ee593c8ca92e66c6481f`
 - 割り目（手順 4）: 割らない（cruise の周）。
+- 1 パス目: 起点（1 パス目の関門に渡した HEAD）`3ac7a03`。Verifier（sonnet・`dev-loop:dev-loop-verifier`）と `/code-review` を当てる。
 - 交絡を潰した手順: 実験なし（A2 の直す前に赤・直した後に緑は試料の当て比べで、陽性対照は直した版の 0）。
 - A2 の直す前に赤・直した後に緑（手で当てた）: 新しい `scripts/test-check-gates.py` を、`3052f61`（main）の `plugins/dev-loop/skills/dev-loop/scripts/` を写した一時ディレクトリの `check-gates.py` に向けて走らせると、
   試料「不在の周では満たさないを線（マージ前の判断（後退・未達を含む））で通す（#1176）」が rc=3（期待 0）で赤。同じ試料は直した版で rc=0（`test-check-gates.py` 193 件すべて合格・変異 42 件すべて赤）。
