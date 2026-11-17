@@ -27,7 +27,8 @@ Formal Checker が組んだモデルは `spec/formal/<対象>/` に残るが、�
   `-continue` は不変条件の違反の後も展開を続けさせる（違反した状態ごとに反例を出し、状態グラフを最後まで書く）。
 - **状態**: 状態グラフの節点。対応で同じ言葉になる状態は 1 つにまとめる（ビュー）。初めの状態（`style = filled`）に `[*]` からの矢印を付ける。
 - **遷移**: 状態グラフの辺を、行為の名前を対応の言葉に替えて描く（まとめた結果が同じ遷移は 1 本）。対応の `skip` の行為は、まとめた後で同じ状態に戻る辺に限って描かない。
-- **印**: TLC の出力の反例（`is violated`・`Deadlock reached`）の最後の状態を、規則を破る状態として `⚠` を付けて描く（`classDef violated` も付ける）。
+- **印**: TLC の出力の反例（`is violated`・`Deadlock reached`。初めの状態が破る `is violated by the initial state:` の形も）の最後の状態を、規則を破る状態として `⚠` を付けて描く（`classDef violated` も付ける）。
+  行き止まり（`Deadlock reached`）の状態にも同じ印を付け、図にそう書く（`check-formal-rerun.py` も行き止まりを反例に数える）。
 - **経路**: 最初の反例（幅優先の展開なので最短）の段を、遷移の言葉の前に段の番号（`1. 申請する`）を付けて描き、図の下に経路の一覧を書く。
 - **大きいモデル**: まとめた後の遷移が `--max-edges`（既定 20）本を超え、反例があるなら、**反例までの経路の状態と遷移だけを描き**、そう書く（反例が無ければ全部を描いて、多いと書く）。
 - **全体でないグラフ**: TLC が待ちの状態を残して止まった（`N states left on queue` の N が 0 でない。行き止まりで止まったときなど）なら、図に「全体ではない」と書く。
@@ -57,7 +58,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 0 | 描けた（`--out` に書いたか、標準出力に出した） |
 | 1 | 描けない——対応に無い状態・行為がある、対応の形が違う・使えない文字、`skip` の行為が別の状態へ移る、規則を破る状態と破らない状態を 1 つの言葉にまとめた、時相の性質の反例（繰り返しのある反例）。対応を直す |
 | 2 | 引数が違う・想定外の例外 |
-| 4 | 判定できなかった——呼び方の行が無い、記録が読めない、TLC のモデルが一覧に無い、`図の対応のファイル` が無い、一覧のファイルが無い、TLC が走りきらない（時間切れを含む）・状態グラフが無いか読めない、反例の状態・段が状態グラフに無い、`--controls` で陽性対照に違反が出ない |
+| 4 | 判定できなかった——呼び方の行が無い、記録が読めない、TLC のモデルが一覧に無い、`図の対応のファイル` が無い、一覧のファイルが無い、TLC が走りきらない（時間切れ・反例の印と別の `Error: ` の行——反例の後の評価の誤りを含む）・状態グラフが無いか読めない、反例の状態・段が状態グラフに無い、`--controls` で陽性対照に違反が出ない |
 
 ## 何を守り、何を守らないか
 
@@ -74,7 +75,7 @@ JSON のオブジェクト。Formal Checker が報告に書き（`agents/formal-
 | 反例の状態と段が状態グラフに無ければ 4 | 状態グラフと食い違う経路を描く |
 | `--controls` の陽性対照で違反が出なければ 4 | 印を付ける形が空振りのまま、描けたと言う |
 | 時相の性質の反例（繰り返しのある反例）は描かない（1） | 戻る経路を、規則を破る状態への経路と読ませる |
-| TLC が走りきらない・状態グラフが無いなら 4 | 走っていないモデルの図を出す |
+| TLC が走りきらない（反例の印と別の `Error: ` の行がある）・状態グラフが無いなら 4 | 走っていないモデル・途中で止まったモデルの図を出す |
 | 待ちの状態が残ったグラフには「全体ではない」と書く | 途中で止まった展開を全体と読ませる |
 | 一時ディレクトリで走らせ、描けたときだけ `--out` の 1 ファイルを書く | 正本に `states/` や状態グラフが残る・描けなかったのに古い図が新しく見える |
 | 呼び方の行が無ければ 4（`PATH` の `tlc` で探さない） | `check-tlc.py` と違う探し方で走らせる |
@@ -135,6 +136,9 @@ EDGE = re.compile(r'(-?\d+) -> (-?\d+) \[label="((?:[^"\\]|\\.)*)"(?:,[^\]]*)?\]
 STATE = re.compile(r"State (\d+): <(.*)>$")
 QUEUE = re.compile(r"(\d+) states? left on queue")
 TRACE_START = ("is violated", "Deadlock reached", "were violated")
+# 反例の本体の前置き（反例の印の後ろに TLC が書く行）。ほかの `Error: ` の行は、TLC が走りきらなかった印
+BEHAVIOR = ("Error: The behavior up to this point is:", "Error: The following behavior constitutes a counter-example:")
+INITIAL = "by the initial state:"
 
 
 class Stop(Exception):
@@ -224,6 +228,13 @@ def read_traces(out: str) -> list[tuple[bool, list[tuple[str | None, dict[str, s
             trace: list[tuple[str | None, dict[str, str]]] = []
             deadlock = "Deadlock reached" in line
             i += 1
+            if line.rstrip().endswith(INITIAL):  # 初めの状態が破る形——`State 1:` の見出しが無く、状態がすぐ続く
+                body = []
+                while i < len(lines) and lines[i].strip():
+                    body.append(lines[i])
+                    i += 1
+                traces.append((deadlock, [(None, assignments("\n".join(body)))]))
+                continue
             while i < len(lines):
                 head = lines[i].strip()
                 if head.startswith("Back to state") or head.endswith(": Stuttering"):
@@ -388,7 +399,7 @@ def render(name: str, kind: str, dot: str, out: str, view, max_edges: int) -> tu
     chart.append("```")
     result = "反例あり" if walks else "反例なし"
     lines = [f"## {name}.tla（{kind}）", "",
-             f"- 結果: {result}（状態 {len(set(labels.values()))}・遷移 {len(view_edges)}。TLC の状態 {len(nodes)}・遷移 {len(edges)}）"]
+             f"- 結果: {result}（状態 {len(set(labels.values()))}・遷移 {len(view_edges)}。TLC の状態 {len(nodes)}・遷移 {len(edge_set)}）"]
     lines += [f"- {note}" for note in notes]
     lines += ["", *chart, ""]
     if walks:
@@ -457,6 +468,10 @@ def draw(call: str, directory: Path, max_edges: int, timeout: int, controls: boo
             dot_path = Path(tmp) / dot_name
             if rc is None or not (tlc.GOOD_MARK in out or rerun.violated(out)) or not dot_path.is_file():
                 raise Stop(EXIT_UNKNOWN, f"{directory}: {name}.tla を TLC が走りきらなかった（終了コード {rc}）: {tlc.tail(out)}")
+            odd = [line for line in out.splitlines()
+                   if line.startswith("Error: ") and not any(mark in line for mark in TRACE_START) and not line.startswith(BEHAVIOR)]
+            if odd:  # 反例の後に評価の誤りで止まった形——状態グラフが途中で切れている
+                raise Stop(EXIT_UNKNOWN, f"{directory}: {name}.tla を TLC が走りきらなかった（終了コード {rc}。{odd[0]}）")
             lines, found = render(name, kind, dot_path.read_text(encoding="utf-8", errors="replace"), out, view, max_edges)
             if kind != "本体" and not found:
                 raise Stop(EXIT_UNKNOWN, f"{directory}: 陽性対照 {name}.tla で違反が出ない（印を付ける形を確かめられない。空振りの疑い）")

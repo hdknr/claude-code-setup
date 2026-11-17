@@ -40,6 +40,7 @@ SCRIPTS = REAL_REPO / "plugins" / "spec-loop" / "scripts"
 TARGET = "formal-statechart.py"
 
 # 本物の TLC 2.19（tla2tools v1.7.4）で手元で取った出力（2026-11-18）。鍵はモジュールの名前（`:nocontinue` は -continue なし）。
+# `InitBad`（初めの状態が破る）・`CrashAfter`（反例の後に評価の誤り）・`Dup`（同じ辺を重ねて書く）は 1 パス目の関門の指摘を受けて同じ日に足した。
 # `Skew` は本物の `OrderBroken` を書き換えて作った（反例の 2 段目の行為を `Ship` から `Pay` に替え、状態グラフの辺と食い違わせた）。
 FIXTURES: dict[str, dict] = {'Order': {'rc': 0,
            'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
@@ -465,6 +466,194 @@ FIXTURES: dict[str, dict] = {'Order': {'rc': 0,
                   'Spec == Init /\\ [][Next]_x\n'
                   '====\n',
            'cfg': 'SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\n'},
+ 'InitBad': {'rc': 0,
+             'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
+                       'Semantic processing of module Naturals\n'
+                       'Semantic processing of module InitBad\n'
+                       'Computing initial states...\n'
+                       'Error: Invariant Small is violated by the initial state:\n'
+                       'x = 5\n'
+                       '\n'
+                       'Error: Invariant Small is violated.\n'
+                       'Error: The behavior up to this point is:\n'
+                       'State 1: <Initial predicate>\n'
+                       'x = 5\n'
+                       '\n'
+                       'State 2: <Inc line 5, col 8 to line 5, col 26 of module InitBad>\n'
+                       'x = 6\n'
+                       '\n'
+                       'Model checking completed. No error has been found.\n'
+                       '  Estimates of the probability that TLC did not check all reachable states\n'
+                       '  because two distinct states had the same fingerprint:\n'
+                       '  calculated (optimistic):  val = 3.8E-19\n'
+                       '8 states generated, 7 distinct states found, 0 states left on queue.\n'
+                       'The depth of the complete state graph search is 5.\n'
+                       'The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 1 and the 95th percentile is 1).\n',
+             'dot': 'strict digraph DiskGraph {\n'
+                    'nodesep=0.35;\n'
+                    'subgraph cluster_graph {\n'
+                    'color="white";\n'
+                    '6878809131176742310 [label="x = 0",style = filled]\n'
+                    '120556001817863923 [label="x = 5",style = filled]\n'
+                    '6878809131176742310 -> -3856709652555242122 [label="Inc",color="black",fontcolor="black"];\n'
+                    '-3856709652555242122 [label="x = 1"];\n'
+                    '120556001817863923 -> 3754412053038006208 [label="Inc",color="black",fontcolor="black"];\n'
+                    '3754412053038006208 [label="x = 6"];\n'
+                    '-3856709652555242122 -> -14597302870295483 [label="Inc",color="black",fontcolor="black"];\n'
+                    '-14597302870295483 [label="x = 2"];\n'
+                    '-14597302870295483 -> 7692258802772710549 [label="Inc",color="black",fontcolor="black"];\n'
+                    '7692258802772710549 [label="x = 3"];\n'
+                    '7692258802772710549 -> -7737172615487680989 [label="Inc",color="black",fontcolor="black"];\n'
+                    '-7737172615487680989 [label="x = 4"];\n'
+                    '-7737172615487680989 -> 120556001817863923 [label="Inc",color="black",fontcolor="black"];\n'
+                    '{rank = same; 120556001817863923;6878809131176742310;}\n'
+                    '{rank = same; -3856709652555242122;}\n'
+                    '{rank = same; -14597302870295483;}\n'
+                    '{rank = same; 7692258802772710549;}\n'
+                    '{rank = same; -7737172615487680989;}\n'
+                    '}\n'
+                    '}',
+             'tla': '---- MODULE InitBad ----\n'
+                    'EXTENDS Naturals\n'
+                    'VARIABLES x\n'
+                    'Init == x \\in {0, 5}\n'
+                    "Inc == x < 6 /\\ x' = x + 1\n"
+                    'Next == Inc\n'
+                    'Spec == Init /\\ [][Next]_x\n'
+                    'Small == x < 5\n'
+                    '====\n',
+             'cfg': 'SPECIFICATION Spec\nINVARIANT Small\nCHECK_DEADLOCK FALSE\n'},
+ 'CrashAfter': {'rc': 75,
+                'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
+                          'Semantic processing of module Naturals\n'
+                          'Semantic processing of module CrashAfter\n'
+                          'Computing initial states...\n'
+                          'Error: Invariant Small is violated.\n'
+                          'Error: The behavior up to this point is:\n'
+                          'State 1: <Initial predicate>\n'
+                          'x = 0\n'
+                          '\n'
+                          'State 2: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 1\n'
+                          '\n'
+                          'State 3: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 2\n'
+                          '\n'
+                          'Error: Invariant Small is violated.\n'
+                          'Error: The behavior up to this point is:\n'
+                          'State 1: <Initial predicate>\n'
+                          'x = 0\n'
+                          '\n'
+                          'State 2: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 1\n'
+                          '\n'
+                          'State 3: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 2\n'
+                          '\n'
+                          'State 4: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 3\n'
+                          '\n'
+                          'Error: TLC threw an unexpected exception.\n'
+                          'This was probably caused by an error in the spec or model.\n'
+                          'See the User Output or TLC Console for clues to what happened.\n'
+                          ': Attempted to compute the value of an expression of form\n'
+                          'CHOOSE x \\in S: P, but no element of S satisfied P.\n'
+                          'line 6, col 23 to line 6, col 44 of module CrashAfter\n'
+                          'Error: The behavior up to this point is:\n'
+                          'State 1: <Initial predicate>\n'
+                          'x = 0\n'
+                          '\n'
+                          'State 2: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 1\n'
+                          '\n'
+                          'State 3: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 2\n'
+                          '\n'
+                          'State 4: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 3\n'
+                          '\n'
+                          'Error: TLC threw an unexpected exception.\n'
+                          'This was probably caused by an error in the spec or model.\n'
+                          'See the User Output or TLC Console for clues to what happened.\n'
+                          ': Attempted to compute the value of an expression of form\n'
+                          'CHOOSE x \\in S: P, but no element of S satisfied P.\n'
+                          'line 6, col 23 to line 6, col 44 of module CrashAfter\n'
+                          'Error: The behavior up to this point is:\n'
+                          'State 1: <Initial predicate>\n'
+                          'x = 0\n'
+                          '\n'
+                          'State 2: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 1\n'
+                          '\n'
+                          'State 3: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 2\n'
+                          '\n'
+                          'State 4: <Inc line 5, col 8 to line 5, col 26 of module CrashAfter>\n'
+                          'x = 3\n'
+                          '\n'
+                          'Error: The error occurred when TLC was evaluating the nested\n'
+                          'expressions at the following positions:\n'
+                          '0. Line 6, column 9 to line 6, column 44 in CrashAfter\n'
+                          '1. Line 6, column 9 to line 6, column 13 in CrashAfter\n'
+                          '2. Line 6, column 18 to line 6, column 44 in CrashAfter\n'
+                          '3. Line 6, column 23 to line 6, column 44 in CrashAfter\n'
+                          '\n'
+                          '\n'
+                          '4 states generated, 4 distinct states found, 0 states left on queue.\n',
+                'dot': 'strict digraph DiskGraph {\n'
+                       'nodesep=0.35;\n'
+                       'subgraph cluster_graph {\n'
+                       'color="white";\n'
+                       '67180241641765912 [label="x = 0",style = filled]\n'
+                       '67180241641765912 -> 6296468819102642741 [label="Inc",color="black",fontcolor="black"];\n'
+                       '6296468819102642741 [label="x = 1"];\n'
+                       '6296468819102642741 -> -5768849194604109758 [label="Inc",color="black",fontcolor="black"];\n'
+                       '-5768849194604109758 [label="x = 2"];\n'
+                       '-5768849194604109758 -> -540485634259276177 [label="Inc",color="black",fontcolor="black"];\n'
+                       '-540485634259276177 [label="x = 3"];\n'
+                       '{rank = same; 67180241641765912;}\n'
+                       '{rank = same; 6296468819102642741;}\n'
+                       '{rank = same; -5768849194604109758;}\n'
+                       '}\n'
+                       '}',
+                'tla': '---- MODULE CrashAfter ----\n'
+                       'EXTENDS Naturals\n'
+                       'VARIABLES x\n'
+                       'Init == x = 0\n'
+                       "Inc == x < 3 /\\ x' = x + 1\n"
+                       "Boom == x = 3 /\\ x' = CHOOSE n \\in {} : TRUE\n"
+                       'Next == Inc \\/ Boom\n'
+                       'Spec == Init /\\ [][Next]_x\n'
+                       'Small == x < 2\n'
+                       '====\n',
+                'cfg': 'SPECIFICATION Spec\nINVARIANT Small\nCHECK_DEADLOCK FALSE\n'},
+ 'Dup': {'rc': 0,
+         'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
+                   'Semantic processing of module Dup\n'
+                   'Computing initial states...\n'
+                   'Model checking completed. No error has been found.\n'
+                   '  Estimates of the probability that TLC did not check all reachable states\n'
+                   '  because two distinct states had the same fingerprint:\n'
+                   '  calculated (optimistic):  val = 3.3E-19\n'
+                   '5 states generated, 2 distinct states found, 0 states left on queue.\n'
+                   'The depth of the complete state graph search is 2.\n'
+                   'The average outdegree of the complete state graph is 1 (minimum is 0, the maximum 1 and the 95th percentile is 1).\n',
+         'dot': 'strict digraph DiskGraph {\n'
+                'nodesep=0.35;\n'
+                'subgraph cluster_graph {\n'
+                'color="white";\n'
+                '-4620721407511713798 [label="x = 0",style = filled]\n'
+                '-4620721407511713798 -> -3743087399657325628 [label="Next",color="black",fontcolor="black"];\n'
+                '-3743087399657325628 [label="x = 1"];\n'
+                '-4620721407511713798 -> -3743087399657325628 [label="Next",color="black",fontcolor="black"];\n'
+                '-3743087399657325628 -> -3743087399657325628 [label="Next",color="black",fontcolor="black"];\n'
+                '-3743087399657325628 -> -3743087399657325628 [label="Next",color="black",fontcolor="black"];\n'
+                '{rank = same; -4620721407511713798;}\n'
+                '{rank = same; -3743087399657325628;}\n'
+                '}\n'
+                '}',
+         'tla': "---- MODULE Dup ----\nVARIABLES x\nInit == x = 0\nNext == \\E i \\in {1, 2} : x' = 1\nSpec == Init /\\ [][Next]_x\n====\n",
+         'cfg': 'SPECIFICATION Spec\nCHECK_DEADLOCK FALSE\n'},
  'Skew': {'rc': 0,
           'stdout': 'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n'
                     'Semantic processing of module Naturals\n'
@@ -529,6 +718,8 @@ FIXTURES: dict[str, dict] = {'Order': {'rc': 0,
 
 # `Calm` は本物の `Order` のモジュールの名前だけを替えた写し（違反の出ない陽性対照）
 FIXTURES["Calm"] = {**FIXTURES["Order"], "tla": FIXTURES["Order"]["tla"].replace("MODULE Order", "MODULE Calm")}
+# `Slow` も同じ写し。偽の TLC は状態グラフを書いてから眠る（時間切れ——状態グラフが在っても走りきっていない）
+FIXTURES["Slow"] = {**FIXTURES["Order"], "tla": FIXTURES["Order"]["tla"].replace("MODULE Order", "MODULE Slow")}
 
 FAKE_TLC = """#!{python}
 import json, os, re, sys
@@ -545,6 +736,8 @@ if "-dump" in args:
     kind, path = args[args.index("-dump") + 1], args[args.index("-dump") + 2]
     if kind == "dot,actionlabels":
         open(path, "w", encoding="utf-8").write(case["dot"])
+if module == "Slow":
+    sys.stdout.flush(); import time; time.sleep(5)
 sys.stdout.write(case["stdout"])
 sys.exit(case["rc"])
 """
@@ -574,6 +767,8 @@ VIEW_LIVE = {"states": [{"when": {"x": str(n)}, "label": w} for n, w in enumerat
 VIEW_DEAD = {"states": [{"when": {"x": "1"}, "label": "止めた"}, {"when": {"r": '[s |-> "a"]', "x": "0"}, "label": "はじめ"},
                         {"when": {"x": "2"}, "label": "進めた"}, {"when": {"x": "3"}, "label": "3 番目"}, {"when": {"x": "4"}, "label": "4 番目"}],
              "actions": {"Stop": "止める", "Go": "進める", "Step": "次へ", "Back": "戻る"}}
+VIEW_INIT = {"states": [{"when": {"x": str(n)}, "label": f"{n} 個"} for n in range(7)], "actions": {"Inc": "増やす"}}
+VIEW_DUP = {"states": [{"when": {"x": "0"}, "label": "はじめ"}, {"when": {"x": "1"}, "label": "進んだ"}], "actions": {"Next": "進む"}}
 # 図に出てはならない語（変数名・行為の名前・TLA+ の値）
 HIDDEN = {"Order": ["status", "paid", "Submit", "Ship", "Cancel", "draft", "FALSE"], "OrderBroken": ["status", "paid", "Ship", "FALSE"],
           "Two": ["x =", "Inc", "Reset"], "Par": ["done", "Write"], "Dead": ["|->", "Stop", "Go"]}
@@ -621,6 +816,10 @@ CASES: dict[str, tuple] = {
     "本体の反例が 3 つ": (f"TLC の呼び方: {CALL}\n", target("Two", view=VIEW_TWO), [], 0, "反例あり", [("Two", VIEW_TWO, False)]),
     "行き止まり": (f"TLC の呼び方: {CALL}\n", target("Par", view=VIEW_PAR), [], 0, "行き止まり", [("Par", VIEW_PAR, False)]),
     "途中で止まったグラフ・値に ->": (f"TLC の呼び方: {CALL}\n", target("Dead", view=VIEW_DEAD), [], 0, "全体ではない", [("Dead", VIEW_DEAD, False)]),
+    "初めの状態が破る": (f"TLC の呼び方: {CALL}\n", target("InitBad", view=VIEW_INIT), [], 0, "反例あり", [("InitBad", VIEW_INIT, False)]),
+    "重なった辺は 1 本に数える": (f"TLC の呼び方: {CALL}\n", target("Dup", view=VIEW_DUP), [], 0, "TLC の状態 2・遷移 2）", [("Dup", VIEW_DUP, False)]),
+    "反例の後に評価の誤りで止まる": (f"TLC の呼び方: {CALL}\n", target("CrashAfter", view=VIEW_TWO | {"actions": {"Inc": "増やす", "Boom": "壊す"}}),
+                          ["--out", OUT], 4, "unexpected exception", []),
     "大きいモデルは経路だけ": (f"TLC の呼び方: {CALL}\n", target("Two", view=VIEW_TWO), ["--max-edges", "2"], 0, "経路だけを描いた", [("Two", VIEW_TWO, True)]),
     "まとめて skip": (f"TLC の呼び方: {CALL}\n", target(view=VIEW_ORDER_MERGED), [], 0, "申請済み", [("Order", VIEW_ORDER_MERGED, False)]),
     "--out に書く": (f"TLC の呼び方: {CALL}\n", target(), ["--out", OUT], 0, "書いた", [("Order", VIEW_ORDER, False)]),
@@ -643,6 +842,7 @@ CASES: dict[str, tuple] = {
     "TLC が走りきらない（構文）": (f"TLC の呼び方: {CALL}\n", target(controls=("Broken",)), ["--controls", "--out", OUT], 4, "走りきらなかった", []),
     "TLC が途中で止まる": (f"TLC の呼び方: {CALL}\n", target("Crash", view=VIEW_TWO | {"actions": {"Inc": "増やす", "Boom": "壊す"}}), ["--out", OUT], 4,
                     "走りきらなかった", []),
+    "時間切れ": (f"TLC の呼び方: {CALL}\n", target("Slow"), ["--timeout", "1", "--out", OUT], 4, "時間切れ", []),
     "呼び方の行が無い": (None, target(), [], 4, "TLC の呼び方が無い", []),
     "判定しない: --max-edges が 0": (f"TLC の呼び方: {CALL}\n", target(), ["--max-edges", "0"], 2, "--max-edges は 1 以上", []),
 }
@@ -678,7 +878,11 @@ def parse_graph(dot: str):
 
 def parse_traces(out: str) -> list[list[tuple[str | None, dict[str, str]]]]:
     traces = []
-    for block in re.split(r"^Error: (?:Invariant \w+ is violated|Deadlock reached)\.$", out, flags=re.MULTILINE)[1:]:
+    parts = re.split(r"^Error: (?:Invariant \w+ is violated(\.| by the initial state:)|Deadlock reached\.)$", out, flags=re.MULTILINE)
+    for form, block in zip(parts[1::2], parts[2::2]):
+        if form == " by the initial state:":  # 初めの状態が破る形——見出しが無く、状態がすぐ続く
+            traces.append([(None, parse_state(block.strip().split("\n\n")[0]))])
+            continue
         steps = []
         for m in re.finditer(r"^State \d+: <(\w+)[^>]*>\n((?:.+\n)+)", block, flags=re.MULTILINE):
             steps.append((None if m.group(1) == "Initial" else m.group(1), parse_state(m.group(2))))
@@ -820,7 +1024,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("時相の性質の反例を描く", '                raise Stop(EXIT_UNDRAWABLE, "時相の性質の反例（繰り返しのある反例）は描かない")', "                pass",
      "時相の性質の反例は描かない"),
     ("走りきらない TLC の図を出す", "            if rc is None or not (tlc.GOOD_MARK in out or rerun.violated(out)) or not dot_path.is_file():",
-     "            if not dot_path.is_file():", "TLC が途中で止まる"),
+     "            if not dot_path.is_file():", "時間切れ"),
     ("待ちの残ったグラフに書かない", "    if queued and int(queued[-1]) != 0:", "    if False:", "途中で止まったグラフ・値に ->"),
     ("辺を節点より先に読む", "        node = NODE.fullmatch(line)", '        node = None if "->" in line else NODE.fullmatch(line)', "途中で止まったグラフ・値に ->"),
     ("大きいモデルも全部描く", "            drawn_edges = set(steps)", "            drawn_edges = view_edges", "大きいモデルは経路だけ"),
@@ -830,6 +1034,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("描けなくても --out を書く", "        print(f\"描かなかった: {stop}\", file=sys.stderr)\n",
      "        print(f\"描かなかった: {stop}\", file=sys.stderr)\n        args.out and args.out.write_text(\"x\")\n", "時相の性質の反例は描かない"),
     ("初めの状態に矢印を付けない", '    chart += [f"    [*] --> {ids[label]}" for label in states if label in starts]', "", "本体: 反例なし"),
+    ("初めの状態が破る形を読まない", "            if line.rstrip().endswith(INITIAL):", "            if False:", "初めの状態が破る"),
+    ("反例の後の評価の誤りを通す", "            if odd:", "            if False:", "反例の後に評価の誤りで止まる"),
+    ("重なった辺を数える", "遷移 {len(edge_set)}）", "遷移 {len(edges)}）", "重なった辺は 1 本に数える"),
     ("使えない文字を通す", "    if bad:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}", "    if False:\n        raise Stop(EXIT_UNDRAWABLE, f\"対応の {where}",
      "使えない文字"),
 ]
