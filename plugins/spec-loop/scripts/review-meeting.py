@@ -30,7 +30,8 @@ usage:
 - `rows` の起票元は `要求確定（レビュー会 <日付>）`、質問の文の後ろに `（レビュー会 <日付> の指摘 <行>。対象: <対象>）`（`対象` が空なら `。対象: …` を付けない）
 - 記録の行の番号（`指摘 <行>`・振り分けの `note`）は、見出しと空行を除いて上から 1 から数える
 - `rows` は会の記録の指摘をどれも落とさない——まだ起票していない指摘の行は、質問の候補（1 つ以上）か見送り（ちょうど 1 つ）のどちらかに入る。入らない・両方に入る・
-  指摘でない行や無い行を指す・起票済み（質問の文に上の添え書きの頭がある行が全部の版を通して在る）の指摘をまた指す、はどれも 1 で何も書かない
+  指摘でない行や無い行を指す・起票済み（質問の文に上の添え書きの頭がある行が全部の版を通して在る）の指摘を見送りにする・起票済みの指摘に起票した質問と違う質問を足す、はどれも 1 で何も書かない。
+  **起票済みの指摘の候補で、作った質問の文が既にある行と同じものは、足さずに通す**——振り分けのファイルは会の記録として残し、末尾に足した指摘のために同じファイルで当て直すため
 - 見送りの種類は `見た目`（範囲の外——`references/spec-scope.md` の「見た目」）・`既にある`（`detail` に、重ね合わせた全体の共有の表に在る番号を書く）・`質問にしない`。`detail` は空にしない
 - `rows` は同じ質問の行を足さない——候補から作った質問の文が、既にある行（全部の版を重ねた全体）の質問と同じなら 1
 - 番号は `Q-R-` の、全部の版の `shared/qa.csv` を通した最大の次から振る（`intake-code.py` の `next_number` を読み込む——写さない）
@@ -366,6 +367,7 @@ def rows(root: Path, directory: Path, dry_run: bool) -> tuple[int, list[str]]:
     new_rows: list[dict[str, str]] = []
     skipped: list[tuple[int, str, str]] = []
     covered: dict[int, list[str]] = {}
+    filed: list[str] = []  # 起票済みの指摘の候補で、同じ質問が既にあるもの（当て直し。足さない）
     if check_keys(data, TOP_KEYS, TOP_KEYS, "振り分けのファイル", errors):
         if not isinstance(data["candidates"], list) or not isinstance(data["skipped"], list):
             errors.append("振り分けのファイル: `candidates` と `skipped` は並び（無ければ []）")
@@ -377,6 +379,15 @@ def rows(root: Path, directory: Path, dry_run: bool) -> tuple[int, list[str]]:
                     continue
                 line, row = built
                 covered.setdefault(line, []).append("候補")
+                if line in done:
+                    # 振り分けのファイルは会の記録として残す（commit する）ので、末尾に足した指摘のために当て直すと、
+                    # 起票済みの指摘の候補もそのまま来る——同じ質問が既にあれば足さずに通し、違う質問なら止める
+                    if squash(row["質問"]) in asked:
+                        filed.append(row["質問"])
+                    else:
+                        errors.append(f"candidates[{i}]: 指摘 {line} はもう起票してある（質問の文に {NOTE_HEAD.format(date=date, line=line)}… の行がある）"
+                                      "——起票した質問と違う質問を足さない")
+                    continue
                 if squash(row["質問"]) in asked:
                     errors.append(f"candidates[{i}]: 同じ質問が既にある: {row['質問']!r}")
                     continue
@@ -392,8 +403,8 @@ def rows(root: Path, directory: Path, dry_run: bool) -> tuple[int, list[str]]:
         for line in findings:
             kinds = covered.get(line, [])
             if line in done:
-                if kinds:
-                    errors.append(f"指摘 {line}: もう起票してある（質問の文に {NOTE_HEAD.format(date=date, line=line)}… の行がある）——振り分けに書かない")
+                if "見送り" in kinds:
+                    errors.append(f"指摘 {line}: もう起票してある（質問の文に {NOTE_HEAD.format(date=date, line=line)}… の行がある）——見送りに書かない")
             elif not kinds:
                 errors.append(f"指摘 {line}: 質問の候補にも見送りにも無い（会の指摘を落とさない）: {squash(findings[line]['メモ'])}")
             elif "見送り" in kinds and len(kinds) > 1:
@@ -431,6 +442,8 @@ def rows(root: Path, directory: Path, dry_run: bool) -> tuple[int, list[str]]:
         os.replace(tmp, target)
         report.append(f"{target} に {len(new_rows)} 行を足した（{'・'.join(r['No'] for r in new_rows)}。"
                       "どれも `確認中`・`未回答`——利用者が回答するまで確定しない）")
+    if filed:
+        report.append(f"起票済みの指摘の候補 {len(filed)} 件は、同じ質問が既にあるので足していない（当て直し）")
     report.append(f"見送り: {len(skipped)} 件（Q&A 表に起票しない）")
     report.extend(f"  - 指摘 {line}: {kind}——{detail}" for line, kind, detail in skipped)
     return 0, report

@@ -264,12 +264,25 @@ def case_dry_run(e: Env) -> str | None:
 
 
 def case_rerun(e: Env) -> str | None:
+    """同じ振り分けで当て直しても足さない（0・表を書かない）。末尾に足した指摘は、前の振り分けを残したまま足して当て直せる。"""
     root = e.repo()
     e.run("rows", str(root), str(root / "reviews" / DATE))
-    first = v2(root).read_bytes()
+    first = tree_files(root)
     code, out = e.run("rows", str(root), str(root / "reviews" / DATE))
-    if code != 1 or v2(root).read_bytes() != first:
-        return f"当て直し: 終了 {code}・表が変わったか {v2(root).read_bytes() != first}: {out}"
+    if code != 0 or tree_files(root) != first or "同じ質問が既にあるので足していない" not in out:
+        return f"当て直し: 終了 {code}・書いたか {tree_files(root) != first}: {out}"
+    write(root / "reviews" / DATE / "notes.csv", NOTES + "指摘,,S-003,保存の前に確かめたい,業務部\n")
+    triage = json.loads(json.dumps(GOOD, ensure_ascii=False))
+    triage["candidates"].append({"note": 6, "question": "設定の保存の前に確認を出しますか？", "options": ["出す", "出さない"],
+                                 "recommend": "A", "reason": "会で言われた"})
+    write(root / "reviews" / DATE / "triage.json", json.dumps(triage, ensure_ascii=False))
+    before = v2(root).read_bytes()
+    code, out = e.run("rows", str(root), str(root / "reviews" / DATE))
+    added = v2(root).read_bytes()[len(before):].decode("utf-8")
+    want = ("Q-R-012,要求確定（レビュー会 2026-11-20）,設定の保存の前に確認を出しますか？（レビュー会 2026-11-20 の指摘 6。対象: S-003）,"
+            "A: 出す / B: 出さない,A,会で言われた,未回答,—,確認中,\r\n")
+    if code != 0 or added != want:
+        return f"末尾に足した指摘: 終了 {code}・足した行 {added!r}: {out}"
     return None
 
 
@@ -455,14 +468,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    if not isinstance(value, int) or isinstance(value, bool):", "bad_triage"),
     ("真偽値を行と読む", "    if not isinstance(value, int) or isinstance(value, bool) or value not in findings:",
      "    if not isinstance(value, int) or value not in findings:", "bad_triage"),
-    ("起票済みの指摘をまた指せる", "                if kinds:\n                    errors.append(", "                if False:\n                    errors.append(",
-     "raised_again"),
+    ("起票済みの指摘を見送りにできる", '                if "見送り" in kinds:\n', "                if False:\n", "raised_again"),
+    ("起票済みの指摘に違う質問を足せる", "                    else:\n                        errors.append(f\"candidates[{i}]: 指摘 {line} はもう起票してある",
+     "                    elif False:\n                        errors.append(f\"candidates[{i}]: 指摘 {line} はもう起票してある", "raised_again"),
+    ("起票済みの同じ候補で止まる", "                    if squash(row[\"質問\"]) in asked:\n                        filed.append(row[\"質問\"])",
+     "                    if False:\n                        filed.append(row[\"質問\"])", "rerun"),
     # 見送り
     ("見送りの種類を見ない", "    if kind not in SKIP_KINDS:", "    if False:", "bad_triage"),
     ("既にあるの番号を見ない", "    if kind == SKIP_EXISTING and detail:", "    if False:", "bad_triage"),
     ("見送りの理由を出さない", '    report.extend(f"  - 指摘 {line}: {kind}——{detail}" for line, kind, detail in skipped)\n', "", "rows"),
     # 重ねない
-    ("同じ質問を重ねて足す", '                if squash(row["質問"]) in asked:', "                if False:", "bad_triage"),
+    ("同じ質問を重ねて足す", '                if squash(row["質問"]) in asked:\n                    errors.append(f"candidates[{i}]: 同じ質問が既にある',
+     '                if False:\n                    errors.append(f"candidates[{i}]: 同じ質問が既にある', "bad_triage"),
     # 番号と書き方
     ("番号をほかの印も数える", "    start = ic.next_number(versions)", "    start = 13", "rows"),
     ("--dry-run でも書く", "    if dry_run:\n", "    if False:\n", "dry_run"),
