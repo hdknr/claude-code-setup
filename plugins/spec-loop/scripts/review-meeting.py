@@ -28,6 +28,7 @@ usage:
   **回答の `No` は共有の層の番号で、重ね合わせた全体の共有の表に在る行**、`発言者` は空にしない（誰が答えたか）。`対象` は改行を含まない。反すれば 1
 - `rows` の行は必ず `回答 = 未回答`・`反映先 = —`・`状態 = 確認中`——振り分けのファイルに回答・状態・反映先の鍵があれば 1 で、何も書かない
 - `rows` の起票元は `要求確定（レビュー会 <日付>）`、質問の文の後ろに `（レビュー会 <日付> の指摘 <行>。対象: <対象>）`（`対象` が空なら `。対象: …` を付けない）
+- 記録の行の番号（`指摘 <行>`・振り分けの `note`）は、見出しと空行を除いて上から 1 から数える
 - `rows` は会の記録の指摘をどれも落とさない——まだ起票していない指摘の行は、質問の候補（1 つ以上）か見送り（ちょうど 1 つ）のどちらかに入る。入らない・両方に入る・
   指摘でない行や無い行を指す・起票済み（質問の文に上の添え書きの頭がある行が全部の版を通して在る）の指摘をまた指す、はどれも 1 で何も書かない
 - 見送りの種類は `見た目`（範囲の外——`references/spec-scope.md` の「見た目」）・`既にある`（`detail` に、重ね合わせた全体の共有の表に在る番号を書く）・`質問にしない`。`detail` は空にしない
@@ -38,6 +39,7 @@ usage:
   どれかのセルにその質問の番号がある画面のうち、画面の表の順で最初のもの。画面ごとのまとまりの名前は `画面 <画面ID> <画面名>`、並びは画面の表の順
 - `groups` のテーマは、画面に掛からない質問だけを、どれも落とさずちょうど 1 つずつ入れる——画面に掛かる質問・資料に載らない番号・どのテーマにも無い画面に掛からない質問・
   2 つのテーマに入る質問・空のテーマ・画面のまとまりと同じ名前のテーマは、どれも 1 で書かない
+- `groups` は出力先が入力の Q&A 表と同じファイルなら 2 で書かない。セルの中の番号は screen-spec の `check-screens.py` と同じ境界で読む（`FAQ-001` の中の `Q-001` を番号と読まない）
 - `groups` の出力は JSON のオブジェクト（鍵がまとまりの名前、値が質問の番号の並び。並びは鍵の順——画面のまとまりが先で画面の表の順、続けてテーマを渡した順。中の質問は Q&A 表の順）
 
 終了コード:
@@ -115,7 +117,9 @@ QA_PATH = "shared/qa.csv"
 SCREENS = mv.SCREENS_DATA + "screens.csv"
 ITEMS = mv.SCREENS_DATA + "screen-items.csv"
 TRANSITIONS = mv.SCREENS_DATA + "transitions.csv"
-SHARED_NUMBER = re.compile(qa.NUMBER.pattern)
+# セルの中の共有の層の番号。境界は screen-spec の `check-screens.py` の `qa_number`（モックの逆引きが使う）と同じ——
+# 画面ID `FAQ-001` の中の `Q-001` を番号と読まない（spec-loop は screen-spec を読み込まないので、境界だけ写す）
+SHARED_NUMBER = re.compile(rf"(?<![A-Za-z0-9-]){qa.NUMBER.pattern}(?![0-9])")
 
 
 class Stop(Exception):
@@ -465,6 +469,8 @@ def screen_of(canon: dict[str, bytes]) -> tuple[dict[str, str], list[str]]:
 def groups(root: Path, qa_path: Path, themes_path: Path, out: Path) -> tuple[int, list[str]]:
     if qa.is_internal(qa_path):
         raise Stop(f"{qa_path}: 内部の層の表——資料に載せるのは共有の表 shared/qa.csv だけ")
+    if out.exists() and qa_path.exists() and out.samefile(qa_path):
+        raise Stop(f"{out}: 入力の Q&A 表と同じファイルなので書かない")
     code, lines, pending = pp.read_pending(qa_path)
     if code:
         raise Stop(f"{qa_path}: 検査を通らない:\n" + "\n".join(f"  {line}" for line in lines))

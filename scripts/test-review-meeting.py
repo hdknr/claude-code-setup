@@ -22,6 +22,8 @@
 - 番号は `Q-R-` の、全部の版を通した最大の次（ほかの印は数えない）で、作業中の版の表に書く。書いた表は本物の `check-qa-csv.py` を通る。`--dry-run` は書かない
 - `rows` は既にある表の BOM と CRLF を保ち、既にある行のバイトを変えずに足す。足す行が無ければ書かない
 - `groups` の逆引きは、画面の行・その画面の項目・その画面を遷移元にする遷移（遷移先ではない）のセルを、重ね合わせた全体（後の版の画面の行を含む）で見て、画面の表の順で最初の画面に入れる
+- `groups` は出力先が入力の Q&A 表なら 2 で書かない。セルの番号は境界つきで読む（`XQ-R-005` を `Q-R-005` と読まない）
+- 記録の行の番号は見出しと空行を除いて数える（`指摘 1`・`指摘 10` の試料）
 - `groups` の出力は画面のまとまり（画面の表の順・質問の無い画面は出さない・名前は `画面 <画面ID> <画面名>`）、続けてテーマ（渡した順）。中の質問は Q&A 表の順
 - `groups` のテーマの決まり（画面に掛かる質問・載らない番号・漏れ・重複・空のテーマ・画面のまとまりと同じ名前・オブジェクトでない）に反すれば 1 で何も書かない。内部の層の表は 2
 - 本体の定数が `references/tree.md` の「レビュー会の記録」の表と一致する
@@ -65,11 +67,13 @@ QA_V2_ROWS = [qa_row("Q-R-002", "保存の後はどこへ戻りますか？"), q
 QA_V2 = "﻿" + "\r\n".join([HEADER] + QA_V2_ROWS) + "\r\n"
 SCREENS_V1 = "画面ID,画面名,種別,根拠\nS-001,受注一覧,list,\nS-002,受注入力,form,\nS-003,設定,form,\nS-004,ヘルプ,detail,\n"  # S-004 は質問が無い
 SCREENS_V2 = "画面ID,画面名,種別,根拠\nS-003,設定,form,Q-R-009\n"   # 後の版で画面の行に番号を足す
-ITEMS_V1 = "番号,画面ID,項目名,根拠\nI-001,S-002,備考,Q-R-008\nI-002,S-001,担当者,Q-R-006\n"
+# I-003 の `XQ-R-005` は番号ではない（境界——screen-spec の逆引きと同じ読み方。読めば Q-R-005 が S-001 に入る）
+ITEMS_V1 = "番号,画面ID,項目名,根拠\nI-001,S-002,備考,Q-R-008\nI-002,S-001,担当者,Q-R-006\nI-003,S-001,記号,XQ-R-005\n"
 TRANSITIONS_V1 = ("番号,遷移元,きっかけ,遷移先,根拠\nT-001,S-001,押す,S-002,Q-R-002\n"
                   "T-002,S-002,保存,S-001,Q-R-003\nT-003,S-003,戻る,S-001,Q-R-006\n")
 NOTES = ("種類,No,対象,メモ,発言者\n"
          "指摘,,S-002 I-001,備考は 2 行要る,業務部\n"
+         ",,,,\n"            # Excel の空行（数えない——指摘 2 は次の行）
          "指摘,,,通知の文が硬い,業務部\n"
          "指摘,,S-001,色が薄い,業務部\n"
          "指摘,,S-001,担当者の並び替えが要る,業務部\n"
@@ -370,6 +374,12 @@ def case_bad_themes(e: Env) -> str | None:
         if code != 1 or path.exists():
             return f"{name}: 終了 {code}（期待 1）・書いたか {path.exists()}: {out}"
     root = e.repo()
+    before = v2(root).read_bytes()
+    themes_path = root / "build" / "themes.json"
+    write(themes_path, json.dumps(THEMES, ensure_ascii=False))
+    code, out = e.run("groups", str(root), str(v2(root)), str(themes_path), str(v2(root)))
+    if code != 2 or v2(root).read_bytes() != before:
+        return f"出力先が入力の表: 終了 {code}（期待 2）・表が変わったか {v2(root).read_bytes() != before}: {out}"
     internal = root / "docs/v2/spec/qa-dev.csv"
     write(internal, HEADER + "\nD-S-001,仕様レビュー,内部の質問,A: x / B: y,A,r,未回答,—,確認中,\n")
     code, out, path = run_groups(e, root, {}, internal)
@@ -422,6 +432,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    if len(parts) != 2:", "bad_dir"),
     # 会の記録の決まり
     ("記録の見出しを見ない", "    if header != NOTE_COLUMNS:", "    if False:", "bad_notes"),
+    ("空行も行に数える", "        if not any(f.strip() for f in fields):\n            continue\n        line = len(rows) + 1",
+     "        line = len(rows) + 1", "rows"),
     ("記録の種類を見ない", "        if kind not in NOTE_KINDS:", "        if False:", "bad_notes"),
     ("空のメモを通す", '        if not row["メモ"]:', "        if False:", "bad_notes"),
     ("番号を書いた指摘を通す", '        if kind == KIND_FINDING and row["No"]:', "        if False:", "bad_notes"),
@@ -472,6 +484,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("空のテーマを通す", "        if not isinstance(numbers, list) or not numbers:", "        if not isinstance(numbers, list):", "bad_themes"),
     ("画面のまとまりと同じ名前を通す", "        if name.strip() in names:", "        if False:", "bad_themes"),
     ("内部の層の表からまとめる", "    if qa.is_internal(qa_path):", "    if False:", "bad_themes"),
+    ("入力の表に上書きする", "    if out.exists() and qa_path.exists() and out.samefile(qa_path):", "    if False:", "bad_themes"),
+    ("番号の前の境界を見ない", 'SHARED_NUMBER = re.compile(rf"(?<![A-Za-z0-9-]){qa.NUMBER.pattern}(?![0-9])")',
+     'SHARED_NUMBER = re.compile(rf"{qa.NUMBER.pattern}(?![0-9])")', "groups"),
     # 定数
     ("見送りの種類の写しがずれる", 'SKIP_KINDS = ("見た目", "既にある", "質問にしない")', 'SKIP_KINDS = ("見た目", "既にある", "質問にしない", "好み")',
      "constants"),
