@@ -84,10 +84,10 @@ RUNS2 = R_HEAD + run_row("1", "2026-11-03", "抜けていない", "満たす", f
 
 
 def dc(no: str, review="1回目", category="内部の Q&A 表に記録する", weight="補い", confirmed="確かめた", judge="domain-checker",
-       run="1", day="2026-11-03") -> str:
-    """Domain Checker が内部の行を確かめた指摘の行（印 `（内部の行: <No>）`）。"""
+       run="1", day="2026-11-03", colon=": ") -> str:
+    """Domain Checker が内部の行を確かめた指摘の行（印 `（内部の行: <No>）`。`colon` で全角のコロンも作る）。"""
     return f(no=run, day=day, review=review, judge=judge, weight=weight, category=category, confirmed=confirmed,
-             text=f"（内部の行: {no}）利用者に見える結果は変わらない", result="内部のまま")
+             text=f"（内部の行{colon}{no}）利用者に見える結果は変わらない", result="内部のまま")
 
 
 # 名前 → (サブコマンド, 指摘の表（None なら置かない）, 記録の表（None なら置かない）, 足す引数, 期待の終了コード, 出力に含む語[, 正本の docs, 版])
@@ -124,6 +124,14 @@ CASES: dict[str, tuple] = {
     # 確かめの行（印つきの 内部の Q&A 表に記録する）は仕様を直していないので 2 回目を回さない（#1155）
     "条件: 内部の行の確かめだけでは 2 回目を回さない": ("conditions", F_HEAD + f(weight="結果が割れる", category="共有の Q&A 表に起票する", result="Q-001")
                                          + dc("D-001", run="2", day="2026-11-02"), RUNS, [], 1, "最後のレビューは 1回目"),
+    # 確かめの行に当たるのは domain-checker・内部の Q&A 表に記録する・印の 3 つが揃う行だけ（1 パス目の CR1-1・CR1-2）
+    "条件: 印を引いた Red Team の直しは 2 回目を回す": ("conditions", F_HEAD + f(weight="結果が割れる", category="共有の Q&A 表に起票する", result="Q-001")
+                                         + f(weight="結果が割れる", category="内部の Q&A 表に記録する", text="（内部の行: D-002）を決め直す", result="D-002"),
+                                         RUNS, [], 0, "最後のレビューは 2回目"),
+    "条件: 仕様に移した印つきの行は 2 回目を回す": ("conditions", F_HEAD + f(weight="結果が割れる", category="共有の Q&A 表に起票する", result="Q-001")
+                                       + dc("D-001", run="2", day="2026-11-02", category="仕様を直す"), RUNS, [], 0, "最後のレビューは 2回目"),
+    "条件: 全角のコロンの確かめも 2 回目を回さない": ("conditions", F_HEAD + f(weight="結果が割れる", category="共有の Q&A 表に起票する", result="Q-001")
+                                         + dc("D-001", run="2", day="2026-11-02", colon="："), RUNS, [], 1, "最後のレビューは 1回目"),
     "条件: 1 回目の効く重さは 2 回目があれば数えない": ("conditions", F_HEAD + f(weight="結果が割れる") + f(review="2回目"), RUNS, [], 0, "満たす"),
     "条件: 狭いパスはほかの役でも数える": ("conditions", F_HEAD + f() + f(review="狭いパス", judge="formal-checker", weight="結果が割れる"),
                                 RUNS, [], 1, "狭いパス・formal-checker"),
@@ -139,6 +147,7 @@ CASES: dict[str, tuple] = {
                                     "満たす: 回 1・v2 で足した・変えた内部の行 2 件——すべて", DOCS_V2, 2),
     "内部: 1 行だけ確かめていない": ("internal", F_HEAD + dc("D-002"), RUNS2, [], 1, "確かめていない・移していない行が 1 件", DOCS_V2, 2),
     "内部: v1 は全部の行": ("internal", F_HEAD + dc("D-001") + dc("D-002"), RUNS2, [], 1, "D-004:", DOCS_V1, 1),
+    "内部: 全角のコロンの印も数える": ("internal", F_HEAD + dc("D-002", colon="：") + dc("D-003", colon="： "), RUNS2, [], 0, "すべて", DOCS_V2, 2),
     "内部: 確かめられない行は数えない": ("internal", F_HEAD + dc("D-002") + dc("D-003", confirmed="確かめられない"), RUNS2, [], 1, "D-003:", DOCS_V2, 2),
     "内部: ほかの判定役の行は数えない": ("internal", F_HEAD + dc("D-002") + dc("D-003", judge="red-team"), RUNS2, [], 1, "D-003:", DOCS_V2, 2),
     "内部: 前の回の行は数えない": ("internal", F_HEAD + dc("D-002", run="1", day="2026-11-02") + dc("D-003", run="1", day="2026-11-02") + dc("D-002", run="2"),
@@ -224,7 +233,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      'and c["結果"] != NEXT_RUN and', "条件: 2 回目の起票の行は直しでないので数える"),
     ("判断が要るも直したと読む", ' and c["重さ"] != DECIDE\n', "\n", "条件: 2 回目の判断が要るは直しても数える"),
     # ---- internal（#1155）
-    ("確かめの行で 2 回目と読む", " and internal_number(c) is None for _, c in mine)", " for _, c in mine)", "条件: 内部の行の確かめだけでは 2 回目を回さない"),
+    ("確かめの行で 2 回目と読む", " and not is_confirmation(c) for _, c in mine)", " for _, c in mine)", "条件: 内部の行の確かめだけでは 2 回目を回さない"),
+    ("確かめの行を判定役で絞らない", 'return c["判定役"] == DOMAIN_CHECKER and c["振り分け"] == KEEP and', 'return c["振り分け"] == KEEP and',
+     "条件: 印を引いた Red Team の直しは 2 回目を回す"),
+    ("確かめの行を振り分けで絞らない", 'return c["判定役"] == DOMAIN_CHECKER and c["振り分け"] == KEEP and', 'return c["判定役"] == DOMAIN_CHECKER and',
+     "条件: 仕様に移した印つきの行は 2 回目を回す"),
+    ("全角のコロンを読まない", "（内部の行\\s*[:：]\\s*", "（内部の行: ", "条件: 全角のコロンの確かめも 2 回目を回さない"),
+    ("全角のコロンを内部で読まない", "（内部の行\\s*[:：]\\s*", "（内部の行\\s*:\\s*", "内部: 全角のコロンの印も数える"),
     ("内部: 確かめていない行を見ない", " for no in targets if no not in judged]", " for no in targets if False]", "内部: 確かめた行が無い（陽性対照）"),
     ("内部: 満たさないのに 0", "        return EXIT_UNMET, lines + [f\"満たさない: {seen}", "        return EXIT_OK, lines + [f\"満たさない: {seen}",
      "内部: 1 行だけ確かめていない"),
@@ -320,7 +335,7 @@ def reference_mismatches(source: str, spec_exit: str) -> list[str]:
 def mark_mismatches(source: str, text: str, where: str) -> list[str]:
     """内部の行の印（`（内部の行: <No>）`）が文書に在り、本体の `INTERNAL_MARK` がその形の番号を取り出すか（#1155）。"""
     found = re.search(r"`(（内部の行: <No>）)`", text)
-    pattern = re.search(r'^INTERNAL_MARK = re\.compile\(r"(.+)"\)$', source, flags=re.MULTILINE)
+    pattern = re.search(r'^INTERNAL_MARK = re\.compile\(r"(.+?)"\)', source, flags=re.MULTILINE)
     if not found or not pattern:
         return [f"内部の行の印が {where} か本体に無い"]
     m = re.search(pattern.group(1), found.group(1).replace("<No>", "D-S-003"))

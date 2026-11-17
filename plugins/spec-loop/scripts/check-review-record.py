@@ -30,9 +30,10 @@ usage:
   **重さが `判断が要る`・`結果が割れる`** で、**振り分けが `退ける` でない**もの（退けた指摘は誤り。`確かめられない` の行は判定役の重さのまま数える）。
   **2 回目の `仕様を直す` の行で `結果` が `次の回` でないもの（その回の 2 回目のあとで直した）は数えない**（重さが `判断が要る` の行は除く——解消済みにはならない）——spec-exit.md の「2 回目の `満たさない` を
   解消済みに置き換えてよい」の道で、直しは狭いパスが確かめる（2 パス目の CR2-1）。
-- **確かめの行は 2 回目を回したことに数えない**（#1155）——`指摘` に内部の行の印（`（内部の行: <No>）`）がある行は、Domain Checker が内部の表の行を
-  確かめた記録で、振り分けが `内部の Q&A 表に記録する` でも仕様を直していない（spec-review の手順 5 は 2 回目を回さない）。数えると、
-  2 回目の行が 0 件の回に 1 回目の Red Team の効く重さを数え落とす。
+- **確かめの行は 2 回目を回したことに数えない**（#1155）——`domain-checker` の行で、振り分けが `内部の Q&A 表に記録する`、`指摘` に内部の行の印
+  （`（内部の行: <No>）`。コロンは全角でもよい）がある行は、Domain Checker が内部の表の行を確かめて内部のまま置いた記録で、仕様を直していない
+  （spec-review の手順 5 は 2 回目を回さない）。数えると、2 回目の行が 0 件の回に 1 回目の Red Team の効く重さを数え落とす。
+  **印を引いただけのほかの行**（Red Team の直し・書き手が仕様に移した行）は今までどおり数える。
 - 1 件でもあれば `満たさない`（1）。数えた行を全部出す。
 
 ## `internal` — 条件 5 のうち、内部の Q&A 表の行を判定役が確かめたか（#1155）
@@ -79,7 +80,8 @@ N は正本の `CLAUDE.md` で変えてよい（spec-exit.md）——このス�
 | 数え始めは `続ける`・`範囲を決め直す` の最後の行の後 | 利用者が数え直しを選んだのに、前の行を数え続ける |
 | 最後の利用者の判断が `止める` なら上限 | 呼び直しただけで判定役が動き出す |
 | `回答待ち`・`満たす` の行は上限に数えない | 利用者の回答待ちを判定役の空回りと数える |
-| 内部の行の印のある行は、2 回目を回したことに数えない | 確かめの行だけの 1 回目を 2 回目ありと読み、1 回目の Red Team の効く重さを数え落とす（#1155） |
+| 確かめの行（`domain-checker`・`内部の Q&A 表に記録する`・印）は、2 回目を回したことに数えない。印のほかの行は数える | 確かめの行だけの 1 回目を 2 回目ありと読み、1 回目の Red Team の効く重さを数え落とす／印を引いた直しを 2 回目なしと読み、直した指摘を数える（#1155） |
+| 印のコロンは全角でも読む | 全角で書いた確かめの行を、確かめていない・2 回目を回したと読む |
 | `internal`: その版で足した・変えた内部の行に、その回の Domain Checker の確かめた行が無ければ 1 | 書き手が判定役に渡し忘れた・判定役が見落とした内部の行が、書き手の自己判定のまま抜ける（#1155） |
 | `internal`: `確かめられない` の行・ほかの判定役の行・前の回の行は確かめに数えない | 確かめていない判断を確かめたと読む |
 | `internal`: 前の版から変わらない内部の行は求めない | 前の版で確かめた行を毎回確かめ直させる（H1） |
@@ -146,7 +148,8 @@ NEXT_RUN = "次の回"
 DECIDE = EFFECTIVE[0]  # `判断が要る`——直しても解消済みにはならない
 FIX = "仕様を直す"
 # ---- `references/spec-exit.md` の「指摘の表」の、内部の Q&A 表の行を確かめた印（#1155）の写し
-INTERNAL_MARK = re.compile(r"（内部の行: ([^）\s]+)）")
+INTERNAL_MARK = re.compile(r"（内部の行\s*[:：]\s*([^）\s]+)）")  # コロンは全角でもよい（findings-by-feature.py の機能の印と同じ）
+KEEP = "内部の Q&A 表に記録する"
 DOMAIN_CHECKER = "domain-checker"
 MOVE = "共有の Q&A 表に起票する"
 
@@ -192,6 +195,12 @@ def run_cells(table: Path, run: str | None) -> tuple[str | None, list[tuple[int,
     return run, [(number, c) for number, c in enumerate(cells, start=2) if c["回"] == run], []
 
 
+def is_confirmation(c: dict[str, str]) -> bool:
+    """Domain Checker が内部の行を確かめて、内部のまま置いた行か（印つき・`domain-checker`・振り分けが `内部の Q&A 表に記録する`）。
+    仕様を直していないので 2 回目のレビューを回す理由にならない。印を引いただけのほかの行（Red Team の直し・書き手が仕様に移した行）は除く。"""
+    return c["判定役"] == DOMAIN_CHECKER and c["振り分け"] == KEEP and internal_number(c) is not None
+
+
 def internal_number(c: dict[str, str]) -> str | None:
     """`指摘` の内部の行の印が指す番号（無ければ None）。"""
     m = INTERNAL_MARK.search(c["指摘"])
@@ -203,7 +212,7 @@ def conditions(table: Path, run: str | None) -> tuple[int, list[str]]:
     if run is None:
         return EXIT_UNJUDGED, problems
     second = any(c["レビュー"] == SECOND for _, c in mine) or any(
-        c["レビュー"] == FIRST and c["振り分け"] in SECOND_TRIGGERS and internal_number(c) is None for _, c in mine)
+        c["レビュー"] == FIRST and c["振り分け"] in SECOND_TRIGGERS and not is_confirmation(c) for _, c in mine)
     last = SECOND if second else FIRST
     counted = [(number, c) for number, c in mine
                if c["重さ"] in EFFECTIVE and c["振り分け"] != REJECTED
