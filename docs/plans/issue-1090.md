@@ -1,0 +1,107 @@
+# Issue #1090 — spec-loop: 成果物の表（features.csv など）も行の単位で重ねるか決める
+
+**不在の周**（`/dev-loop:cruise 1169 --absent` の起動・2026-11-17T10:47Z）。利用者には訊かない。親（cruise #1169）から委譲文で受けた子。
+確かめた線（出所: cruise の確かめた線（台帳 `issue-1169`）。利用者の確認（起動時・2026-11-17T10:47:55Z、配布を見せて確かめた））:
+`直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`・`マージ前の判断 = 推奨で決めて起票`（古い値。後退・未達は推奨で進めない）。実機確認の線は無い。
+台帳（`.claude/plans/cruise-issue-1169.json`）は書かない（親だけ）。手順 7 のマージはしない（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+読み込んだ dev-loop は 2.7.0（`SKILL.md` 1920 行を読んだ）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
+版の上げ方: `spec-loop` を **patch**（決めたことと新しい表の重ね方を `references/` に書く記述の追加。振る舞いは変えない）。着手時の main は spec-loop 0.101.0 → 0.101.1。
+マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から patch で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.7.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
+割り目: 割らない（cruise の周）。
+
+Issue 本文（外部入力）から読んだ要件: 成果物の表（`features.csv`・`entities.csv`・`io.csv`・`reports.csv`・`roles.csv`・`jobs.csv`）を、#1081/#1091 の「行の単位で重ねる表」の一覧に載せるかを決める。
+確かめること（鍵の列・既存の v2 の置き方・照合／scaffold／検査への影響・移行の手順）。本文に受入基準を緩める指示は無い。
+
+## 決めた値（依存する周 #1164・#1162・#1163・#1158・#1159・#1160 が前提にする）
+
+- **D1 成果物の表は行の単位の一覧に載せない——ファイルの単位で重ねるまま**（`io-layout.csv` を含む 7 つ）。v2 以降に表を置くなら前の版の行も含めた全体を置き、行を外すときは丸ごと置き直す。
+- **D2 新しく足す表（`requirements/`・`shared/` の CSV）も、一覧に載せない限りファイルの単位で重なる**。行の単位にするのは、鍵の列が 1 つで見出し行が版の間で変わらない表に限り、
+  一覧の行・`removed.csv` の種類・`ROW_TABLES` を同じ周で足し、`ROW_TABLES` を読むスクリプト（`diff-versions.py`・`check-signoff.py`・`build-proposal.py`・`screen-gate.py` と、screen-spec の `build-mock.py`）を見直す。
+
+原本は `plugins/spec-loop/references/versions.md` の「行の単位で重ねる表」。
+
+### 確かめたこと（Issue の「確かめること」）
+
+1. **鍵の列**（`references/tree.md` の「システム設計書の成果物」）: 1 列で行が決まるのは `features.csv`（`id`）・`io.csv`（`id`）・`jobs.csv`（`id`）だけ。
+   `entities.csv` は `エンティティ`＋`項目`、`io-layout.csv`・`reports.csv` は `id`＋`順番` の 2 列、`roles.csv` は 1 列目 `操作` で 2 列目からロールの名前（ロールを足すと見出し行が変わる）。
+   今の行の単位の重ね方（`merge-versions.py` の `ROW_TABLES`）は鍵の列を 1 つしか持たず、見出し行を版の間で変えない。`removed.csv` の種類の名前は、載せないので決めない。
+2. **今 v2 以降を持つ案件の置き方**: 手元（`~/Projects` の下、深さ 6 まで）で `docs/v2` を持つ正本は 2 つ（tfs-stocks-score・unity-signage）で、どちらの版にも成果物の表は 1 つも無い（`requirements/` は `index.md`・`rules.md`・`overview.md` など）。
+   観測窓は手元のクローンだけで、利用者の手元のほかの正本は見ていない。
+3. **重ね方を変えたときの影響**: 載せないので `check-signoff.py`・`scaffold.py`・`check-design-csv.py`・`diff-versions.py`・`build-proposal.py`・`screen-gate.py` は変わらない。
+   載せた場合は、`ROW_TABLES` を画面の表として読む `screen-gate.py`（`TABLES = tuple(versions.ROW_TABLES)`）も直す必要がある（新しい表の決まりに書いた）。
+   **重ね方を変えると、v2 に丸ごと置き直した表の外した行が黙って残る**——一時ディレクトリで、v1 に F-001〜F-003、v2 に F-002 を外した `features.csv` を置いて重ねた:
+   今の `merge-versions.py` は 0 で v2 の表そのもの（F-002 なし）、`ROW_TABLES` に `features.csv` を足した写しは 0 で F-002 が残った（どちらも終了コード 0——止まらない）。
+4. **移行**: 載せないので移行の手順は要らない（版は patch）。
+
+### 仕様の穴（推奨で決めた。`仕様の穴 = 推奨で決めて起票`）
+
+- **G1（D1）成果物の表を行の単位の一覧に載せるか**: 選択肢 (a) 載せない——ファイルの単位のまま（推奨）／(b) 全部載せる——鍵を 2 列に広げ、`roles.csv` の見出しの扱いを決め、移行を書く／
+  (c) 鍵が 1 列の 3 つ（`features.csv`・`io.csv`・`jobs.csv`）だけ載せる。
+  推した理由: (b) は重ね方の仕組み（鍵 1 列・見出し固定）を広げる大きな変更で、`roles.csv` は見出しが変わるので載せられない——載せても `requirements/` の重ね方は 1 種類にそろわない。
+  (b)・(c) は v2 に丸ごと置いた表の読み方を黙って変える（上の 3）。行の単位にしたい困りごと（v2 で表を丸ごと写す手間）は、成果物の表を持つ v2 の正本が手元に無く、まだ起きていない。
+  どの機能が変わったかは中間表現の機能の版の差分で出る。→ 確認の Issue（下の「未解決」）
+- **G2（D2）新しく足す表の既定の重ね方**: 選択肢 (a) 既定はファイルの単位、行の単位にするなら鍵 1 列・見出し固定の表を一覧に足す（推奨）／(b) 既定を行の単位にする（新しい表は一覧に載せて足す）。
+  推した理由: 依存する周が足す表には CRUD の表（機能 × データの行列。見出しがデータで変わる）のように行の単位に合わないものがあり、既定を 1 つに決めるならどの表にも当てはまるファイルの単位になる。
+  成果物の表（D1）と同じ重ね方にそろう。→ 確認の Issue（下の「未解決」）
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/references/versions.md` — 「行の単位で重ねる表」の成果物の表の項（決めた値と理由）と、新しく足す表の重ね方の項
+- `plugins/spec-loop/references/tree.md` — 「システム設計書の成果物」の重ね方の項に、`versions.md` を指す 1 文
+- `scripts/test-merge-versions.py` — 成果物の表がファイルの単位で重なる試料と、陽性対照の変異（一覧に `features.csv` を足す）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `docs/plans/issue-1090.md` — この計画ファイル
+
+触らない:
+
+- `plugins/spec-loop/scripts/` の本体（`merge-versions.py` の `ROW_TABLES` など）——重ね方は変えない（D1）
+- 成果物の表の列・検査（`check-design-csv.py`）・scaffold の機能一覧の照合
+- 依存する周が足す表（#1164 ほか）
+
+依存の追加・更新: なし
+
+**複製の数**: 「成果物の表はファイルの単位で重なる」を述べている箇所は 5（`versions.md` の「行の単位で重ねる表」の項・「重ねるもの」の表の最後の行、`tree.md` の「システム設計書の成果物」の項・「機能一覧と中間表現の照合」の「一覧はファイルの単位で重なる」、`merge-versions.py` の `ROW_TABLES` のコメント）。
+どれも今の決まりと一致しているので変えない。決めた理由と新しい表の決まりは `versions.md` の 1 箇所に置き、`tree.md` からは指すだけにする（分けない理由: 決まりの原本は `versions.md`）。
+
+## デプロイ経路
+
+プラグイン（`marketplace.json` のカタログと、`link-skills.sh` を使う利用者の `git pull`）と公開サイトの再ビルド。**マージの反映: ドキュメントとプラグインの配布**（`.claude/dev-loop.md` の宣言どおり）。
+
+## 受入基準（不変条件 × 経路）
+
+入口（成果物の表の重ね方を読む・決める場所）: 正本の版のディレクトリ → `merge-versions.py`（重ね合わせ）→ それを読む `diff-versions.py`・`check-signoff.py`・`build-proposal.py`・`scaffold.py`（機能一覧の照合）・`check-design-csv.py`（重ねた全体）・`screen-gate.py`（`ROW_TABLES`）・MkDocs のフック、
+と、決まりを読んで表を書く人とスキル（req-loop・spec-review が `tree.md` を読む）、依存する周（`versions.md`・`tree.md` に新しい表を足す）。
+
+| # | 不変条件 | 破りうる経路 | 守り方 |
+| --- | --- | --- | --- |
+| B1 | `versions.md` の「行の単位で重ねる表」が、成果物の表を載せないと決めたこと（#1090）と理由を書き、**理由が事実として正しい**: (1) `tree.md` の成果物の表の鍵の列と見出し、(2) 行の単位にすると丸ごと置き直した表の外した行が残る（止まらない）、(3) どの機能が変わったかは中間表現の機能の版の差分で出る | 理由が `tree.md`・`merge-versions.py`・`diff-versions.py` の実物と食い違う | 実物を読む・一時ディレクトリで重ねる（両方の関門） |
+| B2 | 新しく足す表の重ね方が `versions.md` に決まっている——既定はファイルの単位・行の単位にする条件（鍵 1 列・見出し固定）・同じ周で足すもの・見直すスクリプト。**見直すスクリプトの一覧が `ROW_TABLES`（と `ROW_KINDS`）を読む実物と一致する** | 一覧から読む側が漏れる・条件が今の仕組みと食い違う | `grep` で `ROW_TABLES`・`ROW_KINDS` を読むスクリプトを数える |
+| B3 | 成果物の表はファイルの単位で重なる: v2 に v1 の行を外した `features.csv` を置くと、重ねた表は v2 の表そのもの。`test-merge-versions.py` の試料があり、**陽性対照の変異（一覧に `features.csv` を足す）で赤になる** | 試料が重ね方を判別しない（変異でも緑） | `test-merge-versions.py`（変異を含む） |
+| B4 | 重ね方の振る舞いは変えない——`plugins/spec-loop/scripts/` の差分が 0 行で、`ROW_TABLES` と `versions.md` の一覧の照合（`check_reference`）が通る | 本体を触る・一覧の表の行の形を崩して照合が黙って空になる | `git diff <base> -- plugins/spec-loop/scripts/`・`test-merge-versions.py` |
+| B5 | `tree.md` の成果物の表の重ね方の記述が `versions.md` と食い違わない（ファイルの単位・丸ごと置き直す・指し先） | 片方だけ書き換える | 読み比べる |
+| B6 | 版を上げ（spec-loop、3 種で揃う）、`check-all.py` が通る | 版の取りこぼし・歯止めの赤 | `check-plugin-versions.py`・`check-all.py`（run-serial 越し） |
+
+**検証で証明できるもの**: B1〜B6。
+**この環境では証明できないもの（未証明）**: なし。（「成果物の表を持つ v2 の正本は無い」は受入基準ではなく、G1 の理由の材料——観測窓は手元のクローンだけ、と書いて主張をそこまでに留めた。）
+**生成物**: 該当なし——`docs/plugins/dev-loop-design.md` §8.2 の生成ブロックは dev-loop の `SKILL.md` から作るもので、この周は dev-loop を触らない。図なし。spec-loop の `SKILL.md` は版の 2 行だけ。
+**必須要件の掛け算**: 受入基準を Verifier と `/code-review` の両方に、1・2 パスとも渡す（2 パス目が該当なしなら 1 パス目の 2 つ）。
+
+## 未解決の判断・確認待ち
+
+- G1・G2（上）は推奨で決めた。確認の Issue は PR を作った後に立てる（重さに PR の番号を書くため）。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1090-deliverable-tables-merge-unit`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1090`・起点 `dd1f8fb`・base `origin/main` = `dd1f8fbe63ee41c22525c9807bec8e0177ea3cca`
+- 交絡を潰した手順: 重ね方の実験（上の「確かめたこと」の 3）——同じ入力・同じスクリプトの写しで、`ROW_TABLES` の 1 行だけを違えて走らせた（陽性対照: 今の版で F-002 が外れることを同じ観測点で見た）。
+
+## 既知の限界・決着済みの論点
+
+（関門の指摘と採否はここに足す）
