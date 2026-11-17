@@ -2032,7 +2032,8 @@ SCAN_MUTANTS = {
 HOOK = SCRIPTS / "check_all_trace" / "usercustomize.py"
 CACHE_HOOK_REL = "scripts/check_all_trace/usercustomize.py"
 CACHE_TESTS = ["t-file.py", "t-list.py", "t-absent.py", "t-child.py", "t-iso.py", "t-sh.py",
-               "t-git.py", "t-layout.py", "t-flaky.py", "t-edit.py", "t-import.py", "t-nested.py", "t-fresh.py"]
+               "t-git.py", "t-layout.py", "t-flaky.py", "t-edit.py", "t-import.py", "t-nested.py", "t-fresh.py",
+               "t-gittmp.py"]
 CACHE_OVERRIDE = (
     'GUARDS = [("g.py", [], False)]\n'
     f"TESTS = {CACHE_TESTS!r}\n"
@@ -2072,6 +2073,14 @@ CACHE_FAKES = {
     # 環境を組み直した子の Python（hook が入らない）が、引数に無いファイルを読む
     "t-fresh.py": "import os, subprocess, sys\n"
                   "subprocess.run([sys.executable, 'plugins/r/read.py'], check=True, env={'PATH': os.environ['PATH']})\n",
+    # 一時ディレクトリのリポジトリに git を当てる。**引数（`data/a.txt`）は作業ツリーにも同じ名前で在る**——
+    # `-C` の先ではなく cwd で解決すると、作業ツリーを読んだことになり、どのファイルを変えても回る（#1151 の実走で test-scaffold.py）。
+    "t-gittmp.py": "import os, subprocess, tempfile\n"
+                   "d = tempfile.mkdtemp()\n"
+                   "subprocess.run(['git', 'init', '-q', d], check=True)\n"
+                   "os.makedirs(os.path.join(d, 'data'))\n"
+                   "open(os.path.join(d, 'data', 'a.txt'), 'w').write('t')\n"
+                   "subprocess.run(['git', '-C', d, 'add', 'data/a.txt'], check=True)\n",
     "helpmod.py": "X = 1\n",
 }
 CACHE_DATA = {
@@ -2266,6 +2275,9 @@ CACHE_MUTANTS = {
     "キーに hook を入れない": ("check-all", '    for f in (SCRIPTS / "check-all.py", SCRIPTS / TRACE_DIRNAME / "usercustomize.py"):\n',
                                '    for f in (SCRIPTS / "check-all.py",):\n'),
     "キーに --jobs の値を入れる": ("check-all", '        if a == "--jobs":\n', "        if False:\n"),
+    "git の引数を -C の先ではなく cwd で解決する": (
+        "check-all", "        if a and _rel(repo, a, where) is not None and os.path.exists(os.path.join(where, a)):\n",
+        "        if a and _rel(repo, a, cwd) is not None and os.path.exists(os.path.join(cwd, a)):\n"),
     "hook が import の仕組みの列挙も数える": ("hook", '        return "_bootstrap_external" in caller.f_code.co_filename\n', "        return False\n"),
     "hook が子を記録しない": ("hook", "                spawn(argv, cwd, env)\n", "                pass\n"),
     "hook が環境を組み直した子も hook が入ると書く": ("hook", "                env_ok = (env.get(\"CHECK_ALL_TRACE_LOG\") or env.get(b\"CHECK_ALL_TRACE_LOG\")) is not None\n",

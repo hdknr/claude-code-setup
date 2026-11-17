@@ -391,11 +391,12 @@ def _git_reads_repo(repo: Path, argv: list[str], cwd: str) -> bool:
         break
     sub = argv[i] if i < len(argv) else ""
     rest = argv[i + 1:]
-    # 引数が作業ツリーの中を指す（`git clone <作業ツリー> …` など）——読む。
+    # 引数が作業ツリーの中を指す（`git clone <作業ツリー> …` など）——読む。**相対の引数は `-C` を反映した先で解決する**
+    # （`git -C <一時ディレクトリ> add README.md` の `README.md` を cwd 基準で読むと、作業ツリーの同名のファイルに当たる）。
     for a in rest:
         if a.startswith("-"):
             a = a.split("=", 1)[1] if "=" in a else ""
-        if a and _rel(repo, a, cwd) is not None and os.path.exists(os.path.join(cwd, a)):
+        if a and _rel(repo, a, where) is not None and os.path.exists(os.path.join(where, a)):
             return True
     if sub in GIT_READ_FREE:
         return False
