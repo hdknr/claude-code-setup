@@ -5,8 +5,8 @@ description: "spec-loop の正本リポジトリに、画面設計書の置き�
 
 # init スキル
 
-<!-- skill-version: 0.6.0 -->
-> **このスキルの版: 0.6.0**（プラグイン `screen-spec`）。
+<!-- skill-version: 0.6.1 -->
+> **このスキルの版: 0.6.1**（プラグイン `screen-spec`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update screen-spec@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
