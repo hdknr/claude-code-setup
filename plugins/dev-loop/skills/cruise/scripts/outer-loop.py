@@ -3,7 +3,7 @@ r"""cruise を外から繰り返し起こすループ（外側のループ）。
 起動のたびに周が進んでいるあいだだけ起こし直す（#791）。
 
     python3 <このスキルの base ディレクトリ>/scripts/outer-loop.py <親 Issue の番号> [--absent] \
-        [--max-launches 20] [--max-stalls 2] [--max-total-usd <ドル>] [--claude claude] [-- <claude に足す引数> …]
+        [--max-launches 20] [--max-stalls 2] [--max-total-usd <ドル>] [--autocompact-window <トークン数>] [--claude claude] [-- <claude に足す引数> …]
 
 **cruise の既定の回し方は、対話のセッションで 1 度起動して台帳から再開する形である**（cruise の `SKILL.md`）。これは、利用者が
 その起動を自分で繰り返す代わりに、決まった条件で止まるループを同梱したもの——プロジェクトごとに手で書いたループは、前進を台帳の
@@ -21,12 +21,17 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
    1 つでもあれば（12）、取れた分の合計が上限以上なら（11）、起こさずに止まる（下の「費用の数え方」）。
 4. メインの作業ツリー（台帳と同じ決め方——`ledger.py path` の場所から）を cwd に、標準入力を閉じて
 
-       <--claude> -p "/dev-loop:cruise <親>[ --absent]" --output-format stream-json --verbose --append-system-prompt <追記> [<足す引数> …]
+       <--claude> -p "/dev-loop:cruise <親>[ --absent]" --output-format stream-json --verbose --append-system-prompt <追記> [--autocompact <トークン数>] [<足す引数> …]
 
    を起こし、終わるのを待つ。標準出力と標準エラーは台帳の隣の `cruise-issue-<親>-loop/` に起動ごとのファイル（`<NNN>-<UTC の時刻>.out`・`.err`）で残す
    （費用を読むため。#992）。**`claude` の出力は端末に出さない**——見るならそのファイルを開く。環境には **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`** を置く——`-p` はターンを閉じた後の背景のタスクを
    上限の時間（既定 10 分）しか待たずに止める（#633。標準エラーの `Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.`
    の文言による。0 で止めずに待つことは測っていない）。**利用者の環境に別の値があっても 0 で上書きし、上書きしたことを出す**（`child-cycle.py` と同じ）。
+   **`--autocompact-window <値>` を渡したときだけ、起こす `claude` に `--autocompact <トークン数>` を足す**（#1167。**既定は渡さない**——渡さなければ起動コマンドは今と変わらない。
+   周を重ねて文脈が積み上がるのはこの親なので、窓を下げるならここがいちばん効く）。値の書式（数字だけ・`400k`・`1M`）・範囲（100000〜1000000）・
+   トークン数への正規化・環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` に上書きされるときの表示は、`child-cycle.py` の `parse_window`・`window_flag`・`window_override_note` を読み込んで使う（写さない。
+   原本とテストは `child-cycle.py` の docstring の「auto-compact の窓」）。**書式・範囲の誤りは 2（起動の前）。** 窓は起動の前（最初の起動の前）に 1 度だけ出し、環境変数があれば効かないとも言う。
+   **この窓は起こした `claude` 1 つにだけ効く**——その親が起こす子プロセスの周（`child-cycle.py`）には掛からない（子の窓は `child-cycle.py launch --autocompact-window` で別に決める）。
    **追記（`APPEND`）は、非対話の起動の決まりを親に渡す**——権限の判定に拒まれたら周を `await` にして次へ進み、「止まった」と書いて
    ターンを終えない（cruise `SKILL.md` §4 の 5）。進められる周が無いなら台帳を書き換えずにターンを終える（同 §4 の 6）。原本は `SKILL.md` で、追記はそこを指す。
 5. その起動の費用と、子プロセスの周の費用を数え直し（下の「費用の数え方」）、`費用:` の行に出す。
@@ -57,7 +62,7 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 | コード | 意味 |
 | --- | --- |
 | 0 | 済んだ——`status` が 5（親 Issue の一覧の行がすべてマージ済みか取り下げ） |
-| 2 | 引数が違う（親の番号の形——先頭の 0 を外した桁数が `int()` の上限を超えるものを含む・上限が 1 未満・`--max-total-usd` が正の有限の数でない・`--claude` を語に分けられない）。**通知しない**（引数を読む前に止まる） |
+| 2 | 引数が違う（親の番号の形——先頭の 0 を外した桁数が `int()` の上限を超えるものを含む・上限が 1 未満・`--max-total-usd` が正の有限の数でない・`--autocompact-window` の書式と範囲・`--claude` を語に分けられない）。**通知しない**（引数を読む前に止まる） |
 | 3 | 人を待つ周だけ——`status` が 3。台帳の `show` の「利用者の判断待ち」「利用者の操作待ち」を見る |
 | 4 | 判定できなかった——`status` が 4 か表に無い値・`progress` が 0 以外・`ledger.py` を起こせない・出力の置き場を作れない・ループの中の予期しない例外。**「済んだ」とも「人待ち」とも答えていない** |
 | 6 | 前進なし——`progress` の変わらない起動が続けて `--max-stalls` 回 |
@@ -82,6 +87,9 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **`claude` の cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも同じ（cruise の親はメインの作業ツリーで起動する。#466）。
 - **`claude` の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——利用者の環境に無くても、別の値があっても（上書きしたと出す）。
 - **`--append-system-prompt` で追記（`APPEND`）を渡す**——非対話の起動の決まり（拒まれたら `await`・進めないなら台帳を書かない）。
+- **`--autocompact-window` を渡したときだけ、起こす `claude` に `--autocompact <トークン数>` を足す**（#1167）——渡さなければ起動コマンドは変えない。
+- **窓は `child-cycle.py` の `parse_window` でトークン数の整数に正規化し、範囲の外・書式の誤りは起動の前に 2 で拒む**——写しを作らず読み込む。
+- **渡した窓を起動の前に 1 度出し、環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` が設定されていれば効かないと言う**——設定されていなければ・窓を渡さなければ言わない。
 - **親の番号は先頭の 0 を外して読み、桁数で狭めない**——19 桁以上も受ける（`int()` の上限の桁数まで）。
 - **0 を外した桁数が `int()` の上限を超える番号は 2 で拒む**——例外（1）で終わらせない。
 - **`--absent` は渡されたときだけ `/dev-loop:cruise` に付ける**——席を外すかは利用者が決める（cruise `SKILL.md` §3）。
@@ -114,6 +122,8 @@ spec-loop の autopilot（#789）では、止まったことを見落とした�
 - **台帳と実物（PR・worktree）が一致しているか**——`status` も `progress` も台帳の値だけで決める（`ledger.py` の「守らない」）。
 - **通知が見えること**——`osascript` が 0 で終わったかも見ない。`osascript` の無い環境（macOS 以外）では通知を出さない（理由は標準出力に出る）。
 - **1 回の起動の長さ**——`claude` を待つだけで、時間で打ち切らない。
+- **窓が実際に効くか**——`--autocompact` を渡すまでである。実物の `claude` で窓が効くことを確かめたのは `child-cycle.py` の子（小さな呼び出し。`references/child-process.md` の「auto-compact の窓」）で、
+  この外側のループが起こす実物の親では確かめていない。**環境変数に上書きされるかは、起動した時点の環境の値で決めて言うだけ**で、`claude` の settings の `env` が重ねる値は読まない。
 - **`claude` の版・許可モード・モデル・認証**——足す引数（`--` の後ろ）と `--claude` で利用者が決める（cruise `SKILL.md` §3 の点検）。
   長期トークンの起動口（`../dev-loop/scripts/launch-with-long-token.sh`）に `-p` を渡す形は確かめていない。
 - **同じ台帳を回すループ・対話の cruise が他に走っていないか**——台帳を書くのは親 1 体である（`../dev-loop/references/ledger.md`）。
@@ -296,7 +306,7 @@ def launch(args, main_tree, logs, n):
     """(終了コード か None, 標準出力のファイル)。"""
     prompt = f"/dev-loop:cruise {args.parent}" + (" --absent" if args.absent else "")
     cmd = [*args.claude_cmd, "-p", prompt, "--output-format", "stream-json", "--verbose",
-           "--append-system-prompt", APPEND, *args.extra]
+           "--append-system-prompt", APPEND, *([] if args.window is None else child_cycle().window_flag(args.window)), *args.extra]
     env = dict(os.environ)
     if env.get(BG_CEILING) not in (None, "0"):
         print(f"{BG_CEILING}={env[BG_CEILING]} を 0 で上書きした")
@@ -348,6 +358,11 @@ def run_loop(args):
         return EXIT_UNKNOWN, f"出力の置き場を作れない（{logs}: {exc}）"
     costs = args.costs
     costs.rescan = lambda: child_costs(children, seen)
+    if args.window is not None:
+        print(f"auto-compact の窓: {args.window} トークンを --autocompact で渡す（起こす claude 1 つにだけ効く）", flush=True)
+        note = child_cycle().window_override_note(args.window, os.environ)
+        if note is not None:
+            print(note, flush=True)
     launches = stalls = 0
     while True:
         code, out = ledger("status", name)
@@ -400,6 +415,8 @@ def build_parser():
     p.add_argument("--max-launches", type=int, default=20, help="起動の総数の上限（既定 20）")
     p.add_argument("--max-stalls", type=int, default=2, help="前進なしが続けてこの回数で止まる（既定 2）")
     p.add_argument("--max-total-usd", type=float, default=None, help="費用の合計の上限（ドル。既定なし——上限なし）")
+    p.add_argument("--autocompact-window", default=None,
+                   help="起こす claude に渡す auto-compact の窓（トークン数・400k・1M。100000〜1000000。既定は渡さない。#1167）")
     p.add_argument("--claude", default="claude", help="claude を起こすコマンド（既定 claude）")
     return p
 
@@ -430,6 +447,16 @@ def main(argv=None):
     # 0 を外した残りの桁数が `int()` の上限（Python 3.11 以降の `sys.get_int_max_str_digits()`。0 は上限なし）を超えるものだけ拒む
     number = re.fullmatch(r"0*([1-9][0-9]*)", args.parent)
     limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
+    args.window = None
+    window_problem = None
+    if args.autocompact_window is not None:
+        try:
+            args.window = child_cycle().parse_window(args.autocompact_window)
+        except ValueError as exc:
+            window_problem = str(exc)
+    if window_problem is not None:
+        print(f"引数が違う: --autocompact-window: {window_problem}", file=sys.stderr)
+        return EXIT_USAGE
     if (not number or (limit and len(number.group(1)) > limit) or args.max_launches < 1 or args.max_stalls < 1
             or (args.max_total_usd is not None and not (math.isfinite(args.max_total_usd) and args.max_total_usd > 0))
             or not args.claude_cmd):

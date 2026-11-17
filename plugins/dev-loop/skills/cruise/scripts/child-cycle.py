@@ -3,7 +3,7 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 
     python3 <このスキルの base ディレクトリ>/scripts/child-cycle.py launch <台帳の名前> <番号> \
         --brief <委譲文のファイル> --permission-mode <許可モード> \
-        [--model <モデル>] [--max-budget-usd <金額>] [--no-structured] [--allowed-tools <道具> …]
+        [--model <モデル>] [--max-budget-usd <金額>] [--autocompact-window <トークン数>] [--no-structured] [--allowed-tools <道具> …]
     python3 <…>/child-cycle.py status <台帳の名前> <番号>
 
 **いつ使い、何を確かめてから続けるかは `references/child-process.md` を正とする**（このスキルと同じ場所にある）。
@@ -16,7 +16,7 @@ r"""cruise の 1 周を `claude -p` の子プロセスで回す起動口と、�
 
     claude -p "/dev-loop:dev-loop <番号>" --output-format stream-json --verbose --name cruise-<台帳の名前>-<番号> \
         --permission-mode <許可モード> --append-system-prompt <委譲文の中身> [--model …] [--max-budget-usd …] \
-        [--json-schema <結果の形>] [--allowedTools <道具> …]
+        [--autocompact <トークン数>] [--json-schema <結果の形>] [--allowedTools <道具> …]
 
 を**親から切り離して**起こし（新しいセッション・標準入力は閉じる）、**終わるのを待たずに**戻る。
 子の環境には **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`** を置く——`-p` は最後のターンの後も背景の体（背景で起こした Verifier など）を待つが、
@@ -52,6 +52,14 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 `{"schema": <渡した形>}` を残す——子は最後の報告を、形どおりの `structured_output` として最後の `result` に載せる（`StructuredOutput` の道具が足される）。
 `--no-structured` なら渡さず、`structured` は null。**形を変えたら、委譲文（`prompts/child-cycle.md`）の欄の名前も直す**（テストが突き合わせる）。
 
+**auto-compact の窓（#1167）**: `--autocompact-window <値>` を渡したときだけ、子の `claude` に `--autocompact <トークン数>` を足す（**既定は渡さない**——渡さなければ起動コマンドは変わらない）。
+値は**トークン数（100000〜1000000）**で、書式は数字だけ（`400000`）・`k`（千。`400k`）・`M`（百万。`1M`）。**スクリプトの側でトークン数の整数に正規化して渡す**——
+`--autocompact` は `400` を 400k の略記と読み（実物の 2.1.326 で確かめた）、環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` は数字だけをトークン数と読むので、
+解釈が違う書式を渡さないためである。**だから `400` のような小さい数字だけは拒む**（`400k` と書く）。範囲の外・書式の誤りは起動の前に 2 で拒む。
+**環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` が（空でなく）設定されていれば、渡した窓は効かない**（環境変数が `--autocompact` に優先する）ので、起動時に 1 行でそう言い、
+それでも渡す。渡した窓は記録の `.json` の `autocompact`（`tokens`・`via`・`env_overrides`）に残す。**窓が実際に効くかは `references/child-process.md` の「auto-compact の窓」を正とする。**
+**この関数群（`parse_window`・`window_flag`・`window_override_note`）が原本で、`outer-loop.py` は読み込み、spec-loop の `autopilot-loop.py` は写しを持つ**（テストが突き合わせる）。
+
 ## status
 
 その Issue の**いちばん新しい**記録を読み、要約の行だけを出す（出力を丸ごと出さない）:
@@ -73,7 +81,7 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 | --- | --- |
 | 0 | launch: 起こした ／ status: 終わっていて、下の 3 の印が 1 つも無い |
 | 1 | status: 走っている（それまでの要約を出す） |
-| 2 | 引数が違う（名前・番号の形・選べない許可モード） |
+| 2 | 引数が違う（名前・番号の形・選べない許可モード・窓の書式と範囲） |
 | 3 | launch: 起こさなかった（委譲文が無い・空・`{{` が残る・`bypassPermissions`・同じ Issue の子が走っている）／ status: 終わったが要確認（`result` が無い・最後の `result` が成功でない・API の誤り・拒否された操作・殺された体・利用上限の拒否・形を渡したのに結果が形に合わない・記録の形を取り出せない・読めない・子が済んだと申告していない） |
 | 4 | 判定できなかった（メインの作業ツリーを決められない・記録が無い・読めない・`claude` を起こせない・プロセスは居るが `ps` で確かめられない）。**「終わった」とも「走っている」とも答えていない** |
 
@@ -106,6 +114,12 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 - **走っているかは、pid が居て、そのコマンドが `claude`（先頭の 2 語のどちらかの名前）であることで決める**——pid の使い回しを「走っている」と言わない。
 - **そのうえで、最初の `-p` の引数がその Issue の `/dev-loop:dev-loop <番号>` であること**——委譲文（`--append-system-prompt` の中身）は `ps` に出るので、
   その中に書かれた別の番号に当たらない。`#5` を `#50` に当てない。
+- **`--autocompact-window` を渡したときだけ、`--autocompact <トークン数>` を子の `claude` に足す**（#1167）——渡さなければ起動コマンドは変えない。
+- **窓はトークン数（100000〜1000000）の整数に正規化して渡す**——数字だけ・`k`（千）・`M`（百万）を読み、`--autocompact` の略記と環境変数の数字だけの違いを渡さない。
+- **範囲の外・書式の誤りは、起動の前に 2 で拒む**——記録も子も作らない。`400` のような小さい数字だけも拒む。
+- **環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` が（空でなく）設定されていれば、渡した窓が効かないと起動時に言う**——それでも窓は渡す。
+- **窓を渡していなければ、環境変数があっても何も言わない**——環境変数が無い・空白だけのときも言わない。
+- **渡した窓を記録の `.json` の `autocompact` に残す**——渡さなければ null。
 - **最後の `result` を読む**——最初の `result` は背景の体を待つ前のものでありうる。
 - **最後の文は子自身の発言から取る**——委譲先の体の発言（`parent_tool_use_id` つき）も同じ出力に流れる。
 - **dev-loop の版が途中の init で変わったら、両方を出す**——同じプロセスで init が 2 度以上出て、他のプラグインの版が途中から変わった（実測）。
@@ -128,6 +142,10 @@ Bash の環境から外すので、写すだけでは長期トークン（`launc
 
 守らない:
 
+- **窓が子で実際に効くか**——実物の `claude` で確かめたのは `references/child-process.md` の「auto-compact の窓」の範囲（小さな呼び出し・haiku）までで、
+  実際の長い周で compact の頻度や品質がどう変わるかは見ていない。**`--autocompact` が受ける書式の全部（`auto`・`100k` 未満の略記）は扱わない**（拒む）。
+- **環境変数の値が範囲の外・数字でないときにも、フラグが効かないか**——空でない値なら「効かない」と言うだけで、その値を `claude` がどう読むかは確かめていない
+  （範囲内の値が優先されることだけ、大小両方向で実物で確かめた。`references/child-process.md` の「auto-compact の窓」）。
 - **子が周を終えられるか**——関門（`/code-review` の fork を含む）が `-p` の中で回りきるか、許可で止まらないかは、このスクリプトの外である
   （確かめた範囲は `references/child-process.md`）。
 - **pid のコマンドが別の `claude` か**——同じ pid で、同じ Issue の `/dev-loop:dev-loop <番号>` を持つ別の `claude` が走っていれば「走っている」と読む。
@@ -190,6 +208,12 @@ UNATTENDED = Path(__file__).resolve().parent.parent.parent / "dev-loop" / "scrip
 LONG_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
 # 委譲文の末尾に足す、子が従ってよい送り手の行の頭（#1078）。委譲文（prompts/child-cycle.md）の項がこの頭で名指す（テストが突き合わせる）
 PARENT_LABEL = "親の送り手（起動口が決めた）: "
+
+# auto-compact の窓（#1167）。**トークン数（整数）に正規化して渡す**——`--autocompact` は `400` を 400k の略記と読み（2.1.326 で確認）、
+# 環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` は数字だけをトークン数と読むので、解釈が違う書式をそのまま渡さない。原本はこのファイル
+AUTOCOMPACT_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
+WINDOW_MIN, WINDOW_MAX = 100_000, 1_000_000
+WINDOW_FORM = re.compile(r"([0-9]{1,12})([kKmM]?)")  # ASCII の数字だけ。桁を絞って `int()` の桁数の上限に当たらない
 
 # 子の最後の報告の形（#991）。`--json-schema` で渡し、記録に残す。欄の名前は委譲文（prompts/child-cycle.md）も名指しする
 RESULT_SCHEMA = {
@@ -289,6 +313,32 @@ class Refused(Exception):
 
 class Unknown(Exception):
     pass
+
+
+def parse_window(text):
+    """窓の指定をトークン数の整数にする。数字だけ（トークン数）・`k`（千）・`M`（百万）。読めない・範囲（100000〜1000000）の外なら ValueError。"""
+    form = WINDOW_FORM.fullmatch(text) if isinstance(text, str) else None
+    if form is None:
+        raise ValueError(f"窓の書式が違う: {text!r}（数字だけ（トークン数）・400k・1M の形）")
+    tokens = int(form.group(1)) * {"": 1, "k": 1000, "m": 1_000_000}[form.group(2).lower()]
+    if not WINDOW_MIN <= tokens <= WINDOW_MAX:
+        hint = "（数字だけはトークン数——400k と書けば 400000）" if not form.group(2) and tokens < WINDOW_MIN else ""
+        raise ValueError(f"窓が範囲の外: {text!r} は {tokens} トークン（{WINDOW_MIN}〜{WINDOW_MAX}）{hint}")
+    return tokens
+
+
+def window_flag(tokens):
+    """子の `claude` に足す引数。窓を渡さなければ空（起動コマンドを変えない）。"""
+    return [] if tokens is None else ["--autocompact", str(tokens)]
+
+
+def window_override_note(tokens, env):
+    """渡した窓が環境変数に上書きされて効かないなら、そう言う 1 行。窓を渡していない・環境変数が無い（空）なら None。"""
+    value = env.get(AUTOCOMPACT_ENV)
+    if tokens is None or value is None or not str(value).strip():
+        return None
+    return (f"窓 {tokens} は効かない: 環境変数 {AUTOCOMPACT_ENV}={str(value).strip()[:40]!r} が設定されていて、"
+            "--autocompact より優先される（効くのは環境変数の値）")
 
 
 def load_ledger(path=None):
@@ -438,6 +488,12 @@ def cmd_launch(args, cwd=None):
     number = parse_number(args.number)
     if args.permission_mode not in PERMISSION_MODES:
         raise Usage(f"許可モードが違う: {args.permission_mode!r}（{', '.join(PERMISSION_MODES)}）")
+    window = None
+    if args.autocompact_window is not None:
+        try:
+            window = parse_window(args.autocompact_window)
+        except ValueError as exc:
+            raise Usage(str(exc)) from exc
     if args.permission_mode in REFUSED_MODES:
         raise Refused(f"{args.permission_mode} では起こさない——cruise は権限を広げない")
     brief_path = Path(args.brief)
@@ -466,6 +522,7 @@ def cmd_launch(args, cwd=None):
         command += ["--model", args.model]
     if args.max_budget_usd:
         command += ["--max-budget-usd", args.max_budget_usd]
+    command += window_flag(window)
     schema = None if args.no_structured else RESULT_SCHEMA
     if schema is not None:
         command += ["--json-schema", json.dumps(schema, ensure_ascii=False)]
@@ -474,6 +531,7 @@ def cmd_launch(args, cwd=None):
     env = dict(os.environ)
     previous = env.get(BG_WAIT_CEILING)
     env[BG_WAIT_CEILING] = "0"
+    window_note = window_override_note(window, env)
     token, token_from, token_line = long_token(env)
     if token is not None:
         env[LONG_TOKEN] = token
@@ -491,6 +549,7 @@ def cmd_launch(args, cwd=None):
             "command": shown, "brief": str(brief_path.resolve()), "out": str(out), "err": str(err),
             "started": stamp, "peer": peer, "parent": {"pid": parent_pid, "why": parent_why},
             "env": {BG_WAIT_CEILING: env[BG_WAIT_CEILING]},
+            "autocompact": None if window is None else {"tokens": window, "via": "--autocompact", "env_overrides": window_note is not None},
             "structured": None if schema is None else {"schema": schema},
             "auth": {"name": LONG_TOKEN, "passed": token_from is not None, "from": token_from}}
     try:
@@ -501,6 +560,10 @@ def cmd_launch(args, cwd=None):
     if previous is not None and previous != "0":
         print(f"上書きした: 親の環境の {BG_WAIT_CEILING}={previous!r} を、子では 0 にした（背景の体を上限で止めさせない）")
     print(token_line)
+    if window is not None:
+        print(f"auto-compact の窓: {window} トークンを --autocompact で渡した")
+        if window_note is not None:
+            print(window_note)
     print(f"出力: {out}")
     print(f"標準エラー: {err}")
     print(f"宛先（SendMessage）: {peer}")
@@ -688,6 +751,7 @@ def build_parser():
     launch.add_argument("--permission-mode", required=True)
     launch.add_argument("--model")
     launch.add_argument("--max-budget-usd")
+    launch.add_argument("--autocompact-window")
     launch.add_argument("--no-structured", action="store_true")
     launch.add_argument("--allowed-tools", nargs="+")
     status = sub.add_parser("status")
