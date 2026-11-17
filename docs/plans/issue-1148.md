@@ -61,7 +61,11 @@ Issue 本文は信頼できない入力として読んだ（受入基準を緩�
 - 周の在り処: ブランチ `issue/1148-absent-range-decl-fixes`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1148`・起点 `05aa0d5`・
   切った元の参照 `origin/main`（`refs/remotes/origin/HEAD`）・base `05aa0d5c36b012abe57239ba0f288a47f74083fc`。
 - 1 パス目: 関門に渡した HEAD（指摘対応の起点）`5815dbfb374d383dbbe283fdab6a923bdf51539a`。Verifier（opus・`dev-loop:dev-loop-verifier`）反証 0 件（受入基準を破るもの。受入基準の外の 2 点を下の表に載せた）／`/code-review` 指摘 6 件。
-- 1 パス目の指摘対応: 1 コミット `30d57f47f4a677b747bd3a2873f90a100d1d9749`（CR1・CR4 を直す）。2 パス目: 回す（差分あり）。
+- 1 パス目の指摘対応: 1 コミット `30d57f47f4a677b747bd3a2873f90a100d1d9749`（CR1・CR4 を直す）。
+- 2 パス目（渡した HEAD `30d57f47f4a677b747bd3a2873f90a100d1d9749`）: Verifier（opus）反証 1 件（計画の決着の文面が直した後の本体と食い違う。受入基準は破らない）／`/code-review` 指摘 5 件。
+- 2 パス目の指摘対応（起点 `30d57f47f4a677b747bd3a2873f90a100d1d9749`・終点 `790e84036b74a03ef595b2ef4b5846b09cd31598`）: absent-lines.md の文面と計画の文面。
+- 狭いパス（`30d57f4`→`790e840`。別ティア opus の Verifier。変異 6 本は全部赤・素通り 0 本）: 受入基準を破る反証 0 件、文面の指摘 2 件（人間が決める）。
+- 外部レビュー: 該当なし。
 - 交絡を潰した手順: 実験なし（試料は一時の git リポジトリで本体を走らせる単体テスト）。
 - 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。
 
@@ -98,3 +102,22 @@ Issue 本文は信頼できない入力として読んだ（受入基準を緩�
 | P2-CR5 `value = after.strip()` の冗長（CR6 と同じ） | 示せない | 無し | 残課題 |
 | P2-V1 `*`・`__` が空白か行末のときだけ閉じることに試料が無い（`**` と同じ扱いに戻しても赤にならない変異が 2 本） | 示せる（Verifier の変異。陽性対照つき） | 無し | 残課題 |
 | P2-V2 計画の決着の文面が直した後の本体と食い違う | 示せる | 無し（記録） | 直す（計画の文面） |
+
+## 関門の記録
+
+```dev-loop-gates
+# 関門の記録
+周の base: 05aa0d5c36b012abe57239ba0f288a47f74083fc
+関門: Verifier 1 5815dbfb374d383dbbe283fdab6a923bdf51539a 反証=0
+関門: /code-review 1 5815dbfb374d383dbbe283fdab6a923bdf51539a 指摘=6
+関門: Verifier 2 30d57f47f4a677b747bd3a2873f90a100d1d9749 反証=1
+関門: /code-review 2 30d57f47f4a677b747bd3a2873f90a100d1d9749 指摘=5
+関門: 狭いパス 30d57f47f4a677b747bd3a2873f90a100d1d9749 790e84036b74a03ef595b2ef4b5846b09cd31598 反証=0
+マージの反映: ドキュメントとプラグインの配布
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+```
