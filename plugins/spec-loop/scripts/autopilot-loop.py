@@ -17,7 +17,7 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
 
 **cruise の外側のループ（dev-loop の `skills/cruise/scripts/outer-loop.py`。#791）を写した形だが、import も相対パスでの呼び出しもしない**——spec-loop だけを
 入れた利用者に dev-loop が在るとは限らず、プラグインをまたいで相対パスで指せない（`autopilot-ledger.py` の `main_worktree` の写しと同じ理由）。
-**写しは `notify`・`stop_child`・`cost_of`・`read_cost` の 4 関数だけ**（と、#1167 の窓の `parse_window`・`window_flag`・`window_override_note` の 3 関数と定数——こちらの元は `child-cycle.py`）で、元とずれないことを `scripts/test-autopilot-loop.py`（リポジトリの根）が関数のソースを突き合わせて見る。
+**写しは `notify`・`stop_child`・`cost_of`・`read_cost` の 4 関数（元は cruise の `outer-loop.py`）と、#1167 の窓の `parse_window`・`window_flag`・`window_override_note` の 3 関数と定数（元は `child-cycle.py`）**で、元とずれないことを `scripts/test-autopilot-loop.py`（リポジトリの根）が関数のソースを突き合わせて見る。
 ループの本体は、cruise に無い止め方（同じ状態での起動の上限・使用量の上限の待ち）を持つので写しにしていない。
 
 ## 1 回の起動

@@ -99,11 +99,11 @@ Issue 本文（外部入力）から読んだ要件: 3 つの起動口（`child-
 
 実物の Claude Code 2.1.326・`--model haiku`（init の `model` は `claude-haiku-5-5`）で、`child-cycle.py launch` が組んだ引数を、使い捨てのディレクトリ（リポジトリの外のスクラッチ・空の git リポジトリ）で最小の呼び出しに差し替えて実物の `claude` に渡した。
 差し替えは `claude` の前に置いた包み（`-p` の文と `--append-system-prompt` の中身だけ。`/dev-loop:dev-loop` の周は回さない）。`--autocompact` と環境は起動口のまま。許可モード `dontAsk`・`--allowed-tools Read`・`--max-budget-usd 0.6`。長期トークンの値は出力に出していない（`認証:` の行は「値は出さない」）。
-計約 $0.89（出力ファイルの合計 $0.85 に書式の確かめと逆向きの対照の分を足した。最初の試しの $0.45 を含む。1 回目は 1 ターンに約 44.5 万トークンを渡して予算を食った）。詳細な表と読み方は `plugins/dev-loop/skills/cruise/references/child-process.md` の「auto-compact の窓」。
+計約 $0.89（出力ファイル 7 つの合計 $0.887。書式の確かめ 5 回の分は出力が残らず含めない。最初の試しの $0.45 を含む。1 回目は 1 ターンに約 44.5 万トークンを渡して予算を食った）。詳細な表と読み方は `plugins/dev-loop/skills/cruise/references/child-process.md` の「auto-compact の窓」。
 
 - **交絡の候補**（主張が偽でも同じ出力が出る設定）: (1) 窓を渡した子が compact したのは、渡した窓のせいではなく入力が違うから → 同じ 7 ファイル・同じ文で、窓を渡さない子（compact 0・8 ターン）と比べた。(2) 窓を渡さない子が compact しないのは「もともと compact しない」設定だから → 窓を渡した子が同じ入力で compact した（陽性対照）。
   (3) 環境変数が効くはずなのに効かない → 環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000` と窓 100k を併せた子は compact 0（環境変数が優先。起動口の「効かない」の表示と合う）。
-  (4) 1 ターンの長い入力（約 13 万トークン・窓 100k）は compact しなかった——これを「窓が効かない」と読まない。ターンをまたいで積み上がる子で測り直し、compact が出た。
+  (4) 1 ターンの長い入力（約 12 万トークン・窓 100k）は compact しなかった——これを「窓が効かない」と読まない。ターンをまたいで積み上がる子で測り直し、compact が出た。
 - **観測窓**: 各条件 1 回ずつ。出力ファイル（stream-json）の `compact_boundary` の行を数えた。窓 100k の子は 10 ターンで compact 2 回（圧縮前 71188・72882 トークン）。ほかの窓の値・ほかのモデル・長い周は測っていない。
 
 | 条件 | `compact_boundary` | ターン数 |
