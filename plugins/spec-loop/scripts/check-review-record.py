@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""仕様レビューの記録（`spec-review/v<n>.csv` と `spec-review/v<n>-findings.csv`）から、抜ける条件 2・3 と実行の上限を数え直す（#1044）。
+"""仕様レビューの記録（`spec-review/v<n>.csv` と `spec-review/v<n>-findings.csv`）から、抜ける条件 2・3 と実行の上限（#1044）と、
+条件 5 のうち内部の Q&A 表の行の確かめ（#1155）を数え直す。
 
 usage:
     python3 check-review-record.py conditions <spec-review/v<n>-findings.csv> [--run <回>]
+    python3 check-review-record.py internal <spec-review/v<n>-findings.csv> --docs <正本の docs> [--run <回>]
     python3 check-review-record.py limit <spec-review/v<n>.csv> [--limit <N>]
 
 **決まりの正は `references/spec-exit.md` の「指摘の重さ」と「実行の上限と記録」である**（このプラグインの中にある）。
 指摘の表の列と値・実行の記録の読み方は同梱の `check-findings-csv.py` のもの（読み込んで使う——写さない）。
 `scaffold.py` は記録の表の最後の実行の行をここの `last_run` で読む（写さない）。
+`internal` の版の差分は同梱の `diff-versions.py` の `compare`、重ねた全体は `merge-versions.py` の `merge`、内部の層の番号は `check-qa-csv.py` の
+`is_internal_number` で決める（読み込んで使う——写さない）。**内部の行の印（`（内部の行: <No>）`）は spec-exit.md の「指摘の表」の写しで、
+このリポジトリの `scripts/test-check-review-record.py` が突き合わせる。**
 
 ## なぜ在るのか（#1044）
 
@@ -25,7 +30,22 @@ usage:
   **重さが `判断が要る`・`結果が割れる`** で、**振り分けが `退ける` でない**もの（退けた指摘は誤り。`確かめられない` の行は判定役の重さのまま数える）。
   **2 回目の `仕様を直す` の行で `結果` が `次の回` でないもの（その回の 2 回目のあとで直した）は数えない**（重さが `判断が要る` の行は除く——解消済みにはならない）——spec-exit.md の「2 回目の `満たさない` を
   解消済みに置き換えてよい」の道で、直しは狭いパスが確かめる（2 パス目の CR2-1）。
+- **確かめの行は 2 回目を回したことに数えない**（#1155）——`指摘` に内部の行の印（`（内部の行: <No>）`）がある行は、Domain Checker が内部の表の行を
+  確かめた記録で、振り分けが `内部の Q&A 表に記録する` でも仕様を直していない（spec-review の手順 5 は 2 回目を回さない）。数えると、
+  2 回目の行が 0 件の回に 1 回目の Red Team の効く重さを数え落とす。
 - 1 件でもあれば `満たさない`（1）。数えた行を全部出す。
+
+## `internal` — 条件 5 のうち、内部の Q&A 表の行を判定役が確かめたか（#1155）
+
+指摘の表を `conditions` と同じく検査に当て、`--run` の回（省けば最後の実行の行）を見る。版は指摘の表の名前（`v<n>-findings.csv`）の `<n>`:
+
+- **確かめる行**: その版で足した・変えた内部の層の行（`diff-versions.py` の `Q&A（内部）` の `追加`・`変更`。v1 は全部が追加）。
+  **前の版から変わらない行は求めない**——その版の spec-review が確かめている（spec-exit.md の条件 5）。
+- **確かめた行**: その回の `domain-checker` の行で、`確かめたか` が `確かめた`、`指摘` に印 `（内部の行: <No>）` があるもの（どのレビューでもよい）。
+- 確かめる行のうち、確かめた行の無いものが 1 つでもあれば `満たさない`（1）。
+- **確かめた行の振り分けが `共有の Q&A 表に起票する` なのに、その番号が重ねた全体の内部の表に残っていれば `満たさない`（1）**——
+  利用者に見える結果が変わると決めた判断を、内部の表に置いたまま抜けない（移し方は `references/qa-csv.md` の「層を移す」）。
+- 確かめる行が 0 件なら 0（その旨を出す）。
 
 ## `limit` — 実行の上限を数える
 
@@ -38,9 +58,9 @@ N は正本の `CLAUDE.md` で変えてよい（spec-exit.md）——このス�
 
 | コード | 意味 |
 | --- | --- |
-| 0 | `conditions`: 数える行が 0 件（条件 2・3 と狭いパスの効く重さを満たす）／`limit`: 上限に達していない |
-| 1 | `conditions`: 数える行がある（満たさない） |
-| 2 | 判定していない——引数の誤り・ファイルが読めない・指摘の表が `check-findings-csv.py` の検査に通らない・実行の行が無い・`--run` の回が実行の行でない・記録の見出しに要る列が無い・想定外の例外 |
+| 0 | `conditions`: 数える行が 0 件（条件 2・3 と狭いパスの効く重さを満たす）／`internal`: 確かめる行がすべて確かめてあり、移すと決めた行が内部の表に残らない／`limit`: 上限に達していない |
+| 1 | `conditions`: 数える行がある（満たさない）／`internal`: 確かめていない行か、移していない行がある（満たさない） |
+| 2 | 判定していない——引数の誤り・ファイルが読めない・指摘の表が `check-findings-csv.py` の検査に通らない・実行の行が無い・`--run` の回が実行の行でない・記録の見出しに要る列が無い・`internal`: `--docs` が無い・正本の版が無い／読めない／重ね合わせが決まりに反する・想定外の例外 |
 | 3 | `limit`: 上限に達した（か、最後の利用者の判断が `止める`）——判定役を起動せずに利用者に訊く |
 
 ## 何を守り、何を守らないか
@@ -59,6 +79,12 @@ N は正本の `CLAUDE.md` で変えてよい（spec-exit.md）——このス�
 | 数え始めは `続ける`・`範囲を決め直す` の最後の行の後 | 利用者が数え直しを選んだのに、前の行を数え続ける |
 | 最後の利用者の判断が `止める` なら上限 | 呼び直しただけで判定役が動き出す |
 | `回答待ち`・`満たす` の行は上限に数えない | 利用者の回答待ちを判定役の空回りと数える |
+| 内部の行の印のある行は、2 回目を回したことに数えない | 確かめの行だけの 1 回目を 2 回目ありと読み、1 回目の Red Team の効く重さを数え落とす（#1155） |
+| `internal`: その版で足した・変えた内部の行に、その回の Domain Checker の確かめた行が無ければ 1 | 書き手が判定役に渡し忘れた・判定役が見落とした内部の行が、書き手の自己判定のまま抜ける（#1155） |
+| `internal`: `確かめられない` の行・ほかの判定役の行・前の回の行は確かめに数えない | 確かめていない判断を確かめたと読む |
+| `internal`: 前の版から変わらない内部の行は求めない | 前の版で確かめた行を毎回確かめ直させる（H1） |
+| `internal`: 移すと決めた行が内部の表に残れば 1 | 利用者に見える結果が変わる判断が、利用者に見えないまま抜ける |
+| `internal`: 重ね合わせが決まりに反する・版が無いなら 2 | 比べられない版を「確かめる行が無い」と読んで 0 にする |
 
 守らない:
 
@@ -68,7 +94,10 @@ N は正本の `CLAUDE.md` で変えてよい（spec-exit.md）——このス�
 | **狭いパスが全部の役から返ったか・元の指摘が `解消した` か**（狭いパスの 1・2 つ目） | 指摘の表に残らない。2 回目のあとで直した行は数えないので、その行が解消したかは判定役（狭いパス）の判定だけで決まる |
 | **2 回目を回す前に止めた回**で、1 回目に直した行がある | 2 回目は指摘なしと読む。その回の記録は `抜けていない` なので、scaffold は止まる |
 | **判定役の書いた重さが正しいか**・行を落とさずに足したか | 判断であり、表の元は会話にしか無い（`check-findings-csv.py` と同じ） |
-| **条件 1・4・5** | 条件 1 は `check-spec-exit.py`、条件 4 の TLC のモデルは `check-formal-rerun.py`、条件 5 は振り分けの表 |
+| **条件 1・4・5** | 条件 1 は `check-spec-exit.py`、条件 4 の TLC のモデルは `check-formal-rerun.py`、条件 5 は振り分けの表——`internal` が見るのは条件 5 のうち内部の行の確かめだけ |
+| **`internal`: 判定役の判定（変わる／変わらない）が正しいか**・確かめた後に行を書き換えたか | 判断であり、指摘の表は行の中身を残さない（確かめた時点の行と今の行を比べられない） |
+| **`internal`: spec-review を抜けた後に、feasibility・dev-loop が内部の表に足した行** | 抜けた記録は記録の表に残り、scaffold はそれを読むだけ。足した行は次の spec-review の実行で確かめる |
+| **`internal`: 移した先の共有の表の行があるか**・指し先を直したか | 移し方は `references/qa-csv.md` の「層を移す」。共有の表の行は条件 1 が見る |
 | **記録の表の `条件2〜4` の値が判定どおりか** | `limit` は書いた値を数えるだけ |
 
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う。
@@ -94,6 +123,8 @@ def _load(name: str, filename: str):
 
 findings = _load("check_findings_csv", "check-findings-csv.py")
 Unreadable = findings.Unreadable
+diff_versions = _load("diff_versions", "diff-versions.py")
+merge_versions = diff_versions.merge_versions
 
 # ---- `references/spec-exit.md` の「指摘の重さ」「実行の上限と記録」の写し
 EFFECTIVE = ("判断が要る", "結果が割れる")
@@ -114,6 +145,10 @@ LIMIT_COLUMNS = ("回", "結果", "条件2〜4", "判断", "機能")
 NEXT_RUN = "次の回"
 DECIDE = EFFECTIVE[0]  # `判断が要る`——直しても解消済みにはならない
 FIX = "仕様を直す"
+# ---- `references/spec-exit.md` の「指摘の表」の、内部の Q&A 表の行を確かめた印（#1155）の写し
+INTERNAL_MARK = re.compile(r"（内部の行: ([^）\s]+)）")
+DOMAIN_CHECKER = "domain-checker"
+MOVE = "共有の Q&A 表に起票する"
 
 EXIT_OK, EXIT_UNMET, EXIT_UNJUDGED, EXIT_LIMIT = 0, 1, 2, 3
 
@@ -139,23 +174,36 @@ def last_run(path: Path) -> dict[str, str] | None:
     return runs[-1] if runs else None
 
 
-def conditions(table: Path, run: str | None) -> tuple[int, list[str]]:
+def run_cells(table: Path, run: str | None) -> tuple[str | None, list[tuple[int, dict[str, str]]], list[str]]:
+    """(数える回, その回の指摘の行（行番号つき）, 判定していない理由)。理由があれば回は None。"""
     code, problems = findings.check(table)
     if code:
-        return EXIT_UNJUDGED, problems + [f"指摘の表が check-findings-csv.py の検査に通らない（{len(problems)} 件）。数え直していない"]
+        return None, [], problems + [f"指摘の表が check-findings-csv.py の検査に通らない（{len(problems)} 件）。数え直していない"]
     record = findings.runs_path(table)
     runs = [r for r in read_runs(record) if r["結果"] in findings.RUN_RESULTS]
     if not runs:
-        return EXIT_UNJUDGED, [f"{record}: 実行の行（結果が {'／'.join(findings.RUN_RESULTS)}）が無い。数え直していない"]
+        return None, [], [f"{record}: 実行の行（結果が {'／'.join(findings.RUN_RESULTS)}）が無い。数え直していない"]
     if run is None:
         run = runs[-1]["回"]
     elif run not in {r["回"] for r in runs}:
-        return EXIT_UNJUDGED, [f"{record}: 回 {run} は実行の行でない。数え直していない"]
+        return None, [], [f"{record}: 回 {run} は実行の行でない。数え直していない"]
     rows = findings.read_csv(table, "指摘の表")
     cells = [dict(zip(findings.COLUMNS, (v.strip() for v in r))) for r in rows[1:]]
-    mine = [(number, c) for number, c in enumerate(cells, start=2) if c["回"] == run]
+    return run, [(number, c) for number, c in enumerate(cells, start=2) if c["回"] == run], []
+
+
+def internal_number(c: dict[str, str]) -> str | None:
+    """`指摘` の内部の行の印が指す番号（無ければ None）。"""
+    m = INTERNAL_MARK.search(c["指摘"])
+    return m.group(1) if m else None
+
+
+def conditions(table: Path, run: str | None) -> tuple[int, list[str]]:
+    run, mine, problems = run_cells(table, run)
+    if run is None:
+        return EXIT_UNJUDGED, problems
     second = any(c["レビュー"] == SECOND for _, c in mine) or any(
-        c["レビュー"] == FIRST and c["振り分け"] in SECOND_TRIGGERS for _, c in mine)
+        c["レビュー"] == FIRST and c["振り分け"] in SECOND_TRIGGERS and internal_number(c) is None for _, c in mine)
     last = SECOND if second else FIRST
     counted = [(number, c) for number, c in mine
                if c["重さ"] in EFFECTIVE and c["振り分け"] != REJECTED
@@ -165,6 +213,37 @@ def conditions(table: Path, run: str | None) -> tuple[int, list[str]]:
         return EXIT_OK, [f"満たす: {seen}——Red Team と狭いパスに、効く重さ（{'・'.join(EFFECTIVE)}）の行が無い"]
     lines = [f"{table}:{number}: {c['レビュー']}・{c['判定役']}・{c['重さ']}・{c['振り分け']}: {c['指摘']}" for number, c in counted]
     return EXIT_UNMET, lines + [f"満たさない: {seen}——効く重さの行が {len(counted)} 件（条件 2・3 か狭いパスの 3 つ目。references/spec-exit.md の「指摘の重さ」）"]
+
+
+def internal(table: Path, docs: Path, run: str | None) -> tuple[int, list[str]]:
+    run, mine, problems = run_cells(table, run)
+    if run is None:
+        return EXIT_UNJUDGED, problems
+    version = int(findings.NAME.match(table.name).group(1))
+    try:
+        problems, diff = diff_versions.compare(docs, version)
+        if not problems:
+            problems, _, whole, _ = merge_versions.merge(docs, version)
+    except merge_versions.Unreadable as e:
+        return EXIT_UNJUDGED, [f"正本の版を読めない: {e}。数え直していない"]
+    if problems:
+        return EXIT_UNJUDGED, problems + [f"v{version} の重ね合わせが決まりに反する（{len(problems)} 件）。数え直していない"]
+    targets = [c.key for c in diff.changes[diff_versions.KIND_QA_INTERNAL] if c.status != diff_versions.REMOVED]
+    judged: dict[str, list[tuple[int, dict[str, str]]]] = {}
+    for number, c in mine:
+        no = internal_number(c)
+        if no is not None and c["判定役"] == DOMAIN_CHECKER and c["確かめたか"] == findings.CONFIRMED:
+            judged.setdefault(no, []).append((number, c))
+    remaining = diff_versions.qa_layers(whole)[1]
+    seen = f"回 {run}・v{version} で足した・変えた内部の行 {len(targets)} 件"
+    lines = [f"{no}: Domain Checker が確かめた行（印 `（内部の行: {no}）`）が回 {run} の指摘の表に無い" for no in targets if no not in judged]
+    lines += [f"{table}:{number}: {no} は {MOVE} に振り分けたのに、重ねた全体の内部の表に残る（references/qa-csv.md の「層を移す」）"
+              for no, rows in judged.items() if no in remaining for number, c in rows if c["振り分け"] == MOVE]
+    if lines:
+        return EXIT_UNMET, lines + [f"満たさない: {seen}——確かめていない・移していない行が {len(lines)} 件（条件 5。references/spec-exit.md）"]
+    if not targets:
+        return EXIT_OK, [f"満たす: {seen}——確かめる行が無い"]
+    return EXIT_OK, [f"満たす: {seen}——すべて Domain Checker が確かめた"]
 
 
 def fixed_after_second(c: dict[str, str]) -> bool:
@@ -200,6 +279,10 @@ def main(argv: list[str]) -> int:
     c = sub.add_parser("conditions")
     c.add_argument("table", type=Path, help="spec-review/v<n>-findings.csv")
     c.add_argument("--run", help="数える回（省けば最後の実行の行）")
+    i = sub.add_parser("internal")
+    i.add_argument("table", type=Path, help="spec-review/v<n>-findings.csv")
+    i.add_argument("--docs", type=Path, required=True, help="正本の docs ディレクトリ（版 v1・v2…を持つ）")
+    i.add_argument("--run", help="数える回（省けば最後の実行の行）")
     m = sub.add_parser("limit")
     m.add_argument("record", type=Path, help="spec-review/v<n>.csv")
     m.add_argument("--limit", default=str(LIMIT), help=f"上限の N（既定 {LIMIT}）")
@@ -208,11 +291,14 @@ def main(argv: list[str]) -> int:
     except SystemExit as exc:
         return EXIT_OK if exc.code == 0 else EXIT_UNJUDGED
     try:
-        if args.command == "conditions":
+        if args.command in ("conditions", "internal"):
             if args.run is not None and not findings.NUMBER.match(args.run):
                 print(f"--run は 1 からの番号: {args.run!r}", file=sys.stderr)
                 return EXIT_UNJUDGED
-            code, lines = conditions(args.table, args.run)
+            if args.command == "conditions":
+                code, lines = conditions(args.table, args.run)
+            else:
+                code, lines = internal(args.table, args.docs, args.run)
         elif args.command == "limit":
             if not re.fullmatch(r"[1-9][0-9]*", args.limit):
                 print(f"--limit は 1 以上の整数: {args.limit!r}", file=sys.stderr)
