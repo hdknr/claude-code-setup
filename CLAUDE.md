@@ -42,7 +42,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **親はメインの作業ツリーから worktree に入らずに起動し、起動時に周で使う操作の権限を点検する**（#466）。
       **dev-loop スキルを `../dev-loop/` で指す**ので、**素のスキルとしては張れない**。書式と守る／守らないは docstring を正とする。
       テストは `scripts/test-parent-issue.py`
-      - `skills/cruise/scripts/child-cycle.py` - 周を **`claude -p` の子プロセス**で回す起動口と、出力（stream-json）の要約（#491。**任意で、既定はサブエージェントのまま**。
+      - `skills/cruise/scripts/child-cycle.py` - 周を **`claude -p` の子プロセス**で回す起動口と、出力（stream-json）の要約（#491。**任意で、既定はサブエージェントのまま**。**`--autocompact-window` で auto-compact の窓を子に渡せる**（#1167。**原本は `parse_window`・`window_flag`・`window_override_note`**。`outer-loop.py` は読み込み、spec-loop の `autopilot-loop.py` は写しを持つ）。
         子は親から切り離して起き、`--name cruise-<名前>-<番号>` を付けて親が `SendMessage` で宛てられるようにし（#1039）、記録は台帳の隣の `.claude/plans/cruise-<名前>-children/` に置く。回し方と確かめた範囲は `references/child-process.md`、
         守る／守らないは docstring を正とする。テストは `scripts/test-child-cycle.py`）
       - `skills/cruise/scripts/run-serial.py` - cruise の周の**重い検査・アプリの起動を、同じリポジトリでは順番待ちにして走らせる**（#493。
@@ -53,7 +53,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
         守る／守らないは docstring を正とする。テストは `scripts/test-cleanup-cycle.py`）
       - `skills/cruise/scripts/outer-loop.py` - cruise を `claude -p` で**外から繰り返し起動するループ**（#791。**任意**）。`ledger.py status` が 0 のときだけ起こし、
         1 回の起動で台帳が進んだかを `ledger.py progress`（`updated`・`note` を含まない要約）で比べ、前進なしが続く・起動の上限・`claude` の失敗・費用の合計の上限（`--max-total-usd`。#992）で止まって通知する。
-        守る／守らないは docstring を正とする。テストは `scripts/test-outer-loop.py`）
+        **`--autocompact-window` で起こす `claude` に auto-compact の窓を渡せる**（#1167。検査は `child-cycle.py` を読み込む）。守る／守らないは docstring を正とする。テストは `scripts/test-outer-loop.py`）
   - `spec-loop/` - dev-loop の手前にある**要求側のループ**（#214）
     - `skills/req-loop/` - 要求確定のループ（#216。1 周 = レビュー会 1 回。**回答待ちで止まる**）。
       **共有の `references/` と `scripts/` を `../../` で指す**ので、**素のスキルとしては張れない**
@@ -213,7 +213,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/autopilot-loop.py` - autopilot を `claude -p` で**外から繰り返し起動するループ**（#850）。台帳の `status` が `running` のときだけ起こし、
       `progress` で前進を比べ、前進なしが続く・起動の上限・**同じ状態での起動の上限**（段の行き来）・`claude` の失敗・費用の合計の上限（`--max-total-usd`。#992）で止まって通知する。
       **使用量の上限は出力から読み、解除の時刻まで待って再開する**（本物の `claude` の上限の出力の形は測っていない）。長期トークンは `--claude` に起動口を渡す。
-      **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
+      **cruise の `outer-loop.py` の写しの関数（`notify`・`stop_child`・`cost_of`・`read_cost`）と、窓の `--autocompact-window`（#1167）の写し（`child-cycle.py` の `parse_window` など）はテストが突き合わせる**。守る／守らないは docstring を正とする。テストは `scripts/test-autopilot-loop.py`
   - `screen-spec/` - 画面設計書を spec-loop とは別に持つプラグイン（#1081。**spec-loop の決まりに従い、spec-loop は screen-spec に依存しない**。
     いまは表の検査と、スキル `init`・`add` と雛形と、UI モックの生成器（差分の印とレビュー会の進め方——#1096）と、profile `web-spa`（#1094）と、MkDocs のフック（#1098）まで）
     - `references/` - **表の形の原本**（画面・項目・遷移の 3 つの CSV の列と決まった値・案件ごとの設定（`settings.csv`）・`init` と `add`（採番）・検査と終了コードは `tables.md`、

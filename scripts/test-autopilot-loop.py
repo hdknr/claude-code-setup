@@ -42,6 +42,9 @@ LEDGER = REAL_REPO / "plugins" / "spec-loop" / "scripts" / "autopilot-ledger.py"
 CRUISE_LOOP = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "outer-loop.py"
 LONG_TOKEN = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "scripts" / "launch-with-long-token.sh"
 COPIED = ("notify", "stop_child", "cost_of", "read_cost")
+CHILD_CYCLE = REAL_REPO / "plugins" / "dev-loop" / "skills" / "cruise" / "scripts" / "child-cycle.py"
+WINDOW_COPIED = ("parse_window", "window_flag", "window_override_note")  # 窓（#1167）の写し。元は cruise の child-cycle.py
+WINDOW_CONSTANTS = ("AUTOCOMPACT_ENV", "WINDOW_MIN, WINDOW_MAX", "WINDOW_FORM")
 TOKEN = "fake-long-token-850"
 CONTROL = "（陽性対照）"
 
@@ -112,6 +115,9 @@ def rejected(**kw):
 
 
 MUTATIONS = {
+    "窓を常に渡す": [("*window_flag(args.window), ", '"--autocompact", "400000", ')],
+    "窓の範囲を検査しない": [("            args.window = parse_window(args.autocompact_window)", '            args.window = int(args.autocompact_window.rstrip("kK") or 0) * (1000 if args.autocompact_window[-1:] in "kK" else 1)')],
+    "環境変数に上書きされても言わない": [("window_override_note(args.window, os.environ)", "window_override_note(args.window, {})")],
     "止まった・判定できないでも起こす": [
         ("        if code == 3:\n", "        if code == 99:\n"),
         ('        if code != 0:\n            return EXIT_UNKNOWN, f"判定できなかった（status: {code}）"\n', "")],
@@ -157,7 +163,7 @@ MUTATIONS = {
     "済んだときは通知しない": [("    notify(line)\n", "    if code != EXIT_DONE:\n        notify(line)\n")],
     "cwd をメインの作業ツリーにしない": [("cwd=main_tree, stdin", "cwd=None, stdin")],
     "上限 0 を置かない": [('    env[BG_CEILING] = "0"\n', "    pass\n")],
-    "追記を渡さない": [('           "--append-system-prompt", APPEND, *args.extra]', "           *args.extra]")],
+    "追記を渡さない": [('           "--append-system-prompt", APPEND, *window_flag(args.window), *args.extra]', "           *window_flag(args.window), *args.extra]")],
     "stream-json で起こさない": [('"--output-format", "stream-json", "--verbose",\n', "\n")],
     "--claude の先頭の語だけ使う": [('    cmd = [*args.claude_cmd, "-p"', '    cmd = [args.claude_cmd[0], "-p"')],
     "先頭 0 の版を通す": [('r"[1-9][0-9]*", args.version', 'r"[0-9]+", args.version')],
@@ -194,6 +200,18 @@ def load(script: Path = SCRIPT):
 def functions(source: str) -> dict:
     tree = ast.parse(source)
     return {n.name: ast.get_source_segment(source, n) for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in COPIED}
+
+
+def window_sources(source: str) -> dict:
+    """窓の写しの関数と定数のソース（比べる形）。定数は代入の文の文字列で見る。"""
+    tree = ast.parse(source)
+    out = {n.name: ast.get_source_segment(source, n) for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in WINDOW_COPIED}
+    for n in tree.body:
+        if isinstance(n, ast.Assign):
+            target = ast.get_source_segment(source, n.targets[0])
+            if target in WINDOW_CONSTANTS:
+                out[target] = ast.get_source_segment(source, n)
+    return out
 
 
 def assert_not_real_repo(root: Path) -> None:
@@ -285,6 +303,10 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     # 写しの突き合わせ（この関数に渡された本体のソースで見る）
     mine, theirs = functions(Path(mod.__file__).read_text(encoding="utf-8")), functions(CRUISE_LOOP.read_text(encoding="utf-8"))
     o["写しが一致する"] = {name: mine.get(name) == theirs.get(name) and mine.get(name) is not None for name in COPIED}
+    # 窓の写し（#1167）は child-cycle.py と突き合わせる——関数 3 つと定数 3 つ
+    mine_w, theirs_w = window_sources(Path(mod.__file__).read_text(encoding="utf-8")), window_sources(CHILD_CYCLE.read_text(encoding="utf-8"))
+    o["窓の写しが一致する"] = {name: mine_w.get(name) == theirs_w.get(name) and mine_w.get(name) is not None
+                         for name in (*WINDOW_COPIED, *WINDOW_CONSTANTS)}
 
     waits: list = []
 
@@ -605,6 +627,40 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
     for key, value in (("0", "0"), ("負", "-1"), ("nan", "nan"), ("inf", "inf"), ("数でない", "abc")):
         o[f"B6 上限 {key}"] = run(mod, ["50", "--max-total-usd", value], root)[0]
 
+
+    # W: auto-compact の窓（#1167）。渡したときだけ --autocompact <トークン数>（追記の後・足す引数の前）。環境変数があれば効かないと言う。拒むのは起動の前（通知もしない）
+    def go_out(key, v, argv, env=None):
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        before = len(notes(home))
+        os.environ.pop("CLAUDE_CODE_AUTO_COMPACT_WINDOW", None)
+        os.environ.update(env or {})
+        out_, err_ = io.StringIO(), io.StringIO()
+        saved_cwd = os.getcwd()
+        os.chdir(root)
+        try:
+            with contextlib.redirect_stdout(out_), contextlib.redirect_stderr(err_):
+                try:
+                    rc_ = mod.main([str(v), *argv])
+                except Exception as exc:  # 変異で落ちたら、それも「違う挙動」として観測する
+                    rc_ = ("例外", type(exc).__name__)
+        finally:
+            os.chdir(saved_cwd)
+            os.environ.pop("CLAUDE_CODE_AUTO_COMPACT_WINDOW", None)
+        o[key] = {"rc": rc_, "lines": [l for l in out_.getvalue().splitlines() if "窓" in l], "stderr": err_.getvalue().strip()[:60],
+                  "argv": [r["argv"] for r in records(home, v)], "notify": len(notes(home)) - before}
+
+    make(80)
+    plan["80"] = [{"ledger": [done(80)]}]
+    go_out("W1 窓 400k", 80, ["--autocompact-window", "400k", "--", "--model", "sonnet"])
+    make(81)
+    plan["81"] = [{"ledger": [done(81)]}]
+    go_out("W2 窓と環境変数", 81, ["--autocompact-window", "1M"], {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"})
+    make(82)
+    plan["82"] = [{"ledger": [done(82)]}]
+    go_out("W3 窓なしと環境変数", 82, [], {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"})
+    for bad in ("400", "99999", "1000001", "4e5", "", "-1", "１００k", "400kk"):
+        go_out(f"W4 拒む {bad!r}", 90, ["--autocompact-window", bad])
+
     # A30: 引数が違う → 2。通知しない
     go("A30 引数", 30, ["--max-same-state", "0"])
     limit = sys.get_int_max_str_digits()
@@ -720,11 +776,31 @@ def main() -> int:
         check("通知の本文は argv で渡す（スクリプトに埋め込まない）",
               bool(body) and all(n[0] == "-e" and "autopilot" not in n[1] and n[2].startswith("autopilot の外側のループ: 止まった") for n in body))
         check(f"写し {', '.join(COPIED)} が cruise の outer-loop.py と一致する", all(a("写しが一致する").values()))
+        print("\nauto-compact の窓（#1167）")
+        w1 = a("W1 窓 400k")
+        check("W1 --autocompact-window 400k は --autocompact 400000 を追記の後・足す引数の前に足し、窓を 1 度出す",
+              w1["rc"] == 0 and w1["argv"] and all(r == ["-p", "/spec-loop:autopilot 80", "--output-format", "stream-json", "--verbose",
+                                                         "--append-system-prompt", mod.APPEND, "--autocompact", "400000", "--model", "sonnet"]
+                                                    for r in w1["argv"])
+              and w1["lines"] == ["auto-compact の窓: 400000 トークンを --autocompact で渡す（起こす claude 1 つにだけ効く）"])
+        w2 = a("W2 窓と環境変数")
+        check("W2 環境変数が設定されていれば、効かないと 1 度言う（それでも渡す）",
+              w2["argv"] and w2["argv"][0][-2:] == ["--autocompact", "1000000"] and len(w2["lines"]) == 2
+              and "窓 1000000 は効かない: 環境変数 CLAUDE_CODE_AUTO_COMPACT_WINDOW='300000'" in w2["lines"][1])
+        w3 = a("W3 窓なしと環境変数")
+        check("W3 窓を渡していなければ、環境変数があっても何も言わず、--autocompact を足さない",
+              w3["lines"] == [] and w3["argv"] and all("--autocompact" not in r for r in w3["argv"]))
+        bads = {k: v for k, v in o.items() if k.startswith("W4 拒む")}
+        check("W4 範囲の外・書式の誤りは起動の前に 2 で拒み、claude を起こさず、通知もしない",
+              len(bads) == 8 and all(v["rc"] == 2 and v["argv"] == [] and v["notify"] == 0 and "--autocompact-window" in v["stderr"] for v in bads.values()))
+        check("窓の写し（関数 3 つと定数 3 つ）が cruise の child-cycle.py と一致する", all(a("窓の写しが一致する").values()) and len(a("窓の写しが一致する")) == 6)
 
         print("\n写しの突き合わせの陽性対照")
         theirs = functions(CRUISE_LOOP.read_text(encoding="utf-8"))
         changed = functions(SCRIPT.read_text(encoding="utf-8").replace("proc.terminate()", "proc.terminate( )"))
         check("1 文字変えた写しは「違う」と出る", changed["stop_child"] != theirs["stop_child"])
+        changed_w = window_sources(SCRIPT.read_text(encoding="utf-8").replace('"k": 1000', '"k": 1024'))
+        check("窓の写しも、1 文字変えると「違う」と出る", changed_w["parse_window"] != window_sources(CHILD_CYCLE.read_text(encoding="utf-8"))["parse_window"])
 
         print("\n終了コードが docstring の表と一致する")
         source = SCRIPT.read_text(encoding="utf-8")

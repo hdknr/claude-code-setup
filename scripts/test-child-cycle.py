@@ -193,6 +193,16 @@ MUTATIONS = {
     "status で子が従う送り手を比べない": [("    print(sender_line(meta))\n", "")],
     "保留されたメッセージを出さない": [('    if summary["holds"]:', "    if False:")],
     "子の標準入力を閉じない": [("stdin=subprocess.DEVNULL, ", "")],
+    "窓を常に渡す": [("    command += window_flag(window)\n", '    command += ["--autocompact", str(window or 400000)]\n')],
+    "窓をトークン数の整数に正規化しない": [('    return [] if tokens is None else ["--autocompact", str(tokens)]', '    return [] if tokens is None else ["--autocompact", str(tokens // 1000)]'),
+                              ('{"": 1, "k": 1000, "m": 1_000_000}', '{"": 1, "k": 1024, "m": 1_000_000}')],
+    "範囲の外を起動の前に拒まない": [("    if not WINDOW_MIN <= tokens <= WINDOW_MAX:", "    if False:")],
+    "環境変数に上書きされても言わない": [("    if tokens is None or value is None or not str(value).strip():", "    if True:")],
+    "窓を渡さなくても環境変数を言う": [
+        ("    if tokens is None or value is None or not str(value).strip():", "    if value is None or not str(value).strip():"),
+        ('    if window is not None:\n        print(f"auto-compact の窓: {window} トークンを --autocompact で渡した")\n        if window_note is not None:\n            print(window_note)\n',
+         '    if window_note is not None:\n        print(window_note)\n    if window is not None:\n        print(f"auto-compact の窓: {window} トークンを --autocompact で渡した")\n')],
+    "窓を記録に残さない": [('            "autocompact": None if window is None else {"tokens": window, "via": "--autocompact", "env_overrides": window_note is not None},\n', "")],
     "子の環境に上限 0 を置かない": [(", env=env)", ")")],
     "cwd をメインの作業ツリーにしない": [("cwd=main_tree, stdin", "cwd=None, stdin")],
     "許可モードを既定に任せる": [('launch.add_argument("--permission-mode", required=True)',
@@ -377,6 +387,14 @@ def stop(pid) -> None:
         os.kill(pid, signal.SIGKILL)
 
 
+def _ok(mod, text):
+    try:
+        mod.parse_window(text)
+    except ValueError:
+        return False
+    return True
+
+
 def scenario(mod, tmp: Path, tag: str) -> dict:
     """全試料を 1 本のリポジトリで走らせ、観測を辞書で返す。**変異の前後で同じ関数を使う。**"""
     o: dict = {}
@@ -504,6 +522,42 @@ def scenario(mod, tmp: Path, tag: str) -> dict:
         wait_for(lambda: run(mod, ["status", NAME, "55"], main)[0] != 1)
         o["--no-structured の要約"] = run(mod, ["status", NAME, "55"], main)[:2]
         os.environ["FAKE_CLAUDE_OUTPUT"] = str(stream)
+
+        # auto-compact の窓（#1167）: 渡したときだけ --autocompact <トークン数>。環境変数に上書きされるときは言う。拒むのは起動の前
+        os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
+        os.environ["FAKE_CLAUDE_SLEEP"] = "0"
+
+        def window_launch(number, window_args, env=None):
+            for key in (mod.AUTOCOMPACT_ENV,):
+                os.environ.pop(key, None)
+            os.environ.update(env or {})
+            try:
+                rc, out, err = run(mod, ["launch", NAME, str(number), "--brief", str(brief), "--permission-mode", "auto", *window_args], main)
+            finally:
+                os.environ.pop(mod.AUTOCOMPACT_ENV, None)
+            m = re.search(r"pid (\d+)", str(out))
+            if m:
+                started.append(int(m.group(1)))
+            rec_w = home / f"claude-rec-{m.group(1)}.json" if m else None
+            argv_w = (json.loads(rec_w.read_text(encoding="utf-8")).get("argv")
+                      if rec_w and wait_for(rec_w.exists) and wait_for(lambda: rec_w.stat().st_size > 0) else None)
+            agent_w = re.search(r"^台帳の agent: claude-p:(.+)$", str(out), re.M)
+            meta_w = json.loads(Path(agent_w.group(1)).read_text(encoding="utf-8")).get("autocompact", "鍵が無い") if agent_w else None
+            return {"rc": rc, "argv": argv_w, "meta": meta_w,
+                    "lines": [l for l in str(out).splitlines() if "窓" in l], "records": len(list(children.glob(f"{number}-*.json")))}
+
+        o["窓 400k"] = window_launch(60, ["--autocompact-window", "400k"])
+        o["窓 1M"] = window_launch(61, ["--autocompact-window", "1M"])
+        o["窓 数字だけ"] = window_launch(62, ["--autocompact-window", "400000"])
+        o["窓 環境変数あり"] = window_launch(63, ["--autocompact-window", "400k"], {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"})
+        o["窓 渡さない・環境変数あり"] = window_launch(64, [], {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "300000"})
+        o["窓 環境変数が空白だけ"] = window_launch(65, ["--autocompact-window", "400k"], {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "  "})
+        before = len(list(home.glob("claude-rec-*.json")))
+        o["窓を拒む"] = {bad: (lambda r: (r["rc"], r["records"]))(window_launch(66, ["--autocompact-window", bad]))
+                         for bad in ("400", "99999", "1000001", "4e5", "", "400 ", "k", "-1", "１００k", "1.5M", "400kk", "0x61A80")}
+        o["窓を拒んだ後に増えた claude の記録"] = len(list(home.glob("claude-rec-*.json"))) - before
+        o["parse_window"] = {t: (mod.parse_window(t) if _ok(mod, t) else "ERR")
+                             for t in ("100000", "100k", "100K", "1000000", "1M", "1m", "099999", "99999", "1000001", "1001k", "2M", "0")}
 
         # 認証（#785）: 子の環境の CLAUDE_CODE_OAUTH_TOKEN の出所。偽の ps が起動した claude の環境を答える
         os.environ.pop("FAKE_CLAUDE_OUTPUT", None)
@@ -680,6 +734,33 @@ def main() -> int:
         check("記録の .json に子へ渡した上限を残す", o["記録の env"] == {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"})
         check("記録は台帳の隣（.claude/plans/cruise-<名前>-children/）に在り、その場所を出す", o["記録の場所"])
         check("worktree の中には書かない", o["worktree に書かない"] == [".git", "sub"])
+
+        print("\nauto-compact の窓（#1167）")
+        def w(name):
+            return o[name]
+        want_tail = lambda r: r["argv"][r["argv"].index("--autocompact"):r["argv"].index("--autocompact") + 2] if r["argv"] and "--autocompact" in r["argv"] else None
+        check("--autocompact-window 400k は子に --autocompact 400000（トークン数の整数）を渡す。記録の autocompact に残し、起動時に窓を出す",
+              w("窓 400k")["rc"] == 0 and want_tail(w("窓 400k")) == ["--autocompact", "400000"]
+              and w("窓 400k")["meta"] == {"tokens": 400000, "via": "--autocompact", "env_overrides": False}
+              and w("窓 400k")["lines"] == ["auto-compact の窓: 400000 トークンを --autocompact で渡した"])
+        check("1M は 1000000、数字だけは 1 つ足さずそのまま（400000）",
+              want_tail(w("窓 1M")) == ["--autocompact", "1000000"] and want_tail(w("窓 数字だけ")) == ["--autocompact", "400000"])
+        check("窓を渡さない起動は --autocompact を足さず、記録の autocompact は null（引数の完全一致は上の起動の形の検査）",
+              w("窓 渡さない・環境変数あり")["rc"] == 0 and "--autocompact" not in w("窓 渡さない・環境変数あり")["argv"]
+              and w("窓 渡さない・環境変数あり")["meta"] is None)
+        check("環境変数が設定されていると、渡した窓が効かないと言う（それでも渡す。記録の env_overrides が true）",
+              want_tail(w("窓 環境変数あり")) == ["--autocompact", "400000"] and w("窓 環境変数あり")["meta"]["env_overrides"] is True
+              and len(w("窓 環境変数あり")["lines"]) == 2
+              and "窓 400000 は効かない: 環境変数 CLAUDE_CODE_AUTO_COMPACT_WINDOW='300000' が設定されていて" in w("窓 環境変数あり")["lines"][1])
+        check("窓を渡していなければ、環境変数があっても何も言わない", w("窓 渡さない・環境変数あり")["lines"] == [])
+        check("環境変数が空白だけなら設定されていないものとして、効かないとは言わない",
+              w("窓 環境変数が空白だけ")["meta"]["env_overrides"] is False and len(w("窓 環境変数が空白だけ")["lines"]) == 1)
+        check("範囲の外・書式の誤り（400・99999・1000001・4e5・空・全角・小数・k の重なり・16 進）は全部 2 で、記録を作らない",
+              set(w("窓を拒む").values()) == {(2, 0)} and len(w("窓を拒む")) == 12)
+        check("拒んだ起動は claude を 1 つも起こさない", w("窓を拒んだ後に増えた claude の記録") == 0)
+        check("境界: 100000・100k・1000000・1M は通り、99999・1000001・2M・0 は拒む（先頭の 0 は読み飛ばす）",
+              w("parse_window") == {"100000": 100000, "100k": 100000, "100K": 100000, "1000000": 1000000, "1M": 1000000, "1m": 1000000,
+                                    "099999": "ERR", "99999": "ERR", "1000001": "ERR", "1001k": "ERR", "2M": "ERR", "0": "ERR"})
 
         print("\n認証（#785）: 子の環境の CLAUDE_CODE_OAUTH_TOKEN")
         def auth(n):

@@ -3,7 +3,8 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
 `running` のあいだだけ `claude -p` を 1 回ずつ起こし、使用量の上限に当たったら解除の時刻まで待って起こし直す。
 
     python3 <spec-loop の根>/scripts/autopilot-loop.py <版> [--max-launches 20] [--max-stalls 2] [--max-same-state 3] \
-        [--limit-wait 1800] [--max-limit-wait 21600] [--max-total-usd <ドル>] [--claude claude] [--prompt "/spec-loop:autopilot <版>"] [-- <claude に足す引数> …]
+        [--limit-wait 1800] [--max-limit-wait 21600] [--max-total-usd <ドル>] [--autocompact-window <トークン数>] [--claude claude] [--prompt "/spec-loop:autopilot <版>"] \
+        [-- <claude に足す引数> …]
 
 長期トークン（#584）で起こすなら、dev-loop の起動口を `--claude` に渡す——`--claude "bash <dev-loop の skills/dev-loop>/scripts/launch-with-long-token.sh"`
 （アカウントを分けるなら起動口の決まりどおり `… launch-with-long-token.sh --account <名前>`）。起動口は受けた引数をそのまま `claude` に渡す。
@@ -16,7 +17,7 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
 
 **cruise の外側のループ（dev-loop の `skills/cruise/scripts/outer-loop.py`。#791）を写した形だが、import も相対パスでの呼び出しもしない**——spec-loop だけを
 入れた利用者に dev-loop が在るとは限らず、プラグインをまたいで相対パスで指せない（`autopilot-ledger.py` の `main_worktree` の写しと同じ理由）。
-**写しは `notify`・`stop_child`・`cost_of`・`read_cost` の 4 関数だけ**で、元とずれないことを `scripts/test-autopilot-loop.py`（リポジトリの根）が関数のソースを突き合わせて見る。
+**写しは `notify`・`stop_child`・`cost_of`・`read_cost` の 4 関数だけ**（と、#1167 の窓の `parse_window`・`window_flag`・`window_override_note` の 3 関数と定数——こちらの元は `child-cycle.py`）で、元とずれないことを `scripts/test-autopilot-loop.py`（リポジトリの根）が関数のソースを突き合わせて見る。
 ループの本体は、cruise に無い止め方（同じ状態での起動の上限・使用量の上限の待ち）を持つので写しにしていない。
 
 ## 1 回の起動
@@ -30,11 +31,15 @@ r"""spec-loop の autopilot（#789）を外から繰り返し起こすループ�
    **`--max-total-usd` を渡したなら**、費用を取れなかった起動が 1 つでもあれば（12）、取れた分の合計が上限以上なら（11）、起こさずに止まる（下の「費用の数え方」）。
 4. メインの作業ツリー（台帳の場所——`autopilot-ledger.py path` から）を cwd に、標準入力を閉じて
 
-       <--claude> -p <--prompt> --output-format stream-json --verbose --append-system-prompt <追記> [<足す引数> …]
+       <--claude> -p <--prompt> --output-format stream-json --verbose --append-system-prompt <追記> [--autocompact <トークン数>] [<足す引数> …]
 
    を起こし、終わるのを待つ。標準出力と標準エラーは台帳の隣の `spec-autopilot-v<版>-loop/` に起動ごとのファイルで残す（使用量の上限を読むため）。
    環境には **`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`** を置く——`-p` はターンを閉じた後の背景のタスクを上限の時間しか待たずに止める（#633。
    cruise の `outer-loop.py` と同じ。0 で止めずに待つことは測っていない）。利用者の環境に別の値があっても 0 で上書きし、上書きしたことを出す。
+   **`--autocompact-window <値>` を渡したときだけ、起こす `claude` に `--autocompact <トークン数>` を足す**（#1167。**既定は渡さない**——渡さなければ起動コマンドは今と変わらない）。
+   値の書式（数字だけ・`400k`・`1M`）・範囲（100000〜1000000）・トークン数への正規化・環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` に上書きされるときの表示は、cruise の
+   `child-cycle.py` の `parse_window`・`window_flag`・`window_override_note` と同じ（**写しで、import も相対パスの呼び出しもしない**——上と同じ理由。ソースが一致することはテストが見る）。
+   **書式・範囲の誤りは 2（起動の前）。** 窓は最初の起動の前に 1 度だけ出し、環境変数があれば効かないとも言う。
    **追記（`APPEND`）は、非対話の起動の決まりを渡す**——`status` が `running` でなければ何もせず台帳も書き換えずに終える・進めるのは次の 1 単位まで
    （#790 の直し方の「ループが終われなかったときの二重の歯止め」）。原本は入口のスキル（#849）で、追記は短く指すだけにする。
 5. その起動の費用を数え（下の「費用の数え方」）、`費用:` の行に出す。
@@ -78,7 +83,7 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 | コード | 意味 |
 | --- | --- |
 | 0 | 済んだ——`status` が 5（`done`） |
-| 2 | 引数が違う（版の形——正の整数で先頭に 0 を付けない・桁が `int()` の上限を超える・上限が 1 未満・待ちが負・`--max-total-usd` が正の有限の数でない・`--claude` を語に分けられない・`--prompt` が空）。**通知しない**（引数を読む前に止まる） |
+| 2 | 引数が違う（版の形——正の整数で先頭に 0 を付けない・桁が `int()` の上限を超える・上限が 1 未満・待ちが負・`--max-total-usd` が正の有限の数でない・`--autocompact-window` の書式と範囲・`--claude` を語に分けられない・`--prompt` が空）。**通知しない**（引数を読む前に止まる） |
 | 3 | 止まった——`status` が 3（`stopped`）。理由と利用者に頼むことは `autopilot-ledger.py status <版>` の出力（止まった行にも写す） |
 | 4 | 判定できなかった——`status` が 4 か表に無い値・`progress` が 0 以外・台帳の場所を決められない・出力の置き場を作れない・ループの中の予期しない例外。**「済んだ」とも「止まった」とも答えていない** |
 | 6 | 前進なし——`progress` の変わらない起動が続けて `--max-stalls` 回 |
@@ -125,6 +130,9 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 - **`claude` の cwd はメインの作業ツリー**——worktree の中・サブディレクトリから呼んでも同じ。
 - **`claude` の環境に `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` を置く**——利用者の環境に無くても、別の値があっても（上書きしたと出す）。
 - **`--append-system-prompt` で追記（`APPEND`）を渡す。**
+- **`--autocompact-window` を渡したときだけ、起こす `claude` に `--autocompact <トークン数>` を足す**（#1167）——渡さなければ起動コマンドは変えない。
+- **窓はトークン数（100000〜1000000）の整数に正規化し、範囲の外・書式の誤りは起動の前に 2 で拒む**——`parse_window` は `child-cycle.py` の写しで、ソースが一致する。
+- **渡した窓を起動の前に 1 度出し、環境変数 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` が設定されていれば効かないと言う**——設定されていなければ・窓を渡さなければ言わない。
 - **`--output-format stream-json --verbose` を付けて起こす**——上限を `rate_limit_event`・`result` で読むため。
 - **`--claude` に渡したコマンドに、`-p` と同じ引数を渡す**——長期トークンの起動口（`launch-with-long-token.sh`）を挟んでも、`claude` が同じ引数を受ける。
 - **版は正の整数だけで、先頭の 0 と桁が `int()` の上限を超える値を 2 で拒む**——台帳と同じ形（`autopilot-ledger.py` が `03` を拒むので、ここで別の台帳を指さない）。
@@ -155,6 +163,8 @@ JSON として読めない行は、文言 `usage limit reached`・`hit your limi
 - **台帳と実物（コミット・PR）が一致しているか**——`status` も `progress` も台帳の値だけで決める（`autopilot-ledger.py` の「守らない」）。
 - **通知が見えること**——`osascript` が 0 で終わったかも見ない。`osascript` の無い環境（macOS 以外）では通知を出さない（理由は標準出力に出る）。
 - **1 回の起動の長さ**——`claude` を待つだけで、時間で打ち切らない。
+- **窓が実際に効くか**——`--autocompact` を渡すまでである。実物の `claude` で窓が効くことを確かめたのは cruise の子プロセスの起動口（`child-cycle.py`。小さな呼び出し）で、
+  この外側のループが起こす実物の autopilot では確かめていない。環境変数に上書きされるかは、起動した時点の環境の値で言うだけで、settings の `env` が重ねる値は読まない。
 - **`claude` の版・許可モード・モデル・認証**——足す引数（`--` の後ろ）と `--claude` で利用者が決める。長期トークンの起動口が読めない（キーチェーンに無い）なら、起動口が
   0 以外で終わるので 8 で止まる。
 - **同じ台帳を回すループ・対話のセッションが他に走っていないか**——台帳を書くのは 1 体である。
@@ -184,6 +194,12 @@ LEDGER = Path(__file__).resolve().parent / "autopilot-ledger.py"
 BG_CEILING = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
 GRACE = 10  # 中断のとき claude の後始末を待つ秒数（過ぎたら SIGKILL）
 LIMIT_MARGIN = 60  # 解除の時刻のあと、起こし直すまでに足す秒数
+
+# auto-compact の窓（#1167）。**cruise の `child-cycle.py` の `parse_window`・`window_flag`・`window_override_note` と定数の写し**——プラグインをまたいで読み込まない（上の理由）。
+# ソースが一致することを `scripts/test-autopilot-loop.py` が見る
+AUTOCOMPACT_ENV = "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
+WINDOW_MIN, WINDOW_MAX = 100_000, 1_000_000
+WINDOW_FORM = re.compile(r"([0-9]{1,12})([kKmM]?)")  # ASCII の数字だけ。桁を絞って `int()` の桁数の上限に当たらない
 # 非対話の起動の決まり（#850）。原本は入口のスキル（#849）——ここは #790 の二重の歯止めを短く渡すだけ
 APPEND = (
     "この起動は spec-loop の autopilot の外側のループ（autopilot-loop.py）が起こした非対話の起動で、利用者は応答しない（#850）。"
@@ -208,6 +224,32 @@ EXIT_LIMIT_FAR = 10
 EXIT_BUDGET = 11
 EXIT_COST_UNKNOWN = 12
 EXIT_INTERRUPTED = 130
+
+
+def parse_window(text):
+    """窓の指定をトークン数の整数にする。数字だけ（トークン数）・`k`（千）・`M`（百万）。読めない・範囲（100000〜1000000）の外なら ValueError。"""
+    form = WINDOW_FORM.fullmatch(text) if isinstance(text, str) else None
+    if form is None:
+        raise ValueError(f"窓の書式が違う: {text!r}（数字だけ（トークン数）・400k・1M の形）")
+    tokens = int(form.group(1)) * {"": 1, "k": 1000, "m": 1_000_000}[form.group(2).lower()]
+    if not WINDOW_MIN <= tokens <= WINDOW_MAX:
+        hint = "（数字だけはトークン数——400k と書けば 400000）" if not form.group(2) and tokens < WINDOW_MIN else ""
+        raise ValueError(f"窓が範囲の外: {text!r} は {tokens} トークン（{WINDOW_MIN}〜{WINDOW_MAX}）{hint}")
+    return tokens
+
+
+def window_flag(tokens):
+    """子の `claude` に足す引数。窓を渡さなければ空（起動コマンドを変えない）。"""
+    return [] if tokens is None else ["--autocompact", str(tokens)]
+
+
+def window_override_note(tokens, env):
+    """渡した窓が環境変数に上書きされて効かないなら、そう言う 1 行。窓を渡していない・環境変数が無い（空）なら None。"""
+    value = env.get(AUTOCOMPACT_ENV)
+    if tokens is None or value is None or not str(value).strip():
+        return None
+    return (f"窓 {tokens} は効かない: 環境変数 {AUTOCOMPACT_ENV}={str(value).strip()[:40]!r} が設定されていて、"
+            "--autocompact より優先される（効くのは環境変数の値）")
 
 
 def ledger(*args):
@@ -375,7 +417,7 @@ def over_budget(args):
 def launch(args, main_tree, logs, n):
     """(終了コード か None, 出力のファイルの組)。"""
     cmd = [*args.claude_cmd, "-p", args.prompt, "--output-format", "stream-json", "--verbose",
-           "--append-system-prompt", APPEND, *args.extra]
+           "--append-system-prompt", APPEND, *window_flag(args.window), *args.extra]
     env = dict(os.environ)
     if env.get(BG_CEILING) not in (None, "0"):
         print(f"{BG_CEILING}={env[BG_CEILING]} を 0 で上書きした")
@@ -422,6 +464,11 @@ def run_loop(args):
         logs.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         return EXIT_UNKNOWN, f"出力の置き場を作れない（{logs}: {exc}）"
+    if args.window is not None:
+        print(f"auto-compact の窓: {args.window} トークンを --autocompact で渡す（起こす claude 1 つにだけ効く）", flush=True)
+        note = window_override_note(args.window, os.environ)
+        if note is not None:
+            print(note, flush=True)
     launches = stalls = 0
     seen = {}
     while True:
@@ -497,6 +544,8 @@ def build_parser():
     p.add_argument("--limit-wait", type=int, default=1800, help="上限の解除の時刻が読めないとき待つ秒数（既定 1800）")
     p.add_argument("--max-limit-wait", type=int, default=21600, help="これより長く待つなら止まる（秒。既定 21600）")
     p.add_argument("--max-total-usd", type=float, default=None, help="費用の合計の上限（ドル。既定なし——上限なし）")
+    p.add_argument("--autocompact-window", default=None,
+                   help="起こす claude に渡す auto-compact の窓（トークン数・400k・1M。100000〜1000000。既定は渡さない。#1167）")
     p.add_argument("--claude", default="claude", help="claude を起こすコマンド（既定 claude。長期トークンなら起動口）")
     p.add_argument("--prompt", default=None, help="起こす文（既定 /spec-loop:autopilot <版>）")
     return p
@@ -524,6 +573,16 @@ def main(argv=None):
         args.claude_cmd = shlex.split(args.claude)
     except ValueError:
         args.claude_cmd = []
+    args.window = None
+    window_problem = None
+    if args.autocompact_window is not None:
+        try:
+            args.window = parse_window(args.autocompact_window)
+        except ValueError as exc:
+            window_problem = str(exc)
+    if window_problem is not None:
+        print(f"引数が違う: --autocompact-window: {window_problem}", file=sys.stderr)
+        return EXIT_USAGE
     # ASCII の数字だけで、先頭の 0 を付けない（台帳と同じ形）。桁が `int()` の上限（`sys.get_int_max_str_digits()`。0 は上限なし）を超えるものも拒む
     limit = getattr(sys, "get_int_max_str_digits", lambda: 0)()
     if (not re.fullmatch(r"[1-9][0-9]*", args.version) or (limit and len(args.version) > limit)
