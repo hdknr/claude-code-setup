@@ -99,6 +99,8 @@ QA_SHOWN = ["No", "質問", "選択肢", "推奨", "回答", "状態"]
 # Q&A の行の分け方（`references/mock.md` の「未回答・未反映」）
 UNANSWERED, UNREFLECTED, PROVISIONAL, REFLECTED = "未回答", "未反映", "暫定反映", "反映済み"
 
+# 見出しの見た目の注記（#1082。原本は spec-loop の `references/spec-scope.md` の「見た目」。この文書の写しは `references/mock.md` の「出力」）
+APPEARANCE_NOTE = "確かめるのは項目・操作・遷移で、見た目（色・余白・フォント）は確かめる対象ではない"
 LIST = "一覧"  # 項目の種類のうち、行の並ぶ表（`references/tables.md` の「項目の種類」）
 
 GIT_LOCATION = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE")
@@ -1082,7 +1084,7 @@ def render_html(number: int, data: dict, renderers: dict[str, str]) -> str:
 <style>{STYLE}</style>
 </head>
 <body>
-<header class="bar"><span>画面モック（画面の表から生成した参考資料。受入基準ではない）</span><label>画面 <select id="screen-picker" aria-label="画面"></select></label></header>
+<header class="bar"><span>画面モック（画面の表から生成した参考資料。受入基準ではない）。{html.escape(APPEARANCE_NOTE)}</span><label>画面 <select id="screen-picker" aria-label="画面"></select></label></header>
 <div id="message" role="status"></div>
 <section class="panel" id="agenda"><details open><summary>レビュー会の進め方（今回の会の質問。選ぶとその画面に飛ぶ）</summary><ol id="agenda-list"></ol></details></section>
 <section class="panel" id="removed"><details><summary>消したもの</summary><ul id="removed-list"></ul></details></section>

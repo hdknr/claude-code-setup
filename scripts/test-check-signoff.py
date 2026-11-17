@@ -17,6 +17,8 @@
    だけ・`removed.csv` の内部の Q&A の行・理由・行の順序だけが違う組も**（`removed.csv` のファイルの行は範囲の外の対象でも比べる——
    `merge` が拒否する行なので。#372 の B）。**`.` で始まる名前だけの違いも**——途中の `.` で始まるディレクトリの中も含む）。
    **形式検査のモデル（`spec/formal/`。前の版のものも）だけ・`removed.csv` でそこのファイルを消した行だけが違う組も一致**（#908）。
+   **レビュー会の記録（`reviews/<日付>/` の会で見せたモックの写し・会の記録）を足しても結果が変わらない**——足しただけの組は一致のまま、
+   中身が違う組に足しても同じ 1 と同じ差分（記録のパスは出ない）（#1082）。
 3. **「最新」を数で選ぶ**（`-10` > `-9`）・**命名に合わないタグ（旧い `v<n>/req-signoff-<k>`・`req-signoff-v<n>` を含む）を数えない**・
    指定したタグで照合する・**版を省けば作業中の版（番号の最大）**・`--version` で版を選ぶ・
    **素の `v1` タグがあっても（先でも後でも）承認のタグを作れて照合が 0 になる**（#270）。
@@ -101,6 +103,15 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
      [], 0, "一致する"),
     ("中身が違う", [("w", SHARED, QA_A), ("c",), ("t", R1),
                   ("w", SHARED, QA_B), ("c",), ("t", B1)],
+     [], 1, "M\tdocs/v1/shared/qa.csv"),
+    # レビュー会の記録（#1082）——版の外なので、足しても「一致」「中身が違う」と同じ結果
+    ("レビュー会の記録だけ違う", [("w", SHARED, QA_A), ("c",), ("t", R1),
+                           ("w", "reviews/2026-11-20/mock.html", "<!doctype html><title>モック</title>\n"),
+                           ("w", "reviews/2026-11-20/notes.csv", "種類,No,対象,メモ,発言者\n指摘,,S-001,要る,業務部\n"),
+                           ("c",), ("t", B1)],
+     [], 0, f"一致する: {R1}"),
+    ("中身が違い、レビュー会の記録も足した", [("w", SHARED, QA_A), ("c",), ("t", R1),
+                                   ("w", SHARED, QA_B), ("w", "reviews/2026-11-20/mock.html", "<!doctype html>\n"), ("c",), ("t", B1)],
      [], 1, "M\tdocs/v1/shared/qa.csv"),
     ("ファイルの追加", [("w", SHARED, QA_A), ("c",), ("t", R1),
                     ("w", "docs/v1/shared/nfr.csv", "a\n"), ("c",), ("t", B1)],
@@ -468,6 +479,9 @@ UNCHECKED_REMOVED = (
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # 陽性対照（#1082）——比べる場所に正本の根のレビュー会の記録を足すと、記録だけ違う組が 1 になる
+    ("レビュー会の記録も比べる", '    paths.append(f"{DOCS}/v1/{REMOVED}")\n',
+     '    paths.append(f"{DOCS}/v1/{REMOVED}")\n    paths.append(":(top)reviews")\n', "レビュー会の記録だけ違う"),
     ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "要求確定の時点の Q&A 表に巨大なセル"),
     ("最新を文字列で選ぶ", "numbered = [(int(m.group(1)), name)", "numbered = [(m.group(1), name)", "最新を数で選ぶ"),
@@ -770,10 +784,15 @@ def merge_refusing(root: Path) -> list[str]:
     return module.merge(root / "docs")[0]
 
 
+# 出力に出てはならない文字列（#1082——レビュー会の記録は比べる範囲の外なので、差分にも出ない）
+ABSENT = {"中身が違い、レビュー会の記録も足した": "reviews/", "レビュー会の記録だけ違う": "reviews/"}
+
+
 def as_expected(name: str, result: tuple[int | None, str]) -> bool:
     expected = next(case for case in CASES if case[0] == name)
     once = name not in ONCE or result[1].count(ONCE[name]) == 1
-    return result[0] == expected[3] and expected[4] in result[1] and once and "Traceback" not in result[1]
+    absent = name not in ABSENT or ABSENT[name] not in result[1]
+    return result[0] == expected[3] and expected[4] in result[1] and once and absent and "Traceback" not in result[1]
 
 
 # 想定外の例外・読めなさの原因（#286）。(名前, 壊す前, 壊した後)

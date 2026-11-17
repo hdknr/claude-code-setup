@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Q&A 表（`qa.csv`）から、レビュー会用の PPTX を作る。
 
-usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>] [--focus <No>[,<No>…]] [--links <JSON>]
+usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--subtitle <表紙の副題>] [--focus <No>[,<No>…]] [--links <JSON>] [--groups <JSON>]
 
 **載せるのは、利用者にまだ見せる行だけ**——`状態` が `check-qa-csv.py` の
 `DONE` でない行である（状態の意味は `references/qa-csv.md` を正とする）。回答待ち・回答はあるが未反映の行に加えて、
@@ -25,6 +25,16 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 守るのは次だけ: **読めない・JSON のオブジェクトでない・鍵が資料に載る行の番号でない（反映済み・表に無い）・値が空（XML に書けない文字を外した後で）か文字列でない・`--links` を 2 度書いた、はどれも 2**
 （出力を作らず、既存の出力に触らない）。**`--links` を渡さなければ、出力は前と同じバイト**——段落も関係も足さない。
 
+**`--groups <JSON>` で、質問のまとめ方を外から渡す**（#1082）——JSON のオブジェクトで、鍵がまとまりの名前、値が質問の番号の並び
+（req-loop は同梱の `review-meeting.py groups` が画面の表の逆引きで作ったものを渡す。どうまとめるかは req-loop の `SKILL.md` の手順 4 を正とする）。
+一覧はまとまりの順に、まとまりの名前の行を挟んで並べ、1 問 1 枚の前に、まとまりごとに区切りの 1 枚（名前と質問の数）を置く。まとまりの中の質問は渡した順。
+守るのは次だけ: **資料に載る行がどれもちょうど 1 つのまとまりに入る**——読めない・JSON のオブジェクトでない・名前が空・値が空でない番号の並びでない・
+資料に載る行でない番号・2 つのまとまりに入る番号・どのまとまりにも無い載る行・`--groups` を 2 度書いた、はどれも 2（出力を作らず、既存の出力に触らない）。
+**`--groups` を渡さなければ、並びは前と同じ**（表の順）。
+
+**`--groups` か `--links` を渡したら、表紙に見た目の注記（`APPEARANCE_NOTE`）を足す**（#1082）——モックを見せて進める会で、確かめるのは項目・操作・遷移で、
+見た目は確かめる対象ではないことを冒頭で示す（決まりの原本は `references/spec-scope.md` の「見た目」）。どちらも渡さなければ足さない。
+
 **載せるのは共有の層の表だけ**——内部の層の表（`check-qa-csv.py` の `INTERNAL_NAME`）を渡されたら作らない（2）。
 内部の質問は開発者が決めるもので、利用者に見せない（`references/qa-csv.md` の「層」。#330）。
 
@@ -44,7 +54,7 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 
 - 0: 作った（載せた質問の数を、回答待ち・未反映と暫定に分けて出す）
 - 1: 列検査を通らない（**出力は作らない。既存の出力にも触らない**）
-- 2: 引数の誤り（`--focus` の番号が資料に載る行に無い・重複・空・`FOCUS_MAX` 問を超える・`--focus` を 2 度書いた、`--links` の拒む形、を含む）・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・
+- 2: 引数の誤り（`--focus` の番号が資料に載る行に無い・重複・空・`FOCUS_MAX` 問を超える・`--focus` を 2 度書いた、`--links`・`--groups` の拒む形、を含む）・表が読めない・**出力先が入力の表と同じファイル**・**内部の層の表**・
   **書いたパスと大文字小文字だけ違う名前を開く表**（`docs/v2/shared/qa.csv` と書いてディスクが `Shared/`。`check-qa-csv.py` の `misspelled`。#514）・想定外の例外（128KB を超えるセルの
   `csv.Error` など。書いている途中でも一時ファイルを消すので既存の出力は残る。#286）（**同上**）
 - 3: 出力を書けなかった（**既存の出力は残る**——一時ファイルに書いてから置き換える）
@@ -94,6 +104,8 @@ SLIDE_W, SLIDE_H = 12192000, 6858000
 MARGIN = 457200
 INDEX_PER_SLIDE = 10
 FOCUS_MAX = 3  # 「今回の会で決めたい問」の上限（#1042。元記事の「最大 3 問ずつ」に合わせる）
+# 表紙の見た目の注記（#1082。原本は `references/spec-scope.md` の「見た目」。screen-spec の生成器のモックの見出しにも同じ文がある）
+APPEARANCE_NOTE = "確かめるのは項目・操作・遷移で、見た目（色・余白・フォント）は確かめる対象ではない"
 ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 
 # XML 1.0 に書けない文字（タブ・改行・復帰を除く制御文字など）
@@ -199,29 +211,41 @@ def slide(title: list[str], body: list[str]) -> str:
 
 # ---------------------------------------------------------------- スライドの中身
 
-def cover(title: str, subtitle: str, rows: list[dict[str, str]]) -> str:
+def cover(title: str, subtitle: str, rows: list[dict[str, str]], note: bool = False) -> str:
     settled = sum(qa.is_provisional(row) for row in rows)
     body = lines_of(f"回答待ち・未反映の質問: {len(rows) - settled} 件", 2400)
     body += lines_of(f"暫定の回答（反映済み・確認待ち）: {settled} 件", 2400)
     if subtitle:
         body = lines_of(subtitle, 2000) + body
+    if note:
+        body += [paragraph("", 1200)] + lines_of(APPEARANCE_NOTE, 1800)
     return slide(lines_of(title, 4000, bold=True), body)
 
 
-def index_slides(rows: list[dict[str, str]]) -> list[str]:
+def index_slides(rows: list[dict[str, str]], names: list[str] | None = None) -> list[str]:
+    """`names` は `rows` と同じ長さの、行ごとのまとまりの名前（`--groups`。無ければ None）。"""
     if not rows:
         return [slide(lines_of("一覧", 3200, bold=True), lines_of("載せる質問はありません", 2000))]
-    chunks = [rows[i:i + INDEX_PER_SLIDE] for i in range(0, len(rows), INDEX_PER_SLIDE)]
+    chunks = [range(i, min(i + INDEX_PER_SLIDE, len(rows))) for i in range(0, len(rows), INDEX_PER_SLIDE)]
     out = []
     for n, chunk in enumerate(chunks, 1):
         head = "一覧" if len(chunks) == 1 else f"一覧（{n}/{len(chunks)}）"
         body = []
-        for row in chunk:
+        for i in chunk:
+            row = rows[i]
+            if names is not None and (i == chunk.start or names[i] != names[i - 1]):
+                more = "（続き）" if i > 0 and names[i] == names[i - 1] else ""
+                body += lines_of(f"【{names[i]}】{more}", 1600, bold=True)
             first = split_lines(row["質問"])[0]
             mark = "（暫定）" if qa.is_provisional(row) else ""
             body += lines_of(f"{row['No']}{mark}  {first}  ［{recommendation_label(row)}］", 1600)
         out.append(slide(lines_of(head, 3200, bold=True), body))
     return out
+
+
+def group_slide(name: str, count: int) -> str:
+    """まとまりの区切りの 1 枚（`--groups`）。"""
+    return slide(lines_of(name, 3600, bold=True), lines_of(f"質問 {count} 件", 2400))
 
 
 def focus_slide(rows: list[dict[str, str]]) -> str:
@@ -496,13 +520,27 @@ def package(slides: list[str], title: str, links: list[str | None] | None = None
 
 
 def build(rows: list[dict[str, str]], title: str, subtitle: str,
-          focus: list[dict[str, str]] | None = None, links: dict[str, str] | None = None) -> list[tuple[str, str]]:
+          focus: list[dict[str, str]] | None = None, links: dict[str, str] | None = None,
+          groups: list[tuple[str, list[dict[str, str]]]] | None = None) -> list[tuple[str, str]]:
+    note = links is not None or groups is not None
     links = links or {}
-    head = [cover(title, subtitle, rows)] + ([focus_slide(focus)] if focus else [])
-    front = head + index_slides(rows)
-    question_links = [links.get(r["No"].strip()) for r in rows]
-    slides = front + [question_slide(r, link) for r, link in zip(rows, question_links)]
-    return package(slides, title, [None] * len(front) + question_links)
+    head = [cover(title, subtitle, rows, note)] + ([focus_slide(focus)] if focus else [])
+    if groups is None:
+        front = head + index_slides(rows)
+        question_links = [links.get(r["No"].strip()) for r in rows]
+        slides = front + [question_slide(r, link) for r, link in zip(rows, question_links)]
+        return package(slides, title, [None] * len(front) + question_links)
+    ordered = [row for _, members in groups for row in members]
+    front = head + index_slides(ordered, [name for name, members in groups for _ in members])
+    slides, slide_links = list(front), [None] * len(front)
+    for name, members in groups:
+        slides.append(group_slide(name, len(members)))
+        slide_links.append(None)
+        for row in members:
+            link = links.get(row["No"].strip())
+            slides.append(question_slide(row, link))
+            slide_links.append(link)
+    return package(slides, title, slide_links)
 
 
 def read_links(path: Path, rows: list[dict[str, str]]) -> tuple[dict[str, str], str | None]:
@@ -522,6 +560,38 @@ def read_links(path: Path, rows: list[dict[str, str]]) -> tuple[dict[str, str], 
     if empty:
         return {}, f"--links の {', '.join(empty)} のリンクが空か文字列でない"
     return {n: v.strip() for n, v in data.items()}, None
+
+
+def read_groups(path: Path, rows: list[dict[str, str]]) -> tuple[list[tuple[str, list[dict[str, str]]]], str | None]:
+    """(`--groups` のまとまり（名前, 行）の並び, 問題) を返す。問題があれば並びは空。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        return [], f"--groups の {path} を JSON として読めない（{type(e).__name__}）"
+    if not isinstance(data, dict):
+        return [], f"--groups の {path} が JSON のオブジェクトでない（鍵がまとまりの名前、値が質問の番号の並び）"
+    by_no = {row["No"].strip(): row for row in rows}
+    seen: set[str] = set()
+    out: list[tuple[str, list[dict[str, str]]]] = []
+    for name, numbers in data.items():
+        if not INVALID_XML.sub("", name).strip():
+            return [], "--groups にまとまりの名前が空のものがある"
+        if not isinstance(numbers, list) or not numbers or not all(isinstance(n, str) for n in numbers):
+            return [], f"--groups の {name} の値が、質問の番号の空でない並びでない"
+        members = []
+        for number in numbers:
+            number = number.strip()
+            if number not in by_no:
+                return [], f"--groups の {name} の {number or '（空）'} は資料に載る行に無い（反映済みか、表に無い）"
+            if number in seen:
+                return [], f"--groups の {number} が 2 つのまとまりに入っている"
+            seen.add(number)
+            members.append(by_no[number])
+        out.append((name.strip(), members))
+    missing = [no for no in by_no if no not in seen]
+    if missing:
+        return [], f"--groups のどのまとまりにも無い載る行: {', '.join(missing)}"
+    return out, None
 
 
 def write(parts: list[tuple[str, str]], out: Path) -> None:
@@ -544,16 +614,16 @@ def write(parts: list[tuple[str, str]], out: Path) -> None:
 
 # ---------------------------------------------------------------- 入口
 
-def parse(argv: list[str]) -> tuple[Path, Path, str, str, list[str] | None, Path | None] | None:
-    args, opts = [], {"--title": "レビュー会の確認事項", "--subtitle": "", "--focus": None, "--links": None}
+def parse(argv: list[str]) -> tuple[Path, Path, str, str, list[str] | None, Path | None, Path | None] | None:
+    args, opts = [], {"--title": "レビュー会の確認事項", "--subtitle": "", "--focus": None, "--links": None, "--groups": None}
     it = iter(argv)
     for a in it:
         if a in opts:
             value = next(it, None)
             if value is None:
                 return None
-            if a in ("--focus", "--links") and opts[a] is not None:
-                return None  # 2 度目の --focus・--links で前の値を黙って捨てない（#1042 の 1 パス目・#1100）
+            if a in ("--focus", "--links", "--groups") and opts[a] is not None:
+                return None  # 2 度目の --focus・--links・--groups で前の値を黙って捨てない（#1042 の 1 パス目・#1100・#1082）
             opts[a] = value
         elif a.startswith("--"):
             return None
@@ -563,7 +633,8 @@ def parse(argv: list[str]) -> tuple[Path, Path, str, str, list[str] | None, Path
         return None
     focus = None if opts["--focus"] is None else [n.strip() for n in opts["--focus"].split(",")]
     links = None if opts["--links"] is None else Path(opts["--links"])
-    return Path(args[0]), Path(args[1]), opts["--title"], opts["--subtitle"], focus, links
+    groups = None if opts["--groups"] is None else Path(opts["--groups"])
+    return Path(args[0]), Path(args[1]), opts["--title"], opts["--subtitle"], focus, links, groups
 
 
 def main(argv: list[str]) -> int:
@@ -572,7 +643,7 @@ def main(argv: list[str]) -> int:
         print(__doc__.splitlines()[2] if __doc__ else
               f"usage: python3 {Path(__file__).name} …（-OO で docstring が無く、使い方を出せない）", file=sys.stderr)
         return 2
-    src, out, title, subtitle, numbers, links_path = parsed
+    src, out, title, subtitle, numbers, links_path, groups_path = parsed
     problem = qa.misspelled(src)
     if problem:  # 区別しないファイルシステムでだけ開ける綴り違いの表から作らない（#514）
         print(f"{problem}。PPTX を作らない", file=sys.stderr)
@@ -602,14 +673,21 @@ def main(argv: list[str]) -> int:
         if problem:
             print(f"{src}: {problem}。PPTX を作らない", file=sys.stderr)
             return 2
+    groups = None
+    if groups_path is not None:
+        groups, problem = read_groups(groups_path, rows)
+        if problem:
+            print(f"{src}: {problem}。PPTX を作らない", file=sys.stderr)
+            return 2
     try:
-        write(build(rows, title, subtitle, focus, links), out)
+        write(build(rows, title, subtitle, focus, links, groups), out)
     except OSError as e:
         print(f"{out}: 書けない（{e.strerror}）。既存の出力には触っていない", file=sys.stderr)
         return 3
     settled = sum(qa.is_provisional(row) for row in rows)
     picked = f"・今回の会で決めたい問 {len(focus)} 問" if focus else ""
     picked += f"・モックへのリンク {len(links)} 問" if links else ""
+    picked += f"・まとまり {len(groups)}" if groups else ""
     print(f"{out}: 質問 {len(rows)} 件を載せた（回答待ち・未反映 {len(rows) - settled} 件・暫定の回答 {settled} 件{picked}）")
     return 0
 
