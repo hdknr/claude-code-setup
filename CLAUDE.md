@@ -32,7 +32,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#1001。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。正本が無ければ何も求めずに 0。
       申告の値・変える周が残すもの・正本が別リポジトリのとき・Red テストが赤になったときの扱いは `references/spec-writeback.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-spec-writeback.py`）
     - `skills/dev-loop/scripts/artifact-reads.py` - **spec-loop から来た周が計画ファイルに書いた「読んだ成果物」の行を集め、成果物ごとに読んだ周の数と、その周の起票・関門の指摘を並べる**
-      （#1157。**測るだけで、閾値も削る候補も決めない。読むだけ**。いつ何を書くかは `references/spec-gap.md` の「読んだ成果物を記録する」、
+      （#1157。**測るだけで、閾値も削る候補も決めない。読むだけ**。関門の記録とコードブロックの読み方は同じ場所の `check-gates.py` を読み込む——写さない。いつ何を書くかは `references/spec-gap.md` の「読んだ成果物を記録する」、
       行の形の原本と守る／守らないは docstring を正とする。**CI からは本体を呼ばない**——入力は spec-loop から来た周の計画ファイル（製品のリポジトリ）。テストは `scripts/test-artifact-reads.py`）
     - `skills/dev-loop/scripts/external-reviews.py` - **PR に付いた外部レビュー bot（CodeRabbit など）のコメントを、`.claude/dev-loop.md` の `外部レビュー:` で宣言した bot の分だけ取り出す**
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。

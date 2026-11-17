@@ -10,9 +10,11 @@
 1. **数える**——成果物ごとに読んだ周の数・その周の起票の合計・関門の指摘の合計（陽性対照）。1 周で同じパスは 1 件、`./` は外す、
    ディレクトリは `*.md` を再帰、同じファイルを 2 度渡しても 1 本、コードブロックの中の行は数えない、起票の行・関門の記録の無い周の数を出す。
 2. **一度も読まれない成果物**——`--all-artifacts` に挙げたパスのうち、どの周にも無いものを 0 の行で出す。
-3. **黙って落とさない**——形に合わない行（装飾つき・字下げ・バッククォートの無いパス・`なし` とパスの混在）は名指しして 1。
-4. **0 にしない**——無いパス・計画ファイルが 1 本も無い・引数の誤り・読めない `--all-artifacts` は 2。
-5. **読むだけ**——走らせた前後で試料のディレクトリが 1 バイトも変わらない。
+3. **黙って落とさない**——形に合わない行（装飾つき・字下げ・番号・チェックボックス・見出し・バッククォートの無いパス・1 行に 2 つのパス・`なし` とパスの混在）・
+   閉じないコードブロック・読めない関門の記録は名指しして 1。関門の記録は `check-gates.py` が通す書き方（`~~~`・コロンの後の空白なし・当て直し）を同じに読む。
+4. **0 にしない**——無いパス・計画ファイルが 1 本も無い・UTF-8 でない計画ファイル・引数の誤り・読めない `--all-artifacts` は 2。
+5. **読むだけ**——走らせた前後で試料のディレクトリと、写したスクリプトのディレクトリ（`__pycache__` を含む）が 1 バイトも変わらない。
+   **陽性対照**: 試料のディレクトリ・スクリプトの隣に書き込む変異と、読み込みで `__pycache__` を書く変異が落ちる。
 6. **原本との突き合わせ**——`references/spec-gap.md` の例の行が本体の正規表現に当たり、本体を指す。
 7. **リポジトリの外で単体で動く**——`scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
@@ -96,36 +98,68 @@ CASES: dict[str, tuple] = {
     "数えない: 引数なし": ({}, [], 2, ["usage"], []),
     "数えない: 未知の引数": ({"p/a.md": plan(IR)}, ["@p", "--all"], 2, ["usage"], []),
     "数えない: 読めない --all-artifacts": ({"p/a.md": plan(IR)}, ["@p", "--all-artifacts", "@none.txt"], 2, ["読めない"], ["| `"]),
+    "数えない: 番号・チェックボックス・見出し・バッククォートの見出し": ({"p/a.md": plan(IR, f"1. 読んだ成果物: `{RED}`", f"- [ ] 読んだ成果物: `{RED}`",
+                                                                    f"### 読んだ成果物: `{RED}`", f"- `読んだ成果物`: `{RED}`")}, ["@p"], 1,
+                                                      ["形に合わない行（数えていない）: 4", "a.md: 6 行目", "a.md: 9 行目", row(IR, 1, 0, 0)], [f"`{RED}` |"]),
+    "数えない: 1 行に 2 つのパス": ({"p/a.md": plan(f"- 読んだ成果物: `{IR}` `{RED}`")}, ["@p"], 1, ["a.md: 5 行目"], [f"`{RED}` |", f"`{IR}` |"]),
+    "数えない: 4 つのバッククォートの中の 3 つのブロック": ({"p/a.md": plan(IR, extra=f"\n````markdown\n```text\nx\n```\n- 読んだ成果物: `{RED}`\n````\n")}, ["@p"], 0,
+                                                 [row(IR, 1, 0, 0)], [f"`{RED}`"]),
+    "数えない: 情報文字列つきの印では閉じない": ({"p/a.md": plan(IR, extra=f"\n````markdown\n````python\n- 読んだ成果物: `{RED}`\n````\n")}, ["@p"], 0,
+                                          [row(IR, 1, 0, 0)], [f"`{RED}`", "形に合わない"]),
+    "数えない: 閉じないコードブロック": ({"p/a.md": plan(IR, extra=f"\n```text\n- 読んだ成果物: `{RED}`\n")}, ["@p"], 1,
+                                  ["閉じないコードブロックがある", row(IR, 1, 0, 0)], [f"`{RED}`"]),
+    "数えない: UTF-8 でない計画ファイル": ({"p/a.md": plan(IR), "p/b.md": b"\xff\xfe\x00"}, ["@p"], 2, ["読めない計画ファイル"], ["Traceback", "| `"]),
+    "数える: 関門の記録の別の書き方（~~~・コロンの後の空白なし・当て直し）": (
+        {"p/a.md": plan(IR, count=1, extra="\n~~~dev-loop-gates\n周の base: abcdef1\n関門:Verifier 1 abcdef1 反証=5\n関門: /code-review 1 abcdef1 指摘=2\n"
+                                         "関門: 当て直し abcdef1 abcdef2 反証=4\n# 前の記録の 反証=100\n~~~\n")}, ["@p"], 0, [row(IR, 1, 1, 11), "関門の記録が無い周: 0"], []),
+    "数えない: 関門の記録が 2 つ": ({"p/a.md": plan(IR, gates=[1], extra="\n```dev-loop-gates\n関門: Verifier 1 abcdef1 反証=1\n```\n")}, ["@p"], 1,
+                               ["関門の記録が読めない", "関門の記録が無い周: 1"], []),
+    "数える: 最初の起票の行だけ": ({"p/a.md": plan(IR, count=2, extra="\n- この周の起票: 9 件\n")}, ["@p"], 0, [row(IR, 1, 9, 0)], []),
+    "数える: 挙げたパスの重なりは 1 つ": ({"p/a.md": plan(IR), "all.txt": f"{REF}\n./{REF}\n"}, ["@p", "--all-artifacts", "@all.txt"], 0,
+                                    [row(REF, 0, 0, 0), "一度も読まれない成果物: 1"], []),
 }
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("読み込みで __pycache__ を書く", "    sys.dont_write_bytecode = True  # 読むだけ——読み込みで __pycache__ を書かない\n", "", "数える: 多い順に並べる"),
     ("./ を外さない", '    while path.startswith("./"):\n', '    while False:\n', "数える: 同じ周の同じパスは 1 件"),
     ("同じ周の同じパスを 2 度数える", "                if p not in reads:\n", "                if True:\n", "数える: 同じ周の同じパスは 1 件"),
-    ("注記を許さない", r'(?=$|[\s（])"', r'$"', "数える: 注記つきの行"),
-    ("コードブロックを読み飛ばさない", "        if fence is not None:\n            if line", "        if False:\n            if line", "数える: コードブロックの中の行は数えない"),
-    ("関門のブロックの外の関門の行も数える", "            if in_gates:\n", "            if True:\n", "数える: 関門のブロックの外（地の文・ほかのコードブロック）の関門の行は数えない"),
-    ("関門の指摘を数えない", "                    gates += int(g.group(1))\n", "                    gates += 0\n", "数える: 周の結果と並べる（陽性対照）"),
+    ("注記を許さない", r'(?P<rest>$|[\s（][^`]*$)', r'(?P<rest>$)', "数える: 注記つきの行"),
+    ("注記の中のバッククォートを許す", r'(?P<rest>$|[\s（][^`]*$)', r'(?P<rest>$|[\s（].*$)', "数えない: 1 行に 2 つのパス"),
+    ("コードブロックを読み飛ばさない", "            if m:\n                fence = m.group(1)\n                continue\n", "            if False:\n                pass\n", "数える: コードブロックの中の行は数えない"),
+    ("印の長さを 3 で切る", "                fence = m.group(1)\n", "                fence = m.group(1)[:3]\n", "数えない: 4 つのバッククォートの中の 3 つのブロック"),
+    ("閉じる印の後ろの文字を見ない", "            if gates.closes(line, fence):\n", "            if line.strip().startswith(fence):\n", "数えない: 情報文字列つきの印では閉じない"),
+    ("閉じないコードブロックを名指ししない", '        bad.append("閉じないコードブロックがある（その後ろを読んでいない）")\n', "        pass\n", "数えない: 閉じないコードブロック"),
+    ("関門の行の外も数える", '        if any(gates.LINE_FORMS[k].match(t) for k in ("pass", "narrow", "redo")):\n', "        if NUMBER.search(t):\n", "数える: 関門の記録の別の書き方（~~~・コロンの後の空白なし・当て直し）"),
+    ("当て直しを数えない", '("pass", "narrow", "redo")', '("pass", "narrow")', "数える: 関門の記録の別の書き方（~~~・コロンの後の空白なし・当て直し）"),
+    ("関門の指摘を数えない", "            total += int(NUMBER.search(t).group(1))\n", "            total += 0\n", "数える: 周の結果と並べる（陽性対照）"),
+    ("読めない関門の記録を名指ししない", "    if why:\n        bad.append(why)\n", "", "数えない: 関門の記録が 2 つ"),
     ("起票を数えない", "            counts[p] += info[\"count\"] or 0\n", "", "数える: 周の結果と並べる（陽性対照）"),
-    ("2 本目以降の計画を数えない", "    for plan in plans:\n", "    for plan in plans[:1]:\n", "数える: 周の結果と並べる（陽性対照）"),
+    ("最後の起票の行を使う", "        if c and count is None:\n", "        if c:\n", "数える: 最初の起票の行だけ"),
+    ("2 本目以降の計画を数えない", "    for plan in plans:\n        try:", "    for plan in plans[:1]:\n        try:", "数える: 周の結果と並べる（陽性対照）"),
     ("ディレクトリを再帰しない", 'p.rglob("*.md")', 'p.glob("*.md")', "数える: ディレクトリを再帰する"),
-    ("同じファイルを 2 度数える", "        if p.resolve() not in [s.resolve() for s in seen]:\n", "        if True:\n", "数える: 同じファイルを 2 度渡しても 1 本"),
+    ("同じファイルを 2 度数える", "        if p.resolve() not in resolved:\n", "        if True:\n", "数える: 同じファイルを 2 度渡しても 1 本"),
     ("多い順に並べない", "key=lambda n: (-cycles[n], n)", "key=lambda n: n", "数える: 多い順に並べる"),
     ("記録の無い周も数える", "        if not info[\"reads\"] and not info[\"none\"]:\n            continue\n", "", "数える: 記録の無い周は数えない"),
     ("なしの周を数えない", "            nones += 1\n", "            pass\n", "数える: なしの周"),
     ("起票の行が無い周を数えない", "            no_count += 1\n", "            pass\n", "数える: 起票の行・関門の記録の無い周"),
     ("関門の記録が無い周を数えない", "            no_gates += 1\n", "            pass\n", "数える: 起票の行・関門の記録の無い周"),
     ("一度も読まれない成果物を出さない", "            names.append(p)\n", "            pass\n", "数える: 一度も読まれない成果物"),
-    ("形に合わない行を名指ししない", "            bad.append(no)\n", "            pass\n", "数えない: 太字の行"),
-    ("字下げを形の誤りと見ない", r'CANDIDATE = re.compile(r"^[\s>*_\-+]*', r'CANDIDATE = re.compile(r"^[>*_\-+]*', "数えない: 字下げした行"),
-    ("全角のコロンを形の誤りと見ない", r'(?:\*\*|__)?\s*[:：]")', r'(?:\*\*|__)?\s*[:]")', "数えない: 全角のコロン"),
+    ("挙げたパスを 2 度数える", ' and normalize(s) not in expected:\n', ':\n', "数える: 挙げたパスの重なりは 1 つ"),
+    ("形に合わない行を名指ししない", '            bad.append(f"{no} 行目")\n', "            pass\n", "数えない: 太字の行"),
+    ("飾りを外さない", "        m = gates.DECOR.match(t)\n", "        m = None\n", "数えない: 番号・チェックボックス・見出し・バッククォートの見出し"),
+    ("バッククォートの見出しを見ない", r'LABEL = re.compile(r"^`?読んだ成果物`?', r'LABEL = re.compile(r"^読んだ成果物', "数えない: 番号・チェックボックス・見出し・バッククォートの見出し"),
+    ("全角のコロンを形の誤りと見ない", r'(?:\*\*|__)?`?\s*[:：]")', r'(?:\*\*|__)?`?\s*[:]")', "数えない: 全角のコロン"),
     ("なしとパスの混在を見ない", "    if none and reads:\n", "    if False:\n", "数えない: なしとパスの混在"),
     ("形に合わない行で 0", "        return 1\n    return 0\n", "        return 0\n    return 0\n", "数えない: バッククォートの無いパス"),
     ("無いパスを読み飛ばす", "            return None\n", "            continue\n", "数えない: 無いパス"),
+    ("読めない計画ファイルで落ちる", "        except (OSError, UnicodeDecodeError) as e:\n", "        except OSError as e:\n", "数えない: UTF-8 でない計画ファイル"),
     ("計画ファイルが無くても 0", "    if not plans:\n", "    if False:\n", "数えない: 計画ファイルが無い"),
     ("引数なしで 0", "    if not rest:\n", "    if False:\n", "数えない: 引数なし"),
     ("未知の引数を通す", '        if a.startswith("-"):\n', '        if False:\n', "数えない: 未知の引数"),
     ("読めない --all-artifacts で 0", "                return 2\n            for line", "                text = \"\"\n            for line", "数えない: 読めない --all-artifacts"),
+    ("書き込む（読むだけの陽性対照）", "    plans = collect(rest)\n", "    plans = collect(rest)\n    Path(rest[0], 'written.out').write_text('x') if Path(rest[0]).is_dir() else None\n", "数える: 多い順に並べる"),
+    ("スクリプトの隣に書き込む（読むだけの陽性対照）", "    plans = collect(rest)\n", "    plans = collect(rest)\n    (Path(__file__).parent / 'written.out').write_text('x')\n", "数える: 多い順に並べる"),
 ]
 
 
@@ -159,11 +193,14 @@ def run_one(script: Path, work: Path, case: tuple) -> tuple[int, str, bool]:
             continue
         p = work / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body, encoding="utf-8")
+        if isinstance(body, bytes):
+            p.write_bytes(body)
+        else:
+            p.write_text(body, encoding="utf-8")
     argv = [str(work / a[1:]) if a.startswith("@") else a for a in args]
-    before = snapshot(work)
+    before = (snapshot(work), snapshot(script.parent))
     proc = subprocess.run([sys.executable, "-I", str(script), *argv], capture_output=True, text=True, cwd=work)
-    return proc.returncode, proc.stdout + proc.stderr, snapshot(work) == before
+    return proc.returncode, proc.stdout + proc.stderr, (snapshot(work), snapshot(script.parent)) == before
 
 
 def as_expected(case: tuple, result: tuple[int, str, bool]) -> bool:

@@ -15,27 +15,30 @@ spec-loop から来た Issue の周は、手順 2（文脈収集）と手順 4�
     - 読んだ成果物: なし
 
 - **`<パス>`** は Issue の本文が書いた形のまま（`build/merged/spec/spec_ir.json`・`scaffold/tests/test_order.py` など）、バッククォートで囲む。
-  先頭の `./` は外して数える。**1 行に 1 つ。** 後ろに空白か `（` で注記を続けてよい（``- 読んだ成果物: `x.md`（手順 4）``）。
+  先頭の `./` は外して数える。**1 行に 1 つ**——注記は後ろに空白か `（` で続けてよい（``- 読んだ成果物: `x.md`（手順 4）``）が、注記にバッククォートを置かない（2 つ目のパスと区別できない）。
 - **`なし`** は、本文が指すファイルを 1 つも開かなかった周の行（1 本だけ。パスの行と混ぜない）。
-- **1 周で同じパスを 2 度書いても 1 件**に数える。コードブロック（``` か ~~~ で囲んだ範囲）の中の行は数えない。
+- **1 周で同じパスを 2 度書いても 1 件**に数える。コードブロック（3 つ以上の ``` か ~~~ で囲んだ範囲。閉じるのは同じ文字が同じ数以上だけの行）の中の行は数えない。
 
 ## 何を並べるか
 
 成果物ごとに: 読んだ周の数・その周の起票の合計（行 `- この周の起票: N 件`。`SKILL.md` 手順 8）・
-その周の関門の指摘の合計（`dev-loop-gates` のブロックの `関門:` の行の `反証=`・`指摘=`。`check-gates.py` の「記録の形」）。
+その周の関門の指摘の合計（`dev-loop-gates` のブロックの関門の行（各パス・狭いパス・当て直し）の `反証=`・`指摘=`。
+**ブロックと行の読み方は同じ場所の `check-gates.py`（`gate_block`・`LINE_FORMS`）を読み込む**——写さない。行頭の飾りとコードブロックの読み方も同じファイルの `DECOR`・`FENCE_ANY`・`closes`）。
 起票の行・関門の記録の無い周は 0 に数え、その周の数を別の行に出す。`--all-artifacts` に挙げたパス（1 行 1 つ。空行と `#` で始まる行は読まない）は、
 どの周にも無ければ読んだ周 0 の行で出す——一度も読まれない成果物である。
 
 ## 終了コード
 
 - **0**: 数えた。
-- **1**: 数えたが、形に合わない行があった——ファイルと行番号を出す（その行は数えない）。形に合わない行は、行頭の飾りを外すと
-  `読んだ成果物` で始まり直後がコロンなのに、上の形でないもの（装飾つき・字下げ・バッククォートの無いパス・空のパス）と、`なし` とパスを同じファイルに書いたもの。
-- **2**: 数えていない——引数の誤り・無いパス・計画ファイル（`*.md`）が 1 本も無い・`--all-artifacts` のファイルが読めない。
+- **1**: 数えたが、形に合わない行があった——ファイルと行番号を出す（その行は数えない）。形に合わない行は、行頭の飾り（字下げ・リストの印・番号・チェックボックス・見出し・引用・強調）を外すと
+  `読んだ成果物` で始まり直後がコロンなのに、上の形でないもの（装飾つき・字下げ・バッククォートの無いパス・空のパス・1 行に 2 つのパス）。
+  ほかに、ファイルごとに次も名指しして 1 にする: `なし` とパスを同じファイルに書いた（パスの行は数える）・閉じないコードブロックがある（その後ろは読んでいない）・
+  関門の記録が読めない（ブロックが 2 つある・閉じていない。その周の関門の指摘は「記録が無い」に数える）。
+- **2**: 数えていない——引数の誤り・無いパス・計画ファイル（`*.md`）が 1 本も無い・読めない計画ファイル（UTF-8 でない・権限）・`--all-artifacts` のファイルが読めない・`check-gates.py` を読み込めない。
 
 ## 守ること
 
-- **読むだけ**——ファイルを書かない・消さない。外へ繋がない。標準ライブラリだけで、リポジトリの外で単体で動く。
+- **読むだけ**——ファイルを書かない・消さない。外へ繋がない。標準ライブラリと同じ場所の `check-gates.py` だけで、リポジトリの外で単体で動く。
 - **黙って落とさない**——形に合わない行は名指しし、記録の無い周（起票の行・関門の記録）は数を出す。
 
 ## 守らないもの
@@ -47,19 +50,29 @@ spec-loop から来た Issue の周は、手順 2（文脈収集）と手順 4�
 """
 from __future__ import annotations
 
+import importlib.util
 import re
 import sys
 from collections import Counter
 from pathlib import Path
 
-LINE = re.compile(r"^- 読んだ成果物: (?:`(?P<path>[^`\s][^`]*)`|(?P<none>なし))(?=$|[\s（])")
-CANDIDATE = re.compile(r"^[\s>*_\-+]*読んだ成果物\s*(?:\*\*|__)?\s*[:：]")
+LINE = re.compile(r"^- 読んだ成果物: (?:`(?P<path>[^`\s][^`]*)`|(?P<none>なし))(?P<rest>$|[\s（][^`]*$)")
+LABEL = re.compile(r"^`?読んだ成果物`?\s*(?:\*\*|__)?`?\s*[:：]")
 COUNT = re.compile(r"^- この周の起票: ([0-9]+) 件")
-GATE = re.compile(r"^関門: .*?(?:反証|指摘)=([0-9]+)\s*$")
-FENCE = re.compile(r"^\s*(```|~~~)")
-GATES_OPEN = re.compile(r"^\s*```dev-loop-gates\s*$")
+NUMBER = re.compile(r"(?:反証|指摘)=([0-9]+)$")
 
 USAGE = "usage: artifact-reads.py <計画ファイルかディレクトリ> [...] [--all-artifacts <ファイル>]"
+
+
+def load_gates():
+    """関門の記録の読み方（同じ場所の `check-gates.py` の `gate_block`・`LINE_FORMS`・コードブロックの読み方）。写しを作らない。"""
+    path = Path(__file__).resolve().parent / "check-gates.py"
+    spec = importlib.util.spec_from_file_location("dev_loop_check_gates", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.dont_write_bytecode = True  # 読むだけ——読み込みで __pycache__ を書かない
+    sys.modules[spec.name] = mod  # dataclass が自分のモジュールを引くため
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def normalize(path: str) -> str:
@@ -68,32 +81,50 @@ def normalize(path: str) -> str:
     return path
 
 
-def read_plan(path: Path) -> dict:
+def looks_like(line: str, gates) -> bool:
+    """行頭の飾り（`check-gates.py` の `DECOR`）を外すと `読んだ成果物` で始まり、直後がコロンか。"""
+    t = line
+    while True:
+        m = gates.DECOR.match(t)
+        if not m or not m.group(0):
+            break
+        t = t[m.end():]
+    return bool(LABEL.match(t))
+
+
+def gate_findings(text: str, gates) -> tuple[int | None, str | None]:
+    """関門の記録の反証・指摘の合計。記録が無ければ None、読めなければ理由。"""
+    try:
+        block = gates.gate_block(text)
+    except gates.Malformed as e:
+        if "無い" in str(e):
+            return None, None
+        return None, f"関門の記録が読めない（{e}）"
+    total = 0
+    for line in block:
+        t = line.strip()
+        if any(gates.LINE_FORMS[k].match(t) for k in ("pass", "narrow", "redo")):
+            total += int(NUMBER.search(t).group(1))
+    return total, None
+
+
+def read_plan(path: Path, gates) -> dict:
     """1 本の計画ファイルから、読んだ成果物・なし・起票・関門の指摘・形に合わない行を取る。"""
     reads: list[str] = []
     none = False
     count = None
-    gates = None
-    bad: list[int] = []
+    bad: list[str] = []
     fence = None
-    in_gates = False
-    for no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        m = FENCE.match(line)
-        if fence is None and m:
-            fence = m.group(1)
-            if GATES_OPEN.match(line):
-                in_gates = True
-                gates = gates or 0
-            continue
-        if fence is not None:
-            if line.strip().startswith(fence) and line.strip().strip(fence[0]) == "":
-                fence = None
-                in_gates = False
+    text = path.read_text(encoding="utf-8")
+    for no, line in enumerate(text.splitlines(), start=1):
+        if fence is None:
+            m = gates.FENCE_ANY.match(line.strip())
+            if m:
+                fence = m.group(1)
                 continue
-            if in_gates:
-                g = GATE.match(line.strip())
-                if g:
-                    gates += int(g.group(1))
+        else:
+            if gates.closes(line, fence):
+                fence = None
             continue
         c = COUNT.match(line)
         if c and count is None:
@@ -107,11 +138,16 @@ def read_plan(path: Path) -> dict:
                 if p not in reads:
                     reads.append(p)
             continue
-        if CANDIDATE.match(line):
-            bad.append(no)
+        if looks_like(line, gates):
+            bad.append(f"{no} 行目")
+    if fence is not None:
+        bad.append("閉じないコードブロックがある（その後ろを読んでいない）")
     if none and reads:
-        bad.append(0)
-    return {"reads": reads, "none": none, "count": count, "gates": gates, "bad": bad}
+        bad.append("なしとパスを両方書いている")
+    findings, why = gate_findings(text, gates)
+    if why:
+        bad.append(why)
+    return {"reads": reads, "none": none, "count": count, "gates": findings, "bad": bad}
 
 
 def collect(args: list[str]) -> list[Path] | None:
@@ -126,8 +162,10 @@ def collect(args: list[str]) -> list[Path] | None:
             print(f"無いパス: {arg}（数えていない）", file=sys.stderr)
             return None
     seen: list[Path] = []
+    resolved: set[Path] = set()
     for p in plans:
-        if p.resolve() not in [s.resolve() for s in seen]:
+        if p.resolve() not in resolved:
+            resolved.add(p.resolve())
             seen.append(p)
     return seen
 
@@ -149,7 +187,7 @@ def main(argv: list[str]) -> int:
                 return 2
             for line in text.splitlines():
                 s = line.strip()
-                if s and not s.startswith("#"):
+                if s and not s.startswith("#") and normalize(s) not in expected:
                     expected.append(normalize(s))
             i += 2
             continue
@@ -168,6 +206,11 @@ def main(argv: list[str]) -> int:
         print("計画ファイル（*.md）が 1 本も無い（数えていない）", file=sys.stderr)
         return 2
 
+    try:
+        cg = load_gates()
+    except (OSError, ImportError, SyntaxError, AttributeError) as e:
+        print(f"関門の記録を読む check-gates.py を読み込めない: {e}（数えていない）", file=sys.stderr)
+        return 2
     cycles: Counter[str] = Counter()
     counts: Counter[str] = Counter()
     gates: Counter[str] = Counter()
@@ -177,9 +220,12 @@ def main(argv: list[str]) -> int:
     no_gates = 0
     bad: list[str] = []
     for plan in plans:
-        info = read_plan(plan)
-        for no in info["bad"]:
-            where = "なしとパスを両方書いている" if no == 0 else f"{no} 行目"
+        try:
+            info = read_plan(plan, cg)
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"読めない計画ファイル: {plan}: {e}（数えていない）", file=sys.stderr)
+            return 2
+        for where in info["bad"]:
             bad.append(f"{plan}: {where}")
         if not info["reads"] and not info["none"]:
             continue
@@ -197,7 +243,7 @@ def main(argv: list[str]) -> int:
 
     names = list(cycles)
     for p in expected:
-        if p not in cycles and p not in names:
+        if p not in names:
             names.append(p)
     names.sort(key=lambda n: (-cycles[n], n))
 
