@@ -13,7 +13,8 @@
 **守ること**:
 
 - 案件の雛形（`docs/v<k>/requirements/screens/templates/` の下）はサイトに出さない（`{{画面ID}}` を持ち、リンクが解決しない）
-- 正本を書かない——書くのは `<docs の親>/build/mock/v<n>/index.html`（`build-mock.py` と同じ場所。commit しない）だけ。`mkdocs.yml` を書き換えない
+- 正本を書かない——書くのは `<docs の親>/build/mkdocs/mock/v<n>/index.html`（commit しない）だけ。`mkdocs.yml` を書き換えない
+- `build-mock.py` の出力（`<docs の親>/build/mock/v<n>/index.html`。`--since` で作ったレビュー会のモック・req-loop の PPTX が指すモック）を書き換えない——置き場所を分ける
 - 表を出すのは `docs/v<k>/requirements/screens/` の直下の Markdown の、表で持つ節の印だけ（ほかのページ・コードブロックの中は変えない）
 - 版 `v<k>` の仕様書には、後の版が同じ名前の仕様書を置くまでの版を重ねた行を出す（表だけを変えた版の行も出る）。その範囲で画面を消した版・重ね合わせが決まりに反する版は飛ばして下の版を探し（v<k> より下へは行かない）、表の上にどの版まで重ねたかを書く。同じ名前の仕様書を指す画面が 2 つ以上なら注意書き
 - 出す列は `references/mkdocs.md` の表の列だけ（`build-mock.py` の許可の列の中）。どのセルからも `D-` の番号を外す
@@ -74,6 +75,7 @@ CALLERS = "呼び出し元"  # `1. 基本情報` に足す行
 NO_ROWS = "この画面に当たる行は無い"
 RANGE = "（v1〜v{upto} を重ねた表の行）"  # 表の上に置く、どの版まで重ねたか
 SITE_DIR = "mock"  # サイトの中の置き場所 `mock/v<n>/index.html`
+BUILD_DIR = "build/mkdocs"  # `<docs の親>/` の下。モックは `<BUILD_DIR>/<SITE_DIR>/v<n>/index.html` に書く——build-mock.py の出力（`build/mock/`）と分ける
 MOCK_NAME = "画面モック（表から生成）"
 MOCK_KIND = "HTML（screen-spec が生成）"
 DECORATION = "⚠️ "
@@ -325,7 +327,7 @@ def on_files(files, config):
             _, whole, _ = merged(docs, number)
             if not has_tables(whole):
                 continue
-            out_dir, text, warnings = mock.build(docs, number, spec_loop, shown, link=site_link(docs, number, use_directory_urls))
+            _, text, warnings = mock.build(docs, number, spec_loop, shown, link=site_link(docs, number, use_directory_urls))
         except (Problem, mock.Refused, checks.Stop, checks.Unreadable) as e:
             log.warning("screen-spec: v%d: 画面モックを作れない（%s）", number, e)
             rows.append({"version": number, "problem": f"画面モックを作れない（{e}）"})
@@ -337,6 +339,7 @@ def on_files(files, config):
             log.warning("screen-spec: v%d: サイトの %s に正本のファイルが在るので、画面モックを置かない", number, src_uri)
             rows.append({"version": number, "problem": f"サイトの {src_uri} に正本のファイルが在るので、画面モックを置かない"})
             continue
+        out_dir = docs.resolve().parent / BUILD_DIR / SITE_DIR / f"v{number}"
         target = out_dir / mock.OUT_NAME
         try:
             out_dir.mkdir(parents=True, exist_ok=True)

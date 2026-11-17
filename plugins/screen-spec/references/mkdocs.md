@@ -75,10 +75,13 @@ python3 scripts/write-screens.py mkdocs <docs ディレクトリ> [--spec-loop <
 | 決まり | 値 |
 | --- | --- |
 | サイトの中の置き場所 | `mock/v<n>/index.html` |
+| ビルドで書く場所（`<docs の親>/` の下） | `build/mkdocs/mock/v<n>/index.html` |
 | モックのページの名前 | `画面モック（表から生成）` |
 | モックのページの形式 | `HTML（screen-spec が生成）` |
 
-- ビルドのとき（MkDocs の `on_files`）、v1〜v<n> を重ねた全体に画面の表がある版ごとに、`build-mock.py` と同じものを作り、`<docs の親>/build/mock/v<n>/index.html` に書いて、サイトの上の場所に置く（commit しない——#1081 の決めること 7）。
+- ビルドのとき（MkDocs の `on_files`）、v1〜v<n> を重ねた全体に画面の表がある版ごとに、`build-mock.py` と同じものを作り、上の「ビルドで書く場所」に書いて、サイトの上の場所に置く（commit しない——#1081 の決めること 7）。
+- **`build-mock.py` の出力（`<docs の親>/build/mock/v<n>/index.html`）とは置き場所を分ける**——`--since` で作ったレビュー会のモック（`references/mock.md` の「差分の印」）と、req-loop の PPTX が指すモックを、`mkdocs build`・`mkdocs serve` が書き換えないように（中の仕様書へのリンクはサイト向けなので、ファイルとして開くと切れる）。
+  `build/mkdocs/` の下にサイトの中と同じ形（`mock/v<n>/`）で書くので、MkDocs にはその根を渡すだけで置ける。
 - **モックの中の仕様書へのリンクは、サイトの仕様書のページを指す**（`build-mock.py` だけで作ったモックは Markdown のファイルを指す）。
 - **基準の時点（`--since`）は渡さない**——ビルドには「前回の会」が無いので、サイトのモックに基準の時点からの差分の印は付かない。前の版からの差分の印（v2 以降）は `build-mock.py --upto <n>` と同じく付く（`references/mock.md` の「差分の印」）。
 - `docs/mocks.md` の版ごとの節には、spec-loop のフックの口（`spec_loop_mocks`）を通して、手で書いたモックのリンクと並べて出す。

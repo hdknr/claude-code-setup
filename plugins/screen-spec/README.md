@@ -57,4 +57,4 @@ python3 scripts/write-screens.py mkdocs <正本リポジトリの docs ディレ
 ```
 
 spec-loop の MkDocs の雛形のフックに、このプラグインのフックを登録します（`mkdocs.yml` は書き換えません）。画面の表の行が仕様書の節に表として出て、
-ビルドのときに版ごとのモックが生成されて `docs/mocks.md` に載ります（サイトのモックには差分の印を付けません）。決まりは `references/mkdocs.md` を正とします。
+ビルドのときに版ごとのモックが `build/mkdocs/mock/v<n>/` に生成されて（`build-mock.py` の出力の `build/mock/` は書き換えません）`docs/mocks.md` に載ります（サイトのモックには基準の時点（`--since`）からの差分の印を付けません。前の版からの印は付きます）。決まりは `references/mkdocs.md` を正とします。

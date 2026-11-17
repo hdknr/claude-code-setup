@@ -332,7 +332,7 @@ def mocks_page(plugin: Path, work: Path) -> bool:
     text = out["mocks.md"]
     v1, v2 = text.find("## v1"), text.find("## v2")
     placed = {f.src_uri: f for f in files}
-    mock_v1 = root / "build" / "mock" / "v1" / "index.html"
+    mock_v1 = root / "build" / "mkdocs" / "mock" / "v1" / "index.html"
     data = {}
     if mock_v1.is_file():
         found = re.search(r'id="screen-spec-data">(.*?)</script>', mock_v1.read_text(encoding="utf-8"), re.S)
@@ -351,7 +351,7 @@ def mocks_directory_urls(plugin: Path, work: Path) -> bool:
     """use_directory_urls のサイトでは、モックの中の仕様書へのリンクはディレクトリの URL を指す。"""
     root, _, _, env = project(work, plugin)
     build(root, env, {}, use_directory_urls=True)
-    page_text = (root / "build" / "mock" / "v2" / "index.html").read_text(encoding="utf-8")
+    page_text = (root / "build" / "mkdocs" / "mock" / "v2" / "index.html").read_text(encoding="utf-8")
     data = json.loads(re.search(r'id="screen-spec-data">(.*?)</script>', page_text, re.S).group(1))
     return data["documents"].get("S-001") == "../../v2/requirements/screens/order-list/"
 
@@ -369,10 +369,31 @@ def mocks_no_since(plugin: Path, work: Path) -> bool:
     build(root, git_env, {})
     kinds = {}
     for number in (1, 2):
-        text = (root / "build" / "mock" / f"v{number}" / "index.html").read_text(encoding="utf-8")
+        text = (root / "build" / "mkdocs" / "mock" / f"v{number}" / "index.html").read_text(encoding="utf-8")
         data = json.loads(re.search(r'id="screen-spec-data">(.*?)</script>', text, re.S).group(1))
         kinds[number] = [d["kind"] for d in data["diffs"]]
     return kinds == {1: [], 2: ["version"]}
+
+
+def cli_mock_kept(plugin: Path, work: Path) -> bool:
+    """MkDocs のビルドは build-mock.py の出力（`build/mock/v<n>/index.html`。`--since` で作ったレビュー会のモック・req-loop の PPTX が指すモック）を
+    書き換えない——フックは `build/mkdocs/mock/v<n>/` に書く（#1098 の取り込みの MC-4）。CLI の出力は本物の build-mock.py で作る（`--since` を渡す）。"""
+    root, screen, spec_loop, env = project(work, plugin)
+    git_env = dict(env, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+    for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "base"]):
+        subprocess.run(["git", *args], cwd=root, env=git_env, check=True, capture_output=True)
+    cli = {}
+    for number in (1, 2):
+        code, out = run(screen / BUILD, str(root / "docs"), "--upto", str(number), "--since", "HEAD", "--spec-loop", str(spec_loop), env=git_env)
+        if code != 0:
+            return False
+        cli[number] = (root / "build" / "mock" / f"v{number}" / "index.html").read_bytes()
+    files, _, _ = build(root, git_env, {})
+    placed = {f.src_uri: f for f in files}
+    site = root / "build" / "mkdocs" / "mock" / "v2" / "index.html"
+    return (all((root / "build" / "mock" / f"v{n}" / "index.html").read_bytes() == cli[n] for n in cli)
+            and site.is_file() and site.read_bytes() != cli[2]
+            and "mock/v2/index.html" in placed and Path(placed["mock/v2/index.html"].abs_src_path).resolve() == site.resolve())
 
 
 def mocks_broken_version(plugin: Path, work: Path) -> bool:
@@ -452,6 +473,7 @@ CASES = {
     "use_directory_urls のサイトでは仕様書のディレクトリの URL を指す": mocks_directory_urls,
     "作れない版はモックのページに理由を出す": mocks_broken_version,
     "サイトのモックに基準の時点からの印を付けない": mocks_no_since,
+    "MkDocs のビルドは build-mock.py の出力を書き換えない": cli_mock_kept,
     "screen-spec が見つからなければ警告と注意書き": not_found,
     "記録から screen-spec を見つける": found_in_record,
     "環境変数の screen-spec を使う": found_by_env,
@@ -511,6 +533,8 @@ MUTATIONS: list[tuple] = [
     ("--hook を渡さない", WRITE, ', "--hook", str(MKDOCS_HOOK)]', "]", "登録した案件で回し直しても登録は消えない"),
     ("基準の時点を渡す", IMPL, ", link=site_link(docs, number, use_directory_urls))", ", \"HEAD\", link=site_link(docs, number, use_directory_urls))",
      "サイトのモックに基準の時点からの印を付けない"),
+    ("ビルドで書く場所を build-mock.py と同じにする", IMPL, 'BUILD_DIR = "build/mkdocs"', 'BUILD_DIR = "build"',
+     "MkDocs のビルドは build-mock.py の出力を書き換えない"),
     ("link を使わない", BUILD, "                links[key] = link(path) if link else", "                links[key] =",
      "docs/mocks.md に版ごとの生成したモックへのリンクが出る"),
 ]
@@ -562,6 +586,8 @@ def check_reference() -> None:
     check("節の種類が check-screens.py の項目の種類の外にある", not kinds, ", ".join(kinds))
     mocks = dict((r[0], r[1]) for r in table_rows(text, ["決まり", "値"]))
     check("サイトの中の置き場所が違う", mocks.get("サイトの中の置き場所") == f"`{impl.SITE_DIR}/v<n>/{impl.mock.OUT_NAME}`")
+    check("ビルドで書く場所が違う", mocks.get("ビルドで書く場所（`<docs の親>/` の下）") == f"`{impl.BUILD_DIR}/{impl.SITE_DIR}/v<n>/{impl.mock.OUT_NAME}`"
+          and f"{impl.BUILD_DIR}/{impl.SITE_DIR}" != impl.mock.OUT_DIR)  # build-mock.py の出力と重ならない
     check("モックのページの名前が違う", mocks.get("モックのページの名前") == f"`{impl.MOCK_NAME}`")
     check("モックのページの形式が違う", mocks.get("モックのページの形式") == f"`{impl.MOCK_KIND}`")
     check("登録するファイルが違う", mocks.get("登録するファイル") == f"`{SHIM.as_posix()}`"

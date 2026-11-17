@@ -241,7 +241,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/mkdocs-pages.py`・`templates/mkdocs/screen_spec_pages.py` - **MkDocs のフック**（#1098）。正本に登録するのは薄いフック（screen-spec を環境変数 `SCREEN_SPEC_PLUGIN` か
       プラグインの記録から探して本体に渡すだけ）で、**`write-screens.py mkdocs` が spec-loop の `init-mkdocs.py --hook` で登録する（`mkdocs.yml` を書き換えない）**。
       本体は画面の表の行を仕様書の「表で持つ」節に表として出し（共有の層だけ・未決定のセルに `⚠️` の飾り）、ビルドのときに版ごとのモックを `build-mock.py` の `build` で作って（**基準の時点（`--since`）は渡さない**——サイトのモックに前回の会からの印は付かない）
-      サイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
+      `build/mkdocs/mock/v<n>/`（`build-mock.py` の出力の `build/mock/` と分ける）に書いてサイトの `mock/v<n>/index.html` に置き、spec-loop の口（`spec_loop_mocks`）で `docs/mocks.md` の版ごとの節に載せる。**見つからなければ警告と注意書き（黙って空にしない）**。
       決まりの原本は `references/mkdocs.md`、守る／守らないは docstring を正とする。テストは `scripts/test-screen-spec-pages.py`）
 - `scripts/` - CI から呼ぶチェックスクリプト（標準ライブラリのみ・ローカルでも実行可）
   - `check-all.py` - **歯止めと回帰テストを全部回す入口**（**CI からは呼ばない**
