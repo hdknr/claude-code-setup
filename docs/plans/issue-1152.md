@@ -13,6 +13,7 @@
 
 - `plugins/spec-loop/scripts/build-proposal.py` — `changes_section` が画面・項目・遷移の変更を件数の表と節に載せる（表があるときだけ）
 - `scripts/test-build-proposal.py` — 試料・変異
+- `plugins/spec-loop/skills/proposal/SKILL.md` — 本文の 1 箇所（「前の版からの変更」の節の種類の列挙。Verifier 1 パス目の反証 V1-1 で足した）と版
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
 - `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行だけ
@@ -21,7 +22,7 @@
 触らない:
 
 - `plugins/spec-loop/scripts/diff-versions.py`（比較そのものは #1091 で行の単位になっている。出さないのは `build-proposal.py` の描き側）
-- `references/versions.md`・`tree.md`・`skills/proposal/SKILL.md`（節の説明は「種類ごとの追加・変更・削除」で、画面の種類を足しても偽にならない）
+- `references/versions.md`・`tree.md`（節の説明は「種類ごとの追加・変更・削除」で、画面の種類を足しても偽にならない）
 - 仕様書（`spec.md`）・PPTX の「前の版からの変更」の節の作り方は同じ `changes_section` を共有するので、別に直さない
 
 複製の数: 比較の節を描く場所は `changes_section` 1 つ（提案書と仕様書が同じ関数を呼ぶ）。分けない理由: 複製は 1。
