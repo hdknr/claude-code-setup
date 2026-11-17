@@ -130,7 +130,7 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
     git(repo, "reset", "-q", "--hard", s["M"])
     # F1・F2（#1148）: 強調の閉じがコロンの内側にある宣言・値の無い宣言
     s["M10"] = commit(repo, "closing emphasis inside colon", {".claude/dev-loop.md": MAIN_MD + FIX_CLOSE,
-                                                               **{f"e{i}/k.txt": "k\n" for i in range(1, 5)}, "k.zz": "k\n"})
+                                                               **{f"e{i}/k.txt": "k\n" for i in range(1, 5)}, "k.zz": "k\n", "_build/k.txt": "k\n"})
     git(repo, "reset", "-q", "--hard", s["M"])
     s["M11"] = commit(repo, "no value decls", {".claude/dev-loop.md": MAIN_MD + NO_VALUE})
     git(repo, "reset", "-q", "--hard", s["M"])
@@ -164,7 +164,7 @@ def build(root: Path) -> tuple[Path, dict[str, str]]:
                        ("H10", {".claude/dev-loop.md": MAIN_MD + DECORATED, **{f"dir{i}/x.txt": "x\n" for i in range(1, 11)}}),
                        ("H11", {".claude/dev-loop.md": MAIN_MD + MISSPELLED}),
                        ("H12", {".claude/dev-loop.md": MAIN_MD + FIX_CLOSE,
-                                **{f"e{i}/x.txt": "x\n" for i in range(1, 5)}, "x.zz": "x\n"}),
+                                **{f"e{i}/x.txt": "x\n" for i in range(1, 5)}, "x.zz": "x\n", "_build/x.txt": "x\n"}),
                        ("H13", {".claude/dev-loop.md": MAIN_MD + FIX_CLOSE, "ok.txt": "o\n"}),
                        ("H14", {".claude/dev-loop.md": MAIN_MD + NO_VALUE, "ok.txt": "o\n"}),
                        ("Y2", {".claude/dev-loop.md": MAIN_MD + "不在で止める範囲: a.txt\n"})):
@@ -194,8 +194,8 @@ DECORATED = ("\n**不在で止める範囲:** dir1/\n**不在で止める範囲*
              "> 不在で止める範囲: dir4/\n- [ ] 不在で止める範囲: dir5/\n不在で止める範囲：dir6/\n"
              "- 不在で止める範囲: dir7/\n__不在で止める範囲__: dir8/\n- [x] 不在で止める範囲: dir9/\n- [X] 不在で止める範囲: dir10/\n")
 # F1（#1148）: 強調の閉じがコロンの内側にある宣言。最後は、開いた強調の後にコロン・空白・`*.zz`（glob）と続く形（閉じではない）
-FIX_CLOSE = ("\n*不在で止める範囲:* e1/\n**不在で止める範囲:**e2/\n_不在で止める範囲:_ e3/\n__不在で止める範囲:__e4/\n"
-             "*不在で止める範囲: *.zz\n")
+FIX_CLOSE = ("\n*不在で止める範囲:* e1/\n**不在で止める範囲:**e2/\n_不在で止める範囲:_ e3/\n__不在で止める範囲:__ e4/\n"
+             "*不在で止める範囲: *.zz\n_不在で止める範囲:_build/\n")
 # F2（#1148）: 値の無い宣言
 NO_VALUE = "\n**不在で止める範囲:**\n*不在で止める範囲:*\n"
 MISSPELLED = ("\n不在で止める範囲 risky/\n不在で止める範囲=risky/\n不在で止める範囲、つまり risky/ のこと\n")
@@ -323,7 +323,7 @@ CASES = {
         (FULL + ["関門: 当て直し {MM} {H13} 反証=0", REFL], "H13", 0, ["--absent"], {"default": "M10"}),
     "強調の閉じがコロンの内側にある宣言は、宣言したパターンで照合して止める（F1）":
         (FULL + ["関門: 当て直し {MM} {H12} 反証=0", REFL], "H12", 3, ["--absent"], {"default": "M10"},
-         *[f"「不在で止める範囲: e{i}/」に当たる" for i in range(1, 5)], "「不在で止める範囲: *.zz」に当たる"),
+         *[f"「不在で止める範囲: e{i}/」に当たる" for i in range(1, 5)], "「不在で止める範囲: *.zz」に当たる", "「不在で止める範囲: _build/」に当たる"),
     "値の無い宣言は、読めない宣言として名指して止める（全部に当たったとは言わない。F2）":
         (FULL + ["関門: 当て直し {MM} {H14} 反証=0", REFL], "H14", 3, ["--absent"], {"default": "M11"},
          "「**不在で止める範囲:**」", "「*不在で止める範囲:*」", "形で読めない"),
@@ -456,7 +456,7 @@ MUTATIONS = {
     # 守る（#1047 R1）: 全角のコロンも宣言
     "全角のコロンを読まない": ('COLONS = (":", "：")', 'COLONS = (":",)'),
     # 守る（#1148 F1）: 強調の閉じがコロンの内側にある宣言も宣言として読む
-    "強調の閉じがコロンの内側にある宣言を読まない": ("        if openers and after.startswith(openers[-1]):  # コロンの直後（空白なし）に同じ印がある\n", "        if False:\n"),
+    "強調の閉じがコロンの内側にある宣言を読まない": ("        if mark and after.startswith(mark) and (", "        if False and ("),
     # 守る（#1148 F2）: 値の無い宣言を `**` のパターンと読まない
     "値の無い宣言をパターンと読む": ('        if value:\n            return "pattern", value\n', '        return "pattern", value\n'),
     # 守る（#1047 J1）: パスは引用符なしで読む
@@ -481,12 +481,16 @@ MUTATIONS = {
 EXTRA_MUTATIONS = {
     **{f"助詞「{p}」を外す": ('PARTICLES = "' + PARTICLES_DOC + '"', 'PARTICLES = "' + PARTICLES_DOC.replace(p, "") + '"')
        for p in PARTICLES_DOC},
+    "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": (
+        'mark == "**" or tail == "" or tail[0].isspace()', "True"),
     "チェックボックス `[ ]` を外す": (r"\[[ xX]\]", r"\[[xX]\]"),
     "チェックボックス `[x]` を外す": (r"\[[ xX]\]", r"\[[ X]\]"),
     "チェックボックス `[X]` を外す": (r"\[[ xX]\]", r"\[[ x]\]"),
 }
 
 KILLS = {
+    "閉じの後が空白でも行末でもない形も閉じと読む（`_…:_build/` の先頭の `_` を食う）": [
+        "強調の閉じがコロンの内側にある宣言は、宣言したパターンで照合して止める（F1）"],
     **{f"助詞「{p}」を外す": ["キーワードを含むだけの散文の行では止めない（J2）"] for p in PARTICLES_DOC},
     **{f"チェックボックス `[{c}]` を外す": ["飾った宣言・全角のコロンの宣言に当たる差分は、それぞれ宣言に当たったと言って止める（R1）"]
        for c in (" ", "x", "X")},
