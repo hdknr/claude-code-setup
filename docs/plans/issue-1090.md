@@ -97,11 +97,25 @@ Issue 本文（外部入力）から読んだ要件: 成果物の表（`features
 
 - G1・G2（上）は推奨で決めた。確認の Issue は PR を作った後に立てる（重さに PR の番号を書くため）。
 
+## 起票
+
+- この周の起票: 2 件（仕様の穴 G1・G2 の確認の Issue。`仕様の穴 = 推奨で決めて起票` の線で立てる——起票の承認は不在のため訊いていない）
+
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1090-deliverable-tables-merge-unit`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1090`・起点 `dd1f8fb`・base `origin/main` = `dd1f8fbe63ee41c22525c9807bec8e0177ea3cca`
+- 1 パス目の指摘対応の起点: `2c5a30c`（1 パス目の関門に渡した時点の HEAD）
+- Verifier 1 パス目: 通した（2c5a30c）。反証 0 件（`dev-loop:dev-loop-verifier`・sonnet。`SubagentHandback` が届かず、報告はトランスクリプトの handback の呼び出しから読んだ）。自分では変異を設計せず、テストの変異（113 件）だけ——陽性対照は著者が別に当てた（「確かめたこと」の 3）
+- `/code-review` 1 パス目: 起動（2c5a30c）
 - 交絡を潰した手順: 重ね方の実験（上の「確かめたこと」の 3）——同じ入力・同じスクリプトの写しで、`ROW_TABLES` の 1 行だけを違えて走らせた（陽性対照: 今の版で F-002 が外れることを同じ観測点で見た）。
 
 ## 既知の限界・決着済みの論点
 
 （関門の指摘と採否はここに足す）
+
+## 関門の記録
+
+```dev-loop-gates
+周の base: dd1f8fbe63ee41c22525c9807bec8e0177ea3cca
+関門: Verifier 1 2c5a30c 反証=0
+```
