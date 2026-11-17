@@ -53,7 +53,7 @@ usage: python3 check-screens.py <docs ディレクトリ> [--upto <n>] [--spec-l
 | **セルの中身の意味**（目的が業務に合うか・入力チェックが足りるか） | 判断であって、一意に決まらない |
 | **印を使わずに書いた未決定**（「あとで決める」） | 言い回しは列挙しきれない。spec-loop の `check-spec-exit.py` と同じ限界 |
 | **成果物の表そのものの形** | spec-loop の `check-design-csv.py` が見る。ここは指す先の `id`・`操作` が在るかだけ |
-| **`common.md` の節** | 案件で節を足し、書いていない節は空のままでよい（`references/prose.md` の「共通仕様」）。Q&A の番号と未決定の印だけを見る |
+| **`common.md` の profile の節以外の節** | 案件で節を足し、書いていない節は空のままでよい（`references/prose.md` の「共通仕様」）。Q&A の番号と未決定の印だけを見る。**profile を選んだ案件の共通仕様の profile の節（`## 実現方式: <profile>`）は見る**——小見出しを全部・どれも空でなく理由の無い `N/A` でないことを求める（上の「profile があれば」） |
 | **ワイヤーフレーム（drawio）と画面遷移図** | 図の鮮度は spec-loop の `render-diagrams.py --check` |
 | **本物のプラグインのキャッシュの形が変わったとき**（`installed_plugins.json` の形） | 1 つの実測（`plugins` の下に `<名前>@<マーケットプレイス>` → 入れた先の一覧）に合わせて読む。読めなければ見つからないとして 4 |
 """

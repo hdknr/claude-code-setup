@@ -70,6 +70,9 @@ settings に現れないので、「良い」と出た操作も止まりうる�
 | どれにも当たらない | 人が見る（自動モードの分類器・起動の `--allowedTools`・`--permission-mode` が通しうる） |
 
 良い以外の行には、deny に足す規則（`Bash(<操作>:*)`）を → の行に出す——足すのは利用者である（点検は settings を書かない）。
+**足す層は正本リポジトリの `.claude/settings.local.json`** で、案がそう名指す（利用者の層 `~/.claude/settings.json` に足すと、ほかのリポジトリのタグ打ちも止まる。#1149）。
+**`Bash(git tag:*)` は `git tag --list` も拒む**——案の `git tag` の行がそう添える。Q&A 表の移行の手順（`references/tree.md` の「Q&A 表を移す」）が `git tag --list` を打つので、
+deny を足した正本では止まる。手当ては tree.md の同じ節が書く。Claude Code が実際にこの規則で `git tag --list` を拒むかは測っていない（判定は上の写しの `rule_matches`）。
 
 ## 写し
 
@@ -171,6 +174,11 @@ PR_OPS = ("git switch", "git pull", "git add", "git commit", "git push", "gh pr 
 COMMIT_OPS = {"しない": (), "PR で止まる": PR_OPS, "マージまで": PR_OPS + ("gh pr merge",)}
 # 入口が線に依らずしない操作（#1046）。settings が拒むかを `check` が点検する。scaffold は `refused_operations` が足す
 REFUSED_OPS = ("git tag", "git push --tags", "gh issue create")
+# deny の案が足す層（#1149）。利用者の層（~/.claude/settings.json）に足すと、ほかのリポジトリの操作も止まる
+DENY_LAYER = "正本リポジトリの .claude/settings.local.json（利用者の層 ~/.claude/settings.json には足さない——ほかのリポジトリの操作も止まる）"
+# `Bash(git tag:*)` は `git tag --list` も拒む（rule_matches で当たる）。手当ては tree.md の Q&A 表の移行の手順を正とする
+GIT_TAG_LIST_NOTE = ("。この規則は `git tag --list` も拒む——Q&A 表の移行の手順（tree.md）が打つので止まる。"
+                     "拒まれたら、その手順のタグを見る行だけ利用者が打つか、読むだけの形（`git ls-remote --tags origin`）に変える")
 
 MANAGED_DEFAULTS = {
     "darwin": "/Library/Application Support/ClaudeCode/managed-settings.json",
@@ -512,7 +520,8 @@ def check_refused(stack, commands):
         ask_hits = [r for r in ask_rules if rule_matches(r, call)]
         allow_hits = [r for r in allow_rules if rule_matches(r, call)]
         label = f"拒む: `{command}`"
-        proposal = f'settings の permissions.deny に "Bash({command}:*)" を足す（足すのは利用者）'
+        proposal = (f'{DENY_LAYER} の permissions.deny に "Bash({command}:*)" を足す（足すのは利用者）'
+                    + (GIT_TAG_LIST_NOTE if command == "git tag" else ""))
         if deny_hits:
             items.append((GOOD, label, f"deny に当たる（{', '.join(deny_hits)}）", ""))
         elif unreadable:

@@ -324,9 +324,13 @@ def changes_section(diff, tag: str) -> list[str]:
     out = [f"## 前の版（v{diff.version - 1}）からの変更", ""]
     out += [f"> `{tag}` の時点の、v{diff.version - 1} までの全体と v{diff.version} までの全体の比較。"
             "同じ中身を置き直しただけのものは載らない。", ""]
-    out += table(["種類", *diffs.STATUSES], [[k, *(str(diff.count(k, s)) for s in diffs.STATUSES)] for k in diffs.SHARED_KINDS])
+    # 画面の表（画面・項目・遷移。行の単位で重ねる。#1091）は、どちらかの版の全体に表があるときだけ載せる（#1152）。
+    # 表の無い正本は `diff.changes` に画面の種類を持たないので、出力は今と同じバイトのまま
+    row_kinds = [k for k in diffs.ROW_KINDS if k in diff.changes]
+    shown = [*diffs.SHARED_KINDS, *row_kinds]
+    out += table(["種類", *diffs.STATUSES], [[k, *(str(diff.count(k, s)) for s in diffs.STATUSES)] for k in shown])
     out.append("")
-    if not any(diff.changes[k] for k in diffs.SHARED_KINDS):
+    if not any(diff.changes[k] for k in shown):
         return out + ["（前の版からの変更はありません）", ""]
 
     def answer(row) -> str:
@@ -348,6 +352,13 @@ def changes_section(diff, tag: str) -> list[str]:
         out += [f"### {file_kind}", ""]
         out += table(["パス", "変化", "削除の理由"], [[c.key, c.status, c.reason or "—"] for c in diff.changes[file_kind]])
         out.append("")
+    for kind in row_kinds:
+        if diff.changes[kind]:
+            # 鍵（画面ID・番号）・変化・題（画面だけ画面名）・削除の理由。項目・遷移の中身の列は出さない
+            out += [f"### {kind}", ""]
+            out += table(["鍵", "変化", "題", "削除の理由"],
+                         [[c.key, c.status, diffs.label(kind, c) or "—", c.reason or "—"] for c in diff.changes[kind]])
+            out.append("")
     return out
 
 

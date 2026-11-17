@@ -442,8 +442,18 @@ def main() -> int:
               refused("しない で python3 だけ allow（拒む操作の deny なし）") == (1, {"git tag": "人が見る", "git push --tags": "人が見る",
                                                                          "gh issue create": "人が見る", sc: "要対処"}))
         check("拒む: 良い以外の行に deny の案を出す（全部 allow・deny なしで 4 行）",
-              o["拒む: deny の案"] == [f'→ settings の permissions.deny に "Bash({c}:*)" を足す（足すのは利用者）'
+              o["拒む: deny の案"] == [f'→ {mod.DENY_LAYER} の permissions.deny に "Bash({c}:*)" を足す（足すのは利用者）'
+                                    + (mod.GIT_TAG_LIST_NOTE if c == "git tag" else "")
                                     for c in (*REFUSED, "python3 <scripts>/scaffold.py")])
+        check("拒む: deny の案が足す層（正本の .claude/settings.local.json）を名指し、利用者の層には足さないと言う（#1149 の受入基準 1）",
+              len(o["拒む: deny の案"]) == 4 and all(".claude/settings.local.json" in l and "~/.claude/settings.json には足さない" in l
+                                                   for l in o["拒む: deny の案"]))
+        check("拒む: git tag の案だけが git tag --list も拒むと添え、手当てを言う（#1149 の受入基準 2。ほかの行には添えない）",
+              [("git tag --list" in l and "git ls-remote --tags" in l) for l in o["拒む: deny の案"]] == [True, False, False, False])
+        check("拒む: git tag --list は実際に Bash(git tag:*) に当たる（案の主張の根拠。陽性対照）",
+              mod.rule_matches("Bash(git tag:*)", "git tag --list 'release-v*' <引数>"))
+        check("拒む: git ls-remote --tags は Bash(git tag:*) に当たらない（手当ての形が止まらない。陰性対照）",
+              not mod.rule_matches("Bash(git tag:*)", "git ls-remote --tags origin <引数>"))
         check("拒む: ops には拒む操作を出さない", o["拒む: ops に出ない"] == [])
         check("拒む: 周で使う git push は push --tags の deny に当たらない（全部 deny で git push は良い）",
               ("良い", "許可: `git push`") in o["拒む: 全部 deny（allow もある）"][1])
