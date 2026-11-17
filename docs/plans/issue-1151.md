@@ -104,7 +104,11 @@ OS の読み取りを全部見る手段（`fs_usage`・DTrace は root が要る
 
 - 周の在り処: ブランチ `issue/1151-check-all-cache`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1151`・起点 `1d39e55a`・
   base は `origin/main`（`refs/remotes/origin/HEAD`）を解決した `1d39e55a2d854a9bcaa6cccc581f925b75e9a1ff`
-- 関門: 1 パス目の前（実装は `561dc4db` まで。割り目の訊き方は下）
+- 関門: 1 パス目の前（実装は `561dc4db` まで。計画の実測は `6bbb51b2`）
+- 割り目（手順 4 の完了時。2026-11-17）: `AskUserQuestion` で訊き、**「ここで割る」**——worktree の中で `/clear` して `/dev-loop:dev-loop 1151` で手順 5 から再開する
+- 再開したら次にすること: 手順 5（Verifier 1 パス目）と手順 6（`/code-review` 1 パス目）。base は上の `1d39e55a…`。
+  1 パス目の指摘対応の起点は、関門に渡す時点の HEAD（再開して最初に渡す前に、ここに書く）。
+  **手元の dev-loop は 1.112.0 なので、リポジトリの 2.4.0 の `SKILL.md`（`plugins/dev-loop/skills/dev-loop/`）に従う**（冒頭）
 - 交絡を潰した手順: 手順 2 の試作の見積りは近似のまま（PR には「見積り」と書く）。実測（A1・A2）は下の「実装の後の実測」。
   **実測の秒数は負荷に揺れる**——測った回はどれも `uptime` のロードが 17〜41 で、別の処理と重なっていた。比べるのは「何本回したか」を主にし、秒数は負荷を添える
 
