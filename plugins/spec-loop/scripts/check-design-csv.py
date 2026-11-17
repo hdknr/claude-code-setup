@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
-"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）を検査する。
+"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）と関係者の表を検査する。
 
 usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か重ね合わせた全体（build/merged）>
 
-**決まりの正は `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
-下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類）はその写しで、
+**決まりの正は `references/tree.md` の「システム設計書の成果物」（関係者の表を含む）と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
+下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-check-design-csv.py` が突き合わせて見る**。
 
-渡したディレクトリの `requirements/` と `shared/nfr.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
+渡したディレクトリの `requirements/` と `shared/nfr.csv`・`shared/stakeholders.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
 
 - **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ）・列の数・番号の形・重複・
   決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
-  目的の表（#1154）の種類ごとに空にする欄に書いた（未決定の印なら未決定に数える）・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた
+  目的の表（#1154）の種類ごとに空にする欄に書いた（未決定の印なら未決定に数える）・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた・
+  関係者の表（#1161）の名前の重複・役割と合意の値が決まった値でない・同じ値を重ねた・合意に `なし` とほかの値を混ぜた
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
   印の判定は `check-spec-exit.py` の `find_markers` を読む（写さない）。**印のあるセルと空のセルは、値の決まりに当てない**——未決定は違反ではない。
   **目的の表の結び付けの欠け**（目的を測る指標が無い・機能一覧の機能がどの指標の `機能` にも無い——目的を指さない機能）もここに数える——
   要るかどうかは利用者が決めることで、表の形の誤りではない
+
+**4 つのほかに、回答者の照合を報告する（終了コードに数えない。#1161）**——関係者の表が決まりどおりで、`shared/qa.csv` があるとき、
+`未回答` でも暫定でもない行の回答者（`check-qa-csv.py` の `respondent` が `回答` の括弧から読む）が、表の `名前` に無い・表で `答える範囲` が `なし`・括弧から読めない、を出す。
+関係者の表が決まりに反するなら照らさず、そう出す。
 
 **v2 以降は重ね合わせた全体（`merge-versions.py docs build/merged`）に当てる**——版のディレクトリは足した・変えた表しか持たない。
 
@@ -39,8 +44,11 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 | --- | --- |
 | **欄の中身**（意味の書き方・保管期間が業務に合うか・ロールの切り方） | 判断であって、一意に決まらない |
 | **帳票の見本・ER 図があるか** | 見本は HTML か PDF、図は drawio で、表の検査の外（図の鮮度は `render-diagrams.py --check`） |
-| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は id で指す 2 つだけ**——入出力のレイアウトの id（一覧に無い id は落とす）と、目的の表の指標の `機能`（機能一覧の id と照らす） |
+| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は id で指す 2 つだけ**——入出力のレイアウトの id（一覧に無い id は落とす）と、目的の表の指標の `機能`（機能一覧の id と照らす）。Q&A 表の回答者と関係者の表の名前の照合は報告で、終了コードに数えない（下の行） |
 | **目的に照らした過不足の中身**（`機能` に載った機能が本当にその指標を動かすか・目的の切り方が正しいか） | 判断であって、一意に決まらない。spec-review の Domain Checker が目的の表を照合先にして見る。ここは結び付けの有無と id の実在だけ |
+| **回答者が答えた質問が、その人の答える範囲の中か** | 範囲は自由に書く（分野・機能・目的の id）ので、質問との対応を機械で決められない。req-loop が回答を反映するときに確かめる（`references/tree.md` の「関係者の表」）。照らすのは名前と `なし` だけで、**終了コードにも数えない**——表を置く前の回答（凍結した版を含む）は書き直せない |
+| **関係者の表の名前が個人名でないか・非公式の影響力を書いていないか** | 書き方の判断で、文字列からは決まらない |
+| **入出力の一覧の `相手` と関係者の表の対応** | 相手はシステムの名前、関係者は部署・役職で、名前の付け方が違う |
 | **機能一覧と中間表現の機能の対応** | このスクリプトは中間表現を読まない。`scaffold.py` が関門で照らす（`listed_features` を読む） |
 | **印を使わずに書いた未決定**（「あとで決める」） | 言い回しは列挙しきれない。`check-spec-exit.py` と同じ限界 |
 | **非機能要求の性能の行・ほかの語の行・種類の語の綴りの揺れ**（`稼働率` と書いた行） | 上のとおり見ない。種類は `指標` の語が 4 つのどれかと一致する行だけ |
@@ -68,6 +76,8 @@ def _load(name: str, filename: str):
 
 # 未決定の印の判定は `check-spec-exit.py` のもの（写さない）
 spec_exit = _load("check_spec_exit", "check-spec-exit.py")
+# Q&A 表の列・「まだ無い」の印・暫定の行の判別・回答の括弧から答えた人を読む関数は `check-qa-csv.py` のもの（写さない。#1161）
+qa = _load("check_qa_csv", "check-qa-csv.py")
 
 # ---- `references/tree.md` の「システム設計書の成果物」の写し
 FEATURES = "requirements/features.csv"
@@ -128,6 +138,16 @@ ORDER_COLUMN = "順番"
 # 権限一覧: 1 列目の名前と、ロールの列のセルの値
 ROLES_FIRST = "操作"
 ROLES_VALUES = ("可", "不可")
+# 関係者の表（`references/tree.md` の「関係者の表」。#1161）: 見出しの行・id の形・役割と合意の決まった値・区切り・「無い」の値
+STAKEHOLDERS = "shared/stakeholders.csv"
+STAKEHOLDERS_COLUMNS = ["id", "名前", "役割", "関心事", "答える範囲", "合意"]
+STAKEHOLDER_ID = re.compile(r"P-[0-9]{3,}")
+STAKEHOLDER_ROLES = ("利用者", "予算責任者", "決裁者", "連携先")
+STAKEHOLDER_AGREEMENTS = ("要求確定", "予算", "決裁")
+STAKEHOLDER_SEPARATOR = "・"
+STAKEHOLDER_NONE = "なし"
+# 回答者を照らす Q&A 表（共有の表だけ。内部の表は開発者が決める）
+QA_TABLE = "shared/qa.csv"
 # ---- `references/nfr.md` の写し
 NFR_COLUMNS = ["No", "対象", "指標", "上限", "単位", "条件", "根拠"]
 NFR_NUMBER = re.compile(r"N-[0-9]{3,}")
@@ -143,7 +163,7 @@ NFR_REQUIRED = ("対象", "条件", "根拠")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]{0,8}")
 PERCENT = re.compile(r"(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,6})?")
 
-ALL_TABLES = list(COLUMNS) + [PURPOSES, ROLES, NFR]
+ALL_TABLES = list(COLUMNS) + [PURPOSES, ROLES, NFR, STAKEHOLDERS]
 
 
 class Report:
@@ -153,6 +173,8 @@ class Report:
         self.empty: list[str] = []
         self.undecided: list[str] = []
         self.unreadable: list[str] = []
+        # 回答者の照合（#1161）——終了コードに数えない報告
+        self.respondents: list[str] = []
         self.rows: dict[str, int] = {}
 
     def code(self, strict_nfr: bool = True) -> int:
@@ -184,6 +206,11 @@ class Report:
         else:
             checked = ", ".join(f"{name}（{count} 行）" for name, count in self.rows.items())
             out.append(f"OK（{checked or '検査した表なし'}）")
+        if self.respondents:
+            out.append(f"回答者の照合（終了コードに数えない。{len(self.respondents)} 件）:")
+            out.extend(f"  {item}" for item in self.respondents)
+            out.append("表に無い人・答える範囲の無い人の回答は、範囲を持つ関係者に確かめてから反映する"
+                       "（references/tree.md の「関係者の表」。質問がその人の範囲かは機械で見ていない）")
         if len(self.missing) == len(ALL_TABLES):
             out.append("成果物の表が 1 つも無い——渡したディレクトリが版のディレクトリか重ね合わせた全体かを確かめる")
         return out
@@ -455,6 +482,120 @@ def check_roles(root: Path, report: Report) -> None:
     report.rows[ROLES] = len(rows)
 
 
+def check_stakeholders(root: Path, report: Report) -> dict[str, bool] | None:
+    """関係者の表（#1161）。表が決まりどおりなら {名前: 答える範囲が `なし` でないか} を返す（回答者の照合に使う）。
+    無い・読めない・形式の違反があるなら None（違反のある表で回答者を照らさない）。"""
+    table = read_table(root, STAKEHOLDERS, report)
+    if table is None:
+        return None
+    header, rows = table
+    if not check_columns(report, STAKEHOLDERS, header, STAKEHOLDERS_COLUMNS):
+        return None
+    before = len(report.violations)
+    ids: dict[str, int] = {}
+    names: dict[str, int] = {}
+    answers: dict[str, bool] = {}
+    for line, fields in rows:
+        where = f"{STAKEHOLDERS}:{line}"
+        if len(fields) != len(STAKEHOLDERS_COLUMNS):
+            report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(STAKEHOLDERS_COLUMNS)}）")
+            continue
+        row = dict(zip(STAKEHOLDERS_COLUMNS, fields))
+        if cell_state(report, where, "id", row["id"], False):
+            value = row["id"].strip()
+            if not STAKEHOLDER_ID.fullmatch(value):
+                report.violations.append(f"{where}: id が P- に 3 桁以上の数字の形でない: {value!r}")
+            elif value in ids:
+                report.violations.append(f"{where}: id が {ids[value]} 行目と重複: {value}")
+            else:
+                ids[value] = line
+        name = None
+        if cell_state(report, where, "名前", row["名前"], False):
+            name = row["名前"].strip()
+            if name in names:
+                report.violations.append(f"{where}: 名前 が {names[name]} 行目と重複: {name}")
+                name = None
+            else:
+                names[name] = line
+        for column, allowed, none in (("役割", STAKEHOLDER_ROLES, None), ("合意", STAKEHOLDER_AGREEMENTS, STAKEHOLDER_NONE)):
+            if not cell_state(report, where, column, row[column], False):
+                continue
+            items = [item.strip() for item in row[column].split(STAKEHOLDER_SEPARATOR)]
+            if none is not None and items == [none]:
+                continue
+            if none is not None and none in items:
+                report.violations.append(f"{where}: {column} に {none} とほかの値を混ぜた: {row[column].strip()!r}")
+                continue
+            for item in items:
+                if item not in allowed:
+                    report.violations.append(f"{where}: {column} の値が {'・'.join(allowed)} のどれでもない: {item!r}"
+                                             f"（区切りは {STAKEHOLDER_SEPARATOR}）")
+            if len(set(items)) != len(items):
+                report.violations.append(f"{where}: {column} に同じ値を重ねた: {row[column].strip()!r}")
+        cell_state(report, where, "関心事", row["関心事"], False)
+        scope = cell_state(report, where, "答える範囲", row["答える範囲"], False)
+        if name is not None:
+            # 範囲が未決定・空の人も「答える人」に数える（範囲が `なし` と決まった人だけを答えない人と読む）
+            answers[name] = not (scope and row["答える範囲"].strip() == STAKEHOLDER_NONE)
+    report.rows[STAKEHOLDERS] = len(rows)
+    return answers if len(report.violations) == before else None
+
+
+def agreements(root: Path) -> dict[str, tuple[str, ...] | None] | None:
+    """関係者の表の {名前: 合意}（`なし` なら空のタプル、未決定の印・空なら None）。表が無い・読めない・形式の違反があるなら None。
+    **`check-signoff.py` が合意が要る関係者の報告（#1161）で読む**——表の読み方を写さない。名前が未決定・空の行は数えない。"""
+    report = Report()
+    if check_stakeholders(root, report) is None:
+        return None
+    _, rows = read_table(root, STAKEHOLDERS, report)
+    result: dict[str, tuple[str, ...] | None] = {}
+    for _, fields in rows:
+        row = dict(zip(STAKEHOLDERS_COLUMNS, fields))
+        name = row["名前"].strip()
+        if not name or markers(name):
+            continue
+        value = row["合意"]
+        if markers(value) or not value.strip():
+            result[name] = None
+            continue
+        items = tuple(item.strip() for item in value.split(STAKEHOLDER_SEPARATOR))
+        result[name] = () if items == (STAKEHOLDER_NONE,) else items
+    return result
+
+
+def check_respondents(root: Path, report: Report, answers: dict[str, bool]) -> None:
+    """共有の Q&A 表の回答者を関係者の表の `名前` に照らし、表に無い・答える範囲が `なし`・読めない回答を報告する（#1161）。
+    **終了コードに数えない**——表を置く前の回答（凍結した版の書き方を含む）は直せず、質問がその人の範囲かは機械で決まらない。
+    `未回答` と暫定の行（利用者が確かめていない）は見ない。表の形は `check-qa-csv.py` が見る——ここは見出しが決まりどおりの表だけを読む。"""
+    path = root / QA_TABLE
+    if not path.is_file():
+        return
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError):
+        report.respondents.append(f"{QA_TABLE}: 読めない——回答者を照らしていない（check-qa-csv.py で確かめる）")
+        return
+    reader = csv.reader(io.StringIO(text, newline=""))
+    if next(reader, None) != qa.COLUMNS:
+        report.respondents.append(f"{QA_TABLE}: 見出しの行が決まりと違う——回答者を照らしていない（check-qa-csv.py で確かめる）")
+        return
+    for fields in reader:
+        if not any(f.strip() for f in fields) or len(fields) != len(qa.COLUMNS):
+            continue  # 空行と列の数の違う行は check-qa-csv.py が見る
+        row = dict(zip(qa.COLUMNS, fields))
+        answer = row["回答"].strip()
+        if answer == qa.NO_ANSWER or qa.is_provisional(row):
+            continue
+        where = f"{QA_TABLE}:{reader.line_num}: {row['No'].strip()}"
+        who = qa.respondent(answer)
+        if who is None:
+            report.respondents.append(f"{where} の回答から答えた人を読めない（括弧を `<関係者の名前>が回答` で始める）: {answer!r}")
+        elif who not in answers:
+            report.respondents.append(f"{where} の回答者 {who} が関係者の表（{STAKEHOLDERS}）の名前に無い")
+        elif not answers[who]:
+            report.respondents.append(f"{where} の回答者 {who} は関係者の表で答える範囲が {STAKEHOLDER_NONE}")
+
+
 def check_nfr(root: Path, report: Report) -> None:
     table = read_table(root, NFR, report)
     if table is None:
@@ -522,6 +663,11 @@ def inspect(root: Path) -> Report:
     check_purposes(root, report, context)  # 機能一覧より後（`context` の機能一覧の id を照らす）
     check_roles(root, report)
     check_nfr(root, report)
+    answers = check_stakeholders(root, report)
+    if answers is not None:
+        check_respondents(root, report, answers)
+    elif (root / STAKEHOLDERS).is_file():
+        report.respondents.append(f"{STAKEHOLDERS} が決まりに反する・読めないので、回答者を照らしていない")
     return report
 
 

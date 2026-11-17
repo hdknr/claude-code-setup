@@ -39,6 +39,11 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
   暫定の行の判別は同梱の `check-qa-csv.py` の `is_provisional` を使う（写さない——#404）。表が列検査を通らなければ 2。
   **一致するかどうかと独立に見る**——一致しなくても、暫定の行があれば 3（両方を出す）。
 - **LLM に判断させないための照合**なので、判定はすべて `git` の出力から決める。
+- **照合した後（0・1・3）に、合意が要る関係者を報告する（#1161。CLI の出力だけで、終了コードに数えない）**——タグごとに、その時点の関係者の表
+  （`shared/stakeholders.csv`。v<n> から v1 へ遡って最初に在るもの。遡る途中の `removed.csv` が種類 `ファイル` で消していれば無し）で `合意` に
+  `要求確定`（req）・`予算`（budget）を持つ関係者と、タグの注釈の `承認: ` の行に並べた名前を並べ、注釈に無い関係者・表で合意が要るとしていない名前を出す。
+  軽量のタグは「注釈が無い」と出す。表の読み方は `check-design-csv.py` の `agreements` を使う（写さない）。
+  **どちらの時点にも表が無ければ何も出さない**（表を置かない正本の出力は前と同じ）。`resolve` の行には入れない——提案書の生成（`build-proposal.py`）が読む出力を変えない。
 
 終了コード:
 
@@ -62,7 +67,8 @@ usage: python3 check-signoff.py [--repo <正本リポジトリ>] [--version <n>]
 | 守らないもの | なぜ |
 | --- | --- |
 | **タグを付け直していないか** | 付け直した後の状態しか見えない。`references/signoff-tags.md` の「付け直さない」は運用で守る |
-| **誰がタグを付けたか** | 署名を検査しない。タグを付けられる人を絞るのはリポジトリの権限 |
+| **誰がタグを付けたか** | 署名を検査しない。タグを付けられる人を絞るのはリポジトリの権限。合意が要る関係者の報告が見るのは**注釈に書いた名前**で、書いた人がその関係者本人かは見ない |
+| **合意が要る関係者がそろったか** | 報告するだけで、照合を止めない——誰が承認したかは人が判断する（前からのタグは軽量で注釈を持たない。`references/signoff-tags.md` の「合意が要る関係者」） |
 | **比べる範囲の外**（`feasibility/`・`proposal/`・`spec/qa-dev.csv`・`spec/formal/`） | 予算の合意・決裁の側と開発者の内部が書くもの、仕様から書き起こした写し。2 つの承認の間で変わってよい |
 | **綴りだけ違う `spec/Formal/`** | 形式検査のモデルと見なさず、ふつうの仕様のファイルとして比べる（`is_formal` は綴りどおりの名前だけを見る） |
 | **画面の表（`requirements/screens/data/`）の行の単位の比べ** | 承認が見た中身はファイルのバイトで比べる（ほかの `requirements/` のファイルと同じ）。行の単位で重ねるのは重ね合わせと版の差分（`references/versions.md`） |
@@ -104,6 +110,15 @@ def _load(name: str, filename: str):
 
 versions = _load("merge_versions", "merge-versions.py")
 qa = versions.qa  # `check-qa-csv.py`（状態の名前を写さない）
+# 関係者の表の置き場所と読み方（`check-design-csv.py` のもの。写さない。#1161）
+design = _load("check_design_csv", "check-design-csv.py")
+
+# 合意が要る関係者の報告（#1161。`references/signoff-tags.md` の「合意が要る関係者」の写し）: タグの注釈の承認の行の書き出しと区切り、
+# タグの種類 → 関係者の表の `合意` の値
+APPROVAL = "承認: "
+APPROVAL_SEPARATOR = "・"
+AGREEMENT = {"req": "要求確定", "budget": "予算"}
+assert set(AGREEMENT.values()) <= set(design.STAKEHOLDER_AGREEMENTS)
 
 
 class Unjudged(Exception):
@@ -427,6 +442,93 @@ def resolve(repo: Path, req: str | None = None, budget: str | None = None,
     return 0, [f"一致する: {pair} の {where} は同じ"], info
 
 
+def stakeholders_at(repo: Path, commit: str, tag: str, version: int) -> str | None:
+    """その時点で v<version> の全体に効いている関係者の表のパス——v<version> から v1 へ遡って最初に在る `docs/v<k>/shared/stakeholders.csv`。
+    その前に、遡る途中の版の `removed.csv` が種類 `ファイル` でその表を消していれば None（消した後に置き直していない）。無ければ None。
+    読めなければ `Unjudged`（報告の側で「報告していない」と出す。照合の終了コードは変えない）。"""
+    for number in range(version, 0, -1):
+        path = f"{DOCS}/v{number}/{design.STAKEHOLDERS}"
+        listed = git(repo, "ls-tree", "--name-only", commit, "--", path)
+        if listed.returncode != 0:
+            raise Unjudged(f"{tag} の {path} を読めない: {listed.stderr.strip()}")
+        if listed.stdout.strip():
+            return path
+        if number >= 2:
+            rows = read_removed_at(repo, commit, tag, f"{DOCS}/v{number}/{REMOVED}") or []
+            if any(kind == REMOVED_FILE and target == design.STAKEHOLDERS for _, kind, target in rows):
+                return None
+    return None
+
+
+def approvers(repo: Path, tag: str) -> list[str] | None:
+    """タグの注釈の `承認: ` の行に並べた名前（行が無ければ空）。軽量のタグ（注釈が無い）なら None。"""
+    kind = git(repo, "for-each-ref", "--format=%(objecttype)", f"refs/tags/{tag}")
+    if kind.returncode != 0:
+        raise Unjudged(f"タグ {tag} の種類を読めない: {kind.stderr.strip()}")
+    if kind.stdout.strip() != "tag":
+        return None
+    body = git(repo, "for-each-ref", "--format=%(contents)", f"refs/tags/{tag}")
+    if body.returncode != 0:
+        raise Unjudged(f"タグ {tag} の注釈を読めない: {body.stderr.strip()}")
+    names: list[str] = []
+    for line in body.stdout.splitlines():
+        if line.startswith(APPROVAL):
+            names += [name.strip() for name in line[len(APPROVAL):].split(APPROVAL_SEPARATOR) if name.strip()]
+    return names
+
+
+def agreement_report(repo: Path, info: dict) -> list[str]:
+    """照合した 2 つのタグについて、その時点の関係者の表で合意が要る関係者と、タグの注釈の承認を並べる（#1161）。
+    **照合の結果（終了コード）に数えない**——誰が承認したかは人が判断する（`references/signoff-tags.md` の「合意が要る関係者」）。
+    どちらの時点にも関係者の表が無ければ何も返さない（表を置かない正本の出力を変えない）。"""
+    repo = Path(info["top"])
+    body: list[str] = []
+    reported = False
+    for key in ("req", "budget"):
+        tag, commit, agreement = info[key], info[f"{key}_commit"], AGREEMENT[key]
+        head = f"  {tag}（{agreement}）"
+        try:
+            path = stakeholders_at(repo, commit, tag, info["version"])
+            if path is None:
+                body.append(f"{head}: その時点に関係者の表が無い")
+                continue
+            reported = True
+            result = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{path}"], capture_output=True)
+            if result.returncode != 0:
+                raise Unjudged(f"{tag} の {path} を読めない: {result.stderr.decode(errors='replace').strip()}")
+            with tempfile.TemporaryDirectory() as tmp:
+                copy = Path(tmp) / design.STAKEHOLDERS
+                copy.parent.mkdir(parents=True)
+                copy.write_bytes(result.stdout)
+                table = design.agreements(Path(tmp))
+            if table is None:
+                body.append(f"{head}: {path} が決まりに反する・読めない——合意が要る関係者を報告していない"
+                            f"（check-design-csv.py で確かめる）")
+                continue
+            needed = [name for name, items in table.items() if items is not None and agreement in items]
+            unknown = [name for name, items in table.items() if items is None]
+            signed = approvers(repo, tag)
+        except Unjudged as e:
+            body.append(f"{head}: {e}——合意が要る関係者を報告していない")
+            continue
+        body.append(f"{head}。表 {path}: 合意が要る {'・'.join(needed) or '（いない）'}")
+        if unknown:
+            body.append(f"    合意が決まっていない関係者: {'・'.join(unknown)}")
+        if signed is None:
+            body.append("    タグに注釈が無い（軽量のタグ）——承認した関係者が記録されていない")
+            continue
+        body.append(f"    タグの注釈の承認: {'・'.join(signed) or f'（{APPROVAL.strip()} の行が無い）'}")
+        missing = [name for name in needed if name not in signed]
+        extra = [name for name in signed if name not in needed]
+        if missing:
+            body.append(f"    注釈に無い（合意が要るのに承認の記録が無い）: {'・'.join(missing)}")
+        if extra:
+            body.append(f"    表で{agreement}の合意が要るとしていない名前: {'・'.join(extra)}")
+    if not reported:
+        return []
+    return ["合意が要る関係者（関係者の表とタグの注釈。照合の結果に数えない——references/signoff-tags.md の「合意が要る関係者」）:"] + body
+
+
 def positive(text: str) -> int:
     """`--version` の値（1 以上・先頭に 0 を付けない）。"""
     if not re.fullmatch(NUMBER, text):
@@ -441,7 +543,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--req")
     parser.add_argument("--budget")
     args = parser.parse_args(argv)
-    code, lines, _ = resolve(args.repo, args.req, args.budget, args.version)
+    code, lines, info = resolve(args.repo, args.req, args.budget, args.version)
+    if info:
+        lines = lines + agreement_report(args.repo, info)
     for line in lines:
         print(line, file=sys.stderr if code else sys.stdout)
     return code

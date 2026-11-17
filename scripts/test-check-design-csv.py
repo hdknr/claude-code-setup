@@ -11,15 +11,18 @@
    id と順番）・決まった値（種類・必須・向き・ヘッダー・権限の可否）・順番・レイアウトの id が一覧に無い（一覧が無いときも）・帳票名・
    権限一覧の見出し（1 列目・ロールが無い・重複）と操作の重複・非機能要求の種類の上限と単位・No の形と重複・見出し・
    目的の表（#1154）の見出し・列の数・id の形と重複・種類ごとに空にする欄・上位が目的でない／表に無い・機能の id の形・機能一覧に無い id（一覧が無いときも）・`なし` の混在。
+   関係者の表（#1161）の見出し・列の数・id の形と重複・名前の重複・役割と合意の値（区切り・`なし` を役割に書く）・同じ値の重ね・合意の `なし` の混在。
 2. **決まりどおりの形を通す**（陽性対照。BOM・空でよい欄が空・性能の行とほかの語の行は崩れていても見ない）。
 3. **4 つを分けて出す**——形式の違反（1）・表が無い（止めない。0）・必須の欄が空（3）・未決定の印（3。全角も）。
    **未決定の印のあるセルを値の違反に数えない**。違反と未決定が両方あれば 1 で、両方の見出しを出す。
    **目的の表の結び付けの欠け**（目的を測る指標が無い・目的を指さない機能・機能一覧があるのに指標の機能が空）も 3。
    機能一覧が無ければ指標の機能は空でよい（0）。
+3a. **回答者の照合を報告し、終了コードに数えない**（#1161）——表に無い・答える範囲が `なし`・括弧から読めない回答を出す。表にある人・`未回答`・暫定の行は出さない。
+   範囲が未決定の人は答える人に数える。関係者の表が決まりに反する・無いなら照らさない。Q&A 表の見出しが違えば照らさないと出す。
 4. **中身を検査していない形を 0 にしない（2）**——UTF-8 でない・空のファイル・ファイルでない・ディレクトリが無い・引数の誤り・
    想定外の例外（128KB 超のセルの `csv.Error`）・`-OO` で引数なし。
 5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ。
-   目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`）。
+   目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`。関係者の表は列・決める人・id の接頭辞・役割と合意の値・区切りと `なし`）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -53,6 +56,8 @@ RO = "requirements/roles.csv"
 J = "requirements/jobs.csv"
 N = "shared/nfr.csv"
 P = "requirements/purposes.csv"
+S = "shared/stakeholders.csv"
+Q = "shared/qa.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
 E_HEAD = "エンティティ,項目,意味,型,必須,保管期間\n"
@@ -66,6 +71,26 @@ P_HEAD = "id,上位,誰の課題か,内容,成功の判定,機能\n"
 P_GOAL = "G-001,,受注の担当者,受注の入力の手間を減らす,,\n"
 P_OK = (P_GOAL + "K-001,G-001,,1 件の受注の入力にかかる時間,5 分から 2 分以下に,F-001・F-002\n"
         "K-002,G-001,,入力の誤り,月 3 件以下,なし\n")
+S_HEAD = "id,名前,役割,関心事,答える範囲,合意\n"
+S_OK = ("P-001,業務部長,利用者・決裁者,受注の入力の手間,受注の業務ルール,要求確定・決裁\n"
+        "P-002,経理部,予算責任者,開発費と運用費,なし,予算\n"
+        "P-003,倉庫システムの担当,連携先,在庫の連携のファイル,IO-001,なし\n")
+Q_HEAD = "No,起票元,質問,選択肢,推奨,推奨の理由,回答,反映先,状態,費用への影響\n"
+
+
+def qa_rows(*answers: tuple[str, str]) -> str:
+    """共有の Q&A 表の試料。(回答, 状態) ごとに 1 行（番号は Q-R-001 から）。"""
+    return Q_HEAD + "".join(f"Q-R-{i:03d},要求確定,質問,A: x / B: y,A,理由,{answer},{'—' if answer == '未回答' else '決定表 1 行目'},{state},\n"
+                            for i, (answer, state) in enumerate(answers, start=1))
+
+
+def stakeholders(body: str = S_OK, qa: str | None = None) -> dict:
+    """関係者の表の試料（#1161）。`qa` があれば共有の Q&A 表も置く。ほかの表は置かない。"""
+    files = {S: S_HEAD + body}
+    if qa is not None:
+        files[Q] = qa
+    return files
+
 
 GOOD = {
     F: F_HEAD + "F-001,注文の受付,API,flows/受注.svg\nF-002,注文の一覧,画面,\n",
@@ -114,9 +139,9 @@ def purposes(body: str, features: str | None = None) -> dict:
 
 # (名前, 置く表（パス → 中身。bytes はそのまま・"<dir>" はディレクトリ）, 引数（None なら根）, 期待する終了コード, 出力に含まれるべき文字列, 含まれてはならない文字列)
 CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
-    ("決まりどおり", GOOD | {P: P_HEAD + P_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
+    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
     ("BOM 付き", {rel: "﻿" + body for rel, body in GOOD.items()}, None, 0, "OK（", "見出しの行"),
-    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（8 件）", "成果物の表が 1 つも無い"),
+    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（9 件）", "成果物の表が 1 つも無い"),
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
@@ -222,6 +247,43 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
      "requirements/purposes.csv:3: 機能 に未決定の印（未定）", "機能一覧の F-001 が"),
     ("目的の表: 一覧の id が未決定なら機能の id も未決定", purposes(P_OK.replace("なし", "F-009"), features=GOOD[F] + "TBD,x,API,\n"), None, 3,
      "機能 F-009 が機能一覧（requirements/features.csv）に無い（一覧に id の決まっていない行がある）", ""),
+    # ---- 関係者の表（#1161）
+    ("関係者の表: 決まりどおり", stakeholders(), None, 0, "OK（shared/stakeholders.csv（3 行））", "回答者の照合"),
+    ("関係者の表: 見出し", {S: "id,役割,名前,関心事,答える範囲,合意\nP-001,利用者,業務部長,a,b,なし\n"}, None, 1,
+     "shared/stakeholders.csv:1: 見出しの行が決まりと違う", ""),
+    ("関係者の表: 列の数", stakeholders("P-001,業務部長,利用者,a,b\n"), None, 1, "shared/stakeholders.csv:2: 列の数が 5", ""),
+    ("関係者の表: id の形", stakeholders(S_OK.replace("P-002", "P-02")), None, 1, "id が P- に 3 桁以上の数字の形でない: 'P-02'", ""),
+    ("関係者の表: id の重複", stakeholders(S_OK.replace("P-002", "P-001")), None, 1, "shared/stakeholders.csv:3: id が 2 行目と重複: P-001", ""),
+    ("関係者の表: 名前の重複", stakeholders(S_OK.replace("経理部", "業務部長")), None, 1, "shared/stakeholders.csv:3: 名前 が 2 行目と重複: 業務部長", ""),
+    ("関係者の表: 役割の値", stakeholders(S_OK.replace("予算責任者,", "担当者,")), None, 1,
+     "役割 の値が 利用者・予算責任者・決裁者・連携先 のどれでもない: '担当者'", ""),
+    ("関係者の表: 役割になしを書く", stakeholders(S_OK.replace("予算責任者,", "なし,")), None, 1,
+     "役割 の値が 利用者・予算責任者・決裁者・連携先 のどれでもない: 'なし'", ""),
+    ("関係者の表: 役割の重ね", stakeholders(S_OK.replace("利用者・決裁者", "利用者・利用者")), None, 1, "役割 に同じ値を重ねた: '利用者・利用者'", ""),
+    ("関係者の表: 合意の値", stakeholders(S_OK.replace(",予算\n", ",承認\n")), None, 1, "合意 の値が 要求確定・予算・決裁 のどれでもない: '承認'", ""),
+    ("関係者の表: 合意の区切り", stakeholders(S_OK.replace("要求確定・決裁", "要求確定、決裁")), None, 1,
+     "合意 の値が 要求確定・予算・決裁 のどれでもない: '要求確定、決裁'", ""),
+    ("関係者の表: 合意になしとほかを混ぜる", stakeholders(S_OK.replace(",予算\n", ",予算・なし\n")), None, 1, "合意 に なし とほかの値を混ぜた", ""),
+    ("関係者の表: 必須の欄が空", stakeholders(S_OK.replace("開発費と運用費", "")), None, 3, "shared/stakeholders.csv:3: 関心事 が空", ""),
+    ("関係者の表: 未決定の印", stakeholders(S_OK.replace("受注の業務ルール", "未定")), None, 3, "shared/stakeholders.csv:2: 答える範囲 に未決定の印（未定）", ""),
+    ("回答者: 表に無い", stakeholders(qa=qa_rows(("A（業務部長が回答）", "反映済み"), ("A（営業部が回答）", "反映済み"))), None, 0,
+     "shared/qa.csv:3: Q-R-002 の回答者 営業部 が関係者の表（shared/stakeholders.csv）の名前に無い", "Q-R-001"),
+    ("回答者: 答える範囲がなし", stakeholders(qa=qa_rows(("A（経理部が回答）", "確認中"))), None, 0,
+     "Q-R-001 の回答者 経理部 は関係者の表で答える範囲が なし", ""),
+    ("回答者: 括弧から読めない", stakeholders(qa=qa_rows(("A（業務部長）", "反映済み"))), None, 0,
+     "Q-R-001 の回答から答えた人を読めない（括弧を `<関係者の名前>が回答` で始める）: 'A（業務部長）'", ""),
+    ("回答者: 表にある人は出さない", stakeholders(qa=qa_rows(("A（業務部長が回答）", "反映済み"), ("B（業務部長が確認）", "反映済み"),
+                                                          ("A（倉庫システムの担当が回答。モック requirements/mocks/a.html）", "反映済み"))), None, 0,
+     "OK（shared/stakeholders.csv（3 行））", "回答者の照合"),
+    ("回答者: 未回答と暫定は見ない", stakeholders(qa=qa_rows(("未回答", "確認中"), ("A（暫定で採用。営業部 2026-10-21 の指示）", "暫定反映"))), None, 0,
+     "OK（", "回答者の照合"),
+    ("回答者: 範囲が未決定の人は答える人に数える", stakeholders(S_OK.replace("受注の業務ルール", "未定"), qa_rows(("A（業務部長が回答）", "反映済み"))), None, 3,
+     "答える範囲 に未決定の印（未定）", "回答者の照合"),
+    ("回答者: 表が決まりに反するなら照らさない", stakeholders(S_OK.replace("P-002", "P-02"), qa_rows(("A（営業部が回答）", "反映済み"))), None, 1,
+     "shared/stakeholders.csv が決まりに反する・読めないので、回答者を照らしていない", "営業部 が関係者の表"),
+    ("回答者: Q&A 表の見出しが違えば照らさない", stakeholders(qa=Q_HEAD.replace("推奨,推奨の理由,", "") + "Q-001,要求確定,a,A: x / B: y,A（営業部が回答）,b,反映済み,\n"),
+     None, 0, "shared/qa.csv: 見出しの行が決まりと違う——回答者を照らしていない", "営業部"),
+    ("回答者: 関係者の表が無ければ照らさない", {Q: qa_rows(("A（営業部が回答）", "反映済み"))}, None, 0, "成果物の表が 1 つも無い", "回答者の照合"),
     ("UTF-8 でない", good(F=(F_HEAD + "F-001,注文,API,\n").encode("cp932")), None, 2, "requirements/features.csv: UTF-8 として読めない", ""),
     ("空のファイル", good(F=""), None, 2, "requirements/features.csv: 空のファイル", ""),
     ("ファイルでない", good(F="<dir>"), None, 2, "requirements/features.csv: ファイルでない", ""),
@@ -309,6 +371,29 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("印と並べた決まった id を結び付けに数えない", "            covered.update(item.strip() for item in value.split(PURPOSE_SEPARATOR) if item.strip() in features)\n",
      "", "目的の表: 印と並べた決まった id は結び付けに数える"),
     ("目的を指さない機能を見ない", "        for feature in sorted(features - covered):", "        for feature in []:", "目的の表: 目的を指さない機能"),
+    # ---- 関係者の表（#1161）
+    ("関係者の表を検査しない", "    answers = check_stakeholders(root, report)", "    answers = None", "関係者の表: 決まりどおり"),
+    ("関係者の表の見出しを見ない", "    if not check_columns(report, STAKEHOLDERS, header, STAKEHOLDERS_COLUMNS):\n        return None",
+     "    if False:\n        return None", "関係者の表: 見出し"),
+    ("関係者の表の列の数を見ない", "        if len(fields) != len(STAKEHOLDERS_COLUMNS):", "        if False:", "関係者の表: 列の数"),
+    ("関係者の表の id を 1 桁から許す", 'STAKEHOLDER_ID = re.compile(r"P-[0-9]{3,}")', 'STAKEHOLDER_ID = re.compile(r"P-[0-9]{1,}")', "関係者の表: id の形"),
+    ("関係者の表の id の重複を見ない", "            elif value in ids:", "            elif False:", "関係者の表: id の重複"),
+    ("名前の重複を見ない", "            if name in names:", "            if False:", "関係者の表: 名前の重複"),
+    ("役割と合意の値を見ない", "                if item not in allowed:", "                if False:", "関係者の表: 役割の値"),
+    ("役割になしを許す", '("役割", STAKEHOLDER_ROLES, None)', '("役割", STAKEHOLDER_ROLES, STAKEHOLDER_NONE)', "関係者の表: 役割になしを書く"),
+    ("同じ値の重ねを見ない", "            if len(set(items)) != len(items):", "            if False:", "関係者の表: 役割の重ね"),
+    ("合意のなしの混在を見ない", "            if none is not None and none in items:", "            if False:", "関係者の表: 合意になしとほかを混ぜる"),
+    ("関心事の空を数えない", '        cell_state(report, where, "関心事", row["関心事"], False)', '        cell_state(report, where, "関心事", row["関心事"], True)',
+     "関係者の表: 必須の欄が空"),
+    ("回答者を照らさない", "        check_respondents(root, report, answers)", "        pass", "回答者: 表に無い"),
+    ("答える範囲のなしを見ない", "        elif not answers[who]:", "        elif False:", "回答者: 答える範囲がなし"),
+    ("読めない回答者を名指ししない", "        if who is None:", "        if False:", "回答者: 括弧から読めない"),
+    ("未回答と暫定も照らす", "        if answer == qa.NO_ANSWER or qa.is_provisional(row):", "        if False:", "回答者: 未回答と暫定は見ない"),
+    ("範囲が未決定の人を答えない人に数える", '            answers[name] = not (scope and row["答える範囲"].strip() == STAKEHOLDER_NONE)',
+     '            answers[name] = scope and row["答える範囲"].strip() != STAKEHOLDER_NONE', "回答者: 範囲が未決定の人は答える人に数える"),
+    ("違反のある表で照らす", "    return answers if len(report.violations) == before else None", "    return answers", "回答者: 表が決まりに反するなら照らさない"),
+    ("Q&A 表の見出しを見ない", "    if next(reader, None) != qa.COLUMNS:", "    if next(reader, None) is None:", "回答者: Q&A 表の見出しが違えば照らさない"),
+    ("回答者の照合を終了コードに数える", "        if self.empty or self.undecided:", "        if self.empty or self.undecided or self.respondents:", "回答者: 表に無い"),
 ]
 
 # -OO（docstring が無い）で引数なしに呼んでも、使い方の誤りとして 2（#286）。(名前, 壊す前, 壊した後)
@@ -423,6 +508,7 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
     if sorted(tables) != sorted(module.ALL_TABLES):
         problems.append(f"成果物の表の一覧が違う（tree.md {sorted(tables)} ／ 本体 {sorted(module.ALL_TABLES)}）")
     problems += purpose_mismatches(module, design)
+    problems += stakeholder_mismatches(module, design)
     kinds = {}
     for row in rows_of(section(nfr_md, "## 性能のほかの種類"))[1:]:  # 1 行目は見出し（`指標`・`上限`・`単位`）
         kinds[row[0].strip("`")] = () if row[2] == "空にする" else tuple(re.findall(r"`([^`]+)`", row[2]))
@@ -460,6 +546,33 @@ def purpose_mismatches(module, design: str) -> list[str]:
     return problems
 
 
+def stakeholder_mismatches(module, design: str) -> list[str]:
+    """関係者の表（#1161）の定数が tree.md の「関係者の表」と一致するか。"""
+    heading = next((line for line in design.splitlines() if line.startswith("### ") and f"（`{module.STAKEHOLDERS}`）" in line), None)
+    if heading is None:
+        return [f"{module.STAKEHOLDERS}: tree.md に節が無い"]
+    rows = {row[0].strip("`"): row for row in rows_of(section(design, heading))}
+    if list(rows) != module.STAKEHOLDERS_COLUMNS:
+        return [f"{module.STAKEHOLDERS}: 列が違う（tree.md {list(rows)} ／ 本体 {module.STAKEHOLDERS_COLUMNS}）"]
+    problems = []
+    if any(len(row) != 3 or row[2] != "利用者" for row in rows.values()):
+        problems.append(f"{module.STAKEHOLDERS}: 「決める人」が利用者でない行がある")
+    prefix = re.match(r"^`([A-Z]+-)` に 3 桁以上の数字", rows["id"][1])
+    if not prefix or module.STAKEHOLDER_ID.pattern != prefix.group(1) + "[0-9]{3,}":
+        problems.append(f"{module.STAKEHOLDERS}: id の形が違う（tree.md {prefix and prefix.group(1)} ／ 本体 {module.STAKEHOLDER_ID.pattern}）")
+    roles = re.match(r"^((?:`[^`]+`・)+`[^`]+`) のどれか", rows["役割"][1])
+    if tuple(re.findall(r"`([^`]+)`", roles.group(1)) if roles else ()) != module.STAKEHOLDER_ROLES:
+        problems.append(f"{module.STAKEHOLDERS}: 役割の値が違う（本体 {module.STAKEHOLDER_ROLES}）")
+    if tuple(re.findall(r"`([^`]+)`（", rows["合意"][1])) != module.STAKEHOLDER_AGREEMENTS:
+        problems.append(f"{module.STAKEHOLDERS}: 合意の値が違う（tree.md {re.findall(r'`([^`]+)`（', rows['合意'][1])} ／ 本体 {module.STAKEHOLDER_AGREEMENTS}）")
+    separator = f"`{module.STAKEHOLDER_SEPARATOR}` で区切って"
+    if separator not in rows["役割"][1] or separator not in rows["合意"][1]:
+        problems.append(f"{module.STAKEHOLDERS}: 区切り（{module.STAKEHOLDER_SEPARATOR}）が tree.md と違う")
+    if f"要らないなら `{module.STAKEHOLDER_NONE}`" not in rows["合意"][1] or f"答えないなら `{module.STAKEHOLDER_NONE}`" not in rows["答える範囲"][1]:
+        problems.append(f"{module.STAKEHOLDERS}: 無いことの値（{module.STAKEHOLDER_NONE}）が tree.md と違う")
+    return problems
+
+
 # references を崩すと不一致になる（突き合わせが空振りでないこと）。(名前, ファイル, 崩す前, 崩した後)
 REFERENCE_MUTATIONS = [
     ("機能一覧の列を消す", "tree", "| `関係` | 関係する画面", "| 関係 | 関係する画面"),
@@ -474,6 +587,13 @@ REFERENCE_MUTATIONS = [
     ("目的の表の区切りを変える", "tree", "`・` で区切って並べる（`F-001・F-003`）", "`,` で区切って並べる（`F-001・F-003`）"),
     ("目的の表の決める人を崩す", "tree", "の `id` を `・` で区切って並べる（`F-001・F-003`）。システムの機能では動かさない指標（業務の手順で動かす）は `なし` とだけ書く。目的の行は空にする | 利用者 |",
      "の `id` を `・` で区切って並べる（`F-001・F-003`）。システムの機能では動かさない指標（業務の手順で動かす）は `なし` とだけ書く。目的の行は空にする | 開発者 |"),
+    ("関係者の表の列を消す", "tree", "| `関心事` | その関係者", "| 関心事 | その関係者"),
+    ("関係者の表の接頭辞を変える", "tree", "| `id` | `P-` に 3 桁以上の数字（`P-001`）", "| `id` | `S-` に 3 桁以上の数字（`S-001`）"),
+    ("関係者の表の役割を足す", "tree", "`利用者`・`予算責任者`・`決裁者`・`連携先` のどれか", "`利用者`・`予算責任者`・`決裁者`・`連携先`・`開発者` のどれか"),
+    ("関係者の表の合意を変える", "tree", "`決裁`（提案書の決裁）", "`発注`（提案書の決裁）"),
+    ("関係者の表の区切りを変える", "tree", "を `・` で区切って並べる（`利用者・決裁者`）", "を `,` で区切って並べる（`利用者・決裁者`）"),
+    ("関係者の表のなしを変える", "tree", "要らないなら `なし`", "要らないなら `無し`"),
+    ("関係者の表の決める人を崩す", "tree", "答えないなら `なし` | 利用者 |", "答えないなら `なし` | 開発者 |"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]
 
