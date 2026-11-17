@@ -27,7 +27,7 @@
 | `scripts/intake-code.py` | 取り込みの段の機械で決まる部分——持ち込まれたコードを読むだけで写し（`snapshot`）、候補の JSON を検査して Q&A 表の回答待ちの行にし、基盤要件との食い違いを照らす（`rows`）（標準ライブラリと `git`） |
 | `references/feasibility-csv.md` | スケジュール（`schedule.csv`）と見積り（`estimate.csv`）の列 |
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
-| `scripts/check-review-record.py` | 仕様レビューの記録（指摘の表と実行の記録）から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限を数え直す。`scaffold.py` は最後の実行の行をここで読む（標準ライブラリのみ） |
+| `scripts/check-review-record.py` | 仕様レビューの記録（指摘の表と実行の記録）から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限と、条件 5 のうち内部の Q&A 表の足した・変えた行を Domain Checker が確かめたかを数え直す。`scaffold.py` は最後の実行の行をここで読む（標準ライブラリのみ） |
 | `scripts/check-formal-rerun.py` | 保存した TLC のモデルの本体と陽性対照を、正本の `CLAUDE.md` の呼び方で走らせ直し、抜ける条件 4 を判定し直す（標準ライブラリと TLC） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |

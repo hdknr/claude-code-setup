@@ -101,6 +101,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `build-proposal.py` もこの関数で読む——**検査を通った表しか描かない・載せない**。テストは
       `scripts/test-check-feasibility-csv.py`）
     - `scripts/check-review-record.py` - 仕様レビューの**記録の表と指摘の表から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限を数え直す**（#1044。`conditions` と `limit`。
+      **`internal` は条件 5 のうち、作業中の版で足した・変えた内部の Q&A 表の行（`D-`）を Domain Checker が確かめたか（指摘の表の印 `（内部の行: <No>）`）と、共有へ移すと決めた行が内部の表に残らないかを数える**——#1155。版の差分は `diff-versions.py` を読み込む。
       **判定役の判定と食い違ったら厳しいほうを取る**——spec-review の手順 1・6 が呼ぶ。`scaffold.py` は記録の表の最後の実行の行が `抜けた` かをここの `last_run` で読み、そうでなければ作らない。
       指摘の表の列と検査は `check-findings-csv.py` を読み込む——写さない。決まりの原本は `references/spec-exit.md` の「条件 2〜4 と上限を数え直す」、守る／守らないは docstring を正とする。テストは `scripts/test-check-review-record.py`）
     - `scripts/findings-by-feature.py` - 仕様レビューの**指摘の表から、機能ごとの指摘の件数（合計と振り分けの区分ごと）を数える**（#1045。仕事の切り方——範囲の既定の線・scaffold の `--bundle`——を見直す材料）。
@@ -442,7 +443,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     （`File` は偽物。`mkdocs build` は走らせない）。#1098 の受入基準（回し直しても登録が消えない・`docs/mocks.md` に版ごとの生成したモック・節に表）と、
     **本体の定数が `references/mkdocs.md` と一致すること**を見る
   - `test-check-review-record.py` - spec-loop の仕様レビューの記録の数え直し（#1044）の回帰テスト（変異テストを含む）。
-    **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数（効く重さ・上限の数える値と数え直しの判断）が `references/spec-exit.md` と一致することも見る**
+    **本体は `plugins/spec-loop/scripts/` にある**。**本体の定数（効く重さ・上限の数える値と数え直しの判断・内部の行の印）が `references/spec-exit.md` と一致することも見る**（印は `agents/domain-checker.md` とも。#1155）
   - `test-findings-by-feature.py` - spec-loop の指摘の機能ごとの数え方（#1045）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。試料の表は一時ディレクトリに書き、**出力に指摘の文面が出ないこと**と、
     **本体の docstring の名前の区切りの記号が正規表現と同じこと・`references/spec-exit.md` と `spec-scope.md` が印と数え方を指すこと**も見る
