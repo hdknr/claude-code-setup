@@ -7,8 +7,8 @@
 読み込んだ dev-loop は 2.7.0（`SKILL.md` 1920 行を読んだ）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
-版の上げ方: `spec-loop` を **patch**（決めたことと新しい表の重ね方を `references/` に書く記述の追加。振る舞いは変えない）。着手時の main は spec-loop 0.101.0 → 0.101.1。
-マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から patch で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+版の上げ方: `spec-loop` を **minor**（新しい表を行の単位にするときの手順を `references/` に足す——CLAUDE.md の「能力・手順の追加」。2 パス目の CR2-8 で patch から改めた）。着手時の main は spec-loop 0.101.0 → 0.102.0。
+マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.7.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 割り目: 割らない（cruise の周）。
 
