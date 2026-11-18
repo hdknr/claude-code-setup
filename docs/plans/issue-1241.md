@@ -14,7 +14,7 @@ spec-loop から来た Issue ではない（本文の先頭に `<!-- spec-loop-h
 この周は導入済みの dev-loop 2.8.0 の `SKILL.md`（1923 行）で回る。重い検査は `run-serial.py` 越しに回す——
 `python3 /Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.8.0/skills/cruise/scripts/run-serial.py -- <コマンド>`。関門にも渡す。
 
-版の上げ方: **dev-loop を patch**（2.9.0 → 2.9.1。不具合の修正）。PR を出した後に main が 2.10.0（#1156）へ進んだので、取り込んで 2.10.1 に上げ直した（版の行だけが衝突。2026-11-18）。
+版の上げ方: **dev-loop を patch**（2.9.0 → 2.9.1。不具合の修正）。PR を出した後に main が 2.10.0（#1156）へ進んだので、取り込んで 2.10.1 に上げ直した（版の行だけが衝突。2026-11-18）。NP-1 を直した後に main（#1163・#1159・#1242。dev-loop 2.11.0）を取り込み、2.11.1 に上げ直した（版の行だけが衝突。2026-11-19）。
 
 ## 変更範囲
 
