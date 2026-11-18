@@ -286,7 +286,8 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   **どこにも無いことを「良い」にしない**——本体の既定はオフ（要対処）
 - **非対話の起動で、通知の 2 項目を要対処にも判定できないにもしない**——人が見る 1 行（値を添える）。
   **対話の起動・変数が無い・ほかの値では今までどおり**（未設定・`false` は要対処、読めなければ判定できない）
-- **`--since-last` で、終了コードを縮めた出力から決めない**——縮めた項目も数える。**縮めた要対処・判定できないの名前を落とさない**（cruise は終えるときに名指しして渡す）。**指紋が同じでない項目を縮めない**（中身・直し方・区分のどれかが変われば全文）。
+- **`--since-last` で、終了コードを縮めた出力から決めない**——縮めた項目も数える。**縮めた要対処・判定できないの名前を落とさない**（cruise は終えるときに名指しして渡す）。
+  **人が見るの `マージ前の判断の線` も、縮めたときに名前を落とさない**（#1242。`--absent` の再開のたびに古い線の名指しが渡るように）。**指紋が同じでない項目を縮めない**（中身・直し方・区分のどれかが変われば全文）。
   **読めない・形の違う記録で縮めない**——全文を出す。`--cruise --ledger` の無い `--since-last` は使い方の誤り（2）で、何も書かない
 - **`--cruise` で、宣言した操作を点検から落とさない**——既定（か `--command`）に足す。フェンスの中の行は宣言にしない。
   **種類の違うフェンスの記号では閉じない**。**宣言の形に届かなかった行を黙って読み飛ばさない**（要対処）。
@@ -1117,6 +1118,7 @@ MERGE_LINE = "マージの線"
 DECISION_LINE = "マージ前の判断の線"  # 到達の項目の名前（#1242）
 DECISION_KEY = "マージ前の判断"  # 台帳の確かめた線の項目（ledger.py の LINES の鍵）
 DECISION_OLD, DECISION_NEW = "推奨で決めて起票", "推奨で決めて起票（後退・未達を含む）"
+NAMED_HUMAN = (DECISION_LINE,)  # --since-last で縮めても名前を出す人が見るの項目（#1242）
 JUDGE_MARKS = ("利用者の判断待ち:", "利用者の判断待ち：")  # `note` の先頭の印。found-lines.md が blocked の行に書く印と同じ語（cruise SKILL.md §4 の 4）
 ABSENT_MERGE = re.compile(r"^不在の線:\s*マージ\s*=(.*)$")
 REFLECT = re.compile(r"^マージの反映:(.*)$")
@@ -1588,6 +1590,9 @@ def report(stack, items, out=None, previous=None, notes=()):
             # 要対処・判定できないは名前を出す——親が利用者に渡すときに名指しできるように（#635 の 1 パス目）
             named = "".join(f"。{s}: " + "・".join(it[1] for it in same if it[0] == s)
                             for s in (ACTION, UNKNOWN) if any(it[0] == s for it in same))
+            # 人が見るのうち、古い線の名指しも名前を出す——cruise が --absent の再開のたびに渡せるように（#1242）
+            kept = [it[1] for it in same if it[0] == HUMAN and it[1] in NAMED_HUMAN]
+            named += f"。{HUMAN}: " + "・".join(kept) if kept else ""
             print(f"[前回と同じ] {len(same)} 項目（{counts}。前回 {previous['updated']}{named}）"
                   "——全文は --since-last を外して回す", file=out)
     for status, label, detail, fix in shown:
