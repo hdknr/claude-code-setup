@@ -125,6 +125,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `build-proposal.py` は列をここから読んで提案書に「目的と成功の判定」の節を作る）。
       **関係者の表（`shared/stakeholders.csv`。`P-`）も見て、共有の Q&A 表の回答者が表の名前に無い・答える範囲が `なし`・括弧から読めない回答を報告する——終了コードに数えない**（#1161。
       `check-signoff.py` は `agreements` で表を読む）。
+      **用語集（`shared/glossary.csv`。用語・意味・使わない言い方）も見て、`requirements/`・`shared/` の文書に現れた使わない言い方を報告する——終了コードに数えない**（#1164。
+      英語名は表に置かない。MkDocs のフックは `glossary` の印で描く）。
       決まりの原本は `references/tree.md` の「システム設計書の成果物」、守る／守らないは docstring を正とする。テストは `scripts/test-check-design-csv.py`）
     - `scripts/check-infra-csv.py` - 基盤要件の表（`shared/infra.csv`。言語・DBMS・ホスティング環境など）の検査とゲートの判定（#950。
       **形式の違反（1）・未決定（3。表が無いときも）・暫定（4）を分けて出し、表の状態と根拠の Q&A の行の状態の対応も照らす**。

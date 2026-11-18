@@ -908,6 +908,46 @@ def init_infra_page(plugin: Path, work: Path) -> bool:
     return code == 0 and copied.is_file() and copied.read_bytes() == page.read_bytes()
 
 
+def hook_glossary(plugin: Path, work: Path) -> bool:
+    """用語集（#1164）を、決定表と同じく版ごとに見出しの行どおりに描く。表の無い版は飛ばし、基盤要件の表は描かない。"""
+    docs = work / "docs"
+    write(docs, {"v1/shared/glossary.csv": "\ufeff用語,意味,使わない言い方,決めた人,決めた日\n受注,<b>注文</b>を受けたもの,注文・オーダー,業務部長,2026-11-01\n",
+                 "v1/shared/infra.csv": "項目,決定,状態\n言語,Python,決定\n",
+                 "v2/requirements/a.md": "# a\n"})
+    out, warnings = render(plugin, docs, "# 用語集\n\n<!-- spec-loop: glossary -->\n", src="glossary.md")
+    return (not warnings and "## v2" not in out and "| 項目 | 決定 | 状態 |" not in out
+            and "## v1\n\n| 用語 | 意味 | 使わない言い方 | 決めた人 | 決めた日 |\n| --- | --- | --- | --- | --- |\n"
+                "| 受注 | &lt;b&gt;注文&lt;/b&gt;を受けたもの | 注文・オーダー | 業務部長 | 2026-11-01 |\n" in out
+            and "<!-- spec-loop" not in out)
+
+
+def hook_glossary_none(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/infra.csv": "項目,決定\n言語,Python\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: glossary -->", src="glossary.md")
+    return not warnings and "用語集（`docs/v<n>/shared/glossary.csv`）はまだ無い" in out and "| 項目 |" not in out
+
+
+def hook_misspelled_glossary(plugin: Path, work: Path) -> bool:
+    docs = work / "docs"
+    write(docs, {"v1/shared/glossary.csv": "用語,意味\n受注,a\n", "v2/Shared/glossary.csv": "列,値\nx,y\n"})
+    out, warnings = render(plugin, docs, "<!-- spec-loop: glossary -->", src="glossary.md")
+    return (len(warnings) == 1 and "v2/Shared/glossary.csv: shared/glossary.csv " + SPELLING in warnings[0]
+            and "| 用語 | 意味 |" in out and "| 列 | 値 |" not in out and "## v2" not in out)
+
+
+# 雛形の用語集のページ（#1164）——在って、印を持ち、空の根に写る
+def init_glossary_page(plugin: Path, work: Path) -> bool:
+    page = plugin / "templates" / "mkdocs" / "docs" / "glossary.md"
+    if not page.is_file() or "<!-- spec-loop: glossary -->" not in page.read_text(encoding="utf-8"):
+        return False
+    root = work / "root"
+    root.mkdir(parents=True)
+    code, _ = run_init(plugin, root)
+    copied = root / "docs" / "glossary.md"
+    return code == 0 and copied.is_file() and copied.read_bytes() == page.read_bytes()
+
+
 # UI モック（#952）——各版の requirements/mocks/ の HTML と React の入口へのリンクを、版ごとの節に描く
 MOCK_HTML = "v1/requirements/mocks/受注 入力.html"
 MOCK_REACT = "v1/requirements/mocks/在庫/index.html"
@@ -1024,7 +1064,7 @@ def init_decision_table_page(plugin: Path, work: Path) -> bool:
 PLUGIN_HOOK = "spec_loop_plugins"
 REGISTERED = "hooks/spec_loop_plugins/"
 # 登録の口を使わない空の根で、今（#1098 の前）の init-mkdocs.py が出す行（受入基準 4。写すファイルの一覧が変われば変わる）
-EXPECTED_EMPTY = ["写した: docs/decision-table.md", "写した: docs/index.md", "写した: docs/infra.md", "写した: docs/mocks.md",
+EXPECTED_EMPTY = ["写した: docs/decision-table.md", "写した: docs/glossary.md", "写した: docs/index.md", "写した: docs/infra.md", "写した: docs/mocks.md",
                   "写した: docs/qa.md", "写した: .gitignore", "写した: hooks/spec_loop_pages.py", "写した: pyproject.toml", "写した: mkdocs.yml"]
 
 
@@ -1295,6 +1335,10 @@ CASES = {
     "基盤要件の表が無ければそう書く": hook_infra_none,
     "綴り違いの基盤要件の表は警告して描かない": hook_misspelled_infra,
     "雛形の基盤要件のページは印を持ち、空の根に写る": init_infra_page,
+    "用語集を版ごとに見出しの行どおりに描く": hook_glossary,
+    "用語集が無ければそう書く": hook_glossary_none,
+    "綴り違いの用語集は警告して描かない": hook_misspelled_glossary,
+    "雛形の用語集のページは印を持ち、空の根に写る": init_glossary_page,
     "UI モックを版ごとに HTML と React の入口へのリンクで描く": hook_mocks,
     "UI モックのリンクは印のページからの相対": hook_mocks_subdir_page,
     "UI モックが無ければそう書く": hook_mocks_none,
@@ -1405,6 +1449,11 @@ MUTATIONS: list[tuple] = [
      "雛形の決定表のページは印を持ち、空の根に写る"),
     ("雛形の基盤要件のページに印が無い", "templates/mkdocs/docs/infra.md", "<!-- spec-loop: infra -->", "",
      "雛形の基盤要件のページは印を持ち、空の根に写る"),
+    ("用語集を描かない", HOOK, '    "glossary": render_glossary,\n', "", "用語集を版ごとに見出しの行どおりに描く"),
+    ("用語集の印で基盤要件の表を描く", HOOK, '    return render_shared_table(docs_dir, GLOSSARY_TABLE, "用語集")',
+     '    return render_shared_table(docs_dir, INFRA_TABLE, "用語集")', "用語集を版ごとに見出しの行どおりに描く"),
+    ("雛形の用語集のページに印が無い", "templates/mkdocs/docs/glossary.md", "<!-- spec-loop: glossary -->", "",
+     "雛形の用語集のページは印を持ち、空の根に写る"),
     ("UI モックを描かない", HOOK, '    "mocks": render_mocks,\n', "", "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
     ("ドットで始まる名前も読む", HOOK, '            if name.startswith("."):  # 重ね合わせが読まない名前（.DS_Store など）\n                continue\n', "",
      "UI モックを版ごとに HTML と React の入口へのリンクで描く"),
@@ -1710,7 +1759,7 @@ def check_reference() -> None:
     text = REFERENCE.read_text(encoding="utf-8")
     check("references/tree.md に「ドキュメントのツール」の節が無い", "\n## ドキュメントのツール\n" in text)
     section = text.split("\n## ドキュメントのツール\n", 1)[-1].split("\n## ", 1)[0]
-    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "docs/infra.md", "docs/mocks.md", "`mocks` の印", "shared/",
+    for word in ("scripts/init-mkdocs.py", "mkdocs.yml", "docs/qa.md", "docs/decision-table.md", "docs/infra.md", "docs/glossary.md", "`glossary` の印", "docs/mocks.md", "`mocks` の印", "shared/",
                  "`qa-csv.md` の「本文での番号」", "CSV へ直接リンクしない",
                  "spec-loop 0.31.0 で、フックは素の本文の URL の中の番号を書き換えなくなり",
                  "`hooks/spec_loop_plugins/<名前>.py`", "`init-mkdocs.py --hook <ファイル>`", "`spec_loop_mocks(docs_dir)`",

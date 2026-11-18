@@ -19,10 +19,15 @@
    機能一覧が無ければ指標の機能は空でよい（0）。
 3a. **回答者の照合を報告し、終了コードに数えない**（#1161）——表に無い・答える範囲が `なし`・括弧から読めない回答を出す。表にある人・`未回答`・暫定の行は出さない。
    範囲が未決定の人は答える人に数える。関係者の表が決まりに反する・無いなら照らさない。Q&A 表の見出しが違えば照らさないと出す。
+3b. **用語集（#1164）の形を見て、使わない言い方を報告し、終了コードに数えない**——見出し・列の数・用語の重複・使わない言い方が用語と同じ・
+   同じ行で重ねる・空の項・決めた日の形と実在（1）、必須の欄が空・未決定の印（3）、使わない言い方は空でよい（0）。
+   `requirements/`・`shared/` の `.md`・`.csv` の行に出た使わない言い方を `<パス>:<行>` で出し、用語の中の出現・共有の Q&A 表・`.` で始まる名前の下・
+   ほかの拡張子は出さない。用語集が決まりに反するなら探さないと出す。読めない文書はそう出す。報告の見出しは scaffold の関門が使う `respondent_block` が拾う。
 4. **中身を検査していない形を 0 にしない（2）**——UTF-8 でない・空のファイル・ファイルでない・ディレクトリが無い・引数の誤り・
    想定外の例外（128KB 超のセルの `csv.Error`）・`-OO` で引数なし。
 5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ。
-   目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`。関係者の表は列・決める人・id の接頭辞・役割と合意の値・区切りと `なし`）。
+   目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`。関係者の表は列・決める人・id の接頭辞・役割と合意の値・区切りと `なし`。
+   用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -58,6 +63,7 @@ N = "shared/nfr.csv"
 P = "requirements/purposes.csv"
 S = "shared/stakeholders.csv"
 Q = "shared/qa.csv"
+G = "shared/glossary.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
 E_HEAD = "エンティティ,項目,意味,型,必須,保管期間\n"
@@ -82,6 +88,19 @@ def qa_rows(*answers: tuple[str, str]) -> str:
     """共有の Q&A 表の試料。(回答, 状態) ごとに 1 行（番号は Q-R-001 から）。"""
     return Q_HEAD + "".join(f"Q-R-{i:03d},要求確定,質問,A: x / B: y,A,理由,{answer},{'—' if answer == '未回答' else '決定表 1 行目'},{state},\n"
                             for i, (answer, state) in enumerate(answers, start=1))
+
+
+G_HEAD = "用語,意味,使わない言い方,決めた人,決めた日\n"
+G_OK = ("受注,顧客から注文を受け、受注番号を振ったもの,注文・オーダー,業務部長,2026-11-01\n"
+        "受注伝票,受注の記録,,業務部長,2026-11-01\n"
+        "売上票,売上の記録,伝票,経理部,2026-11-02\n")
+# 使わない言い方の報告の陽性の行（どの除外の試料にも置き、報告が空振りでないことを示す）
+G_HIT = {"shared/decision_table.csv": "条件,結果\n注文の取り消し,可\n"}
+
+
+def glossary(body: str = G_OK, docs: dict | None = None) -> dict:
+    """用語集の試料（#1164）。`docs` は探す文書（パス → 中身）。ほかの表は置かない。"""
+    return {G: G_HEAD + body} | (docs or {})
 
 
 def stakeholders(body: str = S_OK, qa: str | None = None) -> dict:
@@ -139,9 +158,9 @@ def purposes(body: str, features: str | None = None) -> dict:
 
 # (名前, 置く表（パス → 中身。bytes はそのまま・"<dir>" はディレクトリ）, 引数（None なら根）, 期待する終了コード, 出力に含まれるべき文字列, 含まれてはならない文字列)
 CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
-    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
+    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
     ("BOM 付き", {rel: "﻿" + body for rel, body in GOOD.items()}, None, 0, "OK（", "見出しの行"),
-    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（9 件）", "成果物の表が 1 つも無い"),
+    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（10 件）", "成果物の表が 1 つも無い"),
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
@@ -291,6 +310,44 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
      "shared/stakeholders.csv が決まりに反する・読めないので、回答者を照らしていない", "営業部 が関係者の表"),
     ("回答者: Q&A 表の見出しが違えば照らさない", stakeholders(qa=Q_HEAD.replace("推奨,推奨の理由,", "") + "Q-001,要求確定,a,A: x / B: y,A（営業部が回答）,b,反映済み,\n"),
      None, 0, "shared/qa.csv: 見出しの行が決まりと違う——回答者を照らしていない", "営業部"),
+    # ---- 用語集（#1164）
+    ("用語集: 決まりどおり", glossary(), None, 0, "OK（shared/glossary.csv（3 行））", "用語集の使わない言い方"),
+    ("用語集: 見出し", {G: "意味,用語,使わない言い方,決めた人,決めた日\n受注,a,,b,2026-11-01\n"}, None, 1, "shared/glossary.csv:1: 見出しの行が決まりと違う", ""),
+    ("用語集: 列の数", glossary("受注,a,,b\n"), None, 1, "shared/glossary.csv:2: 列の数が 4", ""),
+    ("用語集: 用語の重複", glossary(G_OK + "受注,b,,経理部,2026-11-03\n"), None, 1, "shared/glossary.csv:5: 用語 が 2 行目と重複: 受注", ""),
+    ("用語集: 使わない言い方が用語と同じ", glossary(G_OK.replace("注文・オーダー", "注文・受注伝票")), None, 1,
+     "shared/glossary.csv:2: 使わない言い方 '受注伝票' が表の用語（3 行目）と同じ", ""),
+    ("用語集: 使わない言い方を重ねる", glossary(G_OK.replace("注文・オーダー", "注文・注文")), None, 1, "使わない言い方 に同じ言い方を重ねた: '注文・注文'", ""),
+    ("用語集: 使わない言い方の空の項", glossary(G_OK.replace("注文・オーダー", "注文・・オーダー")), None, 1, "使わない言い方 に区切り（・）で空の項がある", ""),
+    ("用語集: 決めた日の形", glossary(G_OK.replace("2026-11-02", "2026/11/02")), None, 1,
+     "shared/glossary.csv:4: 決めた日 が YYYY-MM-DD の実在する日付でない: '2026/11/02'", ""),
+    ("用語集: 実在しない日付", glossary(G_OK.replace("2026-11-02", "2026-02-30")), None, 1, "決めた日 が YYYY-MM-DD の実在する日付でない: '2026-02-30'", ""),
+    ("用語集: 必須の欄が空", glossary(G_OK.replace("売上の記録", "")), None, 3, "shared/glossary.csv:4: 意味 が空", ""),
+    ("用語集: 決めた人が空", glossary(G_OK.replace(",経理部,", ",,")), None, 3, "shared/glossary.csv:4: 決めた人 が空", ""),
+    ("用語集: 未決定の印", glossary(G_OK.replace("受注の記録", "未定")), None, 3, "shared/glossary.csv:3: 意味 に未決定の印（未定）", ""),
+    ("用語集: 使わない言い方は空でよい", glossary("受注伝票,受注の記録,,業務部長,2026-11-01\n"), None, 0, "OK（shared/glossary.csv（1 行））", "が空"),
+    ("使わない言い方: 文書の行を報告する", glossary(docs={"requirements/rules.md": "# 要求\n注文を受けたら受注伝票を作る\nオーダーの一覧\n"}), None, 0,
+     "requirements/rules.md:2: 使わない言い方 「注文」（用語集の用語: 受注）", ""),
+    ("使わない言い方: 2 つ目の言い方も報告する", glossary(docs={"requirements/rules.md": "# 要求\nオーダーの一覧\n"}), None, 0,
+     "requirements/rules.md:2: 使わない言い方 「オーダー」（用語集の用語: 受注）", ""),
+    ("使わない言い方: 用語の中の出現は出さない", glossary(docs={"requirements/rules.md": "受注伝票を作る\n伝票を出す\n"}), None, 0,
+     "requirements/rules.md:2: 使わない言い方 「伝票」（用語集の用語: 売上票）", "requirements/rules.md:1:"),
+    ("使わない言い方: 共有の Q&A 表は探さない", glossary(docs=G_HIT | {Q: "No\n注文\n"}), None, 0, "shared/decision_table.csv:2: 使わない言い方 「注文」", "shared/qa.csv:"),
+    ("使わない言い方: ドットで始まる名前の下は探さない", glossary(docs=G_HIT | {"requirements/.draft/a.md": "注文\n"}), None, 0,
+     "shared/decision_table.csv:2: 使わない言い方 「注文」", ".draft"),
+    ("使わない言い方: Markdown と CSV のほかは探さない", glossary(docs=G_HIT | {"requirements/a.txt": "注文\n"}), None, 0,
+     "shared/decision_table.csv:2: 使わない言い方 「注文」", "a.txt"),
+    ("使わない言い方: requirements と shared のほかは探さない", glossary(docs=G_HIT | {"spec/a.md": "注文\n"}), None, 0,
+     "shared/decision_table.csv:2: 使わない言い方 「注文」", "spec/a.md"),
+    ("使わない言い方: 用語集そのものは探さない", glossary(docs=G_HIT), None, 0, "shared/decision_table.csv:2: 使わない言い方 「注文」", "shared/glossary.csv:"),
+    ("使わない言い方: 行番号は改行で数える", glossary(docs={"requirements/r.md": "x\x0cy\u2028z\n注文\n"}), None, 0,
+     "requirements/r.md:2: 使わない言い方 「注文」", "requirements/r.md:3:"),
+    ("使わない言い方: 読めない文書はそう出す", glossary(docs={"requirements/x.md": "注文\n".encode("cp932")}), None, 0,
+     "requirements/x.md: 読めない——使わない言い方を探していない", ""),
+    ("使わない言い方: 用語集が決まりに反するなら探さない", glossary(G_OK + "受注,b,,経理部,2026-11-03\n", docs=G_HIT), None, 1,
+     "shared/glossary.csv が決まりに反する・読めないので、使わない言い方を探していない", "「注文」"),
+    ("使わない言い方: 未決定の表でも探す", glossary(G_OK.replace("受注の記録", "未定"), docs=G_HIT), None, 3,
+     "shared/decision_table.csv:2: 使わない言い方 「注文」", ""),
     ("回答者: 関係者の表が無ければ照らさない", {Q: qa_rows(("A（営業部が回答）", "反映済み"))}, None, 0, "成果物の表が 1 つも無い", "回答者の照合"),
     ("UTF-8 でない", good(F=(F_HEAD + "F-001,注文,API,\n").encode("cp932")), None, 2, "requirements/features.csv: UTF-8 として読めない", ""),
     ("空のファイル", good(F=""), None, 2, "requirements/features.csv: 空のファイル", ""),
@@ -408,6 +465,39 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("行番号を記録の番号にする", "        rows = [(reader.line_num, fields) for fields in reader]",
      "        rows = list(enumerate(reader, start=2))", "回答者: 行番号はファイルの物理の行"),
     ("回答者の照合を終了コードに数える", "        if self.empty or self.undecided:", "        if self.empty or self.undecided or self.respondents:", "回答者: 表に無い"),
+    # #1164: 用語集
+    ("用語集を検査しない", "    glossary = check_glossary(root, report)", "    glossary = None", "用語集: 決まりどおり"),
+    ("用語集の見出しを見ない", "    if not check_columns(report, GLOSSARY, header, GLOSSARY_COLUMNS):\n        return None",
+     "    if False:\n        return None", "用語集: 見出し"),
+    ("用語集の列の数を見ない", "        if len(fields) != len(GLOSSARY_COLUMNS):", "        if False:", "用語集: 列の数"),
+    ("用語の重複を見ない", "            if term in terms:\n", "            if False:\n", "用語集: 用語の重複"),
+    ("使わない言い方と用語の兼ねを見ない", "            if item in terms:\n", "            if False:\n", "用語集: 使わない言い方が用語と同じ"),
+    ("使わない言い方の重ねを見ない", "            elif len(set(items)) != len(items):", "            elif False:", "用語集: 使わない言い方を重ねる"),
+    ("使わない言い方の空の項を見ない", '            if "" in items:', "            if False:", "用語集: 使わない言い方の空の項"),
+    ("決めた日の形を見ない", 'GLOSSARY_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")', 'GLOSSARY_DATE = re.compile(r"([0-9]{4})[-/]([0-9]{2})[-/]([0-9]{2})")',
+     "用語集: 決めた日の形"),
+    ("実在しない日付を通す", "            except ValueError:\n                valid = False", "            except ValueError:\n                valid = True", "用語集: 実在しない日付"),
+    ("意味を空でよいとする", '        cell_state(report, where, "意味", row["意味"], False)', '        cell_state(report, where, "意味", row["意味"], True)', "用語集: 必須の欄が空"),
+    ("決めた人を空でよいとする", '        cell_state(report, where, "決めた人", row["決めた人"], False)', '        cell_state(report, where, "決めた人", row["決めた人"], True)',
+     "用語集: 決めた人が空"),
+    ("使わない言い方を必須にする", 'GLOSSARY_MAY_BE_EMPTY = ("使わない言い方",)', "GLOSSARY_MAY_BE_EMPTY = ()", "用語集: 使わない言い方は空でよい"),
+    ("使わない言い方を探さない", "        check_usages(root, report, *glossary)", "        pass", "使わない言い方: 文書の行を報告する"),
+    ("使わない言い方を区切らない", '            items = [item.strip() for item in row["使わない言い方"].split(GLOSSARY_SEPARATOR)]',
+     '            items = [row["使わない言い方"].strip()]', "使わない言い方: 2 つ目の言い方も報告する"),
+    ("用語の中の出現を除かない", '                    masked = masked.replace(term, "\\0")', "                    pass", "使わない言い方: 用語の中の出現は出さない"),
+    ("共有の Q&A 表も探す", "USAGE_EXCLUDE = (GLOSSARY, QA_TABLE)", "USAGE_EXCLUDE = (GLOSSARY,)", "使わない言い方: 共有の Q&A 表は探さない"),
+    ("用語集そのものも探す", "USAGE_EXCLUDE = (GLOSSARY, QA_TABLE)", "USAGE_EXCLUDE = (QA_TABLE,)", "使わない言い方: 用語集そのものは探さない"),
+    ("ドットで始まる名前の下も探す", '            if any(part.startswith(".") for part in parts) or rel in USAGE_EXCLUDE',
+     "            if rel in USAGE_EXCLUDE", "使わない言い方: ドットで始まる名前の下は探さない"),
+    ("ほかの拡張子も探す", 'USAGE_SUFFIXES = (".md", ".csv")', 'USAGE_SUFFIXES = (".md", ".csv", ".txt")', "使わない言い方: Markdown と CSV のほかは探さない"),
+    ("spec も探す", 'USAGE_DIRS = ("requirements", "shared")', 'USAGE_DIRS = ("requirements", "shared", "spec")', "使わない言い方: requirements と shared のほかは探さない"),
+    ("行番号を splitlines で数える", '        for number, line in enumerate(text.split("\\n"), start=1):',
+     "        for number, line in enumerate(text.splitlines(), start=1):", "使わない言い方: 行番号は改行で数える"),
+    ("読めない文書で落ちる", "        except (OSError, UnicodeDecodeError):\n            report.usages.append",
+     "        except OSError:\n            report.usages.append", "使わない言い方: 読めない文書はそう出す"),
+    ("決まりに反する用語集でも探す", "    return (synonyms, list(terms)) if len(report.violations) == before else None",
+     "    return (synonyms, list(terms))", "使わない言い方: 用語集が決まりに反するなら探さない"),
+    ("使わない言い方を終了コードに数える", "        if self.empty or self.undecided:", "        if self.empty or self.undecided or self.usages:", "使わない言い方: 文書の行を報告する"),
 ]
 
 # -OO（docstring が無い）で引数なしに呼んでも、使い方の誤りとして 2（#286）。(名前, 壊す前, 壊した後)
@@ -523,6 +613,7 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
         problems.append(f"成果物の表の一覧が違う（tree.md {sorted(tables)} ／ 本体 {sorted(module.ALL_TABLES)}）")
     problems += purpose_mismatches(module, design)
     problems += stakeholder_mismatches(module, design)
+    problems += glossary_mismatches(module, design)
     kinds = {}
     for row in rows_of(section(nfr_md, "## 性能のほかの種類"))[1:]:  # 1 行目は見出し（`指標`・`上限`・`単位`）
         kinds[row[0].strip("`")] = () if row[2] == "空にする" else tuple(re.findall(r"`([^`]+)`", row[2]))
@@ -589,6 +680,50 @@ def stakeholder_mismatches(module, design: str) -> list[str]:
     return problems
 
 
+def glossary_mismatches(module, design: str) -> list[str]:
+    """用語集（#1164）の定数が tree.md の「用語集」と一致するか。"""
+    heading = next((line for line in design.splitlines() if line.startswith("### ") and f"（`{module.GLOSSARY}`）" in line), None)
+    if heading is None:
+        return [f"{module.GLOSSARY}: tree.md に節が無い"]
+    body = section(design, heading)
+    rows = {row[0].strip("`"): row for row in rows_of(body)}
+    if list(rows) != module.GLOSSARY_COLUMNS:
+        return [f"{module.GLOSSARY}: 列が違う（tree.md {list(rows)} ／ 本体 {module.GLOSSARY_COLUMNS}）"]
+    problems = []
+    if any(len(row) != 3 or row[2] != "利用者" for row in rows.values()):
+        problems.append(f"{module.GLOSSARY}: 「決める人」が利用者でない行がある")
+    empty = tuple(name for name, row in rows.items() if "空でよい" in row[1])
+    if empty != module.GLOSSARY_MAY_BE_EMPTY:
+        problems.append(f"{module.GLOSSARY}: 空でよい列が違う（tree.md {empty} ／ 本体 {module.GLOSSARY_MAY_BE_EMPTY}）")
+    if f"`{module.GLOSSARY_SEPARATOR}` で区切って" not in rows["使わない言い方"][1]:
+        problems.append(f"{module.GLOSSARY}: 区切り（{module.GLOSSARY_SEPARATOR}）が tree.md と違う")
+    if "（`YYYY-MM-DD`）" not in rows["決めた日"][1] or module.GLOSSARY_DATE.pattern != r"([0-9]{4})-([0-9]{2})-([0-9]{2})":
+        problems.append(f"{module.GLOSSARY}: 決めた日の形が tree.md と違う（本体 {module.GLOSSARY_DATE.pattern}）")
+    dirs = " と ".join(f"`{name}/`" for name in module.USAGE_DIRS)
+    suffixes = "・".join(f"`{suffix}`" for suffix in module.USAGE_SUFFIXES)
+    excluded = f"用語集と `{module.QA_TABLE}` を除く"
+    if f"{dirs} の下の {suffixes}（{excluded}。`.` で始まる名前の下は見ない）" not in body or set(module.USAGE_EXCLUDE) != {module.GLOSSARY, module.QA_TABLE}:
+        problems.append(f"{module.GLOSSARY}: 使わない言い方を探す範囲が tree.md と違う（本体 {module.USAGE_DIRS} {module.USAGE_SUFFIXES} {module.USAGE_EXCLUDE}）")
+    return problems
+
+
+def block_problems(module) -> list[str]:
+    """`respondent_block`（scaffold の関門が通ったときに出す報告）が、用語集の使わない言い方だけの報告も拾うか（#1164）。"""
+    lines = ["OK（shared/glossary.csv（1 行））", f"{module.USAGE_HEADING}1 件）:", "  requirements/a.md:1: x", "言い換える"]
+    respondents = ["OK（x）", f"{module.RESPONDENT_HEADING}1 件）:", "  y", f"{module.USAGE_HEADING}1 件）:", "  z"]
+    problems = []
+    if module.respondent_block(lines) != lines[1:]:
+        problems.append(f"使わない言い方だけの報告を拾わない: {module.respondent_block(lines)!r}")
+    if module.respondent_block(respondents) != respondents[1:]:
+        problems.append(f"回答者の照合から後ろを拾わない: {module.respondent_block(respondents)!r}")
+    if module.respondent_block(["OK（x）"]):
+        problems.append("報告の無い出力から何かを拾う")
+    return problems
+
+
+# 本体を壊すと block_problems が不一致を出す。(名前, 壊す前, 壊した後)
+BLOCK_MUTATIONS = [("使わない言い方の見出しを拾わない", "line.startswith((RESPONDENT_HEADING, USAGE_HEADING))", "line.startswith(RESPONDENT_HEADING)")]
+
 # references を崩すと不一致になる（突き合わせが空振りでないこと）。(名前, ファイル, 崩す前, 崩した後)
 REFERENCE_MUTATIONS = [
     ("機能一覧の列を消す", "tree", "| `関係` | 関係する画面", "| 関係 | 関係する画面"),
@@ -611,6 +746,13 @@ REFERENCE_MUTATIONS = [
     ("関係者の表のなしを変える", "tree", "要らないなら `なし`", "要らないなら `無し`"),
     ("関係者の表の名前の文字を変える", "tree", "`・`・`（`・`）` を使わない", "`・` を使わない"),
     ("関係者の表の決める人を崩す", "tree", "答えないなら `なし` | 利用者 |", "答えないなら `なし` | 開発者 |"),
+    ("用語集の列を消す", "tree", "| `意味` | その言葉が指す範囲", "| 意味 | その言葉が指す範囲"),
+    ("用語集の決める人を崩す", "tree", "| `決めた日` | 決めた日（`YYYY-MM-DD`） | 利用者 |", "| `決めた日` | 決めた日（`YYYY-MM-DD`） | 開発者 |"),
+    ("用語集の空でよいを外す", "tree", "無ければ空でよい。表のどれかの", "無ければ書かない。表のどれかの"),
+    ("用語集の区切りを変える", "tree", "を `・` で区切って並べる（`注文・オーダー`）", "を `,` で区切って並べる（`注文・オーダー`）"),
+    ("用語集の日付の形を変える", "tree", "決めた日（`YYYY-MM-DD`）", "決めた日（`YYYY/MM/DD`）"),
+    ("用語集の探す範囲を変える", "tree", "`requirements/` と `shared/` の下の `.md`・`.csv`（用語集と `shared/qa.csv` を除く。",
+     "`requirements/` と `shared/` の下の `.md`（用語集と `shared/qa.csv` を除く。"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]
 
@@ -663,6 +805,16 @@ def main() -> int:
             result = run_all(mutated, tmp_path / f"mutwork{index}", only=killer)[killer]
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not as_expected(killer, result), result[1][-300:])
 
+        problems = block_problems(module)
+        check("respondent_block が報告の見出しを拾わない", not problems, "; ".join(problems))
+        for index, (name, before, after) in enumerate(BLOCK_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"block-mut{index}")
+            (mutated / TARGET).write_text(source.replace(before, after), encoding="utf-8")
+            check(f"変異が生き残った: {name}", bool(block_problems(load(mutated / TARGET))))
+
         problems = oo_problems(scripts, tmp_path)
         check("-OO の引数なしで使い方の誤り（2）にならない", not problems, "; ".join(problems))
         for index, (name, before, after) in enumerate(OO_MUTATIONS):
@@ -678,7 +830,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS)} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(OO_MUTATIONS) + len(BLOCK_MUTATIONS)} 件・references の崩し {len(REFERENCE_MUTATIONS)} 件")
     return 0
 
 
