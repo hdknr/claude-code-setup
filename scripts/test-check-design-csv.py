@@ -23,11 +23,15 @@
    同じ行で重ねる・空の項・決めた日の形と実在（1）、必須の欄が空・未決定の印（3）、使わない言い方は空でよい（0）。
    `requirements/`・`shared/` の `.md`・`.csv` の行に出た使わない言い方を `<パス>:<行>` で出し、用語の中の出現・共有の Q&A 表・`.` で始まる名前の下・
    ほかの拡張子は出さない。用語集が決まりに反するなら探さないと出す。読めない文書はそう出す。報告の見出しは scaffold の関門が使う `respondent_block` が拾う。
+3c. **CRUD 表（#1162）の形と抜けを見る**——見出し・列の数・機能の形・機能一覧に無い機能（一覧が無いときも）・データモデルに無いエンティティ（データモデルが無いときも）・
+   操作の形（順・重ね・区切り・小文字）・機能とエンティティの組の重複・`なし` の行と機能の操作の重なり（1）。作る・読む機能の無いエンティティと、保管期間が決まっているのに
+   消す機能の無いエンティティ（3）。`なし` の行で決めた操作・更新の抜け・保管期間が未決定のエンティティの消す機能は数えない。行の決まっていないエンティティ・
+   エンティティの決まっていない行があれば抜けを言い切らない。一覧・データモデルに id・名前の決まっていない行があれば、無い機能・エンティティを未決定に数える。
 4. **中身を検査していない形を 0 にしない（2）**——UTF-8 でない・空のファイル・ファイルでない・ディレクトリが無い・引数の誤り・
    想定外の例外（128KB 超のセルの `csv.Error`）・`-OO` で引数なし。
 5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ。
    目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`。関係者の表は列・決める人・id の接頭辞・役割と合意の値・区切りと `なし`。
-   用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲）。
+   用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲。CRUD 表は列・決める人・操作の文字・`なし`・抜けに数える操作と保管期間で求める操作）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -64,6 +68,7 @@ P = "requirements/purposes.csv"
 S = "shared/stakeholders.csv"
 Q = "shared/qa.csv"
 G = "shared/glossary.csv"
+C = "requirements/crud.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
 E_HEAD = "エンティティ,項目,意味,型,必須,保管期間\n"
@@ -96,6 +101,20 @@ G_OK = ("受注,顧客から注文を受け、受注番号を振ったもの,注
         "売上票,売上の記録,伝票,経理部,2026-11-02\n")
 # 使わない言い方の報告の陽性の行（どの除外の試料にも置き、報告が空振りでないことを示す）
 G_HIT = {"shared/decision_table.csv": "条件,結果\n注文の取り消し,可\n"}
+
+
+C_HEAD = "機能,エンティティ,操作\n"
+C_OK = "F-001,注文,CR\nF-002,注文,RU\nなし,注文,D\n"
+
+
+def crud(body: str = C_OK, features: str | None = None, entities: str | None = None) -> dict:
+    """CRUD 表の試料（#1162）。機能一覧とデータモデルは GOOD のもの（F-001・F-002、注文（保管期間 7 年））か引数（"" なら置かない）。ほかの表は置かない。"""
+    files = {C: C_HEAD + body}
+    for rel, given in ((F, features), (E, entities)):
+        body_of = GOOD[rel] if given is None else given
+        if body_of:
+            files[rel] = body_of
+    return files
 
 
 def glossary(body: str = G_OK, docs: dict | None = None) -> dict:
@@ -158,9 +177,9 @@ def purposes(body: str, features: str | None = None) -> dict:
 
 # (名前, 置く表（パス → 中身。bytes はそのまま・"<dir>" はディレクトリ）, 引数（None なら根）, 期待する終了コード, 出力に含まれるべき文字列, 含まれてはならない文字列)
 CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
-    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
+    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK, C: C_HEAD + C_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
     ("BOM 付き", {rel: "﻿" + body for rel, body in GOOD.items()}, None, 0, "OK（", "見出しの行"),
-    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（10 件）", "成果物の表が 1 つも無い"),
+    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（11 件）", "成果物の表が 1 つも無い"),
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
@@ -348,6 +367,48 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
      "shared/glossary.csv が決まりに反する・読めないので、使わない言い方を探していない", "「注文」"),
     ("使わない言い方: 未決定の表でも探す", glossary(G_OK.replace("受注の記録", "未定"), docs=G_HIT), None, 3,
      "shared/decision_table.csv:2: 使わない言い方 「注文」", ""),
+    # ---- CRUD 表（#1162）
+    ("CRUD 表: 決まりどおり", crud(), None, 0, "requirements/crud.csv（3 行）", "機能が無い（"),
+    ("CRUD 表: 更新の抜けは数えず、消すのは機能でもよい", crud("F-001,注文,CR\nF-002,注文,D\n"), None, 0, "requirements/crud.csv（2 行）", "機能が無い（"),
+    ("CRUD 表: 見出し", crud() | {C: "エンティティ,機能,操作\n注文,F-001,CRD\n"}, None, 1, "requirements/crud.csv:1: 見出しの行が決まりと違う", ""),
+    ("CRUD 表: 列の数", crud("F-001,注文\n"), None, 1, "requirements/crud.csv:2: 列の数が 2", ""),
+    ("CRUD 表: 機能の形", crud(C_OK.replace("F-002,", "F-02,")), None, 1, "機能 が機能一覧の id（F- に 3 桁以上の数字）でも なし でもない: 'F-02'", ""),
+    ("CRUD 表: 機能が機能一覧に無い", crud(C_OK.replace("F-002", "F-009")), None, 1, "requirements/crud.csv:3: 機能 F-009 が機能一覧（requirements/features.csv）に無い", ""),
+    ("CRUD 表: 機能一覧が無い", crud(features=""), None, 1, "機能 F-001 を照らす機能一覧（requirements/features.csv）が無い・読めない", ""),
+    ("CRUD 表: 機能一覧が無くてもなしの行は通す", crud("なし,注文,CRD\n", features=""), None, 0, "requirements/crud.csv（1 行）", "を照らす機能一覧"),
+    ("CRUD 表: エンティティがデータモデルに無い", crud(C_OK + "F-001,顧客,C\n"), None, 1, "requirements/crud.csv:5: エンティティ 顧客 がデータモデル（requirements/entities.csv）に無い", ""),
+    ("CRUD 表: データモデルが無い", crud(entities=""), None, 1, "エンティティ 注文 を照らすデータモデル（requirements/entities.csv）が無い・読めない", "機能が無い（"),
+    ("CRUD 表: 操作の順", crud(C_OK.replace(",CR\n", ",RC\n")), None, 1, "操作 が C・R・U・D をこの順に 1 回ずつまで並べた形（CR・RU など）でない: 'RC'", ""),
+    ("CRUD 表: 操作の重ね", crud(C_OK.replace(",CR\n", ",CCR\n")), None, 1, "でない: 'CCR'", ""),
+    ("CRUD 表: 操作の区切り", crud(C_OK.replace(",CR\n", ",C・R\n")), None, 1, "でない: 'C・R'", ""),
+    ("CRUD 表: 操作の小文字", crud(C_OK.replace(",CR\n", ",cr\n")), None, 1, "でない: 'cr'", ""),
+    ("CRUD 表: 組の重複", crud(C_OK + "F-001,注文,U\n"), None, 1, "requirements/crud.csv:5: 機能・エンティティ が 2 行目と重複: F-001 / 注文", ""),
+    ("CRUD 表: 操作の決まっていない行も組の重複を見る", crud(C_OK + "F-001,注文,未定\n"), None, 1, "requirements/crud.csv:5: 機能・エンティティ が 2 行目と重複: F-001 / 注文", ""),
+    ("CRUD 表: なしと機能の操作が重なる", crud(C_OK.replace("なし,注文,D", "なし,注文,RD")), None, 1,
+     "requirements/crud.csv:4: エンティティ 注文 の R を なし と書いたが、機能 F-001 が R する", ""),
+    ("CRUD 表: 作る機能が無い", crud("F-002,注文,RU\nなし,注文,D\n"), None, 3,
+     "requirements/crud.csv: エンティティ 注文 を作る（C）機能が無い", "を読む（R）"),
+    ("CRUD 表: 読む機能が無い", crud("F-001,注文,C\nなし,注文,D\n"), None, 3, "エンティティ 注文 を読む（R）機能が無い", "を作る（C）"),
+    ("CRUD 表: 消す機能が無い", crud("F-001,注文,CR\n"), None, 3, "エンティティ 注文 を消す（D）機能が無い（保管期間が決まっているのに", "を作る（C）"),
+    ("CRUD 表: 保管期間が未決定なら消す機能を求めない", crud("F-001,注文,CR\n", entities=E_HEAD + "注文,番号,a,文字列,はい,未定\n"), None, 3,
+     "requirements/entities.csv:2: 保管期間 に未決定の印（未定）", "を消す（D）"),
+    ("CRUD 表: どの行にも無いエンティティ", crud(entities=GOOD[E] + "顧客,名前,b,文字列,はい,退会まで\n"), None, 3,
+     "エンティティ 顧客 を作る（C）機能が無い", "エンティティ 注文"),
+    ("CRUD 表: 未決定の印", crud(C_OK.replace(",RU\n", ",未定\n")), None, 3, "requirements/crud.csv:3: 操作 に未決定の印（未定）", "機能が無い（"),
+    ("CRUD 表: 機能が空", crud(C_OK.replace("F-002,", ",")), None, 3, "requirements/crud.csv:3: 機能 が空", "機能が無い（"),
+    ("CRUD 表: 行の決まっていないエンティティは抜けを言い切らない", crud("F-001,注文,C\nF-002,注文,未定\n"), None, 3,
+     "requirements/crud.csv:3: 操作 に未決定の印（未定）", "機能が無い（"),
+    ("CRUD 表: エンティティの決まっていない行の操作は抜けを言い切らない", crud("F-001,注文,C\nF-002,TBD,R\n"), None, 3,
+     "requirements/crud.csv:3: エンティティ に未決定の印（TBD）", "を読む（R）"),
+    ("CRUD 表: エンティティの決まっていない行のほかの操作の抜けは出す", crud("F-001,注文,C\nF-002,TBD,R\n"), None, 3,
+     "エンティティ 注文 を消す（D）機能が無い", "を作る（C）"),
+    ("CRUD 表: 列の数の違う行があれば抜けを言い切らない", crud("F-001,注文\n"), None, 1, "requirements/crud.csv:2: 列の数が 2", "機能が無い（"),
+    ("CRUD 表: 機能の決まっていない行の操作は結び付けに数え、ほかの抜けは出す", crud("未定,注文,C\n"), None, 3,
+     "エンティティ 注文 を読む（R）機能が無い", "を作る（C）"),
+    ("CRUD 表: 一覧の id が未決定なら機能の id も未決定", crud(C_OK.replace("F-002", "F-009"), features=GOOD[F] + "TBD,x,API,\n"), None, 3,
+     "機能 F-009 が機能一覧（requirements/features.csv）に無い（一覧に id の決まっていない行がある）", "形式の違反（"),
+    ("CRUD 表: データモデルのエンティティが未決定ならエンティティも未決定", crud(C_OK + "F-001,顧客,C\n", entities=GOOD[E] + "未定,名前,b,文字列,はい,1 年\n"), None, 3,
+     "エンティティ 顧客 がデータモデル（requirements/entities.csv）に無い（データモデルにエンティティの決まっていない行がある）", "形式の違反（"),
     ("回答者: 関係者の表が無ければ照らさない", {Q: qa_rows(("A（営業部が回答）", "反映済み"))}, None, 0, "成果物の表が 1 つも無い", "回答者の照合"),
     ("UTF-8 でない", good(F=(F_HEAD + "F-001,注文,API,\n").encode("cp932")), None, 2, "requirements/features.csv: UTF-8 として読めない", ""),
     ("空のファイル", good(F=""), None, 2, "requirements/features.csv: 空のファイル", ""),
@@ -498,6 +559,54 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("決まりに反する用語集でも探す", "    return (synonyms, list(terms)) if len(report.violations) == before else None",
      "    return (synonyms, list(terms))", "使わない言い方: 用語集が決まりに反するなら探さない"),
     ("使わない言い方を終了コードに数える", "        if self.empty or self.undecided:", "        if self.empty or self.undecided or self.usages:", "使わない言い方: 文書の行を報告する"),
+    # #1162: CRUD 表
+    ("CRUD 表を検査しない", "    check_crud(root, report, context)  # ", "    pass  # ", "CRUD 表: 作る機能が無い"),
+    ("CRUD 表の見出しを見ない", "    if not check_columns(report, CRUD, header, CRUD_COLUMNS):\n        return", "    if False:\n        return", "CRUD 表: 見出し"),
+    ("CRUD 表の列の数を見ない", "        if len(fields) != len(CRUD_COLUMNS):", "        if False:", "CRUD 表: 列の数"),
+    ("なしを機能と読まない", "            if value == CRUD_NONE:\n                feature = value", "            if False:\n                feature = value", "CRUD 表: 決まりどおり"),
+    ("CRUD 表の機能の形を見ない", "            elif not FEATURE_ID.fullmatch(value):", "            elif False:", "CRUD 表: 機能の形"),
+    ("CRUD 表の機能を機能一覧に照らさない", '                report.violations.append(f"{where}: 機能 {value} が機能一覧（{FEATURES}）に無い")',
+     "                pass", "CRUD 表: 機能が機能一覧に無い"),
+    ("CRUD 表の機能一覧が無いのを通す", "            elif feature_ids is None:\n                report.violations.append(f\"{where}: 機能 {value} を照らす",
+     "            elif False:\n                report.violations.append(f\"{where}: 機能 {value} を照らす", "CRUD 表: 機能一覧が無い"),
+    ("CRUD 表の機能一覧の未決定を見ない", "            elif feature_ids_pending:", "            elif False:",
+     "CRUD 表: 一覧の id が未決定なら機能の id も未決定"),
+    ("CRUD 表のエンティティを照らさない", '                report.violations.append(f"{where}: エンティティ {value} がデータモデル（{ENTITIES}）に無い")',
+     "                pass", "CRUD 表: エンティティがデータモデルに無い"),
+    ("CRUD 表のデータモデルが無いのを通す", "            if entities is None:\n                report.violations.append(f\"{where}: エンティティ",
+     "            if False:\n                report.violations.append(f\"{where}: エンティティ", "CRUD 表: データモデルが無い"),
+    ("CRUD 表のデータモデルの未決定を見ない", "            elif entities_pending:", "            elif False:", "CRUD 表: データモデルのエンティティが未決定ならエンティティも未決定"),
+    ("データモデルのエンティティの未決定を記録しない", "        pending = pending or (referenced in decided and not decided[referenced])",
+     '        pending = pending or ("id" in decided and not decided["id"])', "CRUD 表: データモデルのエンティティが未決定ならエンティティも未決定"),
+    ("データモデルのエンティティを記録しない", "            ids.add(row[ENTITY_COLUMN].strip())", "            pass", "CRUD 表: 決まりどおり"),
+    ("保管期間を記録しない", "            if decided[RETENTION_COLUMN]:\n", "            if False:\n", "CRUD 表: 消す機能が無い"),
+    ("操作の形を見ない", "            if value and CRUD_OPERATION.fullmatch(value):", "            if value:", "CRUD 表: 操作の順"),
+    ("操作の順と重ねを問わない", 'CRUD_OPERATION = re.compile("".join(f"(?:{op})?" for op in CRUD_OPERATIONS))', 'CRUD_OPERATION = re.compile("[CRUD]+")',
+     "CRUD 表: 操作の重ね"),
+    ("機能とエンティティの組の重複を見ない", "        if pair in seen:", "        if False:", "CRUD 表: 組の重複"),
+    ("操作の決まった行だけで組の重複を見る", "        if feature_value is not None and entity_value is not None:",
+     "        if feature_value is not None and entity_value is not None and operations is not None:", "CRUD 表: 操作の決まっていない行も組の重複を見る"),
+    ("なしと機能の操作の重なりを見ない", "            if op in done.get(entity, {}):", "            if False:", "CRUD 表: なしと機能の操作が重なる"),
+    ("作る機能の抜けを見ない", 'CRUD_GAPS = {"C": "作る", "R": "読む", "D": "消す"}', 'CRUD_GAPS = {"R": "読む", "D": "消す"}', "CRUD 表: 作る機能が無い"),
+    ("読む機能の抜けを見ない", 'CRUD_GAPS = {"C": "作る", "R": "読む", "D": "消す"}', 'CRUD_GAPS = {"C": "作る", "D": "消す"}', "CRUD 表: 読む機能が無い"),
+    ("消す機能の抜けを見ない", 'CRUD_GAPS = {"C": "作る", "R": "読む", "D": "消す"}', 'CRUD_GAPS = {"C": "作る", "R": "読む"}', "CRUD 表: 消す機能が無い"),
+    ("更新の抜けも数える", 'CRUD_GAPS = {"C": "作る", "R": "読む", "D": "消す"}', 'CRUD_GAPS = {"C": "作る", "R": "読む", "U": "更新する", "D": "消す"}',
+     "CRUD 表: 更新の抜けは数えず、消すのは機能でもよい"),
+    ("保管期間を問わず消す機能を求める", "            if op in covered or op in unsure_ops or (op == CRUD_KEPT and entity not in kept):", "            if op in covered or op in unsure_ops:",
+     "CRUD 表: 保管期間が未決定なら消す機能を求めない"),
+    ("なしの行を抜けから外さない", "        covered = set(done.get(entity, {})) | set(declined.get(entity, {}))", "        covered = set(done.get(entity, {}))",
+     "CRUD 表: 決まりどおり"),
+    ("行の決まっていないエンティティでも抜けを言う", "            pending.add(entity)", "            pass", "CRUD 表: 行の決まっていないエンティティは抜けを言い切らない"),
+    ("エンティティの決まっていない行があっても抜けを言う", "            if op in covered or op in unsure_ops or (op == CRUD_KEPT and entity not in kept):",
+     "            if op in covered or (op == CRUD_KEPT and entity not in kept):", "CRUD 表: エンティティの決まっていない行の操作は抜けを言い切らない"),
+    ("エンティティの決まっていない行の操作をすべての抜けから外す", "            unsure_ops.update(operations or CRUD_OPERATIONS)",
+     "            unsure_ops.update(CRUD_OPERATIONS)", "CRUD 表: エンティティの決まっていない行のほかの操作の抜けは出す"),
+    ("列の数の違う行を抜けの判定に数えない", "            unsure_ops.update(CRUD_OPERATIONS)\n            continue", "            continue",
+     "CRUD 表: 列の数の違う行があれば抜けを言い切らない"),
+    ("機能の決まっていない行の操作を結び付けに数えない", "            maybe.setdefault(entity, set()).update(operations)", "            pass",
+     "CRUD 表: 機能の決まっていない行の操作は結び付けに数え、ほかの抜けは出す"),
+    ("機能の決まっていない行のエンティティの抜けを全部言わない", "            maybe.setdefault(entity, set()).update(operations)", "            pending.add(entity)",
+     "CRUD 表: 機能の決まっていない行の操作は結び付けに数え、ほかの抜けは出す"),
 ]
 
 # -OO（docstring が無い）で引数なしに呼んでも、使い方の誤りとして 2（#286）。(名前, 壊す前, 壊した後)
@@ -614,6 +723,7 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
     problems += purpose_mismatches(module, design)
     problems += stakeholder_mismatches(module, design)
     problems += glossary_mismatches(module, design)
+    problems += crud_mismatches(module, design)
     kinds = {}
     for row in rows_of(section(nfr_md, "## 性能のほかの種類"))[1:]:  # 1 行目は見出し（`指標`・`上限`・`単位`）
         kinds[row[0].strip("`")] = () if row[2] == "空にする" else tuple(re.findall(r"`([^`]+)`", row[2]))
@@ -707,6 +817,31 @@ def glossary_mismatches(module, design: str) -> list[str]:
     return problems
 
 
+def crud_mismatches(module, design: str) -> list[str]:
+    """CRUD 表（#1162）の定数が tree.md の「機能とデータの対応」と一致するか。"""
+    heading = next((line for line in design.splitlines() if line.startswith("### ") and f"（`{module.CRUD}`）" in line), None)
+    if heading is None:
+        return [f"{module.CRUD}: tree.md に節が無い"]
+    body = section(design, heading)
+    rows = {row[0].strip("`"): row for row in rows_of(body)}
+    if list(rows) != module.CRUD_COLUMNS:
+        return [f"{module.CRUD}: 列が違う（tree.md {list(rows)} ／ 本体 {module.CRUD_COLUMNS}）"]
+    problems = []
+    if any(len(row) != 3 or row[2] != "利用者" for row in rows.values()):
+        problems.append(f"{module.CRUD}: 「決める人」が利用者でない行がある")
+    letters = re.match(r"^((?:`[A-Z]`・)+`[A-Z]`) の文字を、この順に 1 回ずつまで並べる", rows["操作"][1])
+    if tuple(re.findall(r"`([A-Z])`", letters.group(1)) if letters else ()) != module.CRUD_OPERATIONS:
+        problems.append(f"{module.CRUD}: 操作の文字が tree.md と違う（本体 {module.CRUD_OPERATIONS}）")
+    if f"`{module.CRUD_NONE}` とだけ書く" not in rows["機能"][1]:
+        problems.append(f"{module.CRUD}: する機能は無いの値（{module.CRUD_NONE}）が tree.md と違う")
+    gaps = re.findall(r"^  - \*\*(保管期間が決まっているのに)?(\S+?)機能が無い\*\*——.*?どの機能の行にも `([A-Z])` が無い", body, flags=re.MULTILINE)
+    if {op: verb for _, verb, op in gaps} != module.CRUD_GAPS:
+        problems.append(f"{module.CRUD}: 抜けに数える操作が違う（tree.md {gaps} ／ 本体 {module.CRUD_GAPS}）")
+    if [op for kept, _, op in gaps if kept] != [module.CRUD_KEPT]:
+        problems.append(f"{module.CRUD}: 保管期間が決まっているときだけ求める操作が違う（本体 {module.CRUD_KEPT}）")
+    return problems
+
+
 def block_problems(module) -> list[str]:
     """`respondent_block`（scaffold の関門が通ったときに出す報告）が、用語集の使わない言い方だけの報告も拾うか（#1164）。"""
     lines = ["OK（shared/glossary.csv（1 行））", f"{module.USAGE_HEADING}1 件）:", "  requirements/a.md:1: x", "言い換える"]
@@ -753,6 +888,13 @@ REFERENCE_MUTATIONS = [
     ("用語集の日付の形を変える", "tree", "決めた日（`YYYY-MM-DD`）", "決めた日（`YYYY/MM/DD`）"),
     ("用語集の探す範囲を変える", "tree", "`requirements/` と `shared/` の下の `.md`・`.csv`（用語集と `shared/qa.csv` を除く。",
      "`requirements/` と `shared/` の下の `.md`（用語集と `shared/qa.csv` を除く。"),
+    ("CRUD 表の列を消す", "tree", "| `操作` | `C`・", "| 操作 | `C`・"),
+    ("CRUD 表の決める人を崩す", "tree", "項目は書かない | 利用者 |", "項目は書かない | 開発者 |"),
+    ("CRUD 表の操作の文字を変える", "tree", "`C`・`R`・`U`・`D` の文字を", "`C`・`R`・`D` の文字を"),
+    ("CRUD 表のなしを変える", "tree", "と決めたなら `なし` とだけ書く", "と決めたなら `無し` とだけ書く"),
+    ("CRUD 表の抜けを減らす", "tree", "  - **読む機能が無い**——どの機能の行にも `R` が無い（記録するだけで使われない）\n", ""),
+    ("CRUD 表の消す抜けの操作を変える", "tree", "どの機能の行にも `D` が無い（期限", "どの機能の行にも `U` が無い（期限"),
+    ("CRUD 表の保管期間の条件を外す", "tree", "  - **保管期間が決まっているのに消す機能が無い**", "  - **消す機能が無い**"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]
 
