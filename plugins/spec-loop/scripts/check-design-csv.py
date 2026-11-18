@@ -532,9 +532,10 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
         row = dict(zip(CRUD_COLUMNS, fields))
         feature = None
         feature_open = True  # 機能が未決定（未決定の印・空・一覧の未決定で照らせない）——形式の違反なら偽
+        feature_value = entity_value = None  # 決まったセルの値（組の重複は、操作が決まっていなくても見る）
         if cell_state(report, where, "機能", row["機能"], False):
             feature_open = False
-            value = row["機能"].strip()
+            value = feature_value = row["機能"].strip()
             if value == CRUD_NONE:
                 feature = value
             elif not FEATURE_ID.fullmatch(value):
@@ -551,7 +552,7 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
         entity = None
         entity_open = False  # エンティティが未決定（未決定の印・空）
         if cell_state(report, where, "エンティティ", row["エンティティ"], False):
-            value = row["エンティティ"].strip()
+            value = entity_value = row["エンティティ"].strip()
             if entities is None:
                 report.violations.append(f"{where}: エンティティ {value} を照らすデータモデル（{ENTITIES}）が無い・読めない")
             elif value in entities:
@@ -569,6 +570,12 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
                 operations = value
             else:
                 report.violations.append(f"{where}: 操作 が {'・'.join(CRUD_OPERATIONS)} をこの順に 1 回ずつまで並べた形（CR・RU など）でない: {value!r}")
+        if feature_value is not None and entity_value is not None:
+            pair = (feature_value, entity_value)
+            if pair in seen:
+                report.violations.append(f"{where}: 機能・エンティティ が {seen[pair]} 行目と重複: {feature_value} / {entity_value}")
+                continue
+            seen[pair] = line
         if entity_open:
             # どのエンティティの行か決まらない——その行の操作の抜けだけを、どのエンティティでも言い切らない（ほかの操作の抜けは言い切れる）
             unsure_ops.update(operations or CRUD_OPERATIONS)
@@ -582,11 +589,6 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
             # する機能は決まっていないが、その操作をする機能があることは決まっている——結び付けに数える（目的の表の `機能` の印と同じ）
             maybe.setdefault(entity, set()).update(operations)
             continue
-        pair = (feature, entity)
-        if pair in seen:
-            report.violations.append(f"{where}: 機能・エンティティ が {seen[pair]} 行目と重複: {feature} / {entity}")
-            continue
-        seen[pair] = line
         for op in operations:
             if feature == CRUD_NONE:
                 declined.setdefault(entity, {}).setdefault(op, where)
