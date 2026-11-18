@@ -6,7 +6,7 @@ usage: python3 check-qa-csv.py <qa.csv | qa-dev.csv>
 **決まりの正は `references/qa-csv.md` である**（このプラグインの中にある）。
 このスクリプトは、そこに書いた決まりのうち**答えが一意に決まるもの**だけを機械で見る。
 下の定数（列・起票元・状態・反映した状態・「まだ無い」の印・空を許す列・費用付きの質問の起票元・番号の桁・起票元の括弧・選択肢のラベル／数／区切り・
-推奨しない印・内部の表の名前と番号・内部の表で使わない状態・暫定の回答の印・起票元ごとの番号の印）は
+推奨しない印・内部の表の名前と番号・内部の表で使わない状態・暫定の回答の印・起票元ごとの番号の印・`回答` の括弧の書き出し（答えた人。#1161））は
 その写しで、**写しがずれていないかは
 このリポジトリの `scripts/test-check-qa-csv.py` が `references/qa-csv.md` の表と突き合わせて見る**。
 
@@ -95,6 +95,9 @@ OPTION_LABEL = "[A-Z]"
 OPTION = re.compile(rf"(?P<label>{OPTION_LABEL}): \S.*")
 OPTION_SEPARATOR = " / "
 MIN_OPTIONS = 2
+# 共有の表の `回答` の括弧の書き出し——答えた人（関係者の表の `名前`。#1161）と、答えた・確かめたの語
+RESPONDENT_VERBS = ("回答", "確認")
+RESPONDENT = re.compile(rf"{OPTION_LABEL}{DETAIL_OPEN}(?P<who>[^{DETAIL_OPEN}{DETAIL_CLOSE}]+?)が(?:{'|'.join(RESPONDENT_VERBS)})(?:{DETAIL_CLOSE}|。)")
 
 
 # 書いた綴りを確かめるパスの末尾の段の数——版（`v<n>`）・置き場所（`shared/`・`spec/`・`feasibility/`）・ファイル（#514）
@@ -173,6 +176,18 @@ def is_provisional(row: dict[str, str]) -> bool:
     **行が暫定かを決めるのはここだけ**——`build-proposal.py`・`qa-to-pptx.py`・`check-spec-exit.py`・`scaffold.py`・
     `check-signoff.py` はこれを読む（MkDocs の雛形のフックは単独で動くので写しを持つ）。"""
     return row["状態"].strip() == PROVISIONAL
+
+
+def respondent(answer: str) -> str | None:
+    """共有の表の `回答` から、答えた人（関係者の表の `名前` で照らす）を読む。読めなければ None。
+
+    形は `references/qa-csv.md` の「列」の `回答`——選んだ選択肢のラベルに続く括弧が `<答えた人>が回答` か
+    （暫定を確かめたなら）`<答えた人>が確認` で始まり、そのあとは `）` か `。`（モックのパスなどを続ける）。
+    **答えた人の読み方を決めるのはここだけ**——`check-design-csv.py` が関係者の表との照合（#1161）で読む。
+    暫定の回答（`暫定で採用。…の指示`）・未回答・内部の表の書き方（`開発 山田 2026-10-22`）は、この形に当たらないので None。
+    """
+    m = RESPONDENT.match(answer.strip())
+    return m["who"].strip() if m else None
 
 
 def option_labels(value: str) -> tuple[list[str], str | None]:

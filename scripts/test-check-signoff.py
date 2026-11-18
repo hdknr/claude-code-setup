@@ -41,7 +41,11 @@
    出力は試料と変異で、docstring の終了コード 3 の項は文字列で見る）。
 5'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、トレースバックの 1 にしない**。`-OO`（docstring が無い）で
    引数なしに呼んでも想定外の例外にならない。**`removed.csv` が権限などで読めないとき「UTF-8 として読めない」と言わない**（#286）。
-6. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ）。
+5''. **照合した後に、合意が要る関係者を報告する**（#1161）——タグの時点の関係者の表で `合意` に要求確定・予算を持つ関係者と、
+   タグの注釈の `承認: ` の行を並べ、注釈に無い関係者・表で合意が要るとしていない名前・軽量のタグ・合意が決まっていない関係者・
+   表が決まりに反する・片方の時点にだけ表がある、を出す。**前の版の表を遡って読み、後の版の `removed.csv` で消した表は無いと読む。**
+   **照合の終了コードは変えない**。**関係者の表の無い試料（「一致」）では何も出さない**（前と同じ出力）。
+6. **本体の定数が `references/signoff-tags.md` と一致する**（写しのずれ。承認の行の書き出しと区切りも）。
 7. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料の git リポジトリはすべて一時ディレクトリに作り、
@@ -82,7 +86,7 @@ W_1 = "Q-001,要求確定,割引は？,A: なし / B: 3%,A,理由,A（推奨案�
 P_2 = "Q-002,開発,上限は？,A: 拒否 / B: 切り詰める,A,理由,A（推奨案を暫定で採用。業務部 2026-10-21 の指示）,spec/a.md,暫定反映,\n"
 
 # 試料の作り方: 手順の列。("w", パス, 中身) 書く／("rm", パス) 消す／("c",) commit／("t", 名前) 軽量タグ／
-# ("ta", 名前) 注釈つきタグ／("tt", 名前) ツリーを指すタグ。None なら git でないディレクトリ
+# ("ta", 名前) 注釈つきタグ／("tm", 名前, 注釈) 注釈を書いたタグ／("tt", 名前) ツリーを指すタグ。None なら git でないディレクトリ
 Steps = list[tuple[str, ...]] | None
 SHARED = "docs/v1/shared/qa.csv"
 SHARED2 = "docs/v2/shared/qa.csv"
@@ -92,10 +96,40 @@ SCREENS1 = "docs/v1/requirements/screens/data/screens.csv"
 SCREENS_CSV = "画面ID,画面名\nS-001,一覧\nS-002,詳細\n"
 FORMAL1 = "docs/v1/spec/formal/order/Order.tla"
 R1, B1 = "signoff/v1/req-1", "signoff/v1/budget-1"
+# 関係者の表（#1161）
+STAKE1 = "docs/v1/shared/stakeholders.csv"
+STAKE_HEAD = "id,名前,役割,関心事,答える範囲,合意\n"
+STAKE = (STAKE_HEAD + "P-001,業務部長,利用者・決裁者,受注の入力の手間,受注の業務ルール,要求確定・決裁\n"
+         "P-002,経理部,予算責任者,開発費と運用費,なし,予算\n"
+         "P-003,倉庫システムの担当,連携先,在庫の連携,IO-001,なし\n")
+STAKE_BASE = [("w", SHARED, QA_A), ("w", STAKE1, STAKE), ("c",)]
 R2, B2 = "signoff/v2/req-1", "signoff/v2/budget-1"
 
 # (名前, 手順, 引数, 期待する終了コード, 出力に含まれるべき文字列)
 CASES: list[tuple[str, Steps, list[str], int, str]] = [
+    # ---- 合意が要る関係者（#1161）。照合の終了コードは変えない
+    ("関係者: 注釈に無い関係者", STAKE_BASE + [("tm", R1, "要求確定\n承認: 総務部"), ("tm", B1, "承認: 経理部")],
+     [], 0, f"{R1}（要求確定）。表 {STAKE1}: 合意が要る 業務部長\n    タグの注釈の承認: 総務部\n"
+            "    注釈に無い（合意が要るのに承認の記録が無い）: 業務部長\n    表で要求確定の合意が要るとしていない名前: 総務部"),
+    ("関係者: 予算の合意を読む", STAKE_BASE + [("tm", R1, "承認: 業務部長"), ("tm", B1, "予算の合意\n承認: 経理部")],
+     [], 0, f"{B1}（予算）。表 {STAKE1}: 合意が要る 経理部\n    タグの注釈の承認: 経理部\n"),
+    ("関係者: 軽量のタグ", STAKE_BASE + [("t", R1), ("tm", B1, "承認: 経理部")],
+     [], 0, f"{R1}（要求確定）。表 {STAKE1}: 合意が要る 業務部長\n    タグに注釈が無い（軽量のタグ）"),
+    ("関係者: 前の版の表を読む", STAKE_BASE + [("w", SHARED2, QA_A), ("c",), ("tm", R2, "承認: 業務部長"), ("tm", B2, "承認: 経理部")],
+     [], 0, f"{R2}（要求確定）。表 {STAKE1}: 合意が要る 業務部長"),
+    ("関係者: removed.csv で消した表は無い", STAKE_BASE + [("w", SHARED2, QA_A), ("w", REMOVED2, "種類,対象,理由\nファイル,shared/stakeholders.csv,不要\n"),
+                                                     ("c",), ("tm", R2, "承認: 業務部長"), ("tm", B2, "承認: 経理部")],
+     [], 0, f"一致する: {R2}"),
+    ("関係者: 表が決まりに反する", [("w", SHARED, QA_A), ("w", STAKE1, STAKE.replace("P-002", "P-02")), ("c",), ("t", R1), ("t", B1)],
+     [], 0, f"{R1}（要求確定）: {STAKE1} が決まりに反する・読めない——合意が要る関係者を報告していない"),
+    ("関係者: 巨大なセルでも照合の結果を変えない", [("w", SHARED, QA_A), ("w", STAKE1, STAKE + "P-004," + "x" * 200_000 + ",利用者,a,b,なし\n"), ("c",), ("t", R1), ("t", B1)],
+     [], 0, f"{R1}（要求確定）: {STAKE1} が決まりに反する・読めない"),
+    ("関係者: UTF-8 でない注釈でも照合の結果を変えない", STAKE_BASE + [("tmb", R1, "要求確定\n承認: 業務部長".encode("cp932")), ("tm", B1, "承認: 経理部")],
+     [], 0, f"一致する: {R1}"),
+    ("関係者: 合意が決まっていない", [("w", SHARED, QA_A), ("w", STAKE1, STAKE.replace(",予算\n", ",未定\n")), ("c",), ("t", R1), ("t", B1)],
+     [], 0, "    合意が決まっていない関係者: 経理部"),
+    ("関係者: 片方の時点にだけ表がある", [("w", SHARED, QA_A), ("c",), ("t", R1), ("w", STAKE1, STAKE), ("c",), ("tm", B1, "承認: 経理部")],
+     [], 1, f"  {R1}（要求確定）: その時点に関係者の表が無い\n  {B1}（予算）。表 {STAKE1}: 合意が要る 経理部"),
     ("一致", [("w", SHARED, QA_A), ("c",), ("t", R1),
               ("w", "docs/v1/feasibility/schedule.csv", "x\n"), ("c",), ("t", B1)],
      [], 0, f"一致する: {R1}"),
@@ -479,6 +513,25 @@ UNCHECKED_REMOVED = (
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    # ---- 合意が要る関係者（#1161）
+    ("合意を報告しない", "    if info:\n        lines = lines + agreement_report(args.repo, info)", "    if False:\n        lines = lines", "関係者: 注釈に無い関係者"),
+    ("表が無くても報告の見出しを出す", "    if not reported:\n        return []", "    if False:\n        return []", "一致"),
+    ("要求確定と予算を取り違える", 'AGREEMENT = {"req": "要求確定", "budget": "予算"}', 'AGREEMENT = {"req": "予算", "budget": "要求確定"}',
+     "関係者: 予算の合意を読む"),
+    ("注釈に無い関係者を出さない", "        if missing:", "        if False:", "関係者: 注釈に無い関係者"),
+    ("表に無い名前を出さない", "        if extra:", "        if False:", "関係者: 注釈に無い関係者"),
+    ("軽量のタグを見分けない", '    if kind.stdout.strip() != "tag":\n        return None', "    if False:\n        return None", "関係者: 軽量のタグ"),
+    ("承認の行を読まない", "        if line.startswith(APPROVAL):", "        if False:", "関係者: 予算の合意を読む"),
+    ("removed.csv で消した表を読む", "            if any(kind == REMOVED_FILE and target == design.STAKEHOLDERS for _, kind, target in rows):",
+     "            if False:", "関係者: removed.csv で消した表は無い"),
+    ("前の版を遡らない", "    for number in range(version, 0, -1):", "    for number in (version,):", "関係者: 前の版の表を読む"),
+    ("決まりに反する表を報告しないと言わない", "            if table is None:", "            if table is None and False:", "関係者: 表が決まりに反する"),
+    ("表を読む例外を照合の結果に寄せる", "                except Exception:  # 128KB", "                except ValueError:  # 128KB", "関係者: 巨大なセルでも照合の結果を変えない"),
+    ("注釈を UTF-8 として厳しく読む", '    for line in body.stdout.decode("utf-8", errors="replace").splitlines():',
+     '    for line in body.stdout.decode("utf-8").splitlines():', "関係者: UTF-8 でない注釈でも照合の結果を変えない"),
+    ("合意が決まっていない関係者を出さない", "        if unknown:", "        if False:", "関係者: 合意が決まっていない"),
+    ("片方の時点の表が無いことを出さない", '                body.append(f"{head}: その時点に関係者の表が無い")', "                pass",
+     "関係者: 片方の時点にだけ表がある"),
     # 陽性対照（#1082）——比べる場所に正本の根のレビュー会の記録を足すと、記録だけ違う組が 1 になる
     ("レビュー会の記録も比べる", '    paths.append(f"{DOCS}/v1/{REMOVED}")\n',
      '    paths.append(f"{DOCS}/v1/{REMOVED}")\n    paths.append(":(top)reviews")\n', "レビュー会の記録だけ違う"),
@@ -694,6 +747,12 @@ def build_repo(root: Path, steps: Steps, env: dict[str, str]) -> None:
             run_git(root, env, "tag", step[1])
         elif kind == "ta":
             run_git(root, env, "tag", "-a", "-m", "signoff", step[1])
+        elif kind == "tmb":  # 注釈をバイトのまま渡す（UTF-8 でない注釈）
+            message = root.parent / f"{root.name}-message"
+            message.write_bytes(step[2])
+            run_git(root, env, "tag", "-a", "-F", str(message), step[1])
+        elif kind == "tm":
+            run_git(root, env, "tag", "-a", "-m", step[2], step[1])
         elif kind == "tt":
             run_git(root, env, "tag", step[1], "HEAD^{tree}")
 
@@ -785,7 +844,10 @@ def merge_refusing(root: Path) -> list[str]:
 
 
 # 出力に出てはならない文字列（#1082——レビュー会の記録は比べる範囲の外なので、差分にも出ない）
-ABSENT = {"中身が違い、レビュー会の記録も足した": "reviews/", "レビュー会の記録だけ違う": "reviews/"}
+ABSENT = {"中身が違い、レビュー会の記録も足した": "reviews/", "レビュー会の記録だけ違う": "reviews/",
+          # 関係者の表が無ければ、合意の報告を出さない（前と同じ出力。#1161）
+          "一致": "合意が要る関係者", "関係者: removed.csv で消した表は無い": "合意が要る関係者",
+          "関係者: 予算の合意を読む": "注釈に無い"}
 
 
 def as_expected(name: str, result: tuple[int | None, str]) -> bool:
@@ -869,6 +931,11 @@ def reference_mismatches(source: str, markdown: str) -> list[str]:
     found = (tuple(re.findall(r"`([^`]+)`", place.group(1))), place.group(2)) if place else None
     if found != actual:
         problems.append(f"比べる場所 {found!r} ≠ 本体 {actual!r}")
+    approval = re.search(r"承認の行は行頭から `([^`]+)` で始め、名前を `([^`]+)` で区切って", markdown)
+    if not approval or (approval.group(1).rstrip(), approval.group(2)) != (
+            (constant(source, "APPROVAL") or "").rstrip(), constant(source, "APPROVAL_SEPARATOR")):
+        problems.append(f"承認の行の書き出しと区切り {approval and approval.groups()} ≠ 本体 "
+                        f"{constant(source, 'APPROVAL')!r}・{constant(source, 'APPROVAL_SEPARATOR')!r}")
     internal = constant(source, "INTERNAL_QA")
     if not internal or f"（`{internal}`。番号 `D-`）" not in markdown:
         problems.append(f"比べない内部の Q&A 表 ≠ 本体 {internal!r}")
@@ -883,6 +950,8 @@ REFERENCE_MUTATIONS: list[tuple[str, str, str]] = [
     ("比べる場所（spec）", "`requirements/`・`spec/` と `removed.csv`（v1 のものも）", "`requirements/` と `removed.csv`（v1 のものも）"),
     ("比べる場所（removed.csv）", "と `removed.csv`（v1 のものも）", "と `deleted.csv`（v1 のものも）"),
     ("比べない内部の Q&A 表", "（`spec/qa-dev.csv`。番号 `D-`）", "（`spec/qa-internal.csv`。番号 `D-`）"),
+    ("承認の行の書き出し", "行頭から `承認: ` で始め", "行頭から `承認者: ` で始め"),
+    ("承認の行の区切り", "名前を `・` で区切って並べる**（表の", "名前を `,` で区切って並べる**（表の"),
 ]
 
 
