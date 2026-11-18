@@ -9,6 +9,7 @@
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
 版の上げ方: `spec-loop` を **minor**（デザインの正本の参照を読み、Issue の本文に載せる——CLAUDE.md の「能力・手順の追加」）。着手時の main は spec-loop 0.109.0 → 0.110.0。
 `dev-loop` を **minor**（spec-loop から来た Issue の読み方に、デザインの正本の段落があれば見た目を受入基準に足す手順を足す）。着手時の main は dev-loop 2.8.0 → 2.9.0。
+1 パス目の後に main（#1157 が dev-loop を 2.9.0 に上げた）を取り込み（`6ca3ecf`）、dev-loop を **2.10.0** に上げ直した（spec-loop は main が 0.109.0 のままなので 0.110.0 のまま）。
 マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。並行して #1163・#1158 の周が spec-loop を触る。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.8.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 割り目: 割らない（cruise の周）。
@@ -109,8 +110,16 @@ A7 の req-loop が実際のレビュー会の後に見送った見た目の指�
 
 ## 関門の進捗（再開点）
 
-- 周の在り処: ブランチ `issue/1156-design-source`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1156`・起点 `53517d5`・base の参照 `origin/main`（解決した SHA `53517d593b60a75123648e6f26b0d77dd669b1d1`）
+- 周の在り処: ブランチ `issue/1156-design-source`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1156`・起点 `53517d5`・base の参照 `origin/main`（解決した SHA `53517d593b60a75123648e6f26b0d77dd669b1d1`。main の取り込み `6ca3ecf` の後に当て直して `27327a15d327f38034ad84d987313187d98133d3`）
 - 割り目（手順 4）: 割らない（cruise の周）
+- 1 パス目の起点（先に当てた Verifier に渡した時点の HEAD）: `9279244bcfb846c4965699b818eccabe752cce91`
+- 手元の歯止め（1 パス目の前）: `scripts/test-scaffold-screens.py`（run-serial 越し）緑（試料 17・変異 27）。`check-all.py`（run-serial 越し、`9279244` の作業ツリー）は 56/93 本を回して失敗 3——`check-plan-counts.py`（件数の行がまだ無い）・`check-plan-scope.py`（下の V1-1）・`check-version-bump.py`（main が #1157 で dev-loop を 2.9.0 に上げていた——取り込みで上げ直した）
+- Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet。委譲文 194 行を全文読んだと報告）: 反証 1 件（V1-1）。テストの変異 27 件は全部赤、独自の変異は当てていない。git status は前後とも空で同じ。報告は SubagentHandback で届かず、`SendMessage` で催促したあと子の transcript から読んだ
+- `/code-review` 1 パス目（high。起動の引数で受け渡しの文面 163 行のファイルを指した）: 指摘 8 件（直す 3・残課題 5）。コードを読んだだけで、テストも変異も走らせていない（本人の申告）。git status は前後とも空
+- 手順 4 への差し戻し: あり（直すの 4 行——V1-1 は計画ファイルだけの直し）
+- 割り目（手順 6 の 2 パス目の前）: 割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 1 パス目の指摘対応: `2f79b005428da014507341c7f89542284b2ecea8`（`git diff 9279244 2f79b00 -- ':(top)' ':(top,exclude)docs/plans/issue-1156.md'` は 5 ファイル——2 パス目を回す）
+- main の取り込み: `6ca3ecf`（#1157 を取り込み、生成ブロックは main 側を取ってから `skill-metrics.py` で書き直し、dev-loop を 2.10.0 に上げ直した）。**周の base を当て直した**: `git merge-base origin/main HEAD` = `27327a15d327f38034ad84d987313187d98133d3`（2 パス目と狭いパスの関門にはこれを渡す）
 - 著者の逸脱の記録: 生成ブロックの鮮度を base と比べるために worktree で `git stash`／`git stash pop` を素で使った（CLAUDE.md が禁じる形——stash は全 worktree で共有）。直後に `git status --porcelain` で自分の変更が全部戻り、`git stash list` が空であることを確かめた（他人の stash を取り出していない）
 
 ## 既知の限界・決着済みの論点
@@ -121,3 +130,17 @@ A7 の req-loop が実際のレビュー会の後に見送った見た目の指�
 - `design/sources.csv` は版の外なので、`--upto` で前の版の時点を見るときも今の作業ツリーのファイルを読む（版ごとの参照は持たない——描き方の差し替え `screen-spec/renderers/` と同じ）。本文は参照の中身（Figma のファイル）の sha256 を持たない——中身は周の途中でも変わりうるので、dev-loop は比べた時点を計画ファイルに書く。
 - 参照（URL・パス）が実在するか・開けるかは見ない（ネットワークに出ない。パスもファイルの在ることを求めない——トークンのファイルが別のリポジトリにあることがある）。
 - 周の途中の課題の振り分け（found-lines。線 `周の途中の課題 = 外に出す`）は下に足す。
+
+### 1 パス目の採否の表
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V1-1（Verifier）: 計画ファイルの `触る:` の 2 行が 1 行に 2 パスを書いていて、`check-plan-scope.py` が dev-loop の 3 ファイルを範囲の外と言う | 示せる（`check-plan-scope.py 53517d5` が非 0。`check-all.py` でも落ちた） | A9（`check-all.py` が緑） | 直す——1 行 1 パスに分けた（計画ファイルだけ） |
+| CR1-1: 決まりに反する `design/sources.csv` で `--check`・`--red-check` も 1 になる——本文を作らないモードで、版の外のファイルが契約の CI を止める | 示せる（直す前の形に戻す変異「--check・--red-check でも読む」で、書いた後に `S-999` の行を置いた `--check` が 1——試料が赤。直した後は 0） | A4（参照は契約に効かない） | 直す——読むのを本文を作るモード（書く生成・`--dry-run`）に移し（`check_design`）、試料と変異を足した |
+| CR1-2: v2 で画面を持たない機能だけが変わると、どの本文にも参照が載らないのに知らせない | 示せる（理屈。試料は作っていない） | 無し（A5 の括弧が知らせる場面を「画面の表が無い・どの機能も画面を持たない」と決めている。変わっていない機能の本文は前の版の Issue にある） | 残課題 |
+| CR1-3: spec-review の判定役の見た目の指摘は、範囲の外に振るだけでデザインの担当へ渡らず、原則の文が「仕様とケースに書く」だけのまま | 示せる（`spec-scope.md` を読んだ） | A7（経路「spec-review」） | 直す——`spec-scope.md` の判定役の項と行き先の項、spec-review の `SKILL.md` に渡すことを書いた |
+| CR1-4: 参照は本文を作った時点の写しで、後から `design/sources.csv` を足す・差し替えても登録済みの Issue に届かない | 示せる（理屈） | 無し（D3・`handoff-issue.md` が「参照を変えても Issue は作り直されない」と決めている） | 残課題（dev-loop が周の時点の `design/sources.csv` を読む案は別の周） |
+| CR1-5: `メモ` に `- 仮回答: ` や `<!--` を書くと、本文が仮回答に依存すると数えられる・GitHub で本文の後ろが隠れる | 示せる（理屈） | 無し | 残課題（まれな形） |
+| CR1-6: BOM を許す決まりと空の行を飛ばすことに試料が無い（`utf-8-sig` を `utf-8` にしても緑） | 示せる（試料の穴） | 無し（本体は正しい） | 残課題 |
+| CR1-7: A4 の「v2 以降の変更の判定は変わらない」に試料が無い | 示せる（v2 の試料が無い） | A4（証明が無い） | 直す——試料「v2 の変更の判定は変わらない」（参照の有無で v2 の本文の数・契約・段落の外の本文が同じ）を足した |
+| CR1-8: `screen_ids` が `linked_screens` と別に画面の表を読む（列の欠けで食い違う） | 示せない（列が欠ければ画面の関門が先に止める） | 無し | 残課題 |
