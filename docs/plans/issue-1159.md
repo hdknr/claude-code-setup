@@ -7,7 +7,7 @@
 読み込んだ dev-loop は 2.8.0（`SKILL.md` 1923 行を読んだ）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
-版の上げ方: `spec-loop` を **minor**（運用要件の表とその検査・可用性を受ける障害対応の抜けの判定・feasibility の運用費の根拠を足す——CLAUDE.md の「能力・手順の追加」）。着手時の main は spec-loop 0.109.0 → 0.110.0。
+版の上げ方: `spec-loop` を **minor**（運用要件の表とその検査・可用性を受ける障害対応の抜けの判定・feasibility の運用費の根拠を足す——CLAUDE.md の「能力・手順の追加」）。着手時の main は spec-loop 0.109.0 → 0.110.0。取り込みの後は main の 0.112.0 → 0.113.0。
 マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.8.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 割り目: 割らない（cruise の周）。
@@ -147,6 +147,11 @@ feasibility 手順 2（規模を数える）／手順 3（運用費）／手順 
 - `/code-review` 1 パス目（high。起動の引数で受け渡しの文面のファイルを指し、161 行を全文読んだと報告）: 指摘 9 件（直す 1・残課題 8）。手順 4 への差し戻し: あり（CR1-1）。
   `test-check-design-csv.py` は順番待ちで回していない。git status は前後とも計画ファイルだけで同じ
 - PR: #1250（https://github.com/hdknr/claude-code-setup/pull/1250）
+- main の取り込み（親の依頼。PR #1255 ほかが main に入った）: merge `4ac2802`（main の先端 `d140b19`）。衝突 14 ファイル——版の行は main の 0.112.0 から minor で **0.113.0** に上げ直し、
+  `tree.md`・`check-design-csv.py`・`CLAUDE.md`・`feasibility/SKILL.md`・`test-check-design-csv.py`・`test-scaffold.py` は移行の表（#1158）と運用要件の表を並べた（ツリーの運用要件の行は `├──`、
+  テストの「表が無い」は 13 件、3d と 3e。CR2-2 の手当て）。取り込みの後は `check-plugin-versions.py`・`skill-metrics.py --check` の 2 本だけ回して 0（CLAUDE.md の手順 5）。PR 側の CI で確かめる。
+  `check-gates.py --absent` 0・`check-deps-declared.py <merge-base>` 0・`check-spec-writeback.py <merge-base>` 0（正本が無い——該当なし）
+- 外部レビュー: 該当なし（PR 側の CI の後に `external-reviews.py` で確かめる）
 - 割り目（手順 6 の 2 パス目の前）: 割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 - 再開（2026-11-18T09:19Z の cruise の再開。前の子は `test-check-design-csv.py` を run-serial 越しに待つ途中で止まった）: 読み込んだ dev-loop は 2.9.0（`SKILL.md` 1923 行）。
   CR1-1 の直し（4568f38）に `test-check-design-csv.py` を run-serial 越しに回して OK（試料 196 件・変異 162 件・references の崩し 44 件）。
