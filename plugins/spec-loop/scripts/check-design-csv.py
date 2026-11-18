@@ -668,6 +668,7 @@ def check_migration(root: Path, report: Report) -> None:
             if value in MIGRATION_KINDS:
                 kind = value
             else:
+                kind_open = True  # どの種類の行のつもりか決まらない（列の数の違う行と同じ）
                 report.violations.append(f"{where}: 種類 が {'・'.join(MIGRATION_KINDS)} のどれでもない: {value!r}")
         else:
             kind_open = True
