@@ -106,7 +106,11 @@ A7 の req-loop が実際のレビュー会の後に見送った見た目の指�
 
 ## 未解決・確認待ち
 
-- H1〜H3 の確認の Issue（利用者が戻ってから確かめる）: 立てたら番号を書く。
+- H1〜H3 の確認の Issue（利用者が戻ってから確かめる）: H1 #1244・H2 #1245・H3 #1246（どれも先頭 `<!-- cruise-decision: #1169 -->`・ラベル `要確認`。2026-11-18T07:55Z ごろに立てた）。
+
+## 手順 8（起票）
+
+- この周の起票: 3 件（仕様の穴 H1〜H3 の確認の Issue #1244・#1245・#1246。起票の承認は不在のため訊いていない）
 
 ## 関門の進捗（再開点）
 
@@ -119,6 +123,7 @@ A7 の req-loop が実際のレビュー会の後に見送った見た目の指�
 - 手順 4 への差し戻し: あり（直すの 4 行——V1-1 は計画ファイルだけの直し）
 - 割り目（手順 6 の 2 パス目の前）: 割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
 - 1 パス目の指摘対応: `2f79b005428da014507341c7f89542284b2ecea8`（`git diff 9279244 2f79b00 -- ':(top)' ':(top,exclude)docs/plans/issue-1156.md'` は 5 ファイル——2 パス目を回す）
+- PR: #1243（https://github.com/hdknr/claude-code-setup/pull/1243）
 - main の取り込み: `6ca3ecf`（#1157 を取り込み、生成ブロックは main 側を取ってから `skill-metrics.py` で書き直し、dev-loop を 2.10.0 に上げ直した）。**周の base を当て直した**: `git merge-base origin/main HEAD` = `27327a15d327f38034ad84d987313187d98133d3`（2 パス目と狭いパスの関門にはこれを渡す）
 - 著者の逸脱の記録: 生成ブロックの鮮度を base と比べるために worktree で `git stash`／`git stash pop` を素で使った（CLAUDE.md が禁じる形——stash は全 worktree で共有）。直後に `git status --porcelain` で自分の変更が全部戻り、`git stash list` が空であることを確かめた（他人の stash を取り出していない）
 
