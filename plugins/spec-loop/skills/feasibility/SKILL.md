@@ -5,8 +5,8 @@ description: "実現性・コストのループを 1 回分進める。要求・
 
 # feasibility スキル
 
-<!-- skill-version: 0.109.0 -->
-> **このスキルの版: 0.109.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.110.0 -->
+> **このスキルの版: 0.110.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -141,6 +141,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/diff-versions
 | 業務フロー・状態遷移 | 要求の業務フロー |
 | 外部連携 | 要求に出てくる外部のシステム |
 | 非機能要求 | `nfr.csv` の行 |
+| 移行 | 移行の表（`requirements/migration.csv`）の行を種類（`データ`・`切替`・`業務`）ごとに。`対象` が `なし` の行は数えない（形は `../../references/tree.md` の「移行」。#1158）。データの行は `範囲`（期間・件数）も規模の文書に写す——実データでの移行のリハーサルは件数で重さが変わる |
 
 **画面の表があるとき**（正本の `requirements/screens/data/`。`../../references/tree.md` の「画面の表」。#1099）——**画面と機能を二重に数えない**:
 
