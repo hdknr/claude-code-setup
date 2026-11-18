@@ -115,6 +115,8 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 - **利用者向けの要求（`requirements/`）に、その機能の UI モック・業務フロー（BPMN の書き出し `.svg`）・画面遷移の図があれば、機能の `refs` にそのパスを並べる**
   （`../../references/spec-ir.md` の「参考資料」）——Issue の本文の `## 参考資料` に載り、写しが `scaffold/refs/` に置かれて、dev-loop が見た目や業務の流れを推測で作らずに済む（#951）。
   パスは**重ね合わせた全体の根から**（`requirements/flows/受注.svg`）。**参考資料は受入基準ではない**——見た目を受入基準にしたいなら仕様とケースに書く（`/spec-loop:spec-review` に戻す）。
+  **デザインの正本（Figma・デザイントークン）の参照は `refs` に書かない**——正本の根の `design/sources.csv`（版の外）に置けば、スクリプトが画面を持つ機能の本文に載せる
+  （`../../references/tree.md` の「デザインの正本の参照」。このスキルは `design/sources.csv` を書かない——書くのはデザインの担当）。
   関係する図が無い機能には書かない。
   **画面の表（`requirements/screens/`）の画面の仕様書・ワイヤーフレーム・生成したモックは `refs` に書かない**——画面の表の `機能` の列がその機能を挙げる画面の分を、
   スクリプトが引いて本文と写しに足す（書く生成は screen-spec の生成器でモックを作る。`../../references/handoff-issue.md` の「画面の表から引く参考資料」。#1099）。
