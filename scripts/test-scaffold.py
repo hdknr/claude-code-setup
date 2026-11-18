@@ -952,6 +952,8 @@ STOCK_TRACE = {
 FEATURES_FILE = str(V1 / "requirements" / "features.csv")
 FEATURES_HEAD = "id,名前,種類,関係\n"
 FEATURES_LIST = FEATURES_HEAD + "F-001,割引額を計算する,API,\nF-002,注文を取り消せるか,API,\n"
+# 機能一覧の任意の列 `必須度`（#1163）: Won't（作らない）の機能は中間表現に求めず、中間表現に在れば止める
+FEATURES_PRIORITY = ("id,名前,種類,関係,必須度\nF-001,割引額を計算する,API,,Must\nF-002,注文を取り消せるか,API,,Should\n")
 JOBS_FILE = str(V1 / "requirements" / "jobs.csv")
 JOBS_HEAD = "id,名前,契機,周期,失敗したときの扱い\n"
 JOBS_DECIDED = JOBS_HEAD + "J-001,売上の締め,毎日 23 時,毎日,翌朝に担当者へ通知する\n"
@@ -978,6 +980,11 @@ ENTITIES_TABLE = "エンティティ,項目,意味,型,必須,保管期間\n注�
 CRUD_FILE = str(V1 / "requirements" / "crud.csv")
 CRUD_GAP = "機能,エンティティ,操作\nF-001,注文,R\nF-002,注文,U\nなし,注文,D\n"
 CRUD_FULL = CRUD_GAP.replace("F-001,注文,R\n", "F-001,注文,CR\n")
+# 運用要件の表（#1159）: 可用性の水準を受ける障害対応の行が無い表は未決定（3）——scaffold は止まる。障害対応の行を足せば作る
+OPERATIONS_FILE = str(V1 / "requirements" / "operations.csv")
+OPERATIONS_NFR = "No,対象,指標,上限,単位,条件,根拠\nN-101,注文の受付,可用性,99.9,%,月の稼働で,契約\n"
+OPERATIONS_GAP = "id,種類,内容,時間帯,担当,目標,SLA,水準\nOP-001,問い合わせ,操作の質問の受付,平日 9〜18 時,開発側,翌営業日までに回答,いいえ,\n"
+OPERATIONS_FULL = OPERATIONS_GAP + "OP-002,障害対応,一次対応と復旧,24 時間 365 日,開発側,4 時間以内に復旧,はい,N-101\n"
 # 移行の表（#1158）: 切替の行の無い表は未決定（3）——scaffold は止まる。切替を なし と決めれば作る
 MIGRATION_FILE = str(V1 / "requirements" / "migration.csv")
 MIGRATION_GAP = ("id,種類,移行元,対象,範囲,変換の決まり,切替の方式,並行稼働の期間,切り戻しの条件,担当\n"
@@ -2455,6 +2462,16 @@ CASES: list[Case] = [
          extra={FEATURES_FILE: FEATURES_LIST, str(V2 / "requirements" / "features.csv"): FEATURES_HEAD + "F-001,割引額を計算する,API,\n",
                 **v2([], removed="機能,F-002,取り消しはやめる\n")}, post=v2_removed, absent="機能一覧（"),
     Case("機能一覧: 表が無ければ照らさない", 0, "作った", absent="機能一覧"),
+    Case("機能一覧: 必須度が Won't の機能は中間表現に要らない（#1163）", 0, "作った",
+         extra={FEATURES_FILE: FEATURES_PRIORITY + "F-009,在庫を引き当てる,API,,Won't\n"}, post=files_written, absent="機能一覧（"),
+    Case("機能一覧: 必須度が Won't の機能が中間表現に在れば止める（#1163）", 1,
+         "F-002: 機能一覧（build/merged/requirements/features.csv）で必須度が Won't（作らない）の機能が中間表現に在る",
+         extra={FEATURES_FILE: FEATURES_PRIORITY.replace(",Should\n", ",Won't\n")}, pre=plant_old_issues, post=nothing_written),
+    Case("機能一覧: 必須度が Won't でない機能は中間表現に要る（#1163）", 1,
+         "F-009: 機能一覧（build/merged/requirements/features.csv）の機能が中間表現に無い",
+         extra={FEATURES_FILE: FEATURES_PRIORITY + "F-009,在庫を引き当てる,API,,Could\n"}, post=nothing_written),
+    Case("機能一覧: 必須度が未定なら止める（#1163）", 1, "build/merged/requirements/features.csv:3: 必須度 に未決定の印（未定）",
+         extra={FEATURES_FILE: FEATURES_PRIORITY.replace(",Should\n", ",未定（Q-001）\n")}, post=nothing_written),
     Case("成果物の表: 未決定の欄で止める", 1, "build/merged/requirements/jobs.csv:2: 周期 に未決定の印（未定）",
          extra={JOBS_FILE: JOBS_UNDECIDED}, pre=plant_old_issues, post=nothing_written),
     Case("成果物の表: 必須の欄が空で止める", 1, "build/merged/requirements/jobs.csv:2: 周期 が空",
@@ -2479,6 +2496,11 @@ CASES: list[Case] = [
          extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_GAP}, post=nothing_written),
     Case("CRUD 表: 抜けが無ければ作る（#1162）", 0, "作った",
          extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_FULL}, absent=DESIGN_GATE),
+    Case("運用要件: 可用性を受ける障害対応の行が無ければ止める（#1159）", 1,
+         "build/merged/requirements/operations.csv: 可用性の水準 N-101（shared/nfr.csv）を 水準 で指す 障害対応 の行が無い",
+         extra={NFR_FILE: OPERATIONS_NFR, OPERATIONS_FILE: OPERATIONS_GAP}, post=nothing_written),
+    Case("運用要件: 可用性を受ける障害対応の行があれば作る（#1159）", 0, "作った",
+         extra={NFR_FILE: OPERATIONS_NFR, OPERATIONS_FILE: OPERATIONS_FULL}, absent=DESIGN_GATE),
     Case("移行の表: 行の無い種類があれば止める（#1158）", 1,
          "build/merged/requirements/migration.csv: 種類 切替 の行が無い",
          extra={MIGRATION_FILE: MIGRATION_GAP}, post=nothing_written),
@@ -3186,12 +3208,19 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "成果物の表: --upto で前の版を確かめるときは機能一覧も照らさない"),
     ("読めない非機能要求の表で止める", "design.check(whole, strict_nfr=False) if design_gate", "design.check(whole, strict_nfr=True) if design_gate",
      "成果物の表: 読めない非機能要求の表では止めない"),
-    ("機能一覧を照らさない", "            mismatched = listed_problems(ir, design.listed_features(whole))",
+    ("機能一覧を照らさない", "            mismatched = listed_problems(ir, design.listed_features(whole), design.wont_features(whole))",
      "            mismatched = []", "機能一覧: 入口が一覧に無い"),
     ("呼ばれる機能も一覧に要る", """if "called_by" not in f and f["id"] not in listed]""", """if f["id"] not in listed]""",
      "機能一覧: 呼ばれる機能は一覧に無くてよい"),
-    ("一覧の余りを照らさない", "for fid in listed if fid not in ids]", "for fid in listed if False]",
+    ("一覧の余りを照らさない", "for fid in listed if fid not in ids and fid not in wont]", "for fid in listed if False]",
      "機能一覧: 一覧の機能が中間表現に無い"),
+    # #1163: 機能一覧の必須度 Won't
+    ("Won't の機能も中間表現に求める", "for fid in listed if fid not in ids and fid not in wont]", "for fid in listed if fid not in ids]",
+     "機能一覧: 必須度が Won't の機能は中間表現に要らない（#1163）"),
+    ("Won't の機能が中間表現に在っても通す", "for fid in ids if fid in wont]", "for fid in ids if False]",
+     "機能一覧: 必須度が Won't の機能が中間表現に在れば止める（#1163）"),
+    ("Won't の機能を読まない", "listed_problems(ir, design.listed_features(whole), design.wont_features(whole))",
+     "listed_problems(ir, design.listed_features(whole))", "機能一覧: 必須度が Won't の機能は中間表現に要らない（#1163）"),
     # #923: トレースのケース
     ("トレースの形式検査の記録を見ない", "        elif not (whole / versions.FORMAL_DIR / formal / FORMAL_RECORD).is_file():",
      "        elif False:", "トレース: 形式検査の記録が無い"),
@@ -3929,6 +3958,14 @@ def entry_caught(script: Path, cwd: Path) -> tuple[bool, str]:
     return (proc.returncode == 2 and "想定外の例外で止まった（ValueError: 試料）" in output and "Traceback" not in output), output
 
 
+# 機能一覧の Won't を読む関数（`check-design-csv.py` の `wont_features`）を壊す——scaffold は写しを持たずにそれを読む（#1163）
+DESIGN = "check-design-csv.py"
+DESIGN_MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("Won't を読まない", "if len(fields) > at and fields[0].strip() and fields[at].strip() == PRIORITY_WONT}",
+     "if False}", "機能一覧: 必須度が Won't の機能が中間表現に在れば止める（#1163）"),
+    ("必須度の列の位置を読まない", "    at = header.index(PRIORITY_COLUMN)\n", "    at = 0\n",
+     "機能一覧: 必須度が Won't の機能は中間表現に要らない（#1163）"),
+]
 CHECKER = "check-qa-csv.py"
 CHECKER_MUTATIONS: list[tuple[str, str, str, str]] = [
     ("判別の本体で暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False", "暫定反映の Q&A を指さない"),
@@ -4120,6 +4157,16 @@ def main() -> int:
             (mutated / CHECKER).write_text(checker.replace(before, after), encoding="utf-8")
             ok, detail = run_case(mutated, tmp_path / f"checker-mutwork{index}", by_name[killer])
             check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
+        design_source = (SCRIPTS / DESIGN).read_text(encoding="utf-8")
+        for index, (name, before, after, killer) in enumerate(DESIGN_MUTATIONS):
+            count = design_source.count(before)
+            if count != 1:
+                check(f"変異が届いていない: {name}", False, f"壊す箇所が {count} 回現れる")
+                continue
+            mutated = copy_scripts(tmp_path / f"design-mut{index}")
+            (mutated / DESIGN).write_text(design_source.replace(before, after), encoding="utf-8")
+            ok, detail = run_case(mutated, tmp_path / f"design-mutwork{index}", by_name[killer])
+            check(f"変異が生き残った: {name}（{killer} で殺せるはず）", not ok, detail)
         folds = case_folding(tmp_path)
         unknown = sorted(set(FOLDING_ONLY) - {name for name, *_ in MUTATIONS})
         check("FOLDING_ONLY に MUTATIONS に無い変異の名前がある", not unknown, f"{unknown}")
@@ -4160,7 +4207,7 @@ def main() -> int:
         for message in failures:
             print(f"  - {message}")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS) - len(skipped)} 件"
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(CHECKER_MUTATIONS) + len(DESIGN_MUTATIONS) - len(skipped)} 件"
           + (f"（ほかに当てなかった変異 {len(skipped)} 件: {'・'.join(skipped)}）" if skipped else ""))
     return 0
 

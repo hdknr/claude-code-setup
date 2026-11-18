@@ -122,6 +122,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 必須の欄が空か未決定の印のある欄（3）が残れば 1 で何も作らない**（未決定の欄が残るうちは開発に渡さない）。**表が無いだけなら止めない**
 （前からの正本は表を持たない）。読めない表は 2。**機能一覧（`requirements/features.csv`）があれば、中間表現の機能と照らす**——
 入口（`called_by` を持たない機能）が一覧に無い・一覧の id が中間表現に無いなら 1。呼ばれる判定の関数は一覧に無くてよい。
+**一覧の任意の列 `必須度` が `Won't`（作らない）の機能は中間表現に求めず、中間表現に在れば 1**（#1163）。
 一覧が無ければ照らさない。**読めない `shared/nfr.csv` では止めない**（種類の行が在るかを決められず、性能の行は指された行だけを読む——前からの扱い）。
 **`--upto` で前の版の時点を確かめるときは、この関門も照合も当てない**（前の版は凍結していれば直せない）
 （決まりの正は `references/tree.md` の「システム設計書の成果物」）。
@@ -1505,7 +1506,7 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
                     "利用者に確かめてもらうまで生成しない（/spec-loop:req-loop）"], None, {}
         problems = check_ir(ir, whole, answered, path_rules=gate, provisional=provisional)
         if gate and design_gate and not problems:
-            mismatched = listed_problems(ir, design.listed_features(whole))
+            mismatched = listed_problems(ir, design.listed_features(whole), design.wont_features(whole))
             if mismatched:
                 return 1, mismatched + [f"機能一覧と中間表現の機能がずれている（{len(mismatched)} 件。references/tree.md の"
                                         "「機能一覧と中間表現の照合」）。生成しない"], None, {}
@@ -1523,17 +1524,21 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
     return 0, [], ir, answered
 
 
-def listed_problems(ir: dict, listed: list[str] | None) -> list[str]:
+def listed_problems(ir: dict, listed: list[str] | None, wont: set[str] = frozenset()) -> list[str]:
     """機能一覧（`requirements/features.csv`）と中間表現の機能の照合（#957。`references/tree.md` の「機能一覧と中間表現の照合」）。
     一覧が無ければ照らさない。入口（`called_by` を持たない機能）は一覧に要り、一覧の id は中間表現に要る。
-    呼ばれる判定の関数（`called_by` を持つ機能）は一覧に無くてよい。検査を通った中間表現に呼ぶ。"""
+    呼ばれる判定の関数（`called_by` を持つ機能）は一覧に無くてよい。検査を通った中間表現に呼ぶ。
+    `wont` は一覧で必須度が `Won't`（作らない）の機能の id（#1163）——中間表現に求めず、中間表現に在れば止める。"""
     if listed is None:
         return []
     ids = [f["id"] for f in features_of(ir)]
     problems = [f"{f['id']}: 入口の機能が機能一覧（{merged(design.FEATURES)}）に無い——一覧に足すか、中間表現から外す"
                 for f in features_of(ir) if "called_by" not in f and f["id"] not in listed]
     problems += [f"{fid}: 機能一覧（{merged(design.FEATURES)}）の機能が中間表現に無い——中間表現に書き起こすか、一覧から外す"
-                 for fid in listed if fid not in ids]
+                 for fid in listed if fid not in ids and fid not in wont]
+    problems += [f"{fid}: 機能一覧（{merged(design.FEATURES)}）で必須度が {design.PRIORITY_WONT}（作らない）の機能が中間表現に在る"
+                 "——中間表現から外すか、必須度を利用者に確かめる（推測で直さない）"
+                 for fid in ids if fid in wont]
     return problems
 
 
