@@ -24,6 +24,10 @@
     `merge-versions.py` の `fold` と同じ答えを返すか**と、**読み込んだ `check` は綴りを見ない**（`merge-versions.py` が index の
     綴りのパスで呼ぶ。#569）も見る。
 
+4e. **回答の括弧から答えた人を読む（`respondent`。#1161）**——`<名前>が回答`・`<名前>が確認` から名前を読み、続きが `。` でも読む。
+    暫定の回答・未回答・内部の表の書き方・括弧に答えた人の無い形・語の後ろが続く形（`が回答する予定`）・ラベルの無い形は読めない（None）。
+    **`references/qa-csv.md` の「答えた人」の語と例が本体と合う**（例は本体で読めて、名前が `業務部長`）。
+
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
 **変異テストを含む。** 本体を 1 箇所ずつ壊し、**壊したのに全部の試料が期待どおりなら失格**とする。
@@ -305,6 +309,42 @@ PROVISIONAL_ROWS = [
     ("確認中", "B（暫定で採用の予定）", False),
     ("確認中", "未回答", False),
 ]
+# (回答, 読めるはずの答えた人。None は読めない)（#1161）
+RESPONDENT_ROWS = [
+    ("A（業務部が回答）", "業務部"),
+    ("A（業務部が確認）", "業務部"),
+    ("B（業務部長が回答。モック requirements/mocks/受注入力.html）", "業務部長"),
+    ("  A（営業部 課長が回答）  ", "営業部 課長"),
+    ("A（暫定で採用。業務部 2026-10-21 の指示）", None),
+    ("未回答", None),
+    ("B（開発 山田 2026-10-22）", None),
+    ("A（業務部）", None),
+    ("A（業務部が回答する予定）", None),
+    ("a（業務部が回答）", None),
+    ("A（が回答）", None),
+]
+RESPONDENT_MUTATIONS = [
+    ("答えた人を読まない", '    return m["who"].strip() if m else None', "    return None"),
+    ("確認を読まない", 'RESPONDENT_VERBS = ("回答", "確認")', 'RESPONDENT_VERBS = ("回答",)'),
+    ("語の後ろを見ない", "(?:{DETAIL_CLOSE}|。)\")", "\")"),
+    ("ラベルを見ない", 'RESPONDENT = re.compile(rf"{OPTION_LABEL}{DETAIL_OPEN}', 'RESPONDENT = re.compile(rf"[A-Za-z]{DETAIL_OPEN}'),
+    ("前後の空白を落とさない", "    m = RESPONDENT.match(answer.strip())", "    m = RESPONDENT.match(answer)"),
+]
+
+
+def respondent_mismatches(mod, reference: str) -> list[str]:
+    problems = [f"{answer!r} → {mod.respondent(answer)!r}（期待: {want!r}）"
+                for answer, want in RESPONDENT_ROWS if mod.respondent(answer) != want]
+    paragraph = next((line for line in reference.splitlines() if line.startswith("**答えた人**")), "")
+    verbs = tuple(re.findall(r"`<答えた人>が([^`]+)`", paragraph))
+    if verbs != mod.RESPONDENT_VERBS:
+        problems.append(f"qa-csv.md の「答えた人」の語 {verbs} が本体 {mod.RESPONDENT_VERBS} と違う")
+    examples = re.findall(r"`([A-Z]（[^`]+）)`", paragraph)
+    if not examples or any(mod.respondent(example) != "業務部長" for example in examples):
+        problems.append(f"qa-csv.md の「答えた人」の例 {examples} を本体が 業務部長 と読まない")
+    return problems
+
+
 PROVISIONAL_MUTATIONS = [
     ("暫定を見ない", 'return row["状態"].strip() == PROVISIONAL', "return False"),
     ("反映済みも暫定にする", 'return row["状態"].strip() == PROVISIONAL',
@@ -951,6 +991,16 @@ def main() -> int:
                 continue
             check(f"崩すと見える: {name}", bool(reader_problems({**sources, file: sources[file].replace(before, after)})))
 
+        print("4e. 回答の括弧から答えた人を読む（respondent。#1161）")
+        problems = respondent_mismatches(mod, reference)
+        check("答えた人の読み方が期待どおり・qa-csv.md の語と例に合う", not problems, "; ".join(problems))
+        for name, before, after in [("「答えた人」の語を変える", "`<答えた人>が確認` で始める", "`<答えた人>が承認` で始める"),
+                                    ("「答えた人」の例を読めない形にする", "`A（業務部長が回答）`・", "`A（業務部長）`・")]:
+            if reference.count(before) != 1:
+                check(f"崩すと不一致になる: {name}", False, f"崩す箇所が {reference.count(before)} 回現れる")
+                continue
+            check(f"崩すと不一致になる: {name}", bool(respondent_mismatches(mod, reference.replace(before, after))))
+
         print("4b''. 番号の並び（number_order）")
         problems = number_order_mismatches(mod)
         check("番号の並びが期待どおり", not problems, "; ".join(problems))
@@ -1007,6 +1057,14 @@ def main() -> int:
             broken.write_text(source.replace(before, after), encoding="utf-8")
             assert_in_tmp(broken)
             check(f"変異を殺せる: {name}（暫定の判別）", bool(provisional_mismatches(load(broken))))
+        for index, (name, before, after) in enumerate(RESPONDENT_MUTATIONS):
+            if source.count(before) != 1:
+                check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
+                continue
+            broken = root / f"respondent-mutant-{index}.py"
+            broken.write_text(source.replace(before, after), encoding="utf-8")
+            assert_in_tmp(broken)
+            check(f"変異を殺せる: {name}（答えた人）", bool(respondent_mismatches(load(broken), reference)))
         for index, (name, before, after) in enumerate(ORDER_MUTATIONS):
             if source.count(before) != 1:
                 check(f"変異が届く: {name}", False, f"壊す箇所が {source.count(before)} 回現れる")
@@ -1026,7 +1084,7 @@ def main() -> int:
     if failures:
         print(f"FAIL: {len(failures)} 件")
         return 1
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(READER_MUTATIONS) + len(ENTRY_MUTATIONS) + len(SPELLING_MUTATIONS) + 1} 件")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS) + len(NUMBER_MUTATIONS) + len(ORDER_MUTATIONS) + len(PROVISIONAL_MUTATIONS) + len(RESPONDENT_MUTATIONS) + len(READER_MUTATIONS) + len(ENTRY_MUTATIONS) + len(SPELLING_MUTATIONS) + 1} 件")
     return 0
 
 

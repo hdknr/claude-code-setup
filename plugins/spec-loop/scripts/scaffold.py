@@ -1363,6 +1363,9 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
                 lines = [re.sub(r"^  (requirements/|shared/)", rf"  {MERGED_DIR}/\1", line) for line in lines]
                 return (2 if code == 2 else 1), [line for line in lines if not line.startswith("OK（")] + [
                     "関門（システム設計書の成果物の表。references/tree.md の「システム設計書の成果物」）を通らない。生成しない"], None, {}
+            # 通っても、回答者の照合（関係者の表。終了コードに数えない報告。#1161）は利用者に見せる
+            for line in design.respondent_block(lines):
+                print(line, file=sys.stderr)
         raw = rendered[IR_PATH]
         try:
             ir = json.loads(raw.decode("utf-8"))
