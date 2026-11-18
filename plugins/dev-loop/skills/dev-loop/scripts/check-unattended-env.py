@@ -111,6 +111,10 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   宣言がそれでないのにプラグインのカタログ（`.claude-plugin/marketplace.json`）があれば効かない（マージが配布を起こす）。
   `ドキュメントのみ` なら効く。宣言が無ければ「判定できない」（`CLAUDE.md` でしか決まらない）。
   **効くと出しても、照合（ワークフロー・`CLAUDE.md`・周の差分）は見ていない**——各周がマージの前に行う（`references/absent-lines.md`）
+- **マージ前の判断の線**（1 行。人が見る。#1242）——台帳の確かめた線の `マージ前の判断` が古い値 `推奨で決めて起票` で、`ledger.py` の `LINES` に新しい値
+  `推奨で決めて起票（後退・未達を含む）` があり、不在の間に上のマージの線が効く（か判定できない）ときだけ出す——新しい値があることと、古い値のままだと止まる場面
+  （後退の分け方の 3 に入る後退・満たしていない受入基準）を名指しする（`references/absent-lines.md` の「後退・未達を含む値」）。
+  **線は書き換えない**（線を広げられるのは利用者だけ）。新しい値・`止まる`・線が無い・`--present`・マージの線が効かないときは出さない
 - **周ごと**（`到達 #<番号>`）——`await` は止まる（`note`）、`blocked` は止まる（`note` が `利用者の判断待ち:` で始まればそのまま、
   ほかは「止まっている」）、まとめの中で取り残された行（`ledger.py` の名指し）は止まる。進行中（`impl`・`gate`・`pr`）は
   `note` が `利用者の判断待ち:` で始まれば（まとめならどれか 1 行の `note` でも。`note` は代表にしか書かれないことがある）マージの前の判断待ちで止まる——
@@ -313,7 +317,9 @@ r"""利用者が不在になる前に 1 度だけ回す、環境の点検（#394
   フェンスの中の宣言・マージを利用者が打つ（`user_ops`）・配布の宣言で印が無い・カタログがあるのに配布の宣言が無いときに「効く」と言わない**。
   宣言もカタログも無ければ判定できない
 - **居る cruise（`--present`）で、マージの承認待ちを要対処にしない**——人が見る
-- **台帳を書かない**——`ledger.py` から使うのは読む関数と定数だけ（`load`・`ledger_path`・`is_stranded`・`has_dist_mark`・`DIST_MERGE`・`DIST_MARK`）。
+- **マージ前の判断の線で、古い値（`推奨で決めて起票`）を黙って通さない**（#1242）——不在の間にマージの線が効く（か判定できない）なら、新しい値があることと止まる場面を人が見る 1 行で出す。
+  **新しい値・`止まる`・線が無い・居る cruise・マージの線が効かないときには出さない**（陽性対照）。**要対処にしない**（終了コードを変えない——古い値は利用者が選んだ値でもある）
+- **台帳を書かない**——`ledger.py` から使うのは読む関数と定数だけ（`load`・`ledger_path`・`is_stranded`・`has_dist_mark`・`DIST_MERGE`・`DIST_MARK`・`LINES`）。
   **これらの意味を `ledger.py` で変えると、ここの到達も変わる**。**`note` は切って出す**（同じ `note` が依存する周の数だけ並ぶ）
 
 守らない:
@@ -1108,6 +1114,9 @@ def parent_location(cwd=None):
 REACH = "到達"
 REACH_SUMMARY = "到達できる範囲"
 MERGE_LINE = "マージの線"
+DECISION_LINE = "マージ前の判断の線"  # 到達の項目の名前（#1242）
+DECISION_KEY = "マージ前の判断"  # 台帳の確かめた線の項目（ledger.py の LINES の鍵）
+DECISION_OLD, DECISION_NEW = "推奨で決めて起票", "推奨で決めて起票（後退・未達を含む）"
 JUDGE_MARKS = ("利用者の判断待ち:", "利用者の判断待ち：")  # `note` の先頭の印。found-lines.md が blocked の行に書く印と同じ語（cruise SKILL.md §4 の 4）
 ABSENT_MERGE = re.compile(r"^不在の線:\s*マージ\s*=(.*)$")
 REFLECT = re.compile(r"^マージの反映:(.*)$")
@@ -1302,6 +1311,25 @@ def merge_effect(project, data, present, lg):
                        "CLAUDE.md・deploy runbook で決まり、このスクリプトは読まない（判定できなければ効かない）", "")
 
 
+def decision_items(data, present, merge_kind, lg):
+    """台帳の `マージ前の判断` が古い値のまま、不在の間にマージの線が効くなら、新しい値と止まる場面を人が見る 1 行で名指しする（#1242）。
+    **線は書き換えない**——確かめ直すのは利用者だけ（`references/absent-lines.md` の「線を広げられるのは利用者だけ」）。"""
+    if present or merge_kind not in ("merge", "unknown"):
+        return []  # 居る cruise・マージの線が効かない周では、この線も効かない
+    if data.get("lines", {}).get("values", {}).get(DECISION_KEY) != DECISION_OLD:
+        return []
+    if DECISION_NEW not in lg.LINES.get(DECISION_KEY, ()):
+        return []  # 新しい値の無い版の ledger.py——名指す先が無い
+    return [(HUMAN, DECISION_LINE,
+             f"台帳の確かめた線は `{DECISION_KEY} = {DECISION_OLD}`（古い値）——不在の間、後退の分け方の 3 に入る後退"
+             "（当て直しで残った・新たに出た・直していない後退）と満たしていない受入基準では、その周がマージの前で止まる"
+             "（利用者の判断待ち。依存する周も始まらない）。"
+             f"新しい値 `{DECISION_NEW}` なら、それらも推奨で決めてマージし、確認の Issue とフォローアップの Issue を立てて進む"
+             "（references/absent-lines.md の「後退・未達を含む値」）",
+             "止めずに進めるなら、離れる前に利用者が線を確かめ直す（cruise SKILL.md §1 の `ledger.py lines`）。"
+             "このスクリプトも cruise も、線を書き換えない——古い値のまま離れるなら、止まった周は 6 で終えるときに渡される")]
+
+
 def reach_items(project, name, present, pr_view=None):
     """台帳の済んでいない周ごとに、不在の間の到達（マージまで・PR で止まる・始まらない・止まっている）と理由。読むだけ。"""
     try:
@@ -1418,7 +1446,7 @@ def reach_items(project, name, present, pr_view=None):
                                 else f"{lead}——依存先 #{d}: {why}", root)
         return memo[number]
 
-    items = [merge_item]
+    items = [merge_item] + decision_items(data, present, merge_kind, lg)
     groups = {k: [] for k in KIND_ORDER}
     for i in data["issues"]:
         if i["state"] == "dropped" or (i["state"] in lg.MERGED and not lg.is_stranded(i)):

@@ -20,8 +20,8 @@ description: >
 
 # dev-loop スキル
 
-<!-- skill-version: 2.8.0 -->
-> **このスキルの版: 2.8.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 2.9.0 -->
+> **このスキルの版: 2.9.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -1425,6 +1425,7 @@ gh issue view <issue-number>   # 要件・受入条件・関連 PR を把握（�
   「残課題を束ねた Issue は作らない」はそれを禁じない（#641。単位は `references/found-lines.md` の「台帳に足す」を正とする）。
   **利用者の直接の指示で、人の判断が要る項目を推奨で決めて立てる確認の Issue も対象外**——指示が (c) にあたり、判断の記録なので (a) は掛からない（#696・#699）。
   **cruise の台帳の確かめた線 `マージ前の判断 = 推奨で決めて起票` で親が立てる確認の Issue も同じ**——線が (c) にあたる（`references/absent-lines.md` の同名の節。#829）。
+  **その線の値が `推奨で決めて起票（後退・未達を含む）` のとき親が立てるフォローアップの Issue（直す作業を持つ実装の Issue）も同じ**——同じ節の「フォローアップの Issue」（#1242）。
   **cruise の周では、関門の指摘・周の途中の課題から起票の候補・確認の Issue にするのは `references/found-lines.md` の「振り分け」で直すとした行だけ**
   ——受入基準を破る・利用者に見える誤り・その周が持ち込んだ後退の 3 つ（実際の利用でまず起きない形を除く）で、それ以外は PR コメントにだけ残す（#774。線の値に依らない）。
   **周の中で使うなら、指示は計画ファイルに日時と出所を書いてから使う**（`references/absent-lines.md` の「線を広げられるのは利用者だけ」と同じ）。
