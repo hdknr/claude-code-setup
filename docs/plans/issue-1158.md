@@ -129,6 +129,7 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・feasibility �
 - 1 パス目の指摘対応: `d2fca699db7a03a8afdecc929b95063c1a3cff99`（`git diff d273a9e -- ':(top)' ':(top,exclude)docs/plans/issue-1158.md'` は 3 ファイル——2 パス目を回す）
 - Verifier 2 パス目（sonnet。委譲文 190 行をファイルで渡し、190 行を読んだと報告）: **反証 0 件**。CR1-1・CR1-5 は一致、`test-check-design-csv.py` 緑（試料 194・変異 164・崩し 42）、生成物なし。`test-scaffold.py`・`check-all.py` は親が回すので回していない・変異の独立の当ては無し。git status は前後とも計画ファイルだけで同じ。報告は SubagentHandback で届かず、子の transcript から読んだ
 - `/code-review` 2 パス目（high。154 行を全部読んだと報告。移行の 2 ケースを写しの `run_case` で回して緑、陽性対照（`check_migration` を外すと NG）つき）: 指摘 8 件（直す 3・残課題 5）。git status は前後とも計画ファイルだけで同じ
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `3dc41e3fee425ca99c96669cbc7a59cd04021446`
 
 ## 既知の限界・決着済みの論点
 
