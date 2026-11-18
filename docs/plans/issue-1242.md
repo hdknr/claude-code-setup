@@ -121,6 +121,8 @@ B（古い値の意味を新しい値に寄せる）は「線を広げられる�
   取り込み後（PR の前）の `check-all.py`（run-serial 越し。HEAD `edb0015`）: 94 本中 失敗 1——`test-check-all.py` のキャッシュの契約の `cache_interrupt` が中で起こす `check-all.py --jobs 4` の 60 秒の時間切れ（`subprocess.TimeoutExpired`）。ほか 93 本は OK。
   同じ `test-check-all.py` を run-serial 越しに単独で回し直すと rc=0（すべて通った。終わった時の load average 8.40）。この周は `check-all.py`・`test-check-all.py` を触っていない。
   run-serial を通した失敗なので本物と読む決まり（parallel.md の「負荷による偽の失敗」）に従い、両方の結果をここに残し、PR 側の CI の結果で確かめる。残課題: 全部回す中で時間で待ち合わせる契約が自分の並列の負荷で落ちうる（この周の受入基準の外。振り分け: 記録だけ）。
+  PR #1266 を作った後に main が進んだ（#1156・#1163。dev-loop が 2.10.0 に）ので取り込み直した（merge commit `8992da5`。衝突は §8.2 の生成ブロックだけ——main 側を取って書き直した）。dev-loop を **2.11.0** に上げ直した。
+  取り込みで入った検査は無い（`scripts/`・`plugins/*/scripts/` の差分は spec-loop の検査の変更とそのテストだけ）。main の dev-loop の差分は版の行と `spec-gap.md` だけ。マージ直前の取り込みなので `check-plugin-versions.py` と `skill-metrics.py --check` の 2 本だけ回し（どちらも 0）、PR 側の CI で確かめる。
 
 ```dev-loop-gates
 周の base: 53517d593b60a75123648e6f26b0d77dd669b1d1
