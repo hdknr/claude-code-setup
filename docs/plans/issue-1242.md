@@ -94,7 +94,7 @@ B（古い値の意味を新しい値に寄せる）は「線を広げられる�
 
 ## 起票
 
-- この周の起票: 0 件（仕様の穴 G1〜G3 の確認の Issue はまだ立てていない——立てたら直す）
+- この周の起票: 0 件（仕様の穴 G1〜G3 の確認の Issue は子が立てない——親が立てたら件数を直す）
 
 ## 関門の進捗（再開点）
 
@@ -114,6 +114,13 @@ B（古い値の意味を新しい値に寄せる）は「線を広げられる�
   素通りした変異: 名指しの文から「影響範囲」「宣言の外の反映」「依存の表」を 1 つずつ削る変異（試料は `CI が緑でない` だけを見る）——M1 として記録。
 - 割り目: 割らない（cruise の周）。外部レビュー: PR の後に `external-reviews.py` で見る。
 - 交絡を潰した手順: 実験なし（スクリプトの試料と変異のみ）。
+- 再開（2026-11-18T09:19Z。`/dev-loop:cruise 1169 --absent` の再開。前の子は止まった）: 読み込んだ dev-loop は 2.9.0（`SKILL.md` 1923 行を読んだ）。再開点の HEAD `895ac80` から続けた。
+  PR の前に `origin/main`（`8c84f23`。#1157・#1158）を取り込んだ（merge commit `edb0015`）。衝突は §8.2 の生成ブロックだけ——main 側を取って `skill-metrics.py` で書き直した。
+  main の dev-loop が 2.9.0 に進んでいたので **2.10.0** に上げ直した（3 種）。取り込みで入った検査: `artifact-reads.py` とそのテスト（#1157）。main の dev-loop の差分は版の行と `spec-gap.md`・`artifact-reads.py` だけで、この周の文の前提になる値は変えていない。
+  式を当て直した base: `8c84f23cb6353b7a4f62fb6a842ee74bd37fc4aa`（`check-deps-declared.py`・`check-spec-writeback.py` に渡した。関門の記録の `周の base` は関門に渡した値のまま）。
+  取り込み後（PR の前）の `check-all.py`（run-serial 越し。HEAD `edb0015`）: 94 本中 失敗 1——`test-check-all.py` のキャッシュの契約の `cache_interrupt` が中で起こす `check-all.py --jobs 4` の 60 秒の時間切れ（`subprocess.TimeoutExpired`）。ほか 93 本は OK。
+  同じ `test-check-all.py` を run-serial 越しに単独で回し直すと rc=0（すべて通った。終わった時の load average 8.40）。この周は `check-all.py`・`test-check-all.py` を触っていない。
+  run-serial を通した失敗なので本物と読む決まり（parallel.md の「負荷による偽の失敗」）に従い、両方の結果をここに残し、PR 側の CI の結果で確かめる。残課題: 全部回す中で時間で待ち合わせる契約が自分の並列の負荷で落ちうる（この周の受入基準の外。振り分け: 記録だけ）。
 
 ```dev-loop-gates
 周の base: 53517d593b60a75123648e6f26b0d77dd669b1d1
