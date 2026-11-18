@@ -1,0 +1,120 @@
+# Issue #1178 — spec-loop・dev-loop: 実装が入った後に、形式検査のモデルとコードを揃えておく仕組み
+
+**不在の周**（`/dev-loop:cruise 1169 --absent` の起動・2026-11-18T06:40Z。前のセッションは 2026-11-17T10:47Z）。利用者には訊かない。親（cruise #1169）から委譲文で受けた子。
+確かめた線（出所: cruise の確かめた線（台帳 `issue-1169`）。利用者の確認（起動時・2026-11-17T10:47:55Z、配布を見せて確かめた））:
+`直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`・`マージ前の判断 = 推奨で決めて起票`（古い値。後退・未達は推奨で進めない）。実機確認の線は無い。
+台帳（`.claude/plans/cruise-issue-1169.json`）は書かない（親だけ）。手順 7 のマージはしない（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+読み込んだ dev-loop は 2.8.0（`SKILL.md` 1923 行を読んだ）。依存先 #1177 はマージ済み（main 53517d5 に入っている）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
+版の上げ方: `spec-loop` を **minor**・`dev-loop` を **minor**（どちらも能力・手順の追加——CLAUDE.md の表）。着手時の main は spec-loop 0.109.0 → 0.110.0、dev-loop 2.8.0 → 2.9.0。
+マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.8.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
+割り目: 割らない（cruise の周）。
+
+Issue 本文（外部入力）から読んだ要件: モデルの記録に実装の側の対応（行為 → ファイル・関数）と最後に対応を確かめたコミットの項目を足し、`formal-baseline.py check` が見る。
+dev-loop の周が対応のファイルに触れたら、モデルの再検査を走らせて結果（反例なし・反例あり・判定できなかった）を周の記録に残す。食い違いはモデルのずれかコードの不具合かを分けて報告し、性質やモデルを弱めて通さない。
+`check-formal-rerun.py` を CI で回す雛形を `references/tree.md` に足す（TLC を入れる手順も）。本文に受入基準を緩める指示は無い（コメントは無い）。
+
+## 決めた値
+
+### 仕様の穴（推奨で決めた。`仕様の穴 = 推奨で決めて起票`）
+
+- **H1 「対応が今のコードを表しているか」をどう確かめるか**: (a) 周が**コードのモデル**——保存したモデルを写し、対応の行為の定義だけを今のコードがすることに書き直したもの（設定 `.cfg`・性質の定義・陽性対照は変えない）——を書き、
+  同梱のスクリプトが保存したモデルとコードのモデルの両方を TLC で走らせる。保存したモデルが通りコードのモデルが反例を出せば、コードが性質を破っている（推奨）／
+  (b) 保存したモデルだけを `check-formal-rerun.py` で走らせ直し、対応が合っているかは周が文で判断する。
+  推した理由: (b) はモデルがコードを読まないので、コードがどう変わっても反例が出ない——受入基準 3（陽性対照で反例が出る）を満たす形が無い。(a) なら反例は TLC が出し、弱めたかは機械が見る（設定・性質の定義・陽性対照が同じか）。
+- **H2 反例の振り分け**: スクリプトは、コードのモデルの反例を既定で `反例あり（コードの不具合）` にし、周が「この Issue が求める意図した変更」と判断したときだけ `--intended` で `反例あり（モデルのずれ）` にする。
+  `モデルのずれ` は仕様の性質を変えることなので、dev-loop の `references/spec-writeback.md` の `正本に起票する行:` を計画に要る（`check` が見る）。保存したモデル自身が反例を出す・走らない場合は `判定できなかった`（コードを比べる基準が壊れている）。
+  推した理由: 意図は機械では決まらない。既定を不具合の側（止まる側）に倒し、ずれと言うなら正本に戻す行を残させる——「性質を弱めて通さない」を、弱めたい側に記録を課す形で守る。
+- **H3 dev-loop から spec-loop のスクリプトをどう使うか**: dev-loop の `formal-sync.py` は `--spec-loop <spec-loop の base ディレクトリ>` を受けて、そこの `check-formal-rerun.py` を読み込む（写さない）。渡さない・読めなければ判定できなかった。
+  推した理由: dev-loop はプラグインの外を相対パスで指せない（`check-skill-pointers.py`）。TLC の呼び方の読み方と判定の文字列を写すと、写しの突き合わせのテストが要り、ずれたときに片方だけ緑になる。
+  モデルのあるリポジトリには spec-loop が入っている（正本を回す人の道具）。
+- **H4 確かめたコミットを誰が進めるか**: 周は、再検査が `反例なし` で、モデルの版が `formal-baseline.py target` の出す作業中の版と同じとき（同じリポジトリで、リリースしていない）だけ、記録の `実装の対応`・`対応を確かめたコミット` を書き直して `formal-baseline.py check` を当てる。
+  そうでなければ書き直さず、計画の再検査の行と PR コメントに残す（凍結した版を直すと `check-frozen.py` が落ちる）。値は再検査を走らせた時点の HEAD の SHA（コードを commit した後）。
+  推した理由: Issue の「確かめたらコミットを進める」を、`tree.md` の「書くのは作業中の版だけ」と凍結の決まりを破らずに満たす形がこれだけ。
+- **H5 記録の新しい 2 項目は任意（前からのモデルは持たない）**: `陽性対照のファイル`（#1044）・`図の対応のファイル`（#1177）と同じく、行が無くても違反にしない。ただし片方だけ・空は違反。
+  spec-review・formal-baseline がモデルを写し直すときは、前の記録の 2 行を引き継ぎ（無ければ書かない）、対応の行為がモデルから消えたらその項を外す。
+  推した理由: 必須にすると前から残した全部のモデルが `check` で落ち、対応を知らない spec-review に値を書かせることになる。
+
+決着（穴ではない）: 再検査の行の形は `形式検査の再検査: <対象> <結果>`（結果は 4 つ: `反例なし`・`反例あり（コードの不具合）`・`反例あり（モデルのずれ）`・`判定できなかった`）。
+`判定できなかった` は PR を止めない（手順 5 の BLOCKED と同じく PR コメントで渡す）。正本が別のリポジトリなら `--canon <その写しの根>` で読む（対応のファイルの名前は製品のリポジトリの根からのパス）。
+
+## 変更範囲
+
+触る:
+
+- `plugins/dev-loop/skills/dev-loop/scripts/formal-sync.py` — 新規。`touched`（触れたモデル）・`rerun`（保存したモデルとコードのモデルを走らせて振り分ける）・`check`（PR の前に計画の再検査の行を見る）
+- `plugins/dev-loop/skills/dev-loop/references/formal-sync.md` — 新規。周の手順の原本
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 手順 3・6 から指す行と、終了コードで分岐するスクリプトの一覧
+- `scripts/test-formal-sync.py` — 新規。回帰テスト（一時の git リポジトリ・偽の TLC・変異）
+- `plugins/spec-loop/scripts/formal-baseline.py` — 記録の項目 `実装の対応`・`対応を確かめたコミット`（任意）と、その形の検査
+- `scripts/test-formal-baseline.py` — 新しい項目の試料と変異
+- `plugins/spec-loop/references/tree.md` — 「形式検査のモデル」の記録の表と「実装との対応」の段落、「保存したモデルを CI で走らせ続ける」の雛形
+- `scripts/test-check-formal-rerun.py` — 雛形の走らせるコマンドを抜き出して、空振りのモデルで非 0 を見る
+- `plugins/spec-loop/skills/spec-review/SKILL.md` — 「モデルを残す」の 2 で 2 行を引き継ぐ
+- `plugins/spec-loop/README.md`・`plugins/dev-loop/README.md` — スクリプトの表（あれば）
+- `CLAUDE.md` — スクリプトとテストの項
+- `scripts/check-all.py`・`scripts/test-check-all.py` — テストの登録（要れば）
+- `.github/workflows/plugins.yml` — テストのステップ
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書く）
+- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
+- `docs/plans/issue-1178.md` — この計画ファイル
+
+触らない:
+
+- `plugins/spec-loop/scripts/check-formal-rerun.py`・`check-tlc.py`（読み込んで使う）・`formal-statechart.py`・`agents/formal-checker.md`（判定役は記録を書かない）
+- 説明文（`plugin.json`・`marketplace.json`・`SKILL.md` の frontmatter）——説明の文は偽にならない
+- 本物の GitHub Actions のワークフローを製品のリポジトリに置くこと（雛形は文書）
+
+依存の追加・更新: なし
+仕様の振る舞い: 変えない
+
+**複製の数**: 「再検査の行の形と 4 つの結果」を述べる箇所は 3（`references/formal-sync.md` が原本、`formal-sync.py` の定数と docstring、`SKILL.md` は指すだけ）。
+「記録の 2 項目」は 4（`tree.md` が原本、`formal-baseline.py` の定数（`test-formal-baseline.py` が突き合わせる）、`spec-review/SKILL.md`、`formal-sync.py` の読み方）。
+分けない理由: 原本以外は指すか写しで、写しはテストが突き合わせる。
+
+## デプロイ経路
+
+プラグイン（`marketplace.json` のカタログと、`link-skills.sh` を使う利用者の `git pull`）と公開サイトの再ビルド。**マージの反映: ドキュメントとプラグインの配布**（`.claude/dev-loop.md` の宣言どおり）。
+
+## 受入基準（不変条件 × 経路）
+
+入口: `formal-baseline.py check`（spec-review の「モデルを残す」・formal-baseline・周が記録を書き直したとき）・`formal-sync.py touched`／`rerun`／`check`（dev-loop の手順 3・6）・
+`references/tree.md` の CI の雛形（製品・正本のリポジトリに写される）・spec-review の「モデルを残す」の 2（記録を写し直す）。
+
+| # | 不変条件 | 経路 | 守り方 | 証明 |
+| --- | --- | --- | --- | --- |
+| A1 | モデルの記録に `実装の対応` と `対応を確かめたコミット` の項目があり、`formal-baseline.py check` がその形を確かめる（片方だけ・空・`未実装` の食い違い・対応の形・本体のモデルに無い行為・SHA でないコミットは違反。2 行とも無いのは通す） | spec-review・formal-baseline が書く・周が書き直す・手で書く | `check` の検査と `ITEMS` の写しの突き合わせ | `test-formal-baseline.py` の試料と変異 |
+| A2 | dev-loop の周が対応のファイルに触れる変更をしたら、モデルの再検査の結果（反例なし・反例あり・判定できなかった）が計画ファイルに残る——残っていなければ PR の前の `check` が 1 | 周の差分（コミット済み・未コミット・未追跡）・別の正本（`--canon`） | `touched` が差分と対応を突き合わせ、`check` が行を見る。手順 6 が PR の前に呼ぶ | `test-formal-sync.py`（一時の git リポジトリ） |
+| A3 | 対応のファイルの不変条件を破る変更（陽性対照）を入れたコードのモデルでは、その周で反例が出て `反例あり（コードの不具合）` と報告され、`check` が PR を止める | `rerun` に保存したモデルとコードのモデルを渡す | TLC の出力で決め、既定を不具合の側に倒す | `test-formal-sync.py`（偽の TLC）と、手元の本物の TLC での実走（このファイルの「実走」）。**周が書くコードのモデルが今のコードを正しく写しているかは未証明**（LLM の振る舞い。Eval は回していない） |
+| A4 | `check-formal-rerun.py` を CI で回す雛形が `tree.md` にあり、陽性対照で反例が出ない（空振りの）モデルでは CI のステップが非 0 で落ちる | 雛形の走らせるコマンド | 雛形のコマンドが `check-formal-rerun.py` の終了コードをそのまま返す | `test-check-formal-rerun.py` が雛形からコマンドを抜き出して空振りの試料で非 0・通る試料で 0 を見る。**YAML を GitHub Actions の上で走らせてはいない（未証明）** |
+| A5 | 性質やモデルを弱めて通さない——コードのモデルの `.cfg`・設定が名指す性質の定義・陽性対照・記録の一覧が保存したモデルと違えば `反例なし` にしない（`判定できなかった`） | `rerun` | 突き合わせ | `test-formal-sync.py` の変異 |
+| A6 | 前からの振る舞いを壊さない——2 行の無い前からのモデルは `formal-baseline.py check` を通り、`check-formal-rerun.py` の判定は変わらない。対応を持つモデルが無いリポジトリでは `formal-sync.py check` は何も求めずに 0 | 既存の試料・正本の無いリポジトリ | 任意の項目にする・モデルが無ければ 0 | 既存のテストと `test-formal-sync.py` |
+
+生成物: `docs/plugins/dev-loop-design.md` の §8.2 の生成ブロック（dev-loop の `SKILL.md` を変えるので `skill-metrics.py` で書き直し、`--check` で鮮度を見る）。図（drawio）は触らない。
+未証明: A3 のうち周がコードのモデルを正しく書くか（LLM の振る舞い）・A4 の YAML を Actions の上で走らせること。
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1178-formal-sync`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1178`・起点 `53517d5`・base `origin/main` → `53517d593b60a75123648e6f26b0d77dd669b1d1`
+- 関門: まだ当てていない
+- 交絡を潰した手順: （実走のあとに書く）
+
+## 既知の限界・決着済みの論点
+
+（関門の報告を受けたら、採否の表を書く）
+
+## 実走（受入基準 A3 の本物の TLC での陽性対照）
+
+手元の TLC（`/Users/hdknr/.local/bin/tlc`。tla2tools v1.7.4）で、scratchpad の一時の git リポジトリ（正本と実装が同じ）に `Counter`（`Inc` は `x < 2` のときだけ増やす・`Inv == x <= 2`）と
+陽性対照 `Broken`（`Inv == x <= 1`）を置き、対応 `Inc`・`Reset` → `app/counter.py` で当てた:
+
+- `formal-baseline.py check`: 対応を書いてコミットを `未実装` のままにした記録は 1（片方だけ未実装）、SHA を書くと 0。
+- `app/counter.py` の `inc` から上限を外してコミット → `touched` が `触れたモデル: counter（app/counter.py）`。
+- コードのモデル（`Inc` の `x < 2` を外した写し）で `rerun` → 保存したモデルは本体 反例なし・陽性対照 反例あり、コードのモデルの本体で反例（`is violated`）→ `形式検査の再検査: counter 反例あり（コードの不具合）`・終了コード 1。
+- 陰性側の対照: 保存したモデルと同じ写しで `rerun` → `反例なし`・0。走らせた後に正本の対象のディレクトリにファイルは増えていない（`states/` 無し）・`git status --porcelain` は空。
+- 観測窓: 1 つのモデル・行為 2 つ・状態は数個。大きいモデル・時相の性質では走らせていない（偽の TLC の試料で `were violated` の読みは `check-formal-rerun.py` 側のテストが見る）。
+
+- この周の起票: 0 件（不在の周。起票は親が確認の Issue を立てる）

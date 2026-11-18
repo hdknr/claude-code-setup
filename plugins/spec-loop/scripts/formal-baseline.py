@@ -32,6 +32,10 @@ usage:
   （`check-formal-rerun.py` は、行が無い対象を「判定できなかった」にする）。
 - **`図の対応のファイル`・`状態遷移図のファイル`（任意。#1177）**: 同じく、行があれば同じ形で見て、行が無くても違反にしない——前から残したモデルは持たない
   （`formal-statechart.py` は対応が無い対象を描かない）。
+- **`実装の対応`・`対応を確かめたコミット`（任意。#1178）**: 2 行ともそろって在るか、そろって無い（無いのは前から残したモデル）。
+  `実装の対応` は `未実装` か、`` `<行為>` → `<ファイル>::<関数>` `` を `、` で区切った並び（行為は 2 回書かない。本体のモデル（`モデルのファイル` の `.tla` のうち陽性対照でないもの）が行頭から `<行為> ==` で定義していること。
+  `.tla` が無い対象（Alloy など）は形だけを見る）。`対応を確かめたコミット` は `未実装` か 7〜40 桁の小文字の 16 進で、**`未実装` は 2 行で食い違わない**。
+  対応のファイル・関数が在るか、コミットが在るかは見ない（正本と実装のリポジトリが別のことがある——dev-loop の `formal-sync.py` が実装のリポジトリで読む）。
 - **ディレクトリの中身は、`README.md` と `モデルのファイル`・`陽性対照のファイル`・`図の対応のファイル`・`状態遷移図のファイル` の一覧だけ**——TLC の `states/`・Alloy の `<名前>/`・出力を落としたファイル・前に残したファイルが在れば違反。
 
 終了コード:
@@ -56,6 +60,7 @@ usage:
 | `図の対応のファイル`・`状態遷移図のファイル` の一覧のファイルが無ければ違反にし、一覧のファイルは残ってよいとする（#1177） | 図（`formal-statechart.py`）が対応を読めない・質問から指す図が無い・対応と図を残すと違反になる |
 | `結果`・`前回のモデル` は値そのものか、値に `（…）` の要約を 1 つだけ続けた形（閉じた後ろに何も無い）だけを通す | `反例なしかは判定できなかった`・`反例なし（N=3）かは判定できなかった` のような、走らせていないモデルが残る |
 | 置き場所と名前の形を見る | 次の回が同じ名前で探せない |
+| `実装の対応`・`対応を確かめたコミット` の片方だけ・`未実装` の食い違い・対応の形の違い・本体が定義しない行為・SHA でないコミットを違反にする（2 行とも無いのは通す。#1178） | dev-loop の周が触れたファイルからモデルを引けない・確かめていないのにコミットだけ進んだ形が残る |
 
 **守らないもの**:
 
@@ -64,6 +69,7 @@ usage:
 | **リモートにも押していない `release-v<n>`**（他の人の手元にだけあるタグ） | 訊く先に無いものは見えない。タグは付けたら押す運用で守る |
 | **モデルの中身が仕様に合っているか・検査器が本当に走らせたものか** | 判定役の仕事で、報告から写すときにスキルが守る（`cp` で写す） |
 | **記録の値が正しいか**（陽性対照が本当に反例を出したか・前提が全部か） | 文面の真偽は機械で決まらない |
+| **`実装の対応` のファイル・関数が在るか、`対応を確かめたコミット` が在るか・本当に確かめたか** | 正本と実装のリポジトリが別のことがあり、このディレクトリからは決まらない（dev-loop の `formal-sync.py` が実装のリポジトリで読む） |
 | **`残した回` が記録の表の行を指しているか** | 記録の表は版ごとに `docs/` の外にあり、このディレクトリからは決まらない |
 | **前の版のモデルが重ね合わせた全体に残ること** | 決まりのとおり（前の版のファイルは直さない）。次の回は `モデルのファイル` の一覧だけを使う |
 
@@ -94,10 +100,16 @@ versions = _load("merge_versions", "merge-versions.py")
 frozen = _load("check_frozen", "check-frozen.py")
 
 # ---- `references/tree.md` の「形式検査のモデル」の写し（`README.md` の記録の項目）
-ITEMS = ("対象", "検査器", "構成の大きさ", "結果", "陽性対照", "置いた前提", "前回のモデル", "モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル", "残した回")
+ITEMS = ("対象", "検査器", "構成の大きさ", "結果", "陽性対照", "置いた前提", "前回のモデル", "モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル", "実装の対応", "対応を確かめたコミット", "残した回")
 # 行が無くてもよい項目（#1044。前から残したモデルは持たない——`check-formal-rerun.py` は無ければ判定できなかったにする。
 # 図の対応と状態遷移図（#1177）も前から残したモデルは持たない——`formal-statechart.py` は対応が無ければ描かない）
-OPTIONAL = ("陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")
+OPTIONAL = ("陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル", "実装の対応", "対応を確かめたコミット")
+# 実装との対応（#1178）——2 行はそろって在るか、そろって無い。実装の前は両方 `未実装`
+SYNC = ("実装の対応", "対応を確かめたコミット")
+UNIMPLEMENTED = "未実装"
+# `実装の対応` の 1 項: `<行為>` → `<ファイル>::<関数>`。項は `、` で区切る
+MAPPING_ENTRY = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*)`\s*→\s*`([^`:\s]+)::([^`\s]+)`")
+COMMIT = re.compile(r"[0-9a-f]{7,40}")
 # 一覧のファイルを持つ項目（ディレクトリに在ってよいのは `README.md` とこれらの一覧のファイルだけ）
 LISTS = ("モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")
 RESULTS = ("反例なし", "反例あり")
@@ -258,9 +270,72 @@ def check(directory: Path) -> tuple[int, list[str]]:
     for entry in sorted(p.name for p in directory.iterdir()):
         if entry != README and entry not in listed:
             problems.append(f"{directory}/{entry}: モデルのファイルの一覧に無い（陽性対照・図の対応・状態遷移図のファイルの一覧にも無い。検査器の作業ファイル・出力・前の残りは残さない）")
+    problems += check_sync(directory, records)
     if problems:
         return 1, problems
     return 0, [f"{directory}: 形どおり（{'・'.join(counts)}）"]
+
+
+def parse_mapping(value: str) -> list[tuple[str, str, str]] | None:
+    """`実装の対応` の値を (行為, ファイル, 関数) の並びにする。`未実装` は空の並び。形が違えば None。
+
+    形: `` `<行為>` → `<ファイル>::<関数>` `` を `、` で区切って並べる（ファイルは製品のリポジトリの根からのパス）。
+    dev-loop の `formal-sync.py` もこの関数で読む（写さない）。
+    """
+    value = value.strip()
+    if value == UNIMPLEMENTED:
+        return []
+    entries = []
+    for part in value.split("、"):
+        m = MAPPING_ENTRY.fullmatch(part.strip())
+        if not m:
+            return None
+        entries.append((m.group(1), m.group(2), m.group(3)))
+    return entries or None
+
+
+def defines(text: str, action: str) -> bool:
+    """TLA+ の本文が、行頭から `<行為> ==`（引数つき `<行為>(…) ==` も）で定義しているか。"""
+    return re.search(rf"^{re.escape(action)}\s*(\([^)]*\))?\s*==", text, re.MULTILINE) is not None
+
+
+def check_sync(directory: Path, records: dict[str, str]) -> list[str]:
+    """`実装の対応`・`対応を確かめたコミット`（#1178）の形。2 行とも無ければ何も言わない（前からのモデル）。"""
+    present = [item for item in SYNC if item in records]
+    if not present:
+        return []
+    if len(present) == 1:
+        missing = next(item for item in SYNC if item not in records)
+        return [f"{README}: 「{present[0]}」があるのに「{missing}」の行が無い（実装との対応の 2 行はそろえて書く）"]
+    mapping_value, commit_value = records[SYNC[0]], records[SYNC[1]]
+    if not mapping_value or not commit_value:
+        return []  # 空は上の「記録が空」で出している
+    problems: list[str] = []
+    mapping = parse_mapping(mapping_value)
+    if mapping is None:
+        problems.append(f"{README}: 実装の対応が「{UNIMPLEMENTED}」でも "
+                        f"`<行為>` → `<ファイル>::<関数>` を「、」で区切った形でもない: {mapping_value!r}")
+    if (mapping_value == UNIMPLEMENTED) != (commit_value == UNIMPLEMENTED):
+        problems.append(f"{README}: 実装の対応と対応を確かめたコミットの片方だけが「{UNIMPLEMENTED}」（実装の前は両方、対応を書いたら確かめたコミットも書く）")
+    elif commit_value != UNIMPLEMENTED and not COMMIT.fullmatch(commit_value):
+        problems.append(f"{README}: 対応を確かめたコミットが「{UNIMPLEMENTED}」でも 7〜40 桁の小文字の 16 進でもない: {commit_value!r}")
+    if mapping:
+        controls = FILE.findall(records.get("陽性対照のファイル", ""))
+        bodies = [n for n in FILE.findall(records.get("モデルのファイル", "")) if n.endswith(".tla") and n not in controls]
+        texts = []
+        for name in bodies:
+            try:
+                texts.append((directory / name).read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                pass  # 無い・読めないファイルは一覧の検査が出す
+        seen: set[str] = set()
+        for action, _, _ in mapping:
+            if action in seen:
+                problems.append(f"{README}: 実装の対応に行為「{action}」が 2 回ある")
+            seen.add(action)
+            if texts and not any(defines(t, action) for t in texts):
+                problems.append(f"{README}: 実装の対応の行為「{action}」を、モデルのファイルの本体（.tla）が定義していない")
+    return problems
 
 
 def main(argv: list[str]) -> int:

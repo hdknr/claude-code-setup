@@ -192,6 +192,7 @@ TESTS: list[str] = [
     "test-find-cycle.py",
     "test-check-deps-declared.py",
     "test-check-spec-writeback.py",
+    "test-formal-sync.py",
     "test-external-reviews.py",
     "test-check-unattended-env.py",
     "test-launch-with-long-token.py",

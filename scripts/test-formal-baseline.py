@@ -92,6 +92,14 @@ ITEMS = {
 MODEL_FILES = {"order.tla": "---- MODULE order ----\n====\n", "order.cfg": "INIT Init\n"}
 
 
+SYNC_FILES = {"order.tla": "---- MODULE order ----\nCancel ==\n  x' = 1\nPay(o) == x' = o\n====\n", "order.cfg": "INIT Init\n"}
+MAPPING = "`Cancel` → `app/orders.py::cancel`、`Pay` → `app/pay.py::Payment.pay`"
+
+
+def sync_rows(mapping: str, commit: str) -> str:
+    return f"| 実装の対応 | {mapping} |\n| 対応を確かめたコミット | {commit} |\n"
+
+
 def readme(drop: tuple[str, ...] = (), **over: str) -> str:
     rows = ["| 項目 | 記録 |", "| --- | --- |"]
     for item, value in ITEMS.items():
@@ -148,6 +156,25 @@ CHECK_CASES: list[CheckCase] = [
      "「README.md」はこのディレクトリのファイルの名前でない"),
     ("名前に大文字", "docs/v1/spec/formal/Order", {"README.md": readme(), **MODEL_FILES}, 1, "英小文字・数字・ハイフンだけでない"),
     ("置き場所が違う", "docs/v1/spec/models/order-cancel", {"README.md": readme(), **MODEL_FILES}, 1, "置き場所が spec/formal/<対象>/ でない"),
+    # 実装との対応（#1178。任意の 2 行）
+    ("対応が未実装", GOOD_DIR, {"README.md": readme() + sync_rows("未実装", "未実装"), **SYNC_FILES}, 0, "形どおり"),
+    ("対応とコミット", GOOD_DIR, {"README.md": readme() + sync_rows(MAPPING, "abc1234"), **SYNC_FILES}, 0, "形どおり"),
+    ("対応だけでコミットが無い", GOOD_DIR, {"README.md": readme() + "| 実装の対応 | 未実装 |\n", **SYNC_FILES}, 1,
+     "「実装の対応」があるのに「対応を確かめたコミット」の行が無い"),
+    ("片方だけ未実装", GOOD_DIR, {"README.md": readme() + sync_rows(MAPPING, "未実装"), **SYNC_FILES}, 1, "片方だけが「未実装」"),
+    ("対応の形が違う", GOOD_DIR, {"README.md": readme() + sync_rows("Cancel → app/orders.py", "abc1234"), **SYNC_FILES}, 1,
+     "を「、」で区切った形でもない"),
+    ("本体が定義しない行為", GOOD_DIR, {"README.md": readme() + sync_rows("`Refund` → `app/refund.py::refund`", "abc1234"), **SYNC_FILES}, 1,
+     "行為「Refund」を、モデルのファイルの本体（.tla）が定義していない"),
+    # 両方の一覧に書いた陽性対照は本体に数えない（check-formal-rerun.py と同じ）
+    ("陽性対照だけが定義する行為", GOOD_DIR, {"README.md": readme(モデルのファイル="`order.tla`・`order.cfg`・`broken.tla`・`broken.cfg`") + "| 陽性対照のファイル | `broken.tla`・`broken.cfg` |\n"
+                                         + sync_rows("`Refund` → `app/refund.py::refund`", "abc1234"),
+                                         **SYNC_FILES, "broken.tla": "Refund == TRUE\n", "broken.cfg": "x"}, 1,
+     "行為「Refund」を、モデルのファイルの本体（.tla）が定義していない"),
+    ("コミットが SHA でない", GOOD_DIR, {"README.md": readme() + sync_rows(MAPPING, "main"), **SYNC_FILES}, 1, "7〜40 桁の小文字の 16 進でもない"),
+    ("行為が 2 回", GOOD_DIR, {"README.md": readme() + sync_rows("`Cancel` → `a.py::f`、`Cancel` → `b.py::g`", "abc1234"), **SYNC_FILES}, 1,
+     "行為「Cancel」が 2 回ある"),
+    ("対応が空", GOOD_DIR, {"README.md": readme() + sync_rows("", "abc1234"), **SYNC_FILES}, 1, "項目「実装の対応」の記録が空"),
     ("ディレクトリが無い", GOOD_DIR, None, 2, "ディレクトリでない"),
     ("README が無い", GOOD_DIR, dict(MODEL_FILES), 2, "README.md: 無い"),
 ]
@@ -184,8 +211,19 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '    listed = frozen.git(root, "tag", "--list")\n', "prune の設定でも手元のタグを見る"),
     ("図の対応・状態遷移図を一覧に数えない", 'LISTS = ("モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")',
      'LISTS = ("モデルのファイル", "陽性対照のファイル")', "図の対応と状態遷移図が残る"),
-    ("図の対応・状態遷移図の行の欠けを落とす", 'OPTIONAL = ("陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")',
-     'OPTIONAL = ("陽性対照のファイル",)', "形どおり"),
+    ("図の対応・状態遷移図の行の欠けを落とす", 'OPTIONAL = ("陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル",',
+     'OPTIONAL = ("陽性対照のファイル",', "形どおり"),
+    # 実装との対応（#1178）
+    ("片方だけの対応を通す", "    if len(present) == 1:\n", "    if False:\n", "対応だけでコミットが無い"),
+    ("未実装の食い違いを通す", "    if (mapping_value == UNIMPLEMENTED) != (commit_value == UNIMPLEMENTED):\n", "    if False:\n", "片方だけ未実装"),
+    ("SHA でないコミットを通す", "    elif commit_value != UNIMPLEMENTED and not COMMIT.fullmatch(commit_value):\n", "    elif False:\n", "コミットが SHA でない"),
+    ("対応の形を見ない", "    if mapping is None:\n", "    if False:\n", "対応の形が違う"),
+    ("定義しない行為を通す", "            if texts and not any(defines(t, action) for t in texts):\n", "            if False:\n", "本体が定義しない行為"),
+    ("陽性対照も本体に数える", 'n.endswith(".tla") and n not in controls]', 'n.endswith(".tla")]', "陽性対照だけが定義する行為"),
+    ("2 回の行為を通す", "            if action in seen:\n", "            if False:\n", "行為が 2 回"),
+    ("対応の 2 行を必須にする", '"状態遷移図のファイル", "実装の対応", "対応を確かめたコミット")\n# 実装との対応', '"状態遷移図のファイル")\n# 実装との対応', "形どおり"),
+    ("対応を確かめない", "    problems += check_sync(directory, records)\n", "", "片方だけ未実装"),
+    ("引数つきの定義を読まない", r'\s*(\([^)]*\))?\s*==', r'\s*==', "対応とコミット"),
     ("バッククォートの無い一覧を通す", '        if records.get(item) and not names:\n', "        if False:\n", "一覧にバッククォートが無い"),
     ("陽性対照のファイルを一覧に足さない", "        listed += names\n", '        listed += names if item == "モデルのファイル" else []\n', "陽性対照のファイルが残る"),
     ("パスを含む名前を通す", 'if "/" in name or name in (README, ".", ".."):', 'if name in (README, ".", ".."):', "一覧の名前にパス"),

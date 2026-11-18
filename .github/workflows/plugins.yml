@@ -162,6 +162,9 @@ jobs:
       - name: 仕様への戻しの歯止めのテスト（#1001）
         run: python3 scripts/test-check-spec-writeback.py
 
+      - name: 形式検査のモデルと実装を揃えておく段のテスト（#1178）
+        run: python3 scripts/test-formal-sync.py
+
       - name: 外部レビュー bot のコメントの取り出しのテスト（#997）
         run: python3 scripts/test-external-reviews.py
 
