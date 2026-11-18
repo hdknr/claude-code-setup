@@ -1,0 +1,142 @@
+# Issue #1164 — spec-loop: 用語集が無く、文書どうしの定義の一致を照らす基準が無い
+
+**不在の周**（`/dev-loop:cruise 1169 --absent` の起動・2026-11-17T10:47Z）。利用者には訊かない。親（cruise #1169）から委譲文で受けた子。
+確かめた線（出所: cruise の確かめた線（台帳 `issue-1169`）。利用者の確認（起動時・2026-11-17T10:47:55Z、配布を見せて確かめた））:
+`直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`・`マージ前の判断 = 推奨で決めて起票`（古い値。後退・未達は推奨で進めない）。実機確認の線は無い。
+台帳（`.claude/plans/cruise-issue-1169.json`）は書かない（親だけ）。手順 7 のマージはしない（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+読み込んだ dev-loop は 2.7.0（`SKILL.md` 1920 行を読んだ）。
+
+直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
+版の上げ方: `spec-loop` を **minor**（用語集の表と、その検査・使わない言い方の報告・表示用ページ・req-loop と spec-review の手順を足す——CLAUDE.md の「能力・手順の追加」）。着手時の main は spec-loop 0.107.0 → 0.108.0。
+マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.7.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
+割り目: 割らない（cruise の周）。
+
+Issue 本文（外部入力）から読んだ要件: 用語集の表（例 `shared/glossary.csv`。列の例: 用語・意味・同義語（使わない言い方）・英語名・決めた日と人）を足す（案 1）・
+req-loop が要求を書くときに表に無い業務用語を起票の候補にする（案 2）・spec-review の「文書どうしの定義の一致」の基準に用語集を使う（案 3）・
+scaffold が中間表現の名前と英語名を照らす（案 4。任意）・MkDocs の表示用ページ（`docs/glossary.md`。ほかの表と同じフック）（案 5）。
+決めること: 同義語を検査で止めるか報告だけか・英語名を共有の層に置くか内部の層か。コメントは無い。本文に受入基準を緩める指示は無い。
+前提（親の委譲文）: #1090 の重ね方（新しい表は一覧に載せない限りファイルの単位で重なる）に従う。main の #1154（目的の表）・#1161（関係者の表）と同じ形（`tree.md`・`check-design-csv.py`）に揃える。
+
+## 決めた値（開発者が決めた——利用者に見える結果が変わらない実現の手段）
+
+- **D1 置き場所は `shared/glossary.csv`**（Issue の例のとおり）。`shared/` なので 2 つのサインオフが比べる範囲に入り、両方の読者に見せる。
+- **D2 列は `用語`・`意味`・`使わない言い方`・`決めた人`・`決めた日`**（Issue の列の例から英語名を外し（H2）、「決めた日と人」を 1 列 1 つに分けた）。
+  `用語` は表の中で重複させない。`使わない言い方` は `・` で区切って並べ、無ければ空でよい。`決めた人` は部署・役職（関係者の表があればその `名前`。照らしはしない）。`決めた日` は `YYYY-MM-DD`。
+- **D3 重ね方**: `versions.md` の「行の単位で重ねる表」の一覧に載せない——**ファイルの単位で重なる**（#1090）。
+- **D4 検査と報告は `check-design-csv.py` に足す**（成果物の表・関係者の表と同じ「形式の違反 1・表が無い 0・未決定 3」の仕組みに乗り、req-loop・spec-review・scaffold の関門がもう呼んでいる）。
+  使わない言い方の報告は、回答者の照合と同じく報告の見出しの下に出し、scaffold の関門が通ったときにも出る（`respondent_block` が報告の見出しの最初から後ろを返す）。
+- **D5 使わない言い方を探す文書**: 渡した根の `requirements/` と `shared/` の下の `.md`・`.csv`（`.` で始まる名前の下は除く）。用語集そのものと共有の Q&A 表（`shared/qa.csv`。質問と回答は利用者の言った言葉を残す記録で、凍結した版は直せない）は除く。
+  使わない言い方を含む用語（`受注` を使わない言い方にして、用語に `受注伝票` がある）の中の出現は数えない。
+- **D6 表示用ページ**: フックに `glossary` の印を足し、決定表・基盤要件の表と同じく見出しの行どおりに版ごとに描く（`render_shared_table`）。雛形に `docs/glossary.md`。
+- **D7 案 4（scaffold の英語名の照合）はしない**——H2 の推奨で英語名を用語集に置かないので、照らす相手が表に無い。
+
+### 仕様の穴（推奨で決めた。`仕様の穴 = 推奨で決めて起票`）
+
+- **H1（決めること 1）使わない言い方が要求の文書に現れたとき、検査で止めるか報告だけか**: (a) 報告だけ——`check-design-csv.py` の出力に出し、終了コードに数えない（推奨）／
+  (b) 未決定（3）に数え、scaffold を止める／(c) 形式の違反（1）に数える。
+  推した理由: 日本語には語の区切りが無く、文字列の一致では `注文` が `注文書` の中にも当たる（D5 は用語の中の出現だけを除く）——止めると、正しい文書の scaffold が止まり続ける。
+  用語集を置く前の要求の文書（凍結した前の版を含む）は直せない。言い換えるかは文脈で決まる（引用・「注文とは呼ばない」の説明）。報告を読んだ req-loop が言い換えるか起票する。
+- **H2（決めること 2）英語名（型・API で使う名前）をどこに置くか**: (a) 共有の用語集に `英語名` の列を足す／(b) 用語集には置かず、開発者の決定として内部の Q&A 表（`spec/qa-dev.csv`）に記録する（推奨）／
+  (c) 内部の層に別の表（`spec/` の下）を足す。
+  推した理由: 英語名は利用者に見える結果を変えない実現の手段で、`tree.md` の「欄ごとの決める人」は開発者が決めるもの（物理設計）を成果物の表に書かず内部の Q&A 表に記録すると決めている。
+  (a) は `shared/` にあるので、型の名前を 1 つ変えるたびに 2 つのサインオフの取り直しになる。(c) は `spec/` の下に置くとサインオフが比べる範囲に入り、外すには照合（`check-signoff.py`）の範囲を変えることになる。
+  (b) は今の仕組みのまま記録が残り、案 4（任意）は照らす相手が無くなるので行わない（D7）。
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/references/tree.md` — ツリーに `glossary.csv` と `docs/glossary.md`、「システム設計書の成果物」に用語集の節（列・決める人・決まった値・使わない言い方の報告・英語名・重ね方）、「ドキュメントのツール」に `glossary` の印
+- `plugins/spec-loop/references/spec-exit.md` — 「文書どうしの定義」に用語集を基準にすること
+- `plugins/spec-loop/agents/red-team.md` — 「文書どうしの定義」に用語集
+- `plugins/spec-loop/scripts/check-design-csv.py` — 用語集の検査と使わない言い方の報告
+- `plugins/spec-loop/templates/mkdocs/hooks/spec_loop_pages.py` — `glossary` の印
+- `plugins/spec-loop/templates/mkdocs/docs/glossary.md` — 雛形の表示用ページ
+- `plugins/spec-loop/skills/req-loop/SKILL.md` — 手順 3 の用語の起票・手順 4 の報告の読み方
+- `plugins/spec-loop/skills/spec-review/SKILL.md` — 手順 2 で用語集の言葉で書く・Red Team に用語集を渡す
+- `scripts/test-check-design-csv.py` — 用語集の試料・変異・references との突き合わせ、使わない言い方の報告
+- `scripts/test-init-mkdocs.py` — `glossary` の印の試料と変異・雛形のページ・写すファイルの一覧
+- `CLAUDE.md` — `check-design-csv.py` の項
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `docs/plans/issue-1164.md` — この計画ファイル
+
+触らない:
+
+- `plugins/spec-loop/scripts/scaffold.py`・`merge-versions.py`・`check-signoff.py`・`build-proposal.py`・`init-mkdocs.py` の本体——用語集は `shared/` のファイルの単位で重なり（D3）、照合の範囲も scaffold の関門も今の読み方のまま効く。`init-mkdocs.py` は雛形のディレクトリを写すので、ページを足すだけで写る
+- `versions.md` の一覧（D3）・Q&A 表の列・`hearing.md`（初回ヒアリングで用語を聞く手順は Issue に無い）
+- 案 4（D7）・英語名の列（H2）
+- 説明文（`plugin.json`・`marketplace.json`・`SKILL.md` の frontmatter）・`README.md`・公開ページ——今の要約が偽にならない（要約で、全部を挙げる文ではない）
+
+依存の追加・更新: なし
+
+仕様の振る舞い: 変えない（このリポジトリは spec-loop の正本ではない）
+
+**複製の数**: 用語集の列・決める人・区切り・日付の形を述べる箇所は 2（`tree.md` の節が原本、`check-design-csv.py` の定数が写し——`test-check-design-csv.py` が突き合わせる）。
+使わない言い方を探す文書の範囲は 2（`tree.md` が原本、`check-design-csv.py` の定数——同じく突き合わせる）。
+`glossary` の印は 3（`tree.md` の「ドキュメントのツール」・フックの docstring の表・雛形のページ——`test-init-mkdocs.py` が雛形の印と `tree.md` の語を見る）。
+用語集を定義の基準にすることは 3（`spec-exit.md` が原本、`red-team.md` と `spec-review/SKILL.md` は指す）。
+分けない理由: 決まりの原本は `references/`、スクリプトは写しを持ち、テストが突き合わせる。エージェントとスキルは原本を指す。
+
+## デプロイ経路
+
+プラグイン（`marketplace.json` のカタログと、`link-skills.sh` を使う利用者の `git pull`）と公開サイトの再ビルド。**マージの反映: ドキュメントとプラグインの配布**（`.claude/dev-loop.md` の宣言どおり）。
+
+## 受入基準（不変条件 × 経路）
+
+入口（用語集を書く・読む・照らす・描く場所）: req-loop 手順 3（要求を書く）／手順 4（`check-design-csv.py`）・spec-review 手順 2（仕様を書く）／手順 3（Red Team）・
+scaffold の関門（重ねた全体に `check-design-csv.py`）・照合（`check-signoff.py` が `shared/` を比べる）・重ね合わせ（`merge-versions.py`）・MkDocs のフック（`glossary` の印）・`init-mkdocs.py`（雛形を写す）。
+
+| # | 不変条件 | 経路 | 守り方 | 証明 |
+| --- | --- | --- | --- | --- |
+| B1 | 用語集の決まり（置き場所・列・決める人=利用者・任意・照合の範囲・ファイルの単位で重なる・使わない言い方の報告と探す範囲・英語名を表に書かず内部の Q&A 表に記録）が `tree.md` の 1 箇所にある | 決まりを読む人・スキル | `tree.md` の節 | 読んで確かめる＋`test-check-design-csv.py` の突き合わせ（列・決める人・区切り・空でよい列・日付の形・探す範囲） |
+| B2 | `check-design-csv.py` が用語集の形の違反を 1 で落とす（見出し・列の数・用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねる・区切りで空の項・決めた日の形と実在しない日付） | req-loop／spec-review／scaffold | 検査の関数 | 試料と変異（`test-check-design-csv.py`） |
+| B3 | 決まっていないことを 3 で出す（必須の欄（用語・意味・決めた人・決めた日）が空・未決定の印）。使わない言い方は空でよい。表が無ければ「表が無い」と出して 0 | 同上 | 検査の関数 | 試料と変異 |
+| B4 | 前からの結果は変わらない——用語集の無い正本で `check-design-csv.py` の終了コードと文面（「表が無い」の件数を除く） | 前からの正本 | 表が無ければ何もしない | 前からの試料が全部通る（件数の文面は直す） |
+| B5 | 用語集が決まりどおりなら、`requirements/`・`shared/` の `.md`・`.csv`（用語集と `shared/qa.csv` を除く）に現れた使わない言い方を `<パス>:<行>` で報告する。使わない言い方を含む用語の中の出現は出さない。終了コードに数えない。表が決まりに反するなら報告しないと出す。scaffold の関門が通ったときにも報告を出す | req-loop 手順 4・spec-review・scaffold の関門 | `check-design-csv.py` | 試料と変異 |
+| B6 | req-loop が要求を書くとき、用語集に無い業務用語・使わない言い方を見つけたら、意味を推測で書かずに起票の候補にし、利用者が明示した定義だけを用語集に書く。手順 4 で報告を読む。英語名は表に書かない | req-loop 手順 3・4 | `req-loop/SKILL.md` | 読んで確かめる |
+| B7 | spec-review が、用語集があれば仕様を用語集の言葉で書き、Red Team が「文書どうしの定義」で用語集を基準に照らす（`spec-exit.md` が原本） | spec-review 手順 2・3 | `spec-exit.md`・`red-team.md`・`spec-review/SKILL.md` | 読んで確かめる |
+| B8 | MkDocs のフックが `glossary` の印で各版の `shared/glossary.csv` を見出しの行どおりに描き、無ければ「まだ無い」と書き、綴り違いは警告する。雛形の `docs/glossary.md` が印を持ち、`init-mkdocs.py` が空の根に写す。`tree.md` の「ドキュメントのツール」が書く | MkDocs・`init-mkdocs.py` | フックと雛形 | `test-init-mkdocs.py` の試料と変異 |
+| B9 | 照合（`check-signoff.py`）が用語集の違いを拾う（`shared/` の中なので） | proposal の照合 | 照合の範囲のまま | 一時の git リポジトリで、用語集だけ違う 2 つのタグを照合して非 0（陽性対照: 同じなら 0） |
+| B10 | 版を 3 種類で揃えて上げ、`check-all.py` が緑 | CI | 版の行 | `check-all.py`・`check-plugin-versions.py` |
+| B11 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目（または「該当なし」）で渡す | 関門 | 委譲文 | 関門の記録 |
+
+**この環境では証明できないもの（未証明）**: B6・B7 の req-loop・spec-review が実際の正本で用語を起票し・用語集を基準に照らすこと（スキルを実際の正本と利用者で走らせて観測していない——人間のレビューに回す）。
+
+**生成物**: 生成物なし（変更するファイルに生成物は無い。`skill-metrics.py` の生成ブロックは dev-loop の `SKILL.md` を測るもので、この周は触らない——`--check` は `check-all.py` で見る）。
+
+## 未解決・確認待ち
+
+- H1・H2 の確認の Issue（利用者が戻ってから確かめる）: 起票後に番号を書く。
+
+## 実験と確認の記録
+
+- **B9（照合が用語集の違いを拾う）**: 一時の git リポジトリ（`HOME`・`GIT_CONFIG_GLOBAL` を差し替え）で `docs/v1/shared/qa.csv`（見出しだけ）と `docs/v1/shared/glossary.csv` を置き、
+  同じコミットに `signoff/v1/req-1` と `signoff/v1/budget-1` を付けて `check-signoff.py --req signoff/v1/req-1 --budget signoff/v1/budget-1` → **0**（陽性対照「一致する」）。
+  用語集に 1 行足したコミットに `signoff/v1/budget-2` を付けて同じく → **1**（`M docs/v1/shared/glossary.csv`）。観測窓: v1 だけ・1 回。
+
+## 関門の記録
+
+```dev-loop-gates
+周の base: 98108f08a040cb6804d1cb66c19d7e59ff55062a
+```
+
+## 手順 8（起票）
+
+（マージの前に書く）
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1164-glossary`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1164`・起点 `98108f0`・base の参照 `origin/main`（解決した SHA `98108f08a040cb6804d1cb66c19d7e59ff55062a`）
+- 割り目（手順 4）: 割らない（cruise の周）
+- 交絡: 実験は B9 の照合の確認だけ（陽性対照つき）
+
+## 既知の限界・決着済みの論点
+
+（関門に毎パス渡す。決着の理由が誤っていると判断したなら、それは新しい反証である）
+
+- 上の H1・H2 と D1〜D7。
+- 使わない言い方の報告は文字列の一致で、語の区切りを見ない（H1 の理由）——用語の中の出現だけを除き、ほかの語の中の出現（`注文書` の中の `注文`）は報告に出る。報告だけなので終了コードは変えない。
+- `決めた人` が関係者の表の名前かは照らさない（関係者の表は任意で、書き方の判断）。

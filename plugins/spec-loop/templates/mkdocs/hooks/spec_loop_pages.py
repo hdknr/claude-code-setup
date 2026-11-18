@@ -8,6 +8,7 @@
 | `qa` | 各版の `docs/v<n>/shared/qa.csv` を、版ごとの節に（件数・一覧・質問ごとの詳細。推奨の選択肢と理由も） |
 | `decision_table` | 各版の `docs/v<n>/shared/decision_table.csv` を、版ごとの節に（見出しの行どおりの表。#369） |
 | `infra` | 各版の `docs/v<n>/shared/infra.csv`（基盤要件）を、版ごとの節に（決定表と同じく見出しの行どおりの表。#950） |
+| `glossary` | 各版の `docs/v<n>/shared/glossary.csv`（用語集）を、版ごとの節に（決定表と同じく見出しの行どおりの表。#1164） |
 | `mocks` | 各版の `docs/v<n>/requirements/mocks/` の UI モックへのリンクを、版ごとの節に（HTML の `<画面名>.html` と React の `<画面名>/index.html`。#952） |
 
 **描くのは共有の層の表だけ**——内部の層の表（`docs/v<n>/spec/qa-dev.csv`）は描かない（開発者が決めて記録するもの。
@@ -107,6 +108,7 @@ SHARED = "shared"
 QA_TABLE = "qa.csv"
 DECISION_TABLE = "decision_table.csv"
 INFRA_TABLE = "infra.csv"
+GLOSSARY_TABLE = "glossary.csv"
 REQUIREMENTS = "requirements"
 MOCKS = "mocks"
 MOCK_HTML = ".html"
@@ -339,8 +341,13 @@ def render_infra(docs_dir: Path) -> str:
     return render_shared_table(docs_dir, INFRA_TABLE, "基盤要件の表")
 
 
+def render_glossary(docs_dir: Path) -> str:
+    """各版の `shared/glossary.csv`（用語集）を、見出しの行どおりの表にする（#1164。描き方は決定表と同じ）。"""
+    return render_shared_table(docs_dir, GLOSSARY_TABLE, "用語集")
+
+
 def render_shared_table(docs_dir: Path, name: str, title: str) -> str:
-    """各版の `shared/<name>` を、見出しの行どおりの表にする（決定表と基盤要件の表。列は決めない）。"""
+    """各版の `shared/<name>` を、見出しの行どおりの表にする（決定表・基盤要件の表・用語集。列は決めない）。"""
     out: list[str] = []
     for version, root in versions(docs_dir):
         path, wrong, unverified = lookup(root, SHARED, name)
@@ -483,6 +490,7 @@ RENDERERS = {
     "qa": render_qa,
     "decision_table": render_decision_table,
     "infra": render_infra,
+    "glossary": render_glossary,
 }
 # リンクを印のページからの相対で書く描画関数（ページの `docs/` からのパスも受け取る）
 PAGE_RENDERERS = {

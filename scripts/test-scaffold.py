@@ -968,6 +968,10 @@ STAKEHOLDERS_FILE = str(V1 / "shared" / "stakeholders.csv")
 STAKEHOLDERS_HEAD = "id,名前,役割,関心事,答える範囲,合意\n"
 STAKEHOLDERS_OTHER = STAKEHOLDERS_HEAD + "P-001,経理部,予算責任者,開発費,なし,予算\n"
 STAKEHOLDERS_LISTED = STAKEHOLDERS_HEAD + "P-001,業務部,利用者,割引の計算,割引の業務ルール,要求確定\n"
+# 用語集（#1164）: 使わない言い方の報告も終了コードに数えない——通ったときにも scaffold が報告を出す
+GLOSSARY_FILE = str(V1 / "shared" / "glossary.csv")
+GLOSSARY_TABLE = "用語,意味,使わない言い方,決めた人,決めた日\n割引,注文の金額から差し引く額,値引き,業務部,2026-11-01\n"
+GLOSSARY_PROBE = str(V1 / "requirements" / "glossary-probe.md")
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
@@ -2450,6 +2454,8 @@ CASES: list[Case] = [
          absent=DESIGN_GATE),
     Case("関係者の表: 通っても回答者の照合を出す（#1161）", 0, "Q-001 の回答者 業務部 が関係者の表（shared/stakeholders.csv）の名前に無い",
          extra={STAKEHOLDERS_FILE: STAKEHOLDERS_OTHER}),
+    Case("用語集: 通っても使わない言い方を出す（#1164）", 0, "requirements/glossary-probe.md:1: 使わない言い方 「値引き」（用語集の用語: 割引）",
+         extra={GLOSSARY_FILE: GLOSSARY_TABLE, GLOSSARY_PROBE: "値引きの上限\n"}),
     Case("関係者の表: 表にある回答者なら照合を出さない（#1161）", 0, "作った",
          extra={STAKEHOLDERS_FILE: STAKEHOLDERS_LISTED}, absent="回答者の照合"),
     Case("目的の表: 目的を指さない機能があれば止める（#1154）", 1,
