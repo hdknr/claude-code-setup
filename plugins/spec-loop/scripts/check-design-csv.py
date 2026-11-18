@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
-"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・機能とデータの対応（CRUD）・入出力・帳票・権限・バッチ・ジョブ・運用要件と、非機能要求の性能のほかの種類）と関係者の表・用語集を検査する。
+"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・機能とデータの対応（CRUD）・入出力・帳票・権限・バッチ・ジョブ・移行・運用要件と、非機能要求の性能のほかの種類）と関係者の表・用語集を検査する。
 
 usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か重ね合わせた全体（build/merged）>
 
 **決まりの正は `references/tree.md` の「システム設計書の成果物」（関係者の表・用語集を含む）と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
-下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲・
-CRUD 表の列と操作の文字と `なし` と抜けに数える操作・運用要件の表の `水準` の区切りと目標を置かない値と SLA の値と抜けに数える組）はその写しで、
+下の定数（表の置き場所・列・末尾に足してよい任意の列（機能一覧の `必須度`。#1163）・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲・
+CRUD 表の列と操作の文字と `なし` と抜けに数える操作・運用要件の表の `水準` の区切りと目標を置かない値と SLA の値と抜けに数える組・移行の表の列と種類と種類ごとに書く列と切替の方式と `なし`）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-check-design-csv.py` が突き合わせて見る**。
 
 渡したディレクトリの `requirements/` と `shared/nfr.csv`・`shared/stakeholders.csv`・`shared/glossary.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
 
-- **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ）・列の数・番号の形・重複・
-  決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
+- **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ。機能一覧だけは末尾に任意の列 `必須度` を足してよい——#1163）・列の数・番号の形・重複・
+  決まった値でない（機能一覧の `必須度` が `Must`・`Should`・`Could`・`Won't` のどれでもない、を含む）・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
   目的の表（#1154）の種類ごとに空にする欄に書いた（未決定の印なら未決定に数える）・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた・
   関係者の表（#1161）の名前の重複・役割と合意の値が決まった値でない・同じ値を重ねた・合意に `なし` とほかの値を混ぜた・
   用語集（#1164）の用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねた・区切りで空の項・決めた日が `YYYY-MM-DD` の実在する日付でない・
   CRUD 表（#1162）の機能が機能一覧の id でも `なし` でもない・機能一覧に無い（一覧が無いときも）・エンティティがデータモデルに無い（データモデルが無いときも）・
   操作が `C`・`R`・`U`・`D` をこの順に 1 回ずつまで並べた形でない・機能とエンティティの組の重複・同じエンティティで機能がする操作を `なし` の行にも書いた・
-  運用要件の表（#1159）の `水準` の項が非機能要求の No の形でない・空の項・`shared/nfr.csv` に無い No（表が無い・読めない・見出しが決まりと違うときも。同じセルの別の項に未決定の印があっても）・SLA が `はい` なのに目標が `なし`
+  運用要件の表（#1159）の `水準` の項が非機能要求の No の形でない・空の項・`shared/nfr.csv` に無い No（表が無い・読めない・見出しが決まりと違うときも。同じセルの別の項に未決定の印があっても）・SLA が `はい` なのに目標が `なし`・
+  移行の表（#1158）の id の形と重複・種類と切替の方式が決まった値でない・種類の外の欄に書いた（未決定の印なら未決定に数える）・`並行稼働` でない方式の行に並行稼働の期間を書いた・
+  対象が `なし` の行にほかの欄を書いた・`なし` と決めた種類にほかの行がある
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
@@ -28,7 +30,8 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作・運�
   どれも、その操作を `なし` の行で「する機能は無い」と決めていなければ）も同じ理由でここに数える。
   **運用要件の表の抜け**（#1159。表があるのに、`shared/nfr.csv` の `可用性` の行の No を、どの `障害対応` の行の `水準` も指していない——
   止まったとき誰がいつ対応するかが決まっていない）も同じ。種類か水準の決まっていない行がその No を受けうるなら言い切らない。
-  `shared/nfr.csv` に No の決まっていない行があれば、運用要件の表が指す無い No も未決定に数える
+  `shared/nfr.csv` に No の決まっていない行があれば、運用要件の表が指す無い No も未決定に数える。
+  **移行の表の行の無い種類**（#1158。表があるのに `データ`・`切替`・`業務` のどれかの行が無い——`なし` の行で決めていない）と、切替の方式が `並行稼働` なのに期間が空も、ここに数える
 
 **4 つのほかに、回答者の照合を報告する（終了コードに数えない。#1161）**——関係者の表が決まりどおりで、`shared/qa.csv` があるとき、
 `未回答` でも暫定でもない行の回答者（`check-qa-csv.py` の `respondent` が `回答` の括弧から読む）が、表の `名前` に無い・表で `答える範囲` が `なし`・括弧から読めない、を出す。
@@ -67,6 +70,8 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作・運�
 | **運用要件の表が無い正本の、可用性の行を受ける体制** | 表は任意で、前からの正本（可用性の行を持つものを含む）を止めない。表が無いときは feasibility が障害時の体制を費用付きの質問として起票する（`references/tree.md` の「運用要件」） |
 | **問い合わせ・定期作業の行が無いこと**・**可用性のほかの種類（バックアップなど）を受ける行** | 要るかは要求による。抜けに数えるのは可用性を受ける障害対応だけ |
 | **運用の手順（ランブック）・SLA の違反の扱い（返金・減額）** | 表に置かない（範囲の外。`references/tree.md` の「運用要件」）ので、照らす相手が無い |
+| **移行の表とほかの表の整合**（移行元と入出力の一覧の `相手`・データの行とデータモデルのエンティティ・切替の行と業務の行の対応） | 名前の付け方と切り方が違う（旧システムのデータは名寄せ・分割で 1 対多になる）。`references/tree.md` の「移行」 |
+| **移行の表の欄の中身**（範囲が十分か・切り戻しの条件が具体的か）と、**`対象` の決まっていない行の種類ごとの欄** | 中身は判断で、一意に決まらない。`対象` が決まらない行は `なし` の行かどうか決まらないので、種類ごとの欄を判定しない（`対象` は未決定に出る） |
 | **目的に照らした過不足の中身**（`機能` に載った機能が本当にその指標を動かすか・目的の切り方が正しいか） | 判断であって、一意に決まらない。spec-review の Domain Checker が目的の表を照合先にして見る。ここは結び付けの有無と id の実在だけ |
 | **回答者が答えた質問が、その人の答える範囲の中か** | 範囲は自由に書く（分野・機能・目的の id）ので、質問との対応を機械で決められない。req-loop が回答を反映するときに確かめる（`references/tree.md` の「関係者の表」）。照らすのは名前と `なし` だけで、**終了コードにも数えない**——表を置く前の回答（凍結した版を含む）は書き直せない |
 | **関係者の表の名前が個人名でないか・非公式の影響力を書いていないか** | 書き方の判断で、文字列からは決まらない |
@@ -75,7 +80,9 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作・運�
 | **用語集の `決めた人` が関係者の表の名前か** | 関係者の表は任意で、照らす相手が無いことがある。書き方は `references/tree.md` の「用語集」 |
 | **型・API の英語名と用語の対応** | 英語名は用語集に置かない（開発者が内部の Q&A 表に記録する。`references/tree.md` の「用語集」）。照らす相手が表に無い |
 | **入出力の一覧の `相手` と関係者の表の対応** | 相手はシステムの名前、関係者は部署・役職で、名前の付け方が違う |
-| **機能一覧と中間表現の機能の対応** | このスクリプトは中間表現を読まない。`scaffold.py` が関門で照らす（`listed_features` を読む） |
+| **機能一覧と中間表現の機能の対応** | このスクリプトは中間表現を読まない。`scaffold.py` が関門で照らす（`listed_features` と、必須度が `Won't` の機能を `wont_features` で読む——#1163） |
+| **必須度の中身**（どの機能を `Must` にするか・組み合わせが予算に収まるか）・**`Won't` の機能が範囲の文書（`spec/scope.md`）の「範囲の外」に写っているか** | 前者は利用者の判断、後者は範囲の文書が場面を文で書く表で機能の id の列を持たず、機械で対応を決められない（`references/tree.md` の「機能一覧」・`references/spec-scope.md`） |
+| **必須度の列を置かない機能一覧** | 列は任意である（前からの正本は持たない）。置かない正本では、必須度が決まっていないことを出さない |
 | **印を使わずに書いた未決定**（「あとで決める」） | 言い回しは列挙しきれない。`check-spec-exit.py` と同じ限界 |
 | **非機能要求の性能の行・ほかの語の行・種類の語の綴りの揺れ**（`稼働率` と書いた行） | 上のとおり見ない。種類は `指標` の語が 4 つのどれかと一致する行だけ |
 | **綴りだけ違う置き場所**（`Requirements/features.csv`） | 決まりの綴りで探し、無ければ「表が無い」と出す。大文字小文字を区別しないファイルシステムでは開けてしまう |
@@ -127,6 +134,11 @@ COLUMNS = {
     JOBS: ["id", "名前", "契機", "周期", "失敗したときの扱い"],
     OPERATIONS: ["id", "種類", "内容", "時間帯", "担当", "目標", "SLA", "水準"],
 }
+# 見出しの末尾に足してよい任意の列（置くかは正本が決める。置いたら空でよい列でない——どの行も値が要る）。
+# 機能一覧の `必須度`（MoSCoW。`references/tree.md` の「機能一覧」。#1163）
+OPTIONAL_COLUMNS = {
+    FEATURES: ["必須度"],
+}
 # 空でよい列（ほかの列が空なら「必須の欄が空」）
 MAY_BE_EMPTY = {
     FEATURES: {"関係"},
@@ -145,7 +157,11 @@ VALUES = {
     (OPERATIONS, "種類"): ("障害対応", "問い合わせ", "定期作業"),
     (OPERATIONS, "担当"): ("利用者側", "開発側"),
     (OPERATIONS, "SLA"): YES_NO,
+    (FEATURES, "必須度"): ("Must", "Should", "Could", "Won't"),
 }
+# 機能一覧の `必須度` の列と、「作らない」と決めた値（scaffold は中間表現に求めず、在れば止まる。#1163）
+PRIORITY_COLUMN = "必須度"
+PRIORITY_WONT = "Won't"
 # 表 → 番号の接頭辞（`<接頭辞>` に 3 桁以上の数字。`F-` は中間表現の機能の `id` と同じ形——`references/spec-ir.md`）
 ID_PREFIX = {FEATURES: "F-", IO_LIST: "IO-", REPORTS: "RP-", JOBS: "J-", OPERATIONS: "OP-"}
 # 表 → 重ねてはならない欄の組
@@ -233,7 +249,25 @@ OPERATIONS_NO_TARGET = "なし"
 OPERATIONS_PROMISED = "はい"
 OPERATIONS_GAP = ("可用性", "障害対応")
 
-ALL_TABLES = list(COLUMNS) + [PURPOSES, CRUD, ROLES, NFR, STAKEHOLDERS, GLOSSARY]
+
+# 移行の表（`references/tree.md` の「移行」。#1158）: 見出しの行・id の形・種類・種類ごとに書く列（どの行も書く列のほか）・切替の方式・
+# 並行稼働の期間を求める方式・「移すもの・することは無い」と決めた行の対象の値
+MIGRATION = "requirements/migration.csv"
+MIGRATION_COLUMNS = ["id", "種類", "移行元", "対象", "範囲", "変換の決まり", "切替の方式", "並行稼働の期間", "切り戻しの条件", "担当"]
+MIGRATION_ID = re.compile(r"M-[0-9]{3,}")
+MIGRATION_KINDS = ("データ", "切替", "業務")
+MIGRATION_COMMON = ("対象", "担当")
+MIGRATION_OWN = {
+    "データ": ("移行元", "範囲", "変換の決まり"),
+    "切替": ("移行元", "切替の方式", "並行稼働の期間", "切り戻しの条件"),
+    "業務": ("範囲",),
+}
+MIGRATION_METHODS = ("一斉", "段階", "並行稼働")
+MIGRATION_PARALLEL = "並行稼働"
+MIGRATION_PERIOD = "並行稼働の期間"
+MIGRATION_NONE = "なし"
+
+ALL_TABLES = list(COLUMNS) + [PURPOSES, CRUD, MIGRATION, ROLES, NFR, STAKEHOLDERS, GLOSSARY]
 
 
 class Report:
@@ -341,10 +375,14 @@ def cell_state(report: Report, where: str, column: str, value: str, may_be_empty
 
 
 def check_columns(report: Report, rel: str, header: list[str], expected: list[str]) -> bool:
-    if header == expected:
+    optional = OPTIONAL_COLUMNS.get(rel, [])
+    if header == expected or (optional and header == expected + optional):
         return True
-    report.violations.append(f"{rel}:1: 見出しの行が決まりと違う（期待: {','.join(expected)} ／ 実際: {','.join(header)}）")
-    extra = [name for name in header if name not in expected]
+    # 任意の列の名前を見出しに書いたときだけ、置き場所を言い添える（置かない表の文面は前からのまま。#1163）
+    shown = ",".join(expected) + (f"（末尾に任意の列 {','.join(optional)} を足してよい）"
+                                  if any(name in header for name in optional) else "")
+    report.violations.append(f"{rel}:1: 見出しの行が決まりと違う（期待: {shown} ／ 実際: {','.join(header)}）")
+    extra = [name for name in header if name not in expected + optional]
     if extra:
         report.violations.append(f"{rel}:1: 決まりに無い列（{'・'.join(extra)}）——物理設計（テーブル・インデックス・物理の型）は"
                                  "この表に書かず、内部の Q&A 表（spec/qa-dev.csv）に記録する")
@@ -356,9 +394,9 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
     if table is None:
         return
     header, rows = table
-    expected = COLUMNS[rel]
-    if not check_columns(report, rel, header, expected):
+    if not check_columns(report, rel, header, COLUMNS[rel]):
         return
+    expected = header  # 決まりの列か、末尾に任意の列を足したもの（`check_columns` が確かめた）
     seen: dict[tuple[str, ...], int] = {}
     names: dict[str, tuple[str, int]] = {}
     ids: set[str] = set()
@@ -634,6 +672,104 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
             reason = "保管期間が決まっているのに、" if op == CRUD_KEPT else ""
             report.undecided.append(f"{CRUD}: エンティティ {entity} を{verb}（{op}）機能が無い（{reason}どの機能の行にも {op} が無く、{CRUD_NONE} の行でも決めていない——"
                                     f"{verb}機能を足すか、{verb}機能は無いと {CRUD_NONE} の行で決めるかを Q&A 表に起票する）")
+
+
+def check_migration(root: Path, report: Report) -> None:
+    """移行の表（#1158）。種類ごとに書く列を見て、表があれば 3 つの種類のどれにも行（`なし` の行でもよい）があるかを見る。"""
+    table = read_table(root, MIGRATION, report)
+    if table is None:
+        return
+    header, rows = table
+    if not check_columns(report, MIGRATION, header, MIGRATION_COLUMNS):
+        return
+    numbers: dict[str, int] = {}  # id → 最初の行
+    kinds: dict[str, list[str]] = {}  # 種類 → その種類の行の場所
+    declined: dict[str, str] = {}  # 種類 → `なし` と決めた行の場所
+    kind_open = False  # 種類の決まっていない行がある（行の無い種類を言い切れない）
+    for line, fields in rows:
+        where = f"{MIGRATION}:{line}"
+        if len(fields) != len(MIGRATION_COLUMNS):
+            report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(MIGRATION_COLUMNS)}）")
+            kind_open = True
+            continue
+        row = dict(zip(MIGRATION_COLUMNS, fields))
+        if cell_state(report, where, "id", row["id"], False):
+            value = row["id"].strip()
+            if not MIGRATION_ID.fullmatch(value):
+                report.violations.append(f"{where}: id が M- に 3 桁以上の数字の形でない: {value!r}")
+            elif value in numbers:
+                report.violations.append(f"{where}: id が {numbers[value]} 行目と重複: {value}")
+            else:
+                numbers[value] = line
+        kind = None
+        if cell_state(report, where, "種類", row["種類"], False):
+            value = row["種類"].strip()
+            if value in MIGRATION_KINDS:
+                kind = value
+            else:
+                kind_open = True  # どの種類の行のつもりか決まらない（列の数の違う行と同じ）
+                report.violations.append(f"{where}: 種類 が {'・'.join(MIGRATION_KINDS)} のどれでもない: {value!r}")
+        else:
+            kind_open = True
+        if kind is None:
+            continue
+        kinds.setdefault(kind, []).append(where)
+        if not cell_state(report, where, "対象", row["対象"], False):
+            continue  # `なし` の行かどうか決まらない——種類ごとの欄を判定しない
+        if row["対象"].strip() == MIGRATION_NONE:
+            declined.setdefault(kind, where)
+            for column in MIGRATION_COLUMNS:
+                if column in ("id", "種類", "対象"):
+                    continue
+                cell = row[column]
+                if markers(cell):
+                    cell_state(report, where, column, cell, True)
+                elif cell.strip():
+                    report.violations.append(f"{where}: 対象 が {MIGRATION_NONE} の行に {column} を書いた（移すもの・することが無いと決めた行は"
+                                             f" id・種類・対象 のほかを空にする）: {row[column].strip()!r}")
+            continue
+        own = MIGRATION_OWN[kind]
+        method = None
+        for column in MIGRATION_COLUMNS:
+            if column in ("id", "種類", "対象"):
+                continue
+            if column in MIGRATION_COMMON or column in own:
+                if column == MIGRATION_PERIOD:
+                    continue  # 切替の方式を見てから決める（下）
+                if cell_state(report, where, column, row[column], False) and column == "切替の方式":
+                    value = row[column].strip()
+                    if value in MIGRATION_METHODS:
+                        method = value
+                    else:
+                        report.violations.append(f"{where}: 切替の方式 が {'・'.join(MIGRATION_METHODS)} のどれでもない: {value!r}")
+                continue
+            cell = row[column]
+            if markers(cell):
+                # 印は未決定（値の決まりに当てない）。空にする欄でも違反にしない
+                cell_state(report, where, column, cell, True)
+            elif cell.strip():
+                owners = "・".join(k for k in MIGRATION_KINDS if column in MIGRATION_OWN[k])
+                report.violations.append(f"{where}: {kind}の行に {column} を書いた（{owners}の行だけに書く）: {row[column].strip()!r}")
+        if MIGRATION_PERIOD in own:
+            period = row[MIGRATION_PERIOD]
+            if method == MIGRATION_PARALLEL:
+                cell_state(report, where, MIGRATION_PERIOD, period, False)
+            elif markers(period):
+                cell_state(report, where, MIGRATION_PERIOD, period, True)
+            elif method is not None and period.strip():
+                report.violations.append(f"{where}: 切替の方式 が {method} の行に {MIGRATION_PERIOD} を書いた（{MIGRATION_PARALLEL} の行だけに書く）: "
+                                         f"{period.strip()!r}")
+    for kind, where in declined.items():
+        others = [place for place in kinds[kind] if place != where]
+        if others:
+            report.violations.append(f"{where}: 種類 {kind} を 対象 {MIGRATION_NONE} と決めたが、同じ種類の行がほかにある（{'・'.join(others)}）"
+                                     f"——移すもの・することがあるなら {MIGRATION_NONE} の行を外す")
+    if not kind_open:
+        for kind in MIGRATION_KINDS:
+            if kind not in kinds:
+                report.undecided.append(f"{MIGRATION}: 種類 {kind} の行が無い（{kind}の移行が決まっていない——移すもの・することが無いなら"
+                                        f" 対象 を {MIGRATION_NONE} にした行で決める。どちらかを Q&A 表に起票する）")
+    report.rows[MIGRATION] = len(rows)
 
 
 def check_roles(root: Path, report: Report) -> None:
@@ -1035,6 +1171,7 @@ def inspect(root: Path) -> Report:
         check_plain(root, rel, report, context)
     check_purposes(root, report, context)  # 機能一覧より後（`context` の機能一覧の id を照らす）
     check_crud(root, report, context)  # 機能一覧とデータモデルより後（`context` の id とエンティティを照らす）
+    check_migration(root, report)
     check_roles(root, report)
     check_nfr(root, report, context)
     check_operations(root, report, context)  # 非機能要求の表より後（`context` の No と可用性の行を照らす）
@@ -1070,6 +1207,19 @@ def listed_features(root: Path) -> list[str] | None:
         return None
     _, rows = table
     return [fields[0].strip() for _, fields in rows if fields and fields[0].strip()]
+
+
+def wont_features(root: Path) -> set[str]:
+    """機能一覧で `必須度` が `Won't`（作らない）の機能の id（#1163）。表・列が無ければ空。`check` を通った表に呼ぶ（scaffold の関門）。"""
+    table = read_table(root, FEATURES, Report())
+    if table is None:
+        return set()
+    header, rows = table
+    if PRIORITY_COLUMN not in header:
+        return set()
+    at = header.index(PRIORITY_COLUMN)
+    return {fields[0].strip() for _, fields in rows
+            if len(fields) > at and fields[0].strip() and fields[at].strip() == PRIORITY_WONT}
 
 
 def main(argv: list[str]) -> int:

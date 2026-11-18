@@ -31,6 +31,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/check-spec-writeback.py` - **spec-loop の正本があるリポジトリで、計画に `仕様の振る舞い:` の申告が無い・`変える` なのに正本に起票する行（`正本に起票する行:`）が計画に無い・緑のケースの一覧から載った行を外したか指紋を変えた周を赤くする**
       （#1001。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。正本が無ければ何も求めずに 0。
       申告の値・変える周が残すもの・正本が別リポジトリのとき・Red テストが赤になったときの扱いは `references/spec-writeback.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-spec-writeback.py`）
+    - `skills/dev-loop/scripts/artifact-reads.py` - **spec-loop から来た周が計画ファイルに書いた「読んだ成果物」の行を集め、成果物ごとに読んだ周の数と、その周の起票・関門の指摘を並べる**
+      （#1157。**測るだけで、閾値も削る候補も決めない。読むだけ**。関門の記録とコードブロックの読み方は同じ場所の `check-gates.py` を読み込む——写さない。いつ何を書くかは `references/spec-gap.md` の「読んだ成果物を記録する」、
+      行の形の原本と守る／守らないは docstring を正とする。**CI からは本体を呼ばない**——入力は spec-loop から来た周の計画ファイル（製品のリポジトリ）。テストは `scripts/test-artifact-reads.py`）
     - `skills/dev-loop/scripts/external-reviews.py` - **PR に付いた外部レビュー bot（CodeRabbit など）のコメントを、`.claude/dev-loop.md` の `外部レビュー:` で宣言した bot の分だけ取り出す**
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。
       読む時点・採否の表への載せ方・2 パスとの関係・待ち方は `references/external-review.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-reviews.py`）
@@ -120,7 +123,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       テストは `scripts/test-formal-statechart.py`——本物の TLC で取った出力を返す偽の TLC で回す）
     - `scripts/check-design-csv.py` - システム設計書の成果物の表（`requirements/` の機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、
       `shared/nfr.csv` の可用性などの種類の行）の検査（#957。**形式の違反（1）・表が無い（止めない）・必須の欄が空と未決定の印（3）を分けて出す**。
-      `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
+      `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。**機能一覧の任意の列 `必須度`（Must・Should・Could・Won't。#1163）も見て、`Won't` の機能は中間表現に求めず、在れば `scaffold.py` が止まる**（`wont_features` を読む）。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
       **目的の表（`requirements/purposes.csv`。目的 `G-` と指標 `K-`）も見て、指標の `機能` を機能一覧と照らし、目的を指さない機能・測る指標の無い目的を 3 に数える**（#1154。
       `build-proposal.py` は列をここから読んで提案書に「目的と成功の判定」の節を作る）。
       **関係者の表（`shared/stakeholders.csv`。`P-`）も見て、共有の Q&A 表の回答者が表の名前に無い・答える範囲が `なし`・括弧から読めない回答を報告する——終了コードに数えない**（#1161。
@@ -130,6 +133,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       **機能とデータの対応（`requirements/crud.csv`。機能 × エンティティの `C`・`R`・`U`・`D`）も見て、機能一覧とデータモデルに照らし、作る・読む機能の無いエンティティと、保管期間が決まっているのに消す機能の無いエンティティを 3 に数える——`なし` の行で「する機能は無い」と決めたものは数えない**（#1162。権限一覧との食い違いは照らさず、spec-review が Formal Checker に並べて渡す）。
       **運用要件の表（`requirements/operations.csv`。障害対応・問い合わせ・定期作業を誰が・いつ・どの目標で受け持つかと SLA）も見て、`水準` を `shared/nfr.csv` の No と照らし、
       表があるのに可用性の行を受ける障害対応の行が無いことを 3 に数える**（#1159。ランブックと SLA の違反の扱いは表に置かない。feasibility は運用費の根拠にこの表の `id` を書く）。
+      **移行の表（`requirements/migration.csv`。`M-`。種類 `データ`・`切替`・`業務` で書く列が決まる）も見て、種類の外の欄・`なし` と決めた種類のほかの行を形式の違反に、行の無い種類・種類ごとの必須の欄の空を 3 に数える——`対象` を `なし` にした行で「移すもの・することは無い」と決める**（#1158。表が無いのは未検討で、止めない）。
       決まりの原本は `references/tree.md` の「システム設計書の成果物」、守る／守らないは docstring を正とする。テストは `scripts/test-check-design-csv.py`）
     - `scripts/check-infra-csv.py` - 基盤要件の表（`shared/infra.csv`。言語・DBMS・ホスティング環境など）の検査とゲートの判定（#950。
       **形式の違反（1）・未決定（3。表が無いときも）・暫定（4）を分けて出し、表の状態と根拠の Q&A の行の状態の対応も照らす**。
@@ -168,6 +172,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
       **画面の表があれば、`機能` の列が機能を挙げる画面の仕様書・ワイヤーフレーム・生成したモック（書く生成が screen-spec の `build-mock.py` で作る）を本文と `scaffold/refs/` に足す——
       機能のオブジェクトには入れず、`--check` はモックを生成し直さない**（#1099。決まりは `references/handoff-issue.md` の「画面の表から引く参考資料」）。
+      **正本の根の `design/sources.csv`（版の外。デザインの正本の参照）があれば、画面を持つ機能の本文の `## 参考資料` にだけ載せ、形に反すれば作らない——無ければ前と同じバイト**
+      （#1156。決まりは `references/tree.md` の「デザインの正本の参照」。dev-loop は段落があれば見た目を受入基準に足す——dev-loop の `spec-gap.md` の「デザインの正本」）。
       テストは `scripts/test-scaffold.py`・`scripts/test-scaffold-screens.py`）
     - `scripts/rebuild-scope.py` - **仮回答と推奨で決めた事項の台帳**から、利用者が確かめたときに作り直す範囲（Issue と受入基準のケース）を引く
       （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行と閉じのコメントの `確認の結果: ` の行（#884）を、
@@ -347,6 +353,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-spec-writeback.py` - **仕様への戻しの歯止め**の回帰テスト（#1001。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-spec-writeback.py`**（`test-find-cycle.py` と同じ形）。一時の git リポジトリに当て、
     **申告漏れの陽性対照は spec-loop の本物の `scaffold.py` と `green-list.py` で作った緑のケースの一覧で取る**。Q&A 表の列の写しを `check-qa-csv.py` と突き合わせる
+  - `test-artifact-reads.py` - **読んだ成果物の集計**の回帰テスト（#1157。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/artifact-reads.py`**（`test-find-cycle.py` と同じ形）。試料の計画ファイルは一時ディレクトリに書き、
+    **走らせた前後で試料が変わらないこと**と、**`references/spec-gap.md` の例の行が本体の正規表現に当たること**（陽性対照つき）も見る
   - `test-external-reviews.py` - **外部レビュー bot のコメントの取り出し**の回帰テスト（#997。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/external-reviews.py`**（`test-find-cycle.py` と同じ形）。
     **偽の `gh` を `PATH` の先頭に置き、`PATH` の残りは `/usr/bin:/bin` だけにする**——本物の GitHub には届かない。**渡す文面が bot のコメントの中の指示に従わないと書くこと**も見る
