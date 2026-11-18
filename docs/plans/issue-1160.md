@@ -117,7 +117,31 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・feasibility �
 
 ## 関門の記録
 
-（関門に渡すたびに足す）
+```dev-loop-gates
+周の base: 8c84f23cb6353b7a4f62fb6a842ee74bd37fc4aa
+関門: Verifier 1 8a96178aa10048fc8e4d3785203ee68f29113722 反証=0
+関門: /code-review 1 8a96178aa10048fc8e4d3785203ee68f29113722 指摘=8
+関門: Verifier 2 627891ed8d1402b2b258531dd42ac4b22e8f551d 反証=0
+関門: /code-review 2 627891ed8d1402b2b258531dd42ac4b22e8f551d 指摘=7
+関門: 狭いパス 627891ed8d1402b2b258531dd42ac4b22e8f551d 68fa64ab34ea74e8f2283e628574d4fbc5675846 反証=2
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+受入基準: A7 未証明
+受入基準: A8 満たす
+受入基準: A9 満たす
+受入基準: A10 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
+
+受入基準ごとの判定の根拠: A1 は `tree.md` の「テスト要件」を読んで確かめた（関門 4 体も読んだ。CR1-1・CR1-5・CR2-1 で決まりの文を直した）＋`test-check-design-csv.py` の突き合わせ（テスト要件の崩し 10）。
+A2・A3 は `test-check-design-csv.py`（試料 222・変異 190・崩し 52。取り込みの後は件数の文面だけ 13 → 14）と、Verifier 1 パス目の一時ディレクトリでの実走、Verifier 2 パス目・`/code-review` 1・2 パス目の独立の実行。
+A4 は前からの試料が全部通る（件数の文面だけ直した）。A5 は `test-scaffold.py`（「テスト要件の表: 受入の人の行が無ければ止める」「受入の人の行があれば作る」。著者の `check-all.py` で緑——Verifier は 10 分を超えるので回していない）。
+A6・A8 は手の確認（上の「実験と確認の記録」。陽性対照つき。A6 は Verifier 1 パス目と `/code-review` 1・2 パス目も独立に再現）。A7 は文書を読んで確かめた——スキルを実際の正本で走らせた観測は無い（未証明。PR コメントで人間に回す）。
+A9 は `check-all.py` 緑と PR 側の CI。A10 は上の関門の記録（Verifier には 3 回とも受入基準の節を委譲文に貼り、`/code-review` には 2 回とも節を含む受け渡しの文面のファイルを指して全文を読ませた）。
 
 ## 手順 8（起票）
 
@@ -138,6 +162,9 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・feasibility �
 - Verifier 2 パス目（sonnet。委譲文 207 行をファイルで渡し、207 行を読んだと報告）: **反証 0 件**。CR1-1・CR1-5 の直しは一次ソースと一致、`test-check-design-csv.py` を run-serial 越しに回して緑（試料 222・変異 190・崩し 52）、生成物なし。`test-scaffold.py` は 10 分を超えるので回していない（A5 は著者の `check-all.py` で緑）。git status は前後とも計画ファイルだけで同じ。報告は SubagentHandback で届かず、子の transcript から読んだ
 - `/code-review` 2 パス目（high。176 行を全部読んだと報告。transcript から読んだ）: 指摘 7 件（直す 1・残課題 5・取り込みで手当て 1）。`test-check-design-csv.py` を回して緑・A6 を独立に再現（陽性対照つき）。git status は前後とも計画ファイルだけで同じ
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `627891ed8d1402b2b258531dd42ac4b22e8f551d`・終点: `68fa64ab34ea74e8f2283e628574d4fbc5675846`（文書だけ——`tree.md` の 1 文。`test-check-design-csv.py`・`check-skill-pointers.py`・`check-bold-flanking.py`・`check-duplicate-counts.py`・`check-norm-markers.py` は緑）
+- 狭いパス（Verifier・sonnet。委譲文 222 行をファイルで渡し、223 行を読んだと報告——末尾の改行の数え方の差）: **反証 2 件・後退なし**（NP-1・NP-2。下の表）。空で 0・`未定` で 3 を実走で確かめた。変異は文書だけの修正なので当てていない。git status は前後とも計画ファイルだけで同じ。報告は SubagentHandback で届かず、子の transcript から読んだ
+- 取り込み: `origin/main`（d140b19 以降。#1159・#1163）を取り込み、spec-loop を main の 0.113.0 から 0.114.0 に上げ直した。衝突は版の行と、`tree.md`・`check-design-csv.py`・`test-check-design-csv.py` の運用要件の表（#1159）と並ぶ塊——両方を残し、`表が無い` の件数を 14、`例外は id と鍵で指す` を 5 つにした（CR2-3）
+- 手元の歯止め（取り込みの後）: `check-all.py`（run-serial 越し）緑（94/94 本を回して失敗 0）
 
 ## 既知の限界・決着済みの論点
 
