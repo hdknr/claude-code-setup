@@ -107,7 +107,13 @@ feasibility 手順 2（規模を数える）／手順 3（運用費）／手順 
 
 ## 実験と確認の記録
 
-（B7 の確認を書く）
+- **B7（照合が運用要件の表の違いを拾う）**: 一時の git リポジトリ（`HOME`・`GIT_CONFIG_GLOBAL` を差し替え）で `docs/v1/shared/qa.csv`（見出しだけ）と `docs/v1/requirements/operations.csv` を置き、
+  同じコミットに `signoff/v1/req-1` と `signoff/v1/budget-1` を付けて `check-signoff.py --req signoff/v1/req-1 --budget signoff/v1/budget-1` → **0**（陽性対照「一致する」）。
+  運用要件の表に 1 行足したコミットに `signoff/v1/budget-2` を付けて同じく → **1**（`M docs/v1/requirements/operations.csv`）。観測窓: v1 だけ・1 回。
+
+## 手順 8（起票）
+
+- この周の起票: 4 件（仕様の穴 H1〜H4 の確認の Issue。起票の承認は不在のため訊いていない）
 
 ## 関門の記録
 
