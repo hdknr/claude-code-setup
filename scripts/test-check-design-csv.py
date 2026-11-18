@@ -71,6 +71,9 @@ G = "shared/glossary.csv"
 C = "requirements/crud.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
+# 機能一覧の任意の列 `必須度`（#1163）を末尾に足した見出しと、F-002 を作らない（Won't）一覧
+F_HEAD_P = "id,名前,種類,関係,必須度\n"
+F_PRIORITY = F_HEAD_P + "F-001,注文の受付,API,flows/受注.svg,Must\nF-002,注文の一覧,画面,,Won't\n"
 E_HEAD = "エンティティ,項目,意味,型,必須,保管期間\n"
 IO_HEAD = "id,名前,向き,相手,形式,文字コード,区切り,ヘッダー,契機\n"
 L_HEAD = "id,順番,項目,型,桁,必須,意味\n"
@@ -183,6 +186,20 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
+    # ---- 機能一覧の任意の列 `必須度`（#1163）
+    ("必須度の列を末尾に置く", good(F=F_PRIORITY), None, 0, "OK（requirements/features.csv（2 行）", "見出しの行"),
+    ("必須度の値", good(F=F_HEAD_P + "F-001,a,API,,must\n"), None, 1, "必須度 が Must・Should・Could・Won't のどれでもない: 'must'", ""),
+    ("必須度の列を途中に置く", good(F="id,名前,必須度,種類,関係\nF-001,a,Must,API,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
+    ("必須度の列を 2 つ置く", good(F="id,名前,種類,関係,必須度,必須度\nF-001,a,API,,Must,Must\n"), None, 1, "見出しの行が決まりと違う", ""),
+    ("必須度の綴りが違う", good(F="id,名前,種類,関係,優先度\nF-001,a,API,,Must\n"), None, 1, "決まりに無い列（優先度）", ""),
+    ("必須度の列があって行の列の数が足りない", good(F=F_HEAD_P + "F-001,a,API,\n"), None, 1, "requirements/features.csv:2: 列の数が 4（見出しは 5）", ""),
+    ("必須度の列の無い見出しで行が 5 列", good(F=F_HEAD + "F-001,a,API,,Must\n"), None, 1, "requirements/features.csv:2: 列の数が 5（見出しは 4）", ""),
+    ("必須度が空", good(F=F_HEAD_P + "F-001,a,API,,\n"), None, 3, "requirements/features.csv:2: 必須度 が空", "形式の違反（"),
+    ("必須度が未定", good(F=F_HEAD_P + "F-001,a,API,,未定（Q-012）\n"), None, 3, "requirements/features.csv:2: 必須度 に未決定の印（未定）", "形式の違反（"),
+    ("必須度の列があっても目的の表と照らす", purposes(P_OK, features=F_PRIORITY), None, 0, "requirements/purposes.csv（3 行）", "目的を指さない"),
+    ("Won't の機能も目的を指す", purposes(P_OK.replace("F-001・F-002", "F-001"), features=F_PRIORITY), None, 3,
+     "requirements/purposes.csv: 機能一覧の F-002 が、どの指標の 機能 にも無い（目的を指さない機能", ""),
+    ("必須度の列があっても CRUD 表と照らす", crud(features=F_PRIORITY), None, 0, "requirements/crud.csv（3 行）", "形式の違反"),
     ("物理設計の列を足す", good(E="エンティティ,項目,意味,型,必須,保管期間,インデックス\n注文,番号,a,文字列,はい,7 年,あり\n"), None, 1,
      "決まりに無い列（インデックス）", ""),
     ("列の数", good(F=F_HEAD + "F-001,a,API\n"), None, 1, "requirements/features.csv:2: 列の数が 3", ""),
@@ -422,7 +439,18 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("一覧の未決定の id を見ない", '            elif row["id"].strip() not in listed and context.get(IO_LIST + "#pending"):',
      "            elif False:", "一覧の id が未決定ならレイアウトの id も未決定"),
-    ("見出しを見ない", "    if header == expected:\n        return True", "    if True:\n        return True", "見出しの順が違う"),
+    ("見出しを見ない", "    if header == expected or (optional and header == expected + optional):\n        return True", "    if True:\n        return True", "見出しの順が違う"),
+    # #1163: 機能一覧の任意の列 `必須度`
+    ("任意の列を受けない", "    if header == expected or (optional and header == expected + optional):", "    if header == expected:", "必須度の列を末尾に置く"),
+    ("任意の列をどこにでも受ける", "    if header == expected or (optional and header == expected + optional):",
+     "    if header == expected or (optional and sorted(header) == sorted(expected + optional)):", "必須度の列を途中に置く"),
+    ("任意の列を重ねて受ける", "    if header == expected or (optional and header == expected + optional):",
+     "    if header == expected or (optional and set(header) == set(expected + optional)):", "必須度の列を 2 つ置く"),
+    ("任意の列を決まりに無い列と言う", "    extra = [name for name in header if name not in expected + optional]",
+     "    extra = [name for name in header if name not in expected]", "必須度の列を途中に置く"),
+    ("行の列の数を決まりの列で見る", "    expected = header  # 決まりの列か", "    expected = COLUMNS[rel]  # 決まりの列か", "必須度の列を末尾に置く"),
+    ("必須度の値を見ない", '    (FEATURES, "必須度"): ("Must", "Should", "Could", "Won\'t"),\n', "", "必須度の値"),
+    ("必須度を空でよいにする", '    FEATURES: {"関係"},', '    FEATURES: {"関係", "必須度"},', "必須度が空"),
     ("物理設計の列を名指ししない", "    if extra:", "    if False:", "物理設計の列を足す"),
     ("列の数を見ない", "        if len(fields) != len(expected):", "        if False:", "列の数"),
     ("決まった値を見ない", "            if allowed and value not in allowed:", "            if False:", "種類の値"),
@@ -690,9 +718,13 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
             continue
         rows = rows_of(section(design, heading))
         names = [row[0].strip("`") for row in rows]
-        if names != columns:
-            problems.append(f"{rel}: 列が違う（tree.md {names} ／ 本体 {columns}）")
+        optional = module.OPTIONAL_COLUMNS.get(rel, [])
+        if names != columns + optional:
+            problems.append(f"{rel}: 列が違う（tree.md {names} ／ 本体 {columns} と任意の列 {optional}）")
             continue
+        marked = [row[0].strip("`") for row in rows if "**任意の列**" in row[1]]
+        if marked != optional:
+            problems.append(f"{rel}: 任意の列が違う（tree.md {marked} ／ 本体 {optional}）")
         if any(len(row) != 3 or row[2] not in ("利用者", "連携先") for row in rows):
             problems.append(f"{rel}: 「決める人」の列が利用者か連携先でない行がある")
         empty = {row[0].strip("`") for row in rows if "空でよい" in row[1]}
@@ -720,6 +752,13 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
               for rel in re.findall(r"（`((?:requirements|shared)/[^`]+\.csv)`）", line)]
     if sorted(tables) != sorted(module.ALL_TABLES):
         problems.append(f"成果物の表の一覧が違う（tree.md {sorted(tables)} ／ 本体 {sorted(module.ALL_TABLES)}）")
+    # 機能一覧の必須度（#1163）: 列の名前と「作らない」の値が、tree.md の列と決まった値の中にあるか
+    if module.OPTIONAL_COLUMNS.get(module.FEATURES) != [module.PRIORITY_COLUMN]:
+        problems.append(f"必須度の列の名前が任意の列と違う（{module.PRIORITY_COLUMN}）")
+    if module.PRIORITY_WONT not in (module.VALUES.get((module.FEATURES, module.PRIORITY_COLUMN)) or ()):
+        problems.append(f"作らないの値（{module.PRIORITY_WONT}）が必須度の決まった値に無い")
+    if f"#### {module.PRIORITY_COLUMN}（MoSCoW" not in design or f"`{module.PRIORITY_WONT}` の機能は中間表現に書き起こさない" not in design:
+        problems.append("tree.md の「機能一覧」に必須度の小節か Won't の扱いが無い")
     problems += purpose_mismatches(module, design)
     problems += stakeholder_mismatches(module, design)
     problems += glossary_mismatches(module, design)
@@ -862,6 +901,11 @@ BLOCK_MUTATIONS = [("使わない言い方の見出しを拾わない", "line.st
 # references を崩すと不一致になる（突き合わせが空振りでないこと）。(名前, ファイル, 崩す前, 崩した後)
 REFERENCE_MUTATIONS = [
     ("機能一覧の列を消す", "tree", "| `関係` | 関係する画面", "| 関係 | 関係する画面"),
+    ("必須度の列を消す", "tree", "| `必須度` | `Must`", "| 必須度 | `Must`"),
+    ("必須度の値を減らす", "tree", "`Must`・`Should`・`Could`・`Won't` のどれか。", "`Must`・`Should`・`Could` のどれか。"),
+    ("必須度を任意でなくする", "tree", "**任意の列**——置くなら見出しの末尾に置く", "置くなら見出しの末尾に置く"),
+    ("必須度の決める人を崩す", "tree", "（下の「必須度」） | 利用者 |", "（下の「必須度」） | 開発者 |"),
+    ("必須度の Won't の扱いを消す", "tree", "- **`Won't` の機能は中間表現に書き起こさない**", "- **作らない機能は中間表現に書き起こさない**"),
     ("種類の値を足す", "tree", "`画面`・`API`・`バッチ`・`ファイル連携` のどれか", "`画面`・`API`・`バッチ`・`ファイル連携`・`帳票` のどれか"),
     ("空でよいを外す", "tree", "決まらない形式なら空でよい", "決まらない形式なら書かない"),
     ("決める人を崩す", "tree", "| `相手` | 誰と（どのシステム・部署と）やり取りするか | 連携先 |", "| `相手` | 誰と（どのシステム・部署と）やり取りするか | 開発者 |"),
