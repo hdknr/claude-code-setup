@@ -10,6 +10,7 @@
 版の上げ方: `spec-loop` を **minor**（デザインの正本の参照を読み、Issue の本文に載せる——CLAUDE.md の「能力・手順の追加」）。着手時の main は spec-loop 0.109.0 → 0.110.0。
 `dev-loop` を **minor**（spec-loop から来た Issue の読み方に、デザインの正本の段落があれば見た目を受入基準に足す手順を足す）。着手時の main は dev-loop 2.8.0 → 2.9.0。
 1 パス目の後に main（#1157 が dev-loop を 2.9.0 に上げた）を取り込み（`6ca3ecf`）、dev-loop を **2.10.0** に上げ直した（spec-loop は main が 0.109.0 のままなので 0.110.0 のまま）。
+狭いパスの後に main（#1158 が spec-loop を 0.110.0 に上げた）を取り込み（`f68ca5d`）、spec-loop を **0.111.0** に上げ直した（dev-loop は 2.10.0 のまま）。
 マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。並行して #1163・#1158 の周が spec-loop を触る。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.8.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 割り目: 割らない（cruise の周）。
@@ -128,7 +129,39 @@ A7 の req-loop が実際のレビュー会の後に見送った見た目の指�
 - Verifier 2 パス目（sonnet。委譲文 212 行を全文読んだと報告——213 行と表示、末尾の改行の数え方）: 反証 0 件。`test-scaffold-screens.py` 緑（試料 18・変異 28）・軽い検査 10 本が 0。git status は前後とも空で同じ。報告は SubagentHandback で届かず、子の transcript から読んだ
 - `/code-review` 2 パス目（high。180 行の受け渡しの文面を指した）: 指摘 10 件（直す 4・計画ファイルだけの直し 2・残課題 4）。`test-scaffold-screens.py` は順番待ちが長く走らせず、**止めた——その際に残った run-serial のプロセスを kill したと申告**。同じ時刻にこちらが背景で起こした `test-scaffold-screens.py`（run-serial 越し、`tss-2.txt`）が 143 で終わっていた——関門が周の子の検査を止めた可能性が高い（その結果は使っていない。Verifier 2 パス目の緑と、下の狭いパスの前の走らせ直しを使う）。git status は前後とも空
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `075dc4ee21c9ece743a5aaf84d30f092ab2a5f95`
+- 2 パス目の指摘対応の終点: `46182aea4943d48301571a7a7a01baa91dd4e427`（直す 4 行 CR2-1・CR2-2・CR2-4・CR2-5 と計画ファイルだけの直し 2 行）
+- 再開（2026-11-18T09:19Z。前の子は止まり、新しい子が `/dev-loop:cruise 1169 --absent` の再開で受けた。読み込んだ dev-loop は 2.9.0（`SKILL.md` 1923 行を読んだ））: 前の子が 08:32Z に起こした狭いパスの Verifier は報告を返さないまま止まっていた（transcript の最後の文は待つと言うだけ）——その結果は使わず、狭いパスを当て直した
+- 狭いパス（`dev-loop:dev-loop-verifier`・sonnet。`git diff 075dc4e 46182ae`。委譲文はテンプレート 185 行と差し込みの値 95 行を全部読んだと報告——186・96 と表示、末尾の改行の数え方）: 反証 0 件。
+  `test-scaffold-screens.py`（run-serial 越し。待ち 1133 秒）緑（試料 18・変異 30——著者が足した 2 本「--red-check では読む」「参照を機能のオブジェクトに入れる」も赤）。
+  Verifier が設計した独立の変異 4 本（--check だけ読む・--red-check だけ読む・参照の件数を機能のオブジェクトに書く・v2 の本文に段落を載せない）は全部赤、素通り 0 件（worktree の外の `.git` を持たない写しで、run-serial は枠を決められず 125 だったので順番待ちを通さずに走らせた）。
+  CR2-1・CR2-2 は文書だけの直しで変異では当てられず、読解と指し先の実在（`check-skill-pointers.py`）まで。git status は前後とも空で同じ。報告は SubagentHandback で届かず、子の transcript から読んだ
+- main の取り込み（2 回目）: `f68ca5d`（#1158 ほかを取り込み、main が spec-loop を 0.110.0 に上げていたので **0.111.0** に上げ直した。dev-loop は main が 2.9.0 のままなので 2.10.0 のまま。衝突なし。`check-plugin-versions.py`・`skill-metrics.py --check` が 0）。
+  取り込みで増えた検査は無い（`git diff --name-status HEAD...origin/main -- scripts/ 'plugins/*/scripts/*'` は既存の 3 ファイルの `M` だけ）
 - 著者の逸脱の記録: 生成ブロックの鮮度を base と比べるために worktree で `git stash`／`git stash pop` を素で使った（CLAUDE.md が禁じる形——stash は全 worktree で共有）。直後に `git status --porcelain` で自分の変更が全部戻り、`git stash list` が空であることを確かめた（他人の stash を取り出していない）
+
+### 関門の記録
+
+実際に通した関門だけを書く（終点 = その関門に渡した時点の HEAD。2 パス目の Verifier は 2026-11-18T07:39:56Z、`/code-review` は 07:45:53Z に起こした——HEAD は `075dc4e`（16:39:45 JST）。1 パス目は 07:00Z・07:06Z で HEAD は `9279244`）。
+
+```dev-loop-gates
+周の base: 53517d593b60a75123648e6f26b0d77dd669b1d1
+関門: Verifier 1 9279244bcfb846c4965699b818eccabe752cce91 反証=1
+関門: /code-review 1 9279244bcfb846c4965699b818eccabe752cce91 指摘=8
+関門: Verifier 2 075dc4ee21c9ece743a5aaf84d30f092ab2a5f95 反証=0
+関門: /code-review 2 075dc4ee21c9ece743a5aaf84d30f092ab2a5f95 指摘=10
+関門: 狭いパス 075dc4ee21c9ece743a5aaf84d30f092ab2a5f95 46182aea4943d48301571a7a7a01baa91dd4e427 反証=0
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 未証明
+受入基準: A7 未証明
+受入基準: A8 満たす
+受入基準: A9 満たす
+受入基準: A10 満たす
+マージの反映: ドキュメントとプラグインの配布
+```
 
 ## 既知の限界・決着済みの論点
 
