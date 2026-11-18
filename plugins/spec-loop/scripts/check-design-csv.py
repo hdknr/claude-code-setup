@@ -913,11 +913,15 @@ def check_nfr(root: Path, report: Report, context: dict) -> None:
     counts: dict[str, int] = {}
     kinds = []
     pending = False  # No の決まっていない行がある（運用要件の表が指す No を「無い」と言い切れない）
+    listed: set[str] = set()  # 列の数の違う行の No（運用要件の表の照合の相手にだけ数える）
     for line, fields in rows:
         if len(fields) != len(NFR_COLUMNS):
             if len(fields) > 2 and fields[2].strip() in NFR_KINDS:
                 report.violations.append(f"{NFR}:{line}: 列の数が {len(fields)}（見出しは {len(NFR_COLUMNS)}）")
-            pending = True
+            # 列の数の違う行も、1 列目の No は照らす相手に数える（性能の行は崩れていても見ない——No だけ読む）
+            number = fields[0] if fields else ""
+            pending = pending or not number.strip() or bool(markers(number))
+            listed.add(number.strip())  # 重複の判定（`numbers`）には入れない——前からの判定を変えない
             continue
         row = dict(zip(NFR_COLUMNS, fields))
         pending = pending or not row["No"].strip() or bool(markers(row["No"]))
@@ -954,7 +958,7 @@ def check_nfr(root: Path, report: Report, context: dict) -> None:
         elif cell_state(report, where, "単位", unit, True):
             report.violations.append(f"{where}: {kind} の単位は空にする（水準は上限に書く）: {unit.strip()!r}")
     report.rows[NFR] = len(kinds)
-    context[NFR] = {number for number in numbers if NFR_NUMBER.fullmatch(number)}
+    context[NFR] = {number for number in set(numbers) | listed if NFR_NUMBER.fullmatch(number)}
     context[NFR + "#pending"] = pending
     context[NFR + "#gap"] = [row["No"].strip() for _, row in kinds
                              if row["指標"].strip() == OPERATIONS_GAP[0] and NFR_NUMBER.fullmatch(row["No"].strip())]
