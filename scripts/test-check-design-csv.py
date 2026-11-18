@@ -27,11 +27,16 @@
    操作の形（順・重ね・区切り・小文字）・機能とエンティティの組の重複・`なし` の行と機能の操作の重なり（1）。作る・読む機能の無いエンティティと、保管期間が決まっているのに
    消す機能の無いエンティティ（3）。`なし` の行で決めた操作・更新の抜け・保管期間が未決定のエンティティの消す機能は数えない。行の決まっていないエンティティ・
    エンティティの決まっていない行があれば抜けを言い切らない。一覧・データモデルに id・名前の決まっていない行があれば、無い機能・エンティティを未決定に数える。
+3d. **移行の表（#1158）の形と行の無い種類を見る**——見出し・列の数・id の形と重複・種類と切替の方式の値・種類の外の欄（データの行の切替の欄を含む）・
+   `並行稼働` でない方式の期間・`なし` の行のほかの欄・`なし` と決めた種類のほかの行（1）。種類ごとの必須の欄が空・並行稼働なのに期間が空・種類の外の欄の印・行の無い種類（3）。
+   `なし` の行だけの表・一斉の行の空の期間は通す（0）。種類の決まっていない行・列の数の違う行があれば行の無い種類を言い切らない。対象の決まっていない行は種類ごとの欄を判定しないが、種類の行には数える。
+   方式の決まっていない行の期間は判定しない。
 4. **中身を検査していない形を 0 にしない（2）**——UTF-8 でない・空のファイル・ファイルでない・ディレクトリが無い・引数の誤り・
    想定外の例外（128KB 超のセルの `csv.Error`）・`-OO` で引数なし。
 5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ。
    目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`。関係者の表は列・決める人・id の接頭辞・役割と合意の値・区切りと `なし`。
-   用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲。CRUD 表は列・決める人・操作の文字・`なし`・抜けに数える操作と保管期間で求める操作）。
+   用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲。CRUD 表は列・決める人・操作の文字・`なし`・抜けに数える操作と保管期間で求める操作。
+   移行の表は列・決める人・id の形・種類・どの行も書く列と種類ごとに書く列・切替の方式・期間を求める方式・`なし`）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -69,6 +74,7 @@ S = "shared/stakeholders.csv"
 Q = "shared/qa.csv"
 G = "shared/glossary.csv"
 C = "requirements/crud.csv"
+M = "requirements/migration.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
 E_HEAD = "エンティティ,項目,意味,型,必須,保管期間\n"
@@ -115,6 +121,19 @@ def crud(body: str = C_OK, features: str | None = None, entities: str | None = N
         if body_of:
             files[rel] = body_of
     return files
+
+
+M_HEAD = "id,種類,移行元,対象,範囲,変換の決まり,切替の方式,並行稼働の期間,切り戻しの条件,担当\n"
+M_DATA = "M-001,データ,旧販売管理,受注の履歴,直近 5 年・約 20 万件,得意先コードを新しいコードに読み替える,,,,業務部\n"
+M_SWITCH = "M-002,切替,旧販売管理,受注の業務の全部,,,並行稼働,1 か月,稼働の 3 日目までに受注の取り込みが止まったら戻す,業務部長\n"
+M_WORK = "M-003,業務,,操作の教育,受注の担当者 30 人,,,,,情報システム部\n"
+M_OK = M_DATA + M_SWITCH + M_WORK
+M_NONE = "M-001,データ,,なし,,,,,,\nM-002,切替,,なし,,,,,,\nM-003,業務,,なし,,,,,,\n"
+
+
+def migration(body: str = M_OK) -> dict:
+    """移行の表の試料（#1158）。ほかの表は置かない。"""
+    return {M: M_HEAD + body}
 
 
 def glossary(body: str = G_OK, docs: dict | None = None) -> dict:
@@ -177,9 +196,9 @@ def purposes(body: str, features: str | None = None) -> dict:
 
 # (名前, 置く表（パス → 中身。bytes はそのまま・"<dir>" はディレクトリ）, 引数（None なら根）, 期待する終了コード, 出力に含まれるべき文字列, 含まれてはならない文字列)
 CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
-    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK, C: C_HEAD + C_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
+    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK, C: C_HEAD + C_OK, M: M_HEAD + M_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
     ("BOM 付き", {rel: "﻿" + body for rel, body in GOOD.items()}, None, 0, "OK（", "見出しの行"),
-    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（11 件）", "成果物の表が 1 つも無い"),
+    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（12 件）", "成果物の表が 1 つも無い"),
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
@@ -409,6 +428,49 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
      "機能 F-009 が機能一覧（requirements/features.csv）に無い（一覧に id の決まっていない行がある）", "形式の違反（"),
     ("CRUD 表: データモデルのエンティティが未決定ならエンティティも未決定", crud(C_OK + "F-001,顧客,C\n", entities=GOOD[E] + "未定,名前,b,文字列,はい,1 年\n"), None, 3,
      "エンティティ 顧客 がデータモデル（requirements/entities.csv）に無い（データモデルにエンティティの決まっていない行がある）", "形式の違反（"),
+    # ---- 移行の表（#1158）
+    ("移行の表: 決まりどおり", migration(), None, 0, "requirements/migration.csv（3 行）", "の行が無い"),
+    ("移行の表: 移行が無いと決めた", migration(M_NONE), None, 0, "requirements/migration.csv（3 行）", "の行が無い"),
+    ("移行の表: 一斉なら期間は空でよい", migration(M_DATA + M_SWITCH.replace(",並行稼働,1 か月,", ",一斉,,") + M_WORK), None, 0,
+     "requirements/migration.csv（3 行）", "並行稼働の期間"),
+    ("移行の表: 見出し", {M: M_HEAD.replace("移行元,対象", "対象,移行元") + M_OK}, None, 1, "requirements/migration.csv:1: 見出しの行が決まりと違う", ""),
+    ("移行の表: 列の数", migration(M_OK + "M-004,データ\n"), None, 1, "requirements/migration.csv:5: 列の数が 2", ""),
+    ("移行の表: 列の数の違う行があれば行の無い種類を言い切らない", migration("M-001,業務\n"), None, 1, "requirements/migration.csv:2: 列の数が 2", "の行が無い"),
+    ("移行の表: id の形", migration(M_OK.replace("M-003,", "M-03,")), None, 1, "id が M- に 3 桁以上の数字の形でない: 'M-03'", ""),
+    ("移行の表: id の重複", migration(M_OK.replace("M-003,", "M-001,")), None, 1, "requirements/migration.csv:4: id が 2 行目と重複: M-001", ""),
+    ("移行の表: 種類の値", migration(M_OK + M_WORK.replace("M-003,業務,", "M-004,教育,")), None, 1,
+     "requirements/migration.csv:5: 種類 が データ・切替・業務 のどれでもない: '教育'", ""),
+    ("移行の表: 切替の方式の値", migration(M_OK.replace(",並行稼働,1 か月,", ",一部,1 か月,")), None, 1,
+     "requirements/migration.csv:3: 切替の方式 が 一斉・段階・並行稼働 のどれでもない: '一部'", ""),
+    ("移行の表: 種類の外の欄", migration(M_OK.replace("M-003,業務,,", "M-003,業務,旧販売管理,")), None, 1,
+     "requirements/migration.csv:4: 業務の行に 移行元 を書いた（データ・切替の行だけに書く）: '旧販売管理'", ""),
+    ("移行の表: データの行に切替の欄", migration(M_OK.replace(",得意先コードを新しいコードに読み替える,,,,", ",得意先コードを新しいコードに読み替える,一斉,,,")), None, 1,
+     "requirements/migration.csv:2: データの行に 切替の方式 を書いた（切替の行だけに書く）: '一斉'", ""),
+    ("移行の表: 種類の外の欄の印は未決定", migration(M_OK.replace("M-003,業務,,", "M-003,業務,未定,")), None, 3,
+     "requirements/migration.csv:4: 移行元 に未決定の印（未定）", "形式の違反（"),
+    ("移行の表: 一斉の行に期間", migration(M_OK.replace(",並行稼働,1 か月,", ",一斉,1 か月,")), None, 1,
+     "requirements/migration.csv:3: 切替の方式 が 一斉 の行に 並行稼働の期間 を書いた（並行稼働 の行だけに書く）: '1 か月'", ""),
+    ("移行の表: 並行稼働なのに期間が空", migration(M_OK.replace(",並行稼働,1 か月,", ",並行稼働,,")), None, 3,
+     "requirements/migration.csv:3: 並行稼働の期間 が空", "形式の違反（"),
+    ("移行の表: 方式が決まっていなければ期間を判定しない", migration(M_OK.replace(",並行稼働,1 か月,", ",未定,1 か月,")), None, 3,
+     "requirements/migration.csv:3: 切替の方式 に未決定の印（未定）", "並行稼働の期間"),
+    ("移行の表: 必須の欄が空", migration(M_OK.replace(",直近 5 年・約 20 万件,", ",,")), None, 3, "requirements/migration.csv:2: 範囲 が空", "形式の違反（"),
+    ("移行の表: 担当が空", migration(M_OK.replace(",情報システム部\n", ",\n")), None, 3, "requirements/migration.csv:4: 担当 が空", "形式の違反（"),
+    ("移行の表: 切り戻しの条件が空", migration(M_OK.replace(",稼働の 3 日目までに受注の取り込みが止まったら戻す,", ",,")), None, 3,
+     "requirements/migration.csv:3: 切り戻しの条件 が空", "形式の違反（"),
+    ("移行の表: なしの行にほかの欄", migration(M_NONE.replace("M-001,データ,,なし,,", "M-001,データ,旧販売管理,なし,,")), None, 1,
+     "requirements/migration.csv:2: 対象 が なし の行に 移行元 を書いた", ""),
+    ("移行の表: なしの種類にほかの行", migration(M_NONE + M_DATA.replace("M-001,", "M-004,")), None, 1,
+     "requirements/migration.csv:2: 種類 データ を 対象 なし と決めたが、同じ種類の行がほかにある（requirements/migration.csv:5）", ""),
+    ("移行の表: 行の無い種類", migration(M_DATA + M_WORK), None, 3, "requirements/migration.csv: 種類 切替 の行が無い", "種類 データ の行が無い"),
+    ("移行の表: 種類が決まった値でない行があれば行の無い種類を言い切らない", migration(M_DATA + M_SWITCH + M_WORK.replace(",業務,", ",教育,")), None, 1,
+     "requirements/migration.csv:4: 種類 が データ・切替・業務 のどれでもない: '教育'", "の行が無い"),
+    ("移行の表: 種類の決まっていない行があれば行の無い種類を言い切らない", migration(M_DATA + M_WORK.replace(",業務,", ",未定,")), None, 3,
+     "requirements/migration.csv:3: 種類 に未決定の印（未定）", "の行が無い"),
+    ("移行の表: 対象の決まっていない行は種類ごとの欄を判定しない", migration(M_OK.replace(",操作の教育,", ",未定,").replace("M-003,業務,,", "M-003,業務,旧販売管理,")), None, 3,
+     "requirements/migration.csv:4: 対象 に未決定の印（未定）", "を書いた"),
+    ("移行の表: 対象の決まっていない行も種類の行に数える", migration(M_DATA + M_SWITCH + M_WORK.replace(",操作の教育,", ",TBD,")), None, 3,
+     "requirements/migration.csv:4: 対象 に未決定の印（TBD）", "の行が無い"),
     ("回答者: 関係者の表が無ければ照らさない", {Q: qa_rows(("A（営業部が回答）", "反映済み"))}, None, 0, "成果物の表が 1 つも無い", "回答者の照合"),
     ("UTF-8 でない", good(F=(F_HEAD + "F-001,注文,API,\n").encode("cp932")), None, 2, "requirements/features.csv: UTF-8 として読めない", ""),
     ("空のファイル", good(F=""), None, 2, "requirements/features.csv: 空のファイル", ""),
@@ -605,6 +667,42 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "CRUD 表: 列の数の違う行があれば抜けを言い切らない"),
     ("機能の決まっていない行の操作を結び付けに数えない", "            maybe.setdefault(entity, set()).update(operations)", "            pass",
      "CRUD 表: 機能の決まっていない行の操作は結び付けに数え、ほかの抜けは出す"),
+    # #1158: 移行の表
+    ("移行の表を検査しない", "    check_migration(root, report)\n", "", "移行の表: 行の無い種類"),
+    ("移行の表の見出しを見ない", "    if not check_columns(report, MIGRATION, header, MIGRATION_COLUMNS):\n        return", "    if False:\n        return", "移行の表: 見出し"),
+    ("移行の表の列の数を見ない", "        if len(fields) != len(MIGRATION_COLUMNS):", "        if False:", "移行の表: 列の数"),
+    ("移行の表の id の形を見ない", "            if not MIGRATION_ID.fullmatch(value):", "            if False:", "移行の表: id の形"),
+    ("移行の表の id の重複を見ない", "            elif value in numbers:", "            elif False:", "移行の表: id の重複"),
+    ("移行の表の種類の値を見ない", "            if value in MIGRATION_KINDS:\n                kind = value", "            if True:\n                kind = value", "移行の表: 種類の値"),
+    ("移行の表の切替の方式の値を見ない", "                    if value in MIGRATION_METHODS:", "                    if True:", "移行の表: 切替の方式の値"),
+    ("移行の表の種類の外の欄を見ない", "                report.violations.append(f\"{where}: {kind}の行に {column} を書いた", "                pass  # (f\"{where}: {kind}の行に {column} を書いた", "移行の表: 種類の外の欄"),
+    ("移行の表の種類の外の欄の印を違反にする", "            if markers(cell):\n                # 印は未決定（値の決まりに当てない）。空にする欄でも違反にしない",
+     "            if False:\n                # 印は未決定（値の決まりに当てない）。空にする欄でも違反にしない", "移行の表: 種類の外の欄の印は未決定"),
+    ("移行の表の期間を一斉の行でも許す", "            elif method is not None and period.strip():", "            elif False:", "移行の表: 一斉の行に期間"),
+    ("移行の表の期間を方式が決まらなくても違反にする", "            elif method is not None and period.strip():", "            elif period.strip():", "移行の表: 方式が決まっていなければ期間を判定しない"),
+    ("移行の表の並行稼働の期間を求めない", "            if method == MIGRATION_PARALLEL:\n                cell_state(report, where, MIGRATION_PERIOD, period, False)",
+     "            if method == MIGRATION_PARALLEL:\n                pass", "移行の表: 並行稼働なのに期間が空"),
+    ("移行の表の期間をどの方式でも求める", "            if method == MIGRATION_PARALLEL:", "            if True:", "移行の表: 一斉なら期間は空でよい"),
+    ("移行の表の切替の方式を種類ごとの列から外す", '    "切替": ("移行元", "切替の方式", "並行稼働の期間", "切り戻しの条件"),', '    "切替": ("移行元", "並行稼働の期間", "切り戻しの条件"),',
+     "移行の表: データの行に切替の欄"),
+    ("移行の表の範囲を業務の列から外す", '    "業務": ("範囲",),', '    "業務": (),', "移行の表: 決まりどおり"),
+    ("移行の表の担当を求めない", 'MIGRATION_COMMON = ("対象", "担当")', 'MIGRATION_COMMON = ("対象",)', "移行の表: 担当が空"),
+    ("移行の表のなしの行を読まない", "        if row[\"対象\"].strip() == MIGRATION_NONE:", "        if False:", "移行の表: 移行が無いと決めた"),
+    ("移行の表のなしの行のほかの欄を見ない", "                    report.violations.append(f\"{where}: 対象 が {MIGRATION_NONE} の行に {column} を書いた",
+     "                    pass  # (f\"{where}: 対象 が {MIGRATION_NONE} の行に {column} を書いた", "移行の表: なしの行にほかの欄"),
+    ("移行の表のなしの種類のほかの行を見ない", "        if others:", "        if False:", "移行の表: なしの種類にほかの行"),
+    ("移行の表の行の無い種類を見ない", "            if kind not in kinds:", "            if False:", "移行の表: 行の無い種類"),
+    ("移行の表の種類の決まっていない行があっても行の無い種類を言う", "    if not kind_open:\n", "    if True:\n", "移行の表: 種類の決まっていない行があれば行の無い種類を言い切らない"),
+    ("移行の表の決まった値でない種類の行を種類の判定に数えない", "                kind_open = True  # どの種類の行のつもりか決まらない（列の数の違う行と同じ）\n", "",
+     "移行の表: 種類が決まった値でない行があれば行の無い種類を言い切らない"),
+    ("移行の表の列の数の違う行を種類の判定に数えない", "            kind_open = True\n            continue\n        row = dict(zip(MIGRATION_COLUMNS, fields))",
+     "            continue\n        row = dict(zip(MIGRATION_COLUMNS, fields))", "移行の表: 列の数の違う行があれば行の無い種類を言い切らない"),
+    ("移行の表の対象の決まっていない行も種類ごとの欄を判定する", "            continue  # `なし` の行かどうか決まらない——種類ごとの欄を判定しない",
+     "            pass", "移行の表: 対象の決まっていない行は種類ごとの欄を判定しない"),
+    ("移行の表の対象の決まっていない行を種類の行に数えない",
+     "        kinds.setdefault(kind, []).append(where)\n        if not cell_state(report, where, \"対象\", row[\"対象\"], False):\n            continue  # `なし` の行かどうか決まらない——種類ごとの欄を判定しない\n",
+     "        if not cell_state(report, where, \"対象\", row[\"対象\"], False):\n            continue  # `なし` の行かどうか決まらない——種類ごとの欄を判定しない\n        kinds.setdefault(kind, []).append(where)\n",
+     "移行の表: 対象の決まっていない行も種類の行に数える"),
     ("機能の決まっていない行のエンティティの抜けを全部言わない", "            maybe.setdefault(entity, set()).update(operations)", "            pending.add(entity)",
      "CRUD 表: 機能の決まっていない行の操作は結び付けに数え、ほかの抜けは出す"),
 ]
@@ -724,6 +822,7 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
     problems += stakeholder_mismatches(module, design)
     problems += glossary_mismatches(module, design)
     problems += crud_mismatches(module, design)
+    problems += migration_mismatches(module, design)
     kinds = {}
     for row in rows_of(section(nfr_md, "## 性能のほかの種類"))[1:]:  # 1 行目は見出し（`指標`・`上限`・`単位`）
         kinds[row[0].strip("`")] = () if row[2] == "空にする" else tuple(re.findall(r"`([^`]+)`", row[2]))
@@ -842,6 +941,47 @@ def crud_mismatches(module, design: str) -> list[str]:
     return problems
 
 
+def migration_mismatches(module, design: str) -> list[str]:
+    """移行の表（#1158）の定数が tree.md の「移行」と一致するか。"""
+    heading = next((line for line in design.splitlines() if line.startswith("### ") and f"（`{module.MIGRATION}`）" in line), None)
+    if heading is None:
+        return [f"{module.MIGRATION}: tree.md に節が無い"]
+    rows = {row[0].strip("`"): row for row in rows_of(section(design, heading))}
+    if list(rows) != module.MIGRATION_COLUMNS:
+        return [f"{module.MIGRATION}: 列が違う（tree.md {list(rows)} ／ 本体 {module.MIGRATION_COLUMNS}）"]
+    problems = []
+    if any(len(row) != 3 or row[2] != "利用者" for row in rows.values()):
+        problems.append(f"{module.MIGRATION}: 「決める人」が利用者でない行がある")
+    prefix = re.match(r"^`([A-Z]+-)` に 3 桁以上の数字", rows["id"][1])
+    if prefix is None or module.MIGRATION_ID.pattern != prefix.group(1) + "[0-9]{3,}":
+        problems.append(f"{module.MIGRATION}: id の形が tree.md と違う（本体 {module.MIGRATION_ID.pattern}）")
+    listed = re.match(r"^((?:`[^`]+`・)+`[^`]+`) のどれか", rows["種類"][1])
+    if tuple(re.findall(r"`([^`]+)`", listed.group(1)) if listed else ()) != module.MIGRATION_KINDS:
+        problems.append(f"{module.MIGRATION}: 種類が tree.md と違う（本体 {module.MIGRATION_KINDS}）")
+    common, own = [], {kind: [] for kind in module.MIGRATION_KINDS}
+    for column, row in rows.items():
+        if column in ("id", "種類"):
+            continue
+        if row[1].startswith("どの行も:"):
+            common.append(column)
+            continue
+        only = re.match(r"^((?:`[^`]+`・)*`[^`]+`) の行だけ:", row[1])
+        for kind in (re.findall(r"`([^`]+)`", only.group(1)) if only else ["(種類が読めない)"]):
+            own.setdefault(kind, []).append(column)
+    if tuple(common) != module.MIGRATION_COMMON:
+        problems.append(f"{module.MIGRATION}: どの行も書く列が違う（tree.md {common} ／ 本体 {module.MIGRATION_COMMON}）")
+    if {kind: tuple(columns) for kind, columns in own.items()} != module.MIGRATION_OWN:
+        problems.append(f"{module.MIGRATION}: 種類ごとに書く列が違う（tree.md {own} ／ 本体 {module.MIGRATION_OWN}）")
+    methods = re.search(r"の行だけ: ((?:`[^`]+`・)+`[^`]+`) のどれか", rows["切替の方式"][1])
+    if tuple(re.findall(r"`([^`]+)`", methods.group(1)) if methods else ()) != module.MIGRATION_METHODS:
+        problems.append(f"{module.MIGRATION}: 切替の方式が tree.md と違う（本体 {module.MIGRATION_METHODS}）")
+    if f"切替の方式が `{module.MIGRATION_PARALLEL}` なら" not in rows.get(module.MIGRATION_PERIOD, ["", ""])[1]:
+        problems.append(f"{module.MIGRATION}: 期間を求める方式（{module.MIGRATION_PARALLEL}）が tree.md と違う")
+    if f"`{module.MIGRATION_NONE}` とだけ書く" not in rows["対象"][1]:
+        problems.append(f"{module.MIGRATION}: 移行が無いの値（{module.MIGRATION_NONE}）が tree.md と違う")
+    return problems
+
+
 def block_problems(module) -> list[str]:
     """`respondent_block`（scaffold の関門が通ったときに出す報告）が、用語集の使わない言い方だけの報告も拾うか（#1164）。"""
     lines = ["OK（shared/glossary.csv（1 行））", f"{module.USAGE_HEADING}1 件）:", "  requirements/a.md:1: x", "言い換える"]
@@ -895,6 +1035,15 @@ REFERENCE_MUTATIONS = [
     ("CRUD 表の抜けを減らす", "tree", "  - **読む機能が無い**——どの機能の行にも `R` が無い（記録するだけで使われない）\n", ""),
     ("CRUD 表の消す抜けの操作を変える", "tree", "どの機能の行にも `D` が無い（期限", "どの機能の行にも `U` が無い（期限"),
     ("CRUD 表の保管期間の条件を外す", "tree", "  - **保管期間が決まっているのに消す機能が無い**", "  - **消す機能が無い**"),
+    ("移行の表の列を消す", "tree", "| `切り戻しの条件` | `切替` の行だけ", "| 切り戻しの条件 | `切替` の行だけ"),
+    ("移行の表の決める人を崩す", "tree", "個人名を書かない | 利用者 |\n\n- **種類の外の欄は空にする**", "個人名を書かない | 開発者 |\n\n- **種類の外の欄は空にする**"),
+    ("移行の表の接頭辞を変える", "tree", "| `id` | `M-` に 3 桁以上の数字（`M-001`）", "| `id` | `MG-` に 3 桁以上の数字（`MG-001`）"),
+    ("移行の表の種類を足す", "tree", "| `種類` | `データ`・`切替`・`業務` のどれか", "| `種類` | `データ`・`切替`・`業務`・`教育` のどれか"),
+    ("移行の表の種類ごとの列を変える", "tree", "| `範囲` | `データ`・`業務` の行だけ", "| `範囲` | `データ` の行だけ"),
+    ("移行の表のどの行も書く列を変える", "tree", "| `担当` | どの行も:", "| `担当` | `データ` の行だけ:"),
+    ("移行の表の切替の方式を変える", "tree", "`一斉`・`段階`・`並行稼働` のどれか。ほかの行は空にする", "`一斉`・`並行稼働` のどれか。ほかの行は空にする"),
+    ("移行の表の期間を求める方式を変える", "tree", "切替の方式が `並行稼働` なら", "切替の方式が `段階` なら"),
+    ("移行の表のなしを変える", "tree", "移すもの・することが無いなら `なし` とだけ書く", "移すもの・することが無いなら `無し` とだけ書く"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]
 
