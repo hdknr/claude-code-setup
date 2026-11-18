@@ -983,6 +983,11 @@ MIGRATION_FILE = str(V1 / "requirements" / "migration.csv")
 MIGRATION_GAP = ("id,種類,移行元,対象,範囲,変換の決まり,切替の方式,並行稼働の期間,切り戻しの条件,担当\n"
                  "M-001,データ,旧販売管理,受注の履歴,直近 5 年,変えない,,,,業務部\nM-002,業務,,なし,,,,,,\n")
 MIGRATION_FULL = MIGRATION_GAP + "M-003,切替,,なし,,,,,,\n"
+# テスト要件の表（#1160）: 受入の人の行の無い表は未決定（3）——scaffold は止まる。受入の人の行を足せば作る
+ACCEPTANCE_FILE = str(V1 / "requirements" / "acceptance.csv")
+ACCEPTANCE_GAP = ("id,段,観点,確かめ方,テストケース,担当,使うデータ,期間,合格の条件,機能\n"
+                  "A-001,総合,割引の計算,自動,F1-5b,,,,,\n")
+ACCEPTANCE_FULL = ACCEPTANCE_GAP + "A-002,受入,月末の帳票,人,,業務部,10 月の写し,2 週間,差が 0 件,\n"
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
@@ -2484,6 +2489,11 @@ CASES: list[Case] = [
          extra={MIGRATION_FILE: MIGRATION_GAP}, post=nothing_written),
     Case("移行の表: 種類がそろえば作る（#1158）", 0, "作った",
          extra={MIGRATION_FILE: MIGRATION_FULL}, absent=DESIGN_GATE),
+    Case("テスト要件の表: 受入の人の行が無ければ止める（#1160）", 1,
+         "build/merged/requirements/acceptance.csv: 段 受入 で 確かめ方 人 の行が無い",
+         extra={ACCEPTANCE_FILE: ACCEPTANCE_GAP}, post=nothing_written),
+    Case("テスト要件の表: 受入の人の行があれば作る（#1160）", 0, "作った",
+         extra={ACCEPTANCE_FILE: ACCEPTANCE_FULL}, absent=DESIGN_GATE),
     Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
     Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
     Case("画面の表: screen-spec が見つからなければ 2 で止める（#1097）", 2, "画面の表があるのに screen-spec が見つからない",
