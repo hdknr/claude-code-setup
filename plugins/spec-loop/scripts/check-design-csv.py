@@ -251,6 +251,8 @@ ACCEPTANCE_OWN = {
     "人": ("担当", "使うデータ", "期間", "合格の条件"),
 }
 ACCEPTANCE_FEATURES = "機能"
+# 確かめ方ごとに書く列のうち空でよいもの（自動の行のテストケースは、仕様のテストケースが書かれるまで空でよい）
+ACCEPTANCE_MAY_BE_EMPTY = ("テストケース",)
 ACCEPTANCE_REQUIRED = ("受入", "人")
 
 ALL_TABLES = list(COLUMNS) + [PURPOSES, CRUD, MIGRATION, ACCEPTANCE, ROLES, NFR, STAKEHOLDERS, GLOSSARY]
@@ -809,7 +811,7 @@ def check_acceptance(root: Path, report: Report, context: dict) -> None:
             for column in columns:
                 cell = row[column]
                 if kind == way:
-                    cell_state(report, where, column, cell, False)
+                    cell_state(report, where, column, cell, column in ACCEPTANCE_MAY_BE_EMPTY)
                 elif markers(cell):
                     # 印は未決定（値の決まりに当てない）。空にする欄でも違反にしない
                     cell_state(report, where, column, cell, True)
