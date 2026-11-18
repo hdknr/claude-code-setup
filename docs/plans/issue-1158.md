@@ -109,7 +109,13 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・feasibility �
 
 ## 実験と確認の記録
 
-（A8 の照合の確認をここに書く）
+- **A8（照合が移行の表の違いを拾う）**: 一時の git リポジトリ（`HOME`・`GIT_CONFIG_GLOBAL` を scratchpad に差し替え）で `docs/v1/shared/qa.csv`（見出しだけ）と `docs/v1/requirements/migration.csv`（`M-001,データ,,なし,…` の 1 行）を置き、
+  同じコミットに `signoff/v1/req-1` と `signoff/v1/budget-1` を付けて `check-signoff.py --req signoff/v1/req-1 --budget signoff/v1/budget-1` → **0**（陽性対照「一致する」）。
+  移行の表に 1 行足したコミットに `signoff/v1/budget-2` を付けて同じく → **1**（`M docs/v1/requirements/migration.csv`）。観測窓: v1 だけ・1 回（ebd50ae の `check-signoff.py`）。
+
+## 手順 8（起票）
+
+- この周の起票: 4 件（仕様の穴 H1〜H4 の確認の Issue。起票の承認は不在のため訊いていない）
 
 ## 関門の進捗（再開点）
 
