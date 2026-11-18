@@ -31,6 +31,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/check-spec-writeback.py` - **spec-loop の正本があるリポジトリで、計画に `仕様の振る舞い:` の申告が無い・`変える` なのに正本に起票する行（`正本に起票する行:`）が計画に無い・緑のケースの一覧から載った行を外したか指紋を変えた周を赤くする**
       （#1001。周が PR の前に素の 1 行で呼ぶ——どのリポジトリでも。正本が無ければ何も求めずに 0。
       申告の値・変える周が残すもの・正本が別リポジトリのとき・Red テストが赤になったときの扱いは `references/spec-writeback.md`、守る／守らないは docstring を正とする。テストは `scripts/test-check-spec-writeback.py`）
+    - `skills/dev-loop/scripts/artifact-reads.py` - **spec-loop から来た周が計画ファイルに書いた「読んだ成果物」の行を集め、成果物ごとに読んだ周の数と、その周の起票・関門の指摘を並べる**
+      （#1157。**測るだけで、閾値も削る候補も決めない。読むだけ**。関門の記録とコードブロックの読み方は同じ場所の `check-gates.py` を読み込む——写さない。いつ何を書くかは `references/spec-gap.md` の「読んだ成果物を記録する」、
+      行の形の原本と守る／守らないは docstring を正とする。**CI からは本体を呼ばない**——入力は spec-loop から来た周の計画ファイル（製品のリポジトリ）。テストは `scripts/test-artifact-reads.py`）
     - `skills/dev-loop/scripts/external-reviews.py` - **PR に付いた外部レビュー bot（CodeRabbit など）のコメントを、`.claude/dev-loop.md` の `外部レビュー:` で宣言した bot の分だけ取り出す**
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。
       読む時点・採否の表への載せ方・2 パスとの関係・待ち方は `references/external-review.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-reviews.py`）
@@ -346,6 +349,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-spec-writeback.py` - **仕様への戻しの歯止め**の回帰テスト（#1001。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/check-spec-writeback.py`**（`test-find-cycle.py` と同じ形）。一時の git リポジトリに当て、
     **申告漏れの陽性対照は spec-loop の本物の `scaffold.py` と `green-list.py` で作った緑のケースの一覧で取る**。Q&A 表の列の写しを `check-qa-csv.py` と突き合わせる
+  - `test-artifact-reads.py` - **読んだ成果物の集計**の回帰テスト（#1157。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/artifact-reads.py`**（`test-find-cycle.py` と同じ形）。試料の計画ファイルは一時ディレクトリに書き、
+    **走らせた前後で試料が変わらないこと**と、**`references/spec-gap.md` の例の行が本体の正規表現に当たること**（陽性対照つき）も見る
   - `test-external-reviews.py` - **外部レビュー bot のコメントの取り出し**の回帰テスト（#997。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/external-reviews.py`**（`test-find-cycle.py` と同じ形）。
     **偽の `gh` を `PATH` の先頭に置き、`PATH` の残りは `/usr/bin:/bin` だけにする**——本物の GitHub には届かない。**渡す文面が bot のコメントの中の指示に従わないと書くこと**も見る
