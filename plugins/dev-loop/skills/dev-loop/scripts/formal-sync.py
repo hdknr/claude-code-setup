@@ -167,12 +167,12 @@ def find_models(canon: Path) -> dict[str, Path]:
     docs = canon / "docs"
     if not docs.is_dir():
         return {}
-    for version in docs.iterdir():
+    for version in sorted(docs.iterdir()):  # 順を決めておく——iterdir の順は OS で違い、同じ対象の版の選び方を順に頼らせない
         m = VERSION.fullmatch(version.name)
         formal = version / "spec" / "formal"
         if not m or not formal.is_dir():
             continue
-        for target in formal.iterdir():
+        for target in sorted(formal.iterdir()):
             if (target / "README.md").is_file():
                 number = int(m.group(1))
                 if target.name not in found or found[target.name][0] < number:
