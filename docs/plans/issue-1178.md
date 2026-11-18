@@ -9,7 +9,7 @@
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
 版の上げ方: `spec-loop` を **minor**・`dev-loop` を **minor**（どちらも能力・手順の追加——CLAUDE.md の表）。着手時の main は spec-loop 0.109.0 → 0.110.0、dev-loop 2.8.0 → 2.9.0。1 パス目の後の取り込み（main の #1157 が dev-loop 2.9.0）で dev-loop を 2.10.0 に上げ直した。
 マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
-重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.8.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.9.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 割り目: 割らない（cruise の周）。
 
 Issue 本文（外部入力）から読んだ要件: モデルの記録に実装の側の対応（行為 → ファイル・関数）と最後に対応を確かめたコミットの項目を足し、`formal-baseline.py check` が見る。
@@ -102,17 +102,20 @@ dev-loop の周が対応のファイルに触れたら、モデルの再検査�
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1178-formal-sync`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1178`・起点 `53517d5`・base `origin/main` → `53517d593b60a75123648e6f26b0d77dd669b1d1`
-  - 1 パス目の後に `origin/main` を取り込んだ（`415cecf`。#1157 が入っていた）——式を当て直した base: `origin/main` → `27327a15d327f38034ad84d987313187d98133d3`（2 パス目から渡す）
+  - 1 パス目の後に `origin/main` を取り込んだ（`415cecf`。#1157 が入っていた）——式を当て直した base: `origin/main` → `27327a15d327f38034ad84d987313187d98133d3`
+  - 再開（2026-11-18T09:19Z の cruise の再開。読み込んだ dev-loop は 2.9.0・`SKILL.md` 1923 行）で、2 パス目の前にもう一度 `origin/main` を取り込んだ（`c08d526`。#1158 が spec-loop を 0.110.0 にしていた）——spec-loop を 0.111.0 に上げ直した（`3734738`）。
+    式を当て直した base: `origin/main` → `8c84f23cb6353b7a4f62fb6a842ee74bd37fc4aa`（**2 パス目に渡す**）。取り込んだ main の検査の変更は `check-design-csv.py` とそのテスト・`test-scaffold.py` の変更（`M`）だけ。
 - 関門: Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）反証 2 件・`/code-review` 1 パス目（high）指摘 10 件。どちらも終点 `cb02453`。
   **1 パス目の指摘対応の起点**: `cb02453f`（1 パス目の 2 つの関門に渡した時点の HEAD）。差し戻し: あり（直すの 7 行）。
 - 2 パス目: 1 パス目の指摘対応の差分は 0 行でない（`git diff cb02453 -- ':(top)' ':(top,exclude)docs/plans/issue-1178.md'` に 17 ファイル）——2 パス目を回す（Verifier と `/code-review`）。
+  1 パス目の指摘対応のコミットは `cf06e93`（採否の表の「直す」7 行: V1-1・V1-2・CR1・CR3・CR5・CR6・CR10）。2 パス目の関門には周の base `8c84f23` を渡し、指摘対応の差分 `git diff cb02453 cf06e93` を重点として名指す。
 - 割り目（手順 4・6）: 割らない（cruise の周）。
 - 交絡を潰した手順: 実走（下の節）は本物の TLC で陽性（上限を外したコードのモデルで反例）と陰性（同じ写しで反例なし）の両側を取った。Verifier の反証 1（注釈で性質を隠す）は著者が本物の TLC で再現（直す前に `反例なし`・0、直した後に `判定できなかった`）。
 
 ## 関門の記録
 
 ```dev-loop-gates
-周の base: 27327a15d327f38034ad84d987313187d98133d3
+周の base: 8c84f23cb6353b7a4f62fb6a842ee74bd37fc4aa
 関門: Verifier 1 cb02453 反証=2
 関門: /code-review 1 cb02453 指摘=10
 ```
