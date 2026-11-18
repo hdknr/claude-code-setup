@@ -17,7 +17,7 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作・運�
   用語集（#1164）の用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねた・区切りで空の項・決めた日が `YYYY-MM-DD` の実在する日付でない・
   CRUD 表（#1162）の機能が機能一覧の id でも `なし` でもない・機能一覧に無い（一覧が無いときも）・エンティティがデータモデルに無い（データモデルが無いときも）・
   操作が `C`・`R`・`U`・`D` をこの順に 1 回ずつまで並べた形でない・機能とエンティティの組の重複・同じエンティティで機能がする操作を `なし` の行にも書いた・
-  運用要件の表（#1159）の `水準` の項が非機能要求の No の形でない・空の項・`shared/nfr.csv` に無い No（表が無い・読めない・見出しが決まりと違うときも）・SLA が `はい` なのに目標が `なし`
+  運用要件の表（#1159）の `水準` の項が非機能要求の No の形でない・空の項・`shared/nfr.csv` に無い No（表が無い・読めない・見出しが決まりと違うときも。同じセルの別の項に未決定の印があっても）・SLA が `はい` なのに目標が `なし`
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
@@ -997,12 +997,12 @@ def check_operations(root: Path, report: Report, context: dict) -> None:
         kind_known = settled(row["種類"])
         receives = not kind_known or row["種類"].strip() == incident
         level = row["水準"]
-        if markers(level):
-            if receives:
-                unsure_all = True
-            continue
         items = [item.strip() for item in level.split(OPERATIONS_SEPARATOR)] if level.strip() else []
         for item in items:
+            if item and markers(item):  # 決まっていない項（印は `check_plain` が報告した）。隣の項は照らす（CR2-1）
+                if receives:
+                    unsure_all = True
+                continue
             if not item:
                 report.violations.append(f"{where}: 水準 に空の項がある（`{OPERATIONS_SEPARATOR}` で区切る）: {level.strip()!r}")
             elif not NFR_NUMBER.fullmatch(item):
