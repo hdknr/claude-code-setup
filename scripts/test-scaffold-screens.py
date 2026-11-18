@@ -557,10 +557,15 @@ def case_design_bad(work: Path, source: str | None) -> str | None:
     code, out = w.scaffold()
     if code != 0:
         return f"ファイルの無い書く生成: exit={code}: {out[-400:]}"
+    code, plain_out = w.scaffold("--red-check")
     w.design(DESIGN_HEAD + "S-999,a,\n")
-    code, out = w.scaffold("--check")
-    if code != 0:
-        return f"--check が決まりに反するデザインの正本の参照で止まった: exit={code}: {out[-400:]}"
+    code_check, out = w.scaffold("--check")
+    if code_check != 0:
+        return f"--check が決まりに反するデザインの正本の参照で止まった: exit={code_check}: {out[-400:]}"
+    # `--red-check`（実装が無いのでケースは赤）も、参照の有無で終了コードと出力が変わらない
+    red, out = w.scaffold("--red-check")
+    if (red, out) != (code, plain_out) or "デザインの正本" in out:
+        return f"--red-check が決まりに反するデザインの正本の参照で変わった: exit={code}→{red}: {out[-400:]}"
     shutil.rmtree(w.repo / "scaffold")
     shutil.rmtree(w.repo / "build")
     w.design(None)
@@ -593,7 +598,7 @@ def case_design_previous(work: Path, source: str | None) -> str | None:
 
 
 def case_design_v2(work: Path, source: str | None) -> str | None:
-    """v2 以降の変更の判定は、参照が在っても変わらない——v1 の後で参照を足し・差し替えても、本文を作るのは中間表現を直した機能だけ（受入基準 A4）。"""
+    """v2 以降の変更の判定は、参照が在っても変わらない——v1 の後で参照を足しても、本文を作るのは中間表現を直した機能だけ（受入基準 A4。差し替えは試していない）。"""
     found = {}
     for label, design in (("無い", None), ("在る", DESIGN)):
         w = World(work / label, base(), source)
@@ -710,6 +715,11 @@ MUTATIONS = [
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
     ("前の版の時点でも読む", "    if not loaded.current:\n        return 0, []\n", "",
      "デザインの正本: 前の版の時点では読まない"),
+    ("--red-check では読む", "    if not (args.check or args.red_check):\n        # デザインの正本の参照", "    if not args.check:\n        # デザインの正本の参照",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("参照を機能のオブジェクトに入れる", "    loaded.notes += design_notes(loaded)\n",
+     "    loaded.notes += design_notes(loaded)\n    [f.__setitem__(\"design\", [list(r) for r in loaded.design]) for f in features_of(loaded.ir)]\n",
+     "デザインの正本: v2 の変更の判定は変わらない"),
     ("--check・--red-check でも読む", "    if not (args.check or args.red_check):\n        # デザインの正本の参照", "    if True:\n        # デザインの正本の参照",
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
 ]
