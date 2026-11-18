@@ -105,7 +105,7 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・feasibility �
 
 ## 未解決・確認待ち
 
-- H1〜H4 の確認の Issue（利用者が戻ってから確かめる）: 起票したら番号を書く。
+- H1〜H4 の確認の Issue（利用者が戻ってから確かめる）: H1 #1256・H2 #1257・H3 #1258・H4 #1259（どれも先頭 `<!-- cruise-decision: #1169 -->`・ラベル `要確認`。2026-11-18T08:30Z に立てた）。
 
 ## 実験と確認の記録
 
@@ -143,7 +143,7 @@ A9 は `check-all.py` 緑と PR 側の CI。A10 は上の関門の記録（Verif
 
 ## 手順 8（起票）
 
-- この周の起票: 4 件（仕様の穴 H1〜H4 の確認の Issue。起票の承認は不在のため訊いていない）
+- この周の起票: 4 件（仕様の穴 H1〜H4 の確認の Issue #1256・#1257・#1258・#1259。起票の承認は不在のため訊いていない）
 
 ## 関門の進捗（再開点）
 
@@ -160,6 +160,7 @@ A9 は `check-all.py` 緑と PR 側の CI。A10 は上の関門の記録（Verif
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `3dc41e3fee425ca99c96669cbc7a59cd04021446`・終点: `c66d76872b52133b43415d0fe54c9868b8781564`（指摘対応のコミット。文書だけ——`feasibility/SKILL.md` と `tree.md`。`test-check-design-csv.py`・`check-skill-pointers.py`・`check-duplicate-counts.py`・`check-bold-flanking.py` は緑）
 - 狭いパス（Verifier・sonnet。212 行の委譲文を全文読んだと報告）: **反証 0 件・後退なし**。CR2-2・CR2-6・CR2-3 の記述は一次ソースと一致（CR2-3 は一時ディレクトリで実走: 方式が空・印・決まった値でない行で期間を判定しない、陽性対照の `一斉` では期間の違反が出る）。変異は文書だけの修正なので当てていない（赤 0・素通り 0——実施せず）。新しい文は機械の突き合わせの対象外と指摘（下の NP-1）。git status は前後とも計画ファイルだけで同じ。報告は SubagentHandback で届かず、子の transcript から読んだ
 - 交絡: 実験は A8 の照合の確認だけ（陽性対照つき）
+- PR: #1255（https://github.com/hdknr/claude-code-setup/pull/1255）
 - 手元の歯止め（指摘対応の後）: `check-all.py`（run-serial 越し。c66d768 の作業ツリー＋計画ファイル）緑（失敗 0。41 本は CACHED）
 
 ## 既知の限界・決着済みの論点
