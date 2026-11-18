@@ -161,6 +161,9 @@ A9 は `check-all.py` 緑と PR 側の CI。A10 は上の関門の記録（Verif
 - 狭いパス（Verifier・sonnet。212 行の委譲文を全文読んだと報告）: **反証 0 件・後退なし**。CR2-2・CR2-6・CR2-3 の記述は一次ソースと一致（CR2-3 は一時ディレクトリで実走: 方式が空・印・決まった値でない行で期間を判定しない、陽性対照の `一斉` では期間の違反が出る）。変異は文書だけの修正なので当てていない（赤 0・素通り 0——実施せず）。新しい文は機械の突き合わせの対象外と指摘（下の NP-1）。git status は前後とも計画ファイルだけで同じ。報告は SubagentHandback で届かず、子の transcript から読んだ
 - 交絡: 実験は A8 の照合の確認だけ（陽性対照つき）
 - PR: #1255（https://github.com/hdknr/claude-code-setup/pull/1255）
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い——`external-reviews.py` が 3）
+- 関門の結果・振り分け・マージ前の判断（推奨: 該当なし）の PR コメント: https://github.com/hdknr/claude-code-setup/pull/1255#issuecomment-6973280394
+- PR 側の CI: `8338b48` で全部通った（deploy は skipping）
 - 手元の歯止め（指摘対応の後）: `check-all.py`（run-serial 越し。c66d768 の作業ツリー＋計画ファイル）緑（失敗 0。41 本は CACHED）
 
 ## 既知の限界・決着済みの論点
