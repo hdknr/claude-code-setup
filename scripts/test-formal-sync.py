@@ -90,6 +90,17 @@ COMMENT_TRICK = MODEL.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Inc ==
     "Inv == x <= 2\n", "Inv == x <= 2\nReset == *)\n  Inv == x <= 100\n  Reset == x' = 0\n", 1)
 # 性質が使う定義（Max）を持つモデル
 MODEL_MAX = MODEL.replace("Inv == x <= 2", "Max == 2\nInv == x <= Max")
+# 2 パス目の指摘: 字下げした弱めた性質と、====の後ろへ動かした元の性質
+INDENT_TRICK = MODEL.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Inc == x' = x + 1\n  Inv == TRUE\n").replace(
+    "Inv == x <= 2\n====\n", "====\nInv == x <= 2\n")
+# EXTENDS した別のファイルの補助の定義（Bound）を性質が使うモデル
+MODEL_EXT = MODEL.replace("EXTENDS Naturals", "EXTENDS Naturals, Helper").replace("Inv == x <= 2", "Inv == Bound(x)")
+HELPER_TLA = "---- MODULE Helper ----\nEXTENDS Naturals\nBound(v) == v <= 2\n====\n"
+# Init が使う補助の定義（Start）を持つモデル
+MODEL_START = MODEL.replace("Init == x = 0", "Start == {0}\nInit == x \\in Start")
+# SPECIFICATION 形の設定（Verifier 2 パス目の反証）
+MODEL_SPEC = MODEL.replace("====\n", "Spec == Init /\\ [][Next]_x /\\ WF_x(Inc)\n====\n")
+CFG_SPEC = "SPECIFICATION Spec\nINVARIANT Inv\n"
 HELPER = MODEL.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Step(n) == n + 1\nInc ==\n  /\\ x < 2\n  /\\ x' = Step(x)\n")
 
 # 計画ファイル
@@ -165,6 +176,19 @@ CASES: dict[str, dict] = {
                      "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "どれでもない"},
     "check: フェンスの中だけ": {"after": TOUCH, "plan": plan("```text", "形式検査の再検査: counter 反例なし", "```"),
                            "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "の行が無い"},
+    # 2 パス目の指摘: 対応の付け替え・モデルを消す・触れずにモデルを変える・フェンスの読み方
+    "check: 対応を付け替える": {"after": TOUCH + [("commit", f"{DIR1}/README.md", readme("`Inc` → `app/other.py::inc`、`Reset` → `app/other.py::reset`"))],
+                            "plan": plan(), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "「形式検査の再検査: counter <結果>」の行が無い"},
+    "check: 対応の 2 行を消す": {"after": TOUCH + [("commit", f"{DIR1}/README.md", readme(None))],
+                             "plan": plan(), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "「形式検査の再検査: counter <結果>」の行が無い"},
+    "check: モデルを消す": {"after": TOUCH + [("commit", f"{DIR1}/{k}", None) for k in model_files()],
+                         "plan": plan("形式検査の再検査: counter 反例なし"), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"],
+                         "code": 1, "word": "保存したモデル docs/v1/spec/formal/counter/README.md を消した"},
+    "check: 触れずに保存したモデルを変える": {"after": [("commit", "app/other.py", "X = 2\n"), ("commit", f"{DIR1}/Counter.cfg", "INIT Init\nNEXT Next\n")],
+                                     "plan": plan(), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"],
+                                     "code": 1, "word": "保存したモデルのファイル docs/v1/spec/formal/counter/Counter.cfg を変えた"},
+    "check: 違う印のフェンスの中": {"after": TOUCH, "plan": plan("~~~text", "```", "形式検査の再検査: counter 反例なし", "~~~"),
+                               "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "の行が無い"},
     "check: 触れていない": {"after": [("commit", "app/other.py", "X = 2\n")], "plan": plan(),
                          "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 0, "word": "触れたモデルは無い"},
     "check: モデルが無いリポジトリ": {"setup": {f"{DIR1}/{k}": None for k in model_files()}, "after": TOUCH, "plan": plan(),
@@ -200,6 +224,28 @@ CASES: dict[str, dict] = {
     "rerun: 性質が使う定義を対応に挙げて書き直す": {"setup": {f"{DIR1}/README.md": readme(MAPPING + "、`Max` → `app/counter.py::inc`"), f"{DIR1}/Counter.tla": MODEL_MAX},
                                          "code_model": {"Counter.tla": MODEL_MAX.replace("Max == 2", "Max == 100")},
                                          "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Max」は設定（.cfg）が名指すか"},
+    # 2 パス目の指摘
+    "rerun: 字下げと ==== の後ろで性質を差し替える": {"code_model": {"Counter.tla": INDENT_TRICK},
+                                          "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Inv」が消えた"},
+    "rerun: ==== の後ろを変える": {"code_model": {"Counter.tla": MODEL + "Inv == TRUE\n"},
+                               "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "より後ろが保存したモデルと違う"},
+    "rerun: EXTENDS した補助の定義を対応に挙げて書き直す": {
+        "setup": {f"{DIR1}/README.md": readme(MAPPING + "、`Bound` → `app/counter.py::inc`", models="`Counter.tla`・`Counter.cfg`・`Helper.tla`"),
+                  f"{DIR1}/Counter.tla": MODEL_EXT, f"{DIR1}/Helper.tla": HELPER_TLA},
+        "code_model": {"Helper.tla": HELPER_TLA.replace("Bound(v) == v <= 2", "Bound(v) == TRUE")},
+        "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Bound」は設定（.cfg）が名指すか"},
+    "rerun: Init が使う補助の定義を対応に挙げて書き直す": {
+        "setup": {f"{DIR1}/README.md": readme(MAPPING + "、`Start` → `app/counter.py::inc`"), f"{DIR1}/Counter.tla": MODEL_START},
+        "code_model": {"Counter.tla": MODEL_START.replace("Start == {0}", "Start == {}")},
+        "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Start」は設定（.cfg）が名指すか"},
+    "rerun: SPECIFICATION 形で Next を対応に挙げて書き直す": {
+        "setup": {f"{DIR1}/README.md": readme(MAPPING + "、`Next` → `app/counter.py::step`"), f"{DIR1}/Counter.tla": MODEL_SPEC, f"{DIR1}/Counter.cfg": CFG_SPEC},
+        "code_model": {"Counter.tla": MODEL_SPEC.replace("Next == Inc \\/ Reset", "Next == UNCHANGED x")},
+        "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Next」は設定（.cfg）が名指すか"},
+    "rerun: SPECIFICATION 形で公平性の行為を書き直す": {
+        "setup": {f"{DIR1}/Counter.tla": MODEL_SPEC, f"{DIR1}/Counter.cfg": CFG_SPEC},
+        "code_model": {"Counter.tla": MODEL_SPEC.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Step(n) == n + 1\nInc ==\n  /\\ x < 2\n  /\\ x' = Step(x)\n")},
+        "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 0, "word": "counter 反例なし"},
     "rerun: 番号が最大の版でない記録を渡す": {"setup": {**{f"{DIR2}/{k}": v for k, v in model_files().items()}}, "code_model": {},
                                     "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 2, "word": "番号が最大の版）でない"},
     "rerun: 保存したモデルが反例を出す": {"setup": {f"{DIR1}/Counter.tla": MODEL.replace("FAKE:PASS", "FAKE:VIOLATE")}, "code_model": {},
@@ -226,7 +272,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ずれに起票の行を求めない", "        elif results[0] == MODEL_DRIFT and not writeback:\n", "        elif False:\n", "check: ずれで起票の行が無い"),
     ("2 本を通す", "        elif len(results) > 1:\n", "        elif False:\n", "check: 2 本"),
     ("値を見ない", "        elif results[0] not in RESULTS:\n", "        elif False:\n", "check: 値が違う"),
-    ("フェンスの中も数える", "        if fenced:\n            continue\n", "", "check: フェンスの中だけ"),
+    ("フェンスの中も数える", "        if fence is not None:\n            continue\n", "", "check: フェンスの中だけ"),
     ("反例を既定でずれにする", "                result = MODEL_DRIFT if intended else CODE_BUG\n", "                result = MODEL_DRIFT\n",
      "rerun: 不変条件を破る行為（受入基準 3）"),
     ("反例を反例なしと読む", "            if code_verdict == module.PASS:\n", "            if code_verdict != module.UNKNOWN:\n", "rerun: 不変条件を破る行為（受入基準 3）"),
@@ -241,16 +287,20 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("記録の一覧を比べない", "        if code_records.get(item) != saved_records.get(item):\n", "        if False:\n", "rerun: 記録の一覧を変える"),
     ("保存したモデルを確かめない", "        if saved_verdict != module.PASS:\n", "        if False:\n", "rerun: 保存したモデルが反例を出す"),
     # 1 パス目の指摘対応
-    ("注釈を除かない", 'code_defs, code_others = split_module(strip_comments(b.read_text(encoding="utf-8")))',
-     'code_defs, code_others = split_module(b.read_text(encoding="utf-8"))', "rerun: 注釈で性質を隠す（1 パス目の反証）"),
-    ("設定が名指す行為の書き直しを通す", "        protected = named | closure(saved_defs, properties)\n", "        protected = set()\n", "rerun: 対応に性質を挙げて書き直す"),
-    ("性質が使う定義をたどらない", "        protected = named | closure(saved_defs, properties)\n", "        protected = named\n",
-     "rerun: 性質が使う定義を対応に挙げて書き直す"),
+    ("注釈を除かない", 'code_head, code_tail = module_end(module.baseline.strip_comments(b.read_text(encoding="utf-8")))',
+     'code_head, code_tail = module_end(b.read_text(encoding="utf-8"))', "rerun: 注釈で性質を隠す（1 パス目の反証）"),
+    ("設定が名指す行為の書き直しを通す", "    protected = roots | closure(everything, roots - steps) | closure(everything, steps | spec_direct, stop=actions)  #",
+     "    protected = set()  #", "rerun: 対応に性質を挙げて書き直す"),
+    ("性質が使う定義をたどらない", "    protected = roots | closure(everything, roots - steps) | closure(everything, steps | spec_direct, stop=actions)  #",
+     "    protected = roots  #", "rerun: 性質が使う定義を対応に挙げて書き直す"),
+    ("Spec が直に使う定義を守らない", "    spec_direct = {n for spec in specs if spec in everything", "    spec_direct = {n for spec in set() if spec in everything", "rerun: SPECIFICATION 形で Next を対応に挙げて書き直す"),
+    ("Spec から行為で止めない", "closure(everything, steps | spec_direct, stop=actions)", "closure(everything, steps | spec_direct)",
+     "rerun: SPECIFICATION 形で公平性の行為を書き直す"),
     ("-z を外す", 'names = git("diff", "--name-only", "--no-renames", "-z", base).split("\\0")',
      'names = git("diff", "--name-only", "--no-renames", base).split("\\n")', "touched: 名前が ASCII でない"),
     ("古い版の記録を通す", "    if target.name not in models or models[target.name].resolve() != target.resolve():\n",
      "    if target.name not in models:\n", "rerun: 番号が最大の版でない記録を渡す"),
-    ("保存したモデルの変更を見ない", "    problems += saved_model_changes(base, canon)\n", "", "check: 保存したモデルを周が変える"),
+    ("保存したモデルの変更を見ない", "    problems = saved_model_changes(base, canon)  #", "    problems = []  #", "check: 保存したモデルを周が変える"),
     ("記録のほかの行を見ない", "            elif not readme_rows_kept(base, path, root / path):\n", "            elif False:\n", "check: 記録のほかの行を変える"),
     ("空の起票の行を数える", "        if w and w.group(1):\n", "        if w:\n", "check: ずれで起票の行が空"),
     ("申告を見ない", '    return found, bool(rows) and declares == ["変える"]\n', "    return found, bool(rows)\n", "check: ずれで申告が変えない"),
@@ -258,6 +308,22 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("新しい定義を止める", '                    raise Unjudged(f"定義「{current}」が 2 つある")\n                definitions[current] = line + "\\n"\n',
      '                    raise Unjudged(f"定義「{current}」が 2 つある")\n                definitions[current] = line + "\\n"\n                others.append("新しい定義")\n',
      "rerun: 定義を足して行為を書き直す"),
+    # 2 パス目の指摘対応
+    ("モジュールの終わりを読まない", 'MODULE_END = re.compile(r"^={4,}[ \\t]*$", re.MULTILINE)', 'MODULE_END = re.compile(r"(?!)")',
+     "rerun: 字下げと ==== の後ろで性質を差し替える"),
+    ("==== の後ろを比べない", "        if saved_tail.strip() != code_tail.strip():\n", "        if False:\n", "rerun: ==== の後ろを変える"),
+    ("別のファイルの定義をたどらない", "    for _, saved_defs, _, _, _ in parsed:\n        for definition, body in saved_defs.items():\n",
+     "    for _, saved_defs, _, _, _ in parsed[:1]:\n        for definition, body in saved_defs.items():\n", "rerun: EXTENDS した補助の定義を対応に挙げて書き直す"),
+    ("INIT からたどらない", "closure(everything, roots - steps)", "closure(everything, roots - steps - {'Init'})", "rerun: Init が使う補助の定義を対応に挙げて書き直す"),
+
+    ("base の時点の対応を読まない", "            entries += mapping(module, root / at_base[name], base_records(module, base, at_base[name]))\n", "",
+     "check: 対応を付け替える"),
+    ("base の時点のモデルを数えない", "    for name, rel in sorted(set(now.items()) | set(at_base.items())):\n", "    for name, rel in sorted(set(now.items())):\n",
+     "check: モデルを消す"),
+    ("触れていなければ保存したモデルを見ない", "        return (1, notes + problems) if problems else (0, notes)\n", "        return 0, notes\n",
+     "check: 触れずに保存したモデルを変える"),
+    ("どの印でもフェンスを閉じる", "            elif mark[0] == fence[0] and len(mark) >= len(fence) and not line.strip()[len(mark):].strip():\n", "            else:\n",
+     "check: 違う印のフェンスの中"),
 ]
 
 

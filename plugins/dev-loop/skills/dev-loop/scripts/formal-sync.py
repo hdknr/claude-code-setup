@@ -15,7 +15,8 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 ## touched — 周が触れたモデル
 
 記録の `実装の対応`（`` `<行為>` → `<ファイル>::<関数>` ``。ファイルは実装のリポジトリの根からのパス）のファイルが、周の差分
-（`git diff --name-only --no-renames <base>`——2 点なので未コミットも入る——と未追跡のファイル）に入るモデルを出す。対応が `未実装` か行の無いモデルは「対応の無いモデル」として名前だけ出す。
+（`git diff --name-only --no-renames <base>`——2 点なので未コミットも入る——と未追跡のファイル）に入るモデルを出す。
+**対応は base の時点の記録と今の記録の両方から引く**（正本が同じリポジトリのとき。base の時点にあって今は消えたモデルも数える）——周が対応を付け替える・`未実装` に戻す・2 行を消す・モデルを消すと、再検査を求められずに抜けるため（#1178 の 2 パス目）。対応が `未実装` か行の無いモデルは「対応の無いモデル」として名前だけ出す。
 対応のファイルが今の木に無いモデルは「対応が古い」と出す（触れたモデルには数えない——周が消したファイルは差分に入るので触れたに数える）。
 
 ## rerun — 今のコードに当てて走らせ直す
@@ -28,10 +29,14 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 - 記録の `モデルのファイル`・`陽性対照のファイル` の一覧と、`実装の対応`
 - 一覧の `.cfg` と陽性対照のファイル（バイトで）
 - 本体の `.tla` の、**対応に挙げた行為の定義のほか**のすべて——行頭から始まる定義（`<名前> ==`・`<名前>(…) ==`・`LOCAL` つき）は名前ごとに本文で、
-  定義の外の行（`MODULE` の行・`EXTENDS`・`VARIABLES`・`CONSTANTS`・`ASSUME`・行頭の注釈・`====`）は順に。行為の定義は書き直してよく、新しい定義を足してよい（書き直した行為が使う）。
+  定義の外の行（`MODULE` の行・`EXTENDS`・`VARIABLES`・`CONSTANTS`・`ASSUME`・行頭の注釈・`====`）は順に。
+  **モジュールの終わり（最初の `====` の行）より後ろは、文字列のまま比べる**——TLC は読まないので、性質の定義をそこへ動かす形を違いにする（#1178 の 2 パス目）。行為の定義は書き直してよく、新しい定義を足してよい（書き直した行為が使う）。
   保存したモデルの定義を消す・対応に無い定義（性質・`Init`・`Spec`）を変えるのは違い。
   **比べる前に注釈（`(* … *)`・`\\*`）を除く**——注釈で行頭の定義を隠して行頭でない位置に弱めた定義を置く形を、TLC と同じに読むため。
-- **対応に挙げても書き直してはならない定義**——本体の `.cfg` が名指す名前（`Init`・`Next`・性質など）と、性質（`INVARIANT`・`PROPERTY`）の定義がたどって使う定義。
+- **対応に挙げても書き直してはならない定義**——本体の `.cfg` が（注釈の外で）名指す名前（`Init`・`Next`・性質など）と、それらの定義がたどって使う定義。
+  たどるのは本体の `.tla` 全部をまとめた定義の中で（`EXTENDS` した別のファイルの定義も）、`NEXT`・`SPECIFICATION` からたどるときだけ対応の行為で止める（行為は書き直してよいので）。
+  性質（`INVARIANT`・`PROPERTY`）・`INIT`・`CONSTRAINT` などからは行為でも止めない（#1178 の 2 パス目——`Init` が使う補助の定義を書き直して初期状態を空にする形）。
+  **`SPECIFICATION Spec` 形の設定では、`Spec` が公平性（`WF_…(…)`・`SF_…(…)`）の外で直に使う定義（`Init`・`Next`）も名指したものとして守る**（同——`Next` を対応に挙げて `UNCHANGED x` に書き直す形）。
 
 **渡す保存したモデルは、正本の対象の記録（番号が最大の版）そのもの**——別の版・写しを渡すと 2。
 
@@ -46,12 +51,12 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 
 ## check — PR の前に計画を見る
 
-`touched` と同じに触れたモデルを引き、計画ファイルの行頭（`- ` を前に置いてよい。コードフェンスの中は数えない）の `形式検査の再検査: <対象> <結果>` を見る。
+`touched` と同じに触れたモデルを引き、計画ファイルの行頭（`- `・`* ` を前に置いてよい。コードフェンスの中は数えない——フェンスは開いた印と同じ文字で同じ長さ以上の印で閉じる。`check-spec-writeback.py` の `scan` と同じ読み方）の `形式検査の再検査: <対象> <結果>` を見る。
 
 - **触れたモデルの行が無い・結果が上の 4 つでない・同じ対象の行が 2 本ある**——1
 - **`反例あり（コードの不具合）`**——1（コードを直して走らせ直し、行を書き直してから PR を作る）
 - **`反例あり（モデルのずれ）` なのに、計画に中身のある `正本に起票する行:` の行と `仕様の振る舞い: 変える` の申告（`references/spec-writeback.md`）がそろわない**——1
-- **周の差分が、保存したモデルのファイルを変えた・記録（`README.md`）の `実装の対応`・`対応を確かめたコミット` のほかの行を変えた**——1（モデルは spec-loop で直す。正本が別のリポジトリなら見ない）
+- **周の差分が、保存したモデルのファイルを変えた・消した・記録（`README.md`）の `実装の対応`・`対応を確かめたコミット` のほかの行を変えた**——1（モデルは spec-loop で直す。正本が別のリポジトリなら見ない。**触れたモデルが 0 件でも見る**）
 - `判定できなかった`——0（PR コメントで渡す。止めないが緑ではない）・`反例なし`——0
 - モデルが 1 つも無い——何も求めずに 0（`--spec-loop` も要らない）
 
@@ -78,8 +83,13 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 | 未コミット・未追跡の変更も触れたに数える | 2 点の差分の外にある実装を見落とす |
 | 差分の名前を `-z` で読む | ASCII でない名前が引用符つきの 8 進で出て、対応の名前と合わない |
 | 注釈を除いてから比べる | 注釈で行頭の性質を隠し、行頭でない位置の弱めた定義を TLC に読ませる |
-| 設定が名指す名前と性質が使う定義は、対応に挙げても書き直しを許さない | 対応に性質を挙げて書き直し、弱めて「反例なし」にする |
-| 渡す保存したモデルを正本の記録に限り、周の差分が保存したモデルを変えたら `check` が 1 | 古い版・写し・周の中で弱めたモデルを基準にする |
+| 設定が名指す名前とそれがたどる定義は、対応に挙げても書き直しを許さない | 対応に性質を挙げて書き直し、弱めて「反例なし」にする |
+| 渡す保存したモデルを正本の記録に限り、周の差分が保存したモデルを変えたら `check` が 1（触れたモデルが 0 件でも） | 古い版・写し・周の中で弱めたモデルを基準にする |
+| 対応を base の時点と今の記録の両方から引き、base の時点のモデルを消したら `check` が 1 | 対応を付け替える・`未実装` に戻す・2 行を消す・モデルを消して、再検査を求められずに抜ける |
+| モジュールの終わりより後ろを文字列のまま比べる | 性質の定義を `====` の後ろへ動かし、字下げした弱めた定義を TLC に読ませる |
+| 書き直しを許さない定義を、本体の `.tla` 全部と `.cfg` が名指す名前全部からたどる | `EXTENDS` した別のファイルの補助の定義・`Init` が使う補助の定義を書き直して弱める |
+| `SPECIFICATION` が公平性の外で直に使う定義（`Init`・`Next`）を書き直させない | `SPECIFICATION Spec` 形の設定で `Next` を対応に挙げて書き直し、弱めて「反例なし」にする |
+| コードフェンスを開いた印と同じ文字・長さ以上の印で閉じる | `~~~` の中の ``` で状態がずれ、例の行を再検査の行と数える |
 | 記録の読み方・TLC の呼び方と判定は spec-loop から読み込む | 写しがずれて片方だけ緑になる |
 
 守らない:
@@ -93,6 +103,10 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 | **TLC でないモデル**（Alloy など） | `check-formal-rerun.py` が走らせ直さない（`判定できなかった`） |
 | **定義の区切りの読み方** | 行頭から始まる行で区切る。行頭に置いた式の続き・中置の演算子の定義は、別の定義の外の行として比べる（違えば止まる側に倒れる） |
 | **正本が別のリポジトリのときの写しの時点** | `--canon` に渡した写しを読むだけ。写しが古いかは見ない |
+| **正本が別のリポジトリのときの base の時点の対応・消したモデル** | 周の base は実装のリポジトリの SHA で、正本の履歴は読まない——今の写しの対応だけで引く |
+| **`INIT` が行為を使う形**（`NEXT`・`SPECIFICATION` からは行為で止める） | 行為は書き直してよいので `Next`・`Spec`（公平性）からは止める。`Init`・性質から行為に届けば止めずに守る |
+| **`SPECIFICATION` の `[][…]_` に行為を直に書いたモデル** | `Spec` が直に使う名前は書き直させないので、その行為を書き直したコードのモデルは `判定できなかった`（止まる側）。`Next` を定義して名指せば書き直せる |
+| **字下げした定義・`LET` の中の定義** | 行頭から始まる行だけを定義の始まりと読む。字下げした定義は、それを含む定義の本文として比べる（行為のほかなら違いになる） |
 
 標準ライブラリだけを使う（`git` が要る）。
 """
@@ -104,6 +118,7 @@ import importlib.util
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 LINE_KEY = "形式検査の再検査:"
@@ -116,17 +131,19 @@ WRITEBACK_KEY = "正本に起票する行:"
 SYNC_ITEMS = ("実装の対応", "対応を確かめたコミット")
 COMPARED_ITEMS = ("モデルのファイル", "陽性対照のファイル", "実装の対応")
 VERSION = re.compile(r"v([1-9][0-9]*)")
+BASE_README = re.compile(r"docs/v([1-9][0-9]*)/spec/formal/([^/]+)/README\.md")
 DEFINITION = re.compile(r"(?:LOCAL\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*==")
 PLAN_LINE = re.compile(r"^(?:[-*]\s+)?" + re.escape(LINE_KEY) + r"\s*(\S+)\s+(.+?)\s*$")
 # `check-spec-writeback.py` の DECLARE・ROW_LINE と同じ形（前置きの `- `・`* ` を許す）
 WRITEBACK_LINE = re.compile(r"^(?:[-*]\s+)?" + re.escape(WRITEBACK_KEY) + r"\s*(.*?)\s*$")
 DECLARE_LINE = re.compile(r"^(?:[-*]\s+)?仕様の振る舞い:\s*(.*?)\s*$")
 FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+MODULE_END = re.compile(r"^={4,}[ \t]*$", re.MULTILINE)
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 CFG_KEYWORDS = {"INIT", "NEXT", "SPECIFICATION", "INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES", "CONSTANT", "CONSTANTS",
                 "CONSTRAINT", "CONSTRAINTS", "ACTION_CONSTRAINT", "ACTION_CONSTRAINTS", "SYMMETRY", "VIEW", "CHECK_DEADLOCK",
                 "POSTCONDITION", "ALIAS", "TRUE", "FALSE"}
-PROPERTY_KEYWORDS = {"INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES"}
+STEP_KEYWORDS = {"NEXT", "SPECIFICATION"}  # ここからたどるときだけ、対応の行為で止める（行為は書き直してよい）
 
 
 class Unjudged(Exception):
@@ -163,6 +180,32 @@ def find_models(canon: Path) -> dict[str, Path]:
     return {name: path for name, (_, path) in sorted(found.items())}
 
 
+def base_models(base: str, canon: Path | None) -> dict[str, str]:
+    """base の時点の、対象の名前 → 記録を持つディレクトリ（リポジトリの根からのパス。番号が最大の版）。正本が別のリポジトリなら空。"""
+    root = repo_root()
+    if canon is not None and canon.resolve() != root.resolve():
+        return {}
+    found: dict[str, tuple[int, str]] = {}
+    for path in git("ls-tree", "-r", "--name-only", "-z", base, "--", "docs").split("\0"):
+        m = BASE_README.fullmatch(path)
+        if m:
+            number = int(m.group(1))
+            if m.group(2) not in found or found[m.group(2)][0] < number:
+                found[m.group(2)] = (number, path.rsplit("/", 1)[0])
+    return {name: rel for name, (_, rel) in sorted(found.items())}
+
+
+def base_records(rerun_module, base: str, rel: str) -> dict[str, str]:
+    """base の時点の `<rel>/README.md` の記録（読めなければ 2——黙って対応の無いモデルにしない）。"""
+    text = git("show", f"{base}:{rel}/README.md")
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "README.md").write_text(text, encoding="utf-8")
+        try:
+            return records(rerun_module, Path(tmp))
+        except Unjudged as e:
+            raise Unjudged(f"base の時点の {rel}/README.md: {e}")
+
+
 def load_spec_loop(directory: Path | None):
     """spec-loop の `check-formal-rerun.py` を読み込む（`baseline`・`tlc` もそこが読み込む）。"""
     if directory is None:
@@ -173,8 +216,8 @@ def load_spec_loop(directory: Path | None):
     spec = importlib.util.spec_from_file_location("check_formal_rerun", script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if not hasattr(module.baseline, "parse_mapping"):
-        raise Unjudged(f"{directory}: spec-loop が古い（formal-baseline.py に parse_mapping が無い——#1178 より前の版）")
+    if not all(hasattr(module.baseline, name) for name in ("parse_mapping", "strip_comments", "spec_references")):
+        raise Unjudged(f"{directory}: spec-loop が古い（formal-baseline.py に parse_mapping・strip_comments・spec_references が無い——#1178 より前の版）")
     return module
 
 
@@ -208,17 +251,21 @@ def changed_files(base: str) -> set[str]:
 
 
 def touched(base: str, spec_loop: Path | None, canon: Path | None) -> tuple[list[tuple[str, Path, list[str]]], list[str]]:
-    """(触れたモデル [(対象, ディレクトリ, 触れたファイル)], 説明の行)。"""
+    """(触れたモデル [(対象, ディレクトリ, 触れたファイル)], 説明の行)。対応は base の時点と今の記録の両方から引く（#1178 の 2 パス目）。"""
     root = repo_root()
     models = find_models(canon or root)
-    if not models:
+    changed = changed_files(base)
+    at_base = base_models(base, canon)
+    if not models and not at_base:
         return [], [f"形式検査のモデルが無い（{(canon or root) / 'docs'}/v<n>/spec/formal/<対象>/README.md）——何も求めない"]
     module = load_spec_loop(spec_loop)
-    changed = changed_files(base)
     hits, notes = [], []
     unmapped = []
-    for name, directory in models.items():
-        entries = mapping(module, directory, records(module, directory))
+    for name in sorted(set(models) | set(at_base)):
+        directory = models.get(name, root / at_base.get(name, ""))
+        entries = mapping(module, directory, records(module, directory)) if name in models else []
+        if name in at_base:
+            entries += mapping(module, root / at_base[name], base_records(module, base, at_base[name]))
         if not entries:
             unmapped.append(name)
             continue
@@ -234,43 +281,10 @@ def touched(base: str, spec_loop: Path | None, canon: Path | None) -> tuple[list
     return hits, notes
 
 
-def strip_comments(text: str) -> str:
-    """TLA+ の注釈（入れ子の `(* … *)` と行の `\\*` から行末まで）を除く。文字列 `"…"` の中は除かない。改行は残す（行の区切りを変えない）。
-
-    注釈で定義を隠す形（行為の本文で `(*` を開き、行頭の性質の定義を注釈に入れて、行頭でない位置に弱めた定義を置く）を、
-    比べる前に TLC と同じに読むため（#1178 の 1 パス目の反証）。
-    """
-    out: list[str] = []
-    i, depth, quoted = 0, 0, False
-    while i < len(text):
-        ch, two = text[i], text[i:i + 2]
-        if depth:
-            if two == "(*":
-                depth, i = depth + 1, i + 2
-            elif two == "*)":
-                depth, i = depth - 1, i + 2
-            else:
-                if ch == "\n":
-                    out.append(ch)
-                i += 1
-        elif quoted:
-            out.append(ch)
-            if ch == "\\" and i + 1 < len(text):
-                out.append(text[i + 1])
-                i += 2
-                continue
-            quoted = ch != '"'
-            i += 1
-        elif two == "(*":
-            depth, i = 1, i + 2
-        elif two == "\\*":
-            end = text.find("\n", i)
-            i = len(text) if end < 0 else end
-        else:
-            quoted = ch == '"'
-            out.append(ch)
-            i += 1
-    return "".join(out)
+def module_end(text: str) -> tuple[str, str]:
+    """(最初の `====` の行まで, その後ろ)。TLC はモジュールの終わりより後ろを読まない（#1178 の 2 パス目）。"""
+    m = MODULE_END.search(text)
+    return (text, "") if m is None else (text[:m.end()], text[m.end():])
 
 
 def split_module(text: str) -> tuple[dict[str, str], list[str]]:
@@ -308,7 +322,8 @@ def weakened(module, saved: Path, code: Path, saved_records: dict[str, str]) -> 
     actions = {action for action, _, _ in mapping(module, saved, saved_records)}
     controls = module.baseline.FILE.findall(saved_records.get("陽性対照のファイル", ""))
     models = module.baseline.FILE.findall(saved_records.get("モデルのファイル", ""))
-    named, properties = cfg_names(saved, [n for n in models if n.endswith(".cfg") and n not in controls])
+    roots, steps, specs = cfg_names(module, saved, [n for n in models if n.endswith(".cfg") and n not in controls])
+    parsed: list[tuple[str, dict[str, str], list[str], dict[str, str], list[str]]] = []
     for name in dict.fromkeys(models + controls):
         a, b = saved / name, code / name
         if not b.is_file():
@@ -321,18 +336,32 @@ def weakened(module, saved: Path, code: Path, saved_records: dict[str, str]) -> 
                 problems.append(f"{name} が保存したモデルと違う（設定と陽性対照は変えない）")
             continue
         try:
-            saved_defs, saved_others = split_module(strip_comments(a.read_text(encoding="utf-8")))
-            code_defs, code_others = split_module(strip_comments(b.read_text(encoding="utf-8")))
+            saved_head, saved_tail = module_end(module.baseline.strip_comments(a.read_text(encoding="utf-8")))
+            code_head, code_tail = module_end(module.baseline.strip_comments(b.read_text(encoding="utf-8")))
+            saved_defs, saved_others = split_module(saved_head)
+            code_defs, code_others = split_module(code_head)
         except (Unjudged, UnicodeDecodeError) as e:
             problems.append(f"{name} を読めない: {e}")
             continue
+        if saved_tail.strip() != code_tail.strip():
+            problems.append(f"{name} のモジュールの終わり（====）より後ろが保存したモデルと違う（TLC は読まない）")
         if saved_others != code_others:
             problems.append(f"{name} の定義の外の行（MODULE・EXTENDS・VARIABLES・CONSTANTS・ASSUME など）が保存したモデルと違う")
-        # 書き直してよいのは、対応の行為のうち、設定が名指さず性質の定義が（たどって）使わないものだけ（#1178 の 1 パス目の指摘）
-        protected = named | closure(saved_defs, properties)
+        parsed.append((name, saved_defs, saved_others, code_defs, code_others))
+    # 書き直してよいのは、対応の行為のうち、設定が名指す名前から（たどって）使われないものだけ（#1178 の 1・2 パス目の指摘）。
+    # たどるのは本体の .tla 全部の定義の中で（EXTENDS した別のファイルも）、NEXT・SPECIFICATION からだけ行為で止める
+    everything: dict[str, str] = {}
+    for _, saved_defs, _, _, _ in parsed:
+        for definition, body in saved_defs.items():
+            everything[definition] = everything.get(definition, "") + body
+    # SPECIFICATION 形では、Spec が公平性の外で直に使う定義（Init・Next）も名指したものとして守る（#1178 の 2 パス目の反証）
+    spec_direct = {n for spec in specs if spec in everything
+                   for n in module.baseline.spec_references(everything[spec].split("==", 1)[-1]) if n in everything}
+    protected = roots | closure(everything, roots - steps) | closure(everything, steps | spec_direct, stop=actions)  # 根（spec_direct も）は closure が数える
+    for name, saved_defs, _, code_defs, _ in parsed:
         for action in sorted(actions & protected & set(saved_defs)):
             if code_defs.get(action) != saved_defs[action]:
-                problems.append(f"{name} の定義「{action}」は設定（.cfg）が名指すか性質の定義が使う——実装の対応に挙げても書き直さない")
+                problems.append(f"{name} の定義「{action}」は設定（.cfg）が名指すか、名指す定義が使う——実装の対応に挙げても書き直さない")
         for definition, body in saved_defs.items():
             if definition not in code_defs:
                 problems.append(f"{name} から定義「{definition}」が消えた")
@@ -341,13 +370,14 @@ def weakened(module, saved: Path, code: Path, saved_records: dict[str, str]) -> 
     return problems
 
 
-def cfg_names(directory: Path, cfgs: list[str]) -> tuple[set[str], set[str]]:
-    """本体の `.cfg` が名指す名前の全部と、そのうち性質（INVARIANT・PROPERTY）として名指す名前。"""
+def cfg_names(module, directory: Path, cfgs: list[str]) -> tuple[set[str], set[str], set[str]]:
+    """本体の `.cfg` が（注釈の外で）名指す名前の全部と、そのうち `NEXT`・`SPECIFICATION` として名指す名前と、`SPECIFICATION` として名指す名前。"""
     named: set[str] = set()
-    properties: set[str] = set()
+    steps: set[str] = set()
+    specs: set[str] = set()
     for cfg in cfgs:
         try:
-            text = strip_comments((directory / cfg).read_text(encoding="utf-8"))
+            text = module.baseline.strip_comments((directory / cfg).read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError):
             continue
         keyword = None
@@ -356,13 +386,15 @@ def cfg_names(directory: Path, cfgs: list[str]) -> tuple[set[str], set[str]]:
                 keyword = word
                 continue
             named.add(word)
-            if keyword in PROPERTY_KEYWORDS:
-                properties.add(word)
-    return named, properties
+            if keyword in STEP_KEYWORDS:
+                steps.add(word)
+            if keyword == "SPECIFICATION":
+                specs.add(word)
+    return named, steps, specs
 
 
-def closure(definitions: dict[str, str], roots: set[str]) -> set[str]:
-    """roots の定義が（たどって）使う定義の名前（roots を含む）。"""
+def closure(definitions: dict[str, str], roots: set[str], stop: set[str] = frozenset()) -> set[str]:
+    """roots の定義が（たどって）使う定義の名前（roots を含む）。stop の名前には入らず、数えもしない（roots にあれば数える）。"""
     seen: set[str] = set()
     todo = [r for r in roots if r in definitions]
     while todo:
@@ -371,7 +403,7 @@ def closure(definitions: dict[str, str], roots: set[str]) -> set[str]:
             continue
         seen.add(name)
         body = definitions[name].split("==", 1)[1] if "==" in definitions[name] else ""
-        todo += [w for w in IDENT.findall(body) if w in definitions and w not in seen]
+        todo += [w for w in IDENT.findall(body) if w in definitions and w not in seen and w not in stop]
     return seen
 
 
@@ -425,12 +457,17 @@ def plan_lines(plan: Path) -> tuple[dict[str, list[str]], bool]:
         raise Unjudged(f"{plan}: 読めない（{e}）")
     found: dict[str, list[str]] = {}
     rows, declares = [], []
-    fenced = False
+    fence = None  # 開いた印。閉じは同じ文字で同じ長さ以上の印だけの行（check-spec-writeback.py の scan と同じ読み方）
     for line in text.splitlines():
-        if FENCE.match(line):
-            fenced = not fenced
+        f = FENCE.match(line)
+        if f:
+            mark = f.group(1)
+            if fence is None:
+                fence = mark
+            elif mark[0] == fence[0] and len(mark) >= len(fence) and not line.strip()[len(mark):].strip():
+                fence = None
             continue
-        if fenced:
+        if fence is not None:
             continue
         m = PLAN_LINE.match(line)
         if m:
@@ -446,14 +483,21 @@ def plan_lines(plan: Path) -> tuple[dict[str, list[str]], bool]:
 
 
 def saved_model_changes(base: str, canon: Path | None) -> list[str]:
-    """周の差分が、保存したモデル（README.md の 2 行のほか）を変えていないか。正本が別のリポジトリなら見ない。"""
+    """周の差分が、保存したモデル（README.md の 2 行のほか）を変えた・消していないか。正本が別のリポジトリなら見ない。
+
+    base の時点のモデルも数える——周がモデルのディレクトリ・README.md を消すと、今の木だけでは「モデルが無い」になる（#1178 の 2 パス目）。
+    """
     root = repo_root()
     if canon is not None and canon.resolve() != root.resolve():
         return []
     changed = changed_files(base)
+    now = {name: directory.resolve().relative_to(root.resolve()).as_posix() for name, directory in find_models(root).items()}
+    at_base = base_models(base, canon)
     problems = []
-    for name, directory in find_models(root).items():
-        rel = directory.resolve().relative_to(root.resolve()).as_posix()
+    for name, rel in sorted(set(now.items()) | set(at_base.items())):
+        if not (root / rel / "README.md").is_file():
+            problems.append(f"{name}: 周の差分が保存したモデル {rel}/README.md を消した——モデルは spec-loop で直す")
+            continue
         for path in sorted(p for p in changed if p.startswith(rel + "/")):
             if path != f"{rel}/README.md":
                 problems.append(f"{name}: 周の差分が保存したモデルのファイル {path} を変えた——モデルは spec-loop で直す（周が書いてよいのは README.md の {'・'.join(SYNC_ITEMS)} だけ）")
@@ -478,11 +522,12 @@ def readme_rows_kept(base: str, rel: str, now: Path) -> bool:
 
 def check(plan: Path, base: str, spec_loop: Path | None, canon: Path | None) -> tuple[int, list[str]]:
     hits, notes = touched(base, spec_loop, canon)
+    problems = saved_model_changes(base, canon)  # 触れたモデルが 0 件でも見る（#1178 の 2 パス目）
     if not hits:
-        return 0, notes + ["触れたモデルは無い——再検査の行は求めない"]
+        notes.append("触れたモデルは無い——再検査の行は求めない")
+        return (1, notes + problems) if problems else (0, notes)
     found, writeback = plan_lines(plan)
-    problems, lines = [], list(notes)
-    problems += saved_model_changes(base, canon)
+    lines = list(notes)
     for name, _, files in hits:
         results = found.get(name, [])
         where = f"{name}（触れた対応のファイル: {', '.join(files)}）"
