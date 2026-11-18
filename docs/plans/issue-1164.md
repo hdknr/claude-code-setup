@@ -57,6 +57,7 @@ scaffold が中間表現の名前と英語名を照らす（案 4。任意）・
 - `plugins/spec-loop/skills/spec-review/SKILL.md` — 手順 2 で用語集の言葉で書く・Red Team に用語集を渡す
 - `scripts/test-check-design-csv.py` — 用語集の試料・変異・references との突き合わせ、使わない言い方の報告
 - `scripts/test-init-mkdocs.py` — `glossary` の印の試料と変異・雛形のページ・写すファイルの一覧
+- `scripts/test-scaffold.py` — scaffold の関門が通ったときにも使わない言い方を出す試料（受入基準 B5 の経路「scaffold の関門」。実装中に広げた——`scaffold.py` の本体は触らない）
 - `CLAUDE.md` — `check-design-csv.py` の項
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
@@ -109,7 +110,7 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・照合（`che
 
 ## 未解決・確認待ち
 
-- H1・H2 の確認の Issue（利用者が戻ってから確かめる）: 起票後に番号を書く。
+- H1・H2 の確認の Issue（利用者が戻ってから確かめる）: H1 #1232・H2 #1233（どちらも先頭 `<!-- cruise-decision: #1169 -->`・ラベル `要確認`）。
 
 ## 実験と確認の記録
 
@@ -125,7 +126,7 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・照合（`che
 
 ## 手順 8（起票）
 
-（マージの前に書く）
+- この周の起票: 2 件（仕様の穴 H1・H2 の確認の Issue #1232・#1233。起票の承認は不在のため訊いていない）
 
 ## 関門の進捗（再開点）
 
