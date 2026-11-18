@@ -4,14 +4,14 @@
 usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か重ね合わせた全体（build/merged）>
 
 **決まりの正は `references/tree.md` の「システム設計書の成果物」（関係者の表・用語集を含む）と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
-下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲・
+下の定数（表の置き場所・列・末尾に足してよい任意の列（機能一覧の `必須度`。#1163）・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲・
 CRUD 表の列と操作の文字と `なし` と抜けに数える操作・移行の表の列と種類と種類ごとに書く列と切替の方式と `なし`）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-check-design-csv.py` が突き合わせて見る**。
 
 渡したディレクトリの `requirements/` と `shared/nfr.csv`・`shared/stakeholders.csv`・`shared/glossary.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
 
-- **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ）・列の数・番号の形・重複・
-  決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
+- **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ。機能一覧だけは末尾に任意の列 `必須度` を足してよい——#1163）・列の数・番号の形・重複・
+  決まった値でない（機能一覧の `必須度` が `Must`・`Should`・`Could`・`Won't` のどれでもない、を含む）・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
   目的の表（#1154）の種類ごとに空にする欄に書いた（未決定の印なら未決定に数える）・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた・
   関係者の表（#1161）の名前の重複・役割と合意の値が決まった値でない・同じ値を重ねた・合意に `なし` とほかの値を混ぜた・
   用語集（#1164）の用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねた・区切りで空の項・決めた日が `YYYY-MM-DD` の実在する日付でない・
@@ -71,7 +71,9 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作・移�
 | **用語集の `決めた人` が関係者の表の名前か** | 関係者の表は任意で、照らす相手が無いことがある。書き方は `references/tree.md` の「用語集」 |
 | **型・API の英語名と用語の対応** | 英語名は用語集に置かない（開発者が内部の Q&A 表に記録する。`references/tree.md` の「用語集」）。照らす相手が表に無い |
 | **入出力の一覧の `相手` と関係者の表の対応** | 相手はシステムの名前、関係者は部署・役職で、名前の付け方が違う |
-| **機能一覧と中間表現の機能の対応** | このスクリプトは中間表現を読まない。`scaffold.py` が関門で照らす（`listed_features` を読む） |
+| **機能一覧と中間表現の機能の対応** | このスクリプトは中間表現を読まない。`scaffold.py` が関門で照らす（`listed_features` と、必須度が `Won't` の機能を `wont_features` で読む——#1163） |
+| **必須度の中身**（どの機能を `Must` にするか・組み合わせが予算に収まるか）・**`Won't` の機能が範囲の文書（`spec/scope.md`）の「範囲の外」に写っているか** | 前者は利用者の判断、後者は範囲の文書が場面を文で書く表で機能の id の列を持たず、機械で対応を決められない（`references/tree.md` の「機能一覧」・`references/spec-scope.md`） |
+| **必須度の列を置かない機能一覧** | 列は任意である（前からの正本は持たない）。置かない正本では、必須度が決まっていないことを出さない |
 | **印を使わずに書いた未決定**（「あとで決める」） | 言い回しは列挙しきれない。`check-spec-exit.py` と同じ限界 |
 | **非機能要求の性能の行・ほかの語の行・種類の語の綴りの揺れ**（`稼働率` と書いた行） | 上のとおり見ない。種類は `指標` の語が 4 つのどれかと一致する行だけ |
 | **綴りだけ違う置き場所**（`Requirements/features.csv`） | 決まりの綴りで探し、無ければ「表が無い」と出す。大文字小文字を区別しないファイルシステムでは開けてしまう |
@@ -121,6 +123,11 @@ COLUMNS = {
     REPORTS: ["id", "帳票名", "順番", "項目", "意味", "書式"],
     JOBS: ["id", "名前", "契機", "周期", "失敗したときの扱い"],
 }
+# 見出しの末尾に足してよい任意の列（置くかは正本が決める。置いたら空でよい列でない——どの行も値が要る）。
+# 機能一覧の `必須度`（MoSCoW。`references/tree.md` の「機能一覧」。#1163）
+OPTIONAL_COLUMNS = {
+    FEATURES: ["必須度"],
+}
 # 空でよい列（ほかの列が空なら「必須の欄が空」）
 MAY_BE_EMPTY = {
     FEATURES: {"関係"},
@@ -135,7 +142,11 @@ VALUES = {
     (IO_LIST, "向き"): ("入力", "出力"),
     (IO_LIST, "ヘッダー"): ("あり", "なし"),
     (IO_LAYOUT, "必須"): YES_NO,
+    (FEATURES, "必須度"): ("Must", "Should", "Could", "Won't"),
 }
+# 機能一覧の `必須度` の列と、「作らない」と決めた値（scaffold は中間表現に求めず、在れば止まる。#1163）
+PRIORITY_COLUMN = "必須度"
+PRIORITY_WONT = "Won't"
 # 表 → 番号の接頭辞（`<接頭辞>` に 3 桁以上の数字。`F-` は中間表現の機能の `id` と同じ形——`references/spec-ir.md`）
 ID_PREFIX = {FEATURES: "F-", IO_LIST: "IO-", REPORTS: "RP-", JOBS: "J-"}
 # 表 → 重ねてはならない欄の組
@@ -340,10 +351,14 @@ def cell_state(report: Report, where: str, column: str, value: str, may_be_empty
 
 
 def check_columns(report: Report, rel: str, header: list[str], expected: list[str]) -> bool:
-    if header == expected:
+    optional = OPTIONAL_COLUMNS.get(rel, [])
+    if header == expected or (optional and header == expected + optional):
         return True
-    report.violations.append(f"{rel}:1: 見出しの行が決まりと違う（期待: {','.join(expected)} ／ 実際: {','.join(header)}）")
-    extra = [name for name in header if name not in expected]
+    # 任意の列の名前を見出しに書いたときだけ、置き場所を言い添える（置かない表の文面は前からのまま。#1163）
+    shown = ",".join(expected) + (f"（末尾に任意の列 {','.join(optional)} を足してよい）"
+                                  if any(name in header for name in optional) else "")
+    report.violations.append(f"{rel}:1: 見出しの行が決まりと違う（期待: {shown} ／ 実際: {','.join(header)}）")
+    extra = [name for name in header if name not in expected + optional]
     if extra:
         report.violations.append(f"{rel}:1: 決まりに無い列（{'・'.join(extra)}）——物理設計（テーブル・インデックス・物理の型）は"
                                  "この表に書かず、内部の Q&A 表（spec/qa-dev.csv）に記録する")
@@ -355,9 +370,9 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
     if table is None:
         return
     header, rows = table
-    expected = COLUMNS[rel]
-    if not check_columns(report, rel, header, expected):
+    if not check_columns(report, rel, header, COLUMNS[rel]):
         return
+    expected = header  # 決まりの列か、末尾に任意の列を足したもの（`check_columns` が確かめた）
     seen: dict[tuple[str, ...], int] = {}
     names: dict[str, tuple[str, int]] = {}
     ids: set[str] = set()
@@ -1091,6 +1106,19 @@ def listed_features(root: Path) -> list[str] | None:
         return None
     _, rows = table
     return [fields[0].strip() for _, fields in rows if fields and fields[0].strip()]
+
+
+def wont_features(root: Path) -> set[str]:
+    """機能一覧で `必須度` が `Won't`（作らない）の機能の id（#1163）。表・列が無ければ空。`check` を通った表に呼ぶ（scaffold の関門）。"""
+    table = read_table(root, FEATURES, Report())
+    if table is None:
+        return set()
+    header, rows = table
+    if PRIORITY_COLUMN not in header:
+        return set()
+    at = header.index(PRIORITY_COLUMN)
+    return {fields[0].strip() for _, fields in rows
+            if len(fields) > at and fields[0].strip() and fields[at].strip() == PRIORITY_WONT}
 
 
 def main(argv: list[str]) -> int:

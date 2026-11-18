@@ -123,7 +123,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       テストは `scripts/test-formal-statechart.py`——本物の TLC で取った出力を返す偽の TLC で回す）
     - `scripts/check-design-csv.py` - システム設計書の成果物の表（`requirements/` の機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、
       `shared/nfr.csv` の可用性などの種類の行）の検査（#957。**形式の違反（1）・表が無い（止めない）・必須の欄が空と未決定の印（3）を分けて出す**。
-      `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
+      `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。**機能一覧の任意の列 `必須度`（Must・Should・Could・Won't。#1163）も見て、`Won't` の機能は中間表現に求めず、在れば `scaffold.py` が止まる**（`wont_features` を読む）。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
       **目的の表（`requirements/purposes.csv`。目的 `G-` と指標 `K-`）も見て、指標の `機能` を機能一覧と照らし、目的を指さない機能・測る指標の無い目的を 3 に数える**（#1154。
       `build-proposal.py` は列をここから読んで提案書に「目的と成功の判定」の節を作る）。
       **関係者の表（`shared/stakeholders.csv`。`P-`）も見て、共有の Q&A 表の回答者が表の名前に無い・答える範囲が `なし`・括弧から読めない回答を報告する——終了コードに数えない**（#1161。
@@ -170,6 +170,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
       **画面の表があれば、`機能` の列が機能を挙げる画面の仕様書・ワイヤーフレーム・生成したモック（書く生成が screen-spec の `build-mock.py` で作る）を本文と `scaffold/refs/` に足す——
       機能のオブジェクトには入れず、`--check` はモックを生成し直さない**（#1099。決まりは `references/handoff-issue.md` の「画面の表から引く参考資料」）。
+      **正本の根の `design/sources.csv`（版の外。デザインの正本の参照）があれば、画面を持つ機能の本文の `## 参考資料` にだけ載せ、形に反すれば作らない——無ければ前と同じバイト**
+      （#1156。決まりは `references/tree.md` の「デザインの正本の参照」。dev-loop は段落があれば見た目を受入基準に足す——dev-loop の `spec-gap.md` の「デザインの正本」）。
       テストは `scripts/test-scaffold.py`・`scripts/test-scaffold-screens.py`）
     - `scripts/rebuild-scope.py` - **仮回答と推奨で決めた事項の台帳**から、利用者が確かめたときに作り直す範囲（Issue と受入基準のケース）を引く
       （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行と閉じのコメントの `確認の結果: ` の行（#884）を、
