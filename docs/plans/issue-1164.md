@@ -137,6 +137,10 @@ scaffold の関門（重ねた全体に `check-design-csv.py`）・照合（`che
 - Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）: 反証 0 件。**委譲文の末尾に貼るはずの受入基準の表を貼り損ねた（`$(cat ac.md)` のまま）**——Verifier は計画ファイルの B1〜B11 を原本として読んだと報告（テンプレートが計画ファイルを「受入基準の原本。まず読むこと」と指す）。報告は SubagentHandback で届かず、子の transcript から読んだ
 - `/code-review` 1 パス目（high。起動の引数で受け渡しの文面のファイルを指し、全文を読ませた）: 指摘 8 件（直す 2・残課題 6）。手順 4 への差し戻し: あり（直すの 2 行）
 - 割り目（手順 6 の 2 パス目の前）: 割らない（cruise の周）。残っているもの: 手順 5 の当て直し（Verifier 2 パス目）と `/code-review` 2 パス目の両方
+- 1 パス目の指摘対応: `da265929b31ed22ed8e4d48201c1724042d7e056`（`git diff f0fcf2a da26592` は計画ファイルの外で 2 ファイル——2 パス目を回す）。手元の歯止め: `check-all.py`（run-serial 越し）緑（失敗 0）
+- Verifier 2 パス目（sonnet。受入基準の表を貼った）: 反証 0 件。独立の変異 23 件（赤 19・素通り 4）。素通り: `GLOSSARY_DATE.fullmatch` → `match`（`2026-01-011` を通す。テストの変異に無い）・`ALL_TABLES` から `GLOSSARY` を外す（注記の出方だけ。赤になるかは未確認）・ほか 2 件は等価に近い／既存のテストが覆う。報告は SubagentHandback で届かず、子の transcript から読んだ
+- `/code-review` 2 パス目（high）: 指摘 9 件（直す 3・残課題 5・捨てる 1）
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `da265929b31ed22ed8e4d48201c1724042d7e056`
 - 交絡: 実験は B9 の照合の確認だけ（陽性対照つき）
 
 ## 既知の限界・決着済みの論点
