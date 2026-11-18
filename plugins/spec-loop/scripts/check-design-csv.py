@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）と関係者の表を検査する。
+"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）と関係者の表・用語集を検査する。
 
 usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か重ね合わせた全体（build/merged）>
 
-**決まりの正は `references/tree.md` の「システム設計書の成果物」（関係者の表を含む）と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
-下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値）はその写しで、
+**決まりの正は `references/tree.md` の「システム設計書の成果物」（関係者の表・用語集を含む）と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
+下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-check-design-csv.py` が突き合わせて見る**。
 
-渡したディレクトリの `requirements/` と `shared/nfr.csv`・`shared/stakeholders.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
+渡したディレクトリの `requirements/` と `shared/nfr.csv`・`shared/stakeholders.csv`・`shared/glossary.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
 
 - **形式の違反**——見出しの行が決まりと違う（順・綴り・列の過不足。物理設計の列を足した表もここ）・列の数・番号の形・重複・
   決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
   目的の表（#1154）の種類ごとに空にする欄に書いた（未決定の印なら未決定に数える）・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた・
-  関係者の表（#1161）の名前の重複・役割と合意の値が決まった値でない・同じ値を重ねた・合意に `なし` とほかの値を混ぜた
+  関係者の表（#1161）の名前の重複・役割と合意の値が決まった値でない・同じ値を重ねた・合意に `なし` とほかの値を混ぜた・
+  用語集（#1164）の用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねた・区切りで空の項・決めた日が `YYYY-MM-DD` の実在する日付でない
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
@@ -23,6 +24,10 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 **4 つのほかに、回答者の照合を報告する（終了コードに数えない。#1161）**——関係者の表が決まりどおりで、`shared/qa.csv` があるとき、
 `未回答` でも暫定でもない行の回答者（`check-qa-csv.py` の `respondent` が `回答` の括弧から読む）が、表の `名前` に無い・表で `答える範囲` が `なし`・括弧から読めない、を出す。
 関係者の表が決まりに反するなら照らさず、そう出す。
+
+**同じく、用語集の使わない言い方を報告する（終了コードに数えない。#1164）**——用語集が決まりどおりなら、渡した根の `requirements/` と `shared/` の下の
+`.md`・`.csv`（用語集と `shared/qa.csv` を除く。`.` で始まる名前の下は見ない）の行に、表の `使わない言い方` が現れたら `<パス>:<行>` で出す。
+**その使わない言い方を含む用語（`受注` に対する `受注伝票`）の中の出現は出さない。** 用語集が決まりに反するなら探さず、そう出す。
 
 **v2 以降は重ね合わせた全体（`merge-versions.py docs build/merged`）に当てる**——版のディレクトリは足した・変えた表しか持たない。
 
@@ -48,6 +53,10 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 | **目的に照らした過不足の中身**（`機能` に載った機能が本当にその指標を動かすか・目的の切り方が正しいか） | 判断であって、一意に決まらない。spec-review の Domain Checker が目的の表を照合先にして見る。ここは結び付けの有無と id の実在だけ |
 | **回答者が答えた質問が、その人の答える範囲の中か** | 範囲は自由に書く（分野・機能・目的の id）ので、質問との対応を機械で決められない。req-loop が回答を反映するときに確かめる（`references/tree.md` の「関係者の表」）。照らすのは名前と `なし` だけで、**終了コードにも数えない**——表を置く前の回答（凍結した版を含む）は書き直せない |
 | **関係者の表の名前が個人名でないか・非公式の影響力を書いていないか** | 書き方の判断で、文字列からは決まらない |
+| **使わない言い方が、文脈で要る形で現れたか**（引用・「注文とは呼ばない」の説明）・**ほかの語の中の出現**（`注文書` の中の `注文`） | 日本語には語の区切りが無く、文字列の一致では決まらない。だから報告だけで、終了コードに数えない（`references/tree.md` の「用語集」）。除くのは用語集の用語の中の出現だけ |
+| **用語の意味が要求・仕様の使い方と合うか** | 判断であって、一意に決まらない。spec-review の Red Team が「文書どうしの定義」で用語集を基準に見る（`references/spec-exit.md`） |
+| **用語集の `決めた人` が関係者の表の名前か** | 関係者の表は任意で、照らす相手が無いことがある。書き方は `references/tree.md` の「用語集」 |
+| **型・API の英語名と用語の対応** | 英語名は用語集に置かない（開発者が内部の Q&A 表に記録する。`references/tree.md` の「用語集」）。照らす相手が表に無い |
 | **入出力の一覧の `相手` と関係者の表の対応** | 相手はシステムの名前、関係者は部署・役職で、名前の付け方が違う |
 | **機能一覧と中間表現の機能の対応** | このスクリプトは中間表現を読まない。`scaffold.py` が関門で照らす（`listed_features` を読む） |
 | **印を使わずに書いた未決定**（「あとで決める」） | 言い回しは列挙しきれない。`check-spec-exit.py` と同じ限界 |
@@ -58,6 +67,7 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 from __future__ import annotations
 
 import csv
+import datetime
 import importlib.util
 import io
 import re
@@ -152,6 +162,18 @@ STAKEHOLDER_NAME_FORBIDDEN = ("・", "（", "）")
 RESPONDENT_HEADING = "回答者の照合（終了コードに数えない。"
 # 回答者を照らす Q&A 表（共有の表だけ。内部の表は開発者が決める）
 QA_TABLE = "shared/qa.csv"
+# 用語集（`references/tree.md` の「用語集」。#1164）: 見出しの行・空でよい列・`使わない言い方` の区切り・決めた日の形
+GLOSSARY = "shared/glossary.csv"
+GLOSSARY_COLUMNS = ["用語", "意味", "使わない言い方", "決めた人", "決めた日"]
+GLOSSARY_MAY_BE_EMPTY = ("使わない言い方",)
+GLOSSARY_SEPARATOR = "・"
+GLOSSARY_DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
+# 使わない言い方を探す文書: 根からのディレクトリ・拡張子・除くファイル（用語集そのものと、利用者の言葉を残す共有の Q&A 表）
+USAGE_DIRS = ("requirements", "shared")
+USAGE_SUFFIXES = (".md", ".csv")
+USAGE_EXCLUDE = (GLOSSARY, QA_TABLE)
+# 使わない言い方の報告の見出し（回答者の照合と同じく、scaffold の関門が通ったときにも出す）
+USAGE_HEADING = "用語集の使わない言い方（終了コードに数えない。"
 # ---- `references/nfr.md` の写し
 NFR_COLUMNS = ["No", "対象", "指標", "上限", "単位", "条件", "根拠"]
 NFR_NUMBER = re.compile(r"N-[0-9]{3,}")
@@ -167,7 +189,7 @@ NFR_REQUIRED = ("対象", "条件", "根拠")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]{0,8}")
 PERCENT = re.compile(r"(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,6})?")
 
-ALL_TABLES = list(COLUMNS) + [PURPOSES, ROLES, NFR, STAKEHOLDERS]
+ALL_TABLES = list(COLUMNS) + [PURPOSES, ROLES, NFR, STAKEHOLDERS, GLOSSARY]
 
 
 class Report:
@@ -179,6 +201,8 @@ class Report:
         self.unreadable: list[str] = []
         # 回答者の照合（#1161）——終了コードに数えない報告
         self.respondents: list[str] = []
+        # 用語集の使わない言い方（#1164）——終了コードに数えない報告
+        self.usages: list[str] = []
         self.rows: dict[str, int] = {}
 
     def code(self, strict_nfr: bool = True) -> int:
@@ -215,6 +239,11 @@ class Report:
             out.extend(f"  {item}" for item in self.respondents)
             out.append("表に無い人・答える範囲の無い人の回答は、範囲を持つ関係者に確かめてから反映する"
                        "（references/tree.md の「関係者の表」。質問がその人の範囲かは機械で見ていない）")
+        if self.usages:
+            out.append(f"{USAGE_HEADING}{len(self.usages)} 件）:")
+            out.extend(f"  {item}" for item in self.usages)
+            out.append("用語集の用語に言い換えるか、文脈で要る（引用・説明）なら残す（references/tree.md の「用語集」。"
+                       "語の区切りは見ていない——ほかの語の中の出現も出る）")
         if len(self.missing) == len(ALL_TABLES):
             out.append("成果物の表が 1 つも無い——渡したディレクトリが版のディレクトリか重ね合わせた全体かを確かめる")
         return out
@@ -610,6 +639,99 @@ def check_respondents(root: Path, report: Report, answers: dict[str, bool]) -> N
             report.respondents.append(f"{where} の回答者 {who} は関係者の表で答える範囲が {STAKEHOLDER_NONE}")
 
 
+def check_glossary(root: Path, report: Report) -> tuple[dict[str, list[str]], list[str]] | None:
+    """用語集（#1164）。表が決まりどおりなら ({使わない言い方: [その行の用語]}, [表の用語]) を返す（使わない言い方の報告に使う）。
+    無い・読めない・形式の違反があるなら None（違反のある表で探さない）。用語が未決定・空の行の使わない言い方は探さない（どの用語の言い換えか言えない）。"""
+    table = read_table(root, GLOSSARY, report)
+    if table is None:
+        return None
+    header, rows = table
+    if not check_columns(report, GLOSSARY, header, GLOSSARY_COLUMNS):
+        return None
+    before = len(report.violations)
+    terms: dict[str, int] = {}
+    listed: list[tuple[str, list[str], str | None]] = []
+    for line, fields in rows:
+        where = f"{GLOSSARY}:{line}"
+        if len(fields) != len(GLOSSARY_COLUMNS):
+            report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(GLOSSARY_COLUMNS)}）")
+            continue
+        row = dict(zip(GLOSSARY_COLUMNS, fields))
+        term = None
+        if cell_state(report, where, "用語", row["用語"], False):
+            term = row["用語"].strip()
+            if term in terms:
+                report.violations.append(f"{where}: 用語 が {terms[term]} 行目と重複: {term}")
+                term = None
+            else:
+                terms[term] = line
+        cell_state(report, where, "意味", row["意味"], False)
+        cell_state(report, where, "決めた人", row["決めた人"], False)
+        if cell_state(report, where, "決めた日", row["決めた日"], False):
+            value = row["決めた日"].strip()
+            found = GLOSSARY_DATE.fullmatch(value)
+            try:
+                valid = found is not None and bool(datetime.date(*(int(part) for part in found.groups())))
+            except ValueError:
+                valid = False
+            if not valid:
+                report.violations.append(f"{where}: 決めた日 が YYYY-MM-DD の実在する日付でない: {value!r}")
+        if cell_state(report, where, "使わない言い方", row["使わない言い方"], "使わない言い方" in GLOSSARY_MAY_BE_EMPTY):
+            items = [item.strip() for item in row["使わない言い方"].split(GLOSSARY_SEPARATOR)]
+            if "" in items:
+                report.violations.append(f"{where}: 使わない言い方 に区切り（{GLOSSARY_SEPARATOR}）で空の項がある: {row['使わない言い方'].strip()!r}")
+            elif len(set(items)) != len(items):
+                report.violations.append(f"{where}: 使わない言い方 に同じ言い方を重ねた: {row['使わない言い方'].strip()!r}")
+            else:
+                listed.append((where, items, term))
+    synonyms: dict[str, list[str]] = {}
+    for where, items, owner in listed:
+        for item in items:
+            if item in terms:
+                report.violations.append(f"{where}: 使わない言い方 {item!r} が表の用語（{terms[item]} 行目）と同じ——使う言葉と使わない言い方を兼ねられない")
+            elif owner is not None:
+                synonyms.setdefault(item, []).append(owner)
+    report.rows[GLOSSARY] = len(rows)
+    return (synonyms, list(terms)) if len(report.violations) == before else None
+
+
+def usage_files(root: Path) -> list[tuple[str, Path]]:
+    """使わない言い方を探す文書（`USAGE_DIRS` の下の `USAGE_SUFFIXES` のファイル。`USAGE_EXCLUDE` と `.` で始まる名前の下は除く）。"""
+    found = []
+    for top in USAGE_DIRS:
+        base = root / top
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            parts = path.relative_to(root).parts
+            rel = "/".join(parts)
+            if any(part.startswith(".") for part in parts) or rel in USAGE_EXCLUDE or path.suffix not in USAGE_SUFFIXES or not path.is_file():
+                continue
+            found.append((rel, path))
+    return found
+
+
+def check_usages(root: Path, report: Report, synonyms: dict[str, list[str]], terms: list[str]) -> None:
+    """文書の行に現れた用語集の使わない言い方を報告する（#1164）。**終了コードに数えない**——語の区切りを見ないので、
+    文脈で要る出現（引用・説明）もほかの語の中の出現も出る。その言い方を含む用語の中の出現だけは除く（`受注` に対する `受注伝票`）。"""
+    if not synonyms:
+        return
+    covering = {word: sorted((term for term in terms if word in term), key=len, reverse=True) for word in synonyms}
+    for rel, path in usage_files(root):
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError):
+            report.usages.append(f"{rel}: 読めない——使わない言い方を探していない")
+            continue
+        for number, line in enumerate(text.split("\n"), start=1):  # 行は改行（\n）で数える——splitlines は \x0c・U+2028 なども割り、行番号がずれる
+            for word, owners in synonyms.items():
+                masked = line
+                for term in covering[word]:
+                    masked = masked.replace(term, "\0")
+                if word in masked:
+                    report.usages.append(f"{rel}:{number}: 使わない言い方 「{word}」（用語集の用語: {'・'.join(owners)}）")
+
+
 def check_nfr(root: Path, report: Report) -> None:
     table = read_table(root, NFR, report)
     if table is None:
@@ -682,12 +804,18 @@ def inspect(root: Path) -> Report:
         check_respondents(root, report, answers)
     elif (root / STAKEHOLDERS).is_file():
         report.respondents.append(f"{STAKEHOLDERS} が決まりに反する・読めないので、回答者を照らしていない")
+    glossary = check_glossary(root, report)
+    if glossary is not None:
+        check_usages(root, report, *glossary)
+    elif (root / GLOSSARY).is_file():
+        report.usages.append(f"{GLOSSARY} が決まりに反する・読めないので、使わない言い方を探していない")
     return report
 
 
 def respondent_block(lines: list[str]) -> list[str]:
-    """`check` の出力のうち、回答者の照合の報告（見出しから後ろ）。無ければ空。scaffold の関門が、通ったときにも出す。"""
-    start = next((i for i, line in enumerate(lines) if line.startswith(RESPONDENT_HEADING)), None)
+    """`check` の出力のうち、終了コードに数えない報告——回答者の照合（#1161）と用語集の使わない言い方（#1164）——の最初の見出しから後ろ。
+    無ければ空。scaffold の関門が、通ったときにも出す。"""
+    start = next((i for i, line in enumerate(lines) if line.startswith((RESPONDENT_HEADING, USAGE_HEADING))), None)
     return [] if start is None else lines[start:]
 
 
