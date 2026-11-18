@@ -332,7 +332,9 @@ def check_columns(report: Report, rel: str, header: list[str], expected: list[st
     optional = OPTIONAL_COLUMNS.get(rel, [])
     if header == expected or (optional and header == expected + optional):
         return True
-    shown = ",".join(expected) + (f"（末尾に任意の列 {','.join(optional)} を足してよい）" if optional else "")
+    # 任意の列の名前を見出しに書いたときだけ、置き場所を言い添える（置かない表の文面は前からのまま。#1163）
+    shown = ",".join(expected) + (f"（末尾に任意の列 {','.join(optional)} を足してよい）"
+                                  if any(name in header for name in optional) else "")
     report.violations.append(f"{rel}:1: 見出しの行が決まりと違う（期待: {shown} ／ 実際: {','.join(header)}）")
     extra = [name for name in header if name not in expected + optional]
     if extra:

@@ -189,7 +189,9 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
     # ---- 機能一覧の任意の列 `必須度`（#1163）
     ("必須度の列を末尾に置く", good(F=F_PRIORITY), None, 0, "OK（requirements/features.csv（2 行）", "見出しの行"),
     ("必須度の値", good(F=F_HEAD_P + "F-001,a,API,,must\n"), None, 1, "必須度 が Must・Should・Could・Won't のどれでもない: 'must'", ""),
-    ("必須度の列を途中に置く", good(F="id,名前,必須度,種類,関係\nF-001,a,Must,API,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
+    ("4 列の見出しの誤りは前からの文面", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1,
+     "見出しの行が決まりと違う（期待: id,名前,種類,関係 ／ 実際: id,種類,名前,関係）", ""),
+    ("必須度の列を途中に置く", good(F="id,名前,必須度,種類,関係\nF-001,a,Must,API,\n"), None, 1, "（末尾に任意の列 必須度 を足してよい）", "決まりに無い列"),
     ("必須度の列を 2 つ置く", good(F="id,名前,種類,関係,必須度,必須度\nF-001,a,API,,Must,Must\n"), None, 1, "見出しの行が決まりと違う", ""),
     ("必須度の綴りが違う", good(F="id,名前,種類,関係,優先度\nF-001,a,API,,Must\n"), None, 1, "決まりに無い列（優先度）", ""),
     ("必須度の列があって行の列の数が足りない", good(F=F_HEAD_P + "F-001,a,API,\n"), None, 1, "requirements/features.csv:2: 列の数が 4（見出しは 5）", ""),
@@ -441,6 +443,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            elif False:", "一覧の id が未決定ならレイアウトの id も未決定"),
     ("見出しを見ない", "    if header == expected or (optional and header == expected + optional):\n        return True", "    if True:\n        return True", "見出しの順が違う"),
     # #1163: 機能一覧の任意の列 `必須度`
+    ("任意の列の言い添えをいつも出す", "                                  if any(name in header for name in optional) else \"\")",
+     "                                  if optional else \"\")", "4 列の見出しの誤りは前からの文面"),
+    ("任意の列の言い添えを出さない", "                                  if any(name in header for name in optional) else \"\")",
+     "                                  if False else \"\")", "必須度の列を途中に置く"),
     ("任意の列を受けない", "    if header == expected or (optional and header == expected + optional):", "    if header == expected:", "必須度の列を末尾に置く"),
     ("任意の列をどこにでも受ける", "    if header == expected or (optional and header == expected + optional):",
      "    if header == expected or (optional and sorted(header) == sorted(expected + optional)):", "必須度の列を途中に置く"),
