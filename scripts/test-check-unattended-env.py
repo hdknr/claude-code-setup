@@ -257,13 +257,17 @@ def row(number, state, deps=(), pr="", note="", group=""):
 
 
 def cruise_ledger(env, rows, merge="関門を通ればマージ", source="利用者の確認（起動時・2026-10-27T09:07:27Z）",
-                  user_ops=None, name="issue-1"):
-    """一時のリポジトリ（env.project）に台帳を書く。**実際の台帳は読まない・書かない。**"""
+                  user_ops=None, name="issue-1", decision=None):
+    """一時のリポジトリ（env.project）に台帳を書く。**実際の台帳は読まない・書かない。**
+    `decision` は確かめた線の `マージ前の判断` の値（None なら書かない。#1242）。"""
     if not (env.project / ".git").exists():
         git(env.project, "init", "-q")
     data = {"format": 1, "name": name, "issues": rows}
-    if merge is not None:
-        data["lines"] = {"values": {"マージ": merge}, "source": source, "updated": "x"}
+    if merge is not None or decision is not None:
+        values = {"マージ": merge} if merge is not None else {}
+        if decision is not None:
+            values["マージ前の判断"] = decision
+        data["lines"] = {"values": values, "source": source, "updated": "x"}
     if user_ops:
         data["user_ops"] = {"commands": list(user_ops), "source": "利用者の確認", "updated": "x"}
     plans = env.project / ".claude" / "plans"
@@ -286,7 +290,7 @@ def pr_json(state="OPEN", mergeable="MERGEABLE", files=()):
 def run_reach(mod, env, present=False, name="issue-1"):
     stack, items = mod.gather(env.project, COMMANDS, None, None, env.home, "darwin", None,
                               env=dict(SESSION_ENV), cruise=True, present=present, cwd=env.project, ledger=name)
-    return [it for it in items if it[1].startswith(("到達", "マージの線"))]
+    return [it for it in items if it[1].startswith(("到達", "マージの線", "マージ前の判断の線"))]
 
 
 def detail_of(items, label_part):
@@ -1146,6 +1150,44 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
               at(items, "到達 #1")[0] == mod.HUMAN and at(items, "到達 #2")[0] == mod.HUMAN
               and "依存先のマージを待つ" in at(items, "到達 #2")[1], bad)
 
+    # マージ前の判断の線の古い値を名指しする（#1242 の受入基準 1）。陽性対照: 新しい値・止まる・線が無い・居る・マージの線が効かないでは出さない
+    with scenario(script) as env:
+        env.all_good()
+        rows = [row(1, "pr", pr="10"), row(2, "todo", deps=[1])]
+        fake_gh(env, {10: pr_json()})
+        docs = "マージの反映: ドキュメントのみ\n"
+        old, new = "推奨で決めて起票", "推奨で決めて起票（後退・未達を含む）"
+        results = {}
+        for label, md, kwargs, present in (
+                ("古い値・マージの線が効く", docs, {"decision": old}, False),
+                ("古い値・マージの線が判定できない", "", {"decision": old}, False),
+                ("新しい値", docs, {"decision": new}, False),
+                ("止まる", docs, {"decision": "止まる"}, False),
+                ("線が無い", docs, {}, False),
+                ("古い値・居る cruise", docs, {"decision": old}, True),
+                ("古い値・マージの線が止まる", docs, {"decision": old, "merge": "止まる"}, False),
+                ("古い値・マージを利用者が打つ", docs, {"decision": old, "user_ops": ["gh pr merge 10"]}, False)):
+            env.write(env.project / ".claude" / "dev-loop.md", md)
+            ledger = cruise_ledger(env, rows, **kwargs)
+            before = ledger.read_bytes()
+            items = run_reach(mod, env, present=present)
+            results[label] = (at(items, "マージ前の判断の線"), at(items, "到達 #1"), ledger.read_bytes() == before,
+                              mod.exit_code(items))
+        named, _row, kept, _code = results["古い値・マージの線が効く"]
+        check("マージ前の判断の線: 古い値で名指しする（人が見る）", named[0] == mod.HUMAN, bad)
+        check("マージ前の判断の線: 新しい値と止まる場面を名指しする",
+              "推奨で決めて起票（後退・未達を含む）" in named[1] and "後退の分け方の 3" in named[1]
+              and "満たしていない受入基準" in named[1], bad)
+        check("マージ前の判断の線: 新しい値でも「止める」の判断は止まると言う（約束しすぎない）",
+              "新しい値でも止まる" in named[1] and "CI が緑でない" in named[1], bad)
+        check("マージ前の判断の線: 台帳を書き換えない", all(r[2] for r in results.values()), bad)
+        check("マージ前の判断の線: 周の到達は変えない（マージまで進む見込みのまま）", _row[0] == mod.GOOD, bad)
+        check("マージ前の判断の線: 要対処にしない（終了コード 0 のまま）", _code == 0, bad)
+        check("マージ前の判断の線: マージの線が判定できなくても名指しする",
+              results["古い値・マージの線が判定できない"][0][0] == mod.HUMAN, bad)
+        for label in ("新しい値", "止まる", "線が無い", "古い値・居る cruise", "古い値・マージの線が止まる", "古い値・マージを利用者が打つ"):
+            check(f"マージ前の判断の線: {label}では名指ししない", results[label][0][0] is None, bad)
+
     # 依存を辿る・止まっている周（#490 の 2・4）
     with scenario(script) as env:
         env.all_good()
@@ -1617,6 +1659,21 @@ def since_last_scenarios(mod, script, bad):
         check("--since-last: 書けなければそう言い、終了コードは変えない",
               "今回の結果を記録できなかった" in out and code == plain_code, bad)
 
+    # --absent の再開（--since-last）でも、古い値の名指しは出る——2 回目は縮むが名前は残る（#1242）
+    with scenario(SCRIPT) as env:
+        env.all_good()
+        env.write(env.project / ".claude" / "dev-loop.md", "マージの反映: ドキュメントのみ\n")
+        cruise_ledger(env, [row(1, "todo")], decision="推奨で決めて起票")
+        code, plain_code, out, _ = cycle(env)
+        check("--since-last 初回: マージ前の判断の線の名指しを全文で出す",
+              "[人が見る] マージ前の判断の線: 台帳の確かめた線は `マージ前の判断 = 推奨で決めて起票`（古い値）" in out, bad)
+        record = env.project / ".claude" / "plans" / "cruise-issue-1.env-check"
+        rec = json.loads(record.read_text(encoding="utf-8"))
+        record.write_text(json.dumps({**rec, "updated": "2000-01-01T00:00:00Z"}), encoding="utf-8")
+        code, plain_code, out, _ = cycle(env)
+        same_line = next((ln for ln in out.splitlines() if ln.startswith("[前回と同じ]")), "")
+        check("--since-last 2 回目: マージ前の判断の線は縮めても名前を出す", "マージ前の判断の線" in same_line, bad)
+
     check("指紋: pid の数字だけの違いは同じ", mod.item_key(("a", "b", "最寄りの claude（pid 123）", "")) ==
           mod.item_key(("a", "b", "最寄りの claude（pid 456）", "")), bad)
     check("指紋: 直し方が変われば違う", mod.item_key(("a", "b", "c", "x")) != mod.item_key(("a", "b", "c", "y")), bad)
@@ -1670,6 +1727,34 @@ def since_last_scenarios(mod, script, bad):
 
 
 MUTATIONS = {
+    # マージ前の判断の線の古い値の名指し（#1242）
+    "マージ前の判断の線: 名指しを出さない": (
+        "    items = [merge_item] + decision_items(data, present, merge_kind, lg)\n",
+        "    items = [merge_item]\n"),
+    "マージ前の判断の線: どの値でも名指しする": (
+        "    if data.get(\"lines\", {}).get(\"values\", {}).get(DECISION_KEY) != DECISION_OLD:\n",
+        "    if False:\n"),
+    "マージ前の判断の線: 居る cruise・マージの線が効かない周でも名指しする": (
+        "    if present or merge_kind not in (\"merge\", \"unknown\"):\n",
+        "    if False:\n"),
+    "マージ前の判断の線: 居る cruise でも名指しする": (
+        "    if present or merge_kind not in (\"merge\", \"unknown\"):\n",
+        "    if merge_kind not in (\"merge\", \"unknown\", \"user\"):\n"),
+    "マージ前の判断の線: マージの線が判定できないときは名指ししない": (
+        "    if present or merge_kind not in (\"merge\", \"unknown\"):\n",
+        "    if present or merge_kind != \"merge\":\n"),
+    "マージ前の判断の線: 要対処にする": (
+        "    return [(HUMAN, DECISION_LINE,\n",
+        "    return [(ACTION, DECISION_LINE,\n"),
+    "マージ前の判断の線: --since-last で縮めたときに名前を落とす": (
+        "            named += f\"。{HUMAN}: \" + \"・\".join(kept) if kept else \"\"\n",
+        "\n"),
+    "マージ前の判断の線: 新しい値でも止まるものを言わない": (
+        "             \"（推奨が「止める」・推奨が無い判断と、CI が緑でない・影響範囲・宣言の外の反映・依存の表などほかの止まる条件は、新しい値でも止まる。\"\n",
+        "             \"（\"\n"),
+    "マージ前の判断の線: 止まる場面を名指ししない": (
+        "             \"（当て直しで残った後退・直していない後退など、1・2 に当たらない後退すべて）と満たしていない受入基準では、その周がマージの前で止まる\"\n",
+        "             \"では、その周がマージの前で止まる\"\n"),
     # 通知の 2 キーの層（#822）
     "通知を settings の層から読まない（グローバル設定だけ）": (
         "    value, layer = effective(stack, key)\n    if layer is not None:\n        return value, layer\n",
