@@ -520,17 +520,20 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
     seen: dict[tuple[str, str], int] = {}
     done: dict[str, dict[str, str]] = {}  # エンティティ → 操作 → その操作をする機能（最初の 1 つ）
     declined: dict[str, dict[str, str]] = {}  # エンティティ → 操作 → `なし` と決めた行
-    pending: set[str] = set()  # 行のどこかが決まっていないエンティティ（抜けを言い切れない）
-    unsure = False  # エンティティの決まっていない行がある（どのエンティティの抜けも言い切れない）
+    maybe: dict[str, set[str]] = {}  # エンティティ → 機能の決まっていない行（未決定の印・空）が持つ操作（する機能はある——結び付けに数える）
+    pending: set[str] = set()  # 操作が決まっていない・機能が形式の違反の行のあるエンティティ（どの操作の抜けも言い切れない）
+    unsure_ops: set[str] = set()  # エンティティの決まっていない行の操作（どのエンティティの、その操作の抜けも言い切れない）
     for line, fields in rows:
         where = f"{CRUD}:{line}"
         if len(fields) != len(CRUD_COLUMNS):
             report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(CRUD_COLUMNS)}）")
-            unsure = True
+            unsure_ops.update(CRUD_OPERATIONS)
             continue
         row = dict(zip(CRUD_COLUMNS, fields))
         feature = None
+        feature_open = True  # 機能が未決定（未決定の印・空・一覧の未決定で照らせない）——形式の違反なら偽
         if cell_state(report, where, "機能", row["機能"], False):
+            feature_open = False
             value = row["機能"].strip()
             if value == CRUD_NONE:
                 feature = value
@@ -541,10 +544,12 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
             elif value in feature_ids:
                 feature = value
             elif feature_ids_pending:
+                feature_open = True
                 report.undecided.append(f"{where}: 機能 {value} が機能一覧（{FEATURES}）に無い（一覧に id の決まっていない行がある）")
             else:
                 report.violations.append(f"{where}: 機能 {value} が機能一覧（{FEATURES}）に無い")
         entity = None
+        entity_open = False  # エンティティが未決定（未決定の印・空）
         if cell_state(report, where, "エンティティ", row["エンティティ"], False):
             value = row["エンティティ"].strip()
             if entities is None:
@@ -556,7 +561,7 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
             else:
                 report.violations.append(f"{where}: エンティティ {value} がデータモデル（{ENTITIES}）に無い")
         else:
-            unsure = True
+            entity_open = True
         operations = None
         if cell_state(report, where, "操作", row["操作"], False):
             value = row["操作"].strip()
@@ -564,10 +569,18 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
                 operations = value
             else:
                 report.violations.append(f"{where}: 操作 が {'・'.join(CRUD_OPERATIONS)} をこの順に 1 回ずつまで並べた形（CR・RU など）でない: {value!r}")
+        if entity_open:
+            # どのエンティティの行か決まらない——その行の操作の抜けだけを、どのエンティティでも言い切らない（ほかの操作の抜けは言い切れる）
+            unsure_ops.update(operations or CRUD_OPERATIONS)
+            continue
         if entity is None:
             continue
-        if feature is None or operations is None:
+        if operations is None or (feature is None and not feature_open):
             pending.add(entity)
+            continue
+        if feature is None:
+            # する機能は決まっていないが、その操作をする機能があることは決まっている——結び付けに数える（目的の表の `機能` の印と同じ）
+            maybe.setdefault(entity, set()).update(operations)
             continue
         pair = (feature, entity)
         if pair in seen:
@@ -585,13 +598,13 @@ def check_crud(root: Path, report: Report, context: dict) -> None:
                 report.violations.append(f"{where}: エンティティ {entity} の {op} を {CRUD_NONE} と書いたが、機能 {done[entity][op]} が {op} する"
                                          "——する機能があるなら なし の行から外す")
     report.rows[CRUD] = len(rows)
-    if entities is None or unsure:
-        return  # どのエンティティの行か決まらない行がある——抜けを言い切れない（その行は上で違反か未決定に数えた）
+    if entities is None:
+        return
     kept = context.get(ENTITIES + "#kept", set())
     for entity in sorted(entities - pending):
-        covered = set(done.get(entity, {})) | set(declined.get(entity, {}))
+        covered = set(done.get(entity, {})) | set(declined.get(entity, {})) | maybe.get(entity, set())
         for op, verb in CRUD_GAPS.items():
-            if op in covered or (op == CRUD_KEPT and entity not in kept):
+            if op in covered or op in unsure_ops or (op == CRUD_KEPT and entity not in kept):
                 continue
             reason = "保管期間が決まっているのに、" if op == CRUD_KEPT else ""
             report.undecided.append(f"{CRUD}: エンティティ {entity} を{verb}（{op}）機能が無い（{reason}どの機能の行にも {op} が無く、{CRUD_NONE} の行でも決めていない——"
