@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）と関係者の表・用語集を検査する。
+"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・機能とデータの対応（CRUD）・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）と関係者の表・用語集を検査する。
 
 usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か重ね合わせた全体（build/merged）>
 
 **決まりの正は `references/tree.md` の「システム設計書の成果物」（関係者の表・用語集を含む）と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
-下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲）はその写しで、
+下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲・
+CRUD 表の列と操作の文字と `なし` と抜けに数える操作）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-check-design-csv.py` が突き合わせて見る**。
 
 渡したディレクトリの `requirements/` と `shared/nfr.csv`・`shared/stakeholders.csv`・`shared/glossary.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
@@ -13,13 +14,17 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
   決まった値でない・レイアウトの id が入出力の一覧に無い・同じ帳票の id で帳票名が違う・非機能要求の種類の上限と単位の形・
   目的の表（#1154）の種類ごとに空にする欄に書いた（未決定の印なら未決定に数える）・指標の `上位` が表の目的でない・指標の `機能` の id が機能一覧に無い（一覧が無いときも）・`なし` と id を混ぜた・
   関係者の表（#1161）の名前の重複・役割と合意の値が決まった値でない・同じ値を重ねた・合意に `なし` とほかの値を混ぜた・
-  用語集（#1164）の用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねた・区切りで空の項・決めた日が `YYYY-MM-DD` の実在する日付でない
+  用語集（#1164）の用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねた・区切りで空の項・決めた日が `YYYY-MM-DD` の実在する日付でない・
+  CRUD 表（#1162）の機能が機能一覧の id でも `なし` でもない・機能一覧に無い（一覧が無いときも）・エンティティがデータモデルに無い（データモデルが無いときも）・
+  操作が `C`・`R`・`U`・`D` をこの順に 1 回ずつまで並べた形でない・機能とエンティティの組の重複・同じエンティティで機能がする操作を `なし` の行にも書いた
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
   印の判定は `check-spec-exit.py` の `find_markers` を読む（写さない）。**印のあるセルと空のセルは、値の決まりに当てない**——未決定は違反ではない。
   **目的の表の結び付けの欠け**（目的を測る指標が無い・機能一覧の機能がどの指標の `機能` にも無い——目的を指さない機能）もここに数える——
-  要るかどうかは利用者が決めることで、表の形の誤りではない
+  要るかどうかは利用者が決めることで、表の形の誤りではない。
+  **CRUD 表の抜け**（#1162。データモデルのエンティティを作る（`C`）・読む（`R`）機能が無い、`保管期間` が決まっているのに消す（`D`）機能が無い——
+  どれも、その操作を `なし` の行で「する機能は無い」と決めていなければ）も同じ理由でここに数える
 
 **4 つのほかに、回答者の照合を報告する（終了コードに数えない。#1161）**——関係者の表が決まりどおりで、`shared/qa.csv` があるとき、
 `未回答` でも暫定でもない行の回答者（`check-qa-csv.py` の `respondent` が `回答` の括弧から読む）が、表の `名前` に無い・表で `答える範囲` が `なし`・括弧から読めない、を出す。
@@ -49,7 +54,10 @@ usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か�
 | --- | --- |
 | **欄の中身**（意味の書き方・保管期間が業務に合うか・ロールの切り方） | 判断であって、一意に決まらない |
 | **帳票の見本・ER 図があるか** | 見本は HTML か PDF、図は drawio で、表の検査の外（図の鮮度は `render-diagrams.py --check`） |
-| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は id で指す 2 つだけ**——入出力のレイアウトの id（一覧に無い id は落とす）と、目的の表の指標の `機能`（機能一覧の id と照らす）。Q&A 表の回答者と関係者の表の名前の照合は報告で、終了コードに数えない（下の行） |
+| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は id と鍵で指す 3 つだけ**——入出力のレイアウトの id（一覧に無い id は落とす）と、目的の表の指標の `機能`（機能一覧の id と照らす）と、CRUD 表の `機能`・`エンティティ`（機能一覧の id とデータモデルのエンティティと照らす）。Q&A 表の回答者と関係者の表の名前の照合は報告で、終了コードに数えない（下の行） |
+| **権限一覧の操作と、機能が触るデータの食い違い**（CRUD 表で消さない機能に、権限一覧で消す操作を許している、など） | 権限一覧の `操作` は名前で書き、機能一覧の id を持たないので、CRUD 表の行と機械で結べない。spec-review の Formal Checker が権限・ロールを対象に選んだとき、権限一覧と並べて CRUD 表を入力に渡す（`references/tree.md` の「機能とデータの対応」） |
+| **CRUD 表の更新（`U`）の抜け・どのデータも触らない機能** | 作った後に変えないデータ（履歴・記録）も、データを持たない機能（外部の呼び出しだけ・画面の切り替えだけ）もふつうにある。抜けに数えるのは作る・読む・消す（保管期間が決まっているとき）だけ |
+| **CRUD 表の粒度より細かい対応**（エンティティのどの項目を作る・更新するか） | 表は機能 × エンティティの粒度で、項目を持たない（`references/tree.md` の「機能とデータの対応」） |
 | **目的に照らした過不足の中身**（`機能` に載った機能が本当にその指標を動かすか・目的の切り方が正しいか） | 判断であって、一意に決まらない。spec-review の Domain Checker が目的の表を照合先にして見る。ここは結び付けの有無と id の実在だけ |
 | **回答者が答えた質問が、その人の答える範囲の中か** | 範囲は自由に書く（分野・機能・目的の id）ので、質問との対応を機械で決められない。req-loop が回答を反映するときに確かめる（`references/tree.md` の「関係者の表」）。照らすのは名前と `なし` だけで、**終了コードにも数えない**——表を置く前の回答（凍結した版を含む）は書き直せない |
 | **関係者の表の名前が個人名でないか・非公式の影響力を書いていないか** | 書き方の判断で、文字列からは決まらない |
@@ -145,6 +153,9 @@ PURPOSE_NONE = "なし"
 FEATURE_ID = re.compile(r"F-[0-9]{3,}")
 # 順番の列（正の整数）
 ORDER_COLUMN = "順番"
+# データモデルのエンティティ名と保管期間の列（CRUD 表がエンティティ名で指し、保管期間が決まっていれば消す機能を求める。#1162）
+ENTITY_COLUMN = "エンティティ"
+RETENTION_COLUMN = "保管期間"
 # 権限一覧: 1 列目の名前と、ロールの列のセルの値
 ROLES_FIRST = "操作"
 ROLES_VALUES = ("可", "不可")
@@ -189,7 +200,17 @@ NFR_REQUIRED = ("対象", "条件", "根拠")
 POSITIVE_INTEGER = re.compile(r"[1-9][0-9]{0,8}")
 PERCENT = re.compile(r"(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,6})?")
 
-ALL_TABLES = list(COLUMNS) + [PURPOSES, ROLES, NFR, STAKEHOLDERS, GLOSSARY]
+# 機能とデータの対応（CRUD 表。`references/tree.md` の「機能とデータの対応」。#1162）: 見出しの行・操作の文字（この順に 1 回ずつまで）・
+# 「その操作をする機能は無い」と決めた行の機能の値・抜けに数える操作（`D` は保管期間が決まっているエンティティだけ）
+CRUD = "requirements/crud.csv"
+CRUD_COLUMNS = ["機能", "エンティティ", "操作"]
+CRUD_OPERATIONS = ("C", "R", "U", "D")
+CRUD_OPERATION = re.compile("".join(f"(?:{op})?" for op in CRUD_OPERATIONS))
+CRUD_NONE = "なし"
+CRUD_GAPS = {"C": "作る", "R": "読む", "D": "消す"}
+CRUD_KEPT = "D"
+
+ALL_TABLES = list(COLUMNS) + [PURPOSES, CRUD, ROLES, NFR, STAKEHOLDERS, GLOSSARY]
 
 
 class Report:
@@ -319,6 +340,8 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
     names: dict[str, tuple[str, int]] = {}
     ids: set[str] = set()
     pending = False  # id が未決定・空の行がある（その行を指すレイアウトの id を違反と言い切れない）
+    kept: set[str] = set()  # データモデルの、保管期間が決まっているエンティティ（CRUD 表の消す機能の抜けに使う。#1162）
+    referenced = ENTITY_COLUMN if rel == ENTITIES else "id"  # ほかの表から指される欄（データモデルはエンティティ名で指される）
     for line, fields in rows:
         where = f"{rel}:{line}"
         if len(fields) != len(expected):
@@ -327,7 +350,11 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
         row = dict(zip(expected, fields))
         decided = {column: cell_state(report, where, column, value, column in MAY_BE_EMPTY.get(rel, set()))
                    for column, value in row.items()}
-        pending = pending or ("id" in decided and not decided["id"])
+        pending = pending or (referenced in decided and not decided[referenced])
+        if rel == ENTITIES and decided[ENTITY_COLUMN]:
+            ids.add(row[ENTITY_COLUMN].strip())
+            if decided[RETENTION_COLUMN]:
+                kept.add(row[ENTITY_COLUMN].strip())
         for column, value in row.items():
             if not decided[column]:
                 continue
@@ -366,6 +393,8 @@ def check_plain(root: Path, rel: str, report: Report, context: dict) -> None:
     report.rows[rel] = len(rows)
     context[rel] = ids
     context[rel + "#pending"] = pending
+    if rel == ENTITIES:
+        context[ENTITIES + "#kept"] = kept
 
 
 def check_purposes(root: Path, report: Report, context: dict) -> None:
@@ -473,6 +502,100 @@ def check_purposes(root: Path, report: Report, context: dict) -> None:
             report.undecided.append(f"{PURPOSES}: 機能一覧の {feature} が、どの指標の 機能 にも無い（目的を指さない機能——"
                                     "要るか、要るならどの目的のためかを Q&A 表に起票する）")
     report.rows[PURPOSES] = len(rows)
+
+
+def check_crud(root: Path, report: Report, context: dict) -> None:
+    """CRUD 表（#1162）。機能一覧の id とデータモデルのエンティティは `context`（`check_plain` が先に読む）から照らす。
+    表が決まりどおりに読めたら、データモデルのエンティティごとに作る・読む・消す（保管期間が決まっているとき）機能の抜けを未決定に数える。"""
+    table = read_table(root, CRUD, report)
+    if table is None:
+        return
+    header, rows = table
+    if not check_columns(report, CRUD, header, CRUD_COLUMNS):
+        return
+    feature_ids = context.get(FEATURES)  # 機能一覧が無い・読めない・見出しが違うなら None
+    feature_ids_pending = context.get(FEATURES + "#pending", False)
+    entities = context.get(ENTITIES)  # データモデルが無い・読めない・見出しが違うなら None
+    entities_pending = context.get(ENTITIES + "#pending", False)
+    seen: dict[tuple[str, str], int] = {}
+    done: dict[str, dict[str, str]] = {}  # エンティティ → 操作 → その操作をする機能（最初の 1 つ）
+    declined: dict[str, dict[str, str]] = {}  # エンティティ → 操作 → `なし` と決めた行
+    pending: set[str] = set()  # 行のどこかが決まっていないエンティティ（抜けを言い切れない）
+    unsure = False  # エンティティの決まっていない行がある（どのエンティティの抜けも言い切れない）
+    for line, fields in rows:
+        where = f"{CRUD}:{line}"
+        if len(fields) != len(CRUD_COLUMNS):
+            report.violations.append(f"{where}: 列の数が {len(fields)}（見出しは {len(CRUD_COLUMNS)}）")
+            unsure = True
+            continue
+        row = dict(zip(CRUD_COLUMNS, fields))
+        feature = None
+        if cell_state(report, where, "機能", row["機能"], False):
+            value = row["機能"].strip()
+            if value == CRUD_NONE:
+                feature = value
+            elif not FEATURE_ID.fullmatch(value):
+                report.violations.append(f"{where}: 機能 が機能一覧の id（F- に 3 桁以上の数字）でも {CRUD_NONE} でもない: {value!r}")
+            elif feature_ids is None:
+                report.violations.append(f"{where}: 機能 {value} を照らす機能一覧（{FEATURES}）が無い・読めない")
+            elif value in feature_ids:
+                feature = value
+            elif feature_ids_pending:
+                report.undecided.append(f"{where}: 機能 {value} が機能一覧（{FEATURES}）に無い（一覧に id の決まっていない行がある）")
+            else:
+                report.violations.append(f"{where}: 機能 {value} が機能一覧（{FEATURES}）に無い")
+        entity = None
+        if cell_state(report, where, "エンティティ", row["エンティティ"], False):
+            value = row["エンティティ"].strip()
+            if entities is None:
+                report.violations.append(f"{where}: エンティティ {value} を照らすデータモデル（{ENTITIES}）が無い・読めない")
+            elif value in entities:
+                entity = value
+            elif entities_pending:
+                report.undecided.append(f"{where}: エンティティ {value} がデータモデル（{ENTITIES}）に無い（データモデルにエンティティの決まっていない行がある）")
+            else:
+                report.violations.append(f"{where}: エンティティ {value} がデータモデル（{ENTITIES}）に無い")
+        else:
+            unsure = True
+        operations = None
+        if cell_state(report, where, "操作", row["操作"], False):
+            value = row["操作"].strip()
+            if value and CRUD_OPERATION.fullmatch(value):
+                operations = value
+            else:
+                report.violations.append(f"{where}: 操作 が {'・'.join(CRUD_OPERATIONS)} をこの順に 1 回ずつまで並べた形（CR・RU など）でない: {value!r}")
+        if entity is None:
+            continue
+        if feature is None or operations is None:
+            pending.add(entity)
+            continue
+        pair = (feature, entity)
+        if pair in seen:
+            report.violations.append(f"{where}: 機能・エンティティ が {seen[pair]} 行目と重複: {feature} / {entity}")
+            continue
+        seen[pair] = line
+        for op in operations:
+            if feature == CRUD_NONE:
+                declined.setdefault(entity, {}).setdefault(op, where)
+            else:
+                done.setdefault(entity, {}).setdefault(op, feature)
+    for entity, ops in declined.items():
+        for op, where in ops.items():
+            if op in done.get(entity, {}):
+                report.violations.append(f"{where}: エンティティ {entity} の {op} を {CRUD_NONE} と書いたが、機能 {done[entity][op]} が {op} する"
+                                         "——する機能があるなら なし の行から外す")
+    report.rows[CRUD] = len(rows)
+    if entities is None or unsure:
+        return  # どのエンティティの行か決まらない行がある——抜けを言い切れない（その行は上で違反か未決定に数えた）
+    kept = context.get(ENTITIES + "#kept", set())
+    for entity in sorted(entities - pending):
+        covered = set(done.get(entity, {})) | set(declined.get(entity, {}))
+        for op, verb in CRUD_GAPS.items():
+            if op in covered or (op == CRUD_KEPT and entity not in kept):
+                continue
+            reason = "保管期間が決まっているのに、" if op == CRUD_KEPT else ""
+            report.undecided.append(f"{CRUD}: エンティティ {entity} を{verb}（{op}）機能が無い（{reason}どの機能の行にも {op} が無く、{CRUD_NONE} の行でも決めていない——"
+                                    f"{verb}機能を足すか、{verb}機能は無いと {CRUD_NONE} の行で決めるかを Q&A 表に起票する）")
 
 
 def check_roles(root: Path, report: Report) -> None:
@@ -797,6 +920,7 @@ def inspect(root: Path) -> Report:
     for rel in COLUMNS:  # 入出力の一覧はレイアウトより先（辞書の順）
         check_plain(root, rel, report, context)
     check_purposes(root, report, context)  # 機能一覧より後（`context` の機能一覧の id を照らす）
+    check_crud(root, report, context)  # 機能一覧とデータモデルより後（`context` の id とエンティティを照らす）
     check_roles(root, report)
     check_nfr(root, report)
     answers = check_stakeholders(root, report)

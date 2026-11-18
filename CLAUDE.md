@@ -127,6 +127,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `check-signoff.py` は `agreements` で表を読む）。
       **用語集（`shared/glossary.csv`。用語・意味・使わない言い方）も見て、`requirements/`・`shared/` の文書に現れた使わない言い方を報告する——終了コードに数えない**（#1164。
       英語名は表に置かない。MkDocs のフックは `glossary` の印で描く）。
+      **機能とデータの対応（`requirements/crud.csv`。機能 × エンティティの `C`・`R`・`U`・`D`）も見て、機能一覧とデータモデルに照らし、作る・読む機能の無いエンティティと、保管期間が決まっているのに消す機能の無いエンティティを 3 に数える——`なし` の行で「する機能は無い」と決めたものは数えない**（#1162。権限一覧との食い違いは照らさず、spec-review が Formal Checker に並べて渡す）。
       決まりの原本は `references/tree.md` の「システム設計書の成果物」、守る／守らないは docstring を正とする。テストは `scripts/test-check-design-csv.py`）
     - `scripts/check-infra-csv.py` - 基盤要件の表（`shared/infra.csv`。言語・DBMS・ホスティング環境など）の検査とゲートの判定（#950。
       **形式の違反（1）・未決定（3。表が無いときも）・暫定（4）を分けて出し、表の状態と根拠の Q&A の行の状態の対応も照らす**。

@@ -972,6 +972,12 @@ STAKEHOLDERS_LISTED = STAKEHOLDERS_HEAD + "P-001,業務部,利用者,割引の�
 GLOSSARY_FILE = str(V1 / "shared" / "glossary.csv")
 GLOSSARY_TABLE = "用語,意味,使わない言い方,決めた人,決めた日\n割引,注文の金額から差し引く額,値引き,業務部,2026-11-01\n"
 GLOSSARY_PROBE = str(V1 / "requirements" / "glossary-probe.md")
+# CRUD 表（#1162）: 注文を作る機能が無い表は未決定（3）——scaffold は止まる。作る機能を足せば作る
+ENTITIES_FILE = str(V1 / "requirements" / "entities.csv")
+ENTITIES_TABLE = "エンティティ,項目,意味,型,必須,保管期間\n注文,注文番号,注文を一意に示す番号,文字列,はい,7 年\n"
+CRUD_FILE = str(V1 / "requirements" / "crud.csv")
+CRUD_GAP = "機能,エンティティ,操作\nF-001,注文,R\nF-002,注文,U\nなし,注文,D\n"
+CRUD_FULL = CRUD_GAP.replace("F-001,注文,R\n", "F-001,注文,CR\n")
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
@@ -2463,6 +2469,11 @@ CASES: list[Case] = [
          extra={FEATURES_FILE: FEATURES_LIST, PURPOSES_FILE: PURPOSES_PARTIAL}, post=nothing_written),
     Case("目的の表: 機能一覧の機能をどれも指していれば作る（#1154）", 0, "作った",
          extra={FEATURES_FILE: FEATURES_LIST, PURPOSES_FILE: PURPOSES_FULL}, absent=DESIGN_GATE),
+    Case("CRUD 表: 作る機能の無いエンティティがあれば止める（#1162）", 1,
+         "build/merged/requirements/crud.csv: エンティティ 注文 を作る（C）機能が無い",
+         extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_GAP}, post=nothing_written),
+    Case("CRUD 表: 抜けが無ければ作る（#1162）", 0, "作った",
+         extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_FULL}, absent=DESIGN_GATE),
     Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
     Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
     Case("画面の表: screen-spec が見つからなければ 2 で止める（#1097）", 2, "画面の表があるのに screen-spec が見つからない",
