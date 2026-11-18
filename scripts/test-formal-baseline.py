@@ -105,11 +105,18 @@ def readme(drop: tuple[str, ...] = (), **over: str) -> str:
 GOOD_DIR = "docs/v1/spec/formal/order-cancel"
 CheckCase = tuple[str, str, dict[str, str | None] | None, int, str]
 CHECK_CASES: list[CheckCase] = [
-    ("形どおり", GOOD_DIR, {"README.md": readme(), **MODEL_FILES}, 0, "形どおり（モデルのファイル 2 件・陽性対照のファイル 0 件）"),
+    ("形どおり", GOOD_DIR, {"README.md": readme(), **MODEL_FILES}, 0, "形どおり（モデルのファイル 2 件・陽性対照のファイル 0 件・図の対応のファイル 0 件・状態遷移図のファイル 0 件）"),
     # 陽性対照のファイル（#1044。任意の項目）
     ("陽性対照のファイルの行が無い", GOOD_DIR, {"README.md": readme(), **MODEL_FILES}, 0, "陽性対照のファイル 0 件"),
     ("陽性対照のファイルが残る", GOOD_DIR, {"README.md": readme() + "| 陽性対照のファイル | `broken.tla`・`broken.cfg` |\n", **MODEL_FILES,
-                                         "broken.tla": "x", "broken.cfg": "x"}, 0, "形どおり（モデルのファイル 2 件・陽性対照のファイル 2 件）"),
+                                         "broken.tla": "x", "broken.cfg": "x"}, 0, "形どおり（モデルのファイル 2 件・陽性対照のファイル 2 件・"),
+    # 図の対応と状態遷移図（#1177。任意の項目）
+    ("図の対応と状態遷移図が残る", GOOD_DIR, {"README.md": readme() + "| 図の対応のファイル | `view.json` |\n| 状態遷移図のファイル | `statechart.md` |\n",
+                                       **MODEL_FILES, "view.json": "{}", "statechart.md": "x"}, 0,
+     "形どおり（モデルのファイル 2 件・陽性対照のファイル 0 件・図の対応のファイル 1 件・状態遷移図のファイル 1 件）"),
+    ("状態遷移図のファイルが無い", GOOD_DIR, {"README.md": readme() + "| 図の対応のファイル | `view.json` |\n| 状態遷移図のファイル | `statechart.md` |\n",
+                                       **MODEL_FILES, "view.json": "{}"}, 1, "状態遷移図のファイル「statechart.md」がこのディレクトリの通常のファイルとして無い"),
+    ("一覧に無い状態遷移図", GOOD_DIR, {"README.md": readme(), **MODEL_FILES, "statechart.md": "x"}, 1, "statechart.md: モデルのファイルの一覧に無い"),
     ("陽性対照のファイルが無い", GOOD_DIR, {"README.md": readme() + "| 陽性対照のファイル | `broken.tla`・`broken.cfg` |\n", **MODEL_FILES,
                                          "broken.tla": "x"}, 1, "陽性対照のファイル「broken.cfg」がこのディレクトリの通常のファイルとして無い"),
     ("陽性対照のファイルが空", GOOD_DIR, {"README.md": readme() + "| 陽性対照のファイル |  |\n", **MODEL_FILES}, 1, "項目「陽性対照のファイル」の記録が空"),
@@ -175,6 +182,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("fetch に戻す", '    listed = frozen.git(root, "tag", "--list")\n',
      '    subprocess.run(["git", "-C", str(root), "fetch", "--all", "--tags", "--quiet"], capture_output=True)\n'
      '    listed = frozen.git(root, "tag", "--list")\n', "prune の設定でも手元のタグを見る"),
+    ("図の対応・状態遷移図を一覧に数えない", 'LISTS = ("モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")',
+     'LISTS = ("モデルのファイル", "陽性対照のファイル")', "図の対応と状態遷移図が残る"),
+    ("図の対応・状態遷移図の行の欠けを落とす", 'OPTIONAL = ("陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")',
+     'OPTIONAL = ("陽性対照のファイル",)', "形どおり"),
     ("バッククォートの無い一覧を通す", '        if records.get(item) and not names:\n', "        if False:\n", "一覧にバッククォートが無い"),
     ("陽性対照のファイルを一覧に足さない", "        listed += names\n", '        listed += names if item == "モデルのファイル" else []\n', "陽性対照のファイルが残る"),
     ("パスを含む名前を通す", 'if "/" in name or name in (README, ".", ".."):', 'if name in (README, ".", ".."):', "一覧の名前にパス"),

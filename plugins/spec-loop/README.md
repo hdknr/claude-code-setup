@@ -30,6 +30,7 @@
 | `scripts/check-spec-exit.py` | 仕様レビューを抜ける条件のうち、機械で決まる条件 1 の判定（標準ライブラリのみ） |
 | `scripts/check-review-record.py` | 仕様レビューの記録（指摘の表と実行の記録）から、抜ける条件 2・3（と狭いパスの効く重さ）と実行の上限と、条件 5 のうち内部の Q&A 表の足した・変えた行を Domain Checker が確かめたかを数え直す。`scaffold.py` は最後の実行の行をここで読む（標準ライブラリのみ） |
 | `scripts/check-formal-rerun.py` | 保存した TLC のモデルの本体と陽性対照を、正本の `CLAUDE.md` の呼び方で走らせ直し、抜ける条件 4 を判定し直す（標準ライブラリと TLC） |
+| `scripts/formal-statechart.py` | 保存した TLC のモデルを TLC で展開し（`-dump dot,actionlabels`）、図の対応（`view.json`）の利用者の言葉で Mermaid の状態遷移図にする。規則を破る状態に印を付け、反例の経路を番号で描く（標準ライブラリと TLC） |
 | `scripts/check-feasibility-csv.py` | スケジュールと見積りの表が決まりどおりかの検査（標準ライブラリのみ） |
 | `scripts/schedule-to-gantt.py` | スケジュールの表からガントチャート（SVG）を作る（標準ライブラリのみ） |
 | `scripts/render-diagrams.py` | 正本リポジトリの `docs/` の下の drawio と BPMN を隣の SVG に書き出し、ソースの指紋を書き込む。`--check` で書き出しが今のソースのものかを確かめる（標準ライブラリと draw.io の CLI。BPMN は下の `render-bpmn.mjs`。図の決まりは `references/tree.md` の「図」を正とする） |

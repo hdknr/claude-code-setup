@@ -81,7 +81,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-qa-csv.py` - Q&A 表の検査（**正本リポジトリで使う**。共有の `shared/qa.csv` と内部の
       `spec/qa-dev.csv` を**ファイルの名前で見分ける**——#339。**行の層を番号で決める関数 `is_internal_number` もここに 1 つだけ置き、
       他のスクリプトはそれを読む**——#353。**暫定の行の判別 `is_provisional`（`状態` だけで決め、`回答` の文言は見ない）も同じで、
-      全段が読み、テストが静的に見る**（MkDocs のフックだけは単独で動くので写しを持ち、テストが本体と突き合わせる）——#404。テストは `scripts/test-check-qa-csv.py`）
+      全段が読み、テストが静的に見る**（MkDocs のフックだけは単独で動くので写しを持ち、テストが本体と突き合わせる）——#404。
+      **`回答` の括弧から答えた人を読む `respondent` もここに置き、`check-design-csv.py` が関係者の表との照合で読む**——#1161。テストは `scripts/test-check-qa-csv.py`）
     - `scripts/intake-code.py` - 持ち込まれた動くコード（PR・ブランチ・ディレクトリ）から要求の候補を起こす取り込みの段（req-loop の手順 3a。#998）の機械で決まる部分。
       **`snapshot` は正本で `fetch`・`rev-parse`・`ls-tree`・`cat-file`・`check-ignore` だけを走らせて正本の外か（`.gitignore` に外された）`build/` の下へ写し（マージしない）、`rows` はスキルが書いた候補の JSON を検査して作業中の版の Q&A 表に `確認中`・`未回答` の行で足す**
       （回答・状態・反映先の鍵は違反。足した表全体を `check-qa-csv.py` に当ててから書く）。基盤要件の 3 項目はコードの目印と機械で照らし、ほかの食い違いはスキルが引いた正本の文が在るかだけを見る。
@@ -116,11 +117,20 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-formal-rerun.py` - **保存した TLC のモデル（`spec/formal/<対象>/`）の本体と陽性対照（記録の `陽性対照のファイル`）を、正本の `CLAUDE.md` の呼び方で一時ディレクトリに写して走らせ直し、条件 4 を判定し直す**
       （#1044。陽性対照で反例が出ない・陽性対照のファイルが無いは「判定できなかった」（4）。呼び方の読み方と走らせ方は `check-tlc.py`、記録の読み方は `formal-baseline.py` を読み込む——写さない。
       TLC でない対象は走らせ直さない。守る／守らないは docstring を正とする。テストは `scripts/test-check-formal-rerun.py`——偽の TLC で回す）
+    - `scripts/formal-statechart.py` - **保存した TLC のモデルを TLC で展開し（`-continue -dump dot,actionlabels`）、図の対応（記録の `図の対応のファイル`。`view.json`）の利用者の言葉で Mermaid の状態遷移図にする**
+      （#1177。**図は描かずにモデルからレンダリングする**——変数名・行為の名前は図に出さず、対応に無い状態・行為があれば描かない。規則を破る状態に `⚠` の印、最初の反例を番号つきの経路で描く。
+      spec-review の「モデルを残す」が `statechart.md` に書き、範囲の中の反例を Q&A 表に起票するときに質問へパスを添える。置き場所は `references/tree.md` の「形式検査のモデル」、守る／守らないは docstring を正とする。
+      テストは `scripts/test-formal-statechart.py`——本物の TLC で取った出力を返す偽の TLC で回す）
     - `scripts/check-design-csv.py` - システム設計書の成果物の表（`requirements/` の機能一覧・データモデル・入出力・帳票・権限・バッチ・ジョブと、
       `shared/nfr.csv` の可用性などの種類の行）の検査（#957。**形式の違反（1）・表が無い（止めない）・必須の欄が空と未決定の印（3）を分けて出す**。
       `scaffold.py` が関門で重ね合わせた全体に当て、1・3 なら作らず、機能一覧と中間表現の機能も照らす。未決定の印の判定は `check-spec-exit.py` の `find_markers` を読む。
       **目的の表（`requirements/purposes.csv`。目的 `G-` と指標 `K-`）も見て、指標の `機能` を機能一覧と照らし、目的を指さない機能・測る指標の無い目的を 3 に数える**（#1154。
       `build-proposal.py` は列をここから読んで提案書に「目的と成功の判定」の節を作る）。
+      **関係者の表（`shared/stakeholders.csv`。`P-`）も見て、共有の Q&A 表の回答者が表の名前に無い・答える範囲が `なし`・括弧から読めない回答を報告する——終了コードに数えない**（#1161。
+      `check-signoff.py` は `agreements` で表を読む）。
+      **用語集（`shared/glossary.csv`。用語・意味・使わない言い方）も見て、`requirements/`・`shared/` の文書に現れた使わない言い方を報告する——終了コードに数えない**（#1164。
+      英語名は表に置かない。MkDocs のフックは `glossary` の印で描く）。
+      **機能とデータの対応（`requirements/crud.csv`。機能 × エンティティの `C`・`R`・`U`・`D`）も見て、機能一覧とデータモデルに照らし、作る・読む機能の無いエンティティと、保管期間が決まっているのに消す機能の無いエンティティを 3 に数える——`なし` の行で「する機能は無い」と決めたものは数えない**（#1162。権限一覧との食い違いは照らさず、spec-review が Formal Checker に並べて渡す）。
       決まりの原本は `references/tree.md` の「システム設計書の成果物」、守る／守らないは docstring を正とする。テストは `scripts/test-check-design-csv.py`）
     - `scripts/check-infra-csv.py` - 基盤要件の表（`shared/infra.csv`。言語・DBMS・ホスティング環境など）の検査とゲートの判定（#950。
       **形式の違反（1）・未決定（3。表が無いときも）・暫定（4）を分けて出し、表の状態と根拠の Q&A の行の状態の対応も照らす**。
@@ -136,7 +146,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       図の決まりは `references/tree.md` の「図」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-render-diagrams.py`。
       **BPMN は同梱の `render-bpmn.mjs`（bpmn-js を headless の Chrome で動かす）を呼ぶ**——#901。テストは偽の描画口を差し、`render-bpmn.mjs` そのものは走らせない）
     - `scripts/check-signoff.py` - 同じ版の 2 つのサインオフのタグ（`signoff/v<n>/req-<k>`）の時点で、
-      2 つの承認が見た中身（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` と形式検査のモデル `formal/` を除く。#908）と `removed.csv`。#375）が一致するかの照合（#262。**どちらかの時点に比べる中身が
+      2 つの承認が見た中身（v1〜v<n> の `shared/`・`requirements/`・`spec/`（`qa-dev.csv` と形式検査のモデル `formal/` を除く。#908）と `removed.csv`。#375）が一致するかの照合（#262。
+      **照合した後に、タグの時点の関係者の表で合意が要る関係者とタグの注釈の `承認: ` の行を並べて報告する——CLI の出力だけで、終了コードに数えない。表が無ければ何も出さない**（#1161）。**どちらかの時点に比べる中身が
       無ければ 2**——`git diff` は比べる中身が無くても差分なしを返す。**要求確定のタグの時点に `暫定反映` の Q&A が
       残れば 3**（#325。Q&A の行だけを版の順に重ね、重ね方はテストが `merge-versions.py` と突き合わせる。
       **要求確定のタグの時点の `removed.csv` の共有の Q&A の行（内部の層の `D-` は除く）について `merge` が拒否する配置は 2——判定は `merge-versions.py` の `check_removed`**（#338）。
@@ -500,6 +511,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     **`HOME` をテンポラリにし `CLAUDE_CONFIG_DIR` を外し、flag と managed の層をテンポラリのファイルで渡す**——実機の設定を読まない。**許可の判定の写しを dev-loop の `check-unattended-env.py` と突き合わせる**
   - `test-check-tlc.py` - spec-loop の TLC の前提の確かめ（#912）の回帰テスト（変異テストを含む）。
     **偽の TLC（本物の出力に合わせた 2 つの文字列を出すスクリプト）を絶対パスで呼び、`PATH` の先頭に `command -v` で見つかる偽の `tlc` を置く**——本物の TLC は走らせない（出力の形は見ない）
+  - `test-formal-statechart.py` - spec-loop の保存した TLC のモデルの状態遷移図（#1177）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**偽の TLC が、本物の TLC 2.19 に `-continue -dump dot,actionlabels` を渡して手元で取った出力と状態グラフをそのまま返す**（CI に TLC は無い）。
+    **図と TLC の状態グラフが食い違わないことを、状態グラフと反例をテストの側で別に読んで突き合わせる**（状態・遷移・初めの状態・印・経路。突き合わせの側の陽性対照つき）
   - `test-tlc-trace.py` - spec-loop の TLC の反例の JSON から trace ケースを作る変換（#1020）の回帰テスト（変異テストを含む）。
     **試料の反例の JSON は本物の TLC（v1.8.0 のプレリリース）で手元で取ったものを埋める**——CI に TLC は無い。出力は本物の `scaffold.py` の `check_trace` に当てる
   - `test-check-alloy.py` - spec-loop の Alloy の確かめ（#922）の回帰テスト（変異テストを含む）。
