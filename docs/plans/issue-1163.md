@@ -176,6 +176,8 @@ feasibility 手順 2・3（規模と見積り）・proposal 手順 2（手書き
 - マージの直前の取り込み（親の依頼。2026-11-18）: origin/main 8c84f23（#1158 / PR #1255）を取り込んだ。衝突は `plugins/spec-loop/scripts/check-design-csv.py` の docstring の定数の列挙 1 箇所だけ（この周の `必須度` の任意の列と、#1158 の移行の表）。
   1 度目は parallel.md の「版とマージの順」どおり解かずに止まって `git merge --abort` し、**利用者の指示（2026-11-18T10:09Z、親から受けた「両方入れて進めて」）で両方を入れて解いた**。ほかのファイルは自動でマージされた。
   spec-loop の版は main の 0.110.0 から minor で 0.111.0 に上げ直した。取り込みの後は `check-plugin-versions.py` と `skill-metrics.py --check` の 2 本だけ回し（CLAUDE.md の例外）、PR 側の CI で確かめる。関門はやり直していない
+- 2 度目の取り込み（親の依頼。2026-11-18）: 9d354ac の CI を待つあいだに main が 10b7e7a（#1156 / PR #1243。spec-loop 0.111.0）へ進んだので、取り込み直した。衝突なし。
+  spec-loop の版を main の 0.111.0 から minor で 0.112.0 に上げ直した。回したのは同じ 2 本だけ。関門はやり直していない
 
 ## 既知の限界・決着済みの論点
 
