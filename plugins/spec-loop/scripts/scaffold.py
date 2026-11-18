@@ -80,7 +80,7 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 
 **デザインの正本の参照（#1156）**: 正本の根の `design/sources.csv`（版の外。見出し `対象,参照,メモ`）があれば、画面の表がその機能を挙げる画面を持つ機能の本文の `## 参考資料` に、
 印 `**デザインの正本**` で始まる段落と、`全体` の行・その機能を挙げる画面の行（表の並び）を載せる。**本文にだけ載せる**——`scaffold/` の契約・機能のオブジェクト（指紋・v2 以降の変更の判定）には入れない。
-**見出し・列の数・`対象`（`全体` か画面の表の画面ID）・`参照`（空・バッククォート・`\\`・改行）・`メモ`（改行）・組の重複・UTF-8 でないなら 1**（作業中の版の全体で読む——`--upto` で前の版の時点を見るときは読まない）。
+**見出し・列の数・`対象`（`全体` か画面の表の画面ID）・`参照`（空・バッククォート・`\\`・改行）・`メモ`（改行）・組の重複・UTF-8 でないなら 1**——**読むのは本文を作るモード（書く生成・`--dry-run`）で作業中の版の全体を見るときだけ**で、`--check`・`--red-check`（本文を作らない）と、`--upto` で前の版の時点を見るときは読まない。
 行があるのにどの本文にも載らない（画面の表がどの機能も挙げない・どの機能にも挙げられていない画面の行）なら、止めずに知らせる。参照が実在するかは見ない。
 **ファイルが無ければ、契約と本文は #1156 の前と 1 バイトも変わらない**（決まりの正は `references/tree.md` の「デザインの正本の参照」と `references/handoff-issue.md` の「デザインの正本」）。
 
@@ -1224,6 +1224,8 @@ class Loaded:
         self.mock: bytes | None = None  # 生成したモック（書く生成は作ったもの、`--check`・`--red-check` は置いてある写し。#1099）
         # デザインの正本の参照（#1156）——`design/sources.csv` の行 [(対象, 参照, メモ)]（表の並び）。本文にだけ載せ、契約にも機能のオブジェクトにも入れない
         self.design: list[tuple[str, str, str]] = []
+        self.screen_ids: set[str] = set()  # 重ね合わせた全体の画面の表の画面ID（デザインの正本の `対象` を照らす。#1156）
+        self.current = False  # 作業中の版の全体を見ているか（`--upto` が前の版なら False——デザインの正本を読まない。#1156）
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
         self.answered = answered  # Q&A の行（No → 行）
         self.number = number  # 重ねた最後の版の番号
@@ -1285,16 +1287,28 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     # 画面の表から引いた参考資料（#1099）——在るファイルだけを写す
     loaded.screens = linked_screens(rendered, ir)
     loaded.refs.update({rel: rendered[rel] for linked in loaded.screens.values() for _, _, paths in linked for rel in paths})
-    # デザインの正本の参照（#1156）は作業中の版の全体だけで読む（版の外のファイルで、前の版の時点の画面の表と照らすと、後で足した画面を「無い」と言う）
-    if design_gate:
-        problems, loaded.design = read_design(repo, rendered)
-        if problems:
-            return 1, problems + [f"デザインの正本の参照（{DESIGN_PATH}。references/tree.md の「デザインの正本の参照」）が決まりに反する。生成しない"], None
-        loaded.notes += design_notes(loaded)
+    # デザインの正本の参照（#1156）を照らす画面ID（読むのは本文を作るモードだけ——`run` の `check_design`）
+    loaded.screen_ids = screen_ids(rendered)
+    loaded.current = design_gate
     return 0, [], loaded
 
 
-def read_design(repo: Path, rendered: dict[str, bytes]) -> tuple[list[str], list[tuple[str, str, str]]]:
+def check_design(repo: Path, loaded: Loaded) -> tuple[int, list[str]]:
+    """デザインの正本の参照（#1156）を読んで `loaded.design` に置く。(終了コード, 止めるときの行) を返す。
+
+    **本文を作るモード（書く生成・`--dry-run`）で、作業中の版の全体を見るときだけ**呼ぶ——参照は本文にだけ載るので、
+    `--check`・`--red-check`（本文を作らない。別のリポジトリの CI も当てる）を版の外のファイルで止めない。前の版の時点（`--upto`）では読まない
+    （版の外のファイルで、前の版の時点の画面の表と照らすと、後で足した画面を「無い」と言う）。"""
+    if not loaded.current:
+        return 0, []
+    problems, loaded.design = read_design(repo, loaded.screen_ids)
+    if problems:
+        return 1, problems + [f"デザインの正本の参照（{DESIGN_PATH}。references/tree.md の「デザインの正本の参照」）が決まりに反する。生成しない"]
+    loaded.notes += design_notes(loaded)
+    return 0, []
+
+
+def read_design(repo: Path, screens: set[str]) -> tuple[list[str], list[tuple[str, str, str]]]:
     """デザインの正本の参照（正本の根の `design/sources.csv`。#1156。決まりの正は `references/tree.md` の「デザインの正本の参照」）。
 
     (違反の行, [(対象, 参照, メモ)]) を返す。**無ければ何も無い**（違反も行も無い——本文は #1156 の前と同じバイト）。
@@ -1311,7 +1325,6 @@ def read_design(repo: Path, rendered: dict[str, bytes]) -> tuple[list[str], list
         return [f"{DESIGN_PATH}: 読めない（UTF-8 の CSV でない: {exc}）"], []
     if not rows or tuple(cell.strip() for cell in rows[0]) != DESIGN_COLUMNS:
         return [f"{DESIGN_PATH}: 見出しの行が {','.join(DESIGN_COLUMNS)} でない"], []
-    screens = screen_ids(rendered)
     problems: list[str] = []
     found: list[tuple[str, str, str]] = []
     seen: set[tuple[str, str]] = set()
@@ -3217,6 +3230,11 @@ def run(repo: Path, args, writing: bool) -> int:
         code, lines = 2, [str(exc)]
     if code:
         return fail(repo, writing, code, lines)
+    if not (args.check or args.red_check):
+        # デザインの正本の参照（#1156）——本文を作るモードだけ
+        code, lines = check_design(repo, loaded)
+        if code:
+            return fail(repo, writing, code, lines)
     for line in loaded.notes:
         # 止めずに知らせる（基盤要件の表が無い。#950）
         print(line, file=sys.stderr)

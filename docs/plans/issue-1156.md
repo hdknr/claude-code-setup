@@ -51,9 +51,11 @@ Issue 本文（外部入力）から読んだ要件: (1) 見た目の正本（Fi
 - `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 参考資料の行と、新しい節「デザインの正本（見た目の確かめ）」
 - `scripts/test-scaffold-screens.py` — デザインの正本の試料・変異・写しの突き合わせ（`handoff-issue.md`・dev-loop の `spec-gap.md`）
 - `CLAUDE.md` — `scaffold.py` の項
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
 - `.claude-plugin/marketplace.json` — 版
-- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`spec-gap.md` の行数が変わるので `skill-metrics.py` で書き直す。手で書かない）
 - `docs/plans/issue-1156.md` — この計画ファイル
 

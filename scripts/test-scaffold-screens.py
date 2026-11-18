@@ -22,6 +22,9 @@
 5. **回帰**——画面の表が無い正本と、画面の表はあるがどの画面も機能を挙げない正本で、`scaffold/` と本文が同じバイト（モックも `scaffold/refs/` も作らない）。
    画面が機能を挙げなくなった（v2 で `機能` を空にした）画面の写しは消える。
 6. **写し**——本文の文言の定数が `references/handoff-issue.md` に原文のまま在る。生成したモックの置き場所と生成器の名前が screen-spec の `build-mock.py` の定数と同じ。
+7. **デザインの正本の参照（#1156）**——正本の根の `design/sources.csv` があれば、画面を持つ機能の本文の `## 参考資料` に段落と `全体`・その機能を挙げる画面の行が表の順で載り、
+   契約（`scaffold/`）と段落の外の本文はファイルの無い正本と同じバイト（v2 の変更の判定も同じ）。どの本文にも載らない行は止めずに知らせる。決まりに反すれば書く生成と `--dry-run` は 1 で何も書かず、
+   本文を作らない `--check` と前の版の時点（`--upto`）は読まない。`design/` だけが違う 2 つのタグを照合は一致と言う。段落の文言・印・置き場所・列が `handoff-issue.md`・`tree.md`・dev-loop の `spec-gap.md` と一致する。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書き、`HOME` を一時ディレクトリにし、`CLAUDE_CONFIG_DIR`・`SPEC_LOOP_SCREEN_SPEC`・
 `SCREEN_SPEC_SPEC_LOOP`・`PYTHONDONTWRITEBYTECODE` を外す。git は一時のリポジトリにだけ使い、`HOME`・`GIT_CONFIG_GLOBAL` を差し替える。
@@ -549,6 +552,17 @@ def case_design_bad(work: Path, source: str | None) -> str | None:
                 return f"{name}（{' '.join(args) or '書く生成'}）: exit={code}: {out[-400:]}"
             if (w.repo / "scaffold").exists() or (w.repo / "build" / "scaffold").exists():
                 return f"{name}: 決まりに反するのに何か書いた"
+    # 本文を作らない `--check` は読まない——書いた後に決まりに反するファイルを置いても 0（受入基準 A4: 参照は契約に効かない）
+    w.design(None)
+    code, out = w.scaffold()
+    if code != 0:
+        return f"ファイルの無い書く生成: exit={code}: {out[-400:]}"
+    w.design(DESIGN_HEAD + "S-999,a,\n")
+    code, out = w.scaffold("--check")
+    if code != 0:
+        return f"--check が決まりに反するデザインの正本の参照で止まった: exit={code}: {out[-400:]}"
+    shutil.rmtree(w.repo / "scaffold")
+    shutil.rmtree(w.repo / "build")
     w.design(None)
     (w.repo / "design" / "sources.csv").mkdir(parents=True)
     code, out = w.scaffold()
@@ -576,6 +590,28 @@ def case_design_previous(work: Path, source: str | None) -> str | None:
     if code != 1 or "対象 'S-999'" not in out:
         return f"陽性対照: 作業中の版で読まない: exit={code}: {out[-400:]}"
     return None
+
+
+def case_design_v2(work: Path, source: str | None) -> str | None:
+    """v2 以降の変更の判定は、参照が在っても変わらない——v1 の後で参照を足し・差し替えても、本文を作るのは中間表現を直した機能だけ（受入基準 A4）。"""
+    found = {}
+    for label, design in (("無い", None), ("在る", DESIGN)):
+        w = World(work / label, base(), source)
+        code, out = w.scaffold()
+        if code != 0:
+            return f"参照が{label}正本の v1: exit={code}: {out[-600:]}"
+        w.design(design)
+        gate_test.write_docs(w.repo / "docs", v2_files(True))
+        w.record(2)
+        code, out = w.scaffold()
+        if code != 0:
+            return f"参照が{label}正本の v2: exit={code}: {out[-600:]}"
+        found[label] = (w.bodies(), w.snapshot("scaffold"), without_design(w.body("F-001")) if w.bodies() else "")
+        if design and DESIGN_NOTE not in w.body("F-001"):
+            return "v2 の変更の本文にデザインの正本の段落が無い"
+    if found["無い"] != found["在る"]:
+        return f"参照の有無で v2 の本文の数・契約・段落の外の本文が違う: {found['無い'][0]} / {found['在る'][0]}"
+    return None if found["在る"][0] == ["F-001"] else f"v2 で本文を作った機能が F-001 だけでない: {found['在る'][0]}"
 
 
 def case_design_signoff(work: Path, source: str | None) -> str | None:
@@ -613,6 +649,7 @@ CASES: list[tuple[str, Callable[[Path, str | None], str | None]]] = [
     ("デザインの正本: どの本文にも載らない行は止めずに知らせる", case_design_unlinked),
     ("デザインの正本: 決まりに反すれば 1 で何も作らない", case_design_bad),
     ("デザインの正本: 前の版の時点では読まない", case_design_previous),
+    ("デザインの正本: v2 の変更の判定は変わらない", case_design_v2),
     ("デザインの正本: 照合の範囲に入らない", case_design_signoff),
 ]
 
@@ -650,7 +687,7 @@ MUTATIONS = [
      "デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない"),
     ("ファイルを読まない", "    if not path.exists() and not path.is_symlink():\n", "    if True:\n",
      "デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない"),
-    ("載らない行を知らせない", "        loaded.notes += design_notes(loaded)\n", "",
+    ("載らない行を知らせない", "    loaded.notes += design_notes(loaded)\n", "",
      "デザインの正本: どの本文にも載らない行は止めずに知らせる"),
     ("機能を挙げない画面の行を知らせない", "for target, ref, _ in loaded.design if target != DESIGN_WHOLE and target not in linked]",
      "for target, ref, _ in loaded.design if False]", "デザインの正本: どの本文にも載らない行は止めずに知らせる"),
@@ -669,10 +706,12 @@ MUTATIONS = [
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
     ("ファイルでないものを無いと読む", "    if not path.is_file():\n        return [f\"{DESIGN_PATH}: ファイルでない", "    if False:\n        return [f\"{DESIGN_PATH}: ファイルでない",
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
-    ("違反でも止めない", "        if problems:\n            return 1, problems + [f\"デザインの正本の参照", "        if False:\n            return 1, problems + [f\"デザインの正本の参照",
+    ("違反でも止めない", "    if problems:\n        return 1, problems + [f\"デザインの正本の参照", "    if False:\n        return 1, problems + [f\"デザインの正本の参照",
      "デザインの正本: 決まりに反すれば 1 で何も作らない"),
-    ("前の版の時点でも読む", "    if design_gate:\n        problems, loaded.design", "    if True:\n        problems, loaded.design",
+    ("前の版の時点でも読む", "    if not loaded.current:\n        return 0, []\n", "",
      "デザインの正本: 前の版の時点では読まない"),
+    ("--check・--red-check でも読む", "    if not (args.check or args.red_check):\n        # デザインの正本の参照", "    if True:\n        # デザインの正本の参照",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
 ]
 
 
