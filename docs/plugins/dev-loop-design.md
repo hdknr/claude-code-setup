@@ -1325,7 +1325,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | 守ること | 28 | 1 |
 | 複数の Issue を回すとき | 7 | 1 |
 
-**このほかに、起点に載らないファイルが 16 本・2944 行**（`（必須）` 159 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 4874 行・`（必須）` 344 個）。
+**このほかに、起点に載らないファイルが 16 本・2972 行**（`（必須）` 160 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 4902 行・`（必須）` 345 個）。
 
 | 起点に載らないファイル | 行 | `（必須）` |
 | --- | --- | --- |
@@ -1333,12 +1333,12 @@ Eotel 側で同じ範囲を覆う 5 本
 | references/dependencies.md | 65 | 5 |
 | references/external-review.md | 90 | 8 |
 | references/fix-line.md | 67 | 8 |
-| references/formal-sync.md | 68 | 4 |
+| references/formal-sync.md | 69 | 4 |
 | references/found-lines.md | 247 | 5 |
 | references/guard-rejections.md | 115 | 16 |
 | references/ledger.md | 165 | 7 |
 | references/resume.md | 344 | 34 |
-| references/spec-gap.md | 259 | 16 |
+| references/spec-gap.md | 286 | 17 |
 | references/spec-writeback.md | 94 | 5 |
 | references/stacked.md | 155 | 9 |
 | references/untrusted-input.md | 52 | 2 |

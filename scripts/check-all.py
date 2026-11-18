@@ -193,6 +193,7 @@ TESTS: list[str] = [
     "test-check-deps-declared.py",
     "test-check-spec-writeback.py",
     "test-formal-sync.py",
+    "test-artifact-reads.py",
     "test-external-reviews.py",
     "test-check-unattended-env.py",
     "test-launch-with-long-token.py",

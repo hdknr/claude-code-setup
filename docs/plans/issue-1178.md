@@ -7,7 +7,7 @@
 読み込んだ dev-loop は 2.8.0（`SKILL.md` 1923 行を読んだ）。依存先 #1177 はマージ済み（main 53517d5 に入っている）。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1169`））。
-版の上げ方: `spec-loop` を **minor**・`dev-loop` を **minor**（どちらも能力・手順の追加——CLAUDE.md の表）。着手時の main は spec-loop 0.109.0 → 0.110.0、dev-loop 2.8.0 → 2.9.0。
+版の上げ方: `spec-loop` を **minor**・`dev-loop` を **minor**（どちらも能力・手順の追加——CLAUDE.md の表）。着手時の main は spec-loop 0.109.0 → 0.110.0、dev-loop 2.8.0 → 2.9.0。1 パス目の後の取り込み（main の #1157 が dev-loop 2.9.0）で dev-loop を 2.10.0 に上げ直した。
 マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.8.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 割り目: 割らない（cruise の周）。

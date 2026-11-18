@@ -165,6 +165,9 @@ jobs:
       - name: 形式検査のモデルと実装を揃えておく段のテスト（#1178）
         run: python3 scripts/test-formal-sync.py
 
+      - name: 読んだ成果物の集計のテスト（#1157）
+        run: python3 scripts/test-artifact-reads.py
+
       - name: 外部レビュー bot のコメントの取り出しのテスト（#997）
         run: python3 scripts/test-external-reviews.py
 
