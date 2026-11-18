@@ -467,11 +467,15 @@ def approvers(repo: Path, tag: str) -> list[str] | None:
         raise Unjudged(f"タグ {tag} の種類を読めない: {kind.stderr.strip()}")
     if kind.stdout.strip() != "tag":
         return None
-    body = git(repo, "for-each-ref", "--format=%(contents)", f"refs/tags/{tag}")
+    try:
+        # 注釈は利用者が書く——UTF-8 でなくても照合の結果（終了コード）を変えない（読めない文字は置き換えて、注釈に無いと出る）
+        body = subprocess.run(["git", "-C", str(repo), "for-each-ref", "--format=%(contents)", f"refs/tags/{tag}"], capture_output=True)
+    except OSError as e:
+        raise Unjudged(f"git を起動できない（{e.strerror}）")
     if body.returncode != 0:
-        raise Unjudged(f"タグ {tag} の注釈を読めない: {body.stderr.strip()}")
+        raise Unjudged(f"タグ {tag} の注釈を読めない: {body.stderr.decode(errors='replace').strip()}")
     names: list[str] = []
-    for line in body.stdout.splitlines():
+    for line in body.stdout.decode("utf-8", errors="replace").splitlines():
         if line.startswith(APPROVAL):
             names += [name.strip() for name in line[len(APPROVAL):].split(APPROVAL_SEPARATOR) if name.strip()]
     return names

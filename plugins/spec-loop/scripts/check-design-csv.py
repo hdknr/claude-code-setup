@@ -583,16 +583,17 @@ def check_respondents(root: Path, report: Report, answers: dict[str, bool]) -> N
     except (OSError, UnicodeDecodeError):
         report.respondents.append(f"{QA_TABLE}: 読めない——回答者を照らしていない（check-qa-csv.py で確かめる）")
         return
+    reader = csv.reader(io.StringIO(text, newline=""))
     try:
-        rows = list(csv.reader(io.StringIO(text, newline="")))
+        if next(reader, None) != qa.COLUMNS:
+            report.respondents.append(f"{QA_TABLE}: 見出しの行が決まりと違う——回答者を照らしていない（check-qa-csv.py で確かめる）")
+            return
+        rows = [(reader.line_num, fields) for fields in reader]  # 行番号はファイルの物理の行（セルの中の改行を数える。check-qa-csv.py と同じ）
     except csv.Error as e:
         # 128KB を超えるセルなど——表の検査は check-qa-csv.py の仕事で、ここは報告だけなので終了コードを変えない
         report.respondents.append(f"{QA_TABLE}: CSV として読めない（{e}）——回答者を照らしていない（check-qa-csv.py で確かめる）")
         return
-    if not rows or rows[0] != qa.COLUMNS:
-        report.respondents.append(f"{QA_TABLE}: 見出しの行が決まりと違う——回答者を照らしていない（check-qa-csv.py で確かめる）")
-        return
-    for line_num, fields in enumerate(rows[1:], start=2):
+    for line_num, fields in rows:
         if not any(f.strip() for f in fields) or len(fields) != len(qa.COLUMNS):
             continue  # 空行と列の数の違う行は check-qa-csv.py が見る
         row = dict(zip(qa.COLUMNS, fields))

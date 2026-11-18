@@ -267,6 +267,9 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
     ("関係者の表: 名前に区切りの文字", stakeholders(S_OK.replace("経理部", "総務・経理部")), None, 1,
      "shared/stakeholders.csv:3: 名前 に '・' を使った（承認の行の区切りと回答の括弧に使う文字）: 総務・経理部", ""),
     ("関係者の表: 名前に括弧", stakeholders(S_OK.replace("経理部", "情報システム部（IT）")), None, 1, "名前 に '（'・'）' を使った", ""),
+    ("回答者: 行番号はファイルの物理の行", stakeholders(qa=Q_HEAD + 'Q-R-001,要求確定,"1 行目\n2 行目\n3 行目",A: x / B: y,A,理由,A（業務部長が回答）,a,反映済み,\n'
+                                                 "Q-R-002,要求確定,質問,A: x / B: y,A,理由,A（営業部が回答）,a,反映済み,\n"), None, 0,
+     "shared/qa.csv:5: Q-R-002 の回答者 営業部", ""),
     ("回答者: Q&A 表の巨大なセルでも終了コードを変えない", stakeholders(qa=Q_HEAD + "Q-R-001,要求確定,質問,A: x / B: y,A," + "x" * 200_000 + ",A（業務部長が回答）,a,反映済み,\n"),
      None, 0, "shared/qa.csv: CSV として読めない", "想定外の例外"),
     ("関係者の表: 必須の欄が空", stakeholders(S_OK.replace("開発費と運用費", "")), None, 3, "shared/stakeholders.csv:3: 関心事 が空", ""),
@@ -397,11 +400,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("範囲が未決定の人を答えない人に数える", '            answers[name] = not (scope and row["答える範囲"].strip() == STAKEHOLDER_NONE)',
      '            answers[name] = scope and row["答える範囲"].strip() != STAKEHOLDER_NONE', "回答者: 範囲が未決定の人は答える人に数える"),
     ("違反のある表で照らす", "    return answers if len(report.violations) == before else None", "    return answers", "回答者: 表が決まりに反するなら照らさない"),
-    ("Q&A 表の見出しを見ない", "    if not rows or rows[0] != qa.COLUMNS:", "    if not rows:", "回答者: Q&A 表の見出しが違えば照らさない"),
+    ("Q&A 表の見出しを見ない", "        if next(reader, None) != qa.COLUMNS:", "        if next(reader, None) is None:", "回答者: Q&A 表の見出しが違えば照らさない"),
     ("名前の文字を見ない", "            if used:\n", "            if False:\n", "関係者の表: 名前に区切りの文字"),
     ("名前の括弧を見ない", 'STAKEHOLDER_NAME_FORBIDDEN = ("・", "（", "）")', 'STAKEHOLDER_NAME_FORBIDDEN = ("・",)', "関係者の表: 名前に括弧"),
     ("Q&A 表の CSV の誤りを報告に寄せない", "    except csv.Error as e:\n        # 128KB", "    except ValueError as e:\n        # 128KB",
      "回答者: Q&A 表の巨大なセルでも終了コードを変えない"),
+    ("行番号を記録の番号にする", "        rows = [(reader.line_num, fields) for fields in reader]",
+     "        rows = list(enumerate(reader, start=2))", "回答者: 行番号はファイルの物理の行"),
     ("回答者の照合を終了コードに数える", "        if self.empty or self.undecided:", "        if self.empty or self.undecided or self.respondents:", "回答者: 表に無い"),
 ]
 

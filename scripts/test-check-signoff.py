@@ -124,6 +124,8 @@ CASES: list[tuple[str, Steps, list[str], int, str]] = [
      [], 0, f"{R1}（要求確定）: {STAKE1} が決まりに反する・読めない——合意が要る関係者を報告していない"),
     ("関係者: 巨大なセルでも照合の結果を変えない", [("w", SHARED, QA_A), ("w", STAKE1, STAKE + "P-004," + "x" * 200_000 + ",利用者,a,b,なし\n"), ("c",), ("t", R1), ("t", B1)],
      [], 0, f"{R1}（要求確定）: {STAKE1} が決まりに反する・読めない"),
+    ("関係者: UTF-8 でない注釈でも照合の結果を変えない", STAKE_BASE + [("tmb", R1, "要求確定\n承認: 業務部長".encode("cp932")), ("tm", B1, "承認: 経理部")],
+     [], 0, f"一致する: {R1}"),
     ("関係者: 合意が決まっていない", [("w", SHARED, QA_A), ("w", STAKE1, STAKE.replace(",予算\n", ",未定\n")), ("c",), ("t", R1), ("t", B1)],
      [], 0, "    合意が決まっていない関係者: 経理部"),
     ("関係者: 片方の時点にだけ表がある", [("w", SHARED, QA_A), ("c",), ("t", R1), ("w", STAKE1, STAKE), ("c",), ("tm", B1, "承認: 経理部")],
@@ -525,6 +527,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("前の版を遡らない", "    for number in range(version, 0, -1):", "    for number in (version,):", "関係者: 前の版の表を読む"),
     ("決まりに反する表を報告しないと言わない", "            if table is None:", "            if table is None and False:", "関係者: 表が決まりに反する"),
     ("表を読む例外を照合の結果に寄せる", "                except Exception:  # 128KB", "                except ValueError:  # 128KB", "関係者: 巨大なセルでも照合の結果を変えない"),
+    ("注釈を UTF-8 として厳しく読む", '    for line in body.stdout.decode("utf-8", errors="replace").splitlines():',
+     '    for line in body.stdout.decode("utf-8").splitlines():', "関係者: UTF-8 でない注釈でも照合の結果を変えない"),
     ("合意が決まっていない関係者を出さない", "        if unknown:", "        if False:", "関係者: 合意が決まっていない"),
     ("片方の時点の表が無いことを出さない", '                body.append(f"{head}: その時点に関係者の表が無い")', "                pass",
      "関係者: 片方の時点にだけ表がある"),
@@ -743,6 +747,10 @@ def build_repo(root: Path, steps: Steps, env: dict[str, str]) -> None:
             run_git(root, env, "tag", step[1])
         elif kind == "ta":
             run_git(root, env, "tag", "-a", "-m", "signoff", step[1])
+        elif kind == "tmb":  # 注釈をバイトのまま渡す（UTF-8 でない注釈）
+            message = root.parent / f"{root.name}-message"
+            message.write_bytes(step[2])
+            run_git(root, env, "tag", "-a", "-F", str(message), step[1])
         elif kind == "tm":
             run_git(root, env, "tag", "-a", "-m", step[2], step[1])
         elif kind == "tt":
