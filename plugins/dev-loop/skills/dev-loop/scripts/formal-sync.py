@@ -30,6 +30,10 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 - 本体の `.tla` の、**対応に挙げた行為の定義のほか**のすべて——行頭から始まる定義（`<名前> ==`・`<名前>(…) ==`・`LOCAL` つき）は名前ごとに本文で、
   定義の外の行（`MODULE` の行・`EXTENDS`・`VARIABLES`・`CONSTANTS`・`ASSUME`・行頭の注釈・`====`）は順に。行為の定義は書き直してよく、新しい定義を足してよい（書き直した行為が使う）。
   保存したモデルの定義を消す・対応に無い定義（性質・`Init`・`Spec`）を変えるのは違い。
+  **比べる前に注釈（`(* … *)`・`\\*`）を除く**——注釈で行頭の定義を隠して行頭でない位置に弱めた定義を置く形を、TLC と同じに読むため。
+- **対応に挙げても書き直してはならない定義**——本体の `.cfg` が名指す名前（`Init`・`Next`・性質など）と、性質（`INVARIANT`・`PROPERTY`）の定義がたどって使う定義。
+
+**渡す保存したモデルは、正本の対象の記録（番号が最大の版）そのもの**——別の版・写しを渡すと 2。
 
 | 結果 | 条件 | 終了コード |
 | --- | --- | --- |
@@ -46,7 +50,8 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 
 - **触れたモデルの行が無い・結果が上の 4 つでない・同じ対象の行が 2 本ある**——1
 - **`反例あり（コードの不具合）`**——1（コードを直して走らせ直し、行を書き直してから PR を作る）
-- **`反例あり（モデルのずれ）` なのに、計画に `正本に起票する行:` の行（`references/spec-writeback.md`）が無い**——1
+- **`反例あり（モデルのずれ）` なのに、計画に中身のある `正本に起票する行:` の行と `仕様の振る舞い: 変える` の申告（`references/spec-writeback.md`）がそろわない**——1
+- **周の差分が、保存したモデルのファイルを変えた・記録（`README.md`）の `実装の対応`・`対応を確かめたコミット` のほかの行を変えた**——1（モデルは spec-loop で直す。正本が別のリポジトリなら見ない）
 - `判定できなかった`——0（PR コメントで渡す。止めないが緑ではない）・`反例なし`——0
 - モデルが 1 つも無い——何も求めずに 0（`--spec-loop` も要らない）
 
@@ -71,6 +76,10 @@ cwd は周の worktree（実装のリポジトリ）。`--spec-loop` は spec-lo
 | 対応の行為の定義のほかが保存したモデルと違えば `判定できなかった` | 性質・`Init`・設定・陽性対照を弱めて「反例なし」にする |
 | 保存したモデルが `満たす` でなければ `判定できなかった` | 壊れた基準と比べて「反例なし」と読む |
 | 未コミット・未追跡の変更も触れたに数える | 2 点の差分の外にある実装を見落とす |
+| 差分の名前を `-z` で読む | ASCII でない名前が引用符つきの 8 進で出て、対応の名前と合わない |
+| 注釈を除いてから比べる | 注釈で行頭の性質を隠し、行頭でない位置の弱めた定義を TLC に読ませる |
+| 設定が名指す名前と性質が使う定義は、対応に挙げても書き直しを許さない | 対応に性質を挙げて書き直し、弱めて「反例なし」にする |
+| 渡す保存したモデルを正本の記録に限り、周の差分が保存したモデルを変えたら `check` が 1 | 古い版・写し・周の中で弱めたモデルを基準にする |
 | 記録の読み方・TLC の呼び方と判定は spec-loop から読み込む | 写しがずれて片方だけ緑になる |
 
 守らない:
@@ -108,7 +117,16 @@ SYNC_ITEMS = ("実装の対応", "対応を確かめたコミット")
 COMPARED_ITEMS = ("モデルのファイル", "陽性対照のファイル", "実装の対応")
 VERSION = re.compile(r"v([1-9][0-9]*)")
 DEFINITION = re.compile(r"(?:LOCAL\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*==")
-PLAN_LINE = re.compile(r"^(?:- )?" + re.escape(LINE_KEY) + r"\s*(\S+)\s+(.+?)\s*$")
+PLAN_LINE = re.compile(r"^(?:[-*]\s+)?" + re.escape(LINE_KEY) + r"\s*(\S+)\s+(.+?)\s*$")
+# `check-spec-writeback.py` の DECLARE・ROW_LINE と同じ形（前置きの `- `・`* ` を許す）
+WRITEBACK_LINE = re.compile(r"^(?:[-*]\s+)?" + re.escape(WRITEBACK_KEY) + r"\s*(.*?)\s*$")
+DECLARE_LINE = re.compile(r"^(?:[-*]\s+)?仕様の振る舞い:\s*(.*?)\s*$")
+FENCE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+CFG_KEYWORDS = {"INIT", "NEXT", "SPECIFICATION", "INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES", "CONSTANT", "CONSTANTS",
+                "CONSTRAINT", "CONSTRAINTS", "ACTION_CONSTRAINT", "ACTION_CONSTRAINTS", "SYMMETRY", "VIEW", "CHECK_DEADLOCK",
+                "POSTCONDITION", "ALIAS", "TRUE", "FALSE"}
+PROPERTY_KEYWORDS = {"INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES"}
 
 
 class Unjudged(Exception):
@@ -183,8 +201,9 @@ def mapping(rerun_module, directory: Path, found: dict[str, str]) -> list[tuple[
 def changed_files(base: str) -> set[str]:
     if subprocess.run(["git", "merge-base", "--is-ancestor", base, "HEAD"], capture_output=True).returncode != 0:
         raise Unjudged(f"{base}: HEAD の祖先でない——周の base を渡す（SKILL.md 手順 4。main を取り込んだ後は式を当て直す）")
-    names = git("diff", "--name-only", "--no-renames", base).splitlines()
-    names += git("ls-files", "--others", "--exclude-standard").splitlines()
+    # -z で読む——既定の core.quotePath では ASCII でない名前が引用符つきの 8 進で出て、対応の名前と合わない
+    names = git("diff", "--name-only", "--no-renames", "-z", base).split("\0")
+    names += git("ls-files", "--others", "--exclude-standard", "-z").split("\0")
     return {n for n in names if n}
 
 
@@ -213,6 +232,45 @@ def touched(base: str, spec_loop: Path | None, canon: Path | None) -> tuple[list
     if unmapped:
         notes.append(f"対応の無いモデル（未実装・行が無い）: {', '.join(unmapped)}——触れたかを決められない")
     return hits, notes
+
+
+def strip_comments(text: str) -> str:
+    """TLA+ の注釈（入れ子の `(* … *)` と行の `\\*` から行末まで）を除く。文字列 `"…"` の中は除かない。改行は残す（行の区切りを変えない）。
+
+    注釈で定義を隠す形（行為の本文で `(*` を開き、行頭の性質の定義を注釈に入れて、行頭でない位置に弱めた定義を置く）を、
+    比べる前に TLC と同じに読むため（#1178 の 1 パス目の反証）。
+    """
+    out: list[str] = []
+    i, depth, quoted = 0, 0, False
+    while i < len(text):
+        ch, two = text[i], text[i:i + 2]
+        if depth:
+            if two == "(*":
+                depth, i = depth + 1, i + 2
+            elif two == "*)":
+                depth, i = depth - 1, i + 2
+            else:
+                if ch == "\n":
+                    out.append(ch)
+                i += 1
+        elif quoted:
+            out.append(ch)
+            if ch == "\\" and i + 1 < len(text):
+                out.append(text[i + 1])
+                i += 2
+                continue
+            quoted = ch != '"'
+            i += 1
+        elif two == "(*":
+            depth, i = 1, i + 2
+        elif two == "\\*":
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+        else:
+            quoted = ch == '"'
+            out.append(ch)
+            i += 1
+    return "".join(out)
 
 
 def split_module(text: str) -> tuple[dict[str, str], list[str]]:
@@ -250,6 +308,7 @@ def weakened(module, saved: Path, code: Path, saved_records: dict[str, str]) -> 
     actions = {action for action, _, _ in mapping(module, saved, saved_records)}
     controls = module.baseline.FILE.findall(saved_records.get("陽性対照のファイル", ""))
     models = module.baseline.FILE.findall(saved_records.get("モデルのファイル", ""))
+    named, properties = cfg_names(saved, [n for n in models if n.endswith(".cfg") and n not in controls])
     for name in dict.fromkeys(models + controls):
         a, b = saved / name, code / name
         if not b.is_file():
@@ -262,13 +321,18 @@ def weakened(module, saved: Path, code: Path, saved_records: dict[str, str]) -> 
                 problems.append(f"{name} が保存したモデルと違う（設定と陽性対照は変えない）")
             continue
         try:
-            saved_defs, saved_others = split_module(a.read_text(encoding="utf-8"))
-            code_defs, code_others = split_module(b.read_text(encoding="utf-8"))
+            saved_defs, saved_others = split_module(strip_comments(a.read_text(encoding="utf-8")))
+            code_defs, code_others = split_module(strip_comments(b.read_text(encoding="utf-8")))
         except (Unjudged, UnicodeDecodeError) as e:
             problems.append(f"{name} を読めない: {e}")
             continue
         if saved_others != code_others:
             problems.append(f"{name} の定義の外の行（MODULE・EXTENDS・VARIABLES・CONSTANTS・ASSUME など）が保存したモデルと違う")
+        # 書き直してよいのは、対応の行為のうち、設定が名指さず性質の定義が（たどって）使わないものだけ（#1178 の 1 パス目の指摘）
+        protected = named | closure(saved_defs, properties)
+        for action in sorted(actions & protected & set(saved_defs)):
+            if code_defs.get(action) != saved_defs[action]:
+                problems.append(f"{name} の定義「{action}」は設定（.cfg）が名指すか性質の定義が使う——実装の対応に挙げても書き直さない")
         for definition, body in saved_defs.items():
             if definition not in code_defs:
                 problems.append(f"{name} から定義「{definition}」が消えた")
@@ -277,11 +341,49 @@ def weakened(module, saved: Path, code: Path, saved_records: dict[str, str]) -> 
     return problems
 
 
+def cfg_names(directory: Path, cfgs: list[str]) -> tuple[set[str], set[str]]:
+    """本体の `.cfg` が名指す名前の全部と、そのうち性質（INVARIANT・PROPERTY）として名指す名前。"""
+    named: set[str] = set()
+    properties: set[str] = set()
+    for cfg in cfgs:
+        try:
+            text = strip_comments((directory / cfg).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        keyword = None
+        for word in IDENT.findall(text):
+            if word in CFG_KEYWORDS:
+                keyword = word
+                continue
+            named.add(word)
+            if keyword in PROPERTY_KEYWORDS:
+                properties.add(word)
+    return named, properties
+
+
+def closure(definitions: dict[str, str], roots: set[str]) -> set[str]:
+    """roots の定義が（たどって）使う定義の名前（roots を含む）。"""
+    seen: set[str] = set()
+    todo = [r for r in roots if r in definitions]
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        body = definitions[name].split("==", 1)[1] if "==" in definitions[name] else ""
+        todo += [w for w in IDENT.findall(body) if w in definitions and w not in seen]
+    return seen
+
+
 def rerun(target: Path, code: Path, spec_loop: Path | None, canon: Path | None, intended: bool, timeout: int) -> tuple[int, list[str]]:
     module = load_spec_loop(spec_loop)
     root = canon or repo_root()
     if not target.is_dir() or not code.is_dir():
         raise Unjudged(f"{target if not target.is_dir() else code}: ディレクトリでない")
+    models = find_models(root)
+    if target.name not in models or models[target.name].resolve() != target.resolve():
+        where = models[target.name] if target.name in models else "（無い）"
+        raise Unjudged(f"{target}: 正本の対象「{target.name}」の記録（番号が最大の版）でない——{where} を渡す（#1178 の 1 パス目の指摘）")
     saved_records = records(module, target)
     if not mapping(module, target, saved_records):
         raise Unjudged(f"{target}: 実装の対応が無い（未実装・行が無い）——どの行為をコードに当てるか決まらない")
@@ -322,10 +424,10 @@ def plan_lines(plan: Path) -> tuple[dict[str, list[str]], bool]:
     except (OSError, UnicodeDecodeError) as e:
         raise Unjudged(f"{plan}: 読めない（{e}）")
     found: dict[str, list[str]] = {}
-    writeback = False
+    rows, declares = [], []
     fenced = False
     for line in text.splitlines():
-        if line.lstrip().startswith("```"):
+        if FENCE.match(line):
             fenced = not fenced
             continue
         if fenced:
@@ -333,9 +435,45 @@ def plan_lines(plan: Path) -> tuple[dict[str, list[str]], bool]:
         m = PLAN_LINE.match(line)
         if m:
             found.setdefault(m.group(1), []).append(m.group(2))
-        if re.match(r"^(?:- )?" + re.escape(WRITEBACK_KEY), line):
-            writeback = True
-    return found, writeback
+        w = WRITEBACK_LINE.match(line)
+        if w and w.group(1):
+            rows.append(w.group(1))
+        d = DECLARE_LINE.match(line)
+        if d:
+            declares.append(d.group(1))
+    # モデルのずれは性質を変える——中身のある起票の行と、`仕様の振る舞い: 変える` の申告がそろうときだけ戻したと読む
+    return found, bool(rows) and declares == ["変える"]
+
+
+def saved_model_changes(base: str, canon: Path | None) -> list[str]:
+    """周の差分が、保存したモデル（README.md の 2 行のほか）を変えていないか。正本が別のリポジトリなら見ない。"""
+    root = repo_root()
+    if canon is not None and canon.resolve() != root.resolve():
+        return []
+    changed = changed_files(base)
+    problems = []
+    for name, directory in find_models(root).items():
+        rel = directory.resolve().relative_to(root.resolve()).as_posix()
+        for path in sorted(p for p in changed if p.startswith(rel + "/")):
+            if path != f"{rel}/README.md":
+                problems.append(f"{name}: 周の差分が保存したモデルのファイル {path} を変えた——モデルは spec-loop で直す（周が書いてよいのは README.md の {'・'.join(SYNC_ITEMS)} だけ）")
+            elif not readme_rows_kept(base, path, root / path):
+                problems.append(f"{name}: 周の差分が {path} の {'・'.join(SYNC_ITEMS)} のほかの行を変えた——モデルは spec-loop で直す")
+    return problems
+
+
+def readme_rows_kept(base: str, rel: str, now: Path) -> bool:
+    """base の時点の記録の表と今の表が、2 行のほかで同じか（base に無ければ新しく足したモデル——変えたと読む）。"""
+    proc = subprocess.run(["git", "show", f"{base}:{rel}"], capture_output=True, text=True)
+    if proc.returncode != 0:
+        return False
+    def rows(text: str) -> list[str]:
+        return [line.strip() for line in text.splitlines()
+                if line.strip().startswith("|") and line.strip().split("|")[1].strip() not in SYNC_ITEMS]
+    try:
+        return rows(proc.stdout) == rows(now.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def check(plan: Path, base: str, spec_loop: Path | None, canon: Path | None) -> tuple[int, list[str]]:
@@ -344,6 +482,7 @@ def check(plan: Path, base: str, spec_loop: Path | None, canon: Path | None) -> 
         return 0, notes + ["触れたモデルは無い——再検査の行は求めない"]
     found, writeback = plan_lines(plan)
     problems, lines = [], list(notes)
+    problems += saved_model_changes(base, canon)
     for name, _, files in hits:
         results = found.get(name, [])
         where = f"{name}（触れた対応のファイル: {', '.join(files)}）"
@@ -356,7 +495,7 @@ def check(plan: Path, base: str, spec_loop: Path | None, canon: Path | None) -> 
         elif results[0] == CODE_BUG:
             problems.append(f"{where}: {CODE_BUG}——コードを直して走らせ直し、行を書き直してから PR を作る")
         elif results[0] == MODEL_DRIFT and not writeback:
-            problems.append(f"{where}: {MODEL_DRIFT} なのに計画に「{WRITEBACK_KEY}」の行が無い——性質を変えたことを正本に戻す（references/spec-writeback.md）")
+            problems.append(f"{where}: {MODEL_DRIFT} なのに計画に中身のある「{WRITEBACK_KEY}」の行と「仕様の振る舞い: 変える」の申告がそろっていない——性質を変えたことを正本に戻す（references/spec-writeback.md）")
         elif results[0] == UNKNOWN:
             lines.append(f"{where}: {UNKNOWN}——PR コメントで渡す（緑ではない）")
         else:

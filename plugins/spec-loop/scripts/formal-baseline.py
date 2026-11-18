@@ -34,7 +34,7 @@ usage:
   （`formal-statechart.py` は対応が無い対象を描かない）。
 - **`実装の対応`・`対応を確かめたコミット`（任意。#1178）**: 2 行ともそろって在るか、そろって無い（無いのは前から残したモデル）。
   `実装の対応` は `未実装` か、`` `<行為>` → `<ファイル>::<関数>` `` を `、` で区切った並び（行為は 2 回書かない。本体のモデル（`モデルのファイル` の `.tla` のうち陽性対照でないもの）が行頭から `<行為> ==` で定義していること。
-  `.tla` が無い対象（Alloy など）は形だけを見る）。`対応を確かめたコミット` は `未実装` か 7〜40 桁の小文字の 16 進で、**`未実装` は 2 行で食い違わない**。
+  `.tla` が無い対象（Alloy など）は形だけを見る。本体の `.cfg` が名指す名前（`Init`・`Next`・性質）は行為として挙げない。ファイルは正規の相対パス（`./`・`..`・`//`・絶対パスは違反））。`対応を確かめたコミット` は `未実装` か 7〜40 桁の小文字の 16 進で、**`未実装` は 2 行で食い違わない**。
   対応のファイル・関数が在るか、コミットが在るかは見ない（正本と実装のリポジトリが別のことがある——dev-loop の `formal-sync.py` が実装のリポジトリで読む）。
 - **ディレクトリの中身は、`README.md` と `モデルのファイル`・`陽性対照のファイル`・`図の対応のファイル`・`状態遷移図のファイル` の一覧だけ**——TLC の `states/`・Alloy の `<名前>/`・出力を落としたファイル・前に残したファイルが在れば違反。
 
@@ -81,6 +81,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -288,15 +289,20 @@ def parse_mapping(value: str) -> list[tuple[str, str, str]] | None:
     entries = []
     for part in value.split("、"):
         m = MAPPING_ENTRY.fullmatch(part.strip())
-        if not m:
+        if not m or not normal_path(m.group(2)):
             return None
         entries.append((m.group(1), m.group(2), m.group(3)))
     return entries or None
 
 
+def normal_path(path: str) -> bool:
+    """リポジトリの根からの正規の相対パスか（`./`・`..`・`//`・絶対パス・末尾の `/` は通さない——`git diff --name-only` の名前と文字列で突き合わせるため。#1178 の 1 パス目）。"""
+    return not path.startswith("/") and "\\" not in path and posixpath.normpath(path) == path and not path.startswith("..")
+
+
 def defines(text: str, action: str) -> bool:
     """TLA+ の本文が、行頭から `<行為> ==`（引数つき `<行為>(…) ==` も）で定義しているか。"""
-    return re.search(rf"^{re.escape(action)}\s*(\([^)]*\))?\s*==", text, re.MULTILINE) is not None
+    return re.search(rf"^(?:LOCAL\s+)?{re.escape(action)}\s*(\([^)]*\))?\s*==", text, re.MULTILINE) is not None
 
 
 def check_sync(directory: Path, records: dict[str, str]) -> list[str]:
@@ -323,6 +329,13 @@ def check_sync(directory: Path, records: dict[str, str]) -> list[str]:
         controls = FILE.findall(records.get("陽性対照のファイル", ""))
         bodies = [n for n in FILE.findall(records.get("モデルのファイル", "")) if n.endswith(".tla") and n not in controls]
         texts = []
+        named = ""
+        for name in FILE.findall(records.get("モデルのファイル", "")):
+            if name.endswith(".cfg") and name not in controls:
+                try:
+                    named += (directory / name).read_text(encoding="utf-8") + "\n"
+                except (OSError, UnicodeDecodeError):
+                    pass
         for name in bodies:
             try:
                 texts.append((directory / name).read_text(encoding="utf-8"))
@@ -335,6 +348,8 @@ def check_sync(directory: Path, records: dict[str, str]) -> list[str]:
             seen.add(action)
             if texts and not any(defines(t, action) for t in texts):
                 problems.append(f"{README}: 実装の対応の行為「{action}」を、モデルのファイルの本体（.tla）が定義していない")
+            if re.search(rf"\b{re.escape(action)}\b", named):
+                problems.append(f"{README}: 実装の対応の「{action}」は本体の設定（.cfg）が名指す定義（INIT・NEXT・性質など）——行為でない")
     return problems
 
 

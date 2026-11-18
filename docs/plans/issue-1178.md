@@ -53,13 +53,16 @@ dev-loop の周が対応のファイルに触れたら、モデルの再検査�
 - `plugins/spec-loop/references/tree.md` — 「形式検査のモデル」の記録の表と「実装との対応」の段落、「保存したモデルを CI で走らせ続ける」の雛形
 - `scripts/test-check-formal-rerun.py` — 雛形の走らせるコマンドを抜き出して、空振りのモデルで非 0 を見る
 - `plugins/spec-loop/skills/spec-review/SKILL.md` — 「モデルを残す」の 2 で 2 行を引き継ぐ
-- `plugins/spec-loop/README.md`・`plugins/dev-loop/README.md` — スクリプトの表（あれば）
+- `plugins/spec-loop/README.md` — スクリプトの表
 - `CLAUDE.md` — スクリプトとテストの項
-- `scripts/check-all.py`・`scripts/test-check-all.py` — テストの登録（要れば）
+- `scripts/check-all.py` — テストの登録
 - `.github/workflows/plugins.yml` — テストのステップ
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書く）
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
-- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行（`cruise` も）
 - `docs/plans/issue-1178.md` — この計画ファイル
 
 触らない:
@@ -99,12 +102,31 @@ dev-loop の周が対応のファイルに触れたら、モデルの再検査�
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1178-formal-sync`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1178`・起点 `53517d5`・base `origin/main` → `53517d593b60a75123648e6f26b0d77dd669b1d1`
-- 関門: まだ当てていない
-- 交絡を潰した手順: （実走のあとに書く）
+- 関門: Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）反証 2 件・`/code-review` 1 パス目（high）指摘 10 件。どちらも終点 `cb02453`。
+  **1 パス目の指摘対応の起点**: `cb02453f`（1 パス目の 2 つの関門に渡した時点の HEAD）。差し戻し: あり（直すの 7 行）。
+- 割り目（手順 4・6）: 割らない（cruise の周）。
+- 交絡を潰した手順: 実走（下の節）は本物の TLC で陽性（上限を外したコードのモデルで反例）と陰性（同じ写しで反例なし）の両側を取った。Verifier の反証 1（注釈で性質を隠す）は著者が本物の TLC で再現（直す前に `反例なし`・0、直した後に `判定できなかった`）。
 
 ## 既知の限界・決着済みの論点
 
-（関門の報告を受けたら、採否の表を書く）
+### 1 パス目の採否の表（直す線: 既定）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| V1-1 | Verifier: `split_module` が注釈を読まず、行為の本文の `(*` で行頭の `Inv` を隠し、行頭でない `Inv == x <= 100` を置くと `反例なし` | 示せる——著者が本物の TLC で再現（`形式検査の再検査: counter 反例なし`・0） | A5 | 直す（注釈を除いてから比べる） |
+| V1-2 | Verifier・CR4: 対応のパスが正規でない（`./app/x.py`・`app//x.py`）と `touched` が触れたと読まない | 示せる——両方の関門が一時のリポジトリで `触れたモデルは無い`・`check` 0 を出した。テストの試料で再現 | A2 | 直す（`parse_mapping` で正規でないパスを形の違反に） |
+| V1-3 | Verifier: 同じ一時ディレクトリで TLC を続けて起動すると `states/` の名前が同じ秒で衝突して `判定できなかった` が 1 回 | 示せない（1 回の観測。`check-formal-rerun.py` の既存の挙動で、偽の反例なしにはならない） | 無し | 残課題 |
+| CR1 | `実装の対応` に性質・`Init`・`Next` を挙げると、コードのモデルで書き直して弱められる | 示せる——関門が本物の TLC で `反例なし` を出した。テストの試料で再現 | A5 | 直す（設定が名指す名前と性質がたどって使う定義は書き直しを許さない。`formal-baseline.py check` も設定が名指す名前を違反に） |
+| CR2 | `判定できなかった`（弱めた違いを含む）で `check` が 0——不在の周でマージに進む | 示せる（`check` が 0） | 無し（A5 は「反例なしにしない」で、判定できなかったは満たす） | 残課題（推奨は PR コメント） |
+| CR3 | `rerun` が任意のディレクトリを保存したモデルとして受ける・周の差分で保存したモデルを弱められる | 示せる——テストの試料で再現（古い版を渡す・`.cfg` を周の中で変える） | A5 | 直す（`rerun` は正本の対象の記録に限り、`check` は周の差分が保存したモデルを変えたら 1） |
+| CR5 | ASCII でない名前（`app/注文.py`）が `git diff --name-only` で引用されて合わない | 示せる——関門が再現。テストの試料で再現 | A2 | 直す（`-z`） |
+| CR6 | `モデルのずれ` の起票の行が空でも・`仕様の振る舞い: 変えない` でも通る・前置き `* ` の食い違い | 示せる——テストの試料で再現 | A5（ずれの経路で性質を変えたことを残さずに通す） | 直す（中身のある行と `変える` の申告を要る。前置きを `check-spec-writeback.py` と同じ形に） |
+| CR7 | `tree.md`・`formal-baseline.py` の docstring が「関数とコミットが在るかは formal-sync.py が読む」と書くが、読まない | 示せる（文面と実装の食い違い） | 無し | 残課題 |
+| CR8 | spec-review が行為の定義を変えても `対応を確かめたコミット` を引き継ぐので、確かめていない対応が確かめたと読める | 示せない（起きる形の推論） | 無し | 残課題 |
+| CR9 | 呼び方の行が無いとき、保存したモデルの判定できなかったが「基準が壊れている」と出て、誤った手当てに誘う | 示せる（出力の文） | 無し（結果は判定できなかったで正しい） | 残課題 |
+| CR10 | `formal-baseline.py` の `defines` が `LOCAL` を読まない | 示せる——テストの試料で再現 | A1 | 直す |
+
+決着済み（仕様の穴を推奨で決めた値）: 上の「決めた値」の H1〜H5 と決着。
 
 ## 実走（受入基準 A3 の本物の TLC での陽性対照）
 

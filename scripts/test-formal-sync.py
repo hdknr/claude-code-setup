@@ -85,6 +85,11 @@ def model_files(model: str = MODEL, broken: str = BROKEN, mapping: str | None = 
 
 # コードのモデル（行為を書き直したもの）
 VIOLATING = MODEL.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Inc ==\n  \\* FAKE:VIOLATE（上限の確かめを外した）\n  /\\ x' = x + 1\n")
+# 1 パス目の反証: 行為の本文の注釈で行頭の性質の定義を隠し、行頭でない位置に弱めた定義を置く
+COMMENT_TRICK = MODEL.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Inc ==\n  /\\ x' = x + 1 (*\n").replace(
+    "Inv == x <= 2\n", "Inv == x <= 2\nReset == *)\n  Inv == x <= 100\n  Reset == x' = 0\n", 1)
+# 性質が使う定義（Max）を持つモデル
+MODEL_MAX = MODEL.replace("Inv == x <= 2", "Max == 2\nInv == x <= Max")
 HELPER = MODEL.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Step(n) == n + 1\nInc ==\n  /\\ x < 2\n  /\\ x' = Step(x)\n")
 
 # 計画ファイル
@@ -122,6 +127,9 @@ CASES: dict[str, dict] = {
                           "code": 0, "word": "形式検査のモデルが無い"},
     "touched: spec-loop が無い": {"after": TOUCH, "args": ["touched", "{BASE}"], "code": 2, "word": "--spec-loop"},
     "touched: base が祖先でない": {"after": TOUCH, "args": ["touched", "{OTHER}", "--spec-loop", "{SPEC}"], "code": 2, "word": "HEAD の祖先でない"},
+    "touched: 名前が ASCII でない": {"setup": {f"{DIR1}/README.md": readme("`Inc` → `app/注文.py::inc`"), "app/注文.py": "x = 1\n"},
+                                 "after": [("commit", "app/注文.py", "x = 2\n")], "args": ["touched", "{BASE}", "--spec-loop", "{SPEC}"],
+                                 "code": 0, "word": "触れたモデル: counter（app/注文.py）"},
     # check
     "check: 行が無い（受入基準 2）": {"after": TOUCH, "plan": plan(), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"],
                               "code": 1, "word": "「形式検査の再検査: counter <結果>」の行が無い"},
@@ -130,9 +138,25 @@ CASES: dict[str, dict] = {
     "check: コードの不具合（受入基準 3）": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 反例あり（コードの不具合）"),
                                   "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "コードを直して走らせ直し"},
     "check: ずれで起票の行が無い": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 反例あり（モデルのずれ）"),
-                             "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "「正本に起票する行:」の行が無い"},
-    "check: ずれと起票の行": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 反例あり（モデルのずれ）", "正本に起票する行: ,開発（#1）,…,A,A,…,未回答,—,確認中,"),
+                             "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "そろっていない"},
+    "check: ずれと起票の行": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 反例あり（モデルのずれ）", "正本に起票する行: ,開発（#1）,…,A,A,…,未回答,—,確認中,",
+                                                  "仕様の振る舞い: 変える"),
                           "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 0, "word": ""},
+    "check: ずれで起票の行が空": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 反例あり（モデルのずれ）", "正本に起票する行:", "仕様の振る舞い: 変える"),
+                             "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "そろっていない"},
+    "check: ずれで申告が変えない": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 反例あり（モデルのずれ）", "正本に起票する行: ,開発（#1）,…", "仕様の振る舞い: 変えない"),
+                               "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 1, "word": "そろっていない"},
+    "check: 星の前置き": {"after": TOUCH, "plan": plan("* 形式検査の再検査: counter 反例なし"), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"],
+                       "code": 0, "word": ": 反例なし"},
+    "check: 保存したモデルを周が変える": {"after": TOUCH + [("commit", f"{DIR1}/Counter.cfg", "INIT Init\nNEXT Next\n")],
+                                  "plan": plan("形式検査の再検査: counter 反例なし"), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"],
+                                  "code": 1, "word": "保存したモデルのファイル docs/v1/spec/formal/counter/Counter.cfg を変えた"},
+    "check: 記録の 2 行だけを進める": {"after": TOUCH + [("commit", f"{DIR1}/README.md", readme().replace("abc1234", "def5678"))],
+                                "plan": plan("形式検査の再検査: counter 反例なし"), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"],
+                                "code": 0, "word": ": 反例なし"},
+    "check: 記録のほかの行を変える": {"after": TOUCH + [("commit", f"{DIR1}/README.md", readme().replace("| 結果 | 反例なし |", "| 結果 | 反例あり（x） |"))],
+                                "plan": plan("形式検査の再検査: counter 反例なし"), "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"],
+                                "code": 1, "word": "のほかの行を変えた"},
     "check: 判定できなかった": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 判定できなかった"),
                             "args": ["check", "{PLAN}", "{BASE}", "--spec-loop", "{SPEC}"], "code": 0, "word": "緑ではない"},
     "check: 2 本": {"after": TOUCH, "plan": plan("形式検査の再検査: counter 反例なし", "形式検査の再検査: counter 反例なし"),
@@ -168,6 +192,16 @@ CASES: dict[str, dict] = {
                         "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Reset」が消えた"},
     "rerun: 記録の一覧を変える": {"code_model": {"README.md": readme(controls="`Counter.tla`・`Counter.cfg`")},
                              "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "記録の「陽性対照のファイル」が保存したモデルと違う"},
+    "rerun: 注釈で性質を隠す（1 パス目の反証）": {"code_model": {"Counter.tla": COMMENT_TRICK},
+                                       "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Inv」が消えた"},
+    "rerun: 対応に性質を挙げて書き直す": {"setup": {f"{DIR1}/README.md": readme(MAPPING + "、`Inv` → `app/counter.py::inc`")},
+                                  "code_model": {"Counter.tla": VIOLATING.replace("Inv == x <= 2", "Inv == TRUE")},
+                                  "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Inv」は設定（.cfg）が名指すか"},
+    "rerun: 性質が使う定義を対応に挙げて書き直す": {"setup": {f"{DIR1}/README.md": readme(MAPPING + "、`Max` → `app/counter.py::inc`"), f"{DIR1}/Counter.tla": MODEL_MAX},
+                                         "code_model": {"Counter.tla": MODEL_MAX.replace("Max == 2", "Max == 100")},
+                                         "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Max」は設定（.cfg）が名指すか"},
+    "rerun: 番号が最大の版でない記録を渡す": {"setup": {**{f"{DIR2}/{k}": v for k, v in model_files().items()}}, "code_model": {},
+                                    "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 2, "word": "番号が最大の版）でない"},
     "rerun: 保存したモデルが反例を出す": {"setup": {f"{DIR1}/Counter.tla": MODEL.replace("FAKE:PASS", "FAKE:VIOLATE")}, "code_model": {},
                                 "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "比べる基準が壊れている"},
     "rerun: 保存したモデルが空振り": {"setup": {f"{DIR1}/Broken.tla": "---- MODULE Broken ----\n\\* FAKE:PASS\n====\n"}, "code_model": {},
@@ -180,9 +214,9 @@ CASES: dict[str, dict] = {
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("未追跡を数えない", '    names += git("ls-files", "--others", "--exclude-standard").splitlines()\n', "", "touched: 未追跡で触れる"),
-    ("3 点の差分にする", 'names = git("diff", "--name-only", "--no-renames", base).splitlines()',
-     'names = git("diff", "--name-only", "--no-renames", f"{base}...HEAD").splitlines()', "touched: 未コミットで触れる"),
+    ("未追跡を数えない", '    names += git("ls-files", "--others", "--exclude-standard", "-z").split("\\0")\n', "", "touched: 未追跡で触れる"),
+    ("3 点の差分にする", 'names = git("diff", "--name-only", "--no-renames", "-z", base).split("\\0")',
+     'names = git("diff", "--name-only", "--no-renames", "-z", f"{base}...HEAD").split("\\0")', "touched: 未コミットで触れる"),
     ("最小の版を読む", "if target.name not in found or found[target.name][0] < number:", "if target.name not in found:", "touched: 番号が最大の版の記録"),
     ("祖先を確かめない", '    if subprocess.run(["git", "merge-base", "--is-ancestor", base, "HEAD"], capture_output=True).returncode != 0:\n',
      "    if False:\n", "touched: base が祖先でない"),
@@ -206,6 +240,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "rerun: 定義を消す"),
     ("記録の一覧を比べない", "        if code_records.get(item) != saved_records.get(item):\n", "        if False:\n", "rerun: 記録の一覧を変える"),
     ("保存したモデルを確かめない", "        if saved_verdict != module.PASS:\n", "        if False:\n", "rerun: 保存したモデルが反例を出す"),
+    # 1 パス目の指摘対応
+    ("注釈を除かない", 'code_defs, code_others = split_module(strip_comments(b.read_text(encoding="utf-8")))',
+     'code_defs, code_others = split_module(b.read_text(encoding="utf-8"))', "rerun: 注釈で性質を隠す（1 パス目の反証）"),
+    ("設定が名指す行為の書き直しを通す", "        protected = named | closure(saved_defs, properties)\n", "        protected = set()\n", "rerun: 対応に性質を挙げて書き直す"),
+    ("性質が使う定義をたどらない", "        protected = named | closure(saved_defs, properties)\n", "        protected = named\n",
+     "rerun: 性質が使う定義を対応に挙げて書き直す"),
+    ("-z を外す", 'names = git("diff", "--name-only", "--no-renames", "-z", base).split("\\0")',
+     'names = git("diff", "--name-only", "--no-renames", base).split("\\n")', "touched: 名前が ASCII でない"),
+    ("古い版の記録を通す", "    if target.name not in models or models[target.name].resolve() != target.resolve():\n",
+     "    if target.name not in models:\n", "rerun: 番号が最大の版でない記録を渡す"),
+    ("保存したモデルの変更を見ない", "    problems += saved_model_changes(base, canon)\n", "", "check: 保存したモデルを周が変える"),
+    ("記録のほかの行を見ない", "            elif not readme_rows_kept(base, path, root / path):\n", "            elif False:\n", "check: 記録のほかの行を変える"),
+    ("空の起票の行を数える", "        if w and w.group(1):\n", "        if w:\n", "check: ずれで起票の行が空"),
+    ("申告を見ない", '    return found, bool(rows) and declares == ["変える"]\n', "    return found, bool(rows)\n", "check: ずれで申告が変えない"),
+    ("星の前置きを読まない", r'PLAN_LINE = re.compile(r"^(?:[-*]\s+)?"', r'PLAN_LINE = re.compile(r"^(?:- )?"', "check: 星の前置き"),
     ("新しい定義を止める", '                    raise Unjudged(f"定義「{current}」が 2 つある")\n                definitions[current] = line + "\\n"\n',
      '                    raise Unjudged(f"定義「{current}」が 2 つある")\n                definitions[current] = line + "\\n"\n                others.append("新しい定義")\n',
      "rerun: 定義を足して行為を書き直す"),
