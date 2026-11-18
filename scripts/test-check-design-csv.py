@@ -35,13 +35,18 @@
    （表が無い・見出しが違うときも）・SLA が `はい` で目標が `なし`（1）。表があるのに可用性の行の No を指す障害対応の行が無い（3）。障害対応でない行の指しは数えず、
    種類か水準の決まっていない行がその No を受けうる・列の数の違う行があれば言い切らない。`shared/nfr.csv` に No の決まっていない行があれば、無い No を未決定に数える。
    表が無ければ可用性の行があっても 0。
+3f. **テスト要件の表（#1160）の形と受入の人の行を見る**——見出し・列の数・id の形と重複・段と確かめ方の値（単体・結合は段に無い）・確かめ方の外の欄（自動の行の人の欄・人の行のテストケース）・
+   機能の id の形・機能一覧に無い id（一覧が無いときも）（1）。確かめ方ごとの必須の欄が空・観点が空・確かめ方の外の欄の印・受入の人の行が無い（自動の行だけの受入も）・
+   一覧に id の決まっていない行があるときの無い機能（3）。機能の空・自動の行のテストケースの空・総合と移行のリハーサルの行が無い表は通す（0）。段か確かめ方の決まっていない行・列の数の違う行があれば
+   受入の人の行が無いと言い切らない。確かめ方の決まっていない行は確かめ方ごとの欄を判定しない。
 4. **中身を検査していない形を 0 にしない（2）**——UTF-8 でない・空のファイル・ファイルでない・ディレクトリが無い・引数の誤り・
    想定外の例外（128KB 超のセルの `csv.Error`）・`-OO` で引数なし。
 5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ。
    目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`。関係者の表は列・決める人・id の接頭辞・役割と合意の値・区切りと `なし`。
    用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲。CRUD 表は列・決める人・操作の文字・`なし`・抜けに数える操作と保管期間で求める操作。
    移行の表は列・決める人・id の形・種類・どの行も書く列と種類ごとに書く列・切替の方式・期間を求める方式・`なし`。
-   運用要件の表は列・決める人・決まった値・接頭辞・空でよい列（成果物の表と同じ突き合わせ）と、水準の区切り・目標を置かない値・SLA の値・抜けに数える組）。
+   運用要件の表は列・決める人・決まった値・接頭辞・空でよい列（成果物の表と同じ突き合わせ）と、水準の区切り・目標を置かない値・SLA の値・抜けに数える組。
+   テスト要件の表は列・決める人・id の形・段・確かめ方・どの行も書く列と確かめ方ごとに書く列・空でよい列・受入の人の行）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -81,6 +86,7 @@ G = "shared/glossary.csv"
 C = "requirements/crud.csv"
 O = "requirements/operations.csv"
 M = "requirements/migration.csv"
+A = "requirements/acceptance.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
 # 機能一覧の任意の列 `必須度`（#1163）を末尾に足した見出しと、F-002 を作らない（Won't）一覧
@@ -163,6 +169,22 @@ def migration(body: str = M_OK) -> dict:
     return {M: M_HEAD + body}
 
 
+A_HEAD = "id,段,観点,確かめ方,テストケース,担当,使うデータ,期間,合格の条件,機能\n"
+A_ACCEPT = "A-001,受入,月末の締めの帳票が前のシステムと同じ数字になる,人,,業務部長,前のシステムの 10 月の受注の写し,2027-03-01〜2027-03-14,差が 0 件,F-001\n"
+A_AUTO = "A-002,総合,割引の計算,自動,F1-5b・F1-6,,,,,F-001・F-002\n"
+A_REHEARSAL = "A-003,移行のリハーサル,受注の履歴の件数,人,,情報システム部,前のシステムの本番の写し,稼働の 2 週間前,件数が一致する,\n"
+A_OK = A_ACCEPT + A_AUTO + A_REHEARSAL
+
+
+def acceptance(body: str = A_OK, features: str | None = None) -> dict:
+    """テスト要件の表の試料（#1160）。機能一覧は GOOD のもの（F-001・F-002）か `features`（"" なら置かない）。ほかの表は置かない。"""
+    files = {A: A_HEAD + body}
+    feature_list = GOOD[F] if features is None else features
+    if feature_list:
+        files[F] = feature_list
+    return files
+
+
 def glossary(body: str = G_OK, docs: dict | None = None) -> dict:
     """用語集の試料（#1164）。`docs` は探す文書（パス → 中身）。ほかの表は置かない。"""
     return {G: G_HEAD + body} | (docs or {})
@@ -223,9 +245,9 @@ def purposes(body: str, features: str | None = None) -> dict:
 
 # (名前, 置く表（パス → 中身。bytes はそのまま・"<dir>" はディレクトリ）, 引数（None なら根）, 期待する終了コード, 出力に含まれるべき文字列, 含まれてはならない文字列)
 CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
-    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK, C: C_HEAD + C_OK, O: O_HEAD + O_OK, M: M_HEAD + M_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
+    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK, C: C_HEAD + C_OK, O: O_HEAD + O_OK, M: M_HEAD + M_OK, A: A_HEAD + A_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
     ("BOM 付き", {rel: "﻿" + body for rel, body in GOOD.items()}, None, 0, "OK（", "見出しの行"),
-    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（13 件）", "成果物の表が 1 つも無い"),
+    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（14 件）", "成果物の表が 1 つも無い"),
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
@@ -518,6 +540,57 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
     ("運用要件: 内容が空", operations(O_OK.replace(",一次対応と復旧,", ",,")), None, 3, "requirements/operations.csv:2: 内容 が空", "を 水準 で指す"),
     ("運用要件: 時間帯に未決定の印", operations(O_OK.replace(",平日 9〜18 時,", ",未定,")), None, 3, "requirements/operations.csv:3: 時間帯 に未決定の印（未定）", ""),
     # ---- 移行の表（#1158）
+    ("テスト要件の表: 決まりどおり", acceptance(), None, 0, "requirements/acceptance.csv（3 行）", "の行が無い"),
+    ("テスト要件の表: 受入の人の行だけでよい", acceptance(A_ACCEPT), None, 0, "requirements/acceptance.csv（1 行）", "の行が無い"),
+    ("テスト要件の表: 機能は空でよい", acceptance(A_ACCEPT.replace(",差が 0 件,F-001\n", ",差が 0 件,\n")), None, 0, "requirements/acceptance.csv（1 行）", "機能"),
+    ("テスト要件の表: 見出し", {A: A_HEAD.replace("観点,確かめ方", "確かめ方,観点") + A_OK, F: GOOD[F]}, None, 1,
+     "requirements/acceptance.csv:1: 見出しの行が決まりと違う", ""),
+    ("テスト要件の表: 列の数", acceptance(A_OK + "A-004,受入\n"), None, 1, "requirements/acceptance.csv:5: 列の数が 2", ""),
+    ("テスト要件の表: 列の数の違う行があれば受入の人の行が無いと言い切らない", acceptance(A_AUTO + "A-004,受入\n"), None, 1,
+     "requirements/acceptance.csv:3: 列の数が 2", "の行が無い"),
+    ("テスト要件の表: id の形", acceptance(A_OK.replace("A-003,", "A-03,")), None, 1, "id が A- に 3 桁以上の数字の形でない: 'A-03'", ""),
+    ("テスト要件の表: id の重複", acceptance(A_OK.replace("A-003,", "A-001,")), None, 1, "requirements/acceptance.csv:4: id が 2 行目と重複: A-001", ""),
+    ("テスト要件の表: 段の値", acceptance(A_OK + A_AUTO.replace("A-002,総合,", "A-004,単体,")), None, 1,
+     "requirements/acceptance.csv:5: 段 が 総合・受入・移行のリハーサル のどれでもない: '単体'", ""),
+    ("テスト要件の表: 確かめ方の値", acceptance(A_OK.replace(",月末の締めの帳票が前のシステムと同じ数字になる,人,", ",月末の締めの帳票が前のシステムと同じ数字になる,目視,")), None, 1,
+     "requirements/acceptance.csv:2: 確かめ方 が 自動・人 のどれでもない: '目視'", "の行が無い"),
+    ("テスト要件の表: 自動の行に人の欄", acceptance(A_OK.replace(",F1-5b・F1-6,,", ",F1-5b・F1-6,業務部,")), None, 1,
+     "requirements/acceptance.csv:3: 自動の行に 担当 を書いた（人の行だけに書く）: '業務部'", ""),
+    ("テスト要件の表: 人の行にテストケース", acceptance(A_OK.replace(",人,,業務部長,", ",人,F1-5b,業務部長,")), None, 1,
+     "requirements/acceptance.csv:2: 人の行に テストケース を書いた（自動の行だけに書く）: 'F1-5b'", ""),
+    ("テスト要件の表: 確かめ方の外の欄の印は未決定", acceptance(A_OK.replace(",F1-5b・F1-6,,", ",F1-5b・F1-6,未定,")), None, 3,
+     "requirements/acceptance.csv:3: 担当 に未決定の印（未定）", "形式の違反（"),
+    ("テスト要件の表: 確かめ方の決まっていない行は確かめ方ごとの欄を判定しない",
+     acceptance(A_ACCEPT + A_AUTO.replace(",自動,F1-5b・F1-6,,", ",未定,F1-5b・F1-6,業務部,")), None, 3,
+     "requirements/acceptance.csv:3: 確かめ方 に未決定の印（未定）", "を書いた"),
+    ("テスト要件の表: 人の行の必須の欄が空", acceptance(A_OK.replace(",2027-03-01〜2027-03-14,", ",,")), None, 3,
+     "requirements/acceptance.csv:2: 期間 が空", "形式の違反（"),
+    ("テスト要件の表: 合格の条件が空", acceptance(A_OK.replace(",差が 0 件,", ",,")), None, 3, "requirements/acceptance.csv:2: 合格の条件 が空", "形式の違反（"),
+    ("テスト要件の表: 自動の行のテストケースは空でよい", acceptance(A_OK.replace(",F1-5b・F1-6,", ",,")), None, 0,
+     "requirements/acceptance.csv（3 行）", "テストケース"),
+    ("テスト要件の表: 観点が空", acceptance(A_OK.replace(",総合,割引の計算,", ",総合,,")), None, 3, "requirements/acceptance.csv:3: 観点 が空", "形式の違反（"),
+    ("テスト要件の表: 受入の人の行が無い", acceptance(A_AUTO + A_REHEARSAL), None, 3,
+     "requirements/acceptance.csv: 段 受入 で 確かめ方 人 の行が無い", "形式の違反（"),
+    ("テスト要件の表: 受入が自動の行だけ", acceptance(A_AUTO.replace(",総合,", ",受入,")), None, 3,
+     "requirements/acceptance.csv: 段 受入 で 確かめ方 人 の行が無い", "形式の違反（"),
+    ("テスト要件の表: 段の決まっていない行があれば受入の人の行が無いと言い切らない", acceptance(A_AUTO + A_REHEARSAL.replace(",移行のリハーサル,", ",TBD,")), None, 3,
+     "requirements/acceptance.csv:3: 段 に未決定の印（TBD）", "の行が無い"),
+    ("テスト要件の表: 確かめ方の決まっていない行があれば受入の人の行が無いと言い切らない",
+     acceptance(A_AUTO + A_REHEARSAL.replace(",受注の履歴の件数,人,", ",受注の履歴の件数,要確認,")), None, 3,
+     "requirements/acceptance.csv:3: 確かめ方 に未決定の印（要確認）", "の行が無い"),
+    ("テスト要件の表: 機能の形", acceptance(A_OK.replace(",F-001・F-002\n", ",F-001,F-002\n")), None, 1,
+     "requirements/acceptance.csv:3: 列の数が 11", ""),
+    ("テスト要件の表: 機能の値", acceptance(A_OK.replace(",F-001・F-002\n", ",F-001・注文\n")), None, 1,
+     "requirements/acceptance.csv:3: 機能 の値が機能一覧の id（F- に 3 桁以上の数字）でない: '注文'", ""),
+    ("テスト要件の表: 機能一覧に無い機能", acceptance(A_OK.replace(",F-001・F-002\n", ",F-001・F-009\n")), None, 1,
+     "requirements/acceptance.csv:3: 機能 F-009 が機能一覧（requirements/features.csv）に無い", ""),
+    ("テスト要件の表: 機能一覧が無いのに機能を書いた", acceptance(features=""), None, 1,
+     "requirements/acceptance.csv:2: 機能 の id を照らす機能一覧（requirements/features.csv）が無い・読めない", ""),
+    ("テスト要件の表: 機能一覧が無ければ機能は空でよい", acceptance(A_ACCEPT.replace(",差が 0 件,F-001\n", ",差が 0 件,\n"), features=""), None, 0,
+     "requirements/acceptance.csv（1 行）", "機能"),
+    ("テスト要件の表: 一覧に id の決まっていない行があれば無い機能は未決定", acceptance(A_OK.replace(",F-001・F-002\n", ",F-001・F-009\n"),
+                                                                       features=GOOD[F] + "未定,注文の取り消し,API,\n"), None, 3,
+     "requirements/acceptance.csv:3: 機能 F-009 が機能一覧（requirements/features.csv）に無い（一覧に id の決まっていない行がある）", "形式の違反（"),
     ("移行の表: 決まりどおり", migration(), None, 0, "requirements/migration.csv（3 行）", "の行が無い"),
     ("移行の表: 移行が無いと決めた", migration(M_NONE), None, 0, "requirements/migration.csv（3 行）", "の行が無い"),
     ("移行の表: 一斉なら期間は空でよい", migration(M_DATA + M_SWITCH.replace(",並行稼働,1 か月,", ",一斉,,") + M_WORK), None, 0,
@@ -797,6 +870,53 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("移行の表のなしの種類のほかの行を見ない", "        if others:", "        if False:", "移行の表: なしの種類にほかの行"),
     ("移行の表の行の無い種類を見ない", "            if kind not in kinds:", "            if False:", "移行の表: 行の無い種類"),
     ("移行の表の種類の決まっていない行があっても行の無い種類を言う", "    if not kind_open:\n", "    if True:\n", "移行の表: 種類の決まっていない行があれば行の無い種類を言い切らない"),
+    # #1160: テスト要件の表
+    ("テスト要件の表を検査しない", "    check_acceptance(root, report, context)", "    pass", "テスト要件の表: 受入の人の行が無い"),
+    ("テスト要件の表の見出しを見ない", "    if not check_columns(report, ACCEPTANCE, header, ACCEPTANCE_COLUMNS):\n        return", "    if False:\n        return",
+     "テスト要件の表: 見出し"),
+    ("テスト要件の表の列の数を見ない", "        if len(fields) != len(ACCEPTANCE_COLUMNS):", "        if False:", "テスト要件の表: 列の数"),
+    ("テスト要件の表の id の形を見ない", "            if not ACCEPTANCE_ID.fullmatch(value):", "            if False:", "テスト要件の表: id の形"),
+    ("テスト要件の表の id の重複を見ない", "            elif value in stage_ids:", "            elif False:", "テスト要件の表: id の重複"),
+    ("テスト要件の表の段の値を見ない", "            if value in ACCEPTANCE_STAGES:", "            if True:", "テスト要件の表: 段の値"),
+    ("テスト要件の表の段に単体を許す", 'ACCEPTANCE_STAGES = ("総合", "受入", "移行のリハーサル")', 'ACCEPTANCE_STAGES = ("単体", "総合", "受入", "移行のリハーサル")',
+     "テスト要件の表: 段の値"),
+    ("テスト要件の表の確かめ方の値を見ない", "            if value in ACCEPTANCE_WAYS:", "            if True:", "テスト要件の表: 確かめ方の値"),
+    ("テスト要件の表の観点を求めない", 'ACCEPTANCE_COMMON = ("観点",)', "ACCEPTANCE_COMMON = ()", "テスト要件の表: 観点が空"),
+    ("テスト要件の表の確かめ方の外の欄を見ない", '                    report.violations.append(f"{where}: {way}の行に {column} を書いた',
+     '                    pass  # (f"{where}: {way}の行に {column} を書いた', "テスト要件の表: 自動の行に人の欄"),
+    ("テスト要件の表の確かめ方の外の欄の印を違反にする", "                elif markers(cell):\n                    # 印は未決定（値の決まりに当てない）。空にする欄でも違反にしない",
+     "                elif False:\n                    # 印は未決定（値の決まりに当てない）。空にする欄でも違反にしない", "テスト要件の表: 確かめ方の外の欄の印は未決定"),
+    ("テスト要件の表の確かめ方の欄を求めない", "                if kind == way:\n                    cell_state(report, where, column, cell, column in ACCEPTANCE_MAY_BE_EMPTY)",
+     "                if kind == way:\n                    pass", "テスト要件の表: 人の行の必須の欄が空"),
+    ("テスト要件の表の合格の条件を人の列から外す", '    "人": ("担当", "使うデータ", "期間", "合格の条件"),', '    "人": ("担当", "使うデータ", "期間"),',
+     "テスト要件の表: 合格の条件が空"),
+    ("テスト要件の表のテストケースを自動の列から外す", '    "自動": ("テストケース",),', '    "自動": (),', "テスト要件の表: 人の行にテストケース"),
+    ("テスト要件の表の自動の行のテストケースを求める", 'ACCEPTANCE_MAY_BE_EMPTY = ("テストケース",)', "ACCEPTANCE_MAY_BE_EMPTY = ()",
+     "テスト要件の表: 自動の行のテストケースは空でよい"),
+    ("テスト要件の表の受入の人の行を求めない", "    if not open_rows and not required:", "    if False:", "テスト要件の表: 受入の人の行が無い"),
+    ("テスト要件の表の受入の自動の行を受入の人の行に数える", 'ACCEPTANCE_REQUIRED = ("受入", "人")', 'ACCEPTANCE_REQUIRED = ("受入", "自動")',
+     "テスト要件の表: 受入が自動の行だけ"),
+    ("テスト要件の表の段の決まっていない行があっても受入の人の行が無いと言う", "        if stage is None or way is None:\n            open_rows = True\n", "", "テスト要件の表: 確かめ方の決まっていない行があれば受入の人の行が無いと言い切らない"),
+    ("テスト要件の表の機能を照らさない", "    check_acceptance_features(report, where, row[ACCEPTANCE_FEATURES], features, features_pending)\n", "",
+     "テスト要件の表: 機能一覧に無い機能"),
+    ("テスト要件の表の機能を空にさせない", "    if not cell_state(report, where, ACCEPTANCE_FEATURES, value, True):", "    if not cell_state(report, where, ACCEPTANCE_FEATURES, value, False):",
+     "テスト要件の表: 機能は空でよい"),
+    ("テスト要件の表の機能一覧が無くても機能を許す", "    if features is None:\n        report.violations.append(f\"{where}: 機能 の id を照らす機能一覧",
+     "    if features is None:\n        return\n        report.violations.append(f\"{where}: 機能 の id を照らす機能一覧", "テスト要件の表: 機能一覧が無いのに機能を書いた"),
+    ("テスト要件の表の機能の形を見ない", "        if not FEATURE_ID.fullmatch(item):\n            report.violations.append(f\"{where}: 機能 の値が機能一覧の id（F- に 3 桁以上の数字）でない: {item!r}（区切りは",
+     "        if False:\n            report.violations.append(f\"{where}: 機能 の値が機能一覧の id（F- に 3 桁以上の数字）でない: {item!r}（区切りは", "テスト要件の表: 機能の値"),
+    ("テスト要件の表の一覧の未決定の id を見ない", "        elif features_pending:\n            report.undecided.append(f\"{where}: 機能 {item} が機能一覧（{FEATURES}）に無い（一覧に id の決まっていない行がある）\")\n        else:\n            report.violations.append(f\"{where}: 機能 {item} が機能一覧（{FEATURES}）に無い\")\n\n\ndef check_roles",
+     "        else:\n            report.violations.append(f\"{where}: 機能 {item} が機能一覧（{FEATURES}）に無い\")\n\n\ndef check_roles",
+     "テスト要件の表: 一覧に id の決まっていない行があれば無い機能は未決定"),
+    ("テスト要件の表の列の数の違う行を受入の判定に数えない",
+     "            report.violations.append(f\"{where}: 列の数が {len(fields)}（見出しは {len(ACCEPTANCE_COLUMNS)}）\")\n            open_rows = True\n",
+     "            report.violations.append(f\"{where}: 列の数が {len(fields)}（見出しは {len(ACCEPTANCE_COLUMNS)}）\")\n",
+     "テスト要件の表: 列の数の違う行があれば受入の人の行が無いと言い切らない"),
+    ("テスト要件の表の確かめ方の決まっていない行も確かめ方ごとの欄を判定する",
+     "            continue  # どちらの行か決まらない——確かめ方ごとの欄を判定しない", "            pass",
+     "テスト要件の表: 確かめ方の決まっていない行は確かめ方ごとの欄を判定しない"),
+    ("テスト要件の表の段の決まっていない行を受入の判定に数えない", "        if stage is None or way is None:\n            open_rows = True\n",
+     "        if way is None:\n            open_rows = True\n", "テスト要件の表: 段の決まっていない行があれば受入の人の行が無いと言い切らない"),
     ("移行の表の決まった値でない種類の行を種類の判定に数えない", "                kind_open = True  # どの種類の行のつもりか決まらない（列の数の違う行と同じ）\n", "",
      "移行の表: 種類が決まった値でない行があれば行の無い種類を言い切らない"),
     ("移行の表の列の数の違う行を種類の判定に数えない", "            kind_open = True\n            continue\n        row = dict(zip(MIGRATION_COLUMNS, fields))",
@@ -974,6 +1094,7 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
     problems += crud_mismatches(module, design)
     problems += operations_mismatches(module, design, tree)
     problems += migration_mismatches(module, design)
+    problems += acceptance_mismatches(module, design)
     kinds = {}
     for row in rows_of(section(nfr_md, "## 性能のほかの種類"))[1:]:  # 1 行目は見出し（`指標`・`上限`・`単位`）
         kinds[row[0].strip("`")] = () if row[2] == "空にする" else tuple(re.findall(r"`([^`]+)`", row[2]))
@@ -1155,6 +1276,53 @@ def migration_mismatches(module, design: str) -> list[str]:
     return problems
 
 
+def acceptance_mismatches(module, design: str) -> list[str]:
+    """テスト要件の表（#1160）の定数が tree.md の「テスト要件」と一致するか。"""
+    heading = next((line for line in design.splitlines() if line.startswith("### ") and f"（`{module.ACCEPTANCE}`）" in line), None)
+    if heading is None:
+        return [f"{module.ACCEPTANCE}: tree.md に節が無い"]
+    body = section(design, heading)
+    rows = {row[0].strip("`"): row for row in rows_of(body)}
+    if list(rows) != module.ACCEPTANCE_COLUMNS:
+        return [f"{module.ACCEPTANCE}: 列が違う（tree.md {list(rows)} ／ 本体 {module.ACCEPTANCE_COLUMNS}）"]
+    problems = []
+    if any(len(row) != 3 or row[2] != "利用者" for row in rows.values()):
+        problems.append(f"{module.ACCEPTANCE}: 「決める人」が利用者でない行がある")
+    prefix = re.match(r"^`([A-Z]+-)` に 3 桁以上の数字", rows["id"][1])
+    if prefix is None or module.ACCEPTANCE_ID.pattern != prefix.group(1) + "[0-9]{3,}":
+        problems.append(f"{module.ACCEPTANCE}: id の形が tree.md と違う（本体 {module.ACCEPTANCE_ID.pattern}）")
+    for column, constant_value in (("段", module.ACCEPTANCE_STAGES), ("確かめ方", module.ACCEPTANCE_WAYS)):
+        listed = re.match(r"^((?:`[^`]+`・)+`[^`]+`) のどれか", rows[column][1])
+        if tuple(re.findall(r"`([^`]+)`", listed.group(1)) if listed else ()) != constant_value:
+            problems.append(f"{module.ACCEPTANCE}: {column} の値が tree.md と違う（本体 {constant_value}）")
+    common, optional, own = [], [], {way: [] for way in module.ACCEPTANCE_WAYS}
+    for column, row in rows.items():
+        if column in ("id", "段", "確かめ方"):
+            continue
+        if row[1].startswith("どの行も:"):
+            common.append(column)
+            continue
+        if row[1].startswith("どの行も（空でよい）:"):
+            optional.append(column)
+            continue
+        only = re.match(r"^((?:`[^`]+`・)*`[^`]+`) の行だけ:", row[1])
+        for way in (re.findall(r"`([^`]+)`", only.group(1)) if only else ["(確かめ方が読めない)"]):
+            own.setdefault(way, []).append(column)
+    if tuple(common) != module.ACCEPTANCE_COMMON:
+        problems.append(f"{module.ACCEPTANCE}: どの行も書く列が違う（tree.md {common} ／ 本体 {module.ACCEPTANCE_COMMON}）")
+    if optional != [module.ACCEPTANCE_FEATURES]:
+        problems.append(f"{module.ACCEPTANCE}: どの行も空でよい列が違う（tree.md {optional} ／ 本体 {module.ACCEPTANCE_FEATURES}）")
+    empty = tuple(column for column in rows if column not in ("id", module.ACCEPTANCE_FEATURES) and "空でよい" in rows[column][1])
+    if empty != module.ACCEPTANCE_MAY_BE_EMPTY:
+        problems.append(f"{module.ACCEPTANCE}: 確かめ方ごとに空でよい列が違う（tree.md {empty} ／ 本体 {module.ACCEPTANCE_MAY_BE_EMPTY}）")
+    if {way: tuple(columns) for way, columns in own.items()} != module.ACCEPTANCE_OWN:
+        problems.append(f"{module.ACCEPTANCE}: 確かめ方ごとに書く列が違う（tree.md {own} ／ 本体 {module.ACCEPTANCE_OWN}）")
+    stage, way = module.ACCEPTANCE_REQUIRED
+    if f"段が `{stage}` で確かめ方が `{way}` の行が 1 行以上要る" not in body:
+        problems.append(f"{module.ACCEPTANCE}: 表があれば要る行（{module.ACCEPTANCE_REQUIRED}）が tree.md と違う")
+    return problems
+
+
 def block_problems(module) -> list[str]:
     """`respondent_block`（scaffold の関門が通ったときに出す報告）が、用語集の使わない言い方だけの報告も拾うか（#1164）。"""
     lines = ["OK（shared/glossary.csv（1 行））", f"{module.USAGE_HEADING}1 件）:", "  requirements/a.md:1: x", "言い換える"]
@@ -1233,6 +1401,16 @@ REFERENCE_MUTATIONS = [
     ("移行の表の切替の方式を変える", "tree", "`一斉`・`段階`・`並行稼働` のどれか。ほかの行は空にする", "`一斉`・`並行稼働` のどれか。ほかの行は空にする"),
     ("移行の表の期間を求める方式を変える", "tree", "切替の方式が `並行稼働` なら", "切替の方式が `段階` なら"),
     ("移行の表のなしを変える", "tree", "移すもの・することが無いなら `なし` とだけ書く", "移すもの・することが無いなら `無し` とだけ書く"),
+    ("テスト要件の表の列を消す", "tree", "| `使うデータ` | `人` の行だけ", "| 使うデータ | `人` の行だけ"),
+    ("テスト要件の表の決める人を崩す", "tree", "（`差が 0 件`） | 利用者 |", "（`差が 0 件`） | 開発者 |"),
+    ("テスト要件の表の接頭辞を変える", "tree", "| `id` | `A-` に 3 桁以上の数字（`A-001`）", "| `id` | `AT-` に 3 桁以上の数字（`AT-001`）"),
+    ("テスト要件の表の段を足す", "tree", "| `段` | `総合`・`受入`・`移行のリハーサル` のどれか", "| `段` | `単体`・`総合`・`受入`・`移行のリハーサル` のどれか"),
+    ("テスト要件の表の確かめ方を変える", "tree", "| `確かめ方` | `自動`・`人` のどれか", "| `確かめ方` | `自動`・`目視` のどれか"),
+    ("テスト要件の表の確かめ方ごとの列を変える", "tree", "| `期間` | `人` の行だけ", "| `期間` | `自動` の行だけ"),
+    ("テスト要件の表のどの行も書く列を変える", "tree", "| `観点` | どの行も:", "| `観点` | `人` の行だけ:"),
+    ("テスト要件の表のテストケースの空でよいを外す", "tree", "仕様のテストケースが書かれるまでは空でよい（要求の段では仕様がまだ無い）", "仕様のテストケースが書かれてから書く（要求の段では仕様がまだ無い）"),
+    ("テスト要件の表の空でよい列を変える", "tree", "| `機能` | どの行も（空でよい）:", "| `機能` | どの行も:"),
+    ("テスト要件の表の受入の人の行を変える", "tree", "段が `受入` で確かめ方が `人` の行が 1 行以上要る", "段が `総合` で確かめ方が `人` の行が 1 行以上要る"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]
 
