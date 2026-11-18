@@ -980,6 +980,11 @@ ENTITIES_TABLE = "エンティティ,項目,意味,型,必須,保管期間\n注�
 CRUD_FILE = str(V1 / "requirements" / "crud.csv")
 CRUD_GAP = "機能,エンティティ,操作\nF-001,注文,R\nF-002,注文,U\nなし,注文,D\n"
 CRUD_FULL = CRUD_GAP.replace("F-001,注文,R\n", "F-001,注文,CR\n")
+# 移行の表（#1158）: 切替の行の無い表は未決定（3）——scaffold は止まる。切替を なし と決めれば作る
+MIGRATION_FILE = str(V1 / "requirements" / "migration.csv")
+MIGRATION_GAP = ("id,種類,移行元,対象,範囲,変換の決まり,切替の方式,並行稼働の期間,切り戻しの条件,担当\n"
+                 "M-001,データ,旧販売管理,受注の履歴,直近 5 年,変えない,,,,業務部\nM-002,業務,,なし,,,,,,\n")
+MIGRATION_FULL = MIGRATION_GAP + "M-003,切替,,なし,,,,,,\n"
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
@@ -2486,6 +2491,11 @@ CASES: list[Case] = [
          extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_GAP}, post=nothing_written),
     Case("CRUD 表: 抜けが無ければ作る（#1162）", 0, "作った",
          extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_FULL}, absent=DESIGN_GATE),
+    Case("移行の表: 行の無い種類があれば止める（#1158）", 1,
+         "build/merged/requirements/migration.csv: 種類 切替 の行が無い",
+         extra={MIGRATION_FILE: MIGRATION_GAP}, post=nothing_written),
+    Case("移行の表: 種類がそろえば作る（#1158）", 0, "作った",
+         extra={MIGRATION_FILE: MIGRATION_FULL}, absent=DESIGN_GATE),
     Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
     Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
     Case("画面の表: screen-spec が見つからなければ 2 で止める（#1097）", 2, "画面の表があるのに screen-spec が見つからない",
