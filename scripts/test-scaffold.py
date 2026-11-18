@@ -978,6 +978,11 @@ ENTITIES_TABLE = "エンティティ,項目,意味,型,必須,保管期間\n注�
 CRUD_FILE = str(V1 / "requirements" / "crud.csv")
 CRUD_GAP = "機能,エンティティ,操作\nF-001,注文,R\nF-002,注文,U\nなし,注文,D\n"
 CRUD_FULL = CRUD_GAP.replace("F-001,注文,R\n", "F-001,注文,CR\n")
+# 運用要件の表（#1159）: 可用性の水準を受ける障害対応の行が無い表は未決定（3）——scaffold は止まる。障害対応の行を足せば作る
+OPERATIONS_FILE = str(V1 / "requirements" / "operations.csv")
+OPERATIONS_NFR = "No,対象,指標,上限,単位,条件,根拠\nN-101,注文の受付,可用性,99.9,%,月の稼働で,契約\n"
+OPERATIONS_GAP = "id,種類,内容,時間帯,担当,目標,SLA,水準\nOP-001,問い合わせ,操作の質問の受付,平日 9〜18 時,開発側,翌営業日までに回答,いいえ,\n"
+OPERATIONS_FULL = OPERATIONS_GAP + "OP-002,障害対応,一次対応と復旧,24 時間 365 日,開発側,4 時間以内に復旧,はい,N-101\n"
 # ---- 画面の表の関門（#1097）。試料の scripts/ の隣に screen-spec は無い（一時ディレクトリ）——画面の表を置けば screen-spec が見つからずに止まる
 SCREEN_TABLE = str(V1 / "requirements" / "screens" / "data" / "screens.csv")
 SCREEN_GATE = "関門（画面の表。screen-gate.py）"
@@ -2474,6 +2479,11 @@ CASES: list[Case] = [
          extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_GAP}, post=nothing_written),
     Case("CRUD 表: 抜けが無ければ作る（#1162）", 0, "作った",
          extra={FEATURES_FILE: FEATURES_LIST, ENTITIES_FILE: ENTITIES_TABLE, CRUD_FILE: CRUD_FULL}, absent=DESIGN_GATE),
+    Case("運用要件: 可用性を受ける障害対応の行が無ければ止める（#1159）", 1,
+         "build/merged/requirements/operations.csv: 可用性の水準 N-101（shared/nfr.csv）を 水準 で指す 障害対応 の行が無い",
+         extra={NFR_FILE: OPERATIONS_NFR, OPERATIONS_FILE: OPERATIONS_GAP}, post=nothing_written),
+    Case("運用要件: 可用性を受ける障害対応の行があれば作る（#1159）", 0, "作った",
+         extra={NFR_FILE: OPERATIONS_NFR, OPERATIONS_FILE: OPERATIONS_FULL}, absent=DESIGN_GATE),
     Case("成果物の表: --check も止める", 1, DESIGN_GATE, args=("--check",), generate_first=True, pre=plant_undecided_jobs),
     Case("成果物の表: --dry-run も止める", 1, DESIGN_GATE, args=("--dry-run",), pre=plant_undecided_jobs),
     Case("画面の表: screen-spec が見つからなければ 2 で止める（#1097）", 2, "画面の表があるのに screen-spec が見つからない",

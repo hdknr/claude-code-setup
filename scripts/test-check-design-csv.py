@@ -27,11 +27,16 @@
    操作の形（順・重ね・区切り・小文字）・機能とエンティティの組の重複・`なし` の行と機能の操作の重なり（1）。作る・読む機能の無いエンティティと、保管期間が決まっているのに
    消す機能の無いエンティティ（3）。`なし` の行で決めた操作・更新の抜け・保管期間が未決定のエンティティの消す機能は数えない。行の決まっていないエンティティ・
    エンティティの決まっていない行があれば抜けを言い切らない。一覧・データモデルに id・名前の決まっていない行があれば、無い機能・エンティティを未決定に数える。
+3d. **運用要件の表（#1159）の形と抜けを見る**——見出し・列の数・id の形と重複・種類・担当・SLA の値・水準の形と空の項・`shared/nfr.csv` に無い No
+   （表が無い・見出しが違うときも）・SLA が `はい` で目標が `なし`（1）。表があるのに可用性の行の No を指す障害対応の行が無い（3）。障害対応でない行の指しは数えず、
+   種類か水準の決まっていない行がその No を受けうる・列の数の違う行があれば言い切らない。`shared/nfr.csv` に No の決まっていない行があれば、無い No を未決定に数える。
+   表が無ければ可用性の行があっても 0。
 4. **中身を検査していない形を 0 にしない（2）**——UTF-8 でない・空のファイル・ファイルでない・ディレクトリが無い・引数の誤り・
    想定外の例外（128KB 超のセルの `csv.Error`）・`-OO` で引数なし。
 5. **本体の定数が `references/tree.md` の「システム設計書の成果物」と `references/nfr.md` の「性能のほかの種類」の表と一致する**（写しのずれ。
    目的の表は列・決める人・id の接頭辞と種類・種類ごとに書く列・`機能` の区切りと `なし`。関係者の表は列・決める人・id の接頭辞・役割と合意の値・区切りと `なし`。
-   用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲。CRUD 表は列・決める人・操作の文字・`なし`・抜けに数える操作と保管期間で求める操作）。
+   用語集は列・決める人・空でよい列・区切り・日付の形・使わない言い方を探す範囲。CRUD 表は列・決める人・操作の文字・`なし`・抜けに数える操作と保管期間で求める操作。
+   運用要件の表は列・決める人・決まった値・接頭辞・空でよい列（成果物の表と同じ突き合わせ）と、水準の区切り・目標を置かない値・SLA の値・抜けに数える組）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -69,6 +74,7 @@ S = "shared/stakeholders.csv"
 Q = "shared/qa.csv"
 G = "shared/glossary.csv"
 C = "requirements/crud.csv"
+O = "requirements/operations.csv"
 
 F_HEAD = "id,名前,種類,関係\n"
 E_HEAD = "エンティティ,項目,意味,型,必須,保管期間\n"
@@ -114,6 +120,24 @@ def crud(body: str = C_OK, features: str | None = None, entities: str | None = N
         body_of = GOOD[rel] if given is None else given
         if body_of:
             files[rel] = body_of
+    return files
+
+
+O_HEAD = "id,種類,内容,時間帯,担当,目標,SLA,水準\n"
+O_OK = ("OP-001,障害対応,一次対応と復旧,24 時間 365 日,開発側,4 時間以内に復旧,はい,N-002\n"
+        "OP-002,問い合わせ,操作の質問の受付,平日 9〜18 時,開発側,翌営業日までに回答,いいえ,\n"
+        "OP-003,定期作業,バックアップの戻しの確かめ,毎月 1 日,利用者側,なし,いいえ,N-003・N-004\n")
+O_NFR = (N_HEAD + "N-002,注文の受付,可用性,99.9,%,月の稼働で,契約\n"
+         "N-003,日次のバックアップ,保管期間,30,日,バックアップの世代として,監査\n"
+         "N-004,注文のデータベース,バックアップ,1,日,毎日,監査\n")
+O_GAP = "requirements/operations.csv: 可用性の水準 N-002（shared/nfr.csv）を 水準 で指す 障害対応 の行が無い"
+
+
+def operations(body: str = O_OK, nfr_table: str | None = O_NFR) -> dict:
+    """運用要件の表の試料（#1159）。非機能要求の表は O_NFR（N-002 が可用性）か `nfr_table`（None なら置かない）。ほかの表は置かない。"""
+    files = {O: O_HEAD + body}
+    if nfr_table is not None:
+        files[N] = nfr_table
     return files
 
 
@@ -177,9 +201,9 @@ def purposes(body: str, features: str | None = None) -> dict:
 
 # (名前, 置く表（パス → 中身。bytes はそのまま・"<dir>" はディレクトリ）, 引数（None なら根）, 期待する終了コード, 出力に含まれるべき文字列, 含まれてはならない文字列)
 CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
-    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK, C: C_HEAD + C_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
+    ("決まりどおり", GOOD | {P: P_HEAD + P_OK, S: S_HEAD + S_OK, G: G_HEAD + G_OK, C: C_HEAD + C_OK, O: O_HEAD + O_OK}, None, 0, "OK（requirements/features.csv（2 行）", "表が無い"),
     ("BOM 付き", {rel: "﻿" + body for rel, body in GOOD.items()}, None, 0, "OK（", "見出しの行"),
-    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（11 件）", "成果物の表が 1 つも無い"),
+    ("表が無いだけ", {F: GOOD[F]}, None, 0, "表が無い（12 件）", "成果物の表が 1 つも無い"),
     ("表が 1 つも無い", {}, None, 0, "成果物の表が 1 つも無い", ""),
     # ---- 形式の違反
     ("見出しの順が違う", good(F="id,種類,名前,関係\nF-001,API,a,\n"), None, 1, "見出しの行が決まりと違う", "決まりに無い列"),
@@ -409,6 +433,41 @@ CASES: list[tuple[str, dict | None, list[str] | None, int, str, str]] = [
      "機能 F-009 が機能一覧（requirements/features.csv）に無い（一覧に id の決まっていない行がある）", "形式の違反（"),
     ("CRUD 表: データモデルのエンティティが未決定ならエンティティも未決定", crud(C_OK + "F-001,顧客,C\n", entities=GOOD[E] + "未定,名前,b,文字列,はい,1 年\n"), None, 3,
      "エンティティ 顧客 がデータモデル（requirements/entities.csv）に無い（データモデルにエンティティの決まっていない行がある）", "形式の違反（"),
+    # ---- 運用要件の表（#1159）
+    ("運用要件: 決まりどおり", operations(), None, 0, "requirements/operations.csv（3 行）", "を 水準 で指す"),
+    ("運用要件: 表が無ければ可用性の行があっても止めない", {N: O_NFR}, None, 0, "requirements/operations.csv\n", "を 水準 で指す"),
+    ("運用要件: SLA でなければ目標はなしでよい", operations(O_OK.replace("4 時間以内に復旧,はい", "なし,いいえ")), None, 0, "requirements/operations.csv（3 行）", "約束する目標が無い"),
+    ("運用要件: 見出し", operations() | {O: O_HEAD.replace("担当,目標", "目標,担当") + O_OK}, None, 1, "requirements/operations.csv:1: 見出しの行が決まりと違う", ""),
+    ("運用要件: 列の数", operations(O_OK + "OP-004,障害対応\n"), None, 1, "requirements/operations.csv:5: 列の数が 2", ""),
+    ("運用要件: id の形", operations(O_OK.replace("OP-002", "OP-2")), None, 1, "id が OP- に 3 桁以上の数字の形でない: 'OP-2'", ""),
+    ("運用要件: id の重複", operations(O_OK.replace("OP-003", "OP-001")), None, 1, "requirements/operations.csv:4: id が 2 行目と重複: OP-001", ""),
+    ("運用要件: 種類の値", operations(O_OK.replace(",定期作業,", ",監視,")), None, 1, "種類 が 障害対応・問い合わせ・定期作業 のどれでもない: '監視'", ""),
+    ("運用要件: 担当の値", operations(O_OK.replace(",利用者側,", ",委託先,")), None, 1, "担当 が 利用者側・開発側 のどれでもない: '委託先'", ""),
+    ("運用要件: SLA の値", operations(O_OK.replace(",はい,", ",約束する,")), None, 1, "SLA が はい・いいえ のどれでもない: '約束する'", ""),
+    ("運用要件: 水準の形", operations(O_OK.replace(",N-002\n", ",可用性\n")), None, 1, "requirements/operations.csv:2: 水準 の '可用性' が非機能要求の No", ""),
+    ("運用要件: 水準の空の項", operations(O_OK.replace(",N-003・N-004\n", ",N-003・\n")), None, 1, "requirements/operations.csv:4: 水準 に空の項がある", ""),
+    ("運用要件: 水準が非機能要求の表に無い", operations(O_OK.replace("N-004\n", "N-009\n")), None, 1,
+     "requirements/operations.csv:4: 水準 N-009 が非機能要求の表（shared/nfr.csv）に無い", ""),
+    ("運用要件: 非機能要求の表が無い", operations(nfr_table=None), None, 1,
+     "requirements/operations.csv:2: 水準 N-002 を照らす非機能要求の表（shared/nfr.csv）が無い・読めない・見出しが決まりと違う", "を 水準 で指す"),
+    ("運用要件: 非機能要求の表の見出しが違う", operations(nfr_table="No,対象,指標,上限\nN-002,注文,p95,300\n"), None, 1,
+     "水準 N-002 を照らす非機能要求の表（shared/nfr.csv）が無い・読めない・見出しが決まりと違う", "を 水準 で指す"),
+    ("運用要件: 非機能要求の表に No の決まっていない行があれば未決定", operations(O_OK.replace("N-004\n", "N-009\n"), nfr_table=O_NFR + "未定,検索,p95,300,ms,ピーク,実測\n"), None, 3,
+     "水準 N-009 が非機能要求の表（shared/nfr.csv）に無い（表に No の決まっていない行がある）", "形式の違反（"),
+    ("運用要件: SLA なのに目標がなし", operations(O_OK.replace("4 時間以内に復旧,はい", "なし,はい")), None, 1,
+     "requirements/operations.csv:2: SLA が はい なのに 目標 が なし（約束する目標が無い）", ""),
+    ("運用要件: 可用性を受ける障害対応が無い", operations(O_OK.replace("OP-001,障害対応,一次対応と復旧,24 時間 365 日,開発側,4 時間以内に復旧,はい,N-002\n", "")), None, 3,
+     O_GAP, "形式の違反（"),
+    ("運用要件: 障害対応でない行が可用性を指しても抜け", operations(O_OK.replace(",障害対応,", ",問い合わせ,")), None, 3, O_GAP, "形式の違反（"),
+    ("運用要件: 種類の決まっていない行が可用性を指せば言い切らない", operations(O_OK.replace(",障害対応,", ",未定,")), None, 3,
+     "requirements/operations.csv:2: 種類 に未決定の印（未定）", "を 水準 で指す"),
+    ("運用要件: 水準の決まっていない障害対応の行があれば言い切らない", operations(O_OK.replace(",N-002\n", ",TBD\n")), None, 3,
+     "requirements/operations.csv:2: 水準 に未決定の印（TBD）", "を 水準 で指す"),
+    ("運用要件: 水準の決まっていない問い合わせの行は抜けを止めない",
+     operations(O_OK.replace(",N-002\n", ",\n").replace("翌営業日までに回答,いいえ,\n", "翌営業日までに回答,いいえ,TBD\n")), None, 3, O_GAP, "形式の違反（"),
+    ("運用要件: 列の数の違う行があれば言い切らない", operations("OP-004,障害対応\n"), None, 1, "requirements/operations.csv:2: 列の数が 2", "を 水準 で指す"),
+    ("運用要件: 内容が空", operations(O_OK.replace(",一次対応と復旧,", ",,")), None, 3, "requirements/operations.csv:2: 内容 が空", "を 水準 で指す"),
+    ("運用要件: 時間帯に未決定の印", operations(O_OK.replace(",平日 9〜18 時,", ",未定,")), None, 3, "requirements/operations.csv:3: 時間帯 に未決定の印（未定）", ""),
     ("回答者: 関係者の表が無ければ照らさない", {Q: qa_rows(("A（営業部が回答）", "反映済み"))}, None, 0, "成果物の表が 1 つも無い", "回答者の照合"),
     ("UTF-8 でない", good(F=(F_HEAD + "F-001,注文,API,\n").encode("cp932")), None, 2, "requirements/features.csv: UTF-8 として読めない", ""),
     ("空のファイル", good(F=""), None, 2, "requirements/features.csv: 空のファイル", ""),
@@ -607,6 +666,34 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "CRUD 表: 機能の決まっていない行の操作は結び付けに数え、ほかの抜けは出す"),
     ("機能の決まっていない行のエンティティの抜けを全部言わない", "            maybe.setdefault(entity, set()).update(operations)", "            pending.add(entity)",
      "CRUD 表: 機能の決まっていない行の操作は結び付けに数え、ほかの抜けは出す"),
+    # #1159: 運用要件の表
+    ("運用要件の表の水準と抜けを見ない", "    check_operations(root, report, context)  # ", "    pass  # ", "運用要件: 可用性を受ける障害対応が無い"),
+    ("SLA の目標を見ない", '                and row["目標"].strip() == OPERATIONS_NO_TARGET:', "                and False:", "運用要件: SLA なのに目標がなし"),
+    ("水準の空の項を見ない", "            if not item:\n", "            if False:\n", "運用要件: 水準の空の項"),
+    ("水準の形を見ない", "            elif not NFR_NUMBER.fullmatch(item):", "            elif False:", "運用要件: 水準の形"),
+    ("非機能要求の表が無いのを通す", "            elif numbers is None:", "            elif False:", "運用要件: 非機能要求の表が無い"),
+    ("非機能要求の表の未決定を見ない", '            elif item not in numbers and context.get(NFR + "#pending"):', "            elif False:",
+     "運用要件: 非機能要求の表に No の決まっていない行があれば未決定"),
+    ("非機能要求の表に無い No を通す", '                report.violations.append(f"{where}: 水準 {item} が非機能要求の表（{NFR}）に無い")', "                pass",
+     "運用要件: 水準が非機能要求の表に無い"),
+    ("非機能要求の No を残さない", "    context[NFR] = {number for number in numbers if NFR_NUMBER.fullmatch(number)}", "    context[NFR] = set()", "運用要件: 決まりどおり"),
+    ("非機能要求の No の未決定を数えない", '        pending = pending or not row["No"].strip() or bool(markers(row["No"]))', "        pass",
+     "運用要件: 非機能要求の表に No の決まっていない行があれば未決定"),
+    ("可用性の行を残さない", 'if row["指標"].strip() == OPERATIONS_GAP[0] and', "if False and", "運用要件: 可用性を受ける障害対応が無い"),
+    ("障害対応でない行も受けたと数える", '        receives = not kind_known or row["種類"].strip() == incident', "        receives = True",
+     "運用要件: 障害対応でない行が可用性を指しても抜け"),
+    ("種類の決まっていない行の指しも言い切る", "            elif receives:\n                unsure.add(item)", "            elif False:\n                unsure.add(item)",
+     "運用要件: 種類の決まっていない行が可用性を指せば言い切らない"),
+    ("水準の決まっていない障害対応の行があっても言い切る", "            if receives:\n                unsure_all = True", "            if False:\n                unsure_all = True",
+     "運用要件: 水準の決まっていない障害対応の行があれば言い切らない"),
+    ("水準の決まっていない行はどれでも言い切らない", "            if receives:\n                unsure_all = True", "            if True:\n                unsure_all = True",
+     "運用要件: 水準の決まっていない問い合わせの行は抜けを止めない"),
+    ("列の数の違う行でも言い切る", "\n            unsure_all = True\n            continue", "\n            continue", "運用要件: 列の数の違う行があれば言い切らない"),
+    ("種類の値を広げる", '(OPERATIONS, "種類"): ("障害対応", "問い合わせ", "定期作業"),', '(OPERATIONS, "種類"): ("障害対応", "問い合わせ", "定期作業", "監視"),', "運用要件: 種類の値"),
+    ("担当の値を広げる", '(OPERATIONS, "担当"): ("利用者側", "開発側"),', '(OPERATIONS, "担当"): ("利用者側", "開発側", "委託先"),', "運用要件: 担当の値"),
+    ("SLA の値を広げる", '(OPERATIONS, "SLA"): YES_NO,', '(OPERATIONS, "SLA"): YES_NO + ("約束する",),', "運用要件: SLA の値"),
+    ("運用要件の id の接頭辞を見ない", 'JOBS: "J-", OPERATIONS: "OP-"}', 'JOBS: "J-"}', "運用要件: id の形"),
+    ("運用要件の水準を空でよいとしない", '    OPERATIONS: {"水準"},\n', "", "運用要件: 決まりどおり"),
 ]
 
 # -OO（docstring が無い）で引数なしに呼んでも、使い方の誤りとして 2（#286）。(名前, 壊す前, 壊した後)
@@ -724,6 +811,7 @@ def reference_mismatches(module, tree: str, nfr_md: str) -> list[str]:
     problems += stakeholder_mismatches(module, design)
     problems += glossary_mismatches(module, design)
     problems += crud_mismatches(module, design)
+    problems += operations_mismatches(module, design, tree)
     kinds = {}
     for row in rows_of(section(nfr_md, "## 性能のほかの種類"))[1:]:  # 1 行目は見出し（`指標`・`上限`・`単位`）
         kinds[row[0].strip("`")] = () if row[2] == "空にする" else tuple(re.findall(r"`([^`]+)`", row[2]))
@@ -842,6 +930,28 @@ def crud_mismatches(module, design: str) -> list[str]:
     return problems
 
 
+def operations_mismatches(module, design: str, tree: str) -> list[str]:
+    """運用要件の表（#1159）の定数のうち、成果物の表の突き合わせ（列・決める人・決まった値・接頭辞・空でよい列）の外のものが tree.md の「運用要件」と一致するか。"""
+    heading = next((line for line in design.splitlines() if line.startswith("### ") and f"（`{module.OPERATIONS}`）" in line), None)
+    if heading is None:
+        return [f"{module.OPERATIONS}: tree.md に節が無い"]
+    body = section(design, heading)
+    rows = {row[0].strip("`"): row for row in rows_of(body)}
+    problems = []
+    if f"複数は `{module.OPERATIONS_SEPARATOR}` で区切る" not in rows.get("水準", ["", ""])[1]:
+        problems.append(f"{module.OPERATIONS}: 水準の区切り（{module.OPERATIONS_SEPARATOR}）が tree.md と違う")
+    if f"目標を置かないなら `{module.OPERATIONS_NO_TARGET}` とだけ書く" not in rows.get("目標", ["", ""])[1]:
+        problems.append(f"{module.OPERATIONS}: 目標を置かない値（{module.OPERATIONS_NO_TARGET}）が tree.md と違う")
+    if f"`{module.OPERATIONS_PROMISED}` はその目標を利用者と約束する（SLA）行で、`目標` を `{module.OPERATIONS_NO_TARGET}` にしない" not in rows.get("SLA", ["", ""])[1]:
+        problems.append(f"{module.OPERATIONS}: SLA の行の値（{module.OPERATIONS_PROMISED}）か目標の決まりが tree.md と違う")
+    kind, incident = module.OPERATIONS_GAP
+    if f"`shared/nfr.csv` の `{kind}` の行ごとに、その `No` を `水準` で指す `{incident}` の行が無ければ未決定（3）に出す" not in body:
+        problems.append(f"{module.OPERATIONS}: 抜けに数える組（{module.OPERATIONS_GAP}）が tree.md と違う")
+    if "── " + module.OPERATIONS.split("/")[-1] + " " not in tree.split("```")[1]:  # 最初のコードブロックがツリー
+        problems.append(f"{module.OPERATIONS}: tree.md のツリーに無い")
+    return problems
+
+
 def block_problems(module) -> list[str]:
     """`respondent_block`（scaffold の関門が通ったときに出す報告）が、用語集の使わない言い方だけの報告も拾うか（#1164）。"""
     lines = ["OK（shared/glossary.csv（1 行））", f"{module.USAGE_HEADING}1 件）:", "  requirements/a.md:1: x", "言い換える"]
@@ -895,6 +1005,17 @@ REFERENCE_MUTATIONS = [
     ("CRUD 表の抜けを減らす", "tree", "  - **読む機能が無い**——どの機能の行にも `R` が無い（記録するだけで使われない）\n", ""),
     ("CRUD 表の消す抜けの操作を変える", "tree", "どの機能の行にも `D` が無い（期限", "どの機能の行にも `U` が無い（期限"),
     ("CRUD 表の保管期間の条件を外す", "tree", "  - **保管期間が決まっているのに消す機能が無い**", "  - **消す機能が無い**"),
+    ("運用要件の列を消す", "tree", "| `時間帯` | いつ受け持つか", "| 時間帯 | いつ受け持つか"),
+    ("運用要件の種類の値を足す", "tree", "`障害対応`・`問い合わせ`・`定期作業` のどれか", "`障害対応`・`問い合わせ`・`定期作業`・`監視` のどれか"),
+    ("運用要件の担当の値を変える", "tree", "`利用者側`・`開発側` のどちらか", "`利用者側`・`委託先` のどちらか"),
+    ("運用要件の接頭辞を変える", "tree", "| `id` | `OP-` に 3 桁以上の数字", "| `id` | `OPS-` に 3 桁以上の数字"),
+    ("運用要件の空でよいを外す", "tree", "水準を指さない行なら空でよい", "水準を指さない行なら書かない"),
+    ("運用要件の決める人を崩す", "tree", "水準を指さない行なら空でよい | 利用者 |", "水準を指さない行なら空でよい | 開発者 |"),
+    ("運用要件の区切りを変える", "tree", "複数は `・` で区切る）。水準を指さない行", "複数は `,` で区切る）。水準を指さない行"),
+    ("運用要件のなしを変える", "tree", "目標を置かないなら `なし` とだけ書く", "目標を置かないなら `無し` とだけ書く"),
+    ("運用要件の SLA の値を変える", "tree", "`はい` はその目標を利用者と約束する（SLA）行で", "`約束` はその目標を利用者と約束する（SLA）行で"),
+    ("運用要件をツリーから消す", "tree", "│   └── operations.csv       # 運用要件", "│   └── operation.csv       # 運用要件"),
+    ("運用要件の抜けの組を変える", "tree", "`可用性` の行ごとに、その `No` を `水準` で指す `障害対応` の行", "`バックアップ` の行ごとに、その `No` を `水準` で指す `障害対応` の行"),
     ("非機能要求の単位を変える", "nfr", "| `保管期間` | 正の整数（`7`） | `日`・`月`・`年` のどれか |", "| `保管期間` | 正の整数（`7`） | `日`・`年` のどれか |"),
 ]
 

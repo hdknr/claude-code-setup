@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・機能とデータの対応（CRUD）・入出力・帳票・権限・バッチ・ジョブと、非機能要求の性能のほかの種類）と関係者の表・用語集を検査する。
+"""システム設計書の成果物の表（目的と成功の判定・機能一覧・データモデル・機能とデータの対応（CRUD）・入出力・帳票・権限・バッチ・ジョブ・運用要件と、非機能要求の性能のほかの種類）と関係者の表・用語集を検査する。
 
 usage: python3 check-design-csv.py <版のディレクトリ（docs/v<n>）か重ね合わせた全体（build/merged）>
 
 **決まりの正は `references/tree.md` の「システム設計書の成果物」（関係者の表・用語集を含む）と `references/nfr.md` の「性能のほかの種類」である**（このプラグインの中にある）。
 下の定数（表の置き場所・列・空でよい列・決まった値・番号の形・重複させない欄・権限一覧の形・非機能要求の種類・関係者の表の列と決まった値・用語集の列と日付の形と使わない言い方を探す範囲・
-CRUD 表の列と操作の文字と `なし` と抜けに数える操作）はその写しで、
+CRUD 表の列と操作の文字と `なし` と抜けに数える操作・運用要件の表の `水準` の区切りと目標を置かない値と SLA の値と抜けに数える組）はその写しで、
 **写しがずれていないかはこのリポジトリの `scripts/test-check-design-csv.py` が突き合わせて見る**。
 
 渡したディレクトリの `requirements/` と `shared/nfr.csv`・`shared/stakeholders.csv`・`shared/glossary.csv` を読み、見つけたものを **4 つに分けて**出す（#957）:
@@ -16,7 +16,8 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作）は�
   関係者の表（#1161）の名前の重複・役割と合意の値が決まった値でない・同じ値を重ねた・合意に `なし` とほかの値を混ぜた・
   用語集（#1164）の用語の重複・使わない言い方が表の用語と同じ・同じ行で重ねた・区切りで空の項・決めた日が `YYYY-MM-DD` の実在する日付でない・
   CRUD 表（#1162）の機能が機能一覧の id でも `なし` でもない・機能一覧に無い（一覧が無いときも）・エンティティがデータモデルに無い（データモデルが無いときも）・
-  操作が `C`・`R`・`U`・`D` をこの順に 1 回ずつまで並べた形でない・機能とエンティティの組の重複・同じエンティティで機能がする操作を `なし` の行にも書いた
+  操作が `C`・`R`・`U`・`D` をこの順に 1 回ずつまで並べた形でない・機能とエンティティの組の重複・同じエンティティで機能がする操作を `なし` の行にも書いた・
+  運用要件の表（#1159）の `水準` の項が非機能要求の No の形でない・空の項・`shared/nfr.csv` に無い No（表が無い・読めない・見出しが決まりと違うときも）・SLA が `はい` なのに目標が `なし`
 - **表が無い**——決まりの表のうち、渡したディレクトリに無いもの。**止めない**（前からの正本は成果物の表を持たない。v2 以降の版のディレクトリは足した表しか持たない）
 - **必須の欄が空**——空でよい列のほかの欄が空（要る情報がまだ無い）
 - **未決定の印**——セルに `references/spec-exit.md` の未決定の印（`TBD`・`TODO`・`未定`・`要確認`）がある。
@@ -24,7 +25,10 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作）は�
   **目的の表の結び付けの欠け**（目的を測る指標が無い・機能一覧の機能がどの指標の `機能` にも無い——目的を指さない機能）もここに数える——
   要るかどうかは利用者が決めることで、表の形の誤りではない。
   **CRUD 表の抜け**（#1162。データモデルのエンティティを作る（`C`）・読む（`R`）機能が無い、`保管期間` が決まっているのに消す（`D`）機能が無い——
-  どれも、その操作を `なし` の行で「する機能は無い」と決めていなければ）も同じ理由でここに数える
+  どれも、その操作を `なし` の行で「する機能は無い」と決めていなければ）も同じ理由でここに数える。
+  **運用要件の表の抜け**（#1159。表があるのに、`shared/nfr.csv` の `可用性` の行の No を、どの `障害対応` の行の `水準` も指していない——
+  止まったとき誰がいつ対応するかが決まっていない）も同じ。種類か水準の決まっていない行がその No を受けうるなら言い切らない。
+  `shared/nfr.csv` に No の決まっていない行があれば、運用要件の表が指す無い No も未決定に数える
 
 **4 つのほかに、回答者の照合を報告する（終了コードに数えない。#1161）**——関係者の表が決まりどおりで、`shared/qa.csv` があるとき、
 `未回答` でも暫定でもない行の回答者（`check-qa-csv.py` の `respondent` が `回答` の括弧から読む）が、表の `名前` に無い・表で `答える範囲` が `なし`・括弧から読めない、を出す。
@@ -38,6 +42,7 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作）は�
 
 **非機能要求（`shared/nfr.csv`）は、`指標` が性能のほかの種類（可用性・保管期間・バックアップ・セキュリティ）の行だけを見る**
 （見出しの行は、種類の行が 1 つでもあるときだけ見る——種類の行は見出しの `指標` の位置で探す）。**性能の行とほかの語の行は見ない**——性能の行は `scaffold.py` が中間表現から指された行だけを見る（`references/nfr.md`）。
+**例外は運用要件の表の `水準` の照合だけ**（#1159）——見出しが決まりどおりなら、どの行の `No` も照らす相手に数える（行の中身は見ない）。
 
 終了コード:
 
@@ -54,10 +59,14 @@ CRUD 表の列と操作の文字と `なし` と抜けに数える操作）は�
 | --- | --- |
 | **欄の中身**（意味の書き方・保管期間が業務に合うか・ロールの切り方） | 判断であって、一意に決まらない |
 | **帳票の見本・ER 図があるか** | 見本は HTML か PDF、図は drawio で、表の検査の外（図の鮮度は `render-diagrams.py --check`） |
-| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は id と鍵で指す 3 つだけ**——入出力のレイアウトの id（一覧に無い id は落とす）と、目的の表の指標の `機能`（機能一覧の id と照らす）と、CRUD 表の `機能`・`エンティティ`（機能一覧の id とデータモデルのエンティティと照らす）。Q&A 表の回答者と関係者の表の名前の照合は報告で、終了コードに数えない（下の行） |
+| **表どうしの整合**（データモデルの項目と入出力の項目が合うか・権限一覧の操作が機能一覧にあるか） | 名前の付け方が表ごとに違ってよく、機械で対応を決められない。**例外は id と鍵で指す 4 つだけ**——入出力のレイアウトの id（一覧に無い id は落とす）と、目的の表の指標の `機能`（機能一覧の id と照らす）と、CRUD 表の `機能`・`エンティティ`（機能一覧の id とデータモデルのエンティティと照らす）と、運用要件の表の `水準`（`shared/nfr.csv` の No と照らす）。Q&A 表の回答者と関係者の表の名前の照合は報告で、終了コードに数えない（下の行） |
 | **権限一覧の操作と、機能が触るデータの食い違い**（CRUD 表で消さない機能に、権限一覧で消す操作を許している、など） | 権限一覧の `操作` は名前で書き、機能一覧の id を持たないので、CRUD 表の行と機械で結べない。spec-review の Formal Checker が権限・ロールを対象に選んだとき、権限一覧と並べて CRUD 表を入力に渡す（`references/tree.md` の「機能とデータの対応」） |
 | **CRUD 表の更新（`U`）の抜け・どのデータも触らない機能** | 作った後に変えないデータ（履歴・記録）も、データを持たない機能（外部の呼び出しだけ・画面の切り替えだけ）もふつうにある。抜けに数えるのは作る・読む・消す（保管期間が決まっているとき）だけ |
 | **CRUD 表の粒度より細かい対応**（エンティティのどの項目を作る・更新するか） | 表は機能 × エンティティの粒度で、項目を持たない（`references/tree.md` の「機能とデータの対応」） |
+| **運用要件の表の中身が水準に見合うか**（可用性が 99.9% なのに障害対応が `平日 9〜18 時` だけ、など）・**目標の書き方** | 判断であって、一意に決まらない。見るのは可用性の行を指す障害対応の行の有無だけ |
+| **運用要件の表が無い正本の、可用性の行を受ける体制** | 表は任意で、前からの正本（可用性の行を持つものを含む）を止めない。表が無いときは feasibility が障害時の体制を費用付きの質問として起票する（`references/tree.md` の「運用要件」） |
+| **問い合わせ・定期作業の行が無いこと**・**可用性のほかの種類（バックアップなど）を受ける行** | 要るかは要求による。抜けに数えるのは可用性を受ける障害対応だけ |
+| **運用の手順（ランブック）・SLA の違反の扱い（返金・減額）** | 表に置かない（範囲の外。`references/tree.md` の「運用要件」）ので、照らす相手が無い |
 | **目的に照らした過不足の中身**（`機能` に載った機能が本当にその指標を動かすか・目的の切り方が正しいか） | 判断であって、一意に決まらない。spec-review の Domain Checker が目的の表を照合先にして見る。ここは結び付けの有無と id の実在だけ |
 | **回答者が答えた質問が、その人の答える範囲の中か** | 範囲は自由に書く（分野・機能・目的の id）ので、質問との対応を機械で決められない。req-loop が回答を反映するときに確かめる（`references/tree.md` の「関係者の表」）。照らすのは名前と `なし` だけで、**終了コードにも数えない**——表を置く前の回答（凍結した版を含む）は書き直せない |
 | **関係者の表の名前が個人名でないか・非公式の影響力を書いていないか** | 書き方の判断で、文字列からは決まらない |
@@ -106,6 +115,7 @@ REPORTS = "requirements/reports.csv"
 JOBS = "requirements/jobs.csv"
 ROLES = "requirements/roles.csv"
 PURPOSES = "requirements/purposes.csv"
+OPERATIONS = "requirements/operations.csv"
 NFR = "shared/nfr.csv"
 # 置き場所（版の根から）→ 見出しの行
 COLUMNS = {
@@ -115,12 +125,14 @@ COLUMNS = {
     IO_LAYOUT: ["id", "順番", "項目", "型", "桁", "必須", "意味"],
     REPORTS: ["id", "帳票名", "順番", "項目", "意味", "書式"],
     JOBS: ["id", "名前", "契機", "周期", "失敗したときの扱い"],
+    OPERATIONS: ["id", "種類", "内容", "時間帯", "担当", "目標", "SLA", "水準"],
 }
 # 空でよい列（ほかの列が空なら「必須の欄が空」）
 MAY_BE_EMPTY = {
     FEATURES: {"関係"},
     IO_LAYOUT: {"桁"},
     REPORTS: {"書式"},
+    OPERATIONS: {"水準"},
 }
 YES_NO = ("はい", "いいえ")
 # (表, 列) → 決まった値
@@ -130,9 +142,12 @@ VALUES = {
     (IO_LIST, "向き"): ("入力", "出力"),
     (IO_LIST, "ヘッダー"): ("あり", "なし"),
     (IO_LAYOUT, "必須"): YES_NO,
+    (OPERATIONS, "種類"): ("障害対応", "問い合わせ", "定期作業"),
+    (OPERATIONS, "担当"): ("利用者側", "開発側"),
+    (OPERATIONS, "SLA"): YES_NO,
 }
 # 表 → 番号の接頭辞（`<接頭辞>` に 3 桁以上の数字。`F-` は中間表現の機能の `id` と同じ形——`references/spec-ir.md`）
-ID_PREFIX = {FEATURES: "F-", IO_LIST: "IO-", REPORTS: "RP-", JOBS: "J-"}
+ID_PREFIX = {FEATURES: "F-", IO_LIST: "IO-", REPORTS: "RP-", JOBS: "J-", OPERATIONS: "OP-"}
 # 表 → 重ねてはならない欄の組
 UNIQUE = {
     FEATURES: ("id",),
@@ -141,6 +156,7 @@ UNIQUE = {
     IO_LAYOUT: ("id", "順番"),
     REPORTS: ("id", "順番"),
     JOBS: ("id",),
+    OPERATIONS: ("id",),
 }
 # 目的の表（`references/tree.md` の「目的と成功の判定」。#1154）: 見出しの行・id の接頭辞 → 種類・種類ごとに書く列
 # （`id`・`内容` はどちらの種類も書く。ここに無い列は、その種類では空にする）・`機能` の区切りと「動かす機能が無い」の値
@@ -209,6 +225,13 @@ CRUD_OPERATION = re.compile("".join(f"(?:{op})?" for op in CRUD_OPERATIONS))
 CRUD_NONE = "なし"
 CRUD_GAPS = {"C": "作る", "R": "読む", "D": "消す"}
 CRUD_KEPT = "D"
+
+# 運用要件（`references/tree.md` の「運用要件」。#1159）: `水準` の区切り・目標を置かない値・SLA の行の値・
+# 抜けに数える組（この種類の非機能要求の行を、この種類の運用要件の行が `水準` で指していなければ未決定）
+OPERATIONS_SEPARATOR = "・"
+OPERATIONS_NO_TARGET = "なし"
+OPERATIONS_PROMISED = "はい"
+OPERATIONS_GAP = ("可用性", "障害対応")
 
 ALL_TABLES = list(COLUMNS) + [PURPOSES, CRUD, ROLES, NFR, STAKEHOLDERS, GLOSSARY]
 
@@ -870,7 +893,9 @@ def check_usages(root: Path, report: Report, synonyms: dict[str, list[str]], ter
                     report.usages.append(f"{rel}:{number}: 使わない言い方 「{word}」（用語集の用語: {'・'.join(owners)}）")
 
 
-def check_nfr(root: Path, report: Report) -> None:
+def check_nfr(root: Path, report: Report, context: dict) -> None:
+    """非機能要求の種類の行。見出しが決まりどおりなら、表の `No` と、`OPERATIONS_GAP` の種類の行の `No` を `context` に残す
+    （運用要件の表の `水準` の照合と抜けに使う。#1159）。"""
     table = read_table(root, NFR, report)
     if table is None:
         return
@@ -887,12 +912,15 @@ def check_nfr(root: Path, report: Report) -> None:
     numbers: dict[str, int] = {}
     counts: dict[str, int] = {}
     kinds = []
+    pending = False  # No の決まっていない行がある（運用要件の表が指す No を「無い」と言い切れない）
     for line, fields in rows:
         if len(fields) != len(NFR_COLUMNS):
             if len(fields) > 2 and fields[2].strip() in NFR_KINDS:
                 report.violations.append(f"{NFR}:{line}: 列の数が {len(fields)}（見出しは {len(NFR_COLUMNS)}）")
+            pending = True
             continue
         row = dict(zip(NFR_COLUMNS, fields))
+        pending = pending or not row["No"].strip() or bool(markers(row["No"]))
         numbers.setdefault(row["No"].strip(), line)
         counts[row["No"].strip()] = counts.get(row["No"].strip(), 0) + 1
         if row["指標"].strip() in NFR_KINDS:
@@ -926,6 +954,73 @@ def check_nfr(root: Path, report: Report) -> None:
         elif cell_state(report, where, "単位", unit, True):
             report.violations.append(f"{where}: {kind} の単位は空にする（水準は上限に書く）: {unit.strip()!r}")
     report.rows[NFR] = len(kinds)
+    context[NFR] = {number for number in numbers if NFR_NUMBER.fullmatch(number)}
+    context[NFR + "#pending"] = pending
+    context[NFR + "#gap"] = [row["No"].strip() for _, row in kinds
+                             if row["指標"].strip() == OPERATIONS_GAP[0] and NFR_NUMBER.fullmatch(row["No"].strip())]
+
+
+def settled(value: str) -> bool:
+    """セルが決まっているか（空でも未決定の印でもない）。報告には足さない——`check_plain` が先に足している。"""
+    return bool(value.strip()) and not markers(value)
+
+
+def check_operations(root: Path, report: Report, context: dict) -> None:
+    """運用要件の表（#1159）の、`check_plain` の後に見るもの——`水準` の No を非機能要求の表（`context`。`check_nfr` が先に読む）に照らし、
+    SLA の行の目標と、`OPERATIONS_GAP` の抜け（可用性の行を `水準` で指す障害対応の行が無い）を見る。
+    表の形（見出し・列の数・id・決まった値・空・未決定の印）は `check_plain` が見て報告している。"""
+    table = read_table(root, OPERATIONS, Report())  # 無い・読めないは `check_plain` が報告した
+    if table is None:
+        return
+    header, rows = table
+    columns = COLUMNS[OPERATIONS]
+    if header != columns:
+        return  # `check_plain` が見出しの違反を出した
+    numbers = context.get(NFR)
+    gap_kind, incident = OPERATIONS_GAP
+    covered: set[str] = set()  # 障害対応の行が `水準` で指した No
+    unsure: set[str] = set()  # 種類か水準の決まっていない行が受けうる No
+    unsure_all = False  # 列の数の違う行・水準の決まっていない障害対応の行がある（どの No を受けるか決まらない）
+    for line, fields in rows:
+        where = f"{OPERATIONS}:{line}"
+        if len(fields) != len(columns):
+            unsure_all = True
+            continue
+        row = dict(zip(columns, fields))
+        if settled(row["SLA"]) and settled(row["目標"]) and row["SLA"].strip() == OPERATIONS_PROMISED \
+                and row["目標"].strip() == OPERATIONS_NO_TARGET:
+            report.violations.append(f"{where}: SLA が {OPERATIONS_PROMISED} なのに 目標 が {OPERATIONS_NO_TARGET}（約束する目標が無い）")
+        kind_known = settled(row["種類"])
+        receives = not kind_known or row["種類"].strip() == incident
+        level = row["水準"]
+        if markers(level):
+            if receives:
+                unsure_all = True
+            continue
+        items = [item.strip() for item in level.split(OPERATIONS_SEPARATOR)] if level.strip() else []
+        for item in items:
+            if not item:
+                report.violations.append(f"{where}: 水準 に空の項がある（`{OPERATIONS_SEPARATOR}` で区切る）: {level.strip()!r}")
+            elif not NFR_NUMBER.fullmatch(item):
+                report.violations.append(f"{where}: 水準 の {item!r} が非機能要求の No（N- に 3 桁以上の数字）の形でない")
+            elif numbers is None:
+                report.violations.append(f"{where}: 水準 {item} を照らす非機能要求の表（{NFR}）が無い・読めない・見出しが決まりと違う")
+            elif item not in numbers and context.get(NFR + "#pending"):
+                report.undecided.append(f"{where}: 水準 {item} が非機能要求の表（{NFR}）に無い（表に No の決まっていない行がある）")
+            elif item not in numbers:
+                report.violations.append(f"{where}: 水準 {item} が非機能要求の表（{NFR}）に無い")
+            elif kind_known and receives:
+                covered.add(item)
+            elif receives:
+                unsure.add(item)
+    report.rows.setdefault(OPERATIONS, len(rows))
+    if unsure_all:
+        return
+    for number in context.get(NFR + "#gap", []):
+        if number in covered or number in unsure:
+            continue
+        report.undecided.append(f"{OPERATIONS}: {gap_kind}の水準 {number}（{NFR}）を 水準 で指す {incident} の行が無い"
+                                "（止まったとき誰がいつ対応するかが決まっていない）")
 
 
 def inspect(root: Path) -> Report:
@@ -937,7 +1032,8 @@ def inspect(root: Path) -> Report:
     check_purposes(root, report, context)  # 機能一覧より後（`context` の機能一覧の id を照らす）
     check_crud(root, report, context)  # 機能一覧とデータモデルより後（`context` の id とエンティティを照らす）
     check_roles(root, report)
-    check_nfr(root, report)
+    check_nfr(root, report, context)
+    check_operations(root, report, context)  # 非機能要求の表より後（`context` の No と可用性の行を照らす）
     answers = check_stakeholders(root, report)
     if answers is not None:
         check_respondents(root, report, answers)
