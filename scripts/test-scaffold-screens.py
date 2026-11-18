@@ -22,6 +22,9 @@
 5. **回帰**——画面の表が無い正本と、画面の表はあるがどの画面も機能を挙げない正本で、`scaffold/` と本文が同じバイト（モックも `scaffold/refs/` も作らない）。
    画面が機能を挙げなくなった（v2 で `機能` を空にした）画面の写しは消える。
 6. **写し**——本文の文言の定数が `references/handoff-issue.md` に原文のまま在る。生成したモックの置き場所と生成器の名前が screen-spec の `build-mock.py` の定数と同じ。
+7. **デザインの正本の参照（#1156）**——正本の根の `design/sources.csv` があれば、画面を持つ機能の本文の `## 参考資料` に段落と `全体`・その機能を挙げる画面の行が表の順で載り、
+   契約（`scaffold/`）と段落の外の本文はファイルの無い正本と同じバイト（v2 の変更の判定も同じ）。どの本文にも載らない行は止めずに知らせる。決まりに反すれば書く生成と `--dry-run` は 1 で何も書かず、
+   本文を作らない `--check` と前の版の時点（`--upto`）は読まない。`design/` だけが違う 2 つのタグを照合は一致と言う。段落の文言・印・置き場所・列が `handoff-issue.md`・`tree.md`・dev-loop の `spec-gap.md` と一致する。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書き、`HOME` を一時ディレクトリにし、`CLAUDE_CONFIG_DIR`・`SPEC_LOOP_SCREEN_SPEC`・
 `SCREEN_SPEC_SPEC_LOOP`・`PYTHONDONTWRITEBYTECODE` を外す。git は一時のリポジトリにだけ使い、`HOME`・`GIT_CONFIG_GLOBAL` を差し替える。
@@ -47,6 +50,8 @@ SPEC_LOOP = REAL_REPO / "plugins" / "spec-loop"
 SCREEN_SPEC = REAL_REPO / "plugins" / "screen-spec"
 TARGET = "scaffold.py"
 HANDOFF_REF = SPEC_LOOP / "references" / "handoff-issue.md"
+TREE_REF = SPEC_LOOP / "references" / "tree.md"
+SPEC_GAP_REF = REAL_REPO / "plugins" / "dev-loop" / "skills" / "dev-loop" / "references" / "spec-gap.md"
 
 sys.dont_write_bytecode = True
 
@@ -163,6 +168,16 @@ class World:
         folder = self.repo / "build" / "scaffold" / "issues"
         return sorted(p.stem for p in folder.glob("F-*.md")) if folder.is_dir() else []
 
+    def design(self, data: str | bytes | None) -> None:
+        """正本の根の `design/sources.csv`（#1156。版の外）を置く（None なら消す）。"""
+        path = self.repo / "design" / "sources.csv"
+        if data is None:
+            if path.exists():
+                path.unlink()
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data if isinstance(data, bytes) else data.encode("utf-8"))
+
     def snapshot(self, *parts: str) -> dict[str, bytes]:
         found = {}
         for part in parts:
@@ -187,6 +202,10 @@ NOTE = ("**参考資料は受入基準ではない**——受入基準は上の 
         "実装で決めず、仕様の穴として Q&A 表に起票する（下の「仕様の穴を見つけたら」）。")
 SCREENS_NOTE = ("画面の表（`requirements/screens/data/screens.csv` の `機能` の列）がこの機能を挙げる画面——仕様書・ワイヤーフレームの書き出し・生成したモック。"
                 "**生成したモックは画面の表から作った生成物で、承認の対象は画面の表である**——機能の変更の判定には使わない。モックのコードを実装に流用しない。")
+DESIGN_NOTE = ("**デザインの正本**（`design/sources.csv`。版の外にあり、承認の対象ではない）——この機能の画面の見た目（色・余白・フォント・大きさ・飾り）は、ここを正とする。"
+               "dev-loop は、この段落があれば、Red テストの表とは別に、見た目がデザインの正本と合うことを受入基準に足し、比べる手段が無ければ BLOCKED にする"
+               "（dev-loop の `spec-gap.md` の「デザインの正本」）。デザインの正本が Red テスト・仕様の原文・画面の表と食い違うと読めたら、"
+               "実装で決めず、仕様の穴として Q&A 表に起票する（下の「仕様の穴を見つけたら」）。")
 TAIL = "（`build/merged/` は上の `## 仕様` のコマンドで作る。写しは `scaffold/` の契約で、正本と開発のリポジトリが別でも `scaffold/` を写せば届く。）"
 
 
@@ -430,6 +449,194 @@ def signoff(changed: bool) -> Callable[[Path, str | None], str | None]:
     return run
 
 
+# ---- デザインの正本の参照（#1156）
+
+DESIGN_HEAD = "対象,参照,メモ\n"
+DESIGN = (DESIGN_HEAD + "全体,tokens/colors.json,色と余白のトークン\n"
+          "S-002,https://www.figma.com/design/abc?node-id=2-1,\n"
+          "S-001,https://www.figma.com/design/abc?node-id=1-1,一覧のフレーム\n")
+DESIGN_LINES = {
+    "F-001": ["- 全体: `tokens/colors.json`（色と余白のトークン）",
+              "- 画面 `S-002`: `https://www.figma.com/design/abc?node-id=2-1`",
+              "- 画面 `S-001`: `https://www.figma.com/design/abc?node-id=1-1`（一覧のフレーム）"],
+    "F-002": ["- 全体: `tokens/colors.json`（色と余白のトークン）",
+              "- 画面 `S-002`: `https://www.figma.com/design/abc?node-id=2-1`"],
+}
+
+
+def without_design(body: str) -> str:
+    """本文からデザインの正本の段落（段落・行・後ろの空行）を外したもの。"""
+    if DESIGN_NOTE not in body:
+        return body
+    head, tail = body.split(DESIGN_NOTE + "\n\n", 1)
+    rest = tail.split("\n\n", 1)
+    return head + (rest[1] if len(rest) > 1 else "")
+
+
+def case_design_listed(work: Path, source: str | None) -> str | None:
+    """画面を持つ機能の本文に、`全体` とその機能を挙げる画面の行が表の順で載る。契約と、段落の外の本文は、ファイルの無い正本と同じバイト。"""
+    plain = World(work / "plain", base(), source)
+    code, out = plain.scaffold()
+    if code != 0:
+        return f"ファイルの無い正本: exit={code}: {out[-600:]}"
+    w = World(work / "design", base(), source)
+    w.design(DESIGN)
+    code, out = w.scaffold()
+    if code != 0:
+        return f"exit={code}: {out[-600:]}"
+    for fid, rows in DESIGN_LINES.items():
+        want = EXPECTED[fid].replace("\n\n" + TAIL, "\n\n" + "\n".join([DESIGN_NOTE, ""] + rows) + "\n\n" + TAIL)
+        got = refs_section(w.body(fid))
+        if got != want:
+            return f"{fid} の参考資料の節が違う:\n{got}\n---- 期待:\n{want}"
+        if without_design(w.body(fid)) != plain.body(fid):
+            return f"{fid}: 段落の外の本文が、ファイルの無い正本と違う"
+    if w.snapshot("scaffold") != plain.snapshot("scaffold"):
+        return "scaffold/ の契約が、ファイルの無い正本と違う（参照は本文にだけ載るはず）"
+    if "どの Issue の本文にも載らない" in out:
+        return f"全部の行が載るのに、載らないと知らせた: {out[-400:]}"
+    return None
+
+
+def case_design_unlinked(work: Path, source: str | None) -> str | None:
+    """どの本文にも載らない行は、止めずに知らせる——画面の表が無い正本・機能を挙げない画面の行。"""
+    plain = World(work / "plain", no_screens(), source)
+    code, out = plain.scaffold()
+    if code != 0:
+        return f"画面の表の無い正本（参照なし）: exit={code}: {out[-600:]}"
+    w = World(work / "noscreens", no_screens(), source)
+    w.design(DESIGN_HEAD + "全体,tokens/colors.json,\n")
+    code, out = w.scaffold()
+    if code != 0:
+        return f"画面の表の無い正本（全体の行）: exit={code}: {out[-600:]}"
+    if "画面の表がどの機能も挙げない——どの Issue の本文にも載らない" not in out:
+        return f"画面の表の無い正本で、載らないことを知らせない: {out[-400:]}"
+    if w.snapshot("scaffold", "build/scaffold") != plain.snapshot("scaffold", "build/scaffold"):
+        return "画面の表の無い正本で、参照を置いたら出力が変わった"
+    files = base()
+    files[t.S] = t.S_HEAD + t.S1 + t.S2.replace(",入力,F-002,,", ",入力,,,")
+    w = World(work / "partial", files, source)
+    w.design(DESIGN)
+    code, out = w.scaffold()
+    if code != 0:
+        return f"S-002 が機能を挙げない正本: exit={code}: {out[-600:]}"
+    if "画面 S-002 は、画面の表でどの機能にも挙げられていない" not in out:
+        return f"機能を挙げない画面の行を知らせない: {out[-400:]}"
+    if "node-id=2-1" in w.body("F-001"):
+        return "機能を挙げない画面の行が本文に載った"
+    return None
+
+
+DESIGN_BAD = [
+    ("見出しが違う", "対象,参照\n全体,a\n", "見出しの行"),
+    ("列の数が違う", DESIGN_HEAD + "全体,a\n", "列の数が 2"),
+    ("対象が画面の表に無い", DESIGN_HEAD + "S-999,a,\n", "対象 'S-999'"),
+    ("参照が空", DESIGN_HEAD + "全体, ,\n", "参照が空"),
+    ("参照にバッククォート", DESIGN_HEAD + "全体,a`b,\n", "参照にバッククォート"),
+    ("参照に \\", DESIGN_HEAD + "全体,a\\b,\n", "参照にバッククォート"),
+    ("参照に改行", DESIGN_HEAD + "全体,\"a\nb\",\n", "参照にバッククォート"),
+    ("メモに改行", DESIGN_HEAD + "全体,a,\"x\ny\"\n", "メモに改行"),
+    ("組の重複", DESIGN_HEAD + "全体,a,x\n全体,a,y\n", "組が重複"),
+    ("UTF-8 でない", (DESIGN_HEAD + "全体,色,\n").encode("cp932"), "読めない"),
+]
+
+
+def case_design_bad(work: Path, source: str | None) -> str | None:
+    """決まりに反するファイルなら 1 で何も作らない（`--dry-run` も 1）。"""
+    w = World(work, base(), source)
+    for name, data, said in DESIGN_BAD:
+        w.design(data)
+        for args in ((), ("--dry-run",)):
+            code, out = w.scaffold(*args)
+            if code != 1 or said not in out or "デザインの正本の参照（design/sources.csv" not in out:
+                return f"{name}（{' '.join(args) or '書く生成'}）: exit={code}: {out[-400:]}"
+            if (w.repo / "scaffold").exists() or (w.repo / "build" / "scaffold").exists():
+                return f"{name}: 決まりに反するのに何か書いた"
+    # 本文を作らない `--check` は読まない——書いた後に決まりに反するファイルを置いても 0（受入基準 A4: 参照は契約に効かない）
+    w.design(None)
+    code, out = w.scaffold()
+    if code != 0:
+        return f"ファイルの無い書く生成: exit={code}: {out[-400:]}"
+    code, plain_out = w.scaffold("--red-check")
+    w.design(DESIGN_HEAD + "S-999,a,\n")
+    code_check, out = w.scaffold("--check")
+    if code_check != 0:
+        return f"--check が決まりに反するデザインの正本の参照で止まった: exit={code_check}: {out[-400:]}"
+    # `--red-check`（実装が無いのでケースは赤）も、参照の有無で終了コードと出力が変わらない
+    red, out = w.scaffold("--red-check")
+    if (red, out) != (code, plain_out) or "デザインの正本" in out:
+        return f"--red-check が決まりに反するデザインの正本の参照で変わった: exit={code}→{red}: {out[-400:]}"
+    shutil.rmtree(w.repo / "scaffold")
+    shutil.rmtree(w.repo / "build")
+    w.design(None)
+    (w.repo / "design" / "sources.csv").mkdir(parents=True)
+    code, out = w.scaffold()
+    if code != 1 or "ファイルでない" not in out:
+        return f"ファイルでない: exit={code}: {out[-400:]}"
+    shutil.rmtree(w.repo / "design")
+    plain = World(work / "noscreens", no_screens(), source)
+    plain.design(DESIGN_HEAD + "S-001,a,\n")
+    code, out = plain.scaffold()
+    if code != 1 or "対象 'S-001'" not in out:
+        return f"画面の表の無い正本で画面ID の行: exit={code}: {out[-400:]}"
+    return None
+
+
+def case_design_previous(work: Path, source: str | None) -> str | None:
+    """前の版の時点（`--upto` が作業中の版より前）を見るときは、版の外のファイルを読まない——作業中の版では読む（陽性対照）。"""
+    w = World(work, base(), source)
+    gate_test.write_docs(w.repo / "docs", v2_files(False))
+    w.record(2)
+    w.design(DESIGN_HEAD + "S-999,a,\n")
+    code, out = w.scaffold("--dry-run", "--upto", "1")
+    if code != 0:
+        return f"前の版の時点で読んだ: exit={code}: {out[-400:]}"
+    code, out = w.scaffold("--dry-run")
+    if code != 1 or "対象 'S-999'" not in out:
+        return f"陽性対照: 作業中の版で読まない: exit={code}: {out[-400:]}"
+    return None
+
+
+def case_design_v2(work: Path, source: str | None) -> str | None:
+    """v2 以降の変更の判定は、参照が在っても変わらない——v1 の後で参照を足しても、本文を作るのは中間表現を直した機能だけ（受入基準 A4。差し替えは試していない）。"""
+    found = {}
+    for label, design in (("無い", None), ("在る", DESIGN)):
+        w = World(work / label, base(), source)
+        code, out = w.scaffold()
+        if code != 0:
+            return f"参照が{label}正本の v1: exit={code}: {out[-600:]}"
+        w.design(design)
+        gate_test.write_docs(w.repo / "docs", v2_files(True))
+        w.record(2)
+        code, out = w.scaffold()
+        if code != 0:
+            return f"参照が{label}正本の v2: exit={code}: {out[-600:]}"
+        found[label] = (w.bodies(), w.snapshot("scaffold"), without_design(w.body("F-001")) if w.bodies() else "")
+        if design and DESIGN_NOTE not in w.body("F-001"):
+            return "v2 の変更の本文にデザインの正本の段落が無い"
+    if found["無い"] != found["在る"]:
+        return f"参照の有無で v2 の本文の数・契約・段落の外の本文が違う: {found['無い'][0]} / {found['在る'][0]}"
+    return None if found["在る"][0] == ["F-001"] else f"v2 で本文を作った機能が F-001 だけでない: {found['在る'][0]}"
+
+
+def case_design_signoff(work: Path, source: str | None) -> str | None:
+    """`design/` は照合の範囲に入らない——`design/sources.csv` だけが違う 2 つのタグで一致と言う（陽性対照は「照合: 画面の表だけが違えば一致と言わない」）。"""
+    w = World(work, base(), source)
+    w.design(DESIGN)
+    env = {k: v for k, v in w.env().items() if not k.startswith("GIT_")}
+    env.update(GIT_CONFIG_GLOBAL=str(w.home / "gitconfig"), GIT_CONFIG_NOSYSTEM="1")
+    git(w.repo, env, "init", "-q", "-b", "main")
+    git(w.repo, env, "add", "-A")
+    git(w.repo, env, "commit", "-q", "-m", "v1")
+    git(w.repo, env, "tag", "signoff/v1/req-1")
+    w.design(DESIGN.replace("node-id=1-1", "node-id=9-9"))
+    git(w.repo, env, "commit", "-q", "-am", "デザインの参照を差し替えた")
+    git(w.repo, env, "tag", "signoff/v1/budget-1")
+    proc = subprocess.run([sys.executable, str(w.spec_loop / "scripts" / "check-signoff.py"), "--repo", str(w.repo), "--version", "1"],
+                          capture_output=True, text=True, env=env)
+    return None if proc.returncode == 0 else f"design/sources.csv だけが違うのに exit={proc.returncode}: {(proc.stdout + proc.stderr)[-600:]}"
+
+
 CASES: list[tuple[str, Callable[[Path, str | None], str | None]]] = [
     ("参考資料: 画面ごとの仕様書・svg・生成したモックが並び、写しと目録が在る", case_refs_listed),
     ("参考資料: 中間表現の refs と重なるパスは 2 度並べない", case_overlap),
@@ -443,6 +650,12 @@ CASES: list[tuple[str, Callable[[Path, str | None], str | None]]] = [
     ("v2 で機能を挙げなくなった画面の写しを消す", case_unlinked_in_v2),
     ("照合: 画面の表だけが違えば一致と言わない", signoff(True)),
     ("照合の陽性対照: 同じ中身なら 0", signoff(False)),
+    ("デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない", case_design_listed),
+    ("デザインの正本: どの本文にも載らない行は止めずに知らせる", case_design_unlinked),
+    ("デザインの正本: 決まりに反すれば 1 で何も作らない", case_design_bad),
+    ("デザインの正本: 前の版の時点では読まない", case_design_previous),
+    ("デザインの正本: v2 の変更の判定は変わらない", case_design_v2),
+    ("デザインの正本: 照合の範囲に入らない", case_design_signoff),
 ]
 
 # 本体を壊す変異: (名前, 壊す箇所, 置き換え, 赤になるはずの試料の名前)
@@ -469,6 +682,46 @@ MUTATIONS = [
      "生成器が 1 なら 1 で何も書かない"),
     ("機能を挙げない画面でもモックを作る", "    if loaded.screens:\n        # 生成したモック",
      "    if True:\n        # 生成したモック", "回帰: 機能を挙げる画面が無ければ、画面の表の無い正本と同じバイト"),
+    ("デザインの正本の行を載せない", '        design = design_rows(loaded, change.feature["id"])\n', "        design = []\n",
+     "デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない"),
+    ("画面に依らず全部の行を載せる", "    return [row for row in loaded.design if row[0] == DESIGN_WHOLE or row[0] in linked]",
+     "    return list(loaded.design)", "デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない"),
+    ("全体の行を載せない", "if row[0] == DESIGN_WHOLE or row[0] in linked]", "if row[0] in linked]",
+     "デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない"),
+    ("メモを載せない", '(f"（{memo}）" if memo else "")', '""',
+     "デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない"),
+    ("ファイルを読まない", "    if not path.exists() and not path.is_symlink():\n", "    if True:\n",
+     "デザインの正本: 画面を持つ機能の本文に、全体とその画面の行が載り、契約は変わらない"),
+    ("載らない行を知らせない", "    loaded.notes += design_notes(loaded)\n", "",
+     "デザインの正本: どの本文にも載らない行は止めずに知らせる"),
+    ("機能を挙げない画面の行を知らせない", "for target, ref, _ in loaded.design if target != DESIGN_WHOLE and target not in linked]",
+     "for target, ref, _ in loaded.design if False]", "デザインの正本: どの本文にも載らない行は止めずに知らせる"),
+    ("見出しを見ない", "    if not rows or tuple(cell.strip() for cell in rows[0]) != DESIGN_COLUMNS:\n", "    if not rows:\n",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("列の数を見ない", "        if len(fields) != len(DESIGN_COLUMNS):\n", "        if False:\n",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("対象を画面の表と照らさない", "        if target != DESIGN_WHOLE and target not in screens:\n", "        if False:\n",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("参照が空でも通す", "        if not ref:\n", "        if False:\n", "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("参照の形を見ない", '        elif "`" in ref or "\\\\" in ref or ref.splitlines() != [ref]:\n', "        elif False:\n",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("メモの改行を見ない", "        if memo.splitlines() not in ([memo], []):\n", "        if False:\n",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("組の重複を見ない", "        if not bad and (target, ref) in seen:\n", "        if False:\n",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("ファイルでないものを無いと読む", "    if not path.is_file():\n        return [f\"{DESIGN_PATH}: ファイルでない", "    if False:\n        return [f\"{DESIGN_PATH}: ファイルでない",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("違反でも止めない", "    if problems:\n        return 1, problems + [f\"デザインの正本の参照", "    if False:\n        return 1, problems + [f\"デザインの正本の参照",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("前の版の時点でも読む", "    if not loaded.current:\n        return 0, []\n", "",
+     "デザインの正本: 前の版の時点では読まない"),
+    ("--red-check では読む", "    if not (args.check or args.red_check):\n        # デザインの正本の参照", "    if not args.check:\n        # デザインの正本の参照",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
+    ("参照を機能のオブジェクトに入れる", "    loaded.notes += design_notes(loaded)\n",
+     "    loaded.notes += design_notes(loaded)\n    [f.__setitem__(\"design\", [list(r) for r in loaded.design]) for f in features_of(loaded.ir)]\n",
+     "デザインの正本: v2 の変更の判定は変わらない"),
+    ("--check・--red-check でも読む", "    if not (args.check or args.red_check):\n        # デザインの正本の参照", "    if True:\n        # デザインの正本の参照",
+     "デザインの正本: 決まりに反すれば 1 で何も作らない"),
 ]
 
 
@@ -502,6 +755,30 @@ def check_copies() -> None:
     joined = "".join(re.findall(r'"([^"]*)"', scaffold_note.group(1))) if scaffold_note else None
     if joined != SCREENS_NOTE:
         failures.append(f"写し: scaffold.py の REFS_SCREENS がテストの文言と違う: {joined!r}")
+    # デザインの正本（#1156）——段落の文言は handoff-issue.md と scaffold.py に、印は dev-loop の spec-gap.md にも、置き場所と列は tree.md に
+    if DESIGN_NOTE not in handoff:
+        failures.append(f"写し: デザインの正本の段落が {HANDOFF_REF.name} に原文のまま無い")
+    design_note = re.search(r'^REFS_DESIGN = \((.*?)\)\n', source, flags=re.MULTILINE | re.DOTALL)
+    joined = "".join(re.findall(r'"([^"]*)"', design_note.group(1))) if design_note else None
+    if joined != DESIGN_NOTE:
+        failures.append(f"写し: scaffold.py の REFS_DESIGN がテストの文言と違う: {joined!r}")
+    mark = constant(source, "DESIGN_MARK")
+    if not mark or not DESIGN_NOTE.startswith(mark):
+        failures.append(f"写し: scaffold.py の DESIGN_MARK {mark!r} が段落の頭でない")
+    gap = SPEC_GAP_REF.read_text(encoding="utf-8")
+    if f"`{mark}` で始まる段落" not in gap or "### デザインの正本（#1156）" not in gap:
+        failures.append(f"写し: dev-loop の spec-gap.md に印 `{mark}` で始まる段落の決まり（「デザインの正本」の節）が無い")
+    if f"`{mark}`" not in handoff:
+        failures.append(f"写し: {HANDOFF_REF.name} に段落の印 `{mark}` が無い")
+    tree = TREE_REF.read_text(encoding="utf-8")
+    columns = re.findall(r'^DESIGN_COLUMNS = \(([^)]*)\)', source, flags=re.MULTILINE)
+    names = re.findall(r'"([^"]*)"', columns[0]) if columns else []
+    if constant(source, "DESIGN_PATH") != "design/sources.csv" or "design/sources.csv" not in tree:
+        failures.append(f"写し: scaffold.py の DESIGN_PATH {constant(source, 'DESIGN_PATH')!r} が tree.md の置き場所と違う")
+    if not names or f"見出し `{','.join(names)}`" not in tree or any(f"| `{name}` |" not in tree for name in names):
+        failures.append(f"写し: scaffold.py の DESIGN_COLUMNS {names!r} が tree.md の「デザインの正本の参照」の列と違う")
+    if constant(source, "DESIGN_WHOLE") != "全体" or "`全体`（どの画面にも掛かる" not in tree:
+        failures.append(f"写し: scaffold.py の DESIGN_WHOLE {constant(source, 'DESIGN_WHOLE')!r} が tree.md と違う")
     mock = (SCREEN_SPEC / "scripts" / "build-mock.py").read_text(encoding="utf-8")
     want = f"{constant(mock, 'OUT_DIR')}/v{{}}/{constant(mock, 'OUT_NAME')}"
     if constant(source, "MOCK_OUT") != want:
