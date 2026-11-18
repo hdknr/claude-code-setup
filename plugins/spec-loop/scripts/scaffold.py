@@ -78,6 +78,12 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 **画面の表が無い・どの画面も機能を挙げないなら、契約と本文は #1099 の前と 1 バイトも変わらない**（決まりの正は `references/handoff-issue.md` の「参考資料」と
 `references/tree.md` の「UI モック」）。
 
+**デザインの正本の参照（#1156）**: 正本の根の `design/sources.csv`（版の外。見出し `対象,参照,メモ`）があれば、画面の表がその機能を挙げる画面を持つ機能の本文の `## 参考資料` に、
+印 `**デザインの正本**` で始まる段落と、`全体` の行・その機能を挙げる画面の行（表の並び）を載せる。**本文にだけ載せる**——`scaffold/` の契約・機能のオブジェクト（指紋・v2 以降の変更の判定）には入れない。
+**見出し・列の数・`対象`（`全体` か画面の表の画面ID）・`参照`（空・バッククォート・`\\`・改行）・`メモ`（改行）・組の重複・UTF-8 でないなら 1**（作業中の版の全体で読む——`--upto` で前の版の時点を見るときは読まない）。
+行があるのにどの本文にも載らない（画面の表がどの機能も挙げない・どの機能にも挙げられていない画面の行）なら、止めずに知らせる。参照が実在するかは見ない。
+**ファイルが無ければ、契約と本文は #1156 の前と 1 バイトも変わらない**（決まりの正は `references/tree.md` の「デザインの正本の参照」と `references/handoff-issue.md` の「デザインの正本」）。
+
 **トレースのケース（`trace`。#923）**: ケースに `input`・`expected`・`error` の代わりに `trace` を書くと、形式検査の反例の実行順
 （`calls` の呼び出しと `steps` の段の並び）を実装の口で強制して再現する Red テストを、その機能の Red テストのファイルに足す。
 実装に求める口は、呼び出しのキーワード引数 `checkpoint`（段の前で呼ぶ）と、モジュールの `reset_state()`（`CHECKPOINT`・`RESET`）。
@@ -338,6 +344,17 @@ SCREENS_DIR = "requirements/screens"
 WIREFRAME = "requirements/screens/wireframes/{}.svg"
 SCREEN_COLUMNS = ("画面ID", "画面名", "機能", "仕様書")
 SCREEN_SEPARATOR = "、"
+# デザインの正本の参照（#1156。`references/tree.md` の「デザインの正本の参照」と `references/handoff-issue.md` の「デザインの正本」の写し）——
+# 正本の根の版の外のファイル。画面を持つ機能の本文の `## 参考資料` にだけ載せ、`scaffold/` の契約にも機能のオブジェクトにも入れない。
+# 段落は印 `DESIGN_MARK` で始まり、dev-loop の `references/spec-gap.md` の「デザインの正本」がこの印を見る
+DESIGN_PATH = "design/sources.csv"
+DESIGN_COLUMNS = ("対象", "参照", "メモ")
+DESIGN_WHOLE = "全体"
+DESIGN_MARK = "**デザインの正本**"
+REFS_DESIGN = ("**デザインの正本**（`design/sources.csv`。版の外にあり、承認の対象ではない）——この機能の画面の見た目（色・余白・フォント・大きさ・飾り）は、ここを正とする。"
+               "dev-loop は、この段落があれば、Red テストの表とは別に、見た目がデザインの正本と合うことを受入基準に足し、比べる手段が無ければ BLOCKED にする"
+               "（dev-loop の `spec-gap.md` の「デザインの正本」）。デザインの正本が Red テスト・仕様の原文・画面の表と食い違うと読めたら、"
+               "実装で決めず、仕様の穴として Q&A 表に起票する（下の「仕様の穴を見つけたら」）。")
 # 生成したモック（screen-spec の `references/mock.md` の「出力」の写し）——生成した場所（`docs` の親からのパス）と、写しの置き場所（`refs/` の下）
 MOCK_SCRIPT = "scripts/build-mock.py"
 MOCK_OUT = "build/mock/v{}/index.html"
@@ -1205,6 +1222,8 @@ class Loaded:
         # 画面の表から引いた参考資料（#1099）——機能の id → [(画面ID, 画面名, [全体の根からのパス])]（画面の表の並び）。機能のオブジェクトには入れない
         self.screens: dict[str, list[tuple[str, str, list[str]]]] = {}
         self.mock: bytes | None = None  # 生成したモック（書く生成は作ったもの、`--check`・`--red-check` は置いてある写し。#1099）
+        # デザインの正本の参照（#1156）——`design/sources.csv` の行 [(対象, 参照, メモ)]（表の並び）。本文にだけ載せ、契約にも機能のオブジェクトにも入れない
+        self.design: list[tuple[str, str, str]] = []
         self.raw = raw  # 中間表現のバイト（本文の指紋は機能単位なので、これ全体の sha256 は使わない。#290）
         self.answered = answered  # Q&A の行（No → 行）
         self.number = number  # 重ねた最後の版の番号
@@ -1266,7 +1285,95 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     # 画面の表から引いた参考資料（#1099）——在るファイルだけを写す
     loaded.screens = linked_screens(rendered, ir)
     loaded.refs.update({rel: rendered[rel] for linked in loaded.screens.values() for _, _, paths in linked for rel in paths})
+    # デザインの正本の参照（#1156）は作業中の版の全体だけで読む（版の外のファイルで、前の版の時点の画面の表と照らすと、後で足した画面を「無い」と言う）
+    if design_gate:
+        problems, loaded.design = read_design(repo, rendered)
+        if problems:
+            return 1, problems + [f"デザインの正本の参照（{DESIGN_PATH}。references/tree.md の「デザインの正本の参照」）が決まりに反する。生成しない"], None
+        loaded.notes += design_notes(loaded)
     return 0, [], loaded
+
+
+def read_design(repo: Path, rendered: dict[str, bytes]) -> tuple[list[str], list[tuple[str, str, str]]]:
+    """デザインの正本の参照（正本の根の `design/sources.csv`。#1156。決まりの正は `references/tree.md` の「デザインの正本の参照」）。
+
+    (違反の行, [(対象, 参照, メモ)]) を返す。**無ければ何も無い**（違反も行も無い——本文は #1156 の前と同じバイト）。
+    見出し（`対象,参照,メモ`）・列の数・`対象`（`全体` か、重ね合わせた全体の画面の表の画面ID）・`参照`（空・バッククォート・`\\`・改行）・
+    `メモ`（改行）・同じ `対象` と `参照` の組の重複・UTF-8 でない・ファイルでないを違反にする。参照が実在するか・開けるかは見ない。"""
+    path = repo / DESIGN_PATH
+    if not path.exists() and not path.is_symlink():
+        return [], []
+    if not path.is_file():
+        return [f"{DESIGN_PATH}: ファイルでない（読めない）"], []
+    try:
+        rows = list(csv.reader(io.StringIO(path.read_bytes().decode("utf-8-sig"), newline="")))
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        return [f"{DESIGN_PATH}: 読めない（UTF-8 の CSV でない: {exc}）"], []
+    if not rows or tuple(cell.strip() for cell in rows[0]) != DESIGN_COLUMNS:
+        return [f"{DESIGN_PATH}: 見出しの行が {','.join(DESIGN_COLUMNS)} でない"], []
+    screens = screen_ids(rendered)
+    problems: list[str] = []
+    found: list[tuple[str, str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for number, fields in enumerate(rows[1:], start=2):
+        if not any(cell.strip() for cell in fields):
+            continue
+        where = f"{DESIGN_PATH}: {number} 行目"
+        if len(fields) != len(DESIGN_COLUMNS):
+            problems.append(f"{where}: 列の数が {len(fields)}（{len(DESIGN_COLUMNS)} のはず）")
+            continue
+        target, ref, memo = (cell.strip() for cell in fields)
+        bad = False
+        if target != DESIGN_WHOLE and target not in screens:
+            problems.append(f"{where}: 対象 {target!r} が {DESIGN_WHOLE} でも、画面の表（{merged(versions.SCREENS_DATA + 'screens.csv')}）の画面ID でもない")
+            bad = True
+        if not ref:
+            problems.append(f"{where}: 参照が空")
+            bad = True
+        elif "`" in ref or "\\" in ref or ref.splitlines() != [ref]:
+            problems.append(f"{where}: 参照にバッククォート・\\・改行を書けない（本文のコードスパンに入れる）")
+            bad = True
+        if memo.splitlines() not in ([memo], []):
+            problems.append(f"{where}: メモに改行を書けない（本文の 1 行に入れる）")
+            bad = True
+        if not bad and (target, ref) in seen:
+            problems.append(f"{where}: 対象 {target!r} と参照 {ref!r} の組が重複している")
+            bad = True
+        if not bad:
+            seen.add((target, ref))
+            found.append((target, ref, memo))
+    return problems, ([] if problems else found)
+
+
+def screen_ids(rendered: dict[str, bytes]) -> set[str]:
+    """重ね合わせた全体の画面の表の画面ID（無い・読めない・列が無いなら空——表の決まりは画面の関門が見る）。"""
+    raw = rendered.get(versions.SCREENS_DATA + "screens.csv")
+    if raw is None:
+        return set()
+    try:
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+        return {(row.get("画面ID") or "").strip() for row in reader} - {""}
+    except (UnicodeDecodeError, csv.Error):
+        return set()
+
+
+def design_rows(loaded: Loaded, fid: str) -> list[tuple[str, str, str]]:
+    """その機能の本文に載せるデザインの正本の行（#1156）——`全体` の行と、画面の表がその機能を挙げる画面の行（表の並び）。
+    呼ぶのは、その機能を挙げる画面があるとき（`references` の画面の段落の中）だけである。"""
+    linked = {screen for screen, _, _ in loaded.screens.get(fid, [])}
+    return [row for row in loaded.design if row[0] == DESIGN_WHOLE or row[0] in linked]
+
+
+def design_notes(loaded: Loaded) -> list[str]:
+    """デザインの正本の行のうち、どの本文にも載らないものを知らせる行（止めない。#1156）。"""
+    if not loaded.design:
+        return []
+    if not loaded.screens:
+        return [f"デザインの正本の参照（{DESIGN_PATH}）に行があるが、画面の表がどの機能も挙げない——どの Issue の本文にも載らない"
+                "（載るのは画面を持つ機能だけ。references/tree.md の「デザインの正本の参照」）"]
+    linked = {screen for found in loaded.screens.values() for screen, _, _ in found}
+    return [f"デザインの正本の参照（{DESIGN_PATH}）の画面 {target} は、画面の表でどの機能にも挙げられていない——この行（{ref}）はどの Issue の本文にも載らない"
+            for target, ref, _ in loaded.design if target != DESIGN_WHOLE and target not in linked]
 
 
 def linked_screens(rendered: dict[str, bytes], ir: dict) -> dict[str, list[tuple[str, str, list[str]]]]:
@@ -2435,6 +2542,13 @@ def references(change: Change, loaded: Loaded) -> list[str]:
             lines += [f"  - `{merged(rel)}`（写し: `{OUT_DIR}/{REFS_DIR}/{rel}`）" for rel in paths if rel not in refs]
             lines.append(f"  - `{mock}#screen={screen}`（生成したモック。写し: `{OUT_DIR}/{REFS_DIR}/{MOCK_COPY}#screen={screen}`）")
         lines += ["", f"（`{mock}` は scaffold の書く生成が screen-spec の `{MOCK_SCRIPT}` で作り、commit しない——写しは `{OUT_DIR}/` の契約である。）", ""]
+        design = design_rows(loaded, change.feature["id"])
+        if design:
+            lines += [REFS_DESIGN, ""]
+            for target, ref, memo in design:
+                label = DESIGN_WHOLE if target == DESIGN_WHOLE else "画面 `" + target + "`"
+                lines.append(f"- {label}: `{ref}`" + (f"（{memo}）" if memo else ""))
+            lines.append("")
     return lines + [f"（`{MERGED_DIR}/` は上の `## 仕様` のコマンドで作る。写しは `{OUT_DIR}/` の契約で、"
                     f"正本と開発のリポジトリが別でも `{OUT_DIR}/` を写せば届く。）"]
 

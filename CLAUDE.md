@@ -166,6 +166,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
       **画面の表があれば、`機能` の列が機能を挙げる画面の仕様書・ワイヤーフレーム・生成したモック（書く生成が screen-spec の `build-mock.py` で作る）を本文と `scaffold/refs/` に足す——
       機能のオブジェクトには入れず、`--check` はモックを生成し直さない**（#1099。決まりは `references/handoff-issue.md` の「画面の表から引く参考資料」）。
+      **正本の根の `design/sources.csv`（版の外。デザインの正本の参照）があれば、画面を持つ機能の本文の `## 参考資料` にだけ載せ、形に反すれば作らない——無ければ前と同じバイト**
+      （#1156。決まりは `references/tree.md` の「デザインの正本の参照」。dev-loop は段落があれば見た目を受入基準に足す——dev-loop の `spec-gap.md` の「デザインの正本」）。
       テストは `scripts/test-scaffold.py`・`scripts/test-scaffold-screens.py`）
     - `scripts/rebuild-scope.py` - **仮回答と推奨で決めた事項の台帳**から、利用者が確かめたときに作り直す範囲（Issue と受入基準のケース）を引く
       （#875。**台帳は登録した Issue の本文**——`scaffold.py --provisional` が付けた仮回答の印と、dev-loop の確認の Issue の `決めた値: `・`影響する Issue: ` の 2 行と閉じのコメントの `確認の結果: ` の行（#884）を、
