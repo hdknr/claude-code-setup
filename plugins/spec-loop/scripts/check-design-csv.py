@@ -723,7 +723,7 @@ def check_usages(root: Path, report: Report, synonyms: dict[str, list[str]], ter
         except (OSError, UnicodeDecodeError):
             report.usages.append(f"{rel}: 読めない——使わない言い方を探していない")
             continue
-        for number, line in enumerate(text.splitlines(), start=1):
+        for number, line in enumerate(text.split("\n"), start=1):  # 行は改行（\n）で数える——splitlines は \x0c・U+2028 なども割り、行番号がずれる
             for word, owners in synonyms.items():
                 masked = line
                 for term in covering[word]:
