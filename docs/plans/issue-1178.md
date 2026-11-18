@@ -117,6 +117,7 @@ dev-loop の周が対応のファイルに触れたら、モデルの再検査�
 - 狭いパス: Verifier（`dev-loop:dev-loop-verifier`・sonnet。`git diff f95516f 07e460a`）反証 1 件（N1。下の「狭いパスの指摘」）。読んだ行数 229 は `wc -l` と一致。報告は scratchpad のファイルで受け取った（体は報告を返さずに終わった）。
 - 狭いパスの後に `origin/main` を取り込んだ（`46d6766`。#1156・#1159・#1163・#1242 が入っていた）——dev-loop を 2.12.0・spec-loop を 0.114.0 に上げ直した（取り込みの merge commit の中）。
   式を当て直した base: `origin/main` → `d0685bdcd38ab458b8c8f10d40cf4b51810faa9b`（`check-deps-declared.py`・`check-spec-writeback.py`・`formal-sync.py check` に渡す）。関門の記録の周の base は関門に渡した `8c84f23` のまま。
+- PR #1272（draft）を作った後、PR 側の CI の `dev-loop` ジョブで `test-formal-sync.py` の変異「最小の版を読む」が殺されなかった（Linux の `iterdir` の順）——`find_models` を決まった順で読むように直し（`1ea5971`）、その差分だけに Verifier を 1 回当てた（当て直し。反証 0。逆順の `iterdir` でも変異が殺されることを直に呼んで確かめた）。
 - 割り目（手順 4・6）: 割らない（cruise の周）。
 - 交絡を潰した手順: 実走（下の節）は本物の TLC で陽性（上限を外したコードのモデルで反例）と陰性（同じ写しで反例なし）の両側を取った。Verifier の反証 1（注釈で性質を隠す）は著者が本物の TLC で再現（直す前に `反例なし`・0、直した後に `判定できなかった`）。
 
@@ -129,6 +130,7 @@ dev-loop の周が対応のファイルに触れたら、モデルの再検査�
 関門: Verifier 2 9433d68 反証=3
 関門: /code-review 2 9433d68 指摘=10
 関門: 狭いパス f95516f5c5925a6fdf689f901de636df0a57624a 07e460a4244fa14da748933b91155b3d9950ff61 反証=1
+関門: 当て直し c474eb9353a0d7f60276fc77e4689e7f9d2cbf7a 1ea5971f4b463c899a907281d4596579422ae692 反証=0
 受入基準: A1 満たす
 受入基準: A2 満たす
 受入基準: A3 未証明
