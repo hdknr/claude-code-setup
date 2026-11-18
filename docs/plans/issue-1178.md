@@ -102,10 +102,20 @@ dev-loop の周が対応のファイルに触れたら、モデルの再検査�
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1178-formal-sync`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1178`・起点 `53517d5`・base `origin/main` → `53517d593b60a75123648e6f26b0d77dd669b1d1`
+  - 1 パス目の後に `origin/main` を取り込んだ（`415cecf`。#1157 が入っていた）——式を当て直した base: `origin/main` → `27327a15d327f38034ad84d987313187d98133d3`（2 パス目から渡す）
 - 関門: Verifier 1 パス目（`dev-loop:dev-loop-verifier`・sonnet）反証 2 件・`/code-review` 1 パス目（high）指摘 10 件。どちらも終点 `cb02453`。
   **1 パス目の指摘対応の起点**: `cb02453f`（1 パス目の 2 つの関門に渡した時点の HEAD）。差し戻し: あり（直すの 7 行）。
+- 2 パス目: 1 パス目の指摘対応の差分は 0 行でない（`git diff cb02453 -- ':(top)' ':(top,exclude)docs/plans/issue-1178.md'` に 17 ファイル）——2 パス目を回す（Verifier と `/code-review`）。
 - 割り目（手順 4・6）: 割らない（cruise の周）。
 - 交絡を潰した手順: 実走（下の節）は本物の TLC で陽性（上限を外したコードのモデルで反例）と陰性（同じ写しで反例なし）の両側を取った。Verifier の反証 1（注釈で性質を隠す）は著者が本物の TLC で再現（直す前に `反例なし`・0、直した後に `判定できなかった`）。
+
+## 関門の記録
+
+```dev-loop-gates
+周の base: 27327a15d327f38034ad84d987313187d98133d3
+関門: Verifier 1 cb02453 反証=2
+関門: /code-review 1 cb02453 指摘=10
+```
 
 ## 既知の限界・決着済みの論点
 
