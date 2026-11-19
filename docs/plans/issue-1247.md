@@ -139,7 +139,7 @@ Verifier の変異（リポジトリの外のコピーに当てた）: **素通�
 - 2 パス目: Verifier（opus。HEAD `87f3e51`。反証 4（重要 1・中 1・軽微 2）。SubagentHandback は 2 回目の送付依頼で届いた）と `/code-review`（high。HEAD `87f3e51`。指摘 5（重要 2・nit 3））。
   2 パス目の指摘対応の起点（狭いパスの起点）: `87f3e519f7ab77a5d3d376de423081bda9687b48`。終点（指摘対応の最後のコミット）: `c3a879ed70b42b15b3d80d33c3288acd8ac1d842`（`git merge-base --is-ancestor` で子孫を確認）。
 - 狭いパス: 起点 `87f3e51` → 終点 `c3a879e` の差分だけに別ティア（opus）の Verifier を 1 回当てた。反証 4（R1〜R4。上の表）。直さない（採否は人間が決める）。SubagentHandback は 5 回目の送付で届いた（1〜4 回目は「呼び出し元が終了している」）。変異は Verifier が設計した（素通り 9・捕まった 1・陽性対照 2。上の「Verifier の変異」）。
-- 割り目: 割らない（cruise の周）。外部レビュー: 未実行（PR を作ってから `external-reviews.py` を呼ぶ）。
+- 割り目: 割らない（cruise の周）。外部レビュー: 該当なし（`external-reviews.py 1294` が 3——`.claude/dev-loop.md` に `外部レビュー:` の宣言が無い）。PR #1294 側の CI は全部 pass（deploy は skipping）。ローカルの `check-all.py` が落とした `test-check-all.py` は CI では通った（ローカルは load average 15 前後で `cache_interrupt` の 60 秒待ちが時間切れ）。
 - 交絡を潰した手順: 実験なし（文書の周。試料の `check-qa-csv.py` の確認は陽性・陰性の対照を取った）。
 
 ## 起票の確認（手順 8）
