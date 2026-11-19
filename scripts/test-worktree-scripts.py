@@ -1039,6 +1039,21 @@ def check_norm_shape() -> None:
     check("SKILL.md: 不安定なテストの原本を指す", "references/flaky-tests.md" in skill)
     check("flaky-tests.md: 不安定なテストの記録の形がある",
           "不安定なテスト: " in (skill_dir / "references" / "flaky-tests.md").read_text(encoding="utf-8"))
+    # **プロパティテストの扱い（#1190）**——手順 3 が原本を指すこと、Verifier の差し込みが陽性対照と生成の設定を返させること、
+    # 実装の指示が「無い」を報告させること、原本が計画の表の形と代替の記録の形を持つこと。
+    prop_doc = (skill_dir / "references" / "property-tests.md").read_text(encoding="utf-8")
+    implementer = (skill_dir / "prompts" / "implementer.md").read_text(encoding="utf-8")
+    prop_block = verifier[verifier.find("`プロパティテスト: あり`"):]
+    check("SKILL.md: プロパティテストの原本を指し、該当判定の行を求める",
+          "references/property-tests.md" in skill and "プロパティテスト: なし（理由）" in skill)
+    check("verifier.md: プロパティテストの差し込みが、性質を破る変異で反例が出るか・生成の設定・空振りの形を返させる",
+          "10." in prop_block and all(k in prop_block for k in ("性質を破る変異", "反例", "生成の設定", "空振り", "max_examples")))
+    check("verifier.md: プロパティテストの差し込みが、ライブラリが無い行の代替の誠実さを見させる",
+          "ライブラリ: 無い" in prop_block and "黙って例のテストにしていない" in prop_block)
+    check("implementer.md: プロパティテストをライブラリで書かせ、無いときは差し替えずに「無い」と報告させる",
+          all(k in implementer for k in ("Hypothesis", "fast-check", "proptest", "「無い」と報告")))
+    check("property-tests.md: 4 つの型と、表の形と、代替の記録の形がある",
+          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト")))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
