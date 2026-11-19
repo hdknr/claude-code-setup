@@ -1043,17 +1043,26 @@ def check_norm_shape() -> None:
     # 実装の指示が「無い」を報告させること、原本が計画の表の形と代替の記録の形を持つこと。
     prop_doc = (skill_dir / "references" / "property-tests.md").read_text(encoding="utf-8")
     implementer = (skill_dir / "prompts" / "implementer.md").read_text(encoding="utf-8")
-    prop_block = verifier[verifier.find("`プロパティテスト: あり`"):]
+    # **差し込み 10 の本文だけを切り出す**（末尾の行の `}}` まで。入れ子の `{{ }}` で切れないように。表の見出しの語や後ろの節の語で緑にならないように）。
+    _start = verifier.find("10. **計画ファイルの「プロパティテスト」の表の行ごとに")
+    _end = verifier.find("表が返らない行は、親が未検証として扱います。**}}", _start) if _start >= 0 else -1
+    prop_block = verifier[_start:_end] if _start >= 0 and _end >= 0 else ""
+    check("verifier.md: プロパティテストの差し込み 10 がある", bool(prop_block))
     check("SKILL.md: プロパティテストの原本を指し、該当判定の行を求める",
           "references/property-tests.md" in skill and "プロパティテスト: なし（理由）" in skill)
-    check("verifier.md: プロパティテストの差し込みが、性質を破る変異で反例が出るか・生成の設定・空振りの形を返させる",
-          "10." in prop_block and all(k in prop_block for k in ("性質を破る変異", "反例", "生成の設定", "空振り", "max_examples")))
-    check("verifier.md: プロパティテストの差し込みが、ライブラリが無い行の代替の誠実さを見させる",
+    check("SKILL.md: 手順 5 が差し込み 10 を入れることと、表が返らなければ未検証とすることを求める",
+          "差し込み 10 を入れ、行ごとの表が返らなければ未検証として扱う" in skill)
+    check("verifier.md: 差し込み 10 が、性質を破る変異を実際に当てて反例が出るかを求める（表の見出しの語では満たさない）",
+          "反例を出して落ちるかを、実際に当てて" in prop_block and "空振りしています" in prop_block)
+    check("verifier.md: 差し込み 10 が生成の設定と空振りの形を読ませる",
+          all(k in prop_block for k in ("生成の設定を読んで", "max_examples", "空振りの形を探して")))
+    check("verifier.md: 差し込み 10 が、ライブラリが無い行の代替の誠実さを見させる",
           "ライブラリ: 無い" in prop_block and "黙って例のテストにしていない" in prop_block)
-    check("implementer.md: プロパティテストをライブラリで書かせ、無いときは差し替えずに「無い」と報告させる",
-          all(k in implementer for k in ("Hypothesis", "fast-check", "proptest", "「無い」と報告")))
-    check("property-tests.md: 4 つの型と、表の形と、代替の記録の形がある",
-          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト")))
+    check("implementer.md: プロパティテストをライブラリで書かせ、無いときは差し替えずに止まって「無い」と報告させる",
+          all(k in implementer for k in ("Hypothesis", "fast-check", "proptest"))
+          and "例のテストにも差し替えず" in implementer and "「無い」と報告" in implementer)
+    check("property-tests.md: 4 つの型と、表の形と、代替の記録の形と、落とした主張の名指しがある",
+          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張")))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
