@@ -211,7 +211,14 @@ def observe(mod, tool_dir: Path) -> dict:
     placed = pp.place_cards(big, pp.CY1 - pp.CY0)
     seen("収まらないカードは割る", lambda: len(placed) >= 2)
     seen("割ってもどの箇条も落とさない", lambda: all(any(f"箇条0-{j}" in line[1] for chunk, _ in placed for card in chunk for line in card["lines"]) for j in range(40)))
+    seen("割った前半は見出しを持つ", lambda: placed[0][0][0]["heading"] == "見出し0")
     seen("割った続きに見出し", lambda: any("（続き）" in (card["heading"] or "") for chunk, _ in placed for card in chunk))
+    seen("見積りの余裕（行の高さ 1.3 倍以上・折り返し 0.97 以下）", lambda: pp.LINE_HEIGHT >= 1.3 and pp.SAFETY <= 0.97)
+    para1 = [{"heading": "大きな見出し", "lines": [(0, "これは長い段落の文である。" * 200, False)]}]
+    placed1 = pp.place_cards(para1, pp.CY1 - pp.CY0)
+    seen("長い 1 段落は枚を分け、文字を落とさない", lambda: len(placed1) >= 2 and "".join(l[1] for ch, _ in placed1 for c in ch for l in c["lines"]) == para1[0]["lines"][0][1])
+    seen("続きの見出しは重ならない", lambda: all("（続き）（続き）" not in (c["heading"] or "") for ch, _ in placed1 for c in ch) and any("（続き）" in (c["heading"] or "") for ch, _ in placed1 for c in ch))
+    seen("長い 1 段落の各枚は最小の文字の大きさ以上", lambda: all(size >= pp.CARD_MIN for _, size in placed1))
     parsed = pp.parse_hand(HAND)
     seen("節とカード", lambda: [(t, [c["heading"] for c in cs]) for t, cs in parsed] == [
         ("背景と目的", ["転記に月 40 時間かかっている", "年内に動かしたい", "暫定の回答を引く"]), ("リスク", ["繁忙期に間に合わない"])])
@@ -249,6 +256,12 @@ def observe(mod, tool_dir: Path) -> dict:
     seen("範囲を決めた質問の 1 枚", lambda: len(sc) == 1 and "帳票を作らない" in sc[0] and "決めたこと" in sc[0] and "作らない" in sc[0])
     seen("範囲の質問を番号で選ぶ", lambda: "質問 2" in slide_list_texts(pp.scope_slides(qa_rows, ["Q-R-002"], None, []))[0])
     seen("範囲の質問を正規表現で選ぶ", lambda: "質問 3" in slide_list_texts(pp.scope_slides(qa_rows, None, "質問 3", []))[0])
+    pend = qa_rows + [qa_row(mod, 7, state="確認中", ans="未回答", target="—", question="範囲の未回答の質問")]
+    seen("未回答の質問は範囲の枚に載せない", lambda: not any("未回答の質問" in t for t in slide_list_texts(pp.scope_slides(pend, None, None, []))))
+    many_scope = [qa_row(mod, 20 + i, target="spec/scope.md", question=f"範囲の質問{i:02d}") for i in range(12)]
+    ms = slide_list_texts(pp.scope_slides(many_scope, None, None, [], True))
+    seen("既定の選び方は 1 枚に収め、残りは別紙を見ると書く", lambda: len(ms) == 1 and "ほかに範囲に関わる質問が 6 件" in ms[0] and "decisions.xlsx" in ms[0] and "範囲の質問06" not in ms[0])
+    seen("番号の指示は全部載せる", lambda: "範囲の質問11" in "".join(slide_list_texts(pp.scope_slides(many_scope, [r["No"] for r in many_scope], None, []))))
     seen("範囲の質問が無ければ枚を作らない", lambda: pp.scope_slides(qa_rows, ["Q-999"], None, []) == [])
     # 6. 図
     figs = [("spec/er.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>"), ("spec/screens/wireframe-注文.drawio.svg", DRAWIO_SVG.encode("utf-8"))]
@@ -373,7 +386,13 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("カードを 1 枚ずつにする", "            for k in range(min(MAX_CARDS, len(queue)), 0, -1):", "            for k in range(1, 0, -1):"),
     ("収まらないカードの続きを捨てる", "                queue = parts + queue[1:]", "                queue = parts[:1] + queue[1:]"),
     ("カードの上限を外す", "MAX_CARDS = 6", "MAX_CARDS = 9"),
-    ("続きの見出しを付けない", '(card["heading"] + "（続き）") if card["heading"] else None', 'card["heading"]'),
+    ("続きの見出しを付けない", 'heading if heading is None or heading.endswith("（続き）") else heading + "（続き）"', "heading"),
+    ("長い 1 段落を割らない", "    elif lines and len(split_text(lines[0][1])) == 2:", "    elif False:"),
+    ("前半の見出しを落とす", '    return [{"heading": heading, "lines": first}, {"heading": more, "lines": second}]', '    return [{"heading": None, "lines": first}, {"heading": more, "lines": second}]'),
+    ("範囲の質問に未回答も選ぶ", '    done = [r for r in rows if r["状態"].strip() == qa.DONE]\n    if numbers is not None:', '    done = list(rows)\n    if numbers is not None:'),
+    ("範囲の枚に上限を掛けない", "    if numbers is None and len(chosen) > SCOPE_MAX:", "    if False:"),
+    ("見積りの余裕を外す（行の高さ）", "LINE_HEIGHT = 1.42", "LINE_HEIGHT = 1.0"),
+    ("見積りの余裕を外す（折り返し）", "SAFETY = 0.94", "SAFETY = 1.2"),
     ("別紙に全件を書かない", "    for n, row in enumerate(rows, 2):", "    for n, row in enumerate(rows[:4], 2):"),
     ("別紙の暫定を状態にしない", '        state = "暫定" if qa.is_provisional(row) else row["状態"].strip()', '        state = row["状態"].strip()'),
     ("概要の推奨どおりを数えない", "        same = sum(1 for r in done if answer_label(r) is not None and answer_label(r) == qa_recommended(r))", "        same = 0"),

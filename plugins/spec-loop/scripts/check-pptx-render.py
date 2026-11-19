@@ -8,7 +8,8 @@ usage: python3 check-pptx-render.py <PPTX>… [--out <PNG の出力先>] [--dpi 
 
 - **見切れ**: 文字に省略記号（`…`）がある（PPTX の本文と、描画した PDF の文字の両方）。
 - **図の中の代わりの文字**: `Text is not SVG`（drawio の書き出しが付けるもの）がある。**図を PNG にした後の画像の中の文字は見えない**——目で見る。
-- **はみ出し**: 描画した文字がページの外に出ている・文字どうしが重なっている（行が増えて前の行に被さる）・文字が枠の下の辺をまたいでいる。
+- **はみ出し**: 描画した文字がページの外に出ている・文字どうしが重なっている（行が増えて前の行に被さる）・文字が枠の下の辺をまたいでいる・
+  文字がどの枠（文字を持つ図形・表）の中にも無い（枠の下に丸ごと出た行）。**ページの外に丸ごと出た文字は、`pdftotext` が出さないので見えない**。
 
 **目で見るもの**（機械では決まらない）: 書き出した 1 ページずつの PNG（`--out`。既定は PPTX の隣の `<PPTX の名前>-pages/`）を、費用・期間・決定事項・図の順に開いて見る。
 この道具が 0 で終わっても、見た目が読めることの証明ではない——**探せるのは上の 3 つだけ**である。
@@ -83,7 +84,7 @@ def text_findings(pptx: Path) -> list[str]:
 
 
 def text_boxes(pptx: Path) -> dict[int, list[tuple[float, float, float, float]]]:
-    """スライドごとの、文字を持つ図形の枠（pt。左上が原点）。表・図は除く。"""
+    """スライドごとの、文字を持つ図形の枠（pt。左上が原点）と、表の枠。"""
     out: dict[int, list] = {}
     with zipfile.ZipFile(pptx) as z:
         for n in z.namelist():
@@ -99,6 +100,11 @@ def text_boxes(pptx: Path) -> dict[int, list[tuple[float, float, float, float]]]
                     continue
                 boxes.append((int(off.get("x")) / EMU_PT, int(off.get("y")) / EMU_PT,
                               int(ext.get("cx")) / EMU_PT, int(ext.get("cy")) / EMU_PT))
+            for frame in root.iter(f"{{{NS['p']}}}graphicFrame"):
+                off, ext = frame.find("p:xfrm/a:off", NS), frame.find("p:xfrm/a:ext", NS)
+                if off is not None and ext is not None:
+                    boxes.append((int(off.get("x")) / EMU_PT, int(off.get("y")) / EMU_PT,
+                                  int(ext.get("cx")) / EMU_PT, int(ext.get("cy")) / EMU_PT))
             out[int(re.sub(r"\D", "", n))] = boxes
     return out
 
@@ -128,7 +134,14 @@ def render_findings(name: str, pdf: Path, pdftotext: str, boxes: dict[int, list]
                 w, h = min(ax1, bx1) - max(ax0, bx0), min(ay1, by1) - max(ay0, by0)
                 if w > 0 and h > 0 and w * h > OVERLAP * min((ax1 - ax0) * (ay1 - ay0), (bx1 - bx0) * (by1 - by0)):
                     found.append(f"{name} {number} ページ: はみ出し（文字の重なり）: {at} と {bt}")
-        for bx, by, bw, bh in boxes.get(number, []):
+        regions = boxes.get(number, [])
+        if regions:  # どの枠（文字を持つ図形・表）の中にも無い文字——枠の下に丸ごと出た行など
+            for x0, y0, x1, y1, text in words:
+                cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+                if not any(bx - TOLERANCE <= cx <= bx + bw + TOLERANCE and by - TOLERANCE <= cy <= by + bh + TOLERANCE
+                           for bx, by, bw, bh in regions):
+                    found.append(f"{name} {number} ページ: はみ出し（どの枠の中にも無い文字）: {text}")
+        for bx, by, bw, bh in regions:
             bottom = by + bh
             for x0, y0, x1, y1, text in words:
                 if bx - TOLERANCE <= x0 <= bx + bw and y0 < bottom - TOLERANCE and y1 > bottom + TOLERANCE and by <= y0:

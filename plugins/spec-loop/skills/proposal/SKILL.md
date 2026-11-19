@@ -167,7 +167,7 @@ python3 <このスキルの base ディレクトリ>/../../scripts/build-proposa
 **渡す前に、生成した PPTX を描画して 1 ページずつ見る**——見切れ・はみ出し・図の中の代わりの文字は、描画して初めて分かる。
 
 ```bash
-python3 <このスキルの base ディレクトリ>/../../scripts/check-pptx-render.py <出力先>/proposal.pptx <出力先>/spec.pptx
+python3 <このスキルの base ディレクトリ>/../../scripts/check-pptx-render.py <出力先>/<提案書の名前>.pptx <出力先>/spec.pptx
 ```
 
 - **機械で探すもの**: 見切れ（`…`）・図の中の代わりの文字（`Text is not SVG`）・はみ出し（ページの外・文字の重なり・枠の下の辺をまたぐ）。

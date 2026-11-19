@@ -93,7 +93,7 @@ def cases(script: Path, work: Path, pp, bin_dir: Path, bare_dir: Path) -> dict[s
     ellipsis = make_pptx(pp, work / "ellipsis.pptx", "切れた文…")
     alt = make_pptx(pp, work / "alt.pptx", "Text is not SVG - cannot display")
     out = work / "pages"
-    inside = page((10, 10, 60, 24, "あ"), (60, 10, 110, 24, "い"), (200, 100, 260, 114, "う"))
+    inside = page((40, 25, 90, 40, "あ"), (90, 25, 140, 40, "い"), (100, 100, 160, 114, "う"))
     obs: dict[str, bool] = {}
 
     before = good.read_bytes()
@@ -116,13 +116,16 @@ def cases(script: Path, work: Path, pp, bin_dir: Path, bare_dir: Path) -> dict[s
     # 枠 (1000000, 1000000, 3000000, 1000000) EMU = x 78.7pt・y 78.7pt・幅 236.2pt・高さ 78.7pt → 下の辺は 157.5pt
     rc, text = run(script, [str(good), "--out", str(work / "p7")], bin_dir, page((100, 150, 150, 165, "またぐ")), work)
     obs["枠の下の辺をまたぐ語は 1"] = rc == 1 and "枠の下の辺をまたぐ" in text and "またぐ" in text
+    # 枠の下 100pt に、枠をまたがず他の文字にも重ならない行が丸ごと出ている（反証: またぐ語・重なりでは見えない形）
+    rc, text = run(script, [str(good), "--out", str(work / "p7b")], bin_dir, page((100, 260, 150, 274, "枠の外"), (160, 260, 210, 274, "の行")), work)
+    obs["どの枠にも無い文字は 1"] = rc == 1 and "どの枠の中にも無い" in text and "枠の外" in text
     rc, text = run(script, [str(good), "--out", str(work / "p8")], bin_dir, page((100, 120, 150, 134, "中")), work)
     obs["枠の中の語は 0"] = rc == 0
     rc, text = run(script, [str(good), "--out", str(work / "p9")], bin_dir, page((100, 143, 150, 157.5 + 1.0, "辺の近く")), work)
     obs["枠の辺の許容の内側は 0"] = rc == 0
-    rc, text = run(script, [str(good), "--out", str(work / "p10")], bin_dir, page((10, 10, 960 + 1.0, 24, "辺")), work)
+    rc, text = run(script, [str(good), "--out", str(work / "p10")], bin_dir, page((10, 30, 960 + 1.0, 44, "辺")), work)
     obs["ページの辺の許容の内側は 0"] = rc == 0
-    rc, text = run(script, [str(good), "--out", str(work / "p11")], bin_dir, page((10, 10, 60, 24, "同じ行"), (60, 10, 110, 24, "の隣")), work)
+    rc, text = run(script, [str(good), "--out", str(work / "p11")], bin_dir, page((40, 30, 90, 44, "同じ行"), (90, 30, 140, 44, "の隣")), work)
     obs["隣り合うだけの語は 0"] = rc == 0
 
     rc, text = run(script, [str(ellipsis), "--out", str(work / "p12")], bare_dir, None, work)
@@ -171,6 +174,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("文字の重なりを見ない", "                if w > 0 and h > 0 and w * h > OVERLAP", "                if False and w * h > OVERLAP", "重なる文字は 1"),
     ("枠の下の辺をまたぐ語を見ない", "                if bx - TOLERANCE <= x0 <= bx + bw and y0 < bottom - TOLERANCE and y1 > bottom + TOLERANCE and by <= y0:\n",
      "                if False:\n", "枠の下の辺をまたぐ語は 1"),
+    ("どの枠にも無い文字を見ない", "        if regions:  # どの枠", "        if False:  # どの枠", "どの枠にも無い文字は 1"),
     ("枠の辺の許容を外す", "and y1 > bottom + TOLERANCE and by <= y0", "and y1 > bottom and by <= y0", "枠の辺の許容の内側は 0"),
     ("ページの辺の許容を外す", "or x1 > width + TOLERANCE or", "or x1 > width or", "ページの辺の許容の内側は 0"),
     ("道具が無くても緑にする", "        return 3\n", "        return 0\n", "道具が無ければ 3"),

@@ -47,7 +47,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   `references/tree.md` の「形式検査のモデル」。#908）。「前の版からの変更」にも出ない（`diff-versions.py` が比べない）。
 - **`--pptx` で提案書と仕様書の PPTX と、別紙の表（`decisions.xlsx`。利用者と決めたことの全件）も作る**（#1289。既定のデザインは `proposal-pptx.py`、
   決まりの正は `references/tree.md` の「PPTX のデザインと指示」）。図は PNG にして載せる（`rsvg-convert`。無ければ載せずに標準エラーに知らせ、0 で作る）。
-  **指示（正本の `CLAUDE.md`。proposal のスキルが引数に組む）**: `--pptx-script <スクリプト>`（PPTX の生成を差し替える。材料は出力の `proposal.md`・`spec.md`・`gantt.svg`・
+  **指示（正本の `CLAUDE.md`。proposal のスキルが引数に組む）**: `--pptx-script <スクリプト>`（PPTX の生成を差し替える。材料は出力（提案書は `--out` の名前。既定は `proposal.md`）・`spec.md`・`gantt.svg`・
   `spec-figure-NN.svg`・別紙だけを置いたディレクトリで、`python3 <スクリプト> --materials <ディレクトリ> --proposal-out <p.pptx> --spec-out <s.pptx>`。0 でない・2 本が揃わない・
   zip でない・300 秒を超えるは 2）・`--no-appendix`（別紙を作らない）・`--no-scope-slide`・`--scope-questions`・`--scope-match`・`--overview`・`--slide-strip`。
   **これらは `--pptx` と一緒にしか渡せない**（argparse の 2）。
@@ -1091,9 +1091,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--overview", help="概要の 1 枚に載せるもの（counts・recommend・origin・theme のコンマ区切り）")
     parser.add_argument("--slide-strip", action="append", default=[], help="スライドから外す参照の形（正規表現。何度でも書ける）")
     args = parser.parse_args(argv)
-    custom = (args.pptx_script, args.no_appendix, args.no_scope_slide, args.scope_questions, args.scope_match, args.overview, args.slide_strip)
+    custom = (args.pptx_script is not None, args.no_appendix, args.no_scope_slide, args.scope_questions is not None,
+              args.scope_match is not None, args.overview is not None, bool(args.slide_strip))
     if any(custom) and not args.pptx:
         parser.error("--pptx-script・--no-appendix・--no-scope-slide・--scope-questions・--scope-match・--overview・--slide-strip は --pptx と一緒に渡す")
+    if args.scope_questions is not None and not [n for n in args.scope_questions.split(",") if n.strip()]:
+        parser.error("--scope-questions に番号が無い（範囲の 1 枚を載せないなら --no-scope-slide）")
     if args.overview is not None and not set(i.strip() for i in args.overview.split(",") if i.strip()) <= set(ppt.OVERVIEW_ITEMS):
         parser.error(f"--overview は {'・'.join(ppt.OVERVIEW_ITEMS)} のコンマ区切り")
     for pattern in [args.scope_match, *args.slide_strip]:

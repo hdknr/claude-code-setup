@@ -423,15 +423,32 @@ def best_size(cards: list[Card], area_h: int) -> float | None:
     return None
 
 
+def split_text(text: str) -> list[str]:
+    """1 つの長い文を 2 つに割る。「。」の位置のうち真ん中に近いところ、無ければ真ん中の文字の位置で。割れない（短い）なら 1 つ。"""
+    if len(text) < 24:
+        return [text]
+    mid = len(text) // 2
+    stops = [i + 1 for i, c in enumerate(text) if c == "。" and 0 < i + 1 < len(text)]
+    cut = min(stops, key=lambda i: abs(i - mid)) if stops else mid
+    return [text[:cut], text[cut:]]
+
+
 def split_card(card: Card, area_h: int) -> list[Card]:
-    """1 枚でも最小の文字の大きさで収まらないカードを、箇条の途中で 2 つに割る（続きに見出しを付ける）。"""
+    """1 枚でも最小の文字の大きさで収まらないカードを 2 つに割る（続きに見出しを付ける）。箇条が 2 つ以上なら箇条の途中で、
+    1 つだけ（長い段落・巨大な箇条）なら、その文を「。」か真ん中で割る。どの文字も落とさない。"""
     lines = card["lines"]
-    if len(lines) < 2:
+    if len(lines) >= 2:
+        mid = len(lines) // 2
+        first, second = lines[:mid], lines[mid:]
+    elif lines and len(split_text(lines[0][1])) == 2:
+        level, text, bullet = lines[0]
+        a, b = split_text(text)
+        first, second = [(level, a, bullet)], [(level, b, bullet)]
+    else:
         return [card]
-    mid = len(lines) // 2
-    head = {"heading": card["heading"], "lines": lines[:mid]}
-    tail = {"heading": (card["heading"] + "（続き）") if card["heading"] else None, "lines": lines[mid:]}
-    return [head, tail]
+    heading = card["heading"]
+    more = heading if heading is None or heading.endswith("（続き）") else heading + "（続き）"
+    return [{"heading": heading, "lines": first}, {"heading": more, "lines": second}]
 
 
 def place_cards(cards: list[Card], area_h: int) -> list[tuple[list[Card], float]]:
@@ -797,18 +814,30 @@ def option_text(row: dict[str, str]) -> str:
     return row["回答"].strip()
 
 
-def scope_slides(rows: list[dict[str, str]], numbers: list[str] | None, match: str | None, extra: list | None) -> list[Slide]:
+SCOPE_MAX = 6  # 既定の選び方のとき、範囲の 1 枚に載せる質問の上限（残りは別紙の表を見る）
+
+
+def scope_slides(rows: list[dict[str, str]], numbers: list[str] | None, match: str | None, extra: list | None,
+                 appendix: bool = True) -> list[Slide]:
     chosen = scope_rows(rows, numbers, match)
     if not chosen:
         return []
+    rest = 0
+    if numbers is None and len(chosen) > SCOPE_MAX:  # 番号を指示されたときは全部載せる。既定の選び方は 1 枚に収める
+        chosen, rest = chosen[:SCOPE_MAX], len(chosen) - SCOPE_MAX
     cards = []
     for r in chosen:
         question = plain(pptx.split_lines(r["質問"])[0], extra)
         mark = "推奨どおり" if answer_label(r) == qa_recommended(r) else ("推奨と違う" if qa_recommended(r) else "推奨なし")
         cards.append({"heading": question, "lines": [(0, "決めたこと: " + plain(option_text(r), extra), False), (0, f"（{mark}）", False)]})
-    placed = place_cards(cards, CY1 - CY0)
-    return [card_slide("何を作り、何を作らないか" if len(placed) == 1 else f"何を作り、何を作らないか（{n}/{len(placed)}）", chunk, size)
-            for n, (chunk, size) in enumerate(placed, 1)]
+    area_h = CY1 - CY0 - (420000 if rest else 0)
+    placed = place_cards(cards, area_h)
+    slides = [card_slide("何を作り、何を作らないか" if len(placed) == 1 else f"何を作り、何を作らないか（{n}/{len(placed)}）", chunk, size, area_h)
+              for n, (chunk, size) in enumerate(placed, 1)]
+    if rest:
+        where = "別紙の表（decisions.xlsx）" if appendix else "proposal.md"
+        slides[-1].box(MARGIN, H - 760000, CONTENT_W, 330000, paras(f"ほかに範囲に関わる質問が {rest} 件ある。全件は{where}を見る。", 12, color=GREY), name="Note")
+    return slides
 
 
 def decisions_xlsx(rows: list[dict[str, str]]) -> bytes:
@@ -1048,7 +1077,7 @@ def proposal_deck(ctx: dict, categories: list[str], opts: Options, md_name: str)
     for s in overview_slides(rows, opts.overview, opts.appendix):
         deck.add(s)
     if opts.scope_slide:
-        for s in scope_slides(rows, opts.scope_questions, opts.scope_match, opts.strip):
+        for s in scope_slides(rows, opts.scope_questions, opts.scope_match, opts.strip, opts.appendix):
             deck.add(s)
     provisional = [r for r in rows if qa.is_provisional(r)]
     pending = [r for r in rows if r["状態"].strip() != qa.DONE and not qa.is_provisional(r)]
