@@ -27,7 +27,7 @@ cruise #1290（`--absent`。2026-11-19 の起動）の子として回す周。�
 ## 変更範囲
 
 触る:
-- `scripts/test-check-all.py` — `cache_interrupt` が子の SIGINT を既定に戻して起こす。SIGINT 無視の親から起こす陽性対照の段を 1 つ足す
+- `scripts/test-check-all.py` — `cache_interrupt` が本体の SIGINT を既定に戻して起こす（`exec` の 1 段を挟む）。SIGINT 無視の環境から起こす陽性対照の段を 1 つ足す
 - `docs/plans/issue-1288.md` — この計画
 
 触らない:
@@ -52,12 +52,12 @@ cruise #1290（`--absent`。2026-11-19 の起動）の子として回す周。�
 | --- | --- | --- |
 | A1 | 親が SIGINT を無視していても、`cache_interrupt` は 30 秒以内に終わる（修正前は 60 秒超） | 契約の新しい段（`test-check-all.py` が回す）と、修正前の版を当てた陽性対照 |
 | A2 | 通常の環境では今までどおり中断を確かめ、記録を書きも消しもしない（A5 の段が緑のまま） | `test-check-all.py` 全体 |
-| A3 | 起こす側が自分の SIGINT を無視するのは起こす間だけで、戻す（テストの後続が Ctrl-C を受けられる） | コードを読む（`finally` で戻す）と `test-check-all.py` |
+| A3 | `cache_interrupt` は変異の段で作業者のスレッドからも呼ばれるので、`signal.signal`（メインスレッドだけ）も `preexec_fn`（スレッドと併用で安全でない）も使わない | 最初の実装（`signal.signal` で親の SIGINT を一時的に無視）は変異の段で `ValueError: signal only works in main thread` で落ちた（`check-all.py` の 1 回目で実測）。作り直した版は `exec` の 1 段を挟む。スレッドから呼んで 1.08 秒で通ることを確かめた |
 | A4 | `check-all.py` 全部が緑（歯止めと回帰テスト） | `check-all.py` |
 
 ## 関門の進捗（再開点）
 
-- 実装を終えた。割らない（cruise の周）。1 パス目の関門はこれから。
+- 実装を終えた（最初の実装は変異の段のスレッドから `signal.signal` を呼んで落ちたので、`exec` の 1 段を挟む形に作り直した）。割らない（cruise の周）。1 パス目の関門はこれから。
 
 ```dev-loop-gates
 周の base: f80dc8d11fdc59e6f66b095c2d92a9e54dea77f7

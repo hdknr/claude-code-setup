@@ -2174,31 +2174,32 @@ def cache_run(root: Path, *args: str, **flags: bool) -> tuple[int, str]:
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def _sigint_default() -> None:
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
+# SIGINT の扱いを決めてから、残りの引数でそのまま起こし直す（`exec` なので pid は変わらない——`send_signal` が届く）。
+# `preexec_fn` や自分の SIGINT の書き換えは使わない——この関数は変異の段で作業者のスレッドから呼ばれ、
+# `signal.signal` はメインスレッドでしか呼べず、`preexec_fn` はスレッドと組み合わせて安全でない。
+_SIGINT_EXEC = ("import os, signal, sys\n"
+                "signal.signal(signal.SIGINT, signal.{handler})\n"
+                "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])")
 
 
 def cache_interrupt(root: Path, parent_ignores_sigint: bool = False) -> bool:
     """`--no-cache` で回し、`t-slow.py` が眠り始めたら本体に SIGINT を送る。眠りに入ったのを見られたか。
 
-    **子の SIGINT は起こす側が既定に戻す**（#1288）。SIGINT が無視された環境（バックグラウンドで起こされた親・
+    **本体の SIGINT は起こす側が既定に戻す**（#1288）。SIGINT が無視された環境（バックグラウンドで起こされた親・
     その子）から回すと、無視は exec をまたいで子に残り、Python は KeyboardInterrupt を受けなくなる——
     本体は SIGINT を受けても中断せず、`t-slow.py` の眠り（60 秒）と残りの回帰テストを走り切る。
     すると下の待ち（60 秒）が負荷で足りず、時間切れになる。**この段が確かめるのは中断の契約で、
     起こされた環境の SIGINT の扱いではない**ので、扱いを揃えてから起こす。
-    `parent_ignores_sigint` は、その環境を作る（陽性対照）——起こす間だけ自分の SIGINT を無視する。"""
+    `parent_ignores_sigint` は、その環境を作る（陽性対照）——本体の手前に SIGINT を無視する 1 段を挟む。"""
     assert_not_real_repo(root)
     marker = root.parent / f"{root.name}-slow-started"
     env = cache_env()
     env["CACHE_T_SLOW"] = str(marker)
-    cmd = [sys.executable, str(root / "scripts" / "check-all.py"), "--jobs", "4", "--no-cache"]
-    previous = signal.signal(signal.SIGINT, signal.SIG_IGN) if parent_ignores_sigint else None
-    try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root, env=env,
-                                preexec_fn=_sigint_default)
-    finally:
-        if parent_ignores_sigint:
-            signal.signal(signal.SIGINT, previous)
+    cmd = [sys.executable, "-c", _SIGINT_EXEC.format(handler="SIG_DFL"),
+           str(root / "scripts" / "check-all.py"), "--jobs", "4", "--no-cache"]
+    if parent_ignores_sigint:
+        cmd = [sys.executable, "-c", _SIGINT_EXEC.format(handler="SIG_IGN"), "-c", cmd[2], *cmd[3:]]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root, env=env)
     try:
         deadline = time.time() + 120
         while time.time() < deadline and not marker.exists() and proc.poll() is None:
