@@ -95,6 +95,9 @@ INDENT_TRICK = MODEL.replace("Inc ==\n  /\\ x < 2\n  /\\ x' = x + 1\n", "Inc == 
     "Inv == x <= 2\n====\n", "====\nInv == x <= 2\n")
 # 狭いパスの指摘: 行為の本文に字下げした弱めた Next・Inv と字下げした ==== を置き、行頭の本物の定義を後ろに残す
 INDENTED_END = VIOLATING.replace("Reset == x' = 0\n", "Reset == x' = 0\n  Next == Inc \\/ Reset\n  Inv == TRUE\n  ====\n")
+# N2: 行の途中の ====・後ろに文字が続く ==== で後ろの本物の定義を隠す
+MID_END = VIOLATING.replace("Reset == x' = 0\n", "Reset == x' = 0\n  Next == Inc \\/ Reset\n  Inv == TRUE ====\n")
+JUNK_END = VIOLATING.replace("Reset == x' = 0\n", "Reset == x' = 0\n  Next == Inc \\/ Reset\n  Inv == TRUE\n  ==== junk\n")
 # EXTENDS した別のファイルの補助の定義（Bound）を性質が使うモデル
 MODEL_EXT = MODEL.replace("EXTENDS Naturals", "EXTENDS Naturals, Helper").replace("Inv == x <= 2", "Inv == Bound(x)")
 HELPER_TLA = "---- MODULE Helper ----\nEXTENDS Naturals\nBound(v) == v <= 2\n====\n"
@@ -231,6 +234,18 @@ CASES: dict[str, dict] = {
                                           "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "定義「Inv」が消えた"},
     "rerun: 字下げした ==== で後ろの本物の定義を隠す（狭いパスの指摘）": {"code_model": {"Counter.tla": INDENTED_END}, "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"],
                                                   "code": 4, "word": "より後ろが保存したモデルと違う"},
+    "rerun: 行の途中の ==== で後ろの本物の定義を隠す（N2）": {"code_model": {"Counter.tla": MID_END}, "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"],
+                                              "code": 4, "word": "より後ろが保存したモデルと違う"},
+    "rerun: 後ろに文字が続く ==== で後ろの本物の定義を隠す（N2）": {"code_model": {"Counter.tla": JUNK_END}, "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"],
+                                                   "code": 4, "word": "より後ろが保存したモデルと違う"},
+    "rerun: タブで字下げした ====": {"code_model": {"Counter.tla": INDENTED_END.replace("  ====", "\t====")}, "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"],
+                                 "code": 4, "word": "より後ろが保存したモデルと違う"},
+    "rerun: 行末に空白のある長い ====": {"code_model": {"Counter.tla": INDENTED_END.replace("  ====\n", "  =========  \n")}, "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"],
+                                    "code": 4, "word": "より後ろが保存したモデルと違う"},
+    "rerun: CRLF の字下げした ====": {"code_model": {"Counter.tla": INDENTED_END.replace("\n", "\r\n")}, "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"],
+                                  "code": 4, "word": "判定できなかった"},
+    "rerun: 注釈の中の ==== は終わりと読まない": {"code_model": {"Counter.tla": MODEL.replace("Reset == x' = 0\n", "Reset == x' = 0 (* ==== *)\n  \\* ==== もここは注釈\n")},
+                                         "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 0, "word": "counter 反例なし"},
     "rerun: ==== の後ろを変える": {"code_model": {"Counter.tla": MODEL + "Inv == TRUE\n"},
                                "args": ["rerun", DIR1, "--code-model", "{CODE}", "--spec-loop", "{SPEC}"], "code": 4, "word": "より後ろが保存したモデルと違う"},
     "rerun: EXTENDS した補助の定義を対応に挙げて書き直す": {
@@ -313,9 +328,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '                    raise Unjudged(f"定義「{current}」が 2 つある")\n                definitions[current] = line + "\\n"\n                others.append("新しい定義")\n',
      "rerun: 定義を足して行為を書き直す"),
     # 2 パス目の指摘対応
-    ("モジュールの終わりを読まない", 'MODULE_END = re.compile(r"^[ \\t]*={4,}[ \\t]*$", re.MULTILINE)', 'MODULE_END = re.compile(r"(?!)")',
+    ("モジュールの終わりを読まない", 'MODULE_END = re.compile(r"={4,}")', 'MODULE_END = re.compile(r"(?!)")',
      "rerun: 字下げと ==== の後ろで性質を差し替える"),
-    ("字下げした ==== を終わりと読まない", 'MODULE_END = re.compile(r"^[ \\t]*={4,}', 'MODULE_END = re.compile(r"^={4,}', "rerun: 字下げした ==== で後ろの本物の定義を隠す（狭いパスの指摘）"),
+    ("字下げした ==== を終わりと読まない", 'MODULE_END = re.compile(r"={4,}")', 'MODULE_END = re.compile(r"^={4,}[ \\t]*$", re.MULTILINE)', "rerun: 字下げした ==== で後ろの本物の定義を隠す（狭いパスの指摘）"),
+    ("行の途中の ==== を終わりと読まない", 'MODULE_END = re.compile(r"={4,}")', 'MODULE_END = re.compile(r"^[ \\t]*={4,}", re.MULTILINE)', "rerun: 行の途中の ==== で後ろの本物の定義を隠す（N2）"),
+    ("後ろに文字が続く ==== を終わりと読まない", 'MODULE_END = re.compile(r"={4,}")', 'MODULE_END = re.compile(r"={4,}[ \\t]*$", re.MULTILINE)', "rerun: 後ろに文字が続く ==== で後ろの本物の定義を隠す（N2）"),
     ("==== の後ろを比べない", "        if saved_tail.strip() != code_tail.strip():\n", "        if False:\n", "rerun: ==== の後ろを変える"),
     ("別のファイルの定義をたどらない", "    for _, saved_defs, _, _, _ in parsed:\n        for definition, body in saved_defs.items():\n",
      "    for _, saved_defs, _, _, _ in parsed[:1]:\n        for definition, body in saved_defs.items():\n", "rerun: EXTENDS した補助の定義を対応に挙げて書き直す"),
