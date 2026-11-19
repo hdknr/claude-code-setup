@@ -1032,6 +1032,13 @@ def check_norm_shape() -> None:
     check("SKILL.md: DEV_LOOP_BASE_REF が書いてある", "DEV_LOOP_BASE_REF" in skill)
     check("SKILL.md: 祖先であることの確認を要求している",
           "--is-ancestor" in skill)
+    # **不安定なテストの扱い（#1193）**——Verifier が差分の skip・sleep・リトライを探すこと、原則が原本を指すこと。
+    verifier = (skill_dir / "prompts" / "verifier.md").read_text(encoding="utf-8")
+    check("verifier.md: テストを緑にする小細工（skip・sleep・リトライ）を差分から探させる",
+          "小細工" in verifier and all(k in verifier for k in ("skip", "sleep", "リトライ")))
+    check("SKILL.md: 不安定なテストの原本を指す", "references/flaky-tests.md" in skill)
+    check("flaky-tests.md: 不安定なテストの記録の形がある",
+          "不安定なテスト: " in (skill_dir / "references" / "flaky-tests.md").read_text(encoding="utf-8"))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
