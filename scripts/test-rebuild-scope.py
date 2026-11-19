@@ -21,6 +21,7 @@
 - 撤去の Issue（変化の印 `remove`）は作り直す範囲に数えない。空の台帳の行は「決まりの形でない」と言う
 - まとめた本文（2 行目が `<!-- spec-loop-bundle: … -->`。#876）は機能の印の行で部分に分け、部分ごとに引く（本物の `scaffold.py --bundle` で作る）
 - まとめた本文の改行が `\r\n` でも部分に分ける
+- `## 受入基準` の節は `### Red テストにしない受入基準` の手前まで読む（小見出しの下の、先頭のセルを等幅にして最後の列に Q&A の No を持つ仕様の行を、Red テストのケースと読まない。#1318）
 - 入力の形が違えば 2（どの Issue が違うかを言う）
 - 確認の Issue の閉じのコメントの結果の行を読み、推奨のまま・変えた・結果なしを `#N` と一覧に出す（最後の結果の行を採る。本文の中・装飾つき・文の途中の行は読まない。#884）
 - 形に反する結果の行は名指しして 1。`comments` の鍵が無い入力は「読んでいない」と言う（「結果なし」と言わない）。`comments` の形が違えば 2
@@ -78,6 +79,20 @@ IR = {
          "operation": {"id": "can_cancel", "method": "GET", "path": "/orders/cancelable",
                        "input": {"shipped": {"type": "boolean"}}, "output": {"ok": {"type": "boolean"}}},
          "cases": [{"id": "F-002-C1", "title": "発送前なら取り消せる", "input": {"shipped": False}, "expected": {"ok": True}}]},
+    ],
+}
+
+
+# Red テストにしない受入基準（#1318）——先頭のセルを等幅にし、最後の列が Q&A の No の仕様の行（`acceptance`）を持つ機能
+SCREEN_SPEC = "# 画面\n\n| 番号 | 確かめること | Q&A |\n| --- | --- | --- |\n| `F1-3` | 画面を閉じても入力が残る | Q-001 |\n"
+IR_ACCEPTANCE = {
+    "spec_ir_version": 1, "title": "画面",
+    "features": [
+        {"id": "F-003", "title": "入力を残す", "source": ["spec/screen.md"], "qa": [],
+         "operation": {"id": "keep_input", "method": "GET", "path": "/screen/input",
+                       "input": {"draft": {"type": "string"}}, "output": {"kept": {"type": "boolean"}}},
+         "cases": [{"id": "F-003-C1", "title": "下書きを返す", "input": {"draft": "a"}, "expected": {"kept": True}}],
+         "acceptance": ["| `F1-3` | 画面を閉じても入力が残る | Q-001 |"]},
     ],
 }
 
@@ -198,6 +213,9 @@ CASES = [
           "#30 F-001・F-002: 割引額を計算する／注文を取り消せるか [OPEN]（F-002）——ケースに無い（機能全体）"), bundle="bundle"),
     Case("改行が CRLF のまとめた本文", ("Q-001",), 0,
          ("作り直す範囲 2 件", "（F-001）——受入基準 `F-001-C1`", "（F-002）——ケースに無い（機能全体）"), bundle="crlf"),
+    # Red テストにしない受入基準（#1318）の行は、Red テストのケースではない
+    Case("Red テストにしない受入基準の行をケースに数えない", ("Q-001",), 1,
+         ("Q-001: 根拠にした spec-loop の Issue が無い",), ("F1-3", "#50"), bundle="acceptance"),
     # 作り直しの Issue の下書き（#885）
     Case("下書き（No）", ("--draft", "Q-001"), 0,
          ("## 作り直す範囲", "- #11 F-001: 割引額を計算する [OPEN]（F-001）——受入基準 `F-001-C1`",
@@ -237,6 +255,8 @@ CASES = [
 
 # (名前, 壊す箇所, 置き換え, 落ちるはずの試料)
 MUTATIONS = [
+    ("受入基準の節を小見出しの手前で切らない", "    return lines[:lines.index(scaffold.ACCEPTANCE_HEADING)] if scaffold.ACCEPTANCE_HEADING in lines else lines",
+     "    return lines", "Red テストにしない受入基準の行をケースに数えない"),
     ("表の暫定の印を外さない", "                    text = text[: -len(scaffold.PROVISIONAL_CELL)]\n", "                    pass\n",
      "暫定の Q-001"),
     ("仕様の行を読まない", "            if line.startswith(scaffold.PROVISIONAL_LINE):", "            if False:", "一覧"),
@@ -352,7 +372,27 @@ def make_bodies(work: Path, scripts: Path) -> dict[str, str]:
                            "--bundle", "F-001,F-002"], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     found["bundle"] = (issues / "bundle-F-001-F-002.md").read_text(encoding="utf-8")
+    found["acceptance"] = acceptance_body(work, scripts)
     return found
+
+
+def acceptance_body(work: Path, scripts: Path) -> str:
+    """`acceptance` を書いた機能（F-003）の本文を、本物の `scaffold.py --provisional` で作る（別の正本。#1318）。"""
+    repo = work / "repo-acceptance"
+    base = repo / "docs" / "v1"
+    (base / "shared").mkdir(parents=True)
+    (base / "spec").mkdir(parents=True)
+    # どの機能の qa からも指さないので、Q-001 は反映済みにする（暫定のままだと scaffold が作らない）
+    (base / "shared" / "qa.csv").write_text(QA.replace("A（暫定で採用。業務部 2026-10-21 の指示）", "A（業務部が回答）").replace("暫定反映", "反映済み"),
+                                            encoding="utf-8")
+    (base / "spec" / "screen.md").write_text(SCREEN_SPEC, encoding="utf-8")
+    (base / "spec" / "spec_ir.json").write_text(json.dumps(IR_ACCEPTANCE, ensure_ascii=False, indent=2), encoding="utf-8")
+    (repo / "spec-review").mkdir()
+    (repo / "spec-review" / "v1.csv").write_text(PASSED_RECORD, encoding="utf-8")
+    proc = subprocess.run([sys.executable, "-I", str(scripts / "scaffold.py"), "--repo", str(repo), "--provisional"],
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return (repo / "build" / "scaffold" / "issues" / "F-003.md").read_text(encoding="utf-8")
 
 
 def run_case(scripts: Path, data: Path, case: Case) -> str | None:
@@ -388,12 +428,16 @@ def main() -> int:
         scripts = work / "scripts"
         shutil.copytree(SCRIPTS, scripts, ignore=shutil.ignore_patterns("__pycache__"))
         bodies = make_bodies(work, scripts)
-        check("scaffold が F-001・F-002 の本文を作った", sorted(bodies) == ["F-001", "F-002", "bundle"], f"{sorted(bodies)}")
+        check("scaffold が F-001・F-002 の本文を作った", sorted(bodies) == ["F-001", "F-002", "acceptance", "bundle"], f"{sorted(bodies)}")
+        check("陽性対照: 受入基準の本文に、Red テストにしない受入基準の小見出しと、Q&A の No を持つ表の行がある",
+              "### Red テストにしない受入基準" in bodies["acceptance"] and "| `F1-3` | 画面を閉じても入力が残る | Q-001 |" in bodies["acceptance"])
         data = work / "issues.json"
         data.write_text(json.dumps(issues_json(bodies), ensure_ascii=False), encoding="utf-8")
         (work / "bundle.json").write_text(json.dumps([{"number": 30, "title": "F-001・F-002: 割引額を計算する／注文を取り消せるか",
                                                         "state": "OPEN", "body": bodies["bundle"]}], ensure_ascii=False),
                                           encoding="utf-8")
+        (work / "acceptance.json").write_text(json.dumps([{"number": 50, "title": "F-003: 入力を残す", "state": "OPEN",
+                                                            "body": bodies["acceptance"]}], ensure_ascii=False), encoding="utf-8")
         decided = [i for i in issues_json(bodies) if i["number"] in (11, 23, 29)]
         (work / "decided.json").write_text(json.dumps(decided, ensure_ascii=False), encoding="utf-8")
         changed_comment = [{"body": "確認の結果: 変えた: Z"}]
