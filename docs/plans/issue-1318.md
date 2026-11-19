@@ -50,9 +50,9 @@ Issue 本文（外部入力）から読んだ要件: `rebuild-scope.py` の `Han
 
 | # | 不変条件 | 経路 | 守り方 | 証明 |
 | --- | --- | --- | --- | --- |
-| A1 | `### Red テストにしない受入基準` の下の行（先頭のセルを等幅にし最後の列に Q&A の No を持つ仕様の行）を Red テストのケースと読まない | No の引き・`--draft`・一覧（`Handoff.cases`・`refs`） | `red_test_lines` | 本物の `scaffold.py` で作った `acceptance` つきの本文の試料（直す前は赤・直した後は緑）と変異 |
+| A1 | `### Red テストにしない受入基準` の下の行（先頭のセルを等幅にし最後の列に Q&A の No を持つ仕様の行）を Red テストのケースと読まない | No の引き・`--draft`・一覧（`Handoff.cases`・`refs`） | `red_test_lines` | 本物の `scaffold.py` で作った `acceptance` つきの本文の試料（直す前は赤・直した後は緑）と変異。経路は No の引き（`Q-001`）だけ当てた（`--draft`・一覧・`--changed` は同じ `Handoff` を共有） |
 | A2 | `acceptance` を書かない本文（小見出しが無い）は今までと同じ結果 | 既存の全試料 | 小見出しが無ければ節の全部を読む | 既存の試料が全部通る |
-| A3 | まとめた本文の部分ごとの読みでも同じ（部分に `acceptance` がある） | まとめた本文 | `Handoff(issue, part)` が同じ関数を通る | 既存の試料が通る（部分の読みは同じ経路） |
+| A3 | まとめた本文の部分ごとの読みでも同じ（部分に `acceptance` がある） | まとめた本文・`rework-metrics.py`（`rebuild.Handoff` を作る） | `Handoff(issue, part)` が同じ関数を通る | コードの読み（部分も同じ `Handoff.__init__` を通る）。Verifier が本物の `scaffold.py --bundle` と CRLF の本文を手で当てて確かめた。**試料には無い**（既存の bundle の試料は `acceptance` を持たない）——試料の穴として残課題に載せた |
 | A4 | 版を 3 種類で揃えて上げ、`check-all.py` が緑 | CI | 版の行 | `check-all.py`・`check-plugin-versions.py` |
 | A5 | 必須の掛け算: 受入基準を Verifier と `/code-review` の両方に、1 パス目と 2 パス目（または「該当なし」）で渡す | 関門 | 委譲文 | 関門の記録 |
 
@@ -73,17 +73,32 @@ Issue 本文（外部入力）から読んだ要件: `rebuild-scope.py` の `Han
 
 | 指摘 | 出所 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- |
-| （まだ無い） | | | | |
+| T1 新しい試料は「小見出しがあれば空を返す」変異（Red テストの行を全部落とす）を殺せない（F-003 のケースの `qa` が空） | Verifier 1・/code-review 1（important） | 示せる（複製で変異を入れて試料が緑のまま） | 無し（コードは正しい。A1 の証明の穴＝試料の穴） | 残課題（試料の穴は記録だけ。found-lines.md の振り分け） |
+| T2 A3 の証明が既存の試料で、部分に `acceptance` を持つ試料が無い | Verifier 1・/code-review 1 | 示せる（計画の文面） | 無し | **直した**（計画の A3 の証明の欄を実際に当てたものに。成果物は変わらない）。試料の穴は T1 と同じく記録だけ |
+| T3 `rework-metrics.py` も `rebuild.Handoff` を作るので修正が効く（入口の表に無い） | Verifier 1 | 示せる | 無し（振る舞いは揃う。`test-rework-metrics.py` は緑） | **直した**（A3 の経路に足した） |
+| T4 修正で、小見出しの下の行にだけ Q&A の No を持つ機能は、その No から引けなくなる（以前はケースと誤読して挙がった）。`scaffold.py` が `acceptance` の行の No を `## Q&A の回答` に載せない | /code-review 1 | 示せる（まれ。`acceptance` の行だけが根拠の Q&A） | 無し | 記録だけ（前から在る欠落で、この周の変更が作ったものでない。`scaffold.py` を変える別の周の判断） |
+| T5 小見出しの照合は完全一致で、末尾に空白の付いた手書きの本文では打ち切れない | /code-review 1 | 示せる（合成。scaffold は付けない） | 無し | 記録だけ（まれな書き方） |
+| T6 試料は No の引きだけで `--draft`・一覧を当てない | /code-review 1 | 示せる | 無し | **直した**（A1 の証明の文面を実際に当てた経路に） |
 
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1318-rebuild-scope-red-test-excluded`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1318`・切った元の参照 `origin/main`（解決した SHA `8910094ad748ae28f00251078cb5f737b748ee37`）・起点コミット `8910094a`。base は `8910094ad748ae28f00251078cb5f737b748ee37`（prepare-worktree.sh の出力）。
-- 実装を終えた。割り目: 割らない（cruise の周）。
+- 実装を終えた。割り目: 割らない（cruise の周）。1 パス目: Verifier 1・`/code-review` 1 を `ebe34c021f81e6e05ddec4d40e69c253cd84cb6a` に当てた。**1 パス目の指摘対応の起点の SHA: `ebe34c021f81e6e05ddec4d40e69c253cd84cb6a`**。指摘対応は計画ファイルの文面だけ（成果物の差分 0 行）——2 パス目: 該当なし・狭いパス: 該当なし。
 
 ## 関門の記録
 
 ```dev-loop-gates
 周の base: 8910094ad748ae28f00251078cb5f737b748ee37
+関門: Verifier 1 ebe34c021f81e6e05ddec4d40e69c253cd84cb6a 反証=2
+関門: /code-review 1 ebe34c021f81e6e05ddec4d40e69c253cd84cb6a 指摘=5
+関門: 2 パス目 該当なし ebe34c021f81e6e05ddec4d40e69c253cd84cb6a
+関門: 狭いパス 該当なし
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
 
 - この周の起票: 0 件（cruise の子は起票しない。振り分けで直すとした行があれば親が足す）
