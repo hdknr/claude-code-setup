@@ -36,6 +36,7 @@ scaffold が仕様のテストケースと中間表現を突き合わせ、内�
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 書き起こす手順に `acceptance` と内訳の読み方
 - `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 小見出しの読み方（dev-loop の規定は変えない）
 - `scripts/test-scaffold.py` — 試料・変異
+- `scripts/test-check-spec-exit.py` — `case_rows` に変えた行を探す変異の文字列（出力は変えないが、変異が探す文字列が変わった。CI で見つかった）
 - `CLAUDE.md` — `scaffold.py` の項
 - `plugins/spec-loop/.claude-plugin/plugin.json` — 版
 - `plugins/dev-loop/.claude-plugin/plugin.json` — 版
@@ -49,7 +50,6 @@ scaffold が仕様のテストケースと中間表現を突き合わせ、内�
 
 - `dev-loop` の `SKILL.md` の本文・手順（Issue が「dev-loop の規定は変えない」と決めている。縮退の線のまま BLOCKED）
 - `spec-exit.md`（番号の形の原本は #1297 のまま。変えない）・`spec-review/SKILL.md`・`agents/`
-- `scripts/test-check-spec-exit.py`（`case_numbers` の出力は変えない。`case_rows` は scaffold のテストが通して見る）
 - 説明文（frontmatter・`plugin.json`・`marketplace.json` の description）・`README.md`・公開ページ——今の要約が偽にならない
 
 依存の追加・更新: なし
