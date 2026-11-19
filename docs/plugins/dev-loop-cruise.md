@@ -31,7 +31,7 @@ dev-loop は「1 Issue = 1 周」のスキルなので、オートクルーズ�
 | 環境点検 | `scripts/check-unattended-env.py` | 起動時に、周で使う操作の許可・止まりうる操作・親の起動場所を読むだけで点検する。席を外すなら自動継続・通知なども（席を外したあとの再開の `--since-last` だけは、前回の結果を台帳の隣に残す） |
 | 直す線 | `references/fix-line.md` | 関門の指摘をどこまで周の中で直すか |
 | まとめの周 | `../cruise/references/grouping.md`・`scripts/ledger.py`（`group`） | 周の途中で足した、同じファイルを触る行を 1 周・1 PR にまとめる（[#641](https://github.com/hdknr/claude-code-setup/issues/641)） |
-| 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
+| 長期トークンの起動口 | `scripts/launch-with-long-token.sh` | 対話ログインの 8 時間の期限で止めないよう、キーチェーンの長期トークンで `claude` を起動する（未登録なら、対話の端末ではその場で登録してから起動する。`--install-launcher` で版を含まない短い起動口 `dev-loop-cruise` を置ける。[cruise を長期トークンで起動する](../usage/cruise-long-lived-token.md)） |
 | 子プロセスの周（任意） | `../cruise/scripts/child-cycle.py`・`../cruise/references/child-process.md` | 周を `claude -p` の子プロセスで回す起動口と要約。親の `/clear` の道連れにならない。**既定はサブエージェントのまま**（[#491](https://github.com/hdknr/claude-code-setup/issues/491)） |
 | 外側のループ（任意） | `../cruise/scripts/outer-loop.py`・`scripts/ledger.py`（`status`・`progress`） | cruise を `claude -p` で起動し直して回すループ。進められる周があり、起動のたびに周が進んでいるあいだだけ起こし直す（[#791](https://github.com/hdknr/claude-code-setup/issues/791)） |
 | 周の片付け | `../cruise/scripts/cleanup-cycle.py` | 周のマージの後に、その PR から決まる worktree（周の作業木と Verifier・`/code-review` の隔離木）とローカルブランチだけを消す。未コミットの変更がある木は残して台帳のメモに載せる。リモートのブランチ・PR には触らず、終えるときに本数と PR の状態ごとの内訳を数える（[#823](https://github.com/hdknr/claude-code-setup/issues/823)） |
