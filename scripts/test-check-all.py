@@ -2174,14 +2174,31 @@ def cache_run(root: Path, *args: str, **flags: bool) -> tuple[int, str]:
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def cache_interrupt(root: Path) -> bool:
-    """`--no-cache` で回し、`t-slow.py` が眠り始めたら本体に SIGINT を送る。眠りに入ったのを見られたか。"""
+def _sigint_default() -> None:
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def cache_interrupt(root: Path, parent_ignores_sigint: bool = False) -> bool:
+    """`--no-cache` で回し、`t-slow.py` が眠り始めたら本体に SIGINT を送る。眠りに入ったのを見られたか。
+
+    **子の SIGINT は起こす側が既定に戻す**（#1288）。SIGINT が無視された環境（バックグラウンドで起こされた親・
+    その子）から回すと、無視は exec をまたいで子に残り、Python は KeyboardInterrupt を受けなくなる——
+    本体は SIGINT を受けても中断せず、`t-slow.py` の眠り（60 秒）と残りの回帰テストを走り切る。
+    すると下の待ち（60 秒）が負荷で足りず、時間切れになる。**この段が確かめるのは中断の契約で、
+    起こされた環境の SIGINT の扱いではない**ので、扱いを揃えてから起こす。
+    `parent_ignores_sigint` は、その環境を作る（陽性対照）——起こす間だけ自分の SIGINT を無視する。"""
     assert_not_real_repo(root)
     marker = root.parent / f"{root.name}-slow-started"
     env = cache_env()
     env["CACHE_T_SLOW"] = str(marker)
-    proc = subprocess.Popen([sys.executable, str(root / "scripts" / "check-all.py"), "--jobs", "4", "--no-cache"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root, env=env)
+    cmd = [sys.executable, str(root / "scripts" / "check-all.py"), "--jobs", "4", "--no-cache"]
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN) if parent_ignores_sigint else None
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root, env=env,
+                                preexec_fn=_sigint_default)
+    finally:
+        if parent_ignores_sigint:
+            signal.signal(signal.SIGINT, previous)
     try:
         deadline = time.time() + 120
         while time.time() < deadline and not marker.exists() and proc.poll() is None:
@@ -2319,6 +2336,10 @@ def cache_contract(root: Path):
     seen = cache_interrupt(root)
     rc2, out2 = cache_run(root)
     yield "中断した回は記録を書きも消しもしない（A5）", seen and rc2 == 0 and "t-slow.py" in cached_tests(out2) and "t-slow.py" not in ran_tests(out2)
+    # SIGINT を無視した親から回しても、中断の段は届く（#1288。起こす側が子の SIGINT を既定に戻さないと、本体は止まらず 60 秒を超える）。
+    t0 = time.monotonic()
+    seen2 = cache_interrupt(root, parent_ignores_sigint=True)
+    yield "SIGINT を無視した親から起こしても、中断は 30 秒以内に届く（#1288）", seen2 and time.monotonic() - t0 < 30
     # 4) git の状態。コミットすると、git を当てたテストだけが回る（配置だけを訊くものは回らない）。
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "-m", "c2"], check=True)
