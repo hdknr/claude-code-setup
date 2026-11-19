@@ -240,6 +240,7 @@ TESTS: list[str] = [
     "test-review-meeting.py",
     "test-parent-checklist.py",
     "test-green-list.py",
+    "test-scaffold-estimate.py",
     "test-merge-versions.py",
     "test-diff-versions.py",
     "test-check-frozen.py",

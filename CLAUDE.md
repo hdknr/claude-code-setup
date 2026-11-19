@@ -202,6 +202,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/green-list.py` - 製品のリポジトリで、scaffold の Red テストのうち**緑のケースとその中身の指紋を一覧（`scaffold-green.txt`）に書き（`record`）、CI で一覧のケースが緑のままかを見る（`check`）**
       （#1000。**一覧に無いケース（まだ実装していない機能）の赤では落ちず、`record` は載ったケースを壊していれば書かない**。走らせ方は `scaffold.py` の `run_tests` を読み込む。
       決まり（選び方・性能テストの扱い・別リポジトリの形・GitHub Actions の雛形）の原本は `references/tree.md` の「Red テストを CI で走らせ続ける」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-green-list.py`）
+    - `scripts/scaffold-estimate.py` - **scaffold の書き起こしの前に、仕様のテストケースのうち開発に渡る（Red テストか受入基準になる）割合の見積もり**の機械で決まる部分（#1302。`list` は重ね合わせた全体の `spec/` のケースを番号・場所・原文で出し、
+      `check` はスキルが書いた分け方（`build/scaffold-estimate.json`。`red`・`acceptance`・`neither`）の形と網羅を確かめて件数と割合を数え、どちらにもできないケースを名指しする。**どれに分けるかは判断でスキルが決め、機械は決めない。
+      止める割合の線は決めていない**（理由は `references/spec-ir.md` の「書き起こす前の見積もり」）。ケースの数え方は `scaffold.py` の `spec_case_rows` を読み込む——写さない。何も書かない。守る／守らないは docstring を正とする。テストは `scripts/test-scaffold-estimate.py`）
     - `scripts/merge-versions.py` - バージョンアップの版（`docs/v<n>/`。v2 以降は差分だけ）を重ねて、ある版の時点の全体を作る
       （#261。決まりは `references/versions.md`。**印 `.merged-versions` の無い出力先は消さない**。
       `scaffold.py` と `check-signoff.py` もここの関数で重ね・版を見つける——写しを作らない。
@@ -512,6 +515,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-green-list.py` - spec-loop の緑のケースの一覧のスクリプト（#1000）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**`scaffold/` は本物の `scaffold.py` で作り**（v2 の作り直しも）、実装を壊すと `check` が 1 になる陽性対照と、
     別リポジトリの形（`scaffold.py --check` と `diff -r` が、写しを直す・正本だけ変えると非 0）を見る。**変異の数は本体の docstring の「守ること」の行の数以上**
+  - `test-scaffold-estimate.py` - spec-loop の scaffold の書き起こし前の見積もり（#1302）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリの正本（v1・v2 の版・数えない表と `.txt`）に、写した本物の `scaffold.py`・`check-spec-exit.py`・`merge-versions.py` で走らせる**。
+    割合が低くても 0・どちらにもできないを番号と場所で名指し・走らせた前後で正本が変わらないこと・形と網羅の違反が 1、見積もりのファイルが無いか読めなければ 2、ケースの表が無ければ 3。**変異の数は本体の docstring の「守ること」の行の数以上**
   - `test-merge-versions.py` - spec-loop の段 5a（#261）の回帰テスト（変異テストを含む）。
     **本体の定数が `references/versions.md` と一致することも見る**
   - `test-diff-versions.py` - spec-loop の段 5c（#263）の版の差分の回帰テスト（変異テストを含む）。
