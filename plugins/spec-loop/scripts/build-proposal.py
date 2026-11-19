@@ -507,7 +507,7 @@ def compose(title: str, info: dict, hand: list[tuple[str, str]], qa_rows: list[d
     else:
         out.append("（反映済みの決定事項はありません）")
     out.append("")
-    # `##` にする——`###` だと PPTX で「主な決定事項」の題のスライドに暫定の行が載る（`markdown_slides` は `##` で分ける）
+    # `##` にする（暫定の節を、主な決定事項の節の中身にしない）
     scope = "この版の Q&A で" if diff is not None else ""
     out += [f"## {scope}利用者にまだ確かめていない決定（{len(provisional)} 件）", ""]
     if diff is not None:
@@ -800,6 +800,7 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
                                                                 if r[0].strip().startswith(prefix)), "—") for r in purposes or []],
                    "provisional_lead": lead}
             opts = pptx_options(args)
+            opts.appendix = appendix  # 別紙を書かないとき（Q&A が 0 行など）は、スライドも別紙を指さない
             proposal_pptx, _ = ppt.proposal_deck(ctx, feasibility.CATEGORIES, opts, out.name)
             spec_pptx, failed = ppt.spec_deck(spec_material, opts)
             if failed:  # 図を PNG にできなかった——載せていないことを隠さない（終了コードは 0 のまま）

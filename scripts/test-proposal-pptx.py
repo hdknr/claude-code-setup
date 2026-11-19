@@ -132,6 +132,15 @@ def schedule_rows(n: int = 14, start: str = "2026-11-02") -> list[dict]:
     return rows
 
 
+def pp_title(text: str) -> str:
+    slide = LOADED[0].Slide()
+    slide.title(text)
+    return slide.render()
+
+
+LOADED: list = []
+
+
 def observe(mod, tool_dir: Path) -> dict:
     """本体の観測。例外は観測の値にする（壊した本体が落ちたことも「期待と違う」と数える）。"""
     obs: dict = {}
@@ -143,6 +152,7 @@ def observe(mod, tool_dir: Path) -> dict:
             obs[key] = f"例外 {type(e).__name__}"
 
     pp = mod
+    LOADED[:] = [mod]
     # 1. 参照の括弧
     seen("参照の括弧を外す", lambda: pp.strip_refs("画面は 4 枚（Q-R-001）。") == "画面は 4 枚。")
     seen("暫定の断り書きは残す", lambda: pp.strip_refs("Q-R-002（暫定の回答。利用者に未確認）") == "（暫定の回答。利用者に未確認）")
@@ -252,6 +262,10 @@ def observe(mod, tool_dir: Path) -> dict:
     seen("概要の別紙の案内は別紙が無ければ出ない", lambda: not any("decisions.xlsx" in t for t in slide_list_texts(pp.overview_slides(qa_rows, pp.OVERVIEW_ITEMS, False))))
     seen("概要は指示で絞る", lambda: len(pp.overview_slides(qa_rows, ("counts",), True)) == 1
          and not any("起票元ごと" in t for t in slide_list_texts(pp.overview_slides(qa_rows, ("counts",), True))))
+    seen("Q&A が 0 行なら概要の枚を作らない", lambda: pp.overview_slides([], pp.OVERVIEW_ITEMS, True) == [])
+    free = qa_row(mod, 30, rec="なし", ans="自由に書いた回答", target="spec/scope.md", question="範囲の自由記述")
+    seen("推奨なしの質問は推奨どおりと言わない", lambda: "推奨なし" in slide_list_texts(pp.scope_slides([free], None, None, []))[0]
+         and "推奨どおり" not in slide_list_texts(pp.scope_slides([free], None, None, []))[0])
     sc = slide_list_texts(pp.scope_slides(qa_rows, None, None, []))
     seen("範囲を決めた質問の 1 枚", lambda: len(sc) == 1 and "帳票を作らない" in sc[0] and "決めたこと" in sc[0] and "作らない" in sc[0])
     seen("範囲の質問を番号で選ぶ", lambda: "質問 2" in slide_list_texts(pp.scope_slides(qa_rows, ["Q-R-002"], None, []))[0])
@@ -300,6 +314,10 @@ def observe(mod, tool_dir: Path) -> dict:
             os.environ[pp.SPEC_RSVG_ENV] = old
     seen("図の見出し: title のセル", lambda: pp.figure_title("a.svg", DRAWIO_SVG.encode("utf-8")) == "注文の流れ")
     seen("図の見出し: title 要素", lambda: pp.figure_title("a.svg", "<svg><title>返品の画面</title></svg>".encode("utf-8")) == "返品の画面")
+    seen("図の見出しは unescape する", lambda: pp.figure_title("a.svg", "<svg><title>A &amp; B</title></svg>".encode("utf-8")) == "A & B")
+    seen("図形の tooltip は図の見出しにしない", lambda: pp.figure_title("spec/order-flow.svg", "<svg><g><title>tooltip text</title></g></svg>".encode("utf-8")) == "order flow")
+    seen("長い題は小さくして 1 行に収める", lambda: 'sz="2600"' not in pp_title("受注から出荷までの業務の流れと現場への影響を踏まえた推奨案の全体像について") and 'sz="2600"' in pp_title("短い題"))
+    seen("折れない長い語は新しい行に移してから割る", lambda: pp.lines_needed("項目" + "1" * 54, 12, 100) >= pp.lines_needed("1" * 54, 12, 100) + 1)
     seen("図の見出し: 画面", lambda: pp.figure_title("spec/wireframe-受注一覧.svg", b"<svg/>") == "画面: 受注一覧")
     seen("図の見出し: 一般の名前", lambda: pp.figure_title("spec/order-flow.drawio.svg", b"<svg/>") == "order flow")
     # 8. 仕様書
@@ -390,6 +408,12 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("長い 1 段落を割らない", "    elif lines and len(split_text(lines[0][1])) == 2:", "    elif False:"),
     ("前半の見出しを落とす", '    return [{"heading": heading, "lines": first}, {"heading": more, "lines": second}]', '    return [{"heading": None, "lines": first}, {"heading": more, "lines": second}]'),
     ("範囲の質問に未回答も選ぶ", '    done = [r for r in rows if r["状態"].strip() == qa.DONE]\n    if numbers is not None:', '    done = list(rows)\n    if numbers is not None:'),
+    ("推奨なしを推奨どおりと言う", '        mark = "推奨なし" if rec is None else ("推奨どおり" if answer_label(r) == rec else "推奨と違う")', '        mark = "推奨どおり" if answer_label(r) == rec else ("推奨と違う" if rec else "推奨なし")'),
+    ("Q&A が 0 行でも概要を作る", "    if not rows:\n        return []\n    if \"counts\" in items:", "    if \"counts\" in items:"),
+    ("題を縮めない", "        while size > 14 and lines_needed(text, size, width) > 1:\n            size -= 2\n", "        pass\n"),
+    ("図の見出しを unescape しない", "    if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:\n        return unescape(m.group(1)).strip()\n    m = re.search(r'<diagram", "    if m and m.group(1).strip().lower() not in GENERIC_NAMES:\n        return m.group(1).strip()\n    m = re.search(r'<diagram"),
+    ("図形の tooltip を図の見出しにする", '    m = re.search(r"<svg\\b[^>]*>\\s*(?:<defs\\b[^>]*/>\\s*|<defs\\b.*?</defs>\\s*)?<title', '    m = re.search(r"<title'),
+    ("折れない長い語を現在の行から割る", "                if line > 0:  # 折れない長い語は、新しい行に移してから割る（描画の側もそうする）\n                    count += 1\n                    line = 0.0\n", ""),
     ("範囲の枚に上限を掛けない", "    if numbers is None and len(chosen) > SCOPE_MAX:", "    if False:"),
     ("見積りの余裕を外す（行の高さ）", "LINE_HEIGHT = 1.42", "LINE_HEIGHT = 1.0"),
     ("見積りの余裕を外す（折り返し）", "SAFETY = 0.94", "SAFETY = 1.2"),

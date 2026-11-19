@@ -110,6 +110,9 @@ def lines_needed(text: str, size: float, width_pt: float) -> int:
             if token.isspace():
                 continue
             if line == 0 or w > width_pt:
+                if line > 0:  # 折れない長い語は、新しい行に移してから割る（描画の側もそうする）
+                    count += 1
+                    line = 0.0
                 for c in token:
                     cw = char_em(c) * size
                     if line + cw > width_pt and line > 0:
@@ -256,6 +259,10 @@ class Slide:
         self.box(x, y, w, h, [], fill=fill, geom=geom, name=name)
 
     def title(self, text: str, size: float = 26) -> None:
+        """題は 1 行に収まる大きさにし（14pt まで）、それでも収まらなければ 2 行（罫線をまたがない高さ）にする。"""
+        width = emu_pt(CONTENT_W - 2 * INSET_X)
+        while size > 14 and lines_needed(text, size, width) > 1:
+            size -= 2
         self.box(MARGIN, 260000, CONTENT_W, 640000, paras(text, size, bold=True, color=DARK), anchor="ctr", name="Title")
         self.rect(MARGIN, 930000, CONTENT_W, 22860, ACCENT, name="Rule")
 
@@ -763,6 +770,8 @@ def overview_slides(rows: list[dict[str, str]], items: tuple[str, ...], appendix
     provisional = [r for r in rows if qa.is_provisional(r)]
     pending = [r for r in rows if r["状態"].strip() != qa.DONE and not qa.is_provisional(r)]
     cards: list[Card] = []
+    if not rows:
+        return []
     if "counts" in items:
         cards.append({"heading": "件数", "lines": [(0, f"決定: {len(done)} 件", True),
                                                    (0, f"暫定（利用者に未確認）: {len(provisional)} 件", True),
@@ -828,7 +837,8 @@ def scope_slides(rows: list[dict[str, str]], numbers: list[str] | None, match: s
     cards = []
     for r in chosen:
         question = plain(pptx.split_lines(r["質問"])[0], extra)
-        mark = "推奨どおり" if answer_label(r) == qa_recommended(r) else ("推奨と違う" if qa_recommended(r) else "推奨なし")
+        rec = qa_recommended(r)
+        mark = "推奨なし" if rec is None else ("推奨どおり" if answer_label(r) == rec else "推奨と違う")
         cards.append({"heading": question, "lines": [(0, "決めたこと: " + plain(option_text(r), extra), False), (0, f"（{mark}）", False)]})
     area_h = CY1 - CY0 - (420000 if rest else 0)
     placed = place_cards(cards, area_h)
@@ -946,12 +956,12 @@ def drawio_title_cell(text: str) -> str | None:
 def figure_title(path: str, svg: bytes) -> str:
     """図の見出し。図の中の名前（`<title>`・drawio のページ名）があればそれ、無ければファイル名から読める名前を作る。"""
     text = svg.decode("utf-8", "replace")
-    m = re.search(r"<title[^>]*>([^<]+)</title>", text)
-    if m and m.group(1).strip().lower() not in GENERIC_NAMES:
-        return m.group(1).strip()
+    m = re.search(r"<svg\b[^>]*>\s*(?:<defs\b[^>]*/>\s*|<defs\b.*?</defs>\s*)?<title[^>]*>([^<]+)</title>", text, re.S)  # 図そのものの題（図形の tooltip ではなく）
+    if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:
+        return unescape(m.group(1)).strip()
     m = re.search(r'<diagram\b[^>]*\bname=(?:"|&quot;)([^"&]+)', text)
-    if m and m.group(1).strip().lower() not in GENERIC_NAMES:
-        return m.group(1).strip()
+    if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:
+        return unescape(m.group(1)).strip()
     named = drawio_title_cell(text)
     if named:
         return named
