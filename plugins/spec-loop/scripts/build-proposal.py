@@ -45,10 +45,15 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
   `X.drawio.svg` は `X.drawio` の書き出しと数えるが、`X.bpmn.svg` は `X.bpmn` の書き出しと数えず、隣に `X.bpmn` があれば図としても載せない。載せるものと置き場所の正は `references/tree.md` の「仕様書」。
   **形式検査のモデル（`spec/formal/`）は、規模・図・「仕様と要求のファイル」のどれにも入れない**——仕様から書き起こした写し（判別は `merge-versions.py` の `is_formal`。
   `references/tree.md` の「形式検査のモデル」。#908）。「前の版からの変更」にも出ない（`diff-versions.py` が比べない）。
-- **`--pptx` で提案書と仕様書の PPTX も作る**（`qa-to-pptx.py` の仕組み。図は載せず、載せていないとスライドに書く）。
+- **`--pptx` で提案書と仕様書の PPTX と、別紙の表（`decisions.xlsx`。利用者と決めたことの全件）も作る**（#1289。既定のデザインは `proposal-pptx.py`、
+  決まりの正は `references/tree.md` の「PPTX のデザインと指示」）。図は PNG にして載せる（`rsvg-convert`。無ければ載せずに標準エラーに知らせ、0 で作る）。
+  **指示（正本の `CLAUDE.md`。proposal のスキルが引数に組む）**: `--pptx-script <スクリプト>`（PPTX の生成を差し替える。材料は出力の `proposal.md`・`spec.md`・`gantt.svg`・
+  `spec-figure-NN.svg`・別紙だけを置いたディレクトリで、`python3 <スクリプト> --materials <ディレクトリ> --proposal-out <p.pptx> --spec-out <s.pptx>`。0 でない・2 本が揃わない・
+  zip でない・300 秒を超えるは 2）・`--no-appendix`（別紙を作らない）・`--no-scope-slide`・`--scope-questions`・`--scope-match`・`--overview`・`--slide-strip`。
+  **これらは `--pptx` と一緒にしか渡せない**（argparse の 2）。
 - **始める前に、前に作った出力を消し、全部作れてから書く**——作れなかったときに、古い提案書を今のものと取り違えないため。
   **消すのは、出力と同じ場所の印（`.build-proposal`）が名指しするものだけ**（#405）——印は書いた出力（提案書・`gantt.svg`・
-  `spec.md`・PPTX・`spec-figure-*.svg`）の名前の一覧で、出力より先に書く。**印の無い場所では何も消さない**——`--out` を
+  `spec.md`・PPTX・別紙 `decisions.xlsx`・`spec-figure-*.svg`）の名前の一覧で、出力より先に書く。**印の無い場所では何も消さない**——`--out` を
   手書きの `spec.md` の在る場所に向けても消さない（#397）。**書こうとする名前のファイルが印に無いまま在れば、上書きせずに 2。** **読めない印は消さない**（名指しした出力も消さない）。
   **読めない印（UTF-8 で読めない・ディレクトリ・symlink——辿れても辿れなくても）は書き換えもせず、作れても書く前に 2 で止まる**（#512。書けば読めない印の跡が消え、
   symlink の印なら先——出力の場所の外——に書く）。**印が名指しする出力が symlink なら、先が在る（辿れない先を含む）かぎりリンクも先も消さず、
@@ -78,7 +83,7 @@ usage: python3 build-proposal.py [--repo <正本リポジトリ>] [--version <n>
 - 3: 要求確定のタグの時点に暫定の回答（`暫定反映`）が残る（`check-signoff.py` の 3 と同じ）・基盤要件に暫定の行がある（#950）——書いていない
 
 **守らないもの**: 手書き部分の中身（判断であって一意に決まらない）・見た目（Markdown を表示して目で見る）・
-PPTX がアプリで開けること（見るのは部品の揃いと XML の整形式まで）・前の版の暫定の行（提案書に載るのはその版の `qa.csv` だけ）。
+PPTX がアプリで開けること（見るのは部品の揃いと XML の整形式まで。描画して確かめるのは `check-pptx-render.py`）・差し替えスクリプトの中身・前の版の暫定の行（提案書に載るのはその版の `qa.csv` だけ）。
 """
 
 from __future__ import annotations
@@ -111,6 +116,8 @@ feasibility = _load("check_feasibility_csv", "check-feasibility-csv.py")
 gantt = _load("schedule_to_gantt", "schedule-to-gantt.py")
 diffs = _load("diff_versions", "diff-versions.py")
 pptx = _load("qa_to_pptx", "qa-to-pptx.py")
+# `--pptx` の既定のデザイン・別紙の xlsx（#1289）
+ppt = _load("proposal_pptx", "proposal-pptx.py")
 # 図の書き出しの印と指紋（#902）。判定の式を 2 箇所に置かない
 diagrams = _load("render_diagrams", "render-diagrams.py")
 # 基盤要件の表の検査とゲートの判定（#950。写さない）
@@ -128,6 +135,8 @@ GANTT_NAME = "gantt.svg"
 # 仕様書（#374）。出力は提案書と同じ場所。手書き部分は提案書の手書き部分の下のディレクトリ（提案書には入らない）
 SPEC_NAME = "spec.md"
 SPEC_PPTX_NAME = "spec.pptx"
+DECISIONS_NAME = "decisions.xlsx"  # 別紙（`--pptx`。利用者と決めたことの全件。#1289）
+SCRIPT_TIMEOUT = 300  # 差し替えスクリプト（`--pptx-script`）の秒数
 SPEC_HAND_DIR = HAND_DIR + "/spec"
 FIGURE_PREFIX = "spec-figure-"
 FIGURE_DIRS = ("spec/", "requirements/")
@@ -138,7 +147,6 @@ MANIFEST_HEAD = "# build-proposal.py が作った出力の一覧。手で直さ�
 DECISION_PATH = "shared/decision_table.csv"
 SCOPE_PATH = "spec/scope.md"
 OUT_OF_SCOPE = "範囲の外"
-FIGURE_NOTE = "PPTX に載せていない（{} で見る）"
 
 
 def in_version(version: int, path: str) -> str:
@@ -368,6 +376,39 @@ def changes_section(diff, tag: str) -> list[str]:
     return out
 
 
+def changes_material(diff, tag: str) -> dict:
+    """前の版からの変更を `--pptx` の既定のデザインに渡す形にする（#1289）。`changes_section` と同じ表の値（見出しの行・変化の語・削除の理由）。"""
+    qa_kind, feature_kind, file_kind = diffs.SHARED_KINDS
+    screen_kinds = [k for k in diffs.ROW_KINDS if diff.changes.get(k) is not None]
+    listed = [*diffs.SHARED_KINDS, *screen_kinds]
+
+    def reason(c) -> str:
+        return c.reason or "—"
+
+    def after_of(c) -> str:
+        return c.after["回答"] if c.after is not None else "—"
+
+    def before_of(c) -> str:
+        return c.before["回答"] if c.before is not None else "—"
+
+    details = []
+    if diff.changes[qa_kind]:
+        details.append((qa_kind, ["No", "変化", "質問", "前の版の回答", "この版の回答", "削除の理由"],
+                        [[c.key, c.status, diffs.label(qa_kind, c), before_of(c), after_of(c), reason(c)] for c in diff.changes[qa_kind]]))
+    if diff.changes[feature_kind]:
+        details.append((feature_kind, ["id", "変化", "題", "削除の理由"],
+                        [[c.key, c.status, diffs.label(feature_kind, c) or "—", reason(c)] for c in diff.changes[feature_kind]]))
+    if diff.changes[file_kind]:
+        details.append((file_kind, ["パス", "変化", "削除の理由"], [[c.key, c.status, reason(c)] for c in diff.changes[file_kind]]))
+    for kind in screen_kinds:
+        if diff.changes[kind]:
+            details.append((kind, ["鍵", "変化", "題", "削除の理由"],
+                            [[c.key, c.status, diffs.label(kind, c) or "—", reason(c)] for c in diff.changes[kind]]))
+    return {"title": f"前の版（v{diff.version - 1}）からの変更", "tag": tag,
+            "summary": (["種類", *diffs.STATUSES], [[k, *(str(diff.count(k, st)) for st in diffs.STATUSES)] for k in listed]),
+            "details": details}
+
+
 def read_qa(text: str, label: str) -> list[dict[str, str]]:
     """Q&A 表を検査して行を返す（`check-qa-csv.py` はパスを取るので一時ファイルに書く）。"""
     with tempfile.TemporaryDirectory() as tmp:
@@ -594,8 +635,8 @@ def eol_digests(data: bytes) -> set[str]:
 
 
 def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, diff,
-                 proposal_name: str) -> tuple[str, dict[str, bytes]]:
-    """(仕様書, 図のファイル名 → 中身) を返す。材料は req のタグの時点の重ねた全体と、仕様書の手書き部分。"""
+                 proposal_name: str) -> tuple[str, dict[str, bytes], dict]:
+    """(仕様書, 図のファイル名 → 中身, `--pptx` の材料) を返す。材料は req のタグの時点の重ねた全体と、仕様書の手書き部分。"""
     version = info["version"]
     span = f"`{signoff.DOCS}/v1/`" if version == 1 else f"`{signoff.DOCS}/v1/`〜`{signoff.DOCS}/v{version}/` を重ね合わせた全体"
     out = [f"# {title}", ""]
@@ -625,7 +666,7 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
     decided = sum(1 for r in shared_rows if r["状態"].strip() == qa.DONE)
     svgs, missing, stale = figures_of(whole)
     out += ["## 規模", ""]
-    out += table(["もの", "数"], [
+    scale_rows = [
         ["要求のファイル（`requirements/`）", str(sum(1 for p in files if p.startswith("requirements/")))],
         ["仕様のファイル（`spec/`。中間表現・内部の Q&A 表・形式検査のモデルを除く）", str(sum(1 for p in files if p.startswith("spec/")))],
         ["決定表の行（見出しを除く）", str(len(decision_rows) - 1) if decision_rows else "—（決定表が無い）"],
@@ -633,7 +674,8 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
          f"{len(shared_rows)}（決定 {decided}・暫定 {provisional}・未決定 {len(shared_rows) - decided - provisional}）"],
         ["機能（中間表現）", str(len(whole.features)) if whole.spec is not None else "—（中間表現が無い）"],
         ["図", f"{len(svgs)}（書き出しが無いので載せていない図 {len(missing)}・書き出しが今のソースと合わない図 {len(stale)}）"],
-    ])
+    ]
+    out += table(["もの", "数"], scale_rows)
     out.append("")
 
     figures: dict[str, bytes] = {}
@@ -683,7 +725,16 @@ def compose_spec(title: str, info: dict, hand: list[tuple[str, str]], whole, dif
     listed = [p for p in files if p.startswith(("spec/", "requirements/"))]
     out += table(["パス"], [[p] for p in listed]) if listed else ["（ありません）"]
     out.append("")
-    return "\n".join(out), figures
+    # `--pptx` の既定のデザインが読む材料（#1289）。Markdown と同じ値から作る
+    material = {
+        "title": title, "version": version, "hand": hand, "scale": scale_rows,
+        "figures": [(path, whole.files[path]) for path in svgs],
+        "features": [(fid, str(f.get("title", ""))) for fid, f in whole.features.items()],
+        "decision": padded if decision_rows else None, "missing": missing, "stale": stale,
+        "out_of_scope": body, "files": listed,
+        "changes": changes_material(diff, info["req"]) if diff is not None else None,
+    }
+    return "\n".join(out), figures, material
 
 
 def infra_gate(files: dict[str, bytes], tag: str) -> None:
@@ -729,17 +780,75 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
     if not hand:
         raise Stop(1, [f"{hand_dir}: 手書き部分（*.md）が無い。背景と目的・推奨案・代替案・リスクを書いてから作る"])
     text = compose(args.title, info, hand, qa_rows, schedule, estimate, diff, purposes)
-    spec_text, figures = compose_spec(args.spec_title, info, read_hand(top / in_version(info["version"], SPEC_HAND_DIR)),
-                                      whole, diff, out.name)
+    spec_text, figures, spec_material = compose_spec(args.spec_title, info,
+                                                     read_hand(top / in_version(info["version"], SPEC_HAND_DIR)), whole, diff, out.name)
     outputs = {out: text.encode("utf-8"), out.parent / GANTT_NAME: gantt.render(schedule).encode("utf-8"),
                out.parent / SPEC_NAME: spec_text.encode("utf-8")}
     outputs.update({out.parent / name: content for name, content in figures.items()})
     if args.pptx:
-        # 図を見る先は、その PPTX の元の Markdown（ガントチャートは提案書、構成の図は仕様書にしか無い）
-        for path, body, name, source in ((out.with_suffix(".pptx"), text, args.title, out.name),
-                                         (out.parent / SPEC_PPTX_NAME, spec_text, args.spec_title, SPEC_NAME)):
-            outputs[path] = pptx.package(pptx.markdown_slides(body, FIGURE_NOTE.format(source)), name)
+        appendix = not args.no_appendix and bool(qa_rows)
+        if appendix:
+            outputs[out.parent / DECISIONS_NAME] = ppt.decisions_xlsx(qa_rows)
+        if args.pptx_script is not None:
+            proposal_pptx, spec_pptx = run_pptx_script(args.pptx_script, {path.name: content for path, content in outputs.items()
+                                                                            if isinstance(content, bytes)})
+        else:
+            lead = "この版の Q&A で" if diff is not None else ""
+            ctx = {"title": args.title, "version": info["version"], "hand": hand, "qa": qa_rows, "estimate": estimate,
+                   "schedule": schedule, "changes": changes_material(diff, info["req"]) if diff is not None else None,
+                   "purposes": purposes, "purpose_kinds": [next((kind for prefix, kind in design.PURPOSE_KINDS.items()
+                                                                if r[0].strip().startswith(prefix)), "—") for r in purposes or []],
+                   "provisional_lead": lead}
+            opts = pptx_options(args)
+            proposal_pptx, _ = ppt.proposal_deck(ctx, feasibility.CATEGORIES, opts, out.name)
+            spec_pptx, failed = ppt.spec_deck(spec_material, opts)
+            if failed:  # 図を PNG にできなかった——載せていないことを隠さない（終了コードは 0 のまま）
+                print(f"図 {len(failed)} 枚を仕様書の PPTX に載せていない: SVG を PNG にする道具（rsvg-convert。"
+                      f"環境変数 {ppt.SPEC_RSVG_ENV} で差し替え）が無いか、変換に失敗した", file=sys.stderr)
+        outputs[out.with_suffix(".pptx")] = proposal_pptx
+        outputs[out.parent / SPEC_PPTX_NAME] = spec_pptx
     return outputs
+
+
+def pptx_options(args) -> "ppt.Options":
+    """正本の `CLAUDE.md` の指示から渡された引数を、既定のデザインの設定にする（#1289）。"""
+    numbers = None if args.scope_questions is None else [n.strip() for n in args.scope_questions.split(",") if n.strip()]
+    overview = ppt.OVERVIEW_ITEMS if args.overview is None else tuple(i.strip() for i in args.overview.split(",") if i.strip())
+    return ppt.Options(appendix=not args.no_appendix, scope_slide=not args.no_scope_slide, scope_questions=numbers,
+                       scope_match=args.scope_match, overview=overview, strip=[re.compile(p) for p in args.slide_strip])
+
+
+def run_pptx_script(script: Path, materials: dict[str, bytes]) -> tuple[list | bytes, list | bytes]:
+    """プロジェクトの PPTX 生成スクリプトに差し替える（`--pptx-script`。#1289）。材料は `build-proposal.py` の出力だけで、
+    一時ディレクトリに同じ名前で置いて渡す——スクリプトは中身を足さない・変えない（出力は 2 本の PPTX だけ）。
+    `python3 <script> --materials <dir> --proposal-out <p.pptx> --spec-out <s.pptx>`。0 でない・2 本が揃わない・タイムアウトは Stop(2)。"""
+    if not script.is_file():
+        raise Stop(2, [f"{script}: --pptx-script のスクリプトが無い（ファイルでない）。PPTX を作れない"])
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        (base / "materials").mkdir()
+        for name, content in materials.items():
+            (base / "materials" / name).write_bytes(content)
+        targets = (base / "proposal.pptx", base / "spec.pptx")
+        try:
+            done = subprocess.run([sys.executable, str(script), "--materials", str(base / "materials"),
+                                   "--proposal-out", str(targets[0]), "--spec-out", str(targets[1])],
+                                  capture_output=True, text=True, timeout=SCRIPT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise Stop(2, [f"{script}: {SCRIPT_TIMEOUT} 秒で終わらなかった。PPTX を作れない"])
+        except OSError as e:
+            raise Stop(2, [f"{script}: 起動できない（{e.strerror}）。PPTX を作れない"])
+        if done.returncode != 0:
+            tail = [line for line in (done.stderr or done.stdout).splitlines() if line.strip()][-5:]
+            raise Stop(2, [f"{script}: 終了コード {done.returncode}。PPTX を作れない", *tail])
+        missing = [t.name for t in targets if not t.is_file()]
+        if missing:
+            raise Stop(2, [f"{script}: 出力が揃っていない（{'・'.join(missing)} が無い）。PPTX を作れない"])
+        blobs = tuple(t.read_bytes() for t in targets)
+    bad = [name for name, blob in zip(("proposal.pptx", "spec.pptx"), blobs) if not blob.startswith(b"PK")]
+    if bad:
+        raise Stop(2, [f"{script}: {'・'.join(bad)} が zip（PPTX）として読めない。PPTX を作れない"])
+    return blobs
 
 
 def repo_top(repo: Path) -> Path:
@@ -845,7 +954,7 @@ def output_named(name: str, out_name: str) -> bool:
     """この道具の出力の名前か（大文字小文字を区別しない）。PPTX は提案書（`--out` の名前・`proposal.md`）と仕様書のものだけで、
     `--pptx` の有無に依らない——前の出力は今回の引数と関係が無い。図は `spec-figure-<数字>.svg` だけ。"""
     proposals = {n for n in (out_name, Path(DEFAULT_OUT).name) if n not in ("", ".", "..")}
-    names = proposals | {str(Path(n).with_suffix(".pptx")) for n in proposals} | {GANTT_NAME, SPEC_NAME, SPEC_PPTX_NAME}
+    names = proposals | {str(Path(n).with_suffix(".pptx")) for n in proposals} | {GANTT_NAME, SPEC_NAME, SPEC_PPTX_NAME, DECISIONS_NAME}
     lower = name.lower()
     return lower in {n.lower() for n in names} or re.fullmatch(re.escape(FIGURE_PREFIX) + r"[0-9]+\.svg", lower) is not None
 
@@ -933,10 +1042,10 @@ def bad_out(out: Path) -> str | None:
     if is_directory:
         return f"{out}: 出力先がディレクトリ（`--out` には `<ディレクトリ>/proposal.md` の形で渡す）"
     # 大文字小文字だけ違う名前も重なる（区別しない FS では同じファイル）。`spec.html` なら PPTX が仕様書の PPTX と重なる
-    reserved = {name.lower() for name in (SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, MANIFEST)}
+    reserved = {name.lower() for name in (SPEC_NAME, GANTT_NAME, SPEC_PPTX_NAME, DECISIONS_NAME, MANIFEST)}
     if ({out.name.lower(), out.with_suffix(".pptx").name.lower()} & reserved or out.suffix.lower() == ".pptx"
             or out.name.lower().startswith(FIGURE_PREFIX)):
-        return f"{out}: 仕様書・ガントチャート・PPTX・図・印と同じ名前になる"
+        return f"{out}: 仕様書・ガントチャート・PPTX・別紙・図・印と同じ名前になる"
     return None
 
 
@@ -973,7 +1082,26 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--title", default="提案書")
     parser.add_argument("--spec-title", default="仕様書")
     parser.add_argument("--pptx", action="store_true", help="提案書と仕様書の PPTX も作る")
+    # 以下は `--pptx` の既定のデザインを正本の `CLAUDE.md` の指示で変える引数（#1289。proposal のスキルが組んで渡す）
+    parser.add_argument("--pptx-script", type=Path, help="PPTX の生成を、このプロジェクトのスクリプトに差し替える")
+    parser.add_argument("--no-appendix", action="store_true", help="別紙の表（decisions.xlsx）を作らない")
+    parser.add_argument("--no-scope-slide", action="store_true", help="範囲を決めた質問の 1 枚を載せない")
+    parser.add_argument("--scope-questions", help="範囲を決めた質問の番号（コンマ区切り。渡した順に載せる）")
+    parser.add_argument("--scope-match", help="範囲を決めた質問を、質問の文から選ぶ正規表現")
+    parser.add_argument("--overview", help="概要の 1 枚に載せるもの（counts・recommend・origin・theme のコンマ区切り）")
+    parser.add_argument("--slide-strip", action="append", default=[], help="スライドから外す参照の形（正規表現。何度でも書ける）")
     args = parser.parse_args(argv)
+    custom = (args.pptx_script, args.no_appendix, args.no_scope_slide, args.scope_questions, args.scope_match, args.overview, args.slide_strip)
+    if any(custom) and not args.pptx:
+        parser.error("--pptx-script・--no-appendix・--no-scope-slide・--scope-questions・--scope-match・--overview・--slide-strip は --pptx と一緒に渡す")
+    if args.overview is not None and not set(i.strip() for i in args.overview.split(",") if i.strip()) <= set(ppt.OVERVIEW_ITEMS):
+        parser.error(f"--overview は {'・'.join(ppt.OVERVIEW_ITEMS)} のコンマ区切り")
+    for pattern in [args.scope_match, *args.slide_strip]:
+        if pattern is not None:
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                parser.error(f"正規表現として読めない: {pattern}（{e}）")
 
     # git を起動できなくても、古い出力は消してから 2 で終わる（ここで落ちると古い提案書が残る）
     out = args.out if args.out else repo_top(args.repo) / DEFAULT_OUT

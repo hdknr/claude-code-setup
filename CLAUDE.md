@@ -166,7 +166,14 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       テストは `scripts/test-check-signoff.py`）
     - `scripts/build-proposal.py` - **照合が 0 のときだけ**、**承認したタグの時点の中身**から提案書と仕様書を作る
       （照合をスキルの判断に任せないため、**生成の側で照合する**。**前の出力は印 `.build-proposal` が名指しするものだけ消し、印に無いファイルは上書きしない**——#405。**暫定の行の判別は `check-qa-csv.py` の `is_provisional` を読む**——#374・#404。
-      `--pptx` の PPTX は `qa-to-pptx.py` の `markdown_slides` で作る。テストは `scripts/test-build-proposal.py`）
+      **`--pptx` の PPTX は、決裁者が読める既定のデザインを `proposal-pptx.py` で作り、利用者と決めたことの全件は別紙 `decisions.xlsx` に出す**（#1289。指示で変える引数と差し替えスクリプトの口は `--pptx-script` ほか。
+      決まりの原本は `references/tree.md` の「PPTX のデザインと指示」）。テストは `scripts/test-build-proposal.py`）
+    - `scripts/proposal-pptx.py` - **提案書・仕様書の PPTX の既定のデザイン**（#1289。`build-proposal.py` が読み込む——実行しない。**標準ライブラリだけ**。材料（表・手書き部分・図）から枚を組み、
+      費用は開発費・運用費を別のページ・行は枚数で受ける・期間はガントチャートを図形で・手書き部分はカード・図は PNG（`rsvg-convert`。`SPEC_LOOP_RSVG` で差し替え）・決定事項は別紙の xlsx と概要の 1 枚と範囲の 1 枚。
+      **`…` で切らない**。文字の寸法は見積りで、**描画して確かめるのは `check-pptx-render.py`**。守る／守らないは docstring を正とする。テストは `scripts/test-proposal-pptx.py`）
+    - `scripts/check-pptx-render.py` - **生成した PPTX を LibreOffice で PDF に描画し、見切れ（`…`）・図の中の代わりの文字・はみ出し（ページの外・文字の重なり・枠の下の辺をまたぐ）を探し、1 ページずつの PNG を書く**
+      （#1289。proposal の `SKILL.md` の手順 3a。**道具（LibreOffice・poppler）が無ければ 3（確かめられない）で、緑にしない**。**CI からは呼ばない**——道具が無い。テストは `scripts/test-check-pptx-render.py`——偽の道具で回し、
+      手元に道具があれば本物でも回す）
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**トレースのケース（`trace`）は、形式検査の反例の実行順を実装の口で強制して再現する Red テストになる**——#923。形と口は `references/spec-ir.md` の「トレースのケース」を正とする。**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
       **入力は版を重ね合わせた全体で、メモリ上で重ねる**——`build/merged/` を書かない（#262）。
@@ -442,6 +449,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-check-spec-exit.py` - spec-loop の抜ける条件 1 の判定の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**未決定の印が `references/spec-exit.md` の表と
     一致することも見る**（`test-check-qa-csv.py` と同じ形）
+  - `test-proposal-pptx.py` - **提案書・仕様書の PPTX の既定のデザイン**（#1289）の回帰テスト（変異テストを含む）。**本体は `plugins/spec-loop/scripts/` にある**。
+    合成の材料（Q&A 120 件・費用 22 行・工程 14 行・図）を渡し、**描画はせず**構造（費用が別のページ・どの行も 1 度ずつ・ガントチャートの ◆ と網掛け・カードを割っても箇条を落とさない・別紙に全件・PNG の部品）を見る。
+    **偽の `rsvg-convert`（`SPEC_LOOP_RSVG`）で、drawio の代わりの文字が変換の入力から消えることも見る**。描画の実機の結果は PR に貼る
+  - `test-check-pptx-render.py` - **PPTX の描画の確かめ**（#1289）の回帰テスト（変異テストを含む）。**偽の `soffice`・`pdftotext`・`pdftoppm` を `PATH` の先頭に置く**（残りは `/usr/bin:/bin`）。
+    手元に本物の道具があれば、収まる枚は 0・はみ出す枚は 1 も見る（無ければ「走らせていない」と言う）
   - `test-check-feasibility-csv.py` / `test-schedule-to-gantt.py` / `test-check-signoff.py` /
     `test-build-proposal.py` - spec-loop の段 3（#218）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。照合と提案書のテストは**一時ディレクトリに本物の git リポジトリと

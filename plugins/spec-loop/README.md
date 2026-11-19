@@ -36,7 +36,9 @@
 | `scripts/render-diagrams.py` | 正本リポジトリの `docs/` の下の drawio と BPMN を隣の SVG に書き出し、ソースの指紋を書き込む。`--check` で書き出しが今のソースのものかを確かめる（標準ライブラリと draw.io の CLI。BPMN は下の `render-bpmn.mjs`。図の決まりは `references/tree.md` の「図」を正とする） |
 | `scripts/render-bpmn.mjs` | `render-diagrams.py` が呼ぶ BPMN の描画口。bpmn-js を headless の Chrome で動かし、BPMN 1 枚を SVG に書き出す（Node・bpmn-js・puppeteer-core・Chrome） |
 | `scripts/check-signoff.py` | 同じ版の 2 つのサインオフのタグの時点で、2 つの承認が見た中身（`shared/`・`requirements/`・`spec/`・`removed.csv`）が一致するかの照合（標準ライブラリと `git`） |
-| `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で PPTX も）を作る（標準ライブラリと `git`） |
+| `scripts/build-proposal.py` | 照合が通ったときだけ、承認したタグの時点の中身から提案書と仕様書（`--pptx` で、決裁者が読める既定のデザインの PPTX と、利用者と決めたことの全件の別紙 `decisions.xlsx` も）を作る。デザインは正本の `CLAUDE.md` の指示で変えられる（`--pptx-script` ほか。`references/tree.md` の「PPTX のデザインと指示」）（標準ライブラリと `git`。図を PNG にするには `rsvg-convert`） |
+| `scripts/proposal-pptx.py` | `build-proposal.py` が読み込む、提案書・仕様書の PPTX の既定のデザイン（実行しない。標準ライブラリだけ） |
+| `scripts/check-pptx-render.py` | 生成した PPTX を LibreOffice で描画して、見切れ・図の中の代わりの文字・はみ出しを探し、1 ページずつの PNG を書く（LibreOffice と poppler。無ければ確かめられない） |
 | `references/spec-ir.md` | 仕様の中間表現（`spec_ir.json`）の形 |
 | `references/handoff-issue.md` | dev-loop に渡す Issue の本文の形 |
 | `references/nfr.md` | 性能の要求の表（`shared/nfr.csv`）の列・性能を仕様に書く手順・要求の無い機能は最適化しない既定の原則・性能テスト |
