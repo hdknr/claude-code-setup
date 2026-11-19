@@ -263,7 +263,9 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 | `ref` | このケースの元になった、仕様の中の行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。省いてよい）。**仕様が番号を振っていれば書く**——生成と `--check` が、機能の `source` の原文にその番号が在るかを確かめる（#465。値が一致するかまでは見ない） |
 | `setup` | （任意）`input` で本体を呼ぶ前の状態を作る——入口の呼び出し（`{"operation", "input", "expected" か "error"}`）か、入口の無い前提を作る口 `seed` の呼び出し（`{"seed", "values"}`）の配列（1 つ以上）。下の「前提と後の状態」 |
 | `after` | （任意）本体を呼んだ後の状態を確かめる——`setup` と同じ形の配列（1 つ以上）。下の「前提と後の状態」 |
+| `as` | （任意）本体の結果を名前で束ねる——`after` の期待の `$ref` が指す。`expected` を持つケースだけ。下の「実行ごとに変わる出力」 |
 
+**`expected` の項目の値には、等しさの代わりに `{"$any": <型>}`・`{"$ref": "<名前>.<項目>"}` を書ける**（実行ごとに変わる出力。下の「実行ごとに変わる出力」）。
 **`expected` と `error` は、ちょうど片方だけ書く。** **決まりに無いキーは書かない**——書いても生成物に現れないので、検査が落とす。
 **`setup`・`after` は入出力のケースにだけ書ける**（トレースのケースの `setup`・`after` は `trace` の中。上と下の「前提と後の状態」「トレースのケース」）。
 **`input`・`expected`・`error` の代わりに `trace` を書いたケースは、トレースのケースである**（下の「トレースのケース」）。**機能には入出力のケース（`trace` でないもの）を 1 つ以上置く**——性能テストはその入力を使う。
@@ -357,6 +359,87 @@ def reset_state():
 def seed(name, /, **values):
     if name == "customer":
         _customers[values["id"]] = values
+```
+
+## 実行ごとに変わる出力（`$any`・`$ref`。#1299）
+
+**成功の応答の URN・版・作った日時のように、実行ごとに変わる出力は、等しさでは比べられない。** 期待の項目の値に、等しさの代わりの比べ方を書く。
+
+| 書き方 | Red テストが確かめること |
+| --- | --- |
+| `{"$any": "<型>"}` | その項目が、決めた型の値であること（値は見ない）。型は項目の型と同じ（`string`・`integer`・`number`・`boolean`）。`enum` は見ない |
+| `{"$ref": "<名前>.<項目>"}` | その項目が、`as` で束ねた名前の結果の項目と同じ値であること（`true` を `1` と同じ値とは見ない——項目の型も見る）。指す項目の型は、書く項目の型と同じ |
+
+- **書ける場所**: 入出力のケースの `expected` と、`setup`・`after` の呼び出しの `expected` の、項目の値だけ。**`input` と `seed` の値には書けない**（前に返った値を入力に渡すことはできない）。
+  **トレースのケースの `expected`・`setup`・`after` には書けない**。
+- **`as`**: ケースの本体と、`setup`・`after` の入口の呼び出しに書ける——結果（実装が返した出力）を名前で束ねる。名前は英小文字で始まり英小文字・数字・`_`、1 つのケースの中で重ならない。
+  **期待が `expected` の呼び出しだけ**（`error` の結果は項目を持たない）。
+- **`$ref` が指せるのは、呼ぶ順で前の `as` だけ**——`setup`（書いた順）→ 本体 → `after`（書いた順）。後ろの呼び出し・自分自身・束ねていない名前を指すと、生成が止まる。
+  `<項目>` は、束ねた呼び出しの入口の `output` の項目。
+- **`null` を許す項目**（`nullable`）は、`null` を返しても `$any`・`$ref` に合う（`$ref` は、指した値も `null` のとき）。
+- **書かないケースは今までと変わらない**——`$any`・`$ref`・`as` を 1 つも書いていない機能の Red テスト・Issue の本文・機能の指紋は、1 バイトも変わらない。
+  書いたケースは `self.dynamic(…)` で比べる（前提・後の状態があるケースは、`reset_state()` を呼ぶところまで前提と後の状態と同じ。実装に求める口は変わらない）。
+
+**例**（成功の応答の URN は実行ごとに変わる。`features` の要素）:
+
+```json
+[
+  {
+    "id": "F-009", "title": "文書を作る", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "create_document", "method": "POST", "path": "/documents",
+      "input": {"title": {"type": "string"}},
+      "output": {"urn": {"type": "string"}, "version": {"type": "integer"}},
+      "errors": ["EMPTY_TITLE"]
+    },
+    "cases": [
+      {"id": "F-009-C1", "title": "URN を返す: 作ると URN と版が返る（URN は実行ごとに変わるので、型だけを見る）",
+       "input": {"title": "契約書"}, "expected": {"urn": {"$any": "string"}, "version": {"$any": "integer"}}},
+      {"id": "F-009-C2", "title": "作った後に読むと、作ったときの URN が返る（最初の版は 1）",
+       "input": {"title": "契約書"}, "expected": {"urn": {"$any": "string"}, "version": 1}, "as": "created",
+       "after": [{"operation": "get_document", "input": {"title": "契約書"},
+                  "expected": {"urn": {"$ref": "created.urn"}, "title": "契約書", "version": {"$ref": "created.version"}}}]},
+      {"id": "F-009-C3", "title": "題が空なら拒否する", "input": {"title": ""}, "error": "EMPTY_TITLE"}
+    ]
+  },
+  {
+    "id": "F-010", "title": "文書を読む", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "get_document", "method": "GET", "path": "/documents/by-title",
+      "input": {"title": {"type": "string"}},
+      "output": {"urn": {"type": "string"}, "title": {"type": "string"}, "version": {"type": "integer"}},
+      "errors": ["NOT_FOUND"]
+    },
+    "cases": [
+      {"id": "F-010-C1", "title": "前提で作った文書を読むと、作ったときの URN が返る",
+       "setup": [{"operation": "create_document", "input": {"title": "契約書"},
+                  "expected": {"urn": {"$any": "string"}, "version": 1}, "as": "created"}],
+       "input": {"title": "契約書"},
+       "expected": {"urn": {"$ref": "created.urn"}, "title": "契約書", "version": {"$ref": "created.version"}}},
+      {"id": "F-010-C2", "title": "無い文書は見つからない", "input": {"title": "none"}, "error": "NOT_FOUND"}
+    ]
+  }
+]
+```
+
+実装は、前提・後の状態があるので `reset_state()` を持つ（`seed` は書いていないので要らない）。**URN は呼ぶたびに違う値を返してよい**——次の形でよい:
+
+```python
+import itertools
+
+_documents, _numbers = {}, itertools.count(1)
+
+def reset_state():
+    _documents.clear()          # 採番は戻さない（URN は実行ごとに変わる）
+
+def create_document(title):
+    if not title:
+        return {"error": "EMPTY_TITLE"}
+    _documents[title] = {"urn": f"urn:doc:{next(_numbers)}", "title": title, "version": 1}
+    return {"urn": _documents[title]["urn"], "version": 1}
+
+def get_document(title):
+    return dict(_documents[title]) if title in _documents else {"error": "NOT_FOUND"}
 ```
 
 ## トレースのケース（`trace`。#923）
