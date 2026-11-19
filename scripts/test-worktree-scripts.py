@@ -1070,7 +1070,7 @@ def check_norm_shape() -> None:
           "手順 3 に戻して" in prop_doc and "緩める操作ではない" not in prop_doc
           and "手順 3 に戻して切り替えた" in prop_block)
     check("property-tests.md: 4 つの型と、表の形と、代替の記録の形と、落とした主張の名指しがある",
-          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "計画を書く時点（手順 3）で決める", "依存の定義にも lockfile にも無い")))
+          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "手順 3 で決めるときだけ", "依存の定義にも lockfile にも無い")))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
