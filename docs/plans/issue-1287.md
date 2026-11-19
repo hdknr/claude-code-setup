@@ -22,7 +22,8 @@ Issue 本文（外部入力）から読んだ要件: 提案 1（未登録なら�
 - `docs/plugins/dev-loop-cruise.md` — 部品の表の行
 - `scripts/test-launch-with-long-token.py` — 疑似端末のシナリオ・起動口のシナリオ・変異
 - `scripts/test-check-unattended-env.py` — 案内文の試料と変異
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す。今回は行数が動かないので変更なしの見込み）
 - `docs/plans/issue-1287.md` — この計画ファイル
 
@@ -91,9 +92,25 @@ Issue 本文（外部入力）から読んだ要件: 提案 1（未登録なら�
 - 周の在り処: ブランチ `issue/1287-long-token-one-command`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1287`・
   起点 `f80dc8d`・切った元の参照 `origin/main`（解決した SHA `f80dc8d11fdc59e6f66b095c2d92a9e54dea77f7`）・base `f80dc8d11fdc59e6f66b095c2d92a9e54dea77f7`
 - 割り目（手順 4）: 割らない（cruise の周）。
+- 1 パス目: Verifier（opus・`dev-loop:dev-loop-verifier`。HEAD `05e4ee75`。反証 1（R1）・軽微 4（O1〜O4）。verifier.md 185 行を読んだと報告——`wc -l` と一致。SubagentHandback は親に届かず、トランスクリプトから読んだ）と
+  `/code-review`（high。ブランチ `issue/1287-long-token-one-command` に当てた。指摘 7 件——important 2・nit 5。最初に対象を渡し損ねて main の先端のコミットを見た回は破棄して回し直した）。
+  1 パス目の指摘対応の起点: `05e4ee75b2bf2cbe18a1af3bfd3bf4da7d52cda4`（先に当てた Verifier に渡した HEAD。コミット済み）。
 - 交絡を潰した手順: 実験なし（偽の `security`・`claude` による試料と変異のみ。本物のキーチェーンは走らせていない）。
 
 ## 既知の限界・決着済みの論点
+
+### 1 パス目の指摘の採否（直す線: 既定）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| R1・CR2: 置いた起動口は後ろの `--account`・`--store-token`・`--status` を 1 本の語に混ぜ、本体の「--account は最初」の検査をすり抜ける（O1 の `--install-launcher` も同じ） | 示せる——Verifier が `dev-loop-cruise 1290 --account work` で終了コード 7・既定の項目を読み、`arg=[/dev-loop:cruise 1290 --account work]` と実測 | A8 | 直す |
+| CR1: `check-plan-scope.py` が計画の `plugin.json`・`marketplace.json` の 1 行を 1 つに読み `marketplace.json` を外と言う | 示せる——`check-plan-scope.py f80dc8d1…` が rc=1（CR が走らせた） | A9（歯止めが通る） | 直す（計画を別の行に分けた） |
+| CR3: 切れたシンボリックリンクを `-e` が見ず、リンク先に書く | 示せる——CR が一時の HOME で再現（リンク先に mode 755 のファイル） | A8（上書きしない） | 直す |
+| O2・CR6: 44 の止まる案内が cruise の引数を付けず、そのとおり打つと素の `claude` が起動する | 示せる——文面（`bash $0 ` で起動口を打つと引数なし） | A7（案内が 1 本のコマンド） | 直す |
+| CR4: 空のまま入力すると空の項目ができ、以後「値が空」の行き止まり | 示せない（本物の `security` が空入力で何をするかは未確認） | 無し | 残課題 |
+| CR5: `claude` が PATH に無いと貼った後に 127 で失敗する | 示せる（文面から）が受入基準の外 | 無し | 残課題 |
+| O3・CR7: 「いちばん新しい版」は実装ではキャッシュで版が最大のもの（`installed_plugins.json` が決める版とずれうる） | 示せない（ずれた実例は無い。手元では一致） | 無し（A5 の文言「最新の版を探して呼ぶ」に合っている） | 残課題 |
+| O4: 登録の入力の見え方は使い捨てのキーチェーン（`security create-keychain`）で測れる見込み | 試していない | 無し | 残課題（未測定。公開ページの「確かめていないこと」に載せた範囲のまま） |
 
 - G1 は (b) を採った（上）。**決着の理由が誤っていると判断したなら、それは新しい反証である。**
 - 本物のキーチェーンへの登録は未証明（上）。

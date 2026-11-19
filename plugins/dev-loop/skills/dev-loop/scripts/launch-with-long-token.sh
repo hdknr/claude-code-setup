@@ -15,7 +15,8 @@
 #   入っている dev-loop プラグインの最新の版のこのスクリプトを探して呼ぶ——プラグインを更新しても、打つコマンドは変わらない）。
 #   使い方: dev-loop-cruise <親 Issue> [--absent]（= このスクリプトに "/dev-loop:cruise <親 Issue> [--absent]" を渡す）・
 #   dev-loop-cruise [--account <名前>] --store-token|--status。**--account は最初に置く**。
-#   置いた起動口でないファイルが同じ名前で在れば、上書きせず止まる（2）。**--account と一緒には使わない**（実行時に渡す）。
+#   置いた起動口でないファイルが同じ名前で在れば（切れたシンボリックリンクも）、上書きせず止まる（2）。
+#   **--account・--store-token・--status・--install-launcher は、cruise の引数の位置に置けない**（止まる（2）。1 本の語にまとめるので、本体の「--account は最初」の検査をすり抜けるため）。**--account と一緒には使わない**（実行時に渡す）。
 #
 # --account <名前>: アカウントごとに別の項目（サービス名 claude-long-token-<名前>）を使う。名前は英数字で始め、英数字と . _ -（`-` で始まる名前は断る）。**--account は最初に置く**——ほかの位置（`--account=…` の形も）にあれば止まる（2）。--store-token・--status の後ろに引数があっても止まる（2）。
 #   週の上限に近いアカウントから別のアカウントに切り替えて起動し直すため（利用者の指示 2026-10-29。
@@ -105,7 +106,7 @@ if [ "$1" = "--install-launcher" ]; then
     fi
     dir="${2:-$HOME/.local/bin}"
     target="$dir/dev-loop-cruise"
-    if [ -e "$target" ] && ! grep -qF -- "$LAUNCHER_MARK" "$target" 2>/dev/null; then
+    if { [ -e "$target" ] || [ -L "$target" ]; } && ! grep -qF -- "$LAUNCHER_MARK" "$target" 2>/dev/null; then
         echo "launch-with-long-token: $target が在り、このスクリプトが置いた起動口ではない——上書きしない（置く場所を変えるか、消してから）" >&2
         exit 2
     fi
@@ -143,6 +144,15 @@ case "$1" in
     exit 1
     ;;
 esac
+for arg in "$@"; do
+    case "$arg" in
+    --account | --account=* | --store-token | --status | --install-launcher)
+        # 1 本の語 "/dev-loop:cruise …" にまとめると、本体の「--account は最初に置く」の検査をすり抜け、cruise の引数に混ざる
+        echo "dev-loop-cruise: $arg は cruise の引数に置けない（--account は最初、--store-token・--status は --account の次）" >&2
+        exit 2
+        ;;
+    esac
+done
 exec bash "$script" "${account[@]}" "/dev-loop:cruise $*"
 LAUNCHER_EOF
     chmod +x "$target" || exit 2
@@ -238,7 +248,7 @@ if [ "$rc" -eq 44 ] && [ -t 0 ] && [ "$CLAUDECODE" != "1" ]; then
     read_token
 fi
 if [ "$rc" -eq 44 ]; then
-    stop 2 "キーチェーンに $SERVICE が無い（Claude Code の外の対話の端末で bash $0 ${ACCT}を打てば、登録してから起動する。入れるだけなら bash $0 ${ACCT}--store-token）"
+    stop 2 "キーチェーンに $SERVICE が無い（Claude Code の外の対話の端末で bash $0 ${ACCT}\"/dev-loop:cruise <親> [--absent]\" を打てば、登録してから起動する。入れるだけなら bash $0 ${ACCT}--store-token）"
 elif [ "$rc" -ne 0 ]; then
     # 44 のほか（ロック・ダイアログの拒否など）を「無い」と言わない——入れ直しても直らない
     stop 2 "キーチェーンの $SERVICE を読めなかった（security の終了コード $rc——キーチェーンのロック・アクセスの拒否など。security unlock-keychain を確かめる）"
