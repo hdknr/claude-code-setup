@@ -23,8 +23,9 @@ usage: python3 scaffold-estimate.py list  [--repo <正本>]
 - `class` は `red`（Red テストにできる）・`acceptance`（Red テストにできず、受入基準に回す）・`neither`（どちらにもできない）の 3 つ。
 - `acceptance`・`neither` は `reason`（空でない 1 行の文字列）が要る——`red` は書いてもよい。
 - 仕様のケースの番号を**全部**分け、**1 つずつ**（番号は NFKC で正規化し、前後の空白を落として比べる）。仕様に無い番号は分けない。
-- 出力は `仕様のテストケース N 件のうち、Red テストにできる a 件・受入基準に回す b 件・どちらにもできない c 件（乗る割合 P%）` と、
+- 出力は `仕様のテストケース N 件のうち、Red テストにできる a 件・受入基準に回す b 件・どちらにもできない c 件（Red テストだけの割合 R%・受入基準まで含めた乗る割合 P%）` と、
   どちらにもできないケースの番号・場所（`ファイル:行`）・`reason`、受入基準に回すケースの番号。
+  **「乗る割合」は Red テスト + 受入基準（開発に渡るケース）の割合で、Red テストだけの割合も併記する**（受入基準に回すものは Red テストにならない）。
 
 **止める割合の線は決めていない**（`references/spec-ir.md` の「書き起こす前の見積もり」が理由）。0 を返しても「続けてよい」ではない——
 **割合に依らず、結果を利用者に示し、続けるかを確かめてから 2 に入る**のはスキルの手順である。
@@ -138,7 +139,7 @@ def unique_cases(rows: list[tuple[str, int, str, str]]) -> dict[str, tuple[str, 
 def read_estimate(path: Path) -> dict[str, dict]:
     """見積もりのファイルを読んで形を確かめる。読めなければ `Unjudged`、形の違反は `Violation`。返すのは正規化した番号 → 項目。"""
     if not path.is_file():
-        raise Unjudged(f"{path}: 見積もりのファイルが無い（仕様のケースを分けて書く。scaffold.py の手順 1a）。判定していない")
+        raise Unjudged(f"{path}: 見積もりのファイルが無い（仕様のケースを分けて書く。scaffold スキルの手順 1a）。判定していない")
     repeated: list[str] = []
 
     def keep(pairs):
@@ -196,9 +197,10 @@ def estimate_lines(cases: dict[str, tuple[str, int]], estimate: dict[str, dict])
     by_class = {kind: [n for n in cases if estimate[n]["class"] == kind] for kind in CLASSES}
     total = len(cases)
     reachable = len(by_class[RED]) + len(by_class[ACCEPTANCE])
-    percent = 100 * reachable / total
+    percent = 100 * reachable / total  # 開発に渡る割合（Red テスト + 受入基準）
+    red_percent = 100 * len(by_class[RED]) / total  # Red テストになる割合（受入基準に回すものは数えない）
     lines = [f"仕様のテストケース {total} 件のうち、Red テストにできる {len(by_class[RED])} 件・受入基準に回す {len(by_class[ACCEPTANCE])} 件"
-             f"・どちらにもできない {len(by_class[NEITHER])} 件（乗る割合 {percent:.1f}%）"]
+             f"・どちらにもできない {len(by_class[NEITHER])} 件（Red テストだけの割合 {red_percent:.1f}%・受入基準まで含めた乗る割合 {percent:.1f}%）"]
     if by_class[ACCEPTANCE]:
         lines.append(f"  受入基準に回す: {', '.join(by_class[ACCEPTANCE])}")
     for number in by_class[NEITHER]:
