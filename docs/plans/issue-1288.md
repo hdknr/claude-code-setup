@@ -62,7 +62,7 @@ cruise #1290（`--absent`。2026-11-19 の起動）の子として回す周。�
 - 1 パス目: 起点（関門に渡した HEAD）= `20505eb2b8e30ecfa67eb791b7f505fd7eda913f`。Verifier（別ティア `opus`。`dev-loop:dev-loop-verifier`。3 体目で報告を回収——先の 2 体は古い HEAD を見て、報告は SubagentHandback で届かずトランスクリプトから読んだ）反証=2、`/code-review`（high）指摘=5。
 - 採否の表（下）のとおり、**直す行は 0 件**。1 パス目の指摘対応の成果物の差分は 0 行（起点 `20505eb2` に対して `git diff 20505eb2 -- ':(top)' ':(top,exclude)docs/plans/issue-1288.md'` が空・`git status --porcelain` が空）なので、2 パス目は該当なし。狭いパスも該当なし。
 - 2 パス目: 該当なし（理由: 1 パス目の指摘対応の差分 0 行・起点 `20505eb2`・判定の 2 本に計画ファイル以外が出なかった）。狭いパス: 該当なし。
-- 交絡を潰した手順: 原因の調べ（上）を、(1) 負荷だけ、(2) SIGINT 無視、の 2 設定で測り、(2) だけが再現した。陽性対照は修正を外した版（`SIG_DFL` → `SIG_IGN`）で rc 0・約 61 秒、修正で rc -2・約 1 秒（Verifier も独立に再現）。観測窓: 各設定 3〜4 回。外部レビュー: 該当なし（宣言なしなら `external-reviews.py` が 3 で答える。PR の後に当てて下に書く）。
+- 交絡を潰した手順: 原因の調べ（上）を、(1) 負荷だけ、(2) SIGINT 無視、の 2 設定で測り、(2) だけが再現した。陽性対照は修正を外した版（`SIG_DFL` → `SIG_IGN`）で rc 0・約 61 秒、修正で rc -2・約 1 秒（Verifier も独立に再現）。観測窓: 各設定 3〜4 回。外部レビュー: 該当なし（PR #1291 の CI の後に `external-reviews.py` を当てて 3 = `.claude/dev-loop.md` に宣言が無い）。
 
 ```dev-loop-gates
 周の base: f80dc8d11fdc59e6f66b095c2d92a9e54dea77f7
