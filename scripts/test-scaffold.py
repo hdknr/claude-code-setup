@@ -19,6 +19,9 @@
    **作らないもの**（#851。中間表現の `out_of_scope` に挙げた範囲の外の行が原文のまま・表の見出しつき・範囲の文書の順で写り、
    「次の版の候補」を含む行は別の小見出しに分かれ、挙げていない行は写らない。行の無い機能でも節と「無い」の文言と性能予算の「要求なし」が出る。
    `out_of_scope` が範囲の文書の「範囲の外」の節に原文のまま無い・形が決まりに反するなら作らない）・
+   **Red テストにしない受入基準**（#1301。中間表現の `acceptance` に挙げた仕様の行が原文のまま・表の見出しつき・`acceptance` の順で本文の `## 受入基準` の中の小見出しに写り、
+   持たない機能と撤去の本文は小見出しを持たず、節は 7 つのまま。原文が機能の `source` に無い・区切りや見出しの行・形が決まりに反するなら作らない。書く生成と `--dry-run` は
+   「仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件」を出し、どちらにも無いケースを番号と場所で名指しする——0 件なら 0 件と出て、止めない）・
    **性能の要求**（#852。中間表現の `nfr` が指す `shared/nfr.csv` の行の数字が性能予算に写り、性能テスト `scaffold/perf/perf_<機能>.py` が作られ、
    本文がその sha256 と回し方を持つ。性能テストは実装が無ければ「未実装」で失敗し、上限を超える遅い実装で失敗し、速い実装で緑（陽性対照）。
    `nfr` の無い機能は「要求なし」で性能テストを作らない。`nfr` を外せば性能テストを消し、`--check` が残りを古いと言う。
@@ -509,6 +512,104 @@ def not_built_copied(repo: Path) -> str | None:
             if stray in body:
                 return f"{fid} の本文に挙げていない行 {stray!r} がある"
     return None
+
+
+# ---- Red テストにしない受入基準（#1301）。関数で表せないケースを、中間表現の acceptance で受入基準として Issue に載せる
+ACC_HEADER = "| テストケース | 内容 | 期待 |\n| --- | --- | --- |"
+ACC_ROWS = ("| F1-1 | シルバーで 9999 円 | 割引なし |",
+            "| F1-2 | 金額が負 | 拒否する |",
+            "| F1-3 | 確定を 2 回押す（画面） | 注文は 1 件だけ作られる |",
+            "| F1-4 | 同時に在庫を取る | 売り越さない |")
+ACC_FREE = "- 確定ボタンを 2 回押しても 1 件だけ作る"
+# 数えない表（見出しがテストケースの表でない。Q&A・決定表の行の番号を並べた表）と、番号でない先頭のセルの表を含める
+ACC_SPEC = ("# 注文\n\n割引と取り消し。\n\n" + ACC_HEADER + "\n" + "\n".join(ACC_ROWS)
+            + "\n\n## 別の表\n\n| No | 内容 |\n| --- | --- |\n| F1-9 | 数えない |\n\n" + ACC_FREE + "\n")
+ACC_FILES = {"order.md": ACC_SPEC}
+# 数えないファイル: `.md` でないファイルの表と、形式検査のモデル（`spec/formal/`）の表
+ACC_STRAYS = {str(V1 / "spec" / "memo.txt"): ACC_HEADER + "\n| F1-8 | 数えない |\n",
+              str(V1 / "spec" / "formal" / "stock" / "README.md"): ACC_HEADER + "\n| F1-7 | 数えない |\n"}
+ACC_INTRO = ("下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、**Red テストにしていない**。**これも受入基準である**——"
+             "上の Red テストがすべて緑でも、この行を確かめたことにならない。実装して自分で確かめる。確かめる手段が無いなら、"
+             "弱い検査で代えずに、dev-loop の縮退の線のとおり BLOCKED として報告する。")
+ACC_COPIED = "（中間表現の機能の `acceptance` が挙げた行を、機能の `source` の仕様の原文から、原文のまま写した。）"
+ACC_HEADING = "### Red テストにしない受入基準"
+ACC_COUNT = "仕様のテストケース 4 件のうち、Red テスト {} 件・受入基準 {} 件・どちらにも無い {} 件"
+
+
+def accepting(refs=(), acceptance=None, f002_ref=None, f002_acceptance=None) -> Callable[[dict], dict]:
+    """F-001 のケースに順に ref を書き、acceptance を書く。F-002 のケースにも ref・acceptance を書ける。"""
+    def apply(ir: dict) -> None:
+        for case, ref in zip(f1(ir)["cases"], refs):
+            case["ref"] = ref
+        if acceptance is not None:
+            f1(ir)["acceptance"] = acceptance
+        if f002_ref is not None:
+            ir["features"][1]["cases"][0]["ref"] = f002_ref
+        if f002_acceptance is not None:
+            ir["features"][1]["acceptance"] = f002_acceptance
+    return edit(apply)
+
+
+def accepted_section(body: str) -> str | None:
+    if f"\n{ACC_HEADING}\n\n" not in body:
+        return None
+    return body.split(f"\n{ACC_HEADING}\n\n", 1)[1].split("\n\n## Red テスト\n", 1)[0]
+
+
+def acceptance_copied(repo: Path) -> str | None:
+    found = bodies(repo)
+    # F-001 は並びを仕様の順と変えて挙げる——本文は acceptance の順。表の行には表の見出し、表でない行には見出しを付けない
+    want = "\n\n".join([ACC_INTRO, f"{ACC_HEADER}\n{ACC_ROWS[3]}\n{ACC_ROWS[2]}", ACC_FREE, ACC_COPIED])
+    got = accepted_section(found["F-001"])
+    if got != want:
+        return f"F-001 の Red テストにしない受入基準が違う:\n{got}\n---- 期待:\n{want}"
+    # 受入基準の節の中（Red テストの表の後ろ・`## Red テスト` の前）にあり、節は 7 つのまま
+    body = found["F-001"]
+    if not (body.index("| `F-001-C2` |") < body.index(ACC_HEADING) < body.index("\n## Red テスト\n")):
+        return "小見出しが受入基準の表と `## Red テスト` の間に無い"
+    if sum(1 for line in body.splitlines() if line.startswith("## ")) != 7:
+        return "本文の節が 7 つでない"
+    if ACC_HEADING in found["F-002"]:
+        return "acceptance を持たない F-002 の本文に小見出しがある"
+    return None
+
+
+def acceptance_absent(repo: Path) -> str | None:
+    for fid, body in bodies(repo).items():
+        if ACC_HEADING in body or "Red テストにしていない" in body:
+            return f"acceptance を書かない {fid} の本文に小見出しがある"
+        if "\n\n## 受入基準\n\n" not in body or "\n\n## Red テスト\n\n" not in body:
+            return f"{fid} の本文の節が揃っていない"
+    return None
+
+
+def acceptance_added_in_v2(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのは acceptance を足した機能だけのはず: {list(found)}"
+    problem = body_has(found["F-001"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-001-C1` | 回帰 |", "| `F-001-C2` | 回帰 |"),
+                       "acceptance を足した変更")
+    if problem:
+        return problem
+    section = accepted_section(found["F-001"])
+    return None if section and f"{ACC_HEADER}\n{ACC_ROWS[2]}\n\n{ACC_COPIED}" in section else f"v2 の本文の小見出しに行が無い: {section}"
+
+
+def acceptance_not_in_removal(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-002"]:
+        return f"本文を作るのは消した機能だけのはず: {list(found)}"
+    return "撤去の本文に acceptance の小見出しがある" if ACC_HEADING in found["F-002"] else None
+
+
+def acceptance_dot_source(repo: Path) -> str | None:
+    section = accepted_section(bodies(repo)["F-001"])
+    return None if section and f"{ACC_HEADER}\n{ACC_ROWS[2]}\n\n{ACC_COPIED}" in section else f"./ を含む source の行に表の見出しが付かない: {section}"
+
+
+def acceptance_unnumbered(repo: Path) -> str | None:
+    section = accepted_section(bodies(repo)["F-001"])
+    return None if section and f"{ACC_INTRO}\n\n{ACC_FREE}\n\n{ACC_COPIED}" in section else f"番号の無い行が写っていない: {section}"
 
 
 # ---- 参考資料（#951）。重ね合わせた全体の requirements/ の図・モックを、中間表現の refs で機能に結びつける
@@ -1460,13 +1561,19 @@ def typed_dict_fields(types: str) -> dict[str, dict[str, dict]]:
     `Literal[...]` は値しか持たない——number の enum の値がすべて整数なら integer と区別できないので、
     整数だけなら integer と number の両方を許し、float が 1 つでもあれば number だけを許す（#318 の N1）。"""
     fields: dict[str, dict[str, dict]] = {}
+    names = set(re.findall(r"^class (\w+)\(TypedDict\):", types, flags=re.MULTILINE))
     for block in re.findall(r"^class (\w+)\(TypedDict\):\n((?:    .+\n)+)", types, flags=re.MULTILINE):
         fields[block[0]] = {}
         for field, note in re.findall(r"^    (\w+): (.+)$", block[1], flags=re.MULTILINE):
             # `<型> | None` は null を許す項目（#487）——OpenAPI では `type` に `"null"` を足し、enum にも null を足す
             allow_null = note.endswith(" | None")
             note = note.removesuffix(" | None")
-            if note.startswith("Literal[") and note.endswith("]"):
+            if note.startswith("list["):
+                # 配列（#1300）は中の型を見ない——OpenAPI の側が `items` を持つ
+                fields[block[0]][field] = {"types": {"array"}}
+            elif note in names:
+                fields[block[0]][field] = {"types": {"object"}}  # 入れ子のオブジェクトは名前つきの TypedDict
+            elif note.startswith("Literal[") and note.endswith("]"):
                 values = ast.literal_eval("[" + note[len("Literal["):-1] + "]")
                 kinds = {PY_SCHEMA_TYPES[type(value).__name__] for value in values}
                 if kinds == {"integer"}:
@@ -1492,6 +1599,8 @@ def schema_matches(schema: dict, expected: dict) -> bool:
         kind, enum = kind[0], None if enum is None else enum + [None]
     if not isinstance(kind, str) or kind not in expected["types"]:
         return False
+    if kind in ("array", "object"):
+        return True  # 中の項目は、types.py の入れ子の型と別に見る（#1300）
     if enum is not None:
         return set(schema) == {"type", "enum"} and schema["enum"] == enum
     return set(schema) == {"type"}
@@ -2213,6 +2322,699 @@ def git_init_only(repo: Path) -> None:
     git_in(repo, "init", "-q")
 
 
+# ---- 前提・後の状態（#1298）。在庫の機能に書く（F-003 はトレースのケースも持つ。F-004 は後の状態だけ、F-005 は前提だけ）
+STAGE_RESERVE_CASE = {
+    "id": "F-003-C3", "title": "前提あり: 在庫を置いてから引き当てると、後の在庫が減る",
+    "setup": [{"operation": "set_stock", "input": {"item": "a", "qty": 1}, "expected": {"stock": 1}}],
+    "input": {"item": "a", "qty": 1}, "expected": {"ok": True},
+    "after": [{"operation": "get_stock", "input": {"item": "a"}, "expected": {"stock": 0}}],
+}
+STAGE_SET_CASE = {
+    "id": "F-004-C2", "title": "後の状態: 置いた数を後から読める",
+    "input": {"item": "y", "qty": 3}, "expected": {"stock": 3},
+    # 2 つ目の後の状態は、前のケース（F-004-C1。前提を書かず、cleanup も無い）が置いた在庫 b が、頭の reset_state() で空に戻っていること
+    "after": [{"operation": "get_stock", "input": {"item": "y"}, "expected": {"stock": 3}},
+              {"operation": "get_stock", "input": {"item": "b"}, "expected": {"stock": 0}}],
+}
+STAGE_COUNT_CASE = {
+    "id": "F-005-C2", "title": "前提あり: 置いた数を数える",
+    "setup": [{"operation": "set_stock", "input": {"item": "x", "qty": 2}, "expected": {"stock": 2}}],
+    "input": {"item": "x"}, "expected": {"stock": 2},
+}
+# 前提を書かないケース——前の前提のケース（F-005-C2）が置いた在庫を残さない実装でだけ緑（テストが終わったら状態を空に戻す）
+STAGE_PLAIN_CASE = {"id": "F-005-C3", "title": "前提を書かないケース: 前のケースの在庫が残らない",
+                    "input": {"item": "x"}, "expected": {"stock": 0}}
+STAGE_TEST = "scaffold/tests/test_f_004.py"
+
+
+def staged_ir(fn: Callable[[dict], None] = lambda ir: None, *, trace: bool = False) -> Callable[[dict], dict]:
+    """基準の中間表現に在庫の機能を足し、前提・後の状態のケースを書く。`trace` なら F-003（トレースのケースと前提あり）も足す。"""
+    def build_ir(ir: dict) -> dict:
+        ir = copy.deepcopy(ir)
+        features = copy.deepcopy(STOCK_FEATURES)
+        features[0]["cases"].append(copy.deepcopy(STAGE_RESERVE_CASE))
+        features[1]["cases"].append(copy.deepcopy(STAGE_SET_CASE))
+        features[2]["cases"] += [copy.deepcopy(STAGE_COUNT_CASE), copy.deepcopy(STAGE_PLAIN_CASE)]
+        ir["features"] += features if trace else features[1:]
+        fn(ir)
+        return ir
+    return build_ir
+
+
+def stage_feature(ir: dict, fid: str) -> dict:
+    return next(f for f in ir["features"] if f["id"] == fid)
+
+
+def stage_case(ir: dict, cid: str) -> dict:
+    return next(c for f in ir["features"] for c in f["cases"] if c["id"] == cid)
+
+
+# 状態を持つ在庫の実装（`seed` の口は持たない）。set_stock は置いた数を覚える
+STAGE_IMPL = GOOD_IMPL + STOCK_STATE
+# 置いた数を覚えない実装——前提（set_stock）が効かず、後の状態（get_stock）も変わらない
+STAGE_NO_STORE_IMPL = STAGE_IMPL.replace("    _stock[item] = qty\n    return {\"stock\": qty}", "    return {\"stock\": qty}")
+assert STAGE_NO_STORE_IMPL != STAGE_IMPL
+# 状態を空に戻す関数の無い実装
+STAGE_NO_RESET_IMPL = STAGE_IMPL.replace("def reset_state():\n    _stock.clear()\n", "")
+assert STAGE_NO_RESET_IMPL != STAGE_IMPL
+
+
+def stage_red(count: int, *needles: str) -> Callable[[Path], str | None]:
+    """Red テストが `count` 件の失敗（エラーなし）になり、出力に `needles` が全部ある。"""
+    def post(repo: Path) -> str | None:
+        code, out = red_run(repo)
+        if code == 0:
+            return f"Red テストが通った: {out[-300:]}"
+        if f"FAILED (failures={count})" not in out:
+            return f"失敗が {count} 件の失敗（エラーなし）になっていない: {out[-600:]}"
+        for needle in needles:
+            if needle not in out:
+                return f"失敗の出力に {needle!r} が無い: {out[-600:]}"
+        return None
+    return post
+
+
+def stage_written(repo: Path) -> str | None:
+    test = (repo / STAGE_TEST).read_text(encoding="utf-8")
+    for needle in ("    def test_f_004_c2(self):\n        self.staged({'item': 'y', 'qty': 3}, {'stock': 3}, [], "
+                   "[{'expected': {'stock': 3}, 'input': {'item': 'y'}, 'operation': 'get_stock'}, "
+                   "{'expected': {'stock': 0}, 'input': {'item': 'b'}, 'operation': 'get_stock'}])",
+                   "RESET = 'reset_state'", "SEED = 'seed'", "    def staged(self, given, expected, setup, after):",
+                   "        self.function_of(RESET)()\n        self.addCleanup(self.function_of(RESET))", "    def test_f_004_c1(self):\n        self.check("):
+        if needle not in test:
+            return f"{STAGE_TEST} に {needle!r} が無い"
+    # 動的な比べ方（#1299）を書かない前提・後の状態の機能の Red テストに、動的な道具・定数を足さない
+    for needle in ("\nANY = ", "\nREF = ", "\nNULLABLE = ", "def dynamic", "def reason"):
+        if needle in test:
+            return f"動的な比べ方を書かない {STAGE_TEST} に {needle!r} がある"
+    # トレースのケースを持たない機能には、順の強制は要らない
+    if "Schedule" in test or "import threading" in test or "TRACE_STEP_WAIT" in test:
+        return f"トレースのケースを持たない {STAGE_TEST} に順の強制がある"
+    # 前提・後の状態を書かない機能の Red テストは、足す前と同じバイト（#923 の前の生成物と同じ）
+    for rel in ("scaffold/tests/test_f_001.py", "scaffold/tests/test_f_002.py"):
+        if hashlib.sha256((repo / rel).read_bytes()).hexdigest() != BASE_SHA256[rel]:
+            return f"前提・後の状態を書かない {rel} が #1298 の前の生成物と違う"
+        if "reset_state" in (repo / rel).read_text(encoding="utf-8"):
+            return f"前提・後の状態を書かない {rel} に口がある"
+    found = bodies(repo)
+    problem = body_has(found["F-004"], ("状態を空に戻す関数 `reset_state()` を持つ（ケースの初めに呼ぶ）",
+                                       "前提（`setup`）・後の状態（`after`）を持つケース"), "前提・後の状態を持つ機能")
+    if problem:
+        return problem
+    line = next(l for l in found["F-004"].splitlines() if l.startswith("- 前提（`setup`）・後の状態（`after`）を持つケース"))
+    if "seed(" in line:
+        return "`seed` を書いていない機能の本文に `seed` の口を求める行がある"
+    if "reset_state" in found["F-001"]:
+        return "前提・後の状態を書かない機能の本文に口の行がある"
+    # 後の状態・前提を持つ機能の指紋も、dev-loop の照合で一致する（式は変えていない）
+    merge_with_script(repo)
+    return fingerprint_matches(repo, found["F-004"], "F-004", "build/merged")
+
+
+def stage_both_written(repo: Path) -> str | None:
+    """トレースのケースと前提を両方持つ機能は、入口を引く道具を 1 つだけ持つ。"""
+    test = (repo / TRACE_TEST).read_text(encoding="utf-8")
+    for needle in ("    def trace(self, trace):", "    def staged(self, given, expected, setup, after):",
+                   "    def test_f_003_c3(self):\n        self.staged({'item': 'a', 'qty': 1}, {'ok': True}, [{"):
+        if needle not in test:
+            return f"{TRACE_TEST} に {needle!r} が無い"
+    if test.count("    def function_of(self, name):") != 1 or test.count("RESET = 'reset_state'") != 1:
+        return "入口を引く道具か口の定数が 2 つある"
+    body = bodies(repo)["F-003"]
+    return body_has(body, ("トレースが同時に走らせる関数（`reserve`）", "前提（`setup`）・後の状態（`after`）を持つケース"), "両方を持つ機能")
+
+
+# 仕様の中間表現の「前提と後の状態」の例（spec-ir.md の json のブロック）。**文書の例を、そのまま生成に通す**
+def doc_example() -> list[dict]:
+    text = SPEC_IR_REF.read_text(encoding="utf-8")
+    section = text.split("\n## 前提と後の状態", 1)[1].split("\n## ", 1)[0]
+    found = re.findall(r"```json\n(.*?)\n```", section, re.S)
+    assert len(found) == 1, f"spec-ir.md の「前提と後の状態」の json のブロックが 1 つでない: {len(found)}"
+    return json.loads(found[0])
+
+
+def doc_ir(fn: Callable[[dict], None] = lambda ir: None) -> Callable[[dict], dict]:
+    def build_ir(ir: dict) -> dict:
+        ir = copy.deepcopy(ir)
+        ir["features"] += copy.deepcopy(doc_example())
+        fn(ir)
+        return ir
+    return build_ir
+
+
+DOC_STATE = """
+_customers, _orders = {}, {}
+
+
+def reset_state():
+    _customers.clear()
+    _orders.clear()
+
+
+def seed(name, /, **values):
+    if name == "customer":
+        _customers[values["id"]] = values
+
+
+def create_order(order_no, customer):
+    if customer not in _customers:
+        return {"error": "UNKNOWN_CUSTOMER"}
+    if order_no in _orders:
+        return {"error": "DUPLICATE"}
+    _orders[order_no] = "open"
+    return {"status": "open"}
+
+
+def cancel_order(order_no):
+    if order_no not in _orders:
+        return {"error": "NOT_FOUND"}
+    _orders[order_no] = "cancelled"
+    return {"status": "cancelled"}
+
+
+def get_order(order_no):
+    if order_no not in _orders:
+        return {"error": "NOT_FOUND"}
+    return {"status": _orders[order_no]}
+"""
+DOC_IMPL = GOOD_IMPL + DOC_STATE
+# 前提を作る口が何もしない・口の関数が無い・状態を空に戻さない・取り消しを覚えない実装
+DOC_NO_SEED_IMPL = DOC_IMPL.replace('    if name == "customer":\n        _customers[values["id"]] = values\n', "    pass\n")
+DOC_NO_SEED_FUNCTION_IMPL = DOC_IMPL.replace('def seed(name, /, **values):\n    if name == "customer":\n        _customers[values["id"]] = values\n', "")
+DOC_NO_RESET_IMPL = DOC_IMPL.replace("def reset_state():\n    _customers.clear()\n    _orders.clear()\n", "")
+DOC_LEAKY_IMPL = DOC_IMPL.replace("    _customers.clear()\n    _orders.clear()\n", "    _customers.clear()\n")
+DOC_NO_CANCEL_IMPL = DOC_IMPL.replace('    _orders[order_no] = "cancelled"\n', "")
+for _mutant in (DOC_NO_SEED_IMPL, DOC_NO_SEED_FUNCTION_IMPL, DOC_NO_RESET_IMPL, DOC_LEAKY_IMPL, DOC_NO_CANCEL_IMPL):
+    assert _mutant != DOC_IMPL
+
+
+def doc_written(repo: Path) -> str | None:
+    test = (repo / "scaffold" / "tests" / "test_f_006.py").read_text(encoding="utf-8")
+    for needle in ("SEED = 'seed'", "    def test_f_006_c3(self):\n        self.staged(", "'seed': 'customer'", "'values': {'id': 'c1', 'name': '取引先'}",
+                   "    def test_f_006_c2(self):\n        self.check("):
+        if needle not in test:
+            return f"test_f_006.py に {needle!r} が無い"
+    body = bodies(repo)["F-006"]
+    return body_has(body, ("`seed(<名前>, /, **値)` も持つ（ケースの `seed` の行が呼ぶ）",), "seed を書いた機能")
+
+
+def plain_feature(fid: str, op: str, extra_input: dict | None = None) -> dict:
+    return {"id": fid, "title": "足した機能", "source": ["spec/order.md"], "qa": [],
+            "operation": {"id": op, "method": "GET", "path": f"/{op}", "input": {"k": {"type": "string"}, **(extra_input or {})},
+                          "output": {"ok": {"type": "boolean"}}},
+            "cases": [{"id": f"{fid}-C1", "title": "足したケース", "input": {"k": "a", **{n: "x" for n in (extra_input or {})}},
+                       "expected": {"ok": True}}]}
+
+
+def trace_v2_of(fid: str, case: str, status: str) -> Callable[[Path], str | None]:
+    """v2 で本文を作るのは機能 `fid` だけで、ケース `case` の状態が `status`。"""
+    def post(repo: Path) -> str | None:
+        found = bodies(repo)
+        if list(found) != [fid]:
+            return f"本文を作るのは変えた機能だけのはず: {list(found)}"
+        return body_has(found[fid], (f"| `{case}` | {status} |",), "v2 の変更")
+    return post
+
+
+def stage_v2_feature(fn: Callable[[dict], None], fid: str = "F-004") -> dict[str, str]:
+    feature = copy.deepcopy(stage_feature(staged_ir()(IR), fid))
+    fn(feature)
+    return v2([feature])
+
+
+def stage_v2_moved(repo: Path) -> str | None:
+    """v2 で呼ぶ入口（F-005 の get_stock）の出力の型だけを変えた——F-004 は機能が同じでも、後の状態で呼ぶ入口が変わったので Red テストが変わる。"""
+    found = bodies(repo)
+    if list(found) != ["F-004", "F-005"]:
+        return f"本文を作るのは F-004（後の状態で呼ぶ入口が変わった）と F-005 のはず: {list(found)}"
+    return body_has(found["F-004"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-004-C1` | 回帰 |", "| `F-004-C2` | 変更 |"),
+                    "後の状態で呼ぶ入口が変わった機能")
+
+
+def stage_reordered_kept(repo: Path) -> str | None:
+    if "F-004" in bodies(repo):
+        return f"キーの順だけ変えた F-004 の本文を作った: {list(bodies(repo))}"
+    now = hashlib.sha256((repo / STAGE_TEST).read_bytes()).hexdigest()
+    before = (repo / "before.sha256").read_text(encoding="utf-8")
+    return None if now == before else f"キーの順だけ変えたのに {STAGE_TEST} のバイトが変わった（{before[:12]} → {now[:12]}）"
+
+
+def plant_stage_reordered_v2(repo: Path) -> None:
+    (repo / "before.sha256").write_text(hashlib.sha256((repo / STAGE_TEST).read_bytes()).hexdigest(), encoding="utf-8")
+    for rel, body in v2([reversed_keys(stage_feature(staged_ir()(IR), "F-004"))]).items():
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+
+# ---- 実行ごとに変わる出力（#1299）。**文書の例（spec-ir.md の「実行ごとに変わる出力」）と、その実装の例を、そのまま生成に通す**
+def dyn_section() -> str:
+    text = SPEC_IR_REF.read_text(encoding="utf-8")
+    return text.split("\n## 実行ごとに変わる出力", 1)[1].split("\n## ", 1)[0]
+
+
+def dyn_example() -> list[dict]:
+    found = re.findall(r"```json\n(.*?)\n```", dyn_section(), re.S)
+    assert len(found) == 1, f"spec-ir.md の「実行ごとに変わる出力」の json のブロックが 1 つでない: {len(found)}"
+    return json.loads(found[0])
+
+
+def dyn_python() -> str:
+    found = re.findall(r"```python\n(.*?)\n```", dyn_section(), re.S)
+    assert len(found) == 1, f"spec-ir.md の「実行ごとに変わる出力」の python のブロックが 1 つでない: {len(found)}"
+    return found[0]
+
+
+def dyn_ir(fn: Callable[[dict], None] = lambda ir: None) -> Callable[[dict], dict]:
+    def build_ir(ir: dict) -> dict:
+        ir = copy.deepcopy(ir)
+        ir["features"] += copy.deepcopy(dyn_example())
+        fn(ir)
+        return ir
+    return build_ir
+
+
+DYN_IMPL = GOOD_IMPL + "\n" + dyn_python() + "\n"
+# URN が整数・None・余計な項目を持つ・版が真偽値・別の URN を返す・題が違う・状態を空に戻す関数が無い実装
+DYN_INT_URN_IMPL = DYN_IMPL.replace('f"urn:doc:{next(_numbers)}"', "next(_numbers)")
+DYN_NONE_URN_IMPL = DYN_IMPL.replace('return {"urn": _documents[title]["urn"], "version": 1}', 'return {"urn": None, "version": 1}')
+DYN_EXTRA_IMPL = DYN_IMPL.replace('return {"urn": _documents[title]["urn"], "version": 1}',
+                                  'return {"urn": _documents[title]["urn"], "version": 1, "extra": 1}')
+DYN_BOOL_VERSION_IMPL = DYN_IMPL.replace('return {"urn": _documents[title]["urn"], "version": 1}',
+                                         'return {"urn": _documents[title]["urn"], "version": True}')
+DYN_OTHER_URN_IMPL = DYN_IMPL.replace("return dict(_documents[title]) if title in _documents",
+                                      'return {"urn": "urn:doc:other", "title": title, "version": 1} if title in _documents')
+DYN_WRONG_TITLE_IMPL = DYN_IMPL.replace('"title": title, "version": 1}\n', '"title": "x", "version": 1}\n')
+DYN_NO_RESET_IMPL = DYN_IMPL.replace("def reset_state():\n    _documents.clear()          # 採番は戻さない（URN は実行ごとに変わる）\n", "")
+for _mutant in (DYN_INT_URN_IMPL, DYN_NONE_URN_IMPL, DYN_EXTRA_IMPL, DYN_BOOL_VERSION_IMPL, DYN_OTHER_URN_IMPL, DYN_WRONG_TITLE_IMPL,
+                DYN_NO_RESET_IMPL):
+    assert _mutant != DYN_IMPL
+# null を許す項目（F-003 の label・score）に `$any` を書く——null は型を見ない。型の違う値（整数の label）は落ちる
+NULLABLE_BAD_LABEL_IMPL = NULLABLE_IMPL.replace('{"label": None, "score": None, "count": 0}', '{"label": 5, "score": None, "count": 0}')
+assert NULLABLE_BAD_LABEL_IMPL != NULLABLE_IMPL
+
+
+# 保存した版が真偽値の実装——作ったときの版（整数 1）と等しいが型が違う（`True == 1`）
+DYN_BOOL_STORED_IMPL = DYN_IMPL.replace('"title": title, "version": 1}\n', '"title": title, "version": True}\n')
+assert DYN_BOOL_STORED_IMPL != DYN_IMPL
+# 前提（seed）が効かないと文書が読めない実装——動的なケースの `setup` の seed を呼ぶかを見る
+DYN_SEED_IMPL = DYN_IMPL.replace("def reset_state():\n    _documents.clear()          # 採番は戻さない（URN は実行ごとに変わる）\n",
+                                 "_ready = []\n\n\ndef reset_state():\n    _documents.clear()\n    _ready.clear()\n\n\n"
+                                 "def seed(name, /, **values):\n    _ready.append(name)\n"
+                                 ).replace("return dict(_documents[title]) if title in _documents", "return dict(_documents[title]) if _ready and title in _documents")
+assert DYN_SEED_IMPL != DYN_IMPL and "_ready" in DYN_SEED_IMPL and DYN_SEED_IMPL.count("_ready") > 3
+
+
+def dyn_seeded(ir: dict) -> None:
+    seed = {"seed": "customer", "values": {"id": "c1"}}
+    stage_case(ir, "F-009-C2")["setup"] = [copy.deepcopy(seed)]
+    stage_case(ir, "F-010-C1")["setup"].insert(0, copy.deepcopy(seed))
+
+
+def dyn_after_only(ir: dict) -> None:
+    """期待に `$any` を書くのが `after` の呼び出しだけのケース（本体も `setup` も等しさで比べる）。"""
+    stage_case(ir, "F-010-C2")["after"] = [{"operation": "create_document", "input": {"title": "x"},
+                                           "expected": {"urn": {"$any": "string"}, "version": 1}}]
+
+
+def dyn_as_only(ir: dict) -> None:
+    """`as` だけを書き、`$any`・`$ref` を書かないケース（F-003-C1）。"""
+    with_nullable(ir)
+    f3(ir)["cases"][0]["as"] = "first"
+
+
+def dyn_as_written(repo: Path) -> str | None:
+    test = (repo / "scaffold" / "tests" / "test_f_003.py").read_text(encoding="utf-8")
+    needle = "    def test_f_003_c1(self):\n        self.dynamic({'kind': 'a', 'note': 'x'}, {'count': 1, 'label': 'x', 'score': 1}, [], [], 'first')"
+    return None if needle in test else f"test_f_003.py に {needle!r} が無い"
+
+
+# 返した辞書を実装が持ち続け、後の呼び出しがそれを書き換える実装——`as` で束ねた結果を写さないと、`$ref` が書き換わった値と比べて通る
+DYN_ALIAS_IMPL = GOOD_IMPL + '''
+
+_documents, _numbers = {}, __import__("itertools").count(1)
+
+
+def reset_state():
+    _documents.clear()
+
+
+def create_document(title):
+    if not title:
+        return {"error": "EMPTY_TITLE"}
+    out = {"urn": f"urn:doc:{next(_numbers)}", "version": 1}
+    _documents[title] = out
+    return out
+
+
+def get_document(title):
+    if title not in _documents:
+        return {"error": "NOT_FOUND"}
+    _documents[title]["version"] += 1
+    return {"urn": _documents[title]["urn"], "title": title, "version": _documents[title]["version"]}
+'''
+# null を許す項目の `$ref`——指した値が null でないのに null を返す実装は落ちる
+NULLABLE_REF_IMPL = NULLABLE_IMPL + "\n\ndef reset_state():\n    pass\n"
+
+
+def dyn_nullable_ref(ir: dict) -> None:
+    with_nullable(ir)
+    case = f3(ir)["cases"][1]
+    case["setup"] = [{"operation": "label_of", "input": {"note": "x", "kind": None},
+                      "expected": {"label": "x", "score": 1, "count": 1}, "as": "first"}]
+    case["expected"] = {"label": {"$ref": "first.label"}, "score": None, "count": 0}
+
+
+def dyn_setup_error(ir: dict) -> None:
+    """動的なケースの `setup` に失敗を期待する呼び出しを書く（失敗の形は項目を持たない）。"""
+    dyn_after_only(ir)
+    stage_case(ir, "F-010-C2")["setup"] = [{"operation": "create_document", "input": {"title": ""}, "error": "EMPTY_TITLE"}]
+
+
+def dyn_nullable(ir: dict) -> None:
+    with_nullable(ir)
+    f3(ir)["cases"][1]["expected"] = {"label": {"$any": "string"}, "score": {"$any": "integer"}, "count": 0}
+
+
+def dyn_written(repo: Path) -> str | None:
+    test = (repo / "scaffold" / "tests" / "test_f_009.py").read_text(encoding="utf-8")
+    for needle in ("ANY = '$any'", "REF = '$ref'", "NULLABLE = ()", "RESET = 'reset_state'", "    def dynamic(self, given, expected, setup, after, bind):",
+                   "    def test_f_009_c1(self):\n        self.dynamic({'title': '契約書'}, {'urn': {'$any': 'string'}, 'version': {'$any': 'integer'}}, [], [], None)",
+                   "{'urn': {'$any': 'string'}, 'version': 1}, [], [{", "'created.urn'", "}], 'created')",
+                   "    def test_f_009_c3(self):\n        self.check("):
+        if needle not in test:
+            return f"test_f_009.py に {needle!r} が無い"
+    test10 = (repo / "scaffold" / "tests" / "test_f_010.py").read_text(encoding="utf-8")
+    # 配列・入れ子を持たない動的な機能は、深い写し（#1300）を使わず、`copy` も読み込まない
+    if "import copy" in test or "import copy" in test10 or "deepcopy" in test or "deepcopy" in test10:
+        return "配列・入れ子を持たない動的な機能の Red テストに copy の道具がある（#1300）"
+    for needle in ("    def test_f_010_c1(self):\n        self.dynamic({'title': '契約書'}, {'title': '契約書', 'urn': {'$ref': 'created.urn'}, 'version': {'$ref': 'created.version'}}, [{",
+                   "'as': 'created'", "    def test_f_010_c2(self):\n        self.check("):
+        if needle not in test10:
+            return f"test_f_010.py に {needle!r} が無い"
+    if test10.count("    def function_of(self, name):") != 1 or test10.count("SEED = 'seed'") != 1 or test10.count("RESET = 'reset_state'") != 1:
+        return "前提と期待の動的を両方持つ機能が、入口を引く道具か口の定数を 2 つ持つ"
+    # 書かない機能の Red テストは、足す前と同じバイト（#1299 の前の生成物と同じ）
+    for rel in ("scaffold/tests/test_f_001.py", "scaffold/tests/test_f_002.py"):
+        if hashlib.sha256((repo / rel).read_bytes()).hexdigest() != BASE_SHA256[rel]:
+            return f"動的な比べ方を書かない {rel} が #1299 の前の生成物と違う"
+        text = (repo / rel).read_text(encoding="utf-8")
+        if "dynamic" in text or "$any" in text:
+            return f"動的な比べ方を書かない {rel} に動的な比べ方の道具がある"
+    merge_with_script(repo)
+    for fid in ("F-009", "F-010"):
+        problem = fingerprint_matches(repo, bodies(repo)[fid], fid, "build/merged")
+        if problem:
+            return problem
+    return None
+
+
+def dyn_v2_feature(fn: Callable[[dict], None], fid: str = "F-010") -> dict[str, str]:
+    feature = copy.deepcopy(stage_feature(dyn_ir()(IR), fid))
+    fn(feature)
+    return v2([feature])
+
+
+# ---- 配列と入れ子のオブジェクト（#1300）。**文書の例（spec-ir.md の「配列と入れ子のオブジェクト」）と、その実装の例を、そのまま生成に通す**
+def arr_section() -> str:
+    text = SPEC_IR_REF.read_text(encoding="utf-8")
+    return text.split("\n## 配列と入れ子のオブジェクト", 1)[1].split("\n## ", 1)[0]
+
+
+def arr_example() -> list[dict]:
+    found = re.findall(r"```json\n(.*?)\n```", arr_section(), re.S)
+    assert len(found) == 1, f"spec-ir.md の「配列と入れ子のオブジェクト」の json のブロックが 1 つでない: {len(found)}"
+    return json.loads(found[0])
+
+
+def arr_python() -> str:
+    found = re.findall(r"```python\n(.*?)\n```", arr_section(), re.S)
+    assert len(found) == 1, f"spec-ir.md の「配列と入れ子のオブジェクト」の python のブロックが 1 つでない: {len(found)}"
+    return found[0]
+
+
+def arr_ir(fn: Callable[[dict], None] = lambda ir: None) -> Callable[[dict], dict]:
+    def build_ir(ir: dict) -> dict:
+        ir = copy.deepcopy(ir)
+        ir["features"] += copy.deepcopy(arr_example())
+        fn(ir)
+        return ir
+    return build_ir
+
+
+def arr_op(ir: dict) -> dict:
+    return next(f for f in ir["features"] if f["id"] == "F-011")["operation"]
+
+
+def arr_out(ir: dict, name: str) -> dict:
+    return arr_op(ir)["output"][name]
+
+
+ARR_IMPL = GOOD_IMPL + "\n" + arr_python() + "\n"
+# 実装の例を 1 箇所ずつ壊した実装（どれも文書の例の実装と違う）
+ARR_REVERSED_NOTES_IMPL = ARR_IMPL.replace('for note in shown],', 'for note in reversed(shown)],')                       # 順を問う配列の並びが逆
+ARR_REVERSED_TAGS_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),', '"tags": sorted({note["tag"] for note in shown}, reverse=True),')  # 順を問わない配列の並びが逆
+ARR_FEWER_TAGS_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),', '"tags": sorted({note["tag"] for note in shown})[:1],')   # 要素が足りない
+ARR_FLOAT_TOTAL_IMPL = ARR_IMPL.replace('"total": len(found)', '"total": float(len(found))')                                                 # 4.0 == 4 だが integer でない
+ARR_EXTRA_KEY_IMPL = ARR_IMPL.replace('{"title": note["title"], "kind": note["kind"]}', '{"title": note["title"], "kind": note["kind"], "size": 1}')
+ARR_MISSING_KEY_IMPL = ARR_IMPL.replace('{"title": note["title"], "kind": note["kind"]}', '{"title": note["title"]}')
+ARR_INT_STAMP_IMPL = ARR_IMPL.replace('"stamp": str(time.time())', '"stamp": 1')
+ARR_TUPLE_NOTES_IMPL = ARR_IMPL.replace('"notes": [{"title": note["title"], "kind": note["kind"]} for note in shown],', '"notes": tuple({"title": note["title"], "kind": note["kind"]} for note in shown),')
+ARR_BAD_TITLE_IMPL = ARR_IMPL.replace('{"title": note["title"], "kind": note["kind"]}', '{"title": 1, "kind": note["kind"]}')
+# 2 度目に tags の並びが変わる（順を問わないので `$ref` は通る）・2 度目に tags が減る（落ちる）
+ARR_FLIP_TAGS_IMPL = ARR_IMPL.replace('_notes = []', '_notes, _calls = [], []', 1).replace(
+    '"tags": list({note["tag"] for note in shown}),',
+    '"tags": (_calls.append(1), sorted({note["tag"] for note in shown}, reverse=len(_calls) % 2 == 0))[1],')
+ARR_SHRINK_TAGS_IMPL = ARR_IMPL.replace('_notes = []', '_notes, _calls = [], []', 1).replace(
+    '"tags": list({note["tag"] for note in shown}),',
+    '"tags": (_calls.append(1), sorted({note["tag"] for note in shown})[:3 - len(_calls)])[1],')
+# tags の要素は null も持てる（`items` に nullable）——元の実装に null の要素を足す
+ARR_NULL_ELEMENT_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),', '"tags": sorted({note["tag"] for note in shown}) + [None],')
+ARR_ZERO_ELEMENT_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),', '"tags": sorted({note["tag"] for note in shown}) + [0],')
+for _mutant in (ARR_REVERSED_NOTES_IMPL, ARR_REVERSED_TAGS_IMPL, ARR_FEWER_TAGS_IMPL, ARR_FLOAT_TOTAL_IMPL, ARR_EXTRA_KEY_IMPL,
+                ARR_MISSING_KEY_IMPL, ARR_INT_STAMP_IMPL, ARR_TUPLE_NOTES_IMPL, ARR_BAD_TITLE_IMPL, ARR_FLIP_TAGS_IMPL,
+                ARR_SHRINK_TAGS_IMPL, ARR_NULL_ELEMENT_IMPL, ARR_ZERO_ELEMENT_IMPL):
+    assert _mutant != ARR_IMPL
+
+
+def arr_nullable_elements(ir: dict) -> None:
+    """tags の要素を null も持てるようにし（`items` に nullable）、期待にも null の要素を足す。"""
+    arr_out(ir, "tags")["items"]["nullable"] = True
+    for cid in ("F-011-C1", "F-011-C2"):
+        stage_case(ir, cid)["expected"]["tags"] = ["x", "y", None]
+
+
+def arr_multiset(ir: dict) -> None:
+    """tags の期待を、同じ要素の重なりを含む並び（x が 2 つ）にする——順を問わなくても数は問う。"""
+    stage_case(ir, "F-011-C1")["expected"]["tags"] = ["x", "y", "x"]
+
+
+# 重なりを返す実装（題の順 a・b・c の tag を、そのまま並べる）と、重なりを減らす実装（set）
+ARR_DUP_TAGS_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),', '"tags": [note["tag"] for note in shown],')
+assert ARR_DUP_TAGS_IMPL != ARR_IMPL
+
+
+def arr_expected(ir: dict, cid: str, **values) -> None:
+    stage_case(ir, cid)["expected"].update(values)
+
+
+def arr_written(repo: Path) -> str | None:
+    test = (repo / "scaffold" / "tests" / "test_f_011.py").read_text(encoding="utf-8")
+    for needle in ("OUTPUT_TYPES = {'error': 'string', 'notes': {'type': 'array', 'items': {'type': 'object', 'properties': "
+                   "{'kind': {'type': 'string'}, 'title': {'type': 'string'}}}}, 'page': {'type': 'object', 'properties': "
+                   "{'next': {'type': 'string', 'nullable': True}, 'stamp': {'type': 'string'}, 'total': {'type': 'integer'}}}, "
+                   "'tags': {'type': 'array', 'items': {'type': 'string'}, 'unordered': True}}",
+                   "def shape_fits(spec, value):", "def matches(spec, want, got, env):",
+                   "    def check(self, given, expected):\n        actual = self.call(given)\n        self.agree(f\"{OPERATION}({given!r})\", OUTPUT_TYPES, NULLABLE, actual, expected, {})\n",
+                   "        return self.reason(TRACE_TYPES[operation], TRACE_NULLABLE[operation], actual, expected, {}) is None",
+                   "NULLABLE = ()", "ANY = '$any'", "REF = '$ref'", "AS = 'as'",
+                   "    def test_f_011_c1(self):\n        self.dynamic(", "    def test_f_011_c3(self):\n        self.check("):
+        if needle not in test:
+            return f"test_f_011.py に {needle!r} が無い"
+    api = json.loads((repo / "scaffold" / "openapi.json").read_text(encoding="utf-8"))
+    schemas = api["components"]["schemas"]
+    output = schemas["ListNotesOutput"]["properties"]
+    expected = {"notes": {"type": "array", "items": {"type": "object", "required": ["kind", "title"], "additionalProperties": False,
+                                                      "properties": {"kind": {"type": "string", "enum": ["memo", "task"]}, "title": {"type": "string"}}}},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "page": {"type": "object", "required": ["next", "stamp", "total"], "additionalProperties": False,
+                         "properties": {"next": {"type": ["string", "null"]}, "stamp": {"type": "string"}, "total": {"type": "integer"}}}}
+    if output != expected:
+        return f"OpenAPI の ListNotesOutput が違う（順を問うかは出さない）: {json.dumps(output, ensure_ascii=False)[:600]}"
+    kinds = schemas["ListNotesInput"]["properties"]["kinds"]
+    if kinds != {"type": "array", "items": {"type": "string", "enum": ["memo", "task"]}}:
+        return f"OpenAPI の入力の配列が違う: {kinds}"
+    types = (repo / "scaffold" / "types.py").read_text(encoding="utf-8")
+    for needle in ("class ListNotesOutput_Notes_Item(TypedDict):\n    kind: Literal['memo', 'task']\n    title: str\n\n\n",
+                   "class ListNotesOutput_Page(TypedDict):\n    next: str | None\n    stamp: str\n    total: int\n\n\n",
+                   "class ListNotesOutput(TypedDict):\n    notes: list[ListNotesOutput_Notes_Item]\n    page: ListNotesOutput_Page\n    tags: list[str]\n",
+                   "class ListNotesInput(TypedDict):\n    kinds: list[Literal['memo', 'task']]\n    origin: str\n"):
+        if needle not in types:
+            return f"types.py に {needle!r} が無い"
+    # 書かない機能の Red テストは、足す前と同じバイト（配列・入れ子の道具を足さない）
+    for rel in ("scaffold/tests/test_f_001.py", "scaffold/tests/test_f_002.py"):
+        if hashlib.sha256((repo / rel).read_bytes()).hexdigest() != BASE_SHA256[rel]:
+            return f"配列・入れ子を書かない {rel} が #1300 の前の生成物と違う"
+        if "shape_fits" in (repo / rel).read_text(encoding="utf-8"):
+            return f"配列・入れ子を書かない {rel} に配列・入れ子の道具がある"
+    merge_with_script(repo)
+    return fingerprint_matches(repo, bodies(repo)["F-011"], "F-011", "build/merged")
+
+
+def arr_nullable_page(ir: dict) -> None:
+    """page を null も持てるようにし（`nullable`）、2 件しか無い C2 は page が null（本体も後の呼び出しも）。"""
+    arr_out(ir, "page")["nullable"] = True
+    stage_case(ir, "F-011-C2")["expected"]["page"] = None
+    stage_case(ir, "F-011-C2")["after"][0]["expected"]["page"] = None
+
+
+ARR_NULL_PAGE_IMPL = ARR_IMPL.replace('"page": {"total": len(found),', '"page": None if len(found) < 3 else {"total": len(found),')
+ARR_SORTED_TAGS_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),', '"tags": sorted({note["tag"] for note in shown}),')
+assert ARR_NULL_PAGE_IMPL != ARR_IMPL and ARR_SORTED_TAGS_IMPL != ARR_IMPL
+
+
+def arr_any_arrays(ir: dict) -> None:
+    """notes の期待を、値でなく形（`$any` の `array`）にする。"""
+    for cid in ("F-011-C1", "F-011-C2"):
+        stage_case(ir, cid)["expected"]["notes"] = {"$any": "array"}
+
+
+def arr_ref_only_tags(ir: dict) -> None:
+    """C2 の本体は tags を形だけで見て、後の呼び出しの `$ref`（本体の tags）だけが値を比べる。"""
+    stage_case(ir, "F-011-C2")["expected"]["tags"] = {"$any": "array"}
+
+
+def arr_no_stamp(ir: dict) -> None:
+    """stamp を持たない出力にし、C1 は期待に動的を書かない前提・後の状態のケースにする（後の呼び出しも中まで比べる）。C2 は `as` と `$ref` のまま。"""
+    arr_out(ir, "page")["properties"].pop("stamp")
+    for cid in ("F-011-C1", "F-011-C2"):
+        stage_case(ir, cid)["expected"]["page"].pop("stamp")
+    stage_case(ir, "F-011-C2")["after"][0]["expected"]["page"].pop("stamp")
+    c1 = stage_case(ir, "F-011-C1")
+    c1["after"] = [{"operation": "list_notes", "input": copy.deepcopy(c1["input"]), "expected": copy.deepcopy(c1["expected"])}]
+
+
+ARR_NOSTAMP_IMPL = ARR_IMPL.replace(', "stamp": str(time.time())', "")
+ARR_NOSTAMP_REVERSED_TAGS_IMPL = ARR_REVERSED_TAGS_IMPL.replace(', "stamp": str(time.time())', "")
+ARR_NOSTAMP_REVERSED_NOTES_IMPL = ARR_REVERSED_NOTES_IMPL.replace(', "stamp": str(time.time())', "")
+ARR_SHORT_NOTES_IMPL = ARR_IMPL.replace('for note in shown],', 'for note in shown[:2]],')
+ARR_LONG_NOTES_IMPL = ARR_IMPL.replace('for note in shown],', 'for note in shown] + [{"title": "z", "kind": "memo"}],')
+# 3 件のとき tags が x・y・y（期待は x・y・x）——同じ要素を二度数えると合ってしまう
+ARR_WRONG_MULTISET_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),',
+                                           '"tags": ["x", "y", "y"] if len(shown) == 3 else sorted({note["tag"] for note in shown}),')
+for _mutant in (ARR_NOSTAMP_IMPL, ARR_NOSTAMP_REVERSED_TAGS_IMPL, ARR_NOSTAMP_REVERSED_NOTES_IMPL, ARR_SHORT_NOTES_IMPL,
+                ARR_LONG_NOTES_IMPL, ARR_WRONG_MULTISET_IMPL):
+    assert _mutant != ARR_IMPL
+
+
+ARR_WRONG_TAG_IMPL = ARR_IMPL.replace('"tags": list({note["tag"] for note in shown}),', '"tags": [tag if tag != "y" else "q" for tag in sorted({note["tag"] for note in shown})],')
+ARR_EXTRA_TOP_IMPL = ARR_IMPL.replace('    return {"notes":', '    return {"extra": 1, "notes":')
+assert ARR_WRONG_TAG_IMPL != ARR_IMPL and ARR_EXTRA_TOP_IMPL != ARR_IMPL
+
+
+def arr_plain(ir: dict) -> None:
+    """期待に `$any`・`as`・`$ref` を 1 つも書かない（動的でない）機能にする——stamp を外し、C2 の後の呼び出しも値で書く。"""
+    arr_no_stamp(ir)
+    c2 = stage_case(ir, "F-011-C2")
+    c2.pop("as")
+    c2["after"][0]["expected"].update(notes=copy.deepcopy(c2["expected"]["notes"]), tags=copy.deepcopy(c2["expected"]["tags"]))
+
+
+# 返した配列を実装が持ち続け、後の呼び出しがその配列を書き換える実装——束ねた配列を深く写さないと、`$ref` が書き換わった値と比べて通る
+ARR_ALIAS_TAGS_IMPL = ARR_IMPL.replace('_notes = []', '_notes, _shared, _calls = [], [], []', 1).replace(
+    '"tags": list({note["tag"] for note in shown}),', '"tags": _refill(sorted({note["tag"] for note in shown})),') + '''
+
+def _refill(tags):
+    _calls.append(1)
+    _shared[:] = tags[:3 - len(_calls)]
+    return _shared
+'''
+assert ARR_ALIAS_TAGS_IMPL != ARR_IMPL
+
+
+def arr_setup_ref(ir: dict) -> None:
+    """C2 を、前提の呼び出しで一覧を束ね（`as`）、本体の tags がそれと同じ（`$ref`）形にする。"""
+    c2 = stage_case(ir, "F-011-C2")
+    shape = {"notes": {"$any": "array"}, "tags": {"$any": "array"}, "page": {"$any": "object"}}
+    c2["setup"].append({"operation": "list_notes", "input": copy.deepcopy(c2["input"]), "expected": shape, "as": "first"})
+    c2.pop("as")
+    c2.pop("after")
+    c2["expected"] = {"notes": {"$any": "array"}, "tags": {"$ref": "first.tags"}, "page": {"$any": "object"}}
+
+
+def arr_setup_ref_notes(ir: dict) -> None:
+    """arr_setup_ref の `$ref` を notes（要素がオブジェクトの配列）に向ける。"""
+    arr_setup_ref(ir)
+    c2 = stage_case(ir, "F-011-C2")
+    c2["expected"].update(tags={"$any": "array"}, notes={"$ref": "first.notes"})
+
+
+# 要素の辞書を持ち続け、呼ぶたびに題を書き換えて、新しい配列に入れて返す実装——束ねた結果を 1 段しか写さないと、`$ref` が書き換わった要素と比べて通る
+ARR_ALIAS_ELEMENTS_IMPL = ARR_IMPL.replace('_notes = []', '_notes, _view, _calls = [], [], []', 1).replace(
+    '"notes": [{"title": note["title"], "kind": note["kind"]} for note in shown],', '"notes": _elements(shown),') + '''
+
+def _elements(shown):
+    _calls.append(1)
+    if not _view:
+        _view.extend({"title": note["title"], "kind": note["kind"]} for note in shown)
+    else:
+        for element in _view:
+            element["title"] = f"z{len(_calls)}"
+    return list(_view)
+'''
+assert ARR_ALIAS_ELEMENTS_IMPL != ARR_IMPL
+
+
+def arr_nullable_any(ir: dict) -> None:
+    """tags の要素を null も持てるようにし、期待は値でなく形（`$any` の `array`）にする。"""
+    arr_out(ir, "tags")["items"]["nullable"] = True
+    for cid in ("F-011-C1", "F-011-C2"):
+        stage_case(ir, cid)["expected"]["tags"] = {"$any": "array"}
+
+
+def arr_nested_unordered(ir: dict) -> None:
+    """tags を、順を問わない配列の中に順を問う配列（要素は文字列）を持つ形にし、中の要素に `$any` を書く。"""
+    arr_out(ir, "tags").update(items={"type": "array", "items": {"type": "string"}})
+    arr_expected(ir, "F-011-C1", tags=[[{"$any": "string"}]])
+
+
+def arr_mini(ir: dict) -> None:
+    """出力に、page と同じ名前の項目でも形でもないオブジェクト（項目 total だけ）を足し、C2 の後の呼び出しで page の `$ref` を mini に書く。"""
+    arr_op(ir)["output"]["mini"] = {"type": "object", "properties": {"total": {"type": "integer"}}}
+    for cid in ("F-011-C1", "F-011-C2"):
+        arr_expected(ir, cid, mini={"total": 1})
+    stage_case(ir, "F-011-C2")["after"][0]["expected"]["mini"] = {"$ref": "first.page"}
+
+
+def arr_called_by_discount(ir: dict) -> None:
+    """配列を返す入口 list_notes を、割引の機能（F-001）の後の状態で呼ぶ——F-001 自身の出力は配列を持たない。"""
+    stage_case(ir, "F-001-C1")["after"] = [{"operation": "list_notes", "input": {"origin": "root", "kinds": []},
+                                            "expected": {"notes": [], "tags": [], "page": {"total": 0, "next": None, "stamp": {"$any": "string"}}}}]
+
+
+def arr_v2_feature(fn: Callable[[dict], None], fid: str = "F-011") -> dict[str, str]:
+    feature = copy.deepcopy(stage_feature(arr_ir()(IR), fid))
+    fn(feature)
+    return v2([feature])
+
+
+def arr_v2_kept(repo: Path) -> str | None:
+    """キーの順だけ変えた F-011 の本文は作らず、Red テストのバイトは変わらない。"""
+    if bodies(repo):
+        return f"キーの順だけ変えた F-011 の本文を作った: {list(bodies(repo))}"
+    now = hashlib.sha256((repo / "scaffold" / "tests" / "test_f_011.py").read_bytes()).hexdigest()
+    before = (repo / "before.sha256").read_text(encoding="utf-8")
+    return None if now == before else f"キーの順だけ変えたのに test_f_011.py のバイトが変わった（{before[:12]} → {now[:12]}）"
+
+
+def plant_arr_reordered_v2(repo: Path) -> None:
+    (repo / "before.sha256").write_text(hashlib.sha256((repo / "scaffold" / "tests" / "test_f_011.py").read_bytes()).hexdigest(), encoding="utf-8")
+    for rel, body in v2([reversed_keys(stage_feature(arr_ir()(IR), "F-011"))]).items():
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+
 CASES: list[Case] = [
     # 仕様レビューの記録（#1044）——最後の実行の行が `抜けた` でなければ何も作らない（Issue の受入基準 3）
     Case("記録: 最後の実行が抜けていない", 1, "最後の実行の行（回 3）が 抜けていない——仕様レビューを抜けていない",
@@ -2328,6 +3130,311 @@ CASES: list[Case] = [
          ir=traced(lambda ir: ir["features"][2]["cases"][1].update(input={"item": "a", "qty": 1})), extra=TRACE_FORMAL),
     Case("トレース: 入出力のケースが無い機能", 1, "F-003.cases: 入出力のケース（`trace` でないもの）が 1 つも無い",
          ir=traced(lambda ir: ir["features"][2]["cases"].pop(0)), extra=TRACE_FORMAL),
+    # #1298: 入出力のケースの前提（setup）・後の状態（after）と、入口の無い前提を作る口（seed）
+    Case("前提・後の状態: 作る", 0, "作った", ir=staged_ir(), post=stage_written),
+    Case("前提・後の状態: 実装が無ければ失敗", 0, "作った", ir=staged_ir(), post=expect_red(8)),
+    Case("前提・後の状態: 正しい実装で緑", 0, "作った", ir=staged_ir(), impl=STAGE_IMPL, post=expect_green),
+    # 前提（set_stock）が効かない・後の状態が変わらない実装は、前提だけのケースと後の状態だけのケースの両方が落ちる
+    Case("前提・後の状態: 前提を無視する実装で失敗", 0, "作った", ir=staged_ir(), impl=STAGE_NO_STORE_IMPL,
+         post=stage_red(2, "test_f_005_c2", "test_f_004_c2")),
+    Case("前提・後の状態: 後の状態を変えない実装で失敗", 0, "作った", ir=staged_ir(), impl=STAGE_NO_STORE_IMPL,
+         post=stage_red(2, "get_stock({'item': 'y'}) が {'stock': 0} を返した（期待 {'stock': 3}）")),
+    Case("前提・後の状態: 状態を空に戻す関数が無ければ失敗", 0, "作った", ir=staged_ir(), impl=STAGE_NO_RESET_IMPL,
+         post=stage_red(2, "未実装: spec_impl.reset_state が無い")),
+    Case("前提・後の状態: --red-check が数える", 0, "失敗 2 件（追加・変更）", args=("--red-check",), generate_first=True,
+         ir=staged_ir(), impl=STAGE_NO_STORE_IMPL),
+    Case("前提・後の状態: トレースのケースと一緒でも作る", 0, "作った", ir=staged_ir(trace=True), extra=TRACE_FORMAL,
+         post=stage_both_written),
+    Case("前提・後の状態: トレースのケースと一緒でも正しい実装で緑", 0, "作った", ir=staged_ir(trace=True), extra=TRACE_FORMAL,
+         impl=LOCKED_IMPL, post=expect_green),
+    Case("前提・後の状態: 性能テストの入力に入れる・混ぜない", 0, "作った",
+         ir=staged_ir(lambda ir: stage_feature(ir, "F-004").update(nfr=["N-001"])), extra=with_nfr(),
+         post=lambda repo: None if "INPUTS = [{'item': 'b', 'qty': 3}, {'item': 'y', 'qty': 3}]" in (
+             repo / "scaffold" / "perf" / "perf_f_004.py").read_text(encoding="utf-8") else "性能テストの入力が入出力のケースの入力でない"),
+    # 文書の例（spec-ir.md の「前提と後の状態」の json）を、そのまま生成に通す。ケースは全部で 9 件
+    Case("前提・後の状態: 文書の例を作る", 0, "作った", ir=doc_ir(), post=doc_written),
+    Case("前提・後の状態: 文書の例は実装が無ければ失敗", 0, "作った", ir=doc_ir(), post=expect_red(9)),
+    Case("前提・後の状態: 文書の例の正しい実装で緑", 0, "作った", ir=doc_ir(), impl=DOC_IMPL, post=expect_green),
+    Case("前提・後の状態: seed が何もしない実装で失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_SEED_IMPL,
+         post=stage_red(3, "test_f_006_c1", "test_f_006_c3", "test_f_007_c1")),
+    Case("前提・後の状態: seed の関数が無ければ失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_SEED_FUNCTION_IMPL,
+         post=stage_red(3, "未実装: spec_impl.seed が無い")),
+    Case("前提・後の状態: 文書の例で状態を空に戻す関数が無ければ失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_RESET_IMPL,
+         post=stage_red(3, "未実装: spec_impl.reset_state が無い")),
+    Case("前提・後の状態: 状態を空に戻さない実装で失敗", 0, "作った", ir=doc_ir(), impl=DOC_LEAKY_IMPL,
+         post=stage_red(2, "create_order({'customer': 'c1', 'order_no': 'A-1'}) が {'error': 'DUPLICATE'} を返した")),
+    Case("前提・後の状態: 取り消しを覚えない実装で失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_CANCEL_IMPL,
+         post=stage_red(1, "get_order({'order_no': 'A-1'}) が {'status': 'open'} を返した（期待 {'status': 'cancelled'}）")),
+    Case("前提・後の状態: v2 で前提を変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][1].update(setup=[dict(STAGE_COUNT_CASE["setup"][0])])),
+         post=trace_v2_of("F-004", "F-004-C2", "変更")),
+    Case("前提・後の状態: v2 で既にある前提の値だけ変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][1]["setup"][0]["input"].update(qty=3) or
+                                f["cases"][1]["setup"][0]["expected"].update(stock=3), "F-005"),
+         post=trace_v2_of("F-005", "F-005-C2", "変更")),
+    Case("前提・後の状態: v2 で後の状態を変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][1]["after"][0]["expected"].update(stock=4) or
+                                f["cases"][1]["after"][0].update(input={"item": "z"})),
+         post=trace_v2_of("F-004", "F-004-C2", "変更")),
+    Case("前提・後の状態: v2 でほかのケースだけ変えたら回帰", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][0]["input"].update(qty=4) or f["cases"][0]["expected"].update(stock=4)),
+         post=trace_v2_of("F-004", "F-004-C2", "回帰")),
+    Case("前提・後の状態: v2 で後の状態が呼ぶ入口の型だけ変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=v2([dict(copy.deepcopy(STOCK_FEATURES[2]), operation=dict(copy.deepcopy(STOCK_FEATURES[2]["operation"]),
+                                                                            output={"stock": {"type": "number"}}))]),
+         post=stage_v2_moved),
+    Case("前提・後の状態: v2 でキーの順だけ変えても Red テストは同じ", 0, "作った", ir=staged_ir(), generate_first=True,
+         pre=plant_stage_reordered_v2, post=stage_reordered_kept),
+    Case("前提・後の状態: setup が空の配列", 1, "F-006-C1.setup: 1 つ以上の呼び出しの配列でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1").update(setup=[]))),
+    Case("前提・後の状態: after が配列でない", 1, "F-006-C1.after: 1 つ以上の呼び出しの配列でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1").update(after={}))),
+    Case("前提・後の状態: 入口が中間表現に無い", 1, "F-006-C3.setup[1].operation: 中間表現の入口に無い: 'take'",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1].update(operation="take"))),
+    Case("前提・後の状態: 呼び出しの入力が型に反する", 1, "F-006-C3.setup[1].input.order_no: 型 string でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1]["input"].update(order_no=1))),
+    Case("前提・後の状態: 後の期待が型に反する", 1, "F-006-C3.after[0].expected.status: 型 string でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["after"][0]["expected"].update(status=True))),
+    Case("前提・後の状態: 期待も error も無い", 1, "F-006-C3.setup[1]: expected と error のちょうど片方だけを書く",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1].pop("expected"))),
+    Case("前提・後の状態: 入口の error が errors に無い", 1, "F-006-C3.setup[1].error: 入口 create_order の errors に無い: 'NOPE'",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1].update(error="NOPE") or
+                   stage_case(ir, "F-006-C3")["setup"][1].pop("expected"))),
+    Case("前提・後の状態: seed の名前の形", 1, "F-006-C1.setup[0].seed: 前提の名前の形に反する",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(seed="Customer"))),
+    Case("前提・後の状態: seed の values が空", 1, "F-006-C1.setup[0].values: 1 つ以上の項目のオブジェクトでない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(values={}))),
+    Case("前提・後の状態: seed の値が入れ子", 1, "F-006-C1.setup[0].values.id: 文字列・数・真偽・null のどれでもない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0]["values"].update(id=["c1"]))),
+    Case("前提・後の状態: seed の項目の名前の形", 1, "F-006-C1.setup[0].values: 項目の名前の形に反する",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0]["values"].update(Id="c1"))),
+    Case("前提・後の状態: seed に決まりに無いキー", 1, "F-006-C1.setup[0]: 決まりに無いキー `note`",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(note="x"))),
+    Case("前提・後の状態: seed と入口のキーを混ぜる", 1, "F-006-C1.setup[0]: 決まりに無いキー `input`",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(input={}))),
+    Case("前提・後の状態: seed と同じ名前の入口", 1, "入口の名前 `seed` は、`setup`・`after` が実装に求める口",
+         ir=doc_ir(lambda ir: ir["features"].append(plain_feature("F-009", "seed")))),
+    Case("前提・後の状態: 入力に seed の項目がある入口", 1, "入口 tag の入力に項目 `seed` がある",
+         ir=doc_ir(lambda ir: ir["features"].append(plain_feature("F-009", "tag", {"seed": {"type": "string"}})))),
+    # 陽性対照: seed を書かないなら、口と同じ名前の入口・入力の項目を使える
+    Case("前提・後の状態: seed を書かなければ同じ名前の入口を使える", 0, "作った",
+         ir=staged_ir(lambda ir: ir["features"].append(plain_feature("F-009", "seed", {"seed": {"type": "string"}})))),
+    Case("前提・後の状態: setup を書いたケースがあるとき入口の名前 reset_state", 1,
+         "入口の名前 `reset_state` は、前提・後の状態（`setup`・`after`）のケースが実装に求める口",
+         ir=staged_ir(lambda ir: ir["features"].append(plain_feature("F-009", "reset_state")))),
+    Case("前提・後の状態: 書かなければ入口の名前 reset_state を使える", 0, "作った",
+         ir=edit(lambda ir: ir["features"].append(plain_feature("F-009", "reset_state")))),
+    Case("前提・後の状態: トレースのケースの直下には書けない", 1, "F-003.cases[1]: 決まりに無いキー `setup`",
+         ir=traced(lambda ir: ir["features"][2]["cases"][1].update(setup=[dict(STAGE_COUNT_CASE["setup"][0])])), extra=TRACE_FORMAL),
+    Case("前提・後の状態: トレースの setup に seed は書けない", 1, "F-003-C2.trace.setup[0]: `operation` が無い",
+         ir=traced(lambda ir: trace_of(ir)["setup"].__setitem__(0, {"seed": "item", "values": {"id": "a"}})), extra=TRACE_FORMAL),
+    # #1299: 実行ごとに変わる出力を型・同一性で比べる（`$any`・`$ref`・`as`）。文書の例（F-009・F-010。ケースは 8 件）を通す
+    Case("動的: 作る", 0, "作った", ir=dyn_ir(), post=dyn_written),
+    Case("動的: 実装が無ければ失敗", 0, "作った", ir=dyn_ir(), post=expect_red(8)),
+    Case("動的: 文書の実装の例で緑（URN は呼ぶたびに違う）", 0, "作った", ir=dyn_ir(), impl=DYN_IMPL, post=expect_green),
+    Case("動的: 型の違う値を返す実装で失敗", 0, "作った", ir=dyn_ir(), impl=DYN_INT_URN_IMPL,
+         post=stage_red(3, "create_document({'title': '契約書'}): urn が 1（期待 型 string）")),
+    Case("動的: null を許さない項目が null なら失敗", 0, "作った", ir=dyn_ir(), impl=DYN_NONE_URN_IMPL,
+         post=stage_red(3, "urn が None（期待 型 string）")),
+    Case("動的: 真偽値を integer の項目に返す実装で失敗", 0, "作った", ir=dyn_ir(), impl=DYN_BOOL_VERSION_IMPL,
+         post=stage_red(3, "version が True（期待 型 integer）", "version が True（期待 1）")),
+    Case("動的: 期待に無い項目を返す実装で失敗", 0, "作った", ir=dyn_ir(), impl=DYN_EXTRA_IMPL,
+         post=stage_red(3, "を返した（期待の項目は ['urn', 'version']）")),
+    Case("動的: 前に返った値と違う値を返す実装で失敗", 0, "作った", ir=dyn_ir(), impl=DYN_OTHER_URN_IMPL,
+         post=stage_red(2, "get_document({'title': '契約書'}): urn が 'urn:doc:other'（期待 created.urn と同じ値（'urn:doc:")),
+    Case("動的: 動的でない項目は等しさで比べる", 0, "作った", ir=dyn_ir(), impl=DYN_WRONG_TITLE_IMPL,
+         post=stage_red(2, "title が 'x'（期待 '契約書'）")),
+    # 前提・後の状態を持たない動的なケース（F-009-C1）は、状態を空に戻す関数が無くても通る——失敗は前提・後の状態を持つ 2 件だけ
+    Case("動的: 状態を空に戻す関数は前提・後の状態を持つケースだけが求める", 0, "作った", ir=dyn_ir(), impl=DYN_NO_RESET_IMPL,
+         post=stage_red(2, "未実装: spec_impl.reset_state が無い")),
+    Case("動的: null を許す項目の null は型を見ない", 0, "作った", ir=edit(dyn_nullable), impl=NULLABLE_IMPL, post=expect_green),
+    Case("動的: null を許す項目の型の違う値は落ちる", 0, "作った", ir=edit(dyn_nullable), impl=NULLABLE_BAD_LABEL_IMPL,
+         post=stage_red(1, "label が 5（期待 型 string）")),
+    Case("動的: 版が真偽値の実装で $ref が落ちる（等しいが型が違う）", 0, "作った", ir=dyn_ir(), impl=DYN_BOOL_STORED_IMPL,
+         post=stage_red(2, "version が True（期待 created.version と同じ値（1））")),
+    Case("動的: 束ねた結果は写す（実装が返した辞書を後で書き換えても $ref は返った時点の値と比べる）", 0, "作った", ir=dyn_ir(), impl=DYN_ALIAS_IMPL,
+         post=stage_red(2, "version が 2（期待 created.version と同じ値（1））")),
+    Case("動的: $ref の指した値が null でないのに null を返す実装で失敗", 0, "作った", ir=edit(dyn_nullable_ref), impl=NULLABLE_REF_IMPL,
+         post=stage_red(1, "label が None（期待 first.label と同じ値（'x'））")),
+    Case("動的: 動的なケースの前提に失敗を期待する呼び出しを書ける", 0, "作った", ir=dyn_ir(dyn_setup_error), impl=DYN_IMPL, post=expect_green),
+    Case("動的: $ref が本体の自分自身を指す", 1, "F-009-C2.expected.urn.$ref: `created` は、この呼び出しより前に `as` で束ねた名前でない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C2")["expected"].update(urn={"$ref": "created.urn"}))),
+    Case("動的: seed を書いた動的なケースは、前提の seed を呼ぶ実装で緑", 0, "作った", ir=dyn_ir(dyn_seeded), impl=DYN_SEED_IMPL, post=expect_green),
+    Case("動的: 後の呼び出しだけが動的なケースも動的に比べる", 0, "作った", ir=dyn_ir(dyn_after_only), impl=DYN_IMPL, post=expect_green),
+    Case("動的: as だけを書いたケースも動的に作る", 0, "作った", ir=edit(dyn_as_only), impl=NULLABLE_IMPL, post=dyn_as_written),
+    Case("動的: v2 で期待を $ref から $any に変えたら変更", 0, "作った", ir=dyn_ir(),
+         extra=dyn_v2_feature(lambda f: f["cases"][0]["expected"].update(version={"$any": "integer"})),
+         post=trace_v2_of("F-010", "F-010-C1", "変更")),
+    Case("動的: v2 でほかのケースだけ変えたら回帰", 0, "作った", ir=dyn_ir(),
+         extra=dyn_v2_feature(lambda f: f["cases"][1].update(input={"title": "x"})),
+         post=trace_v2_of("F-010", "F-010-C1", "回帰")),
+    Case("動的: $any の型が項目の型と違う", 1, "F-009-C1.expected.version.$any: 項目の型 integer と違う（string）",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C1")["expected"].update(version={"$any": "string"}))),
+    Case("動的: $any の型が決まりに無い", 1, "F-009-C1.expected.urn.$any: 型 `date` は決まりに無い",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C1")["expected"].update(urn={"$any": "date"}))),
+    Case("動的: $any と $ref を両方書く", 1, "F-010-C1.expected.urn: `$any` か `$ref` のどちらか 1 つだけ",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["expected"].update(urn={"$any": "string", "$ref": "created.urn"}))),
+    Case("動的: $ref の形", 1, "F-010-C1.expected.urn.$ref: `<束ねた名前>.<出力の項目>` の形でない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["expected"].update(urn={"$ref": "created"}))),
+    Case("動的: $ref が後ろの呼び出しを指す", 1, "F-009-C2.expected.version.$ref: `again` は、この呼び出しより前に `as` で束ねた名前でない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C2")["expected"].update(version={"$ref": "again.version"}) or
+                   stage_case(ir, "F-009-C2")["after"][0].update({"as": "again"}))),
+    Case("動的: $ref が自分自身を指す", 1, "F-010-C1.setup[0].expected.urn.$ref: `created` は、この呼び出しより前に `as` で束ねた名前でない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["setup"][0]["expected"].update(urn={"$ref": "created.urn"}))),
+    Case("動的: $ref が束ねていない名前を指す", 1, "F-010-C1.expected.urn.$ref: `nope` は、この呼び出しより前に `as` で束ねた名前でない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["expected"].update(urn={"$ref": "nope.urn"}))),
+    Case("動的: $ref が出力に無い項目を指す", 1, "F-010-C1.expected.title.$ref: `created` の入口の出力に項目 `title` が無い",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["expected"].update(title={"$ref": "created.title"}))),
+    Case("動的: $ref の型が項目の型と違う", 1, "F-009-C2.after[0].expected.urn.$ref: 指す項目 created.version の型 integer が、項目の型 string と違う",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C2")["after"][0]["expected"].update(urn={"$ref": "created.version"}))),
+    Case("動的: as の名前の形", 1, "F-009-C2.as: 名前の形に反する",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C2").update({"as": "Created"}))),
+    Case("動的: error の呼び出しは束ねられない", 1, "F-010-C1.setup[0].as: `expected` の無い呼び出しの結果は束ねられない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["setup"][0].pop("expected") and None or
+                   stage_case(ir, "F-010-C1")["setup"][0].update(error="EMPTY_TITLE"))),
+    Case("動的: error のケースの本体は束ねられない", 1, "F-009-C3.as: `expected` の無い呼び出しの結果は束ねられない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C3").update({"as": "x"}))),
+    Case("動的: as の名前が重なる", 1, "F-010-C1.setup[1].as: 名前 `created` が、同じケースの前の `as` と重なっている",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["setup"].append(copy.deepcopy(stage_case(ir, "F-010-C1")["setup"][0])))),
+    Case("動的: seed には as を書けない", 1, "F-010-C1.setup[1]: 決まりに無いキー `as`",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-010-C1")["setup"].append({"seed": "customer", "values": {"id": "c1"}, "as": "x"}))),
+    Case("動的: input には $any を書けない", 1, "F-009-C1.input.title: 型 string でない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C1")["input"].update(title={"$any": "string"}))),
+    Case("動的: トレースの setup には $any を書けない", 1, "F-003-C2.trace.setup[0].expected.stock: 型 integer でない",
+         ir=traced(lambda ir: trace_of(ir)["setup"][0]["expected"].update(stock={"$any": "integer"})), extra=TRACE_FORMAL),
+    Case("動的: トレースの setup には as を書けない", 1, "F-003-C2.trace.setup[0]: 決まりに無いキー `as`",
+         ir=traced(lambda ir: trace_of(ir)["setup"][0].update({"as": "x"})), extra=TRACE_FORMAL),
+    Case("動的: トレースのケースの直下には as を書けない", 1, "F-003.cases[1]: 決まりに無いキー `as`",
+         ir=traced(lambda ir: ir["features"][2]["cases"][1].update({"as": "x"})), extra=TRACE_FORMAL),
+    # #1300: 項目の型に配列と入れ子のオブジェクトを足す（`items`・`properties`・`unordered`）。文書の例（F-011）を通す
+    Case("配列: 作る", 0, "作った", ir=arr_ir(), post=arr_written),
+    Case("配列: 実装が無ければ失敗", 0, "作った", ir=arr_ir(), post=expect_red(6)),
+    Case("配列: 文書の実装の例で緑（tags の並びは返すたびに違ってよい）", 0, "作った", ir=arr_ir(), impl=ARR_IMPL, post=expect_green),
+    Case("配列: 順を問う配列の並びが違う実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_REVERSED_NOTES_IMPL,
+         post=stage_red(2, "notes が [{'title': 'c', 'kind': 'memo'}")),
+    Case("配列: 順を問わない配列は並びが違う実装でも緑", 0, "作った", ir=arr_ir(), impl=ARR_REVERSED_TAGS_IMPL, post=expect_green),
+    Case("配列: 順を問う印を外すと、並びが違う実装で失敗（陽性対照）", 0, "作った",
+         ir=arr_ir(lambda ir: arr_out(ir, "tags").pop("unordered")), impl=ARR_REVERSED_TAGS_IMPL, post=stage_red(2, "tags が ['y', 'x']")),
+    Case("配列: 順を問わない配列は並びが同じ実装も緑", 0, "作った", ir=arr_ir(), impl=ARR_SORTED_TAGS_IMPL, post=expect_green),
+    Case("配列: 要素が足りない実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_FEWER_TAGS_IMPL, post=stage_red(2, "tags が ['x']")),
+    Case("配列: 順を問わなくても同じ要素の数は見る", 0, "作った", ir=arr_ir(arr_multiset), impl=ARR_IMPL, post=stage_red(1, "tags が")),
+    Case("配列: 同じ要素の重なりは並びが違っても合う", 0, "作った", ir=arr_ir(arr_multiset), impl=ARR_DUP_TAGS_IMPL, post=expect_green),
+    Case("配列: 入れ子の項目の型が違う（4.0 は integer でない）実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_FLOAT_TOTAL_IMPL,
+         post=stage_red(2, "'total': 4.0")),
+    Case("配列: 入れ子のオブジェクトに余る項目がある実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_EXTRA_KEY_IMPL, post=stage_red(2, "'size': 1")),
+    Case("配列: 入れ子のオブジェクトに足りない項目がある実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_MISSING_KEY_IMPL,
+         post=stage_red(2, "notes が [{'title': 'a'}")),
+    Case("配列: 入れ子の $any の型が違う実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_INT_STAMP_IMPL, post=stage_red(2, "'stamp': 1")),
+    Case("配列: 配列でない値を返す実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_TUPLE_NOTES_IMPL, post=stage_red(2, "notes が ({'title': 'a'")),
+    Case("配列: $any の array は中の型まで見る（要素の題が整数なら落ちる）", 0, "作った", ir=arr_ir(arr_any_arrays), impl=ARR_BAD_TITLE_IMPL,
+         post=stage_red(2, "notes が [{'title': 1")),
+    Case("配列: $any の array は中の値を見ない", 0, "作った", ir=arr_ir(arr_any_arrays), impl=ARR_IMPL, post=expect_green),
+    Case("配列: $any の array は足りない項目も落とす", 0, "作った", ir=arr_ir(arr_any_arrays), impl=ARR_MISSING_KEY_IMPL, post=stage_red(2, "notes が [{'title': 'a'}")),
+    Case("配列: 束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる", 0, "作った", ir=arr_ir(arr_ref_only_tags), impl=ARR_ALIAS_TAGS_IMPL,
+         post=stage_red(1, "tags が []")),
+    Case("配列: 前提で束ねた配列と同じ配列を返す実装で緑", 0, "作った", ir=arr_ir(arr_setup_ref), impl=ARR_IMPL, post=expect_green),
+    Case("配列: 束ねた配列の要素を実装が後で書き換えても $ref は返った時点の値と比べる", 0, "作った", ir=arr_ir(arr_setup_ref_notes), impl=ARR_ALIAS_ELEMENTS_IMPL,
+         post=stage_red(1, "notes が [{'title': 'z3'")),
+    Case("配列: 前提で束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる", 0, "作った", ir=arr_ir(arr_setup_ref), impl=ARR_ALIAS_TAGS_IMPL,
+         post=stage_red(1, "tags が []")),
+    Case("配列: $any の array は余る項目も落とす", 0, "作った", ir=arr_ir(arr_any_arrays), impl=ARR_EXTRA_KEY_IMPL, post=stage_red(2, "'size': 1")),
+    Case("配列: 順を問わない配列の $ref は、並びが変わった配列に合う", 0, "作った", ir=arr_ir(), impl=ARR_FLIP_TAGS_IMPL, post=expect_green),
+    Case("配列: $ref が指した配列と違う配列を返す実装で失敗", 0, "作った", ir=arr_ir(arr_ref_only_tags), impl=ARR_SHRINK_TAGS_IMPL,
+         post=stage_red(1, "tags が []")),
+    Case("配列: 要素の nullable は null の要素を許す", 0, "作った", ir=arr_ir(arr_nullable_elements), impl=ARR_NULL_ELEMENT_IMPL, post=expect_green),
+    Case("配列: 要素の nullable は null 以外の型の違う値を許さない", 0, "作った", ir=arr_ir(arr_nullable_elements), impl=ARR_ZERO_ELEMENT_IMPL,
+         post=stage_red(2, "tags が ['x', 'y', 0]")),
+    Case("配列: 要素の nullable を書かなければ null の要素は落ちる", 0, "作った", ir=arr_ir(), impl=ARR_NULL_ELEMENT_IMPL,
+         post=stage_red(2, "tags が ['x', 'y', None]")),
+    Case("配列: nullable の入れ子のオブジェクトは null を返せる", 0, "作った", ir=arr_ir(arr_nullable_page), impl=ARR_NULL_PAGE_IMPL, post=expect_green),
+    Case("配列: nullable の入れ子のオブジェクトでも、期待が object なら null は落ちる", 0, "作った",
+         ir=arr_ir(lambda ir: arr_out(ir, "page").update(nullable=True)), impl=ARR_NULL_PAGE_IMPL, post=stage_red(1, "page が None")),
+    Case("配列: nullable でない入れ子のオブジェクトの null は落ちる", 0, "作った", ir=arr_ir(), impl=ARR_NULL_PAGE_IMPL, post=stage_red(1, "page が None")),
+    Case("配列: 順を問う配列の要素には $any を書ける", 0, "作った",
+         ir=arr_ir(lambda ir: (arr_out(ir, "tags").pop("unordered"), stage_case(ir, "F-011-C1")["expected"].update(tags=[{"$any": "string"}, "y"]))),
+         impl=ARR_SORTED_TAGS_IMPL, post=expect_green),
+    Case("配列: 順を問う配列の要素の $any の型が項目の型と違う", 1, "F-011-C1.expected.tags[0].$any: 項目の型 string と違う（integer）",
+         ir=arr_ir(lambda ir: (arr_out(ir, "tags").pop("unordered"), stage_case(ir, "F-011-C1")["expected"].update(tags=[{"$any": "integer"}, "y"])))),
+    # 書けない形（生成が止まる）
+    Case("配列: items が無い", 1, "F-011.operation.output.notes: `items` が無い", ir=arr_ir(lambda ir: arr_out(ir, "notes").pop("items"))),
+    Case("配列: properties が無い", 1, "F-011.operation.output.page: `properties` が無い", ir=arr_ir(lambda ir: arr_out(ir, "page").pop("properties"))),
+    Case("配列: properties が空", 1, "F-011.operation.output.page.properties: 項目が 1 つも無い", ir=arr_ir(lambda ir: arr_out(ir, "page")["properties"].clear())),
+    Case("配列: 配列に enum は書けない", 1, "F-011.operation.output.tags: 決まりに無いキー `enum`", ir=arr_ir(lambda ir: arr_out(ir, "tags").update(enum=["a"]))),
+    Case("配列: オブジェクトに enum は書けない", 1, "F-011.operation.output.page: 決まりに無いキー `enum`", ir=arr_ir(lambda ir: arr_out(ir, "page").update(enum=["a"]))),
+    Case("配列: 文字列に items は書けない", 1, "F-011.operation.output.page.properties.stamp: 決まりに無いキー `items`",
+         ir=arr_ir(lambda ir: arr_out(ir, "page")["properties"]["stamp"].update(items={"type": "string"}))),
+    Case("配列: unordered は true だけ", 1, "F-011.operation.output.tags: `unordered` は true だけを書く", ir=arr_ir(lambda ir: arr_out(ir, "tags").update(unordered=False))),
+    Case("配列: unordered はオブジェクトに書けない", 1, "F-011.operation.output.page: 決まりに無いキー `unordered`",
+         ir=arr_ir(lambda ir: arr_out(ir, "page").update(unordered=True))),
+    Case("配列: unordered は文字列に書けない", 1, "F-011.operation.output.page.properties.stamp: 決まりに無いキー `unordered`",
+         ir=arr_ir(lambda ir: arr_out(ir, "page")["properties"]["stamp"].update(unordered=True))),
+    Case("配列: 入れ子の型が決まりに無い", 1, "F-011.operation.output.tags.items: 型 `date` は決まりに無い",
+         ir=arr_ir(lambda ir: arr_out(ir, "tags")["items"].update(type="date"))),
+    Case("配列: 入れ子の項目名の形", 1, "F-011.operation.output.page.properties.Bad: 項目名の形に反する",
+         ir=arr_ir(lambda ir: arr_out(ir, "page")["properties"].update({"Bad": {"type": "string"}}))),
+    Case("配列: 入れ子の項目の nullable は true だけ", 1, "F-011.operation.output.tags.items: `nullable` は true だけを書く",
+         ir=arr_ir(lambda ir: arr_out(ir, "tags")["items"].update(nullable=False))),
+    Case("配列: 入れ子の enum の値の型", 1, "F-011.operation.input.kinds.items: enum の値が型 string でない",
+         ir=arr_ir(lambda ir: arr_op(ir)["input"]["kinds"]["items"].update(enum=[1]))),
+    Case("配列: 配列はパスの変数にできない", 1, "パスの変数 {kinds} は配列・オブジェクトにできない", ir=arr_ir(lambda ir: arr_op(ir).update(path="/notes/{kinds}"))),
+    Case("配列: 期待の要素の値が enum に無い", 1, "F-011-C1.expected.notes[0].kind: enum に無い値",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C1")["expected"]["notes"][0].update(kind="x"))),
+    Case("配列: 期待の配列が配列でない", 1, "F-011-C1.expected.tags: 型 array でない", ir=arr_ir(lambda ir: arr_expected(ir, "F-011-C1", tags="x"))),
+    Case("配列: 期待の要素の型が違う", 1, "F-011-C1.expected.tags[1]: 型 string でない", ir=arr_ir(lambda ir: arr_expected(ir, "F-011-C1", tags=["x", 1]))),
+    Case("配列: 期待のオブジェクトに項目が足りない", 1, "F-011-C1.expected.page: 項目 `total` が無い",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C1")["expected"]["page"].pop("total"))),
+    Case("配列: 期待のオブジェクトに余る項目がある", 1, "F-011-C1.expected.notes[1]: 決まりに無い項目 `size`",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C1")["expected"]["notes"][1].update(size=1))),
+    Case("配列: 期待のオブジェクトがオブジェクトでない", 1, "F-011-C1.expected.page: 型 object でない", ir=arr_ir(lambda ir: arr_expected(ir, "F-011-C1", page=5))),
+    Case("配列: 入力の配列の要素が enum に無い", 1, "F-011-C1.input.kinds[0]: enum に無い値",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C1")["input"].update(kinds=["x"]))),
+    Case("配列: 入力に $any は書けない（配列の中でも）", 1, "F-011-C1.input.kinds[0]: 型 string でない",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C1")["input"].update(kinds=[{"$any": "string"}]))),
+    Case("配列: 順を問わない配列の要素の中には $any を書けない", 1, "F-011-C1.expected.tags[0]: 順を問わない配列（`unordered`）の要素の中には `$any`・`$ref` を書けない",
+         ir=arr_ir(lambda ir: arr_expected(ir, "F-011-C1", tags=[{"$any": "string"}, "y"]))),
+    Case("配列: 順を問わない配列の要素の中の入れ子にも $any は書けない", 1, "順を問わない配列（`unordered`）の要素の中には",
+         ir=arr_ir(lambda ir: (arr_out(ir, "tags").update(items={"type": "object", "properties": {"name": {"type": "string"}}}),
+                               arr_expected(ir, "F-011-C1", tags=[{"name": {"$any": "string"}}])))),
+    Case("配列: 入れ子の $any の型が項目の型と違う", 1, "F-011-C1.expected.page.stamp.$any: 項目の型 string と違う（integer）",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C1")["expected"]["page"].update(stamp={"$any": "integer"}))),
+    Case("配列: 文字列の項目に $any の array は書けない", 1, "F-011-C1.expected.page.stamp.$any: 項目の型 string と違う（array）",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C1")["expected"]["page"].update(stamp={"$any": "array"}))),
+    Case("配列: $ref が指す項目と形が違う", 1, "F-011-C2.after[0].expected.notes.$ref: 指す項目 first.tags の形（中の型）が、項目の形と違う",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C2")["after"][0]["expected"].update(notes={"$ref": "first.tags"}))),
+    Case("配列: $ref が指す項目と型が違う", 1, "F-011-C2.after[0].expected.page.$ref: 指す項目 first.notes の型 array が、項目の型 object と違う",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C2")["after"][0]["expected"].update(page={"$ref": "first.notes"}))),
+    Case("配列: 配列の項目の $ref も束ねていない名前は止まる", 1, "F-011-C2.after[0].expected.notes.$ref: `nope` は、この呼び出しより前に",
+         ir=arr_ir(lambda ir: stage_case(ir, "F-011-C2")["after"][0]["expected"].update(notes={"$ref": "nope.notes"}))),
+    Case("配列: 前提・後の状態だけのケース（動的を書かない）も中まで比べる", 0, "作った", ir=arr_ir(arr_no_stamp), impl=ARR_NOSTAMP_IMPL, post=expect_green),
+    Case("配列: 前提・後の状態だけのケースは、順を問わない配列の並びが違う実装でも緑", 0, "作った", ir=arr_ir(arr_no_stamp), impl=ARR_NOSTAMP_REVERSED_TAGS_IMPL,
+         post=expect_green),
+    Case("配列: 前提・後の状態だけのケースは、順を問う配列の並びが違う実装で失敗", 0, "作った", ir=arr_ir(arr_no_stamp), impl=ARR_NOSTAMP_REVERSED_NOTES_IMPL,
+         post=stage_red(2, "notes が [{'title': 'c', 'kind': 'memo'}")),
+    Case("配列: 順を問わない配列は同じ数でも別の要素なら失敗", 0, "作った", ir=arr_ir(), impl=ARR_WRONG_TAG_IMPL, post=stage_red(2, "tags が ['x', 'q']")),
+    Case("配列: 出力に余る項目がある実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_EXTRA_TOP_IMPL, post=stage_red(2, "を返した（期待の項目は")),
+    Case("配列: 動的を 1 つも書かない機能も中まで比べる（並びの違う順を問わない配列で緑）", 0, "作った", ir=arr_ir(arr_plain), impl=ARR_NOSTAMP_REVERSED_TAGS_IMPL,
+         post=expect_green),
+    Case("配列: 順を問う配列の要素が足りない実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_SHORT_NOTES_IMPL, post=stage_red(1, "notes が [{'title': 'a', 'kind': 'task'}, {'title': 'b'")),
+    Case("配列: 順を問う配列の要素が余る実装で失敗", 0, "作った", ir=arr_ir(), impl=ARR_LONG_NOTES_IMPL, post=stage_red(2, "'title': 'z'")),
+    Case("配列: 順を問わない配列は同じ要素を二度数えない", 0, "作った", ir=arr_ir(arr_multiset), impl=ARR_WRONG_MULTISET_IMPL, post=stage_red(1, "tags が ['x', 'y', 'y']")),
+    Case("配列: $any の array は null の要素も形に合う（要素が nullable）", 0, "作った", ir=arr_ir(arr_nullable_any), impl=ARR_NULL_ELEMENT_IMPL, post=expect_green),
+    Case("配列: $any の array は null の要素が nullable でなければ落ちる", 0, "作った",
+         ir=arr_ir(lambda ir: [stage_case(ir, cid)["expected"].update(tags={"$any": "array"}) for cid in ("F-011-C1", "F-011-C2")]), impl=ARR_NULL_ELEMENT_IMPL, post=stage_red(2, "tags が ['x', 'y', None]")),
+    Case("配列: 順を問わない配列の中の順を問う配列の要素にも $any は書けない", 1, "F-011-C1.expected.tags[0][0]: 順を問わない配列（`unordered`）の要素の中には",
+         ir=arr_ir(arr_nested_unordered)),
+    Case("配列: $ref が指す項目と、中の項目の型が違う形", 1, "F-011-C2.after[0].expected.mini.$ref: 指す項目 first.page の形（中の型）が、項目の形と違う",
+         ir=arr_ir(arr_mini)),
+    Case("配列: 後の状態で配列を返す入口を呼ぶ機能（自分の出力は配列を持たない）も中まで比べる", 0, "作った",
+         ir=arr_ir(arr_called_by_discount), impl=ARR_IMPL, post=expect_green),
+    Case("配列: v2 で配列の要素に nullable を足したら変更", 0, "作った", ir=arr_ir(),
+         extra=arr_v2_feature(lambda f: f["operation"]["output"]["tags"]["items"].update(nullable=True)), post=trace_v2_of("F-011", "F-011-C1", "変更")),
+    Case("配列: v2 で配列の項目の中の型を広げたら変更", 0, "作った", ir=arr_ir(),
+         extra=arr_v2_feature(lambda f: f["operation"]["output"]["page"]["properties"]["total"].update(type="number")), post=trace_v2_of("F-011", "F-011-C1", "変更")),
+    Case("配列: v2 で順を問う印を外したら変更", 0, "作った", ir=arr_ir(),
+         extra=arr_v2_feature(lambda f: f["operation"]["output"]["tags"].pop("unordered")), post=trace_v2_of("F-011", "F-011-C1", "変更")),
+    Case("配列: v2 で期待の要素を変えたら変更", 0, "作った", ir=arr_ir(),
+         extra=arr_v2_feature(lambda f: f["cases"][0]["expected"]["notes"][0].update(title="z")), post=trace_v2_of("F-011", "F-011-C1", "変更")),
+    Case("配列: v2 でキーの順だけ変えても Red テストは同じ", 0, "作った", ir=arr_ir(), generate_first=True, pre=plant_arr_reordered_v2, post=arr_v2_kept),
     # #851: 作らないもの
     Case("作らないもの: 範囲の外の行と次の版の候補を写す", 0, "作った", ir=OUT_OF_SCOPE_IR, spec=SCOPE_SPEC, post=not_built_copied),
     Case("作らないもの: 節に無い行", 1, "F-001.out_of_scope: 範囲の文書の「範囲の外」の節に、この行が原文のまま無い",
@@ -2843,6 +3950,58 @@ CASES: list[Case] = [
     # #851: out_of_scope を足すだけでも機能は変更になる（ケースは全部 回帰）。本文の作らないものに写る
     Case("v2 で作らないものだけ足す", 0, "modify 1", spec=SCOPE_SPEC,
          extra=v2([{**copy.deepcopy(IR["features"][0]), "out_of_scope": [SCOPE_ROWS[0]]}]), post=not_built_added_in_v2),
+    # #1301: Red テストにしない受入基準。仕様のケースの内訳（Red テスト・受入基準・どちらにも無い）を出し、書いた行を本文に写す
+    Case("受入基準: 内訳を出し、どちらにも無いケースを名指しする", 0, ACC_COUNT.format(2, 1, 1) + "\n  どちらにも無い: F1-4（spec/order.md:10）",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=ACC_STRAYS, absent="どちらにも無い: F1-3"),
+    Case("受入基準: どちらにも無いケースが 0 件", 0, ACC_COUNT.format(2, 2, 0), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]),
+         spec=ACC_FILES, extra=ACC_STRAYS, absent="どちらにも無い: F"),
+    Case("受入基準: Red テストと重なる行は Red テストに数える", 0, ACC_COUNT.format(2, 2, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[0], ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, extra=ACC_STRAYS),
+    Case("受入基準: 別の機能のケースの ref も数える", 0, ACC_COUNT.format(3, 1, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], f002_ref="F1-4"), spec=ACC_FILES),
+    Case("受入基準: 別の機能の acceptance も数える", 0, ACC_COUNT.format(2, 2, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], f002_acceptance=[ACC_ROWS[3]]), spec=ACC_FILES),
+    Case("受入基準: 何も書かなければ全部がどちらにも無い（Issue の本文は変わらない）", 0,
+         ACC_COUNT.format(0, 0, 4) + "\n  どちらにも無い: F1-1（spec/order.md:7）\n  どちらにも無い: F1-2（spec/order.md:8）",
+         spec=ACC_FILES, extra=ACC_STRAYS, post=acceptance_absent),
+    Case("受入基準: --dry-run も内訳を出す", 0, ACC_COUNT.format(2, 1, 1), args=("--dry-run",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES),
+    Case("受入基準: 行を原文のまま本文に写す", 0, "作った", ir=accepting((), [ACC_ROWS[3], ACC_ROWS[2], ACC_FREE]), spec=ACC_FILES,
+         post=acceptance_copied),
+    Case("受入基準: 番号の無い行は数に入れず、行数を知らせる", 0, "番号の無い受入基準の行 1 件（テストケースの表の行でないので、上の数に入らない）",
+         ir=accepting((), [ACC_FREE]), spec=ACC_FILES, post=acceptance_unnumbered),
+    Case("受入基準: 仕様に無い行", 1, "F-001.acceptance: 機能の source の仕様の原文に、この行が原文のまま無い"
+         "（表の見出し・区切りの行・見出しの行は挙げない）: '| F1-5 | 仕様に無い | 作らない |'",
+         ir=accepting((), ["| F1-5 | 仕様に無い | 作らない |"]), spec=ACC_FILES, pre=plant_old_issues, post=nothing_written),
+    Case("受入基準: 別の機能の仕様の行", 1, "F-001.acceptance: 機能の source の仕様の原文に、この行が原文のまま無い",
+         ir=accepting((), ["| F2-1 | 別の機能 | 返す |"]), spec={**ACC_FILES, "other.md": "# 別\n\n" + ACC_HEADER + "\n| F2-1 | 別の機能 | 返す |\n"}),
+    Case("受入基準: 区切りの行", 1, "この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: '| --- | --- | --- |'",
+         ir=accepting((), ["| --- | --- | --- |"]), spec=ACC_FILES),
+    Case("受入基準: 表の見出しの行", 1, "この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: '| テストケース | 内容 | 期待 |'",
+         ir=accepting((), ["| テストケース | 内容 | 期待 |"]), spec=ACC_FILES),
+    Case("受入基準: 仕様のケースの数に spec/ の外の .md を入れない", 0, ACC_COUNT.format(2, 1, 1), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]),
+         spec=ACC_FILES, extra={str(V1 / "requirements" / "x.md"): ACC_HEADER + "\n| F1-6 | 数えない |\n"}),
+    Case("受入基準: ref の全角も半角と同じ番号に数える", 0, ACC_COUNT.format(1, 0, 3), ir=accepting(("Ｆ1-1",)),
+         spec={"order.md": ACC_SPEC + "\nＦ1-1 を参照\n"}, absent="どちらにも無い: F1-1"),
+    Case("受入基準: 見出しの行", 1, "この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: '## 別の表'",
+         ir=accepting((), ["## 別の表"]), spec=ACC_FILES),
+    Case("受入基準: source が ./ を含む綴りでも表の見出しが付く", 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/./order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]))),
+         spec=ACC_FILES, post=acceptance_dot_source),
+    Case("受入基準: 空の配列", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
+         ir=accepting((), []), spec=ACC_FILES),
+    Case("受入基準: 配列でない", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
+         ir=accepting((), ACC_ROWS[2]), spec=ACC_FILES),
+    Case("受入基準: 重複", 1, "F-001.acceptance: 重複している", ir=accepting((), [ACC_ROWS[2], ACC_ROWS[2]]), spec=ACC_FILES),
+    Case("受入基準: 前後に空白", 1, "F-001.acceptance: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=accepting((), [" " + ACC_ROWS[2]]), spec=ACC_FILES),
+    Case("受入基準: 複数行", 1, "F-001.acceptance: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=accepting((), [ACC_ROWS[2] + "\n" + ACC_ROWS[3]]), spec=ACC_FILES),
+    Case("受入基準: 文字列でない", 1, "F-001.acceptance: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=accepting((), [1]), spec=ACC_FILES),
+    Case("v2 で受入基準だけ足す", 0, "modify 1", spec=ACC_FILES,
+         extra=v2([{**copy.deepcopy(IR["features"][0]), "acceptance": [ACC_ROWS[2]]}]), post=acceptance_added_in_v2),
+    Case("受入基準: 消した機能の本文には小見出しを付けない", 0, "作った", ir=accepting((), None, f002_acceptance=[ACC_ROWS[2]]), spec=ACC_FILES,
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=acceptance_not_in_removal),
     # #855: 課題一覧（案）。案は入口の機能ごと・未決定事項・受入基準の雛形・作らないもの
     Case("課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの", 0, "課題一覧（案）: build/scaffold/issues/proposals.md（案 2 件・未決定事項 4 件）",
          ir=BRANCHES_IR, spec=BRANCH_SPECS, post=proposals_written),
@@ -3271,6 +4430,265 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        return {key: canonical(value[key]) for key in value}", "トレース: v2 でキーの順だけ変えても Red テストは同じ"),
     ("トレースの無い機能にも順の強制を足す", '    traced = any(is_trace(case) for case in feature["cases"])',
      "    traced = True", "トレース: 作る"),
+    # #1298: 入出力のケースの前提・後の状態
+    ("前提・後の状態の検査をしない", '                    problems += check_stage(f"{at}.{SETUP}", case[SETUP], ops, bound)',
+     "                    problems += []", "前提・後の状態: 入口が中間表現に無い"),
+    ("空の前提・後の状態を通す", "    if not isinstance(items, list) or not items:\n        return [f\"{where}: 1 つ以上の呼び出しの配列でない\"]\n    problems = []\n    for index, item in enumerate(items):",
+     "    if not isinstance(items, list):\n        return [f\"{where}: 1 つ以上の呼び出しの配列でない\"]\n    problems = []\n    for index, item in enumerate(items):",
+     "前提・後の状態: setup が空の配列"),
+    ("前提・後の状態の呼び出しの期待を見ない", "check_seed(at, item) if isinstance(item, dict) and SEED in item else check_call(at, item, ops, True, bound)",
+     "check_seed(at, item) if isinstance(item, dict) and SEED in item else check_call(at, item, ops, False, bound)",
+     "前提・後の状態: 期待も error も無い"),
+    ("seed の名前の形を見ない", '    if "seed" in item and (not isinstance(name, str) or not NAME.fullmatch(name)):', "    if False:",
+     "前提・後の状態: seed の名前の形"),
+    ("seed の values が空でも通す", "        if not isinstance(values, dict) or not values:\n            problems.append(f\"{where}.values: 1 つ以上",
+     "        if not isinstance(values, dict):\n            problems.append(f\"{where}.values: 1 つ以上", "前提・後の状態: seed の values が空"),
+    ("seed の項目の名前の形を見ない", "                if not NAME.fullmatch(key):\n                    problems.append(f\"{where}.values: 項目の名前の形",
+     "                if False:\n                    problems.append(f\"{where}.values: 項目の名前の形", "前提・後の状態: seed の項目の名前の形"),
+    ("seed の値の型を見ない", "                if not (value is None or isinstance(value, (str, bool)) or value_fits(\"number\", value)):",
+     "                if False:", "前提・後の状態: seed の値が入れ子"),
+    ("seed と入口のキーの混在を通す", "    problems = keys_problem(where, item, {SEED, \"values\"})", "    problems = []",
+     "前提・後の状態: seed に決まりに無いキー"),
+    ("seed と同じ名前の入口を通す", "        if SEED in operation_ids:", "        if False:", "前提・後の状態: seed と同じ名前の入口"),
+    ("入力の項目 seed を通す", "            if SEED in op_fields(op, \"input\"):", "            if False:", "前提・後の状態: 入力に seed の項目がある入口"),
+    ("seed を書かなくても口の名前を断る", "    if seeded:\n", "    if True:\n", "前提・後の状態: seed を書かなければ同じ名前の入口を使える"),
+    ("前提・後の状態で reset_state と同じ名前の入口を通す", "    elif staged and RESET in operation_ids:", "    elif False:",
+     "前提・後の状態: setup を書いたケースがあるとき入口の名前 reset_state"),
+    ("書かなくても reset_state と同じ名前の入口を断る", "    elif staged and RESET in operation_ids:", "    elif RESET in operation_ids:",
+     "前提・後の状態: 書かなければ入口の名前 reset_state を使える"),
+    ("トレースのケースに前提・後の状態のキーを通す", '                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref"})',
+     '                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref", SETUP, AFTER})',
+     "前提・後の状態: トレースのケースの直下には書けない"),
+    ("状態を空に戻さない", '        "        self.function_of(RESET)()",', '        "        pass",',
+     "前提・後の状態: 正しい実装で緑"),
+    ("終わったら状態を空に戻さない", '        "        self.addCleanup(self.function_of(RESET))",', '        "        pass",',
+     "前提・後の状態: 正しい実装で緑"),
+    ("前提を呼ばない", '        "        for call in setup:",\n        "            self.stage(call)",', '        "        for call in []:",\n        "            self.stage(call)",', "前提・後の状態: 正しい実装で緑"),
+    ("後の状態を比べない", '        "        for call in after:",\n        "            self.stage(call)",', '        "        for call in []:",\n        "            self.stage(call)",',
+     "前提・後の状態: 後の状態を変えない実装で失敗"),
+    ("seed の口を呼ばない", '        f"            self.function_of(SEED)(call[\\"{SEED}\\"], **call[\\"values\\"])",', '        "            pass",',
+     "前提・後の状態: 文書の例の正しい実装で緑"),
+    ("本体を呼ばない", '        "        self.check(given, expected)",', '        "        pass",', "前提・後の状態: 文書の例の正しい実装で緑"),
+    ("前提を持たないケースにも状態の戻しを足す", "            elif is_staged(case):\n                run = (", "            elif True:\n                run = (",
+     "前提・後の状態: 作る"),
+    ("前提・後の状態の無い機能にも口を足す", '    staged = any(is_staged(case) for case in feature["cases"])', "    staged = True",
+     "前提・後の状態: 作る"),
+    ("前提・後の状態のあるトレースの機能で道具を 2 つ足す", "        *(stage_helpers(composite) if traced or staged else []),",
+     "        *(stage_helpers(composite) if staged else []),\n        *(stage_helpers(composite) if traced and staged else []),",
+     "前提・後の状態: トレースのケースと一緒でも作る"),
+    ("本文に口の行を書かない", "if any(is_staged(c) for c in feature[\"cases\"]) else []),", "if False else []),", "前提・後の状態: 作る"),
+    ("seed を書かなくても本文に seed の口を求める", "                  if seeds_used(feature) else \"\")]", "                  if True else \"\")]", "前提・後の状態: 作る"),
+    ("seed を書いても本文に seed の口を求めない", "                  if seeds_used(feature) else \"\")]", "                  if False else \"\")]", "前提・後の状態: 文書の例を作る"),
+    ("前提・後の状態の呼ぶ入口の型を引かない", "    return sorted({name for case in feature[\"cases\"] for name in case_operations(case)})",
+     "    return sorted({name for case in feature[\"cases\"] if is_trace(case) for name in case_operations(case)})",
+     "前提・後の状態: 正しい実装で緑"),
+    ("v2 で前提の変化を見ない", "literal(canonical(expected)), SETUP, repr(canonical(case.get(SETUP, []))),", "literal(canonical(expected)), SETUP, \"\",",
+     "前提・後の状態: v2 で既にある前提の値だけ変えたら変更"),
+    ("v2 で後の状態の変化を見ない", "                AFTER, repr(canonical(case.get(AFTER, []))))", "                AFTER, \"\")",
+     "前提・後の状態: v2 で後の状態を変えたら変更"),
+    ("後の状態が呼ぶ入口の型の変化を機能で見ない", "               for case in feature[\"cases\"] if is_trace(case) or is_staged(case))",
+     "               for case in feature[\"cases\"] if is_trace(case))", "前提・後の状態: v2 で後の状態が呼ぶ入口の型だけ変えたら変更"),
+    ("後の状態が呼ぶ入口の型の変化をケースで見ない", "    if is_staged(case) and trace_shape(old, ops_before or {}) != trace_shape(case, ops_now or {}):",
+     "    if False:", "前提・後の状態: v2 で後の状態が呼ぶ入口の型だけ変えたら変更"),
+    ("前提・後の状態を並べ替えない", "    if isinstance(value, list):\n        return [canonical(item) for item in value]\n",
+     "    if isinstance(value, list):\n        return list(value)\n", "前提・後の状態: v2 でキーの順だけ変えても Red テストは同じ"),
+    # #1299: 実行ごとに変わる出力（$any・$ref・as）
+    ("動的な比べ方の検査をしない", "    if bound is not None and is_dynamic_value(value):", "    if False:", "動的: 作る"),
+    ("期待の検査が束ねた名前を持たない（入力・トレースにも動的を通す）", "    if bound is not None and is_dynamic_value(value):",
+     "    if is_dynamic_value(value):", "動的: トレースの setup には $any を書けない"),
+    ("入力にも動的な比べ方を通す", '                    problems += check_values(f"{at}.input", case["input"], fields_in)',
+     '                    problems += check_values(f"{at}.input", case["input"], fields_in, bound)', "動的: input には $any を書けない"),
+    ("$any の型が項目の型と違っても通す", '    if value[ANY] != field["type"]:', "    if False:", "動的: $any の型が項目の型と違う"),
+    ("$any の型が決まりに無くても通す", "        if value[ANY] not in ALL_TYPES:", "        if False:", "動的: $any の型が決まりに無い"),
+    ("$any と $ref の両方を通す", "    if len(value) != 1:\n        return [f\"{where}: `{ANY}` か", "    if False:\n        return [f\"{where}: `{ANY}` か",
+     "動的: $any と $ref を両方書く"),
+    ("$ref の形を見ない", "    found = REF_FORM.fullmatch(value[REF]) if isinstance(value[REF], str) else None\n    if not found:",
+     "    found = REF_FORM.fullmatch(value[REF]) if isinstance(value[REF], str) else None\n    if False:", "動的: $ref の形"),
+    ("束ねていない名前を指しても通す", "    if name not in bound:", "    if False:", "動的: $ref が束ねていない名前を指す"),
+    ("指す項目が出力に無くても通す", '    if not isinstance(target, dict) or target.get("type") not in ALL_TYPES:', "    if False:",
+     "動的: $ref が出力に無い項目を指す"),
+    ("指す項目の型が違っても通す", '    if target["type"] != field["type"]:', "    if False:", "動的: $ref の型が項目の型と違う"),
+    ("as の名前の形を見ない", "    if not isinstance(name, str) or not NAME.fullmatch(name):\n        return [f\"{where}.{AS}: 名前の形",
+     "    if False:\n        return [f\"{where}.{AS}: 名前の形", "動的: as の名前の形"),
+    ("error の呼び出しの as を通す", "    if \"expected\" not in call:\n        return [f\"{where}.{AS}:", "    if False:\n        return [f\"{where}.{AS}:",
+     "動的: error の呼び出しは束ねられない"),
+    ("as の名前の重なりを通す", "    if name in bound:\n        return [f\"{where}.{AS}:", "    if False:\n        return [f\"{where}.{AS}:", "動的: as の名前が重なる"),
+    ("トレースの呼び出しにも as を通す", '({"expected", "error"} | ({AS} if bound is not None else set()))', '({"expected", "error", AS})',
+     "動的: トレースの setup には as を書けない"),
+    ("seed にも as を通す", "    problems = keys_problem(where, item, {SEED, \"values\"})", "    problems = keys_problem(where, item, {SEED, \"values\", AS})",
+     "動的: seed には as を書けない"),
+    ("トレースのケースの直下にも as を通す", '                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref"})',
+     '                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref", AS})', "動的: トレースのケースの直下には as を書けない"),
+    ("入出力のケースの as を見ない", "                if AS in case:\n                    problems += check_binding(at, case, fields_out, bound)\n                if AFTER in case:",
+     "                if False:\n                    problems += check_binding(at, case, fields_out, bound)\n                if AFTER in case:", "動的: as の名前の形"),
+    ("本体の as を、後の状態を検査した後に束ねる",
+     "                if AS in case:\n                    problems += check_binding(at, case, fields_out, bound)\n                if AFTER in case:\n"
+     "                    problems += check_stage(f\"{at}.{AFTER}\", case[AFTER], ops, bound)\n",
+     "                if AFTER in case:\n                    problems += check_stage(f\"{at}.{AFTER}\", case[AFTER], ops, bound)\n"
+     "                if AS in case:\n                    problems += check_binding(at, case, fields_out, bound)\n", "動的: 作る"),
+    ("後の状態の検査をしない", '                    problems += check_stage(f"{at}.{AFTER}", case[AFTER], ops, bound)',
+     "                    problems += []", "前提・後の状態: 後の期待が型に反する"),
+    ("呼び出しの as を、期待を見る前に束ねる",
+     "        if (\"expected\" in call) == (\"error\" in call):\n            problems.append(f\"{where}: expected と error のちょうど片方だけを書く\")\n"
+     "        elif \"expected\" in call:\n            problems += check_values(f\"{where}.expected\", call[\"expected\"], op_fields(op, \"output\"), bound)",
+     "        if isinstance(call.get(AS), str) and bound is not None:\n            bound.setdefault(call[AS], op_fields(op, \"output\"))\n"
+     "        if (\"expected\" in call) == (\"error\" in call):\n            problems.append(f\"{where}: expected と error のちょうど片方だけを書く\")\n"
+     "        elif \"expected\" in call:\n            problems += check_values(f\"{where}.expected\", call[\"expected\"], op_fields(op, \"output\"), bound)",
+     "動的: $ref が自分自身を指す"),
+    ("動的の無い機能にも動的の道具を足す", '    dynamic = any(is_dynamic(case) for case in feature["cases"])', "    dynamic = True", "動的: 作る"),
+    ("null を許す項目を持たない動的な機能に NULLABLE を足さない", "] if allow_null or dynamic or composite else []),", "] if allow_null else []),", "動的: 作る"),
+    ("動的なケースを動的に比べない", "            if is_dynamic(case):\n                run = (f\"        self.dynamic(",
+     "            if False:\n                run = (f\"        self.dynamic(", "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
+    ("本体の as を渡さない", "{canonical(case.get(AFTER, []))!r}, {case.get(AS)!r})\")", "{canonical(case.get(AFTER, []))!r}, None)\")",
+     "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
+    ("前提・後の状態の呼び出しの動的を数えない", "    calls = [case] + [item for key in (SETUP, AFTER) for item in case.get(key, []) if SEED not in item]",
+     "    calls = [case]", "動的: 後の呼び出しだけが動的なケースも動的に比べる"),
+    ("as を動的と数えない", "    return any(AS in call or any(contains_dynamic(v)", "    return any(any(contains_dynamic(v)", "動的: as だけを書いたケースも動的に作る"),
+    ("$any の型を見ない", '        "                good, shown = nullish or type_fits(want[ANY], got), f\\"型 {want[ANY]}\\"",',
+     '        "                good, shown = True, f\\"型 {want[ANY]}\\"",', "動的: 型の違う値を返す実装で失敗"),
+    ("null を許さない項目の null も型を見ない", '        "            nullish = got is None and name in allow",', '        "            nullish = got is None",',
+     "動的: null を許さない項目が null なら失敗"),
+    ("null を許す項目の null も型を見る", '        "            nullish = got is None and name in allow",', '        "            nullish = False",',
+     "動的: null を許す項目の null は型を見ない"),
+    ("$ref の同一性を見ない", '        "                good = got == env[bound][item] and (nullish or type_fits(types.get(name), got))",',
+     '        "                good = (nullish or type_fits(types.get(name), got))",', "動的: 前に返った値と違う値を返す実装で失敗"),
+    ("$ref の指す項目の型を見ない", '        "                good = got == env[bound][item] and (nullish or type_fits(types.get(name), got))",',
+     '        "                good = got == env[bound][item]",', "動的: 版が真偽値の実装で $ref が落ちる（等しいが型が違う）"),
+    ("動的でない項目の型を見ない", '        "                good, shown = got == want and (nullish or type_fits(types.get(name), got)), repr(want)",',
+     '        "                good, shown = got == want, repr(want)",', "動的: 真偽値を integer の項目に返す実装で失敗"),
+    ("動的でない項目の等しさを見ない", '        "                good, shown = got == want and (nullish or type_fits(types.get(name), got)), repr(want)",',
+     '        "                good, shown = (nullish or type_fits(types.get(name), got)), repr(want)",', "動的: 動的でない項目は等しさで比べる"),
+    ("出力の項目の数を見ない", '\n        "        if not isinstance(actual, dict) or actual.keys() != expected.keys():",',
+     '\n        "        if not isinstance(actual, dict):",', "動的: 期待に無い項目を返す実装で失敗"),
+    ("合わなくても失敗にしない", '        "        if problem is not None:",', '        "        if False:",', "動的: 型の違う値を返す実装で失敗"),
+    ("後の呼び出しの as を束ねない", "        f\"            env[call[AS]] = {'copy.deepcopy' if composite else 'dict'}(actual)\",", '        "            pass",', "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
+    ("本体の as を束ねない", "        f\"            env[bind] = {'copy.deepcopy' if composite else 'dict'}(actual)\",", '        "            pass",', "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
+    ("前提・後の状態が無くても状態を空に戻す", '        "        if setup or after:",', '        "        if True:",',
+     "動的: 状態を空に戻す関数は前提・後の状態を持つケースだけが求める"),
+    ("前提・後の状態があっても状態を空に戻さない", '        "        if setup or after:",', '        "        if False:",',
+     "動的: 状態を空に戻す関数は前提・後の状態を持つケースだけが求める"),
+    ("動的なケースの前提を呼ばない", '        "        for call in setup:",\n        "            self.dynamic_stage(call, env)",',
+     '        "        for call in []:",\n        "            self.dynamic_stage(call, env)",', "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
+    ("動的なケースの後の状態を比べない", '        "        for call in after:",\n        "            self.dynamic_stage(call, env)",',
+     '        "        for call in []:",\n        "            self.dynamic_stage(call, env)",', "動的: 前に返った値と違う値を返す実装で失敗"),
+    ("動的なケースの本体を比べない", '        "        self.agree(f\\"{OPERATION}({given!r})\\", OUTPUT_TYPES, NULLABLE, actual, expected, env)",',
+     '        "        pass",', "動的: 型の違う値を返す実装で失敗"),
+    ("束ねる結果を写さない（後の呼び出し）", "        f\"            env[call[AS]] = {'copy.deepcopy' if composite else 'dict'}(actual)\",", '        "            env[call[AS]] = actual",',
+     "動的: 束ねた結果は写す（実装が返した辞書を後で書き換えても $ref は返った時点の値と比べる）"),
+    ("束ねる結果を写さない（本体）", "        f\"            env[bind] = {'copy.deepcopy' if composite else 'dict'}(actual)\",", '        "            env[bind] = actual",',
+     "動的: 束ねた結果は写す（実装が返した辞書を後で書き換えても $ref は返った時点の値と比べる）"),
+    ("$ref の指した値が null でないのに null を通す", '        "                good = got == env[bound][item] and (nullish or type_fits(types.get(name), got))",',
+     '        "                good = nullish or (got == env[bound][item] and type_fits(types.get(name), got))",',
+     "動的: $ref の指した値が null でないのに null を返す実装で失敗"),
+    ("動的なケースの前提の失敗を期待しない",
+     '        "        expected = call[\\"expected\\"] if \\"expected\\" in call else {\\"error\\": call[\\"error\\"]}",\n        "        self.agree(f\\"{call[\'operation\']}',
+     '        "        expected = call.get(\\"expected\\", {})",\n        "        self.agree(f\\"{call[\'operation\']}',
+     "動的: 動的なケースの前提に失敗を期待する呼び出しを書ける"),
+    ("本体の as を、本体の期待を見る前に束ねる", '                if "input" in case:\n                    problems += check_values(f"{at}.input", case["input"], fields_in)\n',
+     '                if isinstance(case.get(AS), str) and "expected" in case:\n                    bound.setdefault(case[AS], fields_out)\n'
+     '                if "input" in case:\n                    problems += check_values(f"{at}.input", case["input"], fields_in)\n',
+     "動的: $ref が本体の自分自身を指す"),
+    ("動的なケースの seed を呼ばない", '        "            self.function_of(SEED)(call[SEED], **call[\\"values\\"])",', '        "            pass",',
+     "動的: seed を書いた動的なケースは、前提の seed を呼ぶ実装で緑"),
+    # #1300: 配列と入れ子のオブジェクト
+    ("配列の items の中を見ない", '        problems += check_field(f"{at}.items", field["items"])\n', "        pass\n", "配列: 入れ子の型が決まりに無い"),
+    ("オブジェクトの properties の中を見ない", '        problems += check_fields(f"{at}.properties", field["properties"], True, False)\n', "        pass\n",
+     "配列: 入れ子の項目名の形"),
+    ("空の properties を許す", 'check_fields(f"{at}.properties", field["properties"], True, False)', 'check_fields(f"{at}.properties", field["properties"], False, False)',
+     "配列: properties が空"),
+    ("unordered に true 以外を許す", "    for key in (NULLABLE, UNORDERED):\n", "    for key in (NULLABLE,):\n", "配列: unordered は true だけ"),
+    ("オブジェクトに unordered を許す", 'required, optional = {"type", "properties"}, {NULLABLE}', 'required, optional = {"type", "properties"}, {NULLABLE, UNORDERED}',
+     "配列: unordered はオブジェクトに書けない"),
+    ("文字列に unordered を許す", 'required, optional = {"type"}, {"enum", NULLABLE}', 'required, optional = {"type"}, {"enum", NULLABLE, UNORDERED}',
+     "配列: unordered は文字列に書けない"),
+    ("配列に enum を許す", 'required, optional = {"type", "items"}, {NULLABLE, UNORDERED}', 'required, optional = {"type", "items"}, {"enum", NULLABLE, UNORDERED}',
+     "配列: 配列に enum は書けない"),
+    ("文字列に items を許す", 'required, optional = {"type"}, {"enum", NULLABLE}', 'required, optional = {"type"}, {"enum", NULLABLE, "items"}',
+     "配列: 文字列に items は書けない"),
+    ("items を必須にしない", 'required, optional = {"type", "items"}, {NULLABLE, UNORDERED}', 'required, optional = {"type"}, {"items", NULLABLE, UNORDERED}',
+     "配列: items が無い"),
+    ("パスの変数に配列を許す", "        if name in fields and is_composite(fields[name]):", "        if False:", "配列: 配列はパスの変数にできない"),
+    ("配列の要素の値を見ない", '            problems += check_value(f"{where}[{index}]", field["items"], item, bound, inner)\n', "            pass\n",
+     "配列: 期待の要素の型が違う"),
+    ("配列でない値を通す", '        if not isinstance(value, list):\n            return [f"{where}: 型 array でない', '        if False:\n            return [f"{where}: 型 array でない',
+     "配列: 期待の配列が配列でない"),
+    ("オブジェクトでない値を通す", '        if not isinstance(value, dict):\n            return [f"{where}: 型 object でない', '        if False:\n            return [f"{where}: 型 object でない',
+     "配列: 期待のオブジェクトがオブジェクトでない"),
+    ("オブジェクトの中の項目を見ない", '        return check_values(where, value, field["properties"], bound, unordered)\n', "        return []\n",
+     "配列: 期待のオブジェクトに項目が足りない"),
+    ("順を問わない配列の中の動的を許す", "    if bound is not None and is_dynamic_value(value):\n        if unordered:", "    if bound is not None and is_dynamic_value(value):\n        if False:",
+     "配列: 順を問わない配列の要素の中には $any を書けない"),
+    ("順を問わない配列の中の入れ子で順を問わないことを引き継がない", "        inner = unordered or field.get(UNORDERED) is True\n", "        inner = field.get(UNORDERED) is True\n",
+     "配列: 順を問わない配列の中の順を問う配列の要素にも $any は書けない"),
+    ("オブジェクトの中で順を問わないことを引き継がない", '        return check_values(where, value, field["properties"], bound, unordered)\n', '        return check_values(where, value, field["properties"], bound)\n',
+     "配列: 順を問わない配列の要素の中の入れ子にも $any は書けない"),
+    ("形の違う $ref を通す", "    if is_composite(field) and shape_of(target) != shape_of(field):", "    if False:", "配列: $ref が指す項目と形が違う"),
+    ("配列の形に要素を入れない", '        return ("array", shape_of(field["items"]))', '        return "array"', "配列: $ref が指す項目と形が違う"),
+    ("オブジェクトの形に項目を入れない", '        return ("object", tuple((name, shape_of(field["properties"][name])) for name in sorted(field["properties"])))', '        return "object"',
+     "配列: $ref が指す項目と、中の項目の型が違う形"),
+    ("$any の array を決まりに無い型とする", "        if value[ANY] not in ALL_TYPES:", "        if value[ANY] not in TYPES:", "配列: $any の array は中の値を見ない"),
+    ("動的を入れ子の中で数えない", "    if isinstance(value, dict):\n        return any(contains_dynamic(item) for item in value.values())\n    return isinstance(value, list) and any(contains_dynamic(item) for item in value)\n",
+     "    return False\n", "配列: 作る"),
+    ("OpenAPI の配列に items を書かない", 'out = {"type": "array", "items": schema_of(field["items"])}', 'out = {"type": "array"}', "配列: 作る"),
+    ("OpenAPI のオブジェクトに項目を書かない", 'out = object_schema(field["properties"])', 'out = {"type": "object"}', "配列: 作る"),
+    ("types.py の配列を list にしない", '''base = f"list[{py_type(field['items'], name + '_Item', nested)}]"''', 'base = "list"', "配列: 作る"),
+    ("types.py に入れ子の型を書かない", '        nested += typed_dict(name, field["properties"])\n', "        pass\n", "配列: 作る"),
+    ("Red テストの型の記述が順を問う印を持たない", "        if field.get(UNORDERED) is True:\n            out[UNORDERED] = True\n", "        if False:\n            out[UNORDERED] = True\n",
+     "配列: 順を問わない配列は並びが違う実装でも緑"),
+    ("Red テストの型の記述が nullable を持たない", "        out[NULLABLE] = True\n    return out\n", "        pass\n    return out\n", "配列: 要素の nullable は null の要素を許す"),
+    ("Red テストの出力の型を名前のままにする", "types = {name: spec_of(field) if is_composite(field) else field[\"type\"] for name, field in op[\"output\"].items()}",
+     "types = {name: field[\"type\"] for name, field in op[\"output\"].items()}", "配列: 作る"),
+    ("配列を返す入口を呼ぶだけの機能に配列の道具を足さない", "    called = [op] + [ops[name] for name in traced_operations(feature)] if (traced or staged) and ops else [op]\n",
+     "    called = [op]\n", "配列: 後の状態で配列を返す入口を呼ぶ機能（自分の出力は配列を持たない）も中まで比べる"),
+    ("配列を持たない機能に配列の道具を足す", "    composite = any(is_composite(field) for one in called for field in one[\"output\"].values())\n",
+     "    composite = True\n", "配列: 作る"),
+    ("shape_fits が配列の要素を見ない", '    "        return isinstance(value, list) and all(shape_fits(spec[\\"items\\"], item) for item in value)",\n',
+     '    "        return isinstance(value, list)",\n', "配列: $any の array は中の型まで見る（要素の題が整数なら落ちる）"),
+    ("shape_fits がオブジェクトの項目の集合を見ない", '    "        return (isinstance(value, dict) and value.keys() == spec[\\"properties\\"].keys()",\n',
+     '    "        return (isinstance(value, dict) and True",\n', "配列: $any の array は余る項目も落とす"),
+    ("shape_fits がオブジェクトの項目の足りなさを見ない", '    "        return (isinstance(value, dict) and value.keys() == spec[\\"properties\\"].keys()",\n',
+     '    "        return (isinstance(value, dict) and value.keys() <= spec[\\"properties\\"].keys()",\n', "配列: $any の array は足りない項目も落とす"),
+    ("束ねた配列を浅く写す（後の呼び出し）", "        f\"            env[call[AS]] = {'copy.deepcopy' if composite else 'dict'}(actual)\",",
+     '        "            env[call[AS]] = dict(actual)",', "配列: 前提で束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる"),
+    ("束ねた結果を 1 段しか写さない（後の呼び出し）", "        f\"            env[call[AS]] = {'copy.deepcopy' if composite else 'dict'}(actual)\",",
+     "        f\"            env[call[AS]] = {'copy.copy' if composite else 'dict'}(actual)\",", "配列: 束ねた配列の要素を実装が後で書き換えても $ref は返った時点の値と比べる"),
+    ("動的な機能に配列・入れ子が無くても copy を読み込む", '*(["import copy"] if composite and dynamic else []),', '*(["import copy"] if dynamic else []),', "動的: 作る"),
+    ("束ねた配列を浅く写す（本体）", "        f\"            env[bind] = {'copy.deepcopy' if composite else 'dict'}(actual)\",",
+     '        "            env[bind] = dict(actual)",', "配列: 束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる"),
+    ("shape_fits が null を許さない", '    f"        return bool(spec.get({NULLABLE!r}))",\n', '    "        return False",\n',
+     "配列: $any の array は null の要素も形に合う（要素が nullable）"),
+    ("$any を形で見ない", '    "        return shape_fits(spec, got)",\n', '    "        return True",\n', "配列: 入れ子の $any の型が違う実装で失敗"),
+    ("$ref を値で比べない", '    "        return matches(spec, env[bound][item], got, env)",\n', '    "        return shape_fits(spec, got)",\n',
+     "配列: $ref が指した配列と違う配列を返す実装で失敗"),
+    ("null どうしでなくても通す", '    f"        return want is None and got is None and bool(spec.get({NULLABLE!r}))",\n', '    "        return True",\n',
+     "配列: 要素の nullable は null 以外の型の違う値を許さない"),
+    ("配列の長さを見ない", '    "        if not (isinstance(want, list) and isinstance(got, list)) or len(want) != len(got):",\n',
+     '    "        if not (isinstance(want, list) and isinstance(got, list)):",\n', "配列: 順を問う配列の要素が足りない実装で失敗"),
+    ("配列が配列かを見ない", '    "        if not (isinstance(want, list) and isinstance(got, list)) or len(want) != len(got):",\n',
+     '    "        if len(want) != len(got):",\n', "配列: 配列でない値を返す実装で失敗"),
+    ("順を問う配列を順を問わずに比べる", '    f"        if spec.get({UNORDERED!r}):",\n', '    "        if True:",\n', "配列: 順を問う配列の並びが違う実装で失敗"),
+    ("順を問わない配列を順で比べる", '    f"        if spec.get({UNORDERED!r}):",\n', '    "        if False:",\n', "配列: 順を問わない配列は並びが違う実装でも緑"),
+    ("順を問わない配列で同じ要素を二度数える", '    "                del rest[found]",\n', '    "                pass",\n', "配列: 順を問わない配列は同じ要素を二度数えない"),
+    ("順を問わない配列で要素が無くても通す", '    "                if found is None:",\n    "                    return False",\n',
+     '    "                if found is None:",\n    "                    continue",\n', "配列: 順を問わない配列は同じ数でも別の要素なら失敗"),
+    ("オブジェクトの項目の集合を見ない", '    "        if not (isinstance(want, dict) and isinstance(got, dict)) or not want.keys() == got.keys() == props.keys():",\n',
+     '    "        if not (isinstance(want, dict) and isinstance(got, dict)):",\n', "配列: 入れ子のオブジェクトに余る項目がある実装で失敗"),
+    ("入れ子の値の型を見ない", '    "    return got == want and type_fits(kind, got)",\n', '    "    return got == want",\n',
+     "配列: 入れ子の項目の型が違う（4.0 は integer でない）実装で失敗"),
+    ("composite の reason が型の名前を型の記述にしない", '            "            if isinstance(spec, str):",\n', '            "            if False:",\n',
+     "配列: 文書の実装の例で緑（tags の並びは返すたびに違ってよい）"),
+    ("composite の reason が項目の集合を見ない", '            "        if not isinstance(actual, dict) or actual.keys() != expected.keys():",\n',
+     '            "        if not isinstance(actual, dict):",\n', "配列: 出力に余る項目がある実装で失敗"),
+    ("composite の fits が等しさで比べる", '            "        return self.reason(TRACE_TYPES[operation], TRACE_NULLABLE[operation], actual, expected, {}) is None",\n',
+     '            "        return actual == expected",\n', "配列: 前提・後の状態だけのケースは、順を問わない配列の並びが違う実装でも緑"),
+    ("composite の check が等しさで比べる", '''actual, expected, {{}})"] if composite else [''', '''actual, expected, {{}})"] if False else [''',
+     "配列: 前提・後の状態だけのケースは、順を問わない配列の並びが違う実装でも緑"),
+    ("配列を持たない機能の道具の定数を足さない", '*([f"ANY = {ANY!r}", f"REF = {REF!r}"] if dynamic or composite else []),', '*([f"ANY = {ANY!r}", f"REF = {REF!r}"] if dynamic else []),',
+     "配列: 動的を 1 つも書かない機能も中まで比べる（並びの違う順を問わない配列で緑）"),
+    ("配列を返す入口の型を項目名の順に並べない", 'canonical(output_types(ops[name])) if any(is_composite(field) for field in ops[name]["output"].values()) else output_types(ops[name])',
+     "output_types(ops[name])", "配列: v2 でキーの順だけ変えても Red テストは同じ"),
+    ("v2 で配列の中の型の広げを広げと読む", '    return isinstance(was, str) and isinstance(now, str) and (was, now) in WIDENED', '    return (was, now) in WIDENED if isinstance(was, str) else True',
+     "配列: v2 で配列の項目の中の型を広げたら変更"),
     # #876: まとめた本文（--bundle）と依存の連鎖（depends）
     ("まとめない", "        if len(group) == 1:\n", "        if True:\n", "まとめた本文"),
     ("機能の一覧をタスクリストにする", 'f"- `{c.feature[\'id\']}` {cell(', 'f"- [ ] `{c.feature[\'id\']}` {cell(', "まとめた本文"),
@@ -3338,7 +4756,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("仮回答の本文を出力で名指ししない", "    if marked:\n", "    if False:\n", "--provisional で暫定反映を指す"),
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
-    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY, REFS})",
+    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY, REFS, ACCEPTANCE})",
      "性能の要求: 行があれば性能テストと予算"),
     ("性能テストを作らない", "        if rows:\n            contract[f\"{PERF_DIR}/", "        if False:\n            contract[f\"{PERF_DIR}/",
      "性能の要求: 行があれば性能テストと予算"),
@@ -3406,7 +4824,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("表でない行を空の行で区切らない", "            if index and (header is None or header != group[index - 1][1]):",
      "            if index and header is not None and header != group[index - 1][1]:", "作らないもの: 範囲の外の行と次の版の候補を写す"),
-    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, NFR, BRANCHES_KEY, REFS})",
+    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("out_of_scope の検査を呼ばない", "        if OUT_OF_SCOPE in feature:\n            problems += check_out_of_scope",
      "        if False:\n            problems += check_out_of_scope", "作らないもの: 節に無い行"),
@@ -3431,6 +4849,58 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("out_of_scope の複数行を許す", " or not one_line(row) or row != row.strip() for row in picked", " or row != row.strip() for row in picked",
      "作らないもの: 複数行"),
     ("out_of_scope の前後の空白を許す", " or row != row.strip() for row in picked", " for row in picked", "作らないもの: 前後に空白"),
+    # #1301: Red テストにしない受入基準
+    ("acceptance を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})",
+     "受入基準: 行を原文のまま本文に写す"),
+    ("acceptance の検査を呼ばない", "        if ACCEPTANCE in feature:\n            problems += check_acceptance(", "        if False:\n            problems += check_acceptance(",
+     "受入基準: 仕様に無い行"),
+    ("acceptance の空の配列を許す", "    if not isinstance(listed, list) or not listed:", "    if not isinstance(listed, list):", "受入基準: 空の配列"),
+    ("acceptance の重複を許す", "    if len(set(map(str, listed))) != len(listed):", "    if False:", "受入基準: 重複"),
+    ("acceptance の前後の空白を許す", " or row != row.strip() for row in listed", " for row in listed", "受入基準: 前後に空白"),
+    ("acceptance の複数行を許す", " or not one_line(row) or row != row.strip() for row in listed", " or row != row.strip() for row in listed",
+     "受入基準: 複数行"),
+    ("acceptance の仕様に無い行を許す", "for row in listed if row not in lines]", "for row in listed if False]", "受入基準: 仕様に無い行"),
+    ("acceptance の行を表の読み方で絞らない", "    lines = source_lines(sources, whole, rows_only=True)", "    lines = source_lines(sources, whole)",
+     "受入基準: 表の見出しの行"),
+    ("仕様のケースの数に spec/ の外を入れる", "        if parts[0] != SPEC_DIR or not rel", "        if not rel",
+     "受入基準: 仕様のケースの数に spec/ の外の .md を入れない"),
+    ("内訳で ref の全角を半角にそろえない", 'red = {unicodedata.normalize("NFKC", case["ref"]).strip() for', 'red = {case["ref"].strip() for',
+     "受入基準: ref の全角も半角と同じ番号に数える"),
+    ("acceptance を機能の source の外の仕様の行でも許す", "    lines = source_lines(sources, whole, rows_only=True)\n    if lines is None:\n        return []  # source が配列でない",
+     "    lines = source_lines([f\"{SPEC_DIR}/{path.name}\" for path in (whole / SPEC_DIR).glob(\"*.md\")], whole)\n    if lines is None:\n        return []  # source が配列でない",
+     "受入基準: 別の機能の仕様の行"),
+    ("acceptance の小見出しを書かない", '        lines += ["", ACCEPTANCE_HEADING, ""] + acceptance_section(feature, loaded)', "        pass",
+     "受入基準: 行を原文のまま本文に写す"),
+    ("撤去の本文にも acceptance の小見出しを付ける", "    if change.kind != REMOVE and feature.get(ACCEPTANCE):", "    if feature.get(ACCEPTANCE):",
+     "受入基準: 消した機能の本文には小見出しを付けない"),
+    ("acceptance の表の見出しを付けない", "        if header is not None and (index == 0 or header != previous):\n            lines += list(header)",
+     "        if False:\n            lines += list(header)", "受入基準: 行を原文のまま本文に写す"),
+    ("source の綴りを正規化せずに原文を引く", "for rel in feature.get(\"source\", []) if os.path.normpath(rel) in rendered}", "for rel in feature.get(\"source\", []) if rel in rendered}",
+     "受入基準: source が ./ を含む綴りでも表の見出しが付く"),
+    ("acceptance を中間表現の順でなく並べ替える", "for index, text in enumerate(feature[ACCEPTANCE]):", "for index, text in enumerate(sorted(feature[ACCEPTANCE])):",
+     "受入基準: 行を原文のまま本文に写す"),
+    ("acceptance の注意書きを書かない", '    lines = ["下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、', '    lines = ["", "下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、',
+     "受入基準: 行を原文のまま本文に写す"),
+    ("内訳で Red テストを数えない", "    in_red = [n for n in cases if n in red]", "    in_red = []", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("内訳で受入基準を数えない", "    in_acceptance = [n for n in cases if n not in red and n in accepted]", "    in_acceptance = []",
+     "受入基準: どちらにも無いケースが 0 件"),
+    ("内訳で Red テストと重なる行を受入基準にも数える", "    in_acceptance = [n for n in cases if n not in red and n in accepted]",
+     "    in_acceptance = [n for n in cases if n in accepted]", "受入基準: Red テストと重なる行は Red テストに数える"),
+    ("内訳で先頭の機能の ref だけを数える", '    red = {unicodedata.normalize("NFKC", case["ref"]).strip() for feature in features_of(ir) for case',
+     '    red = {unicodedata.normalize("NFKC", case["ref"]).strip() for feature in features_of(ir)[:1] for case',
+     "受入基準: 別の機能のケースの ref も数える"),
+    ("内訳で先頭の機能の acceptance だけを数える", "    for feature in features_of(ir):\n        for text in feature.get(ACCEPTANCE, []):",
+     "    for feature in features_of(ir)[:1]:\n        for text in feature.get(ACCEPTANCE, []):", "受入基準: 別の機能の acceptance も数える"),
+    ("どちらにも無いケースを名指ししない", '    lines += [f"  どちらにも無い: {number}（{cases[number][0]}:{cases[number][1]}）" for number in neither]',
+     "    pass", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("番号の無い受入基準の行を知らせない", "    if unnumbered:\n", "    if False:\n", "受入基準: 番号の無い行は数に入れず、行数を知らせる"),
+    ("仕様のケースの数に .md でないファイルを入れる", ' or not rel.endswith(".md") or any(part.startswith(".")', ' or any(part.startswith(".")',
+     "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("仕様のケースの数に形式検査のモデルを入れる", " or versions.is_formal(rel):\n            continue\n        try:\n            text = rendered[rel]",
+     ":\n            continue\n        try:\n            text = rendered[rel]", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("内訳を読み込まない", "    loaded.coverage = coverage_lines(rendered, ir)", "    loaded.coverage = []", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("内訳を出力しない", "    for line in loaded.coverage:\n        # 仕様のテストケースの内訳（#1301）——止めずに知らせる\n        print(line)\n",
+     "", "受入基準: --dry-run も内訳を出す"),
     # #855: 呼ぶ側の分岐と課題一覧（案）
     ("課題一覧（案）を作らない", "    issues[PROPOSALS] = proposals(changes, loaded, contract)\n", "",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
@@ -3458,7 +4928,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("案が無いことを書かない", "    if not entries:\n", "    if False:\n", "課題一覧（案）: v2 で機能を消すだけなら案は無い"),
     ("案の件数を出さない", "（案 {len(entries)} 件", "（案 {len(changes)} 件", "課題一覧（案）: 呼ばれる関数には案を作らない"),
-    ("branches を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, OUT_OF_SCOPE, NFR, REFS})",
+    ("branches を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, OUT_OF_SCOPE, NFR, REFS, ACCEPTANCE})",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("branches の検査を呼ばない", "        if BRANCHES_KEY in feature:\n            problems += check_branches",
      "        if False:\n            problems += check_branches", "呼ぶ側の分岐: 原文に無い行"),
@@ -3478,7 +4948,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("原文の前後の空白を許す", " or not one_line(text) or text != text.strip():", " or not one_line(text):", "呼ぶ側の分岐: 前後に空白"),
     ("原文が在ることを見ない（分岐）", "for at, text in good if text not in lines]", "for at, text in good if False]",
      "呼ぶ側の分岐: 原文に無い行"),
-    ("原文の行の前後の空白を落とさない", "lines |= {line.strip() for line in", "lines |= {line for line in",
+    ("原文の行の前後の空白を落とさない", "found = [line.strip() for line in", "found = [line for line in",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("source の 1 つ目しか読まない", "            continue  # 読めない原文は source の検査と未決定の印の関門が言う\n    return lines",
      "            continue  # 読めない原文は source の検査と未決定の印の関門が言う\n        break\n    return lines",
@@ -3568,8 +5038,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("真偽値を整数に数える", "        return isinstance(value, int) and not isinstance(value, bool)",
      "        return isinstance(value, int)", "整数に真偽値"),
     ("有限を見ない", " and math.isfinite(value)", "", "number に Infinity"),
-    ("enum を見ない", '        elif isinstance(field.get("enum"), list) and value not in field["enum"]:',
-     "        elif False:", "enum に無い値"),
+    ("enum を見ない", '    if isinstance(field.get("enum"), list) and value not in field["enum"]:',
+     "    if False:", "enum に無い値"),
     ("入力の過不足を見ない", "    for name in sorted(fields.keys() - values.keys()):", "    for name in []:", "入力の項目が足りない"),
     ("片方だけを見ない", '            if ("expected" in case) == ("error" in case):', "            if False:", "期待とエラーの両方"),
     ("予約語を許す", "        if not NAME.fullmatch(name) or keyword.iskeyword(name):", "        if not NAME.fullmatch(name):",
@@ -3585,26 +5055,26 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("未実装で fail しない", 'MISSING_FAIL = "            self.fail(f\\"未実装: {IMPL_MODULE}.{OPERATION} が無い\\")"', 'MISSING_FAIL = "            pass"',
      "関数の無い実装でも失敗する"),
     ("期待を比べない", '"        self.assertEqual(actual, expected)",', '"        self.assertIsNotNone(actual)",', "誤った実装で失敗する"),
-    ("nullable に true 以外を許す", "if NULLABLE in field and field[NULLABLE] is not True:",
-     "if NULLABLE in field and field[NULLABLE] is None:", "nullable が false"),
-    ("null を許す項目にも null を拒む", "        if value is None and nullable(field):\n            continue",
-     "        if False:\n            continue", "null を許す項目"),
-    ("null を許さない項目にも null を許す", "        if value is None and nullable(field):\n            continue",
-     "        if value is None:\n            continue", "null を許さない出力に null を期待する"),
-    ("null を許す項目の型を見ない", "        if value is None and nullable(field):\n            continue",
-     "        if nullable(field):\n            continue", "null を許す項目に型の違う値"),
+    ("nullable に true 以外を許す", "        if key in field and field[key] is not True:",
+     "        if key in field and field[key] is None:", "nullable が false"),
+    ("null を許す項目にも null を拒む", "    if value is None and nullable(field):\n        return []",
+     "    if False:\n        return []", "null を許す項目"),
+    ("null を許さない項目にも null を許す", "    if value is None and nullable(field):\n        return []",
+     "    if value is None:\n        return []", "null を許さない出力に null を期待する"),
+    ("null を許す項目の型を見ない", "    if value is None and nullable(field):\n        return []",
+     "    if nullable(field):\n        return []", "null を許す項目に型の違う値"),
     ("パスの変数の nullable を見ない", "        if name in fields and nullable(fields[name]):", "        if False:",
      "パスの変数を nullable にする"),
     ("OpenAPI の型に null を足さない", '        out["type"] = [field["type"], "null"]', "        pass", "null を許す項目"),
     ("OpenAPI の enum に null を足さない", '            out["enum"] = field["enum"] + [None]', "            pass",
      "null を許す項目"),
-    ("型に None を足さない", 'return name + " | None" if nullable(field) else name', "return name", "null を許す項目"),
+    ("型に None を足さない", 'return base + " | None" if nullable(field) else base', "return base", "null を許す項目"),
     ("Red テストが null を型の検査から外さない",
      '*(["            if value is None and name in NULLABLE:", "                continue"] if allow_null else []),', "",
      "null を返す正しい実装で緑"),
     ("Red テストが null を許す項目の型を見ない", '"            if value is None and name in NULLABLE:"',
      '"            if name in NULLABLE:"', "null を許す整数の項目に真偽値を返す実装で失敗する"),
-    ("null を許す項目の無い機能にも NULLABLE を書く", '*([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null else []),',
+    ("null を許す項目の無い機能にも NULLABLE を書く", '*([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null or dynamic or composite else []),',
      'f"NULLABLE = {tuple(allow_null)!r}",', "null を許す項目を書かない生成物は変わらない"),
     ("型を見ない", '"            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",', '"            self.assertTrue(True,",',
      "型の違う実装で失敗する"),
@@ -3671,8 +5141,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '    return 0, str(int(case["id"].rsplit("C", 1)[1]))', "桁の多いケースの id"),
     ("版を値だけで比べる", '    if type(ir.get("spec_ir_version")) is not int or', '    if isinstance(ir.get("spec_ir_version"), bool) or',
      "版が 1.0"),
-    ("enum の重複を文字列で数える", "            elif any(a == b for i, a in enumerate(enum) for b in enum[i + 1:]):",
-     "            elif len({json.dumps(v) for v in enum}) != len(enum):", "enum の 1 と 1.0"),
+    ("enum の重複を文字列で数える", "        elif any(a == b for i, a in enumerate(enum) for b in enum[i + 1:]):",
+     "        elif len({json.dumps(v) for v in enum}) != len(enum):", "enum の 1 と 1.0"),
     ("真偽値をどの型にも合うとする", '"        return kind == \\"boolean\\"",', '"        return True",',
      "真偽値を整数の項目に返す実装で失敗する"),
     ("型の名前の衝突を見ない", "                elif pascal(oid) in type_names:", "                elif False:", "型の名前が潰れる"),
@@ -3687,8 +5157,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("整数を isfinite に渡す", "        return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))",
      "        return math.isfinite(value) and isinstance(value, (int, float))", "number に桁の大きい整数"),
     ("エラーのケースで error を期待しない",
-     '            expected = case["expected"] if "expected" in case else {"error": case["error"]}\n            run',
-     '            expected = case.get("expected", {})\n            run', "正しい実装で緑"),
+     '            expected = case["expected"] if "expected" in case else {"error": case["error"]}\n            if is_dynamic(case):',
+     '            expected = case.get("expected", {})\n            if is_dynamic(case):', "正しい実装で緑"),
     ("ケースを 1 つしか作らない", '    for case in sorted(feature["cases"], key=case_order):\n        refs',
      '    for case in sorted(feature["cases"], key=case_order)[:1]:\n        refs',
      "Red テストが失敗する"),
@@ -3714,10 +5184,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("前の版と比べない", "    if number == 1:\n        return 0, [], [Change(ADD", "    if True:\n        return 0, [], [Change(ADD",
      "v2 で機能を変える"),
     ("削除を変更と書く", "diffs.REMOVED: REMOVE}", "diffs.REMOVED: MODIFY}", "v2 で機能を消す"),
-    ("ケースの期待の違いを見ない", "literal(case[\"input\"]), literal(expected)\n", "literal(case[\"input\"])\n",
+    ("ケースの期待の違いを見ない", "literal(canonical(case[\"input\"])), literal(canonical(expected))\n", "literal(canonical(case[\"input\"]))\n",
      "v2 で機能を変える"),
-    ("題だけの違いを変化に数える", "literal(case[\"input\"]), literal(expected)\n",
-     "literal(case[\"input\"]), literal(expected), case[\"title\"]\n", "v2 でケースを足し・消し・題を変える"),
+    ("題だけの違いを変化に数える", "literal(canonical(case[\"input\"])), literal(canonical(expected))\n",
+     "literal(canonical(case[\"input\"])), literal(canonical(expected)), case[\"title\"]\n", "v2 でケースを足し・消し・題を変える"),
     ("消したケースを書かない", "    if gone:\n", "    if False:\n", "v2 でケースを足し・消し・題を変える"),
     ("再現コマンドに版を書かない", 'command = f"merge-versions.py {DOCS} {MERGED_DIR} --upto {number}"',
      'command = f"merge-versions.py {DOCS} {MERGED_DIR}"', "v3 を足しても本文の指紋が合う"),
@@ -3783,7 +5253,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "if loaded.number > 1 else", "凍結した前の版が崩れている"),
     # `check_qa_refs` の状態の行（`は状態が {state}`）は、今の版では関門が、前の版では `unsettled_qa` が先に止めるので
     # 届かない——変異を入れても殺せない（等価変異）。守りとして残すが変異には入れない（#361）
-    ("期待に無い項目の型も見る", "not in WIDENED for name in expected)", "not in WIDENED for name in now)",
+    ("期待に無い項目の型も見る", "and not widened(was.get(name), now.get(name)) for name in expected)", "and not widened(was.get(name), now.get(name)) for name in now)",
      "Red の状態: v2 で出力の項目を足す"),
     ("型を広げたのを変化に数える", 'WIDENED = {("integer", "number")}', "WIDENED = set()", "Red の状態: v2 で型を広げる"),
     ("impl_module の変化を見ない", "    if before.impl_module != loaded.ir.get(", "    if False and before.impl_module != loaded.ir.get(",
@@ -4012,8 +5482,14 @@ def main() -> int:
         methods, types = table_cells(ir_ref, "### メソッド"), table_cells(ir_ref, "### 項目")
         check("METHODS が references/spec-ir.md の表と違う", list(constant(source, "METHODS") or ()) == methods,
               f"{constant(source, 'METHODS')} vs {methods}")
-        check("TYPES が references/spec-ir.md の表と違う", list(constant(source, "TYPES") or ()) == types,
-              f"{constant(source, 'TYPES')} vs {types}")
+        check("TYPES・COMPOSITE が references/spec-ir.md の表と違う", list(constant(source, "TYPES") or ()) + list(constant(source, "COMPOSITE") or ()) == types,
+              f"{constant(source, 'TYPES')} {constant(source, 'COMPOSITE')} vs {types}")
+        # 配列と入れ子のオブジェクトの書き方（#1300）——原本は spec-ir.md の「配列と入れ子のオブジェクト」
+        arr = arr_section()
+        check("UNORDERED が references/spec-ir.md の「配列と入れ子のオブジェクト」の書き方と違う",
+              f'"{constant(source, "UNORDERED")}": true' in arr and f"`{constant(source, 'UNORDERED')}`" in arr, arr[:400])
+        check("試料の実装の例が references/spec-ir.md の python のブロックでない（文書の実装を生成に通していない）",
+              arr_python() in ARR_IMPL and "list_notes" in ARR_IMPL)
         check("references からメソッド・型を読めない（読み方が壊れている）", len(methods) >= 3 and len(types) >= 3,
               f"{methods} {types}")
         # 呼ぶ側の分岐の名前（#855）——中間表現の原本は spec-ir.md の表
@@ -4024,8 +5500,21 @@ def main() -> int:
               f"{ALL_BRANCHES} vs {branch_names}")
         # トレースのケースが実装に求める口（#923）——原本は spec-ir.md の「実装に求める口」の表。待つ時間も原本の文と一致する
         ports = table_cells(ir_ref, "### 実装に求める口")
-        check("CHECKPOINT, RESET が references/spec-ir.md の実装に求める口の表と違う",
-              ports == [constant(source, "CHECKPOINT"), constant(source, "RESET")], f"{ports}")
+        check("CHECKPOINT, RESET, SEED が references/spec-ir.md の実装に求める口の表と違う",
+              ports == [constant(source, "CHECKPOINT"), constant(source, "RESET"), constant(source, "SEED")], f"{ports}")
+        # 入出力のケースの前提・後の状態のキー（#1298）——原本は spec-ir.md のテストケースの表
+        case_keys = table_cells(ir_ref, "## テストケース（`cases` の要素）")
+        check("SETUP, AFTER が references/spec-ir.md のテストケースの表と違う",
+              constant(source, "SETUP") in case_keys and constant(source, "AFTER") in case_keys, f"{case_keys}")
+        # 実行ごとに変わる出力の書き方（#1299）——原本は spec-ir.md の「実行ごとに変わる出力」の表とテストケースの表
+        check("AS が references/spec-ir.md のテストケースの表と違う", constant(source, "AS") in case_keys, f"{case_keys}")
+        dyn = dyn_section()
+        check("ANY, REF が references/spec-ir.md の「実行ごとに変わる出力」の表と違う",
+              f'{{"{constant(source, "ANY")}": "<型>"}}' in dyn and f'{{"{constant(source, "REF")}": "<名前>.<項目>"}}' in dyn, dyn[:400])
+        check("試料の実装の例が references/spec-ir.md の python のブロックでない（文書の実装を生成に通していない）",
+              dyn_python() in DYN_IMPL and "next(_numbers)" in DYN_IMPL)
+        check("試料の実装が seed の口の名前を使っていない（口の名前の変異を試料が判別しない）",
+              f"def {constant(source, 'SEED')}(name, /, **values):" in DOC_IMPL)
         check("TRACE_STEP_WAIT・TRACE_LIMIT が references/spec-ir.md の「Red テストが確かめること」と違う",
               f"（1 段 {constant(source, 'TRACE_STEP_WAIT')} 秒）" in ir_ref and f"（上限 {constant(source, 'TRACE_LIMIT')} 秒。" in ir_ref)
         check("試料の実装が口の名前を使っていない（口の名前の変異を試料が判別しない）",

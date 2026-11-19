@@ -920,8 +920,9 @@ def check_auth(stack, env, present=False, ancestor=None):
     return [(HUMAN if present else ACTION, label,
              "対話ログインの OAuth で起動している（起動した claude の環境にも CLAUDE_CODE_OAUTH_TOKEN が無い）"
              "——アクセストークンは 8 時間で切れ、更新に失敗すると 401 で止まる",
-             f"長期トークンで回すなら: 別の端末で bash {LAUNCHER} --store-token（入れる・入れ替える）→"
-             f" このセッションを終えて bash {LAUNCHER} で起動し直す（入れ方: {TOKEN_PAGE}）")]
+             f"長期トークンで回すなら: このセッションを終え、Claude Code の外の端末で bash {LAUNCHER} \"/dev-loop:cruise <親> [--absent]\" と打って起動し直す"
+             "（キーチェーンに未登録なら、別のタブで claude setup-token を走らせ、その場の入力に表示されたトークンを貼る——登録してから起動する。"
+             f"入れ替えるだけなら --store-token。版を含まない短い起動口は bash {LAUNCHER} --install-launcher で置く。入れ方: {TOKEN_PAGE}）")]
 
 
 def human_items(stack):

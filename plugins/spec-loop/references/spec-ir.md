@@ -47,6 +47,7 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 | `cases` | テストケースの配列（1 つ以上）。**1 ケースが Red テスト 1 本になる** |
 | `called_by` | （任意）**この機能が他の機能から呼ばれる判定の関数なら**、呼ぶ機能の `id` の配列（1 つ以上）。下の「呼ばれる機能」 |
 | `out_of_scope` | （任意）**この機能に関わる範囲の外の行**の原文の配列（1 つ以上）。下の「作らないもの」 |
+| `acceptance` | （任意）**関数の 1 回の呼び出しでは表せず、Red テストにしないケース**の、仕様の行の原文の配列（1 つ以上）。下の「Red テストにしない受入基準」 |
 | `nfr` | （任意）**この機能に効く性能の要求**——`shared/nfr.csv` の行の `No` の配列（1 つ以上）。下の「性能の要求」 |
 | `branches` | （任意）**この機能の呼ぶ側の分岐**——分岐の名前から、見せるもの（`shows`）か該当なし（`none`）の仕様の原文への対応。下の「呼ぶ側の分岐」 |
 | `refs` | （任意）**この機能に関係する参考資料**——UI モック・業務フローの図・画面遷移の図など、`requirements/` の中のファイルのパスの配列（1 つ以上）。下の「参考資料」 |
@@ -82,6 +83,61 @@ python3 <spec-loop の base ディレクトリ>/scripts/scaffold.py --repo <正�
 - **どの行が関わるかは書き起こす側の判断**で、機械は原文が在ることだけを見る——関わらない行を挙げても、関わる行を落としても通る。
   **範囲の文書に無い場面を足さない**（足したくなったら `spec-review` に戻して範囲の文書に書く）。
 - **`out_of_scope` を v2 で足す・変える・外すだけでも、その機能は変更になる**（機能のオブジェクトが変わる。ケースは全部 `回帰`。`called_by` と同じ）。
+
+## Red テストにしない受入基準（`acceptance`。#1301）
+
+**画面の振る舞い・障害・同時・時間のケースは、関数の 1 回の呼び出し（`input` → `expected`）では表せない。** 表せないケースを書き起こさなければ、
+**この JSON に書いていないことは生成物にも Issue にも現れない**ので、仕様レビューで確かめたケースの大半が開発に渡らない。
+そのケースを、機能の `acceptance` に**仕様の行の原文のまま**並べる——Issue の本文の `## 受入基準` の中の `### Red テストにしない受入基準` に写る
+（`handoff-issue.md` の「Red テストにしない受入基準」）。**Red テストにはならない**——確かめるのは dev-loop の周で、確かめる手段が無ければ dev-loop は縮退の線のとおり BLOCKED にする
+（dev-loop の規定は変えない）。
+
+```json
+"acceptance": ["| F1-7 | 注文確定の画面で確定を 2 回押す | 注文は 1 件だけ作られ、2 回目の押下は無視される |"]
+```
+
+- **原文のまま書く**——機能の `source` の仕様のファイルの 1 行と、前後の空白を落として一致する文字列。表の行なら本文の 1 行をそのまま（**表の見出しと区切りの行は挙げない**——本文には生成のスクリプトが表の見出しを付ける）。
+  **要約・言い換え・複数行は書かない。** 仕様の行を直したら、ここも同じ文字列に直す（直さなければ生成のスクリプトが止まる）。**見出しの行（`#`）・表の見出しの行・区切りの行は挙げられない**（`out_of_scope` と同じ読み方で除く）。
+- **1 つ以上・重複させない。** 関わるケースが無い機能には書かない（本文にこの小見出しは出ない）。
+- **どの行を Red テストにせず `acceptance` に並べるかは書き起こす側の判断**で、機械は原文が在ることだけを見る。**仕様に無いケースを足さない**
+  （足したくなったら `spec-review` に戻して仕様のテストケースに書く）。
+- **仕様のケースの数え方は、テストケースの番号の形（`spec-exit.md` の「テストケースの番号の重複」。`CASE_NUMBER`・`CASE_HEADER`）と同じ**——仕様（`spec/`）の `.md` の、見出しがテストケースの表の表のデータ行の先頭のセルが番号である。
+  **`acceptance` に並べた行がその表の行なら、先頭のセルの番号のケースが受入基準になる。** **ケースの `ref`（上の「テストケース」）が番号と一致すれば Red テストになる。**
+- **生成のスクリプトは、仕様のケースの内訳を出す**——`仕様のテストケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件`。**Red テストと受入基準の両方に当たるケースは Red テストに数える。**
+  **どちらにも無いケースは、番号と出た場所（`ファイル:行`）を全部名指しする**（1 件でもあれば名指しし、0 件なら `どちらにも無い 0 件` と出る）。**止めない**（終了コードは変わらない）——
+  Red テストにする（ケースの `ref` に番号を書く）か、`acceptance` に並べるか、仕様から外すかは書き起こす側が決める。
+  **数えるのは重ね合わせた全体の仕様のケース全部**で、機能ごとには数えない。`ref` を書いていない Red テストのケースは数えない（仕様のケースと結べない）。
+  番号の形に当たらない行（`acceptance` に並べても、番号の無い行）は内訳の数に入らず、出力にその行数だけを書く。
+- **`acceptance` を v2 で足す・変える・外すだけでも、その機能は変更になる**（機能のオブジェクトが変わる。ケースは全部 `回帰`。`out_of_scope` と同じ）。
+  **`acceptance` を書かない中間表現の生成物（Issue の本文・`scaffold/`）は、この決まりを足す前と同じバイトである**（出力に内訳の 1 行が足されるだけ）。
+
+## 書き起こす前の見積もり（#1302）
+
+**中間表現を書き起こす前に、仕様のテストケースを 3 つに分けて数え、利用者に示して続けるかを確かめる**（`scaffold` スキルの手順 1a）。
+#1296 では、仕様のケースのほとんどが中間表現に乗らないことに**書き起こしの途中で**気づいた——乗らない割合は、書き起こす前に分かる。
+
+| 区分（`class`） | 意味 | 書き起こしたときの行き先 |
+| --- | --- | --- |
+| `red` | **Red テストにできる**——関数の 1 回の呼び出し（`input` → `expected`）か、この文書の形のどれかで書ける: 前提と後の状態（`setup`・`after`・`seed`。#1298）・実行ごとに変わる出力（`$any`・`$ref`。#1299）・配列と入れ子のオブジェクト（#1300）・トレースのケース（`trace`。#923） | ケースの `ref` に番号を書く |
+| `acceptance` | **Red テストにできず、受入基準に回す**——画面の振る舞い・障害・同時・時間など、上の形でも書けない（#1301） | 機能の `acceptance` に行を原文のまま並べる |
+| `neither` | **どちらにもできない**——期待が書かれていない・書いてあることが決まっていない・番号の行が仕様の別の行と食い違う、など、**仕様のほうを決めないと書き起こせない** | 書き起こさない——`/spec-loop:spec-review` に戻して仕様で決めるか、仕様から外す（`neither` は利用者と決める） |
+
+- **どれに分けるかは書き起こす側（スキル）の判断**で、**分けた理由を `acceptance`・`neither` の `reason` に 1 行で書く**。機械は決めない——
+  **「乗る割合」は Red テスト + 受入基準（開発に渡るケース）の割合で、Red テストだけの割合も併記する。**
+  機械で決まるのは、仕様のケースの一覧（`scaffold-estimate.py list`。番号の形は「Red テストにしない受入基準」と同じ）と、
+  分け方の**形と網羅**（`scaffold-estimate.py check`。全ケースを 1 つずつ分けたか・仕様に無い番号を分けていないか）と、分けたとおりの**件数と割合**である。
+- **見積もりのファイルは `build/scaffold-estimate.json`**（正本の中の `build/`。commit しない。形は `scaffold-estimate.py` の docstring）。
+- **結果（分けた件数・乗る割合・どちらにもできないケースの番号と場所）を利用者に示し、続けるかを確かめてから、中間表現の書き起こしに入る。**
+  **どちらにもできないケースが 1 件でもあれば、それを名指しして、書き起こす前に決める**——書き起こしの後の内訳（`scaffold.py` の「どちらにも無い」）に初めて現れるのと違い、
+  書き起こす前なら、仕様に戻す・外すがまだ安い。
+- **止める割合の線（閾値）は決めていない。** 割合に依らず、結果は毎回利用者に示して続けるかを確かめる。理由は 3 つ:
+  - **根拠になる実測が 1 点しかなく、今の定義では 0 点**——#1296 の実測は、1 案件（636 件）の 1 ファイル（113 件）を試して、素直に書けた（Red テストにできた）のが 15 件（13%）という値で、
+    #1298〜#1301 で書ける形を足す前の、Red テストだけの割合である。この節の「乗る割合」（Red テスト + 受入基準）で測った値は手元に無く、分布も持たない。数字を決めれば、その下は止まり、上は素通りになる。
+  - **線を引いても、示すかどうかが変わるだけ**——示して確かめる操作は軽く、線の上で素通りして書き起こしの途中で気づく形（#1296）をまた作る。
+  - **Red テストだけの割合は仕様の性質で変わる**（画面中心の仕様は低く、計算中心の仕様は高い）ので、その割合に一律の線を引くと、どちらかの仕様で誤る。
+    受入基準まで含めた乗る割合（1 −『どちらにもできない』の割合）には、この理由は当たらない——線を引かない理由は上の 2 つ（実測が無い・示すかどうかが変わるだけ）である。——一律の線は、どちらかの仕様で誤る。
+  実案件で見積もりと書き起こしの後の内訳を比べ、線を引ける形が見えたら、このファイルに根拠と一緒に書く。
+- **見積もりと書き起こしの後の内訳は突き合わせない**（`scaffold.py` の内訳は `ref` と `acceptance` から数える。見積もりは判断の記録で、機械は照合しない）。
 
 ## 性能の要求（`nfr`。#852）
 
@@ -228,6 +284,7 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 `{"<項目名>": {"type": "<型>", "enum": [...], "nullable": true}}` の形。項目名は英小文字で始まり、英小文字・数字・`_` だけで、Python の予約語は使わない。
 `enum` は省いてよく、書くなら 1 つ以上の値を、その型で、重複させずに並べる。
 `nullable` も省いてよく、書くなら `true` だけ（下の「null を許す項目」）。
+**配列と入れ子のオブジェクトも型にできる**（下の「配列と入れ子のオブジェクト」。#1300）。
 
 | 型 | 値 |
 | --- | --- |
@@ -235,8 +292,8 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 | `integer` | 整数（`true`・`false` は整数に数えない） |
 | `number` | 数（整数でもよい。`true`・`false`・`NaN`・`Infinity` は数に数えない） |
 | `boolean` | `true`・`false` |
-
-**入れ子のオブジェクト・配列は、いまは持たない。** 要るなら、この決まりを先に広げる。
+| `array` | 値の並び（0 件でもよい）。要素の項目を `items` に書く。順を問うかは `unordered` で書き分ける（下の「配列と入れ子のオブジェクト」） |
+| `object` | 名前つきの値。項目を `properties` に書く |
 
 ### null を許す項目（#487）
 
@@ -250,6 +307,106 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 - 生成物では、OpenAPI の schema の `type` が `["<型>", "null"]` になり（`enum` があれば `enum` の最後に `null` を足す）、
   `types.py` の型は `null` を許さないときの型の後ろに ` | None` を足したもの（`str | None`。`enum` があれば `Literal['a', 'b'] | None`）になる。Red テストは、その出力の項目が `None` のときだけ型を見ない（`None` 以外の値の型は今までどおり見る）。
 
+## 配列と入れ子のオブジェクト（#1300）
+
+**一覧を返す入口（「起点 O で読むと 3 件だけ返る」）や、入れ子の応答（ページの情報）は、項目の型に配列と入れ子のオブジェクトを書いて表す。**
+
+```
+{"type": "array", "items": <項目>, "unordered": true, "nullable": true}
+{"type": "object", "properties": {"<項目名>": <項目>, …}, "nullable": true}
+```
+
+- **`items`**（配列。要る）は要素の項目、**`properties`**（オブジェクト。要る・1 つ以上）は項目名から項目への対応。**中の項目も上の「項目」と同じ決まり**——`string`・`integer`・`number`・`boolean`（`enum`・`nullable` を書いてよい）か、
+  さらに入れ子の配列・オブジェクト。項目名の形も同じ。
+  **`enum` は `string`・`integer`・`number`・`boolean` の項目にだけ書ける**（配列・オブジェクトには書けない）。**`nullable` は配列・オブジェクト・要素・中の項目のどれにも書ける**（`true` だけ）。
+- **値**: 配列は JSON の配列で、要素は `items` の決まりに合う。オブジェクトは、**`properties` の項目をちょうど全部**、その型で持つ（`input`・`expected` の項目と同じ）。
+- **順を問う・問わない**: **配列は既定で順を問う**——Red テストは、同じ位置の要素どうしを比べる。**`"unordered": true` を書いた配列は順を問わない**——同じ要素が同じ数だけあれば合う
+  （並びだけが違う実装も緑になる）。`true` だけを書く（順を問うなら省く。`nullable` と同じ）。**配列にだけ書ける**。
+  `unordered` は、その配列の並びだけに掛かる——要素が配列（入れ子）なら、中の配列は自分の `unordered` に従う。**入力（`input`）の項目に書いても、何も変わらない**（Red テストは入力を書いた順のまま渡す）。
+- **`nullable` との組み合わせ**: 配列・オブジェクトの項目が `nullable` なら、`null` か、その型の値。要素を `null` にしたいときは `items` に `nullable` を書く。`null` と空の配列・空でないオブジェクトは別の値。
+- **`$any`・`$ref`（上の「実行ごとに変わる出力」）との組み合わせ**:
+  - **`$any`** は、配列・オブジェクトの中の値（要素・中の項目の値）にも、配列・オブジェクトの項目の値そのものにも書ける。型は**書く場所の項目の型**と同じで、`array`・`object` も書ける
+    （配列・オブジェクトの `$any` は、値を見ずに**形——中の型と `nullable`——に合うか**を見る）。
+  - **`$ref`** も同じ場所に書ける。**指すのは `as` で束ねた結果の出力の項目**（一番外の項目）で、**指す項目の形と書く場所の項目の形が同じ**でなければ生成が止まる（形は、中の型と要素・項目の構成。`nullable`・`enum`・`unordered` の違いは問わない）。
+    **比べるときの順は、書く場所の項目の `unordered` に従う**。
+  - **順を問わない配列（`unordered`）の要素の中には、`$any`・`$ref` を書けない**——どの要素に当たるかが決まらない（生成が止まる。順を問うなら書ける）。
+    配列の項目そのものに `$any`・`$ref` を書くのは構わない。
+- **パスの変数（上の「パスの変数」）には書けない**——パスの値は 1 つの文字列になる。
+- **生成物**: OpenAPI の schema は、配列が `{"type": "array", "items": …}`、オブジェクトが `{"type": "object", "required": […], "additionalProperties": false, "properties": …}`
+  （`nullable` は上の「null を許す項目」と同じに `type` へ `"null"` を足す）。**`unordered` は OpenAPI の schema に表せないので、出ない**（Red テストだけが見る）。
+  `types.py` は、配列が `list[<要素の型>]`、入れ子のオブジェクトが `TypedDict`（名前は、入口の型の名前に `_` と項目名を Pascal にしたものを足したもの（`_` は項目名の Pascal 化では作れないので、`order.item` と `order_item` は重ならない）。配列の要素なら `_Item` を足す。例: `ListNotesOutput_Notes_Item`）で、
+  `nullable` は ` | None` を足す。Red テストは、**項目の型の記述（`OUTPUT_TYPES`）に沿って、値を中まで——要素の型・オブジェクトの項目・`null` の可否——比べる**
+  （`true` を整数の要素と見ない・足りない項目も余る項目も違反）。**配列・入れ子を 1 つも使わない機能の生成物は、今までと 1 バイトも変わらない。**
+- **v2 以降**: 配列・入れ子の項目の型の記述が前の版と違えば（`nullable`・`unordered` の違い、`integer` から `number` に広げただけの違いも）、その項目を期待に持つケースは変更に数える
+  （中の型の違いを項目ごとに見分けない。型の名前だけの項目が `integer` から `number` に広がっただけの違いは、今までどおり変化に数えない）。
+
+**例**（ノートの一覧。起点 `root` から、種類 `kinds`（配列の入力）に合うノートを 3 件だけ返し、残りの件数を `page` に返す。`tags` は並びを問わず、`stamp` は実行ごとに変わる。`features` の要素）:
+
+```json
+[
+  {
+    "id": "F-011", "title": "ノートを一覧する", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "list_notes", "method": "GET", "path": "/notes",
+      "input": {"origin": {"type": "string"}, "kinds": {"type": "array", "items": {"type": "string", "enum": ["memo", "task"]}}},
+      "output": {
+        "notes": {"type": "array", "items": {"type": "object", "properties": {
+          "title": {"type": "string"}, "kind": {"type": "string", "enum": ["memo", "task"]}}}},
+        "tags": {"type": "array", "unordered": true, "items": {"type": "string"}},
+        "page": {"type": "object", "properties": {
+          "total": {"type": "integer"}, "next": {"type": "string", "nullable": true}, "stamp": {"type": "string"}}}
+      },
+      "errors": ["UNKNOWN_ORIGIN"]
+    },
+    "cases": [
+      {"id": "F-011-C1", "title": "一覧: 起点 root で読むと 3 件だけ返り（題の順）、残りは次の 1 件として page に出る",
+       "setup": [{"seed": "note", "values": {"title": "c", "kind": "memo", "tag": "x"}},
+                 {"seed": "note", "values": {"title": "a", "kind": "task", "tag": "y"}},
+                 {"seed": "note", "values": {"title": "b", "kind": "memo", "tag": "x"}},
+                 {"seed": "note", "values": {"title": "d", "kind": "task", "tag": "z"}}],
+       "input": {"origin": "root", "kinds": ["memo", "task"]},
+       "expected": {"notes": [{"title": "a", "kind": "task"}, {"title": "b", "kind": "memo"}, {"title": "c", "kind": "memo"}],
+                    "tags": ["x", "y"], "page": {"total": 4, "next": "d", "stamp": {"$any": "string"}}}},
+      {"id": "F-011-C2", "title": "同じ起点を 2 度読むと、同じ一覧が返る（tags は並びが変わってもよい）",
+       "setup": [{"seed": "note", "values": {"title": "a", "kind": "task", "tag": "y"}},
+                 {"seed": "note", "values": {"title": "b", "kind": "memo", "tag": "x"}}],
+       "input": {"origin": "root", "kinds": ["memo", "task"]},
+       "expected": {"notes": [{"title": "a", "kind": "task"}, {"title": "b", "kind": "memo"}],
+                    "tags": ["x", "y"], "page": {"total": 2, "next": null, "stamp": {"$any": "string"}}},
+       "as": "first",
+       "after": [{"operation": "list_notes", "input": {"origin": "root", "kinds": ["memo", "task"]},
+                  "expected": {"notes": {"$ref": "first.notes"}, "tags": {"$ref": "first.tags"},
+                               "page": {"total": 2, "next": null, "stamp": {"$any": "string"}}}}]},
+      {"id": "F-011-C3", "title": "知らない起点は拒否する", "input": {"origin": "nowhere", "kinds": []}, "error": "UNKNOWN_ORIGIN"}
+    ]
+  }
+]
+```
+
+実装は `reset_state()` と `seed` の口を持つ（`seed` が何を置くかは実装が決める）。**`tags` の並びは返すたびに違ってよい**——次の形でよい:
+
+```python
+import time
+
+_notes = []
+
+def reset_state():
+    _notes.clear()
+
+def seed(name, /, **values):
+    if name == "note":
+        _notes.append(values)
+
+def list_notes(origin, kinds):
+    if origin != "root":
+        return {"error": "UNKNOWN_ORIGIN"}
+    found = sorted((note for note in _notes if note["kind"] in kinds), key=lambda note: note["title"])
+    shown = found[:3]
+    return {"notes": [{"title": note["title"], "kind": note["kind"]} for note in shown],
+            "tags": list({note["tag"] for note in shown}),
+            "page": {"total": len(found), "next": found[3]["title"] if len(found) > 3 else None, "stamp": str(time.time())}}
+```
+
 ## テストケース（`cases` の要素）
 
 | キー | 書くもの |
@@ -261,13 +418,186 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 | `error` | 失敗するケースなら、`expected` の代わりに `operation.errors` のどれか |
 | `qa` | このケースの根拠にした Q&A の `No` の配列（省いてよい）。機能の `qa` と同じ決まり |
 | `ref` | このケースの元になった、仕様の中の行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。省いてよい）。**仕様が番号を振っていれば書く**——生成と `--check` が、機能の `source` の原文にその番号が在るかを確かめる（#465。値が一致するかまでは見ない） |
+| `setup` | （任意）`input` で本体を呼ぶ前の状態を作る——入口の呼び出し（`{"operation", "input", "expected" か "error"}`）か、入口の無い前提を作る口 `seed` の呼び出し（`{"seed", "values"}`）の配列（1 つ以上）。下の「前提と後の状態」 |
+| `after` | （任意）本体を呼んだ後の状態を確かめる——`setup` と同じ形の配列（1 つ以上）。下の「前提と後の状態」 |
+| `as` | （任意）本体の結果を名前で束ねる——`after` の期待の `$ref` が指す。`expected` を持つケースだけ。下の「実行ごとに変わる出力」 |
 
+**`expected` の項目の値には、等しさの代わりに `{"$any": <型>}`・`{"$ref": "<名前>.<項目>"}` を書ける**（実行ごとに変わる出力。下の「実行ごとに変わる出力」）。
 **`expected` と `error` は、ちょうど片方だけ書く。** **決まりに無いキーは書かない**——書いても生成物に現れないので、検査が落とす。
+**`setup`・`after` は入出力のケースにだけ書ける**（トレースのケースの `setup`・`after` は `trace` の中。上と下の「前提と後の状態」「トレースのケース」）。
 **`input`・`expected`・`error` の代わりに `trace` を書いたケースは、トレースのケースである**（下の「トレースのケース」）。**機能には入出力のケース（`trace` でないもの）を 1 つ以上置く**——性能テストはその入力を使う。
 
 実装は、`input` を受け取って、正常なら `expected` と等しいオブジェクトを、失敗なら
 `{"error": "<エラーの名前>"}` を返す。**Red テストはこの等しさと、各項目の型を見る**
 （`True == 1 == 1.0` なので、等しさだけでは `boolean` に `1` を返す実装が通る。`number` は整数でも小数でもよい。`nullable` の項目が `null` のときは型を見ない）。
+
+## 前提と後の状態（`setup`・`after`。#1298）
+
+**入出力のケースは、`input` の 1 回の呼び出しだけでなく、その前の状態（前提）と後の状態を書ける。** 「同じ番号のレコードが既にある」「作る → 取消にする → 同じキーで送り直す」など、
+仕様のテストケースが 1 回の呼び出しで書けないものを写すために使う。
+
+- **`setup`**: 本体を呼ぶ前に、書いた順に呼ぶ。入口の呼び出し（`{"operation": <入口の id>, "input": <入力>, "expected": <出力>}`。`expected` の代わりに `"error": <エラーの名前>`）は、
+  **重ね合わせた全体の中間表現のどの機能の入口でもよい**（トレースのケースの `setup`・`after` と同じ決まり。入力はその入口の `input` の項目をちょうど全部、期待は `output` の項目をちょうど全部）。
+- **`after`**: 本体を呼んで期待と比べた後に、書いた順に呼んで比べる（`setup` と同じ形）。**本体の戻り値では見えない状態**（作った・変えたレコード）を、読む入口で確かめる。
+- **`seed`**: 入口の無い前提——マスタ・利用者・権限など、アプリの入口からは作れないもの——を作る口の呼び出し。`{"seed": "<名前>", "values": {"<項目>": <値>}}`。
+  名前と項目の名前は英小文字で始まり英小文字・数字・`_`、値は文字列・数・真偽・`null`（入れ子にしない）。`values` は 1 つ以上。
+  **口は実装に求める**（下の「実装に求める口」の `seed`）。**`seed` は `setup`・`after` の中でだけ書ける**（トレースのケースの `setup`・`after` には書けない）。
+
+**`setup`・`after` を書かないケースは、今までと変わらない**——Red テスト・Issue の本文・機能の指紋は、書いていないケースだけの機能では 1 バイトも変わらない
+（機能の指紋は機能のオブジェクト全体の sha256 なので、書いたケースを持つ機能の指紋は変わる）。**書いたケースの Red テストは、`reset_state()` を呼んで状態を空にしてから（テストが終わったら、後ろのケースに状態を残さないよう、もう一度呼ぶ）、
+`setup` を順に呼び、本体を呼んで `expected`（か `error`）と比べ、`after` を順に呼んで比べる。** `reset_state()` と `seed` の口が実装に無ければ失敗する（実装が無いときも失敗で、エラーではない）。
+**入口の名前に `reset_state` は使えない**（`setup`・`after` を書いたケースがあるとき）。**`seed` を書いたケースがあるときは、入口の名前に `seed` も、どの入口の入力にも項目 `seed` も使えない**
+（口と重なる。生成のスクリプトが止める。`checkpoint` と同じ扱い）。
+
+**性能テストは `setup` を呼ばず、入出力のケースの `input` だけで測る**（前提の無い呼び出しの時間になる。`references/nfr.md` の「性能テストは `条件` の負荷を再現しない」と同じ限界）。
+
+**例**（前提あり・2 回の操作。次の 3 つの機能の `features` の要素）:
+
+```json
+[
+  {
+    "id": "F-006", "title": "注文を作る", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "create_order", "method": "POST", "path": "/orders",
+      "input": {"order_no": {"type": "string"}, "customer": {"type": "string"}},
+      "output": {"status": {"type": "string"}},
+      "errors": ["UNKNOWN_CUSTOMER", "DUPLICATE"]
+    },
+    "cases": [
+      {"id": "F-006-C1", "title": "前提あり: 登録済みの顧客なら注文を作れる",
+       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}}],
+       "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"},
+       "after": [{"operation": "get_order", "input": {"order_no": "A-1"}, "expected": {"status": "open"}}]},
+      {"id": "F-006-C2", "title": "顧客が登録されていなければ拒否する",
+       "input": {"order_no": "A-1", "customer": "none"}, "error": "UNKNOWN_CUSTOMER"},
+      {"id": "F-006-C3", "title": "2 回の操作: 作る → 取消にする → 同じ番号で送り直すと拒否し、取消のまま",
+       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}},
+                 {"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"}},
+                 {"operation": "cancel_order", "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}}],
+       "input": {"order_no": "A-1", "customer": "c1"}, "error": "DUPLICATE",
+       "after": [{"operation": "get_order", "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}}]}
+    ]
+  },
+  {
+    "id": "F-007", "title": "注文を取り消す", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "cancel_order", "method": "POST", "path": "/orders/cancel",
+      "input": {"order_no": {"type": "string"}}, "output": {"status": {"type": "string"}}, "errors": ["NOT_FOUND"]
+    },
+    "cases": [
+      {"id": "F-007-C1", "title": "作った注文は取り消せる",
+       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}},
+                 {"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"}}],
+       "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}},
+      {"id": "F-007-C2", "title": "無い注文は取り消せない", "input": {"order_no": "none"}, "error": "NOT_FOUND"}
+    ]
+  },
+  {
+    "id": "F-008", "title": "注文の状態を見る", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "get_order", "method": "GET", "path": "/orders/status",
+      "input": {"order_no": {"type": "string"}}, "output": {"status": {"type": "string"}}, "errors": ["NOT_FOUND"]
+    },
+    "cases": [
+      {"id": "F-008-C1", "title": "無い注文は見つからない", "input": {"order_no": "none"}, "error": "NOT_FOUND"}
+    ]
+  }
+]
+```
+
+実装は、モジュールの `reset_state()` と `seed(<名前>, /, **値)`（名前だけを位置引数で受け取る）を持つ——次の形でよい（`seed` が何を置くかは実装が決める）:
+
+```python
+_customers, _orders = {}, {}
+
+def reset_state():
+    _customers.clear(); _orders.clear()
+
+def seed(name, /, **values):
+    if name == "customer":
+        _customers[values["id"]] = values
+```
+
+## 実行ごとに変わる出力（`$any`・`$ref`。#1299）
+
+**成功の応答の URN・版・作った日時のように、実行ごとに変わる出力は、等しさでは比べられない。** 期待の項目の値に、等しさの代わりの比べ方を書く。
+
+| 書き方 | Red テストが確かめること |
+| --- | --- |
+| `{"$any": "<型>"}` | その項目が、決めた型の値であること（値は見ない）。型は項目の型と同じ（`string`・`integer`・`number`・`boolean`。配列・入れ子のオブジェクトの項目は `array`・`object`で、形——中の型——に合うかを見る）。`enum` は見ない |
+| `{"$ref": "<名前>.<項目>"}` | その項目が、`as` で束ねた名前の結果の項目と同じ値であること（`true` を `1` と同じ値とは見ない——項目の型も見る）。指す項目の型は、書く項目の型と同じ |
+
+- **書ける場所**: 入出力のケースの `expected` と、`setup`・`after` の呼び出しの `expected` の、項目の値だけ。**`input` と `seed` の値には書けない**（前に返った値を入力に渡すことはできない）。
+  **トレースのケースの `expected`・`setup`・`after` には書けない**。
+- **`as`**: ケースの本体と、`setup`・`after` の入口の呼び出しに書ける——結果（実装が返した出力）を名前で束ねる。名前は英小文字で始まり英小文字・数字・`_`、1 つのケースの中で重ならない。
+  **期待が `expected` の呼び出しだけ**（`error` の結果は項目を持たない）。
+- **`$ref` が指せるのは、呼ぶ順で前の `as` だけ**——`setup`（書いた順）→ 本体 → `after`（書いた順）。後ろの呼び出し・自分自身・束ねていない名前を指すと、生成が止まる。
+  `<項目>` は、束ねた呼び出しの入口の `output` の項目。
+- **`null` を許す項目**（`nullable`）は、`null` を返しても `$any`・`$ref` に合う（`$ref` は、指した値も `null` のとき）。
+- **書かないケースは今までと変わらない**——`$any`・`$ref`・`as` を 1 つも書いていない機能の Red テスト・Issue の本文・機能の指紋は、1 バイトも変わらない。
+  書いたケースは `self.dynamic(…)` で比べる（前提・後の状態があるケースは、`reset_state()` を呼ぶところまで前提と後の状態と同じ。実装に求める口は変わらない）。
+
+**例**（成功の応答の URN は実行ごとに変わる。`features` の要素）:
+
+```json
+[
+  {
+    "id": "F-009", "title": "文書を作る", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "create_document", "method": "POST", "path": "/documents",
+      "input": {"title": {"type": "string"}},
+      "output": {"urn": {"type": "string"}, "version": {"type": "integer"}},
+      "errors": ["EMPTY_TITLE"]
+    },
+    "cases": [
+      {"id": "F-009-C1", "title": "URN を返す: 作ると URN と版が返る（URN は実行ごとに変わるので、型だけを見る）",
+       "input": {"title": "契約書"}, "expected": {"urn": {"$any": "string"}, "version": {"$any": "integer"}}},
+      {"id": "F-009-C2", "title": "作った後に読むと、作ったときの URN が返る（最初の版は 1）",
+       "input": {"title": "契約書"}, "expected": {"urn": {"$any": "string"}, "version": 1}, "as": "created",
+       "after": [{"operation": "get_document", "input": {"title": "契約書"},
+                  "expected": {"urn": {"$ref": "created.urn"}, "title": "契約書", "version": {"$ref": "created.version"}}}]},
+      {"id": "F-009-C3", "title": "題が空なら拒否する", "input": {"title": ""}, "error": "EMPTY_TITLE"}
+    ]
+  },
+  {
+    "id": "F-010", "title": "文書を読む", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "get_document", "method": "GET", "path": "/documents/by-title",
+      "input": {"title": {"type": "string"}},
+      "output": {"urn": {"type": "string"}, "title": {"type": "string"}, "version": {"type": "integer"}},
+      "errors": ["NOT_FOUND"]
+    },
+    "cases": [
+      {"id": "F-010-C1", "title": "前提で作った文書を読むと、作ったときの URN が返る",
+       "setup": [{"operation": "create_document", "input": {"title": "契約書"},
+                  "expected": {"urn": {"$any": "string"}, "version": 1}, "as": "created"}],
+       "input": {"title": "契約書"},
+       "expected": {"urn": {"$ref": "created.urn"}, "title": "契約書", "version": {"$ref": "created.version"}}},
+      {"id": "F-010-C2", "title": "無い文書は見つからない", "input": {"title": "none"}, "error": "NOT_FOUND"}
+    ]
+  }
+]
+```
+
+実装は、前提・後の状態があるので `reset_state()` を持つ（`seed` は書いていないので要らない）。**URN は呼ぶたびに違う値を返してよい**——次の形でよい:
+
+```python
+import itertools
+
+_documents, _numbers = {}, itertools.count(1)
+
+def reset_state():
+    _documents.clear()          # 採番は戻さない（URN は実行ごとに変わる）
+
+def create_document(title):
+    if not title:
+        return {"error": "EMPTY_TITLE"}
+    _documents[title] = {"urn": f"urn:doc:{next(_numbers)}", "title": title, "version": 1}
+    return {"urn": _documents[title]["urn"], "version": 1}
+
+def get_document(title):
+    return dict(_documents[title]) if title in _documents else {"error": "NOT_FOUND"}
+```
 
 ## トレースのケース（`trace`。#923）
 
@@ -307,10 +637,12 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 | 口 | 書くもの |
 | --- | --- |
 | `checkpoint` | `calls` の呼び出しの入口の関数が受け取るキーワード引数（既定は何もしない関数。`setup`・`after` の呼び出しには渡さない）。**トレースの段の全部について、その段の操作の直前に `checkpoint("<段の名前>")` を呼ぶ**——結果で書かない分岐（在庫が足りず書かずに返す、など）でも、その段の前で呼ぶ。**その段のために排他を取る前に呼ぶ**（テストは呼び出しを `checkpoint` で止めるので、排他の内側で呼ぶと、止められている間ほかの呼び出しが排他で待ち、トレースの順に進められない）。**先にまとめて呼ばない**——続けて呼んでよいのは、1 回の原子的な操作で読むと書くをまとめる実装が、その操作の直前に呼ぶときだけ。1 回も呼ばない・段を飛ばして終わる・トレースの順で次の段と違う段に来る呼び出しがあれば、順を強制できないので失敗にする（口を無視する・一部の段だけに呼ぶ・名前を違える競合する実装を素通りさせない） |
-| `reset_state` | `impl_module` のモジュールの関数。状態を空に戻す。トレースのケースのテストの初めに呼ぶ |
+| `reset_state` | `impl_module` のモジュールの関数。状態を空に戻す。トレースのケースのテストの初めに呼ぶ。**前提・後の状態（`setup`・`after`）を書いた入出力のケースも、テストの初めに呼ぶ**（上の「前提と後の状態」） |
+| `seed` | `impl_module` のモジュールの関数 `seed(<名前>, /, **値)`。入口の無い前提（マスタ・利用者・権限など）を作る。**`setup`・`after` に `seed` の呼び出しを書いたケースがあるときだけ求める**（名前だけを位置引数に取り、値の項目の名前と重ならない）。トレースのケースは呼ばない |
 
 **口は手段ではなく観測点である**——段の名前は仕様（モデル）の行為の名前で、実装は段の前で知らせるだけ。排他の取り方・書き方は決めない。
 **入口の名前に `reset_state`、トレースが呼ぶ入口の入力の項目に `checkpoint` は使えない**（口と重なる。生成のスクリプトが止める）。
+**`seed` を書いたケースがあるときは、入口の名前に `seed`、どの入口の入力にも項目 `seed` は使えない**（同じく止める。上の「前提と後の状態」）。
 
 ### Red テストが確かめること
 
@@ -365,3 +697,33 @@ Red テストは Python の `unittest` で、スレッドで走らせる——�
   ]
 }
 ```
+
+### 画面のケースの例（`acceptance`。#1301）
+
+関数で表せる割引の判定は `cases` に書き、**画面の振る舞い（確定を 2 回押す）・障害（保存先が落ちる）・同時・時間のケースは、Red テストにせず `acceptance` に仕様の行のまま並べる。**
+仕様（`spec/order.md`）にこの表があるとする:
+
+```markdown
+| テストケース | 内容 | 期待 |
+| --- | --- | --- |
+| F1-1 | シルバーで 9999 円 | 割引なし |
+| F1-2 | 注文確定の画面で確定を 2 回押す | 注文は 1 件だけ作られ、2 回目の押下は無視される |
+| F1-3 | 注文の保存中にデータベースが落ちる | 注文は作られず、画面にやり直しを促す表示が出る |
+```
+
+```json
+{
+  "id": "F-001",
+  "title": "注文を確定する",
+  "source": ["spec/order.md"],
+  "qa": [],
+  "operation": {"id": "confirm_order", "method": "POST", "path": "/orders", "input": {"amount": {"type": "integer"}},
+                "output": {"discount": {"type": "integer"}}},
+  "cases": [{"id": "F-001-C1", "title": "シルバーで 9999 円は割引なし", "ref": "F1-1",
+             "input": {"amount": 9999}, "expected": {"discount": 0}}],
+  "acceptance": ["| F1-2 | 注文確定の画面で確定を 2 回押す | 注文は 1 件だけ作られ、2 回目の押下は無視される |"]
+}
+```
+
+`F1-1` は `ref` で Red テストになり、`F1-2` は `acceptance` で Issue の本文の `### Red テストにしない受入基準` に写る。`F1-3` は書き起こしていないので、
+生成のスクリプトは `仕様のテストケース 3 件のうち、Red テスト 1 件・受入基準 1 件・どちらにも無い 1 件` と出し、`どちらにも無い: F1-3（spec/order.md:…）` と名指しする。

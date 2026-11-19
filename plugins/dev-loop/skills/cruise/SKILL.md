@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 2.12.0 -->
-> **このスキルの版: 2.12.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 2.14.1 -->
+> **このスキルの版: 2.14.1**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -231,13 +231,14 @@ check-unattended-env.py --cruise --ledger issue-<親> --since-last  # --absent �
    **`--absent` の再開（5 のタイマーで起動し直したときなど）では訊かない**——結果は 6 で終えるときに渡す。
     - **長期トークンで回す**——**このセッションのまま切り替えることはできない**（トークンは起動した `claude` の環境変数で、
       セッションの中のコマンドからは変えられない）。**利用者に次の 2 つを渡し、周を始めずに止まる**（台帳は作ってあるので、起動し直すと 1 の再開から続く）:
-      別の端末で `bash <このスキルの base ディレクトリ>/../dev-loop/scripts/launch-with-long-token.sh --store-token`（キーチェーンに入れる・入れ替える）→
-      このセッションを終え、`bash <同じ>/launch-with-long-token.sh "/dev-loop:cruise <親> [--absent]"` で起動し直す。
+      このセッションを終え、Claude Code の外の端末で `bash <このスキルの base ディレクトリ>/../dev-loop/scripts/launch-with-long-token.sh "/dev-loop:cruise <親> [--absent]"` と打って起動し直す
+      （**1 本のコマンドで足りる**——キーチェーンに未登録で、標準入力が端末なら、その場で入力を求めて登録してから起動する。`claude setup-token` は別のタブで走らせて、表示されたトークンを貼る。
+      入れ替えるだけなら同じスクリプトの `--store-token`。版を含まない短い起動口は同じスクリプトの `--install-launcher` で置く。#1287）。
       パスは点検の直し方の行に絶対パスで出る。**入れ方は `../dev-loop/scripts/launch-with-long-token.sh` の冒頭と公開ページを、長期トークンで使えない機能（2.1.316 で実測）は公開ページの「機能の表」を正とする。**
     - **このまま回す**——起動から 8 時間ほどで 401 で止まりうると添えて続ける。**答えが返らなければこちら。**
 
    **トークンの値を会話に通さない。**——`claude setup-token` を Bash で走らせない・`!` で打たせない・値を貼らせない。
-   入れるのは利用者が別の端末で打つ `--store-token` だけである（`--store-token` はセッションの中では止まる）。
+   入れるのは利用者が Claude Code の外で打つ起動口の登録の入力だけである（起動口の登録も `--store-token` もセッションの中では止まる）。
    **長期トークンで起動していれば訊かない**——点検が添える「使えない機能」（claude.ai のコネクタ・claude.ai から届くスキル・Remote Control・Claude in Chrome。通知は判定できていない）を見せる。
    **ほかの認証（API キーの類）がある・判定できないと出たら、見せるだけで訊かない。**
    **認証は点検の「認証」の行で決め、Bash の `env` で決めない**——Claude Code 2.1.316 は起動時の `CLAUDE_CODE_OAUTH_TOKEN` を Bash の環境から外す
@@ -593,6 +594,8 @@ cruise の状態は会話の外——台帳・各周の計画ファイル・GitH
 消すか（未コミットの変更を捨てるか）は利用者が決める。**残っているリモートのブランチの本数と、その PR の状態ごとの内訳も載せる**——
 メインの作業ツリーで `python3 <このスキルの base ディレクトリ>/scripts/cleanup-cycle.py remotes` の 1 行を写す（数えるだけで、リモートのブランチ・PR は消さない。
 7 なら数えられなかったことと理由を書く）。
+**子が報告した「不安定なテスト」（回し直しで緑になった失敗。PR コメントの残課題の見出し。`references/parallel.md` の「負荷による偽の失敗」。#1193）があれば、テストごとに渡す**——
+削除・隔離は利用者が決める（`../dev-loop/references/flaky-tests.md`）。親は消さない・skip しない。
 **周の途中で足した行**（`show` の「周の途中で足した行のうち済んでいないもの」）**が残っていれば、出所ごとに渡す**——番号・題・状態（`todo` なら「回していない」）を並べ、
 「なし」でなければ「済んだ」と報告しない（`../dev-loop/references/found-lines.md`）。**台帳から取り下げない・Issue を閉じない**——回すか閉じるかは利用者が決める。
 **1 で名指しされた Issue（親 Issue にあって台帳に無い）が残っていれば、それも渡す**——台帳がすべて済んでも、親 Issue の一覧は済んでいない。

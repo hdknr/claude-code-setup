@@ -103,6 +103,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （`check-qa-csv.py` の `REFLECTED`——`暫定反映` を含む）でない行を数える——**資料に載る行とは別の定義**（#325）。
       **仕様のディレクトリの中の内部の表（`qa-dev.csv`）も数え、未決定の印の走査からは外す**（#339）。
       **`--docs` で画面の関門（`screen-gate.py`）も入れる**（#1097）。テストは
+      **仕様のテストケースの番号（表の行の先頭のセル）が重ねた全体の中で重複していたら 1**（#1297。番号の形と読まないものは `references/spec-exit.md` の「テストケースの番号の重複」を正とする）。テストは
       `scripts/test-check-spec-exit.py`・`scripts/test-screen-gate.py`）
     - `scripts/screen-gate.py` - **画面の表の関門**（#1097）——画面の表（`requirements/screens/`。任意）があれば、その未決定の印と screen-spec の検査（`check-screens.py`。**子のプロセスで呼び、読み込まない**）の結果を入れ、
       **画面の表があるのに screen-spec が見つからなければ 4 で止まる**。画面の表が無ければ何も出さずに 0（spec-loop は screen-spec に依存しない）。
@@ -174,7 +175,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/check-pptx-render.py` - **生成した PPTX を LibreOffice で PDF に描画し、見切れ（`…`）・図の中の代わりの文字・はみ出し（ページの外・文字の重なり・枠の下の辺をまたぐ・どの枠の中にも無い文字）を探し、1 ページずつの PNG を書く**
       （#1289。proposal の `SKILL.md` の手順 3a。**道具（LibreOffice・poppler）が無ければ 3（確かめられない）で、緑にしない**。**CI からは呼ばない**——道具が無い。テストは `scripts/test-check-pptx-render.py`——偽の道具で回し、
       手元に道具があれば本物でも回す）
-    - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**トレースのケース（`trace`）は、形式検査の反例の実行順を実装の口で強制して再現する Red テストになる**——#923。形と口は `references/spec-ir.md` の「トレースのケース」を正とする。**生成の側で
+    - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**トレースのケース（`trace`）は、形式検査の反例の実行順を実装の口で強制して再現する Red テストになる**——#923。形と口は `references/spec-ir.md` の「トレースのケース」を正とする。**入出力のケースは `setup`・`after` で前提と後の状態を書け、入口の無い前提を作る口 `seed` も書ける**——#1298。書かないケースの生成物は同じバイト。形と口は `references/spec-ir.md` の「前提と後の状態」を正とする。**期待の項目の値に `{"$any": <型>}`（型だけを見る）・`{"$ref": "<名前>.<項目>"}`（`as` で束ねた前の結果と同じ値）を書け、実行ごとに変わる出力（URN・版・作った日時）を比べられる**——#1299。`$any`・`$ref`・`as` を書かないケースの生成物は同じバイト。形は `references/spec-ir.md` の「実行ごとに変わる出力」を正とする。**項目の型に配列（`items`。`unordered` で順を問わない）と入れ子のオブジェクト（`properties`）を書け、Red テストは値を中まで比べる**——#1300。書かない中間表現の生成物は同じバイト。形・`nullable`・`enum`・`$any`・`$ref` との組み合わせは `references/spec-ir.md` の「配列と入れ子のオブジェクト」を正とする。**生成の側で
       抜ける条件 1 を確かめる**——`build-proposal.py` と同じ形。`--check` で `scaffold/` の鮮度を見る。
       **入力は版を重ね合わせた全体で、メモリ上で重ねる**——`build/merged/` を書かない（#262）。
       **v2 以降は前の版の全体と比べて機能を追加・変更・削除に分け、変わった機能だけ本文を作る**（#264。
@@ -182,6 +183,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       `--check --upto <n-1>` で前の版の時点の鮮度を見る）。
       **前の版の時点に `反映済み` でない Q&A が残れば、指しているかに依らず止める——凍結した前の版なら止めずに全部を追加にする**
       （#361。手当ては `references/versions.md`。**凍結を見るときだけ `git` を使う**）。
+      **中間表現の機能の `acceptance`（Red テストにしないケースを仕様の行の原文のまま並べる）は本文の `## 受入基準` の中の小見出しに写り、書く生成と `--dry-run` は「仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件」を出して、どちらにも無いケースを番号と場所で名指しする——止めない。数える番号の形は `check-spec-exit.py` の `case_rows`（条件 1 の重複と同じ）**（#1301。決まりは `references/spec-ir.md` の「Red テストにしない受入基準」）。
       **画面の表があれば、`機能` の列が機能を挙げる画面の仕様書・ワイヤーフレーム・生成したモック（書く生成が screen-spec の `build-mock.py` で作る）を本文と `scaffold/refs/` に足す——
       機能のオブジェクトには入れず、`--check` はモックを生成し直さない**（#1099。決まりは `references/handoff-issue.md` の「画面の表から引く参考資料」）。
       **正本の根の `design/sources.csv`（版の外。デザインの正本の参照）があれば、画面を持つ機能の本文の `## 参考資料` にだけ載せ、形に反すれば作らない——無ければ前と同じバイト**
@@ -207,6 +209,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/green-list.py` - 製品のリポジトリで、scaffold の Red テストのうち**緑のケースとその中身の指紋を一覧（`scaffold-green.txt`）に書き（`record`）、CI で一覧のケースが緑のままかを見る（`check`）**
       （#1000。**一覧に無いケース（まだ実装していない機能）の赤では落ちず、`record` は載ったケースを壊していれば書かない**。走らせ方は `scaffold.py` の `run_tests` を読み込む。
       決まり（選び方・性能テストの扱い・別リポジトリの形・GitHub Actions の雛形）の原本は `references/tree.md` の「Red テストを CI で走らせ続ける」、終了コードと守る／守らないは docstring を正とする。テストは `scripts/test-green-list.py`）
+    - `scripts/scaffold-estimate.py` - **scaffold の書き起こしの前に、仕様のテストケースのうち開発に渡る（Red テストか受入基準になる）割合の見積もり**の機械で決まる部分（#1302。`list` は重ね合わせた全体の `spec/` のケースを番号・場所・原文で出し、
+      `check` はスキルが書いた分け方（`build/scaffold-estimate.json`。`red`・`acceptance`・`neither`）の形と網羅を確かめて件数と割合を数え、どちらにもできないケースを名指しする。**どれに分けるかは判断でスキルが決め、機械は決めない。
+      止める割合の線は決めていない**（理由は `references/spec-ir.md` の「書き起こす前の見積もり」）。ケースの数え方は `scaffold.py` の `spec_case_rows` を読み込む——写さない。何も書かない。守る／守らないは docstring を正とする。テストは `scripts/test-scaffold-estimate.py`）
     - `scripts/merge-versions.py` - バージョンアップの版（`docs/v<n>/`。v2 以降は差分だけ）を重ねて、ある版の時点の全体を作る
       （#261。決まりは `references/versions.md`。**印 `.merged-versions` の無い出力先は消さない**。
       `scaffold.py` と `check-signoff.py` もここの関数で重ね・版を見つける——写しを作らない。
@@ -522,6 +527,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-green-list.py` - spec-loop の緑のケースの一覧のスクリプト（#1000）の回帰テスト（変異テストを含む）。
     **本体は `plugins/spec-loop/scripts/` にある**。**`scaffold/` は本物の `scaffold.py` で作り**（v2 の作り直しも）、実装を壊すと `check` が 1 になる陽性対照と、
     別リポジトリの形（`scaffold.py --check` と `diff -r` が、写しを直す・正本だけ変えると非 0）を見る。**変異の数は本体の docstring の「守ること」の行の数以上**
+  - `test-scaffold-estimate.py` - spec-loop の scaffold の書き起こし前の見積もり（#1302）の回帰テスト（変異テストを含む）。
+    **本体は `plugins/spec-loop/scripts/` にある**。**一時ディレクトリの正本（v1・v2 の版・数えない表と `.txt`）に、写した本物の `scaffold.py`・`check-spec-exit.py`・`merge-versions.py` で走らせる**。
+    割合が低くても 0・どちらにもできないを番号と場所で名指し・走らせた前後で正本が変わらないこと・形と網羅の違反が 1、見積もりのファイルが無いか読めなければ 2、ケースの表が無ければ 3。**変異の数は本体の docstring の「守ること」の行の数以上**
   - `test-merge-versions.py` - spec-loop の段 5a（#261）の回帰テスト（変異テストを含む）。
     **本体の定数が `references/versions.md` と一致することも見る**
   - `test-diff-versions.py` - spec-loop の段 5c（#263）の版の差分の回帰テスト（変異テストを含む）。

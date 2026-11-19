@@ -18,6 +18,10 @@
 5. **本体の定数が `references/spec-exit.md` の「未決定の印」の表と一致する**（写しのずれ）。
 3'. **想定外の例外（128KB 超のセルの `csv.Error`）も 2 で、トレースバックの 1 にしない**。`-OO`（docstring が無い）で
    引数なしに呼んでも使い方の誤りとして 2（#286）。
+7. **テストケースの番号の重複を 1 で落とす**（#1297）——同じファイル・別のファイルで同じ番号が 2 回以上出たら、番号と出た場所（`ファイル:行`）を全部名指しする。
+   重複の無い仕様・先頭のセル以外の言及・コードブロックの中・形の外の識別子（連番 `1`・数字の無い名前）・`.md` 以外・形式検査のモデルは数えない（陰性対照）。
+   **後の版が同じファイルを置き換えたのは重複に数えない**（`merge-versions.py` で重ねた全体に当てる。別のファイルに同じ番号を置けば 1）。
+   **番号の形が `references/spec-exit.md` の「テストケースの番号の重複」と一致する**（写しのずれ）。
 6. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
@@ -56,6 +60,11 @@ BAD_ROW = "Q-004,仕様レビュー,選択肢が 1 つ,A: これだけ,A,理由,
 INTERNAL_DONE = "D-001,仕様レビュー（Red Team）,上限が未定のときの再試行の間隔は,A: 10 秒 / B: 60 秒,B,呼び出しの上限,B（開発 2026-10-22）,spec/order.md,反映済み,\n"
 INTERNAL_OPEN = "D-002,仕様レビュー（Red Team）,ワーカーを分けるか,A: 分ける / B: 分けない,B,費用,未回答,—,確認中,\n"
 CLEAN_SPEC = "# 注文\n\n未定義の状態に遷移しない。\nmastodon のような語も、TODOS も印ではない。\n"
+
+# テストケースの番号の重複（#1297）。表の行の先頭のセルが番号
+CASE_HEAD = "| テストケース | 入力 | 期待 |\n| --- | --- | --- |\n"
+CASE_TABLE = "# 注文\n\n" + CASE_HEAD + "| F1-5a | 1 | 通る |\n| F1-5b | 2 | 拒否 |\n"
+DUP = "重複"
 
 # (名前, qa.csv の中身（None なら作らない）, {仕様の相対パス: 中身}（None ならディレクトリを作らない）,
 #  期待する終了コード, 出力に含まれるべき文字列)
@@ -127,12 +136,84 @@ CASES: list[tuple[str, str | bytes | None, dict[str, str | bytes] | None, int, s
     ("空のファイルと中身のある仕様", HEADER, {"a.md": b"", "order.md": CLEAN_SPEC}, 0, "条件 1 を満たす"),
     # 反映が残る行が別にあれば、満たさないことは確か（1 を優先）
     ("空のファイルと確認中の行", HEADER + OPEN_ROW, {"a.md": b""}, 1, "Q-002: 状態が 確認中"),
+    # テストケースの番号の重複（#1297）。表の見出しの先頭のセルが `ケース`・`テスト` を含む表の、データ行の先頭のセルが番号。order.md の 6 行目が `F1-5b`
+    ("番号の重複が無い表（陰性対照）", HEADER, {"order.md": CASE_TABLE}, 0, "条件 1 を満たす"),
+    ("同じファイルの重複", HEADER, {"order.md": CASE_TABLE + "| F1-5b | 3 | 拒否 |\n"}, 1,
+     "order.md:6: テストケースの番号 F1-5b が 2 か所で重複"),
+    ("同じファイルの重複は後ろの場所も名指しする", HEADER, {"order.md": CASE_TABLE + "| F1-5b | 3 | 拒否 |\n"}, 1, "order.md:7）"),
+    ("別のファイルの重複", HEADER, {"order.md": CASE_TABLE, "flow.md": CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 1, "flow.md:3"),
+    ("別のファイルの重複は先のファイルの場所も名指しする", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 1, "order.md:6"),
+    ("3 か所の重複", HEADER, {"order.md": CASE_TABLE + "| F1-5b | 3 | 拒否 |\n| F1-5b | 4 | 拒否 |\n"}, 1, "3 か所で重複"),
+    ("入れ子のディレクトリとの重複", HEADER, {"order.md": CASE_TABLE, "rules/flow.md": CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 1, "flow.md:3"),
+    ("重複と未決定の印の両方を出す", HEADER, {"order.md": CASE_TABLE + "| F1-5b | 3 | TBD |\n"}, 1, "未決定の印 TBD"),
+    ("等幅の飾りを外して数える", HEADER, {"order.md": CASE_TABLE, "flow.md": CASE_HEAD + "| `F1-5b` | 9 | 通る |\n"}, 1, "flow.md:3"),
+    ("強調の飾りを外して数える", HEADER, {"order.md": CASE_TABLE, "flow.md": CASE_HEAD + "| **F1-5b** | 9 | 通る |\n"}, 1, "flow.md:3"),
+    ("アンダースコアの飾りを外して数える", HEADER, {"order.md": CASE_TABLE, "flow.md": CASE_HEAD + "| _F1-5b_ | 9 | 通る |\n"}, 1, "flow.md:3"),
+    ("全角の英数字とハイフンを半角にそろえて数える", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": CASE_HEAD + "| Ｆ１－５ｂ | 9 | 通る |\n"}, 1, "flow.md:3"),
+    ("決定表の行の番号もテストケースの表の先頭のセルなら数える", HEADER,
+     {"order.md": CASE_HEAD + "| R-F10 | 9999 | 0 |\n", "flow.md": CASE_HEAD + "| R-F10 | 10000 | 500 |\n"}, 1, "テストケースの番号 R-F10"),
+    ("英語の見出しでも数える", HEADER,
+     {"order.md": "| Test Case | in |\n|---|---|\n| F1-5b | 1 |\n", "flow.md": "| TC | in |\n|:--|--:|\n| F1-5b | 2 |\n"}, 1, "flow.md:3"),
+    ("末尾の `|` が無い行も表の行", HEADER, {"order.md": CASE_TABLE, "flow.md": CASE_HEAD + "  | F1-5b\n"}, 1, "flow.md:3"),
+    # テストケースの表でない表は数えない（Verifier 1 パス目の R1）
+    ("Q&A の番号を引く表は数えない", HEADER,
+     {"order.md": "| 質問 | 内容 |\n| --- | --- |\n| Q-001 | 割引しない |\n", "flow.md": "| 質問 | 内容 |\n| --- | --- |\n| Q-001 | 通知しない |\n"}, 0,
+     "条件 1 を満たす"),
+    ("決定表の行の番号を並べた表は数えない", HEADER,
+     {"order.md": "| 決定表の行 | 入力 | 期待 |\n| --- | --- | --- |\n| R-F10 | 9999 | 0 |\n| R-F10 | 10000 | 500 |\n"}, 0, "条件 1 を満たす"),
+    ("ユースケースの表は数えない", HEADER,
+     {"order.md": "| ユースケース | 内容 |\n| --- | --- |\n| UC-01 | a |\n", "flow.md": "| ユースケース | 内容 |\n| --- | --- |\n| UC-01 | b |\n"}, 0, "条件 1 を満たす"),
+    ("テスト環境・Latest の表は数えない", HEADER,
+     {"order.md": "| テスト環境 | a |\n| --- | --- |\n| ENV-1 | a |\n\n| Latest | a |\n| --- | --- |\n| R-1 | a |\n",
+      "flow.md": "| テスト環境 | a |\n| --- | --- |\n| ENV-1 | b |\n\n| Latest | a |\n| --- | --- |\n| R-1 | b |\n"}, 0, "条件 1 を満たす"),
+    ("見出しが ID・No の表は読まない（見逃しの限界）", HEADER,
+     {"order.md": "| ID | 手順 |\n| --- | --- |\n| TC-001 | a |\n| TC-001 | b |\n", "flow.md": "| No | 手順 |\n| --- | --- |\n| TC-001 | c |\n"}, 0,
+     "条件 1 を満たす"),
+    ("見出しは先頭のセルだけを見る", HEADER,
+     {"order.md": "| No | テストケース内容 |\n| --- | --- |\n| F1-5b | a |\n", "flow.md": "| No | テストケース内容 |\n| --- | --- |\n| F1-5b | b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("`TC-1` の形も番号（各表が振り直すと重複）", HEADER,
+     {"order.md": CASE_HEAD + "| TC-1 | a |\n", "flow.md": CASE_HEAD + "| TC-1 | b |\n"}, 1, "テストケースの番号 TC-1"),
+    ("フェンスは見出しの状態を消す", HEADER, {"order.md": CASE_TABLE + "```\nx\n```\n| F1-5b | 9 | 通る |\n"}, 0, "条件 1 を満たす"),
+    ("3 字下げのフェンスも開く", HEADER, {"order.md": CASE_TABLE + "\n   ```\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n   ```\n"}, 0, "条件 1 を満たす"),
+    ("長いフェンスで閉じる", HEADER, {"order.md": CASE_TABLE + "\n```\nx\n````\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 1, "order.md:13"),
+    ("見出し行の先頭のセルは番号に数えない", HEADER,
+     {"order.md": "| テストケース F1-5b | 入力 |\n| --- | --- |\n| F1-5a | 1 |\n", "flow.md": "| テストケース |\n| --- |\n| F1-5b |\n"}, 0,
+     "条件 1 を満たす"),
+    ("縦の表の見出し行が番号の形でも数えない", HEADER,
+     {"order.md": CASE_TABLE, "flow.md": "| F1-5b | |\n| --- | --- |\n| 入力 | 1 |\n"}, 0, "条件 1 を満たす"),
+    ("区切りの行が無い表は数えない", HEADER, {"order.md": "| テストケース | 入力 |\n| F1-5b | 1 |\n\n| テストケース | 入力 |\n| F1-5b | 2 |\n"}, 0, "条件 1 を満たす"),
+    ("表が切れたら見出しを引き継がない", HEADER,
+     {"order.md": CASE_TABLE + "\n| F1-5b | 1 |\n"}, 0, "条件 1 を満たす"),
+    ("行頭が `|` でない行は数えない", HEADER, {"order.md": CASE_HEAD + "xF1-5b\nxF1-5b\n"}, 0, "条件 1 を満たす"),
+    ("本文での言及は重複に数えない", HEADER, {"order.md": CASE_TABLE + "\nF1-5b を参照。F1-5b は拒否する。\n"}, 0, "条件 1 を満たす"),
+    ("先頭のセル以外は数えない", HEADER, {"order.md": "| テストケース | TC |\n| --- | --- |\n| 1 | F1-5b |\n| 2 | F1-5b |\n"}, 0, "条件 1 を満たす"),
+    ("表ごとに振り直す連番は数えない", HEADER, {"order.md": CASE_HEAD + "| 1 | a |\n| 2 | b |\n\n" + CASE_HEAD + "| 1 | c |\n| 2 | d |\n"}, 0,
+     "条件 1 を満たす"),
+    ("数字の無い名前は番号に数えない", HEADER, {"order.md": CASE_HEAD + "| Case-Id | a |\n\n" + CASE_HEAD + "| Case-Id | b |\n"}, 0, "条件 1 を満たす"),
+    ("番号の後ろに字が続くセルは番号に数えない", HEADER, {"order.md": CASE_HEAD + "| F1-5b（境界） | a |\n| F1-5b（境界） | b |\n"}, 0, "条件 1 を満たす"),
+    ("大文字小文字の違う番号は別の番号", HEADER, {"order.md": CASE_HEAD + "| F1-5b | a |\n| F1-5B | b |\n"}, 0, "条件 1 を満たす"),
+    ("コードブロックの中は数えない", HEADER, {"order.md": CASE_TABLE + "\n```\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n```\n"}, 0, "条件 1 を満たす"),
+    ("チルダのコードブロックの中も数えない", HEADER, {"order.md": CASE_TABLE + "\n~~~\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n~~~\n"}, 0, "条件 1 を満たす"),
+    ("コードブロックの後ろは数える", HEADER, {"order.md": CASE_TABLE + "\n```\nx\n```\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 1, "order.md:13"),
+    ("長いフェンスは短いフェンスで閉じない", HEADER, {"order.md": CASE_TABLE + "\n````\n```\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n````\n"}, 0, "条件 1 を満たす"),
+    ("種類の違うフェンスでは閉じない", HEADER, {"order.md": CASE_TABLE + "\n```\n~~~\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n```\n"}, 0, "条件 1 を満たす"),
+    ("情報文字列の付いたフェンスでは閉じない", HEADER, {"order.md": CASE_TABLE + "\n```\n```python\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n```\n"}, 0, "条件 1 を満たす"),
+    ("字下げの深いフェンスは開かない", HEADER, {"order.md": CASE_TABLE + "\n    ```\n" + CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 1, "order.md:11"),
+    (".md 以外のファイルは数えない", HEADER, {"order.md": CASE_TABLE, "rules.txt": CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 0, "条件 1 を満たす"),
+    ("形式検査のモデルの番号は数えない", HEADER, {"order.md": CASE_TABLE, "formal/order/README.md": CASE_HEAD + "| F1-5b | 9 |\n"}, 0, "条件 1 を満たす"),
+    ("内部の表の番号は数えない", HEADER + DONE_ROW,
+     {"order.md": CASE_TABLE, "qa-dev.csv": HEADER + INTERNAL_DONE}, 0, "条件 1 を満たす"),
     ("Q&A 表が無い", None, {"order.md": CLEAN_SPEC}, 2, "Q&A 表を読めない"),
     ("Q&A 表が UTF-8 でない", b"\xff\xfe\x00", {"order.md": CLEAN_SPEC}, 2, "Q&A 表を読めない"),
     # 想定外の例外（128KB 超のセルの csv.Error）も 2 で、トレースバックの 1 にしない（#286）
     ("巨大なセル", HEADER + OPEN_ROW.replace("端数は？", "x" * 200_000), {"order.md": CLEAN_SPEC}, 2,
      "想定外の例外で止まった（Error: field larger"),
 ]
+
+CELL = 'unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip().strip("`*_ ")'  # 番号のセルを読む行（本体）
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -187,6 +268,56 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("TBD を印から外す", 'MARKERS = ("TBD", "TODO", "未定", "要確認")', 'MARKERS = ("TODO", "未定", "要確認")', "TBD"),
     ("満たしても但し書きを出さない", '        "**これだけでは抜けていない**——条件 2〜5 は判定していない（references/spec-exit.md）",\n',
      "", "満たす"),
+    # テストケースの番号の重複（#1297）
+    ("番号の行を 0 から数える", "enumerate(text.splitlines(), 1)", "enumerate(text.splitlines(), 0)", "同じファイルの重複"),
+    ("番号の重複を数えない", "    problems += duplicate_numbers(numbers)\n", "    problems += []\n", "同じファイルの重複"),
+    ("1 か所の番号も重複に数える", "        if len(where) < 2:", "        if len(where) < 1:", "番号の重複が無い表（陰性対照）"),
+    ("ファイルごとに数える", "numbers.setdefault(case, []).append((path, number))", "numbers.setdefault(f\"{path}:{case}\", []).append((path, number))",
+     "別のファイルの重複"),
+    ("最初の場所だけ名指しする", '        spots = "、".join(f"{path}:{line}" for path, line in where)',
+     '        spots = f"{where[0][0]}:{where[0][1]}"', "同じファイルの重複は後ろの場所も名指しする"),
+    ("先頭のセルでなく最後のセルを見る", CELL,
+     'unicodedata.normalize("NFKC", stripped.rstrip("|").rsplit("|", 1)[-1]).strip().strip("`*_ ")', "先頭のセル以外は数えない"),
+    ("表の行でなくても数える", '        if not stripped.startswith("|"):\n            previous, counting = None, False\n            continue\n',
+     "", "行頭が `|` でない行は数えない"),
+    ("飾りを外さない", CELL, 'unicodedata.normalize("NFKC", stripped[1:].split("|", 1)[0]).strip()', "等幅の飾りを外して数える"),
+    ("強調だけ外さない", '.strip().strip("`*_ ")', '.strip().strip("`_ ")', "強調の飾りを外して数える"),
+    ("アンダースコアだけ外さない", '.strip().strip("`*_ ")', '.strip().strip("`* ")', "アンダースコアの飾りを外して数える"),
+    ("全角を半角にそろえない", CELL, 'stripped[1:].split("|", 1)[0].strip().strip("`*_ ")', "全角の英数字とハイフンを半角にそろえて数える"),
+    ("数字を要らない形にする", " and any(ch.isdigit() for ch in cell)", "", "数字の無い名前は番号に数えない"),
+    ("セルの一部だけ番号に当たれば数える", "CASE_NUMBER_RE.fullmatch(cell)", "CASE_NUMBER_RE.match(cell)", "番号の後ろに字が続くセルは番号に数えない"),
+    ("大文字小文字をそろえる", "found.append((number, cell, stripped))", "found.append((number, cell.lower(), stripped))", "大文字小文字の違う番号は別の番号"),
+    ("コードブロックの中も数える", "        if fence is not None:\n", "        if False:\n", "コードブロックの中は数えない"),
+    ("チルダのコードブロックを開かない", "FENCE = re.compile(r\"^ {0,3}(`{3,}|~{3,})\")", "FENCE = re.compile(r\"^ {0,3}(`{3,})\")",
+     "チルダのコードブロックの中も数えない"),
+    ("コードブロックを閉じない", "                fence = None\n            continue\n", "                pass\n            continue\n",
+     "コードブロックの後ろは数える"),
+    ("閉じのフェンスの長さを見ない", " and len(opened.group(1)) >= len(fence)", "", "長いフェンスは短いフェンスで閉じない"),
+    ("閉じのフェンスの種類を見ない", "opened.group(1)[0] == fence[0] and ", "", "種類の違うフェンスでは閉じない"),
+    ("閉じのフェンスの情報文字列を見ない", ' and not line.strip(" `~")', "", "情報文字列の付いたフェンスでは閉じない"),
+    ("深い字下げのフェンスも開く", 'FENCE = re.compile(r"^ {0,3}', 'FENCE = re.compile(r"^ *', "字下げの深いフェンスは開かない"),
+    (".md 以外も数える", '        if path.suffix == ".md":', "        if True:", ".md 以外のファイルは数えない"),
+    ("形の外の識別子も番号に数える", 'CASE_NUMBER = r"[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+"', 'CASE_NUMBER = r"[A-Za-z0-9][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*"',
+     "表ごとに振り直す連番は数えない"),
+    ("見出しを見ずに全部の表を数える", "        if counting and CASE_NUMBER_RE", "        if CASE_NUMBER_RE", "Q&A の番号を引く表は数えない"),
+    ("見出し行も数える", "            counting = previous is not None and CASE_HEADER.search(previous) is not None\n            previous = None\n",
+     "            counting = previous is not None and CASE_HEADER.search(previous) is not None\n            previous = None\n"
+     "            if counting:\n                found.append((number, \"F1-5b\"))\n", "見出し行の先頭のセルは番号に数えない"),
+    ("区切りの行が無くても数える", "        if counting and CASE_NUMBER_RE", "        if (counting or (previous and CASE_HEADER.search(previous))) and CASE_NUMBER_RE",
+     "区切りの行が無い表は数えない"),
+    ("表が切れても見出しを引き継ぐ", "            previous, counting = None, False\n            continue\n        cell =", "            previous = None\n            continue\n        cell =",
+     "表が切れたら見出しを引き継がない"),
+    ("見出しの語を `テストケース` だけにする", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', 'CASE_HEADER = re.compile(r"テストケース")',
+     "英語の見出しでも数える"),
+    ("見出しの大文字小文字を区別する", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b")',
+     "英語の見出しでも数える"),
+    ("見出しの語を部分一致で広げる", r'CASE_HEADER = re.compile(r"\btest ?cases?\b|テストケース|\bcase ?(?:id|no\.?|number)\b|ケース(?:番号|ID|No)|テスト(?:番号|ID|No)|\btc\b", re.IGNORECASE)', 'CASE_HEADER = re.compile(r"ケース|テスト|case|test", re.IGNORECASE)',
+     "ユースケースの表は数えない"),
+    ("見出しを行全体で探す", "        previous = cell\n    return found", "        previous = stripped\n    return found", "見出しは先頭のセルだけを見る"),
+    ("フェンスを開いても見出しの状態を残す", "            fence = opened.group(1)\n            previous, counting = None, False\n",
+     "            fence = opened.group(1)\n            previous = None\n", "フェンスは見出しの状態を消す"),
+    ("フェンスの字下げを 2 字までにする", 'FENCE = re.compile(r"^ {0,3}', 'FENCE = re.compile(r"^ {0,2}', "3 字下げのフェンスも開く"),
+    ("閉じのフェンスを同じ長さだけにする", "len(opened.group(1)) >= len(fence)", "len(opened.group(1)) == len(fence)", "長いフェンスで閉じる"),
     ("想定外の例外を 2 に寄せない", "    except Exception as e:  # 想定外の例外も「判定していない」（2）",
      "    except ImportError as e:  # 想定外の例外も「判定していない」（2）", "巨大なセル"),
 ]
@@ -276,6 +407,49 @@ CHECKER_MUTATIONS: list[tuple[str, str, str, str]] = [
 ]
 
 
+def reference_case_number(markdown: str) -> str | None:
+    """「テストケースの番号の重複」の節の「番号の形」（`CASE_NUMBER`）の正規表現。"""
+    section = markdown.split("### テストケースの番号の重複", 1)[1].split("\n## ", 1)[0].split("\n### ", 1)[0] \
+        if "### テストケースの番号の重複" in markdown else ""
+    found = re.search(r"\*\*番号の形\*\*（`CASE_NUMBER`）: `([^`]+)`", section)
+    return found.group(1) if found else None
+
+
+def merged_cases(scripts: Path, work: Path) -> list[tuple[str, int, str, int, str]]:
+    """(名前, 実際の終了コード, 出力, 期待する終了コード, 出力に含まれるべき文字列)。版（`docs/v<n>/`）を `merge-versions.py` で重ねた全体に当てる。
+    後の版が同じファイルを置き換えたら重複でない。別のファイルに同じ番号を置けば前の版の行が残るので重複（#1297）。"""
+    table_v2 = CASE_TABLE.replace("| 2 | 拒否 |", "| 3 | 拒否 |")
+    samples = [
+        ("後の版が同じファイルを置き換えた（番号は同じ）", {"v1/spec/order.md": CASE_TABLE, "v2/spec/order.md": table_v2}, 0, "条件 1 を満たす"),
+        ("後の版が別のファイルに同じ番号を置いた", {"v1/spec/order.md": CASE_TABLE, "v2/spec/flow.md": CASE_HEAD + "| F1-5b | 9 | 通る |\n"}, 1,
+         "テストケースの番号 F1-5b が 2 か所で重複"),
+        ("後の版が同じファイルを置き換え、前の版の番号を別のファイルへ移した",
+         {"v1/spec/order.md": CASE_TABLE, "v2/spec/order.md": "# 注文\n\n" + CASE_HEAD + "| F9-1 | 1 |\n", "v2/spec/flow.md": CASE_HEAD + "| F1-5b | 9 | 通る |\n"},
+         0, "条件 1 を満たす"),
+    ]
+    results = []
+    for index, (name, files, code, needle) in enumerate(samples):
+        docs = work / f"merge{index}" / "docs"
+        assert_in_tmp(docs)
+        for version in ("v1", "v2"):
+            (docs / version / "shared").mkdir(parents=True)
+            (docs / version / "shared" / "qa.csv").write_text(HEADER, encoding="utf-8")
+        for rel, body in files.items():
+            path = docs / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        out = docs.parent / "out"
+        merge = subprocess.run([sys.executable, "-I", str(scripts / "merge-versions.py"), str(docs), str(out)],
+                               capture_output=True, text=True, cwd=work)
+        if merge.returncode != 0:
+            results.append((name, merge.returncode, merge.stdout + merge.stderr, code, needle))
+            continue
+        proc = subprocess.run([sys.executable, "-I", str(scripts / TARGET), str(out / "shared" / "qa.csv"), str(out / "spec")],
+                              capture_output=True, text=True, cwd=work)
+        results.append((name, proc.returncode, proc.stdout + proc.stderr, code, needle))
+    return results
+
+
 def copy_scripts(dest: Path) -> Path:
     assert_in_tmp(dest)
     shutil.copytree(SCRIPTS, dest, ignore=shutil.ignore_patterns("__pycache__"))
@@ -304,6 +478,25 @@ def main() -> int:
             check("NOT_MARKERS が references/spec-exit.md と違う",
                   list(ast.literal_eval(code_not.group(1))) == not_markers, f"{code_not.group(1)} vs {not_markers}")
         check("references から印を 1 つも読めない（読み方が壊れている）", len(markers) >= 2, str(markers))
+
+        # 番号の形（#1297）
+        code_number = re.search(r'^CASE_NUMBER = r"(.*)"$', source, flags=re.MULTILINE)
+        ref_number = reference_case_number(reference)
+        code_header = re.search(r'^CASE_HEADER = re.compile\(r"(.*)", re.IGNORECASE\)$', source, flags=re.MULTILINE)
+        check("本体に CASE_HEADER が見つからない", code_header is not None)
+        if code_header:
+            check("CASE_HEADER が references/spec-exit.md と違う", f"`{code_header.group(1)}`" in reference, code_header.group(1))
+        check("本体に CASE_NUMBER が見つからない", code_number is not None)
+        check("references/spec-exit.md の「テストケースの番号の重複」に番号の形が見つからない", ref_number is not None)
+        if code_number and ref_number:
+            check("CASE_NUMBER が references/spec-exit.md と違う", code_number.group(1) == ref_number, f"{code_number.group(1)} vs {ref_number}")
+        broken_number = reference.replace("`[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+`", "`[A-Z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+`")
+        check("番号の形の写しを崩しても不一致にならない", reference_case_number(broken_number) != ref_number)
+
+        # 版を重ねた全体（#1297）
+        for name, got, output, want, needle in merged_cases(scripts, tmp_path / "mergework"):
+            check(f"重ねた全体の試料が期待どおりでない: {name}", got == want and needle in output and "Traceback" not in output,
+                  f"exit={got} {output[-300:]}")
 
         # 突き合わせ自体の陽性対照: 写しを崩すと不一致になる
         broken = reference.replace("| `要確認` |", "| `要検討` |")
