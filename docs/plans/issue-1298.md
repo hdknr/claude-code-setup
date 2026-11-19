@@ -7,7 +7,7 @@
 読み込んだ dev-loop は 2.13.0（`SKILL.md` 1931 行を読んだ）。並行して #1297 の周を別の子が回している。
 
 直す線: `既定`（出所: cruise の確かめた線（台帳 `issue-1296`））。
-版の上げ方: `spec-loop` を **minor**（能力の追加——`spec-loop` は 0.x なので壊れる変更も minor）。着手時の main は 0.116.0 → 0.117.0。
+版の上げ方: `spec-loop` を **minor**（能力の追加——`spec-loop` は 0.x なので壊れる変更も minor）。着手時の main は 0.116.0 → 0.117.0。main が #1297 で 0.117.0 に進んだので取り込み、0.118.0 に上げ直した。
 マージの直前に main が進んでいたら、親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
 重い検査は `/Users/hdknr/Projects/hdknr/claude-code-setup/plugins/dev-loop/skills/cruise/scripts/run-serial.py` 越しに走らせる。
 割り目: 割らない（cruise の周）。
