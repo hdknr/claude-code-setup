@@ -6,7 +6,7 @@
 読み込んだ dev-loop は 2.13.0（キャッシュ `skills/dev-loop/SKILL.md` 1931 行を全部読んだ。リポジトリの main は 2.14.0 で、その差は読んでいない）。割り目: 割らない（cruise の周）。
 
 直す線: `既定`（出所: cruise の確かめた線）。
-版の上げ方: `spec-loop` を **minor**（中間表現の能力追加。0.117.0 → 0.118.0）、`dev-loop` を **patch**（`references/spec-gap.md` の記述追加。2.14.0 → 2.14.1）。
+版の上げ方: `spec-loop` を **minor**（中間表現の能力追加。0.117.0 → 0.118.0 に上げたが、main が先に #1298 で 0.118.0 へ進んだので取り込み、0.119.0 に上げ直した）、`dev-loop` を **patch**（`references/spec-gap.md` の記述追加。2.14.0 → 2.14.1）。
 マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から上げ直す（cruise の `references/parallel.md`）。
 並行する周 #1298 が spec-loop の `scaffold.py`・版の行を触りうる——取り込みで衝突したら版の行と生成ブロックのほかは塊ごとに解く。
 重い検査（`test-scaffold.py`・`check-all.py`）は `run-serial.py` 越し。
@@ -37,8 +37,11 @@ scaffold が仕様のテストケースと中間表現を突き合わせ、内�
 - `plugins/dev-loop/skills/dev-loop/references/spec-gap.md` — 小見出しの読み方（dev-loop の規定は変えない）
 - `scripts/test-scaffold.py` — 試料・変異
 - `CLAUDE.md` — `scaffold.py` の項
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
-- `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
+- `plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plugins/dev-loop-design.md` — `skill-metrics.py` が書く生成ブロック（spec-gap.md の行数の変化）
 - `docs/plans/issue-1301.md` — この計画ファイル
 
