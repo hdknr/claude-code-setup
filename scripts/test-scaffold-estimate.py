@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""`scaffold-estimate.py`（spec-loop の、scaffold の書き起こしの前に、仕様のテストケースが Red テストに乗る見積もりを数えるスクリプト。#1302）の回帰テスト。
+"""`scaffold-estimate.py`（spec-loop の、scaffold の書き起こしの前に、仕様のテストケースが開発に渡る（Red テスト・受入基準）見積もりを数えるスクリプト。#1302）の回帰テスト。
 
     python3 scripts/test-scaffold-estimate.py
 

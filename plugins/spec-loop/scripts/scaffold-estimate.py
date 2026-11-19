@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scaffold の書き起こしの前に、仕様のテストケースがどれだけ Red テストに乗るかの見積もりを数える（#1302）。
+"""scaffold の書き起こしの前に、仕様のテストケースのうち開発に渡る（Red テストか受入基準になる）割合の見積もりを数える（#1302）。
 
 usage: python3 scaffold-estimate.py list  [--repo <正本>]
        python3 scaffold-estimate.py check [--repo <正本>] [--file <見積もりのファイル>]
@@ -28,7 +28,7 @@ usage: python3 scaffold-estimate.py list  [--repo <正本>]
   **「乗る割合」は Red テスト + 受入基準（開発に渡るケース）の割合で、Red テストだけの割合も併記する**（受入基準に回すものは Red テストにならない）。
 
 **止める割合の線は決めていない**（`references/spec-ir.md` の「書き起こす前の見積もり」が理由）。0 を返しても「続けてよい」ではない——
-**割合に依らず、結果を利用者に示し、続けるかを確かめてから 2 に入る**のはスキルの手順である。
+**割合に依らず、結果を利用者に示し、続けるかを確かめてから手順 2 に入る**のはスキルの手順である。
 
 終了コード: 0 ／ 1 形の違反か、分けていないケース・仕様に無い番号がある ／ 2 判定していない（`docs/` が無い・版が無い・重ね合わせが読めない・
 見積もりのファイルが無いか JSON として読めない・引数の誤り）／ 3 仕様にテストケースの番号の表が無く、見積もれない（`list`・`check` とも。
@@ -239,7 +239,7 @@ def cmd_check(repo: Path, path: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="scaffold の書き起こしの前に、仕様のテストケースが Red テストに乗る見積もりを数える")
+    parser = argparse.ArgumentParser(description="scaffold の書き起こしの前に、仕様のテストケースが開発に渡る（Red テスト・受入基準）見積もりを数える")
     parser.add_argument("command", choices=["list", "check"])
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--file", type=Path, default=None, help=f"見積もりのファイル（既定 <正本>/{DEFAULT_FILE}）")
