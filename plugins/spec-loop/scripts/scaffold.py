@@ -1899,7 +1899,7 @@ def openapi(ir: dict) -> str:
 def py_type(field: dict, name: str = "", nested: list[str] | None = None) -> str:
     """項目の Python の型。入れ子のオブジェクト（#1300）は、`name` の名前の TypedDict の定義を `nested` の行に足して、その名前を返す。"""
     if field["type"] == "array":
-        base = f"list[{py_type(field['items'], name + 'Item', nested)}]"
+        base = f"list[{py_type(field['items'], name + '_Item', nested)}]"
     elif field["type"] == "object":
         nested += typed_dict(name, field["properties"])
         base = name
@@ -2285,7 +2285,7 @@ def reason_methods(composite: bool = False) -> list[str]:
     ]
 
 
-def dynamic_methods() -> list[str]:
+def dynamic_methods(composite: bool = False) -> list[str]:
     """期待に `$any`・`$ref` を書く（結果を `as` で束ねる）入出力のケースがある機能の Red テストのクラスに足すメソッド（#1299。比べるメソッドは `reason_methods`）。名前は定数から入れる。"""
     return [
         "",
@@ -2298,7 +2298,7 @@ def dynamic_methods() -> list[str]:
         "        self.agree(f\"{call['operation']}({call['input']!r})\", TRACE_TYPES[call[\"operation\"]],",
         "                   TRACE_NULLABLE[call[\"operation\"]], actual, expected, env)",
         "        if AS in call:",
-        "            env[call[AS]] = dict(actual)",
+        f"            env[call[AS]] = {'copy.deepcopy' if composite else 'dict'}(actual)",
         "",
         "    def dynamic(self, given, expected, setup, after, bind):",
         "        # 前提・後の状態があれば状態を空に戻し、`setup` → 本体 → `after` の順に比べる。`as` で束ねた結果は写して env に持ち（実装が返した値を後の呼び出しが書き換えても、`$ref` は返った時点の値と比べる）、`$ref` が指す",
@@ -2311,7 +2311,7 @@ def dynamic_methods() -> list[str]:
         "        actual = self.call(given)",
         "        self.agree(f\"{OPERATION}({given!r})\", OUTPUT_TYPES, NULLABLE, actual, expected, env)",
         "        if bind:",
-        "            env[bind] = dict(actual)",
+        f"            env[bind] = {'copy.deepcopy' if composite else 'dict'}(actual)",
         "        for call in after:",
         "            self.dynamic_stage(call, env)",
     ]
@@ -2402,6 +2402,7 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
            "（references/spec-ir.md の「配列と入れ子のオブジェクト」）。"] if composite else []),
         "from __future__ import annotations",
         "",
+        *(["import copy"] if composite and dynamic else []),
         "import importlib",
         *(["import threading", "import time"] if traced else []),
         "import unittest",
@@ -2456,7 +2457,7 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         *(stage_helpers(composite) if traced or staged else []),
         *(staged_methods() if staged else []),
         *(reason_methods(composite) if dynamic or composite else []),
-        *(dynamic_methods() if dynamic else []),
+        *(dynamic_methods(composite) if dynamic else []),
         *(trace_methods() if traced else []),
     ]
     for case in sorted(feature["cases"], key=case_order):
