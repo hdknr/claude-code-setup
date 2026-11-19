@@ -302,6 +302,11 @@ jobs:
       - name: spec-loop の緑のケースの一覧のテスト（#1000）
         run: python3 scripts/test-green-list.py
 
+      # 本体は plugins/spec-loop/scripts/scaffold-estimate.py（scaffold の書き起こしの前に、仕様のテストケースを Red テスト・受入基準・どちらにもできないに分けた見積もりの形と網羅を確かめて数える）。
+      # 試料は一時ディレクトリの正本で、本物の scaffold.py・check-spec-exit.py・merge-versions.py を読み込んで走らせる。
+      - name: spec-loop の書き起こし前の見積もりのテスト（#1302）
+        run: python3 scripts/test-scaffold-estimate.py
+
       # 本体は plugins/spec-loop/scripts/ にある（ある版が前の版から何を足し・変え・消したか）。
       - name: spec-loop の版の差分のテスト（#263）
         run: python3 scripts/test-diff-versions.py
