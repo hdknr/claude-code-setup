@@ -289,13 +289,103 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 | `error` | 失敗するケースなら、`expected` の代わりに `operation.errors` のどれか |
 | `qa` | このケースの根拠にした Q&A の `No` の配列（省いてよい）。機能の `qa` と同じ決まり |
 | `ref` | このケースの元になった、仕様の中の行の番号（決定表の `R-F10`・テストケースの `F1-5b` など。省いてよい）。**仕様が番号を振っていれば書く**——生成と `--check` が、機能の `source` の原文にその番号が在るかを確かめる（#465。値が一致するかまでは見ない） |
+| `setup` | （任意）`input` で本体を呼ぶ前の状態を作る——入口の呼び出し（`{"operation", "input", "expected" か "error"}`）か、入口の無い前提を作る口 `seed` の呼び出し（`{"seed", "values"}`）の配列（1 つ以上）。下の「前提と後の状態」 |
+| `after` | （任意）本体を呼んだ後の状態を確かめる——`setup` と同じ形の配列（1 つ以上）。下の「前提と後の状態」 |
 
 **`expected` と `error` は、ちょうど片方だけ書く。** **決まりに無いキーは書かない**——書いても生成物に現れないので、検査が落とす。
+**`setup`・`after` は入出力のケースにだけ書ける**（トレースのケースの `setup`・`after` は `trace` の中。上と下の「前提と後の状態」「トレースのケース」）。
 **`input`・`expected`・`error` の代わりに `trace` を書いたケースは、トレースのケースである**（下の「トレースのケース」）。**機能には入出力のケース（`trace` でないもの）を 1 つ以上置く**——性能テストはその入力を使う。
 
 実装は、`input` を受け取って、正常なら `expected` と等しいオブジェクトを、失敗なら
 `{"error": "<エラーの名前>"}` を返す。**Red テストはこの等しさと、各項目の型を見る**
 （`True == 1 == 1.0` なので、等しさだけでは `boolean` に `1` を返す実装が通る。`number` は整数でも小数でもよい。`nullable` の項目が `null` のときは型を見ない）。
+
+## 前提と後の状態（`setup`・`after`。#1298）
+
+**入出力のケースは、`input` の 1 回の呼び出しだけでなく、その前の状態（前提）と後の状態を書ける。** 「同じ番号のレコードが既にある」「作る → 取消にする → 同じキーで送り直す」など、
+仕様のテストケースが 1 回の呼び出しで書けないものを写すために使う。
+
+- **`setup`**: 本体を呼ぶ前に、書いた順に呼ぶ。入口の呼び出し（`{"operation": <入口の id>, "input": <入力>, "expected": <出力>}`。`expected` の代わりに `"error": <エラーの名前>`）は、
+  **重ね合わせた全体の中間表現のどの機能の入口でもよい**（トレースのケースの `setup`・`after` と同じ決まり。入力はその入口の `input` の項目をちょうど全部、期待は `output` の項目をちょうど全部）。
+- **`after`**: 本体を呼んで期待と比べた後に、書いた順に呼んで比べる（`setup` と同じ形）。**本体の戻り値では見えない状態**（作った・変えたレコード）を、読む入口で確かめる。
+- **`seed`**: 入口の無い前提——マスタ・利用者・権限など、アプリの入口からは作れないもの——を作る口の呼び出し。`{"seed": "<名前>", "values": {"<項目>": <値>}}`。
+  名前と項目の名前は英小文字で始まり英小文字・数字・`_`、値は文字列・数・真偽・`null`（入れ子にしない）。`values` は 1 つ以上。
+  **口は実装に求める**（下の「実装に求める口」の `seed`）。**`seed` は `setup`・`after` の中でだけ書ける**（トレースのケースの `setup`・`after` には書けない）。
+
+**`setup`・`after` を書かないケースは、今までと変わらない**——Red テスト・Issue の本文・機能の指紋は、書いていないケースだけの機能では 1 バイトも変わらない
+（機能の指紋は機能のオブジェクト全体の sha256 なので、書いたケースを持つ機能の指紋は変わる）。**書いたケースの Red テストは、`reset_state()` を呼んで状態を空にしてから（テストが終わったら、後ろのケースに状態を残さないよう、もう一度呼ぶ）、
+`setup` を順に呼び、本体を呼んで `expected`（か `error`）と比べ、`after` を順に呼んで比べる。** `reset_state()` と `seed` の口が実装に無ければ失敗する（実装が無いときも失敗で、エラーではない）。
+**入口の名前に `reset_state` は使えない**（`setup`・`after` を書いたケースがあるとき）。**`seed` を書いたケースがあるときは、入口の名前に `seed` も、どの入口の入力にも項目 `seed` も使えない**
+（口と重なる。生成のスクリプトが止める。`checkpoint` と同じ扱い）。
+
+**性能テストは `setup` を呼ばず、入出力のケースの `input` だけで測る**（前提の無い呼び出しの時間になる。`references/nfr.md` の「性能テストは `条件` の負荷を再現しない」と同じ限界）。
+
+**例**（前提あり・2 回の操作。次の 3 つの機能の `features` の要素）:
+
+```json
+[
+  {
+    "id": "F-006", "title": "注文を作る", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "create_order", "method": "POST", "path": "/orders",
+      "input": {"order_no": {"type": "string"}, "customer": {"type": "string"}},
+      "output": {"status": {"type": "string"}},
+      "errors": ["UNKNOWN_CUSTOMER", "DUPLICATE"]
+    },
+    "cases": [
+      {"id": "F-006-C1", "title": "前提あり: 登録済みの顧客なら注文を作れる",
+       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}}],
+       "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"},
+       "after": [{"operation": "get_order", "input": {"order_no": "A-1"}, "expected": {"status": "open"}}]},
+      {"id": "F-006-C2", "title": "顧客が登録されていなければ拒否する",
+       "input": {"order_no": "A-1", "customer": "none"}, "error": "UNKNOWN_CUSTOMER"},
+      {"id": "F-006-C3", "title": "2 回の操作: 作る → 取消にする → 同じ番号で送り直すと拒否し、取消のまま",
+       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}},
+                 {"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"}},
+                 {"operation": "cancel_order", "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}}],
+       "input": {"order_no": "A-1", "customer": "c1"}, "error": "DUPLICATE",
+       "after": [{"operation": "get_order", "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}}]}
+    ]
+  },
+  {
+    "id": "F-007", "title": "注文を取り消す", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "cancel_order", "method": "POST", "path": "/orders/cancel",
+      "input": {"order_no": {"type": "string"}}, "output": {"status": {"type": "string"}}, "errors": ["NOT_FOUND"]
+    },
+    "cases": [
+      {"id": "F-007-C1", "title": "作った注文は取り消せる",
+       "setup": [{"seed": "customer", "values": {"id": "c1", "name": "取引先"}},
+                 {"operation": "create_order", "input": {"order_no": "A-1", "customer": "c1"}, "expected": {"status": "open"}}],
+       "input": {"order_no": "A-1"}, "expected": {"status": "cancelled"}},
+      {"id": "F-007-C2", "title": "無い注文は取り消せない", "input": {"order_no": "none"}, "error": "NOT_FOUND"}
+    ]
+  },
+  {
+    "id": "F-008", "title": "注文の状態を見る", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "get_order", "method": "GET", "path": "/orders/status",
+      "input": {"order_no": {"type": "string"}}, "output": {"status": {"type": "string"}}, "errors": ["NOT_FOUND"]
+    },
+    "cases": [
+      {"id": "F-008-C1", "title": "無い注文は見つからない", "input": {"order_no": "none"}, "error": "NOT_FOUND"}
+    ]
+  }
+]
+```
+
+実装は、モジュールの `reset_state()` と `seed(<名前>, /, **値)`（名前だけを位置引数で受け取る）を持つ——次の形でよい（`seed` が何を置くかは実装が決める）:
+
+```python
+_customers, _orders = {}, {}
+
+def reset_state():
+    _customers.clear(); _orders.clear()
+
+def seed(name, /, **values):
+    if name == "customer":
+        _customers[values["id"]] = values
+```
 
 ## トレースのケース（`trace`。#923）
 
@@ -335,10 +425,12 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 | 口 | 書くもの |
 | --- | --- |
 | `checkpoint` | `calls` の呼び出しの入口の関数が受け取るキーワード引数（既定は何もしない関数。`setup`・`after` の呼び出しには渡さない）。**トレースの段の全部について、その段の操作の直前に `checkpoint("<段の名前>")` を呼ぶ**——結果で書かない分岐（在庫が足りず書かずに返す、など）でも、その段の前で呼ぶ。**その段のために排他を取る前に呼ぶ**（テストは呼び出しを `checkpoint` で止めるので、排他の内側で呼ぶと、止められている間ほかの呼び出しが排他で待ち、トレースの順に進められない）。**先にまとめて呼ばない**——続けて呼んでよいのは、1 回の原子的な操作で読むと書くをまとめる実装が、その操作の直前に呼ぶときだけ。1 回も呼ばない・段を飛ばして終わる・トレースの順で次の段と違う段に来る呼び出しがあれば、順を強制できないので失敗にする（口を無視する・一部の段だけに呼ぶ・名前を違える競合する実装を素通りさせない） |
-| `reset_state` | `impl_module` のモジュールの関数。状態を空に戻す。トレースのケースのテストの初めに呼ぶ |
+| `reset_state` | `impl_module` のモジュールの関数。状態を空に戻す。トレースのケースのテストの初めに呼ぶ。**前提・後の状態（`setup`・`after`）を書いた入出力のケースも、テストの初めに呼ぶ**（上の「前提と後の状態」） |
+| `seed` | `impl_module` のモジュールの関数 `seed(<名前>, /, **値)`。入口の無い前提（マスタ・利用者・権限など）を作る。**`setup`・`after` に `seed` の呼び出しを書いたケースがあるときだけ求める**（名前だけを位置引数に取り、値の項目の名前と重ならない）。トレースのケースは呼ばない |
 
 **口は手段ではなく観測点である**——段の名前は仕様（モデル）の行為の名前で、実装は段の前で知らせるだけ。排他の取り方・書き方は決めない。
 **入口の名前に `reset_state`、トレースが呼ぶ入口の入力の項目に `checkpoint` は使えない**（口と重なる。生成のスクリプトが止める）。
+**`seed` を書いたケースがあるときは、入口の名前に `seed`、どの入口の入力にも項目 `seed` は使えない**（同じく止める。上の「前提と後の状態」）。
 
 ### Red テストが確かめること
 

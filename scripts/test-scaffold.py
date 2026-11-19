@@ -2314,6 +2314,247 @@ def git_init_only(repo: Path) -> None:
     git_in(repo, "init", "-q")
 
 
+# ---- 前提・後の状態（#1298）。在庫の機能に書く（F-003 はトレースのケースも持つ。F-004 は後の状態だけ、F-005 は前提だけ）
+STAGE_RESERVE_CASE = {
+    "id": "F-003-C3", "title": "前提あり: 在庫を置いてから引き当てると、後の在庫が減る",
+    "setup": [{"operation": "set_stock", "input": {"item": "a", "qty": 1}, "expected": {"stock": 1}}],
+    "input": {"item": "a", "qty": 1}, "expected": {"ok": True},
+    "after": [{"operation": "get_stock", "input": {"item": "a"}, "expected": {"stock": 0}}],
+}
+STAGE_SET_CASE = {
+    "id": "F-004-C2", "title": "後の状態: 置いた数を後から読める",
+    "input": {"item": "y", "qty": 3}, "expected": {"stock": 3},
+    # 2 つ目の後の状態は、前のケース（F-004-C1。前提を書かず、cleanup も無い）が置いた在庫 b が、頭の reset_state() で空に戻っていること
+    "after": [{"operation": "get_stock", "input": {"item": "y"}, "expected": {"stock": 3}},
+              {"operation": "get_stock", "input": {"item": "b"}, "expected": {"stock": 0}}],
+}
+STAGE_COUNT_CASE = {
+    "id": "F-005-C2", "title": "前提あり: 置いた数を数える",
+    "setup": [{"operation": "set_stock", "input": {"item": "x", "qty": 2}, "expected": {"stock": 2}}],
+    "input": {"item": "x"}, "expected": {"stock": 2},
+}
+# 前提を書かないケース——前の前提のケース（F-005-C2）が置いた在庫を残さない実装でだけ緑（テストが終わったら状態を空に戻す）
+STAGE_PLAIN_CASE = {"id": "F-005-C3", "title": "前提を書かないケース: 前のケースの在庫が残らない",
+                    "input": {"item": "x"}, "expected": {"stock": 0}}
+STAGE_TEST = "scaffold/tests/test_f_004.py"
+
+
+def staged_ir(fn: Callable[[dict], None] = lambda ir: None, *, trace: bool = False) -> Callable[[dict], dict]:
+    """基準の中間表現に在庫の機能を足し、前提・後の状態のケースを書く。`trace` なら F-003（トレースのケースと前提あり）も足す。"""
+    def build_ir(ir: dict) -> dict:
+        ir = copy.deepcopy(ir)
+        features = copy.deepcopy(STOCK_FEATURES)
+        features[0]["cases"].append(copy.deepcopy(STAGE_RESERVE_CASE))
+        features[1]["cases"].append(copy.deepcopy(STAGE_SET_CASE))
+        features[2]["cases"] += [copy.deepcopy(STAGE_COUNT_CASE), copy.deepcopy(STAGE_PLAIN_CASE)]
+        ir["features"] += features if trace else features[1:]
+        fn(ir)
+        return ir
+    return build_ir
+
+
+def stage_feature(ir: dict, fid: str) -> dict:
+    return next(f for f in ir["features"] if f["id"] == fid)
+
+
+def stage_case(ir: dict, cid: str) -> dict:
+    return next(c for f in ir["features"] for c in f["cases"] if c["id"] == cid)
+
+
+# 状態を持つ在庫の実装（`seed` の口は持たない）。set_stock は置いた数を覚える
+STAGE_IMPL = GOOD_IMPL + STOCK_STATE
+# 置いた数を覚えない実装——前提（set_stock）が効かず、後の状態（get_stock）も変わらない
+STAGE_NO_STORE_IMPL = STAGE_IMPL.replace("    _stock[item] = qty\n    return {\"stock\": qty}", "    return {\"stock\": qty}")
+assert STAGE_NO_STORE_IMPL != STAGE_IMPL
+# 状態を空に戻す関数の無い実装
+STAGE_NO_RESET_IMPL = STAGE_IMPL.replace("def reset_state():\n    _stock.clear()\n", "")
+assert STAGE_NO_RESET_IMPL != STAGE_IMPL
+
+
+def stage_red(count: int, *needles: str) -> Callable[[Path], str | None]:
+    """Red テストが `count` 件の失敗（エラーなし）になり、出力に `needles` が全部ある。"""
+    def post(repo: Path) -> str | None:
+        code, out = red_run(repo)
+        if code == 0:
+            return f"Red テストが通った: {out[-300:]}"
+        if f"FAILED (failures={count})" not in out:
+            return f"失敗が {count} 件の失敗（エラーなし）になっていない: {out[-600:]}"
+        for needle in needles:
+            if needle not in out:
+                return f"失敗の出力に {needle!r} が無い: {out[-600:]}"
+        return None
+    return post
+
+
+def stage_written(repo: Path) -> str | None:
+    test = (repo / STAGE_TEST).read_text(encoding="utf-8")
+    for needle in ("    def test_f_004_c2(self):\n        self.staged({'item': 'y', 'qty': 3}, {'stock': 3}, [], "
+                   "[{'expected': {'stock': 3}, 'input': {'item': 'y'}, 'operation': 'get_stock'}, "
+                   "{'expected': {'stock': 0}, 'input': {'item': 'b'}, 'operation': 'get_stock'}])",
+                   "RESET = 'reset_state'", "SEED = 'seed'", "    def staged(self, given, expected, setup, after):",
+                   "        self.function_of(RESET)()\n        self.addCleanup(self.function_of(RESET))", "    def test_f_004_c1(self):\n        self.check("):
+        if needle not in test:
+            return f"{STAGE_TEST} に {needle!r} が無い"
+    # トレースのケースを持たない機能には、順の強制は要らない
+    if "Schedule" in test or "import threading" in test or "TRACE_STEP_WAIT" in test:
+        return f"トレースのケースを持たない {STAGE_TEST} に順の強制がある"
+    # 前提・後の状態を書かない機能の Red テストは、足す前と同じバイト（#923 の前の生成物と同じ）
+    for rel in ("scaffold/tests/test_f_001.py", "scaffold/tests/test_f_002.py"):
+        if hashlib.sha256((repo / rel).read_bytes()).hexdigest() != BASE_SHA256[rel]:
+            return f"前提・後の状態を書かない {rel} が #1298 の前の生成物と違う"
+        if "reset_state" in (repo / rel).read_text(encoding="utf-8"):
+            return f"前提・後の状態を書かない {rel} に口がある"
+    found = bodies(repo)
+    problem = body_has(found["F-004"], ("状態を空に戻す関数 `reset_state()` を持つ（ケースの初めに呼ぶ）",
+                                       "前提（`setup`）・後の状態（`after`）を持つケース"), "前提・後の状態を持つ機能")
+    if problem:
+        return problem
+    line = next(l for l in found["F-004"].splitlines() if l.startswith("- 前提（`setup`）・後の状態（`after`）を持つケース"))
+    if "seed(" in line:
+        return "`seed` を書いていない機能の本文に `seed` の口を求める行がある"
+    if "reset_state" in found["F-001"]:
+        return "前提・後の状態を書かない機能の本文に口の行がある"
+    # 後の状態・前提を持つ機能の指紋も、dev-loop の照合で一致する（式は変えていない）
+    merge_with_script(repo)
+    return fingerprint_matches(repo, found["F-004"], "F-004", "build/merged")
+
+
+def stage_both_written(repo: Path) -> str | None:
+    """トレースのケースと前提を両方持つ機能は、入口を引く道具を 1 つだけ持つ。"""
+    test = (repo / TRACE_TEST).read_text(encoding="utf-8")
+    for needle in ("    def trace(self, trace):", "    def staged(self, given, expected, setup, after):",
+                   "    def test_f_003_c3(self):\n        self.staged({'item': 'a', 'qty': 1}, {'ok': True}, [{"):
+        if needle not in test:
+            return f"{TRACE_TEST} に {needle!r} が無い"
+    if test.count("    def function_of(self, name):") != 1 or test.count("RESET = 'reset_state'") != 1:
+        return "入口を引く道具か口の定数が 2 つある"
+    body = bodies(repo)["F-003"]
+    return body_has(body, ("トレースが同時に走らせる関数（`reserve`）", "前提（`setup`）・後の状態（`after`）を持つケース"), "両方を持つ機能")
+
+
+# 仕様の中間表現の「前提と後の状態」の例（spec-ir.md の json のブロック）。**文書の例を、そのまま生成に通す**
+def doc_example() -> list[dict]:
+    text = SPEC_IR_REF.read_text(encoding="utf-8")
+    section = text.split("\n## 前提と後の状態", 1)[1].split("\n## ", 1)[0]
+    found = re.findall(r"```json\n(.*?)\n```", section, re.S)
+    assert len(found) == 1, f"spec-ir.md の「前提と後の状態」の json のブロックが 1 つでない: {len(found)}"
+    return json.loads(found[0])
+
+
+def doc_ir(fn: Callable[[dict], None] = lambda ir: None) -> Callable[[dict], dict]:
+    def build_ir(ir: dict) -> dict:
+        ir = copy.deepcopy(ir)
+        ir["features"] += copy.deepcopy(doc_example())
+        fn(ir)
+        return ir
+    return build_ir
+
+
+DOC_STATE = """
+_customers, _orders = {}, {}
+
+
+def reset_state():
+    _customers.clear()
+    _orders.clear()
+
+
+def seed(name, /, **values):
+    if name == "customer":
+        _customers[values["id"]] = values
+
+
+def create_order(order_no, customer):
+    if customer not in _customers:
+        return {"error": "UNKNOWN_CUSTOMER"}
+    if order_no in _orders:
+        return {"error": "DUPLICATE"}
+    _orders[order_no] = "open"
+    return {"status": "open"}
+
+
+def cancel_order(order_no):
+    if order_no not in _orders:
+        return {"error": "NOT_FOUND"}
+    _orders[order_no] = "cancelled"
+    return {"status": "cancelled"}
+
+
+def get_order(order_no):
+    if order_no not in _orders:
+        return {"error": "NOT_FOUND"}
+    return {"status": _orders[order_no]}
+"""
+DOC_IMPL = GOOD_IMPL + DOC_STATE
+# 前提を作る口が何もしない・口の関数が無い・状態を空に戻さない・取り消しを覚えない実装
+DOC_NO_SEED_IMPL = DOC_IMPL.replace('    if name == "customer":\n        _customers[values["id"]] = values\n', "    pass\n")
+DOC_NO_SEED_FUNCTION_IMPL = DOC_IMPL.replace('def seed(name, /, **values):\n    if name == "customer":\n        _customers[values["id"]] = values\n', "")
+DOC_NO_RESET_IMPL = DOC_IMPL.replace("def reset_state():\n    _customers.clear()\n    _orders.clear()\n", "")
+DOC_LEAKY_IMPL = DOC_IMPL.replace("    _customers.clear()\n    _orders.clear()\n", "    _customers.clear()\n")
+DOC_NO_CANCEL_IMPL = DOC_IMPL.replace('    _orders[order_no] = "cancelled"\n', "")
+for _mutant in (DOC_NO_SEED_IMPL, DOC_NO_SEED_FUNCTION_IMPL, DOC_NO_RESET_IMPL, DOC_LEAKY_IMPL, DOC_NO_CANCEL_IMPL):
+    assert _mutant != DOC_IMPL
+
+
+def doc_written(repo: Path) -> str | None:
+    test = (repo / "scaffold" / "tests" / "test_f_006.py").read_text(encoding="utf-8")
+    for needle in ("SEED = 'seed'", "    def test_f_006_c3(self):\n        self.staged(", "'seed': 'customer'", "'values': {'id': 'c1', 'name': '取引先'}",
+                   "    def test_f_006_c2(self):\n        self.check("):
+        if needle not in test:
+            return f"test_f_006.py に {needle!r} が無い"
+    body = bodies(repo)["F-006"]
+    return body_has(body, ("`seed(<名前>, /, **値)` も持つ（ケースの `seed` の行が呼ぶ）",), "seed を書いた機能")
+
+
+def plain_feature(fid: str, op: str, extra_input: dict | None = None) -> dict:
+    return {"id": fid, "title": "足した機能", "source": ["spec/order.md"], "qa": [],
+            "operation": {"id": op, "method": "GET", "path": f"/{op}", "input": {"k": {"type": "string"}, **(extra_input or {})},
+                          "output": {"ok": {"type": "boolean"}}},
+            "cases": [{"id": f"{fid}-C1", "title": "足したケース", "input": {"k": "a", **{n: "x" for n in (extra_input or {})}},
+                       "expected": {"ok": True}}]}
+
+
+def trace_v2_of(fid: str, case: str, status: str) -> Callable[[Path], str | None]:
+    """v2 で本文を作るのは機能 `fid` だけで、ケース `case` の状態が `status`。"""
+    def post(repo: Path) -> str | None:
+        found = bodies(repo)
+        if list(found) != [fid]:
+            return f"本文を作るのは変えた機能だけのはず: {list(found)}"
+        return body_has(found[fid], (f"| `{case}` | {status} |",), "v2 の変更")
+    return post
+
+
+def stage_v2_feature(fn: Callable[[dict], None], fid: str = "F-004") -> dict[str, str]:
+    feature = copy.deepcopy(stage_feature(staged_ir()(IR), fid))
+    fn(feature)
+    return v2([feature])
+
+
+def stage_v2_moved(repo: Path) -> str | None:
+    """v2 で呼ぶ入口（F-005 の get_stock）の出力の型だけを変えた——F-004 は機能が同じでも、後の状態で呼ぶ入口が変わったので Red テストが変わる。"""
+    found = bodies(repo)
+    if list(found) != ["F-004", "F-005"]:
+        return f"本文を作るのは F-004（後の状態で呼ぶ入口が変わった）と F-005 のはず: {list(found)}"
+    return body_has(found["F-004"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-004-C1` | 回帰 |", "| `F-004-C2` | 変更 |"),
+                    "後の状態で呼ぶ入口が変わった機能")
+
+
+def stage_reordered_kept(repo: Path) -> str | None:
+    if "F-004" in bodies(repo):
+        return f"キーの順だけ変えた F-004 の本文を作った: {list(bodies(repo))}"
+    now = hashlib.sha256((repo / STAGE_TEST).read_bytes()).hexdigest()
+    before = (repo / "before.sha256").read_text(encoding="utf-8")
+    return None if now == before else f"キーの順だけ変えたのに {STAGE_TEST} のバイトが変わった（{before[:12]} → {now[:12]}）"
+
+
+def plant_stage_reordered_v2(repo: Path) -> None:
+    (repo / "before.sha256").write_text(hashlib.sha256((repo / STAGE_TEST).read_bytes()).hexdigest(), encoding="utf-8")
+    for rel, body in v2([reversed_keys(stage_feature(staged_ir()(IR), "F-004"))]).items():
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+
 CASES: list[Case] = [
     # 仕様レビューの記録（#1044）——最後の実行の行が `抜けた` でなければ何も作らない（Issue の受入基準 3）
     Case("記録: 最後の実行が抜けていない", 1, "最後の実行の行（回 3）が 抜けていない——仕様レビューを抜けていない",
@@ -2429,6 +2670,104 @@ CASES: list[Case] = [
          ir=traced(lambda ir: ir["features"][2]["cases"][1].update(input={"item": "a", "qty": 1})), extra=TRACE_FORMAL),
     Case("トレース: 入出力のケースが無い機能", 1, "F-003.cases: 入出力のケース（`trace` でないもの）が 1 つも無い",
          ir=traced(lambda ir: ir["features"][2]["cases"].pop(0)), extra=TRACE_FORMAL),
+    # #1298: 入出力のケースの前提（setup）・後の状態（after）と、入口の無い前提を作る口（seed）
+    Case("前提・後の状態: 作る", 0, "作った", ir=staged_ir(), post=stage_written),
+    Case("前提・後の状態: 実装が無ければ失敗", 0, "作った", ir=staged_ir(), post=expect_red(8)),
+    Case("前提・後の状態: 正しい実装で緑", 0, "作った", ir=staged_ir(), impl=STAGE_IMPL, post=expect_green),
+    # 前提（set_stock）が効かない・後の状態が変わらない実装は、前提だけのケースと後の状態だけのケースの両方が落ちる
+    Case("前提・後の状態: 前提を無視する実装で失敗", 0, "作った", ir=staged_ir(), impl=STAGE_NO_STORE_IMPL,
+         post=stage_red(2, "test_f_005_c2", "test_f_004_c2")),
+    Case("前提・後の状態: 後の状態を変えない実装で失敗", 0, "作った", ir=staged_ir(), impl=STAGE_NO_STORE_IMPL,
+         post=stage_red(2, "get_stock({'item': 'y'}) が {'stock': 0} を返した（期待 {'stock': 3}）")),
+    Case("前提・後の状態: 状態を空に戻す関数が無ければ失敗", 0, "作った", ir=staged_ir(), impl=STAGE_NO_RESET_IMPL,
+         post=stage_red(2, "未実装: spec_impl.reset_state が無い")),
+    Case("前提・後の状態: --red-check が数える", 0, "失敗 2 件（追加・変更）", args=("--red-check",), generate_first=True,
+         ir=staged_ir(), impl=STAGE_NO_STORE_IMPL),
+    Case("前提・後の状態: トレースのケースと一緒でも作る", 0, "作った", ir=staged_ir(trace=True), extra=TRACE_FORMAL,
+         post=stage_both_written),
+    Case("前提・後の状態: トレースのケースと一緒でも正しい実装で緑", 0, "作った", ir=staged_ir(trace=True), extra=TRACE_FORMAL,
+         impl=LOCKED_IMPL, post=expect_green),
+    Case("前提・後の状態: 性能テストの入力に入れる・混ぜない", 0, "作った",
+         ir=staged_ir(lambda ir: stage_feature(ir, "F-004").update(nfr=["N-001"])), extra=with_nfr(),
+         post=lambda repo: None if "INPUTS = [{'item': 'b', 'qty': 3}, {'item': 'y', 'qty': 3}]" in (
+             repo / "scaffold" / "perf" / "perf_f_004.py").read_text(encoding="utf-8") else "性能テストの入力が入出力のケースの入力でない"),
+    # 文書の例（spec-ir.md の「前提と後の状態」の json）を、そのまま生成に通す。ケースは全部で 9 件
+    Case("前提・後の状態: 文書の例を作る", 0, "作った", ir=doc_ir(), post=doc_written),
+    Case("前提・後の状態: 文書の例は実装が無ければ失敗", 0, "作った", ir=doc_ir(), post=expect_red(9)),
+    Case("前提・後の状態: 文書の例の正しい実装で緑", 0, "作った", ir=doc_ir(), impl=DOC_IMPL, post=expect_green),
+    Case("前提・後の状態: seed が何もしない実装で失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_SEED_IMPL,
+         post=stage_red(3, "test_f_006_c1", "test_f_006_c3", "test_f_007_c1")),
+    Case("前提・後の状態: seed の関数が無ければ失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_SEED_FUNCTION_IMPL,
+         post=stage_red(3, "未実装: spec_impl.seed が無い")),
+    Case("前提・後の状態: 文書の例で状態を空に戻す関数が無ければ失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_RESET_IMPL,
+         post=stage_red(3, "未実装: spec_impl.reset_state が無い")),
+    Case("前提・後の状態: 状態を空に戻さない実装で失敗", 0, "作った", ir=doc_ir(), impl=DOC_LEAKY_IMPL,
+         post=stage_red(2, "create_order({'customer': 'c1', 'order_no': 'A-1'}) が {'error': 'DUPLICATE'} を返した")),
+    Case("前提・後の状態: 取り消しを覚えない実装で失敗", 0, "作った", ir=doc_ir(), impl=DOC_NO_CANCEL_IMPL,
+         post=stage_red(1, "get_order({'order_no': 'A-1'}) が {'status': 'open'} を返した（期待 {'status': 'cancelled'}）")),
+    Case("前提・後の状態: v2 で前提を変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][1].update(setup=[dict(STAGE_COUNT_CASE["setup"][0])])),
+         post=trace_v2_of("F-004", "F-004-C2", "変更")),
+    Case("前提・後の状態: v2 で既にある前提の値だけ変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][1]["setup"][0]["input"].update(qty=3) or
+                                f["cases"][1]["setup"][0]["expected"].update(stock=3), "F-005"),
+         post=trace_v2_of("F-005", "F-005-C2", "変更")),
+    Case("前提・後の状態: v2 で後の状態を変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][1]["after"][0]["expected"].update(stock=4) or
+                                f["cases"][1]["after"][0].update(input={"item": "z"})),
+         post=trace_v2_of("F-004", "F-004-C2", "変更")),
+    Case("前提・後の状態: v2 でほかのケースだけ変えたら回帰", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][0]["input"].update(qty=4) or f["cases"][0]["expected"].update(stock=4)),
+         post=trace_v2_of("F-004", "F-004-C2", "回帰")),
+    Case("前提・後の状態: v2 で後の状態が呼ぶ入口の型だけ変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=v2([dict(copy.deepcopy(STOCK_FEATURES[2]), operation=dict(copy.deepcopy(STOCK_FEATURES[2]["operation"]),
+                                                                            output={"stock": {"type": "number"}}))]),
+         post=stage_v2_moved),
+    Case("前提・後の状態: v2 でキーの順だけ変えても Red テストは同じ", 0, "作った", ir=staged_ir(), generate_first=True,
+         pre=plant_stage_reordered_v2, post=stage_reordered_kept),
+    Case("前提・後の状態: setup が空の配列", 1, "F-006-C1.setup: 1 つ以上の呼び出しの配列でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1").update(setup=[]))),
+    Case("前提・後の状態: after が配列でない", 1, "F-006-C1.after: 1 つ以上の呼び出しの配列でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1").update(after={}))),
+    Case("前提・後の状態: 入口が中間表現に無い", 1, "F-006-C3.setup[1].operation: 中間表現の入口に無い: 'take'",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1].update(operation="take"))),
+    Case("前提・後の状態: 呼び出しの入力が型に反する", 1, "F-006-C3.setup[1].input.order_no: 型 string でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1]["input"].update(order_no=1))),
+    Case("前提・後の状態: 後の期待が型に反する", 1, "F-006-C3.after[0].expected.status: 型 string でない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["after"][0]["expected"].update(status=True))),
+    Case("前提・後の状態: 期待も error も無い", 1, "F-006-C3.setup[1]: expected と error のちょうど片方だけを書く",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1].pop("expected"))),
+    Case("前提・後の状態: 入口の error が errors に無い", 1, "F-006-C3.setup[1].error: 入口 create_order の errors に無い: 'NOPE'",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C3")["setup"][1].update(error="NOPE") or
+                   stage_case(ir, "F-006-C3")["setup"][1].pop("expected"))),
+    Case("前提・後の状態: seed の名前の形", 1, "F-006-C1.setup[0].seed: 前提の名前の形に反する",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(seed="Customer"))),
+    Case("前提・後の状態: seed の values が空", 1, "F-006-C1.setup[0].values: 1 つ以上の項目のオブジェクトでない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(values={}))),
+    Case("前提・後の状態: seed の値が入れ子", 1, "F-006-C1.setup[0].values.id: 文字列・数・真偽・null のどれでもない",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0]["values"].update(id=["c1"]))),
+    Case("前提・後の状態: seed の項目の名前の形", 1, "F-006-C1.setup[0].values: 項目の名前の形に反する",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0]["values"].update(Id="c1"))),
+    Case("前提・後の状態: seed に決まりに無いキー", 1, "F-006-C1.setup[0]: 決まりに無いキー `note`",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(note="x"))),
+    Case("前提・後の状態: seed と入口のキーを混ぜる", 1, "F-006-C1.setup[0]: 決まりに無いキー `input`",
+         ir=doc_ir(lambda ir: stage_case(ir, "F-006-C1")["setup"][0].update(input={}))),
+    Case("前提・後の状態: seed と同じ名前の入口", 1, "入口の名前 `seed` は、`setup`・`after` が実装に求める口",
+         ir=doc_ir(lambda ir: ir["features"].append(plain_feature("F-009", "seed")))),
+    Case("前提・後の状態: 入力に seed の項目がある入口", 1, "入口 tag の入力に項目 `seed` がある",
+         ir=doc_ir(lambda ir: ir["features"].append(plain_feature("F-009", "tag", {"seed": {"type": "string"}})))),
+    # 陽性対照: seed を書かないなら、口と同じ名前の入口・入力の項目を使える
+    Case("前提・後の状態: seed を書かなければ同じ名前の入口を使える", 0, "作った",
+         ir=staged_ir(lambda ir: ir["features"].append(plain_feature("F-009", "seed", {"seed": {"type": "string"}})))),
+    Case("前提・後の状態: setup を書いたケースがあるとき入口の名前 reset_state", 1,
+         "入口の名前 `reset_state` は、前提・後の状態（`setup`・`after`）のケースが実装に求める口",
+         ir=staged_ir(lambda ir: ir["features"].append(plain_feature("F-009", "reset_state")))),
+    Case("前提・後の状態: 書かなければ入口の名前 reset_state を使える", 0, "作った",
+         ir=edit(lambda ir: ir["features"].append(plain_feature("F-009", "reset_state")))),
+    Case("前提・後の状態: トレースのケースの直下には書けない", 1, "F-003.cases[1]: 決まりに無いキー `setup`",
+         ir=traced(lambda ir: ir["features"][2]["cases"][1].update(setup=[dict(STAGE_COUNT_CASE["setup"][0])])), extra=TRACE_FORMAL),
+    Case("前提・後の状態: トレースの setup に seed は書けない", 1, "F-003-C2.trace.setup[0]: `operation` が無い",
+         ir=traced(lambda ir: trace_of(ir)["setup"].__setitem__(0, {"seed": "item", "values": {"id": "a"}})), extra=TRACE_FORMAL),
     # #851: 作らないもの
     Case("作らないもの: 範囲の外の行と次の版の候補を写す", 0, "作った", ir=OUT_OF_SCOPE_IR, spec=SCOPE_SPEC, post=not_built_copied),
     Case("作らないもの: 節に無い行", 1, "F-001.out_of_scope: 範囲の文書の「範囲の外」の節に、この行が原文のまま無い",
@@ -3424,6 +3763,68 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        return {key: canonical(value[key]) for key in value}", "トレース: v2 でキーの順だけ変えても Red テストは同じ"),
     ("トレースの無い機能にも順の強制を足す", '    traced = any(is_trace(case) for case in feature["cases"])',
      "    traced = True", "トレース: 作る"),
+    # #1298: 入出力のケースの前提・後の状態
+    ("前提・後の状態の検査をしない", '                        problems += check_stage(f"{at}.{key}", case[key], ops)',
+     "                        problems += []", "前提・後の状態: 入口が中間表現に無い"),
+    ("空の前提・後の状態を通す", "    if not isinstance(items, list) or not items:\n        return [f\"{where}: 1 つ以上の呼び出しの配列でない\"]\n    problems = []\n    for index, item in enumerate(items):",
+     "    if not isinstance(items, list):\n        return [f\"{where}: 1 つ以上の呼び出しの配列でない\"]\n    problems = []\n    for index, item in enumerate(items):",
+     "前提・後の状態: setup が空の配列"),
+    ("前提・後の状態の呼び出しの期待を見ない", "check_seed(at, item) if isinstance(item, dict) and SEED in item else check_call(at, item, ops, True)",
+     "check_seed(at, item) if isinstance(item, dict) and SEED in item else check_call(at, item, ops, False)",
+     "前提・後の状態: 期待も error も無い"),
+    ("seed の名前の形を見ない", '    if "seed" in item and (not isinstance(name, str) or not NAME.fullmatch(name)):', "    if False:",
+     "前提・後の状態: seed の名前の形"),
+    ("seed の values が空でも通す", "        if not isinstance(values, dict) or not values:\n            problems.append(f\"{where}.values: 1 つ以上",
+     "        if not isinstance(values, dict):\n            problems.append(f\"{where}.values: 1 つ以上", "前提・後の状態: seed の values が空"),
+    ("seed の項目の名前の形を見ない", "                if not NAME.fullmatch(key):\n                    problems.append(f\"{where}.values: 項目の名前の形",
+     "                if False:\n                    problems.append(f\"{where}.values: 項目の名前の形", "前提・後の状態: seed の項目の名前の形"),
+    ("seed の値の型を見ない", "                if not (value is None or isinstance(value, (str, bool)) or value_fits(\"number\", value)):",
+     "                if False:", "前提・後の状態: seed の値が入れ子"),
+    ("seed と入口のキーの混在を通す", "    problems = keys_problem(where, item, {SEED, \"values\"})", "    problems = []",
+     "前提・後の状態: seed に決まりに無いキー"),
+    ("seed と同じ名前の入口を通す", "        if SEED in operation_ids:", "        if False:", "前提・後の状態: seed と同じ名前の入口"),
+    ("入力の項目 seed を通す", "            if SEED in op_fields(op, \"input\"):", "            if False:", "前提・後の状態: 入力に seed の項目がある入口"),
+    ("seed を書かなくても口の名前を断る", "    if seeded:\n", "    if True:\n", "前提・後の状態: seed を書かなければ同じ名前の入口を使える"),
+    ("前提・後の状態で reset_state と同じ名前の入口を通す", "    elif staged and RESET in operation_ids:", "    elif False:",
+     "前提・後の状態: setup を書いたケースがあるとき入口の名前 reset_state"),
+    ("書かなくても reset_state と同じ名前の入口を断る", "    elif staged and RESET in operation_ids:", "    elif RESET in operation_ids:",
+     "前提・後の状態: 書かなければ入口の名前 reset_state を使える"),
+    ("トレースのケースに前提・後の状態のキーを通す", '                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref"})',
+     '                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref", SETUP, AFTER})',
+     "前提・後の状態: トレースのケースの直下には書けない"),
+    ("状態を空に戻さない", '        "        self.function_of(RESET)()",', '        "        pass",',
+     "前提・後の状態: 正しい実装で緑"),
+    ("終わったら状態を空に戻さない", '        "        self.addCleanup(self.function_of(RESET))",', '        "        pass",',
+     "前提・後の状態: 正しい実装で緑"),
+    ("前提を呼ばない", '        "        for call in setup:",', '        "        for call in []:",', "前提・後の状態: 正しい実装で緑"),
+    ("後の状態を比べない", '        "        for call in after:",', '        "        for call in []:",',
+     "前提・後の状態: 後の状態を変えない実装で失敗"),
+    ("seed の口を呼ばない", '        f"            self.function_of(SEED)(call[\\"{SEED}\\"], **call[\\"values\\"])",', '        "            pass",',
+     "前提・後の状態: 文書の例の正しい実装で緑"),
+    ("本体を呼ばない", '        "        self.check(given, expected)",', '        "        pass",', "前提・後の状態: 文書の例の正しい実装で緑"),
+    ("前提を持たないケースにも状態の戻しを足す", "            if is_staged(case):\n                run = (", "            if True:\n                run = (",
+     "前提・後の状態: 作る"),
+    ("前提・後の状態の無い機能にも口を足す", '    staged = any(is_staged(case) for case in feature["cases"])', "    staged = True",
+     "前提・後の状態: 作る"),
+    ("前提・後の状態のあるトレースの機能で道具を 2 つ足す", "        *(stage_helpers() if traced or staged else []),",
+     "        *(stage_helpers() if staged else []),\n        *(stage_helpers() if traced and staged else []),",
+     "前提・後の状態: トレースのケースと一緒でも作る"),
+    ("本文に口の行を書かない", "if any(is_staged(c) for c in feature[\"cases\"]) else []),", "if False else []),", "前提・後の状態: 作る"),
+    ("seed を書かなくても本文に seed の口を求める", "                  if seeds_used(feature) else \"\")]", "                  if True else \"\")]", "前提・後の状態: 作る"),
+    ("seed を書いても本文に seed の口を求めない", "                  if seeds_used(feature) else \"\")]", "                  if False else \"\")]", "前提・後の状態: 文書の例を作る"),
+    ("前提・後の状態の呼ぶ入口の型を引かない", "    return sorted({name for case in feature[\"cases\"] for name in case_operations(case)})",
+     "    return sorted({name for case in feature[\"cases\"] if is_trace(case) for name in case_operations(case)})",
+     "前提・後の状態: 正しい実装で緑"),
+    ("v2 で前提の変化を見ない", "literal(expected), SETUP, repr(canonical(case.get(SETUP, []))),", "literal(expected), SETUP, \"\",",
+     "前提・後の状態: v2 で既にある前提の値だけ変えたら変更"),
+    ("v2 で後の状態の変化を見ない", "                AFTER, repr(canonical(case.get(AFTER, []))))", "                AFTER, \"\")",
+     "前提・後の状態: v2 で後の状態を変えたら変更"),
+    ("後の状態が呼ぶ入口の型の変化を機能で見ない", "               for case in feature[\"cases\"] if is_trace(case) or is_staged(case))",
+     "               for case in feature[\"cases\"] if is_trace(case))", "前提・後の状態: v2 で後の状態が呼ぶ入口の型だけ変えたら変更"),
+    ("後の状態が呼ぶ入口の型の変化をケースで見ない", "    if is_staged(case) and trace_shape(old, ops_before or {}) != trace_shape(case, ops_now or {}):",
+     "    if False:", "前提・後の状態: v2 で後の状態が呼ぶ入口の型だけ変えたら変更"),
+    ("前提・後の状態を並べ替えない", "    if isinstance(value, list):\n        return [canonical(item) for item in value]\n",
+     "    if isinstance(value, list):\n        return list(value)\n", "前提・後の状態: v2 でキーの順だけ変えても Red テストは同じ"),
     # #876: まとめた本文（--bundle）と依存の連鎖（depends）
     ("まとめない", "        if len(group) == 1:\n", "        if True:\n", "まとめた本文"),
     ("機能の一覧をタスクリストにする", 'f"- `{c.feature[\'id\']}` {cell(', 'f"- [ ] `{c.feature[\'id\']}` {cell(', "まとめた本文"),
@@ -3892,8 +4293,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("整数を isfinite に渡す", "        return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))",
      "        return math.isfinite(value) and isinstance(value, (int, float))", "number に桁の大きい整数"),
     ("エラーのケースで error を期待しない",
-     '            expected = case["expected"] if "expected" in case else {"error": case["error"]}\n            run',
-     '            expected = case.get("expected", {})\n            run', "正しい実装で緑"),
+     '            expected = case["expected"] if "expected" in case else {"error": case["error"]}\n            if is_staged(case):',
+     '            expected = case.get("expected", {})\n            if is_staged(case):', "正しい実装で緑"),
     ("ケースを 1 つしか作らない", '    for case in sorted(feature["cases"], key=case_order):\n        refs',
      '    for case in sorted(feature["cases"], key=case_order)[:1]:\n        refs',
      "Red テストが失敗する"),
@@ -4229,8 +4630,14 @@ def main() -> int:
               f"{ALL_BRANCHES} vs {branch_names}")
         # トレースのケースが実装に求める口（#923）——原本は spec-ir.md の「実装に求める口」の表。待つ時間も原本の文と一致する
         ports = table_cells(ir_ref, "### 実装に求める口")
-        check("CHECKPOINT, RESET が references/spec-ir.md の実装に求める口の表と違う",
-              ports == [constant(source, "CHECKPOINT"), constant(source, "RESET")], f"{ports}")
+        check("CHECKPOINT, RESET, SEED が references/spec-ir.md の実装に求める口の表と違う",
+              ports == [constant(source, "CHECKPOINT"), constant(source, "RESET"), constant(source, "SEED")], f"{ports}")
+        # 入出力のケースの前提・後の状態のキー（#1298）——原本は spec-ir.md のテストケースの表
+        case_keys = table_cells(ir_ref, "## テストケース（`cases` の要素）")
+        check("SETUP, AFTER が references/spec-ir.md のテストケースの表と違う",
+              constant(source, "SETUP") in case_keys and constant(source, "AFTER") in case_keys, f"{case_keys}")
+        check("試料の実装が seed の口の名前を使っていない（口の名前の変異を試料が判別しない）",
+              f"def {constant(source, 'SEED')}(name, /, **values):" in DOC_IMPL)
         check("TRACE_STEP_WAIT・TRACE_LIMIT が references/spec-ir.md の「Red テストが確かめること」と違う",
               f"（1 段 {constant(source, 'TRACE_STEP_WAIT')} 秒）" in ir_ref and f"（上限 {constant(source, 'TRACE_LIMIT')} 秒。" in ir_ref)
         check("試料の実装が口の名前を使っていない（口の名前の変異を試料が判別しない）",
