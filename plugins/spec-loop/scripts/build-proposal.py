@@ -1098,7 +1098,7 @@ def main(argv: list[str]) -> int:
         parser.error("--pptx-script・--no-appendix・--no-scope-slide・--scope-questions・--scope-match・--overview・--slide-strip は --pptx と一緒に渡す")
     if args.scope_questions is not None and not [n for n in args.scope_questions.split(",") if n.strip()]:
         parser.error("--scope-questions に番号が無い（範囲の 1 枚を載せないなら --no-scope-slide）")
-    if args.overview is not None and not args.overview.strip():
+    if args.overview is not None and not [i for i in args.overview.split(",") if i.strip()]:
         parser.error("--overview が空（概要の 1 枚を載せないなら、載せるものを 1 つ以上渡す）")
     if args.scope_match is not None and not args.scope_match.strip():
         parser.error("--scope-match が空の正規表現（既定の選び方に戻したいなら渡さない）")

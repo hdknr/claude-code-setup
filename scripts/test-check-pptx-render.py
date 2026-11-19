@@ -88,6 +88,28 @@ def run(script: Path, args: list[str], bin_dir: Path, bbox: str | None, work: Pa
     return proc.returncode, proc.stdout + proc.stderr
 
 
+def with_parts(src: Path, dst: Path, edits: dict[str, tuple[str, str]]) -> Path:
+    """PPTX の部品を書き換えた写しを作る。edits: 部品名 → (置き換える文字列, 置き換え後)。"""
+    import zipfile
+    with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename in edits:
+                old, new = edits[item.filename]
+                text = data.decode("utf-8")
+                assert old in text, item.filename
+                data = text.replace(old, new, 1).encode("utf-8")
+            zout.writestr(item, data)
+    return dst
+
+
+def shape(x: int, y: int, cx: int, cy: int, text: str | None, positioned: bool = True) -> str:
+    xfrm = f'<a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>' if positioned else ""
+    body = f"<a:r><a:t>{text}</a:t></a:r>" if text else ""
+    return (f'<p:sp><p:nvSpPr><p:cNvPr id="90" name="S"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{xfrm}</p:spPr>'
+            f'<p:txBody><a:bodyPr/><a:lstStyle/><a:p>{body}</a:p></p:txBody></p:sp>')
+
+
 def cases(script: Path, work: Path, pp, bin_dir: Path, bare_dir: Path) -> dict[str, bool]:
     """観測。(名前 → 期待どおりか)。"""
     (work / "home").mkdir(exist_ok=True)
@@ -131,6 +153,22 @@ def cases(script: Path, work: Path, pp, bin_dir: Path, bare_dir: Path) -> dict[s
     obs["ページの辺の許容の内側は 0"] = rc == 0
     rc, text = run(script, [str(good), "--out", str(work / "p11")], bin_dir, page((40, 30, 90, 44, "同じ行"), (90, 30, 140, 44, "の隣")), work)
     obs["隣り合うだけの語は 0"] = rc == 0
+
+    # レイアウトの図形（社のテンプレートのフッター）の枠は、どのスライドにも出る。文字の無い図形はページ全体を覆っても枠にしない
+    layout = "ppt/slideLayouts/slideLayout1.xml"
+    footer = with_parts(good, work / "footer.pptx", {layout: ("</p:spTree>", shape(1000000, 5000000, 3000000, 300000, "社外秘") + "</p:spTree>")})
+    rc, text = run(script, [str(footer), "--out", str(work / "p16")], bin_dir, page((100, 395, 150, 408, "社外秘")), work)
+    obs["レイアウトのフッターの中の語は 0"] = rc == 0
+    rc, text = run(script, [str(footer), "--out", str(work / "p16b")], bin_dir, page((100, 260, 150, 274, "枠の外")), work)
+    obs["レイアウトのフッターがあっても、枠の外の語は 1"] = rc == 1 and "どの枠の中にも無い" in text
+    empty_ph = with_parts(good, work / "empty-ph.pptx", {layout: ("</p:spTree>", shape(0, 0, 12192000, 6858000, None) + "</p:spTree>")})
+    rc, text = run(script, [str(empty_ph), "--out", str(work / "p16c")], bin_dir, page((100, 260, 150, 274, "枠の外")), work)
+    obs["空のプレースホルダがページ全体を覆っても、枠の外の語は 1"] = rc == 1 and "どの枠の中にも無い" in text
+    inherited = with_parts(good, work / "inherited.pptx", {"ppt/slides/slide1.xml": ("</p:spTree>", shape(0, 0, 0, 0, "継ぐ", positioned=False) + "</p:spTree>")})
+    rc, text = run(script, [str(inherited), "--out", str(work / "p16d")], bin_dir, page((100, 260, 150, 274, "どこか")), work)
+    obs["位置をレイアウトから継ぐ文字があるスライドは、枠の判定をしない（0）"] = rc == 0
+    rc, text = run(script, [str(inherited), "--out", str(work / "p16e")], bin_dir, page((900, 10, 1000, 24, "外へ")), work)
+    obs["枠の判定をしなくても、ページの外は 1"] = rc == 1 and "ページの外" in text
 
     rc, text = run(script, [str(ellipsis), "--out", str(work / "p12")], bare_dir, None, work)
     obs["道具が無ければ 3"] = rc == 3 and "描画の道具が無い（soffice）" in text and "確かめられていない" in text
@@ -197,6 +235,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("PPTX の本文の省略記号を見ない", "        for m in re.finditer(re.escape(ELLIPSIS), text):", "        for m in []:", "PPTX の本文の省略記号は 1"),
     ("道具が無いときに本文を見ない", "    found_tools, missing = tools()\n    if missing:\n        for line in findings:\n            print(line)\n",
      "    found_tools, missing = tools()\n    if missing:\n", "道具が無くても PPTX の本文は見る"),
+    ("テンプレートの枠を足さない", "                boxes.extend(template)\n", "                pass\n", "レイアウトのフッターの中の語は 0"),
+    ("空の図形も枠にする", "                        continue  # 文字の無い図形", "                        pass  # 文字の無い図形", "空のプレースホルダがページ全体を覆っても、枠の外の語は 1"),
+    ("位置を継ぐ文字を見ない", "None if inherited else boxes", "boxes", "位置をレイアウトから継ぐ文字があるスライドは、枠の判定をしない（0）"),
 ]
 
 

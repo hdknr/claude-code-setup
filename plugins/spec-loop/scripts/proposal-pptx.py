@@ -839,13 +839,21 @@ def scope_slides(rows: list[dict[str, str]], numbers: list[str] | None, match: s
         cards.append({"heading": question, "lines": [(0, "決めたこと: " + plain(option_text(r), extra), False), (0, f"（{mark}）", False)]})
     rest = 0
     area_h = CY1 - CY0
+    note_h = CY1 - CY0 - 420000
     if numbers is None:  # 番号を指示されたときは全部載せる。既定の選び方は 1 枚に収まる最大の問数（6 問まで）にする
-        note_h = CY1 - CY0 - 420000
         k = min(SCOPE_MAX, len(cards))
         if len(chosen) > k or best_size(cards[:k], area_h) is None:
-            while k > 1 and best_size(cards[:k], note_h) is None:
+            fit = [c for c in cards if best_size([c], note_h) is not None]  # 1 問だけでも収まらない長さの質問は載せず、別紙に回す
+            k = min(SCOPE_MAX, len(fit))
+            while k > 1 and best_size(fit[:k], note_h) is None:
                 k -= 1
-            cards, rest, area_h = cards[:k], len(chosen) - k, note_h
+            cards, rest, area_h = fit[:k], len(chosen) - k, note_h
+    if not cards:  # 載せられる質問が 1 つも無い（どれも 1 枚に収まらない長さ）。案内だけの 1 枚にする
+        slide = Slide()
+        slide.title("何を作り、何を作らないか")
+        where = "別紙の表（decisions.xlsx）" if appendix else md_name
+        slide.box(MARGIN, CY0, CONTENT_W, 600000, paras(f"範囲に関わる質問が {rest} 件ある（どれも 1 枚に収まらない長さ）。全件は{where}を見る。", 16, color=GREY), name="Note")
+        return [slide]
     size = best_size(cards, area_h) if numbers is None else None
     placed = [(cards, size)] if size is not None else place_cards(cards, area_h)  # 既定の選び方は、収まる問数に絞ったうえで 1 枚に置く
     slides = [card_slide("何を作り、何を作らないか" if len(placed) == 1 else f"何を作り、何を作らないか（{n}/{len(placed)}）", chunk, size, area_h)

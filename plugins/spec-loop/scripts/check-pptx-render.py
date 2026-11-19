@@ -112,6 +112,8 @@ def text_boxes(pptx: Path) -> dict[int, list[tuple[float, float, float, float]]]
         for n in z.namelist():
             if re.fullmatch(r"ppt/(slideLayouts|slideMasters)/[^/]+\.xml", n):
                 for sp in ElementTree.fromstring(z.read(n)).iter(f"{{{NS['p']}}}sp"):
+                    if not any((t.text or "").strip() for t in sp.iter(f"{{{NS['a']}}}t")):
+                        continue  # 文字の無い図形（空のプレースホルダ）は枠にしない——ページ全体を枠にして、はみ出しを隠す
                     off, ext = sp.find(".//a:off", NS), sp.find(".//a:ext", NS)
                     if off is not None and ext is not None:
                         template.append((int(off.get("x")) / EMU_PT, int(off.get("y")) / EMU_PT, int(ext.get("cx")) / EMU_PT, int(ext.get("cy")) / EMU_PT))

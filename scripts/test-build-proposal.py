@@ -704,6 +704,8 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
      lambda r: r.code == 2 and "--pptx と一緒に" in r.output and r.text is None and not r.names),
     ("--overview は決まった値だけ", SIGNED + [("arg", "--pptx", "--overview", "counts,nothing")], False,
      lambda r: r.code == 2 and "--overview は" in r.output and r.text is None and not r.names),
+    ("--overview がコンマだけなら作らない", SIGNED + [("arg", "--pptx", "--overview", ",")], False,
+     lambda r: r.code == 2 and "--overview が空" in r.output and r.text is None and not r.names),
     ("--slide-strip は正規表現として読めること", SIGNED + [("arg", "--pptx", "--slide-strip", "(")], False,
      lambda r: r.code == 2 and "正規表現として読めない" in r.output and r.text is None),
     ("別紙の表に Q&A の全件がある", SIGNED + [("arg", "--pptx")], False,
@@ -743,6 +745,8 @@ CASES: list[tuple[str, list[tuple[str, ...]], bool, Callable[[Result], bool]]] =
 
 # (名前, 壊す前, 壊した後, 殺すはずの試料の名前)
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("--overview の空の要素を数えて通す", '    if args.overview is not None and not [i for i in args.overview.split(",") if i.strip()]:', '    if args.overview is not None and not args.overview.strip():',
+     "--overview がコンマだけなら作らない"),
     # #1154: 目的と成功の判定
     ("目的の表を読まない", '    purposes = read_purposes(whole.files, info["req"])\n', "    purposes = None\n", "目的の表から目的と成功の判定の節を作る"),
     ("目的の表を作業ツリーから読む", '    purposes = read_purposes(whole.files, info["req"])\n',

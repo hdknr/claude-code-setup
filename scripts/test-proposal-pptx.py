@@ -297,6 +297,14 @@ def observe(mod, tool_dir: Path) -> dict:
         note = int(re.search(r'name="Note \d+"/>.*?<a:off x="\d+" y="(\d+)"', x)[1])
         return bool(bottoms) and max(bottoms) <= note
     seen("範囲の枚の注記はカードと重ならない", card_bottoms_above_note)
+    huge = "A: " + "範囲の決めごとの説明です。" * 110 + " / B: しない"
+    huge_row = {**qa_row(mod, 60, target="spec/scope.md", question="範囲の長い質問"), "選択肢": huge}
+    mixed = pp.scope_slides([huge_row] + [qa_row(mod, 61 + i, target="spec/scope.md", question=f"範囲の短い質問{i}") for i in range(5)], None, None, [], True)
+    seen("1 枚に収まらない長さの質問があっても範囲は 1 枚（長い質問は別紙へ）", lambda: len(mixed) == 1 and "範囲の長い質問" not in mixed[0].render()
+         and "ほかに範囲に関わる質問が 1 件" in "".join(slide_list_texts(mixed)))
+    only_huge = pp.scope_slides([huge_row], None, None, [], True)
+    seen("どの質問も収まらなければ、案内だけの 1 枚", lambda: len(only_huge) == 1 and "1 件" in "".join(slide_list_texts(only_huge)) and "decisions.xlsx" in "".join(slide_list_texts(only_huge)))
+    seen("長い質問も番号の指示なら全部載せる（分けて）", lambda: len(pp.scope_slides([huge_row], ["Q-R-060"], None, [], True)) > 1)
     ms = slide_list_texts(pp.scope_slides(many_scope, None, None, [], True))
     seen("既定の選び方は 1 枚に収め、残りは別紙を見ると書く", lambda: len(ms) == 1 and "ほかに範囲に関わる質問が 6 件" in ms[0] and "decisions.xlsx" in ms[0] and "範囲の質問06" not in ms[0])
     seen("番号の指示は全部載せる", lambda: "範囲の質問11" in "".join(slide_list_texts(pp.scope_slides(many_scope, [r["No"] for r in many_scope], None, []))))
@@ -441,8 +449,10 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("図形の tooltip を図の見出しにする", '    m = re.search(r"<svg\\b[^>]*>\\s*(?:<defs\\b[^>]*/>\\s*|<defs\\b.*?</defs>\\s*)?<title', '    m = re.search(r"<title'),
     ("折れない長い語を現在の行から割る", "                if line > 0:  # 折れない長い語は、新しい行に移してから割る（描画の側もそうする）\n                    count += 1\n                    line = 0.0\n", ""),
     ("別紙が無くても別紙を指す", '        where = "別紙の表（decisions.xlsx）" if appendix else md_name', '        where = "別紙の表（decisions.xlsx）"'),
-    ("範囲の枚の注記の分を空けない", "        note_h = CY1 - CY0 - 420000", "        note_h = CY1 - CY0"),
-    ("1 枚に収まる問数に絞らない", "            while k > 1 and best_size(cards[:k], note_h) is None:\n                k -= 1\n", "            pass\n"),
+    ("範囲の枚の注記の分を空けない", "    note_h = CY1 - CY0 - 420000", "    note_h = CY1 - CY0"),
+    ("1 枚に収まる問数に絞らない", "            while k > 1 and best_size(fit[:k], note_h) is None:\n                k -= 1\n", "            pass\n"),
+    ("1 問だけでも収まらない質問を載せる", "            fit = [c for c in cards if best_size([c], note_h) is not None]", "            fit = list(cards)"),
+    ("載せる質問が無いとき案内の枚にしない", "    if not cards:  # 載せられる質問が 1 つも無い", "    if False:  # 載せられる質問が 1 つも無い"),
     ("drawio のページ名を見ない", "    m = re.search(r'(?:<|&lt;)diagram", "    m = re.search(r'(?:<|&lt;)NODIAGRAM"),
     ("v2 の費用を差分と書かない", '    version_note = f"この版（v{ctx[\'version\']}）の差分の見積り。前の版までの費用は含まない。" if ctx.get("changes") else ""', '    version_note = ""'),
     ("範囲の枚に上限を掛けない", "    if numbers is None:  # 番号を指示されたときは", "    if False:  # 番号を指示されたときは"),
