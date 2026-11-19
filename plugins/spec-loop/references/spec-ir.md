@@ -256,6 +256,7 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 `{"<項目名>": {"type": "<型>", "enum": [...], "nullable": true}}` の形。項目名は英小文字で始まり、英小文字・数字・`_` だけで、Python の予約語は使わない。
 `enum` は省いてよく、書くなら 1 つ以上の値を、その型で、重複させずに並べる。
 `nullable` も省いてよく、書くなら `true` だけ（下の「null を許す項目」）。
+**配列と入れ子のオブジェクトも型にできる**（下の「配列と入れ子のオブジェクト」。#1300）。
 
 | 型 | 値 |
 | --- | --- |
@@ -263,8 +264,8 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 | `integer` | 整数（`true`・`false` は整数に数えない） |
 | `number` | 数（整数でもよい。`true`・`false`・`NaN`・`Infinity` は数に数えない） |
 | `boolean` | `true`・`false` |
-
-**入れ子のオブジェクト・配列は、いまは持たない。** 要るなら、この決まりを先に広げる。
+| `array` | 値の並び（0 件でもよい）。要素の項目を `items` に書く。順を問うかは `unordered` で書き分ける（下の「配列と入れ子のオブジェクト」） |
+| `object` | 名前つきの値。項目を `properties` に書く |
 
 ### null を許す項目（#487）
 
@@ -277,6 +278,106 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 - ケースの `input`・`expected` では、その項目に `null` を書ける。
 - 生成物では、OpenAPI の schema の `type` が `["<型>", "null"]` になり（`enum` があれば `enum` の最後に `null` を足す）、
   `types.py` の型は `null` を許さないときの型の後ろに ` | None` を足したもの（`str | None`。`enum` があれば `Literal['a', 'b'] | None`）になる。Red テストは、その出力の項目が `None` のときだけ型を見ない（`None` 以外の値の型は今までどおり見る）。
+
+## 配列と入れ子のオブジェクト（#1300）
+
+**一覧を返す入口（「起点 O で読むと 3 件だけ返る」）や、入れ子の応答（ページの情報）は、項目の型に配列と入れ子のオブジェクトを書いて表す。**
+
+```
+{"type": "array", "items": <項目>, "unordered": true, "nullable": true}
+{"type": "object", "properties": {"<項目名>": <項目>, …}, "nullable": true}
+```
+
+- **`items`**（配列。要る）は要素の項目、**`properties`**（オブジェクト。要る・1 つ以上）は項目名から項目への対応。**中の項目も上の「項目」と同じ決まり**——`string`・`integer`・`number`・`boolean`（`enum`・`nullable` を書いてよい）か、
+  さらに入れ子の配列・オブジェクト。項目名の形も同じ。
+  **`enum` は `string`・`integer`・`number`・`boolean` の項目にだけ書ける**（配列・オブジェクトには書けない）。**`nullable` は配列・オブジェクト・要素・中の項目のどれにも書ける**（`true` だけ）。
+- **値**: 配列は JSON の配列で、要素は `items` の決まりに合う。オブジェクトは、**`properties` の項目をちょうど全部**、その型で持つ（`input`・`expected` の項目と同じ）。
+- **順を問う・問わない**: **配列は既定で順を問う**——Red テストは、同じ位置の要素どうしを比べる。**`"unordered": true` を書いた配列は順を問わない**——同じ要素が同じ数だけあれば合う
+  （並びだけが違う実装も緑になる）。`true` だけを書く（順を問うなら省く。`nullable` と同じ）。**配列にだけ書ける**。
+  `unordered` は、その配列の並びだけに掛かる——要素が配列（入れ子）なら、中の配列は自分の `unordered` に従う。**入力（`input`）の項目に書いても、何も変わらない**（Red テストは入力を書いた順のまま渡す）。
+- **`nullable` との組み合わせ**: 配列・オブジェクトの項目が `nullable` なら、`null` か、その型の値。要素を `null` にしたいときは `items` に `nullable` を書く。`null` と空の配列・空でないオブジェクトは別の値。
+- **`$any`・`$ref`（上の「実行ごとに変わる出力」）との組み合わせ**:
+  - **`$any`** は、配列・オブジェクトの中の値（要素・中の項目の値）にも、配列・オブジェクトの項目の値そのものにも書ける。型は**書く場所の項目の型**と同じで、`array`・`object` も書ける
+    （配列・オブジェクトの `$any` は、値を見ずに**形——中の型と `nullable`——に合うか**を見る）。
+  - **`$ref`** も同じ場所に書ける。**指すのは `as` で束ねた結果の出力の項目（一番外の項目）**で、**指す項目の形と書く場所の項目の形が同じ**でなければ生成が止まる（形は、中の型と要素・項目の構成。`nullable`・`enum`・`unordered` の違いは問わない）。
+    **比べるときの順は、書く場所の項目の `unordered` に従う**。
+  - **順を問わない配列（`unordered`）の要素の中には、`$any`・`$ref` を書けない**——どの要素に当たるかが決まらない（生成が止まる。順を問うなら書ける）。
+    配列の項目そのものに `$any`・`$ref` を書くのは構わない。
+- **パスの変数（上の「パスの変数」）には書けない**——パスの値は 1 つの文字列になる。
+- **生成物**: OpenAPI の schema は、配列が `{"type": "array", "items": …}`、オブジェクトが `{"type": "object", "required": […], "additionalProperties": false, "properties": …}`
+  （`nullable` は上の「null を許す項目」と同じに `type` へ `"null"` を足す）。**`unordered` は OpenAPI の schema に表せないので、出ない**（Red テストだけが見る）。
+  `types.py` は、配列が `list[<要素の型>]`、入れ子のオブジェクトが `TypedDict`（名前は、入口の型の名前に項目名を Pascal にして足したもの。配列の要素なら `Item` を足す。例: `ListNotesOutputNotesItem`）で、
+  `nullable` は ` | None` を足す。Red テストは、**項目の型の記述（`OUTPUT_TYPES`）に沿って、値を中まで——要素の型・オブジェクトの項目・`null` の可否——比べる**
+  （`true` を整数の要素と見ない・足りない項目も余る項目も違反）。**配列・入れ子を 1 つも使わない機能の生成物は、今までと 1 バイトも変わらない。**
+- **v2 以降**: 配列・入れ子の項目の型の記述が前の版と違えば（`nullable`・`unordered` の違い、`integer` から `number` に広げただけの違いも）、その項目を期待に持つケースは変更に数える
+  （中の型の違いを項目ごとに見分けない。型の名前だけの項目が `integer` から `number` に広がっただけの違いは、今までどおり変化に数えない）。
+
+**例**（ノートの一覧。起点 `root` から、種類 `kinds`（配列の入力）に合うノートを 3 件だけ返し、残りの件数を `page` に返す。`tags` は並びを問わず、`stamp` は実行ごとに変わる。`features` の要素）:
+
+```json
+[
+  {
+    "id": "F-011", "title": "ノートを一覧する", "source": ["spec/order.md"], "qa": [],
+    "operation": {
+      "id": "list_notes", "method": "GET", "path": "/notes",
+      "input": {"origin": {"type": "string"}, "kinds": {"type": "array", "items": {"type": "string", "enum": ["memo", "task"]}}},
+      "output": {
+        "notes": {"type": "array", "items": {"type": "object", "properties": {
+          "title": {"type": "string"}, "kind": {"type": "string", "enum": ["memo", "task"]}}}},
+        "tags": {"type": "array", "unordered": true, "items": {"type": "string"}},
+        "page": {"type": "object", "properties": {
+          "total": {"type": "integer"}, "next": {"type": "string", "nullable": true}, "stamp": {"type": "string"}}}
+      },
+      "errors": ["UNKNOWN_ORIGIN"]
+    },
+    "cases": [
+      {"id": "F-011-C1", "title": "一覧: 起点 root で読むと 3 件だけ返り（題の順）、残りは次の 1 件として page に出る",
+       "setup": [{"seed": "note", "values": {"title": "c", "kind": "memo", "tag": "x"}},
+                 {"seed": "note", "values": {"title": "a", "kind": "task", "tag": "y"}},
+                 {"seed": "note", "values": {"title": "b", "kind": "memo", "tag": "x"}},
+                 {"seed": "note", "values": {"title": "d", "kind": "task", "tag": "z"}}],
+       "input": {"origin": "root", "kinds": ["memo", "task"]},
+       "expected": {"notes": [{"title": "a", "kind": "task"}, {"title": "b", "kind": "memo"}, {"title": "c", "kind": "memo"}],
+                    "tags": ["x", "y"], "page": {"total": 4, "next": "d", "stamp": {"$any": "string"}}}},
+      {"id": "F-011-C2", "title": "同じ起点を 2 度読むと、同じ一覧が返る（tags は並びが変わってもよい）",
+       "setup": [{"seed": "note", "values": {"title": "a", "kind": "task", "tag": "y"}},
+                 {"seed": "note", "values": {"title": "b", "kind": "memo", "tag": "x"}}],
+       "input": {"origin": "root", "kinds": ["memo", "task"]},
+       "expected": {"notes": [{"title": "a", "kind": "task"}, {"title": "b", "kind": "memo"}],
+                    "tags": ["x", "y"], "page": {"total": 2, "next": null, "stamp": {"$any": "string"}}},
+       "as": "first",
+       "after": [{"operation": "list_notes", "input": {"origin": "root", "kinds": ["memo", "task"]},
+                  "expected": {"notes": {"$ref": "first.notes"}, "tags": {"$ref": "first.tags"},
+                               "page": {"total": 2, "next": null, "stamp": {"$any": "string"}}}}]},
+      {"id": "F-011-C3", "title": "知らない起点は拒否する", "input": {"origin": "nowhere", "kinds": []}, "error": "UNKNOWN_ORIGIN"}
+    ]
+  }
+]
+```
+
+実装は `reset_state()` と `seed` の口を持つ（`seed` が何を置くかは実装が決める）。**`tags` の並びは返すたびに違ってよい**——次の形でよい:
+
+```python
+import time
+
+_notes = []
+
+def reset_state():
+    _notes.clear()
+
+def seed(name, /, **values):
+    if name == "note":
+        _notes.append(values)
+
+def list_notes(origin, kinds):
+    if origin != "root":
+        return {"error": "UNKNOWN_ORIGIN"}
+    found = sorted((note for note in _notes if note["kind"] in kinds), key=lambda note: note["title"])
+    shown = found[:3]
+    return {"notes": [{"title": note["title"], "kind": note["kind"]} for note in shown],
+            "tags": list({note["tag"] for note in shown}),
+            "page": {"total": len(found), "next": found[3]["title"] if len(found) > 3 else None, "stamp": str(time.time())}}
+```
 
 ## テストケース（`cases` の要素）
 
@@ -395,7 +496,7 @@ def seed(name, /, **values):
 
 | 書き方 | Red テストが確かめること |
 | --- | --- |
-| `{"$any": "<型>"}` | その項目が、決めた型の値であること（値は見ない）。型は項目の型と同じ（`string`・`integer`・`number`・`boolean`）。`enum` は見ない |
+| `{"$any": "<型>"}` | その項目が、決めた型の値であること（値は見ない）。型は項目の型と同じ（`string`・`integer`・`number`・`boolean`。配列・入れ子のオブジェクトの項目は `array`・`object`で、形——中の型——に合うかを見る）。`enum` は見ない |
 | `{"$ref": "<名前>.<項目>"}` | その項目が、`as` で束ねた名前の結果の項目と同じ値であること（`true` を `1` と同じ値とは見ない——項目の型も見る）。指す項目の型は、書く項目の型と同じ |
 
 - **書ける場所**: 入出力のケースの `expected` と、`setup`・`after` の呼び出しの `expected` の、項目の値だけ。**`input` と `seed` の値には書けない**（前に返った値を入力に渡すことはできない）。

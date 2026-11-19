@@ -26,6 +26,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 **変わっていない機能の本文は作らない**（前の版の Issue がある）。v1 だけなら全部が追加。
 ケースの変化は**Red テストが実行する中身**（入力・期待・`operation.id`・期待にある項目の出力の型・`impl_module`）で決める——
 題だけの違い・`integer` を `number` に広げただけの違い・項目の `nullable` を足した・外しただけの違いは変化に数えない（前の版の実装は落ちない）。
+**配列・入れ子のオブジェクトの項目（#1300）は、中の型・`nullable`・`unordered` の違いも変化に数える**（中の違いを項目ごとに見分けない）。
 **`impl_module` を変えた版では、残る機能も全部が変更になる**（どの Red テストも前の版の実装を探せない）。**前の版の中間表現も決まり（`references/spec-ir.md`）に当て、反すれば分けずに 1。**
 **前の版の時点で `反映済み` でない Q&A（`確認中`・`暫定反映`。共有・内部とも）が残れば、中間表現が指しているかに依らず、
 後の版で確定しても止め**、v<n-1> を scaffold できていないことを名指しする（#335・#358。手当ては
@@ -283,6 +284,9 @@ ISSUES_DIR = "build/scaffold/issues"
 IR_VERSION = 1
 METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 TYPES = ("string", "integer", "number", "boolean")
+# 配列と入れ子のオブジェクト（#1300。`references/spec-ir.md` の「配列と入れ子のオブジェクト」の写し）。配列は `items`（要素の項目）、オブジェクトは `properties`（項目名から項目への対応）を持つ
+COMPOSITE = ("array", "object")
+ALL_TYPES = TYPES + COMPOSITE
 # `\d` は全角や他の文字体系の数字にも合うので使わない（`check-qa-csv.py` と同じ理由）
 FEATURE_ID = re.compile(r"F-[0-9]{3,}")
 NAME = re.compile(r"[a-z][a-z0-9_]*")
@@ -340,6 +344,8 @@ GENERATED = "spec-loop scaffold が生成（手で直さない。spec_ir.json �
 PY_TYPES = {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}
 # 項目に null を許す印（`"nullable": true`。`references/spec-ir.md` の「項目」の写し）
 NULLABLE = "nullable"
+# 配列の順を問わない印（`"unordered": true`。書かなければ順を問う）
+UNORDERED = "unordered"
 # 機能を呼ぶ機能の id の配列（任意。`references/spec-ir.md` の「呼ばれる機能」。#609）
 CALLED_BY = "called_by"
 # 機能に関わる範囲の外の行の原文の配列（任意。`references/spec-ir.md` の「作らないもの」。#851）
@@ -532,6 +538,40 @@ def value_fits(kind: str, value) -> bool:
     return isinstance(value, bool)
 
 
+def check_field(at: str, field) -> list[str]:
+    """項目 1 つの型・`enum`・`nullable`（と、配列の `items`・`unordered`・オブジェクトの `properties`。#1300）。中の項目も同じ決まりで見る。"""
+    kind = field.get("type") if isinstance(field, dict) else None
+    required, optional = {"type"}, {"enum", NULLABLE}
+    if kind == "array":
+        required, optional = {"type", "items"}, {NULLABLE, UNORDERED}
+    elif kind == "object":
+        required, optional = {"type", "properties"}, {NULLABLE}
+    found = keys_problem(at, field, required, optional)
+    if found:
+        return found
+    problems = []
+    if field["type"] not in ALL_TYPES:
+        return [f"{at}: 型 `{field['type']}` は決まりに無い（{' / '.join(ALL_TYPES)}）"]
+    # `false` は省くのと同じ意味になる——同じ意味の書き方を 2 つ作ると、機能の指紋が違う値になる
+    for key in (NULLABLE, UNORDERED):
+        if key in field and field[key] is not True:
+            problems.append(f"{at}: `{key}` は true だけを書く（{'null を許さない' if key == NULLABLE else '順を問う'}なら省く）")
+    if kind == "array":
+        problems += check_field(f"{at}.items", field["items"])
+    elif kind == "object":
+        problems += check_fields(f"{at}.properties", field["properties"], True, False)
+    elif "enum" in field:
+        enum = field["enum"]
+        if not isinstance(enum, list) or not enum:
+            problems.append(f"{at}: enum は 1 つ以上の値の配列")
+        elif not all(value_fits(field["type"], v) for v in enum):
+            problems.append(f"{at}: enum の値が型 {field['type']} でない")
+        # `json.dumps` の文字列で比べると `1` と `1.0` を別の値と数える
+        elif any(a == b for i, a in enumerate(enum) for b in enum[i + 1:]):
+            problems.append(f"{at}: enum の値が重複している")
+    return problems
+
+
 def check_fields(where: str, fields, at_least_one: bool, output: bool) -> list[str]:
     if not isinstance(fields, dict):
         return [f"{where}: オブジェクトでない"]
@@ -544,35 +584,34 @@ def check_fields(where: str, fields, at_least_one: bool, output: bool) -> list[s
             problems.append(f"{at}: 項目名の形に反する（英小文字で始まり英小文字・数字・_、Python の予約語でない）")
         if output and name == RESERVED_OUTPUT:
             problems.append(f"{at}: 正常時の出力に `{RESERVED_OUTPUT}` は使えない（失敗の形と見分けられない）")
-        found = keys_problem(at, field, {"type"}, {"enum", NULLABLE})
-        if found:
-            problems += found
-            continue
-        if field["type"] not in TYPES:
-            problems.append(f"{at}: 型 `{field['type']}` は決まりに無い（{' / '.join(TYPES)}）")
-            continue
-        # `false` は省くのと同じ意味になる——同じ意味の書き方を 2 つ作ると、機能の指紋が違う値になる
-        if NULLABLE in field and field[NULLABLE] is not True:
-            problems.append(f"{at}: `{NULLABLE}` は true だけを書く（null を許さないなら省く）")
-        if "enum" in field:
-            enum = field["enum"]
-            if not isinstance(enum, list) or not enum:
-                problems.append(f"{at}: enum は 1 つ以上の値の配列")
-            elif not all(value_fits(field["type"], v) for v in enum):
-                problems.append(f"{at}: enum の値が型 {field['type']} でない")
-            # `json.dumps` の文字列で比べると `1` と `1.0` を別の値と数える
-            elif any(a == b for i, a in enumerate(enum) for b in enum[i + 1:]):
-                problems.append(f"{at}: enum の値が重複している")
+        problems += check_field(at, field)
     return problems
 
 
+def is_composite(field) -> bool:
+    """項目が配列か入れ子のオブジェクトか（#1300）。"""
+    return isinstance(field, dict) and field.get("type") in COMPOSITE
+
+
+def shape_of(field: dict):
+    """項目の形——型と、配列の要素・オブジェクトの項目（`nullable`・`enum`・`unordered` は入れない）。`$ref` が指す項目と書く項目の形を比べるのに使う。"""
+    if field["type"] == "array":
+        return ("array", shape_of(field["items"]))
+    if field["type"] == "object":
+        return ("object", tuple((name, shape_of(field["properties"][name])) for name in sorted(field["properties"])))
+    return field["type"]
+
+
 def check_dynamic(where: str, value: dict, field: dict, bound: dict[str, dict]) -> list[str]:
-    """期待の項目の値 `{"$any": <型>}`・`{"$ref": "<名前>.<項目>"}`（#1299）。`bound` は、この呼び出しより前に `as` で束ねた {名前: 出力の項目}。"""
+    """期待の項目の値 `{"$any": <型>}`・`{"$ref": "<名前>.<項目>"}`（#1299）。`bound` は、この呼び出しより前に `as` で束ねた {名前: 出力の項目}。
+
+    配列・入れ子のオブジェクト（#1300）の中の値にも書ける——`$any` の型は書く項目の型（`array`・`object` でもよい）、`$ref` は出力の項目（一番外の項目）を指す。
+    """
     if len(value) != 1:
         return [f"{where}: `{ANY}` か `{REF}` のどちらか 1 つだけを書く（{json.dumps(value, ensure_ascii=False)}）"]
     if ANY in value:
-        if value[ANY] not in TYPES:
-            return [f"{where}.{ANY}: 型 `{value[ANY]}` は決まりに無い（{' / '.join(TYPES)}）"]
+        if value[ANY] not in ALL_TYPES:
+            return [f"{where}.{ANY}: 型 `{value[ANY]}` は決まりに無い（{' / '.join(ALL_TYPES)}）"]
         if value[ANY] != field["type"]:
             return [f"{where}.{ANY}: 項目の型 {field['type']} と違う（{value[ANY]}）"]
         return []
@@ -583,17 +622,50 @@ def check_dynamic(where: str, value: dict, field: dict, bound: dict[str, dict]) 
     if name not in bound:
         return [f"{where}.{REF}: `{name}` は、この呼び出しより前に `{AS}` で束ねた名前でない（後ろの呼び出し・自分自身・書いていない名前は指せない）"]
     target = bound[name].get(item)
-    if not isinstance(target, dict) or target.get("type") not in TYPES:
+    if not isinstance(target, dict) or target.get("type") not in ALL_TYPES:
         return [f"{where}.{REF}: `{name}` の入口の出力に項目 `{item}` が無い"]
     if target["type"] != field["type"]:
         return [f"{where}.{REF}: 指す項目 {name}.{item} の型 {target['type']} が、項目の型 {field['type']} と違う"]
+    if is_composite(field) and shape_of(target) != shape_of(field):
+        return [f"{where}.{REF}: 指す項目 {name}.{item} の形（中の型）が、項目の形と違う"]
     return []
 
 
-def check_values(where: str, values, fields: dict, bound: dict[str, dict] | None = None) -> list[str]:
+def check_value(where: str, field: dict, value, bound: dict[str, dict] | None, unordered: bool) -> list[str]:
+    """項目 1 つの値（`nullable` の `null` は型も enum も見ない）。配列・入れ子のオブジェクトは中の値まで見る（#1300）。
+
+    `unordered` は、順を問わない配列の要素の中か——どの要素に当たるかが決まらないので、`$any`・`$ref` を書けない。
+    """
+    if bound is not None and is_dynamic_value(value):
+        if unordered:
+            return [f"{where}: 順を問わない配列（`{UNORDERED}`）の要素の中には `{ANY}`・`{REF}` を書けない（どの要素に当たるか決まらない）"]
+        return check_dynamic(where, value, field, bound)
+    if value is None and nullable(field):
+        return []  # null は enum に書かない（enum の値は型に合うものだけ）
+    if field["type"] == "array":
+        if not isinstance(value, list):
+            return [f"{where}: 型 array でない（{json.dumps(value, ensure_ascii=False)}）"]
+        inner = unordered or field.get(UNORDERED) is True
+        problems = []
+        for index, item in enumerate(value):
+            problems += check_value(f"{where}[{index}]", field["items"], item, bound, inner)
+        return problems
+    if field["type"] == "object":
+        if not isinstance(value, dict):
+            return [f"{where}: 型 object でない（{json.dumps(value, ensure_ascii=False)}）"]
+        return check_values(where, value, field["properties"], bound, unordered)
+    if not value_fits(field["type"], value):
+        return [f"{where}: 型 {field['type']} でない（{json.dumps(value, ensure_ascii=False)}）"]
+    if isinstance(field.get("enum"), list) and value not in field["enum"]:
+        return [f"{where}: enum に無い値（{json.dumps(value, ensure_ascii=False)}）"]
+    return []
+
+
+def check_values(where: str, values, fields: dict, bound: dict[str, dict] | None = None, unordered: bool = False) -> list[str]:
     """`values` が `fields` の項目をちょうど全部、その型と enum で持つか（`nullable` の項目の `null` は型も enum も見ない）。
 
     `bound` を渡すと（期待だけ。#1299）、項目の値に `$any`・`$ref` を書ける——型・`enum` の代わりに `check_dynamic` が見る。
+    配列・入れ子のオブジェクト（#1300）は中の値まで見る。
     """
     if not isinstance(values, dict):
         return [f"{where}: オブジェクトでない"]
@@ -603,24 +675,32 @@ def check_values(where: str, values, fields: dict, bound: dict[str, dict] | None
     for name in sorted(values.keys() - fields.keys()):
         problems.append(f"{where}: 決まりに無い項目 `{name}`")
     for name in sorted(values.keys() & fields.keys()):
-        field, value = fields[name], values[name]
-        if not isinstance(field, dict) or field.get("type") not in TYPES:
+        field = fields[name]
+        if not isinstance(field, dict) or field.get("type") not in ALL_TYPES:
             continue  # 項目の定義の誤りは別に出ている
-        if bound is not None and is_dynamic_value(value):
-            problems += check_dynamic(f"{where}.{name}", value, field, bound)
-            continue
-        if value is None and nullable(field):
-            continue  # null は enum に書かない（enum の値は型に合うものだけ）
-        if not value_fits(field["type"], value):
-            problems.append(f"{where}.{name}: 型 {field['type']} でない（{json.dumps(value, ensure_ascii=False)}）")
-        elif isinstance(field.get("enum"), list) and value not in field["enum"]:
-            problems.append(f"{where}.{name}: enum に無い値（{json.dumps(value, ensure_ascii=False)}）")
+        if is_composite(field) and not valid_field(field):
+            continue  # 中の項目の定義の誤りも別に出ている
+        problems += check_value(f"{where}.{name}", field, values[name], bound, unordered)
     return problems
+
+
+def valid_field(field) -> bool:
+    """項目の定義が、中の項目まで決まりに合うか——合わない定義の上では値を見ない（定義の誤りは `check_fields` が出している）。"""
+    return not check_field("field", field)
 
 
 def is_dynamic_value(value) -> bool:
     """期待の項目の値が、等しさでなく型・同一性で比べるもの（`$any`・`$ref` のどちらかを持つオブジェクト）か。"""
     return isinstance(value, dict) and (ANY in value or REF in value)
+
+
+def contains_dynamic(value) -> bool:
+    """期待の値が `$any`・`$ref` を、配列・入れ子のオブジェクトの中も含めて持つか（#1300）。"""
+    if is_dynamic_value(value):
+        return True
+    if isinstance(value, dict):
+        return any(contains_dynamic(item) for item in value.values())
+    return isinstance(value, list) and any(contains_dynamic(item) for item in value)
 
 
 def check_binding(where: str, call: dict, fields_out: dict, bound: dict[str, dict]) -> list[str]:
@@ -753,6 +833,8 @@ def check_path_vars(where: str, path: str, fields: dict, templates: dict[str, st
             problems.append(f"{where}: パスの変数 {{{name}}} が重複している")
         if name in fields and nullable(fields[name]):
             problems.append(f"{where}: パスの変数 {{{name}}} は {NULLABLE} にできない（パスの値は null にならない）")
+        if name in fields and is_composite(fields[name]):
+            problems.append(f"{where}: パスの変数 {{{name}}} は配列・オブジェクトにできない（パスの値は 1 つの文字列になる）")
     # OpenAPI では変数の名前だけが違うパスは同じパスなので、並べると無効になる（メソッドが違っても）
     template = PATH_VAR.sub("{}", path)
     if templates.setdefault(template, path) != path:
@@ -1746,7 +1828,12 @@ def literal(values: dict) -> str:
 
 
 def schema_of(field: dict) -> dict:
-    out = {"type": field["type"]}
+    if field["type"] == "array":
+        out = {"type": "array", "items": schema_of(field["items"])}
+    elif field["type"] == "object":
+        out = object_schema(field["properties"])
+    else:
+        out = {"type": field["type"]}
     if "enum" in field:
         out["enum"] = field["enum"]
     if nullable(field):
@@ -1809,18 +1896,25 @@ def openapi(ir: dict) -> str:
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
 
-def py_type(field: dict) -> str:
-    if "enum" in field:
-        name = "Literal[" + ", ".join(repr(v) for v in field["enum"]) + "]"
+def py_type(field: dict, name: str = "", nested: list[str] | None = None) -> str:
+    """項目の Python の型。入れ子のオブジェクト（#1300）は、`name` の名前の TypedDict の定義を `nested` の行に足して、その名前を返す。"""
+    if field["type"] == "array":
+        base = f"list[{py_type(field['items'], name + 'Item', nested)}]"
+    elif field["type"] == "object":
+        nested += typed_dict(name, field["properties"])
+        base = name
+    elif "enum" in field:
+        base = "Literal[" + ", ".join(repr(v) for v in field["enum"]) + "]"
     else:
-        name = PY_TYPES[field["type"]]
-    return name + " | None" if nullable(field) else name
+        base = PY_TYPES[field["type"]]
+    return base + " | None" if nullable(field) else base
 
 
 def typed_dict(name: str, fields: dict) -> list[str]:
+    nested: list[str] = []
     lines = [f"class {name}(TypedDict):"]
-    lines += [f"    {field}: {py_type(fields[field])}" for field in sorted(fields)] or ["    pass"]
-    return lines + ["", ""]
+    lines += [f"    {field}: {py_type(fields[field], name + pascal(field), nested)}" for field in sorted(fields)] or ["    pass"]
+    return nested + lines + ["", ""]
 
 
 def types_py(ir: dict) -> str:
@@ -1855,9 +1949,23 @@ def test_class(feature: dict) -> str:
     return "Test" + feature["id"].replace("-", "")
 
 
+def spec_of(field: dict) -> dict:
+    """項目の型の記述（`enum` を除く）。配列・入れ子のオブジェクト（#1300）を、Red テストが中まで比べるのに使う。キーは並べ替えて持つ。"""
+    out = {"type": field["type"]}
+    if field["type"] == "array":
+        out["items"] = spec_of(field["items"])
+        if field.get(UNORDERED) is True:
+            out[UNORDERED] = True
+    elif field["type"] == "object":
+        out["properties"] = {name: spec_of(field["properties"][name]) for name in sorted(field["properties"])}
+    if nullable(field):
+        out[NULLABLE] = True
+    return out
+
+
 def output_types(op: dict) -> dict:
-    """正常時の出力の項目と、失敗の形（`error`）の型。Red テストが値と一緒に型を見るのに使う。"""
-    types = {name: field["type"] for name, field in op["output"].items()}
+    """正常時の出力の項目と、失敗の形（`error`）の型。Red テストが値と一緒に型を見るのに使う。配列・入れ子のオブジェクトの項目は、型の名前でなく型の記述（`spec_of`）。"""
+    types = {name: spec_of(field) if is_composite(field) else field["type"] for name, field in op["output"].items()}
     types[RESERVED_OUTPUT] = "string"
     return types
 
@@ -1899,7 +2007,7 @@ def is_dynamic(case: dict) -> bool:
     if is_trace(case):
         return False
     calls = [case] + [item for key in (SETUP, AFTER) for item in case.get(key, []) if SEED not in item]
-    return any(AS in call or any(is_dynamic_value(v) for v in call.get("expected", {}).values()) for call in calls)
+    return any(AS in call or any(contains_dynamic(v) for v in call.get("expected", {}).values()) for call in calls)
 
 
 def seeds_used(feature: dict) -> bool:
@@ -1940,7 +2048,9 @@ def concurrent_operations(feature: dict) -> list[str]:
 
 def trace_types(feature: dict, ops: dict[str, dict]) -> dict[str, dict]:
     """{入口の名前: 出力の型}——トレースのケースが呼ぶ入口の全部。Red テストが値と一緒に型を見るのに使う。"""
-    return {name: output_types(ops[name]) for name in traced_operations(feature)}
+    # 配列・入れ子のオブジェクトの出力を持つ入口の型は、項目名の順に並べる（#1300。JSON に書いた項目の順で、Red テストのバイトが変わらないように）
+    return {name: canonical(output_types(ops[name])) if any(is_composite(field) for field in ops[name]["output"].values()) else output_types(ops[name])
+            for name in traced_operations(feature)}
 
 
 def trace_nullable(feature: dict, ops: dict[str, dict]) -> dict[str, tuple]:
@@ -2025,8 +2135,58 @@ TRACE_RUNTIME = (
 )
 
 
-def stage_helpers() -> list[str]:
-    """トレースのケースか、前提・後の状態を持つ入出力のケースがある機能の Red テストのクラスに足すメソッド（入口の関数を引く・呼んで比べる）。"""
+# 配列・入れ子のオブジェクトの出力を持つ機能の Red テストにだけ足す部分（#1300。`references/spec-ir.md` の「配列と入れ子のオブジェクト」）。
+# 値を型の記述（`OUTPUT_TYPES` の値）に沿って中まで比べる。順を問わない配列（unordered）は並びを無視し、`$any`・`$ref` は中の値にも書ける
+COMPOSITE_RUNTIME = (
+    "def shape_fits(spec, value):",
+    f"    # 型の記述（type・items・properties・{NULLABLE}）に、値が中まで合うか",
+    "    if value is None:",
+    f"        return bool(spec.get({NULLABLE!r}))",
+    "    kind = spec[\"type\"]",
+    "    if kind == \"array\":",
+    "        return isinstance(value, list) and all(shape_fits(spec[\"items\"], item) for item in value)",
+    "    if kind == \"object\":",
+    "        return (isinstance(value, dict) and value.keys() == spec[\"properties\"].keys()",
+    "                and all(shape_fits(spec[\"properties\"][key], item) for key, item in value.items()))",
+    "    return type_fits(kind, value)",
+    "",
+    "",
+    "def matches(spec, want, got, env):",
+    f"    # 期待 want と実際の値 got が合うか。`{ANY}` は型の記述に合うことだけ、`{REF}` は束ねた結果の項目と同じ値、順を問わない配列（{UNORDERED}）は並びを無視する",
+    "    if isinstance(want, dict) and ANY in want:",
+    "        return shape_fits(spec, got)",
+    "    if isinstance(want, dict) and REF in want:",
+    "        bound, item = want[REF].split(\".\")",
+    "        return matches(spec, env[bound][item], got, env)",
+    "    if want is None or got is None:",
+    f"        return want is None and got is None and bool(spec.get({NULLABLE!r}))",
+    "    kind = spec[\"type\"]",
+    "    if kind == \"array\":",
+    "        if not (isinstance(want, list) and isinstance(got, list)) or len(want) != len(got):",
+    "            return False",
+    f"        if spec.get({UNORDERED!r}):",
+    "            rest = list(got)",
+    "            for item in want:",
+    "                found = next((i for i, other in enumerate(rest) if matches(spec[\"items\"], item, other, env)), None)",
+    "                if found is None:",
+    "                    return False",
+    "                del rest[found]",
+    "            return True",
+    "        return all(matches(spec[\"items\"], w, g, env) for w, g in zip(want, got))",
+    "    if kind == \"object\":",
+    "        props = spec[\"properties\"]",
+    "        if not (isinstance(want, dict) and isinstance(got, dict)) or not want.keys() == got.keys() == props.keys():",
+    "            return False",
+    "        return all(matches(props[key], want[key], got[key], env) for key in want)",
+    "    return got == want and type_fits(kind, got)",
+)
+
+
+def stage_helpers(composite: bool = False) -> list[str]:
+    """トレースのケースか、前提・後の状態を持つ入出力のケースがある機能の Red テストのクラスに足すメソッド（入口の関数を引く・呼んで比べる）。
+
+    `composite`（配列・入れ子のオブジェクトの出力を持つ機能。#1300）なら、`fits` は項目ごとに型の記述に沿って中まで比べる（`reason` を使う）。
+    """
     return [
         "",
         "    def function_of(self, name):",
@@ -2036,11 +2196,16 @@ def stage_helpers() -> list[str]:
         "        return function",
         "",
         "    def fits(self, operation, actual, expected):",
-        "        # 等しく、項目の型が入口の出力の型に合う（null を許す項目の null は型を見ない）",
-        "        if not isinstance(actual, dict) or actual != expected:",
-        "            return False",
-        "        types, allow = TRACE_TYPES[operation], TRACE_NULLABLE[operation]",
-        "        return all((value is None and name in allow) or type_fits(types.get(name), value) for name, value in actual.items())",
+        *([
+            "        # 項目ごとに型の記述に沿って中まで比べる（順を問わない配列は並びを無視する）",
+            "        return self.reason(TRACE_TYPES[operation], TRACE_NULLABLE[operation], actual, expected, {}) is None",
+        ] if composite else [
+            "        # 等しく、項目の型が入口の出力の型に合う（null を許す項目の null は型を見ない）",
+            "        if not isinstance(actual, dict) or actual != expected:",
+            "            return False",
+            "        types, allow = TRACE_TYPES[operation], TRACE_NULLABLE[operation]",
+            "        return all((value is None and name in allow) or type_fits(types.get(name), value) for name, value in actual.items())",
+        ]),
         "",
         "    def step(self, call):",
         "        actual = self.function_of(call[\"operation\"])(**call[\"input\"])",
@@ -2073,10 +2238,26 @@ def staged_methods() -> list[str]:
     ]
 
 
-def dynamic_methods() -> list[str]:
-    """期待に `$any`・`$ref` を書く（結果を `as` で束ねる）入出力のケースがある機能の Red テストのクラスに足すメソッド（#1299）。名前は定数から入れる。"""
+def reason_methods(composite: bool = False) -> list[str]:
+    """期待に `$any`・`$ref` を書く入出力のケース（#1299）か、配列・入れ子のオブジェクトの出力（#1300）がある機能の Red テストのクラスに足す、比べるメソッド。名前は定数から入れる。
+
+    `composite` なら、項目ごとに型の記述（`OUTPUT_TYPES` の値）に沿って中まで比べる（`matches`）。
+    """
     return [
         "",
+        *([
+            "    def reason(self, types, allow, actual, expected, env):",
+            "        # 合わない理由（合えば None）。項目ごとに型の記述に沿って中まで比べる（`$any` は型だけ、`$ref` は束ねた結果の項目と同じ値、順を問わない配列は並びを無視する）",
+            "        if not isinstance(actual, dict) or actual.keys() != expected.keys():",
+            "            return f\"{actual!r} を返した（期待の項目は {sorted(expected)!r}）\"",
+            "        for name in sorted(expected):",
+            "            spec = types.get(name)",
+            "            if isinstance(spec, str):",
+            "                spec = {\"type\": spec, \"nullable\": name in allow}",
+            "            if not matches(spec, expected[name], actual[name], env):",
+            "                return f\"{name} が {actual[name]!r}（期待 {expected[name]!r}）\"",
+            "        return None",
+        ] if composite else [
         "    def reason(self, types, allow, actual, expected, env):",
         "        # 合わない理由（合えば None）。`$any` は型だけ、`$ref` は束ねた結果の項目と同じ値か、それ以外は等しさと型を見る",
         "        if not isinstance(actual, dict) or actual.keys() != expected.keys():",
@@ -2095,11 +2276,18 @@ def dynamic_methods() -> list[str]:
         "            if not good:",
         "                return f\"{name} が {got!r}（期待 {shown}）\"",
         "        return None",
+        ]),
         "",
         "    def agree(self, label, types, allow, actual, expected, env):",
         "        problem = self.reason(types, allow, actual, expected, env)",
         "        if problem is not None:",
         "            self.fail(f\"{label}: {problem}\")",
+    ]
+
+
+def dynamic_methods() -> list[str]:
+    """期待に `$any`・`$ref` を書く（結果を `as` で束ねる）入出力のケースがある機能の Red テストのクラスに足すメソッド（#1299。比べるメソッドは `reason_methods`）。名前は定数から入れる。"""
+    return [
         "",
         "    def dynamic_stage(self, call, env):",
         "        if SEED in call:",
@@ -2196,6 +2384,9 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
     staged = any(is_staged(case) for case in feature["cases"])
     # 期待に `$any`・`$ref` を書くケース（#1299）。無い機能の Red テストは、足す前と 1 バイトも変えない
     dynamic = any(is_dynamic(case) for case in feature["cases"])
+    # 配列・入れ子のオブジェクトの出力を持つ機能（#1300。呼ぶ入口の出力を含む）。無い機能の Red テストは、足す前と 1 バイトも変えない
+    called = [op] + [ops[name] for name in traced_operations(feature)] if (traced or staged) and ops else [op]
+    composite = any(is_composite(field) for one in called for field in one["output"].values())
     lines = [
         f"# {GENERATED}",
         f"# {feature['id']}: {feature['title']} の Red テスト",
@@ -2207,6 +2398,8 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
            "（references/spec-ir.md の「前提と後の状態」）。"] if staged else []),
         *([f"# 期待に `{ANY}`・`{REF}` を書いたケースは、等しさの代わりに型・同一性で比べる（references/spec-ir.md の「実行ごとに変わる出力」）。"]
           if dynamic else []),
+        *(["# 配列・入れ子のオブジェクトの項目は、型の記述（OUTPUT_TYPES）に沿って中まで比べる。順を問わない配列は並びを無視する"
+           "（references/spec-ir.md の「配列と入れ子のオブジェクト」）。"] if composite else []),
         "from __future__ import annotations",
         "",
         "import importlib",
@@ -2216,11 +2409,12 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         f"IMPL_MODULE = {impl_module!r}",
         f"OPERATION = {op['id']!r}",
         f"OUTPUT_TYPES = {literal(output_types(op))}",
-        *([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null or dynamic else []),
+        *([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null or dynamic or composite else []),
         *([f"TRACE_TYPES = {literal(trace_types(feature, ops))}",
            f"TRACE_NULLABLE = {literal(trace_nullable(feature, ops))}", f"RESET = {RESET!r}"] if traced or staged else []),
         *([f"SEED = {SEED!r}"] if staged else []),
-        *([f"ANY = {ANY!r}", f"REF = {REF!r}", f"AS = {AS!r}"] if dynamic else []),
+        *([f"ANY = {ANY!r}", f"REF = {REF!r}"] if dynamic or composite else []),
+        *([f"AS = {AS!r}"] if dynamic else []),
         *([f"TRACE_STEP_WAIT = {TRACE_STEP_WAIT}", f"TRACE_LIMIT = {TRACE_LIMIT}"] if traced else []),
         "",
         "",
@@ -2237,6 +2431,7 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         "    return False",
         "",
         "",
+        *([*COMPOSITE_RUNTIME, "", ""] if composite else []),
         *IMPLEMENTATION,
         "",
         "",
@@ -2251,13 +2446,16 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         "",
         "    def check(self, given, expected):",
         "        actual = self.call(given)",
+        *([f"        self.agree(f\"{{OPERATION}}({{given!r}})\", OUTPUT_TYPES, NULLABLE, actual, expected, {{}})"] if composite else [
         "        self.assertEqual(actual, expected)",
         "        for name, value in actual.items():",
         *(["            if value is None and name in NULLABLE:", "                continue"] if allow_null else []),
         "            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",
         "                            f\"{name}: 型が {OUTPUT_TYPES[name]} でない（{value!r}）\")",
-        *(stage_helpers() if traced or staged else []),
+        ]),
+        *(stage_helpers(composite) if traced or staged else []),
         *(staged_methods() if staged else []),
+        *(reason_methods(composite) if dynamic or composite else []),
         *(dynamic_methods() if dynamic else []),
         *(trace_methods() if traced else []),
     ]
@@ -2268,13 +2466,13 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         else:
             expected = case["expected"] if "expected" in case else {"error": case["error"]}
             if is_dynamic(case):
-                run = (f"        self.dynamic({literal(case['input'])}, {literal(expected)}, "
+                run = (f"        self.dynamic({literal(canonical(case['input']))}, {literal(canonical(expected))}, "
                        f"{canonical(case.get(SETUP, []))!r}, {canonical(case.get(AFTER, []))!r}, {case.get(AS)!r})")
             elif is_staged(case):
-                run = (f"        self.staged({literal(case['input'])}, {literal(expected)}, "
+                run = (f"        self.staged({literal(canonical(case['input']))}, {literal(canonical(expected))}, "
                        f"{canonical(case.get(SETUP, []))!r}, {canonical(case.get(AFTER, []))!r})")
             else:
-                run = f"        self.check({literal(case['input'])}, {literal(expected)})"
+                run = f"        self.check({literal(canonical(case['input']))}, {literal(canonical(expected))})"
         lines += [
             "",
             f"    # {case['id']}: {case['title']}" + (f"（{refs}）" if refs else ""),
@@ -2316,7 +2514,7 @@ def perf_test(feature: dict, rows: list[dict[str, str]], impl_module: str) -> st
         "",
         f"IMPL_MODULE = {impl_module!r}",
         f"OPERATION = {op['id']!r}",
-        "INPUTS = [" + ", ".join(literal(given) for given in inputs) + "]",
+        "INPUTS = [" + ", ".join(literal(canonical(given)) for given in inputs) + "]",
         f"CALLS = {PERF_CALLS}",
         "",
         "",
@@ -2615,6 +2813,11 @@ def callers_unchanged(changes: list[Change], number: int) -> list[str]:
 WIDENED = {("integer", "number")}
 
 
+def widened(was, now) -> bool:
+    """型を広げただけか。型の名前（文字列）どうしだけを見る——配列・入れ子のオブジェクトの項目（#1300）は中の型を見分けず、違えば変えたと読む。"""
+    return isinstance(was, str) and isinstance(now, str) and (was, now) in WIDENED
+
+
 def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
     """そのケースの Red テストが実行する中身のうち、型を除いたもの（題・コメントは入れない）。"""
     op = feature["operation"]
@@ -2625,9 +2828,9 @@ def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
         # 前提・後の状態（#1298）。書いていないケースの中身は、足す前と同じ。
         # 期待の `$any`・`$ref`（#1299）は `expected` の写しに、前提・後の状態の `as` と `$ref` は `setup`・`after` の写しに入る
         # （本体の `as` だけを変えても、指す `$ref` を書き換えなければ中身は変わらない——書き換えれば `after` の写しが変わる）
-        return (impl_module, op["id"], literal(case["input"]), literal(expected), SETUP, repr(canonical(case.get(SETUP, []))),
+        return (impl_module, op["id"], literal(canonical(case["input"])), literal(canonical(expected)), SETUP, repr(canonical(case.get(SETUP, []))),
                 AFTER, repr(canonical(case.get(AFTER, []))))
-    return impl_module, op["id"], literal(case["input"]), literal(expected)
+    return impl_module, op["id"], literal(canonical(case["input"])), literal(canonical(expected))
 
 
 def trace_shape(case: dict, ops: dict[str, dict]) -> tuple:
@@ -2662,7 +2865,7 @@ def case_changed(before: dict, old: dict, impl_before: str, feature: dict, case:
         return True  # 前提・後の状態が呼ぶ入口の出力の型が変わった（#1298）
     was, now = output_types(before["operation"]), output_types(feature["operation"])
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
-    return any(was.get(name) != now.get(name) and (was.get(name), now.get(name)) not in WIDENED for name in expected)
+    return any(was.get(name) != now.get(name) and not widened(was.get(name), now.get(name)) for name in expected)
 
 
 def case_changes(change: Change, impl_now: str, impl_before: str, ops_now: dict[str, dict] | None = None,
