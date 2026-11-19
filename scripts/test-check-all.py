@@ -2174,26 +2174,54 @@ def cache_run(root: Path, *args: str, **flags: bool) -> tuple[int, str]:
     return proc.returncode, proc.stdout + proc.stderr
 
 
-def cache_interrupt(root: Path) -> bool:
-    """`--no-cache` で回し、`t-slow.py` が眠り始めたら本体に SIGINT を送る。眠りに入ったのを見られたか。"""
+# SIGINT の扱いを決めてから、残りの引数でそのまま起こし直す（`exec` なので pid は変わらない——`send_signal` が届く）。
+# `preexec_fn` や自分の SIGINT の書き換えは使わない——この関数は変異の段で作業者のスレッドから呼ばれ、
+# `signal.signal` はメインスレッドでしか呼べず、`preexec_fn` はスレッドと組み合わせて安全でない。
+_SIGINT_EXEC = ("import os, signal, sys\n"
+                "signal.signal(signal.SIGINT, signal.{handler})\n"
+                "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])")
+
+
+# 中断を待つ秒数。**本体が止まるのは普通 1 秒ほど（`GRACE` 3 秒が上限）だが、負荷の高い機械では桁で伸びる**（#1288。
+# 回帰テストの所要時間が 10 倍以上に伸びる負荷が実測された）——`cache_run` の時間切れ（300 秒）に揃える。
+INTERRUPT_WAIT = 300
+
+
+def cache_interrupt_run(root: Path, parent_ignores_sigint: bool = False) -> tuple[bool, int]:
+    """`--no-cache` で回し、`t-slow.py` が眠り始めたら本体に SIGINT を送る。(眠りに入ったのを見られたか, 終了コード)。
+
+    **本体の SIGINT は起こす側が既定に戻す**（#1288）。SIGINT が無視された環境（バックグラウンドで起こされた親・
+    その子）から回すと、無視は exec をまたいで子に残り、Python は KeyboardInterrupt を受けなくなる——
+    本体は SIGINT を受けても中断せず、`t-slow.py` の眠り（60 秒）と残りの回帰テストを走り切る。
+    すると 60 秒の待ちが負荷で足りず、時間切れになった。**終了コードで見分ける**——中断されれば非 0、走り切れば 0
+    （時間で見分けると、負荷で偽の失敗が出る）。**この段が確かめるのは中断の契約で、
+    起こされた環境の SIGINT の扱いではない**ので、扱いを揃えてから起こす。
+    `parent_ignores_sigint` は、その環境を作る（陽性対照）——本体の手前に SIGINT を無視する 1 段を挟む。"""
     assert_not_real_repo(root)
     marker = root.parent / f"{root.name}-slow-started"
+    marker.unlink(missing_ok=True)  # 前の呼び出しの印が残っていると、起動の前に SIGINT を送ってしまう（本体の準備の前に届き、無視される）
     env = cache_env()
     env["CACHE_T_SLOW"] = str(marker)
-    proc = subprocess.Popen([sys.executable, str(root / "scripts" / "check-all.py"), "--jobs", "4", "--no-cache"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root, env=env)
+    cmd = [sys.executable, "-c", _SIGINT_EXEC.format(handler="SIG_DFL"),
+           str(root / "scripts" / "check-all.py"), "--jobs", "4", "--no-cache"]
+    if parent_ignores_sigint:
+        cmd = [sys.executable, "-c", _SIGINT_EXEC.format(handler="SIG_IGN"), "-c", cmd[2], *cmd[3:]]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=root, env=env)
     try:
         deadline = time.time() + 120
         while time.time() < deadline and not marker.exists() and proc.poll() is None:
             time.sleep(0.05)
         seen = marker.exists()
         proc.send_signal(signal.SIGINT)
-        proc.wait(timeout=60)
-        return seen
+        return seen, proc.wait(timeout=INTERRUPT_WAIT)
     finally:
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+def cache_interrupt(root: Path) -> bool:
+    return cache_interrupt_run(root)[0]
 
 
 def ran_tests(out: str) -> set[str]:
@@ -2319,6 +2347,9 @@ def cache_contract(root: Path):
     seen = cache_interrupt(root)
     rc2, out2 = cache_run(root)
     yield "中断した回は記録を書きも消しもしない（A5）", seen and rc2 == 0 and "t-slow.py" in cached_tests(out2) and "t-slow.py" not in ran_tests(out2)
+    # SIGINT を無視した親から回しても、中断の段は届く（#1288。起こす側が本体の SIGINT を既定に戻さないと、本体は止まらず走り切って 0 で終わる）。
+    seen2, rc_ignored = cache_interrupt_run(root, parent_ignores_sigint=True)
+    yield "SIGINT を無視した親から起こしても、本体は中断される（走り切らず非 0。#1288）", seen2 and rc_ignored != 0
     # 4) git の状態。コミットすると、git を当てたテストだけが回る（配置だけを訊くものは回らない）。
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(root), *GIT_ID, "commit", "-q", "-m", "c2"], check=True)

@@ -347,8 +347,10 @@ def suite(script: Path, first_failure: bool = False) -> list[str]:
         code, items, out = run(mod, env, environ={"CLAUDECODE": "1"})
         check("認証: どれも無ければ 8 時間のトークンで要対処", status_of(items, "認証") == [mod.ACTION]
               and "8 時間" in detail_of(items, "認証") and code == 1, bad)
-        check("認証: 直し方に起動口の絶対パスと --store-token", str(mod.LAUNCHER) in fix_of(items, "認証")
-              and mod.LAUNCHER.is_absolute() and "--store-token" in fix_of(items, "認証"), bad)
+        check("認証: 直し方に起動口の絶対パスと、登録してから起動する 1 本のコマンド（#1287）", str(mod.LAUNCHER) in fix_of(items, "認証")
+              and mod.LAUNCHER.is_absolute() and '"/dev-loop:cruise <親> [--absent]"' in fix_of(items, "認証")
+              and "登録してから起動する" in fix_of(items, "認証") and "--install-launcher" in fix_of(items, "認証")
+              and "別の端末で" not in fix_of(items, "認証") and "--store-token" in fix_of(items, "認証"), bad)
         check("認証: 起動口は本体と同じ場所の実在するファイル",
               (SCRIPT.parent / mod.LAUNCHER.name).is_file(), bad)
         _, items, _ = run(mod, env, environ={"CLAUDECODE": "1", "CLAUDE_CODE_OAUTH_TOKEN": "  "})
@@ -2122,8 +2124,11 @@ MUTATIONS = {
         "    return [(HUMAN if present else ACTION, label,",
         "    return [(ACTION, label,"),
     "認証: 起動口を案内しない": (
-        'f"長期トークンで回すなら: 別の端末で bash {LAUNCHER} --store-token',
-        'f"長期トークンで回すなら: 別の端末で claude setup-token'),
+        ' bash {LAUNCHER} \\"/dev-loop:cruise <親> [--absent]\\" と打って起動し直す"',
+        ' claude setup-token と打って起動し直す"'),
+    "認証: 登録してから起動すると案内しない": (
+        "（キーチェーンに未登録なら、別のタブで claude setup-token を走らせ、その場の入力に表示されたトークンを貼る——登録してから起動する。",
+        "（"),
     "認証: 起動口の名前を違えるz": (
         'LAUNCHER = Path(__file__).resolve().parent / "launch-with-long-token.sh"',
         'LAUNCHER = Path(__file__).resolve().parent / "launch-long-token.sh"'),
