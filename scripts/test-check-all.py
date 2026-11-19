@@ -2199,6 +2199,7 @@ def cache_interrupt_run(root: Path, parent_ignores_sigint: bool = False) -> tupl
     `parent_ignores_sigint` は、その環境を作る（陽性対照）——本体の手前に SIGINT を無視する 1 段を挟む。"""
     assert_not_real_repo(root)
     marker = root.parent / f"{root.name}-slow-started"
+    marker.unlink(missing_ok=True)  # 前の呼び出しの印が残っていると、起動の前に SIGINT を送ってしまう（本体の準備の前に届き、無視される）
     env = cache_env()
     env["CACHE_T_SLOW"] = str(marker)
     cmd = [sys.executable, "-c", _SIGINT_EXEC.format(handler="SIG_DFL"),
