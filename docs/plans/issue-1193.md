@@ -145,11 +145,28 @@ dev-loop の原則に、テストを緑にするための skip・sleep・リト�
 
 ## 手順 8 の記録
 
-- 切り分けの層（親 Issue の書き方・まとめの基準・spec-loop の切り分け）を見た結果: 未記入
-- 焼き戻す学び: 未記入
+- 切り分けの層（親 Issue の書き方・まとめの基準・spec-loop の切り分け）を見た結果: 戻せる学びなし。この周の残課題（`implementer.md`・`child-cycle.md` への指示、親の終える報告が会話にしか無いこと、
+  静的な検査の弱さ）は、仕事の切り方ではなく規定の置き場所の問題で、親 Issue の書き方・まとめの基準・spec-loop の切り分けのどれを変えても消えない。
+- 焼き戻す学び: 「指摘対応で原本の行数が増えるなら、生成ブロックを作り直してからコミットする」——1 パス目の直しのあとで `skill-metrics.py` を回し忘れ、2 パス目の Verifier と `/code-review` が同時に見つけた。
+  すでに CLAUDE.md の「`SKILL.md` の測定値」に「`SKILL.md` を編集すると古くなる」があり、`references/` の行数も対象（#136）なので、新しい規定は足さない（周の記録にだけ残す）。
 
 - この周の起票: 2 件（確認の Issue。H1・H2。仕様の穴の起票で、手順 6 の 3 条件の対象外）
 
+## マージが起こす反映の照合（`マージの反映: ドキュメントとプラグインの配布`）
+
+- 読んだもの: `.claude/dev-loop.md` の宣言（マージする前の既定ブランチのもの）・差分（`git diff 45640c38…`）・`.github/workflows/`（この周は触っていない）。
+- 見つかった反映: 差分の `.claude-plugin/marketplace.json` と `plugins/dev-loop/.claude-plugin/plugin.json` の変更は `version` の行だけ。hooks・MCP・`.claude/settings.json` の変更なし。宣言の外の反映は無い。
+
 ```dev-loop-gates
 周の base: 45640c3864b95f052346a506558162b3c82a090c
+関門: Verifier 1 9e226821fd7000d654253e333474e8fb2bea7194 反証=1
+関門: /code-review 1 5292d6c8a394931a407a984a1c1b035ce609557a 指摘=5
+関門: Verifier 2 0b86d6c39baddda563050e1e60ce240d1240967f 反証=2
+関門: /code-review 2 0b86d6c39baddda563050e1e60ce240d1240967f 指摘=7
+関門: 狭いパス d355bf725af0e7b740c70a071abdb9371a6e0fdd e7c525d138b1025d79b4cb1592e9bbbd1d03f615 反証=0
+受入基準: 1 満たす
+受入基準: 2 満たす
+受入基準: 3 満たす
+受入基準: 4 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
