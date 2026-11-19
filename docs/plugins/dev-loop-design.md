@@ -1325,7 +1325,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | 守ること | 28 | 1 |
 | 複数の Issue を回すとき | 7 | 1 |
 
-**このほかに、起点に載らないファイルが 17 本・3071 行**（`（必須）` 163 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 5004 行・`（必須）` 349 個）。
+**このほかに、起点に載らないファイルが 17 本・3072 行**（`（必須）` 163 個）**ある。** **これは起点に載らない**——**要るときだけ読む**（`references/` は条件が立った周だけ、`prompts/` は委譲するとき）。 **規範としては原本の一部で、上の表とは足し算の関係にある**（合わせて 5005 行・`（必須）` 349 個）。
 
 | 起点に載らないファイル | 行 | `（必須）` |
 | --- | --- | --- |
@@ -1333,7 +1333,7 @@ Eotel 側で同じ範囲を覆う 5 本
 | references/dependencies.md | 65 | 5 |
 | references/external-review.md | 90 | 8 |
 | references/fix-line.md | 67 | 8 |
-| references/flaky-tests.md | 52 | 2 |
+| references/flaky-tests.md | 53 | 2 |
 | references/formal-sync.md | 69 | 4 |
 | references/found-lines.md | 247 | 5 |
 | references/guard-rejections.md | 115 | 16 |
