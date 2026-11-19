@@ -44,12 +44,23 @@ Issue 本文（外部入力）から読んだ要件: `--pptx` の既定のデザ
 - `plugins/spec-loop/scripts/qa-to-pptx.py` — `write` が画像の部品（バイト列）も書けるようにする
 - `plugins/spec-loop/scripts/schedule-to-gantt.py` — SVG の重なり（短い工程の名前と棒・月の見出しどうし）
 - `plugins/spec-loop/skills/proposal/SKILL.md` — 描画の確かめの手順・指示から引数を組む手順
-- `plugins/spec-loop/references/tree.md`・`writing-style.md` — PPTX の決まり・手書き部分の長さの目安
-- `scripts/test-proposal-pptx.py`・`scripts/test-check-pptx-render.py` — 新規。回帰テスト（変異テストを含む）
+- `plugins/spec-loop/references/tree.md` — PPTX の決まり・手書き部分の長さの目安
+- `writing-style.md` — PPTX の決まり・手書き部分の長さの目安
+- `scripts/test-proposal-pptx.py` — 新規。回帰テスト（変異テストを含む）
+- `scripts/test-check-pptx-render.py` — 新規。回帰テスト（変異テストを含む）
 - `scripts/test-build-proposal.py`・`scripts/test-schedule-to-gantt.py`・`scripts/test-qa-to-pptx.py`・`scripts/test-check-qa-csv.py`（`is_provisional` を読む側に `proposal-pptx.py` を足す） — 変えた振る舞いに合わせる
-- `scripts/check-all.py`・`.github/workflows/plugins.yml` — テストの登録
-- `CLAUDE.md`・`plugins/spec-loop/README.md`・`docs/plugins/spec-loop.md` — スクリプトの表
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版
+- `scripts/check-all.py` — テストの登録
+- `.github/workflows/plugins.yml` — テストの登録
+- `CLAUDE.md` — スクリプトの表
+- `plugins/spec-loop/README.md` — スクリプトの表
+- `.github/workflows/plugins.yml` — テストのステップ（上の `scripts/check-all.py` と対）
+- `plugins/spec-loop/references/writing-style.md` — 手書き部分の長さの目安（上の `tree.md` と対）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（proposal 以外は版だけ）
+- `scripts/test-check-pptx-render.py` — 変異の追加と読む側の登録
+- `scripts/test-check-qa-csv.py` — 変異の追加と読む側の登録
+- `scripts/test-schedule-to-gantt.py` — 変異の追加と読む側の登録
 - `docs/plans/issue-1289.md` — この計画ファイル
 
 触らない:
