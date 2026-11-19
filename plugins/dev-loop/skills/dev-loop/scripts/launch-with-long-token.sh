@@ -16,7 +16,8 @@
 #   使い方: dev-loop-cruise <親 Issue> [--absent]（= このスクリプトに "/dev-loop:cruise <親 Issue> [--absent]" を渡す）・
 #   dev-loop-cruise [--account <名前>] --store-token|--status。**--account は最初に置く**。
 #   置いた起動口でないファイルが同じ名前で在れば（切れたシンボリックリンクも）、上書きせず止まる（2）。
-#   **cruise の引数は、最初が親 Issue の番号、残りは --absent のような長いオプション（空白を含む語・claude の引数は止まる（2））。
+#   **cruise の引数は、最初が親 Issue の番号、残りは --absent のような長いオプション（空白を含む語・先頭が番号でない引数（-p など）は止まる（2））。
+#   **--verbose のような単語 1 語のオプションは通る**——cruise の引数の 1 語としてまとめて渡るだけで、claude のオプションとしては効かない。
 #   --account・--store-token・--status・--install-launcher は、cruise の引数の位置に置けない**（止まる（2）。1 本の語にまとめるので、本体の「--account は最初」の検査をすり抜けるため）。**--account と一緒には使わない**（実行時に渡す）。
 #
 # --account <名前>: アカウントごとに別の項目（サービス名 claude-long-token-<名前>）を使う。名前は英数字で始め、英数字と . _ -（`-` で始まる名前は断る）。**--account は最初に置く**——ほかの位置（`--account=…` の形も）にあれば止まる（2）。--store-token・--status の後ろに引数があっても止まる（2）。
@@ -155,7 +156,7 @@ for arg in "$@"; do
         ;;
     esac
 done
-# 最初は親 Issue の番号、残りは --absent のような長いオプションだけ（空白を含む 1 語・claude の引数（-p など）を 1 本の語に混ぜない）
+# 最初は親 Issue の番号、残りは --absent のような長いオプションだけ（空白を含む 1 語・先頭が番号でない引数（-p など）を 1 本の語に混ぜない。単語 1 語のオプションは通るが、1 本の語の中なので claude のオプションとしては効かない）
 if ! [[ "$1" =~ ^[0-9]+$ ]]; then
     echo "dev-loop-cruise: 最初の引数は親 Issue の番号（例: dev-loop-cruise 1290 --absent。受け取った: '$1'）" >&2
     exit 2

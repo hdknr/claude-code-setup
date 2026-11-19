@@ -231,7 +231,8 @@ def suite(script: Path) -> list[str]:
         (e.base / "launcher.log").unlink(missing_ok=True)
         for late in (("1290", "--absent", "--account", "work"), ("1290", "--account=work"), ("1290", "--store-token"),
                      ("1290", "--status"), ("--install-launcher",), ("1290", "--install-launcher"),
-                     ("1290 --account work",), ("1290 --store-token",), ("-p", "x"), ("foo",), ("1290", "x y")):
+                     ("1290 --account work",), ("1290 --store-token",), ("-p", "x"), ("foo",), ("1290", "x y"),
+                     ("1290", "--absent --account work"), ("1290", "--absent --store-token")):
             code, out = e.run_exec(target, *late)
             check(f"起動口: {' '.join(late)} は cruise の引数に混ぜず 2 で止まり、本体を呼ばない",
                   code == 2 and e.log("launcher.log") == "" and e.log("claude.log") == "")
@@ -435,6 +436,9 @@ MUTATIONS = {
     "起動口が後ろの --account を cruise に混ぜる": ('    --account | --account=* | --store-token | --status | --install-launcher)', '    --never-match)'),
     "シンボリックリンクを上書きする": ('if [ -L "$target" ] || { [ -e "$target" ] && ! grep', 'if { [ -e "$target" ] && ! grep'),
     "起動口が親 Issue の番号を見ない": ('if ! [[ "$1" =~ ^[0-9]+$ ]]; then', 'if false; then'),
+    "起動口が番号の後ろの語の形を緩める": ('=~ ^--[a-z][a-z-]*$ ]]', '=~ ^-- ]]'),
+    "起動口が番号の後ろの語の末尾を見ない": ('=~ ^--[a-z][a-z-]*$ ]]', '=~ ^--[a-z][a-z-]* ]]'),
+    "起動口が番号の後ろの語を割る": ('for arg in "${@:2}"; do', 'for arg in ${@:2}; do'),
     "起動口が番号の後ろの語を見ない": ('    if ! [[ "$arg" =~ ^--[a-z][a-z-]*$ ]]; then', '    if false; then'),
     "44 の案内に cruise の引数を付けない": ('bash $0 ${ACCT}\\"/dev-loop:cruise <親> [--absent]\\" を打てば', 'bash $0 ${ACCT}を打てば'),
     "同名の別ファイルを上書きする": ('{ [ -e "$target" ] && ! grep -qF', "{ false && ! grep -qF"),
