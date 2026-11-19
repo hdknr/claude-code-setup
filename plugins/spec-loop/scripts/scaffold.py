@@ -47,7 +47,7 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 
 **Red テストにしない受入基準（`acceptance`。#1301）**: 関数の 1 回の呼び出しでは表せないケース（画面の振る舞い・障害・同時・時間）の、仕様の行の原文を中間表現の機能の `acceptance` に並べる。
 本文の `## 受入基準` の中の `### Red テストにしない受入基準` に原文のまま写す（表の行なら表の見出しの 2 行を付ける）。**挙げた行が機能の `source` の仕様の原文に原文のまま無い
-（区切りの行・見出しの行を挙げた）なら 1**——どの行がそのケースかは書き起こす側の判断で、機械は原文の照合だけをする。**書く生成と `--dry-run` は、仕様のテストケース（番号の形は
+（表の見出し・区切りの行・見出しの行を挙げた）なら 1**——どの行がそのケースかは書き起こす側の判断で、機械は原文の照合だけをする。**書く生成と `--dry-run` は、仕様のテストケース（番号の形は
 `check-spec-exit.py` の `case_rows`——条件 1 の重複の検査と同じ）の内訳を出す**: `仕様のテストケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件`。
 Red テスト = ケースの `ref` が番号と一致するもの、受入基準 = `acceptance` の行の先頭のセルの番号（Red テストと重なれば Red テストに数える）。**どちらにも無いケースは番号と `ファイル:行` を全部名指しする**
 （0 件なら `0 件`）。**止めない**（終了コードは変わらない）。`acceptance` を書かない中間表現の本文・`scaffold/` は 1 バイトも変わらない
@@ -1035,7 +1035,7 @@ def check_acceptance(where: str, listed, sources, whole: Path) -> list[str]:
     """機能の `acceptance`（#1301。`references/spec-ir.md` の「Red テストにしない受入基準」）。
 
     **挙げた行が、機能の `source` の仕様の原文のどれかに原文のまま在ること**だけを見る——どの行が Red テストにしないケースかは書き起こす側の判断。
-    区切りの行（`| --- |`）と見出しの行は挙げられない（本文には生成のスクリプトが表の見出しを付ける）。
+    表の見出しの行・区切りの行（`| --- |`）・見出しの行は挙げられない（`scope_rows` と同じ読み方で除く。本文には生成のスクリプトが表の見出しを付ける）。
     """
     if not isinstance(listed, list) or not listed:
         return [f"{where}: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない"]
@@ -1046,11 +1046,11 @@ def check_acceptance(where: str, listed, sources, whole: Path) -> list[str]:
         problems.append(f"{where}: 重複している")
     if problems:
         return problems
-    lines = source_lines(sources, whole)
+    lines = source_lines(sources, whole, rows_only=True)
     if lines is None:
         return []  # source が配列でないことは source の検査が言う
-    return [f"{where}: 機能の source の仕様の原文に、この行が原文のまま無い（区切りの行・見出しの行は挙げない）: {row!r}"
-            for row in listed if row not in lines or TABLE_SEPARATOR.fullmatch(row) or proposal.heading_level(row)]
+    return [f"{where}: 機能の source の仕様の原文に、この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: {row!r}"
+            for row in listed if row not in lines]
 
 
 def nfr_rows(text: str) -> tuple[list[str] | None, dict[str, list[tuple[dict[str, str], int]]]]:
@@ -1116,7 +1116,7 @@ def check_nfr(where: str, refs, whole: Path) -> list[str]:
     return problems
 
 
-def source_lines(sources, whole: Path) -> set[str] | None:
+def source_lines(sources, whole: Path, rows_only: bool = False) -> set[str] | None:
     """機能の `source` の原文の行（前後の空白を落とした）。`source` が配列でなければ None（`check_source` が言う）。
 
     読むのは `check_ref` と同じく、重ね合わせた全体の `spec/` の中の相対パスだけ——外のファイルを読まない。読めない原文は飛ばす。
@@ -1133,7 +1133,9 @@ def source_lines(sources, whole: Path) -> set[str] | None:
             continue
         try:
             if path.is_file():
-                lines |= {line.strip() for line in path.read_bytes().decode("utf-8-sig").splitlines()}
+                found = [line.strip() for line in path.read_bytes().decode("utf-8-sig").splitlines()]
+                # `rows_only`: `rows_with_header` の読み方で、表の見出しと区切りの行・見出しの行を除く（`acceptance`。#1301）
+                lines |= {row for row, _ in rows_with_header(found)} if rows_only else set(found)
         except (OSError, UnicodeDecodeError, ValueError):
             continue  # 読めない原文は source の検査と未決定の印の関門が言う
     return lines

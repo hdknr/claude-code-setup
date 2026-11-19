@@ -39,6 +39,7 @@ scaffold が仕様のテストケースと中間表現を突き合わせ、内�
 - `CLAUDE.md` — `scaffold.py` の項
 - `plugins/spec-loop/.claude-plugin/plugin.json`・`plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
 - `plugins/spec-loop/skills/*/SKILL.md`・`plugins/dev-loop/skills/*/SKILL.md` — 版の 2 行
+- `docs/plugins/dev-loop-design.md` — `skill-metrics.py` が書く生成ブロック（spec-gap.md の行数の変化）
 - `docs/plans/issue-1301.md` — この計画ファイル
 
 触らない:
@@ -93,6 +94,13 @@ scaffold が仕様のテストケースと中間表現を突き合わせ、内�
 | 指摘 | 出所 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- |
 | （関門の指摘が出たらここに 1 件 1 行で書く） | | | | |
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1301-acceptance-cases`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1301`・切った元の参照 `origin/main`（解決した SHA `b874615af572f4d40b20b0071893d8336dbd19c6`）・起点コミット `b874615a`。base は `b874615af572f4d40b20b0071893d8336dbd19c6`（prepare-worktree.sh の出力）。
+- 実装を終えた（コミット `6a4e7edd`）。割り目: 割らない（cruise の周）。`test-scaffold.py` は全部回して `OK: 試料 477 件・変異 384 件`（run-serial 越し）。
+- 1 パス目: Verifier（別ティア `opus`・`dev-loop:dev-loop-verifier`）と `/code-review` を `6a4e7edde0640f64865c972198854a586e782c22` に当てている。**1 パス目の指摘対応の起点の SHA: `6a4e7edde0640f64865c972198854a586e782c22`**。
+- 手順 5 の反証と差し戻し: 実験なし（交絡を潰す対象の実験は無い。変異は試料で当て、陽性対照は `test-scaffold.py` が持つ）。
 
 ## 関門の記録
 
