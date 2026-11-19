@@ -606,6 +606,8 @@ spec/formal/<対象>/
 | 陽性対照のファイル | 陽性対照（わざと壊したモデル）と到達の確かめで走らせた、反例が出ることを確かめたモデルのファイルの名前の一覧（同じく 1 つずつバッククォートで囲む）。**TLC の対象は書く**——`scripts/check-formal-rerun.py` が本体と一緒に走らせ直す（#1044）。**この行は無くても形の違反にしない**（前から残したモデルは持たない。走らせ直しは「判定できなかった」になる） |
 | 図の対応のファイル | 状態遷移図のラベルの対応（ビュー）のファイルの名前（`view.json`。バッククォートで囲む）。**TLC の対象は書く**（#1177。下の「状態遷移図」）。**無くても形の違反にしない**（前から残したモデルは持たない。図は描かれない） |
 | 状態遷移図のファイル | 生成した状態遷移図のファイルの名前（`statechart.md`。バッククォートで囲む）。**TLC の対象は書く**（#1177。下の「状態遷移図」）。**無くても形の違反にしない** |
+| 実装の対応 | モデルの行為ごとに、それを実装するファイルと関数——`` `<行為>` → `<ファイル>::<関数>` `` を `、` で区切って並べる（ファイルは実装のリポジトリの根からのパス。関数はクラスの中なら `<クラス>.<メソッド>`。トレースのケースの `checkpoint` の段の名前は行為の名前と同じ——`spec-ir.md` の「トレースのケース」）。**実装の前は `未実装`**。**この行は無くても形の違反にしない**（前から残したモデルは持たない）——ただし次の行とそろえる（#1178。下の「実装との対応」） |
+| 対応を確かめたコミット | 対応が今のコードを表していることを最後に確かめたときの、実装のリポジトリのコミット（7〜40 桁の 16 進）。**実装の前は `未実装`**。前の行とそろえる（#1178） |
 | 残した回 | 版・日付・何回目のレビューか（`spec-review/v<n>.csv` の実行の行。formal-baseline が残したなら、その表の `モデルの保存` の行） |
 
 - **残したら、対象ごとに `scripts/formal-baseline.py check docs/v<n>/spec/formal/<対象>` を当て、0 になるまで直す**——置き場所と名前・記録の項目・
@@ -622,6 +624,15 @@ spec/formal/<対象>/
     - **図は生成物である**——モデルか対応を写し直したら、同じコマンドで作り直す（手で直さない）。**0 でなければ図を残さず、記録の `状態遷移図のファイル` の行も書かない**（前の図が残っていれば消す）。
     - **図は Markdown の中の Mermaid**——GitHub の上で開けば図として見える。範囲の中の反例を共有の Q&A 表に起票するとき、spec-review は質問にこの図のパスを添える（spec-review の `SKILL.md` の手順 4）。
     - **TLC でない対象（Alloy・総当たり・Z3）は図を作らない**（`formal-statechart.py` は TLC のモデルだけを読む）。
+- **実装との対応（#1178）——実装が入った後も、モデルとコードを揃えておく。** 仕様と揃えるのは spec-review（保存したモデルから始め、`check-formal-rerun.py` で走らせ直す）だが、
+  実装の周と spec-loop を通らない変更（不具合の修正・リファクタリング）はモデルを見ない。そこで記録の `実装の対応`・`対応を確かめたコミット` の 2 行で、モデルの行為と実装の場所を結ぶ:
+    - **値を決めるのは実装の側（dev-loop の周）である**——モデルの行為を実装した周・対応のファイルに触れた周が、モデルを今のコードに当てて確かめ、`反例なし` なら 2 行を書き直す。
+      **確かめ方・結果の書き方・書き直してよい条件（書く場所が作業中の版で、リリースしていない）は dev-loop の `references/formal-sync.md` を正とする**（このプラグインの外にある）。
+    - **spec-review と formal-baseline はモデルを写し直すとき、前の記録の 2 行を引き継ぐ**（重ね合わせた全体の同じ対象の `README.md` に在れば、そのまま書く。無ければ書かない——実装の前なら `未実装` と書いてもよい）。
+      **対応の行為が写し直したモデルの本体に無くなったら、その項を外す**（全部外れたら 2 行とも `未実装`）。対応の値を自分で決めない・足さない（実装を読む役ではない）。
+    - **形は `scripts/formal-baseline.py check` が見る**——2 行がそろうこと・`未実装` の食い違い・対応の形・本体のモデルが定義しない行為・SHA の形。ファイルと関数が在るか・コミットが在るかは
+      実装のリポジトリで dev-loop の `formal-sync.py` が読む（正本と実装のリポジトリが別のことがある）。
+    - **TLC でない対象（Alloy など）は行為の定義を照らさない**（形だけを見る）——dev-loop の再検査も TLC の対象だけを走らせる。
 - **次の回は、保存したモデルから始める**——spec-review は重ね合わせた全体の `spec/formal/`（v1 では `docs/v1/spec/formal/`）の、渡す対象に当たる
   ディレクトリを Formal Checker に渡す。**前回の「置いた前提」は引き継ぐものではなく、確かめ直す対象である**（判定役を別に呼ぶのは盲点を共有させないため）。
   渡し方と報告の形は spec-review の `SKILL.md` の手順 3 と `agents/formal-checker.md`（プラグイン直下）を正とする。
@@ -1069,6 +1080,65 @@ jobs:
 
 **確かめた範囲**: 走らせるコマンド（`scaffold.py --check`・`diff -r -x __pycache__`・`green-list.py check`）が、実装を壊す・写しを手で直す・正本の仕様だけ変えると
 非 0 を返すことは、このリポジトリの `scripts/test-green-list.py` が試料で確かめている。**雛形の YAML そのもの（`actions/checkout` の引数・別リポジトリを取る権限）は GitHub Actions の上で走らせていない。**
+
+## 保存したモデルを CI で走らせ続ける（#1178）
+
+**保存した TLC のモデル（`spec/formal/<対象>/`）の本体と陽性対照を、正本のリポジトリ（か、正本を写したリポジトリ）の CI で、マージのたびに走らせ直す。**
+spec-review は抜けるたびに走らせ直す（`check-formal-rerun.py`。#1044）が、spec-review を回さないあいだの変更——モデルや記録を手で直した・TLC の版を上げた・重ね合わせで前の版のモデルが置き換わった——は次の spec-review まで見つからない。
+**ここがこの決まりの原本である**——ほかの文書は指すだけにする。実装とモデルの対応は CI では見ない（dev-loop の周が見る。上の「形式検査のモデル」の「実装との対応」）。
+
+- **走らせるのは重ね合わせた全体の `spec/formal/` の、`.tla` を持つ対象だけ**——`merge-versions.py docs build/merged` で重ね、`build/merged/spec/formal/*/` のうち `.tla` の在るディレクトリを `check-formal-rerun.py` に渡す。
+  **TLC でない対象（Alloy など）は渡さない**——渡すと `判定できなかった`（4）で落ちる。`.tla` の対象が 1 つも無ければ何もせずに通す。
+- **終了コードをそのまま CI の結果にする**——**0 だけが通る**。1（本体で反例）・4（判定できなかった——**陽性対照で反例が出ない空振りのモデル**・本体が走らない・`陽性対照のファイル` の無い対象・呼び方の行が無い）・2 は落ちる。
+  空振りのモデルが落ちるのは、「反例なし」が何も確かめていない形を通さないためである（`check-formal-rerun.py` の docstring の「判定」を正とする）。
+- **TLC の呼び方は正本の `CLAUDE.md` の `TLC の呼び方:` の行のまま**（`check-tlc.py` の docstring を正とする）。手元と CI で jar の場所が違うなら、行を環境変数で書いて CI で値を渡す
+  ——例: `TLC の呼び方: java -XX:+UseParallelGC -cp "${TLA2TOOLS_JAR:-$HOME/.local/share/formal-tools/tla2tools.jar}" tlc2.TLC`（行は `sh` に渡るので、`${…:-…}` が効く）。
+- **TLC を CI に入れる**——Java（17 以上）を入れ、`tla2tools.jar` を版を固定して取る（下の雛形は GitHub の tlaplus のリリースから取る形）。**版を上げたら、手元の TLC と同じ版にそろえる**——判定の文字列は TLC 2.19 で確かめた（`check-formal-rerun.py` の「守らない」）。
+- **CI でプラグインのスクリプトをどこから取るかは、正本のリポジトリの `CLAUDE.md` に書く**（上の「Red テストを CI で走らせ続ける」と同じ。雛形はこのリポジトリを版を固定して取る形の例）。
+
+GitHub Actions の雛形（正本のリポジトリに置く形）:
+
+```yaml
+name: formal-models
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  formal-models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: spec-loop のスクリプトを取る（版を固定する）
+        uses: actions/checkout@v4
+        with:
+          repository: hdknr/claude-code-setup
+          ref: <spec-loop を含む版のタグかコミット>
+          path: .spec-loop
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: TLC を入れる（版を固定する）
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/tla2tools.jar" https://github.com/tlaplus/tlaplus/releases/download/<版>/tla2tools.jar
+          echo "TLA2TOOLS_JAR=$RUNNER_TEMP/tla2tools.jar" >> "$GITHUB_ENV"
+      - name: 保存したモデルを走らせ直す（反例・空振り・走らないモデルで落ちる）
+        run: |
+          python3 .spec-loop/plugins/spec-loop/scripts/merge-versions.py docs build/merged
+          targets=""
+          for d in build/merged/spec/formal/*/; do
+            if ls "$d"*.tla > /dev/null 2>&1; then targets="$targets $d"; fi
+          done
+          if [ -z "$targets" ]; then echo "TLC のモデルが無い——走らせ直すものが無い"; exit 0; fi
+          python3 .spec-loop/plugins/spec-loop/scripts/check-formal-rerun.py . $targets
+```
+
+**確かめた範囲**: 最後のステップの `run:` の中身を、このリポジトリの `scripts/test-check-formal-rerun.py` が雛形から抜き出して、偽の TLC で走らせている——
+空振りのモデル・本体で反例の出るモデルで非 0、通るモデルで 0、TLC でない対象だけなら 0。**雛形の YAML そのもの（`actions/setup-java`・jar の取得・`$GITHUB_ENV`）は GitHub Actions の上で走らせていない。**
 
 ## ドキュメントのツール
 

@@ -17,6 +17,10 @@
 3. **正本に `states/` を残さない**。
 4. **引数の誤りは 2**。
 5. **リポジトリの外で単体で動く**——プラグインの `scripts/` を一時ディレクトリに写し、`python3 -I` で走らせる。
+6. **CI の雛形（`references/tree.md` の「保存したモデルを CI で走らせ続ける」。#1178）の走らせるステップが、空振りのモデルで落ちる**——
+   雛形の最後のステップの `run:` の中身を毎回抜き出し（写しを作らない）、写した正本（`.spec-loop/plugins/spec-loop/scripts/` にプラグインの写し）で `bash -eo pipefail` に渡す
+   （GitHub Actions の `run:` の既定のシェル）。空振り・本体の反例で非 0、通るモデル・TLC でない対象だけで 0。雛形を崩す変異（最後のコマンドの結果を捨てる・
+   TLC でない対象も渡す）で期待が変わることも見る。**YAML そのもの（`actions/*`・jar の取得）は走らせない。**
 
 **このテストは実環境を触らない。** 試料はすべて一時ディレクトリに書く。
 
@@ -26,6 +30,8 @@
 from __future__ import annotations
 
 import os
+import re
+import textwrap
 import shutil
 import subprocess
 import sys
@@ -137,6 +143,61 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
 ]
 
 
+TREE = REAL_REPO / "plugins" / "spec-loop" / "references" / "tree.md"
+CI_SECTION = "## 保存したモデルを CI で走らせ続ける"
+CI_STEP = "- name: 保存したモデルを走らせ直す"
+ALLOY = {"README.md": "| 項目 | 記録 |\n| --- | --- |\n| モデルのファイル | `perm.als` |\n", "perm.als": "sig A {}\n"}
+# 名前 → ({対象のパス: 中身}, 0 で終わるか, 出力に含む語——走らせずに通った形と分けるため)
+CI_CASES: dict[str, tuple[dict, bool]] = {
+    "雛形: 空振りのモデルで落ちる（受入基準 4）": ({T1: target(controls=("PASS",))}, False, "空振りの疑い"),
+    "雛形: 本体の反例で落ちる": ({T1: target(body="VIOLATE")}, False, "本体 Order.tla で反例が出た"),
+    "雛形: 陽性対照のファイルの無いモデルで落ちる": ({T1: target(controls=())}, False, "陽性対照のファイルに TLC のモデル"),
+    "雛形: 通るモデルは通す": ({T1: target()}, True, "渡した 1 件とも満たす"),
+    "雛形: TLC でない対象は渡さない": ({T1: target(), T2: ALLOY}, True, "渡した 1 件とも満たす"),
+    "雛形: TLC の対象が無ければ通す": ({T2: ALLOY}, True, "TLC のモデルが無い"),
+}
+# (名前, 壊す前, 壊した後, 殺す試料)——雛形の run: の中身を崩す
+CI_MUTATIONS = [
+    ("最後のコマンドの結果を捨てる", "check-formal-rerun.py . $targets", "check-formal-rerun.py . $targets || true", "雛形: 空振りのモデルで落ちる（受入基準 4）"),
+    ("TLC でない対象も渡す", 'if ls "$d"*.tla > /dev/null 2>&1; then targets="$targets $d"; fi', 'targets="$targets $d"', "雛形: TLC でない対象は渡さない"),
+]
+
+
+def ci_block(markdown: str) -> str:
+    """tree.md の雛形の、モデルを走らせ直すステップの `run: |` の中身（字下げを外したもの）。"""
+    section = re.search(rf"^{re.escape(CI_SECTION)}.*?(?=^## )", markdown, flags=re.MULTILINE | re.DOTALL)
+    check("tree.md に CI の雛形の節がある", section is not None)
+    lines = section.group(0).splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip().startswith(CI_STEP)), None)
+    check("雛形にモデルを走らせ直すステップがある", start is not None)
+    check("ステップの次の行が run: |", lines[start + 1].strip() == "run: |", lines[start + 1])
+    body = []
+    indent = len(lines[start + 1]) - len(lines[start + 1].lstrip())
+    for line in lines[start + 2:]:
+        if line.strip() == "```" or (line.strip() and len(line) - len(line.lstrip()) <= indent):
+            break
+        body.append(line)
+    return textwrap.dedent("\n".join(body)) + "\n"
+
+
+def run_ci(block: str, plugin_scripts: Path, work: Path, fake: Path, targets: dict) -> tuple[int, str]:
+    if work.exists():
+        shutil.rmtree(work)
+    repo = work / "canon"
+    repo.mkdir(parents=True)
+    assert_in_tmp(repo)
+    (repo / "CLAUDE.md").write_text(f"TLC の呼び方: {fake}\n", encoding="utf-8")
+    shutil.copytree(plugin_scripts, repo / ".spec-loop" / "plugins" / "spec-loop" / "scripts")
+    for rel, files in targets.items():
+        (repo / rel).mkdir(parents=True)
+        for name, body in files.items():
+            (repo / rel / name).write_text(body, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    proc = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", block], capture_output=True, text=True,
+                          cwd=repo, env=env, timeout=300)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
 def check(name: str, cond: bool, detail: str = "") -> None:
     if not cond:
         raise AssertionError(f"{name}{(': ' + detail) if detail else ''}")
@@ -207,7 +268,19 @@ def main() -> int:
             check(f"変異を殺す: {name} ← {killer}", not as_expected(killer, case, result) and result[0] != 2,
                   f"{result[0]} {result[1][-300:]!r}")
         print(f"  変異 {len(MUTATIONS)} 件 OK")
-    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件")
+
+        print("CI の雛形（#1178）")
+        block = ci_block(TREE.read_text(encoding="utf-8"))
+        for i, (name, (targets, passes, word)) in enumerate(CI_CASES.items()):
+            code, out = run_ci(block, scripts, root / f"ci{i}", fake, targets)
+            check(name, (code == 0) == passes and word in out and "Traceback" not in out, f"終了コード {code}: {out[-400:]!r}")
+        for name, before, after, killer in CI_MUTATIONS:
+            check(f"雛形の壊す箇所がちょうど 1 回: {name}", block.count(before) == 1, f"{block.count(before)} 回")
+            targets, passes, _ = CI_CASES[killer]
+            code, out = run_ci(block.replace(before, after), scripts, root / "cimut", fake, targets)
+            check(f"雛形の変異を殺す: {name} ← {killer}", (code == 0) != passes, f"終了コード {code}: {out[-300:]!r}")
+        print(f"  試料 {len(CI_CASES)} 件・変異 {len(CI_MUTATIONS)} 件 OK")
+    print(f"OK: 試料 {len(CASES)} 件・変異 {len(MUTATIONS)} 件・雛形の試料 {len(CI_CASES)} 件・雛形の変異 {len(CI_MUTATIONS)} 件")
     return 0
 
 
