@@ -32,6 +32,10 @@ usage:
   （`check-formal-rerun.py` は、行が無い対象を「判定できなかった」にする）。
 - **`図の対応のファイル`・`状態遷移図のファイル`（任意。#1177）**: 同じく、行があれば同じ形で見て、行が無くても違反にしない——前から残したモデルは持たない
   （`formal-statechart.py` は対応が無い対象を描かない）。
+- **`実装の対応`・`対応を確かめたコミット`（任意。#1178）**: 2 行ともそろって在るか、そろって無い（無いのは前から残したモデル）。
+  `実装の対応` は `未実装` か、`` `<行為>` → `<ファイル>::<関数>` `` を `、` で区切った並び（行為は 2 回書かない。本体のモデル（`モデルのファイル` の `.tla` のうち陽性対照でないもの）が、注釈（`(* … *)`・`\\*`）を除いた本文の行頭から `<行為> ==` で定義していること。
+  `.tla` が無い対象（Alloy など）は形だけを見る。本体の `.cfg` が（注釈の外で）名指す名前（`Init`・`Next`・性質）は行為として挙げない。ファイルは正規の相対パス（`./`・`..`・`//`・絶対パスは違反））。`対応を確かめたコミット` は `未実装` か 7〜40 桁の小文字の 16 進で、**`未実装` は 2 行で食い違わない**。
+  対応のファイル・関数が在るか、コミットが在るかは見ない（正本と実装のリポジトリが別のことがある——dev-loop の `formal-sync.py` が実装のリポジトリで読む）。
 - **ディレクトリの中身は、`README.md` と `モデルのファイル`・`陽性対照のファイル`・`図の対応のファイル`・`状態遷移図のファイル` の一覧だけ**——TLC の `states/`・Alloy の `<名前>/`・出力を落としたファイル・前に残したファイルが在れば違反。
 
 終了コード:
@@ -56,6 +60,9 @@ usage:
 | `図の対応のファイル`・`状態遷移図のファイル` の一覧のファイルが無ければ違反にし、一覧のファイルは残ってよいとする（#1177） | 図（`formal-statechart.py`）が対応を読めない・質問から指す図が無い・対応と図を残すと違反になる |
 | `結果`・`前回のモデル` は値そのものか、値に `（…）` の要約を 1 つだけ続けた形（閉じた後ろに何も無い）だけを通す | `反例なしかは判定できなかった`・`反例なし（N=3）かは判定できなかった` のような、走らせていないモデルが残る |
 | 置き場所と名前の形を見る | 次の回が同じ名前で探せない |
+| `実装の対応`・`対応を確かめたコミット` の片方だけ・`未実装` の食い違い・対応の形の違い・本体が定義しない行為・SHA でないコミットを違反にする（2 行とも無いのは通す。#1178） | dev-loop の周が触れたファイルからモデルを引けない・確かめていないのにコミットだけ進んだ形が残る |
+| `SPECIFICATION` が公平性の外で直に使う定義（`Init`・`Next`）を行為として挙げたら違反にする（#1178 の 2 パス目） | `SPECIFICATION Spec` 形の設定で `Next`・`Init` を対応に挙げて書き直し、検査を弱める |
+| 行為の定義と設定が名指す名前は、注釈（`(* … *)`・`\\*`）を除いてから読む（#1178 の 2 パス目） | 注釈の中だけの定義を本体が定義する行為として通す・設定の注釈に書いた名前で正しい記録を落とす |
 
 **守らないもの**:
 
@@ -64,6 +71,7 @@ usage:
 | **リモートにも押していない `release-v<n>`**（他の人の手元にだけあるタグ） | 訊く先に無いものは見えない。タグは付けたら押す運用で守る |
 | **モデルの中身が仕様に合っているか・検査器が本当に走らせたものか** | 判定役の仕事で、報告から写すときにスキルが守る（`cp` で写す） |
 | **記録の値が正しいか**（陽性対照が本当に反例を出したか・前提が全部か） | 文面の真偽は機械で決まらない |
+| **`実装の対応` のファイル・関数が在るか、`対応を確かめたコミット` が在るか・本当に確かめたか** | 正本と実装のリポジトリが別のことがあり、このディレクトリからは決まらない（dev-loop の `formal-sync.py` が実装のリポジトリで読む） |
 | **`残した回` が記録の表の行を指しているか** | 記録の表は版ごとに `docs/` の外にあり、このディレクトリからは決まらない |
 | **前の版のモデルが重ね合わせた全体に残ること** | 決まりのとおり（前の版のファイルは直さない）。次の回は `モデルのファイル` の一覧だけを使う |
 
@@ -75,6 +83,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -94,10 +103,16 @@ versions = _load("merge_versions", "merge-versions.py")
 frozen = _load("check_frozen", "check-frozen.py")
 
 # ---- `references/tree.md` の「形式検査のモデル」の写し（`README.md` の記録の項目）
-ITEMS = ("対象", "検査器", "構成の大きさ", "結果", "陽性対照", "置いた前提", "前回のモデル", "モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル", "残した回")
+ITEMS = ("対象", "検査器", "構成の大きさ", "結果", "陽性対照", "置いた前提", "前回のモデル", "モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル", "実装の対応", "対応を確かめたコミット", "残した回")
 # 行が無くてもよい項目（#1044。前から残したモデルは持たない——`check-formal-rerun.py` は無ければ判定できなかったにする。
 # 図の対応と状態遷移図（#1177）も前から残したモデルは持たない——`formal-statechart.py` は対応が無ければ描かない）
-OPTIONAL = ("陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")
+OPTIONAL = ("陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル", "実装の対応", "対応を確かめたコミット")
+# 実装との対応（#1178）——2 行はそろって在るか、そろって無い。実装の前は両方 `未実装`
+SYNC = ("実装の対応", "対応を確かめたコミット")
+UNIMPLEMENTED = "未実装"
+# `実装の対応` の 1 項: `<行為>` → `<ファイル>::<関数>`。項は `、` で区切る
+MAPPING_ENTRY = re.compile(r"`([A-Za-z_][A-Za-z0-9_]*)`\s*→\s*`([^`:\s]+)::([^`\s]+)`")
+COMMIT = re.compile(r"[0-9a-f]{7,40}")
 # 一覧のファイルを持つ項目（ディレクトリに在ってよいのは `README.md` とこれらの一覧のファイルだけ）
 LISTS = ("モデルのファイル", "陽性対照のファイル", "図の対応のファイル", "状態遷移図のファイル")
 RESULTS = ("反例なし", "反例あり")
@@ -258,9 +273,162 @@ def check(directory: Path) -> tuple[int, list[str]]:
     for entry in sorted(p.name for p in directory.iterdir()):
         if entry != README and entry not in listed:
             problems.append(f"{directory}/{entry}: モデルのファイルの一覧に無い（陽性対照・図の対応・状態遷移図のファイルの一覧にも無い。検査器の作業ファイル・出力・前の残りは残さない）")
+    problems += check_sync(directory, records)
     if problems:
         return 1, problems
     return 0, [f"{directory}: 形どおり（{'・'.join(counts)}）"]
+
+
+def parse_mapping(value: str) -> list[tuple[str, str, str]] | None:
+    """`実装の対応` の値を (行為, ファイル, 関数) の並びにする。`未実装` は空の並び。形が違えば None。
+
+    形: `` `<行為>` → `<ファイル>::<関数>` `` を `、` で区切って並べる（ファイルは製品のリポジトリの根からのパス）。
+    dev-loop の `formal-sync.py` もこの関数で読む（写さない）。
+    """
+    value = value.strip()
+    if value == UNIMPLEMENTED:
+        return []
+    entries = []
+    for part in value.split("、"):
+        m = MAPPING_ENTRY.fullmatch(part.strip())
+        if not m or not normal_path(m.group(2)):
+            return None
+        entries.append((m.group(1), m.group(2), m.group(3)))
+    return entries or None
+
+
+def normal_path(path: str) -> bool:
+    """リポジトリの根からの正規の相対パスか（`./`・`..`・`//`・絶対パス・末尾の `/` は通さない——`git diff --name-only` の名前と文字列で突き合わせるため。#1178 の 1 パス目）。"""
+    return not path.startswith("/") and "\\" not in path and posixpath.normpath(path) == path and not path.startswith("..")
+
+
+def strip_comments(text: str) -> str:
+    """TLA+ の注釈（入れ子の `(* … *)` と行の `\\*` から行末まで）を除く。文字列 `"…"` の中は除かない。改行は残す（行の区切りを変えない）。
+
+    `.cfg` も同じ注釈の書き方なので、これで読む。dev-loop の `formal-sync.py` もこの関数で読む（写さない）。
+    注釈の中の定義・名前を、TLC と同じく無いものとして読むため（#1178 の 1・2 パス目の指摘）。
+    """
+    out: list[str] = []
+    i, depth, quoted = 0, 0, False
+    while i < len(text):
+        ch, two = text[i], text[i:i + 2]
+        if depth:
+            if two == "(*":
+                depth, i = depth + 1, i + 2
+            elif two == "*)":
+                depth, i = depth - 1, i + 2
+            else:
+                if ch == "\n":
+                    out.append(ch)
+                i += 1
+        elif quoted:
+            out.append(ch)
+            if ch == "\\" and i + 1 < len(text):
+                out.append(text[i + 1])
+                i += 2
+                continue
+            quoted = ch != '"'
+            i += 1
+        elif two == "(*":
+            depth, i = 1, i + 2
+        elif two == "\\*":
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+        else:
+            quoted = ch == '"'
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
+def spec_references(body: str) -> set[str]:
+    """`SPECIFICATION` の定義の本文が、公平性（`WF_…(…)`・`SF_…(…)` の括弧の中）の外で直に使う名前（`Init`・`Next` など）。
+
+    `Spec == Init /\\ [][Next]_x /\\ WF_x(Inc)` なら `Init`・`Next`（と `x`）。これらは状態の始まりと次の状態の関係そのもので、
+    行為として書き直すと検査を弱められる（#1178 の 2 パス目の反証）。公平性に挙げた行為は書き直してよい。dev-loop の `formal-sync.py` もこの関数で読む（写さない）。
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(body):
+        m = re.compile(r"[WS]F_[^(\s]*\s*\(").match(body, i)
+        if m and (i == 0 or not (body[i - 1].isalnum() or body[i - 1] == "_")):
+            depth, j = 1, m.end()
+            while j < len(body) and depth:
+                depth += {"(": 1, ")": -1}.get(body[j], 0)
+                j += 1
+            i = j
+            continue
+        out.append(body[i])
+        i += 1
+    return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", "".join(out)))
+
+
+def definition_body(text: str, name: str) -> str | None:
+    """注釈を除いた TLA+ の本文で、行頭の `<name> ==` の定義の本文（次に行頭から始まる行の前まで）。無ければ None。"""
+    m = re.search(rf"^{re.escape(name)}\s*==(.*?)(?=^\S|\Z)", strip_comments(text), re.MULTILINE | re.DOTALL)
+    return None if m is None else m.group(1)
+
+
+def defines(text: str, action: str) -> bool:
+    """TLA+ の本文が、注釈の外の行頭から `<行為> ==`（引数つき `<行為>(…) ==` も）で定義しているか。"""
+    return re.search(rf"^(?:LOCAL\s+)?{re.escape(action)}\s*(\([^)]*\))?\s*==", strip_comments(text), re.MULTILINE) is not None
+
+
+def check_sync(directory: Path, records: dict[str, str]) -> list[str]:
+    """`実装の対応`・`対応を確かめたコミット`（#1178）の形。2 行とも無ければ何も言わない（前からのモデル）。"""
+    present = [item for item in SYNC if item in records]
+    if not present:
+        return []
+    if len(present) == 1:
+        missing = next(item for item in SYNC if item not in records)
+        return [f"{README}: 「{present[0]}」があるのに「{missing}」の行が無い（実装との対応の 2 行はそろえて書く）"]
+    mapping_value, commit_value = records[SYNC[0]], records[SYNC[1]]
+    if not mapping_value or not commit_value:
+        return []  # 空は上の「記録が空」で出している
+    problems: list[str] = []
+    mapping = parse_mapping(mapping_value)
+    if mapping is None:
+        problems.append(f"{README}: 実装の対応が「{UNIMPLEMENTED}」でも "
+                        f"`<行為>` → `<ファイル>::<関数>` を「、」で区切った形でもない: {mapping_value!r}")
+    if (mapping_value == UNIMPLEMENTED) != (commit_value == UNIMPLEMENTED):
+        problems.append(f"{README}: 実装の対応と対応を確かめたコミットの片方だけが「{UNIMPLEMENTED}」（実装の前は両方、対応を書いたら確かめたコミットも書く）")
+    elif commit_value != UNIMPLEMENTED and not COMMIT.fullmatch(commit_value):
+        problems.append(f"{README}: 対応を確かめたコミットが「{UNIMPLEMENTED}」でも 7〜40 桁の小文字の 16 進でもない: {commit_value!r}")
+    if mapping:
+        controls = FILE.findall(records.get("陽性対照のファイル", ""))
+        bodies = [n for n in FILE.findall(records.get("モデルのファイル", "")) if n.endswith(".tla") and n not in controls]
+        texts = []
+        named = ""
+        for name in FILE.findall(records.get("モデルのファイル", "")):
+            if name.endswith(".cfg") and name not in controls:
+                try:
+                    named += strip_comments((directory / name).read_text(encoding="utf-8")) + "\n"
+                except (OSError, UnicodeDecodeError):
+                    pass
+        for name in bodies:
+            try:
+                texts.append((directory / name).read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                pass  # 無い・読めないファイルは一覧の検査が出す
+        # SPECIFICATION 形の設定では、Spec が直に使う定義（Init・Next）も行為でない（#1178 の 2 パス目の反証）
+        spec_direct: set[str] = set()
+        for spec_name in re.findall(r"\bSPECIFICATION\s+([A-Za-z_][A-Za-z0-9_]*)", named):
+            for t in texts:
+                body = definition_body(t, spec_name)
+                if body is not None:
+                    spec_direct |= spec_references(body)
+        seen: set[str] = set()
+        for action, _, _ in mapping:
+            if action in seen:
+                problems.append(f"{README}: 実装の対応に行為「{action}」が 2 回ある")
+            seen.add(action)
+            if texts and not any(defines(t, action) for t in texts):
+                problems.append(f"{README}: 実装の対応の行為「{action}」を、モデルのファイルの本体（.tla）が定義していない")
+            if re.search(rf"\b{re.escape(action)}\b", named):
+                problems.append(f"{README}: 実装の対応の「{action}」は本体の設定（.cfg）が名指す定義（INIT・NEXT・性質など）——行為でない")
+            elif action in spec_direct:
+                problems.append(f"{README}: 実装の対応の「{action}」は設定が名指す SPECIFICATION が直に使う定義（Init・Next など。公平性の外）——行為でない")
+    return problems
 
 
 def main(argv: list[str]) -> int:
