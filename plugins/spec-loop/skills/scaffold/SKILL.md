@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.120.1 -->
-> **このスキルの版: 0.120.1**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.122.0 -->
+> **このスキルの版: 0.122.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -111,6 +111,8 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
   後の状態を読む入口の呼び出しを `after` に書く（#1298）。仕様に書いていない前提を足さない。
 - **仕様のテストケースの期待が実行ごとに変わる値（URN・版・作った日時）なら、等しさで書かず、型だけを見る `{"$any": "<型>"}` か、前に返った値と同じ `{"$ref": "<名前>.<項目>"}` を書く**
   （`../../references/spec-ir.md` の「実行ごとに変わる出力」）——`$ref` が指す結果は、呼び出しの `as` で名前を付ける（#1299）。仕様に書いていない値の固定を足さない。
+- **仕様のテストケースが一覧（件数・並びのある応答）や入れ子の応答を返すなら、項目の型に配列 `{"type": "array", "items": …}` と入れ子のオブジェクト `{"type": "object", "properties": …}` を書く**
+  （`../../references/spec-ir.md` の「配列と入れ子のオブジェクト」）——並びを問うかは、配列の `"unordered": true`（順を問わない）で書き分ける。仕様が並びを決めていなければ、もっともらしく決めず `/spec-loop:spec-review` に戻す（#1300）。
 - **範囲の文書（`spec/scope.md`）の「範囲の外」の行のうち、その機能を作る人が作らずにおくべき場面があれば、機能の `out_of_scope` にその行を原文のまま並べる**
   （`../../references/spec-ir.md` の「作らないもの」）——Issue の本文の `## 作らないもの` に写り、dev-loop に「何を作らないか」が届く（#851）。
   **要約・言い換えをしない**（スクリプトが原文のまま在るかを確かめる）。関わる行が無い機能には書かない。
