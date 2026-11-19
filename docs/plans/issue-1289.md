@@ -104,6 +104,10 @@ Issue 本文（外部入力）から読んだ要件: `--pptx` の既定のデザ
 
 - 周の在り処: ブランチ `issue/1289-proposal-pptx-readable`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1289`・起点 `45640c38`・base `origin/main` → `45640c3864b95f052346a506558162b3c82a090c`
 - 割り目（手順 4・6）: 割らない（cruise の周）。
-- 交絡を潰した手順: （描画の確かめの時に書く）
+- 実装のコミット: `446146f06515e036aeab69cc5e7b36c135154c3f`（1 パス目の 2 つの関門に渡す起点）。**1 パス目の指摘対応の起点**: `446146f06515e036aeab69cc5e7b36c135154c3f`。
+- 実機の確かめ（LibreOffice 25.x・rsvg-convert・poppler が手元にある）: 合成の正本（Q&A 120 件・費用 14 行・工程 14 行・図 20 枚）から `build-proposal.py --pptx` で作り、`check-pptx-render.py` が 0 件（見切れ・代わりの文字・はみ出し）。
+  `decisions.xlsx` は LibreOffice で CSV に変換して 120 件（`soffice --convert-to csv`）。1 ページずつの PNG を目で見た（費用・期間・図・概要）。
+- 交絡を潰した手順: 描画の確かめの陽性対照を取った——わざとはみ出す・重なる・省略記号の枚（`bad.pptx`）では 6 件見つかり、収まる枚では 0 件。「0 件」が検査の空振りでないことを、
+  同じ観測点で「出る」ほうを 1 度見せて確かめた。図の `Text is not SVG` は、PNG にした後の画素を機械では読めないので、変換の入力から消えること（偽の `rsvg-convert` が受けた入力）と目で見ることで確かめた。
 
 - この周の起票: 0 件（周の中で起票するものは無い。不在の線の `仕様の穴` の確認の Issue（H1〜H5）は親が立てる）
