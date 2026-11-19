@@ -9,7 +9,7 @@
 
 直す線: `既定`（出所: cruise の確かめた線）。
 割り目: 割らない（cruise の周）。
-版の上げ方: `dev-loop` を **minor**（手順・規定の追加）。着手時の main は 2.12.0 → 2.13.0（`marketplace.json`・`plugin.json`・`dev-loop` と `cruise` の `SKILL.md` の 2 行）。
+版の上げ方: `dev-loop` を **minor**（手順・規定の追加）。着手時の main は 2.12.0 → 2.13.0 に上げたが、PR を出す前に main（#1287 が 2.13.0）を取り込み、2.14.0 に上げ直した（`marketplace.json`・`plugin.json`・`dev-loop` と `cruise` の `SKILL.md` の 2 行）。
 マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md` の「版とマージの順」。#1287 も同じプラグインの版を触る）。
 重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.12.0/skills/cruise/scripts/run-serial.py` 越しに走らせ、背景なら出力ファイルの終わりの印を前面で待つ。
 
