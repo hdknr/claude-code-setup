@@ -2223,7 +2223,9 @@ STAGE_RESERVE_CASE = {
 STAGE_SET_CASE = {
     "id": "F-004-C2", "title": "後の状態: 置いた数を後から読める",
     "input": {"item": "y", "qty": 3}, "expected": {"stock": 3},
-    "after": [{"operation": "get_stock", "input": {"item": "y"}, "expected": {"stock": 3}}],
+    # 2 つ目の後の状態は、前のケース（F-004-C1。前提を書かず、cleanup も無い）が置いた在庫 b が、頭の reset_state() で空に戻っていること
+    "after": [{"operation": "get_stock", "input": {"item": "y"}, "expected": {"stock": 3}},
+              {"operation": "get_stock", "input": {"item": "b"}, "expected": {"stock": 0}}],
 }
 STAGE_COUNT_CASE = {
     "id": "F-005-C2", "title": "前提あり: 置いた数を数える",
@@ -2286,7 +2288,8 @@ def stage_red(count: int, *needles: str) -> Callable[[Path], str | None]:
 def stage_written(repo: Path) -> str | None:
     test = (repo / STAGE_TEST).read_text(encoding="utf-8")
     for needle in ("    def test_f_004_c2(self):\n        self.staged({'item': 'y', 'qty': 3}, {'stock': 3}, [], "
-                   "[{'expected': {'stock': 3}, 'input': {'item': 'y'}, 'operation': 'get_stock'}])",
+                   "[{'expected': {'stock': 3}, 'input': {'item': 'y'}, 'operation': 'get_stock'}, "
+                   "{'expected': {'stock': 0}, 'input': {'item': 'b'}, 'operation': 'get_stock'}])",
                    "RESET = 'reset_state'", "SEED = 'seed'", "    def staged(self, given, expected, setup, after):",
                    "        self.function_of(RESET)()\n        self.addCleanup(self.function_of(RESET))", "    def test_f_004_c1(self):\n        self.check("):
         if needle not in test:
@@ -3637,7 +3640,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '                found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref", SETUP, AFTER})',
      "前提・後の状態: トレースのケースの直下には書けない"),
     ("状態を空に戻さない", '        "        self.function_of(RESET)()",', '        "        pass",',
-     "前提・後の状態: 文書の例の正しい実装で緑"),
+     "前提・後の状態: 正しい実装で緑"),
     ("終わったら状態を空に戻さない", '        "        self.addCleanup(self.function_of(RESET))",', '        "        pass",',
      "前提・後の状態: 正しい実装で緑"),
     ("前提を呼ばない", '        "        for call in setup:",', '        "        for call in []:",', "前提・後の状態: 正しい実装で緑"),
