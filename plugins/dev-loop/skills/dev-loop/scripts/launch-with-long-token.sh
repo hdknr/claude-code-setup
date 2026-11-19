@@ -16,7 +16,8 @@
 #   使い方: dev-loop-cruise <親 Issue> [--absent]（= このスクリプトに "/dev-loop:cruise <親 Issue> [--absent]" を渡す）・
 #   dev-loop-cruise [--account <名前>] --store-token|--status。**--account は最初に置く**。
 #   置いた起動口でないファイルが同じ名前で在れば（切れたシンボリックリンクも）、上書きせず止まる（2）。
-#   **--account・--store-token・--status・--install-launcher は、cruise の引数の位置に置けない**（止まる（2）。1 本の語にまとめるので、本体の「--account は最初」の検査をすり抜けるため）。**--account と一緒には使わない**（実行時に渡す）。
+#   **cruise の引数は、最初が親 Issue の番号、残りは --absent のような長いオプション（空白を含む語・claude の引数は止まる（2））。
+#   --account・--store-token・--status・--install-launcher は、cruise の引数の位置に置けない**（止まる（2）。1 本の語にまとめるので、本体の「--account は最初」の検査をすり抜けるため）。**--account と一緒には使わない**（実行時に渡す）。
 #
 # --account <名前>: アカウントごとに別の項目（サービス名 claude-long-token-<名前>）を使う。名前は英数字で始め、英数字と . _ -（`-` で始まる名前は断る）。**--account は最初に置く**——ほかの位置（`--account=…` の形も）にあれば止まる（2）。--store-token・--status の後ろに引数があっても止まる（2）。
 #   週の上限に近いアカウントから別のアカウントに切り替えて起動し直すため（利用者の指示 2026-10-29。
@@ -106,8 +107,9 @@ if [ "$1" = "--install-launcher" ]; then
     fi
     dir="${2:-$HOME/.local/bin}"
     target="$dir/dev-loop-cruise"
-    if { [ -e "$target" ] || [ -L "$target" ]; } && ! grep -qF -- "$LAUNCHER_MARK" "$target" 2>/dev/null; then
-        echo "launch-with-long-token: $target が在り、このスクリプトが置いた起動口ではない——上書きしない（置く場所を変えるか、消してから）" >&2
+    if [ -L "$target" ] || { [ -e "$target" ] && ! grep -qF -- "$LAUNCHER_MARK" "$target" 2>/dev/null; }; then
+        # シンボリックリンクは、リンク先が起動口でも断る——cat > がリンク先（別の場所）に書く
+        echo "launch-with-long-token: $target がシンボリックリンクか、このスクリプトが置いた起動口ではないファイル——上書きしない（置く場所を変えるか、消してから）" >&2
         exit 2
     fi
     mkdir -p "$dir" || exit 2
@@ -152,6 +154,17 @@ for arg in "$@"; do
         exit 2
         ;;
     esac
+done
+# 最初は親 Issue の番号、残りは --absent のような長いオプションだけ（空白を含む 1 語・claude の引数（-p など）を 1 本の語に混ぜない）
+if ! [[ "$1" =~ ^[0-9]+$ ]]; then
+    echo "dev-loop-cruise: 最初の引数は親 Issue の番号（例: dev-loop-cruise 1290 --absent。受け取った: '$1'）" >&2
+    exit 2
+fi
+for arg in "${@:2}"; do
+    if ! [[ "$arg" =~ ^--[a-z][a-z-]*$ ]]; then
+        echo "dev-loop-cruise: 親 Issue の番号の後ろは --absent のようなオプションだけ（受け取った: '$arg'）" >&2
+        exit 2
+    fi
 done
 exec bash "$script" "${account[@]}" "/dev-loop:cruise $*"
 LAUNCHER_EOF

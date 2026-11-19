@@ -230,7 +230,8 @@ def suite(script: Path) -> list[str]:
               and "arg=[--store-token]" in e.log("launcher.log") and "dev-loop:cruise" not in e.log("launcher.log"))
         (e.base / "launcher.log").unlink(missing_ok=True)
         for late in (("1290", "--absent", "--account", "work"), ("1290", "--account=work"), ("1290", "--store-token"),
-                     ("1290", "--status"), ("--install-launcher",), ("1290", "--install-launcher")):
+                     ("1290", "--status"), ("--install-launcher",), ("1290", "--install-launcher"),
+                     ("1290 --account work",), ("1290 --store-token",), ("-p", "x"), ("foo",), ("1290", "x y")):
             code, out = e.run_exec(target, *late)
             check(f"起動口: {' '.join(late)} は cruise の引数に混ぜず 2 で止まり、本体を呼ばない",
                   code == 2 and e.log("launcher.log") == "" and e.log("claude.log") == "")
@@ -262,9 +263,22 @@ def suite(script: Path) -> list[str]:
         dangling.parent.mkdir()
         victim.parent.mkdir()
         dangling.symlink_to(victim)
+        marked = e.base / "marked" / "dev-loop-cruise"
+        marked.parent.mkdir()
+        e.run(script, "--install-launcher", str(marked.parent))
+        marked_before = marked.read_text(encoding="utf-8") if marked.exists() else "（置けなかった）"
+        link2 = e.base / "custom3" / "dev-loop-cruise"
+        link2.parent.mkdir()
+        link2.symlink_to(marked)
         code, out = e.run(script, "--install-launcher", str(dangling.parent))
         check("--install-launcher: 切れたシンボリックリンクも上書きせず（リンク先に書かず）2",
               code == 2 and not victim.exists())
+        code, out = e.run(script, "--install-launcher", str(link2.parent))
+        marked.parent.mkdir(exist_ok=True)
+        marked.write_text(marked_before + "# 目印\n", encoding="utf-8")
+        code, out = e.run(script, "--install-launcher", str(link2.parent))
+        check("--install-launcher: 起動口へのシンボリックリンクも、リンク先に書かず 2",
+              code == 2 and marked.read_text(encoding="utf-8") == marked_before + "# 目印\n")
         code, out = e.run(script, "--account", "work", "--install-launcher")
         check("--install-launcher: --account と一緒には使わない（2）", code == 2 and "--account" in out)
         code, out = e.run(script, "--install-launcher", "a", "b")
@@ -419,9 +433,11 @@ MUTATIONS = {
     "起動口が引数なしで cruise を起こす": ('"")\n    echo "使い方:', '"x")\n    echo "使い方:'),
     "起動口の置き場所を無視する": ('dir="${2:-$HOME/.local/bin}"', 'dir="$HOME/.local/bin"'),
     "起動口が後ろの --account を cruise に混ぜる": ('    --account | --account=* | --store-token | --status | --install-launcher)', '    --never-match)'),
-    "切れたシンボリックリンクを上書きする": ('if { [ -e "$target" ] || [ -L "$target" ]; } && ! grep', 'if [ -e "$target" ] && ! grep'),
+    "シンボリックリンクを上書きする": ('if [ -L "$target" ] || { [ -e "$target" ] && ! grep', 'if { [ -e "$target" ] && ! grep'),
+    "起動口が親 Issue の番号を見ない": ('if ! [[ "$1" =~ ^[0-9]+$ ]]; then', 'if false; then'),
+    "起動口が番号の後ろの語を見ない": ('    if ! [[ "$arg" =~ ^--[a-z][a-z-]*$ ]]; then', '    if false; then'),
     "44 の案内に cruise の引数を付けない": ('bash $0 ${ACCT}\\"/dev-loop:cruise <親> [--absent]\\" を打てば', 'bash $0 ${ACCT}を打てば'),
-    "同名の別ファイルを上書きする": ('if { [ -e "$target" ] || [ -L "$target" ]; } && ! grep -qF', "if false && ! grep -qF"),
+    "同名の別ファイルを上書きする": ('{ [ -e "$target" ] && ! grep -qF', "{ false && ! grep -qF"),
     "--install-launcher が --account を無視する": ('    if [ -n "$ACCT" ]; then\n        echo "launch-with-long-token: --install-launcher', '    if false; then\n        echo "launch-with-long-token: --install-launcher'),
     "--install-launcher の余分な引数を捨てる": ('    if [ $# -gt 2 ]; then\n        echo "launch-with-long-token: --install-launcher', '    if false; then\n        echo "launch-with-long-token: --install-launcher'),
     "起動口の中の変数を置くときに展開する": ("cat >\"$target\" <<'LAUNCHER_EOF'", 'cat >"$target" <<LAUNCHER_EOF'),
