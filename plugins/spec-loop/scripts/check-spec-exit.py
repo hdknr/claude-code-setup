@@ -141,8 +141,9 @@ def find_markers(text: str) -> list[tuple[int, str]]:
     return hits
 
 
-def case_numbers(text: str) -> list[tuple[int, str]]:
-    """(行番号, 番号) の一覧。**見出しの先頭のセルがテストケースの表（`CASE_HEADER`）の、データ行の先頭のセル**だけを見る。
+def case_rows(text: str) -> list[tuple[int, str, str]]:
+    """(行番号, 番号, 行の原文) の一覧。**見出しの先頭のセルがテストケースの表（`CASE_HEADER`）の、データ行の先頭のセル**だけを見る。
+    行の原文は前後の空白を落とした 1 行（`scaffold.py` の `acceptance` が、中間表現に並べた原文から番号を引くのに使う。#1301）。
     見出し行そのもの・区切りの行・見出しが `CASE_HEADER` に当たらない表（Q&A・NFR・決定表の行の番号を並べた表など）は見ない。
     コードブロックの中は見ない。セルは NFKC で正規化し、前後の空白・バッククォート・`*`・`_`（強調と等幅の飾り）を外してから番号の形に当てる。"""
     found = []
@@ -169,9 +170,14 @@ def case_numbers(text: str) -> list[tuple[int, str]]:
             previous = None
             continue
         if counting and CASE_NUMBER_RE.fullmatch(cell) and any(ch.isdigit() for ch in cell):
-            found.append((number, cell))
+            found.append((number, cell, stripped))
         previous = cell
     return found
+
+
+def case_numbers(text: str) -> list[tuple[int, str]]:
+    """(行番号, 番号) の一覧（`case_rows` の行の原文を除いたもの）。"""
+    return [(number, case) for number, case, _ in case_rows(text)]
 
 
 def duplicate_numbers(places: dict[str, list[tuple[Path, int]]]) -> list[str]:

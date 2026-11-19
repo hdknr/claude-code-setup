@@ -19,6 +19,9 @@
    **作らないもの**（#851。中間表現の `out_of_scope` に挙げた範囲の外の行が原文のまま・表の見出しつき・範囲の文書の順で写り、
    「次の版の候補」を含む行は別の小見出しに分かれ、挙げていない行は写らない。行の無い機能でも節と「無い」の文言と性能予算の「要求なし」が出る。
    `out_of_scope` が範囲の文書の「範囲の外」の節に原文のまま無い・形が決まりに反するなら作らない）・
+   **Red テストにしない受入基準**（#1301。中間表現の `acceptance` に挙げた仕様の行が原文のまま・表の見出しつき・`acceptance` の順で本文の `## 受入基準` の中の小見出しに写り、
+   持たない機能と撤去の本文は小見出しを持たず、節は 7 つのまま。原文が機能の `source` に無い・区切りや見出しの行・形が決まりに反するなら作らない。書く生成と `--dry-run` は
+   「仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件」を出し、どちらにも無いケースを番号と場所で名指しする——0 件なら 0 件と出て、止めない）・
    **性能の要求**（#852。中間表現の `nfr` が指す `shared/nfr.csv` の行の数字が性能予算に写り、性能テスト `scaffold/perf/perf_<機能>.py` が作られ、
    本文がその sha256 と回し方を持つ。性能テストは実装が無ければ「未実装」で失敗し、上限を超える遅い実装で失敗し、速い実装で緑（陽性対照）。
    `nfr` の無い機能は「要求なし」で性能テストを作らない。`nfr` を外せば性能テストを消し、`--check` が残りを古いと言う。
@@ -509,6 +512,99 @@ def not_built_copied(repo: Path) -> str | None:
             if stray in body:
                 return f"{fid} の本文に挙げていない行 {stray!r} がある"
     return None
+
+
+# ---- Red テストにしない受入基準（#1301）。関数で表せないケースを、中間表現の acceptance で受入基準として Issue に載せる
+ACC_HEADER = "| テストケース | 内容 | 期待 |\n| --- | --- | --- |"
+ACC_ROWS = ("| F1-1 | シルバーで 9999 円 | 割引なし |",
+            "| F1-2 | 金額が負 | 拒否する |",
+            "| F1-3 | 確定を 2 回押す（画面） | 注文は 1 件だけ作られる |",
+            "| F1-4 | 同時に在庫を取る | 売り越さない |")
+ACC_FREE = "- 確定ボタンを 2 回押しても 1 件だけ作る"
+# 数えない表（見出しがテストケースの表でない。Q&A・決定表の行の番号を並べた表）と、番号でない先頭のセルの表を含める
+ACC_SPEC = ("# 注文\n\n割引と取り消し。\n\n" + ACC_HEADER + "\n" + "\n".join(ACC_ROWS)
+            + "\n\n## 別の表\n\n| No | 内容 |\n| --- | --- |\n| F1-9 | 数えない |\n\n" + ACC_FREE + "\n")
+ACC_FILES = {"order.md": ACC_SPEC}
+# 数えないファイル: `.md` でないファイルの表と、形式検査のモデル（`spec/formal/`）の表
+ACC_STRAYS = {str(V1 / "spec" / "memo.txt"): ACC_HEADER + "\n| F1-8 | 数えない |\n",
+              str(V1 / "spec" / "formal" / "stock" / "README.md"): ACC_HEADER + "\n| F1-7 | 数えない |\n"}
+ACC_INTRO = ("下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、**Red テストにしていない**。**これも受入基準である**——"
+             "上の Red テストがすべて緑でも、この行を確かめたことにならない。実装して自分で確かめる。確かめる手段が無いなら、"
+             "弱い検査で代えずに、dev-loop の縮退の線のとおり BLOCKED として報告する。")
+ACC_COPIED = "（中間表現の機能の `acceptance` が挙げた行を、機能の `source` の仕様の原文から、原文のまま写した。）"
+ACC_HEADING = "### Red テストにしない受入基準"
+ACC_COUNT = "仕様のテストケース 4 件のうち、Red テスト {} 件・受入基準 {} 件・どちらにも無い {} 件"
+
+
+def accepting(refs=(), acceptance=None, f002_ref=None, f002_acceptance=None) -> Callable[[dict], dict]:
+    """F-001 のケースに順に ref を書き、acceptance を書く。F-002 のケースにも ref・acceptance を書ける。"""
+    def apply(ir: dict) -> None:
+        for case, ref in zip(f1(ir)["cases"], refs):
+            case["ref"] = ref
+        if acceptance is not None:
+            f1(ir)["acceptance"] = acceptance
+        if f002_ref is not None:
+            ir["features"][1]["cases"][0]["ref"] = f002_ref
+        if f002_acceptance is not None:
+            ir["features"][1]["acceptance"] = f002_acceptance
+    return edit(apply)
+
+
+def accepted_section(body: str) -> str | None:
+    if f"\n{ACC_HEADING}\n\n" not in body:
+        return None
+    return body.split(f"\n{ACC_HEADING}\n\n", 1)[1].split("\n\n## Red テスト\n", 1)[0]
+
+
+def acceptance_copied(repo: Path) -> str | None:
+    found = bodies(repo)
+    # F-001 は並びを仕様の順と変えて挙げる——本文は acceptance の順。表の行には表の見出し、表でない行には見出しを付けない
+    want = "\n\n".join([ACC_INTRO, f"{ACC_HEADER}\n{ACC_ROWS[3]}\n{ACC_ROWS[2]}", ACC_FREE, ACC_COPIED])
+    got = accepted_section(found["F-001"])
+    if got != want:
+        return f"F-001 の Red テストにしない受入基準が違う:\n{got}\n---- 期待:\n{want}"
+    # 受入基準の節の中（Red テストの表の後ろ・`## Red テスト` の前）にあり、節は 7 つのまま
+    body = found["F-001"]
+    if not (body.index("| `F-001-C2` |") < body.index(ACC_HEADING) < body.index("\n## Red テスト\n")):
+        return "小見出しが受入基準の表と `## Red テスト` の間に無い"
+    if sum(1 for line in body.splitlines() if line.startswith("## ")) != 7:
+        return "本文の節が 7 つでない"
+    if ACC_HEADING in found["F-002"]:
+        return "acceptance を持たない F-002 の本文に小見出しがある"
+    return None
+
+
+def acceptance_absent(repo: Path) -> str | None:
+    for fid, body in bodies(repo).items():
+        if ACC_HEADING in body or "Red テストにしていない" in body:
+            return f"acceptance を書かない {fid} の本文に小見出しがある"
+        if "\n\n## 受入基準\n\n" not in body or "\n\n## Red テスト\n\n" not in body:
+            return f"{fid} の本文の節が揃っていない"
+    return None
+
+
+def acceptance_added_in_v2(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-001"]:
+        return f"本文を作るのは acceptance を足した機能だけのはず: {list(found)}"
+    problem = body_has(found["F-001"], ("<!-- spec-loop-change: modify; base=v1 -->", "| `F-001-C1` | 回帰 |", "| `F-001-C2` | 回帰 |"),
+                       "acceptance を足した変更")
+    if problem:
+        return problem
+    section = accepted_section(found["F-001"])
+    return None if section and f"{ACC_HEADER}\n{ACC_ROWS[2]}\n\n{ACC_COPIED}" in section else f"v2 の本文の小見出しに行が無い: {section}"
+
+
+def acceptance_not_in_removal(repo: Path) -> str | None:
+    found = bodies(repo)
+    if list(found) != ["F-002"]:
+        return f"本文を作るのは消した機能だけのはず: {list(found)}"
+    return "撤去の本文に acceptance の小見出しがある" if ACC_HEADING in found["F-002"] else None
+
+
+def acceptance_unnumbered(repo: Path) -> str | None:
+    section = accepted_section(bodies(repo)["F-001"])
+    return None if section and f"{ACC_INTRO}\n\n{ACC_FREE}\n\n{ACC_COPIED}" in section else f"番号の無い行が写っていない: {section}"
 
 
 # ---- 参考資料（#951）。重ね合わせた全体の requirements/ の図・モックを、中間表現の refs で機能に結びつける
@@ -2843,6 +2939,50 @@ CASES: list[Case] = [
     # #851: out_of_scope を足すだけでも機能は変更になる（ケースは全部 回帰）。本文の作らないものに写る
     Case("v2 で作らないものだけ足す", 0, "modify 1", spec=SCOPE_SPEC,
          extra=v2([{**copy.deepcopy(IR["features"][0]), "out_of_scope": [SCOPE_ROWS[0]]}]), post=not_built_added_in_v2),
+    # #1301: Red テストにしない受入基準。仕様のケースの内訳（Red テスト・受入基準・どちらにも無い）を出し、書いた行を本文に写す
+    Case("受入基準: 内訳を出し、どちらにも無いケースを名指しする", 0, ACC_COUNT.format(2, 1, 1) + "\n  どちらにも無い: F1-4（spec/order.md:10）",
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES, extra=ACC_STRAYS, absent="どちらにも無い: F1-3"),
+    Case("受入基準: どちらにも無いケースが 0 件", 0, ACC_COUNT.format(2, 2, 0), ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2], ACC_ROWS[3]]),
+         spec=ACC_FILES, extra=ACC_STRAYS, absent="どちらにも無い: F"),
+    Case("受入基準: Red テストと重なる行は Red テストに数える", 0, ACC_COUNT.format(2, 2, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[0], ACC_ROWS[2], ACC_ROWS[3]]), spec=ACC_FILES, extra=ACC_STRAYS),
+    Case("受入基準: 別の機能のケースの ref も数える", 0, ACC_COUNT.format(3, 1, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], f002_ref="F1-4"), spec=ACC_FILES),
+    Case("受入基準: 別の機能の acceptance も数える", 0, ACC_COUNT.format(2, 2, 0),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]], f002_acceptance=[ACC_ROWS[3]]), spec=ACC_FILES),
+    Case("受入基準: 何も書かなければ全部がどちらにも無い（Issue の本文は変わらない）", 0,
+         ACC_COUNT.format(0, 0, 4) + "\n  どちらにも無い: F1-1（spec/order.md:7）\n  どちらにも無い: F1-2（spec/order.md:8）",
+         spec=ACC_FILES, extra=ACC_STRAYS, post=acceptance_absent),
+    Case("受入基準: --dry-run も内訳を出す", 0, ACC_COUNT.format(2, 1, 1), args=("--dry-run",),
+         ir=accepting(("F1-1", "F1-2"), [ACC_ROWS[2]]), spec=ACC_FILES),
+    Case("受入基準: 行を原文のまま本文に写す", 0, "作った", ir=accepting((), [ACC_ROWS[3], ACC_ROWS[2], ACC_FREE]), spec=ACC_FILES,
+         post=acceptance_copied),
+    Case("受入基準: 番号の無い行は数に入れず、行数を知らせる", 0, "番号の無い受入基準の行 1 件（テストケースの表の行でないので、上の数に入らない）",
+         ir=accepting((), [ACC_FREE]), spec=ACC_FILES, post=acceptance_unnumbered),
+    Case("受入基準: 仕様に無い行", 1, "F-001.acceptance: 機能の source の仕様の原文に、この行が原文のまま無い"
+         "（区切りの行・見出しの行は挙げない）: '| F1-5 | 仕様に無い | 作らない |'",
+         ir=accepting((), ["| F1-5 | 仕様に無い | 作らない |"]), spec=ACC_FILES, pre=plant_old_issues, post=nothing_written),
+    Case("受入基準: 別の機能の仕様の行", 1, "F-001.acceptance: 機能の source の仕様の原文に、この行が原文のまま無い",
+         ir=accepting((), ["| F2-1 | 別の機能 | 返す |"]), spec={**ACC_FILES, "other.md": "# 別\n\n" + ACC_HEADER + "\n| F2-1 | 別の機能 | 返す |\n"}),
+    Case("受入基準: 区切りの行", 1, "この行が原文のまま無い（区切りの行・見出しの行は挙げない）: '| --- | --- | --- |'",
+         ir=accepting((), ["| --- | --- | --- |"]), spec=ACC_FILES),
+    Case("受入基準: 見出しの行", 1, "この行が原文のまま無い（区切りの行・見出しの行は挙げない）: '## 別の表'",
+         ir=accepting((), ["## 別の表"]), spec=ACC_FILES),
+    Case("受入基準: 空の配列", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
+         ir=accepting((), []), spec=ACC_FILES),
+    Case("受入基準: 配列でない", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
+         ir=accepting((), ACC_ROWS[2]), spec=ACC_FILES),
+    Case("受入基準: 重複", 1, "F-001.acceptance: 重複している", ir=accepting((), [ACC_ROWS[2], ACC_ROWS[2]]), spec=ACC_FILES),
+    Case("受入基準: 前後に空白", 1, "F-001.acceptance: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=accepting((), [" " + ACC_ROWS[2]]), spec=ACC_FILES),
+    Case("受入基準: 複数行", 1, "F-001.acceptance: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=accepting((), [ACC_ROWS[2] + "\n" + ACC_ROWS[3]]), spec=ACC_FILES),
+    Case("受入基準: 文字列でない", 1, "F-001.acceptance: 前後に空白の無い 1 行の文字列でない行がある",
+         ir=accepting((), [1]), spec=ACC_FILES),
+    Case("v2 で受入基準だけ足す", 0, "modify 1", spec=ACC_FILES,
+         extra=v2([{**copy.deepcopy(IR["features"][0]), "acceptance": [ACC_ROWS[2]]}]), post=acceptance_added_in_v2),
+    Case("受入基準: 消した機能の本文には小見出しを付けない", 0, "作った", ir=accepting((), None, f002_acceptance=[ACC_ROWS[2]]), spec=ACC_FILES,
+         extra=v2([], removed="機能,F-002,取り消しはやめる\n"), post=acceptance_not_in_removal),
     # #855: 課題一覧（案）。案は入口の機能ごと・未決定事項・受入基準の雛形・作らないもの
     Case("課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの", 0, "課題一覧（案）: build/scaffold/issues/proposals.md（案 2 件・未決定事項 4 件）",
          ir=BRANCHES_IR, spec=BRANCH_SPECS, post=proposals_written),
@@ -3338,7 +3478,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("仮回答の本文を出力で名指ししない", "    if marked:\n", "    if False:\n", "--provisional で暫定反映を指す"),
     ("性能予算に数字を写さない", "    if not rows:\n        return [NO_PERFORMANCE_BUDGET]", "    if True:\n        return [NO_PERFORMANCE_BUDGET]",
      "性能の要求: 行があれば性能テストと予算"),
-    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY, REFS})",
+    ("nfr を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, OUT_OF_SCOPE, BRANCHES_KEY, REFS, ACCEPTANCE})",
      "性能の要求: 行があれば性能テストと予算"),
     ("性能テストを作らない", "        if rows:\n            contract[f\"{PERF_DIR}/", "        if False:\n            contract[f\"{PERF_DIR}/",
      "性能の要求: 行があれば性能テストと予算"),
@@ -3406,7 +3546,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("表でない行を空の行で区切らない", "            if index and (header is None or header != group[index - 1][1]):",
      "            if index and header is not None and header != group[index - 1][1]:", "作らないもの: 範囲の外の行と次の版の候補を写す"),
-    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, NFR, BRANCHES_KEY, REFS})",
+    ("out_of_scope を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})",
      "作らないもの: 範囲の外の行と次の版の候補を写す"),
     ("out_of_scope の検査を呼ばない", "        if OUT_OF_SCOPE in feature:\n            problems += check_out_of_scope",
      "        if False:\n            problems += check_out_of_scope", "作らないもの: 節に無い行"),
@@ -3431,6 +3571,54 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("out_of_scope の複数行を許す", " or not one_line(row) or row != row.strip() for row in picked", " or row != row.strip() for row in picked",
      "作らないもの: 複数行"),
     ("out_of_scope の前後の空白を許す", " or row != row.strip() for row in picked", " for row in picked", "作らないもの: 前後に空白"),
+    # #1301: Red テストにしない受入基準
+    ("acceptance を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})",
+     "受入基準: 行を原文のまま本文に写す"),
+    ("acceptance の検査を呼ばない", "        if ACCEPTANCE in feature:\n            problems += check_acceptance(", "        if False:\n            problems += check_acceptance(",
+     "受入基準: 仕様に無い行"),
+    ("acceptance の空の配列を許す", "    if not isinstance(listed, list) or not listed:", "    if not isinstance(listed, list):", "受入基準: 空の配列"),
+    ("acceptance の重複を許す", "    if len(set(map(str, listed))) != len(listed):", "    if False:", "受入基準: 重複"),
+    ("acceptance の前後の空白を許す", " or row != row.strip() for row in listed", " for row in listed", "受入基準: 前後に空白"),
+    ("acceptance の複数行を許す", " or not one_line(row) or row != row.strip() for row in listed", " or row != row.strip() for row in listed",
+     "受入基準: 複数行"),
+    ("acceptance の仕様に無い行を許す", "for row in listed if row not in lines or TABLE_SEPARATOR", "for row in listed if TABLE_SEPARATOR", "受入基準: 仕様に無い行"),
+    ("acceptance の区切りの行を許す", "for row in listed if row not in lines or TABLE_SEPARATOR.fullmatch(row) or proposal",
+     "for row in listed if row not in lines or proposal", "受入基準: 区切りの行"),
+    ("acceptance の見出しの行を許す", "or TABLE_SEPARATOR.fullmatch(row) or proposal.heading_level(row)]\n\n\ndef nfr_rows",
+     "or TABLE_SEPARATOR.fullmatch(row)]\n\n\ndef nfr_rows", "受入基準: 見出しの行"),
+    ("acceptance を機能の source の外の仕様の行でも許す", "    lines = source_lines(sources, whole)\n    if lines is None:\n        return []  # source が配列でない",
+     "    lines = source_lines([f\"{SPEC_DIR}/{path.name}\" for path in (whole / SPEC_DIR).glob(\"*.md\")], whole)\n    if lines is None:\n        return []  # source が配列でない",
+     "受入基準: 別の機能の仕様の行"),
+    ("acceptance の小見出しを書かない", '        lines += ["", ACCEPTANCE_HEADING, ""] + acceptance_section(feature, loaded)', "        pass",
+     "受入基準: 行を原文のまま本文に写す"),
+    ("撤去の本文にも acceptance の小見出しを付ける", "    if change.kind != REMOVE and feature.get(ACCEPTANCE):", "    if feature.get(ACCEPTANCE):",
+     "受入基準: 消した機能の本文には小見出しを付けない"),
+    ("acceptance の表の見出しを付けない", "        if header is not None and (index == 0 or header != previous):\n            lines += list(header)",
+     "        if False:\n            lines += list(header)", "受入基準: 行を原文のまま本文に写す"),
+    ("acceptance を中間表現の順でなく並べ替える", "for index, text in enumerate(feature[ACCEPTANCE]):", "for index, text in enumerate(sorted(feature[ACCEPTANCE])):",
+     "受入基準: 行を原文のまま本文に写す"),
+    ("acceptance の注意書きを書かない", '    lines = ["下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、', '    lines = ["", "下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、',
+     "受入基準: 行を原文のまま本文に写す"),
+    ("内訳で Red テストを数えない", "    in_red = [n for n in cases if n in red]", "    in_red = []", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("内訳で受入基準を数えない", "    in_acceptance = [n for n in cases if n not in red and n in accepted]", "    in_acceptance = []",
+     "受入基準: どちらにも無いケースが 0 件"),
+    ("内訳で Red テストと重なる行を受入基準にも数える", "    in_acceptance = [n for n in cases if n not in red and n in accepted]",
+     "    in_acceptance = [n for n in cases if n in accepted]", "受入基準: Red テストと重なる行は Red テストに数える"),
+    ("内訳で先頭の機能の ref だけを数える", '    red = {unicodedata.normalize("NFKC", case["ref"]).strip() for feature in features_of(ir) for case',
+     '    red = {unicodedata.normalize("NFKC", case["ref"]).strip() for feature in features_of(ir)[:1] for case',
+     "受入基準: 別の機能のケースの ref も数える"),
+    ("内訳で先頭の機能の acceptance だけを数える", "    for feature in features_of(ir):\n        for text in feature.get(ACCEPTANCE, []):",
+     "    for feature in features_of(ir)[:1]:\n        for text in feature.get(ACCEPTANCE, []):", "受入基準: 別の機能の acceptance も数える"),
+    ("どちらにも無いケースを名指ししない", '    lines += [f"  どちらにも無い: {number}（{cases[number][0]}:{cases[number][1]}）" for number in neither]',
+     "    pass", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("番号の無い受入基準の行を知らせない", "    if unnumbered:\n", "    if False:\n", "受入基準: 番号の無い行は数に入れず、行数を知らせる"),
+    ("仕様のケースの数に .md でないファイルを入れる", ' or not rel.endswith(".md") or any(part.startswith(".")', ' or any(part.startswith(".")',
+     "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("仕様のケースの数に形式検査のモデルを入れる", " or versions.is_formal(rel):\n            continue\n        try:\n            text = rendered[rel]",
+     ":\n            continue\n        try:\n            text = rendered[rel]", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("内訳を読み込まない", "    loaded.coverage = coverage_lines(rendered, ir)", "    loaded.coverage = []", "受入基準: 内訳を出し、どちらにも無いケースを名指しする"),
+    ("内訳を出力しない", "    for line in loaded.coverage:\n        # 仕様のテストケースの内訳（#1301）——止めずに知らせる\n        print(line)\n",
+     "", "受入基準: --dry-run も内訳を出す"),
     # #855: 呼ぶ側の分岐と課題一覧（案）
     ("課題一覧（案）を作らない", "    issues[PROPOSALS] = proposals(changes, loaded, contract)\n", "",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
@@ -3458,7 +3646,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("案が無いことを書かない", "    if not entries:\n", "    if False:\n", "課題一覧（案）: v2 で機能を消すだけなら案は無い"),
     ("案の件数を出さない", "（案 {len(entries)} 件", "（案 {len(changes)} 件", "課題一覧（案）: 呼ばれる関数には案を作らない"),
-    ("branches を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})", "{CALLED_BY, OUT_OF_SCOPE, NFR, REFS})",
+    ("branches を決まりに無いキーとして拒む", "{CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})", "{CALLED_BY, OUT_OF_SCOPE, NFR, REFS, ACCEPTANCE})",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("branches の検査を呼ばない", "        if BRANCHES_KEY in feature:\n            problems += check_branches",
      "        if False:\n            problems += check_branches", "呼ぶ側の分岐: 原文に無い行"),
