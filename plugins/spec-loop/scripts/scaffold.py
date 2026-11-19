@@ -1913,7 +1913,7 @@ def py_type(field: dict, name: str = "", nested: list[str] | None = None) -> str
 def typed_dict(name: str, fields: dict) -> list[str]:
     nested: list[str] = []
     lines = [f"class {name}(TypedDict):"]
-    lines += [f"    {field}: {py_type(fields[field], name + pascal(field), nested)}" for field in sorted(fields)] or ["    pass"]
+    lines += [f"    {field}: {py_type(fields[field], name + '_' + pascal(field), nested)}" for field in sorted(fields)] or ["    pass"]
     return nested + lines + ["", ""]
 
 

@@ -2705,6 +2705,9 @@ def dyn_written(repo: Path) -> str | None:
         if needle not in test:
             return f"test_f_009.py に {needle!r} が無い"
     test10 = (repo / "scaffold" / "tests" / "test_f_010.py").read_text(encoding="utf-8")
+    # 配列・入れ子を持たない動的な機能は、深い写し（#1300）を使わず、`copy` も読み込まない
+    if "import copy" in test or "import copy" in test10 or "deepcopy" in test or "deepcopy" in test10:
+        return "配列・入れ子を持たない動的な機能の Red テストに copy の道具がある（#1300）"
     for needle in ("    def test_f_010_c1(self):\n        self.dynamic({'title': '契約書'}, {'title': '契約書', 'urn': {'$ref': 'created.urn'}, 'version': {'$ref': 'created.version'}}, [{",
                    "'as': 'created'", "    def test_f_010_c2(self):\n        self.check("):
         if needle not in test10:
@@ -2842,9 +2845,9 @@ def arr_written(repo: Path) -> str | None:
     if kinds != {"type": "array", "items": {"type": "string", "enum": ["memo", "task"]}}:
         return f"OpenAPI の入力の配列が違う: {kinds}"
     types = (repo / "scaffold" / "types.py").read_text(encoding="utf-8")
-    for needle in ("class ListNotesOutputNotes_Item(TypedDict):\n    kind: Literal['memo', 'task']\n    title: str\n\n\n",
-                   "class ListNotesOutputPage(TypedDict):\n    next: str | None\n    stamp: str\n    total: int\n\n\n",
-                   "class ListNotesOutput(TypedDict):\n    notes: list[ListNotesOutputNotes_Item]\n    page: ListNotesOutputPage\n    tags: list[str]\n",
+    for needle in ("class ListNotesOutput_Notes_Item(TypedDict):\n    kind: Literal['memo', 'task']\n    title: str\n\n\n",
+                   "class ListNotesOutput_Page(TypedDict):\n    next: str | None\n    stamp: str\n    total: int\n\n\n",
+                   "class ListNotesOutput(TypedDict):\n    notes: list[ListNotesOutput_Notes_Item]\n    page: ListNotesOutput_Page\n    tags: list[str]\n",
                    "class ListNotesInput(TypedDict):\n    kinds: list[Literal['memo', 'task']]\n    origin: str\n"):
         if needle not in types:
             return f"types.py に {needle!r} が無い"
@@ -2937,6 +2940,29 @@ def arr_setup_ref(ir: dict) -> None:
     c2.pop("as")
     c2.pop("after")
     c2["expected"] = {"notes": {"$any": "array"}, "tags": {"$ref": "first.tags"}, "page": {"$any": "object"}}
+
+
+def arr_setup_ref_notes(ir: dict) -> None:
+    """arr_setup_ref の `$ref` を notes（要素がオブジェクトの配列）に向ける。"""
+    arr_setup_ref(ir)
+    c2 = stage_case(ir, "F-011-C2")
+    c2["expected"].update(tags={"$any": "array"}, notes={"$ref": "first.notes"})
+
+
+# 要素の辞書を持ち続け、呼ぶたびに題を書き換えて、新しい配列に入れて返す実装——束ねた結果を 1 段しか写さないと、`$ref` が書き換わった要素と比べて通る
+ARR_ALIAS_ELEMENTS_IMPL = ARR_IMPL.replace('_notes = []', '_notes, _view, _calls = [], [], []', 1).replace(
+    '"notes": [{"title": note["title"], "kind": note["kind"]} for note in shown],', '"notes": _elements(shown),') + '''
+
+def _elements(shown):
+    _calls.append(1)
+    if not _view:
+        _view.extend({"title": note["title"], "kind": note["kind"]} for note in shown)
+    else:
+        for element in _view:
+            element["title"] = f"z{len(_calls)}"
+    return list(_view)
+'''
+assert ARR_ALIAS_ELEMENTS_IMPL != ARR_IMPL
 
 
 def arr_nullable_any(ir: dict) -> None:
@@ -3307,6 +3333,8 @@ CASES: list[Case] = [
     Case("配列: 束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる", 0, "作った", ir=arr_ir(arr_ref_only_tags), impl=ARR_ALIAS_TAGS_IMPL,
          post=stage_red(1, "tags が []")),
     Case("配列: 前提で束ねた配列と同じ配列を返す実装で緑", 0, "作った", ir=arr_ir(arr_setup_ref), impl=ARR_IMPL, post=expect_green),
+    Case("配列: 束ねた配列の要素を実装が後で書き換えても $ref は返った時点の値と比べる", 0, "作った", ir=arr_ir(arr_setup_ref_notes), impl=ARR_ALIAS_ELEMENTS_IMPL,
+         post=stage_red(1, "notes が [{'title': 'z3'")),
     Case("配列: 前提で束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる", 0, "作った", ir=arr_ir(arr_setup_ref), impl=ARR_ALIAS_TAGS_IMPL,
          post=stage_red(1, "tags が []")),
     Case("配列: $any の array は余る項目も落とす", 0, "作った", ir=arr_ir(arr_any_arrays), impl=ARR_EXTRA_KEY_IMPL, post=stage_red(2, "'size': 1")),
@@ -4622,6 +4650,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '    "        return (isinstance(value, dict) and value.keys() <= spec[\\"properties\\"].keys()",\n', "配列: $any の array は足りない項目も落とす"),
     ("束ねた配列を浅く写す（後の呼び出し）", "        f\"            env[call[AS]] = {'copy.deepcopy' if composite else 'dict'}(actual)\",",
      '        "            env[call[AS]] = dict(actual)",', "配列: 前提で束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる"),
+    ("束ねた結果を 1 段しか写さない（後の呼び出し）", "        f\"            env[call[AS]] = {'copy.deepcopy' if composite else 'dict'}(actual)\",",
+     "        f\"            env[call[AS]] = {'copy.copy' if composite else 'dict'}(actual)\",", "配列: 束ねた配列の要素を実装が後で書き換えても $ref は返った時点の値と比べる"),
+    ("動的な機能に配列・入れ子が無くても copy を読み込む", '*(["import copy"] if composite and dynamic else []),', '*(["import copy"] if dynamic else []),', "動的: 作る"),
     ("束ねた配列を浅く写す（本体）", "        f\"            env[bind] = {'copy.deepcopy' if composite else 'dict'}(actual)\",",
      '        "            env[bind] = dict(actual)",', "配列: 束ねた配列を実装が後で書き換えても $ref は返った時点の値と比べる"),
     ("shape_fits が null を許さない", '    f"        return bool(spec.get({NULLABLE!r}))",\n', '    "        return False",\n',

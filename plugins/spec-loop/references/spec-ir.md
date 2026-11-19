@@ -306,7 +306,7 @@ Issue の本文の `## 参考資料` にパスが載り、写しが契約 `scaff
 - **パスの変数（上の「パスの変数」）には書けない**——パスの値は 1 つの文字列になる。
 - **生成物**: OpenAPI の schema は、配列が `{"type": "array", "items": …}`、オブジェクトが `{"type": "object", "required": […], "additionalProperties": false, "properties": …}`
   （`nullable` は上の「null を許す項目」と同じに `type` へ `"null"` を足す）。**`unordered` は OpenAPI の schema に表せないので、出ない**（Red テストだけが見る）。
-  `types.py` は、配列が `list[<要素の型>]`、入れ子のオブジェクトが `TypedDict`（名前は、入口の型の名前に項目名を Pascal にして足したもの。配列の要素なら `_Item` を足す。例: `ListNotesOutputNotes_Item`）で、
+  `types.py` は、配列が `list[<要素の型>]`、入れ子のオブジェクトが `TypedDict`（名前は、入口の型の名前に `_` と項目名を Pascal にしたものを足したもの（`_` は項目名の Pascal 化では作れないので、`order.item` と `order_item` は重ならない）。配列の要素なら `_Item` を足す。例: `ListNotesOutput_Notes_Item`）で、
   `nullable` は ` | None` を足す。Red テストは、**項目の型の記述（`OUTPUT_TYPES`）に沿って、値を中まで——要素の型・オブジェクトの項目・`null` の可否——比べる**
   （`true` を整数の要素と見ない・足りない項目も余る項目も違反）。**配列・入れ子を 1 つも使わない機能の生成物は、今までと 1 バイトも変わらない。**
 - **v2 以降**: 配列・入れ子の項目の型の記述が前の版と違えば（`nullable`・`unordered` の違い、`integer` から `number` に広げただけの違いも）、その項目を期待に持つケースは変更に数える

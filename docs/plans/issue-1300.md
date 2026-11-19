@@ -29,7 +29,7 @@ Issue 本文（外部入力）から読んだ要件: 項目の型に `{"type": "
 - **順を問わない配列の要素の中の `$any`・`$ref` は書けない**（どの要素に当たるかが決まらない。照合を一意にするため）。順を問う配列の要素にも項目そのものにも書ける。
 - **パスの変数は配列・オブジェクトにできない**。入力に配列・オブジェクトは書ける（GET のクエリの schema は配列・オブジェクトの schema になる）。入力の `unordered` は何も変えない。
 - **OpenAPI**: 配列は `{"type": "array", "items": …}`、オブジェクトは既存の `object_schema`（`required`・`additionalProperties: false`・`properties`）。`unordered` は表せないので出さない。
-- **`types.py`**: 配列は `list[<要素>]`、入れ子のオブジェクトは名前つきの `TypedDict`（入口の型の名前に項目名を Pascal にして足す。配列の要素は `Item` を足す）。
+- **`types.py`**: 配列は `list[<要素>]`、入れ子のオブジェクトは名前つきの `TypedDict`（入口の型の名前に項目名を Pascal にして足す。配列の要素は `_Item` を足す。各階層は `_` で区切る（Pascal 化では作れない区切りなので、`order.item` と `order_item` は重ならない））。
 - **v2 の変化**: 配列・入れ子の項目の型の記述が前の版と違えば（`nullable`・`unordered`・中の `integer` から `number` への広げを含む）変更に数える（中の違いを項目ごとに見分けない。保守的に倒した）。
 
 ## 変更範囲
