@@ -45,6 +45,14 @@ usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>
 どの行がその機能に関わるかは書き起こす側の判断で、機械は原文が在ることだけを見る
 （決まりの正は `references/handoff-issue.md` の「作らないもの」と `references/spec-ir.md` の「作らないもの」）。
 
+**Red テストにしない受入基準（`acceptance`。#1301）**: 関数の 1 回の呼び出しでは表せないケース（画面の振る舞い・障害・同時・時間）の、仕様の行の原文を中間表現の機能の `acceptance` に並べる。
+本文の `## 受入基準` の中の `### Red テストにしない受入基準` に原文のまま写す（表の行なら表の見出しの 2 行を付ける）。**挙げた行が機能の `source` の仕様の原文に原文のまま無い
+（表の見出し・区切りの行・見出しの行を挙げた）なら 1**——どの行がそのケースかは書き起こす側の判断で、機械は原文の照合だけをする。**書く生成と `--dry-run` は、仕様のテストケース（番号の形は
+`check-spec-exit.py` の `case_rows`——条件 1 の重複の検査と同じ）の内訳を出す**: `仕様のテストケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件`。
+Red テスト = ケースの `ref` が番号と一致するもの、受入基準 = `acceptance` の行の先頭のセルの番号（Red テストと重なれば Red テストに数える）。**どちらにも無いケースは番号と `ファイル:行` を全部名指しする**
+（0 件なら `0 件`）。**止めない**（終了コードは変わらない）。`acceptance` を書かない中間表現の本文・`scaffold/` は 1 バイトも変わらない
+（決まりの正は `references/spec-ir.md` の「Red テストにしない受入基準」と `references/handoff-issue.md` の「Red テストにしない受入基準」）。
+
 **性能の要求（`nfr`。#852）**: 中間表現の機能の `nfr` に、重ね合わせた全体の `shared/nfr.csv` の性能の行の `No` を書く。
 **指した行が無い・2 行ある・性能の行の形（列・指標・上限・単位 `ms`・条件・根拠。`references/nfr.md`）に反するなら 1**——指していない行は見ない。
 `nfr` を持つ機能だけ、性能テスト `scaffold/perf/perf_<機能>.py`（契約。実装をケースの入力で 1 回ずつ呼び、1 回の時間から指標を出して上限と比べる）を作り、
@@ -330,6 +338,10 @@ NULLABLE = "nullable"
 CALLED_BY = "called_by"
 # 機能に関わる範囲の外の行の原文の配列（任意。`references/spec-ir.md` の「作らないもの」。#851）
 OUT_OF_SCOPE = "out_of_scope"
+# Red テストにしないケースを、仕様の行の原文のまま並べる配列（任意。`references/spec-ir.md` の「Red テストにしない受入基準」。#1301）
+ACCEPTANCE = "acceptance"
+# 本文の `## 受入基準` の中の小見出し（`acceptance` を持つ機能だけ。`references/handoff-issue.md` の「Red テストにしない受入基準」の写し）
+ACCEPTANCE_HEADING = "### Red テストにしない受入基準"
 # 機能に効く性能の要求の行の `No` の配列（任意。`references/spec-ir.md` の「性能の要求」。#852）
 NFR = "nfr"
 # 機能に関係する参考資料（UI モック・業務フロー・画面遷移の図など）の、重ね合わせた全体の根からのパスの配列（任意。
@@ -718,7 +730,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     for index, feature in enumerate(features):
         where = f"features[{index}]"
         found = keys_problem(where, feature, {"id", "title", "source", "qa", "operation", "cases"},
-                             {CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS})
+                             {CALLED_BY, OUT_OF_SCOPE, NFR, BRANCHES_KEY, REFS, ACCEPTANCE})
         if found:
             problems += found
             if not isinstance(feature, dict):
@@ -742,6 +754,8 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             problems += check_refs(f"{where}.{REFS}", feature[REFS], whole)
         if OUT_OF_SCOPE in feature:
             problems += check_out_of_scope(f"{where}.{OUT_OF_SCOPE}", feature[OUT_OF_SCOPE], whole)
+        if ACCEPTANCE in feature:
+            problems += check_acceptance(f"{where}.{ACCEPTANCE}", feature[ACCEPTANCE], feature.get("source"), whole)
         if NFR in feature:
             problems += check_nfr(f"{where}.{NFR}", feature[NFR], whole)
         if BRANCHES_KEY in feature:
@@ -1021,7 +1035,12 @@ def scope_rows(text: str) -> list[tuple[str, tuple[str, str] | None]] | None:
     body = proposal.out_of_scope(text)
     if body is None:
         return None
-    lines = [line.strip() for line in body]
+    return rows_with_header([line.strip() for line in body])
+
+
+def rows_with_header(lines: list[str]) -> list[tuple[str, tuple[str, str] | None]]:
+    """前後の空白を落とした行の並びから、(行, その行が表の行なら表の見出しの 2 行) を並びの順に返す（`scope_rows` の表の読み方）。
+    **空の行・見出しの行・表の見出しと区切りの行は行に数えない**（`acceptance` の原文の表の見出しにも同じ読み方を当てる。#1301）。"""
     rows: list[tuple[str, tuple[str, str] | None]] = []
     header: tuple[str, str] | None = None  # 続いている表の見出しの 2 行
     index = 0
@@ -1069,6 +1088,28 @@ def check_out_of_scope(where: str, picked, whole: Path) -> list[str]:
     present = {text for text, _ in rows}
     return [f"{where}: 範囲の文書の「{proposal.OUT_OF_SCOPE}」の節に、この行が原文のまま無い"
             f"（表の見出し・区切りの行は挙げない）: {row!r}" for row in picked if row not in present]
+
+
+def check_acceptance(where: str, listed, sources, whole: Path) -> list[str]:
+    """機能の `acceptance`（#1301。`references/spec-ir.md` の「Red テストにしない受入基準」）。
+
+    **挙げた行が、機能の `source` の仕様の原文のどれかに原文のまま在ること**だけを見る——どの行が Red テストにしないケースかは書き起こす側の判断。
+    表の見出しの行・区切りの行（`| --- |`）・見出しの行は挙げられない（`scope_rows` と同じ読み方で除く。本文には生成のスクリプトが表の見出しを付ける）。
+    """
+    if not isinstance(listed, list) or not listed:
+        return [f"{where}: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない"]
+    problems = []
+    if any(not isinstance(row, str) or not one_line(row) or row != row.strip() for row in listed):
+        problems.append(f"{where}: 前後に空白の無い 1 行の文字列でない行がある")
+    if len(set(map(str, listed))) != len(listed):
+        problems.append(f"{where}: 重複している")
+    if problems:
+        return problems
+    lines = source_lines(sources, whole, rows_only=True)
+    if lines is None:
+        return []  # source が配列でないことは source の検査が言う
+    return [f"{where}: 機能の source の仕様の原文に、この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: {row!r}"
+            for row in listed if row not in lines]
 
 
 def nfr_rows(text: str) -> tuple[list[str] | None, dict[str, list[tuple[dict[str, str], int]]]]:
@@ -1134,7 +1175,7 @@ def check_nfr(where: str, refs, whole: Path) -> list[str]:
     return problems
 
 
-def source_lines(sources, whole: Path) -> set[str] | None:
+def source_lines(sources, whole: Path, rows_only: bool = False) -> set[str] | None:
     """機能の `source` の原文の行（前後の空白を落とした）。`source` が配列でなければ None（`check_source` が言う）。
 
     読むのは `check_ref` と同じく、重ね合わせた全体の `spec/` の中の相対パスだけ——外のファイルを読まない。読めない原文は飛ばす。
@@ -1151,7 +1192,9 @@ def source_lines(sources, whole: Path) -> set[str] | None:
             continue
         try:
             if path.is_file():
-                lines |= {line.strip() for line in path.read_bytes().decode("utf-8-sig").splitlines()}
+                found = [line.strip() for line in path.read_bytes().decode("utf-8-sig").splitlines()]
+                # `rows_only`: `rows_with_header` の読み方で、表の見出しと区切りの行・見出しの行を除く（`acceptance`。#1301）
+                lines |= {row for row, _ in rows_with_header(found)} if rows_only else set(found)
         except (OSError, UnicodeDecodeError, ValueError):
             continue  # 読めない原文は source の検査と未決定の印の関門が言う
     return lines
@@ -1278,6 +1321,9 @@ class Loaded:
         self.infra: str | None = None  # 決まった基盤要件の 1 行（書く生成と --dry-run で出す。#950）
         self.scope = scope  # 範囲の文書（`spec/scope.md`）のバイト。無ければ None
         self.nfr = nfr  # 性能の要求の表（`shared/nfr.csv`）のバイト。無ければ None
+        # 機能の `source` の仕様の原文（全体の根からのパス → バイト）と、仕様のテストケースの内訳の行（#1301）——`acceptance` の本文と、書く生成・`--dry-run` の報告
+        self.spec_texts: dict[str, bytes] = {}
+        self.coverage: list[str] = []
         self.refs: dict[str, bytes] = {}  # 機能の `refs` が指すファイル（全体の根からのパス → バイト。#951）と、画面の表から引いたファイル（#1099）
         # 画面の表から引いた参考資料（#1099）——機能の id → [(画面ID, 画面名, [全体の根からのパス])]（画面の表の並び）。機能のオブジェクトには入れない
         self.screens: dict[str, list[tuple[str, str, list[str]]]] = {}
@@ -1341,6 +1387,10 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     loaded = Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
     loaded.provisional = provisional
     loaded.notes = notes
+    # 綴りが `spec/./order.md` でも `check_source` は通す（解決して見る）——全体の鍵は正規化した綴りなので、正規化して引く
+    loaded.spec_texts = {rel: rendered[os.path.normpath(rel)] for feature in features_of(ir)
+                         for rel in feature.get("source", []) if os.path.normpath(rel) in rendered}
+    loaded.coverage = coverage_lines(rendered, ir)
     loaded.infra = settled
     # 検査（`check_refs`）を通った後なので、指したパスは重ね合わせた全体に在る
     loaded.refs = {rel: rendered[rel] for feature in features_of(ir) for rel in feature.get(REFS, [])}
@@ -2602,6 +2652,9 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
     if gone:
         lines += ["", f"{CASE_REMOVED}したケース（Red テストから外した。その振る舞いはもう求めない）: "
                   + "・".join(f"`{c['id']}` {cell(c['title'])}" for c in gone)]
+    if change.kind != REMOVE and feature.get(ACCEPTANCE):
+        # Red テストにしない受入基準（#1301）——`acceptance` を書いた機能だけ。書かなければ #1301 の前と同じバイト
+        lines += ["", ACCEPTANCE_HEADING, ""] + acceptance_section(feature, loaded)
     lines += ["", SECTIONS[2], ""]
     if change.kind == REMOVE:
         lines += [
@@ -2668,6 +2721,84 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
                      "この Issue は手元の仕様と別の時点のもの**——")
     lines.append("実装に入らず、同じく差し戻す。")
     return "\n".join(lines) + "\n"
+
+
+def acceptance_section(feature: dict, loaded: Loaded) -> list[str]:
+    """`## 受入基準` の中の `### Red テストにしない受入基準` の中身（#1301。`references/handoff-issue.md` の「Red テストにしない受入基準」）。
+    中間表現の `acceptance` に挙げた行を、機能の `source` の仕様の原文から**原文のまま**写す（表の行なら表の見出しの 2 行を前に付ける。並びは `acceptance` の順）。"""
+    found: dict[str, tuple[str, str] | None] = {}
+    for rel in feature["source"]:
+        data = loaded.spec_texts.get(rel)
+        if data is None:
+            continue  # 検査（`check_acceptance`）を通った後なので、読めない原文は無い
+        for text, header in rows_with_header([line.strip() for line in data.decode("utf-8-sig").splitlines()]):
+            found.setdefault(text, header)
+    lines = ["下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、**Red テストにしていない**。**これも受入基準である**——"
+             "上の Red テストがすべて緑でも、この行を確かめたことにならない。実装して自分で確かめる。確かめる手段が無いなら、"
+             "弱い検査で代えずに、dev-loop の縮退の線のとおり BLOCKED として報告する。", ""]
+    previous: tuple[str, str] | None = None
+    for index, text in enumerate(feature[ACCEPTANCE]):
+        header = found.get(text)
+        if index and (header is None or header != previous):
+            lines.append("")
+        if header is not None and (index == 0 or header != previous):
+            lines += list(header)
+        lines.append(text)
+        previous = header
+    return lines + ["", "（中間表現の機能の `acceptance` が挙げた行を、機能の `source` の仕様の原文から、原文のまま写した。）"]
+
+
+def spec_case_rows(rendered: dict[str, bytes]) -> list[tuple[str, int, str, str]]:
+    """重ね合わせた全体の仕様（`spec/`）のテストケースの表の行 (ファイル, 行番号, 番号, 行の原文)。
+
+    **数え方は `check-spec-exit.py` の条件 1（テストケースの番号の重複。`references/spec-exit.md`）と同じ**——`.md` だけ・`.` で始まる場所と形式検査のモデルは見ない・
+    見出しがテストケースの表の表の先頭のセルだけを番号と読む（`case_rows`）。読めないファイルは飛ばす（条件 1 が言う）。"""
+    found = []
+    for rel in sorted(rendered):
+        parts = rel.split("/")
+        if parts[0] != SPEC_DIR or not rel.endswith(".md") or any(part.startswith(".") for part in parts[1:]) or versions.is_formal(rel):
+            continue
+        try:
+            text = rendered[rel].decode("utf-8-sig")
+        except UnicodeDecodeError:
+            continue
+        found += [(rel, number, case, row) for number, case, row in spec_exit.case_rows(text)]
+    return found
+
+
+def coverage_lines(rendered: dict[str, bytes], ir: dict) -> list[str]:
+    """仕様のテストケースの内訳（#1301）——仕様のケース N 件のうち、Red テスト a 件・受入基準 b 件・どちらにも無い c 件。
+
+    **Red テスト**: 中間表現のケースの `ref` が番号と一致する仕様のケース。**受入基準**: 機能の `acceptance` に挙げた行の先頭のセルの番号（Red テストと重なれば Red テストに数える）。
+    **どちらにも無いケースは、番号と出た場所（`ファイル:行`）を全部名指しする**。止めない（0 を返す側の `run` が出すだけ）。"""
+    rows = spec_case_rows(rendered)
+    cases: dict[str, tuple[str, int]] = {}
+    by_row: dict[str, set[str]] = {}
+    for rel, line, number, text in rows:
+        cases.setdefault(number, (rel, line))
+        by_row.setdefault(text, set()).add(number)
+    red = {unicodedata.normalize("NFKC", case["ref"]).strip() for feature in features_of(ir) for case in feature["cases"]
+           if isinstance(case.get("ref"), str)}
+    accepted: set[str] = set()
+    unnumbered = 0
+    for feature in features_of(ir):
+        for text in feature.get(ACCEPTANCE, []):
+            if text in by_row:
+                accepted |= by_row[text]
+            else:
+                unnumbered += 1
+    in_red = [n for n in cases if n in red]
+    in_acceptance = [n for n in cases if n not in red and n in accepted]
+    neither = [n for n in cases if n not in red and n not in accepted]
+    lines = [f"仕様のテストケース {len(cases)} 件のうち、Red テスト {len(in_red)} 件・受入基準 {len(in_acceptance)} 件・どちらにも無い {len(neither)} 件"]
+    lines += [f"  どちらにも無い: {number}（{cases[number][0]}:{cases[number][1]}）" for number in neither]
+    if neither:
+        lines.append("  ——どちらにも無いケースは、Red テストにも Issue の受入基準にも現れず、開発に渡らない。"
+                     "Red テストにするなら、そのケースの `ref` に番号を書く。Red テストにできないなら、機能の `acceptance` に行を原文のまま並べる"
+                     "（`references/spec-ir.md` の「Red テストにしない受入基準」）")
+    if unnumbered:
+        lines.append(f"  番号の無い受入基準の行 {unnumbered} 件（テストケースの表の行でないので、上の数に入らない）")
+    return lines
 
 
 def references(change: Change, loaded: Loaded) -> list[str]:
@@ -3426,6 +3557,9 @@ def run(repo: Path, args, writing: bool) -> int:
             print(f"{OUT_DIR}/ が古い（{len(problems)} 件）。作り直してから Red の状態を見る", file=sys.stderr)
             return 1
         return red_check(repo, loaded, changes, before, args.in_progress)
+    for line in loaded.coverage:
+        # 仕様のテストケースの内訳（#1301）——止めずに知らせる
+        print(line)
     groups, problems = group_changes(changes, args.bundle)
     if problems:
         # 引数の誤り（2）——まとめ方は中間表現ではなく引数が決める（#876）

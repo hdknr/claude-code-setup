@@ -286,7 +286,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("全角を半角にそろえない", CELL, 'stripped[1:].split("|", 1)[0].strip().strip("`*_ ")', "全角の英数字とハイフンを半角にそろえて数える"),
     ("数字を要らない形にする", " and any(ch.isdigit() for ch in cell)", "", "数字の無い名前は番号に数えない"),
     ("セルの一部だけ番号に当たれば数える", "CASE_NUMBER_RE.fullmatch(cell)", "CASE_NUMBER_RE.match(cell)", "番号の後ろに字が続くセルは番号に数えない"),
-    ("大文字小文字をそろえる", "found.append((number, cell))", "found.append((number, cell.lower()))", "大文字小文字の違う番号は別の番号"),
+    ("大文字小文字をそろえる", "found.append((number, cell, stripped))", "found.append((number, cell.lower(), stripped))", "大文字小文字の違う番号は別の番号"),
     ("コードブロックの中も数える", "        if fence is not None:\n", "        if False:\n", "コードブロックの中は数えない"),
     ("チルダのコードブロックを開かない", "FENCE = re.compile(r\"^ {0,3}(`{3,}|~{3,})\")", "FENCE = re.compile(r\"^ {0,3}(`{3,})\")",
      "チルダのコードブロックの中も数えない"),
