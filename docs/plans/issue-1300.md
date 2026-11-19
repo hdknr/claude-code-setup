@@ -77,7 +77,8 @@ Issue 本文（外部入力）から読んだ要件: 項目の型に `{"type": "
 経路（不変条件 × 破りうる経路）: 入力の入口は中間表現（`check_ir`）の項目の定義（入力・出力）と、ケースの `input`・`expected`・`setup`・`after` の値だけ。
 生成の入口は `scaffold.py` の書く生成・`--dry-run`・`--check`・`--red-check`・`--upto`（前の版の時点）・v2 以降の差分（`behavior`・`case_changed`）・`--bundle`・性能テスト（入出力のケースの入力だけを使う）。
 どれも `check_ir`・`red_test`・`behavior`・`openapi`・`types_py` を通る。
-未証明: 実際の実装の言語・フレームワークとの組み合わせ（生成物は Python の `unittest` だけ）。OpenAPI の schema を実際の OpenAPI の検証器に通すことはしていない（schema の形はテストが文字列で見る）。
+未証明: 実際の実装の言語・フレームワークとの組み合わせ（生成物は Python の `unittest` だけ）。
+（落とした主張: 「OpenAPI の schema を OpenAPI の検証器に通した」——通していない。受入基準でなく、schema の形はテストが文字列で見る。PR コメントに名指しで残す。）
 
 ## 既知の限界・決着済みの論点
 
@@ -87,12 +88,30 @@ Issue 本文（外部入力）から読んだ要件: 項目の型に `{"type": "
 | `unordered` を OpenAPI に出すか | 出さない | schema に表せない（`uniqueItems` は重なりを禁じる別の意味）。Red テストだけが見る |
 | v2 で配列の項目の `nullable`・`integer` から `number` の広げを変化に数えるか | 数える（保守的） | 中の違いを項目ごとに見分けると、決まりが大きくなる。数えても追加のケースが回帰でなく変更になるだけ |
 | 入力の配列の `unordered` | 何も変えない | Red テストは入力を書いた順のまま渡す。書けるが意味を持たない |
-| TypedDict の名前の衝突（`a_b` と `a__b`） | 扱わない | 項目名の Pascal 化が重なる形はまれ（まれな書き方） |
+| TypedDict の名前の衝突（`a_b` と `a__b`・入口の入力の項目 `output` と入口 `foo_input` の出力） | 扱わない | 項目名の Pascal 化が重なる形はまれ。配列の要素と項目 `<名前>_item` の衝突は、要素の接尾辞を `_Item`（Pascal 化で作れない形）にして消した（1 パス目の指摘） |
+
+## 採否の表（1 パス目）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| code-review 1・Verifier R1: 束ねた配列・オブジェクトを `dict(actual)` の浅い写しで持つので、実装が返した配列を後で書き換えると `$ref` が書き換わった値と比べて通る | 示せる（文書の例の実装の tags を同じ list で返す形で緑になった） | A3 | 直す（composite の機能は `copy.deepcopy`。書かない機能は `dict` のまま——バイトを変えない。試料 2・変異 4） |
+| code-review 3・4・5 / Verifier R2: `check-duplicate-counts`・`check-bold-flanking`・`check-plan-counts` が赤 | 示せる（check-all） | 無し（周を閉じる条件の CI） | 直す |
+| Verifier R3: `$any` の array が足りない項目を落とす試料が無い（`==` を `<=` にする変異が素通り） | 示せる | A3（試料の判別力） | 直す（試料・変異） |
+| Verifier R4・code-review 6: TypedDict の名前が `notes`（要素）と `notes_item` で衝突する | 示せる（`ListNotesOutputNotesItem` が 2 度） | A1（types.py に反映） | 直す（要素の接尾辞を `_Item`）。残る衝突の形（`a_b` と `a__b`・入口をまたぐ形）は残課題 |
+| Verifier 分類: OpenAPI 検証器に通していないのは未証明でなく道具の欠け | 示せる | 無し（受入基準でない付随の主張） | 主張を落とす（上の「未証明」の括弧に書いた） |
+| code-review 2: `$ref` の指す項目の定義が壊れていると `shape_of` が例外（KeyError）になる | 示せる（合成の IR。定義の誤りと `$ref` が重なる形） | 無し | 残課題（記録だけ。想定外の例外は入口が 2 にする。まれな書き方） |
+| code-review 7: 性能テストが入力の配列を使い回すので、引数を破壊する実装は後の繰り返しで別の入力を見る | 示せる（文言上の形） | 無し（性能テストは受入基準でない） | 残課題（記録だけ。引数を書き換える実装はまれ） |
 
 ## 周の記録
 
-（関門の通過とともに書く）
+- 周の記録（再開点）: 1 パス目（HEAD 9d3bbf2c に Verifier・/code-review）まで通し、指摘対応をコミット済み（6f2d909f）。2 パス目はこれから。
+- 外部レビュー: 該当なし（`.claude/dev-loop.md` に宣言が無い）。
+- 割り目: 割らない（cruise の周）。
+
+- この周の起票: 0 件（手順 8 の起票は、親が立てる確認の Issue を除いて無い）
 
 ```dev-loop-gates
 周の base: 6a83e5688c85597d080b62fd30f816984ebdfbe8
+関門: Verifier 1 9d3bbf2cf74cdc33a1849db17db6e2998731389d 反証=4
+関門: /code-review 1 9d3bbf2cf74cdc33a1849db17db6e2998731389d 指摘=7
 ```
