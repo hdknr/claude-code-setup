@@ -52,7 +52,8 @@ dev-loop の原則に、テストを緑にするための skip・sleep・リト�
 - `plugins/dev-loop/skills/cruise/SKILL.md` — 6 の「渡す」に 1 項と版の 2 行
 - `scripts/test-worktree-scripts.py` — 委譲文と原則が新しい規定を持つことの静的な検査
 - `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書く）
-- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `plugins/dev-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
 - `docs/plans/issue-1193.md` — この計画ファイル
 
 触らない:
