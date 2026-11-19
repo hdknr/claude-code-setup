@@ -16,8 +16,8 @@ description: >
 
 # cruise スキル
 
-<!-- skill-version: 2.13.0 -->
-> **このスキルの版: 2.13.0**（プラグイン `dev-loop`）。
+<!-- skill-version: 2.14.0 -->
+> **このスキルの版: 2.14.0**（プラグイン `dev-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update dev-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -594,6 +594,8 @@ cruise の状態は会話の外——台帳・各周の計画ファイル・GitH
 消すか（未コミットの変更を捨てるか）は利用者が決める。**残っているリモートのブランチの本数と、その PR の状態ごとの内訳も載せる**——
 メインの作業ツリーで `python3 <このスキルの base ディレクトリ>/scripts/cleanup-cycle.py remotes` の 1 行を写す（数えるだけで、リモートのブランチ・PR は消さない。
 7 なら数えられなかったことと理由を書く）。
+**子が報告した「不安定なテスト」（回し直しで緑になった失敗。PR コメントの残課題の見出し。`references/parallel.md` の「負荷による偽の失敗」。#1193）があれば、テストごとに渡す**——
+削除・隔離は利用者が決める（`../dev-loop/references/flaky-tests.md`）。親は消さない・skip しない。
 **周の途中で足した行**（`show` の「周の途中で足した行のうち済んでいないもの」）**が残っていれば、出所ごとに渡す**——番号・題・状態（`todo` なら「回していない」）を並べ、
 「なし」でなければ「済んだ」と報告しない（`../dev-loop/references/found-lines.md`）。**台帳から取り下げない・Issue を閉じない**——回すか閉じるかは利用者が決める。
 **1 で名指しされた Issue（親 Issue にあって台帳に無い）が残っていれば、それも渡す**——台帳がすべて済んでも、親 Issue の一覧は済んでいない。

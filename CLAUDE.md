@@ -103,6 +103,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
       （`check-qa-csv.py` の `REFLECTED`——`暫定反映` を含む）でない行を数える——**資料に載る行とは別の定義**（#325）。
       **仕様のディレクトリの中の内部の表（`qa-dev.csv`）も数え、未決定の印の走査からは外す**（#339）。
       **`--docs` で画面の関門（`screen-gate.py`）も入れる**（#1097）。テストは
+      **仕様のテストケースの番号（表の行の先頭のセル）が重ねた全体の中で重複していたら 1**（#1297。番号の形と読まないものは `references/spec-exit.md` の「テストケースの番号の重複」を正とする）。テストは
       `scripts/test-check-spec-exit.py`・`scripts/test-screen-gate.py`）
     - `scripts/screen-gate.py` - **画面の表の関門**（#1097）——画面の表（`requirements/screens/`。任意）があれば、その未決定の印と screen-spec の検査（`check-screens.py`。**子のプロセスで呼び、読み込まない**）の結果を入れ、
       **画面の表があるのに screen-spec が見つからなければ 4 で止まる**。画面の表が無ければ何も出さずに 0（spec-loop は screen-spec に依存しない）。
