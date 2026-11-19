@@ -15,7 +15,7 @@ gh issue list --repo <開発のリポジトリ> --state all --limit 1000 --json 
 読むのは 2 種類の Issue である:
 
 - **spec-loop から渡した Issue**（本文の先頭が `<!-- spec-loop-handoff: v`）——受入基準の表の `Q&A` の列と `## Q&A の回答` の No が、
-  その Issue が根拠にした Q&A である。`## 仕様` の `- 仮回答: ` の行と表の `（暫定）` が仮回答の印（`--provisional` で作った本文だけ。
+  その Issue が根拠にした Q&A である（`## 受入基準` は `### Red テストにしない受入基準` の手前まで読む——小見出しの下は仕様の行の原文で、Red テストのケースではない。#1318）。`## 仕様` の `- 仮回答: ` の行と表の `（暫定）` が仮回答の印（`--provisional` で作った本文だけ。
   形の正は `references/handoff-issue.md` の「仮回答の印」で、印の定数は `scaffold.py` のものを読む——写さない）。
   **まとめた本文**（2 行目が `<!-- spec-loop-bundle: … -->`。#876）は、機能の印の行で機能ごとの部分に分け、部分ごとに同じく読む
   （部分は機能 1 件の本文と同じ節を持つ。`references/handoff-issue.md` の「まとめた本文」）。
@@ -155,6 +155,14 @@ def parts(body: str) -> list[str]:
     return [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])] or [body]
 
 
+def red_test_lines(body: str) -> list[str]:
+    """`## 受入基準` の節の、Red テストのケースの表の行（`### Red テストにしない受入基準` の手前まで。#1318）。
+
+    小見出しの下は仕様の行の原文（表の行なら先頭のセルを等幅にした行もある）で、Red テストのケースではない。`acceptance` を書かない本文には小見出しが無く、節の全部を読む。"""
+    lines = section(body, scaffold.SECTIONS[1]).splitlines()
+    return lines[:lines.index(scaffold.ACCEPTANCE_HEADING)] if scaffold.ACCEPTANCE_HEADING in lines else lines
+
+
 class Handoff:
     """spec-loop から渡した Issue の、機能 1 件分（まとめた本文なら部分 1 つ）の Q&A への依存。"""
 
@@ -165,7 +173,7 @@ class Handoff:
         self.feature = found.group(1) if found else "?"
         self.cases: dict[str, list[str]] = {}  # No → それを根拠にするケース
         self.held: set[str] = set()  # 仮回答の印を付けた No
-        for line in section(body, scaffold.SECTIONS[1]).splitlines():
+        for line in red_test_lines(body):
             row = ROW.match(line)
             if not row:
                 continue
