@@ -6,7 +6,7 @@
 読み込んだ dev-loop は 2.13.0（`SKILL.md` 1931 行を全部読んだ）。割り目: 割らない（cruise の周）。
 
 直す線: `既定`（出所: cruise の確かめた線）。
-版の上げ方: `spec-loop` を **minor**（検査の能力追加）。着手時の main は spec-loop 0.115.0 → 0.116.0。マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md`）。
+版の上げ方: `spec-loop` を **minor**（検査の能力追加）。着手時の main は spec-loop 0.115.0 → 0.116.0。main が先に 0.116.0（#1247）へ進んだので取り込み、0.117.0 に上げ直した（2026-11-19）。マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から minor で上げ直す（cruise の `references/parallel.md`）。
 並行する周 #1298 が spec-loop の同じファイル（`spec-exit.md`・版の行）を触りうる——取り込みで衝突したら版の行と生成ブロックのほかは塊ごとに解く。
 重い検査（`check-all.py`）は `run-serial.py` 越し。
 
@@ -98,4 +98,18 @@ Issue 本文（外部入力）から読んだ要件: 同じ版を重ねた全体
 
 ```dev-loop-gates
 周の base: edb10f11ff98dc45ac6dbf6a7df4acf17cd8aa6a
+関門: Verifier 1 b3e51ad8e9016b4eaf32fa24a676453e7fc8a45c 反証=4
+関門: /code-review 1 b3e51ad8e9016b4eaf32fa24a676453e7fc8a45c 指摘=4
+関門: Verifier 2 8036c4ad81684619026aa4818b7cca4cd65fd8ca 反証=4
+関門: /code-review 2 8036c4ad81684619026aa4818b7cca4cd65fd8ca 指摘=6
+関門: 狭いパス 8036c4ad81684619026aa4818b7cca4cd65fd8ca b912b7d13f6d9ac53b3e05871531c4d5538309ca 反証=3
+受入基準: A1 満たす
+受入基準: A2 満たす
+受入基準: A3 満たす
+受入基準: A4 満たす
+受入基準: A5 満たす
+受入基準: A6 満たす
+マージの反映: ドキュメントとプラグインの配布
 ```
+
+- この周の起票: 0 件（不在の周。確認の Issue は親が立てる。周の途中の課題は PR コメントの記録だけ・残課題）
