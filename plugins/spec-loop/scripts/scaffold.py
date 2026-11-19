@@ -920,8 +920,7 @@ def check_seed(where: str, item) -> list[str]:
             for key, value in values.items():
                 if not NAME.fullmatch(key):
                     problems.append(f"{where}.values: 項目の名前の形に反する（英小文字で始まり英小文字・数字・_）: {key!r}")
-                if not (value is None or isinstance(value, (str, bool, int))
-                        or (isinstance(value, float) and math.isfinite(value))):
+                if not (value is None or isinstance(value, (str, bool)) or value_fits("number", value)):
                     problems.append(f"{where}.values.{key}: 文字列・数・真偽・null のどれでもない（{json.dumps(value, ensure_ascii=False)}）")
     return problems
 
