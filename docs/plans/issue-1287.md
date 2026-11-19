@@ -94,7 +94,7 @@ Issue 本文（外部入力）から読んだ要件: 提案 1（未登録なら�
 - 割り目（手順 4）: 割らない（cruise の周）。
 - 1 パス目: Verifier（opus・`dev-loop:dev-loop-verifier`。HEAD `05e4ee75`。反証 1（R1）・軽微 4（O1〜O4）。verifier.md 185 行を読んだと報告——`wc -l` と一致。SubagentHandback は親に届かず、トランスクリプトから読んだ）と
   `/code-review`（high。ブランチ `issue/1287-long-token-one-command` に当てた。指摘 7 件——important 2・nit 5。最初に対象を渡し損ねて main の先端のコミットを見た回は破棄して回し直した）。
-  1 パス目の指摘対応の起点: `05e4ee75b2bf2cbe18a1af3bfd3bf4da7d52cda4`（先に当てた Verifier に渡した HEAD。コミット済み）。
+  1 パス目の指摘対応の起点: `05e4ee752d9d2053649b57f7c99f4f8c1288ddb2`（先に当てた Verifier に渡した HEAD。コミット済み）。
 - 交絡を潰した手順: 実験なし（偽の `security`・`claude` による試料と変異のみ。本物のキーチェーンは走らせていない）。
 
 ## 既知の限界・決着済みの論点
