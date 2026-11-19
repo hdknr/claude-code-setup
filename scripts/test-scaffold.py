@@ -2294,6 +2294,10 @@ def stage_written(repo: Path) -> str | None:
                    "        self.function_of(RESET)()\n        self.addCleanup(self.function_of(RESET))", "    def test_f_004_c1(self):\n        self.check("):
         if needle not in test:
             return f"{STAGE_TEST} に {needle!r} が無い"
+    # 動的な比べ方（#1299）を書かない前提・後の状態の機能の Red テストに、動的な道具・定数を足さない
+    for needle in ("\nANY = ", "\nREF = ", "\nNULLABLE = ", "def dynamic", "def reason"):
+        if needle in test:
+            return f"動的な比べ方を書かない {STAGE_TEST} に {needle!r} がある"
     # トレースのケースを持たない機能には、順の強制は要らない
     if "Schedule" in test or "import threading" in test or "TRACE_STEP_WAIT" in test:
         return f"トレースのケースを持たない {STAGE_TEST} に順の強制がある"
@@ -2534,6 +2538,48 @@ def dyn_as_written(repo: Path) -> str | None:
     test = (repo / "scaffold" / "tests" / "test_f_003.py").read_text(encoding="utf-8")
     needle = "    def test_f_003_c1(self):\n        self.dynamic({'kind': 'a', 'note': 'x'}, {'count': 1, 'label': 'x', 'score': 1}, [], [], 'first')"
     return None if needle in test else f"test_f_003.py に {needle!r} が無い"
+
+
+# 返した辞書を実装が持ち続け、後の呼び出しがそれを書き換える実装——`as` で束ねた結果を写さないと、`$ref` が書き換わった値と比べて通る
+DYN_ALIAS_IMPL = GOOD_IMPL + '''
+
+_documents, _numbers = {}, __import__("itertools").count(1)
+
+
+def reset_state():
+    _documents.clear()
+
+
+def create_document(title):
+    if not title:
+        return {"error": "EMPTY_TITLE"}
+    out = {"urn": f"urn:doc:{next(_numbers)}", "version": 1}
+    _documents[title] = out
+    return out
+
+
+def get_document(title):
+    if title not in _documents:
+        return {"error": "NOT_FOUND"}
+    _documents[title]["version"] += 1
+    return {"urn": _documents[title]["urn"], "title": title, "version": _documents[title]["version"]}
+'''
+# null を許す項目の `$ref`——指した値が null でないのに null を返す実装は落ちる
+NULLABLE_REF_IMPL = NULLABLE_IMPL + "\n\ndef reset_state():\n    pass\n"
+
+
+def dyn_nullable_ref(ir: dict) -> None:
+    with_nullable(ir)
+    case = f3(ir)["cases"][1]
+    case["setup"] = [{"operation": "label_of", "input": {"note": "x", "kind": None},
+                      "expected": {"label": "x", "score": 1, "count": 1}, "as": "first"}]
+    case["expected"] = {"label": {"$ref": "first.label"}, "score": None, "count": 0}
+
+
+def dyn_setup_error(ir: dict) -> None:
+    """動的なケースの `setup` に失敗を期待する呼び出しを書く（失敗の形は項目を持たない）。"""
+    dyn_after_only(ir)
+    stage_case(ir, "F-010-C2")["setup"] = [{"operation": "create_document", "input": {"title": ""}, "error": "EMPTY_TITLE"}]
 
 
 def dyn_nullable(ir: dict) -> None:
@@ -2814,6 +2860,13 @@ CASES: list[Case] = [
          post=stage_red(1, "label が 5（期待 型 string）")),
     Case("動的: 版が真偽値の実装で $ref が落ちる（等しいが型が違う）", 0, "作った", ir=dyn_ir(), impl=DYN_BOOL_STORED_IMPL,
          post=stage_red(2, "version が True（期待 created.version と同じ値（1））")),
+    Case("動的: 束ねた結果は写す（実装が返した辞書を後で書き換えても $ref は返った時点の値と比べる）", 0, "作った", ir=dyn_ir(), impl=DYN_ALIAS_IMPL,
+         post=stage_red(2, "version が 2（期待 created.version と同じ値（1））")),
+    Case("動的: $ref の指した値が null でないのに null を返す実装で失敗", 0, "作った", ir=edit(dyn_nullable_ref), impl=NULLABLE_REF_IMPL,
+         post=stage_red(1, "label が None（期待 first.label と同じ値（'x'））")),
+    Case("動的: 動的なケースの前提に失敗を期待する呼び出しを書ける", 0, "作った", ir=dyn_ir(dyn_setup_error), impl=DYN_IMPL, post=expect_green),
+    Case("動的: $ref が本体の自分自身を指す", 1, "F-009-C2.expected.urn.$ref: `created` は、この呼び出しより前に `as` で束ねた名前でない",
+         ir=dyn_ir(lambda ir: stage_case(ir, "F-009-C2")["expected"].update(urn={"$ref": "created.urn"}))),
     Case("動的: seed を書いた動的なケースは、前提の seed を呼ぶ実装で緑", 0, "作った", ir=dyn_ir(dyn_seeded), impl=DYN_SEED_IMPL, post=expect_green),
     Case("動的: 後の呼び出しだけが動的なケースも動的に比べる", 0, "作った", ir=dyn_ir(dyn_after_only), impl=DYN_IMPL, post=expect_green),
     Case("動的: as だけを書いたケースも動的に作る", 0, "作った", ir=edit(dyn_as_only), impl=NULLABLE_IMPL, post=dyn_as_written),
@@ -3935,8 +3988,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("出力の項目の数を見ない", '        "        if not isinstance(actual, dict) or actual.keys() != expected.keys():",',
      '        "        if not isinstance(actual, dict):",', "動的: 期待に無い項目を返す実装で失敗"),
     ("合わなくても失敗にしない", '        "        if problem is not None:",', '        "        if False:",', "動的: 型の違う値を返す実装で失敗"),
-    ("後の呼び出しの as を束ねない", '        "            env[call[AS]] = actual",', '        "            pass",', "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
-    ("本体の as を束ねない", '        "            env[bind] = actual",', '        "            pass",', "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
+    ("後の呼び出しの as を束ねない", '        "            env[call[AS]] = dict(actual)",', '        "            pass",', "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
+    ("本体の as を束ねない", '        "            env[bind] = dict(actual)",', '        "            pass",', "動的: 文書の実装の例で緑（URN は呼ぶたびに違う）"),
     ("前提・後の状態が無くても状態を空に戻す", '        "        if setup or after:",', '        "        if True:",',
      "動的: 状態を空に戻す関数は前提・後の状態を持つケースだけが求める"),
     ("前提・後の状態があっても状態を空に戻さない", '        "        if setup or after:",', '        "        if False:",',
@@ -3947,6 +4000,21 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '        "        for call in []:",\n        "            self.dynamic_stage(call, env)",', "動的: 前に返った値と違う値を返す実装で失敗"),
     ("動的なケースの本体を比べない", '        "        self.agree(f\\"{OPERATION}({given!r})\\", OUTPUT_TYPES, NULLABLE, actual, expected, env)",',
      '        "        pass",', "動的: 型の違う値を返す実装で失敗"),
+    ("束ねる結果を写さない（後の呼び出し）", '        "            env[call[AS]] = dict(actual)",', '        "            env[call[AS]] = actual",',
+     "動的: 束ねた結果は写す（実装が返した辞書を後で書き換えても $ref は返った時点の値と比べる）"),
+    ("束ねる結果を写さない（本体）", '        "            env[bind] = dict(actual)",', '        "            env[bind] = actual",',
+     "動的: 束ねた結果は写す（実装が返した辞書を後で書き換えても $ref は返った時点の値と比べる）"),
+    ("$ref の指した値が null でないのに null を通す", '        "                good = got == env[bound][item] and (nullish or type_fits(types.get(name), got))",',
+     '        "                good = nullish or (got == env[bound][item] and type_fits(types.get(name), got))",',
+     "動的: $ref の指した値が null でないのに null を返す実装で失敗"),
+    ("動的なケースの前提の失敗を期待しない",
+     '        "        expected = call[\\"expected\\"] if \\"expected\\" in call else {\\"error\\": call[\\"error\\"]}",\n        "        self.agree(f\\"{call[\'operation\']}',
+     '        "        expected = call.get(\\"expected\\", {})",\n        "        self.agree(f\\"{call[\'operation\']}',
+     "動的: 動的なケースの前提に失敗を期待する呼び出しを書ける"),
+    ("本体の as を、本体の期待を見る前に束ねる", '                if "input" in case:\n                    problems += check_values(f"{at}.input", case["input"], fields_in)\n',
+     '                if isinstance(case.get(AS), str) and "expected" in case:\n                    bound.setdefault(case[AS], fields_out)\n'
+     '                if "input" in case:\n                    problems += check_values(f"{at}.input", case["input"], fields_in)\n',
+     "動的: $ref が本体の自分自身を指す"),
     ("動的なケースの seed を呼ばない", '        "            self.function_of(SEED)(call[SEED], **call[\\"values\\"])",', '        "            pass",',
      "動的: seed を書いた動的なケースは、前提の seed を呼ぶ実装で緑"),
     # #876: まとめた本文（--bundle）と依存の連鎖（depends）
