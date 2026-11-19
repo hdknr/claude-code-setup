@@ -109,6 +109,12 @@ Red テストは `reset_state()` → `setup` → 本体の呼び出し → `afte
 **書かないケースだけの機能の Red テスト・本文・指紋は 1 バイトも変わらない**（機能の指紋の式は変えない）。**呼び出しの入口・入力・期待が中間表現に合わない・空の配列・`seed` の形に反する・
 `setup`・`after` を書いたケースがあるのに入口の名前が `reset_state`・`seed` を書いたのに入口の名前か入力の項目が `seed` なら 1**（決まりの正は `references/spec-ir.md` の「前提と後の状態」）。
 
+**実行ごとに変わる出力（`$any`・`$ref`・`as`。#1299）**: 入出力のケースの `expected`（と `setup`・`after` の呼び出しの `expected`）の項目の値に、等しさの代わりに
+`{"$any": <型>}`（型だけを見る）か `{"$ref": "<名前>.<項目>"}`（呼び出しかケースの本体の `as` で束ねた前の結果の項目と同じ値）を書ける。
+Red テストは `self.dynamic(…)` で、`setup` → 本体 → `after` の順に呼んで型・同一性で比べる（前提・後の状態があるときだけ `reset_state()` を呼ぶ）。
+**`$any` の型・`$ref` の指す項目の型が書く項目の型と違う・`$ref` が束ねていない名前・後ろの呼び出し・自分自身を指す・`as` が `error` の呼び出し・名前の重なり・
+`input`・`seed`・トレースのケースに書く、なら 1。** 書かないケースだけの機能の Red テスト・本文・指紋は 1 バイトも変わらない（決まりの正は `references/spec-ir.md` の「実行ごとに変わる出力」）。
+
 **仕様の基準コミット（#874）**: 本文の `## 仕様` に、正本リポジトリで本文を生成した時点の HEAD とそのコミットの日時を
 `- 基準コミット: ` の行で書く——dev-loop が周の頭で、その後の変化が仕様の前提（既存のシステム）を崩していないかを点検する
 （dev-loop の `references/spec-gap.md`）。**git の作業ツリーの根でない・コミットが無い・git を起動できないなら止めずに**
@@ -411,6 +417,13 @@ RESET = "reset_state"
 SETUP = "setup"
 AFTER = "after"
 SEED = "seed"
+# 実行ごとに変わる出力の比べ方（#1299。`references/spec-ir.md` の「実行ごとに変わる出力」が原本）。
+# 期待の項目の値に `{"$any": <型>}`（型だけを見る）か `{"$ref": "<束ねた名前>.<出力の項目>"}`（前に返った値と同じ）を書く。
+# 呼び出し（と、ケースの本体）に `as` を書くと、その結果を名前で束ねて後ろの `$ref` が指せる
+ANY = "$any"
+REF = "$ref"
+AS = "as"
+REF_FORM = re.compile(r"([a-z][a-z0-9_]*)\.([a-z][a-z0-9_]*)")
 # `spec/formal/<対象>/` の対象の名前（`references/tree.md` の「形式検査のモデル」）
 FORMAL_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 FORMAL_RECORD = "README.md"
@@ -553,8 +566,35 @@ def check_fields(where: str, fields, at_least_one: bool, output: bool) -> list[s
     return problems
 
 
-def check_values(where: str, values, fields: dict) -> list[str]:
-    """`values` が `fields` の項目をちょうど全部、その型と enum で持つか（`nullable` の項目の `null` は型も enum も見ない）。"""
+def check_dynamic(where: str, value: dict, field: dict, bound: dict[str, dict]) -> list[str]:
+    """期待の項目の値 `{"$any": <型>}`・`{"$ref": "<名前>.<項目>"}`（#1299）。`bound` は、この呼び出しより前に `as` で束ねた {名前: 出力の項目}。"""
+    if len(value) != 1:
+        return [f"{where}: `{ANY}` か `{REF}` のどちらか 1 つだけを書く（{json.dumps(value, ensure_ascii=False)}）"]
+    if ANY in value:
+        if value[ANY] not in TYPES:
+            return [f"{where}.{ANY}: 型 `{value[ANY]}` は決まりに無い（{' / '.join(TYPES)}）"]
+        if value[ANY] != field["type"]:
+            return [f"{where}.{ANY}: 項目の型 {field['type']} と違う（{value[ANY]}）"]
+        return []
+    found = REF_FORM.fullmatch(value[REF]) if isinstance(value[REF], str) else None
+    if not found:
+        return [f"{where}.{REF}: `<束ねた名前>.<出力の項目>` の形でない（{json.dumps(value[REF], ensure_ascii=False)}）"]
+    name, item = found.groups()
+    if name not in bound:
+        return [f"{where}.{REF}: `{name}` は、この呼び出しより前に `{AS}` で束ねた名前でない（後ろの呼び出し・自分自身・書いていない名前は指せない）"]
+    target = bound[name].get(item)
+    if not isinstance(target, dict) or target.get("type") not in TYPES:
+        return [f"{where}.{REF}: `{name}` の入口の出力に項目 `{item}` が無い"]
+    if target["type"] != field["type"]:
+        return [f"{where}.{REF}: 指す項目 {name}.{item} の型 {target['type']} が、項目の型 {field['type']} と違う"]
+    return []
+
+
+def check_values(where: str, values, fields: dict, bound: dict[str, dict] | None = None) -> list[str]:
+    """`values` が `fields` の項目をちょうど全部、その型と enum で持つか（`nullable` の項目の `null` は型も enum も見ない）。
+
+    `bound` を渡すと（期待だけ。#1299）、項目の値に `$any`・`$ref` を書ける——型・`enum` の代わりに `check_dynamic` が見る。
+    """
     if not isinstance(values, dict):
         return [f"{where}: オブジェクトでない"]
     problems = []
@@ -566,6 +606,9 @@ def check_values(where: str, values, fields: dict) -> list[str]:
         field, value = fields[name], values[name]
         if not isinstance(field, dict) or field.get("type") not in TYPES:
             continue  # 項目の定義の誤りは別に出ている
+        if bound is not None and is_dynamic_value(value):
+            problems += check_dynamic(f"{where}.{name}", value, field, bound)
+            continue
         if value is None and nullable(field):
             continue  # null は enum に書かない（enum の値は型に合うものだけ）
         if not value_fits(field["type"], value):
@@ -573,6 +616,24 @@ def check_values(where: str, values, fields: dict) -> list[str]:
         elif isinstance(field.get("enum"), list) and value not in field["enum"]:
             problems.append(f"{where}.{name}: enum に無い値（{json.dumps(value, ensure_ascii=False)}）")
     return problems
+
+
+def is_dynamic_value(value) -> bool:
+    """期待の項目の値が、等しさでなく型・同一性で比べるもの（`$any`・`$ref` のどちらかを持つオブジェクト）か。"""
+    return isinstance(value, dict) and (ANY in value or REF in value)
+
+
+def check_binding(where: str, call: dict, fields_out: dict, bound: dict[str, dict]) -> list[str]:
+    """呼び出し（かケースの本体）の `as`——結果を束ねる名前（#1299）。期待を持つ呼び出しだけが束ねられ、名前は 1 つのケースの中で重ならない。"""
+    name = call[AS]
+    if not isinstance(name, str) or not NAME.fullmatch(name):
+        return [f"{where}.{AS}: 名前の形に反する（英小文字で始まり英小文字・数字・_）: {name!r}"]
+    if "expected" not in call:
+        return [f"{where}.{AS}: `expected` の無い呼び出しの結果は束ねられない（失敗の形は項目を持たない）"]
+    if name in bound:
+        return [f"{where}.{AS}: 名前 `{name}` が、同じケースの前の `{AS}` と重なっている"]
+    bound[name] = fields_out
+    return []
 
 
 def check_qa_refs(where: str, refs, answered: dict[str, dict[str, str]], provisional: bool = False) -> list[str]:
@@ -821,7 +882,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             if trace_case:
                 found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref"})
             else:
-                found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa", "ref", SETUP, AFTER})
+                found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa", "ref", SETUP, AFTER, AS})
             if found:
                 problems += found
                 if not isinstance(case, dict):
@@ -840,20 +901,27 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
                 traced = True
                 problems += check_trace(f"{at}.{TRACE}", case[TRACE], ops, whole)
             else:
+                # 呼ぶ順（`setup` → 本体 → `after`）に、`as` で束ねた名前を足していく（`$ref` は前の呼び出しだけを指せる。#1299）
+                bound: dict[str, dict] = {}
                 for key in (SETUP, AFTER):
                     if key in case:
                         staged = True
-                        problems += check_stage(f"{at}.{key}", case[key], ops)
                         seeded = seeded or (isinstance(case[key], list)
                                             and any(isinstance(item, dict) and SEED in item for item in case[key]))
+                if SETUP in case:
+                    problems += check_stage(f"{at}.{SETUP}", case[SETUP], ops, bound)
                 if "input" in case:
                     problems += check_values(f"{at}.input", case["input"], fields_in)
                 if ("expected" in case) == ("error" in case):
                     problems.append(f"{at}: expected と error のちょうど片方だけを書く")
                 elif "expected" in case:
-                    problems += check_values(f"{at}.expected", case["expected"], fields_out)
+                    problems += check_values(f"{at}.expected", case["expected"], fields_out, bound)
                 elif case["error"] not in errors:
                     problems.append(f"{at}.error: operation.errors に無い: {case['error']!r}")
+                if AS in case:
+                    problems += check_binding(at, case, fields_out, bound)
+                if AFTER in case:
+                    problems += check_stage(f"{at}.{AFTER}", case[AFTER], ops, bound)
             if "qa" in case:
                 problems += check_qa_refs(f"{at}.qa", case["qa"], answered, provisional)
             if "ref" in case:
@@ -893,9 +961,14 @@ def op_errors(op: dict) -> list:
     return errors if isinstance(errors, list) else []
 
 
-def check_call(where: str, call, ops: dict[str, dict], result: bool) -> list[str]:
-    """トレースの 1 つの呼び出し。`result` なら期待（`expected` か `error`）も持つ（`setup`・`after`）。"""
-    problems = keys_problem(where, call, {"operation", "input"}, {"expected", "error"} if result else set())
+def check_call(where: str, call, ops: dict[str, dict], result: bool, bound: dict[str, dict] | None = None) -> list[str]:
+    """トレースの 1 つの呼び出し。`result` なら期待（`expected` か `error`）も持つ（`setup`・`after`）。
+
+    `bound` を渡すのは入出力のケースの `setup`・`after` だけ（#1299）——期待に `$any`・`$ref` を書け、`as` で結果を束ねられる。
+    トレースのケースの呼び出しには書けない（`bound` が無い）。
+    """
+    problems = keys_problem(where, call, {"operation", "input"},
+                            ({"expected", "error"} | ({AS} if bound is not None else set())) if result else set())
     if not isinstance(call, dict):
         return problems
     name = call.get("operation")
@@ -912,9 +985,12 @@ def check_call(where: str, call, ops: dict[str, dict], result: bool) -> list[str
         if ("expected" in call) == ("error" in call):
             problems.append(f"{where}: expected と error のちょうど片方だけを書く")
         elif "expected" in call:
-            problems += check_values(f"{where}.expected", call["expected"], op_fields(op, "output"))
+            problems += check_values(f"{where}.expected", call["expected"], op_fields(op, "output"), bound)
         elif call["error"] not in op_errors(op):
             problems.append(f"{where}.error: 入口 {name} の errors に無い: {call['error']!r}")
+        # 期待の `$ref` を見てから束ねる——自分自身の結果は指せない
+        if AS in call and bound is not None:
+            problems += check_binding(where, call, op_fields(op, "output"), bound)
     return problems
 
 
@@ -939,14 +1015,17 @@ def check_seed(where: str, item) -> list[str]:
     return problems
 
 
-def check_stage(where: str, items, ops: dict[str, dict]) -> list[str]:
-    """入出力のケースの `setup`・`after`——入口の呼び出し（`{"operation", "input", "expected" か "error"}`）か、口 `seed` の呼び出しの配列（1 つ以上）。"""
+def check_stage(where: str, items, ops: dict[str, dict], bound: dict[str, dict]) -> list[str]:
+    """入出力のケースの `setup`・`after`——入口の呼び出し（`{"operation", "input", "expected" か "error", "as"}`）か、口 `seed` の呼び出しの配列（1 つ以上）。
+
+    `bound` は、このケースでここまでに `as` で束ねた {名前: 出力の項目}（#1299。呼び出しの順に足していく）。
+    """
     if not isinstance(items, list) or not items:
         return [f"{where}: 1 つ以上の呼び出しの配列でない"]
     problems = []
     for index, item in enumerate(items):
         at = f"{where}[{index}]"
-        problems += check_seed(at, item) if isinstance(item, dict) and SEED in item else check_call(at, item, ops, True)
+        problems += check_seed(at, item) if isinstance(item, dict) and SEED in item else check_call(at, item, ops, True, bound)
     return problems
 
 
@@ -1815,6 +1894,14 @@ def is_staged(case: dict) -> bool:
     return not is_trace(case) and (SETUP in case or AFTER in case)
 
 
+def is_dynamic(case: dict) -> bool:
+    """期待に `$any`・`$ref` を書くか、結果を `as` で束ねる入出力のケース（#1299。本体も `setup`・`after` の呼び出しも見る）。"""
+    if is_trace(case):
+        return False
+    calls = [case] + [item for key in (SETUP, AFTER) for item in case.get(key, []) if SEED not in item]
+    return any(AS in call or any(is_dynamic_value(v) for v in call.get("expected", {}).values()) for call in calls)
+
+
 def seeds_used(feature: dict) -> bool:
     """機能の入出力のケースが、入口の無い前提を作る口（`seed`）を呼ぶか。"""
     return any(SEED in item for case in feature["cases"] if is_staged(case) for key in (SETUP, AFTER) for item in case.get(key, []))
@@ -1986,6 +2073,62 @@ def staged_methods() -> list[str]:
     ]
 
 
+def dynamic_methods() -> list[str]:
+    """期待に `$any`・`$ref` を書く（結果を `as` で束ねる）入出力のケースがある機能の Red テストのクラスに足すメソッド（#1299）。名前は定数から入れる。"""
+    return [
+        "",
+        "    def reason(self, types, allow, actual, expected, env):",
+        "        # 合わない理由（合えば None）。`$any` は型だけ、`$ref` は束ねた結果の項目と同じ値か、それ以外は等しさと型を見る",
+        "        if not isinstance(actual, dict) or actual.keys() != expected.keys():",
+        "            return f\"{actual!r} を返した（期待の項目は {sorted(expected)!r}）\"",
+        "        for name in sorted(expected):",
+        "            got, want = actual[name], expected[name]",
+        "            nullish = got is None and name in allow",
+        "            if isinstance(want, dict) and ANY in want:",
+        "                good, shown = nullish or type_fits(want[ANY], got), f\"型 {want[ANY]}\"",
+        "            elif isinstance(want, dict):",
+        "                bound, item = want[REF].split(\".\")",
+        "                good = got == env[bound][item] and (nullish or type_fits(types.get(name), got))",
+        "                shown = f\"{want[REF]} と同じ値（{env[bound][item]!r}）\"",
+        "            else:",
+        "                good, shown = got == want and (nullish or type_fits(types.get(name), got)), repr(want)",
+        "            if not good:",
+        "                return f\"{name} が {got!r}（期待 {shown}）\"",
+        "        return None",
+        "",
+        "    def agree(self, label, types, allow, actual, expected, env):",
+        "        problem = self.reason(types, allow, actual, expected, env)",
+        "        if problem is not None:",
+        "            self.fail(f\"{label}: {problem}\")",
+        "",
+        "    def dynamic_stage(self, call, env):",
+        "        if SEED in call:",
+        "            self.function_of(SEED)(call[SEED], **call[\"values\"])",
+        "            return",
+        "        actual = self.function_of(call[\"operation\"])(**call[\"input\"])",
+        "        expected = call[\"expected\"] if \"expected\" in call else {\"error\": call[\"error\"]}",
+        "        self.agree(f\"{call['operation']}({call['input']!r})\", TRACE_TYPES[call[\"operation\"]],",
+        "                   TRACE_NULLABLE[call[\"operation\"]], actual, expected, env)",
+        "        if AS in call:",
+        "            env[call[AS]] = dict(actual)",
+        "",
+        "    def dynamic(self, given, expected, setup, after, bind):",
+        "        # 前提・後の状態があれば状態を空に戻し、`setup` → 本体 → `after` の順に比べる。`as` で束ねた結果は写して env に持ち（実装が返した値を後の呼び出しが書き換えても、`$ref` は返った時点の値と比べる）、`$ref` が指す",
+        "        env = {}",
+        "        if setup or after:",
+        "            self.function_of(RESET)()",
+        "            self.addCleanup(self.function_of(RESET))",
+        "        for call in setup:",
+        "            self.dynamic_stage(call, env)",
+        "        actual = self.call(given)",
+        "        self.agree(f\"{OPERATION}({given!r})\", OUTPUT_TYPES, NULLABLE, actual, expected, env)",
+        "        if bind:",
+        "            env[bind] = dict(actual)",
+        "        for call in after:",
+        "            self.dynamic_stage(call, env)",
+    ]
+
+
 def trace_methods() -> list[str]:
     """トレースのケースを持つ機能の Red テストのクラスに足すメソッド（口の名前は定数から入れる）。"""
     return [
@@ -2051,6 +2194,8 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
     traced = any(is_trace(case) for case in feature["cases"])
     # 前提・後の状態を持つ入出力のケース（#1298）。無い機能の Red テストは、足す前と 1 バイトも変えない
     staged = any(is_staged(case) for case in feature["cases"])
+    # 期待に `$any`・`$ref` を書くケース（#1299）。無い機能の Red テストは、足す前と 1 バイトも変えない
+    dynamic = any(is_dynamic(case) for case in feature["cases"])
     lines = [
         f"# {GENERATED}",
         f"# {feature['id']}: {feature['title']} の Red テスト",
@@ -2060,6 +2205,8 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
            "（references/spec-ir.md の「トレースのケース」）。"] if traced else []),
         *([f"# 前提・後の状態を持つケースは、`{RESET}()` で状態を空にし、`{SETUP}` を順に呼んで本体を呼び、`{AFTER}` を順に呼んで比べる"
            "（references/spec-ir.md の「前提と後の状態」）。"] if staged else []),
+        *([f"# 期待に `{ANY}`・`{REF}` を書いたケースは、等しさの代わりに型・同一性で比べる（references/spec-ir.md の「実行ごとに変わる出力」）。"]
+          if dynamic else []),
         "from __future__ import annotations",
         "",
         "import importlib",
@@ -2069,10 +2216,11 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         f"IMPL_MODULE = {impl_module!r}",
         f"OPERATION = {op['id']!r}",
         f"OUTPUT_TYPES = {literal(output_types(op))}",
-        *([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null else []),
+        *([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null or dynamic else []),
         *([f"TRACE_TYPES = {literal(trace_types(feature, ops))}",
            f"TRACE_NULLABLE = {literal(trace_nullable(feature, ops))}", f"RESET = {RESET!r}"] if traced or staged else []),
         *([f"SEED = {SEED!r}"] if staged else []),
+        *([f"ANY = {ANY!r}", f"REF = {REF!r}", f"AS = {AS!r}"] if dynamic else []),
         *([f"TRACE_STEP_WAIT = {TRACE_STEP_WAIT}", f"TRACE_LIMIT = {TRACE_LIMIT}"] if traced else []),
         "",
         "",
@@ -2110,6 +2258,7 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         "                            f\"{name}: 型が {OUTPUT_TYPES[name]} でない（{value!r}）\")",
         *(stage_helpers() if traced or staged else []),
         *(staged_methods() if staged else []),
+        *(dynamic_methods() if dynamic else []),
         *(trace_methods() if traced else []),
     ]
     for case in sorted(feature["cases"], key=case_order):
@@ -2118,7 +2267,10 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
             run = f"        self.trace({literal(canonical(case[TRACE]))})"
         else:
             expected = case["expected"] if "expected" in case else {"error": case["error"]}
-            if is_staged(case):
+            if is_dynamic(case):
+                run = (f"        self.dynamic({literal(case['input'])}, {literal(expected)}, "
+                       f"{canonical(case.get(SETUP, []))!r}, {canonical(case.get(AFTER, []))!r}, {case.get(AS)!r})")
+            elif is_staged(case):
                 run = (f"        self.staged({literal(case['input'])}, {literal(expected)}, "
                        f"{canonical(case.get(SETUP, []))!r}, {canonical(case.get(AFTER, []))!r})")
             else:
@@ -2470,7 +2622,9 @@ def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
         return impl_module, TRACE, literal(canonical(case[TRACE]))
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
     if is_staged(case):
-        # 前提・後の状態（#1298）。書いていないケースの中身は、足す前と同じ
+        # 前提・後の状態（#1298）。書いていないケースの中身は、足す前と同じ。
+        # 期待の `$any`・`$ref`（#1299）は `expected` の写しに、前提・後の状態の `as` と `$ref` は `setup`・`after` の写しに入る
+        # （本体の `as` だけを変えても、指す `$ref` を書き換えなければ中身は変わらない——書き換えれば `after` の写しが変わる）
         return (impl_module, op["id"], literal(case["input"]), literal(expected), SETUP, repr(canonical(case.get(SETUP, []))),
                 AFTER, repr(canonical(case.get(AFTER, []))))
     return impl_module, op["id"], literal(case["input"]), literal(expected)
