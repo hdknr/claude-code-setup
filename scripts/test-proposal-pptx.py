@@ -304,6 +304,7 @@ def observe(mod, tool_dir: Path) -> dict:
          and "ほかに範囲に関わる質問が 1 件" in "".join(slide_list_texts(mixed)))
     only_huge = pp.scope_slides([huge_row], None, None, [], True)
     seen("どの質問も収まらなければ、案内だけの 1 枚", lambda: len(only_huge) == 1 and "1 件" in "".join(slide_list_texts(only_huge)) and "decisions.xlsx" in "".join(slide_list_texts(only_huge)))
+    seen("案内だけの枚も、別紙が無ければ提案書の名前を指す", lambda: "teian.md" in "".join(slide_list_texts(pp.scope_slides([huge_row], None, None, [], False, "teian.md"))))
     seen("長い質問も番号の指示なら全部載せる（分けて）", lambda: len(pp.scope_slides([huge_row], ["Q-R-060"], None, [], True)) > 1)
     ms = slide_list_texts(pp.scope_slides(many_scope, None, None, [], True))
     seen("既定の選び方は 1 枚に収め、残りは別紙を見ると書く", lambda: len(ms) == 1 and "ほかに範囲に関わる質問が 6 件" in ms[0] and "decisions.xlsx" in ms[0] and "範囲の質問06" not in ms[0])
@@ -448,7 +449,8 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("図の見出しを unescape しない", "    if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:\n        return unescape(m.group(1)).strip()\n    m = re.search(r'(?:<|&lt;)diagram", "    if m and m.group(1).strip().lower() not in GENERIC_NAMES:\n        return m.group(1).strip()\n    m = re.search(r'(?:<|&lt;)diagram"),
     ("図形の tooltip を図の見出しにする", '    m = re.search(r"<svg\\b[^>]*>\\s*(?:<defs\\b[^>]*/>\\s*|<defs\\b.*?</defs>\\s*)?<title', '    m = re.search(r"<title'),
     ("折れない長い語を現在の行から割る", "                if line > 0:  # 折れない長い語は、新しい行に移してから割る（描画の側もそうする）\n                    count += 1\n                    line = 0.0\n", ""),
-    ("別紙が無くても別紙を指す", '        where = "別紙の表（decisions.xlsx）" if appendix else md_name', '        where = "別紙の表（decisions.xlsx）"'),
+    ("別紙が無くても別紙を指す", '        where = "別紙の表（decisions.xlsx）" if appendix else md_name\n        slides[-1]', '        where = "別紙の表（decisions.xlsx）"\n        slides[-1]'),
+    ("案内だけの枚が、別紙が無くても別紙を指す", '        where = "別紙の表（decisions.xlsx）" if appendix else md_name\n        slide.box', '        where = "別紙の表（decisions.xlsx）"\n        slide.box'),
     ("範囲の枚の注記の分を空けない", "    note_h = CY1 - CY0 - 420000", "    note_h = CY1 - CY0"),
     ("1 枚に収まる問数に絞らない", "            while k > 1 and best_size(fit[:k], note_h) is None:\n                k -= 1\n", "            pass\n"),
     ("1 問だけでも収まらない質問を載せる", "            fit = [c for c in cards if best_size([c], note_h) is not None]", "            fit = list(cards)"),
