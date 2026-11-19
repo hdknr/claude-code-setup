@@ -171,6 +171,8 @@ CASES: dict[str, tuple] = {
                                          RUNS2, [], 0, "割れた: D-002", DOCS_V2, 2),
     "内部: 確かめる行が無くても割れを名指しする": ("internal", F_HEAD + dc("D-001") + dc("D-001", review="狭いパス", weight="判断が要る"), RUNS2, [], 0, "割れた: D-001",
                                   {**DOCS_V1, "v2/shared/qa.csv": QA_HEAD + qa("Q-001", "共有1"), "v2/spec/qa-dev.csv": QA_HEAD + qa("D-001", "内部1")}, 2),
+    "内部: 往復した判定も割れと名指しする": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目", weight="判断が要る", category="退ける") + dc("D-002", review="狭いパス", category="退ける")
+                                 + dc("D-003"), RUNS2, [], 0, "割れた: D-002", DOCS_V2, 2),
     "内部: 同じ判定の段は割れと読まない": ("internal", F_HEAD + dc("D-002") + dc("D-002", review="2回目") + dc("D-003", weight="判断が要る", category="退ける")
                                  + dc("D-003", review="狭いパス", weight="判断が要る", category="退ける"), RUNS2, [], 0, "!割れた", DOCS_V2, 2),
     "内部: 確かめられない行は割れに数えない": ("internal", F_HEAD + dc("D-002") + dc("D-003") + dc("D-002", review="2回目", confirmed="確かめられない", weight="判断が要る"),
@@ -218,7 +220,7 @@ CASES: dict[str, tuple] = {
 }
 
 # 終了コードを変えず、出力の語の有無でだけ殺す変異（#1248。割れた行の名指しは出力だけで、終了コードに数えない）
-OUTPUT_KILLED = {"割れを名指ししない", "結果が割れるを変わると読まない", "確かめる行が無いとき割れを出さない", "同じ判定の段も割れと読む", "重さでなく振り分けで判定を読む"}
+OUTPUT_KILLED = {"割れを名指ししない", "最初と最後だけを比べる", "結果が割れるを変わると読まない", "確かめる行が無いとき割れを出さない", "同じ判定の段も割れと読む", "重さでなく振り分けで判定を読む"}
 
 # (名前, 壊す前, 壊した後, 殺す試料)
 MUTATIONS: list[tuple[str, str, str, str]] = [
@@ -283,6 +285,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '    return (EXIT_UNMET if split else EXIT_OK), [f"満たす: {seen}——すべて Domain Checker が確かめた"] + split\n', "内部: 割れた行を名指しする（陽性対照）"),
     ("結果が割れるを変わると読まない", '**{w: "変わる" for w in EFFECTIVE}}', '"判断が要る": "変わる"}', "内部: 結果が割れるも変わる側として割れを名指しする"),
     ("確かめる行が無いとき割れを出さない", '[f"満たす: {seen}——確かめる行が無い"] + split', '[f"満たす: {seen}——確かめる行が無い"]', "内部: 確かめる行が無くても割れを名指しする"),
+    ("最初と最後だけを比べる", "        if len({v for _, v, _ in verdicts}) > 1:\n", "        if verdicts and verdicts[0][1] != verdicts[-1][1]:\n", "内部: 往復した判定も割れと名指しする"),
     ("同じ判定の段も割れと読む", "        if len({v for _, v, _ in verdicts}) > 1:\n", "        if len(verdicts) > 1:\n", "内部: 同じ判定の段は割れと読まない"),
     ("重さでなく振り分けで判定を読む", '        verdicts = [(c["レビュー"], names[c["重さ"]], number) for number, c in rows if c["重さ"] in names]\n',
      '        verdicts = [(c["レビュー"], names[c["重さ"]], number) for number, c in rows if c["重さ"] in names and c["振り分け"] != REJECTED]\n',
