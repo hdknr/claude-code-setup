@@ -813,7 +813,7 @@ def build(args, out: Path) -> dict[Path, bytes | list]:
 
 def pptx_options(args) -> "ppt.Options":
     """正本の `CLAUDE.md` の指示から渡された引数を、既定のデザインの設定にする（#1289）。"""
-    numbers = None if args.scope_questions is None else [n.strip() for n in args.scope_questions.split(",") if n.strip()]
+    numbers = None if args.scope_questions is None else list(dict.fromkeys(n.strip() for n in args.scope_questions.split(",") if n.strip()))
     overview = ppt.OVERVIEW_ITEMS if args.overview is None else tuple(i.strip() for i in args.overview.split(",") if i.strip())
     return ppt.Options(appendix=not args.no_appendix, scope_slide=not args.no_scope_slide, scope_questions=numbers,
                        scope_match=args.scope_match, overview=overview, strip=[re.compile(p) for p in args.slide_strip])
@@ -1098,6 +1098,10 @@ def main(argv: list[str]) -> int:
         parser.error("--pptx-script・--no-appendix・--no-scope-slide・--scope-questions・--scope-match・--overview・--slide-strip は --pptx と一緒に渡す")
     if args.scope_questions is not None and not [n for n in args.scope_questions.split(",") if n.strip()]:
         parser.error("--scope-questions に番号が無い（範囲の 1 枚を載せないなら --no-scope-slide）")
+    if args.overview is not None and not args.overview.strip():
+        parser.error("--overview が空（概要の 1 枚を載せないなら、載せるものを 1 つ以上渡す）")
+    if args.scope_match is not None and not args.scope_match.strip():
+        parser.error("--scope-match が空の正規表現（既定の選び方に戻したいなら渡さない）")
     if args.overview is not None and not set(i.strip() for i in args.overview.split(",") if i.strip()) <= set(ppt.OVERVIEW_ITEMS):
         parser.error(f"--overview は {'・'.join(ppt.OVERVIEW_ITEMS)} のコンマ区切り")
     for pattern in [args.scope_match, *args.slide_strip]:

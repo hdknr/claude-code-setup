@@ -105,11 +105,23 @@ def text_boxes(pptx: Path) -> dict[int, list[tuple[float, float, float, float]]]
                 if off is not None and ext is not None:
                     boxes.append((int(off.get("x")) / EMU_PT, int(off.get("y")) / EMU_PT,
                                   int(ext.get("cx")) / EMU_PT, int(ext.get("cy")) / EMU_PT))
-            out[int(re.sub(r"\D", "", n))] = boxes
+            inherited = any(sp.find(".//a:off", NS) is None and any((t.text or "").strip() for t in sp.iter(f"{{{NS['a']}}}t"))
+                            for sp in root.iter(f"{{{NS['p']}}}sp"))
+            out[int(re.sub(r"\D", "", n))] = None if inherited else boxes  # 位置をレイアウトから継ぐ文字があれば、枠は決められない
+        template = []  # レイアウト・マスターの図形（社のテンプレートのフッターなど）は、どのスライドにも出る
+        for n in z.namelist():
+            if re.fullmatch(r"ppt/(slideLayouts|slideMasters)/[^/]+\.xml", n):
+                for sp in ElementTree.fromstring(z.read(n)).iter(f"{{{NS['p']}}}sp"):
+                    off, ext = sp.find(".//a:off", NS), sp.find(".//a:ext", NS)
+                    if off is not None and ext is not None:
+                        template.append((int(off.get("x")) / EMU_PT, int(off.get("y")) / EMU_PT, int(ext.get("cx")) / EMU_PT, int(ext.get("cy")) / EMU_PT))
+        for key, boxes in out.items():
+            if boxes is not None:
+                boxes.extend(template)
     return out
 
 
-WORD = re.compile(r'<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</word>')
+WORD = re.compile(r'<word xMin="(-?[\d.]+)" yMin="(-?[\d.]+)" xMax="(-?[\d.]+)" yMax="(-?[\d.]+)">(.*?)</word>')
 PAGE = re.compile(r'<page width="([\d.]+)" height="([\d.]+)">(.*?)</page>', re.S)
 
 
@@ -141,7 +153,7 @@ def render_findings(name: str, pdf: Path, pdftotext: str, boxes: dict[int, list]
                 if not any(bx - TOLERANCE <= cx <= bx + bw + TOLERANCE and by - TOLERANCE <= cy <= by + bh + TOLERANCE
                            for bx, by, bw, bh in regions):
                     found.append(f"{name} {number} ページ: はみ出し（どの枠の中にも無い文字）: {text}")
-        for bx, by, bw, bh in regions:
+        for bx, by, bw, bh in regions or []:
             bottom = by + bh
             for x0, y0, x1, y1, text in words:
                 if bx - TOLERANCE <= x0 <= bx + bw and y0 < bottom - TOLERANCE and y1 > bottom + TOLERANCE and by <= y0:
@@ -151,6 +163,7 @@ def render_findings(name: str, pdf: Path, pdftotext: str, boxes: dict[int, list]
 
 def render(pptx: Path, out: Path, soffice: str, pdftoppm: str, dpi: int) -> Path:
     out.mkdir(parents=True, exist_ok=True)
+    (out / f"{pptx.stem}.pdf").unlink(missing_ok=True)  # 前の PDF を今回のものと取り違えない（soffice が 0 で終わって何も書かない場合）
     with tempfile.TemporaryDirectory() as profile:
         done = subprocess.run([soffice, f"-env:UserInstallation=file://{profile}", "--headless", "--convert-to", "pdf", "--outdir", str(out), str(pptx)],
                               capture_output=True, text=True, timeout=TIMEOUT)

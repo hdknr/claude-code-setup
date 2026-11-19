@@ -588,7 +588,7 @@ def money(value: int) -> str:
     return f"{value:,}"
 
 
-def cost_slides(estimate: list[dict[str, str]], categories: list[str], md_name: str) -> list[Slide]:
+def cost_slides(estimate: list[dict[str, str]], categories: list[str], md_name: str, version_note: str = "") -> list[Slide]:
     """開発費・運用費を区分ごとに別のページにする。根拠は計算式だけ（番号だけ・長すぎる根拠は出さない）。"""
     fracs = [0.42, 0.17, 0.41]
     basis_w = emu_pt(int(CONTENT_W * fracs[2]) - 2 * INSET_X)
@@ -605,7 +605,7 @@ def cost_slides(estimate: list[dict[str, str]], categories: list[str], md_name: 
             body.append([plain(r["項目"]), money(int(r["金額"])), text or "—"])
         total = sum(int(r["金額"]) for r in rows)
         body.append(["合計", money(total), ""])
-        note = f"{category}の合計 {money(total)} 円" + ("。根拠が長い行の全文は " + md_name if long_seen else "")
+        note = (version_note + " " if version_note else "") + f"{category}の合計 {money(total)} 円" + ("。根拠が長い行の全文は " + md_name if long_seen else "")
         slides += table_slides(category, ["項目", "金額（円）", "根拠"], body, fracs, ["l", "r", "l"], size=12, bold_last=True, note=note)
     return slides
 
@@ -827,25 +827,31 @@ SCOPE_MAX = 6  # 既定の選び方のとき、範囲の 1 枚に載せる質問
 
 
 def scope_slides(rows: list[dict[str, str]], numbers: list[str] | None, match: str | None, extra: list | None,
-                 appendix: bool = True) -> list[Slide]:
+                 appendix: bool = True, md_name: str = "proposal.md") -> list[Slide]:
     chosen = scope_rows(rows, numbers, match)
     if not chosen:
         return []
-    rest = 0
-    if numbers is None and len(chosen) > SCOPE_MAX:  # 番号を指示されたときは全部載せる。既定の選び方は 1 枚に収める
-        chosen, rest = chosen[:SCOPE_MAX], len(chosen) - SCOPE_MAX
     cards = []
     for r in chosen:
         question = plain(pptx.split_lines(r["質問"])[0], extra)
         rec = qa_recommended(r)
         mark = "推奨なし" if rec is None else ("推奨どおり" if answer_label(r) == rec else "推奨と違う")
         cards.append({"heading": question, "lines": [(0, "決めたこと: " + plain(option_text(r), extra), False), (0, f"（{mark}）", False)]})
-    area_h = CY1 - CY0 - (420000 if rest else 0)
-    placed = place_cards(cards, area_h)
+    rest = 0
+    area_h = CY1 - CY0
+    if numbers is None:  # 番号を指示されたときは全部載せる。既定の選び方は 1 枚に収まる最大の問数（6 問まで）にする
+        note_h = CY1 - CY0 - 420000
+        k = min(SCOPE_MAX, len(cards))
+        if len(chosen) > k or best_size(cards[:k], area_h) is None:
+            while k > 1 and best_size(cards[:k], note_h) is None:
+                k -= 1
+            cards, rest, area_h = cards[:k], len(chosen) - k, note_h
+    size = best_size(cards, area_h) if numbers is None else None
+    placed = [(cards, size)] if size is not None else place_cards(cards, area_h)  # 既定の選び方は、収まる問数に絞ったうえで 1 枚に置く
     slides = [card_slide("何を作り、何を作らないか" if len(placed) == 1 else f"何を作り、何を作らないか（{n}/{len(placed)}）", chunk, size, area_h)
               for n, (chunk, size) in enumerate(placed, 1)]
     if rest:
-        where = "別紙の表（decisions.xlsx）" if appendix else "proposal.md"
+        where = "別紙の表（decisions.xlsx）" if appendix else md_name
         slides[-1].box(MARGIN, H - 760000, CONTENT_W, 330000, paras(f"ほかに範囲に関わる質問が {rest} 件ある。全件は{where}を見る。", 12, color=GREY), name="Note")
     return slides
 
@@ -959,7 +965,7 @@ def figure_title(path: str, svg: bytes) -> str:
     m = re.search(r"<svg\b[^>]*>\s*(?:<defs\b[^>]*/>\s*|<defs\b.*?</defs>\s*)?<title[^>]*>([^<]+)</title>", text, re.S)  # 図そのものの題（図形の tooltip ではなく）
     if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:
         return unescape(m.group(1)).strip()
-    m = re.search(r'<diagram\b[^>]*\bname=(?:"|&quot;)([^"&]+)', text)
+    m = re.search(r'(?:<|&lt;)diagram\b.*?\bname=(?:"|&quot;)(.+?)(?:"|&quot;)', text, re.S)
     if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:
         return unescape(m.group(1)).strip()
     named = drawio_title_cell(text)
@@ -1009,13 +1015,13 @@ class Options:
         self.scope_match, self.overview, self.strip = scope_match, overview, strip or []
 
 
-def change_slides(changes: dict, extra: list | None) -> list[Slide]:
+def change_slides(changes: dict, extra: list | None, md_name: str = "proposal.md") -> list[Slide]:
     """前の版からの変更（v2 以降）。集計の表と、種類ごとの表（番号の列は出さない。ファイルは場所ごとの件数）。"""
     columns, rows = changes["summary"]
     slides = table_slides(changes["title"], columns, rows, size=14)
     for kind, cols, body in changes["details"]:
         if cols and cols[0] in ("パス",):
-            slides += file_summary_slides(f"{kind}（{len(body)} 件）", [r[0] for r in body], extra, note="変化の内訳は proposal.md・spec.md を見る")
+            slides += file_summary_slides(f"{kind}（{len(body)} 件）", [r[0] for r in body], extra, note=f"変化の内訳は {md_name}・spec.md を見る")
             continue
         keep = [i for i, c in enumerate(cols) if c not in ("No", "id", "鍵") and any(r[i] != "—" for r in body)]
         slides += table_slides(f"{changes['title']}: {kind}", [cols[i] for i in keep],
@@ -1081,13 +1087,13 @@ def proposal_deck(ctx: dict, categories: list[str], opts: Options, md_name: str)
         for s in table_slides("目的と成功の判定", cols, rows, [0.1, 0.2, 0.4, 0.3], size=12):
             deck.add(s)
     if ctx.get("changes"):
-        for s in change_slides(ctx["changes"], opts.strip):
+        for s in change_slides(ctx["changes"], opts.strip, md_name):
             deck.add(s)
     rows = ctx["qa"]
     for s in overview_slides(rows, opts.overview, opts.appendix):
         deck.add(s)
     if opts.scope_slide:
-        for s in scope_slides(rows, opts.scope_questions, opts.scope_match, opts.strip, opts.appendix):
+        for s in scope_slides(rows, opts.scope_questions, opts.scope_match, opts.strip, opts.appendix, md_name):
             deck.add(s)
     provisional = [r for r in rows if qa.is_provisional(r)]
     pending = [r for r in rows if r["状態"].strip() != qa.DONE and not qa.is_provisional(r)]
@@ -1105,7 +1111,8 @@ def proposal_deck(ctx: dict, categories: list[str], opts: Options, md_name: str)
         for s in table_slides(f"承認の時点で未決定の質問（{len(pending)} 件）", ["質問", "費用への影響"],
                               [[plain(r["質問"], opts.strip), plain(r["費用への影響"], opts.strip) or "—"] for r in pending], [0.65, 0.35], size=12):
             deck.add(s)
-    for s in cost_slides(ctx["estimate"], categories, md_name):
+    version_note = f"この版（v{ctx['version']}）の差分の見積り。前の版までの費用は含まない。" if ctx.get("changes") else ""
+    for s in cost_slides(ctx["estimate"], categories, md_name, version_note):
         deck.add(s)
     for s in gantt_slides(ctx["schedule"]):
         deck.add(s)
@@ -1129,7 +1136,7 @@ def spec_deck(ctx: dict, opts: Options) -> tuple[list[tuple[str, str | bytes]], 
         s = Slide()
         s.title("構成の図")
         s.box(MARGIN, CY0, CONTENT_W, 1400000,
-              paras(f"図 {len(failed)} 枚は、SVG を PNG にする道具（rsvg-convert）が無いので載せていない。spec.md で見る。", 18, color=DARK))
+              paras(f"図 {len(failed)} 枚は、SVG を PNG にする道具（rsvg-convert）が無いか変換に失敗したので載せていない。spec.md で見る。", 18, color=DARK))
         deck.add(s)
     notes = ([[plain(p.replace("`", "")), "書き出し（.svg）が無いので載せていない"] for p in ctx.get("missing", [])]
              + [[plain(line.replace("`", "")), "載せているが、書き出しが今のソースと合わない（仕様書（spec.md）の図にも載せている）"] for line in ctx.get("stale", [])])

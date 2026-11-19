@@ -171,7 +171,7 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `scripts/proposal-pptx.py` - **提案書・仕様書の PPTX の既定のデザイン**（#1289。`build-proposal.py` が読み込む——実行しない。**標準ライブラリだけ**。材料（表・手書き部分・図）から枚を組み、
       費用は開発費・運用費を別のページ・行は枚数で受ける・期間はガントチャートを図形で・手書き部分はカード・図は PNG（`rsvg-convert`。`SPEC_LOOP_RSVG` で差し替え）・決定事項は別紙の xlsx と概要の 1 枚と範囲の 1 枚。
       **`…` で切らない**。文字の寸法は見積りで、**描画して確かめるのは `check-pptx-render.py`**。守る／守らないは docstring を正とする。テストは `scripts/test-proposal-pptx.py`）
-    - `scripts/check-pptx-render.py` - **生成した PPTX を LibreOffice で PDF に描画し、見切れ（`…`）・図の中の代わりの文字・はみ出し（ページの外・文字の重なり・枠の下の辺をまたぐ）を探し、1 ページずつの PNG を書く**
+    - `scripts/check-pptx-render.py` - **生成した PPTX を LibreOffice で PDF に描画し、見切れ（`…`）・図の中の代わりの文字・はみ出し（ページの外・文字の重なり・枠の下の辺をまたぐ・どの枠の中にも無い文字）を探し、1 ページずつの PNG を書く**
       （#1289。proposal の `SKILL.md` の手順 3a。**道具（LibreOffice・poppler）が無ければ 3（確かめられない）で、緑にしない**。**CI からは呼ばない**——道具が無い。テストは `scripts/test-check-pptx-render.py`——偽の道具で回し、
       手元に道具があれば本物でも回す）
     - `scripts/scaffold.py` - 中間表現から OpenAPI・型・**Red テスト**・Issue の本文を作る（**トレースのケース（`trace`）は、形式検査の反例の実行順を実装の口で強制して再現する Red テストになる**——#923。形と口は `references/spec-ir.md` の「トレースのケース」を正とする。**生成の側で

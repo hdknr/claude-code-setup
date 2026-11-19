@@ -101,6 +101,10 @@ def slide_xmls(parts) -> list[str]:
     return [named[n] for n in sorted(named, key=lambda n: int(re.sub(r"\D", "", n)))]
 
 
+def slide_list_texts_parts(parts) -> list[str]:
+    return texts(parts)
+
+
 def slide_list_texts(slides) -> list[str]:
     return ["".join(t.text or "" for t in ET.fromstring(s.render()).iter(f"{A}t")) for s in slides]
 
@@ -167,6 +171,12 @@ def observe(mod, tool_dir: Path) -> dict:
     # 3. 費用
     cost = pp.cost_slides(estimate_rows(), ["開発費", "運用費（月額）"], "proposal.md")
     ct = slide_list_texts(cost)
+    v2 = slide_list_texts(pp.cost_slides(estimate_rows(), ["開発費", "運用費（月額）"], "proposal.md", "この版（v2）の差分の見積り。前の版までの費用は含まない。"))
+    ctx2 = {"title": "提案書", "version": 2, "hand": [], "qa": [], "estimate": estimate_rows(2), "schedule": schedule_rows(3), "purposes": None, "purpose_kinds": [],
+            "provisional_lead": "この版の Q&A で", "changes": {"title": "前の版（v1）からの変更", "summary": (["種類", "追加"], [["Q&A", "1"]]), "details": []}}
+    p2 = slide_list_texts_parts(pp.proposal_deck(ctx2, ["開発費", "運用費（月額）"], pp.Options(), "proposal.md")[0])
+    seen("v2 以降の提案書の費用の枚は差分と書く", lambda: any(t.startswith("開発費") and "この版（v2）の差分の見積り" in t for t in p2))
+    seen("v2 以降の費用は差分と書く", lambda: all("この版（v2）の差分の見積り" in t for t in v2) and not any("差分" in t for t in ct))
     seen("開発費は枚数で受ける", lambda: sum("開発費の合計" in t for t in ct) >= 2 and sum("運用費（月額）の合計" in t for t in ct) == 1)
     seen("費用の行は 1 度ずつ載る", lambda: all(sum(f"開発の項目{i:02d}" in t for t in ct) == 1 for i in range(1, 23))
          and all(sum(f"運用の項目{i:02d}" in t for t in ct) == 1 for i in range(1, 4)))
@@ -232,6 +242,8 @@ def observe(mod, tool_dir: Path) -> dict:
     parsed = pp.parse_hand(HAND)
     seen("節とカード", lambda: [(t, [c["heading"] for c in cs]) for t, cs in parsed] == [
         ("背景と目的", ["転記に月 40 時間かかっている", "年内に動かしたい", "暫定の回答を引く"]), ("リスク", ["繁忙期に間に合わない"])])
+    seen("続きの見出しを毎回足さない（長い段落でも「続き」は 1 つ）", lambda: all("（続き）（続き）" not in (c["heading"] or "") for ch, _ in pp.place_cards(
+        [{"heading": "見出し", "lines": [(0, "長い文である。" * 2500, False)]}], pp.CY1 - pp.CY0) for c in ch))
     seen("手書き部分の参照の括弧は外れる", lambda: all("Q-R-001" not in line[1] and "purposes.csv" not in line[1] for _, cs in parsed for c in cs for line in c["lines"]))
     seen("手書き部分の暫定の断りは残る", lambda: any("暫定の回答。利用者に未確認" in line[1] for _, cs in parsed for c in cs for line in c["lines"]))
     seen("箇条は箇条", lambda: all(line[2] for _, cs in parsed[:1] for c in cs for line in c["lines"]))
@@ -273,6 +285,18 @@ def observe(mod, tool_dir: Path) -> dict:
     pend = qa_rows + [qa_row(mod, 7, state="確認中", ans="未回答", target="—", question="範囲の未回答の質問")]
     seen("未回答の質問は範囲の枚に載せない", lambda: not any("未回答の質問" in t for t in slide_list_texts(pp.scope_slides(pend, None, None, []))))
     many_scope = [qa_row(mod, 20 + i, target="spec/scope.md", question=f"範囲の質問{i:02d}") for i in range(12)]
+    seen("別紙が無いとき範囲の案内は提案書の名前を指す", lambda: "teian.md" in slide_list_texts(pp.scope_slides(many_scope, None, None, [], False, "teian.md"))[0])
+    seen("別紙が無いとき変更の案内は提案書の名前を指す", lambda: any("teian.md" in t for t in slide_list_texts(pp.change_slides(
+        {"title": "前の版（v1）からの変更", "summary": (["種類", "追加"], [["ファイル", "1"]]), "details": [("ファイル", ["パス", "変化", "削除の理由"], [["spec/a.md", "追加", "—"]])]}, [], "teian.md"))))
+    long_q = [qa_row(mod, 40 + i, target="spec/scope.md", question="範囲を決めた長い質問の文" * 16) for i in range(12)]
+    lq = pp.scope_slides(long_q, None, None, [], True)
+    seen("長い質問でも既定の選び方は 1 枚に収める", lambda: len(lq) == 1)
+    def card_bottoms_above_note():
+        x = lq[0].render()
+        bottoms = [int(a) + int(b) for a, b in re.findall(r'name="Card \d+"/>.*?<a:off x="\d+" y="(\d+)"/><a:ext cx="\d+" cy="(\d+)"', x)]
+        note = int(re.search(r'name="Note \d+"/>.*?<a:off x="\d+" y="(\d+)"', x)[1])
+        return bool(bottoms) and max(bottoms) <= note
+    seen("範囲の枚の注記はカードと重ならない", card_bottoms_above_note)
     ms = slide_list_texts(pp.scope_slides(many_scope, None, None, [], True))
     seen("既定の選び方は 1 枚に収め、残りは別紙を見ると書く", lambda: len(ms) == 1 and "ほかに範囲に関わる質問が 6 件" in ms[0] and "decisions.xlsx" in ms[0] and "範囲の質問06" not in ms[0])
     seen("番号の指示は全部載せる", lambda: "範囲の質問11" in "".join(slide_list_texts(pp.scope_slides(many_scope, [r["No"] for r in many_scope], None, []))))
@@ -314,6 +338,8 @@ def observe(mod, tool_dir: Path) -> dict:
             os.environ[pp.SPEC_RSVG_ENV] = old
     seen("図の見出し: title のセル", lambda: pp.figure_title("a.svg", DRAWIO_SVG.encode("utf-8")) == "注文の流れ")
     seen("図の見出し: title 要素", lambda: pp.figure_title("a.svg", "<svg><title>返品の画面</title></svg>".encode("utf-8")) == "返品の画面")
+    drawio_page = '<svg content="&lt;mxfile&gt;&lt;diagram id=&quot;abc&quot; name=&quot;受注の流れ&quot;&gt;"></svg>'.encode("utf-8")
+    seen("drawio のページ名（content 属性の中）", lambda: pp.figure_title("spec/order-flow.drawio.svg", drawio_page) == "受注の流れ")
     seen("図の見出しは unescape する", lambda: pp.figure_title("a.svg", "<svg><title>A &amp; B</title></svg>".encode("utf-8")) == "A & B")
     seen("図形の tooltip は図の見出しにしない", lambda: pp.figure_title("spec/order-flow.svg", "<svg><g><title>tooltip text</title></g></svg>".encode("utf-8")) == "order flow")
     seen("長い題は小さくして 1 行に収める", lambda: 'sz="2600"' not in pp_title("受注から出荷までの業務の流れと現場への影響を踏まえた推奨案の全体像について") and 'sz="2600"' in pp_title("短い題"))
@@ -411,10 +437,15 @@ MUTATIONS: list[tuple[str, str, str]] = [
     ("推奨なしを推奨どおりと言う", '        mark = "推奨なし" if rec is None else ("推奨どおり" if answer_label(r) == rec else "推奨と違う")', '        mark = "推奨どおり" if answer_label(r) == rec else ("推奨と違う" if rec else "推奨なし")'),
     ("Q&A が 0 行でも概要を作る", "    if not rows:\n        return []\n    if \"counts\" in items:", "    if \"counts\" in items:"),
     ("題を縮めない", "        while size > 14 and lines_needed(text, size, width) > 1:\n            size -= 2\n", "        pass\n"),
-    ("図の見出しを unescape しない", "    if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:\n        return unescape(m.group(1)).strip()\n    m = re.search(r'<diagram", "    if m and m.group(1).strip().lower() not in GENERIC_NAMES:\n        return m.group(1).strip()\n    m = re.search(r'<diagram"),
+    ("図の見出しを unescape しない", "    if m and unescape(m.group(1)).strip().lower() not in GENERIC_NAMES:\n        return unescape(m.group(1)).strip()\n    m = re.search(r'(?:<|&lt;)diagram", "    if m and m.group(1).strip().lower() not in GENERIC_NAMES:\n        return m.group(1).strip()\n    m = re.search(r'(?:<|&lt;)diagram"),
     ("図形の tooltip を図の見出しにする", '    m = re.search(r"<svg\\b[^>]*>\\s*(?:<defs\\b[^>]*/>\\s*|<defs\\b.*?</defs>\\s*)?<title', '    m = re.search(r"<title'),
     ("折れない長い語を現在の行から割る", "                if line > 0:  # 折れない長い語は、新しい行に移してから割る（描画の側もそうする）\n                    count += 1\n                    line = 0.0\n", ""),
-    ("範囲の枚に上限を掛けない", "    if numbers is None and len(chosen) > SCOPE_MAX:", "    if False:"),
+    ("別紙が無くても別紙を指す", '        where = "別紙の表（decisions.xlsx）" if appendix else md_name', '        where = "別紙の表（decisions.xlsx）"'),
+    ("範囲の枚の注記の分を空けない", "        note_h = CY1 - CY0 - 420000", "        note_h = CY1 - CY0"),
+    ("1 枚に収まる問数に絞らない", "            while k > 1 and best_size(cards[:k], note_h) is None:\n                k -= 1\n", "            pass\n"),
+    ("drawio のページ名を見ない", "    m = re.search(r'(?:<|&lt;)diagram", "    m = re.search(r'(?:<|&lt;)NODIAGRAM"),
+    ("v2 の費用を差分と書かない", '    version_note = f"この版（v{ctx[\'version\']}）の差分の見積り。前の版までの費用は含まない。" if ctx.get("changes") else ""', '    version_note = ""'),
+    ("範囲の枚に上限を掛けない", "    if numbers is None:  # 番号を指示されたときは", "    if False:  # 番号を指示されたときは"),
     ("見積りの余裕を外す（行の高さ）", "LINE_HEIGHT = 1.42", "LINE_HEIGHT = 1.0"),
     ("見積りの余裕を外す（折り返し）", "SAFETY = 0.94", "SAFETY = 1.2"),
     ("別紙に全件を書かない", "    for n, row in enumerate(rows, 2):", "    for n, row in enumerate(rows[:4], 2):"),

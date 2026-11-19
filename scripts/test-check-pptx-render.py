@@ -37,6 +37,8 @@ FAKE_SOFFICE = """#!/usr/bin/env python3
 import os, sys, pathlib
 if os.environ.get("FAKE_SOFFICE_FAIL"):
     print("soffice が壊れている", file=sys.stderr); sys.exit(3)
+if os.environ.get("FAKE_SOFFICE_NOWRITE"):
+    sys.exit(0)  # 0 で終わるが PDF を書かない
 args = sys.argv[1:]
 out = pathlib.Path(args[args.index("--outdir") + 1]); src = pathlib.Path(args[-1])
 (out / (src.stem + ".pdf")).write_bytes(b"%PDF-fake")
@@ -119,6 +121,8 @@ def cases(script: Path, work: Path, pp, bin_dir: Path, bare_dir: Path) -> dict[s
     # 枠の下 100pt に、枠をまたがず他の文字にも重ならない行が丸ごと出ている（反証: またぐ語・重なりでは見えない形）
     rc, text = run(script, [str(good), "--out", str(work / "p7b")], bin_dir, page((100, 260, 150, 274, "枠の外"), (160, 260, 210, 274, "の行")), work)
     obs["どの枠にも無い文字は 1"] = rc == 1 and "どの枠の中にも無い" in text and "枠の外" in text
+    rc, text = run(script, [str(good), "--out", str(work / "p7c")], bin_dir, page((-8, 10, 20, 24, "左へ")), work)
+    obs["左へはみ出した語は 1"] = rc == 1 and "ページの外" in text and "左へ" in text
     rc, text = run(script, [str(good), "--out", str(work / "p8")], bin_dir, page((100, 120, 150, 134, "中")), work)
     obs["枠の中の語は 0"] = rc == 0
     rc, text = run(script, [str(good), "--out", str(work / "p9")], bin_dir, page((100, 143, 150, 157.5 + 1.0, "辺の近く")), work)
@@ -135,6 +139,10 @@ def cases(script: Path, work: Path, pp, bin_dir: Path, bare_dir: Path) -> dict[s
     obs["道具が無ければ緑にしない"] = rc == 3 and "描画して確かめていない" in text
     rc, text = run(script, [str(good), "--out", str(work / "p14")], bin_dir, inside, work, {"FAKE_SOFFICE_FAIL": "1"})
     obs["描画に失敗したら 2"] = rc == 2 and "描画して確かめられなかった" in text
+    stale_out = work / "p14b"
+    run(script, [str(good), "--out", str(stale_out)], bin_dir, inside, work)  # 前の PDF が残る
+    rc, text = run(script, [str(good), "--out", str(stale_out)], bin_dir, inside, work, {"FAKE_SOFFICE_NOWRITE": "1"})
+    obs["PDF を書かずに 0 で終わっても、前の PDF を検査しない"] = rc == 2 and "描画して確かめられなかった" in text
     broken = work / "broken.pptx"
     broken.write_bytes(b"not a zip")
     rc, text = run(script, [str(broken), "--out", str(work / "p15")], bin_dir, inside, work)
@@ -175,6 +183,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("枠の下の辺をまたぐ語を見ない", "                if bx - TOLERANCE <= x0 <= bx + bw and y0 < bottom - TOLERANCE and y1 > bottom + TOLERANCE and by <= y0:\n",
      "                if False:\n", "枠の下の辺をまたぐ語は 1"),
     ("どの枠にも無い文字を見ない", "        if regions:  # どの枠", "        if False:  # どの枠", "どの枠にも無い文字は 1"),
+    ("負の座標を読まない", 'xMin="(-?[\\d.]+)" yMin="(-?[\\d.]+)"', 'xMin="([\\d.]+)" yMin="([\\d.]+)"', "左へはみ出した語は 1"),
+    ("前の PDF を消さない", '    (out / f"{pptx.stem}.pdf").unlink(missing_ok=True)', "    pass", "PDF を書かずに 0 で終わっても、前の PDF を検査しない"),
     ("枠の辺の許容を外す", "and y1 > bottom + TOLERANCE and by <= y0", "and y1 > bottom and by <= y0", "枠の辺の許容の内側は 0"),
     ("ページの辺の許容を外す", "or x1 > width + TOLERANCE or", "or x1 > width or", "ページの辺の許容の内側は 0"),
     ("道具が無くても緑にする", "        return 3\n", "        return 0\n", "道具が無ければ 3"),
