@@ -89,11 +89,19 @@ Issue 本文（外部入力）から読んだ要件: scaffold の `SKILL.md` の
 
 | 指摘 | 出所 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- |
+| V1 「乗る割合」の分子が Red + 受入基準で、見出し（Red テストに乗るか）と食い違い、spec-ir.md の理由 3 が実装の定義のもとで偽 | Verifier 1・/code-review 1 | 示せる（red 0・acceptance 20 で 100.0%。出力で確認） | A4 | **直した**（定義を spec-ir.md・docstring に書き、出力に Red だけの割合を併記。テスト更新） |
+| V2 spec-ir.md の「実測 #1296 1 点」が不正確（実際は 636 件のうち 1 ファイル 113 件で 15 件 13%・#1298〜#1301 の前・Red だけ） | Verifier 1 | 示せる（#1296 本文） | A4 | **直した**（事実を書き直し、「今の定義では 0 点」に） |
+| V3 手順 1a が終了コード 2 と list の 1 を扱わず、「2 に入る」が項目 2 と読める | /code-review 1 | 示せる（文面） | A2 | **直した**（終了コード 2・list の 1 を書き、「手順 2」と書く） |
+| V4 試料の穴: class の大文字小文字・値の中の重複キー・RecursionError を 2 にしない・未分けの全件名指し（変異が素通り） | Verifier 1 | 示せる（変異が素通り） | 無し | 記録だけ（試料の穴） |
+| V5 エラー文「scaffold.py の手順 1a」 | Verifier 1・/code-review 1 | 示せる（文言） | 無し | **直した**（V1 と同じ編集で文言を scaffold スキルに。記録だけの行だが同じ行を触るため） |
+| V6 find_versions の probe を捨てる（v01 だけの正本で理由が紛らわしい）・reason の CR・tree.md に置き場所が無い・neither の記述が条件 1 と重なる | /code-review 1 | 示せる（合成・文言） | 無し | 記録だけ（まれな形・文言） |
 
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1302-scaffold-estimate`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1302`・切った元の参照 `origin/main`（解決した SHA `5ebb6689aa7812dcaa55ca508a006385cfebc7c6`）・起点コミット `5ebb6689`。base は `5ebb6689aa7812dcaa55ca508a006385cfebc7c6`。
-- 実装を終えた。割り目: 割らない（cruise の周）。
+- 実装を終えた（コミット `0fc32792`）。割り目: 割らない（cruise の周）。`test-scaffold-estimate.py` は `OK: 試料 28 件・変異 23 件`。
+- 1 パス目: Verifier（別ティア `opus`・`dev-loop:dev-loop-verifier`）と `/code-review`（high）を `0fc3279291d9faa72eb25852e33e7614e0d05118` に当てた。**1 パス目の指摘対応の起点の SHA: `0fc3279291d9faa72eb25852e33e7614e0d05118`**。反証 4・指摘 7（上の表）。
+- 指摘対応: V1・V2・V3・V5 を直した（コミット `e68e14dd685a96bce52e8a51783100b167297a2b`）。V4・V6 は記録だけ。
 - 手順 5 の反証と差し戻し: 実験なし。
 
 ## 関門の記録
