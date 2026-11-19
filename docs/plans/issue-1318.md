@@ -7,7 +7,7 @@
 cruise-found の周の判定: Issue が「利用者に見える誤り」（found-lines.md の直す 3 条件の 2。`Handoff` が実際に作る本文から Q&A の No を誤って引く）を示している——記録だけではなく直す。
 
 直す線: `既定`（出所: cruise の確かめた線）。
-版の上げ方: `spec-loop` を **patch**（不具合の修正。0.119.0 → 0.119.1）。並行する周 #1299 も spec-loop を触る——マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から上げ直す（cruise の `references/parallel.md`）。
+版の上げ方: `spec-loop` を **patch**（不具合の修正。0.119.0 → 0.119.1 に上げたが、main が先に #1299 で 0.120.0 へ進んだので取り込み、0.120.1 に上げ直した）。並行する周 #1299 も spec-loop を触る——マージの直前に main が進んでいたら親の依頼で取り込み、main の先端の版から上げ直す（cruise の `references/parallel.md`）。
 重い検査（`check-all.py`）は `run-serial.py` 越し。
 
 Issue 本文（外部入力）から読んだ要件: `rebuild-scope.py` の `Handoff` が `## 受入基準` の節を読む範囲を `### Red テストにしない受入基準` の手前で打ち切る。`test-rebuild-scope.py` に失敗を再現する試料（直す前は赤・直した後は緑）を足す。`acceptance` を書かない Issue 本文は今までと同じ結果。
