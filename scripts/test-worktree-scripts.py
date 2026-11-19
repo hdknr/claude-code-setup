@@ -1050,19 +1050,23 @@ def check_norm_shape() -> None:
     check("verifier.md: プロパティテストの差し込み 10 がある", bool(prop_block))
     check("SKILL.md: プロパティテストの原本を指し、該当判定の行を求める",
           "references/property-tests.md" in skill and "プロパティテスト: なし（理由）" in skill)
-    check("SKILL.md: 手順 5 が差し込み 10 を入れることと、表が返らなければ未検証とすることを求める",
-          "差し込み 10 を入れ、行ごとの表が返らなければ未検証として扱う" in skill)
+    _s5 = skill[skill.find("### 5. 検証"):skill.find("### 6. レビュー")]
+    check("SKILL.md: 手順 5（の節の中）が差し込み 10 を入れることと、表が返らなければ未検証とすることを求める",
+          "差し込み 10 を入れ、行ごとの表が返らなければ未検証として扱う" in _s5)
+    check("SKILL.md: 手順 3 の計画の委譲の項が、プロパティテストの該当判定を委譲先の産物で確かめさせる",
+          "プロパティテストの該当判定（`プロパティテスト:` の行）が、委譲先の産物に" in skill)
     check("verifier.md: 差し込み 10 が、性質を破る変異を実際に当てて反例が出るかを求める（表の見出しの語では満たさない）",
           "反例を出して落ちるかを、実際に当てて" in prop_block and "空振りしています" in prop_block)
     check("verifier.md: 差し込み 10 が生成の設定と空振りの形を読ませる",
           all(k in prop_block for k in ("生成の設定を読んで", "max_examples", "空振りの形を探して")))
     check("verifier.md: 差し込み 10 が、ライブラリが無い行の代替の誠実さを見させる",
-          "ライブラリ: 無い" in prop_block and "黙って例のテストにしていない" in prop_block)
+          "ライブラリ: 無い" in prop_block and "黙って例のテストにしていない" in prop_block
+          and "落とした主張（入力の空間の偏り）が計画に名指しされているか" in prop_block)
     check("implementer.md: プロパティテストをライブラリで書かせ、無いときは差し替えずに止まって「無い」と報告させる",
           all(k in implementer for k in ("Hypothesis", "fast-check", "proptest"))
-          and "例のテストにも差し替えず" in implementer and "「無い」と報告" in implementer)
+          and "足さず、例のテストにも差し替えず、その行は書かずに止まって「無い」と報告" in implementer)
     check("property-tests.md: 4 つの型と、表の形と、代替の記録の形と、落とした主張の名指しがある",
-          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張")))
+          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "計画を書く時点（手順 3）で決める", "依存の定義にも lockfile にも無い")))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
