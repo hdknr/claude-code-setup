@@ -1,0 +1,99 @@
+# Issue #1287 — launch-with-long-token: 長期トークンの登録と cruise の起動を 1 コマンドにする
+
+**不在の周**（`/dev-loop:cruise 1290 --absent` の起動・2026-11-19）。利用者には訊かない。親（cruise #1290）から委譲文で受けた子。
+確かめた線（出所: 親の委譲文——cruise の確かめた線）: `直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`・`マージ前の判断 = 推奨で決めて起票`（古い値）。
+台帳は書かない（親だけ）。手順 7 のマージはしない（PR・CI の確認まで。手順 8 は計画ファイルに書くまで）。
+読み込んだ dev-loop は 2.12.0（`SKILL.md` 1931 行を読んだ）。
+直す線: `既定`（出所: 親の委譲文）。割り目: 割らない（cruise の周）。
+版の上げ方: `dev-loop` を **minor**（起動口に登録・起動口の設置という能力を足す）。着手時の main は dev-loop 2.12.0。マージ直前に main が進んでいたら、親の依頼で取り込み、先端の版から上げ直す（cruise の `references/parallel.md` の「版とマージの順」）。
+重い検査は `/Users/hdknr/.claude/plugins/cache/claude-code-setup/dev-loop/2.12.0/skills/cruise/scripts/run-serial.py` 越しに走らせる。
+
+Issue 本文（外部入力）から読んだ要件: 提案 1（未登録なら登録に進んでから起動する）・提案 2（版に依らない短い起動口。(a) shell 関数か (b) `--install-launcher` のどちらか）・提案 3（点検の案内文・cruise `SKILL.md` §3・公開ページを合わせる）。受入基準は本文の 7 項目を下の表に固定した。
+
+## 変更範囲
+
+触る:
+
+- `plugins/dev-loop/skills/dev-loop/scripts/launch-with-long-token.sh` — 登録に進む分岐（`store_token`・`read_token`）と `--install-launcher`、冒頭のコメント
+- `plugins/dev-loop/skills/dev-loop/scripts/check-unattended-env.py` — 「認証」の直し方の文（1 本のコマンドを案内する）
+- `plugins/dev-loop/skills/cruise/SKILL.md` — §3 の 3（案内を 1 本のコマンドに合わせる。「別の端末」を「Claude Code の外」に）と版の 2 行
+- `plugins/dev-loop/skills/dev-loop/SKILL.md` — 版の 2 行だけ
+- `docs/usage/cruise-long-lived-token.md` — 公開ページ（1 本のコマンド・短い起動口・確かめた範囲）
+- `docs/plugins/dev-loop-cruise.md` — 部品の表の行
+- `scripts/test-launch-with-long-token.py` — 疑似端末のシナリオ・起動口のシナリオ・変異
+- `scripts/test-check-unattended-env.py` — 案内文の試料と変異
+- `plugins/dev-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json` — 版
+- `docs/plugins/dev-loop-design.md` — §8.2 の生成ブロック（`skill-metrics.py` が書き直す。今回は行数が動かないので変更なしの見込み）
+- `docs/plans/issue-1287.md` — この計画ファイル
+
+触らない:
+
+- `claude setup-token` の自動化（ブラウザの認証。Issue のとおり案内するだけ）
+- `--status` の挙動（44 とそれ以外を分けて言う今のまま）
+- `child-cycle.py`・`outer-loop.py`・`autopilot-loop.py`（起動口を `--claude` で受ける側。標準入力が端末でない起動は今までどおり止まるので変えない）
+- キーチェーンのトークンの保管場所・サービス名
+
+依存の追加・更新: なし
+
+## 設計の判断
+
+- **登録に進む条件**: 項目が無い（`security` の 44）・標準入力が端末（`[ -t 0 ]`）・`CLAUDECODE` が `1` でない、の 3 つが揃うときだけ。44 以外（ロック 36 など）では進まない。先に使われる認証（`ANTHROPIC_*`）の検査は登録の前（今のまま）。
+  登録の入力は `--store-token` と同じ関数（`store_token`）で、トークンは `security` のプロンプトに貼らせ、変数・引数・表示に載せない。登録の後に値を読み直し、空・読めないなら今までの分岐で止まる。
+- **`--store-token` は `exec` をやめて関数＋ `exit $?`**（終了コードは `security` のまま。テストで見る）。
+- **短い起動口は (b) `--install-launcher`**（下の G1）。名前は `dev-loop-cruise`、既定の置き場所は `~/.local/bin`。置く起動口は呼ぶたびに `$CLAUDE_CONFIG_DIR`（無ければ `~/.claude`）の下のキャッシュから最新の版（`sort -V`）の `launch-with-long-token.sh` を探して呼ぶ。
+  `--account` は起動口の最初の引数で受けて渡す。同名の別ファイルは上書きしない（印の行で見分ける）。
+
+### 仕様の穴（推奨で決めた。`仕様の穴 = 推奨で決めて起票`）
+
+- **G1 版に依らない短い起動口の形**: (a) 最新の版を探して呼ぶ shell 関数を公開ページに載せる／(b) `--install-launcher` で版を含まない場所に起動口を置く（推奨）。
+  Issue 本文が「次のどちらか」と開いている。推した理由: (a) は利用者が関数を自分の `.zshrc` に写す手間が残り、手で写す間に直し残しも起きる（試作の関数は `--status` が 44 とそれ以外を分けないので、ロックでも登録に進む欠陥が Issue 本文に書いてある）。(b) はスクリプトが置くので、44 とそれ以外の分けを 1 か所（本体）に持てる。
+  (a) も選ぶなら、公開ページに書くだけで足りる（実装は要らない）——利用者が選べる。
+
+## デプロイ経路
+
+プラグイン（`marketplace.json` のカタログと、`link-skills.sh` を使う利用者の `git pull`）と公開サイトの再ビルド。**マージの反映: ドキュメントとプラグインの配布**（`.claude/dev-loop.md` の宣言どおり）。
+
+## 受入基準（不変条件 × 経路）
+
+入口: 起動口の通常の起動（対話の端末・非対話・Claude Code のセッションの中）× キーチェーンの状態（登録済み・44・44 以外の失敗・値が空）× `--account`／
+起動口の設置（`--install-launcher`）と置いた起動口の実行／案内文の 3 か所（点検の直し方・cruise `SKILL.md` §3・公開ページ）。
+
+| # | 不変条件 | 破りうる経路 | 守り方 |
+| --- | --- | --- | --- |
+| A1 | キーチェーンに項目が無い状態で、対話の端末から 1 本のコマンドを打つと、登録の入力を経て長期トークンで起動する（点検の「認証」が長期トークンと出す前提） | 登録に進まない・登録の後に読み直さない・引数を落とす | `test-launch-with-long-token.py` の疑似端末のシナリオ（偽の `security`・`claude`）。点検の「認証」自体は既存の `test-check-unattended-env.py`（起動した `claude` の環境を見る） |
+| A2 | 登録済みなら、入力なし（登録に進まない）で起動する | 登録済みでも `add-generic-password` を呼ぶ | 同じシナリオ（登録済みで `add` が呼ばれない） |
+| A3 | 非対話（標準入力が端末でない）・Claude Code のセッションの中では、項目が無ければ 2 で止まり、登録に進まない | 条件の片方を落として進む | 同じシナリオ（`/dev/null` と `CLAUDECODE=1`）と変異 2 本 |
+| A4 | 44 以外（ロックなど）の読めない理由では、端末でも登録に進まずに止まる。登録が失敗したら起動せずに止まる | 44 以外でも進む・失敗のまま起動する | 同じシナリオ（終了コード 36・`FAKE_ADD_RC=5`）と変異 2 本 |
+| A5 | プラグインの版が変わっても、利用者が打つコマンドは変わらない（置いた起動口が最新の版を探して呼ぶ） | 版を起動口に埋める・文字列順で選ぶ（2.9.0 > 2.12.0） | 起動口のシナリオ（版 2.9.0・2.10.1・2.12.0 → 2.13.0 を後から足す）と変異 |
+| A6 | トークンの値が標準出力・標準エラー・引数（`ps`）・置いた起動口に出ない | 登録の入力を変数・引数に載せる・起動口に埋める | 同じシナリオ（出力・security の引数の記録・claude の記録・起動口の本文にトークンが無い）と既存の変異 |
+| A7 | 点検の案内文・cruise `SKILL.md` §3・公開ページが新しい 1 本のコマンドを案内し、「別の端末で」を「Claude Code の外で」に直している | 3 か所のどれかが古い 2 段の案内のまま | `test-check-unattended-env.py`（案内文の試料と変異）。`SKILL.md`・公開ページは文書の読み比べ |
+| A8 | `--install-launcher` は同名の別ファイルを上書きせず、`--account` と一緒には使えず、起動口は `--account`・`--store-token`・`--status` を起動口へ渡し cruise の引数にしない | 上書きする・引数を cruise に混ぜる | 起動口のシナリオと変異 |
+| A9 | 版を上げ（dev-loop、3 種で揃う）、`check-all.py` が通る | 版の取りこぼし・歯止めの赤 | `check-plugin-versions.py`・`skill-metrics.py --check`・`check-all.py`（run-serial 越し） |
+
+**検証で証明できるもの**: A1〜A9（偽の `security`・`claude` と疑似端末・偽のプラグインのキャッシュ）。
+**この環境では証明できないもの（未証明）**: 本物のキーチェーンに登録する操作（`security add-generic-password` の本物のプロンプトが入力を画面に出すか・登録の直後に読み直せるか）。
+本物のキーチェーンは利用者のものなので走らせない。公開ページの「確かめていないこと」に書いた。人間のレビューで確かめる。
+**生成物**: `docs/plugins/dev-loop-design.md` §8.2 の生成ブロック（`skill-metrics.py --check`）。図なし。
+**必須要件の掛け算**: 受入基準を Verifier と `/code-review` の両方に、1・2 パスとも渡す（2 パス目が該当なしなら 1 パス目の 2 つ）。
+
+**複製の数**: 1 本のコマンドの案内を述べる箇所は 4（起動口の冒頭（原本）・点検の直し方・cruise §3・公開ページ）。**分けない理由**: Issue の受入基準が 3 か所（点検・SKILL.md・公開ページ）を名指しで合わせることを求める。原本は起動口の冒頭と公開ページで、ほかは指す短い形にとどめた。
+
+## 未解決の判断・確認待ち
+
+- G1 は推奨で決めた。確認の Issue を起票する（不在の線 `仕様の穴 = 推奨で決めて起票`）。閉じるのは利用者。台帳の `decisions` には親が足す（子は台帳を書かない）。
+
+## 起票
+
+- この周の起票: 1 件（仕様の穴の確認の Issue——G1）
+
+## 関門の進捗（再開点）
+
+- 周の在り処: ブランチ `issue/1287-long-token-one-command`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1287`・
+  起点 `f80dc8d`・切った元の参照 `origin/main`（解決した SHA `f80dc8d11fdc59e6f66b095c2d92a9e54dea77f7`）・base `f80dc8d11fdc59e6f66b095c2d92a9e54dea77f7`
+- 割り目（手順 4）: 割らない（cruise の周）。
+- 交絡を潰した手順: 実験なし（偽の `security`・`claude` による試料と変異のみ。本物のキーチェーンは走らせていない）。
+
+## 既知の限界・決着済みの論点
+
+- G1 は (b) を採った（上）。**決着の理由が誤っていると判断したなら、それは新しい反証である。**
+- 本物のキーチェーンへの登録は未証明（上）。
