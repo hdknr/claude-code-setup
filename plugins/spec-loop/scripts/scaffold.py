@@ -1328,7 +1328,9 @@ def load(repo: Path, upto: int | None = None, provisional: bool = False) -> tupl
     loaded = Loaded(ir, rendered[IR_PATH], answered, number, docs, rendered.get(SCOPE_PATH), rendered.get(NFR_PATH))
     loaded.provisional = provisional
     loaded.notes = notes
-    loaded.spec_texts = {rel: rendered[rel] for feature in features_of(ir) for rel in feature.get("source", []) if rel in rendered}
+    # 綴りが `spec/./order.md` でも `check_source` は通す（解決して見る）——全体の鍵は正規化した綴りなので、正規化して引く
+    loaded.spec_texts = {rel: rendered[os.path.normpath(rel)] for feature in features_of(ir)
+                         for rel in feature.get("source", []) if os.path.normpath(rel) in rendered}
     loaded.coverage = coverage_lines(rendered, ir)
     loaded.infra = settled
     # 検査（`check_refs`）を通った後なので、指したパスは重ね合わせた全体に在る

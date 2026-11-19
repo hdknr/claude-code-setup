@@ -602,6 +602,11 @@ def acceptance_not_in_removal(repo: Path) -> str | None:
     return "撤去の本文に acceptance の小見出しがある" if ACC_HEADING in found["F-002"] else None
 
 
+def acceptance_dot_source(repo: Path) -> str | None:
+    section = accepted_section(bodies(repo)["F-001"])
+    return None if section and f"{ACC_HEADER}\n{ACC_ROWS[2]}\n\n{ACC_COPIED}" in section else f"./ を含む source の行に表の見出しが付かない: {section}"
+
+
 def acceptance_unnumbered(repo: Path) -> str | None:
     section = accepted_section(bodies(repo)["F-001"])
     return None if section and f"{ACC_INTRO}\n\n{ACC_FREE}\n\n{ACC_COPIED}" in section else f"番号の無い行が写っていない: {section}"
@@ -2974,6 +2979,8 @@ CASES: list[Case] = [
          spec={"order.md": ACC_SPEC + "\nＦ1-1 を参照\n"}, absent="どちらにも無い: F1-1"),
     Case("受入基準: 見出しの行", 1, "この行が原文のまま無い（表の見出し・区切りの行・見出しの行は挙げない）: '## 別の表'",
          ir=accepting((), ["## 別の表"]), spec=ACC_FILES),
+    Case("受入基準: source が ./ を含む綴りでも表の見出しが付く", 0, "作った", ir=edit(lambda ir: (f1(ir).update(source=["spec/./order.md"]), f1(ir).update(acceptance=[ACC_ROWS[2]]))),
+         spec=ACC_FILES, post=acceptance_dot_source),
     Case("受入基準: 空の配列", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
          ir=accepting((), []), spec=ACC_FILES),
     Case("受入基準: 配列でない", 1, "F-001.acceptance: Red テストにしない受入基準の行の原文の 1 つ以上の配列でない",
@@ -3587,14 +3594,14 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("acceptance の前後の空白を許す", " or row != row.strip() for row in listed", " for row in listed", "受入基準: 前後に空白"),
     ("acceptance の複数行を許す", " or not one_line(row) or row != row.strip() for row in listed", " or row != row.strip() for row in listed",
      "受入基準: 複数行"),
-    ("acceptance の仕様に無い行を許す", "for row in listed if row not in lines or TABLE_SEPARATOR", "for row in listed if TABLE_SEPARATOR", "受入基準: 仕様に無い行"),
+    ("acceptance の仕様に無い行を許す", "for row in listed if row not in lines]", "for row in listed if False]", "受入基準: 仕様に無い行"),
     ("acceptance の行を表の読み方で絞らない", "    lines = source_lines(sources, whole, rows_only=True)", "    lines = source_lines(sources, whole)",
      "受入基準: 表の見出しの行"),
     ("仕様のケースの数に spec/ の外を入れる", "        if parts[0] != SPEC_DIR or not rel", "        if not rel",
      "受入基準: 仕様のケースの数に spec/ の外の .md を入れない"),
     ("内訳で ref の全角を半角にそろえない", 'red = {unicodedata.normalize("NFKC", case["ref"]).strip() for', 'red = {case["ref"].strip() for',
      "受入基準: ref の全角も半角と同じ番号に数える"),
-    ("acceptance を機能の source の外の仕様の行でも許す", "    lines = source_lines(sources, whole)\n    if lines is None:\n        return []  # source が配列でない",
+    ("acceptance を機能の source の外の仕様の行でも許す", "    lines = source_lines(sources, whole, rows_only=True)\n    if lines is None:\n        return []  # source が配列でない",
      "    lines = source_lines([f\"{SPEC_DIR}/{path.name}\" for path in (whole / SPEC_DIR).glob(\"*.md\")], whole)\n    if lines is None:\n        return []  # source が配列でない",
      "受入基準: 別の機能の仕様の行"),
     ("acceptance の小見出しを書かない", '        lines += ["", ACCEPTANCE_HEADING, ""] + acceptance_section(feature, loaded)', "        pass",
@@ -3603,6 +3610,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "受入基準: 消した機能の本文には小見出しを付けない"),
     ("acceptance の表の見出しを付けない", "        if header is not None and (index == 0 or header != previous):\n            lines += list(header)",
      "        if False:\n            lines += list(header)", "受入基準: 行を原文のまま本文に写す"),
+    ("source の綴りを正規化せずに原文を引く", "for rel in feature.get(\"source\", []) if os.path.normpath(rel) in rendered}", "for rel in feature.get(\"source\", []) if rel in rendered}",
+     "受入基準: source が ./ を含む綴りでも表の見出しが付く"),
     ("acceptance を中間表現の順でなく並べ替える", "for index, text in enumerate(feature[ACCEPTANCE]):", "for index, text in enumerate(sorted(feature[ACCEPTANCE])):",
      "受入基準: 行を原文のまま本文に写す"),
     ("acceptance の注意書きを書かない", '    lines = ["下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、', '    lines = ["", "下に挙げた仕様のケースは、関数の 1 回の呼び出しでは表せず、',
@@ -3674,7 +3683,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("原文の前後の空白を許す", " or not one_line(text) or text != text.strip():", " or not one_line(text):", "呼ぶ側の分岐: 前後に空白"),
     ("原文が在ることを見ない（分岐）", "for at, text in good if text not in lines]", "for at, text in good if False]",
      "呼ぶ側の分岐: 原文に無い行"),
-    ("原文の行の前後の空白を落とさない", "lines |= {line.strip() for line in", "lines |= {line for line in",
+    ("原文の行の前後の空白を落とさない", "found = [line.strip() for line in", "found = [line for line in",
      "課題一覧（案）: 未決定事項と受入基準の雛形と作らないもの"),
     ("source の 1 つ目しか読まない", "            continue  # 読めない原文は source の検査と未決定の印の関門が言う\n    return lines",
      "            continue  # 読めない原文は source の検査と未決定の印の関門が言う\n        break\n    return lines",

@@ -93,13 +93,19 @@ scaffold が仕様のテストケースと中間表現を突き合わせ、内�
 
 | 指摘 | 出所 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
 | --- | --- | --- | --- | --- |
-| （関門の指摘が出たらここに 1 件 1 行で書く） | | | | |
+| F1 `rebuild-scope.py` の `Handoff` が `## 受入基準` の節を次の `## ` まで読むので、小見出しの下の先頭セルを等幅にした行（最後の列が Q&A の No）を Red テストのケースと読み違える | Verifier 1・/code-review 1 | 示せる（`acceptance` に `| `F1-3` | … | Q-001 |` を挙げて scaffold し `Handoff` に通すと `Q-001: [F-001-C1, F1-3]`。親が走らせて確認） | 無し（受入基準 A1〜A8 に rebuild-scope は無い。入口に挙げていない読み手） | 残課題（既定の線。手順 8 の振り分け: 直す——利用者に見える誤り。`rebuild-scope.py` の節の読みを小見出しの手前で打ち切る。仕様の穴ではない） |
+| F2 表の見出しの行（`| テストケース | … |`）が `acceptance` に通り、`out_of_scope` と食い違う | Verifier 1・/code-review 1 | 示せる（exit=0・見出しの付かない裸の行が本文に写る） | A1 | **直した**（`source_lines(rows_only=True)` で `rows_with_header` の読み方に。試料と変異を足した） |
+| F3 内訳の試料の穴（`spec/` の外の `.md`・全角の ref の NFKC） | Verifier 1 | 示せる（変異が素通り） | A2・A3 | **直した**（試料と変異を足した） |
+| F4 未証明の項が #1297 の限界で、主張を弱めれば分類が要らない | Verifier 1 | 示せない（BLOCKED に寄せていない） | 無し | 記録だけ（未証明の文を「`CASE_HEADER` に当たる表のケースを数える」までに弱めて PR に書く） |
+| N0 件のとき `0 件のうち…` が確認済みに読める | /code-review 1 | 示せる（文言） | 無し | 記録だけ（文言。#1297 の限界） |
+| spec_case_rows が NUL を含むファイルを読む（check-spec-exit は読めない側） | Verifier 1 | 示せる（軽微） | 無し | 記録だけ（NUL を含む `.md` はまず起きない） |
 
 ## 関門の進捗（再開点）
 
 - 周の在り処: ブランチ `issue/1301-acceptance-cases`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1301`・切った元の参照 `origin/main`（解決した SHA `b874615af572f4d40b20b0071893d8336dbd19c6`）・起点コミット `b874615a`。base は `b874615af572f4d40b20b0071893d8336dbd19c6`（prepare-worktree.sh の出力）。
 - 実装を終えた（コミット `6a4e7edd`）。割り目: 割らない（cruise の周）。`test-scaffold.py` は全部回して `OK: 試料 477 件・変異 384 件`（run-serial 越し）。
-- 1 パス目: Verifier（別ティア `opus`・`dev-loop:dev-loop-verifier`）と `/code-review` を `6a4e7edde0640f64865c972198854a586e782c22` に当てている。**1 パス目の指摘対応の起点の SHA: `6a4e7edde0640f64865c972198854a586e782c22`**。
+- 1 パスの指摘対応: F2・F3 を直した（コミット `5c4a2c5b`）。F1 は残課題。**2 パス目の起点・終点**: Verifier 2・/code-review 2 は `5c4a2c5b574c5c229e2babf332adc3b99e83fe74` に当てる。
+- （1 パス目の記録）Verifier（別ティア `opus`・`dev-loop:dev-loop-verifier`）と `/code-review` を `6a4e7edde0640f64865c972198854a586e782c22` に当てている。**1 パス目の指摘対応の起点の SHA: `6a4e7edde0640f64865c972198854a586e782c22`**。
 - 手順 5 の反証と差し戻し: 実験なし（交絡を潰す対象の実験は無い。変異は試料で当て、陽性対照は `test-scaffold.py` が持つ）。
 
 ## 関門の記録
