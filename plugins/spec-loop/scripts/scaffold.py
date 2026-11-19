@@ -95,6 +95,12 @@ Red テストの表（受入基準）にも `--red-check` にも入れない（�
 口と同じ名前の入口や入力の項目があるなら 1。** トレースのケースを持たない機能の Red テストと本文は、足す前と 1 バイトも変わらない
 （決まりの正は `references/spec-ir.md` の「トレースのケース」）。
 
+**前提と後の状態（`setup`・`after`。#1298）**: 入出力のケースに、本体を呼ぶ前の状態を作る `setup` と、呼んだ後の状態を確かめる `after` を書ける——
+入口の呼び出し（`{"operation", "input", "expected" か "error"}`）か、入口の無い前提（マスタ・利用者・権限）を作る口 `seed` の呼び出し（`{"seed", "values"}`）の配列。
+Red テストは `reset_state()` → `setup` → 本体の呼び出し → `after` の順に呼んで比べる。実装に求める口は `reset_state()` と（`seed` を書いたときだけ）`seed(<名前>, /, **値)`。
+**書かないケースだけの機能の Red テスト・本文・指紋は 1 バイトも変わらない**（機能の指紋の式は変えない）。**呼び出しの入口・入力・期待が中間表現に合わない・空の配列・`seed` の形に反する・
+`setup`・`after` を書いたケースがあるのに入口の名前が `reset_state`・`seed` を書いたのに入口の名前か入力の項目が `seed` なら 1**（決まりの正は `references/spec-ir.md` の「前提と後の状態」）。
+
 **仕様の基準コミット（#874）**: 本文の `## 仕様` に、正本リポジトリで本文を生成した時点の HEAD とそのコミットの日時を
 `- 基準コミット: ` の行で書く——dev-loop が周の頭で、その後の変化が仕様の前提（既存のシステム）を崩していないかを点検する
 （dev-loop の `references/spec-gap.md`）。**git の作業ツリーの根でない・コミットが無い・git を起動できないなら止めずに**
@@ -388,6 +394,11 @@ TRACE = "trace"
 # 実装に求める口: 呼び出しのキーワード引数（段の前で呼ぶ）と、状態を空に戻すモジュールの関数
 CHECKPOINT = "checkpoint"
 RESET = "reset_state"
+# 入出力のケースの前提・後の状態（#1298。`references/spec-ir.md` の「前提と後の状態」が原本）。
+# 実装に求める口は、`reset_state()`（上）と、入口の無い前提を作るモジュールの関数 `seed(<名前>, /, **値)`
+SETUP = "setup"
+AFTER = "after"
+SEED = "seed"
 # `spec/formal/<対象>/` の対象の名前（`references/tree.md` の「形式検査のモデル」）
 FORMAL_NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 FORMAL_RECORD = "README.md"
@@ -702,7 +713,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
     templates = {}  # 変数の名前を消したパス → 最初に使ったパス
     # トレースのケースは、ほかの機能の入口も呼ぶ（#923）——先に全部の入口を集める（後ろの機能の入口も指せる）
     ops = operations(ir)
-    traced = False
+    traced = staged = seeded = False
     type_names = {}  # pascal(operation.id) → 最初に使った operation.id
     for index, feature in enumerate(features):
         where = f"features[{index}]"
@@ -796,7 +807,7 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
             if trace_case:
                 found = keys_problem(at, case, {"id", "title", TRACE}, {"qa", "ref"})
             else:
-                found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa", "ref"})
+                found = keys_problem(at, case, {"id", "title", "input"}, {"expected", "error", "qa", "ref", SETUP, AFTER})
             if found:
                 problems += found
                 if not isinstance(case, dict):
@@ -815,6 +826,12 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
                 traced = True
                 problems += check_trace(f"{at}.{TRACE}", case[TRACE], ops, whole)
             else:
+                for key in (SETUP, AFTER):
+                    if key in case:
+                        staged = True
+                        problems += check_stage(f"{at}.{key}", case[key], ops)
+                        seeded = seeded or (isinstance(case[key], list)
+                                            and any(isinstance(item, dict) and SEED in item for item in case[key]))
                 if "input" in case:
                     problems += check_values(f"{at}.input", case["input"], fields_in)
                 if ("expected" in case) == ("error" in case):
@@ -829,6 +846,16 @@ def check_ir(ir, whole: Path, answered: dict[str, dict[str, str]], path_rules: b
                 problems += check_ref(f"{at}.ref", case["ref"], feature.get("source"), whole)
     if traced and RESET in operation_ids:
         problems.append(f"spec_ir.json: 入口の名前 `{RESET}` は、トレースのケースが実装に求める口（状態を空に戻す関数）と重なる")
+    elif staged and RESET in operation_ids:
+        problems.append(f"spec_ir.json: 入口の名前 `{RESET}` は、前提・後の状態（`{SETUP}`・`{AFTER}`）のケースが実装に求める口（状態を空に戻す関数）と重なる")
+    if seeded:
+        # 口 `seed` は入口の関数と並ぶモジュールの関数なので、入口の名前と重ならない。入力の項目の名前も避ける
+        # （`checkpoint` と同じ扱い——口の名前を入力の項目に持つ入口の呼び出しを、口と読み違えない）
+        if SEED in operation_ids:
+            problems.append(f"spec_ir.json: 入口の名前 `{SEED}` は、`{SETUP}`・`{AFTER}` が実装に求める口（入口の無い前提を作る関数）と重なる")
+        for oid, op in sorted(ops.items()):
+            if SEED in op_fields(op, "input"):
+                problems.append(f"spec_ir.json: 入口 {oid} の入力に項目 `{SEED}` がある（`{SETUP}`・`{AFTER}` の口の名前と重なる）")
     return problems + check_called_by(features)
 
 
@@ -874,6 +901,38 @@ def check_call(where: str, call, ops: dict[str, dict], result: bool) -> list[str
             problems += check_values(f"{where}.expected", call["expected"], op_fields(op, "output"))
         elif call["error"] not in op_errors(op):
             problems.append(f"{where}.error: 入口 {name} の errors に無い: {call['error']!r}")
+    return problems
+
+
+def check_seed(where: str, item) -> list[str]:
+    """入口の無い前提を作る口 `seed` の呼び出し（`{"seed": <名前>, "values": {<項目>: <値>}}`。`references/spec-ir.md` の「前提と後の状態」）。"""
+    problems = keys_problem(where, item, {SEED, "values"})
+    if not isinstance(item, dict):
+        return problems
+    name = item.get(SEED)
+    if "seed" in item and (not isinstance(name, str) or not NAME.fullmatch(name)):
+        problems.append(f"{where}.{SEED}: 前提の名前の形に反する（英小文字で始まり英小文字・数字・_）: {name!r}")
+    values = item.get("values")
+    if "values" in item:
+        if not isinstance(values, dict) or not values:
+            problems.append(f"{where}.values: 1 つ以上の項目のオブジェクトでない")
+        else:
+            for key, value in values.items():
+                if not NAME.fullmatch(key):
+                    problems.append(f"{where}.values: 項目の名前の形に反する（英小文字で始まり英小文字・数字・_）: {key!r}")
+                if not (value is None or isinstance(value, (str, bool)) or value_fits("number", value)):
+                    problems.append(f"{where}.values.{key}: 文字列・数・真偽・null のどれでもない（{json.dumps(value, ensure_ascii=False)}）")
+    return problems
+
+
+def check_stage(where: str, items, ops: dict[str, dict]) -> list[str]:
+    """入出力のケースの `setup`・`after`——入口の呼び出し（`{"operation", "input", "expected" か "error"}`）か、口 `seed` の呼び出しの配列（1 つ以上）。"""
+    if not isinstance(items, list) or not items:
+        return [f"{where}: 1 つ以上の呼び出しの配列でない"]
+    problems = []
+    for index, item in enumerate(items):
+        at = f"{where}[{index}]"
+        problems += check_seed(at, item) if isinstance(item, dict) and SEED in item else check_call(at, item, ops, True)
     return problems
 
 
@@ -1701,6 +1760,16 @@ def canonical(value):
     return value
 
 
+def is_staged(case: dict) -> bool:
+    """前提（`setup`）か後の状態（`after`）を持つ入出力のケース（#1298）。"""
+    return not is_trace(case) and (SETUP in case or AFTER in case)
+
+
+def seeds_used(feature: dict) -> bool:
+    """機能の入出力のケースが、入口の無い前提を作る口（`seed`）を呼ぶか。"""
+    return any(SEED in item for case in feature["cases"] if is_staged(case) for key in (SETUP, AFTER) for item in case.get(key, []))
+
+
 def plain_cases(feature: dict) -> list[dict]:
     """入出力のケース（トレースのケースでないもの）。番号の順。"""
     return [case for case in sorted(feature["cases"], key=case_order) if not is_trace(case)]
@@ -1713,8 +1782,18 @@ def trace_operations(case: dict) -> list[str]:
     return sorted({call["operation"] for call in calls})
 
 
+def stage_operations(case: dict) -> list[str]:
+    """前提・後の状態を持つ入出力のケースが呼ぶ入口の名前（`seed` は入口でない）。重複なし・名前の順。"""
+    return sorted({item["operation"] for key in (SETUP, AFTER) for item in case.get(key, []) if SEED not in item})
+
+
+def case_operations(case: dict) -> list[str]:
+    """ケースの Red テストが、本体の入口のほかに呼ぶ入口の名前。入出力のケースで前提も後の状態も無ければ空。"""
+    return trace_operations(case) if is_trace(case) else stage_operations(case)
+
+
 def traced_operations(feature: dict) -> list[str]:
-    return sorted({name for case in feature["cases"] if is_trace(case) for name in trace_operations(case)})
+    return sorted({name for case in feature["cases"] for name in case_operations(case)})
 
 
 def concurrent_operations(feature: dict) -> list[str]:
@@ -1733,11 +1812,8 @@ def trace_nullable(feature: dict, ops: dict[str, dict]) -> dict[str, tuple]:
             for name in traced_operations(feature)}
 
 
-# トレースのケースを持つ機能の Red テストにだけ足す部分（#923。`references/spec-ir.md` の「トレースのケース」）。
-# 呼び出しをスレッドで走らせ、口（`checkpoint`）で止めて、トレースの順に 1 段ずつ進める。1 段の時間のうちに段に来ない（排他で待っている）
-# 呼び出しに当たったら、その順にはならないと読んで順の強制をやめ、全部を走らせる——正しい実装はどの順でも正しい。
-# 段に来ずに終わった・違う段に来た呼び出しは `strayed` に記録して、全部が終わった後に失敗にする（口の約束を守っていない）
-TRACE_RUNTIME = (
+# 名前を指して実装の関数を引く（トレースのケースか、前提・後の状態を持つ入出力のケース（#1298）を持つ機能の Red テストにだけ足す）
+IMPLEMENTATION_OF = (
     "def implementation_of(name):",
     "    try:",
     "        module = importlib.import_module(IMPL_MODULE)",
@@ -1746,8 +1822,12 @@ TRACE_RUNTIME = (
     "            return None",
     "        raise",
     "    return getattr(module, name, None)",
-    "",
-    "",
+)
+# トレースのケースを持つ機能の Red テストにだけ足す部分（#923。`references/spec-ir.md` の「トレースのケース」）。
+# 呼び出しをスレッドで走らせ、口（`checkpoint`）で止めて、トレースの順に 1 段ずつ進める。1 段の時間のうちに段に来ない（排他で待っている）
+# 呼び出しに当たったら、その順にはならないと読んで順の強制をやめ、全部を走らせる——正しい実装はどの順でも正しい。
+# 段に来ずに終わった・違う段に来た呼び出しは `strayed` に記録して、全部が終わった後に失敗にする（口の約束を守っていない）
+TRACE_RUNTIME = (
     "class Schedule:",
     "    # トレースの順に、呼び出しを口（checkpoint）で止めて 1 段ずつ進める",
     "    def __init__(self, steps):",
@@ -1808,8 +1888,8 @@ TRACE_RUNTIME = (
 )
 
 
-def trace_methods() -> list[str]:
-    """トレースのケースを持つ機能の Red テストのクラスに足すメソッド（口の名前は定数から入れる）。"""
+def stage_helpers() -> list[str]:
+    """トレースのケースか、前提・後の状態を持つ入出力のケースがある機能の Red テストのクラスに足すメソッド（入口の関数を引く・呼んで比べる）。"""
     return [
         "",
         "    def function_of(self, name):",
@@ -1830,6 +1910,35 @@ def trace_methods() -> list[str]:
         "        expected = call[\"expected\"] if \"expected\" in call else {\"error\": call[\"error\"]}",
         "        self.assertTrue(self.fits(call[\"operation\"], actual, expected),",
         "                        f\"{call['operation']}({call['input']!r}) が {actual!r} を返した（期待 {expected!r}）\")",
+    ]
+
+
+def staged_methods() -> list[str]:
+    """前提・後の状態を持つ入出力のケースがある機能の Red テストのクラスに足すメソッド（#1298）。口の名前は定数から入れる。"""
+    return [
+        "",
+        "    def stage(self, call):",
+        f"        # 口 `{SEED}` の呼び出しか、入口の呼び出し",
+        f"        if \"{SEED}\" in call:",
+        f"            self.function_of(SEED)(call[\"{SEED}\"], **call[\"values\"])",
+        "        else:",
+        "            self.step(call)",
+        "",
+        "    def staged(self, given, expected, setup, after):",
+        "        # 状態を空に戻し、前提を順に作り、本体を呼んで比べ、後の状態を順に確かめる",
+        "        self.function_of(RESET)()",
+        "        self.addCleanup(self.function_of(RESET))",
+        "        for call in setup:",
+        "            self.stage(call)",
+        "        self.check(given, expected)",
+        "        for call in after:",
+        "            self.stage(call)",
+    ]
+
+
+def trace_methods() -> list[str]:
+    """トレースのケースを持つ機能の Red テストのクラスに足すメソッド（口の名前は定数から入れる）。"""
+    return [
         "",
         "    def trace(self, trace):",
         "        reset = self.function_of(RESET)",
@@ -1890,6 +1999,8 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
     allow_null = sorted(name for name, field in op["output"].items() if nullable(field))
     # トレースのケース（#923）。無い機能の Red テストは、トレースを足す前と 1 バイトも変えない
     traced = any(is_trace(case) for case in feature["cases"])
+    # 前提・後の状態を持つ入出力のケース（#1298）。無い機能の Red テストは、足す前と 1 バイトも変えない
+    staged = any(is_staged(case) for case in feature["cases"])
     lines = [
         f"# {GENERATED}",
         f"# {feature['id']}: {feature['title']} の Red テスト",
@@ -1897,6 +2008,8 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         "# 実装が無ければ、エラーではなく失敗になる。",
         *([f"# トレースのケースは、呼び出しに `{CHECKPOINT}` を渡して段の前で止め、`{RESET}()` で状態を空にしてから当てる"
            "（references/spec-ir.md の「トレースのケース」）。"] if traced else []),
+        *([f"# 前提・後の状態を持つケースは、`{RESET}()` で状態を空にし、`{SETUP}` を順に呼んで本体を呼び、`{AFTER}` を順に呼んで比べる"
+           "（references/spec-ir.md の「前提と後の状態」）。"] if staged else []),
         "from __future__ import annotations",
         "",
         "import importlib",
@@ -1908,8 +2021,9 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         f"OUTPUT_TYPES = {literal(output_types(op))}",
         *([f"NULLABLE = {tuple(allow_null)!r}"] if allow_null else []),
         *([f"TRACE_TYPES = {literal(trace_types(feature, ops))}",
-           f"TRACE_NULLABLE = {literal(trace_nullable(feature, ops))}", f"RESET = {RESET!r}",
-           f"TRACE_STEP_WAIT = {TRACE_STEP_WAIT}", f"TRACE_LIMIT = {TRACE_LIMIT}"] if traced else []),
+           f"TRACE_NULLABLE = {literal(trace_nullable(feature, ops))}", f"RESET = {RESET!r}"] if traced or staged else []),
+        *([f"SEED = {SEED!r}"] if staged else []),
+        *([f"TRACE_STEP_WAIT = {TRACE_STEP_WAIT}", f"TRACE_LIMIT = {TRACE_LIMIT}"] if traced else []),
         "",
         "",
         "def type_fits(kind, value):",
@@ -1928,6 +2042,7 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         *IMPLEMENTATION,
         "",
         "",
+        *([*IMPLEMENTATION_OF, "", ""] if traced or staged else []),
         *([*TRACE_RUNTIME, "", ""] if traced else []),
         f"class {test_class(feature)}(unittest.TestCase):",
         "    def call(self, given):",
@@ -1943,6 +2058,8 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
         *(["            if value is None and name in NULLABLE:", "                continue"] if allow_null else []),
         "            self.assertTrue(type_fits(OUTPUT_TYPES[name], value),",
         "                            f\"{name}: 型が {OUTPUT_TYPES[name]} でない（{value!r}）\")",
+        *(stage_helpers() if traced or staged else []),
+        *(staged_methods() if staged else []),
         *(trace_methods() if traced else []),
     ]
     for case in sorted(feature["cases"], key=case_order):
@@ -1951,7 +2068,11 @@ def red_test(feature: dict, impl_module: str, ops: dict[str, dict] | None = None
             run = f"        self.trace({literal(canonical(case[TRACE]))})"
         else:
             expected = case["expected"] if "expected" in case else {"error": case["error"]}
-            run = f"        self.check({literal(case['input'])}, {literal(expected)})"
+            if is_staged(case):
+                run = (f"        self.staged({literal(case['input'])}, {literal(expected)}, "
+                       f"{canonical(case.get(SETUP, []))!r}, {canonical(case.get(AFTER, []))!r})")
+            else:
+                run = f"        self.check({literal(case['input'])}, {literal(expected)})"
         lines += [
             "",
             f"    # {case['id']}: {case['title']}" + (f"（{refs}）" if refs else ""),
@@ -2298,6 +2419,10 @@ def behavior(feature: dict, case: dict, impl_module: str) -> tuple[str, ...]:
     if is_trace(case):
         return impl_module, TRACE, literal(canonical(case[TRACE]))
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
+    if is_staged(case):
+        # 前提・後の状態（#1298）。書いていないケースの中身は、足す前と同じ
+        return (impl_module, op["id"], literal(case["input"]), literal(expected), SETUP, repr(canonical(case.get(SETUP, []))),
+                AFTER, repr(canonical(case.get(AFTER, []))))
     return impl_module, op["id"], literal(case["input"]), literal(expected)
 
 
@@ -2305,12 +2430,13 @@ def trace_shape(case: dict, ops: dict[str, dict]) -> tuple:
     """トレースのケースの Red テストが見る、呼ぶ入口の出力の型と null を許す項目（#923）。前の版に無い入口は None。"""
     return tuple((name, literal(output_types(ops[name])),
                   tuple(sorted(n for n, field in ops[name]["output"].items() if nullable(field))))
-                 if name in ops else (name, None) for name in trace_operations(case))
+                 if name in ops else (name, None) for name in case_operations(case))
 
 
 def trace_moved(feature: dict, ops_before: dict[str, dict], ops_now: dict[str, dict]) -> bool:
     """機能のトレースのケースが呼ぶ入口の出力の型が、前の版から変わったか——機能が同じでも Red テストが変わる（#923）。"""
-    return any(trace_shape(case, ops_before) != trace_shape(case, ops_now) for case in feature["cases"] if is_trace(case))
+    return any(trace_shape(case, ops_before) != trace_shape(case, ops_now)
+               for case in feature["cases"] if is_trace(case) or is_staged(case))
 
 
 def case_changed(before: dict, old: dict, impl_before: str, feature: dict, case: dict, impl_now: str,
@@ -2328,6 +2454,8 @@ def case_changed(before: dict, old: dict, impl_before: str, feature: dict, case:
         return True
     if is_trace(case):
         return trace_shape(old, ops_before or {}) != trace_shape(case, ops_now or {})
+    if is_staged(case) and trace_shape(old, ops_before or {}) != trace_shape(case, ops_now or {}):
+        return True  # 前提・後の状態が呼ぶ入口の出力の型が変わった（#1298）
     was, now = output_types(before["operation"]), output_types(feature["operation"])
     expected = case["expected"] if "expected" in case else {"error": case["error"]}
     return any(was.get(name) != now.get(name) and (was.get(name), now.get(name)) not in WIDENED for name in expected)
@@ -2496,6 +2624,10 @@ def issue_body(change: Change, loaded: Loaded, contract: dict[str, str], before:
                + f"）はキーワード引数 `{CHECKPOINT}`（既定は何もしない）を受け取って、トレースの段の全部について、その段の操作の直前に——その段のために排他を取る前に——"
                f"`{CHECKPOINT}(\"<段の名前>\")` を呼ぶ"
                "（結果で書かない分岐でも呼ぶ。段を飛ばす・違う名前で呼ぶと失敗）"] if any(is_trace(c) for c in feature["cases"]) else []),
+            *([f"- 前提（`{SETUP}`）・後の状態（`{AFTER}`）を持つケース（spec-loop の `references/spec-ir.md` の「前提と後の状態」）があるので、"
+               f"実装はモジュール `{impl}` に状態を空に戻す関数 `{RESET}()` を持つ（ケースの初めに呼ぶ）"
+               + (f"。入口の無い前提（マスタ・利用者・権限など）を作る関数 `{SEED}(<名前>, /, **値)` も持つ（ケースの `{SEED}` の行が呼ぶ）"
+                  if seeds_used(feature) else "")] if any(is_staged(c) for c in feature["cases"]) else []),
             "- 回し方（正本リポジトリの根で）:",
             "",
             "```bash",

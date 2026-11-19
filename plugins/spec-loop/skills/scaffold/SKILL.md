@@ -5,8 +5,8 @@ description: "確定した仕様を dev-loop の入力（Issue）に変える引
 
 # scaffold スキル
 
-<!-- skill-version: 0.117.0 -->
-> **このスキルの版: 0.117.0**（プラグイン `spec-loop`）。
+<!-- skill-version: 0.118.0 -->
+> **このスキルの版: 0.118.0**（プラグイン `spec-loop`）。
 > 手元で読まれている版がリポジトリの最新より古いなら、
 > `/plugin marketplace update` → `/plugin update spec-loop@claude-code-setup` の順に実行し、
 > Claude Code を再起動する（[#63](https://github.com/hdknr/claude-code-setup/issues/63)）。
@@ -106,6 +106,9 @@ python3 <このスキルの base ディレクトリ>/../../scripts/check-spec-ex
 - **仕様が形式検査の反例のトレースをテストケースとして書いていれば（呼び出し・段の順・結果）、そのケースを `trace` を持つケースに書き起こす**
   （`../../references/spec-ir.md` の「トレースのケース」）——Red テストがトレースの順を実装の口で強制して再現する（#923）。
   `formal` には反例を出した形式検査の対象の名前（`spec/formal/<対象>/`）を書く。**仕様が段の名前や結果を書いていなければ、もっともらしく足さず `/spec-loop:spec-review` に戻す。**
+- **仕様のテストケースが 1 回の呼び出しで書けない（前提の状態・後の状態を確かめる・入口の無い前提がある）なら、入出力のケースに `setup`・`after` を書く**
+  （`../../references/spec-ir.md` の「前提と後の状態」）——前提を作る入口の呼び出しと、入口の無い前提（マスタ・利用者・権限）を作る口 `seed` を `setup` に、
+  後の状態を読む入口の呼び出しを `after` に書く（#1298）。仕様に書いていない前提を足さない。
 - **範囲の文書（`spec/scope.md`）の「範囲の外」の行のうち、その機能を作る人が作らずにおくべき場面があれば、機能の `out_of_scope` にその行を原文のまま並べる**
   （`../../references/spec-ir.md` の「作らないもの」）——Issue の本文の `## 作らないもの` に写り、dev-loop に「何を作らないか」が届く（#851）。
   **要約・言い換えをしない**（スクリプトが原文のまま在るかを確かめる）。関わる行が無い機能には書かない。
