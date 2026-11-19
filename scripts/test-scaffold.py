@@ -2230,6 +2230,9 @@ STAGE_COUNT_CASE = {
     "setup": [{"operation": "set_stock", "input": {"item": "x", "qty": 2}, "expected": {"stock": 2}}],
     "input": {"item": "x"}, "expected": {"stock": 2},
 }
+# 前提を書かないケース——前の前提のケース（F-005-C2）が置いた在庫を残さない実装でだけ緑（テストが終わったら状態を空に戻す）
+STAGE_PLAIN_CASE = {"id": "F-005-C3", "title": "前提を書かないケース: 前のケースの在庫が残らない",
+                    "input": {"item": "x"}, "expected": {"stock": 0}}
 STAGE_TEST = "scaffold/tests/test_f_004.py"
 
 
@@ -2240,7 +2243,7 @@ def staged_ir(fn: Callable[[dict], None] = lambda ir: None, *, trace: bool = Fal
         features = copy.deepcopy(STOCK_FEATURES)
         features[0]["cases"].append(copy.deepcopy(STAGE_RESERVE_CASE))
         features[1]["cases"].append(copy.deepcopy(STAGE_SET_CASE))
-        features[2]["cases"].append(copy.deepcopy(STAGE_COUNT_CASE))
+        features[2]["cases"] += [copy.deepcopy(STAGE_COUNT_CASE), copy.deepcopy(STAGE_PLAIN_CASE)]
         ir["features"] += features if trace else features[1:]
         fn(ir)
         return ir
@@ -2285,7 +2288,7 @@ def stage_written(repo: Path) -> str | None:
     for needle in ("    def test_f_004_c2(self):\n        self.staged({'item': 'y', 'qty': 3}, {'stock': 3}, [], "
                    "[{'expected': {'stock': 3}, 'input': {'item': 'y'}, 'operation': 'get_stock'}])",
                    "RESET = 'reset_state'", "SEED = 'seed'", "    def staged(self, given, expected, setup, after):",
-                   "        self.function_of(RESET)()", "    def test_f_004_c1(self):\n        self.check("):
+                   "        self.function_of(RESET)()\n        self.addCleanup(self.function_of(RESET))", "    def test_f_004_c1(self):\n        self.check("):
         if needle not in test:
             return f"{STAGE_TEST} に {needle!r} が無い"
     # トレースのケースを持たない機能には、順の強制は要らない
@@ -2565,7 +2568,7 @@ CASES: list[Case] = [
          ir=traced(lambda ir: ir["features"][2]["cases"].pop(0)), extra=TRACE_FORMAL),
     # #1298: 入出力のケースの前提（setup）・後の状態（after）と、入口の無い前提を作る口（seed）
     Case("前提・後の状態: 作る", 0, "作った", ir=staged_ir(), post=stage_written),
-    Case("前提・後の状態: 実装が無ければ失敗", 0, "作った", ir=staged_ir(), post=expect_red(7)),
+    Case("前提・後の状態: 実装が無ければ失敗", 0, "作った", ir=staged_ir(), post=expect_red(8)),
     Case("前提・後の状態: 正しい実装で緑", 0, "作った", ir=staged_ir(), impl=STAGE_IMPL, post=expect_green),
     # 前提（set_stock）が効かない・後の状態が変わらない実装は、前提だけのケースと後の状態だけのケースの両方が落ちる
     Case("前提・後の状態: 前提を無視する実装で失敗", 0, "作った", ir=staged_ir(), impl=STAGE_NO_STORE_IMPL,
@@ -2601,6 +2604,10 @@ CASES: list[Case] = [
     Case("前提・後の状態: v2 で前提を変えたら変更", 0, "作った", ir=staged_ir(),
          extra=stage_v2_feature(lambda f: f["cases"][1].update(setup=[dict(STAGE_COUNT_CASE["setup"][0])])),
          post=trace_v2_of("F-004", "F-004-C2", "変更")),
+    Case("前提・後の状態: v2 で既にある前提の値だけ変えたら変更", 0, "作った", ir=staged_ir(),
+         extra=stage_v2_feature(lambda f: f["cases"][1]["setup"][0]["input"].update(qty=3) or
+                                f["cases"][1]["setup"][0]["expected"].update(stock=3), "F-005"),
+         post=trace_v2_of("F-005", "F-005-C2", "変更")),
     Case("前提・後の状態: v2 で後の状態を変えたら変更", 0, "作った", ir=staged_ir(),
          extra=stage_v2_feature(lambda f: f["cases"][1]["after"][0]["expected"].update(stock=4) or
                                 f["cases"][1]["after"][0].update(input={"item": "z"})),
@@ -3631,6 +3638,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "前提・後の状態: トレースのケースの直下には書けない"),
     ("状態を空に戻さない", '        "        self.function_of(RESET)()",', '        "        pass",',
      "前提・後の状態: 文書の例の正しい実装で緑"),
+    ("終わったら状態を空に戻さない", '        "        self.addCleanup(self.function_of(RESET))",', '        "        pass",',
+     "前提・後の状態: 正しい実装で緑"),
     ("前提を呼ばない", '        "        for call in setup:",', '        "        for call in []:",', "前提・後の状態: 正しい実装で緑"),
     ("後の状態を比べない", '        "        for call in after:",', '        "        for call in []:",',
      "前提・後の状態: 後の状態を変えない実装で失敗"),
@@ -3651,7 +3660,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    return sorted({name for case in feature[\"cases\"] if is_trace(case) for name in case_operations(case)})",
      "前提・後の状態: 正しい実装で緑"),
     ("v2 で前提の変化を見ない", "literal(expected), SETUP, repr(canonical(case.get(SETUP, []))),", "literal(expected), SETUP, \"\",",
-     "前提・後の状態: v2 で前提を変えたら変更"),
+     "前提・後の状態: v2 で既にある前提の値だけ変えたら変更"),
     ("v2 で後の状態の変化を見ない", "                AFTER, repr(canonical(case.get(AFTER, []))))", "                AFTER, \"\")",
      "前提・後の状態: v2 で後の状態を変えたら変更"),
     ("後の状態が呼ぶ入口の型の変化を機能で見ない", "               for case in feature[\"cases\"] if is_trace(case) or is_staged(case))",

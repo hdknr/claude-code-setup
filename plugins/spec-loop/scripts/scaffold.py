@@ -1928,6 +1928,7 @@ def staged_methods() -> list[str]:
         "    def staged(self, given, expected, setup, after):",
         "        # 状態を空に戻し、前提を順に作り、本体を呼んで比べ、後の状態を順に確かめる",
         "        self.function_of(RESET)()",
+        "        self.addCleanup(self.function_of(RESET))",
         "        for call in setup:",
         "            self.stage(call)",
         "        self.check(given, expected)",
