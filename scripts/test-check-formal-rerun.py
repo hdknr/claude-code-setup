@@ -130,6 +130,14 @@ def target(body: str = "PASS", controls: tuple[str, ...] = ("VIOLATE",), model_l
     return files
 
 
+def two_bodies(first: str, second: str) -> dict[str, str]:
+    """本体を 2 つ（Order と Second）持つ対象。陽性対照は Broken0（違反する）。"""
+    files = target(body=first, model_list="`Order.tla`・`Order.cfg`・`Second.tla`・`Second.cfg`")
+    files["Second.tla"] = f"---- MODULE Second ----\n\\* FAKE:{second}\n====\n"
+    files["Second.cfg"] = CFG
+    return files
+
+
 T1 = "docs/v1/spec/formal/order-cancel"
 T2 = "docs/v1/spec/formal/stock"
 CALL = "@FAKE@"  # 試料を組むときに偽の TLC の絶対パスに置き換える
@@ -148,6 +156,9 @@ CASES: dict[str, tuple] = {
     "本体が通ったと言わない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SILENT")}, [], 4, "通らず、反例も出さなかった"),
     "時相の性質と行き止まりの印を読む": (f"TLC の呼び方: {CALL}\n", {T1: target(controls=("TEMPORAL", "DEADLOCK"))}, [], 0, "満たす"),
     # 時相の性質の違反で終わった回が states/ を残し、次の回が同じ秒に起動しても落ちない（#1346）
+    # 本体の回どうしも別のディレクトリ——構文の誤りで残った states/ に、次の本体がぶつかって反例を落とさない（#1346 の /code-review 1 パス目）
+    "前の本体の states に次の本体がぶつからない": (f"TLC の呼び方: {CALL}\n", {T1: two_bodies("PARSE", "VIOLATE")}, [], 1,
+                                  "本体 Second.tla で反例が出た"),
     "前の回の states に次の回がぶつからない": (f"TLC の呼び方: {CALL}\n", {T1: target(controls=("TEMPORAL", "VIOLATE"))}, [], 0,
                                 "陽性対照 Broken1.tla: 反例が出た（空振りでない）"),
     # 陽性対照を両方の一覧に書いた記録（1 パス目の CR1）——陽性対照を本体の反例と読まない
@@ -195,6 +206,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("正本で走らせる", "            return where\n", "            return str(directory)\n", "満たす"),
     ("1 回ごとに分けない（1 つの一時ディレクトリで続けて走らせる）", "            where = tempfile.mkdtemp(dir=tmp)\n", "            where = tmp\n",
      "前の回の states に次の回がぶつからない"),
+    ("本体の回でディレクトリを分けない", "        for name in bodies:\n            rc, out, weight = timed(call, fresh(), name, timeout)\n",
+     "        shared = fresh()\n        for name in bodies:\n            rc, out, weight = timed(call, shared, name, timeout)\n",
+     "前の本体の states に次の本体がぶつからない"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),
     ("桁区切りを外さない", "re.sub('[' + GROUP_SEPARATORS + ']', '', found[-1])", "found[-1]", "時間切れは進み具合の行の状態数"),
