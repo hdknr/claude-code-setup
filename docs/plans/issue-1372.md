@@ -65,7 +65,8 @@ main へのマージ → GitHub Pages の再ビルド（計画ファイルだけ
 - 指摘対応のコミット: `db55e432`。その後の `check-all.py`: 18/99 本を回して失敗 0（81 本はキャッシュ）
 - 割り目（手順 6、2 パス目の前）: `AskUserQuestion` で「ここで割る」（2026-11-20）。**再開は 2 パス目から**——残りは**手順 5 の当て直し（Verifier 2 パス目）**と **`/code-review` 2 パス目**の**両方**（どちらも未着手）。base は上の `de438dca…` のまま。2 パス目の指摘対応を始める直前に、狭いパスの起点（その時点の HEAD）をここに書く
 - 再開（2026-11-20、`/clear` の後）: 肯定的な確認でブランチ `issue/1372-clock-check-fix`・HEAD `11c16bc8` を確かめた。1 パス目の指摘対応の差分（起点 `659caee1` から、計画ファイルを除く）は `scripts/test-qa-to-pptx.py` の 75 行で 0 行ではない——2 パス目を回す
-- 関門 2 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件・限界 1 件（V2-1。採否の表）。git status は前後とも空。`/code-review`（high）は結果待ち
+- 関門 2 パス目: Verifier（`dev-loop:dev-loop-verifier`・sonnet）反証 0 件・限界 1 件（V2-1。採否の表）。git status は前後とも空。`/code-review`（high）指摘 5 件（important 3・nit 2）。採否は「2 パス目の採否の表」——直す 4 件（V2-1・CR2-1・CR2-2・CR2-3）、残課題 2 件
+- 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `c247b771cad4053b6faae6d7284843dd266e9549`
 - 手元の実測（2026-11-20）:
   - 素の起動: `PPTX 生成のテスト: すべて合格`・「本物の本体の決定性の観測は zip の時刻の刻みをまたぐ（実際: True）」（C4）
   - 陽性対照の写し（走らせた後に消した）: 新しい版に「主な生成を非 0 にする」変異を足した写しは終了コード 0（動的な検査は緑・「変異を殺せる」も緑）（C1）。base（`de438dca`）の版に同じ変異を足した写しは「時計を読むらしい変異が CLOCK_MUTATIONS に無い: X: 主な生成を非 0 にする」で赤（直す前の欠陥の陽性対照）。新しい版に `writestr(name`・`__import__("time").localtime()` の変異を足した写しは 2 本とも動的な検査が赤（違った観測は `deterministic`）（C2）
