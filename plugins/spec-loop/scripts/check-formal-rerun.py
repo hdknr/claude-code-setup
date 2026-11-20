@@ -4,7 +4,8 @@
 usage:
     python3 check-formal-rerun.py <正本リポジトリの根> <spec/formal/<対象> のディレクトリ>... [--timeout <秒>]
 
-**読むだけ**——正本リポジトリに書かない。モデルは対象ごとに一時ディレクトリへ写して走らせ、終わったら消す（TLC の `states/` を正本に残さない）。
+**読むだけ**——正本リポジトリに書かない。モデルは一時ディレクトリへ写して走らせ、終わったら消す（TLC の `states/` を正本に残さない）。
+**走らせる 1 回ごとに別の一時ディレクトリへ写す**（#1346。下の「何を走らせるか」）。
 
 **決まりの正は `references/tree.md` の「形式検査のモデル」（記録の項目）と `references/spec-exit.md` の条件 4 である**（このプラグインの中にある）。
 記録（`README.md`）の読み方は同梱の `formal-baseline.py` の `read_records`、TLC の呼び方の読み方・走らせ方・判定の文字列は同梱の
@@ -19,7 +20,10 @@ usage:
 
 - **本体**: 記録の `モデルのファイル` の一覧の `.tla` のうち、同じ名前の `.cfg` も一覧にあるもの（1 つ以上）。陽性対照の一覧にもある名前は本体に数えない。
 - **陽性対照**: 記録の `陽性対照のファイル` の一覧の同じ形のもの（1 つ以上）——わざと壊したモデルと到達の確かめ（反例が出ることを確かめたもの）。
-- 両方の一覧のファイルを 1 つの一時ディレクトリに写し、呼び方の後ろに `<名前>.tla` を足して、そのディレクトリで `sh` に渡す（`check-tlc.py` と同じ）。
+- 両方の一覧のファイルを一時ディレクトリに写し、呼び方の後ろに `<名前>.tla` を足して、そのディレクトリで `sh` に渡す（`check-tlc.py` と同じ）。
+  **本体・陽性対照の 1 回ごとに、一覧のファイルを別の空の一時ディレクトリへ写して走らせる**（#1346）——TLC は作業ディレクトリに `states/<yy-MM-dd-HH-mm-ss>`（秒の単位の名前）を作り、
+  時相の性質の違反・構文の誤りで終わった回はそれを残す（TLC 2.19 で確かめた。不変条件の違反・行き止まり・通った回は消した）。同じディレクトリで続けて走らせると、次の回が同じ秒に起動したとき
+  `util.FileUtil.makeMetaDir` で検査の前に落ち（`… but that directory already exists.`）、陽性対照なら「空振りの疑い」と読み違える。
 - **保存した `.cfg` のまま走らせる**——`PROPERTY`（時相の性質）を外して速くしない（外すと判定が弱くなる。`references/tree.md` の「保存したモデルを CI で走らせ続ける」）。
 
 ## 重さの注記（#1339）
@@ -60,6 +64,7 @@ usage:
 | 制約で刈ったまま時相の性質を検査した本体の「反例なし」は 4（#1339） | `CONSTRAINT` で刈った先の時相の性質の違反を隠したまま 0 にする |
 | 呼び方の行が無ければ 4 | `PATH` の `tlc` で走らせる（探し方を `check-tlc.py` に揃える） |
 | 一時ディレクトリで走らせる | 正本に `states/` と出力が残り、`formal-baseline.py check` が落ちる |
+| 走らせる 1 回ごとに別の空の一時ディレクトリで走らせる（#1346） | 前の回が残した `states/<秒>` と同じ秒に起動した回が TLC の `makeMetaDir` で落ち、陽性対照を「空振りの疑い」・本体を「通らず、反例も出さなかった」と読む |
 | 1 回の検査を `--timeout` 秒で止める（プロセスグループごと） | 大きいモデルで待ち続ける |
 | 走らせたモデルごとに状態数と経過時間を出し、状態数が読めなければそう言う（#1339） | 時間切れのとき、状態数が多すぎたのか遅いだけなのかが出力から分からない・読めない回に数を作る（知らない桁区切りの数の最後の 3 桁を数と読む） |
 | 状態数が読めなくても判定と終了コードを変えない | 診断の材料が無いことで、通るモデルを「判定できなかった」にする |
@@ -173,12 +178,19 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
             return UNKNOWN, [f"{directory}: 一覧のファイル「{name}」がこのディレクトリの通常のファイルとして無い"]
     lines: list[str] = []
     with tempfile.TemporaryDirectory(prefix="spec-loop-formal-rerun-") as tmp:
-        for name in names:
-            shutil.copyfile(directory / name, Path(tmp) / name)
-        where = tmp  # 写した先で走らせる——TLC の `states/` と出力を正本に残さない
+
+        def fresh() -> str:
+            """一覧のファイルを写した、空の新しい作業ディレクトリ。"""
+            # 写した先で走らせる——TLC の `states/` と出力を正本に残さない。1 回ごとに別にする——前の回が残した
+            # `states/<秒>` に同じ秒の次の回がぶつかって、検査の前に落ちる（#1346）
+            where = tempfile.mkdtemp(dir=tmp)
+            for name in names:
+                shutil.copyfile(directory / name, Path(where) / name)
+            return where
+
         verdict = PASS
         for name in bodies:
-            rc, out, weight = timed(call, where, name, timeout)
+            rc, out, weight = timed(call, fresh(), name, timeout)
             if violated(out):
                 lines.append(f"{directory}: 本体 {name}.tla で反例が出た{weight}: {tlc.tail(out)}")
                 verdict = COUNTEREXAMPLE
@@ -194,7 +206,7 @@ def rerun(call: str | None, directory: Path, timeout: int) -> tuple[str, list[st
             else:
                 lines.append(f"{directory}: 本体 {name}.tla: 反例なし{weight}")
         for name in broken:
-            rc, out, weight = timed(call, where, name, timeout)
+            rc, out, weight = timed(call, fresh(), name, timeout)
             if violated(out):
                 lines.append(f"{directory}: 陽性対照 {name}.tla: 反例が出た（空振りでない）{weight}")
             else:
