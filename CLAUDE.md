@@ -38,6 +38,11 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     - `skills/dev-loop/scripts/artifact-reads.py` - **spec-loop から来た周が計画ファイルに書いた「読んだ成果物」の行を集め、成果物ごとに読んだ周の数と、その周の起票・関門の指摘を並べる**
       （#1157。**測るだけで、閾値も削る候補も決めない。読むだけ**。関門の記録とコードブロックの読み方は同じ場所の `check-gates.py` を読み込む——写さない。いつ何を書くかは `references/spec-gap.md` の「読んだ成果物を記録する」、
       行の形の原本と守る／守らないは docstring を正とする。**CI からは本体を呼ばない**——入力は spec-loop から来た周の計画ファイル（製品のリポジトリ）。テストは `scripts/test-artifact-reads.py`）
+    - `skills/dev-loop/scripts/line-effects.py` - **委譲文（`prompts/*.md`）の各行について、計画ファイルの `- 効いた行: <ID>` の記録から最後に効いた周を引き、効いていない行を外す候補・同趣旨の行をまとめる候補として根拠つきで並べる**
+      （#1194。「削らない」を「黙って削らない」に置き換える。**台帳は `references/line-registry.csv`（`prompts/` の項は全部載る）で、`check` が台帳と原文の食い違い・未登録の項を 1 にする**。**測るだけで、削る判断はしない**——外すのは人間の承認つきの PR でだけ。
+      手順・eval の付け方は `references/prune.md`、行の形・守る／守らないは docstring を正とする。テストは `scripts/test-line-effects.py`）
+      - `scripts/check-prompt-lines.py` - **CI（PR）で、上の台帳と原文の整合と、台帳から行を外す PR に元の事故を再現する eval（`plugins/dev-loop/evals/*/case.yaml` の `# 外した行: <ID>`・`# 元の事故:`・`graders`）が差分に在るかを落とす**（#1194。
+        eval が通ったかは見ない——PR に要約を貼って人間が見る。同趣旨の行への統合は eval を求めない。守る／守らないは docstring を正とする。テストは `scripts/test-line-effects.py`）
     - `skills/dev-loop/scripts/external-reviews.py` - **PR に付いた外部レビュー bot（CodeRabbit など）のコメントを、`.claude/dev-loop.md` の `外部レビュー:` で宣言した bot の分だけ取り出す**
       （#997。周が手順 6 で PR 側の CI の後に素の 1 行で呼ぶ。**宣言が無ければ 3 で「該当なし」**、本文は `--out` に信頼できない入力の注意つきで書く。
       読む時点・採否の表への載せ方・2 パスとの関係・待ち方は `references/external-review.md`、守る／守らないは docstring を正とする。テストは `scripts/test-external-reviews.py`）
@@ -379,6 +384,9 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
   - `test-artifact-reads.py` - **読んだ成果物の集計**の回帰テスト（#1157。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/artifact-reads.py`**（`test-find-cycle.py` と同じ形）。試料の計画ファイルは一時ディレクトリに書き、
     **走らせた前後で試料が変わらないこと**と、**`references/spec-gap.md` の例の行が本体の正規表現に当たること**（陽性対照つき）も見る
+  - `test-line-effects.py` - **委譲文の行の台帳・最後に効いた周の集計・行を外す PR の歯止め**の回帰テスト（#1194。変異テストを含む）。
+    **本体は `plugins/dev-loop/skills/dev-loop/scripts/line-effects.py` と `scripts/check-prompt-lines.py`**。一時ディレクトリの skill と**一時の git リポジトリ**（周の順はコミットの時刻で、名前順と食い違う試料）に当て、
+    **本物の台帳が通ること・`references/prune.md` の記録の例が本体の正規表現に当たること・「削らない」が「黙って削らない」に置き換わっていること**も見る
   - `test-external-reviews.py` - **外部レビュー bot のコメントの取り出し**の回帰テスト（#997。変異テストを含む）。
     **本体は `plugins/dev-loop/skills/dev-loop/scripts/external-reviews.py`**（`test-find-cycle.py` と同じ形）。
     **偽の `gh` を `PATH` の先頭に置き、`PATH` の残りは `/usr/bin:/bin` だけにする**——本物の GitHub には届かない。**渡す文面が bot のコメントの中の指示に従わないと書くこと**も見る

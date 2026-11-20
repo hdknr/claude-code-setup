@@ -158,6 +158,7 @@ GUARDS: list[tuple[str, list[str], bool]] = [
     ("check-version-bump.py", [], True),
     ("check-description-sync.py", [], True),
     ("check-plan-scope.py", [], True),
+    ("check-prompt-lines.py", [], True),
 ]
 
 # 中で自分も `--jobs` で並列に回すもの（#460。回帰テストの 7 本は #748・#749・#1021・#1049・#1051・#1050・#1052）。親の並列数から決めた `--jobs` を渡す——
@@ -194,6 +195,7 @@ TESTS: list[str] = [
     "test-check-spec-writeback.py",
     "test-formal-sync.py",
     "test-artifact-reads.py",
+    "test-line-effects.py",
     "test-external-reviews.py",
     "test-commit-gate.py",
     "test-check-unattended-env.py",
