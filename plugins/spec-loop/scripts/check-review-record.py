@@ -47,6 +47,13 @@ usage:
 - **確かめた行の振り分けが `共有の Q&A 表に起票する` なのに、その番号が重ねた全体の内部の表に残っていれば `満たさない`（1）**——
   利用者に見える結果が変わると決めた判断を、内部の表に置いたまま抜けない（移し方は `references/qa-csv.md` の「層を移す」）。
 - 確かめる行が 0 件なら 0（その旨を出す）。
+- **判定を読めない行の名指し（#1248）**: 確かめた行の重さが `-` だと判定（`補い`＝変わらない・`判断が要る`＝変わる）が読めず、割れも見えない。
+  `実装に渡す`・`範囲の外として記録する` に振ると重さは `-`（`check-findings-csv.py` の決まり）になり、書き手が重さを `-` のまま振り分けだけ変えた行（`内部の Q&A 表に記録する`・`退ける`）も同じ。重さが `-` の行を `読めない: <No> …` と名指しする（終了コードは変えない。内部の行はその 2 区分に振らない決まり——spec-exit.md）。
+- **割れた行の名指し（#1248）**: 同じ回の中で、同じ内部の行の確かめた行の判定が段（`1回目`・`2回目`・`狭いパス`）ごとに食い違ったら、`割れた: <No> …` を出力に足す。
+  判定は `重さ` で読む（`補い`＝変わらない・`判断が要る`／`結果が割れる`＝変わる。書き手が判定を退けても重さを書き換えない決まり——spec-exit.md）。**終了コードには数えない**——
+  割れたのが、書き手が段の間で行を直したからか、判定役の判断のぶれか、照合先の不足（事実を確かめられなかった）かは、表からは分からない。
+  数えると、正当な直しの後の判定替えも止める。割れた行をどう扱うか（退けるなら、どの段の判定をどの根拠で退けたかを `結果` に書く）は
+  `references/spec-exit.md` の「内部の表の行を確かめる」。
 
 ## `limit` — 実行の上限を数える
 
@@ -87,6 +94,9 @@ N は正本の `CLAUDE.md` で変えてよい（spec-exit.md）——このス�
 | `internal`: 前の版から変わらない内部の行は求めない | 前の版で確かめた行を毎回確かめ直させる（H1） |
 | `internal`: 移すと決めた行が内部の表に残れば 1 | 利用者に見える結果が変わる判断が、利用者に見えないまま抜ける |
 | `internal`: 重ね合わせが決まりに反する・版が無いなら 2 | 比べられない版を「確かめる行が無い」と読んで 0 にする |
+| `internal`: 同じ回の中で段ごとに判定（重さ）が食い違った行を `割れた:` と名指しする（終了コードは変えない） | 段ごとに逆の判定が出た行が、最後の判定だけで決まって、割れたことが誰にも見えない（#1248） |
+| `internal`: 確かめた行の重さが `-` なら（`実装に渡す`・`範囲の外として記録する` に振られた行も、重さを `-` のまま振り分けだけ変えた行も）`読めない:` と名指しする | 重さが `-` の行は判定が読めず、段ごとの食い違いが見えなくなる（#1248 の F1） |
+| `internal`: `確かめられない` の行・前の回の行・同じ判定の段は割れに数えない | 確かめていない行や回をまたいだ違いを、同じ回の判定の割れと読む |
 
 守らない:
 
@@ -99,6 +109,8 @@ N は正本の `CLAUDE.md` で変えてよい（spec-exit.md）——このス�
 | **条件 1・4・5** | 条件 1 は `check-spec-exit.py`、条件 4 の TLC のモデルは `check-formal-rerun.py`、条件 5 は振り分けの表——`internal` が見るのは条件 5 のうち内部の行の確かめだけ |
 | **`internal`: 判定役の判定（変わる／変わらない）が正しいか**・確かめた後に行を書き換えたか | 判断であり、指摘の表は行の中身を残さない（確かめた時点の行と今の行を比べられない） |
 | **`internal`: spec-review を抜けた後に、feasibility・dev-loop が内部の表に足した行** | 抜けた記録は記録の表に残り、scaffold はそれを読むだけ。足した行は次の spec-review の実行で確かめる |
+| **`internal`: 書き手が `重さ` を書き換えた行**（判定役の判定と区別できない。書き換えない決まりは spec-exit.md） | 表は判定役の返した重さと書き手の直した重さを区別して残さない。割れが名指しされない（#1248） |
+| **`internal`: 割れた行の判定のどちらが正しいか**・書き手が `結果` に退けた根拠を書いたか・割れた原因（行を直した・判定役のぶれ・照合先の不足） | 判断であり、表の行は中身も原因も残さない。名指しは書き手に気づかせるだけで、止めない（#1248） |
 | **`internal`: 移した先の共有の表の行があるか**・指し先を直したか | 移し方は `references/qa-csv.md` の「層を移す」。共有の表の行は条件 1 が見る |
 | **記録の表の `条件2〜4` の値が判定どおりか** | `limit` は書いた値を数えるだけ |
 
@@ -152,6 +164,7 @@ INTERNAL_MARK = re.compile(r"（内部の行\s*[:：]\s*([^）\s]+)）")  # コ�
 KEEP = "内部の Q&A 表に記録する"
 DOMAIN_CHECKER = "domain-checker"
 MOVE = "共有の Q&A 表に起票する"
+SAME = "補い"  # 内部の行の判定が「変わらない」のときの重さ。「変わる」は DECIDE（`判断が要る`）——domain-checker.md の「内部の Q&A 表に置いた判断」
 
 EXIT_OK, EXIT_UNMET, EXIT_UNJUDGED, EXIT_LIMIT = 0, 1, 2, 3
 
@@ -248,11 +261,29 @@ def internal(table: Path, docs: Path, run: str | None) -> tuple[int, list[str]]:
     lines = [f"{no}: Domain Checker が確かめた行（印 `（内部の行: {no}）`）が回 {run} の指摘の表に無い" for no in targets if no not in judged]
     lines += [f"{table}:{number}: {no} は {MOVE} に振り分けたのに、重ねた全体の内部の表に残る（references/qa-csv.md の「層を移す」）"
               for no, rows in judged.items() if no in remaining for number, c in rows if c["振り分け"] == MOVE]
+    split = split_judgments(judged)  # 名指しするだけで、終了コードには数えない（#1248）
     if lines:
-        return EXIT_UNMET, lines + [f"満たさない: {seen}——確かめていない・移していない行が {len(lines)} 件（条件 5。references/spec-exit.md）"]
+        return EXIT_UNMET, lines + [f"満たさない: {seen}——確かめていない・移していない行が {len(lines)} 件（条件 5。references/spec-exit.md）"] + split
     if not targets:
-        return EXIT_OK, [f"満たす: {seen}——確かめる行が無い"]
-    return EXIT_OK, [f"満たす: {seen}——すべて Domain Checker が確かめた"]
+        return EXIT_OK, [f"満たす: {seen}——確かめる行が無い"] + split
+    return EXIT_OK, [f"満たす: {seen}——すべて Domain Checker が確かめた"] + split
+
+
+def split_judgments(judged: dict[str, list[tuple[int, dict[str, str]]]]) -> list[str]:
+    """同じ回の中で、同じ内部の行の判定（`補い`＝変わらない／`判断が要る`＝変わる）が段（レビュー）ごとに食い違った行を名指しする（#1248）。
+    判定は `重さ` で読む——書き手が判定を退けた行も重さは判定役のまま残る（振り分けは `退ける` になる）。終了コードには数えない。"""
+    unread = [f"読めない: {no} の確かめた行（{number} 行目・{c['レビュー']}）は {c['振り分け']} に振られ（重さが -）、判定（変わる・変わらない）を読めない。"
+              "確かめた内部の行は 実装に渡す・範囲の外として記録する に振らず、重さを 補い・判断が要る のまま書く（references/spec-exit.md の「内部の表の行を確かめる」）"
+              for no, rows in sorted(judged.items()) for number, c in rows if c["重さ"] == "-"]
+    names = {SAME: "変わらない", **{w: "変わる" for w in EFFECTIVE}}  # `結果が割れる` も「変わる」側（domain-checker.md は迷ったら重いほうと言う）
+    lines = []
+    for no, rows in sorted(judged.items()):
+        verdicts = [(c["レビュー"], names[c["重さ"]], number) for number, c in rows if c["重さ"] in names]
+        if len({v for _, v, _ in verdicts}) > 1:
+            seen = "・".join(f"{review}={verdict}（{number} 行目）" for review, verdict, number in verdicts)
+            lines.append(f"割れた: {no} の判定が同じ回の中で段ごとに食い違う——{seen}。終了コードには数えない。"
+                         "書き手が判定を退けるなら、どの段の判定をどの根拠で退けたかを `結果` に書く（references/spec-exit.md の「内部の表の行を確かめる」）")
+    return lines + unread
 
 
 def fixed_after_second(c: dict[str, str]) -> bool:
