@@ -77,6 +77,7 @@ import contextvars
 import copy
 import functools
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -791,8 +792,11 @@ BRANCH_LINES = ("- 入力が欠ける: 「データ欠落」と表示する",
                 "| 呼ぶ処理が失敗する | 「再計算待ち」と表示し、担当に通知する |",
                 "- 入力の順が崩れる: 該当なし（1 回の要求で全部そろって届く）",
                 "呼ぶ側の分岐: 該当なし（純粋な計算で、外と結ばない）")
+# 仕様の行は 8 分岐のどれにも触れる（#1340。触れていなければ条件 1 が止め、scaffold は作らない）——中間表現の F-001 は一部だけを書き起こす
+BRANCH_REST = ("- 呼ぶ処理がやり直される・再起動する: 該当なし（1 回の要求で返る）\n"
+               "- 量が上限を超える・重なる: 該当なし（1 件ずつ受ける）")
 BRANCH_SPEC = SPEC + "\n## 呼ぶ側の分岐\n\n" + "\n".join(BRANCH_LINES[:2]) + "\n\n| 分岐 | 見せるもの |\n| --- | --- |\n" \
-    + "  " + BRANCH_LINES[2] + "  \n\n" + BRANCH_LINES[3] + "\n\n" + BRANCH_LINES[4] + "\n"
+    + "  " + BRANCH_LINES[2] + "  \n\n" + BRANCH_LINES[3] + "\n" + BRANCH_REST + "\n\n" + BRANCH_LINES[4] + "\n"
 BRANCH_SPECS = {"order.md": BRANCH_SPEC, "scope.md": SCOPE_MD}
 # 未決定事項と受入基準の雛形を見分けるため、F-001 は分岐の一部だけ（見せるもの 3・該当なし 1。並びを分岐の表と変える）、
 # F-002 は行ごと該当なし。F-001 は範囲の外の行も持つ（案の作らないもの）
@@ -815,6 +819,19 @@ def branches(f001=None, f002=None, scope=None) -> Callable[[dict], dict]:
 
 BRANCHES_IR = branches(F001_BRANCHES, {"none": BRANCH_LINES[4]}, [SCOPE_ROWS[0], SCOPE_ROWS[1]])
 PROPOSALS_FILE = Path("build") / "scaffold" / "issues" / "proposals.md"
+# #1340: 仕様の行が 8 分岐に触れていない仕様（BRANCH_REST を外した形）——条件 1 が止め、scaffold は課題一覧（案）を作らない
+GAPPED_BRANCH_SPECS = {"order.md": BRANCH_SPEC.replace(BRANCH_REST + "\n", ""), "scope.md": SCOPE_MD}
+REST_LINES = BRANCH_REST.split("\n")
+# 仕様の行の 8 分岐を全部書き起こした中間表現（まとめて書いた行は、触れる分岐ごとに同じ原文を書く）
+FULL_BRANCHES_IR = branches({**F001_BRANCHES, "呼ぶ処理がやり直される": {"none": REST_LINES[0]}, "呼ぶ処理が再起動する": {"none": REST_LINES[0]},
+                             "量が上限を超える": {"none": REST_LINES[1]}, "量が重なる": {"none": REST_LINES[1]}},
+                            {"none": BRANCH_LINES[4]}, [SCOPE_ROWS[0], SCOPE_ROWS[1]])
+
+
+def no_proposals(repo: Path) -> str | None:
+    return "条件 1 で止まったのに課題一覧（案）を書いた" if (repo / PROPOSALS_FILE).exists() else None
+
+
 UNDECIDED = "- {}: 中間表現の `branches` に書き起こしていない——仕様が決めていれば書き起こし、決めていなければ `/spec-loop:spec-review` に戻す"
 KEEP_GREEN = "- [ ] 周の前に緑だった Red テストが、周の後も緑のままであること（元の機能 `{}` の Red テストを含む）"
 NO_RED = "上の分岐に Red テストは無い——見せるものの確かめ方（結合テスト・実機確認）は、この案を登録した Issue の周が決める。"
@@ -4040,6 +4057,11 @@ CASES: list[Case] = [
     Case("呼ぶ側の分岐: 呼ばれる関数に書く", 1, "F-001.branches: 呼ばれる関数（called_by を持つ機能）には書かない",
          ir=edit(lambda ir: (f1(ir).update(called_by=["F-002"], branches={"none": BRANCH_LINES[4]}))), spec=BRANCH_SPECS,
          pre=plant_old_issues, post=nothing_written_issues),
+    # #1340: 仕様の「呼ぶ側の分岐」の行が分岐に触れていなければ、関門（条件 1）で止まり何も作らない——未決定事項は仕様の書き漏れで出ない
+    Case("呼ぶ側の分岐: 仕様の行が分岐に触れていなければ条件 1 で止まる", 1, "呼ぶ側の分岐の行が 8 分岐のうち 4 分岐に触れていない",
+         ir=BRANCHES_IR, spec=GAPPED_BRANCH_SPECS, post=no_proposals),
+    Case("呼ぶ側の分岐: 条件 1 を通った仕様を全部書き起こせば未決定事項は 0 件", 0, "（案 2 件・未決定事項 0 件）",
+         ir=FULL_BRANCHES_IR, spec=BRANCH_SPECS),
     Case("呼ぶ側の分岐: オブジェクトでない", 1, "F-001.branches: 分岐の名前から", ir=branches([BRANCH_LINES[0]]),
          spec=BRANCH_SPECS),
     Case("呼ぶ側の分岐: 空", 1, "F-001.branches: 分岐の名前から", ir=branches({}), spec=BRANCH_SPECS),
@@ -5597,8 +5619,15 @@ def main() -> int:
               f"{methods} {types}")
         # 呼ぶ側の分岐の名前（#855）——中間表現の原本は spec-ir.md の表
         branch_names = table_cells(ir_ref, "### 分岐の名前")
-        check("BRANCHES が references/spec-ir.md の分岐の名前の表と違う", list(constant(source, "BRANCHES") or ()) == branch_names
-              and len(branch_names) == 8, f"{constant(source, 'BRANCHES')} vs {branch_names}")
+        # 分岐の名前の原本は check-spec-exit.py の CALLER_BRANCHES（#1340。条件 1 の揃いと課題一覧（案）の未決定事項を同じ定義で数える）——scaffold.py は読む
+        check("scaffold.py の BRANCHES が check-spec-exit.py の CALLER_BRANCHES を読んでいない（写しを持つ）",
+              re.search(r"^BRANCHES = spec_exit\.CALLER_BRANCHES$", source, flags=re.MULTILINE) is not None)
+        exit_source = (SCRIPTS / "check-spec-exit.py").read_text(encoding="utf-8")
+        exit_spec = importlib.util.spec_from_file_location("check_spec_exit_names", SCRIPTS / "check-spec-exit.py")
+        exit_module = importlib.util.module_from_spec(exit_spec)
+        exit_spec.loader.exec_module(exit_module)
+        check("CALLER_BRANCHES が references/spec-ir.md の分岐の名前の表と違う", list(exit_module.CALLER_BRANCHES) == branch_names
+              and len(branch_names) == 8 and "CALLER_BRANCHES" in exit_source, f"{exit_module.CALLER_BRANCHES} vs {branch_names}")
         check("試料の ALL_BRANCHES が references/spec-ir.md の分岐の名前の表と違う", list(ALL_BRANCHES) == branch_names,
               f"{ALL_BRANCHES} vs {branch_names}")
         # トレースのケースが実装に求める口（#923）——原本は spec-ir.md の「実装に求める口」の表。待つ時間も原本の文と一致する
