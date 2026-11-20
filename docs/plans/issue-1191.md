@@ -118,6 +118,7 @@
 ## 関門の進捗（再開点）
 
 - 周の base: `6d00ec2d03c7256ed880d223cd21244cb48bd0d3`
+- 1 パス目の指摘対応の起点: `2dc0f22918157c7f8ad3d0491ce1b539cc1a5306`（Verifier と /code-review に渡す時点の HEAD）
 - 割り目: 割らない（cruise の周）
 
 ## 手順 8 の記録
