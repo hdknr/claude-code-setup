@@ -566,7 +566,8 @@ Claude Code のセットアップガイドを mkdocs で構築・公開するプ
     長期トークンは本物の起動口（`launch-with-long-token.sh`）を偽の `security` で回す。上限の待ちは眠らずに秒数を記録する
   - `test-scaffold.py` - spec-loop の段 4（#219）の回帰テスト（変異テストを含む）。
     **生成した Red テストを実際に `unittest` で走らせ、実装が無ければケースの数だけ失敗し、
-    正しい実装で緑になる（陽性対照）**ことを見る。**dev-loop の `references/spec-gap.md` の印と節の写しも突き合わせる**
+    正しい実装で緑になる（陽性対照）**ことを見る。**dev-loop の `references/spec-gap.md` の印と節の写しも突き合わせる**。
+    **試料と変異は作業者のプールで同時に当てる**（#1361。`--jobs N`、既定と上限 4。`check-all.py` が入れ子として親の半分を渡す）
   - `measure-guard-os.sh` / `measure-guard-os-inner.sh` / `measure-guard-os.Dockerfile` -
     ガードを Linux（コンテナ）と macOS の両方で発火させて測る（**CI からは呼ばない**。
     `docker` と `claude` を起こすので課金が発生する）。**probe の一覧は `-inner.sh` に
