@@ -2,14 +2,14 @@
 """確定した仕様の中間表現（`spec_ir.json`）から、dev-loop に渡すものを作る。
 
 usage: python3 scaffold.py [--repo <正本リポジトリ>] [--check [--upto <n>] | --dry-run [--upto <n>] | --red-check [--in-progress]] [--provisional]
-                           [--bundle F-001,F-002]...
+                           [--bundle F-001,F-002]... [--foundation]
 
 作るもの（置き場所の正は `references/tree.md`）:
 
 - `scaffold/openapi.json`・`scaffold/types.py`・`scaffold/tests/test_<機能>.py`（Red テスト）・`scaffold/perf/perf_<機能>.py`（性能テスト。`nfr` を持つ機能だけ）・
   `scaffold/refs/<パス>` と `scaffold/refs/index.md`（参考資料の写しと目録。`refs` を持つ機能があるときだけ）——**commit する契約**
 - `build/scaffold/issues/<機能の id>.md` と `issues.json`——**Issue の本文**（登録はスクリプトの外。`gh` を呼ばない）。`--bundle` でまとめた機能は
-  `bundle-<機能の id>-<機能の id>.md` の 1 件（下の「まとめた本文」）
+  `bundle-<機能の id>-<機能の id>.md` の 1 件（下の「まとめた本文」）。`--foundation` なら土台の本文 `foundation.md` も（下の「土台の本文」）
 - `build/scaffold/issues/proposals.md`——**課題一覧（案）**（#855。Issue の本文ではない。登録しない——下の「呼ぶ側の分岐」）
 
 **形の正は `references/spec-ir.md`（中間表現）と `references/handoff-issue.md`（Issue の本文）である**
@@ -136,8 +136,19 @@ Red テストは `self.dynamic(…)` で、`setup` → 本体 → `after` の順
 変化（追加・変更・撤去）が揃わない・1 件だけ・重複・まとめると依存が循環するなら 2**（引数の誤り）。同じモジュール・同じデプロイ経路かは見ない——
 中間表現に無く、選ぶのは scaffold を回す人（決まりの正は `references/handoff-issue.md` の「まとめた本文」）。
 **依存の連鎖**: `issues.json` の項目は、依存があるときだけ `depends`（依存先の機能の id）を持つ——呼ぶ機能（`called_by` に挙がった入口）の Issue は、
-呼ばれる機能の Issue に依存する。番号は登録の後にしか無いので、cruise の親 Issue の書式（`- [ ] #N (depends: #M)`）で出すのは同梱の
-`parent-checklist.py`（登録した Issue の一覧から引く）。
+呼ばれる機能の Issue に依存し、**Red テストが前提・後の状態（`setup`・`after`）・トレースの呼び出しでほかの機能の入口を呼ぶ機能の Issue は、その機能の Issue に依存する**
+（その入口ができるまで緑にならない。#1347。`seed` は入口でないので数えない）。番号は登録の後にしか無いので、cruise の親 Issue の書式（`- [ ] #N (depends: #M)`）で出すのは同梱の
+`parent-checklist.py`（登録した Issue の一覧から引く）。**書く生成と `--dry-run` は、依存が循環すれば本文を作らずに止まる**——中間表現の機能どうしの循環なら 1 で、
+循環する組と、依存を作ったケース（`setup`・`after`・`trace.*` のどれが、どの入口を呼ぶか）か `called_by` を 1 行ずつ名指しし、解き方（循環の中のケースを依存の順で一番後の機能へ移す・
+循環する機能を `--bundle` でまとめる）を出す。`--bundle` のまとめ方でだけ循環するなら 2（引数の誤り）。循環する機能を `--bundle` で 1 件にまとめれば、組の中の依存は数えないので通る
+（決まりの正は `references/handoff-issue.md` の「依存の連鎖」）。
+
+**土台の本文（`--foundation`。#1347）**: 一から作る案件（既存のシステムの改修でない）の v1 で、利用者がそう答えたときだけ付ける——**機械は一から作る案件かを決めない**。
+`issues.json` の先頭に土台の項目（`"foundation": true`・`body` は `foundation.md`・`red` は空）と本文を足し、**ほかの全部の項目の `depends` に `foundation` を足す**。
+本文は中間表現から引く——実装のモジュール（`impl_module`）・口（`reset_state`・`seed`）とそれを使うケースの数・seed の名前と値のキーと使うケースの数と機能・
+Red テストのケースの半分以上が使う seed は土台で作ること・verify の手順を開発のリポジトリの `CLAUDE.md`・`.claude/dev-loop.md` に書くこと。
+1 行目は `<!-- spec-loop-foundation: v1 -->` で、**handoff の印を持たない**（dev-loop はふつうの Issue として読む）。**v1 でだけ・書く生成と `--dry-run` でだけ使える**
+（v2 以降・`--check`・`--red-check` は 2）。旗が無ければ本文も `issues.json` も前と同じバイト（決まりの正は `references/handoff-issue.md` の「土台の本文」）。
 
 **システム設計書の成果物（#957）**: 関門で、重ね合わせた全体に同梱の `check-design-csv.py` を当てる——**形式の違反（1）と、
 必須の欄が空か未決定の印のある欄（3）が残れば 1 で何も作らない**（未決定の欄が残るうちは開発に渡さない）。**表が無いだけなら止めない**
@@ -200,6 +211,7 @@ Red テストは `self.dynamic(…)` で、`setup` → 本体 → `after` の順
   そうでなければ**回帰を判定していない**（2）。テストを書き換えない・何も書かない。
 - `--provisional`: 上の「仮回答」。利用者がそう決めたときだけ付ける。
 - `--bundle F-001,F-002`: 上の「まとめた本文」。書く生成と `--dry-run` でだけ使える（`--check`・`--red-check` は本文を作らない）。
+- `--foundation`: 上の「土台の本文」。v1 の書く生成と `--dry-run` でだけ使える。
 - `--in-progress`: `--red-check` と一緒にだけ使う。**作り直しの経路**（この版の Issue を登録し、実装が始まっている）で、
   追加・変更のケースが作業中の版の期待をもう満たしていても止めない。
 
@@ -207,10 +219,10 @@ Red テストは `self.dynamic(…)` で、`setup` → 本体 → `after` の順
 
 - 0: 作った（`--check` なら新しい・`--dry-run` なら作れる・`--red-check` なら期待どおり）
 - 1: 作らなかった——版の重ね合わせが決まりに反する・関門の条件 1 を満たさない・画面の関門が 1（#1097）・生成したモックの生成器が 1（#1099）・仕様レビューの記録の最後の実行の行が `抜けた` でない（記録・実行の行が無いを含む）・中間表現（前の版のものを含む）が決まりに
-  反する（全部を 1 行ずつ出す）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
+  反する（全部を 1 行ずつ出す）・中間表現の機能どうしの依存が循環する（書く生成と `--dry-run`。#1347）・前の版の時点が崩れている（凍結していない、または凍結したのに直されている）・`--check` で古い・`--red-check` で期待と違う（名指しする）。**Issue の本文の前の出力は消す**
   （古い本文を登録させない。`--check`・`--dry-run`・`--red-check` では消さない）
 - 2: 判定していない——仕様レビューの記録が読めない・画面の関門が 2 か 4（画面の表があるのに screen-spec が無いを含む。#1097）・生成したモックを作れない（生成器の 1 のほか。#1099）・引数の誤り（書く生成・`--red-check` に `--upto`、`--red-check` の無い `--in-progress`、無い版の `--upto`、`--bundle` の形・
-  まとめ方の誤り（上の「まとめた本文」）・`--check`・`--red-check` との組み合わせを含む）・`docs/` が無い／版が 1 つも無い／
+  まとめ方の誤り（上の「まとめた本文」。まとめ方でだけ起きる依存の循環を含む）・`--check`・`--red-check` との組み合わせ、v1 でない `--foundation` を含む）・`docs/` が無い／版が 1 つも無い／
   版が読めない・関門が判定していない・中間表現が無い・Red テストを走らせられない・実装が無く回帰を判定できない・
   前の版の時点が崩れていて凍結しているかを判定できない（`git` を起動できない・浅い clone・`check-frozen.py` が 2）・
   予期しない失敗（書き込みの失敗・128KB を超えるセルの `csv.Error` を含む）。書く生成では前の Issue の本文は消す。
@@ -237,7 +249,11 @@ Red テストは `self.dynamic(…)` で、`setup` → 本体 → `after` の順
 | **基準コミットが、仕様を書いた人の見ていた既存のシステムと同じか** | 書くのは生成した時点の HEAD。作業ツリーの commit していない変更は入らず、仕様を書いてから生成までに入ったコミットとも見分けない |
 | **基準コミットから後の変化が仕様の前提を崩したか** | 本文に時点を残すだけ。点検は dev-loop の周の頭（dev-loop の `references/spec-gap.md`） |
 | **`--bundle` でまとめた機能が、同じモジュール・同じ受入基準・同じデプロイ経路か** | 中間表現はデプロイ経路を持たず、`impl_module` は全体で 1 つ。機械が見るのは変化が揃うことだけで、選ぶのは scaffold を回す人 |
-| **撤去の順（呼ぶ側を変えてから撤去する）** | `depends` は今の版の `called_by` から作る。撤去の機能は前の版の `called_by` しか持たないので、依存に出さない |
+| **撤去の順（呼ぶ側を変えてから撤去する）** | `depends` は今の版の `called_by` と Red テストの呼び出しから作る。撤去の機能は前の版の `called_by` しか持たず、入口はもう呼べないので、依存に出さない |
+| **前の版で作った機能の Issue への依存** | `depends` はこの版で本文を作る機能の間だけ。前の版の機能の入口を呼ぶケースは、その機能が前の版の Issue で作ってあるものとして依存に出さない（前の版の Issue が閉じたかは見ない） |
+| **一から作る案件か** | `--foundation` は利用者がそう答えたときに付ける（`scaffold` スキルが確かめる）。機械は中間表現・リポジトリから推さない |
+| **土台の本文が書く作り方** | 何を作るか（モジュール・口・seed・verify の手順を書くこと）だけ。構成・依存・テスト用のデータベースは利用者と決める |
+| **循環を解く移し方** | 名指しして止めるだけ。どのケースを移すか・まとめるかは中間表現を書き起こす側が決める |
 | **置いてある生成したモックの写しが、今の画面の表から作るものと同じか**（`--check`・`--red-check`） | 生成し直さない（#1099）——生成器は版で見た目が変わり、`--check` は別のリポジトリの CI でも走る。表を直したら書く生成で作り直す（仕様書の写しと本文は古いと言う） |
 | **生成したモックの中の、仕様書へのリンクが写しから辿れるか** | リンクは生成器が生成した場所（`build/mock/v<n>/`）からの相対のパスで書く。同じリポジトリなら写し（`scaffold/refs/mock/`）からも同じ深さで届くが、開発のリポジトリが別なら届かない（仕様書の写しは本文が名指す） |
 | **画面の表の `機能` の列が、その機能に関わる画面を漏れなく挙げているか** | 表の中身は利用者と決めるもの。機械は挙げた画面だけを並べる |
@@ -335,6 +351,13 @@ PROVISIONAL_CELL = "（暫定）"
 BUNDLE_MARKER = "<!-- spec-loop-bundle: {} -->"
 BUNDLE_FILE = "bundle-{}.md"
 BUNDLE_RULE = "---"
+# 土台の本文（#1347。`references/handoff-issue.md` の「土台の本文」の写し）——1 行目の印・ファイル名・`issues.json` の項目の鍵と、
+# ほかの項目の `depends` に書く依存先の id。handoff の印は持たない（dev-loop はふつうの Issue として読む）
+FOUNDATION_MARKER = "<!-- spec-loop-foundation: v1 -->"
+FOUNDATION_FILE = "foundation.md"
+FOUNDATION_ID = "foundation"
+# 土台で作る seed——Red テストのケースのうち、この割合（分子/分母）以上が使う seed
+SHARED_SEED = (1, 2)
 # コミットの名前（SHA-1 の 40 桁か SHA-256 の 64 桁）
 COMMIT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
@@ -3431,7 +3454,7 @@ def group_changes(changes: list[Change], bundles: list[list[str]]) -> tuple[list
 
     まとめてよいのは、この版で本文を作る機能で、変化（追加・変更・撤去）が揃うものだけ——受入基準の形が変化で決まるので。
     同じモジュール・同じデプロイ経路かは中間表現から決められず、選ぶのは scaffold を回す人である（見ない）。
-    まとめた結果の依存（`dependencies`）が循環すれば使えない——cruise の親 Issue が拒む。(組, 問題) を返す。
+    組の依存の循環は見ない——`dependency_problems` が見る（中間表現の循環とまとめ方の循環で終了コードが違う）。(組, 問題) を返す。
     """
     by_id = {c.feature["id"]: c for c in changes}
     problems = []
@@ -3453,55 +3476,113 @@ def group_changes(changes: list[Change], bundles: list[list[str]]) -> tuple[list
             ids = bundled.get(fid, [fid])
             groups.append([by_id[i] for i in ids])
             done |= set(ids)
-    order = cycle_in(groups, dependencies(groups))
-    if order:
-        problems.append(f"--bundle でまとめると依存が循環する（{' → '.join(order)}）——呼ぶ機能と呼ばれる機能を、別々の組に"
-                        "互い違いに入れている。組み方を変える")
     return groups, problems
 
 
-def dependencies(groups: list[list[Change]]) -> list[list[str]]:
-    """組ごとの依存先の機能の id（#876）——**呼ぶ機能（入口）の組は、呼ばれる機能（関数）の組に依存する**（`called_by`）。
+def case_calls(case: dict) -> list[tuple[str, str]]:
+    """ケースの Red テストが呼ぶ入口の (どこの呼び出しか, 入口の名前)（#1347）。本体の入口と口（`seed`）は含まない。書いた順。"""
+    if is_trace(case):
+        trace = case[TRACE]
+        return ([("trace.setup", call["operation"]) for call in trace.get("setup", [])]
+                + [("trace.calls", call["operation"]) for call in trace["calls"].values()]
+                + [("trace.after", call["operation"]) for call in trace.get("after", [])])
+    return [(key, item["operation"]) for key in (SETUP, AFTER) for item in case.get(key, []) if SEED not in item]
 
-    同じ組の中の依存と、撤去の機能（前の版の `called_by` しか持たない）は数えない。この版で本文を作らない機能への依存も数えない
+
+def dependency_reasons(groups: list[list[Change]]) -> list[dict[str, list[str]]]:
+    """組ごとの {依存先の機能の id: 理由の並び}（#876・#1347。`references/handoff-issue.md` の「依存の連鎖」）。
+
+    依存は 2 つの形で引く——**呼ぶ機能（入口）の組は、呼ばれる機能（関数）の組に依存する**（`called_by`）と、
+    **Red テストが前提・後の状態・トレースでほかの機能の入口を呼ぶ機能の組は、その機能の組に依存する**（その入口ができるまで緑にならない）。
+    同じ組の中の依存と、撤去の機能（前の版の `called_by` しか持たず、入口はもう呼べない）は数えない。この版で本文を作らない機能への依存も数えない
     （その機能は前の版の Issue で作ってある）。
     """
     owner = {c.feature["id"]: index for index, group in enumerate(groups) for c in group}
-    found: list[set[str]] = [set() for _ in groups]
+    # 入口の名前 → 機能の id。撤去の機能の入口は数えない（同じ名前を新しい機能が使いうる）
+    entry = {c.feature["operation"]["id"]: c.feature["id"] for group in groups for c in group if c.kind != REMOVE}
+    found: list[dict[str, list[str]]] = [{} for _ in groups]
     for index, group in enumerate(groups):
         for change in group:
             if change.kind == REMOVE:
                 continue
+            fid = change.feature["id"]
             for caller in change.feature.get(CALLED_BY, []):
                 at = owner.get(caller)
                 if at is not None and at != index and groups[at][0].kind != REMOVE:
-                    found[at].add(change.feature["id"])
-    return [sorted(ids) for ids in found]
+                    found[at].setdefault(fid, []).append(f"`{fid}` の `{CALLED_BY}` に `{caller}` がある")
+            for case in sorted(change.feature["cases"], key=case_order):
+                for where, name in case_calls(case):
+                    target = entry.get(name)
+                    if target is not None and owner[target] != index:
+                        reason = f"`{case['id']}` の `{where}` が `{name}` を呼ぶ"
+                        if reason not in found[index].setdefault(target, []):
+                            found[index][target].append(reason)
+    return found
 
 
-def cycle_in(groups: list[list[Change]], depends: list[list[str]]) -> list[str]:
-    """組の依存の循環を、組の頭の機能の id の並びで返す（無ければ空）。"""
+def dependencies(groups: list[list[Change]]) -> list[list[str]]:
+    """組ごとの依存先の機能の id（`dependency_reasons` の鍵）。"""
+    return [sorted(reasons) for reasons in dependency_reasons(groups)]
+
+
+def cycles(groups: list[list[Change]]) -> list[list[int]]:
+    """依存が循環する組の集まり（強連結成分のうち 2 組以上のもの）を、組の番号の順で返す（無ければ空）。
+
+    どの組から辿れるかを組ごとに数える——組の数は機能の数を超えないので、2 乗で足りる。
+    """
     owner = {c.feature["id"]: index for index, group in enumerate(groups) for c in group}
-    edges = [sorted({owner[fid] for fid in ids}) for ids in depends]
-    state: dict[int, int] = {}
-    path: list[int] = []
+    edges = [{owner[fid] for fid in ids} for ids in dependencies(groups)]
+    reach = []
+    for start in range(len(groups)):
+        seen, stack = set(), list(edges[start])
+        while stack:
+            node = stack.pop()
+            if node not in seen:
+                seen.add(node)
+                stack.extend(edges[node])
+        reach.append(seen)
+    found, done = [], set()
+    for start in range(len(groups)):
+        if start in done:
+            continue
+        loop = sorted({start} | {other for other in reach[start] if start in reach[other]})
+        done |= set(loop)
+        if len(loop) > 1:
+            found.append(loop)
+    return found
 
-    def visit(node: int) -> list[int]:
-        state[node] = 1
-        path.append(node)
-        for nxt in edges[node]:
-            if state.get(nxt) == 1:
-                return path[path.index(nxt):] + [nxt]
-            if nxt not in state and (loop := visit(nxt)):
-                return loop
-        state[node] = 2
-        path.pop()
-        return []
 
-    for node in range(len(groups)):
-        if node not in state and (loop := visit(node)):
-            return ["・".join(c.feature["id"] for c in groups[i]) for i in loop]
-    return []
+def group_label(group: list[Change]) -> str:
+    return "・".join(c.feature["id"] for c in group)
+
+
+def dependency_problems(groups: list[list[Change]], changes: list[Change], bundled: bool) -> tuple[int, list[str]]:
+    """依存の循環（#1347。`references/handoff-issue.md` の「依存の連鎖」）——(終了コード, 行)。循環が無ければ (0, [])。
+
+    **中間表現の機能どうしで循環するなら 1**——循環する組と、依存を作ったケース（どこの呼び出しか）を名指しし、解き方を出す。
+    **`--bundle` のまとめ方でだけ循環するなら 2**（引数の誤り。#876）。循環する機能を `--bundle` で 1 件にまとめれば、組の中の依存は数えないので通る。
+    """
+    loops = cycles(groups)
+    if not loops:
+        return 0, []
+    if bundled and not cycles([[c] for c in changes]):
+        labels = " と ".join("・".join(group_label(groups[i]) for i in loop) for loop in loops)
+        return 2, [f"--bundle でまとめると依存が循環する（循環する組: {labels}）——呼ぶ機能と呼ばれる機能を、別々の組に"
+                   "互い違いに入れている。組み方を変える"]
+    reasons = dependency_reasons(groups)
+    lines = [f"依存が循環する（{len(loops)} 組）——Red テストの呼び出し（前提・後の状態・トレース）と `{CALLED_BY}` から引いた依存で、"
+             "循環する機能はどれも、相手の入口ができるまで Red テストが緑にならない。登録の前に解く:"]
+    for loop in loops:
+        lines.append(f"循環する組（{len(loop)} 件）: " + "・".join(group_label(groups[i]) for i in loop))
+        for at in loop:
+            for target in sorted(reasons[at]):
+                to = next(i for i, group in enumerate(groups) if any(c.feature["id"] == target for c in group))
+                if to in loop:
+                    lines += [f"  {group_label(groups[at])} → {target}: {reason}" for reason in reasons[at][target]]
+    lines.append("解き方: 循環の中のケースを、呼び出しの順と期待を変えずに、依存の順で一番後の機能へ移す（その機能の入口の呼び出しを本体にする）か、"
+                 "循環する機能を --bundle で 1 件の本文にまとめる。どれを移すかは中間表現を書き起こす側が決める"
+                 "（spec-loop の references/handoff-issue.md の「依存の連鎖」）")
+    return 1, lines
 
 
 def bundle_title(group: list[Change], number: int) -> str:
@@ -3535,19 +3616,137 @@ def bundle_body(group: list[Change], bodies: dict[str, str]) -> str:
     return "\n".join(head) + "\n" + "".join(f"\n{BUNDLE_RULE}\n\n{bodies[fid].split(chr(10), 1)[1]}" for fid in ids)
 
 
+def seed_uses(ir: dict) -> dict[str, dict]:
+    """{seed の名前: {"cases": 使うケースの数, "keys": 値のキー, "features": 使う機能の id}}（#1347。名前の順）。"""
+    found: dict[str, dict] = {}
+    for feature in features_of(ir):
+        for case in feature["cases"]:
+            if not is_staged(case):
+                continue
+            names = set()
+            for key in (SETUP, AFTER):
+                for item in case.get(key, []):
+                    if SEED in item:
+                        entry = found.setdefault(item[SEED], {"cases": 0, "keys": set(), "features": set()})
+                        entry["keys"] |= set(item["values"])
+                        entry["features"].add(feature["id"])
+                        names.add(item[SEED])
+            for name in names:
+                found[name]["cases"] += 1
+    return {name: found[name] for name in sorted(found)}
+
+
+def foundation_title(loaded: Loaded) -> str:
+    return f"土台: 実装のモジュール・口・verify の手順（{loaded.ir['title']}）"
+
+
+def foundation_body(loaded: Loaded) -> str:
+    """土台の本文（#1347。`references/handoff-issue.md` の「土台の本文」）——一から作る案件（v1）で、ほかの全部の本文が依存する。
+
+    中身は中間表現から引く: 実装のモジュール・口（`reset_state`・`seed`）とそれを使うケースの数・seed の名前と値のキーと使うケースの数・
+    verify の手順を書く指示。作り方（構成・依存・テスト用のデータベース）は書かない——利用者と決める。
+    """
+    ir = loaded.ir
+    impl_module = ir.get("impl_module", DEFAULT_IMPL_MODULE)
+    features = features_of(ir)
+    total = sum(len(f["cases"]) for f in features)
+    reset = sum(1 for f in features for c in f["cases"] if is_trace(c) or is_staged(c))
+    seeds = seed_uses(ir)
+    seeded = sum(1 for f in features for c in f["cases"] if is_staged(c)
+                 and any(SEED in item for key in (SETUP, AFTER) for item in c.get(key, [])))
+    numerator, denominator = SHARED_SEED
+    shared = [name for name, use in seeds.items() if use["cases"] * denominator >= total * numerator]
+    lines = [
+        FOUNDATION_MARKER,
+        "",
+        f"この Issue は spec-loop の `scaffold` が、確定した仕様の中間表現から生成した（`scaffold.py --foundation`。一から作る案件の v{loaded.number}）。"
+        "**本文を手で直さない。**",
+        "ほかの Issue（機能ごとの Red テスト）は、どれもこの Issue に依存する——ここで作る実装の土台（モジュール・口・verify の手順）が無いと、"
+        "どの Red テストも緑にならない。",
+        "**土台の作り方（構成・依存・テスト用のデータベース・マスタの当て方）は利用者と決める**——この本文は何を作るかだけを書く。",
+        "",
+        "## 仕様",
+        "",
+        f"- 題: {cell(ir['title'])}",
+        f"- 中間表現: `{merged(IR_PATH)}`（機能 {len(features)} 件・Red テストのケース {total} 件）",
+        f"- 契約: `{OUT_DIR}/openapi.json`・`{OUT_DIR}/types.py`・`{OUT_DIR}/tests/`（Red テスト）",
+        "",
+        "## 作るもの",
+        "",
+        "### 実装のモジュール",
+        "",
+        f"- `{impl_module}`——Red テスト（`{OUT_DIR}/tests/`）はこのモジュールを読み込み、入口の関数を名前で探す。"
+        f"**入口の関数（{len(features)} 件）は機能ごとの Issue が作る——この Issue では作らない。**",
+        "",
+        "### 口",
+        "",
+    ]
+    if reset or seeds:
+        lines += ["| 口 | 使うケース | 書くもの |", "| --- | --- | --- |"]
+        if reset:
+            lines.append(f"| `{impl_module}.{RESET}()` | {reset} 件 | 状態を空に戻す（前提・後の状態とトレースのケースの Red テストが、"
+                         "テストの初めと終わりに呼ぶ） |")
+        if seeds:
+            lines.append(f"| `{impl_module}.{SEED}(<名前>, /, **値)` | {seeded} 件 | 入口の無い前提（マスタ・利用者・権限など）を作る。"
+                         "名前だけを位置引数で受け、下の一覧の名前を受ける |")
+    else:
+        lines.append(f"口は要らない——前提・後の状態とトレースのケースが無い（`{RESET}`・`{SEED}` を呼ぶ Red テストが無い）。")
+    lines += ["", "### seed の一覧", ""]
+    if seeds:
+        lines += [f"Red テストのケース {total} 件のうち、{numerator}/{denominator} 以上が使う seed は**土台で作る**"
+                  "（多くの機能が共有する前提なので、最初の機能の周に任せない）。ほかは使う機能の Issue で作ってよい。", "",
+                  "| 名前 | 値のキー | 使うケース | 使う機能 | 土台で作るか |", "| --- | --- | --- | --- | --- |"]
+        lines += [f"| `{name}` | {'・'.join(f'`{k}`' for k in sorted(use['keys']))} | {use['cases']} 件 | "
+                  f"{'・'.join(sorted(use['features']))} | {'作る' if name in shared else '機能の Issue で作ってよい'} |"
+                  for name, use in seeds.items()]
+    else:
+        lines.append("無い——どのケースも `seed` を書いていない。")
+    lines += [
+        "",
+        "### verify の手順",
+        "",
+        "開発のリポジトリの `CLAUDE.md` と `.claude/dev-loop.md` に、次を書く（dev-loop の周は「はじめに」でここから verify の手順を拾う）:",
+        "",
+        f"- Red テストの走らせ方（`python3 -m unittest discover -s {OUT_DIR}/tests`。実装をサブディレクトリに置くなら読み込み方も——"
+        "spec-loop の `references/monorepo.md` の「Red テストを走らせる」）",
+        "- 歯止めを全部回す 1 本のコマンド",
+        "- テスト用のデータベースを使うなら、その作り方と、口 `reset_state()` がそれを空に戻すこと",
+        "",
+        "## 受入基準",
+        "",
+        f"- [ ] `{impl_module}` を読み込める——Red テストを走らせると、どのケースも「{MISSING}{impl_module}.<入口> が無い」の失敗か緑で終わり、"
+        "読み込みのエラーで落ちない",
+    ]
+    if reset:
+        lines.append(f"- [ ] `{RESET}()` があり、状態を空に戻す")
+    if seeds:
+        lines.append(f"- [ ] `{SEED}` が上の一覧の名前を受ける" + (
+            "。**土台で作る seed（" + "・".join(f"`{n}`" for n in shared) + "）は、ここで値を置けるところまで作る**" if shared else ""))
+    lines += [
+        "- [ ] 開発のリポジトリの `CLAUDE.md`・`.claude/dev-loop.md` に、上の verify の手順が書いてある",
+        "- [ ] 入口の関数を作らない（機能ごとの Issue の受入基準である）",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def feature_bodies(changes: list[Change], loaded: Loaded, contract: dict[str, str], before: Before, base: str) -> dict[str, str]:
     """{機能の id: 機能 1 件の本文}。`base` は基準コミットの行（`base_commit`）。"""
     return {c.feature["id"]: issue_body(c, loaded, contract, before, base) for c in changes}
 
 
 def render_issues(changes: list[Change], groups: list[list[Change]], bodies: dict[str, str], loaded: Loaded,
-                  contract: dict[str, str], before: Before) -> dict[str, str]:
+                  contract: dict[str, str], before: Before, foundation: bool = False) -> dict[str, str]:
     """{Issue の本文のファイル名: 中身} を返す。本文は変わった機能だけで、`groups` の組 1 つが Issue 1 件（既定は 1 機能 = 1 件）。
 
     `issues.json` の項目は、まとめた組なら `feature` の代わりに `features` を持ち、依存があるときだけ `depends` を持つ（#876）。
+    **`foundation`（`--foundation`。#1347）なら、先頭に土台の項目（`"foundation": true`）と本文を足し、ほかの全部の項目の `depends` に
+    `foundation` を足す**——旗が無ければ前と同じバイト。
     """
     impl_now = loaded.ir.get("impl_module", DEFAULT_IMPL_MODULE)
     issues, index = {}, []
+    if foundation:
+        issues[FOUNDATION_FILE] = foundation_body(loaded)
+        index.append({"foundation": True, "title": foundation_title(loaded), "change": ADD, "body": FOUNDATION_FILE, "red": []})
 
     def red(change: Change) -> list[str]:
         rows, _ = case_changes(change, impl_now, before.impl_module, operations(loaded.ir), operations(before.ir))
@@ -3566,6 +3765,8 @@ def render_issues(changes: list[Change], groups: list[list[Change]], bodies: dic
             issues[name] = bundle_body(group, bodies)
             entry = {"features": ids, "title": bundle_title(group, loaded.number), "change": group[0].kind,
                      "body": name, "red": [test for c in group for test in red(c)]}
+        if foundation:
+            depends = sorted(depends + [FOUNDATION_ID])
         if depends:
             entry["depends"] = depends
         index.append(entry)
@@ -3832,6 +4033,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--in-progress", action="store_true")
     parser.add_argument("--provisional", action="store_true")
     parser.add_argument("--bundle", action="append", default=[])
+    parser.add_argument("--foundation", action="store_true")
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
@@ -3839,6 +4041,10 @@ def main(argv: list[str]) -> int:
     if args.bundle and (args.check or args.red_check):
         # 本文を作らないモードでは、まとめ方を見る相手が無い——受け付けると、何も確かめていないのに通ったと読める
         print("--bundle は書く生成か --dry-run と一緒にだけ使う（--check・--red-check は Issue の本文を作らない）", file=sys.stderr)
+        return 2
+    if args.foundation and (args.check or args.red_check):
+        # 土台の本文も Issue の本文——作らないモードで受け付けると、何も確かめていないのに通ったと読める（#1347）
+        print("--foundation は書く生成か --dry-run と一緒にだけ使う（--check・--red-check は Issue の本文を作らない）", file=sys.stderr)
         return 2
     repo = Path(args.repo)
     writing = not (args.check or args.dry_run or args.red_check)
@@ -3899,6 +4105,9 @@ def run(repo: Path, args, writing: bool) -> int:
         code, lines = check_design(repo, loaded)
         if code:
             return fail(repo, writing, code, lines)
+    if args.foundation and loaded.number != 1:
+        # 一から作る案件の土台は最初の版で作る（#1347）——v2 以降は v1 の土台の上に足す
+        return fail(repo, writing, 2, [f"--foundation は v1 でだけ使う（一から作る案件の最初の版。いまは v{loaded.number}）。判定していない"])
     for line in loaded.notes:
         # 止めずに知らせる（基盤要件の表が無い。#950）
         print(line, file=sys.stderr)
@@ -3960,9 +4169,15 @@ def run(repo: Path, args, writing: bool) -> int:
     if problems:
         # 引数の誤り（2）——まとめ方は中間表現ではなく引数が決める（#876）
         return fail(repo, writing, 2, problems + ["--bundle のまとめ方が使えない。生成しない（判定していない）"])
+    code, problems = dependency_problems(groups, changes, bool(args.bundle))
+    if code == 2:
+        return fail(repo, writing, 2, problems + ["--bundle のまとめ方が使えない。生成しない（判定していない）"])
+    if code:
+        # 中間表現の機能どうしの循環（1。#1347）——登録の前に止める
+        return fail(repo, writing, 1, problems + ["依存が循環する。生成しない"])
     base, unrecorded = base_commit(repo)
     bodies = feature_bodies(changes, loaded, contract, before, base)
-    issues = render_issues(changes, groups, bodies, loaded, contract, before)
+    issues = render_issues(changes, groups, bodies, loaded, contract, before, args.foundation)
     marked = sorted(fid for fid, body in bodies.items() if PROVISIONAL_LINE in body)
     if marked:
         # 止めない（#875）——`--provisional` で通した仮回答に依存する本文を名指しする
@@ -3981,6 +4196,9 @@ def run(repo: Path, args, writing: bool) -> int:
         merged_groups = [g for g in groups if len(g) > 1]
         summary += (f"。--bundle で {sum(len(g) for g in merged_groups)} 件の機能を {len(merged_groups)} 件の本文にまとめ、"
                     f"登録する本文は {len(groups)} 件")
+    if args.foundation:
+        # 土台の本文（#1347）——件数は機能の変化で数えたまま、足した 1 件を言う
+        summary += f"。--foundation で土台の本文 1 件（{FOUNDATION_FILE}）を足し、ほかの本文はどれもそれに依存する"
     if args.dry_run:
         print(passed)
         print(f"作れる（{summary}）。何も書いていない")
