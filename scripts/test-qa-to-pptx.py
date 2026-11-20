@@ -43,6 +43,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import csv
 import importlib.util
 import io
@@ -319,11 +320,28 @@ def zip_tick() -> tuple[int, ...]:
     return tuple(now[:5]) + (now[5] // 2,)
 
 
+@contextlib.contextmanager
+def shifted_clock(seconds: float):
+    """`time` の時計（`time`・`time_ns`・`localtime`・`gmtime`）を `seconds` 秒進める——実時計を待たずに zip の時刻の刻みをまたぐ（#1369）。
+
+    `zipfile` が既定で刻む時刻（`time.localtime(time.time())`）も進むので、`time` をどう書いて読む変異でも違いが出る。
+    **`datetime` の時計は進まない**——それを読む変異は `CLOCK_MUTATIONS` に入れて実時計で待つ。"""
+    real_time, real_ns, real_local, real_gm = time.time, time.time_ns, time.localtime, time.gmtime
+    time.time = lambda: real_time() + seconds
+    time.time_ns = lambda: real_ns() + int(seconds * 1_000_000_000)
+    time.localtime = lambda secs=None: real_local(real_time() + seconds if secs is None else secs)
+    time.gmtime = lambda secs=None: real_gm(real_time() + seconds if secs is None else secs)
+    try:
+        yield
+    finally:
+        time.time, time.time_ns, time.localtime, time.gmtime = real_time, real_ns, real_local, real_gm
+
+
 def observe(mod, base: Path, *, cross_clock: bool = True) -> dict:
     """1 つの本体に対する観測を全部まとめる（変異テストでも同じ観測を使う）。
 
     `cross_clock` が真なら、決定性の観測の 2 回目の生成の前に実時計で zip の時刻の刻みをまたぐ（`CLOCK_STEP` 秒待つ）。
-    偽なら待たずに作り直してバイトを比べる——時刻以外の非決定性はそれでも見える（#1369）。"""
+    偽なら待たずに、`time` の時計を `CLOCK_SHIFT` 秒進めて作り直す（`shifted_clock`）——どちらでも 2 回の生成は刻みをまたぐ（#1369）。"""
     obs: dict = {}
     # 手書き部分の太字の行（#965）——`build-proposal.py --pptx` が読む `markdown_slides` を直に呼ぶ
     try:
@@ -411,12 +429,16 @@ def observe(mod, base: Path, *, cross_clock: bool = True) -> dict:
             obs["links_last"] = sorted(sl[-1] for sl in lslides if sl and sl[-1].startswith("モック: "))
         # 決定性: 作り直してバイトを比べる。`cross_clock` なら時刻をまたいでから（zip の時刻を固定していないと、ここで違う）。
         # 待つのは本物の本体と `CLOCK_MUTATIONS` だけ（#1369）——1 回 2.1 秒を約 70 回待って、テストの時間のほぼ全部だった
+        again = base / "again.pptx"
+        first = zip_tick()
         if cross_clock:
-            first = zip_tick()
             time.sleep(CLOCK_STEP)
             obs["crossed_clock"] = zip_tick() != first
-        again = base / "again.pptx"
-        run(mod, str(good), str(again), "--subtitle", "2026-10-13")
+            run(mod, str(good), str(again), "--subtitle", "2026-10-13")
+        else:
+            with shifted_clock(CLOCK_SHIFT):
+                obs["crossed_clock"] = zip_tick() != first
+                run(mod, str(good), str(again), "--subtitle", "2026-10-13")
         obs["deterministic"] = again.exists() and again.read_bytes() == out.read_bytes()
 
     # `--focus` で拒む形は 2 で、既存の出力に触らない（#1042）
@@ -521,6 +543,8 @@ def observe(mod, base: Path, *, cross_clock: bool = True) -> dict:
 
 # 決定性の観測で実時計をまたぐ秒（zip の時刻は 2 秒刻み）
 CLOCK_STEP = 2.1
+# 待たない回で `time` の時計を進める秒——刻み（2 秒）を必ずまたぐ
+CLOCK_SHIFT = 4
 # 時刻で出力が変わる変異——決定性の観測で実時計をまたがないと殺せない（#1369）。ほかの変異は待たずに当てる
 CLOCK_MUTATIONS = {"zip の時刻を固定しない"}
 # 置き換え先がこれを含む変異は時計を読む——`CLOCK_MUTATIONS` に入っていなければ赤にする
@@ -814,6 +838,9 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 diff = [f"例外: {type(e).__name__}"]
             check(f"変異を殺せる: {name}（違った観測: {', '.join(diff) or 'なし'}）", bool(diff))
+            # 待たずに時計を進めた回で決定性の観測が割れたなら、その変異は時計を読む——実時計で待つ組に入れ忘れている（#1369）
+            check(f"時計を読むらしい変異が CLOCK_MUTATIONS に無い: {name}",
+                  name in CLOCK_MUTATIONS or "deterministic" not in diff)
 
         # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——資料は写しを持たずにそれを読む（#404）
         checker = CHECKER.read_text(encoding="utf-8")
@@ -833,6 +860,9 @@ def main() -> int:
             except Exception as e:  # noqa: BLE001
                 diff = [f"例外: {type(e).__name__}"]
             check(f"変異を殺せる: {name}（違った観測: {', '.join(diff) or 'なし'}）", bool(diff))
+            # 待たずに時計を進めた回で決定性の観測が割れたなら、その変異は時計を読む——実時計で待つ組に入れ忘れている（#1369）
+            check(f"時計を読むらしい変異が CLOCK_MUTATIONS に無い: {name}",
+                  name in CLOCK_MUTATIONS or "deterministic" not in diff)
 
     print()
     if failures:
