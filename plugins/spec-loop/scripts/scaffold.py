@@ -393,11 +393,11 @@ MOCK_COPY = "mock/index.html"
 REFS_SCREENS = ("画面の表（`requirements/screens/data/screens.csv` の `機能` の列）がこの機能を挙げる画面——仕様書・ワイヤーフレームの書き出し・生成したモック。"
                 "**生成したモックは画面の表から作った生成物で、承認の対象は画面の表である**——機能の変更の判定には使わない。モックのコードを実装に流用しない。")
 # 呼ぶ側の分岐の書き起こし（任意。`references/spec-ir.md` の「呼ぶ側の分岐」。#855）——分岐の名前 → 見せるもの（`shows`）か
-# 該当なし（`none`）。行ごと該当なしは `none` だけ。分岐の名前は `references/spec-ir.md` の分岐の表の写し
+# 該当なし（`none`）。行ごと該当なしは `none` だけ。分岐の名前（`BRANCHES`）は下で `check-spec-exit.py` の `CALLER_BRANCHES` を読む
+# （#1340。仕様レビューを抜ける条件 1 の揃いの検査と、課題一覧（案）の未決定事項を同じ定義で数える——写さない）
 BRANCHES_KEY = "branches"
 SHOWS = "shows"
 NONE = "none"
-BRANCHES = ("入力が欠ける", "入力が遅れる", "入力の順が崩れる", "呼ぶ処理が失敗する", "呼ぶ処理がやり直される", "呼ぶ処理が再起動する", "量が上限を超える", "量が重なる")
 # 課題一覧（案）——Issue の本文と同じ場所に置く（`references/tree.md` の「生成物の置き場所」。#855）
 PROPOSALS = "proposals.md"
 # 性能の要求の表（重ねた全体の中の場所）と、その列・指標・単位（`references/nfr.md` の写し）
@@ -450,6 +450,8 @@ def _load(name: str, filename: str):
 
 
 spec_exit = _load("check_spec_exit", "check-spec-exit.py")
+# 呼ぶ側の分岐の名前（#1340。原本は `check-spec-exit.py`。`references/spec-ir.md` の分岐の表と同じ）
+BRANCHES = spec_exit.CALLER_BRANCHES
 qa = spec_exit.pptx.qa
 versions = _load("merge_versions", "merge-versions.py")
 # 内部の層の Q&A 表の、重ねた全体の中の場所（`merge-versions.py` のもの。写さない——#353）
@@ -1778,7 +1780,8 @@ def read_whole(rendered: dict[str, bytes], gate: bool, provisional: bool = False
 
         if gate:
             # 画面の関門（#1097）はここでは当てない——`load` が成果物の表の関門と同じ条件で `screen-gate.py` を当てる
-            code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR, screen=False)
+            # 呼ぶ側の分岐の行の揃い（#1340）は作業中の版でだけ見る——前の版の時点（`--upto`）は凍結していて直せない（成果物の表の関門と同じ）
+            code, lines = spec_exit.check(whole / QA_PATH, whole / SPEC_DIR, screen=False, callers=design_gate)
             if code:
                 return code, shown(lines) + ["関門（仕様レビューを抜ける条件 1）を通らない。生成しない"], None, {}
             # システム設計書の成果物の表（#957）。形式の違反（1）と、決まっていない欄（3）で止める——未決定の欄が残るうちは
