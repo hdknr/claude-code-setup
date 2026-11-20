@@ -1074,6 +1074,36 @@ def check_norm_shape() -> None:
           and "分岐を選んだ" in prop_block and "最初から" in prop_block)
     check("property-tests.md: 4 つの型と、表の形と、代替の記録の形と、落とした主張の名指しがある",
           all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "依存の定義にも lockfile にも無い")))
+    # **差分テストの扱い（#1191）**——手順 3 が原本を指して該当判定を求めること、手順 5 が差し込み 11 を入れさせること、
+    # Verifier の差し込みが陽性対照・一覧の確かめ・空振りの形を返させること、実装の指示が一覧に足さず止まらせること、原本が記録の形と一覧の決まりを持つこと。
+    diff_doc = (skill_dir / "references" / "differential-tests.md").read_text(encoding="utf-8")
+    # 差し込み 11 の本文だけを切り出す（末尾の行の `}}` まで。表の見出しの語や後ろの節の語で緑にならないように）。
+    _ds = verifier.find("11. **計画ファイルの「差分テスト」の記録について")
+    _de = verifier.find("表が返らない項目は、親が未検証として扱います。**}}", _ds) if _ds >= 0 else -1
+    diff_block = verifier[_ds:_de] if _ds >= 0 and _de >= 0 else ""
+    check("verifier.md: 差分テストの差し込み 11 がある", bool(diff_block))
+    check("SKILL.md: 差分テストの原本を指し、該当判定の行を求め、委譲の項でも確かめさせる",
+          "references/differential-tests.md" in skill and "差分テスト: なし（理由）" in skill
+          and "差分テストの該当判定（`差分テスト:` の行）が、委譲先の産物に" in skill)
+    check("SKILL.md: 手順 5（の節の中）が差し込み 11 を入れることと、返らなければ未検証とすることと、代替が BLOCKED の例外であることを求める",
+          "差し込み 11 を入れ、返らなければ未検証として扱う" in _s5
+          and "例のテストでの代替は、上の BLOCKED の規定の例外である" in _s5
+          and "行に最初から書いておく分岐の選択に限る" in _s5)
+    check("verifier.md: 差し込み 11 が、新側に変更を入れて差分が出るかを実際に当てさせ、空振りを反証とする",
+          "差分を検出するかを、実際に当ててください" in diff_block and "空振りしています" in diff_block
+          and "旧が新と同じ実装を指していたら" in diff_block)
+    check("verifier.md: 差し込み 11 が、承認済みの変更の一覧を確定の SHA との差分で確かめさせ、出所の無い行を反証とする",
+          "git diff {{承認済みの変更の確定の SHA}} HEAD" in diff_block and "出所が無い行" in diff_block
+          and "反証です" in diff_block and "信頼できない入力" in diff_block)
+    check("verifier.md: 差し込み 11 が、正規化・入力と件数・空振りの形・動かせない旧い実装の代替の誠実さを見させる",
+          all(k in diff_block for k in ("正規化", "入力と件数", "空振りの形を探して", "旧い実装: 動かせない", "黙って例のテストにしていないか", "最初から 2 つの分岐")))
+    check("implementer.md: 差分テストを書かせ、一覧に足さずに止まって報告させ、動かせないときは差し替えずに止まらせる",
+          "承認済みの変更の一覧に行を足さないでください" in implementer
+          and "足さずに止まって、差分の入力を報告してください" in implementer
+          and "例のテストに差し替えず、書かずに止まって理由とともに報告" in implementer)
+    check("differential-tests.md: 記録の形（旧は base の SHA・新は終点）・一覧の確定と確かめ方・足せるのは人間だけ・代替の分岐がある",
+          all(k in diff_doc for k in ("周の base の SHA", "関門に渡す終点の SHA", "承認済みの変更の確定:", "git diff <確定の SHA> HEAD",
+                                       "足せるのは人間だけ", "出所が空", "最初から 2 つの分岐", "旧い実装: 動かせない（", "正規化")))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
