@@ -40,7 +40,7 @@ docs/v<n>/
 │   ├── qa-dev.csv           # 内部の層の Q&A 表：開発者が決めて記録する質問（列は qa-csv.md。shared/ に置かない）
 │   ├── formal/              # 形式検査のモデル（対象ごとの <対象>/。spec-review が残す写し。下の「形式検査のモデル」）
 │   └── spec_ir.json         # 仕様の中間表現（scaffold が書き起こす。形は spec-ir.md）
-├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り
+├── feasibility/             # 予算責任者向け：規模の数え方・開発手法・体制・基盤案・見積り・テストの工数の突き合わせ（test-effort.md）
 │   ├── schedule.csv         # スケジュールの正本（列は feasibility-csv.md）
 │   └── estimate.csv         # 見積りの正本（同上）
 ├── proposal/                # 決裁者向け提案書の手書き部分
