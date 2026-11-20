@@ -1,0 +1,80 @@
+# Issue #1249 — spec-loop: 利用者向けに、ループの運用の決まりを 1 か所で追える要約が無い
+
+**不在の周**（`/dev-loop:cruise 1290 --absent` の起動・2026-11-20）。利用者には訊かない。親（cruise #1290）から委譲文で受けた子（`cruise-1290-1249`）。
+確かめた線（出所: cruise の確かめた線（台帳 `issue-1290`））: `直す線 = 既定`・`仕様の穴 = 推奨で決めて起票`・`マージ = 関門を通ればマージ`・`周の途中の課題 = 外に出す`・`マージ前の判断 = 推奨で決めて起票`（古い値）。
+台帳は書かない（親だけ）。手順 7 のマージはしない（PR・PR 側の CI の確認と計画ファイルの関門の記録まで）。読んだ dev-loop の `SKILL.md` は 1933 行（メインの作業ツリー）。worktree の写しは 1938 行（base が新しい）。
+
+直す線: `既定`（出所: cruise の確かめた線）。
+版の上げ方: `spec-loop` を **minor**（0.x。利用者向けの要約の追加）。着手時の main は spec-loop 0.125.0 → 0.126.0。マージの直前に main が進んでいたら親の依頼で取り込み、先端の版から上げ直す（cruise の `references/parallel.md`）。
+並行して #1191（dev-loop）の周が走る（dev-loop のプラグインを触るので spec-loop の版とは衝突しない見込み）。
+重い検査は `plugins/dev-loop/skills/cruise/scripts/run-serial.py` 越し。
+割り目: 割らない（cruise の周）。
+仕様の振る舞い: 該当なし（このリポジトリに spec-loop の正本は無い）。形式検査のモデル: 無い。依存の追加・更新: なし。生成物: `skill-metrics.py` の生成ブロックは dev-loop の `SKILL.md` を変えないので変わらない（`--check` で確かめる）。図なし。
+
+周の在り処:
+
+- ブランチ: `issue/1249-loop-operations-summary`
+- worktree: `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1249`
+- 起点コミット: `6d00ec2d03c7256ed880d223cd21244cb48bd0d3`（`origin/main`。refs/remotes/origin/HEAD から取り直した）
+- 周の base: `6d00ec2d03c7256ed880d223cd21244cb48bd0d3`
+
+## 変更範囲
+
+触る:
+
+- `plugins/spec-loop/references/operations.md` — 利用者向けの運用の決まりの要約（新規）
+- `plugins/spec-loop/README.md` — 中身の表の行と、読む入口の 1 段落
+- `plugins/spec-loop/skills/req-loop/SKILL.md` — 「データの決まり」の後に要約への 1 文と版の 2 行
+- `plugins/spec-loop/skills/spec-review/SKILL.md` — 同上
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行（同じプラグインの全スキル）
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `docs/plugins/spec-loop.md` — 公開ページの冒頭に要約への指し先を 1 文
+- `CLAUDE.md` — 構成の記述に `references/operations.md` を 1 行
+- `docs/plans/issue-1249.md` — この計画ファイル
+
+触らない:
+
+- `references/` の既存の原本（`qa-csv.md`・`spec-exit.md`・`spec-scope.md` など）の決まりの中身——要約は指すだけで、決まりを変えない
+- スクリプト・agents・テスト
+- marketplace の description（要約の追加は紹介文を変えない）
+
+## 設計の判断
+
+- **置き場所**: Issue の案は「README か `references/`」。**`references/operations.md` に置き、README とスキルからは指すだけ**にした。README は前提とスキルの一覧が中心で、FAQ を載せると肥大する。
+  スキル（書き手）は `references/` を読むので、そこに置けば「書き手が毎回 references を読み直して要約し直す」を避けられる。
+- **形**: 先頭に問い → 節の表、各節は要約と「原本: …」の指し先。Issue の 7 つの問いの全部に節を置いた（Q&A 表の 2 層・層を移すと回答はどうなるか・1 回の流れと 2 回で打ち切る理由・抜ける条件 5 つと「抜けた」の意味・回し直し・上限・形式検査の対象・暫定の回答）。
+  さらに、利用者が実際に聞いた「なぜ質問が増えたのか」を 1 節に独立させた。
+- **複製の数**: 要約は決まりの写しなので、原本を直すと要約も直す必要がある（数は 9 節 × 各原本）。**分けない理由**: 要約であることを冒頭に書き、各節の末尾に原本を名指しし、「食い違ったら原本を正とする」と明記した。
+  原本の数値（既定の上限 3・条件 5 つなど）が変わったときの手戻りは、この要約に残る。**この写しの鮮度を機械では見ていない**（残課題）。
+
+## 受入基準（不変条件 × 経路）
+
+入口: 利用者が読む場所（README・公開ページ）と、書き手が読む場所（`req-loop`・`spec-review` の `SKILL.md`）。
+
+| # | 不変条件 | 破りうる経路 | 守り方 |
+| --- | --- | --- | --- |
+| A1 | Issue の 7 つの問い（Q&A 表の 2 層と層を移したときの回答・1 回の流れと打ち切りの理由・抜ける条件 5 つと「抜けた」が承認でも網羅の証明でもないこと・回し直し（要求を変えた・決まりが増えた・回さなくてよい）・上限と訊かれること・形式検査の対象と検査していない部分・暫定の回答）に、`operations.md` の節が答えている | 問いの抜け・節が答えていない | `operations.md` を問いごとに読む |
+| A2 | 要約の記述が、原本の記述と食い違わない（数値・状態の名前・手順の順・「できる／しない」の向き） | 要約が原本と違う数・名前を書く・原本に無いことを書く | 節ごとに原本の該当箇所と突き合わせる（`qa-csv.md`・`spec-exit.md`・`spec-scope.md`・`signoff-tags.md`・`versions.md`・`skills/spec-review/SKILL.md`・`README.md`の前提） |
+| A3 | 各節が原本を名指しし、要約が原本ではないことが冒頭にある。決まりを要約で新しく決めない | 原本の無い決まりを書く・原本を名指ししない | `operations.md` の冒頭と各節の末尾を読む。`check-skill-pointers.py` |
+| A4 | README・公開ページ・`req-loop`・`spec-review` の `SKILL.md` から `operations.md` へ辿れる。指し先が実在する | 指し先が無い・パスの誤り | `check-skill-pointers.py`・`check-site-links.py`・README と公開ページのリンクを読む |
+| A5 | 版が 3 種（`marketplace.json`・`plugin.json`・全 `SKILL.md`）で 0.126.0 に揃い、`check-all.py` が通る | 版の取りこぼし・歯止めの赤 | `check-plugin-versions.py`・`skill-metrics.py --check`・`check-all.py`（run-serial 越し） |
+
+**検証で証明できるもの**: A1〜A5（文書の読み比べと CI の歯止め）。
+**この環境では証明できないもの**: 要約が**利用者に実際に伝わるか**（読みやすさ。利用者が読んで追えるか）。実際の利用者の読みは測れないので人間のレビューに回す（PR コメントに名指しで書く）。
+**必須要件の掛け算**: 受入基準を Verifier と `/code-review` の両方に、1・2 パスとも渡す（2 パス目が該当なしなら 1 パス目の 2 つ）。
+
+## 未解決の判断・確認待ち
+
+- なし。
+
+## 起票
+
+- この周の起票: 0 件（残課題は PR コメントに書く。起票は親）
+
+## 関門の進捗（再開点）
+
+- 実装: コミット済み（起点 `6d00ec2d`）。次: Verifier と `/code-review` の 1 パス目。
+- 割り目: 割らない（cruise の周）。
+- 反証・差し戻し: まだ無い。
+- 交絡を潰した手順: 実験なし。

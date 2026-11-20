@@ -17,6 +17,7 @@
 | 場所 | 何があるか |
 | --- | --- |
 | `references/tree.md` | 正本リポジトリのツリー（どこに何を置くか） |
+| `references/operations.md` | 利用者向けの運用の決まりの要約（Q&A 表の 2 層・1 回の仕様レビューの流れ・抜ける条件と「抜けた」の意味・抜けたあとの回し直し・実行の上限・形式検査の対象の選び方・暫定の回答）。細部は指し先の `references/` が原本 |
 | `references/qa-csv.md` | Q&A 表の列・起票元・状態（表の置き場所は `references/tree.md`） |
 | `references/signoff-tags.md` | サインオフのタグの命名と、2 つの承認が同じ範囲を見ていたかの確かめ方 |
 | `references/spec-exit.md` | 仕様レビューを抜ける条件・未決定の印・仕様チェックリスト・形式検査の対象 |
@@ -65,6 +66,8 @@
 | `skills/autopilot/` | 仕様レビューと実現性・コストのループを、利用者の不在のあいだに 1 単位ずつ進める入口 |
 | `skills/formal-baseline/` | レビューをせずに、今の仕様から形式検査のモデルを組んで `spec/formal/` に基準として残すスキル |
 | `agents/` | 仕様を批判する 3 つの判定役（`red-team`・`domain-checker`・`formal-checker`）と見積りの検証役（`estimate-checker`）。**書き込みツールを持たない** |
+
+**運用の決まりを 1 か所で追いたいとき**（なぜ質問が増えたのか・抜けたあとに回し直すのはいつか・上限に達すると何を訊かれるのか、など）は、[`references/operations.md`](references/operations.md) から読んでください。
 
 **データの決まりは `references/` だけに書きます。** このファイルも、スキルも、公開ページも、
 そこを指すだけで決まりを写しません。写しがあると、直すときに一部だけ直し漏れます。

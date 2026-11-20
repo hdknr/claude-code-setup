@@ -6,6 +6,7 @@ spec-loop は、dev-loop の**手前にある要求側のループ**です。5 �
 仕様レビューの **[形式検査（Z3・TLC・Alloy）](#formal)**、正本リポジトリの **[ドキュメントの道具（図の書き出し・MkDocs の雛形）](#doc-tools)** を案内します。
 スキルごとの説明とインストールは [プラグイン一覧の「spec-loop」](index.md#spec-loop) にあります。
 仕様レビューと実現性・コストを利用者の不在のあいだに 1 単位ずつ回す入口 `autopilot` の回し方は [spec-loop の autopilot](spec-loop-autopilot.md) にあります。
+運用の決まり（Q&A 表の 2 層・仕様レビューの流れ・抜ける条件・抜けたあとの回し直し・実行の上限・暫定の回答）を利用者向けに 1 か所でまとめた要約は、プラグインの [`operations.md`](https://github.com/hdknr/claude-code-setup/blob/main/plugins/spec-loop/references/operations.md) にあります（決まりの原本は要約が指す `references/` です）。
 
 !!! warning "規範はプラグインの中にあります"
     このページは**部品の場所と流れの案内**です。決まり（データの列・判定の表・終了コード・何を守り何を守らないか）は
