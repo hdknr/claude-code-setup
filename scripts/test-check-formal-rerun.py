@@ -50,7 +50,8 @@ text = open(name, encoding="utf-8").read()
 print("TLC2 Version 2.19 of 08 August 2024 (偽物)")
 if "FAKE:PASS" in text:
     print("Model checking completed. No error has been found.")
-    print("1,234,567 states generated, 456,789 distinct states found, 0 states left on queue."); sys.exit(0)
+    # 最後の行は区切らない（TLC 2.19 はロケールに依らずこの形。#1339 で ドイツ語のロケールでも確かめた）
+    print("1234567 states generated, 456789 distinct states found, 0 states left on queue."); sys.exit(0)
 if "FAKE:QUIETPASS" in text:  # 状態数の行を出さずに通る（ほかの版で形が違うとき）
     print("Model checking completed. No error has been found."); sys.exit(0)
 if "FAKE:VIOLATE" in text:
@@ -62,6 +63,13 @@ if "FAKE:DEADLOCK" in text:
     print("Error: Deadlock reached."); sys.exit(11)
 if "FAKE:SILENT" in text:
     sys.exit(0)
+# 時間切れの前の進み具合の行の区切りは JVM のロケールで変わる（#1339 で本物の TLC 2.19 から取った形）
+for form, sep in (("SLEEPDE", "."), ("SLEEPFR", "\u202f"), ("SLEEPCH", "'")):
+    if "FAKE:" + form in text:
+        print(f"Progress(67) at 2026-11-20 11:11:02: 56{{sep}}259{{sep}}125 states generated (54{{sep}}153{{sep}}637 s/min), "
+              f"12{{sep}}118{{sep}}483 distinct states found (11{{sep}}632{{sep}}650 ds/min), 866{{sep}}583 states left on queue.", flush=True)
+        time.sleep(3)
+        sys.exit(0)
 if "FAKE:SLEEP" in text:
     # 時間切れの前に出る進み具合の行（TLC 2.19 の形。#1339 で本物の TLC から取った）
     print("Progress(2) at 2026-11-20 10:38:37: 9,989 states generated (9,989 s/min), 2,219 distinct states found (2,219 ds/min), "
@@ -126,7 +134,11 @@ CASES: dict[str, tuple] = {
     "反例ありが判定できなかったより先": (f"TLC の呼び方: {CALL}\n", {T1: target(body="VIOLATE"), T2: target(controls=("PASS",))}, [], 1, "反例あり 1 件"),
     "時間切れ": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEP")}, ["--timeout", "1"], 4, "時間切れ"),
     # 重さの注記（#1339）——判定には使わない
-    "状態数を出す（3 桁ごとの , を外す）": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "本体 Order.tla: 反例なし（状態数 456789・"),
+    "状態数を出す": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "本体 Order.tla: 反例なし（状態数 456789・"),
+    "本体の反例の行にも重さの注記": (f"TLC の呼び方: {CALL}\n", {T1: target(body="VIOLATE")}, [], 1, "本体 Order.tla で反例が出た（状態数 9・"),
+    "進み具合の行の . 区切り（ドイツ語のロケール）": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPDE")}, ["--timeout", "1"], 4, "（状態数 12118483・"),
+    "進み具合の行の U+202F 区切り（フランス語のロケール）": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPFR")}, ["--timeout", "1"], 4, "（状態数 12118483・"),
+    "知らない区切りの数は読まない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEPCH")}, ["--timeout", "1"], 4, "（状態数は読めなかった・"),
     "陽性対照の状態数も出す": (f"TLC の呼び方: {CALL}\n", {T1: target()}, [], 0, "反例が出た（空振りでない）（状態数 9・"),
     "時間切れは進み具合の行の状態数": (f"TLC の呼び方: {CALL}\n", {T1: target(body="SLEEP")}, ["--timeout", "1"], 4, "（状態数 37791・"),
     "状態数が読めなくても判定を変えない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="QUIETPASS", controls=("TEMPORAL",))}, [], 0,
@@ -155,8 +167,13 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("正本で走らせる", "        where = tmp ", "        where = str(directory) ", "満たす"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),
-    ("状態数の , を外さない", "found[-1].replace(',', '')", "found[-1]", "状態数を出す（3 桁ごとの , を外す）"),
-    ("最初の状態数を読む（時間切れの最後の進み具合でなく）", "found[-1].replace", "found[0].replace", "時間切れは進み具合の行の状態数"),
+    ("桁区切りを外さない", "re.sub('[' + GROUP_SEPARATORS + ']', '', found[-1])", "found[-1]", "時間切れは進み具合の行の状態数"),
+    ("最初の状態数を読む（時間切れの最後の進み具合でなく）", "'', found[-1])", "'', found[0])", "時間切れは進み具合の行の状態数"),
+    ("桁区切りを , だけにする", 'GROUP_SEPARATORS = ",.\\u00a0\\u202f"', 'GROUP_SEPARATORS = ","', "進み具合の行の . 区切り（ドイツ語のロケール）"),
+    ("U+202F を区切りにしない", 'GROUP_SEPARATORS = ",.\\u00a0\\u202f"', 'GROUP_SEPARATORS = ",.\\u00a0"', "進み具合の行の U+202F 区切り（フランス語のロケール）"),
+    ("数の始まりを縛らない", "(?<![^ \\t:(\\n])", "", "知らない区切りの数は読まない"),
+    ("本体の反例の行に重さの注記を付けない", "で反例が出た{weight}: ", "で反例が出た: ", "本体の反例の行にも重さの注記"),
+    ("経過時間に 秒 を付けない", "{seconds:.1f} 秒）", "{seconds:.1f}）", "時間切れは進み具合の行の状態数"),
     ("状態数が読めないと判定できなかったにする", "    return rc, out, measure(out, time.monotonic() - started)\n",
      "    return (rc if DISTINCT.search(out or \"\") else None), out, measure(out, time.monotonic() - started)\n",
      "状態数が読めなくても判定を変えない"),
@@ -249,9 +266,14 @@ def run_one(script: Path, work: Path, fake: Path, fakebin: Path, case: tuple) ->
     return proc.returncode, proc.stdout + proc.stderr, repo
 
 
+# 出力に当てる正規表現（終了コードと語に加えて見る試料）——経過時間は回ごとに変わるので語では見られない
+PATTERN = {"時間切れは進み具合の行の状態数": r"本体 Order\.tla が通らず、反例も出さなかった（終了コード None）（状態数 37791・[0-9]+\.[0-9] 秒）"}
+
+
 def as_expected(name: str, case: tuple, result: tuple[int, str, Path]) -> bool:
     code, out, repo = result
-    return code == case[3] and case[4] in out and (name not in POST or POST[name](repo))
+    return (code == case[3] and case[4] in out and (name not in POST or POST[name](repo))
+            and (name not in PATTERN or re.search(PATTERN[name], out) is not None))
 
 
 def main() -> int:

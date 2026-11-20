@@ -24,7 +24,7 @@ usage:
 
 ## 重さの注記（#1339）
 
-走らせたモデルごとの行の終わりに `（状態数 <m>・<秒> 秒）` を付ける——状態数は TLC の出力の最後の `<m> distinct states found` の数、秒はこのスクリプトが測った経過時間。
+走らせたモデルごとの行の終わりに `（状態数 <m>・<秒> 秒）` を付ける——状態数は TLC の出力の最後の `<m> distinct states found` の数（進み具合の行の 3 桁ごとの区切り `,`・`.`・U+00A0・U+202F は外す）、秒はこのスクリプトが測った経過時間。
 **時間切れ・重いモデルの切り分け**（状態数が多いのか、少ないのに遅いのか）の材料で、**判定と終了コードには使わない**。読めなければ `状態数は読めなかった` と言う。
 時間切れの回の状態数は、そこまでの進み具合の行の数（全体より少ない）。読み方を変えたいときは `agents/formal-checker.md` の「検査が重いとき」を見る。
 
@@ -60,7 +60,7 @@ usage:
 | 呼び方の行が無ければ 4 | `PATH` の `tlc` で走らせる（探し方を `check-tlc.py` に揃える） |
 | 一時ディレクトリで走らせる | 正本に `states/` と出力が残り、`formal-baseline.py check` が落ちる |
 | 1 回の検査を `--timeout` 秒で止める（プロセスグループごと） | 大きいモデルで待ち続ける |
-| 走らせたモデルごとに状態数と経過時間を出し、状態数が読めなければそう言う（#1339） | 時間切れのとき、状態数が多すぎたのか遅いだけなのかが出力から分からない・読めない回に数を作る |
+| 走らせたモデルごとに状態数と経過時間を出し、状態数が読めなければそう言う（#1339） | 時間切れのとき、状態数が多すぎたのか遅いだけなのかが出力から分からない・読めない回に数を作る（知らない桁区切りの数の最後の 3 桁を数と読む） |
 | 状態数が読めなくても判定と終了コードを変えない | 診断の材料が無いことで、通るモデルを「判定できなかった」にする |
 
 守らない:
@@ -70,7 +70,7 @@ usage:
 | **TLC でないモデル**（Alloy・総当たり・Z3） | Issue の範囲の外（`check-tlc.py` の呼び方で走らせ直す）。渡されたら `判定できなかった`——spec-review は TLC の対象だけを渡し、ほかは判定役の判定を使う |
 | **モデルが仕様を正しく写しているか・陽性対照が意味のある壊し方か** | 判定役の仕事（記録の `陽性対照` に書く）。機械が見るのは、壊した形で反例が出ることだけ |
 | **TLC の版による出力の違い** | 判定の文字列は TLC 2.19 で確かめた——`is violated`・`No error has been found` は `check-tlc.py`（#912）、`Temporal properties were violated.`・`Deadlock reached.` はこの周（#1044）に、本体が通り陽性対照が反例を出す形と、本体が行き止まりで反例を出す形を走らせた。ほかの版は確かめていない。回帰テストは偽の TLC で当てる |
-| **状態数の行の形の違い** | `distinct states found` の形は TLC 2.19 で確かめた（#1339。手元で走らせた）。ほかの版で形が違えば「読めなかった」になるだけで、判定は変わらない |
+| **状態数の行の形の違い** | `distinct states found` の形は TLC 2.19 で確かめた（#1339。手元で英語・ドイツ語・フランス語のロケールで走らせた）。ほかの版・ほかの区切りで形が違えば「読めなかった」になるだけで、判定は変わらない |
 | **呼び方の安全** | 正本の `CLAUDE.md` の文字列をそのまま `sh` で走らせる（`check-tlc.py` と同じ） |
 | **前の版の残りのファイル** | 一覧のファイルだけを写す（`tree.md` の「次の回が使うのは一覧のファイルだけ」） |
 
@@ -107,9 +107,12 @@ VIOLATED = (tlc.BROKEN_MARK, "were violated", "Deadlock reached")
 TIMEOUT = 600
 PASS, COUNTEREXAMPLE, UNKNOWN = "満たす", "反例あり", "判定できなかった"
 EXIT_OK, EXIT_COUNTEREXAMPLE, EXIT_USAGE, EXIT_UNKNOWN = 0, 1, 2, 4
-# TLC 2.19 の状態数の行（`<n> states generated, <m> distinct states found, <k> states left on queue.`）と、
-# 途中の進み具合の行（`Progress(…): … <m> distinct states found …`）。数は 3 桁ごとに `,` を挟むことがある
-DISTINCT = re.compile(r"([0-9][0-9,]*) distinct states found")
+# TLC 2.19 の状態数の行（`<n> states generated, <m> distinct states found, <k> states left on queue.`。区切りなし）と、
+# 途中の進み具合の行（`Progress(…): … <m> distinct states found …`）。進み具合の行は JVM のロケールで 3 桁ごとに区切る——
+# `,`（英語）・`.`（ドイツ語）・U+202F（フランス語）を手元で見た（#1339）。U+00A0 も同じ扱いにする。
+# 数は空白・`:`・`(` か行頭の直後から始まるものだけ読む——知らない区切り（`'` など）の数の最後の 3 桁を、数として読まない
+GROUP_SEPARATORS = ",.\u00a0\u202f"
+DISTINCT = re.compile(r"(?<![^ \t:(\n])([0-9]{1,3}(?:[" + GROUP_SEPARATORS + r"][0-9]{3})+|[0-9]+) distinct states found")
 
 
 def entries(names: list[str]) -> list[str]:
@@ -127,7 +130,7 @@ def measure(out: str, seconds: float) -> str:
     状態数は出力の最後の `distinct states found` の数（時間切れなら、そこまでの進み具合の行の数で、全体より少ない）。読めなければそう言う。
     """
     found = DISTINCT.findall(out or "")
-    count = f"状態数 {found[-1].replace(',', '')}" if found else "状態数は読めなかった"
+    count = f"状態数 {re.sub('[' + GROUP_SEPARATORS + ']', '', found[-1])}" if found else "状態数は読めなかった"
     return f"（{count}・{seconds:.1f} 秒）"
 
 
