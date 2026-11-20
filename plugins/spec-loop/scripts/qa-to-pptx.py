@@ -45,7 +45,8 @@ usage: python3 qa-to-pptx.py <qa.csv> <出力.pptx> [--title <表紙の題>] [--
 対象リポジトリ（正本リポジトリ）で単体で動くよう、**標準ライブラリだけ**を使う
 （`zipfile` と XML の文字列で OOXML を直接書く）。
 
-**提案書・仕様書の PPTX も同じ仕組みで作る**——`build-proposal.py` が `markdown_slides` と `package`・`write` を読む（#374）。
+**提案書・仕様書の PPTX も同じ部品で作る**——`build-proposal.py` の既定のデザイン（`proposal-pptx.py`。#1289）が `package`・`write` を読み、`markdown_slides` は読まない
+（Markdown を見出しごとに流し込む旧い形は、この関数に残る）。`write` は画像の部品（バイト列）も書く。
 
 **出力は入力と引数だけで決まる**（zip の時刻を固定し、日付を埋め込まない）。
 日付を表紙に入れたいなら `--subtitle` で渡す。
@@ -605,7 +606,8 @@ def write(parts: list[tuple[str, str]], out: Path) -> None:
                 info = zipfile.ZipInfo(name, date_time=ZIP_TIME)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 info.external_attr = 0o644 << 16
-                z.writestr(info, body.encode("utf-8"))
+                # 画像の部品（バイト列。提案書・仕様書の図。#1289）はそのまま、XML は UTF-8 に
+                z.writestr(info, body if isinstance(body, bytes) else body.encode("utf-8"))
         os.replace(tmp, out)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
