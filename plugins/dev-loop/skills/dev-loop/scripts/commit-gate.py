@@ -35,6 +35,9 @@
 - **設定の誤り（値が表に無い・同じ行が 2 本以上）は `off`**。止める側に倒さない。誤りは `status` が名指しする。
 - **コードフェンスと HTML コメントの中の行は設定として読まない。**
 - 記録に書くのは、時刻・モード・結果・理由・cwd・コマンドの**先頭 120 文字**だけ。メッセージ全文は書かない。
+- **ヒアドキュメントは、引用符の外の `<<` で始まるものだけを読む**（二重引用符の中の `$( … )` の中——`-m "$(cat <<'EOF' … )"`——は外と同じに読む）。
+  `-m 'docs: explain <<EOF usage'` の引用符の中の `<<` を始まりと読んで、後ろの別のコマンドのヒアドキュメントの本文を拾わない（#1368 の V1）。
+- **`-m`／`--message` を渡したコミットは、ヒアドキュメント（stdin）を判定の文面に足さない**——git は stdin を読まない（#1368 の V2）。`-F -` のヒアドキュメントは足す。
 
 ## 守らないこと
 
@@ -79,6 +82,8 @@ GIT_COMMIT = re.compile(
 )
 HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([\w.\-]+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*\r?(?=\n|$)", re.DOTALL)
 SEGMENT_END = re.compile(r"&&|\|\||;|\||\n")
+# メッセージを引数で渡す形（-m・-am・-m=…・--message）。-F は含めない（-F - はヒアドキュメントを読む）
+MESSAGE_ARG = re.compile(r"(?:^|\s)(?:-[a-zA-Z]*m(?=[\s=\"']|$)|--message\b)")
 # 行頭・引用符の直後・文字のままの `\n` の直後の `Verified:`（-m を 2 本渡す形・$'…' の形も読む）
 TRAILER = re.compile(r"(?:^|[\"']|\\n)[ \t]*Verified:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 # 値の終わり: 閉じの引用符（後ろが空白・行末・区切り・リダイレクト）と、文字のままの `\n`。
@@ -153,9 +158,62 @@ def load_config(cwd: str) -> tuple[str, str, list[str]]:
     return mode, esc, errors
 
 
+def hide_quoted_heredoc_ops(text: str) -> str:
+    """引用符の中の `<<` を、**同じ長さで**別の文字に置き換えた写し（#1368 の V1）。
+
+    `-m 'docs: explain <<EOF usage' && cat <<'EOF'` の引用符の中の `<<EOF` を、ヒアドキュメントの始まりと読まないため。
+    引用符の外の `<<` と、二重引用符の中の `$( … )` の `<<`（`-m "$(cat <<'EOF' … )"`）は残す。
+    ヒアドキュメントの本体は跳ばす（本体の `'`・`"` を引用符と読まない）。
+    """
+    chars = list(text)
+    stack: list[str] = []  # '"'（二重引用符の中）か '$('（コマンド置換の中。引用符の外と同じに辿る）
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if stack and stack[-1] == '"':
+            if c == "\\":
+                i += 2
+            elif c == '"':
+                stack.pop()
+                i += 1
+            elif text.startswith("$(", i):
+                stack.append("$(")
+                i += 2
+            elif text.startswith("<<", i):
+                chars[i] = chars[i + 1] = "\x02"
+                i += 2
+            else:
+                i += 1
+            continue
+        if c == "'":  # 引用符の外の `\'` は跳ばさない（QUOTED と同じ読み方にそろえる）
+            j = text.find("'", i + 1)
+            if j < 0:
+                i += 1  # 閉じない単一引用符は文字のまま（QUOTED と同じ）
+                continue
+            for k in range(i, j):
+                if text.startswith("<<", k):
+                    chars[k] = chars[k + 1] = "\x02"
+            i = j + 1
+        elif c == '"':
+            stack.append('"')
+            i += 1
+        elif text.startswith("$(", i):
+            stack.append("$(")
+            i += 2
+        elif c == ")" and stack:
+            stack.pop()
+            i += 1
+        elif text.startswith("<<", i) and (m := HEREDOC.match(text, i)):
+            i = m.end()
+        else:
+            i += 1
+    return "".join(chars)
+
+
 def skeleton(command: str) -> str:
     """ヒアドキュメントの本体と引用符の中を、**同じ長さで**消す（コマンドの形だけを残す。位置は元の文字列と同じ）。"""
     out = command.replace("\\\n", "  ")  # 行継続は空白に畳む
+    out = hide_quoted_heredoc_ops(out)  # 引用符の中の `<<` を始まりと読まない（#1368）
 
     def heredoc(m: re.Match) -> str:
         first, _, rest = m.group(0).partition("\n")
@@ -166,18 +224,30 @@ def skeleton(command: str) -> str:
 
 
 def heredoc_text(command: str, a: int, b: int) -> str:
-    """その commit の部分（a〜b）で始まるヒアドキュメントの本文（`git commit -F - <<EOF && git push` の形）。"""
+    """その commit の部分（a〜b）で始まるヒアドキュメントの本文（`git commit -F - <<EOF && git push` の形）。
+
+    **引用符の外の `<<` で始まるものだけ**（#1368 の V1）。**`-m`／`--message` を渡したコミットでは数えない**——
+    git は stdin を読まない（#1368 の V2。`-m "$(cat <<'EOF' … )"` の本文は、その commit の部分の中にある）。
+    """
+    if MESSAGE_ARG.search(skeleton(command)[a:b]):
+        return ""
     folded = command.replace("\\\n", "  ")
-    return "".join("\n" + folded[m.start():m.end()] for m in HEREDOC.finditer(folded) if a <= m.start() < b)
+    found = HEREDOC.finditer(hide_quoted_heredoc_ops(folded))
+    return "".join("\n" + folded[m.start():m.end()] for m in found if a <= m.start() < b)
 
 
 def find_commits(command: str) -> tuple[str, list[tuple[int, int]]]:
-    """(骨組み, `git commit` の呼び出しごとの、続く部分の範囲（次の `&&`・`;`・`|`・改行まで）)。範囲は元の文字列にも当たる。"""
+    """(骨組み, `git commit` の呼び出しごとの、続く部分の範囲（次の `&&`・`;`・`|`・改行まで）)。範囲は元の文字列にも当たる。
+
+    **ヒアドキュメントの本体はその範囲に入れない**（`<<EOF` の行の終わりで切る）——本体は `heredoc_text` が、数えてよいときだけ足す（#1368 の V2）。
+    """
     skel = skeleton(command)
     spans = []
     for m in GIT_COMMIT.finditer(skel):
         end = SEGMENT_END.search(skel, m.end())
-        spans.append((m.end(), end.start() if end else len(skel)))
+        stop = end.start() if end else len(skel)
+        body = skel.find("\x01", m.end(), stop)  # 骨組みでは、ヒアドキュメントの本体の前の改行が \x01 になっている
+        spans.append((m.end(), body if body >= 0 else stop))
     return skel, spans
 
 
