@@ -98,6 +98,9 @@ BLOCKED: なし。
 - 周の在り処: ブランチ `issue/1347-scaffold-foundation-depends`・worktree `/Users/hdknr/Projects/hdknr/claude-code-setup/.claude/worktrees/issue-1347`・起点 `33de1e80`・base `origin/main` = `33de1e800c75c6f34a074b8a5cd789c3c9e313b8`
 - 直す線: 既定（出所: cruise の台帳の確かめた線）
 - PR: #1391
+- 1 パス目の関門に渡した成果物: `25b1a4b5`（1 パス目の指摘対応の起点）。結果: Verifier（sonnet・`dev-loop:dev-loop-verifier`・テンプレート 246 行を読んだ）反証 2 件・`/code-review`（high）指摘 5 件（採否は下の表）。
+- 1 パス目の指摘対応: `8a0a2d77`（差分 0 行ではない）→ 2 パス目へ。2 つ目の割り目は訊かずに続けた（割らない——cruise の周）。
+- main の取り込み: `8a0a2d77` の後に `origin/main`（`5662956c`。#1346）を取り込み、版の行だけが衝突した（main 0.129.1・周 0.130.0 → main から minor で 0.130.0 のまま）。周の base を当て直した: `git merge-base origin/main HEAD` = `5662956ca486dc268a83c6a15247ecfc97af3994`。
 - 割り目: 割らない（cruise の周）。手順 4 の割り目は訊かずに続けた。
 - 実験: A3・A4・A5 の陽性対照（下の「歯止め」）。交絡: 同じ試料（`test-scaffold.py` の `CASES` の中間表現を `build` で置いた正本）・同じ `python3 -I`・本体だけが違う（base `33de1e80` を `git archive` で写した `scripts/` と HEAD）。
 - 既存の試料の直し: 在庫の `staged_ir`（F-004 ⇄ F-005）・文書の例の「前提と後の状態」（F-006 ⇄ F-007）・「実行ごとに変わる出力」（F-009 ⇄ F-010）が循環していたので、Issue の移し方で循環しない形に直した
@@ -110,9 +113,21 @@ BLOCKED: なし。
 - A3 の陽性対照: 在庫の `staged_ir` に base の本体は `depends` を 1 つも書かず（F-004: None）、HEAD は F-004: [F-005]。文書の例も base は全部 None、HEAD は F-006: [F-008]・F-007: [F-006, F-008]。
 - A4 の陽性対照: 循環する試料（`STAGE_CYCLE`）に base の本体は 0 で本文を書き、HEAD は 1（循環する組・ケース・解き方を出し、本文を書かない）。
 - A5 の陽性対照: HEAD の `scaffold.py --foundation` が書いた `issues.json` に、base の `parent-checklist.py` は 2（0 番目が項目の形でない）、HEAD は 0（`- [ ] #100 foundation` を先頭に `(depends: #100, …)`）。
+- `check-all.py`（run-serial 越し）2 回目（`8ee21aa6` の前）: 失敗 0。3 回目（指摘対応と main の取り込みの後）: 失敗 0。
 - `check-all.py`（run-serial 越し）1 回目: 失敗 3（`check-bold-flanking.py`——handoff-issue.md の太字・`check-plan-counts.py`——件数の行・`test-scaffold.py`——既存の試料の直しで素通りした変異 3 つ）。直した。
 
 ## 既知の限界・決着済みの論点
+
+### 1 パス目の採否（Verifier 反証 2 件・/code-review 指摘 5 件）
+
+| 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- |
+| V-R1 計画の変更範囲の行に 2 つのパターンを並べ、`check-plan-scope.py origin/main` が 1（9 ファイルが範囲の外） | 示せる（Verifier が走らせた出力） | A8 | 直す——1 行 1 パターン（直した後 0） |
+| V-R2・CR2（同じもの）トレースの `calls` がほかの機能の入口を呼ぶ試料が無く、`trace.calls` を外す変異が素通り | 示せる（Verifier の陽性対照: `calls.second` を `set_stock` にすると F-003: ['F-004']、変異で None） | 無し（振る舞いは正しい。試料の穴） | 残課題 |
+| CR1 まとめ方だけで起きた循環を、ほかの所の中間表現の循環（`--bundle` で解いてある）があると 1 と言い、中間表現を直せと出す | 示せる——試料（F-001 ⇄ F-002 をまとめ、F-010 → F-009・F-012 → F-011 を互い違いに組む）で `25b1a4b5` の本体は 1、直した後は 2 | A4（循環の組と解き方を正しく名指す） | 直す——組の循環ごとに、その組の機能だけで組をまたぐ機能の循環が残るかで決める。試料・変異 |
+| CR3 「この版で本文を作らない機能の入口にも依存する」の変異は KeyError（2）で殺され、`depends` の違いを観測していない | 示せる（読んで） | 無し（試料の穴） | 残課題 |
+| CR4 scaffold の SKILL.md が「不在の cruise に土台の行を入れるかを確かめる」と書き、外すと `parent-issue.py` が「依存先が一覧に無い」で拒む | 示せる（ほかの全部の行が `(depends: #土台)` を持ち、`parent-issue.py` は一覧に無い依存先を拒む） | A5（経路: scaffold スキルの登録） | 直す——外さず、先に済ませたなら閉じてから出し直す（`[x]` で出る）と書いた |
+| CR5 v2 の `--foundation` が、デザインの正本などの関門より後で断られ、関門が落ちると 1 になる | 示せる——v2 に壊した `design/sources.csv` を置いた試料で `25b1a4b5` の本体は 1、直した後は 2 | A2 | 直す——`load` の直後に断る。試料 |
 
 - 一から作る案件の合図・土台の本文の印——上の「決めたこと」のとおり推奨で決めた。
 - #1389・#1379 はこの周では直さない（範囲外）。
@@ -124,5 +139,7 @@ BLOCKED: なし。
 ## 関門の記録
 
 ```dev-loop-gates
-周の base: 33de1e800c75c6f34a074b8a5cd789c3c9e313b8
+周の base: 5662956ca486dc268a83c6a15247ecfc97af3994
+関門: Verifier 1 25b1a4b5 反証=2
+関門: /code-review 1 25b1a4b5 指摘=5
 ```
