@@ -88,6 +88,8 @@ SEGMENT_END = re.compile(r"&&|\|\||;|\||\n")
 PIPELINE_BOUND = re.compile(r"&&|\|\||;(?![ \t]*\})|\n")
 # メッセージのファイルを渡す引数（-F <x>・-F<x>・--file=<x>・--file <x>）。<x> は骨組みの上の位置で取り、元の文字列から読む
 FILE_ARG = re.compile(r"(?:^|\s)(?:-[a-zA-Z]*F[ \t]*|--file(?:=|[ \t]+))([^\s;&|)<>]+)")
+# ヒアドキュメントの本文をファイルに書く形（`cat > m.txt <<EOF`・`cat <<EOF >> m.txt`・`tee [-a] m.txt <<EOF`）。ファイル名は 1 番目の組
+WRITE_TO = re.compile(r"(?:>>?|\btee(?:[ \t]+-a)?)[ \t]*([^\s;&|)<>]+)")
 # git が stdin から読むファイルの名前（引用符を外した形）
 STDIN_NAMES = ("-", "/dev/stdin", "/dev/fd/0")
 # 行頭・引用符の直後・文字のままの `\n` の直後の `Verified:`（-m を 2 本渡す形・$'…' の形も読む）
@@ -245,7 +247,7 @@ def heredoc_text(command: str, a: int, b: int) -> str:
 
     **引用符の外の `<<` で始まるものだけ**（#1368 の V1）。**メッセージを stdin から読む形（`-F -`・`--file=-`・`-F /dev/stdin`。引用符つきも）のコミットでだけ数える**——
     ほかの形（`-m`・`-F <ファイル>`・`-C`・エディタ）では git は stdin を読まない（#1368 の V2。`-m "$(cat <<'EOF' … )"` の本文は、その commit の部分の中にある）。
-    例外は、`-F <ファイル>` のファイルを同じコマンドの前のヒアドキュメントが `> <ファイル>` で書く形——その本文を読む。
+    例外は、`-F <ファイル>` のファイルを同じコマンドの前のヒアドキュメントが `> <ファイル>`・`tee <ファイル>` で書く形——最後に書いた本文を読む。
     """
     folded = command.replace("\\\n", "  ")
     shape = skeleton(command)  # 骨組み（引用符の中を消した形）
@@ -258,13 +260,20 @@ def heredoc_text(command: str, a: int, b: int) -> str:
         return "".join("\n" + folded[m.start():m.end()] for m in found if start <= m.start() < b)
     # `-F <ファイル>` で、そのファイルを同じコマンドの前のヒアドキュメントが書く形（`cat > m.txt <<'EOF' && git commit -F m.txt`）——
     # hook の時点ではファイルがまだ無いので、書くヒアドキュメントの本文を読む
+    # 書き込みは骨組みの上で探し（引用符の中の `> x` を書き込みと読まない）、ファイル名は元の文字列から読む。同じファイルを何度も書くなら最後のものだけ
     out = []
     for path in args:
-        to_path = re.compile(r">>?[ \t]*['\"]?" + re.escape(path) + r"['\"]?(?=[\s;&|)<]|$)")
+        last = None
         for m in found:
-            line = folded[folded.rfind("\n", 0, m.start()) + 1:m.start()] + folded[m.start():m.end()].partition("\n")[0]
-            if m.start() < a and to_path.search(line):
-                out.append("\n" + folded[m.start():m.end()])
+            if m.start() >= a:
+                continue
+            start = folded.rfind("\n", 0, m.start()) + 1
+            end = folded.find("\n", m.start())
+            for w in WRITE_TO.finditer(shape, start, end if end >= 0 else len(folded)):
+                if os.path.normpath(folded[w.start(1):w.end(1)].strip("'\"")) == os.path.normpath(path):
+                    last = m
+        if last is not None:
+            out.append("\n" + folded[last.start():last.end()])
     return "".join(out)
 
 

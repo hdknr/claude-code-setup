@@ -339,6 +339,27 @@ def suite(script: Path) -> list[str]:
           c.hook("cat > m.txt <<'EOF' && git commit -F m.txt\nfeat\n\nVerified: verify\nEOF").returncode == 0)
     check("前のヒアドキュメントが別のファイルに書くなら読まない",
           c.hook("cat > other.txt <<'EOF' && git commit -F m.txt\nVerified: verify\nEOF").returncode == 2)
+    for form in ("-F /dev/fd/0", "-aF -"):
+        check(f"{form} のヒアドキュメントを読む", c.hook(f"git commit {form} <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("-F -<<'EOF' の形を読む", c.hook("git commit -F -<<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("別のコマンド（; の前）のヒアドキュメントを -F - の本文に数えない",
+          c.hook("cat <<'EOF'; git commit -F -\nVerified: verify\nEOF").returncode == 2)
+    check("引用符の中の > <ファイル> を書き込みと読まない",
+          c.hook("echo \"> plain.txt\"; cat <<'EOF' | cat\nVerified: verify\nEOF\ngit commit -F plain.txt").returncode == 2)
+    check("同じファイルを 2 度書くなら最後の本文を読む",
+          c.hook("cat > plain.txt <<'EOF'\nVerified: verify\nEOF\ncat > plain.txt <<'EOF'\nfeat\nEOF\ngit commit -F plain.txt").returncode == 2)
+    check("-F ./m.txt でも前のヒアドキュメントが書く m.txt を読む",
+          c.hook("cat > m.txt <<'EOF' && git commit -F ./m.txt\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("tee m.txt <<EOF の本文を読む",
+          c.hook("tee m.txt <<'EOF' >/dev/null && git commit -F m.txt\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("名前の前が同じ別のファイル（m.txt.bak）は読まない",
+          c.hook("cat > m.txt.bak <<'EOF' && git commit -F m.txt\nVerified: verify\nEOF").returncode == 2)
+    check("後ろのヒアドキュメントが書くファイルは読まない",
+          c.hook("git commit -F m.txt && cat > m.txt <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    check("引用符つきのファイル名でも読む",
+          c.hook("cat > 'm.txt' <<'EOF' && git commit -F 'm.txt'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("<<EOF > m.txt の形でも読む",
+          c.hook("cat <<'EOF' > m.txt && git commit -F m.txt\nfeat\n\nVerified: verify\nEOF").returncode == 0)
     check("引用符の外の \\\" の後ろの -F - のヒアドキュメントを読む",
           c.hook("grep -c \\\"foo\\\" a.txt; git commit -F - <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
     check("{ cat <<EOF; } | git commit -F - の印を読む",
@@ -487,7 +508,14 @@ MUTATIONS = [
     ("--file=- を stdin と読まない", "--file(?:=|[ \\t]+))(", "--file[ \\t]+)("),
     ("引用符つきの -F '-' を stdin と読まない", """.strip("'\\"") for x in FILE_ARG""", " for x in FILE_ARG"),
     ("/dev/stdin を stdin と読まない", 'STDIN_NAMES = ("-", "/dev/stdin", "/dev/fd/0")', 'STDIN_NAMES = ("-",)'),
-    ("前のヒアドキュメントが書く -F のファイルを読まない", "            if m.start() < a and to_path.search(line):", "            if False:"),
+    ("前のヒアドキュメントが書く -F のファイルを読まない", "                    last = m\n", "                    pass\n"),
+    ("後ろのヒアドキュメントが書くファイルも読む", "            if m.start() >= a:\n                continue\n", ""),
+    ("書き込みを元の文字列で探す", "WRITE_TO.finditer(shape, start,", "WRITE_TO.finditer(folded, start,"),
+    ("同じファイルの最初の書き込みを読む", "                    last = m\n", "                    last = last or m\n"),
+    ("tee を書き込みと読まない", "|\\btee(?:[ \\t]+-a)?)", ")"),
+    ("./ を外さずに比べる", ".strip(\"'\\\"\")) == os.path.normpath(path)", ".strip(\"'\\\"\")) == path"),
+    ("/dev/fd/0 を stdin と読まない", 'STDIN_NAMES = ("-", "/dev/stdin", "/dev/fd/0")', 'STDIN_NAMES = ("-", "/dev/stdin")'),
+    ("同じパイプラインの始まりを見ない", "        start = bounds[-1] if bounds else 0\n        return", "        start = 0\n        return"),
     ("引用符の外の \\ を跳ばさない", '        if c == "\\\\":  # 引用符の外の', '        if False:  # 引用符の外の'),
     ("{ } の中の ; でパイプラインを区切る", ";(?![ \\t]*\\})|", ";|"),
     ("二重引用符の中の逆引用符に入らない", '            elif c == "`":\n                stack.append("`")\n                i += 1\n', ""),
