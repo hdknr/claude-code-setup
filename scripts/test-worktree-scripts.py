@@ -1039,6 +1039,41 @@ def check_norm_shape() -> None:
     check("SKILL.md: 不安定なテストの原本を指す", "references/flaky-tests.md" in skill)
     check("flaky-tests.md: 不安定なテストの記録の形がある",
           "不安定なテスト: " in (skill_dir / "references" / "flaky-tests.md").read_text(encoding="utf-8"))
+    # **プロパティテストの扱い（#1190）**——手順 3 が原本を指すこと、Verifier の差し込みが陽性対照と生成の設定を返させること、
+    # 実装の指示が「無い」を報告させること、原本が計画の表の形と代替の記録の形を持つこと。
+    prop_doc = (skill_dir / "references" / "property-tests.md").read_text(encoding="utf-8")
+    implementer = (skill_dir / "prompts" / "implementer.md").read_text(encoding="utf-8")
+    # **差し込み 10 の本文だけを切り出す**（末尾の行の `}}` まで。入れ子の `{{ }}` で切れないように。表の見出しの語や後ろの節の語で緑にならないように）。
+    _start = verifier.find("10. **計画ファイルの「プロパティテスト」の表の行ごとに")
+    _end = verifier.find("表が返らない行は、親が未検証として扱います。**}}", _start) if _start >= 0 else -1
+    prop_block = verifier[_start:_end] if _start >= 0 and _end >= 0 else ""
+    check("verifier.md: プロパティテストの差し込み 10 がある", bool(prop_block))
+    check("SKILL.md: プロパティテストの原本を指し、該当判定の行を求める",
+          "references/property-tests.md" in skill and "プロパティテスト: なし（理由）" in skill)
+    _s5 = skill[skill.find("### 5. 検証"):skill.find("### 6. レビュー")]
+    check("SKILL.md: 手順 5（の節の中）が差し込み 10 を入れることと、表が返らなければ未検証とすることを求める",
+          "差し込み 10 を入れ、行ごとの表が返らなければ未検証として扱う" in _s5
+          and "例のテストでの代替は、上の BLOCKED の規定の例外である" in _s5)
+    check("SKILL.md: 手順 3 の計画の委譲の項が、プロパティテストの該当判定を委譲先の産物で確かめさせる",
+          "プロパティテストの該当判定（`プロパティテスト:` の行）が、委譲先の産物に" in skill)
+    check("verifier.md: 差し込み 10 が、性質を破る変異を実際に当てて反例が出るかを求める（表の見出しの語では満たさない）",
+          "反例を出して落ちるかを、実際に当てて" in prop_block and "空振りしています" in prop_block)
+    check("verifier.md: 差し込み 10 が生成の設定と空振りの形を読ませる",
+          all(k in prop_block for k in ("生成の設定を読んで", "max_examples", "空振りの形を探して")))
+    check("verifier.md: 差し込み 10 が、ライブラリが無い行の代替の誠実さを見させる",
+          "ライブラリ: 無い" in prop_block and "黙って例のテストにしていない" in prop_block
+          and "落とした主張（入力の空間の偏り）が計画に名指しされているか" in prop_block)
+    check("implementer.md: プロパティテストをライブラリで書かせ、無いときは差し替えずに止まって「無い」と報告させる",
+          all(k in implementer for k in ("Hypothesis", "fast-check", "proptest"))
+          and "足さず、例のテストにも差し替えず、その行は書かずに止まって「無い」と報告" in implementer)
+    check("property-tests.md・verifier.md: 代替の扱いが 1 つ（行に最初から書いておく分岐の選択。禁止は目的を限定せず、「緩める操作ではない」と呼び変えない）",
+          "最初から書いておく分岐" in prop_doc and "分岐を選んだ" in prop_doc
+          and "実装の途中で受入基準の行を書き換えない" in prop_doc
+          and "通すために書き換えない" not in prop_doc and "緩める操作ではない" not in prop_doc
+          and "決定の場所を移すだけ" not in prop_doc
+          and "分岐を選んだ" in prop_block and "最初から" in prop_block)
+    check("property-tests.md: 4 つの型と、表の形と、代替の記録の形と、落とした主張の名指しがある",
+          all(k in prop_doc for k in ("往復", "冪等性", "等価性", "数値の境界", "| 不変条件の番号 |", "ライブラリ: 無い（", "代替: 例のテスト", "落とした主張", "依存の定義にも lockfile にも無い")))
     agent = (REAL_REPO / "plugins" / "dev-loop" / "agents" / "dev-loop-verifier.md"
              ).read_text(encoding="utf-8")
     # **生の `fetch` では広すぎる**——`WebFetch` を `tools:` に足しただけで赤くなる
