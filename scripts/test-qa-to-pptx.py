@@ -324,8 +324,9 @@ def zip_tick() -> tuple[int, ...]:
 def shifted_clock(seconds: float):
     """`time` の時計（`time`・`time_ns`・`localtime`・`gmtime`）を `seconds` 秒進める——実時計を待たずに zip の時刻の刻みをまたぐ（#1369）。
 
-    `zipfile` が既定で刻む時刻（`time.localtime(time.time())`）も進むので、`time` をどう書いて読む変異でも違いが出る。
-    **`datetime` の時計は進まない**——それを読む変異は `CLOCK_MUTATIONS` に入れて実時計で待つ。"""
+    進むのは `time` モジュールの属性として呼んだとき（`time.localtime()`・`__import__("time").gmtime()`・`zipfile` が既定で刻む
+    `time.localtime(time.time())` など）。**進まない時計もある**——`from time import localtime` で読み込み時に束縛した関数・
+    引数なしの `time.strftime(fmt)`・`time.ctime()`・`datetime` の時計。それを読む変異は `CLOCK_MUTATIONS` に入れて実時計で待つ（#1372）。"""
     real_time, real_ns, real_local, real_gm = time.time, time.time_ns, time.localtime, time.gmtime
     time.time = lambda: real_time() + seconds
     time.time_ns = lambda: real_ns() + int(seconds * 1_000_000_000)
@@ -545,7 +546,9 @@ def observe(mod, base: Path, *, cross_clock: bool = True) -> dict:
 CLOCK_STEP = 2.1
 # 待たない回で `time` の時計を進める秒——刻み（2 秒）を必ずまたぐ
 CLOCK_SHIFT = 4
-# 時刻で出力が変わる変異——決定性の観測で実時計をまたがないと殺せない（#1369）。ほかの変異は待たずに当てる
+# 時計を読む変異の組——決定性の観測で実時計をまたいで当てる（#1369）。ほかの変異は待たずに、`time` の時計を進めて当てる。
+# 決まりは「時計を読む変異はここに入れる」の 1 つ（#1372）。`time` の時計を読む変異（「zip の時刻を固定しない」など）は
+# 進めた時計でも殺せるが、`datetime` のように `shifted_clock` で進まない時計を読む変異は、ここに入れないと殺せない
 CLOCK_MUTATIONS = {"zip の時刻を固定しない"}
 # 置き換え先がこれを含む変異は時計を読む——`CLOCK_MUTATIONS` に入っていなければ赤にする
 CLOCK_READERS = ("time.", "datetime")
@@ -832,15 +835,18 @@ def main() -> int:
             (d / SCRIPT.name).write_text(mutated, encoding="utf-8")
             work = d / "work"
             work.mkdir()
+            got: dict = {}
             try:
                 got = observe(load(d / SCRIPT.name), work, cross_clock=name in CLOCK_MUTATIONS)
                 diff = [k for k, v in EXPECTED.items() if got.get(k) != v]
             except Exception as e:  # noqa: BLE001
                 diff = [f"例外: {type(e).__name__}"]
             check(f"変異を殺せる: {name}（違った観測: {', '.join(diff) or 'なし'}）", bool(diff))
-            # 待たずに時計を進めた回で決定性の観測が割れたなら、その変異は時計を読む——実時計で待つ組に入れ忘れている（#1369）
+            # 待たずに時計を進めた回で決定性の観測が割れたなら、その変異は時計を読む——実時計で待つ組に入れ忘れている（#1369）。
+            # 割れたと数えるのは、主な生成が 0 で終わり決定性が `False` と観測できたときだけ（#1372）——非 0 で終わると
+            # 決定性は観測されず（`None`）、違った観測に入るが、時計を読んだのではない
             check(f"時計を読むらしい変異が CLOCK_MUTATIONS に無い: {name}",
-                  name in CLOCK_MUTATIONS or "deterministic" not in diff)
+                  name in CLOCK_MUTATIONS or not (got.get("rc") == 0 and got.get("deterministic") is False))
 
         # 判別の本体（`check-qa-csv.py` の `is_provisional`）を壊す——資料は写しを持たずにそれを読む（#404）
         checker = CHECKER.read_text(encoding="utf-8")
@@ -854,15 +860,18 @@ def main() -> int:
             (d / CHECKER.name).write_text(checker.replace(needle, replacement, 1), encoding="utf-8")
             work = d / "work"
             work.mkdir()
+            got: dict = {}
             try:
                 got = observe(load(d / SCRIPT.name), work, cross_clock=name in CLOCK_MUTATIONS)
                 diff = [k for k, v in EXPECTED.items() if got.get(k) != v]
             except Exception as e:  # noqa: BLE001
                 diff = [f"例外: {type(e).__name__}"]
             check(f"変異を殺せる: {name}（違った観測: {', '.join(diff) or 'なし'}）", bool(diff))
-            # 待たずに時計を進めた回で決定性の観測が割れたなら、その変異は時計を読む——実時計で待つ組に入れ忘れている（#1369）
+            # 待たずに時計を進めた回で決定性の観測が割れたなら、その変異は時計を読む——実時計で待つ組に入れ忘れている（#1369）。
+            # 割れたと数えるのは、主な生成が 0 で終わり決定性が `False` と観測できたときだけ（#1372）——非 0 で終わると
+            # 決定性は観測されず（`None`）、違った観測に入るが、時計を読んだのではない
             check(f"時計を読むらしい変異が CLOCK_MUTATIONS に無い: {name}",
-                  name in CLOCK_MUTATIONS or "deterministic" not in diff)
+                  name in CLOCK_MUTATIONS or not (got.get("rc") == 0 and got.get("deterministic") is False))
 
     print()
     if failures:
