@@ -884,7 +884,7 @@ scaffold が Issue の本文に載せ、dev-loop が見た目を確かめる。
 | ガントチャート | `build/feasibility/gantt.svg` | `feasibility` |
 | 提案書 | `build/proposal/proposal.md`（と同じ場所の `gantt.svg`。`--pptx` なら `proposal.pptx` と別紙の `decisions.xlsx`） | `proposal` |
 | 仕様書 | `build/proposal/spec.md`（と同じ場所の `spec-figure-NN.svg`。`--pptx` なら `spec.pptx`。下の「仕様書」） | `proposal` |
-| Issue の本文 | `build/scaffold/issues/<機能の id>.md`（`--bundle` でまとめた機能は `bundle-<機能の id>-<機能の id>.md`。と同じ場所の `issues.json`） | `scaffold` |
+| Issue の本文 | `build/scaffold/issues/<機能の id>.md`（`--bundle` でまとめた機能は `bundle-<機能の id>-<機能の id>.md`、`--foundation` の土台の本文は `foundation.md`。と同じ場所の `issues.json`） | `scaffold` |
 | 課題一覧（案） | `build/scaffold/issues/proposals.md`（Issue の本文ではない。登録しない——`spec-ir.md` の「呼ぶ側の分岐」） | `scaffold` |
 | サイト | `site/`（MkDocs の出力。下の「ドキュメントのツール」） | `mkdocs build` |
 
