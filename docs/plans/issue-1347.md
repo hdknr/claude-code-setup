@@ -10,11 +10,14 @@
 - `plugins/spec-loop/references/spec-ir.md` — 「前提と後の状態」の例が依存の循環を持つ（F-006 ⇄ F-007）ので、F-006-C3 を F-007 へ移す（Issue の移し方）。呼び出しが依存になることを 1 文
 - `plugins/spec-loop/references/tree.md` — `issues.json`・`foundation.md` の置き場所（記述があれば）
 - `plugins/spec-loop/skills/scaffold/SKILL.md` — 一から作る案件かを利用者に確かめて `--foundation`・循環で止まったときの手当て・土台の本文の登録（重複の探し方・先に登録する）
-- `plugins/spec-loop/README.md`・`docs/plugins/spec-loop.md` — 依存の連鎖の説明（呼ぶ機能だけでなく Red テストの呼び出し）と `--foundation`
+- `plugins/spec-loop/README.md` — 依存の連鎖の説明（呼ぶ機能だけでなく Red テストの呼び出し）と `--foundation`
+- `docs/plugins/spec-loop.md` — 同上（公開ページ）
 - `CLAUDE.md` — `parent-checklist.py` の行の「依存は … 呼ぶ機能が呼ばれる機能に依存する」を今の定義に（`scaffold.py` の行に `--foundation`）
 - `scripts/test-scaffold.py` — 依存・循環・土台の試料と変異。循環する既存の試料（在庫の `staged_ir`・文書の例）を、Issue の移し方で循環しない形に直す
 - `scripts/test-parent-checklist.py` — 土台の項目の試料
-- `plugins/spec-loop/.claude-plugin/plugin.json`・`.claude-plugin/marketplace.json`・`plugins/spec-loop/skills/*/SKILL.md` — 版
+- `plugins/spec-loop/.claude-plugin/plugin.json` — 版
+- `.claude-plugin/marketplace.json` — 版
+- `plugins/spec-loop/skills/*/SKILL.md` — 版の 2 行
 - `docs/plans/issue-1347.md` — この計画
 
 触らない:

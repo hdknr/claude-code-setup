@@ -2615,6 +2615,16 @@ STAGE_CYCLE = staged_ir(lambda ir: stage_feature(ir, "F-005")["cases"].append(co
 MIXED_CYCLE = edit(lambda ir: (f1(ir).update(called_by=["F-002"]),
                                f1(ir)["cases"][0].update(setup=[{"operation": "can_cancel", "input": {"shipped": False},
                                                                  "expected": {"ok": True}}])))
+# まとめて解いた中間表現の循環（F-001 ⇄ F-002）と、まとめ方だけで起きる循環（F-010 → F-009・F-012 → F-011 を {F-010, F-011}・{F-009, F-012} に互い違いに入れる）——
+# まとめ方だけの循環は、ほかに中間表現の循環があっても 2（1 パス目の /code-review の指摘）
+def bundle_only_with_spec_cycle(ir: dict) -> None:
+    ir["features"][:2] = MIXED_CYCLE(ir)["features"][:2]  # MIXED_CYCLE は写しを返す
+    ir["features"] += [plain_feature("F-009", "op_a"), plain_feature("F-010", "op_b"), plain_feature("F-011", "op_c"),
+                       plain_feature("F-012", "op_d")]
+    stage_feature(ir, "F-009")["called_by"] = ["F-010"]
+    stage_feature(ir, "F-011")["called_by"] = ["F-012"]
+
+
 # 土台（--foundation）——文書の例の seed を多くのケースに書き、半分以上が使う seed にする
 def doc_more_seeds(ir: dict) -> None:
     for cid in ("F-006-C2", "F-007-C2"):
@@ -4264,6 +4274,8 @@ CASES: list[Case] = [
     # 循環する機能を --bundle で 1 件にまとめれば、組の中の依存は数えないので通る
     Case("依存: 循環する機能をまとめれば通る", 0, "作った", ir=STAGE_CYCLE, args=("--bundle", "F-004,F-005"),
          post=expect_depends({"F-001": None, "F-002": None, "F-004・F-005": None})),
+    Case("依存: まとめ方だけの循環は、ほかの中間表現の循環をまとめて解いていれば 2", 2, "--bundle でまとめると依存が循環する",
+         ir=edit(bundle_only_with_spec_cycle), args=("--bundle", "F-001,F-002", "--bundle", "F-010,F-011", "--bundle", "F-009,F-012")),
     # 循環と関係ない機能をまとめても、中間表現の循環は 1（引数の誤りの 2 ではない）
     Case("依存: まとめても残る中間表現の循環は 1", 1, "循環する組（2 件）: F-004・F-005", ir=STAGE_CYCLE,
          args=("--bundle", "F-001,F-002")),
@@ -4283,6 +4295,8 @@ CASES: list[Case] = [
          post=expect_depends({"foundation": None, "F-001・F-002": ["foundation"], "F-003": ["foundation"]})),
     Case("土台: --check と一緒に使えない", 2, "--foundation は書く生成か --dry-run と一緒にだけ使う", args=("--check", "--foundation")),
     Case("土台: --red-check と一緒に使えない", 2, "--foundation は書く生成か --dry-run と一緒にだけ使う", args=("--red-check", "--foundation")),
+    Case("土台: v2 ではほかの関門より先に 2", 2, "--foundation は v1 でだけ使う", extra=v2([V2_CHANGED]), args=("--foundation",),
+         pre=lambda repo: ((repo / "design").mkdir(), (repo / "design" / "sources.csv").write_text("壊れた,表\n", encoding="utf-8"))),
     Case("土台: v2 では使えない", 2, "--foundation は v1 でだけ使う（一から作る案件の最初の版。いまは v2）", extra=v2([V2_CHANGED]),
          args=("--foundation",), pre=plant_old_issues, post=nothing_written_issues),
     Case("まとめる機能が 1 件", 2, "まとめるには機能を 2 件以上並べる", args=("--bundle", "F-001"),
@@ -4914,8 +4928,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      '                    target = entry.get(name) or {"get_stock": "F-005"}.get(name)', "依存: この版で本文を作らない機能には依存しない"),
     ("中間表現の循環で止めない", "    if code:\n        # 中間表現の機能どうしの循環", "    if False:\n        # 中間表現の機能どうしの循環",
      "依存: 循環すると止まり、組を名指す"),
-    ("中間表現の循環をまとめ方の誤りと言う", "    if bundled and not cycles([[c] for c in changes]):", "    if bundled:",
+    ("中間表現の循環をまとめ方の誤りと言う", "    if bundled and not spec_loops:", "    if bundled:",
      "依存: まとめても残る中間表現の循環は 1"),
+    ("循環ごとでなく中間表現の全体で決める", "        if any(len({owner[members[i].feature[\"id\"]] for i in inner}) > 1 for inner in cycles([[c] for c in members])):",
+     "        if cycles([[c] for c in changes]):", "依存: まとめ方だけの循環は、ほかの中間表現の循環をまとめて解いていれば 2"),
     ("循環の理由を名指ししない", '                    lines += [f"  {group_label(groups[at])} → {target}: {reason}" for reason in reasons[at][target]]',
      "                    lines += []", "依存: 循環すると依存を作ったケースを名指す"),
     ("循環の解き方を出さない", '    lines.append("解き方: ', '    lines.append("ほかに: ', "依存: 循環の解き方を出す"),

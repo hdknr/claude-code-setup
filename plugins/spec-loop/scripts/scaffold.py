@@ -3561,14 +3561,24 @@ def dependency_problems(groups: list[list[Change]], changes: list[Change], bundl
 
     **中間表現の機能どうしで循環するなら 1**——循環する組と、依存を作ったケース（どこの呼び出しか）を名指しし、解き方を出す。
     **`--bundle` のまとめ方でだけ循環するなら 2**（引数の誤り。#876）。循環する機能を `--bundle` で 1 件にまとめれば、組の中の依存は数えないので通る。
+    **組の循環ごとに決める**——その循環の組に入った機能だけで、機能どうしの循環が 2 つ以上の組にまたがって残るなら中間表現の循環（1）。
+    ほかの所で中間表現が循環していても（`--bundle` で解いてあっても）、この循環がまとめ方だけで起きたなら 1 と言わない。
     """
     loops = cycles(groups)
     if not loops:
         return 0, []
-    if bundled and not cycles([[c] for c in changes]):
+    owner = {c.feature["id"]: index for index, group in enumerate(groups) for c in group}
+    spec_loops = []
+    for loop in loops:
+        # その循環の組の機能だけで、1 機能 = 1 組にしたときの循環が、2 つ以上の組にまたがって残るか
+        members = [c for i in loop for c in groups[i]]
+        if any(len({owner[members[i].feature["id"]] for i in inner}) > 1 for inner in cycles([[c] for c in members])):
+            spec_loops.append(loop)
+    if bundled and not spec_loops:
         labels = " と ".join("・".join(group_label(groups[i]) for i in loop) for loop in loops)
         return 2, [f"--bundle でまとめると依存が循環する（循環する組: {labels}）——呼ぶ機能と呼ばれる機能を、別々の組に"
                    "互い違いに入れている。組み方を変える"]
+    loops = spec_loops or loops
     reasons = dependency_reasons(groups)
     lines = [f"依存が循環する（{len(loops)} 組）——Red テストの呼び出し（前提・後の状態・トレース）と `{CALLED_BY}` から引いた依存で、"
              "循環する機能はどれも、相手の入口ができるまで Red テストが緑にならない。登録の前に解く:"]
@@ -4100,14 +4110,14 @@ def run(repo: Path, args, writing: bool) -> int:
         code, lines = 2, [str(exc)]
     if code:
         return fail(repo, writing, code, lines)
+    if args.foundation and loaded.number != 1:
+        # 一から作る案件の土台は最初の版で作る（#1347）——v2 以降は v1 の土台の上に足す。ほかの関門より先に見る（引数の誤りを関門の 1 に隠さない）
+        return fail(repo, writing, 2, [f"--foundation は v1 でだけ使う（一から作る案件の最初の版。いまは v{loaded.number}）。判定していない"])
     if not (args.check or args.red_check):
         # デザインの正本の参照（#1156）——本文を作るモードだけ
         code, lines = check_design(repo, loaded)
         if code:
             return fail(repo, writing, code, lines)
-    if args.foundation and loaded.number != 1:
-        # 一から作る案件の土台は最初の版で作る（#1347）——v2 以降は v1 の土台の上に足す
-        return fail(repo, writing, 2, [f"--foundation は v1 でだけ使う（一から作る案件の最初の版。いまは v{loaded.number}）。判定していない"])
     for line in loaded.notes:
         # 止めずに知らせる（基盤要件の表が無い。#950）
         print(line, file=sys.stderr)
