@@ -313,8 +313,17 @@ def runs_of(slide_xml: str) -> list[tuple[str, bool]]:
     return out
 
 
-def observe(mod, base: Path) -> dict:
-    """1 つの本体に対する観測を全部まとめる（変異テストでも同じ観測を使う）。"""
+def zip_tick() -> tuple[int, ...]:
+    """いまの時刻を zip の時刻の刻み（秒は 2 秒単位）で返す。"""
+    now = time.localtime()
+    return tuple(now[:5]) + (now[5] // 2,)
+
+
+def observe(mod, base: Path, *, cross_clock: bool = True) -> dict:
+    """1 つの本体に対する観測を全部まとめる（変異テストでも同じ観測を使う）。
+
+    `cross_clock` が真なら、決定性の観測の 2 回目の生成の前に実時計で zip の時刻の刻みをまたぐ（`CLOCK_STEP` 秒待つ）。
+    偽なら待たずに作り直してバイトを比べる——時刻以外の非決定性はそれでも見える（#1369）。"""
     obs: dict = {}
     # 手書き部分の太字の行（#965）——`build-proposal.py --pptx` が読む `markdown_slides` を直に呼ぶ
     try:
@@ -400,8 +409,12 @@ def observe(mod, base: Path) -> dict:
                 stripped[0] = stripped[0][:-2]
             obs["links_rest_same"] = stripped == slides
             obs["links_last"] = sorted(sl[-1] for sl in lslides if sl and sl[-1].startswith("モック: "))
-        # 決定性: 時刻をまたいで作り直す（zip の時刻を固定していないと、ここで違う）
-        time.sleep(2.1)
+        # 決定性: 作り直してバイトを比べる。`cross_clock` なら時刻をまたいでから（zip の時刻を固定していないと、ここで違う）。
+        # 待つのは本物の本体と `CLOCK_MUTATIONS` だけ（#1369）——1 回 2.1 秒を約 70 回待って、テストの時間のほぼ全部だった
+        if cross_clock:
+            first = zip_tick()
+            time.sleep(CLOCK_STEP)
+            obs["crossed_clock"] = zip_tick() != first
         again = base / "again.pptx"
         run(mod, str(good), str(again), "--subtitle", "2026-10-13")
         obs["deterministic"] = again.exists() and again.read_bytes() == out.read_bytes()
@@ -505,6 +518,13 @@ def observe(mod, base: Path) -> dict:
     obs["no_tmp_left"] = not list(base.glob(".is-a-dir.pptx.*"))
     return obs
 
+
+# 決定性の観測で実時計をまたぐ秒（zip の時刻は 2 秒刻み）
+CLOCK_STEP = 2.1
+# 時刻で出力が変わる変異——決定性の観測で実時計をまたがないと殺せない（#1369）。ほかの変異は待たずに当てる
+CLOCK_MUTATIONS = {"zip の時刻を固定しない"}
+# 置き換え先がこれを含む変異は時計を読む——`CLOCK_MUTATIONS` に入っていなければ赤にする
+CLOCK_READERS = ("time.", "datetime")
 
 EXPECTED = {
     "rc": 0, "problems": [], "slides": 1 + 1 + len(PENDING),
@@ -707,6 +727,9 @@ def main() -> int:
         obs = observe(load(SCRIPT), base / "real")
         for key, want in EXPECTED.items():
             check(f"{key} = {want!r}（実際: {obs.get(key)!r}）", obs.get(key) == want)
+        # 決定性の観測の陽性対照の前提: 本物の本体の 2 回の生成は、実時計で zip の時刻の刻みをまたいでいる（#1369）
+        check(f"本物の本体の決定性の観測は zip の時刻の刻みをまたぐ（実際: {obs.get('crossed_clock')!r}）",
+              obs.get("crossed_clock") is True)
 
         print("\n確認中が 0 件・一覧が 2 枚に割れる")
         mod = load(SCRIPT)
@@ -765,6 +788,13 @@ def main() -> int:
 
         print("\n変異テスト（壊したのに期待どおりなら失格）")
         source = SCRIPT.read_text(encoding="utf-8")
+        # 実時計をまたぐのは `CLOCK_MUTATIONS` だけ（#1369）——時計を読む変異がそこから漏れると、待たずに当てて生き残る
+        names = {name for name, *_ in MUTATIONS}
+        check(f"CLOCK_MUTATIONS の名前が MUTATIONS にある（無いもの: {sorted(CLOCK_MUTATIONS - names)}）",
+              CLOCK_MUTATIONS <= names)
+        readers = sorted(name for name, _, replacement in MUTATIONS + CHECKER_MUTATIONS
+                         if any(word in replacement for word in CLOCK_READERS) and name not in CLOCK_MUTATIONS)
+        check(f"時計を読む変異は CLOCK_MUTATIONS にある（漏れ: {readers}）", not readers)
         for n, (name, needle, replacement) in enumerate(MUTATIONS):
             if source.count(needle) != 1:
                 check(f"変異を当てる先が 1 箇所ある: {name}（{source.count(needle)} 箇所）", False)
@@ -779,7 +809,7 @@ def main() -> int:
             work = d / "work"
             work.mkdir()
             try:
-                got = observe(load(d / SCRIPT.name), work)
+                got = observe(load(d / SCRIPT.name), work, cross_clock=name in CLOCK_MUTATIONS)
                 diff = [k for k, v in EXPECTED.items() if got.get(k) != v]
             except Exception as e:  # noqa: BLE001
                 diff = [f"例外: {type(e).__name__}"]
@@ -798,7 +828,7 @@ def main() -> int:
             work = d / "work"
             work.mkdir()
             try:
-                got = observe(load(d / SCRIPT.name), work)
+                got = observe(load(d / SCRIPT.name), work, cross_clock=name in CLOCK_MUTATIONS)
                 diff = [k for k, v in EXPECTED.items() if got.get(k) != v]
             except Exception as e:  # noqa: BLE001
                 diff = [f"例外: {type(e).__name__}"]
