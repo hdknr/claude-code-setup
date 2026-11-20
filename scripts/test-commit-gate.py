@@ -298,12 +298,28 @@ def suite(script: Path) -> list[str]:
           c.hook("git commit --author='Bob <<EOF bob@x>' -F plain.txt && cat > notes.md <<'EOF'\nVerified: verify\nEOF").returncode == 2)
     check("V1: 二重引用符の中の <<EOF（-m なし）の後ろのヒアドキュメントの印を拾わない",
           c.hook('git commit --author="Bob <<EOF bob@x>" -F plain.txt && cat > notes.md <<\'EOF\'\nVerified: verify\nEOF').returncode == 2)
+    check("V1: -F - のコミットで、単一引用符の中の <<EOF の後ろのヒアドキュメントの印を拾わない",
+          c.hook("git commit --author='Bob <<EOF bob@x>' -F - <<'M'\nfeat\nM\ncat > notes.md <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    check("V1: -F - のコミットで、二重引用符の中の <<EOF の後ろのヒアドキュメントの印を拾わない",
+          c.hook('git commit --author="Bob <<EOF bob@x>" -F - <<\'M\'\nfeat\nM\ncat > notes.md <<\'EOF\'\nVerified: verify\nEOF').returncode == 2)
     check("V1: 引用符の中の <<EOF が次の行の git commit を隠さない",
           c.hook("git commit -m 'x' -m 'Verified: tests' --author='A <<EOF a@b>'\ngit commit -m y\nEOF").returncode == 2)
     check("\"$(cat <<'EOF' …)\" の本文の \" に崩されない",
           c.hook("git commit -m \"$(cat <<'EOF'\nfix: 3\" pipe\n\nVerified: verify\nEOF\n)\"").returncode == 0)
     check("前のヒアドキュメントの本文の ' に崩されない",
           c.hook("cat > a.md <<'EOF'\ndon't\nEOF\ngit commit -F - <<'M'\nfeat: x\n\nVerified: tests\nM\necho 'done'").returncode == 0)
+    check("パイプで stdin に渡るヒアドキュメントの印を読む（cat <<EOF | git commit -F -）",
+          c.hook("cat <<'EOF' | git commit -F -\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("パイプで stdin に渡るヒアドキュメントに印が無ければ止める",
+          c.hook("cat <<'EOF' | git commit -F -\nfeat\nEOF").returncode == 2)
+    check("\"`cat <<'EOF' …`\" の本文の \" に崩されない",
+          c.hook("git commit -m \"`cat <<'EOF'\nfix: 3\" pipe\n\nVerified: verify\nEOF\n`\"").returncode == 0)
+    check("\"`cat <<EOF …`\" の後ろに && で続く -F - のコミットも読む",
+          c.hook("git commit -m \"`cat <<'EOF'\nfeat\n\nVerified: verify\nEOF\n`\" && git commit -F - <<'M'\nfeat\n\nVerified: tests\nM").returncode == 0)
+    check("引用符の無い $(cat <<EOF …) の印を読む",
+          c.hook("git commit -m $(cat <<'EOF'\nVerified:verify\nEOF\n)").returncode == 0)
+    check("\"$(cat <<EOF …)\" の後ろに && で続く -F - のコミットも読む",
+          c.hook("git commit -m \"$(cat <<'EOF'\nfeat\n\nVerified: verify\nEOF\n)\" && git commit -F - <<'M'\nfeat\n\nVerified: tests\nM").returncode == 0)
     # #1368 の V2: -m を渡したコミットでは、ヒアドキュメント（stdin）を本文に数えない
     check("V2: -m のヒアドキュメントの印を数えない（印なしは止める）",
           c.hook("git commit -m 'feat: x' <<'EOF' && git push\nVerified: verify\nEOF").returncode == 2)
@@ -312,6 +328,13 @@ def suite(script: Path) -> list[str]:
     check("V2: -am でもヒアドキュメントを数えない", c.hook("git commit -am x <<'EOF'\nVerified: verify\nEOF").returncode == 2)
     check("V2: --message= でもヒアドキュメントを数えない",
           c.hook("git commit --message=x <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    check("V2: -mfoo でもヒアドキュメントを数えない", c.hook("git commit -mfoo <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    check("V2: 略した --mess= でもヒアドキュメントを数えない", c.hook("git commit --mess=x <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    check("V2: -F <ファイル> ではヒアドキュメントを数えない", c.hook("git commit -F plain.txt <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    check("V2: メッセージの引数が無い（エディタ）形ではヒアドキュメントを数えない", c.hook("git commit <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    check("-F- のヒアドキュメントを読む", c.hook("git commit -F- <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("--file=- のヒアドキュメントを読む", c.hook("git commit --file=- <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("--file - のヒアドキュメントを読む", c.hook("git commit --file - <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
     (c.repo / "msg.txt").write_text("x\n\nVerified: gates\n")
     check("--file= のファイルを読む", c.hook("git commit --file=msg.txt").returncode == 0)
     check("-F は commit の部分だけで読む（別コマンドの -F を拾わない）", c.hook("git log -F msg.txt && git commit -m x").returncode == 2)
@@ -448,9 +471,15 @@ MUTATIONS = [
     ('"$( の中を引用符の中と読む', '            elif text.startswith("$(", i):\n                stack.append("$(")\n                i += 2\n',
      ""),
     ("ヒアドキュメントの本体を跳ばさない", "        elif text.startswith(\"<<\", i) and (m := HEREDOC.match(text, i)):\n            i = m.end()\n", ""),
-    ("-m でもヒアドキュメントを数える", '    if MESSAGE_ARG.search(skeleton(command)[a:b]):\n        return ""\n', ""),
-    ("-am を -m と読まない", "(?:-[a-zA-Z]*m(?=[\\s=\\\"']|$)|--message\\b)\")", "(?:-m(?=[\\s=\\\"']|$)|--message\\b)\")"),
-    ("--message を -m と読まない", "|--message\\b)\")", ")\")"),
+    ("-m でもヒアドキュメントを数える", '    if not STDIN_MESSAGE.search(skeleton(command)[a:b]):\n        return ""\n', ""),
+    ("-F- を stdin と読まない", "F[ \\t]*-|--file", "F[ \\t]+-|--file"),
+    ("--file=- を stdin と読まない", "--file(?:=|[ \\t]+)-)", "--file[ \\t]+-)"),
+    ("二重引用符の中の逆引用符に入らない", '            elif c == "`":\n                stack.append("`")\n                i += 1\n', ""),
+    ("逆引用符のコマンド置換を辿らない", '        elif c == "`":  # 逆引用符', '        elif False:  # 逆引用符'),
+    ("$( から ) で抜けない", '        elif c == ")" and stack and stack[-1] == "$(":\n            stack.pop()\n            i += 1\n', ""),
+    ("引用符の無い $( の中のヒアドキュメントで範囲を切る", '            body = -1  # 引用符の無い', '            pass  # 引用符の無い'),
+    ("パイプの前のヒアドキュメントを数えない", "    start = bounds[-1] if bounds else 0\n", "    start = a\n"),
+    ("単独の | でもパイプラインを区切る", 'PIPELINE_BOUND = re.compile(r"&&|\\|\\||;|\\n")', 'PIPELINE_BOUND = re.compile(r"&&|\\|\\||;|\\n|\\|")'),
     ("ヒアドキュメントの本体を commit の部分に含める", "spans.append((m.end(), body if body >= 0 else stop))", "spans.append((m.end(), stop))"),
 ]
 
