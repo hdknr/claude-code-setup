@@ -69,7 +69,10 @@ main へのマージ → GitHub Pages の再ビルド（計画ファイルだけ
 - 狭いパスの起点（2 パス目の指摘対応を始める直前の HEAD）: `c247b771cad4053b6faae6d7284843dd266e9549`
 - 2 パス目の指摘対応: V2-1・CR2-1・CR2-2・CR2-3 を直した（`split_with_frozen_clock` を `output_follows_clock` に置き換え、`frozen_clock` に止める時刻と `monotonic`・`perf_counter` を足し、コメントを合わせた）。狭いパスの終点: `28842c625c455e7d693da62ef66fe975d002f222`
 - 指摘対応の実測（2026-11-20。写しはリポジトリの外）: 素の起動 `すべて合格`・刻みをまたぐ `True`（C4）。時計を読む `X-both`・`X-mono`・`X-lt` は「時計を読むらしい…」が FAIL（C2）。時計を読まない `X-state`・`X-rand`・`X-name`・`X-rc` は ok（C1・C1b）。`check-all.py`: 17/99 本を回して失敗 0（82 本はキャッシュ）
-- 狭いパス: 起動中
+- 狭いパス（`dev-loop:dev-loop-verifier`・sonnet、`c247b771`→`28842c62` の 2 点）: 反証 0 件・限界 2 件（NP-1・NP-2。採否は人間が決める）。git status は前後とも空。Verifier の変異 10 本のうち、時計を読むのに赤にならなかったのは `X-M1-proc`（`process_time_ns`）だけ（陽性対照 `X-M3-timefull` は赤）
+- 満たしていない受入基準: C2 の一部——`frozen_clock` が止めない細かい時計（`process_time_ns` など）を `CLOCK_READERS` に当たらない書き方で読む変異は、入れ忘れても何も赤にならない（NP-1。base では赤）
+- 外部レビュー: PR を作った後に見る
+- 実験の交絡: 「赤にならない」の主張（C1・C1b）は base で赤になる陽性対照を取った（1 パス目）。2 パス目の `X-state` も base で赤・HEAD で ok
 - 手元の実測（2026-11-20）:
   - 素の起動: `PPTX 生成のテスト: すべて合格`・「本物の本体の決定性の観測は zip の時刻の刻みをまたぐ（実際: True）」（C4）
   - 陽性対照の写し（走らせた後に消した）: 新しい版に「主な生成を非 0 にする」変異を足した写しは終了コード 0（動的な検査は緑・「変異を殺せる」も緑）（C1）。base（`de438dca`）の版に同じ変異を足した写しは「時計を読むらしい変異が CLOCK_MUTATIONS に無い: X: 主な生成を非 0 にする」で赤（直す前の欠陥の陽性対照）。新しい版に `writestr(name`・`__import__("time").localtime()` の変異を足した写しは 2 本とも動的な検査が赤（違った観測は `deterministic`）（C2）
@@ -109,3 +112,10 @@ main へのマージ → GitHub Pages の再ビルド（計画ファイルだけ
 | CR2-5 | `frozen_clock` が `shifted_clock` の時計の一覧と退避・復元を写している | 示せない（一覧がずれた実例は無い） | 無し | 残課題 |
 
 直し方: 時計を止めた生成は、同じ変異の本体を毎回新しく読み込み直し（`load`）、同じ出力名で別のディレクトリに 3 回作る——止めた時刻 T で 2 回（割れたら止めた時計のほかで割れている）、T+`CLOCK_SHIFT` で 1 回（T の 1 回と割れたら時計を読む）。`frozen_clock` は止める時刻を引数に取り、`monotonic`・`perf_counter`（と `_ns`）も止める。コメント・docstring を合わせる（C3）
+
+### 狭いパスの採否の表（採否は人間が決める）
+
+| # | 指摘 | 実物で失敗を示せるか | 破る受入基準 | 採否 |
+| --- | --- | --- | --- | --- |
+| NP-1 | `frozen_clock` が止めない細かい時計（`process_time_ns`・`thread_time` など）を `__import__("time")` 経由で読む変異は、`CLOCK_MUTATIONS` に入れ忘れても何も赤にならない（コメントには書いた） | 示せる——Verifier の `X-M1-proc` が rc=0（陽性対照 `X-M3-timefull` は赤） | C2（base では赤） | 人間が決める |
+| NP-2 | 秒の粒度で止めない時計（`ctime`・`strftime`）を読む変異は「時計を読む…」では拾えず、「変異を殺せる」が赤になる | 示せる——`X-M10-ctime`・`X-M11-strftime` | 無し（赤にはなる。コメントのとおり） | 人間が決める |
