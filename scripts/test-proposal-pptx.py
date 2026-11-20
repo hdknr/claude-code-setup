@@ -301,7 +301,7 @@ def observe(mod, tool_dir: Path) -> dict:
     huge_row = {**qa_row(mod, 60, target="spec/scope.md", question="範囲の長い質問"), "選択肢": huge}
     mixed = pp.scope_slides([huge_row] + [qa_row(mod, 61 + i, target="spec/scope.md", question=f"範囲の短い質問{i}") for i in range(5)], None, None, [], True)
     seen("1 枚に収まらない長さの質問があっても範囲は 1 枚（長い質問は別紙へ）", lambda: len(mixed) == 1 and "範囲の長い質問" not in mixed[0].render()
-         and re.search(r"質問が 1 件ある", "".join(slide_list_texts(mixed))))
+         and bool(re.search(r"質問が 1 件ある", "".join(slide_list_texts(mixed)))))
     only_huge = pp.scope_slides([huge_row], None, None, [], True)
     seen("どの質問も収まらなければ、案内だけの 1 枚", lambda: len(only_huge) == 1 and "1 件" in "".join(slide_list_texts(only_huge)) and "decisions.xlsx" in "".join(slide_list_texts(only_huge)))
     seen("案内だけの枚も、別紙が無ければ提案書の名前を指す", lambda: "teian.md" in "".join(slide_list_texts(pp.scope_slides([huge_row], None, None, [], False, "teian.md"))))
