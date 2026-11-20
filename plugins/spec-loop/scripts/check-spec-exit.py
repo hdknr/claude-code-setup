@@ -35,6 +35,11 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
   **数えるのは重ねた後の全体**——後の版が同じファイルを置き換えたなら、置き換えられた前の版の行は全体に無いので重複に数えない
   （重ね方は `merge-versions.py`。このスクリプトは重ねない）。番号の形・どの列を番号と読むか・読まないものは `references/spec-exit.md` の
   「テストケースの番号の重複」を正とする。重複が無い仕様では出力も終了コードも変わらない。
+- **「呼ぶ側の分岐」の行が 8 分岐のどれかに触れていなければ 1**（#1340）——仕様の `.md` の、見出し・項目の行・表の行・表の見出しの形の「呼ぶ側の分岐」の行ごとに、
+  分岐（`CALLER_BRANCHES`）のうち触れていないものを、行（`ファイル:行`）と一緒に名指しする。**組の名前だけの項目（`量: …`）と別の節を指す書き方（「…と同じ」）は
+  どの分岐にも触れない**（そう添えて出す）。**行の形・まとめて書く書き方・触れているの読み方は `references/spec-exit.md` の「呼ぶ側の分岐の行の形」を正とする。**
+  **分岐の名前の原本はここ**で、`scaffold.py` の `BRANCHES`（課題一覧（案）の未決定事項）はこれを読む——検査器と scaffold は同じ定義で数える。
+  行の無い仕様では出力も終了コードも変わらない。`check(callers=False)` は見ない（`scaffold.py` の前の版の時点の `--upto`）。
 - 未決定の印（`MARKERS`）と、印に当たらない語（`NOT_MARKERS`）は `references/spec-exit.md` の写しで、
   **写しがずれていないかはこのリポジトリの `scripts/test-check-spec-exit.py` が突き合わせて見る**。
 
@@ -68,6 +73,10 @@ screen-spec が無いなどで止めた）は条件 1 を判定していない�
 | **番号の形に当たらない行の識別子**（`1`・`あ`・`No.3` など） | 表ごとに 1 から振り直す連番は、表が違えば重複でも誤りでない。形に当たる番号だけを全体で一意とみなす |
 | **全角・半角の違い以外の表記ゆれ**（`F1-5B` と `F1-5b`・`F1‐5b`（別のハイフン）） | 別の番号として数える。NFKC で畳むのは全角の英数字とハイフンだけ |
 | **形式検査のモデル（`formal/`）の中の印** | 仕様から書き起こした写しなので見ない（上）。綴りだけ違う `Formal/` は写しと見なさず、印を見る |
+| **「呼ぶ側の分岐」の行そのものが無い機能** | 機能の単位（仕様が書き分けている単位）を機械で決めない。行の無い機能は条件 2 の判定役（Red Team）が見る |
+| **4 つの形の外の「呼ぶ側の分岐」**（「呼ぶ側の分岐は次のとおり」のような本文・見出しの後ろに字が続く `呼ぶ側の分岐（受注）`）と、**`.md` 以外のファイルの行** | 行の形の決まり（`references/spec-exit.md`）の外は行と読まない——読まない行は揃いを見ない |
+| **分岐の項目の文の中身**（見せるものが仕様として足りるか・「該当なし」に理由があるか） | 触れているか（`:` の後ろに文があるか）だけを見る。中身は条件 2 の判定役が見る |
+| **4 字下げのコードブロックと HTML コメントの中の行** | フェンスのコードブロックの中だけを外す（テストケースの番号と同じ）。中の行も読んでしまう |
 """
 
 from __future__ import annotations
@@ -135,6 +144,12 @@ SEPARATOR = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
+def fence_closes(opened: re.Match[str] | None, fence: str, line: str) -> bool:
+    """開いているフェンス（`fence`）を、この行が閉じるか——同じ種類で、開きより短くなく、情報文字列の無いフェンスの行。
+    テストケースの番号（`case_rows`）と呼ぶ側の分岐の行（`caller_rows`）が同じ読み方でコードブロックを外す。"""
+    return bool(opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence) and not line.strip(" `~"))
+
+
 def find_markers(text: str) -> list[tuple[int, str]]:
     """(行番号, 当たった印) の一覧。印ではない語は先に伏せる（長さを保つ）。
 
@@ -167,7 +182,7 @@ def case_rows(text: str) -> list[tuple[int, str, str]]:
     for number, line in enumerate(text.splitlines(), 1):
         opened = FENCE.match(line)
         if fence is not None:
-            if opened and opened.group(1)[0] == fence[0] and len(opened.group(1)) >= len(fence) and not line.strip(" `~"):
+            if fence_closes(opened, fence, line):
                 fence = None
             continue
         if opened:
@@ -221,6 +236,229 @@ def duplicate_numbers(places: dict[str, list[tuple[Path, int]]]) -> list[str]:
     return problems
 
 
+# 呼ぶ側の分岐（#1340）。`references/spec-exit.md` の「呼ぶ側の分岐の行の形」の写し（`scripts/test-check-spec-exit.py` が突き合わせる）。
+# **分岐の名前の原本はここ**——`scaffold.py` の `BRANCHES` はこれを読む（写さない）。組の名前 → (つなぐ助詞, 分岐の述語) の並び
+CALLER_LABEL = "呼ぶ側の分岐"
+CALLER_GROUPS = (
+    ("入力", (("が", "欠ける"), ("が", "遅れる"), ("の", "順が崩れる"))),
+    ("呼ぶ処理", (("が", "失敗する"), ("が", "やり直される"), ("が", "再起動する"))),
+    ("量", (("が", "上限を超える"), ("が", "重なる"))),
+)
+CALLER_BRANCHES = tuple(f"{group}{particle}{predicate}" for group, preds in CALLER_GROUPS for particle, predicate in preds)
+CALLER_NONE = "該当なし"
+# まとめて書くときの区切り（`入力が欠ける・遅れる`）。NFKC の後なので全角の `／` は `/` になっている
+CALLER_JOINERS = re.compile(r"[・、/]")
+BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?")  # タスクリストのチェックボックスも外す
+BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# 別の節を指す書き方（「[価格照会書を出力する] と同じ」）——文の末尾が「と同じ」
+REFERS = re.compile(r"(?:\]\([^)]*\)|[\]」』])\s*と同じ\s*(?:[。.]|[（(][^）)]*[）)])?$")  # 角括弧・鉤括弧・リンクで名指した先と「同じ」で文が終わる（後ろの句点・括弧書きは許す）
+
+
+def _bare(text: str) -> str:
+    """前後の空白・強調と等幅の飾り（`*`・`_`・`` ` ``）を外す。"""
+    return text.strip().strip("*`_ ").strip()
+
+
+def caller_label(label: str) -> tuple[set[str], bool] | None:
+    """項目の見出し（`:` の前）を分岐の書き方として読む。読めれば (触れる分岐, 読めない書き方か)、組の名前で始まらなければ None。
+
+    分岐の名前（`入力が欠ける`）か、組の名前に `が`・`の` を続けてその組の述語を `・`・`、`・`/` で並べたもの
+    （`入力が欠ける・遅れる・順が崩れる`。並べる途中で別の組の分岐の名前を書いてもよい）。
+    **組の名前だけ（`量`）や組に無い述語を含む書き方は、どの分岐にも触れない**（読めない書き方として返す）。"""
+    label = _bare(label)
+    if not any(label.startswith(group) for group, _ in CALLER_GROUPS):
+        return None
+    touched: set[str] = set()
+    current = None
+    for piece in CALLER_JOINERS.split(label):
+        piece = _bare(piece)
+        for group, preds in CALLER_GROUPS:
+            if piece.startswith(group) and piece[len(group):len(group) + 1] in ("が", "の"):
+                current, piece = (group, preds), piece[len(group) + 1:]
+                break
+        if current is None:
+            return set(), True
+        group, preds = current
+        names = [f"{group}{particle}{predicate}" for particle, predicate in preds if predicate == piece]
+        if not names:
+            return set(), True
+        touched.update(names)
+    return touched, False
+
+
+def _caller_start(line: str) -> tuple[str, str] | None:
+    """行が「呼ぶ側の分岐」の行の始まりなら (形, 同じ行の中身)。形は `見出し`・`表`・`項目`。"""
+    text = unicodedata.normalize("NFKC", line)
+    heading = HEADING.match(text)
+    if heading:
+        title = _bare(text.strip().strip("#")).rstrip(":").strip()
+        title = re.sub(r"^[0-9]+(?:\.[0-9]+)*\.?\s+", "", _bare(title))  # 節の番号（`3.2 `）を外す
+        return ("見出し", "") if _bare(title) == CALLER_LABEL else None
+    stripped = text.strip()
+    if stripped.startswith("|"):
+        cells = stripped.strip("|").split("|")
+        return ("表", "|".join(cells[1:])) if _bare(cells[0]) == CALLER_LABEL else None
+    body = BULLET.sub("", stripped)
+    if not body.lstrip("*_`").startswith(CALLER_LABEL):
+        return None
+    rest = _bare(body.lstrip("*_`")[len(CALLER_LABEL):].lstrip("*_`"))
+    if rest == "":
+        return "項目", ""
+    if rest.startswith(":"):
+        return "項目", rest[1:].strip()
+    return None
+
+
+def _caller_item(line: str) -> tuple[str, str] | None:
+    """中身の 1 項目を (見出し, 文) に分ける。表の行は先頭のセルが見出し。`:` の無い行は None。"""
+    text = unicodedata.normalize("NFKC", line).strip()
+    if text.startswith("|"):
+        if SEPARATOR.fullmatch(text):
+            return None
+        cells = text.strip("|").split("|")
+        return (cells[0], "|".join(cells[1:])) if len(cells) > 1 else None
+    body = BULLET.sub("", text)
+    if ":" not in body:
+        return None
+    label, _, rest = body.partition(":")
+    return label, rest
+
+
+def _is_branch_item(line: str) -> bool:
+    item = _caller_item(line)
+    return item is not None and caller_label(item[0]) is not None
+
+
+def caller_rows(text: str) -> list[tuple[int, list[str], list[str], bool]]:
+    """仕様の「呼ぶ側の分岐」の行ごとに (行番号, 触れていない分岐, 読めない書き方, 別の節を指す書き方か)。
+
+    行の形と読み方は `references/spec-exit.md` の「呼ぶ側の分岐の行の形」を正とする（#1340）。コードブロックの中は見ない。"""
+    lines = text.splitlines()
+    rows = []
+    fence = None
+    at = 0
+    while at < len(lines):
+        line = lines[at]
+        opened = FENCE.match(line)
+        if fence:
+            if fence_closes(opened, fence, line):
+                fence = None
+            at += 1
+            continue
+        if opened:
+            fence = opened.group(1)
+            at += 1
+            continue
+        start = _caller_start(line)
+        if start is None:
+            at += 1
+            continue
+        kind, own = start
+        follow = at + 1
+        if kind == "表" and follow < len(lines) and SEPARATOR.fullmatch(lines[follow].strip()):
+            # 先頭の列の見出しが `呼ぶ側の分岐` の表——見出し行のほかのセルは列の名前で、続く表の行（先頭のセルが分岐の書き方）が中身
+            kind = "表の見出し"
+            content, follow = _table_body(lines, follow + 1)
+        elif kind == "表":
+            content = [cell for cell in own.split("|") if cell.strip()]  # セルごとに項目（`<br>` でも分ける）
+        else:
+            content = [own] if own else []
+            inner = None  # 中身の途中のコードブロック（中は読まずに飛ばし、行は閉じない）
+            while follow < len(lines):
+                nxt = lines[follow]
+                fenced = FENCE.match(nxt)
+                if inner:
+                    if fence_closes(fenced, inner, nxt):
+                        inner = None
+                    follow += 1
+                    continue
+                if fenced:
+                    inner = fenced.group(1)
+                    follow += 1
+                    continue
+                nested = _caller_start(nxt)
+                if nested is not None and nested[0] == "表" and follow + 1 < len(lines) and SEPARATOR.fullmatch(lines[follow + 1].strip()):
+                    # 見出しの下の、先頭の列の見出しが `呼ぶ側の分岐` の表は、この行の中身（別の行にしない）
+                    body, follow = _table_body(lines, follow + 2)
+                    content += body
+                    continue
+                if nested is not None:
+                    break
+                if HEADING.match(unicodedata.normalize("NFKC", nxt)):
+                    break
+                if not nxt.strip() and kind == "項目":
+                    ahead = follow + 1
+                    while ahead < len(lines) and not lines[ahead].strip():
+                        ahead += 1
+                    if ahead >= len(lines) or not _is_branch_item(lines[ahead]):
+                        break
+                content.append(nxt)
+                follow += 1
+        touched: set[str] = set()
+        unread: list[str] = []
+        whole_none = False
+        refers = False
+        first = True  # 中身の最初の空でない部分か——行ごと該当なしは、中身が `該当なし` で始まり、分岐の項目を持たないときだけ
+        labelled = False  # 分岐の書き方の項目を 1 つでも持つか
+        for part in (piece for entry in content for piece in BREAK.split(entry)):
+            item = _caller_item(part)
+            plain = _bare(BULLET.sub("", unicodedata.normalize("NFKC", part).strip()).strip("|"))
+            if not plain:
+                continue
+            leading, first = first, False
+            if item is None or caller_label(item[0]) is None:
+                if leading and plain.startswith(CALLER_NONE):
+                    whole_none = True
+                if REFERS.search(plain):
+                    refers = True
+                continue
+            label, rest = item
+            labelled = True
+            names, bad = caller_label(label)
+            text_of = _bare(rest.strip("|"))
+            if bad:
+                unread.append(_bare(label))
+            elif REFERS.search(text_of):
+                refers = True  # 別の節を指す書き方は、分岐の項目の文でも触れない
+            elif text_of:
+                touched |= names
+        whole_none = whole_none and not labelled
+        missing = [] if whole_none else [name for name in CALLER_BRANCHES if name not in touched]
+        # 表の行で、分岐の書き方も「該当なし」も別の節も持たず、中身が「呼ぶ側の分岐」を名指すもの（`| 呼ぶ側の分岐 | 下の「呼ぶ側の分岐」の節 |`）は、
+        # ほかの行を指す案内——ほかに行があれば行に数えない（書きかけの行（`| 呼ぶ側の分岐 | 後で書く |`）は案内でない）
+        pointer = kind == "表" and not labelled and not whole_none and not refers and CALLER_LABEL in own
+        rows.append((at + 1, missing, unread, refers, pointer))
+        at = follow
+    if any(not row[4] for row in rows):
+        rows = [row for row in rows if not row[4]]
+    return [row[:4] for row in rows]
+
+
+def _table_body(lines: list[str], at: int) -> tuple[list[str], int]:
+    """`at` から続く表の行（`|` で始まる行）と、その次の行の番号。"""
+    body = []
+    while at < len(lines) and lines[at].strip().startswith("|"):
+        body.append(lines[at])
+        at += 1
+    return body, at
+
+
+def caller_problems(path: Path, text: str) -> list[str]:
+    """揃わない「呼ぶ側の分岐」の行を、行と欠けた分岐を名指しして 1 行ずつ。"""
+    problems = []
+    for number, missing, unread, refers in caller_rows(text):
+        if not missing:
+            continue
+        line = (f"{path}:{number}: 呼ぶ側の分岐の行が 8 分岐のうち {len(missing)} 分岐に触れていない（{'・'.join(missing)}）"
+                "——分岐ごとに見せるものか「該当なし」と理由を書く")
+        if unread:
+            line += f"。読めない分岐の書き方（組の名前だけ・組に無い述語。どの分岐にも触れない）: {'・'.join(unread)}"
+        if refers:
+            line += "。別の節を指す書き方（「…と同じ」）は認めない——この機能の分岐を書く"
+        problems.append(line + "（references/spec-exit.md の「呼ぶ側の分岐の行の形」）")
+    return problems
+
+
 def spec_files(root: Path) -> list[Path]:
     files = []
     for path in sorted(root.rglob("*")):
@@ -248,9 +486,10 @@ def screen_gate(spec_dir: Path, docs: Path | None, upto: int | None, named: str 
 
 
 def check(qa_path: Path, spec_dir: Path, docs: Path | None = None, upto: int | None = None,
-          named: str | None = None, screen: bool = True) -> tuple[int, list[str]]:
+          named: str | None = None, screen: bool = True, callers: bool = True) -> tuple[int, list[str]]:
     """(終了コード, 出力する行) を返す。`docs`・`upto`・`named` は画面の関門（`screen-gate.py`）に渡す。
-    `screen=False` は画面の関門を当てない——呼ぶ側（`scaffold.py`）が自分の条件で `screen-gate.py` を当てるとき。"""
+    `screen=False` は画面の関門を当てない——呼ぶ側（`scaffold.py`）が自分の条件で `screen-gate.py` を当てるとき。
+    `callers=False` は呼ぶ側の分岐の行の揃いを見ない——`scaffold.py` が前の版の時点（`--upto <n-1>`。凍結した版は直せない）を見るとき（#1340）。"""
     code, lines, rows = pptx.read_rows(qa_path)
     provisional = [row for row in rows if pptx.qa.is_provisional(row)]
     if code == 2:
@@ -295,6 +534,8 @@ def check(qa_path: Path, spec_dir: Path, docs: Path | None = None, upto: int | N
         if path.suffix == ".md":
             for number, case in case_numbers(text):
                 numbers.setdefault(case, []).append((path, number))
+            if callers:
+                problems += caller_problems(path, text)
     problems += duplicate_numbers(numbers)
 
     screen_code, screen_lines = screen_gate(spec_dir, docs, upto, named) if screen else (0, [])
