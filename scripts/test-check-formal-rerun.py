@@ -159,6 +159,10 @@ CASES: dict[str, tuple] = {
     # 本体の回どうしも別のディレクトリ——構文の誤りで残った states/ に、次の本体がぶつかって反例を落とさない（#1346 の /code-review 1 パス目）
     "前の本体の states に次の本体がぶつからない": (f"TLC の呼び方: {CALL}\n", {T1: two_bodies("PARSE", "VIOLATE")}, [], 1,
                                   "本体 Second.tla で反例が出た"),
+    # 本体の回と陽性対照の回も別のディレクトリ——時相の性質の違反の本体が残した states/ に、陽性対照がぶつからない（#1346 の /code-review 2 パス目）。
+    # 終了コードは本体の反例で 1 のまま変わらないので、陽性対照の行で見る
+    "本体の states に陽性対照がぶつからない": (f"TLC の呼び方: {CALL}\n", {T1: target(body="TEMPORAL")}, [], 1,
+                                 "陽性対照 Broken0.tla: 反例が出た（空振りでない）"),
     "前の回の states に次の回がぶつからない": (f"TLC の呼び方: {CALL}\n", {T1: target(controls=("TEMPORAL", "VIOLATE"))}, [], 0,
                                 "陽性対照 Broken1.tla: 反例が出た（空振りでない）"),
     # 陽性対照を両方の一覧に書いた記録（1 パス目の CR1）——陽性対照を本体の反例と読まない
@@ -209,6 +213,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("本体の回でディレクトリを分けない", "        for name in bodies:\n            rc, out, weight = timed(call, fresh(), name, timeout)\n",
      "        shared = fresh()\n        for name in bodies:\n            rc, out, weight = timed(call, shared, name, timeout)\n",
      "前の本体の states に次の本体がぶつからない"),
+    ("陽性対照が最後に作ったディレクトリを使い回す", "timed(call, fresh(), name, timeout)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
+     "timed(call, max(map(str, Path(tmp).iterdir()), key=lambda d: Path(d).stat().st_mtime_ns), name, timeout)\n            if violated(out):\n                lines.append(f\"{directory}: 陽性対照",
+     "本体の states に陽性対照がぶつからない"),
     ("判定できなかったを反例ありより先に読む", "    if COUNTEREXAMPLE in verdicts:\n", "    if COUNTEREXAMPLE in verdicts and UNKNOWN not in verdicts:\n",
      "反例ありが判定できなかったより先"),
     ("桁区切りを外さない", "re.sub('[' + GROUP_SEPARATORS + ']', '', found[-1])", "found[-1]", "時間切れは進み具合の行の状態数"),
