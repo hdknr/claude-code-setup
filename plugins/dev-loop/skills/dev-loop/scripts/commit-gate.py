@@ -84,9 +84,12 @@ GIT_COMMIT = re.compile(
 HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)([\w.\-]+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*\r?(?=\n|$)", re.DOTALL)
 SEGMENT_END = re.compile(r"&&|\|\||;|\||\n")
 # パイプライン（`|` でつないだ並び）の区切り。単独の `|` は区切らない
-PIPELINE_BOUND = re.compile(r"&&|\|\||;|\n")
-# メッセージを stdin から読む形（-F -・-F-・--file=-・--file -）。git が stdin を読むのはこの形だけ
-STDIN_MESSAGE = re.compile(r"(?:^|\s)(?:-[a-zA-Z]*F[ \t]*-|--file(?:=|[ \t]+)-)(?=[\s;&|)<>]|$)")
+# `{ cat <<EOF; } | git commit -F -` の `}` の前の `;` は区切らない
+PIPELINE_BOUND = re.compile(r"&&|\|\||;(?![ \t]*\})|\n")
+# メッセージのファイルを渡す引数（-F <x>・-F<x>・--file=<x>・--file <x>）。<x> は骨組みの上の位置で取り、元の文字列から読む
+FILE_ARG = re.compile(r"(?:^|\s)(?:-[a-zA-Z]*F[ \t]*|--file(?:=|[ \t]+))([^\s;&|)<>]+)")
+# git が stdin から読むファイルの名前（引用符を外した形）
+STDIN_NAMES = ("-", "/dev/stdin", "/dev/fd/0")
 # 行頭・引用符の直後・文字のままの `\n` の直後の `Verified:`（-m を 2 本渡す形・$'…' の形も読む）
 TRAILER = re.compile(r"(?:^|[\"']|\\n)[ \t]*Verified:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
 # 値の終わり: 閉じの引用符（後ろが空白・行末・区切り・リダイレクト）と、文字のままの `\n`。
@@ -191,7 +194,9 @@ def hide_quoted_heredoc_ops(text: str) -> str:
             else:
                 i += 1
             continue
-        if c == "'":  # 引用符の外の `\'` は跳ばさない（QUOTED と同じ読み方にそろえる）
+        if c == "\\":  # 引用符の外の `\"`・`\'` は文字（引用符の始まりではない）
+            i += 2
+        elif c == "'":
             j = text.find("'", i + 1)
             if j < 0:
                 i += 1  # 閉じない単一引用符は文字のまま（QUOTED と同じ）
@@ -238,17 +243,29 @@ def skeleton(command: str) -> str:
 def heredoc_text(command: str, a: int, b: int) -> str:
     """その commit の部分（a〜b）で始まるヒアドキュメントの本文（`git commit -F - <<EOF && git push` の形）。
 
-    **引用符の外の `<<` で始まるものだけ**（#1368 の V1）。**メッセージを stdin から読む形（`-F -`・`--file=-`）のコミットでだけ数える**——
+    **引用符の外の `<<` で始まるものだけ**（#1368 の V1）。**メッセージを stdin から読む形（`-F -`・`--file=-`・`-F /dev/stdin`。引用符つきも）のコミットでだけ数える**——
     ほかの形（`-m`・`-F <ファイル>`・`-C`・エディタ）では git は stdin を読まない（#1368 の V2。`-m "$(cat <<'EOF' … )"` の本文は、その commit の部分の中にある）。
+    例外は、`-F <ファイル>` のファイルを同じコマンドの前のヒアドキュメントが `> <ファイル>` で書く形——その本文を読む。
     """
-    if not STDIN_MESSAGE.search(skeleton(command)[a:b]):
-        return ""
     folded = command.replace("\\\n", "  ")
-    # パイプで commit の stdin に渡るヒアドキュメント（`cat <<'EOF' | git commit -F -`）も数える——同じパイプラインの始まりから数える
-    bounds = [x.end() for x in PIPELINE_BOUND.finditer(skeleton(command), 0, a)]
-    start = bounds[-1] if bounds else 0
-    found = HEREDOC.finditer(hide_quoted_heredoc_ops(folded))
-    return "".join("\n" + folded[m.start():m.end()] for m in found if start <= m.start() < b)
+    shape = skeleton(command)  # 骨組み（引用符の中を消した形）
+    found = list(HEREDOC.finditer(hide_quoted_heredoc_ops(folded)))
+    args = [folded[x.start(1):x.end(1)].strip("'\"") for x in FILE_ARG.finditer(shape, a, b)]
+    if any(x in STDIN_NAMES for x in args):
+        # パイプで commit の stdin に渡るヒアドキュメント（`cat <<'EOF' | git commit -F -`）も数える——同じパイプラインの始まりから数える
+        bounds = [x.end() for x in PIPELINE_BOUND.finditer(shape, 0, a)]
+        start = bounds[-1] if bounds else 0
+        return "".join("\n" + folded[m.start():m.end()] for m in found if start <= m.start() < b)
+    # `-F <ファイル>` で、そのファイルを同じコマンドの前のヒアドキュメントが書く形（`cat > m.txt <<'EOF' && git commit -F m.txt`）——
+    # hook の時点ではファイルがまだ無いので、書くヒアドキュメントの本文を読む
+    out = []
+    for path in args:
+        to_path = re.compile(r">>?[ \t]*['\"]?" + re.escape(path) + r"['\"]?(?=[\s;&|)<]|$)")
+        for m in found:
+            line = folded[folded.rfind("\n", 0, m.start()) + 1:m.start()] + folded[m.start():m.end()].partition("\n")[0]
+            if m.start() < a and to_path.search(line):
+                out.append("\n" + folded[m.start():m.end()])
+    return "".join(out)
 
 
 def find_commits(command: str) -> tuple[str, list[tuple[int, int]]]:

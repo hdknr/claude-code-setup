@@ -332,6 +332,17 @@ def suite(script: Path) -> list[str]:
     check("V2: 略した --mess= でもヒアドキュメントを数えない", c.hook("git commit --mess=x <<'EOF'\nVerified: verify\nEOF").returncode == 2)
     check("V2: -F <ファイル> ではヒアドキュメントを数えない", c.hook("git commit -F plain.txt <<'EOF'\nVerified: verify\nEOF").returncode == 2)
     check("V2: メッセージの引数が無い（エディタ）形ではヒアドキュメントを数えない", c.hook("git commit <<'EOF'\nVerified: verify\nEOF").returncode == 2)
+    for form in ("-F '-'", '-F "-"', "--file='-'", "-F /dev/stdin", "--file=/dev/stdin"):
+        check(f"{form} のヒアドキュメントを読む", c.hook(f"git commit {form} <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("-F /dev/stdin のヒアドキュメントに印が無ければ止める", c.hook("git commit -F /dev/stdin <<'EOF'\nfeat\nEOF").returncode == 2)
+    check("前のヒアドキュメントが書く -F のファイルの印を読む",
+          c.hook("cat > m.txt <<'EOF' && git commit -F m.txt\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("前のヒアドキュメントが別のファイルに書くなら読まない",
+          c.hook("cat > other.txt <<'EOF' && git commit -F m.txt\nVerified: verify\nEOF").returncode == 2)
+    check("引用符の外の \\\" の後ろの -F - のヒアドキュメントを読む",
+          c.hook("grep -c \\\"foo\\\" a.txt; git commit -F - <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
+    check("{ cat <<EOF; } | git commit -F - の印を読む",
+          c.hook("{ cat <<'EOF'; } | git commit -F -\nfeat\n\nVerified: verify\nEOF").returncode == 0)
     check("-F- のヒアドキュメントを読む", c.hook("git commit -F- <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
     check("--file=- のヒアドキュメントを読む", c.hook("git commit --file=- <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
     check("--file - のヒアドキュメントを読む", c.hook("git commit --file - <<'EOF'\nfeat\n\nVerified: verify\nEOF").returncode == 0)
@@ -471,15 +482,20 @@ MUTATIONS = [
     ('"$( の中を引用符の中と読む', '            elif text.startswith("$(", i):\n                stack.append("$(")\n                i += 2\n',
      ""),
     ("ヒアドキュメントの本体を跳ばさない", "        elif text.startswith(\"<<\", i) and (m := HEREDOC.match(text, i)):\n            i = m.end()\n", ""),
-    ("-m でもヒアドキュメントを数える", '    if not STDIN_MESSAGE.search(skeleton(command)[a:b]):\n        return ""\n', ""),
-    ("-F- を stdin と読まない", "F[ \\t]*-|--file", "F[ \\t]+-|--file"),
-    ("--file=- を stdin と読まない", "--file(?:=|[ \\t]+)-)", "--file[ \\t]+-)"),
+    ("stdin 以外でもヒアドキュメントを数える", "    if any(x in STDIN_NAMES for x in args):", "    if True:"),
+    ("-F- を stdin と読まない", "F[ \\t]*|--file(?:=", "F[ \\t]+|--file(?:="),
+    ("--file=- を stdin と読まない", "--file(?:=|[ \\t]+))(", "--file[ \\t]+)("),
+    ("引用符つきの -F '-' を stdin と読まない", """.strip("'\\"") for x in FILE_ARG""", " for x in FILE_ARG"),
+    ("/dev/stdin を stdin と読まない", 'STDIN_NAMES = ("-", "/dev/stdin", "/dev/fd/0")', 'STDIN_NAMES = ("-",)'),
+    ("前のヒアドキュメントが書く -F のファイルを読まない", "            if m.start() < a and to_path.search(line):", "            if False:"),
+    ("引用符の外の \\ を跳ばさない", '        if c == "\\\\":  # 引用符の外の', '        if False:  # 引用符の外の'),
+    ("{ } の中の ; でパイプラインを区切る", ";(?![ \\t]*\\})|", ";|"),
     ("二重引用符の中の逆引用符に入らない", '            elif c == "`":\n                stack.append("`")\n                i += 1\n', ""),
     ("逆引用符のコマンド置換を辿らない", '        elif c == "`":  # 逆引用符', '        elif False:  # 逆引用符'),
     ("$( から ) で抜けない", '        elif c == ")" and stack and stack[-1] == "$(":\n            stack.pop()\n            i += 1\n', ""),
     ("引用符の無い $( の中のヒアドキュメントで範囲を切る", '            body = -1  # 引用符の無い', '            pass  # 引用符の無い'),
     ("パイプの前のヒアドキュメントを数えない", "    start = bounds[-1] if bounds else 0\n", "    start = a\n"),
-    ("単独の | でもパイプラインを区切る", 'PIPELINE_BOUND = re.compile(r"&&|\\|\\||;|\\n")', 'PIPELINE_BOUND = re.compile(r"&&|\\|\\||;|\\n|\\|")'),
+    ("単独の | でもパイプラインを区切る", '\\})|\\n")', '\\})|\\n|\\|")'),
     ("ヒアドキュメントの本体を commit の部分に含める", "spans.append((m.end(), body if body >= 0 else stop))", "spans.append((m.end(), stop))"),
 ]
 
